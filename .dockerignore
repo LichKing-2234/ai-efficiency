@@ -1,0 +1,31 @@
+.git
+.gitignore
+.claude
+.worktrees
+
+# Runtime data
+backend/data/
+backend/*.db
+*.db
+
+# Secrets
+.env
+.env.*
+backend/config.yaml
+
+# Dependencies (rebuilt in Docker)
+frontend/node_modules/
+frontend/dist/
+
+# Non-build directories
+ae-cli/
+docs/
+*.md
+!frontend/*.md
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store

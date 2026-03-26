@@ -1,0 +1,284 @@
+package handler
+
+import (
+	"net/http"
+	"strconv"
+	"time"
+
+	"github.com/ai-efficiency/backend/ent"
+	"github.com/ai-efficiency/backend/ent/repoconfig"
+	"github.com/ai-efficiency/backend/ent/session"
+	"github.com/ai-efficiency/backend/internal/pkg"
+	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+)
+
+// SessionHandler handles session API requests from ae-cli.
+type SessionHandler struct {
+	entClient *ent.Client
+}
+
+// NewSessionHandler creates a new session handler.
+func NewSessionHandler(entClient *ent.Client) *SessionHandler {
+	return &SessionHandler{entClient: entClient}
+}
+
+type createSessionRequest struct {
+	ID           string                   `json:"id" binding:"required"`
+	RepoFullName string                   `json:"repo_full_name" binding:"required"`
+	Branch       string                   `json:"branch" binding:"required"`
+	ToolConfigs  []map[string]interface{} `json:"tool_configs"`
+}
+
+type addInvocationRequest struct {
+	Tool  string `json:"tool" binding:"required"`
+	Start string `json:"start" binding:"required"`
+	End   string `json:"end"`
+}
+
+// Create handles POST /api/v1/sessions
+func (h *SessionHandler) Create(c *gin.Context) {
+	var req createSessionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pkg.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	sessionID, err := uuid.Parse(req.ID)
+	if err != nil {
+		pkg.Error(c, http.StatusBadRequest, "invalid session id: must be UUID")
+		return
+	}
+
+	// Resolve repo_config_id from full_name or clone_url
+	rc, err := h.entClient.RepoConfig.Query().
+		Where(repoconfig.FullNameEQ(req.RepoFullName)).
+		Only(c.Request.Context())
+	if err != nil && ent.IsNotFound(err) {
+		// Fallback: try matching by clone_url
+		rc, err = h.entClient.RepoConfig.Query().
+			Where(repoconfig.CloneURLEQ(req.RepoFullName)).
+			Only(c.Request.Context())
+	}
+	if err != nil {
+		if ent.IsNotFound(err) {
+			pkg.Error(c, http.StatusNotFound, "repo not found: "+req.RepoFullName)
+			return
+		}
+		pkg.Error(c, http.StatusInternalServerError, "failed to find repo")
+		return
+	}
+
+	create := h.entClient.Session.Create().
+		SetID(sessionID).
+		SetRepoConfigID(rc.ID).
+		SetBranch(req.Branch).
+		SetStartedAt(time.Now())
+
+	// Set user edge from JWT
+	if userID, exists := c.Get("user_id"); exists {
+		create.SetUserID(userID.(int))
+	}
+
+	// Set tool_configs if provided
+	if len(req.ToolConfigs) > 0 {
+		create.SetToolConfigs(req.ToolConfigs)
+		if tc := req.ToolConfigs[0]; tc != nil {
+			if pn, ok := tc["provider_name"].(string); ok {
+				create.SetProviderName(pn)
+			}
+			if keyID, ok := tc["relay_api_key_id"].(float64); ok {
+				create.SetRelayAPIKeyID(int(keyID))
+			}
+		}
+	}
+
+	s, err := create.Save(c.Request.Context())
+	if err != nil {
+		pkg.Error(c, http.StatusInternalServerError, "failed to create session")
+		return
+	}
+
+	pkg.Created(c, s)
+}
+
+// Update handles PUT /api/v1/sessions/:id (heartbeat)
+func (h *SessionHandler) Update(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		pkg.Error(c, http.StatusBadRequest, "invalid session id")
+		return
+	}
+
+	// Just touch the session to indicate it's still alive
+	s, err := h.entClient.Session.UpdateOneID(id).
+		Save(c.Request.Context())
+	if err != nil {
+		if ent.IsNotFound(err) {
+			pkg.Error(c, http.StatusNotFound, "session not found")
+			return
+		}
+		pkg.Error(c, http.StatusInternalServerError, "failed to update session")
+		return
+	}
+
+	pkg.Success(c, s)
+}
+
+// Stop handles POST /api/v1/sessions/:id/stop
+func (h *SessionHandler) Stop(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		pkg.Error(c, http.StatusBadRequest, "invalid session id")
+		return
+	}
+
+	now := time.Now()
+	s, err := h.entClient.Session.UpdateOneID(id).
+		SetEndedAt(now).
+		SetStatus(session.StatusCompleted).
+		Save(c.Request.Context())
+	if err != nil {
+		if ent.IsNotFound(err) {
+			pkg.Error(c, http.StatusNotFound, "session not found")
+			return
+		}
+		pkg.Error(c, http.StatusInternalServerError, "failed to stop session")
+		return
+	}
+
+	pkg.Success(c, s)
+}
+
+// List handles GET /api/v1/sessions
+func (h *SessionHandler) List(c *gin.Context) {
+	query := h.entClient.Session.Query().
+		WithRepoConfig().
+		Order(ent.Desc(session.FieldStartedAt))
+
+	// Filter by status
+	if status := c.Query("status"); status != "" {
+		query = query.Where(session.StatusEQ(session.Status(status)))
+	}
+
+	// Filter by repo_config_id
+	if repoID := c.Query("repo_id"); repoID != "" {
+		id, err := strconv.Atoi(repoID)
+		if err == nil {
+			query = query.Where(session.HasRepoConfigWith(repoconfig.IDEQ(id)))
+		}
+	}
+
+	// Pagination
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 || pageSize > 100 {
+		pageSize = 20
+	}
+
+	total, err := query.Clone().Count(c.Request.Context())
+	if err != nil {
+		pkg.Error(c, http.StatusInternalServerError, "failed to count sessions")
+		return
+	}
+
+	sessions, err := query.
+		Offset((page - 1) * pageSize).
+		Limit(pageSize).
+		All(c.Request.Context())
+	if err != nil {
+		pkg.Error(c, http.StatusInternalServerError, "failed to list sessions")
+		return
+	}
+
+	pkg.Success(c, gin.H{
+		"items":     sessions,
+		"total":     total,
+		"page":      page,
+		"page_size": pageSize,
+	})
+}
+
+// Get handles GET /api/v1/sessions/:id
+func (h *SessionHandler) Get(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		pkg.Error(c, http.StatusBadRequest, "invalid session id")
+		return
+	}
+
+	s, err := h.entClient.Session.Query().
+		Where(session.IDEQ(id)).
+		WithRepoConfig().
+		Only(c.Request.Context())
+	if err != nil {
+		if ent.IsNotFound(err) {
+			pkg.Error(c, http.StatusNotFound, "session not found")
+			return
+		}
+		pkg.Error(c, http.StatusInternalServerError, "failed to get session")
+		return
+	}
+
+	pkg.Success(c, s)
+}
+
+// AddInvocation handles POST /api/v1/sessions/:id/invocations
+func (h *SessionHandler) AddInvocation(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		pkg.Error(c, http.StatusBadRequest, "invalid session id")
+		return
+	}
+
+	var req addInvocationRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pkg.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	// Append invocation to tool_invocations atomically using a transaction
+	tx, err := h.entClient.Tx(c.Request.Context())
+	if err != nil {
+		pkg.Error(c, http.StatusInternalServerError, "failed to start transaction")
+		return
+	}
+
+	// Lock the row by reading within transaction
+	s, err := tx.Session.Get(c.Request.Context(), id)
+	if err != nil {
+		tx.Rollback()
+		if ent.IsNotFound(err) {
+			pkg.Error(c, http.StatusNotFound, "session not found")
+			return
+		}
+		pkg.Error(c, http.StatusInternalServerError, "failed to get session")
+		return
+	}
+
+	invocations := s.ToolInvocations
+	invocations = append(invocations, map[string]interface{}{
+		"tool":  req.Tool,
+		"start": req.Start,
+		"end":   req.End,
+	})
+
+	s, err = tx.Session.UpdateOneID(id).
+		SetToolInvocations(invocations).
+		Save(c.Request.Context())
+	if err != nil {
+		tx.Rollback()
+		pkg.Error(c, http.StatusInternalServerError, "failed to add invocation")
+		return
+	}
+
+	if err := tx.Commit(); err != nil {
+		pkg.Error(c, http.StatusInternalServerError, "failed to commit transaction")
+		return
+	}
+
+	pkg.Success(c, s)
+}

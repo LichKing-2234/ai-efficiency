@@ -1,0 +1,49 @@
+# AI Efficiency Platform — Configuration Template
+# Copy this file to config.yaml and fill in the values.
+# Environment variables with AE_ prefix can override any setting.
+# e.g. AE_AUTH_JWT_SECRET overrides auth.jwt_secret
+
+# ─── Server ───────────────────────────────────────────────
+server:
+  port: 8081                            # HTTP listen port
+  mode: debug                           # debug | release
+  frontend_url: "http://localhost:5173" # Frontend URL, used for OAuth redirect
+
+# ─── Database ─────────────────────────────────────────────
+db:
+  dsn: "file:ai_efficiency.db?_fk=1"   # SQLite for dev; use postgres://... for production
+
+# ─── Authentication ───────────────────────────────────────
+auth:
+  jwt_secret: "<CHANGE_ME_32_CHARS_MIN>"  # JWT signing key, at least 32 characters
+  access_token_ttl: 7200                  # Access token lifetime in seconds (default: 2h)
+  refresh_token_ttl: 604800               # Refresh token lifetime in seconds (default: 7d)
+  ldap:                                   # Leave url empty to disable LDAP
+    url: ""                               # e.g. ldap://ldap.example.com:389
+    base_dn: ""                           # e.g. ou=users,dc=example,dc=com
+    bind_dn: ""                           # Service account DN for search
+    bind_password: ""                     # Service account password
+    user_filter: "(uid=%s)"               # LDAP search filter, %s = username
+    tls: false                            # Enable StartTLS
+
+# ─── Encryption ───────────────────────────────────────────
+encryption:
+  key: "<64_HEX_CHARS>"                  # 32-byte AES-256 key, hex-encoded; encrypts SCM tokens & API keys
+
+# ─── Relay (sub2api) ─────────────────────────────────────
+# Central relay service for SSO auth, LLM calls, usage stats, and API key delivery.
+# Leave url empty to disable relay-dependent features (SSO, LLM analysis).
+relay:
+  provider: sub2api                       # Provider type (currently only sub2api)
+  url: ""                                 # e.g. http://sub2api-host:8080
+  api_key: ""                             # Admin API key for the relay service
+  model: "claude-sonnet-4-20250514"       # Default LLM model for all relay calls
+
+# ─── Analysis ─────────────────────────────────────────────
+# LLM-powered code analysis settings. LLM connection uses relay config above.
+analysis:
+  llm:
+    max_tokens_per_scan: 100000           # Max tokens per scan request
+    max_scans_per_repo_per_day: 3         # Rate limit: scans per repo per day
+    # system_prompt: ""                   # Optional: override default system prompt
+    # user_prompt_template: ""            # Optional: override default user prompt template

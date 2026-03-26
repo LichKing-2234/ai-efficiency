@@ -1,0 +1,67 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+/backend/ai-efficiency
+/backend/bin/
+/backend/server
+/ae-cli/ae-cli
+
+# Go
+/backend/vendor/
+/backend/tmp/
+
+# Ent generated (keep schema/, ignore generated code)
+/backend/ent/client.go
+/backend/ent/mutation.go
+/backend/ent/runtime.go
+/backend/ent/tx.go
+/backend/ent/enttest/
+/backend/ent/hook/
+/backend/ent/migrate/
+/backend/ent/predicate/
+/backend/ent/runtime/
+
+# Frontend
+/frontend/node_modules/
+/frontend/dist/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment & secrets
+.env
+.env.local
+.env.*.local
+config.yaml
+!deploy/config.example.yaml
+
+# Data & logs
+/data/
+/backend/data/
+*.db
+*.sqlite
+*.sqlite3
+*.log
+
+# Test
+coverage.out
+*_cover.out
+coverage.html
+/frontend/coverage/
+.worktrees/
+
+# Python
+.venv/
+__pycache__/
+*.pyc

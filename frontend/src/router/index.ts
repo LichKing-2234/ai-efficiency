@@ -1,0 +1,78 @@
+import { createRouter, createWebHistory } from 'vue-router'
+import { useAuthStore } from '@/stores/auth'
+
+const router = createRouter({
+  history: createWebHistory(),
+  routes: [
+    {
+      path: '/login',
+      name: 'Login',
+      component: () => import('@/views/LoginView.vue'),
+      meta: { public: true },
+    },
+    {
+      path: '/oauth/authorize',
+      name: 'OAuthAuthorize',
+      component: () => import('@/views/oauth/AuthorizePage.vue'),
+      meta: { public: true },
+    },
+    {
+      path: '/',
+      name: 'Dashboard',
+      component: () => import('@/views/DashboardView.vue'),
+    },
+    {
+      path: '/repos',
+      name: 'RepoList',
+      component: () => import('@/views/repos/RepoListView.vue'),
+    },
+    {
+      path: '/repos/:id',
+      name: 'RepoDetail',
+      component: () => import('@/views/repos/RepoDetailView.vue'),
+      props: true,
+    },
+    {
+      path: '/repos/:repoId/scans',
+      name: 'ScanResult',
+      component: () => import('@/views/analysis/ScanResultView.vue'),
+    },
+    {
+      path: '/repos/:repoId/scans/:scanId',
+      name: 'ScanResultDetail',
+      component: () => import('@/views/analysis/ScanResultView.vue'),
+    },
+    {
+      path: '/sessions',
+      name: 'SessionList',
+      component: () => import('@/views/sessions/SessionListView.vue'),
+    },
+    {
+      path: '/sessions/:id',
+      name: 'SessionDetail',
+      component: () => import('@/views/sessions/SessionListView.vue'),
+    },
+    {
+      path: '/settings',
+      name: 'Settings',
+      component: () => import('@/views/SettingsView.vue'),
+      meta: { requireAdmin: true },
+    },
+  ],
+})
+
+router.beforeEach(async (to) => {
+  const auth = useAuthStore()
+  if (!to.meta.public && !auth.isAuthenticated) {
+    return { path: '/login', query: { redirect: to.fullPath } }
+  }
+  // Hydrate user info after page refresh (pinia state is lost)
+  if (auth.isAuthenticated && !auth.user) {
+    await auth.fetchMe()
+  }
+  if (to.meta.requireAdmin && !auth.isAdmin) {
+    return { path: '/' }
+  }
+})
+
+export default router

@@ -1,0 +1,669 @@
+package client
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+)
+
+func TestNewClient(t *testing.T) {
+	c := New("http://localhost:8080", "tok")
+	if c == nil {
+		t.Fatal("expected non-nil client")
+	}
+	if c.baseURL != "http://localhost:8080" {
+		t.Errorf("baseURL = %q, want %q", c.baseURL, "http://localhost:8080")
+	}
+	if c.token != "tok" {
+		t.Errorf("token = %q, want %q", c.token, "tok")
+	}
+}
+
+func TestNewClientEmptyToken(t *testing.T) {
+	c := New("http://example.com", "")
+	if c == nil {
+		t.Fatal("expected non-nil client")
+	}
+	if c.token != "" {
+		t.Errorf("token = %q, want empty", c.token)
+	}
+}
+
+func TestSetHeadersWithToken(t *testing.T) {
+	c := New("http://localhost", "my-token")
+	req, _ := http.NewRequest(http.MethodGet, "http://localhost", nil)
+	c.setHeaders(req)
+
+	if req.Header.Get("Content-Type") != "application/json" {
+		t.Errorf("Content-Type = %q, want %q", req.Header.Get("Content-Type"), "application/json")
+	}
+	if req.Header.Get("Authorization") != "Bearer my-token" {
+		t.Errorf("Authorization = %q, want %q", req.Header.Get("Authorization"), "Bearer my-token")
+	}
+}
+
+func TestSetHeadersWithoutToken(t *testing.T) {
+	c := New("http://localhost", "")
+	req, _ := http.NewRequest(http.MethodGet, "http://localhost", nil)
+	c.setHeaders(req)
+
+	if req.Header.Get("Content-Type") != "application/json" {
+		t.Errorf("Content-Type = %q, want %q", req.Header.Get("Content-Type"), "application/json")
+	}
+	if req.Header.Get("Authorization") != "" {
+		t.Errorf("Authorization should be empty, got %q", req.Header.Get("Authorization"))
+	}
+}
+
+func TestCreateSession(t *testing.T) {
+	now := time.Now().Truncate(time.Second)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("method = %s, want POST", r.Method)
+		}
+		if r.URL.Path != "/api/v1/sessions" {
+			t.Errorf("path = %s, want /api/v1/sessions", r.URL.Path)
+		}
+		if r.Header.Get("Authorization") != "Bearer test-token" {
+			t.Errorf("auth header = %q, want %q", r.Header.Get("Authorization"), "Bearer test-token")
+		}
+		if r.Header.Get("Content-Type") != "application/json" {
+			t.Errorf("content-type = %q, want application/json", r.Header.Get("Content-Type"))
+		}
+
+		body, _ := io.ReadAll(r.Body)
+		var req CreateSessionRequest
+		if err := json.Unmarshal(body, &req); err != nil {
+			t.Fatalf("unmarshal request body: %v", err)
+		}
+		if req.RepoFullName != "org/repo" {
+			t.Errorf("repo_full_name = %q, want %q", req.RepoFullName, "org/repo")
+		}
+		if req.Branch != "main" {
+			t.Errorf("branch = %q, want %q", req.Branch, "main")
+		}
+
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"data": Session{
+				ID:        req.ID,
+				Status:    "active",
+				StartedAt: now,
+			},
+		})
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "test-token")
+	sess, err := c.CreateSession(context.Background(), CreateSessionRequest{
+		ID:           "sess-1",
+		RepoFullName: "org/repo",
+		Branch:       "main",
+	})
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+	if sess.ID != "sess-1" {
+		t.Errorf("session ID = %q, want %q", sess.ID, "sess-1")
+	}
+	if sess.Status != "active" {
+		t.Errorf("session status = %q, want %q", sess.Status, "active")
+	}
+}
+
+func TestCreateSessionWithOKStatus(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"data": Session{
+				ID:     "sess-ok",
+				Status: "active",
+			},
+		})
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "tok")
+	sess, err := c.CreateSession(context.Background(), CreateSessionRequest{
+		ID:           "sess-ok",
+		RepoFullName: "org/repo",
+		Branch:       "main",
+	})
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+	if sess.ID != "sess-ok" {
+		t.Errorf("session ID = %q, want %q", sess.ID, "sess-ok")
+	}
+}
+
+func TestCreateSessionServerError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte("internal server error"))
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "tok")
+	_, err := c.CreateSession(context.Background(), CreateSessionRequest{
+		ID:           "sess-err",
+		RepoFullName: "org/repo",
+		Branch:       "main",
+	})
+	if err == nil {
+		t.Fatal("expected error for 500 response, got nil")
+	}
+	if !strings.Contains(err.Error(), "unexpected status 500") {
+		t.Errorf("error = %q, want it to contain 'unexpected status 500'", err.Error())
+	}
+}
+
+func TestCreateSessionBadJSON(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+		w.Write([]byte("not json"))
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "tok")
+	_, err := c.CreateSession(context.Background(), CreateSessionRequest{
+		ID:           "sess-bad",
+		RepoFullName: "org/repo",
+		Branch:       "main",
+	})
+	if err == nil {
+		t.Fatal("expected error for bad JSON response, got nil")
+	}
+	if !strings.Contains(err.Error(), "decoding response") {
+		t.Errorf("error = %q, want it to contain 'decoding response'", err.Error())
+	}
+}
+
+func TestCreateSessionNetworkError(t *testing.T) {
+	c := New("http://127.0.0.1:1", "tok") // port 1 should refuse connections
+	_, err := c.CreateSession(context.Background(), CreateSessionRequest{
+		ID:           "sess-net",
+		RepoFullName: "org/repo",
+		Branch:       "main",
+	})
+	if err == nil {
+		t.Fatal("expected error for network failure, got nil")
+	}
+	if !strings.Contains(err.Error(), "sending request") {
+		t.Errorf("error = %q, want it to contain 'sending request'", err.Error())
+	}
+}
+
+func TestCreateSessionCancelledContext(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"data": Session{ID: "x"},
+		})
+	}))
+	defer srv.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel immediately
+
+	c := New(srv.URL, "tok")
+	_, err := c.CreateSession(ctx, CreateSessionRequest{
+		ID:           "sess-cancel",
+		RepoFullName: "org/repo",
+		Branch:       "main",
+	})
+	if err == nil {
+		t.Fatal("expected error for cancelled context, got nil")
+	}
+}
+
+func TestHeartbeat(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut {
+			t.Errorf("method = %s, want PUT", r.Method)
+		}
+		if r.URL.Path != "/api/v1/sessions/sess-42" {
+			t.Errorf("path = %s, want /api/v1/sessions/sess-42", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "tok")
+	if err := c.Heartbeat(context.Background(), "sess-42"); err != nil {
+		t.Fatalf("Heartbeat: %v", err)
+	}
+}
+
+func TestHeartbeatNoContent(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "tok")
+	if err := c.Heartbeat(context.Background(), "sess-nc"); err != nil {
+		t.Fatalf("Heartbeat with 204: %v", err)
+	}
+}
+
+func TestHeartbeatServerError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte("server down"))
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "tok")
+	err := c.Heartbeat(context.Background(), "sess-err")
+	if err == nil {
+		t.Fatal("expected error for 500 response, got nil")
+	}
+	if !strings.Contains(err.Error(), "unexpected status 500") {
+		t.Errorf("error = %q, want it to contain 'unexpected status 500'", err.Error())
+	}
+}
+
+func TestHeartbeatNetworkError(t *testing.T) {
+	c := New("http://127.0.0.1:1", "tok")
+	err := c.Heartbeat(context.Background(), "sess-net")
+	if err == nil {
+		t.Fatal("expected error for network failure, got nil")
+	}
+	if !strings.Contains(err.Error(), "sending request") {
+		t.Errorf("error = %q, want it to contain 'sending request'", err.Error())
+	}
+}
+
+func TestHeartbeatCancelledContext(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	c := New(srv.URL, "tok")
+	err := c.Heartbeat(ctx, "sess-cancel")
+	if err == nil {
+		t.Fatal("expected error for cancelled context, got nil")
+	}
+}
+
+func TestStopSession(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("method = %s, want POST", r.Method)
+		}
+		if r.URL.Path != "/api/v1/sessions/sess-42/stop" {
+			t.Errorf("path = %s, want /api/v1/sessions/sess-42/stop", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "tok")
+	if err := c.StopSession(context.Background(), "sess-42"); err != nil {
+		t.Fatalf("StopSession: %v", err)
+	}
+}
+
+func TestStopSessionOK(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "tok")
+	if err := c.StopSession(context.Background(), "sess-ok"); err != nil {
+		t.Fatalf("StopSession with 200: %v", err)
+	}
+}
+
+func TestStopSessionServerError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte("bad request"))
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "tok")
+	err := c.StopSession(context.Background(), "sess-err")
+	if err == nil {
+		t.Fatal("expected error for 400 response, got nil")
+	}
+	if !strings.Contains(err.Error(), "unexpected status 400") {
+		t.Errorf("error = %q, want it to contain 'unexpected status 400'", err.Error())
+	}
+}
+
+func TestStopSessionNetworkError(t *testing.T) {
+	c := New("http://127.0.0.1:1", "tok")
+	err := c.StopSession(context.Background(), "sess-net")
+	if err == nil {
+		t.Fatal("expected error for network failure, got nil")
+	}
+	if !strings.Contains(err.Error(), "sending request") {
+		t.Errorf("error = %q, want it to contain 'sending request'", err.Error())
+	}
+}
+
+func TestStopSessionCancelledContext(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	c := New(srv.URL, "tok")
+	err := c.StopSession(ctx, "sess-cancel")
+	if err == nil {
+		t.Fatal("expected error for cancelled context, got nil")
+	}
+}
+
+func TestAddInvocation(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("method = %s, want POST", r.Method)
+		}
+		if r.URL.Path != "/api/v1/sessions/sess-42/invocations" {
+			t.Errorf("path = %s, want /api/v1/sessions/sess-42/invocations", r.URL.Path)
+		}
+
+		body, _ := io.ReadAll(r.Body)
+		var inv Invocation
+		if err := json.Unmarshal(body, &inv); err != nil {
+			t.Fatalf("unmarshal invocation: %v", err)
+		}
+		if inv.Tool != "claude" {
+			t.Errorf("tool = %q, want %q", inv.Tool, "claude")
+		}
+
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "tok")
+	inv := Invocation{
+		Tool:  "claude",
+		Start: time.Now().Add(-5 * time.Second),
+		End:   time.Now(),
+	}
+	if err := c.AddInvocation(context.Background(), "sess-42", inv); err != nil {
+		t.Fatalf("AddInvocation: %v", err)
+	}
+}
+
+func TestAddInvocationOK(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "tok")
+	inv := Invocation{Tool: "codex", Start: time.Now(), End: time.Now()}
+	if err := c.AddInvocation(context.Background(), "sess-ok", inv); err != nil {
+		t.Fatalf("AddInvocation with 200: %v", err)
+	}
+}
+
+func TestAddInvocationServerError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		w.Write([]byte("forbidden"))
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "tok")
+	inv := Invocation{Tool: "claude", Start: time.Now(), End: time.Now()}
+	err := c.AddInvocation(context.Background(), "sess-err", inv)
+	if err == nil {
+		t.Fatal("expected error for 403 response, got nil")
+	}
+	if !strings.Contains(err.Error(), "unexpected status 403") {
+		t.Errorf("error = %q, want it to contain 'unexpected status 403'", err.Error())
+	}
+}
+
+func TestAddInvocationNetworkError(t *testing.T) {
+	c := New("http://127.0.0.1:1", "tok")
+	inv := Invocation{Tool: "claude", Start: time.Now(), End: time.Now()}
+	err := c.AddInvocation(context.Background(), "sess-net", inv)
+	if err == nil {
+		t.Fatal("expected error for network failure, got nil")
+	}
+	if !strings.Contains(err.Error(), "sending request") {
+		t.Errorf("error = %q, want it to contain 'sending request'", err.Error())
+	}
+}
+
+func TestAddInvocationCancelledContext(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer srv.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	c := New(srv.URL, "tok")
+	inv := Invocation{Tool: "claude", Start: time.Now(), End: time.Now()}
+	err := c.AddInvocation(ctx, "sess-cancel", inv)
+	if err == nil {
+		t.Fatal("expected error for cancelled context, got nil")
+	}
+}
+
+func TestCreateSessionRequestJSON(t *testing.T) {
+	req := CreateSessionRequest{
+		ID:           "test-id",
+		RepoFullName: "org/repo",
+		Branch:       "main",
+	}
+	data, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var decoded map[string]string
+	json.Unmarshal(data, &decoded)
+	if decoded["id"] != "test-id" {
+		t.Errorf("id = %q, want %q", decoded["id"], "test-id")
+	}
+	if decoded["repo_full_name"] != "org/repo" {
+		t.Errorf("repo_full_name = %q, want %q", decoded["repo_full_name"], "org/repo")
+	}
+}
+
+func TestCreateSessionRequestJSONOmitEmpty(t *testing.T) {
+	req := CreateSessionRequest{
+		ID:           "test-id",
+		RepoFullName: "org/repo",
+		Branch:       "main",
+	}
+	data, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if strings.Contains(string(data), "sub2api_api_key") {
+		t.Errorf("expected sub2api_api_key to be omitted, got %s", string(data))
+	}
+}
+
+func TestInvocationJSON(t *testing.T) {
+	now := time.Now().Truncate(time.Second)
+	inv := Invocation{
+		Tool:  "claude",
+		Start: now,
+		End:   now.Add(10 * time.Second),
+	}
+	data, err := json.Marshal(inv)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var decoded Invocation
+	json.Unmarshal(data, &decoded)
+	if decoded.Tool != "claude" {
+		t.Errorf("tool = %q, want %q", decoded.Tool, "claude")
+	}
+	if !decoded.Start.Equal(now) {
+		t.Errorf("start = %v, want %v", decoded.Start, now)
+	}
+	if !decoded.End.Equal(now.Add(10 * time.Second)) {
+		t.Errorf("end = %v, want %v", decoded.End, now.Add(10*time.Second))
+	}
+}
+
+func TestSessionJSON(t *testing.T) {
+	now := time.Now().Truncate(time.Second)
+	sess := Session{
+		ID:        "sess-json",
+		Status:    "active",
+		StartedAt: now,
+	}
+	data, err := json.Marshal(sess)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var decoded Session
+	json.Unmarshal(data, &decoded)
+	if decoded.ID != "sess-json" {
+		t.Errorf("id = %q, want %q", decoded.ID, "sess-json")
+	}
+	if decoded.Status != "active" {
+		t.Errorf("status = %q, want %q", decoded.Status, "active")
+	}
+	if !decoded.StartedAt.Equal(now) {
+		t.Errorf("started_at = %v, want %v", decoded.StartedAt, now)
+	}
+}
+
+func TestHeartbeatNotFound(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte("session not found"))
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "tok")
+	err := c.Heartbeat(context.Background(), "nonexistent")
+	if err == nil {
+		t.Fatal("expected error for 404 response, got nil")
+	}
+	if !strings.Contains(err.Error(), "unexpected status 404") {
+		t.Errorf("error = %q, want it to contain 'unexpected status 404'", err.Error())
+	}
+}
+
+func TestStopSessionNotFound(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte("not found"))
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "tok")
+	err := c.StopSession(context.Background(), "nonexistent")
+	if err == nil {
+		t.Fatal("expected error for 404 response, got nil")
+	}
+	if !errors.Is(err, ErrNotFound) {
+		t.Errorf("error = %q, want ErrNotFound", err.Error())
+	}
+}
+
+func TestAddInvocationNotFound(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte("session not found"))
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "tok")
+	inv := Invocation{Tool: "claude", Start: time.Now(), End: time.Now()}
+	err := c.AddInvocation(context.Background(), "nonexistent", inv)
+	if err == nil {
+		t.Fatal("expected error for 404 response, got nil")
+	}
+	if !strings.Contains(err.Error(), "unexpected status 404") {
+		t.Errorf("error = %q, want it to contain 'unexpected status 404'", err.Error())
+	}
+}
+
+func TestCreateSessionNotFound(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte("not found"))
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "tok")
+	_, err := c.CreateSession(context.Background(), CreateSessionRequest{
+		ID:           "sess-nf",
+		RepoFullName: "org/repo",
+		Branch:       "main",
+	})
+	if err == nil {
+		t.Fatal("expected error for 404 response, got nil")
+	}
+	if !strings.Contains(err.Error(), "unexpected status 404") {
+		t.Errorf("error = %q, want it to contain 'unexpected status 404'", err.Error())
+	}
+}
+
+func TestNewClientHTTPClientTimeout(t *testing.T) {
+	c := New("http://localhost:8080", "tok")
+	if c.httpClient == nil {
+		t.Fatal("httpClient should not be nil")
+	}
+	if c.httpClient.Timeout != 30*time.Second {
+		t.Errorf("timeout = %v, want 30s", c.httpClient.Timeout)
+	}
+}
+
+func TestAddInvocationNoContent(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "tok")
+	inv := Invocation{Tool: "claude", Start: time.Now(), End: time.Now()}
+	err := c.AddInvocation(context.Background(), "sess-nc", inv)
+	// 204 is not in the accepted list (201, 200), so this should error
+	if err == nil {
+		t.Fatal("expected error for 204 response on AddInvocation")
+	}
+}
+
+func TestCreateSessionEmptyBody(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+		w.Write([]byte("{}"))
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "tok")
+	sess, err := c.CreateSession(context.Background(), CreateSessionRequest{
+		ID:           "sess-empty",
+		RepoFullName: "org/repo",
+		Branch:       "main",
+	})
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+	// Data field will be zero-value
+	if sess.ID != "" {
+		t.Errorf("expected empty ID from empty envelope, got %q", sess.ID)
+	}
+}
