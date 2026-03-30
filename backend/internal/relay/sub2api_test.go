@@ -281,6 +281,138 @@ func TestFindUserByEmail(t *testing.T) {
 	}
 }
 
+func TestFindUserByUsername(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/users", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Errorf("expected GET, got %s", r.Method)
+		}
+		if r.Header.Get("Authorization") != "Bearer test-admin-key" {
+			t.Errorf("expected admin API key in Authorization header")
+		}
+
+		username := r.URL.Query().Get("username")
+		w.Header().Set("Content-Type", "application/json")
+		if username == "missing" {
+			json.NewEncoder(w).Encode(map[string]any{"success": true, "data": []any{}})
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]any{
+			"success": true,
+			"data": []any{
+				map[string]any{
+					"id":       11,
+					"email":    "u@example.com",
+					"username": username,
+					"role":     "user",
+				},
+			},
+		})
+	})
+
+	p := newTestProvider(t, mux)
+
+	user, err := p.FindUserByUsername(context.Background(), "alice")
+	if err != nil {
+		t.Fatalf("FindUserByUsername() unexpected error: %v", err)
+	}
+	if user == nil || user.ID != 11 || user.Username != "alice" {
+		t.Fatalf("FindUserByUsername() unexpected user: %+v", user)
+	}
+
+	user, err = p.FindUserByUsername(context.Background(), "missing")
+	if err != nil {
+		t.Fatalf("FindUserByUsername() unexpected error: %v", err)
+	}
+	if user != nil {
+		t.Fatalf("FindUserByUsername() expected nil for not found, got %+v", user)
+	}
+}
+
+func TestFindUserByUsernameSuccessFalse(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/users", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"success": false,
+			"message": "permission denied",
+			"data":    []any{},
+		})
+	})
+
+	p := newTestProvider(t, mux)
+	_, err := p.FindUserByUsername(context.Background(), "alice")
+	if err == nil {
+		t.Fatal("FindUserByUsername() expected error for success=false, got nil")
+	}
+}
+
+func TestCreateUser(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/users", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("expected POST, got %s", r.Method)
+		}
+		if r.Header.Get("Authorization") != "Bearer test-admin-key" {
+			t.Errorf("expected admin API key in Authorization header")
+		}
+
+		var body relay.CreateUserRequest
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("failed to decode create user body: %v", err)
+		}
+		if body.Username != "newuser" || body.Email != "newuser@example.com" || body.Password != "pw" {
+			t.Fatalf("unexpected body: %+v", body)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"success": true,
+			"data": map[string]any{
+				"id":       123,
+				"email":    body.Email,
+				"username": body.Username,
+				"role":     "user",
+			},
+		})
+	})
+
+	p := newTestProvider(t, mux)
+	u, err := p.CreateUser(context.Background(), relay.CreateUserRequest{
+		Username: "newuser",
+		Email:    "newuser@example.com",
+		Password: "pw",
+		Notes:    "test",
+	})
+	if err != nil {
+		t.Fatalf("CreateUser() unexpected error: %v", err)
+	}
+	if u == nil || u.ID != 123 || u.Username != "newuser" {
+		t.Fatalf("CreateUser() unexpected user: %+v", u)
+	}
+}
+
+func TestCreateUserSuccessFalse(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/users", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"success": false,
+			"message": "validation error",
+		})
+	})
+
+	p := newTestProvider(t, mux)
+	_, err := p.CreateUser(context.Background(), relay.CreateUserRequest{
+		Username: "newuser",
+		Email:    "newuser@example.com",
+		Password: "pw",
+	})
+	if err == nil {
+		t.Fatal("CreateUser() expected error for success=false, got nil")
+	}
+}
+
 func TestChatCompletion(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/chat/completions", func(w http.ResponseWriter, r *http.Request) {

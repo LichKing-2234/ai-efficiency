@@ -234,6 +234,16 @@ func (s *Service) ensureLocalUser(ctx context.Context, info *UserInfo) (*ent.Use
 		}
 	}
 
+	// LDAP may not provide a `mail` attribute; avoid creating a local user with an empty
+	// email because Ent schema marks it NotEmpty.
+	if strings.TrimSpace(info.Email) == "" && strings.EqualFold(info.AuthSource, "ldap") {
+		if strings.Contains(info.Username, "@") {
+			info.Email = info.Username
+		} else {
+			info.Email = info.Username + "@ldap.local"
+		}
+	}
+
 	// Create new user
 	create := s.entClient.User.Create().
 		SetUsername(info.Username).

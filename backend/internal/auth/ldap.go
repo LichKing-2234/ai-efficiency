@@ -95,7 +95,16 @@ func (p *LDAPProvider) Authenticate(ctx context.Context, username, password stri
 		return nil, fmt.Errorf("ldap: invalid credentials")
 	}
 
-	email := entry.GetAttributeValue("mail")
+	email := strings.TrimSpace(entry.GetAttributeValue("mail"))
+	// Some LDAP deployments omit `mail`. Ensure we always return a non-empty email,
+	// because local Ent schema requires it (NotEmpty).
+	if email == "" {
+		if strings.Contains(username, "@") {
+			email = username
+		} else {
+			email = username + "@ldap.local"
+		}
+	}
 
 	p.logger.Info("LDAP authentication successful", zap.String("username", username))
 

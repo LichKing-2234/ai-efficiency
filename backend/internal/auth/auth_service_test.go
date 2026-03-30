@@ -374,6 +374,34 @@ func TestEnsureLocalUserCreatesNew(t *testing.T) {
 	}
 }
 
+func TestEnsureLocalUserCreatesNewLDAPMissingEmail(t *testing.T) {
+	svc, client := newTestServiceWithDB(t)
+	ctx := context.Background()
+
+	info := &UserInfo{
+		Username:   "nomail",
+		Email:      "",
+		Role:       "user",
+		AuthSource: "ldap",
+	}
+
+	u, err := svc.ensureLocalUser(ctx, info)
+	if err != nil {
+		t.Fatalf("ensureLocalUser error: %v", err)
+	}
+	if u.Email != "nomail@ldap.local" {
+		t.Errorf("email = %q, want %q", u.Email, "nomail@ldap.local")
+	}
+
+	dbUser, err := client.User.Query().Where(entuser.UsernameEQ("nomail")).Only(ctx)
+	if err != nil {
+		t.Fatalf("query user: %v", err)
+	}
+	if dbUser.Email != "nomail@ldap.local" {
+		t.Errorf("db email = %q, want %q", dbUser.Email, "nomail@ldap.local")
+	}
+}
+
 func TestEnsureLocalUserFindsExisting(t *testing.T) {
 	svc, client := newTestServiceWithDB(t)
 	ctx := context.Background()

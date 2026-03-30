@@ -203,6 +203,9 @@ func (s *sub2apiRelay) FindUserByUsername(ctx context.Context, username string) 
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("relay: find user by username: decode: %w", err)
 	}
+	if !result.Success {
+		return nil, fmt.Errorf("relay: find user by username: request failed")
+	}
 
 	if len(result.Data) == 0 {
 		return nil, nil

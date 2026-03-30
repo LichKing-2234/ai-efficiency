@@ -144,6 +144,11 @@ func main() {
 		cfg.Auth.RefreshTokenTTL,
 		logger,
 	)
+	// When relay is configured, allow LDAP logins to provision/resolve a relay-side identity
+	// (by stable username) for session/PR attribution.
+	if relayProvider != nil {
+		authService.SetRelayIdentityResolver(auth.NewRelayIdentityResolver(relayProvider, ""))
+	}
 
 	// Register auth providers
 	if relayProvider != nil {
