@@ -96,9 +96,6 @@ func (p *LDAPProvider) Authenticate(ctx context.Context, username, password stri
 	}
 
 	email := entry.GetAttributeValue("mail")
-	if email == "" {
-		email = username + "@ldap.local"
-	}
 
 	p.logger.Info("LDAP authentication successful", zap.String("username", username))
 

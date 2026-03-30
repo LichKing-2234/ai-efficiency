@@ -185,6 +185,61 @@ func (s *sub2apiRelay) FindUserByEmail(ctx context.Context, email string) (*User
 	return &result.Data[0], nil
 }
 
+func (s *sub2apiRelay) FindUserByUsername(ctx context.Context, username string) (*User, error) {
+	resp, err := s.doAdminRequest(ctx, http.MethodGet, "/api/v1/admin/users?username="+url.QueryEscape(username), nil)
+	if err != nil {
+		return nil, fmt.Errorf("relay: find user by username: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("relay: find user by username: unexpected status %d", resp.StatusCode)
+	}
+
+	var result struct {
+		Success bool   `json:"success"`
+		Data    []User `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("relay: find user by username: decode: %w", err)
+	}
+
+	if len(result.Data) == 0 {
+		return nil, nil
+	}
+	return &result.Data[0], nil
+}
+
+func (s *sub2apiRelay) CreateUser(ctx context.Context, req CreateUserRequest) (*User, error) {
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("relay: create user: marshal: %w", err)
+	}
+
+	resp, err := s.doAdminRequest(ctx, http.MethodPost, "/api/v1/admin/users", bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("relay: create user: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("relay: create user: unexpected status %d", resp.StatusCode)
+	}
+
+	var result struct {
+		Success bool `json:"success"`
+		Data    User `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("relay: create user: decode: %w", err)
+	}
+	if !result.Success {
+		return nil, fmt.Errorf("relay: create user: request failed")
+	}
+
+	return &result.Data, nil
+}
+
 func (s *sub2apiRelay) ChatCompletion(ctx context.Context, req ChatCompletionRequest) (*ChatCompletionResponse, error) {
 	req.Model = s.model
 
@@ -322,11 +377,22 @@ func (s *sub2apiRelay) ListUserAPIKeys(ctx context.Context, userID int64) ([]API
 	return result.Data, nil
 }
 
-func (s *sub2apiRelay) CreateUserAPIKey(ctx context.Context, userID int64, keyName string) (*APIKeyWithSecret, error) {
-	payload, _ := json.Marshal(map[string]any{
+func (s *sub2apiRelay) CreateUserAPIKey(ctx context.Context, userID int64, req APIKeyCreateRequest) (*APIKeyWithSecret, error) {
+	payloadMap := map[string]any{
 		"user_id": userID,
-		"name":    keyName,
-	})
+		"name":    req.Name,
+	}
+	if req.ExpiresAt != nil {
+		payloadMap["expires_at"] = req.ExpiresAt
+	}
+	if req.Group != "" {
+		payloadMap["group"] = req.Group
+	}
+
+	payload, err := json.Marshal(payloadMap)
+	if err != nil {
+		return nil, fmt.Errorf("relay: create api key: marshal: %w", err)
+	}
 
 	resp, err := s.doAdminRequest(ctx, http.MethodPost, "/api/v1/keys", bytes.NewReader(payload))
 	if err != nil {
@@ -347,6 +413,47 @@ func (s *sub2apiRelay) CreateUserAPIKey(ctx context.Context, userID int64, keyNa
 	}
 
 	return &result.Data, nil
+}
+
+func (s *sub2apiRelay) RevokeUserAPIKey(ctx context.Context, keyID int64) error {
+	resp, err := s.doAdminRequest(ctx, http.MethodPost, fmt.Sprintf("/api/v1/keys/%d/revoke", keyID), nil)
+	if err != nil {
+		return fmt.Errorf("relay: revoke api key: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("relay: revoke api key: unexpected status %d", resp.StatusCode)
+	}
+	return nil
+}
+
+func (s *sub2apiRelay) ListUsageLogsByAPIKeyExact(ctx context.Context, apiKeyID int64, from, to time.Time) ([]UsageLog, error) {
+	path := fmt.Sprintf("/api/v1/admin/api-keys/%d/usage-logs?from=%s&to=%s",
+		apiKeyID, url.QueryEscape(from.Format(time.RFC3339)), url.QueryEscape(to.Format(time.RFC3339)))
+
+	resp, err := s.doAdminRequest(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return nil, fmt.Errorf("relay: list usage logs by api key: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("relay: list usage logs by api key: unexpected status %d", resp.StatusCode)
+	}
+
+	var result struct {
+		Success bool       `json:"success"`
+		Data    []UsageLog `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("relay: list usage logs by api key: decode: %w", err)
+	}
+	if !result.Success {
+		return nil, fmt.Errorf("relay: list usage logs by api key: request failed")
+	}
+
+	return result.Data, nil
 }
 
 // doAdminRequest is a helper that sends an authenticated request to the admin API.

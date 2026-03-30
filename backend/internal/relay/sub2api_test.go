@@ -487,7 +487,7 @@ func TestCreateUserAPIKey(t *testing.T) {
 	})
 
 	p := newTestProvider(t, mux)
-	key, err := p.CreateUserAPIKey(context.Background(), 3, "my-key")
+	key, err := p.CreateUserAPIKey(context.Background(), 3, relay.APIKeyCreateRequest{Name: "my-key"})
 	if err != nil {
 		t.Fatalf("CreateUserAPIKey() unexpected error: %v", err)
 	}
@@ -533,5 +533,99 @@ func TestChatCompletionUsesConfiguredModel(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestCreateUserAPIKeyWithExpiryAndGroup(t *testing.T) {
+	exp := time.Date(2026, 3, 31, 1, 2, 3, 0, time.UTC)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/keys", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("expected POST, got %s", r.Method)
+		}
+
+		var body struct {
+			UserID    int64     `json:"user_id"`
+			Name      string    `json:"name"`
+			ExpiresAt time.Time `json:"expires_at"`
+			Group     string    `json:"group"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("failed to decode body: %v", err)
+		}
+		if body.UserID != 3 || body.Name != "my-key" || !body.ExpiresAt.Equal(exp) || body.Group != "eng" {
+			t.Errorf("unexpected body: %+v", body)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"success": true,
+			"data": map[string]any{
+				"id":      99,
+				"user_id": 3,
+				"name":    "my-key",
+				"status":  "active",
+				"secret":  "sk-abc123",
+			},
+		})
+	})
+
+	p := newTestProvider(t, mux)
+	key, err := p.CreateUserAPIKey(context.Background(), 3, relay.APIKeyCreateRequest{
+		Name:      "my-key",
+		ExpiresAt: &exp,
+		Group:     "eng",
+	})
+	if err != nil {
+		t.Fatalf("CreateUserAPIKey() unexpected error: %v", err)
+	}
+	if key.ID != 99 || key.Secret != "sk-abc123" || key.Name != "my-key" {
+		t.Fatalf("unexpected key: %+v", key)
+	}
+}
+
+func TestListUsageLogsByAPIKeyExact(t *testing.T) {
+	from := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
+	to := time.Date(2026, 3, 2, 0, 0, 0, 0, time.UTC)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/api-keys/99/usage-logs", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Errorf("expected GET, got %s", r.Method)
+		}
+		if got := r.URL.Query().Get("from"); got != from.Format(time.RFC3339) {
+			t.Errorf("from=%q, want %q", got, from.Format(time.RFC3339))
+		}
+		if got := r.URL.Query().Get("to"); got != to.Format(time.RFC3339) {
+			t.Errorf("to=%q, want %q", got, to.Format(time.RFC3339))
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"success": true,
+			"data": []any{
+				map[string]any{
+					"id":           1,
+					"api_key_id":   99,
+					"user_id":      3,
+					"total_tokens": 123,
+					"total_cost":   0.12,
+					"created_at":   "2026-03-01T00:00:01Z",
+				},
+			},
+		})
+	})
+
+	p := newTestProvider(t, mux)
+	logs, err := p.ListUsageLogsByAPIKeyExact(context.Background(), 99, from, to)
+	if err != nil {
+		t.Fatalf("ListUsageLogsByAPIKeyExact() unexpected error: %v", err)
+	}
+	if len(logs) != 1 {
+		t.Fatalf("expected 1 log, got %d", len(logs))
+	}
+	if logs[0].APIKeyID != 99 || logs[0].UserID != 3 || logs[0].TotalTokens != 123 {
+		t.Fatalf("unexpected log: %+v", logs[0])
 	}
 }

@@ -40,12 +40,18 @@ type mockRelayProvider struct {
 	authUser *relay.User
 }
 
-func (m *mockRelayProvider) Name() string                        { return "mock" }
-func (m *mockRelayProvider) Ping(_ context.Context) error        { return nil }
+func (m *mockRelayProvider) Name() string                 { return "mock" }
+func (m *mockRelayProvider) Ping(_ context.Context) error { return nil }
 func (m *mockRelayProvider) GetUser(_ context.Context, _ int64) (*relay.User, error) {
 	return nil, nil
 }
 func (m *mockRelayProvider) FindUserByEmail(_ context.Context, _ string) (*relay.User, error) {
+	return nil, nil
+}
+func (m *mockRelayProvider) FindUserByUsername(_ context.Context, _ string) (*relay.User, error) {
+	return nil, nil
+}
+func (m *mockRelayProvider) CreateUser(_ context.Context, _ relay.CreateUserRequest) (*relay.User, error) {
 	return nil, nil
 }
 func (m *mockRelayProvider) ChatCompletion(_ context.Context, _ relay.ChatCompletionRequest) (*relay.ChatCompletionResponse, error) {
@@ -60,7 +66,13 @@ func (m *mockRelayProvider) GetUsageStats(_ context.Context, _ int64, _, _ time.
 func (m *mockRelayProvider) ListUserAPIKeys(_ context.Context, _ int64) ([]relay.APIKey, error) {
 	return nil, nil
 }
-func (m *mockRelayProvider) CreateUserAPIKey(_ context.Context, _ int64, _ string) (*relay.APIKeyWithSecret, error) {
+func (m *mockRelayProvider) CreateUserAPIKey(_ context.Context, _ int64, _ relay.APIKeyCreateRequest) (*relay.APIKeyWithSecret, error) {
+	return nil, nil
+}
+func (m *mockRelayProvider) RevokeUserAPIKey(_ context.Context, _ int64) error {
+	return nil
+}
+func (m *mockRelayProvider) ListUsageLogsByAPIKeyExact(_ context.Context, _ int64, _, _ time.Time) ([]relay.UsageLog, error) {
 	return nil, nil
 }
 

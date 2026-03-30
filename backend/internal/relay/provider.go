@@ -20,11 +20,15 @@ type Provider interface {
 	Authenticate(ctx context.Context, username, password string) (*User, error)
 	GetUser(ctx context.Context, userID int64) (*User, error)
 	FindUserByEmail(ctx context.Context, email string) (*User, error)
+	FindUserByUsername(ctx context.Context, username string) (*User, error)
+	CreateUser(ctx context.Context, req CreateUserRequest) (*User, error)
 
 	ChatCompletion(ctx context.Context, req ChatCompletionRequest) (*ChatCompletionResponse, error)
 	ChatCompletionWithTools(ctx context.Context, req ChatCompletionRequest, tools []ToolDef) (*ChatCompletionWithToolsResponse, error)
 
 	GetUsageStats(ctx context.Context, userID int64, from, to time.Time) (*UsageStats, error)
 	ListUserAPIKeys(ctx context.Context, userID int64) ([]APIKey, error)
-	CreateUserAPIKey(ctx context.Context, userID int64, keyName string) (*APIKeyWithSecret, error)
+	CreateUserAPIKey(ctx context.Context, userID int64, req APIKeyCreateRequest) (*APIKeyWithSecret, error)
+	RevokeUserAPIKey(ctx context.Context, keyID int64) error
+	ListUsageLogsByAPIKeyExact(ctx context.Context, apiKeyID int64, from, to time.Time) ([]UsageLog, error)
 }

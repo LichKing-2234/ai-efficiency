@@ -14,11 +14,11 @@ import (
 
 // UserInfo represents authenticated user information.
 type UserInfo struct {
-	ID            int    `json:"id"`
-	Username      string `json:"username"`
-	Email         string `json:"email"`
-	Role          string `json:"role"`
-	AuthSource    string `json:"auth_source"`
+	ID          int    `json:"id"`
+	Username    string `json:"username"`
+	Email       string `json:"email"`
+	Role        string `json:"role"`
+	AuthSource  string `json:"auth_source"`
 	RelayUserID *int   `json:"relay_user_id,omitempty"`
 }
 
@@ -44,12 +44,13 @@ type AuthProvider interface {
 
 // Service handles authentication logic.
 type Service struct {
-	providers       []AuthProvider
-	entClient       *ent.Client
-	jwtSecret       []byte
-	accessTokenTTL  time.Duration
-	refreshTokenTTL time.Duration
-	logger          *zap.Logger
+	providers             []AuthProvider
+	entClient             *ent.Client
+	jwtSecret             []byte
+	accessTokenTTL        time.Duration
+	refreshTokenTTL       time.Duration
+	relayIdentityResolver *RelayIdentityResolver
+	logger                *zap.Logger
 }
 
 // NewService creates a new auth service.
@@ -70,6 +71,10 @@ func NewService(entClient *ent.Client, jwtSecret string, accessTTL, refreshTTL i
 		refreshTokenTTL: time.Duration(refreshTTL) * time.Second,
 		logger:          logger,
 	}
+}
+
+func (s *Service) SetRelayIdentityResolver(r *RelayIdentityResolver) {
+	s.relayIdentityResolver = r
 }
 
 // RegisterProvider adds an auth provider.
@@ -180,6 +185,28 @@ func (s *Service) ensureLocalUser(ctx context.Context, info *UserInfo) (*ent.Use
 		Where(entuser.UsernameEQ(info.Username)).
 		Only(ctx)
 	if err == nil {
+		// If we already have a relay user ID stored, copy it to the session user info.
+		if info.RelayUserID == nil && u.RelayUserID != nil {
+			info.RelayUserID = u.RelayUserID
+		}
+
+		// LDAP path: provision relay-side identity when we don't have it yet.
+		if info.RelayUserID == nil && s.relayIdentityResolver != nil {
+			relayUser, err := s.relayIdentityResolver.ResolveOrProvisionRelayUser(ctx, info.Username, info.Email)
+			if err != nil {
+				return nil, fmt.Errorf("resolve relay identity: %w", err)
+			}
+			relayID := int(relayUser.ID)
+			info.RelayUserID = &relayID
+			if info.Email == "" {
+				info.Email = relayUser.Email
+			}
+			u, err = u.Update().SetRelayUserID(relayID).Save(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("persist relay user id: %w", err)
+			}
+		}
+
 		// Sync role from auth provider on each login
 		if string(u.Role) != info.Role && info.Role != "" {
 			u, err = u.Update().
@@ -193,6 +220,18 @@ func (s *Service) ensureLocalUser(ctx context.Context, info *UserInfo) (*ent.Use
 	}
 	if !ent.IsNotFound(err) {
 		return nil, err
+	}
+
+	if info.RelayUserID == nil && s.relayIdentityResolver != nil {
+		relayUser, err := s.relayIdentityResolver.ResolveOrProvisionRelayUser(ctx, info.Username, info.Email)
+		if err != nil {
+			return nil, fmt.Errorf("resolve relay identity: %w", err)
+		}
+		relayID := int(relayUser.ID)
+		info.RelayUserID = &relayID
+		if info.Email == "" {
+			info.Email = relayUser.Email
+		}
 	}
 
 	// Create new user
