@@ -166,9 +166,14 @@ func ResolveBoundState(cwd string) (*BoundState, error) {
 			}
 			var rt *RuntimeBundle
 			if strings.TrimSpace(m.SessionID) != "" {
-				if b, err := ReadRuntimeBundle(m.SessionID); err == nil {
-					rt = b
+				b, err := ReadRuntimeBundle(m.SessionID)
+				if err != nil {
+					if os.IsNotExist(err) {
+						return &BoundState{WorkspaceRoot: dir, Marker: m, Runtime: nil}, nil
+					}
+					return nil, fmt.Errorf("reading runtime bundle: %w", err)
 				}
+				rt = b
 			}
 			return &BoundState{WorkspaceRoot: dir, Marker: m, Runtime: rt}, nil
 		}

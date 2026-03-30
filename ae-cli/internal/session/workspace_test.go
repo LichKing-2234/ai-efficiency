@@ -105,6 +105,15 @@ func TestCurrentPrefersWorkspaceMarkerOverLegacyState(t *testing.T) {
 	if err := WriteMarker(ws, marker); err != nil {
 		t.Fatalf("WriteMarker: %v", err)
 	}
+	if err := WriteRuntimeBundle(&RuntimeBundle{
+		SessionID:     "marker-id",
+		RuntimeRef:    "rt-1",
+		WorkspaceRoot: ws,
+		EnvBundle:     map[string]string{"AE_SESSION_ID": "marker-id"},
+		KeyExpiresAt:  time.Now().UTC().Add(time.Hour),
+	}); err != nil {
+		t.Fatalf("WriteRuntimeBundle: %v", err)
+	}
 
 	oldWD, _ := os.Getwd()
 	if err := os.Chdir(ws); err != nil {

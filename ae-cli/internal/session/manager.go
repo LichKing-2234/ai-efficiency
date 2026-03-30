@@ -61,6 +61,14 @@ func (m *Manager) Start() (*State, error) {
 		return nil, fmt.Errorf("bootstrapping session: %w", err)
 	}
 
+	rollback := func(cause error) error {
+		if strings.TrimSpace(resp.SessionID) != "" {
+			_ = m.client.StopSession(context.Background(), resp.SessionID)
+			_ = m.cleanupBootstrapArtifacts(gc.workspaceRoot, resp.SessionID)
+		}
+		return cause
+	}
+
 	state := &State{
 		ID:        resp.SessionID,
 		Repo:      gc.repoURL,
@@ -82,11 +90,11 @@ func (m *Manager) Start() (*State, error) {
 	// Ensure marker dir isn't accidentally committed.
 	if err := ensureGitInfoExcludeHas(gc.gitCommonDir, "/.ae/"); err != nil {
 		if err2 := ensureGitInfoExcludeHas(gc.gitDir, "/.ae/"); err2 != nil {
-			return nil, fmt.Errorf("ensuring git exclude: %w", err2)
+			return nil, rollback(fmt.Errorf("ensuring git exclude: %w", err2))
 		}
 	}
 	if err := WriteMarker(gc.workspaceRoot, marker); err != nil {
-		return nil, fmt.Errorf("writing workspace marker: %w", err)
+		return nil, rollback(fmt.Errorf("writing workspace marker: %w", err))
 	}
 
 	rt := &RuntimeBundle{
@@ -97,12 +105,12 @@ func (m *Manager) Start() (*State, error) {
 		KeyExpiresAt:  resp.KeyExpiresAt,
 	}
 	if err := WriteRuntimeBundle(rt); err != nil {
-		return nil, fmt.Errorf("writing runtime bundle: %w", err)
+		return nil, rollback(fmt.Errorf("writing runtime bundle: %w", err))
 	}
 
 	// Compatibility: keep legacy global state for commands run outside the workspace.
 	if err := writeState(state); err != nil {
-		return nil, fmt.Errorf("writing session state: %w", err)
+		return nil, rollback(fmt.Errorf("writing session state: %w", err))
 	}
 
 	return state, nil
@@ -181,7 +189,7 @@ func (m *Manager) Current() (*State, error) {
 	// Prefer workspace marker/runtime binding when available.
 	if bound, err := ResolveBoundState(""); err != nil {
 		return nil, err
-	} else if bound != nil && bound.Marker != nil && strings.TrimSpace(bound.Marker.SessionID) != "" {
+	} else if bound != nil && bound.Marker != nil && strings.TrimSpace(bound.Marker.SessionID) != "" && bound.Runtime != nil {
 		return &State{
 			ID:          bound.Marker.SessionID,
 			Repo:        bound.Marker.RepoFullName,
@@ -449,6 +457,17 @@ func (m *Manager) cleanupLocal(sessionID string) error {
 	}
 
 	// Remove legacy global state.
+	_ = removeState()
+	return nil
+}
+
+func (m *Manager) cleanupBootstrapArtifacts(workspaceRoot, sessionID string) error {
+	if strings.TrimSpace(workspaceRoot) != "" {
+		_ = RemoveMarker(workspaceRoot)
+	}
+	if strings.TrimSpace(sessionID) != "" {
+		_ = RemoveRuntime(sessionID)
+	}
 	_ = removeState()
 	return nil
 }

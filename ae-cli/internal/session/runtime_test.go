@@ -43,5 +43,12 @@ func TestWriteRuntimeBundleUsesRestrictedPermissions(t *testing.T) {
 	if fileInfo.Mode().Perm() != 0o600 {
 		t.Fatalf("runtime file perms = %o, want %o", fileInfo.Mode().Perm(), 0o600)
 	}
-}
 
+	collectorsInfo, err := os.Stat(filepath.Join(d, "collectors"))
+	if err != nil {
+		t.Fatalf("stat collectors dir: %v", err)
+	}
+	if collectorsInfo.Mode().Perm() != 0o700 {
+		t.Fatalf("collectors dir perms = %o, want %o", collectorsInfo.Mode().Perm(), 0o700)
+	}
+}

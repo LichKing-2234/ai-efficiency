@@ -60,6 +60,8 @@ func (d *Dispatcher) Run(sessionID, toolName string, extraArgs []string, tmuxSes
 	var runtimeEnv map[string]string
 	if rt, err := session.ReadRuntimeBundle(sessionID); err == nil && rt != nil {
 		runtimeEnv = rt.EnvBundle
+	} else if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("loading runtime bundle: %w", err)
 	}
 
 	if tmuxSession != "" {

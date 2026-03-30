@@ -49,6 +49,12 @@ func WriteRuntimeBundle(b *RuntimeBundle) error {
 	if err := os.MkdirAll(d, 0o700); err != nil {
 		return fmt.Errorf("creating runtime dir: %w", err)
 	}
+	if err := os.MkdirAll(filepath.Join(d, "collectors"), 0o700); err != nil {
+		return fmt.Errorf("creating collectors dir: %w", err)
+	}
+	if err := os.MkdirAll(filepath.Join(d, "queue"), 0o700); err != nil {
+		return fmt.Errorf("creating queue dir: %w", err)
+	}
 
 	data, err := json.MarshalIndent(b, "", "  ")
 	if err != nil {

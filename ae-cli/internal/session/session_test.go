@@ -1195,7 +1195,17 @@ func TestStartWriteStateFails(t *testing.T) {
 	os.Chdir(tmpDir)
 	t.Cleanup(func() { os.Chdir(origDir) })
 
+	wantWorkspaceRoot, err := filepath.EvalSymlinks(tmpDir)
+	if err != nil {
+		t.Fatalf("EvalSymlinks(tmpDir): %v", err)
+	}
+	wantWorkspaceRoot, err = filepath.Abs(filepath.Clean(wantWorkspaceRoot))
+	if err != nil {
+		t.Fatalf("abs wantWorkspaceRoot: %v", err)
+	}
+
 	now := time.Now().Truncate(time.Second)
+	stopCalls := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost && r.URL.Path == "/api/v1/sessions/bootstrap" {
 			w.WriteHeader(http.StatusCreated)
@@ -1212,6 +1222,11 @@ func TestStartWriteStateFails(t *testing.T) {
 			})
 			return
 		}
+		if r.Method == http.MethodPost && r.URL.Path == "/api/v1/sessions/boot-sess-wsfail/stop" {
+			stopCalls++
+			w.WriteHeader(http.StatusOK)
+			return
+		}
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer srv.Close()
@@ -1223,12 +1238,21 @@ func TestStartWriteStateFails(t *testing.T) {
 	// Make the .ae-cli directory a file instead of a directory to cause writeState to fail
 	os.WriteFile(filepath.Join(tmpHome, ".ae-cli"), []byte("not a dir"), 0o644)
 
-	_, err := m.Start()
+	_, err = m.Start()
 	if err == nil {
 		t.Fatal("expected error when runtime/state write fails")
 	}
 	if !strings.Contains(err.Error(), "writing runtime bundle") && !strings.Contains(err.Error(), "writing session state") {
 		t.Errorf("error = %q, want it to contain 'writing runtime bundle' or 'writing session state'", err.Error())
+	}
+	if stopCalls != 1 {
+		t.Fatalf("stopCalls = %d, want 1", stopCalls)
+	}
+	if _, err := os.Stat(markerPath(wantWorkspaceRoot)); !os.IsNotExist(err) {
+		t.Fatalf("expected marker to be removed after rollback, stat err=%v", err)
+	}
+	if _, err := os.Stat(runtimeDir("boot-sess-wsfail")); err == nil {
+		t.Fatalf("expected runtime dir to be absent after rollback")
 	}
 }
 

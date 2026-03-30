@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -584,6 +585,66 @@ func TestStartCommandWithExistingDeadSession(t *testing.T) {
 	err := startCmd.RunE(startCmd, nil)
 	// This may fail due to git detection, but it exercises the "dead session cleanup" path
 	_ = err
+}
+
+func TestStartCommandDeadSessionCleanupFailureStopsBootstrap(t *testing.T) {
+	origHome := os.Getenv("HOME")
+	tmpHome := t.TempDir()
+	os.Setenv("HOME", tmpHome)
+	defer os.Setenv("HOME", origHome)
+
+	bootstrapCalls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/sessions/bootstrap":
+			bootstrapCalls++
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"data": client.BootstrapSessionResponse{
+					SessionID:     "boot-should-not-happen",
+					StartedAt:     time.Now(),
+					RelayAPIKeyID: 1,
+					ProviderName:  "sub2api",
+					RuntimeRef:    "rt-1",
+					EnvBundle:     map[string]string{"AE_SESSION_ID": "boot-should-not-happen"},
+					KeyExpiresAt:  time.Now().Add(1 * time.Hour),
+				},
+			})
+			return
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/stop"):
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte("stop failed"))
+			return
+		default:
+			w.WriteHeader(http.StatusOK)
+		}
+	}))
+	defer srv.Close()
+
+	cleanup := setupTestGlobals(t, srv)
+	defer cleanup()
+
+	stateDir := filepath.Join(tmpHome, ".ae-cli")
+	os.MkdirAll(stateDir, 0o755)
+	state := session.State{
+		ID:          "dead-sess",
+		Repo:        "org/repo",
+		Branch:      "main",
+		TmuxSession: "ae-dead-nonexistent",
+	}
+	data, _ := json.MarshalIndent(state, "", "  ")
+	os.WriteFile(filepath.Join(stateDir, "current-session.json"), data, 0o600)
+
+	err := startCmd.RunE(startCmd, nil)
+	if err == nil {
+		t.Fatal("expected error when dead session cleanup fails")
+	}
+	if !strings.Contains(err.Error(), "cleaning up previous session") {
+		t.Fatalf("error = %q, want cleanup failure", err.Error())
+	}
+	if bootstrapCalls != 0 {
+		t.Fatalf("bootstrapCalls = %d, want 0", bootstrapCalls)
+	}
 }
 
 func TestKillCommandRunE(t *testing.T) {

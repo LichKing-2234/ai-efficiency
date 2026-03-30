@@ -48,7 +48,9 @@ var startCmd = &cobra.Command{
 			}
 			// Tmux session is dead, clean up and start fresh
 			fmt.Printf("Previous session %s has no active tmux. Cleaning up...\n", existing.ID)
-			_, _ = mgr.Stop()
+			if _, err := mgr.Stop(); err != nil {
+				return fmt.Errorf("cleaning up previous session: %w", err)
+			}
 		}
 
 		state, err := mgr.Start()
