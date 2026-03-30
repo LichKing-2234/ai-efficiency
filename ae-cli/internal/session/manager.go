@@ -16,11 +16,12 @@ import (
 )
 
 type State struct {
-	ID          string    `json:"id"`
-	Repo        string    `json:"repo"`
-	Branch      string    `json:"branch"`
-	StartedAt   time.Time `json:"started_at"`
-	TmuxSession string    `json:"tmux_session,omitempty"`
+	ID            string    `json:"id"`
+	Repo          string    `json:"repo"`
+	Branch        string    `json:"branch"`
+	WorkspaceRoot string    `json:"workspace_root,omitempty"`
+	StartedAt     time.Time `json:"started_at"`
+	TmuxSession   string    `json:"tmux_session,omitempty"`
 }
 
 type Manager struct {
@@ -39,7 +40,7 @@ func (m *Manager) Start() (*State, error) {
 	// Reconcile: if local binding exists but backend session is gone, clean it up.
 	if existing, _ := m.Current(); existing != nil && strings.TrimSpace(existing.ID) != "" {
 		if _, err := m.client.GetSession(context.Background(), existing.ID); errors.Is(err, client.ErrNotFound) {
-			_ = m.cleanupLocal(existing.ID)
+			_ = m.cleanupLocal(existing.ID, existing.WorkspaceRoot)
 		}
 	}
 
@@ -70,10 +71,11 @@ func (m *Manager) Start() (*State, error) {
 	}
 
 	state := &State{
-		ID:        resp.SessionID,
-		Repo:      gc.repoURL,
-		Branch:    gc.branch,
-		StartedAt: resp.StartedAt,
+		ID:            resp.SessionID,
+		Repo:          gc.repoURL,
+		Branch:        gc.branch,
+		WorkspaceRoot: gc.workspaceRoot,
+		StartedAt:     resp.StartedAt,
 	}
 
 	marker := &Marker{
@@ -126,10 +128,11 @@ func (m *Manager) Stop() (*State, error) {
 	var state *State
 	if bound != nil && bound.Marker != nil && strings.TrimSpace(bound.Marker.SessionID) != "" {
 		state = &State{
-			ID:          bound.Marker.SessionID,
-			Repo:        bound.Marker.RepoFullName,
-			Branch:      bound.Marker.Branch,
-			TmuxSession: bound.Marker.TmuxSession,
+			ID:            bound.Marker.SessionID,
+			Repo:          bound.Marker.RepoFullName,
+			Branch:        bound.Marker.Branch,
+			WorkspaceRoot: bound.WorkspaceRoot,
+			TmuxSession:   bound.Marker.TmuxSession,
 		}
 	} else {
 		state, err = m.Current()
@@ -149,7 +152,7 @@ func (m *Manager) Stop() (*State, error) {
 	}
 
 	// Clean up local state (marker/runtime/global state) best-effort.
-	_ = m.cleanupLocal(state.ID)
+	_ = m.cleanupLocal(state.ID, state.WorkspaceRoot)
 
 	return state, nil
 }
@@ -166,7 +169,7 @@ func (m *Manager) Shutdown(ctx context.Context) error {
 	_ = m.client.StopSession(ctx, state.ID)
 
 	// Always clean up local state
-	_ = m.cleanupLocal(state.ID)
+	_ = m.cleanupLocal(state.ID, state.WorkspaceRoot)
 	return nil
 }
 
@@ -191,10 +194,11 @@ func (m *Manager) Current() (*State, error) {
 		return nil, err
 	} else if bound != nil && bound.Marker != nil && strings.TrimSpace(bound.Marker.SessionID) != "" {
 		return &State{
-			ID:          bound.Marker.SessionID,
-			Repo:        bound.Marker.RepoFullName,
-			Branch:      bound.Marker.Branch,
-			TmuxSession: bound.Marker.TmuxSession,
+			ID:            bound.Marker.SessionID,
+			Repo:          bound.Marker.RepoFullName,
+			Branch:        bound.Marker.Branch,
+			WorkspaceRoot: bound.WorkspaceRoot,
+			TmuxSession:   bound.Marker.TmuxSession,
 		}, nil
 	}
 
@@ -426,7 +430,7 @@ func removeState() error {
 	return nil
 }
 
-func (m *Manager) cleanupLocal(sessionID string) error {
+func (m *Manager) cleanupLocal(sessionID, workspaceRoot string) error {
 	removeMarkerForSession := func(workspaceRoot string) {
 		workspaceRoot = strings.TrimSpace(workspaceRoot)
 		if workspaceRoot == "" || strings.TrimSpace(sessionID) == "" {
@@ -446,6 +450,7 @@ func (m *Manager) cleanupLocal(sessionID string) error {
 	if bound, err := ResolveBoundState(""); err == nil && bound != nil {
 		removeMarkerForSession(bound.WorkspaceRoot)
 	}
+	removeMarkerForSession(workspaceRoot)
 
 	// If Stop/Shutdown is invoked outside the workspace, use the runtime pointer to remove the marker.
 	if strings.TrimSpace(sessionID) != "" {

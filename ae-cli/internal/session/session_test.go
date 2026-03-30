@@ -941,6 +941,9 @@ func TestStopCleansMarkerWhenInvokedOutsideWorkspace(t *testing.T) {
 	if _, err := os.Stat(markerPath(wsRoot)); err != nil {
 		t.Fatalf("expected marker to exist: %v", err)
 	}
+	if err := RemoveRuntime("boot-sess-stop"); err != nil {
+		t.Fatalf("RemoveRuntime: %v", err)
+	}
 
 	// Stop from outside the workspace.
 	outside := t.TempDir()
