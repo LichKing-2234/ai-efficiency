@@ -8,6 +8,7 @@ import (
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/session"
+	"github.com/ai-efficiency/backend/internal/auth"
 	"github.com/ai-efficiency/backend/internal/pkg"
 	"github.com/ai-efficiency/backend/internal/sessionbootstrap"
 	"github.com/gin-gonic/gin"
@@ -61,12 +62,12 @@ func (h *SessionHandler) Bootstrap(c *gin.Context) {
 		return
 	}
 
-	userIDRaw, ok := c.Get("user_id")
-	if !ok {
+	uc := auth.GetUserContext(c)
+	if uc == nil {
 		pkg.Error(c, http.StatusUnauthorized, "unauthorized")
 		return
 	}
-	userID := userIDRaw.(int)
+	userID := uc.UserID
 
 	resp, err := h.bootstrapSvc.Bootstrap(c.Request.Context(), userID, sessionbootstrap.BootstrapRequest{
 		RepoFullName:   req.RepoFullName,

@@ -2,9 +2,11 @@ package sessionbootstrap
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
+	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/ent/enttest"
 	"github.com/ai-efficiency/backend/internal/auth"
 	"github.com/ai-efficiency/backend/internal/relay"
@@ -270,5 +272,142 @@ func TestStopRevokesRelayKey(t *testing.T) {
 	}
 	if len(rp.revokedKeyIDs) != 1 || rp.revokedKeyIDs[0] != int64(keyID) {
 		t.Fatalf("revoked = %v, want [%d]", rp.revokedKeyIDs, keyID)
+	}
+}
+
+func TestBootstrapRevokesRelayKeyWhenSessionSaveFails(t *testing.T) {
+	ctx := context.Background()
+	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+
+	// Force session persistence to fail after the relay key is created.
+	client.Session.Use(func(next ent.Mutator) ent.Mutator {
+		return ent.MutateFunc(func(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+			if m.Op() == ent.OpCreate {
+				return nil, errors.New("db insert failed")
+			}
+			return next.Mutate(ctx, m)
+		})
+	})
+
+	sp, err := client.ScmProvider.Create().
+		SetName("mock-gh").
+		SetType("github").
+		SetBaseURL("https://api.github.com").
+		SetCredentials("enc").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create scm provider: %v", err)
+	}
+	rc, err := client.RepoConfig.Create().
+		SetScmProviderID(sp.ID).
+		SetName("mock-repo").
+		SetFullName("org/mock-repo").
+		SetCloneURL("https://github.com/org/mock-repo.git").
+		SetDefaultBranch("main").
+		SetRelayGroupID("g-repo").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create repo config: %v", err)
+	}
+
+	u, err := client.User.Create().
+		SetUsername("alice").
+		SetEmail("alice@example.com").
+		SetAuthSource("ldap").
+		SetRelayUserID(99).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	rp := &fakeRelayProvider{
+		createUserAPIKeyFn: func(_ context.Context, userID int64, req relay.APIKeyCreateRequest) (*relay.APIKeyWithSecret, error) {
+			return &relay.APIKeyWithSecret{
+				APIKey: relay.APIKey{ID: 555, UserID: userID, Name: req.Name, Status: "active"},
+				Secret: "sk-session-555",
+			}, nil
+		},
+	}
+	svc := NewService(client, rp, nil, "sub2api", "http://relay.local/v1", "g-default", 2*time.Hour)
+
+	_, err = svc.Bootstrap(ctx, u.ID, BootstrapRequest{
+		RepoFullName:   rc.FullName,
+		BranchSnapshot: "main",
+		HeadSHA:        "abc123",
+		WorkspaceRoot:  "/tmp/ws",
+		GitDir:         "/tmp/ws/.git",
+		GitCommonDir:   "/tmp/ws/.git",
+		WorkspaceID:    "ws-1",
+	})
+	if err == nil {
+		t.Fatalf("bootstrap: expected error")
+	}
+
+	if len(rp.revokedKeyIDs) != 1 || rp.revokedKeyIDs[0] != 555 {
+		t.Fatalf("revoked = %v, want [555]", rp.revokedKeyIDs)
+	}
+}
+
+func TestBootstrapUsesRelayProviderNameWhenConfigEmpty(t *testing.T) {
+	ctx := context.Background()
+	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+
+	sp, err := client.ScmProvider.Create().
+		SetName("mock-gh").
+		SetType("github").
+		SetBaseURL("https://api.github.com").
+		SetCredentials("enc").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create scm provider: %v", err)
+	}
+	rc, err := client.RepoConfig.Create().
+		SetScmProviderID(sp.ID).
+		SetName("mock-repo").
+		SetFullName("org/mock-repo").
+		SetCloneURL("https://github.com/org/mock-repo.git").
+		SetDefaultBranch("main").
+		SetRelayGroupID("g-repo").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create repo config: %v", err)
+	}
+
+	u, err := client.User.Create().
+		SetUsername("alice").
+		SetEmail("alice@example.com").
+		SetAuthSource("ldap").
+		SetRelayUserID(99).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	rp := &fakeRelayProvider{
+		createUserAPIKeyFn: func(_ context.Context, userID int64, req relay.APIKeyCreateRequest) (*relay.APIKeyWithSecret, error) {
+			return &relay.APIKeyWithSecret{
+				APIKey: relay.APIKey{ID: 555, UserID: userID, Name: req.Name, Status: "active"},
+				Secret: "sk-session-555",
+			}, nil
+		},
+	}
+
+	// Config provider name is empty; the service should still use the relay provider identity.
+	svc := NewService(client, rp, nil, "", "http://relay.local/v1", "g-default", 2*time.Hour)
+
+	resp, err := svc.Bootstrap(ctx, u.ID, BootstrapRequest{
+		RepoFullName:   rc.FullName,
+		BranchSnapshot: "main",
+		HeadSHA:        "abc123",
+		WorkspaceRoot:  "/tmp/ws",
+		GitDir:         "/tmp/ws/.git",
+		GitCommonDir:   "/tmp/ws/.git",
+		WorkspaceID:    "ws-1",
+	})
+	if err != nil {
+		t.Fatalf("bootstrap: %v", err)
+	}
+	if resp.ProviderName != rp.Name() {
+		t.Fatalf("provider_name = %q, want %q", resp.ProviderName, rp.Name())
 	}
 }

@@ -83,16 +83,23 @@ func (s *Service) resolveRouteBinding(rc *ent.RepoConfig) (*routeBinding, error)
 		return nil, fmt.Errorf("route binding: repo config is required")
 	}
 
-	providerName := s.defaultProviderName
+	if s.relayProvider == nil {
+		return nil, fmt.Errorf("route binding: relay provider is not configured")
+	}
+
+	// Treat the relay provider identity as the authoritative provider name source.
+	configuredProviderName := strings.TrimSpace(s.relayProvider.Name())
+	if configuredProviderName == "" {
+		return nil, fmt.Errorf("route binding: relay provider name is empty")
+	}
+
+	// v1 server wiring currently supports a single configured relay provider.
+	requestedProviderName := s.defaultProviderName
 	if rc.RelayProviderName != nil && strings.TrimSpace(*rc.RelayProviderName) != "" {
-		providerName = strings.TrimSpace(*rc.RelayProviderName)
+		requestedProviderName = strings.TrimSpace(*rc.RelayProviderName)
 	}
-	if providerName == "" {
-		return nil, fmt.Errorf("route binding: provider_name is required")
-	}
-	if s.defaultProviderName != "" && providerName != s.defaultProviderName {
-		// v1 server wiring currently supports a single configured relay provider.
-		return nil, fmt.Errorf("route binding: repo requires provider %q, but server configured %q", providerName, s.defaultProviderName)
+	if strings.TrimSpace(requestedProviderName) != "" && strings.TrimSpace(requestedProviderName) != configuredProviderName {
+		return nil, fmt.Errorf("route binding: repo requires provider %q, but server configured %q", strings.TrimSpace(requestedProviderName), configuredProviderName)
 	}
 
 	groupID := s.defaultGroupID
@@ -106,7 +113,7 @@ func (s *Service) resolveRouteBinding(rc *ent.RepoConfig) (*routeBinding, error)
 	}
 
 	return &routeBinding{
-		ProviderName:       providerName,
+		ProviderName:       configuredProviderName,
 		GroupID:            groupID,
 		RouteBindingSource: source,
 	}, nil
@@ -225,6 +232,10 @@ func (s *Service) Bootstrap(ctx context.Context, localUserID int, req BootstrapR
 	}
 
 	if _, err := create.Save(ctx); err != nil {
+		// Best-effort cleanup: never leave a live relay key behind if persisting the session failed.
+		revokeCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		_ = s.relayProvider.RevokeUserAPIKey(revokeCtx, key.ID)
+		cancel()
 		return nil, fmt.Errorf("bootstrap: create session: %w", err)
 	}
 
