@@ -13,7 +13,17 @@ vi.mock('@/api/scmProvider', () => ({
 
 vi.mock('@/api/settings', () => ({
   getLLMConfig: vi.fn().mockResolvedValue({
-    data: { data: { sub2api_url: '', sub2api_api_key: '', model: 'gpt-4', enabled: false } },
+    data: {
+      data: {
+        relay_url: '',
+        relay_api_key: '',
+        model: 'gpt-4',
+        enabled: false,
+        max_tokens_per_scan: 100000,
+        system_prompt: '',
+        user_prompt_template: '',
+      },
+    },
   }),
   updateLLMConfig: vi.fn(),
   testLLMConnection: vi.fn(),
@@ -33,6 +43,7 @@ function createTestRouter() {
       { path: '/settings', component: SettingsView },
       { path: '/login', component: { template: '<div>Login</div>' } },
       { path: '/repos', component: { template: '<div>Repos</div>' } },
+      { path: '/sessions', component: { template: '<div>Sessions</div>' } },
     ],
   })
 }
@@ -84,8 +95,8 @@ describe('SettingsView', () => {
 
   it('renders LLM form fields', async () => {
     const wrapper = await mountSettings()
-    expect(wrapper.text()).toContain('Sub2api URL')
-    expect(wrapper.text()).toContain('API Key')
+    expect(wrapper.text()).toContain('Relay URL')
+    expect(wrapper.text()).toContain('Relay API Key')
     expect(wrapper.text()).toContain('Model')
     expect(wrapper.text()).toContain('System Prompt')
     expect(wrapper.text()).toContain('User Prompt Template')
@@ -432,29 +443,32 @@ describe('SettingsView', () => {
   it('loads LLM config on mount', async () => {
     const wrapper = await mountSettings({
       llmConfig: {
-        sub2api_url: 'http://localhost:3000',
-        sub2api_api_key: 'sk-test',
+        relay_url: 'http://relay.local',
+        relay_api_key: 'sk-test',
         model: 'gpt-4o',
         max_tokens_per_scan: 50000,
         system_prompt: 'You are helpful',
         user_prompt_template: 'Analyze {repo_context}',
+        enabled: true,
       },
     })
 
     const inputs = wrapper.findAll('input[type="text"]')
-    const sub2apiInput = inputs.find((i) => i.attributes('placeholder')?.includes('host:port'))
-    expect(sub2apiInput!.element.value).toBe('http://localhost:3000')
+    const disabledTextInputs = inputs.filter((i) => (i.element as HTMLInputElement).disabled)
+    const disabledValues = disabledTextInputs.map((i) => (i.element as HTMLInputElement).value)
+    expect(disabledValues).toEqual(expect.arrayContaining(['http://relay.local', 'sk-test']))
 
-    // LLM should be enabled since url and key are set
+    const modelInput = inputs.find((i) => i.attributes('placeholder') === 'gpt-4')
+    expect((modelInput!.element as HTMLInputElement).value).toBe('gpt-4o')
+
     expect(wrapper.text()).toContain('Enabled')
   })
 
-  it('shows Not configured when LLM has no url/key', async () => {
+  it('shows Not configured when LLM is disabled', async () => {
     const wrapper = await mountSettings({
       llmConfig: {
-        sub2api_url: '',
-        sub2api_api_key: '',
         model: 'gpt-4',
+        enabled: false,
       },
     })
 
@@ -467,9 +481,8 @@ describe('SettingsView', () => {
 
     const wrapper = await mountSettings()
 
-    // Fill sub2api_url
-    const sub2apiInput = wrapper.findAll('input[type="text"]').find((i) => i.attributes('placeholder')?.includes('host:port'))
-    await sub2apiInput!.setValue('http://localhost:3000')
+    const modelInput = wrapper.findAll('input[type="text"]').find((i) => i.attributes('placeholder') === 'gpt-4')
+    await modelInput!.setValue('gpt-4o')
 
     // Click Save
     const saveBtn = wrapper.findAll('button').find((b) => b.text() === 'Save')
@@ -477,18 +490,8 @@ describe('SettingsView', () => {
     await flushPromises()
 
     expect(updateLLMConfig).toHaveBeenCalled()
+    expect(updateLLMConfig).toHaveBeenCalledWith(expect.objectContaining({ model: 'gpt-4o' }))
     expect(wrapper.text()).toContain('LLM configuration saved')
-  })
-
-  it('shows error when saving LLM without sub2api_url', async () => {
-    const wrapper = await mountSettings()
-
-    // Click Save without filling URL
-    const saveBtn = wrapper.findAll('button').find((b) => b.text() === 'Save')
-    await saveBtn!.trigger('click')
-    await wrapper.vm.$nextTick()
-
-    expect(wrapper.text()).toContain('Sub2api URL is required')
   })
 
   it('handles LLM save error', async () => {
@@ -499,8 +502,8 @@ describe('SettingsView', () => {
 
     const wrapper = await mountSettings()
 
-    const sub2apiInput = wrapper.findAll('input[type="text"]').find((i) => i.attributes('placeholder')?.includes('host:port'))
-    await sub2apiInput!.setValue('http://localhost:3000')
+    const modelInput = wrapper.findAll('input[type="text"]').find((i) => i.attributes('placeholder') === 'gpt-4')
+    await modelInput!.setValue('gpt-4o')
 
     const saveBtn = wrapper.findAll('button').find((b) => b.text() === 'Save')
     await saveBtn!.trigger('click')

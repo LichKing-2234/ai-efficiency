@@ -42,7 +42,7 @@ describe('AppSidebar', () => {
     expect(wrapper.text()).toContain('AI Efficiency')
   })
 
-  it('renders navigation links for Dashboard, Repos, and Settings', async () => {
+  it('renders navigation links for Dashboard, Repos, and Sessions', async () => {
     const router = createTestRouter()
     await router.push('/')
     await router.isReady()
@@ -56,6 +56,28 @@ describe('AppSidebar', () => {
 
     expect(linkTexts).toContain('Dashboard')
     expect(linkTexts).toContain('Repos')
+    expect(linkTexts).toContain('Sessions')
+    expect(linkTexts).not.toContain('Settings')
+  })
+
+  it('renders Settings link for admin users', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+
+    const router = createTestRouter()
+    await router.push('/')
+    await router.isReady()
+
+    const { useAuthStore } = await import('@/stores/auth')
+    const auth = useAuthStore(pinia)
+    auth.user = { id: 1, username: 'admin', email: 'admin@example.com', role: 'admin', auth_source: 'sso' }
+
+    const wrapper = mount(AppSidebar, {
+      global: { plugins: [pinia, router] },
+    })
+
+    const links = wrapper.findAll('a')
+    const linkTexts = links.map((l) => l.text())
     expect(linkTexts).toContain('Settings')
   })
 
@@ -192,12 +214,19 @@ describe('AppSidebar', () => {
   })
 
   it('applies active class to Settings when on settings route', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+
     const router = createTestRouter()
     await router.push('/settings')
     await router.isReady()
 
+    const { useAuthStore } = await import('@/stores/auth')
+    const auth = useAuthStore(pinia)
+    auth.user = { id: 1, username: 'admin', email: 'admin@example.com', role: 'admin', auth_source: 'sso' }
+
     const wrapper = mount(AppSidebar, {
-      global: { plugins: [createPinia(), router] },
+      global: { plugins: [pinia, router] },
     })
 
     const settingsLink = wrapper.findAll('a').find((a) => a.text() === 'Settings')
