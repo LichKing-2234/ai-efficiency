@@ -8,11 +8,23 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/ai-efficiency/ae-cli/config"
 	"github.com/ai-efficiency/ae-cli/internal/session"
 	"github.com/ai-efficiency/ae-cli/internal/shell"
 	"github.com/ai-efficiency/ae-cli/internal/tmux"
 	"github.com/spf13/cobra"
 )
+
+type shellRunner interface {
+	Run() error
+	ShouldKillTmux() bool
+}
+
+// newShellRunner is an injection point for cmd tests. Production uses the real
+// interactive shell implementation.
+var newShellRunner = func(cfg *config.Config, state *session.State) shellRunner {
+	return shell.New(cfg, state)
+}
 
 var shellCmd = &cobra.Command{
 	Use:    "shell",
@@ -45,7 +57,7 @@ var shellCmd = &cobra.Command{
 			os.Exit(0)
 		}()
 
-		s := shell.New(cfg, state)
+		s := newShellRunner(cfg, state)
 		err = s.Run()
 
 		// Clean up signal goroutine on normal exit

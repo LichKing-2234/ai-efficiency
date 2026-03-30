@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"net/http"
@@ -8,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -1384,11 +1386,11 @@ func TestShellCommandWithSession(t *testing.T) {
 	os.Setenv("HOME", tmpHome)
 	defer os.Setenv("HOME", origHome)
 
-	// Bubble Tea will attempt to open /dev/tty when stdin isn't a terminal.
-	// In this test we deliberately pipe stdin to auto-exit; force using stdin
-	// directly so the test is deterministic in environments without /dev/tty.
-	os.Setenv("AE_CLI_SHELL_FORCE_STDIN", "1")
-	t.Cleanup(func() { os.Unsetenv("AE_CLI_SHELL_FORCE_STDIN") })
+	origNewShellRunner := newShellRunner
+	newShellRunner = func(cfg *config.Config, state *session.State) shellRunner {
+		return &fakeShellRunner{}
+	}
+	t.Cleanup(func() { newShellRunner = origNewShellRunner })
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -1428,6 +1430,21 @@ func TestShellCommandWithSession(t *testing.T) {
 		t.Fatalf("shell command: %v", err)
 	}
 }
+
+type fakeShellRunner struct{}
+
+func (f *fakeShellRunner) Run() error {
+	sc := bufio.NewScanner(os.Stdin)
+	for sc.Scan() {
+		switch strings.TrimSpace(sc.Text()) {
+		case "exit", "quit":
+			return nil
+		}
+	}
+	return sc.Err()
+}
+
+func (f *fakeShellRunner) ShouldKillTmux() bool { return false }
 
 func TestStopCommandWithTmuxSession(t *testing.T) {
 	origHome := os.Getenv("HOME")
