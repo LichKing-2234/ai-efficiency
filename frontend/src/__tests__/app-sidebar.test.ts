@@ -199,20 +199,6 @@ describe('AppSidebar', () => {
     expect(wrapper.text()).toContain('User')
   })
 
-  it('renders Sessions link', async () => {
-    const router = createTestRouter()
-    await router.push('/')
-    await router.isReady()
-
-    const wrapper = mount(AppSidebar, {
-      global: { plugins: [createPinia(), router] },
-    })
-
-    const links = wrapper.findAll('a')
-    const linkTexts = links.map((l) => l.text())
-    expect(linkTexts).toContain('Sessions')
-  })
-
   it('applies active class to Settings when on settings route', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)

@@ -4,6 +4,16 @@ import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import SettingsView from '@/views/SettingsView.vue'
 
+function getInputByLabel(wrapper: any, labelText: string) {
+  const label = wrapper.findAll('label').find((l: any) => l.text().trim() === labelText)
+  expect(label, `Missing label: ${labelText}`).toBeTruthy()
+  const container = label!.element.parentElement as HTMLElement | null
+  expect(container, `Missing label container: ${labelText}`).toBeTruthy()
+  const input = container!.querySelector('input')
+  expect(input, `Missing input for label: ${labelText}`).toBeTruthy()
+  return input as HTMLInputElement
+}
+
 vi.mock('@/api/scmProvider', () => ({
   listProviders: vi.fn().mockResolvedValue({ data: { data: { items: [], total: 0 } } }),
   createProvider: vi.fn(),
@@ -458,8 +468,7 @@ describe('SettingsView', () => {
     const disabledValues = disabledTextInputs.map((i) => (i.element as HTMLInputElement).value)
     expect(disabledValues).toEqual(expect.arrayContaining(['http://relay.local', 'sk-test']))
 
-    const modelInput = inputs.find((i) => i.attributes('placeholder') === 'gpt-4')
-    expect((modelInput!.element as HTMLInputElement).value).toBe('gpt-4o')
+    expect(getInputByLabel(wrapper, 'Model').value).toBe('gpt-4o')
 
     expect(wrapper.text()).toContain('Enabled')
   })
@@ -467,6 +476,8 @@ describe('SettingsView', () => {
   it('shows Not configured when LLM is disabled', async () => {
     const wrapper = await mountSettings({
       llmConfig: {
+        relay_url: 'http://relay.local',
+        relay_api_key: 'sk-test',
         model: 'gpt-4',
         enabled: false,
       },
@@ -481,8 +492,10 @@ describe('SettingsView', () => {
 
     const wrapper = await mountSettings()
 
-    const modelInput = wrapper.findAll('input[type="text"]').find((i) => i.attributes('placeholder') === 'gpt-4')
-    await modelInput!.setValue('gpt-4o')
+    const modelInput = getInputByLabel(wrapper, 'Model')
+    modelInput.value = 'gpt-4o'
+    modelInput.dispatchEvent(new Event('input'))
+    await wrapper.vm.$nextTick()
 
     // Click Save
     const saveBtn = wrapper.findAll('button').find((b) => b.text() === 'Save')
@@ -502,8 +515,10 @@ describe('SettingsView', () => {
 
     const wrapper = await mountSettings()
 
-    const modelInput = wrapper.findAll('input[type="text"]').find((i) => i.attributes('placeholder') === 'gpt-4')
-    await modelInput!.setValue('gpt-4o')
+    const modelInput = getInputByLabel(wrapper, 'Model')
+    modelInput.value = 'gpt-4o'
+    modelInput.dispatchEvent(new Event('input'))
+    await wrapper.vm.$nextTick()
 
     const saveBtn = wrapper.findAll('button').find((b) => b.text() === 'Save')
     await saveBtn!.trigger('click')
