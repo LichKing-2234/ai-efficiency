@@ -71,6 +71,8 @@ const (
 	EdgeRepoConfig = "repo_config"
 	// EdgeAttributionRuns holds the string denoting the attribution_runs edge name in mutations.
 	EdgeAttributionRuns = "attribution_runs"
+	// EdgeLastAttributionRun holds the string denoting the last_attribution_run edge name in mutations.
+	EdgeLastAttributionRun = "last_attribution_run"
 	// Table holds the table name of the prrecord in the database.
 	Table = "pr_records"
 	// RepoConfigTable is the table that holds the repo_config relation/edge.
@@ -87,6 +89,13 @@ const (
 	AttributionRunsInverseTable = "pr_attribution_runs"
 	// AttributionRunsColumn is the table column denoting the attribution_runs relation/edge.
 	AttributionRunsColumn = "pr_record_id"
+	// LastAttributionRunTable is the table that holds the last_attribution_run relation/edge.
+	LastAttributionRunTable = "pr_records"
+	// LastAttributionRunInverseTable is the table name for the PrAttributionRun entity.
+	// It exists in this package in order to avoid circular dependency with the "prattributionrun" package.
+	LastAttributionRunInverseTable = "pr_attribution_runs"
+	// LastAttributionRunColumn is the table column denoting the last_attribution_run relation/edge.
+	LastAttributionRunColumn = "last_attribution_run_id"
 )
 
 // Columns holds all SQL columns for prrecord fields.
@@ -408,6 +417,13 @@ func ByAttributionRuns(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
 		sqlgraph.OrderByNeighborTerms(s, newAttributionRunsStep(), append([]sql.OrderTerm{term}, terms...)...)
 	}
 }
+
+// ByLastAttributionRunField orders the results by last_attribution_run field.
+func ByLastAttributionRunField(field string, opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newLastAttributionRunStep(), sql.OrderByField(field, opts...))
+	}
+}
 func newRepoConfigStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
@@ -420,5 +436,12 @@ func newAttributionRunsStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(AttributionRunsInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.O2M, false, AttributionRunsTable, AttributionRunsColumn),
+	)
+}
+func newLastAttributionRunStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(LastAttributionRunInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.M2O, false, LastAttributionRunTable, LastAttributionRunColumn),
 	)
 }

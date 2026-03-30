@@ -271,26 +271,6 @@ func RepoConfigIDNotIn(vs ...int) predicate.CommitRewrite {
 	return predicate.CommitRewrite(sql.FieldNotIn(FieldRepoConfigID, vs...))
 }
 
-// RepoConfigIDGT applies the GT predicate on the "repo_config_id" field.
-func RepoConfigIDGT(v int) predicate.CommitRewrite {
-	return predicate.CommitRewrite(sql.FieldGT(FieldRepoConfigID, v))
-}
-
-// RepoConfigIDGTE applies the GTE predicate on the "repo_config_id" field.
-func RepoConfigIDGTE(v int) predicate.CommitRewrite {
-	return predicate.CommitRewrite(sql.FieldGTE(FieldRepoConfigID, v))
-}
-
-// RepoConfigIDLT applies the LT predicate on the "repo_config_id" field.
-func RepoConfigIDLT(v int) predicate.CommitRewrite {
-	return predicate.CommitRewrite(sql.FieldLT(FieldRepoConfigID, v))
-}
-
-// RepoConfigIDLTE applies the LTE predicate on the "repo_config_id" field.
-func RepoConfigIDLTE(v int) predicate.CommitRewrite {
-	return predicate.CommitRewrite(sql.FieldLTE(FieldRepoConfigID, v))
-}
-
 // RewriteTypeEQ applies the EQ predicate on the "rewrite_type" field.
 func RewriteTypeEQ(v RewriteType) predicate.CommitRewrite {
 	return predicate.CommitRewrite(sql.FieldEQ(FieldRewriteType, v))
@@ -516,6 +496,29 @@ func HasSession() predicate.CommitRewrite {
 func HasSessionWith(preds ...predicate.Session) predicate.CommitRewrite {
 	return predicate.CommitRewrite(func(s *sql.Selector) {
 		step := newSessionStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasRepoConfig applies the HasEdge predicate on the "repo_config" edge.
+func HasRepoConfig() predicate.CommitRewrite {
+	return predicate.CommitRewrite(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, RepoConfigTable, RepoConfigColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasRepoConfigWith applies the HasEdge predicate on the "repo_config" edge with a given conditions (other predicates).
+func HasRepoConfigWith(preds ...predicate.RepoConfig) predicate.CommitRewrite {
+	return predicate.CommitRewrite(func(s *sql.Selector) {
+		step := newRepoConfigStep()
 		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
 			for _, p := range preds {
 				p(s)

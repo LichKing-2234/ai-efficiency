@@ -86,6 +86,9 @@ func (PrRecord) Edges() []ent.Edge {
 			Unique().
 			Required(),
 		edge.To("attribution_runs", PrAttributionRun.Type),
+		edge.To("last_attribution_run", PrAttributionRun.Type).
+			Unique().
+			Field("last_attribution_run_id"),
 	}
 }
 

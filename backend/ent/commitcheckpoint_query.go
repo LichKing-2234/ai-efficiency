@@ -13,6 +13,7 @@ import (
 	"entgo.io/ent/schema/field"
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
 	"github.com/ai-efficiency/backend/ent/predicate"
+	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/session"
 	"github.com/google/uuid"
 )
@@ -20,11 +21,12 @@ import (
 // CommitCheckpointQuery is the builder for querying CommitCheckpoint entities.
 type CommitCheckpointQuery struct {
 	config
-	ctx         *QueryContext
-	order       []commitcheckpoint.OrderOption
-	inters      []Interceptor
-	predicates  []predicate.CommitCheckpoint
-	withSession *SessionQuery
+	ctx            *QueryContext
+	order          []commitcheckpoint.OrderOption
+	inters         []Interceptor
+	predicates     []predicate.CommitCheckpoint
+	withSession    *SessionQuery
+	withRepoConfig *RepoConfigQuery
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
 	path func(context.Context) (*sql.Selector, error)
@@ -76,6 +78,28 @@ func (ccq *CommitCheckpointQuery) QuerySession() *SessionQuery {
 			sqlgraph.From(commitcheckpoint.Table, commitcheckpoint.FieldID, selector),
 			sqlgraph.To(session.Table, session.FieldID),
 			sqlgraph.Edge(sqlgraph.M2O, true, commitcheckpoint.SessionTable, commitcheckpoint.SessionColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(ccq.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryRepoConfig chains the current query on the "repo_config" edge.
+func (ccq *CommitCheckpointQuery) QueryRepoConfig() *RepoConfigQuery {
+	query := (&RepoConfigClient{config: ccq.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := ccq.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := ccq.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(commitcheckpoint.Table, commitcheckpoint.FieldID, selector),
+			sqlgraph.To(repoconfig.Table, repoconfig.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, commitcheckpoint.RepoConfigTable, commitcheckpoint.RepoConfigColumn),
 		)
 		fromU = sqlgraph.SetNeighbors(ccq.driver.Dialect(), step)
 		return fromU, nil
@@ -270,12 +294,13 @@ func (ccq *CommitCheckpointQuery) Clone() *CommitCheckpointQuery {
 		return nil
 	}
 	return &CommitCheckpointQuery{
-		config:      ccq.config,
-		ctx:         ccq.ctx.Clone(),
-		order:       append([]commitcheckpoint.OrderOption{}, ccq.order...),
-		inters:      append([]Interceptor{}, ccq.inters...),
-		predicates:  append([]predicate.CommitCheckpoint{}, ccq.predicates...),
-		withSession: ccq.withSession.Clone(),
+		config:         ccq.config,
+		ctx:            ccq.ctx.Clone(),
+		order:          append([]commitcheckpoint.OrderOption{}, ccq.order...),
+		inters:         append([]Interceptor{}, ccq.inters...),
+		predicates:     append([]predicate.CommitCheckpoint{}, ccq.predicates...),
+		withSession:    ccq.withSession.Clone(),
+		withRepoConfig: ccq.withRepoConfig.Clone(),
 		// clone intermediate query.
 		sql:  ccq.sql.Clone(),
 		path: ccq.path,
@@ -290,6 +315,17 @@ func (ccq *CommitCheckpointQuery) WithSession(opts ...func(*SessionQuery)) *Comm
 		opt(query)
 	}
 	ccq.withSession = query
+	return ccq
+}
+
+// WithRepoConfig tells the query-builder to eager-load the nodes that are connected to
+// the "repo_config" edge. The optional arguments are used to configure the query builder of the edge.
+func (ccq *CommitCheckpointQuery) WithRepoConfig(opts ...func(*RepoConfigQuery)) *CommitCheckpointQuery {
+	query := (&RepoConfigClient{config: ccq.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	ccq.withRepoConfig = query
 	return ccq
 }
 
@@ -371,8 +407,9 @@ func (ccq *CommitCheckpointQuery) sqlAll(ctx context.Context, hooks ...queryHook
 	var (
 		nodes       = []*CommitCheckpoint{}
 		_spec       = ccq.querySpec()
-		loadedTypes = [1]bool{
+		loadedTypes = [2]bool{
 			ccq.withSession != nil,
+			ccq.withRepoConfig != nil,
 		}
 	)
 	_spec.ScanValues = func(columns []string) ([]any, error) {
@@ -396,6 +433,12 @@ func (ccq *CommitCheckpointQuery) sqlAll(ctx context.Context, hooks ...queryHook
 	if query := ccq.withSession; query != nil {
 		if err := ccq.loadSession(ctx, query, nodes, nil,
 			func(n *CommitCheckpoint, e *Session) { n.Edges.Session = e }); err != nil {
+			return nil, err
+		}
+	}
+	if query := ccq.withRepoConfig; query != nil {
+		if err := ccq.loadRepoConfig(ctx, query, nodes, nil,
+			func(n *CommitCheckpoint, e *RepoConfig) { n.Edges.RepoConfig = e }); err != nil {
 			return nil, err
 		}
 	}
@@ -434,6 +477,35 @@ func (ccq *CommitCheckpointQuery) loadSession(ctx context.Context, query *Sessio
 	}
 	return nil
 }
+func (ccq *CommitCheckpointQuery) loadRepoConfig(ctx context.Context, query *RepoConfigQuery, nodes []*CommitCheckpoint, init func(*CommitCheckpoint), assign func(*CommitCheckpoint, *RepoConfig)) error {
+	ids := make([]int, 0, len(nodes))
+	nodeids := make(map[int][]*CommitCheckpoint)
+	for i := range nodes {
+		fk := nodes[i].RepoConfigID
+		if _, ok := nodeids[fk]; !ok {
+			ids = append(ids, fk)
+		}
+		nodeids[fk] = append(nodeids[fk], nodes[i])
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	query.Where(repoconfig.IDIn(ids...))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		nodes, ok := nodeids[n.ID]
+		if !ok {
+			return fmt.Errorf(`unexpected foreign-key "repo_config_id" returned %v`, n.ID)
+		}
+		for i := range nodes {
+			assign(nodes[i], n)
+		}
+	}
+	return nil
+}
 
 func (ccq *CommitCheckpointQuery) sqlCount(ctx context.Context) (int, error) {
 	_spec := ccq.querySpec()
@@ -462,6 +534,9 @@ func (ccq *CommitCheckpointQuery) querySpec() *sqlgraph.QuerySpec {
 		}
 		if ccq.withSession != nil {
 			_spec.Node.AddColumnOnce(commitcheckpoint.FieldSessionID)
+		}
+		if ccq.withRepoConfig != nil {
+			_spec.Node.AddColumnOnce(commitcheckpoint.FieldRepoConfigID)
 		}
 	}
 	if ps := ccq.predicates; len(ps) > 0 {

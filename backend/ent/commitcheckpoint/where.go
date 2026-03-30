@@ -276,26 +276,6 @@ func RepoConfigIDNotIn(vs ...int) predicate.CommitCheckpoint {
 	return predicate.CommitCheckpoint(sql.FieldNotIn(FieldRepoConfigID, vs...))
 }
 
-// RepoConfigIDGT applies the GT predicate on the "repo_config_id" field.
-func RepoConfigIDGT(v int) predicate.CommitCheckpoint {
-	return predicate.CommitCheckpoint(sql.FieldGT(FieldRepoConfigID, v))
-}
-
-// RepoConfigIDGTE applies the GTE predicate on the "repo_config_id" field.
-func RepoConfigIDGTE(v int) predicate.CommitCheckpoint {
-	return predicate.CommitCheckpoint(sql.FieldGTE(FieldRepoConfigID, v))
-}
-
-// RepoConfigIDLT applies the LT predicate on the "repo_config_id" field.
-func RepoConfigIDLT(v int) predicate.CommitCheckpoint {
-	return predicate.CommitCheckpoint(sql.FieldLT(FieldRepoConfigID, v))
-}
-
-// RepoConfigIDLTE applies the LTE predicate on the "repo_config_id" field.
-func RepoConfigIDLTE(v int) predicate.CommitCheckpoint {
-	return predicate.CommitCheckpoint(sql.FieldLTE(FieldRepoConfigID, v))
-}
-
 // CommitShaEQ applies the EQ predicate on the "commit_sha" field.
 func CommitShaEQ(v string) predicate.CommitCheckpoint {
 	return predicate.CommitCheckpoint(sql.FieldEQ(FieldCommitSha, v))
@@ -596,6 +576,29 @@ func HasSession() predicate.CommitCheckpoint {
 func HasSessionWith(preds ...predicate.Session) predicate.CommitCheckpoint {
 	return predicate.CommitCheckpoint(func(s *sql.Selector) {
 		step := newSessionStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasRepoConfig applies the HasEdge predicate on the "repo_config" edge.
+func HasRepoConfig() predicate.CommitCheckpoint {
+	return predicate.CommitCheckpoint(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, RepoConfigTable, RepoConfigColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasRepoConfigWith applies the HasEdge predicate on the "repo_config" edge with a given conditions (other predicates).
+func HasRepoConfigWith(preds ...predicate.RepoConfig) predicate.CommitCheckpoint {
+	return predicate.CommitCheckpoint(func(s *sql.Selector) {
+		step := newRepoConfigStep()
 		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
 			for _, p := range preds {
 				p(s)

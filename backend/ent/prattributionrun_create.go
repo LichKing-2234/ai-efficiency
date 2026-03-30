@@ -59,6 +59,14 @@ func (parc *PrAttributionRunCreate) SetResultClassification(pc prattributionrun.
 	return parc
 }
 
+// SetNillableResultClassification sets the "result_classification" field if the given value is not nil.
+func (parc *PrAttributionRunCreate) SetNillableResultClassification(pc *prattributionrun.ResultClassification) *PrAttributionRunCreate {
+	if pc != nil {
+		parc.SetResultClassification(*pc)
+	}
+	return parc
+}
+
 // SetMatchedCommitShas sets the "matched_commit_shas" field.
 func (parc *PrAttributionRunCreate) SetMatchedCommitShas(s []string) *PrAttributionRunCreate {
 	parc.mutation.SetMatchedCommitShas(s)
@@ -161,6 +169,14 @@ func (parc *PrAttributionRunCreate) defaults() {
 		v := prattributionrun.DefaultTriggerMode
 		parc.mutation.SetTriggerMode(v)
 	}
+	if _, ok := parc.mutation.MatchedCommitShas(); !ok {
+		v := prattributionrun.DefaultMatchedCommitShas
+		parc.mutation.SetMatchedCommitShas(v)
+	}
+	if _, ok := parc.mutation.MatchedSessionIds(); !ok {
+		v := prattributionrun.DefaultMatchedSessionIds
+		parc.mutation.SetMatchedSessionIds(v)
+	}
 	if _, ok := parc.mutation.CreatedAt(); !ok {
 		v := prattributionrun.DefaultCreatedAt()
 		parc.mutation.SetCreatedAt(v)
@@ -195,9 +211,6 @@ func (parc *PrAttributionRunCreate) check() error {
 		if err := prattributionrun.StatusValidator(v); err != nil {
 			return &ValidationError{Name: "status", err: fmt.Errorf(`ent: validator failed for field "PrAttributionRun.status": %w`, err)}
 		}
-	}
-	if _, ok := parc.mutation.ResultClassification(); !ok {
-		return &ValidationError{Name: "result_classification", err: errors.New(`ent: missing required field "PrAttributionRun.result_classification"`)}
 	}
 	if v, ok := parc.mutation.ResultClassification(); ok {
 		if err := prattributionrun.ResultClassificationValidator(v); err != nil {
@@ -256,7 +269,7 @@ func (parc *PrAttributionRunCreate) createSpec() (*PrAttributionRun, *sqlgraph.C
 	}
 	if value, ok := parc.mutation.ResultClassification(); ok {
 		_spec.SetField(prattributionrun.FieldResultClassification, field.TypeEnum, value)
-		_node.ResultClassification = value
+		_node.ResultClassification = &value
 	}
 	if value, ok := parc.mutation.MatchedCommitShas(); ok {
 		_spec.SetField(prattributionrun.FieldMatchedCommitShas, field.TypeJSON, value)

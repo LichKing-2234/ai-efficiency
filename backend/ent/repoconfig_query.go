@@ -13,6 +13,8 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/ai-efficiency/backend/ent/aiscanresult"
+	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
+	"github.com/ai-efficiency/backend/ent/commitrewrite"
 	"github.com/ai-efficiency/backend/ent/efficiencymetric"
 	"github.com/ai-efficiency/backend/ent/predicate"
 	"github.com/ai-efficiency/backend/ent/prrecord"
@@ -31,6 +33,8 @@ type RepoConfigQuery struct {
 	predicates             []predicate.RepoConfig
 	withScmProvider        *ScmProviderQuery
 	withSessions           *SessionQuery
+	withCommitCheckpoints  *CommitCheckpointQuery
+	withCommitRewrites     *CommitRewriteQuery
 	withWebhookDeadLetters *WebhookDeadLetterQuery
 	withAiScanResults      *AiScanResultQuery
 	withPrRecords          *PrRecordQuery
@@ -109,6 +113,50 @@ func (rcq *RepoConfigQuery) QuerySessions() *SessionQuery {
 			sqlgraph.From(repoconfig.Table, repoconfig.FieldID, selector),
 			sqlgraph.To(session.Table, session.FieldID),
 			sqlgraph.Edge(sqlgraph.O2M, false, repoconfig.SessionsTable, repoconfig.SessionsColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(rcq.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryCommitCheckpoints chains the current query on the "commit_checkpoints" edge.
+func (rcq *RepoConfigQuery) QueryCommitCheckpoints() *CommitCheckpointQuery {
+	query := (&CommitCheckpointClient{config: rcq.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := rcq.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := rcq.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(repoconfig.Table, repoconfig.FieldID, selector),
+			sqlgraph.To(commitcheckpoint.Table, commitcheckpoint.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, repoconfig.CommitCheckpointsTable, repoconfig.CommitCheckpointsColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(rcq.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryCommitRewrites chains the current query on the "commit_rewrites" edge.
+func (rcq *RepoConfigQuery) QueryCommitRewrites() *CommitRewriteQuery {
+	query := (&CommitRewriteClient{config: rcq.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := rcq.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := rcq.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(repoconfig.Table, repoconfig.FieldID, selector),
+			sqlgraph.To(commitrewrite.Table, commitrewrite.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, repoconfig.CommitRewritesTable, repoconfig.CommitRewritesColumn),
 		)
 		fromU = sqlgraph.SetNeighbors(rcq.driver.Dialect(), step)
 		return fromU, nil
@@ -398,6 +446,8 @@ func (rcq *RepoConfigQuery) Clone() *RepoConfigQuery {
 		predicates:             append([]predicate.RepoConfig{}, rcq.predicates...),
 		withScmProvider:        rcq.withScmProvider.Clone(),
 		withSessions:           rcq.withSessions.Clone(),
+		withCommitCheckpoints:  rcq.withCommitCheckpoints.Clone(),
+		withCommitRewrites:     rcq.withCommitRewrites.Clone(),
 		withWebhookDeadLetters: rcq.withWebhookDeadLetters.Clone(),
 		withAiScanResults:      rcq.withAiScanResults.Clone(),
 		withPrRecords:          rcq.withPrRecords.Clone(),
@@ -427,6 +477,28 @@ func (rcq *RepoConfigQuery) WithSessions(opts ...func(*SessionQuery)) *RepoConfi
 		opt(query)
 	}
 	rcq.withSessions = query
+	return rcq
+}
+
+// WithCommitCheckpoints tells the query-builder to eager-load the nodes that are connected to
+// the "commit_checkpoints" edge. The optional arguments are used to configure the query builder of the edge.
+func (rcq *RepoConfigQuery) WithCommitCheckpoints(opts ...func(*CommitCheckpointQuery)) *RepoConfigQuery {
+	query := (&CommitCheckpointClient{config: rcq.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	rcq.withCommitCheckpoints = query
+	return rcq
+}
+
+// WithCommitRewrites tells the query-builder to eager-load the nodes that are connected to
+// the "commit_rewrites" edge. The optional arguments are used to configure the query builder of the edge.
+func (rcq *RepoConfigQuery) WithCommitRewrites(opts ...func(*CommitRewriteQuery)) *RepoConfigQuery {
+	query := (&CommitRewriteClient{config: rcq.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	rcq.withCommitRewrites = query
 	return rcq
 }
 
@@ -553,9 +625,11 @@ func (rcq *RepoConfigQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*
 		nodes       = []*RepoConfig{}
 		withFKs     = rcq.withFKs
 		_spec       = rcq.querySpec()
-		loadedTypes = [6]bool{
+		loadedTypes = [8]bool{
 			rcq.withScmProvider != nil,
 			rcq.withSessions != nil,
+			rcq.withCommitCheckpoints != nil,
+			rcq.withCommitRewrites != nil,
 			rcq.withWebhookDeadLetters != nil,
 			rcq.withAiScanResults != nil,
 			rcq.withPrRecords != nil,
@@ -596,6 +670,22 @@ func (rcq *RepoConfigQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*
 		if err := rcq.loadSessions(ctx, query, nodes,
 			func(n *RepoConfig) { n.Edges.Sessions = []*Session{} },
 			func(n *RepoConfig, e *Session) { n.Edges.Sessions = append(n.Edges.Sessions, e) }); err != nil {
+			return nil, err
+		}
+	}
+	if query := rcq.withCommitCheckpoints; query != nil {
+		if err := rcq.loadCommitCheckpoints(ctx, query, nodes,
+			func(n *RepoConfig) { n.Edges.CommitCheckpoints = []*CommitCheckpoint{} },
+			func(n *RepoConfig, e *CommitCheckpoint) {
+				n.Edges.CommitCheckpoints = append(n.Edges.CommitCheckpoints, e)
+			}); err != nil {
+			return nil, err
+		}
+	}
+	if query := rcq.withCommitRewrites; query != nil {
+		if err := rcq.loadCommitRewrites(ctx, query, nodes,
+			func(n *RepoConfig) { n.Edges.CommitRewrites = []*CommitRewrite{} },
+			func(n *RepoConfig, e *CommitRewrite) { n.Edges.CommitRewrites = append(n.Edges.CommitRewrites, e) }); err != nil {
 			return nil, err
 		}
 	}
@@ -692,6 +782,66 @@ func (rcq *RepoConfigQuery) loadSessions(ctx context.Context, query *SessionQuer
 		node, ok := nodeids[*fk]
 		if !ok {
 			return fmt.Errorf(`unexpected referenced foreign-key "repo_config_sessions" returned %v for node %v`, *fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (rcq *RepoConfigQuery) loadCommitCheckpoints(ctx context.Context, query *CommitCheckpointQuery, nodes []*RepoConfig, init func(*RepoConfig), assign func(*RepoConfig, *CommitCheckpoint)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int]*RepoConfig)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(commitcheckpoint.FieldRepoConfigID)
+	}
+	query.Where(predicate.CommitCheckpoint(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(repoconfig.CommitCheckpointsColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.RepoConfigID
+		node, ok := nodeids[fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "repo_config_id" returned %v for node %v`, fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (rcq *RepoConfigQuery) loadCommitRewrites(ctx context.Context, query *CommitRewriteQuery, nodes []*RepoConfig, init func(*RepoConfig), assign func(*RepoConfig, *CommitRewrite)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int]*RepoConfig)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(commitrewrite.FieldRepoConfigID)
+	}
+	query.Where(predicate.CommitRewrite(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(repoconfig.CommitRewritesColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.RepoConfigID
+		node, ok := nodeids[fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "repo_config_id" returned %v for node %v`, fk, n.ID)
 		}
 		assign(node, n)
 	}

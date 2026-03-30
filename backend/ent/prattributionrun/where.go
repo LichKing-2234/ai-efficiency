@@ -220,6 +220,16 @@ func ResultClassificationNotIn(vs ...ResultClassification) predicate.PrAttributi
 	return predicate.PrAttributionRun(sql.FieldNotIn(FieldResultClassification, vs...))
 }
 
+// ResultClassificationIsNil applies the IsNil predicate on the "result_classification" field.
+func ResultClassificationIsNil() predicate.PrAttributionRun {
+	return predicate.PrAttributionRun(sql.FieldIsNull(FieldResultClassification))
+}
+
+// ResultClassificationNotNil applies the NotNil predicate on the "result_classification" field.
+func ResultClassificationNotNil() predicate.PrAttributionRun {
+	return predicate.PrAttributionRun(sql.FieldNotNull(FieldResultClassification))
+}
+
 // PrimaryUsageSummaryIsNil applies the IsNil predicate on the "primary_usage_summary" field.
 func PrimaryUsageSummaryIsNil() predicate.PrAttributionRun {
 	return predicate.PrAttributionRun(sql.FieldIsNull(FieldPrimaryUsageSummary))

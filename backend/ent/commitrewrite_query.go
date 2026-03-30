@@ -13,6 +13,7 @@ import (
 	"entgo.io/ent/schema/field"
 	"github.com/ai-efficiency/backend/ent/commitrewrite"
 	"github.com/ai-efficiency/backend/ent/predicate"
+	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/session"
 	"github.com/google/uuid"
 )
@@ -20,11 +21,12 @@ import (
 // CommitRewriteQuery is the builder for querying CommitRewrite entities.
 type CommitRewriteQuery struct {
 	config
-	ctx         *QueryContext
-	order       []commitrewrite.OrderOption
-	inters      []Interceptor
-	predicates  []predicate.CommitRewrite
-	withSession *SessionQuery
+	ctx            *QueryContext
+	order          []commitrewrite.OrderOption
+	inters         []Interceptor
+	predicates     []predicate.CommitRewrite
+	withSession    *SessionQuery
+	withRepoConfig *RepoConfigQuery
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
 	path func(context.Context) (*sql.Selector, error)
@@ -76,6 +78,28 @@ func (crq *CommitRewriteQuery) QuerySession() *SessionQuery {
 			sqlgraph.From(commitrewrite.Table, commitrewrite.FieldID, selector),
 			sqlgraph.To(session.Table, session.FieldID),
 			sqlgraph.Edge(sqlgraph.M2O, true, commitrewrite.SessionTable, commitrewrite.SessionColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(crq.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryRepoConfig chains the current query on the "repo_config" edge.
+func (crq *CommitRewriteQuery) QueryRepoConfig() *RepoConfigQuery {
+	query := (&RepoConfigClient{config: crq.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := crq.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := crq.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(commitrewrite.Table, commitrewrite.FieldID, selector),
+			sqlgraph.To(repoconfig.Table, repoconfig.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, commitrewrite.RepoConfigTable, commitrewrite.RepoConfigColumn),
 		)
 		fromU = sqlgraph.SetNeighbors(crq.driver.Dialect(), step)
 		return fromU, nil
@@ -270,12 +294,13 @@ func (crq *CommitRewriteQuery) Clone() *CommitRewriteQuery {
 		return nil
 	}
 	return &CommitRewriteQuery{
-		config:      crq.config,
-		ctx:         crq.ctx.Clone(),
-		order:       append([]commitrewrite.OrderOption{}, crq.order...),
-		inters:      append([]Interceptor{}, crq.inters...),
-		predicates:  append([]predicate.CommitRewrite{}, crq.predicates...),
-		withSession: crq.withSession.Clone(),
+		config:         crq.config,
+		ctx:            crq.ctx.Clone(),
+		order:          append([]commitrewrite.OrderOption{}, crq.order...),
+		inters:         append([]Interceptor{}, crq.inters...),
+		predicates:     append([]predicate.CommitRewrite{}, crq.predicates...),
+		withSession:    crq.withSession.Clone(),
+		withRepoConfig: crq.withRepoConfig.Clone(),
 		// clone intermediate query.
 		sql:  crq.sql.Clone(),
 		path: crq.path,
@@ -290,6 +315,17 @@ func (crq *CommitRewriteQuery) WithSession(opts ...func(*SessionQuery)) *CommitR
 		opt(query)
 	}
 	crq.withSession = query
+	return crq
+}
+
+// WithRepoConfig tells the query-builder to eager-load the nodes that are connected to
+// the "repo_config" edge. The optional arguments are used to configure the query builder of the edge.
+func (crq *CommitRewriteQuery) WithRepoConfig(opts ...func(*RepoConfigQuery)) *CommitRewriteQuery {
+	query := (&RepoConfigClient{config: crq.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	crq.withRepoConfig = query
 	return crq
 }
 
@@ -371,8 +407,9 @@ func (crq *CommitRewriteQuery) sqlAll(ctx context.Context, hooks ...queryHook) (
 	var (
 		nodes       = []*CommitRewrite{}
 		_spec       = crq.querySpec()
-		loadedTypes = [1]bool{
+		loadedTypes = [2]bool{
 			crq.withSession != nil,
+			crq.withRepoConfig != nil,
 		}
 	)
 	_spec.ScanValues = func(columns []string) ([]any, error) {
@@ -396,6 +433,12 @@ func (crq *CommitRewriteQuery) sqlAll(ctx context.Context, hooks ...queryHook) (
 	if query := crq.withSession; query != nil {
 		if err := crq.loadSession(ctx, query, nodes, nil,
 			func(n *CommitRewrite, e *Session) { n.Edges.Session = e }); err != nil {
+			return nil, err
+		}
+	}
+	if query := crq.withRepoConfig; query != nil {
+		if err := crq.loadRepoConfig(ctx, query, nodes, nil,
+			func(n *CommitRewrite, e *RepoConfig) { n.Edges.RepoConfig = e }); err != nil {
 			return nil, err
 		}
 	}
@@ -434,6 +477,35 @@ func (crq *CommitRewriteQuery) loadSession(ctx context.Context, query *SessionQu
 	}
 	return nil
 }
+func (crq *CommitRewriteQuery) loadRepoConfig(ctx context.Context, query *RepoConfigQuery, nodes []*CommitRewrite, init func(*CommitRewrite), assign func(*CommitRewrite, *RepoConfig)) error {
+	ids := make([]int, 0, len(nodes))
+	nodeids := make(map[int][]*CommitRewrite)
+	for i := range nodes {
+		fk := nodes[i].RepoConfigID
+		if _, ok := nodeids[fk]; !ok {
+			ids = append(ids, fk)
+		}
+		nodeids[fk] = append(nodeids[fk], nodes[i])
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	query.Where(repoconfig.IDIn(ids...))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		nodes, ok := nodeids[n.ID]
+		if !ok {
+			return fmt.Errorf(`unexpected foreign-key "repo_config_id" returned %v`, n.ID)
+		}
+		for i := range nodes {
+			assign(nodes[i], n)
+		}
+	}
+	return nil
+}
 
 func (crq *CommitRewriteQuery) sqlCount(ctx context.Context) (int, error) {
 	_spec := crq.querySpec()
@@ -462,6 +534,9 @@ func (crq *CommitRewriteQuery) querySpec() *sqlgraph.QuerySpec {
 		}
 		if crq.withSession != nil {
 			_spec.Node.AddColumnOnce(commitrewrite.FieldSessionID)
+		}
+		if crq.withRepoConfig != nil {
+			_spec.Node.AddColumnOnce(commitrewrite.FieldRepoConfigID)
 		}
 	}
 	if ps := crq.predicates; len(ps) > 0 {

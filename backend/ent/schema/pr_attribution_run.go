@@ -21,9 +21,13 @@ func (PrAttributionRun) Fields() []ent.Field {
 		field.Enum("status").
 			Values("completed", "failed"),
 		field.Enum("result_classification").
-			Values("clear", "ambiguous"),
-		field.JSON("matched_commit_shas", []string{}),
-		field.JSON("matched_session_ids", []string{}),
+			Values("clear", "ambiguous").
+			Optional().
+			Nillable(),
+		field.JSON("matched_commit_shas", []string{}).
+			Default([]string{}),
+		field.JSON("matched_session_ids", []string{}).
+			Default([]string{}),
 		field.JSON("primary_usage_summary", map[string]any{}).
 			Optional(),
 		field.JSON("metadata_summary", map[string]any{}).
@@ -47,4 +51,3 @@ func (PrAttributionRun) Edges() []ent.Edge {
 			Required(),
 	}
 }
-

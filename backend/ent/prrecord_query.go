@@ -21,13 +21,14 @@ import (
 // PrRecordQuery is the builder for querying PrRecord entities.
 type PrRecordQuery struct {
 	config
-	ctx                 *QueryContext
-	order               []prrecord.OrderOption
-	inters              []Interceptor
-	predicates          []predicate.PrRecord
-	withRepoConfig      *RepoConfigQuery
-	withAttributionRuns *PrAttributionRunQuery
-	withFKs             bool
+	ctx                    *QueryContext
+	order                  []prrecord.OrderOption
+	inters                 []Interceptor
+	predicates             []predicate.PrRecord
+	withRepoConfig         *RepoConfigQuery
+	withAttributionRuns    *PrAttributionRunQuery
+	withLastAttributionRun *PrAttributionRunQuery
+	withFKs                bool
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
 	path func(context.Context) (*sql.Selector, error)
@@ -101,6 +102,28 @@ func (prq *PrRecordQuery) QueryAttributionRuns() *PrAttributionRunQuery {
 			sqlgraph.From(prrecord.Table, prrecord.FieldID, selector),
 			sqlgraph.To(prattributionrun.Table, prattributionrun.FieldID),
 			sqlgraph.Edge(sqlgraph.O2M, false, prrecord.AttributionRunsTable, prrecord.AttributionRunsColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(prq.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryLastAttributionRun chains the current query on the "last_attribution_run" edge.
+func (prq *PrRecordQuery) QueryLastAttributionRun() *PrAttributionRunQuery {
+	query := (&PrAttributionRunClient{config: prq.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := prq.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := prq.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(prrecord.Table, prrecord.FieldID, selector),
+			sqlgraph.To(prattributionrun.Table, prattributionrun.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, false, prrecord.LastAttributionRunTable, prrecord.LastAttributionRunColumn),
 		)
 		fromU = sqlgraph.SetNeighbors(prq.driver.Dialect(), step)
 		return fromU, nil
@@ -295,13 +318,14 @@ func (prq *PrRecordQuery) Clone() *PrRecordQuery {
 		return nil
 	}
 	return &PrRecordQuery{
-		config:              prq.config,
-		ctx:                 prq.ctx.Clone(),
-		order:               append([]prrecord.OrderOption{}, prq.order...),
-		inters:              append([]Interceptor{}, prq.inters...),
-		predicates:          append([]predicate.PrRecord{}, prq.predicates...),
-		withRepoConfig:      prq.withRepoConfig.Clone(),
-		withAttributionRuns: prq.withAttributionRuns.Clone(),
+		config:                 prq.config,
+		ctx:                    prq.ctx.Clone(),
+		order:                  append([]prrecord.OrderOption{}, prq.order...),
+		inters:                 append([]Interceptor{}, prq.inters...),
+		predicates:             append([]predicate.PrRecord{}, prq.predicates...),
+		withRepoConfig:         prq.withRepoConfig.Clone(),
+		withAttributionRuns:    prq.withAttributionRuns.Clone(),
+		withLastAttributionRun: prq.withLastAttributionRun.Clone(),
 		// clone intermediate query.
 		sql:  prq.sql.Clone(),
 		path: prq.path,
@@ -327,6 +351,17 @@ func (prq *PrRecordQuery) WithAttributionRuns(opts ...func(*PrAttributionRunQuer
 		opt(query)
 	}
 	prq.withAttributionRuns = query
+	return prq
+}
+
+// WithLastAttributionRun tells the query-builder to eager-load the nodes that are connected to
+// the "last_attribution_run" edge. The optional arguments are used to configure the query builder of the edge.
+func (prq *PrRecordQuery) WithLastAttributionRun(opts ...func(*PrAttributionRunQuery)) *PrRecordQuery {
+	query := (&PrAttributionRunClient{config: prq.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	prq.withLastAttributionRun = query
 	return prq
 }
 
@@ -409,9 +444,10 @@ func (prq *PrRecordQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*Pr
 		nodes       = []*PrRecord{}
 		withFKs     = prq.withFKs
 		_spec       = prq.querySpec()
-		loadedTypes = [2]bool{
+		loadedTypes = [3]bool{
 			prq.withRepoConfig != nil,
 			prq.withAttributionRuns != nil,
+			prq.withLastAttributionRun != nil,
 		}
 	)
 	if prq.withRepoConfig != nil {
@@ -448,6 +484,12 @@ func (prq *PrRecordQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*Pr
 		if err := prq.loadAttributionRuns(ctx, query, nodes,
 			func(n *PrRecord) { n.Edges.AttributionRuns = []*PrAttributionRun{} },
 			func(n *PrRecord, e *PrAttributionRun) { n.Edges.AttributionRuns = append(n.Edges.AttributionRuns, e) }); err != nil {
+			return nil, err
+		}
+	}
+	if query := prq.withLastAttributionRun; query != nil {
+		if err := prq.loadLastAttributionRun(ctx, query, nodes, nil,
+			func(n *PrRecord, e *PrAttributionRun) { n.Edges.LastAttributionRun = e }); err != nil {
 			return nil, err
 		}
 	}
@@ -516,6 +558,38 @@ func (prq *PrRecordQuery) loadAttributionRuns(ctx context.Context, query *PrAttr
 	}
 	return nil
 }
+func (prq *PrRecordQuery) loadLastAttributionRun(ctx context.Context, query *PrAttributionRunQuery, nodes []*PrRecord, init func(*PrRecord), assign func(*PrRecord, *PrAttributionRun)) error {
+	ids := make([]int, 0, len(nodes))
+	nodeids := make(map[int][]*PrRecord)
+	for i := range nodes {
+		if nodes[i].LastAttributionRunID == nil {
+			continue
+		}
+		fk := *nodes[i].LastAttributionRunID
+		if _, ok := nodeids[fk]; !ok {
+			ids = append(ids, fk)
+		}
+		nodeids[fk] = append(nodeids[fk], nodes[i])
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	query.Where(prattributionrun.IDIn(ids...))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		nodes, ok := nodeids[n.ID]
+		if !ok {
+			return fmt.Errorf(`unexpected foreign-key "last_attribution_run_id" returned %v`, n.ID)
+		}
+		for i := range nodes {
+			assign(nodes[i], n)
+		}
+	}
+	return nil
+}
 
 func (prq *PrRecordQuery) sqlCount(ctx context.Context) (int, error) {
 	_spec := prq.querySpec()
@@ -541,6 +615,9 @@ func (prq *PrRecordQuery) querySpec() *sqlgraph.QuerySpec {
 			if fields[i] != prrecord.FieldID {
 				_spec.Node.Columns = append(_spec.Node.Columns, fields[i])
 			}
+		}
+		if prq.withLastAttributionRun != nil {
+			_spec.Node.AddColumnOnce(prrecord.FieldLastAttributionRunID)
 		}
 	}
 	if ps := prq.predicates; len(ps) > 0 {

@@ -1000,26 +1000,6 @@ func LastAttributionRunIDNotIn(vs ...int) predicate.PrRecord {
 	return predicate.PrRecord(sql.FieldNotIn(FieldLastAttributionRunID, vs...))
 }
 
-// LastAttributionRunIDGT applies the GT predicate on the "last_attribution_run_id" field.
-func LastAttributionRunIDGT(v int) predicate.PrRecord {
-	return predicate.PrRecord(sql.FieldGT(FieldLastAttributionRunID, v))
-}
-
-// LastAttributionRunIDGTE applies the GTE predicate on the "last_attribution_run_id" field.
-func LastAttributionRunIDGTE(v int) predicate.PrRecord {
-	return predicate.PrRecord(sql.FieldGTE(FieldLastAttributionRunID, v))
-}
-
-// LastAttributionRunIDLT applies the LT predicate on the "last_attribution_run_id" field.
-func LastAttributionRunIDLT(v int) predicate.PrRecord {
-	return predicate.PrRecord(sql.FieldLT(FieldLastAttributionRunID, v))
-}
-
-// LastAttributionRunIDLTE applies the LTE predicate on the "last_attribution_run_id" field.
-func LastAttributionRunIDLTE(v int) predicate.PrRecord {
-	return predicate.PrRecord(sql.FieldLTE(FieldLastAttributionRunID, v))
-}
-
 // LastAttributionRunIDIsNil applies the IsNil predicate on the "last_attribution_run_id" field.
 func LastAttributionRunIDIsNil() predicate.PrRecord {
 	return predicate.PrRecord(sql.FieldIsNull(FieldLastAttributionRunID))
@@ -1238,6 +1218,29 @@ func HasAttributionRuns() predicate.PrRecord {
 func HasAttributionRunsWith(preds ...predicate.PrAttributionRun) predicate.PrRecord {
 	return predicate.PrRecord(func(s *sql.Selector) {
 		step := newAttributionRunsStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasLastAttributionRun applies the HasEdge predicate on the "last_attribution_run" edge.
+func HasLastAttributionRun() predicate.PrRecord {
+	return predicate.PrRecord(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, false, LastAttributionRunTable, LastAttributionRunColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasLastAttributionRunWith applies the HasEdge predicate on the "last_attribution_run" edge with a given conditions (other predicates).
+func HasLastAttributionRunWith(preds ...predicate.PrAttributionRun) predicate.PrRecord {
+	return predicate.PrRecord(func(s *sql.Selector) {
+		step := newLastAttributionRunStep()
 		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
 			for _, p := range preds {
 				p(s)

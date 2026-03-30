@@ -11,6 +11,8 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/ai-efficiency/backend/ent/aiscanresult"
+	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
+	"github.com/ai-efficiency/backend/ent/commitrewrite"
 	"github.com/ai-efficiency/backend/ent/efficiencymetric"
 	"github.com/ai-efficiency/backend/ent/prrecord"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
@@ -229,6 +231,36 @@ func (rcc *RepoConfigCreate) AddSessions(s ...*Session) *RepoConfigCreate {
 		ids[i] = s[i].ID
 	}
 	return rcc.AddSessionIDs(ids...)
+}
+
+// AddCommitCheckpointIDs adds the "commit_checkpoints" edge to the CommitCheckpoint entity by IDs.
+func (rcc *RepoConfigCreate) AddCommitCheckpointIDs(ids ...int) *RepoConfigCreate {
+	rcc.mutation.AddCommitCheckpointIDs(ids...)
+	return rcc
+}
+
+// AddCommitCheckpoints adds the "commit_checkpoints" edges to the CommitCheckpoint entity.
+func (rcc *RepoConfigCreate) AddCommitCheckpoints(c ...*CommitCheckpoint) *RepoConfigCreate {
+	ids := make([]int, len(c))
+	for i := range c {
+		ids[i] = c[i].ID
+	}
+	return rcc.AddCommitCheckpointIDs(ids...)
+}
+
+// AddCommitRewriteIDs adds the "commit_rewrites" edge to the CommitRewrite entity by IDs.
+func (rcc *RepoConfigCreate) AddCommitRewriteIDs(ids ...int) *RepoConfigCreate {
+	rcc.mutation.AddCommitRewriteIDs(ids...)
+	return rcc
+}
+
+// AddCommitRewrites adds the "commit_rewrites" edges to the CommitRewrite entity.
+func (rcc *RepoConfigCreate) AddCommitRewrites(c ...*CommitRewrite) *RepoConfigCreate {
+	ids := make([]int, len(c))
+	for i := range c {
+		ids[i] = c[i].ID
+	}
+	return rcc.AddCommitRewriteIDs(ids...)
 }
 
 // AddWebhookDeadLetterIDs adds the "webhook_dead_letters" edge to the WebhookDeadLetter entity by IDs.
@@ -506,6 +538,38 @@ func (rcc *RepoConfigCreate) createSpec() (*RepoConfig, *sqlgraph.CreateSpec) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(session.FieldID, field.TypeUUID),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := rcc.mutation.CommitCheckpointsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   repoconfig.CommitCheckpointsTable,
+			Columns: []string{repoconfig.CommitCheckpointsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(commitcheckpoint.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := rcc.mutation.CommitRewritesIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   repoconfig.CommitRewritesTable,
+			Columns: []string{repoconfig.CommitRewritesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(commitrewrite.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {

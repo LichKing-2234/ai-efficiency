@@ -10,6 +10,7 @@ import (
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
+	"github.com/ai-efficiency/backend/ent/prattributionrun"
 	"github.com/ai-efficiency/backend/ent/prrecord"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 )
@@ -84,9 +85,11 @@ type PrRecordEdges struct {
 	RepoConfig *RepoConfig `json:"repo_config,omitempty"`
 	// AttributionRuns holds the value of the attribution_runs edge.
 	AttributionRuns []*PrAttributionRun `json:"attribution_runs,omitempty"`
+	// LastAttributionRun holds the value of the last_attribution_run edge.
+	LastAttributionRun *PrAttributionRun `json:"last_attribution_run,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [2]bool
+	loadedTypes [3]bool
 }
 
 // RepoConfigOrErr returns the RepoConfig value or an error if the edge
@@ -107,6 +110,17 @@ func (e PrRecordEdges) AttributionRunsOrErr() ([]*PrAttributionRun, error) {
 		return e.AttributionRuns, nil
 	}
 	return nil, &NotLoadedError{edge: "attribution_runs"}
+}
+
+// LastAttributionRunOrErr returns the LastAttributionRun value or an error if the edge
+// was not loaded in eager-loading, or loaded but was not found.
+func (e PrRecordEdges) LastAttributionRunOrErr() (*PrAttributionRun, error) {
+	if e.LastAttributionRun != nil {
+		return e.LastAttributionRun, nil
+	} else if e.loadedTypes[2] {
+		return nil, &NotFoundError{label: prattributionrun.Label}
+	}
+	return nil, &NotLoadedError{edge: "last_attribution_run"}
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -343,6 +357,11 @@ func (pr *PrRecord) QueryRepoConfig() *RepoConfigQuery {
 // QueryAttributionRuns queries the "attribution_runs" edge of the PrRecord entity.
 func (pr *PrRecord) QueryAttributionRuns() *PrAttributionRunQuery {
 	return NewPrRecordClient(pr.config).QueryAttributionRuns(pr)
+}
+
+// QueryLastAttributionRun queries the "last_attribution_run" edge of the PrRecord entity.
+func (pr *PrRecord) QueryLastAttributionRun() *PrAttributionRunQuery {
+	return NewPrRecordClient(pr.config).QueryLastAttributionRun(pr)
 }
 
 // Update returns a builder for updating this PrRecord.

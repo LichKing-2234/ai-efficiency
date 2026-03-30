@@ -1011,6 +1011,52 @@ func HasSessionsWith(preds ...predicate.Session) predicate.RepoConfig {
 	})
 }
 
+// HasCommitCheckpoints applies the HasEdge predicate on the "commit_checkpoints" edge.
+func HasCommitCheckpoints() predicate.RepoConfig {
+	return predicate.RepoConfig(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, CommitCheckpointsTable, CommitCheckpointsColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasCommitCheckpointsWith applies the HasEdge predicate on the "commit_checkpoints" edge with a given conditions (other predicates).
+func HasCommitCheckpointsWith(preds ...predicate.CommitCheckpoint) predicate.RepoConfig {
+	return predicate.RepoConfig(func(s *sql.Selector) {
+		step := newCommitCheckpointsStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasCommitRewrites applies the HasEdge predicate on the "commit_rewrites" edge.
+func HasCommitRewrites() predicate.RepoConfig {
+	return predicate.RepoConfig(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, CommitRewritesTable, CommitRewritesColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasCommitRewritesWith applies the HasEdge predicate on the "commit_rewrites" edge with a given conditions (other predicates).
+func HasCommitRewritesWith(preds ...predicate.CommitRewrite) predicate.RepoConfig {
+	return predicate.RepoConfig(func(s *sql.Selector) {
+		step := newCommitRewritesStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
 // HasWebhookDeadLetters applies the HasEdge predicate on the "webhook_dead_letters" edge.
 func HasWebhookDeadLetters() predicate.RepoConfig {
 	return predicate.RepoConfig(func(s *sql.Selector) {

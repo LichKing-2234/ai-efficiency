@@ -100,6 +100,12 @@ func (paru *PrAttributionRunUpdate) SetNillableResultClassification(pc *prattrib
 	return paru
 }
 
+// ClearResultClassification clears the value of the "result_classification" field.
+func (paru *PrAttributionRunUpdate) ClearResultClassification() *PrAttributionRunUpdate {
+	paru.mutation.ClearResultClassification()
+	return paru
+}
+
 // SetMatchedCommitShas sets the "matched_commit_shas" field.
 func (paru *PrAttributionRunUpdate) SetMatchedCommitShas(s []string) *PrAttributionRunUpdate {
 	paru.mutation.SetMatchedCommitShas(s)
@@ -289,6 +295,9 @@ func (paru *PrAttributionRunUpdate) sqlSave(ctx context.Context) (n int, err err
 	if value, ok := paru.mutation.ResultClassification(); ok {
 		_spec.SetField(prattributionrun.FieldResultClassification, field.TypeEnum, value)
 	}
+	if paru.mutation.ResultClassificationCleared() {
+		_spec.ClearField(prattributionrun.FieldResultClassification, field.TypeEnum)
+	}
 	if value, ok := paru.mutation.MatchedCommitShas(); ok {
 		_spec.SetField(prattributionrun.FieldMatchedCommitShas, field.TypeJSON, value)
 	}
@@ -448,6 +457,12 @@ func (paruo *PrAttributionRunUpdateOne) SetNillableResultClassification(pc *prat
 	if pc != nil {
 		paruo.SetResultClassification(*pc)
 	}
+	return paruo
+}
+
+// ClearResultClassification clears the value of the "result_classification" field.
+func (paruo *PrAttributionRunUpdateOne) ClearResultClassification() *PrAttributionRunUpdateOne {
+	paruo.mutation.ClearResultClassification()
 	return paruo
 }
 
@@ -669,6 +684,9 @@ func (paruo *PrAttributionRunUpdateOne) sqlSave(ctx context.Context) (_node *PrA
 	}
 	if value, ok := paruo.mutation.ResultClassification(); ok {
 		_spec.SetField(prattributionrun.FieldResultClassification, field.TypeEnum, value)
+	}
+	if paruo.mutation.ResultClassificationCleared() {
+		_spec.ClearField(prattributionrun.FieldResultClassification, field.TypeEnum)
 	}
 	if value, ok := paruo.mutation.MatchedCommitShas(); ok {
 		_spec.SetField(prattributionrun.FieldMatchedCommitShas, field.TypeJSON, value)

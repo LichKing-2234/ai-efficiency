@@ -82,6 +82,10 @@ func ValidColumn(column string) bool {
 var (
 	// TriggeredByValidator is a validator for the "triggered_by" field. It is called by the builders before save.
 	TriggeredByValidator func(string) error
+	// DefaultMatchedCommitShas holds the default value on creation for the "matched_commit_shas" field.
+	DefaultMatchedCommitShas []string
+	// DefaultMatchedSessionIds holds the default value on creation for the "matched_session_ids" field.
+	DefaultMatchedSessionIds []string
 	// DefaultCreatedAt holds the default value on creation for the "created_at" field.
 	DefaultCreatedAt func() time.Time
 )

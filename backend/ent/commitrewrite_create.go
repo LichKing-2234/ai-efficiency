@@ -11,6 +11,7 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/ai-efficiency/backend/ent/commitrewrite"
+	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/session"
 	"github.com/google/uuid"
 )
@@ -103,6 +104,11 @@ func (crc *CommitRewriteCreate) SetNillableCapturedAt(t *time.Time) *CommitRewri
 // SetSession sets the "session" edge to the Session entity.
 func (crc *CommitRewriteCreate) SetSession(s *Session) *CommitRewriteCreate {
 	return crc.SetSessionID(s.ID)
+}
+
+// SetRepoConfig sets the "repo_config" edge to the RepoConfig entity.
+func (crc *CommitRewriteCreate) SetRepoConfig(r *RepoConfig) *CommitRewriteCreate {
+	return crc.SetRepoConfigID(r.ID)
 }
 
 // Mutation returns the CommitRewriteMutation object of the builder.
@@ -201,6 +207,9 @@ func (crc *CommitRewriteCreate) check() error {
 	if _, ok := crc.mutation.CapturedAt(); !ok {
 		return &ValidationError{Name: "captured_at", err: errors.New(`ent: missing required field "CommitRewrite.captured_at"`)}
 	}
+	if len(crc.mutation.RepoConfigIDs()) == 0 {
+		return &ValidationError{Name: "repo_config", err: errors.New(`ent: missing required edge "CommitRewrite.repo_config"`)}
+	}
 	return nil
 }
 
@@ -234,10 +243,6 @@ func (crc *CommitRewriteCreate) createSpec() (*CommitRewrite, *sqlgraph.CreateSp
 	if value, ok := crc.mutation.WorkspaceID(); ok {
 		_spec.SetField(commitrewrite.FieldWorkspaceID, field.TypeString, value)
 		_node.WorkspaceID = value
-	}
-	if value, ok := crc.mutation.RepoConfigID(); ok {
-		_spec.SetField(commitrewrite.FieldRepoConfigID, field.TypeInt, value)
-		_node.RepoConfigID = value
 	}
 	if value, ok := crc.mutation.RewriteType(); ok {
 		_spec.SetField(commitrewrite.FieldRewriteType, field.TypeEnum, value)
@@ -274,6 +279,23 @@ func (crc *CommitRewriteCreate) createSpec() (*CommitRewrite, *sqlgraph.CreateSp
 			edge.Target.Nodes = append(edge.Target.Nodes, k)
 		}
 		_node.SessionID = &nodes[0]
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := crc.mutation.RepoConfigIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   commitrewrite.RepoConfigTable,
+			Columns: []string{commitrewrite.RepoConfigColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(repoconfig.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_node.RepoConfigID = nodes[0]
 		_spec.Edges = append(_spec.Edges, edge)
 	}
 	return _node, _spec

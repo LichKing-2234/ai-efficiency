@@ -49,6 +49,10 @@ const (
 	EdgeScmProvider = "scm_provider"
 	// EdgeSessions holds the string denoting the sessions edge name in mutations.
 	EdgeSessions = "sessions"
+	// EdgeCommitCheckpoints holds the string denoting the commit_checkpoints edge name in mutations.
+	EdgeCommitCheckpoints = "commit_checkpoints"
+	// EdgeCommitRewrites holds the string denoting the commit_rewrites edge name in mutations.
+	EdgeCommitRewrites = "commit_rewrites"
 	// EdgeWebhookDeadLetters holds the string denoting the webhook_dead_letters edge name in mutations.
 	EdgeWebhookDeadLetters = "webhook_dead_letters"
 	// EdgeAiScanResults holds the string denoting the ai_scan_results edge name in mutations.
@@ -73,6 +77,20 @@ const (
 	SessionsInverseTable = "sessions"
 	// SessionsColumn is the table column denoting the sessions relation/edge.
 	SessionsColumn = "repo_config_sessions"
+	// CommitCheckpointsTable is the table that holds the commit_checkpoints relation/edge.
+	CommitCheckpointsTable = "commit_checkpoints"
+	// CommitCheckpointsInverseTable is the table name for the CommitCheckpoint entity.
+	// It exists in this package in order to avoid circular dependency with the "commitcheckpoint" package.
+	CommitCheckpointsInverseTable = "commit_checkpoints"
+	// CommitCheckpointsColumn is the table column denoting the commit_checkpoints relation/edge.
+	CommitCheckpointsColumn = "repo_config_id"
+	// CommitRewritesTable is the table that holds the commit_rewrites relation/edge.
+	CommitRewritesTable = "commit_rewrites"
+	// CommitRewritesInverseTable is the table name for the CommitRewrite entity.
+	// It exists in this package in order to avoid circular dependency with the "commitrewrite" package.
+	CommitRewritesInverseTable = "commit_rewrites"
+	// CommitRewritesColumn is the table column denoting the commit_rewrites relation/edge.
+	CommitRewritesColumn = "repo_config_id"
 	// WebhookDeadLettersTable is the table that holds the webhook_dead_letters relation/edge.
 	WebhookDeadLettersTable = "webhook_dead_letters"
 	// WebhookDeadLettersInverseTable is the table name for the WebhookDeadLetter entity.
@@ -289,6 +307,34 @@ func BySessions(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
 	}
 }
 
+// ByCommitCheckpointsCount orders the results by commit_checkpoints count.
+func ByCommitCheckpointsCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newCommitCheckpointsStep(), opts...)
+	}
+}
+
+// ByCommitCheckpoints orders the results by commit_checkpoints terms.
+func ByCommitCheckpoints(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newCommitCheckpointsStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+
+// ByCommitRewritesCount orders the results by commit_rewrites count.
+func ByCommitRewritesCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newCommitRewritesStep(), opts...)
+	}
+}
+
+// ByCommitRewrites orders the results by commit_rewrites terms.
+func ByCommitRewrites(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newCommitRewritesStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+
 // ByWebhookDeadLettersCount orders the results by webhook_dead_letters count.
 func ByWebhookDeadLettersCount(opts ...sql.OrderTermOption) OrderOption {
 	return func(s *sql.Selector) {
@@ -356,6 +402,20 @@ func newSessionsStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(SessionsInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.O2M, false, SessionsTable, SessionsColumn),
+	)
+}
+func newCommitCheckpointsStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(CommitCheckpointsInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, CommitCheckpointsTable, CommitCheckpointsColumn),
+	)
+}
+func newCommitRewritesStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(CommitRewritesInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, CommitRewritesTable, CommitRewritesColumn),
 	)
 }
 func newWebhookDeadLettersStep() *sqlgraph.Step {

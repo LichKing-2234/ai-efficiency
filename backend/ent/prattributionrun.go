@@ -28,7 +28,7 @@ type PrAttributionRun struct {
 	// Status holds the value of the "status" field.
 	Status prattributionrun.Status `json:"status,omitempty"`
 	// ResultClassification holds the value of the "result_classification" field.
-	ResultClassification prattributionrun.ResultClassification `json:"result_classification,omitempty"`
+	ResultClassification *prattributionrun.ResultClassification `json:"result_classification,omitempty"`
 	// MatchedCommitShas holds the value of the "matched_commit_shas" field.
 	MatchedCommitShas []string `json:"matched_commit_shas,omitempty"`
 	// MatchedSessionIds holds the value of the "matched_session_ids" field.
@@ -131,7 +131,8 @@ func (par *PrAttributionRun) assignValues(columns []string, values []any) error 
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field result_classification", values[i])
 			} else if value.Valid {
-				par.ResultClassification = prattributionrun.ResultClassification(value.String)
+				par.ResultClassification = new(prattributionrun.ResultClassification)
+				*par.ResultClassification = prattributionrun.ResultClassification(value.String)
 			}
 		case prattributionrun.FieldMatchedCommitShas:
 			if value, ok := values[i].(*[]byte); !ok {
@@ -239,8 +240,10 @@ func (par *PrAttributionRun) String() string {
 	builder.WriteString("status=")
 	builder.WriteString(fmt.Sprintf("%v", par.Status))
 	builder.WriteString(", ")
-	builder.WriteString("result_classification=")
-	builder.WriteString(fmt.Sprintf("%v", par.ResultClassification))
+	if v := par.ResultClassification; v != nil {
+		builder.WriteString("result_classification=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
 	builder.WriteString(", ")
 	builder.WriteString("matched_commit_shas=")
 	builder.WriteString(fmt.Sprintf("%v", par.MatchedCommitShas))

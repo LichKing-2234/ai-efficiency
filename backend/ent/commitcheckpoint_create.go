@@ -11,6 +11,7 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
+	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/session"
 	"github.com/google/uuid"
 )
@@ -125,6 +126,11 @@ func (ccc *CommitCheckpointCreate) SetSession(s *Session) *CommitCheckpointCreat
 	return ccc.SetSessionID(s.ID)
 }
 
+// SetRepoConfig sets the "repo_config" edge to the RepoConfig entity.
+func (ccc *CommitCheckpointCreate) SetRepoConfig(r *RepoConfig) *CommitCheckpointCreate {
+	return ccc.SetRepoConfigID(r.ID)
+}
+
 // Mutation returns the CommitCheckpointMutation object of the builder.
 func (ccc *CommitCheckpointCreate) Mutation() *CommitCheckpointMutation {
 	return ccc.mutation
@@ -204,6 +210,9 @@ func (ccc *CommitCheckpointCreate) check() error {
 	if _, ok := ccc.mutation.CapturedAt(); !ok {
 		return &ValidationError{Name: "captured_at", err: errors.New(`ent: missing required field "CommitCheckpoint.captured_at"`)}
 	}
+	if len(ccc.mutation.RepoConfigIDs()) == 0 {
+		return &ValidationError{Name: "repo_config", err: errors.New(`ent: missing required edge "CommitCheckpoint.repo_config"`)}
+	}
 	return nil
 }
 
@@ -237,10 +246,6 @@ func (ccc *CommitCheckpointCreate) createSpec() (*CommitCheckpoint, *sqlgraph.Cr
 	if value, ok := ccc.mutation.WorkspaceID(); ok {
 		_spec.SetField(commitcheckpoint.FieldWorkspaceID, field.TypeString, value)
 		_node.WorkspaceID = value
-	}
-	if value, ok := ccc.mutation.RepoConfigID(); ok {
-		_spec.SetField(commitcheckpoint.FieldRepoConfigID, field.TypeInt, value)
-		_node.RepoConfigID = value
 	}
 	if value, ok := ccc.mutation.CommitSha(); ok {
 		_spec.SetField(commitcheckpoint.FieldCommitSha, field.TypeString, value)
@@ -285,6 +290,23 @@ func (ccc *CommitCheckpointCreate) createSpec() (*CommitCheckpoint, *sqlgraph.Cr
 			edge.Target.Nodes = append(edge.Target.Nodes, k)
 		}
 		_node.SessionID = &nodes[0]
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := ccc.mutation.RepoConfigIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   commitcheckpoint.RepoConfigTable,
+			Columns: []string{commitcheckpoint.RepoConfigColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(repoconfig.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_node.RepoConfigID = nodes[0]
 		_spec.Edges = append(_spec.Edges, edge)
 	}
 	return _node, _spec

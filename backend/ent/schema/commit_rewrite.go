@@ -4,6 +4,7 @@ import (
 	"entgo.io/ent"
 	"entgo.io/ent/schema/edge"
 	"entgo.io/ent/schema/field"
+	"entgo.io/ent/schema/index"
 
 	"github.com/google/uuid"
 )
@@ -42,6 +43,17 @@ func (CommitRewrite) Edges() []ent.Edge {
 			Ref("commit_rewrites").
 			Field("session_id").
 			Unique(),
+		edge.From("repo_config", RepoConfig.Type).
+			Ref("commit_rewrites").
+			Field("repo_config_id").
+			Unique().
+			Required(),
 	}
 }
 
+func (CommitRewrite) Indexes() []ent.Index {
+	return []ent.Index{
+		index.Fields("repo_config_id", "old_commit_sha", "new_commit_sha", "rewrite_type").
+			Unique(),
+	}
+}

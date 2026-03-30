@@ -36,6 +36,8 @@ type CreateDirectRequest struct {
 	CloneURL      string `json:"clone_url" binding:"required"`
 	DefaultBranch string `json:"default_branch" binding:"required"`
 	GroupID       string `json:"group_id"`
+	RelayProviderName string `json:"relay_provider_name"`
+	RelayGroupID      string `json:"relay_group_id"`
 }
 
 // UpdateRequest is the request to update a repo config.
@@ -43,8 +45,8 @@ type UpdateRequest struct {
 	Name                string            `json:"name"`
 	GroupID             string            `json:"group_id"`
 	Status              string            `json:"status"`
-	RelayProviderName   string            `json:"relay_provider_name"`
-	RelayGroupID        string            `json:"relay_group_id"`
+	RelayProviderName   *string           `json:"relay_provider_name"`
+	RelayGroupID        *string           `json:"relay_group_id"`
 	ScanPromptOverride  map[string]string `json:"scan_prompt_override,omitempty"`
 	ClearScanPrompt     bool              `json:"clear_scan_prompt,omitempty"`
 }
@@ -159,6 +161,12 @@ func (s *Service) CreateDirect(ctx context.Context, req CreateDirectRequest) (*e
 	if req.GroupID != "" {
 		create.SetGroupID(req.GroupID)
 	}
+	if req.RelayProviderName != "" {
+		create.SetRelayProviderName(req.RelayProviderName)
+	}
+	if req.RelayGroupID != "" {
+		create.SetRelayGroupID(req.RelayGroupID)
+	}
 
 	rc, err := create.Save(ctx)
 	if err != nil {
@@ -225,11 +233,19 @@ func (s *Service) Update(ctx context.Context, id int, req UpdateRequest) (*ent.R
 	if req.Status != "" {
 		update.SetStatus(repoconfig.Status(req.Status))
 	}
-	if req.RelayProviderName != "" {
-		update.SetRelayProviderName(req.RelayProviderName)
+	if req.RelayProviderName != nil {
+		if *req.RelayProviderName == "" {
+			update.ClearRelayProviderName()
+		} else {
+			update.SetRelayProviderName(*req.RelayProviderName)
+		}
 	}
-	if req.RelayGroupID != "" {
-		update.SetRelayGroupID(req.RelayGroupID)
+	if req.RelayGroupID != nil {
+		if *req.RelayGroupID == "" {
+			update.ClearRelayGroupID()
+		} else {
+			update.SetRelayGroupID(*req.RelayGroupID)
+		}
 	}
 	if req.ClearScanPrompt {
 		update.ClearScanPromptOverride()

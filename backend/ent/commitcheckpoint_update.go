@@ -14,6 +14,7 @@ import (
 	"entgo.io/ent/schema/field"
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
 	"github.com/ai-efficiency/backend/ent/predicate"
+	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/session"
 	"github.com/google/uuid"
 )
@@ -81,7 +82,6 @@ func (ccu *CommitCheckpointUpdate) SetNillableWorkspaceID(s *string) *CommitChec
 
 // SetRepoConfigID sets the "repo_config_id" field.
 func (ccu *CommitCheckpointUpdate) SetRepoConfigID(i int) *CommitCheckpointUpdate {
-	ccu.mutation.ResetRepoConfigID()
 	ccu.mutation.SetRepoConfigID(i)
 	return ccu
 }
@@ -91,12 +91,6 @@ func (ccu *CommitCheckpointUpdate) SetNillableRepoConfigID(i *int) *CommitCheckp
 	if i != nil {
 		ccu.SetRepoConfigID(*i)
 	}
-	return ccu
-}
-
-// AddRepoConfigID adds i to the "repo_config_id" field.
-func (ccu *CommitCheckpointUpdate) AddRepoConfigID(i int) *CommitCheckpointUpdate {
-	ccu.mutation.AddRepoConfigID(i)
 	return ccu
 }
 
@@ -211,6 +205,11 @@ func (ccu *CommitCheckpointUpdate) SetSession(s *Session) *CommitCheckpointUpdat
 	return ccu.SetSessionID(s.ID)
 }
 
+// SetRepoConfig sets the "repo_config" edge to the RepoConfig entity.
+func (ccu *CommitCheckpointUpdate) SetRepoConfig(r *RepoConfig) *CommitCheckpointUpdate {
+	return ccu.SetRepoConfigID(r.ID)
+}
+
 // Mutation returns the CommitCheckpointMutation object of the builder.
 func (ccu *CommitCheckpointUpdate) Mutation() *CommitCheckpointMutation {
 	return ccu.mutation
@@ -219,6 +218,12 @@ func (ccu *CommitCheckpointUpdate) Mutation() *CommitCheckpointMutation {
 // ClearSession clears the "session" edge to the Session entity.
 func (ccu *CommitCheckpointUpdate) ClearSession() *CommitCheckpointUpdate {
 	ccu.mutation.ClearSession()
+	return ccu
+}
+
+// ClearRepoConfig clears the "repo_config" edge to the RepoConfig entity.
+func (ccu *CommitCheckpointUpdate) ClearRepoConfig() *CommitCheckpointUpdate {
+	ccu.mutation.ClearRepoConfig()
 	return ccu
 }
 
@@ -266,6 +271,9 @@ func (ccu *CommitCheckpointUpdate) check() error {
 			return &ValidationError{Name: "binding_source", err: fmt.Errorf(`ent: validator failed for field "CommitCheckpoint.binding_source": %w`, err)}
 		}
 	}
+	if ccu.mutation.RepoConfigCleared() && len(ccu.mutation.RepoConfigIDs()) > 0 {
+		return errors.New(`ent: clearing a required unique edge "CommitCheckpoint.repo_config"`)
+	}
 	return nil
 }
 
@@ -286,12 +294,6 @@ func (ccu *CommitCheckpointUpdate) sqlSave(ctx context.Context) (n int, err erro
 	}
 	if value, ok := ccu.mutation.WorkspaceID(); ok {
 		_spec.SetField(commitcheckpoint.FieldWorkspaceID, field.TypeString, value)
-	}
-	if value, ok := ccu.mutation.RepoConfigID(); ok {
-		_spec.SetField(commitcheckpoint.FieldRepoConfigID, field.TypeInt, value)
-	}
-	if value, ok := ccu.mutation.AddedRepoConfigID(); ok {
-		_spec.AddField(commitcheckpoint.FieldRepoConfigID, field.TypeInt, value)
 	}
 	if value, ok := ccu.mutation.CommitSha(); ok {
 		_spec.SetField(commitcheckpoint.FieldCommitSha, field.TypeString, value)
@@ -350,6 +352,35 @@ func (ccu *CommitCheckpointUpdate) sqlSave(ctx context.Context) (n int, err erro
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(session.FieldID, field.TypeUUID),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if ccu.mutation.RepoConfigCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   commitcheckpoint.RepoConfigTable,
+			Columns: []string{commitcheckpoint.RepoConfigColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(repoconfig.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := ccu.mutation.RepoConfigIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   commitcheckpoint.RepoConfigTable,
+			Columns: []string{commitcheckpoint.RepoConfigColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(repoconfig.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {
@@ -427,7 +458,6 @@ func (ccuo *CommitCheckpointUpdateOne) SetNillableWorkspaceID(s *string) *Commit
 
 // SetRepoConfigID sets the "repo_config_id" field.
 func (ccuo *CommitCheckpointUpdateOne) SetRepoConfigID(i int) *CommitCheckpointUpdateOne {
-	ccuo.mutation.ResetRepoConfigID()
 	ccuo.mutation.SetRepoConfigID(i)
 	return ccuo
 }
@@ -437,12 +467,6 @@ func (ccuo *CommitCheckpointUpdateOne) SetNillableRepoConfigID(i *int) *CommitCh
 	if i != nil {
 		ccuo.SetRepoConfigID(*i)
 	}
-	return ccuo
-}
-
-// AddRepoConfigID adds i to the "repo_config_id" field.
-func (ccuo *CommitCheckpointUpdateOne) AddRepoConfigID(i int) *CommitCheckpointUpdateOne {
-	ccuo.mutation.AddRepoConfigID(i)
 	return ccuo
 }
 
@@ -557,6 +581,11 @@ func (ccuo *CommitCheckpointUpdateOne) SetSession(s *Session) *CommitCheckpointU
 	return ccuo.SetSessionID(s.ID)
 }
 
+// SetRepoConfig sets the "repo_config" edge to the RepoConfig entity.
+func (ccuo *CommitCheckpointUpdateOne) SetRepoConfig(r *RepoConfig) *CommitCheckpointUpdateOne {
+	return ccuo.SetRepoConfigID(r.ID)
+}
+
 // Mutation returns the CommitCheckpointMutation object of the builder.
 func (ccuo *CommitCheckpointUpdateOne) Mutation() *CommitCheckpointMutation {
 	return ccuo.mutation
@@ -565,6 +594,12 @@ func (ccuo *CommitCheckpointUpdateOne) Mutation() *CommitCheckpointMutation {
 // ClearSession clears the "session" edge to the Session entity.
 func (ccuo *CommitCheckpointUpdateOne) ClearSession() *CommitCheckpointUpdateOne {
 	ccuo.mutation.ClearSession()
+	return ccuo
+}
+
+// ClearRepoConfig clears the "repo_config" edge to the RepoConfig entity.
+func (ccuo *CommitCheckpointUpdateOne) ClearRepoConfig() *CommitCheckpointUpdateOne {
+	ccuo.mutation.ClearRepoConfig()
 	return ccuo
 }
 
@@ -625,6 +660,9 @@ func (ccuo *CommitCheckpointUpdateOne) check() error {
 			return &ValidationError{Name: "binding_source", err: fmt.Errorf(`ent: validator failed for field "CommitCheckpoint.binding_source": %w`, err)}
 		}
 	}
+	if ccuo.mutation.RepoConfigCleared() && len(ccuo.mutation.RepoConfigIDs()) > 0 {
+		return errors.New(`ent: clearing a required unique edge "CommitCheckpoint.repo_config"`)
+	}
 	return nil
 }
 
@@ -662,12 +700,6 @@ func (ccuo *CommitCheckpointUpdateOne) sqlSave(ctx context.Context) (_node *Comm
 	}
 	if value, ok := ccuo.mutation.WorkspaceID(); ok {
 		_spec.SetField(commitcheckpoint.FieldWorkspaceID, field.TypeString, value)
-	}
-	if value, ok := ccuo.mutation.RepoConfigID(); ok {
-		_spec.SetField(commitcheckpoint.FieldRepoConfigID, field.TypeInt, value)
-	}
-	if value, ok := ccuo.mutation.AddedRepoConfigID(); ok {
-		_spec.AddField(commitcheckpoint.FieldRepoConfigID, field.TypeInt, value)
 	}
 	if value, ok := ccuo.mutation.CommitSha(); ok {
 		_spec.SetField(commitcheckpoint.FieldCommitSha, field.TypeString, value)
@@ -726,6 +758,35 @@ func (ccuo *CommitCheckpointUpdateOne) sqlSave(ctx context.Context) (_node *Comm
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(session.FieldID, field.TypeUUID),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if ccuo.mutation.RepoConfigCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   commitcheckpoint.RepoConfigTable,
+			Columns: []string{commitcheckpoint.RepoConfigColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(repoconfig.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := ccuo.mutation.RepoConfigIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   commitcheckpoint.RepoConfigTable,
+			Columns: []string{commitcheckpoint.RepoConfigColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(repoconfig.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {

@@ -10,6 +10,7 @@ import (
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
 	"github.com/ai-efficiency/backend/ent/commitrewrite"
+	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/session"
 	"github.com/google/uuid"
 )
@@ -47,9 +48,11 @@ type CommitRewrite struct {
 type CommitRewriteEdges struct {
 	// Session holds the value of the session edge.
 	Session *Session `json:"session,omitempty"`
+	// RepoConfig holds the value of the repo_config edge.
+	RepoConfig *RepoConfig `json:"repo_config,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [1]bool
+	loadedTypes [2]bool
 }
 
 // SessionOrErr returns the Session value or an error if the edge
@@ -61,6 +64,17 @@ func (e CommitRewriteEdges) SessionOrErr() (*Session, error) {
 		return nil, &NotFoundError{label: session.Label}
 	}
 	return nil, &NotLoadedError{edge: "session"}
+}
+
+// RepoConfigOrErr returns the RepoConfig value or an error if the edge
+// was not loaded in eager-loading, or loaded but was not found.
+func (e CommitRewriteEdges) RepoConfigOrErr() (*RepoConfig, error) {
+	if e.RepoConfig != nil {
+		return e.RepoConfig, nil
+	} else if e.loadedTypes[1] {
+		return nil, &NotFoundError{label: repoconfig.Label}
+	}
+	return nil, &NotLoadedError{edge: "repo_config"}
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -168,6 +182,11 @@ func (cr *CommitRewrite) Value(name string) (ent.Value, error) {
 // QuerySession queries the "session" edge of the CommitRewrite entity.
 func (cr *CommitRewrite) QuerySession() *SessionQuery {
 	return NewCommitRewriteClient(cr.config).QuerySession(cr)
+}
+
+// QueryRepoConfig queries the "repo_config" edge of the CommitRewrite entity.
+func (cr *CommitRewrite) QueryRepoConfig() *RepoConfigQuery {
+	return NewCommitRewriteClient(cr.config).QueryRepoConfig(cr)
 }
 
 // Update returns a builder for updating this CommitRewrite.

@@ -372,6 +372,11 @@ func (prc *PrRecordCreate) AddAttributionRuns(p ...*PrAttributionRun) *PrRecordC
 	return prc.AddAttributionRunIDs(ids...)
 }
 
+// SetLastAttributionRun sets the "last_attribution_run" edge to the PrAttributionRun entity.
+func (prc *PrRecordCreate) SetLastAttributionRun(p *PrAttributionRun) *PrRecordCreate {
+	return prc.SetLastAttributionRunID(p.ID)
+}
+
 // Mutation returns the PrRecordMutation object of the builder.
 func (prc *PrRecordCreate) Mutation() *PrRecordMutation {
 	return prc.mutation
@@ -631,10 +636,6 @@ func (prc *PrRecordCreate) createSpec() (*PrRecord, *sqlgraph.CreateSpec) {
 		_spec.SetField(prrecord.FieldLastAttributedAt, field.TypeTime, value)
 		_node.LastAttributedAt = &value
 	}
-	if value, ok := prc.mutation.LastAttributionRunID(); ok {
-		_spec.SetField(prrecord.FieldLastAttributionRunID, field.TypeInt, value)
-		_node.LastAttributionRunID = &value
-	}
 	if value, ok := prc.mutation.MergedAt(); ok {
 		_spec.SetField(prrecord.FieldMergedAt, field.TypeTime, value)
 		_node.MergedAt = &value
@@ -682,6 +683,23 @@ func (prc *PrRecordCreate) createSpec() (*PrRecord, *sqlgraph.CreateSpec) {
 		for _, k := range nodes {
 			edge.Target.Nodes = append(edge.Target.Nodes, k)
 		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := prc.mutation.LastAttributionRunIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: false,
+			Table:   prrecord.LastAttributionRunTable,
+			Columns: []string{prrecord.LastAttributionRunColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(prattributionrun.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_node.LastAttributionRunID = &nodes[0]
 		_spec.Edges = append(_spec.Edges, edge)
 	}
 	return _node, _spec

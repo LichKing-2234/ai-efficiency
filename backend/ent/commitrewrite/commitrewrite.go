@@ -35,6 +35,8 @@ const (
 	FieldCapturedAt = "captured_at"
 	// EdgeSession holds the string denoting the session edge name in mutations.
 	EdgeSession = "session"
+	// EdgeRepoConfig holds the string denoting the repo_config edge name in mutations.
+	EdgeRepoConfig = "repo_config"
 	// Table holds the table name of the commitrewrite in the database.
 	Table = "commit_rewrites"
 	// SessionTable is the table that holds the session relation/edge.
@@ -44,6 +46,13 @@ const (
 	SessionInverseTable = "sessions"
 	// SessionColumn is the table column denoting the session relation/edge.
 	SessionColumn = "session_id"
+	// RepoConfigTable is the table that holds the repo_config relation/edge.
+	RepoConfigTable = "commit_rewrites"
+	// RepoConfigInverseTable is the table name for the RepoConfig entity.
+	// It exists in this package in order to avoid circular dependency with the "repoconfig" package.
+	RepoConfigInverseTable = "repo_configs"
+	// RepoConfigColumn is the table column denoting the repo_config relation/edge.
+	RepoConfigColumn = "repo_config_id"
 )
 
 // Columns holds all SQL columns for commitrewrite fields.
@@ -193,10 +202,24 @@ func BySessionField(field string, opts ...sql.OrderTermOption) OrderOption {
 		sqlgraph.OrderByNeighborTerms(s, newSessionStep(), sql.OrderByField(field, opts...))
 	}
 }
+
+// ByRepoConfigField orders the results by repo_config field.
+func ByRepoConfigField(field string, opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newRepoConfigStep(), sql.OrderByField(field, opts...))
+	}
+}
 func newSessionStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(SessionInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.M2O, true, SessionTable, SessionColumn),
+	)
+}
+func newRepoConfigStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(RepoConfigInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.M2O, true, RepoConfigTable, RepoConfigColumn),
 	)
 }

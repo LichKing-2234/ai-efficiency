@@ -13,6 +13,7 @@ import (
 	"entgo.io/ent/schema/field"
 	"github.com/ai-efficiency/backend/ent/commitrewrite"
 	"github.com/ai-efficiency/backend/ent/predicate"
+	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/session"
 	"github.com/google/uuid"
 )
@@ -80,7 +81,6 @@ func (cru *CommitRewriteUpdate) SetNillableWorkspaceID(s *string) *CommitRewrite
 
 // SetRepoConfigID sets the "repo_config_id" field.
 func (cru *CommitRewriteUpdate) SetRepoConfigID(i int) *CommitRewriteUpdate {
-	cru.mutation.ResetRepoConfigID()
 	cru.mutation.SetRepoConfigID(i)
 	return cru
 }
@@ -90,12 +90,6 @@ func (cru *CommitRewriteUpdate) SetNillableRepoConfigID(i *int) *CommitRewriteUp
 	if i != nil {
 		cru.SetRepoConfigID(*i)
 	}
-	return cru
-}
-
-// AddRepoConfigID adds i to the "repo_config_id" field.
-func (cru *CommitRewriteUpdate) AddRepoConfigID(i int) *CommitRewriteUpdate {
-	cru.mutation.AddRepoConfigID(i)
 	return cru
 }
 
@@ -174,6 +168,11 @@ func (cru *CommitRewriteUpdate) SetSession(s *Session) *CommitRewriteUpdate {
 	return cru.SetSessionID(s.ID)
 }
 
+// SetRepoConfig sets the "repo_config" edge to the RepoConfig entity.
+func (cru *CommitRewriteUpdate) SetRepoConfig(r *RepoConfig) *CommitRewriteUpdate {
+	return cru.SetRepoConfigID(r.ID)
+}
+
 // Mutation returns the CommitRewriteMutation object of the builder.
 func (cru *CommitRewriteUpdate) Mutation() *CommitRewriteMutation {
 	return cru.mutation
@@ -182,6 +181,12 @@ func (cru *CommitRewriteUpdate) Mutation() *CommitRewriteMutation {
 // ClearSession clears the "session" edge to the Session entity.
 func (cru *CommitRewriteUpdate) ClearSession() *CommitRewriteUpdate {
 	cru.mutation.ClearSession()
+	return cru
+}
+
+// ClearRepoConfig clears the "repo_config" edge to the RepoConfig entity.
+func (cru *CommitRewriteUpdate) ClearRepoConfig() *CommitRewriteUpdate {
+	cru.mutation.ClearRepoConfig()
 	return cru
 }
 
@@ -239,6 +244,9 @@ func (cru *CommitRewriteUpdate) check() error {
 			return &ValidationError{Name: "binding_source", err: fmt.Errorf(`ent: validator failed for field "CommitRewrite.binding_source": %w`, err)}
 		}
 	}
+	if cru.mutation.RepoConfigCleared() && len(cru.mutation.RepoConfigIDs()) > 0 {
+		return errors.New(`ent: clearing a required unique edge "CommitRewrite.repo_config"`)
+	}
 	return nil
 }
 
@@ -259,12 +267,6 @@ func (cru *CommitRewriteUpdate) sqlSave(ctx context.Context) (n int, err error) 
 	}
 	if value, ok := cru.mutation.WorkspaceID(); ok {
 		_spec.SetField(commitrewrite.FieldWorkspaceID, field.TypeString, value)
-	}
-	if value, ok := cru.mutation.RepoConfigID(); ok {
-		_spec.SetField(commitrewrite.FieldRepoConfigID, field.TypeInt, value)
-	}
-	if value, ok := cru.mutation.AddedRepoConfigID(); ok {
-		_spec.AddField(commitrewrite.FieldRepoConfigID, field.TypeInt, value)
 	}
 	if value, ok := cru.mutation.RewriteType(); ok {
 		_spec.SetField(commitrewrite.FieldRewriteType, field.TypeEnum, value)
@@ -303,6 +305,35 @@ func (cru *CommitRewriteUpdate) sqlSave(ctx context.Context) (n int, err error) 
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(session.FieldID, field.TypeUUID),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if cru.mutation.RepoConfigCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   commitrewrite.RepoConfigTable,
+			Columns: []string{commitrewrite.RepoConfigColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(repoconfig.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := cru.mutation.RepoConfigIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   commitrewrite.RepoConfigTable,
+			Columns: []string{commitrewrite.RepoConfigColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(repoconfig.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {
@@ -380,7 +411,6 @@ func (cruo *CommitRewriteUpdateOne) SetNillableWorkspaceID(s *string) *CommitRew
 
 // SetRepoConfigID sets the "repo_config_id" field.
 func (cruo *CommitRewriteUpdateOne) SetRepoConfigID(i int) *CommitRewriteUpdateOne {
-	cruo.mutation.ResetRepoConfigID()
 	cruo.mutation.SetRepoConfigID(i)
 	return cruo
 }
@@ -390,12 +420,6 @@ func (cruo *CommitRewriteUpdateOne) SetNillableRepoConfigID(i *int) *CommitRewri
 	if i != nil {
 		cruo.SetRepoConfigID(*i)
 	}
-	return cruo
-}
-
-// AddRepoConfigID adds i to the "repo_config_id" field.
-func (cruo *CommitRewriteUpdateOne) AddRepoConfigID(i int) *CommitRewriteUpdateOne {
-	cruo.mutation.AddRepoConfigID(i)
 	return cruo
 }
 
@@ -474,6 +498,11 @@ func (cruo *CommitRewriteUpdateOne) SetSession(s *Session) *CommitRewriteUpdateO
 	return cruo.SetSessionID(s.ID)
 }
 
+// SetRepoConfig sets the "repo_config" edge to the RepoConfig entity.
+func (cruo *CommitRewriteUpdateOne) SetRepoConfig(r *RepoConfig) *CommitRewriteUpdateOne {
+	return cruo.SetRepoConfigID(r.ID)
+}
+
 // Mutation returns the CommitRewriteMutation object of the builder.
 func (cruo *CommitRewriteUpdateOne) Mutation() *CommitRewriteMutation {
 	return cruo.mutation
@@ -482,6 +511,12 @@ func (cruo *CommitRewriteUpdateOne) Mutation() *CommitRewriteMutation {
 // ClearSession clears the "session" edge to the Session entity.
 func (cruo *CommitRewriteUpdateOne) ClearSession() *CommitRewriteUpdateOne {
 	cruo.mutation.ClearSession()
+	return cruo
+}
+
+// ClearRepoConfig clears the "repo_config" edge to the RepoConfig entity.
+func (cruo *CommitRewriteUpdateOne) ClearRepoConfig() *CommitRewriteUpdateOne {
+	cruo.mutation.ClearRepoConfig()
 	return cruo
 }
 
@@ -552,6 +587,9 @@ func (cruo *CommitRewriteUpdateOne) check() error {
 			return &ValidationError{Name: "binding_source", err: fmt.Errorf(`ent: validator failed for field "CommitRewrite.binding_source": %w`, err)}
 		}
 	}
+	if cruo.mutation.RepoConfigCleared() && len(cruo.mutation.RepoConfigIDs()) > 0 {
+		return errors.New(`ent: clearing a required unique edge "CommitRewrite.repo_config"`)
+	}
 	return nil
 }
 
@@ -590,12 +628,6 @@ func (cruo *CommitRewriteUpdateOne) sqlSave(ctx context.Context) (_node *CommitR
 	if value, ok := cruo.mutation.WorkspaceID(); ok {
 		_spec.SetField(commitrewrite.FieldWorkspaceID, field.TypeString, value)
 	}
-	if value, ok := cruo.mutation.RepoConfigID(); ok {
-		_spec.SetField(commitrewrite.FieldRepoConfigID, field.TypeInt, value)
-	}
-	if value, ok := cruo.mutation.AddedRepoConfigID(); ok {
-		_spec.AddField(commitrewrite.FieldRepoConfigID, field.TypeInt, value)
-	}
 	if value, ok := cruo.mutation.RewriteType(); ok {
 		_spec.SetField(commitrewrite.FieldRewriteType, field.TypeEnum, value)
 	}
@@ -633,6 +665,35 @@ func (cruo *CommitRewriteUpdateOne) sqlSave(ctx context.Context) (_node *CommitR
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(session.FieldID, field.TypeUUID),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if cruo.mutation.RepoConfigCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   commitrewrite.RepoConfigTable,
+			Columns: []string{commitrewrite.RepoConfigColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(repoconfig.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := cruo.mutation.RepoConfigIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   commitrewrite.RepoConfigTable,
+			Columns: []string{commitrewrite.RepoConfigColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(repoconfig.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {

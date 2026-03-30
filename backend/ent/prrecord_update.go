@@ -428,7 +428,6 @@ func (pru *PrRecordUpdate) ClearLastAttributedAt() *PrRecordUpdate {
 
 // SetLastAttributionRunID sets the "last_attribution_run_id" field.
 func (pru *PrRecordUpdate) SetLastAttributionRunID(i int) *PrRecordUpdate {
-	pru.mutation.ResetLastAttributionRunID()
 	pru.mutation.SetLastAttributionRunID(i)
 	return pru
 }
@@ -438,12 +437,6 @@ func (pru *PrRecordUpdate) SetNillableLastAttributionRunID(i *int) *PrRecordUpda
 	if i != nil {
 		pru.SetLastAttributionRunID(*i)
 	}
-	return pru
-}
-
-// AddLastAttributionRunID adds i to the "last_attribution_run_id" field.
-func (pru *PrRecordUpdate) AddLastAttributionRunID(i int) *PrRecordUpdate {
-	pru.mutation.AddLastAttributionRunID(i)
 	return pru
 }
 
@@ -540,6 +533,11 @@ func (pru *PrRecordUpdate) AddAttributionRuns(p ...*PrAttributionRun) *PrRecordU
 	return pru.AddAttributionRunIDs(ids...)
 }
 
+// SetLastAttributionRun sets the "last_attribution_run" edge to the PrAttributionRun entity.
+func (pru *PrRecordUpdate) SetLastAttributionRun(p *PrAttributionRun) *PrRecordUpdate {
+	return pru.SetLastAttributionRunID(p.ID)
+}
+
 // Mutation returns the PrRecordMutation object of the builder.
 func (pru *PrRecordUpdate) Mutation() *PrRecordMutation {
 	return pru.mutation
@@ -570,6 +568,12 @@ func (pru *PrRecordUpdate) RemoveAttributionRuns(p ...*PrAttributionRun) *PrReco
 		ids[i] = p[i].ID
 	}
 	return pru.RemoveAttributionRunIDs(ids...)
+}
+
+// ClearLastAttributionRun clears the "last_attribution_run" edge to the PrAttributionRun entity.
+func (pru *PrRecordUpdate) ClearLastAttributionRun() *PrRecordUpdate {
+	pru.mutation.ClearLastAttributionRun()
+	return pru
 }
 
 // Save executes the query and returns the number of nodes affected by the update operation.
@@ -780,15 +784,6 @@ func (pru *PrRecordUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if pru.mutation.LastAttributedAtCleared() {
 		_spec.ClearField(prrecord.FieldLastAttributedAt, field.TypeTime)
 	}
-	if value, ok := pru.mutation.LastAttributionRunID(); ok {
-		_spec.SetField(prrecord.FieldLastAttributionRunID, field.TypeInt, value)
-	}
-	if value, ok := pru.mutation.AddedLastAttributionRunID(); ok {
-		_spec.AddField(prrecord.FieldLastAttributionRunID, field.TypeInt, value)
-	}
-	if pru.mutation.LastAttributionRunIDCleared() {
-		_spec.ClearField(prrecord.FieldLastAttributionRunID, field.TypeInt)
-	}
 	if value, ok := pru.mutation.MergedAt(); ok {
 		_spec.SetField(prrecord.FieldMergedAt, field.TypeTime, value)
 	}
@@ -871,6 +866,35 @@ func (pru *PrRecordUpdate) sqlSave(ctx context.Context) (n int, err error) {
 			Inverse: false,
 			Table:   prrecord.AttributionRunsTable,
 			Columns: []string{prrecord.AttributionRunsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(prattributionrun.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if pru.mutation.LastAttributionRunCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: false,
+			Table:   prrecord.LastAttributionRunTable,
+			Columns: []string{prrecord.LastAttributionRunColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(prattributionrun.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := pru.mutation.LastAttributionRunIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: false,
+			Table:   prrecord.LastAttributionRunTable,
+			Columns: []string{prrecord.LastAttributionRunColumn},
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(prattributionrun.FieldID, field.TypeInt),
@@ -1298,7 +1322,6 @@ func (pruo *PrRecordUpdateOne) ClearLastAttributedAt() *PrRecordUpdateOne {
 
 // SetLastAttributionRunID sets the "last_attribution_run_id" field.
 func (pruo *PrRecordUpdateOne) SetLastAttributionRunID(i int) *PrRecordUpdateOne {
-	pruo.mutation.ResetLastAttributionRunID()
 	pruo.mutation.SetLastAttributionRunID(i)
 	return pruo
 }
@@ -1308,12 +1331,6 @@ func (pruo *PrRecordUpdateOne) SetNillableLastAttributionRunID(i *int) *PrRecord
 	if i != nil {
 		pruo.SetLastAttributionRunID(*i)
 	}
-	return pruo
-}
-
-// AddLastAttributionRunID adds i to the "last_attribution_run_id" field.
-func (pruo *PrRecordUpdateOne) AddLastAttributionRunID(i int) *PrRecordUpdateOne {
-	pruo.mutation.AddLastAttributionRunID(i)
 	return pruo
 }
 
@@ -1410,6 +1427,11 @@ func (pruo *PrRecordUpdateOne) AddAttributionRuns(p ...*PrAttributionRun) *PrRec
 	return pruo.AddAttributionRunIDs(ids...)
 }
 
+// SetLastAttributionRun sets the "last_attribution_run" edge to the PrAttributionRun entity.
+func (pruo *PrRecordUpdateOne) SetLastAttributionRun(p *PrAttributionRun) *PrRecordUpdateOne {
+	return pruo.SetLastAttributionRunID(p.ID)
+}
+
 // Mutation returns the PrRecordMutation object of the builder.
 func (pruo *PrRecordUpdateOne) Mutation() *PrRecordMutation {
 	return pruo.mutation
@@ -1440,6 +1462,12 @@ func (pruo *PrRecordUpdateOne) RemoveAttributionRuns(p ...*PrAttributionRun) *Pr
 		ids[i] = p[i].ID
 	}
 	return pruo.RemoveAttributionRunIDs(ids...)
+}
+
+// ClearLastAttributionRun clears the "last_attribution_run" edge to the PrAttributionRun entity.
+func (pruo *PrRecordUpdateOne) ClearLastAttributionRun() *PrRecordUpdateOne {
+	pruo.mutation.ClearLastAttributionRun()
+	return pruo
 }
 
 // Where appends a list predicates to the PrRecordUpdate builder.
@@ -1680,15 +1708,6 @@ func (pruo *PrRecordUpdateOne) sqlSave(ctx context.Context) (_node *PrRecord, er
 	if pruo.mutation.LastAttributedAtCleared() {
 		_spec.ClearField(prrecord.FieldLastAttributedAt, field.TypeTime)
 	}
-	if value, ok := pruo.mutation.LastAttributionRunID(); ok {
-		_spec.SetField(prrecord.FieldLastAttributionRunID, field.TypeInt, value)
-	}
-	if value, ok := pruo.mutation.AddedLastAttributionRunID(); ok {
-		_spec.AddField(prrecord.FieldLastAttributionRunID, field.TypeInt, value)
-	}
-	if pruo.mutation.LastAttributionRunIDCleared() {
-		_spec.ClearField(prrecord.FieldLastAttributionRunID, field.TypeInt)
-	}
 	if value, ok := pruo.mutation.MergedAt(); ok {
 		_spec.SetField(prrecord.FieldMergedAt, field.TypeTime, value)
 	}
@@ -1771,6 +1790,35 @@ func (pruo *PrRecordUpdateOne) sqlSave(ctx context.Context) (_node *PrRecord, er
 			Inverse: false,
 			Table:   prrecord.AttributionRunsTable,
 			Columns: []string{prrecord.AttributionRunsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(prattributionrun.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if pruo.mutation.LastAttributionRunCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: false,
+			Table:   prrecord.LastAttributionRunTable,
+			Columns: []string{prrecord.LastAttributionRunColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(prattributionrun.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := pruo.mutation.LastAttributionRunIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: false,
+			Table:   prrecord.LastAttributionRunTable,
+			Columns: []string{prrecord.LastAttributionRunColumn},
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(prattributionrun.FieldID, field.TypeInt),

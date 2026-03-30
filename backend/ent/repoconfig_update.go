@@ -12,6 +12,8 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/ai-efficiency/backend/ent/aiscanresult"
+	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
+	"github.com/ai-efficiency/backend/ent/commitrewrite"
 	"github.com/ai-efficiency/backend/ent/efficiencymetric"
 	"github.com/ai-efficiency/backend/ent/predicate"
 	"github.com/ai-efficiency/backend/ent/prrecord"
@@ -296,6 +298,36 @@ func (rcu *RepoConfigUpdate) AddSessions(s ...*Session) *RepoConfigUpdate {
 	return rcu.AddSessionIDs(ids...)
 }
 
+// AddCommitCheckpointIDs adds the "commit_checkpoints" edge to the CommitCheckpoint entity by IDs.
+func (rcu *RepoConfigUpdate) AddCommitCheckpointIDs(ids ...int) *RepoConfigUpdate {
+	rcu.mutation.AddCommitCheckpointIDs(ids...)
+	return rcu
+}
+
+// AddCommitCheckpoints adds the "commit_checkpoints" edges to the CommitCheckpoint entity.
+func (rcu *RepoConfigUpdate) AddCommitCheckpoints(c ...*CommitCheckpoint) *RepoConfigUpdate {
+	ids := make([]int, len(c))
+	for i := range c {
+		ids[i] = c[i].ID
+	}
+	return rcu.AddCommitCheckpointIDs(ids...)
+}
+
+// AddCommitRewriteIDs adds the "commit_rewrites" edge to the CommitRewrite entity by IDs.
+func (rcu *RepoConfigUpdate) AddCommitRewriteIDs(ids ...int) *RepoConfigUpdate {
+	rcu.mutation.AddCommitRewriteIDs(ids...)
+	return rcu
+}
+
+// AddCommitRewrites adds the "commit_rewrites" edges to the CommitRewrite entity.
+func (rcu *RepoConfigUpdate) AddCommitRewrites(c ...*CommitRewrite) *RepoConfigUpdate {
+	ids := make([]int, len(c))
+	for i := range c {
+		ids[i] = c[i].ID
+	}
+	return rcu.AddCommitRewriteIDs(ids...)
+}
+
 // AddWebhookDeadLetterIDs adds the "webhook_dead_letters" edge to the WebhookDeadLetter entity by IDs.
 func (rcu *RepoConfigUpdate) AddWebhookDeadLetterIDs(ids ...int) *RepoConfigUpdate {
 	rcu.mutation.AddWebhookDeadLetterIDs(ids...)
@@ -386,6 +418,48 @@ func (rcu *RepoConfigUpdate) RemoveSessions(s ...*Session) *RepoConfigUpdate {
 		ids[i] = s[i].ID
 	}
 	return rcu.RemoveSessionIDs(ids...)
+}
+
+// ClearCommitCheckpoints clears all "commit_checkpoints" edges to the CommitCheckpoint entity.
+func (rcu *RepoConfigUpdate) ClearCommitCheckpoints() *RepoConfigUpdate {
+	rcu.mutation.ClearCommitCheckpoints()
+	return rcu
+}
+
+// RemoveCommitCheckpointIDs removes the "commit_checkpoints" edge to CommitCheckpoint entities by IDs.
+func (rcu *RepoConfigUpdate) RemoveCommitCheckpointIDs(ids ...int) *RepoConfigUpdate {
+	rcu.mutation.RemoveCommitCheckpointIDs(ids...)
+	return rcu
+}
+
+// RemoveCommitCheckpoints removes "commit_checkpoints" edges to CommitCheckpoint entities.
+func (rcu *RepoConfigUpdate) RemoveCommitCheckpoints(c ...*CommitCheckpoint) *RepoConfigUpdate {
+	ids := make([]int, len(c))
+	for i := range c {
+		ids[i] = c[i].ID
+	}
+	return rcu.RemoveCommitCheckpointIDs(ids...)
+}
+
+// ClearCommitRewrites clears all "commit_rewrites" edges to the CommitRewrite entity.
+func (rcu *RepoConfigUpdate) ClearCommitRewrites() *RepoConfigUpdate {
+	rcu.mutation.ClearCommitRewrites()
+	return rcu
+}
+
+// RemoveCommitRewriteIDs removes the "commit_rewrites" edge to CommitRewrite entities by IDs.
+func (rcu *RepoConfigUpdate) RemoveCommitRewriteIDs(ids ...int) *RepoConfigUpdate {
+	rcu.mutation.RemoveCommitRewriteIDs(ids...)
+	return rcu
+}
+
+// RemoveCommitRewrites removes "commit_rewrites" edges to CommitRewrite entities.
+func (rcu *RepoConfigUpdate) RemoveCommitRewrites(c ...*CommitRewrite) *RepoConfigUpdate {
+	ids := make([]int, len(c))
+	for i := range c {
+		ids[i] = c[i].ID
+	}
+	return rcu.RemoveCommitRewriteIDs(ids...)
 }
 
 // ClearWebhookDeadLetters clears all "webhook_dead_letters" edges to the WebhookDeadLetter entity.
@@ -684,6 +758,96 @@ func (rcu *RepoConfigUpdate) sqlSave(ctx context.Context) (n int, err error) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(session.FieldID, field.TypeUUID),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if rcu.mutation.CommitCheckpointsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   repoconfig.CommitCheckpointsTable,
+			Columns: []string{repoconfig.CommitCheckpointsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(commitcheckpoint.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := rcu.mutation.RemovedCommitCheckpointsIDs(); len(nodes) > 0 && !rcu.mutation.CommitCheckpointsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   repoconfig.CommitCheckpointsTable,
+			Columns: []string{repoconfig.CommitCheckpointsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(commitcheckpoint.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := rcu.mutation.CommitCheckpointsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   repoconfig.CommitCheckpointsTable,
+			Columns: []string{repoconfig.CommitCheckpointsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(commitcheckpoint.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if rcu.mutation.CommitRewritesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   repoconfig.CommitRewritesTable,
+			Columns: []string{repoconfig.CommitRewritesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(commitrewrite.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := rcu.mutation.RemovedCommitRewritesIDs(); len(nodes) > 0 && !rcu.mutation.CommitRewritesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   repoconfig.CommitRewritesTable,
+			Columns: []string{repoconfig.CommitRewritesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(commitrewrite.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := rcu.mutation.CommitRewritesIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   repoconfig.CommitRewritesTable,
+			Columns: []string{repoconfig.CommitRewritesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(commitrewrite.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {
@@ -1152,6 +1316,36 @@ func (rcuo *RepoConfigUpdateOne) AddSessions(s ...*Session) *RepoConfigUpdateOne
 	return rcuo.AddSessionIDs(ids...)
 }
 
+// AddCommitCheckpointIDs adds the "commit_checkpoints" edge to the CommitCheckpoint entity by IDs.
+func (rcuo *RepoConfigUpdateOne) AddCommitCheckpointIDs(ids ...int) *RepoConfigUpdateOne {
+	rcuo.mutation.AddCommitCheckpointIDs(ids...)
+	return rcuo
+}
+
+// AddCommitCheckpoints adds the "commit_checkpoints" edges to the CommitCheckpoint entity.
+func (rcuo *RepoConfigUpdateOne) AddCommitCheckpoints(c ...*CommitCheckpoint) *RepoConfigUpdateOne {
+	ids := make([]int, len(c))
+	for i := range c {
+		ids[i] = c[i].ID
+	}
+	return rcuo.AddCommitCheckpointIDs(ids...)
+}
+
+// AddCommitRewriteIDs adds the "commit_rewrites" edge to the CommitRewrite entity by IDs.
+func (rcuo *RepoConfigUpdateOne) AddCommitRewriteIDs(ids ...int) *RepoConfigUpdateOne {
+	rcuo.mutation.AddCommitRewriteIDs(ids...)
+	return rcuo
+}
+
+// AddCommitRewrites adds the "commit_rewrites" edges to the CommitRewrite entity.
+func (rcuo *RepoConfigUpdateOne) AddCommitRewrites(c ...*CommitRewrite) *RepoConfigUpdateOne {
+	ids := make([]int, len(c))
+	for i := range c {
+		ids[i] = c[i].ID
+	}
+	return rcuo.AddCommitRewriteIDs(ids...)
+}
+
 // AddWebhookDeadLetterIDs adds the "webhook_dead_letters" edge to the WebhookDeadLetter entity by IDs.
 func (rcuo *RepoConfigUpdateOne) AddWebhookDeadLetterIDs(ids ...int) *RepoConfigUpdateOne {
 	rcuo.mutation.AddWebhookDeadLetterIDs(ids...)
@@ -1242,6 +1436,48 @@ func (rcuo *RepoConfigUpdateOne) RemoveSessions(s ...*Session) *RepoConfigUpdate
 		ids[i] = s[i].ID
 	}
 	return rcuo.RemoveSessionIDs(ids...)
+}
+
+// ClearCommitCheckpoints clears all "commit_checkpoints" edges to the CommitCheckpoint entity.
+func (rcuo *RepoConfigUpdateOne) ClearCommitCheckpoints() *RepoConfigUpdateOne {
+	rcuo.mutation.ClearCommitCheckpoints()
+	return rcuo
+}
+
+// RemoveCommitCheckpointIDs removes the "commit_checkpoints" edge to CommitCheckpoint entities by IDs.
+func (rcuo *RepoConfigUpdateOne) RemoveCommitCheckpointIDs(ids ...int) *RepoConfigUpdateOne {
+	rcuo.mutation.RemoveCommitCheckpointIDs(ids...)
+	return rcuo
+}
+
+// RemoveCommitCheckpoints removes "commit_checkpoints" edges to CommitCheckpoint entities.
+func (rcuo *RepoConfigUpdateOne) RemoveCommitCheckpoints(c ...*CommitCheckpoint) *RepoConfigUpdateOne {
+	ids := make([]int, len(c))
+	for i := range c {
+		ids[i] = c[i].ID
+	}
+	return rcuo.RemoveCommitCheckpointIDs(ids...)
+}
+
+// ClearCommitRewrites clears all "commit_rewrites" edges to the CommitRewrite entity.
+func (rcuo *RepoConfigUpdateOne) ClearCommitRewrites() *RepoConfigUpdateOne {
+	rcuo.mutation.ClearCommitRewrites()
+	return rcuo
+}
+
+// RemoveCommitRewriteIDs removes the "commit_rewrites" edge to CommitRewrite entities by IDs.
+func (rcuo *RepoConfigUpdateOne) RemoveCommitRewriteIDs(ids ...int) *RepoConfigUpdateOne {
+	rcuo.mutation.RemoveCommitRewriteIDs(ids...)
+	return rcuo
+}
+
+// RemoveCommitRewrites removes "commit_rewrites" edges to CommitRewrite entities.
+func (rcuo *RepoConfigUpdateOne) RemoveCommitRewrites(c ...*CommitRewrite) *RepoConfigUpdateOne {
+	ids := make([]int, len(c))
+	for i := range c {
+		ids[i] = c[i].ID
+	}
+	return rcuo.RemoveCommitRewriteIDs(ids...)
 }
 
 // ClearWebhookDeadLetters clears all "webhook_dead_letters" edges to the WebhookDeadLetter entity.
@@ -1570,6 +1806,96 @@ func (rcuo *RepoConfigUpdateOne) sqlSave(ctx context.Context) (_node *RepoConfig
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(session.FieldID, field.TypeUUID),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if rcuo.mutation.CommitCheckpointsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   repoconfig.CommitCheckpointsTable,
+			Columns: []string{repoconfig.CommitCheckpointsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(commitcheckpoint.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := rcuo.mutation.RemovedCommitCheckpointsIDs(); len(nodes) > 0 && !rcuo.mutation.CommitCheckpointsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   repoconfig.CommitCheckpointsTable,
+			Columns: []string{repoconfig.CommitCheckpointsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(commitcheckpoint.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := rcuo.mutation.CommitCheckpointsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   repoconfig.CommitCheckpointsTable,
+			Columns: []string{repoconfig.CommitCheckpointsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(commitcheckpoint.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if rcuo.mutation.CommitRewritesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   repoconfig.CommitRewritesTable,
+			Columns: []string{repoconfig.CommitRewritesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(commitrewrite.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := rcuo.mutation.RemovedCommitRewritesIDs(); len(nodes) > 0 && !rcuo.mutation.CommitRewritesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   repoconfig.CommitRewritesTable,
+			Columns: []string{repoconfig.CommitRewritesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(commitrewrite.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := rcuo.mutation.CommitRewritesIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   repoconfig.CommitRewritesTable,
+			Columns: []string{repoconfig.CommitRewritesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(commitrewrite.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {
