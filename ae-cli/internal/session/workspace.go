@@ -85,6 +85,12 @@ func deriveWorkspaceID(repoRoot, workspaceRoot, gitDir, gitCommonDir string) (st
 	return uuid.NewSHA1(workspaceNamespace, []byte(name)).String(), nil
 }
 
+// DeriveWorkspaceID is the shared derivation function used by ae-cli runtime and git hooks.
+// It is a stable UUIDv5 derived from the canonical git context.
+func DeriveWorkspaceID(repoRoot, workspaceRoot, gitDir, gitCommonDir string) (string, error) {
+	return deriveWorkspaceID(repoRoot, workspaceRoot, gitDir, gitCommonDir)
+}
+
 func markerPath(workspaceRoot string) string {
 	return filepath.Join(workspaceRoot, ".ae", "session.json")
 }

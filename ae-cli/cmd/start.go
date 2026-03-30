@@ -6,9 +6,11 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
+	"github.com/ai-efficiency/ae-cli/internal/hooks"
 	"github.com/ai-efficiency/ae-cli/internal/session"
 	"github.com/ai-efficiency/ae-cli/internal/tmux"
 	"github.com/spf13/cobra"
@@ -56,6 +58,17 @@ var startCmd = &cobra.Command{
 		state, err := mgr.Start()
 		if err != nil {
 			return fmt.Errorf("starting session: %w", err)
+		}
+
+		// Install shared git hooks now that bootstrap artifacts (marker/runtime) are in place.
+		// If we can't safely take over hooks, stop the session and fail explicitly.
+		selfPath, _ := os.Executable()
+		if strings.TrimSpace(selfPath) == "" {
+			selfPath = os.Args[0]
+		}
+		if err := hooks.InstallSharedHooks(state.WorkspaceRoot, selfPath); err != nil {
+			_, _ = mgr.Stop()
+			return fmt.Errorf("installing shared git hooks: %w", err)
 		}
 
 		// Register signal handler for graceful shutdown
