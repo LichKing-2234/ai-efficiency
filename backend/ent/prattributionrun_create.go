@@ -137,7 +137,9 @@ func (parc *PrAttributionRunCreate) Mutation() *PrAttributionRunMutation {
 
 // Save creates the PrAttributionRun in the database.
 func (parc *PrAttributionRunCreate) Save(ctx context.Context) (*PrAttributionRun, error) {
-	parc.defaults()
+	if err := parc.defaults(); err != nil {
+		return nil, err
+	}
 	return withHooks(ctx, parc.sqlSave, parc.mutation, parc.hooks)
 }
 
@@ -164,7 +166,7 @@ func (parc *PrAttributionRunCreate) ExecX(ctx context.Context) {
 }
 
 // defaults sets the default values of the builder before save.
-func (parc *PrAttributionRunCreate) defaults() {
+func (parc *PrAttributionRunCreate) defaults() error {
 	if _, ok := parc.mutation.TriggerMode(); !ok {
 		v := prattributionrun.DefaultTriggerMode
 		parc.mutation.SetTriggerMode(v)
@@ -178,9 +180,13 @@ func (parc *PrAttributionRunCreate) defaults() {
 		parc.mutation.SetMatchedSessionIds(v)
 	}
 	if _, ok := parc.mutation.CreatedAt(); !ok {
+		if prattributionrun.DefaultCreatedAt == nil {
+			return fmt.Errorf("ent: uninitialized prattributionrun.DefaultCreatedAt (forgotten import ent/runtime?)")
+		}
 		v := prattributionrun.DefaultCreatedAt()
 		parc.mutation.SetCreatedAt(v)
 	}
+	return nil
 }
 
 // check runs all checks and user-defined validators on the builder.

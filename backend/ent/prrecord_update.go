@@ -578,7 +578,9 @@ func (pru *PrRecordUpdate) ClearLastAttributionRun() *PrRecordUpdate {
 
 // Save executes the query and returns the number of nodes affected by the update operation.
 func (pru *PrRecordUpdate) Save(ctx context.Context) (int, error) {
-	pru.defaults()
+	if err := pru.defaults(); err != nil {
+		return 0, err
+	}
 	return withHooks(ctx, pru.sqlSave, pru.mutation, pru.hooks)
 }
 
@@ -605,11 +607,15 @@ func (pru *PrRecordUpdate) ExecX(ctx context.Context) {
 }
 
 // defaults sets the default values of the builder before save.
-func (pru *PrRecordUpdate) defaults() {
+func (pru *PrRecordUpdate) defaults() error {
 	if _, ok := pru.mutation.UpdatedAt(); !ok {
+		if prrecord.UpdateDefaultUpdatedAt == nil {
+			return fmt.Errorf("ent: uninitialized prrecord.UpdateDefaultUpdatedAt (forgotten import ent/runtime?)")
+		}
 		v := prrecord.UpdateDefaultUpdatedAt()
 		pru.mutation.SetUpdatedAt(v)
 	}
+	return nil
 }
 
 // check runs all checks and user-defined validators on the builder.
@@ -1485,7 +1491,9 @@ func (pruo *PrRecordUpdateOne) Select(field string, fields ...string) *PrRecordU
 
 // Save executes the query and returns the updated PrRecord entity.
 func (pruo *PrRecordUpdateOne) Save(ctx context.Context) (*PrRecord, error) {
-	pruo.defaults()
+	if err := pruo.defaults(); err != nil {
+		return nil, err
+	}
 	return withHooks(ctx, pruo.sqlSave, pruo.mutation, pruo.hooks)
 }
 
@@ -1512,11 +1520,15 @@ func (pruo *PrRecordUpdateOne) ExecX(ctx context.Context) {
 }
 
 // defaults sets the default values of the builder before save.
-func (pruo *PrRecordUpdateOne) defaults() {
+func (pruo *PrRecordUpdateOne) defaults() error {
 	if _, ok := pruo.mutation.UpdatedAt(); !ok {
+		if prrecord.UpdateDefaultUpdatedAt == nil {
+			return fmt.Errorf("ent: uninitialized prrecord.UpdateDefaultUpdatedAt (forgotten import ent/runtime?)")
+		}
 		v := prrecord.UpdateDefaultUpdatedAt()
 		pruo.mutation.SetUpdatedAt(v)
 	}
+	return nil
 }
 
 // check runs all checks and user-defined validators on the builder.

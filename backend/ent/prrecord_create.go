@@ -384,7 +384,9 @@ func (prc *PrRecordCreate) Mutation() *PrRecordMutation {
 
 // Save creates the PrRecord in the database.
 func (prc *PrRecordCreate) Save(ctx context.Context) (*PrRecord, error) {
-	prc.defaults()
+	if err := prc.defaults(); err != nil {
+		return nil, err
+	}
 	return withHooks(ctx, prc.sqlSave, prc.mutation, prc.hooks)
 }
 
@@ -411,7 +413,7 @@ func (prc *PrRecordCreate) ExecX(ctx context.Context) {
 }
 
 // defaults sets the default values of the builder before save.
-func (prc *PrRecordCreate) defaults() {
+func (prc *PrRecordCreate) defaults() error {
 	if _, ok := prc.mutation.Status(); !ok {
 		v := prrecord.DefaultStatus
 		prc.mutation.SetStatus(v)
@@ -453,13 +455,20 @@ func (prc *PrRecordCreate) defaults() {
 		prc.mutation.SetCycleTimeHours(v)
 	}
 	if _, ok := prc.mutation.CreatedAt(); !ok {
+		if prrecord.DefaultCreatedAt == nil {
+			return fmt.Errorf("ent: uninitialized prrecord.DefaultCreatedAt (forgotten import ent/runtime?)")
+		}
 		v := prrecord.DefaultCreatedAt()
 		prc.mutation.SetCreatedAt(v)
 	}
 	if _, ok := prc.mutation.UpdatedAt(); !ok {
+		if prrecord.DefaultUpdatedAt == nil {
+			return fmt.Errorf("ent: uninitialized prrecord.DefaultUpdatedAt (forgotten import ent/runtime?)")
+		}
 		v := prrecord.DefaultUpdatedAt()
 		prc.mutation.SetUpdatedAt(v)
 	}
+	return nil
 }
 
 // check runs all checks and user-defined validators on the builder.

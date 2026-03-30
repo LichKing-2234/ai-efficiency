@@ -142,6 +142,16 @@ func TestAttributionSchemasCreateAndQuery(t *testing.T) {
 		SetAttributionStatus(prrecord.AttributionStatusNotRun).
 		SaveX(ctx)
 
+	// Completed runs must have a result_classification.
+	if _, err := client.PrAttributionRun.Create().
+		SetPrRecordID(pr.ID).
+		SetTriggerMode("manual").
+		SetTriggeredBy("alice").
+		SetStatus("completed").
+		Save(ctx); err == nil {
+		t.Fatalf("expected completed attribution run without result_classification to fail")
+	}
+
 	// Integrity: last_attribution_run_id should not accept arbitrary integers.
 	if _, err := client.PrRecord.UpdateOneID(pr.ID).
 		SetLastAttributionRunID(999999).
@@ -164,6 +174,28 @@ func TestAttributionSchemasCreateAndQuery(t *testing.T) {
 
 	if run.ID == 0 {
 		t.Fatal("expected attribution run ID to be assigned")
+	}
+
+	pr2 := client.PrRecord.Create().
+		SetRepoConfigID(repo.ID).
+		SetScmPrID(56).
+		SetStatus(prrecord.StatusOpen).
+		SetAttributionStatus(prrecord.AttributionStatusNotRun).
+		SaveX(ctx)
+
+	run2 := client.PrAttributionRun.Create().
+		SetPrRecordID(pr2.ID).
+		SetTriggerMode("manual").
+		SetTriggeredBy("bob").
+		SetStatus("completed").
+		SetResultClassification("clear").
+		SaveX(ctx)
+
+	// Integrity: last_attribution_run_id must refer to a run that belongs to the same PR.
+	if _, err := client.PrRecord.UpdateOneID(pr.ID).
+		SetLastAttributionRunID(run2.ID).
+		Save(ctx); err == nil {
+		t.Fatalf("expected setting last_attribution_run_id to another PR's run to fail")
 	}
 
 	// Failed runs should not require result_classification to be fabricated.

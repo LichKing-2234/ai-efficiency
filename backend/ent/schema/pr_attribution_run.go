@@ -1,17 +1,24 @@
 package schema
 
 import (
-	"entgo.io/ent"
+	"context"
+	"fmt"
+
+	entgo "entgo.io/ent"
 	"entgo.io/ent/schema/edge"
 	"entgo.io/ent/schema/field"
+
+	"github.com/ai-efficiency/backend/ent"
+	genhook "github.com/ai-efficiency/backend/ent/hook"
+	"github.com/ai-efficiency/backend/ent/prattributionrun"
 )
 
 type PrAttributionRun struct {
-	ent.Schema
+	entgo.Schema
 }
 
-func (PrAttributionRun) Fields() []ent.Field {
-	return []ent.Field{
+func (PrAttributionRun) Fields() []entgo.Field {
+	return []entgo.Field{
 		field.Int("pr_record_id"),
 		field.Enum("trigger_mode").
 			Values("manual").
@@ -42,12 +49,76 @@ func (PrAttributionRun) Fields() []ent.Field {
 	}
 }
 
-func (PrAttributionRun) Edges() []ent.Edge {
-	return []ent.Edge{
+func (PrAttributionRun) Edges() []entgo.Edge {
+	return []entgo.Edge{
 		edge.From("pr_record", PrRecord.Type).
 			Ref("attribution_runs").
 			Field("pr_record_id").
 			Unique().
 			Required(),
+	}
+}
+
+func (PrAttributionRun) Hooks() []ent.Hook {
+	return []ent.Hook{
+		func(next ent.Mutator) ent.Mutator {
+			return genhook.PrAttributionRunFunc(func(ctx context.Context, m *ent.PrAttributionRunMutation) (ent.Value, error) {
+				if !m.Op().Is(ent.OpCreate | ent.OpUpdateOne | ent.OpUpdate) {
+					return next.Mutate(ctx, m)
+				}
+				// Guardrail: Ent cannot validate per-row invariants on bulk update.
+				if m.Op().Is(ent.OpUpdate) {
+					if _, ok := m.Status(); ok {
+						return nil, fmt.Errorf("prattributionrun: bulk update of status is not supported")
+					}
+					if _, ok := m.ResultClassification(); ok || m.ResultClassificationCleared() {
+						return nil, fmt.Errorf("prattributionrun: bulk update of result_classification is not supported")
+					}
+					return next.Mutate(ctx, m)
+				}
+
+				// Determine the effective status.
+				status, ok := m.Status()
+				if !ok {
+					switch {
+					case m.Op().Is(ent.OpUpdateOne):
+						old, err := m.OldStatus(ctx)
+						if err != nil {
+							return nil, fmt.Errorf("prattributionrun: read old status: %w", err)
+						}
+						status = old
+					case m.Op().Is(ent.OpCreate):
+						// Create should always have status set, but keep this explicit.
+						return nil, fmt.Errorf("prattributionrun: status is required")
+					}
+				}
+
+				if status != prattributionrun.StatusCompleted {
+					return next.Mutate(ctx, m)
+				}
+
+				// Completed runs must have a classification. Failed runs may omit it.
+				hasClassification := false
+				switch {
+				case m.ResultClassificationCleared():
+					hasClassification = false
+				case func() bool { _, ok := m.ResultClassification(); return ok }():
+					hasClassification = true
+				case m.Op().Is(ent.OpUpdateOne):
+					old, err := m.OldResultClassification(ctx)
+					if err != nil {
+						return nil, fmt.Errorf("prattributionrun: read old result_classification: %w", err)
+					}
+					hasClassification = old != nil
+				default:
+					hasClassification = false
+				}
+				if !hasClassification {
+					return nil, fmt.Errorf("prattributionrun: completed runs require result_classification")
+				}
+
+				return next.Mutate(ctx, m)
+			})
+		},
 	}
 }

@@ -1,20 +1,26 @@
 package schema
 
 import (
-	"entgo.io/ent"
+	"context"
+	"fmt"
+
+	entgo "entgo.io/ent"
 	"entgo.io/ent/schema/edge"
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
+
+	"github.com/ai-efficiency/backend/ent"
+	genhook "github.com/ai-efficiency/backend/ent/hook"
 )
 
 // PrRecord holds the schema definition for the PrRecord entity.
 type PrRecord struct {
-	ent.Schema
+	entgo.Schema
 }
 
 // Fields of the PrRecord.
-func (PrRecord) Fields() []ent.Field {
-	return []ent.Field{
+func (PrRecord) Fields() []entgo.Field {
+	return []entgo.Field{
 		field.Int("scm_pr_id"),
 		field.String("scm_pr_url").
 			Optional(),
@@ -79,8 +85,8 @@ func (PrRecord) Fields() []ent.Field {
 }
 
 // Edges of the PrRecord.
-func (PrRecord) Edges() []ent.Edge {
-	return []ent.Edge{
+func (PrRecord) Edges() []entgo.Edge {
+	return []entgo.Edge{
 		edge.From("repo_config", RepoConfig.Type).
 			Ref("pr_records").
 			Unique().
@@ -93,10 +99,50 @@ func (PrRecord) Edges() []ent.Edge {
 }
 
 // Indexes of the PrRecord.
-func (PrRecord) Indexes() []ent.Index {
-	return []ent.Index{
+func (PrRecord) Indexes() []entgo.Index {
+	return []entgo.Index{
 		index.Fields("scm_pr_id").
 			Edges("repo_config").
 			Unique(),
+	}
+}
+
+func (PrRecord) Hooks() []ent.Hook {
+	return []ent.Hook{
+		func(next ent.Mutator) ent.Mutator {
+			return genhook.PrRecordFunc(func(ctx context.Context, m *ent.PrRecordMutation) (ent.Value, error) {
+				if !m.Op().Is(ent.OpUpdateOne | ent.OpUpdate | ent.OpCreate) {
+					return next.Mutate(ctx, m)
+				}
+				if m.LastAttributionRunIDCleared() {
+					return next.Mutate(ctx, m)
+				}
+				runID, ok := m.LastAttributionRunID()
+				if !ok {
+					return next.Mutate(ctx, m)
+				}
+
+				// We need the PR record ID to validate cross-record integrity. Disallow setting this
+				// field on create/bulk updates, because Ent can't validate it without a per-row ID.
+				switch {
+				case m.Op().Is(ent.OpUpdateOne):
+					prID, exists := m.ID()
+					if !exists {
+						return nil, fmt.Errorf("prrecord: missing ID for last_attribution_run_id validation")
+					}
+					run, err := m.Client().PrAttributionRun.Get(ctx, runID)
+					if err != nil {
+						return nil, fmt.Errorf("prrecord: last_attribution_run_id %d: %w", runID, err)
+					}
+					if run.PrRecordID != prID {
+						return nil, fmt.Errorf("prrecord: last_attribution_run_id %d belongs to pr_record_id %d (expected %d)", runID, run.PrRecordID, prID)
+					}
+				default:
+					return nil, fmt.Errorf("prrecord: setting last_attribution_run_id is only supported on UpdateOne")
+				}
+
+				return next.Mutate(ctx, m)
+			})
+		},
 	}
 }
