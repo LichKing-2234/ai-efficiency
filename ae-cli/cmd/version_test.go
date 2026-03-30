@@ -1384,6 +1384,12 @@ func TestShellCommandWithSession(t *testing.T) {
 	os.Setenv("HOME", tmpHome)
 	defer os.Setenv("HOME", origHome)
 
+	// Bubble Tea will attempt to open /dev/tty when stdin isn't a terminal.
+	// In this test we deliberately pipe stdin to auto-exit; force using stdin
+	// directly so the test is deterministic in environments without /dev/tty.
+	os.Setenv("AE_CLI_SHELL_FORCE_STDIN", "1")
+	t.Cleanup(func() { os.Unsetenv("AE_CLI_SHELL_FORCE_STDIN") })
+
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))

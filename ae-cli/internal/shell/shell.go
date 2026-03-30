@@ -1,6 +1,7 @@
 package shell
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"os/exec"
@@ -48,8 +49,27 @@ func New(cfg *config.Config, state *session.State) *Shell {
 	return &Shell{config: cfg, state: state, router: r, toolPanes: make(map[string]string)}
 }
 
+const envShellForceStdin = "AE_CLI_SHELL_FORCE_STDIN"
+
 // Run starts the interactive shell TUI.
 func (s *Shell) Run() error {
+	// Bubble Tea's default stdin behavior is to open /dev/tty when stdin isn't a
+	// terminal, so interactive apps still work when stdin is piped/redirected.
+	// In some test/CI environments /dev/tty is unavailable; for deterministic
+	// tests we allow bypassing the TUI entirely and exiting based on stdin.
+	if os.Getenv(envShellForceStdin) == "1" {
+		sc := bufio.NewScanner(os.Stdin)
+		for sc.Scan() {
+			switch strings.TrimSpace(sc.Text()) {
+			case "exit", "quit":
+				return nil
+			}
+		}
+		if err := sc.Err(); err != nil {
+			return fmt.Errorf("reading stdin: %w", err)
+		}
+		return nil
+	}
 	return s.runWithOpts()
 }
 
