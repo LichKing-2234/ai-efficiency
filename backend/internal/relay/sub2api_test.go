@@ -281,6 +281,24 @@ func TestFindUserByEmail(t *testing.T) {
 	}
 }
 
+func TestFindUserByEmailSuccessFalse(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/users", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"success": false,
+			"message": "permission denied",
+			"data":    []any{},
+		})
+	})
+
+	p := newTestProvider(t, mux)
+	_, err := p.FindUserByEmail(context.Background(), "any@example.com")
+	if err == nil {
+		t.Fatal("FindUserByEmail() expected error for success=false, got nil")
+	}
+}
+
 func TestFindUserByUsername(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/admin/users", func(w http.ResponseWriter, r *http.Request) {

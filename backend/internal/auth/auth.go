@@ -198,9 +198,7 @@ func (s *Service) ensureLocalUser(ctx context.Context, info *UserInfo) (*ent.Use
 			}
 			relayID := int(relayUser.ID)
 			info.RelayUserID = &relayID
-			if info.Email == "" {
-				info.Email = relayUser.Email
-			}
+			info.Email = ensureNonEmptyEmail(info.Email, relayUser.Email, "")
 			u, err = u.Update().SetRelayUserID(relayID).Save(ctx)
 			if err != nil {
 				return nil, fmt.Errorf("persist relay user id: %w", err)
@@ -229,19 +227,13 @@ func (s *Service) ensureLocalUser(ctx context.Context, info *UserInfo) (*ent.Use
 		}
 		relayID := int(relayUser.ID)
 		info.RelayUserID = &relayID
-		if info.Email == "" {
-			info.Email = relayUser.Email
-		}
+		info.Email = ensureNonEmptyEmail(info.Email, relayUser.Email, "")
 	}
 
 	// LDAP may not provide a `mail` attribute; avoid creating a local user with an empty
 	// email because Ent schema marks it NotEmpty.
 	if strings.TrimSpace(info.Email) == "" && strings.EqualFold(info.AuthSource, "ldap") {
-		if strings.Contains(info.Username, "@") {
-			info.Email = info.Username
-		} else {
-			info.Email = info.Username + "@ldap.local"
-		}
+		info.Email = ensureNonEmptyEmail(info.Email, info.Username, "")
 	}
 
 	// Create new user

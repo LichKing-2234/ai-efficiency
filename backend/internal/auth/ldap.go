@@ -95,23 +95,38 @@ func (p *LDAPProvider) Authenticate(ctx context.Context, username, password stri
 		return nil, fmt.Errorf("ldap: invalid credentials")
 	}
 
-	email := strings.TrimSpace(entry.GetAttributeValue("mail"))
-	// Some LDAP deployments omit `mail`. Ensure we always return a non-empty email,
-	// because local Ent schema requires it (NotEmpty).
-	if email == "" {
-		if strings.Contains(username, "@") {
-			email = username
-		} else {
-			email = username + "@ldap.local"
-		}
-	}
+	stableUsername := ldapStableUsername(username, entry)
+	email := ldapDerivedEmail(entry.GetAttributeValue("mail"), username, stableUsername)
 
-	p.logger.Info("LDAP authentication successful", zap.String("username", username))
+	p.logger.Info("LDAP authentication successful",
+		zap.String("username", stableUsername),
+		zap.String("login", strings.TrimSpace(username)),
+	)
 
 	return &UserInfo{
-		Username:   username,
+		Username:   stableUsername,
 		Email:      email,
 		Role:       "user",
 		AuthSource: "ldap",
 	}, nil
+}
+
+func ldapStableUsername(loginInput string, entry *ldap.Entry) string {
+	uid := strings.TrimSpace(entry.GetAttributeValue("uid"))
+	if uid != "" {
+		return uid
+	}
+	return strings.TrimSpace(loginInput)
+}
+
+func ldapDerivedEmail(mailAttr, loginInput, stableUsername string) string {
+	// Prefer the LDAP attribute itself; otherwise:
+	// - if login input looks like an email, preserve it
+	// - else derive from the stable username
+	loginInput = strings.TrimSpace(loginInput)
+	fallbackBase := stableUsername
+	if strings.Contains(loginInput, "@") {
+		fallbackBase = loginInput
+	}
+	return ensureNonEmptyEmail(mailAttr, fallbackBase, "")
 }

@@ -23,12 +23,9 @@ type RelayIdentityResolver struct {
 }
 
 func NewRelayIdentityResolver(api relayIdentityAPI, fallbackDomain string) *RelayIdentityResolver {
-	if fallbackDomain == "" {
-		fallbackDomain = "ldap.local"
-	}
 	return &RelayIdentityResolver{
 		api:            api,
-		fallbackDomain: fallbackDomain,
+		fallbackDomain: strings.TrimSpace(fallbackDomain),
 	}
 }
 
@@ -47,9 +44,7 @@ func (r *RelayIdentityResolver) ResolveOrProvision(ctx context.Context, username
 		return u, nil
 	}
 
-	if email == "" {
-		email = username + "@" + r.fallbackDomain
-	}
+	email = ensureNonEmptyEmail(email, username, r.fallbackDomain)
 
 	pw, err := highEntropyPassword()
 	if err != nil {
