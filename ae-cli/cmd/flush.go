@@ -14,7 +14,7 @@ var flushCmd = &cobra.Command{
 	Hidden: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cwd, _ := os.Getwd()
-		h := hooks.NewHandler(hooks.UnsupportedUploader{})
+		h := hooks.NewHandler(hooks.OutboxUploader{})
 		return h.Flush(context.Background(), cwd)
 	},
 }

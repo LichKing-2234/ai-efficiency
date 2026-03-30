@@ -49,3 +49,20 @@ func TestQueuePersistsAndDedupByEventID(t *testing.T) {
 		t.Fatalf("expected queue file to exist: %v", err)
 	}
 }
+
+func TestQueueRejectsMissingEventID(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	q, err := NewLocalQueue("sess-1")
+	if err != nil {
+		t.Fatalf("NewLocalQueue: %v", err)
+	}
+
+	// Task 5 contract: hook events must carry an explicit, stable event_id
+	// before entering the queue (no queue-generated fallback IDs).
+	ev := HookEvent{Kind: "post-commit", SessionID: "sess-1", CommitSHA: "deadbeef"}
+	if err := q.Enqueue(ev); err == nil {
+		t.Fatalf("expected enqueue to fail due to missing event_id, got nil")
+	}
+}

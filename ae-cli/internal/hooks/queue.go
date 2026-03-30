@@ -2,8 +2,6 @@ package hooks
 
 import (
 	"bufio"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -18,6 +16,11 @@ type HookEvent struct {
 
 	// Git context (minimal slice for Task 5).
 	CommitSHA string `json:"commit_sha,omitempty"`
+
+	// post-rewrite specific fields.
+	RewriteType  string `json:"rewrite_type,omitempty"`
+	OldCommitSHA string `json:"old_commit_sha,omitempty"`
+	NewCommitSHA string `json:"new_commit_sha,omitempty"`
 }
 
 type QueueItem struct {
@@ -57,12 +60,6 @@ func (q *Queue) Path() string {
 	return q.path
 }
 
-func (q *Queue) computeEventID(ev HookEvent) string {
-	// Keep stable and local-only for now; backend idempotency will refine this.
-	h := sha256.Sum256([]byte(strings.TrimSpace(ev.Kind) + "\x1f" + strings.TrimSpace(ev.SessionID) + "\x1f" + strings.TrimSpace(ev.CommitSHA)))
-	return hex.EncodeToString(h[:])
-}
-
 func (q *Queue) List() ([]QueueItem, error) {
 	if q == nil || strings.TrimSpace(q.path) == "" {
 		return nil, fmt.Errorf("queue is not initialized")
@@ -100,7 +97,7 @@ func (q *Queue) Enqueue(ev HookEvent) error {
 		return fmt.Errorf("queue is not initialized")
 	}
 	if strings.TrimSpace(ev.EventID) == "" {
-		ev.EventID = q.computeEventID(ev)
+		return fmt.Errorf("event_id is required")
 	}
 
 	items, err := q.List()

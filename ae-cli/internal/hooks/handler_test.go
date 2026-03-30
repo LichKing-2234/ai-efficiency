@@ -144,7 +144,12 @@ func TestFlushReplaysQueuedEvents(t *testing.T) {
 	}
 	// Seed queue with two events.
 	for i := 0; i < 2; i++ {
-		ev := HookEvent{Kind: "post-commit", SessionID: "sess-1", CommitSHA: "c" + string(rune('0'+i))}
+		sha := "c" + string(rune('0'+i))
+		eid, err := CheckpointEventID("ws-1", sha)
+		if err != nil {
+			t.Fatalf("CheckpointEventID: %v", err)
+		}
+		ev := HookEvent{Kind: "post-commit", SessionID: "sess-1", CommitSHA: sha, EventID: eid}
 		if err := q.Enqueue(ev); err != nil {
 			t.Fatalf("Enqueue: %v", err)
 		}
@@ -166,5 +171,88 @@ func TestFlushReplaysQueuedEvents(t *testing.T) {
 	}
 	if len(items) != 0 {
 		t.Fatalf("items after flush = %d, want 0", len(items))
+	}
+}
+
+func TestPostRewriteQueuesEventsWhenUploadFails(t *testing.T) {
+	repo := initRepoWithCommit2(t)
+
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	gitDirAbs := git2(t, repo, "rev-parse", "--absolute-git-dir")
+	gitCommonRel := git2(t, repo, "rev-parse", "--git-common-dir")
+	gitCommonAbs, err := absUnder(repo, gitCommonRel)
+	if err != nil {
+		t.Fatalf("absUnder(git common): %v", err)
+	}
+	wsid, err := session.DeriveWorkspaceID(repo, repo, gitDirAbs, gitCommonAbs)
+	if err != nil {
+		t.Fatalf("DeriveWorkspaceID: %v", err)
+	}
+
+	marker := &session.Marker{SessionID: "sess-1", WorkspaceID: wsid}
+	if err := session.WriteMarker(repo, marker); err != nil {
+		t.Fatalf("WriteMarker: %v", err)
+	}
+
+	u := &fakeUploader{err: errors.New("upload failed")}
+	h := NewHandler(u)
+
+	stdin := strings.NewReader("oldsha1 newsha1\n")
+	if err := h.PostRewrite(context.Background(), repo, "amend", stdin); err != nil {
+		t.Fatalf("PostRewrite should be fail-open, got: %v", err)
+	}
+
+	q, err := NewLocalQueue("sess-1")
+	if err != nil {
+		t.Fatalf("NewLocalQueue: %v", err)
+	}
+	items, err := q.List()
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("queued items = %d, want 1", len(items))
+	}
+	ev := items[0].Event
+	if ev.Kind != "post-rewrite" {
+		t.Fatalf("queued kind = %q, want %q", ev.Kind, "post-rewrite")
+	}
+	if ev.RewriteType != "amend" || ev.OldCommitSHA != "oldsha1" || ev.NewCommitSHA != "newsha1" {
+		b, _ := json.Marshal(ev)
+		t.Fatalf("queued rewrite fields mismatch: %s", string(b))
+	}
+	wantID, err := RewriteEventID(wsid, "oldsha1", "newsha1", "amend")
+	if err != nil {
+		t.Fatalf("RewriteEventID: %v", err)
+	}
+	if ev.EventID != wantID {
+		t.Fatalf("queued event_id = %q, want %q", ev.EventID, wantID)
+	}
+}
+
+func TestPostCommitSetsEventIDBeforeUpload(t *testing.T) {
+	repo := initRepoWithCommit2(t)
+
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	marker := &session.Marker{SessionID: "sess-1", RepoFullName: "origin", Branch: "main", HeadSHA: git2(t, repo, "rev-parse", "HEAD")}
+	if err := session.WriteMarker(repo, marker); err != nil {
+		t.Fatalf("WriteMarker: %v", err)
+	}
+
+	u := &fakeUploader{}
+	h := NewHandler(u)
+	if err := h.PostCommit(context.Background(), repo); err != nil {
+		t.Fatalf("PostCommit: %v", err)
+	}
+
+	if len(u.events) != 1 {
+		t.Fatalf("uploaded events = %d, want 1", len(u.events))
+	}
+	if got := strings.TrimSpace(u.events[0].EventID); got == "" {
+		t.Fatalf("uploaded event_id is empty; expected handler to set event_id before upload")
 	}
 }

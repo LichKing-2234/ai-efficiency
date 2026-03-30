@@ -1,9 +1,11 @@
 package hooks
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -111,6 +113,15 @@ func (h *Handler) PostCommit(ctx context.Context, cwd string) error {
 	if err != nil {
 		return err
 	}
+	gitDirAbs, _ := gitOutput(cwd, "rev-parse", "--absolute-git-dir")
+	gitCommonRel, _ := gitOutput(cwd, "rev-parse", "--git-common-dir")
+	gitCommonAbs, _ := absUnder(repoRoot, gitCommonRel)
+	scopeID := ""
+	if strings.TrimSpace(gitDirAbs) != "" && strings.TrimSpace(gitCommonAbs) != "" {
+		if wsid, err := session.DeriveWorkspaceID(repoRoot, repoRoot, gitDirAbs, gitCommonAbs); err == nil {
+			scopeID = wsid
+		}
+	}
 
 	m, err := session.ReadMarker(repoRoot)
 	if err != nil {
@@ -135,8 +146,19 @@ func (h *Handler) PostCommit(ctx context.Context, cwd string) error {
 		return nil
 	}
 
+	if scopeID == "" && m != nil {
+		scopeID = strings.TrimSpace(m.WorkspaceID)
+	}
+
+	eventID, err := CheckpointEventID(scopeID, head)
+	if err != nil {
+		// Fail-open: do not block commits; treat as unbound.
+		return nil
+	}
+
 	ev := HookEvent{
 		Kind:      "post-commit",
+		EventID:   eventID,
 		SessionID: sessionID,
 		CommitSHA: head,
 	}
@@ -157,6 +179,121 @@ func (h *Handler) PostCommit(ctx context.Context, cwd string) error {
 			_ = q.Enqueue(ev)
 		}
 		return nil
+	}
+
+	return nil
+}
+
+func parsePostRewritePairs(r io.Reader) ([][2]string, error) {
+	if r == nil {
+		return nil, fmt.Errorf("stdin is nil")
+	}
+	sc := bufio.NewScanner(r)
+	var out [][2]string
+	for sc.Scan() {
+		line := strings.TrimSpace(sc.Text())
+		if line == "" {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			return nil, fmt.Errorf("invalid rewrite line: %q", line)
+		}
+		out = append(out, [2]string{fields[0], fields[1]})
+	}
+	if err := sc.Err(); err != nil {
+		return nil, fmt.Errorf("scan stdin: %w", err)
+	}
+	return out, nil
+}
+
+func (h *Handler) PostRewrite(ctx context.Context, cwd string, rewriteType string, stdin io.Reader) error {
+	rewriteType = strings.TrimSpace(rewriteType)
+
+	repoRoot, err := gitOutput(cwd, "rev-parse", "--show-toplevel")
+	if err != nil {
+		return err
+	}
+	head, _ := gitOutput(cwd, "rev-parse", "HEAD")
+	gitDirAbs, _ := gitOutput(cwd, "rev-parse", "--absolute-git-dir")
+	gitCommonRel, _ := gitOutput(cwd, "rev-parse", "--git-common-dir")
+	gitCommonAbs, _ := absUnder(repoRoot, gitCommonRel)
+
+	scopeID := ""
+	if strings.TrimSpace(gitDirAbs) != "" && strings.TrimSpace(gitCommonAbs) != "" {
+		if wsid, err := session.DeriveWorkspaceID(repoRoot, repoRoot, gitDirAbs, gitCommonAbs); err == nil {
+			scopeID = wsid
+		}
+	}
+
+	m, err := session.ReadMarker(repoRoot)
+	if err != nil {
+		if os.IsNotExist(err) {
+			m, err = h.bootstrapMarkerFromEnv(repoRoot, cwd, head)
+			if err != nil {
+				m = nil
+			}
+		} else {
+			m = nil
+		}
+	}
+
+	sessionID := ""
+	if m != nil {
+		sessionID = strings.TrimSpace(m.SessionID)
+	}
+	if sessionID == "" {
+		return nil
+	}
+	if scopeID == "" && m != nil {
+		scopeID = strings.TrimSpace(m.WorkspaceID)
+	}
+	if scopeID == "" || rewriteType == "" {
+		// Fail-open: cannot build stable idempotent IDs without scope/type.
+		return nil
+	}
+
+	pairs, err := parsePostRewritePairs(stdin)
+	if err != nil {
+		// Fail-open: do not block developer workflows.
+		return nil
+	}
+	if len(pairs) == 0 {
+		return nil
+	}
+
+	q, qerr := NewLocalQueue(sessionID)
+	if qerr != nil {
+		q = nil
+	}
+
+	for _, p := range pairs {
+		oldSHA := strings.TrimSpace(p[0])
+		newSHA := strings.TrimSpace(p[1])
+		eid, err := RewriteEventID(scopeID, oldSHA, newSHA, rewriteType)
+		if err != nil {
+			continue
+		}
+		ev := HookEvent{
+			Kind:         "post-rewrite",
+			EventID:      eid,
+			SessionID:    sessionID,
+			RewriteType:  rewriteType,
+			OldCommitSHA: oldSHA,
+			NewCommitSHA: newSHA,
+		}
+
+		if h == nil || h.uploader == nil {
+			if q != nil {
+				_ = q.Enqueue(ev)
+			}
+			continue
+		}
+		if err := h.uploader.UploadHookEvent(ctx, ev); err != nil {
+			if q != nil {
+				_ = q.Enqueue(ev)
+			}
+		}
 	}
 
 	return nil

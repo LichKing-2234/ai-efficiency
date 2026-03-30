@@ -144,9 +144,10 @@ func InstallSharedHooks(cwd string, selfPath string) error {
 
 	for _, hookName := range []string{"post-commit", "post-rewrite"} {
 		legacyCopy := filepath.Join(sharedDir, "legacy", hookName)
-		legacyExists := false
+		legacyExists := fileExists(legacyCopy)
 
-		if legacyHooksDir != "" {
+		// If we haven't captured a legacy hook yet, try to copy it now.
+		if !legacyExists && legacyHooksDir != "" {
 			legacyHook := filepath.Join(legacyHooksDir, hookName)
 			if fileExists(legacyHook) {
 				info, err := os.Stat(legacyHook)

@@ -83,3 +83,43 @@ func TestInstallSharedHooksRejectsRecursiveLegacyPath(t *testing.T) {
 		t.Fatalf("expected error for recursive legacy path, got nil")
 	}
 }
+
+func TestInstallSharedHooksPreservesLegacyChainAcrossReinstall(t *testing.T) {
+	repo := initRepoWithCommit(t)
+
+	gitDir := git(t, repo, "rev-parse", "--absolute-git-dir")
+	legacyHook := filepath.Join(gitDir, "hooks", "post-commit")
+	if err := os.MkdirAll(filepath.Dir(legacyHook), 0o755); err != nil {
+		t.Fatalf("mkdir hooks dir: %v", err)
+	}
+	legacyRan := filepath.Join(repo, "legacy-ran.txt")
+	legacy := "#!/bin/sh\n" +
+		"echo legacy >> " + shellQuote(legacyRan) + "\n"
+	if err := os.WriteFile(legacyHook, []byte(legacy), 0o755); err != nil {
+		t.Fatalf("write legacy hook: %v", err)
+	}
+
+	// First install captures legacy hook and chains it.
+	if err := InstallSharedHooks(repo, "/bin/true"); err != nil {
+		t.Fatalf("InstallSharedHooks(1): %v", err)
+	}
+
+	// Second install must not silently drop the legacy chain just because core.hooksPath
+	// now points to the shared dir.
+	if err := InstallSharedHooks(repo, "/bin/true"); err != nil {
+		t.Fatalf("InstallSharedHooks(2): %v", err)
+	}
+
+	// Running the shared hook should still run the legacy script.
+	gitCommon := git(t, repo, "rev-parse", "--git-common-dir")
+	sharedHook := filepath.Join(repo, gitCommon, "ae-hooks", "post-commit")
+	cmd := exec.Command(sharedHook)
+	cmd.Dir = repo
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("running shared hook failed: %v\n%s", err, string(out))
+	}
+
+	if _, err := os.Stat(legacyRan); err != nil {
+		t.Fatalf("expected legacy hook to run after reinstall and create %s: %v", legacyRan, err)
+	}
+}
