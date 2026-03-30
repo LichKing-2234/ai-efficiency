@@ -18,6 +18,10 @@ var startCmd = &cobra.Command{
 	Use:   "start",
 	Short: "Start a new efficiency tracking session",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if resolveToken(cfg.Server.Token, "") == "" {
+			return fmt.Errorf("not logged in — run 'ae-cli login'")
+		}
+
 		mgr := session.NewManager(apiClient, cfg)
 
 		// Check if there's already an active session

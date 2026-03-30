@@ -40,6 +40,15 @@ var shellCmd = &cobra.Command{
 			return fmt.Errorf("no active session")
 		}
 
+		// Load runtime env bundle so tools (and router) see session-scoped variables.
+		if bound, err := session.ResolveBoundState(""); err != nil {
+			return fmt.Errorf("resolving session binding: %w", err)
+		} else if bound != nil && bound.Runtime != nil {
+			for k, v := range bound.Runtime.EnvBundle {
+				_ = os.Setenv(k, v)
+			}
+		}
+
 		// Register signal handler — only SIGTERM, not SIGINT
 		// SIGINT (Ctrl+C) is used to cancel current input in interactive shells
 		sigCh := make(chan os.Signal, 1)

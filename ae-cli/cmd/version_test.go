@@ -545,15 +545,17 @@ func TestStartCommandWithExistingDeadSession(t *testing.T) {
 
 	// Server that handles create and stop
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPost && r.URL.Path == "/api/v1/sessions" {
-			var req client.CreateSessionRequest
-			json.NewDecoder(r.Body).Decode(&req)
+		if r.Method == http.MethodPost && r.URL.Path == "/api/v1/sessions/bootstrap" {
 			w.WriteHeader(http.StatusCreated)
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"data": client.Session{
-					ID:        req.ID,
-					Status:    "active",
-					StartedAt: time.Now(),
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"data": client.BootstrapSessionResponse{
+					SessionID:     "boot-dead-tmux-1",
+					StartedAt:     time.Now(),
+					RelayAPIKeyID: 1,
+					ProviderName:  "sub2api",
+					RuntimeRef:    "rt-1",
+					EnvBundle:     map[string]string{"AE_SESSION_ID": "boot-dead-tmux-1"},
+					KeyExpiresAt:  time.Now().Add(1 * time.Hour),
 				},
 			})
 			return
@@ -1145,13 +1147,17 @@ func TestStartCommandNewSessionWithCommandFails(t *testing.T) {
 	// Return a session ID that starts with a known prefix so we can predict the tmux name
 	fixedID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPost && r.URL.Path == "/api/v1/sessions" {
+		if r.Method == http.MethodPost && r.URL.Path == "/api/v1/sessions/bootstrap" {
 			w.WriteHeader(http.StatusCreated)
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"data": client.Session{
-					ID:        fixedID,
-					Status:    "active",
-					StartedAt: now,
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"data": client.BootstrapSessionResponse{
+					SessionID:     fixedID,
+					StartedAt:     now,
+					RelayAPIKeyID: 1,
+					ProviderName:  "sub2api",
+					RuntimeRef:    "rt-1",
+					EnvBundle:     map[string]string{"AE_SESSION_ID": fixedID},
+					KeyExpiresAt:  now.Add(1 * time.Hour),
 				},
 			})
 			return
@@ -1209,15 +1215,17 @@ func TestStartCommandWithTmuxCreation(t *testing.T) {
 
 	now := time.Now().Truncate(time.Second)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPost && r.URL.Path == "/api/v1/sessions" {
-			var req client.CreateSessionRequest
-			json.NewDecoder(r.Body).Decode(&req)
+		if r.Method == http.MethodPost && r.URL.Path == "/api/v1/sessions/bootstrap" {
 			w.WriteHeader(http.StatusCreated)
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"data": client.Session{
-					ID:        req.ID,
-					Status:    "active",
-					StartedAt: now,
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"data": client.BootstrapSessionResponse{
+					SessionID:     "boot-tmux-create-1",
+					StartedAt:     now,
+					RelayAPIKeyID: 1,
+					ProviderName:  "sub2api",
+					RuntimeRef:    "rt-1",
+					EnvBundle:     map[string]string{"AE_SESSION_ID": "boot-tmux-create-1"},
+					KeyExpiresAt:  now.Add(1 * time.Hour),
 				},
 			})
 			return
@@ -1254,6 +1262,14 @@ func TestStartCommandInsideSameSessionSkipsAttach(t *testing.T) {
 	tmpHome := t.TempDir()
 	os.Setenv("HOME", tmpHome)
 	defer os.Setenv("HOME", origHome)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	cleanup := setupTestGlobals(t, srv)
+	defer cleanup()
 
 	// Create a real tmux session to simulate being "inside" it
 	tmuxName := "ae-cli-test-inside"

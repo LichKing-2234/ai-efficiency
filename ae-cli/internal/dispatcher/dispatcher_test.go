@@ -5,11 +5,14 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
 	"strings"
 	"testing"
 
 	"github.com/ai-efficiency/ae-cli/config"
 	"github.com/ai-efficiency/ae-cli/internal/client"
+	"github.com/ai-efficiency/ae-cli/internal/session"
 	"github.com/ai-efficiency/ae-cli/internal/tmux"
 )
 
@@ -87,6 +90,65 @@ func TestRunDirectExecution(t *testing.T) {
 	}
 	if !receivedInv.End.After(receivedInv.Start) && !receivedInv.End.Equal(receivedInv.Start) {
 		t.Error("invocation end should be >= start")
+	}
+}
+
+func TestRunDirectExecutionUsesRuntimeEnvBundle(t *testing.T) {
+	origHome := os.Getenv("HOME")
+	tmpHome := t.TempDir()
+	os.Setenv("HOME", tmpHome)
+	t.Cleanup(func() { os.Setenv("HOME", origHome) })
+
+	if err := session.WriteRuntimeBundle(&session.RuntimeBundle{
+		SessionID: "sess-1",
+		EnvBundle: map[string]string{
+			"AE_SESSION_ID": "sess-1",
+		},
+	}); err != nil {
+		t.Fatalf("WriteRuntimeBundle: %v", err)
+	}
+
+	var lastCmd *exec.Cmd
+	prev := execCommand
+	execCommand = func(name string, args ...string) *exec.Cmd {
+		cmd := exec.Command(name, args...)
+		lastCmd = cmd
+		return cmd
+	}
+	t.Cleanup(func() { execCommand = prev })
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Invocation recording is not relevant for env wiring.
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer srv.Close()
+
+	cfg := &config.Config{
+		Tools: map[string]config.ToolConfig{
+			"true-tool": {
+				Command: "true",
+				Args:    []string{},
+			},
+		},
+	}
+	c := client.New(srv.URL, "tok")
+	d := New(cfg, c)
+
+	if err := d.Run("sess-1", "true-tool", nil, ""); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if lastCmd == nil {
+		t.Fatal("expected execCommand to be called")
+	}
+	found := false
+	for _, kv := range lastCmd.Env {
+		if kv == "AE_SESSION_ID=sess-1" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected AE_SESSION_ID=sess-1 in cmd.Env, got %v", lastCmd.Env)
 	}
 }
 

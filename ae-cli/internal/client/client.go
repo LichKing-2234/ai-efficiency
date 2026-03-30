@@ -39,6 +39,29 @@ type Invocation struct {
 	End   time.Time `json:"end"`
 }
 
+type BootstrapSessionRequest struct {
+	RepoFullName   string `json:"repo_full_name"`
+	BranchSnapshot string `json:"branch_snapshot"`
+	HeadSHA        string `json:"head_sha"`
+	WorkspaceRoot  string `json:"workspace_root"`
+	GitDir         string `json:"git_dir"`
+	GitCommonDir   string `json:"git_common_dir"`
+	WorkspaceID    string `json:"workspace_id"`
+}
+
+type BootstrapSessionResponse struct {
+	SessionID          string            `json:"session_id"`
+	StartedAt          time.Time         `json:"started_at"`
+	RelayUserID        int64             `json:"relay_user_id"`
+	RelayAPIKeyID      int64             `json:"relay_api_key_id"`
+	ProviderName       string            `json:"provider_name"`
+	GroupID            string            `json:"group_id"`
+	RouteBindingSource string            `json:"route_binding_source"`
+	RuntimeRef         string            `json:"runtime_ref"`
+	EnvBundle          map[string]string `json:"env_bundle"`
+	KeyExpiresAt       time.Time         `json:"key_expires_at"`
+}
+
 func New(baseURL, token string) *Client {
 	return &Client{
 		baseURL: baseURL,
@@ -80,6 +103,38 @@ func (c *Client) CreateSession(ctx context.Context, req CreateSessionRequest) (*
 		return nil, fmt.Errorf("decoding response: %w", err)
 	}
 
+	return &envelope.Data, nil
+}
+
+func (c *Client) BootstrapSession(ctx context.Context, req BootstrapSessionRequest) (*BootstrapSessionResponse, error) {
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/api/v1/sessions/bootstrap", bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+	c.setHeaders(httpReq)
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("sending request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("unexpected status %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var envelope struct {
+		Data BootstrapSessionResponse `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
+		return nil, fmt.Errorf("decoding response: %w", err)
+	}
 	return &envelope.Data, nil
 }
 

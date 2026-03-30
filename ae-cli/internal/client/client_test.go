@@ -667,3 +667,91 @@ func TestCreateSessionEmptyBody(t *testing.T) {
 		t.Errorf("expected empty ID from empty envelope, got %q", sess.ID)
 	}
 }
+
+func TestBootstrapSession(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("method = %s, want POST", r.Method)
+		}
+		if r.URL.Path != "/api/v1/sessions/bootstrap" {
+			t.Errorf("path = %s, want /api/v1/sessions/bootstrap", r.URL.Path)
+		}
+		if r.Header.Get("Authorization") != "Bearer test-token" {
+			t.Errorf("auth header = %q, want %q", r.Header.Get("Authorization"), "Bearer test-token")
+		}
+		if r.Header.Get("Content-Type") != "application/json" {
+			t.Errorf("content-type = %q, want application/json", r.Header.Get("Content-Type"))
+		}
+
+		body, _ := io.ReadAll(r.Body)
+		var req BootstrapSessionRequest
+		if err := json.Unmarshal(body, &req); err != nil {
+			t.Fatalf("unmarshal request body: %v", err)
+		}
+		if req.RepoFullName != "org/repo" {
+			t.Errorf("repo_full_name = %q, want %q", req.RepoFullName, "org/repo")
+		}
+		if req.BranchSnapshot != "main" {
+			t.Errorf("branch_snapshot = %q, want %q", req.BranchSnapshot, "main")
+		}
+		if req.HeadSHA != "abc123" {
+			t.Errorf("head_sha = %q, want %q", req.HeadSHA, "abc123")
+		}
+		if req.WorkspaceRoot != "/ws" {
+			t.Errorf("workspace_root = %q, want %q", req.WorkspaceRoot, "/ws")
+		}
+		if req.GitDir != "/ws/.git" {
+			t.Errorf("git_dir = %q, want %q", req.GitDir, "/ws/.git")
+		}
+		if req.GitCommonDir != "/ws/.git" {
+			t.Errorf("git_common_dir = %q, want %q", req.GitCommonDir, "/ws/.git")
+		}
+		if req.WorkspaceID != "wsid-1" {
+			t.Errorf("workspace_id = %q, want %q", req.WorkspaceID, "wsid-1")
+		}
+
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"data": BootstrapSessionResponse{
+				SessionID:     "00000000-0000-0000-0000-000000000001",
+				StartedAt:     now,
+				RelayUserID:   10,
+				RelayAPIKeyID: 20,
+				ProviderName:  "sub2api",
+				GroupID:       "g-default",
+				RuntimeRef:    "rt-1",
+				EnvBundle: map[string]string{
+					"AE_SESSION_ID":  "00000000-0000-0000-0000-000000000001",
+					"AE_RUNTIME_REF": "rt-1",
+				},
+				KeyExpiresAt: now.Add(2 * time.Hour),
+			},
+		})
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "test-token")
+	resp, err := c.BootstrapSession(context.Background(), BootstrapSessionRequest{
+		RepoFullName:   "org/repo",
+		BranchSnapshot: "main",
+		HeadSHA:        "abc123",
+		WorkspaceRoot:  "/ws",
+		GitDir:         "/ws/.git",
+		GitCommonDir:   "/ws/.git",
+		WorkspaceID:    "wsid-1",
+	})
+	if err != nil {
+		t.Fatalf("BootstrapSession: %v", err)
+	}
+	if resp.SessionID != "00000000-0000-0000-0000-000000000001" {
+		t.Errorf("session_id = %q, want %q", resp.SessionID, "00000000-0000-0000-0000-000000000001")
+	}
+	if resp.ProviderName != "sub2api" {
+		t.Errorf("provider_name = %q, want %q", resp.ProviderName, "sub2api")
+	}
+	if got := resp.EnvBundle["AE_SESSION_ID"]; got == "" {
+		t.Errorf("env_bundle[AE_SESSION_ID] empty, want non-empty")
+	}
+}

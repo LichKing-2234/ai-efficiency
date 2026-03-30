@@ -461,16 +461,67 @@ func TestStartInTempGitRepo(t *testing.T) {
 	t.Cleanup(func() { os.Chdir(origDir) })
 
 	now := time.Now().Truncate(time.Second)
+	wantWorkspaceRoot, err := filepath.EvalSymlinks(tmpDir)
+	if err != nil {
+		t.Fatalf("EvalSymlinks(tmpDir): %v", err)
+	}
+	wantWorkspaceRoot, err = filepath.Abs(filepath.Clean(wantWorkspaceRoot))
+	if err != nil {
+		t.Fatalf("abs wantWorkspaceRoot: %v", err)
+	}
+
+	headOut, err := exec.Command("git", "rev-parse", "HEAD").CombinedOutput()
+	if err != nil {
+		t.Fatalf("git rev-parse HEAD: %v\n%s", err, headOut)
+	}
+	headSHA := strings.TrimSpace(string(headOut))
+
+	wantGitDir := filepath.Join(wantWorkspaceRoot, ".git")
+	wantCommonDir := filepath.Join(wantWorkspaceRoot, ".git")
+	wantWorkspaceID, err := deriveWorkspaceID(wantWorkspaceRoot, wantGitDir, wantCommonDir)
+	if err != nil {
+		t.Fatalf("deriveWorkspaceID: %v", err)
+	}
+
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPost && r.URL.Path == "/api/v1/sessions" {
-			var req client.CreateSessionRequest
-			json.NewDecoder(r.Body).Decode(&req)
+		if r.Method == http.MethodPost && r.URL.Path == "/api/v1/sessions/bootstrap" {
+			var req client.BootstrapSessionRequest
+			_ = json.NewDecoder(r.Body).Decode(&req)
+			if req.RepoFullName != "https://github.com/test-org/test-repo.git" {
+				t.Fatalf("bootstrap repo_full_name = %q, want %q", req.RepoFullName, "https://github.com/test-org/test-repo.git")
+			}
+			if req.BranchSnapshot != "feature/test-start" {
+				t.Fatalf("bootstrap branch_snapshot = %q, want %q", req.BranchSnapshot, "feature/test-start")
+			}
+			if req.HeadSHA != headSHA {
+				t.Fatalf("bootstrap head_sha = %q, want %q", req.HeadSHA, headSHA)
+			}
+			if req.WorkspaceRoot != wantWorkspaceRoot {
+				t.Fatalf("bootstrap workspace_root = %q, want %q", req.WorkspaceRoot, wantWorkspaceRoot)
+			}
+			if req.GitDir != wantGitDir {
+				t.Fatalf("bootstrap git_dir = %q, want %q", req.GitDir, wantGitDir)
+			}
+			if req.GitCommonDir != wantCommonDir {
+				t.Fatalf("bootstrap git_common_dir = %q, want %q", req.GitCommonDir, wantCommonDir)
+			}
+			if req.WorkspaceID != wantWorkspaceID {
+				t.Fatalf("bootstrap workspace_id = %q, want %q", req.WorkspaceID, wantWorkspaceID)
+			}
+
 			w.WriteHeader(http.StatusCreated)
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"data": client.Session{
-					ID:        req.ID,
-					Status:    "active",
-					StartedAt: now,
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"data": client.BootstrapSessionResponse{
+					SessionID:     "boot-sess-1",
+					StartedAt:     now,
+					RelayAPIKeyID: 123,
+					ProviderName:  "sub2api",
+					RuntimeRef:    "rt-1",
+					EnvBundle: map[string]string{
+						"AE_SESSION_ID":   "boot-sess-1",
+						"SUB2API_API_KEY": "k",
+					},
+					KeyExpiresAt: now.Add(1 * time.Hour),
 				},
 			})
 			return
@@ -490,14 +541,33 @@ func TestStartInTempGitRepo(t *testing.T) {
 	if state == nil {
 		t.Fatal("expected non-nil state")
 	}
-	if state.ID == "" {
-		t.Error("state ID should not be empty")
+	if state.ID != "boot-sess-1" {
+		t.Errorf("state ID = %q, want %q", state.ID, "boot-sess-1")
 	}
 	if state.Repo != "https://github.com/test-org/test-repo.git" {
 		t.Errorf("Repo = %q, want %q", state.Repo, "https://github.com/test-org/test-repo.git")
 	}
 	if state.Branch != "feature/test-start" {
 		t.Errorf("Branch = %q, want %q", state.Branch, "feature/test-start")
+	}
+
+	// Verify marker/runtime were persisted.
+	marker, err := ReadMarker(wantWorkspaceRoot)
+	if err != nil {
+		t.Fatalf("ReadMarker: %v", err)
+	}
+	if marker.SessionID != "boot-sess-1" {
+		t.Fatalf("marker session_id = %q, want %q", marker.SessionID, "boot-sess-1")
+	}
+	if marker.WorkspaceID != wantWorkspaceID {
+		t.Fatalf("marker workspace_id = %q, want %q", marker.WorkspaceID, wantWorkspaceID)
+	}
+	rt, err := ReadRuntimeBundle("boot-sess-1")
+	if err != nil {
+		t.Fatalf("ReadRuntimeBundle: %v", err)
+	}
+	if rt.EnvBundle["AE_SESSION_ID"] != "boot-sess-1" {
+		t.Fatalf("runtime AE_SESSION_ID = %q, want %q", rt.EnvBundle["AE_SESSION_ID"], "boot-sess-1")
 	}
 
 	// Verify state was persisted
@@ -826,15 +896,17 @@ func TestStartSuccess(t *testing.T) {
 
 	now := time.Now().Truncate(time.Second)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPost && r.URL.Path == "/api/v1/sessions" {
-			var req client.CreateSessionRequest
-			json.NewDecoder(r.Body).Decode(&req)
+		if r.Method == http.MethodPost && r.URL.Path == "/api/v1/sessions/bootstrap" {
 			w.WriteHeader(http.StatusCreated)
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"data": client.Session{
-					ID:        req.ID,
-					Status:    "active",
-					StartedAt: now,
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"data": client.BootstrapSessionResponse{
+					SessionID:     "boot-sess-success",
+					StartedAt:     now,
+					RelayAPIKeyID: 1,
+					ProviderName:  "sub2api",
+					RuntimeRef:    "rt-success",
+					EnvBundle:     map[string]string{"AE_SESSION_ID": "boot-sess-success"},
+					KeyExpiresAt:  now.Add(1 * time.Hour),
 				},
 			})
 			return
@@ -909,8 +981,8 @@ func TestStartDetectRepoFails(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error when not in a git repo")
 	}
-	if !strings.Contains(err.Error(), "detecting git repo") {
-		t.Errorf("error = %q, want it to contain 'detecting git repo'", err.Error())
+	if !strings.Contains(err.Error(), "detecting git workspace root") {
+		t.Errorf("error = %q, want it to contain 'detecting git workspace root'", err.Error())
 	}
 }
 
@@ -990,8 +1062,8 @@ func TestStartCreateSessionFails(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error when server returns 500")
 	}
-	if !strings.Contains(err.Error(), "creating session") {
-		t.Errorf("error = %q, want it to contain 'creating session'", err.Error())
+	if !strings.Contains(err.Error(), "bootstrapping session") {
+		t.Errorf("error = %q, want it to contain 'bootstrapping session'", err.Error())
 	}
 }
 
@@ -1024,12 +1096,18 @@ func TestStartWriteStateFails(t *testing.T) {
 
 	now := time.Now().Truncate(time.Second)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPost && r.URL.Path == "/api/v1/sessions" {
-			var req client.CreateSessionRequest
-			json.NewDecoder(r.Body).Decode(&req)
+		if r.Method == http.MethodPost && r.URL.Path == "/api/v1/sessions/bootstrap" {
 			w.WriteHeader(http.StatusCreated)
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"data": client.Session{ID: req.ID, Status: "active", StartedAt: now},
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"data": client.BootstrapSessionResponse{
+					SessionID:     "boot-sess-wsfail",
+					StartedAt:     now,
+					RelayAPIKeyID: 1,
+					ProviderName:  "sub2api",
+					RuntimeRef:    "rt-x",
+					EnvBundle:     map[string]string{"AE_SESSION_ID": "boot-sess-wsfail"},
+					KeyExpiresAt:  now.Add(1 * time.Hour),
+				},
 			})
 			return
 		}
@@ -1046,10 +1124,10 @@ func TestStartWriteStateFails(t *testing.T) {
 
 	_, err := m.Start()
 	if err == nil {
-		t.Fatal("expected error when writeState fails")
+		t.Fatal("expected error when runtime/state write fails")
 	}
-	if !strings.Contains(err.Error(), "writing session state") {
-		t.Errorf("error = %q, want it to contain 'writing session state'", err.Error())
+	if !strings.Contains(err.Error(), "writing runtime bundle") && !strings.Contains(err.Error(), "writing session state") {
+		t.Errorf("error = %q, want it to contain 'writing runtime bundle' or 'writing session state'", err.Error())
 	}
 }
 
@@ -1066,6 +1144,14 @@ func TestCurrentReadError(t *testing.T) {
 	c := client.New("http://localhost:8080", "tok")
 	cfg := &config.Config{}
 	m := NewManager(c, cfg)
+
+	// Ensure cwd has no workspace marker so Current falls back to legacy state file.
+	origWD, _ := os.Getwd()
+	tmpWD := t.TempDir()
+	if err := os.Chdir(tmpWD); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(origWD) })
 
 	_, err := m.Current()
 	if err == nil {

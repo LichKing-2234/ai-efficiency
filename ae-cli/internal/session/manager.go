@@ -13,7 +13,6 @@ import (
 
 	"github.com/ai-efficiency/ae-cli/config"
 	"github.com/ai-efficiency/ae-cli/internal/client"
-	"github.com/google/uuid"
 )
 
 type State struct {
@@ -37,41 +36,63 @@ func NewManager(c *client.Client, cfg *config.Config) *Manager {
 }
 
 func (m *Manager) Start() (*State, error) {
-	// Reconcile: if local state exists but backend session is gone, clean up
-	if existing, _ := m.Current(); existing != nil {
+	// Reconcile: if local binding exists but backend session is gone, clean it up.
+	if existing, _ := m.Current(); existing != nil && strings.TrimSpace(existing.ID) != "" {
 		if _, err := m.client.GetSession(context.Background(), existing.ID); errors.Is(err, client.ErrNotFound) {
-			_ = removeState()
+			_ = m.cleanupLocal(existing.ID)
 		}
 	}
 
-	repo, err := detectRepo()
+	gc, err := detectGitContext()
 	if err != nil {
-		return nil, fmt.Errorf("detecting git repo: %w", err)
+		return nil, err
 	}
 
-	branch, err := detectBranch()
-	if err != nil {
-		return nil, fmt.Errorf("detecting git branch: %w", err)
-	}
-
-	sessionID := uuid.New().String()
-
-	sess, err := m.client.CreateSession(context.Background(), client.CreateSessionRequest{
-		ID:           sessionID,
-		RepoFullName: repo,
-		Branch:       branch,
+	resp, err := m.client.BootstrapSession(context.Background(), client.BootstrapSessionRequest{
+		RepoFullName:   gc.repoURL,
+		BranchSnapshot: gc.branch,
+		HeadSHA:        gc.headSHA,
+		WorkspaceRoot:  gc.workspaceRoot,
+		GitDir:         gc.gitDir,
+		GitCommonDir:   gc.gitCommonDir,
+		WorkspaceID:    gc.workspaceID,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("creating session: %w", err)
+		return nil, fmt.Errorf("bootstrapping session: %w", err)
 	}
 
 	state := &State{
-		ID:        sess.ID,
-		Repo:      repo,
-		Branch:    branch,
-		StartedAt: sess.StartedAt,
+		ID:        resp.SessionID,
+		Repo:      gc.repoURL,
+		Branch:    gc.branch,
+		StartedAt: resp.StartedAt,
 	}
 
+	marker := &Marker{
+		SessionID:     resp.SessionID,
+		WorkspaceID:   gc.workspaceID,
+		RuntimeRef:    resp.RuntimeRef,
+		ProviderName:  resp.ProviderName,
+		RelayAPIKeyID: resp.RelayAPIKeyID,
+		RepoFullName:  gc.repoURL,
+		Branch:        gc.branch,
+		HeadSHA:       gc.headSHA,
+	}
+	if err := WriteMarker(gc.workspaceRoot, marker); err != nil {
+		return nil, fmt.Errorf("writing workspace marker: %w", err)
+	}
+
+	rt := &RuntimeBundle{
+		SessionID:    resp.SessionID,
+		RuntimeRef:   resp.RuntimeRef,
+		EnvBundle:    resp.EnvBundle,
+		KeyExpiresAt: resp.KeyExpiresAt,
+	}
+	if err := WriteRuntimeBundle(rt); err != nil {
+		return nil, fmt.Errorf("writing runtime bundle: %w", err)
+	}
+
+	// Compatibility: keep legacy global state for commands run outside the workspace.
 	if err := writeState(state); err != nil {
 		return nil, fmt.Errorf("writing session state: %w", err)
 	}
@@ -80,12 +101,28 @@ func (m *Manager) Start() (*State, error) {
 }
 
 func (m *Manager) Stop() (*State, error) {
-	state, err := m.Current()
+	// Resolve bound state first so we know which workspace marker to remove.
+	bound, err := ResolveBoundState("")
 	if err != nil {
 		return nil, err
 	}
-	if state == nil {
-		return nil, fmt.Errorf("no active session")
+
+	var state *State
+	if bound != nil && bound.Marker != nil && strings.TrimSpace(bound.Marker.SessionID) != "" {
+		state = &State{
+			ID:          bound.Marker.SessionID,
+			Repo:        bound.Marker.RepoFullName,
+			Branch:      bound.Marker.Branch,
+			TmuxSession: bound.Marker.TmuxSession,
+		}
+	} else {
+		state, err = m.Current()
+		if err != nil {
+			return nil, err
+		}
+		if state == nil {
+			return nil, fmt.Errorf("no active session")
+		}
 	}
 
 	if err := m.client.StopSession(context.Background(), state.ID); err != nil {
@@ -95,9 +132,8 @@ func (m *Manager) Stop() (*State, error) {
 		}
 	}
 
-	if err := removeState(); err != nil {
-		return nil, fmt.Errorf("removing session state: %w", err)
-	}
+	// Clean up local state (marker/runtime/global state) best-effort.
+	_ = m.cleanupLocal(state.ID)
 
 	return state, nil
 }
@@ -114,16 +150,38 @@ func (m *Manager) Shutdown(ctx context.Context) error {
 	_ = m.client.StopSession(ctx, state.ID)
 
 	// Always clean up local state
-	_ = removeState()
+	_ = m.cleanupLocal(state.ID)
 	return nil
 }
 
 // SaveState persists the session state to disk.
 func (m *Manager) SaveState(state *State) error {
+	// Prefer workspace marker when present.
+	if bound, err := ResolveBoundState(""); err != nil {
+		return err
+	} else if bound != nil && bound.Marker != nil && strings.TrimSpace(bound.Marker.SessionID) != "" && bound.Marker.SessionID == state.ID {
+		bound.Marker.TmuxSession = state.TmuxSession
+		if err := WriteMarker(bound.WorkspaceRoot, bound.Marker); err != nil {
+			return fmt.Errorf("writing workspace marker: %w", err)
+		}
+	}
+	// Compatibility: also update legacy state.
 	return writeState(state)
 }
 
 func (m *Manager) Current() (*State, error) {
+	// Prefer workspace marker/runtime binding when available.
+	if bound, err := ResolveBoundState(""); err != nil {
+		return nil, err
+	} else if bound != nil && bound.Marker != nil && strings.TrimSpace(bound.Marker.SessionID) != "" {
+		return &State{
+			ID:          bound.Marker.SessionID,
+			Repo:        bound.Marker.RepoFullName,
+			Branch:      bound.Marker.Branch,
+			TmuxSession: bound.Marker.TmuxSession,
+		}, nil
+	}
+
 	path, err := stateFilePath()
 	if err != nil {
 		return nil, err
@@ -159,6 +217,105 @@ func detectBranch() (string, error) {
 		return "", fmt.Errorf("git rev-parse --abbrev-ref HEAD: %w", err)
 	}
 	return strings.TrimSpace(string(out)), nil
+}
+
+type gitContext struct {
+	workspaceRoot string
+	gitDir        string
+	gitCommonDir  string
+	repoURL       string
+	branch        string
+	headSHA       string
+	workspaceID   string
+}
+
+func gitOutput(dir string, args ...string) (string, error) {
+	cmd := exec.Command("git", args...)
+	if strings.TrimSpace(dir) != "" {
+		cmd.Dir = dir
+	}
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("git %s: %w", strings.Join(args, " "), err)
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+func absUnder(root, p string) (string, error) {
+	p = strings.TrimSpace(p)
+	if p == "" {
+		return "", fmt.Errorf("path is empty")
+	}
+	if filepath.IsAbs(p) {
+		return filepath.Clean(p), nil
+	}
+	return filepath.Abs(filepath.Join(root, p))
+}
+
+func detectGitContext() (*gitContext, error) {
+	workspaceRoot, err := gitOutput("", "rev-parse", "--show-toplevel")
+	if err != nil {
+		return nil, fmt.Errorf("detecting git workspace root: %w", err)
+	}
+	workspaceRoot, err = canonicalAbsPath(workspaceRoot)
+	if err != nil {
+		return nil, fmt.Errorf("canonical workspace root: %w", err)
+	}
+
+	// Stabilize all other git outputs by running from the repo root.
+	repoURL, err := gitOutput(workspaceRoot, "remote", "get-url", "origin")
+	if err != nil {
+		return nil, fmt.Errorf("detecting git repo: %w", err)
+	}
+	branch, err := gitOutput(workspaceRoot, "rev-parse", "--abbrev-ref", "HEAD")
+	if err != nil {
+		return nil, fmt.Errorf("detecting git branch: %w", err)
+	}
+	headSHA, err := gitOutput(workspaceRoot, "rev-parse", "HEAD")
+	if err != nil {
+		return nil, fmt.Errorf("detecting git head sha: %w", err)
+	}
+
+	gitDirRel, err := gitOutput(workspaceRoot, "rev-parse", "--git-dir")
+	if err != nil {
+		return nil, fmt.Errorf("detecting git dir: %w", err)
+	}
+	gitCommonRel, err := gitOutput(workspaceRoot, "rev-parse", "--git-common-dir")
+	if err != nil {
+		return nil, fmt.Errorf("detecting git common dir: %w", err)
+	}
+
+	gitDirAbs, err := absUnder(workspaceRoot, gitDirRel)
+	if err != nil {
+		return nil, fmt.Errorf("abs git dir: %w", err)
+	}
+	gitCommonAbs, err := absUnder(workspaceRoot, gitCommonRel)
+	if err != nil {
+		return nil, fmt.Errorf("abs git common dir: %w", err)
+	}
+	gitDirAbs, err = canonicalAbsPath(gitDirAbs)
+	if err != nil {
+		return nil, fmt.Errorf("canonical git dir: %w", err)
+	}
+	gitCommonAbs, err = canonicalAbsPath(gitCommonAbs)
+	if err != nil {
+		return nil, fmt.Errorf("canonical git common dir: %w", err)
+	}
+
+	workspaceID, err := deriveWorkspaceID(workspaceRoot, gitDirAbs, gitCommonAbs)
+	if err != nil {
+		return nil, fmt.Errorf("deriving workspace_id: %w", err)
+	}
+
+	return &gitContext{
+		workspaceRoot: workspaceRoot,
+		gitDir:        gitDirAbs,
+		gitCommonDir:  gitCommonAbs,
+		repoURL:       repoURL,
+		branch:        branch,
+		headSHA:       headSHA,
+		workspaceID:   workspaceID,
+	}, nil
 }
 
 func stateFilePath() (string, error) {
@@ -197,5 +354,19 @@ func removeState() error {
 		return fmt.Errorf("removing state file: %w", err)
 	}
 
+	return nil
+}
+
+func (m *Manager) cleanupLocal(sessionID string) error {
+	// Remove marker if present in current workspace tree.
+	if bound, err := ResolveBoundState(""); err == nil && bound != nil {
+		_ = RemoveMarker(bound.WorkspaceRoot)
+	}
+	// Remove runtime (contains secrets).
+	if strings.TrimSpace(sessionID) != "" {
+		_ = RemoveRuntime(sessionID)
+	}
+	// Remove legacy global state.
+	_ = removeState()
 	return nil
 }

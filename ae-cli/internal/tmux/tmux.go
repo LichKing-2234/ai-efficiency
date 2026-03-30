@@ -124,3 +124,20 @@ func KillSession(name string) error {
 	return exec.Command("tmux", "kill-session", "-t", name).Run()
 }
 
+// SetEnvironment sets environment variables for a tmux session (best-effort).
+// This affects future panes started in that tmux session.
+func SetEnvironment(sessionName string, env map[string]string) error {
+	if sessionName == "" || len(env) == 0 {
+		return nil
+	}
+	for k, v := range env {
+		if k == "" {
+			continue
+		}
+		// tmux stores environment variables per-session; values are passed as args (no shell eval).
+		if err := exec.Command("tmux", "set-environment", "-t", sessionName, k, v).Run(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
