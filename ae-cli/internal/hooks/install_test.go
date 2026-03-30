@@ -154,3 +154,39 @@ func TestInstallSharedHooksDoesNotRunNonExecutableLegacyHook(t *testing.T) {
 		t.Fatalf("expected non-executable legacy hook not to run, stat err=%v", err)
 	}
 }
+
+func TestInstallSharedHooksSeesWorktreeCoreHooksPath(t *testing.T) {
+	repo := initRepoWithCommit(t)
+
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+
+	git(t, repo, "config", "extensions.worktreeConfig", "true")
+	legacyDir := filepath.Join(repo, "custom-hooks")
+	if err := os.MkdirAll(legacyDir, 0o755); err != nil {
+		t.Fatalf("mkdir custom-hooks: %v", err)
+	}
+	legacyRan := filepath.Join(repo, "legacy-worktree-ran.txt")
+	legacy := "#!/bin/sh\n" +
+		"echo legacy >> " + shellQuote(legacyRan) + "\n"
+	if err := os.WriteFile(filepath.Join(legacyDir, "post-commit"), []byte(legacy), 0o755); err != nil {
+		t.Fatalf("write legacy hook: %v", err)
+	}
+	git(t, repo, "config", "--worktree", "core.hooksPath", legacyDir)
+
+	if err := InstallSharedHooks(repo, "/bin/true"); err != nil {
+		t.Fatalf("InstallSharedHooks: %v", err)
+	}
+
+	gitCommon := git(t, repo, "rev-parse", "--git-common-dir")
+	sharedHook := filepath.Join(repo, gitCommon, "ae-hooks", "post-commit")
+	cmd := exec.Command(sharedHook)
+	cmd.Dir = repo
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("running shared hook failed: %v\n%s", err, string(out))
+	}
+	if _, err := os.Stat(legacyRan); err != nil {
+		t.Fatalf("expected worktree hooksPath legacy hook to run: %v", err)
+	}
+}

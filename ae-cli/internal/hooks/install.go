@@ -110,7 +110,7 @@ func InstallSharedHooks(cwd string, selfPath string) error {
 
 	// Detect legacy hooks path.
 	legacyHooksDir := ""
-	hooksPath, err := gitOutputInstall(cwd, "config", "--local", "--get", "core.hooksPath")
+	hooksPath, err := gitOutputInstall(cwd, "config", "--get", "core.hooksPath")
 	if err != nil {
 		// Not set: fall back to Git's default common hooks dir.
 		legacyHooksDir = filepath.Join(gitCommonAbs, "hooks")
