@@ -538,7 +538,7 @@ func TestChatCompletionUsesConfiguredModel(t *testing.T) {
 
 func TestCreateUserAPIKeyWithExpiryAndGroup(t *testing.T) {
 	exp := time.Date(2026, 3, 31, 1, 2, 3, 0, time.UTC)
-	groupID := int64(88)
+	groupID := "team-ai"
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/keys", func(w http.ResponseWriter, r *http.Request) {
@@ -550,7 +550,7 @@ func TestCreateUserAPIKeyWithExpiryAndGroup(t *testing.T) {
 			UserID    int64  `json:"user_id"`
 			Name      string `json:"name"`
 			ExpiresAt string `json:"expires_at"`
-			GroupID   int64  `json:"group_id"`
+			GroupID   string `json:"group_id"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Fatalf("failed to decode body: %v", err)
@@ -576,7 +576,7 @@ func TestCreateUserAPIKeyWithExpiryAndGroup(t *testing.T) {
 	key, err := p.CreateUserAPIKey(context.Background(), 3, relay.APIKeyCreateRequest{
 		Name:      "my-key",
 		ExpiresAt: &exp,
-		GroupID:   &groupID,
+		GroupID:   groupID,
 	})
 	if err != nil {
 		t.Fatalf("CreateUserAPIKey() unexpected error: %v", err)
@@ -615,8 +615,8 @@ func TestListUsageLogsByAPIKeyExact(t *testing.T) {
 					"created_at":    "2026-03-01T00:00:01Z",
 					"api_key_id":    99,
 					"user_id":       3,
-					"account_id":    11,
-					"group_id":      88,
+					"account_id":    "acct-1",
+					"group_id":      "team-ai",
 					"model":         "gpt-5.1",
 					"input_tokens":  10,
 					"output_tokens": 20,
@@ -640,7 +640,7 @@ func TestListUsageLogsByAPIKeyExact(t *testing.T) {
 	if logs[0].RequestID != "req-1" {
 		t.Fatalf("expected RequestID=req-1, got %q", logs[0].RequestID)
 	}
-	if logs[0].APIKeyID != 99 || logs[0].UserID != 3 || logs[0].AccountID != 11 || logs[0].GroupID != 88 {
+	if logs[0].APIKeyID != 99 || logs[0].UserID != 3 || logs[0].AccountID != "acct-1" || logs[0].GroupID != "team-ai" {
 		t.Fatalf("unexpected ids: %+v", logs[0])
 	}
 	if logs[0].Model != "gpt-5.1" || logs[0].InputTokens != 10 || logs[0].OutputTokens != 20 || logs[0].CacheTokens != 3 {

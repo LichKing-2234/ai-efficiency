@@ -385,7 +385,7 @@ func (s *sub2apiRelay) CreateUserAPIKey(ctx context.Context, userID int64, req A
 	if req.ExpiresAt != nil {
 		payloadMap["expires_at"] = req.ExpiresAt
 	}
-	if req.GroupID != nil {
+	if req.GroupID != "" {
 		payloadMap["group_id"] = req.GroupID
 	}
 
