@@ -189,4 +189,12 @@ func TestInstallSharedHooksSeesWorktreeCoreHooksPath(t *testing.T) {
 	if _, err := os.Stat(legacyRan); err != nil {
 		t.Fatalf("expected worktree hooksPath legacy hook to run: %v", err)
 	}
+
+	got := git(t, repo, "config", "--get", "core.hooksPath")
+	expectedSharedDir := filepath.Join(repo, gitCommon, "ae-hooks")
+	gotCanon, _ := canonicalPath(got)
+	wantCanon, _ := canonicalPath(expectedSharedDir)
+	if gotCanon != wantCanon {
+		t.Fatalf("core.hooksPath = %q, want %q", gotCanon, wantCanon)
+	}
 }

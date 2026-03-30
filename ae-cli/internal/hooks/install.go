@@ -178,11 +178,17 @@ func InstallSharedHooks(cwd string, selfPath string) error {
 		}
 	}
 
-	// Activate shared hooks.
-	cmd := exec.Command("git", "config", "core.hooksPath", sharedDir)
+	// Activate shared hooks. Prefer worktree config when available so it overrides
+	// any existing worktree-scoped hooksPath cleanly.
+	cmd := exec.Command("git", "config", "--worktree", "core.hooksPath", sharedDir)
 	cmd.Dir = cwd
 	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("git config core.hooksPath: %w (%s)", err, strings.TrimSpace(string(out)))
+		// Fallback for repos/worktrees without worktreeConfig enabled.
+		cmd = exec.Command("git", "config", "core.hooksPath", sharedDir)
+		cmd.Dir = cwd
+		if out2, err2 := cmd.CombinedOutput(); err2 != nil {
+			return fmt.Errorf("git config core.hooksPath: %w (%s); fallback: %w (%s)", err, strings.TrimSpace(string(out)), err2, strings.TrimSpace(string(out2)))
+		}
 	}
 	return nil
 }
