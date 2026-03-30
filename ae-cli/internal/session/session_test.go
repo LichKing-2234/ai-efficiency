@@ -16,6 +16,21 @@ import (
 	"github.com/ai-efficiency/ae-cli/internal/client"
 )
 
+func TestMain(m *testing.M) {
+	origWD, _ := os.Getwd()
+	tmpWD, err := os.MkdirTemp("", "ae-cli-session-test-*")
+	if err != nil {
+		panic(err)
+	}
+	if err := os.Chdir(tmpWD); err != nil {
+		panic(err)
+	}
+	code := m.Run()
+	_ = os.Chdir(origWD)
+	_ = os.RemoveAll(tmpWD)
+	os.Exit(code)
+}
+
 func TestNewManager(t *testing.T) {
 	c := client.New("http://localhost:8080", "tok")
 	cfg := &config.Config{}

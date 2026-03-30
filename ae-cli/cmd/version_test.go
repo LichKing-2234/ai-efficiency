@@ -18,6 +18,21 @@ import (
 	"github.com/ai-efficiency/ae-cli/internal/tmux"
 )
 
+func TestMain(m *testing.M) {
+	origWD, _ := os.Getwd()
+	tmpWD, err := os.MkdirTemp("", "ae-cli-cmd-test-*")
+	if err != nil {
+		panic(err)
+	}
+	if err := os.Chdir(tmpWD); err != nil {
+		panic(err)
+	}
+	code := m.Run()
+	_ = os.Chdir(origWD)
+	_ = os.RemoveAll(tmpWD)
+	os.Exit(code)
+}
+
 func TestVersionCommand(t *testing.T) {
 	buf := new(bytes.Buffer)
 	rootCmd.SetOut(buf)

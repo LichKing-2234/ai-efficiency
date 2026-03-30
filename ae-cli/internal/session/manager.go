@@ -189,7 +189,7 @@ func (m *Manager) Current() (*State, error) {
 	// Prefer workspace marker/runtime binding when available.
 	if bound, err := ResolveBoundState(""); err != nil {
 		return nil, err
-	} else if bound != nil && bound.Marker != nil && strings.TrimSpace(bound.Marker.SessionID) != "" && bound.Runtime != nil {
+	} else if bound != nil && bound.Marker != nil && strings.TrimSpace(bound.Marker.SessionID) != "" {
 		return &State{
 			ID:          bound.Marker.SessionID,
 			Repo:        bound.Marker.RepoFullName,
