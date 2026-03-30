@@ -47,6 +47,10 @@ var shellCmd = &cobra.Command{
 			for k, v := range bound.Runtime.EnvBundle {
 				_ = os.Setenv(k, v)
 			}
+			if state.TmuxSession != "" {
+				// Ensure panes launched from inside the shell inherit the session env.
+				_ = tmux.SetEnvironment(state.TmuxSession, bound.Runtime.EnvBundle)
+			}
 		}
 
 		// Register signal handler — only SIGTERM, not SIGINT

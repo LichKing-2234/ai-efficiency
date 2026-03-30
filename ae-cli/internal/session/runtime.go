@@ -14,10 +14,11 @@ import (
 // It may contain sensitive data (for example env vars with API key secrets),
 // so it must be stored with restricted permissions.
 type RuntimeBundle struct {
-	SessionID    string            `json:"session_id"`
-	RuntimeRef   string            `json:"runtime_ref,omitempty"`
-	EnvBundle    map[string]string `json:"env_bundle,omitempty"`
-	KeyExpiresAt time.Time         `json:"key_expires_at,omitempty"`
+	SessionID     string            `json:"session_id"`
+	RuntimeRef    string            `json:"runtime_ref,omitempty"`
+	WorkspaceRoot string            `json:"workspace_root,omitempty"`
+	EnvBundle     map[string]string `json:"env_bundle,omitempty"`
+	KeyExpiresAt  time.Time         `json:"key_expires_at,omitempty"`
 }
 
 func runtimeDir(sessionID string) string {

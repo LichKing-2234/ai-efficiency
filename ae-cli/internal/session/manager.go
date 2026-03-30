@@ -78,15 +78,23 @@ func (m *Manager) Start() (*State, error) {
 		Branch:        gc.branch,
 		HeadSHA:       gc.headSHA,
 	}
+
+	// Ensure marker dir isn't accidentally committed.
+	if err := ensureGitInfoExcludeHas(gc.gitCommonDir, ".ae/"); err != nil {
+		if err2 := ensureGitInfoExcludeHas(gc.gitDir, ".ae/"); err2 != nil {
+			return nil, fmt.Errorf("ensuring git exclude: %w", err2)
+		}
+	}
 	if err := WriteMarker(gc.workspaceRoot, marker); err != nil {
 		return nil, fmt.Errorf("writing workspace marker: %w", err)
 	}
 
 	rt := &RuntimeBundle{
-		SessionID:    resp.SessionID,
-		RuntimeRef:   resp.RuntimeRef,
-		EnvBundle:    resp.EnvBundle,
-		KeyExpiresAt: resp.KeyExpiresAt,
+		SessionID:     resp.SessionID,
+		RuntimeRef:    resp.RuntimeRef,
+		WorkspaceRoot: gc.workspaceRoot,
+		EnvBundle:     resp.EnvBundle,
+		KeyExpiresAt:  resp.KeyExpiresAt,
 	}
 	if err := WriteRuntimeBundle(rt); err != nil {
 		return nil, fmt.Errorf("writing runtime bundle: %w", err)
@@ -220,6 +228,7 @@ func detectBranch() (string, error) {
 }
 
 type gitContext struct {
+	repoRoot      string
 	workspaceRoot string
 	gitDir        string
 	gitCommonDir  string
@@ -253,14 +262,17 @@ func absUnder(root, p string) (string, error) {
 }
 
 func detectGitContext() (*gitContext, error) {
-	workspaceRoot, err := gitOutput("", "rev-parse", "--show-toplevel")
+	repoRoot, err := gitOutput("", "rev-parse", "--show-toplevel")
 	if err != nil {
 		return nil, fmt.Errorf("detecting git workspace root: %w", err)
 	}
-	workspaceRoot, err = canonicalAbsPath(workspaceRoot)
+	repoRoot, err = canonicalAbsPath(repoRoot)
 	if err != nil {
 		return nil, fmt.Errorf("canonical workspace root: %w", err)
 	}
+	// For ae-cli today, repo root and workspace root are the git toplevel. Keep them
+	// separate in the derivation contract for forward compatibility.
+	workspaceRoot := repoRoot
 
 	// Stabilize all other git outputs by running from the repo root.
 	repoURL, err := gitOutput(workspaceRoot, "remote", "get-url", "origin")
@@ -276,18 +288,21 @@ func detectGitContext() (*gitContext, error) {
 		return nil, fmt.Errorf("detecting git head sha: %w", err)
 	}
 
-	gitDirRel, err := gitOutput(workspaceRoot, "rev-parse", "--git-dir")
+	// Prefer absolute git dir paths to correctly handle linked worktrees (where .git may be a file).
+	gitDirAbs, err := gitOutput(workspaceRoot, "rev-parse", "--absolute-git-dir")
 	if err != nil {
-		return nil, fmt.Errorf("detecting git dir: %w", err)
+		gitDirRel, err2 := gitOutput(workspaceRoot, "rev-parse", "--git-dir")
+		if err2 != nil {
+			return nil, fmt.Errorf("detecting git dir: %w", err2)
+		}
+		gitDirAbs, err = absUnder(workspaceRoot, gitDirRel)
+		if err != nil {
+			return nil, fmt.Errorf("abs git dir: %w", err)
+		}
 	}
 	gitCommonRel, err := gitOutput(workspaceRoot, "rev-parse", "--git-common-dir")
 	if err != nil {
 		return nil, fmt.Errorf("detecting git common dir: %w", err)
-	}
-
-	gitDirAbs, err := absUnder(workspaceRoot, gitDirRel)
-	if err != nil {
-		return nil, fmt.Errorf("abs git dir: %w", err)
 	}
 	gitCommonAbs, err := absUnder(workspaceRoot, gitCommonRel)
 	if err != nil {
@@ -302,12 +317,13 @@ func detectGitContext() (*gitContext, error) {
 		return nil, fmt.Errorf("canonical git common dir: %w", err)
 	}
 
-	workspaceID, err := deriveWorkspaceID(workspaceRoot, gitDirAbs, gitCommonAbs)
+	workspaceID, err := deriveWorkspaceID(repoRoot, workspaceRoot, gitDirAbs, gitCommonAbs)
 	if err != nil {
 		return nil, fmt.Errorf("deriving workspace_id: %w", err)
 	}
 
 	return &gitContext{
+		repoRoot:      repoRoot,
 		workspaceRoot: workspaceRoot,
 		gitDir:        gitDirAbs,
 		gitCommonDir:  gitCommonAbs,
@@ -316,6 +332,51 @@ func detectGitContext() (*gitContext, error) {
 		headSHA:       headSHA,
 		workspaceID:   workspaceID,
 	}, nil
+}
+
+func ensureGitInfoExcludeHas(gitDirAbs string, pattern string) error {
+	gitDirAbs = strings.TrimSpace(gitDirAbs)
+	pattern = strings.TrimSpace(pattern)
+	if gitDirAbs == "" {
+		return fmt.Errorf("git dir is empty")
+	}
+	if pattern == "" {
+		return fmt.Errorf("pattern is empty")
+	}
+
+	excludePath := filepath.Join(gitDirAbs, "info", "exclude")
+	if err := os.MkdirAll(filepath.Dir(excludePath), 0o755); err != nil {
+		return fmt.Errorf("creating exclude dir: %w", err)
+	}
+
+	var existing []byte
+	mode := os.FileMode(0o644)
+	if info, err := os.Stat(excludePath); err == nil {
+		mode = info.Mode().Perm()
+		if b, err := os.ReadFile(excludePath); err == nil {
+			existing = b
+		}
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("stat exclude: %w", err)
+	}
+
+	lines := strings.Split(string(existing), "\n")
+	for _, line := range lines {
+		if strings.TrimSpace(line) == pattern {
+			return nil
+		}
+	}
+
+	out := string(existing)
+	if out != "" && !strings.HasSuffix(out, "\n") {
+		out += "\n"
+	}
+	out += pattern + "\n"
+
+	if err := os.WriteFile(excludePath, []byte(out), mode); err != nil {
+		return fmt.Errorf("writing exclude: %w", err)
+	}
+	return nil
 }
 
 func stateFilePath() (string, error) {
@@ -358,14 +419,35 @@ func removeState() error {
 }
 
 func (m *Manager) cleanupLocal(sessionID string) error {
-	// Remove marker if present in current workspace tree.
-	if bound, err := ResolveBoundState(""); err == nil && bound != nil {
-		_ = RemoveMarker(bound.WorkspaceRoot)
+	removeMarkerForSession := func(workspaceRoot string) {
+		workspaceRoot = strings.TrimSpace(workspaceRoot)
+		if workspaceRoot == "" || strings.TrimSpace(sessionID) == "" {
+			return
+		}
+		mk, err := ReadMarker(workspaceRoot)
+		if err != nil || mk == nil {
+			return
+		}
+		if strings.TrimSpace(mk.SessionID) != sessionID {
+			return
+		}
+		_ = RemoveMarker(workspaceRoot)
 	}
-	// Remove runtime (contains secrets).
+
+	// If we're currently inside a bound workspace, only remove its marker if it matches the session.
+	if bound, err := ResolveBoundState(""); err == nil && bound != nil {
+		removeMarkerForSession(bound.WorkspaceRoot)
+	}
+
+	// If Stop/Shutdown is invoked outside the workspace, use the runtime pointer to remove the marker.
 	if strings.TrimSpace(sessionID) != "" {
+		if rt, err := ReadRuntimeBundle(sessionID); err == nil && rt != nil {
+			removeMarkerForSession(rt.WorkspaceRoot)
+		}
+		// Remove runtime (contains secrets) last.
 		_ = RemoveRuntime(sessionID)
 	}
+
 	// Remove legacy global state.
 	_ = removeState()
 	return nil

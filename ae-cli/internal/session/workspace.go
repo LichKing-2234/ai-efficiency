@@ -63,7 +63,11 @@ func canonicalAbsPath(p string) (string, error) {
 // For ae-cli we treat repo_root as the workspace root (git toplevel). For linked worktrees,
 // workspace_root differs across worktrees while git_common_dir can stay shared, which is
 // sufficient to differentiate workspaces.
-func deriveWorkspaceID(workspaceRoot, gitDir, gitCommonDir string) (string, error) {
+func deriveWorkspaceID(repoRoot, workspaceRoot, gitDir, gitCommonDir string) (string, error) {
+	cRepoRoot, err := canonicalAbsPath(repoRoot)
+	if err != nil {
+		return "", fmt.Errorf("canonical repo root: %w", err)
+	}
 	cWorkspaceRoot, err := canonicalAbsPath(workspaceRoot)
 	if err != nil {
 		return "", fmt.Errorf("canonical workspace root: %w", err)
@@ -77,7 +81,7 @@ func deriveWorkspaceID(workspaceRoot, gitDir, gitCommonDir string) (string, erro
 		return "", fmt.Errorf("canonical git common dir: %w", err)
 	}
 
-	name := cWorkspaceRoot + "\x1f" + cWorkspaceRoot + "\x1f" + cGitDir + "\x1f" + cGitCommon
+	name := cRepoRoot + "\x1f" + cWorkspaceRoot + "\x1f" + cGitDir + "\x1f" + cGitCommon
 	return uuid.NewSHA1(workspaceNamespace, []byte(name)).String(), nil
 }
 

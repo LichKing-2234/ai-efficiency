@@ -478,7 +478,7 @@ func TestStartInTempGitRepo(t *testing.T) {
 
 	wantGitDir := filepath.Join(wantWorkspaceRoot, ".git")
 	wantCommonDir := filepath.Join(wantWorkspaceRoot, ".git")
-	wantWorkspaceID, err := deriveWorkspaceID(wantWorkspaceRoot, wantGitDir, wantCommonDir)
+	wantWorkspaceID, err := deriveWorkspaceID(wantWorkspaceRoot, wantWorkspaceRoot, wantGitDir, wantCommonDir)
 	if err != nil {
 		t.Fatalf("deriveWorkspaceID: %v", err)
 	}
@@ -568,6 +568,16 @@ func TestStartInTempGitRepo(t *testing.T) {
 	}
 	if rt.EnvBundle["AE_SESSION_ID"] != "boot-sess-1" {
 		t.Fatalf("runtime AE_SESSION_ID = %q, want %q", rt.EnvBundle["AE_SESSION_ID"], "boot-sess-1")
+	}
+
+	// Ensure workspace marker dir is excluded from git status by default.
+	excludePath := filepath.Join(wantGitDir, "info", "exclude")
+	excludeData, err := os.ReadFile(excludePath)
+	if err != nil {
+		t.Fatalf("read git info/exclude: %v", err)
+	}
+	if !strings.Contains(string(excludeData), ".ae/") {
+		t.Fatalf("expected %q to contain %q, got %q", excludePath, ".ae/", string(excludeData))
 	}
 
 	// Verify state was persisted
@@ -846,6 +856,97 @@ func TestStopSuccess(t *testing.T) {
 	}
 	if current != nil {
 		t.Error("expected nil state after Stop")
+	}
+}
+
+func TestStopCleansMarkerWhenInvokedOutsideWorkspace(t *testing.T) {
+	origHome := os.Getenv("HOME")
+	tmpHome := t.TempDir()
+	os.Setenv("HOME", tmpHome)
+	t.Cleanup(func() { os.Setenv("HOME", origHome) })
+
+	// Create a temp git repo.
+	tmpDir := t.TempDir()
+	cmds := [][]string{
+		{"git", "init", "-b", "main"},
+		{"git", "config", "user.email", "test@test.com"},
+		{"git", "config", "user.name", "Test"},
+		{"git", "remote", "add", "origin", "https://github.com/test-org/test-repo.git"},
+		{"git", "commit", "--allow-empty", "-m", "init"},
+	}
+	for _, args := range cmds {
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Dir = tmpDir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("cmd %v: %v\n%s", args, err, out)
+		}
+	}
+
+	origDir, _ := os.Getwd()
+	os.Chdir(tmpDir)
+	t.Cleanup(func() { _ = os.Chdir(origDir) })
+
+	now := time.Now().UTC().Truncate(time.Second)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/sessions/bootstrap":
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"data": client.BootstrapSessionResponse{
+					SessionID:     "boot-sess-stop",
+					StartedAt:     now,
+					RelayAPIKeyID: 1,
+					ProviderName:  "sub2api",
+					RuntimeRef:    "rt-stop",
+					EnvBundle:     map[string]string{"AE_SESSION_ID": "boot-sess-stop"},
+					KeyExpiresAt:  now.Add(1 * time.Hour),
+				},
+			})
+			return
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/stop"):
+			w.WriteHeader(http.StatusOK)
+			return
+		default:
+			w.WriteHeader(http.StatusOK)
+		}
+	}))
+	defer srv.Close()
+
+	mgr := NewManager(client.New(srv.URL, "tok"), &config.Config{})
+	if _, err := mgr.Start(); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	wsRoot, err := filepath.EvalSymlinks(tmpDir)
+	if err != nil {
+		t.Fatalf("EvalSymlinks(tmpDir): %v", err)
+	}
+	wsRoot, _ = filepath.Abs(filepath.Clean(wsRoot))
+
+	if _, err := os.Stat(markerPath(wsRoot)); err != nil {
+		t.Fatalf("expected marker to exist: %v", err)
+	}
+
+	// Stop from outside the workspace.
+	outside := t.TempDir()
+	if err := os.Chdir(outside); err != nil {
+		t.Fatalf("chdir(outside): %v", err)
+	}
+
+	if _, err := mgr.Stop(); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+
+	if _, err := os.Stat(markerPath(wsRoot)); !os.IsNotExist(err) {
+		t.Fatalf("expected marker to be removed, stat err=%v", err)
+	}
+	if _, err := os.Stat(runtimeDir("boot-sess-stop")); !os.IsNotExist(err) {
+		t.Fatalf("expected runtime dir to be removed, stat err=%v", err)
+	}
+	if p, err := stateFilePath(); err == nil {
+		if _, err := os.Stat(p); !os.IsNotExist(err) {
+			t.Fatalf("expected legacy state file to be removed, stat err=%v", err)
+		}
 	}
 }
 
