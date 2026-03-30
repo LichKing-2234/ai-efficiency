@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/json"
 	"net/http"
@@ -9,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -1386,9 +1384,15 @@ func TestShellCommandWithSession(t *testing.T) {
 	os.Setenv("HOME", tmpHome)
 	defer os.Setenv("HOME", origHome)
 
+	runner := &stubShellRunner{}
+	var gotCfg *config.Config
+	var gotState *session.State
+
 	origNewShellRunner := newShellRunner
 	newShellRunner = func(cfg *config.Config, state *session.State) shellRunner {
-		return &fakeShellRunner{}
+		gotCfg = cfg
+		gotState = state
+		return runner
 	}
 	t.Cleanup(func() { newShellRunner = origNewShellRunner })
 
@@ -1411,40 +1415,35 @@ func TestShellCommandWithSession(t *testing.T) {
 	data, _ := json.MarshalIndent(state, "", "  ")
 	os.WriteFile(filepath.Join(stateDir, "current-session.json"), data, 0o600)
 
-	// Pipe stdin so shell.Run() exits immediately
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("creating pipe: %v", err)
-	}
-	oldStdin := os.Stdin
-	os.Stdin = r
-	defer func() { os.Stdin = oldStdin }()
-
-	go func() {
-		w.WriteString("exit\n")
-		w.Close()
-	}()
-
-	err = shellCmd.RunE(shellCmd, nil)
+	err := shellCmd.RunE(shellCmd, nil)
 	if err != nil {
 		t.Fatalf("shell command: %v", err)
 	}
-}
 
-type fakeShellRunner struct{}
-
-func (f *fakeShellRunner) Run() error {
-	sc := bufio.NewScanner(os.Stdin)
-	for sc.Scan() {
-		switch strings.TrimSpace(sc.Text()) {
-		case "exit", "quit":
-			return nil
-		}
+	if !runner.runCalled {
+		t.Fatal("expected shell runner Run() to be called")
 	}
-	return sc.Err()
+	if gotCfg == nil {
+		t.Fatal("expected config to be passed to shell runner")
+	}
+	if gotState == nil {
+		t.Fatal("expected session state to be passed to shell runner")
+	}
+	if gotState.ID != "test-shell-sess" {
+		t.Fatalf("state.ID = %q, want %q", gotState.ID, "test-shell-sess")
+	}
 }
 
-func (f *fakeShellRunner) ShouldKillTmux() bool { return false }
+type stubShellRunner struct {
+	runCalled bool
+}
+
+func (s *stubShellRunner) Run() error {
+	s.runCalled = true
+	return nil
+}
+
+func (s *stubShellRunner) ShouldKillTmux() bool { return false }
 
 func TestStopCommandWithTmuxSession(t *testing.T) {
 	origHome := os.Getenv("HOME")
