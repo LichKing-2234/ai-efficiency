@@ -123,3 +123,34 @@ func TestInstallSharedHooksPreservesLegacyChainAcrossReinstall(t *testing.T) {
 		t.Fatalf("expected legacy hook to run after reinstall and create %s: %v", legacyRan, err)
 	}
 }
+
+func TestInstallSharedHooksDoesNotRunNonExecutableLegacyHook(t *testing.T) {
+	repo := initRepoWithCommit(t)
+
+	gitCommon := git(t, repo, "rev-parse", "--git-common-dir")
+	legacyHook := filepath.Join(repo, gitCommon, "hooks", "post-commit")
+	if err := os.MkdirAll(filepath.Dir(legacyHook), 0o755); err != nil {
+		t.Fatalf("mkdir hooks dir: %v", err)
+	}
+	legacyRan := filepath.Join(repo, "legacy-should-not-run.txt")
+	legacy := "#!/bin/sh\n" +
+		"echo legacy >> " + shellQuote(legacyRan) + "\n"
+	if err := os.WriteFile(legacyHook, []byte(legacy), 0o644); err != nil {
+		t.Fatalf("write legacy hook: %v", err)
+	}
+
+	if err := InstallSharedHooks(repo, "/bin/true"); err != nil {
+		t.Fatalf("InstallSharedHooks: %v", err)
+	}
+
+	sharedHook := filepath.Join(repo, gitCommon, "ae-hooks", "post-commit")
+	cmd := exec.Command(sharedHook)
+	cmd.Dir = repo
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("running shared hook failed: %v\n%s", err, string(out))
+	}
+
+	if _, err := os.Stat(legacyRan); !os.IsNotExist(err) {
+		t.Fatalf("expected non-executable legacy hook not to run, stat err=%v", err)
+	}
+}

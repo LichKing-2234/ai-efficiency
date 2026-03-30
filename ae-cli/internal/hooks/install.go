@@ -96,10 +96,6 @@ func InstallSharedHooks(cwd string, selfPath string) error {
 	if err != nil {
 		return err
 	}
-	gitDirAbs, err := gitOutputInstall(cwd, "rev-parse", "--absolute-git-dir")
-	if err != nil {
-		return err
-	}
 	gitCommonRel, err := gitOutputInstall(cwd, "rev-parse", "--git-common-dir")
 	if err != nil {
 		return err
@@ -116,8 +112,8 @@ func InstallSharedHooks(cwd string, selfPath string) error {
 	legacyHooksDir := ""
 	hooksPath, err := gitOutputInstall(cwd, "config", "--local", "--get", "core.hooksPath")
 	if err != nil {
-		// Not set: fall back to default.
-		legacyHooksDir = filepath.Join(gitDirAbs, "hooks")
+		// Not set: fall back to Git's default common hooks dir.
+		legacyHooksDir = filepath.Join(gitCommonAbs, "hooks")
 	} else if strings.TrimSpace(hooksPath) != "" {
 		abs, err := absUnder(repoRoot, hooksPath)
 		if err != nil {
@@ -151,7 +147,7 @@ func InstallSharedHooks(cwd string, selfPath string) error {
 			legacyHook := filepath.Join(legacyHooksDir, hookName)
 			if fileExists(legacyHook) {
 				info, err := os.Stat(legacyHook)
-				if err == nil && info.Mode().IsRegular() {
+				if err == nil && info.Mode().IsRegular() && info.Mode().Perm()&0o111 != 0 {
 					mode := info.Mode().Perm()
 					if mode == 0 {
 						mode = 0o755
@@ -172,12 +168,8 @@ func InstallSharedHooks(cwd string, selfPath string) error {
 		b.WriteString(shellQuote(selfPath) + " hook " + hookName + " \"$@\" || true\n")
 		if legacyExists {
 			b.WriteString("legacy=" + shellQuote(legacyCopy) + "\n")
-			b.WriteString("if [ -f \"$legacy\" ]; then\n")
-			b.WriteString("  if [ -x \"$legacy\" ]; then\n")
-			b.WriteString("    \"$legacy\" \"$@\"\n")
-			b.WriteString("  else\n")
-			b.WriteString("    sh \"$legacy\" \"$@\"\n")
-			b.WriteString("  fi\n")
+			b.WriteString("if [ -x \"$legacy\" ]; then\n")
+			b.WriteString("  \"$legacy\" \"$@\"\n")
 			b.WriteString("fi\n")
 		}
 
