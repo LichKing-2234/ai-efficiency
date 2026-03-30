@@ -576,8 +576,8 @@ func TestStartInTempGitRepo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read git info/exclude: %v", err)
 	}
-	if !strings.Contains(string(excludeData), ".ae/") {
-		t.Fatalf("expected %q to contain %q, got %q", excludePath, ".ae/", string(excludeData))
+	if !strings.Contains(string(excludeData), "/.ae/") {
+		t.Fatalf("expected %q to contain %q, got %q", excludePath, "/.ae/", string(excludeData))
 	}
 
 	// Verify state was persisted

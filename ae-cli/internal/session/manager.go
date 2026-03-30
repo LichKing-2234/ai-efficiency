@@ -80,8 +80,8 @@ func (m *Manager) Start() (*State, error) {
 	}
 
 	// Ensure marker dir isn't accidentally committed.
-	if err := ensureGitInfoExcludeHas(gc.gitCommonDir, ".ae/"); err != nil {
-		if err2 := ensureGitInfoExcludeHas(gc.gitDir, ".ae/"); err2 != nil {
+	if err := ensureGitInfoExcludeHas(gc.gitCommonDir, "/.ae/"); err != nil {
+		if err2 := ensureGitInfoExcludeHas(gc.gitDir, "/.ae/"); err2 != nil {
 			return nil, fmt.Errorf("ensuring git exclude: %w", err2)
 		}
 	}
