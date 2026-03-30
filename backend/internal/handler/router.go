@@ -6,6 +6,7 @@ import (
 	"github.com/ai-efficiency/backend/internal/efficiency"
 	"github.com/ai-efficiency/backend/internal/oauth"
 	"github.com/ai-efficiency/backend/internal/repo"
+	"github.com/ai-efficiency/backend/internal/sessionbootstrap"
 	"github.com/ai-efficiency/backend/internal/webhook"
 	"github.com/gin-gonic/gin"
 )
@@ -27,6 +28,7 @@ func SetupRouter(
 	oauthHandler *oauth.Handler,
 	providerHandler *ProviderHandler,
 	adminSettingsHandler *AdminSettingsHandler,
+	sessionBootstrapSvc *sessionbootstrap.Service,
 ) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Recovery())
@@ -49,7 +51,7 @@ func SetupRouter(
 	analysisHandler := NewAnalysisHandler(analysisService, optimizer, repoService)
 	prHandler := NewPRHandler(entClient, repoService, syncService)
 	efficiencyHandler := NewEfficiencyHandler(entClient, aggregator)
-	sessionHandler := NewSessionHandler(entClient)
+	sessionHandler := NewSessionHandler(entClient, sessionBootstrapSvc)
 
 	api := r.Group("/api/v1")
 
@@ -137,6 +139,7 @@ func SetupRouter(
 	{
 		sessionGroup.GET("", sessionHandler.List)
 		sessionGroup.GET("/:id", sessionHandler.Get)
+		sessionGroup.POST("/bootstrap", sessionHandler.Bootstrap)
 		sessionGroup.POST("", sessionHandler.Create)
 		sessionGroup.PUT("/:id", sessionHandler.Update)
 		sessionGroup.POST("/:id/stop", sessionHandler.Stop)

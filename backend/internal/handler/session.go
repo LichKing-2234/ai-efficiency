@@ -3,24 +3,27 @@ package handler
 import (
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/session"
 	"github.com/ai-efficiency/backend/internal/pkg"
+	"github.com/ai-efficiency/backend/internal/sessionbootstrap"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
 
 // SessionHandler handles session API requests from ae-cli.
 type SessionHandler struct {
-	entClient *ent.Client
+	entClient    *ent.Client
+	bootstrapSvc *sessionbootstrap.Service
 }
 
 // NewSessionHandler creates a new session handler.
-func NewSessionHandler(entClient *ent.Client) *SessionHandler {
-	return &SessionHandler{entClient: entClient}
+func NewSessionHandler(entClient *ent.Client, bootstrapSvc *sessionbootstrap.Service) *SessionHandler {
+	return &SessionHandler{entClient: entClient, bootstrapSvc: bootstrapSvc}
 }
 
 type createSessionRequest struct {
@@ -30,10 +33,66 @@ type createSessionRequest struct {
 	ToolConfigs  []map[string]interface{} `json:"tool_configs"`
 }
 
+type bootstrapSessionRequest struct {
+	RepoFullName   string `json:"repo_full_name" binding:"required"`
+	BranchSnapshot string `json:"branch_snapshot" binding:"required"`
+	HeadSHA        string `json:"head_sha"`
+	WorkspaceRoot  string `json:"workspace_root"`
+	GitDir         string `json:"git_dir"`
+	GitCommonDir   string `json:"git_common_dir"`
+	WorkspaceID    string `json:"workspace_id"`
+}
+
 type addInvocationRequest struct {
 	Tool  string `json:"tool" binding:"required"`
 	Start string `json:"start" binding:"required"`
 	End   string `json:"end"`
+}
+
+// Bootstrap handles POST /api/v1/sessions/bootstrap
+func (h *SessionHandler) Bootstrap(c *gin.Context) {
+	if h.bootstrapSvc == nil {
+		pkg.Error(c, http.StatusInternalServerError, "bootstrap service not configured")
+		return
+	}
+
+	var req bootstrapSessionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pkg.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	userIDRaw, ok := c.Get("user_id")
+	if !ok {
+		pkg.Error(c, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	userID := userIDRaw.(int)
+
+	resp, err := h.bootstrapSvc.Bootstrap(c.Request.Context(), userID, sessionbootstrap.BootstrapRequest{
+		RepoFullName:   req.RepoFullName,
+		BranchSnapshot: req.BranchSnapshot,
+		HeadSHA:        req.HeadSHA,
+		WorkspaceRoot:  req.WorkspaceRoot,
+		GitDir:         req.GitDir,
+		GitCommonDir:   req.GitCommonDir,
+		WorkspaceID:    req.WorkspaceID,
+	})
+	if err != nil {
+		msg := err.Error()
+		if strings.Contains(msg, "repo not found") {
+			pkg.Error(c, http.StatusNotFound, msg)
+			return
+		}
+		if strings.Contains(msg, "required") {
+			pkg.Error(c, http.StatusBadRequest, msg)
+			return
+		}
+		pkg.Error(c, http.StatusInternalServerError, "failed to bootstrap session")
+		return
+	}
+
+	pkg.Created(c, resp)
 }
 
 // Create handles POST /api/v1/sessions
@@ -110,9 +169,14 @@ func (h *SessionHandler) Update(c *gin.Context) {
 		return
 	}
 
-	// Just touch the session to indicate it's still alive
-	s, err := h.entClient.Session.UpdateOneID(id).
-		Save(c.Request.Context())
+	var s *ent.Session
+	if h.bootstrapSvc != nil {
+		s, err = h.bootstrapSvc.Heartbeat(c.Request.Context(), id)
+	} else {
+		// Compatibility fallback
+		s, err = h.entClient.Session.UpdateOneID(id).
+			Save(c.Request.Context())
+	}
 	if err != nil {
 		if ent.IsNotFound(err) {
 			pkg.Error(c, http.StatusNotFound, "session not found")
@@ -133,11 +197,17 @@ func (h *SessionHandler) Stop(c *gin.Context) {
 		return
 	}
 
-	now := time.Now()
-	s, err := h.entClient.Session.UpdateOneID(id).
-		SetEndedAt(now).
-		SetStatus(session.StatusCompleted).
-		Save(c.Request.Context())
+	var s *ent.Session
+	if h.bootstrapSvc != nil {
+		s, err = h.bootstrapSvc.Stop(c.Request.Context(), id)
+	} else {
+		// Compatibility fallback
+		now := time.Now()
+		s, err = h.entClient.Session.UpdateOneID(id).
+			SetEndedAt(now).
+			SetStatus(session.StatusCompleted).
+			Save(c.Request.Context())
+	}
 	if err != nil {
 		if ent.IsNotFound(err) {
 			pkg.Error(c, http.StatusNotFound, "session not found")

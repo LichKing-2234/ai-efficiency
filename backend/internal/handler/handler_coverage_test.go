@@ -11,8 +11,8 @@ import (
 	"testing"
 
 	"github.com/ai-efficiency/backend/ent"
-	entuser "github.com/ai-efficiency/backend/ent/user"
 	"github.com/ai-efficiency/backend/ent/enttest"
+	entuser "github.com/ai-efficiency/backend/ent/user"
 	"github.com/ai-efficiency/backend/internal/analysis"
 	"github.com/ai-efficiency/backend/internal/analysis/llm"
 	"github.com/ai-efficiency/backend/internal/auth"
@@ -44,8 +44,7 @@ func setupFullTestEnv(t *testing.T) *fullTestEnv {
 	// LLM analyzer with config — use a relay provider pointing to a non-listening address
 	// so Enabled()=true but actual LLM calls fail (connection refused).
 	rp := relay.NewSub2apiProvider(http.DefaultClient, "http://localhost:19876/v1", "http://localhost:19876", "sk-test-key-12345678", "gpt-4", logger)
-	llmAnalyzer := llm.NewAnalyzer(config.LLMConfig{
-	}, rp, logger)
+	llmAnalyzer := llm.NewAnalyzer(config.LLMConfig{}, rp, logger)
 
 	// Settings handler with temp config file
 	tmpDir := t.TempDir()
@@ -73,7 +72,7 @@ func setupFullTestEnv(t *testing.T) *fullTestEnv {
 		nil, // optimizer
 		"0000000000000000000000000000000000000000000000000000000000000000",
 		middleware.CORS(nil),
-		nil, nil, nil,
+		nil, nil, nil, nil,
 	)
 
 	// Create admin user

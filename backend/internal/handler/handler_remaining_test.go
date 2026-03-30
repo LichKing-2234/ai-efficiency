@@ -12,8 +12,8 @@ import (
 	"strings"
 	"testing"
 
-	entuser "github.com/ai-efficiency/backend/ent/user"
 	"github.com/ai-efficiency/backend/ent/enttest"
+	entuser "github.com/ai-efficiency/backend/ent/user"
 	"github.com/ai-efficiency/backend/internal/analysis"
 	"github.com/ai-efficiency/backend/internal/analysis/llm"
 	"github.com/ai-efficiency/backend/internal/auth"
@@ -46,8 +46,7 @@ func setupDebugTestEnv(t *testing.T) *fullTestEnv {
 	analysisSvc := analysis.NewService(client, analysisCloner, nil, logger)
 
 	rp := relay.NewSub2apiProvider(http.DefaultClient, "http://localhost:19876/v1", "http://localhost:19876", "sk-test-key-12345678", "gpt-4", logger)
-	llmAnalyzer := llm.NewAnalyzer(config.LLMConfig{
-	}, rp, logger)
+	llmAnalyzer := llm.NewAnalyzer(config.LLMConfig{}, rp, logger)
 
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config.yaml")
@@ -71,7 +70,7 @@ func setupDebugTestEnv(t *testing.T) *fullTestEnv {
 		nil, // optimizer
 		"0000000000000000000000000000000000000000000000000000000000000000",
 		middleware.CORS(nil),
-		nil, nil, nil,
+		nil, nil, nil, nil,
 	)
 
 	u, err := client.User.Create().
@@ -303,7 +302,7 @@ func TestChatLLMNotConfigured(t *testing.T) {
 		nil, nil, chatHandler, nil, nil,
 		"0000000000000000000000000000000000000000000000000000000000000000",
 		middleware.CORS(nil),
-		nil, nil, nil,
+		nil, nil, nil, nil,
 	)
 
 	u, err := client.User.Create().

@@ -1,0 +1,282 @@
+package sessionbootstrap
+
+import (
+	"context"
+	"fmt"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/ai-efficiency/backend/ent"
+	"github.com/ai-efficiency/backend/ent/repoconfig"
+	"github.com/ai-efficiency/backend/ent/session"
+	"github.com/ai-efficiency/backend/internal/auth"
+	"github.com/ai-efficiency/backend/internal/relay"
+	"github.com/google/uuid"
+)
+
+type BootstrapRequest struct {
+	RepoFullName   string `json:"repo_full_name" binding:"required"`
+	BranchSnapshot string `json:"branch_snapshot" binding:"required"`
+	HeadSHA        string `json:"head_sha"`
+	WorkspaceRoot  string `json:"workspace_root"`
+	GitDir         string `json:"git_dir"`
+	GitCommonDir   string `json:"git_common_dir"`
+	WorkspaceID    string `json:"workspace_id"`
+}
+
+type BootstrapResponse struct {
+	SessionID          uuid.UUID         `json:"session_id"`
+	StartedAt          time.Time         `json:"started_at"`
+	RelayUserID        int64             `json:"relay_user_id"`
+	RelayAPIKeyID      int64             `json:"relay_api_key_id"`
+	ProviderName       string            `json:"provider_name"`
+	GroupID            string            `json:"group_id"`
+	RouteBindingSource string            `json:"route_binding_source"`
+	RuntimeRef         string            `json:"runtime_ref"`
+	EnvBundle          map[string]string `json:"env_bundle"`
+	KeyExpiresAt       time.Time         `json:"key_expires_at"`
+}
+
+type Service struct {
+	entClient             *ent.Client
+	relayProvider         relay.Provider
+	relayIdentityResolver *auth.RelayIdentityResolver
+
+	defaultProviderName string
+	providerBaseURL     string
+	defaultGroupID      string
+	keyTTL              time.Duration
+}
+
+func NewService(
+	entClient *ent.Client,
+	relayProvider relay.Provider,
+	relayIdentityResolver *auth.RelayIdentityResolver,
+	defaultProviderName string,
+	providerBaseURL string,
+	defaultGroupID string,
+	keyTTL time.Duration,
+) *Service {
+	if keyTTL <= 0 {
+		keyTTL = 24 * time.Hour
+	}
+	return &Service{
+		entClient:             entClient,
+		relayProvider:         relayProvider,
+		relayIdentityResolver: relayIdentityResolver,
+		defaultProviderName:   strings.TrimSpace(defaultProviderName),
+		providerBaseURL:       strings.TrimRight(strings.TrimSpace(providerBaseURL), "/"),
+		defaultGroupID:        strings.TrimSpace(defaultGroupID),
+		keyTTL:                keyTTL,
+	}
+}
+
+type routeBinding struct {
+	ProviderName       string
+	GroupID            string
+	RouteBindingSource string
+}
+
+func (s *Service) resolveRouteBinding(rc *ent.RepoConfig) (*routeBinding, error) {
+	if rc == nil {
+		return nil, fmt.Errorf("route binding: repo config is required")
+	}
+
+	providerName := s.defaultProviderName
+	if rc.RelayProviderName != nil && strings.TrimSpace(*rc.RelayProviderName) != "" {
+		providerName = strings.TrimSpace(*rc.RelayProviderName)
+	}
+	if providerName == "" {
+		return nil, fmt.Errorf("route binding: provider_name is required")
+	}
+	if s.defaultProviderName != "" && providerName != s.defaultProviderName {
+		// v1 server wiring currently supports a single configured relay provider.
+		return nil, fmt.Errorf("route binding: repo requires provider %q, but server configured %q", providerName, s.defaultProviderName)
+	}
+
+	groupID := s.defaultGroupID
+	source := "default"
+	if rc.RelayGroupID != nil && strings.TrimSpace(*rc.RelayGroupID) != "" {
+		groupID = strings.TrimSpace(*rc.RelayGroupID)
+		source = "repo_config"
+	}
+	if groupID == "" {
+		return nil, fmt.Errorf("route binding: group_id is required")
+	}
+
+	return &routeBinding{
+		ProviderName:       providerName,
+		GroupID:            groupID,
+		RouteBindingSource: source,
+	}, nil
+}
+
+func (s *Service) Bootstrap(ctx context.Context, localUserID int, req BootstrapRequest) (*BootstrapResponse, error) {
+	if strings.TrimSpace(req.RepoFullName) == "" {
+		return nil, fmt.Errorf("bootstrap: repo_full_name is required")
+	}
+	if strings.TrimSpace(req.BranchSnapshot) == "" {
+		return nil, fmt.Errorf("bootstrap: branch_snapshot is required")
+	}
+	if s.entClient == nil {
+		return nil, fmt.Errorf("bootstrap: ent client is required")
+	}
+	if s.relayProvider == nil {
+		return nil, fmt.Errorf("bootstrap: relay provider is not configured")
+	}
+
+	rc, err := s.entClient.RepoConfig.Query().
+		Where(repoconfig.FullNameEQ(req.RepoFullName)).
+		Only(ctx)
+	if err != nil && ent.IsNotFound(err) {
+		rc, err = s.entClient.RepoConfig.Query().
+			Where(repoconfig.CloneURLEQ(req.RepoFullName)).
+			Only(ctx)
+	}
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return nil, fmt.Errorf("bootstrap: repo not found: %s", req.RepoFullName)
+		}
+		return nil, fmt.Errorf("bootstrap: query repo: %w", err)
+	}
+
+	binding, err := s.resolveRouteBinding(rc)
+	if err != nil {
+		return nil, fmt.Errorf("bootstrap: %w", err)
+	}
+
+	u, err := s.entClient.User.Get(ctx, localUserID)
+	if err != nil {
+		return nil, fmt.Errorf("bootstrap: get user: %w", err)
+	}
+
+	var relayUserID int64
+	if u.RelayUserID != nil {
+		relayUserID = int64(*u.RelayUserID)
+	} else {
+		if s.relayIdentityResolver == nil {
+			return nil, fmt.Errorf("bootstrap: relay identity resolver is not configured")
+		}
+		relayUser, err := s.relayIdentityResolver.ResolveOrProvision(ctx, u.Username, u.Email)
+		if err != nil {
+			return nil, fmt.Errorf("bootstrap: resolve relay identity: %w", err)
+		}
+		relayUserID = relayUser.ID
+		_, _ = s.entClient.User.UpdateOneID(u.ID).SetRelayUserID(int(relayUserID)).Save(ctx)
+	}
+
+	now := time.Now()
+	sessionID := uuid.New()
+	shortID := strings.Split(sessionID.String(), "-")[0]
+	expiresAt := now.Add(s.keyTTL)
+
+	key, err := s.relayProvider.CreateUserAPIKey(ctx, relayUserID, relay.APIKeyCreateRequest{
+		Name:      "ae-session-" + shortID,
+		ExpiresAt: &expiresAt,
+		GroupID:   binding.GroupID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("bootstrap: create relay api key: %w", err)
+	}
+
+	runtimeRef := fmt.Sprintf("runtime/%s", sessionID.String())
+
+	toolConfigs := []map[string]interface{}{
+		{
+			"provider_name":    binding.ProviderName,
+			"relay_api_key_id": key.ID,
+		},
+	}
+
+	create := s.entClient.Session.Create().
+		SetID(sessionID).
+		SetRepoConfigID(rc.ID).
+		SetBranch(req.BranchSnapshot).
+		SetRelayUserID(int(relayUserID)).
+		SetRelayAPIKeyID(int(key.ID)).
+		SetProviderName(binding.ProviderName).
+		SetRuntimeRef(runtimeRef).
+		SetLastSeenAt(now).
+		SetStartedAt(now).
+		SetToolConfigs(toolConfigs).
+		SetInitialWorkspaceRoot(req.WorkspaceRoot).
+		SetInitialGitDir(req.GitDir).
+		SetInitialGitCommonDir(req.GitCommonDir)
+
+	if strings.TrimSpace(req.HeadSHA) != "" {
+		create.SetHeadShaAtStart(strings.TrimSpace(req.HeadSHA))
+	}
+	if localUserID != 0 {
+		create.SetUserID(localUserID)
+	}
+
+	if _, err := create.Save(ctx); err != nil {
+		return nil, fmt.Errorf("bootstrap: create session: %w", err)
+	}
+
+	envBundle := map[string]string{
+		"AE_SESSION_ID":       sessionID.String(),
+		"AE_RUNTIME_REF":      runtimeRef,
+		"AE_RELAY_API_KEY_ID": strconv.FormatInt(key.ID, 10),
+		"AE_PROVIDER_NAME":    binding.ProviderName,
+		"AE_ENV_VERSION":      "1",
+		"OPENAI_API_KEY":      key.Secret,
+	}
+	if s.providerBaseURL != "" {
+		envBundle["OPENAI_BASE_URL"] = s.providerBaseURL
+	}
+
+	return &BootstrapResponse{
+		SessionID:          sessionID,
+		StartedAt:          now,
+		RelayUserID:        relayUserID,
+		RelayAPIKeyID:      key.ID,
+		ProviderName:       binding.ProviderName,
+		GroupID:            binding.GroupID,
+		RouteBindingSource: binding.RouteBindingSource,
+		RuntimeRef:         runtimeRef,
+		EnvBundle:          envBundle,
+		KeyExpiresAt:       expiresAt,
+	}, nil
+}
+
+func (s *Service) Heartbeat(ctx context.Context, sessionID uuid.UUID) (*ent.Session, error) {
+	if s.entClient == nil {
+		return nil, fmt.Errorf("heartbeat: ent client is required")
+	}
+	now := time.Now()
+	updated, err := s.entClient.Session.UpdateOneID(sessionID).
+		SetLastSeenAt(now).
+		Save(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("heartbeat: %w", err)
+	}
+	return updated, nil
+}
+
+func (s *Service) Stop(ctx context.Context, sessionID uuid.UUID) (*ent.Session, error) {
+	if s.entClient == nil {
+		return nil, fmt.Errorf("stop: ent client is required")
+	}
+
+	existing, err := s.entClient.Session.Get(ctx, sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("stop: get session: %w", err)
+	}
+
+	now := time.Now()
+	updated, err := s.entClient.Session.UpdateOneID(sessionID).
+		SetEndedAt(now).
+		SetStatus(session.StatusCompleted).
+		Save(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("stop: update session: %w", err)
+	}
+
+	if s.relayProvider != nil && existing.RelayAPIKeyID != nil {
+		_ = s.relayProvider.RevokeUserAPIKey(ctx, int64(*existing.RelayAPIKeyID))
+	}
+
+	return updated, nil
+}

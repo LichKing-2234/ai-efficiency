@@ -22,8 +22,9 @@ import (
 	"github.com/ai-efficiency/backend/internal/middleware"
 	"github.com/ai-efficiency/backend/internal/oauth"
 	"github.com/ai-efficiency/backend/internal/prsync"
-	"github.com/ai-efficiency/backend/internal/repo"
 	"github.com/ai-efficiency/backend/internal/relay"
+	"github.com/ai-efficiency/backend/internal/repo"
+	"github.com/ai-efficiency/backend/internal/sessionbootstrap"
 	"github.com/ai-efficiency/backend/internal/webhook"
 	"github.com/gin-gonic/gin"
 	_ "github.com/lib/pq"
@@ -146,8 +147,10 @@ func main() {
 	)
 	// When relay is configured, allow LDAP logins to provision/resolve a relay-side identity
 	// (by stable username) for session/PR attribution.
+	var relayIdentityResolver *auth.RelayIdentityResolver
 	if relayProvider != nil {
-		authService.SetRelayIdentityResolver(auth.NewRelayIdentityResolver(relayProvider, ""))
+		relayIdentityResolver = auth.NewRelayIdentityResolver(relayProvider, "")
+		authService.SetRelayIdentityResolver(relayIdentityResolver)
 	}
 
 	// Register auth providers
@@ -197,6 +200,20 @@ func main() {
 	// Init admin settings handler
 	adminSettingsHandler := handler.NewAdminSettingsHandler(settingsConfigPath, &ldapConfig)
 
+	// Init session bootstrap lifecycle service (ae-cli start/heartbeat/stop).
+	var sessionBootstrapSvc *sessionbootstrap.Service
+	if relayProvider != nil {
+		sessionBootstrapSvc = sessionbootstrap.NewService(
+			entClient,
+			relayProvider,
+			relayIdentityResolver,
+			cfg.Relay.Provider,
+			cfg.Relay.URL,
+			cfg.Relay.DefaultGroupID,
+			24*time.Hour,
+		)
+	}
+
 	r := handler.SetupRouter(
 		entClient,
 		authService,
@@ -213,6 +230,7 @@ func main() {
 		oauthHandler,
 		providerHandler,
 		adminSettingsHandler,
+		sessionBootstrapSvc,
 	)
 
 	// Start server

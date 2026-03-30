@@ -106,8 +106,7 @@ func TestSCMProviderTest_DecryptError(t *testing.T) {
 // =====================
 
 func TestPersistLLMConfig_YAMLUnmarshalError(t *testing.T) {
-	analyzer := llm.NewAnalyzer(config.LLMConfig{
-	}, nil, zap.NewNop())
+	analyzer := llm.NewAnalyzer(config.LLMConfig{}, nil, zap.NewNop())
 
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config.yaml")
@@ -149,8 +148,7 @@ func TestChatRateLimitExceeded(t *testing.T) {
 	defer server.Close()
 
 	rp := relay.NewSub2apiProvider(server.Client(), server.URL+"/v1", server.URL, "sk-test", "gpt-4", zap.NewNop())
-	llmAnalyzer := llm.NewAnalyzer(config.LLMConfig{
-	}, rp, logger)
+	llmAnalyzer := llm.NewAnalyzer(config.LLMConfig{}, rp, logger)
 
 	ch := NewChatHandler(client, llmAnalyzer, t.TempDir(), logger)
 
@@ -374,7 +372,7 @@ func TestEfficiencyTrend_WithData(t *testing.T) {
 			SetRepoConfigID(repoID).
 			SetPeriodType("weekly").
 			SetPeriodStart(time.Now().AddDate(0, 0, -7*(i+1))).
-			SetTotalPrs(10+i).SetAiPrs(3+i).SetAiVsHumanRatio(float64(3+i)/float64(10+i)).
+			SetTotalPrs(10 + i).SetAiPrs(3 + i).SetAiVsHumanRatio(float64(3+i) / float64(10+i)).
 			SaveX(context.Background())
 	}
 
@@ -522,8 +520,7 @@ func TestDashboardWithAIScore(t *testing.T) {
 // =====================
 
 func TestTestLLMConnection_InvalidURL(t *testing.T) {
-	analyzer := llm.NewAnalyzer(config.LLMConfig{
-	}, nil, zap.NewNop())
+	analyzer := llm.NewAnalyzer(config.LLMConfig{}, nil, zap.NewNop())
 
 	relayCfg := config.RelayConfig{URL: "://invalid-url", APIKey: "sk-test"}
 	sh := NewSettingsHandler(t.TempDir()+"/config.yaml", relayCfg, analyzer, zap.NewNop())
@@ -576,7 +573,7 @@ func TestAggregateAllWithFullEnv(t *testing.T) {
 		nil, nil, nil, aggregator, nil,
 		"0000000000000000000000000000000000000000000000000000000000000000",
 		middleware.CORS(nil),
-		nil, nil, nil,
+		nil, nil, nil, nil,
 	)
 
 	u, _ := client.User.Create().
@@ -620,4 +617,3 @@ func TestAggregateAllWithFullEnv(t *testing.T) {
 		t.Errorf("AggregateForRepo: status = %d, body: %s", w.Code, w.Body.String())
 	}
 }
-
