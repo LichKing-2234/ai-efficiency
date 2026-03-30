@@ -192,7 +192,7 @@ func (s *Service) ensureLocalUser(ctx context.Context, info *UserInfo) (*ent.Use
 
 		// LDAP path: provision relay-side identity when we don't have it yet.
 		if info.RelayUserID == nil && s.relayIdentityResolver != nil {
-			relayUser, err := s.relayIdentityResolver.ResolveOrProvisionRelayUser(ctx, info.Username, info.Email)
+			relayUser, err := s.relayIdentityResolver.ResolveOrProvision(ctx, info.Username, info.Email)
 			if err != nil {
 				return nil, fmt.Errorf("resolve relay identity: %w", err)
 			}
@@ -223,7 +223,7 @@ func (s *Service) ensureLocalUser(ctx context.Context, info *UserInfo) (*ent.Use
 	}
 
 	if info.RelayUserID == nil && s.relayIdentityResolver != nil {
-		relayUser, err := s.relayIdentityResolver.ResolveOrProvisionRelayUser(ctx, info.Username, info.Email)
+		relayUser, err := s.relayIdentityResolver.ResolveOrProvision(ctx, info.Username, info.Email)
 		if err != nil {
 			return nil, fmt.Errorf("resolve relay identity: %w", err)
 		}

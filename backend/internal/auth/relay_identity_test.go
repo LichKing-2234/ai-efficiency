@@ -35,9 +35,9 @@ func TestResolveOrProvisionRelayUser_UsesUsernameAsStableKey(t *testing.T) {
 	}
 
 	r := NewRelayIdentityResolver(api, "ldap.local")
-	u, err := r.ResolveOrProvisionRelayUser(context.Background(), "alice", "completely-different@example.com")
+	u, err := r.ResolveOrProvision(context.Background(), "alice", "completely-different@example.com")
 	if err != nil {
-		t.Fatalf("ResolveOrProvisionRelayUser() unexpected error: %v", err)
+		t.Fatalf("ResolveOrProvision() unexpected error: %v", err)
 	}
 	if u == nil || u.ID != 7 {
 		t.Fatalf("expected existing relay user ID=7, got %+v", u)
@@ -54,9 +54,9 @@ func TestResolveOrProvisionRelayUser_ProvisionsLDAPFallbackEmail(t *testing.T) {
 	api := &fakeRelayIdentityAPI{findResult: nil}
 
 	r := NewRelayIdentityResolver(api, "ldap.local")
-	u, err := r.ResolveOrProvisionRelayUser(context.Background(), "carol", "")
+	u, err := r.ResolveOrProvision(context.Background(), "carol", "")
 	if err != nil {
-		t.Fatalf("ResolveOrProvisionRelayUser() unexpected error: %v", err)
+		t.Fatalf("ResolveOrProvision() unexpected error: %v", err)
 	}
 	if u == nil {
 		t.Fatal("expected non-nil relay user")

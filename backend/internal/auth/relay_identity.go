@@ -32,7 +32,7 @@ func NewRelayIdentityResolver(api relayIdentityAPI, fallbackDomain string) *Rela
 	}
 }
 
-func (r *RelayIdentityResolver) ResolveOrProvisionRelayUser(ctx context.Context, username, email string) (*relay.User, error) {
+func (r *RelayIdentityResolver) ResolveOrProvision(ctx context.Context, username, email string) (*relay.User, error) {
 	username = strings.TrimSpace(username)
 	email = strings.TrimSpace(email)
 	if username == "" {

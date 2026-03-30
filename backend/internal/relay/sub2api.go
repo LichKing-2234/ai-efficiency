@@ -385,8 +385,8 @@ func (s *sub2apiRelay) CreateUserAPIKey(ctx context.Context, userID int64, req A
 	if req.ExpiresAt != nil {
 		payloadMap["expires_at"] = req.ExpiresAt
 	}
-	if req.Group != "" {
-		payloadMap["group"] = req.Group
+	if req.GroupID != nil {
+		payloadMap["group_id"] = req.GroupID
 	}
 
 	payload, err := json.Marshal(payloadMap)
@@ -429,7 +429,7 @@ func (s *sub2apiRelay) RevokeUserAPIKey(ctx context.Context, keyID int64) error 
 }
 
 func (s *sub2apiRelay) ListUsageLogsByAPIKeyExact(ctx context.Context, apiKeyID int64, from, to time.Time) ([]UsageLog, error) {
-	path := fmt.Sprintf("/api/v1/admin/api-keys/%d/usage-logs?from=%s&to=%s",
+	path := fmt.Sprintf("/api/v1/admin/usage_logs?api_key_id=%d&from=%s&to=%s",
 		apiKeyID, url.QueryEscape(from.Format(time.RFC3339)), url.QueryEscape(to.Format(time.RFC3339)))
 
 	resp, err := s.doAdminRequest(ctx, http.MethodGet, path, nil)

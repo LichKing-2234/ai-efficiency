@@ -30,7 +30,7 @@ type APIKey struct {
 type APIKeyCreateRequest struct {
 	Name      string     `json:"name"`
 	ExpiresAt *time.Time `json:"expires_at,omitempty"`
-	Group     string     `json:"group,omitempty"`
+	GroupID   *int64     `json:"group_id,omitempty"`
 }
 
 type APIKeyWithSecret struct {
@@ -39,12 +39,20 @@ type APIKeyWithSecret struct {
 }
 
 type UsageLog struct {
-	ID          int64     `json:"id"`
-	APIKeyID    int64     `json:"api_key_id"`
-	UserID      int64     `json:"user_id"`
-	TotalTokens int64     `json:"total_tokens"`
-	TotalCost   float64   `json:"total_cost"`
-	CreatedAt   time.Time `json:"created_at"`
+	ID           int64     `json:"id"`
+	RequestID    string    `json:"request_id"`
+	CreatedAt    time.Time `json:"created_at"`
+	APIKeyID     int64     `json:"api_key_id"`
+	UserID       int64     `json:"user_id"`
+	AccountID    int64     `json:"account_id"`
+	GroupID      int64     `json:"group_id"`
+	Model        string    `json:"model"`
+	InputTokens  int64     `json:"input_tokens"`
+	OutputTokens int64     `json:"output_tokens"`
+	CacheTokens  int64     `json:"cache_tokens"`
+	TotalTokens  int64     `json:"total_tokens"`
+	TotalCost    float64   `json:"total_cost"`
+	ActualCost   float64   `json:"actual_cost"`
 }
 
 type UsageStats struct {

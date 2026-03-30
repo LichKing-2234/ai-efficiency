@@ -144,7 +144,7 @@ func (h *ProviderHandler) ListForUser(c *gin.Context) {
 		}
 		if apiKeyID == 0 {
 			// No existing key found — create a new one.
-			newKey, err := rp.CreateUserAPIKey(ctx, int64(*user.RelayUserID), "ae-cli-auto")
+			newKey, err := rp.CreateUserAPIKey(ctx, int64(*user.RelayUserID), relay.APIKeyCreateRequest{Name: "ae-cli-auto"})
 			if err != nil {
 				h.logger.Warn("failed to create API key", zap.String("provider", p.Name), zap.Error(err))
 				continue
