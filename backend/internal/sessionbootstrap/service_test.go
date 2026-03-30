@@ -185,6 +185,12 @@ func TestBootstrapCreatesSessionKeyAndEnvBundle(t *testing.T) {
 	if got := resp.EnvBundle["OPENAI_BASE_URL"]; got != "http://relay.local/v1" {
 		t.Fatalf("env OPENAI_BASE_URL = %q, want %q", got, "http://relay.local/v1")
 	}
+	if got := resp.EnvBundle["ANTHROPIC_API_KEY"]; got != "sk-session-555" {
+		t.Fatalf("env ANTHROPIC_API_KEY = %q, want %q", got, "sk-session-555")
+	}
+	if got := resp.EnvBundle["ANTHROPIC_BASE_URL"]; got != "http://relay.local/v1" {
+		t.Fatalf("env ANTHROPIC_BASE_URL = %q, want %q", got, "http://relay.local/v1")
+	}
 
 	if rp.lastCreateUserAPIKeyUserID != 99 {
 		t.Fatalf("CreateUserAPIKey userID = %d, want %d", rp.lastCreateUserAPIKeyUserID, 99)

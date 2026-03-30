@@ -119,6 +119,21 @@ func (s *Service) Bootstrap(ctx context.Context, localUserID int, req BootstrapR
 	if strings.TrimSpace(req.BranchSnapshot) == "" {
 		return nil, fmt.Errorf("bootstrap: branch_snapshot is required")
 	}
+	if strings.TrimSpace(req.HeadSHA) == "" {
+		return nil, fmt.Errorf("bootstrap: head_sha is required")
+	}
+	if strings.TrimSpace(req.WorkspaceRoot) == "" {
+		return nil, fmt.Errorf("bootstrap: workspace_root is required")
+	}
+	if strings.TrimSpace(req.GitDir) == "" {
+		return nil, fmt.Errorf("bootstrap: git_dir is required")
+	}
+	if strings.TrimSpace(req.GitCommonDir) == "" {
+		return nil, fmt.Errorf("bootstrap: git_common_dir is required")
+	}
+	if strings.TrimSpace(req.WorkspaceID) == "" {
+		return nil, fmt.Errorf("bootstrap: workspace_id is required")
+	}
 	if s.entClient == nil {
 		return nil, fmt.Errorf("bootstrap: ent client is required")
 	}
@@ -204,9 +219,7 @@ func (s *Service) Bootstrap(ctx context.Context, localUserID int, req BootstrapR
 		SetInitialGitDir(req.GitDir).
 		SetInitialGitCommonDir(req.GitCommonDir)
 
-	if strings.TrimSpace(req.HeadSHA) != "" {
-		create.SetHeadShaAtStart(strings.TrimSpace(req.HeadSHA))
-	}
+	create.SetHeadShaAtStart(strings.TrimSpace(req.HeadSHA))
 	if localUserID != 0 {
 		create.SetUserID(localUserID)
 	}
@@ -222,9 +235,11 @@ func (s *Service) Bootstrap(ctx context.Context, localUserID int, req BootstrapR
 		"AE_PROVIDER_NAME":    binding.ProviderName,
 		"AE_ENV_VERSION":      "1",
 		"OPENAI_API_KEY":      key.Secret,
+		"ANTHROPIC_API_KEY":   key.Secret,
 	}
 	if s.providerBaseURL != "" {
 		envBundle["OPENAI_BASE_URL"] = s.providerBaseURL
+		envBundle["ANTHROPIC_BASE_URL"] = s.providerBaseURL
 	}
 
 	return &BootstrapResponse{

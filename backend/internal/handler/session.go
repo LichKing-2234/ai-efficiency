@@ -3,7 +3,6 @@ package handler
 import (
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/ai-efficiency/backend/ent"
@@ -36,11 +35,11 @@ type createSessionRequest struct {
 type bootstrapSessionRequest struct {
 	RepoFullName   string `json:"repo_full_name" binding:"required"`
 	BranchSnapshot string `json:"branch_snapshot" binding:"required"`
-	HeadSHA        string `json:"head_sha"`
-	WorkspaceRoot  string `json:"workspace_root"`
-	GitDir         string `json:"git_dir"`
-	GitCommonDir   string `json:"git_common_dir"`
-	WorkspaceID    string `json:"workspace_id"`
+	HeadSHA        string `json:"head_sha" binding:"required"`
+	WorkspaceRoot  string `json:"workspace_root" binding:"required"`
+	GitDir         string `json:"git_dir" binding:"required"`
+	GitCommonDir   string `json:"git_common_dir" binding:"required"`
+	WorkspaceID    string `json:"workspace_id" binding:"required"`
 }
 
 type addInvocationRequest struct {
@@ -52,13 +51,13 @@ type addInvocationRequest struct {
 // Bootstrap handles POST /api/v1/sessions/bootstrap
 func (h *SessionHandler) Bootstrap(c *gin.Context) {
 	if h.bootstrapSvc == nil {
-		pkg.Error(c, http.StatusInternalServerError, "bootstrap service not configured")
+		pkg.Error(c, http.StatusUnprocessableEntity, "bootstrap service not configured")
 		return
 	}
 
 	var req bootstrapSessionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		pkg.Error(c, http.StatusBadRequest, err.Error())
+		pkg.Error(c, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
 
@@ -79,16 +78,7 @@ func (h *SessionHandler) Bootstrap(c *gin.Context) {
 		WorkspaceID:    req.WorkspaceID,
 	})
 	if err != nil {
-		msg := err.Error()
-		if strings.Contains(msg, "repo not found") {
-			pkg.Error(c, http.StatusNotFound, msg)
-			return
-		}
-		if strings.Contains(msg, "required") {
-			pkg.Error(c, http.StatusBadRequest, msg)
-			return
-		}
-		pkg.Error(c, http.StatusInternalServerError, "failed to bootstrap session")
+		pkg.Error(c, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
 
