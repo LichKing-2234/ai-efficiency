@@ -29,6 +29,18 @@ type Session struct {
 	RelayAPIKeyID *int `json:"relay_api_key_id,omitempty"`
 	// ProviderName holds the value of the "provider_name" field.
 	ProviderName *string `json:"provider_name,omitempty"`
+	// RuntimeRef holds the value of the "runtime_ref" field.
+	RuntimeRef *string `json:"runtime_ref,omitempty"`
+	// InitialWorkspaceRoot holds the value of the "initial_workspace_root" field.
+	InitialWorkspaceRoot *string `json:"initial_workspace_root,omitempty"`
+	// InitialGitDir holds the value of the "initial_git_dir" field.
+	InitialGitDir *string `json:"initial_git_dir,omitempty"`
+	// InitialGitCommonDir holds the value of the "initial_git_common_dir" field.
+	InitialGitCommonDir *string `json:"initial_git_common_dir,omitempty"`
+	// HeadShaAtStart holds the value of the "head_sha_at_start" field.
+	HeadShaAtStart *string `json:"head_sha_at_start,omitempty"`
+	// LastSeenAt holds the value of the "last_seen_at" field.
+	LastSeenAt *time.Time `json:"last_seen_at,omitempty"`
 	// ToolConfigs holds the value of the "tool_configs" field.
 	ToolConfigs []map[string]interface{} `json:"tool_configs,omitempty"`
 	// StartedAt holds the value of the "started_at" field.
@@ -55,9 +67,17 @@ type SessionEdges struct {
 	RepoConfig *RepoConfig `json:"repo_config,omitempty"`
 	// User holds the value of the user edge.
 	User *User `json:"user,omitempty"`
+	// SessionWorkspaces holds the value of the session_workspaces edge.
+	SessionWorkspaces []*SessionWorkspace `json:"session_workspaces,omitempty"`
+	// AgentMetadataEvents holds the value of the agent_metadata_events edge.
+	AgentMetadataEvents []*AgentMetadataEvent `json:"agent_metadata_events,omitempty"`
+	// CommitCheckpoints holds the value of the commit_checkpoints edge.
+	CommitCheckpoints []*CommitCheckpoint `json:"commit_checkpoints,omitempty"`
+	// CommitRewrites holds the value of the commit_rewrites edge.
+	CommitRewrites []*CommitRewrite `json:"commit_rewrites,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [2]bool
+	loadedTypes [6]bool
 }
 
 // RepoConfigOrErr returns the RepoConfig value or an error if the edge
@@ -82,6 +102,42 @@ func (e SessionEdges) UserOrErr() (*User, error) {
 	return nil, &NotLoadedError{edge: "user"}
 }
 
+// SessionWorkspacesOrErr returns the SessionWorkspaces value or an error if the edge
+// was not loaded in eager-loading.
+func (e SessionEdges) SessionWorkspacesOrErr() ([]*SessionWorkspace, error) {
+	if e.loadedTypes[2] {
+		return e.SessionWorkspaces, nil
+	}
+	return nil, &NotLoadedError{edge: "session_workspaces"}
+}
+
+// AgentMetadataEventsOrErr returns the AgentMetadataEvents value or an error if the edge
+// was not loaded in eager-loading.
+func (e SessionEdges) AgentMetadataEventsOrErr() ([]*AgentMetadataEvent, error) {
+	if e.loadedTypes[3] {
+		return e.AgentMetadataEvents, nil
+	}
+	return nil, &NotLoadedError{edge: "agent_metadata_events"}
+}
+
+// CommitCheckpointsOrErr returns the CommitCheckpoints value or an error if the edge
+// was not loaded in eager-loading.
+func (e SessionEdges) CommitCheckpointsOrErr() ([]*CommitCheckpoint, error) {
+	if e.loadedTypes[4] {
+		return e.CommitCheckpoints, nil
+	}
+	return nil, &NotLoadedError{edge: "commit_checkpoints"}
+}
+
+// CommitRewritesOrErr returns the CommitRewrites value or an error if the edge
+// was not loaded in eager-loading.
+func (e SessionEdges) CommitRewritesOrErr() ([]*CommitRewrite, error) {
+	if e.loadedTypes[5] {
+		return e.CommitRewrites, nil
+	}
+	return nil, &NotLoadedError{edge: "commit_rewrites"}
+}
+
 // scanValues returns the types for scanning values from sql.Rows.
 func (*Session) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
@@ -91,9 +147,9 @@ func (*Session) scanValues(columns []string) ([]any, error) {
 			values[i] = new([]byte)
 		case session.FieldRelayUserID, session.FieldRelayAPIKeyID:
 			values[i] = new(sql.NullInt64)
-		case session.FieldBranch, session.FieldProviderName, session.FieldStatus:
+		case session.FieldBranch, session.FieldProviderName, session.FieldRuntimeRef, session.FieldInitialWorkspaceRoot, session.FieldInitialGitDir, session.FieldInitialGitCommonDir, session.FieldHeadShaAtStart, session.FieldStatus:
 			values[i] = new(sql.NullString)
-		case session.FieldStartedAt, session.FieldEndedAt, session.FieldCreatedAt:
+		case session.FieldLastSeenAt, session.FieldStartedAt, session.FieldEndedAt, session.FieldCreatedAt:
 			values[i] = new(sql.NullTime)
 		case session.FieldID:
 			values[i] = new(uuid.UUID)
@@ -148,6 +204,48 @@ func (s *Session) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				s.ProviderName = new(string)
 				*s.ProviderName = value.String
+			}
+		case session.FieldRuntimeRef:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field runtime_ref", values[i])
+			} else if value.Valid {
+				s.RuntimeRef = new(string)
+				*s.RuntimeRef = value.String
+			}
+		case session.FieldInitialWorkspaceRoot:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field initial_workspace_root", values[i])
+			} else if value.Valid {
+				s.InitialWorkspaceRoot = new(string)
+				*s.InitialWorkspaceRoot = value.String
+			}
+		case session.FieldInitialGitDir:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field initial_git_dir", values[i])
+			} else if value.Valid {
+				s.InitialGitDir = new(string)
+				*s.InitialGitDir = value.String
+			}
+		case session.FieldInitialGitCommonDir:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field initial_git_common_dir", values[i])
+			} else if value.Valid {
+				s.InitialGitCommonDir = new(string)
+				*s.InitialGitCommonDir = value.String
+			}
+		case session.FieldHeadShaAtStart:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field head_sha_at_start", values[i])
+			} else if value.Valid {
+				s.HeadShaAtStart = new(string)
+				*s.HeadShaAtStart = value.String
+			}
+		case session.FieldLastSeenAt:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field last_seen_at", values[i])
+			} else if value.Valid {
+				s.LastSeenAt = new(time.Time)
+				*s.LastSeenAt = value.Time
 			}
 		case session.FieldToolConfigs:
 			if value, ok := values[i].(*[]byte); !ok {
@@ -227,6 +325,26 @@ func (s *Session) QueryUser() *UserQuery {
 	return NewSessionClient(s.config).QueryUser(s)
 }
 
+// QuerySessionWorkspaces queries the "session_workspaces" edge of the Session entity.
+func (s *Session) QuerySessionWorkspaces() *SessionWorkspaceQuery {
+	return NewSessionClient(s.config).QuerySessionWorkspaces(s)
+}
+
+// QueryAgentMetadataEvents queries the "agent_metadata_events" edge of the Session entity.
+func (s *Session) QueryAgentMetadataEvents() *AgentMetadataEventQuery {
+	return NewSessionClient(s.config).QueryAgentMetadataEvents(s)
+}
+
+// QueryCommitCheckpoints queries the "commit_checkpoints" edge of the Session entity.
+func (s *Session) QueryCommitCheckpoints() *CommitCheckpointQuery {
+	return NewSessionClient(s.config).QueryCommitCheckpoints(s)
+}
+
+// QueryCommitRewrites queries the "commit_rewrites" edge of the Session entity.
+func (s *Session) QueryCommitRewrites() *CommitRewriteQuery {
+	return NewSessionClient(s.config).QueryCommitRewrites(s)
+}
+
 // Update returns a builder for updating this Session.
 // Note that you need to call Session.Unwrap() before calling this method if this Session
 // was returned from a transaction, and the transaction was committed or rolled back.
@@ -266,6 +384,36 @@ func (s *Session) String() string {
 	if v := s.ProviderName; v != nil {
 		builder.WriteString("provider_name=")
 		builder.WriteString(*v)
+	}
+	builder.WriteString(", ")
+	if v := s.RuntimeRef; v != nil {
+		builder.WriteString("runtime_ref=")
+		builder.WriteString(*v)
+	}
+	builder.WriteString(", ")
+	if v := s.InitialWorkspaceRoot; v != nil {
+		builder.WriteString("initial_workspace_root=")
+		builder.WriteString(*v)
+	}
+	builder.WriteString(", ")
+	if v := s.InitialGitDir; v != nil {
+		builder.WriteString("initial_git_dir=")
+		builder.WriteString(*v)
+	}
+	builder.WriteString(", ")
+	if v := s.InitialGitCommonDir; v != nil {
+		builder.WriteString("initial_git_common_dir=")
+		builder.WriteString(*v)
+	}
+	builder.WriteString(", ")
+	if v := s.HeadShaAtStart; v != nil {
+		builder.WriteString("head_sha_at_start=")
+		builder.WriteString(*v)
+	}
+	builder.WriteString(", ")
+	if v := s.LastSeenAt; v != nil {
+		builder.WriteString("last_seen_at=")
+		builder.WriteString(v.Format(time.ANSIC))
 	}
 	builder.WriteString(", ")
 	builder.WriteString("tool_configs=")

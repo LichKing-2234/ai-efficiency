@@ -37,6 +37,10 @@ type RepoConfig struct {
 	LastScanAt *time.Time `json:"last_scan_at,omitempty"`
 	// GroupID holds the value of the "group_id" field.
 	GroupID *string `json:"group_id,omitempty"`
+	// RelayProviderName holds the value of the "relay_provider_name" field.
+	RelayProviderName *string `json:"relay_provider_name,omitempty"`
+	// RelayGroupID holds the value of the "relay_group_id" field.
+	RelayGroupID *string `json:"relay_group_id,omitempty"`
 	// Status holds the value of the "status" field.
 	Status repoconfig.Status `json:"status,omitempty"`
 	// CreatedAt holds the value of the "created_at" field.
@@ -136,7 +140,7 @@ func (*RepoConfig) scanValues(columns []string) ([]any, error) {
 			values[i] = new([]byte)
 		case repoconfig.FieldID, repoconfig.FieldAiScore:
 			values[i] = new(sql.NullInt64)
-		case repoconfig.FieldName, repoconfig.FieldFullName, repoconfig.FieldCloneURL, repoconfig.FieldDefaultBranch, repoconfig.FieldWebhookID, repoconfig.FieldWebhookSecret, repoconfig.FieldGroupID, repoconfig.FieldStatus:
+		case repoconfig.FieldName, repoconfig.FieldFullName, repoconfig.FieldCloneURL, repoconfig.FieldDefaultBranch, repoconfig.FieldWebhookID, repoconfig.FieldWebhookSecret, repoconfig.FieldGroupID, repoconfig.FieldRelayProviderName, repoconfig.FieldRelayGroupID, repoconfig.FieldStatus:
 			values[i] = new(sql.NullString)
 		case repoconfig.FieldLastScanAt, repoconfig.FieldCreatedAt, repoconfig.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -220,6 +224,20 @@ func (rc *RepoConfig) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				rc.GroupID = new(string)
 				*rc.GroupID = value.String
+			}
+		case repoconfig.FieldRelayProviderName:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field relay_provider_name", values[i])
+			} else if value.Valid {
+				rc.RelayProviderName = new(string)
+				*rc.RelayProviderName = value.String
+			}
+		case repoconfig.FieldRelayGroupID:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field relay_group_id", values[i])
+			} else if value.Valid {
+				rc.RelayGroupID = new(string)
+				*rc.RelayGroupID = value.String
 			}
 		case repoconfig.FieldStatus:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -349,6 +367,16 @@ func (rc *RepoConfig) String() string {
 	builder.WriteString(", ")
 	if v := rc.GroupID; v != nil {
 		builder.WriteString("group_id=")
+		builder.WriteString(*v)
+	}
+	builder.WriteString(", ")
+	if v := rc.RelayProviderName; v != nil {
+		builder.WriteString("relay_provider_name=")
+		builder.WriteString(*v)
+	}
+	builder.WriteString(", ")
+	if v := rc.RelayGroupID; v != nil {
+		builder.WriteString("relay_group_id=")
 		builder.WriteString(*v)
 	}
 	builder.WriteString(", ")

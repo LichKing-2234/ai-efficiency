@@ -10,8 +10,12 @@ import (
 
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/ai-efficiency/backend/ent/agentmetadataevent"
+	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
+	"github.com/ai-efficiency/backend/ent/commitrewrite"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/session"
+	"github.com/ai-efficiency/backend/ent/sessionworkspace"
 	"github.com/ai-efficiency/backend/ent/user"
 	"github.com/google/uuid"
 )
@@ -67,6 +71,90 @@ func (sc *SessionCreate) SetProviderName(s string) *SessionCreate {
 func (sc *SessionCreate) SetNillableProviderName(s *string) *SessionCreate {
 	if s != nil {
 		sc.SetProviderName(*s)
+	}
+	return sc
+}
+
+// SetRuntimeRef sets the "runtime_ref" field.
+func (sc *SessionCreate) SetRuntimeRef(s string) *SessionCreate {
+	sc.mutation.SetRuntimeRef(s)
+	return sc
+}
+
+// SetNillableRuntimeRef sets the "runtime_ref" field if the given value is not nil.
+func (sc *SessionCreate) SetNillableRuntimeRef(s *string) *SessionCreate {
+	if s != nil {
+		sc.SetRuntimeRef(*s)
+	}
+	return sc
+}
+
+// SetInitialWorkspaceRoot sets the "initial_workspace_root" field.
+func (sc *SessionCreate) SetInitialWorkspaceRoot(s string) *SessionCreate {
+	sc.mutation.SetInitialWorkspaceRoot(s)
+	return sc
+}
+
+// SetNillableInitialWorkspaceRoot sets the "initial_workspace_root" field if the given value is not nil.
+func (sc *SessionCreate) SetNillableInitialWorkspaceRoot(s *string) *SessionCreate {
+	if s != nil {
+		sc.SetInitialWorkspaceRoot(*s)
+	}
+	return sc
+}
+
+// SetInitialGitDir sets the "initial_git_dir" field.
+func (sc *SessionCreate) SetInitialGitDir(s string) *SessionCreate {
+	sc.mutation.SetInitialGitDir(s)
+	return sc
+}
+
+// SetNillableInitialGitDir sets the "initial_git_dir" field if the given value is not nil.
+func (sc *SessionCreate) SetNillableInitialGitDir(s *string) *SessionCreate {
+	if s != nil {
+		sc.SetInitialGitDir(*s)
+	}
+	return sc
+}
+
+// SetInitialGitCommonDir sets the "initial_git_common_dir" field.
+func (sc *SessionCreate) SetInitialGitCommonDir(s string) *SessionCreate {
+	sc.mutation.SetInitialGitCommonDir(s)
+	return sc
+}
+
+// SetNillableInitialGitCommonDir sets the "initial_git_common_dir" field if the given value is not nil.
+func (sc *SessionCreate) SetNillableInitialGitCommonDir(s *string) *SessionCreate {
+	if s != nil {
+		sc.SetInitialGitCommonDir(*s)
+	}
+	return sc
+}
+
+// SetHeadShaAtStart sets the "head_sha_at_start" field.
+func (sc *SessionCreate) SetHeadShaAtStart(s string) *SessionCreate {
+	sc.mutation.SetHeadShaAtStart(s)
+	return sc
+}
+
+// SetNillableHeadShaAtStart sets the "head_sha_at_start" field if the given value is not nil.
+func (sc *SessionCreate) SetNillableHeadShaAtStart(s *string) *SessionCreate {
+	if s != nil {
+		sc.SetHeadShaAtStart(*s)
+	}
+	return sc
+}
+
+// SetLastSeenAt sets the "last_seen_at" field.
+func (sc *SessionCreate) SetLastSeenAt(t time.Time) *SessionCreate {
+	sc.mutation.SetLastSeenAt(t)
+	return sc
+}
+
+// SetNillableLastSeenAt sets the "last_seen_at" field if the given value is not nil.
+func (sc *SessionCreate) SetNillableLastSeenAt(t *time.Time) *SessionCreate {
+	if t != nil {
+		sc.SetLastSeenAt(*t)
 	}
 	return sc
 }
@@ -181,6 +269,66 @@ func (sc *SessionCreate) SetNillableUserID(id *int) *SessionCreate {
 // SetUser sets the "user" edge to the User entity.
 func (sc *SessionCreate) SetUser(u *User) *SessionCreate {
 	return sc.SetUserID(u.ID)
+}
+
+// AddSessionWorkspaceIDs adds the "session_workspaces" edge to the SessionWorkspace entity by IDs.
+func (sc *SessionCreate) AddSessionWorkspaceIDs(ids ...int) *SessionCreate {
+	sc.mutation.AddSessionWorkspaceIDs(ids...)
+	return sc
+}
+
+// AddSessionWorkspaces adds the "session_workspaces" edges to the SessionWorkspace entity.
+func (sc *SessionCreate) AddSessionWorkspaces(s ...*SessionWorkspace) *SessionCreate {
+	ids := make([]int, len(s))
+	for i := range s {
+		ids[i] = s[i].ID
+	}
+	return sc.AddSessionWorkspaceIDs(ids...)
+}
+
+// AddAgentMetadataEventIDs adds the "agent_metadata_events" edge to the AgentMetadataEvent entity by IDs.
+func (sc *SessionCreate) AddAgentMetadataEventIDs(ids ...int) *SessionCreate {
+	sc.mutation.AddAgentMetadataEventIDs(ids...)
+	return sc
+}
+
+// AddAgentMetadataEvents adds the "agent_metadata_events" edges to the AgentMetadataEvent entity.
+func (sc *SessionCreate) AddAgentMetadataEvents(a ...*AgentMetadataEvent) *SessionCreate {
+	ids := make([]int, len(a))
+	for i := range a {
+		ids[i] = a[i].ID
+	}
+	return sc.AddAgentMetadataEventIDs(ids...)
+}
+
+// AddCommitCheckpointIDs adds the "commit_checkpoints" edge to the CommitCheckpoint entity by IDs.
+func (sc *SessionCreate) AddCommitCheckpointIDs(ids ...int) *SessionCreate {
+	sc.mutation.AddCommitCheckpointIDs(ids...)
+	return sc
+}
+
+// AddCommitCheckpoints adds the "commit_checkpoints" edges to the CommitCheckpoint entity.
+func (sc *SessionCreate) AddCommitCheckpoints(c ...*CommitCheckpoint) *SessionCreate {
+	ids := make([]int, len(c))
+	for i := range c {
+		ids[i] = c[i].ID
+	}
+	return sc.AddCommitCheckpointIDs(ids...)
+}
+
+// AddCommitRewriteIDs adds the "commit_rewrites" edge to the CommitRewrite entity by IDs.
+func (sc *SessionCreate) AddCommitRewriteIDs(ids ...int) *SessionCreate {
+	sc.mutation.AddCommitRewriteIDs(ids...)
+	return sc
+}
+
+// AddCommitRewrites adds the "commit_rewrites" edges to the CommitRewrite entity.
+func (sc *SessionCreate) AddCommitRewrites(c ...*CommitRewrite) *SessionCreate {
+	ids := make([]int, len(c))
+	for i := range c {
+		ids[i] = c[i].ID
+	}
+	return sc.AddCommitRewriteIDs(ids...)
 }
 
 // Mutation returns the SessionMutation object of the builder.
@@ -325,6 +473,30 @@ func (sc *SessionCreate) createSpec() (*Session, *sqlgraph.CreateSpec) {
 		_spec.SetField(session.FieldProviderName, field.TypeString, value)
 		_node.ProviderName = &value
 	}
+	if value, ok := sc.mutation.RuntimeRef(); ok {
+		_spec.SetField(session.FieldRuntimeRef, field.TypeString, value)
+		_node.RuntimeRef = &value
+	}
+	if value, ok := sc.mutation.InitialWorkspaceRoot(); ok {
+		_spec.SetField(session.FieldInitialWorkspaceRoot, field.TypeString, value)
+		_node.InitialWorkspaceRoot = &value
+	}
+	if value, ok := sc.mutation.InitialGitDir(); ok {
+		_spec.SetField(session.FieldInitialGitDir, field.TypeString, value)
+		_node.InitialGitDir = &value
+	}
+	if value, ok := sc.mutation.InitialGitCommonDir(); ok {
+		_spec.SetField(session.FieldInitialGitCommonDir, field.TypeString, value)
+		_node.InitialGitCommonDir = &value
+	}
+	if value, ok := sc.mutation.HeadShaAtStart(); ok {
+		_spec.SetField(session.FieldHeadShaAtStart, field.TypeString, value)
+		_node.HeadShaAtStart = &value
+	}
+	if value, ok := sc.mutation.LastSeenAt(); ok {
+		_spec.SetField(session.FieldLastSeenAt, field.TypeTime, value)
+		_node.LastSeenAt = &value
+	}
 	if value, ok := sc.mutation.ToolConfigs(); ok {
 		_spec.SetField(session.FieldToolConfigs, field.TypeJSON, value)
 		_node.ToolConfigs = value
@@ -381,6 +553,70 @@ func (sc *SessionCreate) createSpec() (*Session, *sqlgraph.CreateSpec) {
 			edge.Target.Nodes = append(edge.Target.Nodes, k)
 		}
 		_node.user_sessions = &nodes[0]
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := sc.mutation.SessionWorkspacesIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   session.SessionWorkspacesTable,
+			Columns: []string{session.SessionWorkspacesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(sessionworkspace.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := sc.mutation.AgentMetadataEventsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   session.AgentMetadataEventsTable,
+			Columns: []string{session.AgentMetadataEventsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(agentmetadataevent.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := sc.mutation.CommitCheckpointsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   session.CommitCheckpointsTable,
+			Columns: []string{session.CommitCheckpointsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(commitcheckpoint.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := sc.mutation.CommitRewritesIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   session.CommitRewritesTable,
+			Columns: []string{session.CommitRewritesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(commitrewrite.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
 		_spec.Edges = append(_spec.Edges, edge)
 	}
 	return _node, _spec

@@ -28,6 +28,24 @@ func (Session) Fields() []ent.Field {
 		field.String("provider_name").
 			Optional().
 			Nillable(),
+		field.String("runtime_ref").
+			Optional().
+			Nillable(),
+		field.String("initial_workspace_root").
+			Optional().
+			Nillable(),
+		field.String("initial_git_dir").
+			Optional().
+			Nillable(),
+		field.String("initial_git_common_dir").
+			Optional().
+			Nillable(),
+		field.String("head_sha_at_start").
+			Optional().
+			Nillable(),
+		field.Time("last_seen_at").
+			Optional().
+			Nillable(),
 		field.JSON("tool_configs", []map[string]interface{}{}).
 			Optional().
 			Default([]map[string]interface{}{}),
@@ -56,5 +74,9 @@ func (Session) Edges() []ent.Edge {
 		edge.From("user", User.Type).
 			Ref("sessions").
 			Unique(),
+		edge.To("session_workspaces", SessionWorkspace.Type),
+		edge.To("agent_metadata_events", AgentMetadataEvent.Type),
+		edge.To("commit_checkpoints", CommitCheckpoint.Type),
+		edge.To("commit_rewrites", CommitRewrite.Type),
 	}
 }

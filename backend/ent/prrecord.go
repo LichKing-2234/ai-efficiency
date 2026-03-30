@@ -49,6 +49,20 @@ type PrRecord struct {
 	AiRatio float64 `json:"ai_ratio,omitempty"`
 	// AiLabel holds the value of the "ai_label" field.
 	AiLabel prrecord.AiLabel `json:"ai_label,omitempty"`
+	// AttributionStatus holds the value of the "attribution_status" field.
+	AttributionStatus prrecord.AttributionStatus `json:"attribution_status,omitempty"`
+	// AttributionConfidence holds the value of the "attribution_confidence" field.
+	AttributionConfidence *prrecord.AttributionConfidence `json:"attribution_confidence,omitempty"`
+	// PrimaryTokenCount holds the value of the "primary_token_count" field.
+	PrimaryTokenCount int64 `json:"primary_token_count,omitempty"`
+	// PrimaryTokenCost holds the value of the "primary_token_cost" field.
+	PrimaryTokenCost float64 `json:"primary_token_cost,omitempty"`
+	// MetadataSummary holds the value of the "metadata_summary" field.
+	MetadataSummary map[string]interface{} `json:"metadata_summary,omitempty"`
+	// LastAttributedAt holds the value of the "last_attributed_at" field.
+	LastAttributedAt *time.Time `json:"last_attributed_at,omitempty"`
+	// LastAttributionRunID holds the value of the "last_attribution_run_id" field.
+	LastAttributionRunID *int `json:"last_attribution_run_id,omitempty"`
 	// MergedAt holds the value of the "merged_at" field.
 	MergedAt *time.Time `json:"merged_at,omitempty"`
 	// CycleTimeHours holds the value of the "cycle_time_hours" field.
@@ -68,9 +82,11 @@ type PrRecord struct {
 type PrRecordEdges struct {
 	// RepoConfig holds the value of the repo_config edge.
 	RepoConfig *RepoConfig `json:"repo_config,omitempty"`
+	// AttributionRuns holds the value of the attribution_runs edge.
+	AttributionRuns []*PrAttributionRun `json:"attribution_runs,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [1]bool
+	loadedTypes [2]bool
 }
 
 // RepoConfigOrErr returns the RepoConfig value or an error if the edge
@@ -84,20 +100,29 @@ func (e PrRecordEdges) RepoConfigOrErr() (*RepoConfig, error) {
 	return nil, &NotLoadedError{edge: "repo_config"}
 }
 
+// AttributionRunsOrErr returns the AttributionRuns value or an error if the edge
+// was not loaded in eager-loading.
+func (e PrRecordEdges) AttributionRunsOrErr() ([]*PrAttributionRun, error) {
+	if e.loadedTypes[1] {
+		return e.AttributionRuns, nil
+	}
+	return nil, &NotLoadedError{edge: "attribution_runs"}
+}
+
 // scanValues returns the types for scanning values from sql.Rows.
 func (*PrRecord) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case prrecord.FieldLabels, prrecord.FieldChangedFiles, prrecord.FieldSessionIds:
+		case prrecord.FieldLabels, prrecord.FieldChangedFiles, prrecord.FieldSessionIds, prrecord.FieldMetadataSummary:
 			values[i] = new([]byte)
-		case prrecord.FieldTokenCost, prrecord.FieldAiRatio, prrecord.FieldCycleTimeHours:
+		case prrecord.FieldTokenCost, prrecord.FieldAiRatio, prrecord.FieldPrimaryTokenCost, prrecord.FieldCycleTimeHours:
 			values[i] = new(sql.NullFloat64)
-		case prrecord.FieldID, prrecord.FieldScmPrID, prrecord.FieldLinesAdded, prrecord.FieldLinesDeleted:
+		case prrecord.FieldID, prrecord.FieldScmPrID, prrecord.FieldLinesAdded, prrecord.FieldLinesDeleted, prrecord.FieldPrimaryTokenCount, prrecord.FieldLastAttributionRunID:
 			values[i] = new(sql.NullInt64)
-		case prrecord.FieldScmPrURL, prrecord.FieldAuthor, prrecord.FieldTitle, prrecord.FieldSourceBranch, prrecord.FieldTargetBranch, prrecord.FieldStatus, prrecord.FieldAiLabel:
+		case prrecord.FieldScmPrURL, prrecord.FieldAuthor, prrecord.FieldTitle, prrecord.FieldSourceBranch, prrecord.FieldTargetBranch, prrecord.FieldStatus, prrecord.FieldAiLabel, prrecord.FieldAttributionStatus, prrecord.FieldAttributionConfidence:
 			values[i] = new(sql.NullString)
-		case prrecord.FieldMergedAt, prrecord.FieldCreatedAt, prrecord.FieldUpdatedAt:
+		case prrecord.FieldLastAttributedAt, prrecord.FieldMergedAt, prrecord.FieldCreatedAt, prrecord.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
 		case prrecord.ForeignKeys[0]: // repo_config_pr_records
 			values[i] = new(sql.NullInt64)
@@ -218,6 +243,53 @@ func (pr *PrRecord) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				pr.AiLabel = prrecord.AiLabel(value.String)
 			}
+		case prrecord.FieldAttributionStatus:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field attribution_status", values[i])
+			} else if value.Valid {
+				pr.AttributionStatus = prrecord.AttributionStatus(value.String)
+			}
+		case prrecord.FieldAttributionConfidence:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field attribution_confidence", values[i])
+			} else if value.Valid {
+				pr.AttributionConfidence = new(prrecord.AttributionConfidence)
+				*pr.AttributionConfidence = prrecord.AttributionConfidence(value.String)
+			}
+		case prrecord.FieldPrimaryTokenCount:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field primary_token_count", values[i])
+			} else if value.Valid {
+				pr.PrimaryTokenCount = value.Int64
+			}
+		case prrecord.FieldPrimaryTokenCost:
+			if value, ok := values[i].(*sql.NullFloat64); !ok {
+				return fmt.Errorf("unexpected type %T for field primary_token_cost", values[i])
+			} else if value.Valid {
+				pr.PrimaryTokenCost = value.Float64
+			}
+		case prrecord.FieldMetadataSummary:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field metadata_summary", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &pr.MetadataSummary); err != nil {
+					return fmt.Errorf("unmarshal field metadata_summary: %w", err)
+				}
+			}
+		case prrecord.FieldLastAttributedAt:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field last_attributed_at", values[i])
+			} else if value.Valid {
+				pr.LastAttributedAt = new(time.Time)
+				*pr.LastAttributedAt = value.Time
+			}
+		case prrecord.FieldLastAttributionRunID:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field last_attribution_run_id", values[i])
+			} else if value.Valid {
+				pr.LastAttributionRunID = new(int)
+				*pr.LastAttributionRunID = int(value.Int64)
+			}
 		case prrecord.FieldMergedAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
 				return fmt.Errorf("unexpected type %T for field merged_at", values[i])
@@ -266,6 +338,11 @@ func (pr *PrRecord) Value(name string) (ent.Value, error) {
 // QueryRepoConfig queries the "repo_config" edge of the PrRecord entity.
 func (pr *PrRecord) QueryRepoConfig() *RepoConfigQuery {
 	return NewPrRecordClient(pr.config).QueryRepoConfig(pr)
+}
+
+// QueryAttributionRuns queries the "attribution_runs" edge of the PrRecord entity.
+func (pr *PrRecord) QueryAttributionRuns() *PrAttributionRunQuery {
+	return NewPrRecordClient(pr.config).QueryAttributionRuns(pr)
 }
 
 // Update returns a builder for updating this PrRecord.
@@ -335,6 +412,33 @@ func (pr *PrRecord) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("ai_label=")
 	builder.WriteString(fmt.Sprintf("%v", pr.AiLabel))
+	builder.WriteString(", ")
+	builder.WriteString("attribution_status=")
+	builder.WriteString(fmt.Sprintf("%v", pr.AttributionStatus))
+	builder.WriteString(", ")
+	if v := pr.AttributionConfidence; v != nil {
+		builder.WriteString("attribution_confidence=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	builder.WriteString("primary_token_count=")
+	builder.WriteString(fmt.Sprintf("%v", pr.PrimaryTokenCount))
+	builder.WriteString(", ")
+	builder.WriteString("primary_token_cost=")
+	builder.WriteString(fmt.Sprintf("%v", pr.PrimaryTokenCost))
+	builder.WriteString(", ")
+	builder.WriteString("metadata_summary=")
+	builder.WriteString(fmt.Sprintf("%v", pr.MetadataSummary))
+	builder.WriteString(", ")
+	if v := pr.LastAttributedAt; v != nil {
+		builder.WriteString("last_attributed_at=")
+		builder.WriteString(v.Format(time.ANSIC))
+	}
+	builder.WriteString(", ")
+	if v := pr.LastAttributionRunID; v != nil {
+		builder.WriteString("last_attribution_run_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
 	builder.WriteString(", ")
 	if v := pr.MergedAt; v != nil {
 		builder.WriteString("merged_at=")

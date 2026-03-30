@@ -24,6 +24,18 @@ const (
 	FieldRelayAPIKeyID = "relay_api_key_id"
 	// FieldProviderName holds the string denoting the provider_name field in the database.
 	FieldProviderName = "provider_name"
+	// FieldRuntimeRef holds the string denoting the runtime_ref field in the database.
+	FieldRuntimeRef = "runtime_ref"
+	// FieldInitialWorkspaceRoot holds the string denoting the initial_workspace_root field in the database.
+	FieldInitialWorkspaceRoot = "initial_workspace_root"
+	// FieldInitialGitDir holds the string denoting the initial_git_dir field in the database.
+	FieldInitialGitDir = "initial_git_dir"
+	// FieldInitialGitCommonDir holds the string denoting the initial_git_common_dir field in the database.
+	FieldInitialGitCommonDir = "initial_git_common_dir"
+	// FieldHeadShaAtStart holds the string denoting the head_sha_at_start field in the database.
+	FieldHeadShaAtStart = "head_sha_at_start"
+	// FieldLastSeenAt holds the string denoting the last_seen_at field in the database.
+	FieldLastSeenAt = "last_seen_at"
 	// FieldToolConfigs holds the string denoting the tool_configs field in the database.
 	FieldToolConfigs = "tool_configs"
 	// FieldStartedAt holds the string denoting the started_at field in the database.
@@ -40,6 +52,14 @@ const (
 	EdgeRepoConfig = "repo_config"
 	// EdgeUser holds the string denoting the user edge name in mutations.
 	EdgeUser = "user"
+	// EdgeSessionWorkspaces holds the string denoting the session_workspaces edge name in mutations.
+	EdgeSessionWorkspaces = "session_workspaces"
+	// EdgeAgentMetadataEvents holds the string denoting the agent_metadata_events edge name in mutations.
+	EdgeAgentMetadataEvents = "agent_metadata_events"
+	// EdgeCommitCheckpoints holds the string denoting the commit_checkpoints edge name in mutations.
+	EdgeCommitCheckpoints = "commit_checkpoints"
+	// EdgeCommitRewrites holds the string denoting the commit_rewrites edge name in mutations.
+	EdgeCommitRewrites = "commit_rewrites"
 	// Table holds the table name of the session in the database.
 	Table = "sessions"
 	// RepoConfigTable is the table that holds the repo_config relation/edge.
@@ -56,6 +76,34 @@ const (
 	UserInverseTable = "users"
 	// UserColumn is the table column denoting the user relation/edge.
 	UserColumn = "user_sessions"
+	// SessionWorkspacesTable is the table that holds the session_workspaces relation/edge.
+	SessionWorkspacesTable = "session_workspaces"
+	// SessionWorkspacesInverseTable is the table name for the SessionWorkspace entity.
+	// It exists in this package in order to avoid circular dependency with the "sessionworkspace" package.
+	SessionWorkspacesInverseTable = "session_workspaces"
+	// SessionWorkspacesColumn is the table column denoting the session_workspaces relation/edge.
+	SessionWorkspacesColumn = "session_id"
+	// AgentMetadataEventsTable is the table that holds the agent_metadata_events relation/edge.
+	AgentMetadataEventsTable = "agent_metadata_events"
+	// AgentMetadataEventsInverseTable is the table name for the AgentMetadataEvent entity.
+	// It exists in this package in order to avoid circular dependency with the "agentmetadataevent" package.
+	AgentMetadataEventsInverseTable = "agent_metadata_events"
+	// AgentMetadataEventsColumn is the table column denoting the agent_metadata_events relation/edge.
+	AgentMetadataEventsColumn = "session_id"
+	// CommitCheckpointsTable is the table that holds the commit_checkpoints relation/edge.
+	CommitCheckpointsTable = "commit_checkpoints"
+	// CommitCheckpointsInverseTable is the table name for the CommitCheckpoint entity.
+	// It exists in this package in order to avoid circular dependency with the "commitcheckpoint" package.
+	CommitCheckpointsInverseTable = "commit_checkpoints"
+	// CommitCheckpointsColumn is the table column denoting the commit_checkpoints relation/edge.
+	CommitCheckpointsColumn = "session_id"
+	// CommitRewritesTable is the table that holds the commit_rewrites relation/edge.
+	CommitRewritesTable = "commit_rewrites"
+	// CommitRewritesInverseTable is the table name for the CommitRewrite entity.
+	// It exists in this package in order to avoid circular dependency with the "commitrewrite" package.
+	CommitRewritesInverseTable = "commit_rewrites"
+	// CommitRewritesColumn is the table column denoting the commit_rewrites relation/edge.
+	CommitRewritesColumn = "session_id"
 )
 
 // Columns holds all SQL columns for session fields.
@@ -65,6 +113,12 @@ var Columns = []string{
 	FieldRelayUserID,
 	FieldRelayAPIKeyID,
 	FieldProviderName,
+	FieldRuntimeRef,
+	FieldInitialWorkspaceRoot,
+	FieldInitialGitDir,
+	FieldInitialGitCommonDir,
+	FieldHeadShaAtStart,
+	FieldLastSeenAt,
 	FieldToolConfigs,
 	FieldStartedAt,
 	FieldEndedAt,
@@ -165,6 +219,36 @@ func ByProviderName(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldProviderName, opts...).ToFunc()
 }
 
+// ByRuntimeRef orders the results by the runtime_ref field.
+func ByRuntimeRef(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldRuntimeRef, opts...).ToFunc()
+}
+
+// ByInitialWorkspaceRoot orders the results by the initial_workspace_root field.
+func ByInitialWorkspaceRoot(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldInitialWorkspaceRoot, opts...).ToFunc()
+}
+
+// ByInitialGitDir orders the results by the initial_git_dir field.
+func ByInitialGitDir(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldInitialGitDir, opts...).ToFunc()
+}
+
+// ByInitialGitCommonDir orders the results by the initial_git_common_dir field.
+func ByInitialGitCommonDir(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldInitialGitCommonDir, opts...).ToFunc()
+}
+
+// ByHeadShaAtStart orders the results by the head_sha_at_start field.
+func ByHeadShaAtStart(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldHeadShaAtStart, opts...).ToFunc()
+}
+
+// ByLastSeenAt orders the results by the last_seen_at field.
+func ByLastSeenAt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldLastSeenAt, opts...).ToFunc()
+}
+
 // ByStartedAt orders the results by the started_at field.
 func ByStartedAt(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldStartedAt, opts...).ToFunc()
@@ -198,6 +282,62 @@ func ByUserField(field string, opts ...sql.OrderTermOption) OrderOption {
 		sqlgraph.OrderByNeighborTerms(s, newUserStep(), sql.OrderByField(field, opts...))
 	}
 }
+
+// BySessionWorkspacesCount orders the results by session_workspaces count.
+func BySessionWorkspacesCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newSessionWorkspacesStep(), opts...)
+	}
+}
+
+// BySessionWorkspaces orders the results by session_workspaces terms.
+func BySessionWorkspaces(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newSessionWorkspacesStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+
+// ByAgentMetadataEventsCount orders the results by agent_metadata_events count.
+func ByAgentMetadataEventsCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newAgentMetadataEventsStep(), opts...)
+	}
+}
+
+// ByAgentMetadataEvents orders the results by agent_metadata_events terms.
+func ByAgentMetadataEvents(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newAgentMetadataEventsStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+
+// ByCommitCheckpointsCount orders the results by commit_checkpoints count.
+func ByCommitCheckpointsCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newCommitCheckpointsStep(), opts...)
+	}
+}
+
+// ByCommitCheckpoints orders the results by commit_checkpoints terms.
+func ByCommitCheckpoints(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newCommitCheckpointsStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+
+// ByCommitRewritesCount orders the results by commit_rewrites count.
+func ByCommitRewritesCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newCommitRewritesStep(), opts...)
+	}
+}
+
+// ByCommitRewrites orders the results by commit_rewrites terms.
+func ByCommitRewrites(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newCommitRewritesStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
 func newRepoConfigStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
@@ -210,5 +350,33 @@ func newUserStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(UserInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.M2O, true, UserTable, UserColumn),
+	)
+}
+func newSessionWorkspacesStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(SessionWorkspacesInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, SessionWorkspacesTable, SessionWorkspacesColumn),
+	)
+}
+func newAgentMetadataEventsStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(AgentMetadataEventsInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, AgentMetadataEventsTable, AgentMetadataEventsColumn),
+	)
+}
+func newCommitCheckpointsStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(CommitCheckpointsInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, CommitCheckpointsTable, CommitCheckpointsColumn),
+	)
+}
+func newCommitRewritesStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(CommitRewritesInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, CommitRewritesTable, CommitRewritesColumn),
 	)
 }

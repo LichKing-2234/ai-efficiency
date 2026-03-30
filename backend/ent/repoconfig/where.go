@@ -100,6 +100,16 @@ func GroupID(v string) predicate.RepoConfig {
 	return predicate.RepoConfig(sql.FieldEQ(FieldGroupID, v))
 }
 
+// RelayProviderName applies equality check predicate on the "relay_provider_name" field. It's identical to RelayProviderNameEQ.
+func RelayProviderName(v string) predicate.RepoConfig {
+	return predicate.RepoConfig(sql.FieldEQ(FieldRelayProviderName, v))
+}
+
+// RelayGroupID applies equality check predicate on the "relay_group_id" field. It's identical to RelayGroupIDEQ.
+func RelayGroupID(v string) predicate.RepoConfig {
+	return predicate.RepoConfig(sql.FieldEQ(FieldRelayGroupID, v))
+}
+
 // CreatedAt applies equality check predicate on the "created_at" field. It's identical to CreatedAtEQ.
 func CreatedAt(v time.Time) predicate.RepoConfig {
 	return predicate.RepoConfig(sql.FieldEQ(FieldCreatedAt, v))
@@ -693,6 +703,156 @@ func GroupIDEqualFold(v string) predicate.RepoConfig {
 // GroupIDContainsFold applies the ContainsFold predicate on the "group_id" field.
 func GroupIDContainsFold(v string) predicate.RepoConfig {
 	return predicate.RepoConfig(sql.FieldContainsFold(FieldGroupID, v))
+}
+
+// RelayProviderNameEQ applies the EQ predicate on the "relay_provider_name" field.
+func RelayProviderNameEQ(v string) predicate.RepoConfig {
+	return predicate.RepoConfig(sql.FieldEQ(FieldRelayProviderName, v))
+}
+
+// RelayProviderNameNEQ applies the NEQ predicate on the "relay_provider_name" field.
+func RelayProviderNameNEQ(v string) predicate.RepoConfig {
+	return predicate.RepoConfig(sql.FieldNEQ(FieldRelayProviderName, v))
+}
+
+// RelayProviderNameIn applies the In predicate on the "relay_provider_name" field.
+func RelayProviderNameIn(vs ...string) predicate.RepoConfig {
+	return predicate.RepoConfig(sql.FieldIn(FieldRelayProviderName, vs...))
+}
+
+// RelayProviderNameNotIn applies the NotIn predicate on the "relay_provider_name" field.
+func RelayProviderNameNotIn(vs ...string) predicate.RepoConfig {
+	return predicate.RepoConfig(sql.FieldNotIn(FieldRelayProviderName, vs...))
+}
+
+// RelayProviderNameGT applies the GT predicate on the "relay_provider_name" field.
+func RelayProviderNameGT(v string) predicate.RepoConfig {
+	return predicate.RepoConfig(sql.FieldGT(FieldRelayProviderName, v))
+}
+
+// RelayProviderNameGTE applies the GTE predicate on the "relay_provider_name" field.
+func RelayProviderNameGTE(v string) predicate.RepoConfig {
+	return predicate.RepoConfig(sql.FieldGTE(FieldRelayProviderName, v))
+}
+
+// RelayProviderNameLT applies the LT predicate on the "relay_provider_name" field.
+func RelayProviderNameLT(v string) predicate.RepoConfig {
+	return predicate.RepoConfig(sql.FieldLT(FieldRelayProviderName, v))
+}
+
+// RelayProviderNameLTE applies the LTE predicate on the "relay_provider_name" field.
+func RelayProviderNameLTE(v string) predicate.RepoConfig {
+	return predicate.RepoConfig(sql.FieldLTE(FieldRelayProviderName, v))
+}
+
+// RelayProviderNameContains applies the Contains predicate on the "relay_provider_name" field.
+func RelayProviderNameContains(v string) predicate.RepoConfig {
+	return predicate.RepoConfig(sql.FieldContains(FieldRelayProviderName, v))
+}
+
+// RelayProviderNameHasPrefix applies the HasPrefix predicate on the "relay_provider_name" field.
+func RelayProviderNameHasPrefix(v string) predicate.RepoConfig {
+	return predicate.RepoConfig(sql.FieldHasPrefix(FieldRelayProviderName, v))
+}
+
+// RelayProviderNameHasSuffix applies the HasSuffix predicate on the "relay_provider_name" field.
+func RelayProviderNameHasSuffix(v string) predicate.RepoConfig {
+	return predicate.RepoConfig(sql.FieldHasSuffix(FieldRelayProviderName, v))
+}
+
+// RelayProviderNameIsNil applies the IsNil predicate on the "relay_provider_name" field.
+func RelayProviderNameIsNil() predicate.RepoConfig {
+	return predicate.RepoConfig(sql.FieldIsNull(FieldRelayProviderName))
+}
+
+// RelayProviderNameNotNil applies the NotNil predicate on the "relay_provider_name" field.
+func RelayProviderNameNotNil() predicate.RepoConfig {
+	return predicate.RepoConfig(sql.FieldNotNull(FieldRelayProviderName))
+}
+
+// RelayProviderNameEqualFold applies the EqualFold predicate on the "relay_provider_name" field.
+func RelayProviderNameEqualFold(v string) predicate.RepoConfig {
+	return predicate.RepoConfig(sql.FieldEqualFold(FieldRelayProviderName, v))
+}
+
+// RelayProviderNameContainsFold applies the ContainsFold predicate on the "relay_provider_name" field.
+func RelayProviderNameContainsFold(v string) predicate.RepoConfig {
+	return predicate.RepoConfig(sql.FieldContainsFold(FieldRelayProviderName, v))
+}
+
+// RelayGroupIDEQ applies the EQ predicate on the "relay_group_id" field.
+func RelayGroupIDEQ(v string) predicate.RepoConfig {
+	return predicate.RepoConfig(sql.FieldEQ(FieldRelayGroupID, v))
+}
+
+// RelayGroupIDNEQ applies the NEQ predicate on the "relay_group_id" field.
+func RelayGroupIDNEQ(v string) predicate.RepoConfig {
+	return predicate.RepoConfig(sql.FieldNEQ(FieldRelayGroupID, v))
+}
+
+// RelayGroupIDIn applies the In predicate on the "relay_group_id" field.
+func RelayGroupIDIn(vs ...string) predicate.RepoConfig {
+	return predicate.RepoConfig(sql.FieldIn(FieldRelayGroupID, vs...))
+}
+
+// RelayGroupIDNotIn applies the NotIn predicate on the "relay_group_id" field.
+func RelayGroupIDNotIn(vs ...string) predicate.RepoConfig {
+	return predicate.RepoConfig(sql.FieldNotIn(FieldRelayGroupID, vs...))
+}
+
+// RelayGroupIDGT applies the GT predicate on the "relay_group_id" field.
+func RelayGroupIDGT(v string) predicate.RepoConfig {
+	return predicate.RepoConfig(sql.FieldGT(FieldRelayGroupID, v))
+}
+
+// RelayGroupIDGTE applies the GTE predicate on the "relay_group_id" field.
+func RelayGroupIDGTE(v string) predicate.RepoConfig {
+	return predicate.RepoConfig(sql.FieldGTE(FieldRelayGroupID, v))
+}
+
+// RelayGroupIDLT applies the LT predicate on the "relay_group_id" field.
+func RelayGroupIDLT(v string) predicate.RepoConfig {
+	return predicate.RepoConfig(sql.FieldLT(FieldRelayGroupID, v))
+}
+
+// RelayGroupIDLTE applies the LTE predicate on the "relay_group_id" field.
+func RelayGroupIDLTE(v string) predicate.RepoConfig {
+	return predicate.RepoConfig(sql.FieldLTE(FieldRelayGroupID, v))
+}
+
+// RelayGroupIDContains applies the Contains predicate on the "relay_group_id" field.
+func RelayGroupIDContains(v string) predicate.RepoConfig {
+	return predicate.RepoConfig(sql.FieldContains(FieldRelayGroupID, v))
+}
+
+// RelayGroupIDHasPrefix applies the HasPrefix predicate on the "relay_group_id" field.
+func RelayGroupIDHasPrefix(v string) predicate.RepoConfig {
+	return predicate.RepoConfig(sql.FieldHasPrefix(FieldRelayGroupID, v))
+}
+
+// RelayGroupIDHasSuffix applies the HasSuffix predicate on the "relay_group_id" field.
+func RelayGroupIDHasSuffix(v string) predicate.RepoConfig {
+	return predicate.RepoConfig(sql.FieldHasSuffix(FieldRelayGroupID, v))
+}
+
+// RelayGroupIDIsNil applies the IsNil predicate on the "relay_group_id" field.
+func RelayGroupIDIsNil() predicate.RepoConfig {
+	return predicate.RepoConfig(sql.FieldIsNull(FieldRelayGroupID))
+}
+
+// RelayGroupIDNotNil applies the NotNil predicate on the "relay_group_id" field.
+func RelayGroupIDNotNil() predicate.RepoConfig {
+	return predicate.RepoConfig(sql.FieldNotNull(FieldRelayGroupID))
+}
+
+// RelayGroupIDEqualFold applies the EqualFold predicate on the "relay_group_id" field.
+func RelayGroupIDEqualFold(v string) predicate.RepoConfig {
+	return predicate.RepoConfig(sql.FieldEqualFold(FieldRelayGroupID, v))
+}
+
+// RelayGroupIDContainsFold applies the ContainsFold predicate on the "relay_group_id" field.
+func RelayGroupIDContainsFold(v string) predicate.RepoConfig {
+	return predicate.RepoConfig(sql.FieldContainsFold(FieldRelayGroupID, v))
 }
 
 // StatusEQ applies the EQ predicate on the "status" field.

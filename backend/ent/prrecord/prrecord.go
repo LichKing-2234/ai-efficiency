@@ -45,6 +45,20 @@ const (
 	FieldAiRatio = "ai_ratio"
 	// FieldAiLabel holds the string denoting the ai_label field in the database.
 	FieldAiLabel = "ai_label"
+	// FieldAttributionStatus holds the string denoting the attribution_status field in the database.
+	FieldAttributionStatus = "attribution_status"
+	// FieldAttributionConfidence holds the string denoting the attribution_confidence field in the database.
+	FieldAttributionConfidence = "attribution_confidence"
+	// FieldPrimaryTokenCount holds the string denoting the primary_token_count field in the database.
+	FieldPrimaryTokenCount = "primary_token_count"
+	// FieldPrimaryTokenCost holds the string denoting the primary_token_cost field in the database.
+	FieldPrimaryTokenCost = "primary_token_cost"
+	// FieldMetadataSummary holds the string denoting the metadata_summary field in the database.
+	FieldMetadataSummary = "metadata_summary"
+	// FieldLastAttributedAt holds the string denoting the last_attributed_at field in the database.
+	FieldLastAttributedAt = "last_attributed_at"
+	// FieldLastAttributionRunID holds the string denoting the last_attribution_run_id field in the database.
+	FieldLastAttributionRunID = "last_attribution_run_id"
 	// FieldMergedAt holds the string denoting the merged_at field in the database.
 	FieldMergedAt = "merged_at"
 	// FieldCycleTimeHours holds the string denoting the cycle_time_hours field in the database.
@@ -55,6 +69,8 @@ const (
 	FieldUpdatedAt = "updated_at"
 	// EdgeRepoConfig holds the string denoting the repo_config edge name in mutations.
 	EdgeRepoConfig = "repo_config"
+	// EdgeAttributionRuns holds the string denoting the attribution_runs edge name in mutations.
+	EdgeAttributionRuns = "attribution_runs"
 	// Table holds the table name of the prrecord in the database.
 	Table = "pr_records"
 	// RepoConfigTable is the table that holds the repo_config relation/edge.
@@ -64,6 +80,13 @@ const (
 	RepoConfigInverseTable = "repo_configs"
 	// RepoConfigColumn is the table column denoting the repo_config relation/edge.
 	RepoConfigColumn = "repo_config_pr_records"
+	// AttributionRunsTable is the table that holds the attribution_runs relation/edge.
+	AttributionRunsTable = "pr_attribution_runs"
+	// AttributionRunsInverseTable is the table name for the PrAttributionRun entity.
+	// It exists in this package in order to avoid circular dependency with the "prattributionrun" package.
+	AttributionRunsInverseTable = "pr_attribution_runs"
+	// AttributionRunsColumn is the table column denoting the attribution_runs relation/edge.
+	AttributionRunsColumn = "pr_record_id"
 )
 
 // Columns holds all SQL columns for prrecord fields.
@@ -84,6 +107,13 @@ var Columns = []string{
 	FieldTokenCost,
 	FieldAiRatio,
 	FieldAiLabel,
+	FieldAttributionStatus,
+	FieldAttributionConfidence,
+	FieldPrimaryTokenCount,
+	FieldPrimaryTokenCost,
+	FieldMetadataSummary,
+	FieldLastAttributedAt,
+	FieldLastAttributionRunID,
 	FieldMergedAt,
 	FieldCycleTimeHours,
 	FieldCreatedAt,
@@ -120,6 +150,10 @@ var (
 	DefaultTokenCost float64
 	// DefaultAiRatio holds the default value on creation for the "ai_ratio" field.
 	DefaultAiRatio float64
+	// DefaultPrimaryTokenCount holds the default value on creation for the "primary_token_count" field.
+	DefaultPrimaryTokenCount int64
+	// DefaultPrimaryTokenCost holds the default value on creation for the "primary_token_cost" field.
+	DefaultPrimaryTokenCost float64
 	// DefaultCycleTimeHours holds the default value on creation for the "cycle_time_hours" field.
 	DefaultCycleTimeHours float64
 	// DefaultCreatedAt holds the default value on creation for the "created_at" field.
@@ -181,6 +215,58 @@ func AiLabelValidator(al AiLabel) error {
 		return nil
 	default:
 		return fmt.Errorf("prrecord: invalid enum value for ai_label field: %q", al)
+	}
+}
+
+// AttributionStatus defines the type for the "attribution_status" enum field.
+type AttributionStatus string
+
+// AttributionStatusNotRun is the default value of the AttributionStatus enum.
+const DefaultAttributionStatus = AttributionStatusNotRun
+
+// AttributionStatus values.
+const (
+	AttributionStatusNotRun    AttributionStatus = "not_run"
+	AttributionStatusClear     AttributionStatus = "clear"
+	AttributionStatusAmbiguous AttributionStatus = "ambiguous"
+	AttributionStatusFailed    AttributionStatus = "failed"
+)
+
+func (as AttributionStatus) String() string {
+	return string(as)
+}
+
+// AttributionStatusValidator is a validator for the "attribution_status" field enum values. It is called by the builders before save.
+func AttributionStatusValidator(as AttributionStatus) error {
+	switch as {
+	case AttributionStatusNotRun, AttributionStatusClear, AttributionStatusAmbiguous, AttributionStatusFailed:
+		return nil
+	default:
+		return fmt.Errorf("prrecord: invalid enum value for attribution_status field: %q", as)
+	}
+}
+
+// AttributionConfidence defines the type for the "attribution_confidence" enum field.
+type AttributionConfidence string
+
+// AttributionConfidence values.
+const (
+	AttributionConfidenceHigh   AttributionConfidence = "high"
+	AttributionConfidenceMedium AttributionConfidence = "medium"
+	AttributionConfidenceLow    AttributionConfidence = "low"
+)
+
+func (ac AttributionConfidence) String() string {
+	return string(ac)
+}
+
+// AttributionConfidenceValidator is a validator for the "attribution_confidence" field enum values. It is called by the builders before save.
+func AttributionConfidenceValidator(ac AttributionConfidence) error {
+	switch ac {
+	case AttributionConfidenceHigh, AttributionConfidenceMedium, AttributionConfidenceLow:
+		return nil
+	default:
+		return fmt.Errorf("prrecord: invalid enum value for attribution_confidence field: %q", ac)
 	}
 }
 
@@ -252,6 +338,36 @@ func ByAiLabel(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldAiLabel, opts...).ToFunc()
 }
 
+// ByAttributionStatus orders the results by the attribution_status field.
+func ByAttributionStatus(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldAttributionStatus, opts...).ToFunc()
+}
+
+// ByAttributionConfidence orders the results by the attribution_confidence field.
+func ByAttributionConfidence(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldAttributionConfidence, opts...).ToFunc()
+}
+
+// ByPrimaryTokenCount orders the results by the primary_token_count field.
+func ByPrimaryTokenCount(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPrimaryTokenCount, opts...).ToFunc()
+}
+
+// ByPrimaryTokenCost orders the results by the primary_token_cost field.
+func ByPrimaryTokenCost(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPrimaryTokenCost, opts...).ToFunc()
+}
+
+// ByLastAttributedAt orders the results by the last_attributed_at field.
+func ByLastAttributedAt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldLastAttributedAt, opts...).ToFunc()
+}
+
+// ByLastAttributionRunID orders the results by the last_attribution_run_id field.
+func ByLastAttributionRunID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldLastAttributionRunID, opts...).ToFunc()
+}
+
 // ByMergedAt orders the results by the merged_at field.
 func ByMergedAt(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldMergedAt, opts...).ToFunc()
@@ -278,10 +394,31 @@ func ByRepoConfigField(field string, opts ...sql.OrderTermOption) OrderOption {
 		sqlgraph.OrderByNeighborTerms(s, newRepoConfigStep(), sql.OrderByField(field, opts...))
 	}
 }
+
+// ByAttributionRunsCount orders the results by attribution_runs count.
+func ByAttributionRunsCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newAttributionRunsStep(), opts...)
+	}
+}
+
+// ByAttributionRuns orders the results by attribution_runs terms.
+func ByAttributionRuns(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newAttributionRunsStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
 func newRepoConfigStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(RepoConfigInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.M2O, true, RepoConfigTable, RepoConfigColumn),
+	)
+}
+func newAttributionRunsStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(AttributionRunsInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, AttributionRunsTable, AttributionRunsColumn),
 	)
 }

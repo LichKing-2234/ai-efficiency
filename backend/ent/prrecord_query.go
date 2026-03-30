@@ -4,6 +4,7 @@ package ent
 
 import (
 	"context"
+	"database/sql/driver"
 	"fmt"
 	"math"
 
@@ -11,6 +12,7 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/ai-efficiency/backend/ent/prattributionrun"
 	"github.com/ai-efficiency/backend/ent/predicate"
 	"github.com/ai-efficiency/backend/ent/prrecord"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
@@ -19,12 +21,13 @@ import (
 // PrRecordQuery is the builder for querying PrRecord entities.
 type PrRecordQuery struct {
 	config
-	ctx            *QueryContext
-	order          []prrecord.OrderOption
-	inters         []Interceptor
-	predicates     []predicate.PrRecord
-	withRepoConfig *RepoConfigQuery
-	withFKs        bool
+	ctx                 *QueryContext
+	order               []prrecord.OrderOption
+	inters              []Interceptor
+	predicates          []predicate.PrRecord
+	withRepoConfig      *RepoConfigQuery
+	withAttributionRuns *PrAttributionRunQuery
+	withFKs             bool
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
 	path func(context.Context) (*sql.Selector, error)
@@ -76,6 +79,28 @@ func (prq *PrRecordQuery) QueryRepoConfig() *RepoConfigQuery {
 			sqlgraph.From(prrecord.Table, prrecord.FieldID, selector),
 			sqlgraph.To(repoconfig.Table, repoconfig.FieldID),
 			sqlgraph.Edge(sqlgraph.M2O, true, prrecord.RepoConfigTable, prrecord.RepoConfigColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(prq.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryAttributionRuns chains the current query on the "attribution_runs" edge.
+func (prq *PrRecordQuery) QueryAttributionRuns() *PrAttributionRunQuery {
+	query := (&PrAttributionRunClient{config: prq.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := prq.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := prq.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(prrecord.Table, prrecord.FieldID, selector),
+			sqlgraph.To(prattributionrun.Table, prattributionrun.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, prrecord.AttributionRunsTable, prrecord.AttributionRunsColumn),
 		)
 		fromU = sqlgraph.SetNeighbors(prq.driver.Dialect(), step)
 		return fromU, nil
@@ -270,12 +295,13 @@ func (prq *PrRecordQuery) Clone() *PrRecordQuery {
 		return nil
 	}
 	return &PrRecordQuery{
-		config:         prq.config,
-		ctx:            prq.ctx.Clone(),
-		order:          append([]prrecord.OrderOption{}, prq.order...),
-		inters:         append([]Interceptor{}, prq.inters...),
-		predicates:     append([]predicate.PrRecord{}, prq.predicates...),
-		withRepoConfig: prq.withRepoConfig.Clone(),
+		config:              prq.config,
+		ctx:                 prq.ctx.Clone(),
+		order:               append([]prrecord.OrderOption{}, prq.order...),
+		inters:              append([]Interceptor{}, prq.inters...),
+		predicates:          append([]predicate.PrRecord{}, prq.predicates...),
+		withRepoConfig:      prq.withRepoConfig.Clone(),
+		withAttributionRuns: prq.withAttributionRuns.Clone(),
 		// clone intermediate query.
 		sql:  prq.sql.Clone(),
 		path: prq.path,
@@ -290,6 +316,17 @@ func (prq *PrRecordQuery) WithRepoConfig(opts ...func(*RepoConfigQuery)) *PrReco
 		opt(query)
 	}
 	prq.withRepoConfig = query
+	return prq
+}
+
+// WithAttributionRuns tells the query-builder to eager-load the nodes that are connected to
+// the "attribution_runs" edge. The optional arguments are used to configure the query builder of the edge.
+func (prq *PrRecordQuery) WithAttributionRuns(opts ...func(*PrAttributionRunQuery)) *PrRecordQuery {
+	query := (&PrAttributionRunClient{config: prq.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	prq.withAttributionRuns = query
 	return prq
 }
 
@@ -372,8 +409,9 @@ func (prq *PrRecordQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*Pr
 		nodes       = []*PrRecord{}
 		withFKs     = prq.withFKs
 		_spec       = prq.querySpec()
-		loadedTypes = [1]bool{
+		loadedTypes = [2]bool{
 			prq.withRepoConfig != nil,
+			prq.withAttributionRuns != nil,
 		}
 	)
 	if prq.withRepoConfig != nil {
@@ -403,6 +441,13 @@ func (prq *PrRecordQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*Pr
 	if query := prq.withRepoConfig; query != nil {
 		if err := prq.loadRepoConfig(ctx, query, nodes, nil,
 			func(n *PrRecord, e *RepoConfig) { n.Edges.RepoConfig = e }); err != nil {
+			return nil, err
+		}
+	}
+	if query := prq.withAttributionRuns; query != nil {
+		if err := prq.loadAttributionRuns(ctx, query, nodes,
+			func(n *PrRecord) { n.Edges.AttributionRuns = []*PrAttributionRun{} },
+			func(n *PrRecord, e *PrAttributionRun) { n.Edges.AttributionRuns = append(n.Edges.AttributionRuns, e) }); err != nil {
 			return nil, err
 		}
 	}
@@ -438,6 +483,36 @@ func (prq *PrRecordQuery) loadRepoConfig(ctx context.Context, query *RepoConfigQ
 		for i := range nodes {
 			assign(nodes[i], n)
 		}
+	}
+	return nil
+}
+func (prq *PrRecordQuery) loadAttributionRuns(ctx context.Context, query *PrAttributionRunQuery, nodes []*PrRecord, init func(*PrRecord), assign func(*PrRecord, *PrAttributionRun)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int]*PrRecord)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(prattributionrun.FieldPrRecordID)
+	}
+	query.Where(predicate.PrAttributionRun(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(prrecord.AttributionRunsColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.PrRecordID
+		node, ok := nodeids[fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "pr_record_id" returned %v for node %v`, fk, n.ID)
+		}
+		assign(node, n)
 	}
 	return nil
 }

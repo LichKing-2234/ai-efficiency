@@ -12,6 +12,7 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/dialect/sql/sqljson"
 	"entgo.io/ent/schema/field"
+	"github.com/ai-efficiency/backend/ent/prattributionrun"
 	"github.com/ai-efficiency/backend/ent/predicate"
 	"github.com/ai-efficiency/backend/ent/prrecord"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
@@ -317,6 +318,141 @@ func (pru *PrRecordUpdate) SetNillableAiLabel(pl *prrecord.AiLabel) *PrRecordUpd
 	return pru
 }
 
+// SetAttributionStatus sets the "attribution_status" field.
+func (pru *PrRecordUpdate) SetAttributionStatus(ps prrecord.AttributionStatus) *PrRecordUpdate {
+	pru.mutation.SetAttributionStatus(ps)
+	return pru
+}
+
+// SetNillableAttributionStatus sets the "attribution_status" field if the given value is not nil.
+func (pru *PrRecordUpdate) SetNillableAttributionStatus(ps *prrecord.AttributionStatus) *PrRecordUpdate {
+	if ps != nil {
+		pru.SetAttributionStatus(*ps)
+	}
+	return pru
+}
+
+// SetAttributionConfidence sets the "attribution_confidence" field.
+func (pru *PrRecordUpdate) SetAttributionConfidence(pc prrecord.AttributionConfidence) *PrRecordUpdate {
+	pru.mutation.SetAttributionConfidence(pc)
+	return pru
+}
+
+// SetNillableAttributionConfidence sets the "attribution_confidence" field if the given value is not nil.
+func (pru *PrRecordUpdate) SetNillableAttributionConfidence(pc *prrecord.AttributionConfidence) *PrRecordUpdate {
+	if pc != nil {
+		pru.SetAttributionConfidence(*pc)
+	}
+	return pru
+}
+
+// ClearAttributionConfidence clears the value of the "attribution_confidence" field.
+func (pru *PrRecordUpdate) ClearAttributionConfidence() *PrRecordUpdate {
+	pru.mutation.ClearAttributionConfidence()
+	return pru
+}
+
+// SetPrimaryTokenCount sets the "primary_token_count" field.
+func (pru *PrRecordUpdate) SetPrimaryTokenCount(i int64) *PrRecordUpdate {
+	pru.mutation.ResetPrimaryTokenCount()
+	pru.mutation.SetPrimaryTokenCount(i)
+	return pru
+}
+
+// SetNillablePrimaryTokenCount sets the "primary_token_count" field if the given value is not nil.
+func (pru *PrRecordUpdate) SetNillablePrimaryTokenCount(i *int64) *PrRecordUpdate {
+	if i != nil {
+		pru.SetPrimaryTokenCount(*i)
+	}
+	return pru
+}
+
+// AddPrimaryTokenCount adds i to the "primary_token_count" field.
+func (pru *PrRecordUpdate) AddPrimaryTokenCount(i int64) *PrRecordUpdate {
+	pru.mutation.AddPrimaryTokenCount(i)
+	return pru
+}
+
+// SetPrimaryTokenCost sets the "primary_token_cost" field.
+func (pru *PrRecordUpdate) SetPrimaryTokenCost(f float64) *PrRecordUpdate {
+	pru.mutation.ResetPrimaryTokenCost()
+	pru.mutation.SetPrimaryTokenCost(f)
+	return pru
+}
+
+// SetNillablePrimaryTokenCost sets the "primary_token_cost" field if the given value is not nil.
+func (pru *PrRecordUpdate) SetNillablePrimaryTokenCost(f *float64) *PrRecordUpdate {
+	if f != nil {
+		pru.SetPrimaryTokenCost(*f)
+	}
+	return pru
+}
+
+// AddPrimaryTokenCost adds f to the "primary_token_cost" field.
+func (pru *PrRecordUpdate) AddPrimaryTokenCost(f float64) *PrRecordUpdate {
+	pru.mutation.AddPrimaryTokenCost(f)
+	return pru
+}
+
+// SetMetadataSummary sets the "metadata_summary" field.
+func (pru *PrRecordUpdate) SetMetadataSummary(m map[string]interface{}) *PrRecordUpdate {
+	pru.mutation.SetMetadataSummary(m)
+	return pru
+}
+
+// ClearMetadataSummary clears the value of the "metadata_summary" field.
+func (pru *PrRecordUpdate) ClearMetadataSummary() *PrRecordUpdate {
+	pru.mutation.ClearMetadataSummary()
+	return pru
+}
+
+// SetLastAttributedAt sets the "last_attributed_at" field.
+func (pru *PrRecordUpdate) SetLastAttributedAt(t time.Time) *PrRecordUpdate {
+	pru.mutation.SetLastAttributedAt(t)
+	return pru
+}
+
+// SetNillableLastAttributedAt sets the "last_attributed_at" field if the given value is not nil.
+func (pru *PrRecordUpdate) SetNillableLastAttributedAt(t *time.Time) *PrRecordUpdate {
+	if t != nil {
+		pru.SetLastAttributedAt(*t)
+	}
+	return pru
+}
+
+// ClearLastAttributedAt clears the value of the "last_attributed_at" field.
+func (pru *PrRecordUpdate) ClearLastAttributedAt() *PrRecordUpdate {
+	pru.mutation.ClearLastAttributedAt()
+	return pru
+}
+
+// SetLastAttributionRunID sets the "last_attribution_run_id" field.
+func (pru *PrRecordUpdate) SetLastAttributionRunID(i int) *PrRecordUpdate {
+	pru.mutation.ResetLastAttributionRunID()
+	pru.mutation.SetLastAttributionRunID(i)
+	return pru
+}
+
+// SetNillableLastAttributionRunID sets the "last_attribution_run_id" field if the given value is not nil.
+func (pru *PrRecordUpdate) SetNillableLastAttributionRunID(i *int) *PrRecordUpdate {
+	if i != nil {
+		pru.SetLastAttributionRunID(*i)
+	}
+	return pru
+}
+
+// AddLastAttributionRunID adds i to the "last_attribution_run_id" field.
+func (pru *PrRecordUpdate) AddLastAttributionRunID(i int) *PrRecordUpdate {
+	pru.mutation.AddLastAttributionRunID(i)
+	return pru
+}
+
+// ClearLastAttributionRunID clears the value of the "last_attribution_run_id" field.
+func (pru *PrRecordUpdate) ClearLastAttributionRunID() *PrRecordUpdate {
+	pru.mutation.ClearLastAttributionRunID()
+	return pru
+}
+
 // SetMergedAt sets the "merged_at" field.
 func (pru *PrRecordUpdate) SetMergedAt(t time.Time) *PrRecordUpdate {
 	pru.mutation.SetMergedAt(t)
@@ -389,6 +525,21 @@ func (pru *PrRecordUpdate) SetRepoConfig(r *RepoConfig) *PrRecordUpdate {
 	return pru.SetRepoConfigID(r.ID)
 }
 
+// AddAttributionRunIDs adds the "attribution_runs" edge to the PrAttributionRun entity by IDs.
+func (pru *PrRecordUpdate) AddAttributionRunIDs(ids ...int) *PrRecordUpdate {
+	pru.mutation.AddAttributionRunIDs(ids...)
+	return pru
+}
+
+// AddAttributionRuns adds the "attribution_runs" edges to the PrAttributionRun entity.
+func (pru *PrRecordUpdate) AddAttributionRuns(p ...*PrAttributionRun) *PrRecordUpdate {
+	ids := make([]int, len(p))
+	for i := range p {
+		ids[i] = p[i].ID
+	}
+	return pru.AddAttributionRunIDs(ids...)
+}
+
 // Mutation returns the PrRecordMutation object of the builder.
 func (pru *PrRecordUpdate) Mutation() *PrRecordMutation {
 	return pru.mutation
@@ -398,6 +549,27 @@ func (pru *PrRecordUpdate) Mutation() *PrRecordMutation {
 func (pru *PrRecordUpdate) ClearRepoConfig() *PrRecordUpdate {
 	pru.mutation.ClearRepoConfig()
 	return pru
+}
+
+// ClearAttributionRuns clears all "attribution_runs" edges to the PrAttributionRun entity.
+func (pru *PrRecordUpdate) ClearAttributionRuns() *PrRecordUpdate {
+	pru.mutation.ClearAttributionRuns()
+	return pru
+}
+
+// RemoveAttributionRunIDs removes the "attribution_runs" edge to PrAttributionRun entities by IDs.
+func (pru *PrRecordUpdate) RemoveAttributionRunIDs(ids ...int) *PrRecordUpdate {
+	pru.mutation.RemoveAttributionRunIDs(ids...)
+	return pru
+}
+
+// RemoveAttributionRuns removes "attribution_runs" edges to PrAttributionRun entities.
+func (pru *PrRecordUpdate) RemoveAttributionRuns(p ...*PrAttributionRun) *PrRecordUpdate {
+	ids := make([]int, len(p))
+	for i := range p {
+		ids[i] = p[i].ID
+	}
+	return pru.RemoveAttributionRunIDs(ids...)
 }
 
 // Save executes the query and returns the number of nodes affected by the update operation.
@@ -446,6 +618,16 @@ func (pru *PrRecordUpdate) check() error {
 	if v, ok := pru.mutation.AiLabel(); ok {
 		if err := prrecord.AiLabelValidator(v); err != nil {
 			return &ValidationError{Name: "ai_label", err: fmt.Errorf(`ent: validator failed for field "PrRecord.ai_label": %w`, err)}
+		}
+	}
+	if v, ok := pru.mutation.AttributionStatus(); ok {
+		if err := prrecord.AttributionStatusValidator(v); err != nil {
+			return &ValidationError{Name: "attribution_status", err: fmt.Errorf(`ent: validator failed for field "PrRecord.attribution_status": %w`, err)}
+		}
+	}
+	if v, ok := pru.mutation.AttributionConfidence(); ok {
+		if err := prrecord.AttributionConfidenceValidator(v); err != nil {
+			return &ValidationError{Name: "attribution_confidence", err: fmt.Errorf(`ent: validator failed for field "PrRecord.attribution_confidence": %w`, err)}
 		}
 	}
 	if pru.mutation.RepoConfigCleared() && len(pru.mutation.RepoConfigIDs()) > 0 {
@@ -565,6 +747,48 @@ func (pru *PrRecordUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if value, ok := pru.mutation.AiLabel(); ok {
 		_spec.SetField(prrecord.FieldAiLabel, field.TypeEnum, value)
 	}
+	if value, ok := pru.mutation.AttributionStatus(); ok {
+		_spec.SetField(prrecord.FieldAttributionStatus, field.TypeEnum, value)
+	}
+	if value, ok := pru.mutation.AttributionConfidence(); ok {
+		_spec.SetField(prrecord.FieldAttributionConfidence, field.TypeEnum, value)
+	}
+	if pru.mutation.AttributionConfidenceCleared() {
+		_spec.ClearField(prrecord.FieldAttributionConfidence, field.TypeEnum)
+	}
+	if value, ok := pru.mutation.PrimaryTokenCount(); ok {
+		_spec.SetField(prrecord.FieldPrimaryTokenCount, field.TypeInt64, value)
+	}
+	if value, ok := pru.mutation.AddedPrimaryTokenCount(); ok {
+		_spec.AddField(prrecord.FieldPrimaryTokenCount, field.TypeInt64, value)
+	}
+	if value, ok := pru.mutation.PrimaryTokenCost(); ok {
+		_spec.SetField(prrecord.FieldPrimaryTokenCost, field.TypeFloat64, value)
+	}
+	if value, ok := pru.mutation.AddedPrimaryTokenCost(); ok {
+		_spec.AddField(prrecord.FieldPrimaryTokenCost, field.TypeFloat64, value)
+	}
+	if value, ok := pru.mutation.MetadataSummary(); ok {
+		_spec.SetField(prrecord.FieldMetadataSummary, field.TypeJSON, value)
+	}
+	if pru.mutation.MetadataSummaryCleared() {
+		_spec.ClearField(prrecord.FieldMetadataSummary, field.TypeJSON)
+	}
+	if value, ok := pru.mutation.LastAttributedAt(); ok {
+		_spec.SetField(prrecord.FieldLastAttributedAt, field.TypeTime, value)
+	}
+	if pru.mutation.LastAttributedAtCleared() {
+		_spec.ClearField(prrecord.FieldLastAttributedAt, field.TypeTime)
+	}
+	if value, ok := pru.mutation.LastAttributionRunID(); ok {
+		_spec.SetField(prrecord.FieldLastAttributionRunID, field.TypeInt, value)
+	}
+	if value, ok := pru.mutation.AddedLastAttributionRunID(); ok {
+		_spec.AddField(prrecord.FieldLastAttributionRunID, field.TypeInt, value)
+	}
+	if pru.mutation.LastAttributionRunIDCleared() {
+		_spec.ClearField(prrecord.FieldLastAttributionRunID, field.TypeInt)
+	}
 	if value, ok := pru.mutation.MergedAt(); ok {
 		_spec.SetField(prrecord.FieldMergedAt, field.TypeTime, value)
 	}
@@ -605,6 +829,51 @@ func (pru *PrRecordUpdate) sqlSave(ctx context.Context) (n int, err error) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(repoconfig.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if pru.mutation.AttributionRunsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   prrecord.AttributionRunsTable,
+			Columns: []string{prrecord.AttributionRunsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(prattributionrun.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := pru.mutation.RemovedAttributionRunsIDs(); len(nodes) > 0 && !pru.mutation.AttributionRunsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   prrecord.AttributionRunsTable,
+			Columns: []string{prrecord.AttributionRunsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(prattributionrun.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := pru.mutation.AttributionRunsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   prrecord.AttributionRunsTable,
+			Columns: []string{prrecord.AttributionRunsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(prattributionrun.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {
@@ -919,6 +1188,141 @@ func (pruo *PrRecordUpdateOne) SetNillableAiLabel(pl *prrecord.AiLabel) *PrRecor
 	return pruo
 }
 
+// SetAttributionStatus sets the "attribution_status" field.
+func (pruo *PrRecordUpdateOne) SetAttributionStatus(ps prrecord.AttributionStatus) *PrRecordUpdateOne {
+	pruo.mutation.SetAttributionStatus(ps)
+	return pruo
+}
+
+// SetNillableAttributionStatus sets the "attribution_status" field if the given value is not nil.
+func (pruo *PrRecordUpdateOne) SetNillableAttributionStatus(ps *prrecord.AttributionStatus) *PrRecordUpdateOne {
+	if ps != nil {
+		pruo.SetAttributionStatus(*ps)
+	}
+	return pruo
+}
+
+// SetAttributionConfidence sets the "attribution_confidence" field.
+func (pruo *PrRecordUpdateOne) SetAttributionConfidence(pc prrecord.AttributionConfidence) *PrRecordUpdateOne {
+	pruo.mutation.SetAttributionConfidence(pc)
+	return pruo
+}
+
+// SetNillableAttributionConfidence sets the "attribution_confidence" field if the given value is not nil.
+func (pruo *PrRecordUpdateOne) SetNillableAttributionConfidence(pc *prrecord.AttributionConfidence) *PrRecordUpdateOne {
+	if pc != nil {
+		pruo.SetAttributionConfidence(*pc)
+	}
+	return pruo
+}
+
+// ClearAttributionConfidence clears the value of the "attribution_confidence" field.
+func (pruo *PrRecordUpdateOne) ClearAttributionConfidence() *PrRecordUpdateOne {
+	pruo.mutation.ClearAttributionConfidence()
+	return pruo
+}
+
+// SetPrimaryTokenCount sets the "primary_token_count" field.
+func (pruo *PrRecordUpdateOne) SetPrimaryTokenCount(i int64) *PrRecordUpdateOne {
+	pruo.mutation.ResetPrimaryTokenCount()
+	pruo.mutation.SetPrimaryTokenCount(i)
+	return pruo
+}
+
+// SetNillablePrimaryTokenCount sets the "primary_token_count" field if the given value is not nil.
+func (pruo *PrRecordUpdateOne) SetNillablePrimaryTokenCount(i *int64) *PrRecordUpdateOne {
+	if i != nil {
+		pruo.SetPrimaryTokenCount(*i)
+	}
+	return pruo
+}
+
+// AddPrimaryTokenCount adds i to the "primary_token_count" field.
+func (pruo *PrRecordUpdateOne) AddPrimaryTokenCount(i int64) *PrRecordUpdateOne {
+	pruo.mutation.AddPrimaryTokenCount(i)
+	return pruo
+}
+
+// SetPrimaryTokenCost sets the "primary_token_cost" field.
+func (pruo *PrRecordUpdateOne) SetPrimaryTokenCost(f float64) *PrRecordUpdateOne {
+	pruo.mutation.ResetPrimaryTokenCost()
+	pruo.mutation.SetPrimaryTokenCost(f)
+	return pruo
+}
+
+// SetNillablePrimaryTokenCost sets the "primary_token_cost" field if the given value is not nil.
+func (pruo *PrRecordUpdateOne) SetNillablePrimaryTokenCost(f *float64) *PrRecordUpdateOne {
+	if f != nil {
+		pruo.SetPrimaryTokenCost(*f)
+	}
+	return pruo
+}
+
+// AddPrimaryTokenCost adds f to the "primary_token_cost" field.
+func (pruo *PrRecordUpdateOne) AddPrimaryTokenCost(f float64) *PrRecordUpdateOne {
+	pruo.mutation.AddPrimaryTokenCost(f)
+	return pruo
+}
+
+// SetMetadataSummary sets the "metadata_summary" field.
+func (pruo *PrRecordUpdateOne) SetMetadataSummary(m map[string]interface{}) *PrRecordUpdateOne {
+	pruo.mutation.SetMetadataSummary(m)
+	return pruo
+}
+
+// ClearMetadataSummary clears the value of the "metadata_summary" field.
+func (pruo *PrRecordUpdateOne) ClearMetadataSummary() *PrRecordUpdateOne {
+	pruo.mutation.ClearMetadataSummary()
+	return pruo
+}
+
+// SetLastAttributedAt sets the "last_attributed_at" field.
+func (pruo *PrRecordUpdateOne) SetLastAttributedAt(t time.Time) *PrRecordUpdateOne {
+	pruo.mutation.SetLastAttributedAt(t)
+	return pruo
+}
+
+// SetNillableLastAttributedAt sets the "last_attributed_at" field if the given value is not nil.
+func (pruo *PrRecordUpdateOne) SetNillableLastAttributedAt(t *time.Time) *PrRecordUpdateOne {
+	if t != nil {
+		pruo.SetLastAttributedAt(*t)
+	}
+	return pruo
+}
+
+// ClearLastAttributedAt clears the value of the "last_attributed_at" field.
+func (pruo *PrRecordUpdateOne) ClearLastAttributedAt() *PrRecordUpdateOne {
+	pruo.mutation.ClearLastAttributedAt()
+	return pruo
+}
+
+// SetLastAttributionRunID sets the "last_attribution_run_id" field.
+func (pruo *PrRecordUpdateOne) SetLastAttributionRunID(i int) *PrRecordUpdateOne {
+	pruo.mutation.ResetLastAttributionRunID()
+	pruo.mutation.SetLastAttributionRunID(i)
+	return pruo
+}
+
+// SetNillableLastAttributionRunID sets the "last_attribution_run_id" field if the given value is not nil.
+func (pruo *PrRecordUpdateOne) SetNillableLastAttributionRunID(i *int) *PrRecordUpdateOne {
+	if i != nil {
+		pruo.SetLastAttributionRunID(*i)
+	}
+	return pruo
+}
+
+// AddLastAttributionRunID adds i to the "last_attribution_run_id" field.
+func (pruo *PrRecordUpdateOne) AddLastAttributionRunID(i int) *PrRecordUpdateOne {
+	pruo.mutation.AddLastAttributionRunID(i)
+	return pruo
+}
+
+// ClearLastAttributionRunID clears the value of the "last_attribution_run_id" field.
+func (pruo *PrRecordUpdateOne) ClearLastAttributionRunID() *PrRecordUpdateOne {
+	pruo.mutation.ClearLastAttributionRunID()
+	return pruo
+}
+
 // SetMergedAt sets the "merged_at" field.
 func (pruo *PrRecordUpdateOne) SetMergedAt(t time.Time) *PrRecordUpdateOne {
 	pruo.mutation.SetMergedAt(t)
@@ -991,6 +1395,21 @@ func (pruo *PrRecordUpdateOne) SetRepoConfig(r *RepoConfig) *PrRecordUpdateOne {
 	return pruo.SetRepoConfigID(r.ID)
 }
 
+// AddAttributionRunIDs adds the "attribution_runs" edge to the PrAttributionRun entity by IDs.
+func (pruo *PrRecordUpdateOne) AddAttributionRunIDs(ids ...int) *PrRecordUpdateOne {
+	pruo.mutation.AddAttributionRunIDs(ids...)
+	return pruo
+}
+
+// AddAttributionRuns adds the "attribution_runs" edges to the PrAttributionRun entity.
+func (pruo *PrRecordUpdateOne) AddAttributionRuns(p ...*PrAttributionRun) *PrRecordUpdateOne {
+	ids := make([]int, len(p))
+	for i := range p {
+		ids[i] = p[i].ID
+	}
+	return pruo.AddAttributionRunIDs(ids...)
+}
+
 // Mutation returns the PrRecordMutation object of the builder.
 func (pruo *PrRecordUpdateOne) Mutation() *PrRecordMutation {
 	return pruo.mutation
@@ -1000,6 +1419,27 @@ func (pruo *PrRecordUpdateOne) Mutation() *PrRecordMutation {
 func (pruo *PrRecordUpdateOne) ClearRepoConfig() *PrRecordUpdateOne {
 	pruo.mutation.ClearRepoConfig()
 	return pruo
+}
+
+// ClearAttributionRuns clears all "attribution_runs" edges to the PrAttributionRun entity.
+func (pruo *PrRecordUpdateOne) ClearAttributionRuns() *PrRecordUpdateOne {
+	pruo.mutation.ClearAttributionRuns()
+	return pruo
+}
+
+// RemoveAttributionRunIDs removes the "attribution_runs" edge to PrAttributionRun entities by IDs.
+func (pruo *PrRecordUpdateOne) RemoveAttributionRunIDs(ids ...int) *PrRecordUpdateOne {
+	pruo.mutation.RemoveAttributionRunIDs(ids...)
+	return pruo
+}
+
+// RemoveAttributionRuns removes "attribution_runs" edges to PrAttributionRun entities.
+func (pruo *PrRecordUpdateOne) RemoveAttributionRuns(p ...*PrAttributionRun) *PrRecordUpdateOne {
+	ids := make([]int, len(p))
+	for i := range p {
+		ids[i] = p[i].ID
+	}
+	return pruo.RemoveAttributionRunIDs(ids...)
 }
 
 // Where appends a list predicates to the PrRecordUpdate builder.
@@ -1061,6 +1501,16 @@ func (pruo *PrRecordUpdateOne) check() error {
 	if v, ok := pruo.mutation.AiLabel(); ok {
 		if err := prrecord.AiLabelValidator(v); err != nil {
 			return &ValidationError{Name: "ai_label", err: fmt.Errorf(`ent: validator failed for field "PrRecord.ai_label": %w`, err)}
+		}
+	}
+	if v, ok := pruo.mutation.AttributionStatus(); ok {
+		if err := prrecord.AttributionStatusValidator(v); err != nil {
+			return &ValidationError{Name: "attribution_status", err: fmt.Errorf(`ent: validator failed for field "PrRecord.attribution_status": %w`, err)}
+		}
+	}
+	if v, ok := pruo.mutation.AttributionConfidence(); ok {
+		if err := prrecord.AttributionConfidenceValidator(v); err != nil {
+			return &ValidationError{Name: "attribution_confidence", err: fmt.Errorf(`ent: validator failed for field "PrRecord.attribution_confidence": %w`, err)}
 		}
 	}
 	if pruo.mutation.RepoConfigCleared() && len(pruo.mutation.RepoConfigIDs()) > 0 {
@@ -1197,6 +1647,48 @@ func (pruo *PrRecordUpdateOne) sqlSave(ctx context.Context) (_node *PrRecord, er
 	if value, ok := pruo.mutation.AiLabel(); ok {
 		_spec.SetField(prrecord.FieldAiLabel, field.TypeEnum, value)
 	}
+	if value, ok := pruo.mutation.AttributionStatus(); ok {
+		_spec.SetField(prrecord.FieldAttributionStatus, field.TypeEnum, value)
+	}
+	if value, ok := pruo.mutation.AttributionConfidence(); ok {
+		_spec.SetField(prrecord.FieldAttributionConfidence, field.TypeEnum, value)
+	}
+	if pruo.mutation.AttributionConfidenceCleared() {
+		_spec.ClearField(prrecord.FieldAttributionConfidence, field.TypeEnum)
+	}
+	if value, ok := pruo.mutation.PrimaryTokenCount(); ok {
+		_spec.SetField(prrecord.FieldPrimaryTokenCount, field.TypeInt64, value)
+	}
+	if value, ok := pruo.mutation.AddedPrimaryTokenCount(); ok {
+		_spec.AddField(prrecord.FieldPrimaryTokenCount, field.TypeInt64, value)
+	}
+	if value, ok := pruo.mutation.PrimaryTokenCost(); ok {
+		_spec.SetField(prrecord.FieldPrimaryTokenCost, field.TypeFloat64, value)
+	}
+	if value, ok := pruo.mutation.AddedPrimaryTokenCost(); ok {
+		_spec.AddField(prrecord.FieldPrimaryTokenCost, field.TypeFloat64, value)
+	}
+	if value, ok := pruo.mutation.MetadataSummary(); ok {
+		_spec.SetField(prrecord.FieldMetadataSummary, field.TypeJSON, value)
+	}
+	if pruo.mutation.MetadataSummaryCleared() {
+		_spec.ClearField(prrecord.FieldMetadataSummary, field.TypeJSON)
+	}
+	if value, ok := pruo.mutation.LastAttributedAt(); ok {
+		_spec.SetField(prrecord.FieldLastAttributedAt, field.TypeTime, value)
+	}
+	if pruo.mutation.LastAttributedAtCleared() {
+		_spec.ClearField(prrecord.FieldLastAttributedAt, field.TypeTime)
+	}
+	if value, ok := pruo.mutation.LastAttributionRunID(); ok {
+		_spec.SetField(prrecord.FieldLastAttributionRunID, field.TypeInt, value)
+	}
+	if value, ok := pruo.mutation.AddedLastAttributionRunID(); ok {
+		_spec.AddField(prrecord.FieldLastAttributionRunID, field.TypeInt, value)
+	}
+	if pruo.mutation.LastAttributionRunIDCleared() {
+		_spec.ClearField(prrecord.FieldLastAttributionRunID, field.TypeInt)
+	}
 	if value, ok := pruo.mutation.MergedAt(); ok {
 		_spec.SetField(prrecord.FieldMergedAt, field.TypeTime, value)
 	}
@@ -1237,6 +1729,51 @@ func (pruo *PrRecordUpdateOne) sqlSave(ctx context.Context) (_node *PrRecord, er
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(repoconfig.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if pruo.mutation.AttributionRunsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   prrecord.AttributionRunsTable,
+			Columns: []string{prrecord.AttributionRunsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(prattributionrun.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := pruo.mutation.RemovedAttributionRunsIDs(); len(nodes) > 0 && !pruo.mutation.AttributionRunsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   prrecord.AttributionRunsTable,
+			Columns: []string{prrecord.AttributionRunsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(prattributionrun.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := pruo.mutation.AttributionRunsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   prrecord.AttributionRunsTable,
+			Columns: []string{prrecord.AttributionRunsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(prattributionrun.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {

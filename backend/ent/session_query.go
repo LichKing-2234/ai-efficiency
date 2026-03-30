@@ -4,6 +4,7 @@ package ent
 
 import (
 	"context"
+	"database/sql/driver"
 	"fmt"
 	"math"
 
@@ -11,9 +12,13 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/ai-efficiency/backend/ent/agentmetadataevent"
+	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
+	"github.com/ai-efficiency/backend/ent/commitrewrite"
 	"github.com/ai-efficiency/backend/ent/predicate"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/session"
+	"github.com/ai-efficiency/backend/ent/sessionworkspace"
 	"github.com/ai-efficiency/backend/ent/user"
 	"github.com/google/uuid"
 )
@@ -21,13 +26,17 @@ import (
 // SessionQuery is the builder for querying Session entities.
 type SessionQuery struct {
 	config
-	ctx            *QueryContext
-	order          []session.OrderOption
-	inters         []Interceptor
-	predicates     []predicate.Session
-	withRepoConfig *RepoConfigQuery
-	withUser       *UserQuery
-	withFKs        bool
+	ctx                     *QueryContext
+	order                   []session.OrderOption
+	inters                  []Interceptor
+	predicates              []predicate.Session
+	withRepoConfig          *RepoConfigQuery
+	withUser                *UserQuery
+	withSessionWorkspaces   *SessionWorkspaceQuery
+	withAgentMetadataEvents *AgentMetadataEventQuery
+	withCommitCheckpoints   *CommitCheckpointQuery
+	withCommitRewrites      *CommitRewriteQuery
+	withFKs                 bool
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
 	path func(context.Context) (*sql.Selector, error)
@@ -101,6 +110,94 @@ func (sq *SessionQuery) QueryUser() *UserQuery {
 			sqlgraph.From(session.Table, session.FieldID, selector),
 			sqlgraph.To(user.Table, user.FieldID),
 			sqlgraph.Edge(sqlgraph.M2O, true, session.UserTable, session.UserColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(sq.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QuerySessionWorkspaces chains the current query on the "session_workspaces" edge.
+func (sq *SessionQuery) QuerySessionWorkspaces() *SessionWorkspaceQuery {
+	query := (&SessionWorkspaceClient{config: sq.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := sq.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := sq.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(session.Table, session.FieldID, selector),
+			sqlgraph.To(sessionworkspace.Table, sessionworkspace.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, session.SessionWorkspacesTable, session.SessionWorkspacesColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(sq.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryAgentMetadataEvents chains the current query on the "agent_metadata_events" edge.
+func (sq *SessionQuery) QueryAgentMetadataEvents() *AgentMetadataEventQuery {
+	query := (&AgentMetadataEventClient{config: sq.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := sq.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := sq.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(session.Table, session.FieldID, selector),
+			sqlgraph.To(agentmetadataevent.Table, agentmetadataevent.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, session.AgentMetadataEventsTable, session.AgentMetadataEventsColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(sq.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryCommitCheckpoints chains the current query on the "commit_checkpoints" edge.
+func (sq *SessionQuery) QueryCommitCheckpoints() *CommitCheckpointQuery {
+	query := (&CommitCheckpointClient{config: sq.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := sq.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := sq.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(session.Table, session.FieldID, selector),
+			sqlgraph.To(commitcheckpoint.Table, commitcheckpoint.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, session.CommitCheckpointsTable, session.CommitCheckpointsColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(sq.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryCommitRewrites chains the current query on the "commit_rewrites" edge.
+func (sq *SessionQuery) QueryCommitRewrites() *CommitRewriteQuery {
+	query := (&CommitRewriteClient{config: sq.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := sq.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := sq.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(session.Table, session.FieldID, selector),
+			sqlgraph.To(commitrewrite.Table, commitrewrite.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, session.CommitRewritesTable, session.CommitRewritesColumn),
 		)
 		fromU = sqlgraph.SetNeighbors(sq.driver.Dialect(), step)
 		return fromU, nil
@@ -295,13 +392,17 @@ func (sq *SessionQuery) Clone() *SessionQuery {
 		return nil
 	}
 	return &SessionQuery{
-		config:         sq.config,
-		ctx:            sq.ctx.Clone(),
-		order:          append([]session.OrderOption{}, sq.order...),
-		inters:         append([]Interceptor{}, sq.inters...),
-		predicates:     append([]predicate.Session{}, sq.predicates...),
-		withRepoConfig: sq.withRepoConfig.Clone(),
-		withUser:       sq.withUser.Clone(),
+		config:                  sq.config,
+		ctx:                     sq.ctx.Clone(),
+		order:                   append([]session.OrderOption{}, sq.order...),
+		inters:                  append([]Interceptor{}, sq.inters...),
+		predicates:              append([]predicate.Session{}, sq.predicates...),
+		withRepoConfig:          sq.withRepoConfig.Clone(),
+		withUser:                sq.withUser.Clone(),
+		withSessionWorkspaces:   sq.withSessionWorkspaces.Clone(),
+		withAgentMetadataEvents: sq.withAgentMetadataEvents.Clone(),
+		withCommitCheckpoints:   sq.withCommitCheckpoints.Clone(),
+		withCommitRewrites:      sq.withCommitRewrites.Clone(),
 		// clone intermediate query.
 		sql:  sq.sql.Clone(),
 		path: sq.path,
@@ -327,6 +428,50 @@ func (sq *SessionQuery) WithUser(opts ...func(*UserQuery)) *SessionQuery {
 		opt(query)
 	}
 	sq.withUser = query
+	return sq
+}
+
+// WithSessionWorkspaces tells the query-builder to eager-load the nodes that are connected to
+// the "session_workspaces" edge. The optional arguments are used to configure the query builder of the edge.
+func (sq *SessionQuery) WithSessionWorkspaces(opts ...func(*SessionWorkspaceQuery)) *SessionQuery {
+	query := (&SessionWorkspaceClient{config: sq.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	sq.withSessionWorkspaces = query
+	return sq
+}
+
+// WithAgentMetadataEvents tells the query-builder to eager-load the nodes that are connected to
+// the "agent_metadata_events" edge. The optional arguments are used to configure the query builder of the edge.
+func (sq *SessionQuery) WithAgentMetadataEvents(opts ...func(*AgentMetadataEventQuery)) *SessionQuery {
+	query := (&AgentMetadataEventClient{config: sq.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	sq.withAgentMetadataEvents = query
+	return sq
+}
+
+// WithCommitCheckpoints tells the query-builder to eager-load the nodes that are connected to
+// the "commit_checkpoints" edge. The optional arguments are used to configure the query builder of the edge.
+func (sq *SessionQuery) WithCommitCheckpoints(opts ...func(*CommitCheckpointQuery)) *SessionQuery {
+	query := (&CommitCheckpointClient{config: sq.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	sq.withCommitCheckpoints = query
+	return sq
+}
+
+// WithCommitRewrites tells the query-builder to eager-load the nodes that are connected to
+// the "commit_rewrites" edge. The optional arguments are used to configure the query builder of the edge.
+func (sq *SessionQuery) WithCommitRewrites(opts ...func(*CommitRewriteQuery)) *SessionQuery {
+	query := (&CommitRewriteClient{config: sq.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	sq.withCommitRewrites = query
 	return sq
 }
 
@@ -409,9 +554,13 @@ func (sq *SessionQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*Sess
 		nodes       = []*Session{}
 		withFKs     = sq.withFKs
 		_spec       = sq.querySpec()
-		loadedTypes = [2]bool{
+		loadedTypes = [6]bool{
 			sq.withRepoConfig != nil,
 			sq.withUser != nil,
+			sq.withSessionWorkspaces != nil,
+			sq.withAgentMetadataEvents != nil,
+			sq.withCommitCheckpoints != nil,
+			sq.withCommitRewrites != nil,
 		}
 	)
 	if sq.withRepoConfig != nil || sq.withUser != nil {
@@ -447,6 +596,40 @@ func (sq *SessionQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*Sess
 	if query := sq.withUser; query != nil {
 		if err := sq.loadUser(ctx, query, nodes, nil,
 			func(n *Session, e *User) { n.Edges.User = e }); err != nil {
+			return nil, err
+		}
+	}
+	if query := sq.withSessionWorkspaces; query != nil {
+		if err := sq.loadSessionWorkspaces(ctx, query, nodes,
+			func(n *Session) { n.Edges.SessionWorkspaces = []*SessionWorkspace{} },
+			func(n *Session, e *SessionWorkspace) {
+				n.Edges.SessionWorkspaces = append(n.Edges.SessionWorkspaces, e)
+			}); err != nil {
+			return nil, err
+		}
+	}
+	if query := sq.withAgentMetadataEvents; query != nil {
+		if err := sq.loadAgentMetadataEvents(ctx, query, nodes,
+			func(n *Session) { n.Edges.AgentMetadataEvents = []*AgentMetadataEvent{} },
+			func(n *Session, e *AgentMetadataEvent) {
+				n.Edges.AgentMetadataEvents = append(n.Edges.AgentMetadataEvents, e)
+			}); err != nil {
+			return nil, err
+		}
+	}
+	if query := sq.withCommitCheckpoints; query != nil {
+		if err := sq.loadCommitCheckpoints(ctx, query, nodes,
+			func(n *Session) { n.Edges.CommitCheckpoints = []*CommitCheckpoint{} },
+			func(n *Session, e *CommitCheckpoint) {
+				n.Edges.CommitCheckpoints = append(n.Edges.CommitCheckpoints, e)
+			}); err != nil {
+			return nil, err
+		}
+	}
+	if query := sq.withCommitRewrites; query != nil {
+		if err := sq.loadCommitRewrites(ctx, query, nodes,
+			func(n *Session) { n.Edges.CommitRewrites = []*CommitRewrite{} },
+			func(n *Session, e *CommitRewrite) { n.Edges.CommitRewrites = append(n.Edges.CommitRewrites, e) }); err != nil {
 			return nil, err
 		}
 	}
@@ -514,6 +697,132 @@ func (sq *SessionQuery) loadUser(ctx context.Context, query *UserQuery, nodes []
 		for i := range nodes {
 			assign(nodes[i], n)
 		}
+	}
+	return nil
+}
+func (sq *SessionQuery) loadSessionWorkspaces(ctx context.Context, query *SessionWorkspaceQuery, nodes []*Session, init func(*Session), assign func(*Session, *SessionWorkspace)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[uuid.UUID]*Session)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(sessionworkspace.FieldSessionID)
+	}
+	query.Where(predicate.SessionWorkspace(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(session.SessionWorkspacesColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.SessionID
+		node, ok := nodeids[fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "session_id" returned %v for node %v`, fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (sq *SessionQuery) loadAgentMetadataEvents(ctx context.Context, query *AgentMetadataEventQuery, nodes []*Session, init func(*Session), assign func(*Session, *AgentMetadataEvent)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[uuid.UUID]*Session)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(agentmetadataevent.FieldSessionID)
+	}
+	query.Where(predicate.AgentMetadataEvent(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(session.AgentMetadataEventsColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.SessionID
+		node, ok := nodeids[fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "session_id" returned %v for node %v`, fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (sq *SessionQuery) loadCommitCheckpoints(ctx context.Context, query *CommitCheckpointQuery, nodes []*Session, init func(*Session), assign func(*Session, *CommitCheckpoint)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[uuid.UUID]*Session)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(commitcheckpoint.FieldSessionID)
+	}
+	query.Where(predicate.CommitCheckpoint(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(session.CommitCheckpointsColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.SessionID
+		if fk == nil {
+			return fmt.Errorf(`foreign-key "session_id" is nil for node %v`, n.ID)
+		}
+		node, ok := nodeids[*fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "session_id" returned %v for node %v`, *fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (sq *SessionQuery) loadCommitRewrites(ctx context.Context, query *CommitRewriteQuery, nodes []*Session, init func(*Session), assign func(*Session, *CommitRewrite)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[uuid.UUID]*Session)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(commitrewrite.FieldSessionID)
+	}
+	query.Where(predicate.CommitRewrite(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(session.CommitRewritesColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.SessionID
+		if fk == nil {
+			return fmt.Errorf(`foreign-key "session_id" is nil for node %v`, n.ID)
+		}
+		node, ok := nodeids[*fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "session_id" returned %v for node %v`, *fk, n.ID)
+		}
+		assign(node, n)
 	}
 	return nil
 }

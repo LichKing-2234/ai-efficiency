@@ -12,13 +12,18 @@ import (
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
+	"github.com/ai-efficiency/backend/ent/agentmetadataevent"
 	"github.com/ai-efficiency/backend/ent/aiscanresult"
+	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
+	"github.com/ai-efficiency/backend/ent/commitrewrite"
 	"github.com/ai-efficiency/backend/ent/efficiencymetric"
+	"github.com/ai-efficiency/backend/ent/prattributionrun"
 	"github.com/ai-efficiency/backend/ent/prrecord"
 	"github.com/ai-efficiency/backend/ent/relayprovider"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/scmprovider"
 	"github.com/ai-efficiency/backend/ent/session"
+	"github.com/ai-efficiency/backend/ent/sessionworkspace"
 	"github.com/ai-efficiency/backend/ent/systemsetting"
 	"github.com/ai-efficiency/backend/ent/user"
 	"github.com/ai-efficiency/backend/ent/webhookdeadletter"
@@ -82,16 +87,21 @@ var (
 func checkColumn(table, column string) error {
 	initCheck.Do(func() {
 		columnCheck = sql.NewColumnCheck(map[string]func(string) bool{
-			aiscanresult.Table:      aiscanresult.ValidColumn,
-			efficiencymetric.Table:  efficiencymetric.ValidColumn,
-			prrecord.Table:          prrecord.ValidColumn,
-			relayprovider.Table:     relayprovider.ValidColumn,
-			repoconfig.Table:        repoconfig.ValidColumn,
-			scmprovider.Table:       scmprovider.ValidColumn,
-			session.Table:           session.ValidColumn,
-			systemsetting.Table:     systemsetting.ValidColumn,
-			user.Table:              user.ValidColumn,
-			webhookdeadletter.Table: webhookdeadletter.ValidColumn,
+			agentmetadataevent.Table: agentmetadataevent.ValidColumn,
+			aiscanresult.Table:       aiscanresult.ValidColumn,
+			commitcheckpoint.Table:   commitcheckpoint.ValidColumn,
+			commitrewrite.Table:      commitrewrite.ValidColumn,
+			efficiencymetric.Table:   efficiencymetric.ValidColumn,
+			prattributionrun.Table:   prattributionrun.ValidColumn,
+			prrecord.Table:           prrecord.ValidColumn,
+			relayprovider.Table:      relayprovider.ValidColumn,
+			repoconfig.Table:         repoconfig.ValidColumn,
+			scmprovider.Table:        scmprovider.ValidColumn,
+			session.Table:            session.ValidColumn,
+			sessionworkspace.Table:   sessionworkspace.ValidColumn,
+			systemsetting.Table:      systemsetting.ValidColumn,
+			user.Table:               user.ValidColumn,
+			webhookdeadletter.Table:  webhookdeadletter.ValidColumn,
 		})
 	})
 	return columnCheck(table, column)

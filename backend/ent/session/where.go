@@ -76,6 +76,36 @@ func ProviderName(v string) predicate.Session {
 	return predicate.Session(sql.FieldEQ(FieldProviderName, v))
 }
 
+// RuntimeRef applies equality check predicate on the "runtime_ref" field. It's identical to RuntimeRefEQ.
+func RuntimeRef(v string) predicate.Session {
+	return predicate.Session(sql.FieldEQ(FieldRuntimeRef, v))
+}
+
+// InitialWorkspaceRoot applies equality check predicate on the "initial_workspace_root" field. It's identical to InitialWorkspaceRootEQ.
+func InitialWorkspaceRoot(v string) predicate.Session {
+	return predicate.Session(sql.FieldEQ(FieldInitialWorkspaceRoot, v))
+}
+
+// InitialGitDir applies equality check predicate on the "initial_git_dir" field. It's identical to InitialGitDirEQ.
+func InitialGitDir(v string) predicate.Session {
+	return predicate.Session(sql.FieldEQ(FieldInitialGitDir, v))
+}
+
+// InitialGitCommonDir applies equality check predicate on the "initial_git_common_dir" field. It's identical to InitialGitCommonDirEQ.
+func InitialGitCommonDir(v string) predicate.Session {
+	return predicate.Session(sql.FieldEQ(FieldInitialGitCommonDir, v))
+}
+
+// HeadShaAtStart applies equality check predicate on the "head_sha_at_start" field. It's identical to HeadShaAtStartEQ.
+func HeadShaAtStart(v string) predicate.Session {
+	return predicate.Session(sql.FieldEQ(FieldHeadShaAtStart, v))
+}
+
+// LastSeenAt applies equality check predicate on the "last_seen_at" field. It's identical to LastSeenAtEQ.
+func LastSeenAt(v time.Time) predicate.Session {
+	return predicate.Session(sql.FieldEQ(FieldLastSeenAt, v))
+}
+
 // StartedAt applies equality check predicate on the "started_at" field. It's identical to StartedAtEQ.
 func StartedAt(v time.Time) predicate.Session {
 	return predicate.Session(sql.FieldEQ(FieldStartedAt, v))
@@ -331,6 +361,431 @@ func ProviderNameContainsFold(v string) predicate.Session {
 	return predicate.Session(sql.FieldContainsFold(FieldProviderName, v))
 }
 
+// RuntimeRefEQ applies the EQ predicate on the "runtime_ref" field.
+func RuntimeRefEQ(v string) predicate.Session {
+	return predicate.Session(sql.FieldEQ(FieldRuntimeRef, v))
+}
+
+// RuntimeRefNEQ applies the NEQ predicate on the "runtime_ref" field.
+func RuntimeRefNEQ(v string) predicate.Session {
+	return predicate.Session(sql.FieldNEQ(FieldRuntimeRef, v))
+}
+
+// RuntimeRefIn applies the In predicate on the "runtime_ref" field.
+func RuntimeRefIn(vs ...string) predicate.Session {
+	return predicate.Session(sql.FieldIn(FieldRuntimeRef, vs...))
+}
+
+// RuntimeRefNotIn applies the NotIn predicate on the "runtime_ref" field.
+func RuntimeRefNotIn(vs ...string) predicate.Session {
+	return predicate.Session(sql.FieldNotIn(FieldRuntimeRef, vs...))
+}
+
+// RuntimeRefGT applies the GT predicate on the "runtime_ref" field.
+func RuntimeRefGT(v string) predicate.Session {
+	return predicate.Session(sql.FieldGT(FieldRuntimeRef, v))
+}
+
+// RuntimeRefGTE applies the GTE predicate on the "runtime_ref" field.
+func RuntimeRefGTE(v string) predicate.Session {
+	return predicate.Session(sql.FieldGTE(FieldRuntimeRef, v))
+}
+
+// RuntimeRefLT applies the LT predicate on the "runtime_ref" field.
+func RuntimeRefLT(v string) predicate.Session {
+	return predicate.Session(sql.FieldLT(FieldRuntimeRef, v))
+}
+
+// RuntimeRefLTE applies the LTE predicate on the "runtime_ref" field.
+func RuntimeRefLTE(v string) predicate.Session {
+	return predicate.Session(sql.FieldLTE(FieldRuntimeRef, v))
+}
+
+// RuntimeRefContains applies the Contains predicate on the "runtime_ref" field.
+func RuntimeRefContains(v string) predicate.Session {
+	return predicate.Session(sql.FieldContains(FieldRuntimeRef, v))
+}
+
+// RuntimeRefHasPrefix applies the HasPrefix predicate on the "runtime_ref" field.
+func RuntimeRefHasPrefix(v string) predicate.Session {
+	return predicate.Session(sql.FieldHasPrefix(FieldRuntimeRef, v))
+}
+
+// RuntimeRefHasSuffix applies the HasSuffix predicate on the "runtime_ref" field.
+func RuntimeRefHasSuffix(v string) predicate.Session {
+	return predicate.Session(sql.FieldHasSuffix(FieldRuntimeRef, v))
+}
+
+// RuntimeRefIsNil applies the IsNil predicate on the "runtime_ref" field.
+func RuntimeRefIsNil() predicate.Session {
+	return predicate.Session(sql.FieldIsNull(FieldRuntimeRef))
+}
+
+// RuntimeRefNotNil applies the NotNil predicate on the "runtime_ref" field.
+func RuntimeRefNotNil() predicate.Session {
+	return predicate.Session(sql.FieldNotNull(FieldRuntimeRef))
+}
+
+// RuntimeRefEqualFold applies the EqualFold predicate on the "runtime_ref" field.
+func RuntimeRefEqualFold(v string) predicate.Session {
+	return predicate.Session(sql.FieldEqualFold(FieldRuntimeRef, v))
+}
+
+// RuntimeRefContainsFold applies the ContainsFold predicate on the "runtime_ref" field.
+func RuntimeRefContainsFold(v string) predicate.Session {
+	return predicate.Session(sql.FieldContainsFold(FieldRuntimeRef, v))
+}
+
+// InitialWorkspaceRootEQ applies the EQ predicate on the "initial_workspace_root" field.
+func InitialWorkspaceRootEQ(v string) predicate.Session {
+	return predicate.Session(sql.FieldEQ(FieldInitialWorkspaceRoot, v))
+}
+
+// InitialWorkspaceRootNEQ applies the NEQ predicate on the "initial_workspace_root" field.
+func InitialWorkspaceRootNEQ(v string) predicate.Session {
+	return predicate.Session(sql.FieldNEQ(FieldInitialWorkspaceRoot, v))
+}
+
+// InitialWorkspaceRootIn applies the In predicate on the "initial_workspace_root" field.
+func InitialWorkspaceRootIn(vs ...string) predicate.Session {
+	return predicate.Session(sql.FieldIn(FieldInitialWorkspaceRoot, vs...))
+}
+
+// InitialWorkspaceRootNotIn applies the NotIn predicate on the "initial_workspace_root" field.
+func InitialWorkspaceRootNotIn(vs ...string) predicate.Session {
+	return predicate.Session(sql.FieldNotIn(FieldInitialWorkspaceRoot, vs...))
+}
+
+// InitialWorkspaceRootGT applies the GT predicate on the "initial_workspace_root" field.
+func InitialWorkspaceRootGT(v string) predicate.Session {
+	return predicate.Session(sql.FieldGT(FieldInitialWorkspaceRoot, v))
+}
+
+// InitialWorkspaceRootGTE applies the GTE predicate on the "initial_workspace_root" field.
+func InitialWorkspaceRootGTE(v string) predicate.Session {
+	return predicate.Session(sql.FieldGTE(FieldInitialWorkspaceRoot, v))
+}
+
+// InitialWorkspaceRootLT applies the LT predicate on the "initial_workspace_root" field.
+func InitialWorkspaceRootLT(v string) predicate.Session {
+	return predicate.Session(sql.FieldLT(FieldInitialWorkspaceRoot, v))
+}
+
+// InitialWorkspaceRootLTE applies the LTE predicate on the "initial_workspace_root" field.
+func InitialWorkspaceRootLTE(v string) predicate.Session {
+	return predicate.Session(sql.FieldLTE(FieldInitialWorkspaceRoot, v))
+}
+
+// InitialWorkspaceRootContains applies the Contains predicate on the "initial_workspace_root" field.
+func InitialWorkspaceRootContains(v string) predicate.Session {
+	return predicate.Session(sql.FieldContains(FieldInitialWorkspaceRoot, v))
+}
+
+// InitialWorkspaceRootHasPrefix applies the HasPrefix predicate on the "initial_workspace_root" field.
+func InitialWorkspaceRootHasPrefix(v string) predicate.Session {
+	return predicate.Session(sql.FieldHasPrefix(FieldInitialWorkspaceRoot, v))
+}
+
+// InitialWorkspaceRootHasSuffix applies the HasSuffix predicate on the "initial_workspace_root" field.
+func InitialWorkspaceRootHasSuffix(v string) predicate.Session {
+	return predicate.Session(sql.FieldHasSuffix(FieldInitialWorkspaceRoot, v))
+}
+
+// InitialWorkspaceRootIsNil applies the IsNil predicate on the "initial_workspace_root" field.
+func InitialWorkspaceRootIsNil() predicate.Session {
+	return predicate.Session(sql.FieldIsNull(FieldInitialWorkspaceRoot))
+}
+
+// InitialWorkspaceRootNotNil applies the NotNil predicate on the "initial_workspace_root" field.
+func InitialWorkspaceRootNotNil() predicate.Session {
+	return predicate.Session(sql.FieldNotNull(FieldInitialWorkspaceRoot))
+}
+
+// InitialWorkspaceRootEqualFold applies the EqualFold predicate on the "initial_workspace_root" field.
+func InitialWorkspaceRootEqualFold(v string) predicate.Session {
+	return predicate.Session(sql.FieldEqualFold(FieldInitialWorkspaceRoot, v))
+}
+
+// InitialWorkspaceRootContainsFold applies the ContainsFold predicate on the "initial_workspace_root" field.
+func InitialWorkspaceRootContainsFold(v string) predicate.Session {
+	return predicate.Session(sql.FieldContainsFold(FieldInitialWorkspaceRoot, v))
+}
+
+// InitialGitDirEQ applies the EQ predicate on the "initial_git_dir" field.
+func InitialGitDirEQ(v string) predicate.Session {
+	return predicate.Session(sql.FieldEQ(FieldInitialGitDir, v))
+}
+
+// InitialGitDirNEQ applies the NEQ predicate on the "initial_git_dir" field.
+func InitialGitDirNEQ(v string) predicate.Session {
+	return predicate.Session(sql.FieldNEQ(FieldInitialGitDir, v))
+}
+
+// InitialGitDirIn applies the In predicate on the "initial_git_dir" field.
+func InitialGitDirIn(vs ...string) predicate.Session {
+	return predicate.Session(sql.FieldIn(FieldInitialGitDir, vs...))
+}
+
+// InitialGitDirNotIn applies the NotIn predicate on the "initial_git_dir" field.
+func InitialGitDirNotIn(vs ...string) predicate.Session {
+	return predicate.Session(sql.FieldNotIn(FieldInitialGitDir, vs...))
+}
+
+// InitialGitDirGT applies the GT predicate on the "initial_git_dir" field.
+func InitialGitDirGT(v string) predicate.Session {
+	return predicate.Session(sql.FieldGT(FieldInitialGitDir, v))
+}
+
+// InitialGitDirGTE applies the GTE predicate on the "initial_git_dir" field.
+func InitialGitDirGTE(v string) predicate.Session {
+	return predicate.Session(sql.FieldGTE(FieldInitialGitDir, v))
+}
+
+// InitialGitDirLT applies the LT predicate on the "initial_git_dir" field.
+func InitialGitDirLT(v string) predicate.Session {
+	return predicate.Session(sql.FieldLT(FieldInitialGitDir, v))
+}
+
+// InitialGitDirLTE applies the LTE predicate on the "initial_git_dir" field.
+func InitialGitDirLTE(v string) predicate.Session {
+	return predicate.Session(sql.FieldLTE(FieldInitialGitDir, v))
+}
+
+// InitialGitDirContains applies the Contains predicate on the "initial_git_dir" field.
+func InitialGitDirContains(v string) predicate.Session {
+	return predicate.Session(sql.FieldContains(FieldInitialGitDir, v))
+}
+
+// InitialGitDirHasPrefix applies the HasPrefix predicate on the "initial_git_dir" field.
+func InitialGitDirHasPrefix(v string) predicate.Session {
+	return predicate.Session(sql.FieldHasPrefix(FieldInitialGitDir, v))
+}
+
+// InitialGitDirHasSuffix applies the HasSuffix predicate on the "initial_git_dir" field.
+func InitialGitDirHasSuffix(v string) predicate.Session {
+	return predicate.Session(sql.FieldHasSuffix(FieldInitialGitDir, v))
+}
+
+// InitialGitDirIsNil applies the IsNil predicate on the "initial_git_dir" field.
+func InitialGitDirIsNil() predicate.Session {
+	return predicate.Session(sql.FieldIsNull(FieldInitialGitDir))
+}
+
+// InitialGitDirNotNil applies the NotNil predicate on the "initial_git_dir" field.
+func InitialGitDirNotNil() predicate.Session {
+	return predicate.Session(sql.FieldNotNull(FieldInitialGitDir))
+}
+
+// InitialGitDirEqualFold applies the EqualFold predicate on the "initial_git_dir" field.
+func InitialGitDirEqualFold(v string) predicate.Session {
+	return predicate.Session(sql.FieldEqualFold(FieldInitialGitDir, v))
+}
+
+// InitialGitDirContainsFold applies the ContainsFold predicate on the "initial_git_dir" field.
+func InitialGitDirContainsFold(v string) predicate.Session {
+	return predicate.Session(sql.FieldContainsFold(FieldInitialGitDir, v))
+}
+
+// InitialGitCommonDirEQ applies the EQ predicate on the "initial_git_common_dir" field.
+func InitialGitCommonDirEQ(v string) predicate.Session {
+	return predicate.Session(sql.FieldEQ(FieldInitialGitCommonDir, v))
+}
+
+// InitialGitCommonDirNEQ applies the NEQ predicate on the "initial_git_common_dir" field.
+func InitialGitCommonDirNEQ(v string) predicate.Session {
+	return predicate.Session(sql.FieldNEQ(FieldInitialGitCommonDir, v))
+}
+
+// InitialGitCommonDirIn applies the In predicate on the "initial_git_common_dir" field.
+func InitialGitCommonDirIn(vs ...string) predicate.Session {
+	return predicate.Session(sql.FieldIn(FieldInitialGitCommonDir, vs...))
+}
+
+// InitialGitCommonDirNotIn applies the NotIn predicate on the "initial_git_common_dir" field.
+func InitialGitCommonDirNotIn(vs ...string) predicate.Session {
+	return predicate.Session(sql.FieldNotIn(FieldInitialGitCommonDir, vs...))
+}
+
+// InitialGitCommonDirGT applies the GT predicate on the "initial_git_common_dir" field.
+func InitialGitCommonDirGT(v string) predicate.Session {
+	return predicate.Session(sql.FieldGT(FieldInitialGitCommonDir, v))
+}
+
+// InitialGitCommonDirGTE applies the GTE predicate on the "initial_git_common_dir" field.
+func InitialGitCommonDirGTE(v string) predicate.Session {
+	return predicate.Session(sql.FieldGTE(FieldInitialGitCommonDir, v))
+}
+
+// InitialGitCommonDirLT applies the LT predicate on the "initial_git_common_dir" field.
+func InitialGitCommonDirLT(v string) predicate.Session {
+	return predicate.Session(sql.FieldLT(FieldInitialGitCommonDir, v))
+}
+
+// InitialGitCommonDirLTE applies the LTE predicate on the "initial_git_common_dir" field.
+func InitialGitCommonDirLTE(v string) predicate.Session {
+	return predicate.Session(sql.FieldLTE(FieldInitialGitCommonDir, v))
+}
+
+// InitialGitCommonDirContains applies the Contains predicate on the "initial_git_common_dir" field.
+func InitialGitCommonDirContains(v string) predicate.Session {
+	return predicate.Session(sql.FieldContains(FieldInitialGitCommonDir, v))
+}
+
+// InitialGitCommonDirHasPrefix applies the HasPrefix predicate on the "initial_git_common_dir" field.
+func InitialGitCommonDirHasPrefix(v string) predicate.Session {
+	return predicate.Session(sql.FieldHasPrefix(FieldInitialGitCommonDir, v))
+}
+
+// InitialGitCommonDirHasSuffix applies the HasSuffix predicate on the "initial_git_common_dir" field.
+func InitialGitCommonDirHasSuffix(v string) predicate.Session {
+	return predicate.Session(sql.FieldHasSuffix(FieldInitialGitCommonDir, v))
+}
+
+// InitialGitCommonDirIsNil applies the IsNil predicate on the "initial_git_common_dir" field.
+func InitialGitCommonDirIsNil() predicate.Session {
+	return predicate.Session(sql.FieldIsNull(FieldInitialGitCommonDir))
+}
+
+// InitialGitCommonDirNotNil applies the NotNil predicate on the "initial_git_common_dir" field.
+func InitialGitCommonDirNotNil() predicate.Session {
+	return predicate.Session(sql.FieldNotNull(FieldInitialGitCommonDir))
+}
+
+// InitialGitCommonDirEqualFold applies the EqualFold predicate on the "initial_git_common_dir" field.
+func InitialGitCommonDirEqualFold(v string) predicate.Session {
+	return predicate.Session(sql.FieldEqualFold(FieldInitialGitCommonDir, v))
+}
+
+// InitialGitCommonDirContainsFold applies the ContainsFold predicate on the "initial_git_common_dir" field.
+func InitialGitCommonDirContainsFold(v string) predicate.Session {
+	return predicate.Session(sql.FieldContainsFold(FieldInitialGitCommonDir, v))
+}
+
+// HeadShaAtStartEQ applies the EQ predicate on the "head_sha_at_start" field.
+func HeadShaAtStartEQ(v string) predicate.Session {
+	return predicate.Session(sql.FieldEQ(FieldHeadShaAtStart, v))
+}
+
+// HeadShaAtStartNEQ applies the NEQ predicate on the "head_sha_at_start" field.
+func HeadShaAtStartNEQ(v string) predicate.Session {
+	return predicate.Session(sql.FieldNEQ(FieldHeadShaAtStart, v))
+}
+
+// HeadShaAtStartIn applies the In predicate on the "head_sha_at_start" field.
+func HeadShaAtStartIn(vs ...string) predicate.Session {
+	return predicate.Session(sql.FieldIn(FieldHeadShaAtStart, vs...))
+}
+
+// HeadShaAtStartNotIn applies the NotIn predicate on the "head_sha_at_start" field.
+func HeadShaAtStartNotIn(vs ...string) predicate.Session {
+	return predicate.Session(sql.FieldNotIn(FieldHeadShaAtStart, vs...))
+}
+
+// HeadShaAtStartGT applies the GT predicate on the "head_sha_at_start" field.
+func HeadShaAtStartGT(v string) predicate.Session {
+	return predicate.Session(sql.FieldGT(FieldHeadShaAtStart, v))
+}
+
+// HeadShaAtStartGTE applies the GTE predicate on the "head_sha_at_start" field.
+func HeadShaAtStartGTE(v string) predicate.Session {
+	return predicate.Session(sql.FieldGTE(FieldHeadShaAtStart, v))
+}
+
+// HeadShaAtStartLT applies the LT predicate on the "head_sha_at_start" field.
+func HeadShaAtStartLT(v string) predicate.Session {
+	return predicate.Session(sql.FieldLT(FieldHeadShaAtStart, v))
+}
+
+// HeadShaAtStartLTE applies the LTE predicate on the "head_sha_at_start" field.
+func HeadShaAtStartLTE(v string) predicate.Session {
+	return predicate.Session(sql.FieldLTE(FieldHeadShaAtStart, v))
+}
+
+// HeadShaAtStartContains applies the Contains predicate on the "head_sha_at_start" field.
+func HeadShaAtStartContains(v string) predicate.Session {
+	return predicate.Session(sql.FieldContains(FieldHeadShaAtStart, v))
+}
+
+// HeadShaAtStartHasPrefix applies the HasPrefix predicate on the "head_sha_at_start" field.
+func HeadShaAtStartHasPrefix(v string) predicate.Session {
+	return predicate.Session(sql.FieldHasPrefix(FieldHeadShaAtStart, v))
+}
+
+// HeadShaAtStartHasSuffix applies the HasSuffix predicate on the "head_sha_at_start" field.
+func HeadShaAtStartHasSuffix(v string) predicate.Session {
+	return predicate.Session(sql.FieldHasSuffix(FieldHeadShaAtStart, v))
+}
+
+// HeadShaAtStartIsNil applies the IsNil predicate on the "head_sha_at_start" field.
+func HeadShaAtStartIsNil() predicate.Session {
+	return predicate.Session(sql.FieldIsNull(FieldHeadShaAtStart))
+}
+
+// HeadShaAtStartNotNil applies the NotNil predicate on the "head_sha_at_start" field.
+func HeadShaAtStartNotNil() predicate.Session {
+	return predicate.Session(sql.FieldNotNull(FieldHeadShaAtStart))
+}
+
+// HeadShaAtStartEqualFold applies the EqualFold predicate on the "head_sha_at_start" field.
+func HeadShaAtStartEqualFold(v string) predicate.Session {
+	return predicate.Session(sql.FieldEqualFold(FieldHeadShaAtStart, v))
+}
+
+// HeadShaAtStartContainsFold applies the ContainsFold predicate on the "head_sha_at_start" field.
+func HeadShaAtStartContainsFold(v string) predicate.Session {
+	return predicate.Session(sql.FieldContainsFold(FieldHeadShaAtStart, v))
+}
+
+// LastSeenAtEQ applies the EQ predicate on the "last_seen_at" field.
+func LastSeenAtEQ(v time.Time) predicate.Session {
+	return predicate.Session(sql.FieldEQ(FieldLastSeenAt, v))
+}
+
+// LastSeenAtNEQ applies the NEQ predicate on the "last_seen_at" field.
+func LastSeenAtNEQ(v time.Time) predicate.Session {
+	return predicate.Session(sql.FieldNEQ(FieldLastSeenAt, v))
+}
+
+// LastSeenAtIn applies the In predicate on the "last_seen_at" field.
+func LastSeenAtIn(vs ...time.Time) predicate.Session {
+	return predicate.Session(sql.FieldIn(FieldLastSeenAt, vs...))
+}
+
+// LastSeenAtNotIn applies the NotIn predicate on the "last_seen_at" field.
+func LastSeenAtNotIn(vs ...time.Time) predicate.Session {
+	return predicate.Session(sql.FieldNotIn(FieldLastSeenAt, vs...))
+}
+
+// LastSeenAtGT applies the GT predicate on the "last_seen_at" field.
+func LastSeenAtGT(v time.Time) predicate.Session {
+	return predicate.Session(sql.FieldGT(FieldLastSeenAt, v))
+}
+
+// LastSeenAtGTE applies the GTE predicate on the "last_seen_at" field.
+func LastSeenAtGTE(v time.Time) predicate.Session {
+	return predicate.Session(sql.FieldGTE(FieldLastSeenAt, v))
+}
+
+// LastSeenAtLT applies the LT predicate on the "last_seen_at" field.
+func LastSeenAtLT(v time.Time) predicate.Session {
+	return predicate.Session(sql.FieldLT(FieldLastSeenAt, v))
+}
+
+// LastSeenAtLTE applies the LTE predicate on the "last_seen_at" field.
+func LastSeenAtLTE(v time.Time) predicate.Session {
+	return predicate.Session(sql.FieldLTE(FieldLastSeenAt, v))
+}
+
+// LastSeenAtIsNil applies the IsNil predicate on the "last_seen_at" field.
+func LastSeenAtIsNil() predicate.Session {
+	return predicate.Session(sql.FieldIsNull(FieldLastSeenAt))
+}
+
+// LastSeenAtNotNil applies the NotNil predicate on the "last_seen_at" field.
+func LastSeenAtNotNil() predicate.Session {
+	return predicate.Session(sql.FieldNotNull(FieldLastSeenAt))
+}
+
 // ToolConfigsIsNil applies the IsNil predicate on the "tool_configs" field.
 func ToolConfigsIsNil() predicate.Session {
 	return predicate.Session(sql.FieldIsNull(FieldToolConfigs))
@@ -529,6 +984,98 @@ func HasUser() predicate.Session {
 func HasUserWith(preds ...predicate.User) predicate.Session {
 	return predicate.Session(func(s *sql.Selector) {
 		step := newUserStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasSessionWorkspaces applies the HasEdge predicate on the "session_workspaces" edge.
+func HasSessionWorkspaces() predicate.Session {
+	return predicate.Session(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, SessionWorkspacesTable, SessionWorkspacesColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasSessionWorkspacesWith applies the HasEdge predicate on the "session_workspaces" edge with a given conditions (other predicates).
+func HasSessionWorkspacesWith(preds ...predicate.SessionWorkspace) predicate.Session {
+	return predicate.Session(func(s *sql.Selector) {
+		step := newSessionWorkspacesStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasAgentMetadataEvents applies the HasEdge predicate on the "agent_metadata_events" edge.
+func HasAgentMetadataEvents() predicate.Session {
+	return predicate.Session(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, AgentMetadataEventsTable, AgentMetadataEventsColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasAgentMetadataEventsWith applies the HasEdge predicate on the "agent_metadata_events" edge with a given conditions (other predicates).
+func HasAgentMetadataEventsWith(preds ...predicate.AgentMetadataEvent) predicate.Session {
+	return predicate.Session(func(s *sql.Selector) {
+		step := newAgentMetadataEventsStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasCommitCheckpoints applies the HasEdge predicate on the "commit_checkpoints" edge.
+func HasCommitCheckpoints() predicate.Session {
+	return predicate.Session(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, CommitCheckpointsTable, CommitCheckpointsColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasCommitCheckpointsWith applies the HasEdge predicate on the "commit_checkpoints" edge with a given conditions (other predicates).
+func HasCommitCheckpointsWith(preds ...predicate.CommitCheckpoint) predicate.Session {
+	return predicate.Session(func(s *sql.Selector) {
+		step := newCommitCheckpointsStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasCommitRewrites applies the HasEdge predicate on the "commit_rewrites" edge.
+func HasCommitRewrites() predicate.Session {
+	return predicate.Session(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, CommitRewritesTable, CommitRewritesColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasCommitRewritesWith applies the HasEdge predicate on the "commit_rewrites" edge with a given conditions (other predicates).
+func HasCommitRewritesWith(preds ...predicate.CommitRewrite) predicate.Session {
+	return predicate.Session(func(s *sql.Selector) {
+		step := newCommitRewritesStep()
 		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
 			for _, p := range preds {
 				p(s)

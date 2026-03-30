@@ -46,6 +46,25 @@ func (PrRecord) Fields() []ent.Field {
 		field.Enum("ai_label").
 			Values("ai_via_sub2api", "no_ai_detected", "pending").
 			Default("pending"),
+		field.Enum("attribution_status").
+			Values("not_run", "clear", "ambiguous", "failed").
+			Default("not_run"),
+		field.Enum("attribution_confidence").
+			Values("high", "medium", "low").
+			Optional().
+			Nillable(),
+		field.Int64("primary_token_count").
+			Default(0),
+		field.Float("primary_token_cost").
+			Default(0),
+		field.JSON("metadata_summary", map[string]any{}).
+			Optional(),
+		field.Time("last_attributed_at").
+			Optional().
+			Nillable(),
+		field.Int("last_attribution_run_id").
+			Optional().
+			Nillable(),
 		field.Time("merged_at").
 			Optional().
 			Nillable(),
@@ -66,6 +85,7 @@ func (PrRecord) Edges() []ent.Edge {
 			Ref("pr_records").
 			Unique().
 			Required(),
+		edge.To("attribution_runs", PrAttributionRun.Type),
 	}
 }
 

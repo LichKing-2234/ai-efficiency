@@ -198,6 +198,46 @@ func (rcu *RepoConfigUpdate) ClearGroupID() *RepoConfigUpdate {
 	return rcu
 }
 
+// SetRelayProviderName sets the "relay_provider_name" field.
+func (rcu *RepoConfigUpdate) SetRelayProviderName(s string) *RepoConfigUpdate {
+	rcu.mutation.SetRelayProviderName(s)
+	return rcu
+}
+
+// SetNillableRelayProviderName sets the "relay_provider_name" field if the given value is not nil.
+func (rcu *RepoConfigUpdate) SetNillableRelayProviderName(s *string) *RepoConfigUpdate {
+	if s != nil {
+		rcu.SetRelayProviderName(*s)
+	}
+	return rcu
+}
+
+// ClearRelayProviderName clears the value of the "relay_provider_name" field.
+func (rcu *RepoConfigUpdate) ClearRelayProviderName() *RepoConfigUpdate {
+	rcu.mutation.ClearRelayProviderName()
+	return rcu
+}
+
+// SetRelayGroupID sets the "relay_group_id" field.
+func (rcu *RepoConfigUpdate) SetRelayGroupID(s string) *RepoConfigUpdate {
+	rcu.mutation.SetRelayGroupID(s)
+	return rcu
+}
+
+// SetNillableRelayGroupID sets the "relay_group_id" field if the given value is not nil.
+func (rcu *RepoConfigUpdate) SetNillableRelayGroupID(s *string) *RepoConfigUpdate {
+	if s != nil {
+		rcu.SetRelayGroupID(*s)
+	}
+	return rcu
+}
+
+// ClearRelayGroupID clears the value of the "relay_group_id" field.
+func (rcu *RepoConfigUpdate) ClearRelayGroupID() *RepoConfigUpdate {
+	rcu.mutation.ClearRelayGroupID()
+	return rcu
+}
+
 // SetStatus sets the "status" field.
 func (rcu *RepoConfigUpdate) SetStatus(r repoconfig.Status) *RepoConfigUpdate {
 	rcu.mutation.SetStatus(r)
@@ -552,6 +592,18 @@ func (rcu *RepoConfigUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	}
 	if rcu.mutation.GroupIDCleared() {
 		_spec.ClearField(repoconfig.FieldGroupID, field.TypeString)
+	}
+	if value, ok := rcu.mutation.RelayProviderName(); ok {
+		_spec.SetField(repoconfig.FieldRelayProviderName, field.TypeString, value)
+	}
+	if rcu.mutation.RelayProviderNameCleared() {
+		_spec.ClearField(repoconfig.FieldRelayProviderName, field.TypeString)
+	}
+	if value, ok := rcu.mutation.RelayGroupID(); ok {
+		_spec.SetField(repoconfig.FieldRelayGroupID, field.TypeString, value)
+	}
+	if rcu.mutation.RelayGroupIDCleared() {
+		_spec.ClearField(repoconfig.FieldRelayGroupID, field.TypeString)
 	}
 	if value, ok := rcu.mutation.Status(); ok {
 		_spec.SetField(repoconfig.FieldStatus, field.TypeEnum, value)
@@ -1002,6 +1054,46 @@ func (rcuo *RepoConfigUpdateOne) ClearGroupID() *RepoConfigUpdateOne {
 	return rcuo
 }
 
+// SetRelayProviderName sets the "relay_provider_name" field.
+func (rcuo *RepoConfigUpdateOne) SetRelayProviderName(s string) *RepoConfigUpdateOne {
+	rcuo.mutation.SetRelayProviderName(s)
+	return rcuo
+}
+
+// SetNillableRelayProviderName sets the "relay_provider_name" field if the given value is not nil.
+func (rcuo *RepoConfigUpdateOne) SetNillableRelayProviderName(s *string) *RepoConfigUpdateOne {
+	if s != nil {
+		rcuo.SetRelayProviderName(*s)
+	}
+	return rcuo
+}
+
+// ClearRelayProviderName clears the value of the "relay_provider_name" field.
+func (rcuo *RepoConfigUpdateOne) ClearRelayProviderName() *RepoConfigUpdateOne {
+	rcuo.mutation.ClearRelayProviderName()
+	return rcuo
+}
+
+// SetRelayGroupID sets the "relay_group_id" field.
+func (rcuo *RepoConfigUpdateOne) SetRelayGroupID(s string) *RepoConfigUpdateOne {
+	rcuo.mutation.SetRelayGroupID(s)
+	return rcuo
+}
+
+// SetNillableRelayGroupID sets the "relay_group_id" field if the given value is not nil.
+func (rcuo *RepoConfigUpdateOne) SetNillableRelayGroupID(s *string) *RepoConfigUpdateOne {
+	if s != nil {
+		rcuo.SetRelayGroupID(*s)
+	}
+	return rcuo
+}
+
+// ClearRelayGroupID clears the value of the "relay_group_id" field.
+func (rcuo *RepoConfigUpdateOne) ClearRelayGroupID() *RepoConfigUpdateOne {
+	rcuo.mutation.ClearRelayGroupID()
+	return rcuo
+}
+
 // SetStatus sets the "status" field.
 func (rcuo *RepoConfigUpdateOne) SetStatus(r repoconfig.Status) *RepoConfigUpdateOne {
 	rcuo.mutation.SetStatus(r)
@@ -1386,6 +1478,18 @@ func (rcuo *RepoConfigUpdateOne) sqlSave(ctx context.Context) (_node *RepoConfig
 	}
 	if rcuo.mutation.GroupIDCleared() {
 		_spec.ClearField(repoconfig.FieldGroupID, field.TypeString)
+	}
+	if value, ok := rcuo.mutation.RelayProviderName(); ok {
+		_spec.SetField(repoconfig.FieldRelayProviderName, field.TypeString, value)
+	}
+	if rcuo.mutation.RelayProviderNameCleared() {
+		_spec.ClearField(repoconfig.FieldRelayProviderName, field.TypeString)
+	}
+	if value, ok := rcuo.mutation.RelayGroupID(); ok {
+		_spec.SetField(repoconfig.FieldRelayGroupID, field.TypeString, value)
+	}
+	if rcuo.mutation.RelayGroupIDCleared() {
+		_spec.ClearField(repoconfig.FieldRelayGroupID, field.TypeString)
 	}
 	if value, ok := rcuo.mutation.Status(); ok {
 		_spec.SetField(repoconfig.FieldStatus, field.TypeEnum, value)

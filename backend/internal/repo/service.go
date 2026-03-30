@@ -21,9 +21,11 @@ import (
 
 // CreateRequest is the request to create a repo config.
 type CreateRequest struct {
-	SCMProviderID int    `json:"scm_provider_id" binding:"required"`
-	FullName      string `json:"full_name" binding:"required"`
-	GroupID       string `json:"group_id"`
+	SCMProviderID     int    `json:"scm_provider_id" binding:"required"`
+	FullName          string `json:"full_name" binding:"required"`
+	GroupID           string `json:"group_id"`
+	RelayProviderName string `json:"relay_provider_name"`
+	RelayGroupID      string `json:"relay_group_id"`
 }
 
 // CreateDirectRequest creates a repo without SCM validation (dev mode).
@@ -41,6 +43,8 @@ type UpdateRequest struct {
 	Name                string            `json:"name"`
 	GroupID             string            `json:"group_id"`
 	Status              string            `json:"status"`
+	RelayProviderName   string            `json:"relay_provider_name"`
+	RelayGroupID        string            `json:"relay_group_id"`
 	ScanPromptOverride  map[string]string `json:"scan_prompt_override,omitempty"`
 	ClearScanPrompt     bool              `json:"clear_scan_prompt,omitempty"`
 }
@@ -126,6 +130,12 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (*ent.RepoConfi
 	}
 	if req.GroupID != "" {
 		create.SetGroupID(req.GroupID)
+	}
+	if req.RelayProviderName != "" {
+		create.SetRelayProviderName(req.RelayProviderName)
+	}
+	if req.RelayGroupID != "" {
+		create.SetRelayGroupID(req.RelayGroupID)
 	}
 
 	rc, err := create.Save(ctx)
@@ -214,6 +224,12 @@ func (s *Service) Update(ctx context.Context, id int, req UpdateRequest) (*ent.R
 	}
 	if req.Status != "" {
 		update.SetStatus(repoconfig.Status(req.Status))
+	}
+	if req.RelayProviderName != "" {
+		update.SetRelayProviderName(req.RelayProviderName)
+	}
+	if req.RelayGroupID != "" {
+		update.SetRelayGroupID(req.RelayGroupID)
 	}
 	if req.ClearScanPrompt {
 		update.ClearScanPromptOverride()

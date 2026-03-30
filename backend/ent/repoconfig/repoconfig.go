@@ -33,6 +33,10 @@ const (
 	FieldLastScanAt = "last_scan_at"
 	// FieldGroupID holds the string denoting the group_id field in the database.
 	FieldGroupID = "group_id"
+	// FieldRelayProviderName holds the string denoting the relay_provider_name field in the database.
+	FieldRelayProviderName = "relay_provider_name"
+	// FieldRelayGroupID holds the string denoting the relay_group_id field in the database.
+	FieldRelayGroupID = "relay_group_id"
 	// FieldStatus holds the string denoting the status field in the database.
 	FieldStatus = "status"
 	// FieldCreatedAt holds the string denoting the created_at field in the database.
@@ -111,6 +115,8 @@ var Columns = []string{
 	FieldAiScore,
 	FieldLastScanAt,
 	FieldGroupID,
+	FieldRelayProviderName,
+	FieldRelayGroupID,
 	FieldStatus,
 	FieldCreatedAt,
 	FieldUpdatedAt,
@@ -235,6 +241,16 @@ func ByLastScanAt(opts ...sql.OrderTermOption) OrderOption {
 // ByGroupID orders the results by the group_id field.
 func ByGroupID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldGroupID, opts...).ToFunc()
+}
+
+// ByRelayProviderName orders the results by the relay_provider_name field.
+func ByRelayProviderName(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldRelayProviderName, opts...).ToFunc()
+}
+
+// ByRelayGroupID orders the results by the relay_group_id field.
+func ByRelayGroupID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldRelayGroupID, opts...).ToFunc()
 }
 
 // ByStatus orders the results by the status field.

@@ -129,6 +129,34 @@ func (rcc *RepoConfigCreate) SetNillableGroupID(s *string) *RepoConfigCreate {
 	return rcc
 }
 
+// SetRelayProviderName sets the "relay_provider_name" field.
+func (rcc *RepoConfigCreate) SetRelayProviderName(s string) *RepoConfigCreate {
+	rcc.mutation.SetRelayProviderName(s)
+	return rcc
+}
+
+// SetNillableRelayProviderName sets the "relay_provider_name" field if the given value is not nil.
+func (rcc *RepoConfigCreate) SetNillableRelayProviderName(s *string) *RepoConfigCreate {
+	if s != nil {
+		rcc.SetRelayProviderName(*s)
+	}
+	return rcc
+}
+
+// SetRelayGroupID sets the "relay_group_id" field.
+func (rcc *RepoConfigCreate) SetRelayGroupID(s string) *RepoConfigCreate {
+	rcc.mutation.SetRelayGroupID(s)
+	return rcc
+}
+
+// SetNillableRelayGroupID sets the "relay_group_id" field if the given value is not nil.
+func (rcc *RepoConfigCreate) SetNillableRelayGroupID(s *string) *RepoConfigCreate {
+	if s != nil {
+		rcc.SetRelayGroupID(*s)
+	}
+	return rcc
+}
+
 // SetStatus sets the "status" field.
 func (rcc *RepoConfigCreate) SetStatus(r repoconfig.Status) *RepoConfigCreate {
 	rcc.mutation.SetStatus(r)
@@ -427,6 +455,14 @@ func (rcc *RepoConfigCreate) createSpec() (*RepoConfig, *sqlgraph.CreateSpec) {
 	if value, ok := rcc.mutation.GroupID(); ok {
 		_spec.SetField(repoconfig.FieldGroupID, field.TypeString, value)
 		_node.GroupID = &value
+	}
+	if value, ok := rcc.mutation.RelayProviderName(); ok {
+		_spec.SetField(repoconfig.FieldRelayProviderName, field.TypeString, value)
+		_node.RelayProviderName = &value
+	}
+	if value, ok := rcc.mutation.RelayGroupID(); ok {
+		_spec.SetField(repoconfig.FieldRelayGroupID, field.TypeString, value)
+		_node.RelayGroupID = &value
 	}
 	if value, ok := rcc.mutation.Status(); ok {
 		_spec.SetField(repoconfig.FieldStatus, field.TypeEnum, value)

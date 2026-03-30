@@ -105,6 +105,26 @@ func AiRatio(v float64) predicate.PrRecord {
 	return predicate.PrRecord(sql.FieldEQ(FieldAiRatio, v))
 }
 
+// PrimaryTokenCount applies equality check predicate on the "primary_token_count" field. It's identical to PrimaryTokenCountEQ.
+func PrimaryTokenCount(v int64) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldEQ(FieldPrimaryTokenCount, v))
+}
+
+// PrimaryTokenCost applies equality check predicate on the "primary_token_cost" field. It's identical to PrimaryTokenCostEQ.
+func PrimaryTokenCost(v float64) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldEQ(FieldPrimaryTokenCost, v))
+}
+
+// LastAttributedAt applies equality check predicate on the "last_attributed_at" field. It's identical to LastAttributedAtEQ.
+func LastAttributedAt(v time.Time) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldEQ(FieldLastAttributedAt, v))
+}
+
+// LastAttributionRunID applies equality check predicate on the "last_attribution_run_id" field. It's identical to LastAttributionRunIDEQ.
+func LastAttributionRunID(v int) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldEQ(FieldLastAttributionRunID, v))
+}
+
 // MergedAt applies equality check predicate on the "merged_at" field. It's identical to MergedAtEQ.
 func MergedAt(v time.Time) predicate.PrRecord {
 	return predicate.PrRecord(sql.FieldEQ(FieldMergedAt, v))
@@ -770,6 +790,246 @@ func AiLabelNotIn(vs ...AiLabel) predicate.PrRecord {
 	return predicate.PrRecord(sql.FieldNotIn(FieldAiLabel, vs...))
 }
 
+// AttributionStatusEQ applies the EQ predicate on the "attribution_status" field.
+func AttributionStatusEQ(v AttributionStatus) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldEQ(FieldAttributionStatus, v))
+}
+
+// AttributionStatusNEQ applies the NEQ predicate on the "attribution_status" field.
+func AttributionStatusNEQ(v AttributionStatus) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldNEQ(FieldAttributionStatus, v))
+}
+
+// AttributionStatusIn applies the In predicate on the "attribution_status" field.
+func AttributionStatusIn(vs ...AttributionStatus) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldIn(FieldAttributionStatus, vs...))
+}
+
+// AttributionStatusNotIn applies the NotIn predicate on the "attribution_status" field.
+func AttributionStatusNotIn(vs ...AttributionStatus) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldNotIn(FieldAttributionStatus, vs...))
+}
+
+// AttributionConfidenceEQ applies the EQ predicate on the "attribution_confidence" field.
+func AttributionConfidenceEQ(v AttributionConfidence) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldEQ(FieldAttributionConfidence, v))
+}
+
+// AttributionConfidenceNEQ applies the NEQ predicate on the "attribution_confidence" field.
+func AttributionConfidenceNEQ(v AttributionConfidence) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldNEQ(FieldAttributionConfidence, v))
+}
+
+// AttributionConfidenceIn applies the In predicate on the "attribution_confidence" field.
+func AttributionConfidenceIn(vs ...AttributionConfidence) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldIn(FieldAttributionConfidence, vs...))
+}
+
+// AttributionConfidenceNotIn applies the NotIn predicate on the "attribution_confidence" field.
+func AttributionConfidenceNotIn(vs ...AttributionConfidence) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldNotIn(FieldAttributionConfidence, vs...))
+}
+
+// AttributionConfidenceIsNil applies the IsNil predicate on the "attribution_confidence" field.
+func AttributionConfidenceIsNil() predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldIsNull(FieldAttributionConfidence))
+}
+
+// AttributionConfidenceNotNil applies the NotNil predicate on the "attribution_confidence" field.
+func AttributionConfidenceNotNil() predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldNotNull(FieldAttributionConfidence))
+}
+
+// PrimaryTokenCountEQ applies the EQ predicate on the "primary_token_count" field.
+func PrimaryTokenCountEQ(v int64) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldEQ(FieldPrimaryTokenCount, v))
+}
+
+// PrimaryTokenCountNEQ applies the NEQ predicate on the "primary_token_count" field.
+func PrimaryTokenCountNEQ(v int64) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldNEQ(FieldPrimaryTokenCount, v))
+}
+
+// PrimaryTokenCountIn applies the In predicate on the "primary_token_count" field.
+func PrimaryTokenCountIn(vs ...int64) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldIn(FieldPrimaryTokenCount, vs...))
+}
+
+// PrimaryTokenCountNotIn applies the NotIn predicate on the "primary_token_count" field.
+func PrimaryTokenCountNotIn(vs ...int64) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldNotIn(FieldPrimaryTokenCount, vs...))
+}
+
+// PrimaryTokenCountGT applies the GT predicate on the "primary_token_count" field.
+func PrimaryTokenCountGT(v int64) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldGT(FieldPrimaryTokenCount, v))
+}
+
+// PrimaryTokenCountGTE applies the GTE predicate on the "primary_token_count" field.
+func PrimaryTokenCountGTE(v int64) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldGTE(FieldPrimaryTokenCount, v))
+}
+
+// PrimaryTokenCountLT applies the LT predicate on the "primary_token_count" field.
+func PrimaryTokenCountLT(v int64) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldLT(FieldPrimaryTokenCount, v))
+}
+
+// PrimaryTokenCountLTE applies the LTE predicate on the "primary_token_count" field.
+func PrimaryTokenCountLTE(v int64) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldLTE(FieldPrimaryTokenCount, v))
+}
+
+// PrimaryTokenCostEQ applies the EQ predicate on the "primary_token_cost" field.
+func PrimaryTokenCostEQ(v float64) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldEQ(FieldPrimaryTokenCost, v))
+}
+
+// PrimaryTokenCostNEQ applies the NEQ predicate on the "primary_token_cost" field.
+func PrimaryTokenCostNEQ(v float64) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldNEQ(FieldPrimaryTokenCost, v))
+}
+
+// PrimaryTokenCostIn applies the In predicate on the "primary_token_cost" field.
+func PrimaryTokenCostIn(vs ...float64) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldIn(FieldPrimaryTokenCost, vs...))
+}
+
+// PrimaryTokenCostNotIn applies the NotIn predicate on the "primary_token_cost" field.
+func PrimaryTokenCostNotIn(vs ...float64) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldNotIn(FieldPrimaryTokenCost, vs...))
+}
+
+// PrimaryTokenCostGT applies the GT predicate on the "primary_token_cost" field.
+func PrimaryTokenCostGT(v float64) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldGT(FieldPrimaryTokenCost, v))
+}
+
+// PrimaryTokenCostGTE applies the GTE predicate on the "primary_token_cost" field.
+func PrimaryTokenCostGTE(v float64) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldGTE(FieldPrimaryTokenCost, v))
+}
+
+// PrimaryTokenCostLT applies the LT predicate on the "primary_token_cost" field.
+func PrimaryTokenCostLT(v float64) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldLT(FieldPrimaryTokenCost, v))
+}
+
+// PrimaryTokenCostLTE applies the LTE predicate on the "primary_token_cost" field.
+func PrimaryTokenCostLTE(v float64) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldLTE(FieldPrimaryTokenCost, v))
+}
+
+// MetadataSummaryIsNil applies the IsNil predicate on the "metadata_summary" field.
+func MetadataSummaryIsNil() predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldIsNull(FieldMetadataSummary))
+}
+
+// MetadataSummaryNotNil applies the NotNil predicate on the "metadata_summary" field.
+func MetadataSummaryNotNil() predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldNotNull(FieldMetadataSummary))
+}
+
+// LastAttributedAtEQ applies the EQ predicate on the "last_attributed_at" field.
+func LastAttributedAtEQ(v time.Time) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldEQ(FieldLastAttributedAt, v))
+}
+
+// LastAttributedAtNEQ applies the NEQ predicate on the "last_attributed_at" field.
+func LastAttributedAtNEQ(v time.Time) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldNEQ(FieldLastAttributedAt, v))
+}
+
+// LastAttributedAtIn applies the In predicate on the "last_attributed_at" field.
+func LastAttributedAtIn(vs ...time.Time) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldIn(FieldLastAttributedAt, vs...))
+}
+
+// LastAttributedAtNotIn applies the NotIn predicate on the "last_attributed_at" field.
+func LastAttributedAtNotIn(vs ...time.Time) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldNotIn(FieldLastAttributedAt, vs...))
+}
+
+// LastAttributedAtGT applies the GT predicate on the "last_attributed_at" field.
+func LastAttributedAtGT(v time.Time) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldGT(FieldLastAttributedAt, v))
+}
+
+// LastAttributedAtGTE applies the GTE predicate on the "last_attributed_at" field.
+func LastAttributedAtGTE(v time.Time) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldGTE(FieldLastAttributedAt, v))
+}
+
+// LastAttributedAtLT applies the LT predicate on the "last_attributed_at" field.
+func LastAttributedAtLT(v time.Time) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldLT(FieldLastAttributedAt, v))
+}
+
+// LastAttributedAtLTE applies the LTE predicate on the "last_attributed_at" field.
+func LastAttributedAtLTE(v time.Time) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldLTE(FieldLastAttributedAt, v))
+}
+
+// LastAttributedAtIsNil applies the IsNil predicate on the "last_attributed_at" field.
+func LastAttributedAtIsNil() predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldIsNull(FieldLastAttributedAt))
+}
+
+// LastAttributedAtNotNil applies the NotNil predicate on the "last_attributed_at" field.
+func LastAttributedAtNotNil() predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldNotNull(FieldLastAttributedAt))
+}
+
+// LastAttributionRunIDEQ applies the EQ predicate on the "last_attribution_run_id" field.
+func LastAttributionRunIDEQ(v int) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldEQ(FieldLastAttributionRunID, v))
+}
+
+// LastAttributionRunIDNEQ applies the NEQ predicate on the "last_attribution_run_id" field.
+func LastAttributionRunIDNEQ(v int) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldNEQ(FieldLastAttributionRunID, v))
+}
+
+// LastAttributionRunIDIn applies the In predicate on the "last_attribution_run_id" field.
+func LastAttributionRunIDIn(vs ...int) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldIn(FieldLastAttributionRunID, vs...))
+}
+
+// LastAttributionRunIDNotIn applies the NotIn predicate on the "last_attribution_run_id" field.
+func LastAttributionRunIDNotIn(vs ...int) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldNotIn(FieldLastAttributionRunID, vs...))
+}
+
+// LastAttributionRunIDGT applies the GT predicate on the "last_attribution_run_id" field.
+func LastAttributionRunIDGT(v int) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldGT(FieldLastAttributionRunID, v))
+}
+
+// LastAttributionRunIDGTE applies the GTE predicate on the "last_attribution_run_id" field.
+func LastAttributionRunIDGTE(v int) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldGTE(FieldLastAttributionRunID, v))
+}
+
+// LastAttributionRunIDLT applies the LT predicate on the "last_attribution_run_id" field.
+func LastAttributionRunIDLT(v int) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldLT(FieldLastAttributionRunID, v))
+}
+
+// LastAttributionRunIDLTE applies the LTE predicate on the "last_attribution_run_id" field.
+func LastAttributionRunIDLTE(v int) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldLTE(FieldLastAttributionRunID, v))
+}
+
+// LastAttributionRunIDIsNil applies the IsNil predicate on the "last_attribution_run_id" field.
+func LastAttributionRunIDIsNil() predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldIsNull(FieldLastAttributionRunID))
+}
+
+// LastAttributionRunIDNotNil applies the NotNil predicate on the "last_attribution_run_id" field.
+func LastAttributionRunIDNotNil() predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldNotNull(FieldLastAttributionRunID))
+}
+
 // MergedAtEQ applies the EQ predicate on the "merged_at" field.
 func MergedAtEQ(v time.Time) predicate.PrRecord {
 	return predicate.PrRecord(sql.FieldEQ(FieldMergedAt, v))
@@ -955,6 +1215,29 @@ func HasRepoConfig() predicate.PrRecord {
 func HasRepoConfigWith(preds ...predicate.RepoConfig) predicate.PrRecord {
 	return predicate.PrRecord(func(s *sql.Selector) {
 		step := newRepoConfigStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasAttributionRuns applies the HasEdge predicate on the "attribution_runs" edge.
+func HasAttributionRuns() predicate.PrRecord {
+	return predicate.PrRecord(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, AttributionRunsTable, AttributionRunsColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasAttributionRunsWith applies the HasEdge predicate on the "attribution_runs" edge with a given conditions (other predicates).
+func HasAttributionRunsWith(preds ...predicate.PrAttributionRun) predicate.PrRecord {
+	return predicate.PrRecord(func(s *sql.Selector) {
+		step := newAttributionRunsStep()
 		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
 			for _, p := range preds {
 				p(s)

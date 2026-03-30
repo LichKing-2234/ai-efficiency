@@ -10,6 +10,7 @@ import (
 
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/ai-efficiency/backend/ent/prattributionrun"
 	"github.com/ai-efficiency/backend/ent/prrecord"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 )
@@ -199,6 +200,96 @@ func (prc *PrRecordCreate) SetNillableAiLabel(pl *prrecord.AiLabel) *PrRecordCre
 	return prc
 }
 
+// SetAttributionStatus sets the "attribution_status" field.
+func (prc *PrRecordCreate) SetAttributionStatus(ps prrecord.AttributionStatus) *PrRecordCreate {
+	prc.mutation.SetAttributionStatus(ps)
+	return prc
+}
+
+// SetNillableAttributionStatus sets the "attribution_status" field if the given value is not nil.
+func (prc *PrRecordCreate) SetNillableAttributionStatus(ps *prrecord.AttributionStatus) *PrRecordCreate {
+	if ps != nil {
+		prc.SetAttributionStatus(*ps)
+	}
+	return prc
+}
+
+// SetAttributionConfidence sets the "attribution_confidence" field.
+func (prc *PrRecordCreate) SetAttributionConfidence(pc prrecord.AttributionConfidence) *PrRecordCreate {
+	prc.mutation.SetAttributionConfidence(pc)
+	return prc
+}
+
+// SetNillableAttributionConfidence sets the "attribution_confidence" field if the given value is not nil.
+func (prc *PrRecordCreate) SetNillableAttributionConfidence(pc *prrecord.AttributionConfidence) *PrRecordCreate {
+	if pc != nil {
+		prc.SetAttributionConfidence(*pc)
+	}
+	return prc
+}
+
+// SetPrimaryTokenCount sets the "primary_token_count" field.
+func (prc *PrRecordCreate) SetPrimaryTokenCount(i int64) *PrRecordCreate {
+	prc.mutation.SetPrimaryTokenCount(i)
+	return prc
+}
+
+// SetNillablePrimaryTokenCount sets the "primary_token_count" field if the given value is not nil.
+func (prc *PrRecordCreate) SetNillablePrimaryTokenCount(i *int64) *PrRecordCreate {
+	if i != nil {
+		prc.SetPrimaryTokenCount(*i)
+	}
+	return prc
+}
+
+// SetPrimaryTokenCost sets the "primary_token_cost" field.
+func (prc *PrRecordCreate) SetPrimaryTokenCost(f float64) *PrRecordCreate {
+	prc.mutation.SetPrimaryTokenCost(f)
+	return prc
+}
+
+// SetNillablePrimaryTokenCost sets the "primary_token_cost" field if the given value is not nil.
+func (prc *PrRecordCreate) SetNillablePrimaryTokenCost(f *float64) *PrRecordCreate {
+	if f != nil {
+		prc.SetPrimaryTokenCost(*f)
+	}
+	return prc
+}
+
+// SetMetadataSummary sets the "metadata_summary" field.
+func (prc *PrRecordCreate) SetMetadataSummary(m map[string]interface{}) *PrRecordCreate {
+	prc.mutation.SetMetadataSummary(m)
+	return prc
+}
+
+// SetLastAttributedAt sets the "last_attributed_at" field.
+func (prc *PrRecordCreate) SetLastAttributedAt(t time.Time) *PrRecordCreate {
+	prc.mutation.SetLastAttributedAt(t)
+	return prc
+}
+
+// SetNillableLastAttributedAt sets the "last_attributed_at" field if the given value is not nil.
+func (prc *PrRecordCreate) SetNillableLastAttributedAt(t *time.Time) *PrRecordCreate {
+	if t != nil {
+		prc.SetLastAttributedAt(*t)
+	}
+	return prc
+}
+
+// SetLastAttributionRunID sets the "last_attribution_run_id" field.
+func (prc *PrRecordCreate) SetLastAttributionRunID(i int) *PrRecordCreate {
+	prc.mutation.SetLastAttributionRunID(i)
+	return prc
+}
+
+// SetNillableLastAttributionRunID sets the "last_attribution_run_id" field if the given value is not nil.
+func (prc *PrRecordCreate) SetNillableLastAttributionRunID(i *int) *PrRecordCreate {
+	if i != nil {
+		prc.SetLastAttributionRunID(*i)
+	}
+	return prc
+}
+
 // SetMergedAt sets the "merged_at" field.
 func (prc *PrRecordCreate) SetMergedAt(t time.Time) *PrRecordCreate {
 	prc.mutation.SetMergedAt(t)
@@ -266,6 +357,21 @@ func (prc *PrRecordCreate) SetRepoConfig(r *RepoConfig) *PrRecordCreate {
 	return prc.SetRepoConfigID(r.ID)
 }
 
+// AddAttributionRunIDs adds the "attribution_runs" edge to the PrAttributionRun entity by IDs.
+func (prc *PrRecordCreate) AddAttributionRunIDs(ids ...int) *PrRecordCreate {
+	prc.mutation.AddAttributionRunIDs(ids...)
+	return prc
+}
+
+// AddAttributionRuns adds the "attribution_runs" edges to the PrAttributionRun entity.
+func (prc *PrRecordCreate) AddAttributionRuns(p ...*PrAttributionRun) *PrRecordCreate {
+	ids := make([]int, len(p))
+	for i := range p {
+		ids[i] = p[i].ID
+	}
+	return prc.AddAttributionRunIDs(ids...)
+}
+
 // Mutation returns the PrRecordMutation object of the builder.
 func (prc *PrRecordCreate) Mutation() *PrRecordMutation {
 	return prc.mutation
@@ -325,6 +431,18 @@ func (prc *PrRecordCreate) defaults() {
 		v := prrecord.DefaultAiLabel
 		prc.mutation.SetAiLabel(v)
 	}
+	if _, ok := prc.mutation.AttributionStatus(); !ok {
+		v := prrecord.DefaultAttributionStatus
+		prc.mutation.SetAttributionStatus(v)
+	}
+	if _, ok := prc.mutation.PrimaryTokenCount(); !ok {
+		v := prrecord.DefaultPrimaryTokenCount
+		prc.mutation.SetPrimaryTokenCount(v)
+	}
+	if _, ok := prc.mutation.PrimaryTokenCost(); !ok {
+		v := prrecord.DefaultPrimaryTokenCost
+		prc.mutation.SetPrimaryTokenCost(v)
+	}
 	if _, ok := prc.mutation.CycleTimeHours(); !ok {
 		v := prrecord.DefaultCycleTimeHours
 		prc.mutation.SetCycleTimeHours(v)
@@ -371,6 +489,25 @@ func (prc *PrRecordCreate) check() error {
 		if err := prrecord.AiLabelValidator(v); err != nil {
 			return &ValidationError{Name: "ai_label", err: fmt.Errorf(`ent: validator failed for field "PrRecord.ai_label": %w`, err)}
 		}
+	}
+	if _, ok := prc.mutation.AttributionStatus(); !ok {
+		return &ValidationError{Name: "attribution_status", err: errors.New(`ent: missing required field "PrRecord.attribution_status"`)}
+	}
+	if v, ok := prc.mutation.AttributionStatus(); ok {
+		if err := prrecord.AttributionStatusValidator(v); err != nil {
+			return &ValidationError{Name: "attribution_status", err: fmt.Errorf(`ent: validator failed for field "PrRecord.attribution_status": %w`, err)}
+		}
+	}
+	if v, ok := prc.mutation.AttributionConfidence(); ok {
+		if err := prrecord.AttributionConfidenceValidator(v); err != nil {
+			return &ValidationError{Name: "attribution_confidence", err: fmt.Errorf(`ent: validator failed for field "PrRecord.attribution_confidence": %w`, err)}
+		}
+	}
+	if _, ok := prc.mutation.PrimaryTokenCount(); !ok {
+		return &ValidationError{Name: "primary_token_count", err: errors.New(`ent: missing required field "PrRecord.primary_token_count"`)}
+	}
+	if _, ok := prc.mutation.PrimaryTokenCost(); !ok {
+		return &ValidationError{Name: "primary_token_cost", err: errors.New(`ent: missing required field "PrRecord.primary_token_cost"`)}
 	}
 	if _, ok := prc.mutation.CycleTimeHours(); !ok {
 		return &ValidationError{Name: "cycle_time_hours", err: errors.New(`ent: missing required field "PrRecord.cycle_time_hours"`)}
@@ -470,6 +607,34 @@ func (prc *PrRecordCreate) createSpec() (*PrRecord, *sqlgraph.CreateSpec) {
 		_spec.SetField(prrecord.FieldAiLabel, field.TypeEnum, value)
 		_node.AiLabel = value
 	}
+	if value, ok := prc.mutation.AttributionStatus(); ok {
+		_spec.SetField(prrecord.FieldAttributionStatus, field.TypeEnum, value)
+		_node.AttributionStatus = value
+	}
+	if value, ok := prc.mutation.AttributionConfidence(); ok {
+		_spec.SetField(prrecord.FieldAttributionConfidence, field.TypeEnum, value)
+		_node.AttributionConfidence = &value
+	}
+	if value, ok := prc.mutation.PrimaryTokenCount(); ok {
+		_spec.SetField(prrecord.FieldPrimaryTokenCount, field.TypeInt64, value)
+		_node.PrimaryTokenCount = value
+	}
+	if value, ok := prc.mutation.PrimaryTokenCost(); ok {
+		_spec.SetField(prrecord.FieldPrimaryTokenCost, field.TypeFloat64, value)
+		_node.PrimaryTokenCost = value
+	}
+	if value, ok := prc.mutation.MetadataSummary(); ok {
+		_spec.SetField(prrecord.FieldMetadataSummary, field.TypeJSON, value)
+		_node.MetadataSummary = value
+	}
+	if value, ok := prc.mutation.LastAttributedAt(); ok {
+		_spec.SetField(prrecord.FieldLastAttributedAt, field.TypeTime, value)
+		_node.LastAttributedAt = &value
+	}
+	if value, ok := prc.mutation.LastAttributionRunID(); ok {
+		_spec.SetField(prrecord.FieldLastAttributionRunID, field.TypeInt, value)
+		_node.LastAttributionRunID = &value
+	}
 	if value, ok := prc.mutation.MergedAt(); ok {
 		_spec.SetField(prrecord.FieldMergedAt, field.TypeTime, value)
 		_node.MergedAt = &value
@@ -501,6 +666,22 @@ func (prc *PrRecordCreate) createSpec() (*PrRecord, *sqlgraph.CreateSpec) {
 			edge.Target.Nodes = append(edge.Target.Nodes, k)
 		}
 		_node.repo_config_pr_records = &nodes[0]
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := prc.mutation.AttributionRunsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   prrecord.AttributionRunsTable,
+			Columns: []string{prrecord.AttributionRunsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(prattributionrun.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
 		_spec.Edges = append(_spec.Edges, edge)
 	}
 	return _node, _spec

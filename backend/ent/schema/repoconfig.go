@@ -39,6 +39,12 @@ func (RepoConfig) Fields() []ent.Field {
 		field.String("group_id").
 			Optional().
 			Nillable(),
+		field.String("relay_provider_name").
+			Optional().
+			Nillable(),
+		field.String("relay_group_id").
+			Optional().
+			Nillable(),
 		field.Enum("status").
 			Values("active", "webhook_failed", "inactive").
 			Default("active"),

@@ -12,9 +12,13 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/dialect/sql/sqljson"
 	"entgo.io/ent/schema/field"
+	"github.com/ai-efficiency/backend/ent/agentmetadataevent"
+	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
+	"github.com/ai-efficiency/backend/ent/commitrewrite"
 	"github.com/ai-efficiency/backend/ent/predicate"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/session"
+	"github.com/ai-efficiency/backend/ent/sessionworkspace"
 	"github.com/ai-efficiency/backend/ent/user"
 )
 
@@ -116,6 +120,126 @@ func (su *SessionUpdate) SetNillableProviderName(s *string) *SessionUpdate {
 // ClearProviderName clears the value of the "provider_name" field.
 func (su *SessionUpdate) ClearProviderName() *SessionUpdate {
 	su.mutation.ClearProviderName()
+	return su
+}
+
+// SetRuntimeRef sets the "runtime_ref" field.
+func (su *SessionUpdate) SetRuntimeRef(s string) *SessionUpdate {
+	su.mutation.SetRuntimeRef(s)
+	return su
+}
+
+// SetNillableRuntimeRef sets the "runtime_ref" field if the given value is not nil.
+func (su *SessionUpdate) SetNillableRuntimeRef(s *string) *SessionUpdate {
+	if s != nil {
+		su.SetRuntimeRef(*s)
+	}
+	return su
+}
+
+// ClearRuntimeRef clears the value of the "runtime_ref" field.
+func (su *SessionUpdate) ClearRuntimeRef() *SessionUpdate {
+	su.mutation.ClearRuntimeRef()
+	return su
+}
+
+// SetInitialWorkspaceRoot sets the "initial_workspace_root" field.
+func (su *SessionUpdate) SetInitialWorkspaceRoot(s string) *SessionUpdate {
+	su.mutation.SetInitialWorkspaceRoot(s)
+	return su
+}
+
+// SetNillableInitialWorkspaceRoot sets the "initial_workspace_root" field if the given value is not nil.
+func (su *SessionUpdate) SetNillableInitialWorkspaceRoot(s *string) *SessionUpdate {
+	if s != nil {
+		su.SetInitialWorkspaceRoot(*s)
+	}
+	return su
+}
+
+// ClearInitialWorkspaceRoot clears the value of the "initial_workspace_root" field.
+func (su *SessionUpdate) ClearInitialWorkspaceRoot() *SessionUpdate {
+	su.mutation.ClearInitialWorkspaceRoot()
+	return su
+}
+
+// SetInitialGitDir sets the "initial_git_dir" field.
+func (su *SessionUpdate) SetInitialGitDir(s string) *SessionUpdate {
+	su.mutation.SetInitialGitDir(s)
+	return su
+}
+
+// SetNillableInitialGitDir sets the "initial_git_dir" field if the given value is not nil.
+func (su *SessionUpdate) SetNillableInitialGitDir(s *string) *SessionUpdate {
+	if s != nil {
+		su.SetInitialGitDir(*s)
+	}
+	return su
+}
+
+// ClearInitialGitDir clears the value of the "initial_git_dir" field.
+func (su *SessionUpdate) ClearInitialGitDir() *SessionUpdate {
+	su.mutation.ClearInitialGitDir()
+	return su
+}
+
+// SetInitialGitCommonDir sets the "initial_git_common_dir" field.
+func (su *SessionUpdate) SetInitialGitCommonDir(s string) *SessionUpdate {
+	su.mutation.SetInitialGitCommonDir(s)
+	return su
+}
+
+// SetNillableInitialGitCommonDir sets the "initial_git_common_dir" field if the given value is not nil.
+func (su *SessionUpdate) SetNillableInitialGitCommonDir(s *string) *SessionUpdate {
+	if s != nil {
+		su.SetInitialGitCommonDir(*s)
+	}
+	return su
+}
+
+// ClearInitialGitCommonDir clears the value of the "initial_git_common_dir" field.
+func (su *SessionUpdate) ClearInitialGitCommonDir() *SessionUpdate {
+	su.mutation.ClearInitialGitCommonDir()
+	return su
+}
+
+// SetHeadShaAtStart sets the "head_sha_at_start" field.
+func (su *SessionUpdate) SetHeadShaAtStart(s string) *SessionUpdate {
+	su.mutation.SetHeadShaAtStart(s)
+	return su
+}
+
+// SetNillableHeadShaAtStart sets the "head_sha_at_start" field if the given value is not nil.
+func (su *SessionUpdate) SetNillableHeadShaAtStart(s *string) *SessionUpdate {
+	if s != nil {
+		su.SetHeadShaAtStart(*s)
+	}
+	return su
+}
+
+// ClearHeadShaAtStart clears the value of the "head_sha_at_start" field.
+func (su *SessionUpdate) ClearHeadShaAtStart() *SessionUpdate {
+	su.mutation.ClearHeadShaAtStart()
+	return su
+}
+
+// SetLastSeenAt sets the "last_seen_at" field.
+func (su *SessionUpdate) SetLastSeenAt(t time.Time) *SessionUpdate {
+	su.mutation.SetLastSeenAt(t)
+	return su
+}
+
+// SetNillableLastSeenAt sets the "last_seen_at" field if the given value is not nil.
+func (su *SessionUpdate) SetNillableLastSeenAt(t *time.Time) *SessionUpdate {
+	if t != nil {
+		su.SetLastSeenAt(*t)
+	}
+	return su
+}
+
+// ClearLastSeenAt clears the value of the "last_seen_at" field.
+func (su *SessionUpdate) ClearLastSeenAt() *SessionUpdate {
+	su.mutation.ClearLastSeenAt()
 	return su
 }
 
@@ -227,6 +351,66 @@ func (su *SessionUpdate) SetUser(u *User) *SessionUpdate {
 	return su.SetUserID(u.ID)
 }
 
+// AddSessionWorkspaceIDs adds the "session_workspaces" edge to the SessionWorkspace entity by IDs.
+func (su *SessionUpdate) AddSessionWorkspaceIDs(ids ...int) *SessionUpdate {
+	su.mutation.AddSessionWorkspaceIDs(ids...)
+	return su
+}
+
+// AddSessionWorkspaces adds the "session_workspaces" edges to the SessionWorkspace entity.
+func (su *SessionUpdate) AddSessionWorkspaces(s ...*SessionWorkspace) *SessionUpdate {
+	ids := make([]int, len(s))
+	for i := range s {
+		ids[i] = s[i].ID
+	}
+	return su.AddSessionWorkspaceIDs(ids...)
+}
+
+// AddAgentMetadataEventIDs adds the "agent_metadata_events" edge to the AgentMetadataEvent entity by IDs.
+func (su *SessionUpdate) AddAgentMetadataEventIDs(ids ...int) *SessionUpdate {
+	su.mutation.AddAgentMetadataEventIDs(ids...)
+	return su
+}
+
+// AddAgentMetadataEvents adds the "agent_metadata_events" edges to the AgentMetadataEvent entity.
+func (su *SessionUpdate) AddAgentMetadataEvents(a ...*AgentMetadataEvent) *SessionUpdate {
+	ids := make([]int, len(a))
+	for i := range a {
+		ids[i] = a[i].ID
+	}
+	return su.AddAgentMetadataEventIDs(ids...)
+}
+
+// AddCommitCheckpointIDs adds the "commit_checkpoints" edge to the CommitCheckpoint entity by IDs.
+func (su *SessionUpdate) AddCommitCheckpointIDs(ids ...int) *SessionUpdate {
+	su.mutation.AddCommitCheckpointIDs(ids...)
+	return su
+}
+
+// AddCommitCheckpoints adds the "commit_checkpoints" edges to the CommitCheckpoint entity.
+func (su *SessionUpdate) AddCommitCheckpoints(c ...*CommitCheckpoint) *SessionUpdate {
+	ids := make([]int, len(c))
+	for i := range c {
+		ids[i] = c[i].ID
+	}
+	return su.AddCommitCheckpointIDs(ids...)
+}
+
+// AddCommitRewriteIDs adds the "commit_rewrites" edge to the CommitRewrite entity by IDs.
+func (su *SessionUpdate) AddCommitRewriteIDs(ids ...int) *SessionUpdate {
+	su.mutation.AddCommitRewriteIDs(ids...)
+	return su
+}
+
+// AddCommitRewrites adds the "commit_rewrites" edges to the CommitRewrite entity.
+func (su *SessionUpdate) AddCommitRewrites(c ...*CommitRewrite) *SessionUpdate {
+	ids := make([]int, len(c))
+	for i := range c {
+		ids[i] = c[i].ID
+	}
+	return su.AddCommitRewriteIDs(ids...)
+}
+
 // Mutation returns the SessionMutation object of the builder.
 func (su *SessionUpdate) Mutation() *SessionMutation {
 	return su.mutation
@@ -242,6 +426,90 @@ func (su *SessionUpdate) ClearRepoConfig() *SessionUpdate {
 func (su *SessionUpdate) ClearUser() *SessionUpdate {
 	su.mutation.ClearUser()
 	return su
+}
+
+// ClearSessionWorkspaces clears all "session_workspaces" edges to the SessionWorkspace entity.
+func (su *SessionUpdate) ClearSessionWorkspaces() *SessionUpdate {
+	su.mutation.ClearSessionWorkspaces()
+	return su
+}
+
+// RemoveSessionWorkspaceIDs removes the "session_workspaces" edge to SessionWorkspace entities by IDs.
+func (su *SessionUpdate) RemoveSessionWorkspaceIDs(ids ...int) *SessionUpdate {
+	su.mutation.RemoveSessionWorkspaceIDs(ids...)
+	return su
+}
+
+// RemoveSessionWorkspaces removes "session_workspaces" edges to SessionWorkspace entities.
+func (su *SessionUpdate) RemoveSessionWorkspaces(s ...*SessionWorkspace) *SessionUpdate {
+	ids := make([]int, len(s))
+	for i := range s {
+		ids[i] = s[i].ID
+	}
+	return su.RemoveSessionWorkspaceIDs(ids...)
+}
+
+// ClearAgentMetadataEvents clears all "agent_metadata_events" edges to the AgentMetadataEvent entity.
+func (su *SessionUpdate) ClearAgentMetadataEvents() *SessionUpdate {
+	su.mutation.ClearAgentMetadataEvents()
+	return su
+}
+
+// RemoveAgentMetadataEventIDs removes the "agent_metadata_events" edge to AgentMetadataEvent entities by IDs.
+func (su *SessionUpdate) RemoveAgentMetadataEventIDs(ids ...int) *SessionUpdate {
+	su.mutation.RemoveAgentMetadataEventIDs(ids...)
+	return su
+}
+
+// RemoveAgentMetadataEvents removes "agent_metadata_events" edges to AgentMetadataEvent entities.
+func (su *SessionUpdate) RemoveAgentMetadataEvents(a ...*AgentMetadataEvent) *SessionUpdate {
+	ids := make([]int, len(a))
+	for i := range a {
+		ids[i] = a[i].ID
+	}
+	return su.RemoveAgentMetadataEventIDs(ids...)
+}
+
+// ClearCommitCheckpoints clears all "commit_checkpoints" edges to the CommitCheckpoint entity.
+func (su *SessionUpdate) ClearCommitCheckpoints() *SessionUpdate {
+	su.mutation.ClearCommitCheckpoints()
+	return su
+}
+
+// RemoveCommitCheckpointIDs removes the "commit_checkpoints" edge to CommitCheckpoint entities by IDs.
+func (su *SessionUpdate) RemoveCommitCheckpointIDs(ids ...int) *SessionUpdate {
+	su.mutation.RemoveCommitCheckpointIDs(ids...)
+	return su
+}
+
+// RemoveCommitCheckpoints removes "commit_checkpoints" edges to CommitCheckpoint entities.
+func (su *SessionUpdate) RemoveCommitCheckpoints(c ...*CommitCheckpoint) *SessionUpdate {
+	ids := make([]int, len(c))
+	for i := range c {
+		ids[i] = c[i].ID
+	}
+	return su.RemoveCommitCheckpointIDs(ids...)
+}
+
+// ClearCommitRewrites clears all "commit_rewrites" edges to the CommitRewrite entity.
+func (su *SessionUpdate) ClearCommitRewrites() *SessionUpdate {
+	su.mutation.ClearCommitRewrites()
+	return su
+}
+
+// RemoveCommitRewriteIDs removes the "commit_rewrites" edge to CommitRewrite entities by IDs.
+func (su *SessionUpdate) RemoveCommitRewriteIDs(ids ...int) *SessionUpdate {
+	su.mutation.RemoveCommitRewriteIDs(ids...)
+	return su
+}
+
+// RemoveCommitRewrites removes "commit_rewrites" edges to CommitRewrite entities.
+func (su *SessionUpdate) RemoveCommitRewrites(c ...*CommitRewrite) *SessionUpdate {
+	ids := make([]int, len(c))
+	for i := range c {
+		ids[i] = c[i].ID
+	}
+	return su.RemoveCommitRewriteIDs(ids...)
 }
 
 // Save executes the query and returns the number of nodes affected by the update operation.
@@ -328,6 +596,42 @@ func (su *SessionUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if su.mutation.ProviderNameCleared() {
 		_spec.ClearField(session.FieldProviderName, field.TypeString)
 	}
+	if value, ok := su.mutation.RuntimeRef(); ok {
+		_spec.SetField(session.FieldRuntimeRef, field.TypeString, value)
+	}
+	if su.mutation.RuntimeRefCleared() {
+		_spec.ClearField(session.FieldRuntimeRef, field.TypeString)
+	}
+	if value, ok := su.mutation.InitialWorkspaceRoot(); ok {
+		_spec.SetField(session.FieldInitialWorkspaceRoot, field.TypeString, value)
+	}
+	if su.mutation.InitialWorkspaceRootCleared() {
+		_spec.ClearField(session.FieldInitialWorkspaceRoot, field.TypeString)
+	}
+	if value, ok := su.mutation.InitialGitDir(); ok {
+		_spec.SetField(session.FieldInitialGitDir, field.TypeString, value)
+	}
+	if su.mutation.InitialGitDirCleared() {
+		_spec.ClearField(session.FieldInitialGitDir, field.TypeString)
+	}
+	if value, ok := su.mutation.InitialGitCommonDir(); ok {
+		_spec.SetField(session.FieldInitialGitCommonDir, field.TypeString, value)
+	}
+	if su.mutation.InitialGitCommonDirCleared() {
+		_spec.ClearField(session.FieldInitialGitCommonDir, field.TypeString)
+	}
+	if value, ok := su.mutation.HeadShaAtStart(); ok {
+		_spec.SetField(session.FieldHeadShaAtStart, field.TypeString, value)
+	}
+	if su.mutation.HeadShaAtStartCleared() {
+		_spec.ClearField(session.FieldHeadShaAtStart, field.TypeString)
+	}
+	if value, ok := su.mutation.LastSeenAt(); ok {
+		_spec.SetField(session.FieldLastSeenAt, field.TypeTime, value)
+	}
+	if su.mutation.LastSeenAtCleared() {
+		_spec.ClearField(session.FieldLastSeenAt, field.TypeTime)
+	}
 	if value, ok := su.mutation.ToolConfigs(); ok {
 		_spec.SetField(session.FieldToolConfigs, field.TypeJSON, value)
 	}
@@ -410,6 +714,186 @@ func (su *SessionUpdate) sqlSave(ctx context.Context) (n int, err error) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if su.mutation.SessionWorkspacesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   session.SessionWorkspacesTable,
+			Columns: []string{session.SessionWorkspacesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(sessionworkspace.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := su.mutation.RemovedSessionWorkspacesIDs(); len(nodes) > 0 && !su.mutation.SessionWorkspacesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   session.SessionWorkspacesTable,
+			Columns: []string{session.SessionWorkspacesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(sessionworkspace.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := su.mutation.SessionWorkspacesIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   session.SessionWorkspacesTable,
+			Columns: []string{session.SessionWorkspacesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(sessionworkspace.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if su.mutation.AgentMetadataEventsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   session.AgentMetadataEventsTable,
+			Columns: []string{session.AgentMetadataEventsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(agentmetadataevent.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := su.mutation.RemovedAgentMetadataEventsIDs(); len(nodes) > 0 && !su.mutation.AgentMetadataEventsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   session.AgentMetadataEventsTable,
+			Columns: []string{session.AgentMetadataEventsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(agentmetadataevent.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := su.mutation.AgentMetadataEventsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   session.AgentMetadataEventsTable,
+			Columns: []string{session.AgentMetadataEventsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(agentmetadataevent.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if su.mutation.CommitCheckpointsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   session.CommitCheckpointsTable,
+			Columns: []string{session.CommitCheckpointsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(commitcheckpoint.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := su.mutation.RemovedCommitCheckpointsIDs(); len(nodes) > 0 && !su.mutation.CommitCheckpointsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   session.CommitCheckpointsTable,
+			Columns: []string{session.CommitCheckpointsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(commitcheckpoint.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := su.mutation.CommitCheckpointsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   session.CommitCheckpointsTable,
+			Columns: []string{session.CommitCheckpointsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(commitcheckpoint.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if su.mutation.CommitRewritesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   session.CommitRewritesTable,
+			Columns: []string{session.CommitRewritesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(commitrewrite.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := su.mutation.RemovedCommitRewritesIDs(); len(nodes) > 0 && !su.mutation.CommitRewritesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   session.CommitRewritesTable,
+			Columns: []string{session.CommitRewritesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(commitrewrite.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := su.mutation.CommitRewritesIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   session.CommitRewritesTable,
+			Columns: []string{session.CommitRewritesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(commitrewrite.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {
@@ -525,6 +1009,126 @@ func (suo *SessionUpdateOne) ClearProviderName() *SessionUpdateOne {
 	return suo
 }
 
+// SetRuntimeRef sets the "runtime_ref" field.
+func (suo *SessionUpdateOne) SetRuntimeRef(s string) *SessionUpdateOne {
+	suo.mutation.SetRuntimeRef(s)
+	return suo
+}
+
+// SetNillableRuntimeRef sets the "runtime_ref" field if the given value is not nil.
+func (suo *SessionUpdateOne) SetNillableRuntimeRef(s *string) *SessionUpdateOne {
+	if s != nil {
+		suo.SetRuntimeRef(*s)
+	}
+	return suo
+}
+
+// ClearRuntimeRef clears the value of the "runtime_ref" field.
+func (suo *SessionUpdateOne) ClearRuntimeRef() *SessionUpdateOne {
+	suo.mutation.ClearRuntimeRef()
+	return suo
+}
+
+// SetInitialWorkspaceRoot sets the "initial_workspace_root" field.
+func (suo *SessionUpdateOne) SetInitialWorkspaceRoot(s string) *SessionUpdateOne {
+	suo.mutation.SetInitialWorkspaceRoot(s)
+	return suo
+}
+
+// SetNillableInitialWorkspaceRoot sets the "initial_workspace_root" field if the given value is not nil.
+func (suo *SessionUpdateOne) SetNillableInitialWorkspaceRoot(s *string) *SessionUpdateOne {
+	if s != nil {
+		suo.SetInitialWorkspaceRoot(*s)
+	}
+	return suo
+}
+
+// ClearInitialWorkspaceRoot clears the value of the "initial_workspace_root" field.
+func (suo *SessionUpdateOne) ClearInitialWorkspaceRoot() *SessionUpdateOne {
+	suo.mutation.ClearInitialWorkspaceRoot()
+	return suo
+}
+
+// SetInitialGitDir sets the "initial_git_dir" field.
+func (suo *SessionUpdateOne) SetInitialGitDir(s string) *SessionUpdateOne {
+	suo.mutation.SetInitialGitDir(s)
+	return suo
+}
+
+// SetNillableInitialGitDir sets the "initial_git_dir" field if the given value is not nil.
+func (suo *SessionUpdateOne) SetNillableInitialGitDir(s *string) *SessionUpdateOne {
+	if s != nil {
+		suo.SetInitialGitDir(*s)
+	}
+	return suo
+}
+
+// ClearInitialGitDir clears the value of the "initial_git_dir" field.
+func (suo *SessionUpdateOne) ClearInitialGitDir() *SessionUpdateOne {
+	suo.mutation.ClearInitialGitDir()
+	return suo
+}
+
+// SetInitialGitCommonDir sets the "initial_git_common_dir" field.
+func (suo *SessionUpdateOne) SetInitialGitCommonDir(s string) *SessionUpdateOne {
+	suo.mutation.SetInitialGitCommonDir(s)
+	return suo
+}
+
+// SetNillableInitialGitCommonDir sets the "initial_git_common_dir" field if the given value is not nil.
+func (suo *SessionUpdateOne) SetNillableInitialGitCommonDir(s *string) *SessionUpdateOne {
+	if s != nil {
+		suo.SetInitialGitCommonDir(*s)
+	}
+	return suo
+}
+
+// ClearInitialGitCommonDir clears the value of the "initial_git_common_dir" field.
+func (suo *SessionUpdateOne) ClearInitialGitCommonDir() *SessionUpdateOne {
+	suo.mutation.ClearInitialGitCommonDir()
+	return suo
+}
+
+// SetHeadShaAtStart sets the "head_sha_at_start" field.
+func (suo *SessionUpdateOne) SetHeadShaAtStart(s string) *SessionUpdateOne {
+	suo.mutation.SetHeadShaAtStart(s)
+	return suo
+}
+
+// SetNillableHeadShaAtStart sets the "head_sha_at_start" field if the given value is not nil.
+func (suo *SessionUpdateOne) SetNillableHeadShaAtStart(s *string) *SessionUpdateOne {
+	if s != nil {
+		suo.SetHeadShaAtStart(*s)
+	}
+	return suo
+}
+
+// ClearHeadShaAtStart clears the value of the "head_sha_at_start" field.
+func (suo *SessionUpdateOne) ClearHeadShaAtStart() *SessionUpdateOne {
+	suo.mutation.ClearHeadShaAtStart()
+	return suo
+}
+
+// SetLastSeenAt sets the "last_seen_at" field.
+func (suo *SessionUpdateOne) SetLastSeenAt(t time.Time) *SessionUpdateOne {
+	suo.mutation.SetLastSeenAt(t)
+	return suo
+}
+
+// SetNillableLastSeenAt sets the "last_seen_at" field if the given value is not nil.
+func (suo *SessionUpdateOne) SetNillableLastSeenAt(t *time.Time) *SessionUpdateOne {
+	if t != nil {
+		suo.SetLastSeenAt(*t)
+	}
+	return suo
+}
+
+// ClearLastSeenAt clears the value of the "last_seen_at" field.
+func (suo *SessionUpdateOne) ClearLastSeenAt() *SessionUpdateOne {
+	suo.mutation.ClearLastSeenAt()
+	return suo
+}
+
 // SetToolConfigs sets the "tool_configs" field.
 func (suo *SessionUpdateOne) SetToolConfigs(m []map[string]interface{}) *SessionUpdateOne {
 	suo.mutation.SetToolConfigs(m)
@@ -633,6 +1237,66 @@ func (suo *SessionUpdateOne) SetUser(u *User) *SessionUpdateOne {
 	return suo.SetUserID(u.ID)
 }
 
+// AddSessionWorkspaceIDs adds the "session_workspaces" edge to the SessionWorkspace entity by IDs.
+func (suo *SessionUpdateOne) AddSessionWorkspaceIDs(ids ...int) *SessionUpdateOne {
+	suo.mutation.AddSessionWorkspaceIDs(ids...)
+	return suo
+}
+
+// AddSessionWorkspaces adds the "session_workspaces" edges to the SessionWorkspace entity.
+func (suo *SessionUpdateOne) AddSessionWorkspaces(s ...*SessionWorkspace) *SessionUpdateOne {
+	ids := make([]int, len(s))
+	for i := range s {
+		ids[i] = s[i].ID
+	}
+	return suo.AddSessionWorkspaceIDs(ids...)
+}
+
+// AddAgentMetadataEventIDs adds the "agent_metadata_events" edge to the AgentMetadataEvent entity by IDs.
+func (suo *SessionUpdateOne) AddAgentMetadataEventIDs(ids ...int) *SessionUpdateOne {
+	suo.mutation.AddAgentMetadataEventIDs(ids...)
+	return suo
+}
+
+// AddAgentMetadataEvents adds the "agent_metadata_events" edges to the AgentMetadataEvent entity.
+func (suo *SessionUpdateOne) AddAgentMetadataEvents(a ...*AgentMetadataEvent) *SessionUpdateOne {
+	ids := make([]int, len(a))
+	for i := range a {
+		ids[i] = a[i].ID
+	}
+	return suo.AddAgentMetadataEventIDs(ids...)
+}
+
+// AddCommitCheckpointIDs adds the "commit_checkpoints" edge to the CommitCheckpoint entity by IDs.
+func (suo *SessionUpdateOne) AddCommitCheckpointIDs(ids ...int) *SessionUpdateOne {
+	suo.mutation.AddCommitCheckpointIDs(ids...)
+	return suo
+}
+
+// AddCommitCheckpoints adds the "commit_checkpoints" edges to the CommitCheckpoint entity.
+func (suo *SessionUpdateOne) AddCommitCheckpoints(c ...*CommitCheckpoint) *SessionUpdateOne {
+	ids := make([]int, len(c))
+	for i := range c {
+		ids[i] = c[i].ID
+	}
+	return suo.AddCommitCheckpointIDs(ids...)
+}
+
+// AddCommitRewriteIDs adds the "commit_rewrites" edge to the CommitRewrite entity by IDs.
+func (suo *SessionUpdateOne) AddCommitRewriteIDs(ids ...int) *SessionUpdateOne {
+	suo.mutation.AddCommitRewriteIDs(ids...)
+	return suo
+}
+
+// AddCommitRewrites adds the "commit_rewrites" edges to the CommitRewrite entity.
+func (suo *SessionUpdateOne) AddCommitRewrites(c ...*CommitRewrite) *SessionUpdateOne {
+	ids := make([]int, len(c))
+	for i := range c {
+		ids[i] = c[i].ID
+	}
+	return suo.AddCommitRewriteIDs(ids...)
+}
+
 // Mutation returns the SessionMutation object of the builder.
 func (suo *SessionUpdateOne) Mutation() *SessionMutation {
 	return suo.mutation
@@ -648,6 +1312,90 @@ func (suo *SessionUpdateOne) ClearRepoConfig() *SessionUpdateOne {
 func (suo *SessionUpdateOne) ClearUser() *SessionUpdateOne {
 	suo.mutation.ClearUser()
 	return suo
+}
+
+// ClearSessionWorkspaces clears all "session_workspaces" edges to the SessionWorkspace entity.
+func (suo *SessionUpdateOne) ClearSessionWorkspaces() *SessionUpdateOne {
+	suo.mutation.ClearSessionWorkspaces()
+	return suo
+}
+
+// RemoveSessionWorkspaceIDs removes the "session_workspaces" edge to SessionWorkspace entities by IDs.
+func (suo *SessionUpdateOne) RemoveSessionWorkspaceIDs(ids ...int) *SessionUpdateOne {
+	suo.mutation.RemoveSessionWorkspaceIDs(ids...)
+	return suo
+}
+
+// RemoveSessionWorkspaces removes "session_workspaces" edges to SessionWorkspace entities.
+func (suo *SessionUpdateOne) RemoveSessionWorkspaces(s ...*SessionWorkspace) *SessionUpdateOne {
+	ids := make([]int, len(s))
+	for i := range s {
+		ids[i] = s[i].ID
+	}
+	return suo.RemoveSessionWorkspaceIDs(ids...)
+}
+
+// ClearAgentMetadataEvents clears all "agent_metadata_events" edges to the AgentMetadataEvent entity.
+func (suo *SessionUpdateOne) ClearAgentMetadataEvents() *SessionUpdateOne {
+	suo.mutation.ClearAgentMetadataEvents()
+	return suo
+}
+
+// RemoveAgentMetadataEventIDs removes the "agent_metadata_events" edge to AgentMetadataEvent entities by IDs.
+func (suo *SessionUpdateOne) RemoveAgentMetadataEventIDs(ids ...int) *SessionUpdateOne {
+	suo.mutation.RemoveAgentMetadataEventIDs(ids...)
+	return suo
+}
+
+// RemoveAgentMetadataEvents removes "agent_metadata_events" edges to AgentMetadataEvent entities.
+func (suo *SessionUpdateOne) RemoveAgentMetadataEvents(a ...*AgentMetadataEvent) *SessionUpdateOne {
+	ids := make([]int, len(a))
+	for i := range a {
+		ids[i] = a[i].ID
+	}
+	return suo.RemoveAgentMetadataEventIDs(ids...)
+}
+
+// ClearCommitCheckpoints clears all "commit_checkpoints" edges to the CommitCheckpoint entity.
+func (suo *SessionUpdateOne) ClearCommitCheckpoints() *SessionUpdateOne {
+	suo.mutation.ClearCommitCheckpoints()
+	return suo
+}
+
+// RemoveCommitCheckpointIDs removes the "commit_checkpoints" edge to CommitCheckpoint entities by IDs.
+func (suo *SessionUpdateOne) RemoveCommitCheckpointIDs(ids ...int) *SessionUpdateOne {
+	suo.mutation.RemoveCommitCheckpointIDs(ids...)
+	return suo
+}
+
+// RemoveCommitCheckpoints removes "commit_checkpoints" edges to CommitCheckpoint entities.
+func (suo *SessionUpdateOne) RemoveCommitCheckpoints(c ...*CommitCheckpoint) *SessionUpdateOne {
+	ids := make([]int, len(c))
+	for i := range c {
+		ids[i] = c[i].ID
+	}
+	return suo.RemoveCommitCheckpointIDs(ids...)
+}
+
+// ClearCommitRewrites clears all "commit_rewrites" edges to the CommitRewrite entity.
+func (suo *SessionUpdateOne) ClearCommitRewrites() *SessionUpdateOne {
+	suo.mutation.ClearCommitRewrites()
+	return suo
+}
+
+// RemoveCommitRewriteIDs removes the "commit_rewrites" edge to CommitRewrite entities by IDs.
+func (suo *SessionUpdateOne) RemoveCommitRewriteIDs(ids ...int) *SessionUpdateOne {
+	suo.mutation.RemoveCommitRewriteIDs(ids...)
+	return suo
+}
+
+// RemoveCommitRewrites removes "commit_rewrites" edges to CommitRewrite entities.
+func (suo *SessionUpdateOne) RemoveCommitRewrites(c ...*CommitRewrite) *SessionUpdateOne {
+	ids := make([]int, len(c))
+	for i := range c {
+		ids[i] = c[i].ID
+	}
+	return suo.RemoveCommitRewriteIDs(ids...)
 }
 
 // Where appends a list predicates to the SessionUpdate builder.
@@ -764,6 +1512,42 @@ func (suo *SessionUpdateOne) sqlSave(ctx context.Context) (_node *Session, err e
 	if suo.mutation.ProviderNameCleared() {
 		_spec.ClearField(session.FieldProviderName, field.TypeString)
 	}
+	if value, ok := suo.mutation.RuntimeRef(); ok {
+		_spec.SetField(session.FieldRuntimeRef, field.TypeString, value)
+	}
+	if suo.mutation.RuntimeRefCleared() {
+		_spec.ClearField(session.FieldRuntimeRef, field.TypeString)
+	}
+	if value, ok := suo.mutation.InitialWorkspaceRoot(); ok {
+		_spec.SetField(session.FieldInitialWorkspaceRoot, field.TypeString, value)
+	}
+	if suo.mutation.InitialWorkspaceRootCleared() {
+		_spec.ClearField(session.FieldInitialWorkspaceRoot, field.TypeString)
+	}
+	if value, ok := suo.mutation.InitialGitDir(); ok {
+		_spec.SetField(session.FieldInitialGitDir, field.TypeString, value)
+	}
+	if suo.mutation.InitialGitDirCleared() {
+		_spec.ClearField(session.FieldInitialGitDir, field.TypeString)
+	}
+	if value, ok := suo.mutation.InitialGitCommonDir(); ok {
+		_spec.SetField(session.FieldInitialGitCommonDir, field.TypeString, value)
+	}
+	if suo.mutation.InitialGitCommonDirCleared() {
+		_spec.ClearField(session.FieldInitialGitCommonDir, field.TypeString)
+	}
+	if value, ok := suo.mutation.HeadShaAtStart(); ok {
+		_spec.SetField(session.FieldHeadShaAtStart, field.TypeString, value)
+	}
+	if suo.mutation.HeadShaAtStartCleared() {
+		_spec.ClearField(session.FieldHeadShaAtStart, field.TypeString)
+	}
+	if value, ok := suo.mutation.LastSeenAt(); ok {
+		_spec.SetField(session.FieldLastSeenAt, field.TypeTime, value)
+	}
+	if suo.mutation.LastSeenAtCleared() {
+		_spec.ClearField(session.FieldLastSeenAt, field.TypeTime)
+	}
 	if value, ok := suo.mutation.ToolConfigs(); ok {
 		_spec.SetField(session.FieldToolConfigs, field.TypeJSON, value)
 	}
@@ -846,6 +1630,186 @@ func (suo *SessionUpdateOne) sqlSave(ctx context.Context) (_node *Session, err e
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if suo.mutation.SessionWorkspacesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   session.SessionWorkspacesTable,
+			Columns: []string{session.SessionWorkspacesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(sessionworkspace.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := suo.mutation.RemovedSessionWorkspacesIDs(); len(nodes) > 0 && !suo.mutation.SessionWorkspacesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   session.SessionWorkspacesTable,
+			Columns: []string{session.SessionWorkspacesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(sessionworkspace.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := suo.mutation.SessionWorkspacesIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   session.SessionWorkspacesTable,
+			Columns: []string{session.SessionWorkspacesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(sessionworkspace.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if suo.mutation.AgentMetadataEventsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   session.AgentMetadataEventsTable,
+			Columns: []string{session.AgentMetadataEventsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(agentmetadataevent.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := suo.mutation.RemovedAgentMetadataEventsIDs(); len(nodes) > 0 && !suo.mutation.AgentMetadataEventsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   session.AgentMetadataEventsTable,
+			Columns: []string{session.AgentMetadataEventsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(agentmetadataevent.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := suo.mutation.AgentMetadataEventsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   session.AgentMetadataEventsTable,
+			Columns: []string{session.AgentMetadataEventsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(agentmetadataevent.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if suo.mutation.CommitCheckpointsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   session.CommitCheckpointsTable,
+			Columns: []string{session.CommitCheckpointsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(commitcheckpoint.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := suo.mutation.RemovedCommitCheckpointsIDs(); len(nodes) > 0 && !suo.mutation.CommitCheckpointsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   session.CommitCheckpointsTable,
+			Columns: []string{session.CommitCheckpointsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(commitcheckpoint.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := suo.mutation.CommitCheckpointsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   session.CommitCheckpointsTable,
+			Columns: []string{session.CommitCheckpointsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(commitcheckpoint.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if suo.mutation.CommitRewritesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   session.CommitRewritesTable,
+			Columns: []string{session.CommitRewritesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(commitrewrite.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := suo.mutation.RemovedCommitRewritesIDs(); len(nodes) > 0 && !suo.mutation.CommitRewritesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   session.CommitRewritesTable,
+			Columns: []string{session.CommitRewritesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(commitrewrite.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := suo.mutation.CommitRewritesIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   session.CommitRewritesTable,
+			Columns: []string{session.CommitRewritesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(commitrewrite.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {

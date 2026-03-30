@@ -22,10 +22,11 @@ type ServerConfig struct {
 }
 
 type RelayConfig struct {
-	Provider string `mapstructure:"provider"`
-	URL      string `mapstructure:"url"`
-	APIKey   string `mapstructure:"api_key"`
-	Model    string `mapstructure:"model"`
+	Provider       string `mapstructure:"provider"`
+	URL            string `mapstructure:"url"`
+	APIKey         string `mapstructure:"api_key"`
+	Model          string `mapstructure:"model"`
+	DefaultGroupID string `mapstructure:"default_group_id"`
 }
 
 type DBConfig struct {
@@ -78,6 +79,7 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("db.conn_max_lifetime", 300)
 	v.SetDefault("relay.provider", "sub2api")
 	v.SetDefault("relay.model", "claude-sonnet-4-20250514")
+	v.SetDefault("relay.default_group_id", "")
 	v.SetDefault("auth.access_token_ttl", 7200)
 	v.SetDefault("auth.refresh_token_ttl", 604800)
 	v.SetDefault("auth.ldap.user_filter", "(uid=%s)")
