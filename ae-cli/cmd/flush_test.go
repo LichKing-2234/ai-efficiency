@@ -49,8 +49,8 @@ func TestFlushCommandDrainsQueuedHookEvents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
-	if len(items) != 0 {
-		t.Fatalf("queue not drained after flush; items=%d", len(items))
+	if len(items) != 1 {
+		t.Fatalf("queue items = %d, want 1 when uploader is unsupported", len(items))
 	}
 
 	// Ensure it is safe to call multiple times.

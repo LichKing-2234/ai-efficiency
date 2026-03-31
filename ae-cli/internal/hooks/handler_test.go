@@ -180,18 +180,8 @@ func TestPostRewriteQueuesEventsWhenUploadFails(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
-	gitDirAbs := git2(t, repo, "rev-parse", "--absolute-git-dir")
-	gitCommonRel := git2(t, repo, "rev-parse", "--git-common-dir")
-	gitCommonAbs, err := absUnder(repo, gitCommonRel)
-	if err != nil {
-		t.Fatalf("absUnder(git common): %v", err)
-	}
-	wsid, err := session.DeriveWorkspaceID(repo, repo, gitDirAbs, gitCommonAbs)
-	if err != nil {
-		t.Fatalf("DeriveWorkspaceID: %v", err)
-	}
-
-	marker := &session.Marker{SessionID: "sess-1", WorkspaceID: wsid}
+	repoHint := "github.com/acme/repo"
+	marker := &session.Marker{SessionID: "sess-1", RepoFullName: repoHint}
 	if err := session.WriteMarker(repo, marker); err != nil {
 		t.Fatalf("WriteMarker: %v", err)
 	}
@@ -223,7 +213,7 @@ func TestPostRewriteQueuesEventsWhenUploadFails(t *testing.T) {
 		b, _ := json.Marshal(ev)
 		t.Fatalf("queued rewrite fields mismatch: %s", string(b))
 	}
-	wantID, err := RewriteEventID(wsid, "oldsha1", "newsha1", "amend")
+	wantID, err := RewriteEventID(repoHint, "oldsha1", "newsha1", "amend")
 	if err != nil {
 		t.Fatalf("RewriteEventID: %v", err)
 	}
@@ -254,5 +244,80 @@ func TestPostCommitSetsEventIDBeforeUpload(t *testing.T) {
 	}
 	if got := strings.TrimSpace(u.events[0].EventID); got == "" {
 		t.Fatalf("uploaded event_id is empty; expected handler to set event_id before upload")
+	}
+}
+
+func TestPostCommitUsesRepoScopedEventID(t *testing.T) {
+	repo := initRepoWithCommit2(t)
+
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repoHint := "github.com/acme/repo"
+	marker := &session.Marker{SessionID: "sess-1", RepoFullName: repoHint}
+	if err := session.WriteMarker(repo, marker); err != nil {
+		t.Fatalf("WriteMarker: %v", err)
+	}
+
+	u := &fakeUploader{}
+	h := NewHandler(u)
+	if err := h.PostCommit(context.Background(), repo); err != nil {
+		t.Fatalf("PostCommit: %v", err)
+	}
+
+	if len(u.events) != 1 {
+		t.Fatalf("uploaded events = %d, want 1", len(u.events))
+	}
+	head := git2(t, repo, "rev-parse", "HEAD")
+	wantID, err := CheckpointEventID(repoHint, head)
+	if err != nil {
+		t.Fatalf("CheckpointEventID: %v", err)
+	}
+	if got := u.events[0].EventID; got != wantID {
+		t.Fatalf("uploaded event_id = %q, want %q", got, wantID)
+	}
+}
+
+func TestPostRewriteUsesRepoScopedEventID(t *testing.T) {
+	repo := initRepoWithCommit2(t)
+
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repoHint := "github.com/acme/repo"
+	marker := &session.Marker{SessionID: "sess-1", RepoFullName: repoHint}
+	if err := session.WriteMarker(repo, marker); err != nil {
+		t.Fatalf("WriteMarker: %v", err)
+	}
+
+	u := &fakeUploader{}
+	h := NewHandler(u)
+	if err := h.PostRewrite(context.Background(), repo, "amend", strings.NewReader("oldsha1 newsha1\n")); err != nil {
+		t.Fatalf("PostRewrite: %v", err)
+	}
+
+	if len(u.events) != 1 {
+		t.Fatalf("uploaded events = %d, want 1", len(u.events))
+	}
+	wantID, err := RewriteEventID(repoHint, "oldsha1", "newsha1", "amend")
+	if err != nil {
+		t.Fatalf("RewriteEventID: %v", err)
+	}
+	if got := u.events[0].EventID; got != wantID {
+		t.Fatalf("uploaded event_id = %q, want %q", got, wantID)
+	}
+}
+
+func TestPostCommitFailsOpenOutsideGitRepo(t *testing.T) {
+	h := NewHandler(&fakeUploader{})
+	if err := h.PostCommit(context.Background(), t.TempDir()); err != nil {
+		t.Fatalf("PostCommit outside git repo should fail-open, got: %v", err)
+	}
+}
+
+func TestPostRewriteFailsOpenOutsideGitRepo(t *testing.T) {
+	h := NewHandler(&fakeUploader{})
+	if err := h.PostRewrite(context.Background(), t.TempDir(), "amend", strings.NewReader("oldsha1 newsha1\n")); err != nil {
+		t.Fatalf("PostRewrite outside git repo should fail-open, got: %v", err)
 	}
 }

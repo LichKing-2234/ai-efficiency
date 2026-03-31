@@ -198,3 +198,46 @@ func TestInstallSharedHooksSeesWorktreeCoreHooksPath(t *testing.T) {
 		t.Fatalf("core.hooksPath = %q, want %q", gotCanon, wantCanon)
 	}
 }
+
+func TestInstallSharedHooksPreservesPostRewriteInputForLegacyHook(t *testing.T) {
+	repo := initRepoWithCommit(t)
+
+	selfDir := t.TempDir()
+	selfPath := filepath.Join(selfDir, "ae-cli")
+	selfScript := "#!/bin/sh\ncat >/dev/null\n"
+	if err := os.WriteFile(selfPath, []byte(selfScript), 0o755); err != nil {
+		t.Fatalf("write fake ae-cli: %v", err)
+	}
+
+	gitCommon := git(t, repo, "rev-parse", "--git-common-dir")
+	legacyHook := filepath.Join(repo, gitCommon, "hooks", "post-rewrite")
+	if err := os.MkdirAll(filepath.Dir(legacyHook), 0o755); err != nil {
+		t.Fatalf("mkdir hooks dir: %v", err)
+	}
+	legacySaw := filepath.Join(repo, "legacy-post-rewrite.txt")
+	legacy := "#!/bin/sh\n" +
+		"cat > " + shellQuote(legacySaw) + "\n"
+	if err := os.WriteFile(legacyHook, []byte(legacy), 0o755); err != nil {
+		t.Fatalf("write legacy hook: %v", err)
+	}
+
+	if err := InstallSharedHooks(repo, selfPath); err != nil {
+		t.Fatalf("InstallSharedHooks: %v", err)
+	}
+
+	sharedHook := filepath.Join(repo, gitCommon, "ae-hooks", "post-rewrite")
+	cmd := exec.Command(sharedHook, "amend")
+	cmd.Dir = repo
+	cmd.Stdin = strings.NewReader("oldsha newsha\n")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("running shared post-rewrite failed: %v\n%s", err, string(out))
+	}
+
+	data, err := os.ReadFile(legacySaw)
+	if err != nil {
+		t.Fatalf("read legacy output: %v", err)
+	}
+	if got := string(data); got != "oldsha newsha\n" {
+		t.Fatalf("legacy stdin = %q, want %q", got, "oldsha newsha\n")
+	}
+}

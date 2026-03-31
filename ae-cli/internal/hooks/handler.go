@@ -35,6 +35,17 @@ func (u UnsupportedUploader) UploadHookEvent(ctx context.Context, ev HookEvent) 
 	return fmt.Errorf("hook upload not implemented")
 }
 
+func repoEventHint(cwd string, m *session.Marker) string {
+	if m != nil && strings.TrimSpace(m.RepoFullName) != "" {
+		return strings.TrimSpace(m.RepoFullName)
+	}
+	remote, err := gitOutput(cwd, "config", "--get", "remote.origin.url")
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(remote)
+}
+
 func gitOutput(dir string, args ...string) (string, error) {
 	cmd := exec.Command("git", args...)
 	cmd.Dir = dir
@@ -107,20 +118,11 @@ func ensureGitInfoExcludeHas(gitDirAbs string, pattern string) error {
 func (h *Handler) PostCommit(ctx context.Context, cwd string) error {
 	repoRoot, err := gitOutput(cwd, "rev-parse", "--show-toplevel")
 	if err != nil {
-		return err
+		return nil
 	}
 	head, err := gitOutput(cwd, "rev-parse", "HEAD")
 	if err != nil {
-		return err
-	}
-	gitDirAbs, _ := gitOutput(cwd, "rev-parse", "--absolute-git-dir")
-	gitCommonRel, _ := gitOutput(cwd, "rev-parse", "--git-common-dir")
-	gitCommonAbs, _ := absUnder(repoRoot, gitCommonRel)
-	scopeID := ""
-	if strings.TrimSpace(gitDirAbs) != "" && strings.TrimSpace(gitCommonAbs) != "" {
-		if wsid, err := session.DeriveWorkspaceID(repoRoot, repoRoot, gitDirAbs, gitCommonAbs); err == nil {
-			scopeID = wsid
-		}
+		return nil
 	}
 
 	m, err := session.ReadMarker(repoRoot)
@@ -146,11 +148,9 @@ func (h *Handler) PostCommit(ctx context.Context, cwd string) error {
 		return nil
 	}
 
-	if scopeID == "" && m != nil {
-		scopeID = strings.TrimSpace(m.WorkspaceID)
-	}
+	repoHint := repoEventHint(cwd, m)
 
-	eventID, err := CheckpointEventID(scopeID, head)
+	eventID, err := CheckpointEventID(repoHint, head)
 	if err != nil {
 		// Fail-open: do not block commits; treat as unbound.
 		return nil
@@ -212,19 +212,9 @@ func (h *Handler) PostRewrite(ctx context.Context, cwd string, rewriteType strin
 
 	repoRoot, err := gitOutput(cwd, "rev-parse", "--show-toplevel")
 	if err != nil {
-		return err
+		return nil
 	}
 	head, _ := gitOutput(cwd, "rev-parse", "HEAD")
-	gitDirAbs, _ := gitOutput(cwd, "rev-parse", "--absolute-git-dir")
-	gitCommonRel, _ := gitOutput(cwd, "rev-parse", "--git-common-dir")
-	gitCommonAbs, _ := absUnder(repoRoot, gitCommonRel)
-
-	scopeID := ""
-	if strings.TrimSpace(gitDirAbs) != "" && strings.TrimSpace(gitCommonAbs) != "" {
-		if wsid, err := session.DeriveWorkspaceID(repoRoot, repoRoot, gitDirAbs, gitCommonAbs); err == nil {
-			scopeID = wsid
-		}
-	}
 
 	m, err := session.ReadMarker(repoRoot)
 	if err != nil {
@@ -245,10 +235,8 @@ func (h *Handler) PostRewrite(ctx context.Context, cwd string, rewriteType strin
 	if sessionID == "" {
 		return nil
 	}
-	if scopeID == "" && m != nil {
-		scopeID = strings.TrimSpace(m.WorkspaceID)
-	}
-	if scopeID == "" || rewriteType == "" {
+	repoHint := repoEventHint(cwd, m)
+	if repoHint == "" || rewriteType == "" {
 		// Fail-open: cannot build stable idempotent IDs without scope/type.
 		return nil
 	}
@@ -270,7 +258,7 @@ func (h *Handler) PostRewrite(ctx context.Context, cwd string, rewriteType strin
 	for _, p := range pairs {
 		oldSHA := strings.TrimSpace(p[0])
 		newSHA := strings.TrimSpace(p[1])
-		eid, err := RewriteEventID(scopeID, oldSHA, newSHA, rewriteType)
+		eid, err := RewriteEventID(repoHint, oldSHA, newSHA, rewriteType)
 		if err != nil {
 			continue
 		}
@@ -333,6 +321,10 @@ func (h *Handler) bootstrapMarkerFromEnv(repoRoot, cwd, headSHA string) (*sessio
 	if b, err := gitOutput(cwd, "symbolic-ref", "--short", "-q", "HEAD"); err == nil {
 		branch = b
 	}
+	repoFullName := ""
+	if remote, err := gitOutput(cwd, "config", "--get", "remote.origin.url"); err == nil {
+		repoFullName = strings.TrimSpace(remote)
+	}
 
 	workspaceID := ""
 	if id, err := session.DeriveWorkspaceID(repoRoot, repoRoot, gitDirAbs, gitCommonAbs); err == nil {
@@ -345,6 +337,7 @@ func (h *Handler) bootstrapMarkerFromEnv(repoRoot, cwd, headSHA string) (*sessio
 		RuntimeRef:    strings.TrimSpace(os.Getenv("AE_RUNTIME_REF")),
 		ProviderName:  strings.TrimSpace(os.Getenv("AE_PROVIDER_NAME")),
 		RelayAPIKeyID: relayKeyID,
+		RepoFullName:  repoFullName,
 		Branch:        branch,
 		HeadSHA:       headSHA,
 	}
