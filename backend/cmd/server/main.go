@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/ai-efficiency/backend/ent"
+	_ "github.com/ai-efficiency/backend/ent/runtime"
 	"github.com/ai-efficiency/backend/internal/analysis"
 	"github.com/ai-efficiency/backend/internal/analysis/llm"
 	"github.com/ai-efficiency/backend/internal/attribution"
