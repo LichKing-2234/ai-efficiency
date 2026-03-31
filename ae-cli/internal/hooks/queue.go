@@ -17,6 +17,8 @@ type HookEvent struct {
 	EventID   string `json:"event_id,omitempty"`
 	SessionID string `json:"session_id,omitempty"`
 
+	AgentSnapshot map[string]any `json:"agent_snapshot,omitempty"`
+
 	// Git context (minimal slice for Task 5).
 	CommitSHA string `json:"commit_sha,omitempty"`
 

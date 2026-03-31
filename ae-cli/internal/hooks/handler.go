@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"reflect"
 	"strconv"
 	"strings"
 
@@ -129,25 +128,19 @@ func collectSnapshotForHook(workspaceRoot string, sessionID string) *collector.S
 	return snapshot
 }
 
-func applyAgentSnapshot(ev *HookEvent, snapshot *collector.Snapshot) {
-	if ev == nil || snapshot == nil {
-		return
+func snapshotPayload(snapshot *collector.Snapshot) map[string]any {
+	if snapshot == nil {
+		return nil
 	}
 	data, err := json.Marshal(snapshot)
 	if err != nil {
-		return
+		return nil
 	}
 	var payload map[string]any
 	if err := json.Unmarshal(data, &payload); err != nil {
-		return
+		return nil
 	}
-
-	rv := reflect.ValueOf(ev).Elem()
-	field := rv.FieldByName("AgentSnapshot")
-	if !field.IsValid() || !field.CanSet() || field.Kind() != reflect.Map {
-		return
-	}
-	field.Set(reflect.ValueOf(payload))
+	return payload
 }
 
 func (h *Handler) PostCommit(ctx context.Context, cwd string) error {
@@ -183,6 +176,7 @@ func (h *Handler) PostCommit(ctx context.Context, cwd string) error {
 		return nil
 	}
 	snapshot := collectSnapshotForHook(repoRoot, sessionID)
+	agentSnapshot := snapshotPayload(snapshot)
 
 	repoHint := repoEventHint(cwd, m)
 
@@ -193,12 +187,12 @@ func (h *Handler) PostCommit(ctx context.Context, cwd string) error {
 	}
 
 	ev := HookEvent{
-		Kind:      "post-commit",
-		EventID:   eventID,
-		SessionID: sessionID,
-		CommitSHA: head,
+		Kind:          "post-commit",
+		EventID:       eventID,
+		SessionID:     sessionID,
+		AgentSnapshot: agentSnapshot,
+		CommitSHA:     head,
 	}
-	applyAgentSnapshot(&ev, snapshot)
 
 	if h == nil || h.uploader == nil {
 		// No uploader wired; behave like upload failure (queue best-effort).
@@ -273,6 +267,7 @@ func (h *Handler) PostRewrite(ctx context.Context, cwd string, rewriteType strin
 		return nil
 	}
 	snapshot := collectSnapshotForHook(repoRoot, sessionID)
+	agentSnapshot := snapshotPayload(snapshot)
 	repoHint := repoEventHint(cwd, m)
 	if repoHint == "" || rewriteType == "" {
 		// Fail-open: cannot build stable idempotent IDs without scope/type.
@@ -301,14 +296,14 @@ func (h *Handler) PostRewrite(ctx context.Context, cwd string, rewriteType strin
 			continue
 		}
 		ev := HookEvent{
-			Kind:         "post-rewrite",
-			EventID:      eid,
-			SessionID:    sessionID,
-			RewriteType:  rewriteType,
-			OldCommitSHA: oldSHA,
-			NewCommitSHA: newSHA,
+			Kind:          "post-rewrite",
+			EventID:       eid,
+			SessionID:     sessionID,
+			AgentSnapshot: agentSnapshot,
+			RewriteType:   rewriteType,
+			OldCommitSHA:  oldSHA,
+			NewCommitSHA:  newSHA,
 		}
-		applyAgentSnapshot(&ev, snapshot)
 
 		if h == nil || h.uploader == nil {
 			if q != nil {

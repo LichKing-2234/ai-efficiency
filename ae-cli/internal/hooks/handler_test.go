@@ -52,6 +52,34 @@ func initRepoWithCommit2(t *testing.T) string {
 	return dir
 }
 
+func writeCollectorFixtures(t *testing.T, workspaceRoot string) (string, string, string) {
+	t.Helper()
+
+	dir := t.TempDir()
+	codex := filepath.Join(dir, "codex.jsonl")
+	claude := filepath.Join(dir, "claude.jsonl")
+	kiro := filepath.Join(dir, "kiro.json")
+
+	codexBody := `{"timestamp":"2026-03-27T09:00:00Z","type":"session_meta","payload":{"id":"codex-sess-1","cwd":"` + workspaceRoot + `"}}
+{"timestamp":"2026-03-27T09:05:00Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":1200,"cached_input_tokens":300,"output_tokens":250,"reasoning_output_tokens":80,"total_tokens":1450}}}}`
+	if err := os.WriteFile(codex, []byte(codexBody), 0o600); err != nil {
+		t.Fatalf("write codex fixture: %v", err)
+	}
+
+	claudeBody := `{"type":"assistant","cwd":"` + workspaceRoot + `","sessionId":"claude-sess-1","message":{"usage":{"input_tokens":500,"output_tokens":120,"cache_creation_input_tokens":40,"cache_read_input_tokens":25}}}
+{"type":"assistant","cwd":"` + workspaceRoot + `","sessionId":"claude-sess-1","message":{"usage":{"input_tokens":600,"output_tokens":140,"cache_creation_input_tokens":10,"cache_read_input_tokens":15}}}`
+	if err := os.WriteFile(claude, []byte(claudeBody), 0o600); err != nil {
+		t.Fatalf("write claude fixture: %v", err)
+	}
+
+	kiroBody := `{"session_id":"kiro-sess-1","cwd":"` + workspaceRoot + `","session_state":{"rts_model_state":{"conversation_id":"conv-kiro-1","context_usage_percentage":47.5}}}`
+	if err := os.WriteFile(kiro, []byte(kiroBody), 0o600); err != nil {
+		t.Fatalf("write kiro fixture: %v", err)
+	}
+
+	return codex, claude, kiro
+}
+
 func TestPostCommitBootstrapsMarkerFromEnv(t *testing.T) {
 	repo := initRepoWithCommit2(t)
 
@@ -319,5 +347,92 @@ func TestPostRewriteFailsOpenOutsideGitRepo(t *testing.T) {
 	h := NewHandler(&fakeUploader{})
 	if err := h.PostRewrite(context.Background(), t.TempDir(), "amend", strings.NewReader("oldsha1 newsha1\n")); err != nil {
 		t.Fatalf("PostRewrite outside git repo should fail-open, got: %v", err)
+	}
+}
+
+func TestPostCommitAttachesCollectorSnapshotAndWritesCache(t *testing.T) {
+	repo := initRepoWithCommit2(t)
+
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	workspaceRoot := git2(t, repo, "rev-parse", "--show-toplevel")
+	codex, claude, kiro := writeCollectorFixtures(t, workspaceRoot)
+	t.Setenv("AE_CODEX_SESSION_FILES", codex)
+	t.Setenv("AE_CLAUDE_SESSION_FILES", claude)
+	t.Setenv("AE_KIRO_SESSION_FILES", kiro)
+
+	marker := &session.Marker{SessionID: "sess-collector", RepoFullName: "github.com/acme/repo"}
+	if err := session.WriteMarker(repo, marker); err != nil {
+		t.Fatalf("WriteMarker: %v", err)
+	}
+
+	u := &fakeUploader{}
+	h := NewHandler(u)
+	if err := h.PostCommit(context.Background(), repo); err != nil {
+		t.Fatalf("PostCommit: %v", err)
+	}
+
+	if len(u.events) != 1 {
+		t.Fatalf("uploaded events = %d, want 1", len(u.events))
+	}
+	if u.events[0].AgentSnapshot == nil {
+		t.Fatalf("uploaded agent snapshot is nil")
+	}
+	codexSnapshot, _ := u.events[0].AgentSnapshot["codex"].(map[string]any)
+	if got := codexSnapshot["source_session_id"]; got != "codex-sess-1" {
+		t.Fatalf("codex source_session_id = %v, want codex-sess-1", got)
+	}
+
+	cacheFile := filepath.Join(session.RuntimeCollectorsDir("sess-collector"), "latest.json")
+	data, err := os.ReadFile(cacheFile)
+	if err != nil {
+		t.Fatalf("read cache file: %v", err)
+	}
+	if !strings.Contains(string(data), "\"conversation_id\": \"conv-kiro-1\"") {
+		t.Fatalf("cache file missing kiro snapshot: %s", string(data))
+	}
+}
+
+func TestPostCommitQueuesCollectorSnapshotWhenUploadFails(t *testing.T) {
+	repo := initRepoWithCommit2(t)
+
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	workspaceRoot := git2(t, repo, "rev-parse", "--show-toplevel")
+	codex, claude, kiro := writeCollectorFixtures(t, workspaceRoot)
+	t.Setenv("AE_CODEX_SESSION_FILES", codex)
+	t.Setenv("AE_CLAUDE_SESSION_FILES", claude)
+	t.Setenv("AE_KIRO_SESSION_FILES", kiro)
+
+	marker := &session.Marker{SessionID: "sess-collector", RepoFullName: "github.com/acme/repo"}
+	if err := session.WriteMarker(repo, marker); err != nil {
+		t.Fatalf("WriteMarker: %v", err)
+	}
+
+	u := &fakeUploader{err: errors.New("upload failed")}
+	h := NewHandler(u)
+	if err := h.PostCommit(context.Background(), repo); err != nil {
+		t.Fatalf("PostCommit should fail-open, got: %v", err)
+	}
+
+	q, err := NewLocalQueue("sess-collector")
+	if err != nil {
+		t.Fatalf("NewLocalQueue: %v", err)
+	}
+	items, err := q.List()
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("queued items = %d, want 1", len(items))
+	}
+	if items[0].Event.AgentSnapshot == nil {
+		t.Fatalf("queued agent snapshot is nil")
+	}
+	claudeSnapshot, _ := items[0].Event.AgentSnapshot["claude"].(map[string]any)
+	if got := claudeSnapshot["cached_input_tokens"]; got != float64(90) {
+		t.Fatalf("claude cached_input_tokens = %v, want 90", got)
 	}
 }
