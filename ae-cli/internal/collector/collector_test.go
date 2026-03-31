@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -289,5 +290,37 @@ func TestBuildSnapshotReturnsNilWhenNoToolDataFound(t *testing.T) {
 	}
 	if snapshot != nil {
 		t.Fatalf("snapshot = %+v, want nil when no tool data found", snapshot)
+	}
+}
+
+func TestBuildSnapshotReadsLargeCodexAndClaudeJSONLLines(t *testing.T) {
+	workspaceRoot := "/tmp/repo"
+	dir := t.TempDir()
+	blob := strings.Repeat("x", 5*1024*1024)
+
+	codex := filepath.Join(dir, "codex-large.jsonl")
+	if err := os.WriteFile(codex, []byte(`{"timestamp":"2026-03-27T09:00:00Z","type":"session_meta","payload":{"id":"codex-large","cwd":"`+workspaceRoot+`","note":"`+blob+`"}}
+{"timestamp":"2026-03-27T09:05:00Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":10,"cached_input_tokens":1,"output_tokens":2,"reasoning_output_tokens":0,"total_tokens":13}},"note":"`+blob+`"}}`), 0o600); err != nil {
+		t.Fatalf("write large codex: %v", err)
+	}
+
+	claude := filepath.Join(dir, "claude-large.jsonl")
+	if err := os.WriteFile(claude, []byte(`{"type":"assistant","cwd":"`+workspaceRoot+`","sessionId":"claude-large","message":{"usage":{"input_tokens":20,"output_tokens":3,"cache_creation_input_tokens":1,"cache_read_input_tokens":1},"note":"`+blob+`"}}`), 0o600); err != nil {
+		t.Fatalf("write large claude: %v", err)
+	}
+
+	snapshot, err := BuildSnapshot(Paths{
+		CodexFiles:    []string{codex},
+		ClaudeFiles:   []string{claude},
+		WorkspaceRoot: workspaceRoot,
+	})
+	if err != nil {
+		t.Fatalf("BuildSnapshot() error = %v", err)
+	}
+	if snapshot.Codex == nil || snapshot.Codex.SourceSessionID != "codex-large" {
+		t.Fatalf("Codex snapshot = %+v", snapshot.Codex)
+	}
+	if snapshot.Claude == nil || snapshot.Claude.SourceSessionID != "claude-large" {
+		t.Fatalf("Claude snapshot = %+v", snapshot.Claude)
 	}
 }

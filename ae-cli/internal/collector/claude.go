@@ -2,8 +2,11 @@ package collector
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 )
@@ -32,18 +35,22 @@ func readClaudeSnapshot(path, workspaceRoot string) (*ClaudeSnapshot, error) {
 	wantCWD := cleanPath(workspaceRoot)
 	out := &ClaudeSnapshot{}
 
-	sc := bufio.NewScanner(f)
-	buf := make([]byte, 0, 1024*1024)
-	sc.Buffer(buf, 4*1024*1024)
-
-	for sc.Scan() {
-		line := strings.TrimSpace(sc.Text())
-		if line == "" {
+	r := bufio.NewReaderSize(f, 64*1024)
+	for {
+		line, err := r.ReadBytes('\n')
+		if err != nil && !errors.Is(err, io.EOF) {
+			return nil, fmt.Errorf("read line: %w", err)
+		}
+		line = bytes.TrimSpace(line)
+		if len(line) == 0 {
+			if errors.Is(err, io.EOF) {
+				break
+			}
 			continue
 		}
 
 		var row claudeLine
-		if err := json.Unmarshal([]byte(line), &row); err != nil {
+		if err := json.Unmarshal(line, &row); err != nil {
 			continue
 		}
 		if row.Type != "assistant" || !samePath(row.CWD, wantCWD) {
@@ -56,11 +63,11 @@ func readClaudeSnapshot(path, workspaceRoot string) (*ClaudeSnapshot, error) {
 		out.CachedInputTokens += row.Message.Usage.CacheCreationInputToken + row.Message.Usage.CacheReadInputToken
 
 		var raw map[string]any
-		_ = json.Unmarshal([]byte(line), &raw)
+		_ = json.Unmarshal(line, &raw)
 		out.RawPayload = raw
-	}
-	if err := sc.Err(); err != nil {
-		return nil, fmt.Errorf("scan file: %w", err)
+		if errors.Is(err, io.EOF) {
+			break
+		}
 	}
 
 	if out.SourceSessionID == "" && out.InputTokens == 0 && out.OutputTokens == 0 && out.CachedInputTokens == 0 {

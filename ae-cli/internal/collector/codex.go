@@ -2,8 +2,11 @@ package collector
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -43,18 +46,22 @@ func readCodexSnapshot(path, workspaceRoot string) (*CodexSnapshot, error) {
 	var sourceSessionID string
 	var snapshot *CodexSnapshot
 
-	sc := bufio.NewScanner(f)
-	buf := make([]byte, 0, 1024*1024)
-	sc.Buffer(buf, 4*1024*1024)
-
-	for sc.Scan() {
-		line := strings.TrimSpace(sc.Text())
-		if line == "" {
+	r := bufio.NewReaderSize(f, 64*1024)
+	for {
+		line, err := r.ReadBytes('\n')
+		if err != nil && !errors.Is(err, io.EOF) {
+			return nil, fmt.Errorf("read line: %w", err)
+		}
+		line = bytes.TrimSpace(line)
+		if len(line) == 0 {
+			if errors.Is(err, io.EOF) {
+				break
+			}
 			continue
 		}
 
 		var row codexLine
-		if err := json.Unmarshal([]byte(line), &row); err != nil {
+		if err := json.Unmarshal(line, &row); err != nil {
 			continue
 		}
 
@@ -90,9 +97,9 @@ func readCodexSnapshot(path, workspaceRoot string) (*CodexSnapshot, error) {
 				RawPayload:        raw,
 			}
 		}
-	}
-	if err := sc.Err(); err != nil {
-		return nil, fmt.Errorf("scan file: %w", err)
+		if errors.Is(err, io.EOF) {
+			break
+		}
 	}
 	return snapshot, nil
 }
