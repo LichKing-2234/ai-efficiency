@@ -9,6 +9,7 @@ const route = useRoute()
 const router = useRouter()
 const loading = ref(true)
 const session = ref<Session | null>(null)
+let currentLoadToken = 0
 
 function formatDate(value?: string | null) {
   if (!value) return '—'
@@ -16,14 +17,18 @@ function formatDate(value?: string | null) {
 }
 
 async function loadSession(sessionId: string) {
+  const loadToken = ++currentLoadToken
   loading.value = true
   try {
     const res = await getSession(sessionId)
+    if (loadToken != currentLoadToken) return
     session.value = res.data.data ?? null
   } catch {
+    if (loadToken != currentLoadToken) return
     session.value = null
     router.replace('/sessions')
   } finally {
+    if (loadToken != currentLoadToken) return
     loading.value = false
   }
 }
