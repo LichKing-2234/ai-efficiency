@@ -44,7 +44,7 @@ func readClaudeSnapshot(path, workspaceRoot string) (*ClaudeSnapshot, error) {
 
 		var row claudeLine
 		if err := json.Unmarshal([]byte(line), &row); err != nil {
-			return nil, fmt.Errorf("decode line: %w", err)
+			continue
 		}
 		if row.Type != "assistant" || !samePath(row.CWD, wantCWD) {
 			continue

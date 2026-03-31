@@ -25,7 +25,7 @@ func readKiroSnapshot(path, workspaceRoot string) (*KiroSnapshot, error) {
 
 	var row kiroSession
 	if err := json.Unmarshal(data, &row); err != nil {
-		return nil, err
+		return nil, nil
 	}
 	if !samePath(row.CWD, workspaceRoot) {
 		return nil, nil

@@ -55,14 +55,14 @@ func readCodexSnapshot(path, workspaceRoot string) (*CodexSnapshot, error) {
 
 		var row codexLine
 		if err := json.Unmarshal([]byte(line), &row); err != nil {
-			return nil, fmt.Errorf("decode line: %w", err)
+			continue
 		}
 
 		switch row.Type {
 		case "session_meta":
 			var meta codexSessionMeta
 			if err := json.Unmarshal(row.Payload, &meta); err != nil {
-				return nil, fmt.Errorf("decode session_meta payload: %w", err)
+				continue
 			}
 			if samePath(meta.CWD, wantCWD) {
 				sourceSessionID = strings.TrimSpace(meta.ID)
@@ -73,7 +73,7 @@ func readCodexSnapshot(path, workspaceRoot string) (*CodexSnapshot, error) {
 			}
 			var payload codexTokenPayload
 			if err := json.Unmarshal(row.Payload, &payload); err != nil {
-				return nil, fmt.Errorf("decode event_msg payload: %w", err)
+				continue
 			}
 			if payload.Type != "token_count" {
 				continue

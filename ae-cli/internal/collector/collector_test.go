@@ -1,6 +1,7 @@
 package collector
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -168,5 +169,73 @@ func TestDefaultPathsMergesEnvOverridesWithDefaults(t *testing.T) {
 	}
 	if len(paths.KiroFiles) == 0 || paths.KiroFiles[0] != kiroDefault {
 		t.Fatalf("KiroFiles = %v, want default kiro path", paths.KiroFiles)
+	}
+}
+
+func TestBuildSnapshotToleratesDirtyJSONLTrailingLines(t *testing.T) {
+	workspaceRoot := "/tmp/repo"
+	dir := t.TempDir()
+
+	codex := filepath.Join(dir, "codex-dirty.jsonl")
+	if err := os.WriteFile(codex, []byte(`{"timestamp":"2026-03-27T09:00:00Z","type":"session_meta","payload":{"id":"codex-dirty","cwd":"`+workspaceRoot+`"}}
+{"timestamp":"2026-03-27T09:05:00Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"cached_input_tokens":10,"output_tokens":20,"reasoning_output_tokens":5,"total_tokens":135}}}}
+{broken`), 0o600); err != nil {
+		t.Fatalf("write codex dirty: %v", err)
+	}
+
+	claude := filepath.Join(dir, "claude-dirty.jsonl")
+	if err := os.WriteFile(claude, []byte(`{"type":"assistant","cwd":"`+workspaceRoot+`","sessionId":"claude-dirty","message":{"usage":{"input_tokens":50,"output_tokens":10,"cache_creation_input_tokens":5,"cache_read_input_tokens":5}}}
+{broken`), 0o600); err != nil {
+		t.Fatalf("write claude dirty: %v", err)
+	}
+
+	snapshot, err := BuildSnapshot(Paths{
+		CodexFiles:    []string{codex},
+		ClaudeFiles:   []string{claude},
+		WorkspaceRoot: workspaceRoot,
+	})
+	if err != nil {
+		t.Fatalf("BuildSnapshot() error = %v", err)
+	}
+	if snapshot.Codex == nil || snapshot.Codex.SourceSessionID != "codex-dirty" {
+		t.Fatalf("Codex snapshot = %+v", snapshot.Codex)
+	}
+	if snapshot.Claude == nil || snapshot.Claude.SourceSessionID != "claude-dirty" {
+		t.Fatalf("Claude snapshot = %+v", snapshot.Claude)
+	}
+}
+
+func TestDefaultPathsKeepsMostRecentDefaultFiles(t *testing.T) {
+	origHome := os.Getenv("HOME")
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+	t.Cleanup(func() { _ = os.Setenv("HOME", origHome) })
+
+	codexDir := filepath.Join(tmpHome, ".codex")
+	if err := os.MkdirAll(codexDir, 0o700); err != nil {
+		t.Fatalf("mkdir codex dir: %v", err)
+	}
+
+	base := time.Date(2026, 3, 31, 9, 0, 0, 0, time.UTC)
+	for i := 0; i < 12; i++ {
+		path := filepath.Join(codexDir, fmt.Sprintf("codex-%02d.jsonl", i))
+		if err := os.WriteFile(path, []byte("{}\n"), 0o600); err != nil {
+			t.Fatalf("write %s: %v", path, err)
+		}
+		ts := base.Add(time.Duration(i) * time.Minute)
+		if err := os.Chtimes(path, ts, ts); err != nil {
+			t.Fatalf("chtimes %s: %v", path, err)
+		}
+	}
+
+	paths := DefaultPaths("/tmp/repo")
+	if len(paths.CodexFiles) > 8 {
+		t.Fatalf("CodexFiles len = %d, want <= 8", len(paths.CodexFiles))
+	}
+	if len(paths.CodexFiles) == 0 {
+		t.Fatal("expected recent codex files")
+	}
+	if got := filepath.Base(paths.CodexFiles[0]); got != "codex-11.jsonl" {
+		t.Fatalf("first CodexFiles entry = %s, want newest file", got)
 	}
 }

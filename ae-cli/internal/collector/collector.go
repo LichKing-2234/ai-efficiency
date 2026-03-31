@@ -13,15 +13,12 @@ import (
 	"github.com/ai-efficiency/ae-cli/internal/session"
 )
 
+const maxDefaultFilesPerTool = 8
+
 func BuildSnapshot(paths Paths) (*Snapshot, error) {
 	out := &Snapshot{}
-	var modTime time.Time
 
-	for _, p := range paths.CodexFiles {
-		info, statErr := os.Stat(p)
-		if statErr != nil {
-			continue
-		}
+	for _, p := range orderFilesByModTime(paths.CodexFiles) {
 		s, err := readCodexSnapshot(p, paths.WorkspaceRoot)
 		if err != nil {
 			continue
@@ -29,18 +26,11 @@ func BuildSnapshot(paths Paths) (*Snapshot, error) {
 		if s == nil {
 			continue
 		}
-		if out.Codex == nil || info.ModTime().After(modTime) {
-			out.Codex = s
-			modTime = info.ModTime()
-		}
+		out.Codex = s
+		break
 	}
 
-	modTime = time.Time{}
-	for _, p := range paths.ClaudeFiles {
-		info, statErr := os.Stat(p)
-		if statErr != nil {
-			continue
-		}
+	for _, p := range orderFilesByModTime(paths.ClaudeFiles) {
 		s, err := readClaudeSnapshot(p, paths.WorkspaceRoot)
 		if err != nil {
 			continue
@@ -48,18 +38,11 @@ func BuildSnapshot(paths Paths) (*Snapshot, error) {
 		if s == nil {
 			continue
 		}
-		if out.Claude == nil || info.ModTime().After(modTime) {
-			out.Claude = s
-			modTime = info.ModTime()
-		}
+		out.Claude = s
+		break
 	}
 
-	modTime = time.Time{}
-	for _, p := range paths.KiroFiles {
-		info, statErr := os.Stat(p)
-		if statErr != nil {
-			continue
-		}
+	for _, p := range orderFilesByModTime(paths.KiroFiles) {
 		s, err := readKiroSnapshot(p, paths.WorkspaceRoot)
 		if err != nil {
 			continue
@@ -67,10 +50,8 @@ func BuildSnapshot(paths Paths) (*Snapshot, error) {
 		if s == nil {
 			continue
 		}
-		if out.Kiro == nil || info.ModTime().After(modTime) {
-			out.Kiro = s
-			modTime = info.ModTime()
-		}
+		out.Kiro = s
+		break
 	}
 
 	return out, nil
@@ -132,6 +113,36 @@ func DefaultPaths(workspaceRoot string) Paths {
 	return out
 }
 
+func orderFilesByModTime(paths []string) []string {
+	type candidate struct {
+		path    string
+		modTime time.Time
+	}
+	if len(paths) == 0 {
+		return nil
+	}
+	candidates := make([]candidate, 0, len(paths))
+	for _, path := range paths {
+		info, err := os.Stat(path)
+		if err != nil {
+			candidates = append(candidates, candidate{path: path})
+			continue
+		}
+		candidates = append(candidates, candidate{path: path, modTime: info.ModTime()})
+	}
+	sort.SliceStable(candidates, func(i, j int) bool {
+		if candidates[i].modTime.Equal(candidates[j].modTime) {
+			return candidates[i].path > candidates[j].path
+		}
+		return candidates[i].modTime.After(candidates[j].modTime)
+	})
+	out := make([]string, 0, len(candidates))
+	for _, c := range candidates {
+		out = append(out, c.path)
+	}
+	return out
+}
+
 func envList(key string) []string {
 	raw := strings.TrimSpace(os.Getenv(key))
 	if raw == "" {
@@ -146,7 +157,6 @@ func envList(key string) []string {
 		}
 		out = append(out, p)
 	}
-	sort.Strings(out)
 	return out
 }
 
@@ -158,16 +168,38 @@ func walkFiles(root string, ext string) []string {
 	if ext == "" {
 		return nil
 	}
-	var out []string
+	type candidate struct {
+		path    string
+		modTime time.Time
+	}
+	var matches []candidate
 	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d == nil || d.IsDir() {
 			return nil
 		}
 		if strings.EqualFold(filepath.Ext(path), ext) {
-			out = append(out, path)
+			info, statErr := d.Info()
+			if statErr != nil {
+				return nil
+			}
+			matches = append(matches, candidate{path: path, modTime: info.ModTime()})
 		}
 		return nil
 	})
-	sort.Strings(out)
+	sort.Slice(matches, func(i, j int) bool {
+		if matches[i].modTime.Equal(matches[j].modTime) {
+			return matches[i].path > matches[j].path
+		}
+		return matches[i].modTime.After(matches[j].modTime)
+	})
+
+	limit := len(matches)
+	if limit > maxDefaultFilesPerTool {
+		limit = maxDefaultFilesPerTool
+	}
+	out := make([]string, 0, limit)
+	for i := 0; i < limit; i++ {
+		out = append(out, matches[i].path)
+	}
 	return out
 }

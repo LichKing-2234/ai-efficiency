@@ -2,6 +2,7 @@ package hooks
 
 import (
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -64,5 +65,40 @@ func TestQueueRejectsMissingEventID(t *testing.T) {
 	ev := HookEvent{Kind: "post-commit", SessionID: "sess-1", CommitSHA: "deadbeef"}
 	if err := q.Enqueue(ev); err == nil {
 		t.Fatalf("expected enqueue to fail due to missing event_id, got nil")
+	}
+}
+
+func TestQueueReadsLargeAgentSnapshotPayload(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	q, err := NewLocalQueue("sess-1")
+	if err != nil {
+		t.Fatalf("NewLocalQueue: %v", err)
+	}
+
+	ev := HookEvent{
+		Kind:      "post-commit",
+		SessionID: "sess-1",
+		CommitSHA: "deadbeef",
+		EventID:   "evt-large",
+		AgentSnapshot: map[string]any{
+			"codex": map[string]any{
+				"raw_payload": map[string]any{
+					"blob": strings.Repeat("x", 128*1024),
+				},
+			},
+		},
+	}
+	if err := q.Enqueue(ev); err != nil {
+		t.Fatalf("Enqueue: %v", err)
+	}
+
+	items, err := q.List()
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("items = %d, want 1", len(items))
 	}
 }

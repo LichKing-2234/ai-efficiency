@@ -12,6 +12,8 @@ import (
 	"github.com/ai-efficiency/ae-cli/internal/session"
 )
 
+const maxQueueLineSize = 8 * 1024 * 1024
+
 type HookEvent struct {
 	Kind      string `json:"kind"`
 	EventID   string `json:"event_id,omitempty"`
@@ -76,6 +78,7 @@ func (q *Queue) List() ([]QueueItem, error) {
 
 	var out []QueueItem
 	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 0, 64*1024), maxQueueLineSize)
 	for sc.Scan() {
 		line := strings.TrimSpace(sc.Text())
 		if line == "" {
