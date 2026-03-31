@@ -241,3 +241,113 @@ func TestInstallSharedHooksPreservesPostRewriteInputForLegacyHook(t *testing.T) 
 		t.Fatalf("legacy stdin = %q, want %q", got, "oldsha newsha\n")
 	}
 }
+
+func TestInstallSharedHooksPreservesDistinctLegacyHooksPerWorktree(t *testing.T) {
+	repo := initRepoWithCommit(t)
+	git(t, repo, "config", "extensions.worktreeConfig", "true")
+
+	worktreeParent := t.TempDir()
+	worktree := filepath.Join(worktreeParent, "linked")
+	git(t, repo, "worktree", "add", "-b", "linked-test", worktree)
+
+	legacyMainDir := filepath.Join(repo, "legacy-main")
+	if err := os.MkdirAll(legacyMainDir, 0o755); err != nil {
+		t.Fatalf("mkdir legacy-main: %v", err)
+	}
+	mainRan := filepath.Join(repo, "main-legacy.txt")
+	mainHook := "#!/bin/sh\n" +
+		"echo main >> " + shellQuote(mainRan) + "\n"
+	if err := os.WriteFile(filepath.Join(legacyMainDir, "post-commit"), []byte(mainHook), 0o755); err != nil {
+		t.Fatalf("write main legacy hook: %v", err)
+	}
+
+	legacyLinkedDir := filepath.Join(worktree, "legacy-linked")
+	if err := os.MkdirAll(legacyLinkedDir, 0o755); err != nil {
+		t.Fatalf("mkdir legacy-linked: %v", err)
+	}
+	linkedRan := filepath.Join(worktree, "linked-legacy.txt")
+	linkedHook := "#!/bin/sh\n" +
+		"echo linked >> " + shellQuote(linkedRan) + "\n"
+	if err := os.WriteFile(filepath.Join(legacyLinkedDir, "post-commit"), []byte(linkedHook), 0o755); err != nil {
+		t.Fatalf("write linked legacy hook: %v", err)
+	}
+
+	git(t, repo, "config", "--worktree", "core.hooksPath", legacyMainDir)
+	git(t, worktree, "config", "--worktree", "core.hooksPath", legacyLinkedDir)
+
+	if err := InstallSharedHooks(repo, "/bin/true"); err != nil {
+		t.Fatalf("InstallSharedHooks(repo): %v", err)
+	}
+	if err := InstallSharedHooks(worktree, "/bin/true"); err != nil {
+		t.Fatalf("InstallSharedHooks(worktree): %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(repo, "main.txt"), []byte("main\n"), 0o644); err != nil {
+		t.Fatalf("write main.txt: %v", err)
+	}
+	git(t, repo, "add", "main.txt")
+	git(t, repo, "commit", "-m", "main")
+
+	if err := os.WriteFile(filepath.Join(worktree, "linked.txt"), []byte("linked\n"), 0o644); err != nil {
+		t.Fatalf("write linked.txt: %v", err)
+	}
+	git(t, worktree, "add", "linked.txt")
+	git(t, worktree, "commit", "-m", "linked")
+
+	if _, err := os.Stat(mainRan); err != nil {
+		t.Fatalf("expected main worktree legacy hook to run: %v", err)
+	}
+	if _, err := os.Stat(linkedRan); err != nil {
+		t.Fatalf("expected linked worktree legacy hook to run: %v", err)
+	}
+}
+
+func TestInstallSharedHooksPreservesPostRewriteInputWithoutMktemp(t *testing.T) {
+	repo := initRepoWithCommit(t)
+
+	selfDir := t.TempDir()
+	selfPath := filepath.Join(selfDir, "ae-cli")
+	selfScript := "#!/bin/sh\ncat >/dev/null\n"
+	if err := os.WriteFile(selfPath, []byte(selfScript), 0o755); err != nil {
+		t.Fatalf("write fake ae-cli: %v", err)
+	}
+
+	gitCommon := git(t, repo, "rev-parse", "--git-common-dir")
+	legacyHook := filepath.Join(repo, gitCommon, "hooks", "post-rewrite")
+	if err := os.MkdirAll(filepath.Dir(legacyHook), 0o755); err != nil {
+		t.Fatalf("mkdir hooks dir: %v", err)
+	}
+	legacySaw := filepath.Join(repo, "legacy-post-rewrite-no-mktemp.txt")
+	legacy := "#!/bin/sh\n" +
+		"cat > " + shellQuote(legacySaw) + "\n"
+	if err := os.WriteFile(legacyHook, []byte(legacy), 0o755); err != nil {
+		t.Fatalf("write legacy hook: %v", err)
+	}
+
+	if err := InstallSharedHooks(repo, selfPath); err != nil {
+		t.Fatalf("InstallSharedHooks: %v", err)
+	}
+
+	binDir := t.TempDir()
+	fakeMktemp := filepath.Join(binDir, "mktemp")
+	if err := os.WriteFile(fakeMktemp, []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
+		t.Fatalf("write fake mktemp: %v", err)
+	}
+
+	sharedHook := filepath.Join(repo, gitCommon, "ae-hooks", "post-rewrite")
+	cmd := exec.Command(sharedHook, "amend")
+	cmd.Dir = repo
+	cmd.Stdin = strings.NewReader("oldsha newsha\n")
+	cmd.Env = append(os.Environ(), "PATH="+binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("running shared post-rewrite failed: %v\n%s", err, string(out))
+	}
+
+	data, err := os.ReadFile(legacySaw)
+	if err != nil {
+		t.Fatalf("read legacy output: %v", err)
+	}
+	if got := string(data); got != "oldsha newsha\n" {
+		t.Fatalf("legacy stdin = %q, want %q", got, "oldsha newsha\n")
+	}
+}

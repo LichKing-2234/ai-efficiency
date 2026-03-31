@@ -68,6 +68,11 @@ func fileExists(p string) bool {
 	return err == nil
 }
 
+func legacyWorktreeKey(gitDir string) string {
+	replacer := strings.NewReplacer("/", "_", "\\", "_", ":", "_")
+	return replacer.Replace(strings.TrimSpace(gitDir))
+}
+
 func copyFile(dst, src string, mode os.FileMode) error {
 	b, err := os.ReadFile(src)
 	if err != nil {
@@ -96,6 +101,10 @@ func InstallSharedHooks(cwd string, selfPath string) error {
 	if err != nil {
 		return err
 	}
+	gitDirAbs, err := gitOutputInstall(cwd, "rev-parse", "--absolute-git-dir")
+	if err != nil {
+		return err
+	}
 	gitCommonRel, err := gitOutputInstall(cwd, "rev-parse", "--git-common-dir")
 	if err != nil {
 		return err
@@ -107,6 +116,8 @@ func InstallSharedHooks(cwd string, selfPath string) error {
 
 	sharedDir := filepath.Join(gitCommonAbs, "ae-hooks")
 	sharedCanon, _ := canonicalPath(sharedDir)
+	legacyRootDir := filepath.Join(sharedDir, "legacy")
+	worktreeLegacyDir := filepath.Join(legacyRootDir, legacyWorktreeKey(gitDirAbs))
 
 	// Detect legacy hooks path.
 	legacyHooksDir := ""
@@ -139,7 +150,7 @@ func InstallSharedHooks(cwd string, selfPath string) error {
 	}
 
 	for _, hookName := range []string{"post-commit", "post-rewrite"} {
-		legacyCopy := filepath.Join(sharedDir, "legacy", hookName)
+		legacyCopy := filepath.Join(worktreeLegacyDir, hookName)
 		legacyExists := fileExists(legacyCopy)
 
 		// If we haven't captured a legacy hook yet, try to copy it now.
@@ -164,39 +175,26 @@ func InstallSharedHooks(cwd string, selfPath string) error {
 		runnerPath := filepath.Join(sharedDir, hookName)
 		var b strings.Builder
 		b.WriteString("#!/bin/sh\n")
+		b.WriteString("git_dir=$(git rev-parse --absolute-git-dir 2>/dev/null || printf '')\n")
+		b.WriteString("legacy=\"\"\n")
+		b.WriteString("if [ -n \"$git_dir\" ]; then\n")
+		b.WriteString("  legacy_key=$(printf '%s' \"$git_dir\" | tr '/:\\\\' '___')\n")
+		b.WriteString("  legacy=" + shellQuote(legacyRootDir) + "/$legacy_key/" + hookName + "\n")
+		b.WriteString("fi\n")
 		if hookName == "post-rewrite" {
-			b.WriteString("tmp=\"\"\n")
-			b.WriteString("if command -v mktemp >/dev/null 2>&1; then\n")
-			b.WriteString("  tmp=$(mktemp \"${TMPDIR:-/tmp}/ae-post-rewrite.XXXXXX\" 2>/dev/null || true)\n")
-			b.WriteString("fi\n")
-			b.WriteString("if [ -n \"$tmp\" ]; then\n")
-			b.WriteString("  cat >\"$tmp\" || true\n")
+			b.WriteString("tmp=" + shellQuote(filepath.Join(sharedDir, ".post-rewrite")) + ".$$\n")
+			b.WriteString("cat >\"$tmp\" || true\n")
 			b.WriteString("  " + shellQuote(selfPath) + " hook " + hookName + " \"$@\" <\"$tmp\" || true\n")
-			if legacyExists {
-				b.WriteString("  legacy=" + shellQuote(legacyCopy) + "\n")
-				b.WriteString("  if [ -x \"$legacy\" ]; then\n")
-				b.WriteString("    \"$legacy\" \"$@\" <\"$tmp\"\n")
-				b.WriteString("  fi\n")
-			}
-			b.WriteString("  rm -f \"$tmp\"\n")
-			b.WriteString("else\n")
-			b.WriteString("  " + shellQuote(selfPath) + " hook " + hookName + " \"$@\" || true\n")
-			if legacyExists {
-				b.WriteString("  legacy=" + shellQuote(legacyCopy) + "\n")
-				b.WriteString("  if [ -x \"$legacy\" ]; then\n")
-				b.WriteString("    \"$legacy\" \"$@\"\n")
-				b.WriteString("  fi\n")
-			}
+			b.WriteString("if [ -x \"$legacy\" ]; then\n")
+			b.WriteString("  \"$legacy\" \"$@\" <\"$tmp\"\n")
 			b.WriteString("fi\n")
+			b.WriteString("rm -f \"$tmp\"\n")
 		} else {
 			// The runner itself must not break commits. Any upload failures are handled in ae-cli.
 			b.WriteString(shellQuote(selfPath) + " hook " + hookName + " \"$@\" || true\n")
-			if legacyExists {
-				b.WriteString("legacy=" + shellQuote(legacyCopy) + "\n")
-				b.WriteString("if [ -x \"$legacy\" ]; then\n")
-				b.WriteString("  \"$legacy\" \"$@\"\n")
-				b.WriteString("fi\n")
-			}
+			b.WriteString("if [ -x \"$legacy\" ]; then\n")
+			b.WriteString("  \"$legacy\" \"$@\"\n")
+			b.WriteString("fi\n")
 		}
 
 		if err := os.WriteFile(runnerPath, []byte(b.String()), 0o755); err != nil {

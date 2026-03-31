@@ -348,20 +348,43 @@ func (h *Handler) bootstrapMarkerFromEnv(repoRoot, cwd, headSHA string) (*sessio
 }
 
 func (h *Handler) Flush(ctx context.Context, cwd string) error {
-	repoRoot, err := gitOutput(cwd, "rev-parse", "--show-toplevel")
+	seen := make(map[string]struct{})
+	var sessionIDs []string
+	addSessionID := func(sessionID string) {
+		sessionID = strings.TrimSpace(sessionID)
+		if sessionID == "" {
+			return
+		}
+		if _, ok := seen[sessionID]; ok {
+			return
+		}
+		seen[sessionID] = struct{}{}
+		sessionIDs = append(sessionIDs, sessionID)
+	}
+
+	if repoRoot, err := gitOutput(cwd, "rev-parse", "--show-toplevel"); err == nil {
+		if m, err := session.ReadMarker(repoRoot); err == nil && m != nil {
+			addSessionID(m.SessionID)
+		}
+	}
+
+	pendingSessionIDs, err := PendingSessionIDs()
 	if err != nil {
 		return err
 	}
-
-	m, err := session.ReadMarker(repoRoot)
-	if err != nil {
-		return nil
-	}
-	sessionID := strings.TrimSpace(m.SessionID)
-	if sessionID == "" {
-		return nil
+	for _, sessionID := range pendingSessionIDs {
+		addSessionID(sessionID)
 	}
 
+	for _, sessionID := range sessionIDs {
+		if err := h.flushSession(ctx, sessionID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (h *Handler) flushSession(ctx context.Context, sessionID string) error {
 	q, err := NewLocalQueue(sessionID)
 	if err != nil {
 		return err

@@ -1007,6 +1007,49 @@ func TestStopServerError(t *testing.T) {
 	}
 }
 
+func TestCleanupLocalPreservesPendingQueue(t *testing.T) {
+	origHome := os.Getenv("HOME")
+	tmpHome := t.TempDir()
+	os.Setenv("HOME", tmpHome)
+	t.Cleanup(func() { os.Setenv("HOME", origHome) })
+
+	workspaceRoot := t.TempDir()
+	marker := &Marker{SessionID: "sess-pending"}
+	if err := WriteMarker(workspaceRoot, marker); err != nil {
+		t.Fatalf("WriteMarker: %v", err)
+	}
+	if err := WriteRuntimeBundle(&RuntimeBundle{
+		SessionID:     "sess-pending",
+		RuntimeRef:    "rt-pending",
+		WorkspaceRoot: workspaceRoot,
+		EnvBundle:     map[string]string{"AE_SESSION_ID": "sess-pending"},
+	}); err != nil {
+		t.Fatalf("WriteRuntimeBundle: %v", err)
+	}
+	queueFile := RuntimeQueueFilePath("sess-pending")
+	if err := os.MkdirAll(filepath.Dir(queueFile), 0o700); err != nil {
+		t.Fatalf("mkdir queue dir: %v", err)
+	}
+	if err := os.WriteFile(queueFile, []byte("{\"event\":{\"event_id\":\"evt-1\"}}\n"), 0o600); err != nil {
+		t.Fatalf("write queue: %v", err)
+	}
+
+	mgr := &Manager{}
+	if err := mgr.cleanupLocal("sess-pending", workspaceRoot); err != nil {
+		t.Fatalf("cleanupLocal: %v", err)
+	}
+
+	if _, err := os.Stat(markerPath(workspaceRoot)); !os.IsNotExist(err) {
+		t.Fatalf("expected marker to be removed, stat err=%v", err)
+	}
+	if _, err := os.Stat(runtimeFilePath("sess-pending")); !os.IsNotExist(err) {
+		t.Fatalf("expected runtime bundle to be removed, stat err=%v", err)
+	}
+	if _, err := os.Stat(queueFile); err != nil {
+		t.Fatalf("expected queue file to survive cleanup, stat err=%v", err)
+	}
+}
+
 func TestStartSuccess(t *testing.T) {
 	origHome := os.Getenv("HOME")
 	tmpHome := t.TempDir()

@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"os/exec"
 	"strings"
@@ -10,6 +11,15 @@ import (
 	"github.com/ai-efficiency/ae-cli/internal/hooks"
 	"github.com/ai-efficiency/ae-cli/internal/session"
 )
+
+type recordingUploader struct {
+	events []hooks.HookEvent
+}
+
+func (r *recordingUploader) UploadHookEvent(_ context.Context, ev hooks.HookEvent) error {
+	r.events = append(r.events, ev)
+	return nil
+}
 
 func TestFlushCommandDrainsQueuedHookEvents(t *testing.T) {
 	repo := initRepoWithCommitForCmdTests(t)
@@ -56,6 +66,50 @@ func TestFlushCommandDrainsQueuedHookEvents(t *testing.T) {
 	// Ensure it is safe to call multiple times.
 	if err := flushCmd.RunE(flushCmd, nil); err != nil {
 		t.Fatalf("flush RunE (2): %v", err)
+	}
+}
+
+func TestFlushCommandFindsQueuedEventsWithoutMarker(t *testing.T) {
+	repo := initRepoWithCommitForCmdTests(t)
+
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	q, err := hooks.NewLocalQueue("sess-orphan")
+	if err != nil {
+		t.Fatalf("NewLocalQueue: %v", err)
+	}
+	if err := q.Enqueue(hooks.HookEvent{Kind: "post-commit", SessionID: "sess-orphan", CommitSHA: "deadbeef", EventID: "evt-orphan"}); err != nil {
+		t.Fatalf("Enqueue: %v", err)
+	}
+
+	uploader := &recordingUploader{}
+	prevFactory := newHookUploader
+	newHookUploader = func() hooks.Uploader { return uploader }
+	defer func() { newHookUploader = prevFactory }()
+
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+	defer func() { _ = os.Chdir(wd) }()
+	if err := os.Chdir(repo); err != nil {
+		t.Fatalf("Chdir(repo): %v", err)
+	}
+
+	if err := flushCmd.RunE(flushCmd, nil); err != nil {
+		t.Fatalf("flush RunE: %v", err)
+	}
+
+	items, err := q.List()
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(items) != 0 {
+		t.Fatalf("queue items = %d, want 0 after flush replay", len(items))
+	}
+	if len(uploader.events) != 1 {
+		t.Fatalf("uploaded events = %d, want 1", len(uploader.events))
 	}
 }
 

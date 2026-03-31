@@ -6,7 +6,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
+
+	"github.com/ai-efficiency/ae-cli/internal/session"
 )
 
 type HookEvent struct {
@@ -35,11 +38,7 @@ func queuePath(sessionID string) (string, error) {
 	if strings.TrimSpace(sessionID) == "" {
 		return "", fmt.Errorf("session_id is required")
 	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("home dir: %w", err)
-	}
-	return filepath.Join(home, ".ae-cli", "runtime", sessionID, "queue", "hooks.jsonl"), nil
+	return session.RuntimeQueueFilePath(sessionID), nil
 }
 
 func NewLocalQueue(sessionID string) (*Queue, error) {
@@ -134,6 +133,12 @@ func (q *Queue) rewrite(items []QueueItem) error {
 	if q == nil || strings.TrimSpace(q.path) == "" {
 		return fmt.Errorf("queue is not initialized")
 	}
+	if len(items) == 0 {
+		if err := os.Remove(q.path); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("remove empty queue: %w", err)
+		}
+		return nil
+	}
 	if err := os.MkdirAll(filepath.Dir(q.path), 0o700); err != nil {
 		return fmt.Errorf("creating queue dir: %w", err)
 	}
@@ -165,4 +170,38 @@ func (q *Queue) rewrite(items []QueueItem) error {
 		return fmt.Errorf("rename tmp queue: %w", err)
 	}
 	return nil
+}
+
+func PendingSessionIDs() ([]string, error) {
+	root := session.RuntimeRootDir()
+	if strings.TrimSpace(root) == "" {
+		return nil, fmt.Errorf("runtime root is empty")
+	}
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("read runtime root: %w", err)
+	}
+
+	var out []string
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		sessionID := strings.TrimSpace(entry.Name())
+		if sessionID == "" {
+			continue
+		}
+		hasPending, err := session.HasPendingQueue(sessionID)
+		if err != nil {
+			return nil, err
+		}
+		if hasPending {
+			out = append(out, sessionID)
+		}
+	}
+	sort.Strings(out)
+	return out, nil
 }

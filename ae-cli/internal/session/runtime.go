@@ -22,16 +22,32 @@ type RuntimeBundle struct {
 }
 
 func runtimeDir(sessionID string) string {
+	root := RuntimeRootDir()
+	if root == "" {
+		return ""
+	}
+	return filepath.Join(root, sessionID)
+}
+
+func RuntimeRootDir() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		// The tests set HOME, so failing here is unexpected; keep behavior deterministic.
 		return ""
 	}
-	return filepath.Join(home, ".ae-cli", "runtime", sessionID)
+	return filepath.Join(home, ".ae-cli", "runtime")
 }
 
 func runtimeFilePath(sessionID string) string {
 	return filepath.Join(runtimeDir(sessionID), "runtime.json")
+}
+
+func RuntimeQueueDir(sessionID string) string {
+	return filepath.Join(runtimeDir(sessionID), "queue")
+}
+
+func RuntimeQueueFilePath(sessionID string) string {
+	return filepath.Join(RuntimeQueueDir(sessionID), "hooks.jsonl")
 }
 
 func WriteRuntimeBundle(b *RuntimeBundle) error {
@@ -85,6 +101,33 @@ func ReadRuntimeBundle(sessionID string) (*RuntimeBundle, error) {
 
 func RuntimeCollectorsDir(sessionID string) string {
 	return filepath.Join(runtimeDir(sessionID), "collectors")
+}
+
+func HasPendingQueue(sessionID string) (bool, error) {
+	if strings.TrimSpace(sessionID) == "" {
+		return false, fmt.Errorf("session_id is required")
+	}
+	info, err := os.Stat(RuntimeQueueFilePath(sessionID))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("stat queue file: %w", err)
+	}
+	return info.Size() > 0, nil
+}
+
+func RemoveRuntimeBundle(sessionID string) error {
+	if strings.TrimSpace(sessionID) == "" {
+		return fmt.Errorf("session_id is required")
+	}
+	if err := os.Remove(runtimeFilePath(sessionID)); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("removing runtime bundle: %w", err)
+	}
+	if err := os.RemoveAll(RuntimeCollectorsDir(sessionID)); err != nil {
+		return fmt.Errorf("removing collectors dir: %w", err)
+	}
+	return nil
 }
 
 func RemoveRuntime(sessionID string) error {

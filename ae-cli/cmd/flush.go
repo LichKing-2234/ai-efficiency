@@ -10,11 +10,11 @@ import (
 
 var flushCmd = &cobra.Command{
 	Use:    "flush",
-	Short:  "Replay any locally queued hook events (hidden)",
+	Short:  "Attempt to replay any locally queued hook events (hidden)",
 	Hidden: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cwd, _ := os.Getwd()
-		h := hooks.NewHandler(hooks.UnsupportedUploader{})
+		h := hooks.NewHandler(newHookUploader())
 		return h.Flush(context.Background(), cwd)
 	},
 }

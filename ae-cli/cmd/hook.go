@@ -14,13 +14,17 @@ var hookCmd = &cobra.Command{
 	Hidden: true,
 }
 
+var newHookUploader = func() hooks.Uploader {
+	return hooks.UnsupportedUploader{}
+}
+
 var hookPostCommitCmd = &cobra.Command{
 	Use:    "post-commit",
 	Short:  "Handle git post-commit hook (hidden)",
 	Hidden: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cwd, _ := os.Getwd()
-		h := hooks.NewHandler(hooks.UnsupportedUploader{})
+		h := hooks.NewHandler(newHookUploader())
 		// Fail-open: handler itself should never return errors that block commits.
 		return h.PostCommit(context.Background(), cwd)
 	},
@@ -33,7 +37,7 @@ var hookPostRewriteCmd = &cobra.Command{
 	Args:   cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cwd, _ := os.Getwd()
-		h := hooks.NewHandler(hooks.UnsupportedUploader{})
+		h := hooks.NewHandler(newHookUploader())
 		// Fail-open: handler itself should never return errors that block git workflows.
 		return h.PostRewrite(context.Background(), cwd, args[0], os.Stdin)
 	},

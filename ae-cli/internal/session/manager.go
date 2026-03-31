@@ -457,8 +457,14 @@ func (m *Manager) cleanupLocal(sessionID, workspaceRoot string) error {
 		if rt, err := ReadRuntimeBundle(sessionID); err == nil && rt != nil {
 			removeMarkerForSession(rt.WorkspaceRoot)
 		}
-		// Remove runtime (contains secrets) last.
-		_ = RemoveRuntime(sessionID)
+		hasPendingQueue, err := HasPendingQueue(sessionID)
+		if err == nil && hasPendingQueue {
+			// Preserve queued hook events for later flush/recovery, but still drop secrets.
+			_ = RemoveRuntimeBundle(sessionID)
+		} else {
+			// Remove runtime (contains secrets) last.
+			_ = RemoveRuntime(sessionID)
+		}
 	}
 
 	// Remove legacy global state.
