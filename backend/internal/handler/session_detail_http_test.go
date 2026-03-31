@@ -117,6 +117,19 @@ func TestSessionGetOrdersAndLimitsCheckpointEdges(t *testing.T) {
 		SetStartedAt(time.Now().UTC()).
 		SaveX(ctx)
 
+	baseWorkspace := time.Now().UTC().Add(-3 * time.Hour)
+	for i := 0; i < 25; i++ {
+		client.SessionWorkspace.Create().
+			SetSessionID(sessionID).
+			SetWorkspaceID("ws-" + uuid.NewString()).
+			SetWorkspaceRoot("/tmp/repo").
+			SetGitDir("/tmp/repo/.git").
+			SetGitCommonDir("/tmp/repo/.git").
+			SetBindingSource("marker").
+			SetLastSeenAt(baseWorkspace.Add(time.Duration(i) * time.Minute)).
+			SaveX(ctx)
+	}
+
 	base := time.Now().UTC().Add(-2 * time.Hour)
 	for i := 0; i < 60; i++ {
 		client.CommitCheckpoint.Create().
@@ -148,13 +161,23 @@ func TestSessionGetOrdersAndLimitsCheckpointEdges(t *testing.T) {
 	}
 	data, _ := body["data"].(map[string]any)
 	edges, _ := data["edges"].(map[string]any)
+	workspaces, _ := edges["session_workspaces"].([]any)
+	if len(workspaces) != 20 {
+		t.Fatalf("session_workspaces len = %d, want 20", len(workspaces))
+	}
+	firstWorkspace, _ := workspaces[0].(map[string]any)
+	lastWorkspace, _ := workspaces[len(workspaces)-1].(map[string]any)
+	if firstWorkspace["last_seen_at"] == lastWorkspace["last_seen_at"] {
+		t.Fatalf("expected ordered workspaces, got identical endpoints")
+	}
+
 	checkpoints, _ := edges["commit_checkpoints"].([]any)
 	if len(checkpoints) != 50 {
 		t.Fatalf("commit_checkpoints len = %d, want 50", len(checkpoints))
 	}
 	first, _ := checkpoints[0].(map[string]any)
 	last, _ := checkpoints[len(checkpoints)-1].(map[string]any)
-	if first["captured_at"] == last["captured_at"] {
-		t.Fatalf("expected ordered checkpoints, got identical endpoints")
+	if first["captured_at"].(string) <= last["captured_at"].(string) {
+		t.Fatalf("expected checkpoints ordered desc by captured_at, got first=%v last=%v", first["captured_at"], last["captured_at"])
 	}
 }

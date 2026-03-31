@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import router from '@/router'
 
 function createTestRouter() {
   return createRouter({
@@ -94,7 +95,6 @@ describe('Router Guards', () => {
   })
 
   it('includes session detail route in the router', async () => {
-    const router = createTestRouter()
     const sessionDetail = router.getRoutes().find((r) => r.name === 'SessionDetail')
     expect(sessionDetail?.path).toBe('/sessions/:id')
   })
