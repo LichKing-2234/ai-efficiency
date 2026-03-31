@@ -13,8 +13,6 @@ import (
 	"github.com/ai-efficiency/ae-cli/internal/session"
 )
 
-const maxDefaultFilesPerTool = 8
-
 func BuildSnapshot(paths Paths) (*Snapshot, error) {
 	out := &Snapshot{}
 
@@ -193,13 +191,9 @@ func walkFiles(root string, ext string) []string {
 		return matches[i].modTime.After(matches[j].modTime)
 	})
 
-	limit := len(matches)
-	if limit > maxDefaultFilesPerTool {
-		limit = maxDefaultFilesPerTool
-	}
-	out := make([]string, 0, limit)
-	for i := 0; i < limit; i++ {
-		out = append(out, matches[i].path)
+	out := make([]string, 0, len(matches))
+	for _, match := range matches {
+		out = append(out, match.path)
 	}
 	return out
 }

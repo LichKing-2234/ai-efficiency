@@ -205,7 +205,7 @@ func TestBuildSnapshotToleratesDirtyJSONLTrailingLines(t *testing.T) {
 	}
 }
 
-func TestDefaultPathsKeepsMostRecentDefaultFiles(t *testing.T) {
+func TestDefaultPathsOrdersNewestDefaultFilesFirst(t *testing.T) {
 	origHome := os.Getenv("HOME")
 	tmpHome := t.TempDir()
 	t.Setenv("HOME", tmpHome)
@@ -229,13 +229,53 @@ func TestDefaultPathsKeepsMostRecentDefaultFiles(t *testing.T) {
 	}
 
 	paths := DefaultPaths("/tmp/repo")
-	if len(paths.CodexFiles) > 8 {
-		t.Fatalf("CodexFiles len = %d, want <= 8", len(paths.CodexFiles))
-	}
-	if len(paths.CodexFiles) == 0 {
-		t.Fatal("expected recent codex files")
+	if len(paths.CodexFiles) != 12 {
+		t.Fatalf("CodexFiles len = %d, want 12", len(paths.CodexFiles))
 	}
 	if got := filepath.Base(paths.CodexFiles[0]); got != "codex-11.jsonl" {
 		t.Fatalf("first CodexFiles entry = %s, want newest file", got)
+	}
+}
+
+func TestBuildSnapshotFindsOlderValidFileAfterNewerInvalidDefaults(t *testing.T) {
+	origHome := os.Getenv("HOME")
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+	t.Cleanup(func() { _ = os.Setenv("HOME", origHome) })
+
+	workspaceRoot := "/tmp/repo"
+	codexDir := filepath.Join(tmpHome, ".codex")
+	if err := os.MkdirAll(codexDir, 0o700); err != nil {
+		t.Fatalf("mkdir codex dir: %v", err)
+	}
+
+	base := time.Date(2026, 3, 31, 9, 0, 0, 0, time.UTC)
+	for i := 0; i < 8; i++ {
+		path := filepath.Join(codexDir, fmt.Sprintf("codex-bad-%02d.jsonl", i))
+		if err := os.WriteFile(path, []byte("{broken\n"), 0o600); err != nil {
+			t.Fatalf("write %s: %v", path, err)
+		}
+		ts := base.Add(time.Duration(i+1) * time.Minute)
+		if err := os.Chtimes(path, ts, ts); err != nil {
+			t.Fatalf("chtimes %s: %v", path, err)
+		}
+	}
+
+	valid := filepath.Join(codexDir, "codex-valid.jsonl")
+	if err := os.WriteFile(valid, []byte(`{"timestamp":"2026-03-27T09:00:00Z","type":"session_meta","payload":{"id":"codex-valid","cwd":"`+workspaceRoot+`"}}
+{"timestamp":"2026-03-27T09:05:00Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":200,"cached_input_tokens":10,"output_tokens":20,"reasoning_output_tokens":5,"total_tokens":235}}}}`), 0o600); err != nil {
+		t.Fatalf("write valid codex: %v", err)
+	}
+	if err := os.Chtimes(valid, base, base); err != nil {
+		t.Fatalf("chtimes valid: %v", err)
+	}
+
+	paths := DefaultPaths(workspaceRoot)
+	snapshot, err := BuildSnapshot(paths)
+	if err != nil {
+		t.Fatalf("BuildSnapshot() error = %v", err)
+	}
+	if snapshot.Codex == nil || snapshot.Codex.SourceSessionID != "codex-valid" {
+		t.Fatalf("Codex snapshot = %+v, want older valid file", snapshot.Codex)
 	}
 }
