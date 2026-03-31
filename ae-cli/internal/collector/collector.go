@@ -8,67 +8,69 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/ai-efficiency/ae-cli/internal/session"
 )
 
 func BuildSnapshot(paths Paths) (*Snapshot, error) {
 	out := &Snapshot{}
+	var modTime time.Time
 
 	for _, p := range paths.CodexFiles {
+		info, statErr := os.Stat(p)
+		if statErr != nil {
+			continue
+		}
 		s, err := readCodexSnapshot(p, paths.WorkspaceRoot)
 		if err != nil {
-			if os.IsNotExist(err) {
-				continue
-			}
-			return nil, fmt.Errorf("read codex snapshot %q: %w", p, err)
+			continue
 		}
 		if s == nil {
 			continue
 		}
-		if out.Codex == nil || s.TotalTokens >= out.Codex.TotalTokens {
+		if out.Codex == nil || info.ModTime().After(modTime) {
 			out.Codex = s
+			modTime = info.ModTime()
 		}
 	}
 
+	modTime = time.Time{}
 	for _, p := range paths.ClaudeFiles {
+		info, statErr := os.Stat(p)
+		if statErr != nil {
+			continue
+		}
 		s, err := readClaudeSnapshot(p, paths.WorkspaceRoot)
 		if err != nil {
-			if os.IsNotExist(err) {
-				continue
-			}
-			return nil, fmt.Errorf("read claude snapshot %q: %w", p, err)
+			continue
 		}
 		if s == nil {
 			continue
 		}
-		if out.Claude == nil {
+		if out.Claude == nil || info.ModTime().After(modTime) {
 			out.Claude = s
-			continue
-		}
-		if out.Claude.SourceSessionID == "" {
-			out.Claude.SourceSessionID = s.SourceSessionID
-		}
-		out.Claude.InputTokens += s.InputTokens
-		out.Claude.OutputTokens += s.OutputTokens
-		out.Claude.CachedInputTokens += s.CachedInputTokens
-		if len(s.RawPayload) > 0 {
-			out.Claude.RawPayload = s.RawPayload
+			modTime = info.ModTime()
 		}
 	}
 
+	modTime = time.Time{}
 	for _, p := range paths.KiroFiles {
+		info, statErr := os.Stat(p)
+		if statErr != nil {
+			continue
+		}
 		s, err := readKiroSnapshot(p, paths.WorkspaceRoot)
 		if err != nil {
-			if os.IsNotExist(err) {
-				continue
-			}
-			return nil, fmt.Errorf("read kiro snapshot %q: %w", p, err)
+			continue
 		}
 		if s == nil {
 			continue
 		}
-		out.Kiro = s
+		if out.Kiro == nil || info.ModTime().After(modTime) {
+			out.Kiro = s
+			modTime = info.ModTime()
+		}
 	}
 
 	return out, nil
@@ -112,18 +114,21 @@ func DefaultPaths(workspaceRoot string) Paths {
 	if v := envList("AE_KIRO_SESSION_FILES"); len(v) > 0 {
 		out.KiroFiles = v
 	}
-	if len(out.CodexFiles) > 0 || len(out.ClaudeFiles) > 0 || len(out.KiroFiles) > 0 {
-		return out
-	}
 
 	home, err := os.UserHomeDir()
 	if err != nil || strings.TrimSpace(home) == "" {
 		return out
 	}
 
-	out.CodexFiles = walkFiles(filepath.Join(home, ".codex"), ".jsonl")
-	out.ClaudeFiles = walkFiles(filepath.Join(home, ".claude"), ".jsonl")
-	out.KiroFiles = walkFiles(filepath.Join(home, ".kiro"), ".json")
+	if len(out.CodexFiles) == 0 {
+		out.CodexFiles = walkFiles(filepath.Join(home, ".codex"), ".jsonl")
+	}
+	if len(out.ClaudeFiles) == 0 {
+		out.ClaudeFiles = walkFiles(filepath.Join(home, ".claude"), ".jsonl")
+	}
+	if len(out.KiroFiles) == 0 {
+		out.KiroFiles = walkFiles(filepath.Join(home, ".kiro"), ".json")
+	}
 	return out
 }
 
