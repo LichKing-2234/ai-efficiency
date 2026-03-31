@@ -139,3 +139,57 @@ func TestRecordRewriteAcceptsUnboundEvents(t *testing.T) {
 		t.Fatalf("session_id = %v, want nil for unbound event", rw.SessionID)
 	}
 }
+
+func TestRecordCheckpointWithAgentSnapshotAndNoSessionDoesNotPartiallyWrite(t *testing.T) {
+	t.Parallel()
+
+	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	ctx := context.Background()
+
+	sp := client.ScmProvider.Create().
+		SetName("github-test").
+		SetType("github").
+		SetBaseURL("https://api.github.com").
+		SetCredentials("enc").
+		SaveX(ctx)
+
+	rc := client.RepoConfig.Create().
+		SetScmProviderID(sp.ID).
+		SetName("demo").
+		SetFullName("org/demo").
+		SetCloneURL("https://github.com/org/demo.git").
+		SetDefaultBranch("main").
+		SaveX(ctx)
+
+	svc := NewService(client)
+	req := CommitCheckpointRequest{
+		EventID:      "evt-commit-no-session",
+		RepoFullName: rc.FullName,
+		WorkspaceID:  "ws-1",
+		CommitSHA:    "abc999",
+		BindingSource:"marker",
+		AgentSnapshot: map[string]any{
+			"source":            "codex",
+			"source_session_id": "source-sess-1",
+			"input_tokens":      float64(11),
+			"raw_payload":       map[string]any{"kind": "snapshot"},
+		},
+	}
+
+	if err := svc.RecordCheckpoint(ctx, req); err != nil {
+		t.Fatalf("record checkpoint first call: %v", err)
+	}
+	if err := svc.RecordCheckpoint(ctx, req); err != nil {
+		t.Fatalf("record checkpoint duplicate event: %v", err)
+	}
+
+	checkpointCount := client.CommitCheckpoint.Query().Where(commitcheckpoint.EventIDEQ(req.EventID)).CountX(ctx)
+	if checkpointCount != 1 {
+		t.Fatalf("checkpoint count = %d, want 1", checkpointCount)
+	}
+
+	metadataCount := client.AgentMetadataEvent.Query().CountX(ctx)
+	if metadataCount != 0 {
+		t.Fatalf("metadata event count = %d, want 0 without session_id", metadataCount)
+	}
+}

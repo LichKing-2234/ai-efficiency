@@ -76,7 +76,22 @@ func (s *Service) RecordCheckpoint(ctx context.Context, req CommitCheckpointRequ
 		return fmt.Errorf("record checkpoint: binding_source is required")
 	}
 
-	exists, err := s.entClient.CommitCheckpoint.Query().
+	sessionID, hasSession, err := parseSessionID(req.SessionID)
+	if err != nil {
+		return fmt.Errorf("record checkpoint: %w", err)
+	}
+
+	tx, err := s.entClient.Tx(ctx)
+	if err != nil {
+		return fmt.Errorf("record checkpoint: start tx: %w", err)
+	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
+
+	txSvc := &Service{entClient: tx.Client()}
+
+	exists, err := txSvc.entClient.CommitCheckpoint.Query().
 		Where(commitcheckpoint.EventIDEQ(eventID)).
 		Exist(ctx)
 	if err != nil {
@@ -86,17 +101,12 @@ func (s *Service) RecordCheckpoint(ctx context.Context, req CommitCheckpointRequ
 		return nil
 	}
 
-	rc, err := s.resolveRepoConfig(ctx, req.RepoFullName, req.CloneURL)
+	rc, err := txSvc.resolveRepoConfig(ctx, req.RepoFullName, req.CloneURL)
 	if err != nil {
 		return fmt.Errorf("record checkpoint: %w", err)
 	}
 
-	sessionID, hasSession, err := parseSessionID(req.SessionID)
-	if err != nil {
-		return fmt.Errorf("record checkpoint: %w", err)
-	}
-
-	create := s.entClient.CommitCheckpoint.Create().
+	create := txSvc.entClient.CommitCheckpoint.Create().
 		SetEventID(eventID).
 		SetWorkspaceID(workspaceID).
 		SetRepoConfigID(rc.ID).
@@ -122,7 +132,7 @@ func (s *Service) RecordCheckpoint(ctx context.Context, req CommitCheckpointRequ
 
 	if _, err := create.Save(ctx); err != nil {
 		if ent.IsConstraintError(err) {
-			exists, qerr := s.entClient.CommitCheckpoint.Query().
+			exists, qerr := txSvc.entClient.CommitCheckpoint.Query().
 				Where(commitcheckpoint.EventIDEQ(eventID)).
 				Exist(ctx)
 			if qerr == nil && exists {
@@ -132,15 +142,15 @@ func (s *Service) RecordCheckpoint(ctx context.Context, req CommitCheckpointRequ
 		return fmt.Errorf("record checkpoint: create checkpoint: %w", err)
 	}
 
-	if len(req.AgentSnapshot) > 0 {
-		if !hasSession {
-			return fmt.Errorf("record checkpoint: session_id is required when agent_snapshot is provided")
-		}
-		if err := s.createAgentMetadataEvent(ctx, sessionID, workspaceID, req.AgentSnapshot); err != nil {
+	if len(req.AgentSnapshot) > 0 && hasSession {
+		if err := txSvc.createAgentMetadataEvent(ctx, sessionID, workspaceID, req.AgentSnapshot); err != nil {
 			return fmt.Errorf("record checkpoint: create agent metadata event: %w", err)
 		}
 	}
 
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("record checkpoint: commit tx: %w", err)
+	}
 	return nil
 }
 
