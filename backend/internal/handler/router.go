@@ -29,10 +29,16 @@ func SetupRouter(
 	providerHandler *ProviderHandler,
 	adminSettingsHandler *AdminSettingsHandler,
 	sessionBootstrapSvc *sessionbootstrap.Service,
+	checkpointHandlers ...*CheckpointHandler,
 ) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Recovery())
 	r.Use(corsMiddleware)
+
+	var checkpointHandler *CheckpointHandler
+	if len(checkpointHandlers) > 0 {
+		checkpointHandler = checkpointHandlers[0]
+	}
 
 	// OAuth endpoints — at root /oauth/* (not under /api/v1)
 	if oauthHandler != nil {
@@ -144,6 +150,14 @@ func SetupRouter(
 		sessionGroup.PUT("/:id", sessionHandler.Update)
 		sessionGroup.POST("/:id/stop", sessionHandler.Stop)
 		sessionGroup.POST("/:id/invocations", sessionHandler.AddInvocation)
+	}
+
+	if checkpointHandler != nil {
+		checkpointGroup := protected.Group("/checkpoints")
+		{
+			checkpointGroup.POST("/commit", checkpointHandler.Commit)
+			checkpointGroup.POST("/rewrite", checkpointHandler.Rewrite)
+		}
 	}
 
 	// Providers (ae-cli API key delivery)

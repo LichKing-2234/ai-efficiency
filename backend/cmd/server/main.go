@@ -16,6 +16,7 @@ import (
 	"github.com/ai-efficiency/backend/internal/analysis"
 	"github.com/ai-efficiency/backend/internal/analysis/llm"
 	"github.com/ai-efficiency/backend/internal/auth"
+	"github.com/ai-efficiency/backend/internal/checkpoint"
 	"github.com/ai-efficiency/backend/internal/config"
 	"github.com/ai-efficiency/backend/internal/efficiency"
 	"github.com/ai-efficiency/backend/internal/handler"
@@ -213,6 +214,8 @@ func main() {
 			24*time.Hour,
 		)
 	}
+	checkpointService := checkpoint.NewService(entClient)
+	checkpointHandler := handler.NewCheckpointHandler(checkpointService)
 
 	r := handler.SetupRouter(
 		entClient,
@@ -231,6 +234,7 @@ func main() {
 		providerHandler,
 		adminSettingsHandler,
 		sessionBootstrapSvc,
+		checkpointHandler,
 	)
 
 	// Start server
