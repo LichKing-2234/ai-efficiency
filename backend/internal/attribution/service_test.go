@@ -8,6 +8,7 @@ import (
 
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
+	"github.com/ai-efficiency/backend/ent/commitrewrite"
 	"github.com/ai-efficiency/backend/ent/enttest"
 	"github.com/ai-efficiency/backend/ent/prrecord"
 	"github.com/ai-efficiency/backend/ent/scmprovider"
@@ -295,5 +296,60 @@ func TestSettlePR_ReturnsAmbiguousWhenMatchedCheckpointIsUnbound(t *testing.T) {
 	}
 	if updatedPR.LastAttributionRunID == nil || *updatedPR.LastAttributionRunID == 0 {
 		t.Fatal("expected last_attribution_run_id to be set")
+	}
+}
+
+func TestSettlePR_UsesRewriteHistoryToMatchCheckpoint(t *testing.T) {
+	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	defer client.Close()
+	ctx := context.Background()
+
+	repo, pr, sess := testRepoPRSession(t, client, 654)
+	t1 := sess.StartedAt.Add(25 * time.Minute)
+
+	client.CommitCheckpoint.Create().
+		SetEventID("cp-old").
+		SetSessionID(sess.ID).
+		SetWorkspaceID("ws-rw").
+		SetRepoConfigID(repo.ID).
+		SetBindingSource(commitcheckpoint.BindingSourceMarker).
+		SetCommitSha("old-sha").
+		SetParentShas([]string{"base-sha"}).
+		SetCapturedAt(t1).
+		SaveX(ctx)
+
+	client.CommitRewrite.Create().
+		SetEventID("rw-1").
+		SetSessionID(sess.ID).
+		SetWorkspaceID("ws-rw").
+		SetRepoConfigID(repo.ID).
+		SetBindingSource(commitrewrite.BindingSourceMarker).
+		SetRewriteType(commitrewrite.RewriteTypeAmend).
+		SetOldCommitSha("old-sha").
+		SetNewCommitSha("new-sha").
+		SetCapturedAt(t1.Add(1 * time.Minute)).
+		SaveX(ctx)
+
+	fakeRelay := &fakeRelayProvider{
+		logs: []relay.UsageLog{
+			{TotalTokens: 44, TotalCost: 2.5, AccountID: "acct-rw"},
+		},
+	}
+	fakeProvider := &fakeSCMProvider{
+		listPRCommitsFn: func(ctx context.Context, repoFullName string, prID int) ([]string, error) {
+			return []string{"new-sha"}, nil
+		},
+	}
+
+	svc := NewService(client, fakeRelay)
+	result, err := svc.Settle(ctx, fakeProvider, pr, "carol")
+	if err != nil {
+		t.Fatalf("Settle() error = %v", err)
+	}
+	if result.ResultClassification != "clear" {
+		t.Fatalf("result classification = %q, want clear", result.ResultClassification)
+	}
+	if result.PrimaryTokenCount != 44 {
+		t.Fatalf("primary_token_count = %d, want 44", result.PrimaryTokenCount)
 	}
 }

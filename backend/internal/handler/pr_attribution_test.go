@@ -15,10 +15,6 @@ import (
 	"github.com/ai-efficiency/backend/internal/scm"
 )
 
-func (m *mockSCMProvider) ListPRCommits(ctx context.Context, repoFullName string, prID int) ([]string, error) {
-	return nil, nil
-}
-
 type mockAttributionSettler struct {
 	settleFn func(ctx context.Context, provider scm.SCMProvider, pr *ent.PrRecord, triggeredBy string) (*attribution.SettleResult, error)
 }

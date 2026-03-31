@@ -43,6 +43,9 @@ func (m *mockSCMProvider) ListPRs(ctx context.Context, repoFullName string, opts
 func (m *mockSCMProvider) GetPRChangedFiles(ctx context.Context, repoFullName string, prID int) ([]string, error) {
 	return nil, nil
 }
+func (m *mockSCMProvider) ListPRCommits(ctx context.Context, repoFullName string, prID int) ([]string, error) {
+	return nil, nil
+}
 func (m *mockSCMProvider) GetPRApprovals(ctx context.Context, repoFullName string, prID int) (int, error) {
 	return 0, nil
 }

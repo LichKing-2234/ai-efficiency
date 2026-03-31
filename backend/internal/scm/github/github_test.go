@@ -104,3 +104,42 @@ func TestListPRCommitsInvalidName(t *testing.T) {
 		t.Fatal("expected error for invalid repo full name")
 	}
 }
+
+func TestListPRCommitsPaginates(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/repos/org/repo/pulls/42/commits" {
+			t.Fatalf("path = %q", r.URL.Path)
+		}
+		switch r.URL.Query().Get("page") {
+		case "", "1":
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Link", "</repos/org/repo/pulls/42/commits?page=2>; rel=\"next\"")
+			_, _ = w.Write([]byte(`[{"sha":"abc123"}]`))
+		case "2":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`[{"sha":"def456"}]`))
+		default:
+			t.Fatalf("unexpected page query: %q", r.URL.RawQuery)
+		}
+	}))
+	defer srv.Close()
+
+	client := gh.NewClient(srv.Client())
+	baseURL, err := url.Parse(srv.URL + "/")
+	if err != nil {
+		t.Fatalf("parse base url: %v", err)
+	}
+	client.BaseURL = baseURL
+
+	p := &Provider{client: client}
+	commits, err := p.ListPRCommits(context.Background(), "org/repo", 42)
+	if err != nil {
+		t.Fatalf("ListPRCommits() error = %v", err)
+	}
+	if len(commits) != 2 {
+		t.Fatalf("len(commits) = %d, want 2", len(commits))
+	}
+	if commits[0] != "abc123" || commits[1] != "def456" {
+		t.Fatalf("commits = %#v", commits)
+	}
+}

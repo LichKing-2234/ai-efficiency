@@ -176,14 +176,20 @@ func (p *Provider) ListPRCommits(ctx context.Context, repoFullName string, prID 
 		return nil, err
 	}
 
-	commits, _, err := p.client.PullRequests.ListCommits(ctx, owner, repo, prID, nil)
-	if err != nil {
-		return nil, fmt.Errorf("github list pr commits: %w", err)
-	}
-
-	result := make([]string, 0, len(commits))
-	for _, c := range commits {
-		result = append(result, c.GetSHA())
+	opts := &gh.ListOptions{PerPage: 100}
+	result := make([]string, 0)
+	for {
+		commits, resp, err := p.client.PullRequests.ListCommits(ctx, owner, repo, prID, opts)
+		if err != nil {
+			return nil, fmt.Errorf("github list pr commits: %w", err)
+		}
+		for _, c := range commits {
+			result = append(result, c.GetSHA())
+		}
+		if resp == nil || resp.NextPage == 0 {
+			break
+		}
+		opts.Page = resp.NextPage
 	}
 	return result, nil
 }

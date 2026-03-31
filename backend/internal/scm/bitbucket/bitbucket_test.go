@@ -1006,6 +1006,44 @@ func TestListPRCommitsInvalidName(t *testing.T) {
 	}
 }
 
+func TestListPRCommitsPaginates(t *testing.T) {
+	p, _ := setup(t, func(w http.ResponseWriter, r *http.Request) {
+		if !strings.Contains(r.URL.Path, "/pull-requests/7/commits") {
+			t.Fatalf("path = %q", r.URL.Path)
+		}
+		switch r.URL.Query().Get("start") {
+		case "":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"isLastPage":   false,
+				"nextPageStart": 1,
+				"values": []map[string]any{
+					{"id": "abc123"},
+				},
+			})
+		case "1":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"isLastPage": true,
+				"values": []map[string]any{
+					{"id": "def456"},
+				},
+			})
+		default:
+			t.Fatalf("unexpected start query: %q", r.URL.RawQuery)
+		}
+	})
+
+	commits, err := p.ListPRCommits(context.Background(), "P/r", 7)
+	if err != nil {
+		t.Fatalf("ListPRCommits() error = %v", err)
+	}
+	if len(commits) != 2 {
+		t.Fatalf("len(commits) = %d, want 2", len(commits))
+	}
+	if commits[0] != "abc123" || commits[1] != "def456" {
+		t.Fatalf("commits = %#v", commits)
+	}
+}
+
 // --- parseBBPRInfo ---
 
 func TestParseBBPRInfoWithLink(t *testing.T) {

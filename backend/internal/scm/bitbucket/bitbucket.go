@@ -390,23 +390,36 @@ func (p *Provider) ListPRCommits(ctx context.Context, repoFullName string, prID 
 		return nil, err
 	}
 
-	data, err := p.doRequest(ctx, "GET", fmt.Sprintf("/projects/%s/repos/%s/pull-requests/%d/commits?limit=1000", project, repo, prID), nil)
-	if err != nil {
-		return nil, err
-	}
+	commits := make([]string, 0)
+	start := 0
+	for {
+		path := fmt.Sprintf("/projects/%s/repos/%s/pull-requests/%d/commits?limit=1000", project, repo, prID)
+		if start > 0 {
+			path += fmt.Sprintf("&start=%d", start)
+		}
+		data, err := p.doRequest(ctx, "GET", path, nil)
+		if err != nil {
+			return nil, err
+		}
 
-	var result struct {
-		Values []struct {
-			ID string `json:"id"`
-		} `json:"values"`
-	}
-	if err := json.Unmarshal(data, &result); err != nil {
-		return nil, err
-	}
+		var result struct {
+			IsLastPage   bool `json:"isLastPage"`
+			NextPageStart int `json:"nextPageStart"`
+			Values       []struct {
+				ID string `json:"id"`
+			} `json:"values"`
+		}
+		if err := json.Unmarshal(data, &result); err != nil {
+			return nil, err
+		}
 
-	commits := make([]string, 0, len(result.Values))
-	for _, v := range result.Values {
-		commits = append(commits, v.ID)
+		for _, v := range result.Values {
+			commits = append(commits, v.ID)
+		}
+		if result.IsLastPage || result.NextPageStart == start {
+			break
+		}
+		start = result.NextPageStart
 	}
 	return commits, nil
 }

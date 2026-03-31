@@ -9,6 +9,7 @@ import (
 
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
+	"github.com/ai-efficiency/backend/ent/commitrewrite"
 	"github.com/ai-efficiency/backend/ent/prattributionrun"
 	"github.com/ai-efficiency/backend/ent/prrecord"
 	"github.com/ai-efficiency/backend/internal/relay"
@@ -75,10 +76,15 @@ func (s *Service) Settle(ctx context.Context, provider scm.SCMProvider, pr *ent.
 		return s.persistAmbiguous(ctx, pr, triggeredBy, "no_pr_commits", nil)
 	}
 
+	candidateCommitSHAs, err := s.expandCommitCandidates(ctx, rc.ID, prCommitSHAs)
+	if err != nil {
+		return nil, fmt.Errorf("settle pr: expand commit candidates: %w", err)
+	}
+
 	matchedCheckpoints, err := s.entClient.CommitCheckpoint.Query().
 		Where(
 			commitcheckpoint.RepoConfigIDEQ(rc.ID),
-			commitcheckpoint.CommitShaIn(prCommitSHAs...),
+			commitcheckpoint.CommitShaIn(candidateCommitSHAs...),
 		).
 		All(ctx)
 	if err != nil {
@@ -167,10 +173,17 @@ func (s *Service) Settle(ctx context.Context, provider scm.SCMProvider, pr *ent.
 		})
 	}
 
-	matchedCommits := make([]string, 0, len(commitSet))
+	matchedCommits := make([]string, 0, len(prCommitSHAs))
 	for _, sha := range prCommitSHAs {
-		if _, ok := commitSet[sha]; ok {
-			matchedCommits = append(matchedCommits, sha)
+		candidates, err := s.expandCommitCandidates(ctx, rc.ID, []string{sha})
+		if err != nil {
+			return nil, fmt.Errorf("settle pr: expand matched commits: %w", err)
+		}
+		for _, candidate := range candidates {
+			if _, ok := commitSet[candidate]; ok {
+				matchedCommits = append(matchedCommits, sha)
+				break
+			}
 		}
 	}
 	if len(matchedCommits) == 0 {
@@ -219,6 +232,55 @@ func (s *Service) Settle(ctx context.Context, provider scm.SCMProvider, pr *ent.
 		metadataSummary,
 		validationSummary,
 	)
+}
+
+func (s *Service) expandCommitCandidates(ctx context.Context, repoConfigID int, currentSHAs []string) ([]string, error) {
+	seen := make(map[string]struct{}, len(currentSHAs))
+	ordered := make([]string, 0, len(currentSHAs))
+	queue := append([]string(nil), currentSHAs...)
+
+	for len(queue) > 0 {
+		batch := make([]string, 0, len(queue))
+		next := make([]string, 0)
+		for _, sha := range queue {
+			sha = strings.TrimSpace(sha)
+			if sha == "" {
+				continue
+			}
+			if _, ok := seen[sha]; ok {
+				continue
+			}
+			seen[sha] = struct{}{}
+			ordered = append(ordered, sha)
+			batch = append(batch, sha)
+		}
+		if len(batch) == 0 {
+			break
+		}
+
+		rewrites, err := s.entClient.CommitRewrite.Query().
+			Where(
+				commitrewrite.RepoConfigIDEQ(repoConfigID),
+				commitrewrite.NewCommitShaIn(batch...),
+			).
+			All(ctx)
+		if err != nil {
+			return nil, err
+		}
+		for _, rw := range rewrites {
+			oldSHA := strings.TrimSpace(rw.OldCommitSha)
+			if oldSHA == "" {
+				continue
+			}
+			if _, ok := seen[oldSHA]; ok {
+				continue
+			}
+			next = append(next, oldSHA)
+		}
+		queue = next
+	}
+
+	return ordered, nil
 }
 
 func (s *Service) persistAmbiguous(ctx context.Context, pr *ent.PrRecord, triggeredBy, reason string, commitSet map[string]struct{}) (*SettleResult, error) {
