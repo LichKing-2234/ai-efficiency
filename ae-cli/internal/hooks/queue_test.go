@@ -85,7 +85,7 @@ func TestQueueReadsLargeAgentSnapshotPayload(t *testing.T) {
 		AgentSnapshot: map[string]any{
 			"codex": map[string]any{
 				"raw_payload": map[string]any{
-					"blob": strings.Repeat("x", 128*1024),
+					"blob": strings.Repeat("x", 9*1024*1024),
 				},
 			},
 		},

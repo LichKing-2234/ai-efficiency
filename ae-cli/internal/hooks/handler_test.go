@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ai-efficiency/ae-cli/internal/collector"
 	"github.com/ai-efficiency/ae-cli/internal/session"
 )
 
@@ -434,5 +435,38 @@ func TestPostCommitQueuesCollectorSnapshotWhenUploadFails(t *testing.T) {
 	claudeSnapshot, _ := items[0].Event.AgentSnapshot["claude"].(map[string]any)
 	if got := claudeSnapshot["cached_input_tokens"]; got != float64(90) {
 		t.Fatalf("claude cached_input_tokens = %v, want 90", got)
+	}
+}
+
+func TestPostCommitPreservesCollectorCacheWhenNoSnapshot(t *testing.T) {
+	repo := initRepoWithCommit2(t)
+
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	marker := &session.Marker{SessionID: "sess-cache", RepoFullName: "github.com/acme/repo"}
+	if err := session.WriteMarker(repo, marker); err != nil {
+		t.Fatalf("WriteMarker: %v", err)
+	}
+	original := &collector.Snapshot{
+		Codex: &collector.CodexSnapshot{SourceSessionID: "codex-prev", TotalTokens: 999},
+	}
+	if err := collector.WriteCache("sess-cache", original); err != nil {
+		t.Fatalf("WriteCache: %v", err)
+	}
+
+	u := &fakeUploader{}
+	h := NewHandler(u)
+	if err := h.PostCommit(context.Background(), repo); err != nil {
+		t.Fatalf("PostCommit: %v", err)
+	}
+
+	cacheFile := filepath.Join(session.RuntimeCollectorsDir("sess-cache"), "latest.json")
+	data, err := os.ReadFile(cacheFile)
+	if err != nil {
+		t.Fatalf("read cache file: %v", err)
+	}
+	if !strings.Contains(string(data), "\"source_session_id\": \"codex-prev\"") {
+		t.Fatalf("cache file was unexpectedly overwritten: %s", string(data))
 	}
 }

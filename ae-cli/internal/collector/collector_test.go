@@ -279,3 +279,15 @@ func TestBuildSnapshotFindsOlderValidFileAfterNewerInvalidDefaults(t *testing.T)
 		t.Fatalf("Codex snapshot = %+v, want older valid file", snapshot.Codex)
 	}
 }
+
+func TestBuildSnapshotReturnsNilWhenNoToolDataFound(t *testing.T) {
+	snapshot, err := BuildSnapshot(Paths{
+		WorkspaceRoot: "/tmp/repo",
+	})
+	if err != nil {
+		t.Fatalf("BuildSnapshot() error = %v", err)
+	}
+	if snapshot != nil {
+		t.Fatalf("snapshot = %+v, want nil when no tool data found", snapshot)
+	}
+}

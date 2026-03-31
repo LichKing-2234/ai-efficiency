@@ -2,8 +2,11 @@ package hooks
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -11,8 +14,6 @@ import (
 
 	"github.com/ai-efficiency/ae-cli/internal/session"
 )
-
-const maxQueueLineSize = 8 * 1024 * 1024
 
 type HookEvent struct {
 	Kind      string `json:"kind"`
@@ -77,21 +78,27 @@ func (q *Queue) List() ([]QueueItem, error) {
 	defer f.Close()
 
 	var out []QueueItem
-	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 0, 64*1024), maxQueueLineSize)
-	for sc.Scan() {
-		line := strings.TrimSpace(sc.Text())
-		if line == "" {
+	r := bufio.NewReaderSize(f, 64*1024)
+	for {
+		line, err := r.ReadBytes('\n')
+		if err != nil && !errors.Is(err, io.EOF) {
+			return nil, fmt.Errorf("read queue line: %w", err)
+		}
+		line = bytes.TrimSpace(line)
+		if len(line) == 0 {
+			if errors.Is(err, io.EOF) {
+				break
+			}
 			continue
 		}
 		var it QueueItem
-		if err := json.Unmarshal([]byte(line), &it); err != nil {
+		if err := json.Unmarshal(line, &it); err != nil {
 			return nil, fmt.Errorf("parse queue line: %w", err)
 		}
 		out = append(out, it)
-	}
-	if err := sc.Err(); err != nil {
-		return nil, fmt.Errorf("scan queue: %w", err)
+		if errors.Is(err, io.EOF) {
+			break
+		}
 	}
 	return out, nil
 }

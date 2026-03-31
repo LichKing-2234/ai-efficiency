@@ -52,6 +52,9 @@ func BuildSnapshot(paths Paths) (*Snapshot, error) {
 		break
 	}
 
+	if out.Codex == nil && out.Claude == nil && out.Kiro == nil {
+		return nil, nil
+	}
 	return out, nil
 }
 
