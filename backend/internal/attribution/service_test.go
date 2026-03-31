@@ -352,7 +352,25 @@ func TestSettlePR_UsesRewriteHistoryToMatchCheckpoint(t *testing.T) {
 	if result.AttributionConfidence != "medium" {
 		t.Fatalf("attribution confidence = %q, want medium", result.AttributionConfidence)
 	}
+	if result.ValidationSummary["confidence"] != "medium" {
+		t.Fatalf("validation confidence = %v, want medium", result.ValidationSummary["confidence"])
+	}
+	if result.ValidationSummary["reason"] != "session_start_fallback" {
+		t.Fatalf("validation reason = %v, want session_start_fallback", result.ValidationSummary["reason"])
+	}
 	if result.PrimaryTokenCount != 44 {
 		t.Fatalf("primary_token_count = %d, want 44", result.PrimaryTokenCount)
+	}
+
+	updatedPR := client.PrRecord.GetX(ctx, pr.ID)
+	if updatedPR.AttributionConfidence == nil || *updatedPR.AttributionConfidence != prrecord.AttributionConfidenceMedium {
+		t.Fatalf("pr attribution_confidence = %v, want medium", updatedPR.AttributionConfidence)
+	}
+	if updatedPR.LastAttributionRunID == nil || *updatedPR.LastAttributionRunID == 0 {
+		t.Fatal("expected last_attribution_run_id to be set")
+	}
+	run := client.PrAttributionRun.GetX(ctx, *updatedPR.LastAttributionRunID)
+	if run.ValidationSummary["confidence"] != "medium" {
+		t.Fatalf("run validation confidence = %v, want medium", run.ValidationSummary["confidence"])
 	}
 }
