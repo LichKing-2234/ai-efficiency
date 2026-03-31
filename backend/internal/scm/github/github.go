@@ -170,6 +170,24 @@ func (p *Provider) GetPRChangedFiles(ctx context.Context, repoFullName string, p
 	return paths, nil
 }
 
+func (p *Provider) ListPRCommits(ctx context.Context, repoFullName string, prID int) ([]string, error) {
+	owner, repo, err := splitFullName(repoFullName)
+	if err != nil {
+		return nil, err
+	}
+
+	commits, _, err := p.client.PullRequests.ListCommits(ctx, owner, repo, prID, nil)
+	if err != nil {
+		return nil, fmt.Errorf("github list pr commits: %w", err)
+	}
+
+	result := make([]string, 0, len(commits))
+	for _, c := range commits {
+		result = append(result, c.GetSHA())
+	}
+	return result, nil
+}
+
 func (p *Provider) GetPRApprovals(ctx context.Context, repoFullName string, prID int) (int, error) {
 	owner, repo, err := splitFullName(repoFullName)
 	if err != nil {

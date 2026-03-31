@@ -99,8 +99,8 @@ func TestDoRequest4xxError(t *testing.T) {
 func TestGetRepo(t *testing.T) {
 	p, _ := setup(t, func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"slug": "my-repo",
-			"name": "My Repo",
+			"slug":    "my-repo",
+			"name":    "My Repo",
 			"project": map[string]string{"key": "PROJ"},
 			"links": map[string]interface{}{
 				"clone": []map[string]string{
@@ -256,7 +256,7 @@ func TestGetPRMergedState(t *testing.T) {
 	p, _ := setup(t, func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"id": 1, "title": "T", "state": "MERGED",
-			"author": map[string]interface{}{"user": map[string]string{"name": "u"}},
+			"author":  map[string]interface{}{"user": map[string]string{"name": "u"}},
 			"fromRef": map[string]string{"displayId": "f"}, "toRef": map[string]string{"displayId": "m"},
 		})
 	})
@@ -270,7 +270,7 @@ func TestGetPRDeclinedState(t *testing.T) {
 	p, _ := setup(t, func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"id": 1, "title": "T", "state": "DECLINED",
-			"author": map[string]interface{}{"user": map[string]string{"name": "u"}},
+			"author":  map[string]interface{}{"user": map[string]string{"name": "u"}},
 			"fromRef": map[string]string{"displayId": "f"}, "toRef": map[string]string{"displayId": "m"},
 		})
 	})
@@ -972,13 +972,47 @@ func TestCommitFilesAPIError(t *testing.T) {
 	}
 }
 
+// --- ListPRCommits ---
+
+func TestListPRCommits(t *testing.T) {
+	p, _ := setup(t, func(w http.ResponseWriter, r *http.Request) {
+		if !strings.Contains(r.URL.Path, "/pull-requests/7/commits") {
+			t.Fatalf("path = %q", r.URL.Path)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"values": []map[string]any{
+				{"id": "abc123"},
+				{"id": "def456"},
+			},
+		})
+	})
+
+	commits, err := p.ListPRCommits(context.Background(), "P/r", 7)
+	if err != nil {
+		t.Fatalf("ListPRCommits() error = %v", err)
+	}
+	if len(commits) != 2 {
+		t.Fatalf("len(commits) = %d, want 2", len(commits))
+	}
+	if commits[0] != "abc123" || commits[1] != "def456" {
+		t.Fatalf("commits = %#v", commits)
+	}
+}
+
+func TestListPRCommitsInvalidName(t *testing.T) {
+	p, _ := setup(t, func(w http.ResponseWriter, r *http.Request) {})
+	if _, err := p.ListPRCommits(context.Background(), "bad", 1); err == nil {
+		t.Fatal("expected error")
+	}
+}
+
 // --- parseBBPRInfo ---
 
 func TestParseBBPRInfoWithLink(t *testing.T) {
 	payload := struct {
 		PullRequest struct {
-			ID    int    `json:"id"`
-			Title string `json:"title"`
+			ID      int    `json:"id"`
+			Title   string `json:"title"`
 			FromRef struct {
 				DisplayID string `json:"displayId"`
 			} `json:"fromRef"`

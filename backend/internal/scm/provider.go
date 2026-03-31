@@ -125,6 +125,7 @@ type SCMProvider interface {
 	GetPR(ctx context.Context, repoFullName string, prID int) (*PR, error)
 	ListPRs(ctx context.Context, repoFullName string, opts PRListOpts) ([]*PR, error)
 	GetPRChangedFiles(ctx context.Context, repoFullName string, prID int) ([]string, error)
+	ListPRCommits(ctx context.Context, repoFullName string, prID int) ([]string, error)
 	GetPRApprovals(ctx context.Context, repoFullName string, prID int) (int, error)
 	AddLabels(ctx context.Context, repoFullName string, prID int, labels []string) error
 	SetPRStatus(ctx context.Context, req SetStatusRequest) error

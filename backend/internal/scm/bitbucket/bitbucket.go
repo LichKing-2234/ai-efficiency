@@ -384,6 +384,33 @@ func (p *Provider) GetPRChangedFiles(ctx context.Context, repoFullName string, p
 	return files, nil
 }
 
+func (p *Provider) ListPRCommits(ctx context.Context, repoFullName string, prID int) ([]string, error) {
+	project, repo, err := splitFullName(repoFullName)
+	if err != nil {
+		return nil, err
+	}
+
+	data, err := p.doRequest(ctx, "GET", fmt.Sprintf("/projects/%s/repos/%s/pull-requests/%d/commits?limit=1000", project, repo, prID), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var result struct {
+		Values []struct {
+			ID string `json:"id"`
+		} `json:"values"`
+	}
+	if err := json.Unmarshal(data, &result); err != nil {
+		return nil, err
+	}
+
+	commits := make([]string, 0, len(result.Values))
+	for _, v := range result.Values {
+		commits = append(commits, v.ID)
+	}
+	return commits, nil
+}
+
 // GetPRApprovals returns the number of approvals on a PR.
 func (p *Provider) GetPRApprovals(ctx context.Context, repoFullName string, prID int) (int, error) {
 	pr, err := p.GetPR(ctx, repoFullName, prID)
@@ -515,8 +542,8 @@ func (p *Provider) ParseWebhookPayload(r *http.Request, secret string) (*scm.Web
 			Name string `json:"name"`
 		} `json:"actor"`
 		PullRequest struct {
-			ID    int    `json:"id"`
-			Title string `json:"title"`
+			ID      int    `json:"id"`
+			Title   string `json:"title"`
 			FromRef struct {
 				DisplayID  string `json:"displayId"`
 				Repository struct {
@@ -586,8 +613,8 @@ func parseBBPRInfo(payload interface{}) *scm.PRInfo {
 	// Type assert to access the parsed payload
 	type bbPayload struct {
 		PullRequest struct {
-			ID    int    `json:"id"`
-			Title string `json:"title"`
+			ID      int    `json:"id"`
+			Title   string `json:"title"`
 			FromRef struct {
 				DisplayID string `json:"displayId"`
 			} `json:"fromRef"`

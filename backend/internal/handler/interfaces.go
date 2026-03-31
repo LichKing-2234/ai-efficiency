@@ -5,6 +5,7 @@ import (
 
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/internal/analysis"
+	"github.com/ai-efficiency/backend/internal/attribution"
 	"github.com/ai-efficiency/backend/internal/prsync"
 	"github.com/ai-efficiency/backend/internal/scm"
 )
@@ -31,4 +32,8 @@ type repoSCMProvider interface {
 // prSyncer abstracts prsync.Service for testability.
 type prSyncer interface {
 	Sync(ctx context.Context, scmProvider scm.SCMProvider, rc *ent.RepoConfig) (*prsync.SyncResult, error)
+}
+
+type prAttributionSettler interface {
+	Settle(ctx context.Context, provider scm.SCMProvider, pr *ent.PrRecord, triggeredBy string) (*attribution.SettleResult, error)
 }

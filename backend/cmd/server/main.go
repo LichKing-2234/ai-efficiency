@@ -15,6 +15,7 @@ import (
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/internal/analysis"
 	"github.com/ai-efficiency/backend/internal/analysis/llm"
+	"github.com/ai-efficiency/backend/internal/attribution"
 	"github.com/ai-efficiency/backend/internal/auth"
 	"github.com/ai-efficiency/backend/internal/checkpoint"
 	"github.com/ai-efficiency/backend/internal/config"
@@ -216,6 +217,8 @@ func main() {
 	}
 	checkpointService := checkpoint.NewService(entClient)
 	checkpointHandler := handler.NewCheckpointHandler(checkpointService)
+	attributionService := attribution.NewService(entClient, relayProvider)
+	handler.SetPRAttributionService(attributionService)
 
 	r := handler.SetupRouter(
 		entClient,

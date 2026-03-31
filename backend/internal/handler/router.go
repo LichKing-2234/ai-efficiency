@@ -11,6 +11,12 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+var prAttributionService prAttributionSettler
+
+func SetPRAttributionService(service prAttributionSettler) {
+	prAttributionService = service
+}
+
 // SetupRouter creates and configures the Gin router with all route groups.
 func SetupRouter(
 	entClient *ent.Client,
@@ -50,7 +56,7 @@ func SetupRouter(
 	scmProviderHandler := NewSCMProviderHandler(entClient, encryptionKey)
 	repoHandler := NewRepoHandler(repoService)
 	analysisHandler := NewAnalysisHandler(analysisService, optimizer, repoService)
-	prHandler := NewPRHandler(entClient, repoService, syncService)
+	prHandler := NewPRHandler(entClient, repoService, syncService, prAttributionService)
 	efficiencyHandler := NewEfficiencyHandler(entClient, aggregator)
 	sessionHandler := NewSessionHandler(entClient, sessionBootstrapSvc)
 
@@ -124,6 +130,7 @@ func SetupRouter(
 	prGroup := protected.Group("/prs")
 	{
 		prGroup.GET("/:id", prHandler.Get)
+		prGroup.POST("/:id/settle", prHandler.Settle)
 	}
 
 	// Efficiency
