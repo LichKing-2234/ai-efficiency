@@ -4,14 +4,17 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 
+	"github.com/ai-efficiency/ae-cli/internal/collector"
 	"github.com/ai-efficiency/ae-cli/internal/session"
 )
 
@@ -115,6 +118,38 @@ func ensureGitInfoExcludeHas(gitDirAbs string, pattern string) error {
 	return nil
 }
 
+func collectSnapshotForHook(workspaceRoot string, sessionID string) *collector.Snapshot {
+	snapshot, err := collector.BuildSnapshot(collector.DefaultPaths(workspaceRoot))
+	if err != nil || snapshot == nil {
+		return nil
+	}
+	if strings.TrimSpace(sessionID) != "" {
+		_ = collector.WriteCache(sessionID, snapshot)
+	}
+	return snapshot
+}
+
+func applyAgentSnapshot(ev *HookEvent, snapshot *collector.Snapshot) {
+	if ev == nil || snapshot == nil {
+		return
+	}
+	data, err := json.Marshal(snapshot)
+	if err != nil {
+		return
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return
+	}
+
+	rv := reflect.ValueOf(ev).Elem()
+	field := rv.FieldByName("AgentSnapshot")
+	if !field.IsValid() || !field.CanSet() || field.Kind() != reflect.Map {
+		return
+	}
+	field.Set(reflect.ValueOf(payload))
+}
+
 func (h *Handler) PostCommit(ctx context.Context, cwd string) error {
 	repoRoot, err := gitOutput(cwd, "rev-parse", "--show-toplevel")
 	if err != nil {
@@ -147,6 +182,7 @@ func (h *Handler) PostCommit(ctx context.Context, cwd string) error {
 		// Unbound: no marker and no env bootstrap.
 		return nil
 	}
+	snapshot := collectSnapshotForHook(repoRoot, sessionID)
 
 	repoHint := repoEventHint(cwd, m)
 
@@ -162,6 +198,7 @@ func (h *Handler) PostCommit(ctx context.Context, cwd string) error {
 		SessionID: sessionID,
 		CommitSHA: head,
 	}
+	applyAgentSnapshot(&ev, snapshot)
 
 	if h == nil || h.uploader == nil {
 		// No uploader wired; behave like upload failure (queue best-effort).
@@ -235,6 +272,7 @@ func (h *Handler) PostRewrite(ctx context.Context, cwd string, rewriteType strin
 	if sessionID == "" {
 		return nil
 	}
+	snapshot := collectSnapshotForHook(repoRoot, sessionID)
 	repoHint := repoEventHint(cwd, m)
 	if repoHint == "" || rewriteType == "" {
 		// Fail-open: cannot build stable idempotent IDs without scope/type.
@@ -270,6 +308,7 @@ func (h *Handler) PostRewrite(ctx context.Context, cwd string, rewriteType strin
 			OldCommitSHA: oldSHA,
 			NewCommitSHA: newSHA,
 		}
+		applyAgentSnapshot(&ev, snapshot)
 
 		if h == nil || h.uploader == nil {
 			if q != nil {

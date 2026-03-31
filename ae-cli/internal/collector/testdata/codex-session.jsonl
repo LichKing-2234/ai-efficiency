@@ -1,0 +1,2 @@
+{"timestamp":"2026-03-27T09:00:00Z","type":"session_meta","payload":{"id":"codex-sess-1","cwd":"/tmp/repo"}}
+{"timestamp":"2026-03-27T09:05:00Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":1200,"cached_input_tokens":300,"output_tokens":250,"reasoning_output_tokens":80,"total_tokens":1450}}}}

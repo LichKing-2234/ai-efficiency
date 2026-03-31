@@ -1,0 +1,10 @@
+{
+  "session_id": "kiro-sess-1",
+  "cwd": "/tmp/repo",
+  "session_state": {
+    "rts_model_state": {
+      "conversation_id": "conv-kiro-1",
+      "context_usage_percentage": 47.5
+    }
+  }
+}

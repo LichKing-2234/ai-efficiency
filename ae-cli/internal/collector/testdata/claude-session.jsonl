@@ -1,0 +1,2 @@
+{"type":"assistant","cwd":"/tmp/repo","sessionId":"claude-sess-1","message":{"usage":{"input_tokens":500,"output_tokens":120,"cache_creation_input_tokens":40,"cache_read_input_tokens":25}}}
+{"type":"assistant","cwd":"/tmp/repo","sessionId":"claude-sess-1","message":{"usage":{"input_tokens":600,"output_tokens":140,"cache_creation_input_tokens":10,"cache_read_input_tokens":15}}}
