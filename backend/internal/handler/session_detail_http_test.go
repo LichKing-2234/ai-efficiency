@@ -167,8 +167,8 @@ func TestSessionGetOrdersAndLimitsCheckpointEdges(t *testing.T) {
 	}
 	firstWorkspace, _ := workspaces[0].(map[string]any)
 	lastWorkspace, _ := workspaces[len(workspaces)-1].(map[string]any)
-	if firstWorkspace["last_seen_at"] == lastWorkspace["last_seen_at"] {
-		t.Fatalf("expected ordered workspaces, got identical endpoints")
+	if firstWorkspace["last_seen_at"].(string) <= lastWorkspace["last_seen_at"].(string) {
+		t.Fatalf("expected workspaces ordered desc by last_seen_at, got first=%v last=%v", firstWorkspace["last_seen_at"], lastWorkspace["last_seen_at"])
 	}
 
 	checkpoints, _ := edges["commit_checkpoints"].([]any)

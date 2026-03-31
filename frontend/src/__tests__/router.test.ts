@@ -3,6 +3,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import router from '@/router'
+import SessionDetailView from '@/views/sessions/SessionDetailView.vue'
 
 function createTestRouter() {
   return createRouter({
@@ -97,5 +98,9 @@ describe('Router Guards', () => {
   it('includes session detail route in the router', async () => {
     const sessionDetail = router.getRoutes().find((r) => r.name === 'SessionDetail')
     expect(sessionDetail?.path).toBe('/sessions/:id')
+    const componentLoader = sessionDetail?.components?.default as undefined | (() => Promise<{ default: unknown }>)
+    expect(componentLoader).toBeTypeOf('function')
+    const mod = await componentLoader!()
+    expect(mod.default).toBe(SessionDetailView)
   })
 })

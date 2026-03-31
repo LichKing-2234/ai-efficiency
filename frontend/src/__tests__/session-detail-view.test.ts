@@ -103,4 +103,31 @@ describe('SessionDetailView', () => {
 
     expect(replaceSpy).toHaveBeenCalledWith('/sessions')
   })
+
+  it('reloads when only the route param changes', async () => {
+    const { getSession } = await import('@/api/session')
+    ;(getSession as any)
+      .mockResolvedValueOnce({
+        data: { data: { id: 'sess-1', branch: 'feat/x', status: 'active', started_at: '2026-03-30T00:00:00Z', ended_at: null, tool_invocations: [] } },
+      })
+      .mockResolvedValueOnce({
+        data: { data: { id: 'sess-2', branch: 'feat/y', status: 'completed', started_at: '2026-03-31T00:00:00Z', ended_at: null, tool_invocations: [] } },
+      })
+
+    const router = createTestRouter()
+    await router.push('/sessions/sess-1')
+    await router.isReady()
+
+    const wrapper = mount(SessionDetailView, {
+      global: { plugins: [createPinia(), router] },
+    })
+    await flushPromises()
+    expect(wrapper.text()).toContain('sess-1')
+
+    await router.push('/sessions/sess-2')
+    await flushPromises()
+
+    expect((getSession as any).mock.calls.at(-1)?.[0]).toBe('sess-2')
+    expect(wrapper.text()).toContain('sess-2')
+  })
 })

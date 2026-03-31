@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppLayout from '@/components/AppLayout.vue'
 import { getSession } from '@/api/session'
@@ -9,23 +9,32 @@ const route = useRoute()
 const router = useRouter()
 const loading = ref(true)
 const session = ref<Session | null>(null)
-const sessionId = String(route.params.id || '')
 
 function formatDate(value?: string | null) {
   if (!value) return '—'
   return new Date(value).toLocaleString()
 }
 
-onMounted(async () => {
+async function loadSession(sessionId: string) {
+  loading.value = true
   try {
     const res = await getSession(sessionId)
     session.value = res.data.data ?? null
   } catch {
+    session.value = null
     router.replace('/sessions')
   } finally {
     loading.value = false
   }
-})
+}
+
+watch(
+  () => String(route.params.id || ''),
+  (sessionId) => {
+    void loadSession(sessionId)
+  },
+  { immediate: true },
+)
 </script>
 
 <template>
