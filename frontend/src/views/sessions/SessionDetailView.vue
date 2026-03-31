@@ -21,7 +21,7 @@ onMounted(async () => {
     const res = await getSession(sessionId)
     session.value = res.data.data ?? null
   } catch {
-    router.push('/sessions')
+    router.replace('/sessions')
   } finally {
     loading.value = false
   }

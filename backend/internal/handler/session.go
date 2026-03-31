@@ -6,8 +6,10 @@ import (
 	"time"
 
 	"github.com/ai-efficiency/backend/ent"
+	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/session"
+	"github.com/ai-efficiency/backend/ent/sessionworkspace"
 	"github.com/ai-efficiency/backend/internal/auth"
 	"github.com/ai-efficiency/backend/internal/pkg"
 	"github.com/ai-efficiency/backend/internal/sessionbootstrap"
@@ -274,8 +276,14 @@ func (h *SessionHandler) Get(c *gin.Context) {
 	s, err := h.entClient.Session.Query().
 		Where(session.IDEQ(id)).
 		WithRepoConfig().
-		WithSessionWorkspaces().
-		WithCommitCheckpoints().
+		WithSessionWorkspaces(func(q *ent.SessionWorkspaceQuery) {
+			q.Order(ent.Desc(sessionworkspace.FieldLastSeenAt)).
+				Limit(20)
+		}).
+		WithCommitCheckpoints(func(q *ent.CommitCheckpointQuery) {
+			q.Order(ent.Desc(commitcheckpoint.FieldCapturedAt)).
+				Limit(50)
+		}).
 		Only(c.Request.Context())
 	if err != nil {
 		if ent.IsNotFound(err) {

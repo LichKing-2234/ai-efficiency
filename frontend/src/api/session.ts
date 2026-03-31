@@ -5,6 +5,6 @@ export function listSessions(params?: { page?: number; page_size?: number; statu
   return client.get<ApiResponse<PagedResponse<Session>>>('/sessions', { params })
 }
 
-export function getSession(id: string | number) {
+export function getSession(id: string) {
   return client.get<ApiResponse<Session>>(`/sessions/${id}`)
 }

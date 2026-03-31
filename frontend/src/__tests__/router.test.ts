@@ -10,6 +10,8 @@ function createTestRouter() {
       { path: '/login', name: 'Login', component: { template: '<div>Login</div>' }, meta: { public: true } },
       { path: '/', name: 'Dashboard', component: { template: '<div>Dashboard</div>' } },
       { path: '/repos', name: 'RepoList', component: { template: '<div>Repos</div>' } },
+      { path: '/sessions', name: 'SessionList', component: { template: '<div>Sessions</div>' } },
+      { path: '/sessions/:id', name: 'SessionDetail', component: { template: '<div>Session Detail</div>' } },
     ],
   })
 }
@@ -89,5 +91,11 @@ describe('Router Guards', () => {
 
     expect(router.currentRoute.value.path).toBe('/login')
     expect(router.currentRoute.value.query.redirect).toBe('/repos')
+  })
+
+  it('includes session detail route in the router', async () => {
+    const router = createTestRouter()
+    const sessionDetail = router.getRoutes().find((r) => r.name === 'SessionDetail')
+    expect(sessionDetail?.path).toBe('/sessions/:id')
   })
 })

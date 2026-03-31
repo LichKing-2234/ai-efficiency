@@ -86,4 +86,21 @@ describe('SessionDetailView', () => {
     expect(wrapper.text()).toContain('abc12345def67890')
     expect(wrapper.text()).toContain('marker')
   })
+
+  it('replaces to session list when session load fails', async () => {
+    const { getSession } = await import('@/api/session')
+    ;(getSession as any).mockRejectedValue(new Error('not found'))
+
+    const router = createTestRouter()
+    const replaceSpy = vi.spyOn(router, 'replace')
+    await router.push('/sessions/missing')
+    await router.isReady()
+
+    mount(SessionDetailView, {
+      global: { plugins: [createPinia(), router] },
+    })
+    await flushPromises()
+
+    expect(replaceSpy).toHaveBeenCalledWith('/sessions')
+  })
 })
