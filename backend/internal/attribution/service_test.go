@@ -349,6 +349,9 @@ func TestSettlePR_UsesRewriteHistoryToMatchCheckpoint(t *testing.T) {
 	if result.ResultClassification != "clear" {
 		t.Fatalf("result classification = %q, want clear", result.ResultClassification)
 	}
+	if result.AttributionConfidence != "medium" {
+		t.Fatalf("attribution confidence = %q, want medium", result.AttributionConfidence)
+	}
 	if result.PrimaryTokenCount != 44 {
 		t.Fatalf("primary_token_count = %d, want 44", result.PrimaryTokenCount)
 	}

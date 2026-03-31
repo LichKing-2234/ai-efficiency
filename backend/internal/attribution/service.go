@@ -109,6 +109,7 @@ func (s *Service) Settle(ctx context.Context, provider scm.SCMProvider, pr *ent.
 	var totalTokens int64
 	var totalCost float64
 	var totalUsageLogs int64
+	usedSessionStartFallback := false
 
 	for _, cp := range matchedCheckpoints {
 		sessionID := *cp.SessionID
@@ -135,6 +136,8 @@ func (s *Service) Settle(ctx context.Context, provider scm.SCMProvider, pr *ent.
 		}
 		if prevCP != nil {
 			from = prevCP.CapturedAt
+		} else {
+			usedSessionStartFallback = true
 		}
 
 		to := cp.CapturedAt
@@ -196,6 +199,15 @@ func (s *Service) Settle(ctx context.Context, provider scm.SCMProvider, pr *ent.
 	}
 	slices.Sort(matchedSessions)
 
+	attributionConfidence := prrecord.AttributionConfidenceHigh
+	validationConfidence := "high"
+	validationReason := "all_matched_checkpoints_bound"
+	if usedSessionStartFallback {
+		attributionConfidence = prrecord.AttributionConfidenceMedium
+		validationConfidence = "medium"
+		validationReason = "session_start_fallback"
+	}
+
 	primarySummary := map[string]interface{}{
 		"total_tokens":    totalTokens,
 		"total_cost":      totalCost,
@@ -211,8 +223,8 @@ func (s *Service) Settle(ctx context.Context, provider scm.SCMProvider, pr *ent.
 	}
 	validationSummary := map[string]interface{}{
 		"result":           "consistent",
-		"confidence":       "high",
-		"reason":           "all_matched_checkpoints_bound",
+		"confidence":       validationConfidence,
+		"reason":           validationReason,
 		"matched_commits":  len(matchedCommits),
 		"matched_sessions": len(matchedSessions),
 	}
@@ -223,7 +235,7 @@ func (s *Service) Settle(ctx context.Context, provider scm.SCMProvider, pr *ent.
 		triggeredBy,
 		prattributionrun.ResultClassificationClear,
 		prrecord.AttributionStatusClear,
-		prrecord.AttributionConfidenceHigh,
+		attributionConfidence,
 		totalTokens,
 		totalCost,
 		matchedCommits,
