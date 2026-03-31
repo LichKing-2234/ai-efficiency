@@ -5,7 +5,7 @@ import AppLayout from '@/components/AppLayout.vue'
 import RepoChat from '@/components/RepoChat.vue'
 import { getRepo, updateRepo } from '@/api/repo'
 import { triggerScan, listScans } from '@/api/analysis'
-import { listPRs, syncPRs } from '@/api/pr'
+import { listPRs, syncPRs, settlePR } from '@/api/pr'
 import type { RepoConfig, ScanResult, PRRecord } from '@/types'
 
 const route = useRoute()
@@ -20,6 +20,7 @@ const prsMonths = ref(3)
 const loading = ref(true)
 const scanning = ref(false)
 const syncing = ref(false)
+const settlingPRId = ref<number | null>(null)
 const chatRef = ref<InstanceType<typeof RepoChat> | null>(null)
 
 // Scan Settings
@@ -134,6 +135,27 @@ function prsNextPage() {
 
 function handleOptimize() {
   chatRef.value?.startOptimizePreview()
+}
+
+function formatConfidence(value?: number) {
+  if (value == null || Number.isNaN(value)) return '—'
+  const normalized = value <= 1 ? value * 100 : value
+  return `${Math.round(normalized)}%`
+}
+
+function formatCurrency(value?: number) {
+  if (value == null || Number.isNaN(value)) return '—'
+  return `$${value.toFixed(2)}`
+}
+
+async function handleSettlePR(prId: number) {
+  settlingPRId.value = prId
+  try {
+    await settlePR(prId)
+    await loadPRs()
+  } catch { /* settle failed */ } finally {
+    settlingPRId.value = null
+  }
 }
 
 async function handleSaveScanPrompt() {
@@ -335,7 +357,11 @@ async function handleClearScanPrompt() {
                 <th class="px-3 py-2 text-left font-medium">Author</th>
                 <th class="px-3 py-2 text-left font-medium">Status</th>
                 <th class="px-3 py-2 text-left font-medium">AI Label</th>
+                <th class="px-3 py-2 text-left font-medium">Attribution</th>
+                <th class="px-3 py-2 text-left font-medium">Confidence</th>
+                <th class="px-3 py-2 text-left font-medium">Primary Cost</th>
                 <th class="px-3 py-2 text-left font-medium">Created</th>
+                <th class="px-3 py-2 text-left font-medium">Actions</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-gray-50">
@@ -357,7 +383,17 @@ async function handleClearScanPrompt() {
                     {{ pr.ai_label }}
                   </span>
                 </td>
+                <td class="px-3 py-2 text-gray-600 text-xs">{{ pr.attribution_status || 'not_run' }}</td>
+                <td class="px-3 py-2 text-gray-600 text-xs">{{ formatConfidence(pr.attribution_confidence) }}</td>
+                <td class="px-3 py-2 text-gray-600 text-xs">{{ formatCurrency(pr.primary_token_cost) }}</td>
                 <td class="px-3 py-2 text-gray-400 text-xs whitespace-nowrap">{{ formatDate(pr.created_at) }}</td>
+                <td class="px-3 py-2">
+                  <button
+                    class="rounded border border-gray-200 px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-40"
+                    :disabled="settlingPRId === pr.id"
+                    @click="handleSettlePR(pr.id)"
+                  >{{ settlingPRId === pr.id ? 'Settling...' : 'Settle' }}</button>
+                </td>
               </tr>
             </tbody>
           </table>

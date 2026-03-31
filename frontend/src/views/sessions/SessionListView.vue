@@ -106,6 +106,7 @@ onMounted(fetchSessions)
               <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Duration</th>
               <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tools</th>
               <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Started</th>
+              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-gray-100">
@@ -126,6 +127,12 @@ onMounted(fetchSessions)
               <td class="px-4 py-3 text-sm text-gray-600">{{ duration(s) }}</td>
               <td class="px-4 py-3 text-sm text-gray-600">{{ toolSummary(s) }}</td>
               <td class="px-4 py-3 text-sm text-gray-500">{{ formatDate(s.started_at) }}</td>
+              <td class="px-4 py-3 text-sm">
+                <button
+                  class="text-indigo-600 hover:text-indigo-800"
+                  @click.stop="router.push({ name: 'SessionDetail', params: { id: s.id } })"
+                >View</button>
+              </td>
             </tr>
           </tbody>
         </table>

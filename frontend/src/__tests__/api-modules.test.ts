@@ -15,7 +15,7 @@ vi.mock('@/api/client', () => {
 import client from '@/api/client'
 import { listProviders, getProvider, createProvider, updateProvider, deleteProvider } from '@/api/scmProvider'
 import { triggerScan, listScans, getLatestScan, triggerOptimize, optimizePreview, optimizeConfirm } from '@/api/analysis'
-import { listPRs, getPR, syncPRs } from '@/api/pr'
+import { listPRs, getPR, syncPRs, settlePR } from '@/api/pr'
 import { getDashboard, getRepoMetrics, getRepoTrend } from '@/api/efficiency'
 import { sendChatMessage } from '@/api/chat'
 import { getLLMConfig, updateLLMConfig, testLLMConnection } from '@/api/settings'
@@ -141,6 +141,12 @@ describe('pr API', () => {
     mockClient.post.mockResolvedValue({ data: { data: { created: 2, updated: 1, total: 3 } } })
     await syncPRs(5)
     expect(mockClient.post).toHaveBeenCalledWith('/repos/5/sync-prs')
+  })
+
+  it('settlePR calls POST /prs/:id/settle', async () => {
+    mockClient.post.mockResolvedValue({ data: { data: { attribution_status: 'clear' } } })
+    await settlePR(88)
+    expect(mockClient.post).toHaveBeenCalledWith('/prs/88/settle')
   })
 })
 

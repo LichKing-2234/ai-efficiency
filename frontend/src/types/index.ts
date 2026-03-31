@@ -38,10 +38,42 @@ export interface Session {
   status: string
   started_at: string
   ended_at: string | null
+  provider_name?: string | null
+  relay_api_key_id?: number | null
+  runtime_ref?: string | null
+  initial_workspace_root?: string | null
+  last_seen_at?: string | null
   tool_invocations: Array<{ tool: string; start: string; end: string }>
   edges?: {
     repo_config?: RepoConfig
+    session_workspaces?: SessionWorkspace[]
+    commit_checkpoints?: CommitCheckpoint[]
   }
+}
+
+export interface SessionWorkspace {
+  session_id?: string
+  workspace_id: string
+  workspace_root: string
+  git_dir: string
+  git_common_dir: string
+  first_seen_at: string
+  last_seen_at: string
+  binding_source: string
+}
+
+export interface CommitCheckpoint {
+  event_id?: string
+  session_id?: string
+  workspace_id: string
+  repo_config_id?: number
+  commit_sha: string
+  parent_shas?: string[]
+  branch_snapshot?: string | null
+  head_snapshot?: string | null
+  binding_source: string
+  agent_snapshot?: Record<string, any>
+  captured_at: string
 }
 
 export interface ScanResult {
@@ -69,6 +101,12 @@ export interface PRRecord {
   ai_label: string
   ai_ratio: number
   token_cost: number
+  attribution_status?: string
+  attribution_confidence?: number
+  primary_token_count?: number
+  primary_token_cost?: number
+  metadata_summary?: Record<string, any>
+  last_attributed_at?: string | null
   cycle_time_hours: number
   merged_at: string | null
   created_at: string

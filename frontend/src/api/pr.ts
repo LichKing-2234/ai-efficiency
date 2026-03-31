@@ -12,3 +12,7 @@ export function getPR(prId: number) {
 export function syncPRs(repoId: number) {
   return client.post<ApiResponse<{ created: number; updated: number; total: number }>>(`/repos/${repoId}/sync-prs`)
 }
+
+export function settlePR(prId: number) {
+  return client.post<ApiResponse<PRRecord>>(`/prs/${prId}/settle`)
+}
