@@ -178,17 +178,26 @@ func InstallSharedHooks(cwd string, selfPath string) error {
 		}
 	}
 
-	// Activate shared hooks. Prefer worktree config when available so it overrides
-	// any existing worktree-scoped hooksPath cleanly.
-	cmd := exec.Command("git", "config", "--worktree", "core.hooksPath", sharedDir)
+	// Activate shared hooks. If worktreeConfig is enabled, hooksPath must be written
+	// at the worktree level so it actually overrides any existing worktree-scoped value.
+	worktreeCfg := false
+	if v, err := gitOutputInstall(cwd, "config", "--bool", "extensions.worktreeConfig"); err == nil {
+		worktreeCfg = strings.EqualFold(strings.TrimSpace(v), "true")
+	}
+
+	if worktreeCfg {
+		cmd := exec.Command("git", "config", "--worktree", "core.hooksPath", sharedDir)
+		cmd.Dir = cwd
+		if out, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("git config --worktree core.hooksPath: %w (%s)", err, strings.TrimSpace(string(out)))
+		}
+		return nil
+	}
+
+	cmd := exec.Command("git", "config", "core.hooksPath", sharedDir)
 	cmd.Dir = cwd
 	if out, err := cmd.CombinedOutput(); err != nil {
-		// Fallback for repos/worktrees without worktreeConfig enabled.
-		cmd = exec.Command("git", "config", "core.hooksPath", sharedDir)
-		cmd.Dir = cwd
-		if out2, err2 := cmd.CombinedOutput(); err2 != nil {
-			return fmt.Errorf("git config core.hooksPath: %w (%s); fallback: %w (%s)", err, strings.TrimSpace(string(out)), err2, strings.TrimSpace(string(out2)))
-		}
+		return fmt.Errorf("git config core.hooksPath: %w (%s)", err, strings.TrimSpace(string(out)))
 	}
 	return nil
 }
