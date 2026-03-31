@@ -96,6 +96,7 @@ func setupBootstrapHTTPTestEnv(t *testing.T) *testEnv {
 		middleware.CORS(nil),
 		nil, nil, nil,
 		bootstrapSvc,
+		nil,
 	)
 
 	u, err := client.User.Create().

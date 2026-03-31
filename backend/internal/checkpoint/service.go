@@ -13,6 +13,7 @@ import (
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
 	"github.com/ai-efficiency/backend/ent/commitrewrite"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
+	"github.com/ai-efficiency/backend/ent/session"
 	"github.com/google/uuid"
 )
 
@@ -85,8 +86,11 @@ func (s *Service) RecordCheckpoint(ctx context.Context, req CommitCheckpointRequ
 	if err != nil {
 		return fmt.Errorf("record checkpoint: start tx: %w", err)
 	}
+	txDone := false
 	defer func() {
-		_ = tx.Rollback()
+		if !txDone {
+			_ = tx.Rollback()
+		}
 	}()
 
 	txSvc := &Service{entClient: tx.Client()}
@@ -104,6 +108,11 @@ func (s *Service) RecordCheckpoint(ctx context.Context, req CommitCheckpointRequ
 	rc, err := txSvc.resolveRepoConfig(ctx, req.RepoFullName, req.CloneURL)
 	if err != nil {
 		return fmt.Errorf("record checkpoint: %w", err)
+	}
+	if hasSession {
+		if err := txSvc.validateSessionRepo(ctx, sessionID, rc.ID); err != nil {
+			return fmt.Errorf("record checkpoint: %w", err)
+		}
 	}
 
 	create := txSvc.entClient.CommitCheckpoint.Create().
@@ -132,7 +141,9 @@ func (s *Service) RecordCheckpoint(ctx context.Context, req CommitCheckpointRequ
 
 	if _, err := create.Save(ctx); err != nil {
 		if ent.IsConstraintError(err) {
-			exists, qerr := txSvc.entClient.CommitCheckpoint.Query().
+			_ = tx.Rollback()
+			txDone = true
+			exists, qerr := s.entClient.CommitCheckpoint.Query().
 				Where(commitcheckpoint.EventIDEQ(eventID)).
 				Exist(ctx)
 			if qerr == nil && exists {
@@ -151,6 +162,7 @@ func (s *Service) RecordCheckpoint(ctx context.Context, req CommitCheckpointRequ
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("record checkpoint: commit tx: %w", err)
 	}
+	txDone = true
 	return nil
 }
 
@@ -203,6 +215,11 @@ func (s *Service) RecordRewrite(ctx context.Context, req CommitRewriteRequest) e
 	if err != nil {
 		return fmt.Errorf("record rewrite: %w", err)
 	}
+	if hasSession {
+		if err := s.validateSessionRepo(ctx, sessionID, rc.ID); err != nil {
+			return fmt.Errorf("record rewrite: %w", err)
+		}
+	}
 
 	create := s.entClient.CommitRewrite.Create().
 		SetEventID(eventID).
@@ -232,6 +249,22 @@ func (s *Service) RecordRewrite(ctx context.Context, req CommitRewriteRequest) e
 		return fmt.Errorf("record rewrite: create rewrite: %w", err)
 	}
 
+	return nil
+}
+
+func (s *Service) validateSessionRepo(ctx context.Context, sessionID uuid.UUID, repoConfigID int) error {
+	ok, err := s.entClient.Session.Query().
+		Where(
+			session.IDEQ(sessionID),
+			session.HasRepoConfigWith(repoconfig.IDEQ(repoConfigID)),
+		).
+		Exist(ctx)
+	if err != nil {
+		return fmt.Errorf("load session: %w", err)
+	}
+	if !ok {
+		return fmt.Errorf("session %s does not belong to repo %d", sessionID, repoConfigID)
+	}
 	return nil
 }
 

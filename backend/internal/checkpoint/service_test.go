@@ -193,3 +193,107 @@ func TestRecordCheckpointWithAgentSnapshotAndNoSessionDoesNotPartiallyWrite(t *t
 		t.Fatalf("metadata event count = %d, want 0 without session_id", metadataCount)
 	}
 }
+
+func TestRecordCheckpointRejectsSessionFromDifferentRepo(t *testing.T) {
+	t.Parallel()
+
+	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	ctx := context.Background()
+
+	sp := client.ScmProvider.Create().
+		SetName("github-test").
+		SetType("github").
+		SetBaseURL("https://api.github.com").
+		SetCredentials("enc").
+		SaveX(ctx)
+
+	repoA := client.RepoConfig.Create().
+		SetScmProviderID(sp.ID).
+		SetName("demo-a").
+		SetFullName("org/demo-a").
+		SetCloneURL("https://github.com/org/demo-a.git").
+		SetDefaultBranch("main").
+		SaveX(ctx)
+	repoB := client.RepoConfig.Create().
+		SetScmProviderID(sp.ID).
+		SetName("demo-b").
+		SetFullName("org/demo-b").
+		SetCloneURL("https://github.com/org/demo-b.git").
+		SetDefaultBranch("main").
+		SaveX(ctx)
+
+	sess := client.Session.Create().
+		SetID(uuid.New()).
+		SetRepoConfigID(repoA.ID).
+		SetBranch("main").
+		SaveX(ctx)
+
+	svc := NewService(client)
+	err := svc.RecordCheckpoint(ctx, CommitCheckpointRequest{
+		EventID:       "evt-cross-repo",
+		SessionID:     sess.ID.String(),
+		RepoFullName:  repoB.FullName,
+		WorkspaceID:   "ws-1",
+		CommitSHA:     "abc123",
+		BindingSource: "marker",
+	})
+	if err == nil {
+		t.Fatal("expected cross-repo session checkpoint to fail")
+	}
+	if count := client.CommitCheckpoint.Query().Where(commitcheckpoint.EventIDEQ("evt-cross-repo")).CountX(ctx); count != 0 {
+		t.Fatalf("checkpoint count = %d, want 0", count)
+	}
+}
+
+func TestRecordRewriteRejectsSessionFromDifferentRepo(t *testing.T) {
+	t.Parallel()
+
+	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	ctx := context.Background()
+
+	sp := client.ScmProvider.Create().
+		SetName("github-test").
+		SetType("github").
+		SetBaseURL("https://api.github.com").
+		SetCredentials("enc").
+		SaveX(ctx)
+
+	repoA := client.RepoConfig.Create().
+		SetScmProviderID(sp.ID).
+		SetName("demo-a").
+		SetFullName("org/demo-a").
+		SetCloneURL("https://github.com/org/demo-a.git").
+		SetDefaultBranch("main").
+		SaveX(ctx)
+	repoB := client.RepoConfig.Create().
+		SetScmProviderID(sp.ID).
+		SetName("demo-b").
+		SetFullName("org/demo-b").
+		SetCloneURL("https://github.com/org/demo-b.git").
+		SetDefaultBranch("main").
+		SaveX(ctx)
+
+	sess := client.Session.Create().
+		SetID(uuid.New()).
+		SetRepoConfigID(repoA.ID).
+		SetBranch("main").
+		SaveX(ctx)
+
+	svc := NewService(client)
+	err := svc.RecordRewrite(ctx, CommitRewriteRequest{
+		EventID:       "evt-cross-repo-rewrite",
+		SessionID:     sess.ID.String(),
+		RepoFullName:  repoB.FullName,
+		WorkspaceID:   "ws-2",
+		RewriteType:   "amend",
+		OldCommitSHA:  "old123",
+		NewCommitSHA:  "new123",
+		BindingSource: "marker",
+	})
+	if err == nil {
+		t.Fatal("expected cross-repo session rewrite to fail")
+	}
+	if count := client.CommitRewrite.Query().Where(commitrewrite.EventIDEQ("evt-cross-repo-rewrite")).CountX(ctx); count != 0 {
+		t.Fatalf("rewrite count = %d, want 0", count)
+	}
+}

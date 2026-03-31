@@ -29,16 +29,11 @@ func SetupRouter(
 	providerHandler *ProviderHandler,
 	adminSettingsHandler *AdminSettingsHandler,
 	sessionBootstrapSvc *sessionbootstrap.Service,
-	checkpointHandlers ...*CheckpointHandler,
+	checkpointHandler *CheckpointHandler,
 ) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Recovery())
 	r.Use(corsMiddleware)
-
-	var checkpointHandler *CheckpointHandler
-	if len(checkpointHandlers) > 0 {
-		checkpointHandler = checkpointHandlers[0]
-	}
 
 	// OAuth endpoints — at root /oauth/* (not under /api/v1)
 	if oauthHandler != nil {

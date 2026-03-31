@@ -66,7 +66,7 @@ func setupTestEnv(t *testing.T) *testEnv {
 		nil, // optimizer
 		"0000000000000000000000000000000000000000000000000000000000000000",
 		middleware.CORS(nil),
-		nil, nil, nil, nil,
+		nil, nil, nil, nil, nil,
 	)
 
 	// Create a test admin user

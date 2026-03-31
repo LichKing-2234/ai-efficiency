@@ -72,7 +72,7 @@ func setupFullTestEnv(t *testing.T) *fullTestEnv {
 		nil, // optimizer
 		"0000000000000000000000000000000000000000000000000000000000000000",
 		middleware.CORS(nil),
-		nil, nil, nil, nil,
+		nil, nil, nil, nil, nil,
 	)
 
 	// Create admin user
