@@ -423,7 +423,7 @@ describe('SettingsView', () => {
 
     // base_url should be cleared
     const baseUrlInput = wrapper.findAll('input[type="text"]').find((i) => i.attributes('placeholder')?.includes('https://api.github.com'))
-    expect(baseUrlInput!.element.value).toBe('')
+    expect((baseUrlInput!.element as HTMLInputElement).value).toBe('')
   })
 
   it('changes type back to github and sets default base_url', async () => {
@@ -445,7 +445,7 @@ describe('SettingsView', () => {
     await wrapper.vm.$nextTick()
 
     const baseUrlInput = wrapper.findAll('input[type="text"]').find((i) => i.attributes('placeholder')?.includes('https://api.github.com'))
-    expect(baseUrlInput!.element.value).toBe('https://api.github.com')
+    expect((baseUrlInput!.element as HTMLInputElement).value).toBe('https://api.github.com')
   })
 
   // LLM config tests

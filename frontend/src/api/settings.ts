@@ -4,6 +4,9 @@ import type { ApiResponse } from '@/types'
 export interface LLMConfig {
   sub2api_url: string
   sub2api_api_key: string
+  relay_url?: string
+  relay_api_key?: string
+  enabled?: boolean
   model: string
   max_tokens_per_scan?: number
   max_scans_per_repo_per_day?: number

@@ -305,6 +305,6 @@ describe('LoginView', () => {
 
     const select = wrapper.find('select#source')
     await select.setValue('LDAP')
-    expect(select.element.value).toBe('LDAP')
+    expect((select.element as HTMLSelectElement).value).toBe('LDAP')
   })
 })

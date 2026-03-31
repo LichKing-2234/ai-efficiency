@@ -303,7 +303,7 @@ describe('RepoListView', () => {
 
     // Clone URL should be SSH format
     const cloneUrlInput = wrapper.find('input.font-mono')
-    expect(cloneUrlInput.element.value).toContain('git@github.com:myorg/myrepo.git')
+    expect((cloneUrlInput.element as HTMLInputElement).value).toContain('git@github.com:myorg/myrepo.git')
   })
 
   it('switches clone protocol to HTTP for GitHub', async () => {
@@ -329,7 +329,7 @@ describe('RepoListView', () => {
     await wrapper.vm.$nextTick()
 
     const cloneUrlInput = wrapper.find('input.font-mono')
-    expect(cloneUrlInput.element.value).toContain('https://github.com/myorg/myrepo.git')
+    expect((cloneUrlInput.element as HTMLInputElement).value).toContain('https://github.com/myorg/myrepo.git')
   })
 
   it('switches clone protocol to SSH for Bitbucket', async () => {
@@ -351,7 +351,7 @@ describe('RepoListView', () => {
     await wrapper.vm.$nextTick()
 
     const cloneUrlInput = wrapper.find('input.font-mono')
-    expect(cloneUrlInput.element.value).toContain('ssh://git@')
+    expect((cloneUrlInput.element as HTMLInputElement).value).toContain('ssh://git@')
   })
 
   it('updates SSH host for Bitbucket', async () => {
@@ -379,7 +379,7 @@ describe('RepoListView', () => {
     await wrapper.vm.$nextTick()
 
     const cloneUrlInput = wrapper.find('input.font-mono')
-    expect(cloneUrlInput.element.value).toContain('git@git.example.com')
+    expect((cloneUrlInput.element as HTMLInputElement).value).toContain('git@git.example.com')
   })
 
   it('handles Bitbucket HTTP clone URL', async () => {
@@ -395,7 +395,7 @@ describe('RepoListView', () => {
     await wrapper.vm.$nextTick()
 
     const cloneUrlInput = wrapper.find('input.font-mono')
-    expect(cloneUrlInput.element.value).toContain('/scm/proj/my-repo.git')
+    expect((cloneUrlInput.element as HTMLInputElement).value).toContain('/scm/proj/my-repo.git')
   })
 
   it('clears form when URL is emptied', async () => {
@@ -462,7 +462,7 @@ describe('RepoListView', () => {
 
     // The select should have the BB provider selected
     const select = wrapper.find('select')
-    expect(select.element.value).toBe('2')
+    expect((select.element as HTMLSelectElement).value).toBe('2')
   })
 
   it('handles listProviders error when opening add dialog', async () => {

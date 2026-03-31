@@ -34,7 +34,7 @@ async function handleDevLogin() {
   try {
     const res = await apiDevLogin()
     const data = res.data.data
-    if (data) {
+    if (data && data.token) {
       localStorage.setItem('token', data.token)
       if (data.refresh_token) {
         localStorage.setItem('refresh_token', data.refresh_token)

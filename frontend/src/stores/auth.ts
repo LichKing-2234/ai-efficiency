@@ -16,6 +16,9 @@ export const useAuthStore = defineStore('auth', () => {
     if (data) {
       const accessToken = data.tokens?.access_token || data.token
       const refreshToken = data.tokens?.refresh_token || data.refresh_token
+      if (!accessToken) {
+        throw new Error('login response missing access token')
+      }
       token.value = accessToken
       localStorage.setItem('token', accessToken)
       if (refreshToken) {

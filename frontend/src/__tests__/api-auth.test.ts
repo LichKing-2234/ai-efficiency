@@ -61,26 +61,26 @@ describe('auth API', () => {
     const responseData = { token: 'jwt-token', refresh_token: 'rt' }
     mockClient.post.mockResolvedValue({ data: { data: responseData } })
     const result = await login({ username: 'u', password: 'p', source: 'SSO' })
-    expect(result.data.data).toEqual(responseData)
+    expect(result.data.data!).toEqual(responseData)
   })
 
   it('devLogin returns response data', async () => {
     const responseData = { token: 'dev-token', refresh_token: 'dev-rt' }
     mockClient.post.mockResolvedValue({ data: { data: responseData } })
     const result = await devLogin()
-    expect(result.data.data).toEqual(responseData)
+    expect(result.data.data!).toEqual(responseData)
   })
 
   it('refresh returns new token', async () => {
     mockClient.post.mockResolvedValue({ data: { data: { token: 'refreshed' } } })
     const result = await refresh('rt')
-    expect(result.data.data.token).toBe('refreshed')
+    expect(result.data.data!.token).toBe('refreshed')
   })
 
   it('getMe returns user data', async () => {
     const user = { id: 1, username: 'admin', email: 'a@b.com', role: 'admin' }
     mockClient.get.mockResolvedValue({ data: { data: user } })
     const result = await getMe()
-    expect(result.data.data).toEqual(user)
+    expect(result.data.data!).toEqual(user)
   })
 })

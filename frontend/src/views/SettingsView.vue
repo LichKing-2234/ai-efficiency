@@ -126,8 +126,8 @@ async function fetchLLMConfig() {
     const res = await getLLMConfig()
     const data = res.data.data
     if (data) {
-      llmRelayURL.value = data.relay_url || ''
-      llmRelayAPIKey.value = data.relay_api_key || ''
+      llmRelayURL.value = data.sub2api_url || data.relay_url || ''
+      llmRelayAPIKey.value = data.sub2api_api_key || data.relay_api_key || ''
       llmForm.value = {
         model: data.model || 'gpt-4',
         max_tokens_per_scan: data.max_tokens_per_scan || 100000,
