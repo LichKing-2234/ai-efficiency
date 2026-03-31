@@ -83,7 +83,7 @@ async function mountRepoDetail() {
           merged_at: '2026-03-30T00:00:00Z',
           created_at: '2026-03-29T00:00:00Z',
           attribution_status: 'clear',
-          attribution_confidence: 0.93,
+          attribution_confidence: 'high',
           primary_token_count: 1200,
           primary_token_cost: 1.25,
           metadata_summary: {},
@@ -121,6 +121,7 @@ describe('RepoDetailView', () => {
   it('renders attribution columns and primary cost', async () => {
     const { wrapper } = await mountRepoDetail()
     expect(wrapper.text()).toContain('clear')
+    expect(wrapper.text()).toContain('high')
     expect(wrapper.text()).toContain('$1.25')
   })
 

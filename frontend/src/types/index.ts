@@ -101,8 +101,8 @@ export interface PRRecord {
   ai_label: string
   ai_ratio: number
   token_cost: number
-  attribution_status?: string
-  attribution_confidence?: number
+  attribution_status?: 'not_run' | 'clear' | 'ambiguous' | 'failed'
+  attribution_confidence?: 'high' | 'medium' | 'low' | null
   primary_token_count?: number
   primary_token_cost?: number
   metadata_summary?: Record<string, any>

@@ -137,10 +137,9 @@ function handleOptimize() {
   chatRef.value?.startOptimizePreview()
 }
 
-function formatConfidence(value?: number) {
-  if (value == null || Number.isNaN(value)) return '—'
-  const normalized = value <= 1 ? value * 100 : value
-  return `${Math.round(normalized)}%`
+function formatConfidence(value?: PRRecord['attribution_confidence']) {
+  if (!value) return '—'
+  return value
 }
 
 function formatCurrency(value?: number) {

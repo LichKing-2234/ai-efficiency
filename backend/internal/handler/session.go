@@ -274,6 +274,8 @@ func (h *SessionHandler) Get(c *gin.Context) {
 	s, err := h.entClient.Session.Query().
 		Where(session.IDEQ(id)).
 		WithRepoConfig().
+		WithSessionWorkspaces().
+		WithCommitCheckpoints().
 		Only(c.Request.Context())
 	if err != nil {
 		if ent.IsNotFound(err) {

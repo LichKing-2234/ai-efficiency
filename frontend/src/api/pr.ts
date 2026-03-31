@@ -14,5 +14,5 @@ export function syncPRs(repoId: number) {
 }
 
 export function settlePR(prId: number) {
-  return client.post<ApiResponse<PRRecord>>(`/prs/${prId}/settle`)
+  return client.post<ApiResponse<{ attribution_status: string }>>(`/prs/${prId}/settle`)
 }
