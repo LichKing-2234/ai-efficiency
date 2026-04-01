@@ -36,7 +36,12 @@ var rootCmd = &cobra.Command{
 			cfg.Server.URL = serverURL
 		}
 
-		token := resolveToken(cfg.Server.Token, "")
+		tokenPath, _ := auth.DefaultTokenPath()
+		if tf, ok := resolveTokenFile(tokenPath); ok && cfg.Server.URL == "" && tf.ServerURL != "" {
+			cfg.Server.URL = tf.ServerURL
+		}
+
+		token := resolveToken(cfg.Server.Token, tokenPath)
 		apiClient = client.New(cfg.Server.URL, token)
 		return nil
 	},
@@ -45,23 +50,27 @@ var rootCmd = &cobra.Command{
 // resolveToken returns the best available token.
 // A valid token.json (from OAuth login) takes precedence. Falls back to configToken.
 func resolveToken(configToken, tokenPath string) string {
+	tf, ok := resolveTokenFile(tokenPath)
+	if ok {
+		return tf.AccessToken
+	}
+	return configToken
+}
+
+func resolveTokenFile(tokenPath string) (*auth.TokenFile, bool) {
 	if tokenPath == "" {
 		var err error
 		tokenPath, err = auth.DefaultTokenPath()
 		if err != nil {
-			if configToken != "" {
-				return configToken
-			}
-			return ""
+			return nil, false
 		}
 	}
 
 	tf, err := auth.ReadToken(tokenPath)
 	if err == nil && tf.IsValid() {
-		return tf.AccessToken
+		return tf, true
 	}
-
-	return configToken
+	return nil, false
 }
 
 func Execute() {

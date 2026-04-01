@@ -16,14 +16,21 @@ import (
 )
 
 type HookEvent struct {
-	Kind      string `json:"kind"`
-	EventID   string `json:"event_id,omitempty"`
-	SessionID string `json:"session_id,omitempty"`
+	Kind          string `json:"kind"`
+	EventID       string `json:"event_id,omitempty"`
+	SessionID     string `json:"session_id,omitempty"`
+	RepoFullName  string `json:"repo_full_name,omitempty"`
+	WorkspaceID   string `json:"workspace_id,omitempty"`
+	BindingSource string `json:"binding_source,omitempty"`
 
 	AgentSnapshot map[string]any `json:"agent_snapshot,omitempty"`
 
 	// Git context (minimal slice for Task 5).
-	CommitSHA string `json:"commit_sha,omitempty"`
+	CommitSHA      string   `json:"commit_sha,omitempty"`
+	ParentSHAs     []string `json:"parent_shas,omitempty"`
+	BranchSnapshot string   `json:"branch_snapshot,omitempty"`
+	HeadSnapshot   string   `json:"head_snapshot,omitempty"`
+	CapturedAt     string   `json:"captured_at,omitempty"`
 
 	// post-rewrite specific fields.
 	RewriteType  string `json:"rewrite_type,omitempty"`

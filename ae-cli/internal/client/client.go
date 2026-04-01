@@ -62,6 +62,32 @@ type BootstrapSessionResponse struct {
 	KeyExpiresAt       time.Time         `json:"key_expires_at"`
 }
 
+type CommitCheckpointRequest struct {
+	EventID        string         `json:"event_id"`
+	SessionID      string         `json:"session_id,omitempty"`
+	RepoFullName   string         `json:"repo_full_name"`
+	WorkspaceID    string         `json:"workspace_id"`
+	CommitSHA      string         `json:"commit_sha"`
+	ParentSHAs     []string       `json:"parent_shas,omitempty"`
+	BranchSnapshot string         `json:"branch_snapshot,omitempty"`
+	HeadSnapshot   string         `json:"head_snapshot,omitempty"`
+	BindingSource  string         `json:"binding_source"`
+	AgentSnapshot  map[string]any `json:"agent_snapshot,omitempty"`
+	CapturedAt     *time.Time     `json:"captured_at,omitempty"`
+}
+
+type CommitRewriteRequest struct {
+	EventID       string     `json:"event_id"`
+	SessionID     string     `json:"session_id,omitempty"`
+	RepoFullName  string     `json:"repo_full_name"`
+	WorkspaceID   string     `json:"workspace_id"`
+	RewriteType   string     `json:"rewrite_type"`
+	OldCommitSHA  string     `json:"old_commit_sha"`
+	NewCommitSHA  string     `json:"new_commit_sha"`
+	BindingSource string     `json:"binding_source"`
+	CapturedAt    *time.Time `json:"captured_at,omitempty"`
+}
+
 func New(baseURL, token string) *Client {
 	return &Client{
 		baseURL: baseURL,
@@ -238,6 +264,54 @@ func (c *Client) AddInvocation(ctx context.Context, sessionID string, inv Invoca
 		return fmt.Errorf("unexpected status %d: %s", resp.StatusCode, string(respBody))
 	}
 
+	return nil
+}
+
+func (c *Client) SendCommitCheckpoint(ctx context.Context, req CommitCheckpointRequest) error {
+	body, err := json.Marshal(req)
+	if err != nil {
+		return fmt.Errorf("marshaling checkpoint request: %w", err)
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/api/v1/checkpoints/commit", bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("creating checkpoint request: %w", err)
+	}
+	c.setHeaders(httpReq)
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return fmt.Errorf("sending checkpoint request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("unexpected checkpoint status %d: %s", resp.StatusCode, string(respBody))
+	}
+	return nil
+}
+
+func (c *Client) SendCommitRewrite(ctx context.Context, req CommitRewriteRequest) error {
+	body, err := json.Marshal(req)
+	if err != nil {
+		return fmt.Errorf("marshaling rewrite request: %w", err)
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/api/v1/checkpoints/rewrite", bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("creating rewrite request: %w", err)
+	}
+	c.setHeaders(httpReq)
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return fmt.Errorf("sending rewrite request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("unexpected rewrite status %d: %s", resp.StatusCode, string(respBody))
+	}
 	return nil
 }
 

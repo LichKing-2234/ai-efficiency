@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/ai-efficiency/ae-cli/internal/collector"
 	"github.com/ai-efficiency/ae-cli/internal/session"
@@ -143,6 +144,26 @@ func snapshotPayload(snapshot *collector.Snapshot) map[string]any {
 	return payload
 }
 
+func branchSnapshot(cwd string) string {
+	branch, err := gitOutput(cwd, "symbolic-ref", "--short", "-q", "HEAD")
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(branch)
+}
+
+func parentSHAs(cwd string) []string {
+	line, err := gitOutput(cwd, "rev-list", "--parents", "-n", "1", "HEAD")
+	if err != nil {
+		return nil
+	}
+	fields := strings.Fields(line)
+	if len(fields) <= 1 {
+		return nil
+	}
+	return fields[1:]
+}
+
 func (h *Handler) PostCommit(ctx context.Context, cwd string) error {
 	repoRoot, err := gitOutput(cwd, "rev-parse", "--show-toplevel")
 	if err != nil {
@@ -153,6 +174,7 @@ func (h *Handler) PostCommit(ctx context.Context, cwd string) error {
 		return nil
 	}
 
+	bindingSource := "marker"
 	m, err := session.ReadMarker(repoRoot)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -160,6 +182,8 @@ func (h *Handler) PostCommit(ctx context.Context, cwd string) error {
 			if err != nil {
 				// Env bootstrap is best-effort; a failure here should not block commits.
 				m = nil
+			} else {
+				bindingSource = "env_bootstrap"
 			}
 		} else {
 			// Marker read errors should not block commits.
@@ -168,8 +192,10 @@ func (h *Handler) PostCommit(ctx context.Context, cwd string) error {
 	}
 
 	sessionID := ""
+	workspaceID := ""
 	if m != nil {
 		sessionID = strings.TrimSpace(m.SessionID)
+		workspaceID = strings.TrimSpace(m.WorkspaceID)
 	}
 	if sessionID == "" {
 		// Unbound: no marker and no env bootstrap.
@@ -190,8 +216,15 @@ func (h *Handler) PostCommit(ctx context.Context, cwd string) error {
 		Kind:          "post-commit",
 		EventID:       eventID,
 		SessionID:     sessionID,
+		RepoFullName:  repoHint,
+		WorkspaceID:   workspaceID,
+		BindingSource: bindingSource,
 		AgentSnapshot: agentSnapshot,
 		CommitSHA:     head,
+		ParentSHAs:    parentSHAs(cwd),
+		BranchSnapshot: branchSnapshot(cwd),
+		HeadSnapshot:  head,
+		CapturedAt:    time.Now().UTC().Format(time.RFC3339),
 	}
 
 	if h == nil || h.uploader == nil {
@@ -260,8 +293,10 @@ func (h *Handler) PostRewrite(ctx context.Context, cwd string, rewriteType strin
 	}
 
 	sessionID := ""
+	workspaceID := ""
 	if m != nil {
 		sessionID = strings.TrimSpace(m.SessionID)
+		workspaceID = strings.TrimSpace(m.WorkspaceID)
 	}
 	if sessionID == "" {
 		return nil
@@ -299,10 +334,14 @@ func (h *Handler) PostRewrite(ctx context.Context, cwd string, rewriteType strin
 			Kind:          "post-rewrite",
 			EventID:       eid,
 			SessionID:     sessionID,
+			RepoFullName:  repoHint,
+			WorkspaceID:   workspaceID,
+			BindingSource: "marker",
 			AgentSnapshot: agentSnapshot,
 			RewriteType:   rewriteType,
 			OldCommitSHA:  oldSHA,
 			NewCommitSHA:  newSHA,
+			CapturedAt:    time.Now().UTC().Format(time.RFC3339),
 		}
 
 		if h == nil || h.uploader == nil {

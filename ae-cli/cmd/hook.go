@@ -15,7 +15,10 @@ var hookCmd = &cobra.Command{
 }
 
 var newHookUploader = func() hooks.Uploader {
-	return hooks.UnsupportedUploader{}
+	if apiClient == nil {
+		return hooks.UnsupportedUploader{}
+	}
+	return hooks.NewBackendUploader(apiClient)
 }
 
 var hookPostCommitCmd = &cobra.Command{

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/ai-efficiency/ae-cli/config"
+	"github.com/ai-efficiency/ae-cli/internal/auth"
 	"github.com/ai-efficiency/ae-cli/internal/client"
 	"github.com/ai-efficiency/ae-cli/internal/session"
 	"github.com/ai-efficiency/ae-cli/internal/tmux"
@@ -270,6 +271,51 @@ func TestPersistentPreRunEServerOverride(t *testing.T) {
 	}
 	if cfg.Server.URL != "http://override-server:8080" {
 		t.Errorf("server URL = %q, want %q", cfg.Server.URL, "http://override-server:8080")
+	}
+}
+
+func TestPersistentPreRunEFallsBackToTokenServerURL(t *testing.T) {
+	tmpHome := t.TempDir()
+	tokenPath := filepath.Join(tmpHome, ".ae-cli", "token.json")
+	if err := auth.WriteToken(tokenPath, &auth.TokenFile{
+		AccessToken:  "oauth-access-token",
+		RefreshToken: "oauth-refresh-token",
+		ExpiresAt:    time.Now().Add(2 * time.Hour),
+		ServerURL:    "http://token-server:8081",
+	}); err != nil {
+		t.Fatalf("WriteToken: %v", err)
+	}
+
+	oldHome := os.Getenv("HOME")
+	oldCfg := cfg
+	oldClient := apiClient
+	oldCfgFile := cfgFile
+	oldServerURL := serverURL
+	defer func() {
+		_ = os.Setenv("HOME", oldHome)
+		cfg = oldCfg
+		apiClient = oldClient
+		cfgFile = oldCfgFile
+		serverURL = oldServerURL
+	}()
+
+	if err := os.Setenv("HOME", tmpHome); err != nil {
+		t.Fatalf("Setenv(HOME): %v", err)
+	}
+	cfgFile = ""
+	serverURL = ""
+
+	if err := rootCmd.PersistentPreRunE(runCmd, nil); err != nil {
+		t.Fatalf("PersistentPreRunE: %v", err)
+	}
+	if cfg == nil {
+		t.Fatal("cfg should be set after PersistentPreRunE")
+	}
+	if cfg.Server.URL != "http://token-server:8081" {
+		t.Fatalf("server URL = %q, want %q", cfg.Server.URL, "http://token-server:8081")
+	}
+	if apiClient == nil {
+		t.Fatal("apiClient should be set after PersistentPreRunE")
 	}
 }
 

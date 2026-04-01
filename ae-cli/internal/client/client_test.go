@@ -755,3 +755,87 @@ func TestBootstrapSession(t *testing.T) {
 		t.Errorf("env_bundle[AE_SESSION_ID] empty, want non-empty")
 	}
 }
+
+func TestSendCommitCheckpoint(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("method = %s, want POST", r.Method)
+		}
+		if r.URL.Path != "/api/v1/checkpoints/commit" {
+			t.Errorf("path = %s, want /api/v1/checkpoints/commit", r.URL.Path)
+		}
+		if r.Header.Get("Authorization") != "Bearer test-token" {
+			t.Errorf("auth header = %q, want %q", r.Header.Get("Authorization"), "Bearer test-token")
+		}
+		var req CommitCheckpointRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		if req.EventID != "cp-1" || req.RepoFullName != "org/repo" || req.CommitSHA != "abc123" {
+			t.Fatalf("unexpected checkpoint request: %+v", req)
+		}
+		if req.CapturedAt == nil || !req.CapturedAt.Equal(now) {
+			t.Fatalf("captured_at = %v, want %v", req.CapturedAt, now)
+		}
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"code":201,"data":{"event_id":"cp-1"}}`))
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "test-token")
+	if err := c.SendCommitCheckpoint(context.Background(), CommitCheckpointRequest{
+		EventID:       "cp-1",
+		SessionID:     "sess-1",
+		RepoFullName:  "org/repo",
+		WorkspaceID:   "ws-1",
+		CommitSHA:     "abc123",
+		ParentSHAs:    []string{"000000"},
+		BranchSnapshot:"main",
+		HeadSnapshot:  "abc123",
+		BindingSource: "marker",
+		CapturedAt:    &now,
+	}); err != nil {
+		t.Fatalf("SendCommitCheckpoint: %v", err)
+	}
+}
+
+func TestSendCommitRewrite(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("method = %s, want POST", r.Method)
+		}
+		if r.URL.Path != "/api/v1/checkpoints/rewrite" {
+			t.Errorf("path = %s, want /api/v1/checkpoints/rewrite", r.URL.Path)
+		}
+		var req CommitRewriteRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		if req.EventID != "rw-1" || req.RepoFullName != "org/repo" || req.OldCommitSHA != "old123" || req.NewCommitSHA != "new456" {
+			t.Fatalf("unexpected rewrite request: %+v", req)
+		}
+		if req.CapturedAt == nil || !req.CapturedAt.Equal(now) {
+			t.Fatalf("captured_at = %v, want %v", req.CapturedAt, now)
+		}
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"code":201,"data":{"event_id":"rw-1"}}`))
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "test-token")
+	if err := c.SendCommitRewrite(context.Background(), CommitRewriteRequest{
+		EventID:       "rw-1",
+		SessionID:     "sess-1",
+		RepoFullName:  "org/repo",
+		WorkspaceID:   "ws-1",
+		RewriteType:   "amend",
+		OldCommitSHA:  "old123",
+		NewCommitSHA:  "new456",
+		BindingSource: "marker",
+		CapturedAt:    &now,
+	}); err != nil {
+		t.Fatalf("SendCommitRewrite: %v", err)
+	}
+}
