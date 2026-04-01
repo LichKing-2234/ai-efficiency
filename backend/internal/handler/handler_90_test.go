@@ -873,7 +873,7 @@ func TestGetLLMConfigResponseFields(t *testing.T) {
 	data := resp["data"].(map[string]interface{})
 
 	// Verify all expected fields
-	for _, key := range []string{"relay_url", "relay_api_key", "model", "enabled", "system_prompt", "user_prompt_template"} {
+	for _, key := range []string{"relay_url", "relay_api_key", "relay_admin_api_key", "model", "enabled", "system_prompt", "user_prompt_template"} {
 		if _, ok := data[key]; !ok {
 			t.Errorf("missing key %q in LLM config response", key)
 		}

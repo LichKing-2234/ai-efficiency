@@ -203,7 +203,7 @@ describe('settings API', () => {
   })
 
   it('updateLLMConfig calls PUT /settings/llm with data', async () => {
-    const config = { sub2api_url: 'http://localhost:3000', sub2api_api_key: 'sk-test', model: 'gpt-4' }
+    const config = { sub2api_url: 'http://localhost:3000', sub2api_api_key: 'sk-test', relay_admin_api_key: 'admin-test', model: 'gpt-4' }
     mockClient.put.mockResolvedValue({ data: { data: config } })
     await updateLLMConfig(config)
     expect(mockClient.put).toHaveBeenCalledWith('/settings/llm', config)

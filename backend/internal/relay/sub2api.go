@@ -22,7 +22,8 @@ type sub2apiRelay struct {
 	client   *http.Client
 	baseURL  string // LLM API endpoint, e.g. http://localhost:3000/v1
 	adminURL string // Admin API endpoint, e.g. http://localhost:3000
-	apiKey   string // Admin API key
+	apiKey   string // LLM API key
+	adminKey string // Admin API key
 	model    string
 	logger   *zap.Logger
 }
@@ -44,13 +45,16 @@ func (s *sub2apiRelay) Name() string { return "sub2api" }
 func (s *sub2apiRelay) adminAPIKey() string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	if strings.TrimSpace(s.adminKey) != "" {
+		return s.adminKey
+	}
 	return s.apiKey
 }
 
 func (s *sub2apiRelay) SetAdminAPIKey(apiKey string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.apiKey = strings.TrimSpace(apiKey)
+	s.adminKey = strings.TrimSpace(apiKey)
 }
 
 func (s *sub2apiRelay) Ping(ctx context.Context) error {

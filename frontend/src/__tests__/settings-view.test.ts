@@ -27,6 +27,7 @@ vi.mock('@/api/settings', () => ({
       data: {
         relay_url: '',
         relay_api_key: '',
+        relay_admin_api_key: '',
         model: 'gpt-4',
         enabled: false,
         max_tokens_per_scan: 100000,
@@ -107,6 +108,7 @@ describe('SettingsView', () => {
     const wrapper = await mountSettings()
     expect(wrapper.text()).toContain('Relay URL')
     expect(wrapper.text()).toContain('Relay API Key')
+    expect(wrapper.text()).toContain('Relay Admin API Key')
     expect(wrapper.text()).toContain('Model')
     expect(wrapper.text()).toContain('System Prompt')
     expect(wrapper.text()).toContain('User Prompt Template')
@@ -455,6 +457,7 @@ describe('SettingsView', () => {
       llmConfig: {
         relay_url: 'http://relay.local',
         relay_api_key: 'sk-test',
+        relay_admin_api_key: 'admin-test',
         model: 'gpt-4o',
         max_tokens_per_scan: 50000,
         system_prompt: 'You are helpful',
@@ -466,10 +469,10 @@ describe('SettingsView', () => {
     const inputs = wrapper.findAll('input[type="text"]')
     const disabledTextInputs = inputs.filter((i) => (i.element as HTMLInputElement).disabled)
     const disabledValues = disabledTextInputs.map((i) => (i.element as HTMLInputElement).value)
-    expect(disabledValues).toEqual(expect.arrayContaining(['http://relay.local']))
-    expect(disabledValues).not.toEqual(expect.arrayContaining(['sk-test']))
+    expect(disabledValues).toEqual(expect.arrayContaining(['http://relay.local', 'sk-test']))
 
     expect(getInputByLabel(wrapper, 'Model').value).toBe('gpt-4o')
+    expect(getInputByLabel(wrapper, 'Relay Admin API Key').value).toBe('admin-test')
 
     expect(wrapper.text()).toContain('Enabled')
   })
@@ -479,6 +482,7 @@ describe('SettingsView', () => {
       llmConfig: {
         relay_url: 'http://relay.local',
         relay_api_key: 'sk-test',
+        relay_admin_api_key: 'admin-test',
         model: 'gpt-4',
         enabled: false,
       },
@@ -494,7 +498,8 @@ describe('SettingsView', () => {
     const wrapper = await mountSettings({
       llmConfig: {
         relay_url: 'http://relay.local',
-        relay_api_key: 'admin-old-key',
+        relay_api_key: 'llm-user-key',
+        relay_admin_api_key: 'admin-old-key',
         model: 'gpt-4',
         enabled: true,
       },
@@ -505,7 +510,7 @@ describe('SettingsView', () => {
     modelInput.dispatchEvent(new Event('input'))
     await wrapper.vm.$nextTick()
 
-    const relayKeyInput = getInputByLabel(wrapper, 'Relay API Key')
+    const relayKeyInput = getInputByLabel(wrapper, 'Relay Admin API Key')
     relayKeyInput.value = 'admin-new-key'
     relayKeyInput.dispatchEvent(new Event('input'))
     await wrapper.vm.$nextTick()
@@ -516,7 +521,7 @@ describe('SettingsView', () => {
     await flushPromises()
 
     expect(updateLLMConfig).toHaveBeenCalled()
-    expect(updateLLMConfig).toHaveBeenCalledWith(expect.objectContaining({ model: 'gpt-4o', relay_api_key: 'admin-new-key' }))
+    expect(updateLLMConfig).toHaveBeenCalledWith(expect.objectContaining({ model: 'gpt-4o', relay_admin_api_key: 'admin-new-key' }))
     expect(wrapper.text()).toContain('LLM configuration saved')
   })
 

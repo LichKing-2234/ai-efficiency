@@ -26,6 +26,10 @@ func TestGetLLMConfig(t *testing.T) {
 	if !strings.Contains(apiKey, "****") {
 		t.Errorf("expected masked API key containing '****', got %q", apiKey)
 	}
+	adminAPIKey, _ := data["relay_admin_api_key"].(string)
+	if !strings.Contains(adminAPIKey, "****") {
+		t.Errorf("expected masked admin API key containing '****', got %q", adminAPIKey)
+	}
 
 	// Model should match configured value
 	model, _ := data["model"].(string)
@@ -69,7 +73,7 @@ func TestUpdateLLMConfig(t *testing.T) {
 
 	body := map[string]interface{}{
 		"max_tokens_per_scan": 50000,
-		"relay_api_key":       "admin-new-key-12345678",
+		"relay_admin_api_key": "admin-new-key-12345678",
 	}
 
 	w := doFullRequest(env, http.MethodPut, "/api/v1/settings/llm", body)
@@ -95,16 +99,17 @@ func TestUpdateLLMConfig(t *testing.T) {
 		t.Errorf("expected relay_url 'http://localhost:19876', got %q", url)
 	}
 
-	// API key should be masked in response
+	// LLM API key should remain masked in response
 	apiKey, _ := data["relay_api_key"].(string)
 	if !strings.Contains(apiKey, "****") {
 		t.Errorf("expected masked API key, got %q", apiKey)
 	}
-	if !strings.HasSuffix(apiKey, "5678") {
-		t.Errorf("expected masked API key to reflect updated key suffix, got %q", apiKey)
+	adminAPIKey, _ := data["relay_admin_api_key"].(string)
+	if !strings.HasSuffix(adminAPIKey, "5678") {
+		t.Errorf("expected masked admin API key to reflect updated key suffix, got %q", adminAPIKey)
 	}
 
-	// Verify config file was persisted with max_tokens_per_scan and relay api key
+	// Verify config file was persisted with max_tokens_per_scan and relay admin api key
 	configData, err := os.ReadFile(env.configPath)
 	if err != nil {
 		t.Fatalf("read config: %v", err)
@@ -113,8 +118,8 @@ func TestUpdateLLMConfig(t *testing.T) {
 	if !strings.Contains(configStr, "max_tokens_per_scan") {
 		t.Errorf("config file should contain 'max_tokens_per_scan', got:\n%s", configStr)
 	}
-	if !strings.Contains(configStr, "api_key: admin-new-key-12345678") {
-		t.Errorf("config file should contain updated relay api key, got:\n%s", configStr)
+	if !strings.Contains(configStr, "admin_api_key: admin-new-key-12345678") {
+		t.Errorf("config file should contain updated relay admin api key, got:\n%s", configStr)
 	}
 }
 

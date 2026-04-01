@@ -23,6 +23,7 @@ const showDeleteConfirm = ref<number | null>(null)
 const llmForm = ref({ model: 'gpt-4', max_tokens_per_scan: 100000, system_prompt: '', user_prompt_template: '' })
 const llmRelayURL = ref('')
 const llmRelayAPIKey = ref('')
+const llmRelayAdminAPIKey = ref('')
 const llmEnabled = ref(false)
 const llmSaving = ref(false)
 const llmError = ref('')
@@ -128,6 +129,7 @@ async function fetchLLMConfig() {
     if (data) {
       llmRelayURL.value = data.sub2api_url || data.relay_url || ''
       llmRelayAPIKey.value = data.sub2api_api_key || data.relay_api_key || ''
+      llmRelayAdminAPIKey.value = data.relay_admin_api_key || ''
       llmForm.value = {
         model: data.model || 'gpt-4',
         max_tokens_per_scan: data.max_tokens_per_scan || 100000,
@@ -148,7 +150,7 @@ async function handleSaveLLM() {
   try {
     await updateLLMConfig({
       ...llmForm.value,
-      relay_api_key: llmRelayAPIKey.value,
+      relay_admin_api_key: llmRelayAdminAPIKey.value,
     })
     llmSuccess.value = 'LLM configuration saved'
     setTimeout(() => { llmSuccess.value = '' }, 3000)
@@ -312,7 +314,13 @@ async function handleTestLDAP() {
 
           <div>
             <label class="block text-sm font-medium text-gray-700">Relay API Key</label>
-            <input v-model="llmRelayAPIKey" type="password" placeholder="admin-..." class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
+            <input :value="llmRelayAPIKey" type="text" disabled class="mt-1 block w-full rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-500" />
+            <p class="mt-1 text-xs text-gray-400">Used for relay LLM requests.</p>
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium text-gray-700">Relay Admin API Key</label>
+            <input v-model="llmRelayAdminAPIKey" type="password" placeholder="admin-..." class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
             <p class="mt-1 text-xs text-gray-400">Used as <code class="bg-gray-100 px-1 rounded">X-API-Key</code> for relay admin APIs.</p>
           </div>
 

@@ -133,6 +133,9 @@ func main() {
 			cfg.Relay.Model,
 			logger,
 		)
+		if updater, ok := relayProvider.(interface{ SetAdminAPIKey(string) }); ok {
+			updater.SetAdminAPIKey(cfg.Relay.AdminAPIKey)
+		}
 		logger.Info("relay provider initialized", zap.String("provider", cfg.Relay.Provider), zap.String("url", cfg.Relay.URL))
 	}
 

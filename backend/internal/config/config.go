@@ -25,6 +25,7 @@ type RelayConfig struct {
 	Provider       string `mapstructure:"provider"`
 	URL            string `mapstructure:"url"`
 	APIKey         string `mapstructure:"api_key"`
+	AdminAPIKey    string `mapstructure:"admin_api_key"`
 	Model          string `mapstructure:"model"`
 	DefaultGroupID string `mapstructure:"default_group_id"`
 }
