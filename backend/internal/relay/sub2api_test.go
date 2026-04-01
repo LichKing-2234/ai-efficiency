@@ -883,3 +883,45 @@ func TestListUsageLogsByAPIKeyExact(t *testing.T) {
 		t.Fatalf("unexpected log: %+v", logs[0])
 	}
 }
+
+func TestResolveDefaultGroupIDUsesLargestActiveAccountCount(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/groups", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Errorf("expected GET, got %s", r.Method)
+		}
+		if r.Header.Get("X-API-Key") != "test-admin-key" {
+			t.Fatalf("expected X-API-Key header, got %q", r.Header.Get("X-API-Key"))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": map[string]any{
+				"items": []any{
+					map[string]any{"id": 5, "name": "Anthropic", "status": "active", "account_count": 1, "active_account_count": 1},
+					map[string]any{"id": 6, "name": "OpenAI", "status": "active", "account_count": 14, "active_account_count": 13},
+					map[string]any{"id": 9, "name": "Paused", "status": "inactive", "account_count": 99, "active_account_count": 0},
+				},
+				"page":      1,
+				"page_size": 200,
+				"pages":     1,
+				"total":     3,
+			},
+		})
+	})
+
+	p := newTestProvider(t, mux)
+	resolver, ok := p.(interface {
+		ResolveDefaultGroupID(context.Context) (string, error)
+	})
+	if !ok {
+		t.Fatal("provider does not implement ResolveDefaultGroupID")
+	}
+	groupID, err := resolver.ResolveDefaultGroupID(context.Background())
+	if err != nil {
+		t.Fatalf("ResolveDefaultGroupID() unexpected error: %v", err)
+	}
+	if groupID != "6" {
+		t.Fatalf("groupID = %q, want %q", groupID, "6")
+	}
+}

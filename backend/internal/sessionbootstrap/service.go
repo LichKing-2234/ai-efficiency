@@ -78,7 +78,11 @@ type routeBinding struct {
 	RouteBindingSource string
 }
 
-func (s *Service) resolveRouteBinding(rc *ent.RepoConfig) (*routeBinding, error) {
+type defaultGroupResolver interface {
+	ResolveDefaultGroupID(ctx context.Context) (string, error)
+}
+
+func (s *Service) resolveRouteBinding(ctx context.Context, rc *ent.RepoConfig) (*routeBinding, error) {
 	if rc == nil {
 		return nil, fmt.Errorf("route binding: repo config is required")
 	}
@@ -107,6 +111,18 @@ func (s *Service) resolveRouteBinding(rc *ent.RepoConfig) (*routeBinding, error)
 	if rc.RelayGroupID != nil && strings.TrimSpace(*rc.RelayGroupID) != "" {
 		groupID = strings.TrimSpace(*rc.RelayGroupID)
 		source = "repo_config"
+	}
+	if groupID == "" {
+		if resolver, ok := s.relayProvider.(defaultGroupResolver); ok {
+			resolved, err := resolver.ResolveDefaultGroupID(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("route binding: resolve default group: %w", err)
+			}
+			if strings.TrimSpace(resolved) != "" {
+				groupID = strings.TrimSpace(resolved)
+				source = "relay_default"
+			}
+		}
 	}
 	if groupID == "" {
 		return nil, fmt.Errorf("route binding: group_id is required")
@@ -163,7 +179,7 @@ func (s *Service) Bootstrap(ctx context.Context, localUserID int, req BootstrapR
 		return nil, fmt.Errorf("bootstrap: query repo: %w", err)
 	}
 
-	binding, err := s.resolveRouteBinding(rc)
+	binding, err := s.resolveRouteBinding(ctx, rc)
 	if err != nil {
 		return nil, fmt.Errorf("bootstrap: %w", err)
 	}

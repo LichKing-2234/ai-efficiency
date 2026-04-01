@@ -536,6 +536,70 @@ func (s *sub2apiRelay) RevokeUserAPIKey(ctx context.Context, keyID int64) error 
 	return nil
 }
 
+func (s *sub2apiRelay) ResolveDefaultGroupID(ctx context.Context) (string, error) {
+	type groupItem struct {
+		ID                 int64  `json:"id"`
+		Status             string `json:"status"`
+		AccountCount       int64  `json:"account_count"`
+		ActiveAccountCount int64  `json:"active_account_count"`
+	}
+	type pageData struct {
+		Items []groupItem `json:"items"`
+		Page  int         `json:"page"`
+		Pages int         `json:"pages"`
+	}
+
+	bestID := int64(0)
+	bestAccountCount := int64(-1)
+	bestActiveAccountCount := int64(-1)
+
+	for page := 1; ; page++ {
+		resp, err := s.doAdminRequest(ctx, http.MethodGet, fmt.Sprintf("/api/v1/admin/groups?page=%d&page_size=200", page), nil)
+		if err != nil {
+			return "", fmt.Errorf("relay: resolve default group: %w", err)
+		}
+
+		var result struct {
+			Code int      `json:"code"`
+			Data pageData `json:"data"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			resp.Body.Close()
+			return "", fmt.Errorf("relay: resolve default group: decode: %w", err)
+		}
+		resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			return "", fmt.Errorf("relay: resolve default group: unexpected status %d", resp.StatusCode)
+		}
+		if result.Code != 0 {
+			return "", fmt.Errorf("relay: resolve default group: request failed")
+		}
+
+		for _, item := range result.Data.Items {
+			if !strings.EqualFold(strings.TrimSpace(item.Status), "active") {
+				continue
+			}
+			if item.AccountCount > bestAccountCount ||
+				(item.AccountCount == bestAccountCount && item.ActiveAccountCount > bestActiveAccountCount) ||
+				(item.AccountCount == bestAccountCount && item.ActiveAccountCount == bestActiveAccountCount && (bestID == 0 || item.ID < bestID)) {
+				bestID = item.ID
+				bestAccountCount = item.AccountCount
+				bestActiveAccountCount = item.ActiveAccountCount
+			}
+		}
+
+		if result.Data.Pages <= 1 || page >= result.Data.Pages {
+			break
+		}
+	}
+
+	if bestID == 0 {
+		return "", nil
+	}
+	return strconv.FormatInt(bestID, 10), nil
+}
+
 func (s *sub2apiRelay) loginSessionToken(ctx context.Context, username, password string) (string, *User, error) {
 	loginBody, _ := json.Marshal(map[string]string{
 		"email":    username,

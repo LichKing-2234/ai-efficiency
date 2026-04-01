@@ -20,6 +20,7 @@ type fakeRelayProvider struct {
 
 	createUserAPIKeyFn func(ctx context.Context, userID int64, req relay.APIKeyCreateRequest) (*relay.APIKeyWithSecret, error)
 	revokeUserAPIKeyFn func(ctx context.Context, keyID int64) error
+	resolveDefaultGroupIDFn func(ctx context.Context) (string, error)
 
 	lastCreateUserAPIKeyUserID int64
 	lastCreateUserAPIKeyReq    relay.APIKeyCreateRequest
@@ -83,6 +84,12 @@ func (f *fakeRelayProvider) RevokeUserAPIKey(ctx context.Context, keyID int64) e
 }
 func (f *fakeRelayProvider) ListUsageLogsByAPIKeyExact(ctx context.Context, apiKeyID int64, from, to time.Time) ([]relay.UsageLog, error) {
 	return nil, nil
+}
+func (f *fakeRelayProvider) ResolveDefaultGroupID(ctx context.Context) (string, error) {
+	if f.resolveDefaultGroupIDFn != nil {
+		return f.resolveDefaultGroupIDFn(ctx)
+	}
+	return "", nil
 }
 
 func TestBootstrapCreatesSessionKeyAndEnvBundle(t *testing.T) {
@@ -272,6 +279,80 @@ func TestStopRevokesRelayKey(t *testing.T) {
 	}
 	if len(rp.revokedKeyIDs) != 1 || rp.revokedKeyIDs[0] != int64(keyID) {
 		t.Fatalf("revoked = %v, want [%d]", rp.revokedKeyIDs, keyID)
+	}
+}
+
+func TestBootstrapFallsBackToRelayResolvedDefaultGroup(t *testing.T) {
+	ctx := context.Background()
+	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+
+	sp, err := client.ScmProvider.Create().
+		SetName("mock-gh").
+		SetType("github").
+		SetBaseURL("https://api.github.com").
+		SetCredentials("enc").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create scm provider: %v", err)
+	}
+
+	rc, err := client.RepoConfig.Create().
+		SetScmProviderID(sp.ID).
+		SetName("mock-repo").
+		SetFullName("org/mock-repo").
+		SetCloneURL("https://github.com/org/mock-repo.git").
+		SetDefaultBranch("main").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create repo config: %v", err)
+	}
+
+	u, err := client.User.Create().
+		SetUsername("alice").
+		SetEmail("alice@example.com").
+		SetAuthSource("ldap").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	rp := &fakeRelayProvider{
+		findUserByUsernameFn: func(_ context.Context, username string) (*relay.User, error) {
+			return &relay.User{ID: 99, Username: username, Email: "alice@relay.local"}, nil
+		},
+		createUserAPIKeyFn: func(_ context.Context, userID int64, req relay.APIKeyCreateRequest) (*relay.APIKeyWithSecret, error) {
+			return &relay.APIKeyWithSecret{
+				APIKey: relay.APIKey{ID: 555, UserID: userID, Name: req.Name, Status: "active"},
+				Secret: "sk-session-555",
+			}, nil
+		},
+		resolveDefaultGroupIDFn: func(_ context.Context) (string, error) {
+			return "g-auto", nil
+		},
+	}
+	resolver := auth.NewRelayIdentityResolver(rp, "ldap.local")
+	svc := NewService(client, rp, resolver, "sub2api", "http://relay.local/v1", "", 2*time.Hour)
+
+	resp, err := svc.Bootstrap(ctx, u.ID, BootstrapRequest{
+		RepoFullName:   rc.FullName,
+		BranchSnapshot: "main",
+		HeadSHA:        "abc123",
+		WorkspaceRoot:  "/tmp/ws",
+		GitDir:         "/tmp/ws/.git",
+		GitCommonDir:   "/tmp/ws/.git",
+		WorkspaceID:    "ws-1",
+	})
+	if err != nil {
+		t.Fatalf("bootstrap: %v", err)
+	}
+	if resp.GroupID != "g-auto" {
+		t.Fatalf("group_id = %q, want %q", resp.GroupID, "g-auto")
+	}
+	if resp.RouteBindingSource != "relay_default" {
+		t.Fatalf("route_binding_source = %q, want %q", resp.RouteBindingSource, "relay_default")
+	}
+	if rp.lastCreateUserAPIKeyReq.GroupID != "g-auto" {
+		t.Fatalf("CreateUserAPIKey groupID = %q, want %q", rp.lastCreateUserAPIKeyReq.GroupID, "g-auto")
 	}
 }
 
