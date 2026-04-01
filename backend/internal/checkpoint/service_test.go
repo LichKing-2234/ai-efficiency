@@ -194,6 +194,73 @@ func TestRecordCheckpointWithAgentSnapshotAndNoSessionDoesNotPartiallyWrite(t *t
 	}
 }
 
+func TestRecordCheckpointWritesMetadataEventsFromAggregateSnapshot(t *testing.T) {
+	t.Parallel()
+
+	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	ctx := context.Background()
+
+	sp := client.ScmProvider.Create().
+		SetName("github-test").
+		SetType("github").
+		SetBaseURL("https://api.github.com").
+		SetCredentials("enc").
+		SaveX(ctx)
+
+	rc := client.RepoConfig.Create().
+		SetScmProviderID(sp.ID).
+		SetName("demo").
+		SetFullName("org/demo").
+		SetCloneURL("https://github.com/org/demo.git").
+		SetDefaultBranch("main").
+		SaveX(ctx)
+
+	sess := client.Session.Create().
+		SetID(uuid.New()).
+		SetRepoConfigID(rc.ID).
+		SetBranch("main").
+		SaveX(ctx)
+
+	svc := NewService(client)
+	err := svc.RecordCheckpoint(ctx, CommitCheckpointRequest{
+		EventID:      "evt-aggregate",
+		SessionID:    sess.ID.String(),
+		RepoFullName: rc.FullName,
+		WorkspaceID:  "ws-1",
+		CommitSHA:    "abc555",
+		BindingSource:"marker",
+		AgentSnapshot: map[string]any{
+			"codex": map[string]any{
+				"source_session_id":   "codex-sess-1",
+				"input_tokens":        float64(1200),
+				"cached_input_tokens": float64(300),
+				"output_tokens":       float64(250),
+				"reasoning_tokens":    float64(80),
+				"raw_payload":         map[string]any{"kind": "codex"},
+			},
+			"claude": map[string]any{
+				"source_session_id":   "claude-sess-1",
+				"input_tokens":        float64(1100),
+				"cached_input_tokens": float64(90),
+				"output_tokens":       float64(260),
+				"raw_payload":         map[string]any{"kind": "claude"},
+			},
+			"kiro": map[string]any{
+				"conversation_id":   "kiro-conv-1",
+				"context_usage_pct": 47.5,
+				"raw_payload":       map[string]any{"kind": "kiro"},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("record checkpoint aggregate snapshot: %v", err)
+	}
+
+	if count := client.AgentMetadataEvent.Query().CountX(ctx); count != 3 {
+		t.Fatalf("metadata event count = %d, want 3", count)
+	}
+}
+
 func TestRecordCheckpointRejectsSessionFromDifferentRepo(t *testing.T) {
 	t.Parallel()
 

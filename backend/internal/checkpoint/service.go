@@ -154,7 +154,7 @@ func (s *Service) RecordCheckpoint(ctx context.Context, req CommitCheckpointRequ
 	}
 
 	if len(req.AgentSnapshot) > 0 && hasSession {
-		if err := txSvc.createAgentMetadataEvent(ctx, sessionID, workspaceID, req.AgentSnapshot); err != nil {
+		if err := txSvc.createAgentMetadataEvents(ctx, sessionID, workspaceID, req.AgentSnapshot); err != nil {
 			return fmt.Errorf("record checkpoint: create agent metadata event: %w", err)
 		}
 	}
@@ -323,9 +323,45 @@ func (s *Service) resolveRepoConfig(ctx context.Context, repoFullName, cloneURL 
 	return nil, fmt.Errorf("repo not found: %s", firstNonEmpty(repoFullName, cloneURL))
 }
 
+func (s *Service) createAgentMetadataEvents(ctx context.Context, sessionID uuid.UUID, workspaceID string, snapshot map[string]any) error {
+	for _, source := range []string{
+		string(agentmetadataevent.SourceCodex),
+		string(agentmetadataevent.SourceClaude),
+		string(agentmetadataevent.SourceKiro),
+	} {
+		raw, ok := snapshot[source]
+		if !ok {
+			continue
+		}
+		entry, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		normalized := make(map[string]any, len(entry)+1)
+		normalized["source"] = source
+		for k, v := range entry {
+			normalized[k] = v
+		}
+		if err := s.createAgentMetadataEvent(ctx, sessionID, workspaceID, normalized); err != nil {
+			return err
+		}
+	}
+
+	if _, ok := snapshot["source"]; ok {
+		return s.createAgentMetadataEvent(ctx, sessionID, workspaceID, snapshot)
+	}
+	return nil
+}
+
 func (s *Service) createAgentMetadataEvent(ctx context.Context, sessionID uuid.UUID, workspaceID string, snapshot map[string]any) error {
 	source := normalizeSource(asString(snapshot["source"]))
 	usageUnit := normalizeUsageUnit(asString(snapshot["usage_unit"]))
+	if usageUnit == string(agentmetadataevent.UsageUnitUnknown) {
+		switch source {
+		case string(agentmetadataevent.SourceCodex), string(agentmetadataevent.SourceClaude):
+			usageUnit = string(agentmetadataevent.UsageUnitToken)
+		}
+	}
 
 	rawPayload, _ := snapshot["raw_payload"].(map[string]any)
 	if rawPayload == nil {

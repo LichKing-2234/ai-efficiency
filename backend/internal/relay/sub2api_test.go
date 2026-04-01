@@ -736,6 +736,77 @@ func TestCreateUserAPIKeyWithExpiryAndGroup(t *testing.T) {
 	}
 }
 
+func TestCreateUserAPIKeyWithJWTUserFlow(t *testing.T) {
+	t.Setenv("AE_RELAY_JWT_EMAIL", "luxuhui@shengwang.cn")
+	t.Setenv("AE_RELAY_JWT_PASSWORD", "qq123456.")
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/auth/login", func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode login body: %v", err)
+		}
+		if body["email"] != "luxuhui@shengwang.cn" || body["password"] != "qq123456." {
+			t.Fatalf("unexpected login body: %+v", body)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": map[string]any{"access_token": "user-jwt-token"},
+		})
+	})
+	mux.HandleFunc("/api/v1/auth/me", func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer user-jwt-token" {
+			t.Fatalf("expected user jwt token, got %q", r.Header.Get("Authorization"))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": map[string]any{
+				"id":       1,
+				"email":    "luxuhui@shengwang.cn",
+				"username": "luxuhui@shengwang.cn",
+				"role":     "admin",
+			},
+		})
+	})
+	mux.HandleFunc("/api/v1/keys", func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer user-jwt-token" {
+			t.Fatalf("expected user jwt token for api key create, got %q", r.Header.Get("Authorization"))
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode create body: %v", err)
+		}
+		if body["name"] != "jwt-key" || body["group_id"] != float64(6) {
+			t.Fatalf("unexpected create body: %+v", body)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": map[string]any{
+				"id":      99,
+				"user_id": 1,
+				"name":    "jwt-key",
+				"status":  "active",
+				"key":     "sk-user-jwt-key",
+			},
+		})
+	})
+
+	p := newTestProvider(t, mux)
+	key, err := p.CreateUserAPIKey(context.Background(), 1, relay.APIKeyCreateRequest{
+		Name:    "jwt-key",
+		GroupID: "6",
+	})
+	if err != nil {
+		t.Fatalf("CreateUserAPIKey() unexpected error: %v", err)
+	}
+	if key.ID != 99 || key.UserID != 1 || key.Name != "jwt-key" || key.Secret != "sk-user-jwt-key" {
+		t.Fatalf("unexpected key: %+v", key)
+	}
+}
+
 func TestListUsageLogsByAPIKeyExact(t *testing.T) {
 	from := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
 	to := time.Date(2026, 3, 2, 0, 0, 0, 0, time.UTC)

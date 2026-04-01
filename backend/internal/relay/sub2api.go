@@ -8,6 +8,8 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -384,6 +386,21 @@ func (s *sub2apiRelay) ListUserAPIKeys(ctx context.Context, userID int64) ([]API
 }
 
 func (s *sub2apiRelay) CreateUserAPIKey(ctx context.Context, userID int64, req APIKeyCreateRequest) (*APIKeyWithSecret, error) {
+	if userEmail := strings.TrimSpace(os.Getenv("AE_RELAY_JWT_EMAIL")); userEmail != "" {
+		userPassword := strings.TrimSpace(os.Getenv("AE_RELAY_JWT_PASSWORD"))
+		if userPassword == "" {
+			return nil, fmt.Errorf("relay: create api key: AE_RELAY_JWT_PASSWORD is required when AE_RELAY_JWT_EMAIL is set")
+		}
+		token, user, err := s.loginSessionToken(ctx, userEmail, userPassword)
+		if err != nil {
+			return nil, fmt.Errorf("relay: create api key via jwt: %w", err)
+		}
+		if user == nil || user.ID != userID {
+			return nil, fmt.Errorf("relay: create api key via jwt: authenticated user %d does not match requested user %d", user.ID, userID)
+		}
+		return s.createUserAPIKeyWithJWT(ctx, token, userID, req)
+	}
+
 	payloadMap := map[string]any{
 		"user_id": userID,
 		"name":    req.Name,
@@ -421,6 +438,73 @@ func (s *sub2apiRelay) CreateUserAPIKey(ctx context.Context, userID int64, req A
 	return &result.Data, nil
 }
 
+func (s *sub2apiRelay) createUserAPIKeyWithJWT(ctx context.Context, token string, userID int64, req APIKeyCreateRequest) (*APIKeyWithSecret, error) {
+	payloadMap := map[string]any{
+		"name": req.Name,
+	}
+	if req.GroupID != "" {
+		if groupID, err := strconv.ParseInt(req.GroupID, 10, 64); err == nil {
+			payloadMap["group_id"] = groupID
+		}
+	}
+	if req.ExpiresAt != nil {
+		days := int(time.Until(*req.ExpiresAt).Hours() / 24)
+		if days < 1 {
+			days = 1
+		}
+		payloadMap["expires_in_days"] = days
+	}
+
+	payload, err := json.Marshal(payloadMap)
+	if err != nil {
+		return nil, fmt.Errorf("relay: create api key via jwt: marshal: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, s.adminURL+"/api/v1/keys", bytes.NewReader(payload))
+	if err != nil {
+		return nil, fmt.Errorf("relay: create api key via jwt: %w", err)
+	}
+	httpReq.Header.Set("Authorization", "Bearer "+token)
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := s.client.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("relay: create api key via jwt: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("relay: create api key via jwt: unexpected status %d", resp.StatusCode)
+	}
+
+	var result struct {
+		Code int `json:"code"`
+		Data struct {
+			ID     int64  `json:"id"`
+			UserID int64  `json:"user_id"`
+			Name   string `json:"name"`
+			Status string `json:"status"`
+			Key    string `json:"key"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("relay: create api key via jwt: decode: %w", err)
+	}
+	if result.Code != 0 {
+		return nil, fmt.Errorf("relay: create api key via jwt: request failed")
+	}
+
+	return &APIKeyWithSecret{
+		APIKey: APIKey{
+			ID:     result.Data.ID,
+			UserID: result.Data.UserID,
+			Name:   result.Data.Name,
+			Status: result.Data.Status,
+		},
+		Secret: result.Data.Key,
+	}, nil
+}
+
 func (s *sub2apiRelay) RevokeUserAPIKey(ctx context.Context, keyID int64) error {
 	resp, err := s.doAdminRequest(ctx, http.MethodPost, fmt.Sprintf("/api/v1/keys/%d/revoke", keyID), nil)
 	if err != nil {
@@ -432,6 +516,84 @@ func (s *sub2apiRelay) RevokeUserAPIKey(ctx context.Context, keyID int64) error 
 		return fmt.Errorf("relay: revoke api key: unexpected status %d", resp.StatusCode)
 	}
 	return nil
+}
+
+func (s *sub2apiRelay) loginSessionToken(ctx context.Context, username, password string) (string, *User, error) {
+	loginBody, _ := json.Marshal(map[string]string{
+		"email":    username,
+		"password": password,
+	})
+	loginReq, err := http.NewRequestWithContext(ctx, http.MethodPost, s.adminURL+"/api/v1/auth/login", bytes.NewReader(loginBody))
+	if err != nil {
+		return "", nil, fmt.Errorf("relay: authenticate: %w", err)
+	}
+	loginReq.Header.Set("Content-Type", "application/json")
+
+	loginResp, err := s.client.Do(loginReq)
+	if err != nil {
+		return "", nil, fmt.Errorf("relay: authenticate: %w", err)
+	}
+	defer loginResp.Body.Close()
+
+	if loginResp.StatusCode == http.StatusUnauthorized {
+		return "", nil, ErrInvalidCredentials
+	}
+
+	rawBody, err := io.ReadAll(loginResp.Body)
+	if err != nil {
+		return "", nil, fmt.Errorf("relay: authenticate: read body: %w", err)
+	}
+
+	bodyStr := string(rawBody)
+	if strings.Contains(bodyStr, "requires_2fa") || strings.Contains(bodyStr, "turnstile") {
+		return "", nil, ErrExtraVerificationRequired
+	}
+
+	var loginResult struct {
+		Code int `json:"code"`
+		Data struct {
+			AccessToken string `json:"access_token"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rawBody, &loginResult); err != nil {
+		return "", nil, fmt.Errorf("relay: authenticate: decode login: %w", err)
+	}
+	if loginResult.Code != 0 || loginResult.Data.AccessToken == "" {
+		return "", nil, fmt.Errorf("relay: authenticate: login failed")
+	}
+
+	meReq, err := http.NewRequestWithContext(ctx, http.MethodGet, s.adminURL+"/api/v1/auth/me", nil)
+	if err != nil {
+		return "", nil, fmt.Errorf("relay: authenticate: %w", err)
+	}
+	meReq.Header.Set("Authorization", "Bearer "+loginResult.Data.AccessToken)
+
+	meResp, err := s.client.Do(meReq)
+	if err != nil {
+		return "", nil, fmt.Errorf("relay: authenticate: %w", err)
+	}
+	defer meResp.Body.Close()
+
+	if meResp.StatusCode == http.StatusUnauthorized {
+		return "", nil, ErrInvalidCredentials
+	}
+
+	var meResult struct {
+		Code int  `json:"code"`
+		Data User `json:"data"`
+	}
+	if err := json.NewDecoder(meResp.Body).Decode(&meResult); err != nil {
+		return "", nil, fmt.Errorf("relay: authenticate: decode me: %w", err)
+	}
+	if meResult.Code != 0 {
+		return "", nil, fmt.Errorf("relay: authenticate: /me returned code %d", meResult.Code)
+	}
+
+	user := &meResult.Data
+	if user.Username == "" && user.Email != "" {
+		user.Username = user.Email
+	}
+	return loginResult.Data.AccessToken, user, nil
 }
 
 func (s *sub2apiRelay) ListUsageLogsByAPIKeyExact(ctx context.Context, apiKeyID int64, from, to time.Time) ([]UsageLog, error) {
