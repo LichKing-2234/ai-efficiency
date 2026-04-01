@@ -9,6 +9,7 @@ import (
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/ent/enttest"
 	"github.com/ai-efficiency/backend/internal/auth"
+	"github.com/ai-efficiency/backend/internal/pkg"
 	"github.com/ai-efficiency/backend/internal/relay"
 	"github.com/google/uuid"
 	_ "github.com/mattn/go-sqlite3"
@@ -353,6 +354,85 @@ func TestBootstrapFallsBackToRelayResolvedDefaultGroup(t *testing.T) {
 	}
 	if rp.lastCreateUserAPIKeyReq.GroupID != "g-auto" {
 		t.Fatalf("CreateUserAPIKey groupID = %q, want %q", rp.lastCreateUserAPIKeyReq.GroupID, "g-auto")
+	}
+}
+
+func TestBootstrapUsesStoredRelayCredentialsForSessionKeyCreation(t *testing.T) {
+	ctx := context.Background()
+	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	encryptionKey := "0000000000000000000000000000000000000000000000000000000000000000"
+
+	sp, err := client.ScmProvider.Create().
+		SetName("mock-gh").
+		SetType("github").
+		SetBaseURL("https://api.github.com").
+		SetCredentials("enc").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create scm provider: %v", err)
+	}
+
+	rc, err := client.RepoConfig.Create().
+		SetScmProviderID(sp.ID).
+		SetName("mock-repo").
+		SetFullName("org/mock-repo").
+		SetCloneURL("https://github.com/org/mock-repo.git").
+		SetDefaultBranch("main").
+		SetRelayGroupID("g-repo").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create repo config: %v", err)
+	}
+
+	encryptedPassword, err := pkg.Encrypt("stored-secret", encryptionKey)
+	if err != nil {
+		t.Fatalf("encrypt password: %v", err)
+	}
+	u, err := client.User.Create().
+		SetUsername("alice@example.com").
+		SetEmail("alice@example.com").
+		SetAuthSource("relay_sso").
+		SetRelayUserID(99).
+		SetRelayAuthPassword(encryptedPassword).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	rp := &fakeRelayProvider{
+		createUserAPIKeyFn: func(ctx context.Context, userID int64, req relay.APIKeyCreateRequest) (*relay.APIKeyWithSecret, error) {
+			login, password, ok := relay.UserCredentialsFromContext(ctx)
+			if !ok {
+				t.Fatal("expected relay user credentials in context")
+			}
+			if login != "alice@example.com" {
+				t.Fatalf("login = %q, want %q", login, "alice@example.com")
+			}
+			if password != "stored-secret" {
+				t.Fatalf("password = %q, want %q", password, "stored-secret")
+			}
+			return &relay.APIKeyWithSecret{
+				APIKey: relay.APIKey{ID: 555, UserID: userID, Name: req.Name, Status: "active"},
+				Secret: "sk-session-555",
+			}, nil
+		},
+	}
+
+	svc := NewService(client, rp, nil, "sub2api", "http://relay.local/v1", "g-default", 2*time.Hour, encryptionKey)
+	resp, err := svc.Bootstrap(ctx, u.ID, BootstrapRequest{
+		RepoFullName:   rc.FullName,
+		BranchSnapshot: "main",
+		HeadSHA:        "abc123",
+		WorkspaceRoot:  "/tmp/ws",
+		GitDir:         "/tmp/ws/.git",
+		GitCommonDir:   "/tmp/ws/.git",
+		WorkspaceID:    "ws-1",
+	})
+	if err != nil {
+		t.Fatalf("bootstrap: %v", err)
+	}
+	if resp.RelayAPIKeyID != 555 {
+		t.Fatalf("relay_api_key_id = %d, want %d", resp.RelayAPIKeyID, 555)
 	}
 }
 

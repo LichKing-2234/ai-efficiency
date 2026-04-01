@@ -23,6 +23,8 @@ const (
 	FieldAuthSource = "auth_source"
 	// FieldRelayUserID holds the string denoting the relay_user_id field in the database.
 	FieldRelayUserID = "relay_user_id"
+	// FieldRelayAuthPassword holds the string denoting the relay_auth_password field in the database.
+	FieldRelayAuthPassword = "relay_auth_password"
 	// FieldLdapDn holds the string denoting the ldap_dn field in the database.
 	FieldLdapDn = "ldap_dn"
 	// FieldRole holds the string denoting the role field in the database.
@@ -51,6 +53,7 @@ var Columns = []string{
 	FieldEmail,
 	FieldAuthSource,
 	FieldRelayUserID,
+	FieldRelayAuthPassword,
 	FieldLdapDn,
 	FieldRole,
 	FieldCreatedAt,
@@ -156,6 +159,11 @@ func ByAuthSource(opts ...sql.OrderTermOption) OrderOption {
 // ByRelayUserID orders the results by the relay_user_id field.
 func ByRelayUserID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldRelayUserID, opts...).ToFunc()
+}
+
+// ByRelayAuthPassword orders the results by the relay_auth_password field.
+func ByRelayAuthPassword(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldRelayAuthPassword, opts...).ToFunc()
 }
 
 // ByLdapDn orders the results by the ldap_dn field.

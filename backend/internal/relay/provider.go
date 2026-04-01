@@ -12,6 +12,31 @@ var (
 	ErrExtraVerificationRequired = errors.New("relay: extra verification required")
 )
 
+type userCredentialContextKey struct{}
+
+type UserCredential struct {
+	Login    string
+	Password string
+}
+
+func WithUserCredentials(ctx context.Context, login, password string) context.Context {
+	return context.WithValue(ctx, userCredentialContextKey{}, UserCredential{Login: login, Password: password})
+}
+
+func UserCredentialsFromContext(ctx context.Context) (login string, password string, ok bool) {
+	if ctx == nil {
+		return "", "", false
+	}
+	cred, ok := ctx.Value(userCredentialContextKey{}).(UserCredential)
+	if !ok {
+		return "", "", false
+	}
+	if cred.Login == "" || cred.Password == "" {
+		return "", "", false
+	}
+	return cred.Login, cred.Password, true
+}
+
 // Provider defines the unified interface for relay server interactions.
 type Provider interface {
 	Ping(ctx context.Context) error

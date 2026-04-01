@@ -11,6 +11,7 @@ import (
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/session"
 	"github.com/ai-efficiency/backend/internal/auth"
+	"github.com/ai-efficiency/backend/internal/pkg"
 	"github.com/ai-efficiency/backend/internal/relay"
 	"github.com/google/uuid"
 )
@@ -47,6 +48,7 @@ type Service struct {
 	providerBaseURL     string
 	defaultGroupID      string
 	keyTTL              time.Duration
+	encryptionKey       string
 }
 
 func NewService(
@@ -57,6 +59,7 @@ func NewService(
 	providerBaseURL string,
 	defaultGroupID string,
 	keyTTL time.Duration,
+	encryptionKeys ...string,
 ) *Service {
 	if keyTTL <= 0 {
 		keyTTL = 24 * time.Hour
@@ -69,6 +72,7 @@ func NewService(
 		providerBaseURL:       strings.TrimRight(strings.TrimSpace(providerBaseURL), "/"),
 		defaultGroupID:        strings.TrimSpace(defaultGroupID),
 		keyTTL:                keyTTL,
+		encryptionKey:         strings.TrimSpace(firstNonEmpty(encryptionKeys...)),
 	}
 }
 
@@ -209,7 +213,12 @@ func (s *Service) Bootstrap(ctx context.Context, localUserID int, req BootstrapR
 	shortID := strings.Split(sessionID.String(), "-")[0]
 	expiresAt := now.Add(s.keyTTL)
 
-	key, err := s.relayProvider.CreateUserAPIKey(ctx, relayUserID, relay.APIKeyCreateRequest{
+	createKeyCtx, err := s.contextWithRelayCredentials(ctx, u)
+	if err != nil {
+		return nil, fmt.Errorf("bootstrap: %w", err)
+	}
+
+	key, err := s.relayProvider.CreateUserAPIKey(createKeyCtx, relayUserID, relay.APIKeyCreateRequest{
 		Name:      "ae-session-" + shortID,
 		ExpiresAt: &expiresAt,
 		GroupID:   binding.GroupID,
@@ -281,6 +290,39 @@ func (s *Service) Bootstrap(ctx context.Context, localUserID int, req BootstrapR
 		EnvBundle:          envBundle,
 		KeyExpiresAt:       expiresAt,
 	}, nil
+}
+
+func (s *Service) contextWithRelayCredentials(ctx context.Context, u *ent.User) (context.Context, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if u == nil || u.RelayAuthPassword == nil || strings.TrimSpace(*u.RelayAuthPassword) == "" {
+		return ctx, nil
+	}
+	if strings.TrimSpace(s.encryptionKey) == "" {
+		return nil, fmt.Errorf("relay auth password is stored but encryption key is unavailable")
+	}
+	password, err := pkg.Decrypt(strings.TrimSpace(*u.RelayAuthPassword), s.encryptionKey)
+	if err != nil {
+		return nil, fmt.Errorf("decrypt relay auth password: %w", err)
+	}
+	login := strings.TrimSpace(u.Email)
+	if login == "" {
+		login = strings.TrimSpace(u.Username)
+	}
+	if login == "" || strings.TrimSpace(password) == "" {
+		return ctx, nil
+	}
+	return relay.WithUserCredentials(ctx, login, password), nil
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if strings.TrimSpace(v) != "" {
+			return strings.TrimSpace(v)
+		}
+	}
+	return ""
 }
 
 func (s *Service) Heartbeat(ctx context.Context, sessionID uuid.UUID) (*ent.Session, error) {

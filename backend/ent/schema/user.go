@@ -26,6 +26,10 @@ func (User) Fields() []ent.Field {
 		field.Int("relay_user_id").
 			Optional().
 			Nillable(),
+		field.String("relay_auth_password").
+			Optional().
+			Nillable().
+			Sensitive(),
 		field.String("ldap_dn").
 			Optional().
 			Nillable(),

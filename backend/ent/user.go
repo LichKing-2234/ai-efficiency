@@ -25,6 +25,8 @@ type User struct {
 	AuthSource user.AuthSource `json:"auth_source,omitempty"`
 	// RelayUserID holds the value of the "relay_user_id" field.
 	RelayUserID *int `json:"relay_user_id,omitempty"`
+	// RelayAuthPassword holds the value of the "relay_auth_password" field.
+	RelayAuthPassword *string `json:"-"`
 	// LdapDn holds the value of the "ldap_dn" field.
 	LdapDn *string `json:"ldap_dn,omitempty"`
 	// Role holds the value of the "role" field.
@@ -64,7 +66,7 @@ func (*User) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case user.FieldID, user.FieldRelayUserID:
 			values[i] = new(sql.NullInt64)
-		case user.FieldUsername, user.FieldEmail, user.FieldAuthSource, user.FieldLdapDn, user.FieldRole:
+		case user.FieldUsername, user.FieldEmail, user.FieldAuthSource, user.FieldRelayAuthPassword, user.FieldLdapDn, user.FieldRole:
 			values[i] = new(sql.NullString)
 		case user.FieldCreatedAt, user.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -113,6 +115,13 @@ func (u *User) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				u.RelayUserID = new(int)
 				*u.RelayUserID = int(value.Int64)
+			}
+		case user.FieldRelayAuthPassword:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field relay_auth_password", values[i])
+			} else if value.Valid {
+				u.RelayAuthPassword = new(string)
+				*u.RelayAuthPassword = value.String
 			}
 		case user.FieldLdapDn:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -193,6 +202,8 @@ func (u *User) String() string {
 		builder.WriteString("relay_user_id=")
 		builder.WriteString(fmt.Sprintf("%v", *v))
 	}
+	builder.WriteString(", ")
+	builder.WriteString("relay_auth_password=<sensitive>")
 	builder.WriteString(", ")
 	if v := u.LdapDn; v != nil {
 		builder.WriteString("ldap_dn=")

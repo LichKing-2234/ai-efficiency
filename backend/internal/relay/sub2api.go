@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -404,12 +403,8 @@ func (s *sub2apiRelay) ListUserAPIKeys(ctx context.Context, userID int64) ([]API
 }
 
 func (s *sub2apiRelay) CreateUserAPIKey(ctx context.Context, userID int64, req APIKeyCreateRequest) (*APIKeyWithSecret, error) {
-	if userEmail := strings.TrimSpace(os.Getenv("AE_RELAY_JWT_EMAIL")); userEmail != "" {
-		userPassword := strings.TrimSpace(os.Getenv("AE_RELAY_JWT_PASSWORD"))
-		if userPassword == "" {
-			return nil, fmt.Errorf("relay: create api key: AE_RELAY_JWT_PASSWORD is required when AE_RELAY_JWT_EMAIL is set")
-		}
-		token, user, err := s.loginSessionToken(ctx, userEmail, userPassword)
+	if login, password, ok := UserCredentialsFromContext(ctx); ok {
+		token, user, err := s.loginSessionToken(ctx, login, password)
 		if err != nil {
 			return nil, fmt.Errorf("relay: create api key via jwt: %w", err)
 		}

@@ -150,6 +150,7 @@ func main() {
 		cfg.Auth.AccessTokenTTL,
 		cfg.Auth.RefreshTokenTTL,
 		logger,
+		cfg.Encryption.Key,
 	)
 	// When relay is configured, allow LDAP logins to provision/resolve a relay-side identity
 	// (by stable username) for session/PR attribution.
@@ -221,6 +222,7 @@ func main() {
 			cfg.Relay.URL,
 			cfg.Relay.DefaultGroupID,
 			24*time.Hour,
+			cfg.Encryption.Key,
 		)
 	}
 	checkpointService := checkpoint.NewService(entClient)

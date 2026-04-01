@@ -54,6 +54,20 @@ func (uc *UserCreate) SetNillableRelayUserID(i *int) *UserCreate {
 	return uc
 }
 
+// SetRelayAuthPassword sets the "relay_auth_password" field.
+func (uc *UserCreate) SetRelayAuthPassword(s string) *UserCreate {
+	uc.mutation.SetRelayAuthPassword(s)
+	return uc
+}
+
+// SetNillableRelayAuthPassword sets the "relay_auth_password" field if the given value is not nil.
+func (uc *UserCreate) SetNillableRelayAuthPassword(s *string) *UserCreate {
+	if s != nil {
+		uc.SetRelayAuthPassword(*s)
+	}
+	return uc
+}
+
 // SetLdapDn sets the "ldap_dn" field.
 func (uc *UserCreate) SetLdapDn(s string) *UserCreate {
 	uc.mutation.SetLdapDn(s)
@@ -255,6 +269,10 @@ func (uc *UserCreate) createSpec() (*User, *sqlgraph.CreateSpec) {
 	if value, ok := uc.mutation.RelayUserID(); ok {
 		_spec.SetField(user.FieldRelayUserID, field.TypeInt, value)
 		_node.RelayUserID = &value
+	}
+	if value, ok := uc.mutation.RelayAuthPassword(); ok {
+		_spec.SetField(user.FieldRelayAuthPassword, field.TypeString, value)
+		_node.RelayAuthPassword = &value
 	}
 	if value, ok := uc.mutation.LdapDn(); ok {
 		_spec.SetField(user.FieldLdapDn, field.TypeString, value)

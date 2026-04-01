@@ -53,10 +53,11 @@ func (p *SSOProvider) Authenticate(ctx context.Context, username, password strin
 		role = "user"
 	}
 	return &UserInfo{
-		Username:    relayUser.Username,
-		Email:       relayUser.Email,
-		AuthSource:  "relay_sso",
-		Role:        role,
-		RelayUserID: &relayID,
+		Username:          relayUser.Username,
+		Email:             relayUser.Email,
+		AuthSource:        "relay_sso",
+		Role:              role,
+		RelayUserID:       &relayID,
+		RelayAuthPassword: password,
 	}, nil
 }

@@ -749,9 +749,6 @@ func TestCreateUserAPIKeyWithExpiryAndGroup(t *testing.T) {
 }
 
 func TestCreateUserAPIKeyWithJWTUserFlow(t *testing.T) {
-	t.Setenv("AE_RELAY_JWT_EMAIL", "luxuhui@shengwang.cn")
-	t.Setenv("AE_RELAY_JWT_PASSWORD", "qq123456.")
-
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/auth/login", func(w http.ResponseWriter, r *http.Request) {
 		var body map[string]any
@@ -807,7 +804,8 @@ func TestCreateUserAPIKeyWithJWTUserFlow(t *testing.T) {
 	})
 
 	p := newTestProvider(t, mux)
-	key, err := p.CreateUserAPIKey(context.Background(), 1, relay.APIKeyCreateRequest{
+	ctx := relay.WithUserCredentials(context.Background(), "luxuhui@shengwang.cn", "qq123456.")
+	key, err := p.CreateUserAPIKey(ctx, 1, relay.APIKeyCreateRequest{
 		Name:    "jwt-key",
 		GroupID: "6",
 	})

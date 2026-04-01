@@ -70,6 +70,11 @@ func RelayUserID(v int) predicate.User {
 	return predicate.User(sql.FieldEQ(FieldRelayUserID, v))
 }
 
+// RelayAuthPassword applies equality check predicate on the "relay_auth_password" field. It's identical to RelayAuthPasswordEQ.
+func RelayAuthPassword(v string) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldRelayAuthPassword, v))
+}
+
 // LdapDn applies equality check predicate on the "ldap_dn" field. It's identical to LdapDnEQ.
 func LdapDn(v string) predicate.User {
 	return predicate.User(sql.FieldEQ(FieldLdapDn, v))
@@ -283,6 +288,81 @@ func RelayUserIDIsNil() predicate.User {
 // RelayUserIDNotNil applies the NotNil predicate on the "relay_user_id" field.
 func RelayUserIDNotNil() predicate.User {
 	return predicate.User(sql.FieldNotNull(FieldRelayUserID))
+}
+
+// RelayAuthPasswordEQ applies the EQ predicate on the "relay_auth_password" field.
+func RelayAuthPasswordEQ(v string) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldRelayAuthPassword, v))
+}
+
+// RelayAuthPasswordNEQ applies the NEQ predicate on the "relay_auth_password" field.
+func RelayAuthPasswordNEQ(v string) predicate.User {
+	return predicate.User(sql.FieldNEQ(FieldRelayAuthPassword, v))
+}
+
+// RelayAuthPasswordIn applies the In predicate on the "relay_auth_password" field.
+func RelayAuthPasswordIn(vs ...string) predicate.User {
+	return predicate.User(sql.FieldIn(FieldRelayAuthPassword, vs...))
+}
+
+// RelayAuthPasswordNotIn applies the NotIn predicate on the "relay_auth_password" field.
+func RelayAuthPasswordNotIn(vs ...string) predicate.User {
+	return predicate.User(sql.FieldNotIn(FieldRelayAuthPassword, vs...))
+}
+
+// RelayAuthPasswordGT applies the GT predicate on the "relay_auth_password" field.
+func RelayAuthPasswordGT(v string) predicate.User {
+	return predicate.User(sql.FieldGT(FieldRelayAuthPassword, v))
+}
+
+// RelayAuthPasswordGTE applies the GTE predicate on the "relay_auth_password" field.
+func RelayAuthPasswordGTE(v string) predicate.User {
+	return predicate.User(sql.FieldGTE(FieldRelayAuthPassword, v))
+}
+
+// RelayAuthPasswordLT applies the LT predicate on the "relay_auth_password" field.
+func RelayAuthPasswordLT(v string) predicate.User {
+	return predicate.User(sql.FieldLT(FieldRelayAuthPassword, v))
+}
+
+// RelayAuthPasswordLTE applies the LTE predicate on the "relay_auth_password" field.
+func RelayAuthPasswordLTE(v string) predicate.User {
+	return predicate.User(sql.FieldLTE(FieldRelayAuthPassword, v))
+}
+
+// RelayAuthPasswordContains applies the Contains predicate on the "relay_auth_password" field.
+func RelayAuthPasswordContains(v string) predicate.User {
+	return predicate.User(sql.FieldContains(FieldRelayAuthPassword, v))
+}
+
+// RelayAuthPasswordHasPrefix applies the HasPrefix predicate on the "relay_auth_password" field.
+func RelayAuthPasswordHasPrefix(v string) predicate.User {
+	return predicate.User(sql.FieldHasPrefix(FieldRelayAuthPassword, v))
+}
+
+// RelayAuthPasswordHasSuffix applies the HasSuffix predicate on the "relay_auth_password" field.
+func RelayAuthPasswordHasSuffix(v string) predicate.User {
+	return predicate.User(sql.FieldHasSuffix(FieldRelayAuthPassword, v))
+}
+
+// RelayAuthPasswordIsNil applies the IsNil predicate on the "relay_auth_password" field.
+func RelayAuthPasswordIsNil() predicate.User {
+	return predicate.User(sql.FieldIsNull(FieldRelayAuthPassword))
+}
+
+// RelayAuthPasswordNotNil applies the NotNil predicate on the "relay_auth_password" field.
+func RelayAuthPasswordNotNil() predicate.User {
+	return predicate.User(sql.FieldNotNull(FieldRelayAuthPassword))
+}
+
+// RelayAuthPasswordEqualFold applies the EqualFold predicate on the "relay_auth_password" field.
+func RelayAuthPasswordEqualFold(v string) predicate.User {
+	return predicate.User(sql.FieldEqualFold(FieldRelayAuthPassword, v))
+}
+
+// RelayAuthPasswordContainsFold applies the ContainsFold predicate on the "relay_auth_password" field.
+func RelayAuthPasswordContainsFold(v string) predicate.User {
+	return predicate.User(sql.FieldContainsFold(FieldRelayAuthPassword, v))
 }
 
 // LdapDnEQ applies the EQ predicate on the "ldap_dn" field.

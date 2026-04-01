@@ -151,6 +151,54 @@ func TestLoginSpecificProviderSuccess(t *testing.T) {
 	}
 }
 
+func TestLoginSSOPersistsEncryptedRelayAuthPassword(t *testing.T) {
+	client := setupAuthEntClient(t)
+	encryptionKey := "0000000000000000000000000000000000000000000000000000000000000000"
+	svc := NewService(client, "test-secret-key-for-unit-tests!!", 7200, 604800, zap.NewNop(), encryptionKey)
+	relayID := 42
+	svc.RegisterProvider(&mockAuthProvider{
+		name: "sso",
+		userInfo: &UserInfo{
+			Username:          "alice@example.com",
+			Email:             "alice@example.com",
+			Role:              "admin",
+			AuthSource:        "relay_sso",
+			RelayUserID:       &relayID,
+			RelayAuthPassword: "sso-password",
+		},
+	})
+
+	_, info, err := svc.Login(context.Background(), LoginRequest{
+		Username: "alice@example.com",
+		Password: "sso-password",
+		Source:   "sso",
+	})
+	if err != nil {
+		t.Fatalf("Login error: %v", err)
+	}
+	if info == nil {
+		t.Fatal("expected non-nil user info")
+	}
+
+	u, err := client.User.Query().Where(entuser.UsernameEQ("alice@example.com")).Only(context.Background())
+	if err != nil {
+		t.Fatalf("query user: %v", err)
+	}
+	if u.RelayAuthPassword == nil || *u.RelayAuthPassword == "" {
+		t.Fatal("expected encrypted relay auth password to be stored")
+	}
+	if *u.RelayAuthPassword == "sso-password" {
+		t.Fatal("expected relay auth password to be encrypted, got plaintext")
+	}
+	decrypted, err := svc.DecryptRelayAuthPassword(*u.RelayAuthPassword)
+	if err != nil {
+		t.Fatalf("DecryptRelayAuthPassword error: %v", err)
+	}
+	if decrypted != "sso-password" {
+		t.Fatalf("decrypted relay auth password = %q, want %q", decrypted, "sso-password")
+	}
+}
+
 func TestLoginSpecificProviderNotFound(t *testing.T) {
 	svc, _ := newTestServiceWithDB(t)
 	svc.RegisterProvider(&mockAuthProvider{name: "ldap"})

@@ -8,6 +8,7 @@ import (
 
 	"github.com/ai-efficiency/backend/ent"
 	entuser "github.com/ai-efficiency/backend/ent/user"
+	"github.com/ai-efficiency/backend/internal/pkg"
 	"github.com/golang-jwt/jwt/v5"
 	"go.uber.org/zap"
 )
@@ -20,6 +21,7 @@ type UserInfo struct {
 	Role        string `json:"role"`
 	AuthSource  string `json:"auth_source"`
 	RelayUserID *int   `json:"relay_user_id,omitempty"`
+	RelayAuthPassword string `json:"-"`
 }
 
 // TokenPair contains access and refresh tokens.
@@ -47,6 +49,7 @@ type Service struct {
 	providers             []AuthProvider
 	entClient             *ent.Client
 	jwtSecret             []byte
+	encryptionKey         string
 	accessTokenTTL        time.Duration
 	refreshTokenTTL       time.Duration
 	relayIdentityResolver *RelayIdentityResolver
@@ -54,7 +57,7 @@ type Service struct {
 }
 
 // NewService creates a new auth service.
-func NewService(entClient *ent.Client, jwtSecret string, accessTTL, refreshTTL int, logger *zap.Logger) *Service {
+func NewService(entClient *ent.Client, jwtSecret string, accessTTL, refreshTTL int, logger *zap.Logger, encryptionKeys ...string) *Service {
 	if len(jwtSecret) < 16 {
 		logger.Fatal("JWT secret must be at least 16 characters", zap.Int("length", len(jwtSecret)))
 	}
@@ -67,6 +70,7 @@ func NewService(entClient *ent.Client, jwtSecret string, accessTTL, refreshTTL i
 	return &Service{
 		entClient:       entClient,
 		jwtSecret:       []byte(jwtSecret),
+		encryptionKey:   firstNonEmptyString(encryptionKeys...),
 		accessTokenTTL:  time.Duration(accessTTL) * time.Second,
 		refreshTokenTTL: time.Duration(refreshTTL) * time.Second,
 		logger:          logger,
@@ -192,12 +196,15 @@ func (s *Service) ensureLocalUser(ctx context.Context, info *UserInfo) (*ent.Use
 
 		// LDAP path: provision relay-side identity when we don't have it yet.
 		if info.RelayUserID == nil && s.relayIdentityResolver != nil {
-			relayUser, err := s.relayIdentityResolver.ResolveOrProvision(ctx, info.Username, info.Email)
+			relayUser, relayPassword, err := s.relayIdentityResolver.ResolveOrProvisionWithPassword(ctx, info.Username, info.Email)
 			if err != nil {
 				return nil, fmt.Errorf("resolve relay identity: %w", err)
 			}
 			relayID := int(relayUser.ID)
 			info.RelayUserID = &relayID
+			if strings.TrimSpace(relayPassword) != "" {
+				info.RelayAuthPassword = relayPassword
+			}
 			info.Email = ensureNonEmptyEmail(info.Email, relayUser.Email, "")
 			u, err = u.Update().SetRelayUserID(relayID).Save(ctx)
 			if err != nil {
@@ -214,6 +221,15 @@ func (s *Service) ensureLocalUser(ctx context.Context, info *UserInfo) (*ent.Use
 				return nil, fmt.Errorf("sync user role: %w", err)
 			}
 		}
+		if err := s.persistRelayAuthPassword(ctx, u.ID, info.RelayAuthPassword); err != nil {
+			return nil, err
+		}
+		if info.RelayAuthPassword != "" {
+			u, err = s.entClient.User.Get(ctx, u.ID)
+			if err != nil {
+				return nil, fmt.Errorf("reload user: %w", err)
+			}
+		}
 		return u, nil
 	}
 	if !ent.IsNotFound(err) {
@@ -221,12 +237,15 @@ func (s *Service) ensureLocalUser(ctx context.Context, info *UserInfo) (*ent.Use
 	}
 
 	if info.RelayUserID == nil && s.relayIdentityResolver != nil {
-		relayUser, err := s.relayIdentityResolver.ResolveOrProvision(ctx, info.Username, info.Email)
+		relayUser, relayPassword, err := s.relayIdentityResolver.ResolveOrProvisionWithPassword(ctx, info.Username, info.Email)
 		if err != nil {
 			return nil, fmt.Errorf("resolve relay identity: %w", err)
 		}
 		relayID := int(relayUser.ID)
 		info.RelayUserID = &relayID
+		if strings.TrimSpace(relayPassword) != "" {
+			info.RelayAuthPassword = relayPassword
+		}
 		info.Email = ensureNonEmptyEmail(info.Email, relayUser.Email, "")
 	}
 
@@ -246,8 +265,66 @@ func (s *Service) ensureLocalUser(ctx context.Context, info *UserInfo) (*ent.Use
 	if info.RelayUserID != nil {
 		create.SetRelayUserID(*info.RelayUserID)
 	}
+	if encrypted, err := s.encryptRelayAuthPassword(info.RelayAuthPassword); err != nil {
+		return nil, err
+	} else if encrypted != "" {
+		create.SetRelayAuthPassword(encrypted)
+	}
 
 	return create.Save(ctx)
+}
+
+func (s *Service) encryptRelayAuthPassword(password string) (string, error) {
+	password = strings.TrimSpace(password)
+	if password == "" {
+		return "", nil
+	}
+	if strings.TrimSpace(s.encryptionKey) == "" {
+		return "", fmt.Errorf("encrypt relay auth password: encryption key is required")
+	}
+	encrypted, err := pkg.Encrypt(password, s.encryptionKey)
+	if err != nil {
+		return "", fmt.Errorf("encrypt relay auth password: %w", err)
+	}
+	return encrypted, nil
+}
+
+func (s *Service) DecryptRelayAuthPassword(ciphertext string) (string, error) {
+	ciphertext = strings.TrimSpace(ciphertext)
+	if ciphertext == "" {
+		return "", nil
+	}
+	if strings.TrimSpace(s.encryptionKey) == "" {
+		return "", fmt.Errorf("decrypt relay auth password: encryption key is required")
+	}
+	plaintext, err := pkg.Decrypt(ciphertext, s.encryptionKey)
+	if err != nil {
+		return "", fmt.Errorf("decrypt relay auth password: %w", err)
+	}
+	return plaintext, nil
+}
+
+func (s *Service) persistRelayAuthPassword(ctx context.Context, userID int, password string) error {
+	encrypted, err := s.encryptRelayAuthPassword(password)
+	if err != nil {
+		return err
+	}
+	if encrypted == "" {
+		return nil
+	}
+	if _, err := s.entClient.User.UpdateOneID(userID).SetRelayAuthPassword(encrypted).Save(ctx); err != nil {
+		return fmt.Errorf("persist relay auth password: %w", err)
+	}
+	return nil
+}
+
+func firstNonEmptyString(values ...string) string {
+	for _, v := range values {
+		if strings.TrimSpace(v) != "" {
+			return strings.TrimSpace(v)
+		}
+	}
+	return ""
 }
 
 func (s *Service) generateTokenPair(info *UserInfo) (*TokenPair, error) {

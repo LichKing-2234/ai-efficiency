@@ -99,6 +99,26 @@ func (uu *UserUpdate) ClearRelayUserID() *UserUpdate {
 	return uu
 }
 
+// SetRelayAuthPassword sets the "relay_auth_password" field.
+func (uu *UserUpdate) SetRelayAuthPassword(s string) *UserUpdate {
+	uu.mutation.SetRelayAuthPassword(s)
+	return uu
+}
+
+// SetNillableRelayAuthPassword sets the "relay_auth_password" field if the given value is not nil.
+func (uu *UserUpdate) SetNillableRelayAuthPassword(s *string) *UserUpdate {
+	if s != nil {
+		uu.SetRelayAuthPassword(*s)
+	}
+	return uu
+}
+
+// ClearRelayAuthPassword clears the value of the "relay_auth_password" field.
+func (uu *UserUpdate) ClearRelayAuthPassword() *UserUpdate {
+	uu.mutation.ClearRelayAuthPassword()
+	return uu
+}
+
 // SetLdapDn sets the "ldap_dn" field.
 func (uu *UserUpdate) SetLdapDn(s string) *UserUpdate {
 	uu.mutation.SetLdapDn(s)
@@ -271,6 +291,12 @@ func (uu *UserUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if uu.mutation.RelayUserIDCleared() {
 		_spec.ClearField(user.FieldRelayUserID, field.TypeInt)
 	}
+	if value, ok := uu.mutation.RelayAuthPassword(); ok {
+		_spec.SetField(user.FieldRelayAuthPassword, field.TypeString, value)
+	}
+	if uu.mutation.RelayAuthPasswordCleared() {
+		_spec.ClearField(user.FieldRelayAuthPassword, field.TypeString)
+	}
 	if value, ok := uu.mutation.LdapDn(); ok {
 		_spec.SetField(user.FieldLdapDn, field.TypeString, value)
 	}
@@ -414,6 +440,26 @@ func (uuo *UserUpdateOne) AddRelayUserID(i int) *UserUpdateOne {
 // ClearRelayUserID clears the value of the "relay_user_id" field.
 func (uuo *UserUpdateOne) ClearRelayUserID() *UserUpdateOne {
 	uuo.mutation.ClearRelayUserID()
+	return uuo
+}
+
+// SetRelayAuthPassword sets the "relay_auth_password" field.
+func (uuo *UserUpdateOne) SetRelayAuthPassword(s string) *UserUpdateOne {
+	uuo.mutation.SetRelayAuthPassword(s)
+	return uuo
+}
+
+// SetNillableRelayAuthPassword sets the "relay_auth_password" field if the given value is not nil.
+func (uuo *UserUpdateOne) SetNillableRelayAuthPassword(s *string) *UserUpdateOne {
+	if s != nil {
+		uuo.SetRelayAuthPassword(*s)
+	}
+	return uuo
+}
+
+// ClearRelayAuthPassword clears the value of the "relay_auth_password" field.
+func (uuo *UserUpdateOne) ClearRelayAuthPassword() *UserUpdateOne {
+	uuo.mutation.ClearRelayAuthPassword()
 	return uuo
 }
 
@@ -618,6 +664,12 @@ func (uuo *UserUpdateOne) sqlSave(ctx context.Context) (_node *User, err error) 
 	}
 	if uuo.mutation.RelayUserIDCleared() {
 		_spec.ClearField(user.FieldRelayUserID, field.TypeInt)
+	}
+	if value, ok := uuo.mutation.RelayAuthPassword(); ok {
+		_spec.SetField(user.FieldRelayAuthPassword, field.TypeString, value)
+	}
+	if uuo.mutation.RelayAuthPasswordCleared() {
+		_spec.ClearField(user.FieldRelayAuthPassword, field.TypeString)
 	}
 	if value, ok := uuo.mutation.LdapDn(); ok {
 		_spec.SetField(user.FieldLdapDn, field.TypeString, value)

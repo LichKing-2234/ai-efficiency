@@ -30,25 +30,30 @@ func NewRelayIdentityResolver(api relayIdentityAPI, fallbackDomain string) *Rela
 }
 
 func (r *RelayIdentityResolver) ResolveOrProvision(ctx context.Context, username, email string) (*relay.User, error) {
+	u, _, err := r.ResolveOrProvisionWithPassword(ctx, username, email)
+	return u, err
+}
+
+func (r *RelayIdentityResolver) ResolveOrProvisionWithPassword(ctx context.Context, username, email string) (*relay.User, string, error) {
 	username = strings.TrimSpace(username)
 	email = strings.TrimSpace(email)
 	if username == "" {
-		return nil, fmt.Errorf("relay identity: username is required")
+		return nil, "", fmt.Errorf("relay identity: username is required")
 	}
 
 	u, err := r.api.FindUserByUsername(ctx, username)
 	if err != nil {
-		return nil, fmt.Errorf("relay identity: find user by username: %w", err)
+		return nil, "", fmt.Errorf("relay identity: find user by username: %w", err)
 	}
 	if u != nil {
-		return u, nil
+		return u, "", nil
 	}
 
 	email = ensureNonEmptyEmail(email, username, r.fallbackDomain)
 
 	pw, err := highEntropyPassword()
 	if err != nil {
-		return nil, fmt.Errorf("relay identity: generate password: %w", err)
+		return nil, "", fmt.Errorf("relay identity: generate password: %w", err)
 	}
 
 	created, err := r.api.CreateUser(ctx, relay.CreateUserRequest{
@@ -58,9 +63,9 @@ func (r *RelayIdentityResolver) ResolveOrProvision(ctx context.Context, username
 		Notes:    "provisioned_by_ai_efficiency_ldap",
 	})
 	if err != nil {
-		return nil, fmt.Errorf("relay identity: create user: %w", err)
+		return nil, "", fmt.Errorf("relay identity: create user: %w", err)
 	}
-	return created, nil
+	return created, pw, nil
 }
 
 func highEntropyPassword() (string, error) {
