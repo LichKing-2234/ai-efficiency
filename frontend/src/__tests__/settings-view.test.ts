@@ -466,7 +466,8 @@ describe('SettingsView', () => {
     const inputs = wrapper.findAll('input[type="text"]')
     const disabledTextInputs = inputs.filter((i) => (i.element as HTMLInputElement).disabled)
     const disabledValues = disabledTextInputs.map((i) => (i.element as HTMLInputElement).value)
-    expect(disabledValues).toEqual(expect.arrayContaining(['http://relay.local', 'sk-test']))
+    expect(disabledValues).toEqual(expect.arrayContaining(['http://relay.local']))
+    expect(disabledValues).not.toEqual(expect.arrayContaining(['sk-test']))
 
     expect(getInputByLabel(wrapper, 'Model').value).toBe('gpt-4o')
 
@@ -490,11 +491,23 @@ describe('SettingsView', () => {
     const { updateLLMConfig } = await import('@/api/settings')
     ;(updateLLMConfig as any).mockResolvedValue({ data: { data: {} } })
 
-    const wrapper = await mountSettings()
+    const wrapper = await mountSettings({
+      llmConfig: {
+        relay_url: 'http://relay.local',
+        relay_api_key: 'admin-old-key',
+        model: 'gpt-4',
+        enabled: true,
+      },
+    })
 
     const modelInput = getInputByLabel(wrapper, 'Model')
     modelInput.value = 'gpt-4o'
     modelInput.dispatchEvent(new Event('input'))
+    await wrapper.vm.$nextTick()
+
+    const relayKeyInput = getInputByLabel(wrapper, 'Relay API Key')
+    relayKeyInput.value = 'admin-new-key'
+    relayKeyInput.dispatchEvent(new Event('input'))
     await wrapper.vm.$nextTick()
 
     // Click Save
@@ -503,7 +516,7 @@ describe('SettingsView', () => {
     await flushPromises()
 
     expect(updateLLMConfig).toHaveBeenCalled()
-    expect(updateLLMConfig).toHaveBeenCalledWith(expect.objectContaining({ model: 'gpt-4o' }))
+    expect(updateLLMConfig).toHaveBeenCalledWith(expect.objectContaining({ model: 'gpt-4o', relay_api_key: 'admin-new-key' }))
     expect(wrapper.text()).toContain('LLM configuration saved')
   })
 

@@ -16,18 +16,27 @@ import (
 type SettingsHandler struct {
 	configPath  string
 	relayCfg    config.RelayConfig
+	relayAdmin  relayAdminKeyUpdater
 	llmAnalyzer *llm.Analyzer
 	logger      *zap.Logger
 }
 
+type relayAdminKeyUpdater interface {
+	SetAdminAPIKey(apiKey string)
+}
+
 // NewSettingsHandler creates a new SettingsHandler.
-func NewSettingsHandler(configPath string, relayCfg config.RelayConfig, llmAnalyzer *llm.Analyzer, logger *zap.Logger) *SettingsHandler {
-	return &SettingsHandler{
+func NewSettingsHandler(configPath string, relayCfg config.RelayConfig, llmAnalyzer *llm.Analyzer, logger *zap.Logger, relayAdmins ...relayAdminKeyUpdater) *SettingsHandler {
+	h := &SettingsHandler{
 		configPath:  configPath,
 		relayCfg:    relayCfg,
 		llmAnalyzer: llmAnalyzer,
 		logger:      logger,
 	}
+	if len(relayAdmins) > 0 {
+		h.relayAdmin = relayAdmins[0]
+	}
+	return h
 }
 
 type llmConfigResponse struct {
@@ -41,6 +50,7 @@ type llmConfigResponse struct {
 }
 
 type llmConfigRequest struct {
+	RelayAPIKey        string `json:"relay_api_key"`
 	MaxTokensPerScan   int    `json:"max_tokens_per_scan"`
 	SystemPrompt       string `json:"system_prompt"`
 	UserPromptTemplate string `json:"user_prompt_template"`
@@ -96,15 +106,32 @@ func (h *SettingsHandler) UpdateLLMConfig(c *gin.Context) {
 		UserPromptTemplate: req.UserPromptTemplate,
 	}
 
+	relayAPIKey := strings.TrimSpace(req.RelayAPIKey)
+	switch {
+	case relayAPIKey == "":
+		relayAPIKey = h.relayCfg.APIKey
+	case strings.Contains(relayAPIKey, "****"):
+		relayAPIKey = h.relayCfg.APIKey
+	}
+
 	// Persist to config.yaml
 	if err := h.persistLLMConfig(newCfg); err != nil {
 		h.logger.Error("failed to persist LLM config", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "failed to save config"})
 		return
 	}
+	if err := h.persistRelayConfig(relayAPIKey); err != nil {
+		h.logger.Error("failed to persist relay config", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "failed to save config"})
+		return
+	}
 
 	// Hot-reload analyzer
 	h.llmAnalyzer.UpdateConfig(newCfg)
+	h.relayCfg.APIKey = relayAPIKey
+	if h.relayAdmin != nil {
+		h.relayAdmin.SetAdminAPIKey(relayAPIKey)
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"code":    200,
@@ -176,4 +203,19 @@ func (h *SettingsHandler) persistLLMConfig(llmCfg config.LLMConfig) error {
 		"system_prompt":              llmCfg.SystemPrompt,
 		"user_prompt_template":       llmCfg.UserPromptTemplate,
 	})
+}
+
+func (h *SettingsHandler) persistRelayConfig(apiKey string) error {
+	relaySection := map[string]interface{}{
+		"api_key": apiKey,
+		"model":   h.relayCfg.Model,
+		"url":     h.relayCfg.URL,
+	}
+	if v := strings.TrimSpace(h.relayCfg.Provider); v != "" {
+		relaySection["provider"] = v
+	}
+	if v := strings.TrimSpace(h.relayCfg.DefaultGroupID); v != "" {
+		relaySection["default_group_id"] = v
+	}
+	return updateYAMLSection(h.configPath, []string{"relay"}, relaySection)
 }

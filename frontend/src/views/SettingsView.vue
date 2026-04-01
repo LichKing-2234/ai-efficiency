@@ -146,7 +146,10 @@ async function handleSaveLLM() {
   llmSuccess.value = ''
   llmSaving.value = true
   try {
-    await updateLLMConfig(llmForm.value)
+    await updateLLMConfig({
+      ...llmForm.value,
+      relay_api_key: llmRelayAPIKey.value,
+    })
     llmSuccess.value = 'LLM configuration saved'
     setTimeout(() => { llmSuccess.value = '' }, 3000)
   } catch (e: any) {
@@ -309,7 +312,8 @@ async function handleTestLDAP() {
 
           <div>
             <label class="block text-sm font-medium text-gray-700">Relay API Key</label>
-            <input :value="llmRelayAPIKey" type="text" disabled class="mt-1 block w-full rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-500" />
+            <input v-model="llmRelayAPIKey" type="password" placeholder="admin-..." class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
+            <p class="mt-1 text-xs text-gray-400">Used as <code class="bg-gray-100 px-1 rounded">X-API-Key</code> for relay admin APIs.</p>
           </div>
 
           <div>

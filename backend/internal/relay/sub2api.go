@@ -11,12 +11,14 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"go.uber.org/zap"
 )
 
 type sub2apiRelay struct {
+	mu       sync.RWMutex
 	client   *http.Client
 	baseURL  string // LLM API endpoint, e.g. http://localhost:3000/v1
 	adminURL string // Admin API endpoint, e.g. http://localhost:3000
@@ -38,6 +40,18 @@ func NewSub2apiProvider(httpClient *http.Client, baseURL, adminURL, apiKey, mode
 }
 
 func (s *sub2apiRelay) Name() string { return "sub2api" }
+
+func (s *sub2apiRelay) adminAPIKey() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.apiKey
+}
+
+func (s *sub2apiRelay) SetAdminAPIKey(apiKey string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.apiKey = strings.TrimSpace(apiKey)
+}
 
 func (s *sub2apiRelay) Ping(ctx context.Context) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.adminURL+"/health", nil)
@@ -260,7 +274,7 @@ func (s *sub2apiRelay) ChatCompletion(ctx context.Context, req ChatCompletionReq
 	if err != nil {
 		return nil, fmt.Errorf("relay: chat completion: %w", err)
 	}
-	httpReq.Header.Set("Authorization", "Bearer "+s.apiKey)
+	httpReq.Header.Set("Authorization", "Bearer "+s.adminAPIKey())
 	httpReq.Header.Set("Content-Type", "application/json")
 
 	resp, err := s.client.Do(httpReq)
@@ -309,7 +323,7 @@ func (s *sub2apiRelay) ChatCompletionWithTools(ctx context.Context, req ChatComp
 	if err != nil {
 		return nil, fmt.Errorf("relay: chat completion with tools: %w", err)
 	}
-	httpReq.Header.Set("Authorization", "Bearer "+s.apiKey)
+	httpReq.Header.Set("Authorization", "Bearer "+s.adminAPIKey())
 	httpReq.Header.Set("Content-Type", "application/json")
 
 	resp, err := s.client.Do(httpReq)
@@ -630,7 +644,7 @@ func (s *sub2apiRelay) doAdminRequest(ctx context.Context, method, path string, 
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Authorization", "Bearer "+s.apiKey)
+	req.Header.Set("X-API-Key", s.adminAPIKey())
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}

@@ -69,6 +69,7 @@ func TestUpdateLLMConfig(t *testing.T) {
 
 	body := map[string]interface{}{
 		"max_tokens_per_scan": 50000,
+		"relay_api_key":       "admin-new-key-12345678",
 	}
 
 	w := doFullRequest(env, http.MethodPut, "/api/v1/settings/llm", body)
@@ -99,8 +100,11 @@ func TestUpdateLLMConfig(t *testing.T) {
 	if !strings.Contains(apiKey, "****") {
 		t.Errorf("expected masked API key, got %q", apiKey)
 	}
+	if !strings.HasSuffix(apiKey, "5678") {
+		t.Errorf("expected masked API key to reflect updated key suffix, got %q", apiKey)
+	}
 
-	// Verify config file was persisted with max_tokens_per_scan
+	// Verify config file was persisted with max_tokens_per_scan and relay api key
 	configData, err := os.ReadFile(env.configPath)
 	if err != nil {
 		t.Fatalf("read config: %v", err)
@@ -108,6 +112,9 @@ func TestUpdateLLMConfig(t *testing.T) {
 	configStr := string(configData)
 	if !strings.Contains(configStr, "max_tokens_per_scan") {
 		t.Errorf("config file should contain 'max_tokens_per_scan', got:\n%s", configStr)
+	}
+	if !strings.Contains(configStr, "api_key: admin-new-key-12345678") {
+		t.Errorf("config file should contain updated relay api key, got:\n%s", configStr)
 	}
 }
 

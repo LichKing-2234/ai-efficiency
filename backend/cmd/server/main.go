@@ -190,7 +190,11 @@ func main() {
 	if cp := os.Getenv("AE_CONFIG_PATH"); cp != "" {
 		settingsConfigPath = cp
 	}
-	settingsHandler := handler.NewSettingsHandler(settingsConfigPath, cfg.Relay, llmAnalyzer, logger)
+	var relayAdminUpdater interface{ SetAdminAPIKey(string) }
+	if u, ok := relayProvider.(interface{ SetAdminAPIKey(string) }); ok {
+		relayAdminUpdater = u
+	}
+	settingsHandler := handler.NewSettingsHandler(settingsConfigPath, cfg.Relay, llmAnalyzer, logger, relayAdminUpdater)
 	chatHandler := handler.NewChatHandler(entClient, llmAnalyzer, dataDir, logger)
 
 	// Init OAuth handler

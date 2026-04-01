@@ -206,8 +206,11 @@ func TestGetUser(t *testing.T) {
 		if r.Method != http.MethodGet {
 			t.Errorf("expected GET, got %s", r.Method)
 		}
-		if r.Header.Get("Authorization") != "Bearer test-admin-key" {
-			t.Errorf("expected admin API key in Authorization header")
+		if r.Header.Get("X-API-Key") != "test-admin-key" {
+			t.Errorf("expected admin API key in X-API-Key header")
+		}
+		if got := r.Header.Get("Authorization"); got != "" {
+			t.Errorf("expected Authorization header to be empty, got %q", got)
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{
@@ -305,8 +308,11 @@ func TestFindUserByUsername(t *testing.T) {
 		if r.Method != http.MethodGet {
 			t.Errorf("expected GET, got %s", r.Method)
 		}
-		if r.Header.Get("Authorization") != "Bearer test-admin-key" {
-			t.Errorf("expected admin API key in Authorization header")
+		if r.Header.Get("X-API-Key") != "test-admin-key" {
+			t.Errorf("expected admin API key in X-API-Key header")
+		}
+		if got := r.Header.Get("Authorization"); got != "" {
+			t.Errorf("expected Authorization header to be empty, got %q", got)
 		}
 
 		username := r.URL.Query().Get("username")
@@ -371,8 +377,11 @@ func TestCreateUser(t *testing.T) {
 		if r.Method != http.MethodPost {
 			t.Errorf("expected POST, got %s", r.Method)
 		}
-		if r.Header.Get("Authorization") != "Bearer test-admin-key" {
-			t.Errorf("expected admin API key in Authorization header")
+		if r.Header.Get("X-API-Key") != "test-admin-key" {
+			t.Errorf("expected admin API key in X-API-Key header")
+		}
+		if got := r.Header.Get("Authorization"); got != "" {
+			t.Errorf("expected Authorization header to be empty, got %q", got)
 		}
 
 		var body relay.CreateUserRequest
@@ -612,8 +621,11 @@ func TestCreateUserAPIKey(t *testing.T) {
 		if r.Method != http.MethodPost {
 			t.Errorf("expected POST, got %s", r.Method)
 		}
-		if r.Header.Get("Authorization") != "Bearer test-admin-key" {
-			t.Errorf("expected admin API key in Authorization header")
+		if r.Header.Get("X-API-Key") != "test-admin-key" {
+			t.Errorf("expected admin API key in X-API-Key header")
+		}
+		if got := r.Header.Get("Authorization"); got != "" {
+			t.Errorf("expected Authorization header to be empty, got %q", got)
 		}
 		var body struct {
 			UserID int64  `json:"user_id"`
