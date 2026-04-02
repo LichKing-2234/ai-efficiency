@@ -5,10 +5,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/ai-efficiency/ae-cli/internal/collector"
@@ -20,9 +23,73 @@ type fakeUploader struct {
 	events []HookEvent
 }
 
+type fakeProxyEvent struct {
+	EventType string `json:"event_type"`
+}
+
+type fakeProxyServer struct {
+	ListenAddr string
+	AuthToken  string
+
+	mu        sync.Mutex
+	LastEvent fakeProxyEvent
+	server    *httptest.Server
+}
+
 func (f *fakeUploader) UploadHookEvent(ctx context.Context, ev HookEvent) error {
 	f.events = append(f.events, ev)
 	return f.err
+}
+
+func startFakeProxy(t *testing.T) *fakeProxyServer {
+	t.Helper()
+
+	proxy := &fakeProxyServer{AuthToken: "proxy-token"}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/session-events" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		if got, want := strings.TrimSpace(r.Header.Get("Authorization")), "Bearer "+proxy.AuthToken; got != want {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+
+		var ev fakeProxyEvent
+		if err := json.NewDecoder(r.Body).Decode(&ev); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		proxy.mu.Lock()
+		proxy.LastEvent = ev
+		proxy.mu.Unlock()
+		w.WriteHeader(http.StatusCreated)
+	}))
+	proxy.server = srv
+	proxy.ListenAddr = strings.TrimPrefix(srv.URL, "http://")
+	t.Cleanup(srv.Close)
+
+	return proxy
+}
+
+func writeRuntimeWithProxy(t *testing.T, sessionID, listenAddr, authToken string) {
+	t.Helper()
+	if err := session.WriteRuntimeBundle(&session.RuntimeBundle{
+		SessionID: sessionID,
+		Proxy: &session.ProxyRuntime{
+			ListenAddr: listenAddr,
+			AuthToken:  authToken,
+		},
+	}); err != nil {
+		t.Fatalf("WriteRuntimeBundle: %v", err)
+	}
+}
+
+func writeMarker(t *testing.T, repo, sessionID string) {
+	t.Helper()
+	if err := session.WriteMarker(repo, &session.Marker{SessionID: sessionID, RepoFullName: "origin"}); err != nil {
+		t.Fatalf("WriteMarker: %v", err)
+	}
 }
 
 func git2(t *testing.T, dir string, args ...string) string {
@@ -119,6 +186,27 @@ func TestPostCommitBootstrapsMarkerFromEnv(t *testing.T) {
 	}
 	if !strings.Contains(string(b), "/.ae/") {
 		t.Fatalf("exclude missing /.ae/ pattern, got:\n%s", string(b))
+	}
+}
+
+func TestPostCommitSendsEventToLocalProxyBeforeQueueFallback(t *testing.T) {
+	repo := initRepoWithCommit2(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	proxy := startFakeProxy(t)
+	writeRuntimeWithProxy(t, "sess-1", proxy.ListenAddr, proxy.AuthToken)
+	writeMarker(t, repo, "sess-1")
+
+	h := NewHandler(nil)
+	if err := h.PostCommit(context.Background(), repo); err != nil {
+		t.Fatalf("PostCommit: %v", err)
+	}
+
+	proxy.mu.Lock()
+	defer proxy.mu.Unlock()
+	if proxy.LastEvent.EventType != "post_commit" {
+		t.Fatalf("event_type = %q, want %q", proxy.LastEvent.EventType, "post_commit")
 	}
 }
 

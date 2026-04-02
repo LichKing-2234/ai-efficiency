@@ -88,6 +88,16 @@ type CommitRewriteRequest struct {
 	CapturedAt    *time.Time `json:"captured_at,omitempty"`
 }
 
+type SessionEventRequest struct {
+	EventID     string         `json:"event_id"`
+	SessionID   string         `json:"session_id"`
+	WorkspaceID string         `json:"workspace_id"`
+	EventType   string         `json:"event_type"`
+	Source      string         `json:"source"`
+	CapturedAt  time.Time      `json:"captured_at"`
+	RawPayload  map[string]any `json:"raw_payload,omitempty"`
+}
+
 func New(baseURL, token string) *Client {
 	return &Client{
 		baseURL: baseURL,
@@ -311,6 +321,28 @@ func (c *Client) SendCommitRewrite(ctx context.Context, req CommitRewriteRequest
 	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("unexpected rewrite status %d: %s", resp.StatusCode, string(respBody))
+	}
+	return nil
+}
+
+func (c *Client) SendSessionEvent(ctx context.Context, req SessionEventRequest) error {
+	body, err := json.Marshal(req)
+	if err != nil {
+		return fmt.Errorf("marshal session event: %w", err)
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/api/v1/session-events", bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("create session event request: %w", err)
+	}
+	c.setHeaders(httpReq)
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return fmt.Errorf("send session event: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("unexpected session event status %d: %s", resp.StatusCode, string(respBody))
 	}
 	return nil
 }

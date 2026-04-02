@@ -785,16 +785,16 @@ func TestSendCommitCheckpoint(t *testing.T) {
 
 	c := New(srv.URL, "test-token")
 	if err := c.SendCommitCheckpoint(context.Background(), CommitCheckpointRequest{
-		EventID:       "cp-1",
-		SessionID:     "sess-1",
-		RepoFullName:  "org/repo",
-		WorkspaceID:   "ws-1",
-		CommitSHA:     "abc123",
-		ParentSHAs:    []string{"000000"},
-		BranchSnapshot:"main",
-		HeadSnapshot:  "abc123",
-		BindingSource: "marker",
-		CapturedAt:    &now,
+		EventID:        "cp-1",
+		SessionID:      "sess-1",
+		RepoFullName:   "org/repo",
+		WorkspaceID:    "ws-1",
+		CommitSHA:      "abc123",
+		ParentSHAs:     []string{"000000"},
+		BranchSnapshot: "main",
+		HeadSnapshot:   "abc123",
+		BindingSource:  "marker",
+		CapturedAt:     &now,
 	}); err != nil {
 		t.Fatalf("SendCommitCheckpoint: %v", err)
 	}
@@ -837,5 +837,50 @@ func TestSendCommitRewrite(t *testing.T) {
 		CapturedAt:    &now,
 	}); err != nil {
 		t.Fatalf("SendCommitRewrite: %v", err)
+	}
+}
+
+func TestSendSessionEvent(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("method = %s, want POST", r.Method)
+		}
+		if r.URL.Path != "/api/v1/session-events" {
+			t.Errorf("path = %s, want /api/v1/session-events", r.URL.Path)
+		}
+		if r.Header.Get("Authorization") != "Bearer test-token" {
+			t.Errorf("auth header = %q, want %q", r.Header.Get("Authorization"), "Bearer test-token")
+		}
+
+		var req SessionEventRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		if req.EventID != "evt-1" || req.SessionID != "sess-1" || req.EventType != "post_commit" {
+			t.Fatalf("unexpected session event request: %+v", req)
+		}
+		if !req.CapturedAt.Equal(now) {
+			t.Fatalf("captured_at = %v, want %v", req.CapturedAt, now)
+		}
+		if req.RawPayload["commit_sha"] != "abc123" {
+			t.Fatalf("raw_payload.commit_sha = %v, want %q", req.RawPayload["commit_sha"], "abc123")
+		}
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "test-token")
+	if err := c.SendSessionEvent(context.Background(), SessionEventRequest{
+		EventID:     "evt-1",
+		SessionID:   "sess-1",
+		WorkspaceID: "ws-1",
+		EventType:   "post_commit",
+		Source:      "proxy",
+		CapturedAt:  now,
+		RawPayload:  map[string]any{"commit_sha": "abc123"},
+	}); err != nil {
+		t.Fatalf("SendSessionEvent: %v", err)
 	}
 }
