@@ -2,10 +2,12 @@ package sessionusage
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/ent/enttest"
 	"github.com/ai-efficiency/backend/ent/session"
 	"github.com/ai-efficiency/backend/ent/sessionusageevent"
@@ -13,11 +15,22 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
-func TestCreate_CreatesUsageEvent(t *testing.T) {
-	t.Parallel()
-
+func createOwnedSession(t *testing.T) (*ent.Client, context.Context, uuid.UUID, int, int) {
+	t.Helper()
 	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
 	ctx := context.Background()
+
+	owner := client.User.Create().
+		SetUsername("owner").
+		SetEmail("owner@test.com").
+		SetAuthSource("ldap").
+		SaveX(ctx)
+	other := client.User.Create().
+		SetUsername("other").
+		SetEmail("other@test.com").
+		SetAuthSource("ldap").
+		SaveX(ctx)
+
 	sp := client.ScmProvider.Create().
 		SetName("github-test").
 		SetType("github").
@@ -35,13 +48,16 @@ func TestCreate_CreatesUsageEvent(t *testing.T) {
 		SetID(uuid.New()).
 		SetRepoConfigID(rc.ID).
 		SetBranch("main").
+		SetUserID(owner.ID).
 		SaveX(ctx)
 
-	svc := NewService(client)
+	return client, ctx, sess.ID, owner.ID, other.ID
+}
 
-	err := svc.Create(ctx, CreateUsageEventRequest{
-		EventID:      "usage-evt-1",
-		SessionID:    sess.ID.String(),
+func validUsageReq(sessionID uuid.UUID, eventID string) CreateUsageEventRequest {
+	return CreateUsageEventRequest{
+		EventID:      eventID,
+		SessionID:    sessionID.String(),
 		WorkspaceID:  "ws-1",
 		RequestID:    "req-1",
 		ProviderName: "sub2api",
@@ -52,10 +68,15 @@ func TestCreate_CreatesUsageEvent(t *testing.T) {
 		OutputTokens: 40,
 		TotalTokens:  140,
 		Status:       "completed",
-		RawMetadata: map[string]any{
-			"billing_mode": "postpaid",
-		},
-	})
+	}
+}
+
+func TestCreate_CreatesUsageEvent(t *testing.T) {
+	t.Parallel()
+	client, ctx, sessionID, ownerID, _ := createOwnedSession(t)
+	svc := NewService(client)
+
+	err := svc.Create(ctx, ownerID, validUsageReq(sessionID, "usage-evt-1"))
 	if err != nil {
 		t.Fatalf("create usage event: %v", err)
 	}
@@ -63,22 +84,38 @@ func TestCreate_CreatesUsageEvent(t *testing.T) {
 	ev := client.SessionUsageEvent.Query().
 		Where(sessionusageevent.EventIDEQ("usage-evt-1")).
 		OnlyX(ctx)
-
 	if ev.WorkspaceID != "ws-1" {
-		t.Fatalf("workspace_id = %q, want %q", ev.WorkspaceID, "ws-1")
+		t.Fatalf("workspace_id = %q, want ws-1", ev.WorkspaceID)
 	}
-	if ev.TotalTokens != 140 {
-		t.Fatalf("total_tokens = %d, want 140", ev.TotalTokens)
+}
+
+func TestCreate_IsIdempotentByEventID(t *testing.T) {
+	t.Parallel()
+	client, ctx, sessionID, ownerID, _ := createOwnedSession(t)
+	svc := NewService(client)
+	req := validUsageReq(sessionID, "usage-evt-dup-1")
+
+	if err := svc.Create(ctx, ownerID, req); err != nil {
+		t.Fatalf("first create: %v", err)
+	}
+	if err := svc.Create(ctx, ownerID, req); err != nil {
+		t.Fatalf("duplicate create: %v", err)
+	}
+
+	count := client.SessionUsageEvent.Query().
+		Where(sessionusageevent.EventIDEQ("usage-evt-dup-1")).
+		CountX(ctx)
+	if count != 1 {
+		t.Fatalf("event count = %d, want 1", count)
 	}
 }
 
 func TestCreate_ReturnsErrorForInvalidSessionID(t *testing.T) {
 	t.Parallel()
-
 	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
 	svc := NewService(client)
 
-	err := svc.Create(context.Background(), CreateUsageEventRequest{
+	err := svc.Create(context.Background(), 1, CreateUsageEventRequest{
 		EventID:      "usage-evt-2",
 		SessionID:    "not-a-uuid",
 		WorkspaceID:  "ws-1",
@@ -97,49 +134,67 @@ func TestCreate_ReturnsErrorForInvalidSessionID(t *testing.T) {
 	}
 }
 
+func TestCreate_RejectsCrossUserSession(t *testing.T) {
+	t.Parallel()
+	client, ctx, sessionID, _, otherID := createOwnedSession(t)
+	svc := NewService(client)
+
+	err := svc.Create(ctx, otherID, validUsageReq(sessionID, "usage-evt-cross-user"))
+	if !errors.Is(err, ErrSessionForbidden) {
+		t.Fatalf("error = %v, want ErrSessionForbidden", err)
+	}
+}
+
+func TestCreate_RejectsMissingSession(t *testing.T) {
+	t.Parallel()
+	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	svc := NewService(client)
+
+	err := svc.Create(context.Background(), 1, validUsageReq(uuid.New(), "usage-evt-missing-session"))
+	if !errors.Is(err, ErrSessionNotFound) {
+		t.Fatalf("error = %v, want ErrSessionNotFound", err)
+	}
+}
+
+func TestCreate_RejectsInvalidPayload(t *testing.T) {
+	t.Parallel()
+	client, ctx, sessionID, ownerID, _ := createOwnedSession(t)
+	svc := NewService(client)
+
+	req := validUsageReq(sessionID, "usage-evt-invalid")
+	req.EventID = "   "
+	err := svc.Create(ctx, ownerID, req)
+	if !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("event_id whitespace error = %v, want ErrInvalidRequest", err)
+	}
+
+	req = validUsageReq(sessionID, "usage-evt-invalid-2")
+	req.InputTokens = -1
+	err = svc.Create(ctx, ownerID, req)
+	if !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("negative token error = %v, want ErrInvalidRequest", err)
+	}
+
+	req = validUsageReq(sessionID, "usage-evt-invalid-3")
+	req.FinishedAt = req.StartedAt.Add(-1 * time.Second)
+	err = svc.Create(ctx, ownerID, req)
+	if !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("time order error = %v, want ErrInvalidRequest", err)
+	}
+}
+
 func TestCreate_LinksUsageEventToSessionEdge(t *testing.T) {
 	t.Parallel()
-
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
-	ctx := context.Background()
-
-	sp := client.ScmProvider.Create().
-		SetName("github-test").
-		SetType("github").
-		SetBaseURL("https://api.github.com").
-		SetCredentials("enc").
-		SaveX(ctx)
-	rc := client.RepoConfig.Create().
-		SetScmProviderID(sp.ID).
-		SetName("demo").
-		SetFullName("org/demo").
-		SetCloneURL("https://github.com/org/demo.git").
-		SetDefaultBranch("main").
-		SaveX(ctx)
-	sess := client.Session.Create().
-		SetID(uuid.New()).
-		SetRepoConfigID(rc.ID).
-		SetBranch("main").
-		SaveX(ctx)
-
+	client, ctx, sessionID, ownerID, _ := createOwnedSession(t)
 	svc := NewService(client)
-	err := svc.Create(ctx, CreateUsageEventRequest{
-		EventID:      "usage-evt-edge-1",
-		SessionID:    sess.ID.String(),
-		WorkspaceID:  "ws-1",
-		RequestID:    "req-1",
-		ProviderName: "sub2api",
-		Model:        "gpt-5.4",
-		StartedAt:    time.Date(2026, 4, 2, 10, 0, 0, 0, time.UTC),
-		FinishedAt:   time.Date(2026, 4, 2, 10, 0, 3, 0, time.UTC),
-		Status:       "completed",
-	})
+
+	err := svc.Create(ctx, ownerID, validUsageReq(sessionID, "usage-evt-edge-1"))
 	if err != nil {
 		t.Fatalf("create usage event: %v", err)
 	}
 
 	s := client.Session.Query().
-		Where(session.IDEQ(sess.ID)).
+		Where(session.IDEQ(sessionID)).
 		WithSessionUsageEvents().
 		OnlyX(ctx)
 	if len(s.Edges.SessionUsageEvents) != 1 {

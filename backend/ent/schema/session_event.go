@@ -4,6 +4,7 @@ import (
 	"entgo.io/ent"
 	"entgo.io/ent/schema/edge"
 	"entgo.io/ent/schema/field"
+	"entgo.io/ent/schema/index"
 
 	"github.com/google/uuid"
 )
@@ -39,5 +40,11 @@ func (SessionEvent) Edges() []ent.Edge {
 			Field("session_id").
 			Unique().
 			Required(),
+	}
+}
+
+func (SessionEvent) Indexes() []ent.Index {
+	return []ent.Index{
+		index.Fields("session_id", "captured_at"),
 	}
 }
