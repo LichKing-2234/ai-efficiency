@@ -5,16 +5,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 
 	"github.com/ai-efficiency/ae-cli/internal/collector"
+	"github.com/ai-efficiency/ae-cli/internal/proxy"
 	"github.com/ai-efficiency/ae-cli/internal/session"
 )
 
@@ -23,53 +21,35 @@ type fakeUploader struct {
 	events []HookEvent
 }
 
-type fakeProxyEvent struct {
-	EventType string `json:"event_type"`
-}
-
-type fakeProxyServer struct {
-	ListenAddr string
-	AuthToken  string
-
-	mu        sync.Mutex
-	LastEvent fakeProxyEvent
-	server    *httptest.Server
-}
-
 func (f *fakeUploader) UploadHookEvent(ctx context.Context, ev HookEvent) error {
 	f.events = append(f.events, ev)
 	return f.err
 }
 
-func startFakeProxy(t *testing.T) *fakeProxyServer {
+func startRealProxy(t *testing.T, sessionID string) (listenAddr, authToken string) {
 	t.Helper()
 
-	proxy := &fakeProxyServer{AuthToken: "proxy-token"}
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/session-events" {
-			w.WriteHeader(http.StatusNotFound)
-			return
+	cfg := proxy.RuntimeConfig{
+		SessionID:  sessionID,
+		ListenAddr: "127.0.0.1:0",
+		AuthToken:  "proxy-token",
+	}
+	result, err := proxy.Spawn(cfg)
+	if err != nil {
+		t.Fatalf("proxy.Spawn: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := proxy.Stop(proxy.StopRequest{
+			PID:        result.PID,
+			ListenAddr: result.ListenAddr,
+			AuthToken:  cfg.AuthToken,
+			ConfigPath: result.ConfigPath,
+		}); err != nil {
+			t.Fatalf("proxy.Stop: %v", err)
 		}
-		if got, want := strings.TrimSpace(r.Header.Get("Authorization")), "Bearer "+proxy.AuthToken; got != want {
-			w.WriteHeader(http.StatusUnauthorized)
-			return
-		}
+	})
 
-		var ev fakeProxyEvent
-		if err := json.NewDecoder(r.Body).Decode(&ev); err != nil {
-			w.WriteHeader(http.StatusBadRequest)
-			return
-		}
-		proxy.mu.Lock()
-		proxy.LastEvent = ev
-		proxy.mu.Unlock()
-		w.WriteHeader(http.StatusCreated)
-	}))
-	proxy.server = srv
-	proxy.ListenAddr = strings.TrimPrefix(srv.URL, "http://")
-	t.Cleanup(srv.Close)
-
-	return proxy
+	return result.ListenAddr, cfg.AuthToken
 }
 
 func writeRuntimeWithProxy(t *testing.T, sessionID, listenAddr, authToken string) {
@@ -194,8 +174,8 @@ func TestPostCommitSendsEventToLocalProxyBeforeQueueFallback(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
-	proxy := startFakeProxy(t)
-	writeRuntimeWithProxy(t, "sess-1", proxy.ListenAddr, proxy.AuthToken)
+	listenAddr, authToken := startRealProxy(t, "sess-1")
+	writeRuntimeWithProxy(t, "sess-1", listenAddr, authToken)
 	writeMarker(t, repo, "sess-1")
 
 	h := NewHandler(nil)
@@ -203,10 +183,16 @@ func TestPostCommitSendsEventToLocalProxyBeforeQueueFallback(t *testing.T) {
 		t.Fatalf("PostCommit: %v", err)
 	}
 
-	proxy.mu.Lock()
-	defer proxy.mu.Unlock()
-	if proxy.LastEvent.EventType != "post_commit" {
-		t.Fatalf("event_type = %q, want %q", proxy.LastEvent.EventType, "post_commit")
+	q, err := NewLocalQueue("sess-1")
+	if err != nil {
+		t.Fatalf("NewLocalQueue: %v", err)
+	}
+	items, err := q.List()
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(items) != 0 {
+		t.Fatalf("queued items = %d, want 0 (expected local proxy ingress to accept event)", len(items))
 	}
 }
 

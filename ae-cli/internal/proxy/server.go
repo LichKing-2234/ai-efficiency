@@ -236,6 +236,29 @@ func Serve(ctx context.Context, cfg RuntimeConfig) error {
 		})
 		w.WriteHeader(http.StatusAccepted)
 	})
+	mux.HandleFunc("/api/v1/session-events", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		want := "Bearer " + internalToken
+		if internalToken == "" || strings.TrimSpace(r.Header.Get("Authorization")) != want {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+
+		var event EventEnvelope
+		if err := json.NewDecoder(r.Body).Decode(&event); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		if strings.TrimSpace(event.EventType) == "" {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		// Minimal ingress behavior for Task 6: acknowledge validated event locally.
+		w.WriteHeader(http.StatusCreated)
+	})
 	mux.HandleFunc("/openai/v1/chat/completions", proxyServer.handleOpenAIChatCompletions)
 	mux.HandleFunc("/anthropic/v1/messages", proxyServer.handleAnthropicMessages)
 
