@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -365,6 +366,7 @@ func TestProxyAnthropicMessages_ForwardsRequestAndRecordsUsage(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("x-api-key", "tok-anthropic")
 	req.Header.Set("anthropic-version", "2023-06-01")
+	req.Header.Set("anthropic-beta", "tools-2024-04-04")
 
 	resp, err := (&http.Client{Timeout: 1 * time.Second}).Do(req)
 	if err != nil {
@@ -383,6 +385,9 @@ func TestProxyAnthropicMessages_ForwardsRequestAndRecordsUsage(t *testing.T) {
 	}
 	if got := fx.Upstream.LastAnthropicVersion(); got != "2023-06-01" {
 		t.Fatalf("upstream anthropic-version = %q, want %q", got, "2023-06-01")
+	}
+	if got := fx.Upstream.LastAnthropicBeta(); got != "tools-2024-04-04" {
+		t.Fatalf("upstream anthropic-beta = %q, want %q", got, "tools-2024-04-04")
 	}
 
 	lastUsage, ok := fx.Recorder.LastEvent()
@@ -438,6 +443,325 @@ func TestProxyAnthropicMessages_Upstream5xxRecordsFailureUsage(t *testing.T) {
 	}
 }
 
+func TestProxyAnthropicMessages_RejectsUnauthorizedRequest(t *testing.T) {
+	fx := startProxyWithFakeAnthropicUpstream(t)
+	srv := fx.Server
+
+	req, err := http.NewRequest(
+		http.MethodPost,
+		"http://"+srv.ListenAddr+"/anthropic/v1/messages",
+		strings.NewReader(`{"model":"claude-sonnet-4-20250514","messages":[{"role":"user","content":"hello"}],"max_tokens":64}`),
+	)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := (&http.Client{Timeout: 1 * time.Second}).Do(req)
+	if err != nil {
+		t.Fatalf("post proxy: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusUnauthorized)
+	}
+	if got := fx.Upstream.Hits(); got != 0 {
+		t.Fatalf("upstream hits = %d, want 0", got)
+	}
+	if got := fx.Recorder.EventCount(); got != 0 {
+		t.Fatalf("usage events = %d, want 0", got)
+	}
+}
+
+func TestProxyAnthropicMessages_AuthorizationBearerFallback(t *testing.T) {
+	fx := startProxyWithFakeAnthropicUpstream(t)
+	srv := fx.Server
+
+	req, err := http.NewRequest(
+		http.MethodPost,
+		"http://"+srv.ListenAddr+"/anthropic/v1/messages",
+		strings.NewReader(`{"model":"claude-sonnet-4-20250514","messages":[{"role":"user","content":"hello"}],"max_tokens":64}`),
+	)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer tok-anthropic")
+
+	resp, err := (&http.Client{Timeout: 1 * time.Second}).Do(req)
+	if err != nil {
+		t.Fatalf("post proxy: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+	if got := fx.Upstream.Hits(); got != 1 {
+		t.Fatalf("upstream hits = %d, want 1", got)
+	}
+}
+
+func TestProxyAnthropicMessages_DefaultAnthropicVersion(t *testing.T) {
+	fx := startProxyWithFakeAnthropicUpstream(t)
+	srv := fx.Server
+
+	req, err := http.NewRequest(
+		http.MethodPost,
+		"http://"+srv.ListenAddr+"/anthropic/v1/messages",
+		strings.NewReader(`{"model":"claude-sonnet-4-20250514","messages":[{"role":"user","content":"hello"}],"max_tokens":64}`),
+	)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-api-key", "tok-anthropic")
+
+	resp, err := (&http.Client{Timeout: 1 * time.Second}).Do(req)
+	if err != nil {
+		t.Fatalf("post proxy: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+
+	if got := fx.Upstream.LastAnthropicVersion(); got != "2023-06-01" {
+		t.Fatalf("upstream anthropic-version = %q, want %q", got, "2023-06-01")
+	}
+}
+
+func TestProxyAnthropicMessages_TransportErrorRecordsFailureUsage(t *testing.T) {
+	recorder := &fakeOpenAIRecorder{}
+	origNewProxyServer := newProxyServer
+	newProxyServer = func(cfg RuntimeConfig) *Server {
+		return NewServer(cfg, recorder, &http.Client{Timeout: 300 * time.Millisecond})
+	}
+	t.Cleanup(func() {
+		newProxyServer = origNewProxyServer
+	})
+
+	unreachableAddr := reserveListenAddrForTest(t)
+	cfg := RuntimeConfig{
+		SessionID:   "sess-anthropic-transport-failure",
+		ListenAddr:  reserveListenAddrForTest(t),
+		AuthToken:   "tok-anthropic",
+		ProviderURL: "http://" + unreachableAddr,
+		ProviderKey: "provider-key",
+	}
+
+	srv, err := Spawn(cfg)
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = Stop(StopRequest{
+			PID:        srv.PID,
+			ListenAddr: srv.ListenAddr,
+			AuthToken:  cfg.AuthToken,
+			ConfigPath: srv.ConfigPath,
+		})
+	})
+
+	req, err := http.NewRequest(
+		http.MethodPost,
+		"http://"+srv.ListenAddr+"/anthropic/v1/messages",
+		strings.NewReader(`{"model":"claude-sonnet-4-20250514","messages":[{"role":"user","content":"hello"}],"max_tokens":64}`),
+	)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-api-key", "tok-anthropic")
+
+	resp, err := (&http.Client{Timeout: 1 * time.Second}).Do(req)
+	if err != nil {
+		t.Fatalf("post proxy: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadGateway {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusBadGateway)
+	}
+
+	lastUsage, ok := recorder.LastEvent()
+	if !ok {
+		t.Fatal("expected usage event")
+	}
+	if lastUsage.Status == "completed" {
+		t.Fatalf("status = %q, want non-completed", lastUsage.Status)
+	}
+}
+
+func TestProxyAnthropicMessages_StreamingPassthroughAndRecordsUsage(t *testing.T) {
+	recorder := &fakeOpenAIRecorder{}
+	firstChunkSent := make(chan struct{})
+	allowFinish := make(chan struct{})
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/messages" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		flusher, _ := w.(http.Flusher)
+
+		_, _ = w.Write([]byte("event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_1\",\"model\":\"claude-sonnet-4-20250514\",\"usage\":{\"input_tokens\":11,\"cache_creation_input_tokens\":7,\"cache_read_input_tokens\":5}}}\n\n"))
+		if flusher != nil {
+			flusher.Flush()
+		}
+		close(firstChunkSent)
+
+		<-allowFinish
+		_, _ = w.Write([]byte("event: message_delta\ndata: {\"type\":\"message_delta\",\"usage\":{\"output_tokens\":13}}\n\n"))
+		if flusher != nil {
+			flusher.Flush()
+		}
+	}))
+	t.Cleanup(upstream.Close)
+
+	origNewProxyServer := newProxyServer
+	newProxyServer = func(cfg RuntimeConfig) *Server {
+		return NewServer(cfg, recorder, nil)
+	}
+	t.Cleanup(func() {
+		newProxyServer = origNewProxyServer
+	})
+
+	cfg := RuntimeConfig{
+		SessionID:   "sess-anthropic-stream",
+		ListenAddr:  reserveListenAddrForTest(t),
+		AuthToken:   "tok-anthropic",
+		ProviderURL: upstream.URL,
+		ProviderKey: "provider-key",
+	}
+	srv, err := Spawn(cfg)
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = Stop(StopRequest{
+			PID:        srv.PID,
+			ListenAddr: srv.ListenAddr,
+			AuthToken:  cfg.AuthToken,
+			ConfigPath: srv.ConfigPath,
+		})
+	})
+
+	req, err := http.NewRequest(
+		http.MethodPost,
+		"http://"+srv.ListenAddr+"/anthropic/v1/messages",
+		strings.NewReader(`{"model":"claude-sonnet-4-20250514","stream":true,"messages":[{"role":"user","content":"hello"}],"max_tokens":64}`),
+	)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-api-key", "tok-anthropic")
+
+	resp, err := (&http.Client{Timeout: 2 * time.Second}).Do(req)
+	if err != nil {
+		t.Fatalf("post proxy: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+	if got := strings.TrimSpace(resp.Header.Get("Content-Type")); !strings.HasPrefix(got, "text/event-stream") {
+		t.Fatalf("content-type = %q, want prefix %q", got, "text/event-stream")
+	}
+
+	select {
+	case <-firstChunkSent:
+	case <-time.After(1 * time.Second):
+		t.Fatal("upstream did not send first stream chunk")
+	}
+
+	reader := bufio.NewReader(resp.Body)
+	firstLineCh := make(chan string, 1)
+	firstErrCh := make(chan error, 1)
+	go func() {
+		line, readErr := reader.ReadString('\n')
+		if readErr != nil {
+			firstErrCh <- readErr
+			return
+		}
+		firstLineCh <- line
+	}()
+	select {
+	case line := <-firstLineCh:
+		if !strings.Contains(line, "event: message_start") {
+			t.Fatalf("first streamed line = %q, want message_start event", line)
+		}
+	case err := <-firstErrCh:
+		t.Fatalf("failed reading first stream line: %v", err)
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("stream did not pass through incrementally before upstream completion")
+	}
+
+	close(allowFinish)
+	rest, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatalf("read rest stream: %v", err)
+	}
+	restBody := string(rest)
+	if !strings.Contains(restBody, "message_delta") {
+		t.Fatalf("stream body missing message_delta event: %q", restBody)
+	}
+
+	lastUsage, ok := recorder.LastEvent()
+	if !ok {
+		t.Fatal("expected usage event")
+	}
+	if lastUsage.Status != "completed" {
+		t.Fatalf("status = %q, want %q", lastUsage.Status, "completed")
+	}
+	if lastUsage.TotalTokens != 36 {
+		t.Fatalf("total_tokens = %d, want 36", lastUsage.TotalTokens)
+	}
+}
+
+func TestProxyAnthropicMessages_CacheUsageAccounting(t *testing.T) {
+	fx := startProxyWithFakeAnthropicUpstream(t)
+	fx.Upstream.SetResponse(
+		http.StatusOK,
+		`{"id":"msg_2","type":"message","role":"assistant","model":"claude-sonnet-4-20250514","content":[{"type":"text","text":"hello"}],"stop_reason":"end_turn","usage":{"input_tokens":10,"output_tokens":20,"cache_creation_input_tokens":30,"cache_read_input_tokens":40}}`,
+	)
+	srv := fx.Server
+
+	req, err := http.NewRequest(
+		http.MethodPost,
+		"http://"+srv.ListenAddr+"/anthropic/v1/messages",
+		strings.NewReader(`{"model":"claude-sonnet-4-20250514","messages":[{"role":"user","content":"hello"}],"max_tokens":64}`),
+	)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-api-key", "tok-anthropic")
+
+	resp, err := (&http.Client{Timeout: 1 * time.Second}).Do(req)
+	if err != nil {
+		t.Fatalf("post proxy: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+
+	lastUsage, ok := fx.Recorder.LastEvent()
+	if !ok {
+		t.Fatal("expected usage event")
+	}
+	if lastUsage.InputTokens != 80 {
+		t.Fatalf("input_tokens = %d, want 80", lastUsage.InputTokens)
+	}
+	if lastUsage.TotalTokens != 100 {
+		t.Fatalf("total_tokens = %d, want 100", lastUsage.TotalTokens)
+	}
+}
+
 type fakeOpenAIRecorder struct {
 	mu     sync.Mutex
 	events []UsageEvent
@@ -470,18 +794,20 @@ type fakeUpstream struct {
 	lastAuth       string
 	lastAPIKey     string
 	lastVersion    string
+	lastBeta       string
 	lastBody       string
 	responseStatus int
 	responseBody   string
 }
 
-func (u *fakeUpstream) Hit(auth, apiKey, version, body string) {
+func (u *fakeUpstream) Hit(auth, apiKey, version, beta, body string) {
 	u.mu.Lock()
 	defer u.mu.Unlock()
 	u.hits++
 	u.lastAuth = auth
 	u.lastAPIKey = apiKey
 	u.lastVersion = version
+	u.lastBeta = beta
 	u.lastBody = body
 }
 
@@ -522,6 +848,12 @@ func (u *fakeUpstream) LastAnthropicVersion() string {
 	return u.lastVersion
 }
 
+func (u *fakeUpstream) LastAnthropicBeta() string {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return u.lastBeta
+}
+
 func (u *fakeUpstream) LastBody() string {
 	u.mu.Lock()
 	defer u.mu.Unlock()
@@ -558,6 +890,7 @@ func startProxyWithFakeOpenAIUpstream(t *testing.T) openAIFixture {
 			strings.TrimSpace(r.Header.Get("Authorization")),
 			strings.TrimSpace(r.Header.Get("x-api-key")),
 			strings.TrimSpace(r.Header.Get("anthropic-version")),
+			strings.TrimSpace(r.Header.Get("anthropic-beta")),
 			string(body),
 		)
 
@@ -633,6 +966,7 @@ func startProxyWithFakeAnthropicUpstream(t *testing.T) anthropicFixture {
 			strings.TrimSpace(r.Header.Get("Authorization")),
 			strings.TrimSpace(r.Header.Get("x-api-key")),
 			strings.TrimSpace(r.Header.Get("anthropic-version")),
+			strings.TrimSpace(r.Header.Get("anthropic-beta")),
 			string(body),
 		)
 
