@@ -72,7 +72,13 @@ func (m *Manager) Start() (*State, error) {
 
 	var rt *RuntimeBundle
 	rollback := func(cause error) error {
-		_ = m.stopLocalProxy(rt)
+		if err := m.stopLocalProxy(rt); err != nil {
+			// Preserve local marker/runtime when proxy shutdown fails so recovery is possible.
+			if rt != nil && strings.TrimSpace(rt.SessionID) != "" {
+				_ = WriteRuntimeBundle(rt)
+			}
+			return fmt.Errorf("%w: rollback proxy shutdown failed: %w", cause, err)
+		}
 		if strings.TrimSpace(resp.SessionID) != "" {
 			_ = m.client.StopSession(context.Background(), resp.SessionID)
 			_ = m.cleanupBootstrapArtifacts(gc.workspaceRoot, resp.SessionID)

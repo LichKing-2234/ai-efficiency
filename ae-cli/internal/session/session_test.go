@@ -1549,6 +1549,110 @@ func TestStartWriteStateFails(t *testing.T) {
 	}
 }
 
+func TestStartRollbackPreservesRuntimeWhenProxyStopFails(t *testing.T) {
+	origHome := os.Getenv("HOME")
+	tmpHome := t.TempDir()
+	os.Setenv("HOME", tmpHome)
+	t.Cleanup(func() { os.Setenv("HOME", origHome) })
+
+	tmpDir := t.TempDir()
+	cmds := [][]string{
+		{"git", "init", "-b", "main"},
+		{"git", "config", "user.email", "test@test.com"},
+		{"git", "config", "user.name", "Test"},
+		{"git", "remote", "add", "origin", "https://github.com/test-org/test-repo.git"},
+		{"git", "commit", "--allow-empty", "-m", "init"},
+	}
+	for _, args := range cmds {
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Dir = tmpDir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("cmd %v: %v\n%s", args, err, out)
+		}
+	}
+
+	origDir, _ := os.Getwd()
+	os.Chdir(tmpDir)
+	t.Cleanup(func() { os.Chdir(origDir) })
+
+	wantWorkspaceRoot, err := filepath.EvalSymlinks(tmpDir)
+	if err != nil {
+		t.Fatalf("EvalSymlinks(tmpDir): %v", err)
+	}
+	wantWorkspaceRoot, err = filepath.Abs(filepath.Clean(wantWorkspaceRoot))
+	if err != nil {
+		t.Fatalf("abs wantWorkspaceRoot: %v", err)
+	}
+
+	now := time.Now().Truncate(time.Second)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/api/v1/sessions/bootstrap" {
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"data": client.BootstrapSessionResponse{
+					SessionID:     "boot-sess-rollstopfail",
+					StartedAt:     now,
+					RelayAPIKeyID: 1,
+					ProviderName:  "sub2api",
+					RuntimeRef:    "rt-rollstopfail",
+					EnvBundle:     map[string]string{"AE_SESSION_ID": "boot-sess-rollstopfail"},
+					KeyExpiresAt:  now.Add(1 * time.Hour),
+				},
+			})
+			return
+		}
+		if r.Method == http.MethodPost && r.URL.Path == "/api/v1/sessions/boot-sess-rollstopfail/stop" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	origSpawn := spawnProxyProcess
+	origStop := stopProxyProcess
+	spawnProxyProcess = func(cfg proxy.RuntimeConfig) (proxy.SpawnResult, error) {
+		return proxy.SpawnResult{
+			PID:        9991,
+			ListenAddr: "127.0.0.1:19991",
+			ConfigPath: filepath.Join(t.TempDir(), "runtime.json"),
+		}, nil
+	}
+	stopProxyProcess = func(req proxy.StopRequest) error {
+		return errors.New("forced stop failure in rollback")
+	}
+	t.Cleanup(func() {
+		spawnProxyProcess = origSpawn
+		stopProxyProcess = origStop
+	})
+
+	// Cause writeState to fail after runtime bundle has already been written.
+	// Making current-session.json a directory causes os.WriteFile to fail.
+	if err := os.MkdirAll(filepath.Join(tmpHome, ".ae-cli", "current-session.json"), 0o755); err != nil {
+		t.Fatalf("mkdir failing state path: %v", err)
+	}
+
+	m := NewManager(client.New(srv.URL, "tok"), &config.Config{})
+	_, err = m.Start()
+	if err == nil {
+		t.Fatal("expected Start to fail")
+	}
+	if !strings.Contains(err.Error(), "writing session state") {
+		t.Fatalf("error = %q, want it to contain %q", err.Error(), "writing session state")
+	}
+
+	rt, err := ReadRuntimeBundle("boot-sess-rollstopfail")
+	if err != nil {
+		t.Fatalf("expected runtime bundle to be retained, got err=%v", err)
+	}
+	if rt.Proxy == nil || rt.Proxy.PID == 0 {
+		t.Fatalf("expected retained proxy metadata, got %+v", rt.Proxy)
+	}
+	if _, err := os.Stat(markerPath(wantWorkspaceRoot)); err != nil {
+		t.Fatalf("expected marker to be retained, stat err=%v", err)
+	}
+}
+
 func TestStartRollbackAfterProxySpawnCleansProxyAndTempConfig(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("TMPDIR", tmpDir)
