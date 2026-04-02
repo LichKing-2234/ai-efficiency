@@ -2,6 +2,8 @@ package session
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,6 +15,7 @@ import (
 
 	"github.com/ai-efficiency/ae-cli/config"
 	"github.com/ai-efficiency/ae-cli/internal/client"
+	"github.com/ai-efficiency/ae-cli/internal/proxy"
 )
 
 type State struct {
@@ -28,6 +31,11 @@ type Manager struct {
 	client *client.Client
 	config *config.Config
 }
+
+var (
+	spawnProxyProcess = proxy.Spawn
+	stopProxyProcess  = proxy.Stop
+)
 
 func NewManager(c *client.Client, cfg *config.Config) *Manager {
 	return &Manager{
@@ -62,7 +70,9 @@ func (m *Manager) Start() (*State, error) {
 		return nil, fmt.Errorf("bootstrapping session: %w", err)
 	}
 
+	var rt *RuntimeBundle
 	rollback := func(cause error) error {
+		_ = m.stopLocalProxy(rt)
 		if strings.TrimSpace(resp.SessionID) != "" {
 			_ = m.client.StopSession(context.Background(), resp.SessionID)
 			_ = m.cleanupBootstrapArtifacts(gc.workspaceRoot, resp.SessionID)
@@ -99,12 +109,15 @@ func (m *Manager) Start() (*State, error) {
 		return nil, rollback(fmt.Errorf("writing workspace marker: %w", err))
 	}
 
-	rt := &RuntimeBundle{
+	rt = &RuntimeBundle{
 		SessionID:     resp.SessionID,
 		RuntimeRef:    resp.RuntimeRef,
 		WorkspaceRoot: gc.workspaceRoot,
 		EnvBundle:     resp.EnvBundle,
 		KeyExpiresAt:  resp.KeyExpiresAt,
+	}
+	if err := m.startLocalProxy(rt); err != nil {
+		return nil, rollback(fmt.Errorf("starting local proxy: %w", err))
 	}
 	if err := WriteRuntimeBundle(rt); err != nil {
 		return nil, rollback(fmt.Errorf("writing runtime bundle: %w", err))
@@ -455,6 +468,7 @@ func (m *Manager) cleanupLocal(sessionID, workspaceRoot string) error {
 	// If Stop/Shutdown is invoked outside the workspace, use the runtime pointer to remove the marker.
 	if strings.TrimSpace(sessionID) != "" {
 		if rt, err := ReadRuntimeBundle(sessionID); err == nil && rt != nil {
+			_ = m.stopLocalProxy(rt)
 			removeMarkerForSession(rt.WorkspaceRoot)
 		}
 		hasPendingQueue, err := HasPendingQueue(sessionID)
@@ -470,6 +484,58 @@ func (m *Manager) cleanupLocal(sessionID, workspaceRoot string) error {
 	// Remove legacy global state.
 	_ = removeState()
 	return nil
+}
+
+func (m *Manager) startLocalProxy(rt *RuntimeBundle) error {
+	if rt == nil {
+		return fmt.Errorf("runtime bundle is nil")
+	}
+	token, err := randomToken()
+	if err != nil {
+		return err
+	}
+	cfg := proxy.RuntimeConfig{
+		SessionID:   rt.SessionID,
+		ListenAddr:  "127.0.0.1:0",
+		AuthToken:   token,
+		ProviderURL: strings.TrimSpace(rt.EnvBundle["SUB2API_BASE_URL"]),
+		ProviderKey: strings.TrimSpace(rt.EnvBundle["SUB2API_API_KEY"]),
+	}
+	pid, listenAddr, err := spawnProxyProcess(cfg)
+	if err != nil {
+		return err
+	}
+	rt.Proxy = &ProxyRuntime{
+		PID:        pid,
+		ListenAddr: listenAddr,
+		AuthToken:  token,
+	}
+	if rt.EnvBundle == nil {
+		rt.EnvBundle = map[string]string{}
+	}
+	rt.EnvBundle["AE_LOCAL_PROXY_URL"] = "http://" + listenAddr
+	rt.EnvBundle["AE_LOCAL_PROXY_TOKEN"] = token
+	return nil
+}
+
+func (m *Manager) stopLocalProxy(rt *RuntimeBundle) error {
+	if rt == nil || rt.Proxy == nil || rt.Proxy.PID <= 0 {
+		return nil
+	}
+	pid := rt.Proxy.PID
+	rt.Proxy = nil
+	if err := stopProxyProcess(pid); err != nil {
+		return fmt.Errorf("stopping local proxy pid=%d: %w", pid, err)
+	}
+	return nil
+}
+
+func randomToken() (string, error) {
+	b := make([]byte, 24)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("generating token: %w", err)
+	}
+	return hex.EncodeToString(b), nil
 }
 
 func (m *Manager) cleanupBootstrapArtifacts(workspaceRoot, sessionID string) error {

@@ -19,6 +19,13 @@ type RuntimeBundle struct {
 	WorkspaceRoot string            `json:"workspace_root,omitempty"`
 	EnvBundle     map[string]string `json:"env_bundle,omitempty"`
 	KeyExpiresAt  time.Time         `json:"key_expires_at,omitempty"`
+	Proxy         *ProxyRuntime     `json:"proxy,omitempty"`
+}
+
+type ProxyRuntime struct {
+	PID        int    `json:"pid,omitempty"`
+	ListenAddr string `json:"listen_addr,omitempty"`
+	AuthToken  string `json:"auth_token,omitempty"`
 }
 
 func runtimeDir(sessionID string) string {

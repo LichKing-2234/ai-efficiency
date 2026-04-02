@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/ai-efficiency/ae-cli/internal/hooks"
+	"github.com/ai-efficiency/ae-cli/internal/proxy"
 	"github.com/ai-efficiency/ae-cli/internal/session"
 	"github.com/ai-efficiency/ae-cli/internal/tmux"
 	"github.com/spf13/cobra"
@@ -135,6 +136,23 @@ var startCmd = &cobra.Command{
 	},
 }
 
+var proxyServeInternalCmd = &cobra.Command{
+	Use:    "proxy-serve-internal",
+	Hidden: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		configPath, err := cmd.Flags().GetString("config")
+		if err != nil {
+			return err
+		}
+		if strings.TrimSpace(configPath) == "" {
+			return fmt.Errorf("--config is required")
+		}
+		return proxy.ServeFromConfigFile(configPath)
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(startCmd)
+	proxyServeInternalCmd.Flags().String("config", "", "internal proxy runtime config path")
+	rootCmd.AddCommand(proxyServeInternalCmd)
 }

@@ -14,8 +14,9 @@ func TestWriteRuntimeBundleUsesRestrictedPermissions(t *testing.T) {
 	t.Cleanup(func() { os.Setenv("HOME", origHome) })
 
 	b := &RuntimeBundle{
-		SessionID:   "sess-1",
-		RuntimeRef:  "rt-1",
+		SessionID:  "sess-1",
+		RuntimeRef: "rt-1",
+		Proxy:      &ProxyRuntime{PID: 1234, ListenAddr: "127.0.0.1:18080", AuthToken: "proxy-token"},
 		EnvBundle: map[string]string{
 			"AE_SESSION_ID": "sess-1",
 		},
@@ -50,5 +51,41 @@ func TestWriteRuntimeBundleUsesRestrictedPermissions(t *testing.T) {
 	}
 	if collectorsInfo.Mode().Perm() != 0o700 {
 		t.Fatalf("collectors dir perms = %o, want %o", collectorsInfo.Mode().Perm(), 0o700)
+	}
+}
+
+func TestWriteAndReadRuntimeBundleIncludesProxyMetadata(t *testing.T) {
+	origHome := os.Getenv("HOME")
+	tmpHome := t.TempDir()
+	os.Setenv("HOME", tmpHome)
+	t.Cleanup(func() { os.Setenv("HOME", origHome) })
+
+	in := &RuntimeBundle{
+		SessionID: "sess-with-proxy",
+		Proxy: &ProxyRuntime{
+			PID:        4321,
+			ListenAddr: "127.0.0.1:19999",
+			AuthToken:  "tok-proxy",
+		},
+	}
+	if err := WriteRuntimeBundle(in); err != nil {
+		t.Fatalf("WriteRuntimeBundle: %v", err)
+	}
+
+	out, err := ReadRuntimeBundle("sess-with-proxy")
+	if err != nil {
+		t.Fatalf("ReadRuntimeBundle: %v", err)
+	}
+	if out.Proxy == nil {
+		t.Fatal("expected proxy metadata in runtime bundle")
+	}
+	if out.Proxy.PID != 4321 {
+		t.Fatalf("proxy pid = %d, want %d", out.Proxy.PID, 4321)
+	}
+	if out.Proxy.ListenAddr != "127.0.0.1:19999" {
+		t.Fatalf("proxy listen_addr = %q, want %q", out.Proxy.ListenAddr, "127.0.0.1:19999")
+	}
+	if out.Proxy.AuthToken != "tok-proxy" {
+		t.Fatalf("proxy auth_token = %q, want %q", out.Proxy.AuthToken, "tok-proxy")
 	}
 }

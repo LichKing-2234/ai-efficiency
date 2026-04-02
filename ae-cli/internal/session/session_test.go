@@ -14,7 +14,127 @@ import (
 
 	"github.com/ai-efficiency/ae-cli/config"
 	"github.com/ai-efficiency/ae-cli/internal/client"
+	"github.com/ai-efficiency/ae-cli/internal/proxy"
 )
+
+func startSessionWithFakeBootstrap(t *testing.T) (*State, *RuntimeBundle, *Manager) {
+	t.Helper()
+
+	origSpawn := spawnProxyProcess
+	origStop := stopProxyProcess
+	spawnProxyProcess = func(cfg proxy.RuntimeConfig) (int, string, error) {
+		return 31337, "127.0.0.1:17888", nil
+	}
+	stopProxyProcess = func(pid int) error { return nil }
+	t.Cleanup(func() {
+		spawnProxyProcess = origSpawn
+		stopProxyProcess = origStop
+	})
+
+	origHome := os.Getenv("HOME")
+	tmpHome := t.TempDir()
+	if err := os.Setenv("HOME", tmpHome); err != nil {
+		t.Fatalf("set HOME: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Setenv("HOME", origHome) })
+
+	repoDir := t.TempDir()
+	cmds := [][]string{
+		{"git", "init", "-b", "main"},
+		{"git", "config", "user.email", "test@test.com"},
+		{"git", "config", "user.name", "Test"},
+		{"git", "remote", "add", "origin", "https://github.com/test-org/test-repo.git"},
+		{"git", "commit", "--allow-empty", "-m", "init"},
+	}
+	for _, args := range cmds {
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Dir = repoDir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("cmd %v: %v\n%s", args, err, out)
+		}
+	}
+
+	origWD, _ := os.Getwd()
+	if err := os.Chdir(repoDir); err != nil {
+		t.Fatalf("chdir repo: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(origWD) })
+
+	now := time.Now().UTC().Truncate(time.Second)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/api/v1/sessions/bootstrap" {
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"data": client.BootstrapSessionResponse{
+					SessionID:     "boot-proxy-1",
+					StartedAt:     now,
+					RelayAPIKeyID: 1,
+					ProviderName:  "sub2api",
+					RuntimeRef:    "rt-proxy-1",
+					EnvBundle: map[string]string{
+						"AE_SESSION_ID":   "boot-proxy-1",
+						"SUB2API_API_KEY": "test-key",
+					},
+					KeyExpiresAt: now.Add(1 * time.Hour),
+				},
+			})
+			return
+		}
+		if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/stop") {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+	}))
+	t.Cleanup(srv.Close)
+
+	m := NewManager(client.New(srv.URL, "tok"), &config.Config{})
+	state, err := m.Start()
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	rt, err := ReadRuntimeBundle(state.ID)
+	if err != nil {
+		t.Fatalf("ReadRuntimeBundle: %v", err)
+	}
+	return state, rt, m
+}
+
+func TestManagerStartLaunchesLocalProxyAndStoresRuntimeMetadata(t *testing.T) {
+	state, rt, _ := startSessionWithFakeBootstrap(t)
+
+	if rt.Proxy == nil {
+		t.Fatal("expected runtime bundle to contain proxy metadata")
+	}
+	if rt.Proxy.ListenAddr == "" || rt.Proxy.AuthToken == "" || rt.Proxy.PID == 0 {
+		t.Fatalf("unexpected proxy metadata: %+v", rt.Proxy)
+	}
+	if state.ID == "" {
+		t.Fatal("expected non-empty session id")
+	}
+}
+
+func TestManagerStopRemovesProxyRuntime(t *testing.T) {
+	state, _, mgr := startSessionWithFakeBootstrap(t)
+
+	var stoppedPID int
+	origStop := stopProxyProcess
+	stopProxyProcess = func(pid int) error {
+		stoppedPID = pid
+		return nil
+	}
+	t.Cleanup(func() { stopProxyProcess = origStop })
+
+	if _, err := mgr.Stop(); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	if stoppedPID == 0 {
+		t.Fatal("expected proxy stop to be invoked with runtime pid")
+	}
+	if _, err := ReadRuntimeBundle(state.ID); !os.IsNotExist(err) {
+		t.Fatalf("expected runtime bundle to be removed, got err=%v", err)
+	}
+}
 
 func TestMain(m *testing.M) {
 	origWD, _ := os.Getwd()

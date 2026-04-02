@@ -22,6 +22,11 @@ var stopCmd = &cobra.Command{
 			return fmt.Errorf("no active session")
 		}
 
+		proxyPID := 0
+		if rt, err := session.ReadRuntimeBundle(state.ID); err == nil && rt != nil && rt.Proxy != nil {
+			proxyPID = rt.Proxy.PID
+		}
+
 		// Kill tmux session if it exists
 		if state.TmuxSession != "" && tmux.SessionExists(state.TmuxSession) {
 			if err := tmux.KillSession(state.TmuxSession); err != nil {
@@ -38,6 +43,9 @@ var stopCmd = &cobra.Command{
 		fmt.Printf("  ID:     %s\n", state.ID)
 		fmt.Printf("  Repo:   %s\n", state.Repo)
 		fmt.Printf("  Branch: %s\n", state.Branch)
+		if proxyPID > 0 {
+			fmt.Printf("  Proxy:  stopped pid %d\n", proxyPID)
+		}
 
 		return nil
 	},
