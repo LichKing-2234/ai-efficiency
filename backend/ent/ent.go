@@ -23,6 +23,8 @@ import (
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/scmprovider"
 	"github.com/ai-efficiency/backend/ent/session"
+	"github.com/ai-efficiency/backend/ent/sessionevent"
+	"github.com/ai-efficiency/backend/ent/sessionusageevent"
 	"github.com/ai-efficiency/backend/ent/sessionworkspace"
 	"github.com/ai-efficiency/backend/ent/systemsetting"
 	"github.com/ai-efficiency/backend/ent/user"
@@ -98,6 +100,8 @@ func checkColumn(table, column string) error {
 			repoconfig.Table:         repoconfig.ValidColumn,
 			scmprovider.Table:        scmprovider.ValidColumn,
 			session.Table:            session.ValidColumn,
+			sessionevent.Table:       sessionevent.ValidColumn,
+			sessionusageevent.Table:  sessionusageevent.ValidColumn,
 			sessionworkspace.Table:   sessionworkspace.ValidColumn,
 			systemsetting.Table:      systemsetting.ValidColumn,
 			user.Table:               user.ValidColumn,
