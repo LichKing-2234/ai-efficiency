@@ -16,7 +16,12 @@ func TestWriteRuntimeBundleUsesRestrictedPermissions(t *testing.T) {
 	b := &RuntimeBundle{
 		SessionID:  "sess-1",
 		RuntimeRef: "rt-1",
-		Proxy:      &ProxyRuntime{PID: 1234, ListenAddr: "127.0.0.1:18080", AuthToken: "proxy-token"},
+		Proxy: &ProxyRuntime{
+			PID:        1234,
+			ListenAddr: "127.0.0.1:18080",
+			AuthToken:  "proxy-token",
+			ConfigPath: "/tmp/ae-proxy-config-123/runtime.json",
+		},
 		EnvBundle: map[string]string{
 			"AE_SESSION_ID": "sess-1",
 		},
@@ -66,6 +71,7 @@ func TestWriteAndReadRuntimeBundleIncludesProxyMetadata(t *testing.T) {
 			PID:        4321,
 			ListenAddr: "127.0.0.1:19999",
 			AuthToken:  "tok-proxy",
+			ConfigPath: "/tmp/ae-proxy-config-xyz/runtime.json",
 		},
 	}
 	if err := WriteRuntimeBundle(in); err != nil {
@@ -87,5 +93,8 @@ func TestWriteAndReadRuntimeBundleIncludesProxyMetadata(t *testing.T) {
 	}
 	if out.Proxy.AuthToken != "tok-proxy" {
 		t.Fatalf("proxy auth_token = %q, want %q", out.Proxy.AuthToken, "tok-proxy")
+	}
+	if out.Proxy.ConfigPath != "/tmp/ae-proxy-config-xyz/runtime.json" {
+		t.Fatalf("proxy config_path = %q, want %q", out.Proxy.ConfigPath, "/tmp/ae-proxy-config-xyz/runtime.json")
 	}
 }

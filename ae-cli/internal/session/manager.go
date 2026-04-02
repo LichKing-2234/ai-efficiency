@@ -164,8 +164,9 @@ func (m *Manager) Stop() (*State, error) {
 		}
 	}
 
-	// Clean up local state (marker/runtime/global state) best-effort.
-	_ = m.cleanupLocal(state.ID, state.WorkspaceRoot)
+	if err := m.cleanupLocal(state.ID, state.WorkspaceRoot); err != nil {
+		return nil, err
+	}
 
 	return state, nil
 }
@@ -181,7 +182,7 @@ func (m *Manager) Shutdown(ctx context.Context) error {
 	// Best-effort: try to notify backend, ignore errors
 	_ = m.client.StopSession(ctx, state.ID)
 
-	// Always clean up local state
+	// Best effort cleanup; preserve runtime on proxy-stop errors for recovery.
 	_ = m.cleanupLocal(state.ID, state.WorkspaceRoot)
 	return nil
 }
@@ -459,18 +460,27 @@ func (m *Manager) cleanupLocal(sessionID, workspaceRoot string) error {
 		_ = RemoveMarker(workspaceRoot)
 	}
 
+	// If Stop/Shutdown is invoked outside the workspace, use the runtime pointer to remove the marker.
+	var rt *RuntimeBundle
+	if strings.TrimSpace(sessionID) != "" {
+		if loaded, err := ReadRuntimeBundle(sessionID); err == nil && loaded != nil {
+			rt = loaded
+			if err := m.stopLocalProxy(rt); err != nil {
+				return err
+			}
+		}
+	}
+
 	// If we're currently inside a bound workspace, only remove its marker if it matches the session.
 	if bound, err := ResolveBoundState(""); err == nil && bound != nil {
 		removeMarkerForSession(bound.WorkspaceRoot)
 	}
 	removeMarkerForSession(workspaceRoot)
+	if rt != nil {
+		removeMarkerForSession(rt.WorkspaceRoot)
+	}
 
-	// If Stop/Shutdown is invoked outside the workspace, use the runtime pointer to remove the marker.
 	if strings.TrimSpace(sessionID) != "" {
-		if rt, err := ReadRuntimeBundle(sessionID); err == nil && rt != nil {
-			_ = m.stopLocalProxy(rt)
-			removeMarkerForSession(rt.WorkspaceRoot)
-		}
 		hasPendingQueue, err := HasPendingQueue(sessionID)
 		if err == nil && hasPendingQueue {
 			// Preserve queued hook events for later flush/recovery, but still drop secrets.
@@ -501,19 +511,20 @@ func (m *Manager) startLocalProxy(rt *RuntimeBundle) error {
 		ProviderURL: strings.TrimSpace(rt.EnvBundle["SUB2API_BASE_URL"]),
 		ProviderKey: strings.TrimSpace(rt.EnvBundle["SUB2API_API_KEY"]),
 	}
-	pid, listenAddr, err := spawnProxyProcess(cfg)
+	result, err := spawnProxyProcess(cfg)
 	if err != nil {
 		return err
 	}
 	rt.Proxy = &ProxyRuntime{
-		PID:        pid,
-		ListenAddr: listenAddr,
+		PID:        result.PID,
+		ListenAddr: result.ListenAddr,
 		AuthToken:  token,
+		ConfigPath: result.ConfigPath,
 	}
 	if rt.EnvBundle == nil {
 		rt.EnvBundle = map[string]string{}
 	}
-	rt.EnvBundle["AE_LOCAL_PROXY_URL"] = "http://" + listenAddr
+	rt.EnvBundle["AE_LOCAL_PROXY_URL"] = "http://" + result.ListenAddr
 	rt.EnvBundle["AE_LOCAL_PROXY_TOKEN"] = token
 	return nil
 }
@@ -522,11 +533,16 @@ func (m *Manager) stopLocalProxy(rt *RuntimeBundle) error {
 	if rt == nil || rt.Proxy == nil || rt.Proxy.PID <= 0 {
 		return nil
 	}
-	pid := rt.Proxy.PID
-	rt.Proxy = nil
-	if err := stopProxyProcess(pid); err != nil {
-		return fmt.Errorf("stopping local proxy pid=%d: %w", pid, err)
+	req := proxy.StopRequest{
+		PID:        rt.Proxy.PID,
+		ListenAddr: rt.Proxy.ListenAddr,
+		AuthToken:  rt.Proxy.AuthToken,
+		ConfigPath: rt.Proxy.ConfigPath,
 	}
+	if err := stopProxyProcess(req); err != nil {
+		return fmt.Errorf("stopping local proxy pid=%d: %w", req.PID, err)
+	}
+	rt.Proxy = nil
 	return nil
 }
 

@@ -3,6 +3,7 @@ package session
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -22,10 +23,14 @@ func startSessionWithFakeBootstrap(t *testing.T) (*State, *RuntimeBundle, *Manag
 
 	origSpawn := spawnProxyProcess
 	origStop := stopProxyProcess
-	spawnProxyProcess = func(cfg proxy.RuntimeConfig) (int, string, error) {
-		return 31337, "127.0.0.1:17888", nil
+	spawnProxyProcess = func(cfg proxy.RuntimeConfig) (proxy.SpawnResult, error) {
+		return proxy.SpawnResult{
+			PID:        31337,
+			ListenAddr: "127.0.0.1:17888",
+			ConfigPath: filepath.Join(t.TempDir(), "runtime.json"),
+		}, nil
 	}
-	stopProxyProcess = func(pid int) error { return nil }
+	stopProxyProcess = func(req proxy.StopRequest) error { return nil }
 	t.Cleanup(func() {
 		spawnProxyProcess = origSpawn
 		stopProxyProcess = origStop
@@ -119,8 +124,8 @@ func TestManagerStopRemovesProxyRuntime(t *testing.T) {
 
 	var stoppedPID int
 	origStop := stopProxyProcess
-	stopProxyProcess = func(pid int) error {
-		stoppedPID = pid
+	stopProxyProcess = func(req proxy.StopRequest) error {
+		stoppedPID = req.PID
 		return nil
 	}
 	t.Cleanup(func() { stopProxyProcess = origStop })
@@ -133,6 +138,113 @@ func TestManagerStopRemovesProxyRuntime(t *testing.T) {
 	}
 	if _, err := ReadRuntimeBundle(state.ID); !os.IsNotExist(err) {
 		t.Fatalf("expected runtime bundle to be removed, got err=%v", err)
+	}
+}
+
+func TestManagerStopPreservesRuntimeWhenProxyStopFails(t *testing.T) {
+	state, _, mgr := startSessionWithFakeBootstrap(t)
+
+	origStop := stopProxyProcess
+	stopProxyProcess = func(req proxy.StopRequest) error {
+		return errors.New("proxy stop failed")
+	}
+	t.Cleanup(func() { stopProxyProcess = origStop })
+
+	if _, err := mgr.Stop(); err == nil {
+		t.Fatal("expected Stop to fail when proxy stop fails")
+	}
+	if _, err := ReadRuntimeBundle(state.ID); err != nil {
+		t.Fatalf("expected runtime bundle retained on stop failure, got err=%v", err)
+	}
+}
+
+func startSessionWithRealBootstrap(t *testing.T) (*State, *Manager) {
+	t.Helper()
+
+	origHome := os.Getenv("HOME")
+	tmpHome := t.TempDir()
+	if err := os.Setenv("HOME", tmpHome); err != nil {
+		t.Fatalf("set HOME: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Setenv("HOME", origHome) })
+
+	repoDir := t.TempDir()
+	cmds := [][]string{
+		{"git", "init", "-b", "main"},
+		{"git", "config", "user.email", "test@test.com"},
+		{"git", "config", "user.name", "Test"},
+		{"git", "remote", "add", "origin", "https://github.com/test-org/test-repo.git"},
+		{"git", "commit", "--allow-empty", "-m", "init"},
+	}
+	for _, args := range cmds {
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Dir = repoDir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("cmd %v: %v\n%s", args, err, out)
+		}
+	}
+
+	origWD, _ := os.Getwd()
+	if err := os.Chdir(repoDir); err != nil {
+		t.Fatalf("chdir repo: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(origWD) })
+
+	now := time.Now().UTC().Truncate(time.Second)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/api/v1/sessions/bootstrap" {
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"data": client.BootstrapSessionResponse{
+					SessionID:     "boot-real-proxy-1",
+					StartedAt:     now,
+					RelayAPIKeyID: 1,
+					ProviderName:  "sub2api",
+					RuntimeRef:    "rt-real-proxy-1",
+					EnvBundle: map[string]string{
+						"AE_SESSION_ID":   "boot-real-proxy-1",
+						"SUB2API_API_KEY": "test-key",
+					},
+					KeyExpiresAt: now.Add(1 * time.Hour),
+				},
+			})
+			return
+		}
+		if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/stop") {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+	}))
+	t.Cleanup(srv.Close)
+
+	m := NewManager(client.New(srv.URL, "tok"), &config.Config{})
+	state, err := m.Start()
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	return state, m
+}
+
+func TestManagerStopRemovesProxyTempConfigDirs(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("TMPDIR", tmpDir)
+
+	state, mgr := startSessionWithRealBootstrap(t)
+	if _, err := os.Stat(runtimeFilePath(state.ID)); err != nil {
+		t.Fatalf("expected runtime bundle before stop: %v", err)
+	}
+
+	if _, err := mgr.Stop(); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+
+	matches, err := filepath.Glob(filepath.Join(tmpDir, "ae-proxy-config-*"))
+	if err != nil {
+		t.Fatalf("glob temp configs: %v", err)
+	}
+	if len(matches) != 0 {
+		t.Fatalf("expected no proxy temp config dirs after stop, found %d", len(matches))
 	}
 }
 
@@ -1434,6 +1546,91 @@ func TestStartWriteStateFails(t *testing.T) {
 	}
 	if _, err := os.Stat(runtimeDir("boot-sess-wsfail")); err == nil {
 		t.Fatalf("expected runtime dir to be absent after rollback")
+	}
+}
+
+func TestStartRollbackAfterProxySpawnCleansProxyAndTempConfig(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("TMPDIR", tmpDir)
+
+	origHome := os.Getenv("HOME")
+	tmpHome := t.TempDir()
+	os.Setenv("HOME", tmpHome)
+	t.Cleanup(func() { os.Setenv("HOME", origHome) })
+
+	tmpRepo := t.TempDir()
+	cmds := [][]string{
+		{"git", "init", "-b", "main"},
+		{"git", "config", "user.email", "test@test.com"},
+		{"git", "config", "user.name", "Test"},
+		{"git", "remote", "add", "origin", "https://github.com/test-org/test-repo.git"},
+		{"git", "commit", "--allow-empty", "-m", "init"},
+	}
+	for _, args := range cmds {
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Dir = tmpRepo
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("cmd %v: %v\n%s", args, err, out)
+		}
+	}
+
+	origDir, _ := os.Getwd()
+	os.Chdir(tmpRepo)
+	t.Cleanup(func() { os.Chdir(origDir) })
+
+	now := time.Now().Truncate(time.Second)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/api/v1/sessions/bootstrap" {
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"data": client.BootstrapSessionResponse{
+					SessionID:     "boot-sess-child-cleanup",
+					StartedAt:     now,
+					RelayAPIKeyID: 1,
+					ProviderName:  "sub2api",
+					RuntimeRef:    "rt-child-cleanup",
+					EnvBundle:     map[string]string{"AE_SESSION_ID": "boot-sess-child-cleanup"},
+					KeyExpiresAt:  now.Add(1 * time.Hour),
+				},
+			})
+			return
+		}
+		if r.Method == http.MethodPost && r.URL.Path == "/api/v1/sessions/boot-sess-child-cleanup/stop" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	var spawnedPID int
+	origSpawn := spawnProxyProcess
+	spawnProxyProcess = func(cfg proxy.RuntimeConfig) (proxy.SpawnResult, error) {
+		result, err := proxy.Spawn(cfg)
+		if err == nil {
+			spawnedPID = result.PID
+		}
+		return result, err
+	}
+	t.Cleanup(func() { spawnProxyProcess = origSpawn })
+
+	// Force runtime write failure after proxy spawn.
+	os.WriteFile(filepath.Join(tmpHome, ".ae-cli"), []byte("not a dir"), 0o644)
+
+	m := NewManager(client.New(srv.URL, "tok"), &config.Config{})
+	if _, err := m.Start(); err == nil {
+		t.Fatal("expected start to fail")
+	}
+	if spawnedPID == 0 {
+		t.Fatal("expected proxy child process to spawn before rollback")
+	}
+
+	matches, err := filepath.Glob(filepath.Join(tmpDir, "ae-proxy-config-*"))
+	if err != nil {
+		t.Fatalf("glob config dirs: %v", err)
+	}
+	if len(matches) != 0 {
+		t.Fatalf("expected rollback to clean proxy temp config dirs, found %d", len(matches))
 	}
 }
 

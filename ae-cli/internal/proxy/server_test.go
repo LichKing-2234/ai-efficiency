@@ -1,9 +1,11 @@
 package proxy
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -41,22 +43,27 @@ func TestSpawnStartsProxyAndReturnsReadyAddress(t *testing.T) {
 		ProviderKey: "provider-key",
 	}
 
-	pid, listenAddr, err := Spawn(cfg)
+	result, err := Spawn(cfg)
 	if err != nil {
 		t.Fatalf("Spawn: %v", err)
 	}
 	defer func() {
-		_ = Stop(pid)
+		_ = Stop(StopRequest{
+			PID:        result.PID,
+			ListenAddr: result.ListenAddr,
+			AuthToken:  cfg.AuthToken,
+			ConfigPath: result.ConfigPath,
+		})
 	}()
 
-	if pid <= 0 {
-		t.Fatalf("pid = %d, want > 0", pid)
+	if result.PID <= 0 {
+		t.Fatalf("pid = %d, want > 0", result.PID)
 	}
-	if strings.TrimSpace(listenAddr) == "" {
+	if strings.TrimSpace(result.ListenAddr) == "" {
 		t.Fatal("listenAddr should not be empty")
 	}
 
-	resp, err := (&http.Client{Timeout: 1 * time.Second}).Get("http://" + listenAddr + "/healthz")
+	resp, err := (&http.Client{Timeout: 1 * time.Second}).Get("http://" + result.ListenAddr + "/healthz")
 	if err != nil {
 		t.Fatalf("GET /healthz: %v", err)
 	}
@@ -73,22 +80,88 @@ func TestStopTerminatesProxyProcess(t *testing.T) {
 		AuthToken:  "tok-stop",
 	}
 
-	pid, listenAddr, err := Spawn(cfg)
+	result, err := Spawn(cfg)
 	if err != nil {
 		t.Fatalf("Spawn: %v", err)
 	}
 
-	if err := Stop(pid); err != nil {
+	if err := Stop(StopRequest{
+		PID:        result.PID,
+		ListenAddr: result.ListenAddr,
+		AuthToken:  cfg.AuthToken,
+		ConfigPath: result.ConfigPath,
+	}); err != nil {
 		t.Fatalf("Stop: %v", err)
 	}
 
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		_, err := (&http.Client{Timeout: 150 * time.Millisecond}).Get("http://" + listenAddr + "/healthz")
+		_, err := (&http.Client{Timeout: 150 * time.Millisecond}).Get("http://" + result.ListenAddr + "/healthz")
 		if err != nil {
 			return
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	t.Fatalf("proxy still reachable after stop at %s", listenAddr)
+	t.Fatalf("proxy still reachable after stop at %s", result.ListenAddr)
+}
+
+func TestSpawnForcedChildProcessUsesConfigHandoffAndCleansTempFiles(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("TMPDIR", tmpDir)
+	t.Setenv(forceChildEnv, "1")
+
+	cfg := RuntimeConfig{
+		SessionID:   "sess-child",
+		ListenAddr:  "127.0.0.1:0",
+		AuthToken:   "tok-child",
+		ProviderURL: "http://provider.local",
+		ProviderKey: "provider-secret",
+	}
+
+	result, err := Spawn(cfg)
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+
+	matches, err := filepath.Glob(filepath.Join(tmpDir, "ae-proxy-config-*"))
+	if err != nil {
+		t.Fatalf("glob config dirs: %v", err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("config dirs = %d, want 1", len(matches))
+	}
+	raw, err := os.ReadFile(filepath.Join(matches[0], "runtime.json"))
+	if err != nil {
+		t.Fatalf("reading runtime config: %v", err)
+	}
+	var saved RuntimeConfig
+	if err := json.Unmarshal(raw, &saved); err != nil {
+		t.Fatalf("parsing runtime config: %v", err)
+	}
+	if saved.SessionID != cfg.SessionID || saved.AuthToken != cfg.AuthToken {
+		t.Fatalf("runtime config mismatch: got session=%q token=%q", saved.SessionID, saved.AuthToken)
+	}
+	if saved.ListenAddr != result.ListenAddr {
+		t.Fatalf("runtime listen_addr = %q, want %q", saved.ListenAddr, result.ListenAddr)
+	}
+	if strings.TrimSpace(result.ConfigPath) == "" {
+		t.Fatal("expected Spawn result to include config path")
+	}
+
+	if err := Stop(StopRequest{
+		PID:        result.PID,
+		ListenAddr: result.ListenAddr,
+		AuthToken:  cfg.AuthToken,
+		ConfigPath: result.ConfigPath,
+	}); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+
+	matches, err = filepath.Glob(filepath.Join(tmpDir, "ae-proxy-config-*"))
+	if err != nil {
+		t.Fatalf("glob config dirs after stop: %v", err)
+	}
+	if len(matches) != 0 {
+		t.Fatalf("expected no proxy temp config dirs after stop, found %d", len(matches))
+	}
 }

@@ -26,6 +26,7 @@ type ProxyRuntime struct {
 	PID        int    `json:"pid,omitempty"`
 	ListenAddr string `json:"listen_addr,omitempty"`
 	AuthToken  string `json:"auth_token,omitempty"`
+	ConfigPath string `json:"config_path,omitempty"`
 }
 
 func runtimeDir(sessionID string) string {
