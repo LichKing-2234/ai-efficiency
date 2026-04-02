@@ -12,6 +12,7 @@ import (
 	"github.com/ai-efficiency/backend/ent/sessionevent"
 	"github.com/ai-efficiency/backend/ent/sessionusageevent"
 	"github.com/ai-efficiency/backend/ent/sessionworkspace"
+	"github.com/ai-efficiency/backend/ent/user"
 	"github.com/ai-efficiency/backend/internal/auth"
 	"github.com/ai-efficiency/backend/internal/pkg"
 	"github.com/ai-efficiency/backend/internal/sessionbootstrap"
@@ -220,6 +221,9 @@ func (h *SessionHandler) List(c *gin.Context) {
 	query := h.entClient.Session.Query().
 		WithRepoConfig().
 		Order(ent.Desc(session.FieldStartedAt))
+	if uc := auth.GetUserContext(c); uc != nil {
+		query = query.Where(session.HasUserWith(user.IDEQ(uc.UserID)))
+	}
 
 	// Filter by status
 	if status := c.Query("status"); status != "" {
@@ -275,8 +279,13 @@ func (h *SessionHandler) Get(c *gin.Context) {
 		return
 	}
 
-	s, err := h.entClient.Session.Query().
-		Where(session.IDEQ(id)).
+	query := h.entClient.Session.Query().
+		Where(session.IDEQ(id))
+	if uc := auth.GetUserContext(c); uc != nil {
+		query = query.Where(session.HasUserWith(user.IDEQ(uc.UserID)))
+	}
+
+	s, err := query.
 		WithRepoConfig().
 		WithSessionWorkspaces(func(q *ent.SessionWorkspaceQuery) {
 			q.Order(ent.Desc(sessionworkspace.FieldLastSeenAt)).

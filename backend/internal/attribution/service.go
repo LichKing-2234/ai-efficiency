@@ -2,6 +2,7 @@ package attribution
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -17,6 +18,8 @@ import (
 	"github.com/ai-efficiency/backend/internal/scm"
 	"github.com/google/uuid"
 )
+
+var errSessionMissingAPIKey = errors.New("session missing relay api key for fallback")
 
 type Service struct {
 	entClient     *ent.Client
@@ -121,9 +124,6 @@ func (s *Service) Settle(ctx context.Context, provider scm.SCMProvider, pr *ent.
 		if err != nil {
 			return nil, fmt.Errorf("settle pr: load session %s: %w", sessionID, err)
 		}
-		if sess.RelayAPIKeyID == nil {
-			return s.persistAmbiguous(ctx, pr, triggeredBy, "session_missing_api_key", commitSet)
-		}
 
 		from := sess.StartedAt
 		prevCP, err := s.entClient.CommitCheckpoint.Query().
@@ -143,8 +143,11 @@ func (s *Service) Settle(ctx context.Context, provider scm.SCMProvider, pr *ent.
 		}
 
 		to := cp.CapturedAt
-		intervalTokens, intervalCost, usageSummary, err := s.loadIntervalUsage(ctx, sessionID, from, to, int64(*sess.RelayAPIKeyID))
+		intervalTokens, intervalCost, usageSummary, err := s.loadIntervalUsage(ctx, sessionID, from, to, sess.RelayAPIKeyID)
 		if err != nil {
+			if errors.Is(err, errSessionMissingAPIKey) {
+				return s.persistAmbiguous(ctx, pr, triggeredBy, "session_missing_api_key", commitSet)
+			}
 			return nil, fmt.Errorf("settle pr: load interval usage: %w", err)
 		}
 
@@ -413,13 +416,13 @@ func (s *Service) loadIntervalUsage(
 	ctx context.Context,
 	sessionID uuid.UUID,
 	from, to time.Time,
-	fallbackAPIKeyID int64,
+	fallbackAPIKeyID *int,
 ) (int64, float64, map[string]any, error) {
 	events, err := s.entClient.SessionUsageEvent.Query().
 		Where(
 			sessionusageevent.SessionIDEQ(sessionID),
-			sessionusageevent.StartedAtGTE(from),
-			sessionusageevent.FinishedAtLTE(to),
+			sessionusageevent.StartedAtLT(to),
+			sessionusageevent.FinishedAtGT(from),
 			sessionusageevent.StatusEQ("completed"),
 		).
 		All(ctx)
@@ -436,7 +439,10 @@ func (s *Service) loadIntervalUsage(
 			"event_count": len(events),
 		}, nil
 	}
-	return s.loadRelayLedgerFallback(ctx, fallbackAPIKeyID, from, to)
+	if fallbackAPIKeyID == nil {
+		return 0, 0, nil, errSessionMissingAPIKey
+	}
+	return s.loadRelayLedgerFallback(ctx, int64(*fallbackAPIKeyID), from, to)
 }
 
 func (s *Service) loadRelayLedgerFallback(

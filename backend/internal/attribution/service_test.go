@@ -445,3 +445,140 @@ func TestSettlePR_PrefersSessionUsageEventsOverRelayLedger(t *testing.T) {
 		t.Fatalf("primary_token_count = %d, want 140", result.PrimaryTokenCount)
 	}
 }
+
+func TestSettlePR_UsesLocalUsageEventsWithoutRelayAPIKey(t *testing.T) {
+	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	defer client.Close()
+	ctx := context.Background()
+
+	repo, pr, sess := testRepoPRSession(t, client, 0)
+	t1 := sess.StartedAt.Add(10 * time.Minute)
+	t2 := t1.Add(20 * time.Minute)
+
+	client.CommitCheckpoint.Create().
+		SetEventID("cp-local-nokey-1").
+		SetSessionID(sess.ID).
+		SetWorkspaceID("ws-local-nokey").
+		SetRepoConfigID(repo.ID).
+		SetBindingSource(commitcheckpoint.BindingSourceMarker).
+		SetCommitSha("base-local-nokey").
+		SetParentShas([]string{"p0"}).
+		SetCapturedAt(t1).
+		SaveX(ctx)
+	client.CommitCheckpoint.Create().
+		SetEventID("cp-local-nokey-2").
+		SetSessionID(sess.ID).
+		SetWorkspaceID("ws-local-nokey").
+		SetRepoConfigID(repo.ID).
+		SetBindingSource(commitcheckpoint.BindingSourceMarker).
+		SetCommitSha("pr-local-nokey").
+		SetParentShas([]string{"base-local-nokey"}).
+		SetCapturedAt(t2).
+		SaveX(ctx)
+
+	client.SessionUsageEvent.Create().
+		SetEventID("usage-local-nokey-1").
+		SetSessionID(sess.ID).
+		SetWorkspaceID("ws-local-nokey").
+		SetRequestID("req-local-nokey-1").
+		SetProviderName("codex").
+		SetModel("gpt-5").
+		SetStartedAt(t1.Add(1 * time.Minute)).
+		SetFinishedAt(t1.Add(2 * time.Minute)).
+		SetInputTokens(90).
+		SetOutputTokens(30).
+		SetTotalTokens(120).
+		SetStatus("completed").
+		SetRawMetadata(map[string]interface{}{"source": "test"}).
+		SaveX(ctx)
+
+	fakeRelay := &fakeRelayProvider{
+		listUsageLogsByAPIKeyExactFn: func(ctx context.Context, apiKeyID int64, from, to time.Time) ([]relay.UsageLog, error) {
+			panic("relay usage logs fallback should not be called when local usage exists")
+		},
+	}
+	fakeProvider := &fakeSCMProvider{
+		listPRCommitsFn: func(ctx context.Context, repoFullName string, prID int) ([]string, error) {
+			return []string{"pr-local-nokey"}, nil
+		},
+	}
+
+	svc := NewService(client, fakeRelay)
+	result, err := svc.Settle(ctx, fakeProvider, pr, "alice")
+	if err != nil {
+		t.Fatalf("Settle() error = %v", err)
+	}
+	if result.ResultClassification != "clear" {
+		t.Fatalf("result classification = %q, want clear", result.ResultClassification)
+	}
+	if result.PrimaryTokenCount != 120 {
+		t.Fatalf("primary_token_count = %d, want 120", result.PrimaryTokenCount)
+	}
+}
+
+func TestSettlePR_CountsBoundaryOverlappingUsageEvents(t *testing.T) {
+	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	defer client.Close()
+	ctx := context.Background()
+
+	repo, pr, sess := testRepoPRSession(t, client, 0)
+	t1 := sess.StartedAt.Add(10 * time.Minute)
+	t2 := t1.Add(20 * time.Minute)
+
+	client.CommitCheckpoint.Create().
+		SetEventID("cp-local-overlap-1").
+		SetSessionID(sess.ID).
+		SetWorkspaceID("ws-local-overlap").
+		SetRepoConfigID(repo.ID).
+		SetBindingSource(commitcheckpoint.BindingSourceMarker).
+		SetCommitSha("base-local-overlap").
+		SetParentShas([]string{"p0"}).
+		SetCapturedAt(t1).
+		SaveX(ctx)
+	client.CommitCheckpoint.Create().
+		SetEventID("cp-local-overlap-2").
+		SetSessionID(sess.ID).
+		SetWorkspaceID("ws-local-overlap").
+		SetRepoConfigID(repo.ID).
+		SetBindingSource(commitcheckpoint.BindingSourceMarker).
+		SetCommitSha("pr-local-overlap").
+		SetParentShas([]string{"base-local-overlap"}).
+		SetCapturedAt(t2).
+		SaveX(ctx)
+
+	client.SessionUsageEvent.Create().
+		SetEventID("usage-local-overlap-1").
+		SetSessionID(sess.ID).
+		SetWorkspaceID("ws-local-overlap").
+		SetRequestID("req-local-overlap-1").
+		SetProviderName("codex").
+		SetModel("gpt-5").
+		SetStartedAt(t2.Add(-30 * time.Second)).
+		SetFinishedAt(t2.Add(30 * time.Second)).
+		SetInputTokens(50).
+		SetOutputTokens(20).
+		SetTotalTokens(70).
+		SetStatus("completed").
+		SetRawMetadata(map[string]interface{}{"source": "test"}).
+		SaveX(ctx)
+
+	fakeRelay := &fakeRelayProvider{
+		listUsageLogsByAPIKeyExactFn: func(ctx context.Context, apiKeyID int64, from, to time.Time) ([]relay.UsageLog, error) {
+			panic("relay usage logs fallback should not be called when local usage exists")
+		},
+	}
+	fakeProvider := &fakeSCMProvider{
+		listPRCommitsFn: func(ctx context.Context, repoFullName string, prID int) ([]string, error) {
+			return []string{"pr-local-overlap"}, nil
+		},
+	}
+
+	svc := NewService(client, fakeRelay)
+	result, err := svc.Settle(ctx, fakeProvider, pr, "alice")
+	if err != nil {
+		t.Fatalf("Settle() error = %v", err)
+	}
+	if result.PrimaryTokenCount != 70 {
+		t.Fatalf("primary_token_count = %d, want 70", result.PrimaryTokenCount)
+	}
+}

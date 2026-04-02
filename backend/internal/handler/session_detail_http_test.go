@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/ai-efficiency/backend/ent/enttest"
+	"github.com/ai-efficiency/backend/ent/user"
+	"github.com/ai-efficiency/backend/internal/auth"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	_ "github.com/mattn/go-sqlite3"
@@ -262,5 +264,150 @@ func TestSessionDetailOrdersAndLimitsCheckpointUsageAndSessionEventEdges(t *test
 	lastEvent, _ := sessionEvents[len(sessionEvents)-1].(map[string]any)
 	if firstEvent["captured_at"].(string) <= lastEvent["captured_at"].(string) {
 		t.Fatalf("expected session events ordered desc by captured_at, got first=%v last=%v", firstEvent["captured_at"], lastEvent["captured_at"])
+	}
+}
+
+func TestSessionDetailRejectsNonOwnerAccess(t *testing.T) {
+	t.Parallel()
+	gin.SetMode(gin.TestMode)
+
+	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	defer client.Close()
+
+	ctx := t.Context()
+	sp := client.ScmProvider.Create().
+		SetName("github-test").
+		SetType("github").
+		SetBaseURL("https://api.github.com").
+		SetCredentials("enc").
+		SaveX(ctx)
+	repo := client.RepoConfig.Create().
+		SetScmProviderID(sp.ID).
+		SetName("demo").
+		SetFullName("org/demo").
+		SetCloneURL("https://github.com/org/demo.git").
+		SetDefaultBranch("main").
+		SaveX(ctx)
+
+	owner := client.User.Create().
+		SetUsername("owner").
+		SetEmail("owner@example.com").
+		SetAuthSource(user.AuthSourceLdap).
+		SaveX(ctx)
+	other := client.User.Create().
+		SetUsername("other").
+		SetEmail("other@example.com").
+		SetAuthSource(user.AuthSourceLdap).
+		SaveX(ctx)
+
+	ownerSessionID := uuid.New()
+	client.Session.Create().
+		SetID(ownerSessionID).
+		SetRepoConfigID(repo.ID).
+		SetUserID(owner.ID).
+		SetBranch("feat/x").
+		SetStartedAt(time.Now().UTC()).
+		SaveX(ctx)
+
+	h := NewSessionHandler(client, nil)
+	r := gin.New()
+	r.Use(func(c *gin.Context) {
+		c.Set(auth.ContextKeyUser, &auth.UserContext{
+			UserID:   other.ID,
+			Username: "other",
+			Role:     "user",
+		})
+		c.Next()
+	})
+	r.GET("/sessions/:id", h.Get)
+
+	req := httptest.NewRequest(http.MethodGet, "/sessions/"+ownerSessionID.String(), nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404, body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestSessionListReturnsOnlyCurrentUserSessions(t *testing.T) {
+	t.Parallel()
+	gin.SetMode(gin.TestMode)
+
+	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	defer client.Close()
+
+	ctx := t.Context()
+	sp := client.ScmProvider.Create().
+		SetName("github-test").
+		SetType("github").
+		SetBaseURL("https://api.github.com").
+		SetCredentials("enc").
+		SaveX(ctx)
+	repo := client.RepoConfig.Create().
+		SetScmProviderID(sp.ID).
+		SetName("demo").
+		SetFullName("org/demo").
+		SetCloneURL("https://github.com/org/demo.git").
+		SetDefaultBranch("main").
+		SaveX(ctx)
+
+	owner := client.User.Create().
+		SetUsername("owner-list").
+		SetEmail("owner-list@example.com").
+		SetAuthSource(user.AuthSourceLdap).
+		SaveX(ctx)
+	other := client.User.Create().
+		SetUsername("other-list").
+		SetEmail("other-list@example.com").
+		SetAuthSource(user.AuthSourceLdap).
+		SaveX(ctx)
+
+	ownerSessionID := uuid.New()
+	client.Session.Create().
+		SetID(ownerSessionID).
+		SetRepoConfigID(repo.ID).
+		SetUserID(owner.ID).
+		SetBranch("feat/owner").
+		SetStartedAt(time.Now().UTC()).
+		SaveX(ctx)
+	client.Session.Create().
+		SetID(uuid.New()).
+		SetRepoConfigID(repo.ID).
+		SetUserID(other.ID).
+		SetBranch("feat/other").
+		SetStartedAt(time.Now().UTC().Add(-1 * time.Minute)).
+		SaveX(ctx)
+
+	h := NewSessionHandler(client, nil)
+	r := gin.New()
+	r.Use(func(c *gin.Context) {
+		c.Set(auth.ContextKeyUser, &auth.UserContext{
+			UserID:   owner.ID,
+			Username: "owner-list",
+			Role:     "user",
+		})
+		c.Next()
+	})
+	r.GET("/sessions", h.List)
+
+	req := httptest.NewRequest(http.MethodGet, "/sessions", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body=%s", w.Code, w.Body.String())
+	}
+
+	var body map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	data, _ := body["data"].(map[string]any)
+	items, _ := data["items"].([]any)
+	if len(items) != 1 {
+		t.Fatalf("items len = %d, want 1", len(items))
+	}
+	item, _ := items[0].(map[string]any)
+	if item["id"] != ownerSessionID.String() {
+		t.Fatalf("session id = %v, want %s", item["id"], ownerSessionID.String())
 	}
 }
