@@ -8,12 +8,12 @@ import (
 	"time"
 
 	"github.com/ai-efficiency/backend/ent/enttest"
+	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	_ "github.com/mattn/go-sqlite3"
-	"github.com/gin-gonic/gin"
 )
 
-func TestSessionGetIncludesWorkspaceAndCheckpointEdges(t *testing.T) {
+func TestSessionDetailIncludesWorkspaceCheckpointUsageAndSessionEventEdges(t *testing.T) {
 	t.Parallel()
 	gin.SetMode(gin.TestMode)
 
@@ -60,6 +60,30 @@ func TestSessionGetIncludesWorkspaceAndCheckpointEdges(t *testing.T) {
 		SetBindingSource("marker").
 		SetCapturedAt(time.Now().UTC()).
 		SaveX(ctx)
+	client.SessionUsageEvent.Create().
+		SetEventID("usage-1").
+		SetSessionID(sessionID).
+		SetWorkspaceID("ws-1").
+		SetRequestID("req-1").
+		SetProviderName("codex").
+		SetModel("gpt-5").
+		SetStartedAt(time.Now().UTC().Add(-2 * time.Minute)).
+		SetFinishedAt(time.Now().UTC().Add(-1 * time.Minute)).
+		SetInputTokens(100).
+		SetOutputTokens(40).
+		SetTotalTokens(140).
+		SetStatus("completed").
+		SetRawMetadata(map[string]any{"k": "v"}).
+		SaveX(ctx)
+	client.SessionEvent.Create().
+		SetEventID("evt-1").
+		SetSessionID(sessionID).
+		SetWorkspaceID("ws-1").
+		SetEventType("session.started").
+		SetSource("cli").
+		SetCapturedAt(time.Now().UTC().Add(-30 * time.Second)).
+		SetRawPayload(map[string]any{"x": "y"}).
+		SaveX(ctx)
 
 	h := NewSessionHandler(client, nil)
 	r := gin.New()
@@ -86,9 +110,17 @@ func TestSessionGetIncludesWorkspaceAndCheckpointEdges(t *testing.T) {
 	if len(checkpoints) != 1 {
 		t.Fatalf("commit_checkpoints len = %d, want 1", len(checkpoints))
 	}
+	usageEvents, _ := edges["session_usage_events"].([]any)
+	if len(usageEvents) != 1 {
+		t.Fatalf("session_usage_events len = %d, want 1", len(usageEvents))
+	}
+	sessionEvents, _ := edges["session_events"].([]any)
+	if len(sessionEvents) != 1 {
+		t.Fatalf("session_events len = %d, want 1", len(sessionEvents))
+	}
 }
 
-func TestSessionGetOrdersAndLimitsCheckpointEdges(t *testing.T) {
+func TestSessionDetailOrdersAndLimitsCheckpointUsageAndSessionEventEdges(t *testing.T) {
 	t.Parallel()
 	gin.SetMode(gin.TestMode)
 
@@ -143,6 +175,37 @@ func TestSessionGetOrdersAndLimitsCheckpointEdges(t *testing.T) {
 			SetCapturedAt(base.Add(time.Duration(i) * time.Minute)).
 			SaveX(ctx)
 	}
+	usageBase := time.Now().UTC().Add(-90 * time.Minute)
+	for i := 0; i < 120; i++ {
+		client.SessionUsageEvent.Create().
+			SetEventID("usage-limit-" + uuid.NewString()).
+			SetSessionID(sessionID).
+			SetWorkspaceID("ws-1").
+			SetRequestID("req-" + uuid.NewString()).
+			SetProviderName("codex").
+			SetModel("gpt-5").
+			SetStartedAt(usageBase.Add(time.Duration(i) * time.Minute)).
+			SetFinishedAt(usageBase.Add(time.Duration(i)*time.Minute + 20*time.Second)).
+			SetInputTokens(10).
+			SetOutputTokens(2).
+			SetTotalTokens(12).
+			SetStatus("completed").
+			SetRawMetadata(map[string]any{"i": i}).
+			SaveX(ctx)
+	}
+
+	eventBase := time.Now().UTC().Add(-80 * time.Minute)
+	for i := 0; i < 120; i++ {
+		client.SessionEvent.Create().
+			SetEventID("event-limit-" + uuid.NewString()).
+			SetSessionID(sessionID).
+			SetWorkspaceID("ws-1").
+			SetEventType("checkpoint.captured").
+			SetSource("cli").
+			SetCapturedAt(eventBase.Add(time.Duration(i) * time.Minute)).
+			SetRawPayload(map[string]any{"i": i}).
+			SaveX(ctx)
+	}
 
 	h := NewSessionHandler(client, nil)
 	r := gin.New()
@@ -179,5 +242,25 @@ func TestSessionGetOrdersAndLimitsCheckpointEdges(t *testing.T) {
 	last, _ := checkpoints[len(checkpoints)-1].(map[string]any)
 	if first["captured_at"].(string) <= last["captured_at"].(string) {
 		t.Fatalf("expected checkpoints ordered desc by captured_at, got first=%v last=%v", first["captured_at"], last["captured_at"])
+	}
+
+	usageEvents, _ := edges["session_usage_events"].([]any)
+	if len(usageEvents) != 100 {
+		t.Fatalf("session_usage_events len = %d, want 100", len(usageEvents))
+	}
+	firstUsage, _ := usageEvents[0].(map[string]any)
+	lastUsage, _ := usageEvents[len(usageEvents)-1].(map[string]any)
+	if firstUsage["started_at"].(string) <= lastUsage["started_at"].(string) {
+		t.Fatalf("expected usage events ordered desc by started_at, got first=%v last=%v", firstUsage["started_at"], lastUsage["started_at"])
+	}
+
+	sessionEvents, _ := edges["session_events"].([]any)
+	if len(sessionEvents) != 100 {
+		t.Fatalf("session_events len = %d, want 100", len(sessionEvents))
+	}
+	firstEvent, _ := sessionEvents[0].(map[string]any)
+	lastEvent, _ := sessionEvents[len(sessionEvents)-1].(map[string]any)
+	if firstEvent["captured_at"].(string) <= lastEvent["captured_at"].(string) {
+		t.Fatalf("expected session events ordered desc by captured_at, got first=%v last=%v", firstEvent["captured_at"], lastEvent["captured_at"])
 	}
 }

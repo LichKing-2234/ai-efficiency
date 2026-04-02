@@ -12,8 +12,10 @@ import (
 	"github.com/ai-efficiency/backend/ent/commitrewrite"
 	"github.com/ai-efficiency/backend/ent/prattributionrun"
 	"github.com/ai-efficiency/backend/ent/prrecord"
+	"github.com/ai-efficiency/backend/ent/sessionusageevent"
 	"github.com/ai-efficiency/backend/internal/relay"
 	"github.com/ai-efficiency/backend/internal/scm"
+	"github.com/google/uuid"
 )
 
 type Service struct {
@@ -141,39 +143,41 @@ func (s *Service) Settle(ctx context.Context, provider scm.SCMProvider, pr *ent.
 		}
 
 		to := cp.CapturedAt
-		logs, err := s.relayProvider.ListUsageLogsByAPIKeyExact(ctx, int64(*sess.RelayAPIKeyID), from, to)
+		intervalTokens, intervalCost, usageSummary, err := s.loadIntervalUsage(ctx, sessionID, from, to, int64(*sess.RelayAPIKeyID))
 		if err != nil {
-			return nil, fmt.Errorf("settle pr: list usage logs: %w", err)
+			return nil, fmt.Errorf("settle pr: load interval usage: %w", err)
 		}
 
-		var intervalTokens int64
-		var intervalCost float64
-		for _, log := range logs {
-			intervalTokens += log.TotalTokens
-			intervalCost += log.TotalCost
-			totalUsageLogs++
-
-			accountID := strings.TrimSpace(log.AccountID)
-			if accountID == "" {
-				accountID = "unknown"
+		if usageLogCount, ok := usageSummary["usage_log_count"].(int); ok {
+			totalUsageLogs += int64(usageLogCount)
+		}
+		if intervalAccountTokens, ok := usageSummary["account_token_totals"].(map[string]int64); ok {
+			for accountID, tokens := range intervalAccountTokens {
+				accountTokenTotals[accountID] += tokens
 			}
-			accountTokenTotals[accountID] += log.TotalTokens
-			accountCostTotals[accountID] += log.TotalCost
+		}
+		if intervalAccountCosts, ok := usageSummary["account_cost_totals"].(map[string]float64); ok {
+			for accountID, cost := range intervalAccountCosts {
+				accountCostTotals[accountID] += cost
+			}
 		}
 
 		totalTokens += intervalTokens
 		totalCost += intervalCost
 
-		intervals = append(intervals, map[string]interface{}{
-			"session_id":      sessionID.String(),
-			"checkpoint_id":   cp.ID,
-			"commit_sha":      cp.CommitSha,
-			"from":            from,
-			"to":              to,
-			"usage_log_count": len(logs),
-			"total_tokens":    intervalTokens,
-			"total_cost":      intervalCost,
-		})
+		intervalMetadata := map[string]interface{}{
+			"session_id":    sessionID.String(),
+			"checkpoint_id": cp.ID,
+			"commit_sha":    cp.CommitSha,
+			"from":          from,
+			"to":            to,
+			"total_tokens":  intervalTokens,
+			"total_cost":    intervalCost,
+		}
+		for key, value := range usageSummary {
+			intervalMetadata[key] = value
+		}
+		intervals = append(intervals, intervalMetadata)
 	}
 
 	matchedCommits := make([]string, 0, len(prCommitSHAs))
@@ -402,5 +406,69 @@ func (s *Service) persistResult(
 		PrimaryUsageSummary:   primarySummary,
 		MetadataSummary:       metadataSummary,
 		ValidationSummary:     validationSummary,
+	}, nil
+}
+
+func (s *Service) loadIntervalUsage(
+	ctx context.Context,
+	sessionID uuid.UUID,
+	from, to time.Time,
+	fallbackAPIKeyID int64,
+) (int64, float64, map[string]any, error) {
+	events, err := s.entClient.SessionUsageEvent.Query().
+		Where(
+			sessionusageevent.SessionIDEQ(sessionID),
+			sessionusageevent.StartedAtGTE(from),
+			sessionusageevent.FinishedAtLTE(to),
+			sessionusageevent.StatusEQ("completed"),
+		).
+		All(ctx)
+	if err != nil {
+		return 0, 0, nil, fmt.Errorf("query session usage events: %w", err)
+	}
+	if len(events) > 0 {
+		var totalTokens int64
+		for _, ev := range events {
+			totalTokens += ev.TotalTokens
+		}
+		return totalTokens, 0, map[string]any{
+			"source":      "local_proxy",
+			"event_count": len(events),
+		}, nil
+	}
+	return s.loadRelayLedgerFallback(ctx, fallbackAPIKeyID, from, to)
+}
+
+func (s *Service) loadRelayLedgerFallback(
+	ctx context.Context,
+	apiKeyID int64,
+	from, to time.Time,
+) (int64, float64, map[string]any, error) {
+	logs, err := s.relayProvider.ListUsageLogsByAPIKeyExact(ctx, apiKeyID, from, to)
+	if err != nil {
+		return 0, 0, nil, fmt.Errorf("list usage logs: %w", err)
+	}
+
+	var totalTokens int64
+	var totalCost float64
+	accountTokenTotals := map[string]int64{}
+	accountCostTotals := map[string]float64{}
+	for _, log := range logs {
+		totalTokens += log.TotalTokens
+		totalCost += log.TotalCost
+
+		accountID := strings.TrimSpace(log.AccountID)
+		if accountID == "" {
+			accountID = "unknown"
+		}
+		accountTokenTotals[accountID] += log.TotalTokens
+		accountCostTotals[accountID] += log.TotalCost
+	}
+
+	return totalTokens, totalCost, map[string]any{
+		"source":               "relay_ledger",
+		"usage_log_count":      len(logs),
+		"account_token_totals": accountTokenTotals,
+		"account_cost_totals":  accountCostTotals,
 	}, nil
 }

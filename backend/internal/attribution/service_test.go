@@ -89,8 +89,9 @@ type usageCall struct {
 }
 
 type fakeRelayProvider struct {
-	logs  []relay.UsageLog
-	calls []usageCall
+	logs                         []relay.UsageLog
+	calls                        []usageCall
+	listUsageLogsByAPIKeyExactFn func(ctx context.Context, apiKeyID int64, from, to time.Time) ([]relay.UsageLog, error)
 }
 
 func (f *fakeRelayProvider) Ping(ctx context.Context) error { return nil }
@@ -127,6 +128,9 @@ func (f *fakeRelayProvider) CreateUserAPIKey(ctx context.Context, userID int64, 
 }
 func (f *fakeRelayProvider) RevokeUserAPIKey(ctx context.Context, keyID int64) error { return nil }
 func (f *fakeRelayProvider) ListUsageLogsByAPIKeyExact(ctx context.Context, apiKeyID int64, from, to time.Time) ([]relay.UsageLog, error) {
+	if f.listUsageLogsByAPIKeyExactFn != nil {
+		return f.listUsageLogsByAPIKeyExactFn(ctx, apiKeyID, from, to)
+	}
 	f.calls = append(f.calls, usageCall{APIKeyID: apiKeyID, From: from, To: to})
 	return f.logs, nil
 }
@@ -372,5 +376,72 @@ func TestSettlePR_UsesRewriteHistoryToMatchCheckpoint(t *testing.T) {
 	run := client.PrAttributionRun.GetX(ctx, *updatedPR.LastAttributionRunID)
 	if run.ValidationSummary["confidence"] != "medium" {
 		t.Fatalf("run validation confidence = %v, want medium", run.ValidationSummary["confidence"])
+	}
+}
+
+func TestSettlePR_PrefersSessionUsageEventsOverRelayLedger(t *testing.T) {
+	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	defer client.Close()
+	ctx := context.Background()
+
+	repo, pr, sess := testRepoPRSession(t, client, 111)
+	t1 := sess.StartedAt.Add(20 * time.Minute)
+	t2 := t1.Add(20 * time.Minute)
+
+	client.CommitCheckpoint.Create().
+		SetEventID("cp-local-1").
+		SetSessionID(sess.ID).
+		SetWorkspaceID("ws-local").
+		SetRepoConfigID(repo.ID).
+		SetBindingSource(commitcheckpoint.BindingSourceMarker).
+		SetCommitSha("base-local").
+		SetParentShas([]string{"p0"}).
+		SetCapturedAt(t1).
+		SaveX(ctx)
+	client.CommitCheckpoint.Create().
+		SetEventID("cp-local-2").
+		SetSessionID(sess.ID).
+		SetWorkspaceID("ws-local").
+		SetRepoConfigID(repo.ID).
+		SetBindingSource(commitcheckpoint.BindingSourceMarker).
+		SetCommitSha("pr-local").
+		SetParentShas([]string{"base-local"}).
+		SetCapturedAt(t2).
+		SaveX(ctx)
+
+	client.SessionUsageEvent.Create().
+		SetEventID("usage-local-1").
+		SetSessionID(sess.ID).
+		SetWorkspaceID("ws-local").
+		SetRequestID("req-local-1").
+		SetProviderName("codex").
+		SetModel("gpt-5").
+		SetStartedAt(t1.Add(1 * time.Minute)).
+		SetFinishedAt(t1.Add(2 * time.Minute)).
+		SetInputTokens(100).
+		SetOutputTokens(40).
+		SetTotalTokens(140).
+		SetStatus("completed").
+		SetRawMetadata(map[string]interface{}{"source": "test"}).
+		SaveX(ctx)
+
+	fakeRelay := &fakeRelayProvider{
+		listUsageLogsByAPIKeyExactFn: func(ctx context.Context, apiKeyID int64, from, to time.Time) ([]relay.UsageLog, error) {
+			panic("relay usage logs fallback should not be called when local usage exists")
+		},
+	}
+	fakeProvider := &fakeSCMProvider{
+		listPRCommitsFn: func(ctx context.Context, repoFullName string, prID int) ([]string, error) {
+			return []string{"pr-local"}, nil
+		},
+	}
+
+	svc := NewService(client, fakeRelay)
+	result, err := svc.Settle(ctx, fakeProvider, pr, "alice")
+	if err != nil {
+		t.Fatalf("Settle() error = %v", err)
+	}
+	if result.PrimaryTokenCount != 140 {
+		t.Fatalf("primary_token_count = %d, want 140", result.PrimaryTokenCount)
 	}
 }

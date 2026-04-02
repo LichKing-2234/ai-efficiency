@@ -9,6 +9,8 @@ import (
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/session"
+	"github.com/ai-efficiency/backend/ent/sessionevent"
+	"github.com/ai-efficiency/backend/ent/sessionusageevent"
 	"github.com/ai-efficiency/backend/ent/sessionworkspace"
 	"github.com/ai-efficiency/backend/internal/auth"
 	"github.com/ai-efficiency/backend/internal/pkg"
@@ -283,6 +285,14 @@ func (h *SessionHandler) Get(c *gin.Context) {
 		WithCommitCheckpoints(func(q *ent.CommitCheckpointQuery) {
 			q.Order(ent.Desc(commitcheckpoint.FieldCapturedAt)).
 				Limit(50)
+		}).
+		WithSessionUsageEvents(func(q *ent.SessionUsageEventQuery) {
+			q.Order(ent.Desc(sessionusageevent.FieldStartedAt)).
+				Limit(100)
+		}).
+		WithSessionEvents(func(q *ent.SessionEventQuery) {
+			q.Order(ent.Desc(sessionevent.FieldCapturedAt)).
+				Limit(100)
 		}).
 		Only(c.Request.Context())
 	if err != nil {
