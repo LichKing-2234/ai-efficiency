@@ -12,6 +12,7 @@ import (
 	"github.com/ai-efficiency/ae-cli/internal/session"
 	"github.com/ai-efficiency/ae-cli/internal/shell"
 	"github.com/ai-efficiency/ae-cli/internal/tmux"
+	"github.com/ai-efficiency/ae-cli/internal/toolconfig"
 	"github.com/spf13/cobra"
 )
 
@@ -24,6 +25,35 @@ type shellRunner interface {
 // interactive shell implementation.
 var newShellRunner = func(cfg *config.Config, state *session.State) shellRunner {
 	return shell.New(cfg, state)
+}
+
+func applyRuntimeEnvironment(tmuxSession string, rt *session.RuntimeBundle) {
+	if rt == nil {
+		return
+	}
+
+	env := map[string]string{}
+	for k, v := range rt.EnvBundle {
+		env[k] = v
+	}
+
+	if rt.Proxy != nil {
+		for k, v := range toolconfig.BuildClaudeEnv(toolconfig.ClaudeEnv{
+			BaseURL: "http://" + rt.Proxy.ListenAddr + "/anthropic",
+			Token:   rt.Proxy.AuthToken,
+		}) {
+			if _, exists := env[k]; !exists {
+				env[k] = v
+			}
+		}
+	}
+
+	for k, v := range env {
+		_ = os.Setenv(k, v)
+	}
+	if tmuxSession != "" {
+		_ = tmux.SetEnvironment(tmuxSession, env)
+	}
 }
 
 var shellCmd = &cobra.Command{
@@ -44,20 +74,9 @@ var shellCmd = &cobra.Command{
 		if bound, err := session.ResolveBoundState(""); err != nil {
 			return fmt.Errorf("resolving session binding: %w", err)
 		} else if bound != nil && bound.Runtime != nil {
-			for k, v := range bound.Runtime.EnvBundle {
-				_ = os.Setenv(k, v)
-			}
-			if state.TmuxSession != "" {
-				// Ensure panes launched from inside the shell inherit the session env.
-				_ = tmux.SetEnvironment(state.TmuxSession, bound.Runtime.EnvBundle)
-			}
+			applyRuntimeEnvironment(state.TmuxSession, bound.Runtime)
 		} else if rt, err := session.ReadRuntimeBundle(state.ID); err == nil {
-			for k, v := range rt.EnvBundle {
-				_ = os.Setenv(k, v)
-			}
-			if state.TmuxSession != "" {
-				_ = tmux.SetEnvironment(state.TmuxSession, rt.EnvBundle)
-			}
+			applyRuntimeEnvironment(state.TmuxSession, rt)
 		} else if !os.IsNotExist(err) {
 			return fmt.Errorf("loading runtime bundle: %w", err)
 		}

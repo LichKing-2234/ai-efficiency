@@ -16,6 +16,7 @@ import (
 	"github.com/ai-efficiency/ae-cli/config"
 	"github.com/ai-efficiency/ae-cli/internal/client"
 	"github.com/ai-efficiency/ae-cli/internal/proxy"
+	"github.com/ai-efficiency/ae-cli/internal/toolconfig"
 )
 
 type State struct {
@@ -124,6 +125,19 @@ func (m *Manager) Start() (*State, error) {
 	}
 	if err := m.startLocalProxy(rt); err != nil {
 		return nil, rollback(fmt.Errorf("starting local proxy: %w", err))
+	}
+	if err := toolconfig.WriteCodexSessionConfig(gc.workspaceRoot, toolconfig.CodexConfig{
+		BaseURL:  "http://" + rt.Proxy.ListenAddr + "/openai/v1",
+		TokenEnv: "AE_LOCAL_PROXY_TOKEN",
+		Model:    "gpt-5.4",
+	}); err != nil {
+		return nil, rollback(fmt.Errorf("writing codex config: %w", err))
+	}
+	for k, v := range toolconfig.BuildClaudeEnv(toolconfig.ClaudeEnv{
+		BaseURL: "http://" + rt.Proxy.ListenAddr + "/anthropic",
+		Token:   rt.Proxy.AuthToken,
+	}) {
+		rt.EnvBundle[k] = v
 	}
 	if err := WriteRuntimeBundle(rt); err != nil {
 		return nil, rollback(fmt.Errorf("writing runtime bundle: %w", err))
