@@ -12,6 +12,8 @@ import (
 )
 
 type UsageEvent struct {
+	SessionID    string
+	WorkspaceID  string
 	RequestID    string
 	ProviderName string
 	Model        string
@@ -20,6 +22,8 @@ type UsageEvent struct {
 	InputTokens  int
 	OutputTokens int
 	TotalTokens  int
+	HTTPStatus   int
+	Error        string
 	Status       string
 }
 
@@ -83,6 +87,16 @@ func (s *Server) handleOpenAIChatCompletions(w http.ResponseWriter, r *http.Requ
 	upstreamURL := strings.TrimRight(s.cfg.ProviderURL, "/") + "/chat/completions"
 	upstreamReq, err := http.NewRequestWithContext(r.Context(), http.MethodPost, upstreamURL, r.Body)
 	if err != nil {
+		s.recorder.RecordUsage(UsageEvent{
+			SessionID:    s.cfg.SessionID,
+			RequestID:    reqID,
+			ProviderName: "sub2api",
+			StartedAt:    startedAt,
+			FinishedAt:   time.Now().UTC(),
+			HTTPStatus:   http.StatusBadGateway,
+			Error:        err.Error(),
+			Status:       "proxy_request_build_failed",
+		})
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
@@ -91,14 +105,43 @@ func (s *Server) handleOpenAIChatCompletions(w http.ResponseWriter, r *http.Requ
 
 	resp, err := s.httpClient.Do(upstreamReq)
 	if err != nil {
+		s.recorder.RecordUsage(UsageEvent{
+			SessionID:    s.cfg.SessionID,
+			RequestID:    reqID,
+			ProviderName: "sub2api",
+			StartedAt:    startedAt,
+			FinishedAt:   time.Now().UTC(),
+			HTTPStatus:   http.StatusBadGateway,
+			Error:        err.Error(),
+			Status:       "upstream_transport_error",
+		})
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
 	defer resp.Body.Close()
 
-	body, _ := io.ReadAll(resp.Body)
+	body, readErr := io.ReadAll(resp.Body)
+	if readErr != nil {
+		s.recorder.RecordUsage(UsageEvent{
+			SessionID:    s.cfg.SessionID,
+			RequestID:    reqID,
+			ProviderName: "sub2api",
+			StartedAt:    startedAt,
+			FinishedAt:   time.Now().UTC(),
+			HTTPStatus:   resp.StatusCode,
+			Error:        readErr.Error(),
+			Status:       "upstream_read_error",
+		})
+		http.Error(w, readErr.Error(), http.StatusBadGateway)
+		return
+	}
 	usage := parseOpenAIUsage(body)
+	status := "completed"
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		status = "upstream_http_error"
+	}
 	s.recorder.RecordUsage(UsageEvent{
+		SessionID:    s.cfg.SessionID,
 		RequestID:    reqID,
 		ProviderName: "sub2api",
 		Model:        usage.Model,
@@ -107,7 +150,8 @@ func (s *Server) handleOpenAIChatCompletions(w http.ResponseWriter, r *http.Requ
 		InputTokens:  usage.InputTokens,
 		OutputTokens: usage.OutputTokens,
 		TotalTokens:  usage.TotalTokens,
-		Status:       "completed",
+		HTTPStatus:   resp.StatusCode,
+		Status:       status,
 	})
 
 	copyResponse(w, resp.StatusCode, resp.Header, body)
