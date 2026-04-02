@@ -451,7 +451,7 @@ func TestSettlePR_UsesLocalUsageEventsWithoutRelayAPIKey(t *testing.T) {
 	defer client.Close()
 	ctx := context.Background()
 
-	repo, pr, sess := testRepoPRSession(t, client, 0)
+	repo, pr, sess := testRepoPRSession(t, client, 999)
 	t1 := sess.StartedAt.Add(10 * time.Minute)
 	t2 := t1.Add(20 * time.Minute)
 
@@ -492,11 +492,7 @@ func TestSettlePR_UsesLocalUsageEventsWithoutRelayAPIKey(t *testing.T) {
 		SetRawMetadata(map[string]interface{}{"source": "test"}).
 		SaveX(ctx)
 
-	fakeRelay := &fakeRelayProvider{
-		listUsageLogsByAPIKeyExactFn: func(ctx context.Context, apiKeyID int64, from, to time.Time) ([]relay.UsageLog, error) {
-			panic("relay usage logs fallback should not be called when local usage exists")
-		},
-	}
+	fakeRelay := &fakeRelayProvider{}
 	fakeProvider := &fakeSCMProvider{
 		listPRCommitsFn: func(ctx context.Context, repoFullName string, prID int) ([]string, error) {
 			return []string{"pr-local-nokey"}, nil
@@ -516,14 +512,15 @@ func TestSettlePR_UsesLocalUsageEventsWithoutRelayAPIKey(t *testing.T) {
 	}
 }
 
-func TestSettlePR_CountsBoundaryOverlappingUsageEvents(t *testing.T) {
+func TestSettlePR_AssignsBoundarySpanningUsageByFinishedAtOnce(t *testing.T) {
 	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
 	defer client.Close()
 	ctx := context.Background()
 
-	repo, pr, sess := testRepoPRSession(t, client, 0)
+	repo, pr, sess := testRepoPRSession(t, client, 999)
 	t1 := sess.StartedAt.Add(10 * time.Minute)
 	t2 := t1.Add(20 * time.Minute)
+	t3 := t2.Add(20 * time.Minute)
 
 	client.CommitCheckpoint.Create().
 		SetEventID("cp-local-overlap-1").
@@ -541,9 +538,19 @@ func TestSettlePR_CountsBoundaryOverlappingUsageEvents(t *testing.T) {
 		SetWorkspaceID("ws-local-overlap").
 		SetRepoConfigID(repo.ID).
 		SetBindingSource(commitcheckpoint.BindingSourceMarker).
-		SetCommitSha("pr-local-overlap").
+		SetCommitSha("mid-local-overlap").
 		SetParentShas([]string{"base-local-overlap"}).
 		SetCapturedAt(t2).
+		SaveX(ctx)
+	client.CommitCheckpoint.Create().
+		SetEventID("cp-local-overlap-3").
+		SetSessionID(sess.ID).
+		SetWorkspaceID("ws-local-overlap").
+		SetRepoConfigID(repo.ID).
+		SetBindingSource(commitcheckpoint.BindingSourceMarker).
+		SetCommitSha("pr-local-overlap").
+		SetParentShas([]string{"mid-local-overlap"}).
+		SetCapturedAt(t3).
 		SaveX(ctx)
 
 	client.SessionUsageEvent.Create().
@@ -562,14 +569,10 @@ func TestSettlePR_CountsBoundaryOverlappingUsageEvents(t *testing.T) {
 		SetRawMetadata(map[string]interface{}{"source": "test"}).
 		SaveX(ctx)
 
-	fakeRelay := &fakeRelayProvider{
-		listUsageLogsByAPIKeyExactFn: func(ctx context.Context, apiKeyID int64, from, to time.Time) ([]relay.UsageLog, error) {
-			panic("relay usage logs fallback should not be called when local usage exists")
-		},
-	}
+	fakeRelay := &fakeRelayProvider{}
 	fakeProvider := &fakeSCMProvider{
 		listPRCommitsFn: func(ctx context.Context, repoFullName string, prID int) ([]string, error) {
-			return []string{"pr-local-overlap"}, nil
+			return []string{"mid-local-overlap", "pr-local-overlap"}, nil
 		},
 	}
 

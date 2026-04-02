@@ -421,8 +421,8 @@ func (s *Service) loadIntervalUsage(
 	events, err := s.entClient.SessionUsageEvent.Query().
 		Where(
 			sessionusageevent.SessionIDEQ(sessionID),
-			sessionusageevent.StartedAtLT(to),
 			sessionusageevent.FinishedAtGT(from),
+			sessionusageevent.FinishedAtLTE(to),
 			sessionusageevent.StatusEQ("completed"),
 		).
 		All(ctx)
