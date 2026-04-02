@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -26,9 +27,16 @@ type UsageRecorder interface {
 	RecordUsage(UsageEvent)
 }
 
-type noopUsageRecorder struct{}
+type inMemoryUsageRecorder struct {
+	mu     sync.Mutex
+	events []UsageEvent
+}
 
-func (noopUsageRecorder) RecordUsage(UsageEvent) {}
+func (r *inMemoryUsageRecorder) RecordUsage(event UsageEvent) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.events = append(r.events, event)
+}
 
 type Server struct {
 	cfg        RuntimeConfig
@@ -38,7 +46,8 @@ type Server struct {
 
 func NewServer(cfg RuntimeConfig, recorder UsageRecorder, httpClient *http.Client) *Server {
 	if recorder == nil {
-		recorder = noopUsageRecorder{}
+		// Task 4 keeps usage local-only for now: runtime requests are recorded in memory.
+		recorder = &inMemoryUsageRecorder{}
 	}
 	if httpClient == nil {
 		httpClient = &http.Client{Timeout: 30 * time.Second}
@@ -60,6 +69,11 @@ type openAIUsage struct {
 func (s *Server) handleOpenAIChatCompletions(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	expectedAuth := "Bearer " + strings.TrimSpace(s.cfg.AuthToken)
+	if strings.TrimSpace(s.cfg.AuthToken) == "" || strings.TrimSpace(r.Header.Get("Authorization")) != expectedAuth {
+		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
 

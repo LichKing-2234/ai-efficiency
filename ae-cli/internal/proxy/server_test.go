@@ -173,18 +173,52 @@ func TestSpawnForcedChildProcessUsesConfigHandoffAndCleansTempFiles(t *testing.T
 func TestProxyOpenAIResponses_ForwardsRequestAndRecordsUsage(t *testing.T) {
 	srv, recorder := startProxyWithFakeOpenAIUpstream(t)
 
-	resp, err := http.Post(
+	req, err := http.NewRequest(
+		http.MethodPost,
 		"http://"+srv.ListenAddr+"/openai/v1/chat/completions",
-		"application/json",
 		strings.NewReader(`{"model":"gpt-5.4","messages":[{"role":"user","content":"hi"}]}`),
 	)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer tok-openai")
+
+	resp, err := (&http.Client{Timeout: 1 * time.Second}).Do(req)
+	if err != nil {
+		t.Fatalf("post proxy: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+
+	if recorder.LastUsage.TotalTokens != 140 {
+		t.Fatalf("total_tokens = %d, want 140", recorder.LastUsage.TotalTokens)
+	}
+}
+
+func TestProxyOpenAIResponses_RejectsUnauthorizedRequest(t *testing.T) {
+	srv, _ := startProxyWithFakeOpenAIUpstream(t)
+
+	req, err := http.NewRequest(
+		http.MethodPost,
+		"http://"+srv.ListenAddr+"/openai/v1/chat/completions",
+		strings.NewReader(`{"model":"gpt-5.4","messages":[{"role":"user","content":"hi"}]}`),
+	)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := (&http.Client{Timeout: 1 * time.Second}).Do(req)
 	if err != nil {
 		t.Fatalf("post proxy: %v", err)
 	}
 	defer resp.Body.Close()
 
-	if recorder.LastUsage.TotalTokens != 140 {
-		t.Fatalf("total_tokens = %d, want 140", recorder.LastUsage.TotalTokens)
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusUnauthorized)
 	}
 }
 
