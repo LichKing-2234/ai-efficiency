@@ -349,6 +349,95 @@ func TestProxyOpenAIResponses_TransportErrorRecordsFailureUsage(t *testing.T) {
 	}
 }
 
+func TestProxyAnthropicMessages_ForwardsRequestAndRecordsUsage(t *testing.T) {
+	fx := startProxyWithFakeAnthropicUpstream(t)
+	srv := fx.Server
+
+	reqBody := `{"model":"claude-sonnet-4-20250514","messages":[{"role":"user","content":"hello"}],"max_tokens":64}`
+	req, err := http.NewRequest(
+		http.MethodPost,
+		"http://"+srv.ListenAddr+"/anthropic/v1/messages",
+		strings.NewReader(reqBody),
+	)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-api-key", "tok-anthropic")
+	req.Header.Set("anthropic-version", "2023-06-01")
+
+	resp, err := (&http.Client{Timeout: 1 * time.Second}).Do(req)
+	if err != nil {
+		t.Fatalf("post proxy: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+
+	if got := fx.Upstream.Hits(); got != 1 {
+		t.Fatalf("upstream hits = %d, want 1", got)
+	}
+	if got := fx.Upstream.LastAPIKey(); got != "provider-key" {
+		t.Fatalf("upstream x-api-key = %q, want %q", got, "provider-key")
+	}
+	if got := fx.Upstream.LastAnthropicVersion(); got != "2023-06-01" {
+		t.Fatalf("upstream anthropic-version = %q, want %q", got, "2023-06-01")
+	}
+
+	lastUsage, ok := fx.Recorder.LastEvent()
+	if !ok {
+		t.Fatal("expected usage event")
+	}
+	if lastUsage.TotalTokens != 210 {
+		t.Fatalf("total_tokens = %d, want 210", lastUsage.TotalTokens)
+	}
+	if lastUsage.Status != "completed" {
+		t.Fatalf("status = %q, want %q", lastUsage.Status, "completed")
+	}
+	if lastUsage.SessionID != "sess-anthropic" {
+		t.Fatalf("session_id = %q, want %q", lastUsage.SessionID, "sess-anthropic")
+	}
+}
+
+func TestProxyAnthropicMessages_Upstream5xxRecordsFailureUsage(t *testing.T) {
+	fx := startProxyWithFakeAnthropicUpstream(t)
+	fx.Upstream.SetResponse(
+		http.StatusBadGateway,
+		`{"type":"error","error":{"type":"api_error","message":"upstream failed"}}`,
+	)
+	srv := fx.Server
+
+	req, err := http.NewRequest(
+		http.MethodPost,
+		"http://"+srv.ListenAddr+"/anthropic/v1/messages",
+		strings.NewReader(`{"model":"claude-sonnet-4-20250514","messages":[{"role":"user","content":"hello"}],"max_tokens":64}`),
+	)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-api-key", "tok-anthropic")
+	req.Header.Set("anthropic-version", "2023-06-01")
+
+	resp, err := (&http.Client{Timeout: 1 * time.Second}).Do(req)
+	if err != nil {
+		t.Fatalf("post proxy: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadGateway {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusBadGateway)
+	}
+
+	lastUsage, ok := fx.Recorder.LastEvent()
+	if !ok {
+		t.Fatal("expected usage event")
+	}
+	if lastUsage.Status == "completed" {
+		t.Fatalf("status = %q, want non-completed", lastUsage.Status)
+	}
+}
+
 type fakeOpenAIRecorder struct {
 	mu     sync.Mutex
 	events []UsageEvent
@@ -379,16 +468,20 @@ type fakeUpstream struct {
 	mu             sync.Mutex
 	hits           int
 	lastAuth       string
+	lastAPIKey     string
+	lastVersion    string
 	lastBody       string
 	responseStatus int
 	responseBody   string
 }
 
-func (u *fakeUpstream) Hit(auth, body string) {
+func (u *fakeUpstream) Hit(auth, apiKey, version, body string) {
 	u.mu.Lock()
 	defer u.mu.Unlock()
 	u.hits++
 	u.lastAuth = auth
+	u.lastAPIKey = apiKey
+	u.lastVersion = version
 	u.lastBody = body
 }
 
@@ -415,6 +508,18 @@ func (u *fakeUpstream) LastAuthorization() string {
 	u.mu.Lock()
 	defer u.mu.Unlock()
 	return u.lastAuth
+}
+
+func (u *fakeUpstream) LastAPIKey() string {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return u.lastAPIKey
+}
+
+func (u *fakeUpstream) LastAnthropicVersion() string {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return u.lastVersion
 }
 
 func (u *fakeUpstream) LastBody() string {
@@ -449,7 +554,12 @@ func startProxyWithFakeOpenAIUpstream(t *testing.T) openAIFixture {
 
 		body, _ := io.ReadAll(r.Body)
 		_ = r.Body.Close()
-		upstreamSpy.Hit(strings.TrimSpace(r.Header.Get("Authorization")), string(body))
+		upstreamSpy.Hit(
+			strings.TrimSpace(r.Header.Get("Authorization")),
+			strings.TrimSpace(r.Header.Get("x-api-key")),
+			strings.TrimSpace(r.Header.Get("anthropic-version")),
+			string(body),
+		)
 
 		status, respBody := upstreamSpy.CurrentResponse()
 		w.Header().Set("Content-Type", "application/json")
@@ -487,6 +597,81 @@ func startProxyWithFakeOpenAIUpstream(t *testing.T) openAIFixture {
 		})
 	})
 	return openAIFixture{
+		Server:   result,
+		Recorder: recorder,
+		Upstream: upstreamSpy,
+	}
+}
+
+type anthropicFixture struct {
+	Server   SpawnResult
+	Recorder *fakeOpenAIRecorder
+	Upstream *fakeUpstream
+}
+
+func startProxyWithFakeAnthropicUpstream(t *testing.T) anthropicFixture {
+	t.Helper()
+
+	recorder := &fakeOpenAIRecorder{}
+	upstreamSpy := &fakeUpstream{
+		responseStatus: http.StatusOK,
+		responseBody:   `{"id":"msg_1","type":"message","role":"assistant","model":"claude-sonnet-4-20250514","content":[{"type":"text","text":"hello"}],"stop_reason":"end_turn","usage":{"input_tokens":120,"output_tokens":90}}`,
+	}
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/messages" {
+			http.NotFound(w, r)
+			return
+		}
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+
+		body, _ := io.ReadAll(r.Body)
+		_ = r.Body.Close()
+		upstreamSpy.Hit(
+			strings.TrimSpace(r.Header.Get("Authorization")),
+			strings.TrimSpace(r.Header.Get("x-api-key")),
+			strings.TrimSpace(r.Header.Get("anthropic-version")),
+			string(body),
+		)
+
+		status, respBody := upstreamSpy.CurrentResponse()
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		_, _ = w.Write([]byte(respBody))
+	}))
+	t.Cleanup(upstream.Close)
+
+	origNewProxyServer := newProxyServer
+	newProxyServer = func(cfg RuntimeConfig) *Server {
+		return NewServer(cfg, recorder, nil)
+	}
+	t.Cleanup(func() {
+		newProxyServer = origNewProxyServer
+	})
+
+	cfg := RuntimeConfig{
+		SessionID:   "sess-anthropic",
+		ListenAddr:  reserveListenAddrForTest(t),
+		AuthToken:   "tok-anthropic",
+		ProviderURL: upstream.URL,
+		ProviderKey: "provider-key",
+	}
+
+	result, err := Spawn(cfg)
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = Stop(StopRequest{
+			PID:        result.PID,
+			ListenAddr: result.ListenAddr,
+			AuthToken:  cfg.AuthToken,
+			ConfigPath: result.ConfigPath,
+		})
+	})
+	return anthropicFixture{
 		Server:   result,
 		Recorder: recorder,
 		Upstream: upstreamSpy,
