@@ -39,6 +39,9 @@ var (
 	inProcessMu    sync.Mutex
 	inProcessNext  = 100000
 	inProcessProxy = map[int]func(){}
+	newProxyServer = func(cfg RuntimeConfig) *Server {
+		return NewServer(cfg, nil, nil)
+	}
 )
 
 func Spawn(cfg RuntimeConfig) (SpawnResult, error) {
@@ -205,6 +208,7 @@ func Serve(ctx context.Context, cfg RuntimeConfig) error {
 	}
 
 	internalToken := strings.TrimSpace(cfg.AuthToken)
+	proxyServer := newProxyServer(cfg)
 	stopCh := make(chan struct{})
 	var stopOnce sync.Once
 
@@ -232,6 +236,7 @@ func Serve(ctx context.Context, cfg RuntimeConfig) error {
 		})
 		w.WriteHeader(http.StatusAccepted)
 	})
+	mux.HandleFunc("/openai/v1/chat/completions", proxyServer.handleOpenAIChatCompletions)
 
 	srv := &http.Server{
 		Addr:              cfg.ListenAddr,

@@ -3,10 +3,14 @@ package proxy
 import (
 	"encoding/json"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -164,4 +168,98 @@ func TestSpawnForcedChildProcessUsesConfigHandoffAndCleansTempFiles(t *testing.T
 	if len(matches) != 0 {
 		t.Fatalf("expected no proxy temp config dirs after stop, found %d", len(matches))
 	}
+}
+
+func TestProxyOpenAIResponses_ForwardsRequestAndRecordsUsage(t *testing.T) {
+	srv, recorder := startProxyWithFakeOpenAIUpstream(t)
+
+	resp, err := http.Post(
+		"http://"+srv.ListenAddr+"/openai/v1/chat/completions",
+		"application/json",
+		strings.NewReader(`{"model":"gpt-5.4","messages":[{"role":"user","content":"hi"}]}`),
+	)
+	if err != nil {
+		t.Fatalf("post proxy: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if recorder.LastUsage.TotalTokens != 140 {
+		t.Fatalf("total_tokens = %d, want 140", recorder.LastUsage.TotalTokens)
+	}
+}
+
+type fakeOpenAIRecorder struct {
+	mu        sync.Mutex
+	LastUsage UsageEvent
+}
+
+func (r *fakeOpenAIRecorder) RecordUsage(u UsageEvent) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.LastUsage = u
+}
+
+func startProxyWithFakeOpenAIUpstream(t *testing.T) (SpawnResult, *fakeOpenAIRecorder) {
+	t.Helper()
+
+	recorder := &fakeOpenAIRecorder{}
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/chat/completions" {
+			http.NotFound(w, r)
+			return
+		}
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+
+		_, _ = io.Copy(io.Discard, r.Body)
+		_ = r.Body.Close()
+
+		body := []byte(`{"id":"chatcmpl-1","model":"gpt-5.4","usage":{"prompt_tokens":70,"completion_tokens":70,"total_tokens":140},"choices":[{"index":0,"message":{"role":"assistant","content":"hello"},"finish_reason":"stop"}]}`)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(body)
+	}))
+	t.Cleanup(upstream.Close)
+
+	origNewProxyServer := newProxyServer
+	newProxyServer = func(cfg RuntimeConfig) *Server {
+		return NewServer(cfg, recorder, nil)
+	}
+	t.Cleanup(func() {
+		newProxyServer = origNewProxyServer
+	})
+
+	cfg := RuntimeConfig{
+		SessionID:   "sess-openai",
+		ListenAddr:  reserveListenAddrForTest(t),
+		AuthToken:   "tok-openai",
+		ProviderURL: upstream.URL,
+		ProviderKey: "provider-key",
+	}
+
+	result, err := Spawn(cfg)
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = Stop(StopRequest{
+			PID:        result.PID,
+			ListenAddr: result.ListenAddr,
+			AuthToken:  cfg.AuthToken,
+			ConfigPath: result.ConfigPath,
+		})
+	})
+	return result, recorder
+}
+
+func reserveListenAddrForTest(t *testing.T) string {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer ln.Close()
+	return ln.Addr().String()
 }
