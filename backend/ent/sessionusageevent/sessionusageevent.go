@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"entgo.io/ent/dialect/sql"
+	"entgo.io/ent/dialect/sql/sqlgraph"
 )
 
 const (
@@ -41,8 +42,17 @@ const (
 	FieldRawMetadata = "raw_metadata"
 	// FieldCreatedAt holds the string denoting the created_at field in the database.
 	FieldCreatedAt = "created_at"
+	// EdgeSession holds the string denoting the session edge name in mutations.
+	EdgeSession = "session"
 	// Table holds the table name of the sessionusageevent in the database.
 	Table = "session_usage_events"
+	// SessionTable is the table that holds the session relation/edge.
+	SessionTable = "session_usage_events"
+	// SessionInverseTable is the table name for the Session entity.
+	// It exists in this package in order to avoid circular dependency with the "session" package.
+	SessionInverseTable = "sessions"
+	// SessionColumn is the table column denoting the session relation/edge.
+	SessionColumn = "session_id"
 )
 
 // Columns holds all SQL columns for sessionusageevent fields.
@@ -168,4 +178,18 @@ func ByStatus(opts ...sql.OrderTermOption) OrderOption {
 // ByCreatedAt orders the results by the created_at field.
 func ByCreatedAt(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldCreatedAt, opts...).ToFunc()
+}
+
+// BySessionField orders the results by session field.
+func BySessionField(field string, opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newSessionStep(), sql.OrderByField(field, opts...))
+	}
+}
+func newSessionStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(SessionInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.M2O, true, SessionTable, SessionColumn),
+	)
 }

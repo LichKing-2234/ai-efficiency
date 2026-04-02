@@ -12,6 +12,7 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/ai-efficiency/backend/ent/predicate"
+	"github.com/ai-efficiency/backend/ent/session"
 	"github.com/ai-efficiency/backend/ent/sessionusageevent"
 	"github.com/google/uuid"
 )
@@ -244,9 +245,20 @@ func (sueu *SessionUsageEventUpdate) SetNillableCreatedAt(t *time.Time) *Session
 	return sueu
 }
 
+// SetSession sets the "session" edge to the Session entity.
+func (sueu *SessionUsageEventUpdate) SetSession(s *Session) *SessionUsageEventUpdate {
+	return sueu.SetSessionID(s.ID)
+}
+
 // Mutation returns the SessionUsageEventMutation object of the builder.
 func (sueu *SessionUsageEventUpdate) Mutation() *SessionUsageEventMutation {
 	return sueu.mutation
+}
+
+// ClearSession clears the "session" edge to the Session entity.
+func (sueu *SessionUsageEventUpdate) ClearSession() *SessionUsageEventUpdate {
+	sueu.mutation.ClearSession()
+	return sueu
 }
 
 // Save executes the query and returns the number of nodes affected by the update operation.
@@ -308,6 +320,9 @@ func (sueu *SessionUsageEventUpdate) check() error {
 			return &ValidationError{Name: "status", err: fmt.Errorf(`ent: validator failed for field "SessionUsageEvent.status": %w`, err)}
 		}
 	}
+	if sueu.mutation.SessionCleared() && len(sueu.mutation.SessionIDs()) > 0 {
+		return errors.New(`ent: clearing a required unique edge "SessionUsageEvent.session"`)
+	}
 	return nil
 }
 
@@ -325,9 +340,6 @@ func (sueu *SessionUsageEventUpdate) sqlSave(ctx context.Context) (n int, err er
 	}
 	if value, ok := sueu.mutation.EventID(); ok {
 		_spec.SetField(sessionusageevent.FieldEventID, field.TypeString, value)
-	}
-	if value, ok := sueu.mutation.SessionID(); ok {
-		_spec.SetField(sessionusageevent.FieldSessionID, field.TypeUUID, value)
 	}
 	if value, ok := sueu.mutation.WorkspaceID(); ok {
 		_spec.SetField(sessionusageevent.FieldWorkspaceID, field.TypeString, value)
@@ -376,6 +388,35 @@ func (sueu *SessionUsageEventUpdate) sqlSave(ctx context.Context) (n int, err er
 	}
 	if value, ok := sueu.mutation.CreatedAt(); ok {
 		_spec.SetField(sessionusageevent.FieldCreatedAt, field.TypeTime, value)
+	}
+	if sueu.mutation.SessionCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   sessionusageevent.SessionTable,
+			Columns: []string{sessionusageevent.SessionColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(session.FieldID, field.TypeUUID),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := sueu.mutation.SessionIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   sessionusageevent.SessionTable,
+			Columns: []string{sessionusageevent.SessionColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(session.FieldID, field.TypeUUID),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
 	if n, err = sqlgraph.UpdateNodes(ctx, sueu.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
@@ -612,9 +653,20 @@ func (sueuo *SessionUsageEventUpdateOne) SetNillableCreatedAt(t *time.Time) *Ses
 	return sueuo
 }
 
+// SetSession sets the "session" edge to the Session entity.
+func (sueuo *SessionUsageEventUpdateOne) SetSession(s *Session) *SessionUsageEventUpdateOne {
+	return sueuo.SetSessionID(s.ID)
+}
+
 // Mutation returns the SessionUsageEventMutation object of the builder.
 func (sueuo *SessionUsageEventUpdateOne) Mutation() *SessionUsageEventMutation {
 	return sueuo.mutation
+}
+
+// ClearSession clears the "session" edge to the Session entity.
+func (sueuo *SessionUsageEventUpdateOne) ClearSession() *SessionUsageEventUpdateOne {
+	sueuo.mutation.ClearSession()
+	return sueuo
 }
 
 // Where appends a list predicates to the SessionUsageEventUpdate builder.
@@ -689,6 +741,9 @@ func (sueuo *SessionUsageEventUpdateOne) check() error {
 			return &ValidationError{Name: "status", err: fmt.Errorf(`ent: validator failed for field "SessionUsageEvent.status": %w`, err)}
 		}
 	}
+	if sueuo.mutation.SessionCleared() && len(sueuo.mutation.SessionIDs()) > 0 {
+		return errors.New(`ent: clearing a required unique edge "SessionUsageEvent.session"`)
+	}
 	return nil
 }
 
@@ -723,9 +778,6 @@ func (sueuo *SessionUsageEventUpdateOne) sqlSave(ctx context.Context) (_node *Se
 	}
 	if value, ok := sueuo.mutation.EventID(); ok {
 		_spec.SetField(sessionusageevent.FieldEventID, field.TypeString, value)
-	}
-	if value, ok := sueuo.mutation.SessionID(); ok {
-		_spec.SetField(sessionusageevent.FieldSessionID, field.TypeUUID, value)
 	}
 	if value, ok := sueuo.mutation.WorkspaceID(); ok {
 		_spec.SetField(sessionusageevent.FieldWorkspaceID, field.TypeString, value)
@@ -774,6 +826,35 @@ func (sueuo *SessionUsageEventUpdateOne) sqlSave(ctx context.Context) (_node *Se
 	}
 	if value, ok := sueuo.mutation.CreatedAt(); ok {
 		_spec.SetField(sessionusageevent.FieldCreatedAt, field.TypeTime, value)
+	}
+	if sueuo.mutation.SessionCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   sessionusageevent.SessionTable,
+			Columns: []string{sessionusageevent.SessionColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(session.FieldID, field.TypeUUID),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := sueuo.mutation.SessionIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   sessionusageevent.SessionTable,
+			Columns: []string{sessionusageevent.SessionColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(session.FieldID, field.TypeUUID),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
 	_node = &SessionUsageEvent{config: sueuo.config}
 	_spec.Assign = _node.assignValues

@@ -15,6 +15,8 @@ import (
 	"github.com/ai-efficiency/backend/ent/commitrewrite"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/session"
+	"github.com/ai-efficiency/backend/ent/sessionevent"
+	"github.com/ai-efficiency/backend/ent/sessionusageevent"
 	"github.com/ai-efficiency/backend/ent/sessionworkspace"
 	"github.com/ai-efficiency/backend/ent/user"
 	"github.com/google/uuid"
@@ -301,6 +303,36 @@ func (sc *SessionCreate) AddAgentMetadataEvents(a ...*AgentMetadataEvent) *Sessi
 	return sc.AddAgentMetadataEventIDs(ids...)
 }
 
+// AddSessionUsageEventIDs adds the "session_usage_events" edge to the SessionUsageEvent entity by IDs.
+func (sc *SessionCreate) AddSessionUsageEventIDs(ids ...int) *SessionCreate {
+	sc.mutation.AddSessionUsageEventIDs(ids...)
+	return sc
+}
+
+// AddSessionUsageEvents adds the "session_usage_events" edges to the SessionUsageEvent entity.
+func (sc *SessionCreate) AddSessionUsageEvents(s ...*SessionUsageEvent) *SessionCreate {
+	ids := make([]int, len(s))
+	for i := range s {
+		ids[i] = s[i].ID
+	}
+	return sc.AddSessionUsageEventIDs(ids...)
+}
+
+// AddSessionEventIDs adds the "session_events" edge to the SessionEvent entity by IDs.
+func (sc *SessionCreate) AddSessionEventIDs(ids ...int) *SessionCreate {
+	sc.mutation.AddSessionEventIDs(ids...)
+	return sc
+}
+
+// AddSessionEvents adds the "session_events" edges to the SessionEvent entity.
+func (sc *SessionCreate) AddSessionEvents(s ...*SessionEvent) *SessionCreate {
+	ids := make([]int, len(s))
+	for i := range s {
+		ids[i] = s[i].ID
+	}
+	return sc.AddSessionEventIDs(ids...)
+}
+
 // AddCommitCheckpointIDs adds the "commit_checkpoints" edge to the CommitCheckpoint entity by IDs.
 func (sc *SessionCreate) AddCommitCheckpointIDs(ids ...int) *SessionCreate {
 	sc.mutation.AddCommitCheckpointIDs(ids...)
@@ -580,6 +612,38 @@ func (sc *SessionCreate) createSpec() (*Session, *sqlgraph.CreateSpec) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(agentmetadataevent.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := sc.mutation.SessionUsageEventsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   session.SessionUsageEventsTable,
+			Columns: []string{session.SessionUsageEventsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(sessionusageevent.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := sc.mutation.SessionEventsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   session.SessionEventsTable,
+			Columns: []string{session.SessionEventsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(sessionevent.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {

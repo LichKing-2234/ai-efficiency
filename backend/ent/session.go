@@ -71,13 +71,17 @@ type SessionEdges struct {
 	SessionWorkspaces []*SessionWorkspace `json:"session_workspaces,omitempty"`
 	// AgentMetadataEvents holds the value of the agent_metadata_events edge.
 	AgentMetadataEvents []*AgentMetadataEvent `json:"agent_metadata_events,omitempty"`
+	// SessionUsageEvents holds the value of the session_usage_events edge.
+	SessionUsageEvents []*SessionUsageEvent `json:"session_usage_events,omitempty"`
+	// SessionEvents holds the value of the session_events edge.
+	SessionEvents []*SessionEvent `json:"session_events,omitempty"`
 	// CommitCheckpoints holds the value of the commit_checkpoints edge.
 	CommitCheckpoints []*CommitCheckpoint `json:"commit_checkpoints,omitempty"`
 	// CommitRewrites holds the value of the commit_rewrites edge.
 	CommitRewrites []*CommitRewrite `json:"commit_rewrites,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [6]bool
+	loadedTypes [8]bool
 }
 
 // RepoConfigOrErr returns the RepoConfig value or an error if the edge
@@ -120,10 +124,28 @@ func (e SessionEdges) AgentMetadataEventsOrErr() ([]*AgentMetadataEvent, error) 
 	return nil, &NotLoadedError{edge: "agent_metadata_events"}
 }
 
+// SessionUsageEventsOrErr returns the SessionUsageEvents value or an error if the edge
+// was not loaded in eager-loading.
+func (e SessionEdges) SessionUsageEventsOrErr() ([]*SessionUsageEvent, error) {
+	if e.loadedTypes[4] {
+		return e.SessionUsageEvents, nil
+	}
+	return nil, &NotLoadedError{edge: "session_usage_events"}
+}
+
+// SessionEventsOrErr returns the SessionEvents value or an error if the edge
+// was not loaded in eager-loading.
+func (e SessionEdges) SessionEventsOrErr() ([]*SessionEvent, error) {
+	if e.loadedTypes[5] {
+		return e.SessionEvents, nil
+	}
+	return nil, &NotLoadedError{edge: "session_events"}
+}
+
 // CommitCheckpointsOrErr returns the CommitCheckpoints value or an error if the edge
 // was not loaded in eager-loading.
 func (e SessionEdges) CommitCheckpointsOrErr() ([]*CommitCheckpoint, error) {
-	if e.loadedTypes[4] {
+	if e.loadedTypes[6] {
 		return e.CommitCheckpoints, nil
 	}
 	return nil, &NotLoadedError{edge: "commit_checkpoints"}
@@ -132,7 +154,7 @@ func (e SessionEdges) CommitCheckpointsOrErr() ([]*CommitCheckpoint, error) {
 // CommitRewritesOrErr returns the CommitRewrites value or an error if the edge
 // was not loaded in eager-loading.
 func (e SessionEdges) CommitRewritesOrErr() ([]*CommitRewrite, error) {
-	if e.loadedTypes[5] {
+	if e.loadedTypes[7] {
 		return e.CommitRewrites, nil
 	}
 	return nil, &NotLoadedError{edge: "commit_rewrites"}
@@ -333,6 +355,16 @@ func (s *Session) QuerySessionWorkspaces() *SessionWorkspaceQuery {
 // QueryAgentMetadataEvents queries the "agent_metadata_events" edge of the Session entity.
 func (s *Session) QueryAgentMetadataEvents() *AgentMetadataEventQuery {
 	return NewSessionClient(s.config).QueryAgentMetadataEvents(s)
+}
+
+// QuerySessionUsageEvents queries the "session_usage_events" edge of the Session entity.
+func (s *Session) QuerySessionUsageEvents() *SessionUsageEventQuery {
+	return NewSessionClient(s.config).QuerySessionUsageEvents(s)
+}
+
+// QuerySessionEvents queries the "session_events" edge of the Session entity.
+func (s *Session) QuerySessionEvents() *SessionEventQuery {
+	return NewSessionClient(s.config).QuerySessionEvents(s)
 }
 
 // QueryCommitCheckpoints queries the "commit_checkpoints" edge of the Session entity.

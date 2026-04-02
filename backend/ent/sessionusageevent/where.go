@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"entgo.io/ent/dialect/sql"
+	"entgo.io/ent/dialect/sql/sqlgraph"
 	"github.com/ai-efficiency/backend/ent/predicate"
 	"github.com/google/uuid"
 )
@@ -203,26 +204,6 @@ func SessionIDIn(vs ...uuid.UUID) predicate.SessionUsageEvent {
 // SessionIDNotIn applies the NotIn predicate on the "session_id" field.
 func SessionIDNotIn(vs ...uuid.UUID) predicate.SessionUsageEvent {
 	return predicate.SessionUsageEvent(sql.FieldNotIn(FieldSessionID, vs...))
-}
-
-// SessionIDGT applies the GT predicate on the "session_id" field.
-func SessionIDGT(v uuid.UUID) predicate.SessionUsageEvent {
-	return predicate.SessionUsageEvent(sql.FieldGT(FieldSessionID, v))
-}
-
-// SessionIDGTE applies the GTE predicate on the "session_id" field.
-func SessionIDGTE(v uuid.UUID) predicate.SessionUsageEvent {
-	return predicate.SessionUsageEvent(sql.FieldGTE(FieldSessionID, v))
-}
-
-// SessionIDLT applies the LT predicate on the "session_id" field.
-func SessionIDLT(v uuid.UUID) predicate.SessionUsageEvent {
-	return predicate.SessionUsageEvent(sql.FieldLT(FieldSessionID, v))
-}
-
-// SessionIDLTE applies the LTE predicate on the "session_id" field.
-func SessionIDLTE(v uuid.UUID) predicate.SessionUsageEvent {
-	return predicate.SessionUsageEvent(sql.FieldLTE(FieldSessionID, v))
 }
 
 // WorkspaceIDEQ applies the EQ predicate on the "workspace_id" field.
@@ -798,6 +779,29 @@ func CreatedAtLT(v time.Time) predicate.SessionUsageEvent {
 // CreatedAtLTE applies the LTE predicate on the "created_at" field.
 func CreatedAtLTE(v time.Time) predicate.SessionUsageEvent {
 	return predicate.SessionUsageEvent(sql.FieldLTE(FieldCreatedAt, v))
+}
+
+// HasSession applies the HasEdge predicate on the "session" edge.
+func HasSession() predicate.SessionUsageEvent {
+	return predicate.SessionUsageEvent(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, SessionTable, SessionColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasSessionWith applies the HasEdge predicate on the "session" edge with a given conditions (other predicates).
+func HasSessionWith(preds ...predicate.Session) predicate.SessionUsageEvent {
+	return predicate.SessionUsageEvent(func(s *sql.Selector) {
+		step := newSessionStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
 }
 
 // And groups predicates with the AND operator between them.

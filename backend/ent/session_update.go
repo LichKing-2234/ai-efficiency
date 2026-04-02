@@ -18,6 +18,8 @@ import (
 	"github.com/ai-efficiency/backend/ent/predicate"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/session"
+	"github.com/ai-efficiency/backend/ent/sessionevent"
+	"github.com/ai-efficiency/backend/ent/sessionusageevent"
 	"github.com/ai-efficiency/backend/ent/sessionworkspace"
 	"github.com/ai-efficiency/backend/ent/user"
 )
@@ -381,6 +383,36 @@ func (su *SessionUpdate) AddAgentMetadataEvents(a ...*AgentMetadataEvent) *Sessi
 	return su.AddAgentMetadataEventIDs(ids...)
 }
 
+// AddSessionUsageEventIDs adds the "session_usage_events" edge to the SessionUsageEvent entity by IDs.
+func (su *SessionUpdate) AddSessionUsageEventIDs(ids ...int) *SessionUpdate {
+	su.mutation.AddSessionUsageEventIDs(ids...)
+	return su
+}
+
+// AddSessionUsageEvents adds the "session_usage_events" edges to the SessionUsageEvent entity.
+func (su *SessionUpdate) AddSessionUsageEvents(s ...*SessionUsageEvent) *SessionUpdate {
+	ids := make([]int, len(s))
+	for i := range s {
+		ids[i] = s[i].ID
+	}
+	return su.AddSessionUsageEventIDs(ids...)
+}
+
+// AddSessionEventIDs adds the "session_events" edge to the SessionEvent entity by IDs.
+func (su *SessionUpdate) AddSessionEventIDs(ids ...int) *SessionUpdate {
+	su.mutation.AddSessionEventIDs(ids...)
+	return su
+}
+
+// AddSessionEvents adds the "session_events" edges to the SessionEvent entity.
+func (su *SessionUpdate) AddSessionEvents(s ...*SessionEvent) *SessionUpdate {
+	ids := make([]int, len(s))
+	for i := range s {
+		ids[i] = s[i].ID
+	}
+	return su.AddSessionEventIDs(ids...)
+}
+
 // AddCommitCheckpointIDs adds the "commit_checkpoints" edge to the CommitCheckpoint entity by IDs.
 func (su *SessionUpdate) AddCommitCheckpointIDs(ids ...int) *SessionUpdate {
 	su.mutation.AddCommitCheckpointIDs(ids...)
@@ -468,6 +500,48 @@ func (su *SessionUpdate) RemoveAgentMetadataEvents(a ...*AgentMetadataEvent) *Se
 		ids[i] = a[i].ID
 	}
 	return su.RemoveAgentMetadataEventIDs(ids...)
+}
+
+// ClearSessionUsageEvents clears all "session_usage_events" edges to the SessionUsageEvent entity.
+func (su *SessionUpdate) ClearSessionUsageEvents() *SessionUpdate {
+	su.mutation.ClearSessionUsageEvents()
+	return su
+}
+
+// RemoveSessionUsageEventIDs removes the "session_usage_events" edge to SessionUsageEvent entities by IDs.
+func (su *SessionUpdate) RemoveSessionUsageEventIDs(ids ...int) *SessionUpdate {
+	su.mutation.RemoveSessionUsageEventIDs(ids...)
+	return su
+}
+
+// RemoveSessionUsageEvents removes "session_usage_events" edges to SessionUsageEvent entities.
+func (su *SessionUpdate) RemoveSessionUsageEvents(s ...*SessionUsageEvent) *SessionUpdate {
+	ids := make([]int, len(s))
+	for i := range s {
+		ids[i] = s[i].ID
+	}
+	return su.RemoveSessionUsageEventIDs(ids...)
+}
+
+// ClearSessionEvents clears all "session_events" edges to the SessionEvent entity.
+func (su *SessionUpdate) ClearSessionEvents() *SessionUpdate {
+	su.mutation.ClearSessionEvents()
+	return su
+}
+
+// RemoveSessionEventIDs removes the "session_events" edge to SessionEvent entities by IDs.
+func (su *SessionUpdate) RemoveSessionEventIDs(ids ...int) *SessionUpdate {
+	su.mutation.RemoveSessionEventIDs(ids...)
+	return su
+}
+
+// RemoveSessionEvents removes "session_events" edges to SessionEvent entities.
+func (su *SessionUpdate) RemoveSessionEvents(s ...*SessionEvent) *SessionUpdate {
+	ids := make([]int, len(s))
+	for i := range s {
+		ids[i] = s[i].ID
+	}
+	return su.RemoveSessionEventIDs(ids...)
 }
 
 // ClearCommitCheckpoints clears all "commit_checkpoints" edges to the CommitCheckpoint entity.
@@ -804,6 +878,96 @@ func (su *SessionUpdate) sqlSave(ctx context.Context) (n int, err error) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(agentmetadataevent.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if su.mutation.SessionUsageEventsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   session.SessionUsageEventsTable,
+			Columns: []string{session.SessionUsageEventsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(sessionusageevent.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := su.mutation.RemovedSessionUsageEventsIDs(); len(nodes) > 0 && !su.mutation.SessionUsageEventsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   session.SessionUsageEventsTable,
+			Columns: []string{session.SessionUsageEventsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(sessionusageevent.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := su.mutation.SessionUsageEventsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   session.SessionUsageEventsTable,
+			Columns: []string{session.SessionUsageEventsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(sessionusageevent.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if su.mutation.SessionEventsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   session.SessionEventsTable,
+			Columns: []string{session.SessionEventsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(sessionevent.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := su.mutation.RemovedSessionEventsIDs(); len(nodes) > 0 && !su.mutation.SessionEventsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   session.SessionEventsTable,
+			Columns: []string{session.SessionEventsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(sessionevent.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := su.mutation.SessionEventsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   session.SessionEventsTable,
+			Columns: []string{session.SessionEventsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(sessionevent.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {
@@ -1267,6 +1431,36 @@ func (suo *SessionUpdateOne) AddAgentMetadataEvents(a ...*AgentMetadataEvent) *S
 	return suo.AddAgentMetadataEventIDs(ids...)
 }
 
+// AddSessionUsageEventIDs adds the "session_usage_events" edge to the SessionUsageEvent entity by IDs.
+func (suo *SessionUpdateOne) AddSessionUsageEventIDs(ids ...int) *SessionUpdateOne {
+	suo.mutation.AddSessionUsageEventIDs(ids...)
+	return suo
+}
+
+// AddSessionUsageEvents adds the "session_usage_events" edges to the SessionUsageEvent entity.
+func (suo *SessionUpdateOne) AddSessionUsageEvents(s ...*SessionUsageEvent) *SessionUpdateOne {
+	ids := make([]int, len(s))
+	for i := range s {
+		ids[i] = s[i].ID
+	}
+	return suo.AddSessionUsageEventIDs(ids...)
+}
+
+// AddSessionEventIDs adds the "session_events" edge to the SessionEvent entity by IDs.
+func (suo *SessionUpdateOne) AddSessionEventIDs(ids ...int) *SessionUpdateOne {
+	suo.mutation.AddSessionEventIDs(ids...)
+	return suo
+}
+
+// AddSessionEvents adds the "session_events" edges to the SessionEvent entity.
+func (suo *SessionUpdateOne) AddSessionEvents(s ...*SessionEvent) *SessionUpdateOne {
+	ids := make([]int, len(s))
+	for i := range s {
+		ids[i] = s[i].ID
+	}
+	return suo.AddSessionEventIDs(ids...)
+}
+
 // AddCommitCheckpointIDs adds the "commit_checkpoints" edge to the CommitCheckpoint entity by IDs.
 func (suo *SessionUpdateOne) AddCommitCheckpointIDs(ids ...int) *SessionUpdateOne {
 	suo.mutation.AddCommitCheckpointIDs(ids...)
@@ -1354,6 +1548,48 @@ func (suo *SessionUpdateOne) RemoveAgentMetadataEvents(a ...*AgentMetadataEvent)
 		ids[i] = a[i].ID
 	}
 	return suo.RemoveAgentMetadataEventIDs(ids...)
+}
+
+// ClearSessionUsageEvents clears all "session_usage_events" edges to the SessionUsageEvent entity.
+func (suo *SessionUpdateOne) ClearSessionUsageEvents() *SessionUpdateOne {
+	suo.mutation.ClearSessionUsageEvents()
+	return suo
+}
+
+// RemoveSessionUsageEventIDs removes the "session_usage_events" edge to SessionUsageEvent entities by IDs.
+func (suo *SessionUpdateOne) RemoveSessionUsageEventIDs(ids ...int) *SessionUpdateOne {
+	suo.mutation.RemoveSessionUsageEventIDs(ids...)
+	return suo
+}
+
+// RemoveSessionUsageEvents removes "session_usage_events" edges to SessionUsageEvent entities.
+func (suo *SessionUpdateOne) RemoveSessionUsageEvents(s ...*SessionUsageEvent) *SessionUpdateOne {
+	ids := make([]int, len(s))
+	for i := range s {
+		ids[i] = s[i].ID
+	}
+	return suo.RemoveSessionUsageEventIDs(ids...)
+}
+
+// ClearSessionEvents clears all "session_events" edges to the SessionEvent entity.
+func (suo *SessionUpdateOne) ClearSessionEvents() *SessionUpdateOne {
+	suo.mutation.ClearSessionEvents()
+	return suo
+}
+
+// RemoveSessionEventIDs removes the "session_events" edge to SessionEvent entities by IDs.
+func (suo *SessionUpdateOne) RemoveSessionEventIDs(ids ...int) *SessionUpdateOne {
+	suo.mutation.RemoveSessionEventIDs(ids...)
+	return suo
+}
+
+// RemoveSessionEvents removes "session_events" edges to SessionEvent entities.
+func (suo *SessionUpdateOne) RemoveSessionEvents(s ...*SessionEvent) *SessionUpdateOne {
+	ids := make([]int, len(s))
+	for i := range s {
+		ids[i] = s[i].ID
+	}
+	return suo.RemoveSessionEventIDs(ids...)
 }
 
 // ClearCommitCheckpoints clears all "commit_checkpoints" edges to the CommitCheckpoint entity.
@@ -1720,6 +1956,96 @@ func (suo *SessionUpdateOne) sqlSave(ctx context.Context) (_node *Session, err e
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(agentmetadataevent.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if suo.mutation.SessionUsageEventsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   session.SessionUsageEventsTable,
+			Columns: []string{session.SessionUsageEventsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(sessionusageevent.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := suo.mutation.RemovedSessionUsageEventsIDs(); len(nodes) > 0 && !suo.mutation.SessionUsageEventsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   session.SessionUsageEventsTable,
+			Columns: []string{session.SessionUsageEventsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(sessionusageevent.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := suo.mutation.SessionUsageEventsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   session.SessionUsageEventsTable,
+			Columns: []string{session.SessionUsageEventsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(sessionusageevent.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if suo.mutation.SessionEventsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   session.SessionEventsTable,
+			Columns: []string{session.SessionEventsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(sessionevent.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := suo.mutation.RemovedSessionEventsIDs(); len(nodes) > 0 && !suo.mutation.SessionEventsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   session.SessionEventsTable,
+			Columns: []string{session.SessionEventsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(sessionevent.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := suo.mutation.SessionEventsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   session.SessionEventsTable,
+			Columns: []string{session.SessionEventsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(sessionevent.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {

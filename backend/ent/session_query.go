@@ -18,6 +18,8 @@ import (
 	"github.com/ai-efficiency/backend/ent/predicate"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/session"
+	"github.com/ai-efficiency/backend/ent/sessionevent"
+	"github.com/ai-efficiency/backend/ent/sessionusageevent"
 	"github.com/ai-efficiency/backend/ent/sessionworkspace"
 	"github.com/ai-efficiency/backend/ent/user"
 	"github.com/google/uuid"
@@ -34,6 +36,8 @@ type SessionQuery struct {
 	withUser                *UserQuery
 	withSessionWorkspaces   *SessionWorkspaceQuery
 	withAgentMetadataEvents *AgentMetadataEventQuery
+	withSessionUsageEvents  *SessionUsageEventQuery
+	withSessionEvents       *SessionEventQuery
 	withCommitCheckpoints   *CommitCheckpointQuery
 	withCommitRewrites      *CommitRewriteQuery
 	withFKs                 bool
@@ -154,6 +158,50 @@ func (sq *SessionQuery) QueryAgentMetadataEvents() *AgentMetadataEventQuery {
 			sqlgraph.From(session.Table, session.FieldID, selector),
 			sqlgraph.To(agentmetadataevent.Table, agentmetadataevent.FieldID),
 			sqlgraph.Edge(sqlgraph.O2M, false, session.AgentMetadataEventsTable, session.AgentMetadataEventsColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(sq.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QuerySessionUsageEvents chains the current query on the "session_usage_events" edge.
+func (sq *SessionQuery) QuerySessionUsageEvents() *SessionUsageEventQuery {
+	query := (&SessionUsageEventClient{config: sq.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := sq.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := sq.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(session.Table, session.FieldID, selector),
+			sqlgraph.To(sessionusageevent.Table, sessionusageevent.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, session.SessionUsageEventsTable, session.SessionUsageEventsColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(sq.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QuerySessionEvents chains the current query on the "session_events" edge.
+func (sq *SessionQuery) QuerySessionEvents() *SessionEventQuery {
+	query := (&SessionEventClient{config: sq.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := sq.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := sq.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(session.Table, session.FieldID, selector),
+			sqlgraph.To(sessionevent.Table, sessionevent.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, session.SessionEventsTable, session.SessionEventsColumn),
 		)
 		fromU = sqlgraph.SetNeighbors(sq.driver.Dialect(), step)
 		return fromU, nil
@@ -401,6 +449,8 @@ func (sq *SessionQuery) Clone() *SessionQuery {
 		withUser:                sq.withUser.Clone(),
 		withSessionWorkspaces:   sq.withSessionWorkspaces.Clone(),
 		withAgentMetadataEvents: sq.withAgentMetadataEvents.Clone(),
+		withSessionUsageEvents:  sq.withSessionUsageEvents.Clone(),
+		withSessionEvents:       sq.withSessionEvents.Clone(),
 		withCommitCheckpoints:   sq.withCommitCheckpoints.Clone(),
 		withCommitRewrites:      sq.withCommitRewrites.Clone(),
 		// clone intermediate query.
@@ -450,6 +500,28 @@ func (sq *SessionQuery) WithAgentMetadataEvents(opts ...func(*AgentMetadataEvent
 		opt(query)
 	}
 	sq.withAgentMetadataEvents = query
+	return sq
+}
+
+// WithSessionUsageEvents tells the query-builder to eager-load the nodes that are connected to
+// the "session_usage_events" edge. The optional arguments are used to configure the query builder of the edge.
+func (sq *SessionQuery) WithSessionUsageEvents(opts ...func(*SessionUsageEventQuery)) *SessionQuery {
+	query := (&SessionUsageEventClient{config: sq.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	sq.withSessionUsageEvents = query
+	return sq
+}
+
+// WithSessionEvents tells the query-builder to eager-load the nodes that are connected to
+// the "session_events" edge. The optional arguments are used to configure the query builder of the edge.
+func (sq *SessionQuery) WithSessionEvents(opts ...func(*SessionEventQuery)) *SessionQuery {
+	query := (&SessionEventClient{config: sq.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	sq.withSessionEvents = query
 	return sq
 }
 
@@ -554,11 +626,13 @@ func (sq *SessionQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*Sess
 		nodes       = []*Session{}
 		withFKs     = sq.withFKs
 		_spec       = sq.querySpec()
-		loadedTypes = [6]bool{
+		loadedTypes = [8]bool{
 			sq.withRepoConfig != nil,
 			sq.withUser != nil,
 			sq.withSessionWorkspaces != nil,
 			sq.withAgentMetadataEvents != nil,
+			sq.withSessionUsageEvents != nil,
+			sq.withSessionEvents != nil,
 			sq.withCommitCheckpoints != nil,
 			sq.withCommitRewrites != nil,
 		}
@@ -614,6 +688,22 @@ func (sq *SessionQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*Sess
 			func(n *Session, e *AgentMetadataEvent) {
 				n.Edges.AgentMetadataEvents = append(n.Edges.AgentMetadataEvents, e)
 			}); err != nil {
+			return nil, err
+		}
+	}
+	if query := sq.withSessionUsageEvents; query != nil {
+		if err := sq.loadSessionUsageEvents(ctx, query, nodes,
+			func(n *Session) { n.Edges.SessionUsageEvents = []*SessionUsageEvent{} },
+			func(n *Session, e *SessionUsageEvent) {
+				n.Edges.SessionUsageEvents = append(n.Edges.SessionUsageEvents, e)
+			}); err != nil {
+			return nil, err
+		}
+	}
+	if query := sq.withSessionEvents; query != nil {
+		if err := sq.loadSessionEvents(ctx, query, nodes,
+			func(n *Session) { n.Edges.SessionEvents = []*SessionEvent{} },
+			func(n *Session, e *SessionEvent) { n.Edges.SessionEvents = append(n.Edges.SessionEvents, e) }); err != nil {
 			return nil, err
 		}
 	}
@@ -745,6 +835,66 @@ func (sq *SessionQuery) loadAgentMetadataEvents(ctx context.Context, query *Agen
 	}
 	query.Where(predicate.AgentMetadataEvent(func(s *sql.Selector) {
 		s.Where(sql.InValues(s.C(session.AgentMetadataEventsColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.SessionID
+		node, ok := nodeids[fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "session_id" returned %v for node %v`, fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (sq *SessionQuery) loadSessionUsageEvents(ctx context.Context, query *SessionUsageEventQuery, nodes []*Session, init func(*Session), assign func(*Session, *SessionUsageEvent)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[uuid.UUID]*Session)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(sessionusageevent.FieldSessionID)
+	}
+	query.Where(predicate.SessionUsageEvent(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(session.SessionUsageEventsColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.SessionID
+		node, ok := nodeids[fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "session_id" returned %v for node %v`, fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (sq *SessionQuery) loadSessionEvents(ctx context.Context, query *SessionEventQuery, nodes []*Session, init func(*Session), assign func(*Session, *SessionEvent)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[uuid.UUID]*Session)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(sessionevent.FieldSessionID)
+	}
+	query.Where(predicate.SessionEvent(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(session.SessionEventsColumn), fks...))
 	}))
 	neighbors, err := query.All(ctx)
 	if err != nil {

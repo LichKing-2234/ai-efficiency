@@ -12,6 +12,7 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/ai-efficiency/backend/ent/predicate"
+	"github.com/ai-efficiency/backend/ent/session"
 	"github.com/ai-efficiency/backend/ent/sessionevent"
 	"github.com/google/uuid"
 )
@@ -139,9 +140,20 @@ func (seu *SessionEventUpdate) SetNillableCreatedAt(t *time.Time) *SessionEventU
 	return seu
 }
 
+// SetSession sets the "session" edge to the Session entity.
+func (seu *SessionEventUpdate) SetSession(s *Session) *SessionEventUpdate {
+	return seu.SetSessionID(s.ID)
+}
+
 // Mutation returns the SessionEventMutation object of the builder.
 func (seu *SessionEventUpdate) Mutation() *SessionEventMutation {
 	return seu.mutation
+}
+
+// ClearSession clears the "session" edge to the Session entity.
+func (seu *SessionEventUpdate) ClearSession() *SessionEventUpdate {
+	seu.mutation.ClearSession()
+	return seu
 }
 
 // Save executes the query and returns the number of nodes affected by the update operation.
@@ -193,6 +205,9 @@ func (seu *SessionEventUpdate) check() error {
 			return &ValidationError{Name: "source", err: fmt.Errorf(`ent: validator failed for field "SessionEvent.source": %w`, err)}
 		}
 	}
+	if seu.mutation.SessionCleared() && len(seu.mutation.SessionIDs()) > 0 {
+		return errors.New(`ent: clearing a required unique edge "SessionEvent.session"`)
+	}
 	return nil
 }
 
@@ -210,9 +225,6 @@ func (seu *SessionEventUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	}
 	if value, ok := seu.mutation.EventID(); ok {
 		_spec.SetField(sessionevent.FieldEventID, field.TypeString, value)
-	}
-	if value, ok := seu.mutation.SessionID(); ok {
-		_spec.SetField(sessionevent.FieldSessionID, field.TypeUUID, value)
 	}
 	if value, ok := seu.mutation.WorkspaceID(); ok {
 		_spec.SetField(sessionevent.FieldWorkspaceID, field.TypeString, value)
@@ -234,6 +246,35 @@ func (seu *SessionEventUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	}
 	if value, ok := seu.mutation.CreatedAt(); ok {
 		_spec.SetField(sessionevent.FieldCreatedAt, field.TypeTime, value)
+	}
+	if seu.mutation.SessionCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   sessionevent.SessionTable,
+			Columns: []string{sessionevent.SessionColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(session.FieldID, field.TypeUUID),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := seu.mutation.SessionIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   sessionevent.SessionTable,
+			Columns: []string{sessionevent.SessionColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(session.FieldID, field.TypeUUID),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
 	if n, err = sqlgraph.UpdateNodes(ctx, seu.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
@@ -365,9 +406,20 @@ func (seuo *SessionEventUpdateOne) SetNillableCreatedAt(t *time.Time) *SessionEv
 	return seuo
 }
 
+// SetSession sets the "session" edge to the Session entity.
+func (seuo *SessionEventUpdateOne) SetSession(s *Session) *SessionEventUpdateOne {
+	return seuo.SetSessionID(s.ID)
+}
+
 // Mutation returns the SessionEventMutation object of the builder.
 func (seuo *SessionEventUpdateOne) Mutation() *SessionEventMutation {
 	return seuo.mutation
+}
+
+// ClearSession clears the "session" edge to the Session entity.
+func (seuo *SessionEventUpdateOne) ClearSession() *SessionEventUpdateOne {
+	seuo.mutation.ClearSession()
+	return seuo
 }
 
 // Where appends a list predicates to the SessionEventUpdate builder.
@@ -432,6 +484,9 @@ func (seuo *SessionEventUpdateOne) check() error {
 			return &ValidationError{Name: "source", err: fmt.Errorf(`ent: validator failed for field "SessionEvent.source": %w`, err)}
 		}
 	}
+	if seuo.mutation.SessionCleared() && len(seuo.mutation.SessionIDs()) > 0 {
+		return errors.New(`ent: clearing a required unique edge "SessionEvent.session"`)
+	}
 	return nil
 }
 
@@ -467,9 +522,6 @@ func (seuo *SessionEventUpdateOne) sqlSave(ctx context.Context) (_node *SessionE
 	if value, ok := seuo.mutation.EventID(); ok {
 		_spec.SetField(sessionevent.FieldEventID, field.TypeString, value)
 	}
-	if value, ok := seuo.mutation.SessionID(); ok {
-		_spec.SetField(sessionevent.FieldSessionID, field.TypeUUID, value)
-	}
 	if value, ok := seuo.mutation.WorkspaceID(); ok {
 		_spec.SetField(sessionevent.FieldWorkspaceID, field.TypeString, value)
 	}
@@ -490,6 +542,35 @@ func (seuo *SessionEventUpdateOne) sqlSave(ctx context.Context) (_node *SessionE
 	}
 	if value, ok := seuo.mutation.CreatedAt(); ok {
 		_spec.SetField(sessionevent.FieldCreatedAt, field.TypeTime, value)
+	}
+	if seuo.mutation.SessionCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   sessionevent.SessionTable,
+			Columns: []string{sessionevent.SessionColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(session.FieldID, field.TypeUUID),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := seuo.mutation.SessionIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   sessionevent.SessionTable,
+			Columns: []string{sessionevent.SessionColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(session.FieldID, field.TypeUUID),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
 	_node = &SessionEvent{config: seuo.config}
 	_spec.Assign = _node.assignValues

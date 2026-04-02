@@ -12,16 +12,19 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/ai-efficiency/backend/ent/predicate"
+	"github.com/ai-efficiency/backend/ent/session"
 	"github.com/ai-efficiency/backend/ent/sessionevent"
+	"github.com/google/uuid"
 )
 
 // SessionEventQuery is the builder for querying SessionEvent entities.
 type SessionEventQuery struct {
 	config
-	ctx        *QueryContext
-	order      []sessionevent.OrderOption
-	inters     []Interceptor
-	predicates []predicate.SessionEvent
+	ctx         *QueryContext
+	order       []sessionevent.OrderOption
+	inters      []Interceptor
+	predicates  []predicate.SessionEvent
+	withSession *SessionQuery
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
 	path func(context.Context) (*sql.Selector, error)
@@ -56,6 +59,28 @@ func (seq *SessionEventQuery) Unique(unique bool) *SessionEventQuery {
 func (seq *SessionEventQuery) Order(o ...sessionevent.OrderOption) *SessionEventQuery {
 	seq.order = append(seq.order, o...)
 	return seq
+}
+
+// QuerySession chains the current query on the "session" edge.
+func (seq *SessionEventQuery) QuerySession() *SessionQuery {
+	query := (&SessionClient{config: seq.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := seq.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := seq.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(sessionevent.Table, sessionevent.FieldID, selector),
+			sqlgraph.To(session.Table, session.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, sessionevent.SessionTable, sessionevent.SessionColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(seq.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
 }
 
 // First returns the first SessionEvent entity from the query.
@@ -245,15 +270,27 @@ func (seq *SessionEventQuery) Clone() *SessionEventQuery {
 		return nil
 	}
 	return &SessionEventQuery{
-		config:     seq.config,
-		ctx:        seq.ctx.Clone(),
-		order:      append([]sessionevent.OrderOption{}, seq.order...),
-		inters:     append([]Interceptor{}, seq.inters...),
-		predicates: append([]predicate.SessionEvent{}, seq.predicates...),
+		config:      seq.config,
+		ctx:         seq.ctx.Clone(),
+		order:       append([]sessionevent.OrderOption{}, seq.order...),
+		inters:      append([]Interceptor{}, seq.inters...),
+		predicates:  append([]predicate.SessionEvent{}, seq.predicates...),
+		withSession: seq.withSession.Clone(),
 		// clone intermediate query.
 		sql:  seq.sql.Clone(),
 		path: seq.path,
 	}
+}
+
+// WithSession tells the query-builder to eager-load the nodes that are connected to
+// the "session" edge. The optional arguments are used to configure the query builder of the edge.
+func (seq *SessionEventQuery) WithSession(opts ...func(*SessionQuery)) *SessionEventQuery {
+	query := (&SessionClient{config: seq.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	seq.withSession = query
+	return seq
 }
 
 // GroupBy is used to group vertices by one or more fields/columns.
@@ -332,8 +369,11 @@ func (seq *SessionEventQuery) prepareQuery(ctx context.Context) error {
 
 func (seq *SessionEventQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*SessionEvent, error) {
 	var (
-		nodes = []*SessionEvent{}
-		_spec = seq.querySpec()
+		nodes       = []*SessionEvent{}
+		_spec       = seq.querySpec()
+		loadedTypes = [1]bool{
+			seq.withSession != nil,
+		}
 	)
 	_spec.ScanValues = func(columns []string) ([]any, error) {
 		return (*SessionEvent).scanValues(nil, columns)
@@ -341,6 +381,7 @@ func (seq *SessionEventQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([
 	_spec.Assign = func(columns []string, values []any) error {
 		node := &SessionEvent{config: seq.config}
 		nodes = append(nodes, node)
+		node.Edges.loadedTypes = loadedTypes
 		return node.assignValues(columns, values)
 	}
 	for i := range hooks {
@@ -352,7 +393,43 @@ func (seq *SessionEventQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([
 	if len(nodes) == 0 {
 		return nodes, nil
 	}
+	if query := seq.withSession; query != nil {
+		if err := seq.loadSession(ctx, query, nodes, nil,
+			func(n *SessionEvent, e *Session) { n.Edges.Session = e }); err != nil {
+			return nil, err
+		}
+	}
 	return nodes, nil
+}
+
+func (seq *SessionEventQuery) loadSession(ctx context.Context, query *SessionQuery, nodes []*SessionEvent, init func(*SessionEvent), assign func(*SessionEvent, *Session)) error {
+	ids := make([]uuid.UUID, 0, len(nodes))
+	nodeids := make(map[uuid.UUID][]*SessionEvent)
+	for i := range nodes {
+		fk := nodes[i].SessionID
+		if _, ok := nodeids[fk]; !ok {
+			ids = append(ids, fk)
+		}
+		nodeids[fk] = append(nodeids[fk], nodes[i])
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	query.Where(session.IDIn(ids...))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		nodes, ok := nodeids[n.ID]
+		if !ok {
+			return fmt.Errorf(`unexpected foreign-key "session_id" returned %v`, n.ID)
+		}
+		for i := range nodes {
+			assign(nodes[i], n)
+		}
+	}
+	return nil
 }
 
 func (seq *SessionEventQuery) sqlCount(ctx context.Context) (int, error) {
@@ -379,6 +456,9 @@ func (seq *SessionEventQuery) querySpec() *sqlgraph.QuerySpec {
 			if fields[i] != sessionevent.FieldID {
 				_spec.Node.Columns = append(_spec.Node.Columns, fields[i])
 			}
+		}
+		if seq.withSession != nil {
+			_spec.Node.AddColumnOnce(sessionevent.FieldSessionID)
 		}
 	}
 	if ps := seq.predicates; len(ps) > 0 {

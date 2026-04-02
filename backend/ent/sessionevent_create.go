@@ -10,6 +10,7 @@ import (
 
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/ai-efficiency/backend/ent/session"
 	"github.com/ai-efficiency/backend/ent/sessionevent"
 	"github.com/google/uuid"
 )
@@ -75,6 +76,11 @@ func (sec *SessionEventCreate) SetNillableCreatedAt(t *time.Time) *SessionEventC
 		sec.SetCreatedAt(*t)
 	}
 	return sec
+}
+
+// SetSession sets the "session" edge to the Session entity.
+func (sec *SessionEventCreate) SetSession(s *Session) *SessionEventCreate {
+	return sec.SetSessionID(s.ID)
 }
 
 // Mutation returns the SessionEventMutation object of the builder.
@@ -161,6 +167,9 @@ func (sec *SessionEventCreate) check() error {
 	if _, ok := sec.mutation.CreatedAt(); !ok {
 		return &ValidationError{Name: "created_at", err: errors.New(`ent: missing required field "SessionEvent.created_at"`)}
 	}
+	if len(sec.mutation.SessionIDs()) == 0 {
+		return &ValidationError{Name: "session", err: errors.New(`ent: missing required edge "SessionEvent.session"`)}
+	}
 	return nil
 }
 
@@ -191,10 +200,6 @@ func (sec *SessionEventCreate) createSpec() (*SessionEvent, *sqlgraph.CreateSpec
 		_spec.SetField(sessionevent.FieldEventID, field.TypeString, value)
 		_node.EventID = value
 	}
-	if value, ok := sec.mutation.SessionID(); ok {
-		_spec.SetField(sessionevent.FieldSessionID, field.TypeUUID, value)
-		_node.SessionID = value
-	}
 	if value, ok := sec.mutation.WorkspaceID(); ok {
 		_spec.SetField(sessionevent.FieldWorkspaceID, field.TypeString, value)
 		_node.WorkspaceID = value
@@ -218,6 +223,23 @@ func (sec *SessionEventCreate) createSpec() (*SessionEvent, *sqlgraph.CreateSpec
 	if value, ok := sec.mutation.CreatedAt(); ok {
 		_spec.SetField(sessionevent.FieldCreatedAt, field.TypeTime, value)
 		_node.CreatedAt = value
+	}
+	if nodes := sec.mutation.SessionIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   sessionevent.SessionTable,
+			Columns: []string{sessionevent.SessionColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(session.FieldID, field.TypeUUID),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_node.SessionID = nodes[0]
+		_spec.Edges = append(_spec.Edges, edge)
 	}
 	return _node, _spec
 }

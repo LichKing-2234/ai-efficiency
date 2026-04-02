@@ -7,7 +7,9 @@ import (
 	"time"
 
 	"github.com/ai-efficiency/backend/ent/enttest"
+	"github.com/ai-efficiency/backend/ent/session"
 	"github.com/ai-efficiency/backend/ent/sessionevent"
+	"github.com/google/uuid"
 	_ "github.com/mattn/go-sqlite3"
 )
 
@@ -15,11 +17,31 @@ func TestCreate_CreatesSessionEvent(t *testing.T) {
 	t.Parallel()
 
 	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	ctx := context.Background()
+	sp := client.ScmProvider.Create().
+		SetName("github-test").
+		SetType("github").
+		SetBaseURL("https://api.github.com").
+		SetCredentials("enc").
+		SaveX(ctx)
+	rc := client.RepoConfig.Create().
+		SetScmProviderID(sp.ID).
+		SetName("demo").
+		SetFullName("org/demo").
+		SetCloneURL("https://github.com/org/demo.git").
+		SetDefaultBranch("main").
+		SaveX(ctx)
+	sess := client.Session.Create().
+		SetID(uuid.New()).
+		SetRepoConfigID(rc.ID).
+		SetBranch("main").
+		SaveX(ctx)
+
 	svc := NewService(client)
 
-	err := svc.Create(context.Background(), CreateSessionEventRequest{
+	err := svc.Create(ctx, CreateSessionEventRequest{
 		EventID:     "event-1",
-		SessionID:   "11111111-1111-1111-1111-111111111111",
+		SessionID:   sess.ID.String(),
 		WorkspaceID: "ws-1",
 		EventType:   "user_prompt_submit",
 		Source:      "codex_hook",
@@ -34,7 +56,7 @@ func TestCreate_CreatesSessionEvent(t *testing.T) {
 
 	ev := client.SessionEvent.Query().
 		Where(sessionevent.EventIDEQ("event-1")).
-		OnlyX(context.Background())
+		OnlyX(ctx)
 
 	if ev.EventType != "user_prompt_submit" {
 		t.Fatalf("event_type = %q, want %q", ev.EventType, "user_prompt_submit")
@@ -63,5 +85,52 @@ func TestCreate_ReturnsErrorForInvalidSessionID(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "parse session_id") {
 		t.Fatalf("error = %q, want parse session_id", err.Error())
+	}
+}
+
+func TestCreate_LinksSessionEventToSessionEdge(t *testing.T) {
+	t.Parallel()
+
+	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	ctx := context.Background()
+
+	sp := client.ScmProvider.Create().
+		SetName("github-test").
+		SetType("github").
+		SetBaseURL("https://api.github.com").
+		SetCredentials("enc").
+		SaveX(ctx)
+	rc := client.RepoConfig.Create().
+		SetScmProviderID(sp.ID).
+		SetName("demo").
+		SetFullName("org/demo").
+		SetCloneURL("https://github.com/org/demo.git").
+		SetDefaultBranch("main").
+		SaveX(ctx)
+	sess := client.Session.Create().
+		SetID(uuid.New()).
+		SetRepoConfigID(rc.ID).
+		SetBranch("main").
+		SaveX(ctx)
+
+	svc := NewService(client)
+	err := svc.Create(ctx, CreateSessionEventRequest{
+		EventID:     "event-edge-1",
+		SessionID:   sess.ID.String(),
+		WorkspaceID: "ws-1",
+		EventType:   "user_prompt_submit",
+		Source:      "codex_hook",
+		CapturedAt:  time.Date(2026, 4, 2, 10, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("create session event: %v", err)
+	}
+
+	s := client.Session.Query().
+		Where(session.IDEQ(sess.ID)).
+		WithSessionEvents().
+		OnlyX(ctx)
+	if len(s.Edges.SessionEvents) != 1 {
+		t.Fatalf("session_events = %d, want 1", len(s.Edges.SessionEvents))
 	}
 }

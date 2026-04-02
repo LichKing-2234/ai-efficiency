@@ -10,6 +10,7 @@ import (
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
+	"github.com/ai-efficiency/backend/ent/session"
 	"github.com/ai-efficiency/backend/ent/sessionevent"
 	"github.com/google/uuid"
 )
@@ -34,8 +35,31 @@ type SessionEvent struct {
 	// RawPayload holds the value of the "raw_payload" field.
 	RawPayload map[string]interface{} `json:"raw_payload,omitempty"`
 	// CreatedAt holds the value of the "created_at" field.
-	CreatedAt    time.Time `json:"created_at,omitempty"`
+	CreatedAt time.Time `json:"created_at,omitempty"`
+	// Edges holds the relations/edges for other nodes in the graph.
+	// The values are being populated by the SessionEventQuery when eager-loading is set.
+	Edges        SessionEventEdges `json:"edges"`
 	selectValues sql.SelectValues
+}
+
+// SessionEventEdges holds the relations/edges for other nodes in the graph.
+type SessionEventEdges struct {
+	// Session holds the value of the session edge.
+	Session *Session `json:"session,omitempty"`
+	// loadedTypes holds the information for reporting if a
+	// type was loaded (or requested) in eager-loading or not.
+	loadedTypes [1]bool
+}
+
+// SessionOrErr returns the Session value or an error if the edge
+// was not loaded in eager-loading, or loaded but was not found.
+func (e SessionEventEdges) SessionOrErr() (*Session, error) {
+	if e.Session != nil {
+		return e.Session, nil
+	} else if e.loadedTypes[0] {
+		return nil, &NotFoundError{label: session.Label}
+	}
+	return nil, &NotLoadedError{edge: "session"}
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -135,6 +159,11 @@ func (se *SessionEvent) assignValues(columns []string, values []any) error {
 // This includes values selected through modifiers, order, etc.
 func (se *SessionEvent) Value(name string) (ent.Value, error) {
 	return se.selectValues.Get(name)
+}
+
+// QuerySession queries the "session" edge of the SessionEvent entity.
+func (se *SessionEvent) QuerySession() *SessionQuery {
+	return NewSessionEventClient(se.config).QuerySession(se)
 }
 
 // Update returns a builder for updating this SessionEvent.

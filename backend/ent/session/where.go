@@ -1038,6 +1038,52 @@ func HasAgentMetadataEventsWith(preds ...predicate.AgentMetadataEvent) predicate
 	})
 }
 
+// HasSessionUsageEvents applies the HasEdge predicate on the "session_usage_events" edge.
+func HasSessionUsageEvents() predicate.Session {
+	return predicate.Session(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, SessionUsageEventsTable, SessionUsageEventsColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasSessionUsageEventsWith applies the HasEdge predicate on the "session_usage_events" edge with a given conditions (other predicates).
+func HasSessionUsageEventsWith(preds ...predicate.SessionUsageEvent) predicate.Session {
+	return predicate.Session(func(s *sql.Selector) {
+		step := newSessionUsageEventsStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasSessionEvents applies the HasEdge predicate on the "session_events" edge.
+func HasSessionEvents() predicate.Session {
+	return predicate.Session(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, SessionEventsTable, SessionEventsColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasSessionEventsWith applies the HasEdge predicate on the "session_events" edge with a given conditions (other predicates).
+func HasSessionEventsWith(preds ...predicate.SessionEvent) predicate.Session {
+	return predicate.Session(func(s *sql.Selector) {
+		step := newSessionEventsStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
 // HasCommitCheckpoints applies the HasEdge predicate on the "commit_checkpoints" edge.
 func HasCommitCheckpoints() predicate.Session {
 	return predicate.Session(func(s *sql.Selector) {

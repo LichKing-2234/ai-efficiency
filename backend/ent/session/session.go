@@ -56,6 +56,10 @@ const (
 	EdgeSessionWorkspaces = "session_workspaces"
 	// EdgeAgentMetadataEvents holds the string denoting the agent_metadata_events edge name in mutations.
 	EdgeAgentMetadataEvents = "agent_metadata_events"
+	// EdgeSessionUsageEvents holds the string denoting the session_usage_events edge name in mutations.
+	EdgeSessionUsageEvents = "session_usage_events"
+	// EdgeSessionEvents holds the string denoting the session_events edge name in mutations.
+	EdgeSessionEvents = "session_events"
 	// EdgeCommitCheckpoints holds the string denoting the commit_checkpoints edge name in mutations.
 	EdgeCommitCheckpoints = "commit_checkpoints"
 	// EdgeCommitRewrites holds the string denoting the commit_rewrites edge name in mutations.
@@ -90,6 +94,20 @@ const (
 	AgentMetadataEventsInverseTable = "agent_metadata_events"
 	// AgentMetadataEventsColumn is the table column denoting the agent_metadata_events relation/edge.
 	AgentMetadataEventsColumn = "session_id"
+	// SessionUsageEventsTable is the table that holds the session_usage_events relation/edge.
+	SessionUsageEventsTable = "session_usage_events"
+	// SessionUsageEventsInverseTable is the table name for the SessionUsageEvent entity.
+	// It exists in this package in order to avoid circular dependency with the "sessionusageevent" package.
+	SessionUsageEventsInverseTable = "session_usage_events"
+	// SessionUsageEventsColumn is the table column denoting the session_usage_events relation/edge.
+	SessionUsageEventsColumn = "session_id"
+	// SessionEventsTable is the table that holds the session_events relation/edge.
+	SessionEventsTable = "session_events"
+	// SessionEventsInverseTable is the table name for the SessionEvent entity.
+	// It exists in this package in order to avoid circular dependency with the "sessionevent" package.
+	SessionEventsInverseTable = "session_events"
+	// SessionEventsColumn is the table column denoting the session_events relation/edge.
+	SessionEventsColumn = "session_id"
 	// CommitCheckpointsTable is the table that holds the commit_checkpoints relation/edge.
 	CommitCheckpointsTable = "commit_checkpoints"
 	// CommitCheckpointsInverseTable is the table name for the CommitCheckpoint entity.
@@ -311,6 +329,34 @@ func ByAgentMetadataEvents(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOpti
 	}
 }
 
+// BySessionUsageEventsCount orders the results by session_usage_events count.
+func BySessionUsageEventsCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newSessionUsageEventsStep(), opts...)
+	}
+}
+
+// BySessionUsageEvents orders the results by session_usage_events terms.
+func BySessionUsageEvents(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newSessionUsageEventsStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+
+// BySessionEventsCount orders the results by session_events count.
+func BySessionEventsCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newSessionEventsStep(), opts...)
+	}
+}
+
+// BySessionEvents orders the results by session_events terms.
+func BySessionEvents(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newSessionEventsStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+
 // ByCommitCheckpointsCount orders the results by commit_checkpoints count.
 func ByCommitCheckpointsCount(opts ...sql.OrderTermOption) OrderOption {
 	return func(s *sql.Selector) {
@@ -364,6 +410,20 @@ func newAgentMetadataEventsStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(AgentMetadataEventsInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.O2M, false, AgentMetadataEventsTable, AgentMetadataEventsColumn),
+	)
+}
+func newSessionUsageEventsStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(SessionUsageEventsInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, SessionUsageEventsTable, SessionUsageEventsColumn),
+	)
+}
+func newSessionEventsStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(SessionEventsInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, SessionEventsTable, SessionEventsColumn),
 	)
 }
 func newCommitCheckpointsStep() *sqlgraph.Step {

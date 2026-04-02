@@ -10,6 +10,7 @@ import (
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
+	"github.com/ai-efficiency/backend/ent/session"
 	"github.com/ai-efficiency/backend/ent/sessionusageevent"
 	"github.com/google/uuid"
 )
@@ -46,8 +47,31 @@ type SessionUsageEvent struct {
 	// RawMetadata holds the value of the "raw_metadata" field.
 	RawMetadata map[string]interface{} `json:"raw_metadata,omitempty"`
 	// CreatedAt holds the value of the "created_at" field.
-	CreatedAt    time.Time `json:"created_at,omitempty"`
+	CreatedAt time.Time `json:"created_at,omitempty"`
+	// Edges holds the relations/edges for other nodes in the graph.
+	// The values are being populated by the SessionUsageEventQuery when eager-loading is set.
+	Edges        SessionUsageEventEdges `json:"edges"`
 	selectValues sql.SelectValues
+}
+
+// SessionUsageEventEdges holds the relations/edges for other nodes in the graph.
+type SessionUsageEventEdges struct {
+	// Session holds the value of the session edge.
+	Session *Session `json:"session,omitempty"`
+	// loadedTypes holds the information for reporting if a
+	// type was loaded (or requested) in eager-loading or not.
+	loadedTypes [1]bool
+}
+
+// SessionOrErr returns the Session value or an error if the edge
+// was not loaded in eager-loading, or loaded but was not found.
+func (e SessionUsageEventEdges) SessionOrErr() (*Session, error) {
+	if e.Session != nil {
+		return e.Session, nil
+	} else if e.loadedTypes[0] {
+		return nil, &NotFoundError{label: session.Label}
+	}
+	return nil, &NotLoadedError{edge: "session"}
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -183,6 +207,11 @@ func (sue *SessionUsageEvent) assignValues(columns []string, values []any) error
 // This includes values selected through modifiers, order, etc.
 func (sue *SessionUsageEvent) Value(name string) (ent.Value, error) {
 	return sue.selectValues.Get(name)
+}
+
+// QuerySession queries the "session" edge of the SessionUsageEvent entity.
+func (sue *SessionUsageEvent) QuerySession() *SessionQuery {
+	return NewSessionUsageEventClient(sue.config).QuerySession(sue)
 }
 
 // Update returns a builder for updating this SessionUsageEvent.

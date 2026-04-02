@@ -1,16 +1,26 @@
 package handler
 
 import (
+	"context"
 	"net/http"
 	"testing"
+
+	"github.com/google/uuid"
 )
 
 func TestSessionUsageIngest_CreatesUsageEvent(t *testing.T) {
 	env := setupFullTestEnv(t)
+	repoID := createFullTestRepo(t, env.client)
+	sessionID := uuid.New()
+	env.client.Session.Create().
+		SetID(sessionID).
+		SetRepoConfigID(repoID).
+		SetBranch("main").
+		SaveX(context.Background())
 
 	w := doFullRequest(env, http.MethodPost, "/api/v1/session-usage-events", map[string]any{
 		"event_id":      "usage-evt-1",
-		"session_id":    "11111111-1111-1111-1111-111111111111",
+		"session_id":    sessionID.String(),
 		"workspace_id":  "ws-1",
 		"request_id":    "req-1",
 		"provider_name": "sub2api",
@@ -30,10 +40,17 @@ func TestSessionUsageIngest_CreatesUsageEvent(t *testing.T) {
 
 func TestSessionEventIngest_CreatesPromptEvent(t *testing.T) {
 	env := setupFullTestEnv(t)
+	repoID := createFullTestRepo(t, env.client)
+	sessionID := uuid.New()
+	env.client.Session.Create().
+		SetID(sessionID).
+		SetRepoConfigID(repoID).
+		SetBranch("main").
+		SaveX(context.Background())
 
 	w := doFullRequest(env, http.MethodPost, "/api/v1/session-events", map[string]any{
 		"event_id":     "event-1",
-		"session_id":   "11111111-1111-1111-1111-111111111111",
+		"session_id":   sessionID.String(),
 		"workspace_id": "ws-1",
 		"event_type":   "user_prompt_submit",
 		"source":       "codex_hook",

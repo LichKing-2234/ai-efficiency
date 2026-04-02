@@ -2,6 +2,7 @@ package schema
 
 import (
 	"entgo.io/ent"
+	"entgo.io/ent/schema/edge"
 	"entgo.io/ent/schema/field"
 
 	"github.com/google/uuid"
@@ -28,5 +29,15 @@ func (SessionEvent) Fields() []ent.Field {
 			Optional(),
 		field.Time("created_at").
 			Default(timeNow),
+	}
+}
+
+func (SessionEvent) Edges() []ent.Edge {
+	return []ent.Edge{
+		edge.From("session", Session.Type).
+			Ref("session_events").
+			Field("session_id").
+			Unique().
+			Required(),
 	}
 }

@@ -76,6 +76,8 @@ func (Session) Edges() []ent.Edge {
 			Unique(),
 		edge.To("session_workspaces", SessionWorkspace.Type),
 		edge.To("agent_metadata_events", AgentMetadataEvent.Type),
+		edge.To("session_usage_events", SessionUsageEvent.Type),
+		edge.To("session_events", SessionEvent.Type),
 		edge.To("commit_checkpoints", CommitCheckpoint.Type),
 		edge.To("commit_rewrites", CommitRewrite.Type),
 	}

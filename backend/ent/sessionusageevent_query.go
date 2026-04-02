@@ -12,16 +12,19 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/ai-efficiency/backend/ent/predicate"
+	"github.com/ai-efficiency/backend/ent/session"
 	"github.com/ai-efficiency/backend/ent/sessionusageevent"
+	"github.com/google/uuid"
 )
 
 // SessionUsageEventQuery is the builder for querying SessionUsageEvent entities.
 type SessionUsageEventQuery struct {
 	config
-	ctx        *QueryContext
-	order      []sessionusageevent.OrderOption
-	inters     []Interceptor
-	predicates []predicate.SessionUsageEvent
+	ctx         *QueryContext
+	order       []sessionusageevent.OrderOption
+	inters      []Interceptor
+	predicates  []predicate.SessionUsageEvent
+	withSession *SessionQuery
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
 	path func(context.Context) (*sql.Selector, error)
@@ -56,6 +59,28 @@ func (sueq *SessionUsageEventQuery) Unique(unique bool) *SessionUsageEventQuery 
 func (sueq *SessionUsageEventQuery) Order(o ...sessionusageevent.OrderOption) *SessionUsageEventQuery {
 	sueq.order = append(sueq.order, o...)
 	return sueq
+}
+
+// QuerySession chains the current query on the "session" edge.
+func (sueq *SessionUsageEventQuery) QuerySession() *SessionQuery {
+	query := (&SessionClient{config: sueq.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := sueq.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := sueq.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(sessionusageevent.Table, sessionusageevent.FieldID, selector),
+			sqlgraph.To(session.Table, session.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, sessionusageevent.SessionTable, sessionusageevent.SessionColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(sueq.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
 }
 
 // First returns the first SessionUsageEvent entity from the query.
@@ -245,15 +270,27 @@ func (sueq *SessionUsageEventQuery) Clone() *SessionUsageEventQuery {
 		return nil
 	}
 	return &SessionUsageEventQuery{
-		config:     sueq.config,
-		ctx:        sueq.ctx.Clone(),
-		order:      append([]sessionusageevent.OrderOption{}, sueq.order...),
-		inters:     append([]Interceptor{}, sueq.inters...),
-		predicates: append([]predicate.SessionUsageEvent{}, sueq.predicates...),
+		config:      sueq.config,
+		ctx:         sueq.ctx.Clone(),
+		order:       append([]sessionusageevent.OrderOption{}, sueq.order...),
+		inters:      append([]Interceptor{}, sueq.inters...),
+		predicates:  append([]predicate.SessionUsageEvent{}, sueq.predicates...),
+		withSession: sueq.withSession.Clone(),
 		// clone intermediate query.
 		sql:  sueq.sql.Clone(),
 		path: sueq.path,
 	}
+}
+
+// WithSession tells the query-builder to eager-load the nodes that are connected to
+// the "session" edge. The optional arguments are used to configure the query builder of the edge.
+func (sueq *SessionUsageEventQuery) WithSession(opts ...func(*SessionQuery)) *SessionUsageEventQuery {
+	query := (&SessionClient{config: sueq.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	sueq.withSession = query
+	return sueq
 }
 
 // GroupBy is used to group vertices by one or more fields/columns.
@@ -332,8 +369,11 @@ func (sueq *SessionUsageEventQuery) prepareQuery(ctx context.Context) error {
 
 func (sueq *SessionUsageEventQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*SessionUsageEvent, error) {
 	var (
-		nodes = []*SessionUsageEvent{}
-		_spec = sueq.querySpec()
+		nodes       = []*SessionUsageEvent{}
+		_spec       = sueq.querySpec()
+		loadedTypes = [1]bool{
+			sueq.withSession != nil,
+		}
 	)
 	_spec.ScanValues = func(columns []string) ([]any, error) {
 		return (*SessionUsageEvent).scanValues(nil, columns)
@@ -341,6 +381,7 @@ func (sueq *SessionUsageEventQuery) sqlAll(ctx context.Context, hooks ...queryHo
 	_spec.Assign = func(columns []string, values []any) error {
 		node := &SessionUsageEvent{config: sueq.config}
 		nodes = append(nodes, node)
+		node.Edges.loadedTypes = loadedTypes
 		return node.assignValues(columns, values)
 	}
 	for i := range hooks {
@@ -352,7 +393,43 @@ func (sueq *SessionUsageEventQuery) sqlAll(ctx context.Context, hooks ...queryHo
 	if len(nodes) == 0 {
 		return nodes, nil
 	}
+	if query := sueq.withSession; query != nil {
+		if err := sueq.loadSession(ctx, query, nodes, nil,
+			func(n *SessionUsageEvent, e *Session) { n.Edges.Session = e }); err != nil {
+			return nil, err
+		}
+	}
 	return nodes, nil
+}
+
+func (sueq *SessionUsageEventQuery) loadSession(ctx context.Context, query *SessionQuery, nodes []*SessionUsageEvent, init func(*SessionUsageEvent), assign func(*SessionUsageEvent, *Session)) error {
+	ids := make([]uuid.UUID, 0, len(nodes))
+	nodeids := make(map[uuid.UUID][]*SessionUsageEvent)
+	for i := range nodes {
+		fk := nodes[i].SessionID
+		if _, ok := nodeids[fk]; !ok {
+			ids = append(ids, fk)
+		}
+		nodeids[fk] = append(nodeids[fk], nodes[i])
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	query.Where(session.IDIn(ids...))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		nodes, ok := nodeids[n.ID]
+		if !ok {
+			return fmt.Errorf(`unexpected foreign-key "session_id" returned %v`, n.ID)
+		}
+		for i := range nodes {
+			assign(nodes[i], n)
+		}
+	}
+	return nil
 }
 
 func (sueq *SessionUsageEventQuery) sqlCount(ctx context.Context) (int, error) {
@@ -379,6 +456,9 @@ func (sueq *SessionUsageEventQuery) querySpec() *sqlgraph.QuerySpec {
 			if fields[i] != sessionusageevent.FieldID {
 				_spec.Node.Columns = append(_spec.Node.Columns, fields[i])
 			}
+		}
+		if sueq.withSession != nil {
+			_spec.Node.AddColumnOnce(sessionusageevent.FieldSessionID)
 		}
 	}
 	if ps := sueq.predicates; len(ps) > 0 {
