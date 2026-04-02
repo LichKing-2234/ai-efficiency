@@ -256,7 +256,13 @@ func Serve(ctx context.Context, cfg RuntimeConfig) error {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		// Minimal ingress behavior for Task 6: acknowledge validated event locally.
+
+		// Bind ingress to the running proxy session and persist before ack.
+		event.SessionID = cfg.SessionID
+		if err := AppendDurableEvent(cfg.SessionID, event); err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
 		w.WriteHeader(http.StatusCreated)
 	})
 	mux.HandleFunc("/openai/v1/chat/completions", proxyServer.handleOpenAIChatCompletions)

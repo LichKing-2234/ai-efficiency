@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -15,6 +17,52 @@ type EventEnvelope struct {
 	EventType string `json:"event_type"`
 	SessionID string `json:"session_id,omitempty"`
 	Payload   any    `json:"payload,omitempty"`
+}
+
+const eventSpoolFileName = "proxy-session-events.jsonl"
+
+func EventSpoolPath(sessionID string) string {
+	return filepath.Join(runtimeQueueDir(sessionID), eventSpoolFileName)
+}
+
+func AppendDurableEvent(sessionID string, event EventEnvelope) error {
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		return fmt.Errorf("session id is empty")
+	}
+	event.SessionID = sessionID
+
+	queueDir := runtimeQueueDir(sessionID)
+	if err := os.MkdirAll(queueDir, 0o700); err != nil {
+		return fmt.Errorf("create event queue dir: %w", err)
+	}
+
+	line, err := json.Marshal(event)
+	if err != nil {
+		return fmt.Errorf("marshal event spool line: %w", err)
+	}
+	line = append(line, '\n')
+
+	f, err := os.OpenFile(EventSpoolPath(sessionID), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		return fmt.Errorf("open event spool file: %w", err)
+	}
+	defer f.Close()
+	if _, err := f.Write(line); err != nil {
+		return fmt.Errorf("write event spool line: %w", err)
+	}
+	if err := f.Sync(); err != nil {
+		return fmt.Errorf("sync event spool file: %w", err)
+	}
+	return nil
+}
+
+func runtimeQueueDir(sessionID string) string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".ae-cli", "runtime", sessionID, "queue")
 }
 
 func PostEvent(ctx context.Context, listenAddr, authToken string, event EventEnvelope) error {
