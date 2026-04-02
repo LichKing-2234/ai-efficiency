@@ -9,6 +9,7 @@
 - 本文是平台级历史基线文档。
 - 认证、provider 集成、session API key 归因等核心合同，当前应以 `2026-03-24-oauth-cli-login-design.md` 和 `2026-03-26-session-pr-attribution-design.md` 为准。
 - 文中仍出现的 `sub2api` 数据库直连、`sub2api_*` 字段、旧 session 示例，仅代表早期设计背景，不应覆盖当前代码和后续设计。
+- 项目级架构图与模块总览见 [`docs/architecture.md`](../../architecture.md)；本文仍保留为历史基线说明。
 
 ## 概述
 
@@ -83,7 +84,7 @@ ai-efficiency/
 ```
 
 关键设计决策：
-- 前端嵌入后端二进制，和 sub2api 一样的部署模式
+- 当前交付形态为前端构建产物随 backend 服务镜像一起发布；是否编译进单二进制应以当前代码为准
 - LLM 分析调用通过 sub2api 的 API 网关路由，形成闭环
 
 ## 数据模型

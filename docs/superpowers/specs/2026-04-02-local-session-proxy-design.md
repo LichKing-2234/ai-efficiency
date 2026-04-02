@@ -7,6 +7,8 @@
 - [2026-03-24-oauth-cli-login-design.md](/Users/admin/ai-efficiency/docs/superpowers/specs/2026-03-24-oauth-cli-login-design.md)  
 - [2026-03-26-session-pr-attribution-design.md](/Users/admin/ai-efficiency/docs/superpowers/specs/2026-03-26-session-pr-attribution-design.md)
 
+项目级架构总览见 [`docs/architecture.md`](../../architecture.md)。本文中的 local session proxy 仍为设计方向，不代表当前代码已默认实现。
+
 ## 概述
 
 本设计定义一个**基于 superpowers session runtime 的本地 session-aware proxy/daemon**。
@@ -528,4 +530,3 @@ hooks 的作用不是记 token，而是记：
 7. 能对任一 session 直接汇总 token usage
 8. 能将 session usage 映射到 commit interval
 9. 现有 backend / frontend attribution 查询链路不被破坏
-

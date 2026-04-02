@@ -10,6 +10,7 @@
 - relay/OAuth/provider delivery 仍然是当前系统的基础设计来源。
 - 但本文中关于用户身份、session API key 生命周期、PR 精确归因的部分，已经被 `2026-03-26-session-pr-attribution-design.md` 进一步细化。
 - 当前代码仍主要落在本文这版合同上；后续如实现 username 主键、session bootstrap、session-bound primary key，应以 2026-03-26 设计为准，并同步更新本文。
+- 项目级架构图与模块关系见 [`docs/architecture.md`](../../architecture.md)。
 
 ## Scope
 

@@ -3,10 +3,12 @@
 ## Quick Reference
 
 - Tech stack: Go 1.26+ (Gin + Ent) backend, Vue 3 (Vite + TailwindCSS + Pinia) frontend
+- Architecture overview: `docs/architecture.md`
 - Design specs: `docs/superpowers/specs/`
 - Implementation plans: `docs/superpowers/plans/`
 - Current auth/provider baseline: `docs/superpowers/specs/2026-03-24-oauth-cli-login-design.md`
 - Latest session attribution draft: `docs/superpowers/specs/2026-03-26-session-pr-attribution-design.md`
+- Local session proxy remains a draft in `docs/superpowers/specs/2026-04-02-local-session-proxy-design.md` unless code proves otherwise
 - Remote: `ssh://git@git.agoralab.co/ai/ai-efficiency.git`
 
 ## Commit Convention

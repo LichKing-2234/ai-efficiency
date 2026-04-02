@@ -5,6 +5,8 @@
 **Scope:** `ae-cli/`, `backend/`, `relay provider`, `docs/`
 **Related:** [2026-03-17-ai-efficiency-platform-design.md](/Users/admin/ai-efficiency/docs/superpowers/specs/2026-03-17-ai-efficiency-platform-design.md)
 
+项目级架构总览与运行时关系图见 [`docs/architecture.md`](../../architecture.md)。
+
 ## 概述
 
 本设计定义一条可验证的端到端链路，用于把 `ae-cli` 启动的开发会话、`sub2api` 主账用量、`Codex / Claude / Kiro` 本地会话元数据，以及最终的 PR 结果连接起来。
