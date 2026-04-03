@@ -100,7 +100,26 @@ func setupTestEnv(t *testing.T) *testEnv {
 	}
 }
 
+func issueTokenForUser(t *testing.T, env *testEnv, id int, username, role string) string {
+	t.Helper()
+
+	pair, err := env.authSvc.GenerateTokenPairForUser(&auth.UserInfo{
+		ID:       id,
+		Username: username,
+		Role:     role,
+	})
+	if err != nil {
+		t.Fatalf("generate token: %v", err)
+	}
+
+	return pair.AccessToken
+}
+
 func doRequest(env *testEnv, method, path string, body interface{}) *httptest.ResponseRecorder {
+	return doRequestWithToken(env, method, path, body, env.token)
+}
+
+func doRequestWithToken(env *testEnv, method, path string, body interface{}, token string) *httptest.ResponseRecorder {
 	var reqBody *bytes.Buffer
 	if body != nil {
 		b, _ := json.Marshal(body)
@@ -112,8 +131,8 @@ func doRequest(env *testEnv, method, path string, body interface{}) *httptest.Re
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest(method, path, reqBody)
 	req.Header.Set("Content-Type", "application/json")
-	if env.token != "" {
-		req.Header.Set("Authorization", "Bearer "+env.token)
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
 	}
 	env.router.ServeHTTP(w, req)
 	return w

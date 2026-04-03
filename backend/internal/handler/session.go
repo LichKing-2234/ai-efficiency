@@ -3,6 +3,7 @@ package handler
 import (
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/ai-efficiency/backend/ent"
@@ -52,6 +53,30 @@ type addInvocationRequest struct {
 	Tool  string `json:"tool" binding:"required"`
 	Start string `json:"start" binding:"required"`
 	End   string `json:"end"`
+}
+
+func isAdminUser(c *gin.Context) bool {
+	uc := auth.GetUserContext(c)
+	return uc != nil && uc.Role == "admin"
+}
+
+func requestedOwnerScope(c *gin.Context) string {
+	scope := strings.TrimSpace(c.DefaultQuery("owner_scope", ""))
+	if scope == "" {
+		if isAdminUser(c) {
+			return "all"
+		}
+		return "mine"
+	}
+	if !isAdminUser(c) {
+		return "mine"
+	}
+	switch scope {
+	case "all", "mine", "unowned":
+		return scope
+	default:
+		return "all"
+	}
 }
 
 // Bootstrap handles POST /api/v1/sessions/bootstrap
@@ -222,7 +247,14 @@ func (h *SessionHandler) List(c *gin.Context) {
 		WithRepoConfig().
 		Order(ent.Desc(session.FieldStartedAt))
 	if uc := auth.GetUserContext(c); uc != nil {
-		query = query.Where(session.HasUserWith(user.IDEQ(uc.UserID)))
+		switch requestedOwnerScope(c) {
+		case "mine":
+			query = query.Where(session.HasUserWith(user.IDEQ(uc.UserID)))
+		case "unowned":
+			query = query.Where(session.Not(session.HasUser()))
+		case "all":
+			// Admin users can view all sessions.
+		}
 	}
 
 	// Filter by status
@@ -236,6 +268,19 @@ func (h *SessionHandler) List(c *gin.Context) {
 		if err == nil {
 			query = query.Where(session.HasRepoConfigWith(repoconfig.IDEQ(id)))
 		}
+	}
+
+	if branch := strings.TrimSpace(c.Query("branch")); branch != "" {
+		query = query.Where(session.BranchContainsFold(branch))
+	}
+
+	if repoQuery := strings.TrimSpace(c.Query("repo_query")); repoQuery != "" {
+		query = query.Where(session.HasRepoConfigWith(
+			repoconfig.Or(
+				repoconfig.FullNameContainsFold(repoQuery),
+				repoconfig.CloneURLContainsFold(repoQuery),
+			),
+		))
 	}
 
 	// Pagination
@@ -281,7 +326,7 @@ func (h *SessionHandler) Get(c *gin.Context) {
 
 	query := h.entClient.Session.Query().
 		Where(session.IDEQ(id))
-	if uc := auth.GetUserContext(c); uc != nil {
+	if uc := auth.GetUserContext(c); uc != nil && uc.Role != "admin" {
 		query = query.Where(session.HasUserWith(user.IDEQ(uc.UserID)))
 	}
 

@@ -195,6 +195,182 @@ func TestSessionListWithFilters(t *testing.T) {
 	}
 }
 
+func TestSessionListAdminCanSeeOwnedAndUnownedSessions(t *testing.T) {
+	env := setupTestEnv(t)
+	repoID := createTestRepo(t, env.client)
+	ctx := context.Background()
+
+	member, err := env.client.User.Create().
+		SetUsername("member").
+		SetEmail("member@test.com").
+		SetAuthSource("sub2api_sso").
+		SetRole("user").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create member: %v", err)
+	}
+
+	_, err = env.client.Session.Create().
+		SetID(uuid.MustParse("550e8400-e29b-41d4-a716-446655440110")).
+		SetRepoConfigID(repoID).
+		SetUserID(member.ID).
+		SetBranch("feat/member").
+		SetStartedAt(time.Now()).
+		SetStatus("completed").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create member session: %v", err)
+	}
+
+	_, err = env.client.Session.Create().
+		SetID(uuid.MustParse("550e8400-e29b-41d4-a716-446655440111")).
+		SetRepoConfigID(repoID).
+		SetBranch("feat/unowned").
+		SetStartedAt(time.Now()).
+		SetStatus("completed").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create unowned session: %v", err)
+	}
+
+	w := doRequest(env, "GET", "/api/v1/sessions", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	resp := parseResponse(t, w)
+	data := resp["data"].(map[string]interface{})
+	total := int(data["total"].(float64))
+	if total != 2 {
+		t.Fatalf("total = %d, want %d", total, 2)
+	}
+}
+
+func TestSessionListNonAdminOnlySeesOwnSessionsEvenIfOwnerScopeAll(t *testing.T) {
+	env := setupTestEnv(t)
+	repoID := createTestRepo(t, env.client)
+	ctx := context.Background()
+
+	member, err := env.client.User.Create().
+		SetUsername("member").
+		SetEmail("member@test.com").
+		SetAuthSource("sub2api_sso").
+		SetRole("user").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create member: %v", err)
+	}
+
+	_, err = env.client.Session.Create().
+		SetID(uuid.MustParse("550e8400-e29b-41d4-a716-446655440120")).
+		SetRepoConfigID(repoID).
+		SetUserID(member.ID).
+		SetBranch("feat/member").
+		SetStartedAt(time.Now()).
+		SetStatus("active").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create member session: %v", err)
+	}
+
+	_, err = env.client.Session.Create().
+		SetID(uuid.MustParse("550e8400-e29b-41d4-a716-446655440121")).
+		SetRepoConfigID(repoID).
+		SetUserID(env.userID).
+		SetBranch("feat/admin").
+		SetStartedAt(time.Now()).
+		SetStatus("active").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create admin session: %v", err)
+	}
+
+	memberToken := issueTokenForUser(t, env, member.ID, member.Username, "user")
+	w := doRequestWithToken(env, "GET", "/api/v1/sessions?owner_scope=all", nil, memberToken)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	resp := parseResponse(t, w)
+	data := resp["data"].(map[string]interface{})
+	total := int(data["total"].(float64))
+	if total != 1 {
+		t.Fatalf("total = %d, want %d", total, 1)
+	}
+}
+
+func TestSessionListFiltersByOwnerScopeRepoQueryAndBranch(t *testing.T) {
+	env := setupTestEnv(t)
+	ctx := context.Background()
+
+	provider, err := env.client.ScmProvider.Create().
+		SetName("test-github").
+		SetType("github").
+		SetBaseURL("https://api.github.com").
+		SetCredentials("encrypted").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+
+	alphaRepo, err := env.client.RepoConfig.Create().
+		SetScmProviderID(provider.ID).
+		SetName("alpha").
+		SetFullName("org/alpha").
+		SetCloneURL("https://github.com/org/alpha.git").
+		SetDefaultBranch("main").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create alpha repo: %v", err)
+	}
+
+	betaRepo, err := env.client.RepoConfig.Create().
+		SetScmProviderID(provider.ID).
+		SetName("beta").
+		SetFullName("org/beta").
+		SetCloneURL("https://github.com/org/beta.git").
+		SetDefaultBranch("main").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create beta repo: %v", err)
+	}
+
+	_, err = env.client.Session.Create().
+		SetID(uuid.MustParse("550e8400-e29b-41d4-a716-446655440130")).
+		SetRepoConfigID(alphaRepo.ID).
+		SetBranch("feat/search-me").
+		SetStartedAt(time.Now()).
+		SetStatus("completed").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create alpha unowned session: %v", err)
+	}
+
+	_, err = env.client.Session.Create().
+		SetID(uuid.MustParse("550e8400-e29b-41d4-a716-446655440131")).
+		SetRepoConfigID(betaRepo.ID).
+		SetUserID(env.userID).
+		SetBranch("fix/other").
+		SetStartedAt(time.Now()).
+		SetStatus("active").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create beta owned session: %v", err)
+	}
+
+	w := doRequest(env, "GET", "/api/v1/sessions?owner_scope=unowned&repo_query=alpha&branch=search", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	resp := parseResponse(t, w)
+	data := resp["data"].(map[string]interface{})
+	total := int(data["total"].(float64))
+	if total != 1 {
+		t.Fatalf("total = %d, want %d", total, 1)
+	}
+}
+
 func TestSessionGet(t *testing.T) {
 	env := setupTestEnv(t)
 	repoID := createTestRepo(t, env.client)

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -267,7 +268,7 @@ func TestSessionDetailOrdersAndLimitsCheckpointUsageAndSessionEventEdges(t *test
 	}
 }
 
-func TestSessionDetailRejectsNonOwnerAccess(t *testing.T) {
+func TestSessionDetailAdminCanReadOtherUsersSessionButUserCannot(t *testing.T) {
 	t.Parallel()
 	gin.SetMode(gin.TestMode)
 
@@ -300,6 +301,13 @@ func TestSessionDetailRejectsNonOwnerAccess(t *testing.T) {
 		SetAuthSource(user.AuthSourceLdap).
 		SaveX(ctx)
 
+	admin := client.User.Create().
+		SetUsername("admin").
+		SetEmail("admin@example.com").
+		SetAuthSource(user.AuthSourceLdap).
+		SetRole(user.RoleAdmin).
+		SaveX(ctx)
+
 	ownerSessionID := uuid.New()
 	client.Session.Create().
 		SetID(ownerSessionID).
@@ -309,23 +317,74 @@ func TestSessionDetailRejectsNonOwnerAccess(t *testing.T) {
 		SetStartedAt(time.Now().UTC()).
 		SaveX(ctx)
 
+	authSvc := auth.NewService(client, "test-jwt-secret-32-bytes-long!!!", 7200, 604800, nil)
 	h := NewSessionHandler(client, nil)
 	r := gin.New()
 	r.Use(func(c *gin.Context) {
-		c.Set(auth.ContextKeyUser, &auth.UserContext{
-			UserID:   other.ID,
-			Username: "other",
-			Role:     "user",
-		})
+		header := c.GetHeader("Authorization")
+		if strings.HasPrefix(header, "Bearer ") {
+			token := strings.TrimPrefix(header, "Bearer ")
+			claims, err := authSvc.ValidateAccessToken(token)
+			if err == nil {
+				userIDValue, _ := claims["user_id"].(float64)
+				username, _ := claims["username"].(string)
+				role, _ := claims["role"].(string)
+				c.Set(auth.ContextKeyUser, &auth.UserContext{
+					UserID:   int(userIDValue),
+					Username: username,
+					Role:     role,
+				})
+			}
+		}
 		c.Next()
 	})
 	r.GET("/sessions/:id", h.Get)
 
-	req := httptest.NewRequest(http.MethodGet, "/sessions/"+ownerSessionID.String(), nil)
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, req)
-	if w.Code != http.StatusNotFound {
-		t.Fatalf("status = %d, want 404, body=%s", w.Code, w.Body.String())
+	makeToken := func(t *testing.T, id int, username, role string) string {
+		t.Helper()
+		pair, err := authSvc.GenerateTokenPairForUser(&auth.UserInfo{
+			ID:       id,
+			Username: username,
+			Role:     role,
+		})
+		if err != nil {
+			t.Fatalf("generate token: %v", err)
+		}
+		return pair.AccessToken
+	}
+
+	tests := []struct {
+		name       string
+		token      string
+		wantStatus int
+	}{
+		{
+			name:       "admin can read another users session",
+			token:      makeToken(t, admin.ID, admin.Username, "admin"),
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "owner can read own session",
+			token:      makeToken(t, owner.ID, owner.Username, "user"),
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "different non admin user gets not found",
+			token:      makeToken(t, other.ID, other.Username, "user"),
+			wantStatus: http.StatusNotFound,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/sessions/"+ownerSessionID.String(), nil)
+			req.Header.Set("Authorization", "Bearer "+tc.token)
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
+			if w.Code != tc.wantStatus {
+				t.Fatalf("status = %d, want %d, body=%s", w.Code, tc.wantStatus, w.Body.String())
+			}
+		})
 	}
 }
 
