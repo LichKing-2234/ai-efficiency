@@ -266,6 +266,7 @@ func Serve(ctx context.Context, cfg RuntimeConfig) error {
 		w.WriteHeader(http.StatusCreated)
 	})
 	mux.HandleFunc("/openai/v1/chat/completions", proxyServer.handleOpenAIChatCompletions)
+	mux.HandleFunc("/openai/v1/responses", proxyServer.handleOpenAIResponses)
 	mux.HandleFunc("/anthropic/v1/messages", proxyServer.handleAnthropicMessages)
 
 	srv := &http.Server{

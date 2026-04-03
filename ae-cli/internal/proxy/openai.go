@@ -71,6 +71,14 @@ type openAIUsage struct {
 }
 
 func (s *Server) handleOpenAIChatCompletions(w http.ResponseWriter, r *http.Request) {
+	s.handleOpenAIRequest(w, r, "/chat/completions")
+}
+
+func (s *Server) handleOpenAIResponses(w http.ResponseWriter, r *http.Request) {
+	s.handleOpenAIRequest(w, r, "/responses")
+}
+
+func (s *Server) handleOpenAIRequest(w http.ResponseWriter, r *http.Request, upstreamPath string) {
 	if r.Method != http.MethodPost {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
@@ -84,7 +92,7 @@ func (s *Server) handleOpenAIChatCompletions(w http.ResponseWriter, r *http.Requ
 	reqID := newRequestID()
 	startedAt := time.Now().UTC()
 
-	upstreamURL := strings.TrimRight(s.cfg.ProviderURL, "/") + "/chat/completions"
+	upstreamURL := strings.TrimRight(s.cfg.ProviderURL, "/") + upstreamPath
 	upstreamReq, err := http.NewRequestWithContext(r.Context(), http.MethodPost, upstreamURL, r.Body)
 	if err != nil {
 		s.recorder.RecordUsage(UsageEvent{
@@ -163,17 +171,31 @@ func parseOpenAIUsage(body []byte) openAIUsage {
 		Usage struct {
 			PromptTokens     int `json:"prompt_tokens"`
 			CompletionTokens int `json:"completion_tokens"`
+			InputTokens      int `json:"input_tokens"`
+			OutputTokens     int `json:"output_tokens"`
 			TotalTokens      int `json:"total_tokens"`
 		} `json:"usage"`
 	}
 	if err := json.Unmarshal(body, &payload); err != nil {
 		return openAIUsage{}
 	}
+	inputTokens := payload.Usage.PromptTokens
+	if inputTokens == 0 {
+		inputTokens = payload.Usage.InputTokens
+	}
+	outputTokens := payload.Usage.CompletionTokens
+	if outputTokens == 0 {
+		outputTokens = payload.Usage.OutputTokens
+	}
+	totalTokens := payload.Usage.TotalTokens
+	if totalTokens == 0 && (inputTokens > 0 || outputTokens > 0) {
+		totalTokens = inputTokens + outputTokens
+	}
 	return openAIUsage{
 		Model:        payload.Model,
-		InputTokens:  payload.Usage.PromptTokens,
-		OutputTokens: payload.Usage.CompletionTokens,
-		TotalTokens:  payload.Usage.TotalTokens,
+		InputTokens:  inputTokens,
+		OutputTokens: outputTokens,
+		TotalTokens:  totalTokens,
 	}
 }
 

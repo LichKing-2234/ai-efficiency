@@ -350,6 +350,121 @@ func TestProxyOpenAIResponses_TransportErrorRecordsFailureUsage(t *testing.T) {
 	}
 }
 
+func TestProxyOpenAIResponsesRoute_ForwardsRequestAndRecordsUsage(t *testing.T) {
+	fx := startProxyWithFakeOpenAIResponsesUpstream(t)
+	srv := fx.Server
+
+	requestBody := `{"model":"gpt-5.4","input":"hi"}`
+	req, err := http.NewRequest(
+		http.MethodPost,
+		"http://"+srv.ListenAddr+"/openai/v1/responses",
+		strings.NewReader(requestBody),
+	)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer tok-openai")
+
+	resp, err := (&http.Client{Timeout: 1 * time.Second}).Do(req)
+	if err != nil {
+		t.Fatalf("post proxy: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+
+	if got := fx.Upstream.Hits(); got != 1 {
+		t.Fatalf("upstream hits = %d, want 1", got)
+	}
+	if got := fx.Upstream.LastAuthorization(); got != "Bearer provider-key" {
+		t.Fatalf("upstream authorization = %q, want %q", got, "Bearer provider-key")
+	}
+	if got := fx.Upstream.LastBody(); got != requestBody {
+		t.Fatalf("upstream body = %q, want %q", got, requestBody)
+	}
+
+	lastUsage, ok := fx.Recorder.LastEvent()
+	if !ok {
+		t.Fatal("expected usage event")
+	}
+	if lastUsage.TotalTokens != 140 {
+		t.Fatalf("total_tokens = %d, want 140", lastUsage.TotalTokens)
+	}
+	if lastUsage.Status != "completed" {
+		t.Fatalf("status = %q, want %q", lastUsage.Status, "completed")
+	}
+}
+
+func TestProxyOpenAIResponsesRoute_RejectsUnauthorizedRequest(t *testing.T) {
+	fx := startProxyWithFakeOpenAIResponsesUpstream(t)
+	srv := fx.Server
+
+	req, err := http.NewRequest(
+		http.MethodPost,
+		"http://"+srv.ListenAddr+"/openai/v1/responses",
+		strings.NewReader(`{"model":"gpt-5.4","input":"hi"}`),
+	)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := (&http.Client{Timeout: 1 * time.Second}).Do(req)
+	if err != nil {
+		t.Fatalf("post proxy: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusUnauthorized)
+	}
+	if got := fx.Upstream.Hits(); got != 0 {
+		t.Fatalf("upstream hits = %d, want 0", got)
+	}
+	if got := fx.Recorder.EventCount(); got != 0 {
+		t.Fatalf("usage events = %d, want 0", got)
+	}
+}
+
+func TestProxyOpenAIResponsesRoute_Upstream5xxRecordsFailureUsage(t *testing.T) {
+	fx := startProxyWithFakeOpenAIResponsesUpstream(t)
+	fx.Upstream.SetResponse(
+		http.StatusBadGateway,
+		`{"error":{"message":"upstream failed"}}`,
+	)
+	srv := fx.Server
+
+	req, err := http.NewRequest(
+		http.MethodPost,
+		"http://"+srv.ListenAddr+"/openai/v1/responses",
+		strings.NewReader(`{"model":"gpt-5.4","input":"hi"}`),
+	)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer tok-openai")
+
+	resp, err := (&http.Client{Timeout: 1 * time.Second}).Do(req)
+	if err != nil {
+		t.Fatalf("post proxy: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadGateway {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusBadGateway)
+	}
+
+	lastUsage, ok := fx.Recorder.LastEvent()
+	if !ok {
+		t.Fatal("expected usage event")
+	}
+	if lastUsage.Status == "completed" {
+		t.Fatalf("status = %q, want non-completed", lastUsage.Status)
+	}
+}
+
 func TestProxyAnthropicMessages_ForwardsRequestAndRecordsUsage(t *testing.T) {
 	fx := startProxyWithFakeAnthropicUpstream(t)
 	srv := fx.Server
@@ -876,6 +991,76 @@ func startProxyWithFakeOpenAIUpstream(t *testing.T) openAIFixture {
 	}
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/chat/completions" {
+			http.NotFound(w, r)
+			return
+		}
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+
+		body, _ := io.ReadAll(r.Body)
+		_ = r.Body.Close()
+		upstreamSpy.Hit(
+			strings.TrimSpace(r.Header.Get("Authorization")),
+			strings.TrimSpace(r.Header.Get("x-api-key")),
+			strings.TrimSpace(r.Header.Get("anthropic-version")),
+			strings.TrimSpace(r.Header.Get("anthropic-beta")),
+			string(body),
+		)
+
+		status, respBody := upstreamSpy.CurrentResponse()
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		_, _ = w.Write([]byte(respBody))
+	}))
+	t.Cleanup(upstream.Close)
+
+	origNewProxyServer := newProxyServer
+	newProxyServer = func(cfg RuntimeConfig) *Server {
+		return NewServer(cfg, recorder, nil)
+	}
+	t.Cleanup(func() {
+		newProxyServer = origNewProxyServer
+	})
+
+	cfg := RuntimeConfig{
+		SessionID:   "sess-openai",
+		ListenAddr:  reserveListenAddrForTest(t),
+		AuthToken:   "tok-openai",
+		ProviderURL: upstream.URL,
+		ProviderKey: "provider-key",
+	}
+
+	result, err := Spawn(cfg)
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = Stop(StopRequest{
+			PID:        result.PID,
+			ListenAddr: result.ListenAddr,
+			AuthToken:  cfg.AuthToken,
+			ConfigPath: result.ConfigPath,
+		})
+	})
+	return openAIFixture{
+		Server:   result,
+		Recorder: recorder,
+		Upstream: upstreamSpy,
+	}
+}
+
+func startProxyWithFakeOpenAIResponsesUpstream(t *testing.T) openAIFixture {
+	t.Helper()
+
+	recorder := &fakeOpenAIRecorder{}
+	upstreamSpy := &fakeUpstream{
+		responseStatus: http.StatusOK,
+		responseBody:   `{"id":"resp_1","model":"gpt-5.4","usage":{"input_tokens":70,"output_tokens":70,"total_tokens":140},"output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"hello"}]}]}`,
+	}
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/responses" {
 			http.NotFound(w, r)
 			return
 		}
