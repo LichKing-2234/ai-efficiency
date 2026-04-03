@@ -119,6 +119,72 @@ func TestManagerStartLaunchesLocalProxyAndStoresRuntimeMetadata(t *testing.T) {
 	}
 }
 
+func TestStartLocalProxyUsesOpenAIRuntimeEnvKeys(t *testing.T) {
+	var captured proxy.RuntimeConfig
+	origSpawn := spawnProxyProcess
+	spawnProxyProcess = func(cfg proxy.RuntimeConfig) (proxy.SpawnResult, error) {
+		captured = cfg
+		return proxy.SpawnResult{
+			PID:        4242,
+			ListenAddr: "127.0.0.1:18888",
+			ConfigPath: filepath.Join(t.TempDir(), "runtime.json"),
+		}, nil
+	}
+	t.Cleanup(func() { spawnProxyProcess = origSpawn })
+
+	m := NewManager(nil, &config.Config{})
+	rt := &RuntimeBundle{
+		SessionID: "sess-openai-env",
+		EnvBundle: map[string]string{
+			"OPENAI_BASE_URL": "https://relay.local/openai",
+			"OPENAI_API_KEY":  "openai-runtime-key",
+		},
+	}
+
+	if err := m.startLocalProxy(rt); err != nil {
+		t.Fatalf("startLocalProxy: %v", err)
+	}
+	if captured.ProviderURL != "https://relay.local/openai" {
+		t.Fatalf("ProviderURL = %q, want %q", captured.ProviderURL, "https://relay.local/openai")
+	}
+	if captured.ProviderKey != "openai-runtime-key" {
+		t.Fatalf("ProviderKey = %q, want %q", captured.ProviderKey, "openai-runtime-key")
+	}
+}
+
+func TestStartLocalProxyFallsBackToLegacySub2APIEnvKeys(t *testing.T) {
+	var captured proxy.RuntimeConfig
+	origSpawn := spawnProxyProcess
+	spawnProxyProcess = func(cfg proxy.RuntimeConfig) (proxy.SpawnResult, error) {
+		captured = cfg
+		return proxy.SpawnResult{
+			PID:        4343,
+			ListenAddr: "127.0.0.1:18889",
+			ConfigPath: filepath.Join(t.TempDir(), "runtime.json"),
+		}, nil
+	}
+	t.Cleanup(func() { spawnProxyProcess = origSpawn })
+
+	m := NewManager(nil, &config.Config{})
+	rt := &RuntimeBundle{
+		SessionID: "sess-legacy-env",
+		EnvBundle: map[string]string{
+			"SUB2API_BASE_URL": "https://relay.local/sub2api",
+			"SUB2API_API_KEY":  "legacy-sub2api-key",
+		},
+	}
+
+	if err := m.startLocalProxy(rt); err != nil {
+		t.Fatalf("startLocalProxy: %v", err)
+	}
+	if captured.ProviderURL != "https://relay.local/sub2api" {
+		t.Fatalf("ProviderURL = %q, want %q", captured.ProviderURL, "https://relay.local/sub2api")
+	}
+	if captured.ProviderKey != "legacy-sub2api-key" {
+		t.Fatalf("ProviderKey = %q, want %q", captured.ProviderKey, "legacy-sub2api-key")
+	}
+}
+
 func TestManagerStopRemovesProxyRuntime(t *testing.T) {
 	state, rt, mgr := startSessionWithFakeBootstrap(t)
 
@@ -712,6 +778,23 @@ func TestStartInTempGitRepo(t *testing.T) {
 	os.Chdir(tmpDir)
 	t.Cleanup(func() { os.Chdir(origDir) })
 
+	legacyConfigPath := filepath.Join(tmpDir, ".codex", "config.toml")
+	if err := os.MkdirAll(filepath.Dir(legacyConfigPath), 0o700); err != nil {
+		t.Fatalf("mkdir stale codex dir: %v", err)
+	}
+	if err := os.WriteFile(legacyConfigPath, []byte(`model = "gpt-5.4"
+model_provider = "ae_local_proxy"
+
+[model_providers.ae_local_proxy]
+name = "AI Efficiency Local Proxy"
+base_url = "http://127.0.0.1:43123/openai/v1"
+env_key = "AE_LOCAL_PROXY_TOKEN"
+wire_api = "responses"
+supports_websockets = false
+`), 0o600); err != nil {
+		t.Fatalf("write stale codex config: %v", err)
+	}
+
 	now := time.Now().Truncate(time.Second)
 	wantWorkspaceRoot, err := filepath.EvalSymlinks(tmpDir)
 	if err != nil {
@@ -734,6 +817,18 @@ func TestStartInTempGitRepo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("deriveWorkspaceID: %v", err)
 	}
+
+	var spawnedCfg proxy.RuntimeConfig
+	origSpawn := spawnProxyProcess
+	spawnProxyProcess = func(cfg proxy.RuntimeConfig) (proxy.SpawnResult, error) {
+		spawnedCfg = cfg
+		return proxy.SpawnResult{
+			PID:        31337,
+			ListenAddr: "127.0.0.1:17888",
+			ConfigPath: filepath.Join(t.TempDir(), "runtime.json"),
+		}, nil
+	}
+	t.Cleanup(func() { spawnProxyProcess = origSpawn })
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost && r.URL.Path == "/api/v1/sessions/bootstrap" {
@@ -770,9 +865,11 @@ func TestStartInTempGitRepo(t *testing.T) {
 					ProviderName:  "sub2api",
 					RuntimeRef:    "rt-1",
 					EnvBundle: map[string]string{
-						"AE_SESSION_ID":     "boot-sess-1",
-						"SUB2API_API_KEY":   "k",
-						"ANTHROPIC_API_KEY": "upstream-should-be-removed",
+						"AE_SESSION_ID":      "boot-sess-1",
+						"OPENAI_BASE_URL":    "http://sub2api.test",
+						"OPENAI_API_KEY":     "openai-k",
+						"ANTHROPIC_BASE_URL": "http://sub2api-anthropic.test",
+						"ANTHROPIC_API_KEY":  "upstream-should-be-removed",
 					},
 					KeyExpiresAt: now.Add(1 * time.Hour),
 				},
@@ -802,6 +899,12 @@ func TestStartInTempGitRepo(t *testing.T) {
 	}
 	if state.Branch != "feature/test-start" {
 		t.Errorf("Branch = %q, want %q", state.Branch, "feature/test-start")
+	}
+	if spawnedCfg.ProviderURL != "http://sub2api.test" {
+		t.Fatalf("spawn ProviderURL = %q, want %q", spawnedCfg.ProviderURL, "http://sub2api.test")
+	}
+	if spawnedCfg.ProviderKey != "openai-k" {
+		t.Fatalf("spawn ProviderKey = %q, want %q", spawnedCfg.ProviderKey, "openai-k")
 	}
 
 	// Verify marker/runtime were persisted.

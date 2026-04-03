@@ -57,6 +57,9 @@ func (m *Manager) Start() (*State, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := toolconfig.CleanupLegacyWorkspaceCodexConfig(gc.workspaceRoot); err != nil {
+		return nil, fmt.Errorf("cleaning legacy codex config: %w", err)
+	}
 
 	resp, err := m.client.BootstrapSession(context.Background(), client.BootstrapSessionRequest{
 		RepoFullName:   gc.repoURL,
@@ -532,12 +535,13 @@ func (m *Manager) startLocalProxy(rt *RuntimeBundle) error {
 	if err != nil {
 		return err
 	}
+	providerURL, providerKey := resolveProxyUpstream(rt.EnvBundle)
 	cfg := proxy.RuntimeConfig{
 		SessionID:   rt.SessionID,
 		ListenAddr:  "127.0.0.1:0",
 		AuthToken:   token,
-		ProviderURL: strings.TrimSpace(rt.EnvBundle["SUB2API_BASE_URL"]),
-		ProviderKey: strings.TrimSpace(rt.EnvBundle["SUB2API_API_KEY"]),
+		ProviderURL: providerURL,
+		ProviderKey: providerKey,
 	}
 	result, err := spawnProxyProcess(cfg)
 	if err != nil {
@@ -555,6 +559,34 @@ func (m *Manager) startLocalProxy(rt *RuntimeBundle) error {
 	rt.EnvBundle["AE_LOCAL_PROXY_URL"] = "http://" + result.ListenAddr
 	rt.EnvBundle["AE_LOCAL_PROXY_TOKEN"] = token
 	return nil
+}
+
+func resolveProxyUpstream(env map[string]string) (string, string) {
+	pairs := [][2]string{
+		{"OPENAI_BASE_URL", "OPENAI_API_KEY"},
+		{"ANTHROPIC_BASE_URL", "ANTHROPIC_API_KEY"},
+		{"SUB2API_BASE_URL", "SUB2API_API_KEY"},
+	}
+	for _, pair := range pairs {
+		url := strings.TrimSpace(env[pair[0]])
+		key := strings.TrimSpace(env[pair[1]])
+		if url != "" && key != "" {
+			return url, key
+		}
+	}
+
+	url := firstNonEmptyEnv(env, "OPENAI_BASE_URL", "ANTHROPIC_BASE_URL", "SUB2API_BASE_URL")
+	key := firstNonEmptyEnv(env, "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "SUB2API_API_KEY")
+	return url, key
+}
+
+func firstNonEmptyEnv(env map[string]string, keys ...string) string {
+	for _, key := range keys {
+		if value := strings.TrimSpace(env[key]); value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func (m *Manager) stopLocalProxy(rt *RuntimeBundle) error {

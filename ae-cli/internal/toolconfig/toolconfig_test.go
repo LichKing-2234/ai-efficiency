@@ -27,6 +27,62 @@ func TestWriteCodexSessionConfig(t *testing.T) {
 	}
 }
 
+func TestCleanupLegacyWorkspaceCodexConfigRemovesManagedConfig(t *testing.T) {
+	workspaceRoot := t.TempDir()
+	configPath := filepath.Join(workspaceRoot, ".codex", "config.toml")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o700); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	legacyManaged := `model = "gpt-5.4"
+model_provider = "ae_local_proxy"
+
+[model_providers.ae_local_proxy]
+name = "AI Efficiency Local Proxy"
+base_url = "http://127.0.0.1:43123/openai/v1"
+env_key = "AE_LOCAL_PROXY_TOKEN"
+wire_api = "responses"
+supports_websockets = false
+`
+	if err := os.WriteFile(configPath, []byte(legacyManaged), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	if err := CleanupLegacyWorkspaceCodexConfig(workspaceRoot); err != nil {
+		t.Fatalf("CleanupLegacyWorkspaceCodexConfig: %v", err)
+	}
+	if _, err := os.Stat(configPath); !os.IsNotExist(err) {
+		t.Fatalf("expected managed legacy config removed, got err=%v", err)
+	}
+	if _, err := os.Stat(filepath.Join(workspaceRoot, ".codex")); !os.IsNotExist(err) {
+		t.Fatalf("expected empty .codex dir removed, got err=%v", err)
+	}
+}
+
+func TestCleanupLegacyWorkspaceCodexConfigKeepsUserConfig(t *testing.T) {
+	workspaceRoot := t.TempDir()
+	configPath := filepath.Join(workspaceRoot, ".codex", "config.toml")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o700); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	userConfig := `model = "gpt-5.4"
+model_provider = "openai"
+`
+	if err := os.WriteFile(configPath, []byte(userConfig), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	if err := CleanupLegacyWorkspaceCodexConfig(workspaceRoot); err != nil {
+		t.Fatalf("CleanupLegacyWorkspaceCodexConfig: %v", err)
+	}
+	got, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if string(got) != userConfig {
+		t.Fatalf("unexpected config content after cleanup: %q", string(got))
+	}
+}
+
 func TestWriteClaudeSessionEnv(t *testing.T) {
 	env := ClaudeEnv{
 		BaseURL: "http://127.0.0.1:43123/anthropic",
