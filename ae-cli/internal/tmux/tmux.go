@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"sort"
 	"strings"
 )
 
@@ -67,13 +68,38 @@ func NewSessionWithCommand(name string, command string) error {
 
 // SplitWindow creates a new pane in the session running the given command.
 func SplitWindow(sessionName string, toolName string, command string, args []string) (string, error) {
+	return SplitWindowWithEnv(sessionName, toolName, command, args, nil, nil)
+}
+
+// SplitWindowWithEnv creates a new pane in the session running the given command
+// with explicit environment overrides/unsets for the spawned pane process.
+func SplitWindowWithEnv(sessionName string, toolName string, command string, args []string, env map[string]string, unsetKeys []string) (string, error) {
 	// Build command args safely — pass command and args separately to tmux
 	// using "--" to prevent argument injection
 	cmdArgs := []string{
 		"split-window", "-t", sessionName,
 		"-P", "-F", "#{pane_id}",
-		"--", command,
+		"--", "env",
 	}
+	sort.Strings(unsetKeys)
+	for _, k := range unsetKeys {
+		if strings.TrimSpace(k) == "" {
+			continue
+		}
+		cmdArgs = append(cmdArgs, "-u", k)
+	}
+	keys := make([]string, 0, len(env))
+	for k := range env {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		if strings.TrimSpace(k) == "" {
+			continue
+		}
+		cmdArgs = append(cmdArgs, k+"="+env[k])
+	}
+	cmdArgs = append(cmdArgs, command)
 	cmdArgs = append(cmdArgs, args...)
 	out, err := exec.Command("tmux", cmdArgs...).Output()
 	if err != nil {

@@ -19,7 +19,7 @@ var (
 	execCommand          = exec.Command
 	tmuxSetEnvironment   = tmux.SetEnvironment
 	tmuxUnsetEnvironment = tmux.UnsetEnvironment
-	tmuxSplitWindow      = tmux.SplitWindow
+	tmuxSplitWindow      = tmux.SplitWindowWithEnv
 )
 
 type Dispatcher struct {
@@ -113,16 +113,20 @@ func (d *Dispatcher) Run(sessionID, toolName string, extraArgs []string, tmuxSes
 	}
 
 	if tmuxSession != "" {
+		unsetKeys := []string{}
+		if proxyClaudeEnvActive(runtimeEnv) {
+			unsetKeys = append(unsetKeys, "ANTHROPIC_API_KEY")
+		}
 		// Best-effort: make runtime env visible to future panes in this tmux session.
 		if len(runtimeEnv) > 0 {
 			_ = tmuxSetEnvironment(tmuxSession, runtimeEnv)
-			if proxyClaudeEnvActive(runtimeEnv) {
-				_ = tmuxUnsetEnvironment(tmuxSession, []string{"ANTHROPIC_API_KEY"})
+			if len(unsetKeys) > 0 {
+				_ = tmuxUnsetEnvironment(tmuxSession, unsetKeys)
 			}
 		}
 
 		// Always split a new pane — keep the initial pane as idle control pane
-		if _, err := tmuxSplitWindow(tmuxSession, toolName, toolCfg.Command, args); err != nil {
+		if _, err := tmuxSplitWindow(tmuxSession, toolName, toolCfg.Command, args, runtimeEnv, unsetKeys); err != nil {
 			return fmt.Errorf("splitting tmux pane: %w", err)
 		}
 		fmt.Printf("Tool %q launched in tmux session %q\n", toolName, tmuxSession)

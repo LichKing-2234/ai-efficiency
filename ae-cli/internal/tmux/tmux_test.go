@@ -1,8 +1,13 @@
 package tmux
 
 import (
+	"fmt"
 	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 )
 
 func TestHasTmux(t *testing.T) {
@@ -214,6 +219,53 @@ func TestSplitWindowAndListPanes(t *testing.T) {
 	// Should have at least 2 panes (initial + split)
 	if len(panes) < 2 {
 		t.Errorf("expected at least 2 panes, got %d", len(panes))
+	}
+}
+
+func TestSplitWindowWithEnvRemovesAnthropicAPIKeyInPane(t *testing.T) {
+	if !HasTmux() {
+		t.Skip("tmux not installed")
+	}
+
+	name := "ae-cli-unit-test-split-env"
+	KillSession(name)
+	if err := NewSession(name); err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	defer KillSession(name)
+
+	// Seed stale session-level auth to prove pane launch sanitization works.
+	if err := exec.Command("tmux", "set-environment", "-t", name, "ANTHROPIC_API_KEY", "stale-upstream-key").Run(); err != nil {
+		t.Fatalf("seed stale tmux env: %v", err)
+	}
+
+	outPath := filepath.Join(t.TempDir(), "pane-env.txt")
+	cmd := fmt.Sprintf("env | sort > %q", outPath)
+	if _, err := SplitWindowWithEnv(name, "env-check", "sh", []string{"-lc", cmd}, map[string]string{
+		"ANTHROPIC_BASE_URL":   "http://127.0.0.1:43123/anthropic",
+		"ANTHROPIC_AUTH_TOKEN": "proxy-token",
+	}, []string{"ANTHROPIC_API_KEY"}); err != nil {
+		t.Fatalf("SplitWindowWithEnv: %v", err)
+	}
+
+	var content []byte
+	var readErr error
+	for i := 0; i < 20; i++ {
+		content, readErr = os.ReadFile(outPath)
+		if readErr == nil {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if readErr != nil {
+		t.Fatalf("read pane env output: %v", readErr)
+	}
+	got := string(content)
+	if strings.Contains(got, "ANTHROPIC_API_KEY=") {
+		t.Fatalf("expected pane env to remove ANTHROPIC_API_KEY, got:\n%s", got)
+	}
+	if !strings.Contains(got, "ANTHROPIC_AUTH_TOKEN=proxy-token") {
+		t.Fatalf("expected pane env to include proxy auth token, got:\n%s", got)
 	}
 }
 

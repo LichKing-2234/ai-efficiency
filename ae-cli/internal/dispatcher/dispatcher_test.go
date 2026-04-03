@@ -249,7 +249,13 @@ func TestRunTmuxUnsetsAnthropicAPIKeyWhenProxyEnvPresent(t *testing.T) {
 		unsetKeys = append([]string{}, keys...)
 		return nil
 	}
-	tmuxSplitWindow = func(sessionName string, toolName string, command string, args []string) (string, error) {
+	tmuxSplitWindow = func(sessionName string, toolName string, command string, args []string, env map[string]string, unsetKeys []string) (string, error) {
+		if len(unsetKeys) != 1 || unsetKeys[0] != "ANTHROPIC_API_KEY" {
+			t.Fatalf("expected split-window unset keys to include ANTHROPIC_API_KEY, got %v", unsetKeys)
+		}
+		if _, exists := env["ANTHROPIC_API_KEY"]; exists {
+			t.Fatalf("expected split-window env to be sanitized, got %+v", env)
+		}
 		return "%1", nil
 	}
 	t.Cleanup(func() {
