@@ -816,6 +816,30 @@ func TestStartInTempGitRepo(t *testing.T) {
 	if rt.EnvBundle["AE_SESSION_ID"] != "boot-sess-1" {
 		t.Fatalf("runtime AE_SESSION_ID = %q, want %q", rt.EnvBundle["AE_SESSION_ID"], "boot-sess-1")
 	}
+	if rt.Proxy == nil {
+		t.Fatal("expected proxy metadata in runtime bundle")
+	}
+	wantAnthropicBaseURL := "http://" + rt.Proxy.ListenAddr + "/anthropic"
+	if rt.EnvBundle["ANTHROPIC_BASE_URL"] != wantAnthropicBaseURL {
+		t.Fatalf("runtime ANTHROPIC_BASE_URL = %q, want %q", rt.EnvBundle["ANTHROPIC_BASE_URL"], wantAnthropicBaseURL)
+	}
+	if rt.EnvBundle["ANTHROPIC_AUTH_TOKEN"] != rt.Proxy.AuthToken {
+		t.Fatalf("runtime ANTHROPIC_AUTH_TOKEN = %q, want proxy token", rt.EnvBundle["ANTHROPIC_AUTH_TOKEN"])
+	}
+
+	codexConfigPath := filepath.Join(wantWorkspaceRoot, ".codex", "config.toml")
+	codexConfigData, err := os.ReadFile(codexConfigPath)
+	if err != nil {
+		t.Fatalf("read codex session config: %v", err)
+	}
+	codexConfig := string(codexConfigData)
+	if !strings.Contains(codexConfig, `model_provider = "ae_local_proxy"`) {
+		t.Fatalf("missing model provider in codex config: %s", codexConfig)
+	}
+	wantOpenAIBaseURL := "base_url = " + `"` + "http://" + rt.Proxy.ListenAddr + "/openai/v1" + `"`
+	if !strings.Contains(codexConfig, wantOpenAIBaseURL) {
+		t.Fatalf("missing openai base url in codex config: %s", codexConfig)
+	}
 
 	// Ensure workspace marker dir is excluded from git status by default.
 	excludePath := filepath.Join(wantGitDir, "info", "exclude")
