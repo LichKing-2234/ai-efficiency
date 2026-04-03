@@ -19,6 +19,7 @@ import { listPRs, getPR, syncPRs, settlePR } from '@/api/pr'
 import { getDashboard, getRepoMetrics, getRepoTrend } from '@/api/efficiency'
 import { sendChatMessage } from '@/api/chat'
 import { getLLMConfig, updateLLMConfig, testLLMConnection } from '@/api/settings'
+import { listSessions } from '@/api/session'
 
 const mockClient = client as unknown as {
   get: ReturnType<typeof vi.fn>
@@ -192,6 +193,34 @@ describe('chat API', () => {
       history,
       preview_files: undefined,
     }, { timeout: 120000 })
+  })
+})
+
+describe('session API', () => {
+  it('listSessions calls GET /sessions with typed filter params', async () => {
+    mockClient.get.mockResolvedValue({ data: { data: { items: [], total: 0 } } })
+
+    await listSessions({
+      page: 2,
+      page_size: 10,
+      status: 'active',
+      repo_id: 7,
+      repo_query: 'org/repo',
+      branch: 'feat/filters',
+      owner_scope: 'unowned',
+    })
+
+    expect(mockClient.get).toHaveBeenCalledWith('/sessions', {
+      params: {
+        page: 2,
+        page_size: 10,
+        status: 'active',
+        repo_id: 7,
+        repo_query: 'org/repo',
+        branch: 'feat/filters',
+        owner_scope: 'unowned',
+      },
+    })
   })
 })
 

@@ -1,29 +1,52 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import AppLayout from '@/components/AppLayout.vue'
 import { listSessions } from '@/api/session'
-import type { Session } from '@/types'
+import { useAuthStore } from '@/stores/auth'
+import type { Session, SessionListParams } from '@/types'
 
 const router = useRouter()
+const auth = useAuthStore()
 const sessions = ref<Session[]>([])
 const loading = ref(false)
 const total = ref(0)
 const page = ref(1)
 const pageSize = 20
 const statusFilter = ref('')
+const repoQuery = ref('')
+const branchFilter = ref('')
+const ownerScope = ref<'all' | 'mine' | 'unowned'>('all')
+const isAdmin = computed(() => auth.isAdmin)
 
 async function fetchSessions() {
   loading.value = true
   try {
-    const params: Record<string, any> = { page: page.value, page_size: pageSize }
+    const params: SessionListParams = { page: page.value, page_size: pageSize }
     if (statusFilter.value) params.status = statusFilter.value
+    if (repoQuery.value.trim()) params.repo_query = repoQuery.value.trim()
+    if (branchFilter.value.trim()) params.branch = branchFilter.value.trim()
+    params.owner_scope = isAdmin.value ? ownerScope.value : 'mine'
     const res = await listSessions(params)
     sessions.value = res.data.data?.items ?? []
     total.value = res.data.data?.total ?? 0
   } finally {
     loading.value = false
   }
+}
+
+function applyFilters() {
+  page.value = 1
+  fetchSessions()
+}
+
+function resetFilters() {
+  statusFilter.value = ''
+  repoQuery.value = ''
+  branchFilter.value = ''
+  ownerScope.value = 'all'
+  page.value = 1
+  fetchSessions()
 }
 
 function formatDate(d: string | null) {
@@ -77,6 +100,7 @@ onMounted(fetchSessions)
         <div class="flex items-center gap-3">
           <select
             v-model="statusFilter"
+            name="status"
             class="rounded-md border border-gray-300 px-3 py-1.5 text-sm"
             @change="page = 1; fetchSessions()"
           >
@@ -85,6 +109,52 @@ onMounted(fetchSessions)
             <option value="completed">Completed</option>
             <option value="abandoned">Abandoned</option>
           </select>
+          <input
+            v-model="repoQuery"
+            data-test="repo-query"
+            name="repo_query"
+            type="text"
+            class="rounded-md border border-gray-300 px-3 py-1.5 text-sm"
+            placeholder="Filter by repo"
+            @keyup.enter="applyFilters"
+          />
+          <input
+            v-model="branchFilter"
+            data-test="branch-filter"
+            name="branch"
+            type="text"
+            class="rounded-md border border-gray-300 px-3 py-1.5 text-sm"
+            placeholder="Filter by branch"
+            @keyup.enter="applyFilters"
+          />
+          <select
+            v-if="isAdmin"
+            v-model="ownerScope"
+            data-test="owner-scope"
+            name="owner_scope"
+            class="rounded-md border border-gray-300 px-3 py-1.5 text-sm"
+          >
+            <option value="all">All Owners</option>
+            <option value="mine">My Sessions</option>
+            <option value="unowned">Unowned</option>
+          </select>
+          <button
+            type="button"
+            data-testid="apply-session-filters"
+            data-test="apply-filters"
+            class="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
+            @click="applyFilters"
+          >
+            Apply
+          </button>
+          <button
+            type="button"
+            data-test="reset-filters"
+            class="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
+            @click="resetFilters"
+          >
+            Reset
+          </button>
         </div>
       </div>
 

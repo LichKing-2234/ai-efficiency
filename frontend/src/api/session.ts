@@ -1,7 +1,7 @@
 import client from './client'
-import type { ApiResponse, PagedResponse, Session } from '@/types'
+import type { ApiResponse, PagedResponse, Session, SessionListParams } from '@/types'
 
-export function listSessions(params?: { page?: number; page_size?: number; status?: string; repo_id?: number }) {
+export function listSessions(params?: SessionListParams) {
   return client.get<ApiResponse<PagedResponse<Session>>>('/sessions', { params })
 }
 

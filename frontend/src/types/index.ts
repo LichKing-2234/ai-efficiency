@@ -150,3 +150,13 @@ export interface ApiResponse<T> {
   message?: string
   data?: T
 }
+
+export interface SessionListParams {
+  page?: number
+  page_size?: number
+  status?: string
+  repo_id?: number
+  repo_query?: string
+  branch?: string
+  owner_scope?: 'all' | 'mine' | 'unowned'
+}
