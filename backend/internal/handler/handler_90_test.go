@@ -788,6 +788,11 @@ func TestSessionFullLifecycle(t *testing.T) {
 	if w.Code != http.StatusCreated {
 		t.Fatalf("create: %d, %s", w.Code, w.Body.String())
 	}
+	if err := env.client.Session.UpdateOneID(mustParseUUID(sessionID)).
+		SetUserID(env.userID).
+		Exec(context.Background()); err != nil {
+		t.Fatalf("set session owner: %v", err)
+	}
 
 	// List sessions
 	w = doRequest(env, "GET", "/api/v1/sessions", nil)

@@ -97,6 +97,7 @@ func TestSessionList(t *testing.T) {
 	_, err := env.client.Session.Create().
 		SetID(sessionID).
 		SetRepoConfigID(repoID).
+		SetUserID(env.userID).
 		SetBranch("main").
 		SetStartedAt(time.Now()).
 		Save(ctx)
@@ -131,6 +132,7 @@ func TestSessionListWithFilters(t *testing.T) {
 	_, err := env.client.Session.Create().
 		SetID(s1ID).
 		SetRepoConfigID(repoID).
+		SetUserID(env.userID).
 		SetBranch("main").
 		SetStartedAt(time.Now()).
 		SetStatus("active").
@@ -143,6 +145,7 @@ func TestSessionListWithFilters(t *testing.T) {
 	_, err = env.client.Session.Create().
 		SetID(s2ID).
 		SetRepoConfigID(repoID).
+		SetUserID(env.userID).
 		SetBranch("develop").
 		SetStartedAt(time.Now()).
 		SetStatus("completed").
@@ -201,6 +204,7 @@ func TestSessionGet(t *testing.T) {
 	_, err := env.client.Session.Create().
 		SetID(sessionID).
 		SetRepoConfigID(repoID).
+		SetUserID(env.userID).
 		SetBranch("feature-x").
 		SetStartedAt(time.Now()).
 		Save(ctx)

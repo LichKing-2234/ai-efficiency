@@ -39,6 +39,7 @@ type testEnv struct {
 	router  *gin.Engine
 	authSvc *auth.Service
 	token   string
+	userID  int
 }
 
 func setupTestEnv(t *testing.T) *testEnv {
@@ -95,6 +96,7 @@ func setupTestEnv(t *testing.T) *testEnv {
 		router:  router,
 		authSvc: authSvc,
 		token:   pair.AccessToken,
+		userID:  u.ID,
 	}
 }
 
