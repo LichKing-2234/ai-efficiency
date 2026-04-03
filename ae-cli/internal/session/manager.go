@@ -126,19 +126,22 @@ func (m *Manager) Start() (*State, error) {
 	if err := m.startLocalProxy(rt); err != nil {
 		return nil, rollback(fmt.Errorf("starting local proxy: %w", err))
 	}
-	if err := toolconfig.WriteCodexSessionConfig(gc.workspaceRoot, toolconfig.CodexConfig{
+	codexHome := filepath.Join(runtimeDir(rt.SessionID), "codex-home")
+	if err := toolconfig.WriteCodexSessionConfig(codexHome, toolconfig.CodexConfig{
 		BaseURL:  "http://" + rt.Proxy.ListenAddr + "/openai/v1",
 		TokenEnv: "AE_LOCAL_PROXY_TOKEN",
 		Model:    "gpt-5.4",
 	}); err != nil {
 		return nil, rollback(fmt.Errorf("writing codex config: %w", err))
 	}
-	for k, v := range toolconfig.BuildClaudeEnv(toolconfig.ClaudeEnv{
+	if rt.EnvBundle == nil {
+		rt.EnvBundle = map[string]string{}
+	}
+	rt.EnvBundle["CODEX_HOME"] = codexHome
+	rt.EnvBundle = toolconfig.ApplyClaudeProxyEnv(rt.EnvBundle, toolconfig.ClaudeEnv{
 		BaseURL: "http://" + rt.Proxy.ListenAddr + "/anthropic",
 		Token:   rt.Proxy.AuthToken,
-	}) {
-		rt.EnvBundle[k] = v
-	}
+	})
 	if err := WriteRuntimeBundle(rt); err != nil {
 		return nil, rollback(fmt.Errorf("writing runtime bundle: %w", err))
 	}
@@ -489,6 +492,11 @@ func (m *Manager) cleanupLocal(sessionID, workspaceRoot string) error {
 				return err
 			}
 		}
+	}
+	if rt != nil {
+		_ = os.RemoveAll(strings.TrimSpace(rt.EnvBundle["CODEX_HOME"]))
+	} else if strings.TrimSpace(sessionID) != "" {
+		_ = os.RemoveAll(filepath.Join(runtimeDir(sessionID), "codex-home"))
 	}
 
 	// If we're currently inside a bound workspace, only remove its marker if it matches the session.

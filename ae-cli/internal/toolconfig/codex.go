@@ -12,7 +12,7 @@ type CodexConfig struct {
 	Model    string
 }
 
-func WriteCodexSessionConfig(workspaceRoot string, cfg CodexConfig) error {
+func WriteCodexSessionConfig(codexHome string, cfg CodexConfig) error {
 	content := fmt.Sprintf(`model = %q
 model_provider = "ae_local_proxy"
 
@@ -24,7 +24,7 @@ wire_api = "responses"
 supports_websockets = false
 `, cfg.Model, cfg.BaseURL, cfg.TokenEnv)
 
-	configPath := filepath.Join(workspaceRoot, ".codex", "config.toml")
+	configPath := filepath.Join(codexHome, "config.toml")
 	if err := os.MkdirAll(filepath.Dir(configPath), 0o700); err != nil {
 		return err
 	}

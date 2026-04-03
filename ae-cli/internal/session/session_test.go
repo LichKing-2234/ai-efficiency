@@ -120,7 +120,7 @@ func TestManagerStartLaunchesLocalProxyAndStoresRuntimeMetadata(t *testing.T) {
 }
 
 func TestManagerStopRemovesProxyRuntime(t *testing.T) {
-	state, _, mgr := startSessionWithFakeBootstrap(t)
+	state, rt, mgr := startSessionWithFakeBootstrap(t)
 
 	var stoppedPID int
 	origStop := stopProxyProcess
@@ -138,6 +138,11 @@ func TestManagerStopRemovesProxyRuntime(t *testing.T) {
 	}
 	if _, err := ReadRuntimeBundle(state.ID); !os.IsNotExist(err) {
 		t.Fatalf("expected runtime bundle to be removed, got err=%v", err)
+	}
+	if codexHome := rt.EnvBundle["CODEX_HOME"]; codexHome != "" {
+		if _, err := os.Stat(codexHome); !os.IsNotExist(err) {
+			t.Fatalf("expected codex home removed on stop, got err=%v", err)
+		}
 	}
 }
 
@@ -765,8 +770,9 @@ func TestStartInTempGitRepo(t *testing.T) {
 					ProviderName:  "sub2api",
 					RuntimeRef:    "rt-1",
 					EnvBundle: map[string]string{
-						"AE_SESSION_ID":   "boot-sess-1",
-						"SUB2API_API_KEY": "k",
+						"AE_SESSION_ID":     "boot-sess-1",
+						"SUB2API_API_KEY":   "k",
+						"ANTHROPIC_API_KEY": "upstream-should-be-removed",
 					},
 					KeyExpiresAt: now.Add(1 * time.Hour),
 				},
@@ -826,8 +832,18 @@ func TestStartInTempGitRepo(t *testing.T) {
 	if rt.EnvBundle["ANTHROPIC_AUTH_TOKEN"] != rt.Proxy.AuthToken {
 		t.Fatalf("runtime ANTHROPIC_AUTH_TOKEN = %q, want proxy token", rt.EnvBundle["ANTHROPIC_AUTH_TOKEN"])
 	}
-
-	codexConfigPath := filepath.Join(wantWorkspaceRoot, ".codex", "config.toml")
+	if _, ok := rt.EnvBundle["ANTHROPIC_API_KEY"]; ok {
+		t.Fatalf("runtime should not include ANTHROPIC_API_KEY in proxy mode: %+v", rt.EnvBundle)
+	}
+	codexHome := rt.EnvBundle["CODEX_HOME"]
+	if codexHome == "" {
+		t.Fatalf("runtime CODEX_HOME is empty: %+v", rt.EnvBundle)
+	}
+	wantCodexHomePrefix := runtimeDir("boot-sess-1")
+	if !strings.HasPrefix(codexHome, wantCodexHomePrefix) {
+		t.Fatalf("runtime CODEX_HOME = %q, want under %q", codexHome, wantCodexHomePrefix)
+	}
+	codexConfigPath := filepath.Join(codexHome, "config.toml")
 	codexConfigData, err := os.ReadFile(codexConfigPath)
 	if err != nil {
 		t.Fatalf("read codex session config: %v", err)
@@ -839,6 +855,9 @@ func TestStartInTempGitRepo(t *testing.T) {
 	wantOpenAIBaseURL := "base_url = " + `"` + "http://" + rt.Proxy.ListenAddr + "/openai/v1" + `"`
 	if !strings.Contains(codexConfig, wantOpenAIBaseURL) {
 		t.Fatalf("missing openai base url in codex config: %s", codexConfig)
+	}
+	if _, err := os.Stat(filepath.Join(wantWorkspaceRoot, ".codex", "config.toml")); !os.IsNotExist(err) {
+		t.Fatalf("expected no workspace-local codex config, got err=%v", err)
 	}
 
 	// Ensure workspace marker dir is excluded from git status by default.

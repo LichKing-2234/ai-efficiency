@@ -38,14 +38,11 @@ func applyRuntimeEnvironment(tmuxSession string, rt *session.RuntimeBundle) {
 	}
 
 	if rt.Proxy != nil {
-		for k, v := range toolconfig.BuildClaudeEnv(toolconfig.ClaudeEnv{
+		env = toolconfig.ApplyClaudeProxyEnv(env, toolconfig.ClaudeEnv{
 			BaseURL: "http://" + rt.Proxy.ListenAddr + "/anthropic",
 			Token:   rt.Proxy.AuthToken,
-		}) {
-			if _, exists := env[k]; !exists {
-				env[k] = v
-			}
-		}
+		})
+		_ = os.Unsetenv("ANTHROPIC_API_KEY")
 	}
 
 	for k, v := range env {

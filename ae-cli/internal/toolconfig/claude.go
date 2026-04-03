@@ -11,3 +11,14 @@ func BuildClaudeEnv(cfg ClaudeEnv) map[string]string {
 		"ANTHROPIC_AUTH_TOKEN": cfg.Token,
 	}
 }
+
+func ApplyClaudeProxyEnv(env map[string]string, cfg ClaudeEnv) map[string]string {
+	if env == nil {
+		env = map[string]string{}
+	}
+	delete(env, "ANTHROPIC_API_KEY")
+	for k, v := range BuildClaudeEnv(cfg) {
+		env[k] = v
+	}
+	return env
+}
