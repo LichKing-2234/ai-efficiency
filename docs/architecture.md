@@ -5,6 +5,9 @@ This document is the project-level architecture overview for `ai-efficiency`.
 - Use this file for the current system map, runtime relationships, and module boundaries.
 - Use the topic-specific specs in `docs/superpowers/specs/` for detailed contracts.
 - When documents disagree, prefer the newest relevant spec plus the current code.
+- This file should always reflect the latest implemented project-level architecture.
+- Topic specs may intentionally preserve point-in-time design decisions and trade-offs; do not rewrite them wholesale just to mirror the latest code if doing so would erase architectural evolution.
+- When newer specs supersede or conflict with older specs, record that relationship in the newer spec rather than back-editing historical specs to mirror the latest implementation.
 
 ## Source-of-Truth Order
 
@@ -21,6 +24,8 @@ This document is the project-level architecture overview for `ai-efficiency`.
 flowchart LR
     Browser["Browser UI<br/>Vue 3 + Vite + Pinia"]
     CLI["ae-cli<br/>session tooling + hooks + collectors"]
+    Proxy["Local Session Proxy<br/>(ae-cli child process)"]
+    Tool["Codex / Claude"]
     Backend["ai-efficiency backend<br/>Gin + Ent modular monolith"]
     DB[("ai_efficiency database<br/>SQLite dev / PostgreSQL prod")]
     SCM["SCM providers<br/>GitHub / Bitbucket Server"]
@@ -29,10 +34,15 @@ flowchart LR
 
     Browser <-->|REST API / OAuth| Backend
     CLI <-->|login / bootstrap / events| Backend
+    CLI --> Proxy
+    Tool --> Proxy
+    Proxy --> Relay
+    Proxy --> Backend
     Backend <--> DB
     Backend <--> SCM
     Backend <--> Relay
     CLI --> Workspace
+    Workspace --> Backend
 ```
 
 ### Notes
@@ -43,13 +53,14 @@ flowchart LR
 
 ## Current Runtime Flow
 
-The implemented runtime still centers on backend bootstrap plus relay-issued credentials.
+The implemented runtime centers on backend bootstrap plus a session-bound local proxy started by `ae-cli`.
 
 ```mermaid
 sequenceDiagram
     participant Dev as Developer
     participant CLI as ae-cli
     participant BE as Backend
+    participant Proxy as Local Session Proxy
     participant Relay as Relay / sub2api
     participant WS as Workspace + Hooks
     participant Tool as AI Tooling
@@ -59,30 +70,33 @@ sequenceDiagram
     BE->>Relay: resolve relay identity / manage API key
     Relay-->>BE: user + key metadata
     BE-->>CLI: session metadata + env bundle
+    CLI->>Proxy: start proxy with session runtime config
     CLI->>WS: write marker / install hooks / start collectors
     Dev->>Tool: run Codex / Claude / other tools
-    Tool->>Relay: model requests using injected credentials
+    Tool->>Proxy: local OpenAI / Anthropic request
+    Proxy->>Relay: upstream model request
+    Proxy->>BE: session usage + session events\n(spool fallback on failure)
     WS->>BE: checkpoint events + runtime metadata
-    BE->>Relay: usage lookup for attribution
+    BE->>Relay: relay usage lookup fallback for attribution
 ```
 
 ### Runtime Boundaries
 
-- `ae-cli` owns local session setup, workspace state, hooks, and local metadata collection.
+- `ae-cli` owns local session setup, workspace state, hooks, collector wiring, and the lifecycle of the local session proxy.
 - The backend owns durable state, repo configuration, user/provider mapping, attribution, and SCM/webhook handling.
-- Relay/sub2api remains the upstream auth/LLM/usage integration boundary.
+- Relay/sub2api remains the upstream auth/LLM/usage integration boundary and attribution fallback source.
 
-## Proposed Session Runtime Direction
+## Local Session Proxy Rollout
 
-The local session proxy described below is a design direction from `2026-04-02-local-session-proxy-design.md`. It is not implemented in the current codebase by default.
+The local session proxy from `2026-04-02-local-session-proxy-design.md` is now partially implemented in the current codebase. `ae-cli start` boots a session-bound proxy for Codex and Claude, but the broader proxy-first attribution model is still in progress.
 
 ```mermaid
 flowchart LR
     Codex["Codex"]
     Claude["Claude"]
     Hooks["Tool hooks + Git hooks"]
-    Proxy["Local Session Proxy<br/>(proposed)"]
-    Queue["Local queue / runtime bundle<br/>(proposed)"]
+    Proxy["Local Session Proxy"]
+    Queue["Local queue / runtime bundle"]
     Backend["ai-efficiency backend"]
     Relay["sub2api / relay"]
 
@@ -96,8 +110,8 @@ flowchart LR
 
 ### Status
 
-- Current: backend bootstrap, relay provider integration, session metadata, checkpoints, attribution services
-- Proposed: request-level local proxy, unified local event ingress, local usage fact source
+- Current: backend bootstrap, relay provider integration, session metadata, ae-cli-managed local proxy for Codex and Claude, session usage/session event ingest, checkpoints, attribution services
+- Remaining direction: broader tool coverage, more unified event ingress semantics, and richer local usage facts so attribution depends less on relay fallback
 
 ## Module Responsibilities
 

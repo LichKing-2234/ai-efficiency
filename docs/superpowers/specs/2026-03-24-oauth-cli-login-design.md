@@ -6,11 +6,10 @@
 
 本 spec 聚焦后端 Relay Provider 抽象、OAuth 登录、API Key 下发。ae-cli 侧的工具自动发现、provider-工具映射、以及各工具原生配置文件写入，由独立的 **Spec 2: ae-cli 智能工具发现与自动配置** 处理。
 
-**Current Alignment Note (2026-03-26):**
-- relay/OAuth/provider delivery 仍然是当前系统的基础设计来源。
-- 但本文中关于用户身份、session API key 生命周期、PR 精确归因的部分，已经被 `2026-03-26-session-pr-attribution-design.md` 进一步细化。
-- 当前代码仍主要落在本文这版合同上；后续如实现 username 主键、session bootstrap、session-bound primary key，应以 2026-03-26 设计为准，并同步更新本文。
-- 项目级架构图与模块关系见 [`docs/architecture.md`](../../architecture.md)。
+**Spec Relationship:**
+- 本文相对 [`2026-03-17-ai-efficiency-platform-design.md`](/Users/admin/ai-efficiency/docs/superpowers/specs/2026-03-17-ai-efficiency-platform-design.md) 将认证、relay/provider 抽象、API key 下发从平台级基线设计中拆出，形成更具体的合同。
+- 相比 `2026-03-17` 基线，本文明确放弃 `sub2api` 数据库直连路径，改为 `relay.Provider` + HTTP API。
+- 本文只覆盖 OAuth / provider delivery 主线；工具发现与原生配置写入被拆分到 [`2026-03-24-ae-cli-smart-tool-discovery-design.md`](/Users/admin/ai-efficiency/docs/superpowers/specs/2026-03-24-ae-cli-smart-tool-discovery-design.md)。
 
 ## Scope
 

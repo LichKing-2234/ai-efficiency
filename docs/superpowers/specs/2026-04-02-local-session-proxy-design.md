@@ -1,13 +1,18 @@
 # Local Session Proxy 设计文档
 
 **Date:** 2026-04-02  
-**Status:** Draft for Review  
+**Status:** Draft for Review
 **Scope:** `ae-cli/`, `backend/`, `docs/`  
 **Related:**  
 - [2026-03-24-oauth-cli-login-design.md](/Users/admin/ai-efficiency/docs/superpowers/specs/2026-03-24-oauth-cli-login-design.md)  
 - [2026-03-26-session-pr-attribution-design.md](/Users/admin/ai-efficiency/docs/superpowers/specs/2026-03-26-session-pr-attribution-design.md)
 
-项目级架构总览见 [`docs/architecture.md`](../../architecture.md)。本文中的 local session proxy 仍为设计方向，不代表当前代码已默认实现。
+项目级架构总览见 [`docs/architecture.md`](../../architecture.md)。
+
+**Spec Relationship:**
+- 本文在 session runtime 方向上有意偏离 [`2026-03-24-oauth-cli-login-design.md`](/Users/admin/ai-efficiency/docs/superpowers/specs/2026-03-24-oauth-cli-login-design.md) 与 [`2026-03-26-session-pr-attribution-design.md`](/Users/admin/ai-efficiency/docs/superpowers/specs/2026-03-26-session-pr-attribution-design.md) 中以 backend bootstrap + session-scoped relay key 为中心的主路径。
+- 本文把本地 local proxy 观察到的 request usage 提升为核心事实源，并把 `sub2api` 从 session 归因主账调整为上游网关与可选对账来源。
+- 前述历史 spec 保留其各自时间点的设计背景与取舍，不在其正文中回写本文的演进方向。当前实现状态请以 [`docs/architecture.md`](../../architecture.md) 为准。
 
 ## 概述
 

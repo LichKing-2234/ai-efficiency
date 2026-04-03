@@ -7,6 +7,11 @@
 
 项目级架构总览与运行时关系图见 [`docs/architecture.md`](../../architecture.md)。
 
+**Spec Relationship:**
+- 本文相对 [`2026-03-17-ai-efficiency-platform-design.md`](/Users/admin/ai-efficiency/docs/superpowers/specs/2026-03-17-ai-efficiency-platform-design.md) 将 session / PR attribution 从平台级基线中收敛为独立合同。
+- 本文相对 [`2026-03-24-oauth-cli-login-design.md`](/Users/admin/ai-efficiency/docs/superpowers/specs/2026-03-24-oauth-cli-login-design.md) 进一步细化并部分改写了用户身份主键、session bootstrap、session-scoped relay API key 生命周期、以及 PR attribution 主链路。
+- 因此，若本文与更早 spec 在上述主题上存在冲突，应以本文为准；更早 spec 保留其各自时间点的设计背景与取舍。
+
 ## 概述
 
 本设计定义一条可验证的端到端链路，用于把 `ae-cli` 启动的开发会话、`sub2api` 主账用量、`Codex / Claude / Kiro` 本地会话元数据，以及最终的 PR 结果连接起来。

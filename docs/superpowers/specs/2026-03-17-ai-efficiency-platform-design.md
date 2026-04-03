@@ -5,12 +5,6 @@
 **Status:** Approved
 **Scope:** `backend/`, `frontend/`, `ae-cli/`, `deploy/`
 
-**Current Alignment Note (2026-03-26):**
-- 本文是平台级历史基线文档。
-- 认证、provider 集成、session API key 归因等核心合同，当前应以 `2026-03-24-oauth-cli-login-design.md` 和 `2026-03-26-session-pr-attribution-design.md` 为准。
-- 文中仍出现的 `sub2api` 数据库直连、`sub2api_*` 字段、旧 session 示例，仅代表早期设计背景，不应覆盖当前代码和后续设计。
-- 项目级架构图与模块总览见 [`docs/architecture.md`](../../architecture.md)；本文仍保留为历史基线说明。
-
 ## 概述
 
 AI 效能平台是一个与 sub2api 平行的独立系统，用于衡量和优化 AI 辅助开发的效能。它通过对接多种 SCM 平台（GitHub、Bitbucket Server 等），分析项目的 AI 友好度，追踪 PR 与 token 消耗的精确关联，并提供可配置的 PR 质量门禁。
