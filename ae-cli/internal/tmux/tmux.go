@@ -141,3 +141,20 @@ func SetEnvironment(sessionName string, env map[string]string) error {
 	}
 	return nil
 }
+
+// UnsetEnvironment removes environment variables from a tmux session.
+// This affects future panes started in that tmux session.
+func UnsetEnvironment(sessionName string, keys []string) error {
+	if sessionName == "" || len(keys) == 0 {
+		return nil
+	}
+	for _, k := range keys {
+		if strings.TrimSpace(k) == "" {
+			continue
+		}
+		if err := exec.Command("tmux", "set-environment", "-u", "-t", sessionName, k).Run(); err != nil {
+			return err
+		}
+	}
+	return nil
+}

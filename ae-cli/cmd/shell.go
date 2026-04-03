@@ -50,6 +50,9 @@ func applyRuntimeEnvironment(tmuxSession string, rt *session.RuntimeBundle) {
 	}
 	if tmuxSession != "" {
 		_ = tmux.SetEnvironment(tmuxSession, env)
+		if rt.Proxy != nil {
+			_ = tmux.UnsetEnvironment(tmuxSession, []string{"ANTHROPIC_API_KEY"})
+		}
 	}
 }
 

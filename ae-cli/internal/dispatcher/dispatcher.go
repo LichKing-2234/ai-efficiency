@@ -15,7 +15,12 @@ import (
 	"github.com/ai-efficiency/ae-cli/internal/tmux"
 )
 
-var execCommand = exec.Command
+var (
+	execCommand          = exec.Command
+	tmuxSetEnvironment   = tmux.SetEnvironment
+	tmuxUnsetEnvironment = tmux.UnsetEnvironment
+	tmuxSplitWindow      = tmux.SplitWindow
+)
 
 type Dispatcher struct {
 	config *config.Config
@@ -110,11 +115,14 @@ func (d *Dispatcher) Run(sessionID, toolName string, extraArgs []string, tmuxSes
 	if tmuxSession != "" {
 		// Best-effort: make runtime env visible to future panes in this tmux session.
 		if len(runtimeEnv) > 0 {
-			_ = tmux.SetEnvironment(tmuxSession, runtimeEnv)
+			_ = tmuxSetEnvironment(tmuxSession, runtimeEnv)
+			if proxyClaudeEnvActive(runtimeEnv) {
+				_ = tmuxUnsetEnvironment(tmuxSession, []string{"ANTHROPIC_API_KEY"})
+			}
 		}
 
 		// Always split a new pane — keep the initial pane as idle control pane
-		if _, err := tmux.SplitWindow(tmuxSession, toolName, toolCfg.Command, args); err != nil {
+		if _, err := tmuxSplitWindow(tmuxSession, toolName, toolCfg.Command, args); err != nil {
 			return fmt.Errorf("splitting tmux pane: %w", err)
 		}
 		fmt.Printf("Tool %q launched in tmux session %q\n", toolName, tmuxSession)

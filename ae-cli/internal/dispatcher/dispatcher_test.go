@@ -219,6 +219,72 @@ func TestRunDirectExecutionRemovesAnthropicAPIKeyWhenProxyEnvPresent(t *testing.
 	}
 }
 
+func TestRunTmuxUnsetsAnthropicAPIKeyWhenProxyEnvPresent(t *testing.T) {
+	origHome := os.Getenv("HOME")
+	tmpHome := t.TempDir()
+	os.Setenv("HOME", tmpHome)
+	t.Cleanup(func() { os.Setenv("HOME", origHome) })
+
+	if err := session.WriteRuntimeBundle(&session.RuntimeBundle{
+		SessionID: "sess-tmux-unset",
+		EnvBundle: map[string]string{
+			"ANTHROPIC_BASE_URL":   "http://127.0.0.1:43123/anthropic",
+			"ANTHROPIC_AUTH_TOKEN": "proxy-token",
+			"ANTHROPIC_API_KEY":    "stale-upstream-key",
+		},
+	}); err != nil {
+		t.Fatalf("WriteRuntimeBundle: %v", err)
+	}
+
+	var setEnv map[string]string
+	var unsetKeys []string
+	origSet := tmuxSetEnvironment
+	origUnset := tmuxUnsetEnvironment
+	origSplit := tmuxSplitWindow
+	tmuxSetEnvironment = func(sessionName string, env map[string]string) error {
+		setEnv = env
+		return nil
+	}
+	tmuxUnsetEnvironment = func(sessionName string, keys []string) error {
+		unsetKeys = append([]string{}, keys...)
+		return nil
+	}
+	tmuxSplitWindow = func(sessionName string, toolName string, command string, args []string) (string, error) {
+		return "%1", nil
+	}
+	t.Cleanup(func() {
+		tmuxSetEnvironment = origSet
+		tmuxUnsetEnvironment = origUnset
+		tmuxSplitWindow = origSplit
+	})
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer srv.Close()
+
+	cfg := &config.Config{
+		Tools: map[string]config.ToolConfig{
+			"echo-tool": {Command: "echo", Args: []string{"hello"}},
+		},
+	}
+	c := client.New(srv.URL, "tok")
+	d := New(cfg, c)
+
+	if err := d.Run("sess-tmux-unset", "echo-tool", nil, "tmux-session-1"); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if setEnv == nil {
+		t.Fatal("expected tmuxSetEnvironment to be called")
+	}
+	if _, exists := setEnv["ANTHROPIC_API_KEY"]; exists {
+		t.Fatalf("expected sanitized env not to include ANTHROPIC_API_KEY: %+v", setEnv)
+	}
+	if len(unsetKeys) != 1 || unsetKeys[0] != "ANTHROPIC_API_KEY" {
+		t.Fatalf("expected tmuxUnsetEnvironment to be called with ANTHROPIC_API_KEY, got %v", unsetKeys)
+	}
+}
+
 func TestRunDirectExecutionFailure(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusCreated)
