@@ -3,8 +3,10 @@ package cmd
 import (
 	"context"
 	"os"
+	"time"
 
 	"github.com/ai-efficiency/ae-cli/internal/hooks"
+	"github.com/ai-efficiency/ae-cli/internal/proxy"
 	"github.com/spf13/cobra"
 )
 
@@ -46,8 +48,34 @@ var hookPostRewriteCmd = &cobra.Command{
 	},
 }
 
+var hookSessionEventCmd = &cobra.Command{
+	Use:    "session-event",
+	Short:  "Forward tool hook events to the local proxy (hidden)",
+	Hidden: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		tool, err := cmd.Flags().GetString("tool")
+		if err != nil {
+			return err
+		}
+		err = proxy.ForwardHookEvent(context.Background(), os.Stdin, proxy.HookForwardRequest{
+			Tool:            tool,
+			LocalProxyURL:   os.Getenv("AE_LOCAL_PROXY_URL"),
+			LocalProxyToken: os.Getenv("AE_LOCAL_PROXY_TOKEN"),
+			SessionID:       os.Getenv("AE_SESSION_ID"),
+			WorkspaceID:     os.Getenv("AE_WORKSPACE_ID"),
+			CapturedAt:      time.Now().UTC(),
+		})
+		if err != nil {
+			return nil
+		}
+		return nil
+	},
+}
+
 func init() {
 	hookCmd.AddCommand(hookPostCommitCmd)
 	hookCmd.AddCommand(hookPostRewriteCmd)
+	hookSessionEventCmd.Flags().String("tool", "", "originating tool name")
+	hookCmd.AddCommand(hookSessionEventCmd)
 	rootCmd.AddCommand(hookCmd)
 }

@@ -36,6 +36,7 @@ type Manager struct {
 var (
 	spawnProxyProcess = proxy.Spawn
 	stopProxyProcess  = proxy.Stop
+	resolveSelfPath   = os.Executable
 )
 
 func NewManager(c *client.Client, cfg *config.Config) *Manager {
@@ -115,6 +116,11 @@ func (m *Manager) Start() (*State, error) {
 			return nil, rollback(fmt.Errorf("ensuring git exclude: %w", err2))
 		}
 	}
+	if err := ensureGitInfoExcludeHas(gc.gitCommonDir, "/.claude/settings.local.json"); err != nil {
+		if err2 := ensureGitInfoExcludeHas(gc.gitDir, "/.claude/settings.local.json"); err2 != nil {
+			return nil, rollback(fmt.Errorf("ensuring claude git exclude: %w", err2))
+		}
+	}
 	if err := WriteMarker(gc.workspaceRoot, marker); err != nil {
 		return nil, rollback(fmt.Errorf("writing workspace marker: %w", err))
 	}
@@ -135,13 +141,24 @@ func (m *Manager) Start() (*State, error) {
 	if err := m.startLocalProxy(rt); err != nil {
 		return nil, rollback(fmt.Errorf("starting local proxy: %w", err))
 	}
+	selfPath, err := resolveSelfPath()
+	if err != nil {
+		return nil, rollback(fmt.Errorf("resolving ae-cli executable: %w", err))
+	}
 	codexHome := filepath.Join(runtimeDir(rt.SessionID), "codex-home")
 	if err := toolconfig.WriteCodexSessionConfig(codexHome, toolconfig.CodexConfig{
 		BaseURL:  "http://" + rt.Proxy.ListenAddr + "/openai/v1",
 		TokenEnv: "AE_LOCAL_PROXY_TOKEN",
 		Model:    "gpt-5.4",
+		SelfPath: selfPath,
 	}); err != nil {
 		return nil, rollback(fmt.Errorf("writing codex config: %w", err))
+	}
+	if err := toolconfig.WriteClaudeSessionConfig(gc.workspaceRoot, toolconfig.ClaudeHookConfig{
+		SessionID: rt.SessionID,
+		SelfPath:  selfPath,
+	}); err != nil {
+		return nil, rollback(fmt.Errorf("writing claude config: %w", err))
 	}
 	rt.EnvBundle["CODEX_HOME"] = codexHome
 	rt.EnvBundle = toolconfig.ApplyClaudeProxyEnv(rt.EnvBundle, toolconfig.ClaudeEnv{
@@ -504,10 +521,22 @@ func (m *Manager) cleanupLocal(sessionID, workspaceRoot string) error {
 	} else if strings.TrimSpace(sessionID) != "" {
 		_ = os.RemoveAll(filepath.Join(runtimeDir(sessionID), "codex-home"))
 	}
+	cleanupClaudeConfig := func(workspaceRoot string) {
+		workspaceRoot = strings.TrimSpace(workspaceRoot)
+		if workspaceRoot == "" || strings.TrimSpace(sessionID) == "" {
+			return
+		}
+		_ = toolconfig.CleanupClaudeSessionConfig(workspaceRoot, sessionID)
+	}
+	cleanupClaudeConfig(workspaceRoot)
+	if rt != nil {
+		cleanupClaudeConfig(rt.WorkspaceRoot)
+	}
 
 	// If we're currently inside a bound workspace, only remove its marker if it matches the session.
 	if bound, err := ResolveBoundState(""); err == nil && bound != nil {
 		removeMarkerForSession(bound.WorkspaceRoot)
+		cleanupClaudeConfig(bound.WorkspaceRoot)
 	}
 	removeMarkerForSession(workspaceRoot)
 	if rt != nil {

@@ -233,6 +233,10 @@ func TestManagerStartSpawnedProxySurvivesParentProcessGroupTermination(t *testin
 }
 
 func startSessionWithFakeBootstrap(t *testing.T) (*State, *RuntimeBundle, *Manager) {
+	return startSessionWithFakeBootstrapWithSetup(t, nil)
+}
+
+func startSessionWithFakeBootstrapWithSetup(t *testing.T, repoSetup func(string)) (*State, *RuntimeBundle, *Manager) {
 	t.Helper()
 
 	origSpawn := spawnProxyProcess
@@ -271,6 +275,9 @@ func startSessionWithFakeBootstrap(t *testing.T) (*State, *RuntimeBundle, *Manag
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("cmd %v: %v\n%s", args, err, out)
 		}
+	}
+	if repoSetup != nil {
+		repoSetup(repoDir)
 	}
 
 	origWD, _ := os.Getwd()
@@ -331,6 +338,78 @@ func TestManagerStartLaunchesLocalProxyAndStoresRuntimeMetadata(t *testing.T) {
 	}
 	if state.ID == "" {
 		t.Fatal("expected non-empty session id")
+	}
+}
+
+func TestManagerStartWritesCodexAndClaudeHookConfig(t *testing.T) {
+	state, rt, _ := startSessionWithFakeBootstrap(t)
+
+	codexHome := rt.EnvBundle["CODEX_HOME"]
+	if codexHome == "" {
+		t.Fatalf("CODEX_HOME = %q, want non-empty", codexHome)
+	}
+	codexConfigData, err := os.ReadFile(filepath.Join(codexHome, "config.toml"))
+	if err != nil {
+		t.Fatalf("read codex config.toml: %v", err)
+	}
+	codexConfig := string(codexConfigData)
+	if !strings.Contains(codexConfig, "codex_hooks = true") {
+		t.Fatalf("missing codex_hooks feature flag in config.toml: %s", codexConfig)
+	}
+
+	codexHooksData, err := os.ReadFile(filepath.Join(codexHome, "hooks.json"))
+	if err != nil {
+		t.Fatalf("read codex hooks.json: %v", err)
+	}
+	codexHooks := string(codexHooksData)
+	for _, want := range []string{
+		"SessionStart",
+		"UserPromptSubmit",
+		"PreToolUse",
+		"PostToolUse",
+		"Stop",
+		"hook session-event --tool codex",
+		`"matcher": "Bash"`,
+	} {
+		if !strings.Contains(codexHooks, want) {
+			t.Fatalf("missing %q in codex hooks.json: %s", want, codexHooks)
+		}
+	}
+
+	claudeSettingsPath := filepath.Join(state.WorkspaceRoot, ".claude", "settings.local.json")
+	claudeData, err := os.ReadFile(claudeSettingsPath)
+	if err != nil {
+		t.Fatalf("read claude settings.local.json: %v", err)
+	}
+	claudeSettings := string(claudeData)
+	for _, want := range []string{
+		"SessionStart",
+		"UserPromptSubmit",
+		"PreToolUse",
+		"PostToolUse",
+		"Stop",
+		"hook session-event --tool claude",
+		"ae-session-managed session=boot-proxy-1 tool=claude",
+	} {
+		if !strings.Contains(claudeSettings, want) {
+			t.Fatalf("missing %q in claude settings.local.json: %s", want, claudeSettings)
+		}
+	}
+	if strings.Contains(claudeSettings, `"matcher": "Bash"`) {
+		t.Fatalf("expected Claude tool hooks to cover all tools, got Bash-only matcher: %s", claudeSettings)
+	}
+
+	gitCommonDirOut, err := exec.Command("git", "rev-parse", "--git-common-dir").CombinedOutput()
+	if err != nil {
+		t.Fatalf("git rev-parse --git-common-dir: %v\n%s", err, gitCommonDirOut)
+	}
+	excludePath := filepath.Join(state.WorkspaceRoot, strings.TrimSpace(string(gitCommonDirOut)), "info", "exclude")
+	excludeData, err := os.ReadFile(excludePath)
+	if err != nil {
+		t.Fatalf("read git info/exclude: %v", err)
+	}
+	if !strings.Contains(string(excludeData), "/.claude/settings.local.json") {
+		t.Fatalf("expected %q to contain claude local settings ignore, got %q", excludePath, string(excludeData))
 	}
 }
 
@@ -481,6 +560,54 @@ func TestManagerStopPreservesRuntimeWhenProxyStopFails(t *testing.T) {
 	}
 	if _, err := ReadRuntimeBundle(state.ID); err != nil {
 		t.Fatalf("expected runtime bundle retained on stop failure, got err=%v", err)
+	}
+}
+
+func TestManagerStopCleansManagedClaudeHooksAndPreservesUserSettings(t *testing.T) {
+	state, _, mgr := startSessionWithFakeBootstrapWithSetup(t, func(repoDir string) {
+		settingsPath := filepath.Join(repoDir, ".claude", "settings.local.json")
+		if err := os.MkdirAll(filepath.Dir(settingsPath), 0o700); err != nil {
+			t.Fatalf("mkdir .claude: %v", err)
+		}
+		userSettings := `{
+  "theme": "dark",
+  "hooks": {
+    "Notification": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo notify-user"
+          }
+        ]
+      }
+    ]
+  }
+}`
+		if err := os.WriteFile(settingsPath, []byte(userSettings), 0o600); err != nil {
+			t.Fatalf("write settings.local.json: %v", err)
+		}
+	})
+
+	if _, err := mgr.Stop(); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+
+	settingsPath := filepath.Join(state.WorkspaceRoot, ".claude", "settings.local.json")
+	data, err := os.ReadFile(settingsPath)
+	if err != nil {
+		t.Fatalf("read claude settings.local.json after stop: %v", err)
+	}
+	settings := string(data)
+	if strings.Contains(settings, "hook session-event --tool claude") {
+		t.Fatalf("managed Claude hook command still present after stop: %s", settings)
+	}
+	if !strings.Contains(settings, "notify-user") {
+		t.Fatalf("expected user Notification hook to remain after stop: %s", settings)
+	}
+	if !strings.Contains(settings, `"theme": "dark"`) {
+		t.Fatalf("expected user theme setting to remain after stop: %s", settings)
 	}
 }
 

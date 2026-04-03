@@ -1,6 +1,7 @@
 package toolconfig
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,6 +12,7 @@ type CodexConfig struct {
 	BaseURL  string
 	TokenEnv string
 	Model    string
+	SelfPath string
 }
 
 func WriteCodexSessionConfig(codexHome string, cfg CodexConfig) error {
@@ -23,13 +25,80 @@ base_url = %q
 env_key = %q
 wire_api = "responses"
 supports_websockets = false
+
+[features]
+codex_hooks = true
 `, cfg.Model, cfg.BaseURL, cfg.TokenEnv)
 
 	configPath := filepath.Join(codexHome, "config.toml")
 	if err := os.MkdirAll(filepath.Dir(configPath), 0o700); err != nil {
 		return err
 	}
-	return os.WriteFile(configPath, []byte(content), 0o600)
+	if err := os.WriteFile(configPath, []byte(content), 0o600); err != nil {
+		return err
+	}
+
+	command := hookCommand(strings.TrimSpace(cfg.SelfPath), "codex")
+	hooks := map[string]any{
+		"SessionStart": []any{
+			map[string]any{
+				"matcher": "startup|resume",
+				"hooks": []any{
+					map[string]any{
+						"type":    "command",
+						"command": command,
+					},
+				},
+			},
+		},
+		"UserPromptSubmit": []any{
+			map[string]any{
+				"hooks": []any{
+					map[string]any{
+						"type":    "command",
+						"command": command,
+					},
+				},
+			},
+		},
+		"PreToolUse": []any{
+			map[string]any{
+				"matcher": "Bash",
+				"hooks": []any{
+					map[string]any{
+						"type":    "command",
+						"command": command,
+					},
+				},
+			},
+		},
+		"PostToolUse": []any{
+			map[string]any{
+				"matcher": "Bash",
+				"hooks": []any{
+					map[string]any{
+						"type":    "command",
+						"command": command,
+					},
+				},
+			},
+		},
+		"Stop": []any{
+			map[string]any{
+				"hooks": []any{
+					map[string]any{
+						"type":    "command",
+						"command": command,
+					},
+				},
+			},
+		},
+	}
+	data, err := json.MarshalIndent(hooks, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(codexHome, "hooks.json"), append(data, '\n'), 0o600)
 }
 
 func CleanupLegacyWorkspaceCodexConfig(workspaceRoot string) error {
@@ -82,4 +151,19 @@ func isAEEfficiencyManagedLegacyCodexConfig(content string) bool {
 		}
 	}
 	return true
+}
+
+func hookCommand(selfPath, tool string) string {
+	selfPath = strings.TrimSpace(selfPath)
+	if selfPath == "" {
+		selfPath = "ae-cli"
+	}
+	return shellQuote(selfPath) + " hook session-event --tool " + tool
+}
+
+func shellQuote(value string) string {
+	if value == "" {
+		return "''"
+	}
+	return "'" + strings.ReplaceAll(value, "'", `'"'"'`) + "'"
 }
