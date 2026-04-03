@@ -1,15 +1,20 @@
 package session
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -17,6 +22,215 @@ import (
 	"github.com/ai-efficiency/ae-cli/internal/client"
 	"github.com/ai-efficiency/ae-cli/internal/proxy"
 )
+
+const managerStartHelperEnv = "AE_SESSION_MANAGER_START_HELPER"
+
+type managerStartHelperResult struct {
+	PID        int    `json:"pid"`
+	ListenAddr string `json:"listen_addr"`
+	AuthToken  string `json:"auth_token"`
+	ConfigPath string `json:"config_path"`
+}
+
+func TestProxyChildProcess(t *testing.T) {
+	if os.Getenv("AE_PROXY_TEST_CHILD") != "1" {
+		t.Skip("helper process")
+	}
+	args := os.Args
+	sep := -1
+	for i, a := range args {
+		if a == "--" {
+			sep = i
+			break
+		}
+	}
+	if sep < 0 || sep+1 >= len(args) {
+		fmt.Fprintln(os.Stderr, "missing runtime config path")
+		os.Exit(2)
+	}
+	if err := proxy.ServeFromConfigFile(args[sep+1]); err != nil {
+		fmt.Fprintf(os.Stderr, "proxy child failed: %v\n", err)
+		os.Exit(1)
+	}
+	os.Exit(0)
+}
+
+func TestManagerStartHelperProcess(t *testing.T) {
+	if os.Getenv(managerStartHelperEnv) != "1" {
+		t.Skip("helper process")
+	}
+	if err := os.Setenv("AE_PROXY_FORCE_CHILD", "1"); err != nil {
+		t.Fatalf("set force child env: %v", err)
+	}
+
+	repoDir := t.TempDir()
+	cmds := [][]string{
+		{"git", "init", "-b", "main"},
+		{"git", "config", "user.email", "test@test.com"},
+		{"git", "config", "user.name", "Test"},
+		{"git", "remote", "add", "origin", "https://github.com/test-org/test-repo.git"},
+		{"git", "commit", "--allow-empty", "-m", "init"},
+	}
+	for _, args := range cmds {
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Dir = repoDir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("cmd %v: %v\n%s", args, err, out)
+		}
+	}
+	if err := os.Chdir(repoDir); err != nil {
+		t.Fatalf("chdir repo: %v", err)
+	}
+
+	now := time.Now().UTC().Truncate(time.Second)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/api/v1/sessions/bootstrap" {
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"data": client.BootstrapSessionResponse{
+					SessionID:     "boot-helper-proxy-1",
+					StartedAt:     now,
+					RelayAPIKeyID: 1,
+					ProviderName:  "sub2api",
+					RuntimeRef:    "rt-helper-proxy-1",
+					EnvBundle: map[string]string{
+						"AE_SESSION_ID":   "boot-helper-proxy-1",
+						"OPENAI_BASE_URL": "http://sub2api.test",
+						"OPENAI_API_KEY":  "test-key",
+					},
+					KeyExpiresAt: now.Add(1 * time.Hour),
+				},
+			})
+			return
+		}
+		if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/stop") {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+	}))
+	defer srv.Close()
+
+	m := NewManager(client.New(srv.URL, "tok"), &config.Config{})
+	state, err := m.Start()
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	rt, err := ReadRuntimeBundle(state.ID)
+	if err != nil {
+		t.Fatalf("ReadRuntimeBundle: %v", err)
+	}
+	if rt.Proxy == nil {
+		t.Fatal("expected runtime bundle proxy metadata")
+	}
+	if err := json.NewEncoder(os.Stdout).Encode(managerStartHelperResult{
+		PID:        rt.Proxy.PID,
+		ListenAddr: rt.Proxy.ListenAddr,
+		AuthToken:  rt.Proxy.AuthToken,
+		ConfigPath: rt.Proxy.ConfigPath,
+	}); err != nil {
+		t.Fatalf("writing helper result: %v", err)
+	}
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGHUP, os.Interrupt)
+	defer signal.Stop(sigCh)
+	select {
+	case <-sigCh:
+	case <-time.After(10 * time.Second):
+	}
+}
+
+func TestManagerStartSpawnedProxySurvivesParentProcessGroupTermination(t *testing.T) {
+	helper := exec.Command(os.Args[0], "-test.run=^TestManagerStartHelperProcess$")
+	helper.Env = append(os.Environ(), managerStartHelperEnv+"=1")
+	helper.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	stdout, err := helper.StdoutPipe()
+	if err != nil {
+		t.Fatalf("StdoutPipe: %v", err)
+	}
+	stderr, err := helper.StderrPipe()
+	if err != nil {
+		t.Fatalf("StderrPipe: %v", err)
+	}
+	if err := helper.Start(); err != nil {
+		t.Fatalf("starting helper: %v", err)
+	}
+
+	var result managerStartHelperResult
+	readDone := make(chan error, 1)
+	go func() {
+		scanner := bufio.NewScanner(stdout)
+		for scanner.Scan() {
+			line := strings.TrimSpace(scanner.Text())
+			if !strings.HasPrefix(line, "{") {
+				continue
+			}
+			if err := json.Unmarshal([]byte(line), &result); err != nil {
+				readDone <- fmt.Errorf("parsing helper json %q: %w", line, err)
+				return
+			}
+			readDone <- nil
+			return
+		}
+		if err := scanner.Err(); err != nil {
+			readDone <- fmt.Errorf("scanning helper output: %w", err)
+			return
+		}
+		rawErr, _ := io.ReadAll(stderr)
+		readDone <- fmt.Errorf("helper exited before emitting start result, stderr=%s", strings.TrimSpace(string(rawErr)))
+	}()
+
+	select {
+	case err := <-readDone:
+		if err != nil {
+			_ = helper.Process.Kill()
+			_ = helper.Wait()
+			t.Fatal(err)
+		}
+	case <-time.After(6 * time.Second):
+		_ = helper.Process.Kill()
+		_ = helper.Wait()
+		t.Fatal("timed out waiting for helper start result")
+	}
+
+	if result.PID <= 0 || strings.TrimSpace(result.ListenAddr) == "" || strings.TrimSpace(result.AuthToken) == "" {
+		_ = helper.Process.Kill()
+		_ = helper.Wait()
+		t.Fatalf("invalid helper result: %+v", result)
+	}
+
+	if err := syscall.Kill(-helper.Process.Pid, syscall.SIGTERM); err != nil {
+		_ = helper.Process.Kill()
+		_ = helper.Wait()
+		t.Fatalf("sending SIGTERM to helper process group: %v", err)
+	}
+	if err := helper.Wait(); err != nil {
+		t.Logf("helper exited after group signal: %v", err)
+	}
+	defer func() {
+		_ = proxy.Stop(proxy.StopRequest{
+			PID:        result.PID,
+			ListenAddr: result.ListenAddr,
+			AuthToken:  result.AuthToken,
+			ConfigPath: result.ConfigPath,
+		})
+	}()
+
+	deadline := time.Now().Add(3 * time.Second)
+	client := &http.Client{Timeout: 250 * time.Millisecond}
+	for time.Now().Before(deadline) {
+		resp, err := client.Get("http://" + result.ListenAddr + "/healthz")
+		if err == nil {
+			_ = resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				return
+			}
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatalf("spawned proxy was not listening after parent process group termination at %s", result.ListenAddr)
+}
 
 func startSessionWithFakeBootstrap(t *testing.T) (*State, *RuntimeBundle, *Manager) {
 	t.Helper()
