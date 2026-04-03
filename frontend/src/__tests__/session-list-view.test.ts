@@ -49,6 +49,12 @@ function buildListResponse() {
   }
 }
 
+function buildListResponseWithTotal(total: number) {
+  const res = buildListResponse()
+  res.data.data.total = total
+  return res
+}
+
 describe('SessionListView', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
@@ -145,5 +151,54 @@ describe('SessionListView', () => {
 
     expect(wrapper.find('select[name="owner_scope"]').exists()).toBe(false)
     expect(listSessions).toHaveBeenCalledWith({ page: 1, page_size: 20, owner_scope: 'mine' })
+  })
+
+  it('does not silently apply draft repo/branch/owner filters on status or pagination changes', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+
+    const { listSessions } = await import('@/api/session')
+    ;(listSessions as any).mockResolvedValue(buildListResponseWithTotal(40))
+
+    const auth = useAuthStore(pinia)
+    auth.user = { id: 1, username: 'admin', email: 'admin@example.com', role: 'admin', auth_source: 'sso' }
+
+    const router = createTestRouter()
+    await router.push('/sessions')
+    await router.isReady()
+
+    const wrapper = mount(SessionListView, {
+      global: { plugins: [pinia, router] },
+    })
+    await flushPromises()
+
+    // Draft values (do NOT click Apply)
+    await wrapper.find('input[name="repo_query"]').setValue('draft/repo')
+    await wrapper.find('input[name="branch"]').setValue('draft-branch')
+    await wrapper.find('select[name="owner_scope"]').setValue('unowned')
+
+    // Status changes should fetch immediately, but must use last applied filters (defaults).
+    await wrapper.find('select[name="status"]').setValue('completed')
+    await flushPromises()
+
+    expect(listSessions).toHaveBeenLastCalledWith({
+      page: 1,
+      page_size: 20,
+      status: 'completed',
+      owner_scope: 'all',
+    })
+
+    // Pagination should also use only applied filters.
+    const nextButton = wrapper.findAll('button').find((b) => b.text() === 'Next')
+    expect(nextButton).toBeTruthy()
+    await nextButton!.trigger('click')
+    await flushPromises()
+
+    expect(listSessions).toHaveBeenLastCalledWith({
+      page: 2,
+      page_size: 20,
+      status: 'completed',
+      owner_scope: 'all',
+    })
   })
 })

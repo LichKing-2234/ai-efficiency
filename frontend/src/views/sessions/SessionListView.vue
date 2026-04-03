@@ -14,9 +14,15 @@ const total = ref(0)
 const page = ref(1)
 const pageSize = 20
 const statusFilter = ref('')
+// Draft filter inputs (bound to the UI). These should not affect fetching until Apply is clicked.
 const repoQuery = ref('')
 const branchFilter = ref('')
 const ownerScope = ref<'all' | 'mine' | 'unowned'>('all')
+
+// Applied filter state (used for fetching). Promoted from draft state only via Apply/Reset.
+const appliedRepoQuery = ref('')
+const appliedBranchFilter = ref('')
+const appliedOwnerScope = ref<'all' | 'mine' | 'unowned'>('all')
 const isAdmin = computed(() => auth.isAdmin)
 
 async function fetchSessions() {
@@ -24,9 +30,9 @@ async function fetchSessions() {
   try {
     const params: SessionListParams = { page: page.value, page_size: pageSize }
     if (statusFilter.value) params.status = statusFilter.value
-    if (repoQuery.value.trim()) params.repo_query = repoQuery.value.trim()
-    if (branchFilter.value.trim()) params.branch = branchFilter.value.trim()
-    params.owner_scope = isAdmin.value ? ownerScope.value : 'mine'
+    if (appliedRepoQuery.value.trim()) params.repo_query = appliedRepoQuery.value.trim()
+    if (appliedBranchFilter.value.trim()) params.branch = appliedBranchFilter.value.trim()
+    params.owner_scope = isAdmin.value ? appliedOwnerScope.value : 'mine'
     const res = await listSessions(params)
     sessions.value = res.data.data?.items ?? []
     total.value = res.data.data?.total ?? 0
@@ -37,6 +43,9 @@ async function fetchSessions() {
 
 function applyFilters() {
   page.value = 1
+  appliedRepoQuery.value = repoQuery.value
+  appliedBranchFilter.value = branchFilter.value
+  appliedOwnerScope.value = ownerScope.value
   fetchSessions()
 }
 
@@ -45,6 +54,9 @@ function resetFilters() {
   repoQuery.value = ''
   branchFilter.value = ''
   ownerScope.value = 'all'
+  appliedRepoQuery.value = ''
+  appliedBranchFilter.value = ''
+  appliedOwnerScope.value = 'all'
   page.value = 1
   fetchSessions()
 }
