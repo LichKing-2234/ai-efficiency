@@ -152,6 +152,73 @@ func TestRunDirectExecutionUsesRuntimeEnvBundle(t *testing.T) {
 	}
 }
 
+func TestRunDirectExecutionRemovesAnthropicAPIKeyWhenProxyEnvPresent(t *testing.T) {
+	origHome := os.Getenv("HOME")
+	tmpHome := t.TempDir()
+	os.Setenv("HOME", tmpHome)
+	t.Cleanup(func() { os.Setenv("HOME", origHome) })
+
+	t.Setenv("ANTHROPIC_API_KEY", "upstream-should-not-leak")
+
+	if err := session.WriteRuntimeBundle(&session.RuntimeBundle{
+		SessionID: "sess-1",
+		EnvBundle: map[string]string{
+			"ANTHROPIC_BASE_URL":   "http://127.0.0.1:43123/anthropic",
+			"ANTHROPIC_AUTH_TOKEN": "proxy-token",
+		},
+	}); err != nil {
+		t.Fatalf("WriteRuntimeBundle: %v", err)
+	}
+
+	var lastCmd *exec.Cmd
+	prev := execCommand
+	execCommand = func(name string, args ...string) *exec.Cmd {
+		cmd := exec.Command(name, args...)
+		lastCmd = cmd
+		return cmd
+	}
+	t.Cleanup(func() { execCommand = prev })
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer srv.Close()
+
+	cfg := &config.Config{
+		Tools: map[string]config.ToolConfig{
+			"true-tool": {
+				Command: "true",
+				Args:    []string{},
+			},
+		},
+	}
+	c := client.New(srv.URL, "tok")
+	d := New(cfg, c)
+
+	if err := d.Run("sess-1", "true-tool", nil, ""); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if lastCmd == nil {
+		t.Fatal("expected execCommand to be called")
+	}
+
+	for _, kv := range lastCmd.Env {
+		if kv == "ANTHROPIC_API_KEY=upstream-should-not-leak" {
+			t.Fatalf("unexpected inherited ANTHROPIC_API_KEY in cmd.Env: %v", lastCmd.Env)
+		}
+	}
+	foundProxyToken := false
+	for _, kv := range lastCmd.Env {
+		if kv == "ANTHROPIC_AUTH_TOKEN=proxy-token" {
+			foundProxyToken = true
+			break
+		}
+	}
+	if !foundProxyToken {
+		t.Fatalf("expected ANTHROPIC_AUTH_TOKEN=proxy-token in cmd.Env, got %v", lastCmd.Env)
+	}
+}
+
 func TestRunDirectExecutionFailure(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusCreated)

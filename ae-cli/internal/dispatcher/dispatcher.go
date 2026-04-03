@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/ai-efficiency/ae-cli/config"
@@ -44,6 +45,48 @@ func envPairs(m map[string]string) []string {
 	return out
 }
 
+func proxyClaudeEnvActive(env map[string]string) bool {
+	if len(env) == 0 {
+		return false
+	}
+	return strings.TrimSpace(env["ANTHROPIC_AUTH_TOKEN"]) != "" || strings.TrimSpace(env["ANTHROPIC_BASE_URL"]) != ""
+}
+
+func sanitizeRuntimeEnv(env map[string]string) map[string]string {
+	if len(env) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(env))
+	for k, v := range env {
+		out[k] = v
+	}
+	if proxyClaudeEnvActive(out) {
+		delete(out, "ANTHROPIC_API_KEY")
+	}
+	return out
+}
+
+func mergeProcessEnv(base []string, runtimeEnv map[string]string) []string {
+	if len(runtimeEnv) == 0 {
+		return base
+	}
+	merged := map[string]string{}
+	for _, kv := range base {
+		parts := strings.SplitN(kv, "=", 2)
+		if len(parts) != 2 || parts[0] == "" {
+			continue
+		}
+		merged[parts[0]] = parts[1]
+	}
+	if proxyClaudeEnvActive(runtimeEnv) {
+		delete(merged, "ANTHROPIC_API_KEY")
+	}
+	for k, v := range runtimeEnv {
+		merged[k] = v
+	}
+	return envPairs(merged)
+}
+
 // Run executes a tool. If tmuxSession is non-empty, it runs inside a tmux pane.
 func (d *Dispatcher) Run(sessionID, toolName string, extraArgs []string, tmuxSession string) error {
 	toolCfg, ok := d.config.Tools[toolName]
@@ -59,7 +102,7 @@ func (d *Dispatcher) Run(sessionID, toolName string, extraArgs []string, tmuxSes
 
 	var runtimeEnv map[string]string
 	if rt, err := session.ReadRuntimeBundle(sessionID); err == nil && rt != nil {
-		runtimeEnv = rt.EnvBundle
+		runtimeEnv = sanitizeRuntimeEnv(rt.EnvBundle)
 	} else if err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("loading runtime bundle: %w", err)
 	}
@@ -95,7 +138,7 @@ func (d *Dispatcher) Run(sessionID, toolName string, extraArgs []string, tmuxSes
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin
 	if len(runtimeEnv) > 0 {
-		cmd.Env = append(os.Environ(), envPairs(runtimeEnv)...)
+		cmd.Env = mergeProcessEnv(os.Environ(), runtimeEnv)
 	}
 
 	if err := cmd.Run(); err != nil {

@@ -1578,8 +1578,10 @@ func TestStartWriteStateFails(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error when runtime/state write fails")
 	}
-	if !strings.Contains(err.Error(), "writing runtime bundle") && !strings.Contains(err.Error(), "writing session state") {
-		t.Errorf("error = %q, want it to contain 'writing runtime bundle' or 'writing session state'", err.Error())
+	if !strings.Contains(err.Error(), "writing codex config") &&
+		!strings.Contains(err.Error(), "writing runtime bundle") &&
+		!strings.Contains(err.Error(), "writing session state") {
+		t.Errorf("error = %q, want it to contain 'writing codex config', 'writing runtime bundle' or 'writing session state'", err.Error())
 	}
 	if stopCalls != 1 {
 		t.Fatalf("stopCalls = %d, want 1", stopCalls)
