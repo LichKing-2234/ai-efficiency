@@ -259,9 +259,11 @@ func Serve(ctx context.Context, cfg RuntimeConfig) error {
 
 		// Bind ingress to the running proxy session and persist before ack.
 		event.SessionID = cfg.SessionID
-		if err := AppendDurableEvent(cfg.SessionID, event); err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			return
+		if err := proxyServer.ingestSessionEvent(event); err != nil {
+			if err := AppendDurableEvent(cfg.SessionID, event); err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
 		}
 		w.WriteHeader(http.StatusCreated)
 	})

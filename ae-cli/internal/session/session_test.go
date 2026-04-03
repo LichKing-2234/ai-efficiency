@@ -186,6 +186,46 @@ func TestStartLocalProxyFallsBackToLegacySub2APIEnvKeys(t *testing.T) {
 	}
 }
 
+func TestStartLocalProxyInjectsBackendConfigAndWorkspaceID(t *testing.T) {
+	var captured proxy.RuntimeConfig
+	origSpawn := spawnProxyProcess
+	spawnProxyProcess = func(cfg proxy.RuntimeConfig) (proxy.SpawnResult, error) {
+		captured = cfg
+		return proxy.SpawnResult{
+			PID:        4444,
+			ListenAddr: "127.0.0.1:18890",
+			ConfigPath: filepath.Join(t.TempDir(), "runtime.json"),
+		}, nil
+	}
+	t.Cleanup(func() { spawnProxyProcess = origSpawn })
+
+	m := NewManager(client.New("https://backend.local", "backend-token"), &config.Config{})
+	rt := &RuntimeBundle{
+		SessionID: "sess-backend-config",
+		EnvBundle: map[string]string{
+			"OPENAI_BASE_URL":  "https://relay.local/openai",
+			"OPENAI_API_KEY":   "openai-runtime-key",
+			"AE_WORKSPACE_ID":  "ws-backend-config",
+			"AE_SESSION_ID":    "sess-backend-config",
+			"AE_RUNTIME_REF":   "rt-backend-config",
+			"AE_RELAY_USER_ID": "100",
+		},
+	}
+
+	if err := m.startLocalProxy(rt); err != nil {
+		t.Fatalf("startLocalProxy: %v", err)
+	}
+	if captured.BackendURL != "https://backend.local" {
+		t.Fatalf("BackendURL = %q, want %q", captured.BackendURL, "https://backend.local")
+	}
+	if captured.BackendToken != "backend-token" {
+		t.Fatalf("BackendToken = %q, want %q", captured.BackendToken, "backend-token")
+	}
+	if captured.WorkspaceID != "ws-backend-config" {
+		t.Fatalf("WorkspaceID = %q, want %q", captured.WorkspaceID, "ws-backend-config")
+	}
+}
+
 func TestManagerStopRemovesProxyRuntime(t *testing.T) {
 	state, rt, mgr := startSessionWithFakeBootstrap(t)
 

@@ -877,6 +877,453 @@ func TestProxyAnthropicMessages_CacheUsageAccounting(t *testing.T) {
 	}
 }
 
+func TestProxyOpenAIUsageUploadsToBackend(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/chat/completions" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"id":"chatcmpl-1","model":"gpt-5.4","usage":{"prompt_tokens":11,"completion_tokens":13,"total_tokens":24},"choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`))
+	}))
+	defer upstream.Close()
+
+	var usageReq struct {
+		EventID      string         `json:"event_id"`
+		SessionID    string         `json:"session_id"`
+		WorkspaceID  string         `json:"workspace_id"`
+		RequestID    string         `json:"request_id"`
+		ProviderName string         `json:"provider_name"`
+		Model        string         `json:"model"`
+		StartedAt    time.Time      `json:"started_at"`
+		FinishedAt   time.Time      `json:"finished_at"`
+		InputTokens  int64          `json:"input_tokens"`
+		OutputTokens int64          `json:"output_tokens"`
+		TotalTokens  int64          `json:"total_tokens"`
+		Status       string         `json:"status"`
+		RawMetadata  map[string]any `json:"raw_metadata"`
+	}
+	usageCalls := 0
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/session-usage-events" {
+			http.NotFound(w, r)
+			return
+		}
+		if got := strings.TrimSpace(r.Header.Get("Authorization")); got != "Bearer backend-token" {
+			t.Fatalf("backend auth header = %q, want %q", got, "Bearer backend-token")
+		}
+		usageCalls++
+		if err := json.NewDecoder(r.Body).Decode(&usageReq); err != nil {
+			t.Fatalf("decode usage event: %v", err)
+		}
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer backend.Close()
+
+	cfg := RuntimeConfig{
+		SessionID:    "sess-usage-upload",
+		WorkspaceID:  "ws-usage-upload",
+		ListenAddr:   reserveListenAddrForTest(t),
+		AuthToken:    "tok-openai",
+		ProviderURL:  upstream.URL,
+		ProviderKey:  "provider-key",
+		BackendURL:   backend.URL,
+		BackendToken: "backend-token",
+	}
+	srv, err := Spawn(cfg)
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = Stop(StopRequest{
+			PID:        srv.PID,
+			ListenAddr: srv.ListenAddr,
+			AuthToken:  cfg.AuthToken,
+			ConfigPath: srv.ConfigPath,
+		})
+	})
+
+	req, err := http.NewRequest(
+		http.MethodPost,
+		"http://"+srv.ListenAddr+"/openai/v1/chat/completions",
+		strings.NewReader(`{"model":"gpt-5.4","messages":[{"role":"user","content":"hello"}]}`),
+	)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+cfg.AuthToken)
+
+	resp, err := (&http.Client{Timeout: 1 * time.Second}).Do(req)
+	if err != nil {
+		t.Fatalf("post proxy: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+
+	if usageCalls != 1 {
+		t.Fatalf("backend usage calls = %d, want 1", usageCalls)
+	}
+	if usageReq.SessionID != cfg.SessionID {
+		t.Fatalf("usage session_id = %q, want %q", usageReq.SessionID, cfg.SessionID)
+	}
+	if usageReq.WorkspaceID != cfg.WorkspaceID {
+		t.Fatalf("usage workspace_id = %q, want %q", usageReq.WorkspaceID, cfg.WorkspaceID)
+	}
+	if usageReq.ProviderName != "sub2api" {
+		t.Fatalf("usage provider_name = %q, want %q", usageReq.ProviderName, "sub2api")
+	}
+	if usageReq.Model != "gpt-5.4" {
+		t.Fatalf("usage model = %q, want %q", usageReq.Model, "gpt-5.4")
+	}
+	if usageReq.EventID == "" || usageReq.RequestID == "" {
+		t.Fatalf("usage ids should be non-empty: event_id=%q request_id=%q", usageReq.EventID, usageReq.RequestID)
+	}
+	if usageReq.TotalTokens != 24 || usageReq.InputTokens != 11 || usageReq.OutputTokens != 13 {
+		t.Fatalf("usage tokens = in:%d out:%d total:%d, want 11/13/24", usageReq.InputTokens, usageReq.OutputTokens, usageReq.TotalTokens)
+	}
+	if _, err := os.Stat(EventSpoolPath(cfg.SessionID)); !os.IsNotExist(err) {
+		t.Fatalf("expected no local spool file on successful backend delivery, stat err=%v", err)
+	}
+}
+
+func TestProxyOpenAIUsageBackendFailureFallsBackToLocalSpool(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/chat/completions" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"id":"chatcmpl-1","model":"gpt-5.4","usage":{"prompt_tokens":3,"completion_tokens":4,"total_tokens":7},"choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`))
+	}))
+	defer upstream.Close()
+
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/session-usage-events" {
+			http.NotFound(w, r)
+			return
+		}
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte("backend down"))
+	}))
+	defer backend.Close()
+
+	cfg := RuntimeConfig{
+		SessionID:    "sess-usage-spool",
+		WorkspaceID:  "ws-usage-spool",
+		ListenAddr:   reserveListenAddrForTest(t),
+		AuthToken:    "tok-openai",
+		ProviderURL:  upstream.URL,
+		ProviderKey:  "provider-key",
+		BackendURL:   backend.URL,
+		BackendToken: "backend-token",
+	}
+	srv, err := Spawn(cfg)
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = Stop(StopRequest{
+			PID:        srv.PID,
+			ListenAddr: srv.ListenAddr,
+			AuthToken:  cfg.AuthToken,
+			ConfigPath: srv.ConfigPath,
+		})
+	})
+
+	req, err := http.NewRequest(
+		http.MethodPost,
+		"http://"+srv.ListenAddr+"/openai/v1/chat/completions",
+		strings.NewReader(`{"model":"gpt-5.4","messages":[{"role":"user","content":"hello"}]}`),
+	)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+cfg.AuthToken)
+
+	resp, err := (&http.Client{Timeout: 1 * time.Second}).Do(req)
+	if err != nil {
+		t.Fatalf("post proxy: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+
+	events := readDurableEvents(t, cfg.SessionID)
+	if len(events) != 1 {
+		t.Fatalf("spooled events = %d, want 1", len(events))
+	}
+	if events[0].EventType != "session_usage" {
+		t.Fatalf("spooled event_type = %q, want %q", events[0].EventType, "session_usage")
+	}
+	payload, ok := events[0].Payload.(map[string]any)
+	if !ok {
+		t.Fatalf("spooled payload type = %T, want map[string]any", events[0].Payload)
+	}
+	if payload["session_id"] != cfg.SessionID {
+		t.Fatalf("spooled payload.session_id = %v, want %q", payload["session_id"], cfg.SessionID)
+	}
+	if payload["workspace_id"] != cfg.WorkspaceID {
+		t.Fatalf("spooled payload.workspace_id = %v, want %q", payload["workspace_id"], cfg.WorkspaceID)
+	}
+}
+
+func TestSessionEventsPostCommitIngressCreatesBackendCheckpoint(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	var got struct {
+		EventID        string         `json:"event_id"`
+		SessionID      string         `json:"session_id"`
+		RepoFullName   string         `json:"repo_full_name"`
+		WorkspaceID    string         `json:"workspace_id"`
+		CommitSHA      string         `json:"commit_sha"`
+		ParentSHAs     []string       `json:"parent_shas"`
+		BranchSnapshot string         `json:"branch_snapshot"`
+		HeadSnapshot   string         `json:"head_snapshot"`
+		BindingSource  string         `json:"binding_source"`
+		AgentSnapshot  map[string]any `json:"agent_snapshot"`
+		CapturedAt     *time.Time     `json:"captured_at"`
+	}
+	checkpointCalls := 0
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/checkpoints/commit" {
+			http.NotFound(w, r)
+			return
+		}
+		checkpointCalls++
+		if gotAuth := strings.TrimSpace(r.Header.Get("Authorization")); gotAuth != "Bearer backend-token" {
+			t.Fatalf("backend auth header = %q, want %q", gotAuth, "Bearer backend-token")
+		}
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+			t.Fatalf("decode checkpoint request: %v", err)
+		}
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer backend.Close()
+
+	cfg := RuntimeConfig{
+		SessionID:    "sess-event-commit",
+		WorkspaceID:  "ws-event-commit",
+		ListenAddr:   reserveListenAddrForTest(t),
+		AuthToken:    "tok-local",
+		BackendURL:   backend.URL,
+		BackendToken: "backend-token",
+	}
+	srv, err := Spawn(cfg)
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = Stop(StopRequest{
+			PID:        srv.PID,
+			ListenAddr: srv.ListenAddr,
+			AuthToken:  cfg.AuthToken,
+			ConfigPath: srv.ConfigPath,
+		})
+	})
+
+	reqBody := `{"event_type":"post_commit","payload":{"event_id":"evt-commit-1","repo_full_name":"https://github.com/org/repo.git","workspace_id":"ws-event-commit","binding_source":"marker","commit_sha":"abc123","parent_shas":["def456"],"branch_snapshot":"main","head_snapshot":"abc123","captured_at":"2026-04-03T09:20:00Z","agent_snapshot":{"tool":"codex"}}}`
+	req, err := http.NewRequest(http.MethodPost, "http://"+srv.ListenAddr+"/api/v1/session-events", strings.NewReader(reqBody))
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+cfg.AuthToken)
+
+	resp, err := (&http.Client{Timeout: 1 * time.Second}).Do(req)
+	if err != nil {
+		t.Fatalf("post proxy event: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusCreated)
+	}
+
+	if checkpointCalls != 1 {
+		t.Fatalf("checkpoint backend calls = %d, want 1", checkpointCalls)
+	}
+	if got.SessionID != cfg.SessionID {
+		t.Fatalf("checkpoint session_id = %q, want %q", got.SessionID, cfg.SessionID)
+	}
+	if got.EventID != "evt-commit-1" || got.CommitSHA != "abc123" {
+		t.Fatalf("unexpected checkpoint payload: %+v", got)
+	}
+	if got.BindingSource != "marker" {
+		t.Fatalf("binding_source = %q, want %q", got.BindingSource, "marker")
+	}
+	if got.CapturedAt == nil || got.CapturedAt.UTC().Format(time.RFC3339) != "2026-04-03T09:20:00Z" {
+		t.Fatalf("captured_at = %v, want %q", got.CapturedAt, "2026-04-03T09:20:00Z")
+	}
+	if _, err := os.Stat(EventSpoolPath(cfg.SessionID)); !os.IsNotExist(err) {
+		t.Fatalf("expected no local spool file on successful backend delivery, stat err=%v", err)
+	}
+}
+
+func TestSessionEventsBackendFailureFallsBackToLocalSpool(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	tests := []struct {
+		name            string
+		eventType       string
+		payload         map[string]any
+		wantBackendPath string
+	}{
+		{
+			name:      "post_commit",
+			eventType: "post_commit",
+			payload: map[string]any{
+				"event_id":        "evt-commit-fail",
+				"repo_full_name":  "https://github.com/org/repo.git",
+				"workspace_id":    "ws-event-fail",
+				"binding_source":  "marker",
+				"commit_sha":      "abc123",
+				"parent_shas":     []string{"def456"},
+				"branch_snapshot": "main",
+				"head_snapshot":   "abc123",
+				"captured_at":     "2026-04-03T09:20:00Z",
+			},
+			wantBackendPath: "/api/v1/checkpoints/commit",
+		},
+		{
+			name:      "post_rewrite",
+			eventType: "post_rewrite",
+			payload: map[string]any{
+				"event_id":       "evt-rewrite-fail",
+				"repo_full_name": "https://github.com/org/repo.git",
+				"workspace_id":   "ws-event-fail",
+				"binding_source": "marker",
+				"rewrite_type":   "amend",
+				"old_commit_sha": "old123",
+				"new_commit_sha": "new456",
+				"captured_at":    "2026-04-03T09:21:00Z",
+			},
+			wantBackendPath: "/api/v1/checkpoints/rewrite",
+		},
+		{
+			name:      "generic_session_event",
+			eventType: "user_prompt_submit",
+			payload: map[string]any{
+				"event_id":     "evt-session-fail",
+				"workspace_id": "ws-event-fail",
+				"source":       "hook",
+				"captured_at":  "2026-04-03T09:22:00Z",
+				"prompt":       "hello",
+			},
+			wantBackendPath: "/api/v1/session-events",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sessionID := "sess-" + tt.name
+			backendPathCalls := map[string]int{}
+			backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				backendPathCalls[r.URL.Path]++
+				w.WriteHeader(http.StatusBadGateway)
+				_, _ = w.Write([]byte("backend failed"))
+			}))
+			defer backend.Close()
+
+			cfg := RuntimeConfig{
+				SessionID:    sessionID,
+				WorkspaceID:  "ws-event-fail",
+				ListenAddr:   reserveListenAddrForTest(t),
+				AuthToken:    "tok-local",
+				BackendURL:   backend.URL,
+				BackendToken: "backend-token",
+			}
+			srv, err := Spawn(cfg)
+			if err != nil {
+				t.Fatalf("Spawn: %v", err)
+			}
+			t.Cleanup(func() {
+				_ = Stop(StopRequest{
+					PID:        srv.PID,
+					ListenAddr: srv.ListenAddr,
+					AuthToken:  cfg.AuthToken,
+					ConfigPath: srv.ConfigPath,
+				})
+			})
+
+			body := map[string]any{
+				"event_type": tt.eventType,
+				"payload":    tt.payload,
+			}
+			raw, err := json.Marshal(body)
+			if err != nil {
+				t.Fatalf("marshal request: %v", err)
+			}
+
+			req, err := http.NewRequest(http.MethodPost, "http://"+srv.ListenAddr+"/api/v1/session-events", strings.NewReader(string(raw)))
+			if err != nil {
+				t.Fatalf("new request: %v", err)
+			}
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Authorization", "Bearer "+cfg.AuthToken)
+
+			resp, err := (&http.Client{Timeout: 1 * time.Second}).Do(req)
+			if err != nil {
+				t.Fatalf("post proxy event: %v", err)
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != http.StatusCreated {
+				t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusCreated)
+			}
+
+			if backendPathCalls[tt.wantBackendPath] != 1 {
+				t.Fatalf("backend calls[%s] = %d, want 1", tt.wantBackendPath, backendPathCalls[tt.wantBackendPath])
+			}
+			events := readDurableEvents(t, sessionID)
+			if len(events) != 1 {
+				t.Fatalf("spooled events = %d, want 1", len(events))
+			}
+			if events[0].EventType != tt.eventType {
+				t.Fatalf("spooled event_type = %q, want %q", events[0].EventType, tt.eventType)
+			}
+			if events[0].SessionID != sessionID {
+				t.Fatalf("spooled session_id = %q, want %q", events[0].SessionID, sessionID)
+			}
+		})
+	}
+}
+
+func readDurableEvents(t *testing.T, sessionID string) []EventEnvelope {
+	t.Helper()
+
+	data, err := os.ReadFile(EventSpoolPath(sessionID))
+	if err != nil {
+		t.Fatalf("read durable events: %v", err)
+	}
+
+	sc := bufio.NewScanner(strings.NewReader(string(data)))
+	var events []EventEnvelope
+	for sc.Scan() {
+		line := strings.TrimSpace(sc.Text())
+		if line == "" {
+			continue
+		}
+		var ev EventEnvelope
+		if err := json.Unmarshal([]byte(line), &ev); err != nil {
+			t.Fatalf("parse durable event line: %v", err)
+		}
+		events = append(events, ev)
+	}
+	if err := sc.Err(); err != nil {
+		t.Fatalf("scan durable events: %v", err)
+	}
+	return events
+}
+
 type fakeOpenAIRecorder struct {
 	mu     sync.Mutex
 	events []UsageEvent

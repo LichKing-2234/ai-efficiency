@@ -126,6 +126,12 @@ func (m *Manager) Start() (*State, error) {
 		EnvBundle:     resp.EnvBundle,
 		KeyExpiresAt:  resp.KeyExpiresAt,
 	}
+	if rt.EnvBundle == nil {
+		rt.EnvBundle = map[string]string{}
+	}
+	if strings.TrimSpace(rt.EnvBundle["AE_WORKSPACE_ID"]) == "" {
+		rt.EnvBundle["AE_WORKSPACE_ID"] = gc.workspaceID
+	}
 	if err := m.startLocalProxy(rt); err != nil {
 		return nil, rollback(fmt.Errorf("starting local proxy: %w", err))
 	}
@@ -136,9 +142,6 @@ func (m *Manager) Start() (*State, error) {
 		Model:    "gpt-5.4",
 	}); err != nil {
 		return nil, rollback(fmt.Errorf("writing codex config: %w", err))
-	}
-	if rt.EnvBundle == nil {
-		rt.EnvBundle = map[string]string{}
 	}
 	rt.EnvBundle["CODEX_HOME"] = codexHome
 	rt.EnvBundle = toolconfig.ApplyClaudeProxyEnv(rt.EnvBundle, toolconfig.ClaudeEnv{
@@ -513,7 +516,14 @@ func (m *Manager) cleanupLocal(sessionID, workspaceRoot string) error {
 
 	if strings.TrimSpace(sessionID) != "" {
 		hasPendingQueue, err := HasPendingQueue(sessionID)
-		if err == nil && hasPendingQueue {
+		hasPendingProxyEvents := false
+		if info, serr := os.Stat(proxy.EventSpoolPath(sessionID)); serr == nil {
+			hasPendingProxyEvents = info.Size() > 0
+		} else if serr != nil && !os.IsNotExist(serr) {
+			// Preserve runtime if spool status is uncertain.
+			hasPendingProxyEvents = true
+		}
+		if err == nil && (hasPendingQueue || hasPendingProxyEvents) {
 			// Preserve queued hook events for later flush/recovery, but still drop secrets.
 			_ = RemoveRuntimeBundle(sessionID)
 		} else {
@@ -536,12 +546,22 @@ func (m *Manager) startLocalProxy(rt *RuntimeBundle) error {
 		return err
 	}
 	providerURL, providerKey := resolveProxyUpstream(rt.EnvBundle)
+	workspaceID := strings.TrimSpace(rt.EnvBundle["AE_WORKSPACE_ID"])
+	backendURL := ""
+	backendToken := ""
+	if m != nil && m.client != nil {
+		backendURL = strings.TrimSpace(m.client.BaseURL())
+		backendToken = strings.TrimSpace(m.client.AuthToken())
+	}
 	cfg := proxy.RuntimeConfig{
-		SessionID:   rt.SessionID,
-		ListenAddr:  "127.0.0.1:0",
-		AuthToken:   token,
-		ProviderURL: providerURL,
-		ProviderKey: providerKey,
+		SessionID:    rt.SessionID,
+		WorkspaceID:  workspaceID,
+		ListenAddr:   "127.0.0.1:0",
+		AuthToken:    token,
+		ProviderURL:  providerURL,
+		ProviderKey:  providerKey,
+		BackendURL:   backendURL,
+		BackendToken: backendToken,
 	}
 	result, err := spawnProxyProcess(cfg)
 	if err != nil {

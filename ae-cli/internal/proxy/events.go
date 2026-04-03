@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/ai-efficiency/ae-cli/internal/client"
 )
 
 type EventEnvelope struct {
@@ -103,4 +105,220 @@ func PostEvent(ctx context.Context, listenAddr, authToken string, event EventEnv
 	}
 
 	return nil
+}
+
+type checkpointIngressPayload struct {
+	EventID        string         `json:"event_id"`
+	RepoFullName   string         `json:"repo_full_name"`
+	WorkspaceID    string         `json:"workspace_id"`
+	BindingSource  string         `json:"binding_source"`
+	CommitSHA      string         `json:"commit_sha"`
+	ParentSHAs     []string       `json:"parent_shas"`
+	BranchSnapshot string         `json:"branch_snapshot"`
+	HeadSnapshot   string         `json:"head_snapshot"`
+	AgentSnapshot  map[string]any `json:"agent_snapshot"`
+	CapturedAt     string         `json:"captured_at"`
+}
+
+type rewriteIngressPayload struct {
+	EventID       string `json:"event_id"`
+	RepoFullName  string `json:"repo_full_name"`
+	WorkspaceID   string `json:"workspace_id"`
+	BindingSource string `json:"binding_source"`
+	RewriteType   string `json:"rewrite_type"`
+	OldCommitSHA  string `json:"old_commit_sha"`
+	NewCommitSHA  string `json:"new_commit_sha"`
+	CapturedAt    string `json:"captured_at"`
+}
+
+type sessionIngressPayload struct {
+	EventID     string `json:"event_id"`
+	WorkspaceID string `json:"workspace_id"`
+	Source      string `json:"source"`
+	CapturedAt  string `json:"captured_at"`
+}
+
+func (s *Server) ingestSessionEvent(event EventEnvelope) error {
+	if s.backendClient == nil {
+		return fmt.Errorf("backend client is not configured")
+	}
+
+	eventType := strings.TrimSpace(event.EventType)
+	switch eventType {
+	case "post_commit":
+		req, err := s.buildCommitCheckpointRequest(event)
+		if err != nil {
+			return err
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		return s.backendClient.SendCommitCheckpoint(ctx, req)
+	case "post_rewrite":
+		req, err := s.buildCommitRewriteRequest(event)
+		if err != nil {
+			return err
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		return s.backendClient.SendCommitRewrite(ctx, req)
+	default:
+		req, err := s.buildSessionEventRequest(event)
+		if err != nil {
+			return err
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		return s.backendClient.SendSessionEvent(ctx, req)
+	}
+}
+
+func (s *Server) buildCommitCheckpointRequest(event EventEnvelope) (client.CommitCheckpointRequest, error) {
+	var payload checkpointIngressPayload
+	if err := decodePayload(event.Payload, &payload); err != nil {
+		return client.CommitCheckpointRequest{}, fmt.Errorf("decode post_commit payload: %w", err)
+	}
+	capturedAt, err := parseCapturedAtPtr(payload.CapturedAt)
+	if err != nil {
+		return client.CommitCheckpointRequest{}, fmt.Errorf("parse post_commit captured_at: %w", err)
+	}
+	eventID := strings.TrimSpace(payload.EventID)
+	if eventID == "" {
+		eventID = newRequestID()
+	}
+	workspaceID := firstNonEmptyHeader(payload.WorkspaceID, s.cfg.WorkspaceID)
+	bindingSource := firstNonEmptyHeader(payload.BindingSource, "marker")
+
+	return client.CommitCheckpointRequest{
+		EventID:        eventID,
+		SessionID:      strings.TrimSpace(s.cfg.SessionID),
+		RepoFullName:   strings.TrimSpace(payload.RepoFullName),
+		WorkspaceID:    workspaceID,
+		CommitSHA:      strings.TrimSpace(payload.CommitSHA),
+		ParentSHAs:     payload.ParentSHAs,
+		BranchSnapshot: strings.TrimSpace(payload.BranchSnapshot),
+		HeadSnapshot:   strings.TrimSpace(payload.HeadSnapshot),
+		BindingSource:  bindingSource,
+		AgentSnapshot:  payload.AgentSnapshot,
+		CapturedAt:     capturedAt,
+	}, nil
+}
+
+func (s *Server) buildCommitRewriteRequest(event EventEnvelope) (client.CommitRewriteRequest, error) {
+	var payload rewriteIngressPayload
+	if err := decodePayload(event.Payload, &payload); err != nil {
+		return client.CommitRewriteRequest{}, fmt.Errorf("decode post_rewrite payload: %w", err)
+	}
+	capturedAt, err := parseCapturedAtPtr(payload.CapturedAt)
+	if err != nil {
+		return client.CommitRewriteRequest{}, fmt.Errorf("parse post_rewrite captured_at: %w", err)
+	}
+	eventID := strings.TrimSpace(payload.EventID)
+	if eventID == "" {
+		eventID = newRequestID()
+	}
+	workspaceID := firstNonEmptyHeader(payload.WorkspaceID, s.cfg.WorkspaceID)
+	bindingSource := firstNonEmptyHeader(payload.BindingSource, "marker")
+
+	return client.CommitRewriteRequest{
+		EventID:       eventID,
+		SessionID:     strings.TrimSpace(s.cfg.SessionID),
+		RepoFullName:  strings.TrimSpace(payload.RepoFullName),
+		WorkspaceID:   workspaceID,
+		RewriteType:   strings.TrimSpace(payload.RewriteType),
+		OldCommitSHA:  strings.TrimSpace(payload.OldCommitSHA),
+		NewCommitSHA:  strings.TrimSpace(payload.NewCommitSHA),
+		BindingSource: bindingSource,
+		CapturedAt:    capturedAt,
+	}, nil
+}
+
+func (s *Server) buildSessionEventRequest(event EventEnvelope) (client.SessionEventRequest, error) {
+	var payload sessionIngressPayload
+	if err := decodePayload(event.Payload, &payload); err != nil {
+		return client.SessionEventRequest{}, fmt.Errorf("decode session event payload: %w", err)
+	}
+	capturedAt, err := parseCapturedAt(payload.CapturedAt)
+	if err != nil {
+		return client.SessionEventRequest{}, fmt.Errorf("parse session event captured_at: %w", err)
+	}
+	rawPayload, err := payloadMap(event.Payload)
+	if err != nil {
+		return client.SessionEventRequest{}, fmt.Errorf("encode session event raw payload: %w", err)
+	}
+	eventID := strings.TrimSpace(payload.EventID)
+	if eventID == "" {
+		eventID = newRequestID()
+	}
+	workspaceID := firstNonEmptyHeader(payload.WorkspaceID, s.cfg.WorkspaceID)
+	source := firstNonEmptyHeader(payload.Source, "proxy")
+
+	return client.SessionEventRequest{
+		EventID:     eventID,
+		SessionID:   strings.TrimSpace(s.cfg.SessionID),
+		WorkspaceID: workspaceID,
+		EventType:   strings.TrimSpace(event.EventType),
+		Source:      source,
+		CapturedAt:  capturedAt,
+		RawPayload:  rawPayload,
+	}, nil
+}
+
+func decodePayload(payload any, out any) error {
+	b, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	if len(strings.TrimSpace(string(b))) == 0 || string(b) == "null" {
+		b = []byte("{}")
+	}
+	if err := json.Unmarshal(b, out); err != nil {
+		return err
+	}
+	return nil
+}
+
+func payloadMap(payload any) (map[string]any, error) {
+	if payload == nil {
+		return map[string]any{}, nil
+	}
+	if m, ok := payload.(map[string]any); ok {
+		return m, nil
+	}
+	var out map[string]any
+	b, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(b, &out); err != nil {
+		return nil, err
+	}
+	if out == nil {
+		out = map[string]any{}
+	}
+	return out, nil
+}
+
+func parseCapturedAtPtr(value string) (*time.Time, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil, nil
+	}
+	ts, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		return nil, err
+	}
+	ts = ts.UTC()
+	return &ts, nil
+}
+
+func parseCapturedAt(value string) (time.Time, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return time.Now().UTC(), nil
+	}
+	ts, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return ts.UTC(), nil
 }

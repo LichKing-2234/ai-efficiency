@@ -37,8 +37,9 @@ func (s *Server) handleAnthropicMessages(w http.ResponseWriter, r *http.Request)
 	startedAt := time.Now().UTC()
 	requestBody, readErr := io.ReadAll(r.Body)
 	if readErr != nil {
-		s.recorder.RecordUsage(UsageEvent{
+		s.recordUsage(UsageEvent{
 			SessionID:    s.cfg.SessionID,
+			WorkspaceID:  s.cfg.WorkspaceID,
 			RequestID:    reqID,
 			ProviderName: "sub2api",
 			StartedAt:    startedAt,
@@ -55,8 +56,9 @@ func (s *Server) handleAnthropicMessages(w http.ResponseWriter, r *http.Request)
 	upstreamURL := strings.TrimRight(s.cfg.ProviderURL, "/") + "/v1/messages"
 	upstreamReq, err := http.NewRequestWithContext(r.Context(), http.MethodPost, upstreamURL, bytes.NewReader(requestBody))
 	if err != nil {
-		s.recorder.RecordUsage(UsageEvent{
+		s.recordUsage(UsageEvent{
 			SessionID:    s.cfg.SessionID,
+			WorkspaceID:  s.cfg.WorkspaceID,
 			RequestID:    reqID,
 			ProviderName: "sub2api",
 			StartedAt:    startedAt,
@@ -75,8 +77,9 @@ func (s *Server) handleAnthropicMessages(w http.ResponseWriter, r *http.Request)
 
 	resp, err := s.httpClient.Do(upstreamReq)
 	if err != nil {
-		s.recorder.RecordUsage(UsageEvent{
+		s.recordUsage(UsageEvent{
 			SessionID:    s.cfg.SessionID,
+			WorkspaceID:  s.cfg.WorkspaceID,
 			RequestID:    reqID,
 			ProviderName: "sub2api",
 			StartedAt:    startedAt,
@@ -97,8 +100,9 @@ func (s *Server) handleAnthropicMessages(w http.ResponseWriter, r *http.Request)
 
 	body, readErr := io.ReadAll(resp.Body)
 	if readErr != nil {
-		s.recorder.RecordUsage(UsageEvent{
+		s.recordUsage(UsageEvent{
 			SessionID:    s.cfg.SessionID,
+			WorkspaceID:  s.cfg.WorkspaceID,
 			RequestID:    reqID,
 			ProviderName: "sub2api",
 			StartedAt:    startedAt,
@@ -116,8 +120,9 @@ func (s *Server) handleAnthropicMessages(w http.ResponseWriter, r *http.Request)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		status = "upstream_http_error"
 	}
-	s.recorder.RecordUsage(UsageEvent{
+	s.recordUsage(UsageEvent{
 		SessionID:    s.cfg.SessionID,
+		WorkspaceID:  s.cfg.WorkspaceID,
 		RequestID:    reqID,
 		ProviderName: "sub2api",
 		Model:        usage.Model,
@@ -265,8 +270,9 @@ func (s *Server) recordAnthropicUsage(reqID string, startedAt time.Time, httpSta
 		outputTokens = 0
 		totalTokens = 0
 	}
-	s.recorder.RecordUsage(UsageEvent{
+	s.recordUsage(UsageEvent{
 		SessionID:    s.cfg.SessionID,
+		WorkspaceID:  s.cfg.WorkspaceID,
 		RequestID:    reqID,
 		ProviderName: "sub2api",
 		Model:        model,

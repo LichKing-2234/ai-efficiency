@@ -884,3 +884,89 @@ func TestSendSessionEvent(t *testing.T) {
 		t.Fatalf("SendSessionEvent: %v", err)
 	}
 }
+
+func TestSendSessionUsageEvent(t *testing.T) {
+	startedAt := time.Now().UTC().Truncate(time.Second)
+	finishedAt := startedAt.Add(2 * time.Second)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("method = %s, want POST", r.Method)
+		}
+		if r.URL.Path != "/api/v1/session-usage-events" {
+			t.Errorf("path = %s, want /api/v1/session-usage-events", r.URL.Path)
+		}
+		if r.Header.Get("Authorization") != "Bearer test-token" {
+			t.Errorf("auth header = %q, want %q", r.Header.Get("Authorization"), "Bearer test-token")
+		}
+
+		var req SessionUsageEventRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		if req.EventID != "usage-evt-1" || req.SessionID != "sess-1" || req.RequestID != "req-1" {
+			t.Fatalf("unexpected usage event request: %+v", req)
+		}
+		if req.WorkspaceID != "ws-1" || req.ProviderName != "sub2api" || req.Model != "gpt-5.4" {
+			t.Fatalf("unexpected usage event request metadata: %+v", req)
+		}
+		if !req.StartedAt.Equal(startedAt) || !req.FinishedAt.Equal(finishedAt) {
+			t.Fatalf("unexpected usage event timestamps: started=%v finished=%v", req.StartedAt, req.FinishedAt)
+		}
+		if req.TotalTokens != 12 || req.InputTokens != 5 || req.OutputTokens != 7 {
+			t.Fatalf("unexpected usage event tokens: %+v", req)
+		}
+		if req.RawMetadata["http_status"] != float64(200) {
+			t.Fatalf("raw_metadata.http_status = %v, want 200", req.RawMetadata["http_status"])
+		}
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "test-token")
+	err := c.SendSessionUsageEvent(context.Background(), SessionUsageEventRequest{
+		EventID:      "usage-evt-1",
+		SessionID:    "sess-1",
+		WorkspaceID:  "ws-1",
+		RequestID:    "req-1",
+		ProviderName: "sub2api",
+		Model:        "gpt-5.4",
+		StartedAt:    startedAt,
+		FinishedAt:   finishedAt,
+		InputTokens:  5,
+		OutputTokens: 7,
+		TotalTokens:  12,
+		Status:       "completed",
+		RawMetadata:  map[string]any{"http_status": 200},
+	})
+	if err != nil {
+		t.Fatalf("SendSessionUsageEvent: %v", err)
+	}
+}
+
+func TestSendSessionUsageEventUnexpectedStatus(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte("upstream unavailable"))
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "test-token")
+	err := c.SendSessionUsageEvent(context.Background(), SessionUsageEventRequest{
+		EventID:      "usage-evt-2",
+		SessionID:    "sess-1",
+		WorkspaceID:  "ws-1",
+		RequestID:    "req-2",
+		ProviderName: "sub2api",
+		Model:        "gpt-5.4",
+		StartedAt:    time.Now().UTC(),
+		FinishedAt:   time.Now().UTC().Add(time.Second),
+		Status:       "upstream_http_error",
+	})
+	if err == nil {
+		t.Fatal("expected error for non-2xx response")
+	}
+	if !strings.Contains(err.Error(), "unexpected session usage status 502") {
+		t.Fatalf("error = %q, want status error", err.Error())
+	}
+}

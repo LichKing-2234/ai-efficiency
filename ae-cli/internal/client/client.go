@@ -98,6 +98,22 @@ type SessionEventRequest struct {
 	RawPayload  map[string]any `json:"raw_payload,omitempty"`
 }
 
+type SessionUsageEventRequest struct {
+	EventID      string         `json:"event_id"`
+	SessionID    string         `json:"session_id"`
+	WorkspaceID  string         `json:"workspace_id"`
+	RequestID    string         `json:"request_id"`
+	ProviderName string         `json:"provider_name"`
+	Model        string         `json:"model"`
+	StartedAt    time.Time      `json:"started_at"`
+	FinishedAt   time.Time      `json:"finished_at"`
+	InputTokens  int64          `json:"input_tokens"`
+	OutputTokens int64          `json:"output_tokens"`
+	TotalTokens  int64          `json:"total_tokens"`
+	Status       string         `json:"status"`
+	RawMetadata  map[string]any `json:"raw_metadata,omitempty"`
+}
+
 func New(baseURL, token string) *Client {
 	return &Client{
 		baseURL: baseURL,
@@ -345,6 +361,42 @@ func (c *Client) SendSessionEvent(ctx context.Context, req SessionEventRequest) 
 		return fmt.Errorf("unexpected session event status %d: %s", resp.StatusCode, string(respBody))
 	}
 	return nil
+}
+
+func (c *Client) SendSessionUsageEvent(ctx context.Context, req SessionUsageEventRequest) error {
+	body, err := json.Marshal(req)
+	if err != nil {
+		return fmt.Errorf("marshal session usage event: %w", err)
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/api/v1/session-usage-events", bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("create session usage event request: %w", err)
+	}
+	c.setHeaders(httpReq)
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return fmt.Errorf("send session usage event: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("unexpected session usage status %d: %s", resp.StatusCode, string(respBody))
+	}
+	return nil
+}
+
+func (c *Client) BaseURL() string {
+	if c == nil {
+		return ""
+	}
+	return c.baseURL
+}
+
+func (c *Client) AuthToken() string {
+	if c == nil {
+		return ""
+	}
+	return c.token
 }
 
 func (c *Client) setHeaders(req *http.Request) {
