@@ -201,4 +201,126 @@ describe('SessionListView', () => {
       owner_scope: 'all',
     })
   })
+
+  it('keeps using the last applied repo/branch/owner filters after drafts change', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+
+    const { listSessions } = await import('@/api/session')
+    ;(listSessions as any).mockResolvedValue(buildListResponseWithTotal(40))
+
+    const auth = useAuthStore(pinia)
+    auth.user = { id: 1, username: 'admin', email: 'admin@example.com', role: 'admin', auth_source: 'sso' }
+
+    const router = createTestRouter()
+    await router.push('/sessions')
+    await router.isReady()
+
+    const wrapper = mount(SessionListView, {
+      global: { plugins: [pinia, router] },
+    })
+    await flushPromises()
+
+    const repoQueryInput = wrapper.find('input[name="repo_query"]')
+    const branchInput = wrapper.find('input[name="branch"]')
+    const ownerScopeSelect = wrapper.find('select[name="owner_scope"]')
+    const applyButton = wrapper.find('button[type="button"][data-testid="apply-session-filters"]')
+
+    await repoQueryInput.setValue('applied/repo')
+    await branchInput.setValue('applied-branch')
+    await ownerScopeSelect.setValue('unowned')
+    await applyButton.trigger('click')
+    await flushPromises()
+
+    expect(listSessions).toHaveBeenLastCalledWith({
+      page: 1,
+      page_size: 20,
+      repo_query: 'applied/repo',
+      branch: 'applied-branch',
+      owner_scope: 'unowned',
+    })
+
+    await repoQueryInput.setValue('draft/repo')
+    await branchInput.setValue('draft-branch')
+    await ownerScopeSelect.setValue('all')
+
+    await wrapper.find('select[name="status"]').setValue('completed')
+    await flushPromises()
+
+    expect(listSessions).toHaveBeenLastCalledWith({
+      page: 1,
+      page_size: 20,
+      status: 'completed',
+      repo_query: 'applied/repo',
+      branch: 'applied-branch',
+      owner_scope: 'unowned',
+    })
+
+    const nextButton = wrapper.findAll('button').find((b) => b.text() === 'Next')
+    expect(nextButton).toBeTruthy()
+    await nextButton!.trigger('click')
+    await flushPromises()
+
+    expect(listSessions).toHaveBeenLastCalledWith({
+      page: 2,
+      page_size: 20,
+      status: 'completed',
+      repo_query: 'applied/repo',
+      branch: 'applied-branch',
+      owner_scope: 'unowned',
+    })
+  })
+
+  it('reset clears draft inputs and applied filters before fetching', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+
+    const { listSessions } = await import('@/api/session')
+    ;(listSessions as any).mockResolvedValue(buildListResponse())
+
+    const auth = useAuthStore(pinia)
+    auth.user = { id: 1, username: 'admin', email: 'admin@example.com', role: 'admin', auth_source: 'sso' }
+
+    const router = createTestRouter()
+    await router.push('/sessions')
+    await router.isReady()
+
+    const wrapper = mount(SessionListView, {
+      global: { plugins: [pinia, router] },
+    })
+    await flushPromises()
+
+    const repoQueryInput = wrapper.find('input[name="repo_query"]')
+    const branchInput = wrapper.find('input[name="branch"]')
+    const ownerScopeSelect = wrapper.find('select[name="owner_scope"]')
+    const applyButton = wrapper.find('button[type="button"][data-testid="apply-session-filters"]')
+    const resetButton = wrapper.find('button[data-test="reset-filters"]')
+    const statusSelect = wrapper.find('select[name="status"]')
+
+    await repoQueryInput.setValue('applied/repo')
+    await branchInput.setValue('applied-branch')
+    await ownerScopeSelect.setValue('unowned')
+    await applyButton.trigger('click')
+    await flushPromises()
+
+    await statusSelect.setValue('completed')
+    await flushPromises()
+
+    await repoQueryInput.setValue('draft/repo')
+    await branchInput.setValue('draft-branch')
+    await ownerScopeSelect.setValue('mine')
+    await resetButton.trigger('click')
+    await flushPromises()
+
+    expect((repoQueryInput.element as HTMLInputElement).value).toBe('')
+    expect((branchInput.element as HTMLInputElement).value).toBe('')
+    expect((ownerScopeSelect.element as HTMLSelectElement).value).toBe('all')
+    expect((statusSelect.element as HTMLSelectElement).value).toBe('')
+
+    expect(listSessions).toHaveBeenLastCalledWith({
+      page: 1,
+      page_size: 20,
+      owner_scope: 'all',
+    })
+  })
 })
