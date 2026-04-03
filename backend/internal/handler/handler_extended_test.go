@@ -406,3 +406,45 @@ func TestDashboardWithData(t *testing.T) {
 		t.Errorf("total_ai_prs = %d, want >= 1", totalAIPRs)
 	}
 }
+
+func TestDashboardCountsOnlyActiveSessions(t *testing.T) {
+	env := setupTestEnv(t)
+	repoID := createTestRepo(t, env.client)
+	ctx := context.Background()
+
+	_, err := env.client.Session.Create().
+		SetID(uuid.MustParse("550e8400-e29b-41d4-a716-446655440100")).
+		SetRepoConfigID(repoID).
+		SetUserID(env.userID).
+		SetBranch("main").
+		SetStartedAt(time.Now()).
+		SetStatus("active").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create active session: %v", err)
+	}
+
+	_, err = env.client.Session.Create().
+		SetID(uuid.MustParse("550e8400-e29b-41d4-a716-446655440101")).
+		SetRepoConfigID(repoID).
+		SetUserID(env.userID).
+		SetBranch("release").
+		SetStartedAt(time.Now()).
+		SetStatus("completed").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create completed session: %v", err)
+	}
+
+	w := doRequest(env, "GET", "/api/v1/efficiency/dashboard", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	resp := parseResponse(t, w)
+	data := resp["data"].(map[string]interface{})
+	activeSessions := int(data["active_sessions"].(float64))
+	if activeSessions != 1 {
+		t.Fatalf("active_sessions = %d, want %d", activeSessions, 1)
+	}
+}

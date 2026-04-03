@@ -8,6 +8,7 @@ import (
 	"github.com/ai-efficiency/backend/ent/efficiencymetric"
 	"github.com/ai-efficiency/backend/ent/prrecord"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
+	"github.com/ai-efficiency/backend/ent/session"
 	"github.com/ai-efficiency/backend/internal/efficiency"
 	"github.com/ai-efficiency/backend/internal/pkg"
 	"github.com/gin-gonic/gin"
@@ -29,7 +30,9 @@ func (h *EfficiencyHandler) Dashboard(c *gin.Context) {
 	ctx := c.Request.Context()
 
 	totalRepos, _ := h.entClient.RepoConfig.Query().Count(ctx)
-	activeSessions, _ := h.entClient.Session.Query().Count(ctx)
+	activeSessions, _ := h.entClient.Session.Query().
+		Where(session.StatusEQ(session.StatusActive)).
+		Count(ctx)
 
 	// Compute average AI score across all repos
 	repos, _ := h.entClient.RepoConfig.Query().All(ctx)
