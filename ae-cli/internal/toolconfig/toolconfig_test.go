@@ -83,6 +83,36 @@ model_provider = "openai"
 	}
 }
 
+func TestCleanupLegacyWorkspaceCodexConfigKeepsNearMatchConfig(t *testing.T) {
+	workspaceRoot := t.TempDir()
+	configPath := filepath.Join(workspaceRoot, ".codex", "config.toml")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o700); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	nearMatchConfig := `model = "gpt-5.4"
+model_provider = "ae_local_proxy"
+
+[model_providers.ae_local_proxy]
+name = "AI Efficiency Local Proxy"
+env_key = "USER_LOCAL_PROXY_TOKEN"
+wire_api = "responses"
+`
+	if err := os.WriteFile(configPath, []byte(nearMatchConfig), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	if err := CleanupLegacyWorkspaceCodexConfig(workspaceRoot); err != nil {
+		t.Fatalf("CleanupLegacyWorkspaceCodexConfig: %v", err)
+	}
+	got, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if string(got) != nearMatchConfig {
+		t.Fatalf("unexpected config content after cleanup: %q", string(got))
+	}
+}
+
 func TestWriteClaudeSessionEnv(t *testing.T) {
 	env := ClaudeEnv{
 		BaseURL: "http://127.0.0.1:43123/anthropic",

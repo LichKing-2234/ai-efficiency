@@ -78,7 +78,8 @@ func startSessionWithFakeBootstrap(t *testing.T) (*State, *RuntimeBundle, *Manag
 					RuntimeRef:    "rt-proxy-1",
 					EnvBundle: map[string]string{
 						"AE_SESSION_ID":   "boot-proxy-1",
-						"SUB2API_API_KEY": "test-key",
+						"OPENAI_BASE_URL": "http://sub2api.test",
+						"OPENAI_API_KEY":  "test-key",
 					},
 					KeyExpiresAt: now.Add(1 * time.Hour),
 				},
@@ -274,7 +275,8 @@ func startSessionWithRealBootstrap(t *testing.T) (*State, *Manager) {
 					RuntimeRef:    "rt-real-proxy-1",
 					EnvBundle: map[string]string{
 						"AE_SESSION_ID":   "boot-real-proxy-1",
-						"SUB2API_API_KEY": "test-key",
+						"OPENAI_BASE_URL": "http://sub2api.test",
+						"OPENAI_API_KEY":  "test-key",
 					},
 					KeyExpiresAt: now.Add(1 * time.Hour),
 				},
@@ -316,6 +318,30 @@ func TestManagerStopRemovesProxyTempConfigDirs(t *testing.T) {
 	}
 	if len(matches) != 0 {
 		t.Fatalf("expected no proxy temp config dirs after stop, found %d", len(matches))
+	}
+}
+
+func TestResolveProxyUpstreamPrefersOpenAIPair(t *testing.T) {
+	url, key := resolveProxyUpstream(map[string]string{
+		"OPENAI_BASE_URL":    "http://openai-upstream.local",
+		"OPENAI_API_KEY":     "openai-key",
+		"ANTHROPIC_BASE_URL": "http://anthropic-upstream.local",
+		"ANTHROPIC_API_KEY":  "anthropic-key",
+		"SUB2API_BASE_URL":   "http://legacy-sub2api.local",
+		"SUB2API_API_KEY":    "legacy-key",
+	})
+	if url != "http://openai-upstream.local" || key != "openai-key" {
+		t.Fatalf("resolveProxyUpstream() = (%q, %q), want (%q, %q)", url, key, "http://openai-upstream.local", "openai-key")
+	}
+}
+
+func TestResolveProxyUpstreamFallsBackToLegacySub2API(t *testing.T) {
+	url, key := resolveProxyUpstream(map[string]string{
+		"SUB2API_BASE_URL": "http://legacy-sub2api.local",
+		"SUB2API_API_KEY":  "legacy-key",
+	})
+	if url != "http://legacy-sub2api.local" || key != "legacy-key" {
+		t.Fatalf("resolveProxyUpstream() = (%q, %q), want (%q, %q)", url, key, "http://legacy-sub2api.local", "legacy-key")
 	}
 }
 
