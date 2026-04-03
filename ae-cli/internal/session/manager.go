@@ -76,6 +76,7 @@ func (m *Manager) Start() (*State, error) {
 	}
 
 	var rt *RuntimeBundle
+	claudeConfigWritten := false
 	rollback := func(cause error) error {
 		if err := m.stopLocalProxy(rt); err != nil {
 			// Preserve local marker/runtime when proxy shutdown fails so recovery is possible.
@@ -85,6 +86,9 @@ func (m *Manager) Start() (*State, error) {
 			return fmt.Errorf("%w: rollback proxy shutdown failed: %w", cause, err)
 		}
 		if strings.TrimSpace(resp.SessionID) != "" {
+			if claudeConfigWritten {
+				_ = toolconfig.CleanupClaudeSessionConfig(gc.workspaceRoot, resp.SessionID)
+			}
 			_ = m.client.StopSession(context.Background(), resp.SessionID)
 			_ = m.cleanupBootstrapArtifacts(gc.workspaceRoot, resp.SessionID)
 		}
@@ -158,7 +162,9 @@ func (m *Manager) Start() (*State, error) {
 		SessionID: rt.SessionID,
 		SelfPath:  selfPath,
 	}); err != nil {
-		return nil, rollback(fmt.Errorf("writing claude config: %w", err))
+		claudeConfigWritten = false
+	} else {
+		claudeConfigWritten = true
 	}
 	rt.EnvBundle["CODEX_HOME"] = codexHome
 	rt.EnvBundle = toolconfig.ApplyClaudeProxyEnv(rt.EnvBundle, toolconfig.ClaudeEnv{

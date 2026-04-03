@@ -413,6 +413,22 @@ func TestManagerStartWritesCodexAndClaudeHookConfig(t *testing.T) {
 	}
 }
 
+func TestManagerStartIgnoresMalformedClaudeSettings(t *testing.T) {
+	state, _, _ := startSessionWithFakeBootstrapWithSetup(t, func(repoDir string) {
+		settingsPath := filepath.Join(repoDir, ".claude", "settings.local.json")
+		if err := os.MkdirAll(filepath.Dir(settingsPath), 0o700); err != nil {
+			t.Fatalf("mkdir .claude: %v", err)
+		}
+		if err := os.WriteFile(settingsPath, []byte("{not-json"), 0o600); err != nil {
+			t.Fatalf("write malformed settings.local.json: %v", err)
+		}
+	})
+
+	if state == nil {
+		t.Fatal("expected session start to succeed despite malformed Claude settings")
+	}
+}
+
 func TestStartLocalProxyUsesOpenAIRuntimeEnvKeys(t *testing.T) {
 	var captured proxy.RuntimeConfig
 	origSpawn := spawnProxyProcess
@@ -2101,6 +2117,11 @@ func TestStartWriteStateFails(t *testing.T) {
 	}
 	if _, err := os.Stat(runtimeDir("boot-sess-wsfail")); err == nil {
 		t.Fatalf("expected runtime dir to be absent after rollback")
+	}
+	claudeSettingsPath := filepath.Join(wantWorkspaceRoot, ".claude", "settings.local.json")
+	data, err := os.ReadFile(claudeSettingsPath)
+	if err == nil && strings.Contains(string(data), "ae-session-managed") {
+		t.Fatalf("expected rollback to clean managed Claude hooks, got %s", string(data))
 	}
 }
 

@@ -255,3 +255,49 @@ func TestCleanupClaudeSessionConfigRemovesManagedFileWhenOnlyManagedHooksExist(t
 		t.Fatalf("expected managed-only settings.local.json removed, got err=%v", err)
 	}
 }
+
+func TestWriteClaudeSessionConfigPreservesUserSessionEventHooksWithoutManagedMarker(t *testing.T) {
+	workspaceRoot := t.TempDir()
+	settingsPath := filepath.Join(workspaceRoot, ".claude", "settings.local.json")
+	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o700); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+
+	userSettings := `{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "'/usr/local/bin/ae-cli' hook session-event --tool claude"
+          }
+        ]
+      }
+    ]
+  }
+}`
+	if err := os.WriteFile(settingsPath, []byte(userSettings), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	if err := WriteClaudeSessionConfig(workspaceRoot, ClaudeHookConfig{
+		SessionID: "sess-claude-3",
+		SelfPath:  "/tmp/ae-cli",
+	}); err != nil {
+		t.Fatalf("WriteClaudeSessionConfig: %v", err)
+	}
+
+	data, err := os.ReadFile(settingsPath)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	content := string(data)
+	if !strings.Contains(content, `'/usr/local/bin/ae-cli' hook session-event --tool claude`) {
+		t.Fatalf("expected user-defined session-event hook to survive merge: %s", content)
+	}
+	if !strings.Contains(content, "ae-session-managed session=sess-claude-3 tool=claude") {
+		t.Fatalf("expected managed hook marker to be added: %s", content)
+	}
+}

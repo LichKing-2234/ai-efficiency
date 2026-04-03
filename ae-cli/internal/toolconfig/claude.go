@@ -159,6 +159,7 @@ func removeManagedClaudeHooks(hooksDoc map[string]any, sessionID string) {
 	if strings.TrimSpace(sessionID) != "" {
 		sessionMarker = "session=" + strings.TrimSpace(sessionID)
 	}
+	managedMarker := "ae-session-managed"
 
 	for eventName, value := range hooksDoc {
 		groups := normalizeHookGroups(value)
@@ -179,7 +180,7 @@ func removeManagedClaudeHooks(hooksDoc map[string]any, sessionID string) {
 					continue
 				}
 				command := strings.TrimSpace(asHookString(hookMap["command"]))
-				if !strings.Contains(command, "hook session-event --tool claude") {
+				if !strings.Contains(command, managedMarker) {
 					filteredHooks = append(filteredHooks, hook)
 					continue
 				}
