@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ai-efficiency/backend/ent"
@@ -51,6 +52,10 @@ type Service struct {
 	entClient             *ent.Client
 	relayProvider         relay.Provider
 	relayIdentityResolver *auth.RelayIdentityResolver
+	credentialLocksMu     sync.Mutex
+	credentialLocks       map[string]*sync.Mutex
+	credentialCacheMu     sync.Mutex
+	credentialCache       map[string]*ProviderCredentialResponse
 
 	defaultProviderName string
 	providerBaseURL     string
@@ -81,6 +86,8 @@ func NewService(
 		defaultGroupID:        strings.TrimSpace(defaultGroupID),
 		keyTTL:                keyTTL,
 		encryptionKey:         strings.TrimSpace(firstNonEmpty(encryptionKeys...)),
+		credentialLocks:       map[string]*sync.Mutex{},
+		credentialCache:       map[string]*ProviderCredentialResponse{},
 	}
 }
 
@@ -270,6 +277,59 @@ func (s *Service) Bootstrap(ctx context.Context, localUserID int, req BootstrapR
 }
 
 func (s *Service) ResolveProviderCredential(ctx context.Context, localUserID int, sessionID uuid.UUID, platform string) (*ProviderCredentialResponse, error) {
+	key := fmt.Sprintf("%d:%s:%s", localUserID, sessionID.String(), strings.TrimSpace(platform))
+	lock := s.credentialLock(key)
+	lock.Lock()
+	defer lock.Unlock()
+	if cached := s.cachedCredential(key); cached != nil {
+		return cached, nil
+	}
+	return s.resolveProviderCredentialOnce(ctx, localUserID, sessionID, platform)
+}
+
+func (s *Service) credentialLock(key string) *sync.Mutex {
+	s.credentialLocksMu.Lock()
+	defer s.credentialLocksMu.Unlock()
+	if s.credentialLocks == nil {
+		s.credentialLocks = map[string]*sync.Mutex{}
+	}
+	lock, ok := s.credentialLocks[key]
+	if !ok {
+		lock = &sync.Mutex{}
+		s.credentialLocks[key] = lock
+	}
+	return lock
+}
+
+func (s *Service) cachedCredential(key string) *ProviderCredentialResponse {
+	s.credentialCacheMu.Lock()
+	defer s.credentialCacheMu.Unlock()
+	if s.credentialCache == nil {
+		return nil
+	}
+	cred := s.credentialCache[key]
+	if cred == nil {
+		return nil
+	}
+	copy := *cred
+	return &copy
+}
+
+func (s *Service) storeCredential(key string, cred *ProviderCredentialResponse) {
+	if cred == nil {
+		return
+	}
+	s.credentialCacheMu.Lock()
+	defer s.credentialCacheMu.Unlock()
+	if s.credentialCache == nil {
+		s.credentialCache = map[string]*ProviderCredentialResponse{}
+	}
+	copy := *cred
+	s.credentialCache[key] = &copy
+}
+
+func (s *Service) resolveProviderCredentialOnce(ctx context.Context, localUserID int, sessionID uuid.UUID, platform string) (*ProviderCredentialResponse, error) {
+	cacheKey := fmt.Sprintf("%d:%s:%s", localUserID, sessionID.String(), strings.TrimSpace(platform))
 	platform = strings.TrimSpace(platform)
 	if platform == "" {
 		return nil, fmt.Errorf("resolve provider credential: platform is required")
@@ -341,13 +401,15 @@ func (s *Service) ResolveProviderCredential(ctx context.Context, localUserID int
 		selected.Key = created.Secret
 	}
 
-	return &ProviderCredentialResponse{
+	resp := &ProviderCredentialResponse{
 		ProviderName: s.relayProvider.Name(),
 		Platform:     platform,
 		APIKeyID:     selected.ID,
 		APIKey:       selected.Key,
 		BaseURL:      s.providerBaseURL,
-	}, nil
+	}
+	s.storeCredential(cacheKey, resp)
+	return resp, nil
 }
 
 func (s *Service) resolveCredentialGroupID(ctx context.Context, rc *ent.RepoConfig, platform string) (string, error) {
