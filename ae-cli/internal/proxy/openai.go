@@ -51,6 +51,7 @@ type Server struct {
 	httpClient    *http.Client
 	recorder      UsageRecorder
 	backendClient backendEventClient
+	credentialCache *credentialCache
 }
 
 type backendEventClient interface {
@@ -69,16 +70,20 @@ func NewServer(cfg RuntimeConfig, recorder UsageRecorder, httpClient *http.Clien
 		httpClient = &http.Client{Timeout: 30 * time.Second}
 	}
 	var backendClient backendEventClient
+	var credentialFetcher credentialFetcher
 	backendURL := strings.TrimSpace(cfg.BackendURL)
 	backendToken := strings.TrimSpace(cfg.BackendToken)
 	if backendURL != "" && backendToken != "" {
-		backendClient = client.New(backendURL, backendToken)
+		fetcher := client.New(backendURL, backendToken)
+		backendClient = fetcher
+		credentialFetcher = fetcher
 	}
 	return &Server{
 		cfg:           cfg,
 		httpClient:    httpClient,
 		recorder:      recorder,
 		backendClient: backendClient,
+		credentialCache: newCredentialCache(credentialFetcher),
 	}
 }
 
@@ -111,7 +116,24 @@ func (s *Server) handleOpenAIRequest(w http.ResponseWriter, r *http.Request, ups
 	reqID := newRequestID()
 	startedAt := time.Now().UTC()
 
-	upstreamURL := strings.TrimRight(s.cfg.ProviderURL, "/") + upstreamPath
+	cred, err := s.resolveProviderCredential(r.Context(), "openai")
+	if err != nil {
+		s.recordUsage(UsageEvent{
+			SessionID:    s.cfg.SessionID,
+			WorkspaceID:  s.cfg.WorkspaceID,
+			RequestID:    reqID,
+			ProviderName: "sub2api",
+			StartedAt:    startedAt,
+			FinishedAt:   time.Now().UTC(),
+			HTTPStatus:   http.StatusBadGateway,
+			Error:        err.Error(),
+			Status:       "credential_resolve_failed",
+		})
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+
+	upstreamURL := strings.TrimRight(cred.BaseURL, "/") + upstreamPath
 	upstreamReq, err := http.NewRequestWithContext(r.Context(), http.MethodPost, upstreamURL, r.Body)
 	if err != nil {
 		s.recordUsage(UsageEvent{
@@ -129,7 +151,7 @@ func (s *Server) handleOpenAIRequest(w http.ResponseWriter, r *http.Request, ups
 		return
 	}
 	copyJSONHeaders(upstreamReq.Header, r.Header)
-	upstreamReq.Header.Set("Authorization", "Bearer "+s.cfg.ProviderKey)
+	upstreamReq.Header.Set("Authorization", "Bearer "+cred.APIKey)
 
 	resp, err := s.httpClient.Do(upstreamReq)
 	if err != nil {
@@ -174,7 +196,7 @@ func (s *Server) handleOpenAIRequest(w http.ResponseWriter, r *http.Request, ups
 		SessionID:    s.cfg.SessionID,
 		WorkspaceID:  s.cfg.WorkspaceID,
 		RequestID:    reqID,
-		ProviderName: "sub2api",
+		ProviderName: firstNonEmptyProviderName(cred.ProviderName, "sub2api"),
 		Model:        usage.Model,
 		StartedAt:    startedAt,
 		FinishedAt:   time.Now().UTC(),
@@ -186,6 +208,32 @@ func (s *Server) handleOpenAIRequest(w http.ResponseWriter, r *http.Request, ups
 	})
 
 	copyResponse(w, resp.StatusCode, resp.Header, body)
+}
+
+func (s *Server) resolveProviderCredential(ctx context.Context, platform string) (*client.ProviderCredential, error) {
+	if s.credentialCache != nil {
+		if cred, err := s.credentialCache.Get(ctx, s.cfg.SessionID, platform); err == nil {
+			return cred, nil
+		}
+	}
+	if strings.TrimSpace(s.cfg.ProviderURL) != "" && strings.TrimSpace(s.cfg.ProviderKey) != "" {
+		return &client.ProviderCredential{
+			ProviderName: "sub2api",
+			Platform:     platform,
+			APIKey:       s.cfg.ProviderKey,
+			BaseURL:      s.cfg.ProviderURL,
+		}, nil
+	}
+	return nil, fmt.Errorf("provider credential is not configured for platform %q", platform)
+}
+
+func firstNonEmptyProviderName(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }
 
 func (s *Server) recordUsage(event UsageEvent) {

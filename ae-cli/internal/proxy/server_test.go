@@ -1078,6 +1078,183 @@ func TestProxyOpenAIUsageBackendFailureFallsBackToLocalSpool(t *testing.T) {
 	}
 }
 
+func TestProxyOpenAILazilyFetchesCredentialFromBackend(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/chat/completions" {
+			http.NotFound(w, r)
+			return
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer sk-existing-openai" {
+			t.Fatalf("authorization = %q, want %q", got, "Bearer sk-existing-openai")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"id":"chatcmpl-1","model":"gpt-5.4","usage":{"prompt_tokens":11,"completion_tokens":13,"total_tokens":24},"choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`))
+	}))
+	defer upstream.Close()
+
+	backendCalls := 0
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/sessions/sess-openai/provider-credentials":
+			backendCalls++
+			if got := r.URL.Query().Get("platform"); got != "openai" {
+				t.Fatalf("platform query = %q, want openai", got)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"provider_name": "sub2api",
+					"platform":      "openai",
+					"api_key_id":    900,
+					"api_key":       "sk-existing-openai",
+					"base_url":      upstream.URL,
+				},
+			})
+		case "/api/v1/session-usage-events":
+			w.WriteHeader(http.StatusCreated)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer backend.Close()
+
+	cfg := RuntimeConfig{
+		SessionID:    "sess-openai",
+		WorkspaceID:  "ws-openai",
+		ListenAddr:   reserveListenAddrForTest(t),
+		AuthToken:    "tok-openai",
+		BackendURL:   backend.URL,
+		BackendToken: "backend-token",
+	}
+	srv, err := Spawn(cfg)
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = Stop(StopRequest{
+			PID:        srv.PID,
+			ListenAddr: srv.ListenAddr,
+			AuthToken:  cfg.AuthToken,
+			ConfigPath: srv.ConfigPath,
+		})
+	})
+
+	for i := 0; i < 2; i++ {
+		req, err := http.NewRequest(
+			http.MethodPost,
+			"http://"+srv.ListenAddr+"/openai/v1/chat/completions",
+			strings.NewReader(`{"model":"gpt-5.4","messages":[{"role":"user","content":"hello"}]}`),
+		)
+		if err != nil {
+			t.Fatalf("new request: %v", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+cfg.AuthToken)
+
+		resp, err := (&http.Client{Timeout: 1 * time.Second}).Do(req)
+		if err != nil {
+			t.Fatalf("post proxy: %v", err)
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
+		}
+	}
+
+	if backendCalls != 1 {
+		t.Fatalf("backend credential calls = %d, want 1", backendCalls)
+	}
+}
+
+func TestProxyAnthropicLazilyFetchesCredentialFromBackend(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/messages" {
+			http.NotFound(w, r)
+			return
+		}
+		if got := r.Header.Get("x-api-key"); got != "sk-existing-anthropic" {
+			t.Fatalf("x-api-key = %q, want %q", got, "sk-existing-anthropic")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"id":"msg-1","model":"claude-sonnet-4-20250514","usage":{"input_tokens":9,"output_tokens":3,"total_tokens":12},"content":[{"type":"text","text":"ok"}]}`))
+	}))
+	defer upstream.Close()
+
+	backendCalls := 0
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/sessions/sess-anthropic/provider-credentials":
+			backendCalls++
+			if got := r.URL.Query().Get("platform"); got != "anthropic" {
+				t.Fatalf("platform query = %q, want anthropic", got)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"provider_name": "sub2api",
+					"platform":      "anthropic",
+					"api_key_id":    901,
+					"api_key":       "sk-existing-anthropic",
+					"base_url":      upstream.URL,
+				},
+			})
+		case "/api/v1/session-usage-events":
+			w.WriteHeader(http.StatusCreated)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer backend.Close()
+
+	cfg := RuntimeConfig{
+		SessionID:    "sess-anthropic",
+		WorkspaceID:  "ws-anthropic",
+		ListenAddr:   reserveListenAddrForTest(t),
+		AuthToken:    "tok-anthropic",
+		BackendURL:   backend.URL,
+		BackendToken: "backend-token",
+	}
+	srv, err := Spawn(cfg)
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = Stop(StopRequest{
+			PID:        srv.PID,
+			ListenAddr: srv.ListenAddr,
+			AuthToken:  cfg.AuthToken,
+			ConfigPath: srv.ConfigPath,
+		})
+	})
+
+	for i := 0; i < 2; i++ {
+		req, err := http.NewRequest(
+			http.MethodPost,
+			"http://"+srv.ListenAddr+"/anthropic/v1/messages",
+			strings.NewReader(`{"model":"claude-sonnet-4-20250514","max_tokens":16,"messages":[{"role":"user","content":"hello"}]}`),
+		)
+		if err != nil {
+			t.Fatalf("new request: %v", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("x-api-key", cfg.AuthToken)
+		req.Header.Set("anthropic-version", "2023-06-01")
+
+		resp, err := (&http.Client{Timeout: 1 * time.Second}).Do(req)
+		if err != nil {
+			t.Fatalf("post proxy: %v", err)
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
+		}
+	}
+
+	if backendCalls != 1 {
+		t.Fatalf("backend credential calls = %d, want 1", backendCalls)
+	}
+}
+
 func TestSessionEventsPostCommitIngressCreatesBackendCheckpoint(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 

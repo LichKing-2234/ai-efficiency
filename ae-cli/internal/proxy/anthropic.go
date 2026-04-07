@@ -53,7 +53,24 @@ func (s *Server) handleAnthropicMessages(w http.ResponseWriter, r *http.Request)
 	}
 	requestMeta := parseAnthropicRequestMeta(requestBody)
 
-	upstreamURL := strings.TrimRight(s.cfg.ProviderURL, "/") + "/v1/messages"
+	cred, err := s.resolveProviderCredential(r.Context(), "anthropic")
+	if err != nil {
+		s.recordUsage(UsageEvent{
+			SessionID:    s.cfg.SessionID,
+			WorkspaceID:  s.cfg.WorkspaceID,
+			RequestID:    reqID,
+			ProviderName: "sub2api",
+			StartedAt:    startedAt,
+			FinishedAt:   time.Now().UTC(),
+			HTTPStatus:   http.StatusBadGateway,
+			Error:        err.Error(),
+			Status:       "credential_resolve_failed",
+		})
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+
+	upstreamURL := strings.TrimRight(cred.BaseURL, "/") + "/v1/messages"
 	upstreamReq, err := http.NewRequestWithContext(r.Context(), http.MethodPost, upstreamURL, bytes.NewReader(requestBody))
 	if err != nil {
 		s.recordUsage(UsageEvent{
@@ -72,7 +89,7 @@ func (s *Server) handleAnthropicMessages(w http.ResponseWriter, r *http.Request)
 	}
 	copyJSONHeaders(upstreamReq.Header, r.Header)
 	copyAnthropicHeaders(upstreamReq.Header, r.Header)
-	upstreamReq.Header.Set("x-api-key", strings.TrimSpace(s.cfg.ProviderKey))
+	upstreamReq.Header.Set("x-api-key", strings.TrimSpace(cred.APIKey))
 	upstreamReq.Header.Set("anthropic-version", firstNonEmptyHeader(r.Header.Get("anthropic-version"), "2023-06-01"))
 
 	resp, err := s.httpClient.Do(upstreamReq)
@@ -124,7 +141,7 @@ func (s *Server) handleAnthropicMessages(w http.ResponseWriter, r *http.Request)
 		SessionID:    s.cfg.SessionID,
 		WorkspaceID:  s.cfg.WorkspaceID,
 		RequestID:    reqID,
-		ProviderName: "sub2api",
+		ProviderName: firstNonEmptyProviderName(cred.ProviderName, "sub2api"),
 		Model:        usage.Model,
 		StartedAt:    startedAt,
 		FinishedAt:   time.Now().UTC(),

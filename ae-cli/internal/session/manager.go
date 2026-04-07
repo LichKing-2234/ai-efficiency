@@ -600,7 +600,6 @@ func (m *Manager) startLocalProxy(rt *RuntimeBundle) error {
 	if err != nil {
 		return err
 	}
-	providerURL, providerKey := resolveProxyUpstream(rt.EnvBundle)
 	workspaceID := strings.TrimSpace(rt.EnvBundle["AE_WORKSPACE_ID"])
 	backendURL := ""
 	backendToken := ""
@@ -613,8 +612,6 @@ func (m *Manager) startLocalProxy(rt *RuntimeBundle) error {
 		WorkspaceID:  workspaceID,
 		ListenAddr:   "127.0.0.1:0",
 		AuthToken:    token,
-		ProviderURL:  providerURL,
-		ProviderKey:  providerKey,
 		BackendURL:   backendURL,
 		BackendToken: backendToken,
 	}
@@ -634,34 +631,6 @@ func (m *Manager) startLocalProxy(rt *RuntimeBundle) error {
 	rt.EnvBundle["AE_LOCAL_PROXY_URL"] = "http://" + result.ListenAddr
 	rt.EnvBundle["AE_LOCAL_PROXY_TOKEN"] = token
 	return nil
-}
-
-func resolveProxyUpstream(env map[string]string) (string, string) {
-	pairs := [][2]string{
-		{"OPENAI_BASE_URL", "OPENAI_API_KEY"},
-		{"ANTHROPIC_BASE_URL", "ANTHROPIC_API_KEY"},
-		{"SUB2API_BASE_URL", "SUB2API_API_KEY"},
-	}
-	for _, pair := range pairs {
-		url := strings.TrimSpace(env[pair[0]])
-		key := strings.TrimSpace(env[pair[1]])
-		if url != "" && key != "" {
-			return url, key
-		}
-	}
-
-	url := firstNonEmptyEnv(env, "OPENAI_BASE_URL", "ANTHROPIC_BASE_URL", "SUB2API_BASE_URL")
-	key := firstNonEmptyEnv(env, "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "SUB2API_API_KEY")
-	return url, key
-}
-
-func firstNonEmptyEnv(env map[string]string, keys ...string) string {
-	for _, key := range keys {
-		if value := strings.TrimSpace(env[key]); value != "" {
-			return value
-		}
-	}
-	return ""
 }
 
 func (m *Manager) stopLocalProxy(rt *RuntimeBundle) error {

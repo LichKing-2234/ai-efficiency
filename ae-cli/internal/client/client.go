@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"time"
 )
 
@@ -60,6 +61,14 @@ type BootstrapSessionResponse struct {
 	RuntimeRef         string            `json:"runtime_ref"`
 	EnvBundle          map[string]string `json:"env_bundle"`
 	KeyExpiresAt       time.Time         `json:"key_expires_at"`
+}
+
+type ProviderCredential struct {
+	ProviderName string `json:"provider_name"`
+	Platform     string `json:"platform"`
+	APIKeyID     int64  `json:"api_key_id"`
+	APIKey       string `json:"api_key"`
+	BaseURL      string `json:"base_url"`
 }
 
 type CommitCheckpointRequest struct {
@@ -264,6 +273,41 @@ func (c *Client) GetSession(ctx context.Context, sessionID string) (*Session, er
 		return nil, fmt.Errorf("decoding response: %w", err)
 	}
 
+	return &envelope.Data, nil
+}
+
+func (c *Client) GetSessionProviderCredential(ctx context.Context, sessionID, platform string) (*ProviderCredential, error) {
+	httpReq, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodGet,
+		c.baseURL+"/api/v1/sessions/"+sessionID+"/provider-credentials?platform="+url.QueryEscape(platform),
+		nil,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+	c.setHeaders(httpReq)
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("sending request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, ErrNotFound
+	}
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("unexpected status %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var envelope struct {
+		Data ProviderCredential `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
+		return nil, fmt.Errorf("decoding response: %w", err)
+	}
 	return &envelope.Data, nil
 }
 

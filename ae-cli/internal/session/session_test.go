@@ -449,7 +449,7 @@ func TestManagerStartIgnoresMalformedClaudeSettings(t *testing.T) {
 	}
 }
 
-func TestStartLocalProxyUsesOpenAIRuntimeEnvKeys(t *testing.T) {
+func TestStartLocalProxyDoesNotDeriveProviderCredentialFromRuntimeEnv(t *testing.T) {
 	var captured proxy.RuntimeConfig
 	origSpawn := spawnProxyProcess
 	spawnProxyProcess = func(cfg proxy.RuntimeConfig) (proxy.SpawnResult, error) {
@@ -474,44 +474,11 @@ func TestStartLocalProxyUsesOpenAIRuntimeEnvKeys(t *testing.T) {
 	if err := m.startLocalProxy(rt); err != nil {
 		t.Fatalf("startLocalProxy: %v", err)
 	}
-	if captured.ProviderURL != "https://relay.local/openai" {
-		t.Fatalf("ProviderURL = %q, want %q", captured.ProviderURL, "https://relay.local/openai")
+	if captured.ProviderURL != "" {
+		t.Fatalf("ProviderURL = %q, want empty", captured.ProviderURL)
 	}
-	if captured.ProviderKey != "openai-runtime-key" {
-		t.Fatalf("ProviderKey = %q, want %q", captured.ProviderKey, "openai-runtime-key")
-	}
-}
-
-func TestStartLocalProxyFallsBackToLegacySub2APIEnvKeys(t *testing.T) {
-	var captured proxy.RuntimeConfig
-	origSpawn := spawnProxyProcess
-	spawnProxyProcess = func(cfg proxy.RuntimeConfig) (proxy.SpawnResult, error) {
-		captured = cfg
-		return proxy.SpawnResult{
-			PID:        4343,
-			ListenAddr: "127.0.0.1:18889",
-			ConfigPath: filepath.Join(t.TempDir(), "runtime.json"),
-		}, nil
-	}
-	t.Cleanup(func() { spawnProxyProcess = origSpawn })
-
-	m := NewManager(nil, &config.Config{})
-	rt := &RuntimeBundle{
-		SessionID: "sess-legacy-env",
-		EnvBundle: map[string]string{
-			"SUB2API_BASE_URL": "https://relay.local/sub2api",
-			"SUB2API_API_KEY":  "legacy-sub2api-key",
-		},
-	}
-
-	if err := m.startLocalProxy(rt); err != nil {
-		t.Fatalf("startLocalProxy: %v", err)
-	}
-	if captured.ProviderURL != "https://relay.local/sub2api" {
-		t.Fatalf("ProviderURL = %q, want %q", captured.ProviderURL, "https://relay.local/sub2api")
-	}
-	if captured.ProviderKey != "legacy-sub2api-key" {
-		t.Fatalf("ProviderKey = %q, want %q", captured.ProviderKey, "legacy-sub2api-key")
+	if captured.ProviderKey != "" {
+		t.Fatalf("ProviderKey = %q, want empty", captured.ProviderKey)
 	}
 }
 
@@ -738,27 +705,20 @@ func TestManagerStopRemovesProxyTempConfigDirs(t *testing.T) {
 	}
 }
 
-func TestResolveProxyUpstreamPrefersOpenAIPair(t *testing.T) {
-	url, key := resolveProxyUpstream(map[string]string{
-		"OPENAI_BASE_URL":    "http://openai-upstream.local",
-		"OPENAI_API_KEY":     "openai-key",
-		"ANTHROPIC_BASE_URL": "http://anthropic-upstream.local",
-		"ANTHROPIC_API_KEY":  "anthropic-key",
-		"SUB2API_BASE_URL":   "http://legacy-sub2api.local",
-		"SUB2API_API_KEY":    "legacy-key",
+func TestScrubToolFacingEnvRemovesOpenAISecrets(t *testing.T) {
+	env := scrubToolFacingEnv(map[string]string{
+		"OPENAI_BASE_URL": "http://openai-upstream.local",
+		"OPENAI_API_KEY":  "openai-key",
+		"AE_SESSION_ID":   "sess-1",
 	})
-	if url != "http://openai-upstream.local" || key != "openai-key" {
-		t.Fatalf("resolveProxyUpstream() = (%q, %q), want (%q, %q)", url, key, "http://openai-upstream.local", "openai-key")
+	if _, ok := env["OPENAI_BASE_URL"]; ok {
+		t.Fatalf("expected OPENAI_BASE_URL removed, got %+v", env)
 	}
-}
-
-func TestResolveProxyUpstreamFallsBackToLegacySub2API(t *testing.T) {
-	url, key := resolveProxyUpstream(map[string]string{
-		"SUB2API_BASE_URL": "http://legacy-sub2api.local",
-		"SUB2API_API_KEY":  "legacy-key",
-	})
-	if url != "http://legacy-sub2api.local" || key != "legacy-key" {
-		t.Fatalf("resolveProxyUpstream() = (%q, %q), want (%q, %q)", url, key, "http://legacy-sub2api.local", "legacy-key")
+	if _, ok := env["OPENAI_API_KEY"]; ok {
+		t.Fatalf("expected OPENAI_API_KEY removed, got %+v", env)
+	}
+	if env["AE_SESSION_ID"] != "sess-1" {
+		t.Fatalf("AE_SESSION_ID = %q, want %q", env["AE_SESSION_ID"], "sess-1")
 	}
 }
 
@@ -1343,11 +1303,11 @@ supports_websockets = false
 	if state.Branch != "feature/test-start" {
 		t.Errorf("Branch = %q, want %q", state.Branch, "feature/test-start")
 	}
-	if spawnedCfg.ProviderURL != "http://sub2api.test" {
-		t.Fatalf("spawn ProviderURL = %q, want %q", spawnedCfg.ProviderURL, "http://sub2api.test")
+	if spawnedCfg.ProviderURL != "" {
+		t.Fatalf("spawn ProviderURL = %q, want empty", spawnedCfg.ProviderURL)
 	}
-	if spawnedCfg.ProviderKey != "openai-k" {
-		t.Fatalf("spawn ProviderKey = %q, want %q", spawnedCfg.ProviderKey, "openai-k")
+	if spawnedCfg.ProviderKey != "" {
+		t.Fatalf("spawn ProviderKey = %q, want empty", spawnedCfg.ProviderKey)
 	}
 
 	// Verify marker/runtime were persisted.

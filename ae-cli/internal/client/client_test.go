@@ -756,6 +756,49 @@ func TestBootstrapSession(t *testing.T) {
 	}
 }
 
+func TestGetSessionProviderCredential(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Fatalf("method = %s, want GET", r.Method)
+		}
+		if r.URL.Path != "/api/v1/sessions/sess-1/provider-credentials" {
+			t.Fatalf("path = %q", r.URL.Path)
+		}
+		if got := r.URL.Query().Get("platform"); got != "openai" {
+			t.Fatalf("platform query = %q, want %q", got, "openai")
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer test-token" {
+			t.Fatalf("auth header = %q, want %q", got, "Bearer test-token")
+		}
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"data": ProviderCredential{
+				ProviderName: "sub2api",
+				Platform:     "openai",
+				APIKeyID:     900,
+				APIKey:       "sk-existing-openai",
+				BaseURL:      "http://relay.local/v1",
+			},
+		})
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "test-token")
+	cred, err := c.GetSessionProviderCredential(context.Background(), "sess-1", "openai")
+	if err != nil {
+		t.Fatalf("GetSessionProviderCredential: %v", err)
+	}
+	if cred.APIKeyID != 900 {
+		t.Fatalf("api_key_id = %d, want %d", cred.APIKeyID, 900)
+	}
+	if cred.APIKey != "sk-existing-openai" {
+		t.Fatalf("api_key = %q, want %q", cred.APIKey, "sk-existing-openai")
+	}
+	if cred.BaseURL != "http://relay.local/v1" {
+		t.Fatalf("base_url = %q, want %q", cred.BaseURL, "http://relay.local/v1")
+	}
+}
+
 func TestSendCommitCheckpoint(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
