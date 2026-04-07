@@ -27,6 +27,21 @@ type sub2apiRelay struct {
 	logger   *zap.Logger
 }
 
+type envelopeStatus struct {
+	Success *bool `json:"success"`
+	Code    *int  `json:"code"`
+}
+
+func (s envelopeStatus) ok() bool {
+	if s.Success != nil {
+		return *s.Success
+	}
+	if s.Code != nil {
+		return *s.Code == 0
+	}
+	return false
+}
+
 // NewSub2apiProvider creates a new relay provider backed by a sub2api instance.
 func NewSub2apiProvider(httpClient *http.Client, baseURL, adminURL, apiKey, model string, logger *zap.Logger) Provider {
 	return &sub2apiRelay{
@@ -166,13 +181,13 @@ func (s *sub2apiRelay) GetUser(ctx context.Context, userID int64) (*User, error)
 	}
 
 	var result struct {
-		Success bool `json:"success"`
-		Data    User `json:"data"`
+		envelopeStatus
+		Data User `json:"data"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("relay: get user: decode: %w", err)
 	}
-	if !result.Success {
+	if !result.ok() {
 		return nil, fmt.Errorf("relay: get user: request failed")
 	}
 
@@ -191,13 +206,13 @@ func (s *sub2apiRelay) FindUserByEmail(ctx context.Context, email string) (*User
 	}
 
 	var result struct {
-		Success bool   `json:"success"`
-		Data    []User `json:"data"`
+		envelopeStatus
+		Data []User `json:"data"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("relay: find user by email: decode: %w", err)
 	}
-	if !result.Success {
+	if !result.ok() {
 		return nil, fmt.Errorf("relay: find user by email: request failed")
 	}
 
@@ -219,13 +234,13 @@ func (s *sub2apiRelay) FindUserByUsername(ctx context.Context, username string) 
 	}
 
 	var result struct {
-		Success bool   `json:"success"`
-		Data    []User `json:"data"`
+		envelopeStatus
+		Data []User `json:"data"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("relay: find user by username: decode: %w", err)
 	}
-	if !result.Success {
+	if !result.ok() {
 		return nil, fmt.Errorf("relay: find user by username: request failed")
 	}
 
@@ -252,13 +267,13 @@ func (s *sub2apiRelay) CreateUser(ctx context.Context, req CreateUserRequest) (*
 	}
 
 	var result struct {
-		Success bool `json:"success"`
-		Data    User `json:"data"`
+		envelopeStatus
+		Data User `json:"data"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("relay: create user: decode: %w", err)
 	}
-	if !result.Success {
+	if !result.ok() {
 		return nil, fmt.Errorf("relay: create user: request failed")
 	}
 
@@ -397,26 +412,26 @@ func (s *sub2apiRelay) ListUserAPIKeys(ctx context.Context, userID int64) ([]API
 	}
 
 	var paginated struct {
-		Success bool `json:"success"`
-		Data    struct {
+		envelopeStatus
+		Data struct {
 			Items []APIKey `json:"items"`
 		} `json:"data"`
 	}
-	if err := json.Unmarshal(body, &paginated); err == nil && (paginated.Data.Items != nil || paginated.Success) {
-		if !paginated.Success {
+	if err := json.Unmarshal(body, &paginated); err == nil && (paginated.Data.Items != nil || paginated.Success != nil || paginated.Code != nil) {
+		if !paginated.ok() {
 			return nil, fmt.Errorf("relay: list api keys: request failed")
 		}
 		return paginated.Data.Items, nil
 	}
 
 	var legacy struct {
-		Success bool     `json:"success"`
-		Data    []APIKey `json:"data"`
+		envelopeStatus
+		Data []APIKey `json:"data"`
 	}
 	if err := json.Unmarshal(body, &legacy); err != nil {
 		return nil, fmt.Errorf("relay: list api keys: decode: %w", err)
 	}
-	if !legacy.Success {
+	if !legacy.ok() {
 		return nil, fmt.Errorf("relay: list api keys: request failed")
 	}
 	return legacy.Data, nil
@@ -721,13 +736,13 @@ func (s *sub2apiRelay) ListUsageLogsByAPIKeyExact(ctx context.Context, apiKeyID 
 	}
 
 	var result struct {
-		Success bool       `json:"success"`
-		Data    []UsageLog `json:"data"`
+		envelopeStatus
+		Data []UsageLog `json:"data"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("relay: list usage logs by api key: decode: %w", err)
 	}
-	if !result.Success {
+	if !result.ok() {
 		return nil, fmt.Errorf("relay: list usage logs by api key: request failed")
 	}
 

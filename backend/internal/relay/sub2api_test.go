@@ -663,7 +663,8 @@ func TestListUserAPIKeysDecodesPaginatedItemsEnvelope(t *testing.T) {
 	mux.HandleFunc("/api/v1/admin/users/7/api-keys", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"success": true,
+			"code":    0,
+			"message": "success",
 			"data": map[string]any{
 				"items": []any{
 					map[string]any{
@@ -698,6 +699,34 @@ func TestListUserAPIKeysDecodesPaginatedItemsEnvelope(t *testing.T) {
 	}
 	if keys[0].Group == nil || keys[0].Group.Platform != "anthropic" {
 		t.Fatalf("group platform = %+v, want anthropic", keys[0].Group)
+	}
+}
+
+func TestFindUserByUsernameAcceptsCodeEnvelope(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/users", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code":    0,
+			"message": "success",
+			"data": []any{
+				map[string]any{
+					"id":       10,
+					"email":    "alice@example.com",
+					"username": "alice",
+					"role":     "user",
+				},
+			},
+		})
+	})
+
+	p := newTestProvider(t, mux)
+	user, err := p.FindUserByUsername(context.Background(), "alice")
+	if err != nil {
+		t.Fatalf("FindUserByUsername() unexpected error: %v", err)
+	}
+	if user == nil || user.Username != "alice" {
+		t.Fatalf("unexpected user: %+v", user)
 	}
 }
 
