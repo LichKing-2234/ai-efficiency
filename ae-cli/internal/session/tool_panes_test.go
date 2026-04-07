@@ -3,6 +3,7 @@ package session
 import (
 	"os"
 	"testing"
+	"time"
 )
 
 func TestRegisterToolPaneAssignsMonotonicInstanceNumbers(t *testing.T) {
@@ -107,5 +108,62 @@ func TestReadToolPaneRegistryMissingFileReturnsEmptyRegistry(t *testing.T) {
 	}
 	if _, err := os.Stat(toolPaneRegistryPath("sess-missing")); !os.IsNotExist(err) {
 		t.Fatalf("expected no registry file yet, stat err=%v", err)
+	}
+}
+
+func TestRegisterToolPaneRejectsBlankToolName(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	if _, err := RegisterToolPane("sess-blank", "   ", "%100", "shell"); err == nil {
+		t.Fatalf("expected error when tool name is blank")
+	}
+}
+
+func TestRegisterToolPaneRejectsBlankPaneID(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	if _, err := RegisterToolPane("sess-blank", "claude", "   ", "shell"); err == nil {
+		t.Fatalf("expected error when pane id is blank")
+	}
+}
+
+func TestFindToolPaneRejectsBlankToolName(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	if _, err := FindToolPane("sess-1", "   ", 1); err == nil {
+		t.Fatalf("expected error when tool name is blank")
+	}
+}
+
+func TestWriteToolPaneRegistryRejectsBlankSessionID(t *testing.T) {
+	if err := WriteToolPaneRegistry("", &ToolPaneRegistry{}); err == nil {
+		t.Fatalf("expected error when session_id is blank")
+	}
+}
+
+func TestRegisterToolPaneClearsStaleLock(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	session := "sess-stale"
+	def := toolPaneLockStaleWindow
+	toolPaneLockStaleWindow = time.Millisecond
+	defer func() {
+		toolPaneLockStaleWindow = def
+	}()
+	dir := runtimeDir(session)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatalf("creating runtime dir: %v", err)
+	}
+	lockPath := toolPaneLockPath(session)
+	if err := os.MkdirAll(lockPath, 0o700); err != nil {
+		t.Fatalf("creating stale lock: %v", err)
+	}
+	old := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(lockPath, old, old); err != nil {
+		t.Fatalf("setting lock age: %v", err)
+	}
+	if _, err := RegisterToolPane(session, "claude", "%stale", "shell"); err != nil {
+		t.Fatalf("RegisterToolPane with stale lock: %v", err)
+	}
+	if _, err := os.Stat(lockPath); err == nil {
+		t.Fatalf("expected stale lock to be removed")
+	} else if !os.IsNotExist(err) {
+		t.Fatalf("unexpected stat error: %v", err)
 	}
 }

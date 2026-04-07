@@ -22,8 +22,19 @@ type ToolPaneRegistry struct {
 	Instances          []ToolPaneRecord `json:"instances"`
 }
 
+var (
+	toolPaneLockName        = "tool-panes.lock"
+	toolPaneLockRetryDelay  = 20 * time.Millisecond
+	toolPaneLockMaxRetries  = 50
+	toolPaneLockStaleWindow = 5 * time.Second
+)
+
 func toolPaneRegistryPath(sessionID string) string {
 	return filepath.Join(runtimeDir(sessionID), "tool-panes.json")
+}
+
+func toolPaneLockPath(sessionID string) string {
+	return filepath.Join(runtimeDir(sessionID), toolPaneLockName)
 }
 
 func ReadToolPaneRegistry(sessionID string) (*ToolPaneRegistry, error) {
@@ -57,15 +68,27 @@ func WriteToolPaneRegistry(sessionID string, reg *ToolPaneRegistry) error {
 	if reg == nil {
 		return fmt.Errorf("tool pane registry is nil")
 	}
-	if err := os.MkdirAll(runtimeDir(sessionID), 0o700); err != nil {
+	if strings.TrimSpace(sessionID) == "" {
+		return fmt.Errorf("session_id is required")
+	}
+	dir := runtimeDir(sessionID)
+	if dir == "" {
+		return fmt.Errorf("runtime dir is empty")
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("creating runtime dir: %w", err)
 	}
 	data, err := json.MarshalIndent(reg, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshaling tool pane registry: %w", err)
 	}
-	if err := os.WriteFile(toolPaneRegistryPath(sessionID), data, 0o600); err != nil {
-		return fmt.Errorf("writing tool pane registry: %w", err)
+	tmpPath := toolPaneRegistryPath(sessionID) + ".tmp"
+	if err := os.WriteFile(tmpPath, data, 0o600); err != nil {
+		return fmt.Errorf("writing tool pane registry temp file: %w", err)
+	}
+	if err := os.Rename(tmpPath, toolPaneRegistryPath(sessionID)); err != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("renaming tool pane registry temp file: %w", err)
 	}
 	return nil
 }
@@ -75,39 +98,58 @@ func FormatToolPaneLabel(rec ToolPaneRecord) string {
 }
 
 func RegisterToolPane(sessionID, toolName, paneID, source string) (*ToolPaneRecord, error) {
-	reg, err := ReadToolPaneRegistry(sessionID)
+	normalizedTool, err := normalizeToolName(toolName)
 	if err != nil {
 		return nil, err
 	}
-	toolName = strings.TrimSpace(toolName)
-	next := reg.NextInstanceByTool[toolName] + 1
-	rec := ToolPaneRecord{
-		ToolName:     toolName,
-		InstanceNo:   next,
-		PaneID:       strings.TrimSpace(paneID),
-		LaunchSource: strings.TrimSpace(source),
-		CreatedAt:    time.Now().UTC(),
-	}
-	reg.NextInstanceByTool[toolName] = next
-	reg.Instances = append(reg.Instances, rec)
-	if err := WriteToolPaneRegistry(sessionID, reg); err != nil {
+	normalizedPane, err := normalizePaneID(paneID)
+	if err != nil {
 		return nil, err
 	}
-	return &rec, nil
+	normalizedSource := strings.TrimSpace(source)
+	var registered *ToolPaneRecord
+	if err := withToolPaneLock(sessionID, func() error {
+		reg, err := ReadToolPaneRegistry(sessionID)
+		if err != nil {
+			return err
+		}
+		next := reg.NextInstanceByTool[normalizedTool] + 1
+		rec := ToolPaneRecord{
+			ToolName:     normalizedTool,
+			InstanceNo:   next,
+			PaneID:       normalizedPane,
+			LaunchSource: normalizedSource,
+			CreatedAt:    time.Now().UTC(),
+		}
+		reg.NextInstanceByTool[normalizedTool] = next
+		reg.Instances = append(reg.Instances, rec)
+		if err := WriteToolPaneRegistry(sessionID, reg); err != nil {
+			return err
+		}
+		registered = &rec
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	return registered, nil
 }
 
 func FindToolPane(sessionID, toolName string, instanceNo int) (*ToolPaneRecord, error) {
+	normalizedTool, err := normalizeToolName(toolName)
+	if err != nil {
+		return nil, err
+	}
 	reg, err := ReadToolPaneRegistry(sessionID)
 	if err != nil {
 		return nil, err
 	}
 	for _, rec := range reg.Instances {
-		if rec.ToolName == toolName && rec.InstanceNo == instanceNo {
+		if rec.ToolName == normalizedTool && rec.InstanceNo == instanceNo {
 			copy := rec
 			return &copy, nil
 		}
 	}
-	return nil, fmt.Errorf("tool instance %s#%d not found", toolName, instanceNo)
+	return nil, fmt.Errorf("tool instance %s#%d not found", normalizedTool, instanceNo)
 }
 
 func ListToolPanes(sessionID string) ([]ToolPaneRecord, error) {
@@ -119,36 +161,112 @@ func ListToolPanes(sessionID string) ([]ToolPaneRecord, error) {
 }
 
 func RemoveToolPaneByPaneID(sessionID, paneID string) error {
-	reg, err := ReadToolPaneRegistry(sessionID)
+	normalizedPane, err := normalizePaneID(paneID)
 	if err != nil {
 		return err
 	}
-	keep := reg.Instances[:0]
-	for _, rec := range reg.Instances {
-		if rec.PaneID == strings.TrimSpace(paneID) {
-			continue
+	return withToolPaneLock(sessionID, func() error {
+		reg, err := ReadToolPaneRegistry(sessionID)
+		if err != nil {
+			return err
 		}
-		keep = append(keep, rec)
-	}
-	reg.Instances = append([]ToolPaneRecord(nil), keep...)
-	return WriteToolPaneRegistry(sessionID, reg)
+		keep := reg.Instances[:0]
+		for _, rec := range reg.Instances {
+			if rec.PaneID == normalizedPane {
+				continue
+			}
+			keep = append(keep, rec)
+		}
+		reg.Instances = append([]ToolPaneRecord(nil), keep...)
+		return WriteToolPaneRegistry(sessionID, reg)
+	})
 }
 
 func PruneToolPanes(sessionID string, alive func(string) bool) ([]ToolPaneRecord, error) {
-	reg, err := ReadToolPaneRegistry(sessionID)
-	if err != nil {
-		return nil, err
-	}
-	keep := reg.Instances[:0]
-	for _, rec := range reg.Instances {
-		if alive != nil && !alive(rec.PaneID) {
-			continue
+	var result []ToolPaneRecord
+	if err := withToolPaneLock(sessionID, func() error {
+		reg, err := ReadToolPaneRegistry(sessionID)
+		if err != nil {
+			return err
 		}
-		keep = append(keep, rec)
-	}
-	reg.Instances = append([]ToolPaneRecord(nil), keep...)
-	if err := WriteToolPaneRegistry(sessionID, reg); err != nil {
+		keep := reg.Instances[:0]
+		for _, rec := range reg.Instances {
+			if alive != nil && !alive(rec.PaneID) {
+				continue
+			}
+			keep = append(keep, rec)
+		}
+		reg.Instances = append([]ToolPaneRecord(nil), keep...)
+		if err := WriteToolPaneRegistry(sessionID, reg); err != nil {
+			return err
+		}
+		result = append([]ToolPaneRecord(nil), reg.Instances...)
+		return nil
+	}); err != nil {
 		return nil, err
 	}
-	return append([]ToolPaneRecord(nil), reg.Instances...), nil
+	return result, nil
+}
+
+func normalizeToolName(toolName string) (string, error) {
+	trimmed := strings.TrimSpace(toolName)
+	if trimmed == "" {
+		return "", fmt.Errorf("tool_name is required")
+	}
+	return trimmed, nil
+}
+
+func normalizePaneID(paneID string) (string, error) {
+	trimmed := strings.TrimSpace(paneID)
+	if trimmed == "" {
+		return "", fmt.Errorf("pane_id is required")
+	}
+	return trimmed, nil
+}
+
+func withToolPaneLock(sessionID string, fn func() error) (retErr error) {
+	release, err := acquireToolPaneLock(sessionID)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if relErr := release(); relErr != nil && retErr == nil {
+			retErr = relErr
+		}
+	}()
+	return fn()
+}
+
+func acquireToolPaneLock(sessionID string) (func() error, error) {
+	if strings.TrimSpace(sessionID) == "" {
+		return nil, fmt.Errorf("session_id is required")
+	}
+	dir := runtimeDir(sessionID)
+	if dir == "" {
+		return nil, fmt.Errorf("runtime dir is empty")
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return nil, fmt.Errorf("creating runtime dir: %w", err)
+	}
+	lockPath := toolPaneLockPath(sessionID)
+	for attempt := 0; attempt < toolPaneLockMaxRetries; attempt++ {
+		if err := os.Mkdir(lockPath, 0o700); err == nil {
+			return func() error {
+				if err := os.Remove(lockPath); err != nil && !os.IsNotExist(err) {
+					return fmt.Errorf("releasing tool pane lock: %w", err)
+				}
+				return nil
+			}, nil
+		} else if !os.IsExist(err) {
+			return nil, fmt.Errorf("acquiring tool pane lock: %w", err)
+		}
+		if info, statErr := os.Stat(lockPath); statErr == nil {
+			if time.Since(info.ModTime()) > toolPaneLockStaleWindow {
+				os.RemoveAll(lockPath)
+				continue
+			}
+		}
+		time.Sleep(toolPaneLockRetryDelay)
+	}
+	return nil, fmt.Errorf("acquiring tool pane lock: timeout")
 }
