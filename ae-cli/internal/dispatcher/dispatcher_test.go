@@ -3,6 +3,7 @@ package dispatcher
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -332,6 +333,54 @@ func TestRunWithTmuxRegistersToolPane(t *testing.T) {
 	}
 	if recordedSession != "tmux-session-1" || recordedTool != "echo-tool" {
 		t.Fatalf("split called with (%q, %q), want (%q, %q)", recordedSession, recordedTool, "tmux-session-1", "echo-tool")
+	}
+}
+
+func TestRunWithTmuxRegistrationFailureCleansPane(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	cfg := &config.Config{
+		Tools: map[string]config.ToolConfig{
+			"echo-tool": {Command: "echo", Args: []string{"hello"}},
+		},
+	}
+
+	paneID := "%92"
+	var killedPane string
+	origSplit := tmuxSplitWindow
+	tmuxSplitWindow = func(sessionName string, toolName string, command string, args []string, env map[string]string, unsetKeys []string) (string, error) {
+		return paneID, nil
+	}
+	origRegister := registerToolPane
+	registerToolPane = func(sessionID, toolName, splitPaneID, source string) (*session.ToolPaneRecord, error) {
+		return nil, errors.New("boom")
+	}
+	origKill := tmuxKillPane
+	tmuxKillPane = func(pid string) error {
+		killedPane = pid
+		return nil
+	}
+	t.Cleanup(func() {
+		tmuxSplitWindow = origSplit
+		registerToolPane = origRegister
+		tmuxKillPane = origKill
+	})
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer srv.Close()
+	d := New(cfg, client.New(srv.URL, "tok"))
+
+	err := d.Run("sess-run-fail", "echo-tool", nil, "tmux-session-1")
+	if err == nil {
+		t.Fatal("Run succeeded unexpectedly")
+	}
+	if !strings.Contains(err.Error(), "registering tool pane") {
+		t.Fatalf("error = %q, want it to mention registering tool pane", err.Error())
+	}
+	if killedPane != paneID {
+		t.Fatalf("expected pane %s to be killed, got %s", paneID, killedPane)
 	}
 }
 

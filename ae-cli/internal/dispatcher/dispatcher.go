@@ -20,6 +20,8 @@ var (
 	tmuxSetEnvironment   = tmux.SetEnvironment
 	tmuxUnsetEnvironment = tmux.UnsetEnvironment
 	tmuxSplitWindow      = tmux.SplitWindowWithEnv
+	registerToolPane     = session.RegisterToolPane
+	tmuxKillPane         = tmux.KillPane
 )
 
 type Dispatcher struct {
@@ -149,7 +151,10 @@ func (d *Dispatcher) Run(sessionID, toolName string, extraArgs []string, tmuxSes
 		if err != nil {
 			return fmt.Errorf("splitting tmux pane: %w", err)
 		}
-		if _, err := session.RegisterToolPane(sessionID, toolName, paneID, "run"); err != nil {
+		if _, err := registerToolPane(sessionID, toolName, paneID, "run"); err != nil {
+			if killErr := tmuxKillPane(paneID); killErr != nil {
+				fmt.Fprintf(os.Stderr, "warning: failed to clean up tmux pane %s: %v\n", paneID, killErr)
+			}
 			return fmt.Errorf("registering tool pane: %w", err)
 		}
 		fmt.Printf("Tool %q launched in tmux session %q\n", toolName, tmuxSession)
