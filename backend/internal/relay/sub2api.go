@@ -398,6 +398,9 @@ func (s *sub2apiRelay) ListUserAPIKeys(ctx context.Context, userID int64) ([]API
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("relay: list api keys: decode: %w", err)
 	}
+	if !result.Success {
+		return nil, fmt.Errorf("relay: list api keys: request failed")
+	}
 
 	return result.Data, nil
 }

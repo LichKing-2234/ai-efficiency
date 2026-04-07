@@ -615,6 +615,49 @@ func TestListUserAPIKeys(t *testing.T) {
 	}
 }
 
+func TestListUserAPIKeysDecodesGroupPlatformAndLastUsed(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/users/7/api-keys", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"success": true,
+			"data": []any{
+				map[string]any{
+					"id":           1,
+					"user_id":      7,
+					"key":          "sk-existing-openai",
+					"name":         "alice",
+					"status":       "active",
+					"created_at":   "2026-04-07T10:00:00Z",
+					"last_used_at": "2026-04-07T11:00:00Z",
+					"group": map[string]any{
+						"id":       42,
+						"platform": "openai",
+					},
+				},
+			},
+		})
+	})
+
+	p := newTestProvider(t, mux)
+	keys, err := p.ListUserAPIKeys(context.Background(), 7)
+	if err != nil {
+		t.Fatalf("ListUserAPIKeys() unexpected error: %v", err)
+	}
+	if len(keys) != 1 {
+		t.Fatalf("len(keys) = %d, want 1", len(keys))
+	}
+	if keys[0].Key != "sk-existing-openai" {
+		t.Fatalf("key secret = %q, want %q", keys[0].Key, "sk-existing-openai")
+	}
+	if keys[0].Group == nil || keys[0].Group.Platform != "openai" {
+		t.Fatalf("group platform = %+v, want openai", keys[0].Group)
+	}
+	if keys[0].LastUsedAt == nil || keys[0].LastUsedAt.IsZero() {
+		t.Fatalf("expected last_used_at to be decoded")
+	}
+}
+
 func TestCreateUserAPIKey(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/keys", func(w http.ResponseWriter, r *http.Request) {

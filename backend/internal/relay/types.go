@@ -21,10 +21,19 @@ type CreateUserRequest struct {
 }
 
 type APIKey struct {
-	ID     int64  `json:"id"`
-	UserID int64  `json:"user_id"`
-	Name   string `json:"name"`
-	Status string `json:"status"`
+	ID         int64      `json:"id"`
+	UserID     int64      `json:"user_id"`
+	Key        string     `json:"key"`
+	Name       string     `json:"name"`
+	Status     string     `json:"status"`
+	CreatedAt  time.Time  `json:"created_at"`
+	LastUsedAt *time.Time `json:"last_used_at"`
+	Group      *Group     `json:"group"`
+}
+
+type Group struct {
+	ID       int64  `json:"id"`
+	Platform string `json:"platform"`
 }
 
 type APIKeyCreateRequest struct {
