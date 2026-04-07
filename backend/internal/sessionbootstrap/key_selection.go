@@ -1,6 +1,10 @@
 package sessionbootstrap
 
-import "github.com/ai-efficiency/backend/internal/relay"
+import (
+	"strings"
+
+	"github.com/ai-efficiency/backend/internal/relay"
+)
 
 func selectReusableKey(keys []relay.APIKey, platform, username, emailPrefix string) *relay.APIKey {
 	usernameMatches := filterReusableKeys(keys, platform, username)
@@ -63,4 +67,16 @@ func prefersReusableKey(candidate, current relay.APIKey) bool {
 	}
 
 	return candidate.CreatedAt.After(current.CreatedAt)
+}
+
+func preferredKeyName(username, email string) string {
+	username = strings.TrimSpace(username)
+	if username != "" {
+		return username
+	}
+	email = strings.TrimSpace(email)
+	if at := strings.Index(email, "@"); at > 0 {
+		return email[:at]
+	}
+	return email
 }
