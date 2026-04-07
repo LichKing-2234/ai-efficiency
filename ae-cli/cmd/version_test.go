@@ -688,10 +688,13 @@ func TestShellCommandNoSession(t *testing.T) {
 func TestShellBannerLinesIncludesMultiInstanceHelp(t *testing.T) {
 	output := strings.Join(shell.BannerLines("claude"), "\n")
 	expected := []string{
-		"Launch a new claude instance",
-		"Send to an existing claude instance",
-		"Broadcast to all running tool instances",
+		"Auto-route through the configured router",
+		"@<tool> <msg>",
+		"@<tool>#<n> <msg>",
+		"@all <msg>",
+		"!<cmd>           Run a local shell command",
 		"List running labeled panes",
+		"Tool instances keep the labels <tool>#<n>",
 	}
 	for _, substring := range expected {
 		if !strings.Contains(output, substring) {

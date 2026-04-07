@@ -276,12 +276,15 @@ func BannerLines(toolNames string) []string {
 		"Tools: " + toolNames,
 		"",
 		"Usage:",
-		"  @claude <msg>    Launch a new claude instance",
-		"  @claude#2 <msg> Send to an existing claude instance",
+		"  <msg>             Auto-route through the configured router (if available)",
+		"  @<tool> <msg>     Launch a new <tool> instance",
+		"  @<tool>#<n> <msg> Send to an existing <tool> instance",
 		"  @all <msg>       Broadcast to all running tool instances",
+		"  !<cmd>           Run a local shell command",
 		"  ps               List running labeled panes",
 		"  exit             Quit shell",
 		"",
+		"Tool instances keep the labels <tool>#<n> and are reused when selected.",
 	}
 }
 
