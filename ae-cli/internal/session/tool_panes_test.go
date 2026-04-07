@@ -167,3 +167,48 @@ func TestRegisterToolPaneClearsStaleLock(t *testing.T) {
 		t.Fatalf("unexpected stat error: %v", err)
 	}
 }
+
+func TestLockHeartbeatPreventsStaleStealing(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	session := "sess-heartbeat"
+	def := toolPaneLockStaleWindow
+	toolPaneLockStaleWindow = 50 * time.Millisecond
+	defer func() {
+		toolPaneLockStaleWindow = def
+	}()
+	hold := make(chan struct{})
+	release := make(chan struct{})
+	var holdErr error
+	go func() {
+		holdErr = withToolPaneLock(session, func() error {
+			close(hold)
+			<-release
+			return nil
+		})
+	}()
+	<-hold
+	regDone := make(chan struct{})
+	var regErr error
+	go func() {
+		_, regErr = RegisterToolPane(session, "claude", "%hb", "shell")
+		close(regDone)
+	}()
+	time.Sleep(toolPaneLockStaleWindow + 10*time.Millisecond)
+	select {
+	case <-regDone:
+		t.Fatalf("register should stay blocked while lock held")
+	default:
+	}
+	close(release)
+	select {
+	case <-regDone:
+		if regErr != nil {
+			t.Fatalf("register failed after release: %v", regErr)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("register did not finish after release")
+	}
+	if holdErr != nil {
+		t.Fatalf("hold lock func error: %v", holdErr)
+	}
+}

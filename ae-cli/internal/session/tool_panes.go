@@ -29,12 +29,20 @@ var (
 	toolPaneLockStaleWindow = 5 * time.Second
 )
 
+const (
+	toolPaneLockHeartbeatFile = "heartbeat"
+)
+
 func toolPaneRegistryPath(sessionID string) string {
 	return filepath.Join(runtimeDir(sessionID), "tool-panes.json")
 }
 
 func toolPaneLockPath(sessionID string) string {
 	return filepath.Join(runtimeDir(sessionID), toolPaneLockName)
+}
+
+func toolPaneHeartbeatPath(sessionID string) string {
+	return filepath.Join(toolPaneLockPath(sessionID), toolPaneLockHeartbeatFile)
 }
 
 func ReadToolPaneRegistry(sessionID string) (*ToolPaneRegistry, error) {
@@ -224,6 +232,24 @@ func normalizePaneID(paneID string) (string, error) {
 	return trimmed, nil
 }
 
+func startLockHeartbeat(lockPath string, interval time.Duration) func() {
+	ticker := time.NewTicker(interval)
+	stop := make(chan struct{})
+	go func() {
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				now := time.Now()
+				os.Chtimes(lockPath, now, now)
+			case <-stop:
+				return
+			}
+		}
+	}()
+	return func() { close(stop) }
+}
+
 func withToolPaneLock(sessionID string, fn func() error) (retErr error) {
 	release, err := acquireToolPaneLock(sessionID)
 	if err != nil {
@@ -251,8 +277,15 @@ func acquireToolPaneLock(sessionID string) (func() error, error) {
 	lockPath := toolPaneLockPath(sessionID)
 	for attempt := 0; attempt < toolPaneLockMaxRetries; attempt++ {
 		if err := os.Mkdir(lockPath, 0o700); err == nil {
+			heartbeatPath := filepath.Join(lockPath, toolPaneLockHeartbeatFile)
+			if err := os.WriteFile(heartbeatPath, []byte(time.Now().UTC().Format(time.RFC3339Nano)), 0o600); err != nil {
+				os.RemoveAll(lockPath)
+				return nil, fmt.Errorf("creating lock heartbeat: %w", err)
+			}
+			stop := startLockHeartbeat(heartbeatPath, toolPaneLockRetryDelay)
 			return func() error {
-				if err := os.Remove(lockPath); err != nil && !os.IsNotExist(err) {
+				stop()
+				if err := os.RemoveAll(lockPath); err != nil && !os.IsNotExist(err) {
 					return fmt.Errorf("releasing tool pane lock: %w", err)
 				}
 				return nil
@@ -260,8 +293,14 @@ func acquireToolPaneLock(sessionID string) (func() error, error) {
 		} else if !os.IsExist(err) {
 			return nil, fmt.Errorf("acquiring tool pane lock: %w", err)
 		}
-		if info, statErr := os.Stat(lockPath); statErr == nil {
-			if time.Since(info.ModTime()) > toolPaneLockStaleWindow {
+		if _, statErr := os.Stat(lockPath); statErr == nil {
+			heartbeatPath := filepath.Join(lockPath, toolPaneLockHeartbeatFile)
+			if hbInfo, hbErr := os.Stat(heartbeatPath); hbErr == nil {
+				if time.Since(hbInfo.ModTime()) > toolPaneLockStaleWindow {
+					os.RemoveAll(lockPath)
+					continue
+				}
+			} else {
 				os.RemoveAll(lockPath)
 				continue
 			}
