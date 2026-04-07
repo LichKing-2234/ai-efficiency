@@ -71,10 +71,17 @@ func prefersReusableKey(candidate, current relay.APIKey) bool {
 
 func preferredKeyName(username, email string) string {
 	username = strings.TrimSpace(username)
+	email = strings.TrimSpace(email)
+	if username != "" {
+		// Relay SSO may backfill an empty username with the email address.
+		// Treat that as "no username" so API key names use the email prefix instead.
+		if strings.Contains(username, "@") && (email == "" || strings.EqualFold(username, email)) {
+			username = ""
+		}
+	}
 	if username != "" {
 		return username
 	}
-	email = strings.TrimSpace(email)
 	if at := strings.Index(email, "@"); at > 0 {
 		return email[:at]
 	}

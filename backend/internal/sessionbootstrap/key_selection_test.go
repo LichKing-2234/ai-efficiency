@@ -139,3 +139,10 @@ func TestSelectReusableKeyUsesCreatedAtAsTieBreakerForLastUsed(t *testing.T) {
 		t.Fatalf("selected key = %+v, want id=41", got)
 	}
 }
+
+func TestPreferredKeyNameUsesEmailPrefixWhenUsernameIsEmailAlias(t *testing.T) {
+	got := preferredKeyName("luxuhui@shengwang.cn", "luxuhui@shengwang.cn")
+	if got != "luxuhui" {
+		t.Fatalf("preferredKeyName = %q, want %q", got, "luxuhui")
+	}
+}

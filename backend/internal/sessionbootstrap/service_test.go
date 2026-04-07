@@ -492,6 +492,74 @@ func TestResolveProviderCredentialCreatesUsingPlatformSpecificGroup(t *testing.T
 	}
 }
 
+func TestResolveProviderCredentialCreatesEmailPrefixNameWhenUsernameIsEmailAlias(t *testing.T) {
+	ctx := context.Background()
+	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+
+	sp := client.ScmProvider.Create().
+		SetName("mock-gh").
+		SetType("github").
+		SetBaseURL("https://api.github.com").
+		SetCredentials("enc").
+		SaveX(ctx)
+	rc := client.RepoConfig.Create().
+		SetScmProviderID(sp.ID).
+		SetName("mock-repo").
+		SetFullName("org/mock-repo").
+		SetCloneURL("https://github.com/org/mock-repo.git").
+		SetDefaultBranch("main").
+		SetRelayGroupID("77").
+		SaveX(ctx)
+	u := client.User.Create().
+		SetUsername("luxuhui@shengwang.cn").
+		SetEmail("luxuhui@shengwang.cn").
+		SetAuthSource("relay_sso").
+		SetRelayUserID(99).
+		SaveX(ctx)
+	sid := uuid.New()
+	client.Session.Create().
+		SetID(sid).
+		SetRepoConfigID(rc.ID).
+		SetUserID(u.ID).
+		SetBranch("main").
+		SetProviderName("sub2api").
+		SetStartedAt(time.Now()).
+		SaveX(ctx)
+
+	rp := &fakeRelayProvider{
+		listUserAPIKeysFn: func(_ context.Context, userID int64) ([]relay.APIKey, error) {
+			return nil, nil
+		},
+		createUserAPIKeyFn: func(_ context.Context, userID int64, req relay.APIKeyCreateRequest) (*relay.APIKeyWithSecret, error) {
+			return &relay.APIKeyWithSecret{
+				APIKey: relay.APIKey{
+					ID:        1002,
+					UserID:    userID,
+					Name:      req.Name,
+					Status:    "active",
+					CreatedAt: time.Now(),
+				},
+				Secret: "sk-created-openai",
+			}, nil
+		},
+		resolveDefaultGroupIDForPlatformFn: func(_ context.Context, platform string) (string, error) {
+			return "42", nil
+		},
+	}
+
+	svc := NewService(client, rp, nil, "sub2api", "http://relay.local/v1", "77", 2*time.Hour)
+	cred, err := svc.ResolveProviderCredential(ctx, u.ID, sid, "openai")
+	if err != nil {
+		t.Fatalf("ResolveProviderCredential: %v", err)
+	}
+	if cred.APIKeyID != 1002 {
+		t.Fatalf("api_key_id = %d, want %d", cred.APIKeyID, 1002)
+	}
+	if rp.lastCreateUserAPIKeyReq.Name != "luxuhui" {
+		t.Fatalf("created key name = %q, want %q", rp.lastCreateUserAPIKeyReq.Name, "luxuhui")
+	}
+}
+
 func TestResolveProviderCredentialRejectsNonOwner(t *testing.T) {
 	ctx := context.Background()
 	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
