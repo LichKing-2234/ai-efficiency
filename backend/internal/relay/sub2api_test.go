@@ -702,6 +702,76 @@ func TestListUserAPIKeysDecodesPaginatedItemsEnvelope(t *testing.T) {
 	}
 }
 
+func TestListUserAPIKeysFetchesAllPages(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/users/7/api-keys", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		page := r.URL.Query().Get("page")
+		switch page {
+		case "", "1":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"code":    0,
+				"message": "success",
+				"data": map[string]any{
+					"items": []any{
+						map[string]any{
+							"id":      101,
+							"user_id": 7,
+							"name":    "newer",
+							"status":  "active",
+							"group": map[string]any{
+								"id":       6,
+								"platform": "openai",
+							},
+						},
+					},
+					"total":     2,
+					"page":      1,
+					"page_size": 1,
+					"pages":     2,
+				},
+			})
+		case "2":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"code":    0,
+				"message": "success",
+				"data": map[string]any{
+					"items": []any{
+						map[string]any{
+							"id":      2,
+							"user_id": 7,
+							"name":    "older",
+							"status":  "inactive",
+							"group": map[string]any{
+								"id":       5,
+								"platform": "anthropic",
+							},
+						},
+					},
+					"total":     2,
+					"page":      2,
+					"page_size": 1,
+					"pages":     2,
+				},
+			})
+		default:
+			t.Fatalf("unexpected page query: %q", page)
+		}
+	})
+
+	p := newTestProvider(t, mux)
+	keys, err := p.ListUserAPIKeys(context.Background(), 7)
+	if err != nil {
+		t.Fatalf("ListUserAPIKeys() unexpected error: %v", err)
+	}
+	if len(keys) != 2 {
+		t.Fatalf("len(keys) = %d, want 2", len(keys))
+	}
+	if keys[0].ID != 101 || keys[1].ID != 2 {
+		t.Fatalf("keys = %+v, want ids [101 2]", keys)
+	}
+}
+
 func TestFindUserByUsernameAcceptsCodeEnvelope(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/admin/users", func(w http.ResponseWriter, r *http.Request) {

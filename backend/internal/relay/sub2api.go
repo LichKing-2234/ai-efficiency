@@ -396,45 +396,55 @@ func (s *sub2apiRelay) GetUsageStats(ctx context.Context, userID int64, from, to
 }
 
 func (s *sub2apiRelay) ListUserAPIKeys(ctx context.Context, userID int64) ([]APIKey, error) {
-	resp, err := s.doAdminRequest(ctx, http.MethodGet, fmt.Sprintf("/api/v1/admin/users/%d/api-keys", userID), nil)
-	if err != nil {
-		return nil, fmt.Errorf("relay: list api keys: %w", err)
-	}
-	defer resp.Body.Close()
+	var all []APIKey
+	for page := 1; ; page++ {
+		resp, err := s.doAdminRequest(ctx, http.MethodGet, fmt.Sprintf("/api/v1/admin/users/%d/api-keys?page=%d&page_size=100", userID, page), nil)
+		if err != nil {
+			return nil, fmt.Errorf("relay: list api keys: %w", err)
+		}
 
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("relay: list api keys: unexpected status %d", resp.StatusCode)
-	}
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			return nil, fmt.Errorf("relay: list api keys: unexpected status %d", resp.StatusCode)
+		}
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("relay: list api keys: read body: %w", err)
-	}
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			return nil, fmt.Errorf("relay: list api keys: read body: %w", err)
+		}
 
-	var paginated struct {
-		envelopeStatus
-		Data struct {
-			Items []APIKey `json:"items"`
-		} `json:"data"`
-	}
-	if err := json.Unmarshal(body, &paginated); err == nil && (paginated.Data.Items != nil || paginated.Success != nil || paginated.Code != nil) {
-		if !paginated.ok() {
+		var paginated struct {
+			envelopeStatus
+			Data struct {
+				Items []APIKey `json:"items"`
+				Page  int      `json:"page"`
+				Pages int      `json:"pages"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal(body, &paginated); err == nil && (paginated.Data.Items != nil || paginated.Success != nil || paginated.Code != nil) {
+			if !paginated.ok() {
+				return nil, fmt.Errorf("relay: list api keys: request failed")
+			}
+			all = append(all, paginated.Data.Items...)
+			if paginated.Data.Pages <= 1 || page >= paginated.Data.Pages {
+				return all, nil
+			}
+			continue
+		}
+
+		var legacy struct {
+			envelopeStatus
+			Data []APIKey `json:"data"`
+		}
+		if err := json.Unmarshal(body, &legacy); err != nil {
+			return nil, fmt.Errorf("relay: list api keys: decode: %w", err)
+		}
+		if !legacy.ok() {
 			return nil, fmt.Errorf("relay: list api keys: request failed")
 		}
-		return paginated.Data.Items, nil
+		return legacy.Data, nil
 	}
-
-	var legacy struct {
-		envelopeStatus
-		Data []APIKey `json:"data"`
-	}
-	if err := json.Unmarshal(body, &legacy); err != nil {
-		return nil, fmt.Errorf("relay: list api keys: decode: %w", err)
-	}
-	if !legacy.ok() {
-		return nil, fmt.Errorf("relay: list api keys: request failed")
-	}
-	return legacy.Data, nil
 }
 
 func (s *sub2apiRelay) CreateUserAPIKey(ctx context.Context, userID int64, req APIKeyCreateRequest) (*APIKeyWithSecret, error) {
