@@ -20,9 +20,9 @@ type fakeRelayProvider struct {
 	createUserFn         func(ctx context.Context, req relay.CreateUserRequest) (*relay.User, error)
 	listUserAPIKeysFn    func(ctx context.Context, userID int64) ([]relay.APIKey, error)
 
-	createUserAPIKeyFn      func(ctx context.Context, userID int64, req relay.APIKeyCreateRequest) (*relay.APIKeyWithSecret, error)
-	revokeUserAPIKeyFn      func(ctx context.Context, keyID int64) error
-	resolveDefaultGroupIDFn func(ctx context.Context) (string, error)
+	createUserAPIKeyFn                 func(ctx context.Context, userID int64, req relay.APIKeyCreateRequest) (*relay.APIKeyWithSecret, error)
+	revokeUserAPIKeyFn                 func(ctx context.Context, keyID int64) error
+	resolveDefaultGroupIDFn            func(ctx context.Context) (string, error)
 	resolveDefaultGroupIDForPlatformFn func(ctx context.Context, platform string) (string, error)
 
 	lastCreateUserAPIKeyUserID int64
@@ -108,7 +108,7 @@ func ptrTime(v time.Time) *time.Time {
 	return &v
 }
 
-func TestBootstrapCreatesSessionKeyAndEnvBundle(t *testing.T) {
+func TestBootstrapCreatesSessionAndMetadataEnvBundle(t *testing.T) {
 	ctx := context.Background()
 	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
 
@@ -147,12 +147,6 @@ func TestBootstrapCreatesSessionKeyAndEnvBundle(t *testing.T) {
 		findUserByUsernameFn: func(_ context.Context, username string) (*relay.User, error) {
 			return &relay.User{ID: 99, Username: username, Email: "alice@relay.local"}, nil
 		},
-		createUserAPIKeyFn: func(_ context.Context, userID int64, req relay.APIKeyCreateRequest) (*relay.APIKeyWithSecret, error) {
-			return &relay.APIKeyWithSecret{
-				APIKey: relay.APIKey{ID: 555, UserID: userID, Name: req.Name, Status: "active"},
-				Secret: "sk-session-555",
-			}, nil
-		},
 	}
 	resolver := auth.NewRelayIdentityResolver(rp, "ldap.local")
 
@@ -177,8 +171,8 @@ func TestBootstrapCreatesSessionKeyAndEnvBundle(t *testing.T) {
 	if resp.RelayUserID != 99 {
 		t.Fatalf("relay_user_id = %d, want %d", resp.RelayUserID, 99)
 	}
-	if resp.RelayAPIKeyID != 555 {
-		t.Fatalf("relay_api_key_id = %d, want %d", resp.RelayAPIKeyID, 555)
+	if resp.RelayAPIKeyID != 0 {
+		t.Fatalf("relay_api_key_id = %d, want %d", resp.RelayAPIKeyID, 0)
 	}
 	if resp.ProviderName != "sub2api" {
 		t.Fatalf("provider_name = %q, want %q", resp.ProviderName, "sub2api")
@@ -201,38 +195,22 @@ func TestBootstrapCreatesSessionKeyAndEnvBundle(t *testing.T) {
 	if got := resp.EnvBundle["AE_PROVIDER_NAME"]; got != "sub2api" {
 		t.Fatalf("env AE_PROVIDER_NAME = %q, want %q", got, "sub2api")
 	}
-	if got := resp.EnvBundle["AE_RELAY_API_KEY_ID"]; got != "555" {
-		t.Fatalf("env AE_RELAY_API_KEY_ID = %q, want %q", got, "555")
-	}
-	if got := resp.EnvBundle["OPENAI_API_KEY"]; got != "sk-session-555" {
-		t.Fatalf("env OPENAI_API_KEY = %q, want %q", got, "sk-session-555")
-	}
-	if got := resp.EnvBundle["OPENAI_BASE_URL"]; got != "http://relay.local/v1" {
-		t.Fatalf("env OPENAI_BASE_URL = %q, want %q", got, "http://relay.local/v1")
-	}
-	if got := resp.EnvBundle["ANTHROPIC_API_KEY"]; got != "sk-session-555" {
-		t.Fatalf("env ANTHROPIC_API_KEY = %q, want %q", got, "sk-session-555")
-	}
-	if got := resp.EnvBundle["ANTHROPIC_BASE_URL"]; got != "http://relay.local/v1" {
-		t.Fatalf("env ANTHROPIC_BASE_URL = %q, want %q", got, "http://relay.local/v1")
+	for _, forbidden := range []string{"AE_RELAY_API_KEY_ID", "OPENAI_API_KEY", "OPENAI_BASE_URL", "ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL"} {
+		if got, ok := resp.EnvBundle[forbidden]; ok {
+			t.Fatalf("env %s = %q, want absent", forbidden, got)
+		}
 	}
 
-	if rp.lastCreateUserAPIKeyUserID != 99 {
-		t.Fatalf("CreateUserAPIKey userID = %d, want %d", rp.lastCreateUserAPIKeyUserID, 99)
-	}
-	if rp.lastCreateUserAPIKeyReq.GroupID != "g-repo" {
-		t.Fatalf("CreateUserAPIKey groupID = %q, want %q", rp.lastCreateUserAPIKeyReq.GroupID, "g-repo")
-	}
-	if rp.lastCreateUserAPIKeyReq.ExpiresAt == nil || rp.lastCreateUserAPIKeyReq.ExpiresAt.IsZero() {
-		t.Fatalf("CreateUserAPIKey ExpiresAt is empty")
+	if rp.lastCreateUserAPIKeyUserID != 0 {
+		t.Fatalf("unexpected CreateUserAPIKey call for userID=%d", rp.lastCreateUserAPIKeyUserID)
 	}
 
 	s, err := client.Session.Get(ctx, resp.SessionID)
 	if err != nil {
 		t.Fatalf("get session: %v", err)
 	}
-	if s.RelayAPIKeyID == nil || *s.RelayAPIKeyID != int(resp.RelayAPIKeyID) {
-		t.Fatalf("stored relay_api_key_id = %v, want %d", s.RelayAPIKeyID, resp.RelayAPIKeyID)
+	if s.RelayAPIKeyID != nil {
+		t.Fatalf("stored relay_api_key_id = %v, want nil", s.RelayAPIKeyID)
 	}
 	if s.ProviderName == nil || *s.ProviderName != "sub2api" {
 		t.Fatalf("stored provider_name = %v, want %q", s.ProviderName, "sub2api")
@@ -654,12 +632,6 @@ func TestBootstrapFallsBackToRelayResolvedDefaultGroup(t *testing.T) {
 		findUserByUsernameFn: func(_ context.Context, username string) (*relay.User, error) {
 			return &relay.User{ID: 99, Username: username, Email: "alice@relay.local"}, nil
 		},
-		createUserAPIKeyFn: func(_ context.Context, userID int64, req relay.APIKeyCreateRequest) (*relay.APIKeyWithSecret, error) {
-			return &relay.APIKeyWithSecret{
-				APIKey: relay.APIKey{ID: 555, UserID: userID, Name: req.Name, Status: "active"},
-				Secret: "sk-session-555",
-			}, nil
-		},
 		resolveDefaultGroupIDFn: func(_ context.Context) (string, error) {
 			return "g-auto", nil
 		},
@@ -685,12 +657,12 @@ func TestBootstrapFallsBackToRelayResolvedDefaultGroup(t *testing.T) {
 	if resp.RouteBindingSource != "relay_default" {
 		t.Fatalf("route_binding_source = %q, want %q", resp.RouteBindingSource, "relay_default")
 	}
-	if rp.lastCreateUserAPIKeyReq.GroupID != "g-auto" {
-		t.Fatalf("CreateUserAPIKey groupID = %q, want %q", rp.lastCreateUserAPIKeyReq.GroupID, "g-auto")
+	if rp.lastCreateUserAPIKeyUserID != 0 {
+		t.Fatalf("unexpected CreateUserAPIKey call for userID=%d", rp.lastCreateUserAPIKeyUserID)
 	}
 }
 
-func TestBootstrapUsesStoredRelayCredentialsForSessionKeyCreation(t *testing.T) {
+func TestBootstrapWithStoredRelayCredentialsDoesNotCreateKey(t *testing.T) {
 	ctx := context.Background()
 	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
 	encryptionKey := "0000000000000000000000000000000000000000000000000000000000000000"
@@ -764,12 +736,15 @@ func TestBootstrapUsesStoredRelayCredentialsForSessionKeyCreation(t *testing.T) 
 	if err != nil {
 		t.Fatalf("bootstrap: %v", err)
 	}
-	if resp.RelayAPIKeyID != 555 {
-		t.Fatalf("relay_api_key_id = %d, want %d", resp.RelayAPIKeyID, 555)
+	if resp.RelayAPIKeyID != 0 {
+		t.Fatalf("relay_api_key_id = %d, want %d", resp.RelayAPIKeyID, 0)
+	}
+	if rp.lastCreateUserAPIKeyUserID != 0 {
+		t.Fatalf("unexpected CreateUserAPIKey call for userID=%d", rp.lastCreateUserAPIKeyUserID)
 	}
 }
 
-func TestBootstrapRevokesRelayKeyWhenSessionSaveFails(t *testing.T) {
+func TestBootstrapSessionSaveFailureDoesNotAttemptRelayKeyCleanup(t *testing.T) {
 	ctx := context.Background()
 	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
 
@@ -837,8 +812,11 @@ func TestBootstrapRevokesRelayKeyWhenSessionSaveFails(t *testing.T) {
 		t.Fatalf("bootstrap: expected error")
 	}
 
-	if len(rp.revokedKeyIDs) != 1 || rp.revokedKeyIDs[0] != 555 {
-		t.Fatalf("revoked = %v, want [555]", rp.revokedKeyIDs)
+	if len(rp.revokedKeyIDs) != 0 {
+		t.Fatalf("revoked = %v, want []", rp.revokedKeyIDs)
+	}
+	if rp.lastCreateUserAPIKeyUserID != 0 {
+		t.Fatalf("unexpected CreateUserAPIKey call for userID=%d", rp.lastCreateUserAPIKeyUserID)
 	}
 }
 
