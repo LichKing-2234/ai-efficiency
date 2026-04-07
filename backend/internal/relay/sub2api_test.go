@@ -864,7 +864,7 @@ func TestUpdateUserAPIKeyStatusWithJWT(t *testing.T) {
 			},
 		})
 	})
-	mux.HandleFunc("/api/v1/api-keys/2", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/v1/keys/2", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPut {
 			t.Errorf("expected PUT, got %s", r.Method)
 		}

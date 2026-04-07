@@ -593,7 +593,7 @@ func (s *sub2apiRelay) UpdateUserAPIKeyStatus(ctx context.Context, keyID int64, 
 		return fmt.Errorf("relay: update api key status via jwt: marshal: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, fmt.Sprintf("%s/api/v1/api-keys/%d", s.adminURL, keyID), bytes.NewReader(payload))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, fmt.Sprintf("%s/api/v1/keys/%d", s.adminURL, keyID), bytes.NewReader(payload))
 	if err != nil {
 		return fmt.Errorf("relay: update api key status via jwt: %w", err)
 	}
