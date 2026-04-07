@@ -17,6 +17,7 @@ import (
 	"github.com/ai-efficiency/ae-cli/internal/client"
 	"github.com/ai-efficiency/ae-cli/internal/proxy"
 	"github.com/ai-efficiency/ae-cli/internal/toolconfig"
+	"github.com/google/uuid"
 )
 
 type State struct {
@@ -207,6 +208,13 @@ func (m *Manager) Stop() (*State, error) {
 		if state == nil {
 			return nil, fmt.Errorf("no active session")
 		}
+	}
+
+	if _, err := uuid.Parse(strings.TrimSpace(state.ID)); err != nil {
+		if err := m.cleanupLocal(state.ID, state.WorkspaceRoot); err != nil {
+			return nil, err
+		}
+		return state, nil
 	}
 
 	if err := m.client.StopSession(context.Background(), state.ID); err != nil {

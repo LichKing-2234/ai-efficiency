@@ -142,8 +142,12 @@ func TestManagerStartHelperProcess(t *testing.T) {
 }
 
 func TestManagerStartSpawnedProxySurvivesParentProcessGroupTermination(t *testing.T) {
+	tmpHome := t.TempDir()
 	helper := exec.Command(os.Args[0], "-test.run=^TestManagerStartHelperProcess$")
-	helper.Env = append(os.Environ(), managerStartHelperEnv+"=1")
+	helper.Env = append(os.Environ(),
+		managerStartHelperEnv+"=1",
+		"HOME="+tmpHome,
+	)
 	helper.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	stdout, err := helper.StdoutPipe()
 	if err != nil {
@@ -198,6 +202,11 @@ func TestManagerStartSpawnedProxySurvivesParentProcessGroupTermination(t *testin
 		_ = helper.Process.Kill()
 		_ = helper.Wait()
 		t.Fatalf("invalid helper result: %+v", result)
+	}
+	if _, err := os.Stat(filepath.Join(tmpHome, ".ae-cli", "current-session.json")); err != nil {
+		_ = helper.Process.Kill()
+		_ = helper.Wait()
+		t.Fatalf("expected helper state in isolated HOME, stat err=%v", err)
 	}
 
 	if err := syscall.Kill(-helper.Process.Pid, syscall.SIGTERM); err != nil {
@@ -1787,7 +1796,7 @@ func TestStopServerError(t *testing.T) {
 	m := NewManager(c, cfg)
 
 	state := &State{
-		ID:     "stop-err-id",
+		ID:     "33333333-3333-3333-3333-333333333333",
 		Repo:   "org/repo",
 		Branch: "main",
 	}
@@ -1805,6 +1814,54 @@ func TestStopServerError(t *testing.T) {
 	}
 	if current == nil {
 		t.Error("state should still exist after failed stop")
+	}
+}
+
+func TestStopWithInvalidSessionIDCleansLocalStateWithoutBackendStop(t *testing.T) {
+	origHome := os.Getenv("HOME")
+	tmpHome := t.TempDir()
+	os.Setenv("HOME", tmpHome)
+	t.Cleanup(func() { os.Setenv("HOME", origHome) })
+
+	stopCalls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/stop") {
+			stopCalls++
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	c := client.New(srv.URL, "tok")
+	cfg := &config.Config{}
+	m := NewManager(c, cfg)
+
+	state := &State{
+		ID:     "boot-helper-proxy-1",
+		Repo:   "org/repo",
+		Branch: "main",
+	}
+	if err := writeState(state); err != nil {
+		t.Fatalf("writeState: %v", err)
+	}
+
+	stopped, err := m.Stop()
+	if err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	if stopped.ID != "boot-helper-proxy-1" {
+		t.Fatalf("stopped ID = %q, want %q", stopped.ID, "boot-helper-proxy-1")
+	}
+	if stopCalls != 0 {
+		t.Fatalf("stopCalls = %d, want 0", stopCalls)
+	}
+
+	current, err := m.Current()
+	if err != nil {
+		t.Fatalf("Current: %v", err)
+	}
+	if current != nil {
+		t.Fatal("expected stale state to be removed")
 	}
 }
 

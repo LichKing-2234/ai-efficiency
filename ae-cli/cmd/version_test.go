@@ -634,7 +634,7 @@ func TestStartCommandWithExistingDeadSession(t *testing.T) {
 	stateDir := filepath.Join(tmpHome, ".ae-cli")
 	os.MkdirAll(stateDir, 0o755)
 	state := session.State{
-		ID:          "dead-sess",
+		ID:          "11111111-1111-1111-1111-111111111111",
 		Repo:        "org/repo",
 		Branch:      "main",
 		TmuxSession: "ae-dead-nonexistent",
@@ -688,7 +688,7 @@ func TestStartCommandDeadSessionCleanupFailureStopsBootstrap(t *testing.T) {
 	stateDir := filepath.Join(tmpHome, ".ae-cli")
 	os.MkdirAll(stateDir, 0o755)
 	state := session.State{
-		ID:          "dead-sess",
+		ID:          "44444444-4444-4444-4444-444444444444",
 		Repo:        "org/repo",
 		Branch:      "main",
 		TmuxSession: "ae-dead-nonexistent",
@@ -705,6 +705,92 @@ func TestStartCommandDeadSessionCleanupFailureStopsBootstrap(t *testing.T) {
 	}
 	if bootstrapCalls != 0 {
 		t.Fatalf("bootstrapCalls = %d, want 0", bootstrapCalls)
+	}
+}
+
+func TestStartCommandInvalidStoredSessionIDCleansUpAndContinues(t *testing.T) {
+	origHome := os.Getenv("HOME")
+	tmpHome := t.TempDir()
+	os.Setenv("HOME", tmpHome)
+	defer os.Setenv("HOME", origHome)
+
+	repoDir := t.TempDir()
+	cmds := [][]string{
+		{"git", "init", "-b", "main"},
+		{"git", "config", "user.email", "test@test.com"},
+		{"git", "config", "user.name", "Test"},
+		{"git", "remote", "add", "origin", "https://github.com/test-org/test-repo.git"},
+		{"git", "commit", "--allow-empty", "-m", "init"},
+	}
+	for _, args := range cmds {
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Dir = repoDir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("cmd %v: %v\n%s", args, err, out)
+		}
+	}
+	origWD, _ := os.Getwd()
+	if err := os.Chdir(repoDir); err != nil {
+		t.Fatalf("Chdir(repoDir): %v", err)
+	}
+	defer func() { _ = os.Chdir(origWD) }()
+
+	bootstrapCalls := 0
+	stopCalls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/sessions/bootstrap":
+			bootstrapCalls++
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"data": client.BootstrapSessionResponse{
+					SessionID:     "11111111-1111-1111-1111-111111111111",
+					StartedAt:     time.Now(),
+					RelayAPIKeyID: 1,
+					ProviderName:  "sub2api",
+					RuntimeRef:    "rt-1",
+					EnvBundle:     map[string]string{"AE_SESSION_ID": "11111111-1111-1111-1111-111111111111"},
+					KeyExpiresAt:  time.Now().Add(1 * time.Hour),
+				},
+			})
+			return
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/stop"):
+			stopCalls++
+			w.WriteHeader(http.StatusOK)
+			return
+		default:
+			w.WriteHeader(http.StatusOK)
+		}
+	}))
+	defer srv.Close()
+
+	cleanup := setupTestGlobals(t, srv)
+	defer cleanup()
+
+	stateDir := filepath.Join(tmpHome, ".ae-cli")
+	if err := os.MkdirAll(stateDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(stateDir): %v", err)
+	}
+	state := session.State{
+		ID:          "boot-helper-proxy-1",
+		Repo:        "org/repo",
+		Branch:      "main",
+		TmuxSession: "ae-dead-nonexistent",
+	}
+	data, _ := json.MarshalIndent(state, "", "  ")
+	if err := os.WriteFile(filepath.Join(stateDir, "current-session.json"), data, 0o600); err != nil {
+		t.Fatalf("WriteFile(current-session.json): %v", err)
+	}
+
+	err := startCmd.RunE(startCmd, nil)
+	if err != nil {
+		t.Fatalf("startCmd.RunE: %v", err)
+	}
+	if stopCalls != 0 {
+		t.Fatalf("stopCalls = %d, want 0", stopCalls)
+	}
+	if bootstrapCalls != 1 {
+		t.Fatalf("bootstrapCalls = %d, want 1", bootstrapCalls)
 	}
 }
 
@@ -956,7 +1042,7 @@ func TestStopCommandServerError(t *testing.T) {
 
 	stateDir := filepath.Join(tmpHome, ".ae-cli")
 	os.MkdirAll(stateDir, 0o755)
-	state := session.State{ID: "test-stop-err", Repo: "org/repo", Branch: "main"}
+	state := session.State{ID: "22222222-2222-2222-2222-222222222222", Repo: "org/repo", Branch: "main"}
 	data, _ := json.MarshalIndent(state, "", "  ")
 	os.WriteFile(filepath.Join(stateDir, "current-session.json"), data, 0o600)
 
