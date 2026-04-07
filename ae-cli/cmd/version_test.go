@@ -16,6 +16,7 @@ import (
 	"github.com/ai-efficiency/ae-cli/internal/auth"
 	"github.com/ai-efficiency/ae-cli/internal/client"
 	"github.com/ai-efficiency/ae-cli/internal/session"
+	"github.com/ai-efficiency/ae-cli/internal/shell"
 	"github.com/ai-efficiency/ae-cli/internal/tmux"
 )
 
@@ -681,6 +682,21 @@ func TestShellCommandNoSession(t *testing.T) {
 	err := shellCmd.RunE(shellCmd, nil)
 	if err == nil {
 		t.Fatal("expected error when no active session")
+	}
+}
+
+func TestShellBannerLinesIncludesMultiInstanceHelp(t *testing.T) {
+	output := strings.Join(shell.BannerLines("claude"), "\n")
+	expected := []string{
+		"Launch a new claude instance",
+		"Send to an existing claude instance",
+		"Broadcast to all running tool instances",
+		"List running labeled panes",
+	}
+	for _, substring := range expected {
+		if !strings.Contains(output, substring) {
+			t.Fatalf("banner output = %q, want %q", output, substring)
+		}
 	}
 }
 

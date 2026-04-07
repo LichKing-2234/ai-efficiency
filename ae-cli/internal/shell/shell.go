@@ -70,18 +70,9 @@ func (s *Shell) Run() error {
 
 func (s *Shell) runWithOpts(opts ...tea.ProgramOption) error {
 	// Print banner before bubbletea takes over the terminal
-	fmt.Println("\033[1m=== AE Agent Shell ===\033[0m")
-	fmt.Println("Tools:", s.toolNames())
-	fmt.Println()
-	fmt.Println("Usage:")
-	fmt.Println("  @tool <msg>     Launch a new instance and send message")
-	fmt.Println("  @tool#N <msg>   Send to an existing instance")
-	fmt.Println("  @all <msg>      Broadcast to existing tool instances")
-	fmt.Println("  <msg>           Auto-route via LLM")
-	fmt.Println("  !<cmd>          Execute shell command")
-	fmt.Println("  ps              List running panes")
-	fmt.Println("  exit            Quit shell")
-	fmt.Println()
+	for _, line := range BannerLines(s.toolNames()) {
+		fmt.Println(line)
+	}
 
 	m := newModel(s)
 	p := tea.NewProgram(m, opts...)
@@ -273,16 +264,25 @@ func (m *model) handleCommand(line string) {
 // --- output helpers ---
 
 func (m *model) queueBanner() {
-	m.queueLine("\033[1m=== AE Agent Shell ===\033[0m")
-	m.queueLine("Tools: " + m.shell.toolNames())
-	m.queueLine("")
-	m.queueLine("Usage:")
-	m.queueLine("  @claude <msg>    Launch a new claude instance")
-	m.queueLine("  @claude#2 <msg> Send to an existing claude instance")
-	m.queueLine("  @all <msg>       Broadcast to all running tool instances")
-	m.queueLine("  ps               List running labeled panes")
-	m.queueLine("  exit             Quit shell")
-	m.queueLine("")
+	for _, line := range BannerLines(m.shell.toolNames()) {
+		m.queueLine(line)
+	}
+}
+
+// BannerLines returns the lines printed at shell startup or when listing help.
+func BannerLines(toolNames string) []string {
+	return []string{
+		"\033[1m=== AE Agent Shell ===\033[0m",
+		"Tools: " + toolNames,
+		"",
+		"Usage:",
+		"  @claude <msg>    Launch a new claude instance",
+		"  @claude#2 <msg> Send to an existing claude instance",
+		"  @all <msg>       Broadcast to all running tool instances",
+		"  ps               List running labeled panes",
+		"  exit             Quit shell",
+		"",
+	}
 }
 
 func (m *model) handleDirected(line string) {
