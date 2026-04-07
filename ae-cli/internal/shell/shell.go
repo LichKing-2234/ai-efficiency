@@ -69,11 +69,6 @@ func (s *Shell) Run() error {
 }
 
 func (s *Shell) runWithOpts(opts ...tea.ProgramOption) error {
-	// Print banner before bubbletea takes over the terminal
-	for _, line := range BannerLines(s.toolNames()) {
-		fmt.Println(line)
-	}
-
 	m := newModel(s)
 	p := tea.NewProgram(m, opts...)
 	finalModel, err := p.Run()

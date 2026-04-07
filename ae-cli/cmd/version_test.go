@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -1759,6 +1760,99 @@ func TestShellCommandWithSession(t *testing.T) {
 	}
 	if gotState.ID != "test-shell-sess" {
 		t.Fatalf("state.ID = %q, want %q", gotState.ID, "test-shell-sess")
+	}
+}
+
+func TestShellCommandBannerOutput(t *testing.T) {
+	origHome := os.Getenv("HOME")
+	tmpHome := t.TempDir()
+	os.Setenv("HOME", tmpHome)
+	defer os.Setenv("HOME", origHome)
+
+	runner := &stubShellRunner{}
+	var gotCfg *config.Config
+	var gotState *session.State
+
+	origNewShellRunner := newShellRunner
+	newShellRunner = func(cfg *config.Config, state *session.State) shellRunner {
+		gotCfg = cfg
+		gotState = state
+		return runner
+	}
+	t.Cleanup(func() {
+		newShellRunner = origNewShellRunner
+	})
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	cleanup := setupTestGlobals(t, srv)
+	defer cleanup()
+
+	stateDir := filepath.Join(tmpHome, ".ae-cli")
+	os.MkdirAll(stateDir, 0o755)
+	state := session.State{
+		ID:          "test-shell-banner",
+		Repo:        "org/repo",
+		Branch:      "main",
+		TmuxSession: "ae-test",
+	}
+	data, _ := json.MarshalIndent(state, "", "  ")
+	os.WriteFile(filepath.Join(stateDir, "current-session.json"), data, 0o600)
+
+	oldStdout := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe stdout: %v", err)
+	}
+	os.Stdout = w
+	t.Cleanup(func() {
+		os.Stdout = oldStdout
+		_ = r.Close()
+	})
+	var buf bytes.Buffer
+	done := make(chan struct{})
+	go func() {
+		_, _ = io.Copy(&buf, r)
+		close(done)
+	}()
+
+	if err := shellCmd.RunE(shellCmd, nil); err != nil {
+		w.Close()
+		<-done
+		t.Fatalf("shell command: %v", err)
+	}
+	w.Close()
+	<-done
+
+	output := buf.String()
+	expected := []string{
+		"Auto-route through the configured router",
+		"@<tool> <msg>",
+		"@<tool>#<n> <msg>",
+		"@all <msg>",
+		"!<cmd>           Run a local shell command",
+		"List running labeled panes",
+		"Tool instances keep the labels <tool>#<n>",
+	}
+	for _, substring := range expected {
+		if !strings.Contains(output, substring) {
+			t.Fatalf("banner output = %q, want %q", output, substring)
+		}
+	}
+	if gotCfg == nil {
+		t.Fatal("expected config to be passed to shell runner")
+	}
+	if gotState == nil {
+		t.Fatal("expected session state to be passed to shell runner")
+	}
+	if gotState.ID != "test-shell-banner" {
+		t.Fatalf("state.ID = %q, want %q", gotState.ID, "test-shell-banner")
+	}
+	if !runner.runCalled {
+		t.Fatal("expected shell runner Run() to be called")
 	}
 }
 

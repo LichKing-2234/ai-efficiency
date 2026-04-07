@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -25,6 +26,17 @@ type shellRunner interface {
 // interactive shell implementation.
 var newShellRunner = func(cfg *config.Config, state *session.State) shellRunner {
 	return shell.New(cfg, state)
+}
+
+func shellToolNames(cfg *config.Config) string {
+	if cfg == nil {
+		return ""
+	}
+	var names []string
+	for name := range cfg.Tools {
+		names = append(names, name)
+	}
+	return strings.Join(names, ", ")
 }
 
 func applyRuntimeEnvironment(tmuxSession string, rt *session.RuntimeBundle) {
@@ -99,6 +111,9 @@ var shellCmd = &cobra.Command{
 		}()
 
 		s := newShellRunner(cfg, state)
+		for _, line := range shell.BannerLines(shellToolNames(cfg)) {
+			fmt.Println(line)
+		}
 		err = s.Run()
 
 		// Clean up signal goroutine on normal exit
