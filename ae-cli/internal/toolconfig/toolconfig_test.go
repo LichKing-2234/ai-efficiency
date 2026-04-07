@@ -30,6 +30,19 @@ func TestWriteCodexSessionConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadFile hooks.json: %v", err)
 	}
+	var decoded map[string]any
+	if err := json.Unmarshal(hooksData, &decoded); err != nil {
+		t.Fatalf("Unmarshal hooks.json: %v", err)
+	}
+	hooksRoot, ok := decoded["hooks"].(map[string]any)
+	if !ok {
+		t.Fatalf("hooks.json missing top-level hooks object: %+v", decoded)
+	}
+	for _, eventName := range []string{"SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop"} {
+		if _, ok := hooksRoot[eventName]; !ok {
+			t.Fatalf("hooks root missing %q: %+v", eventName, hooksRoot)
+		}
+	}
 	hooks := string(hooksData)
 	for _, want := range []string{
 		"SessionStart",
@@ -179,8 +192,8 @@ func TestWriteClaudeSessionConfigMergesAndCleanupRemovesOnlyManagedHooks(t *test
 	}
 
 	err := WriteClaudeSessionConfig(workspaceRoot, ClaudeHookConfig{
-		SessionID:   "sess-claude-1",
-		SelfPath:    "/tmp/ae-cli",
+		SessionID:    "sess-claude-1",
+		SelfPath:     "/tmp/ae-cli",
 		ProxyBaseURL: "http://127.0.0.1:43123/anthropic",
 		ProxyToken:   "proxy-token-1",
 	})
@@ -249,8 +262,8 @@ func TestWriteClaudeSessionConfigMergesAndCleanupRemovesOnlyManagedHooks(t *test
 func TestCleanupClaudeSessionConfigRemovesManagedFileWhenOnlyManagedHooksExist(t *testing.T) {
 	workspaceRoot := t.TempDir()
 	if err := WriteClaudeSessionConfig(workspaceRoot, ClaudeHookConfig{
-		SessionID:   "sess-claude-2",
-		SelfPath:    "/tmp/ae-cli",
+		SessionID:    "sess-claude-2",
+		SelfPath:     "/tmp/ae-cli",
 		ProxyBaseURL: "http://127.0.0.1:43123/anthropic",
 		ProxyToken:   "proxy-token-2",
 	}); err != nil {
@@ -294,8 +307,8 @@ func TestWriteClaudeSessionConfigPreservesUserSessionEventHooksWithoutManagedMar
 	}
 
 	if err := WriteClaudeSessionConfig(workspaceRoot, ClaudeHookConfig{
-		SessionID:   "sess-claude-3",
-		SelfPath:    "/tmp/ae-cli",
+		SessionID:    "sess-claude-3",
+		SelfPath:     "/tmp/ae-cli",
 		ProxyBaseURL: "http://127.0.0.1:43123/anthropic",
 		ProxyToken:   "proxy-token-3",
 	}); err != nil {

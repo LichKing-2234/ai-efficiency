@@ -370,6 +370,19 @@ func TestManagerStartWritesCodexAndClaudeHookConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read codex hooks.json: %v", err)
 	}
+	var decoded map[string]any
+	if err := json.Unmarshal(codexHooksData, &decoded); err != nil {
+		t.Fatalf("unmarshal codex hooks.json: %v", err)
+	}
+	hooksRoot, ok := decoded["hooks"].(map[string]any)
+	if !ok {
+		t.Fatalf("hooks.json missing top-level hooks object: %+v", decoded)
+	}
+	for _, eventName := range []string{"SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop"} {
+		if _, ok := hooksRoot[eventName]; !ok {
+			t.Fatalf("hooks root missing %q: %+v", eventName, hooksRoot)
+		}
+	}
 	codexHooks := string(codexHooksData)
 	for _, want := range []string{
 		"SessionStart",

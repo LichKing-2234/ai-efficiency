@@ -40,55 +40,57 @@ codex_hooks = true
 
 	command := hookCommand(strings.TrimSpace(cfg.SelfPath), "codex")
 	hooks := map[string]any{
-		"SessionStart": []any{
-			map[string]any{
-				"matcher": "startup|resume",
-				"hooks": []any{
-					map[string]any{
-						"type":    "command",
-						"command": command,
+		"hooks": map[string]any{
+			"SessionStart": []any{
+				map[string]any{
+					"matcher": "startup|resume",
+					"hooks": []any{
+						map[string]any{
+							"type":    "command",
+							"command": command,
+						},
 					},
 				},
 			},
-		},
-		"UserPromptSubmit": []any{
-			map[string]any{
-				"hooks": []any{
-					map[string]any{
-						"type":    "command",
-						"command": command,
+			"UserPromptSubmit": []any{
+				map[string]any{
+					"hooks": []any{
+						map[string]any{
+							"type":    "command",
+							"command": command,
+						},
 					},
 				},
 			},
-		},
-		"PreToolUse": []any{
-			map[string]any{
-				"matcher": "Bash",
-				"hooks": []any{
-					map[string]any{
-						"type":    "command",
-						"command": command,
+			"PreToolUse": []any{
+				map[string]any{
+					"matcher": "Bash",
+					"hooks": []any{
+						map[string]any{
+							"type":    "command",
+							"command": command,
+						},
 					},
 				},
 			},
-		},
-		"PostToolUse": []any{
-			map[string]any{
-				"matcher": "Bash",
-				"hooks": []any{
-					map[string]any{
-						"type":    "command",
-						"command": command,
+			"PostToolUse": []any{
+				map[string]any{
+					"matcher": "Bash",
+					"hooks": []any{
+						map[string]any{
+							"type":    "command",
+							"command": command,
+						},
 					},
 				},
 			},
-		},
-		"Stop": []any{
-			map[string]any{
-				"hooks": []any{
-					map[string]any{
-						"type":    "command",
-						"command": command,
+			"Stop": []any{
+				map[string]any{
+					"hooks": []any{
+						map[string]any{
+							"type":    "command",
+							"command": command,
+						},
 					},
 				},
 			},
