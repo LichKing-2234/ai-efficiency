@@ -391,18 +391,35 @@ func (s *sub2apiRelay) ListUserAPIKeys(ctx context.Context, userID int64) ([]API
 		return nil, fmt.Errorf("relay: list api keys: unexpected status %d", resp.StatusCode)
 	}
 
-	var result struct {
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("relay: list api keys: read body: %w", err)
+	}
+
+	var paginated struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Items []APIKey `json:"items"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &paginated); err == nil && (paginated.Data.Items != nil || paginated.Success) {
+		if !paginated.Success {
+			return nil, fmt.Errorf("relay: list api keys: request failed")
+		}
+		return paginated.Data.Items, nil
+	}
+
+	var legacy struct {
 		Success bool     `json:"success"`
 		Data    []APIKey `json:"data"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := json.Unmarshal(body, &legacy); err != nil {
 		return nil, fmt.Errorf("relay: list api keys: decode: %w", err)
 	}
-	if !result.Success {
+	if !legacy.Success {
 		return nil, fmt.Errorf("relay: list api keys: request failed")
 	}
-
-	return result.Data, nil
+	return legacy.Data, nil
 }
 
 func (s *sub2apiRelay) CreateUserAPIKey(ctx context.Context, userID int64, req APIKeyCreateRequest) (*APIKeyWithSecret, error) {

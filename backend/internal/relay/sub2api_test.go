@@ -658,6 +658,49 @@ func TestListUserAPIKeysDecodesGroupPlatformAndLastUsed(t *testing.T) {
 	}
 }
 
+func TestListUserAPIKeysDecodesPaginatedItemsEnvelope(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/users/7/api-keys", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"success": true,
+			"data": map[string]any{
+				"items": []any{
+					map[string]any{
+						"id":      1,
+						"user_id": 7,
+						"name":    "alice",
+						"status":  "active",
+						"group": map[string]any{
+							"id":       42,
+							"platform": "anthropic",
+						},
+					},
+				},
+				"total":     1,
+				"page":      1,
+				"page_size": 20,
+				"pages":     1,
+			},
+		})
+	})
+
+	p := newTestProvider(t, mux)
+	keys, err := p.ListUserAPIKeys(context.Background(), 7)
+	if err != nil {
+		t.Fatalf("ListUserAPIKeys() unexpected error: %v", err)
+	}
+	if len(keys) != 1 {
+		t.Fatalf("len(keys) = %d, want 1", len(keys))
+	}
+	if keys[0].Name != "alice" {
+		t.Fatalf("name = %q, want %q", keys[0].Name, "alice")
+	}
+	if keys[0].Group == nil || keys[0].Group.Platform != "anthropic" {
+		t.Fatalf("group platform = %+v, want anthropic", keys[0].Group)
+	}
+}
+
 func TestCreateUserAPIKey(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/keys", func(w http.ResponseWriter, r *http.Request) {
@@ -979,7 +1022,7 @@ func TestResolveDefaultGroupIDForPlatformFiltersByPlatform(t *testing.T) {
 					map[string]any{"id": 6, "platform": "openai", "status": "active", "account_count": 14, "active_account_count": 13},
 					map[string]any{"id": 7, "platform": "anthropic", "status": "active", "account_count": 10, "active_account_count": 9},
 				},
-				"page": 1,
+				"page":  1,
 				"pages": 1,
 			},
 		})
