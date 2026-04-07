@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/ai-efficiency/ae-cli/config"
@@ -17,12 +18,17 @@ import (
 
 // --- helpers ---
 
+var testShellSeq atomic.Int64
+
 func newTestShell(tools map[string]config.ToolConfig) *Shell {
 	if tools == nil {
 		tools = map[string]config.ToolConfig{}
 	}
 	cfg := &config.Config{Tools: tools}
-	state := &session.State{ID: "test-id", TmuxSession: "ae-test"}
+	state := &session.State{
+		ID:          fmt.Sprintf("test-id-%d", testShellSeq.Add(1)),
+		TmuxSession: "ae-test",
+	}
 	return New(cfg, state)
 }
 
@@ -74,9 +80,6 @@ func TestNew(t *testing.T) {
 	}
 	if s.state != state {
 		t.Error("shell state mismatch")
-	}
-	if s.toolPanes == nil {
-		t.Error("toolPanes should be initialized")
 	}
 	if s.router != nil {
 		t.Error("router should be nil without sub2api config")
@@ -366,6 +369,154 @@ func TestUnknownToolDirected(t *testing.T) {
 	}
 }
 
+func TestHandleDirectedLaunchesNewInstanceForPlainTool(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	s := newTestShell(map[string]config.ToolConfig{
+		"claude": {Command: "sleep", Args: []string{"10"}},
+	})
+	s.state.TmuxSession = "ae-shell-new"
+	m := newModel(s)
+
+	origSplit := shellSplitWindow
+	var paneSeq int
+	shellSplitWindow = func(sessionName, toolName, command string, args []string) (string, error) {
+		paneSeq++
+		return fmt.Sprintf("%%%d", 100+paneSeq), nil
+	}
+	t.Cleanup(func() { shellSplitWindow = origSplit })
+
+	m.handleDirected("@claude hello")
+	m.handleDirected("@claude again")
+
+	items, err := session.ListToolPanes(s.state.ID)
+	if err != nil {
+		t.Fatalf("ListToolPanes: %v", err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("len(items) = %d, want 2", len(items))
+	}
+	if session.FormatToolPaneLabel(items[1]) != "claude#2" {
+		t.Fatalf("label = %q, want %q", session.FormatToolPaneLabel(items[1]), "claude#2")
+	}
+}
+
+func TestHandleDirectedTargetsIndexedInstance(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	s := newTestShell(map[string]config.ToolConfig{
+		"claude": {Command: "sleep", Args: []string{"10"}},
+	})
+	s.state.TmuxSession = "ae-shell-target"
+	if _, err := session.RegisterToolPane(s.state.ID, "claude", "%201", "shell"); err != nil {
+		t.Fatalf("RegisterToolPane: %v", err)
+	}
+	if _, err := session.RegisterToolPane(s.state.ID, "claude", "%202", "shell"); err != nil {
+		t.Fatalf("RegisterToolPane: %v", err)
+	}
+
+	var gotTarget string
+	origSend := shellSendKeys
+	shellSendKeys = func(paneID, msg string) error {
+		gotTarget = paneID
+		return nil
+	}
+	t.Cleanup(func() { shellSendKeys = origSend })
+
+	m := newModel(s)
+	m.handleDirected("@claude#2 hello")
+
+	if gotTarget != "%202" {
+		t.Fatalf("target pane = %q, want %q", gotTarget, "%202")
+	}
+}
+
+func TestHandleDirectedMissingIndexedInstanceShowsHelpfulError(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	s := newTestShell(map[string]config.ToolConfig{
+		"claude": {Command: "sleep", Args: []string{"10"}},
+	})
+	s.state.TmuxSession = "ae-shell-missing"
+	m := newModel(s)
+	m.lines = nil
+
+	m.handleDirected("@claude#2 hello")
+
+	found := false
+	for _, line := range m.lines {
+		if strings.Contains(line, "claude#2") && strings.Contains(line, "not found") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("expected missing instance error mentioning claude#2")
+	}
+}
+
+func TestBroadcastSendsToExistingInstancesOnly(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	s := newTestShell(map[string]config.ToolConfig{
+		"claude": {Command: "sleep", Args: []string{"10"}},
+		"codex":  {Command: "sleep", Args: []string{"10"}},
+	})
+	s.state.TmuxSession = "ae-shell-broadcast"
+	if _, err := session.RegisterToolPane(s.state.ID, "claude", "%301", "shell"); err != nil {
+		t.Fatalf("RegisterToolPane: %v", err)
+	}
+	if _, err := session.RegisterToolPane(s.state.ID, "claude", "%302", "shell"); err != nil {
+		t.Fatalf("RegisterToolPane: %v", err)
+	}
+
+	var targets []string
+	origSend := shellSendKeys
+	shellSendKeys = func(paneID, msg string) error {
+		targets = append(targets, paneID)
+		return nil
+	}
+	t.Cleanup(func() { shellSendKeys = origSend })
+
+	m := newModel(s)
+	m.broadcast("hello all")
+
+	if len(targets) != 2 {
+		t.Fatalf("broadcast targets = %v, want 2 existing instances", targets)
+	}
+}
+
+func TestAppendPanesShowsToolLabels(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	s := newTestShell(map[string]config.ToolConfig{
+		"claude": {Command: "sleep", Args: []string{"10"}},
+	})
+	s.state.TmuxSession = "ae-shell-ps"
+	if _, err := session.RegisterToolPane(s.state.ID, "claude", "%401", "shell"); err != nil {
+		t.Fatalf("RegisterToolPane: %v", err)
+	}
+
+	origList := shellListPanes
+	shellListPanes = func(string) ([]tmux.Pane, error) {
+		return []tmux.Pane{{ID: "%401", Tool: "claude", Active: true}}, nil
+	}
+	t.Cleanup(func() { shellListPanes = origList })
+
+	m := newModel(s)
+	m.lines = nil
+	m.appendPanes()
+
+	found := false
+	for _, line := range m.lines {
+		if strings.Contains(line, "claude#1") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("expected appendPanes output to include claude#1")
+	}
+}
+
 func TestAutoRouteNoRouter(t *testing.T) {
 	m := newTestModel(map[string]config.ToolConfig{"claude": {Command: "claude"}})
 	m.lines = nil
@@ -476,7 +627,7 @@ func TestSendToToolNoTmux(t *testing.T) {
 	m := newModel(s)
 	m.lines = nil
 
-	m.sendToTool("echo-tool", "test message")
+	m.launchToolInstance("echo-tool", "test message")
 	found := false
 	for _, line := range m.lines {
 		if strings.Contains(line, "Failed") {
@@ -490,14 +641,28 @@ func TestSendToToolNoTmux(t *testing.T) {
 }
 
 func TestSendToToolDeadPane(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
 	s := newTestShell(map[string]config.ToolConfig{
 		"echo-tool": {Command: "echo", Args: []string{"hello"}},
 	})
 	s.state.TmuxSession = "ae-nonexistent-session-12345"
-	s.toolPanes["echo-tool"] = "%999999"
+	if _, err := session.RegisterToolPane(s.state.ID, "echo-tool", "%999999", "shell"); err != nil {
+		t.Fatalf("RegisterToolPane: %v", err)
+	}
 	m := newModel(s)
+	m.lines = nil
 
-	m.sendToTool("echo-tool", "test")
+	m.sendToExistingTool("echo-tool", 1, "test")
+	found := false
+	for _, line := range m.lines {
+		if strings.Contains(line, "Failed") || strings.Contains(line, "not found") {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected send failure or not found message for dead pane")
+	}
 }
 
 func TestListPanesNoTmux(t *testing.T) {
@@ -523,6 +688,7 @@ func TestSendToToolWithTmux(t *testing.T) {
 	if !tmux.HasTmux() {
 		t.Skip("tmux not installed")
 	}
+	t.Setenv("HOME", t.TempDir())
 
 	tmuxName := "ae-cli-shell-test-send"
 	tmux.KillSession(tmuxName)
@@ -537,11 +703,25 @@ func TestSendToToolWithTmux(t *testing.T) {
 	s.state.TmuxSession = tmuxName
 	m := newModel(s)
 
-	m.sendToTool("echo-tool", "hello")
-	if _, exists := s.toolPanes["echo-tool"]; !exists {
-		t.Error("expected echo-tool pane to be registered")
+	m.launchToolInstance("echo-tool", "hello")
+	items, err := session.ListToolPanes(s.state.ID)
+	if err != nil {
+		t.Fatalf("ListToolPanes after first launch: %v", err)
 	}
-	m.sendToTool("echo-tool", "world")
+	if len(items) != 1 {
+		t.Fatalf("len(items) after first launch = %d, want 1", len(items))
+	}
+	m.launchToolInstance("echo-tool", "world")
+	items, err = session.ListToolPanes(s.state.ID)
+	if err != nil {
+		t.Fatalf("ListToolPanes after second launch: %v", err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("len(items) after second launch = %d, want 2", len(items))
+	}
+	if got := session.FormatToolPaneLabel(items[1]); got != "echo-tool#2" {
+		t.Fatalf("second label = %q, want %q", got, "echo-tool#2")
+	}
 }
 
 func TestListPanesWithTmux(t *testing.T) {
@@ -573,6 +753,7 @@ func TestSendToToolWithTmuxEmptyMessage(t *testing.T) {
 	if !tmux.HasTmux() {
 		t.Skip("tmux not installed")
 	}
+	t.Setenv("HOME", t.TempDir())
 
 	tmuxName := "ae-cli-shell-test-empty"
 	tmux.KillSession(tmuxName)
@@ -587,9 +768,13 @@ func TestSendToToolWithTmuxEmptyMessage(t *testing.T) {
 	s.state.TmuxSession = tmuxName
 	m := newModel(s)
 
-	m.sendToTool("sleep-tool", "")
-	if _, exists := s.toolPanes["sleep-tool"]; !exists {
-		t.Error("expected sleep-tool pane to be registered")
+	m.launchToolInstance("sleep-tool", "")
+	items, err := session.ListToolPanes(s.state.ID)
+	if err != nil {
+		t.Fatalf("ListToolPanes: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("len(items) = %d, want 1", len(items))
 	}
 }
 
@@ -620,6 +805,7 @@ func TestExitWithActivePanesConfirmKill(t *testing.T) {
 	if !tmux.HasTmux() {
 		t.Skip("tmux not installed")
 	}
+	t.Setenv("HOME", t.TempDir())
 
 	tmuxName := "ae-cli-shell-test-exit-kill"
 	tmux.KillSession(tmuxName)
@@ -635,9 +821,13 @@ func TestExitWithActivePanesConfirmKill(t *testing.T) {
 	m.lines = nil
 
 	// Launch a tool pane
-	m.sendToTool("sleep-tool", "")
-	if _, exists := s.toolPanes["sleep-tool"]; !exists {
-		t.Fatal("expected sleep-tool pane to be registered")
+	m.launchToolInstance("sleep-tool", "")
+	items, err := session.ListToolPanes(s.state.ID)
+	if err != nil {
+		t.Fatalf("ListToolPanes: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected one sleep-tool pane, got %d", len(items))
 	}
 
 	// Type "exit" — should prompt for confirmation
@@ -663,6 +853,7 @@ func TestExitWithActivePanesDecline(t *testing.T) {
 	if !tmux.HasTmux() {
 		t.Skip("tmux not installed")
 	}
+	t.Setenv("HOME", t.TempDir())
 
 	tmuxName := "ae-cli-shell-test-exit-nkill"
 	tmux.KillSession(tmuxName)
@@ -677,7 +868,7 @@ func TestExitWithActivePanesDecline(t *testing.T) {
 	s.state.TmuxSession = tmuxName
 	m := newModel(s)
 
-	m.sendToTool("sleep-tool", "")
+	m.launchToolInstance("sleep-tool", "")
 
 	// Type "exit"
 	m, _ = sendLine(m, "exit")

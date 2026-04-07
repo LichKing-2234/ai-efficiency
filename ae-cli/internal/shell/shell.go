@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 
@@ -20,12 +21,25 @@ const exitTimeout = 3 * time.Second
 // exitTimeoutMsg is sent when the pending exit timer expires.
 type exitTimeoutMsg struct{ id int }
 
+type directedTarget struct {
+	ToolName   string
+	InstanceNo int
+	Message    string
+}
+
+var (
+	shellSplitWindow = tmux.SplitWindow
+	shellListPanes   = tmux.ListPanes
+	shellSendKeys    = func(paneID, msg string) error {
+		return exec.Command("tmux", "send-keys", "-t", paneID, msg, "Enter").Run()
+	}
+)
+
 // Shell manages the interactive agent shell session.
 type Shell struct {
 	config         *config.Config
 	state          *session.State
 	router         *router.Router
-	toolPanes      map[string]string
 	killTmuxOnExit bool
 }
 
@@ -45,7 +59,7 @@ func New(cfg *config.Config, state *session.State) *Shell {
 		}
 		r = router.New(cfg.Sub2api.URL, apiKey, model, tools)
 	}
-	return &Shell{config: cfg, state: state, router: r, toolPanes: make(map[string]string)}
+	return &Shell{config: cfg, state: state, router: r}
 }
 
 // Run starts the interactive shell TUI.
@@ -59,8 +73,9 @@ func (s *Shell) runWithOpts(opts ...tea.ProgramOption) error {
 	fmt.Println("Tools:", s.toolNames())
 	fmt.Println()
 	fmt.Println("Usage:")
-	fmt.Println("  @claude <msg>   Send to specific tool")
-	fmt.Println("  @all <msg>      Broadcast to all tools")
+	fmt.Println("  @tool <msg>     Launch a new instance and send message")
+	fmt.Println("  @tool#N <msg>   Send to an existing instance")
+	fmt.Println("  @all <msg>      Broadcast to existing tool instances")
 	fmt.Println("  <msg>           Auto-route via LLM")
 	fmt.Println("  !<cmd>          Execute shell command")
 	fmt.Println("  ps              List running panes")
@@ -261,8 +276,9 @@ func (m *model) queueBanner() {
 	m.queueLine("Tools: " + m.shell.toolNames())
 	m.queueLine("")
 	m.queueLine("Usage:")
-	m.queueLine("  @claude <msg>   Send to specific tool")
-	m.queueLine("  @all <msg>      Broadcast to all tools")
+	m.queueLine("  @tool <msg>     Launch a new instance and send message")
+	m.queueLine("  @tool#N <msg>   Send to an existing instance")
+	m.queueLine("  @all <msg>      Broadcast to existing tool instances")
 	m.queueLine("  <msg>           Auto-route via LLM")
 	m.queueLine("  !<cmd>          Execute shell command")
 	m.queueLine("  ps              List running panes")
@@ -271,18 +287,44 @@ func (m *model) queueBanner() {
 }
 
 func (m *model) handleDirected(line string) {
-	parts := strings.SplitN(line[1:], " ", 2)
-	toolName := parts[0]
-	msg := ""
-	if len(parts) > 1 {
-		msg = parts[1]
+	target, err := parseDirectedTarget(line)
+	if err != nil {
+		m.queueLine(fmt.Sprintf("\033[31m%v\033[0m", err))
+		return
 	}
-	if _, ok := m.shell.config.Tools[toolName]; !ok {
-		m.queueLine(fmt.Sprintf("\033[31mUnknown tool: %s\033[0m", toolName))
+	if _, ok := m.shell.config.Tools[target.ToolName]; !ok {
+		m.queueLine(fmt.Sprintf("\033[31mUnknown tool: %s\033[0m", target.ToolName))
 		m.queueLine("Available: " + m.shell.toolNames())
 		return
 	}
-	m.sendToTool(toolName, msg)
+	if target.InstanceNo == 0 {
+		m.launchToolInstance(target.ToolName, target.Message)
+		return
+	}
+	m.sendToExistingTool(target.ToolName, target.InstanceNo, target.Message)
+}
+
+func parseDirectedTarget(line string) (directedTarget, error) {
+	parts := strings.SplitN(strings.TrimPrefix(line, "@"), " ", 2)
+	head := strings.TrimSpace(parts[0])
+	msg := ""
+	if len(parts) == 2 {
+		msg = parts[1]
+	}
+
+	target := directedTarget{Message: msg}
+	if rawTool, rawIndex, ok := strings.Cut(head, "#"); ok {
+		target.ToolName = strings.TrimSpace(rawTool)
+		n, err := strconv.Atoi(strings.TrimSpace(rawIndex))
+		if err != nil || n <= 0 || target.ToolName == "" {
+			return directedTarget{}, fmt.Errorf("invalid tool instance selector %q", head)
+		}
+		target.InstanceNo = n
+		return target, nil
+	}
+
+	target.ToolName = head
+	return target, nil
 }
 
 func (m *model) handleAutoRoute(msg string) {
@@ -297,53 +339,113 @@ func (m *model) handleAutoRoute(msg string) {
 		return
 	}
 	m.queueLine(fmt.Sprintf("→ \033[32m%s\033[0m", toolName))
-	m.sendToTool(toolName, msg)
+	m.launchToolInstance(toolName, msg)
 }
 
 func (m *model) broadcast(msg string) {
-	for name := range m.shell.config.Tools {
-		m.queueLine(fmt.Sprintf("→ \033[32m%s\033[0m", name))
-		m.sendToTool(name, msg)
+	items, err := m.liveToolPanes()
+	if err != nil {
+		m.queueLine(fmt.Sprintf("\033[31mFailed to load tool panes: %v\033[0m", err))
+		return
+	}
+	if len(items) == 0 {
+		m.queueLine("\033[33mNo running tool instances. Use @tool <msg> to start one.\033[0m")
+		return
+	}
+	for _, rec := range items {
+		label := session.FormatToolPaneLabel(rec)
+		m.queueLine(fmt.Sprintf("→ \033[32m%s\033[0m", label))
+		m.sendKeys(rec.PaneID, msg, label)
 	}
 }
 
-func (m *model) sendToTool(toolName, msg string) {
-	paneID, exists := m.shell.toolPanes[toolName]
-	if exists && !m.shell.paneAlive(paneID) {
-		delete(m.shell.toolPanes, toolName)
-		exists = false
+func (m *model) launchToolInstance(toolName, msg string) {
+	toolCfg := m.shell.config.Tools[toolName]
+	paneID, err := shellSplitWindow(m.shell.state.TmuxSession, toolName, toolCfg.Command, toolCfg.Args)
+	if err != nil {
+		m.queueLine(fmt.Sprintf("\033[31mFailed to launch %s: %v\033[0m", toolName, err))
+		return
 	}
-	if !exists {
-		toolCfg := m.shell.config.Tools[toolName]
-		id, err := tmux.SplitWindow(m.shell.state.TmuxSession, toolName, toolCfg.Command, toolCfg.Args)
-		if err != nil {
-			m.queueLine(fmt.Sprintf("\033[31mFailed to launch %s: %v\033[0m", toolName, err))
+	rec, err := session.RegisterToolPane(m.shell.state.ID, toolName, paneID, "shell")
+	if err != nil {
+		m.queueLine(fmt.Sprintf("\033[31mFailed to register %s pane: %v\033[0m", toolName, err))
+		return
+	}
+	label := session.FormatToolPaneLabel(*rec)
+	m.queueLine(fmt.Sprintf("Launched %s in pane %s as %s", toolName, paneID, label))
+	if msg != "" {
+		m.sendKeys(paneID, msg, label)
+	}
+}
+
+func (m *model) sendToExistingTool(toolName string, instanceNo int, msg string) {
+	items, err := m.liveToolPanes()
+	if err != nil {
+		m.queueLine(fmt.Sprintf("\033[31mFailed to load tool panes: %v\033[0m", err))
+		return
+	}
+	for _, rec := range items {
+		if rec.ToolName == toolName && rec.InstanceNo == instanceNo {
+			if msg != "" {
+				m.sendKeys(rec.PaneID, msg, session.FormatToolPaneLabel(rec))
+			}
 			return
 		}
-		m.shell.toolPanes[toolName] = id
-		paneID = id
-		m.queueLine(fmt.Sprintf("Launched %s in pane %s", toolName, id))
 	}
-	if msg != "" {
-		if err := exec.Command("tmux", "send-keys", "-t", paneID, msg, "Enter").Run(); err != nil {
-			m.queueLine(fmt.Sprintf("\033[31mFailed to send to %s: %v\033[0m", toolName, err))
+	m.queueLine(fmt.Sprintf("\033[31mTool instance %s#%d not found.\033[0m", toolName, instanceNo))
+}
+
+func (m *model) sendKeys(paneID, msg, label string) {
+	if err := shellSendKeys(paneID, msg); err != nil {
+		m.queueLine(fmt.Sprintf("\033[31mFailed to send to %s: %v\033[0m", label, err))
+	}
+}
+
+func (m *model) liveToolPanes() ([]session.ToolPaneRecord, error) {
+	items, err := session.ListToolPanes(m.shell.state.ID)
+	if err != nil {
+		return nil, err
+	}
+	panes, err := shellListPanes(m.shell.state.TmuxSession)
+	if err != nil {
+		return items, nil
+	}
+	livePaneIDs := make(map[string]struct{}, len(panes))
+	for _, pane := range panes {
+		livePaneIDs[pane.ID] = struct{}{}
+	}
+	live := make([]session.ToolPaneRecord, 0, len(items))
+	for _, rec := range items {
+		if _, ok := livePaneIDs[rec.PaneID]; ok {
+			live = append(live, rec)
 		}
 	}
+	return live, nil
 }
 
 func (m *model) appendPanes() {
-	panes, err := tmux.ListPanes(m.shell.state.TmuxSession)
+	panes, err := shellListPanes(m.shell.state.TmuxSession)
 	if err != nil {
 		m.queueLine(fmt.Sprintf("\033[31mFailed to list panes: %v\033[0m", err))
 		return
 	}
-	m.queueLine(fmt.Sprintf("%-12s %-20s %s", "PANE ID", "COMMAND", "ACTIVE"))
-	for _, p := range panes {
+	items, err := session.ListToolPanes(m.shell.state.ID)
+	if err != nil {
+		m.queueLine(fmt.Sprintf("\033[31mFailed to load tool panes: %v\033[0m", err))
+		return
+	}
+	paneByID := map[string]tmux.Pane{}
+	for _, pane := range panes {
+		paneByID[pane.ID] = pane
+	}
+	m.queueLine(fmt.Sprintf("%-16s %-12s %-20s %s", "LABEL", "PANE ID", "COMMAND", "ACTIVE"))
+	for _, rec := range items {
+		p := paneByID[rec.PaneID]
 		active := ""
 		if p.Active {
 			active = "*"
 		}
-		m.queueLine(fmt.Sprintf("%-12s %-20s %s", p.ID, p.Tool, active))
+		m.queueLine(fmt.Sprintf("%-16s %-12s %-20s %s", session.FormatToolPaneLabel(rec), rec.PaneID, p.Tool, active))
 	}
 }
 
@@ -372,9 +474,24 @@ func (s *Shell) paneAlive(paneID string) bool {
 func (s *Shell) hasActivePanes() bool { return s.activeToolPaneCount() > 0 }
 
 func (s *Shell) activeToolPaneCount() int {
+	if s.state == nil {
+		return 0
+	}
+	items, err := session.ListToolPanes(s.state.ID)
+	if err != nil {
+		return 0
+	}
+	panes, err := shellListPanes(s.state.TmuxSession)
+	if err != nil {
+		return len(items)
+	}
+	livePaneIDs := make(map[string]struct{}, len(panes))
+	for _, pane := range panes {
+		livePaneIDs[pane.ID] = struct{}{}
+	}
 	count := 0
-	for _, paneID := range s.toolPanes {
-		if s.paneAlive(paneID) {
+	for _, rec := range items {
+		if _, ok := livePaneIDs[rec.PaneID]; ok {
 			count++
 		}
 	}
