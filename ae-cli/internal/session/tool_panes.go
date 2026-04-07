@@ -2,10 +2,12 @@ package session
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -23,14 +25,9 @@ type ToolPaneRegistry struct {
 }
 
 var (
-	toolPaneLockName        = "tool-panes.lock"
-	toolPaneLockRetryDelay  = 20 * time.Millisecond
-	toolPaneLockMaxRetries  = 50
-	toolPaneLockStaleWindow = 5 * time.Second
-)
-
-const (
-	toolPaneLockHeartbeatFile = "heartbeat"
+	toolPaneLockName       = "tool-panes.lock"
+	toolPaneLockRetryDelay = 20 * time.Millisecond
+	toolPaneLockMaxRetries = 50
 )
 
 func toolPaneRegistryPath(sessionID string) string {
@@ -39,10 +36,6 @@ func toolPaneRegistryPath(sessionID string) string {
 
 func toolPaneLockPath(sessionID string) string {
 	return filepath.Join(runtimeDir(sessionID), toolPaneLockName)
-}
-
-func toolPaneHeartbeatPath(sessionID string) string {
-	return filepath.Join(toolPaneLockPath(sessionID), toolPaneLockHeartbeatFile)
 }
 
 func ReadToolPaneRegistry(sessionID string) (*ToolPaneRegistry, error) {
@@ -232,24 +225,6 @@ func normalizePaneID(paneID string) (string, error) {
 	return trimmed, nil
 }
 
-func startLockHeartbeat(lockPath string, interval time.Duration) func() {
-	ticker := time.NewTicker(interval)
-	stop := make(chan struct{})
-	go func() {
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ticker.C:
-				now := time.Now()
-				os.Chtimes(lockPath, now, now)
-			case <-stop:
-				return
-			}
-		}
-	}()
-	return func() { close(stop) }
-}
-
 func withToolPaneLock(sessionID string, fn func() error) (retErr error) {
 	release, err := acquireToolPaneLock(sessionID)
 	if err != nil {
@@ -275,37 +250,35 @@ func acquireToolPaneLock(sessionID string) (func() error, error) {
 		return nil, fmt.Errorf("creating runtime dir: %w", err)
 	}
 	lockPath := toolPaneLockPath(sessionID)
+	lockFile, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return nil, fmt.Errorf("opening tool pane lock file: %w", err)
+	}
 	for attempt := 0; attempt < toolPaneLockMaxRetries; attempt++ {
-		if err := os.Mkdir(lockPath, 0o700); err == nil {
-			heartbeatPath := filepath.Join(lockPath, toolPaneLockHeartbeatFile)
-			if err := os.WriteFile(heartbeatPath, []byte(time.Now().UTC().Format(time.RFC3339Nano)), 0o600); err != nil {
-				os.RemoveAll(lockPath)
-				return nil, fmt.Errorf("creating lock heartbeat: %w", err)
-			}
-			stop := startLockHeartbeat(heartbeatPath, toolPaneLockRetryDelay)
+		err = syscall.Flock(int(lockFile.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
+		if err == nil {
 			return func() error {
-				stop()
-				if err := os.RemoveAll(lockPath); err != nil && !os.IsNotExist(err) {
-					return fmt.Errorf("releasing tool pane lock: %w", err)
+				unlockErr := syscall.Flock(int(lockFile.Fd()), syscall.LOCK_UN)
+				closeErr := lockFile.Close()
+				if unlockErr != nil {
+					return fmt.Errorf("releasing tool pane lock: %w", unlockErr)
+				}
+				if closeErr != nil {
+					return fmt.Errorf("closing tool pane lock file: %w", closeErr)
 				}
 				return nil
 			}, nil
-		} else if !os.IsExist(err) {
-			return nil, fmt.Errorf("acquiring tool pane lock: %w", err)
 		}
-		if _, statErr := os.Stat(lockPath); statErr == nil {
-			heartbeatPath := filepath.Join(lockPath, toolPaneLockHeartbeatFile)
-			if hbInfo, hbErr := os.Stat(heartbeatPath); hbErr == nil {
-				if time.Since(hbInfo.ModTime()) > toolPaneLockStaleWindow {
-					os.RemoveAll(lockPath)
-					continue
-				}
-			} else {
-				os.RemoveAll(lockPath)
-				continue
-			}
+		if !isToolPaneLockContention(err) {
+			_ = lockFile.Close()
+			return nil, fmt.Errorf("acquiring tool pane lock: %w", err)
 		}
 		time.Sleep(toolPaneLockRetryDelay)
 	}
+	_ = lockFile.Close()
 	return nil, fmt.Errorf("acquiring tool pane lock: timeout")
+}
+
+func isToolPaneLockContention(err error) bool {
+	return errors.Is(err, syscall.EWOULDBLOCK) || errors.Is(err, syscall.EAGAIN)
 }

@@ -2,6 +2,7 @@ package session
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -138,44 +139,9 @@ func TestWriteToolPaneRegistryRejectsBlankSessionID(t *testing.T) {
 	}
 }
 
-func TestRegisterToolPaneClearsStaleLock(t *testing.T) {
+func TestRegisterToolPaneBlocksWhileLockHeld(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	session := "sess-stale"
-	def := toolPaneLockStaleWindow
-	toolPaneLockStaleWindow = time.Millisecond
-	defer func() {
-		toolPaneLockStaleWindow = def
-	}()
-	dir := runtimeDir(session)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		t.Fatalf("creating runtime dir: %v", err)
-	}
-	lockPath := toolPaneLockPath(session)
-	if err := os.MkdirAll(lockPath, 0o700); err != nil {
-		t.Fatalf("creating stale lock: %v", err)
-	}
-	old := time.Now().Add(-time.Hour)
-	if err := os.Chtimes(lockPath, old, old); err != nil {
-		t.Fatalf("setting lock age: %v", err)
-	}
-	if _, err := RegisterToolPane(session, "claude", "%stale", "shell"); err != nil {
-		t.Fatalf("RegisterToolPane with stale lock: %v", err)
-	}
-	if _, err := os.Stat(lockPath); err == nil {
-		t.Fatalf("expected stale lock to be removed")
-	} else if !os.IsNotExist(err) {
-		t.Fatalf("unexpected stat error: %v", err)
-	}
-}
-
-func TestLockHeartbeatPreventsStaleStealing(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
-	session := "sess-heartbeat"
-	def := toolPaneLockStaleWindow
-	toolPaneLockStaleWindow = 50 * time.Millisecond
-	defer func() {
-		toolPaneLockStaleWindow = def
-	}()
+	session := "sess-blocking"
 	hold := make(chan struct{})
 	release := make(chan struct{})
 	var holdErr error
@@ -193,12 +159,56 @@ func TestLockHeartbeatPreventsStaleStealing(t *testing.T) {
 		_, regErr = RegisterToolPane(session, "claude", "%hb", "shell")
 		close(regDone)
 	}()
-	time.Sleep(toolPaneLockStaleWindow + 10*time.Millisecond)
+	time.Sleep(50 * time.Millisecond)
 	select {
 	case <-regDone:
 		t.Fatalf("register should stay blocked while lock held")
 	default:
 	}
+	close(release)
+	select {
+	case <-regDone:
+		if regErr != nil {
+			t.Fatalf("register failed after release: %v", regErr)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("register did not finish after release")
+	}
+	if holdErr != nil {
+		t.Fatalf("hold lock func error: %v", holdErr)
+	}
+}
+
+func TestRegisterToolPaneDoesNotStealLockWithoutHeartbeatOwnership(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	session := "sess-no-steal"
+	hold := make(chan struct{})
+	release := make(chan struct{})
+	var holdErr error
+	go func() {
+		holdErr = withToolPaneLock(session, func() error {
+			close(hold)
+			_ = os.Remove(filepath.Join(toolPaneLockPath(session), "heartbeat"))
+			<-release
+			return nil
+		})
+	}()
+	<-hold
+
+	regDone := make(chan struct{})
+	var regErr error
+	go func() {
+		_, regErr = RegisterToolPane(session, "claude", "%steal", "shell")
+		close(regDone)
+	}()
+
+	time.Sleep(100 * time.Millisecond)
+	select {
+	case <-regDone:
+		t.Fatalf("register should remain blocked even when heartbeat path is missing")
+	default:
+	}
+
 	close(release)
 	select {
 	case <-regDone:
