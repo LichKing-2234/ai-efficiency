@@ -10,6 +10,7 @@ import (
 
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/ent/enttest"
+	"github.com/ai-efficiency/backend/ent/sessionworkspace"
 	"github.com/ai-efficiency/backend/internal/auth"
 	"github.com/ai-efficiency/backend/internal/pkg"
 	"github.com/ai-efficiency/backend/internal/relay"
@@ -230,6 +231,27 @@ func TestBootstrapCreatesSessionAndMetadataEnvBundle(t *testing.T) {
 	}
 	if s.RelayUserID == nil || *s.RelayUserID != int(resp.RelayUserID) {
 		t.Fatalf("stored relay_user_id = %v, want %d", s.RelayUserID, resp.RelayUserID)
+	}
+	workspace, err := client.SessionWorkspace.Query().
+		Where(sessionworkspace.SessionIDEQ(resp.SessionID)).
+		Only(ctx)
+	if err != nil {
+		t.Fatalf("get session workspace: %v", err)
+	}
+	if workspace.WorkspaceID != "ws-1" {
+		t.Fatalf("workspace_id = %q, want %q", workspace.WorkspaceID, "ws-1")
+	}
+	if workspace.WorkspaceRoot != "/tmp/ws" {
+		t.Fatalf("workspace_root = %q, want %q", workspace.WorkspaceRoot, "/tmp/ws")
+	}
+	if workspace.GitDir != "/tmp/ws/.git" {
+		t.Fatalf("git_dir = %q, want %q", workspace.GitDir, "/tmp/ws/.git")
+	}
+	if workspace.GitCommonDir != "/tmp/ws/.git" {
+		t.Fatalf("git_common_dir = %q, want %q", workspace.GitCommonDir, "/tmp/ws/.git")
+	}
+	if workspace.BindingSource != "manual" {
+		t.Fatalf("binding_source = %q, want %q", workspace.BindingSource, "manual")
 	}
 }
 

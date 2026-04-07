@@ -48,6 +48,8 @@ export interface Session {
     repo_config?: RepoConfig
     session_workspaces?: SessionWorkspace[]
     commit_checkpoints?: CommitCheckpoint[]
+    session_usage_events?: SessionUsageEvent[]
+    session_events?: SessionEvent[]
   }
 }
 
@@ -73,6 +75,30 @@ export interface CommitCheckpoint {
   head_snapshot?: string | null
   binding_source: string
   agent_snapshot?: Record<string, any>
+  captured_at: string
+}
+
+export interface SessionUsageEvent {
+  event_id: string
+  session_id?: string
+  workspace_id: string
+  request_id?: string
+  provider_name: string
+  model: string
+  started_at: string
+  finished_at: string
+  input_tokens?: number
+  output_tokens?: number
+  total_tokens?: number
+  status: string
+}
+
+export interface SessionEvent {
+  event_id: string
+  session_id?: string
+  workspace_id: string
+  event_type: string
+  source: string
   captured_at: string
 }
 

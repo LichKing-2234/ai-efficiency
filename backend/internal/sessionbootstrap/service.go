@@ -10,6 +10,7 @@ import (
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/session"
+	"github.com/ai-efficiency/backend/ent/sessionworkspace"
 	"github.com/ai-efficiency/backend/ent/user"
 	"github.com/ai-efficiency/backend/internal/auth"
 	"github.com/ai-efficiency/backend/internal/pkg"
@@ -253,6 +254,16 @@ func (s *Service) Bootstrap(ctx context.Context, localUserID int, req BootstrapR
 
 	if _, err := create.Save(ctx); err != nil {
 		return nil, fmt.Errorf("bootstrap: create session: %w", err)
+	}
+	if _, err := s.entClient.SessionWorkspace.Create().
+		SetSessionID(sessionID).
+		SetWorkspaceID(strings.TrimSpace(req.WorkspaceID)).
+		SetWorkspaceRoot(strings.TrimSpace(req.WorkspaceRoot)).
+		SetGitDir(strings.TrimSpace(req.GitDir)).
+		SetGitCommonDir(strings.TrimSpace(req.GitCommonDir)).
+		SetBindingSource(sessionworkspace.BindingSourceManual).
+		Save(ctx); err != nil {
+		return nil, fmt.Errorf("bootstrap: create session workspace: %w", err)
 	}
 
 	envBundle := map[string]string{

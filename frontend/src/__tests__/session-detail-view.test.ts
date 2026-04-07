@@ -67,6 +67,25 @@ describe('SessionDetailView', () => {
               binding_source: 'marker',
               captured_at: '2026-03-30T00:30:00Z',
             }],
+            session_usage_events: [{
+              event_id: 'usage-1',
+              provider_name: 'sub2api',
+              model: 'claude-opus',
+              started_at: '2026-03-30T00:31:00Z',
+              finished_at: '2026-03-30T00:31:05Z',
+              input_tokens: 100,
+              output_tokens: 40,
+              total_tokens: 140,
+              status: 'completed',
+              workspace_id: 'ws-1',
+            }],
+            session_events: [{
+              event_id: 'event-1',
+              event_type: 'user_prompt_submit',
+              source: 'codex_hook',
+              captured_at: '2026-03-30T00:32:00Z',
+              workspace_id: 'ws-1',
+            }],
           },
         },
       },
@@ -85,6 +104,10 @@ describe('SessionDetailView', () => {
     expect(wrapper.text()).toContain('/workspace/root')
     expect(wrapper.text()).toContain('abc12345def67890')
     expect(wrapper.text()).toContain('marker')
+    expect(wrapper.text()).toContain('claude-opus')
+    expect(wrapper.text()).toContain('140')
+    expect(wrapper.text()).toContain('user_prompt_submit')
+    expect(wrapper.text()).toContain('codex_hook')
   })
 
   it('replaces to session list when session load fails', async () => {

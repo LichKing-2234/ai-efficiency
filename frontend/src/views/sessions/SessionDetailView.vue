@@ -132,6 +132,56 @@ watch(
         </div>
         <p v-else class="mt-3 text-sm text-gray-400">No checkpoints captured.</p>
       </div>
+
+      <div class="rounded-lg bg-white p-5 shadow">
+        <h2 class="text-sm font-semibold text-gray-900 uppercase tracking-wide">Session Usage</h2>
+        <div v-if="session.edges?.session_usage_events?.length" class="mt-3 overflow-x-auto">
+          <table class="min-w-full divide-y divide-gray-100 text-sm">
+            <thead>
+              <tr class="text-xs uppercase text-gray-400">
+                <th class="px-3 py-2 text-left font-medium">Model</th>
+                <th class="px-3 py-2 text-left font-medium">Provider</th>
+                <th class="px-3 py-2 text-left font-medium">Tokens</th>
+                <th class="px-3 py-2 text-left font-medium">Status</th>
+                <th class="px-3 py-2 text-left font-medium">Started</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-50">
+              <tr v-for="usage in session.edges.session_usage_events" :key="usage.event_id">
+                <td class="px-3 py-2 font-mono text-xs text-gray-700">{{ usage.model }}</td>
+                <td class="px-3 py-2 text-xs text-gray-600">{{ usage.provider_name }}</td>
+                <td class="px-3 py-2 text-xs text-gray-600">{{ usage.total_tokens ?? '—' }}</td>
+                <td class="px-3 py-2 text-xs text-gray-600">{{ usage.status }}</td>
+                <td class="px-3 py-2 text-xs text-gray-500">{{ formatDate(usage.started_at) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p v-else class="mt-3 text-sm text-gray-400">No usage records.</p>
+      </div>
+
+      <div class="rounded-lg bg-white p-5 shadow">
+        <h2 class="text-sm font-semibold text-gray-900 uppercase tracking-wide">Session Events</h2>
+        <div v-if="session.edges?.session_events?.length" class="mt-3 overflow-x-auto">
+          <table class="min-w-full divide-y divide-gray-100 text-sm">
+            <thead>
+              <tr class="text-xs uppercase text-gray-400">
+                <th class="px-3 py-2 text-left font-medium">Type</th>
+                <th class="px-3 py-2 text-left font-medium">Source</th>
+                <th class="px-3 py-2 text-left font-medium">Captured</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-50">
+              <tr v-for="event in session.edges.session_events" :key="event.event_id">
+                <td class="px-3 py-2 font-mono text-xs text-gray-700">{{ event.event_type }}</td>
+                <td class="px-3 py-2 text-xs text-gray-600">{{ event.source }}</td>
+                <td class="px-3 py-2 text-xs text-gray-500">{{ formatDate(event.captured_at) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p v-else class="mt-3 text-sm text-gray-400">No session events.</p>
+      </div>
     </div>
 
     <div v-else class="text-center text-gray-500 py-12">Session not found.</div>
