@@ -30,6 +30,7 @@ type directedTarget struct {
 var (
 	shellSplitWindow = tmux.SplitWindow
 	shellListPanes   = tmux.ListPanes
+	shellKillPane    = tmux.KillPane
 	shellSendKeys    = func(paneID, msg string) error {
 		return exec.Command("tmux", "send-keys", "-t", paneID, msg, "Enter").Run()
 	}
@@ -368,6 +369,9 @@ func (m *model) launchToolInstance(toolName, msg string) {
 	}
 	rec, err := session.RegisterToolPane(m.shell.state.ID, toolName, paneID, "shell")
 	if err != nil {
+		if killErr := shellKillPane(paneID); killErr != nil {
+			m.queueLine(fmt.Sprintf("\033[31mFailed to rollback pane %s after register error: %v\033[0m", paneID, killErr))
+		}
 		m.queueLine(fmt.Sprintf("\033[31mFailed to register %s pane: %v\033[0m", toolName, err))
 		return
 	}

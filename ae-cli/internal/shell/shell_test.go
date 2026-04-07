@@ -768,6 +768,50 @@ func TestSendToToolNoTmux(t *testing.T) {
 	}
 }
 
+func TestLaunchToolInstanceRollsBackPaneOnRegisterFailure(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	s := newTestShell(map[string]config.ToolConfig{
+		"claude": {Command: "sleep", Args: []string{"10"}},
+	})
+	s.state.TmuxSession = "ae-shell-rollback"
+	s.state.ID = ""
+	m := newModel(s)
+	m.lines = nil
+
+	origSplit := shellSplitWindow
+	shellSplitWindow = func(sessionName, toolName, command string, args []string) (string, error) {
+		return "%777", nil
+	}
+	origKill := shellKillPane
+	var killedPaneID string
+	shellKillPane = func(paneID string) error {
+		killedPaneID = paneID
+		return nil
+	}
+	t.Cleanup(func() {
+		shellSplitWindow = origSplit
+		shellKillPane = origKill
+	})
+
+	m.launchToolInstance("claude", "hello")
+
+	if killedPaneID != "%777" {
+		t.Fatalf("rollback killed pane = %q, want %q", killedPaneID, "%777")
+	}
+
+	found := false
+	for _, line := range m.lines {
+		if strings.Contains(line, "Failed to register claude pane") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("expected register failure message")
+	}
+}
+
 func TestSendToToolDeadPane(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 
