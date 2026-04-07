@@ -369,6 +369,46 @@ func TestUnknownToolDirected(t *testing.T) {
 	}
 }
 
+func TestHandleDirectedInvalidSelectorShowsError(t *testing.T) {
+	m := newTestModel(map[string]config.ToolConfig{"claude": {Command: "claude"}})
+	m.lines = nil
+
+	m.handleDirected("@claude#x hello")
+
+	found := false
+	for _, line := range m.lines {
+		if strings.Contains(line, "invalid tool instance selector") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("expected invalid selector error")
+	}
+}
+
+func TestBroadcastWithNoRunningInstancesShowsGuidance(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	m := newTestModel(map[string]config.ToolConfig{"claude": {Command: "claude"}})
+	m.lines = nil
+	origList := shellListPanes
+	shellListPanes = func(string) ([]tmux.Pane, error) {
+		return []tmux.Pane{}, nil
+	}
+	t.Cleanup(func() { shellListPanes = origList })
+	m.broadcast("hello")
+
+	found := false
+	for _, line := range m.lines {
+		if strings.Contains(line, "No running tool instances") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("expected no-running-instances guidance")
+	}
+}
+
 func TestHandleDirectedLaunchesNewInstanceForPlainTool(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 

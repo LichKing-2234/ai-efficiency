@@ -277,13 +277,11 @@ func (m *model) queueBanner() {
 	m.queueLine("Tools: " + m.shell.toolNames())
 	m.queueLine("")
 	m.queueLine("Usage:")
-	m.queueLine("  @tool <msg>     Launch a new instance and send message")
-	m.queueLine("  @tool#N <msg>   Send to an existing instance")
-	m.queueLine("  @all <msg>      Broadcast to existing tool instances")
-	m.queueLine("  <msg>           Auto-route via LLM")
-	m.queueLine("  !<cmd>          Execute shell command")
-	m.queueLine("  ps              List running panes")
-	m.queueLine("  exit            Quit shell")
+	m.queueLine("  @claude <msg>    Launch a new claude instance")
+	m.queueLine("  @claude#2 <msg> Send to an existing claude instance")
+	m.queueLine("  @all <msg>       Broadcast to all running tool instances")
+	m.queueLine("  ps               List running labeled panes")
+	m.queueLine("  exit             Quit shell")
 	m.queueLine("")
 }
 
