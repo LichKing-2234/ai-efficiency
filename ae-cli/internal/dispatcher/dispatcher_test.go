@@ -292,6 +292,49 @@ func TestRunDirectExecutionRemovesOpenAIEnvWhenCodexProxyEnvPresent(t *testing.T
 	}
 }
 
+func TestRunWithTmuxRegistersToolPane(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	cfg := &config.Config{
+		Tools: map[string]config.ToolConfig{
+			"echo-tool": {Command: "echo", Args: []string{"hello"}},
+		},
+	}
+
+	var recordedSession string
+	var recordedTool string
+	origSplit := tmuxSplitWindow
+	tmuxSplitWindow = func(sessionName string, toolName string, command string, args []string, env map[string]string, unsetKeys []string) (string, error) {
+		recordedSession = sessionName
+		recordedTool = toolName
+		return "%91", nil
+	}
+	t.Cleanup(func() { tmuxSplitWindow = origSplit })
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer srv.Close()
+	d := New(cfg, client.New(srv.URL, "tok"))
+	if err := d.Run("sess-run", "echo-tool", nil, "tmux-session-1"); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	items, err := session.ListToolPanes("sess-run")
+	if err != nil {
+		t.Fatalf("ListToolPanes: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("len(items) = %d, want 1", len(items))
+	}
+	if items[0].PaneID != "%91" || items[0].ToolName != "echo-tool" || items[0].LaunchSource != "run" {
+		t.Fatalf("unexpected registry item: %#v", items[0])
+	}
+	if recordedSession != "tmux-session-1" || recordedTool != "echo-tool" {
+		t.Fatalf("split called with (%q, %q), want (%q, %q)", recordedSession, recordedTool, "tmux-session-1", "echo-tool")
+	}
+}
+
 func TestRunTmuxUnsetsAnthropicAPIKeyWhenProxyEnvPresent(t *testing.T) {
 	origHome := os.Getenv("HOME")
 	tmpHome := t.TempDir()
