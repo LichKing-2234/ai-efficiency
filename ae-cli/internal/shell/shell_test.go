@@ -399,13 +399,14 @@ func TestBroadcastWithNoRunningInstancesShowsGuidance(t *testing.T) {
 	m.broadcast("hello")
 
 	found := false
+	expected := "No running tool instances. Use @tool <msg> to start one."
 	for _, line := range m.lines {
-		if strings.Contains(line, "No running tool instances") {
+		if strings.Contains(line, expected) {
 			found = true
 		}
 	}
 	if !found {
-		t.Fatal("expected no-running-instances guidance")
+		t.Fatalf("expected guidance containing %q, got %q", expected, m.lines)
 	}
 }
 
