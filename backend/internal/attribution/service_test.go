@@ -126,6 +126,9 @@ func (f *fakeRelayProvider) ListUserAPIKeys(ctx context.Context, userID int64) (
 func (f *fakeRelayProvider) CreateUserAPIKey(ctx context.Context, userID int64, req relay.APIKeyCreateRequest) (*relay.APIKeyWithSecret, error) {
 	return nil, nil
 }
+func (f *fakeRelayProvider) UpdateUserAPIKeyStatus(ctx context.Context, keyID int64, status string) error {
+	return nil
+}
 func (f *fakeRelayProvider) RevokeUserAPIKey(ctx context.Context, keyID int64) error { return nil }
 func (f *fakeRelayProvider) ListUsageLogsByAPIKeyExact(ctx context.Context, apiKeyID int64, from, to time.Time) ([]relay.UsageLog, error) {
 	if f.listUsageLogsByAPIKeyExactFn != nil {

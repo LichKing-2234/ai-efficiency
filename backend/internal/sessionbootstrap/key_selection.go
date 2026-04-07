@@ -7,22 +7,31 @@ import (
 )
 
 func selectReusableKey(keys []relay.APIKey, platform, username, emailPrefix string) *relay.APIKey {
-	usernameMatches := filterReusableKeys(keys, platform, username)
+	usernameMatches := filterKeysByStatus(keys, platform, username, "active")
 	if selected := pickReusableKey(usernameMatches); selected != nil {
 		return selected
 	}
 
-	return pickReusableKey(filterReusableKeys(keys, platform, emailPrefix))
+	return pickReusableKey(filterKeysByStatus(keys, platform, emailPrefix, "active"))
 }
 
-func filterReusableKeys(keys []relay.APIKey, platform, name string) []relay.APIKey {
+func selectReactivatableKey(keys []relay.APIKey, platform, username, emailPrefix string) *relay.APIKey {
+	usernameMatches := filterKeysByStatus(keys, platform, username, "inactive")
+	if selected := pickReusableKey(usernameMatches); selected != nil {
+		return selected
+	}
+
+	return pickReusableKey(filterKeysByStatus(keys, platform, emailPrefix, "inactive"))
+}
+
+func filterKeysByStatus(keys []relay.APIKey, platform, name, status string) []relay.APIKey {
 	if name == "" {
 		return nil
 	}
 
 	filtered := make([]relay.APIKey, 0, len(keys))
 	for _, key := range keys {
-		if key.Status != "active" {
+		if key.Status != status {
 			continue
 		}
 		if key.Group == nil || key.Group.Platform != platform {

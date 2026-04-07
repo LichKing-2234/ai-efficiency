@@ -566,6 +566,52 @@ func (s *sub2apiRelay) RevokeUserAPIKey(ctx context.Context, keyID int64) error 
 	return nil
 }
 
+func (s *sub2apiRelay) UpdateUserAPIKeyStatus(ctx context.Context, keyID int64, status string) error {
+	login, password, ok := UserCredentialsFromContext(ctx)
+	if !ok {
+		return fmt.Errorf("relay: update api key status: user credentials are required")
+	}
+	token, _, err := s.loginSessionToken(ctx, login, password)
+	if err != nil {
+		return fmt.Errorf("relay: update api key status via jwt: %w", err)
+	}
+
+	payload, err := json.Marshal(map[string]any{
+		"status": strings.TrimSpace(status),
+	})
+	if err != nil {
+		return fmt.Errorf("relay: update api key status via jwt: marshal: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, fmt.Sprintf("%s/api/v1/api-keys/%d", s.adminURL, keyID), bytes.NewReader(payload))
+	if err != nil {
+		return fmt.Errorf("relay: update api key status via jwt: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("relay: update api key status via jwt: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("relay: update api key status via jwt: unexpected status %d", resp.StatusCode)
+	}
+
+	var result struct {
+		Code int `json:"code"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return fmt.Errorf("relay: update api key status via jwt: decode: %w", err)
+	}
+	if result.Code != 0 {
+		return fmt.Errorf("relay: update api key status via jwt: request failed")
+	}
+	return nil
+}
+
 func (s *sub2apiRelay) ResolveDefaultGroupID(ctx context.Context) (string, error) {
 	return s.resolveDefaultGroupID(ctx, "")
 }

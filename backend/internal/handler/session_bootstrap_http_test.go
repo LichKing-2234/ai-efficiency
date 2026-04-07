@@ -19,7 +19,7 @@ import (
 )
 
 type fakeRelayProviderForBootstrap struct {
-	listUserAPIKeysFn func(ctx context.Context, userID int64) ([]relay.APIKey, error)
+	listUserAPIKeysFn  func(ctx context.Context, userID int64) ([]relay.APIKey, error)
 	createUserAPIKeyFn func(ctx context.Context, userID int64, req relay.APIKeyCreateRequest) (*relay.APIKeyWithSecret, error)
 }
 
@@ -65,6 +65,9 @@ func (f *fakeRelayProviderForBootstrap) CreateUserAPIKey(ctx context.Context, us
 		APIKey: relay.APIKey{ID: 555, UserID: userID, Name: req.Name, Status: "active"},
 		Secret: "sk-session-555",
 	}, nil
+}
+func (f *fakeRelayProviderForBootstrap) UpdateUserAPIKeyStatus(ctx context.Context, keyID int64, status string) error {
+	return nil
 }
 func (f *fakeRelayProviderForBootstrap) RevokeUserAPIKey(ctx context.Context, keyID int64) error {
 	return nil

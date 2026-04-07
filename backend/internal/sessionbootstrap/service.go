@@ -249,10 +249,10 @@ func (s *Service) Bootstrap(ctx context.Context, localUserID int, req BootstrapR
 	}
 
 	envBundle := map[string]string{
-		"AE_SESSION_ID":       sessionID.String(),
-		"AE_RUNTIME_REF":      runtimeRef,
-		"AE_PROVIDER_NAME":    binding.ProviderName,
-		"AE_ENV_VERSION":      "1",
+		"AE_SESSION_ID":    sessionID.String(),
+		"AE_RUNTIME_REF":   runtimeRef,
+		"AE_PROVIDER_NAME": binding.ProviderName,
+		"AE_ENV_VERSION":   "1",
 	}
 
 	return &BootstrapResponse{
@@ -307,6 +307,20 @@ func (s *Service) ResolveProviderCredential(ctx context.Context, localUserID int
 
 	emailPrefix := preferredKeyName("", u.Email)
 	selected := selectReusableKey(keys, platform, strings.TrimSpace(u.Username), emailPrefix)
+	if selected == nil {
+		inactive := selectReactivatableKey(keys, platform, strings.TrimSpace(u.Username), emailPrefix)
+		if inactive != nil {
+			updateCtx, err := s.contextWithRelayCredentials(ctx, u)
+			if err != nil {
+				return nil, fmt.Errorf("resolve provider credential: %w", err)
+			}
+			if err := s.relayProvider.UpdateUserAPIKeyStatus(updateCtx, inactive.ID, "active"); err != nil {
+				return nil, fmt.Errorf("resolve provider credential: reactivate api key: %w", err)
+			}
+			inactive.Status = "active"
+			selected = inactive
+		}
+	}
 	if selected == nil {
 		groupID, err := s.resolveCredentialGroupID(ctx, sess.Edges.RepoConfig, platform)
 		if err != nil {

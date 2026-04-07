@@ -69,6 +69,9 @@ func (m *mockRelayProvider) ListUserAPIKeys(_ context.Context, _ int64) ([]relay
 func (m *mockRelayProvider) CreateUserAPIKey(_ context.Context, _ int64, _ relay.APIKeyCreateRequest) (*relay.APIKeyWithSecret, error) {
 	return nil, nil
 }
+func (m *mockRelayProvider) UpdateUserAPIKeyStatus(_ context.Context, _ int64, _ string) error {
+	return nil
+}
 func (m *mockRelayProvider) RevokeUserAPIKey(_ context.Context, _ int64) error {
 	return nil
 }

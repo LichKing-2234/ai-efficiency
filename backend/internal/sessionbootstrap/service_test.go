@@ -21,12 +21,15 @@ type fakeRelayProvider struct {
 	listUserAPIKeysFn    func(ctx context.Context, userID int64) ([]relay.APIKey, error)
 
 	createUserAPIKeyFn                 func(ctx context.Context, userID int64, req relay.APIKeyCreateRequest) (*relay.APIKeyWithSecret, error)
+	updateUserAPIKeyStatusFn           func(ctx context.Context, keyID int64, status string) error
 	revokeUserAPIKeyFn                 func(ctx context.Context, keyID int64) error
 	resolveDefaultGroupIDFn            func(ctx context.Context) (string, error)
 	resolveDefaultGroupIDForPlatformFn func(ctx context.Context, platform string) (string, error)
 
 	lastCreateUserAPIKeyUserID int64
 	lastCreateUserAPIKeyReq    relay.APIKeyCreateRequest
+	updatedKeyID               int64
+	updatedKeyStatus           string
 	revokedKeyIDs              []int64
 }
 
@@ -80,6 +83,14 @@ func (f *fakeRelayProvider) CreateUserAPIKey(ctx context.Context, userID int64, 
 		APIKey: relay.APIKey{ID: 1234, UserID: userID, Name: req.Name, Status: "active"},
 		Secret: "sk-test",
 	}, nil
+}
+func (f *fakeRelayProvider) UpdateUserAPIKeyStatus(ctx context.Context, keyID int64, status string) error {
+	f.updatedKeyID = keyID
+	f.updatedKeyStatus = status
+	if f.updateUserAPIKeyStatusFn != nil {
+		return f.updateUserAPIKeyStatusFn(ctx, keyID, status)
+	}
+	return nil
 }
 func (f *fakeRelayProvider) RevokeUserAPIKey(ctx context.Context, keyID int64) error {
 	f.revokedKeyIDs = append(f.revokedKeyIDs, keyID)
@@ -557,6 +568,75 @@ func TestResolveProviderCredentialCreatesEmailPrefixNameWhenUsernameIsEmailAlias
 	}
 	if rp.lastCreateUserAPIKeyReq.Name != "luxuhui" {
 		t.Fatalf("created key name = %q, want %q", rp.lastCreateUserAPIKeyReq.Name, "luxuhui")
+	}
+}
+
+func TestResolveProviderCredentialReactivatesInactiveMatchingKey(t *testing.T) {
+	ctx := context.Background()
+	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+
+	sp := client.ScmProvider.Create().
+		SetName("mock-gh").
+		SetType("github").
+		SetBaseURL("https://api.github.com").
+		SetCredentials("enc").
+		SaveX(ctx)
+	rc := client.RepoConfig.Create().
+		SetScmProviderID(sp.ID).
+		SetName("mock-repo").
+		SetFullName("org/mock-repo").
+		SetCloneURL("https://github.com/org/mock-repo.git").
+		SetDefaultBranch("main").
+		SetRelayGroupID("77").
+		SaveX(ctx)
+	u := client.User.Create().
+		SetUsername("luxuhui@shengwang.cn").
+		SetEmail("luxuhui@shengwang.cn").
+		SetAuthSource("relay_sso").
+		SetRelayUserID(99).
+		SaveX(ctx)
+	sid := uuid.New()
+	client.Session.Create().
+		SetID(sid).
+		SetRepoConfigID(rc.ID).
+		SetUserID(u.ID).
+		SetBranch("main").
+		SetProviderName("sub2api").
+		SetStartedAt(time.Now()).
+		SaveX(ctx)
+
+	rp := &fakeRelayProvider{
+		listUserAPIKeysFn: func(_ context.Context, userID int64) ([]relay.APIKey, error) {
+			return []relay.APIKey{
+				{
+					ID:        2,
+					UserID:    userID,
+					Key:       "sk-existing-anthropic",
+					Name:      "luxuhui",
+					Status:    "inactive",
+					CreatedAt: time.Now().Add(-time.Hour),
+					Group:     &relay.Group{ID: 5, Platform: "anthropic"},
+				},
+			}, nil
+		},
+	}
+
+	svc := NewService(client, rp, nil, "sub2api", "http://relay.local/v1", "77", 2*time.Hour)
+	cred, err := svc.ResolveProviderCredential(ctx, u.ID, sid, "anthropic")
+	if err != nil {
+		t.Fatalf("ResolveProviderCredential: %v", err)
+	}
+	if cred.APIKeyID != 2 {
+		t.Fatalf("api_key_id = %d, want %d", cred.APIKeyID, 2)
+	}
+	if cred.APIKey != "sk-existing-anthropic" {
+		t.Fatalf("api_key = %q, want %q", cred.APIKey, "sk-existing-anthropic")
+	}
+	if rp.updatedKeyID != 2 || rp.updatedKeyStatus != "active" {
+		t.Fatalf("updated key = (%d, %q), want (2, %q)", rp.updatedKeyID, rp.updatedKeyStatus, "active")
+	}
+	if rp.lastCreateUserAPIKeyUserID != 0 {
+		t.Fatalf("unexpected CreateUserAPIKey call: %d", rp.lastCreateUserAPIKeyUserID)
 	}
 }
 

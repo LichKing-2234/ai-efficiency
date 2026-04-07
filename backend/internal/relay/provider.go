@@ -54,6 +54,7 @@ type Provider interface {
 	GetUsageStats(ctx context.Context, userID int64, from, to time.Time) (*UsageStats, error)
 	ListUserAPIKeys(ctx context.Context, userID int64) ([]APIKey, error)
 	CreateUserAPIKey(ctx context.Context, userID int64, req APIKeyCreateRequest) (*APIKeyWithSecret, error)
+	UpdateUserAPIKeyStatus(ctx context.Context, keyID int64, status string) error
 	RevokeUserAPIKey(ctx context.Context, keyID int64) error
 	ListUsageLogsByAPIKeyExact(ctx context.Context, apiKeyID int64, from, to time.Time) ([]UsageLog, error)
 }

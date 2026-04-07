@@ -773,6 +773,57 @@ func TestCreateUserAPIKey(t *testing.T) {
 	}
 }
 
+func TestUpdateUserAPIKeyStatusWithJWT(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/auth/login", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": map[string]any{"access_token": "session-token-123"},
+		})
+	})
+	mux.HandleFunc("/api/v1/auth/me", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": map[string]any{
+				"id":       1,
+				"email":    "luxuhui@shengwang.cn",
+				"username": "",
+				"role":     "admin",
+			},
+		})
+	})
+	mux.HandleFunc("/api/v1/api-keys/2", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut {
+			t.Errorf("expected PUT, got %s", r.Method)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer session-token-123" {
+			t.Fatalf("authorization = %q, want %q", got, "Bearer session-token-123")
+		}
+		var body struct {
+			Status string `json:"status"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		if body.Status != "active" {
+			t.Fatalf("status = %q, want %q", body.Status, "active")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code":    0,
+			"message": "success",
+		})
+	})
+
+	p := newTestProvider(t, mux)
+	ctx := relay.WithUserCredentials(context.Background(), "luxuhui@shengwang.cn", "secret")
+	if err := p.UpdateUserAPIKeyStatus(ctx, 2, "active"); err != nil {
+		t.Fatalf("UpdateUserAPIKeyStatus() unexpected error: %v", err)
+	}
+}
+
 func TestAdminRequestError(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/admin/users/1", func(w http.ResponseWriter, r *http.Request) {
