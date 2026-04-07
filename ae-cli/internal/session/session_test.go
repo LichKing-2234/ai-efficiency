@@ -407,6 +407,17 @@ func TestManagerStartWritesCodexAndClaudeHookConfig(t *testing.T) {
 	if strings.Contains(claudeSettings, `"matcher": "Bash"`) {
 		t.Fatalf("expected Claude tool hooks to cover all tools, got Bash-only matcher: %s", claudeSettings)
 	}
+	wantAnthropicBaseURL := "http://" + rt.Proxy.ListenAddr + "/anthropic"
+	for _, want := range []string{
+		"ANTHROPIC_BASE_URL",
+		wantAnthropicBaseURL,
+		"ANTHROPIC_AUTH_TOKEN",
+		rt.Proxy.AuthToken,
+	} {
+		if !strings.Contains(claudeSettings, want) {
+			t.Fatalf("missing %q in claude settings.local.json env config: %s", want, claudeSettings)
+		}
+	}
 
 	gitCommonDirOut, err := exec.Command("git", "rev-parse", "--git-common-dir").CombinedOutput()
 	if err != nil {

@@ -179,8 +179,10 @@ func TestWriteClaudeSessionConfigMergesAndCleanupRemovesOnlyManagedHooks(t *test
 	}
 
 	err := WriteClaudeSessionConfig(workspaceRoot, ClaudeHookConfig{
-		SessionID: "sess-claude-1",
-		SelfPath:  "/tmp/ae-cli",
+		SessionID:   "sess-claude-1",
+		SelfPath:    "/tmp/ae-cli",
+		ProxyBaseURL: "http://127.0.0.1:43123/anthropic",
+		ProxyToken:   "proxy-token-1",
 	})
 	if err != nil {
 		t.Fatalf("WriteClaudeSessionConfig: %v", err)
@@ -193,6 +195,10 @@ func TestWriteClaudeSessionConfigMergesAndCleanupRemovesOnlyManagedHooks(t *test
 	content := string(data)
 	for _, want := range []string{
 		"Notification",
+		"ANTHROPIC_BASE_URL",
+		"http://127.0.0.1:43123/anthropic",
+		"ANTHROPIC_AUTH_TOKEN",
+		"proxy-token-1",
 		"PreToolUse",
 		"PostToolUse",
 		"SessionStart",
@@ -228,6 +234,9 @@ func TestWriteClaudeSessionConfigMergesAndCleanupRemovesOnlyManagedHooks(t *test
 	if decoded["theme"] != "dark" {
 		t.Fatalf("theme = %#v, want %q", decoded["theme"], "dark")
 	}
+	if _, ok := decoded["env"]; ok {
+		t.Fatalf("expected managed Claude env to be removed on cleanup: %+v", decoded["env"])
+	}
 	hooksMap, _ := decoded["hooks"].(map[string]any)
 	if _, ok := hooksMap["Notification"]; !ok {
 		t.Fatalf("expected Notification hook to survive cleanup: %+v", hooksMap)
@@ -240,8 +249,10 @@ func TestWriteClaudeSessionConfigMergesAndCleanupRemovesOnlyManagedHooks(t *test
 func TestCleanupClaudeSessionConfigRemovesManagedFileWhenOnlyManagedHooksExist(t *testing.T) {
 	workspaceRoot := t.TempDir()
 	if err := WriteClaudeSessionConfig(workspaceRoot, ClaudeHookConfig{
-		SessionID: "sess-claude-2",
-		SelfPath:  "/tmp/ae-cli",
+		SessionID:   "sess-claude-2",
+		SelfPath:    "/tmp/ae-cli",
+		ProxyBaseURL: "http://127.0.0.1:43123/anthropic",
+		ProxyToken:   "proxy-token-2",
 	}); err != nil {
 		t.Fatalf("WriteClaudeSessionConfig: %v", err)
 	}
@@ -283,8 +294,10 @@ func TestWriteClaudeSessionConfigPreservesUserSessionEventHooksWithoutManagedMar
 	}
 
 	if err := WriteClaudeSessionConfig(workspaceRoot, ClaudeHookConfig{
-		SessionID: "sess-claude-3",
-		SelfPath:  "/tmp/ae-cli",
+		SessionID:   "sess-claude-3",
+		SelfPath:    "/tmp/ae-cli",
+		ProxyBaseURL: "http://127.0.0.1:43123/anthropic",
+		ProxyToken:   "proxy-token-3",
 	}); err != nil {
 		t.Fatalf("WriteClaudeSessionConfig: %v", err)
 	}

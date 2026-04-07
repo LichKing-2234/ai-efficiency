@@ -170,8 +170,10 @@ func (m *Manager) Start() (*State, error) {
 		return nil, rollback(fmt.Errorf("writing codex config: %w", err))
 	}
 	if err := toolconfig.WriteClaudeSessionConfig(gc.workspaceRoot, toolconfig.ClaudeHookConfig{
-		SessionID: rt.SessionID,
-		SelfPath:  selfPath,
+		SessionID:    rt.SessionID,
+		SelfPath:     selfPath,
+		ProxyBaseURL: "http://" + rt.Proxy.ListenAddr + "/anthropic",
+		ProxyToken:   rt.Proxy.AuthToken,
 	}); err != nil {
 		claudeConfigWritten = false
 	} else {

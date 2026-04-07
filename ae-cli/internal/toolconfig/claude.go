@@ -14,8 +14,10 @@ type ClaudeEnv struct {
 }
 
 type ClaudeHookConfig struct {
-	SessionID string
-	SelfPath  string
+	SessionID    string
+	SelfPath     string
+	ProxyBaseURL string
+	ProxyToken   string
 }
 
 func BuildClaudeEnv(cfg ClaudeEnv) map[string]string {
@@ -45,6 +47,13 @@ func WriteClaudeSessionConfig(workspaceRoot string, cfg ClaudeHookConfig) error 
 	doc, err := loadClaudeSettings(settingsPath)
 	if err != nil {
 		return err
+	}
+	envDoc := ensureEnvMap(doc)
+	if strings.TrimSpace(cfg.ProxyBaseURL) != "" {
+		envDoc["ANTHROPIC_BASE_URL"] = strings.TrimSpace(cfg.ProxyBaseURL)
+	}
+	if strings.TrimSpace(cfg.ProxyToken) != "" {
+		envDoc["ANTHROPIC_AUTH_TOKEN"] = strings.TrimSpace(cfg.ProxyToken)
 	}
 	hooksDoc := ensureHooksMap(doc)
 	removeManagedClaudeHooks(hooksDoc, "")
@@ -90,6 +99,13 @@ func CleanupClaudeSessionConfig(workspaceRoot, sessionID string) error {
 	removeManagedClaudeHooks(hooksDoc, sessionID)
 	if len(hooksDoc) == 0 {
 		delete(doc, "hooks")
+	}
+	if envDoc, ok := doc["env"].(map[string]any); ok && envDoc != nil {
+		delete(envDoc, "ANTHROPIC_BASE_URL")
+		delete(envDoc, "ANTHROPIC_AUTH_TOKEN")
+		if len(envDoc) == 0 {
+			delete(doc, "env")
+		}
 	}
 
 	if len(doc) == 0 {
@@ -141,6 +157,18 @@ func ensureHooksMap(doc map[string]any) map[string]any {
 	hooksDoc := map[string]any{}
 	doc["hooks"] = hooksDoc
 	return hooksDoc
+}
+
+func ensureEnvMap(doc map[string]any) map[string]any {
+	if doc == nil {
+		return map[string]any{}
+	}
+	if existing, ok := doc["env"].(map[string]any); ok && existing != nil {
+		return existing
+	}
+	envDoc := map[string]any{}
+	doc["env"] = envDoc
+	return envDoc
 }
 
 func normalizeHookGroups(value any) []any {
