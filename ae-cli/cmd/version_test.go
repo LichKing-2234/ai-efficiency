@@ -533,6 +533,91 @@ func TestPsCommandNoTmux(t *testing.T) {
 	}
 }
 
+func TestPsCommandShowsToolLabelsFromRegistry(t *testing.T) {
+	origHome := os.Getenv("HOME")
+	tmpHome := t.TempDir()
+	os.Setenv("HOME", tmpHome)
+	defer os.Setenv("HOME", origHome)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	cleanup := setupTestGlobals(t, srv)
+	defer cleanup()
+
+	stateDir := filepath.Join(tmpHome, ".ae-cli")
+	if err := os.MkdirAll(stateDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	state := session.State{ID: "sess-ps-label", Repo: "org/repo", Branch: "main", TmuxSession: "tmux-ps-label"}
+	data, _ := json.MarshalIndent(state, "", "  ")
+	if err := os.WriteFile(filepath.Join(stateDir, "current-session.json"), data, 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	if _, err := session.RegisterToolPane("sess-ps-label", "claude", "%401", "shell"); err != nil {
+		t.Fatalf("RegisterToolPane: %v", err)
+	}
+
+	origListPanes := listPanes
+	listPanes = func(string) ([]tmux.Pane, error) {
+		return []tmux.Pane{{ID: "%401", Tool: "claude", Active: true}}, nil
+	}
+	t.Cleanup(func() { listPanes = origListPanes })
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetErr(buf)
+	psCmd.SetOut(buf)
+	psCmd.SetErr(buf)
+
+	if err := psCmd.RunE(psCmd, nil); err != nil {
+		t.Fatalf("psCmd.RunE: %v", err)
+	}
+
+	if !strings.Contains(buf.String(), "claude#1") {
+		t.Fatalf("ps output = %q, want label claude#1", buf.String())
+	}
+}
+
+func TestKillCommandPrunesToolPaneRegistry(t *testing.T) {
+	origHome := os.Getenv("HOME")
+	tmpHome := t.TempDir()
+	os.Setenv("HOME", tmpHome)
+	defer os.Setenv("HOME", origHome)
+
+	if _, err := session.RegisterToolPane("sess-kill", "claude", "%501", "shell"); err != nil {
+		t.Fatalf("RegisterToolPane: %v", err)
+	}
+
+	stateDir := filepath.Join(tmpHome, ".ae-cli")
+	if err := os.MkdirAll(stateDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	state := session.State{ID: "sess-kill", Repo: "org/repo", Branch: "main"}
+	data, _ := json.MarshalIndent(state, "", "  ")
+	if err := os.WriteFile(filepath.Join(stateDir, "current-session.json"), data, 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	origKillPane := killPane
+	killPane = func(paneID string) error { return nil }
+	t.Cleanup(func() { killPane = origKillPane })
+
+	if err := killCmd.RunE(killCmd, []string{"%501"}); err != nil {
+		t.Fatalf("killCmd.RunE: %v", err)
+	}
+
+	items, err := session.ListToolPanes("sess-kill")
+	if err != nil {
+		t.Fatalf("ListToolPanes: %v", err)
+	}
+	if len(items) != 0 {
+		t.Fatalf("registry items = %#v, want empty after kill", items)
+	}
+}
+
 func TestAttachCommandNoSession(t *testing.T) {
 	origHome := os.Getenv("HOME")
 	tmpHome := t.TempDir()
