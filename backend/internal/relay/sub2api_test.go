@@ -966,3 +966,37 @@ func TestResolveDefaultGroupIDUsesLargestActiveAccountCount(t *testing.T) {
 		t.Fatalf("groupID = %q, want %q", groupID, "6")
 	}
 }
+
+func TestResolveDefaultGroupIDForPlatformFiltersByPlatform(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/groups", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": map[string]any{
+				"items": []any{
+					map[string]any{"id": 5, "platform": "anthropic", "status": "active", "account_count": 4, "active_account_count": 3},
+					map[string]any{"id": 6, "platform": "openai", "status": "active", "account_count": 14, "active_account_count": 13},
+					map[string]any{"id": 7, "platform": "anthropic", "status": "active", "account_count": 10, "active_account_count": 9},
+				},
+				"page": 1,
+				"pages": 1,
+			},
+		})
+	})
+
+	p := newTestProvider(t, mux)
+	resolver, ok := p.(interface {
+		ResolveDefaultGroupIDForPlatform(context.Context, string) (string, error)
+	})
+	if !ok {
+		t.Fatal("provider does not implement ResolveDefaultGroupIDForPlatform")
+	}
+	groupID, err := resolver.ResolveDefaultGroupIDForPlatform(context.Background(), "anthropic")
+	if err != nil {
+		t.Fatalf("ResolveDefaultGroupIDForPlatform() unexpected error: %v", err)
+	}
+	if groupID != "7" {
+		t.Fatalf("groupID = %q, want %q", groupID, "7")
+	}
+}

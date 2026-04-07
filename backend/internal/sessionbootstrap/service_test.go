@@ -18,10 +18,12 @@ import (
 type fakeRelayProvider struct {
 	findUserByUsernameFn func(ctx context.Context, username string) (*relay.User, error)
 	createUserFn         func(ctx context.Context, req relay.CreateUserRequest) (*relay.User, error)
+	listUserAPIKeysFn    func(ctx context.Context, userID int64) ([]relay.APIKey, error)
 
-	createUserAPIKeyFn func(ctx context.Context, userID int64, req relay.APIKeyCreateRequest) (*relay.APIKeyWithSecret, error)
-	revokeUserAPIKeyFn func(ctx context.Context, keyID int64) error
+	createUserAPIKeyFn      func(ctx context.Context, userID int64, req relay.APIKeyCreateRequest) (*relay.APIKeyWithSecret, error)
+	revokeUserAPIKeyFn      func(ctx context.Context, keyID int64) error
 	resolveDefaultGroupIDFn func(ctx context.Context) (string, error)
+	resolveDefaultGroupIDForPlatformFn func(ctx context.Context, platform string) (string, error)
 
 	lastCreateUserAPIKeyUserID int64
 	lastCreateUserAPIKeyReq    relay.APIKeyCreateRequest
@@ -63,6 +65,9 @@ func (f *fakeRelayProvider) GetUsageStats(ctx context.Context, userID int64, fro
 	return nil, nil
 }
 func (f *fakeRelayProvider) ListUserAPIKeys(ctx context.Context, userID int64) ([]relay.APIKey, error) {
+	if f.listUserAPIKeysFn != nil {
+		return f.listUserAPIKeysFn(ctx, userID)
+	}
 	return nil, nil
 }
 func (f *fakeRelayProvider) CreateUserAPIKey(ctx context.Context, userID int64, req relay.APIKeyCreateRequest) (*relay.APIKeyWithSecret, error) {
@@ -91,6 +96,16 @@ func (f *fakeRelayProvider) ResolveDefaultGroupID(ctx context.Context) (string, 
 		return f.resolveDefaultGroupIDFn(ctx)
 	}
 	return "", nil
+}
+func (f *fakeRelayProvider) ResolveDefaultGroupIDForPlatform(ctx context.Context, platform string) (string, error) {
+	if f.resolveDefaultGroupIDForPlatformFn != nil {
+		return f.resolveDefaultGroupIDForPlatformFn(ctx, platform)
+	}
+	return "", nil
+}
+
+func ptrTime(v time.Time) *time.Time {
+	return &v
 }
 
 func TestBootstrapCreatesSessionKeyAndEnvBundle(t *testing.T) {
@@ -224,6 +239,324 @@ func TestBootstrapCreatesSessionKeyAndEnvBundle(t *testing.T) {
 	}
 	if s.RelayUserID == nil || *s.RelayUserID != int(resp.RelayUserID) {
 		t.Fatalf("stored relay_user_id = %v, want %d", s.RelayUserID, resp.RelayUserID)
+	}
+}
+
+func TestBootstrapNoLongerCreatesRelayKeyOrEnvSecrets(t *testing.T) {
+	ctx := context.Background()
+	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+
+	sp := client.ScmProvider.Create().
+		SetName("mock-gh").
+		SetType("github").
+		SetBaseURL("https://api.github.com").
+		SetCredentials("enc").
+		SaveX(ctx)
+	rc := client.RepoConfig.Create().
+		SetScmProviderID(sp.ID).
+		SetName("mock-repo").
+		SetFullName("org/mock-repo").
+		SetCloneURL("https://github.com/org/mock-repo.git").
+		SetDefaultBranch("main").
+		SetRelayGroupID("g-repo").
+		SaveX(ctx)
+	u := client.User.Create().
+		SetUsername("alice").
+		SetEmail("alice@example.com").
+		SetAuthSource("ldap").
+		SetRelayUserID(99).
+		SaveX(ctx)
+
+	rp := &fakeRelayProvider{}
+	svc := NewService(client, rp, nil, "sub2api", "http://relay.local/v1", "g-default", 2*time.Hour)
+
+	resp, err := svc.Bootstrap(ctx, u.ID, BootstrapRequest{
+		RepoFullName:   rc.FullName,
+		BranchSnapshot: "main",
+		HeadSHA:        "abc123",
+		WorkspaceRoot:  "/tmp/ws",
+		GitDir:         "/tmp/ws/.git",
+		GitCommonDir:   "/tmp/ws/.git",
+		WorkspaceID:    "ws-1",
+	})
+	if err != nil {
+		t.Fatalf("bootstrap: %v", err)
+	}
+
+	if rp.lastCreateUserAPIKeyUserID != 0 {
+		t.Fatalf("unexpected CreateUserAPIKey call for userID=%d", rp.lastCreateUserAPIKeyUserID)
+	}
+	for _, forbidden := range []string{"OPENAI_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_BASE_URL", "ANTHROPIC_BASE_URL"} {
+		if _, ok := resp.EnvBundle[forbidden]; ok {
+			t.Fatalf("bootstrap env must not include %s: %+v", forbidden, resp.EnvBundle)
+		}
+	}
+}
+
+func TestResolveProviderCredentialReusesUsernameMatchBeforeCreating(t *testing.T) {
+	ctx := context.Background()
+	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+
+	sp := client.ScmProvider.Create().
+		SetName("mock-gh").
+		SetType("github").
+		SetBaseURL("https://api.github.com").
+		SetCredentials("enc").
+		SaveX(ctx)
+	rc := client.RepoConfig.Create().
+		SetScmProviderID(sp.ID).
+		SetName("mock-repo").
+		SetFullName("org/mock-repo").
+		SetCloneURL("https://github.com/org/mock-repo.git").
+		SetDefaultBranch("main").
+		SetRelayGroupID("42").
+		SaveX(ctx)
+	u := client.User.Create().
+		SetUsername("alice").
+		SetEmail("alice@example.com").
+		SetAuthSource("ldap").
+		SetRelayUserID(99).
+		SaveX(ctx)
+	sid := uuid.New()
+	client.Session.Create().
+		SetID(sid).
+		SetRepoConfigID(rc.ID).
+		SetUserID(u.ID).
+		SetBranch("main").
+		SetProviderName("sub2api").
+		SetStartedAt(time.Now()).
+		SaveX(ctx)
+
+	now := time.Now()
+	rp := &fakeRelayProvider{
+		listUserAPIKeysFn: func(_ context.Context, userID int64) ([]relay.APIKey, error) {
+			return []relay.APIKey{
+				{
+					ID:         900,
+					UserID:     userID,
+					Key:        "sk-existing-openai",
+					Name:       "alice",
+					Status:     "active",
+					LastUsedAt: ptrTime(now),
+					CreatedAt:  now.Add(-time.Hour),
+					Group:      &relay.Group{ID: 42, Platform: "openai"},
+				},
+			}, nil
+		},
+	}
+
+	svc := NewService(client, rp, nil, "sub2api", "http://relay.local/v1", "42", 2*time.Hour)
+	cred, err := svc.ResolveProviderCredential(ctx, u.ID, sid, "openai")
+	if err != nil {
+		t.Fatalf("ResolveProviderCredential: %v", err)
+	}
+
+	if cred.APIKeyID != 900 {
+		t.Fatalf("api_key_id = %d, want %d", cred.APIKeyID, 900)
+	}
+	if cred.APIKey != "sk-existing-openai" {
+		t.Fatalf("api_key = %q, want %q", cred.APIKey, "sk-existing-openai")
+	}
+	if rp.lastCreateUserAPIKeyUserID != 0 {
+		t.Fatalf("unexpected CreateUserAPIKey call: %d", rp.lastCreateUserAPIKeyUserID)
+	}
+}
+
+func TestResolveProviderCredentialFallsBackToEmailPrefixThenCreates(t *testing.T) {
+	ctx := context.Background()
+	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+
+	sp := client.ScmProvider.Create().
+		SetName("mock-gh").
+		SetType("github").
+		SetBaseURL("https://api.github.com").
+		SetCredentials("enc").
+		SaveX(ctx)
+	rc := client.RepoConfig.Create().
+		SetScmProviderID(sp.ID).
+		SetName("mock-repo").
+		SetFullName("org/mock-repo").
+		SetCloneURL("https://github.com/org/mock-repo.git").
+		SetDefaultBranch("main").
+		SetRelayGroupID("77").
+		SaveX(ctx)
+	u := client.User.Create().
+		SetUsername("alice").
+		SetEmail("a.smith@example.com").
+		SetAuthSource("ldap").
+		SetRelayUserID(99).
+		SaveX(ctx)
+	sid := uuid.New()
+	client.Session.Create().
+		SetID(sid).
+		SetRepoConfigID(rc.ID).
+		SetUserID(u.ID).
+		SetBranch("main").
+		SetProviderName("sub2api").
+		SetStartedAt(time.Now()).
+		SaveX(ctx)
+
+	createCalls := 0
+	rp := &fakeRelayProvider{
+		listUserAPIKeysFn: func(_ context.Context, userID int64) ([]relay.APIKey, error) {
+			return []relay.APIKey{
+				{
+					ID:        901,
+					UserID:    userID,
+					Key:       "sk-existing-other-platform",
+					Name:      "alice",
+					Status:    "active",
+					CreatedAt: time.Now(),
+					Group:     &relay.Group{ID: 77, Platform: "openai"},
+				},
+			}, nil
+		},
+		createUserAPIKeyFn: func(_ context.Context, userID int64, req relay.APIKeyCreateRequest) (*relay.APIKeyWithSecret, error) {
+			createCalls++
+			return &relay.APIKeyWithSecret{
+				APIKey: relay.APIKey{
+					ID:        999,
+					UserID:    userID,
+					Name:      req.Name,
+					Status:    "active",
+					CreatedAt: time.Now(),
+				},
+				Secret: "sk-created-anthropic",
+			}, nil
+		},
+	}
+
+	svc := NewService(client, rp, nil, "sub2api", "http://relay.local/v1", "77", 2*time.Hour)
+	cred, err := svc.ResolveProviderCredential(ctx, u.ID, sid, "anthropic")
+	if err != nil {
+		t.Fatalf("ResolveProviderCredential: %v", err)
+	}
+
+	if createCalls != 1 {
+		t.Fatalf("createCalls = %d, want 1", createCalls)
+	}
+	if cred.APIKeyID != 999 {
+		t.Fatalf("api_key_id = %d, want %d", cred.APIKeyID, 999)
+	}
+	if rp.lastCreateUserAPIKeyReq.Name != "alice" {
+		t.Fatalf("created key name = %q, want %q", rp.lastCreateUserAPIKeyReq.Name, "alice")
+	}
+}
+
+func TestResolveProviderCredentialCreatesUsingPlatformSpecificGroup(t *testing.T) {
+	ctx := context.Background()
+	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+
+	sp := client.ScmProvider.Create().
+		SetName("mock-gh").
+		SetType("github").
+		SetBaseURL("https://api.github.com").
+		SetCredentials("enc").
+		SaveX(ctx)
+	rc := client.RepoConfig.Create().
+		SetScmProviderID(sp.ID).
+		SetName("mock-repo").
+		SetFullName("org/mock-repo").
+		SetCloneURL("https://github.com/org/mock-repo.git").
+		SetDefaultBranch("main").
+		SetRelayGroupID("77").
+		SaveX(ctx)
+	u := client.User.Create().
+		SetUsername("alice").
+		SetEmail("alice@example.com").
+		SetAuthSource("ldap").
+		SetRelayUserID(99).
+		SaveX(ctx)
+	sid := uuid.New()
+	client.Session.Create().
+		SetID(sid).
+		SetRepoConfigID(rc.ID).
+		SetUserID(u.ID).
+		SetBranch("main").
+		SetProviderName("sub2api").
+		SetStartedAt(time.Now()).
+		SaveX(ctx)
+
+	rp := &fakeRelayProvider{
+		listUserAPIKeysFn: func(_ context.Context, userID int64) ([]relay.APIKey, error) {
+			return nil, nil
+		},
+		createUserAPIKeyFn: func(_ context.Context, userID int64, req relay.APIKeyCreateRequest) (*relay.APIKeyWithSecret, error) {
+			return &relay.APIKeyWithSecret{
+				APIKey: relay.APIKey{
+					ID:        1001,
+					UserID:    userID,
+					Name:      req.Name,
+					Status:    "active",
+					CreatedAt: time.Now(),
+				},
+				Secret: "sk-created-openai",
+			}, nil
+		},
+		resolveDefaultGroupIDForPlatformFn: func(_ context.Context, platform string) (string, error) {
+			if platform != "openai" {
+				t.Fatalf("platform = %q, want openai", platform)
+			}
+			return "42", nil
+		},
+	}
+
+	svc := NewService(client, rp, nil, "sub2api", "http://relay.local/v1", "77", 2*time.Hour)
+	cred, err := svc.ResolveProviderCredential(ctx, u.ID, sid, "openai")
+	if err != nil {
+		t.Fatalf("ResolveProviderCredential: %v", err)
+	}
+	if cred.APIKeyID != 1001 {
+		t.Fatalf("api_key_id = %d, want %d", cred.APIKeyID, 1001)
+	}
+	if rp.lastCreateUserAPIKeyReq.GroupID != "42" {
+		t.Fatalf("created group_id = %q, want %q", rp.lastCreateUserAPIKeyReq.GroupID, "42")
+	}
+}
+
+func TestResolveProviderCredentialRejectsNonOwner(t *testing.T) {
+	ctx := context.Background()
+	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+
+	sp := client.ScmProvider.Create().
+		SetName("mock-gh").
+		SetType("github").
+		SetBaseURL("https://api.github.com").
+		SetCredentials("enc").
+		SaveX(ctx)
+	rc := client.RepoConfig.Create().
+		SetScmProviderID(sp.ID).
+		SetName("mock-repo").
+		SetFullName("org/mock-repo").
+		SetCloneURL("https://github.com/org/mock-repo.git").
+		SetDefaultBranch("main").
+		SetRelayGroupID("42").
+		SaveX(ctx)
+	owner := client.User.Create().
+		SetUsername("owner").
+		SetEmail("owner@example.com").
+		SetAuthSource("ldap").
+		SetRelayUserID(77).
+		SaveX(ctx)
+	other := client.User.Create().
+		SetUsername("other").
+		SetEmail("other@example.com").
+		SetAuthSource("ldap").
+		SetRelayUserID(88).
+		SaveX(ctx)
+	sid := uuid.New()
+	client.Session.Create().
+		SetID(sid).
+		SetRepoConfigID(rc.ID).
+		SetUserID(owner.ID).
+		SetBranch("main").
+		SetProviderName("sub2api").
+		SetStartedAt(time.Now()).
+		SaveX(ctx)
+
+	svc := NewService(client, &fakeRelayProvider{}, nil, "sub2api", "http://relay.local/v1", "42", 2*time.Hour)
+	if _, err := svc.ResolveProviderCredential(ctx, other.ID, sid, "openai"); err == nil {
+		t.Fatalf("expected ownership error")
 	}
 }
 

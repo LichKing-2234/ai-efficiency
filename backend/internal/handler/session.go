@@ -55,6 +55,10 @@ type addInvocationRequest struct {
 	End   string `json:"end"`
 }
 
+type providerCredentialQuery struct {
+	Platform string `form:"platform" binding:"required"`
+}
+
 func isAdminUser(c *gin.Context) bool {
 	uc := auth.GetUserContext(c)
 	return uc != nil && uc.Role == "admin"
@@ -114,6 +118,35 @@ func (h *SessionHandler) Bootstrap(c *gin.Context) {
 	}
 
 	pkg.Created(c, resp)
+}
+
+// ProviderCredential handles GET /api/v1/sessions/:id/provider-credentials
+func (h *SessionHandler) ProviderCredential(c *gin.Context) {
+	if h.bootstrapSvc == nil {
+		pkg.Error(c, http.StatusServiceUnavailable, "bootstrap service not configured")
+		return
+	}
+	sessionID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		pkg.Error(c, http.StatusBadRequest, "invalid session id")
+		return
+	}
+	var query providerCredentialQuery
+	if err := c.ShouldBindQuery(&query); err != nil {
+		pkg.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	uc := auth.GetUserContext(c)
+	if uc == nil {
+		pkg.Error(c, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	resp, err := h.bootstrapSvc.ResolveProviderCredential(c.Request.Context(), uc.UserID, sessionID, strings.TrimSpace(query.Platform))
+	if err != nil {
+		pkg.Error(c, http.StatusUnprocessableEntity, err.Error())
+		return
+	}
+	pkg.Success(c, resp)
 }
 
 // Create handles POST /api/v1/sessions

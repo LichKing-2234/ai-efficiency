@@ -3,13 +3,13 @@ package sessionbootstrap
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/session"
+	"github.com/ai-efficiency/backend/ent/user"
 	"github.com/ai-efficiency/backend/internal/auth"
 	"github.com/ai-efficiency/backend/internal/pkg"
 	"github.com/ai-efficiency/backend/internal/relay"
@@ -37,6 +37,14 @@ type BootstrapResponse struct {
 	RuntimeRef         string            `json:"runtime_ref"`
 	EnvBundle          map[string]string `json:"env_bundle"`
 	KeyExpiresAt       time.Time         `json:"key_expires_at"`
+}
+
+type ProviderCredentialResponse struct {
+	ProviderName string `json:"provider_name"`
+	Platform     string `json:"platform"`
+	APIKeyID     int64  `json:"api_key_id"`
+	APIKey       string `json:"api_key"`
+	BaseURL      string `json:"base_url"`
 }
 
 type Service struct {
@@ -84,6 +92,10 @@ type routeBinding struct {
 
 type defaultGroupResolver interface {
 	ResolveDefaultGroupID(ctx context.Context) (string, error)
+}
+
+type platformGroupResolver interface {
+	ResolveDefaultGroupIDForPlatform(ctx context.Context, platform string) (string, error)
 }
 
 func (s *Service) resolveRouteBinding(ctx context.Context, rc *ent.RepoConfig) (*routeBinding, error) {
@@ -210,43 +222,19 @@ func (s *Service) Bootstrap(ctx context.Context, localUserID int, req BootstrapR
 
 	now := time.Now()
 	sessionID := uuid.New()
-	shortID := strings.Split(sessionID.String(), "-")[0]
 	expiresAt := now.Add(s.keyTTL)
 
-	createKeyCtx, err := s.contextWithRelayCredentials(ctx, u)
-	if err != nil {
-		return nil, fmt.Errorf("bootstrap: %w", err)
-	}
-
-	key, err := s.relayProvider.CreateUserAPIKey(createKeyCtx, relayUserID, relay.APIKeyCreateRequest{
-		Name:      "ae-session-" + shortID,
-		ExpiresAt: &expiresAt,
-		GroupID:   binding.GroupID,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("bootstrap: create relay api key: %w", err)
-	}
-
 	runtimeRef := fmt.Sprintf("runtime/%s", sessionID.String())
-
-	toolConfigs := []map[string]interface{}{
-		{
-			"provider_name":    binding.ProviderName,
-			"relay_api_key_id": key.ID,
-		},
-	}
 
 	create := s.entClient.Session.Create().
 		SetID(sessionID).
 		SetRepoConfigID(rc.ID).
 		SetBranch(req.BranchSnapshot).
 		SetRelayUserID(int(relayUserID)).
-		SetRelayAPIKeyID(int(key.ID)).
 		SetProviderName(binding.ProviderName).
 		SetRuntimeRef(runtimeRef).
 		SetLastSeenAt(now).
 		SetStartedAt(now).
-		SetToolConfigs(toolConfigs).
 		SetInitialWorkspaceRoot(req.WorkspaceRoot).
 		SetInitialGitDir(req.GitDir).
 		SetInitialGitCommonDir(req.GitCommonDir)
@@ -257,32 +245,21 @@ func (s *Service) Bootstrap(ctx context.Context, localUserID int, req BootstrapR
 	}
 
 	if _, err := create.Save(ctx); err != nil {
-		// Best-effort cleanup: never leave a live relay key behind if persisting the session failed.
-		revokeCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		_ = s.relayProvider.RevokeUserAPIKey(revokeCtx, key.ID)
-		cancel()
 		return nil, fmt.Errorf("bootstrap: create session: %w", err)
 	}
 
 	envBundle := map[string]string{
 		"AE_SESSION_ID":       sessionID.String(),
 		"AE_RUNTIME_REF":      runtimeRef,
-		"AE_RELAY_API_KEY_ID": strconv.FormatInt(key.ID, 10),
 		"AE_PROVIDER_NAME":    binding.ProviderName,
 		"AE_ENV_VERSION":      "1",
-		"OPENAI_API_KEY":      key.Secret,
-		"ANTHROPIC_API_KEY":   key.Secret,
-	}
-	if s.providerBaseURL != "" {
-		envBundle["OPENAI_BASE_URL"] = s.providerBaseURL
-		envBundle["ANTHROPIC_BASE_URL"] = s.providerBaseURL
 	}
 
 	return &BootstrapResponse{
 		SessionID:          sessionID,
 		StartedAt:          now,
 		RelayUserID:        relayUserID,
-		RelayAPIKeyID:      key.ID,
+		RelayAPIKeyID:      0,
 		ProviderName:       binding.ProviderName,
 		GroupID:            binding.GroupID,
 		RouteBindingSource: binding.RouteBindingSource,
@@ -290,6 +267,91 @@ func (s *Service) Bootstrap(ctx context.Context, localUserID int, req BootstrapR
 		EnvBundle:          envBundle,
 		KeyExpiresAt:       expiresAt,
 	}, nil
+}
+
+func (s *Service) ResolveProviderCredential(ctx context.Context, localUserID int, sessionID uuid.UUID, platform string) (*ProviderCredentialResponse, error) {
+	platform = strings.TrimSpace(platform)
+	if platform == "" {
+		return nil, fmt.Errorf("resolve provider credential: platform is required")
+	}
+	if s.entClient == nil {
+		return nil, fmt.Errorf("resolve provider credential: ent client is required")
+	}
+	if s.relayProvider == nil {
+		return nil, fmt.Errorf("resolve provider credential: relay provider is not configured")
+	}
+
+	query := s.entClient.Session.Query().
+		Where(session.IDEQ(sessionID)).
+		WithRepoConfig()
+	if localUserID != 0 {
+		query = query.Where(session.HasUserWith(user.IDEQ(localUserID)))
+	}
+	sess, err := query.Only(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("resolve provider credential: get session: %w", err)
+	}
+
+	u, err := s.entClient.User.Get(ctx, localUserID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve provider credential: get user: %w", err)
+	}
+	if u.RelayUserID == nil {
+		return nil, fmt.Errorf("resolve provider credential: relay user is not bound")
+	}
+
+	keys, err := s.relayProvider.ListUserAPIKeys(ctx, int64(*u.RelayUserID))
+	if err != nil {
+		return nil, fmt.Errorf("resolve provider credential: list api keys: %w", err)
+	}
+
+	emailPrefix := preferredKeyName("", u.Email)
+	selected := selectReusableKey(keys, platform, strings.TrimSpace(u.Username), emailPrefix)
+	if selected == nil {
+		groupID, err := s.resolveCredentialGroupID(ctx, sess.Edges.RepoConfig, platform)
+		if err != nil {
+			return nil, fmt.Errorf("resolve provider credential: %w", err)
+		}
+		createCtx, err := s.contextWithRelayCredentials(ctx, u)
+		if err != nil {
+			return nil, fmt.Errorf("resolve provider credential: %w", err)
+		}
+		created, err := s.relayProvider.CreateUserAPIKey(createCtx, int64(*u.RelayUserID), relay.APIKeyCreateRequest{
+			Name:    preferredKeyName(strings.TrimSpace(u.Username), strings.TrimSpace(u.Email)),
+			GroupID: groupID,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("resolve provider credential: create api key: %w", err)
+		}
+		selected = &created.APIKey
+		selected.Key = created.Secret
+	}
+
+	return &ProviderCredentialResponse{
+		ProviderName: s.relayProvider.Name(),
+		Platform:     platform,
+		APIKeyID:     selected.ID,
+		APIKey:       selected.Key,
+		BaseURL:      s.providerBaseURL,
+	}, nil
+}
+
+func (s *Service) resolveCredentialGroupID(ctx context.Context, rc *ent.RepoConfig, platform string) (string, error) {
+	if resolver, ok := s.relayProvider.(platformGroupResolver); ok {
+		resolved, err := resolver.ResolveDefaultGroupIDForPlatform(ctx, platform)
+		if err != nil {
+			return "", fmt.Errorf("resolve provider credential group: %w", err)
+		}
+		if strings.TrimSpace(resolved) != "" {
+			return strings.TrimSpace(resolved), nil
+		}
+	}
+
+	binding, err := s.resolveRouteBinding(ctx, rc)
+	if err != nil {
+		return "", err
+	}
+	return binding.GroupID, nil
 }
 
 func (s *Service) contextWithRelayCredentials(ctx context.Context, u *ent.User) (context.Context, error) {

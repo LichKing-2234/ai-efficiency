@@ -535,8 +535,17 @@ func (s *sub2apiRelay) RevokeUserAPIKey(ctx context.Context, keyID int64) error 
 }
 
 func (s *sub2apiRelay) ResolveDefaultGroupID(ctx context.Context) (string, error) {
+	return s.resolveDefaultGroupID(ctx, "")
+}
+
+func (s *sub2apiRelay) ResolveDefaultGroupIDForPlatform(ctx context.Context, platform string) (string, error) {
+	return s.resolveDefaultGroupID(ctx, platform)
+}
+
+func (s *sub2apiRelay) resolveDefaultGroupID(ctx context.Context, platform string) (string, error) {
 	type groupItem struct {
 		ID                 int64  `json:"id"`
+		Platform           string `json:"platform"`
 		Status             string `json:"status"`
 		AccountCount       int64  `json:"account_count"`
 		ActiveAccountCount int64  `json:"active_account_count"`
@@ -550,6 +559,7 @@ func (s *sub2apiRelay) ResolveDefaultGroupID(ctx context.Context) (string, error
 	bestID := int64(0)
 	bestAccountCount := int64(-1)
 	bestActiveAccountCount := int64(-1)
+	platform = strings.TrimSpace(platform)
 
 	for page := 1; ; page++ {
 		resp, err := s.doAdminRequest(ctx, http.MethodGet, fmt.Sprintf("/api/v1/admin/groups?page=%d&page_size=200", page), nil)
@@ -576,6 +586,9 @@ func (s *sub2apiRelay) ResolveDefaultGroupID(ctx context.Context) (string, error
 
 		for _, item := range result.Data.Items {
 			if !strings.EqualFold(strings.TrimSpace(item.Status), "active") {
+				continue
+			}
+			if platform != "" && !strings.EqualFold(strings.TrimSpace(item.Platform), platform) {
 				continue
 			}
 			if item.AccountCount > bestAccountCount ||
