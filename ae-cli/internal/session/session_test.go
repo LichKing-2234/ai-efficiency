@@ -1370,6 +1370,12 @@ supports_websockets = false
 	if _, ok := rt.EnvBundle["ANTHROPIC_API_KEY"]; ok {
 		t.Fatalf("runtime should not include ANTHROPIC_API_KEY in proxy mode: %+v", rt.EnvBundle)
 	}
+	if _, ok := rt.EnvBundle["OPENAI_API_KEY"]; ok {
+		t.Fatalf("runtime should not include OPENAI_API_KEY after proxy bootstrap: %+v", rt.EnvBundle)
+	}
+	if _, ok := rt.EnvBundle["OPENAI_BASE_URL"]; ok {
+		t.Fatalf("runtime should not include OPENAI_BASE_URL after proxy bootstrap: %+v", rt.EnvBundle)
+	}
 	codexHome := rt.EnvBundle["CODEX_HOME"]
 	if codexHome == "" {
 		t.Fatalf("runtime CODEX_HOME is empty: %+v", rt.EnvBundle)

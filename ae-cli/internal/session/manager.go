@@ -47,6 +47,15 @@ func NewManager(c *client.Client, cfg *config.Config) *Manager {
 	}
 }
 
+func scrubToolFacingEnv(env map[string]string) map[string]string {
+	if len(env) == 0 {
+		return env
+	}
+	delete(env, "OPENAI_API_KEY")
+	delete(env, "OPENAI_BASE_URL")
+	return env
+}
+
 func (m *Manager) Start() (*State, error) {
 	// Reconcile: if local binding exists but backend session is gone, clean it up.
 	if existing, _ := m.Current(); existing != nil && strings.TrimSpace(existing.ID) != "" {
@@ -146,6 +155,7 @@ func (m *Manager) Start() (*State, error) {
 	if err := m.startLocalProxy(rt); err != nil {
 		return nil, rollback(fmt.Errorf("starting local proxy: %w", err))
 	}
+	rt.EnvBundle = scrubToolFacingEnv(rt.EnvBundle)
 	selfPath, err := resolveSelfPath()
 	if err != nil {
 		return nil, rollback(fmt.Errorf("resolving ae-cli executable: %w", err))
