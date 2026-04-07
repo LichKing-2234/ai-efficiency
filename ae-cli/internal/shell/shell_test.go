@@ -875,7 +875,7 @@ func TestSendToToolWithTmux(t *testing.T) {
 	s.state.TmuxSession = tmuxName
 	m := newModel(s)
 
-	m.launchToolInstance("echo-tool", "hello")
+	m.launchToolInstance("echo-tool", "")
 	items, err := session.ListToolPanes(s.state.ID)
 	if err != nil {
 		t.Fatalf("ListToolPanes after first launch: %v", err)
@@ -883,7 +883,7 @@ func TestSendToToolWithTmux(t *testing.T) {
 	if len(items) != 1 {
 		t.Fatalf("len(items) after first launch = %d, want 1", len(items))
 	}
-	m.launchToolInstance("echo-tool", "world")
+	m.launchToolInstance("echo-tool", "")
 	items, err = session.ListToolPanes(s.state.ID)
 	if err != nil {
 		t.Fatalf("ListToolPanes after second launch: %v", err)
@@ -893,6 +893,20 @@ func TestSendToToolWithTmux(t *testing.T) {
 	}
 	if got := session.FormatToolPaneLabel(items[1]); got != "echo-tool#2" {
 		t.Fatalf("second label = %q, want %q", got, "echo-tool#2")
+	}
+
+	wantPaneID := items[1].PaneID
+	origSend := shellSendKeys
+	var gotTarget string
+	shellSendKeys = func(paneID, msg string) error {
+		gotTarget = paneID
+		return nil
+	}
+	t.Cleanup(func() { shellSendKeys = origSend })
+
+	m.sendToExistingTool("echo-tool", 2, "world")
+	if gotTarget != wantPaneID {
+		t.Fatalf("send target = %q, want %q (echo-tool#2)", gotTarget, wantPaneID)
 	}
 }
 
@@ -954,6 +968,7 @@ func TestBroadcastWithTmux(t *testing.T) {
 	if !tmux.HasTmux() {
 		t.Skip("tmux not installed")
 	}
+	t.Setenv("HOME", t.TempDir())
 
 	tmuxName := "ae-cli-shell-test-bcast"
 	tmux.KillSession(tmuxName)
@@ -967,8 +982,40 @@ func TestBroadcastWithTmux(t *testing.T) {
 	})
 	s.state.TmuxSession = tmuxName
 	m := newModel(s)
+	m.lines = nil
+
+	m.launchToolInstance("tool-a", "")
+	m.launchToolInstance("tool-a", "")
+	items, err := session.ListToolPanes(s.state.ID)
+	if err != nil {
+		t.Fatalf("ListToolPanes: %v", err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("len(items) = %d, want 2 live instances", len(items))
+	}
+	if _, err := session.RegisterToolPane(s.state.ID, "tool-a", "%999999", "shell"); err != nil {
+		t.Fatalf("RegisterToolPane stale: %v", err)
+	}
+
+	origSend := shellSendKeys
+	var targets []string
+	shellSendKeys = func(paneID, msg string) error {
+		targets = append(targets, paneID)
+		return nil
+	}
+	t.Cleanup(func() { shellSendKeys = origSend })
 
 	m.broadcast("hello all")
+
+	if len(targets) != 2 {
+		t.Fatalf("broadcast targets = %v, want 2 live targets", targets)
+	}
+	live := map[string]bool{items[0].PaneID: true, items[1].PaneID: true}
+	for _, paneID := range targets {
+		if !live[paneID] {
+			t.Fatalf("broadcast sent to non-live pane %q (targets=%v)", paneID, targets)
+		}
+	}
 }
 
 // --- Exit with active panes tests ---
