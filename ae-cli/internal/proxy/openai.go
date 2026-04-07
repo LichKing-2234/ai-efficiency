@@ -94,6 +94,14 @@ type openAIUsage struct {
 	TotalTokens  int
 }
 
+type openAIUsageFields struct {
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
+	InputTokens      int `json:"input_tokens"`
+	OutputTokens     int `json:"output_tokens"`
+	TotalTokens      int `json:"total_tokens"`
+}
+
 func (s *Server) handleOpenAIChatCompletions(w http.ResponseWriter, r *http.Request) {
 	s.handleOpenAIRequest(w, r, "/chat/completions")
 }
@@ -170,6 +178,11 @@ func (s *Server) handleOpenAIRequest(w http.ResponseWriter, r *http.Request, ups
 		return
 	}
 	defer resp.Body.Close()
+
+	if isSSEContentType(resp.Header.Get("Content-Type")) {
+		s.proxyOpenAIStream(w, resp, reqID, startedAt)
+		return
+	}
 
 	body, readErr := io.ReadAll(resp.Body)
 	if readErr != nil {
@@ -314,14 +327,8 @@ func (s *Server) usageRequestFromEvent(event UsageEvent) client.SessionUsageEven
 
 func parseOpenAIUsage(body []byte) openAIUsage {
 	var payload struct {
-		Model string `json:"model"`
-		Usage struct {
-			PromptTokens     int `json:"prompt_tokens"`
-			CompletionTokens int `json:"completion_tokens"`
-			InputTokens      int `json:"input_tokens"`
-			OutputTokens     int `json:"output_tokens"`
-			TotalTokens      int `json:"total_tokens"`
-		} `json:"usage"`
+		Model string            `json:"model"`
+		Usage openAIUsageFields `json:"usage"`
 	}
 	if err := json.Unmarshal(body, &payload); err != nil {
 		return openAIUsage{}
@@ -344,6 +351,164 @@ func parseOpenAIUsage(body []byte) openAIUsage {
 		OutputTokens: outputTokens,
 		TotalTokens:  totalTokens,
 	}
+}
+
+func (s *Server) proxyOpenAIStream(w http.ResponseWriter, resp *http.Response, reqID string, startedAt time.Time) {
+	for k, values := range resp.Header {
+		for _, v := range values {
+			w.Header().Add(k, v)
+		}
+	}
+	w.WriteHeader(resp.StatusCode)
+	flusher, _ := w.(http.Flusher)
+
+	acc := &openAISSEUsageAccumulator{}
+	buf := make([]byte, 32*1024)
+	for {
+		n, err := resp.Body.Read(buf)
+		if n > 0 {
+			chunk := buf[:n]
+			acc.Consume(chunk)
+			if _, writeErr := w.Write(chunk); writeErr != nil {
+				usage, ok := acc.Usage()
+				s.recordOpenAIUsage(reqID, startedAt, resp.StatusCode, usage, ok, "downstream_write_error", writeErr.Error())
+				return
+			}
+			if flusher != nil {
+				flusher.Flush()
+			}
+		}
+
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			usage, ok := acc.Usage()
+			s.recordOpenAIUsage(reqID, startedAt, resp.StatusCode, usage, ok, "upstream_read_error", err.Error())
+			return
+		}
+	}
+
+	usage, ok := acc.Usage()
+	status := "completed"
+	errMessage := ""
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		status = "upstream_http_error"
+	}
+	if status == "completed" && !ok {
+		status = "stream_usage_unavailable"
+		errMessage = "stream completed without usage payload"
+	}
+	s.recordOpenAIUsage(reqID, startedAt, resp.StatusCode, usage, ok, status, errMessage)
+}
+
+func (s *Server) recordOpenAIUsage(reqID string, startedAt time.Time, httpStatus int, usage openAIUsage, hasUsage bool, status string, errMessage string) {
+	model := usage.Model
+	inputTokens := usage.InputTokens
+	outputTokens := usage.OutputTokens
+	totalTokens := usage.TotalTokens
+	if !hasUsage {
+		model = ""
+		inputTokens = 0
+		outputTokens = 0
+		totalTokens = 0
+	}
+	s.recordUsage(UsageEvent{
+		SessionID:    s.cfg.SessionID,
+		WorkspaceID:  s.cfg.WorkspaceID,
+		RequestID:    reqID,
+		ProviderName: "sub2api",
+		Model:        model,
+		StartedAt:    startedAt,
+		FinishedAt:   time.Now().UTC(),
+		InputTokens:  inputTokens,
+		OutputTokens: outputTokens,
+		TotalTokens:  totalTokens,
+		HTTPStatus:   httpStatus,
+		Error:        errMessage,
+		Status:       status,
+	})
+}
+
+type openAISSEUsageAccumulator struct {
+	pending string
+	usage   openAIUsage
+	seen    bool
+}
+
+func (a *openAISSEUsageAccumulator) Consume(chunk []byte) {
+	data := a.pending + string(chunk)
+	lines := strings.Split(data, "\n")
+	a.pending = lines[len(lines)-1]
+	for _, line := range lines[:len(lines)-1] {
+		a.consumeLine(strings.TrimSpace(strings.TrimSuffix(line, "\r")))
+	}
+}
+
+func (a *openAISSEUsageAccumulator) consumeLine(line string) {
+	if !strings.HasPrefix(line, "data:") {
+		return
+	}
+	payload := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+	if payload == "" || payload == "[DONE]" {
+		return
+	}
+
+	var event struct {
+		Type     string            `json:"type"`
+		Model    string            `json:"model"`
+		Usage    openAIUsageFields `json:"usage"`
+		Response struct {
+			Model string            `json:"model"`
+			Usage openAIUsageFields `json:"usage"`
+		} `json:"response"`
+	}
+	if err := json.Unmarshal([]byte(payload), &event); err != nil {
+		return
+	}
+
+	if event.Response.Model != "" {
+		a.usage.Model = event.Response.Model
+	}
+	if event.Model != "" && a.usage.Model == "" {
+		a.usage.Model = event.Model
+	}
+	a.applyUsage(event.Usage)
+	a.applyUsage(event.Response.Usage)
+}
+
+func (a *openAISSEUsageAccumulator) applyUsage(usage openAIUsageFields) {
+	inputTokens := usage.PromptTokens
+	if inputTokens == 0 {
+		inputTokens = usage.InputTokens
+	}
+	outputTokens := usage.CompletionTokens
+	if outputTokens == 0 {
+		outputTokens = usage.OutputTokens
+	}
+	totalTokens := usage.TotalTokens
+	if totalTokens == 0 && (inputTokens > 0 || outputTokens > 0) {
+		totalTokens = inputTokens + outputTokens
+	}
+	if inputTokens > 0 {
+		a.usage.InputTokens = max(a.usage.InputTokens, inputTokens)
+		a.seen = true
+	}
+	if outputTokens > 0 {
+		a.usage.OutputTokens = max(a.usage.OutputTokens, outputTokens)
+		a.seen = true
+	}
+	if totalTokens > 0 {
+		a.usage.TotalTokens = max(a.usage.TotalTokens, totalTokens)
+		a.seen = true
+	}
+}
+
+func (a *openAISSEUsageAccumulator) Usage() (openAIUsage, bool) {
+	if !a.seen {
+		return openAIUsage{}, false
+	}
+	return a.usage, true
 }
 
 func copyJSONHeaders(dst, src http.Header) {

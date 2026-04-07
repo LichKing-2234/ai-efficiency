@@ -508,6 +508,140 @@ func TestProxyOpenAIResponsesRoute_Upstream5xxRecordsFailureUsage(t *testing.T) 
 	}
 }
 
+func TestProxyOpenAIResponsesStreamingPassthroughAndRecordsUsage(t *testing.T) {
+	recorder := &fakeOpenAIRecorder{}
+	firstChunkSent := make(chan struct{})
+	allowFinish := make(chan struct{})
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/responses" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		flusher, _ := w.(http.Flusher)
+
+		_, _ = w.Write([]byte("event: response.created\ndata: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_1\",\"model\":\"gpt-5.4\"}}\n\n"))
+		if flusher != nil {
+			flusher.Flush()
+		}
+		close(firstChunkSent)
+
+		<-allowFinish
+		_, _ = w.Write([]byte("event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_1\",\"model\":\"gpt-5.4\",\"usage\":{\"input_tokens\":11,\"output_tokens\":13,\"total_tokens\":24}}}\n\n"))
+		if flusher != nil {
+			flusher.Flush()
+		}
+	}))
+	t.Cleanup(upstream.Close)
+
+	origNewProxyServer := newProxyServer
+	newProxyServer = func(cfg RuntimeConfig) *Server {
+		fetcher := &staticCredentialFetcher{
+			creds: map[string]*client.ProviderCredential{
+				"openai": providerCredential("openai", upstream.URL, "provider-key"),
+			},
+		}
+		return newServerWithCredentialFetcher(cfg, recorder, nil, fetcher)
+	}
+	t.Cleanup(func() {
+		newProxyServer = origNewProxyServer
+	})
+
+	cfg := RuntimeConfig{
+		SessionID:  "sess-openai-stream",
+		ListenAddr: reserveListenAddrForTest(t),
+		AuthToken:  "tok-openai",
+	}
+	srv, err := Spawn(cfg)
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = Stop(StopRequest{
+			PID:        srv.PID,
+			ListenAddr: srv.ListenAddr,
+			AuthToken:  cfg.AuthToken,
+			ConfigPath: srv.ConfigPath,
+		})
+	})
+
+	req, err := http.NewRequest(
+		http.MethodPost,
+		"http://"+srv.ListenAddr+"/openai/v1/responses",
+		strings.NewReader(`{"model":"gpt-5.4","stream":true,"input":"hello"}`),
+	)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+cfg.AuthToken)
+
+	resp, err := (&http.Client{Timeout: 2 * time.Second}).Do(req)
+	if err != nil {
+		t.Fatalf("post proxy: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+	if got := strings.TrimSpace(resp.Header.Get("Content-Type")); !strings.HasPrefix(got, "text/event-stream") {
+		t.Fatalf("content-type = %q, want prefix %q", got, "text/event-stream")
+	}
+
+	select {
+	case <-firstChunkSent:
+	case <-time.After(1 * time.Second):
+		t.Fatal("upstream did not send first stream chunk")
+	}
+
+	reader := bufio.NewReader(resp.Body)
+	firstLineCh := make(chan string, 1)
+	firstErrCh := make(chan error, 1)
+	go func() {
+		line, readErr := reader.ReadString('\n')
+		if readErr != nil {
+			firstErrCh <- readErr
+			return
+		}
+		firstLineCh <- line
+	}()
+	select {
+	case line := <-firstLineCh:
+		if !strings.Contains(line, "event: response.created") {
+			t.Fatalf("first streamed line = %q, want response.created event", line)
+		}
+	case err := <-firstErrCh:
+		t.Fatalf("failed reading first stream line: %v", err)
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("stream did not pass through incrementally before upstream completion")
+	}
+
+	close(allowFinish)
+	rest, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatalf("read rest stream: %v", err)
+	}
+	if !strings.Contains(string(rest), "response.completed") {
+		t.Fatalf("stream body missing response.completed event: %q", string(rest))
+	}
+
+	lastUsage, ok := recorder.LastEvent()
+	if !ok {
+		t.Fatal("expected usage event")
+	}
+	if lastUsage.Model != "gpt-5.4" {
+		t.Fatalf("model = %q, want %q", lastUsage.Model, "gpt-5.4")
+	}
+	if lastUsage.InputTokens != 11 || lastUsage.OutputTokens != 13 || lastUsage.TotalTokens != 24 {
+		t.Fatalf("usage = in:%d out:%d total:%d, want 11/13/24", lastUsage.InputTokens, lastUsage.OutputTokens, lastUsage.TotalTokens)
+	}
+	if lastUsage.Status != "completed" {
+		t.Fatalf("status = %q, want %q", lastUsage.Status, "completed")
+	}
+}
+
 func TestProxyAnthropicMessages_ForwardsRequestAndRecordsUsage(t *testing.T) {
 	fx := startProxyWithFakeAnthropicUpstream(t)
 	srv := fx.Server
