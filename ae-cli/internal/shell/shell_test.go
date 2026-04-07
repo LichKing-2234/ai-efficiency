@@ -421,7 +421,14 @@ func TestHandleDirectedTargetsIndexedInstance(t *testing.T) {
 		gotTarget = paneID
 		return nil
 	}
-	t.Cleanup(func() { shellSendKeys = origSend })
+	origList := shellListPanes
+	shellListPanes = func(string) ([]tmux.Pane, error) {
+		return []tmux.Pane{{ID: "%201", Tool: "claude"}, {ID: "%202", Tool: "claude"}}, nil
+	}
+	t.Cleanup(func() {
+		shellSendKeys = origSend
+		shellListPanes = origList
+	})
 
 	m := newModel(s)
 	m.handleDirected("@claude#2 hello")
@@ -438,6 +445,12 @@ func TestHandleDirectedMissingIndexedInstanceShowsHelpfulError(t *testing.T) {
 		"claude": {Command: "sleep", Args: []string{"10"}},
 	})
 	s.state.TmuxSession = "ae-shell-missing"
+	origList := shellListPanes
+	shellListPanes = func(string) ([]tmux.Pane, error) {
+		return []tmux.Pane{}, nil
+	}
+	t.Cleanup(func() { shellListPanes = origList })
+
 	m := newModel(s)
 	m.lines = nil
 
@@ -475,13 +488,64 @@ func TestBroadcastSendsToExistingInstancesOnly(t *testing.T) {
 		targets = append(targets, paneID)
 		return nil
 	}
-	t.Cleanup(func() { shellSendKeys = origSend })
+	origList := shellListPanes
+	shellListPanes = func(string) ([]tmux.Pane, error) {
+		return []tmux.Pane{{ID: "%301", Tool: "claude"}, {ID: "%302", Tool: "claude"}}, nil
+	}
+	t.Cleanup(func() {
+		shellSendKeys = origSend
+		shellListPanes = origList
+	})
 
 	m := newModel(s)
 	m.broadcast("hello all")
 
 	if len(targets) != 2 {
 		t.Fatalf("broadcast targets = %v, want 2 existing instances", targets)
+	}
+}
+
+func TestBroadcastDoesNotFallbackWhenPaneListingFails(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	s := newTestShell(map[string]config.ToolConfig{
+		"claude": {Command: "sleep", Args: []string{"10"}},
+	})
+	s.state.TmuxSession = "ae-shell-broadcast-fail"
+	if _, err := session.RegisterToolPane(s.state.ID, "claude", "%381", "shell"); err != nil {
+		t.Fatalf("RegisterToolPane: %v", err)
+	}
+
+	var targets []string
+	origSend := shellSendKeys
+	shellSendKeys = func(paneID, msg string) error {
+		targets = append(targets, paneID)
+		return nil
+	}
+	origList := shellListPanes
+	shellListPanes = func(string) ([]tmux.Pane, error) {
+		return nil, fmt.Errorf("tmux list failed")
+	}
+	t.Cleanup(func() {
+		shellSendKeys = origSend
+		shellListPanes = origList
+	})
+
+	m := newModel(s)
+	m.lines = nil
+	m.broadcast("hello all")
+
+	if len(targets) != 0 {
+		t.Fatalf("broadcast should not send when pane listing fails, got targets %v", targets)
+	}
+	foundErr := false
+	for _, line := range m.lines {
+		if strings.Contains(line, "Failed to load tool panes") {
+			foundErr = true
+		}
+	}
+	if !foundErr {
+		t.Fatal("expected broadcast to show pane loading error when pane listing fails")
 	}
 }
 
@@ -514,6 +578,70 @@ func TestAppendPanesShowsToolLabels(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("expected appendPanes output to include claude#1")
+	}
+}
+
+func TestAppendPanesSkipsStaleRegistryEntries(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	s := newTestShell(map[string]config.ToolConfig{
+		"claude": {Command: "sleep", Args: []string{"10"}},
+	})
+	s.state.TmuxSession = "ae-shell-ps-live-only"
+	if _, err := session.RegisterToolPane(s.state.ID, "claude", "%501", "shell"); err != nil {
+		t.Fatalf("RegisterToolPane #1: %v", err)
+	}
+	if _, err := session.RegisterToolPane(s.state.ID, "claude", "%502", "shell"); err != nil {
+		t.Fatalf("RegisterToolPane #2: %v", err)
+	}
+
+	origList := shellListPanes
+	shellListPanes = func(string) ([]tmux.Pane, error) {
+		return []tmux.Pane{{ID: "%501", Tool: "claude", Active: true}}, nil
+	}
+	t.Cleanup(func() { shellListPanes = origList })
+
+	m := newModel(s)
+	m.lines = nil
+	m.appendPanes()
+
+	hasLive := false
+	hasStale := false
+	for _, line := range m.lines {
+		if strings.Contains(line, "claude#1") {
+			hasLive = true
+		}
+		if strings.Contains(line, "claude#2") {
+			hasStale = true
+		}
+	}
+	if !hasLive {
+		t.Fatal("expected appendPanes output to include claude#1")
+	}
+	if hasStale {
+		t.Fatal("appendPanes should not include stale registry-only pane claude#2")
+	}
+}
+
+func TestActiveToolPaneCountDoesNotFallbackWhenPaneListingFails(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	s := newTestShell(map[string]config.ToolConfig{
+		"claude": {Command: "sleep", Args: []string{"10"}},
+	})
+	s.state.TmuxSession = "ae-shell-count-fail"
+	if _, err := session.RegisterToolPane(s.state.ID, "claude", "%601", "shell"); err != nil {
+		t.Fatalf("RegisterToolPane: %v", err)
+	}
+
+	origList := shellListPanes
+	shellListPanes = func(string) ([]tmux.Pane, error) {
+		return nil, fmt.Errorf("tmux list failed")
+	}
+	t.Cleanup(func() { shellListPanes = origList })
+
+	if got := s.activeToolPaneCount(); got != 0 {
+		t.Fatalf("activeToolPaneCount = %d, want 0 when pane listing fails", got)
 	}
 }
 

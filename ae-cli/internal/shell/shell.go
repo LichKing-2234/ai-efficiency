@@ -408,7 +408,7 @@ func (m *model) liveToolPanes() ([]session.ToolPaneRecord, error) {
 	}
 	panes, err := shellListPanes(m.shell.state.TmuxSession)
 	if err != nil {
-		return items, nil
+		return nil, fmt.Errorf("listing tmux panes: %w", err)
 	}
 	livePaneIDs := make(map[string]struct{}, len(panes))
 	for _, pane := range panes {
@@ -440,7 +440,10 @@ func (m *model) appendPanes() {
 	}
 	m.queueLine(fmt.Sprintf("%-16s %-12s %-20s %s", "LABEL", "PANE ID", "COMMAND", "ACTIVE"))
 	for _, rec := range items {
-		p := paneByID[rec.PaneID]
+		p, ok := paneByID[rec.PaneID]
+		if !ok {
+			continue
+		}
 		active := ""
 		if p.Active {
 			active = "*"
@@ -483,7 +486,7 @@ func (s *Shell) activeToolPaneCount() int {
 	}
 	panes, err := shellListPanes(s.state.TmuxSession)
 	if err != nil {
-		return len(items)
+		return 0
 	}
 	livePaneIDs := make(map[string]struct{}, len(panes))
 	for _, pane := range panes {
