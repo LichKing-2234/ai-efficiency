@@ -219,6 +219,79 @@ func TestRunDirectExecutionRemovesAnthropicAPIKeyWhenProxyEnvPresent(t *testing.
 	}
 }
 
+func TestRunDirectExecutionRemovesOpenAIEnvWhenCodexProxyEnvPresent(t *testing.T) {
+	origHome := os.Getenv("HOME")
+	tmpHome := t.TempDir()
+	os.Setenv("HOME", tmpHome)
+	t.Cleanup(func() { os.Setenv("HOME", origHome) })
+
+	t.Setenv("OPENAI_API_KEY", "upstream-should-not-leak")
+	t.Setenv("OPENAI_BASE_URL", "http://upstream-should-not-leak")
+
+	if err := session.WriteRuntimeBundle(&session.RuntimeBundle{
+		SessionID: "sess-codex-proxy",
+		EnvBundle: map[string]string{
+			"CODEX_HOME":           "/tmp/codex-home",
+			"AE_LOCAL_PROXY_TOKEN": "proxy-token",
+			"AE_LOCAL_PROXY_URL":   "http://127.0.0.1:43123",
+			"OPENAI_API_KEY":       "runtime-openai-key",
+			"OPENAI_BASE_URL":      "http://relay.local/openai",
+		},
+	}); err != nil {
+		t.Fatalf("WriteRuntimeBundle: %v", err)
+	}
+
+	var lastCmd *exec.Cmd
+	prev := execCommand
+	execCommand = func(name string, args ...string) *exec.Cmd {
+		cmd := exec.Command(name, args...)
+		lastCmd = cmd
+		return cmd
+	}
+	t.Cleanup(func() { execCommand = prev })
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer srv.Close()
+
+	cfg := &config.Config{
+		Tools: map[string]config.ToolConfig{
+			"true-tool": {
+				Command: "true",
+				Args:    []string{},
+			},
+		},
+	}
+	c := client.New(srv.URL, "tok")
+	d := New(cfg, c)
+
+	if err := d.Run("sess-codex-proxy", "true-tool", nil, ""); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if lastCmd == nil {
+		t.Fatal("expected execCommand to be called")
+	}
+	for _, kv := range lastCmd.Env {
+		if strings.HasPrefix(kv, "OPENAI_API_KEY=") {
+			t.Fatalf("unexpected OPENAI_API_KEY in cmd.Env: %v", lastCmd.Env)
+		}
+		if strings.HasPrefix(kv, "OPENAI_BASE_URL=") {
+			t.Fatalf("unexpected OPENAI_BASE_URL in cmd.Env: %v", lastCmd.Env)
+		}
+	}
+	foundCodexHome := false
+	for _, kv := range lastCmd.Env {
+		if kv == "CODEX_HOME=/tmp/codex-home" {
+			foundCodexHome = true
+			break
+		}
+	}
+	if !foundCodexHome {
+		t.Fatalf("expected CODEX_HOME in cmd.Env, got %v", lastCmd.Env)
+	}
+}
+
 func TestRunTmuxUnsetsAnthropicAPIKeyWhenProxyEnvPresent(t *testing.T) {
 	origHome := os.Getenv("HOME")
 	tmpHome := t.TempDir()
@@ -289,6 +362,95 @@ func TestRunTmuxUnsetsAnthropicAPIKeyWhenProxyEnvPresent(t *testing.T) {
 	if len(unsetKeys) != 1 || unsetKeys[0] != "ANTHROPIC_API_KEY" {
 		t.Fatalf("expected tmuxUnsetEnvironment to be called with ANTHROPIC_API_KEY, got %v", unsetKeys)
 	}
+}
+
+func TestRunTmuxUnsetsOpenAIEnvWhenCodexProxyEnvPresent(t *testing.T) {
+	origHome := os.Getenv("HOME")
+	tmpHome := t.TempDir()
+	os.Setenv("HOME", tmpHome)
+	t.Cleanup(func() { os.Setenv("HOME", origHome) })
+
+	if err := session.WriteRuntimeBundle(&session.RuntimeBundle{
+		SessionID: "sess-codex-tmux-unset",
+		EnvBundle: map[string]string{
+			"CODEX_HOME":           "/tmp/codex-home",
+			"AE_LOCAL_PROXY_TOKEN": "proxy-token",
+			"AE_LOCAL_PROXY_URL":   "http://127.0.0.1:43123",
+			"OPENAI_API_KEY":       "runtime-openai-key",
+			"OPENAI_BASE_URL":      "http://relay.local/openai",
+		},
+	}); err != nil {
+		t.Fatalf("WriteRuntimeBundle: %v", err)
+	}
+
+	var setEnv map[string]string
+	var unsetKeys []string
+	origSet := tmuxSetEnvironment
+	origUnset := tmuxUnsetEnvironment
+	origSplit := tmuxSplitWindow
+	tmuxSetEnvironment = func(sessionName string, env map[string]string) error {
+		setEnv = env
+		return nil
+	}
+	tmuxUnsetEnvironment = func(sessionName string, keys []string) error {
+		unsetKeys = append([]string{}, keys...)
+		return nil
+	}
+	tmuxSplitWindow = func(sessionName string, toolName string, command string, args []string, env map[string]string, unsetKeys []string) (string, error) {
+		if _, exists := env["OPENAI_API_KEY"]; exists {
+			t.Fatalf("expected split-window env to be sanitized, got %+v", env)
+		}
+		if _, exists := env["OPENAI_BASE_URL"]; exists {
+			t.Fatalf("expected split-window env to omit OPENAI_BASE_URL, got %+v", env)
+		}
+		return "%1", nil
+	}
+	t.Cleanup(func() {
+		tmuxSetEnvironment = origSet
+		tmuxUnsetEnvironment = origUnset
+		tmuxSplitWindow = origSplit
+	})
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer srv.Close()
+
+	cfg := &config.Config{
+		Tools: map[string]config.ToolConfig{
+			"true-tool": {Command: "echo", Args: []string{"hello"}},
+		},
+	}
+	c := client.New(srv.URL, "tok")
+	d := New(cfg, c)
+
+	if err := d.Run("sess-codex-tmux-unset", "true-tool", nil, "tmux-session-1"); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if setEnv == nil {
+		t.Fatal("expected tmuxSetEnvironment to be called")
+	}
+	if _, exists := setEnv["OPENAI_API_KEY"]; exists {
+		t.Fatalf("expected sanitized env not to include OPENAI_API_KEY: %+v", setEnv)
+	}
+	if _, exists := setEnv["OPENAI_BASE_URL"]; exists {
+		t.Fatalf("expected sanitized env not to include OPENAI_BASE_URL: %+v", setEnv)
+	}
+	if len(unsetKeys) != 2 {
+		t.Fatalf("expected tmuxUnsetEnvironment to be called with OPENAI_API_KEY and OPENAI_BASE_URL, got %v", unsetKeys)
+	}
+	if !(contains(unsetKeys, "OPENAI_API_KEY") && contains(unsetKeys, "OPENAI_BASE_URL")) {
+		t.Fatalf("expected unset keys to include OPENAI_API_KEY and OPENAI_BASE_URL, got %v", unsetKeys)
+	}
+}
+
+func contains(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }
 
 func TestRunDirectExecutionFailure(t *testing.T) {

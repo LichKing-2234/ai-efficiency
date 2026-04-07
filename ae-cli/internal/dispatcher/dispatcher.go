@@ -57,6 +57,14 @@ func proxyClaudeEnvActive(env map[string]string) bool {
 	return strings.TrimSpace(env["ANTHROPIC_AUTH_TOKEN"]) != "" || strings.TrimSpace(env["ANTHROPIC_BASE_URL"]) != ""
 }
 
+func proxyCodexEnvActive(env map[string]string) bool {
+	if len(env) == 0 {
+		return false
+	}
+	return strings.TrimSpace(env["CODEX_HOME"]) != "" &&
+		(strings.TrimSpace(env["AE_LOCAL_PROXY_TOKEN"]) != "" || strings.TrimSpace(env["AE_LOCAL_PROXY_URL"]) != "")
+}
+
 func sanitizeRuntimeEnv(env map[string]string) map[string]string {
 	if len(env) == 0 {
 		return nil
@@ -67,6 +75,10 @@ func sanitizeRuntimeEnv(env map[string]string) map[string]string {
 	}
 	if proxyClaudeEnvActive(out) {
 		delete(out, "ANTHROPIC_API_KEY")
+	}
+	if proxyCodexEnvActive(out) {
+		delete(out, "OPENAI_API_KEY")
+		delete(out, "OPENAI_BASE_URL")
 	}
 	return out
 }
@@ -85,6 +97,10 @@ func mergeProcessEnv(base []string, runtimeEnv map[string]string) []string {
 	}
 	if proxyClaudeEnvActive(runtimeEnv) {
 		delete(merged, "ANTHROPIC_API_KEY")
+	}
+	if proxyCodexEnvActive(runtimeEnv) {
+		delete(merged, "OPENAI_API_KEY")
+		delete(merged, "OPENAI_BASE_URL")
 	}
 	for k, v := range runtimeEnv {
 		merged[k] = v
@@ -116,6 +132,9 @@ func (d *Dispatcher) Run(sessionID, toolName string, extraArgs []string, tmuxSes
 		unsetKeys := []string{}
 		if proxyClaudeEnvActive(runtimeEnv) {
 			unsetKeys = append(unsetKeys, "ANTHROPIC_API_KEY")
+		}
+		if proxyCodexEnvActive(runtimeEnv) {
+			unsetKeys = append(unsetKeys, "OPENAI_API_KEY", "OPENAI_BASE_URL")
 		}
 		// Best-effort: make runtime env visible to future panes in this tmux session.
 		if len(runtimeEnv) > 0 {
