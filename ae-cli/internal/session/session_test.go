@@ -474,11 +474,12 @@ func TestStartLocalProxyDoesNotDeriveProviderCredentialFromRuntimeEnv(t *testing
 	if err := m.startLocalProxy(rt); err != nil {
 		t.Fatalf("startLocalProxy: %v", err)
 	}
-	if captured.ProviderURL != "" {
-		t.Fatalf("ProviderURL = %q, want empty", captured.ProviderURL)
+	rawCfg, err := json.Marshal(captured)
+	if err != nil {
+		t.Fatalf("marshal captured config: %v", err)
 	}
-	if captured.ProviderKey != "" {
-		t.Fatalf("ProviderKey = %q, want empty", captured.ProviderKey)
+	if strings.Contains(string(rawCfg), "https://relay.local/openai") || strings.Contains(string(rawCfg), "openai-runtime-key") {
+		t.Fatalf("proxy config should not embed runtime openai credential: %s", rawCfg)
 	}
 }
 
@@ -1303,11 +1304,12 @@ supports_websockets = false
 	if state.Branch != "feature/test-start" {
 		t.Errorf("Branch = %q, want %q", state.Branch, "feature/test-start")
 	}
-	if spawnedCfg.ProviderURL != "" {
-		t.Fatalf("spawn ProviderURL = %q, want empty", spawnedCfg.ProviderURL)
+	rawSpawnedCfg, err := json.Marshal(spawnedCfg)
+	if err != nil {
+		t.Fatalf("marshal spawned proxy config: %v", err)
 	}
-	if spawnedCfg.ProviderKey != "" {
-		t.Fatalf("spawn ProviderKey = %q, want empty", spawnedCfg.ProviderKey)
+	if strings.Contains(string(rawSpawnedCfg), "http://sub2api.test") || strings.Contains(string(rawSpawnedCfg), "openai-k") {
+		t.Fatalf("spawned proxy config should not embed bootstrap openai credential: %s", rawSpawnedCfg)
 	}
 
 	// Verify marker/runtime were persisted.

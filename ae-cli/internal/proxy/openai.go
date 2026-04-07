@@ -47,10 +47,10 @@ func (r *inMemoryUsageRecorder) RecordUsage(event UsageEvent) {
 }
 
 type Server struct {
-	cfg           RuntimeConfig
-	httpClient    *http.Client
-	recorder      UsageRecorder
-	backendClient backendEventClient
+	cfg             RuntimeConfig
+	httpClient      *http.Client
+	recorder        UsageRecorder
+	backendClient   backendEventClient
 	credentialCache *credentialCache
 }
 
@@ -79,10 +79,10 @@ func NewServer(cfg RuntimeConfig, recorder UsageRecorder, httpClient *http.Clien
 		credentialFetcher = fetcher
 	}
 	return &Server{
-		cfg:           cfg,
-		httpClient:    httpClient,
-		recorder:      recorder,
-		backendClient: backendClient,
+		cfg:             cfg,
+		httpClient:      httpClient,
+		recorder:        recorder,
+		backendClient:   backendClient,
 		credentialCache: newCredentialCache(credentialFetcher),
 	}
 }
@@ -211,20 +211,15 @@ func (s *Server) handleOpenAIRequest(w http.ResponseWriter, r *http.Request, ups
 }
 
 func (s *Server) resolveProviderCredential(ctx context.Context, platform string) (*client.ProviderCredential, error) {
-	if s.credentialCache != nil {
-		if cred, err := s.credentialCache.Get(ctx, s.cfg.SessionID, platform); err == nil {
-			return cred, nil
-		}
+	if s.credentialCache == nil {
+		return nil, fmt.Errorf("provider credential cache is not configured")
 	}
-	if strings.TrimSpace(s.cfg.ProviderURL) != "" && strings.TrimSpace(s.cfg.ProviderKey) != "" {
-		return &client.ProviderCredential{
-			ProviderName: "sub2api",
-			Platform:     platform,
-			APIKey:       s.cfg.ProviderKey,
-			BaseURL:      s.cfg.ProviderURL,
-		}, nil
+
+	cred, err := s.credentialCache.Get(ctx, s.cfg.SessionID, platform)
+	if err != nil {
+		return nil, fmt.Errorf("fetch provider credential for %q: %w", platform, err)
 	}
-	return nil, fmt.Errorf("provider credential is not configured for platform %q", platform)
+	return cred, nil
 }
 
 func firstNonEmptyProviderName(values ...string) string {

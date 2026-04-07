@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -14,7 +15,51 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/ai-efficiency/ae-cli/internal/client"
 )
+
+type staticCredentialFetcher struct {
+	mu           sync.Mutex
+	creds        map[string]*client.ProviderCredential
+	errs         map[string]error
+	calls        int
+	lastSession  string
+	lastPlatform string
+}
+
+func (f *staticCredentialFetcher) GetSessionProviderCredential(_ context.Context, sessionID, platform string) (*client.ProviderCredential, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.calls++
+	f.lastSession = sessionID
+	f.lastPlatform = platform
+	if err := f.errs[platform]; err != nil {
+		return nil, err
+	}
+	cred, ok := f.creds[platform]
+	if !ok {
+		return nil, fmt.Errorf("no credential for platform %q", platform)
+	}
+	copy := *cred
+	return &copy, nil
+}
+
+func providerCredential(platform, baseURL, apiKey string) *client.ProviderCredential {
+	return &client.ProviderCredential{
+		ProviderName: "sub2api",
+		Platform:     platform,
+		APIKeyID:     900,
+		APIKey:       apiKey,
+		BaseURL:      baseURL,
+	}
+}
+
+func newServerWithCredentialFetcher(cfg RuntimeConfig, recorder UsageRecorder, httpClient *http.Client, fetcher credentialFetcher) *Server {
+	srv := NewServer(cfg, recorder, httpClient)
+	srv.credentialCache = newCredentialCache(fetcher)
+	return srv
+}
 
 func TestProxyChildProcess(t *testing.T) {
 	if os.Getenv(testChildEnv) != "1" {
@@ -41,11 +86,9 @@ func TestProxyChildProcess(t *testing.T) {
 
 func TestSpawnStartsProxyAndReturnsReadyAddress(t *testing.T) {
 	cfg := RuntimeConfig{
-		SessionID:   "sess-test",
-		ListenAddr:  "127.0.0.1:0",
-		AuthToken:   "tok-test",
-		ProviderURL: "http://example.local",
-		ProviderKey: "provider-key",
+		SessionID:  "sess-test",
+		ListenAddr: "127.0.0.1:0",
+		AuthToken:  "tok-test",
 	}
 
 	result, err := Spawn(cfg)
@@ -116,11 +159,9 @@ func TestSpawnForcedChildProcessUsesConfigHandoffAndCleansTempFiles(t *testing.T
 	t.Setenv(forceChildEnv, "1")
 
 	cfg := RuntimeConfig{
-		SessionID:   "sess-child",
-		ListenAddr:  "127.0.0.1:0",
-		AuthToken:   "tok-child",
-		ProviderURL: "http://provider.local",
-		ProviderKey: "provider-secret",
+		SessionID:  "sess-child",
+		ListenAddr: "127.0.0.1:0",
+		AuthToken:  "tok-child",
 	}
 
 	result, err := Spawn(cfg)
@@ -291,21 +332,23 @@ func TestProxyOpenAIResponses_Upstream5xxRecordsFailureUsage(t *testing.T) {
 
 func TestProxyOpenAIResponses_TransportErrorRecordsFailureUsage(t *testing.T) {
 	recorder := &fakeOpenAIRecorder{}
+	fetcher := &staticCredentialFetcher{
+		creds: map[string]*client.ProviderCredential{
+			"openai": providerCredential("openai", "http://"+reserveListenAddrForTest(t), "provider-key"),
+		},
+	}
 	origNewProxyServer := newProxyServer
 	newProxyServer = func(cfg RuntimeConfig) *Server {
-		return NewServer(cfg, recorder, &http.Client{Timeout: 300 * time.Millisecond})
+		return newServerWithCredentialFetcher(cfg, recorder, &http.Client{Timeout: 300 * time.Millisecond}, fetcher)
 	}
 	t.Cleanup(func() {
 		newProxyServer = origNewProxyServer
 	})
 
-	unreachableAddr := reserveListenAddrForTest(t)
 	cfg := RuntimeConfig{
-		SessionID:   "sess-openai-transport-failure",
-		ListenAddr:  reserveListenAddrForTest(t),
-		AuthToken:   "tok-openai",
-		ProviderURL: "http://" + unreachableAddr,
-		ProviderKey: "provider-key",
+		SessionID:  "sess-openai-transport-failure",
+		ListenAddr: reserveListenAddrForTest(t),
+		AuthToken:  "tok-openai",
 	}
 
 	srv, err := Spawn(cfg)
@@ -649,21 +692,23 @@ func TestProxyAnthropicMessages_DefaultAnthropicVersion(t *testing.T) {
 
 func TestProxyAnthropicMessages_TransportErrorRecordsFailureUsage(t *testing.T) {
 	recorder := &fakeOpenAIRecorder{}
+	fetcher := &staticCredentialFetcher{
+		creds: map[string]*client.ProviderCredential{
+			"anthropic": providerCredential("anthropic", "http://"+reserveListenAddrForTest(t), "provider-key"),
+		},
+	}
 	origNewProxyServer := newProxyServer
 	newProxyServer = func(cfg RuntimeConfig) *Server {
-		return NewServer(cfg, recorder, &http.Client{Timeout: 300 * time.Millisecond})
+		return newServerWithCredentialFetcher(cfg, recorder, &http.Client{Timeout: 300 * time.Millisecond}, fetcher)
 	}
 	t.Cleanup(func() {
 		newProxyServer = origNewProxyServer
 	})
 
-	unreachableAddr := reserveListenAddrForTest(t)
 	cfg := RuntimeConfig{
-		SessionID:   "sess-anthropic-transport-failure",
-		ListenAddr:  reserveListenAddrForTest(t),
-		AuthToken:   "tok-anthropic",
-		ProviderURL: "http://" + unreachableAddr,
-		ProviderKey: "provider-key",
+		SessionID:  "sess-anthropic-transport-failure",
+		ListenAddr: reserveListenAddrForTest(t),
+		AuthToken:  "tok-anthropic",
 	}
 
 	srv, err := Spawn(cfg)
@@ -738,18 +783,21 @@ func TestProxyAnthropicMessages_StreamingPassthroughAndRecordsUsage(t *testing.T
 
 	origNewProxyServer := newProxyServer
 	newProxyServer = func(cfg RuntimeConfig) *Server {
-		return NewServer(cfg, recorder, nil)
+		fetcher := &staticCredentialFetcher{
+			creds: map[string]*client.ProviderCredential{
+				"anthropic": providerCredential("anthropic", upstream.URL, "provider-key"),
+			},
+		}
+		return newServerWithCredentialFetcher(cfg, recorder, nil, fetcher)
 	}
 	t.Cleanup(func() {
 		newProxyServer = origNewProxyServer
 	})
 
 	cfg := RuntimeConfig{
-		SessionID:   "sess-anthropic-stream",
-		ListenAddr:  reserveListenAddrForTest(t),
-		AuthToken:   "tok-anthropic",
-		ProviderURL: upstream.URL,
-		ProviderKey: "provider-key",
+		SessionID:  "sess-anthropic-stream",
+		ListenAddr: reserveListenAddrForTest(t),
+		AuthToken:  "tok-anthropic",
 	}
 	srv, err := Spawn(cfg)
 	if err != nil {
@@ -923,13 +971,24 @@ func TestProxyOpenAIUsageUploadsToBackend(t *testing.T) {
 	}))
 	defer backend.Close()
 
+	fetcher := &staticCredentialFetcher{
+		creds: map[string]*client.ProviderCredential{
+			"openai": providerCredential("openai", upstream.URL, "provider-key"),
+		},
+	}
+	origNewProxyServer := newProxyServer
+	newProxyServer = func(cfg RuntimeConfig) *Server {
+		return newServerWithCredentialFetcher(cfg, nil, nil, fetcher)
+	}
+	t.Cleanup(func() {
+		newProxyServer = origNewProxyServer
+	})
+
 	cfg := RuntimeConfig{
 		SessionID:    "sess-usage-upload",
 		WorkspaceID:  "ws-usage-upload",
 		ListenAddr:   reserveListenAddrForTest(t),
 		AuthToken:    "tok-openai",
-		ProviderURL:  upstream.URL,
-		ProviderKey:  "provider-key",
 		BackendURL:   backend.URL,
 		BackendToken: "backend-token",
 	}
@@ -1016,13 +1075,24 @@ func TestProxyOpenAIUsageBackendFailureFallsBackToLocalSpool(t *testing.T) {
 	}))
 	defer backend.Close()
 
+	fetcher := &staticCredentialFetcher{
+		creds: map[string]*client.ProviderCredential{
+			"openai": providerCredential("openai", upstream.URL, "provider-key"),
+		},
+	}
+	origNewProxyServer := newProxyServer
+	newProxyServer = func(cfg RuntimeConfig) *Server {
+		return newServerWithCredentialFetcher(cfg, nil, nil, fetcher)
+	}
+	t.Cleanup(func() {
+		newProxyServer = origNewProxyServer
+	})
+
 	cfg := RuntimeConfig{
 		SessionID:    "sess-usage-spool",
 		WorkspaceID:  "ws-usage-spool",
 		ListenAddr:   reserveListenAddrForTest(t),
 		AuthToken:    "tok-openai",
-		ProviderURL:  upstream.URL,
-		ProviderKey:  "provider-key",
 		BackendURL:   backend.URL,
 		BackendToken: "backend-token",
 	}
@@ -1609,6 +1679,11 @@ func startProxyWithFakeOpenAIUpstream(t *testing.T) openAIFixture {
 	t.Helper()
 
 	recorder := &fakeOpenAIRecorder{}
+	fetcher := &staticCredentialFetcher{
+		creds: map[string]*client.ProviderCredential{
+			"openai": providerCredential("openai", "", "provider-key"),
+		},
+	}
 	upstreamSpy := &fakeUpstream{
 		responseStatus: http.StatusOK,
 		responseBody:   `{"id":"chatcmpl-1","model":"gpt-5.4","usage":{"prompt_tokens":70,"completion_tokens":70,"total_tokens":140},"choices":[{"index":0,"message":{"role":"assistant","content":"hello"},"finish_reason":"stop"}]}`,
@@ -1642,18 +1717,17 @@ func startProxyWithFakeOpenAIUpstream(t *testing.T) openAIFixture {
 
 	origNewProxyServer := newProxyServer
 	newProxyServer = func(cfg RuntimeConfig) *Server {
-		return NewServer(cfg, recorder, nil)
+		fetcher.creds["openai"] = providerCredential("openai", upstream.URL, "provider-key")
+		return newServerWithCredentialFetcher(cfg, recorder, nil, fetcher)
 	}
 	t.Cleanup(func() {
 		newProxyServer = origNewProxyServer
 	})
 
 	cfg := RuntimeConfig{
-		SessionID:   "sess-openai",
-		ListenAddr:  reserveListenAddrForTest(t),
-		AuthToken:   "tok-openai",
-		ProviderURL: upstream.URL,
-		ProviderKey: "provider-key",
+		SessionID:  "sess-openai",
+		ListenAddr: reserveListenAddrForTest(t),
+		AuthToken:  "tok-openai",
 	}
 
 	result, err := Spawn(cfg)
@@ -1679,6 +1753,11 @@ func startProxyWithFakeOpenAIResponsesUpstream(t *testing.T) openAIFixture {
 	t.Helper()
 
 	recorder := &fakeOpenAIRecorder{}
+	fetcher := &staticCredentialFetcher{
+		creds: map[string]*client.ProviderCredential{
+			"openai": providerCredential("openai", "", "provider-key"),
+		},
+	}
 	upstreamSpy := &fakeUpstream{
 		responseStatus: http.StatusOK,
 		responseBody:   `{"id":"resp_1","model":"gpt-5.4","usage":{"input_tokens":70,"output_tokens":70,"total_tokens":140},"output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"hello"}]}]}`,
@@ -1712,18 +1791,17 @@ func startProxyWithFakeOpenAIResponsesUpstream(t *testing.T) openAIFixture {
 
 	origNewProxyServer := newProxyServer
 	newProxyServer = func(cfg RuntimeConfig) *Server {
-		return NewServer(cfg, recorder, nil)
+		fetcher.creds["openai"] = providerCredential("openai", upstream.URL, "provider-key")
+		return newServerWithCredentialFetcher(cfg, recorder, nil, fetcher)
 	}
 	t.Cleanup(func() {
 		newProxyServer = origNewProxyServer
 	})
 
 	cfg := RuntimeConfig{
-		SessionID:   "sess-openai",
-		ListenAddr:  reserveListenAddrForTest(t),
-		AuthToken:   "tok-openai",
-		ProviderURL: upstream.URL,
-		ProviderKey: "provider-key",
+		SessionID:  "sess-openai",
+		ListenAddr: reserveListenAddrForTest(t),
+		AuthToken:  "tok-openai",
 	}
 
 	result, err := Spawn(cfg)
@@ -1755,6 +1833,11 @@ func startProxyWithFakeAnthropicUpstream(t *testing.T) anthropicFixture {
 	t.Helper()
 
 	recorder := &fakeOpenAIRecorder{}
+	fetcher := &staticCredentialFetcher{
+		creds: map[string]*client.ProviderCredential{
+			"anthropic": providerCredential("anthropic", "", "provider-key"),
+		},
+	}
 	upstreamSpy := &fakeUpstream{
 		responseStatus: http.StatusOK,
 		responseBody:   `{"id":"msg_1","type":"message","role":"assistant","model":"claude-sonnet-4-20250514","content":[{"type":"text","text":"hello"}],"stop_reason":"end_turn","usage":{"input_tokens":120,"output_tokens":90}}`,
@@ -1788,18 +1871,17 @@ func startProxyWithFakeAnthropicUpstream(t *testing.T) anthropicFixture {
 
 	origNewProxyServer := newProxyServer
 	newProxyServer = func(cfg RuntimeConfig) *Server {
-		return NewServer(cfg, recorder, nil)
+		fetcher.creds["anthropic"] = providerCredential("anthropic", upstream.URL, "provider-key")
+		return newServerWithCredentialFetcher(cfg, recorder, nil, fetcher)
 	}
 	t.Cleanup(func() {
 		newProxyServer = origNewProxyServer
 	})
 
 	cfg := RuntimeConfig{
-		SessionID:   "sess-anthropic",
-		ListenAddr:  reserveListenAddrForTest(t),
-		AuthToken:   "tok-anthropic",
-		ProviderURL: upstream.URL,
-		ProviderKey: "provider-key",
+		SessionID:  "sess-anthropic",
+		ListenAddr: reserveListenAddrForTest(t),
+		AuthToken:  "tok-anthropic",
 	}
 
 	result, err := Spawn(cfg)
