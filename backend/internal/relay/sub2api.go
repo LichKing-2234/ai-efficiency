@@ -71,6 +71,12 @@ func (s *sub2apiRelay) SetAdminAPIKey(apiKey string) {
 	s.adminKey = strings.TrimSpace(apiKey)
 }
 
+func (s *sub2apiRelay) inferenceAPIKey() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return strings.TrimSpace(s.apiKey)
+}
+
 func (s *sub2apiRelay) Ping(ctx context.Context) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.adminURL+"/health", nil)
 	if err != nil {
@@ -292,7 +298,7 @@ func (s *sub2apiRelay) ChatCompletion(ctx context.Context, req ChatCompletionReq
 	if err != nil {
 		return nil, fmt.Errorf("relay: chat completion: %w", err)
 	}
-	httpReq.Header.Set("Authorization", "Bearer "+s.adminAPIKey())
+	httpReq.Header.Set("Authorization", "Bearer "+s.inferenceAPIKey())
 	httpReq.Header.Set("Content-Type", "application/json")
 
 	resp, err := s.client.Do(httpReq)
@@ -341,7 +347,7 @@ func (s *sub2apiRelay) ChatCompletionWithTools(ctx context.Context, req ChatComp
 	if err != nil {
 		return nil, fmt.Errorf("relay: chat completion with tools: %w", err)
 	}
-	httpReq.Header.Set("Authorization", "Bearer "+s.adminAPIKey())
+	httpReq.Header.Set("Authorization", "Bearer "+s.inferenceAPIKey())
 	httpReq.Header.Set("Content-Type", "application/json")
 
 	resp, err := s.client.Do(httpReq)

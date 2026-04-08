@@ -17,7 +17,11 @@ func newTestProvider(t *testing.T, handler http.Handler) relay.Provider {
 	t.Helper()
 	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
-	return relay.NewSub2apiProvider(srv.Client(), srv.URL+"/v1", srv.URL, "test-admin-key", "test-model", zap.NewNop())
+	p := relay.NewSub2apiProvider(srv.Client(), srv.URL+"/v1", srv.URL, "test-llm-key", "test-model", zap.NewNop())
+	if setter, ok := p.(interface{ SetAdminAPIKey(string) }); ok {
+		setter.SetAdminAPIKey("test-admin-key")
+	}
+	return p
 }
 
 func TestName(t *testing.T) {
@@ -446,8 +450,8 @@ func TestChatCompletion(t *testing.T) {
 		if r.Method != http.MethodPost {
 			t.Errorf("expected POST, got %s", r.Method)
 		}
-		if r.Header.Get("Authorization") != "Bearer test-admin-key" {
-			t.Errorf("expected API key in Authorization header")
+		if r.Header.Get("Authorization") != "Bearer test-llm-key" {
+			t.Errorf("expected relay api key in Authorization header, got %q", r.Header.Get("Authorization"))
 		}
 		var body map[string]any
 		json.NewDecoder(r.Body).Decode(&body)
@@ -470,6 +474,11 @@ func TestChatCompletion(t *testing.T) {
 	})
 
 	p := newTestProvider(t, mux)
+	if setter, ok := p.(interface{ SetAdminAPIKey(string) }); ok {
+		setter.SetAdminAPIKey("test-admin-key")
+	} else {
+		t.Fatal("provider does not support SetAdminAPIKey")
+	}
 	resp, err := p.ChatCompletion(context.Background(), relay.ChatCompletionRequest{
 		Messages: []relay.ChatMessage{{Role: "user", Content: "Hi"}},
 	})
@@ -487,6 +496,9 @@ func TestChatCompletion(t *testing.T) {
 func TestChatCompletionWithTools(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/chat/completions", func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer test-llm-key" {
+			t.Fatalf("expected relay api key in Authorization header, got %q", r.Header.Get("Authorization"))
+		}
 		var body map[string]any
 		json.NewDecoder(r.Body).Decode(&body)
 		tools, ok := body["tools"]
@@ -523,6 +535,11 @@ func TestChatCompletionWithTools(t *testing.T) {
 	})
 
 	p := newTestProvider(t, mux)
+	if setter, ok := p.(interface{ SetAdminAPIKey(string) }); ok {
+		setter.SetAdminAPIKey("test-admin-key")
+	} else {
+		t.Fatal("provider does not support SetAdminAPIKey")
+	}
 	resp, err := p.ChatCompletionWithTools(context.Background(),
 		relay.ChatCompletionRequest{
 			Messages: []relay.ChatMessage{{Role: "user", Content: "What's the weather?"}},
