@@ -86,6 +86,8 @@ source "$ENV_FILE"
 set +a
 
 check_required_var AE_RELAY_URL
+check_required_var AE_AUTH_JWT_SECRET
+check_required_var AE_ENCRYPTION_KEY
 
 COMPOSE_FILE="$ROOT_DIR/deploy/docker-compose.yml"
 if [[ "$MODE" == "external" ]]; then

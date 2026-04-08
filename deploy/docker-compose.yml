@@ -1,8 +1,6 @@
 services:
   postgres:
     image: postgres:16-alpine
-    env_file:
-      - .env
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
@@ -19,8 +17,6 @@ services:
 
   redis:
     image: redis:7-alpine
-    env_file:
-      - .env
     ports:
       - "127.0.0.1:6379:6379"
     volumes:
@@ -33,8 +29,26 @@ services:
 
   backend:
     image: ${AE_IMAGE_REPOSITORY}:${AE_IMAGE_TAG}
-    env_file:
-      - .env
+    environment:
+      AE_SERVER_PORT: "${AE_SERVER_PORT}"
+      AE_SERVER_MODE: "${AE_SERVER_MODE}"
+      AE_SERVER_FRONTEND_URL: "${AE_SERVER_FRONTEND_URL}"
+      AE_DB_DSN: "${AE_DB_DSN}"
+      AE_REDIS_ADDR: "${AE_REDIS_ADDR}"
+      AE_REDIS_PASSWORD: "${AE_REDIS_PASSWORD}"
+      AE_REDIS_DB: "${AE_REDIS_DB}"
+      AE_RELAY_URL: "${AE_RELAY_URL}"
+      AE_RELAY_API_KEY: "${AE_RELAY_API_KEY}"
+      AE_RELAY_ADMIN_API_KEY: "${AE_RELAY_ADMIN_API_KEY}"
+      AE_AUTH_JWT_SECRET: "${AE_AUTH_JWT_SECRET}"
+      AE_ENCRYPTION_KEY: "${AE_ENCRYPTION_KEY}"
+      AE_DEPLOYMENT_MODE: "${AE_DEPLOYMENT_MODE}"
+      AE_DEPLOYMENT_STATE_DIR: "${AE_DEPLOYMENT_STATE_DIR}"
+      AE_DEPLOYMENT_UPDATE_ENABLED: "${AE_DEPLOYMENT_UPDATE_ENABLED}"
+      AE_DEPLOYMENT_UPDATE_APPLY_ENABLED: "${AE_DEPLOYMENT_UPDATE_APPLY_ENABLED}"
+      AE_DEPLOYMENT_UPDATE_RELEASE_API_URL: "${AE_DEPLOYMENT_UPDATE_RELEASE_API_URL}"
+      AE_DEPLOYMENT_UPDATE_UPDATER_URL: "${AE_DEPLOYMENT_UPDATE_UPDATER_URL}"
+      AE_DEPLOYMENT_UPDATE_IMAGE_REPOSITORY: "${AE_IMAGE_REPOSITORY}"
     ports:
       - "${AE_SERVER_PORT}:8081"
     volumes:
@@ -56,9 +70,11 @@ services:
   updater:
     image: ${AE_IMAGE_REPOSITORY}:${AE_IMAGE_TAG}
     command: ["./updater"]
-    env_file:
-      - .env
     environment:
+      AE_SERVER_MODE: "${AE_SERVER_MODE}"
+      AE_DEPLOYMENT_STATE_DIR: "${AE_DEPLOYMENT_STATE_DIR}"
+      AE_UPDATER_ENV_FILE: "${AE_UPDATER_ENV_FILE}"
+      AE_UPDATER_SERVICE_NAME: "${AE_UPDATER_SERVICE_NAME}"
       AE_UPDATER_COMPOSE_FILE: /work/deploy/docker-compose.yml
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
