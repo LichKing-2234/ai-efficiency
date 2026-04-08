@@ -1,0 +1,89 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: backend/go.mod
+          check-latest: false
+          cache-dependency-path: backend/go.sum
+      - name: Test backend
+        working-directory: backend
+        run: go test ./...
+
+  ae-cli:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: ae-cli/go.mod
+          check-latest: false
+          cache-dependency-path: ae-cli/go.sum
+      - name: Test ae-cli
+        working-directory: ae-cli
+        run: go test ./...
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+      - name: Test frontend
+        working-directory: frontend
+        run: pnpm test
+      - name: Build frontend
+        working-directory: frontend
+        run: pnpm build
+
+  deploy-static:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Validate deploy shell script
+        run: bash -n deploy/docker-deploy.sh
+      - name: Validate compose configs
+        run: |
+          validate_compose() {
+            local compose_file="$1"
+            if docker compose --env-file deploy/.env.example -f "$compose_file" config >/dev/null 2>&1; then
+              echo "validated with docker compose: $compose_file"
+              return 0
+            fi
+            if command -v docker-compose >/dev/null 2>&1; then
+              docker-compose --env-file deploy/.env.example -f "$compose_file" config >/dev/null
+              echo "validated with docker-compose: $compose_file"
+              return 0
+            fi
+            echo "no compatible compose implementation available" >&2
+            exit 1
+          }
+
+          validate_compose deploy/docker-compose.yml
+          validate_compose deploy/docker-compose.external.yml
