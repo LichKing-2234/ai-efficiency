@@ -21,7 +21,7 @@ builds:
         goarch: arm64
     ldflags:
       - -s -w
-      - -X github.com/ai-efficiency/backend/internal/deployment.BuildVersion={{ .Version }}
+      - -X github.com/ai-efficiency/backend/internal/deployment.BuildVersion=v{{ .Version }}
       - -X github.com/ai-efficiency/backend/internal/deployment.BuildCommit={{ .Commit }}
       - -X github.com/ai-efficiency/backend/internal/deployment.BuildTime={{ .Date }}
 
@@ -43,7 +43,7 @@ builds:
         goarch: arm64
     ldflags:
       - -s -w
-      - -X github.com/ai-efficiency/backend/internal/deployment.BuildVersion={{ .Version }}
+      - -X github.com/ai-efficiency/backend/internal/deployment.BuildVersion=v{{ .Version }}
       - -X github.com/ai-efficiency/backend/internal/deployment.BuildCommit={{ .Commit }}
       - -X github.com/ai-efficiency/backend/internal/deployment.BuildTime={{ .Date }}
 
@@ -65,7 +65,7 @@ builds:
         goarch: arm64
     ldflags:
       - -s -w
-      - -X github.com/ai-efficiency/ae-cli/internal/buildinfo.Version={{ .Version }}
+      - -X github.com/ai-efficiency/ae-cli/internal/buildinfo.Version=v{{ .Version }}
 
 archives:
   - id: backend-bundle

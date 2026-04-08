@@ -37,7 +37,7 @@ jobs:
             TAG="${GITHUB_REF#refs/tags/}"
           fi
 
-          echo "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'
+          echo "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$'
 
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             if ! git rev-parse "$TAG" >/dev/null 2>&1; then
@@ -148,6 +148,6 @@ jobs:
             ghcr.io/${{ needs.prepare.outputs.owner_lower }}/ai-efficiency:${{ needs.prepare.outputs.major }}
             ghcr.io/${{ needs.prepare.outputs.owner_lower }}/ai-efficiency:latest
           build-args: |
-            APP_VERSION=${{ needs.prepare.outputs.version }}
+            APP_VERSION=${{ needs.prepare.outputs.tag }}
             APP_COMMIT=${{ github.sha }}
             APP_BUILD_TIME=${{ needs.prepare.outputs.build_time }}
