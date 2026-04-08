@@ -84,6 +84,9 @@ func main() {
 		zap.String("commit", versionInfo.Commit),
 		zap.String("build_time", versionInfo.BuildTime),
 	)
+	if deployment.RequireExplicitDBDSN(versionInfo, cfg.DB.DSN) {
+		logger.Fatal("DB.DSN is required for release builds; SQLite fallback is only available in dev builds")
+	}
 
 	// Set gin mode
 	if cfg.Server.Mode == "release" {
