@@ -17,6 +17,14 @@ bash deploy/docker-deploy.sh
 docker-compose --env-file deploy/.env -f deploy/docker-compose.yml up -d
 ```
 
+`deploy/docker-deploy.sh` will:
+
+- create `deploy/.env` if it does not exist
+- auto-generate `AE_AUTH_JWT_SECRET` if blank
+- auto-generate `AE_ENCRYPTION_KEY` if blank
+- auto-generate `POSTGRES_PASSWORD` for bundled mode if blank
+- validate relay reachability and compose parsing before startup
+
 ## External Mode
 
 ```bash
@@ -30,8 +38,6 @@ docker-compose --env-file deploy/.env -f deploy/docker-compose.external.yml up -
 At minimum, set these in `deploy/.env` before first deploy:
 
 - `AE_RELAY_URL`
-- `AE_AUTH_JWT_SECRET`
-- `AE_ENCRYPTION_KEY`
 - `COMPOSE_PROJECT_NAME`
 - `AE_UPDATER_IMAGE_REPOSITORY`
 - `AE_UPDATER_IMAGE_TAG`
@@ -40,6 +46,12 @@ For external mode, also set:
 
 - `AE_DB_DSN`
 - `AE_REDIS_ADDR`
+
+These can be left blank on first run because `deploy/docker-deploy.sh` will generate them:
+
+- `AE_AUTH_JWT_SECRET`
+- `AE_ENCRYPTION_KEY`
+- `POSTGRES_PASSWORD`
 
 ## Health And Status
 

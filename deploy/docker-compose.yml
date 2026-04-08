@@ -2,23 +2,30 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-    ports:
-      - "127.0.0.1:5432:5432"
+      PGDATA: /var/lib/postgresql/data
+      POSTGRES_USER: "${POSTGRES_USER}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+      POSTGRES_DB: "${POSTGRES_DB}"
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s
       timeout: 3s
       retries: 5
 
   redis:
     image: redis:7-alpine
-    ports:
-      - "127.0.0.1:6379:6379"
+    command: >
+      sh -c '
+        redis-server
+        --save 60 1
+        --appendonly yes
+        --appendfsync everysec
+        ${REDIS_PASSWORD:+--requirepass "$REDIS_PASSWORD"}'
+    environment:
+      REDISCLI_AUTH: "${REDIS_PASSWORD}"
     volumes:
       - redisdata:/data
     healthcheck:
@@ -33,10 +40,10 @@ services:
       AE_SERVER_PORT: "${AE_SERVER_PORT}"
       AE_SERVER_MODE: "${AE_SERVER_MODE}"
       AE_SERVER_FRONTEND_URL: "${AE_SERVER_FRONTEND_URL}"
-      AE_DB_DSN: "${AE_DB_DSN}"
-      AE_REDIS_ADDR: "${AE_REDIS_ADDR}"
-      AE_REDIS_PASSWORD: "${AE_REDIS_PASSWORD}"
-      AE_REDIS_DB: "${AE_REDIS_DB}"
+      AE_DB_DSN: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable"
+      AE_REDIS_ADDR: "redis:6379"
+      AE_REDIS_PASSWORD: "${REDIS_PASSWORD}"
+      AE_REDIS_DB: "0"
       AE_RELAY_URL: "${AE_RELAY_URL}"
       AE_RELAY_API_KEY: "${AE_RELAY_API_KEY}"
       AE_RELAY_ADMIN_API_KEY: "${AE_RELAY_ADMIN_API_KEY}"

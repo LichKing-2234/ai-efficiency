@@ -14,6 +14,10 @@ require_cmd() {
   fi
 }
 
+generate_secret() {
+  openssl rand -hex 32
+}
+
 ensure_env() {
   if [[ ! -f "$ENV_FILE" ]]; then
     cp "$ROOT_DIR/deploy/.env.example" "$ENV_FILE"
@@ -25,6 +29,39 @@ check_required_var() {
   if [[ -z "${!name:-}" ]]; then
     echo "missing required env var: $name" >&2
     exit 1
+  fi
+}
+
+set_env_var() {
+  local name="$1"
+  local value="$2"
+  python3 - "$ENV_FILE" "$name" "$value" <<'PY'
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+name = sys.argv[2]
+value = sys.argv[3]
+lines = path.read_text().splitlines()
+prefix = f"{name}="
+for i, line in enumerate(lines):
+    if line.startswith(prefix):
+        lines[i] = prefix + value
+        break
+else:
+    lines.append(prefix + value)
+path.write_text("\n".join(lines) + "\n")
+PY
+}
+
+ensure_generated_var() {
+  local name="$1"
+  local generated=""
+  if [[ -z "${!name:-}" ]]; then
+    generated="$(generate_secret)"
+    set_env_var "$name" "$generated"
+    export "$name=$generated"
+    echo "generated $name"
   fi
 }
 
@@ -80,7 +117,17 @@ extract_redis_host_port() {
 
 require_cmd docker
 require_cmd curl
+require_cmd openssl
+require_cmd python3
 ensure_env
+
+set -a
+source "$ENV_FILE"
+set +a
+
+ensure_generated_var AE_AUTH_JWT_SECRET
+ensure_generated_var AE_ENCRYPTION_KEY
+ensure_generated_var POSTGRES_PASSWORD
 
 set -a
 source "$ENV_FILE"
@@ -92,6 +139,9 @@ check_required_var AE_ENCRYPTION_KEY
 check_required_var COMPOSE_PROJECT_NAME
 check_required_var AE_UPDATER_IMAGE_REPOSITORY
 check_required_var AE_UPDATER_IMAGE_TAG
+check_required_var POSTGRES_USER
+check_required_var POSTGRES_PASSWORD
+check_required_var POSTGRES_DB
 
 COMPOSE_FILE="$ROOT_DIR/deploy/docker-compose.yml"
 if [[ "$MODE" == "external" ]]; then
