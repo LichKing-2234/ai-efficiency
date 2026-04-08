@@ -38,19 +38,19 @@ func (h *DeploymentHandler) Ready(c *gin.Context) {
 func (h *DeploymentHandler) Status(c *gin.Context) {
 	resp, err := h.status.Status(c.Request.Context())
 	if err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{"code": 502, "message": "failed to read deployment status"})
+		c.JSON(http.StatusBadGateway, gin.H{"code": 502, "message": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, resp)
+	c.JSON(http.StatusOK, gin.H{"code": 200, "data": resp})
 }
 
 func (h *DeploymentHandler) CheckForUpdate(c *gin.Context) {
 	resp, err := h.status.CheckForUpdate(c.Request.Context())
 	if err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{"code": 502, "message": "failed to check for updates"})
+		c.JSON(http.StatusBadGateway, gin.H{"code": 502, "message": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, resp)
+	c.JSON(http.StatusOK, gin.H{"code": 200, "data": resp})
 }
 
 func (h *DeploymentHandler) ApplyUpdate(c *gin.Context) {
@@ -62,17 +62,17 @@ func (h *DeploymentHandler) ApplyUpdate(c *gin.Context) {
 
 	resp, err := h.status.ApplyUpdate(c.Request.Context(), req)
 	if err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{"code": 502, "message": "failed to apply update"})
+		c.JSON(http.StatusBadGateway, gin.H{"code": 502, "message": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, resp)
+	c.JSON(http.StatusOK, gin.H{"code": 200, "data": resp})
 }
 
 func (h *DeploymentHandler) RollbackUpdate(c *gin.Context) {
 	resp, err := h.status.RollbackUpdate(c.Request.Context())
 	if err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{"code": 502, "message": "failed to rollback update"})
+		c.JSON(http.StatusBadGateway, gin.H{"code": 502, "message": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, resp)
+	c.JSON(http.StatusOK, gin.H{"code": 200, "data": resp})
 }

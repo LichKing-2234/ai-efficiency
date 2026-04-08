@@ -129,6 +129,13 @@ func TestDeploymentStatusAdminSuccess(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
+	resp := parseFullResponse(t, w)
+	if code, ok := resp["code"].(float64); !ok || int(code) != 200 {
+		t.Fatalf("expected response code 200, got %+v", resp["code"])
+	}
+	if _, ok := resp["data"].(map[string]interface{}); !ok {
+		t.Fatalf("expected data object, got %T", resp["data"])
+	}
 }
 
 func TestDeploymentStatusReturns502WhenReaderFails(t *testing.T) {
@@ -144,6 +151,10 @@ func TestDeploymentStatusReturns502WhenReaderFails(t *testing.T) {
 	w := doFullRequest(env, http.MethodGet, "/api/v1/settings/deployment", nil)
 	if w.Code != http.StatusBadGateway {
 		t.Fatalf("expected 502, got %d: %s", w.Code, w.Body.String())
+	}
+	resp := parseFullResponse(t, w)
+	if msg, _ := resp["message"].(string); msg != "boom" {
+		t.Fatalf("expected message boom, got %q", msg)
 	}
 }
 
@@ -173,5 +184,29 @@ func TestDeploymentUpdateRoutesRequireAdmin(t *testing.T) {
 		if w.Code != http.StatusForbidden {
 			t.Fatalf("path %s expected 403, got %d: %s", tc.path, w.Code, w.Body.String())
 		}
+	}
+}
+
+func TestDeploymentApplyUpdateSuccessEnvelope(t *testing.T) {
+	env := setupFullTestEnvWithDeployment(t, NewDeploymentHandler(
+		deployment.NewHealthService(
+			deployment.FuncPinger(func(context.Context) error { return nil }),
+			deployment.FuncPinger(func(context.Context) error { return nil }),
+			deployment.FuncPinger(func(context.Context) error { return nil }),
+			deployment.CurrentVersion(),
+		),
+		stubDeploymentStatusReader{},
+	))
+
+	w := doFullRequest(env, http.MethodPost, "/api/v1/settings/deployment/update/apply", bytes.NewReader([]byte(`{"target_version":"v0.5.0"}`)))
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	resp := parseFullResponse(t, w)
+	if code, ok := resp["code"].(float64); !ok || int(code) != 200 {
+		t.Fatalf("expected response code 200, got %+v", resp["code"])
+	}
+	if _, ok := resp["data"].(map[string]interface{}); !ok {
+		t.Fatalf("expected data object, got %T", resp["data"])
 	}
 }
