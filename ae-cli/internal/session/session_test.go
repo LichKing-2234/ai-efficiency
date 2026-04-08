@@ -357,6 +357,10 @@ func TestManagerStartWritesCodexAndClaudeHookConfig(t *testing.T) {
 	if codexHome == "" {
 		t.Fatalf("CODEX_HOME = %q, want non-empty", codexHome)
 	}
+	wantWorkspaceCodexHome := filepath.Join(state.WorkspaceRoot, ".ae", "codex-home")
+	if codexHome != wantWorkspaceCodexHome {
+		t.Fatalf("CODEX_HOME = %q, want %q", codexHome, wantWorkspaceCodexHome)
+	}
 	codexConfigData, err := os.ReadFile(filepath.Join(codexHome, "config.toml"))
 	if err != nil {
 		t.Fatalf("read codex config.toml: %v", err)
@@ -557,9 +561,98 @@ func TestManagerStopRemovesProxyRuntime(t *testing.T) {
 		t.Fatalf("expected runtime bundle to be removed, got err=%v", err)
 	}
 	if codexHome := rt.EnvBundle["CODEX_HOME"]; codexHome != "" {
-		if _, err := os.Stat(codexHome); !os.IsNotExist(err) {
-			t.Fatalf("expected codex home removed on stop, got err=%v", err)
+		if _, err := os.Stat(codexHome); err != nil {
+			t.Fatalf("expected codex home preserved on stop, got err=%v", err)
 		}
+	}
+}
+
+func TestManagerStartReusesWorkspaceScopedCodexHomeAcrossSessions(t *testing.T) {
+	state1, rt1, mgr1 := startSessionWithFakeBootstrap(t)
+	codexHome1 := rt1.EnvBundle["CODEX_HOME"]
+	if codexHome1 == "" {
+		t.Fatal("expected first CODEX_HOME")
+	}
+
+	historyPath := filepath.Join(codexHome1, "history.jsonl")
+	if err := os.WriteFile(historyPath, []byte("persist-me\n"), 0o600); err != nil {
+		t.Fatalf("write codex history: %v", err)
+	}
+
+	if _, err := mgr1.Stop(); err != nil {
+		t.Fatalf("Stop first session: %v", err)
+	}
+	origSpawn := spawnProxyProcess
+	origStop := stopProxyProcess
+	spawnProxyProcess = func(cfg proxy.RuntimeConfig) (proxy.SpawnResult, error) {
+		return proxy.SpawnResult{
+			PID:        31338,
+			ListenAddr: "127.0.0.1:17889",
+			ConfigPath: filepath.Join(t.TempDir(), "runtime.json"),
+		}, nil
+	}
+	stopProxyProcess = func(req proxy.StopRequest) error { return nil }
+	t.Cleanup(func() {
+		spawnProxyProcess = origSpawn
+		stopProxyProcess = origStop
+	})
+
+	origWD, _ := os.Getwd()
+	if err := os.Chdir(state1.WorkspaceRoot); err != nil {
+		t.Fatalf("chdir workspace: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(origWD) })
+
+	now := time.Now().UTC().Truncate(time.Second)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/api/v1/sessions/bootstrap" {
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"data": client.BootstrapSessionResponse{
+					SessionID:     "boot-proxy-2",
+					StartedAt:     now,
+					RelayAPIKeyID: 1,
+					ProviderName:  "sub2api",
+					RuntimeRef:    "rt-proxy-2",
+					EnvBundle: map[string]string{
+						"AE_SESSION_ID":   "boot-proxy-2",
+						"OPENAI_BASE_URL": "http://sub2api.test",
+						"OPENAI_API_KEY":  "test-key",
+					},
+					KeyExpiresAt: now.Add(1 * time.Hour),
+				},
+			})
+			return
+		}
+		if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/stop") {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+	}))
+	defer srv.Close()
+
+	m2 := NewManager(client.New(srv.URL, "tok"), &config.Config{})
+	state2, err := m2.Start()
+	if err != nil {
+		t.Fatalf("Start second session: %v", err)
+	}
+	rt2, err := ReadRuntimeBundle(state2.ID)
+	if err != nil {
+		t.Fatalf("ReadRuntimeBundle second: %v", err)
+	}
+
+	codexHome2 := rt2.EnvBundle["CODEX_HOME"]
+	if codexHome2 != codexHome1 {
+		t.Fatalf("CODEX_HOME second = %q, want reuse %q", codexHome2, codexHome1)
+	}
+
+	data, err := os.ReadFile(historyPath)
+	if err != nil {
+		t.Fatalf("read codex history after restart: %v", err)
+	}
+	if string(data) != "persist-me\n" {
+		t.Fatalf("history content = %q, want preserved", string(data))
 	}
 }
 
@@ -1366,9 +1459,9 @@ supports_websockets = false
 	if codexHome == "" {
 		t.Fatalf("runtime CODEX_HOME is empty: %+v", rt.EnvBundle)
 	}
-	wantCodexHomePrefix := runtimeDir("boot-sess-1")
-	if !strings.HasPrefix(codexHome, wantCodexHomePrefix) {
-		t.Fatalf("runtime CODEX_HOME = %q, want under %q", codexHome, wantCodexHomePrefix)
+	wantCodexHome := filepath.Join(wantWorkspaceRoot, ".ae", "codex-home")
+	if codexHome != wantCodexHome {
+		t.Fatalf("runtime CODEX_HOME = %q, want %q", codexHome, wantCodexHome)
 	}
 	codexConfigPath := filepath.Join(codexHome, "config.toml")
 	codexConfigData, err := os.ReadFile(codexConfigPath)

@@ -160,7 +160,7 @@ func (m *Manager) Start() (*State, error) {
 	if err != nil {
 		return nil, rollback(fmt.Errorf("resolving ae-cli executable: %w", err))
 	}
-	codexHome := filepath.Join(runtimeDir(rt.SessionID), "codex-home")
+	codexHome := WorkspaceCodexHome(gc.workspaceRoot)
 	if err := toolconfig.WriteCodexSessionConfig(codexHome, toolconfig.CodexConfig{
 		BaseURL:  "http://" + rt.Proxy.ListenAddr + "/openai/v1",
 		TokenEnv: "AE_LOCAL_PROXY_TOKEN",
@@ -541,11 +541,6 @@ func (m *Manager) cleanupLocal(sessionID, workspaceRoot string) error {
 				return err
 			}
 		}
-	}
-	if rt != nil {
-		_ = os.RemoveAll(strings.TrimSpace(rt.EnvBundle["CODEX_HOME"]))
-	} else if strings.TrimSpace(sessionID) != "" {
-		_ = os.RemoveAll(filepath.Join(runtimeDir(sessionID), "codex-home"))
 	}
 	cleanupClaudeConfig := func(workspaceRoot string) {
 		workspaceRoot = strings.TrimSpace(workspaceRoot)

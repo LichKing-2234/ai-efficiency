@@ -95,6 +95,10 @@ func markerPath(workspaceRoot string) string {
 	return filepath.Join(workspaceRoot, ".ae", "session.json")
 }
 
+func WorkspaceCodexHome(workspaceRoot string) string {
+	return filepath.Join(workspaceRoot, ".ae", "codex-home")
+}
+
 func WriteMarker(workspaceRoot string, m *Marker) error {
 	if m == nil {
 		return fmt.Errorf("marker is nil")
