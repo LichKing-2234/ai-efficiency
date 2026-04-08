@@ -7,25 +7,25 @@ import (
 )
 
 func TestLoadDefaults(t *testing.T) {
-	// Load with no config file — should use defaults
-	cfg, err := Load("/nonexistent/path/config.yaml")
-	if err == nil {
-		// If no error, check defaults
-		if cfg.Server.Port != 8081 {
-			t.Errorf("default port = %d, want 8081", cfg.Server.Port)
-		}
-		if cfg.Server.Mode != "debug" {
-			t.Errorf("default mode = %s, want debug", cfg.Server.Mode)
-		}
-		if cfg.DB.MaxOpenConns != 25 {
-			t.Errorf("default max_open_conns = %d, want 25", cfg.DB.MaxOpenConns)
-		}
-		if cfg.Auth.AccessTokenTTL != 7200 {
-			t.Errorf("default access_token_ttl = %d, want 7200", cfg.Auth.AccessTokenTTL)
-		}
-		if cfg.Auth.RefreshTokenTTL != 604800 {
-			t.Errorf("default refresh_token_ttl = %d, want 604800", cfg.Auth.RefreshTokenTTL)
-		}
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	if cfg.Server.Port != 8081 {
+		t.Errorf("default port = %d, want 8081", cfg.Server.Port)
+	}
+	if cfg.Server.Mode != "debug" {
+		t.Errorf("default mode = %s, want debug", cfg.Server.Mode)
+	}
+	if cfg.DB.MaxOpenConns != 25 {
+		t.Errorf("default max_open_conns = %d, want 25", cfg.DB.MaxOpenConns)
+	}
+	if cfg.Auth.AccessTokenTTL != 7200 {
+		t.Errorf("default access_token_ttl = %d, want 7200", cfg.Auth.AccessTokenTTL)
+	}
+	if cfg.Auth.RefreshTokenTTL != 604800 {
+		t.Errorf("default refresh_token_ttl = %d, want 604800", cfg.Auth.RefreshTokenTTL)
 	}
 }
 
@@ -69,12 +69,29 @@ encryption:
 
 func TestLoadEnvOverride(t *testing.T) {
 	t.Setenv("AE_SERVER_PORT", "7777")
+	t.Setenv("AE_ENCRYPTION_KEY", "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789")
+	t.Setenv("AE_RELAY_URL", "http://relay.internal:4000")
+	t.Setenv("AE_RELAY_API_KEY", "relay-key-from-env")
+	t.Setenv("AE_AUTH_LDAP_URL", "ldap://env-ldap.example.com:389")
 
-	cfg, err := Load("/nonexistent/path.yaml")
-	if err == nil {
-		if cfg.Server.Port != 7777 {
-			t.Errorf("port = %d, want 7777 (from env)", cfg.Server.Port)
-		}
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Server.Port != 7777 {
+		t.Errorf("port = %d, want 7777 (from env)", cfg.Server.Port)
+	}
+	if cfg.Encryption.Key != "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789" {
+		t.Errorf("encryption key = %q, want env value", cfg.Encryption.Key)
+	}
+	if cfg.Relay.URL != "http://relay.internal:4000" {
+		t.Errorf("relay url = %q, want %q", cfg.Relay.URL, "http://relay.internal:4000")
+	}
+	if cfg.Relay.APIKey != "relay-key-from-env" {
+		t.Errorf("relay api key = %q, want %q", cfg.Relay.APIKey, "relay-key-from-env")
+	}
+	if cfg.Auth.LDAP.URL != "ldap://env-ldap.example.com:389" {
+		t.Errorf("auth.ldap.url = %q, want %q", cfg.Auth.LDAP.URL, "ldap://env-ldap.example.com:389")
 	}
 }
 
@@ -109,9 +126,9 @@ func TestLoadEmptyPath(t *testing.T) {
 }
 
 func TestLoadAllDefaults(t *testing.T) {
-	cfg, err := Load("/nonexistent/path/config.yaml")
+	cfg, err := Load("")
 	if err != nil {
-		return
+		t.Fatalf("Load() error = %v", err)
 	}
 
 	// Verify all defaults
