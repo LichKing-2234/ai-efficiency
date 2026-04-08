@@ -259,6 +259,16 @@ func (m *Manager) Shutdown(ctx context.Context) error {
 	return nil
 }
 
+func (m *Manager) Heartbeat(ctx context.Context, sessionID string) error {
+	if m == nil || m.client == nil {
+		return fmt.Errorf("heartbeat: client is not configured")
+	}
+	if strings.TrimSpace(sessionID) == "" {
+		return fmt.Errorf("heartbeat: session id is required")
+	}
+	return m.client.Heartbeat(ctx, sessionID)
+}
+
 // SaveState persists the session state to disk.
 func (m *Manager) SaveState(state *State) error {
 	// Prefer workspace marker when present.

@@ -10,6 +10,7 @@ import (
 
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/ent/enttest"
+	"github.com/ai-efficiency/backend/ent/session"
 	"github.com/ai-efficiency/backend/ent/sessionworkspace"
 	"github.com/ai-efficiency/backend/internal/auth"
 	"github.com/ai-efficiency/backend/internal/pkg"
@@ -303,6 +304,78 @@ func TestBootstrapNoLongerCreatesRelayKeyOrEnvSecrets(t *testing.T) {
 		if _, ok := resp.EnvBundle[forbidden]; ok {
 			t.Fatalf("bootstrap env must not include %s: %+v", forbidden, resp.EnvBundle)
 		}
+	}
+}
+
+func TestExpireStaleSessionsMarksOnlyOldActiveSessionsAbandoned(t *testing.T) {
+	ctx := context.Background()
+	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+
+	sp := client.ScmProvider.Create().
+		SetName("mock-gh").
+		SetType("github").
+		SetBaseURL("https://api.github.com").
+		SetCredentials("enc").
+		SaveX(ctx)
+	rc := client.RepoConfig.Create().
+		SetScmProviderID(sp.ID).
+		SetName("mock-repo").
+		SetFullName("org/mock-repo").
+		SetCloneURL("https://github.com/org/mock-repo.git").
+		SetDefaultBranch("main").
+		SaveX(ctx)
+
+	oldSession := client.Session.Create().
+		SetID(uuid.New()).
+		SetRepoConfigID(rc.ID).
+		SetBranch("main").
+		SetStatus(session.StatusActive).
+		SetStartedAt(time.Now().Add(-2 * time.Hour)).
+		SetLastSeenAt(time.Now().Add(-30 * time.Minute)).
+		SaveX(ctx)
+	freshSession := client.Session.Create().
+		SetID(uuid.New()).
+		SetRepoConfigID(rc.ID).
+		SetBranch("main").
+		SetStatus(session.StatusActive).
+		SetStartedAt(time.Now().Add(-10 * time.Minute)).
+		SetLastSeenAt(time.Now()).
+		SaveX(ctx)
+	completedSession := client.Session.Create().
+		SetID(uuid.New()).
+		SetRepoConfigID(rc.ID).
+		SetBranch("main").
+		SetStatus(session.StatusCompleted).
+		SetStartedAt(time.Now().Add(-2 * time.Hour)).
+		SetLastSeenAt(time.Now().Add(-30 * time.Minute)).
+		SetEndedAt(time.Now().Add(-20 * time.Minute)).
+		SaveX(ctx)
+
+	svc := NewService(client, &fakeRelayProvider{}, nil, "sub2api", "http://relay.local/v1", "42", 2*time.Hour)
+	count, err := svc.ExpireStaleSessions(ctx, time.Now().Add(-5*time.Minute))
+	if err != nil {
+		t.Fatalf("ExpireStaleSessions: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("count = %d, want 1", count)
+	}
+
+	reloadedOld := client.Session.GetX(ctx, oldSession.ID)
+	if reloadedOld.Status != session.StatusAbandoned {
+		t.Fatalf("old status = %q, want %q", reloadedOld.Status, session.StatusAbandoned)
+	}
+	if reloadedOld.EndedAt == nil {
+		t.Fatal("old session ended_at should be set")
+	}
+
+	reloadedFresh := client.Session.GetX(ctx, freshSession.ID)
+	if reloadedFresh.Status != session.StatusActive {
+		t.Fatalf("fresh status = %q, want %q", reloadedFresh.Status, session.StatusActive)
+	}
+
+	reloadedCompleted := client.Session.GetX(ctx, completedSession.ID)
+	if reloadedCompleted.Status != session.StatusCompleted {
+		t.Fatalf("completed status = %q, want %q", reloadedCompleted.Status, session.StatusCompleted)
 	}
 }
 

@@ -40,6 +40,11 @@ import (
 	"go.uber.org/zap"
 )
 
+const (
+	sessionStaleSweepInterval   = 1 * time.Minute
+	sessionStaleAbandonAfter    = 5 * time.Minute
+)
+
 // authTokenAdapter adapts auth.Service to the oauth.TokenGenerator interface.
 type authTokenAdapter struct {
 	authService *auth.Service
@@ -322,11 +327,40 @@ func main() {
 		}
 	}()
 
+	var sweepCancel context.CancelFunc
+	if sessionBootstrapSvc != nil {
+		var sweepCtx context.Context
+		sweepCtx, sweepCancel = context.WithCancel(context.Background())
+		go func() {
+			ticker := time.NewTicker(sessionStaleSweepInterval)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-sweepCtx.Done():
+					return
+				case <-ticker.C:
+					cutoff := time.Now().Add(-sessionStaleAbandonAfter)
+					count, err := sessionBootstrapSvc.ExpireStaleSessions(sweepCtx, cutoff)
+					if err != nil {
+						logger.Warn("expire stale sessions failed", zap.Error(err))
+						continue
+					}
+					if count > 0 {
+						logger.Info("expired stale sessions", zap.Int("count", count), zap.Duration("older_than", sessionStaleAbandonAfter))
+					}
+				}
+			}
+		}()
+	}
+
 	// Graceful shutdown
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 	logger.Info("shutting down server...")
+	if sweepCancel != nil {
+		sweepCancel()
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

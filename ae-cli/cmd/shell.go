@@ -22,11 +22,26 @@ type shellRunner interface {
 	ShouldKillTmux() bool
 }
 
+type ticker interface {
+	Chan() <-chan time.Time
+	Stop()
+}
+
+type realTicker struct{ *time.Ticker }
+
+func (t realTicker) Chan() <-chan time.Time { return t.C }
+
 // newShellRunner is an injection point for cmd tests. Production uses the real
 // interactive shell implementation.
 var newShellRunner = func(cfg *config.Config, state *session.State) shellRunner {
 	return shell.New(cfg, state)
 }
+
+var (
+	shellSignalSet         = []os.Signal{syscall.SIGTERM, syscall.SIGHUP}
+	newHeartbeatTicker     = func(d time.Duration) ticker { return realTicker{time.NewTicker(d)} }
+	shellHeartbeatInterval = 30 * time.Second
+)
 
 func shellToolNames(cfg *config.Config) string {
 	if cfg == nil {
@@ -68,6 +83,33 @@ func applyRuntimeEnvironment(tmuxSession string, rt *session.RuntimeBundle) {
 	}
 }
 
+func startHeartbeatLoop(mgr *session.Manager, state *session.State) func() {
+	if mgr == nil || state == nil || strings.TrimSpace(state.ID) == "" {
+		return func() {}
+	}
+	t := newHeartbeatTicker(shellHeartbeatInterval)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.Chan():
+				hbCtx, hbCancel := context.WithTimeout(context.Background(), 5*time.Second)
+				_ = mgr.Heartbeat(hbCtx, state.ID)
+				hbCancel()
+			}
+		}
+	}()
+	return func() {
+		cancel()
+		t.Stop()
+		<-done
+	}
+}
+
 var shellCmd = &cobra.Command{
 	Use:    "shell",
 	Short:  "Start the interactive agent shell (used internally by tmux)",
@@ -96,7 +138,8 @@ var shellCmd = &cobra.Command{
 		// Register signal handler — only SIGTERM, not SIGINT
 		// SIGINT (Ctrl+C) is used to cancel current input in interactive shells
 		sigCh := make(chan os.Signal, 1)
-		signal.Notify(sigCh, syscall.SIGTERM)
+		signal.Notify(sigCh, shellSignalSet...)
+		stopHeartbeat := startHeartbeatLoop(mgr, state)
 		go func() {
 			sig, ok := <-sigCh
 			if !ok {
@@ -104,6 +147,7 @@ var shellCmd = &cobra.Command{
 			}
 			_ = sig
 			signal.Stop(sigCh)
+			stopHeartbeat()
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			mgr.Shutdown(ctx)
@@ -119,6 +163,7 @@ var shellCmd = &cobra.Command{
 		// Clean up signal goroutine on normal exit
 		signal.Stop(sigCh)
 		close(sigCh)
+		stopHeartbeat()
 
 		// Graceful shutdown: mark session completed on backend
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

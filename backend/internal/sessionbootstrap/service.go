@@ -513,3 +513,38 @@ func (s *Service) Stop(ctx context.Context, sessionID uuid.UUID) (*ent.Session, 
 
 	return updated, nil
 }
+
+func (s *Service) ExpireStaleSessions(ctx context.Context, cutoff time.Time) (int, error) {
+	if s.entClient == nil {
+		return 0, fmt.Errorf("expire stale sessions: ent client is required")
+	}
+
+	now := time.Now()
+	stale, err := s.entClient.Session.Query().
+		Where(
+			session.StatusEQ(session.StatusActive),
+			session.LastSeenAtLTE(cutoff),
+			session.EndedAtIsNil(),
+		).
+		All(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("expire stale sessions: query: %w", err)
+	}
+	if len(stale) == 0 {
+		return 0, nil
+	}
+
+	ids := make([]uuid.UUID, 0, len(stale))
+	for _, sess := range stale {
+		ids = append(ids, sess.ID)
+	}
+	count, err := s.entClient.Session.Update().
+		Where(session.IDIn(ids...)).
+		SetEndedAt(now).
+		SetStatus(session.StatusAbandoned).
+		Save(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("expire stale sessions: update: %w", err)
+	}
+	return count, nil
+}

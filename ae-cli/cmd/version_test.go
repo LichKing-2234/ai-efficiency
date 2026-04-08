@@ -10,6 +10,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -1858,14 +1860,99 @@ func TestShellCommandBannerOutput(t *testing.T) {
 
 type stubShellRunner struct {
 	runCalled bool
+	runFn     func() error
 }
 
 func (s *stubShellRunner) Run() error {
 	s.runCalled = true
+	if s.runFn != nil {
+		return s.runFn()
+	}
 	return nil
 }
 
 func (s *stubShellRunner) ShouldKillTmux() bool { return false }
+
+type stubTicker struct {
+	ch      chan time.Time
+	stopped atomic.Bool
+}
+
+func (t *stubTicker) Chan() <-chan time.Time { return t.ch }
+func (t *stubTicker) Stop()                  { t.stopped.Store(true) }
+
+func TestShellCommandHeartbeatLoop(t *testing.T) {
+	origHome := os.Getenv("HOME")
+	tmpHome := t.TempDir()
+	os.Setenv("HOME", tmpHome)
+	defer os.Setenv("HOME", origHome)
+
+	runner := &stubShellRunner{
+		runFn: func() error {
+			time.Sleep(20 * time.Millisecond)
+			return nil
+		},
+	}
+	origNewShellRunner := newShellRunner
+	newShellRunner = func(cfg *config.Config, state *session.State) shellRunner { return runner }
+	defer func() { newShellRunner = origNewShellRunner }()
+
+	stub := &stubTicker{ch: make(chan time.Time, 4)}
+	origTickerFactory := newHeartbeatTicker
+	newHeartbeatTicker = func(d time.Duration) ticker { return stub }
+	defer func() { newHeartbeatTicker = origTickerFactory }()
+
+	origInterval := shellHeartbeatInterval
+	shellHeartbeatInterval = time.Millisecond
+	defer func() { shellHeartbeatInterval = origInterval }()
+
+	srvCalls := int32(0)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPut && strings.Contains(r.URL.Path, "/api/v1/sessions/") {
+			atomic.AddInt32(&srvCalls, 1)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	cleanup := setupTestGlobals(t, srv)
+	defer cleanup()
+
+	stateDir := filepath.Join(tmpHome, ".ae-cli")
+	os.MkdirAll(stateDir, 0o755)
+	state := session.State{ID: "heartbeat-shell-sess", Repo: "org/repo", Branch: "main", TmuxSession: "ae-test"}
+	data, _ := json.MarshalIndent(state, "", "  ")
+	os.WriteFile(filepath.Join(stateDir, "current-session.json"), data, 0o600)
+
+	go func() {
+		time.Sleep(2 * time.Millisecond)
+		stub.ch <- time.Now()
+		stub.ch <- time.Now()
+	}()
+
+	if err := shellCmd.RunE(shellCmd, nil); err != nil {
+		t.Fatalf("shell command: %v", err)
+	}
+	if atomic.LoadInt32(&srvCalls) == 0 {
+		t.Fatal("expected heartbeat API to be called")
+	}
+	if !stub.stopped.Load() {
+		t.Fatal("expected ticker to be stopped")
+	}
+}
+
+func TestShellCommandListensForSIGHUP(t *testing.T) {
+	found := false
+	for _, sig := range shellSignalSet {
+		if sig == syscall.SIGHUP {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("expected shellSignalSet to include SIGHUP")
+	}
+}
 
 func TestStopCommandWithTmuxSession(t *testing.T) {
 	origHome := os.Getenv("HOME")
