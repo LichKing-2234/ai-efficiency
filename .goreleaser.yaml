@@ -82,6 +82,11 @@ archives:
     files:
       - deploy/README.md
       - deploy/config.example.yaml
+      - deploy/.env.example
+      - deploy/docker-compose.yml
+      - deploy/docker-compose.external.yml
+      - deploy/docker-deploy.sh
+      - deploy/init-db.sql
 
   - id: ae-cli
     ids:
