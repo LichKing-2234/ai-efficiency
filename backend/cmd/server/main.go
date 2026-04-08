@@ -20,6 +20,7 @@ import (
 	"github.com/ai-efficiency/backend/internal/auth"
 	"github.com/ai-efficiency/backend/internal/checkpoint"
 	"github.com/ai-efficiency/backend/internal/config"
+	"github.com/ai-efficiency/backend/internal/deployment"
 	"github.com/ai-efficiency/backend/internal/efficiency"
 	"github.com/ai-efficiency/backend/internal/handler"
 	"github.com/ai-efficiency/backend/internal/middleware"
@@ -70,6 +71,13 @@ func main() {
 	if err != nil {
 		logger.Fatal("load config", zap.Error(err))
 	}
+	versionInfo := deployment.CurrentVersion()
+	logger.Info(
+		"build metadata",
+		zap.String("version", versionInfo.Version),
+		zap.String("commit", versionInfo.Commit),
+		zap.String("build_time", versionInfo.BuildTime),
+	)
 
 	// Set gin mode
 	if cfg.Server.Mode == "release" {

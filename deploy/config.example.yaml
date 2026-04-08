@@ -16,13 +16,6 @@ redis:
   password: ""
   db: 0
 
-# sub2api database (read-only)
-sub2api_db:
-  dsn: "postgres://ae_readonly:ae_readonly@localhost:5432/sub2api?sslmode=disable&default_transaction_read_only=on"
-  max_open_conns: 10
-  max_idle_conns: 3
-  conn_max_lifetime: 300
-
 auth:
   jwt_secret: "change-me-in-production-32-bytes!"
   access_token_ttl: 7200      # 2 hours
