@@ -65,7 +65,7 @@ func (s *UpdaterServer) Apply(ctx context.Context, req ApplyRequest) (UpdateStat
 	}
 
 	return UpdateStatus{
-		Phase:         "applying",
+		Phase:         "updating",
 		TargetVersion: targetVersion,
 	}, nil
 }
@@ -89,7 +89,7 @@ func (s *UpdaterServer) Rollback(ctx context.Context) (UpdateStatus, error) {
 	}
 
 	return UpdateStatus{
-		Phase:         "rollback_completed",
+		Phase:         "rolling_back",
 		TargetVersion: rollbackTag,
 	}, nil
 }

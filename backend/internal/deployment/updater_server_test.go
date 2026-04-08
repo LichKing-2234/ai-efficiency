@@ -39,8 +39,8 @@ func TestUpdaterServerApplyAndRollbackRewriteEnvFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("apply update: %v", err)
 	}
-	if status.Phase != "applying" {
-		t.Fatalf("expected applying phase, got %q", status.Phase)
+	if status.Phase != "updating" {
+		t.Fatalf("expected updating phase, got %q", status.Phase)
 	}
 	if status.TargetVersion != "v0.5.0" {
 		t.Fatalf("expected target version v0.5.0, got %q", status.TargetVersion)
@@ -63,8 +63,8 @@ func TestUpdaterServerApplyAndRollbackRewriteEnvFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("rollback update: %v", err)
 	}
-	if status.Phase != "rollback_completed" {
-		t.Fatalf("expected rollback_completed phase, got %q", status.Phase)
+	if status.Phase != "rolling_back" {
+		t.Fatalf("expected rolling_back phase, got %q", status.Phase)
 	}
 	if status.TargetVersion != "v0.4.0" {
 		t.Fatalf("expected rollback target version v0.4.0, got %q", status.TargetVersion)
