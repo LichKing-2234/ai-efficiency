@@ -46,7 +46,7 @@ func main() {
 	envFile := mustEnv("AE_UPDATER_ENV_FILE")
 	serviceName := mustEnv("AE_UPDATER_SERVICE_NAME")
 	stateDir := mustEnv("AE_DEPLOYMENT_STATE_DIR")
-	projectName := os.Getenv("AE_UPDATER_PROJECT_NAME")
+	projectName := resolveProjectName()
 
 	runner := NewDockerComposeRunner(composeFile, envFile, projectName)
 	server := deployment.NewUpdaterServer(deployment.UpdaterConfig{
@@ -109,4 +109,11 @@ func mustEnv(key string) string {
 		panic(fmt.Sprintf("required env var %s is not set", key))
 	}
 	return value
+}
+
+func resolveProjectName() string {
+	if override := strings.TrimSpace(os.Getenv("AE_UPDATER_PROJECT_NAME")); override != "" {
+		return override
+	}
+	return strings.TrimSpace(os.Getenv("COMPOSE_PROJECT_NAME"))
 }

@@ -58,17 +58,22 @@ func (s *UpdaterServer) Apply(ctx context.Context, req ApplyRequest) (UpdateStat
 		return UpdateStatus{}, fmt.Errorf("write target image tag: %w", err)
 	}
 
-	if err := s.runner.Run(ctx, "pull", s.cfg.ServiceName); err != nil {
+	services := s.managedServices()
+
+	pullArgs := append([]string{"pull"}, services...)
+	if err := s.runner.Run(ctx, pullArgs...); err != nil {
 		if restoreErr := writeEnvVar(s.cfg.EnvFile, "AE_IMAGE_TAG", currentTag); restoreErr != nil {
-			return UpdateStatus{}, fmt.Errorf("docker compose pull %s: %w (restore env tag: %v)", s.cfg.ServiceName, err, restoreErr)
+			return UpdateStatus{}, fmt.Errorf("docker compose pull %v: %w (restore env tag: %v)", services, err, restoreErr)
 		}
-		return UpdateStatus{}, fmt.Errorf("docker compose pull %s: %w", s.cfg.ServiceName, err)
+		return UpdateStatus{}, fmt.Errorf("docker compose pull %v: %w", services, err)
 	}
-	if err := s.runner.Run(ctx, "up", "-d", s.cfg.ServiceName); err != nil {
+
+	upArgs := append([]string{"up", "-d"}, services...)
+	if err := s.runner.Run(ctx, upArgs...); err != nil {
 		if restoreErr := writeEnvVar(s.cfg.EnvFile, "AE_IMAGE_TAG", currentTag); restoreErr != nil {
-			return UpdateStatus{}, fmt.Errorf("docker compose up %s: %w (restore env tag: %v)", s.cfg.ServiceName, err, restoreErr)
+			return UpdateStatus{}, fmt.Errorf("docker compose up %v: %w (restore env tag: %v)", services, err, restoreErr)
 		}
-		return UpdateStatus{}, fmt.Errorf("docker compose up %s: %w", s.cfg.ServiceName, err)
+		return UpdateStatus{}, fmt.Errorf("docker compose up %v: %w", services, err)
 	}
 
 	return UpdateStatus{
@@ -95,17 +100,35 @@ func (s *UpdaterServer) Rollback(ctx context.Context) (UpdateStatus, error) {
 		return UpdateStatus{}, fmt.Errorf("write rollback image tag: %w", err)
 	}
 
-	if err := s.runner.Run(ctx, "up", "-d", s.cfg.ServiceName); err != nil {
+	services := s.managedServices()
+	pullArgs := append([]string{"pull"}, services...)
+	if err := s.runner.Run(ctx, pullArgs...); err != nil {
 		if restoreErr := writeEnvVar(s.cfg.EnvFile, "AE_IMAGE_TAG", currentTag); restoreErr != nil {
-			return UpdateStatus{}, fmt.Errorf("docker compose up %s: %w (restore env tag: %v)", s.cfg.ServiceName, err, restoreErr)
+			return UpdateStatus{}, fmt.Errorf("docker compose pull %v: %w (restore env tag: %v)", services, err, restoreErr)
 		}
-		return UpdateStatus{}, fmt.Errorf("docker compose up %s: %w", s.cfg.ServiceName, err)
+		return UpdateStatus{}, fmt.Errorf("docker compose pull %v: %w", services, err)
+	}
+
+	upArgs := append([]string{"up", "-d"}, services...)
+	if err := s.runner.Run(ctx, upArgs...); err != nil {
+		if restoreErr := writeEnvVar(s.cfg.EnvFile, "AE_IMAGE_TAG", currentTag); restoreErr != nil {
+			return UpdateStatus{}, fmt.Errorf("docker compose up %v: %w (restore env tag: %v)", services, err, restoreErr)
+		}
+		return UpdateStatus{}, fmt.Errorf("docker compose up %v: %w", services, err)
 	}
 
 	return UpdateStatus{
 		Phase:         "rolling_back",
 		TargetVersion: rollbackTag,
 	}, nil
+}
+
+func (s *UpdaterServer) managedServices() []string {
+	serviceName := strings.TrimSpace(s.cfg.ServiceName)
+	if serviceName == "backend" {
+		return []string{"backend", "updater"}
+	}
+	return []string{serviceName}
 }
 
 func readEnvVar(path, key string) (string, error) {
