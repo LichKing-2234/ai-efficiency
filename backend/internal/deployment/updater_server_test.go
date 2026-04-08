@@ -2,6 +2,7 @@ package deployment
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -9,12 +10,19 @@ import (
 )
 
 type composeRunnerStub struct {
-	calls [][]string
+	calls      [][]string
+	failAtCall int
+	err        error
+	callCount  int
 }
 
 func (s *composeRunnerStub) Run(_ context.Context, args ...string) error {
 	call := append([]string(nil), args...)
 	s.calls = append(s.calls, call)
+	s.callCount++
+	if s.failAtCall > 0 && s.callCount == s.failAtCall {
+		return s.err
+	}
 	return nil
 }
 
@@ -82,5 +90,38 @@ func TestUpdaterServerApplyAndRollbackRewriteEnvFile(t *testing.T) {
 		{"up", "-d", "backend"},
 	}) {
 		t.Fatalf("unexpected compose calls after rollback: %#v", runner.calls)
+	}
+}
+
+func TestUpdaterServerApplyRestoresEnvFileWhenComposeUpFails(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	envFile := filepath.Join(tmpDir, ".env")
+	if err := os.WriteFile(envFile, []byte("AE_IMAGE_TAG=v0.4.0\n"), 0o644); err != nil {
+		t.Fatalf("write initial env file: %v", err)
+	}
+
+	runner := &composeRunnerStub{
+		failAtCall: 2,
+		err:        errors.New("compose up failed"),
+	}
+	server := NewUpdaterServer(UpdaterConfig{
+		ComposeFile: "deploy/docker-compose.yml",
+		EnvFile:     envFile,
+		ServiceName: "backend",
+		StateDir:    tmpDir,
+	}, runner)
+
+	if _, err := server.Apply(context.Background(), ApplyRequest{TargetVersion: "v0.5.0"}); err == nil {
+		t.Fatalf("expected apply error")
+	}
+
+	content, err := os.ReadFile(envFile)
+	if err != nil {
+		t.Fatalf("read env file after failed apply: %v", err)
+	}
+	if string(content) != "AE_IMAGE_TAG=v0.4.0\n" {
+		t.Fatalf("expected env tag restored to previous value, got %q", string(content))
 	}
 }

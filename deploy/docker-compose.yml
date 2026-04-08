@@ -71,10 +71,12 @@ services:
     image: ${AE_IMAGE_REPOSITORY}:${AE_IMAGE_TAG}
     command: ["./updater"]
     environment:
+      COMPOSE_PROJECT_NAME: "${COMPOSE_PROJECT_NAME}"
       AE_SERVER_MODE: "${AE_SERVER_MODE}"
       AE_DEPLOYMENT_STATE_DIR: "${AE_DEPLOYMENT_STATE_DIR}"
       AE_UPDATER_ENV_FILE: "${AE_UPDATER_ENV_FILE}"
       AE_UPDATER_SERVICE_NAME: "${AE_UPDATER_SERVICE_NAME}"
+      AE_UPDATER_PROJECT_NAME: "${AE_UPDATER_PROJECT_NAME}"
       AE_UPDATER_COMPOSE_FILE: /work/deploy/docker-compose.yml
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock

@@ -28,7 +28,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
 
 # Stage 3: Final image
 FROM alpine:3.20
-RUN apk add --no-cache ca-certificates tzdata
+RUN apk add --no-cache ca-certificates tzdata docker-cli docker-cli-compose
 WORKDIR /app
 COPY --from=backend-builder /app/server .
 COPY --from=backend-builder /app/updater .

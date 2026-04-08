@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"strings"
 
 	"github.com/ai-efficiency/backend/internal/deployment"
 	"github.com/gin-gonic/gin"
@@ -14,17 +15,23 @@ import (
 type dockerComposeRunner struct {
 	composeFile string
 	envFile     string
+	projectName string
 }
 
-func NewDockerComposeRunner(composeFile, envFile string) *dockerComposeRunner {
+func NewDockerComposeRunner(composeFile, envFile, projectName string) *dockerComposeRunner {
 	return &dockerComposeRunner{
 		composeFile: composeFile,
 		envFile:     envFile,
+		projectName: strings.TrimSpace(projectName),
 	}
 }
 
 func (r *dockerComposeRunner) Run(ctx context.Context, args ...string) error {
-	baseArgs := []string{"compose", "--env-file", r.envFile, "-f", r.composeFile}
+	baseArgs := []string{"compose"}
+	if r.projectName != "" {
+		baseArgs = append(baseArgs, "-p", r.projectName)
+	}
+	baseArgs = append(baseArgs, "--env-file", r.envFile, "-f", r.composeFile)
 	cmd := exec.CommandContext(ctx, "docker", append(baseArgs, args...)...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -39,13 +46,15 @@ func main() {
 	envFile := mustEnv("AE_UPDATER_ENV_FILE")
 	serviceName := mustEnv("AE_UPDATER_SERVICE_NAME")
 	stateDir := mustEnv("AE_DEPLOYMENT_STATE_DIR")
+	projectName := os.Getenv("AE_UPDATER_PROJECT_NAME")
 
-	runner := NewDockerComposeRunner(composeFile, envFile)
+	runner := NewDockerComposeRunner(composeFile, envFile, projectName)
 	server := deployment.NewUpdaterServer(deployment.UpdaterConfig{
 		ComposeFile: composeFile,
 		EnvFile:     envFile,
 		ServiceName: serviceName,
 		StateDir:    stateDir,
+		ProjectName: projectName,
 	}, runner)
 
 	if mode := os.Getenv("AE_SERVER_MODE"); mode == "release" {

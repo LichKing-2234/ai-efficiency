@@ -20,6 +20,7 @@ type UpdaterConfig struct {
 	EnvFile     string
 	ServiceName string
 	StateDir    string
+	ProjectName string
 }
 
 type UpdaterServer struct {
@@ -58,9 +59,15 @@ func (s *UpdaterServer) Apply(ctx context.Context, req ApplyRequest) (UpdateStat
 	}
 
 	if err := s.runner.Run(ctx, "pull", s.cfg.ServiceName); err != nil {
+		if restoreErr := writeEnvVar(s.cfg.EnvFile, "AE_IMAGE_TAG", currentTag); restoreErr != nil {
+			return UpdateStatus{}, fmt.Errorf("docker compose pull %s: %w (restore env tag: %v)", s.cfg.ServiceName, err, restoreErr)
+		}
 		return UpdateStatus{}, fmt.Errorf("docker compose pull %s: %w", s.cfg.ServiceName, err)
 	}
 	if err := s.runner.Run(ctx, "up", "-d", s.cfg.ServiceName); err != nil {
+		if restoreErr := writeEnvVar(s.cfg.EnvFile, "AE_IMAGE_TAG", currentTag); restoreErr != nil {
+			return UpdateStatus{}, fmt.Errorf("docker compose up %s: %w (restore env tag: %v)", s.cfg.ServiceName, err, restoreErr)
+		}
 		return UpdateStatus{}, fmt.Errorf("docker compose up %s: %w", s.cfg.ServiceName, err)
 	}
 
@@ -79,12 +86,19 @@ func (s *UpdaterServer) Rollback(ctx context.Context) (UpdateStatus, error) {
 	if rollbackTag == "" {
 		return UpdateStatus{}, fmt.Errorf("rollback image tag is empty")
 	}
+	currentTag, err := readEnvVar(s.cfg.EnvFile, "AE_IMAGE_TAG")
+	if err != nil {
+		return UpdateStatus{}, fmt.Errorf("read current image tag: %w", err)
+	}
 
 	if err := writeEnvVar(s.cfg.EnvFile, "AE_IMAGE_TAG", rollbackTag); err != nil {
 		return UpdateStatus{}, fmt.Errorf("write rollback image tag: %w", err)
 	}
 
 	if err := s.runner.Run(ctx, "up", "-d", s.cfg.ServiceName); err != nil {
+		if restoreErr := writeEnvVar(s.cfg.EnvFile, "AE_IMAGE_TAG", currentTag); restoreErr != nil {
+			return UpdateStatus{}, fmt.Errorf("docker compose up %s: %w (restore env tag: %v)", s.cfg.ServiceName, err, restoreErr)
+		}
 		return UpdateStatus{}, fmt.Errorf("docker compose up %s: %w", s.cfg.ServiceName, err)
 	}
 
