@@ -381,3 +381,17 @@ func TestLoadExplicitMissingPathReturnsError(t *testing.T) {
 		t.Fatal("Load() expected error for missing explicit config path")
 	}
 }
+
+func TestDeploymentDefaultsPointAtGitHubPrimaryRepo(t *testing.T) {
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load(): %v", err)
+	}
+
+	if cfg.Deployment.Update.ReleaseAPIURL != "https://api.github.com/repos/LichKing-2234/ai-efficiency/releases/latest" {
+		t.Fatalf("release_api_url = %q", cfg.Deployment.Update.ReleaseAPIURL)
+	}
+	if cfg.Deployment.Update.ImageRepository != "ghcr.io/lichking-2234/ai-efficiency" {
+		t.Fatalf("image_repository = %q", cfg.Deployment.Update.ImageRepository)
+	}
+}

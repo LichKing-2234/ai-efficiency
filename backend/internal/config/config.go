@@ -116,8 +116,9 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("deployment.update.enabled", true)
 	v.SetDefault("deployment.update.apply_enabled", true)
 	v.SetDefault("deployment.update.channel", "stable")
-	v.SetDefault("deployment.update.release_api_url", "https://api.github.com/repos/ai-efficiency/ai-efficiency/releases/latest")
+	v.SetDefault("deployment.update.release_api_url", "https://api.github.com/repos/LichKing-2234/ai-efficiency/releases/latest")
 	v.SetDefault("deployment.update.updater_url", "http://updater:8090")
+	v.SetDefault("deployment.update.image_repository", "ghcr.io/lichking-2234/ai-efficiency")
 
 	// Config file
 	if path != "" {

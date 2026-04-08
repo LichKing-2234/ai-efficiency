@@ -3,16 +3,15 @@ package cmd
 import (
 	"fmt"
 
+	"github.com/ai-efficiency/ae-cli/internal/buildinfo"
 	"github.com/spf13/cobra"
 )
-
-const version = "v0.1.0"
 
 var versionCmd = &cobra.Command{
 	Use:   "version",
 	Short: "Print the version of ae-cli",
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Printf("ae-cli %s\n", version)
+		fmt.Fprintln(cmd.OutOrStdout(), "ae-cli "+buildinfo.Version)
 	},
 }
 

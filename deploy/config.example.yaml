@@ -48,6 +48,6 @@ deployment:
     enabled: true
     apply_enabled: true
     channel: stable
-    release_api_url: "https://api.github.com/repos/ai-efficiency/ai-efficiency/releases/latest"
+    release_api_url: "https://api.github.com/repos/LichKing-2234/ai-efficiency/releases/latest"
     updater_url: "http://updater:8090"
-    image_repository: "ghcr.io/ai-efficiency/ai-efficiency"
+    image_repository: "ghcr.io/lichking-2234/ai-efficiency"

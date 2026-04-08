@@ -17,6 +17,7 @@ import (
 
 	"github.com/ai-efficiency/ae-cli/config"
 	"github.com/ai-efficiency/ae-cli/internal/auth"
+	"github.com/ai-efficiency/ae-cli/internal/buildinfo"
 	"github.com/ai-efficiency/ae-cli/internal/client"
 	"github.com/ai-efficiency/ae-cli/internal/session"
 	"github.com/ai-efficiency/ae-cli/internal/shell"
@@ -39,6 +40,12 @@ func TestMain(m *testing.M) {
 }
 
 func TestVersionCommand(t *testing.T) {
+	oldVersion := buildinfo.Version
+	buildinfo.Version = "v0.1.0"
+	t.Cleanup(func() {
+		buildinfo.Version = oldVersion
+	})
+
 	buf := new(bytes.Buffer)
 	rootCmd.SetOut(buf)
 	rootCmd.SetArgs([]string{"version"})
@@ -47,22 +54,37 @@ func TestVersionCommand(t *testing.T) {
 		t.Fatalf("execute version command: %v", err)
 	}
 
-	output := buf.String()
-	if output == "" {
-		t.Log("version command produced no captured output (fmt.Printf goes to os.Stdout)")
-		return
-	}
-	if !bytes.Contains([]byte(output), []byte("v0.1.0")) {
-		t.Errorf("output = %q, want it to contain %q", output, "v0.1.0")
+	if got := buf.String(); got != "ae-cli v0.1.0\n" {
+		t.Errorf("output = %q, want %q", got, "ae-cli v0.1.0\n")
 	}
 }
 
-func TestVersionConstant(t *testing.T) {
-	if version == "" {
-		t.Error("version constant should not be empty")
+func TestBuildInfoVersionDefault(t *testing.T) {
+	if buildinfo.Version == "" {
+		t.Error("buildinfo version should not be empty")
 	}
-	if version != "v0.1.0" {
-		t.Errorf("version = %q, want %q", version, "v0.1.0")
+	if buildinfo.Version != "dev" {
+		t.Errorf("version = %q, want %q", buildinfo.Version, "dev")
+	}
+}
+
+func TestVersionCommandUsesBuildInfoVersion(t *testing.T) {
+	oldVersion := buildinfo.Version
+	buildinfo.Version = "v9.9.9"
+	t.Cleanup(func() {
+		buildinfo.Version = oldVersion
+	})
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"version"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("execute version command: %v", err)
+	}
+
+	if got := buf.String(); got != "ae-cli v9.9.9\n" {
+		t.Fatalf("output = %q, want %q", got, "ae-cli v9.9.9\\n")
 	}
 }
 
