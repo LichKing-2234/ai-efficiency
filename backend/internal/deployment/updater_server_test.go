@@ -61,8 +61,8 @@ func TestUpdaterServerApplyAndRollbackRewriteEnvFile(t *testing.T) {
 		t.Fatalf("expected env tag updated, got %q", string(content))
 	}
 	if !reflect.DeepEqual(runner.calls, [][]string{
-		{"pull", "backend", "updater"},
-		{"up", "-d", "backend", "updater"},
+		{"pull", "backend"},
+		{"up", "-d", "backend"},
 	}) {
 		t.Fatalf("unexpected compose calls: %#v", runner.calls)
 	}
@@ -85,10 +85,10 @@ func TestUpdaterServerApplyAndRollbackRewriteEnvFile(t *testing.T) {
 		t.Fatalf("expected env tag rolled back, got %q", string(content))
 	}
 	if !reflect.DeepEqual(runner.calls, [][]string{
-		{"pull", "backend", "updater"},
-		{"up", "-d", "backend", "updater"},
-		{"pull", "backend", "updater"},
-		{"up", "-d", "backend", "updater"},
+		{"pull", "backend"},
+		{"up", "-d", "backend"},
+		{"pull", "backend"},
+		{"up", "-d", "backend"},
 	}) {
 		t.Fatalf("unexpected compose calls after rollback: %#v", runner.calls)
 	}

@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENV_FILE="$ROOT_DIR/deploy/.env"
 MODE="${1:-check}"
+COMPOSE_IMPL=""
 
 require_cmd() {
   local cmd="$1"
@@ -98,7 +99,26 @@ elif [[ "$MODE" != "check" ]]; then
   exit 1
 fi
 
-docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" config >/dev/null
+run_compose_config() {
+  local compose_file="$1"
+
+  if docker compose --env-file "$ENV_FILE" -f "$compose_file" config >/dev/null 2>&1; then
+    COMPOSE_IMPL="docker compose"
+    return 0
+  fi
+
+  if command -v docker-compose >/dev/null 2>&1; then
+    if docker-compose --env-file "$ENV_FILE" -f "$compose_file" config >/dev/null 2>&1; then
+      COMPOSE_IMPL="docker-compose"
+      return 0
+    fi
+  fi
+
+  echo "failed to validate compose config with both docker compose and docker-compose" >&2
+  return 1
+}
+
+run_compose_config "$COMPOSE_FILE"
 
 if [[ "$MODE" == "external" ]]; then
   check_required_var AE_DB_DSN
@@ -113,4 +133,5 @@ fi
 
 check_url "${AE_RELAY_URL%/}/health"
 
+echo "compose implementation: ${COMPOSE_IMPL}"
 echo "preflight ok"

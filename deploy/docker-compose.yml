@@ -68,7 +68,7 @@ services:
       start_period: 10s
 
   updater:
-    image: ${AE_IMAGE_REPOSITORY}:${AE_IMAGE_TAG}
+    image: ${AE_UPDATER_IMAGE_REPOSITORY}:${AE_UPDATER_IMAGE_TAG}
     command: ["./updater"]
     environment:
       COMPOSE_PROJECT_NAME: "${COMPOSE_PROJECT_NAME}"
