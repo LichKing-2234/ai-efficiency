@@ -9,7 +9,8 @@
 - Current auth/provider baseline: `docs/superpowers/specs/2026-03-24-oauth-cli-login-design.md`
 - Latest session attribution draft: `docs/superpowers/specs/2026-03-26-session-pr-attribution-design.md`
 - Local session proxy remains a draft in `docs/superpowers/specs/2026-04-02-local-session-proxy-design.md` unless code proves otherwise
-- Remote: `ssh://git@git.agoralab.co/ai/ai-efficiency.git`
+- Primary remote: `https://github.com/LichKing-2234/ai-efficiency.git`
+- GitLab mirror: `ssh://git@git.agoralab.co/ai/ai-efficiency.git`
 
 ## Commit Convention
 

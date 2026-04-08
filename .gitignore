@@ -27,6 +27,8 @@
 # Frontend
 /frontend/node_modules/
 /frontend/dist/
+/frontend/tsconfig.app.tsbuildinfo
+/frontend/tsconfig.node.tsbuildinfo
 
 # Project-local worktrees
 /.worktrees/
