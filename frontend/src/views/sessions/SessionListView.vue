@@ -86,19 +86,6 @@ function statusClass(status: string) {
   }
 }
 
-function invocationCount(s: Session) {
-  return Array.isArray(s.tool_invocations) ? s.tool_invocations.length : 0
-}
-
-function toolSummary(s: Session) {
-  if (!Array.isArray(s.tool_invocations) || s.tool_invocations.length === 0) return '—'
-  const counts: Record<string, number> = {}
-  for (const inv of s.tool_invocations) {
-    counts[inv.tool] = (counts[inv.tool] || 0) + 1
-  }
-  return Object.entries(counts).map(([t, c]) => `${t}×${c}`).join(', ')
-}
-
 const totalPages = () => Math.ceil(total.value / pageSize)
 
 onMounted(fetchSessions)
@@ -186,7 +173,6 @@ onMounted(fetchSessions)
               <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Branch</th>
               <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
               <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Duration</th>
-              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tools</th>
               <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Started</th>
               <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
             </tr>
@@ -207,7 +193,6 @@ onMounted(fetchSessions)
                 </span>
               </td>
               <td class="px-4 py-3 text-sm text-gray-600">{{ duration(s) }}</td>
-              <td class="px-4 py-3 text-sm text-gray-600">{{ toolSummary(s) }}</td>
               <td class="px-4 py-3 text-sm text-gray-500">{{ formatDate(s.started_at) }}</td>
               <td class="px-4 py-3 text-sm">
                 <button
