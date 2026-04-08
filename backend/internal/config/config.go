@@ -1,6 +1,7 @@
 package config
 
 import (
+	"os"
 	"strings"
 
 	"github.com/spf13/viper"
@@ -9,10 +10,12 @@ import (
 type Config struct {
 	Server     ServerConfig     `mapstructure:"server"`
 	DB         DBConfig         `mapstructure:"db"`
+	Redis      RedisConfig      `mapstructure:"redis"`
 	Auth       AuthConfig       `mapstructure:"auth"`
 	Encryption EncryptionConfig `mapstructure:"encryption"`
 	Analysis   AnalysisConfig   `mapstructure:"analysis"`
 	Relay      RelayConfig      `mapstructure:"relay"`
+	Deployment DeploymentConfig `mapstructure:"deployment"`
 }
 
 type ServerConfig struct {
@@ -35,6 +38,12 @@ type DBConfig struct {
 	MaxOpenConns    int    `mapstructure:"max_open_conns"`
 	MaxIdleConns    int    `mapstructure:"max_idle_conns"`
 	ConnMaxLifetime int    `mapstructure:"conn_max_lifetime"` // seconds
+}
+
+type RedisConfig struct {
+	Addr     string `mapstructure:"addr"`
+	Password string `mapstructure:"password"`
+	DB       int    `mapstructure:"db"`
 }
 
 type AuthConfig struct {
@@ -68,6 +77,21 @@ type LLMConfig struct {
 	UserPromptTemplate  string `mapstructure:"user_prompt_template"`
 }
 
+type DeploymentConfig struct {
+	Mode     string       `mapstructure:"mode"`
+	StateDir string       `mapstructure:"state_dir"`
+	Update   UpdateConfig `mapstructure:"update"`
+}
+
+type UpdateConfig struct {
+	Enabled         bool   `mapstructure:"enabled"`
+	ApplyEnabled    bool   `mapstructure:"apply_enabled"`
+	ReleaseAPIURL   string `mapstructure:"release_api_url"`
+	UpdaterURL      string `mapstructure:"updater_url"`
+	ImageRepository string `mapstructure:"image_repository"`
+	Channel         string `mapstructure:"channel"`
+}
+
 func Load(path string) (*Config, error) {
 	v := viper.New()
 
@@ -75,17 +99,28 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("server.port", 8081)
 	v.SetDefault("server.mode", "debug")
 	v.SetDefault("server.frontend_url", "http://localhost:5173")
+	v.SetDefault("db.dsn", "")
 	v.SetDefault("db.max_open_conns", 25)
 	v.SetDefault("db.max_idle_conns", 5)
 	v.SetDefault("db.conn_max_lifetime", 300)
+	v.SetDefault("redis.addr", "redis:6379")
+	v.SetDefault("redis.db", 0)
 	v.SetDefault("relay.provider", "sub2api")
 	v.SetDefault("relay.model", "claude-sonnet-4-20250514")
 	v.SetDefault("relay.default_group_id", "")
+	v.SetDefault("auth.jwt_secret", "")
 	v.SetDefault("auth.access_token_ttl", 7200)
 	v.SetDefault("auth.refresh_token_ttl", 604800)
 	v.SetDefault("auth.ldap.user_filter", "(uid=%s)")
 	v.SetDefault("analysis.llm.max_tokens_per_scan", 100000)
 	v.SetDefault("analysis.llm.max_scans_per_repo_per_day", 3)
+	v.SetDefault("deployment.mode", "bundled")
+	v.SetDefault("deployment.state_dir", "/var/lib/ai-efficiency")
+	v.SetDefault("deployment.update.enabled", true)
+	v.SetDefault("deployment.update.apply_enabled", true)
+	v.SetDefault("deployment.update.channel", "stable")
+	v.SetDefault("deployment.update.release_api_url", "https://api.github.com/repos/ai-efficiency/ai-efficiency/releases/latest")
+	v.SetDefault("deployment.update.updater_url", "http://updater:8090")
 
 	// Config file
 	if path != "" {
@@ -103,7 +138,7 @@ func Load(path string) (*Config, error) {
 	v.AutomaticEnv()
 
 	if err := v.ReadInConfig(); err != nil {
-		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
+		if _, ok := err.(viper.ConfigFileNotFoundError); !ok && !os.IsNotExist(err) {
 			return nil, err
 		}
 	}

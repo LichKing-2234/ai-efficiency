@@ -310,3 +310,39 @@ server:
 		t.Errorf("max_open_conns = %d, want 25 (default)", cfg.DB.MaxOpenConns)
 	}
 }
+
+func TestLoadDeploymentAndRedisConfigFromEnv(t *testing.T) {
+	t.Setenv("AE_REDIS_ADDR", "redis:6379")
+	t.Setenv("AE_REDIS_PASSWORD", "redis-pass")
+	t.Setenv("AE_REDIS_DB", "2")
+	t.Setenv("AE_DEPLOYMENT_MODE", "bundled")
+	t.Setenv("AE_DEPLOYMENT_STATE_DIR", "/var/lib/ai-efficiency")
+	t.Setenv("AE_DEPLOYMENT_UPDATE_ENABLED", "true")
+	t.Setenv("AE_DEPLOYMENT_UPDATE_APPLY_ENABLED", "true")
+	t.Setenv("AE_DEPLOYMENT_UPDATE_RELEASE_API_URL", "https://api.github.com/repos/ai-efficiency/releases/latest")
+	t.Setenv("AE_DEPLOYMENT_UPDATE_UPDATER_URL", "http://updater:8090")
+
+	cfg, err := Load("/nonexistent/config.yaml")
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	if cfg.Redis.Addr != "redis:6379" {
+		t.Errorf("redis addr = %q, want %q", cfg.Redis.Addr, "redis:6379")
+	}
+	if cfg.Redis.DB != 2 {
+		t.Errorf("redis db = %d, want %d", cfg.Redis.DB, 2)
+	}
+	if cfg.Deployment.Mode != "bundled" {
+		t.Errorf("deployment mode = %q, want %q", cfg.Deployment.Mode, "bundled")
+	}
+	if !cfg.Deployment.Update.Enabled {
+		t.Error("deployment update enabled = false, want true")
+	}
+	if !cfg.Deployment.Update.ApplyEnabled {
+		t.Error("deployment update apply enabled = false, want true")
+	}
+	if cfg.Deployment.Update.UpdaterURL != "http://updater:8090" {
+		t.Errorf("deployment updater url = %q, want %q", cfg.Deployment.Update.UpdaterURL, "http://updater:8090")
+	}
+}

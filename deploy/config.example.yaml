@@ -11,6 +11,11 @@ db:
   max_idle_conns: 5
   conn_max_lifetime: 300
 
+redis:
+  addr: "redis:6379"
+  password: ""
+  db: 0
+
 # sub2api database (read-only)
 sub2api_db:
   dsn: "postgres://ae_readonly:ae_readonly@localhost:5432/sub2api?sslmode=disable&default_transaction_read_only=on"
@@ -33,3 +38,14 @@ auth:
 encryption:
   # 32-byte hex-encoded AES-256 key (generate with: openssl rand -hex 32)
   key: "0000000000000000000000000000000000000000000000000000000000000000"
+
+deployment:
+  mode: bundled
+  state_dir: "/var/lib/ai-efficiency"
+  update:
+    enabled: true
+    apply_enabled: true
+    channel: stable
+    release_api_url: "https://api.github.com/repos/ai-efficiency/ai-efficiency/releases/latest"
+    updater_url: "http://updater:8090"
+    image_repository: "ghcr.io/ai-efficiency/ai-efficiency"
