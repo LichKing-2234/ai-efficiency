@@ -50,6 +50,41 @@ flowchart LR
 - `ai-efficiency` is a standalone system. It integrates with `sub2api` through relay/provider HTTP APIs rather than direct database coupling.
 - The backend is the central orchestration point for auth, repo configuration, analysis, attribution, and SCM/webhook workflows.
 - The frontend is built separately and packaged into the backend image during Docker build. Do not assume Go `embed` or a single self-contained binary unless the code is changed to do that explicitly.
+- Official production deployment is now Docker Compose-first.
+- The business entrypoint remains the backend service that also serves the frontend bundle.
+- A dedicated updater sidecar performs privileged deployment update and rollback operations over the local Docker/Compose control path.
+- Public health endpoints expose liveness/readiness, and admin settings expose deployment status plus update controls.
+
+## Current Production Deployment
+
+The current deployment path is organized around one backend image plus a small updater sidecar.
+
+```mermaid
+flowchart LR
+    Browser["Browser"]
+    Backend["Backend + Frontend bundle"]
+    Updater["Updater sidecar"]
+    DB[("Postgres")]
+    Redis[("Redis")]
+    Relay["sub2api / relay"]
+    DockerHost["Docker / Compose host"]
+
+    Browser --> Backend
+    Backend --> DB
+    Backend --> Redis
+    Backend --> Relay
+    Backend --> Updater
+    Updater --> DockerHost
+```
+
+### Deployment Notes
+
+- Official deploy assets live under `deploy/`.
+- `deploy/docker-compose.yml` is the bundled-infra path.
+- `deploy/docker-compose.external.yml` is the external-infra path.
+- `deploy/docker-deploy.sh` is the preflight entrypoint.
+- `deploy/.env.example` is the operator-facing configuration template.
+- Backend deployment status and update APIs are now first-class admin surfaces.
 
 ## Current Runtime Flow
 
