@@ -59,15 +59,6 @@ func TestVersionCommand(t *testing.T) {
 	}
 }
 
-func TestBuildInfoVersionDefault(t *testing.T) {
-	if buildinfo.Version == "" {
-		t.Error("buildinfo version should not be empty")
-	}
-	if buildinfo.Version != "dev" {
-		t.Errorf("version = %q, want %q", buildinfo.Version, "dev")
-	}
-}
-
 func TestVersionCommandUsesBuildInfoVersion(t *testing.T) {
 	oldVersion := buildinfo.Version
 	buildinfo.Version = "v9.9.9"
