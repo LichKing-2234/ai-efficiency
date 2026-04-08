@@ -1,0 +1,107 @@
+version: 2
+
+project_name: ai-efficiency
+
+builds:
+  - id: backend-server
+    dir: backend
+    main: ./cmd/server
+    binary: ai-efficiency-server
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w
+      - -X github.com/ai-efficiency/backend/internal/deployment.BuildVersion={{ .Version }}
+      - -X github.com/ai-efficiency/backend/internal/deployment.BuildCommit={{ .Commit }}
+      - -X github.com/ai-efficiency/backend/internal/deployment.BuildTime={{ .Date }}
+
+  - id: backend-updater
+    dir: backend
+    main: ./cmd/updater
+    binary: ai-efficiency-updater
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w
+      - -X github.com/ai-efficiency/backend/internal/deployment.BuildVersion={{ .Version }}
+      - -X github.com/ai-efficiency/backend/internal/deployment.BuildCommit={{ .Commit }}
+      - -X github.com/ai-efficiency/backend/internal/deployment.BuildTime={{ .Date }}
+
+  - id: ae-cli
+    dir: ae-cli
+    main: .
+    binary: ae-cli
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w
+      - -X github.com/ai-efficiency/ae-cli/internal/buildinfo.Version={{ .Version }}
+
+archives:
+  - id: backend-bundle
+    ids:
+      - backend-server
+      - backend-updater
+    name_template: "ai-efficiency-backend_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    files:
+      - deploy/README.md
+      - deploy/config.example.yaml
+
+  - id: ae-cli
+    ids:
+      - ae-cli
+    name_template: "ae-cli_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+release:
+  github:
+    owner: '{{ envOrDefault "GITHUB_REPO_OWNER" "ai-efficiency" }}'
+    name: '{{ envOrDefault "GITHUB_REPO_NAME" "ai-efficiency" }}'
+  draft: false
+  prerelease: auto
+  name_template: "ai-efficiency {{ .Version }}"
