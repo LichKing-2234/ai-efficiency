@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"net/http"
+	"strings"
 
 	"github.com/ai-efficiency/backend/internal/deployment"
 	"github.com/gin-gonic/gin"
@@ -57,6 +58,10 @@ func (h *DeploymentHandler) ApplyUpdate(c *gin.Context) {
 	var req deployment.ApplyRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "invalid request body"})
+		return
+	}
+	if strings.TrimSpace(req.TargetVersion) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "target_version is required"})
 		return
 	}
 

@@ -208,7 +208,7 @@ func TestDeploymentApplyUpdateSuccessEnvelope(t *testing.T) {
 		stubDeploymentStatusReader{},
 	))
 
-	w := doFullRequest(env, http.MethodPost, "/api/v1/settings/deployment/update/apply", bytes.NewReader([]byte(`{"target_version":"v0.5.0"}`)))
+	w := doFullRequest(env, http.MethodPost, "/api/v1/settings/deployment/update/apply", map[string]string{"target_version": "v0.5.0"})
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
@@ -218,6 +218,27 @@ func TestDeploymentApplyUpdateSuccessEnvelope(t *testing.T) {
 	}
 	if _, ok := resp["data"].(map[string]interface{}); !ok {
 		t.Fatalf("expected data object, got %T", resp["data"])
+	}
+}
+
+func TestDeploymentApplyUpdateRejectsEmptyTargetVersion(t *testing.T) {
+	env := setupFullTestEnvWithDeployment(t, NewDeploymentHandler(
+		deployment.NewHealthService(
+			deployment.FuncPinger(func(context.Context) error { return nil }),
+			deployment.FuncPinger(func(context.Context) error { return nil }),
+			deployment.FuncPinger(func(context.Context) error { return nil }),
+			deployment.CurrentVersion(),
+		),
+		stubDeploymentStatusReader{},
+	))
+
+	w := doFullRequest(env, http.MethodPost, "/api/v1/settings/deployment/update/apply", map[string]string{"target_version": "   "})
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+	resp := parseFullResponse(t, w)
+	if msg, _ := resp["message"].(string); msg != "target_version is required" {
+		t.Fatalf("expected target_version validation message, got %q", msg)
 	}
 }
 
@@ -271,7 +292,7 @@ func TestDeploymentApplyUpdateReturns409ForPolicyDeny(t *testing.T) {
 		},
 	))
 
-	w := doFullRequest(env, http.MethodPost, "/api/v1/settings/deployment/update/apply", bytes.NewReader([]byte(`{"target_version":"v0.5.0"}`)))
+	w := doFullRequest(env, http.MethodPost, "/api/v1/settings/deployment/update/apply", map[string]string{"target_version": "v0.5.0"})
 	if w.Code != http.StatusConflict {
 		t.Fatalf("expected 409, got %d: %s", w.Code, w.Body.String())
 	}
