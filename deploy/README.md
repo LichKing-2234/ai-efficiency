@@ -70,3 +70,25 @@ Admin users can use the Settings page to:
 - trigger rollback
 
 The updater sidecar performs the actual Compose operations.
+
+## GitHub Release Artifacts
+
+The public GitHub repository publishes:
+
+- `ai-efficiency-backend_<version>_<os>_<arch>.tar.gz|zip`
+- `ae-cli_<version>_<os>_<arch>.tar.gz|zip`
+- `checksums.txt`
+
+## GHCR Images
+
+Release images are published to:
+
+- `ghcr.io/lichking-2234/ai-efficiency:<tag>`
+- `ghcr.io/lichking-2234/ai-efficiency:latest`
+
+Examples:
+
+```bash
+docker pull ghcr.io/lichking-2234/ai-efficiency:v0.2.0
+docker pull ghcr.io/lichking-2234/ai-efficiency:latest
+```
