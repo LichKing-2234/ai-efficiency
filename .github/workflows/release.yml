@@ -42,7 +42,7 @@ jobs:
           echo "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$'
 
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            if ! git rev-parse "$TAG" >/dev/null 2>&1; then
+            if ! git rev-parse "refs/tags/$TAG" >/dev/null 2>&1; then
               git config user.name "github-actions[bot]"
               git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
               git tag -a "$TAG" -m "Release $TAG"
@@ -54,7 +54,7 @@ jobs:
           MAJOR="${VERSION%%.*}"
           REST="${VERSION#*.}"
           MINOR="${REST%%.*}"
-          COMMIT_SHA="$(git rev-list -n 1 "$TAG")"
+          COMMIT_SHA="$(git rev-list -n 1 "refs/tags/$TAG")"
           if echo "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
             IS_PRERELEASE=false
           else
