@@ -3,6 +3,7 @@
 server:
   port: 8081
   mode: debug  # debug / release
+  frontend_url: "http://localhost:8081"
 
 # AI Efficiency platform database (read-write)
 db:
@@ -15,6 +16,14 @@ redis:
   addr: "localhost:6379"
   password: ""
   db: 0
+
+relay:
+  provider: "sub2api"
+  url: "http://sub2api.example.com"
+  api_key: ""
+  admin_api_key: ""
+  model: "claude-sonnet-4-20250514"
+  default_group_id: ""
 
 auth:
   jwt_secret: "change-me-in-production-32-bytes!"

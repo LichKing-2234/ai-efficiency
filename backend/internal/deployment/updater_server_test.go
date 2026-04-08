@@ -1,0 +1,86 @@
+package deployment
+
+import (
+	"context"
+	"os"
+	"path/filepath"
+	"reflect"
+	"testing"
+)
+
+type composeRunnerStub struct {
+	calls [][]string
+}
+
+func (s *composeRunnerStub) Run(_ context.Context, args ...string) error {
+	call := append([]string(nil), args...)
+	s.calls = append(s.calls, call)
+	return nil
+}
+
+func TestUpdaterServerApplyAndRollbackRewriteEnvFile(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	envFile := filepath.Join(tmpDir, ".env")
+	if err := os.WriteFile(envFile, []byte("AE_IMAGE_TAG=v0.4.0\n"), 0o644); err != nil {
+		t.Fatalf("write initial env file: %v", err)
+	}
+
+	runner := &composeRunnerStub{}
+	server := NewUpdaterServer(UpdaterConfig{
+		ComposeFile: "deploy/docker-compose.yml",
+		EnvFile:     envFile,
+		ServiceName: "backend",
+		StateDir:    tmpDir,
+	}, runner)
+
+	status, err := server.Apply(context.Background(), ApplyRequest{TargetVersion: "v0.5.0"})
+	if err != nil {
+		t.Fatalf("apply update: %v", err)
+	}
+	if status.Phase != "applying" {
+		t.Fatalf("expected applying phase, got %q", status.Phase)
+	}
+	if status.TargetVersion != "v0.5.0" {
+		t.Fatalf("expected target version v0.5.0, got %q", status.TargetVersion)
+	}
+	content, err := os.ReadFile(envFile)
+	if err != nil {
+		t.Fatalf("read env file after apply: %v", err)
+	}
+	if string(content) != "AE_IMAGE_TAG=v0.5.0\n" {
+		t.Fatalf("expected env tag updated, got %q", string(content))
+	}
+	if !reflect.DeepEqual(runner.calls, [][]string{
+		{"pull", "backend"},
+		{"up", "-d", "backend"},
+	}) {
+		t.Fatalf("unexpected compose calls: %#v", runner.calls)
+	}
+
+	status, err = server.Rollback(context.Background())
+	if err != nil {
+		t.Fatalf("rollback update: %v", err)
+	}
+	if status.Phase != "rollback_completed" {
+		t.Fatalf("expected rollback_completed phase, got %q", status.Phase)
+	}
+	if status.TargetVersion != "v0.4.0" {
+		t.Fatalf("expected rollback target version v0.4.0, got %q", status.TargetVersion)
+	}
+	content, err = os.ReadFile(envFile)
+	if err != nil {
+		t.Fatalf("read env file after rollback: %v", err)
+	}
+	if string(content) != "AE_IMAGE_TAG=v0.4.0\n" {
+		t.Fatalf("expected env tag rolled back, got %q", string(content))
+	}
+	if !reflect.DeepEqual(runner.calls, [][]string{
+		{"pull", "backend"},
+		{"up", "-d", "backend"},
+		{"up", "-d", "backend"},
+	}) {
+		t.Fatalf("unexpected compose calls after rollback: %#v", runner.calls)
+	}
+}

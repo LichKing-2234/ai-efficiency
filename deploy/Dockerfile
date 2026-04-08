@@ -22,11 +22,15 @@ COPY --from=frontend-builder /app/frontend/dist ./static/
 RUN CGO_ENABLED=0 GOOS=linux go build \
   -ldflags "-X github.com/ai-efficiency/backend/internal/deployment.BuildVersion=${APP_VERSION} -X github.com/ai-efficiency/backend/internal/deployment.BuildCommit=${APP_COMMIT} -X github.com/ai-efficiency/backend/internal/deployment.BuildTime=${APP_BUILD_TIME}" \
   -o /app/server ./cmd/server/
+RUN CGO_ENABLED=0 GOOS=linux go build \
+  -ldflags "-X github.com/ai-efficiency/backend/internal/deployment.BuildVersion=${APP_VERSION} -X github.com/ai-efficiency/backend/internal/deployment.BuildCommit=${APP_COMMIT} -X github.com/ai-efficiency/backend/internal/deployment.BuildTime=${APP_BUILD_TIME}" \
+  -o /app/updater ./cmd/updater/
 
 # Stage 3: Final image
 FROM alpine:3.20
 RUN apk add --no-cache ca-certificates tzdata
 WORKDIR /app
 COPY --from=backend-builder /app/server .
+COPY --from=backend-builder /app/updater .
 EXPOSE 8081
 CMD ["./server"]
