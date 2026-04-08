@@ -90,6 +90,8 @@ check_required_var AE_RELAY_URL
 check_required_var AE_AUTH_JWT_SECRET
 check_required_var AE_ENCRYPTION_KEY
 check_required_var COMPOSE_PROJECT_NAME
+check_required_var AE_UPDATER_IMAGE_REPOSITORY
+check_required_var AE_UPDATER_IMAGE_TAG
 
 COMPOSE_FILE="$ROOT_DIR/deploy/docker-compose.yml"
 if [[ "$MODE" == "external" ]]; then
