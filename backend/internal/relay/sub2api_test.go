@@ -31,6 +31,34 @@ func TestName(t *testing.T) {
 	}
 }
 
+func TestNewSub2apiProviderNormalizesInferenceBaseURL(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/chat/completions", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []any{
+				map[string]any{
+					"message": map[string]any{"content": "pong"},
+				},
+			},
+			"usage": map[string]any{"total_tokens": 5},
+		})
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	p := relay.NewSub2apiProvider(srv.Client(), srv.URL, srv.URL, "test-llm-key", "gpt-5.4", zap.NewNop())
+	resp, err := p.ChatCompletion(context.Background(), relay.ChatCompletionRequest{
+		Messages: []relay.ChatMessage{{Role: "user", Content: "ping"}},
+	})
+	if err != nil {
+		t.Fatalf("ChatCompletion() unexpected error: %v", err)
+	}
+	if resp.Content != "pong" || resp.TokensUsed != 5 {
+		t.Fatalf("unexpected response: %+v", resp)
+	}
+}
+
 func TestPing(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {

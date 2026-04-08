@@ -46,12 +46,23 @@ func (s envelopeStatus) ok() bool {
 func NewSub2apiProvider(httpClient *http.Client, baseURL, adminURL, apiKey, model string, logger *zap.Logger) Provider {
 	return &sub2apiRelay{
 		client:   httpClient,
-		baseURL:  strings.TrimRight(baseURL, "/"),
+		baseURL:  normalizeInferenceBaseURL(baseURL),
 		adminURL: strings.TrimRight(adminURL, "/"),
 		apiKey:   apiKey,
 		model:    model,
 		logger:   logger,
 	}
+}
+
+func normalizeInferenceBaseURL(raw string) string {
+	raw = strings.TrimRight(strings.TrimSpace(raw), "/")
+	if raw == "" {
+		return ""
+	}
+	if strings.HasSuffix(raw, "/v1") {
+		return raw
+	}
+	return raw + "/v1"
 }
 
 func (s *sub2apiRelay) Name() string { return "sub2api" }
