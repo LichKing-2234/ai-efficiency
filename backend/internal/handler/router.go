@@ -14,14 +14,9 @@ import (
 )
 
 var prAttributionService prAttributionSettler
-var deploymentHTTPHandler *DeploymentHandler
 
 func SetPRAttributionService(service prAttributionSettler) {
 	prAttributionService = service
-}
-
-func SetDeploymentHandler(h *DeploymentHandler) {
-	deploymentHTTPHandler = h
 }
 
 // SetupRouter creates and configures the Gin router with all route groups.
@@ -43,6 +38,7 @@ func SetupRouter(
 	adminSettingsHandler *AdminSettingsHandler,
 	sessionBootstrapSvc *sessionbootstrap.Service,
 	checkpointHandler *CheckpointHandler,
+	deploymentHandler *DeploymentHandler,
 ) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Recovery())
@@ -77,9 +73,9 @@ func SetupRouter(
 	api.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "ok", "service": "ai-efficiency"})
 	})
-	if deploymentHTTPHandler != nil {
-		api.GET("/health/live", deploymentHTTPHandler.Live)
-		api.GET("/health/ready", deploymentHTTPHandler.Ready)
+	if deploymentHandler != nil {
+		api.GET("/health/live", deploymentHandler.Live)
+		api.GET("/health/ready", deploymentHandler.Ready)
 	}
 
 	// Auth routes — no auth middleware
@@ -210,7 +206,7 @@ func SetupRouter(
 	}
 
 	// Settings — admin only
-	if settingsHandler != nil || deploymentHTTPHandler != nil {
+	if settingsHandler != nil || deploymentHandler != nil {
 		settingsGroup := protected.Group("/settings")
 		settingsGroup.Use(auth.RequireAdmin())
 		{
@@ -219,8 +215,8 @@ func SetupRouter(
 				settingsGroup.PUT("/llm", settingsHandler.UpdateLLMConfig)
 				settingsGroup.POST("/llm/test", settingsHandler.TestLLMConnection)
 			}
-			if deploymentHTTPHandler != nil {
-				settingsGroup.GET("/deployment", deploymentHTTPHandler.Status)
+			if deploymentHandler != nil {
+				settingsGroup.GET("/deployment", deploymentHandler.Status)
 			}
 		}
 	}

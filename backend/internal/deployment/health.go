@@ -55,7 +55,7 @@ func (s *HealthService) Ready(ctx context.Context) ReadyReport {
 	status := "ready"
 	if dbCheck.Status == "down" {
 		status = "not_ready"
-	} else if redisCheck.Status == "down" || relayCheck.Status == "down" {
+	} else if isDegradedDependency(redisCheck.Status) || isDegradedDependency(relayCheck.Status) {
 		status = "degraded"
 	}
 
@@ -68,10 +68,14 @@ func (s *HealthService) Ready(ctx context.Context) ReadyReport {
 
 func runCheck(ctx context.Context, name string, pinger Pinger) CheckResult {
 	if pinger == nil {
-		return CheckResult{Name: name, Status: "up", Message: "not configured"}
+		return CheckResult{Name: name, Status: "not_configured", Message: "not configured"}
 	}
 	if err := pinger.Ping(ctx); err != nil {
-		return CheckResult{Name: name, Status: "down", Message: err.Error()}
+		return CheckResult{Name: name, Status: "down", Message: "unavailable"}
 	}
 	return CheckResult{Name: name, Status: "up"}
+}
+
+func isDegradedDependency(status string) bool {
+	return status == "down" || status == "not_configured"
 }

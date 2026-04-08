@@ -30,6 +30,10 @@ import (
 // setupFullTestEnv creates a test environment with all handlers wired up,
 // including settings, chat, and aggregator (unlike setupTestEnv which passes nil).
 func setupFullTestEnv(t *testing.T) *fullTestEnv {
+	return setupFullTestEnvWithDeployment(t, nil)
+}
+
+func setupFullTestEnvWithDeployment(t *testing.T, deploymentHandler *DeploymentHandler) *fullTestEnv {
 	t.Helper()
 
 	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
@@ -73,6 +77,7 @@ func setupFullTestEnv(t *testing.T) *fullTestEnv {
 		"0000000000000000000000000000000000000000000000000000000000000000",
 		middleware.CORS(nil),
 		nil, nil, nil, nil, nil,
+		deploymentHandler,
 	)
 
 	// Create admin user

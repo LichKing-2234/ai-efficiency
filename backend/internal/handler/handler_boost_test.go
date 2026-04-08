@@ -574,6 +574,7 @@ func TestAggregateAllWithFullEnv(t *testing.T) {
 		"0000000000000000000000000000000000000000000000000000000000000000",
 		middleware.CORS(nil),
 		nil, nil, nil, nil, nil,
+		nil,
 	)
 
 	u, _ := client.User.Create().

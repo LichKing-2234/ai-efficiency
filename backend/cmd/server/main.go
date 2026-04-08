@@ -269,6 +269,12 @@ func main() {
 	checkpointHandler := handler.NewCheckpointHandler(checkpointService)
 	attributionService := attribution.NewService(entClient, relayProvider)
 	handler.SetPRAttributionService(attributionService)
+	var relayPinger deployment.Pinger
+	if relayProvider != nil {
+		relayPinger = deployment.FuncPinger(func(ctx context.Context) error {
+			return relayProvider.Ping(ctx)
+		})
+	}
 	healthService := deployment.NewHealthService(
 		deployment.FuncPinger(func(ctx context.Context) error {
 			if sqlDB == nil {
@@ -282,21 +288,16 @@ func main() {
 			}
 			return redisClient.Ping(ctx).Err()
 		}),
-		deployment.FuncPinger(func(ctx context.Context) error {
-			if relayProvider == nil {
-				return nil
-			}
-			return relayProvider.Ping(ctx)
-		}),
+		relayPinger,
 		deployment.CurrentVersion(),
 	)
-	handler.SetDeploymentHandler(handler.NewDeploymentHandler(
+	deploymentHandler := handler.NewDeploymentHandler(
 		healthService,
 		&staticDeploymentStatusReader{
 			deploymentConfig: cfg.Deployment,
 			version:          versionInfo,
 		},
-	))
+	)
 
 	r := handler.SetupRouter(
 		entClient,
@@ -316,6 +317,7 @@ func main() {
 		adminSettingsHandler,
 		sessionBootstrapSvc,
 		checkpointHandler,
+		deploymentHandler,
 	)
 
 	// Start server

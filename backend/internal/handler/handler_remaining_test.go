@@ -71,6 +71,7 @@ func setupDebugTestEnv(t *testing.T) *fullTestEnv {
 		"0000000000000000000000000000000000000000000000000000000000000000",
 		middleware.CORS(nil),
 		nil, nil, nil, nil, nil,
+		nil,
 	)
 
 	u, err := client.User.Create().
@@ -303,6 +304,7 @@ func TestChatLLMNotConfigured(t *testing.T) {
 		"0000000000000000000000000000000000000000000000000000000000000000",
 		middleware.CORS(nil),
 		nil, nil, nil, nil, nil,
+		nil,
 	)
 
 	u, err := client.User.Create().

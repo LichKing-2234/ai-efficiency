@@ -105,6 +105,7 @@ func setupBootstrapHTTPTestEnv(t *testing.T) *testEnv {
 		nil, nil, nil,
 		bootstrapSvc,
 		nil,
+		nil,
 	)
 
 	u, err := client.User.Create().
@@ -274,6 +275,7 @@ func TestSessionProviderCredentialHTTP_ReusesExistingOpenAIKey(t *testing.T) {
 		nil,
 		nil,
 		bootstrapSvc,
+		nil,
 		nil,
 	)
 
