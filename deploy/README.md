@@ -73,7 +73,7 @@ The updater sidecar performs the actual Compose operations.
 
 ## GitHub Release Artifacts
 
-The public GitHub repository publishes:
+After the first tagged GitHub release, the public repository will publish:
 
 - `ai-efficiency-backend_<version>_<os>_<arch>.tar.gz|zip`
 - `ae-cli_<version>_<os>_<arch>.tar.gz|zip`
@@ -81,7 +81,7 @@ The public GitHub repository publishes:
 
 ## GHCR Images
 
-Release images are published to:
+Release images will be published to:
 
 - `ghcr.io/lichking-2234/ai-efficiency:<tag>`
 - `ghcr.io/lichking-2234/ai-efficiency:latest`

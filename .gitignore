@@ -13,16 +13,7 @@
 /backend/vendor/
 /backend/tmp/
 
-# Ent generated (keep schema/, ignore generated code)
-/backend/ent/client.go
-/backend/ent/mutation.go
-/backend/ent/runtime.go
-/backend/ent/tx.go
-/backend/ent/enttest/
-/backend/ent/hook/
-/backend/ent/migrate/
-/backend/ent/predicate/
-/backend/ent/runtime/
+# Ent generated code is tracked for clean checkouts (schema remains source of generation)
 
 # Frontend
 /frontend/node_modules/
