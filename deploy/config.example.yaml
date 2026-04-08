@@ -12,7 +12,7 @@ db:
   conn_max_lifetime: 300
 
 redis:
-  addr: "redis:6379"
+  addr: "localhost:6379"
   password: ""
   db: 0
 

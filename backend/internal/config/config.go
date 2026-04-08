@@ -99,7 +99,6 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("server.port", 8081)
 	v.SetDefault("server.mode", "debug")
 	v.SetDefault("server.frontend_url", "http://localhost:5173")
-	v.SetDefault("db.dsn", "")
 	v.SetDefault("db.max_open_conns", 25)
 	v.SetDefault("db.max_idle_conns", 5)
 	v.SetDefault("db.conn_max_lifetime", 300)
@@ -108,7 +107,6 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("relay.provider", "sub2api")
 	v.SetDefault("relay.model", "claude-sonnet-4-20250514")
 	v.SetDefault("relay.default_group_id", "")
-	v.SetDefault("auth.jwt_secret", "")
 	v.SetDefault("auth.access_token_ttl", 7200)
 	v.SetDefault("auth.refresh_token_ttl", 604800)
 	v.SetDefault("auth.ldap.user_filter", "(uid=%s)")
@@ -138,7 +136,7 @@ func Load(path string) (*Config, error) {
 	v.AutomaticEnv()
 
 	if err := v.ReadInConfig(); err != nil {
-		if _, ok := err.(viper.ConfigFileNotFoundError); !ok && !os.IsNotExist(err) {
+		if _, ok := err.(viper.ConfigFileNotFoundError); !ok && !(path != "" && os.IsNotExist(err)) {
 			return nil, err
 		}
 	}
