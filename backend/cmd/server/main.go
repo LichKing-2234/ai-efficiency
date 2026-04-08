@@ -33,6 +33,7 @@ import (
 	"github.com/gin-gonic/gin"
 	_ "github.com/lib/pq"
 	_ "github.com/mattn/go-sqlite3"
+	redis "github.com/redis/go-redis/v9"
 
 	"entgo.io/ent/dialect"
 	entsql "entgo.io/ent/dialect/sql"
@@ -42,6 +43,27 @@ import (
 // authTokenAdapter adapts auth.Service to the oauth.TokenGenerator interface.
 type authTokenAdapter struct {
 	authService *auth.Service
+}
+
+type staticDeploymentStatusReader struct {
+	deploymentConfig config.DeploymentConfig
+	version          deployment.VersionInfo
+}
+
+func (r *staticDeploymentStatusReader) Status(context.Context) (map[string]any, error) {
+	return map[string]any{
+		"mode":      r.deploymentConfig.Mode,
+		"state_dir": r.deploymentConfig.StateDir,
+		"update": map[string]any{
+			"enabled":          r.deploymentConfig.Update.Enabled,
+			"apply_enabled":    r.deploymentConfig.Update.ApplyEnabled,
+			"release_api_url":  r.deploymentConfig.Update.ReleaseAPIURL,
+			"updater_url":      r.deploymentConfig.Update.UpdaterURL,
+			"image_repository": r.deploymentConfig.Update.ImageRepository,
+			"channel":          r.deploymentConfig.Update.Channel,
+		},
+		"version": r.version,
+	}, nil
 }
 
 func (a *authTokenAdapter) GenerateAccessToken(userID int, username, role string) (string, string, int, error) {
@@ -86,6 +108,7 @@ func main() {
 
 	// Connect to ai_efficiency database
 	var entClient *ent.Client
+	var sqlDB *sql.DB
 	useSQLite := cfg.DB.DSN == "" || strings.HasPrefix(cfg.DB.DSN, "sqlite3://") || strings.HasPrefix(cfg.DB.DSN, "file:")
 
 	if useSQLite {
@@ -100,6 +123,7 @@ func main() {
 		if err != nil {
 			logger.Fatal("open sqlite db", zap.Error(err))
 		}
+		sqlDB = db
 		defer db.Close()
 		drv := entsql.OpenDB(dialect.SQLite, db)
 		entClient = ent.NewClient(ent.Driver(drv))
@@ -110,6 +134,7 @@ func main() {
 		if err != nil {
 			logger.Fatal("connect ai_efficiency db", zap.Error(err))
 		}
+		sqlDB = db
 		defer db.Close()
 		db.SetMaxOpenConns(cfg.DB.MaxOpenConns)
 		db.SetMaxIdleConns(cfg.DB.MaxIdleConns)
@@ -146,6 +171,13 @@ func main() {
 		}
 		logger.Info("relay provider initialized", zap.String("provider", cfg.Relay.Provider), zap.String("url", cfg.Relay.URL))
 	}
+
+	redisClient := redis.NewClient(&redis.Options{
+		Addr:     cfg.Redis.Addr,
+		Password: cfg.Redis.Password,
+		DB:       cfg.Redis.DB,
+	})
+	defer redisClient.Close()
 
 	// Init LDAP config (shared between auth service and admin settings handler)
 	var ldapConfig atomic.Pointer[config.LDAPConfig]
@@ -237,6 +269,34 @@ func main() {
 	checkpointHandler := handler.NewCheckpointHandler(checkpointService)
 	attributionService := attribution.NewService(entClient, relayProvider)
 	handler.SetPRAttributionService(attributionService)
+	healthService := deployment.NewHealthService(
+		deployment.FuncPinger(func(ctx context.Context) error {
+			if sqlDB == nil {
+				return nil
+			}
+			return sqlDB.PingContext(ctx)
+		}),
+		deployment.FuncPinger(func(ctx context.Context) error {
+			if redisClient == nil {
+				return nil
+			}
+			return redisClient.Ping(ctx).Err()
+		}),
+		deployment.FuncPinger(func(ctx context.Context) error {
+			if relayProvider == nil {
+				return nil
+			}
+			return relayProvider.Ping(ctx)
+		}),
+		deployment.CurrentVersion(),
+	)
+	handler.SetDeploymentHandler(handler.NewDeploymentHandler(
+		healthService,
+		&staticDeploymentStatusReader{
+			deploymentConfig: cfg.Deployment,
+			version:          versionInfo,
+		},
+	))
 
 	r := handler.SetupRouter(
 		entClient,
