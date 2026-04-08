@@ -1,7 +1,6 @@
 package config
 
 import (
-	"os"
 	"strings"
 
 	"github.com/spf13/viper"
@@ -133,10 +132,29 @@ func Load(path string) (*Config, error) {
 	// Environment variables with AE_ prefix
 	v.SetEnvPrefix("AE")
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	for _, key := range []string{
+		"db.dsn",
+		"auth.jwt_secret",
+		"redis.addr",
+		"redis.password",
+		"redis.db",
+		"deployment.mode",
+		"deployment.state_dir",
+		"deployment.update.enabled",
+		"deployment.update.apply_enabled",
+		"deployment.update.release_api_url",
+		"deployment.update.updater_url",
+		"deployment.update.image_repository",
+		"deployment.update.channel",
+	} {
+		if err := v.BindEnv(key); err != nil {
+			return nil, err
+		}
+	}
 	v.AutomaticEnv()
 
 	if err := v.ReadInConfig(); err != nil {
-		if _, ok := err.(viper.ConfigFileNotFoundError); !ok && !(path != "" && os.IsNotExist(err)) {
+		if _, ok := err.(viper.ConfigFileNotFoundError); !ok || path != "" {
 			return nil, err
 		}
 	}

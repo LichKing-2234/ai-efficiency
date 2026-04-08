@@ -142,9 +142,9 @@ func TestLoadEnvOverrideNested(t *testing.T) {
 	t.Setenv("AE_AUTH_JWT_SECRET", "env-secret")
 	t.Setenv("AE_DB_DSN", "postgres://env:env@localhost/envdb")
 
-	cfg, err := Load("/nonexistent/path.yaml")
+	cfg, err := Load("")
 	if err != nil {
-		return
+		t.Fatalf("Load() error = %v", err)
 	}
 	if cfg.Auth.JWTSecret != "env-secret" {
 		t.Errorf("jwt_secret = %q, want %q", cfg.Auth.JWTSecret, "env-secret")
@@ -321,14 +321,18 @@ func TestLoadDeploymentAndRedisConfigFromEnv(t *testing.T) {
 	t.Setenv("AE_DEPLOYMENT_UPDATE_APPLY_ENABLED", "true")
 	t.Setenv("AE_DEPLOYMENT_UPDATE_RELEASE_API_URL", "https://api.github.com/repos/ai-efficiency/releases/latest")
 	t.Setenv("AE_DEPLOYMENT_UPDATE_UPDATER_URL", "http://updater:8090")
+	t.Setenv("AE_DEPLOYMENT_UPDATE_IMAGE_REPOSITORY", "ghcr.io/ai-efficiency/ai-efficiency")
 
-	cfg, err := Load("/nonexistent/config.yaml")
+	cfg, err := Load("")
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
 
 	if cfg.Redis.Addr != "redis:6379" {
 		t.Errorf("redis addr = %q, want %q", cfg.Redis.Addr, "redis:6379")
+	}
+	if cfg.Redis.Password != "redis-pass" {
+		t.Errorf("redis password = %q, want %q", cfg.Redis.Password, "redis-pass")
 	}
 	if cfg.Redis.DB != 2 {
 		t.Errorf("redis db = %d, want %d", cfg.Redis.DB, 2)
@@ -344,5 +348,19 @@ func TestLoadDeploymentAndRedisConfigFromEnv(t *testing.T) {
 	}
 	if cfg.Deployment.Update.UpdaterURL != "http://updater:8090" {
 		t.Errorf("deployment updater url = %q, want %q", cfg.Deployment.Update.UpdaterURL, "http://updater:8090")
+	}
+	if cfg.Deployment.Update.ImageRepository != "ghcr.io/ai-efficiency/ai-efficiency" {
+		t.Errorf(
+			"deployment image repository = %q, want %q",
+			cfg.Deployment.Update.ImageRepository,
+			"ghcr.io/ai-efficiency/ai-efficiency",
+		)
+	}
+}
+
+func TestLoadExplicitMissingPathReturnsError(t *testing.T) {
+	_, err := Load("/nonexistent/config.yaml")
+	if err == nil {
+		t.Fatal("Load() expected error for missing explicit config path")
 	}
 }
