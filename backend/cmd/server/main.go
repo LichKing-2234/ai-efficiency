@@ -45,27 +45,6 @@ type authTokenAdapter struct {
 	authService *auth.Service
 }
 
-type staticDeploymentStatusReader struct {
-	deploymentConfig config.DeploymentConfig
-	version          deployment.VersionInfo
-}
-
-func (r *staticDeploymentStatusReader) Status(context.Context) (map[string]any, error) {
-	return map[string]any{
-		"mode":      r.deploymentConfig.Mode,
-		"state_dir": r.deploymentConfig.StateDir,
-		"update": map[string]any{
-			"enabled":          r.deploymentConfig.Update.Enabled,
-			"apply_enabled":    r.deploymentConfig.Update.ApplyEnabled,
-			"release_api_url":  r.deploymentConfig.Update.ReleaseAPIURL,
-			"updater_url":      r.deploymentConfig.Update.UpdaterURL,
-			"image_repository": r.deploymentConfig.Update.ImageRepository,
-			"channel":          r.deploymentConfig.Update.Channel,
-		},
-		"version": r.version,
-	}, nil
-}
-
 func (a *authTokenAdapter) GenerateAccessToken(userID int, username, role string) (string, string, int, error) {
 	info := &auth.UserInfo{
 		ID:       userID,
@@ -291,12 +270,12 @@ func main() {
 		relayPinger,
 		deployment.CurrentVersion(),
 	)
+	releaseSource := deployment.NewGitHubReleaseSource(http.DefaultClient, cfg.Deployment.Update.ReleaseAPIURL)
+	updaterClient := deployment.NewUpdaterClient(http.DefaultClient, cfg.Deployment.Update.UpdaterURL)
+	deploymentService := deployment.NewService(cfg.Deployment, versionInfo, releaseSource, updaterClient)
 	deploymentHandler := handler.NewDeploymentHandler(
 		healthService,
-		&staticDeploymentStatusReader{
-			deploymentConfig: cfg.Deployment,
-			version:          versionInfo,
-		},
+		deploymentService,
 	)
 
 	r := handler.SetupRouter(

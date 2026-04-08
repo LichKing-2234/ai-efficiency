@@ -217,6 +217,9 @@ func SetupRouter(
 			}
 			if deploymentHandler != nil {
 				settingsGroup.GET("/deployment", deploymentHandler.Status)
+				settingsGroup.POST("/deployment/update/check", deploymentHandler.CheckForUpdate)
+				settingsGroup.POST("/deployment/update/apply", deploymentHandler.ApplyUpdate)
+				settingsGroup.POST("/deployment/update/rollback", deploymentHandler.RollbackUpdate)
 			}
 		}
 	}

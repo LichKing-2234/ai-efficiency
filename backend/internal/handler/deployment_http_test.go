@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"net/http"
@@ -14,11 +15,31 @@ type stubDeploymentStatusReader struct {
 	err error
 }
 
-func (s stubDeploymentStatusReader) Status(context.Context) (map[string]any, error) {
+func (s stubDeploymentStatusReader) Status(context.Context) (deployment.DeploymentStatus, error) {
 	if s.err != nil {
-		return nil, s.err
+		return deployment.DeploymentStatus{}, s.err
 	}
-	return map[string]any{"ok": true}, nil
+	return deployment.DeploymentStatus{
+		Mode: "bundled",
+	}, nil
+}
+
+func (s stubDeploymentStatusReader) CheckForUpdate(ctx context.Context) (deployment.DeploymentStatus, error) {
+	return s.Status(ctx)
+}
+
+func (s stubDeploymentStatusReader) ApplyUpdate(context.Context, deployment.ApplyRequest) (deployment.UpdateStatus, error) {
+	if s.err != nil {
+		return deployment.UpdateStatus{}, s.err
+	}
+	return deployment.UpdateStatus{Phase: "applying"}, nil
+}
+
+func (s stubDeploymentStatusReader) RollbackUpdate(context.Context) (deployment.UpdateStatus, error) {
+	if s.err != nil {
+		return deployment.UpdateStatus{}, s.err
+	}
+	return deployment.UpdateStatus{Phase: "rollback_started"}, nil
 }
 
 func TestHealthLiveRouteReturns200(t *testing.T) {
@@ -123,5 +144,34 @@ func TestDeploymentStatusReturns502WhenReaderFails(t *testing.T) {
 	w := doFullRequest(env, http.MethodGet, "/api/v1/settings/deployment", nil)
 	if w.Code != http.StatusBadGateway {
 		t.Fatalf("expected 502, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestDeploymentUpdateRoutesRequireAdmin(t *testing.T) {
+	env := setupFullTestEnvWithDeployment(t, NewDeploymentHandler(
+		deployment.NewHealthService(
+			deployment.FuncPinger(func(context.Context) error { return nil }),
+			deployment.FuncPinger(func(context.Context) error { return nil }),
+			deployment.FuncPinger(func(context.Context) error { return nil }),
+			deployment.CurrentVersion(),
+		),
+		stubDeploymentStatusReader{},
+	))
+	nonAdminToken := createFullNonAdminToken(t, env)
+
+	cases := []struct {
+		path string
+		body []byte
+	}{
+		{path: "/api/v1/settings/deployment/update/check"},
+		{path: "/api/v1/settings/deployment/update/apply", body: []byte(`{"target_version":"v0.5.0"}`)},
+		{path: "/api/v1/settings/deployment/update/rollback"},
+	}
+
+	for _, tc := range cases {
+		w := doFullRequestWithToken(env, http.MethodPost, tc.path, bytes.NewReader(tc.body), nonAdminToken)
+		if w.Code != http.StatusForbidden {
+			t.Fatalf("path %s expected 403, got %d: %s", tc.path, w.Code, w.Body.String())
+		}
 	}
 }
