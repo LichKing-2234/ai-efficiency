@@ -42,6 +42,14 @@ func TestUpdaterClientApplyAndRollback(t *testing.T) {
 
 	client := NewUpdaterClient(srv.Client(), srv.URL)
 
+	statusResp, err := client.Status(context.Background())
+	if err != nil {
+		t.Fatalf("expected no status error, got %v", err)
+	}
+	if statusResp.Phase != "idle" {
+		t.Fatalf("expected status phase idle, got %q", statusResp.Phase)
+	}
+
 	applyResp, err := client.Apply(context.Background(), ApplyRequest{TargetVersion: "v0.5.0"})
 	if err != nil {
 		t.Fatalf("expected no apply error, got %v", err)
