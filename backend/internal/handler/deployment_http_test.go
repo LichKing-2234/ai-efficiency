@@ -12,8 +12,10 @@ import (
 )
 
 type stubDeploymentStatusReader struct {
-	err    error
-	status deployment.DeploymentStatus
+	err         error
+	applyErr    error
+	rollbackErr error
+	status      deployment.DeploymentStatus
 }
 
 func (s stubDeploymentStatusReader) Status(context.Context) (deployment.DeploymentStatus, error) {
@@ -31,6 +33,9 @@ func (s stubDeploymentStatusReader) CheckForUpdate(ctx context.Context) (deploym
 }
 
 func (s stubDeploymentStatusReader) ApplyUpdate(context.Context, deployment.ApplyRequest) (deployment.UpdateStatus, error) {
+	if s.applyErr != nil {
+		return deployment.UpdateStatus{}, s.applyErr
+	}
 	if s.err != nil {
 		return deployment.UpdateStatus{}, s.err
 	}
@@ -38,6 +43,9 @@ func (s stubDeploymentStatusReader) ApplyUpdate(context.Context, deployment.Appl
 }
 
 func (s stubDeploymentStatusReader) RollbackUpdate(context.Context) (deployment.UpdateStatus, error) {
+	if s.rollbackErr != nil {
+		return deployment.UpdateStatus{}, s.rollbackErr
+	}
 	if s.err != nil {
 		return deployment.UpdateStatus{}, s.err
 	}
@@ -247,5 +255,51 @@ func TestDeploymentStatusAdminSuccessWhenUpdaterUnavailablePayload(t *testing.T)
 	}
 	if phase, _ := updateStatus["phase"].(string); phase != "unavailable" {
 		t.Fatalf("expected unavailable phase, got %q", phase)
+	}
+}
+
+func TestDeploymentApplyUpdateReturns409ForPolicyDeny(t *testing.T) {
+	env := setupFullTestEnvWithDeployment(t, NewDeploymentHandler(
+		deployment.NewHealthService(
+			deployment.FuncPinger(func(context.Context) error { return nil }),
+			deployment.FuncPinger(func(context.Context) error { return nil }),
+			deployment.FuncPinger(func(context.Context) error { return nil }),
+			deployment.CurrentVersion(),
+		),
+		stubDeploymentStatusReader{
+			applyErr: deployment.ErrUpdatesDisabled,
+		},
+	))
+
+	w := doFullRequest(env, http.MethodPost, "/api/v1/settings/deployment/update/apply", bytes.NewReader([]byte(`{"target_version":"v0.5.0"}`)))
+	if w.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d: %s", w.Code, w.Body.String())
+	}
+	resp := parseFullResponse(t, w)
+	if msg, _ := resp["message"].(string); msg != deployment.ErrUpdatesDisabled.Error() {
+		t.Fatalf("expected policy message %q, got %q", deployment.ErrUpdatesDisabled.Error(), msg)
+	}
+}
+
+func TestDeploymentRollbackUpdateReturns502ForDownstreamFailure(t *testing.T) {
+	env := setupFullTestEnvWithDeployment(t, NewDeploymentHandler(
+		deployment.NewHealthService(
+			deployment.FuncPinger(func(context.Context) error { return nil }),
+			deployment.FuncPinger(func(context.Context) error { return nil }),
+			deployment.FuncPinger(func(context.Context) error { return nil }),
+			deployment.CurrentVersion(),
+		),
+		stubDeploymentStatusReader{
+			rollbackErr: errors.New("updater transport failed"),
+		},
+	))
+
+	w := doFullRequest(env, http.MethodPost, "/api/v1/settings/deployment/update/rollback", nil)
+	if w.Code != http.StatusBadGateway {
+		t.Fatalf("expected 502, got %d: %s", w.Code, w.Body.String())
+	}
+	resp := parseFullResponse(t, w)
+	if msg, _ := resp["message"].(string); msg != "updater transport failed" {
+		t.Fatalf("expected downstream message, got %q", msg)
 	}
 }

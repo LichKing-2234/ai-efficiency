@@ -2,6 +2,7 @@ package deployment
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/ai-efficiency/backend/internal/config"
@@ -20,6 +21,24 @@ type DeploymentStatus struct {
 	LatestRelease   *ReleaseInfo `json:"latest_release,omitempty"`
 	UpdateStatus    UpdateStatus `json:"update_status"`
 	Mode            string       `json:"mode"`
+}
+
+type policyError struct {
+	message string
+}
+
+func (e *policyError) Error() string {
+	return e.message
+}
+
+var (
+	ErrUpdatesDisabled = &policyError{message: "deployment updates are disabled"}
+	ErrApplyDisabled   = &policyError{message: "deployment apply is disabled"}
+)
+
+func IsPolicyError(err error) bool {
+	var target *policyError
+	return errors.As(err, &target)
 }
 
 func NewService(cfg config.DeploymentConfig, version VersionInfo, source ReleaseSource, updater Updater) *Service {
@@ -86,10 +105,10 @@ func (s *Service) CheckForUpdate(ctx context.Context) (DeploymentStatus, error) 
 
 func (s *Service) ApplyUpdate(ctx context.Context, req ApplyRequest) (UpdateStatus, error) {
 	if !s.cfg.Update.Enabled {
-		return UpdateStatus{}, fmt.Errorf("deployment updates are disabled")
+		return UpdateStatus{}, ErrUpdatesDisabled
 	}
 	if !s.cfg.Update.ApplyEnabled {
-		return UpdateStatus{}, fmt.Errorf("deployment apply is disabled")
+		return UpdateStatus{}, ErrApplyDisabled
 	}
 	if s.updater == nil {
 		return UpdateStatus{}, fmt.Errorf("deployment updater is not configured")
@@ -99,10 +118,10 @@ func (s *Service) ApplyUpdate(ctx context.Context, req ApplyRequest) (UpdateStat
 
 func (s *Service) RollbackUpdate(ctx context.Context) (UpdateStatus, error) {
 	if !s.cfg.Update.Enabled {
-		return UpdateStatus{}, fmt.Errorf("deployment updates are disabled")
+		return UpdateStatus{}, ErrUpdatesDisabled
 	}
 	if !s.cfg.Update.ApplyEnabled {
-		return UpdateStatus{}, fmt.Errorf("deployment apply is disabled")
+		return UpdateStatus{}, ErrApplyDisabled
 	}
 	if s.updater == nil {
 		return UpdateStatus{}, fmt.Errorf("deployment updater is not configured")

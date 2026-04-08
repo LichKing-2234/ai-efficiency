@@ -206,9 +206,13 @@ func TestDeploymentServiceApplyAndRollbackEnforceUpdateFlags(t *testing.T) {
 	)
 	if _, err := disabled.ApplyUpdate(ctx, ApplyRequest{TargetVersion: "v0.5.0"}); err == nil || err.Error() != "deployment updates are disabled" {
 		t.Fatalf("expected updates disabled error, got %v", err)
+	} else if !IsPolicyError(err) {
+		t.Fatalf("expected policy error, got %T", err)
 	}
 	if _, err := disabled.RollbackUpdate(ctx); err == nil || err.Error() != "deployment updates are disabled" {
 		t.Fatalf("expected updates disabled error, got %v", err)
+	} else if !IsPolicyError(err) {
+		t.Fatalf("expected policy error, got %T", err)
 	}
 
 	applyDisabled := NewService(
@@ -224,8 +228,12 @@ func TestDeploymentServiceApplyAndRollbackEnforceUpdateFlags(t *testing.T) {
 	)
 	if _, err := applyDisabled.ApplyUpdate(ctx, ApplyRequest{TargetVersion: "v0.5.0"}); err == nil || err.Error() != "deployment apply is disabled" {
 		t.Fatalf("expected apply disabled error, got %v", err)
+	} else if !IsPolicyError(err) {
+		t.Fatalf("expected policy error, got %T", err)
 	}
 	if _, err := applyDisabled.RollbackUpdate(ctx); err == nil || err.Error() != "deployment apply is disabled" {
 		t.Fatalf("expected apply disabled error, got %v", err)
+	} else if !IsPolicyError(err) {
+		t.Fatalf("expected policy error, got %T", err)
 	}
 }

@@ -62,6 +62,10 @@ func (h *DeploymentHandler) ApplyUpdate(c *gin.Context) {
 
 	resp, err := h.status.ApplyUpdate(c.Request.Context(), req)
 	if err != nil {
+		if deployment.IsPolicyError(err) {
+			c.JSON(http.StatusConflict, gin.H{"code": 409, "message": err.Error()})
+			return
+		}
 		c.JSON(http.StatusBadGateway, gin.H{"code": 502, "message": err.Error()})
 		return
 	}
@@ -71,6 +75,10 @@ func (h *DeploymentHandler) ApplyUpdate(c *gin.Context) {
 func (h *DeploymentHandler) RollbackUpdate(c *gin.Context) {
 	resp, err := h.status.RollbackUpdate(c.Request.Context())
 	if err != nil {
+		if deployment.IsPolicyError(err) {
+			c.JSON(http.StatusConflict, gin.H{"code": 409, "message": err.Error()})
+			return
+		}
 		c.JSON(http.StatusBadGateway, gin.H{"code": 502, "message": err.Error()})
 		return
 	}
