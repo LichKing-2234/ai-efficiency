@@ -3,8 +3,9 @@ import { onMounted, ref } from 'vue'
 import AppLayout from '@/components/AppLayout.vue'
 import { listProviders, createProvider, updateProvider, deleteProvider } from '@/api/scmProvider'
 import { getLLMConfig, updateLLMConfig, testLLMConnection } from '@/api/settings'
+import { getDeploymentStatus, checkForUpdate, applyUpdate, rollbackUpdate } from '@/api/deployment'
 import client from '@/api/client'
-import type { SCMProvider } from '@/types'
+import type { DeploymentStatus, SCMProvider, UpdateStatus } from '@/types'
 
 const providers = ref<SCMProvider[]>([])
 const loading = ref(true)
@@ -31,6 +32,13 @@ const llmSuccess = ref('')
 const llmTesting = ref(false)
 const llmTestResult = ref<{ success: boolean; message: string } | null>(null)
 
+// Deployment status
+const deployment = ref<DeploymentStatus | null>(null)
+const deploymentLoading = ref(false)
+const deploymentActionLoading = ref(false)
+const deploymentMessage = ref('')
+const deploymentMessageKind = ref<'success' | 'error' | ''>('')
+
 // LDAP config
 const ldapForm = ref({ url: '', base_dn: '', bind_dn: '', bind_password: '', user_filter: '', tls: false })
 const ldapSaving = ref(false)
@@ -39,7 +47,7 @@ const ldapError = ref('')
 const ldapSuccess = ref('')
 
 onMounted(async () => {
-  await Promise.all([fetchProviders(), fetchLLMConfig(), fetchLDAPConfig()])
+  await Promise.all([fetchProviders(), fetchLLMConfig(), fetchDeploymentStatus(), fetchLDAPConfig()])
 })
 
 async function fetchProviders() {
@@ -171,6 +179,82 @@ async function handleTestLLM() {
     llmTestResult.value = { success: false, message: e.message || 'Request failed' }
   } finally {
     llmTesting.value = false
+  }
+}
+
+async function fetchDeploymentStatus() {
+  deploymentLoading.value = true
+  try {
+    const res = await getDeploymentStatus()
+    deployment.value = res.data.data ?? null
+  } catch {
+    deployment.value = null
+  } finally {
+    deploymentLoading.value = false
+  }
+}
+
+function setDeploymentMessage(kind: 'success' | 'error', message: string) {
+  deploymentMessageKind.value = kind
+  deploymentMessage.value = message
+}
+
+function applyDeploymentUpdateStatus(status: UpdateStatus) {
+  if (!deployment.value) return
+  deployment.value = {
+    ...deployment.value,
+    update_status: status,
+  }
+}
+
+async function handleCheckUpdates() {
+  deploymentActionLoading.value = true
+  deploymentMessage.value = ''
+  deploymentMessageKind.value = ''
+  try {
+    const res = await checkForUpdate()
+    deployment.value = res.data.data ?? null
+    setDeploymentMessage('success', 'Update check completed')
+  } catch (e: any) {
+    setDeploymentMessage('error', e.response?.data?.message || 'Failed to check updates')
+  } finally {
+    deploymentActionLoading.value = false
+  }
+}
+
+async function handleApplyUpdate() {
+  const targetVersion = deployment.value?.latest_release?.version?.trim()
+  if (!targetVersion) {
+    setDeploymentMessage('error', 'No target version available')
+    return
+  }
+
+  deploymentActionLoading.value = true
+  deploymentMessage.value = ''
+  deploymentMessageKind.value = ''
+  try {
+    const res = await applyUpdate({ target_version: targetVersion })
+    applyDeploymentUpdateStatus(res.data.data ?? { phase: 'unknown' })
+    setDeploymentMessage('success', 'Update request submitted')
+  } catch (e: any) {
+    setDeploymentMessage('error', e.response?.data?.message || 'Failed to apply update')
+  } finally {
+    deploymentActionLoading.value = false
+  }
+}
+
+async function handleRollbackUpdate() {
+  deploymentActionLoading.value = true
+  deploymentMessage.value = ''
+  deploymentMessageKind.value = ''
+  try {
+    const res = await rollbackUpdate()
+    applyDeploymentUpdateStatus(res.data.data ?? { phase: 'unknown' })
+    setDeploymentMessage('success', 'Rollback request submitted')
+  } catch (e: any) {
+    setDeploymentMessage('error', e.response?.data?.message || 'Failed to rollback update')
+  } finally {
+    deploymentActionLoading.value = false
   }
 }
 
@@ -354,6 +438,57 @@ async function handleTestLDAP() {
             </button>
             <button @click="handleSaveLLM" :disabled="llmSaving" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50">
               {{ llmSaving ? 'Saving...' : 'Save' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Deployment -->
+    <div class="mt-8 space-y-4">
+      <h2 class="text-xl font-bold text-gray-900">Deployment</h2>
+      <div class="overflow-hidden rounded-lg bg-white shadow p-6">
+        <div v-if="deploymentLoading" class="text-sm text-gray-500">Loading deployment status...</div>
+
+        <div v-else class="space-y-4">
+          <div class="flex items-center justify-between">
+            <div>
+              <div class="text-sm text-gray-500">Current version</div>
+              <div class="text-lg font-semibold text-gray-900">{{ deployment?.version.version || 'unknown' }}</div>
+            </div>
+            <span class="inline-flex rounded-full bg-gray-100 px-2 py-1 text-xs font-semibold uppercase tracking-wide text-gray-700">
+              {{ deployment?.mode || 'unknown' }}
+            </span>
+          </div>
+
+          <div class="grid gap-3 md:grid-cols-2">
+            <div class="rounded-md bg-gray-50 p-3">
+              <div class="text-xs uppercase tracking-wide text-gray-500">Commit</div>
+              <div class="mt-1 font-mono text-sm text-gray-700">{{ deployment?.version.commit || 'unknown' }}</div>
+            </div>
+            <div class="rounded-md bg-gray-50 p-3">
+              <div class="text-xs uppercase tracking-wide text-gray-500">Update phase</div>
+              <div class="mt-1 text-sm text-gray-700">{{ deployment?.update_status.phase || 'unknown' }}</div>
+            </div>
+          </div>
+
+          <div v-if="deployment?.latest_release" class="rounded-md bg-blue-50 p-3 text-sm text-blue-800">
+            Latest release: {{ deployment.latest_release.version }}
+          </div>
+
+          <div v-if="deploymentMessage" class="rounded-md p-3 text-sm" :class="deploymentMessageKind === 'error' ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'">
+            {{ deploymentMessage }}
+          </div>
+
+          <div class="flex flex-wrap justify-end gap-3">
+            <button @click="handleCheckUpdates" :disabled="deploymentActionLoading" class="rounded-md border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50">
+              {{ deploymentActionLoading ? 'Working...' : 'Check Updates' }}
+            </button>
+            <button @click="handleApplyUpdate" :disabled="deploymentActionLoading" class="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50">
+              Apply Update
+            </button>
+            <button @click="handleRollbackUpdate" :disabled="deploymentActionLoading" class="rounded-md bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-50">
+              Rollback
             </button>
           </div>
         </div>

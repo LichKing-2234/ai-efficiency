@@ -177,6 +177,35 @@ export interface ApiResponse<T> {
   data?: T
 }
 
+export interface VersionInfo {
+  version: string
+  commit: string
+  build_time: string
+}
+
+export interface ReleaseInfo {
+  version: string
+  url: string
+}
+
+export interface UpdateStatus {
+  phase: string
+  target_version?: string
+  message?: string
+}
+
+export interface DeploymentStatus {
+  version: VersionInfo
+  mode: string
+  update_available: boolean
+  latest_release?: ReleaseInfo
+  update_status: UpdateStatus
+}
+
+export interface ApplyUpdateRequest {
+  target_version: string
+}
+
 export interface SessionListParams {
   page?: number
   page_size?: number

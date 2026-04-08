@@ -20,6 +20,7 @@ import { getDashboard, getRepoMetrics, getRepoTrend } from '@/api/efficiency'
 import { sendChatMessage } from '@/api/chat'
 import { getLLMConfig, updateLLMConfig, testLLMConnection } from '@/api/settings'
 import { listSessions } from '@/api/session'
+import { getDeploymentStatus, checkForUpdate, applyUpdate, rollbackUpdate } from '@/api/deployment'
 
 const mockClient = client as unknown as {
   get: ReturnType<typeof vi.fn>
@@ -242,5 +243,24 @@ describe('settings API', () => {
     mockClient.post.mockResolvedValue({ data: { data: { success: true, message: 'OK' } } })
     await testLLMConnection()
     expect(mockClient.post).toHaveBeenCalledWith('/settings/llm/test')
+  })
+})
+
+describe('deployment API', () => {
+  it('calls deployment endpoints', async () => {
+    mockClient.get.mockResolvedValue({ data: { data: {} } })
+    mockClient.post.mockResolvedValue({ data: { data: {} } })
+
+    await getDeploymentStatus()
+    expect(mockClient.get).toHaveBeenCalledWith('/settings/deployment')
+
+    await checkForUpdate()
+    expect(mockClient.post).toHaveBeenCalledWith('/settings/deployment/update/check')
+
+    await applyUpdate({ target_version: 'v0.5.0' })
+    expect(mockClient.post).toHaveBeenCalledWith('/settings/deployment/update/apply', { target_version: 'v0.5.0' })
+
+    await rollbackUpdate()
+    expect(mockClient.post).toHaveBeenCalledWith('/settings/deployment/update/rollback')
   })
 })

@@ -40,6 +40,23 @@ vi.mock('@/api/settings', () => ({
   testLLMConnection: vi.fn(),
 }))
 
+vi.mock('@/api/deployment', () => ({
+  getDeploymentStatus: vi.fn().mockResolvedValue({
+    data: {
+      data: {
+        version: { version: 'v0.4.0', commit: 'abc1234', build_time: '2026-04-08T12:00:00Z' },
+        mode: 'bundled',
+        update_available: true,
+        latest_release: { version: 'v0.5.0', url: 'https://example.com/v0.5.0' },
+        update_status: { phase: 'idle' },
+      },
+    },
+  }),
+  checkForUpdate: vi.fn(),
+  applyUpdate: vi.fn(),
+  rollbackUpdate: vi.fn(),
+}))
+
 vi.mock('@/api/auth', () => ({
   login: vi.fn(),
   getMe: vi.fn(),
@@ -59,9 +76,10 @@ function createTestRouter() {
   })
 }
 
-async function mountSettings(overrides?: { providers?: any[]; llmConfig?: any }) {
+async function mountSettings(overrides?: { providers?: any[]; llmConfig?: any; deploymentStatus?: any }) {
   const { listProviders } = await import('@/api/scmProvider')
   const { getLLMConfig } = await import('@/api/settings')
+  const { getDeploymentStatus } = await import('@/api/deployment')
 
   if (overrides?.providers) {
     ;(listProviders as any).mockResolvedValue({
@@ -70,6 +88,9 @@ async function mountSettings(overrides?: { providers?: any[]; llmConfig?: any })
   }
   if (overrides?.llmConfig) {
     ;(getLLMConfig as any).mockResolvedValue({ data: { data: overrides.llmConfig } })
+  }
+  if (overrides?.deploymentStatus) {
+    ;(getDeploymentStatus as any).mockResolvedValue({ data: { data: overrides.deploymentStatus } })
   }
 
   const router = createTestRouter()
@@ -102,6 +123,16 @@ describe('SettingsView', () => {
   it('renders LLM Configuration section', async () => {
     const wrapper = await mountSettings()
     expect(wrapper.text()).toContain('LLM Configuration')
+  })
+
+  it('renders deployment status and update controls', async () => {
+    const wrapper = await mountSettings()
+    expect(wrapper.text()).toContain('Deployment')
+    expect(wrapper.text()).toContain('v0.4.0')
+    expect(wrapper.text()).toContain('v0.5.0')
+    expect(wrapper.text()).toContain('Check Updates')
+    expect(wrapper.text()).toContain('Apply Update')
+    expect(wrapper.text()).toContain('Rollback')
   })
 
   it('renders LLM form fields', async () => {
