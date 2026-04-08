@@ -25,6 +25,7 @@ jobs:
       minor: ${{ steps.meta.outputs.minor }}
       is_prerelease: ${{ steps.meta.outputs.is_prerelease }}
       commit_sha: ${{ steps.meta.outputs.commit_sha }}
+      checkout_ref: ${{ steps.meta.outputs.checkout_ref }}
       owner_lower: ${{ steps.owner.outputs.owner_lower }}
       build_time: ${{ steps.meta.outputs.build_time }}
     steps:
@@ -41,20 +42,17 @@ jobs:
 
           echo "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$'
 
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            if ! git rev-parse "refs/tags/$TAG" >/dev/null 2>&1; then
-              git config user.name "github-actions[bot]"
-              git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-              git tag -a "$TAG" -m "Release $TAG"
-              git push origin "$TAG"
-            fi
-          fi
-
           VERSION="${TAG#v}"
           MAJOR="${VERSION%%.*}"
           REST="${VERSION#*.}"
           MINOR="${REST%%.*}"
-          COMMIT_SHA="$(git rev-list -n 1 "refs/tags/$TAG")"
+          if [ "${{ github.event_name }}" = "push" ]; then
+            CHECKOUT_REF="refs/tags/$TAG"
+            COMMIT_SHA="$(git rev-list -n 1 "refs/tags/$TAG")"
+          else
+            CHECKOUT_REF="${GITHUB_SHA}"
+            COMMIT_SHA="$(git rev-parse "${CHECKOUT_REF}^{commit}")"
+          fi
           if echo "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
             IS_PRERELEASE=false
           else
@@ -68,6 +66,7 @@ jobs:
           echo "minor=$MINOR" >> "$GITHUB_OUTPUT"
           echo "is_prerelease=$IS_PRERELEASE" >> "$GITHUB_OUTPUT"
           echo "commit_sha=$COMMIT_SHA" >> "$GITHUB_OUTPUT"
+          echo "checkout_ref=$CHECKOUT_REF" >> "$GITHUB_OUTPUT"
           echo "build_time=$BUILD_TIME" >> "$GITHUB_OUTPUT"
 
       - id: owner
@@ -80,7 +79,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-          ref: refs/tags/${{ needs.prepare.outputs.tag }}
+          ref: ${{ needs.prepare.outputs.checkout_ref }}
       - uses: actions/setup-go@v6
         with:
           go-version-file: backend/go.mod
@@ -110,6 +109,25 @@ jobs:
         run: npm run build
       - name: Validate deploy shell script
         run: bash -n deploy/docker-deploy.sh
+      - name: Validate compose configs
+        run: |
+          validate_compose() {
+            local compose_file="$1"
+            if docker compose --env-file deploy/.env.example -f "$compose_file" config >/dev/null 2>&1; then
+              echo "validated with docker compose: $compose_file"
+              return 0
+            fi
+            if command -v docker-compose >/dev/null 2>&1; then
+              docker-compose --env-file deploy/.env.example -f "$compose_file" config >/dev/null
+              echo "validated with docker-compose: $compose_file"
+              return 0
+            fi
+            echo "no compatible compose implementation available" >&2
+            exit 1
+          }
+
+          validate_compose deploy/docker-compose.yml
+          validate_compose deploy/docker-compose.external.yml
 
   release:
     needs: [prepare, verify]
@@ -118,7 +136,20 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-          ref: refs/tags/${{ needs.prepare.outputs.tag }}
+          ref: ${{ needs.prepare.outputs.checkout_ref }}
+      - name: Ensure release tag exists and checkout tag
+        run: |
+          TAG="${{ needs.prepare.outputs.tag }}"
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && ! git rev-parse "refs/tags/$TAG" >/dev/null 2>&1; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git tag -a "$TAG" -m "Release $TAG"
+            git push origin "refs/tags/$TAG:refs/tags/$TAG"
+          fi
+
+          git fetch --tags --force origin
+          git checkout "refs/tags/$TAG"
       - uses: actions/setup-go@v6
         with:
           go-version-file: backend/go.mod
@@ -126,15 +157,6 @@ jobs:
           cache-dependency-path: |
             backend/go.sum
             ae-cli/go.sum
-      - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v7
-        with:
-          version: '~> v2'
-          args: release --clean
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPO_OWNER: ${{ github.repository_owner }}
-          GITHUB_REPO_NAME: ${{ github.event.repository.name }}
 
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
@@ -168,3 +190,12 @@ jobs:
             APP_VERSION=${{ needs.prepare.outputs.tag }}
             APP_COMMIT=${{ needs.prepare.outputs.commit_sha }}
             APP_BUILD_TIME=${{ needs.prepare.outputs.build_time }}
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v7
+        with:
+          version: '~> v2'
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPO_OWNER: ${{ github.repository_owner }}
+          GITHUB_REPO_NAME: ${{ github.event.repository.name }}
