@@ -4,5 +4,5 @@ package buildinfo
 // Example: go build -ldflags "-X ae-cli/internal/buildinfo.ServerURL=https://ae.example.com"
 var (
 	ServerURL = "http://localhost:8081"
-	Version   = "dev"
+	Version   = "v0.1.0"
 )
