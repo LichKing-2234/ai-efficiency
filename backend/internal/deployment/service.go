@@ -36,17 +36,28 @@ func (s *Service) Status(ctx context.Context) (DeploymentStatus, error) {
 		Version: s.version,
 		Mode:    s.cfg.Mode,
 		UpdateStatus: UpdateStatus{
-			Phase: "disabled",
+			Phase: "unavailable",
 		},
 	}
 
-	if s.updater != nil {
-		updaterStatus, err := s.updater.Status(ctx)
-		if err != nil {
-			return DeploymentStatus{}, fmt.Errorf("read updater status: %w", err)
-		}
-		status.UpdateStatus = updaterStatus
+	if !s.cfg.Update.Enabled {
+		status.UpdateStatus = UpdateStatus{Phase: "disabled"}
+		return status, nil
 	}
+
+	if s.updater == nil {
+		return status, nil
+	}
+
+	updaterStatus, err := s.updater.Status(ctx)
+	if err != nil {
+		status.UpdateStatus = UpdateStatus{
+			Phase:   "unavailable",
+			Message: err.Error(),
+		}
+		return status, nil
+	}
+	status.UpdateStatus = updaterStatus
 
 	return status, nil
 }
@@ -55,6 +66,9 @@ func (s *Service) CheckForUpdate(ctx context.Context) (DeploymentStatus, error) 
 	status, err := s.Status(ctx)
 	if err != nil {
 		return DeploymentStatus{}, err
+	}
+	if !s.cfg.Update.Enabled {
+		return status, nil
 	}
 	if s.source == nil {
 		return status, nil
@@ -71,6 +85,12 @@ func (s *Service) CheckForUpdate(ctx context.Context) (DeploymentStatus, error) 
 }
 
 func (s *Service) ApplyUpdate(ctx context.Context, req ApplyRequest) (UpdateStatus, error) {
+	if !s.cfg.Update.Enabled {
+		return UpdateStatus{}, fmt.Errorf("deployment updates are disabled")
+	}
+	if !s.cfg.Update.ApplyEnabled {
+		return UpdateStatus{}, fmt.Errorf("deployment apply is disabled")
+	}
 	if s.updater == nil {
 		return UpdateStatus{}, fmt.Errorf("deployment updater is not configured")
 	}
@@ -78,6 +98,12 @@ func (s *Service) ApplyUpdate(ctx context.Context, req ApplyRequest) (UpdateStat
 }
 
 func (s *Service) RollbackUpdate(ctx context.Context) (UpdateStatus, error) {
+	if !s.cfg.Update.Enabled {
+		return UpdateStatus{}, fmt.Errorf("deployment updates are disabled")
+	}
+	if !s.cfg.Update.ApplyEnabled {
+		return UpdateStatus{}, fmt.Errorf("deployment apply is disabled")
+	}
 	if s.updater == nil {
 		return UpdateStatus{}, fmt.Errorf("deployment updater is not configured")
 	}

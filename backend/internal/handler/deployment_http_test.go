@@ -12,16 +12,18 @@ import (
 )
 
 type stubDeploymentStatusReader struct {
-	err error
+	err    error
+	status deployment.DeploymentStatus
 }
 
 func (s stubDeploymentStatusReader) Status(context.Context) (deployment.DeploymentStatus, error) {
 	if s.err != nil {
 		return deployment.DeploymentStatus{}, s.err
 	}
-	return deployment.DeploymentStatus{
-		Mode: "bundled",
-	}, nil
+	if s.status != (deployment.DeploymentStatus{}) {
+		return s.status, nil
+	}
+	return deployment.DeploymentStatus{Mode: "bundled"}, nil
 }
 
 func (s stubDeploymentStatusReader) CheckForUpdate(ctx context.Context) (deployment.DeploymentStatus, error) {
@@ -208,5 +210,42 @@ func TestDeploymentApplyUpdateSuccessEnvelope(t *testing.T) {
 	}
 	if _, ok := resp["data"].(map[string]interface{}); !ok {
 		t.Fatalf("expected data object, got %T", resp["data"])
+	}
+}
+
+func TestDeploymentStatusAdminSuccessWhenUpdaterUnavailablePayload(t *testing.T) {
+	env := setupFullTestEnvWithDeployment(t, NewDeploymentHandler(
+		deployment.NewHealthService(
+			deployment.FuncPinger(func(context.Context) error { return nil }),
+			deployment.FuncPinger(func(context.Context) error { return nil }),
+			deployment.FuncPinger(func(context.Context) error { return nil }),
+			deployment.CurrentVersion(),
+		),
+		stubDeploymentStatusReader{
+			status: deployment.DeploymentStatus{
+				Mode: "bundled",
+				UpdateStatus: deployment.UpdateStatus{
+					Phase:   "unavailable",
+					Message: "updater down",
+				},
+			},
+		},
+	))
+
+	w := doFullRequest(env, http.MethodGet, "/api/v1/settings/deployment", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	resp := parseFullResponse(t, w)
+	data, ok := resp["data"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected data object, got %T", resp["data"])
+	}
+	updateStatus, ok := data["update_status"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected update_status object, got %T", data["update_status"])
+	}
+	if phase, _ := updateStatus["phase"].(string); phase != "unavailable" {
+		t.Fatalf("expected unavailable phase, got %q", phase)
 	}
 }

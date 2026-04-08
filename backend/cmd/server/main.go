@@ -270,8 +270,14 @@ func main() {
 		relayPinger,
 		deployment.CurrentVersion(),
 	)
-	releaseSource := deployment.NewGitHubReleaseSource(http.DefaultClient, cfg.Deployment.Update.ReleaseAPIURL)
-	updaterClient := deployment.NewUpdaterClient(http.DefaultClient, cfg.Deployment.Update.UpdaterURL)
+	var releaseSource deployment.ReleaseSource
+	if cfg.Deployment.Update.Enabled && cfg.Deployment.Update.ReleaseAPIURL != "" {
+		releaseSource = deployment.NewGitHubReleaseSource(http.DefaultClient, cfg.Deployment.Update.ReleaseAPIURL)
+	}
+	var updaterClient deployment.Updater
+	if cfg.Deployment.Update.Enabled && cfg.Deployment.Update.UpdaterURL != "" {
+		updaterClient = deployment.NewUpdaterClient(http.DefaultClient, cfg.Deployment.Update.UpdaterURL)
+	}
 	deploymentService := deployment.NewService(cfg.Deployment, versionInfo, releaseSource, updaterClient)
 	deploymentHandler := handler.NewDeploymentHandler(
 		healthService,
