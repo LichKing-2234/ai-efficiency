@@ -20,6 +20,9 @@
 /frontend/dist/
 /frontend/tsconfig.app.tsbuildinfo
 /frontend/tsconfig.node.tsbuildinfo
+/deploy/data/
+/deploy/postgres_data/
+/deploy/redis_data/
 
 # Project-local worktrees
 /.worktrees/
