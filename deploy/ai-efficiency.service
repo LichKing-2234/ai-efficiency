@@ -1,0 +1,25 @@
+[Unit]
+Description=AI Efficiency Platform
+Documentation=https://github.com/LichKing-2234/ai-efficiency
+After=network.target
+
+[Service]
+Type=simple
+User=ai-efficiency
+Group=ai-efficiency
+WorkingDirectory=/opt/ai-efficiency
+ExecStart=/opt/ai-efficiency/ai-efficiency-server
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ai-efficiency
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ReadWritePaths=/opt/ai-efficiency /var/lib/ai-efficiency
+Environment=AE_CONFIG_PATH=/etc/ai-efficiency/config.yaml
+Environment=AE_SERVER_MODE=release
+
+[Install]
+WantedBy=multi-user.target

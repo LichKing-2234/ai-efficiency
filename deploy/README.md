@@ -92,3 +92,15 @@ Examples:
 docker pull ghcr.io/lichking-2234/ai-efficiency:v0.2.0
 docker pull ghcr.io/lichking-2234/ai-efficiency:latest
 ```
+
+## Linux Systemd Install
+
+After the first tagged GitHub release, Linux hosts can install with:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/LichKing-2234/ai-efficiency/main/deploy/install.sh | sudo bash
+```
+
+The installer downloads the backend bundle, verifies checksums, installs under `/opt/ai-efficiency`, writes the systemd service, and enables it.
+
+Edit `/etc/ai-efficiency/config.yaml` before first start.
