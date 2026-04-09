@@ -7,6 +7,8 @@
 - Docker Compose with the updater sidecar
 - Linux systemd with backend binary self-update
 
+In deployed images, the backend process serves both the API and the embedded frontend bundle.
+
 The deploy assets in this directory cover two modes:
 
 - bundled mode: local `postgres` + `redis` containers

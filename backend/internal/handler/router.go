@@ -9,6 +9,7 @@ import (
 	"github.com/ai-efficiency/backend/internal/sessionbootstrap"
 	"github.com/ai-efficiency/backend/internal/sessionevent"
 	"github.com/ai-efficiency/backend/internal/sessionusage"
+	"github.com/ai-efficiency/backend/internal/web"
 	"github.com/ai-efficiency/backend/internal/webhook"
 	"github.com/gin-gonic/gin"
 )
@@ -43,6 +44,9 @@ func SetupRouter(
 	r := gin.New()
 	r.Use(gin.Recovery())
 	r.Use(corsMiddleware)
+	if web.HasEmbeddedFrontend() {
+		r.Use(web.ServeEmbeddedFrontend())
+	}
 
 	// OAuth endpoints — at root /oauth/* (not under /api/v1)
 	if oauthHandler != nil {
