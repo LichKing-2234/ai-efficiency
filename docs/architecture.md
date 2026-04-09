@@ -54,6 +54,7 @@ flowchart LR
 - The business entrypoint remains the backend service that also serves the frontend bundle.
 - Docker/Compose mode uses a dedicated updater sidecar for privileged update and rollback operations over the local Docker/Compose control path.
 - Linux systemd mode installs the backend under `/opt/ai-efficiency`, keeps config in `/etc/ai-efficiency/config.yaml`, and performs binary self-update plus `.backup` rollback.
+- `deploy/` also includes non-production `dev` / `local` compose paths for local verification; these do not run the updater sidecar.
 - Public health endpoints expose liveness/readiness, and admin settings expose deployment status plus update controls.
 
 ## Current Production Deployment
@@ -102,9 +103,12 @@ flowchart TD
 - Official deploy assets live under `deploy/`.
 - `deploy/docker-compose.yml` is the bundled-infra path.
 - `deploy/docker-compose.external.yml` is the external-infra path.
+- `deploy/docker-compose.dev.yml` is the source-build local validation path.
+- `deploy/docker-compose.local.yml` is the directory-backed local validation path.
 - `deploy/docker-deploy.sh` is the preflight entrypoint.
 - `deploy/install.sh` is the Linux systemd installer entrypoint.
 - `deploy/ai-efficiency.service` is the packaged systemd unit template.
+- `deploy/migrate-sqlite-to-postgres.sh` is the one-time bootstrap path from local SQLite data into the local Postgres test environment.
 - `deploy/.env.example` is the operator-facing configuration template.
 - Backend deployment status, update, rollback, and restart APIs are now first-class admin surfaces.
 

@@ -12,6 +12,11 @@ The deploy assets in this directory cover two modes:
 - bundled mode: local `postgres` + `redis` containers
 - external mode: existing external `postgres` + `redis`
 
+It also provides two non-production local validation paths inspired by `sub2api`:
+
+- `docker-compose.dev.yml`: source-build local verification
+- `docker-compose.local.yml`: directory-backed local verification
+
 ## Bundled Mode
 
 ```bash
@@ -35,6 +40,54 @@ cp deploy/.env.example deploy/.env
 bash deploy/docker-deploy.sh external
 docker-compose --env-file deploy/.env -f deploy/docker-compose.external.yml up -d
 ```
+
+## Local Dev Mode
+
+Use this when you want to build from the current checkout and verify a full local stack without the updater sidecar:
+
+```bash
+docker-compose --env-file deploy/.env.example -f deploy/docker-compose.dev.yml up --build
+```
+
+Notes:
+
+- builds `backend` from the local repository
+- starts local `postgres` and `redis`
+- disables deployment update/apply controls
+- does not run the updater sidecar
+
+## Local Persistent Mode
+
+Use this when you want a longer-lived local environment with data stored under `deploy/`:
+
+```bash
+mkdir -p deploy/data deploy/postgres_data deploy/redis_data
+docker-compose --env-file deploy/.env.example -f deploy/docker-compose.local.yml up --build
+```
+
+Notes:
+
+- stores app state in `deploy/data`
+- stores Postgres data in `deploy/postgres_data`
+- stores Redis data in `deploy/redis_data`
+- does not run the updater sidecar
+
+## One-Time SQLite Bootstrap
+
+If you have historical local data in `backend/ai_efficiency.db`, bootstrap it into the local Postgres environment once with:
+
+```bash
+bash deploy/migrate-sqlite-to-postgres.sh local
+```
+
+For the source-build stack, switch `local` to `dev`.
+
+Behavior:
+
+- starts the target Postgres service if needed
+- refuses to import into a non-empty target database
+- supports `--force-reset` when you explicitly want to recreate the local target schema
+- uses a one-shot containerized migrator instead of requiring host database tools
 
 ## Required Variables
 
