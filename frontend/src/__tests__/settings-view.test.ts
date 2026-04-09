@@ -55,6 +55,7 @@ vi.mock('@/api/deployment', () => ({
   checkForUpdate: vi.fn(),
   applyUpdate: vi.fn(),
   rollbackUpdate: vi.fn(),
+  restartDeployment: vi.fn(),
 }))
 
 vi.mock('@/api/auth', () => ({
@@ -133,6 +134,42 @@ describe('SettingsView', () => {
     expect(wrapper.text()).toContain('Check Updates')
     expect(wrapper.text()).toContain('Apply Update')
     expect(wrapper.text()).toContain('Rollback')
+    expect(wrapper.text()).not.toContain('Restart Service')
+  })
+
+  it('renders restart control only in systemd mode', async () => {
+    const wrapper = await mountSettings({
+      deploymentStatus: {
+        version: { version: 'v0.4.0', commit: 'abc1234', build_time: '2026-04-08T12:00:00Z' },
+        mode: 'systemd',
+        update_available: true,
+        latest_release: { version: 'v0.5.0', url: 'https://example.com/v0.5.0' },
+        update_status: { phase: 'idle' },
+      },
+    })
+    expect(wrapper.text()).toContain('Restart Service')
+  })
+
+  it('calls restart deployment when restart control is clicked', async () => {
+    const { restartDeployment } = await import('@/api/deployment')
+    ;(restartDeployment as any).mockResolvedValue({ data: { data: { phase: 'restart_requested' } } })
+
+    const wrapper = await mountSettings({
+      deploymentStatus: {
+        version: { version: 'v0.4.0', commit: 'abc1234', build_time: '2026-04-08T12:00:00Z' },
+        mode: 'systemd',
+        update_available: true,
+        latest_release: { version: 'v0.5.0', url: 'https://example.com/v0.5.0' },
+        update_status: { phase: 'idle' },
+      },
+    })
+    const button = wrapper.findAll('button').find((b) => b.text().includes('Restart Service'))
+    expect(button).toBeTruthy()
+
+    await button!.trigger('click')
+    await flushPromises()
+
+    expect(restartDeployment).toHaveBeenCalled()
   })
 
   it('renders LLM form fields', async () => {

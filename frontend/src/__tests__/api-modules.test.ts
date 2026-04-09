@@ -20,7 +20,7 @@ import { getDashboard, getRepoMetrics, getRepoTrend } from '@/api/efficiency'
 import { sendChatMessage } from '@/api/chat'
 import { getLLMConfig, updateLLMConfig, testLLMConnection } from '@/api/settings'
 import { listSessions } from '@/api/session'
-import { getDeploymentStatus, checkForUpdate, applyUpdate, rollbackUpdate } from '@/api/deployment'
+import { getDeploymentStatus, checkForUpdate, applyUpdate, rollbackUpdate, restartDeployment } from '@/api/deployment'
 
 const mockClient = client as unknown as {
   get: ReturnType<typeof vi.fn>
@@ -262,5 +262,11 @@ describe('deployment API', () => {
 
     await rollbackUpdate()
     expect(mockClient.post).toHaveBeenCalledWith('/settings/deployment/update/rollback')
+  })
+
+  it('calls deployment restart endpoint', async () => {
+    mockClient.post.mockResolvedValue({ data: { data: { phase: 'restart_requested' } } })
+    await restartDeployment()
+    expect(mockClient.post).toHaveBeenCalledWith('/settings/deployment/restart')
   })
 })

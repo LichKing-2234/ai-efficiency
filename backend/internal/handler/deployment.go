@@ -14,6 +14,7 @@ type deploymentStatusReader interface {
 	CheckForUpdate(ctx context.Context) (deployment.DeploymentStatus, error)
 	ApplyUpdate(ctx context.Context, req deployment.ApplyRequest) (deployment.UpdateStatus, error)
 	RollbackUpdate(ctx context.Context) (deployment.UpdateStatus, error)
+	Restart(ctx context.Context) (deployment.UpdateStatus, error)
 }
 
 type DeploymentHandler struct {
@@ -79,6 +80,19 @@ func (h *DeploymentHandler) ApplyUpdate(c *gin.Context) {
 
 func (h *DeploymentHandler) RollbackUpdate(c *gin.Context) {
 	resp, err := h.status.RollbackUpdate(c.Request.Context())
+	if err != nil {
+		if deployment.IsPolicyError(err) {
+			c.JSON(http.StatusConflict, gin.H{"code": 409, "message": err.Error()})
+			return
+		}
+		c.JSON(http.StatusBadGateway, gin.H{"code": 502, "message": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"code": 200, "data": resp})
+}
+
+func (h *DeploymentHandler) Restart(c *gin.Context) {
+	resp, err := h.status.Restart(c.Request.Context())
 	if err != nil {
 		if deployment.IsPolicyError(err) {
 			c.JSON(http.StatusConflict, gin.H{"code": 409, "message": err.Error()})

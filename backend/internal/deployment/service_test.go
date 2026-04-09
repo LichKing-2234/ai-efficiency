@@ -3,6 +3,8 @@ package deployment
 import (
 	"context"
 	"errors"
+	"fmt"
+	"runtime"
 	"testing"
 
 	"github.com/ai-efficiency/backend/internal/config"
@@ -46,6 +48,42 @@ func (u *updaterStub) Rollback(context.Context) (UpdateStatus, error) {
 	return u.rollbackResp, nil
 }
 
+type restartManagerStub struct {
+	result SystemdOperationResult
+	err    error
+	called bool
+}
+
+func (r *restartManagerStub) Restart(context.Context) (SystemdOperationResult, error) {
+	r.called = true
+	if r.err != nil {
+		return SystemdOperationResult{}, r.err
+	}
+	return r.result, nil
+}
+
+type systemdUpdaterStub struct {
+	appliedArchiveURL   string
+	appliedChecksumsURL string
+	rollbackCalled      bool
+	applyErr            error
+	rollbackErr         error
+}
+
+func (s *systemdUpdaterStub) ApplyRelease(_ context.Context, archiveURL, checksumsURL string) (SystemdOperationResult, error) {
+	s.appliedArchiveURL = archiveURL
+	s.appliedChecksumsURL = checksumsURL
+	if s.applyErr != nil {
+		return SystemdOperationResult{}, s.applyErr
+	}
+	return SystemdOperationResult{Message: "update completed", NeedRestart: true}, nil
+}
+
+func (s *systemdUpdaterStub) Rollback(context.Context) error {
+	s.rollbackCalled = true
+	return s.rollbackErr
+}
+
 type releaseStub struct {
 	info ReleaseInfo
 	err  error
@@ -80,6 +118,8 @@ func TestDeploymentServiceCheckAndApplyUpdate(t *testing.T) {
 		VersionInfo{Version: "v0.4.0"},
 		source,
 		updater,
+		nil,
+		nil,
 	)
 
 	status, err := svc.CheckForUpdate(context.Background())
@@ -128,6 +168,8 @@ func TestDeploymentServiceStatusResilientWhenUpdaterUnavailable(t *testing.T) {
 		VersionInfo{Version: "v0.4.0"},
 		nil,
 		nil,
+		nil,
+		nil,
 	)
 	status, err := svcNoUpdater.Status(context.Background())
 	if err != nil {
@@ -150,6 +192,8 @@ func TestDeploymentServiceStatusResilientWhenUpdaterUnavailable(t *testing.T) {
 		VersionInfo{Version: "v0.4.0"},
 		nil,
 		&updaterStub{statusErr: errors.New("updater down")},
+		nil,
+		nil,
 	)
 	status, err = svcUpdaterErr.Status(context.Background())
 	if err != nil {
@@ -174,6 +218,8 @@ func TestDeploymentServiceCheckForUpdateSkipsSourceWhenDisabled(t *testing.T) {
 		},
 		VersionInfo{Version: "v0.4.0"},
 		source,
+		nil,
+		nil,
 		nil,
 	)
 	status, err := svc.CheckForUpdate(context.Background())
@@ -203,6 +249,8 @@ func TestDeploymentServiceApplyAndRollbackEnforceUpdateFlags(t *testing.T) {
 		VersionInfo{Version: "v0.4.0"},
 		nil,
 		&updaterStub{},
+		nil,
+		nil,
 	)
 	if _, err := disabled.ApplyUpdate(ctx, ApplyRequest{TargetVersion: "v0.5.0"}); err == nil || err.Error() != "deployment updates are disabled" {
 		t.Fatalf("expected updates disabled error, got %v", err)
@@ -225,6 +273,8 @@ func TestDeploymentServiceApplyAndRollbackEnforceUpdateFlags(t *testing.T) {
 		VersionInfo{Version: "v0.4.0"},
 		nil,
 		&updaterStub{},
+		nil,
+		nil,
 	)
 	if _, err := applyDisabled.ApplyUpdate(ctx, ApplyRequest{TargetVersion: "v0.5.0"}); err == nil || err.Error() != "deployment apply is disabled" {
 		t.Fatalf("expected apply disabled error, got %v", err)
@@ -235,5 +285,151 @@ func TestDeploymentServiceApplyAndRollbackEnforceUpdateFlags(t *testing.T) {
 		t.Fatalf("expected apply disabled error, got %v", err)
 	} else if !IsPolicyError(err) {
 		t.Fatalf("expected policy error, got %T", err)
+	}
+}
+
+func TestDeploymentServiceRestartInSystemdMode(t *testing.T) {
+	restarter := &restartManagerStub{
+		result: SystemdOperationResult{Message: "restart initiated", NeedRestart: true},
+	}
+	svc := NewService(
+		config.DeploymentConfig{
+			Mode: "systemd",
+			Update: config.UpdateConfig{
+				Enabled:      true,
+				ApplyEnabled: true,
+			},
+		},
+		VersionInfo{Version: "v0.4.0"},
+		nil,
+		nil,
+		nil,
+		restarter,
+	)
+
+	status, err := svc.Restart(context.Background())
+	if err != nil {
+		t.Fatalf("Restart: %v", err)
+	}
+	if !restarter.called {
+		t.Fatalf("expected restarter to be called")
+	}
+	if status.Phase != "restart_requested" {
+		t.Fatalf("expected restart_requested, got %+v", status)
+	}
+}
+
+func TestDeploymentServiceApplyUpdateRejectsStaleTargetVersionInSystemdMode(t *testing.T) {
+	archiveName := fmt.Sprintf("ai-efficiency-backend_0.5.1_%s_%s.tar.gz", runtime.GOOS, runtime.GOARCH)
+	svc := NewService(
+		config.DeploymentConfig{
+			Mode: "systemd",
+			Update: config.UpdateConfig{
+				Enabled:      true,
+				ApplyEnabled: true,
+			},
+		},
+		VersionInfo{Version: "v0.4.0"},
+		releaseStub{
+			info: ReleaseInfo{
+				Version: "v0.5.1",
+				Assets: []ReleaseAsset{
+					{Name: archiveName, DownloadURL: "https://example.com/archive.tgz"},
+					{Name: "checksums.txt", DownloadURL: "https://example.com/checksums.txt"},
+				},
+			},
+		},
+		nil,
+		&systemdUpdaterStub{},
+		nil,
+	)
+
+	_, err := svc.ApplyUpdate(context.Background(), ApplyRequest{TargetVersion: "v0.5.0"})
+	if err == nil {
+		t.Fatal("expected target version mismatch error")
+	}
+	if !IsPolicyError(err) {
+		t.Fatalf("expected policy error, got %T", err)
+	}
+	if got := err.Error(); got != "requested version v0.5.0 no longer matches latest available release v0.5.1" {
+		t.Fatalf("unexpected error: %q", got)
+	}
+}
+
+func TestDeploymentServiceRestartRejectsUnsupportedMode(t *testing.T) {
+	svc := NewService(
+		config.DeploymentConfig{
+			Mode: "bundled",
+			Update: config.UpdateConfig{
+				Enabled:      true,
+				ApplyEnabled: true,
+			},
+		},
+		VersionInfo{Version: "v0.4.0"},
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	_, err := svc.Restart(context.Background())
+	if err == nil {
+		t.Fatal("expected restart unsupported error")
+	}
+	if !IsPolicyError(err) {
+		t.Fatalf("expected policy error, got %T", err)
+	}
+	if got := err.Error(); got != "deployment restart is only available in systemd mode" {
+		t.Fatalf("unexpected error: %q", got)
+	}
+}
+
+func TestDeploymentServiceApplyAndRollbackInSystemdMode(t *testing.T) {
+	archiveName := fmt.Sprintf("ai-efficiency-backend_0.5.0_%s_%s.tar.gz", runtime.GOOS, runtime.GOARCH)
+	source := releaseStub{
+		info: ReleaseInfo{
+			Version: "v0.5.0",
+			URL:     "https://example.com/release/v0.5.0",
+			Assets: []ReleaseAsset{
+				{Name: archiveName, DownloadURL: "https://example.com/archive.tgz"},
+				{Name: "checksums.txt", DownloadURL: "https://example.com/checksums.txt"},
+			},
+		},
+	}
+	systemdUpdater := &systemdUpdaterStub{}
+	svc := NewService(
+		config.DeploymentConfig{
+			Mode: "systemd",
+			Update: config.UpdateConfig{
+				Enabled:      true,
+				ApplyEnabled: true,
+			},
+		},
+		VersionInfo{Version: "v0.4.0"},
+		source,
+		nil,
+		systemdUpdater,
+		nil,
+	)
+
+	result, err := svc.ApplyUpdate(context.Background(), ApplyRequest{TargetVersion: "v0.5.0"})
+	if err != nil {
+		t.Fatalf("ApplyUpdate: %v", err)
+	}
+	if result.Message != "update completed" {
+		t.Fatalf("result = %+v", result)
+	}
+	if systemdUpdater.appliedArchiveURL != "https://example.com/archive.tgz" {
+		t.Fatalf("appliedArchiveURL = %q", systemdUpdater.appliedArchiveURL)
+	}
+	if systemdUpdater.appliedChecksumsURL != "https://example.com/checksums.txt" {
+		t.Fatalf("appliedChecksumsURL = %q", systemdUpdater.appliedChecksumsURL)
+	}
+
+	if _, err := svc.RollbackUpdate(context.Background()); err != nil {
+		t.Fatalf("RollbackUpdate: %v", err)
+	}
+	if !systemdUpdater.rollbackCalled {
+		t.Fatalf("rollbackCalled = false")
 	}
 }

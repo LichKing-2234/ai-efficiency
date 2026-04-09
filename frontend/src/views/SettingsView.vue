@@ -3,7 +3,7 @@ import { onMounted, ref } from 'vue'
 import AppLayout from '@/components/AppLayout.vue'
 import { listProviders, createProvider, updateProvider, deleteProvider } from '@/api/scmProvider'
 import { getLLMConfig, updateLLMConfig, testLLMConnection } from '@/api/settings'
-import { getDeploymentStatus, checkForUpdate, applyUpdate, rollbackUpdate } from '@/api/deployment'
+import { getDeploymentStatus, checkForUpdate, applyUpdate, rollbackUpdate, restartDeployment } from '@/api/deployment'
 import client from '@/api/client'
 import type { DeploymentStatus, SCMProvider, UpdateStatus } from '@/types'
 
@@ -258,6 +258,21 @@ async function handleRollbackUpdate() {
   }
 }
 
+async function handleRestartDeployment() {
+  deploymentActionLoading.value = true
+  deploymentMessage.value = ''
+  deploymentMessageKind.value = ''
+  try {
+    const res = await restartDeployment()
+    applyDeploymentUpdateStatus(res.data.data ?? { phase: 'restart_requested' })
+    setDeploymentMessage('success', 'Restart request submitted')
+  } catch (e: any) {
+    setDeploymentMessage('error', e.response?.data?.message || 'Failed to restart service')
+  } finally {
+    deploymentActionLoading.value = false
+  }
+}
+
 // LDAP config functions
 async function fetchLDAPConfig() {
   try {
@@ -490,6 +505,10 @@ async function handleTestLDAP() {
             <button @click="handleRollbackUpdate" :disabled="deploymentActionLoading" class="rounded-md bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-50">
               Rollback
             </button>
+            <button v-if="deployment?.mode === 'systemd'" @click="handleRestartDeployment" :disabled="deploymentActionLoading" class="rounded-md bg-slate-700 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50">
+              Restart Service
+            </button>
+            <p v-else class="w-full text-right text-xs text-gray-500">Restart is only available in systemd mode.</p>
           </div>
         </div>
       </div>
