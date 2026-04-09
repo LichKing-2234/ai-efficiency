@@ -1861,7 +1861,7 @@ git commit -m "docs(deploy): document production deployment flow"
 Run:
 
 ```bash
-cd /Users/admin/ai-efficiency
+cd <repo-root>
 test -f deploy/docker-compose.dev.yml
 test -f deploy/docker-compose.local.yml
 test -f deploy/migrate-sqlite-to-postgres.sh
@@ -1929,7 +1929,7 @@ Extend `docs/architecture.md` so the deployment section distinguishes:
 Run:
 
 ```bash
-cd /Users/admin/ai-efficiency
+cd <repo-root>
 bash -n deploy/migrate-sqlite-to-postgres.sh
 docker-compose --env-file deploy/.env.example -f deploy/docker-compose.dev.yml config >/dev/null
 docker-compose --env-file deploy/.env.example -f deploy/docker-compose.local.yml config >/dev/null

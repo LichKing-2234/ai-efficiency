@@ -25,24 +25,6 @@ require_cmd() {
   fi
 }
 
-run_compose() {
-  local compose_file="$1"
-  shift
-
-  if docker compose -f "$compose_file" "$@" >/dev/null 2>&1; then
-    docker compose -f "$compose_file" "$@"
-    return 0
-  fi
-
-  if command -v docker-compose >/dev/null 2>&1; then
-    docker-compose -f "$compose_file" "$@"
-    return 0
-  fi
-
-  echo "docker compose or docker-compose is required" >&2
-  exit 1
-}
-
 pick_compose_impl() {
   local compose_file="$1"
   if docker compose -f "$compose_file" config >/dev/null 2>&1; then
@@ -79,6 +61,11 @@ parse_args() {
         shift
         ;;
       --sqlite-path)
+        if [[ -z "${2:-}" ]]; then
+          echo "missing value for --sqlite-path" >&2
+          usage >&2
+          exit 1
+        fi
         SQLITE_PATH="$2"
         shift 2
         ;;
@@ -148,14 +135,35 @@ compose_network() {
 run_pgloader() {
   local network_name="$1"
   local encoded_password
-  encoded_password="$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "${POSTGRES_PASSWORD:-postgres}")"
+  encoded_password="$(urlencode "${POSTGRES_PASSWORD:-postgres}")"
   docker run --rm \
     --network "$network_name" \
     -v "$SQLITE_PATH:/workspace/ai_efficiency.db:ro" \
-    dimitri/pgloader:latest \
+    dimitri/pgloader:3.6.9 \
     pgloader \
     "sqlite:///workspace/ai_efficiency.db" \
     "postgresql://${POSTGRES_USER:-postgres}:${encoded_password}@postgres:5432/${POSTGRES_DB:-ai_efficiency}?sslmode=disable"
+}
+
+urlencode() {
+  local input="$1"
+  local output=""
+  local i ch encoded
+
+  for ((i = 0; i < ${#input}; i++)); do
+    ch="${input:i:1}"
+    case "$ch" in
+      [a-zA-Z0-9.~_-])
+        output+="$ch"
+        ;;
+      *)
+        printf -v encoded '%%%02X' "'$ch"
+        output+="$encoded"
+        ;;
+    esac
+  done
+
+  printf '%s' "$output"
 }
 
 print_summary() {
@@ -171,7 +179,6 @@ print_summary() {
 main() {
   parse_args "$@"
   require_cmd docker
-  require_cmd python3
   ensure_env
 
   if [[ ! -f "$SQLITE_PATH" ]]; then
