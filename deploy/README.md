@@ -75,7 +75,11 @@ Admin users can use the Settings page to:
 
 Docker/Compose mode routes update and rollback through the updater sidecar.
 
-Linux systemd mode downloads the backend bundle from GitHub Releases, verifies `checksums.txt`, replaces `/opt/ai-efficiency/ai-efficiency-server`, keeps `.backup` for rollback, and uses `systemctl restart ai-efficiency` for restarts.
+Linux systemd mode downloads the backend bundle from GitHub Releases, verifies `checksums.txt`, replaces `/opt/ai-efficiency/ai-efficiency-server`, and keeps `.backup` for rollback.
+
+The installer assigns ownership of `/opt/ai-efficiency` to the `ai-efficiency` service user, so binary replacement and rollback can happen in-place without extra write privileges.
+
+Restarts do not shell out to `systemctl restart` by default. The backend acknowledges the restart request and then exits; the packaged `ai-efficiency.service` uses `Restart=always`, so systemd brings the process back automatically.
 
 ## GitHub Release Artifacts
 

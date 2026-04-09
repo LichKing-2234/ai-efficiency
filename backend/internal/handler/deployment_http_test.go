@@ -198,6 +198,7 @@ func TestDeploymentUpdateRoutesRequireAdmin(t *testing.T) {
 		{path: "/api/v1/settings/deployment/update/check"},
 		{path: "/api/v1/settings/deployment/update/apply", body: []byte(`{"target_version":"v0.5.0"}`)},
 		{path: "/api/v1/settings/deployment/update/rollback"},
+		{path: "/api/v1/settings/deployment/restart"},
 	}
 
 	for _, tc := range cases {

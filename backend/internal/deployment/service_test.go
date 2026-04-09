@@ -319,6 +319,71 @@ func TestDeploymentServiceRestartInSystemdMode(t *testing.T) {
 	}
 }
 
+func TestDeploymentServiceApplyUpdateRejectsStaleTargetVersionInSystemdMode(t *testing.T) {
+	archiveName := fmt.Sprintf("ai-efficiency-backend_0.5.1_%s_%s.tar.gz", runtime.GOOS, runtime.GOARCH)
+	svc := NewService(
+		config.DeploymentConfig{
+			Mode: "systemd",
+			Update: config.UpdateConfig{
+				Enabled:      true,
+				ApplyEnabled: true,
+			},
+		},
+		VersionInfo{Version: "v0.4.0"},
+		releaseStub{
+			info: ReleaseInfo{
+				Version: "v0.5.1",
+				Assets: []ReleaseAsset{
+					{Name: archiveName, DownloadURL: "https://example.com/archive.tgz"},
+					{Name: "checksums.txt", DownloadURL: "https://example.com/checksums.txt"},
+				},
+			},
+		},
+		nil,
+		&systemdUpdaterStub{},
+		nil,
+	)
+
+	_, err := svc.ApplyUpdate(context.Background(), ApplyRequest{TargetVersion: "v0.5.0"})
+	if err == nil {
+		t.Fatal("expected target version mismatch error")
+	}
+	if !IsPolicyError(err) {
+		t.Fatalf("expected policy error, got %T", err)
+	}
+	if got := err.Error(); got != "requested version v0.5.0 no longer matches latest available release v0.5.1" {
+		t.Fatalf("unexpected error: %q", got)
+	}
+}
+
+func TestDeploymentServiceRestartRejectsUnsupportedMode(t *testing.T) {
+	svc := NewService(
+		config.DeploymentConfig{
+			Mode: "bundled",
+			Update: config.UpdateConfig{
+				Enabled:      true,
+				ApplyEnabled: true,
+			},
+		},
+		VersionInfo{Version: "v0.4.0"},
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	_, err := svc.Restart(context.Background())
+	if err == nil {
+		t.Fatal("expected restart unsupported error")
+	}
+	if !IsPolicyError(err) {
+		t.Fatalf("expected policy error, got %T", err)
+	}
+	if got := err.Error(); got != "deployment restart is only available in systemd mode" {
+		t.Fatalf("unexpected error: %q", got)
+	}
+}
+
 func TestDeploymentServiceApplyAndRollbackInSystemdMode(t *testing.T) {
 	archiveName := fmt.Sprintf("ai-efficiency-backend_0.5.0_%s_%s.tar.gz", runtime.GOOS, runtime.GOARCH)
 	source := releaseStub{

@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 type SystemdBinaryConfig struct {
@@ -20,6 +21,7 @@ type SystemdBinaryConfig struct {
 	BinaryName  string
 	BackupName  string
 	DownloadDir string
+	HTTPClient  *http.Client
 }
 
 type SystemdOperationResult struct {
@@ -28,14 +30,22 @@ type SystemdOperationResult struct {
 }
 
 type SystemdBinaryUpdater struct {
-	cfg SystemdBinaryConfig
+	cfg    SystemdBinaryConfig
+	client *http.Client
 }
 
 func NewSystemdBinaryUpdater(cfg SystemdBinaryConfig) *SystemdBinaryUpdater {
-	return &SystemdBinaryUpdater{cfg: cfg}
+	client := cfg.HTTPClient
+	if client == nil {
+		client = &http.Client{Timeout: 30 * time.Second}
+	}
+	return &SystemdBinaryUpdater{cfg: cfg, client: client}
 }
 
 func (u *SystemdBinaryUpdater) ApplyRelease(ctx context.Context, archiveURL, checksumsURL string) (SystemdOperationResult, error) {
+	if err := u.validateConfig(); err != nil {
+		return SystemdOperationResult{}, err
+	}
 	downloadDir := u.cfg.DownloadDir
 	if downloadDir == "" {
 		downloadDir = filepath.Join(u.cfg.InstallDir, ".downloads")
@@ -47,10 +57,10 @@ func (u *SystemdBinaryUpdater) ApplyRelease(ctx context.Context, archiveURL, che
 	archivePath := filepath.Join(downloadDir, filepath.Base(archiveURL))
 	checksumsPath := filepath.Join(downloadDir, filepath.Base(checksumsURL))
 
-	if err := downloadFile(ctx, archiveURL, archivePath); err != nil {
+	if err := u.downloadFile(ctx, archiveURL, archivePath); err != nil {
 		return SystemdOperationResult{}, err
 	}
-	if err := downloadFile(ctx, checksumsURL, checksumsPath); err != nil {
+	if err := u.downloadFile(ctx, checksumsURL, checksumsPath); err != nil {
 		return SystemdOperationResult{}, err
 	}
 
@@ -58,6 +68,9 @@ func (u *SystemdBinaryUpdater) ApplyRelease(ctx context.Context, archiveURL, che
 }
 
 func (u *SystemdBinaryUpdater) ApplyArchive(_ context.Context, archivePath, checksumsPath string) (SystemdOperationResult, error) {
+	if err := u.validateConfig(); err != nil {
+		return SystemdOperationResult{}, err
+	}
 	if err := u.verifyArchiveChecksum(archivePath, checksumsPath); err != nil {
 		return SystemdOperationResult{}, err
 	}
@@ -74,7 +87,7 @@ func (u *SystemdBinaryUpdater) ApplyArchive(_ context.Context, archivePath, chec
 	}
 	defer os.Remove(nextPath)
 
-	if err := os.RemoveAll(backupPath); err != nil && !os.IsNotExist(err) {
+	if err := os.Remove(backupPath); err != nil && !os.IsNotExist(err) {
 		return SystemdOperationResult{}, fmt.Errorf("remove old backup: %w", err)
 	}
 
@@ -96,6 +109,9 @@ func (u *SystemdBinaryUpdater) ApplyArchive(_ context.Context, archivePath, chec
 }
 
 func (u *SystemdBinaryUpdater) Rollback(_ context.Context) error {
+	if err := u.validateConfig(); err != nil {
+		return err
+	}
 	currentPath := filepath.Join(u.cfg.InstallDir, u.cfg.BinaryName)
 	backupPath := u.backupPath()
 
@@ -133,6 +149,25 @@ func (u *SystemdBinaryUpdater) Rollback(_ context.Context) error {
 
 func (u *SystemdBinaryUpdater) backupPath() string {
 	return filepath.Join(u.cfg.InstallDir, u.cfg.BackupName)
+}
+
+func (u *SystemdBinaryUpdater) validateConfig() error {
+	if strings.TrimSpace(u.cfg.InstallDir) == "" {
+		return fmt.Errorf("install dir is required")
+	}
+	for fieldName, value := range map[string]string{
+		"binary name": u.cfg.BinaryName,
+		"backup name": u.cfg.BackupName,
+	} {
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			return fmt.Errorf("%s is required", fieldName)
+		}
+		if trimmed == "." || trimmed == ".." || trimmed != filepath.Base(trimmed) {
+			return fmt.Errorf("%s must be a file name, got %q", fieldName, value)
+		}
+	}
+	return nil
 }
 
 func (u *SystemdBinaryUpdater) verifyArchiveChecksum(archivePath, checksumsPath string) error {
@@ -244,13 +279,13 @@ func readChecksum(checksumsPath, targetName string) (string, error) {
 	return "", fmt.Errorf("checksum not found for %s", targetName)
 }
 
-func downloadFile(ctx context.Context, url, path string) error {
+func (u *SystemdBinaryUpdater) downloadFile(ctx context.Context, url, path string) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return fmt.Errorf("build download request: %w", err)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := u.client.Do(req)
 	if err != nil {
 		return fmt.Errorf("download %s: %w", filepath.Base(path), err)
 	}

@@ -298,10 +298,11 @@ func main() {
 			BinaryName:  "ai-efficiency-server",
 			BackupName:  "ai-efficiency-server.backup",
 			DownloadDir: filepath.Join(os.TempDir(), "ai-efficiency-update"),
+			HTTPClient:  deploymentHTTPClient,
 		})
 		systemdManager = deployment.NewSystemdServiceManager(
 			deployment.SystemdServiceConfig{ServiceName: "ai-efficiency"},
-			deployment.NewExecCommandRunner(),
+			nil,
 		)
 	}
 	deploymentService := deployment.NewService(cfg.Deployment, versionInfo, releaseSource, updaterClient, systemdUpdater, systemdManager)

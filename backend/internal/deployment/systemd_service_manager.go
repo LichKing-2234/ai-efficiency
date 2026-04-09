@@ -3,11 +3,14 @@ package deployment
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
+	"time"
 )
 
 type SystemdServiceConfig struct {
-	ServiceName string
+	ServiceName  string
+	RestartDelay time.Duration
 }
 
 type CommandRunner interface {
@@ -31,21 +34,42 @@ func (r *ExecCommandRunner) Run(ctx context.Context, name string, args ...string
 type SystemdServiceManager struct {
 	cfg    SystemdServiceConfig
 	runner CommandRunner
+	exitFunc  func(int)
+	afterFunc func(time.Duration) <-chan time.Time
 }
 
 func NewSystemdServiceManager(cfg SystemdServiceConfig, runner CommandRunner) *SystemdServiceManager {
-	if runner == nil {
-		runner = NewExecCommandRunner()
+	return &SystemdServiceManager{
+		cfg:       cfg,
+		runner:    runner,
+		exitFunc:  os.Exit,
+		afterFunc: time.After,
 	}
-	return &SystemdServiceManager{cfg: cfg, runner: runner}
 }
 
 func (m *SystemdServiceManager) Restart(ctx context.Context) (SystemdOperationResult, error) {
-	if err := m.runner.Run(ctx, "systemctl", "restart", m.cfg.ServiceName); err != nil {
-		return SystemdOperationResult{}, fmt.Errorf("restart systemd service: %w", err)
+	if m.runner != nil {
+		if err := m.runner.Run(ctx, "systemctl", "restart", m.cfg.ServiceName); err != nil {
+			return SystemdOperationResult{}, fmt.Errorf("restart systemd service: %w", err)
+		}
+		return SystemdOperationResult{
+			Message:     "restart initiated",
+			NeedRestart: true,
+		}, nil
 	}
+
+	delay := m.cfg.RestartDelay
+	if delay <= 0 {
+		delay = 500 * time.Millisecond
+	}
+
+	go func() {
+		<-m.afterFunc(delay)
+		m.exitFunc(0)
+	}()
+
 	return SystemdOperationResult{
-		Message:     "restart initiated",
+		Message:     "restart scheduled; systemd will restart the service after process exit",
 		NeedRestart: true,
 	}, nil
 }

@@ -505,9 +505,10 @@ async function handleTestLDAP() {
             <button @click="handleRollbackUpdate" :disabled="deploymentActionLoading" class="rounded-md bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-50">
               Rollback
             </button>
-            <button @click="handleRestartDeployment" :disabled="deploymentActionLoading" class="rounded-md bg-slate-700 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50">
+            <button v-if="deployment?.mode === 'systemd'" @click="handleRestartDeployment" :disabled="deploymentActionLoading" class="rounded-md bg-slate-700 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50">
               Restart Service
             </button>
+            <p v-else class="w-full text-right text-xs text-gray-500">Restart is only available in systemd mode.</p>
           </div>
         </div>
       </div>

@@ -168,6 +168,30 @@ func TestSystemdBinaryUpdaterApplyReleaseDownloadsAndApplies(t *testing.T) {
 	}
 }
 
+func TestSystemdBinaryUpdaterRejectsUnsafeBackupName(t *testing.T) {
+	root := t.TempDir()
+	installDir := filepath.Join(root, "opt")
+	if err := os.MkdirAll(installDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	archive := filepath.Join(root, "bundle.tar.gz")
+	writeTestArchive(t, archive, map[string]string{
+		"ai-efficiency-server": "new-binary",
+	})
+	checksums := filepath.Join(root, "checksums.txt")
+	writeChecksumFile(t, checksums, archive)
+
+	updater := NewSystemdBinaryUpdater(SystemdBinaryConfig{
+		InstallDir: installDir,
+		BinaryName: "ai-efficiency-server",
+		BackupName: "../bad",
+	})
+
+	if _, err := updater.ApplyArchive(context.Background(), archive, checksums); err == nil {
+		t.Fatal("expected invalid backup name error")
+	}
+}
+
 func writeTestArchive(t *testing.T, archivePath string, files map[string]string) {
 	t.Helper()
 

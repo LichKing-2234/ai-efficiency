@@ -46,6 +46,7 @@ func (e *policyError) Error() string {
 var (
 	ErrUpdatesDisabled = &policyError{message: "deployment updates are disabled"}
 	ErrApplyDisabled   = &policyError{message: "deployment apply is disabled"}
+	ErrRestartUnsupported = &policyError{message: "deployment restart is only available in systemd mode"}
 )
 
 func IsPolicyError(err error) bool {
@@ -139,6 +140,15 @@ func (s *Service) ApplyUpdate(ctx context.Context, req ApplyRequest) (UpdateStat
 		if err != nil {
 			return UpdateStatus{}, fmt.Errorf("fetch latest release: %w", err)
 		}
+		if req.TargetVersion != release.Version {
+			return UpdateStatus{}, &policyError{
+				message: fmt.Sprintf(
+					"requested version %s no longer matches latest available release %s",
+					req.TargetVersion,
+					release.Version,
+				),
+			}
+		}
 		archive, checksums, err := SelectSystemdReleaseAssets(release.Assets, runtime.GOOS, runtime.GOARCH)
 		if err != nil {
 			return UpdateStatus{}, err
@@ -186,7 +196,7 @@ func (s *Service) RollbackUpdate(ctx context.Context) (UpdateStatus, error) {
 
 func (s *Service) Restart(ctx context.Context) (UpdateStatus, error) {
 	if s.cfg.Mode != "systemd" {
-		return UpdateStatus{}, ErrApplyDisabled
+		return UpdateStatus{}, ErrRestartUnsupported
 	}
 	if s.systemdRestarter == nil {
 		return UpdateStatus{}, fmt.Errorf("systemd restart is not configured")
