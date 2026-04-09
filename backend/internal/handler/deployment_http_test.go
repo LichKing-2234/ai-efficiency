@@ -15,6 +15,7 @@ type stubDeploymentStatusReader struct {
 	err         error
 	applyErr    error
 	rollbackErr error
+	restartErr  error
 	status      deployment.DeploymentStatus
 }
 
@@ -50,6 +51,16 @@ func (s stubDeploymentStatusReader) RollbackUpdate(context.Context) (deployment.
 		return deployment.UpdateStatus{}, s.err
 	}
 	return deployment.UpdateStatus{Phase: "rollback_started"}, nil
+}
+
+func (s stubDeploymentStatusReader) Restart(context.Context) (deployment.UpdateStatus, error) {
+	if s.restartErr != nil {
+		return deployment.UpdateStatus{}, s.restartErr
+	}
+	if s.err != nil {
+		return deployment.UpdateStatus{}, s.err
+	}
+	return deployment.UpdateStatus{Phase: "restart_requested"}, nil
 }
 
 func TestHealthLiveRouteReturns200(t *testing.T) {
@@ -239,6 +250,23 @@ func TestDeploymentApplyUpdateRejectsEmptyTargetVersion(t *testing.T) {
 	resp := parseFullResponse(t, w)
 	if msg, _ := resp["message"].(string); msg != "target_version is required" {
 		t.Fatalf("expected target_version validation message, got %q", msg)
+	}
+}
+
+func TestDeploymentRestartReturnsConflictWhenUnsupported(t *testing.T) {
+	env := setupFullTestEnvWithDeployment(t, NewDeploymentHandler(
+		deployment.NewHealthService(
+			deployment.FuncPinger(func(context.Context) error { return nil }),
+			deployment.FuncPinger(func(context.Context) error { return nil }),
+			deployment.FuncPinger(func(context.Context) error { return nil }),
+			deployment.CurrentVersion(),
+		),
+		stubDeploymentStatusReader{restartErr: deployment.ErrApplyDisabled},
+	))
+
+	w := doFullRequest(env, http.MethodPost, "/api/v1/settings/deployment/restart", nil)
+	if w.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d: %s", w.Code, w.Body.String())
 	}
 }
 

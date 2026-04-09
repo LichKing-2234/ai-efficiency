@@ -50,17 +50,19 @@ flowchart LR
 - `ai-efficiency` is a standalone system. It integrates with `sub2api` through relay/provider HTTP APIs rather than direct database coupling.
 - The backend is the central orchestration point for auth, repo configuration, analysis, attribution, and SCM/webhook workflows.
 - The frontend is built separately and packaged into the backend image during Docker build. Do not assume Go `embed` or a single self-contained binary unless the code is changed to do that explicitly.
-- Official production deployment is now Docker Compose-first.
+- Official production deployment now has two supported paths: Docker Compose and Linux systemd.
 - The business entrypoint remains the backend service that also serves the frontend bundle.
-- A dedicated updater sidecar performs privileged deployment update and rollback operations over the local Docker/Compose control path.
+- Docker/Compose mode uses a dedicated updater sidecar for privileged update and rollback operations over the local Docker/Compose control path.
+- Linux systemd mode installs the backend under `/opt/ai-efficiency`, keeps config in `/etc/ai-efficiency/config.yaml`, and performs binary self-update plus `.backup` rollback.
 - Public health endpoints expose liveness/readiness, and admin settings expose deployment status plus update controls.
 
 ## Current Production Deployment
 
-The current deployment path is organized around one backend image plus a small updater sidecar.
+The current deployment model is split by runtime mode.
 
 ```mermaid
-flowchart LR
+flowchart TD
+    subgraph Compose["Docker Compose mode"]
     Browser["Browser"]
     Backend["Backend + Frontend bundle"]
     Updater["Updater sidecar"]
@@ -75,6 +77,24 @@ flowchart LR
     Backend --> Relay
     Backend --> Updater
     Updater --> DockerHost
+    end
+
+    subgraph Systemd["Linux systemd mode"]
+    Browser2["Browser"]
+    Backend2["ai-efficiency-server"]
+    Systemctl["systemctl / ai-efficiency.service"]
+    FS["/opt + /etc + /var/lib"]
+    Relay2["sub2api / relay"]
+    DB2[("Postgres")]
+    Redis2[("Redis")]
+
+    Browser2 --> Backend2
+    Backend2 --> DB2
+    Backend2 --> Redis2
+    Backend2 --> Relay2
+    Backend2 --> Systemctl
+    Backend2 --> FS
+    end
 ```
 
 ### Deployment Notes
@@ -83,8 +103,10 @@ flowchart LR
 - `deploy/docker-compose.yml` is the bundled-infra path.
 - `deploy/docker-compose.external.yml` is the external-infra path.
 - `deploy/docker-deploy.sh` is the preflight entrypoint.
+- `deploy/install.sh` is the Linux systemd installer entrypoint.
+- `deploy/ai-efficiency.service` is the packaged systemd unit template.
 - `deploy/.env.example` is the operator-facing configuration template.
-- Backend deployment status and update APIs are now first-class admin surfaces.
+- Backend deployment status, update, rollback, and restart APIs are now first-class admin surfaces.
 
 ## Current Runtime Flow
 

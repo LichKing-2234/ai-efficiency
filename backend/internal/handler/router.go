@@ -220,6 +220,7 @@ func SetupRouter(
 				settingsGroup.POST("/deployment/update/check", deploymentHandler.CheckForUpdate)
 				settingsGroup.POST("/deployment/update/apply", deploymentHandler.ApplyUpdate)
 				settingsGroup.POST("/deployment/update/rollback", deploymentHandler.RollbackUpdate)
+				settingsGroup.POST("/deployment/restart", deploymentHandler.Restart)
 			}
 		}
 	}

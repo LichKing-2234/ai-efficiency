@@ -55,6 +55,7 @@ vi.mock('@/api/deployment', () => ({
   checkForUpdate: vi.fn(),
   applyUpdate: vi.fn(),
   rollbackUpdate: vi.fn(),
+  restartDeployment: vi.fn(),
 }))
 
 vi.mock('@/api/auth', () => ({
@@ -133,6 +134,21 @@ describe('SettingsView', () => {
     expect(wrapper.text()).toContain('Check Updates')
     expect(wrapper.text()).toContain('Apply Update')
     expect(wrapper.text()).toContain('Rollback')
+    expect(wrapper.text()).toContain('Restart Service')
+  })
+
+  it('calls restart deployment when restart control is clicked', async () => {
+    const { restartDeployment } = await import('@/api/deployment')
+    ;(restartDeployment as any).mockResolvedValue({ data: { data: { phase: 'restart_requested' } } })
+
+    const wrapper = await mountSettings()
+    const button = wrapper.findAll('button').find((b) => b.text().includes('Restart Service'))
+    expect(button).toBeTruthy()
+
+    await button!.trigger('click')
+    await flushPromises()
+
+    expect(restartDeployment).toHaveBeenCalled()
   })
 
   it('renders LLM form fields', async () => {

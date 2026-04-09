@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"syscall"
@@ -289,7 +290,21 @@ func main() {
 	if cfg.Deployment.Update.Enabled && cfg.Deployment.Update.UpdaterURL != "" {
 		updaterClient = deployment.NewUpdaterClient(deploymentHTTPClient, cfg.Deployment.Update.UpdaterURL)
 	}
-	deploymentService := deployment.NewService(cfg.Deployment, versionInfo, releaseSource, updaterClient)
+	var systemdUpdater deployment.SystemdUpdater
+	var systemdManager deployment.RestartManager
+	if cfg.Deployment.Mode == "systemd" {
+		systemdUpdater = deployment.NewSystemdBinaryUpdater(deployment.SystemdBinaryConfig{
+			InstallDir:  "/opt/ai-efficiency",
+			BinaryName:  "ai-efficiency-server",
+			BackupName:  "ai-efficiency-server.backup",
+			DownloadDir: filepath.Join(os.TempDir(), "ai-efficiency-update"),
+		})
+		systemdManager = deployment.NewSystemdServiceManager(
+			deployment.SystemdServiceConfig{ServiceName: "ai-efficiency"},
+			deployment.NewExecCommandRunner(),
+		)
+	}
+	deploymentService := deployment.NewService(cfg.Deployment, versionInfo, releaseSource, updaterClient, systemdUpdater, systemdManager)
 	deploymentHandler := handler.NewDeploymentHandler(
 		healthService,
 		deploymentService,
