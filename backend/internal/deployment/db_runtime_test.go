@@ -22,10 +22,10 @@ func TestRequireExplicitDBDSN(t *testing.T) {
 			want:    false,
 		},
 		{
-			name:    "dev build with empty dsn keeps fallback behavior",
+			name:    "dev build with empty dsn still requires explicit dsn",
 			version: "dev",
 			dsn:     "",
-			want:    false,
+			want:    true,
 		},
 	}
 

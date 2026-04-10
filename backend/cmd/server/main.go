@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strings"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -33,10 +32,8 @@ import (
 	"github.com/ai-efficiency/backend/internal/webhook"
 	"github.com/gin-gonic/gin"
 	_ "github.com/lib/pq"
-	_ "github.com/mattn/go-sqlite3"
 	redis "github.com/redis/go-redis/v9"
 
-	"entgo.io/ent/dialect"
 	entsql "entgo.io/ent/dialect/sql"
 	"go.uber.org/zap"
 )
@@ -95,46 +92,22 @@ func main() {
 	}
 
 	// Connect to ai_efficiency database
-	var entClient *ent.Client
-	var sqlDB *sql.DB
-	useSQLite := cfg.DB.DSN == "" || strings.HasPrefix(cfg.DB.DSN, "sqlite3://") || strings.HasPrefix(cfg.DB.DSN, "file:")
-
-	if useSQLite {
-		// SQLite dev mode
-		sqliteDSN := "file:ai_efficiency.db?_fk=1"
-		if strings.HasPrefix(cfg.DB.DSN, "sqlite3://") {
-			sqliteDSN = strings.TrimPrefix(cfg.DB.DSN, "sqlite3://")
-		} else if strings.HasPrefix(cfg.DB.DSN, "file:") {
-			sqliteDSN = cfg.DB.DSN
-		}
-		db, err := sql.Open("sqlite3", sqliteDSN)
-		if err != nil {
-			logger.Fatal("open sqlite db", zap.Error(err))
-		}
-		sqlDB = db
-		defer db.Close()
-		drv := entsql.OpenDB(dialect.SQLite, db)
-		entClient = ent.NewClient(ent.Driver(drv))
-		logger.Info("using SQLite dev mode", zap.String("dsn", sqliteDSN))
-	} else {
-		// PostgreSQL production mode
-		db, err := sql.Open("postgres", cfg.DB.DSN)
-		if err != nil {
-			logger.Fatal("connect ai_efficiency db", zap.Error(err))
-		}
-		sqlDB = db
-		defer db.Close()
-		db.SetMaxOpenConns(cfg.DB.MaxOpenConns)
-		db.SetMaxIdleConns(cfg.DB.MaxIdleConns)
-		db.SetConnMaxLifetime(time.Duration(cfg.DB.ConnMaxLifetime) * time.Second)
-
-		if err := db.Ping(); err != nil {
-			logger.Fatal("ping ai_efficiency db", zap.Error(err))
-		}
-		drv := entsql.OpenDB(dialect.Postgres, db)
-		entClient = ent.NewClient(ent.Driver(drv))
-		logger.Info("connected to ai_efficiency database (PostgreSQL)")
+	db, err := sql.Open("postgres", cfg.DB.DSN)
+	if err != nil {
+		logger.Fatal("connect ai_efficiency db", zap.Error(err))
 	}
+	sqlDB := db
+	defer db.Close()
+	db.SetMaxOpenConns(cfg.DB.MaxOpenConns)
+	db.SetMaxIdleConns(cfg.DB.MaxIdleConns)
+	db.SetConnMaxLifetime(time.Duration(cfg.DB.ConnMaxLifetime) * time.Second)
+
+	if err := db.Ping(); err != nil {
+		logger.Fatal("ping ai_efficiency db", zap.Error(err))
+	}
+	drv := entsql.OpenDB("postgres", db)
+	entClient := ent.NewClient(ent.Driver(drv))
+	logger.Info("connected to ai_efficiency database (PostgreSQL)")
 	defer entClient.Close()
 
 	// Auto-migrate

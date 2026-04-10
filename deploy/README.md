@@ -74,23 +74,6 @@ Notes:
 - stores Redis data in `deploy/redis_data`
 - does not run the updater sidecar
 
-## One-Time SQLite Bootstrap
-
-If you have historical local data in `backend/ai_efficiency.db`, bootstrap it into the local Postgres environment once with:
-
-```bash
-bash deploy/migrate-sqlite-to-postgres.sh local
-```
-
-For the source-build stack, switch `local` to `dev`.
-
-Behavior:
-
-- starts the target Postgres service if needed
-- refuses to import into a non-empty target database
-- supports `--force-reset` when you explicitly want to recreate the local target schema
-- uses a one-shot containerized migrator instead of requiring host database tools
-
 ## Required Variables
 
 At minimum, set these in `deploy/.env` before first deploy:

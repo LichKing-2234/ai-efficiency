@@ -27,7 +27,7 @@ flowchart LR
     Proxy["Local Session Proxy<br/>(ae-cli child process)"]
     Tool["Codex / Claude"]
     Backend["ai-efficiency backend<br/>Gin + Ent modular monolith"]
-    DB[("ai_efficiency database<br/>SQLite dev / PostgreSQL prod")]
+    DB[("ai_efficiency database<br/>PostgreSQL")]
     SCM["SCM providers<br/>GitHub / Bitbucket Server"]
     Relay["Relay provider<br/>sub2api HTTP APIs"]
     Workspace["Developer workspace<br/>repo, git hooks, session marker"]
@@ -108,7 +108,6 @@ flowchart TD
 - `deploy/docker-deploy.sh` is the preflight entrypoint.
 - `deploy/install.sh` is the Linux systemd installer entrypoint.
 - `deploy/ai-efficiency.service` is the packaged systemd unit template.
-- `deploy/migrate-sqlite-to-postgres.sh` is the one-time bootstrap path from local SQLite data into the local Postgres test environment.
 - `deploy/.env.example` is the operator-facing configuration template.
 - Backend deployment status, update, rollback, and restart APIs are now first-class admin surfaces.
 
