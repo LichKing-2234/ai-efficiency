@@ -2,7 +2,7 @@
 
 ## Overview
 
-本 spec 定义 `ai-efficiency` 的官方生产部署形态、交付边界、配置模型、预检机制与升级路径，并补充 `deploy/` 目录下用于本地验证的非生产 compose 变体与一次性数据迁移入口。
+本 spec 定义 `ai-efficiency` 的官方生产部署形态、交付边界、配置模型、预检机制与升级路径，并补充 `deploy/` 目录下用于本地验证的非生产 compose 变体。
 
 目标不是把 `ai-efficiency` 变成“零依赖单机程序”，而是把它定义成一个**独立产品**：可单独交付、可统一部署、可在启动前检查外部依赖是否 ready，并以稳定的运维入口对外提供服务。
 
@@ -25,7 +25,8 @@
 5. 健康检查与降级语义
 6. 在线更新与回滚能力
 7. 升级与版本演进的基本路径
-8. 面向本地验证的 `dev` / `local` compose 变体与 SQLite 到 Postgres 的一次性迁移入口
+8. 面向本地验证的 `dev` / `local` compose 变体
+9. 去除 SQLite 运行时依赖的阶段性路线
 
 本文不覆盖：
 
@@ -34,6 +35,7 @@
 - `sub2api` 自身的部署与升级
 - 业务功能层的 API 合同变更
 - 将现有生产 compose 改造成直接复用 SQLite 文件的长期运行模式
+- 一次性完成全部测试基础设施从 SQLite 到 Postgres 的迁移
 
 ## Current State
 
@@ -52,7 +54,7 @@
 - 产品级在线更新入口与回滚能力
 - 成熟的升级入口与回滚说明
 - 参考 `sub2api` 的本地 `dev` / `local` compose 变体
-- 一个把 `backend/ai_efficiency.db` 一次性迁移到本地测试 Postgres 的标准入口
+- 统一本地开发与生产运行时的数据库口径
 
 因此，本文描述的是**目标合同**，不是对当前实现状态的复述。
 
@@ -65,7 +67,8 @@
 5. 提供与 `sub2api` 行为能力对齐的在线更新能力：检测新版本、一键应用更新、支持回滚
 6. 保持与当前模块化单体架构一致，不引入新的跨模块隐式耦合
 7. 在不污染生产 compose 语义的前提下，为 `deploy/` 提供面向本地验证的 `dev` / `local` 路径
-8. 为历史 SQLite 本地数据提供一次性迁移到本地测试 Postgres 的标准流程
+8. 让 backend 运行时彻底摆脱 SQLite，仅保留 Postgres 作为唯一数据库
+9. 将测试侧 SQLite 迁移拆到后续阶段，避免与运行时切换绑定在同一批次
 
 ## Non-Goals
 
@@ -75,6 +78,7 @@
 4. 不在 v1 同时提供 Compose、Kubernetes、`systemd` 三套等价主线
 5. 不要求 v1 覆盖任意第三方自定义部署拓扑的无差别在线更新
 6. 不把现有 `deploy/docker-compose.yml` 和 `deploy/docker-compose.external.yml` 改造成兼容 SQLite 文件复用的本地测试入口
+7. 不在本轮同时完成所有 SQLite 测试迁移
 
 ## Deployment Positioning
 
@@ -163,6 +167,22 @@ Docker Compose 必须支持两种模式：
 
 这两条路径的目标是本地验证和开发测试，不是生产交付主线。
 
+### SQLite Removal Roadmap
+
+SQLite 的移除分两阶段进行：
+
+1. **Phase 1: Runtime Removal**
+   - backend 运行时仅支持 Postgres
+   - 本地 `dev` / `local` compose 仅支持 Postgres
+   - 删除 SQLite 迁移脚本、样例配置和当前主文档中的 SQLite 运行口径
+
+2. **Phase 2: Test Migration**
+   - 将测试基座从 SQLite 迁移到 Postgres
+   - 删除 `go-sqlite3` 依赖
+   - 清理遗留的 SQLite-only 测试辅助与文档背景
+
+本文当前要求实现的是 **Phase 1**。Phase 2 是后续独立批次，不与运行时切换绑定交付。
+
 ## Deployment Entry Point
 
 ### Official Entry
@@ -247,23 +267,15 @@ Docker Compose 必须支持两种模式：
 
 目标是既保留当前配置读取方式，又提供更适合运维的部署界面。
 
-### Local Test Data Migration
+### Runtime Database Contract
 
-为了复用历史本地开发数据，`deploy/` 应提供一次性迁移入口，例如：
+当前生效合同应收敛为：
 
-- `deploy/migrate-sqlite-to-postgres.sh`
+- backend 在所有运行模式下都只支持 Postgres
+- `DB.DSN` 必须显式配置为 Postgres DSN
+- 本地开发不再依赖 `backend/ai_efficiency.db`
 
-该入口的职责是：
-
-1. 读取 `backend/ai_efficiency.db`
-2. 检查本地测试 Postgres 是否 ready
-3. 在目标库为空时执行一次性迁移
-4. 输出迁移结果摘要
-
-该迁移入口有两个约束：
-
-- 只服务于本地测试 Postgres 初始化，不作为常规同步机制
-- 默认拒绝覆盖非空目标库，除非显式传入强制参数
+历史 SQLite 数据可以在迁移完成前作为离线备份保留，但不再属于系统运行时设计的一部分。
 
 ## Preflight and Readiness
 

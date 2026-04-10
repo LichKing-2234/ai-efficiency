@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Turn the approved production deployment packaging spec into a working Docker Compose-first deployment flow with `.env`-driven config, preflight readiness checks, public health/readiness endpoints, admin-visible online update controls with rollback, plus local `dev` / `local` compose variants and a one-time SQLite-to-Postgres migration path for local testing.
+**Goal:** Turn the approved production deployment packaging spec into a working Docker Compose-first deployment flow with `.env`-driven config, preflight readiness checks, public health/readiness endpoints, admin-visible online update controls with rollback, plus local `dev` / `local` compose variants, while removing SQLite from the runtime path.
 
-**Architecture:** Keep `ai-efficiency` as the single business entrypoint, but add a small deployment/update control plane. The backend exposes read-only deployment metadata plus admin update APIs; a separate updater binary runs as an internal sidecar for privileged `docker compose` apply/rollback operations. Official deployment is driven by `.env` + Compose files + `deploy/docker-deploy.sh`, while the backend reports readiness for Postgres, Redis, and relay/sub2api. In addition, `deploy/docker-compose.dev.yml` and `deploy/docker-compose.local.yml` provide non-production local validation paths without the updater sidecar, and `deploy/migrate-sqlite-to-postgres.sh` seeds local Postgres once from `backend/ai_efficiency.db`.
+**Architecture:** Keep `ai-efficiency` as the single business entrypoint, but add a small deployment/update control plane. The backend exposes read-only deployment metadata plus admin update APIs; a separate updater binary runs as an internal sidecar for privileged `docker compose` apply/rollback operations. Official deployment is driven by `.env` + Compose files + `deploy/docker-deploy.sh`, while the backend reports readiness for Postgres, Redis, and relay/sub2api. `deploy/docker-compose.dev.yml` and `deploy/docker-compose.local.yml` provide non-production local validation paths without the updater sidecar. SQLite removal is staged: this plan covers runtime/config/doc removal only, while test migration is deferred.
 
 **Tech Stack:** Go (`gin`, `ent`, `viper`, `zap`, `go-redis/v9`), Vue 3 + Pinia + Vitest, Docker Compose, POSIX shell.
 
@@ -56,8 +56,6 @@
   Local directory-backed compose path for persistent local testing without the updater sidecar.
 - `deploy/docker-deploy.sh`
   Official deploy/preflight helper script.
-- `deploy/migrate-sqlite-to-postgres.sh`
-  One-shot helper that migrates `backend/ai_efficiency.db` into the local Postgres test environment.
 - `deploy/README.md`
   Operator deployment and upgrade guide.
 
@@ -111,7 +109,7 @@
 5. The updater stores rollback state in a mounted writable state directory so rollback survives backend container replacement.
 6. `deploy/docker-compose.yml` and `deploy/docker-compose.external.yml` remain production-focused and keep the updater sidecar.
 7. `deploy/docker-compose.dev.yml` and `deploy/docker-compose.local.yml` are non-production local validation paths and do not run the updater sidecar.
-8. Local SQLite reuse is handled through a one-time migration into Postgres, not by running SQLite inside the Docker test path.
+8. SQLite is removed from the runtime path in this batch; test-side SQLite migration is explicitly deferred.
 
 ---
 
@@ -1846,15 +1844,14 @@ git add docs/architecture.md deploy/README.md
 git commit -m "docs(deploy): document production deployment flow"
 ```
 
-### Task 7: Add Local Dev/Local Compose Paths And One-Time SQLite Migration
+### Task 7: Add Local Dev/Local Compose Paths
 
 **Files:**
 - Create: `deploy/docker-compose.dev.yml`
 - Create: `deploy/docker-compose.local.yml`
-- Create: `deploy/migrate-sqlite-to-postgres.sh`
 - Modify: `deploy/README.md`
 - Modify: `docs/architecture.md`
-- Verify: compose config + migration script syntax
+- Verify: compose config
 
 - [ ] **Step 1: Write the failing asset checks**
 
@@ -1864,7 +1861,6 @@ Run:
 cd <repo-root>
 test -f deploy/docker-compose.dev.yml
 test -f deploy/docker-compose.local.yml
-test -f deploy/migrate-sqlite-to-postgres.sh
 ```
 
 Expected: FAIL because the local dev/local compose assets do not exist yet.
@@ -1894,22 +1890,7 @@ Create `deploy/docker-compose.local.yml` as the directory-backed local test path
 - keep the runtime contract aligned with `docker-compose.dev.yml`
 - document that this file is for long-lived local test environments, not production
 
-- [ ] **Step 4: Add one-time SQLite migration helper**
-
-Create `deploy/migrate-sqlite-to-postgres.sh`:
-
-- source SQLite file: `backend/ai_efficiency.db`
-- target: the Postgres instance started by the local test compose path
-- implementation should use a one-shot containerized migrator so the host does not need extra tools preinstalled
-- default behavior:
-  - fail if the SQLite source file is missing
-  - fail if Postgres is not ready
-  - fail if the target database is not empty
-- optional `--force-reset` path may reset the local target database before retrying
-
-The script should print a short summary of what it migrated and clearly state that it is a one-time bootstrap helper, not an ongoing sync tool.
-
-- [ ] **Step 5: Update docs**
+- [ ] **Step 4: Update docs**
 
 Extend `deploy/README.md` with:
 
@@ -1917,32 +1898,103 @@ Extend `deploy/README.md` with:
 - when to use `docker-compose.external.yml`
 - when to use `docker-compose.dev.yml`
 - when to use `docker-compose.local.yml`
-- how to run the one-time SQLite-to-Postgres migration
 
 Extend `docs/architecture.md` so the deployment section distinguishes:
 
 - production Compose mode with updater sidecar
 - local dev/local compose validation paths without updater sidecar
 
-- [ ] **Step 6: Run verification**
+- [ ] **Step 5: Run verification**
 
 Run:
 
 ```bash
 cd <repo-root>
-bash -n deploy/migrate-sqlite-to-postgres.sh
 docker-compose --env-file deploy/.env.example -f deploy/docker-compose.dev.yml config >/dev/null
 docker-compose --env-file deploy/.env.example -f deploy/docker-compose.local.yml config >/dev/null
 ```
 
 Expected: all commands succeed.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add deploy/docker-compose.dev.yml deploy/docker-compose.local.yml deploy/migrate-sqlite-to-postgres.sh deploy/README.md docs/architecture.md
+git add deploy/docker-compose.dev.yml deploy/docker-compose.local.yml deploy/README.md docs/architecture.md
 git commit -m "feat(deploy): add local compose validation paths"
 ```
+
+### Task 8: Phase 1 Remove SQLite From Runtime
+
+**Files:**
+- Modify: `backend/cmd/server/main.go`
+- Modify: `backend/config.sample.yaml`
+- Modify: `deploy/README.md`
+- Modify: `docs/architecture.md`
+- Modify: `docs/superpowers/specs/2026-04-08-production-deployment-packaging-design.md`
+- Modify: `docs/superpowers/plans/2026-04-08-production-deployment-packaging.md`
+- Delete: `deploy/migrate-sqlite-to-postgres.sh`
+- Verify: backend runtime build/tests
+
+- [ ] **Step 1: Write failing runtime/config checks**
+
+Add or update tests so they fail while SQLite runtime support still exists:
+
+- backend startup/config tests should require `DB.DSN` to be explicitly set to Postgres
+- runtime path tests should no longer accept `sqlite3://` or `file:` DSNs
+
+- [ ] **Step 2: Remove SQLite runtime support**
+
+Update `backend/cmd/server/main.go` so it:
+
+- removes `_ "github.com/mattn/go-sqlite3"` from runtime imports
+- removes SQLite branching and fallback logic
+- fails fast when `DB.DSN` is empty or non-Postgres
+- keeps Postgres as the only runtime database path
+
+- [ ] **Step 3: Update templates and docs to Postgres-only runtime**
+
+Update:
+
+- `backend/config.sample.yaml`
+- `deploy/README.md`
+- `docs/architecture.md`
+
+to remove SQLite as a supported runtime mode and describe Postgres as the only supported runtime database.
+
+- [ ] **Step 4: Delete the SQLite migration helper**
+
+Delete:
+
+- `deploy/migrate-sqlite-to-postgres.sh`
+
+and remove any references to it from current docs.
+
+- [ ] **Step 5: Run verification**
+
+Run:
+
+```bash
+cd <repo-root>/backend
+go test ./...
+```
+
+Expected: backend passes with Postgres-only runtime code paths.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add backend/cmd/server/main.go backend/config.sample.yaml deploy/README.md docs/architecture.md docs/superpowers/specs/2026-04-08-production-deployment-packaging-design.md docs/superpowers/plans/2026-04-08-production-deployment-packaging.md
+git rm deploy/migrate-sqlite-to-postgres.sh
+git commit -m "refactor(deploy): remove sqlite runtime support"
+```
+
+### Deferred Work: Phase 2 Test Migration
+
+Phase 2 is explicitly out of scope for the current implementation batch. It will cover:
+
+- replacing SQLite-backed `enttest` usage across backend tests
+- removing `_ "github.com/mattn/go-sqlite3"` from test-only imports
+- deleting `github.com/mattn/go-sqlite3` from `backend/go.mod`
 
 ## Self-Review Checklist
 
@@ -1954,8 +2006,8 @@ git commit -m "feat(deploy): add local compose validation paths"
   - admin deployment/update UI: Tasks 3 and 5
   - online update + rollback: Tasks 3 and 4
   - local dev/local compose validation paths: Task 7
-  - one-time SQLite to Postgres local migration: Task 7
-  - architecture/docs alignment: Tasks 6 and 7
+  - runtime SQLite removal: Task 8
+  - architecture/docs alignment: Tasks 6, 7, and 8
 - Placeholder scan:
   - No `TODO`, `TBD`, or “implement later” markers remain.
 - Type consistency:
