@@ -6,13 +6,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ai-efficiency/backend/ent/enttest"
 	"github.com/ai-efficiency/backend/ent/prrecord"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/scmprovider"
 	"github.com/ai-efficiency/backend/internal/efficiency"
 	"github.com/ai-efficiency/backend/internal/scm"
-	_ "github.com/mattn/go-sqlite3"
+	"github.com/ai-efficiency/backend/internal/testdb"
 	"go.uber.org/zap"
 )
 
@@ -29,7 +28,7 @@ func TestSyncUpsertError(t *testing.T) {
 	// A simpler approach: create a scenario where the query in upsertPR fails.
 	// We'll use a context that gets cancelled after the first page fetch.
 
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 	defer client.Close()
 	ctx := context.Background()
 	logger := zap.NewNop()
@@ -37,7 +36,7 @@ func TestSyncUpsertError(t *testing.T) {
 	rc := createTestRepo(t, ctx, client, "upsert-err-repo")
 
 	// Create a second client that we'll close to simulate DB errors during upsert
-	client2 := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client2 := testdb.Open(t)
 	// Create the same repo structure in client2
 	sp2 := client2.ScmProvider.Create().
 		SetName("test-provider").
@@ -98,7 +97,7 @@ func TestSyncWithLabelerError(t *testing.T) {
 	// We can create a PR via sync, then have the labeler fail by using a
 	// closed secondary client for the labeler.
 
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 	defer client.Close()
 	ctx := context.Background()
 	logger := zap.NewNop()
@@ -106,7 +105,7 @@ func TestSyncWithLabelerError(t *testing.T) {
 	rc := createTestRepo(t, ctx, client, "labeler-err-repo")
 
 	// Create a labeler with a separate closed client to force errors
-	client2 := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client2 := testdb.Open(t)
 	client2.Close()
 	labeler := efficiency.NewLabeler(client2, nil, logger)
 
@@ -140,7 +139,7 @@ func TestSyncWithLabelerError(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestSyncWithAggregatorError(t *testing.T) {
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 	defer client.Close()
 	ctx := context.Background()
 	logger := zap.NewNop()
@@ -148,7 +147,7 @@ func TestSyncWithAggregatorError(t *testing.T) {
 	rc := createTestRepo(t, ctx, client, "agg-err-repo")
 
 	// Create an aggregator with a closed client to force errors
-	client2 := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client2 := testdb.Open(t)
 	client2.Close()
 	aggregator := efficiency.NewAggregator(client2, logger)
 
@@ -182,7 +181,7 @@ func TestSyncWithAggregatorError(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestUpsertPRQueryError(t *testing.T) {
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 	ctx := context.Background()
 	logger := zap.NewNop()
 
@@ -211,7 +210,7 @@ func TestUpsertPRQueryError(t *testing.T) {
 
 func TestUpsertPRUpdateExecError(t *testing.T) {
 	// Create a PR, then try to update it with a closed client.
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 	ctx := context.Background()
 	logger := zap.NewNop()
 
@@ -251,7 +250,7 @@ func TestUpsertPRUpdateExecError(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestSyncUpdateWithZeroTimestamps(t *testing.T) {
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 	defer client.Close()
 	ctx := context.Background()
 	logger := zap.NewNop()
@@ -306,7 +305,7 @@ func TestSyncUpdateWithZeroTimestamps(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestFetchAllPRsError(t *testing.T) {
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 	defer client.Close()
 	logger := zap.NewNop()
 
@@ -329,7 +328,7 @@ func TestFetchAllPRsError(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestFetchAllPRsPaginationError(t *testing.T) {
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 	defer client.Close()
 	logger := zap.NewNop()
 
@@ -367,7 +366,7 @@ func TestFetchAllPRsPaginationError(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestUpsertPRCreateError(t *testing.T) {
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 	ctx := context.Background()
 	logger := zap.NewNop()
 
@@ -391,7 +390,7 @@ func TestUpsertPRCreateError(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestNewServiceAllFields(t *testing.T) {
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 	defer client.Close()
 	logger := zap.NewNop()
 
@@ -418,7 +417,7 @@ func TestNewServiceAllFields(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestSyncWithLabelerAndAggregatorErrors(t *testing.T) {
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 	defer client.Close()
 	ctx := context.Background()
 	logger := zap.NewNop()
@@ -426,7 +425,7 @@ func TestSyncWithLabelerAndAggregatorErrors(t *testing.T) {
 	rc := createTestRepo(t, ctx, client, "both-err-repo")
 
 	// Both labeler and aggregator use closed clients
-	closedClient := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	closedClient := testdb.Open(t)
 	closedClient.Close()
 
 	labeler := efficiency.NewLabeler(closedClient, nil, logger)

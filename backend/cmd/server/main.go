@@ -83,7 +83,7 @@ func main() {
 		zap.String("build_time", versionInfo.BuildTime),
 	)
 	if deployment.RequireExplicitDBDSN(versionInfo, cfg.DB.DSN) {
-		logger.Fatal("DB.DSN is required for release builds; SQLite fallback is only available in dev builds")
+		logger.Fatal("DB.DSN is required and must point to PostgreSQL")
 	}
 
 	// Set gin mode

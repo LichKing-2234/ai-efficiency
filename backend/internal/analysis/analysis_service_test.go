@@ -13,12 +13,11 @@ import (
 	"time"
 
 	"github.com/ai-efficiency/backend/ent"
-	"github.com/ai-efficiency/backend/ent/enttest"
 	"github.com/ai-efficiency/backend/internal/analysis/llm"
 	"github.com/ai-efficiency/backend/internal/analysis/rules"
 	"github.com/ai-efficiency/backend/internal/config"
 	"github.com/ai-efficiency/backend/internal/relay"
-	_ "github.com/mattn/go-sqlite3"
+	"github.com/ai-efficiency/backend/internal/testdb"
 	"go.uber.org/zap"
 )
 
@@ -28,7 +27,7 @@ import (
 
 func setupEntClient(t *testing.T) *ent.Client {
 	t.Helper()
-	return enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	return testdb.Open(t)
 }
 
 func createTestSCMProvider(t *testing.T, client *ent.Client) *ent.ScmProvider {
@@ -402,8 +401,7 @@ func TestRunScanWithLLMEnabled(t *testing.T) {
 	defer server.Close()
 
 	rp := relay.NewSub2apiProvider(server.Client(), server.URL+"/v1", server.URL, "sk-test", "gpt-4", zap.NewNop())
-	llmAnalyzer := llm.NewAnalyzer(config.LLMConfig{
-	}, rp, zap.NewNop())
+	llmAnalyzer := llm.NewAnalyzer(config.LLMConfig{}, rp, zap.NewNop())
 
 	svc := NewService(client, c, llmAnalyzer, zap.NewNop())
 
@@ -440,8 +438,7 @@ func TestRunScanWithLLMFailure(t *testing.T) {
 	defer server.Close()
 
 	rp := relay.NewSub2apiProvider(server.Client(), server.URL+"/v1", server.URL, "sk-test", "gpt-4", zap.NewNop())
-	llmAnalyzer := llm.NewAnalyzer(config.LLMConfig{
-	}, rp, zap.NewNop())
+	llmAnalyzer := llm.NewAnalyzer(config.LLMConfig{}, rp, zap.NewNop())
 
 	svc := NewService(client, c, llmAnalyzer, zap.NewNop())
 
@@ -483,8 +480,7 @@ func TestRunScanWithPromptOverride(t *testing.T) {
 	defer server.Close()
 
 	rp := relay.NewSub2apiProvider(server.Client(), server.URL+"/v1", server.URL, "sk-test", "gpt-4", zap.NewNop())
-	llmAnalyzer := llm.NewAnalyzer(config.LLMConfig{
-	}, rp, zap.NewNop())
+	llmAnalyzer := llm.NewAnalyzer(config.LLMConfig{}, rp, zap.NewNop())
 
 	svc := NewService(client, c, llmAnalyzer, zap.NewNop())
 
@@ -730,9 +726,9 @@ func TestBoolVal(t *testing.T) {
 
 func TestFloatVal(t *testing.T) {
 	m := map[string]interface{}{
-		"score":  float64(95.5),
-		"count":  int(10),
-		"label":  "not-a-number",
+		"score": float64(95.5),
+		"count": int(10),
+		"label": "not-a-number",
 	}
 
 	// float64 value

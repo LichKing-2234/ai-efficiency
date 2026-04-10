@@ -8,10 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ai-efficiency/backend/ent/enttest"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/internal/pkg"
-	_ "github.com/mattn/go-sqlite3"
+	"github.com/ai-efficiency/backend/internal/testdb"
 	"go.uber.org/zap"
 )
 
@@ -32,7 +31,7 @@ func TestCreate_ProviderNotFound(t *testing.T) {
 }
 
 func TestCreate_DecryptError(t *testing.T) {
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 	svc := NewService(client, "1111111111111111111111111111111111111111111111111111111111111111", zap.NewNop())
 	ctx := context.Background()
 
@@ -56,7 +55,7 @@ func TestCreate_DecryptError(t *testing.T) {
 }
 
 func TestCreate_UnsupportedProviderType(t *testing.T) {
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 	encKey := "0000000000000000000000000000000000000000000000000000000000000000"
 	svc := NewService(client, encKey, zap.NewNop())
 	ctx := context.Background()
@@ -85,7 +84,7 @@ func TestCreate_UnsupportedProviderType(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestCreate_WithGroupID(t *testing.T) {
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 	encKey := "0000000000000000000000000000000000000000000000000000000000000000"
 	svc := NewService(client, encKey, zap.NewNop())
 	ctx := context.Background()
@@ -224,7 +223,7 @@ func TestDelete_WithWebhookNilProviderEdge(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestGetSCMProvider_BitbucketType(t *testing.T) {
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 	encKey := "0000000000000000000000000000000000000000000000000000000000000000"
 	svc := NewService(client, encKey, zap.NewNop())
 	ctx := context.Background()
@@ -433,7 +432,7 @@ func setupMockGitHub(t *testing.T) *httptest.Server {
 func TestCreate_FullSuccessWithWebhook(t *testing.T) {
 	server := setupMockGitHub(t)
 
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 	encKey := "0000000000000000000000000000000000000000000000000000000000000000"
 	svc := NewService(client, encKey, zap.NewNop())
 	ctx := context.Background()
@@ -471,7 +470,7 @@ func TestCreate_FullSuccessWithWebhook(t *testing.T) {
 func TestCreate_FullSuccessWithGroupID(t *testing.T) {
 	server := setupMockGitHub(t)
 
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 	encKey := "0000000000000000000000000000000000000000000000000000000000000000"
 	svc := NewService(client, encKey, zap.NewNop())
 	ctx := context.Background()
@@ -501,7 +500,7 @@ func TestCreate_FullSuccessWithGroupID(t *testing.T) {
 func TestCreate_WebhookRegistrationFails(t *testing.T) {
 	server := setupMockGitHub(t)
 
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 	encKey := "0000000000000000000000000000000000000000000000000000000000000000"
 	svc := NewService(client, encKey, zap.NewNop())
 	ctx := context.Background()
@@ -544,7 +543,7 @@ func TestDelete_WithWebhookSuccessfulCleanup(t *testing.T) {
 	server := httptest.NewServer(mux)
 	t.Cleanup(server.Close)
 
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 	encKey := "0000000000000000000000000000000000000000000000000000000000000000"
 	svc := NewService(client, encKey, zap.NewNop())
 	ctx := context.Background()
@@ -580,7 +579,7 @@ func TestDelete_WithWebhookSuccessfulCleanup(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestCreate_BitbucketProviderGetRepoFails(t *testing.T) {
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 	encKey := "0000000000000000000000000000000000000000000000000000000000000000"
 	svc := NewService(client, encKey, zap.NewNop())
 	ctx := context.Background()
@@ -611,7 +610,7 @@ func TestCreate_BitbucketProviderGetRepoFails(t *testing.T) {
 func TestCreate_SaveError(t *testing.T) {
 	server := setupMockGitHub(t)
 
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 	encKey := "0000000000000000000000000000000000000000000000000000000000000000"
 	svc := NewService(client, encKey, zap.NewNop())
 	ctx := context.Background()
@@ -649,7 +648,7 @@ func TestCreate_SaveError(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestList_DBError(t *testing.T) {
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 	svc := NewService(client, "key", zap.NewNop())
 
 	client.Close()

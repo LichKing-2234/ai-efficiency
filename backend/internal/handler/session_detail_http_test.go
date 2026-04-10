@@ -8,19 +8,18 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ai-efficiency/backend/ent/enttest"
 	"github.com/ai-efficiency/backend/ent/user"
 	"github.com/ai-efficiency/backend/internal/auth"
+	"github.com/ai-efficiency/backend/internal/testdb"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	_ "github.com/mattn/go-sqlite3"
 )
 
 func TestSessionDetailIncludesWorkspaceCheckpointUsageAndSessionEventEdges(t *testing.T) {
 	t.Parallel()
 	gin.SetMode(gin.TestMode)
 
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 	defer client.Close()
 
 	ctx := t.Context()
@@ -127,7 +126,7 @@ func TestSessionDetailOrdersAndLimitsCheckpointUsageAndSessionEventEdges(t *test
 	t.Parallel()
 	gin.SetMode(gin.TestMode)
 
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 	defer client.Close()
 
 	ctx := t.Context()
@@ -272,7 +271,7 @@ func TestSessionDetailAdminCanReadOtherUsersSessionButUserCannot(t *testing.T) {
 	t.Parallel()
 	gin.SetMode(gin.TestMode)
 
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 	defer client.Close()
 
 	ctx := t.Context()
@@ -392,7 +391,7 @@ func TestSessionListReturnsOnlyCurrentUserSessions(t *testing.T) {
 	t.Parallel()
 	gin.SetMode(gin.TestMode)
 
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 	defer client.Close()
 
 	ctx := t.Context()

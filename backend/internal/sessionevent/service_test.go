@@ -8,16 +8,15 @@ import (
 	"time"
 
 	"github.com/ai-efficiency/backend/ent"
-	"github.com/ai-efficiency/backend/ent/enttest"
 	"github.com/ai-efficiency/backend/ent/session"
 	"github.com/ai-efficiency/backend/ent/sessionevent"
+	"github.com/ai-efficiency/backend/internal/testdb"
 	"github.com/google/uuid"
-	_ "github.com/mattn/go-sqlite3"
 )
 
 func createOwnedSession(t *testing.T) (*ent.Client, context.Context, uuid.UUID, int, int) {
 	t.Helper()
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 	ctx := context.Background()
 
 	owner := client.User.Create().
@@ -108,7 +107,7 @@ func TestCreate_IsIdempotentByEventID(t *testing.T) {
 
 func TestCreate_ReturnsErrorForInvalidSessionID(t *testing.T) {
 	t.Parallel()
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 	svc := NewService(client)
 
 	err := svc.Create(context.Background(), 1, CreateSessionEventRequest{
@@ -140,7 +139,7 @@ func TestCreate_RejectsCrossUserSession(t *testing.T) {
 
 func TestCreate_RejectsMissingSession(t *testing.T) {
 	t.Parallel()
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 	svc := NewService(client)
 
 	err := svc.Create(context.Background(), 1, validSessionEventReq(uuid.New(), "event-missing-session"))

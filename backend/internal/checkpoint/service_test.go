@@ -7,15 +7,14 @@ import (
 	"github.com/ai-efficiency/backend/ent/agentmetadataevent"
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
 	"github.com/ai-efficiency/backend/ent/commitrewrite"
-	"github.com/ai-efficiency/backend/ent/enttest"
+	"github.com/ai-efficiency/backend/internal/testdb"
 	"github.com/google/uuid"
-	_ "github.com/mattn/go-sqlite3"
 )
 
 func TestRecordCheckpointUpsertsByEventIDAndWritesMetadataEvents(t *testing.T) {
 	t.Parallel()
 
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 	ctx := context.Background()
 
 	sp := client.ScmProvider.Create().
@@ -93,7 +92,7 @@ func TestRecordCheckpointUpsertsByEventIDAndWritesMetadataEvents(t *testing.T) {
 func TestRecordRewriteAcceptsUnboundEvents(t *testing.T) {
 	t.Parallel()
 
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 	ctx := context.Background()
 
 	sp := client.ScmProvider.Create().
@@ -143,7 +142,7 @@ func TestRecordRewriteAcceptsUnboundEvents(t *testing.T) {
 func TestRecordCheckpointWithAgentSnapshotAndNoSessionDoesNotPartiallyWrite(t *testing.T) {
 	t.Parallel()
 
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 	ctx := context.Background()
 
 	sp := client.ScmProvider.Create().
@@ -163,11 +162,11 @@ func TestRecordCheckpointWithAgentSnapshotAndNoSessionDoesNotPartiallyWrite(t *t
 
 	svc := NewService(client)
 	req := CommitCheckpointRequest{
-		EventID:      "evt-commit-no-session",
-		RepoFullName: rc.FullName,
-		WorkspaceID:  "ws-1",
-		CommitSHA:    "abc999",
-		BindingSource:"marker",
+		EventID:       "evt-commit-no-session",
+		RepoFullName:  rc.FullName,
+		WorkspaceID:   "ws-1",
+		CommitSHA:     "abc999",
+		BindingSource: "marker",
 		AgentSnapshot: map[string]any{
 			"source":            "codex",
 			"source_session_id": "source-sess-1",
@@ -197,7 +196,7 @@ func TestRecordCheckpointWithAgentSnapshotAndNoSessionDoesNotPartiallyWrite(t *t
 func TestRecordCheckpointWritesMetadataEventsFromAggregateSnapshot(t *testing.T) {
 	t.Parallel()
 
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 	ctx := context.Background()
 
 	sp := client.ScmProvider.Create().
@@ -223,12 +222,12 @@ func TestRecordCheckpointWritesMetadataEventsFromAggregateSnapshot(t *testing.T)
 
 	svc := NewService(client)
 	err := svc.RecordCheckpoint(ctx, CommitCheckpointRequest{
-		EventID:      "evt-aggregate",
-		SessionID:    sess.ID.String(),
-		RepoFullName: rc.FullName,
-		WorkspaceID:  "ws-1",
-		CommitSHA:    "abc555",
-		BindingSource:"marker",
+		EventID:       "evt-aggregate",
+		SessionID:     sess.ID.String(),
+		RepoFullName:  rc.FullName,
+		WorkspaceID:   "ws-1",
+		CommitSHA:     "abc555",
+		BindingSource: "marker",
 		AgentSnapshot: map[string]any{
 			"codex": map[string]any{
 				"source_session_id":   "codex-sess-1",
@@ -264,7 +263,7 @@ func TestRecordCheckpointWritesMetadataEventsFromAggregateSnapshot(t *testing.T)
 func TestRecordCheckpointRejectsSessionFromDifferentRepo(t *testing.T) {
 	t.Parallel()
 
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 	ctx := context.Background()
 
 	sp := client.ScmProvider.Create().
@@ -315,7 +314,7 @@ func TestRecordCheckpointRejectsSessionFromDifferentRepo(t *testing.T) {
 func TestRecordRewriteRejectsSessionFromDifferentRepo(t *testing.T) {
 	t.Parallel()
 
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 	ctx := context.Background()
 
 	sp := client.ScmProvider.Create().

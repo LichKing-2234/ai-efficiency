@@ -7,19 +7,18 @@ import (
 
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/ent/efficiencymetric"
-	"github.com/ai-efficiency/backend/ent/enttest"
 	"github.com/ai-efficiency/backend/ent/prrecord"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/scmprovider"
+	"github.com/ai-efficiency/backend/internal/testdb"
 	"github.com/google/uuid"
-	_ "github.com/mattn/go-sqlite3"
 	"go.uber.org/zap"
 )
 
-// newTestClient creates an in-memory SQLite ent client for testing.
+// newTestClient creates an isolated Postgres-backed ent client for testing.
 func newTestClient(t *testing.T) *ent.Client {
 	t.Helper()
-	return enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	return testdb.Open(t)
 }
 
 // createTestRepo creates an ScmProvider + RepoConfig and returns the RepoConfig.

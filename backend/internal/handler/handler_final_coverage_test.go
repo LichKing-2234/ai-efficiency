@@ -14,14 +14,13 @@ import (
 	"time"
 
 	"github.com/ai-efficiency/backend/ent/aiscanresult"
-	"github.com/ai-efficiency/backend/ent/enttest"
 	"github.com/ai-efficiency/backend/ent/prrecord"
 	"github.com/ai-efficiency/backend/internal/analysis/llm"
 	"github.com/ai-efficiency/backend/internal/auth"
 	"github.com/ai-efficiency/backend/internal/config"
+	"github.com/ai-efficiency/backend/internal/testdb"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	_ "github.com/mattn/go-sqlite3"
 	"go.uber.org/zap"
 )
 
@@ -456,7 +455,7 @@ func TestTestLLMConnectionNotConfigured(t *testing.T) {
 	sh := NewSettingsHandler(configPath, config.RelayConfig{}, llmAnalyzer, zap.NewNop())
 
 	// Create a minimal router with auth
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 	logger := zap.NewNop()
 	authSvc := auth.NewService(client, "test-jwt-secret-32-bytes-long!!!", 7200, 604800, logger)
 

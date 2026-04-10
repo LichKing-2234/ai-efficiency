@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ai-efficiency/backend/ent/enttest"
 	"github.com/ai-efficiency/backend/ent/prrecord"
 	"github.com/ai-efficiency/backend/internal/analysis/llm"
 	"github.com/ai-efficiency/backend/internal/auth"
@@ -21,10 +20,10 @@ import (
 	"github.com/ai-efficiency/backend/internal/middleware"
 	"github.com/ai-efficiency/backend/internal/relay"
 	"github.com/ai-efficiency/backend/internal/repo"
+	"github.com/ai-efficiency/backend/internal/testdb"
 	"github.com/ai-efficiency/backend/internal/webhook"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	_ "github.com/mattn/go-sqlite3"
 	"go.uber.org/zap"
 )
 
@@ -34,7 +33,7 @@ import (
 
 func TestSCMProviderCreate_EncryptError(t *testing.T) {
 	// Use an invalid encryption key (not hex, wrong length) to trigger encrypt failure
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 	h := NewSCMProviderHandler(client, "bad-key") // invalid key
 
 	r := gin.New()
@@ -54,7 +53,7 @@ func TestSCMProviderCreate_EncryptError(t *testing.T) {
 func TestSCMProviderUpdate_EncryptError(t *testing.T) {
 	// First create with valid key, then update handler with bad key
 	validKey := "0000000000000000000000000000000000000000000000000000000000000000"
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 
 	p, _ := client.ScmProvider.Create().
 		SetName("GH").SetType("github").
@@ -80,7 +79,7 @@ func TestSCMProviderUpdate_EncryptError(t *testing.T) {
 
 func TestSCMProviderTest_DecryptError(t *testing.T) {
 	// Create provider with raw credentials (not properly encrypted), then test with bad key
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 
 	p, _ := client.ScmProvider.Create().
 		SetName("GH").SetType("github").
@@ -134,7 +133,7 @@ func TestPersistLLMConfig_YAMLUnmarshalError(t *testing.T) {
 // =====================
 
 func TestChatRateLimitExceeded(t *testing.T) {
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 	logger := zap.NewNop()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -202,7 +201,7 @@ func TestChatRateLimitExceeded(t *testing.T) {
 // =====================
 
 func TestBuildChatSystemPromptWithRepoContext(t *testing.T) {
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 	dataDir := t.TempDir()
 
 	p, _ := client.ScmProvider.Create().
@@ -314,7 +313,7 @@ func TestListPRsByRepo_WithMonthsZeroAndStatus(t *testing.T) {
 // =====================
 
 func TestSCMProviderList_DirectSuccess(t *testing.T) {
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 	h := NewSCMProviderHandler(client, "0000000000000000000000000000000000000000000000000000000000000000")
 
 	// Create a provider directly
@@ -561,7 +560,7 @@ func TestLogin_AuthFailure(t *testing.T) {
 // =====================
 
 func TestAggregateAllWithFullEnv(t *testing.T) {
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 	logger := zap.NewNop()
 	aggregator := efficiency.NewAggregator(client, logger)
 	authSvc := auth.NewService(client, "test-jwt-secret-32-bytes-long!!!", 7200, 604800, logger)

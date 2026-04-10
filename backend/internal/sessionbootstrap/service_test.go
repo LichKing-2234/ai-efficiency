@@ -9,14 +9,13 @@ import (
 	"time"
 
 	"github.com/ai-efficiency/backend/ent"
-	"github.com/ai-efficiency/backend/ent/enttest"
 	"github.com/ai-efficiency/backend/ent/session"
 	"github.com/ai-efficiency/backend/ent/sessionworkspace"
 	"github.com/ai-efficiency/backend/internal/auth"
 	"github.com/ai-efficiency/backend/internal/pkg"
 	"github.com/ai-efficiency/backend/internal/relay"
+	"github.com/ai-efficiency/backend/internal/testdb"
 	"github.com/google/uuid"
-	_ "github.com/mattn/go-sqlite3"
 )
 
 type fakeRelayProvider struct {
@@ -125,7 +124,7 @@ func ptrTime(v time.Time) *time.Time {
 
 func TestBootstrapCreatesSessionAndMetadataEnvBundle(t *testing.T) {
 	ctx := context.Background()
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 
 	sp, err := client.ScmProvider.Create().
 		SetName("mock-gh").
@@ -258,7 +257,7 @@ func TestBootstrapCreatesSessionAndMetadataEnvBundle(t *testing.T) {
 
 func TestBootstrapNoLongerCreatesRelayKeyOrEnvSecrets(t *testing.T) {
 	ctx := context.Background()
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 
 	sp := client.ScmProvider.Create().
 		SetName("mock-gh").
@@ -309,7 +308,7 @@ func TestBootstrapNoLongerCreatesRelayKeyOrEnvSecrets(t *testing.T) {
 
 func TestExpireStaleSessionsMarksOnlyOldActiveSessionsAbandoned(t *testing.T) {
 	ctx := context.Background()
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 
 	sp := client.ScmProvider.Create().
 		SetName("mock-gh").
@@ -381,7 +380,7 @@ func TestExpireStaleSessionsMarksOnlyOldActiveSessionsAbandoned(t *testing.T) {
 
 func TestResolveProviderCredentialReusesUsernameMatchBeforeCreating(t *testing.T) {
 	ctx := context.Background()
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 
 	sp := client.ScmProvider.Create().
 		SetName("mock-gh").
@@ -450,7 +449,7 @@ func TestResolveProviderCredentialReusesUsernameMatchBeforeCreating(t *testing.T
 
 func TestResolveProviderCredentialFallsBackToEmailPrefixThenCreates(t *testing.T) {
 	ctx := context.Background()
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 
 	sp := client.ScmProvider.Create().
 		SetName("mock-gh").
@@ -531,7 +530,7 @@ func TestResolveProviderCredentialFallsBackToEmailPrefixThenCreates(t *testing.T
 
 func TestResolveProviderCredentialCreatesUsingPlatformSpecificGroup(t *testing.T) {
 	ctx := context.Background()
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 
 	sp := client.ScmProvider.Create().
 		SetName("mock-gh").
@@ -602,7 +601,7 @@ func TestResolveProviderCredentialCreatesUsingPlatformSpecificGroup(t *testing.T
 
 func TestResolveProviderCredentialCreatesEmailPrefixNameWhenUsernameIsEmailAlias(t *testing.T) {
 	ctx := context.Background()
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 
 	sp := client.ScmProvider.Create().
 		SetName("mock-gh").
@@ -670,7 +669,7 @@ func TestResolveProviderCredentialCreatesEmailPrefixNameWhenUsernameIsEmailAlias
 
 func TestResolveProviderCredentialReactivatesInactiveMatchingKey(t *testing.T) {
 	ctx := context.Background()
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 
 	sp := client.ScmProvider.Create().
 		SetName("mock-gh").
@@ -739,7 +738,7 @@ func TestResolveProviderCredentialReactivatesInactiveMatchingKey(t *testing.T) {
 
 func TestResolveProviderCredentialDeduplicatesConcurrentCreate(t *testing.T) {
 	ctx := context.Background()
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 
 	sp := client.ScmProvider.Create().
 		SetName("mock-gh").
@@ -833,7 +832,7 @@ func TestResolveProviderCredentialDeduplicatesConcurrentCreate(t *testing.T) {
 
 func TestResolveProviderCredentialRejectsNonOwner(t *testing.T) {
 	ctx := context.Background()
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 
 	sp := client.ScmProvider.Create().
 		SetName("mock-gh").
@@ -879,7 +878,7 @@ func TestResolveProviderCredentialRejectsNonOwner(t *testing.T) {
 
 func TestStopRevokesRelayKey(t *testing.T) {
 	ctx := context.Background()
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 
 	sp, err := client.ScmProvider.Create().
 		SetName("mock-gh").
@@ -935,7 +934,7 @@ func TestStopRevokesRelayKey(t *testing.T) {
 
 func TestBootstrapFallsBackToRelayResolvedDefaultGroup(t *testing.T) {
 	ctx := context.Background()
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 
 	sp, err := client.ScmProvider.Create().
 		SetName("mock-gh").
@@ -1003,7 +1002,7 @@ func TestBootstrapFallsBackToRelayResolvedDefaultGroup(t *testing.T) {
 
 func TestBootstrapWithStoredRelayCredentialsDoesNotCreateKey(t *testing.T) {
 	ctx := context.Background()
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 	encryptionKey := "0000000000000000000000000000000000000000000000000000000000000000"
 
 	sp, err := client.ScmProvider.Create().
@@ -1085,7 +1084,7 @@ func TestBootstrapWithStoredRelayCredentialsDoesNotCreateKey(t *testing.T) {
 
 func TestBootstrapSessionSaveFailureDoesNotAttemptRelayKeyCleanup(t *testing.T) {
 	ctx := context.Background()
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 
 	// Force session persistence to fail after the relay key is created.
 	client.Session.Use(func(next ent.Mutator) ent.Mutator {
@@ -1161,7 +1160,7 @@ func TestBootstrapSessionSaveFailureDoesNotAttemptRelayKeyCleanup(t *testing.T) 
 
 func TestBootstrapUsesRelayProviderNameWhenConfigEmpty(t *testing.T) {
 	ctx := context.Background()
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 
 	sp, err := client.ScmProvider.Create().
 		SetName("mock-gh").

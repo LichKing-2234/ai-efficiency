@@ -7,13 +7,12 @@ import (
 	"time"
 
 	"github.com/ai-efficiency/backend/ent"
-	"github.com/ai-efficiency/backend/ent/enttest"
 	"github.com/ai-efficiency/backend/ent/prrecord"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/scmprovider"
 	"github.com/ai-efficiency/backend/internal/efficiency"
 	"github.com/ai-efficiency/backend/internal/scm"
-	_ "github.com/mattn/go-sqlite3"
+	"github.com/ai-efficiency/backend/internal/testdb"
 	"go.uber.org/zap"
 )
 
@@ -85,7 +84,7 @@ func (m *mockSCMProvider) CommitFiles(ctx context.Context, req scm.CommitFilesRe
 
 func newTestClient(t *testing.T) *ent.Client {
 	t.Helper()
-	return enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	return testdb.Open(t)
 }
 
 func createTestRepo(t *testing.T, ctx context.Context, client *ent.Client, name string) *ent.RepoConfig {
@@ -298,7 +297,7 @@ func TestSyncWithMergedAtAndLabels(t *testing.T) {
 					ID: 1, Title: "PR with labels", Author: "alice",
 					SourceBranch: "feat-1", TargetBranch: "main",
 					State: "merged", URL: "https://example.com/pr/1",
-					Labels: []string{"ai-assisted", "feature"},
+					Labels:    []string{"ai-assisted", "feature"},
 					CreatedAt: createdAt, MergedAt: mergedAt,
 					LinesAdded: 50, LinesDeleted: 10,
 				},
