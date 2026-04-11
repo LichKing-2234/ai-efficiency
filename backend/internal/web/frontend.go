@@ -68,9 +68,20 @@ func ServeEmbeddedFrontend() gin.HandlerFunc {
 			return
 		}
 
-		serveEmbeddedIndex(c, dist)
-		c.Abort()
+		if serveEmbeddedIndex(c, dist) {
+			c.Abort()
+			return
+		}
+		c.Next()
 	}
+}
+
+func ServeEmbeddedIndex(c *gin.Context) bool {
+	dist, err := distFS()
+	if err != nil {
+		return false
+	}
+	return serveEmbeddedIndex(c, dist)
 }
 
 func distFS() (fs.FS, error) {
@@ -100,11 +111,10 @@ func shouldBypassEmbeddedFrontend(requestPath string) bool {
 		strings.HasPrefix(trimmed, "/oauth/")
 }
 
-func serveEmbeddedIndex(c *gin.Context, dist fs.FS) {
+func serveEmbeddedIndex(c *gin.Context, dist fs.FS) bool {
 	f, err := dist.Open("index.html")
 	if err != nil {
-		c.Next()
-		return
+		return false
 	}
 	defer func() {
 		_ = f.Close()
@@ -112,8 +122,8 @@ func serveEmbeddedIndex(c *gin.Context, dist fs.FS) {
 
 	data, err := io.ReadAll(f)
 	if err != nil {
-		c.Next()
-		return
+		return false
 	}
 	c.Data(http.StatusOK, "text/html; charset=utf-8", data)
+	return true
 }
