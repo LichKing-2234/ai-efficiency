@@ -97,7 +97,7 @@ func (h *Handler) Authorize(c *gin.Context) {
 		return
 	}
 
-	frontendURL := h.frontendURL + "/oauth/authorize?" + c.Request.URL.RawQuery
+	frontendURL := strings.TrimRight(h.frontendURL, "/") + "/oauth/authorize?" + c.Request.URL.RawQuery
 	c.Redirect(http.StatusFound, frontendURL)
 }
 
