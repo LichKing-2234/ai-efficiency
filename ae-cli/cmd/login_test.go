@@ -25,3 +25,16 @@ func TestResolveLoginServerURLFallsBackToBuildInfoDefault(t *testing.T) {
 		t.Fatalf("resolveLoginServerURL() = %q, want %q", got, "http://localhost:8081")
 	}
 }
+
+func TestResolveLoginServerURLIgnoresBlankConfiguredValue(t *testing.T) {
+	cfg := &config.Config{
+		Server: config.ServerConfig{
+			URL: "   ",
+		},
+	}
+
+	got := resolveLoginServerURL(cfg, "  http://localhost:8081  ")
+	if got != "http://localhost:8081" {
+		t.Fatalf("resolveLoginServerURL() = %q, want %q", got, "http://localhost:8081")
+	}
+}

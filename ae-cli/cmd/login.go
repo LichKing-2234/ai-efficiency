@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/ai-efficiency/ae-cli/config"
@@ -56,8 +57,10 @@ func init() {
 }
 
 func resolveLoginServerURL(cfg *config.Config, fallback string) string {
-	if cfg != nil && cfg.Server.URL != "" {
-		return cfg.Server.URL
+	if cfg != nil {
+		if configured := strings.TrimSpace(cfg.Server.URL); configured != "" {
+			return configured
+		}
 	}
-	return fallback
+	return strings.TrimSpace(fallback)
 }
