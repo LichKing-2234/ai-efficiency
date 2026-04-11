@@ -47,6 +47,9 @@ func TestHasEmbeddedFrontendAndMiddleware(t *testing.T) {
 		{path: "/", wantCode: http.StatusOK, wantBody: "<html>", wantCTLike: "text/html"},
 		{path: "/repos/1", wantCode: http.StatusOK, wantBody: "<html>", wantCTLike: "text/html"},
 		{path: "/assets/app.js", wantCode: http.StatusOK, wantBody: "console.log", wantCTLike: "text/javascript"},
+		{path: "/assets", wantCode: http.StatusOK, wantBody: "<html>", wantCTLike: "text/html"},
+		{path: "/api", wantCode: http.StatusNotFound, wantBody: "404 page not found", wantCTLike: "text/plain"},
+		{path: "/oauth", wantCode: http.StatusNotFound, wantBody: "404 page not found", wantCTLike: "text/plain"},
 		{path: "/api/v1/health", wantCode: http.StatusOK, wantBody: "ok", wantCTLike: "text/plain"},
 	}
 
