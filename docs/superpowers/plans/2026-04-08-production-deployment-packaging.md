@@ -112,6 +112,7 @@
 6. `deploy/docker-compose.yml` and `deploy/docker-compose.external.yml` remain production-focused and keep the updater sidecar.
 7. `deploy/docker-compose.dev.yml` and `deploy/docker-compose.local.yml` are non-production local validation paths and do not run the updater sidecar.
 8. Local SQLite reuse is handled through a one-time migration into Postgres, not by running SQLite inside the Docker test path.
+9. SQLite is removed from the runtime path, and backend tests now run on the Postgres-backed test helper.
 
 ---
 

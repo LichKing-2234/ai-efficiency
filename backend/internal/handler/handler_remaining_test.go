@@ -12,7 +12,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ai-efficiency/backend/ent/enttest"
 	entuser "github.com/ai-efficiency/backend/ent/user"
 	"github.com/ai-efficiency/backend/internal/analysis"
 	"github.com/ai-efficiency/backend/internal/analysis/llm"
@@ -22,9 +21,9 @@ import (
 	"github.com/ai-efficiency/backend/internal/middleware"
 	"github.com/ai-efficiency/backend/internal/relay"
 	"github.com/ai-efficiency/backend/internal/repo"
+	"github.com/ai-efficiency/backend/internal/testdb"
 	"github.com/ai-efficiency/backend/internal/webhook"
 	"github.com/gin-gonic/gin"
-	_ "github.com/mattn/go-sqlite3"
 	"go.uber.org/zap"
 )
 
@@ -36,7 +35,7 @@ func setupDebugTestEnv(t *testing.T) *fullTestEnv {
 	gin.SetMode(gin.DebugMode)
 	t.Cleanup(func() { gin.SetMode(gin.TestMode) })
 
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 
 	logger := zap.NewNop()
 	authSvc := auth.NewService(client, "test-jwt-secret-32-bytes-long!!!", 7200, 604800, logger)
@@ -286,7 +285,7 @@ func TestChatLLMServiceUnavailable(t *testing.T) {
 
 func TestChatLLMNotConfigured(t *testing.T) {
 	// Create a fullTestEnv-like setup but with empty LLM config so Enabled() returns false
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 	logger := zap.NewNop()
 	authSvc := auth.NewService(client, "test-jwt-secret-32-bytes-long!!!", 7200, 604800, logger)
 	repoSvc := repo.NewService(client, "0000000000000000000000000000000000000000000000000000000000000000", logger)

@@ -8,10 +8,9 @@ import (
 	"time"
 
 	"github.com/ai-efficiency/backend/ent"
-	"github.com/ai-efficiency/backend/ent/enttest"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/internal/pkg"
-	_ "github.com/mattn/go-sqlite3"
+	"github.com/ai-efficiency/backend/internal/testdb"
 	"go.uber.org/zap"
 )
 
@@ -21,7 +20,7 @@ import (
 
 func setupTest(t *testing.T) (*ent.Client, *Service) {
 	t.Helper()
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 	svc := NewService(client, "0000000000000000000000000000000000000000000000000000000000000000", zap.NewNop())
 	return client, svc
 }
@@ -145,7 +144,7 @@ func TestGenerateSecret_Unique(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestNewService(t *testing.T) {
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 	svc := NewService(client, "key", zap.NewNop())
 	if svc == nil {
 		t.Fatal("NewService returned nil")
@@ -693,7 +692,7 @@ func TestGetSCMProvider_NotFound(t *testing.T) {
 }
 
 func TestGetSCMProvider_DecryptError(t *testing.T) {
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 	// Use a different key than what was used to encrypt
 	svc := NewService(client, "1111111111111111111111111111111111111111111111111111111111111111", zap.NewNop())
 	ctx := context.Background()
@@ -791,7 +790,7 @@ func TestDelete_WithWebhookID(t *testing.T) {
 }
 
 func TestDelete_WithWebhookDecryptError(t *testing.T) {
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 	// Wrong encryption key
 	svc := NewService(client, "2222222222222222222222222222222222222222222222222222222222222222", zap.NewNop())
 	ctx := context.Background()

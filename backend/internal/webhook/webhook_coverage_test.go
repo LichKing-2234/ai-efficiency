@@ -14,7 +14,6 @@ import (
 	"github.com/ai-efficiency/backend/internal/efficiency"
 	"github.com/ai-efficiency/backend/internal/scm"
 	"github.com/gin-gonic/gin"
-	_ "github.com/mattn/go-sqlite3"
 	"go.uber.org/zap"
 )
 

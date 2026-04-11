@@ -11,13 +11,12 @@ import (
 	"time"
 
 	"github.com/ai-efficiency/backend/ent"
-	"github.com/ai-efficiency/backend/ent/enttest"
 	entuser "github.com/ai-efficiency/backend/ent/user"
 	"github.com/ai-efficiency/backend/internal/config"
 	"github.com/ai-efficiency/backend/internal/relay"
+	"github.com/ai-efficiency/backend/internal/testdb"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
-	_ "github.com/mattn/go-sqlite3"
 	"go.uber.org/zap"
 )
 
@@ -27,7 +26,7 @@ import (
 
 func setupAuthEntClient(t *testing.T) *ent.Client {
 	t.Helper()
-	return enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	return testdb.Open(t)
 }
 
 func newTestServiceWithDB(t *testing.T) (*Service, *ent.Client) {
@@ -492,10 +491,10 @@ func TestEnsureLocalUserWithSub2apiID(t *testing.T) {
 
 	sub2apiID := 999
 	info := &UserInfo{
-		Username:      "ssouser",
-		Email:         "ssouser@example.com",
-		Role:          "user",
-		AuthSource:    "sub2api_sso",
+		Username:    "ssouser",
+		Email:       "ssouser@example.com",
+		Role:        "user",
+		AuthSource:  "sub2api_sso",
 		RelayUserID: &sub2apiID,
 	}
 
@@ -843,8 +842,8 @@ func handleLDAPBindError(conn net.Conn) {
 	// }
 	diagMsg := []byte("invalid credentials")
 	bindRespValue := []byte{
-		0x0a, 0x01, 49,   // ENUMERATED resultCode = 49
-		0x04, 0x00,        // OCTET STRING matchedDN = ""
+		0x0a, 0x01, 49, // ENUMERATED resultCode = 49
+		0x04, 0x00, // OCTET STRING matchedDN = ""
 		0x04, byte(len(diagMsg)), // OCTET STRING diagnosticMessage
 	}
 	bindRespValue = append(bindRespValue, diagMsg...)
@@ -1001,7 +1000,7 @@ func buildLDAPBindResponse(msgID byte, resultCode byte, diag string) []byte {
 	diagBytes := []byte(diag)
 	bindRespValue := []byte{
 		0x0a, 0x01, resultCode, // ENUMERATED resultCode
-		0x04, 0x00,             // OCTET STRING matchedDN = ""
+		0x04, 0x00, // OCTET STRING matchedDN = ""
 		0x04, byte(len(diagBytes)), // OCTET STRING diagnosticMessage
 	}
 	bindRespValue = append(bindRespValue, diagBytes...)

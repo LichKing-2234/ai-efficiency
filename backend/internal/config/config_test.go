@@ -180,7 +180,7 @@ server:
   port: 3000
   mode: release
 db:
-  dsn: "sqlite3://test.db"
+  dsn: "postgres://file:file@localhost/filedb?sslmode=disable"
   max_open_conns: 50
   max_idle_conns: 10
   conn_max_lifetime: 600

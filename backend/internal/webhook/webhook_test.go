@@ -11,12 +11,11 @@ import (
 	"time"
 
 	"github.com/ai-efficiency/backend/ent"
-	"github.com/ai-efficiency/backend/ent/enttest"
 	"github.com/ai-efficiency/backend/ent/prrecord"
 	"github.com/ai-efficiency/backend/ent/scmprovider"
 	"github.com/ai-efficiency/backend/internal/scm"
+	"github.com/ai-efficiency/backend/internal/testdb"
 	"github.com/gin-gonic/gin"
-	_ "github.com/mattn/go-sqlite3"
 	"go.uber.org/zap"
 )
 
@@ -25,7 +24,7 @@ func init() {
 }
 
 func newTestClient(t *testing.T) *ent.Client {
-	return enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	return testdb.Open(t)
 }
 
 func newTestLogger() *zap.Logger {
@@ -814,11 +813,11 @@ func TestHandleGitHubKnownRepoNoSecret(t *testing.T) {
 			"full_name": "org/gh-repo",
 		},
 		"pull_request": map[string]interface{}{
-			"number": 1,
-			"title":  "Test PR",
-			"user":   map[string]interface{}{"login": "alice"},
-			"head":   map[string]interface{}{"ref": "feat-1"},
-			"base":   map[string]interface{}{"ref": "main"},
+			"number":   1,
+			"title":    "Test PR",
+			"user":     map[string]interface{}{"login": "alice"},
+			"head":     map[string]interface{}{"ref": "feat-1"},
+			"base":     map[string]interface{}{"ref": "main"},
 			"html_url": "https://github.com/org/gh-repo/pull/1",
 		},
 	}

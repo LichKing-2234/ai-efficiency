@@ -8,10 +8,9 @@ import (
 	"time"
 
 	"github.com/ai-efficiency/backend/ent"
-	"github.com/ai-efficiency/backend/ent/enttest"
 	"github.com/ai-efficiency/backend/ent/scmprovider"
+	"github.com/ai-efficiency/backend/internal/testdb"
 	"github.com/google/uuid"
-	_ "github.com/mattn/go-sqlite3"
 	"go.uber.org/zap"
 )
 
@@ -20,8 +19,7 @@ import (
 // ---------------------------------------------------------------------------
 
 func TestAggregateAllPerRepoError(t *testing.T) {
-	dbPath := t.TempDir() + "/test_agg_all.db"
-	client := enttest.Open(t, "sqlite3", "file:"+dbPath+"?_fk=1")
+	client, dsn := testdb.OpenWithDSN(t)
 	defer client.Close()
 	ctx := context.Background()
 	logger := zap.NewNop()
@@ -48,12 +46,12 @@ func TestAggregateAllPerRepoError(t *testing.T) {
 		SaveX(ctx)
 
 	// Drop the efficiency_metrics table to force AggregateForRepo to fail
-	rawDB, err := sql.Open("sqlite3", "file:"+dbPath+"?_fk=0")
+	rawDB, err := sql.Open("postgres", dsn)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer rawDB.Close()
-	if _, err := rawDB.Exec("DROP TABLE IF EXISTS efficiency_metrics"); err != nil {
+	if _, err := rawDB.Exec("DROP TABLE IF EXISTS efficiency_metrics CASCADE"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -67,7 +65,7 @@ func TestAggregateAllPerRepoError(t *testing.T) {
 }
 
 func TestAggregateAllListReposError(t *testing.T) {
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 	logger := zap.NewNop()
 
 	agg := NewAggregator(client, logger)
@@ -84,8 +82,7 @@ func TestAggregateAllListReposError(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestAggregateForRepoMetricQueryNonNotFoundError(t *testing.T) {
-	dbPath := t.TempDir() + "/test_agg_nf.db"
-	client := enttest.Open(t, "sqlite3", "file:"+dbPath+"?_fk=1")
+	client, dsn := testdb.OpenWithDSN(t)
 	defer client.Close()
 	ctx := context.Background()
 	logger := zap.NewNop()
@@ -101,7 +98,7 @@ func TestAggregateForRepoMetricQueryNonNotFoundError(t *testing.T) {
 	}
 
 	// Rename the table so the query fails with a non-NotFound error
-	rawDB, err := sql.Open("sqlite3", "file:"+dbPath+"?_fk=0")
+	rawDB, err := sql.Open("postgres", dsn)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,7 +118,7 @@ func TestAggregateForRepoMetricQueryNonNotFoundError(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestAggregateForRepoClosedDB(t *testing.T) {
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 	ctx := context.Background()
 	logger := zap.NewNop()
 
@@ -143,7 +140,7 @@ func TestAggregateForRepoClosedDB(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestLabelPRNoSessionsUpdateErrorViaHook(t *testing.T) {
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 	defer client.Close()
 	ctx := context.Background()
 	logger := zap.NewNop()
@@ -179,7 +176,7 @@ func TestLabelPRNoSessionsUpdateErrorViaHook(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestLabelPRWithSessionsUpdateErrorViaHook(t *testing.T) {
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 	defer client.Close()
 	ctx := context.Background()
 	logger := zap.NewNop()
@@ -226,8 +223,7 @@ func TestLabelPRWithSessionsUpdateErrorViaHook(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestLabelPRSessionQueryError(t *testing.T) {
-	dbPath := t.TempDir() + "/test_sess_q.db"
-	client := enttest.Open(t, "sqlite3", "file:"+dbPath+"?_fk=1")
+	client, dsn := testdb.OpenWithDSN(t)
 	defer client.Close()
 	ctx := context.Background()
 	logger := zap.NewNop()
@@ -242,12 +238,12 @@ func TestLabelPRSessionQueryError(t *testing.T) {
 		SaveX(ctx)
 
 	// Drop the sessions table to make the session query fail
-	rawDB, err := sql.Open("sqlite3", "file:"+dbPath+"?_fk=0")
+	rawDB, err := sql.Open("postgres", dsn)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer rawDB.Close()
-	if _, err := rawDB.Exec("DROP TABLE IF EXISTS sessions"); err != nil {
+	if _, err := rawDB.Exec("DROP TABLE IF EXISTS sessions CASCADE"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -268,7 +264,7 @@ func TestLabelPRSessionQueryError(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestLabelPRWithSessionsHavingAPIKeyButNoRelayProvider(t *testing.T) {
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 	defer client.Close()
 	ctx := context.Background()
 	logger := zap.NewNop()
@@ -315,7 +311,7 @@ func TestLabelPRWithSessionsHavingAPIKeyButNoRelayProvider(t *testing.T) {
 }
 
 func TestLabelPRWithSessionHavingEndedAt(t *testing.T) {
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 	defer client.Close()
 	ctx := context.Background()
 	logger := zap.NewNop()
@@ -365,9 +361,7 @@ func TestLabelPRWithSessionHavingEndedAt(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestLabelPRRepoConfigNilAfterDelete(t *testing.T) {
-	dbPath := t.TempDir() + "/test_rc_nil.db"
-	// Create with FK enabled for schema setup
-	client := enttest.Open(t, "sqlite3", "file:"+dbPath+"?_fk=1")
+	client, dsn := testdb.OpenWithDSN(t)
 	defer client.Close()
 	ctx := context.Background()
 	logger := zap.NewNop()
@@ -382,13 +376,16 @@ func TestLabelPRRepoConfigNilAfterDelete(t *testing.T) {
 		SaveX(ctx)
 
 	// Use raw SQL with FK disabled to delete the repo config
-	rawDB, err := sql.Open("sqlite3", "file:"+dbPath+"?_fk=0")
+	rawDB, err := sql.Open("postgres", dsn)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer rawDB.Close()
-	// Delete the repo config — FK is disabled so this won't cascade
-	if _, err := rawDB.Exec("DELETE FROM repo_configs WHERE id = ?", rc.ID); err != nil {
+	if _, err := rawDB.Exec("ALTER TABLE pr_records DROP CONSTRAINT pr_records_repo_configs_pr_records"); err != nil {
+		t.Fatal(err)
+	}
+	// Delete the repo config after removing the FK in this test schema to reproduce a dangling edge.
+	if _, err := rawDB.Exec("DELETE FROM repo_configs WHERE id = $1", rc.ID); err != nil {
 		t.Fatal(err)
 	}
 
