@@ -3,10 +3,13 @@ package oauth_test
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/ai-efficiency/backend/internal/oauth"
+	"github.com/ai-efficiency/backend/internal/web"
 	"github.com/gin-gonic/gin"
 )
 
@@ -43,6 +46,39 @@ func TestAuthorizeRedirectsToFrontend(t *testing.T) {
 	}
 	if !strings.Contains(loc, "localhost:5173/oauth/authorize") {
 		t.Fatalf("expected redirect to frontend, got: %s", loc)
+	}
+}
+
+func TestAuthorizeServesEmbeddedFrontendWhenFrontendURLMatchesRequestOrigin(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "dist"), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "dist", "index.html"), []byte("<html><body>oauth-app</body></html>"), 0o644); err != nil {
+		t.Fatalf("WriteFile index: %v", err)
+	}
+	restore := web.SetFrontendFSForTest(os.DirFS(root))
+	defer restore()
+
+	gin.SetMode(gin.TestMode)
+	oauthServer := oauth.NewServer()
+	handler := oauth.NewHandler(oauthServer, "http://localhost:18081", &mockTokenGen{})
+
+	r := gin.New()
+	r.GET("/oauth/authorize", handler.Authorize)
+
+	req := httptest.NewRequest(http.MethodGet, "http://localhost:18081/oauth/authorize?response_type=code&client_id=ae-cli&redirect_uri=http://localhost:18234/callback&code_challenge=abc&code_challenge_method=S256&state=xyz", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "oauth-app") {
+		t.Fatalf("expected embedded frontend body, got: %s", w.Body.String())
+	}
+	if loc := w.Header().Get("Location"); loc != "" {
+		t.Fatalf("expected no redirect location, got: %s", loc)
 	}
 }
 

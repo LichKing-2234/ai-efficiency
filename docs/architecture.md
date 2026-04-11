@@ -49,11 +49,12 @@ flowchart LR
 
 - `ai-efficiency` is a standalone system. It integrates with `sub2api` through relay/provider HTTP APIs rather than direct database coupling.
 - The backend is the central orchestration point for auth, repo configuration, analysis, attribution, and SCM/webhook workflows.
-- The frontend is built separately and packaged into the backend image during Docker build. Do not assume Go `embed` or a single self-contained binary unless the code is changed to do that explicitly.
+- The frontend is built separately and embedded into the backend binary during Docker build, so the backend process serves both API routes and the SPA entrypoint in deployed images.
 - Official production deployment now has two supported paths: Docker Compose and Linux systemd.
 - The business entrypoint remains the backend service that also serves the frontend bundle.
 - Docker/Compose mode uses a dedicated updater sidecar for privileged update and rollback operations over the local Docker/Compose control path.
 - Linux systemd mode installs the backend under `/opt/ai-efficiency`, keeps config in `/etc/ai-efficiency/config.yaml`, and performs binary self-update plus `.backup` rollback.
+- `deploy/` also includes non-production `dev` / `local` compose paths for local verification; these do not run the updater sidecar.
 - Public health endpoints expose liveness/readiness, and admin settings expose deployment status plus update controls.
 
 ## Current Production Deployment
@@ -102,9 +103,12 @@ flowchart TD
 - Official deploy assets live under `deploy/`.
 - `deploy/docker-compose.yml` is the bundled-infra path.
 - `deploy/docker-compose.external.yml` is the external-infra path.
+- `deploy/docker-compose.dev.yml` is the source-build local validation path.
+- `deploy/docker-compose.local.yml` is the directory-backed local validation path.
 - `deploy/docker-deploy.sh` is the preflight entrypoint.
 - `deploy/install.sh` is the Linux systemd installer entrypoint.
 - `deploy/ai-efficiency.service` is the packaged systemd unit template.
+- `deploy/migrate-sqlite-to-postgres.sh` is the one-time bootstrap path from local SQLite data into the local Postgres test environment.
 - `deploy/.env.example` is the operator-facing configuration template.
 - Backend deployment status, update, rollback, and restart APIs are now first-class admin surfaces.
 

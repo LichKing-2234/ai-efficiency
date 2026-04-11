@@ -5,10 +5,12 @@ import (
 	"encoding/hex"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/ai-efficiency/backend/internal/auth"
+	"github.com/ai-efficiency/backend/internal/web"
 	"github.com/gin-gonic/gin"
 )
 
@@ -91,8 +93,44 @@ func (h *Handler) Authorize(c *gin.Context) {
 		return
 	}
 
-	frontendURL := h.frontendURL + "/oauth/authorize?" + c.Request.URL.RawQuery
+	if h.shouldServeEmbeddedAuthorize(c) && web.ServeEmbeddedIndex(c) {
+		return
+	}
+
+	frontendURL := strings.TrimRight(h.frontendURL, "/") + "/oauth/authorize?" + c.Request.URL.RawQuery
 	c.Redirect(http.StatusFound, frontendURL)
+}
+
+func (h *Handler) shouldServeEmbeddedAuthorize(c *gin.Context) bool {
+	if !web.HasEmbeddedFrontend() || h.frontendURL == "" {
+		return false
+	}
+
+	target, err := url.Parse(strings.TrimRight(h.frontendURL, "/") + "/oauth/authorize")
+	if err != nil || target.Scheme == "" || target.Host == "" {
+		return false
+	}
+
+	return strings.EqualFold(target.Scheme, requestScheme(c)) &&
+		strings.EqualFold(target.Host, requestHost(c)) &&
+		target.Path == c.Request.URL.Path
+}
+
+func requestScheme(c *gin.Context) string {
+	if scheme := strings.TrimSpace(c.GetHeader("X-Forwarded-Proto")); scheme != "" {
+		return scheme
+	}
+	if c.Request.TLS != nil {
+		return "https"
+	}
+	return "http"
+}
+
+func requestHost(c *gin.Context) string {
+	if host := strings.TrimSpace(c.GetHeader("X-Forwarded-Host")); host != "" {
+		return host
+	}
+	return c.Request.Host
 }
 
 // ApproveRequest is the request body for POST /oauth/authorize/approve.

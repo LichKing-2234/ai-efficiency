@@ -2,7 +2,7 @@
 
 ## Overview
 
-本 spec 定义 `ai-efficiency` 的官方生产部署形态、交付边界、配置模型、预检机制与升级路径。
+本 spec 定义 `ai-efficiency` 的官方生产部署形态、交付边界、配置模型、预检机制与升级路径，并补充 `deploy/` 目录下用于本地验证的非生产 compose 变体与一次性数据迁移入口。
 
 目标不是把 `ai-efficiency` 变成“零依赖单机程序”，而是把它定义成一个**独立产品**：可单独交付、可统一部署、可在启动前检查外部依赖是否 ready，并以稳定的运维入口对外提供服务。
 
@@ -25,6 +25,7 @@
 5. 健康检查与降级语义
 6. 在线更新与回滚能力
 7. 升级与版本演进的基本路径
+8. 面向本地验证的 `dev` / `local` compose 变体与 SQLite 到 Postgres 的一次性迁移入口
 
 本文不覆盖：
 
@@ -32,6 +33,7 @@
 - 完整的二进制 + `systemd` 安装实现
 - `sub2api` 自身的部署与升级
 - 业务功能层的 API 合同变更
+- 将现有生产 compose 改造成直接复用 SQLite 文件的长期运行模式
 
 ## Current State
 
@@ -49,6 +51,8 @@
 - 清晰区分 `liveness` / `readiness` / `degraded` 的健康语义
 - 产品级在线更新入口与回滚能力
 - 成熟的升级入口与回滚说明
+- 参考 `sub2api` 的本地 `dev` / `local` compose 变体
+- 一个把 `backend/ai_efficiency.db` 一次性迁移到本地测试 Postgres 的标准入口
 
 因此，本文描述的是**目标合同**，不是对当前实现状态的复述。
 
@@ -60,6 +64,8 @@
 4. 对运维暴露清晰的配置模型、健康状态和升级路径
 5. 提供与 `sub2api` 行为能力对齐的在线更新能力：检测新版本、一键应用更新、支持回滚
 6. 保持与当前模块化单体架构一致，不引入新的跨模块隐式耦合
+7. 在不污染生产 compose 语义的前提下，为 `deploy/` 提供面向本地验证的 `dev` / `local` 路径
+8. 为历史 SQLite 本地数据提供一次性迁移到本地测试 Postgres 的标准流程
 
 ## Non-Goals
 
@@ -68,6 +74,7 @@
 3. 不强制所有生产环境都自带本地 `Postgres` / `Redis`
 4. 不在 v1 同时提供 Compose、Kubernetes、`systemd` 三套等价主线
 5. 不要求 v1 覆盖任意第三方自定义部署拓扑的无差别在线更新
+6. 不把现有 `deploy/docker-compose.yml` 和 `deploy/docker-compose.external.yml` 改造成兼容 SQLite 文件复用的本地测试入口
 
 ## Deployment Positioning
 
@@ -121,7 +128,7 @@
 - 不要求 `sub2api` 与 `ai-efficiency` 同机、同网络、同生命周期
 - 不允许为了部署方便重新引入 direct DB coupling 到 `sub2api`
 
-### Compose Modes
+### Production Compose Modes
 
 Docker Compose 必须支持两种模式：
 
@@ -135,6 +142,26 @@ Docker Compose 必须支持两种模式：
    - 适用于企业已有基础设施的场景
 
 无论哪种模式，`sub2api` 都不纳入 `ai-efficiency` 官方 Compose 编排。
+
+### Local Validation Compose Modes
+
+除生产 compose 外，`deploy/` 还应补充两种**非生产**本地验证路径，参考 `sub2api` 的 `docker-compose.dev.yml` 与 `docker-compose.local.yml` 设计：
+
+1. **Dev Compose Mode**
+   - 文件建议为 `deploy/docker-compose.dev.yml`
+   - 面向“当前仓库源码改动验证”
+   - 使用本地源码构建应用容器
+   - 启动 `backend + postgres + redis`
+   - 不包含 updater sidecar
+
+2. **Local Compose Mode**
+   - 文件建议为 `deploy/docker-compose.local.yml`
+   - 面向“长期保留或可搬运的本地测试环境”
+   - 仍启动 `backend + postgres + redis`
+   - 使用本地目录挂载保存应用数据、Postgres 数据和 Redis 数据
+   - 不包含 updater sidecar
+
+这两条路径的目标是本地验证和开发测试，不是生产交付主线。
 
 ## Deployment Entry Point
 
@@ -163,6 +190,15 @@ Docker Compose 必须支持两种模式：
 - 直接运行 `docker compose up -d`
 
 但文档主叙事应以官方脚本入口为准。
+
+### Local Validation Entry
+
+本地验证路径允许直接通过 compose 文件启动，而不是强制经过生产 preflight：
+
+- `docker compose -f deploy/docker-compose.dev.yml up --build`
+- `docker compose -f deploy/docker-compose.local.yml up -d`
+
+它们属于开发/测试入口，不应覆盖生产部署脚本的职责。
 
 ## Configuration Model
 
@@ -210,6 +246,24 @@ Docker Compose 必须支持两种模式：
 - 不要求业务代码直接感知所有部署层别名
 
 目标是既保留当前配置读取方式，又提供更适合运维的部署界面。
+
+### Local Test Data Migration
+
+为了复用历史本地开发数据，`deploy/` 应提供一次性迁移入口，例如：
+
+- `deploy/migrate-sqlite-to-postgres.sh`
+
+该入口的职责是：
+
+1. 读取 `backend/ai_efficiency.db`
+2. 检查本地测试 Postgres 是否 ready
+3. 在目标库为空时执行一次性迁移
+4. 输出迁移结果摘要
+
+该迁移入口有两个约束：
+
+- 只服务于本地测试 Postgres 初始化，不作为常规同步机制
+- 默认拒绝覆盖非空目标库，除非显式传入强制参数
 
 ## Preflight and Readiness
 

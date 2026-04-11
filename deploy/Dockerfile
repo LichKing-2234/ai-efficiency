@@ -17,8 +17,8 @@ COPY backend/go.mod backend/go.sum ./
 ENV GOPROXY=https://goproxy.cn,direct
 RUN go mod download
 COPY backend/ ./
-# Embed frontend dist
-COPY --from=frontend-builder /app/frontend/dist ./static/
+# Embed frontend dist into the backend package tree before building.
+COPY --from=frontend-builder /app/frontend/dist ./internal/web/dist/
 RUN CGO_ENABLED=0 GOOS=linux go build \
   -ldflags "-X github.com/ai-efficiency/backend/internal/deployment.BuildVersion=${APP_VERSION} -X github.com/ai-efficiency/backend/internal/deployment.BuildCommit=${APP_COMMIT} -X github.com/ai-efficiency/backend/internal/deployment.BuildTime=${APP_BUILD_TIME}" \
   -o /app/server ./cmd/server/
