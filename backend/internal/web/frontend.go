@@ -82,13 +82,21 @@ func fileExists(fsys fs.FS, name string) bool {
 	if err != nil {
 		return false
 	}
-	_ = f.Close()
-	return true
+	defer func() {
+		_ = f.Close()
+	}()
+	info, err := f.Stat()
+	if err != nil {
+		return false
+	}
+	return !info.IsDir()
 }
 
 func shouldBypassEmbeddedFrontend(requestPath string) bool {
 	trimmed := strings.TrimSpace(requestPath)
-	return strings.HasPrefix(trimmed, "/api/") ||
+	return trimmed == "/api" ||
+		trimmed == "/oauth" ||
+		strings.HasPrefix(trimmed, "/api/") ||
 		strings.HasPrefix(trimmed, "/oauth/")
 }
 
