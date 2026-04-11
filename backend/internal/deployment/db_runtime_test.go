@@ -31,9 +31,9 @@ func TestRequireExplicitDBDSN(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := RequireExplicitDBDSN(VersionInfo{Version: tc.version}, tc.dsn)
+			got := RequireExplicitDBDSN(tc.dsn)
 			if got != tc.want {
-				t.Fatalf("RequireExplicitDBDSN(%q, %q) = %v, want %v", tc.version, tc.dsn, got, tc.want)
+				t.Fatalf("RequireExplicitDBDSN(%q) = %v, want %v", tc.dsn, got, tc.want)
 			}
 		})
 	}

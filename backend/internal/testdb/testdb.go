@@ -52,6 +52,11 @@ func OpenWithDSN(t *testing.T) (*ent.Client, string) {
 	if _, err := adminDB.ExecContext(ctx, fmt.Sprintf(`CREATE SCHEMA "%s"`, schemaName)); err != nil {
 		t.Fatalf("create schema %s: %v", schemaName, err)
 	}
+	t.Cleanup(func() {
+		if _, err := adminDB.ExecContext(context.Background(), fmt.Sprintf(`DROP SCHEMA IF EXISTS "%s" CASCADE`, schemaName)); err != nil {
+			t.Fatalf("drop schema %s: %v", schemaName, err)
+		}
+	})
 
 	dsn := withSearchPath(t, adminDSN, schemaName)
 	schemaInitMu.Lock()
@@ -67,9 +72,6 @@ func OpenWithDSN(t *testing.T) (*ent.Client, string) {
 	schemaInitMu.Unlock()
 	t.Cleanup(func() {
 		client.Close()
-		if _, err := adminDB.ExecContext(context.Background(), fmt.Sprintf(`DROP SCHEMA IF EXISTS "%s" CASCADE`, schemaName)); err != nil {
-			t.Fatalf("drop schema %s: %v", schemaName, err)
-		}
 	})
 
 	return client, dsn
@@ -78,12 +80,27 @@ func OpenWithDSN(t *testing.T) (*ent.Client, string) {
 func withSearchPath(t *testing.T, dsn, schema string) string {
 	t.Helper()
 
+	out, err := withSearchPathValue(dsn, schema)
+	if err != nil {
+		t.Fatalf("build postgres dsn with search_path: %v", err)
+	}
+	return out
+}
+
+func withSearchPathValue(dsn, schema string) (string, error) {
+	if !strings.Contains(dsn, "://") {
+		return "", fmt.Errorf("AE_TEST_POSTGRES_DSN must be URL-form PostgreSQL DSN, got %q", dsn)
+	}
+
 	u, err := url.Parse(dsn)
 	if err != nil {
-		t.Fatalf("parse postgres dsn: %v", err)
+		return "", err
+	}
+	if u.Scheme == "" || u.Host == "" {
+		return "", fmt.Errorf("AE_TEST_POSTGRES_DSN must include scheme and host, got %q", dsn)
 	}
 	q := u.Query()
 	q.Set("search_path", schema)
 	u.RawQuery = q.Encode()
-	return u.String()
+	return u.String(), nil
 }

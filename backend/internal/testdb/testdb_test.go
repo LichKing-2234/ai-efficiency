@@ -28,3 +28,10 @@ func TestOpenWithDSNProvidesIsolatedSchemas(t *testing.T) {
 		t.Fatalf("client2 user count = %d, want 0", count)
 	}
 }
+
+func TestWithSearchPathValueRejectsKeywordDSN(t *testing.T) {
+	_, err := withSearchPathValue("host=127.0.0.1 user=postgres", "test_schema")
+	if err == nil {
+		t.Fatal("expected error for non-URL DSN")
+	}
+}

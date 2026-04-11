@@ -4,7 +4,7 @@
 
 **Goal:** Turn the approved production deployment packaging spec into a working Docker Compose-first deployment flow with `.env`-driven config, preflight readiness checks, public health/readiness endpoints, admin-visible online update controls with rollback, plus local `dev` / `local` compose variants, while removing SQLite from the runtime path.
 
-**Architecture:** Keep `ai-efficiency` as the single business entrypoint, but add a small deployment/update control plane. The backend exposes read-only deployment metadata plus admin update APIs; a separate updater binary runs as an internal sidecar for privileged `docker compose` apply/rollback operations. Official deployment is driven by `.env` + Compose files + `deploy/docker-deploy.sh`, while the backend reports readiness for Postgres, Redis, and relay/sub2api. `deploy/docker-compose.dev.yml` and `deploy/docker-compose.local.yml` provide non-production local validation paths without the updater sidecar. SQLite removal is staged: this plan covers runtime/config/doc removal only, while test migration is deferred.
+**Architecture:** Keep `ai-efficiency` as the single business entrypoint, but add a small deployment/update control plane. The backend exposes read-only deployment metadata plus admin update APIs; a separate updater binary runs as an internal sidecar for privileged `docker compose` apply/rollback operations. Official deployment is driven by `.env` + Compose files + `deploy/docker-deploy.sh`, while the backend reports readiness for Postgres, Redis, and relay/sub2api. `deploy/docker-compose.dev.yml` and `deploy/docker-compose.local.yml` provide non-production local validation paths without the updater sidecar. SQLite removal was initially staged to separate runtime and test migration risk; the current implementation completes both runtime removal and backend test migration.
 
 **Tech Stack:** Go (`gin`, `ent`, `viper`, `zap`, `go-redis/v9`), Vue 3 + Pinia + Vitest, Docker Compose, POSIX shell.
 
@@ -1988,13 +1988,13 @@ git rm deploy/migrate-sqlite-to-postgres.sh
 git commit -m "refactor(deploy): remove sqlite runtime support"
 ```
 
-### Deferred Work: Phase 2 Test Migration
+### Phase 2 Outcome
 
-Phase 2 is explicitly out of scope for the current implementation batch. It will cover:
+The originally deferred SQLite test migration has now been completed in the same delivery stream:
 
-- replacing SQLite-backed `enttest` usage across backend tests
-- removing `_ "github.com/mattn/go-sqlite3"` from test-only imports
-- deleting `github.com/mattn/go-sqlite3` from `backend/go.mod`
+- SQLite-backed backend tests were migrated to a shared Postgres helper
+- backend CI now provisions PostgreSQL for the backend test job
+- `go-sqlite3` was removed from the backend module
 
 ## Self-Review Checklist
 

@@ -181,7 +181,12 @@ SQLite 的移除分两阶段进行：
    - 删除 `go-sqlite3` 依赖
    - 清理遗留的 SQLite-only 测试辅助与文档背景
 
-本文当前要求实现的是 **Phase 1**。Phase 2 是后续独立批次，不与运行时切换绑定交付。
+该路线最初按 Phase 1 / Phase 2 规划，用于隔离运行时切换和测试基座迁移风险。
+
+当前代码已经完成两阶段的目标：
+
+- Phase 1：backend 运行时已移除 SQLite，只保留 Postgres
+- Phase 2：backend 测试基座已迁移到 Postgres，`go-sqlite3` 已从 backend 模块依赖中移除
 
 ## Deployment Entry Point
 

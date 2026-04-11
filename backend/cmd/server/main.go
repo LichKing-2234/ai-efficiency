@@ -82,7 +82,7 @@ func main() {
 		zap.String("commit", versionInfo.Commit),
 		zap.String("build_time", versionInfo.BuildTime),
 	)
-	if deployment.RequireExplicitDBDSN(versionInfo, cfg.DB.DSN) {
+	if deployment.RequireExplicitDBDSN(cfg.DB.DSN) {
 		logger.Fatal("DB.DSN is required and must point to PostgreSQL")
 	}
 
