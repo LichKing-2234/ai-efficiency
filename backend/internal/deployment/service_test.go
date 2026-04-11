@@ -205,6 +205,27 @@ func TestDeploymentServiceStatusResilientWhenUpdaterUnavailable(t *testing.T) {
 	if status.UpdateStatus.Message != "updater down" {
 		t.Fatalf("expected updater error message, got %q", status.UpdateStatus.Message)
 	}
+
+	svcSystemd := NewService(
+		config.DeploymentConfig{
+			Mode: "systemd",
+			Update: config.UpdateConfig{
+				Enabled: true,
+			},
+		},
+		VersionInfo{Version: "v0.4.0"},
+		nil,
+		nil,
+		&systemdUpdaterStub{},
+		nil,
+	)
+	status, err = svcSystemd.Status(context.Background())
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if status.UpdateStatus.Phase != "idle" {
+		t.Fatalf("expected idle phase for systemd mode, got %q", status.UpdateStatus.Phase)
+	}
 }
 
 func TestDeploymentServiceCheckForUpdateSkipsSourceWhenDisabled(t *testing.T) {

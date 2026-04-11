@@ -166,6 +166,51 @@ func TestSystemdBinaryUpdaterApplyReleaseDownloadsAndApplies(t *testing.T) {
 	if string(data) != "new-binary" {
 		t.Fatalf("current = %q, want new-binary", string(data))
 	}
+	if _, err := os.Stat(filepath.Join(root, "downloads", "bundle.tar.gz")); !os.IsNotExist(err) {
+		t.Fatalf("expected downloaded archive to be removed, got err=%v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "downloads", "checksums.txt")); !os.IsNotExist(err) {
+		t.Fatalf("expected downloaded checksums to be removed, got err=%v", err)
+	}
+}
+
+func TestSystemdBinaryUpdaterApplyArchiveAllowsMissingCurrentBinary(t *testing.T) {
+	root := t.TempDir()
+	installDir := filepath.Join(root, "opt")
+	if err := os.MkdirAll(installDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+
+	archive := filepath.Join(root, "bundle.tar.gz")
+	writeTestArchive(t, archive, map[string]string{
+		"ai-efficiency-server": "new-binary",
+	})
+	checksums := filepath.Join(root, "checksums.txt")
+	writeChecksumFile(t, checksums, archive)
+
+	updater := NewSystemdBinaryUpdater(SystemdBinaryConfig{
+		InstallDir: installDir,
+		BinaryName: "ai-efficiency-server",
+		BackupName: "ai-efficiency-server.backup",
+	})
+
+	result, err := updater.ApplyArchive(context.Background(), archive, checksums)
+	if err != nil {
+		t.Fatalf("ApplyArchive: %v", err)
+	}
+	if !result.NeedRestart {
+		t.Fatalf("NeedRestart = false, want true")
+	}
+	data, err := os.ReadFile(filepath.Join(installDir, "ai-efficiency-server"))
+	if err != nil {
+		t.Fatalf("ReadFile current: %v", err)
+	}
+	if string(data) != "new-binary" {
+		t.Fatalf("current = %q, want new-binary", string(data))
+	}
+	if _, err := os.Stat(filepath.Join(installDir, "ai-efficiency-server.backup")); !os.IsNotExist(err) {
+		t.Fatalf("expected no backup for first install, got err=%v", err)
+	}
 }
 
 func TestSystemdBinaryUpdaterRejectsUnsafeBackupName(t *testing.T) {

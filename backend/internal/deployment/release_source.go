@@ -11,7 +11,7 @@ import (
 type ReleaseInfo struct {
 	Version string         `json:"version"`
 	URL     string         `json:"url"`
-	Assets  []ReleaseAsset `json:"assets,omitempty"`
+	Assets  []ReleaseAsset `json:"-"`
 }
 
 type ReleaseSource interface {

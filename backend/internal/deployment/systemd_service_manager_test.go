@@ -18,9 +18,20 @@ func (r *commandRunnerStub) Run(_ context.Context, name string, args ...string) 
 
 func TestSystemdServiceManagerRestart(t *testing.T) {
 	runner := &commandRunnerStub{}
+	done := make(chan struct{}, 1)
 	manager := NewSystemdServiceManager(SystemdServiceConfig{
 		ServiceName: "ai-efficiency",
 	}, runner)
+	manager.afterFunc = func(time.Duration) <-chan time.Time {
+		ch := make(chan time.Time, 1)
+		ch <- time.Now()
+		return ch
+	}
+	manager.runner = CommandRunner(commandRunnerFunc(func(_ context.Context, name string, args ...string) error {
+		runner.args = append(runner.args, append([]string{name}, args...))
+		done <- struct{}{}
+		return nil
+	}))
 
 	result, err := manager.Restart(context.Background())
 	if err != nil {
@@ -29,9 +40,24 @@ func TestSystemdServiceManagerRestart(t *testing.T) {
 	if !result.NeedRestart {
 		t.Fatalf("NeedRestart = false, want true")
 	}
+	if result.Message != "restart scheduled" {
+		t.Fatalf("unexpected message: %q", result.Message)
+	}
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for runner")
+	}
 	if len(runner.args) != 1 || runner.args[0][0] != "systemctl" || runner.args[0][1] != "restart" || runner.args[0][2] != "ai-efficiency" {
 		t.Fatalf("args = %#v", runner.args)
 	}
+}
+
+type commandRunnerFunc func(context.Context, string, ...string) error
+
+func (f commandRunnerFunc) Run(ctx context.Context, name string, args ...string) error {
+	return f(ctx, name, args...)
 }
 
 func TestSystemdServiceManagerRestartFallsBackToSelfExit(t *testing.T) {

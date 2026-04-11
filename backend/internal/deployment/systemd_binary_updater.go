@@ -64,7 +64,17 @@ func (u *SystemdBinaryUpdater) ApplyRelease(ctx context.Context, archiveURL, che
 		return SystemdOperationResult{}, err
 	}
 
-	return u.ApplyArchive(ctx, archivePath, checksumsPath)
+	result, err := u.ApplyArchive(ctx, archivePath, checksumsPath)
+	if err != nil {
+		return SystemdOperationResult{}, err
+	}
+	if err := os.Remove(archivePath); err != nil && !os.IsNotExist(err) {
+		return SystemdOperationResult{}, fmt.Errorf("remove downloaded archive: %w", err)
+	}
+	if err := os.Remove(checksumsPath); err != nil && !os.IsNotExist(err) {
+		return SystemdOperationResult{}, fmt.Errorf("remove downloaded checksums: %w", err)
+	}
+	return result, nil
 }
 
 func (u *SystemdBinaryUpdater) ApplyArchive(_ context.Context, archivePath, checksumsPath string) (SystemdOperationResult, error) {
@@ -91,13 +101,20 @@ func (u *SystemdBinaryUpdater) ApplyArchive(_ context.Context, archivePath, chec
 		return SystemdOperationResult{}, fmt.Errorf("remove old backup: %w", err)
 	}
 
+	hadBackup := false
 	if err := os.Rename(currentPath, backupPath); err != nil {
-		return SystemdOperationResult{}, fmt.Errorf("backup current binary: %w", err)
+		if !os.IsNotExist(err) {
+			return SystemdOperationResult{}, fmt.Errorf("backup current binary: %w", err)
+		}
+	} else {
+		hadBackup = true
 	}
 
 	if err := os.Rename(nextPath, currentPath); err != nil {
-		if restoreErr := os.Rename(backupPath, currentPath); restoreErr != nil {
-			return SystemdOperationResult{}, fmt.Errorf("replace binary: %w (restore failed: %v)", err, restoreErr)
+		if hadBackup {
+			if restoreErr := os.Rename(backupPath, currentPath); restoreErr != nil {
+				return SystemdOperationResult{}, fmt.Errorf("replace binary: %w (restore failed: %v)", err, restoreErr)
+			}
 		}
 		return SystemdOperationResult{}, fmt.Errorf("replace binary: %w", err)
 	}

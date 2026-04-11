@@ -13,7 +13,7 @@
 
 ## Spec Relationship
 
-- 本文是 [`2026-04-08-production-deployment-packaging-design.md`](/Users/admin/ai-efficiency/docs/superpowers/specs/2026-04-08-production-deployment-packaging-design.md) 的后续补充合同。
+- 本文是 [`2026-04-08-production-deployment-packaging-design.md`](./2026-04-08-production-deployment-packaging-design.md) 的后续补充合同。
 - `2026-04-08` 负责定义项目级生产部署主线、Compose 模式、部署脚本、在线更新目标能力。
 - 本文只补充 **binary/systemd** 路线，不改变 `2026-04-08` 中已确认的 Docker / Compose 主线。
 - 对 Docker 路线，仍以 image/tag 驱动和 updater sidecar 为主。

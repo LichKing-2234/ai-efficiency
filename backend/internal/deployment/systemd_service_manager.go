@@ -48,19 +48,20 @@ func NewSystemdServiceManager(cfg SystemdServiceConfig, runner CommandRunner) *S
 }
 
 func (m *SystemdServiceManager) Restart(ctx context.Context) (SystemdOperationResult, error) {
-	if m.runner != nil {
-		if err := m.runner.Run(ctx, "systemctl", "restart", m.cfg.ServiceName); err != nil {
-			return SystemdOperationResult{}, fmt.Errorf("restart systemd service: %w", err)
-		}
-		return SystemdOperationResult{
-			Message:     "restart initiated",
-			NeedRestart: true,
-		}, nil
-	}
-
 	delay := m.cfg.RestartDelay
 	if delay <= 0 {
 		delay = 500 * time.Millisecond
+	}
+
+	if m.runner != nil {
+		go func() {
+			<-m.afterFunc(delay)
+			_ = m.runner.Run(context.Background(), "systemctl", "restart", m.cfg.ServiceName)
+		}()
+		return SystemdOperationResult{
+			Message:     "restart scheduled",
+			NeedRestart: true,
+		}, nil
 	}
 
 	go func() {
