@@ -24,6 +24,11 @@ func TestRequireExplicitDBDSN(t *testing.T) {
 			want: false,
 		},
 		{
+			name: "postgresql url dsn is case insensitive",
+			dsn:  "PostgreSQL://example",
+			want: false,
+		},
+		{
 			name: "keyword dsn is allowed",
 			dsn:  "host=127.0.0.1 user=postgres dbname=ai_efficiency sslmode=disable",
 			want: false,

@@ -8,10 +8,10 @@ func RequireExplicitDBDSN(dsn string) bool {
 	if dsn == "" {
 		return true
 	}
-	if strings.Contains(dsn, "://") {
-		return !strings.HasPrefix(dsn, "postgres://") && !strings.HasPrefix(dsn, "postgresql://")
-	}
 	lower := strings.ToLower(dsn)
+	if strings.Contains(dsn, "://") {
+		return !strings.HasPrefix(lower, "postgres://") && !strings.HasPrefix(lower, "postgresql://")
+	}
 	for _, prefix := range []string{"host=", "user=", "password=", "dbname=", "sslmode=", "port="} {
 		if strings.HasPrefix(lower, prefix) {
 			return false

@@ -16,7 +16,7 @@ import (
 	_ "github.com/lib/pq"
 )
 
-const defaultAdminDSN = "postgres://postgres:postgres@127.0.0.1:15432/postgres?sslmode=disable"
+const defaultAdminDSN = "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable"
 
 var schemaInitMu sync.Mutex
 
@@ -98,6 +98,10 @@ func withSearchPathValue(dsn, schema string) (string, error) {
 	}
 	if u.Scheme == "" || u.Host == "" {
 		return "", fmt.Errorf("AE_TEST_POSTGRES_DSN must include scheme and host, got %q", dsn)
+	}
+	scheme := strings.ToLower(u.Scheme)
+	if scheme != "postgres" && scheme != "postgresql" {
+		return "", fmt.Errorf("AE_TEST_POSTGRES_DSN must use postgres scheme, got %q", u.Scheme)
 	}
 	q := u.Query()
 	q.Set("search_path", schema)
