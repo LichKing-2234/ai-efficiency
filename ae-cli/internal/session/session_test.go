@@ -540,6 +540,38 @@ func TestStartLocalProxyInjectsBackendConfigAndWorkspaceID(t *testing.T) {
 	}
 }
 
+func TestStartLocalProxyInjectsLoopbackNoProxyEnv(t *testing.T) {
+	origSpawn := spawnProxyProcess
+	spawnProxyProcess = func(cfg proxy.RuntimeConfig) (proxy.SpawnResult, error) {
+		return proxy.SpawnResult{
+			PID:        4545,
+			ListenAddr: "127.0.0.1:18891",
+			ConfigPath: filepath.Join(t.TempDir(), "runtime.json"),
+		}, nil
+	}
+	t.Cleanup(func() { spawnProxyProcess = origSpawn })
+
+	t.Setenv("NO_PROXY", "example.internal")
+
+	m := NewManager(nil, &config.Config{})
+	rt := &RuntimeBundle{
+		SessionID: "sess-no-proxy",
+		EnvBundle: map[string]string{},
+	}
+
+	if err := m.startLocalProxy(rt); err != nil {
+		t.Fatalf("startLocalProxy: %v", err)
+	}
+
+	want := "example.internal,127.0.0.1,localhost,::1"
+	if got := rt.EnvBundle["NO_PROXY"]; got != want {
+		t.Fatalf("NO_PROXY = %q, want %q", got, want)
+	}
+	if got := rt.EnvBundle["no_proxy"]; got != want {
+		t.Fatalf("no_proxy = %q, want %q", got, want)
+	}
+}
+
 func TestManagerStopRemovesProxyRuntime(t *testing.T) {
 	state, rt, mgr := startSessionWithFakeBootstrap(t)
 

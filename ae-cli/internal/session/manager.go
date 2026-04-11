@@ -635,7 +635,51 @@ func (m *Manager) startLocalProxy(rt *RuntimeBundle) error {
 	}
 	rt.EnvBundle["AE_LOCAL_PROXY_URL"] = "http://" + result.ListenAddr
 	rt.EnvBundle["AE_LOCAL_PROXY_TOKEN"] = token
+	applyLoopbackNoProxy(rt.EnvBundle)
 	return nil
+}
+
+func applyLoopbackNoProxy(env map[string]string) {
+	if env == nil {
+		return
+	}
+	base := strings.TrimSpace(env["NO_PROXY"])
+	if base == "" {
+		base = strings.TrimSpace(env["no_proxy"])
+	}
+	if base == "" {
+		base = strings.TrimSpace(os.Getenv("NO_PROXY"))
+	}
+	if base == "" {
+		base = strings.TrimSpace(os.Getenv("no_proxy"))
+	}
+	value := mergeNoProxyList(base, "127.0.0.1", "localhost", "::1")
+	env["NO_PROXY"] = value
+	env["no_proxy"] = value
+}
+
+func mergeNoProxyList(existing string, required ...string) string {
+	items := []string{}
+	seen := map[string]struct{}{}
+	add := func(value string) {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			return
+		}
+		key := strings.ToLower(value)
+		if _, ok := seen[key]; ok {
+			return
+		}
+		seen[key] = struct{}{}
+		items = append(items, value)
+	}
+	for _, part := range strings.Split(existing, ",") {
+		add(part)
+	}
+	for _, part := range required {
+		add(part)
+	}
+	return strings.Join(items, ",")
 }
 
 func (m *Manager) stopLocalProxy(rt *RuntimeBundle) error {
