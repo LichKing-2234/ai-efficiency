@@ -10,21 +10,20 @@ import (
 	"testing"
 
 	"github.com/ai-efficiency/backend/ent"
-	"github.com/ai-efficiency/backend/ent/enttest"
 	"github.com/ai-efficiency/backend/internal/analysis"
 	"github.com/ai-efficiency/backend/internal/auth"
 	"github.com/ai-efficiency/backend/internal/prsync"
 	"github.com/ai-efficiency/backend/internal/scm"
+	"github.com/ai-efficiency/backend/internal/testdb"
 	"github.com/gin-gonic/gin"
-	_ "github.com/mattn/go-sqlite3"
 	"go.uber.org/zap"
 )
 
 // --- Mock implementations ---
 
 type mockAnalysisScanner struct {
-	runScanFn      func(ctx context.Context, id int) (*ent.AiScanResult, error)
-	listScansFn    func(ctx context.Context, id int, limit int) ([]*ent.AiScanResult, error)
+	runScanFn       func(ctx context.Context, id int) (*ent.AiScanResult, error)
+	listScansFn     func(ctx context.Context, id int, limit int) ([]*ent.AiScanResult, error)
 	getLatestScanFn func(ctx context.Context, id int) (*ent.AiScanResult, error)
 }
 
@@ -39,9 +38,9 @@ func (m *mockAnalysisScanner) GetLatestScan(ctx context.Context, id int) (*ent.A
 }
 
 type mockOptimizer struct {
-	createPRFn  func(ctx context.Context, provider scm.SCMProvider, rc *ent.RepoConfig, scan *ent.AiScanResult) (*analysis.OptimizeResult, error)
-	previewFn   func(ctx context.Context, provider scm.SCMProvider, rc *ent.RepoConfig, scan *ent.AiScanResult) (*analysis.OptimizePreview, error)
-	confirmFn   func(ctx context.Context, provider scm.SCMProvider, rc *ent.RepoConfig, files map[string]string, score int) (*analysis.OptimizeResult, error)
+	createPRFn func(ctx context.Context, provider scm.SCMProvider, rc *ent.RepoConfig, scan *ent.AiScanResult) (*analysis.OptimizeResult, error)
+	previewFn  func(ctx context.Context, provider scm.SCMProvider, rc *ent.RepoConfig, scan *ent.AiScanResult) (*analysis.OptimizePreview, error)
+	confirmFn  func(ctx context.Context, provider scm.SCMProvider, rc *ent.RepoConfig, files map[string]string, score int) (*analysis.OptimizeResult, error)
 }
 
 func (m *mockOptimizer) CreateOptimizationPR(ctx context.Context, provider scm.SCMProvider, rc *ent.RepoConfig, scan *ent.AiScanResult) (*analysis.OptimizeResult, error) {
@@ -141,7 +140,7 @@ type mockTestEnv struct {
 
 func setupMockTestEnv(t *testing.T, scanner analysisScanner, opt optimizerService, repoSCM repoSCMProvider, syncer prSyncer) *mockTestEnv {
 	t.Helper()
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 	logger := zap.NewNop()
 	authSvc := auth.NewService(client, "test-jwt-secret-32-bytes-long!!!", 7200, 604800, logger)
 

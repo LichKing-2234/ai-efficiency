@@ -9,12 +9,11 @@ import (
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
 	"github.com/ai-efficiency/backend/ent/commitrewrite"
-	"github.com/ai-efficiency/backend/ent/enttest"
 	"github.com/ai-efficiency/backend/ent/prrecord"
 	"github.com/ai-efficiency/backend/ent/scmprovider"
 	"github.com/ai-efficiency/backend/internal/relay"
 	"github.com/ai-efficiency/backend/internal/scm"
-	_ "github.com/mattn/go-sqlite3"
+	"github.com/ai-efficiency/backend/internal/testdb"
 )
 
 type fakeSCMProvider struct {
@@ -181,12 +180,12 @@ func testRepoPRSession(t *testing.T, client *ent.Client, apiKeyID int) (*ent.Rep
 }
 
 func TestSettlePR_UsesPreviousOverallCheckpointForMatchedInterval(t *testing.T) {
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 	defer client.Close()
 	ctx := context.Background()
 
 	repo, pr, sess := testRepoPRSession(t, client, 321)
-	t0 := sess.StartedAt
+	t0 := sess.StartedAt.UTC().Truncate(time.Microsecond)
 	t1 := t0.Add(20 * time.Minute)
 	t2 := t1.Add(30 * time.Minute)
 
@@ -262,7 +261,7 @@ func TestSettlePR_UsesPreviousOverallCheckpointForMatchedInterval(t *testing.T) 
 }
 
 func TestSettlePR_ReturnsAmbiguousWhenMatchedCheckpointIsUnbound(t *testing.T) {
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 	defer client.Close()
 	ctx := context.Background()
 
@@ -307,7 +306,7 @@ func TestSettlePR_ReturnsAmbiguousWhenMatchedCheckpointIsUnbound(t *testing.T) {
 }
 
 func TestSettlePR_UsesRewriteHistoryToMatchCheckpoint(t *testing.T) {
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 	defer client.Close()
 	ctx := context.Background()
 
@@ -383,7 +382,7 @@ func TestSettlePR_UsesRewriteHistoryToMatchCheckpoint(t *testing.T) {
 }
 
 func TestSettlePR_PrefersSessionUsageEventsOverRelayLedger(t *testing.T) {
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 	defer client.Close()
 	ctx := context.Background()
 
@@ -450,7 +449,7 @@ func TestSettlePR_PrefersSessionUsageEventsOverRelayLedger(t *testing.T) {
 }
 
 func TestSettlePR_UsesLocalUsageEventsWithoutRelayAPIKey(t *testing.T) {
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 	defer client.Close()
 	ctx := context.Background()
 
@@ -516,7 +515,7 @@ func TestSettlePR_UsesLocalUsageEventsWithoutRelayAPIKey(t *testing.T) {
 }
 
 func TestSettlePR_AssignsBoundarySpanningUsageByFinishedAtOnce(t *testing.T) {
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 	defer client.Close()
 	ctx := context.Background()
 

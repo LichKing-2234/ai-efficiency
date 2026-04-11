@@ -8,18 +8,17 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/ai-efficiency/backend/ent/enttest"
 	"github.com/ai-efficiency/backend/internal/checkpoint"
+	"github.com/ai-efficiency/backend/internal/testdb"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	_ "github.com/mattn/go-sqlite3"
 )
 
 func TestCheckpointCommitHappyPath(t *testing.T) {
 	t.Parallel()
 	gin.SetMode(gin.TestMode)
 
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 	ctx := context.Background()
 
 	sp := client.ScmProvider.Create().
@@ -71,7 +70,7 @@ func TestCheckpointRewriteHappyPath(t *testing.T) {
 	t.Parallel()
 	gin.SetMode(gin.TestMode)
 
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 	ctx := context.Background()
 
 	sp := client.ScmProvider.Create().
@@ -117,7 +116,7 @@ func TestCheckpointCommitBadJSON(t *testing.T) {
 	t.Parallel()
 	gin.SetMode(gin.TestMode)
 
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	client := testdb.Open(t)
 	h := NewCheckpointHandler(checkpoint.NewService(client))
 	r := gin.New()
 	r.POST("/commit", h.Commit)
