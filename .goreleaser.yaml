@@ -87,6 +87,8 @@ archives:
       - deploy/docker-compose.external.yml
       - deploy/docker-deploy.sh
       - deploy/init-db.sql
+      - deploy/install.sh
+      - deploy/ai-efficiency.service
 
   - id: ae-cli
     ids:

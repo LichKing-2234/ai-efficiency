@@ -9,8 +9,9 @@ import (
 )
 
 type ReleaseInfo struct {
-	Version string `json:"version"`
-	URL     string `json:"url"`
+	Version string         `json:"version"`
+	URL     string         `json:"url"`
+	Assets  []ReleaseAsset `json:"-"`
 }
 
 type ReleaseSource interface {
@@ -52,13 +53,28 @@ func (s *GitHubReleaseSource) Latest(ctx context.Context) (ReleaseInfo, error) {
 	var payload struct {
 		TagName string `json:"tag_name"`
 		HTMLURL string `json:"html_url"`
+		Assets  []struct {
+			Name               string `json:"name"`
+			BrowserDownloadURL string `json:"browser_download_url"`
+			Size               int64  `json:"size"`
+		} `json:"assets"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
 		return ReleaseInfo{}, fmt.Errorf("decode latest release response: %w", err)
 	}
 
+	assets := make([]ReleaseAsset, 0, len(payload.Assets))
+	for _, asset := range payload.Assets {
+		assets = append(assets, ReleaseAsset{
+			Name:        asset.Name,
+			DownloadURL: asset.BrowserDownloadURL,
+			Size:        asset.Size,
+		})
+	}
+
 	return ReleaseInfo{
 		Version: payload.TagName,
 		URL:     payload.HTMLURL,
+		Assets:  assets,
 	}, nil
 }

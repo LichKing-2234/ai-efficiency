@@ -16,3 +16,7 @@ export function applyUpdate(data: ApplyUpdateRequest) {
 export function rollbackUpdate() {
   return client.post<ApiResponse<UpdateStatus>>('/settings/deployment/update/rollback')
 }
+
+export function restartDeployment() {
+  return client.post<ApiResponse<UpdateStatus>>('/settings/deployment/restart')
+}

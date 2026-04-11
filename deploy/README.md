@@ -2,7 +2,10 @@
 
 ## Overview
 
-`ai-efficiency` now ships with an official Docker Compose deployment path and a dedicated updater sidecar.
+`ai-efficiency` now ships with two production deployment paths:
+
+- Docker Compose with the updater sidecar
+- Linux systemd with backend binary self-update
 
 The deploy assets in this directory cover two modes:
 
@@ -68,8 +71,15 @@ Admin users can use the Settings page to:
 - check for updates
 - apply an update
 - trigger rollback
+- request a service restart
 
-The updater sidecar performs the actual Compose operations.
+Docker/Compose mode routes update and rollback through the updater sidecar.
+
+Linux systemd mode downloads the backend bundle from GitHub Releases, verifies `checksums.txt`, replaces `/opt/ai-efficiency/ai-efficiency-server`, and keeps `.backup` for rollback.
+
+The installer assigns ownership of `/opt/ai-efficiency` to the `ai-efficiency` service user, so binary replacement and rollback can happen in-place without extra write privileges.
+
+Restarts do not shell out to `systemctl restart` by default. The backend acknowledges the restart request and then exits; the packaged `ai-efficiency.service` uses `Restart=always`, so systemd brings the process back automatically.
 
 ## GitHub Release Artifacts
 
@@ -92,3 +102,22 @@ Examples:
 docker pull ghcr.io/lichking-2234/ai-efficiency:v0.2.0
 docker pull ghcr.io/lichking-2234/ai-efficiency:latest
 ```
+
+## Linux Systemd Install
+
+After the first tagged GitHub release, Linux hosts can install with:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/LichKing-2234/ai-efficiency/main/deploy/install.sh | sudo bash
+```
+
+The installer downloads the backend bundle, verifies checksums, installs under `/opt/ai-efficiency`, writes the systemd service, and enables it.
+
+Edit `/etc/ai-efficiency/config.yaml` before first start.
+
+For binary/systemd mode set:
+
+- `deployment.mode: systemd`
+- production `db.dsn`
+- production `redis.addr`
+- relay connection settings

@@ -4,15 +4,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"runtime"
 
 	"github.com/ai-efficiency/backend/internal/config"
 )
 
 type Service struct {
-	cfg     config.DeploymentConfig
-	version VersionInfo
-	source  ReleaseSource
-	updater Updater
+	cfg              config.DeploymentConfig
+	version          VersionInfo
+	source           ReleaseSource
+	updater          Updater
+	systemdUpdater   SystemdUpdater
+	systemdRestarter RestartManager
 }
 
 type DeploymentStatus struct {
@@ -27,6 +30,15 @@ type policyError struct {
 	message string
 }
 
+type SystemdUpdater interface {
+	ApplyRelease(context.Context, string, string) (SystemdOperationResult, error)
+	Rollback(context.Context) error
+}
+
+type RestartManager interface {
+	Restart(context.Context) (SystemdOperationResult, error)
+}
+
 func (e *policyError) Error() string {
 	return e.message
 }
@@ -34,6 +46,7 @@ func (e *policyError) Error() string {
 var (
 	ErrUpdatesDisabled = &policyError{message: "deployment updates are disabled"}
 	ErrApplyDisabled   = &policyError{message: "deployment apply is disabled"}
+	ErrRestartUnsupported = &policyError{message: "deployment restart is only available in systemd mode"}
 )
 
 func IsPolicyError(err error) bool {
@@ -41,12 +54,21 @@ func IsPolicyError(err error) bool {
 	return errors.As(err, &target)
 }
 
-func NewService(cfg config.DeploymentConfig, version VersionInfo, source ReleaseSource, updater Updater) *Service {
+func NewService(
+	cfg config.DeploymentConfig,
+	version VersionInfo,
+	source ReleaseSource,
+	updater Updater,
+	systemdUpdater SystemdUpdater,
+	systemdRestarter RestartManager,
+) *Service {
 	return &Service{
-		cfg:     cfg,
-		version: version,
-		source:  source,
-		updater: updater,
+		cfg:              cfg,
+		version:          version,
+		source:           source,
+		updater:          updater,
+		systemdUpdater:   systemdUpdater,
+		systemdRestarter: systemdRestarter,
 	}
 }
 
@@ -61,6 +83,14 @@ func (s *Service) Status(ctx context.Context) (DeploymentStatus, error) {
 
 	if !s.cfg.Update.Enabled {
 		status.UpdateStatus = UpdateStatus{Phase: "disabled"}
+		return status, nil
+	}
+
+	if s.cfg.Mode == "systemd" {
+		if s.systemdUpdater == nil {
+			return status, nil
+		}
+		status.UpdateStatus = UpdateStatus{Phase: "idle"}
 		return status, nil
 	}
 
@@ -110,6 +140,37 @@ func (s *Service) ApplyUpdate(ctx context.Context, req ApplyRequest) (UpdateStat
 	if !s.cfg.Update.ApplyEnabled {
 		return UpdateStatus{}, ErrApplyDisabled
 	}
+	if s.cfg.Mode == "systemd" {
+		if s.source == nil || s.systemdUpdater == nil {
+			return UpdateStatus{}, fmt.Errorf("systemd updater is not configured")
+		}
+		release, err := s.source.Latest(ctx)
+		if err != nil {
+			return UpdateStatus{}, fmt.Errorf("fetch latest release: %w", err)
+		}
+		if req.TargetVersion != release.Version {
+			return UpdateStatus{}, &policyError{
+				message: fmt.Sprintf(
+					"requested version %s no longer matches latest available release %s",
+					req.TargetVersion,
+					release.Version,
+				),
+			}
+		}
+		archive, checksums, err := SelectSystemdReleaseAssets(release.Assets, runtime.GOOS, runtime.GOARCH)
+		if err != nil {
+			return UpdateStatus{}, err
+		}
+		result, err := s.systemdUpdater.ApplyRelease(ctx, archive.DownloadURL, checksums.DownloadURL)
+		if err != nil {
+			return UpdateStatus{}, err
+		}
+		return UpdateStatus{
+			Phase:         "updated",
+			TargetVersion: release.Version,
+			Message:       result.Message,
+		}, nil
+	}
 	if s.updater == nil {
 		return UpdateStatus{}, fmt.Errorf("deployment updater is not configured")
 	}
@@ -123,8 +184,39 @@ func (s *Service) RollbackUpdate(ctx context.Context) (UpdateStatus, error) {
 	if !s.cfg.Update.ApplyEnabled {
 		return UpdateStatus{}, ErrApplyDisabled
 	}
+	if s.cfg.Mode == "systemd" {
+		if s.systemdUpdater == nil {
+			return UpdateStatus{}, fmt.Errorf("systemd updater is not configured")
+		}
+		if err := s.systemdUpdater.Rollback(ctx); err != nil {
+			return UpdateStatus{}, err
+		}
+		return UpdateStatus{
+			Phase:   "rolled_back",
+			Message: "rollback completed",
+		}, nil
+	}
 	if s.updater == nil {
 		return UpdateStatus{}, fmt.Errorf("deployment updater is not configured")
 	}
 	return s.updater.Rollback(ctx)
+}
+
+func (s *Service) Restart(ctx context.Context) (UpdateStatus, error) {
+	if s.cfg.Mode != "systemd" {
+		return UpdateStatus{}, ErrRestartUnsupported
+	}
+	if s.systemdRestarter == nil {
+		return UpdateStatus{}, fmt.Errorf("systemd restart is not configured")
+	}
+
+	result, err := s.systemdRestarter.Restart(ctx)
+	if err != nil {
+		return UpdateStatus{}, err
+	}
+
+	return UpdateStatus{
+		Phase:   "restart_requested",
+		Message: result.Message,
+	}, nil
 }
