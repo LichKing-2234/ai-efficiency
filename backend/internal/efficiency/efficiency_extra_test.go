@@ -11,7 +11,6 @@ import (
 	"github.com/ai-efficiency/backend/ent/scmprovider"
 	"github.com/ai-efficiency/backend/internal/testdb"
 	"github.com/google/uuid"
-	_ "github.com/lib/pq"
 	"go.uber.org/zap"
 )
 
@@ -382,15 +381,10 @@ func TestLabelPRRepoConfigNilAfterDelete(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer rawDB.Close()
-	if _, err := rawDB.Exec("SET session_replication_role = replica"); err != nil {
+	if _, err := rawDB.Exec("ALTER TABLE pr_records DROP CONSTRAINT pr_records_repo_configs_pr_records"); err != nil {
 		t.Fatal(err)
 	}
-	defer func() {
-		if _, err := rawDB.Exec("SET session_replication_role = origin"); err != nil {
-			t.Fatalf("restore replication role: %v", err)
-		}
-	}()
-	// Delete the repo config with FK checks disabled to reproduce a dangling edge.
+	// Delete the repo config after removing the FK in this test schema to reproduce a dangling edge.
 	if _, err := rawDB.Exec("DELETE FROM repo_configs WHERE id = $1", rc.ID); err != nil {
 		t.Fatal(err)
 	}

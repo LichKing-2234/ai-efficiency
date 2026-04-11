@@ -103,6 +103,7 @@
 3. Backend health reporting distinguishes `live`, `ready`, `degraded`, and `not_ready`.
 4. Public health routes are unauthenticated; deployment/update routes remain admin-only.
 5. The updater stores rollback state in a mounted writable state directory so rollback survives backend container replacement.
+6. SQLite is removed from the runtime path, and backend tests now run on the Postgres-backed test helper.
 
 ---
 

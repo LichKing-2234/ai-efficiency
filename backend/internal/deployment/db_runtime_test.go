@@ -4,28 +4,34 @@ import "testing"
 
 func TestRequireExplicitDBDSN(t *testing.T) {
 	tests := []struct {
-		name    string
-		version string
-		dsn     string
-		want    bool
+		name string
+		dsn  string
+		want bool
 	}{
 		{
-			name:    "release build with empty dsn requires explicit dsn",
-			version: "v1.2.3",
-			dsn:     "",
-			want:    true,
+			name: "empty dsn requires explicit dsn",
+			dsn:  "",
+			want: true,
 		},
 		{
-			name:    "release build with dsn does not require explicit dsn",
-			version: "v1.2.3",
-			dsn:     "postgres://example",
-			want:    false,
+			name: "postgres url dsn is allowed",
+			dsn:  "postgres://example",
+			want: false,
 		},
 		{
-			name:    "dev build with empty dsn still requires explicit dsn",
-			version: "dev",
-			dsn:     "",
-			want:    true,
+			name: "postgresql url dsn is allowed",
+			dsn:  "postgresql://example",
+			want: false,
+		},
+		{
+			name: "keyword dsn is allowed",
+			dsn:  "host=127.0.0.1 user=postgres dbname=ai_efficiency sslmode=disable",
+			want: false,
+		},
+		{
+			name: "sqlite style dsn is rejected",
+			dsn:  "file:ai_efficiency.db?_fk=1",
+			want: true,
 		},
 	}
 
