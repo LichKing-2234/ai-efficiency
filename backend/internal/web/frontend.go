@@ -76,6 +76,15 @@ func ServeEmbeddedFrontend() gin.HandlerFunc {
 	}
 }
 
+func ServeEmbeddedIndex(c *gin.Context) bool {
+	dist, err := distFS()
+	if err != nil {
+		return false
+	}
+	fileServer := http.FileServer(http.FS(dist))
+	return serveEmbeddedIndex(c, fileServer)
+}
+
 func distFS() (fs.FS, error) {
 	return fs.Sub(frontendFS, "dist")
 }

@@ -96,3 +96,36 @@ func TestSetFrontendFSForTestRestoresPreviousFS(t *testing.T) {
 		t.Fatal("expected current frontend fs to be restored")
 	}
 }
+
+func TestServeEmbeddedIndexUsesEmbeddedFrontendRoot(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "dist"), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "dist", "index.html"), []byte("<html><body>index-root</body></html>"), 0o644); err != nil {
+		t.Fatalf("WriteFile index: %v", err)
+	}
+
+	restore := SetFrontendFSForTest(os.DirFS(root))
+	defer restore()
+
+	router := gin.New()
+	router.GET("/oauth/authorize", func(c *gin.Context) {
+		if !ServeEmbeddedIndex(c) {
+			c.String(http.StatusNotFound, "missing")
+		}
+	})
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/oauth/authorize", nil)
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "index-root") {
+		t.Fatalf("body=%q", w.Body.String())
+	}
+}
