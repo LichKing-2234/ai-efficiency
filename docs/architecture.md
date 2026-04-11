@@ -27,7 +27,7 @@ flowchart LR
     Proxy["Local Session Proxy<br/>(ae-cli child process)"]
     Tool["Codex / Claude"]
     Backend["ai-efficiency backend<br/>Gin + Ent modular monolith"]
-    DB[("ai_efficiency database<br/>SQLite dev / PostgreSQL prod")]
+    DB[("ai_efficiency database<br/>PostgreSQL")]
     SCM["SCM providers<br/>GitHub / Bitbucket Server"]
     Relay["Relay provider<br/>sub2api HTTP APIs"]
     Workspace["Developer workspace<br/>repo, git hooks, session marker"]

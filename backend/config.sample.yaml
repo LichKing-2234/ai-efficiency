@@ -11,7 +11,7 @@ server:
 
 # ─── Database ─────────────────────────────────────────────
 db:
-  dsn: "file:ai_efficiency.db?_fk=1"   # SQLite for dev; use postgres://... for production
+  dsn: "postgres://postgres:postgres@localhost:5432/ai_efficiency?sslmode=disable"
 
 # ─── Authentication ───────────────────────────────────────
 auth:

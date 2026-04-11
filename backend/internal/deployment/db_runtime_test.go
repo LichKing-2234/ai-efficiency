@@ -22,18 +22,18 @@ func TestRequireExplicitDBDSN(t *testing.T) {
 			want:    false,
 		},
 		{
-			name:    "dev build with empty dsn keeps fallback behavior",
+			name:    "dev build with empty dsn still requires explicit dsn",
 			version: "dev",
 			dsn:     "",
-			want:    false,
+			want:    true,
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := RequireExplicitDBDSN(VersionInfo{Version: tc.version}, tc.dsn)
+			got := RequireExplicitDBDSN(tc.dsn)
 			if got != tc.want {
-				t.Fatalf("RequireExplicitDBDSN(%q, %q) = %v, want %v", tc.version, tc.dsn, got, tc.want)
+				t.Fatalf("RequireExplicitDBDSN(%q) = %v, want %v", tc.dsn, got, tc.want)
 			}
 		})
 	}
