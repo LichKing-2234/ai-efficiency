@@ -2,9 +2,9 @@ package web
 
 import (
 	"embed"
-	"io"
 	"io/fs"
 	"net/http"
+	"net/url"
 	"path"
 	"strings"
 
@@ -68,20 +68,12 @@ func ServeEmbeddedFrontend() gin.HandlerFunc {
 			return
 		}
 
-		if serveEmbeddedIndex(c, dist) {
+		if serveEmbeddedIndex(c, fileServer) {
 			c.Abort()
 			return
 		}
 		c.Next()
 	}
-}
-
-func ServeEmbeddedIndex(c *gin.Context) bool {
-	dist, err := distFS()
-	if err != nil {
-		return false
-	}
-	return serveEmbeddedIndex(c, dist)
 }
 
 func distFS() (fs.FS, error) {
@@ -111,19 +103,20 @@ func shouldBypassEmbeddedFrontend(requestPath string) bool {
 		strings.HasPrefix(trimmed, "/oauth/")
 }
 
-func serveEmbeddedIndex(c *gin.Context, dist fs.FS) bool {
-	f, err := dist.Open("index.html")
-	if err != nil {
-		return false
-	}
-	defer func() {
-		_ = f.Close()
-	}()
-
-	data, err := io.ReadAll(f)
-	if err != nil {
-		return false
-	}
-	c.Data(http.StatusOK, "text/html; charset=utf-8", data)
+func serveEmbeddedIndex(c *gin.Context, fileServer http.Handler) bool {
+	req := c.Request.Clone(c.Request.Context())
+	req.URL = cloneURL(c.Request.URL)
+	req.URL.Path = "/"
+	req.URL.RawPath = ""
+	req.RequestURI = "/"
+	fileServer.ServeHTTP(c.Writer, req)
 	return true
+}
+
+func cloneURL(u *url.URL) *url.URL {
+	if u == nil {
+		return &url.URL{}
+	}
+	dup := *u
+	return &dup
 }

@@ -39,32 +39,38 @@ func TestHasEmbeddedFrontendAndMiddleware(t *testing.T) {
 	})
 
 	cases := []struct {
+		method     string
 		path       string
 		wantCode   int
 		wantBody   string
 		wantCTLike string
 	}{
-		{path: "/", wantCode: http.StatusOK, wantBody: "<html>", wantCTLike: "text/html"},
-		{path: "/repos/1", wantCode: http.StatusOK, wantBody: "<html>", wantCTLike: "text/html"},
-		{path: "/assets/app.js", wantCode: http.StatusOK, wantBody: "console.log", wantCTLike: "text/javascript"},
-		{path: "/assets", wantCode: http.StatusOK, wantBody: "<html>", wantCTLike: "text/html"},
-		{path: "/api", wantCode: http.StatusNotFound, wantBody: "404 page not found", wantCTLike: "text/plain"},
-		{path: "/oauth", wantCode: http.StatusNotFound, wantBody: "404 page not found", wantCTLike: "text/plain"},
-		{path: "/api/v1/health", wantCode: http.StatusOK, wantBody: "ok", wantCTLike: "text/plain"},
+		{method: http.MethodGet, path: "/", wantCode: http.StatusOK, wantBody: "<html>", wantCTLike: "text/html"},
+		{method: http.MethodGet, path: "/repos/1", wantCode: http.StatusOK, wantBody: "<html>", wantCTLike: "text/html"},
+		{method: http.MethodHead, path: "/repos/1", wantCode: http.StatusOK, wantBody: "", wantCTLike: "text/html"},
+		{method: http.MethodGet, path: "/assets/app.js", wantCode: http.StatusOK, wantBody: "console.log", wantCTLike: "javascript"},
+		{method: http.MethodGet, path: "/assets", wantCode: http.StatusOK, wantBody: "<html>", wantCTLike: "text/html"},
+		{method: http.MethodGet, path: "/api", wantCode: http.StatusNotFound, wantBody: "404 page not found", wantCTLike: "text/plain"},
+		{method: http.MethodGet, path: "/oauth", wantCode: http.StatusNotFound, wantBody: "404 page not found", wantCTLike: "text/plain"},
+		{method: http.MethodGet, path: "/api/v1/health", wantCode: http.StatusOK, wantBody: "ok", wantCTLike: "text/plain"},
 	}
 
 	for _, tc := range cases {
 		w := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+		req := httptest.NewRequest(tc.method, tc.path, nil)
 		router.ServeHTTP(w, req)
 		if w.Code != tc.wantCode {
-			t.Fatalf("%s: status=%d want=%d body=%s", tc.path, w.Code, tc.wantCode, w.Body.String())
+			t.Fatalf("%s %s: status=%d want=%d body=%s", tc.method, tc.path, w.Code, tc.wantCode, w.Body.String())
 		}
-		if !strings.Contains(w.Body.String(), tc.wantBody) {
-			t.Fatalf("%s: body=%q missing %q", tc.path, w.Body.String(), tc.wantBody)
+		if tc.wantBody == "" {
+			if w.Body.Len() != 0 {
+				t.Fatalf("%s %s: expected empty body, got %q", tc.method, tc.path, w.Body.String())
+			}
+		} else if !strings.Contains(w.Body.String(), tc.wantBody) {
+			t.Fatalf("%s %s: body=%q missing %q", tc.method, tc.path, w.Body.String(), tc.wantBody)
 		}
 		if got := w.Header().Get("Content-Type"); !strings.Contains(got, tc.wantCTLike) {
-			t.Fatalf("%s: content-type=%q want like %q", tc.path, got, tc.wantCTLike)
+			t.Fatalf("%s %s: content-type=%q want like %q", tc.method, tc.path, got, tc.wantCTLike)
 		}
 	}
 }
