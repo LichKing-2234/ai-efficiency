@@ -86,6 +86,14 @@ func (s *Service) Status(ctx context.Context) (DeploymentStatus, error) {
 		return status, nil
 	}
 
+	if s.cfg.Mode == "systemd" {
+		if s.systemdUpdater == nil {
+			return status, nil
+		}
+		status.UpdateStatus = UpdateStatus{Phase: "idle"}
+		return status, nil
+	}
+
 	if s.updater == nil {
 		return status, nil
 	}

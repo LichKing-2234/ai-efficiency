@@ -46,7 +46,7 @@ download_release() {
   curl -fsSL "${base}/${archive}" -o "${TMP_DIR}/${archive}"
   curl -fsSL "${base}/checksums.txt" -o "${TMP_DIR}/checksums.txt"
   local expected actual
-  expected="$(grep "${archive}" "${TMP_DIR}/checksums.txt" | awk '{print $1}')"
+  expected="$(grep -F "  ${archive}" "${TMP_DIR}/checksums.txt" | awk '{print $1}')"
   actual="$(sha256sum "${TMP_DIR}/${archive}" | awk '{print $1}')"
   [[ -n "$expected" ]] || { echo "missing checksum for ${archive}" >&2; exit 1; }
   [[ "$expected" == "$actual" ]] || { echo "checksum mismatch for ${archive}" >&2; exit 1; }
@@ -82,6 +82,8 @@ main() {
   require_cmd curl
   require_cmd tar
   require_cmd sha256sum
+  require_cmd useradd
+  require_cmd systemctl
   detect_platform
   TMP_DIR="$(mktemp -d)"
   trap 'rm -rf "${TMP_DIR}"' EXIT

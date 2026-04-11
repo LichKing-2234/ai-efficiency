@@ -109,7 +109,7 @@
 5. The updater stores rollback state in a mounted writable state directory so rollback survives backend container replacement.
 6. `deploy/docker-compose.yml` and `deploy/docker-compose.external.yml` remain production-focused and keep the updater sidecar.
 7. `deploy/docker-compose.dev.yml` and `deploy/docker-compose.local.yml` are non-production local validation paths and do not run the updater sidecar.
-8. SQLite is removed from the runtime path in this batch; test-side SQLite migration is explicitly deferred.
+8. SQLite is removed from the runtime path, and backend tests now run on the Postgres-backed test helper.
 
 ---
 

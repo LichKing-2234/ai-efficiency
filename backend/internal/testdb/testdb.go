@@ -54,7 +54,7 @@ func OpenWithDSN(t *testing.T) (*ent.Client, string) {
 	}
 	t.Cleanup(func() {
 		if _, err := adminDB.ExecContext(context.Background(), fmt.Sprintf(`DROP SCHEMA IF EXISTS "%s" CASCADE`, schemaName)); err != nil {
-			t.Fatalf("drop schema %s: %v", schemaName, err)
+			t.Errorf("drop schema %s: %v", schemaName, err)
 		}
 	})
 
