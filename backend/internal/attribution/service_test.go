@@ -185,7 +185,7 @@ func TestSettlePR_UsesPreviousOverallCheckpointForMatchedInterval(t *testing.T) 
 	ctx := context.Background()
 
 	repo, pr, sess := testRepoPRSession(t, client, 321)
-	t0 := sess.StartedAt
+	t0 := sess.StartedAt.UTC().Truncate(time.Microsecond)
 	t1 := t0.Add(20 * time.Minute)
 	t2 := t1.Add(30 * time.Minute)
 
