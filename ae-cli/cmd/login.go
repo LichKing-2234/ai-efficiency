@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/ai-efficiency/ae-cli/config"
 	"github.com/ai-efficiency/ae-cli/internal/auth"
 	"github.com/ai-efficiency/ae-cli/internal/buildinfo"
 	"github.com/spf13/cobra"
@@ -15,7 +16,7 @@ var loginCmd = &cobra.Command{
 	Short: "Login to the AI Efficiency Platform via browser",
 	Long:  "Opens a browser window for OAuth2 login. After approval, a token is saved locally.",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		serverURL := buildinfo.ServerURL
+		serverURL := resolveLoginServerURL(cfg, buildinfo.ServerURL)
 		if serverURL == "" {
 			return fmt.Errorf("server URL not configured")
 		}
@@ -52,4 +53,11 @@ var loginCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(loginCmd)
+}
+
+func resolveLoginServerURL(cfg *config.Config, fallback string) string {
+	if cfg != nil && cfg.Server.URL != "" {
+		return cfg.Server.URL
+	}
+	return fallback
 }
