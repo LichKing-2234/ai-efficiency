@@ -1,5 +1,7 @@
 # Binary Systemd Install And Update Design
 
+**Status:** Current contract for Linux binary / systemd installation and self-update
+
 ## Overview
 
 本文定义 `ai-efficiency` 的 **binary + systemd** 交付与升级路线。
@@ -39,22 +41,14 @@
 
 ## Current State
 
-截至本文撰写时，代码已经有：
+截至 2026-04-12，当前代码已经具备本文定义的大部分 systemd 路线能力：
 
-- Docker / Compose 路线
-- updater sidecar
-- deployment status / check / apply / rollback API
-- GitHub Release 查询能力
+- `deploy/install.sh` 与 `deploy/ai-efficiency.service` 已存在并随 release bundle 分发。
+- backend 已具备 GitHub Release 查询、systemd 资产选择、binary 下载 / checksum / 原子替换 / `.backup` 回滚逻辑。
+- deployment 服务已经按 `compose` 与 `systemd` 模式分流，并提供 check / apply / rollback / restart 能力。
+- 前端 deployment 设置页已经对 `systemd` 模式暴露 restart 与 mode-aware 提示。
 
-但还没有：
-
-- `deploy/install.sh`
-- `deploy/ai-efficiency.service`
-- binary/systemd 模式的安装目录约定
-- binary 模式的下载、checksum、原子替换、backup、rollback、restart
-- deployment mode 分流到 `systemd` 路线
-
-因此本文描述的是 **新增合同**，不是当前实现状态。
+因此本文不再只是“新增合同”，而是当前已落地 systemd 路线的设计与边界说明。具体运行时行为仍以当前代码和 [`docs/architecture.md`](/Users/admin/ai-efficiency/docs/architecture.md) 为准。
 
 ## Goals
 

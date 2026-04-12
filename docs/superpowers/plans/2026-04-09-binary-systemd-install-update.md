@@ -8,6 +8,14 @@
 
 **Tech Stack:** Go (`gin`, existing deployment/release services, `os/exec` for systemctl integration), shell scripts, systemd unit files, GitHub Release assets, existing frontend deployment settings page.
 
+**Status:** ✅ 已完成（2026-04-12）
+
+**Replay Status:** 历史完成记录。不要直接按本文逐 task 重跑；如需再次执行或扩展，请基于当前 deployment 代码、`deploy/install.sh`、`deploy/ai-efficiency.service` 和最新 spec 重写执行计划。
+
+**Source Of Truth:** 已实现的 systemd 安装、binary update / rollback / restart 路径以当前代码和 `docs/architecture.md` 为准。本文保留实施切片与验收轨迹。
+
+> **Updated:** 2026-04-12 — 基于代码审查回填状态与 checkbox。
+
 ---
 
 ## File Map
@@ -111,7 +119,7 @@
 - Modify: `deploy/README.md`
 - Test: `deploy/install.sh`
 
-- [ ] **Step 1: Write the failing deploy-asset verification steps**
+- [x] **Step 1: Write the failing deploy-asset verification steps**
 
 Run:
 
@@ -127,7 +135,7 @@ Expected:
 - `test -f` fails because the files do not exist yet.
 - `goreleaser check` may pass now but does not yet include the new deploy files.
 
-- [ ] **Step 2: Create the systemd unit template**
+- [x] **Step 2: Create the systemd unit template**
 
 Create `deploy/ai-efficiency.service`:
 
@@ -159,7 +167,7 @@ Environment=AE_SERVER_MODE=release
 WantedBy=multi-user.target
 ```
 
-- [ ] **Step 3: Create the installer script**
+- [x] **Step 3: Create the installer script**
 
 Create `deploy/install.sh`:
 
@@ -264,7 +272,7 @@ main() {
 main "$@"
 ```
 
-- [ ] **Step 4: Include systemd assets in the backend bundle and docs**
+- [x] **Step 4: Include systemd assets in the backend bundle and docs**
 
 Update `.goreleaser.yaml` backend bundle files:
 
@@ -305,7 +313,7 @@ Before first start, edit:
 - `/etc/ai-efficiency/config.yaml`
 ````
 
-- [ ] **Step 5: Verify and commit**
+- [x] **Step 5: Verify and commit**
 
 Run:
 
@@ -336,7 +344,7 @@ git commit -m "feat(deploy): add systemd install assets"
 - Test: `backend/internal/deployment/systemd_asset_test.go`
 - Test: `backend/internal/deployment/systemd_binary_updater_test.go`
 
-- [ ] **Step 1: Write the failing unit tests**
+- [x] **Step 1: Write the failing unit tests**
 
 Create `backend/internal/deployment/systemd_asset_test.go`:
 
@@ -425,7 +433,7 @@ func TestSystemdBinaryUpdaterApplyAndRollback(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the targeted tests to verify they fail**
+- [x] **Step 2: Run the targeted tests to verify they fail**
 
 Run:
 
@@ -436,7 +444,7 @@ go test ./internal/deployment -run 'TestSelectSystemdArchiveAsset|TestSystemdBin
 
 Expected: FAIL because the selectors/updater do not exist yet.
 
-- [ ] **Step 3: Implement the asset selector and binary updater**
+- [x] **Step 3: Implement the asset selector and binary updater**
 
 Create `backend/internal/deployment/systemd_asset.go`:
 
@@ -631,7 +639,7 @@ func extractServerBinary(archivePath, outDir, binaryName string) (string, error)
 }
 ```
 
-- [ ] **Step 4: Run the targeted tests and commit**
+- [x] **Step 4: Run the targeted tests and commit**
 
 Run:
 
@@ -664,7 +672,7 @@ git commit -m "feat(backend): add systemd binary update core"
 - Test: `backend/internal/deployment/service_test.go`
 - Test: `backend/internal/handler/deployment_http_test.go`
 
-- [ ] **Step 1: Write the failing restart and mode-routing tests**
+- [x] **Step 1: Write the failing restart and mode-routing tests**
 
 Create `backend/internal/deployment/systemd_service_manager_test.go`:
 
@@ -752,7 +760,7 @@ func TestDeploymentRestartReturnsConflictWhenUnsupported(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the targeted tests to confirm they fail**
+- [x] **Step 2: Run the targeted tests to confirm they fail**
 
 Run:
 
@@ -763,7 +771,7 @@ go test ./internal/deployment ./internal/handler -run 'TestSystemdServiceManager
 
 Expected: FAIL because restart and systemd mode routing do not exist yet.
 
-- [ ] **Step 3: Implement service manager, mode routing, and restart endpoint**
+- [x] **Step 3: Implement service manager, mode routing, and restart endpoint**
 
 Create `backend/internal/deployment/systemd_service_manager.go`:
 
@@ -889,7 +897,7 @@ deploymentService := deployment.NewService(
 )
 ```
 
-- [ ] **Step 4: Run targeted tests and commit**
+- [x] **Step 4: Run targeted tests and commit**
 
 Run:
 
@@ -918,7 +926,7 @@ git commit -m "feat(backend): route deployment actions by mode"
 - Test: `backend/internal/deployment/release_source_test.go`
 - Test: `backend/internal/deployment/service_test.go`
 
-- [ ] **Step 1: Write the failing integration tests for systemd apply/rollback**
+- [x] **Step 1: Write the failing integration tests for systemd apply/rollback**
 
 Extend `backend/internal/deployment/release_source_test.go`:
 
@@ -1013,7 +1021,7 @@ func TestDeploymentServiceApplyAndRollbackInSystemdMode(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the targeted tests to confirm they fail**
+- [x] **Step 2: Run the targeted tests to confirm they fail**
 
 Run:
 
@@ -1024,7 +1032,7 @@ go test ./internal/deployment -run 'TestGitHubReleaseSourceLatestIncludesAssets|
 
 Expected: FAIL because release assets and systemd mode apply/rollback are not wired yet.
 
-- [ ] **Step 3: Implement systemd mode release handling**
+- [x] **Step 3: Implement systemd mode release handling**
 
 Update `backend/internal/deployment/release_source.go`:
 
@@ -1131,7 +1139,7 @@ deploymentService := deployment.NewService(
 )
 ```
 
-- [ ] **Step 4: Run targeted tests and commit**
+- [x] **Step 4: Run targeted tests and commit**
 
 Run:
 
@@ -1162,7 +1170,7 @@ git commit -m "feat(backend): add systemd self-update mode"
 - Modify: `docs/architecture.md`
 - Verify: full backend/frontend/deploy checks
 
-- [ ] **Step 1: Write the failing frontend tests**
+- [x] **Step 1: Write the failing frontend tests**
 
 Append to `frontend/src/__tests__/api-modules.test.ts`:
 
@@ -1193,7 +1201,7 @@ it('renders restart control in deployment section', async () => {
 })
 ```
 
-- [ ] **Step 2: Run the frontend tests to confirm they fail**
+- [x] **Step 2: Run the frontend tests to confirm they fail**
 
 Run:
 
@@ -1204,7 +1212,7 @@ pnpm test -- api-modules settings-view
 
 Expected: FAIL because restart API and button do not exist.
 
-- [ ] **Step 3: Implement frontend restart control and docs**
+- [x] **Step 3: Implement frontend restart control and docs**
 
 Update `frontend/src/api/deployment.ts`:
 
@@ -1272,7 +1280,7 @@ Update `docs/architecture.md` deployment section to explicitly mention:
 - Compose mode -> updater sidecar
 - systemd mode -> backend binary self-update
 
-- [ ] **Step 4: Run final verification**
+- [x] **Step 4: Run final verification**
 
 Run:
 
@@ -1293,7 +1301,7 @@ docker-compose --env-file deploy/.env.example -f deploy/docker-compose.external.
 
 Expected: all commands succeed.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add frontend/src/api/deployment.ts frontend/src/types/index.ts frontend/src/views/SettingsView.vue frontend/src/__tests__/api-modules.test.ts frontend/src/__tests__/settings-view.test.ts deploy/README.md deploy/config.example.yaml docs/architecture.md

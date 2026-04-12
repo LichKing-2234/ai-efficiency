@@ -1,5 +1,7 @@
 # Production Deployment Packaging Design
 
+**Status:** Current contract for Compose deployment and update control plane; remote Docker bootstrap remains pending
+
 ## Overview
 
 本 spec 定义 `ai-efficiency` 的官方生产部署形态、交付边界、配置模型、预检机制与升级路径，并补充 `deploy/` 目录下用于本地验证的非生产 compose 变体与一次性数据迁移入口。
@@ -37,25 +39,21 @@
 
 ## Current State
 
-截至本文撰写时，仓库已有以下基础：
+截至 2026-04-12，仓库已经具备本文大部分合同所需能力：
 
-- `deploy/Dockerfile` 采用多阶段构建，构建时会先生成前端产物，再构建后端镜像。
-- `deploy/docker-compose.yml` 已可启动 `backend`、`postgres`、`redis` 三个服务。
-- `deploy/docker-deploy.sh` 已具备 `.env` 补齐、密钥生成和 preflight 检查能力，但它假设脚本运行时已经存在完整的 `deploy/` 目录。
-- 后端配置已经支持环境变量覆盖，使用 `AE_` 前缀。
+- `deploy/Dockerfile` 使用多阶段构建，并把前端产物与后端一起打进交付镜像。
+- `deploy/docker-compose.yml` 与 `deploy/docker-compose.external.yml` 分别覆盖 bundled infra 与 external infra 路径。
+- `deploy/docker-compose.dev.yml` 与 `deploy/docker-compose.local.yml` 已作为非生产本地验证路径落地。
+- `deploy/.env.example`、`deploy/README.md`、`deploy/migrate-sqlite-to-postgres.sh` 已提供运维入口、说明和本地数据迁移路径。
+- `deploy/docker-deploy.sh` 已具备 `.env` 补齐、密钥生成和 preflight 检查能力，但仍假设脚本运行时已经存在完整的 `deploy/` 目录。
+- 后端已经提供 health / readiness、deployment status、check / apply / rollback 等管理 API，并通过 updater sidecar 执行 Compose 路径的更新。
 
-但当前代码仍未构成本文定义的完整官方交付体验，至少还缺少：
+当前仍未完成的主要差距是：
 
 - 面向空目录远程执行的 Docker bootstrap 入口
-- 面向运维的 `.env` 模板与生成流程
-- 对外部 `sub2api`、数据库、Redis 的系统化 preflight 检查
-- 清晰区分 `liveness` / `readiness` / `degraded` 的健康语义
-- 产品级在线更新入口与回滚能力
-- 成熟的升级入口与回滚说明
-- 参考 `sub2api` 的本地 `dev` / `local` compose 变体
-- 一个把 `backend/ai_efficiency.db` 一次性迁移到本地测试 Postgres 的标准入口
+- 通过远程 bootstrap 显式指定 preview tag 的入口
 
-因此，本文描述的是**目标合同**，不是对当前实现状态的复述。
+因此，本文现在描述的是“已大部分落地、仍保留少量未完成项”的当前合同，而不再是纯目标态草案。
 
 ## Goals
 

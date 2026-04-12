@@ -8,6 +8,14 @@
 
 **Tech Stack:** Go, Cobra, Bubble Tea, tmux, JSON runtime files, Go testing
 
+**Status:** ✅ 已完成（2026-04-12）
+
+**Replay Status:** 历史完成记录。不要直接按本文逐 task 重跑；如需再次执行或扩展，请基于当前代码和最新 spec 重写执行计划。
+
+**Source Of Truth:** 已实现行为以当前代码、`docs/architecture.md` 和相关最新 spec 为准。本文保留实施切片与验收轨迹。
+
+> **Updated:** 2026-04-12 — 基于代码审查回填状态与 checkbox。
+
 ---
 
 ## File Structure
@@ -37,7 +45,7 @@
 - Create: `ae-cli/internal/session/tool_panes.go`
 - Test: `ae-cli/internal/session/tool_panes_test.go`
 
-- [ ] **Step 1: Write the failing registry tests**
+- [x] **Step 1: Write the failing registry tests**
 
 ```go
 package session
@@ -153,13 +161,13 @@ func TestReadToolPaneRegistryMissingFileReturnsEmptyRegistry(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the session package tests to verify they fail**
+- [x] **Step 2: Run the session package tests to verify they fail**
 
 Run: `go test ./internal/session -run 'TestRegisterToolPaneAssignsMonotonicInstanceNumbers|TestFindToolPaneReturnsRequestedInstance|TestRemoveToolPaneByPaneIDDeletesOnlyMatchingPane|TestPruneToolPanesRemovesDeadEntriesWithoutReusingNumbers|TestReadToolPaneRegistryMissingFileReturnsEmptyRegistry'`
 
 Expected: FAIL with `undefined: RegisterToolPane`, `undefined: FindToolPane`, and missing registry helpers.
 
-- [ ] **Step 3: Write the minimal registry implementation**
+- [x] **Step 3: Write the minimal registry implementation**
 
 ```go
 package session
@@ -318,13 +326,13 @@ func PruneToolPanes(sessionID string, alive func(string) bool) ([]ToolPaneRecord
 }
 ```
 
-- [ ] **Step 4: Run the session package tests to verify they pass**
+- [x] **Step 4: Run the session package tests to verify they pass**
 
 Run: `go test ./internal/session -run 'TestRegisterToolPaneAssignsMonotonicInstanceNumbers|TestFindToolPaneReturnsRequestedInstance|TestRemoveToolPaneByPaneIDDeletesOnlyMatchingPane|TestPruneToolPanesRemovesDeadEntriesWithoutReusingNumbers|TestReadToolPaneRegistryMissingFileReturnsEmptyRegistry'`
 
 Expected: PASS with all 5 tests green.
 
-- [ ] **Step 5: Commit the registry layer**
+- [x] **Step 5: Commit the registry layer**
 
 ```bash
 git add ae-cli/internal/session/tool_panes.go ae-cli/internal/session/tool_panes_test.go
@@ -338,7 +346,7 @@ git commit -m "feat(ae-cli): add session tool pane registry"
 - Modify: `ae-cli/internal/dispatcher/dispatcher_test.go`
 - Test: `ae-cli/internal/session/tool_panes_test.go`
 
-- [ ] **Step 1: Write the failing dispatcher test for registry registration**
+- [x] **Step 1: Write the failing dispatcher test for registry registration**
 
 ```go
 func TestRunWithTmuxRegistersToolPane(t *testing.T) {
@@ -381,13 +389,13 @@ func TestRunWithTmuxRegistersToolPane(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the dispatcher test to verify it fails**
+- [x] **Step 2: Run the dispatcher test to verify it fails**
 
 Run: `go test ./internal/dispatcher -run TestRunWithTmuxRegistersToolPane`
 
 Expected: FAIL because `Dispatcher.Run` currently discards the returned pane id and never writes the registry.
 
-- [ ] **Step 3: Register panes after tmux launch**
+- [x] **Step 3: Register panes after tmux launch**
 
 ```go
 if tmuxSession != "" {
@@ -419,13 +427,13 @@ if tmuxSession != "" {
 }
 ```
 
-- [ ] **Step 4: Run the dispatcher tests to verify they pass**
+- [x] **Step 4: Run the dispatcher tests to verify they pass**
 
 Run: `go test ./internal/dispatcher -run 'TestRunWithTmuxRegistersToolPane|TestRunWithTmux|TestRunWithTmuxUnsets'`
 
 Expected: PASS with the new registration test and existing tmux-launch tests all green.
 
-- [ ] **Step 5: Commit the `run` integration**
+- [x] **Step 5: Commit the `run` integration**
 
 ```bash
 git add ae-cli/internal/dispatcher/dispatcher.go ae-cli/internal/dispatcher/dispatcher_test.go
@@ -438,7 +446,7 @@ git commit -m "feat(ae-cli): register tmux tool panes for run"
 - Modify: `ae-cli/internal/shell/shell.go`
 - Modify: `ae-cli/internal/shell/shell_test.go`
 
-- [ ] **Step 1: Write the failing shell tests for spawn-vs-target semantics**
+- [x] **Step 1: Write the failing shell tests for spawn-vs-target semantics**
 
 ```go
 func TestHandleDirectedLaunchesNewInstanceForPlainTool(t *testing.T) {
@@ -590,13 +598,13 @@ func TestAppendPanesShowsToolLabels(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the shell tests to verify they fail**
+- [x] **Step 2: Run the shell tests to verify they fail**
 
 Run: `go test ./internal/shell -run 'TestHandleDirectedLaunchesNewInstanceForPlainTool|TestHandleDirectedTargetsIndexedInstance|TestHandleDirectedMissingIndexedInstanceShowsHelpfulError|TestBroadcastSendsToExistingInstancesOnly'`
 
 Expected: FAIL because the shell still uses a single `toolPanes` map keyed only by tool name and has no `#N` parser.
 
-- [ ] **Step 3: Replace single-pane shell state with registry-backed routing**
+- [x] **Step 3: Replace single-pane shell state with registry-backed routing**
 
 ```go
 type directedTarget struct {
@@ -750,13 +758,13 @@ func (s *Shell) activeToolPaneCount() int {
 }
 ```
 
-- [ ] **Step 4: Run the shell package tests to verify they pass**
+- [x] **Step 4: Run the shell package tests to verify they pass**
 
 Run: `go test ./internal/shell -run 'TestHandleDirectedLaunchesNewInstanceForPlainTool|TestHandleDirectedTargetsIndexedInstance|TestHandleDirectedMissingIndexedInstanceShowsHelpfulError|TestBroadcastSendsToExistingInstancesOnly|TestAppendPanesShowsToolLabels|TestSendToToolWithTmux|TestBroadcastWithTmux'`
 
 Expected: PASS with the new multi-instance tests and the updated tmux tests.
 
-- [ ] **Step 5: Commit the shell behavior change**
+- [x] **Step 5: Commit the shell behavior change**
 
 ```bash
 git add ae-cli/internal/shell/shell.go ae-cli/internal/shell/shell_test.go
@@ -770,7 +778,7 @@ git commit -m "feat(ae-cli): support multi-instance shell tool panes"
 - Modify: `ae-cli/cmd/kill.go`
 - Modify: `ae-cli/cmd/version_test.go`
 
-- [ ] **Step 1: Write the failing command tests for labeled `ps` and registry-pruning `kill`**
+- [x] **Step 1: Write the failing command tests for labeled `ps` and registry-pruning `kill`**
 
 ```go
 func TestPsCommandShowsToolLabelsFromRegistry(t *testing.T) {
@@ -859,13 +867,13 @@ func TestKillCommandPrunesToolPaneRegistry(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the command tests to verify they fail**
+- [x] **Step 2: Run the command tests to verify they fail**
 
 Run: `go test ./cmd -run 'TestPsCommandShowsToolLabelsFromRegistry|TestKillCommandPrunesToolPaneRegistry'`
 
 Expected: FAIL because `ps` still prints only raw pane data and `kill` does not touch the registry.
 
-- [ ] **Step 3: Render registry labels in `ps` and prune the registry on `kill`**
+- [x] **Step 3: Render registry labels in `ps` and prune the registry on `kill`**
 
 ```go
 // ae-cli/cmd/ps.go
@@ -917,13 +925,13 @@ if state, err := mgr.Current(); err == nil && state != nil {
 fmt.Fprintf(cmd.OutOrStdout(), "Pane %s killed.\n", paneID)
 ```
 
-- [ ] **Step 4: Run the command tests to verify they pass**
+- [x] **Step 4: Run the command tests to verify they pass**
 
 Run: `go test ./cmd -run 'TestPsCommandShowsToolLabelsFromRegistry|TestKillCommandPrunesToolPaneRegistry|TestPsCommandNoSession|TestPsCommandNoTmux'`
 
 Expected: PASS with labeled output and registry pruning covered.
 
-- [ ] **Step 5: Commit the CLI surface changes**
+- [x] **Step 5: Commit the CLI surface changes**
 
 ```bash
 git add ae-cli/cmd/ps.go ae-cli/cmd/kill.go ae-cli/cmd/version_test.go
@@ -937,7 +945,7 @@ git commit -m "feat(ae-cli): label and prune tool panes"
 - Modify: `ae-cli/internal/shell/shell_test.go`
 - Modify: `ae-cli/cmd/version_test.go`
 
-- [ ] **Step 1: Write the failing tests for help text and no-instance broadcast**
+- [x] **Step 1: Write the failing tests for help text and no-instance broadcast**
 
 ```go
 func TestHandleDirectedInvalidSelectorShowsError(t *testing.T) {
@@ -976,13 +984,13 @@ func TestBroadcastWithNoRunningInstancesShowsGuidance(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the shell tests to verify they fail**
+- [x] **Step 2: Run the shell tests to verify they fail**
 
 Run: `go test ./internal/shell -run 'TestHandleDirectedInvalidSelectorShowsError|TestBroadcastWithNoRunningInstancesShowsGuidance'`
 
 Expected: FAIL before help/error-path polish is complete.
 
-- [ ] **Step 3: Update banner/help text and finalize error handling**
+- [x] **Step 3: Update banner/help text and finalize error handling**
 
 ```go
 func (m *model) queueBanner() {
@@ -999,7 +1007,7 @@ func (m *model) queueBanner() {
 }
 ```
 
-- [ ] **Step 4: Run the focused tests and the full ae-cli suite**
+- [x] **Step 4: Run the focused tests and the full ae-cli suite**
 
 Run: `go test ./internal/shell -run 'TestHandleDirectedInvalidSelectorShowsError|TestBroadcastWithNoRunningInstancesShowsGuidance|TestHelpCommand'`
 Expected: PASS
@@ -1007,7 +1015,7 @@ Expected: PASS
 Run: `go test ./...`
 Expected: PASS across the full `ae-cli` module.
 
-- [ ] **Step 5: Commit the polish and verification**
+- [x] **Step 5: Commit the polish and verification**
 
 ```bash
 git add ae-cli/internal/shell/shell.go ae-cli/internal/shell/shell_test.go ae-cli/cmd/version_test.go

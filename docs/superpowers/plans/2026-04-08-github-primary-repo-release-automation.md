@@ -8,6 +8,14 @@
 
 **Tech Stack:** GitHub CLI (`gh`), GitHub Actions, GoReleaser v2, Docker Buildx, GHCR, Go 1.24+, pnpm/Vite/Vitest, shell scripts.
 
+**Status:** ✅ 已完成（2026-04-12）
+
+**Replay Status:** 历史完成记录。不要直接按本文逐 task 重跑；如需再次执行或扩展，请基于当前 GitHub repo、CI workflow 和 release 配置重写执行计划。
+
+**Source Of Truth:** 当前 remote、GitHub workflow、GoReleaser 配置和部署默认值以现有仓库配置为准。本文保留实施切片与验收轨迹。
+
+> **Updated:** 2026-04-12 — 基于代码审查回填状态与 checkbox。
+
 ---
 
 ## File Map
@@ -97,7 +105,7 @@
 - Modify: `.gitignore`
 - Modify: `CLAUDE.md`
 
-- [ ] **Step 1: Verify current remotes and create the GitHub repo**
+- [x] **Step 1: Verify current remotes and create the GitHub repo**
 
 Run:
 
@@ -111,7 +119,7 @@ Expected:
 - `origin` currently points at `ssh://git@git.agoralab.co/ai/ai-efficiency.git`
 - GitHub repo may or may not exist yet
 
-- [ ] **Step 2: Rename GitLab remote, create/connect GitHub primary repo, and push current main**
+- [x] **Step 2: Rename GitLab remote, create/connect GitHub primary repo, and push current main**
 
 Run:
 
@@ -139,7 +147,7 @@ Expected:
 - `main` exists on GitHub
 - local feature branch is `github-primary-repo-release-automation`
 
-- [ ] **Step 3: Ignore generated frontend build-info files**
+- [x] **Step 3: Ignore generated frontend build-info files**
 
 Update `.gitignore`:
 
@@ -148,7 +156,7 @@ Update `.gitignore`:
 /frontend/tsconfig.node.tsbuildinfo
 ```
 
-- [ ] **Step 4: Update quick-reference remote metadata**
+- [x] **Step 4: Update quick-reference remote metadata**
 
 Replace the remote line in `CLAUDE.md`:
 
@@ -157,7 +165,7 @@ Replace the remote line in `CLAUDE.md`:
 - GitLab mirror: `ssh://git@git.agoralab.co/ai/ai-efficiency.git`
 ```
 
-- [ ] **Step 5: Verify repo bootstrap state**
+- [x] **Step 5: Verify repo bootstrap state**
 
 Run:
 
@@ -174,7 +182,7 @@ Expected:
 - GitHub repo is public
 - only `.gitignore` and `CLAUDE.md` are staged for this task (ignore unrelated pre-existing local changes)
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add .gitignore CLAUDE.md
@@ -193,7 +201,7 @@ git commit -m "chore(repo): bootstrap github primary remote"
 - Test: `ae-cli/cmd/version_test.go`
 - Test: `backend/internal/config/config_test.go`
 
-- [ ] **Step 1: Write the failing ae-cli version and config-default tests**
+- [x] **Step 1: Write the failing ae-cli version and config-default tests**
 
 Append to `ae-cli/cmd/version_test.go`:
 
@@ -237,7 +245,7 @@ func TestDeploymentDefaultsPointAtGitHubPrimaryRepo(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the targeted tests to confirm they fail**
+- [x] **Step 2: Run the targeted tests to confirm they fail**
 
 Run:
 
@@ -253,7 +261,7 @@ Expected:
 - `ae-cli` test fails because `cmd/version.go` still uses a hardcoded constant
 - backend test fails because GitHub release defaults still point at the old owner/repo
 
-- [ ] **Step 3: Implement build-info-backed version output and GitHub defaults**
+- [x] **Step 3: Implement build-info-backed version output and GitHub defaults**
 
 Update `ae-cli/cmd/version.go`:
 
@@ -304,7 +312,7 @@ deployment:
     image_repository: "ghcr.io/lichking-2234/ai-efficiency"
 ```
 
-- [ ] **Step 4: Run the targeted tests**
+- [x] **Step 4: Run the targeted tests**
 
 Run:
 
@@ -318,7 +326,7 @@ go test ./internal/config -run 'TestDeploymentDefaultsPointAtGitHubPrimaryRepo$'
 
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add ae-cli/cmd/version.go ae-cli/cmd/version_test.go backend/internal/config/config.go backend/internal/config/config_test.go deploy/.env.example deploy/config.example.yaml
@@ -331,7 +339,7 @@ git commit -m "chore(release): point defaults at github primary repo"
 - Create: `.github/workflows/ci.yml`
 - Test: `.github/workflows/ci.yml`
 
-- [ ] **Step 1: Create the CI workflow**
+- [x] **Step 1: Create the CI workflow**
 
 Create `.github/workflows/ci.yml`:
 
@@ -427,7 +435,7 @@ jobs:
           validate_compose deploy/docker-compose.external.yml
 ```
 
-- [ ] **Step 2: Validate the workflow syntax locally**
+- [x] **Step 2: Validate the workflow syntax locally**
 
 Run:
 
@@ -438,7 +446,7 @@ go run github.com/rhysd/actionlint/cmd/actionlint@latest .github/workflows/ci.ym
 
 Expected: PASS
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add .github/workflows/ci.yml
@@ -453,7 +461,7 @@ git commit -m "ci(github): add pull request validation workflow"
 - Test: `.goreleaser.yaml`
 - Test: `.github/workflows/release.yml`
 
-- [ ] **Step 1: Create the GoReleaser config**
+- [x] **Step 1: Create the GoReleaser config**
 
 Create `.goreleaser.yaml`:
 
@@ -563,7 +571,7 @@ release:
   name_template: "ai-efficiency {{ .Version }}"
 ```
 
-- [ ] **Step 2: Create the release workflow**
+- [x] **Step 2: Create the release workflow**
 
 Create `.github/workflows/release.yml`:
 
@@ -726,7 +734,7 @@ jobs:
             APP_BUILD_TIME=${{ needs.prepare.outputs.build_time }}
 ```
 
-- [ ] **Step 3: Validate the workflow and GoReleaser config locally**
+- [x] **Step 3: Validate the workflow and GoReleaser config locally**
 
 Run:
 
@@ -738,7 +746,7 @@ go run github.com/goreleaser/goreleaser/v2@latest check --config .goreleaser.yam
 
 Expected: PASS
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add .github/workflows/release.yml .goreleaser.yaml
@@ -751,7 +759,7 @@ git commit -m "ci(github): add release automation"
 - Modify: `deploy/README.md`
 - Verify: GitHub workflows visible on remote repo
 
-- [ ] **Step 1: Update deploy docs for GHCR and GitHub Release usage**
+- [x] **Step 1: Update deploy docs for GHCR and GitHub Release usage**
 
 Append to `deploy/README.md`:
 
@@ -779,7 +787,7 @@ docker pull ghcr.io/lichking-2234/ai-efficiency:latest
 ~~~
 ````
 
-- [ ] **Step 2: Run final local validation for the new automation files**
+- [x] **Step 2: Run final local validation for the new automation files**
 
 Run:
 
@@ -799,14 +807,14 @@ docker-compose --env-file deploy/.env.example -f deploy/docker-compose.external.
 
 Expected: all commands succeed.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add deploy/README.md
 git commit -m "docs(deploy): document github release and ghcr usage"
 ```
 
-- [ ] **Step 4: Push the automation branch to GitHub and verify workflows exist**
+- [x] **Step 4: Push the automation branch to GitHub and verify workflows exist**
 
 Run:
 

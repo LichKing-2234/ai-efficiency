@@ -8,6 +8,14 @@
 
 **Tech Stack:** Go (`gin`, `ent`, `viper`, `zap`, `go-redis/v9`), Vue 3 + Pinia + Vitest, Docker Compose, POSIX shell.
 
+**Status:** ✅ 已完成（2026-04-12）
+
+**Replay Status:** 历史完成记录。不要直接按本文逐 task 重跑；如需再次执行或扩展，请基于当前 deployment 代码、`deploy/` 资产和最新 spec 重写执行计划。
+
+**Source Of Truth:** 已实现的 Compose / updater sidecar / deployment API / local validation path 以当前代码和 `docs/architecture.md` 为准。本文保留实施切片与验收轨迹。
+
+> **Updated:** 2026-04-12 — 基于代码审查回填状态与 checkbox。
+
 ---
 
 ## File Map
@@ -129,7 +137,7 @@
 - Test: `backend/internal/config/config_test.go`
 - Test: `backend/internal/deployment/version_test.go`
 
-- [ ] **Step 1: Write the failing config and version tests**
+- [x] **Step 1: Write the failing config and version tests**
 
 Append to `backend/internal/config/config_test.go`:
 
@@ -192,7 +200,7 @@ func TestCurrentVersionUsesInjectedBuildInfo(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the targeted backend tests to confirm they fail**
+- [x] **Step 2: Run the targeted backend tests to confirm they fail**
 
 Run:
 
@@ -203,7 +211,7 @@ go test ./internal/config ./internal/deployment -run 'TestLoadDeploymentAndRedis
 
 Expected: FAIL because `Config` has no `Redis`/`Deployment` fields yet and `deployment.CurrentVersion()` does not exist.
 
-- [ ] **Step 3: Implement Redis/deployment config and version metadata**
+- [x] **Step 3: Implement Redis/deployment config and version metadata**
 
 In `backend/internal/config/config.go`, add:
 
@@ -322,7 +330,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
   -o /app/server ./cmd/server/
 ```
 
-- [ ] **Step 4: Add the Redis dependency and re-run the targeted backend tests**
+- [x] **Step 4: Add the Redis dependency and re-run the targeted backend tests**
 
 Run:
 
@@ -334,7 +342,7 @@ go test ./internal/config ./internal/deployment -count=1
 
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/go.mod backend/go.sum backend/internal/config/config.go backend/internal/config/config_test.go backend/internal/deployment/version.go backend/internal/deployment/version_test.go deploy/Dockerfile deploy/config.example.yaml
@@ -353,7 +361,7 @@ git commit -m "feat(backend): add deployment config and version metadata"
 - Test: `backend/internal/deployment/health_test.go`
 - Test: `backend/internal/handler/deployment_http_test.go`
 
-- [ ] **Step 1: Write the failing health and deployment HTTP tests**
+- [x] **Step 1: Write the failing health and deployment HTTP tests**
 
 Create `backend/internal/deployment/health_test.go`:
 
@@ -429,7 +437,7 @@ func TestDeploymentStatusRequiresAdmin(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the targeted backend tests to confirm they fail**
+- [x] **Step 2: Run the targeted backend tests to confirm they fail**
 
 Run:
 
@@ -440,7 +448,7 @@ go test ./internal/deployment ./internal/handler -run 'TestHealthServiceReadyAnd
 
 Expected: FAIL because there is no health service and the new routes do not exist.
 
-- [ ] **Step 3: Implement the health service and deployment status handler**
+- [x] **Step 3: Implement the health service and deployment status handler**
 
 Create `backend/internal/deployment/health.go`:
 
@@ -600,7 +608,7 @@ deploymentSvc := deployment.NewService(cfg.Deployment, deployment.CurrentVersion
 deploymentHandler := handler.NewDeploymentHandler(healthSvc, deploymentSvc)
 ```
 
-- [ ] **Step 4: Run the targeted backend tests**
+- [x] **Step 4: Run the targeted backend tests**
 
 Run:
 
@@ -611,7 +619,7 @@ go test ./internal/deployment ./internal/handler -run 'TestHealthServiceReadyAnd
 
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/internal/deployment/health.go backend/internal/deployment/health_test.go backend/internal/handler/deployment.go backend/internal/handler/deployment_http_test.go backend/internal/handler/router.go backend/cmd/server/main.go
@@ -635,7 +643,7 @@ git commit -m "feat(backend): add deployment health and status endpoints"
 - Test: `backend/internal/deployment/updater_client_test.go`
 - Test: `backend/internal/handler/deployment_http_test.go`
 
-- [ ] **Step 1: Write the failing release-check and admin update tests**
+- [x] **Step 1: Write the failing release-check and admin update tests**
 
 Create `backend/internal/deployment/release_source_test.go`:
 
@@ -794,7 +802,7 @@ func TestDeploymentUpdateRoutesRequireAdmin(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the targeted backend tests to confirm they fail**
+- [x] **Step 2: Run the targeted backend tests to confirm they fail**
 
 Run:
 
@@ -805,7 +813,7 @@ go test ./internal/deployment ./internal/handler -run 'TestGitHubReleaseSourceLa
 
 Expected: FAIL because the release source, deployment service, updater client, and update endpoints do not exist.
 
-- [ ] **Step 3: Implement release lookup, deployment service, updater client, and admin update routes**
+- [x] **Step 3: Implement release lookup, deployment service, updater client, and admin update routes**
 
 Create `backend/internal/deployment/release_source.go`:
 
@@ -1083,7 +1091,7 @@ settingsGroup.POST("/deployment/update/apply", deploymentHandler.ApplyUpdate)
 settingsGroup.POST("/deployment/update/rollback", deploymentHandler.RollbackUpdate)
 ```
 
-- [ ] **Step 4: Run the targeted backend tests**
+- [x] **Step 4: Run the targeted backend tests**
 
 Run:
 
@@ -1094,7 +1102,7 @@ go test ./internal/deployment ./internal/handler -run 'TestGitHubReleaseSourceLa
 
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/internal/deployment/release_source.go backend/internal/deployment/release_source_test.go backend/internal/deployment/service.go backend/internal/deployment/service_test.go backend/internal/deployment/updater_client.go backend/internal/deployment/updater_client_test.go backend/internal/handler/deployment.go backend/internal/handler/deployment_http_test.go backend/internal/handler/router.go backend/cmd/server/main.go
@@ -1118,7 +1126,7 @@ git commit -m "feat(backend): add deployment update control plane"
 - Verify: `docker compose --env-file deploy/.env.example -f deploy/docker-compose.yml config`
 - Verify: `docker compose --env-file deploy/.env.example -f deploy/docker-compose.external.yml config`
 
-- [ ] **Step 1: Write the failing updater-sidecar test**
+- [x] **Step 1: Write the failing updater-sidecar test**
 
 Create `backend/internal/deployment/updater_server_test.go`:
 
@@ -1176,7 +1184,7 @@ func TestUpdaterServerApplyAndRollbackRewriteEnvFile(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the targeted updater test to confirm it fails**
+- [x] **Step 2: Run the targeted updater test to confirm it fails**
 
 Run:
 
@@ -1187,7 +1195,7 @@ go test ./internal/deployment -run 'TestUpdaterServerApplyAndRollbackRewriteEnvF
 
 Expected: FAIL because the updater server and rollback state logic do not exist.
 
-- [ ] **Step 3: Implement the updater server, updater entrypoint, and official deployment files**
+- [x] **Step 3: Implement the updater server, updater entrypoint, and official deployment files**
 
 Create `backend/internal/deployment/updater_server.go`:
 
@@ -1526,7 +1534,7 @@ check_url "$(grep '^AE_RELAY_URL=' "${ENV_FILE}" | cut -d= -f2)/health"
 echo "preflight ok"
 ```
 
-- [ ] **Step 4: Run the updater test and deployment asset verification**
+- [x] **Step 4: Run the updater test and deployment asset verification**
 
 Run:
 
@@ -1541,7 +1549,7 @@ docker compose --env-file deploy/.env.example -f deploy/docker-compose.external.
 
 Expected: all commands succeed.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/internal/deployment/updater_server.go backend/internal/deployment/updater_server_test.go backend/cmd/updater/main.go deploy/.env.example deploy/docker-compose.yml deploy/docker-compose.external.yml deploy/docker-deploy.sh deploy/Dockerfile deploy/config.example.yaml
@@ -1559,7 +1567,7 @@ git commit -m "feat(deploy): add updater sidecar and official compose assets"
 - Test: `frontend/src/__tests__/api-modules.test.ts`
 - Test: `frontend/src/__tests__/settings-view.test.ts`
 
-- [ ] **Step 1: Write the failing frontend API and view tests**
+- [x] **Step 1: Write the failing frontend API and view tests**
 
 Append to `frontend/src/__tests__/api-modules.test.ts`:
 
@@ -1612,7 +1620,7 @@ it('renders deployment status and update controls', async () => {
 })
 ```
 
-- [ ] **Step 2: Run the targeted frontend tests to confirm they fail**
+- [x] **Step 2: Run the targeted frontend tests to confirm they fail**
 
 Run:
 
@@ -1623,7 +1631,7 @@ pnpm test -- --run api-modules settings-view
 
 Expected: FAIL because `@/api/deployment` does not exist and `SettingsView` has no deployment card.
 
-- [ ] **Step 3: Implement the deployment API module, shared types, and settings UI**
+- [x] **Step 3: Implement the deployment API module, shared types, and settings UI**
 
 Create `frontend/src/api/deployment.ts`:
 
@@ -1739,7 +1747,7 @@ Add the deployment card in the template:
 </section>
 ```
 
-- [ ] **Step 4: Run the targeted frontend tests and build**
+- [x] **Step 4: Run the targeted frontend tests and build**
 
 Run:
 
@@ -1751,7 +1759,7 @@ pnpm build
 
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add frontend/src/api/deployment.ts frontend/src/types/index.ts frontend/src/views/SettingsView.vue frontend/src/__tests__/api-modules.test.ts frontend/src/__tests__/settings-view.test.ts
@@ -1769,7 +1777,7 @@ git commit -m "feat(frontend): add deployment update controls"
 - Verify: `docker compose --env-file deploy/.env.example -f deploy/docker-compose.yml config`
 - Verify: `docker compose --env-file deploy/.env.example -f deploy/docker-compose.external.yml config`
 
-- [ ] **Step 1: Update architecture.md to match the implemented deployment model**
+- [x] **Step 1: Update architecture.md to match the implemented deployment model**
 
 Add to `docs/architecture.md`:
 
@@ -1792,7 +1800,7 @@ flowchart LR
     Updater --> DockerHost
 ```
 
-- [ ] **Step 2: Create the operator guide**
+- [x] **Step 2: Create the operator guide**
 
 Create `deploy/README.md`:
 
@@ -1823,7 +1831,7 @@ docker compose --env-file deploy/.env -f deploy/docker-compose.external.yml up -
 - Use **Rollback** if the new release fails health checks
 ````
 
-- [ ] **Step 3: Run the full verification suite**
+- [x] **Step 3: Run the full verification suite**
 
 Run:
 
@@ -1840,7 +1848,7 @@ docker compose --env-file deploy/.env.example -f deploy/docker-compose.external.
 
 Expected: all commands succeed.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add docs/architecture.md deploy/README.md
@@ -1857,7 +1865,7 @@ git commit -m "docs(deploy): document production deployment flow"
 - Modify: `docs/architecture.md`
 - Verify: compose config + migration script syntax
 
-- [ ] **Step 1: Write the failing asset checks**
+- [x] **Step 1: Write the failing asset checks**
 
 Run:
 
@@ -1870,7 +1878,7 @@ test -f deploy/migrate-sqlite-to-postgres.sh
 
 Expected: FAIL because the local dev/local compose assets do not exist yet.
 
-- [ ] **Step 2: Add `docker-compose.dev.yml`**
+- [x] **Step 2: Add `docker-compose.dev.yml`**
 
 Create `deploy/docker-compose.dev.yml` as the local source-build path:
 
@@ -1882,7 +1890,7 @@ Create `deploy/docker-compose.dev.yml` as the local source-build path:
 - `AE_SERVER_MODE=debug`
 - ports bind to localhost-friendly defaults for local testing
 
-- [ ] **Step 3: Add `docker-compose.local.yml`**
+- [x] **Step 3: Add `docker-compose.local.yml`**
 
 Create `deploy/docker-compose.local.yml` as the directory-backed local test path:
 
@@ -1895,7 +1903,7 @@ Create `deploy/docker-compose.local.yml` as the directory-backed local test path
 - keep the runtime contract aligned with `docker-compose.dev.yml`
 - document that this file is for long-lived local test environments, not production
 
-- [ ] **Step 4: Add one-time SQLite migration helper**
+- [x] **Step 4: Add one-time SQLite migration helper**
 
 Create `deploy/migrate-sqlite-to-postgres.sh`:
 
@@ -1910,7 +1918,7 @@ Create `deploy/migrate-sqlite-to-postgres.sh`:
 
 The script should print a short summary of what it migrated and clearly state that it is a one-time bootstrap helper, not an ongoing sync tool.
 
-- [ ] **Step 5: Update docs**
+- [x] **Step 5: Update docs**
 
 Extend `deploy/README.md` with:
 
@@ -1925,7 +1933,7 @@ Extend `docs/architecture.md` so the deployment section distinguishes:
 - production Compose mode with updater sidecar
 - local dev/local compose validation paths without updater sidecar
 
-- [ ] **Step 6: Run verification**
+- [x] **Step 6: Run verification**
 
 Run:
 
@@ -1938,7 +1946,7 @@ docker-compose --env-file deploy/.env.example -f deploy/docker-compose.local.yml
 
 Expected: all commands succeed.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add deploy/docker-compose.dev.yml deploy/docker-compose.local.yml deploy/migrate-sqlite-to-postgres.sh deploy/README.md docs/architecture.md

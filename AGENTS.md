@@ -119,8 +119,9 @@ ai-efficiency/
 ## Testing
 
 - 后端单元测试：`cd backend && go test ./...`
-- ae-cli 测试：`cd ae-cli && go test ./...`
-- 前端测试：`cd frontend && pnpm test`
+- ae-cli 默认测试：`cd ae-cli && go test ./...`
+- 前端单元测试：`cd frontend && pnpm test`
+- 前端角色回归脚本：`cd frontend && pnpm run test:e2e:role`
 - 环境敏感测试（本地端口监听、TTY、tmux、浏览器/E2E）需与默认单元测试结果分开说明
 
 ## Commit Message Convention

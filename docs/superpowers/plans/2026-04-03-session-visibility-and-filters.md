@@ -8,6 +8,14 @@
 
 **Tech Stack:** Go (`gin`, `ent`, existing handler tests), Vue 3 (`<script setup>`, Pinia, Vitest), existing `frontend/src/api/session.ts` client.
 
+**Status:** ✅ 已完成（2026-04-12）
+
+**Replay Status:** 历史完成记录。不要直接按本文逐 task 重跑；如需再次执行或扩展，请基于当前代码和最新 spec 重写执行计划。
+
+**Source Of Truth:** 已实现行为以当前代码、`docs/architecture.md` 和相关最新 spec 为准。本文保留实施切片与验收轨迹。
+
+> **Updated:** 2026-04-12 — 基于代码审查回填状态与 checkbox。
+
 ---
 
 ## File Structure
@@ -82,7 +90,7 @@ Default behavior:
 - Modify: `backend/internal/handler/handler_extended_test.go`
 - Test: `backend/internal/handler/handler_extended_test.go`
 
-- [ ] **Step 1: Write the failing dashboard aggregation test**
+- [x] **Step 1: Write the failing dashboard aggregation test**
 
 Add this test near the existing dashboard tests in `backend/internal/handler/handler_extended_test.go`:
 
@@ -130,7 +138,7 @@ func TestDashboardCountsOnlyActiveSessions(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run:
 
@@ -145,7 +153,7 @@ Expected:
 FAIL ... active_sessions = 2, want 1
 ```
 
-- [ ] **Step 3: Implement the minimal dashboard fix**
+- [x] **Step 3: Implement the minimal dashboard fix**
 
 Change `backend/internal/handler/efficiency.go`:
 
@@ -161,7 +169,7 @@ Also add the missing import:
 "github.com/ai-efficiency/backend/ent/session"
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run:
 
@@ -176,7 +184,7 @@ Expected:
 ok  	github.com/ai-efficiency/backend/internal/handler	...
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/internal/handler/efficiency.go \
@@ -194,7 +202,7 @@ git commit -m "fix(backend): count only active sessions on dashboard"
 - Test: `backend/internal/handler/handler_extended_test.go`
 - Test: `backend/internal/handler/session_detail_http_test.go`
 
-- [ ] **Step 1: Write failing backend tests for admin visibility and filters**
+- [x] **Step 1: Write failing backend tests for admin visibility and filters**
 
 In `backend/internal/handler/handler_test.go`, add a helper that can mint a token for any user:
 
@@ -489,7 +497,7 @@ func TestSessionDetailAdminCanReadOtherUsersSessionButUserCannot(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the backend tests to verify they fail**
+- [x] **Step 2: Run the backend tests to verify they fail**
 
 Run:
 
@@ -506,7 +514,7 @@ FAIL ... owner_scope / repo_query / branch ignored
 FAIL ... admin detail path returns 404 for another user's session
 ```
 
-- [ ] **Step 3: Implement backend visibility helpers and filters**
+- [x] **Step 3: Implement backend visibility helpers and filters**
 
 In `backend/internal/handler/session.go`, add small helpers near the top of the file:
 
@@ -581,7 +589,7 @@ Add missing imports:
 "strings"
 ```
 
-- [ ] **Step 4: Run the backend tests to verify they pass**
+- [x] **Step 4: Run the backend tests to verify they pass**
 
 Run:
 
@@ -596,7 +604,7 @@ Expected:
 ok  	github.com/ai-efficiency/backend/internal/handler	...
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/internal/handler/session.go \
@@ -617,7 +625,7 @@ git commit -m "feat(backend): add role-aware session visibility filters"
 - Test: `frontend/src/__tests__/api-modules.test.ts`
 - Test: `frontend/src/__tests__/session-list-view.test.ts`
 
-- [ ] **Step 1: Write the failing frontend tests**
+- [x] **Step 1: Write the failing frontend tests**
 
 In `frontend/src/__tests__/api-modules.test.ts`, extend the session API section with:
 
@@ -740,7 +748,7 @@ it('non-admin does not render owner scope filter', async () => {
 })
 ```
 
-- [ ] **Step 2: Run the frontend tests to verify they fail**
+- [x] **Step 2: Run the frontend tests to verify they fail**
 
 Run:
 
@@ -756,7 +764,7 @@ FAIL because listSessions type/signature does not accept the new params
 FAIL because SessionListView has no repo/branch/admin ownership filter controls
 ```
 
-- [ ] **Step 3: Add typed filter params and wire the UI**
+- [x] **Step 3: Add typed filter params and wire the UI**
 
 In `frontend/src/types/index.ts`, add:
 
@@ -877,7 +885,7 @@ Add filter controls in the template:
 </button>
 ```
 
-- [ ] **Step 4: Run the frontend tests to verify they pass**
+- [x] **Step 4: Run the frontend tests to verify they pass**
 
 Run:
 
@@ -892,7 +900,7 @@ Expected:
 PASS
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add frontend/src/api/session.ts \
@@ -908,7 +916,7 @@ git commit -m "feat(frontend): add session visibility filters"
 **Files:**
 - Test only: no new files
 
-- [ ] **Step 1: Run focused backend handler tests**
+- [x] **Step 1: Run focused backend handler tests**
 
 Run:
 
@@ -923,7 +931,7 @@ Expected:
 ok  	github.com/ai-efficiency/backend/internal/handler	...
 ```
 
-- [ ] **Step 2: Run full backend test suite**
+- [x] **Step 2: Run full backend test suite**
 
 Run:
 
@@ -939,7 +947,7 @@ ok  	.../backend/internal/handler
 ok  	.../backend/internal/...
 ```
 
-- [ ] **Step 3: Run focused frontend tests**
+- [x] **Step 3: Run focused frontend tests**
 
 Run:
 
@@ -954,7 +962,7 @@ Expected:
 PASS
 ```
 
-- [ ] **Step 4: Run frontend build**
+- [x] **Step 4: Run frontend build**
 
 Run:
 
@@ -969,7 +977,7 @@ Expected:
 ✓ built in ...
 ```
 
-- [ ] **Step 5: Manual spot-check against the local database-backed app**
+- [x] **Step 5: Manual spot-check against the local database-backed app**
 
 Verify:
 
@@ -981,7 +989,7 @@ Verify:
 3. Non-admin user can see only their own sessions even if they try to pass `owner_scope=all`
 4. Admin can open a session detail page for an unowned or another-user session
 
-- [ ] **Step 6: Commit any final test-only adjustments**
+- [x] **Step 6: Commit any final test-only adjustments**
 
 ```bash
 git add backend/internal/handler/efficiency.go \

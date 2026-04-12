@@ -8,6 +8,14 @@
 
 **Tech Stack:** Go (`gin`, `ent`, existing relay/sessionbootstrap services, ae-cli local proxy), existing backend auth middleware, existing ae-cli runtime/proxy/client tests.
 
+**Status:** ✅ 已完成（2026-04-12）
+
+**Replay Status:** 历史完成记录。不要直接按本文逐 task 重跑；如需再次执行或扩展，请基于当前代码和最新 spec 重写执行计划。
+
+**Source Of Truth:** 已实现行为以当前代码、`docs/architecture.md` 和相关最新 spec 为准。本文保留实施切片与验收轨迹。
+
+> **Updated:** 2026-04-12 — 基于代码审查回填状态与 checkbox。
+
 ---
 
 ## File Structure
@@ -105,7 +113,7 @@ The selected key secret must never be returned in `bootstrap env_bundle`.
 - Test: `backend/internal/sessionbootstrap/key_selection_test.go`
 - Test: `backend/internal/relay/sub2api_test.go`
 
-- [ ] **Step 1: Write the failing key selection tests**
+- [x] **Step 1: Write the failing key selection tests**
 
 Create `backend/internal/sessionbootstrap/key_selection_test.go`:
 
@@ -243,7 +251,7 @@ func TestListUserAPIKeysDecodesGroupPlatformAndLastUsed(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run:
 
@@ -260,7 +268,7 @@ FAIL because selectReusableKey does not exist
 FAIL because relay.APIKey lacks Key/Group/LastUsedAt fields
 ```
 
-- [ ] **Step 3: Implement the minimal relay metadata and selector**
+- [x] **Step 3: Implement the minimal relay metadata and selector**
 
 Modify `backend/internal/relay/types.go`:
 
@@ -360,7 +368,7 @@ func preferredKeyName(username, email string) string {
 
 Update `backend/internal/relay/sub2api.go` decode structs in `ListUserAPIKeys()` to match the enriched fields.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run:
 
@@ -377,7 +385,7 @@ ok  	github.com/ai-efficiency/backend/internal/sessionbootstrap	...
 ok  	github.com/ai-efficiency/backend/internal/relay	...
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/internal/sessionbootstrap/key_selection.go \
@@ -399,7 +407,7 @@ git commit -m "feat(backend): add platform-aware relay key selection"
 - Test: `backend/internal/sessionbootstrap/service_test.go`
 - Test: `backend/internal/handler/session_bootstrap_http_test.go`
 
-- [ ] **Step 1: Write the failing backend service tests**
+- [x] **Step 1: Write the failing backend service tests**
 
 Add these tests to `backend/internal/sessionbootstrap/service_test.go`:
 
@@ -607,7 +615,7 @@ func TestResolveProviderCredentialFallsBackToEmailPrefixThenCreates(t *testing.T
 }
 ```
 
-- [ ] **Step 2: Run the service tests to verify they fail**
+- [x] **Step 2: Run the service tests to verify they fail**
 
 Run:
 
@@ -623,7 +631,7 @@ FAIL because Bootstrap still creates a key
 FAIL because ResolveProviderCredential does not exist
 ```
 
-- [ ] **Step 3: Implement backend service changes**
+- [x] **Step 3: Implement backend service changes**
 
 In `backend/internal/sessionbootstrap/service.go`:
 
@@ -741,7 +749,7 @@ func (s *Service) ResolveProviderCredential(ctx context.Context, localUserID int
 
 Update `fakeRelayProvider` in `service_test.go` to support `listUserAPIKeysFn`.
 
-- [ ] **Step 4: Add the HTTP endpoint and failing HTTP tests**
+- [x] **Step 4: Add the HTTP endpoint and failing HTTP tests**
 
 Add a focused HTTP test in `backend/internal/handler/session_bootstrap_http_test.go`:
 
@@ -848,7 +856,7 @@ func (h *SessionHandler) ProviderCredential(c *gin.Context) {
 }
 ```
 
-- [ ] **Step 5: Run backend tests to verify they pass**
+- [x] **Step 5: Run backend tests to verify they pass**
 
 Run:
 
@@ -865,7 +873,7 @@ ok  	github.com/ai-efficiency/backend/internal/sessionbootstrap	...
 ok  	github.com/ai-efficiency/backend/internal/handler	...
 ```
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add backend/internal/sessionbootstrap/key_selection.go \
@@ -899,7 +907,7 @@ git commit -m "feat(backend): lazily reuse platform-specific relay keys"
 - Test: `ae-cli/internal/proxy/server_test.go`
 - Test: `ae-cli/internal/session/session_test.go`
 
-- [ ] **Step 1: Write the failing ae-cli tests**
+- [x] **Step 1: Write the failing ae-cli tests**
 
 Add a backend client test in `ae-cli/internal/client/client_test.go`:
 
@@ -1009,7 +1017,7 @@ func TestProxyOpenAILazilyFetchesCredentialFromBackend(t *testing.T) {
 
 Update `ae-cli/internal/session/session_test.go` to fail if start still leaves `OPENAI_API_KEY` in the runtime bundle.
 
-- [ ] **Step 2: Run the targeted tests to verify they fail**
+- [x] **Step 2: Run the targeted tests to verify they fail**
 
 Run:
 
@@ -1026,7 +1034,7 @@ Expected:
 FAIL because client method / credential cache / lazy proxy fetch do not exist yet
 ```
 
-- [ ] **Step 3: Implement minimal ae-cli lazy credential flow**
+- [x] **Step 3: Implement minimal ae-cli lazy credential flow**
 
 Add to `ae-cli/internal/client/client.go`:
 
@@ -1158,7 +1166,7 @@ server.credentialCache = newCredentialCache(fetcher)
 
 In `ae-cli/internal/session/manager.go`, remove any dependency on `OPENAI_*` being present for runtime bootstrap and call `startLocalProxy(rt)` with backend-only config.
 
-- [ ] **Step 4: Run the ae-cli tests to verify they pass**
+- [x] **Step 4: Run the ae-cli tests to verify they pass**
 
 Run:
 
@@ -1177,7 +1185,7 @@ ok  	.../internal/proxy
 ok  	.../internal/session
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add ae-cli/internal/client/client.go \
@@ -1206,7 +1214,7 @@ git commit -m "feat(ae-cli): lazily fetch platform relay credentials"
 - Test: `ae-cli/internal/proxy/server_test.go`
 - Test: `ae-cli/internal/session/session_test.go`
 
-- [ ] **Step 1: Update old bootstrap tests to the new contract**
+- [x] **Step 1: Update old bootstrap tests to the new contract**
 
 Change old assertions in:
 
@@ -1232,7 +1240,7 @@ if _, ok := resp.EnvBundle["ANTHROPIC_API_KEY"]; ok {
 }
 ```
 
-- [ ] **Step 2: Run focused full-stack regression tests**
+- [x] **Step 2: Run focused full-stack regression tests**
 
 Run:
 
@@ -1250,7 +1258,7 @@ Expected:
 PASS
 ```
 
-- [ ] **Step 3: Run full project verification**
+- [x] **Step 3: Run full project verification**
 
 Run:
 
@@ -1272,7 +1280,7 @@ Expected:
 all green
 ```
 
-- [ ] **Step 4: Manual spot-check**
+- [x] **Step 4: Manual spot-check**
 
 Verify on a real session:
 
@@ -1288,7 +1296,7 @@ Verify on a real session:
    - latest `last_used_at`
    - latest `created_at`
 
-- [ ] **Step 5: Commit any final test-only adjustments**
+- [x] **Step 5: Commit any final test-only adjustments**
 
 ```bash
 git add backend/internal/sessionbootstrap/service.go \

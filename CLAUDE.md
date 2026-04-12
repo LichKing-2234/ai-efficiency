@@ -9,6 +9,11 @@
 - Current auth/provider baseline: `docs/superpowers/specs/2026-03-24-oauth-cli-login-design.md`
 - Latest session attribution draft: `docs/superpowers/specs/2026-03-26-session-pr-attribution-design.md`
 - Local session proxy remains a draft in `docs/superpowers/specs/2026-04-02-local-session-proxy-design.md` unless code proves otherwise
+- Default verification:
+  - `cd backend && go test ./...`
+  - `cd ae-cli && go test ./...`
+  - `cd frontend && pnpm test`
+  - `cd frontend && pnpm run test:e2e:role`
 - Primary remote: `https://github.com/LichKing-2234/ai-efficiency.git`
 - GitLab legacy remote: `ssh://git@git.agoralab.co/ai/ai-efficiency.git`
 

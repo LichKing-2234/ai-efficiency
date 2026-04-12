@@ -1,5 +1,9 @@
 # OAuth CLI Login & Auth System Enhancement Design
 
+**Status:** Current contract for OAuth / relay provider delivery
+
+**Implementation Note:** OAuth authorize page、PKCE 校验、relay/provider 管理、LDAP 管理界面、`token.json` 登录态，以及 ae-cli 登录主链路均已在当前代码中落地。session bootstrap、workspace marker、local proxy 等后续演进以 [`2026-03-26-session-pr-attribution-design.md`](/Users/admin/ai-efficiency/docs/superpowers/specs/2026-03-26-session-pr-attribution-design.md) 和 [`2026-04-02-local-session-proxy-design.md`](/Users/admin/ai-efficiency/docs/superpowers/specs/2026-04-02-local-session-proxy-design.md) 为准。
+
 ## Overview
 
 为 ae-cli 实现 OAuth 授权登录流程，打通 relay server（当前为 sub2api）SSO 认证，新增 LDAP 前端管理界面。使 ae-cli 用户无需手动配置 token，通过浏览器授权即可完成登录。引入 Relay Provider 抽象层，统一封装所有 relay server 交互（认证、LLM 调用、用量查询、API key 管理），移除 sub2api 数据库直连，支持多个独立 relay provider 实例（每个即一个 LLM 端点），API key 和 base URL 通过 server 自动下发。
@@ -182,6 +186,8 @@ type ChatCompletionWithToolsResponse struct {
     TokensUsed int        `json:"tokens_used"`
 }
 ```
+
+> **Implementation note:** 当前代码中的 `relay.Provider` 已在此基线上继续扩展，增加了 username lookup / provisioning、精确 usage log 查询、以及更完整的 API key 生命周期方法，以支撑后续 session attribution。OAuth / provider delivery 主线仍以本节定义的能力子集为核心；更晚加入的扩展能力以 [`2026-03-26-session-pr-attribution-design.md`](/Users/admin/ai-efficiency/docs/superpowers/specs/2026-03-26-session-pr-attribution-design.md) 和当前代码为准。
 
 ### Sub2api 实现
 
@@ -873,3 +879,14 @@ golang.org/x/oauth2
 - 不支持 Device Authorization Flow（RFC 8628），后续单独实现
 - relay.Provider 当前仅有 sub2api 实现，接口设计基于 sub2api 的 API 能力，后续接入新 relay server 时可能需要微调接口
 - `ChatCompletion` 不支持 streaming 响应，AI shell 场景下用户需等待完整响应。后续可扩展 `ChatCompletionStream` 方法返回 `io.Reader`
+
+## Verification
+
+- Backend: `cd backend && go test ./...`
+- ae-cli: `cd ae-cli && go test ./...`
+- Frontend: `cd frontend && pnpm test`
+- Manual acceptance:
+  - OAuth authorize page loads through [`frontend/src/views/oauth/AuthorizePage.vue`](/Users/admin/ai-efficiency/frontend/src/views/oauth/AuthorizePage.vue)
+  - PKCE rejects invalid verifier / challenge combinations through [`backend/internal/oauth/pkce.go`](/Users/admin/ai-efficiency/backend/internal/oauth/pkce.go)
+  - relay-backed provider CRUD / delivery remains available through [`backend/internal/handler/provider.go`](/Users/admin/ai-efficiency/backend/internal/handler/provider.go)
+  - ae-cli stores login state in `~/.ae-cli/token.json` and can complete browser-based login through [`ae-cli/internal/auth/oauth.go`](/Users/admin/ai-efficiency/ae-cli/internal/auth/oauth.go)

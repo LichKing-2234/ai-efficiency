@@ -8,6 +8,16 @@
 
 **Tech Stack:** Go (`cobra`, `net/http`, `httputil`, `ent`, `gin`), Vue 3 already unchanged for phase 1, existing `ae-cli` runtime/hook infrastructure, existing backend checkpoint/attribution pipeline, OpenAI-compatible and Anthropic-compatible HTTP payloads.
 
+**Status:** ⚠️ 核心链路已实现（2026-04-12）；proxy-first rollout 仍在进行中
+
+**Replay Status:** 不建议直接按本文逐 task 重跑。若要补齐剩余 rollout 项，请基于当前代码、`docs/architecture.md` 和最新 spec 单独拆新的 follow-up plan。
+
+**Source Of Truth:** 当前已落地的是 Codex/Claude 本地 proxy、session usage / event ingest，以及 attribution 对本地 usage 的优先使用；整体 rollout 状态以 `docs/architecture.md` 为准。
+
+**Known Remaining Gaps:** 更广泛的 tool coverage、统一事件语义和更完整的 proxy-first attribution 仍在推进中；本文 checkbox 未逐项回填以避免误报未验证项。
+
+> **Updated:** 2026-04-12 — 基于代码审查补充当前状态与剩余缺口说明。
+
 ---
 
 ## File Structure
@@ -1136,4 +1146,3 @@ git commit -m "docs: document local session proxy rollout"
 - `session_usage_events` and `session_events` are the only new backend ingest nouns.
 - `ProxyRuntime`, `RuntimeConfig`, and `UsageEvent` are used consistently across proxy runtime tasks.
 - `AE_LOCAL_PROXY_TOKEN`, `ANTHROPIC_BASE_URL`, and `ANTHROPIC_AUTH_TOKEN` are the only environment variables injected by this plan for tool routing.
-

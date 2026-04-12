@@ -8,7 +8,13 @@
 
 **Tech Stack:** Markdown, Vue 3, Pinia, Vitest, pnpm, zsh
 
-**Status:** 待实施
+**Status:** ✅ 已完成（2026-04-12）
+
+**Replay Status:** 历史完成记录。不要直接按本文逐 task 重跑；如需再次执行或扩展，请基于当前文档、active specs 和前端验证入口重写 cleanup plan。
+
+**Source Of Truth:** 当前仓库 guidance、active specs 和前端默认验证入口以现有文档与 `frontend/package.json` 为准。
+
+> **Updated:** 2026-04-12 — 基于代码审查、focused frontend tests、以及默认 `pnpm test` 验证回填状态与 checkbox。
 
 ---
 
@@ -33,12 +39,12 @@
 - Modify: `AGENTS.md`
 - Modify: `CLAUDE.md`
 
-- [ ] **Step 1: Verify the current guidance drift**
+- [x] **Step 1: Verify the current guidance drift**
 
 Run: `rg -n "docs/specs|前端测试：|集成测试需要 PostgreSQL \\+ Redis|sub2api 数据库" AGENTS.md CLAUDE.md`
 Expected: matches the outdated spec path and incomplete testing guidance.
 
-- [ ] **Step 2: Update `AGENTS.md` project-structure and testing sections**
+- [x] **Step 2: Update `AGENTS.md` project-structure and testing sections**
 
 Replace the stale path and test bullets in `AGENTS.md` with:
 
@@ -63,7 +69,7 @@ ai-efficiency/
 - 需要 TTY、tmux 或额外本地端口监听的测试属于环境敏感测试；失败时应与默认单元测试结果分开说明
 ```
 
-- [ ] **Step 3: Update `CLAUDE.md` quick reference**
+- [x] **Step 3: Update `CLAUDE.md` quick reference**
 
 Replace the quick-reference doc paths and add the missing frontend E2E script:
 
@@ -81,12 +87,12 @@ Replace the quick-reference doc paths and add the missing frontend E2E script:
 - Remote: `ssh://git@git.agoralab.co/ai/ai-efficiency.git`
 ```
 
-- [ ] **Step 4: Re-run the consistency check**
+- [x] **Step 4: Re-run the consistency check**
 
 Run: `rg -n "docs/superpowers/specs|ae-cli 默认测试|前端角色回归脚本|pnpm run test:e2e:role" AGENTS.md CLAUDE.md`
 Expected: all new guidance is present.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add AGENTS.md CLAUDE.md
@@ -102,12 +108,12 @@ git commit -m "docs(docs): align repository guidance with active spec paths and 
 - Modify: `docs/superpowers/specs/2026-03-24-oauth-cli-login-design.md`
 - Modify: `docs/superpowers/specs/2026-03-24-ae-cli-smart-tool-discovery-design.md`
 
-- [ ] **Step 1: Verify the stale contract markers**
+- [x] **Step 1: Verify the stale contract markers**
 
 Run: `rg -n "sub2api_api_key|sub2api_api_key_id|只读访问 sub2api 数据库|POST /api/v1/tools/discover|api_key_id|Verification|验收" docs/superpowers/specs/*.md`
 Expected: the platform spec still contains `sub2api_*` session payloads, and the tool-discovery spec shows both one-shot and multi-round protocol language without a single authoritative contract.
 
-- [ ] **Step 2: Update the platform design spec to the relay-based source of truth**
+- [x] **Step 2: Update the platform design spec to the relay-based source of truth**
 
 In `docs/superpowers/specs/2026-03-17-ai-efficiency-platform-design.md`, replace the old sub2api DB-centric integration text with:
 
@@ -140,7 +146,7 @@ POST /api/v1/sessions
 }
 ```
 
-- [ ] **Step 3: Add explicit verification sections to the OAuth and tool-discovery specs**
+- [x] **Step 3: Add explicit verification sections to the OAuth and tool-discovery specs**
 
 Append the following section to `docs/superpowers/specs/2026-03-24-oauth-cli-login-design.md`:
 
@@ -177,7 +183,7 @@ Final `complete` responses must include enough data for `~/.ae-cli/discovered_to
   - no API key secret is written to the cache file
 ```
 
-- [ ] **Step 4: Verify the old contract markers are gone from the active sections**
+- [x] **Step 4: Verify the old contract markers are gone from the active sections**
 
 Run: `rg -n "sub2api_api_key\"|sub2api_api_key_id|只读访问 sub2api 数据库" docs/superpowers/specs/2026-03-17-ai-efficiency-platform-design.md`
 Expected: no active session example or current-design section still uses the old fields.
@@ -185,7 +191,7 @@ Expected: no active session example or current-design section still uses the old
 Run: `rg -n "Authoritative Protocol|relay_api_key_id|## Verification" docs/superpowers/specs/2026-03-24-oauth-cli-login-design.md docs/superpowers/specs/2026-03-24-ae-cli-smart-tool-discovery-design.md`
 Expected: both new specs expose explicit verification and the tool-discovery spec names a single authoritative protocol.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add docs/superpowers/specs/2026-03-17-ai-efficiency-platform-design.md docs/superpowers/specs/2026-03-24-oauth-cli-login-design.md docs/superpowers/specs/2026-03-24-ae-cli-smart-tool-discovery-design.md
@@ -199,12 +205,12 @@ git commit -m "docs(specs): align active specs with relay-based contracts and ve
 **Files:**
 - Modify: `frontend/src/__tests__/app-sidebar.test.ts`
 
-- [ ] **Step 1: Run the failing sidebar tests**
+- [x] **Step 1: Run the failing sidebar tests**
 
 Run: `cd frontend && pnpm test -- src/__tests__/app-sidebar.test.ts`
 Expected: FAIL because the tests still expect `Settings` to render for a non-admin store state.
 
-- [ ] **Step 2: Refactor the test helper to control the auth role explicitly**
+- [x] **Step 2: Refactor the test helper to control the auth role explicitly**
 
 Update `frontend/src/__tests__/app-sidebar.test.ts` with a role-aware mount helper and split expectations by role:
 
@@ -258,12 +264,12 @@ it('applies active class to Settings only for an admin on /settings', async () =
 })
 ```
 
-- [ ] **Step 3: Re-run the sidebar tests**
+- [x] **Step 3: Re-run the sidebar tests**
 
 Run: `cd frontend && pnpm test -- src/__tests__/app-sidebar.test.ts`
 Expected: PASS
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add frontend/src/__tests__/app-sidebar.test.ts
@@ -277,12 +283,12 @@ git commit -m "test(frontend): align sidebar tests with admin-gated settings nav
 **Files:**
 - Modify: `frontend/src/__tests__/settings-view.test.ts`
 
-- [ ] **Step 1: Run the failing settings tests**
+- [x] **Step 1: Run the failing settings tests**
 
 Run: `cd frontend && pnpm test -- src/__tests__/settings-view.test.ts`
 Expected: FAIL because the mocks and assertions still use `sub2api_url` and `sub2api_api_key`.
 
-- [ ] **Step 2: Update the mocked config payload and route set**
+- [x] **Step 2: Update the mocked config payload and route set**
 
 In `frontend/src/__tests__/settings-view.test.ts`, replace the LLM settings mock and router definitions with:
 
@@ -316,7 +322,7 @@ function createTestRouter() {
 }
 ```
 
-- [ ] **Step 3: Replace stale assertions with the current UI contract**
+- [x] **Step 3: Replace stale assertions with the current UI contract**
 
 Rewrite the affected tests to assert the relay-backed read-only fields and editable model/prompt fields:
 
@@ -371,17 +377,17 @@ it('saves the editable LLM fields successfully', async () => {
 
 Remove the stale client-side validation test that expects `Sub2api URL is required`; the current component does not expose an editable URL field or local validation for it.
 
-- [ ] **Step 4: Re-run the focused settings tests**
+- [x] **Step 4: Re-run the focused settings tests**
 
 Run: `cd frontend && pnpm test -- src/__tests__/settings-view.test.ts`
 Expected: PASS
 
-- [ ] **Step 5: Run the full frontend suite**
+- [x] **Step 5: Run the full frontend suite**
 
 Run: `cd frontend && pnpm test`
 Expected: PASS
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add frontend/src/__tests__/settings-view.test.ts
@@ -395,7 +401,7 @@ git commit -m "test(frontend): align settings tests with relay-backed configurat
 **Files:**
 - Modify: `frontend/package.json`
 
-- [ ] **Step 1: Add an explicit script for the existing role-based E2E check**
+- [x] **Step 1: Add an explicit script for the existing role-based E2E check**
 
 Update the scripts block in `frontend/package.json` to:
 
@@ -409,12 +415,12 @@ Update the scripts block in `frontend/package.json` to:
 }
 ```
 
-- [ ] **Step 2: Verify the script is discoverable**
+- [x] **Step 2: Verify the script is discoverable**
 
 Run: `cd frontend && node -e "const p=require('./package.json'); console.log(p.scripts['test:e2e:role'])"`
 Expected: prints `python e2e_role_test.py`
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add frontend/package.json
