@@ -2,8 +2,8 @@
 set -euo pipefail
 
 LAYOUT=""
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SCRIPT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+SCRIPT_DIR=""
+SCRIPT_ROOT=""
 ROOT_DIR="$PWD"
 ENV_FILE="$ROOT_DIR/.env"
 MODE="${1:-check}"
@@ -67,6 +67,21 @@ looks_repo() {
   [[ -f "$dir/deploy/docker-deploy.sh" && -f "$dir/deploy/.env.example" ]]
 }
 
+resolve_script_root() {
+  local source_path="${BASH_SOURCE[0]-}"
+
+  if [[ -z "$source_path" ]]; then
+    return
+  fi
+
+  if [[ ! -e "$source_path" ]]; then
+    return
+  fi
+
+  SCRIPT_DIR="$(cd "$(dirname "$source_path")" && pwd)"
+  SCRIPT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+}
+
 detect_layout() {
   local work_dir="$PWD"
 
@@ -77,7 +92,7 @@ detect_layout() {
     return
   fi
 
-  if path_within "$work_dir" "$SCRIPT_ROOT"; then
+  if [[ -n "$SCRIPT_ROOT" ]] && path_within "$work_dir" "$SCRIPT_ROOT"; then
     if looks_bootstrapped "$SCRIPT_ROOT"; then
       LAYOUT="bootstrapped"
       ROOT_DIR="$SCRIPT_ROOT"
@@ -272,6 +287,7 @@ extract_redis_host_port() {
   echo "${host}:${port}"
 }
 
+resolve_script_root
 detect_layout
 
 case "$MODE" in
