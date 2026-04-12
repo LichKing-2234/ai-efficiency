@@ -85,6 +85,7 @@ archives:
       - deploy/.env.example
       - deploy/docker-compose.yml
       - deploy/docker-compose.external.yml
+      - deploy/docker-compose.bootstrap.yml
       - deploy/docker-deploy.sh
       - deploy/init-db.sql
       - deploy/install.sh
