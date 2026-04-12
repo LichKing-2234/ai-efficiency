@@ -33,10 +33,12 @@ cp "$ROOT_DIR/deploy/docker-deploy.sh" "$WORK_DIR/docker-deploy.sh"
 
 test -f "$WORK_DIR/docker-compose.yml"
 test -f "$WORK_DIR/.env"
+test -f "$WORK_DIR/.env.example"
 test -d "$WORK_DIR/deploy"
 test -d "$WORK_DIR/data"
 test -d "$WORK_DIR/postgres_data"
 test -d "$WORK_DIR/redis_data"
+cmp -s "$WORK_DIR/docker-compose.yml" "$WORK_DIR/deploy/docker-compose.bootstrap.yml"
 grep -q "^AE_IMAGE_TAG=${RELEASE_TAG}$" "$WORK_DIR/.env"
 grep -q "^AE_UPDATER_IMAGE_TAG=${RELEASE_TAG}$" "$WORK_DIR/.env"
 
