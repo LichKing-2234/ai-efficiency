@@ -1,3 +1,5 @@
+# Local persistent validation stack.
+# Builds backend from the current checkout, uses bind-mounted local data directories, and skips the updater sidecar.
 services:
   postgres:
     image: postgres:16-alpine

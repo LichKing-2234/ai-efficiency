@@ -1,3 +1,5 @@
+# Bundled bootstrap Docker Compose stack.
+# Intended to be copied to deployment root as docker-compose.yml with bind-mounted local persistence.
 services:
   postgres:
     image: postgres:16-alpine
@@ -48,6 +50,12 @@ services:
       AE_RELAY_API_KEY: "${AE_RELAY_API_KEY}"
       AE_RELAY_ADMIN_API_KEY: "${AE_RELAY_ADMIN_API_KEY}"
       AE_AUTH_JWT_SECRET: "${AE_AUTH_JWT_SECRET}"
+      AE_AUTH_LDAP_URL: "${AE_AUTH_LDAP_URL}"
+      AE_AUTH_LDAP_BASE_DN: "${AE_AUTH_LDAP_BASE_DN}"
+      AE_AUTH_LDAP_BIND_DN: "${AE_AUTH_LDAP_BIND_DN}"
+      AE_AUTH_LDAP_BIND_PASSWORD: "${AE_AUTH_LDAP_BIND_PASSWORD}"
+      AE_AUTH_LDAP_USER_FILTER: "${AE_AUTH_LDAP_USER_FILTER}"
+      AE_AUTH_LDAP_TLS: "${AE_AUTH_LDAP_TLS}"
       AE_ENCRYPTION_KEY: "${AE_ENCRYPTION_KEY}"
       AE_DEPLOYMENT_MODE: "${AE_DEPLOYMENT_MODE}"
       AE_DEPLOYMENT_STATE_DIR: "${AE_DEPLOYMENT_STATE_DIR}"

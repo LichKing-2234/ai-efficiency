@@ -1,3 +1,5 @@
+# Local source-build validation stack.
+# Builds backend from the current checkout and skips the updater sidecar.
 services:
   postgres:
     image: postgres:16-alpine
