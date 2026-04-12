@@ -2,12 +2,10 @@ package session
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
 )
 
@@ -20,7 +18,7 @@ type ToolPaneRecord struct {
 }
 
 type ToolPaneRegistry struct {
-	NextInstanceByTool map[string]int  `json:"next_instance_by_tool"`
+	NextInstanceByTool map[string]int   `json:"next_instance_by_tool"`
 	Instances          []ToolPaneRecord `json:"instances"`
 }
 
@@ -255,10 +253,10 @@ func acquireToolPaneLock(sessionID string) (func() error, error) {
 		return nil, fmt.Errorf("opening tool pane lock file: %w", err)
 	}
 	for attempt := 0; attempt < toolPaneLockMaxRetries; attempt++ {
-		err = syscall.Flock(int(lockFile.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
+		err = tryLockToolPaneFile(lockFile)
 		if err == nil {
 			return func() error {
-				unlockErr := syscall.Flock(int(lockFile.Fd()), syscall.LOCK_UN)
+				unlockErr := unlockToolPaneFile(lockFile)
 				closeErr := lockFile.Close()
 				if unlockErr != nil {
 					return fmt.Errorf("releasing tool pane lock: %w", unlockErr)
@@ -277,8 +275,4 @@ func acquireToolPaneLock(sessionID string) (func() error, error) {
 	}
 	_ = lockFile.Close()
 	return nil, fmt.Errorf("acquiring tool pane lock: timeout")
-}
-
-func isToolPaneLockContention(err error) bool {
-	return errors.Is(err, syscall.EWOULDBLOCK) || errors.Is(err, syscall.EAGAIN)
 }

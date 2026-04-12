@@ -335,7 +335,7 @@ func childCommand(exe, configPath string) (*exec.Cmd, error) {
 	} else {
 		cmd = exec.Command(exe, "proxy-serve-internal", internalConfigArg, configPath)
 	}
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	cmd.SysProcAttr = detachedSysProcAttr()
 	return cmd, nil
 }
 
