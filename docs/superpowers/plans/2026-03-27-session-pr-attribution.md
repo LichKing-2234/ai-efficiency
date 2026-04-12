@@ -12,6 +12,16 @@
 
 **Execution Note:** This stays one plan because bootstrap, checkpoints, and settlement all depend on the same identity/session schema. The tasks still land in independently testable slices so the chain can be verified incrementally.
 
+**Status:** ⚠️ 实现与自动化验证已完成（2026-04-12）；环境敏感手动验收未重跑
+
+**Replay Status:** 不建议直接按本文逐 task 重跑。若要补齐剩余项，请基于当前代码和最新 spec 单独拆新的 follow-up plan。
+
+**Source Of Truth:** 已实现的 bootstrap / checkpoint / attribution / session audit 以当前代码、`docs/architecture.md` 和 `2026-03-26-session-pr-attribution-design.md` 为准。
+
+**Known Remaining Gaps:** 本轮已补齐 `docs/ae-cli/session-pr-attribution.md` 和 Sessions 列表页的 provider/key/last-seen 摘要；但本文中的环境敏感手动验收 checklist 尚未在本轮重跑，因此 checkbox 仍未逐项回填。
+
+> **Updated:** 2026-04-12 — 基于代码修改、前端全量测试/构建、以及 backend + ae-cli 全量测试刷新当前状态说明。
+
 ---
 
 ## File Structure

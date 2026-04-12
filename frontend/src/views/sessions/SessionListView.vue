@@ -174,6 +174,7 @@ onMounted(fetchSessions)
               <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
               <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Duration</th>
               <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Started</th>
+              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Summary</th>
               <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
             </tr>
           </thead>
@@ -194,6 +195,11 @@ onMounted(fetchSessions)
               </td>
               <td class="px-4 py-3 text-sm text-gray-600">{{ duration(s) }}</td>
               <td class="px-4 py-3 text-sm text-gray-500">{{ formatDate(s.started_at) }}</td>
+              <td class="px-4 py-3 text-xs text-gray-500">
+                <div>Provider: {{ s.provider_name || '—' }}</div>
+                <div>Key ID: {{ s.relay_api_key_id ?? '—' }}</div>
+                <div>Last Seen: {{ formatDate(s.last_seen_at ?? null) }}</div>
+              </td>
               <td class="px-4 py-3 text-sm">
                 <button
                   class="text-indigo-600 hover:text-indigo-800"

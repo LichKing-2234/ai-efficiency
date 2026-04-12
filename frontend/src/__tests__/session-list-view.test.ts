@@ -40,6 +40,9 @@ function buildListResponse() {
           status: 'active',
           started_at: '2026-03-30T00:00:00Z',
           ended_at: null,
+          provider_name: 'sub2api-claude',
+          relay_api_key_id: 123,
+          last_seen_at: '2026-03-30T01:23:45Z',
           tool_invocations: [],
           edges: { repo_config: { full_name: 'org/repo' } },
         }],
@@ -151,6 +154,24 @@ describe('SessionListView', () => {
 
     expect(wrapper.find('select[name="owner_scope"]').exists()).toBe(false)
     expect(listSessions).toHaveBeenCalledWith({ page: 1, page_size: 20, owner_scope: 'mine' })
+  })
+
+  it('renders provider, relay key id, and last seen summary for each session', async () => {
+    const { listSessions } = await import('@/api/session')
+    ;(listSessions as any).mockResolvedValue(buildListResponse())
+
+    const router = createTestRouter()
+    await router.push('/sessions')
+    await router.isReady()
+
+    const wrapper = mount(SessionListView, {
+      global: { plugins: [createPinia(), router] },
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('sub2api-claude')
+    expect(wrapper.text()).toContain('123')
+    expect(wrapper.text()).toContain(new Date('2026-03-30T01:23:45Z').toLocaleString())
   })
 
   it('does not silently apply draft repo/branch/owner filters on status or pagination changes', async () => {
