@@ -1,5 +1,6 @@
 # Production Deployment Guide
 
+
 ## Overview
 
 `ai-efficiency` now ships with two production deployment paths:
@@ -18,6 +19,29 @@ It also provides two non-production local validation paths inspired by `sub2api`
 
 - `docker-compose.dev.yml`: source-build local verification
 - `docker-compose.local.yml`: directory-backed local verification
+
+## Empty Directory Bootstrap
+
+Use this when you want a `sub2api`-style deployment bootstrap from an empty directory:
+
+```bash
+mkdir -p ai-efficiency-deploy && cd ai-efficiency-deploy
+curl -fsSL https://raw.githubusercontent.com/LichKing-2234/ai-efficiency/main/deploy/docker-deploy.sh | bash
+docker compose up -d
+```
+
+To install a preview or a specific release:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/LichKing-2234/ai-efficiency/main/deploy/docker-deploy.sh | TAG=v0.1.0-preview.2 bash
+```
+
+`deploy/docker-deploy.sh` serves two roles:
+
+- remote bootstrap from an empty directory
+- local preflight for an already-prepared deployment directory
+
+Bootstrap prepares files and secrets, but does not start services automatically.
 
 ## Bundled Mode
 
