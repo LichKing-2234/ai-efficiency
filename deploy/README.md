@@ -29,6 +29,19 @@ The current remote bootstrap path is bundled-only and does not support external 
 ```bash
 mkdir -p ai-efficiency-deploy && cd ai-efficiency-deploy
 curl -fsSL https://raw.githubusercontent.com/LichKing-2234/ai-efficiency/main/deploy/docker-deploy.sh | bash
+```
+
+Before starting services, edit `.env` with your real settings.
+At minimum, set:
+
+- `AE_RELAY_URL`
+- `AE_RELAY_API_KEY`
+- `AE_RELAY_ADMIN_API_KEY`
+
+Then run the local preflight and start the stack:
+
+```bash
+bash deploy/docker-deploy.sh
 docker compose up -d
 ```
 
@@ -37,6 +50,7 @@ To install a preview or a specific release:
 ```bash
 TAG=v0.1.0-preview.2
 curl -fsSL "https://raw.githubusercontent.com/LichKing-2234/ai-efficiency/${TAG}/deploy/docker-deploy.sh" | TAG="$TAG" bash
+bash deploy/docker-deploy.sh
 docker compose up -d
 ```
 

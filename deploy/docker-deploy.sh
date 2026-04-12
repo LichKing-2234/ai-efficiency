@@ -131,12 +131,40 @@ detect_platform() {
 }
 
 resolve_tag() {
+  local response=""
+  local resolved_tag=""
+
   if [[ -n "${TAG:-}" ]]; then
-    echo "$TAG"
-    return
+    printf '%s\n' "$TAG"
+    return 0
   fi
 
-  curl -fsSL "$RELEASE_API_URL" | grep '"tag_name"' | head -1 | sed -E 's/.*"([^"]+)".*/\1/'
+  if ! response="$(curl -fsSL "$RELEASE_API_URL" 2>/dev/null)"; then
+    return 0
+  fi
+
+  resolved_tag="$(
+    RELEASE_JSON="$response" python3 - <<'PY'
+import json
+import os
+
+payload = os.environ.get("RELEASE_JSON", "")
+if not payload:
+    raise SystemExit(0)
+
+try:
+    data = json.loads(payload)
+except Exception:
+    raise SystemExit(0)
+
+tag = data.get("tag_name")
+if isinstance(tag, str):
+    print(tag.strip())
+PY
+  )"
+
+  printf '%s\n' "$resolved_tag"
+  return 0
 }
 
 download_backend_bundle() {
@@ -180,6 +208,10 @@ prepare_bootstrap_root() {
   [[ ! -e "$ROOT_DIR/.env" ]] || { echo "current directory already contains .env" >&2; exit 1; }
   [[ ! -e "$ROOT_DIR/deploy" ]] || { echo "current directory already contains deploy/" >&2; exit 1; }
   [[ -d "$TMP_DIR/deploy" ]] || { echo "release bundle missing deploy/ assets" >&2; exit 1; }
+  [[ -f "$TMP_DIR/deploy/docker-compose.bootstrap.yml" ]] || { echo "release bundle missing required asset: deploy/docker-compose.bootstrap.yml" >&2; exit 1; }
+  [[ -f "$TMP_DIR/deploy/.env.example" ]] || { echo "release bundle missing required asset: deploy/.env.example" >&2; exit 1; }
+  [[ -f "$TMP_DIR/deploy/docker-deploy.sh" ]] || { echo "release bundle missing required asset: deploy/docker-deploy.sh" >&2; exit 1; }
+  [[ -f "$TMP_DIR/deploy/init-db.sql" ]] || { echo "release bundle missing required asset: deploy/init-db.sql" >&2; exit 1; }
 
   mkdir -p "$ROOT_DIR/deploy"
   cp -R "${TMP_DIR}/deploy/." "$ROOT_DIR/deploy/"

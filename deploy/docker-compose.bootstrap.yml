@@ -67,6 +67,12 @@ services:
         condition: service_healthy
       updater:
         condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8081/api/v1/auth/me"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
   updater:
     image: ${AE_UPDATER_IMAGE_REPOSITORY}:${AE_UPDATER_IMAGE_TAG}
