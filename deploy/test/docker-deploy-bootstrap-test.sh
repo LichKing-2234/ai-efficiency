@@ -17,10 +17,9 @@ cp "$ROOT_DIR/deploy/docker-compose.bootstrap.yml" "$FIXTURE_DIR/deploy/docker-c
 cp "$ROOT_DIR/deploy/init-db.sql" "$FIXTURE_DIR/deploy/init-db.sql"
 
 tar -czf "$RELEASE_DIR/ai-efficiency-backend_0.1.0-test_linux_amd64.tar.gz" -C "$FIXTURE_DIR" deploy
-(
-  cd "$RELEASE_DIR"
-  sha256sum ai-efficiency-backend_0.1.0-test_linux_amd64.tar.gz > checksums.txt
-)
+cat > "$RELEASE_DIR/checksums.txt" <<'EOF'
+checksums are currently downloaded but not validated by docker-deploy.sh
+EOF
 
 cp "$ROOT_DIR/deploy/docker-deploy.sh" "$WORK_DIR/docker-deploy.sh"
 
@@ -29,7 +28,6 @@ cp "$ROOT_DIR/deploy/docker-deploy.sh" "$WORK_DIR/docker-deploy.sh"
   TAG="$RELEASE_TAG" \
   ARCH=amd64 \
   RELEASE_DOWNLOAD_BASE=file://$TMP_ROOT \
-  AE_DOCKER_DEPLOY_BOOTSTRAP=1 \
   bash ./docker-deploy.sh
 )
 
@@ -41,3 +39,28 @@ test -d "$WORK_DIR/postgres_data"
 test -d "$WORK_DIR/redis_data"
 grep -q "^AE_IMAGE_TAG=${RELEASE_TAG}$" "$WORK_DIR/.env"
 grep -q "^AE_UPDATER_IMAGE_TAG=${RELEASE_TAG}$" "$WORK_DIR/.env"
+
+validate_compose() {
+  local compose_file="$1"
+  local compose_dir
+  compose_dir="$(cd "$(dirname "$compose_file")" && pwd)"
+  local compose_name
+  compose_name="$(basename "$compose_file")"
+  if (
+    cd "$compose_dir"
+    docker compose -f "$compose_name" config >/dev/null 2>&1
+  ); then
+    return 0
+  fi
+  if command -v docker-compose >/dev/null 2>&1; then
+    (
+      cd "$compose_dir"
+      docker-compose -f "$compose_name" config >/dev/null 2>&1
+    )
+    return $?
+  fi
+  echo "no compatible compose implementation available" >&2
+  return 1
+}
+
+validate_compose "$WORK_DIR/docker-compose.yml"
