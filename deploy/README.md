@@ -24,6 +24,8 @@ It also provides two non-production local validation paths inspired by `sub2api`
 
 Use this when you want a `sub2api`-style deployment bootstrap from an empty directory:
 
+The current remote bootstrap path is bundled-only and does not support external mode yet.
+
 ```bash
 mkdir -p ai-efficiency-deploy && cd ai-efficiency-deploy
 curl -fsSL https://raw.githubusercontent.com/LichKing-2234/ai-efficiency/main/deploy/docker-deploy.sh | bash
@@ -34,6 +36,7 @@ To install a preview or a specific release:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/LichKing-2234/ai-efficiency/main/deploy/docker-deploy.sh | TAG=v0.1.0-preview.2 bash
+docker compose up -d
 ```
 
 `deploy/docker-deploy.sh` serves two roles:
