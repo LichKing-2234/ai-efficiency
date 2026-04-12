@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/ai-efficiency/ae-cli/config"
 	"github.com/ai-efficiency/ae-cli/internal/session"
@@ -903,7 +904,7 @@ func TestSendToToolWithTmux(t *testing.T) {
 	}
 	t.Setenv("HOME", t.TempDir())
 
-	tmuxName := "ae-cli-shell-test-send"
+	tmuxName := fmt.Sprintf("ae-cli-shell-test-send-%d", time.Now().UnixNano())
 	tmux.KillSession(tmuxName)
 	if err := tmux.NewSession(tmuxName); err != nil {
 		t.Fatalf("NewSession: %v", err)
@@ -956,7 +957,7 @@ func TestListPanesWithTmux(t *testing.T) {
 		t.Skip("tmux not installed")
 	}
 
-	tmuxName := "ae-cli-shell-test-list"
+	tmuxName := fmt.Sprintf("ae-cli-shell-test-list-%d", time.Now().UnixNano())
 	tmux.KillSession(tmuxName)
 	if err := tmux.NewSession(tmuxName); err != nil {
 		t.Fatalf("NewSession: %v", err)
@@ -982,7 +983,7 @@ func TestSendToToolWithTmuxEmptyMessage(t *testing.T) {
 	}
 	t.Setenv("HOME", t.TempDir())
 
-	tmuxName := "ae-cli-shell-test-empty"
+	tmuxName := fmt.Sprintf("ae-cli-shell-test-empty-%d", time.Now().UnixNano())
 	tmux.KillSession(tmuxName)
 	if err := tmux.NewSession(tmuxName); err != nil {
 		t.Fatalf("NewSession: %v", err)
@@ -1011,7 +1012,7 @@ func TestBroadcastWithTmux(t *testing.T) {
 	}
 	t.Setenv("HOME", t.TempDir())
 
-	tmuxName := "ae-cli-shell-test-bcast"
+	tmuxName := fmt.Sprintf("ae-cli-shell-test-bcast-%d", time.Now().UnixNano())
 	tmux.KillSession(tmuxName)
 	if err := tmux.NewSession(tmuxName); err != nil {
 		t.Fatalf("NewSession: %v", err)
@@ -1067,7 +1068,7 @@ func TestExitWithActivePanesConfirmKill(t *testing.T) {
 	}
 	t.Setenv("HOME", t.TempDir())
 
-	tmuxName := "ae-cli-shell-test-exit-kill"
+	tmuxName := fmt.Sprintf("ae-cli-shell-test-exit-kill-%d", time.Now().UnixNano())
 	tmux.KillSession(tmuxName)
 	if err := tmux.NewSession(tmuxName); err != nil {
 		t.Fatalf("NewSession: %v", err)
@@ -1115,7 +1116,7 @@ func TestExitWithActivePanesDecline(t *testing.T) {
 	}
 	t.Setenv("HOME", t.TempDir())
 
-	tmuxName := "ae-cli-shell-test-exit-nkill"
+	tmuxName := fmt.Sprintf("ae-cli-shell-test-exit-nkill-%d", time.Now().UnixNano())
 	tmux.KillSession(tmuxName)
 	if err := tmux.NewSession(tmuxName); err != nil {
 		t.Fatalf("NewSession: %v", err)
