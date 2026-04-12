@@ -41,10 +41,17 @@ func IsInsideSession(name string) bool {
 	return IsInsideSessionFunc(name)
 }
 
-// SessionExists checks if a tmux session exists.
-func SessionExists(name string) bool {
+func sessionExists(name string) bool {
 	err := exec.Command("tmux", "has-session", "-t", name).Run()
 	return err == nil
+}
+
+// SessionExistsFunc can be overridden in tests to control SessionExists behavior.
+var SessionExistsFunc = sessionExists
+
+// SessionExists checks if a tmux session exists.
+func SessionExists(name string) bool {
+	return SessionExistsFunc(name)
 }
 
 // NewSession creates a new tmux session (detached) with aggressive resize enabled.

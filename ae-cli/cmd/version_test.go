@@ -1582,10 +1582,6 @@ func TestStartCommandWithTmuxCreation(t *testing.T) {
 }
 
 func TestStartCommandInsideSameSessionSkipsAttach(t *testing.T) {
-	if !tmux.HasTmux() {
-		t.Skip("tmux not installed")
-	}
-
 	origHome := os.Getenv("HOME")
 	tmpHome := t.TempDir()
 	os.Setenv("HOME", tmpHome)
@@ -1599,14 +1595,7 @@ func TestStartCommandInsideSameSessionSkipsAttach(t *testing.T) {
 	cleanup := setupTestGlobals(t, srv)
 	defer cleanup()
 
-	// Create a real tmux session to simulate being "inside" it
 	tmuxName := "ae-cli-test-inside"
-	tmux.KillSession(tmuxName)
-	err := tmux.NewSession(tmuxName)
-	if err != nil {
-		t.Fatalf("NewSession: %v", err)
-	}
-	defer tmux.KillSession(tmuxName)
 
 	// Write an existing session state pointing to this tmux session
 	stateDir := filepath.Join(tmpHome, ".ae-cli")
@@ -1621,6 +1610,10 @@ func TestStartCommandInsideSameSessionSkipsAttach(t *testing.T) {
 	data, _ := json.MarshalIndent(state, "", "  ")
 	os.WriteFile(filepath.Join(stateDir, "current-session.json"), data, 0o600)
 
+	origSessionExists := tmux.SessionExistsFunc
+	tmux.SessionExistsFunc = func(name string) bool { return name == tmuxName }
+	defer func() { tmux.SessionExistsFunc = origSessionExists }()
+
 	// Override IsInsideSessionFunc to simulate being inside the target session
 	origIsInside := tmux.IsInsideSessionFunc
 	tmux.IsInsideSessionFunc = func(name string) bool { return name == tmuxName }
@@ -1628,7 +1621,7 @@ func TestStartCommandInsideSameSessionSkipsAttach(t *testing.T) {
 
 	// Run start — should detect we're inside the same session and return nil
 	// WITHOUT trying to attach (which would cause infinite recursion)
-	err = startCmd.RunE(startCmd, nil)
+	err := startCmd.RunE(startCmd, nil)
 	if err != nil {
 		t.Fatalf("start inside same session should not error: %v", err)
 	}
