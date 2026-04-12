@@ -227,7 +227,7 @@ func TestSplitWindowWithEnvRemovesAnthropicAPIKeyInPane(t *testing.T) {
 		t.Skip("tmux not installed")
 	}
 
-	name := "ae-cli-unit-test-split-env"
+	name := fmt.Sprintf("ae-cli-unit-test-split-env-%d", time.Now().UnixNano())
 	KillSession(name)
 	if err := NewSession(name); err != nil {
 		t.Fatalf("NewSession: %v", err)
@@ -239,24 +239,19 @@ func TestSplitWindowWithEnvRemovesAnthropicAPIKeyInPane(t *testing.T) {
 		t.Fatalf("seed stale tmux env: %v", err)
 	}
 
-	outPath := filepath.Join(t.TempDir(), "pane-env.txt")
-	cmd := fmt.Sprintf("env | sort > %q", outPath)
-	if _, err := SplitWindowWithEnv(name, "env-check", "sh", []string{"-lc", cmd}, map[string]string{
+	cmd := "env | sort; sleep 2"
+	paneID, err := SplitWindowWithEnv(name, "env-check", "sh", []string{"-lc", cmd}, map[string]string{
 		"ANTHROPIC_BASE_URL":   "http://127.0.0.1:43123/anthropic",
 		"ANTHROPIC_AUTH_TOKEN": "proxy-token",
-	}, []string{"ANTHROPIC_API_KEY"}); err != nil {
+	}, []string{"ANTHROPIC_API_KEY"})
+	if err != nil {
 		t.Fatalf("SplitWindowWithEnv: %v", err)
 	}
 
-	var content []byte
-	var readErr error
-	for i := 0; i < 20; i++ {
-		content, readErr = os.ReadFile(outPath)
-		if readErr == nil {
-			break
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+	content, readErr := waitForPaneContent(paneID, func(content []byte) bool {
+		got := string(content)
+		return strings.Contains(got, "ANTHROPIC_AUTH_TOKEN=proxy-token")
+	})
 	if readErr != nil {
 		t.Fatalf("read pane env output: %v", readErr)
 	}
@@ -266,6 +261,57 @@ func TestSplitWindowWithEnvRemovesAnthropicAPIKeyInPane(t *testing.T) {
 	}
 	if !strings.Contains(got, "ANTHROPIC_AUTH_TOKEN=proxy-token") {
 		t.Fatalf("expected pane env to include proxy auth token, got:\n%s", got)
+	}
+}
+
+func waitForPaneContent(paneID string, matcher func([]byte) bool) ([]byte, error) {
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		out, err := exec.Command("tmux", "capture-pane", "-p", "-S", "-", "-E", "-", "-t", paneID).Output()
+		if err == nil && matcher(out) {
+			return out, nil
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	return nil, fmt.Errorf("timed out waiting for matching pane content: %s", paneID)
+}
+
+func waitForFileContent(path string, matcher func([]byte) bool) ([]byte, error) {
+	var content []byte
+	var err error
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		content, err = os.ReadFile(path)
+		if err == nil && matcher(content) {
+			return content, nil
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return content, fmt.Errorf("timed out waiting for matching file content: %s", path)
+}
+
+func TestWaitForFileContentRetriesUntilMatcherPasses(t *testing.T) {
+	outPath := filepath.Join(t.TempDir(), "pane-env.txt")
+
+	go func() {
+		if err := os.WriteFile(outPath, []byte(""), 0o600); err != nil {
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+		_ = os.WriteFile(outPath, []byte("ANTHROPIC_AUTH_TOKEN=proxy-token\n"), 0o600)
+	}()
+
+	content, err := waitForFileContent(outPath, func(content []byte) bool {
+		return strings.Contains(string(content), "ANTHROPIC_AUTH_TOKEN=proxy-token")
+	})
+	if err != nil {
+		t.Fatalf("waitForFileContent: %v", err)
+	}
+	if got := string(content); !strings.Contains(got, "ANTHROPIC_AUTH_TOKEN=proxy-token") {
+		t.Fatalf("expected proxy token in file content, got %q", got)
 	}
 }
 

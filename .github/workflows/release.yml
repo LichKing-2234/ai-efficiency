@@ -149,6 +149,8 @@ jobs:
 
           validate_compose deploy/docker-compose.yml
           validate_compose deploy/docker-compose.external.yml
+      - name: Test docker bootstrap script
+        run: bash deploy/test/docker-deploy-bootstrap-test.sh
 
   release:
     needs: [prepare, verify]
