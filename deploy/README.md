@@ -35,7 +35,8 @@ docker compose up -d
 To install a preview or a specific release:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/LichKing-2234/ai-efficiency/main/deploy/docker-deploy.sh | TAG=v0.1.0-preview.2 bash
+TAG=v0.1.0-preview.2
+curl -fsSL "https://raw.githubusercontent.com/LichKing-2234/ai-efficiency/${TAG}/deploy/docker-deploy.sh" | TAG="$TAG" bash
 docker compose up -d
 ```
 

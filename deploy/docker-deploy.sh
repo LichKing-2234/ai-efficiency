@@ -43,20 +43,6 @@ normalize_arch() {
   esac
 }
 
-path_within() {
-  local path="$1"
-  local root="$2"
-
-  case "${path}/" in
-    "${root}/"*)
-      return 0
-      ;;
-    *)
-      return 1
-      ;;
-  esac
-}
-
 looks_bootstrapped() {
   local dir="$1"
   [[ -f "$dir/docker-compose.yml" && -d "$dir/deploy" && -f "$dir/.env.example" ]]
@@ -92,7 +78,7 @@ detect_layout() {
     return
   fi
 
-  if [[ -n "$SCRIPT_ROOT" ]] && path_within "$work_dir" "$SCRIPT_ROOT"; then
+  if [[ -n "$SCRIPT_ROOT" ]]; then
     if looks_bootstrapped "$SCRIPT_ROOT"; then
       LAYOUT="bootstrapped"
       ROOT_DIR="$SCRIPT_ROOT"
@@ -157,10 +143,36 @@ download_backend_bundle() {
   local tag="$1"
   local version="${tag#v}"
   local archive="ai-efficiency-backend_${version}_linux_${ARCH}.tar.gz"
+  local archive_path="${TMP_DIR}/${archive}"
+  local checksums_path="${TMP_DIR}/checksums.txt"
+  local expected_sha=""
+  local actual_sha=""
+  local expected_sha_norm=""
+  local actual_sha_norm=""
 
-  curl -fsSL "${RELEASE_DOWNLOAD_BASE}/${tag}/${archive}" -o "${TMP_DIR}/${archive}"
-  curl -fsSL "${RELEASE_DOWNLOAD_BASE}/${tag}/checksums.txt" -o "${TMP_DIR}/checksums.txt"
-  tar -xzf "${TMP_DIR}/${archive}" -C "${TMP_DIR}"
+  curl -fsSL "${RELEASE_DOWNLOAD_BASE}/${tag}/${archive}" -o "${archive_path}"
+  curl -fsSL "${RELEASE_DOWNLOAD_BASE}/${tag}/checksums.txt" -o "${checksums_path}"
+
+  expected_sha="$(awk -v name="$archive" 'NF >= 2 && ($2 == name || $2 == ("*" name)) {print $1; exit}' "$checksums_path")"
+  if [[ -z "$expected_sha" ]]; then
+    echo "missing checksum entry for ${archive}" >&2
+    exit 1
+  fi
+
+  if [[ ! "$expected_sha" =~ ^[[:xdigit:]]{64}$ ]]; then
+    echo "invalid checksum format for ${archive}" >&2
+    exit 1
+  fi
+
+  actual_sha="$(openssl dgst -sha256 "$archive_path" | awk '{print $NF}')"
+  expected_sha_norm="$(printf '%s' "$expected_sha" | tr '[:upper:]' '[:lower:]')"
+  actual_sha_norm="$(printf '%s' "$actual_sha" | tr '[:upper:]' '[:lower:]')"
+  if [[ "$actual_sha_norm" != "$expected_sha_norm" ]]; then
+    echo "checksum verification failed for ${archive}" >&2
+    exit 1
+  fi
+
+  tar -xzf "${archive_path}" -C "${TMP_DIR}"
 }
 
 prepare_bootstrap_root() {
