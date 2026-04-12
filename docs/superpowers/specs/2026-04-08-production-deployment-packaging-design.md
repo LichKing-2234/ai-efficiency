@@ -41,11 +41,12 @@
 
 - `deploy/Dockerfile` 采用多阶段构建，构建时会先生成前端产物，再构建后端镜像。
 - `deploy/docker-compose.yml` 已可启动 `backend`、`postgres`、`redis` 三个服务。
+- `deploy/docker-deploy.sh` 已具备 `.env` 补齐、密钥生成和 preflight 检查能力，但它假设脚本运行时已经存在完整的 `deploy/` 目录。
 - 后端配置已经支持环境变量覆盖，使用 `AE_` 前缀。
 
 但当前代码仍未构成本文定义的完整官方交付体验，至少还缺少：
 
-- 面向生产的统一部署入口脚本
+- 面向空目录远程执行的 Docker bootstrap 入口
 - 面向运维的 `.env` 模板与生成流程
 - 对外部 `sub2api`、数据库、Redis 的系统化 preflight 检查
 - 清晰区分 `liveness` / `readiness` / `degraded` 的健康语义
@@ -66,6 +67,7 @@
 6. 保持与当前模块化单体架构一致，不引入新的跨模块隐式耦合
 7. 在不污染生产 compose 语义的前提下，为 `deploy/` 提供面向本地验证的 `dev` / `local` 路径
 8. 为历史 SQLite 本地数据提供一次性迁移到本地测试 Postgres 的标准流程
+9. 让 Docker 部署入口体验尽量对齐 `sub2api` 当前的“空目录执行远程脚本准备部署目录”模型
 
 ## Non-Goals
 
@@ -75,6 +77,7 @@
 4. 不在 v1 同时提供 Compose、Kubernetes、`systemd` 三套等价主线
 5. 不要求 v1 覆盖任意第三方自定义部署拓扑的无差别在线更新
 6. 不把现有 `deploy/docker-compose.yml` 和 `deploy/docker-compose.external.yml` 改造成兼容 SQLite 文件复用的本地测试入口
+7. 第一版远程 Docker bootstrap 不要求同时覆盖 external 模式
 
 ## Deployment Positioning
 
@@ -163,6 +166,8 @@ Docker Compose 必须支持两种模式：
 
 这两条路径的目标是本地验证和开发测试，不是生产交付主线。
 
+远程 Docker bootstrap 的默认 bundled 体验，可以复用“本地目录持久化”这一设计方向，但不等同于 `deploy/docker-compose.local.yml` 的开发验证语义。
+
 ## Deployment Entry Point
 
 ### Official Entry
@@ -171,15 +176,47 @@ Docker Compose 必须支持两种模式：
 
 - `deploy/docker-deploy.sh`
 
-它的职责是：
+它的职责应明确区分两条路径：
 
-1. 准备部署目录中的必要文件
-2. 生成或校验 `.env`
-3. 生成必须的随机密钥
-4. 执行 preflight 检查
-5. 输出下一步启动或升级指令
+1. **bootstrap path**
+2. **preflight path**
 
-官方推荐的运维路径应是“先执行部署脚本，再启动 Compose”，而不是要求运维手工理解所有配置细节。
+bootstrap path 适用于：
+
+- 用户在空目录通过 `curl ... | bash` 远程执行
+- 当前目录还没有完整部署资产
+
+preflight path 适用于：
+
+- 用户已经拥有完整部署目录
+- 用户希望补齐 `.env`、生成缺失密钥并执行启动前检查
+
+统一脚本的目标不是把所有逻辑揉成一个无边界的入口，而是保留同一个命名与用户心智，同时按上下文切分职责。
+
+### Remote Bootstrap Entry
+
+为对齐 `sub2api` 当前的 Docker UX，官方脚本必须支持空目录远程 bootstrap 入口，例如：
+
+```bash
+mkdir -p ai-efficiency-deploy && cd ai-efficiency-deploy
+curl -fsSL https://raw.githubusercontent.com/LichKing-2234/ai-efficiency/main/deploy/docker-deploy.sh | bash
+docker compose up -d
+```
+
+该入口的职责是：
+
+1. 解析目标 release 版本
+2. 从 GitHub Release 下载对应 backend bundle
+3. 解出运行所需的 `deploy/` 资产
+4. 生成根目录用户入口文件，例如：
+   - `docker-compose.yml`
+   - `.env.example`
+   - `.env`
+5. 创建本地持久化目录
+6. 自动生成必要密钥
+7. 输出下一步启动命令，但不自动执行 Compose
+
+第一版远程 bootstrap 默认只准备 bundled + local-directory 持久化体验，不要求同时覆盖 external 模式。
 
 ### Manual Path
 
@@ -190,6 +227,38 @@ Docker Compose 必须支持两种模式：
 - 直接运行 `docker compose up -d`
 
 但文档主叙事应以官方脚本入口为准。
+
+### Preflight Path
+
+在本地已有部署目录的场景下，`docker-deploy.sh` 继续承担 preflight 入口职责：
+
+1. 生成或校验 `.env`
+2. 生成必须的随机密钥
+3. 执行 preflight 检查
+4. 输出下一步启动或升级指令
+
+远程 bootstrap 完成后，不要求脚本自动继续执行 full preflight。
+
+原因：
+
+- 用户可能尚未填写 relay / external infra 配置
+- 需要保持和 `sub2api` 当前行为接近
+- “准备目录”和“检查环境”是两个不同阶段
+
+### Layout Compatibility
+
+统一脚本必须兼容两种布局：
+
+1. **Repository Layout**
+   - 脚本位于 `repo/deploy/docker-deploy.sh`
+   - `.env.example` 与 compose 模板位于同一仓库内
+
+2. **Bootstrapped Deployment Layout**
+   - 当前目录本身就是部署根目录
+   - 用户直接运行根目录 `docker-compose.yml` 与 `.env`
+   - `deploy/` 作为辅助资产保留，用于 updater sidecar 和排障
+
+实现时必须显式识别这两种布局，而不是把其中一种硬编码为唯一目录结构。
 
 ### Local Validation Entry
 
@@ -461,6 +530,8 @@ v1 的升级体验定义为：
 8. 系统支持一键应用更新
 9. 系统支持明确可执行的回滚路径
 10. 升级路径有明确文档和最小可行操作说明
+11. 用户可在空目录通过远程 `docker-deploy.sh` 准备 Docker 部署目录
+12. 用户可显式指定 preview tag 进行远程 bootstrap
 
 ## Rollout Notes
 
