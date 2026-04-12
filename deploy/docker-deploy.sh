@@ -1,10 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-ENV_FILE="$ROOT_DIR/deploy/.env"
+LAYOUT=""
+ROOT_DIR="$PWD"
+ENV_FILE="$ROOT_DIR/.env"
 MODE="${1:-check}"
 COMPOSE_IMPL=""
+ARCH=""
+TMP_DIR=""
+TAG="${TAG:-}"
+GITHUB_REPO="${GITHUB_REPO:-LichKing-2234/ai-efficiency}"
+RELEASE_API_URL="${RELEASE_API_URL:-https://api.github.com/repos/${GITHUB_REPO}/releases/latest}"
+RELEASE_DOWNLOAD_BASE="${RELEASE_DOWNLOAD_BASE:-https://github.com/${GITHUB_REPO}/releases/download}"
 
 require_cmd() {
   local cmd="$1"
@@ -18,9 +25,90 @@ generate_secret() {
   openssl rand -hex 32
 }
 
+detect_layout() {
+  if [[ -f "$PWD/docker-compose.yml" && -d "$PWD/deploy" ]]; then
+    LAYOUT="bootstrapped"
+    ROOT_DIR="$PWD"
+    ENV_FILE="$ROOT_DIR/.env"
+    return
+  fi
+
+  if [[ -f "$PWD/deploy/docker-deploy.sh" && -f "$PWD/deploy/.env.example" ]]; then
+    LAYOUT="repo"
+    ROOT_DIR="$PWD"
+    ENV_FILE="$ROOT_DIR/deploy/.env"
+    return
+  fi
+
+  LAYOUT="bootstrap"
+  ROOT_DIR="$PWD"
+  ENV_FILE="$ROOT_DIR/.env"
+}
+
+bootstrap_requested() {
+  [[ "$LAYOUT" == "bootstrap" ]] || [[ "${AE_DOCKER_DEPLOY_BOOTSTRAP:-}" == "1" ]]
+}
+
+detect_platform() {
+  local machine
+  machine="$(uname -m)"
+
+  case "$machine" in
+    x86_64|amd64)
+      ARCH="amd64"
+      ;;
+    arm64|aarch64)
+      ARCH="arm64"
+      ;;
+    *)
+      echo "unsupported architecture: ${machine}" >&2
+      exit 1
+      ;;
+  esac
+}
+
+resolve_tag() {
+  if [[ -n "${TAG:-}" ]]; then
+    echo "$TAG"
+    return
+  fi
+
+  curl -fsSL "$RELEASE_API_URL" | grep '"tag_name"' | head -1 | sed -E 's/.*"([^"]+)".*/\1/'
+}
+
+download_backend_bundle() {
+  local tag="$1"
+  local version="${tag#v}"
+  local archive="ai-efficiency-backend_${version}_linux_${ARCH}.tar.gz"
+
+  curl -fsSL "${RELEASE_DOWNLOAD_BASE}/${tag}/${archive}" -o "${TMP_DIR}/${archive}"
+  curl -fsSL "${RELEASE_DOWNLOAD_BASE}/${tag}/checksums.txt" -o "${TMP_DIR}/checksums.txt"
+  tar -xzf "${TMP_DIR}/${archive}" -C "${TMP_DIR}"
+}
+
+prepare_bootstrap_root() {
+  [[ ! -e "$ROOT_DIR/docker-compose.yml" ]] || { echo "current directory already contains docker-compose.yml" >&2; exit 1; }
+  [[ ! -e "$ROOT_DIR/.env" ]] || { echo "current directory already contains .env" >&2; exit 1; }
+  [[ ! -e "$ROOT_DIR/deploy" ]] || { echo "current directory already contains deploy/" >&2; exit 1; }
+  [[ -d "$TMP_DIR/deploy" ]] || { echo "release bundle missing deploy/ assets" >&2; exit 1; }
+
+  mkdir -p "$ROOT_DIR/deploy"
+  cp -R "${TMP_DIR}/deploy/." "$ROOT_DIR/deploy/"
+  cp "$ROOT_DIR/deploy/docker-compose.bootstrap.yml" "$ROOT_DIR/docker-compose.yml"
+  cp "$ROOT_DIR/deploy/.env.example" "$ROOT_DIR/.env.example"
+  cp "$ROOT_DIR/deploy/.env.example" "$ROOT_DIR/.env"
+  mkdir -p "$ROOT_DIR/data" "$ROOT_DIR/postgres_data" "$ROOT_DIR/redis_data"
+}
+
 ensure_env() {
   if [[ ! -f "$ENV_FILE" ]]; then
-    cp "$ROOT_DIR/deploy/.env.example" "$ENV_FILE"
+    local env_example
+    if [[ "$LAYOUT" == "repo" ]]; then
+      env_example="$ROOT_DIR/deploy/.env.example"
+    else
+      env_example="$ROOT_DIR/.env.example"
+    fi
+    cp "$env_example" "$ENV_FILE"
   fi
 }
 
@@ -63,6 +151,13 @@ ensure_generated_var() {
     export "$name=$generated"
     echo "generated $name"
   fi
+}
+
+source_env_file() {
+  set -a
+  # shellcheck disable=SC1090
+  source "$ENV_FILE"
+  set +a
 }
 
 check_url() {
@@ -115,23 +210,47 @@ extract_redis_host_port() {
   echo "${host}:${port}"
 }
 
+detect_layout
+
+if bootstrap_requested; then
+  require_cmd curl
+  require_cmd openssl
+  require_cmd python3
+  require_cmd tar
+  detect_platform
+  TMP_DIR="$(mktemp -d)"
+  trap 'rm -rf "${TMP_DIR}"' EXIT
+  TAG="$(resolve_tag)"
+  if [[ -z "$TAG" ]]; then
+    echo "failed to resolve release tag" >&2
+    exit 1
+  fi
+  download_backend_bundle "$TAG"
+  prepare_bootstrap_root
+  source_env_file
+  set_env_var AE_IMAGE_TAG "$TAG"
+  set_env_var AE_UPDATER_IMAGE_TAG "$TAG"
+  source_env_file
+  ensure_generated_var AE_AUTH_JWT_SECRET
+  ensure_generated_var AE_ENCRYPTION_KEY
+  ensure_generated_var POSTGRES_PASSWORD
+  echo "Bootstrap complete for ${TAG}"
+  echo "Next: docker compose up -d"
+  exit 0
+fi
+
 require_cmd docker
 require_cmd curl
 require_cmd openssl
 require_cmd python3
 ensure_env
-
-set -a
-source "$ENV_FILE"
-set +a
+source_env_file
 
 ensure_generated_var AE_AUTH_JWT_SECRET
 ensure_generated_var AE_ENCRYPTION_KEY
 ensure_generated_var POSTGRES_PASSWORD
 
-set -a
-source "$ENV_FILE"
-set +a
+source_env_file
 
 check_required_var AE_RELAY_URL
 check_required_var AE_AUTH_JWT_SECRET
@@ -143,7 +262,11 @@ check_required_var POSTGRES_USER
 check_required_var POSTGRES_PASSWORD
 check_required_var POSTGRES_DB
 
-COMPOSE_FILE="$ROOT_DIR/deploy/docker-compose.yml"
+if [[ "$LAYOUT" == "bootstrapped" ]]; then
+  COMPOSE_FILE="$ROOT_DIR/docker-compose.yml"
+else
+  COMPOSE_FILE="$ROOT_DIR/deploy/docker-compose.yml"
+fi
 if [[ "$MODE" == "external" ]]; then
   COMPOSE_FILE="$ROOT_DIR/deploy/docker-compose.external.yml"
 elif [[ "$MODE" != "check" ]]; then
