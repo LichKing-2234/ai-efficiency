@@ -2,11 +2,13 @@
 set -euo pipefail
 
 LAYOUT=""
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 ROOT_DIR="$PWD"
 ENV_FILE="$ROOT_DIR/.env"
 MODE="${1:-check}"
 COMPOSE_IMPL=""
-ARCH=""
+ARCH="${ARCH:-}"
 TMP_DIR=""
 TAG="${TAG:-}"
 GITHUB_REPO="${GITHUB_REPO:-LichKing-2234/ai-efficiency}"
@@ -25,23 +27,81 @@ generate_secret() {
   openssl rand -hex 32
 }
 
+normalize_arch() {
+  local machine="$1"
+
+  case "$machine" in
+    x86_64|amd64)
+      echo "amd64"
+      ;;
+    arm64|aarch64)
+      echo "arm64"
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+path_within() {
+  local path="$1"
+  local root="$2"
+
+  case "${path}/" in
+    "${root}/"*)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+looks_bootstrapped() {
+  local dir="$1"
+  [[ -f "$dir/docker-compose.yml" && -d "$dir/deploy" && -f "$dir/.env.example" ]]
+}
+
+looks_repo() {
+  local dir="$1"
+  [[ -f "$dir/deploy/docker-deploy.sh" && -f "$dir/deploy/.env.example" ]]
+}
+
 detect_layout() {
-  if [[ -f "$PWD/docker-compose.yml" && -d "$PWD/deploy" ]]; then
+  local work_dir="$PWD"
+
+  if looks_bootstrapped "$work_dir"; then
     LAYOUT="bootstrapped"
-    ROOT_DIR="$PWD"
+    ROOT_DIR="$work_dir"
     ENV_FILE="$ROOT_DIR/.env"
     return
   fi
 
-  if [[ -f "$PWD/deploy/docker-deploy.sh" && -f "$PWD/deploy/.env.example" ]]; then
+  if path_within "$work_dir" "$SCRIPT_ROOT"; then
+    if looks_bootstrapped "$SCRIPT_ROOT"; then
+      LAYOUT="bootstrapped"
+      ROOT_DIR="$SCRIPT_ROOT"
+      ENV_FILE="$ROOT_DIR/.env"
+      return
+    fi
+
+    if looks_repo "$SCRIPT_ROOT"; then
+      LAYOUT="repo"
+      ROOT_DIR="$SCRIPT_ROOT"
+      ENV_FILE="$ROOT_DIR/deploy/.env"
+      return
+    fi
+  fi
+
+  if looks_repo "$work_dir"; then
     LAYOUT="repo"
-    ROOT_DIR="$PWD"
+    ROOT_DIR="$work_dir"
     ENV_FILE="$ROOT_DIR/deploy/.env"
     return
   fi
 
   LAYOUT="bootstrap"
-  ROOT_DIR="$PWD"
+  ROOT_DIR="$work_dir"
   ENV_FILE="$ROOT_DIR/.env"
 }
 
@@ -51,20 +111,22 @@ bootstrap_requested() {
 
 detect_platform() {
   local machine
-  machine="$(uname -m)"
+  local override_arch=""
 
-  case "$machine" in
-    x86_64|amd64)
-      ARCH="amd64"
-      ;;
-    arm64|aarch64)
-      ARCH="arm64"
-      ;;
-    *)
-      echo "unsupported architecture: ${machine}" >&2
+  if [[ -n "$ARCH" ]]; then
+    override_arch="$ARCH"
+    if ! ARCH="$(normalize_arch "$override_arch")"; then
+      echo "unsupported architecture override: ${override_arch}" >&2
       exit 1
-      ;;
-  esac
+    fi
+    return
+  fi
+
+  machine="$(uname -m)"
+  if ! ARCH="$(normalize_arch "$machine")"; then
+    echo "unsupported architecture: ${machine}" >&2
+    exit 1
+  fi
 }
 
 resolve_tag() {
@@ -212,7 +274,20 @@ extract_redis_host_port() {
 
 detect_layout
 
+case "$MODE" in
+  check|external)
+    ;;
+  *)
+    echo "usage: $0 [check|external]" >&2
+    exit 1
+    ;;
+esac
+
 if bootstrap_requested; then
+  if [[ "$MODE" == "external" ]]; then
+    echo "external mode is not supported during bootstrap" >&2
+    exit 1
+  fi
   require_cmd curl
   require_cmd openssl
   require_cmd python3
@@ -246,6 +321,11 @@ require_cmd python3
 ensure_env
 source_env_file
 
+if [[ "$LAYOUT" == "bootstrapped" && "$MODE" == "external" ]]; then
+  echo "external mode is not supported in bootstrapped layout" >&2
+  exit 1
+fi
+
 ensure_generated_var AE_AUTH_JWT_SECRET
 ensure_generated_var AE_ENCRYPTION_KEY
 ensure_generated_var POSTGRES_PASSWORD
@@ -269,9 +349,6 @@ else
 fi
 if [[ "$MODE" == "external" ]]; then
   COMPOSE_FILE="$ROOT_DIR/deploy/docker-compose.external.yml"
-elif [[ "$MODE" != "check" ]]; then
-  echo "usage: $0 [check|external]" >&2
-  exit 1
 fi
 
 run_compose_config() {
