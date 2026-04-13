@@ -548,9 +548,11 @@ success "Environment is ready"
 check_required_var AE_RELAY_URL
 check_required_var AE_AUTH_JWT_SECRET
 check_required_var AE_ENCRYPTION_KEY
-check_required_var POSTGRES_USER
-check_required_var POSTGRES_PASSWORD
-check_required_var POSTGRES_DB
+if [[ "$MODE" != "external" ]]; then
+  check_required_var POSTGRES_USER
+  check_required_var POSTGRES_PASSWORD
+  check_required_var POSTGRES_DB
+fi
 
 run_compose_config() {
   local compose_file="$1"

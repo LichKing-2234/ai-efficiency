@@ -14,10 +14,10 @@
 
 ## Spec Relationship
 
-- 本文继承 [`2026-04-08-production-deployment-packaging-design.md`](/Users/admin/ai-efficiency/docs/superpowers/specs/2026-04-08-production-deployment-packaging-design.md) 中关于 Docker bootstrap、bundled/external Compose 模式、updater sidecar 与本地验证 compose 变体的总体合同。
+- 本文继承 [`2026-04-08-production-deployment-packaging-design.md`](2026-04-08-production-deployment-packaging-design.md) 中关于 Docker bootstrap、bundled/external Compose 模式、updater sidecar 与本地验证 compose 变体的总体合同。
 - 当 `2026-04-08-production-deployment-packaging-design.md` 中关于 Docker 入口、`.env` 模板、脚本输出的描述与本文冲突时，以本文为准。
-- 本文不覆盖 [`2026-04-09-binary-systemd-install-update-design.md`](/Users/admin/ai-efficiency/docs/superpowers/specs/2026-04-09-binary-systemd-install-update-design.md) 的 systemd 安装路径。
-- 本文不改变业务模块边界；项目级运行时关系仍以 [`docs/architecture.md`](/Users/admin/ai-efficiency/docs/architecture.md) 为总览。
+- 本文不覆盖 [`2026-04-09-binary-systemd-install-update-design.md`](2026-04-09-binary-systemd-install-update-design.md) 的 systemd 安装路径。
+- 本文不改变业务模块边界；项目级运行时关系仍以 [`docs/architecture.md`](../../architecture.md) 为总览。
 
 ## Problem Statement
 

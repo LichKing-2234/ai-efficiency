@@ -117,6 +117,21 @@ validate_compose() {
 validate_compose "$WORK_DIR/docker-compose.yml"
 grep -F 'http://localhost:8081/api/v1/auth/me' "$COMPOSE_CONFIG" >/dev/null
 
+ENV_WITHOUT_PORT="$TMP_ROOT/no-port.env"
+grep -v '^AE_SERVER_PORT=' "$ROOT_DIR/deploy/.env.example" >"$ENV_WITHOUT_PORT"
+NO_PORT_MAIN="$TMP_ROOT/no-port-main.yml"
+NO_PORT_BOOTSTRAP="$TMP_ROOT/no-port-bootstrap.yml"
+NO_PORT_EXTERNAL="$TMP_ROOT/no-port-external.yml"
+docker-compose --env-file "$ENV_WITHOUT_PORT" -f "$ROOT_DIR/deploy/docker-compose.yml" config >"$NO_PORT_MAIN" 2>&1
+docker-compose --env-file "$ENV_WITHOUT_PORT" -f "$ROOT_DIR/deploy/docker-compose.bootstrap.yml" config >"$NO_PORT_BOOTSTRAP" 2>&1
+docker-compose --env-file "$ENV_WITHOUT_PORT" -f "$ROOT_DIR/deploy/docker-compose.external.yml" config >"$NO_PORT_EXTERNAL" 2>&1
+! grep -q 'AE_SERVER_PORT" variable is not set' "$NO_PORT_MAIN"
+! grep -q 'AE_SERVER_PORT" variable is not set' "$NO_PORT_BOOTSTRAP"
+! grep -q 'AE_SERVER_PORT" variable is not set' "$NO_PORT_EXTERNAL"
+grep -q 'published: "8081"' "$NO_PORT_MAIN"
+grep -q 'published: "8081"' "$NO_PORT_BOOTSTRAP"
+grep -q 'published: "8081"' "$NO_PORT_EXTERNAL"
+
 set +e
 (
   cd "$BAD_WORK_DIR"

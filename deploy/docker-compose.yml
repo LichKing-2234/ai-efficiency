@@ -65,7 +65,7 @@ services:
       AE_DEPLOYMENT_UPDATE_UPDATER_URL: "${AE_DEPLOYMENT_UPDATE_UPDATER_URL:-http://updater:8090}"
       AE_DEPLOYMENT_UPDATE_IMAGE_REPOSITORY: "${AE_IMAGE_REPOSITORY:-ghcr.io/lichking-2234/ai-efficiency}"
     ports:
-      - "${AE_SERVER_PORT}:8081"
+      - "${AE_SERVER_PORT:-8081}:8081"
     volumes:
       - appstate:/var/lib/ai-efficiency
     depends_on:
