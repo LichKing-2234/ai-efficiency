@@ -363,9 +363,6 @@ if bootstrap_requested; then
   download_backend_bundle "$TAG"
   prepare_bootstrap_root
   source_env_file
-  set_env_var AE_IMAGE_TAG "$TAG"
-  set_env_var AE_UPDATER_IMAGE_TAG "$TAG"
-  source_env_file
   ensure_generated_var AE_AUTH_JWT_SECRET
   ensure_generated_var AE_ENCRYPTION_KEY
   ensure_generated_var POSTGRES_PASSWORD
@@ -395,9 +392,6 @@ source_env_file
 check_required_var AE_RELAY_URL
 check_required_var AE_AUTH_JWT_SECRET
 check_required_var AE_ENCRYPTION_KEY
-check_required_var COMPOSE_PROJECT_NAME
-check_required_var AE_UPDATER_IMAGE_REPOSITORY
-check_required_var AE_UPDATER_IMAGE_TAG
 check_required_var POSTGRES_USER
 check_required_var POSTGRES_PASSWORD
 check_required_var POSTGRES_DB
