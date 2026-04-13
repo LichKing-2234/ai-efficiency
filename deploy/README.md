@@ -20,6 +20,10 @@ It also provides two non-production local validation paths inspired by `sub2api`
 - `docker-compose.dev.yml`: source-build local verification
 - `docker-compose.local.yml`: directory-backed local verification
 
+## Developer CLI
+
+This guide covers backend deployment only. For the user-level CLI installer, see [`../ae-cli/README.md`](../ae-cli/README.md).
+
 ## Empty Directory Bootstrap
 
 Use this when you want a `sub2api`-style deployment bootstrap from an empty directory:
