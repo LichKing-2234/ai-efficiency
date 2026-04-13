@@ -72,9 +72,11 @@ export function reloadOnceForChunkError(error: unknown, options: ChunkReloadOpti
   const now = options.now ?? (() => Date.now())
   const reload = options.reload ?? (() => window.location.reload())
   const lastReload = storage.getItem(CHUNK_RELOAD_KEY)
+  const parsedLastReload = lastReload ? Number.parseInt(lastReload, 10) : Number.NaN
+  const hasValidLastReload = Number.isFinite(parsedLastReload)
   const currentTime = now()
 
-  if (!lastReload || currentTime - Number.parseInt(lastReload, 10) > CHUNK_RELOAD_WINDOW_MS) {
+  if (!hasValidLastReload || currentTime - parsedLastReload > CHUNK_RELOAD_WINDOW_MS) {
     storage.setItem(CHUNK_RELOAD_KEY, String(currentTime))
     reload()
     return true

@@ -69,4 +69,17 @@ describe('deploymentRecovery', () => {
     expect(reloadOnceForChunkError(error, { reload, now: () => 12001 })).toBe(true)
     expect(reload).toHaveBeenCalledTimes(2)
   })
+
+  it('treats invalid stored timestamps as stale and reloads again', () => {
+    const reload = vi.fn()
+    const error = new Error('Loading chunk 12 failed')
+    const storage = {
+      getItem: vi.fn().mockReturnValue('not-a-number'),
+      setItem: vi.fn(),
+    }
+
+    expect(reloadOnceForChunkError(error, { reload, now: () => 1500, storage })).toBe(true)
+    expect(storage.setItem).toHaveBeenCalledWith('chunk_reload_attempted', '1500')
+    expect(reload).toHaveBeenCalledTimes(1)
+  })
 })
