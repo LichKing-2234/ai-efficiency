@@ -574,6 +574,10 @@ run_compose_config() {
 }
 
 set_stage "compose validation" "Validating compose configuration..."
+if grep -q '^[[:space:]]*updater:' "$COMPOSE_FILE"; then
+  echo "legacy Docker updater-sidecar deployment detected; refresh deploy assets before continuing" >&2
+  exit 1
+fi
 run_compose_config "$COMPOSE_FILE"
 record_check "Compose config via ${COMPOSE_IMPL}"
 success "Validated compose configuration"

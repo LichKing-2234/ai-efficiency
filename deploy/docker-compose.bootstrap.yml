@@ -1,5 +1,5 @@
 # Bundled bootstrap Docker Compose stack.
-# Intended to be copied to deployment root as docker-compose.yml with bind-mounted local persistence.
+# Intended to be copied to deployment root as docker-compose.yml with a launcher-managed runtime binary.
 services:
   postgres:
     image: postgres:16-alpine
@@ -62,7 +62,6 @@ services:
       AE_DEPLOYMENT_UPDATE_ENABLED: "${AE_DEPLOYMENT_UPDATE_ENABLED:-true}"
       AE_DEPLOYMENT_UPDATE_APPLY_ENABLED: "${AE_DEPLOYMENT_UPDATE_APPLY_ENABLED:-true}"
       AE_DEPLOYMENT_UPDATE_RELEASE_API_URL: "${AE_DEPLOYMENT_UPDATE_RELEASE_API_URL:-https://api.github.com/repos/LichKing-2234/ai-efficiency/releases/latest}"
-      AE_DEPLOYMENT_UPDATE_UPDATER_URL: "${AE_DEPLOYMENT_UPDATE_UPDATER_URL:-http://updater:8090}"
       AE_DEPLOYMENT_UPDATE_IMAGE_REPOSITORY: "${AE_IMAGE_REPOSITORY:-ghcr.io/lichking-2234/ai-efficiency}"
     ports:
       - "${AE_SERVER_PORT:-8081}:8081"
@@ -73,27 +72,9 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      updater:
-        condition: service_started
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:8081/api/v1/auth/me"]
       interval: 10s
       timeout: 5s
       retries: 3
       start_period: 10s
-
-  updater:
-    image: "${AE_UPDATER_IMAGE_REPOSITORY:-ghcr.io/lichking-2234/ai-efficiency}:${AE_UPDATER_IMAGE_TAG:-latest}"
-    command: ["./updater"]
-    environment:
-      COMPOSE_PROJECT_NAME: "${COMPOSE_PROJECT_NAME:-ai-efficiency}"
-      AE_SERVER_MODE: "${AE_SERVER_MODE:-release}"
-      AE_DEPLOYMENT_STATE_DIR: "${AE_DEPLOYMENT_STATE_DIR:-/var/lib/ai-efficiency}"
-      AE_UPDATER_ENV_FILE: "${AE_UPDATER_ENV_FILE:-/work/deploy/.env}"
-      AE_UPDATER_SERVICE_NAME: "${AE_UPDATER_SERVICE_NAME:-backend}"
-      AE_UPDATER_PROJECT_NAME: "${AE_UPDATER_PROJECT_NAME:-}"
-      AE_UPDATER_COMPOSE_FILE: /work/deploy/docker-compose.yml
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - ./:/work/deploy
-      - ./data:/var/lib/ai-efficiency

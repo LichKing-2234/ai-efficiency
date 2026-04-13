@@ -209,9 +209,7 @@ function applyDeploymentUpdateStatus(status: UpdateStatus) {
 }
 
 function shouldWaitForRecovery(action: 'apply' | 'rollback' | 'restart') {
-  if (!deployment.value) return false
-  if (action === 'restart') return true
-  return deployment.value.mode !== 'systemd'
+  return action === 'restart'
 }
 
 async function handleCheckUpdates() {
@@ -242,11 +240,7 @@ async function handleApplyUpdate() {
   try {
     const res = await applyUpdate({ target_version: targetVersion })
     applyDeploymentUpdateStatus(res.data.data ?? { phase: 'unknown' })
-    setDeploymentMessage('success', 'Update request submitted')
-    if (shouldWaitForRecovery('apply')) {
-      setDeploymentMessage('success', 'Update submitted. Waiting for service recovery...')
-      await waitForServiceRecovery()
-    }
+    setDeploymentMessage('success', 'Update staged. Restart the service to run the new binary.')
   } catch (e: any) {
     setDeploymentMessage('error', e.response?.data?.message || 'Failed to apply update')
   } finally {
@@ -261,11 +255,7 @@ async function handleRollbackUpdate() {
   try {
     const res = await rollbackUpdate()
     applyDeploymentUpdateStatus(res.data.data ?? { phase: 'unknown' })
-    setDeploymentMessage('success', 'Rollback request submitted')
-    if (shouldWaitForRecovery('rollback')) {
-      setDeploymentMessage('success', 'Rollback submitted. Waiting for service recovery...')
-      await waitForServiceRecovery()
-    }
+    setDeploymentMessage('success', 'Rollback staged. Restart the service to run the restored binary.')
   } catch (e: any) {
     setDeploymentMessage('error', e.response?.data?.message || 'Failed to rollback update')
   } finally {
@@ -524,10 +514,9 @@ async function handleTestLDAP() {
             <button @click="handleRollbackUpdate" :disabled="deploymentActionLoading" class="rounded-md bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-50">
               Rollback
             </button>
-            <button v-if="deployment?.mode === 'systemd'" @click="handleRestartDeployment" :disabled="deploymentActionLoading" class="rounded-md bg-slate-700 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50">
+            <button @click="handleRestartDeployment" :disabled="deploymentActionLoading" class="rounded-md bg-slate-700 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50">
               Restart Service
             </button>
-            <p v-else class="w-full text-right text-xs text-gray-500">Restart is only available in systemd mode.</p>
           </div>
         </div>
       </div>
