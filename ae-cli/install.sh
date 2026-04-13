@@ -2,6 +2,12 @@
 set -euo pipefail
 
 GITHUB_REPO="LichKing-2234/ai-efficiency"
+
+if [[ -z "${HOME:-}" ]]; then
+  echo "HOME must be set to determine the installation directory" >&2
+  exit 1
+fi
+
 INSTALL_DIR="${HOME}/.local/bin"
 TARGET_PATH="${INSTALL_DIR}/ae-cli"
 RELEASE_API_URL="${AE_CLI_INSTALL_RELEASE_API_URL:-https://api.github.com/repos/${GITHUB_REPO}/releases/latest}"
@@ -104,7 +110,16 @@ download_release() {
     exit 1
   fi
 
-  tar -xzf "${TMP_DIR}/${archive}" -C "${TMP_DIR}"
+  if ! tar -tzf "${TMP_DIR}/${archive}" | grep -Fx "ae-cli" >/dev/null 2>&1; then
+    echo "release archive missing ae-cli" >&2
+    exit 1
+  fi
+
+  tar -xzf "${TMP_DIR}/${archive}" -C "${TMP_DIR}" ae-cli
+  if [[ -L "${TMP_DIR}/ae-cli" ]]; then
+    echo "release archive ae-cli must be a regular file" >&2
+    exit 1
+  fi
   if [[ ! -f "${TMP_DIR}/ae-cli" ]]; then
     echo "release archive missing ae-cli" >&2
     exit 1
