@@ -122,9 +122,28 @@ grep -v '^AE_SERVER_PORT=' "$ROOT_DIR/deploy/.env.example" >"$ENV_WITHOUT_PORT"
 NO_PORT_MAIN="$TMP_ROOT/no-port-main.yml"
 NO_PORT_BOOTSTRAP="$TMP_ROOT/no-port-bootstrap.yml"
 NO_PORT_EXTERNAL="$TMP_ROOT/no-port-external.yml"
-docker-compose --env-file "$ENV_WITHOUT_PORT" -f "$ROOT_DIR/deploy/docker-compose.yml" config >"$NO_PORT_MAIN" 2>&1
-docker-compose --env-file "$ENV_WITHOUT_PORT" -f "$ROOT_DIR/deploy/docker-compose.bootstrap.yml" config >"$NO_PORT_BOOTSTRAP" 2>&1
-docker-compose --env-file "$ENV_WITHOUT_PORT" -f "$ROOT_DIR/deploy/docker-compose.external.yml" config >"$NO_PORT_EXTERNAL" 2>&1
+
+config_with_env() {
+  local env_file="$1"
+  local compose_file="$2"
+  local output_file="$3"
+
+  if docker compose --env-file "$env_file" -f "$compose_file" config >"$output_file" 2>&1; then
+    return 0
+  fi
+
+  if command -v docker-compose >/dev/null 2>&1; then
+    docker-compose --env-file "$env_file" -f "$compose_file" config >"$output_file" 2>&1
+    return $?
+  fi
+
+  echo "no compatible compose implementation available" >&2
+  exit 1
+}
+
+config_with_env "$ENV_WITHOUT_PORT" "$ROOT_DIR/deploy/docker-compose.yml" "$NO_PORT_MAIN"
+config_with_env "$ENV_WITHOUT_PORT" "$ROOT_DIR/deploy/docker-compose.bootstrap.yml" "$NO_PORT_BOOTSTRAP"
+config_with_env "$ENV_WITHOUT_PORT" "$ROOT_DIR/deploy/docker-compose.external.yml" "$NO_PORT_EXTERNAL"
 ! grep -q 'AE_SERVER_PORT" variable is not set' "$NO_PORT_MAIN"
 ! grep -q 'AE_SERVER_PORT" variable is not set' "$NO_PORT_BOOTSTRAP"
 ! grep -q 'AE_SERVER_PORT" variable is not set' "$NO_PORT_EXTERNAL"
