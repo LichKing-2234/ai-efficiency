@@ -18,6 +18,7 @@ BAD_WORK_DIR="$TMP_ROOT/bad-work"
 MISSING_ASSET_WORK_DIR="$TMP_ROOT/missing-asset-work"
 INVALID_TAG_WORK_DIR="$TMP_ROOT/invalid-tag-work"
 BOOTSTRAP_SCRIPT="$TMP_ROOT/docker-deploy.sh"
+BOOTSTRAP_LOG="$TMP_ROOT/bootstrap.log"
 mkdir -p "$FIXTURE_DIR/deploy" "$WORK_DIR" "$RELEASE_DIR" "$BAD_RELEASE_DIR" "$BAD_WORK_DIR" \
   "$MISSING_ASSET_FIXTURE_DIR/deploy" "$MISSING_ASSET_DIR" "$MISSING_ASSET_WORK_DIR" "$INVALID_TAG_WORK_DIR"
 
@@ -54,7 +55,7 @@ cp "$ROOT_DIR/deploy/docker-deploy.sh" "$BOOTSTRAP_SCRIPT"
   ARCH=amd64 \
   RELEASE_DOWNLOAD_BASE=file://$TMP_ROOT \
   bash "$BOOTSTRAP_SCRIPT"
-)
+) >"$BOOTSTRAP_LOG" 2>&1
 
 test -f "$WORK_DIR/docker-compose.yml"
 test -f "$WORK_DIR/.env"
@@ -64,8 +65,31 @@ test -d "$WORK_DIR/postgres_data"
 test -d "$WORK_DIR/redis_data"
 cmp -s "$WORK_DIR/.env.example" "$WORK_DIR/deploy/.env.example"
 cmp -s "$WORK_DIR/docker-compose.yml" "$WORK_DIR/deploy/docker-compose.bootstrap.yml"
-grep -q "^AE_IMAGE_TAG=${RELEASE_TAG}$" "$WORK_DIR/.env"
-grep -q "^AE_UPDATER_IMAGE_TAG=${RELEASE_TAG}$" "$WORK_DIR/.env"
+for hidden_var in AE_IMAGE_REPOSITORY AE_IMAGE_TAG AE_UPDATER_IMAGE_REPOSITORY AE_UPDATER_IMAGE_TAG; do
+  if grep -q "^${hidden_var}=" "$WORK_DIR/.env"; then
+    echo "unexpected ${hidden_var} in bootstrap env" >&2
+    exit 1
+  fi
+done
+
+COMPOSE_CONFIG="$TMP_ROOT/bootstrap-compose-config.txt"
+if docker compose --env-file "$WORK_DIR/.env" -f "$WORK_DIR/docker-compose.yml" config >"$COMPOSE_CONFIG" 2>&1; then
+  :
+elif docker-compose --env-file "$WORK_DIR/.env" -f "$WORK_DIR/docker-compose.yml" config >"$COMPOSE_CONFIG" 2>&1; then
+  :
+else
+  cat "$COMPOSE_CONFIG" >&2
+  exit 1
+fi
+grep -F 'image: ghcr.io/lichking-2234/ai-efficiency:latest' "$COMPOSE_CONFIG"
+grep -q "AI Efficiency Deployment Preparation" "$BOOTSTRAP_LOG"
+grep -q "\[INFO\] Downloading deploy assets..." "$BOOTSTRAP_LOG"
+grep -q "\[SUCCESS\] Prepared docker-compose.yml" "$BOOTSTRAP_LOG"
+grep -q "\[SUCCESS\] Generated missing secrets" "$BOOTSTRAP_LOG"
+grep -q "Generated secure credentials:" "$BOOTSTRAP_LOG"
+grep -q "Directory structure:" "$BOOTSTRAP_LOG"
+grep -q "Next steps:" "$BOOTSTRAP_LOG"
+grep -q "docker compose up -d" "$BOOTSTRAP_LOG"
 
 validate_compose() {
   local compose_file="$1"
@@ -91,11 +115,41 @@ validate_compose() {
 }
 
 validate_compose "$WORK_DIR/docker-compose.yml"
-if command -v docker-compose >/dev/null 2>&1; then
-  docker-compose -f "$WORK_DIR/docker-compose.yml" config | grep -F 'http://localhost:8081/api/v1/auth/me' >/dev/null
-elif docker compose version >/dev/null 2>&1; then
-  docker compose -f "$WORK_DIR/docker-compose.yml" config | grep -F 'http://localhost:8081/api/v1/auth/me' >/dev/null
-fi
+grep -F 'http://localhost:8081/api/v1/auth/me' "$COMPOSE_CONFIG" >/dev/null
+
+ENV_WITHOUT_PORT="$TMP_ROOT/no-port.env"
+grep -v '^AE_SERVER_PORT=' "$ROOT_DIR/deploy/.env.example" >"$ENV_WITHOUT_PORT"
+NO_PORT_MAIN="$TMP_ROOT/no-port-main.yml"
+NO_PORT_BOOTSTRAP="$TMP_ROOT/no-port-bootstrap.yml"
+NO_PORT_EXTERNAL="$TMP_ROOT/no-port-external.yml"
+
+config_with_env() {
+  local env_file="$1"
+  local compose_file="$2"
+  local output_file="$3"
+
+  if docker compose --env-file "$env_file" -f "$compose_file" config >"$output_file" 2>&1; then
+    return 0
+  fi
+
+  if command -v docker-compose >/dev/null 2>&1; then
+    docker-compose --env-file "$env_file" -f "$compose_file" config >"$output_file" 2>&1
+    return $?
+  fi
+
+  echo "no compatible compose implementation available" >&2
+  exit 1
+}
+
+config_with_env "$ENV_WITHOUT_PORT" "$ROOT_DIR/deploy/docker-compose.yml" "$NO_PORT_MAIN"
+config_with_env "$ENV_WITHOUT_PORT" "$ROOT_DIR/deploy/docker-compose.bootstrap.yml" "$NO_PORT_BOOTSTRAP"
+config_with_env "$ENV_WITHOUT_PORT" "$ROOT_DIR/deploy/docker-compose.external.yml" "$NO_PORT_EXTERNAL"
+! grep -q 'AE_SERVER_PORT" variable is not set' "$NO_PORT_MAIN"
+! grep -q 'AE_SERVER_PORT" variable is not set' "$NO_PORT_BOOTSTRAP"
+! grep -q 'AE_SERVER_PORT" variable is not set' "$NO_PORT_EXTERNAL"
+grep -q 'published: "8081"' "$NO_PORT_MAIN"
+grep -q 'published: "8081"' "$NO_PORT_BOOTSTRAP"
+grep -q 'published: "8081"' "$NO_PORT_EXTERNAL"
 
 set +e
 (
@@ -109,6 +163,7 @@ bad_status=$?
 set -e
 
 test "$bad_status" -ne 0
+grep -q "Bootstrap failed during deploy asset download" "$TMP_ROOT/bad-checksum.log"
 grep -q "checksum verification failed" "$TMP_ROOT/bad-checksum.log"
 test ! -e "$BAD_WORK_DIR/docker-compose.yml"
 test ! -e "$BAD_WORK_DIR/.env"
@@ -143,6 +198,7 @@ invalid_tag_status=$?
 set -e
 
 test "$invalid_tag_status" -ne 0
+grep -q "Bootstrap failed during release tag resolution" "$TMP_ROOT/invalid-tag.log"
 grep -q "failed to resolve release tag" "$TMP_ROOT/invalid-tag.log"
 
 REPO_FIXTURE="$TMP_ROOT/repo-fixture"

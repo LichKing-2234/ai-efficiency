@@ -31,7 +31,17 @@ mkdir -p ai-efficiency-deploy && cd ai-efficiency-deploy
 curl -fsSL https://raw.githubusercontent.com/LichKing-2234/ai-efficiency/main/deploy/docker-deploy.sh | bash
 ```
 
-Before starting services, edit `.env` with your real settings.
+`deploy/docker-deploy.sh` will:
+
+- download deploy assets
+- prepare `docker-compose.yml`, `.env.example`, and `.env`
+- generate missing secrets
+- create local data directories
+- print a final summary with next steps
+
+By default the Docker stack pulls `ghcr.io/lichking-2234/ai-efficiency:latest`.
+
+Before starting services, edit `.env` for operator-facing settings.
 At minimum, set:
 
 - `AE_RELAY_URL`
@@ -60,6 +70,7 @@ docker compose up -d
 - local preflight for an already-prepared deployment directory
 
 Bootstrap prepares files and secrets, but does not start services automatically.
+The preflight path prints layout/mode context, validates compose configuration, checks relay health, and then prints the next startup command.
 
 ## Bundled Mode
 
@@ -138,9 +149,8 @@ Behavior:
 At minimum, set these in `deploy/.env` before first deploy:
 
 - `AE_RELAY_URL`
-- `COMPOSE_PROJECT_NAME`
-- `AE_UPDATER_IMAGE_REPOSITORY`
-- `AE_UPDATER_IMAGE_TAG`
+- `POSTGRES_USER`
+- `POSTGRES_DB`
 
 For external mode, also set:
 
@@ -152,6 +162,18 @@ These can be left blank on first run because `deploy/docker-deploy.sh` will gene
 - `AE_AUTH_JWT_SECRET`
 - `AE_ENCRYPTION_KEY`
 - `POSTGRES_PASSWORD`
+
+## Advanced Overrides
+
+The default path hides image repository/tag and updater implementation details.
+If you need to override them, append values such as these to `.env` manually:
+
+- `AE_IMAGE_REPOSITORY`
+- `AE_IMAGE_TAG`
+- `AE_UPDATER_IMAGE_REPOSITORY`
+- `AE_UPDATER_IMAGE_TAG`
+- `COMPOSE_PROJECT_NAME`
+- `AE_UPDATER_PROJECT_NAME`
 
 ## Health And Status
 
