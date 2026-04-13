@@ -14,44 +14,57 @@ function getInputByLabel(wrapper: any, labelText: string) {
   return input as HTMLInputElement
 }
 
+const createDefaultProvidersResponse = () => ({
+  data: {
+    data: {
+      items: [],
+      total: 0,
+    },
+  },
+})
+
+const createDefaultLLMConfigResponse = () => ({
+  data: {
+    data: {
+      relay_url: '',
+      relay_api_key: '',
+      relay_admin_api_key: '',
+      model: 'gpt-4',
+      enabled: false,
+      max_tokens_per_scan: 100000,
+      system_prompt: '',
+      user_prompt_template: '',
+    },
+  },
+})
+
+const createDefaultDeploymentStatusResponse = () => ({
+  data: {
+    data: {
+      version: { version: 'v0.4.0', commit: 'abc1234', build_time: '2026-04-08T12:00:00Z' },
+      mode: 'bundled',
+      update_available: true,
+      latest_release: { version: 'v0.5.0', url: 'https://example.com/v0.5.0' },
+      update_status: { phase: 'idle' },
+    },
+  },
+})
+
 vi.mock('@/api/scmProvider', () => ({
-  listProviders: vi.fn().mockResolvedValue({ data: { data: { items: [], total: 0 } } }),
+  listProviders: vi.fn(),
   createProvider: vi.fn(),
   updateProvider: vi.fn(),
   deleteProvider: vi.fn(),
 }))
 
 vi.mock('@/api/settings', () => ({
-  getLLMConfig: vi.fn().mockResolvedValue({
-    data: {
-      data: {
-        relay_url: '',
-        relay_api_key: '',
-        relay_admin_api_key: '',
-        model: 'gpt-4',
-        enabled: false,
-        max_tokens_per_scan: 100000,
-        system_prompt: '',
-        user_prompt_template: '',
-      },
-    },
-  }),
+  getLLMConfig: vi.fn(),
   updateLLMConfig: vi.fn(),
   testLLMConnection: vi.fn(),
 }))
 
 vi.mock('@/api/deployment', () => ({
-  getDeploymentStatus: vi.fn().mockResolvedValue({
-    data: {
-      data: {
-        version: { version: 'v0.4.0', commit: 'abc1234', build_time: '2026-04-08T12:00:00Z' },
-        mode: 'bundled',
-        update_available: true,
-        latest_release: { version: 'v0.5.0', url: 'https://example.com/v0.5.0' },
-        update_status: { phase: 'idle' },
-      },
-    },
-  }),
+  getDeploymentStatus: vi.fn(),
   checkForUpdate: vi.fn(),
   applyUpdate: vi.fn(),
   rollbackUpdate: vi.fn(),
@@ -63,6 +76,40 @@ vi.mock('@/api/auth', () => ({
   getMe: vi.fn(),
   devLogin: vi.fn(),
 }))
+
+vi.mock('@/utils/deploymentRecovery', () => ({
+  waitForServiceRecovery: vi.fn(),
+}))
+
+async function resetApiMocks() {
+  const scmProvider = await import('@/api/scmProvider') as any
+  scmProvider.listProviders.mockReset().mockResolvedValue(createDefaultProvidersResponse())
+  scmProvider.createProvider.mockReset().mockResolvedValue({ data: { data: { id: 1 } } })
+  scmProvider.updateProvider.mockReset().mockResolvedValue({ data: { data: { id: 1 } } })
+  scmProvider.deleteProvider.mockReset().mockResolvedValue({ data: { data: null } })
+
+  const settingsApi = await import('@/api/settings') as any
+  settingsApi.getLLMConfig.mockReset().mockResolvedValue(createDefaultLLMConfigResponse())
+  settingsApi.updateLLMConfig.mockReset().mockResolvedValue({ data: { data: {} } })
+  settingsApi.testLLMConnection.mockReset().mockResolvedValue({
+    data: { data: { success: true, message: 'Connection OK' } },
+  })
+
+  const deploymentApi = await import('@/api/deployment') as any
+  deploymentApi.getDeploymentStatus.mockReset().mockResolvedValue(createDefaultDeploymentStatusResponse())
+  deploymentApi.checkForUpdate.mockReset().mockResolvedValue({ data: { data: null } })
+  deploymentApi.applyUpdate.mockReset().mockResolvedValue({ data: { data: { phase: 'idle' } } })
+  deploymentApi.rollbackUpdate.mockReset().mockResolvedValue({ data: { data: { phase: 'idle' } } })
+  deploymentApi.restartDeployment.mockReset().mockResolvedValue({ data: { data: { phase: 'restart_requested' } } })
+
+  const authApi = await import('@/api/auth') as any
+  authApi.login.mockReset().mockResolvedValue({ data: { data: null } })
+  authApi.getMe.mockReset().mockResolvedValue({ data: { data: {} } })
+  authApi.devLogin.mockReset().mockResolvedValue({ data: { data: null } })
+
+  const recoveryApi = await import('@/utils/deploymentRecovery') as any
+  recoveryApi.waitForServiceRecovery.mockReset().mockResolvedValue(undefined)
+}
 
 function createTestRouter() {
   return createRouter({
@@ -109,9 +156,9 @@ async function mountSettings(overrides?: { providers?: any[]; llmConfig?: any; d
 }
 
 describe('SettingsView', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     setActivePinia(createPinia())
-    vi.clearAllMocks()
+    await resetApiMocks()
   })
 
   it('renders SCM Providers heading and Add Provider button', async () => {
@@ -152,6 +199,7 @@ describe('SettingsView', () => {
 
   it('calls restart deployment when restart control is clicked', async () => {
     const { restartDeployment } = await import('@/api/deployment')
+    const { waitForServiceRecovery } = await import('@/utils/deploymentRecovery')
     ;(restartDeployment as any).mockResolvedValue({ data: { data: { phase: 'restart_requested' } } })
 
     const wrapper = await mountSettings({
@@ -170,6 +218,82 @@ describe('SettingsView', () => {
     await flushPromises()
 
     expect(restartDeployment).toHaveBeenCalled()
+    expect(waitForServiceRecovery).toHaveBeenCalled()
+  })
+
+  it('waits for recovery after bundled apply update', async () => {
+    const { applyUpdate } = await import('@/api/deployment')
+    const { waitForServiceRecovery } = await import('@/utils/deploymentRecovery')
+    ;(applyUpdate as any).mockResolvedValue({ data: { data: { phase: 'updating' } } })
+
+    const wrapper = await mountSettings({
+      deploymentStatus: {
+        version: { version: 'v0.4.0', commit: 'abc1234', build_time: '2026-04-08T12:00:00Z' },
+        mode: 'bundled',
+        update_available: true,
+        latest_release: { version: 'v0.5.0', url: 'https://example.com/v0.5.0' },
+        update_status: { phase: 'idle' },
+      },
+    })
+
+    const button = wrapper.findAll('button').find((b) => b.text().includes('Apply Update'))
+    expect(button).toBeTruthy()
+
+    await button!.trigger('click')
+    await flushPromises()
+
+    expect(applyUpdate).toHaveBeenCalledWith({ target_version: 'v0.5.0' })
+    expect(waitForServiceRecovery).toHaveBeenCalled()
+  })
+
+  it('does not wait for recovery after systemd apply update', async () => {
+    const { applyUpdate } = await import('@/api/deployment')
+    const { waitForServiceRecovery } = await import('@/utils/deploymentRecovery')
+    ;(applyUpdate as any).mockResolvedValue({ data: { data: { phase: 'updated' } } })
+
+    const wrapper = await mountSettings({
+      deploymentStatus: {
+        version: { version: 'v0.4.0', commit: 'abc1234', build_time: '2026-04-08T12:00:00Z' },
+        mode: 'systemd',
+        update_available: true,
+        latest_release: { version: 'v0.5.0', url: 'https://example.com/v0.5.0' },
+        update_status: { phase: 'idle' },
+      },
+    })
+
+    const button = wrapper.findAll('button').find((b) => b.text().includes('Apply Update'))
+    expect(button).toBeTruthy()
+
+    await button!.trigger('click')
+    await flushPromises()
+
+    expect(applyUpdate).toHaveBeenCalledWith({ target_version: 'v0.5.0' })
+    expect(waitForServiceRecovery).not.toHaveBeenCalled()
+  })
+
+  it('waits for recovery after bundled rollback', async () => {
+    const { rollbackUpdate } = await import('@/api/deployment')
+    const { waitForServiceRecovery } = await import('@/utils/deploymentRecovery')
+    ;(rollbackUpdate as any).mockResolvedValue({ data: { data: { phase: 'rolling_back' } } })
+
+    const wrapper = await mountSettings({
+      deploymentStatus: {
+        version: { version: 'v0.4.0', commit: 'abc1234', build_time: '2026-04-08T12:00:00Z' },
+        mode: 'bundled',
+        update_available: true,
+        latest_release: { version: 'v0.5.0', url: 'https://example.com/v0.5.0' },
+        update_status: { phase: 'idle' },
+      },
+    })
+
+    const button = wrapper.findAll('button').find((b) => b.text().includes('Rollback'))
+    expect(button).toBeTruthy()
+
+    await button!.trigger('click')
+    await flushPromises()
+
+    expect(rollbackUpdate).toHaveBeenCalled()
+    expect(waitForServiceRecovery).toHaveBeenCalled()
   })
 
   it('renders LLM form fields', async () => {
