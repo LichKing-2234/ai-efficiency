@@ -82,6 +82,14 @@ else
   exit 1
 fi
 grep -F 'image: ghcr.io/lichking-2234/ai-efficiency:latest' "$COMPOSE_CONFIG"
+grep -q "AI Efficiency Deployment Preparation" "$BOOTSTRAP_LOG"
+grep -q "\[INFO\] Downloading deploy assets..." "$BOOTSTRAP_LOG"
+grep -q "\[SUCCESS\] Prepared docker-compose.yml" "$BOOTSTRAP_LOG"
+grep -q "\[SUCCESS\] Generated missing secrets" "$BOOTSTRAP_LOG"
+grep -q "Generated secure credentials:" "$BOOTSTRAP_LOG"
+grep -q "Directory structure:" "$BOOTSTRAP_LOG"
+grep -q "Next steps:" "$BOOTSTRAP_LOG"
+grep -q "docker compose up -d" "$BOOTSTRAP_LOG"
 
 validate_compose() {
   local compose_file="$1"
@@ -121,6 +129,7 @@ bad_status=$?
 set -e
 
 test "$bad_status" -ne 0
+grep -q "Bootstrap failed during deploy asset download" "$TMP_ROOT/bad-checksum.log"
 grep -q "checksum verification failed" "$TMP_ROOT/bad-checksum.log"
 test ! -e "$BAD_WORK_DIR/docker-compose.yml"
 test ! -e "$BAD_WORK_DIR/.env"
@@ -155,6 +164,7 @@ invalid_tag_status=$?
 set -e
 
 test "$invalid_tag_status" -ne 0
+grep -q "Bootstrap failed during release tag resolution" "$TMP_ROOT/invalid-tag.log"
 grep -q "failed to resolve release tag" "$TMP_ROOT/invalid-tag.log"
 
 REPO_FIXTURE="$TMP_ROOT/repo-fixture"

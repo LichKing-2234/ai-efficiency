@@ -89,4 +89,17 @@ for hidden_repo in AE_IMAGE_REPOSITORY AE_UPDATER_IMAGE_REPOSITORY; do
   fi
 done
 
+grep -q "AI Efficiency Deployment Preflight" "$PREFLIGHT_LOG"
+grep -q "Layout: repo" "$PREFLIGHT_LOG"
+grep -q "Mode: bundled" "$PREFLIGHT_LOG"
+grep -q "Compose file: $REPO_FIXTURE/deploy/docker-compose.yml" "$PREFLIGHT_LOG"
+grep -q "Env file: $REPO_FIXTURE/deploy/.env" "$PREFLIGHT_LOG"
+grep -q "Generated missing secrets: AE_AUTH_JWT_SECRET, AE_ENCRYPTION_KEY, POSTGRES_PASSWORD" "$PREFLIGHT_LOG"
+grep -q "Checks passed:" "$PREFLIGHT_LOG"
+grep -q "Next step:" "$PREFLIGHT_LOG"
+grep -q "docker compose up -d" "$PREFLIGHT_LOG"
+! grep -Eq 'AE_AUTH_JWT_SECRET:[[:space:]][0-9a-f]{64}' "$PREFLIGHT_LOG"
+! grep -Eq 'AE_ENCRYPTION_KEY:[[:space:]][0-9a-f]{64}' "$PREFLIGHT_LOG"
+! grep -Eq 'POSTGRES_PASSWORD:[[:space:]][0-9a-f]{64}' "$PREFLIGHT_LOG"
+
 exit "$preflight_status"
