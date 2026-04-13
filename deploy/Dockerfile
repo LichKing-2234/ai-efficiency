@@ -22,15 +22,13 @@ COPY --from=frontend-builder /app/frontend/dist ./internal/web/dist/
 RUN CGO_ENABLED=0 GOOS=linux go build \
   -ldflags "-X github.com/ai-efficiency/backend/internal/deployment.BuildVersion=${APP_VERSION} -X github.com/ai-efficiency/backend/internal/deployment.BuildCommit=${APP_COMMIT} -X github.com/ai-efficiency/backend/internal/deployment.BuildTime=${APP_BUILD_TIME}" \
   -o /app/server ./cmd/server/
-RUN CGO_ENABLED=0 GOOS=linux go build \
-  -ldflags "-X github.com/ai-efficiency/backend/internal/deployment.BuildVersion=${APP_VERSION} -X github.com/ai-efficiency/backend/internal/deployment.BuildCommit=${APP_COMMIT} -X github.com/ai-efficiency/backend/internal/deployment.BuildTime=${APP_BUILD_TIME}" \
-  -o /app/updater ./cmd/updater/
 
 # Stage 3: Final image
 FROM alpine:3.20
-RUN apk add --no-cache ca-certificates tzdata docker-cli docker-cli-compose
+RUN apk add --no-cache ca-certificates tzdata
 WORKDIR /app
-COPY --from=backend-builder /app/server .
-COPY --from=backend-builder /app/updater .
+COPY --from=backend-builder /app/server /opt/ai-efficiency/bootstrap/ai-efficiency-server
+COPY deploy/docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh /opt/ai-efficiency/bootstrap/ai-efficiency-server
 EXPOSE 8081
-CMD ["./server"]
+ENTRYPOINT ["/docker-entrypoint.sh"]
