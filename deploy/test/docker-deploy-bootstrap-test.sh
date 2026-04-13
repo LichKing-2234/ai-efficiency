@@ -18,6 +18,7 @@ BAD_WORK_DIR="$TMP_ROOT/bad-work"
 MISSING_ASSET_WORK_DIR="$TMP_ROOT/missing-asset-work"
 INVALID_TAG_WORK_DIR="$TMP_ROOT/invalid-tag-work"
 BOOTSTRAP_SCRIPT="$TMP_ROOT/docker-deploy.sh"
+BOOTSTRAP_LOG="$TMP_ROOT/bootstrap.log"
 mkdir -p "$FIXTURE_DIR/deploy" "$WORK_DIR" "$RELEASE_DIR" "$BAD_RELEASE_DIR" "$BAD_WORK_DIR" \
   "$MISSING_ASSET_FIXTURE_DIR/deploy" "$MISSING_ASSET_DIR" "$MISSING_ASSET_WORK_DIR" "$INVALID_TAG_WORK_DIR"
 
@@ -54,7 +55,7 @@ cp "$ROOT_DIR/deploy/docker-deploy.sh" "$BOOTSTRAP_SCRIPT"
   ARCH=amd64 \
   RELEASE_DOWNLOAD_BASE=file://$TMP_ROOT \
   bash "$BOOTSTRAP_SCRIPT"
-)
+) >"$BOOTSTRAP_LOG" 2>&1
 
 test -f "$WORK_DIR/docker-compose.yml"
 test -f "$WORK_DIR/.env"
@@ -64,8 +65,23 @@ test -d "$WORK_DIR/postgres_data"
 test -d "$WORK_DIR/redis_data"
 cmp -s "$WORK_DIR/.env.example" "$WORK_DIR/deploy/.env.example"
 cmp -s "$WORK_DIR/docker-compose.yml" "$WORK_DIR/deploy/docker-compose.bootstrap.yml"
-grep -q "^AE_IMAGE_TAG=${RELEASE_TAG}$" "$WORK_DIR/.env"
-grep -q "^AE_UPDATER_IMAGE_TAG=${RELEASE_TAG}$" "$WORK_DIR/.env"
+for hidden_var in AE_IMAGE_REPOSITORY AE_IMAGE_TAG AE_UPDATER_IMAGE_REPOSITORY AE_UPDATER_IMAGE_TAG; do
+  if grep -q "^${hidden_var}=" "$WORK_DIR/.env"; then
+    echo "unexpected ${hidden_var} in bootstrap env" >&2
+    exit 1
+  fi
+done
+
+COMPOSE_CONFIG="$TMP_ROOT/bootstrap-compose-config.txt"
+if docker compose --env-file "$WORK_DIR/.env" -f "$WORK_DIR/docker-compose.yml" config >"$COMPOSE_CONFIG" 2>&1; then
+  :
+elif docker-compose --env-file "$WORK_DIR/.env" -f "$WORK_DIR/docker-compose.yml" config >"$COMPOSE_CONFIG" 2>&1; then
+  :
+else
+  cat "$COMPOSE_CONFIG" >&2
+  exit 1
+fi
+grep -F 'image: ghcr.io/lichking-2234/ai-efficiency:latest' "$COMPOSE_CONFIG"
 
 validate_compose() {
   local compose_file="$1"
@@ -91,11 +107,7 @@ validate_compose() {
 }
 
 validate_compose "$WORK_DIR/docker-compose.yml"
-if command -v docker-compose >/dev/null 2>&1; then
-  docker-compose -f "$WORK_DIR/docker-compose.yml" config | grep -F 'http://localhost:8081/api/v1/auth/me' >/dev/null
-elif docker compose version >/dev/null 2>&1; then
-  docker compose -f "$WORK_DIR/docker-compose.yml" config | grep -F 'http://localhost:8081/api/v1/auth/me' >/dev/null
-fi
+grep -F 'http://localhost:8081/api/v1/auth/me' "$COMPOSE_CONFIG" >/dev/null
 
 set +e
 (
