@@ -4,6 +4,7 @@ import AppLayout from '@/components/AppLayout.vue'
 import { listProviders, createProvider, updateProvider, deleteProvider } from '@/api/scmProvider'
 import { getLLMConfig, updateLLMConfig, testLLMConnection } from '@/api/settings'
 import { getDeploymentStatus, checkForUpdate, applyUpdate, rollbackUpdate, restartDeployment } from '@/api/deployment'
+import { waitForServiceRecovery } from '@/utils/deploymentRecovery'
 import client from '@/api/client'
 import type { DeploymentStatus, SCMProvider, UpdateStatus } from '@/types'
 
@@ -207,6 +208,12 @@ function applyDeploymentUpdateStatus(status: UpdateStatus) {
   }
 }
 
+function shouldWaitForRecovery(action: 'apply' | 'rollback' | 'restart') {
+  if (!deployment.value) return false
+  if (action === 'restart') return true
+  return deployment.value.mode !== 'systemd'
+}
+
 async function handleCheckUpdates() {
   deploymentActionLoading.value = true
   deploymentMessage.value = ''
@@ -236,6 +243,10 @@ async function handleApplyUpdate() {
     const res = await applyUpdate({ target_version: targetVersion })
     applyDeploymentUpdateStatus(res.data.data ?? { phase: 'unknown' })
     setDeploymentMessage('success', 'Update request submitted')
+    if (shouldWaitForRecovery('apply')) {
+      setDeploymentMessage('success', 'Update submitted. Waiting for service recovery...')
+      await waitForServiceRecovery()
+    }
   } catch (e: any) {
     setDeploymentMessage('error', e.response?.data?.message || 'Failed to apply update')
   } finally {
@@ -251,6 +262,10 @@ async function handleRollbackUpdate() {
     const res = await rollbackUpdate()
     applyDeploymentUpdateStatus(res.data.data ?? { phase: 'unknown' })
     setDeploymentMessage('success', 'Rollback request submitted')
+    if (shouldWaitForRecovery('rollback')) {
+      setDeploymentMessage('success', 'Rollback submitted. Waiting for service recovery...')
+      await waitForServiceRecovery()
+    }
   } catch (e: any) {
     setDeploymentMessage('error', e.response?.data?.message || 'Failed to rollback update')
   } finally {
@@ -266,6 +281,10 @@ async function handleRestartDeployment() {
     const res = await restartDeployment()
     applyDeploymentUpdateStatus(res.data.data ?? { phase: 'restart_requested' })
     setDeploymentMessage('success', 'Restart request submitted')
+    if (shouldWaitForRecovery('restart')) {
+      setDeploymentMessage('success', 'Restart requested. Waiting for service recovery...')
+      await waitForServiceRecovery()
+    }
   } catch (e: any) {
     setDeploymentMessage('error', e.response?.data?.message || 'Failed to restart service')
   } finally {

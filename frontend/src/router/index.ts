@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { reloadOnceForChunkError } from '@/utils/deploymentRecovery'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -74,5 +75,14 @@ router.beforeEach(async (to) => {
     return { path: '/' }
   }
 })
+
+export function handleRouterError(error: unknown) {
+  if (reloadOnceForChunkError(error)) {
+    return
+  }
+  console.error('Router error:', error)
+}
+
+router.onError(handleRouterError)
 
 export default router
