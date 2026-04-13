@@ -76,6 +76,10 @@ func main() {
 		logger.Fatal("load config", zap.Error(err))
 	}
 	versionInfo := deployment.CurrentVersion()
+	if len(os.Args) > 1 && (os.Args[1] == "--version" || os.Args[1] == "version") {
+		fmt.Println(versionInfo.Version)
+		return
+	}
 	logger.Info(
 		"build metadata",
 		zap.String("version", versionInfo.Version),
@@ -265,31 +269,35 @@ func main() {
 	}
 	var systemdUpdater deployment.SystemdUpdater
 	var systemdManager deployment.RestartManager
-	if cfg.Deployment.Update.Enabled && cfg.Deployment.Mode == "systemd" {
-		systemdUpdater = deployment.NewSystemdBinaryUpdater(deployment.SystemdBinaryConfig{
-			InstallDir:  "/opt/ai-efficiency",
-			BinaryName:  "ai-efficiency-server",
-			BackupName:  "ai-efficiency-server.backup",
-			DownloadDir: filepath.Join(os.TempDir(), "ai-efficiency-update"),
-			HTTPClient:  deploymentHTTPClient,
-		})
+	if cfg.Deployment.Mode == "systemd" {
 		systemdManager = deployment.NewSystemdServiceManager(
 			deployment.SystemdServiceConfig{ServiceName: "ai-efficiency"},
 			nil,
 		)
-	} else if cfg.Deployment.Update.Enabled {
-		runtimePaths := deployment.RuntimeBinaryPaths(cfg.Deployment.StateDir)
-		systemdUpdater = deployment.NewSystemdBinaryUpdater(deployment.SystemdBinaryConfig{
-			InstallDir:  runtimePaths.RuntimeDir,
-			BinaryName:  filepath.Base(runtimePaths.RuntimeBinary),
-			BackupName:  filepath.Base(runtimePaths.BackupBinary),
-			DownloadDir: filepath.Join(cfg.Deployment.StateDir, ".downloads"),
-			HTTPClient:  deploymentHTTPClient,
-		})
+		if cfg.Deployment.Update.Enabled {
+			systemdUpdater = deployment.NewSystemdBinaryUpdater(deployment.SystemdBinaryConfig{
+				InstallDir:  "/opt/ai-efficiency",
+				BinaryName:  "ai-efficiency-server",
+				BackupName:  "ai-efficiency-server.backup",
+				DownloadDir: filepath.Join(os.TempDir(), "ai-efficiency-update"),
+				HTTPClient:  deploymentHTTPClient,
+			})
+		}
+	} else {
 		systemdManager = deployment.NewSystemdServiceManager(
 			deployment.SystemdServiceConfig{},
 			nil,
 		)
+		if cfg.Deployment.Update.Enabled {
+			runtimePaths := deployment.RuntimeBinaryPaths(cfg.Deployment.StateDir)
+			systemdUpdater = deployment.NewSystemdBinaryUpdater(deployment.SystemdBinaryConfig{
+				InstallDir:  runtimePaths.RuntimeDir,
+				BinaryName:  filepath.Base(runtimePaths.RuntimeBinary),
+				BackupName:  filepath.Base(runtimePaths.BackupBinary),
+				DownloadDir: filepath.Join(cfg.Deployment.StateDir, ".downloads"),
+				HTTPClient:  deploymentHTTPClient,
+			})
+		}
 	}
 	deploymentService := deployment.NewService(cfg.Deployment, versionInfo, releaseSource, updaterClient, systemdUpdater, systemdManager)
 	deploymentHandler := handler.NewDeploymentHandler(
