@@ -211,3 +211,25 @@ fi
 grep -q "Mode: external" "$EXTERNAL_LOG"
 grep -q "Compose file: $EXTERNAL_FIXTURE_REAL/deploy/docker-compose.external.yml" "$EXTERNAL_LOG"
 grep -q "External dependency checks passed" "$EXTERNAL_LOG"
+
+LEGACY_FIXTURE="$TMP_ROOT/repo-fixture-legacy"
+mkdir -p "$LEGACY_FIXTURE/deploy"
+cp "$ROOT_DIR/deploy/docker-deploy.sh" "$LEGACY_FIXTURE/deploy/docker-deploy.sh"
+cp "$ROOT_DIR/deploy/.env.example" "$LEGACY_FIXTURE/deploy/.env.example"
+cat >"$LEGACY_FIXTURE/deploy/docker-compose.yml" <<'EOF'
+services:
+  updater:
+    image: ghcr.io/lichking-2234/ai-efficiency:latest
+EOF
+cp "$REPO_FIXTURE/deploy/.env" "$LEGACY_FIXTURE/deploy/.env"
+
+set +e
+(
+  cd "$LEGACY_FIXTURE"
+  env -i PATH="$FAKE_BIN:$PATH" bash deploy/docker-deploy.sh
+) >"$TMP_ROOT/legacy-preflight.log" 2>&1
+legacy_status=$?
+set -e
+
+test "$legacy_status" -ne 0
+grep -q "legacy Docker updater-sidecar deployment detected" "$TMP_ROOT/legacy-preflight.log"

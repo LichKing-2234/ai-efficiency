@@ -171,6 +171,19 @@ func TestLoadEnvOverrideNested(t *testing.T) {
 	}
 }
 
+func TestLoadDeploymentConfigDoesNotRequireUpdaterURL(t *testing.T) {
+	t.Setenv("AE_DEPLOYMENT_MODE", "bundled")
+	t.Setenv("AE_DEPLOYMENT_STATE_DIR", "/var/lib/ai-efficiency")
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Deployment.Update.UpdaterURL != "" {
+		t.Fatalf("deployment updater url = %q, want empty in unified self-update mode", cfg.Deployment.Update.UpdaterURL)
+	}
+}
+
 func TestLoadFileOverridesDefaults(t *testing.T) {
 	dir := t.TempDir()
 	cfgFile := filepath.Join(dir, "config.yaml")

@@ -228,6 +228,30 @@ func TestDeploymentServiceStatusResilientWhenUpdaterUnavailable(t *testing.T) {
 	}
 }
 
+func TestDeploymentServiceBundledModeDoesNotDependOnUpdaterClient(t *testing.T) {
+	svc := NewService(
+		config.DeploymentConfig{
+			Mode: "bundled",
+			Update: config.UpdateConfig{
+				Enabled: true,
+			},
+		},
+		VersionInfo{Version: "v0.6.0"},
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	status, err := svc.Status(context.Background())
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if status.UpdateStatus.Phase != "idle" {
+		t.Fatalf("expected idle phase without updater client in bundled mode, got %q", status.UpdateStatus.Phase)
+	}
+}
+
 func TestDeploymentServiceCheckForUpdateSkipsSourceWhenDisabled(t *testing.T) {
 	source := &countingReleaseStub{}
 	svc := NewService(

@@ -90,6 +90,9 @@ grep -q "Generated secure credentials:" "$BOOTSTRAP_LOG"
 grep -q "Directory structure:" "$BOOTSTRAP_LOG"
 grep -q "Next steps:" "$BOOTSTRAP_LOG"
 grep -q "docker compose up -d" "$BOOTSTRAP_LOG"
+! grep -q '^[[:space:]]*updater:' "$WORK_DIR/docker-compose.yml"
+! grep -q '/var/run/docker.sock' "$WORK_DIR/docker-compose.yml"
+grep -q '/var/lib/ai-efficiency/runtime/ai-efficiency-server' "$WORK_DIR/docker-compose.yml"
 
 validate_compose() {
   local compose_file="$1"
