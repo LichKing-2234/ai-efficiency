@@ -6,8 +6,10 @@ TMP_ROOT="$(mktemp -d)"
 trap 'rm -rf "$TMP_ROOT"' EXIT
 
 REPO_FIXTURE="$TMP_ROOT/repo-fixture"
+REPO_FIXTURE_REAL=""
 FAKE_BIN="$TMP_ROOT/fake-bin"
 mkdir -p "$REPO_FIXTURE/deploy" "$FAKE_BIN"
+REPO_FIXTURE_REAL="$(cd "$REPO_FIXTURE" && pwd -P)"
 
 cp "$ROOT_DIR/deploy/docker-deploy.sh" "$REPO_FIXTURE/deploy/docker-deploy.sh"
 cp "$ROOT_DIR/deploy/.env.example" "$REPO_FIXTURE/deploy/.env.example"
@@ -92,8 +94,8 @@ done
 grep -q "AI Efficiency Deployment Preflight" "$PREFLIGHT_LOG"
 grep -q "Layout: repo" "$PREFLIGHT_LOG"
 grep -q "Mode: bundled" "$PREFLIGHT_LOG"
-grep -q "Compose file: $REPO_FIXTURE/deploy/docker-compose.yml" "$PREFLIGHT_LOG"
-grep -q "Env file: $REPO_FIXTURE/deploy/.env" "$PREFLIGHT_LOG"
+grep -q "Compose file: $REPO_FIXTURE_REAL/deploy/docker-compose.yml" "$PREFLIGHT_LOG"
+grep -q "Env file: $REPO_FIXTURE_REAL/deploy/.env" "$PREFLIGHT_LOG"
 grep -q "Generated missing secrets: AE_AUTH_JWT_SECRET, AE_ENCRYPTION_KEY, POSTGRES_PASSWORD" "$PREFLIGHT_LOG"
 grep -q "Checks passed:" "$PREFLIGHT_LOG"
 grep -q "Next step:" "$PREFLIGHT_LOG"

@@ -14,6 +14,122 @@ TAG="${TAG:-}"
 GITHUB_REPO="${GITHUB_REPO:-LichKing-2234/ai-efficiency}"
 RELEASE_API_URL="${RELEASE_API_URL:-https://api.github.com/repos/${GITHUB_REPO}/releases/latest}"
 RELEASE_DOWNLOAD_BASE="${RELEASE_DOWNLOAD_BASE:-https://github.com/${GITHUB_REPO}/releases/download}"
+FLOW_NAME=""
+CURRENT_STAGE=""
+GENERATED_SECRET_NAMES=()
+GENERATED_SECRET_VALUES=()
+CHECKS_PASSED=()
+
+print_header() {
+  local title="$1"
+  printf '\n==========================================\n'
+  printf '  %s\n' "$title"
+  printf '==========================================\n\n'
+}
+
+info() {
+  printf '[INFO] %s\n' "$1"
+}
+
+success() {
+  printf '[SUCCESS] %s\n' "$1"
+}
+
+warning() {
+  printf '[WARNING] %s\n' "$1"
+}
+
+set_stage() {
+  CURRENT_STAGE="$1"
+  info "$2"
+}
+
+record_check() {
+  CHECKS_PASSED+=("$1")
+}
+
+join_names() {
+  local first=1
+  local value=""
+
+  for value in "$@"; do
+    if [[ $first -eq 1 ]]; then
+      printf '%s' "$value"
+      first=0
+    else
+      printf ', %s' "$value"
+    fi
+  done
+}
+
+print_bootstrap_summary() {
+  local entry=""
+
+  printf '\n==========================================\n'
+  printf '  Preparation Complete!\n'
+  printf '==========================================\n\n'
+
+  if [[ "${#GENERATED_SECRET_VALUES[@]}" -gt 0 ]]; then
+    printf 'Generated secure credentials:\n'
+    for entry in "${GENERATED_SECRET_VALUES[@]}"; do
+      printf '  %s\n' "$entry"
+    done
+    printf '\n'
+  fi
+
+  warning "These credentials have been saved to .env file."
+  warning "Please keep them secure and do not share publicly!"
+
+  printf '\nDirectory structure:\n'
+  printf '  docker-compose.yml\n'
+  printf '  .env\n'
+  printf '  .env.example\n'
+  printf '  data/\n'
+  printf '  postgres_data/\n'
+  printf '  redis_data/\n'
+
+  printf '\nNext steps:\n'
+  printf '  1. Edit .env if you need to customize configuration\n'
+  printf '  2. Start services: docker compose up -d\n'
+}
+
+print_preflight_summary() {
+  local entry=""
+
+  printf '\n==========================================\n'
+  printf '  Preflight Complete!\n'
+  printf '==========================================\n\n'
+
+  printf 'Checks passed:\n'
+  for entry in "${CHECKS_PASSED[@]}"; do
+    printf '  %s\n' "$entry"
+  done
+
+  if [[ "${#GENERATED_SECRET_NAMES[@]}" -gt 0 ]]; then
+    printf '\nGenerated missing secrets: '
+    join_names "${GENERATED_SECRET_NAMES[@]}"
+    printf '\n'
+  fi
+
+  printf '\nNext step:\n'
+  printf '  docker compose up -d\n'
+}
+
+cleanup() {
+  if [[ -n "$TMP_DIR" && -d "$TMP_DIR" ]]; then
+    rm -rf "$TMP_DIR"
+  fi
+}
+
+handle_exit() {
+  local exit_code="$1"
+  if [[ "$exit_code" -ne 0 && -n "$FLOW_NAME" && -n "$CURRENT_STAGE" ]]; then
+    printf '[ERROR] %s failed during %s\n' "$FLOW_NAME" "$CURRENT_STAGE" >&2
+  fi
+  cleanup
+}
+
+trap 'handle_exit $?' EXIT
 
 require_cmd() {
   local cmd="$1"
@@ -270,7 +386,8 @@ ensure_generated_var() {
     generated="$(generate_secret)"
     set_env_var "$name" "$generated"
     export "$name=$generated"
-    echo "generated $name"
+    GENERATED_SECRET_NAMES+=("$name")
+    GENERATED_SECRET_VALUES+=("${name}: ${generated}")
   fi
 }
 
@@ -344,6 +461,9 @@ case "$MODE" in
 esac
 
 if bootstrap_requested; then
+  FLOW_NAME="Bootstrap"
+  print_header "AI Efficiency Deployment Preparation"
+
   if [[ "$MODE" == "external" ]]; then
     echo "external mode is not supported during bootstrap" >&2
     exit 1
@@ -354,20 +474,34 @@ if bootstrap_requested; then
   require_cmd tar
   detect_platform
   TMP_DIR="$(mktemp -d)"
-  trap 'rm -rf "${TMP_DIR}"' EXIT
+
+  set_stage "release tag resolution" "Resolving release tag..."
   TAG="$(resolve_tag)"
   if [[ -z "$TAG" ]]; then
     echo "failed to resolve release tag" >&2
     exit 1
   fi
+  success "Resolved release tag: ${TAG}"
+
+  set_stage "deploy asset download" "Downloading deploy assets..."
   download_backend_bundle "$TAG"
+  success "Downloaded deploy assets"
+
+  set_stage "deployment root preparation" "Preparing deployment files..."
   prepare_bootstrap_root
+  success "Prepared docker-compose.yml"
+  success "Prepared .env.example"
+  success "Prepared .env"
+  success "Created data directories"
+
+  set_stage "secret generation" "Generating secure secrets..."
   source_env_file
   ensure_generated_var AE_AUTH_JWT_SECRET
   ensure_generated_var AE_ENCRYPTION_KEY
   ensure_generated_var POSTGRES_PASSWORD
-  echo "Bootstrap complete for ${TAG}"
-  echo "Next: docker compose up -d"
+  success "Generated missing secrets"
+
+  print_bootstrap_summary
   exit 0
 fi
 
@@ -375,26 +509,14 @@ require_cmd docker
 require_cmd curl
 require_cmd openssl
 require_cmd python3
+
+FLOW_NAME="Preflight"
 ensure_env
-source_env_file
 
 if [[ "$LAYOUT" == "bootstrapped" && "$MODE" == "external" ]]; then
   echo "external mode is not supported in bootstrapped layout" >&2
   exit 1
 fi
-
-ensure_generated_var AE_AUTH_JWT_SECRET
-ensure_generated_var AE_ENCRYPTION_KEY
-ensure_generated_var POSTGRES_PASSWORD
-
-source_env_file
-
-check_required_var AE_RELAY_URL
-check_required_var AE_AUTH_JWT_SECRET
-check_required_var AE_ENCRYPTION_KEY
-check_required_var POSTGRES_USER
-check_required_var POSTGRES_PASSWORD
-check_required_var POSTGRES_DB
 
 if [[ "$LAYOUT" == "bootstrapped" ]]; then
   COMPOSE_FILE="$ROOT_DIR/docker-compose.yml"
@@ -404,6 +526,31 @@ fi
 if [[ "$MODE" == "external" ]]; then
   COMPOSE_FILE="$ROOT_DIR/deploy/docker-compose.external.yml"
 fi
+
+print_header "AI Efficiency Deployment Preflight"
+info "Layout: $LAYOUT"
+if [[ "$MODE" == "external" ]]; then
+  info "Mode: external"
+else
+  info "Mode: bundled"
+fi
+info "Compose file: $COMPOSE_FILE"
+info "Env file: $ENV_FILE"
+
+set_stage "env preparation" "Loading environment..."
+source_env_file
+ensure_generated_var AE_AUTH_JWT_SECRET
+ensure_generated_var AE_ENCRYPTION_KEY
+ensure_generated_var POSTGRES_PASSWORD
+source_env_file
+success "Environment is ready"
+
+check_required_var AE_RELAY_URL
+check_required_var AE_AUTH_JWT_SECRET
+check_required_var AE_ENCRYPTION_KEY
+check_required_var POSTGRES_USER
+check_required_var POSTGRES_PASSWORD
+check_required_var POSTGRES_DB
 
 run_compose_config() {
   local compose_file="$1"
@@ -424,7 +571,10 @@ run_compose_config() {
   return 1
 }
 
+set_stage "compose validation" "Validating compose configuration..."
 run_compose_config "$COMPOSE_FILE"
+record_check "Compose config via ${COMPOSE_IMPL}"
+success "Validated compose configuration"
 
 if [[ "$MODE" == "external" ]]; then
   check_required_var AE_DB_DSN
@@ -433,11 +583,17 @@ if [[ "$MODE" == "external" ]]; then
   db_host_port="$(extract_db_host_port "$AE_DB_DSN")"
   redis_host_port="$(extract_redis_host_port "$AE_REDIS_ADDR")"
 
+  set_stage "external dependency checks" "Checking PostgreSQL and Redis connectivity..."
   check_tcp "${db_host_port%:*}" "${db_host_port##*:}"
   check_tcp "${redis_host_port%:*}" "${redis_host_port##*:}"
+  record_check "PostgreSQL TCP connectivity"
+  record_check "Redis TCP connectivity"
+  success "External dependency checks passed"
 fi
 
+set_stage "relay health check" "Checking relay health..."
 check_url "${AE_RELAY_URL%/}/health"
+record_check "Relay health"
+success "Relay health check passed"
 
-echo "compose implementation: ${COMPOSE_IMPL}"
-echo "preflight ok"
+print_preflight_summary
