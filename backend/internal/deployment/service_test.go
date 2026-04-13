@@ -229,6 +229,7 @@ func TestDeploymentServiceStatusResilientWhenUpdaterUnavailable(t *testing.T) {
 }
 
 func TestDeploymentServiceBundledModeDoesNotDependOnUpdaterClient(t *testing.T) {
+	binaryUpdater := &systemdUpdaterStub{}
 	svc := NewService(
 		config.DeploymentConfig{
 			Mode: "bundled",
@@ -239,7 +240,7 @@ func TestDeploymentServiceBundledModeDoesNotDependOnUpdaterClient(t *testing.T) 
 		VersionInfo{Version: "v0.6.0"},
 		nil,
 		nil,
-		nil,
+		binaryUpdater,
 		nil,
 	)
 
@@ -249,6 +250,76 @@ func TestDeploymentServiceBundledModeDoesNotDependOnUpdaterClient(t *testing.T) 
 	}
 	if status.UpdateStatus.Phase != "idle" {
 		t.Fatalf("expected idle phase without updater client in bundled mode, got %q", status.UpdateStatus.Phase)
+	}
+}
+
+func TestDeploymentServiceBundledModeApplyUsesBinaryUpdater(t *testing.T) {
+	archiveName := fmt.Sprintf("ai-efficiency-backend_0.6.0_%s_%s.tar.gz", runtime.GOOS, runtime.GOARCH)
+	binaryUpdater := &systemdUpdaterStub{}
+	svc := NewService(
+		config.DeploymentConfig{
+			Mode: "bundled",
+			Update: config.UpdateConfig{
+				Enabled:      true,
+				ApplyEnabled: true,
+			},
+		},
+		VersionInfo{Version: "v0.5.0"},
+		releaseStub{
+			info: ReleaseInfo{
+				Version: "v0.6.0",
+				Assets: []ReleaseAsset{
+					{Name: archiveName, DownloadURL: "https://example.com/archive.tgz"},
+					{Name: "checksums.txt", DownloadURL: "https://example.com/checksums.txt"},
+				},
+			},
+		},
+		nil,
+		binaryUpdater,
+		nil,
+	)
+
+	status, err := svc.ApplyUpdate(context.Background(), ApplyRequest{TargetVersion: "v0.6.0"})
+	if err != nil {
+		t.Fatalf("ApplyUpdate: %v", err)
+	}
+	if status.Phase != "updated" {
+		t.Fatalf("phase = %q, want updated", status.Phase)
+	}
+	if binaryUpdater.appliedArchiveURL != "https://example.com/archive.tgz" {
+		t.Fatalf("archive url = %q", binaryUpdater.appliedArchiveURL)
+	}
+	if binaryUpdater.appliedChecksumsURL != "https://example.com/checksums.txt" {
+		t.Fatalf("checksums url = %q", binaryUpdater.appliedChecksumsURL)
+	}
+}
+
+func TestDeploymentServiceBundledModeRollbackUsesBinaryUpdater(t *testing.T) {
+	binaryUpdater := &systemdUpdaterStub{}
+	svc := NewService(
+		config.DeploymentConfig{
+			Mode: "bundled",
+			Update: config.UpdateConfig{
+				Enabled:      true,
+				ApplyEnabled: true,
+			},
+		},
+		VersionInfo{Version: "v0.6.0"},
+		nil,
+		nil,
+		binaryUpdater,
+		nil,
+	)
+
+	status, err := svc.RollbackUpdate(context.Background())
+	if err != nil {
+		t.Fatalf("RollbackUpdate: %v", err)
+	}
+	if status.Phase != "rolled_back" {
+		t.Fatalf("phase = %q, want rolled_back", status.Phase)
+	}
+	if !binaryUpdater.rollbackCalled {
+		t.Fatal("expected binary updater rollback to be called")
 	}
 }
 

@@ -265,7 +265,7 @@ func main() {
 	}
 	var systemdUpdater deployment.SystemdUpdater
 	var systemdManager deployment.RestartManager
-	if cfg.Deployment.Mode == "systemd" {
+	if cfg.Deployment.Update.Enabled && cfg.Deployment.Mode == "systemd" {
 		systemdUpdater = deployment.NewSystemdBinaryUpdater(deployment.SystemdBinaryConfig{
 			InstallDir:  "/opt/ai-efficiency",
 			BinaryName:  "ai-efficiency-server",
@@ -277,6 +277,15 @@ func main() {
 			deployment.SystemdServiceConfig{ServiceName: "ai-efficiency"},
 			nil,
 		)
+	} else if cfg.Deployment.Update.Enabled {
+		runtimePaths := deployment.RuntimeBinaryPaths(cfg.Deployment.StateDir)
+		systemdUpdater = deployment.NewSystemdBinaryUpdater(deployment.SystemdBinaryConfig{
+			InstallDir:  runtimePaths.RuntimeDir,
+			BinaryName:  filepath.Base(runtimePaths.RuntimeBinary),
+			BackupName:  filepath.Base(runtimePaths.BackupBinary),
+			DownloadDir: filepath.Join(cfg.Deployment.StateDir, ".downloads"),
+			HTTPClient:  deploymentHTTPClient,
+		})
 	}
 	deploymentService := deployment.NewService(cfg.Deployment, versionInfo, releaseSource, updaterClient, systemdUpdater, systemdManager)
 	deploymentHandler := handler.NewDeploymentHandler(
