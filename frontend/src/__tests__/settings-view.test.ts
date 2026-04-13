@@ -181,14 +181,14 @@ describe('SettingsView', () => {
     expect(wrapper.text()).toContain('Check Updates')
     expect(wrapper.text()).toContain('Apply Update')
     expect(wrapper.text()).toContain('Rollback')
-    expect(wrapper.text()).not.toContain('Restart Service')
+    expect(wrapper.text()).toContain('Restart Service')
   })
 
-  it('renders restart control only in systemd mode', async () => {
+  it('renders restart control in bundled mode', async () => {
     const wrapper = await mountSettings({
       deploymentStatus: {
         version: { version: 'v0.4.0', commit: 'abc1234', build_time: '2026-04-08T12:00:00Z' },
-        mode: 'systemd',
+        mode: 'bundled',
         update_available: true,
         latest_release: { version: 'v0.5.0', url: 'https://example.com/v0.5.0' },
         update_status: { phase: 'idle' },
@@ -221,7 +221,7 @@ describe('SettingsView', () => {
     expect(waitForServiceRecovery).toHaveBeenCalled()
   })
 
-  it('waits for recovery after bundled apply update', async () => {
+  it('does not wait for recovery after bundled apply update', async () => {
     const { applyUpdate } = await import('@/api/deployment')
     const { waitForServiceRecovery } = await import('@/utils/deploymentRecovery')
     ;(applyUpdate as any).mockResolvedValue({ data: { data: { phase: 'updating' } } })
@@ -243,7 +243,7 @@ describe('SettingsView', () => {
     await flushPromises()
 
     expect(applyUpdate).toHaveBeenCalledWith({ target_version: 'v0.5.0' })
-    expect(waitForServiceRecovery).toHaveBeenCalled()
+    expect(waitForServiceRecovery).not.toHaveBeenCalled()
   })
 
   it('does not wait for recovery after systemd apply update', async () => {
@@ -271,7 +271,7 @@ describe('SettingsView', () => {
     expect(waitForServiceRecovery).not.toHaveBeenCalled()
   })
 
-  it('waits for recovery after bundled rollback', async () => {
+  it('does not wait for recovery after bundled rollback', async () => {
     const { rollbackUpdate } = await import('@/api/deployment')
     const { waitForServiceRecovery } = await import('@/utils/deploymentRecovery')
     ;(rollbackUpdate as any).mockResolvedValue({ data: { data: { phase: 'rolling_back' } } })
@@ -293,7 +293,7 @@ describe('SettingsView', () => {
     await flushPromises()
 
     expect(rollbackUpdate).toHaveBeenCalled()
-    expect(waitForServiceRecovery).toHaveBeenCalled()
+    expect(waitForServiceRecovery).not.toHaveBeenCalled()
   })
 
   it('renders LLM form fields', async () => {

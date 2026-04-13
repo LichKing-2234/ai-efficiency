@@ -435,6 +435,37 @@ func TestDeploymentServiceRestartInSystemdMode(t *testing.T) {
 	}
 }
 
+func TestDeploymentServiceRestartInBundledModeUsesProcessRestarter(t *testing.T) {
+	restarter := &restartManagerStub{
+		result: SystemdOperationResult{Message: "restart initiated", NeedRestart: true},
+	}
+	svc := NewService(
+		config.DeploymentConfig{
+			Mode: "bundled",
+			Update: config.UpdateConfig{
+				Enabled:      true,
+				ApplyEnabled: true,
+			},
+		},
+		VersionInfo{Version: "v0.6.0"},
+		nil,
+		nil,
+		nil,
+		restarter,
+	)
+
+	status, err := svc.Restart(context.Background())
+	if err != nil {
+		t.Fatalf("Restart: %v", err)
+	}
+	if !restarter.called {
+		t.Fatal("expected restarter to be called")
+	}
+	if status.Phase != "restart_requested" {
+		t.Fatalf("phase = %q, want restart_requested", status.Phase)
+	}
+}
+
 func TestDeploymentServiceApplyUpdateRejectsStaleTargetVersionInSystemdMode(t *testing.T) {
 	archiveName := fmt.Sprintf("ai-efficiency-backend_0.5.1_%s_%s.tar.gz", runtime.GOOS, runtime.GOARCH)
 	svc := NewService(
@@ -472,7 +503,7 @@ func TestDeploymentServiceApplyUpdateRejectsStaleTargetVersionInSystemdMode(t *t
 	}
 }
 
-func TestDeploymentServiceRestartRejectsUnsupportedMode(t *testing.T) {
+func TestDeploymentServiceRestartRequiresConfiguredRestarter(t *testing.T) {
 	svc := NewService(
 		config.DeploymentConfig{
 			Mode: "bundled",
@@ -490,12 +521,9 @@ func TestDeploymentServiceRestartRejectsUnsupportedMode(t *testing.T) {
 
 	_, err := svc.Restart(context.Background())
 	if err == nil {
-		t.Fatal("expected restart unsupported error")
+		t.Fatal("expected restart configuration error")
 	}
-	if !IsPolicyError(err) {
-		t.Fatalf("expected policy error, got %T", err)
-	}
-	if got := err.Error(); got != "deployment restart is only available in systemd mode" {
+	if got := err.Error(); got != "deployment restart is not configured" {
 		t.Fatalf("unexpected error: %q", got)
 	}
 }

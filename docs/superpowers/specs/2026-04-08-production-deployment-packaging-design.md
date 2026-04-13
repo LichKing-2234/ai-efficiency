@@ -2,6 +2,8 @@
 
 **Status:** Current contract for Compose deployment and update control plane; remote Docker bootstrap remains pending
 
+> Update note (2026-04-13): Docker online update behavior is superseded by `2026-04-13-unified-binary-self-update-design.md`. Historical discussion of updater sidecars is preserved here for evolution context.
+
 ## Overview
 
 本 spec 定义 `ai-efficiency` 的官方生产部署形态、交付边界、配置模型、预检机制与升级路径，并补充 `deploy/` 目录下用于本地验证的非生产 compose 变体与一次性数据迁移入口。

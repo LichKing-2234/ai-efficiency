@@ -5,7 +5,7 @@
 
 `ai-efficiency` now ships with two production deployment paths:
 
-- Docker Compose with the updater sidecar
+- Docker Compose with launcher-managed runtime binaries
 - Linux systemd with backend binary self-update
 
 In deployed images, the backend process serves both the API and the embedded frontend bundle.
@@ -40,6 +40,8 @@ curl -fsSL https://raw.githubusercontent.com/LichKing-2234/ai-efficiency/main/de
 - print a final summary with next steps
 
 By default the Docker stack pulls `ghcr.io/lichking-2234/ai-efficiency:latest`.
+Docker mode now runs the backend from a persistent runtime binary under `AE_DEPLOYMENT_STATE_DIR`.
+Online update and rollback no longer depend on a separate updater sidecar or Docker socket access.
 
 Before starting services, edit `.env` for operator-facing settings.
 At minimum, set:
@@ -98,7 +100,7 @@ docker-compose --env-file deploy/.env -f deploy/docker-compose.external.yml up -
 
 ## Local Dev Mode
 
-Use this when you want to build from the current checkout and verify a full local stack without the updater sidecar:
+Use this when you want to build from the current checkout and verify a full local stack:
 
 ```bash
 docker-compose --env-file deploy/.env.example -f deploy/docker-compose.dev.yml up --build
@@ -109,7 +111,6 @@ Notes:
 - builds `backend` from the local repository
 - starts local `postgres` and `redis`
 - disables deployment update/apply controls
-- does not run the updater sidecar
 
 ## Local Persistent Mode
 
@@ -125,7 +126,7 @@ Notes:
 - stores app state in `deploy/data`
 - stores Postgres data in `deploy/postgres_data`
 - stores Redis data in `deploy/redis_data`
-- does not run the updater sidecar
+- uses bind-mounted local state directories for the backend runtime binary and app data
 
 ## One-Time SQLite Bootstrap
 
@@ -192,7 +193,8 @@ Admin users can use the Settings page to:
 - trigger rollback
 - request a service restart
 
-Docker/Compose mode routes update and rollback through the updater sidecar.
+Docker/Compose mode and non-Docker mode both use backend-managed binary self-update.
+After an update or rollback request completes, restart the service/container to run the swapped binary.
 
 Linux systemd mode downloads the backend bundle from GitHub Releases, verifies `checksums.txt`, replaces `/opt/ai-efficiency/ai-efficiency-server`, and keeps `.backup` for rollback.
 

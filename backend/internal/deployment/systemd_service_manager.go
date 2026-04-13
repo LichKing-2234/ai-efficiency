@@ -70,7 +70,7 @@ func (m *SystemdServiceManager) Restart(ctx context.Context) (SystemdOperationRe
 	}()
 
 	return SystemdOperationResult{
-		Message:     "restart scheduled; systemd will restart the service after process exit",
+		Message:     "restart scheduled; process manager will restart the service after process exit",
 		NeedRestart: true,
 	}, nil
 }

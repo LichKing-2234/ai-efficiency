@@ -84,7 +84,7 @@ func TestSystemdServiceManagerRestartFallsBackToSelfExit(t *testing.T) {
 	if !result.NeedRestart {
 		t.Fatalf("NeedRestart = false, want true")
 	}
-	if result.Message != "restart scheduled; systemd will restart the service after process exit" {
+	if result.Message != "restart scheduled; process manager will restart the service after process exit" {
 		t.Fatalf("unexpected message: %q", result.Message)
 	}
 

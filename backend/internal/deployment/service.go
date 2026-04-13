@@ -205,11 +205,8 @@ func (s *Service) RollbackUpdate(ctx context.Context) (UpdateStatus, error) {
 }
 
 func (s *Service) Restart(ctx context.Context) (UpdateStatus, error) {
-	if s.cfg.Mode != "systemd" {
-		return UpdateStatus{}, ErrRestartUnsupported
-	}
 	if s.systemdRestarter == nil {
-		return UpdateStatus{}, fmt.Errorf("systemd restart is not configured")
+		return UpdateStatus{}, fmt.Errorf("deployment restart is not configured")
 	}
 
 	result, err := s.systemdRestarter.Restart(ctx)

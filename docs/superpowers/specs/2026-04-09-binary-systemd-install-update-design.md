@@ -2,6 +2,8 @@
 
 **Status:** Current contract for Linux binary / systemd installation and self-update
 
+> Relationship note (2026-04-13): The binary self-update model described here is now the baseline for both Docker and non-Docker runtime modes; this spec remains the historical design entry for the non-Docker path.
+
 ## Overview
 
 本文定义 `ai-efficiency` 的 **binary + systemd** 交付与升级路线。

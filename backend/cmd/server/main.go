@@ -286,6 +286,10 @@ func main() {
 			DownloadDir: filepath.Join(cfg.Deployment.StateDir, ".downloads"),
 			HTTPClient:  deploymentHTTPClient,
 		})
+		systemdManager = deployment.NewSystemdServiceManager(
+			deployment.SystemdServiceConfig{},
+			nil,
+		)
 	}
 	deploymentService := deployment.NewService(cfg.Deployment, versionInfo, releaseSource, updaterClient, systemdUpdater, systemdManager)
 	deploymentHandler := handler.NewDeploymentHandler(
