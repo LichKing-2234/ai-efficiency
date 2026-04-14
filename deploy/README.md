@@ -47,6 +47,7 @@ By default the Docker stack pulls `ghcr.io/lichking-2234/ai-efficiency:latest`.
 Docker mode now runs the backend from a persistent runtime binary under `AE_DEPLOYMENT_STATE_DIR`.
 Online update and rollback no longer depend on a separate updater sidecar or Docker socket access.
 The production compose assets configure `backend` with `restart: unless-stopped` and use `GET /api/v1/health/live` for container health checks.
+When `AE_CONFIG_PATH` is not set, the backend also materializes a writable runtime config at `${AE_DEPLOYMENT_STATE_DIR}/config.yaml` so admin-edited settings persist.
 
 Before starting services, edit `.env` for operator-facing settings.
 At minimum, set:
@@ -115,6 +116,7 @@ Notes:
 
 - builds `backend` from the local repository
 - starts local `postgres` and `redis`
+- forces the container entrypoint to refresh the persisted runtime binary from the newly built bootstrap binary on each recreate
 - disables deployment update/apply controls
 
 ## Local Persistent Mode
@@ -132,6 +134,7 @@ Notes:
 - stores Postgres data in `deploy/postgres_data`
 - stores Redis data in `deploy/redis_data`
 - uses bind-mounted local state directories for the backend runtime binary and app data
+- refreshes the persisted runtime binary from the newly built bootstrap binary on each recreate
 
 ## One-Time SQLite Bootstrap
 

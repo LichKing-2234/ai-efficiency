@@ -747,9 +747,20 @@ describe('SettingsView', () => {
 
     const testBtn = wrapper.findAll('button').find((b) => b.text().includes('Test Connection'))
     await testBtn!.trigger('click')
+    await wrapper.vm.$nextTick()
+
+    const promptInput = getInputByLabel(wrapper, 'Test Prompt')
+    expect(promptInput.value).toBe('Hi')
+
+    promptInput.value = 'Say hello from UI'
+    promptInput.dispatchEvent(new Event('input'))
+    await wrapper.vm.$nextTick()
+
+    const runTestBtn = wrapper.findAll('button').find((b) => b.text().includes('Run Test'))
+    await runTestBtn!.trigger('click')
     await flushPromises()
 
-    expect(testLLMConnection).toHaveBeenCalled()
+    expect(testLLMConnection).toHaveBeenCalledWith({ prompt: 'Say hello from UI' })
     expect(wrapper.text()).toContain('Connection OK')
     expect(wrapper.text()).toContain('pong from relay')
   })
@@ -764,6 +775,10 @@ describe('SettingsView', () => {
 
     const testBtn = wrapper.findAll('button').find((b) => b.text().includes('Test Connection'))
     await testBtn!.trigger('click')
+    await wrapper.vm.$nextTick()
+
+    const runTestBtn = wrapper.findAll('button').find((b) => b.text().includes('Run Test'))
+    await runTestBtn!.trigger('click')
     await flushPromises()
 
     expect(wrapper.text()).toContain('Connection refused')
@@ -777,6 +792,10 @@ describe('SettingsView', () => {
 
     const testBtn = wrapper.findAll('button').find((b) => b.text().includes('Test Connection'))
     await testBtn!.trigger('click')
+    await wrapper.vm.$nextTick()
+
+    const runTestBtn = wrapper.findAll('button').find((b) => b.text().includes('Run Test'))
+    await runTestBtn!.trigger('click')
     await flushPromises()
 
     expect(wrapper.text()).toContain('Network error')

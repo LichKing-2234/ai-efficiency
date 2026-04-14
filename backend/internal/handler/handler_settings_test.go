@@ -299,6 +299,111 @@ func TestTestLLMConnection(t *testing.T) {
 	}
 }
 
+func TestTestLLMConnectionUsesRealChatPromptAndReturnsReply(t *testing.T) {
+	var captured struct {
+		Model     string `json:"model"`
+		MaxTokens int    `json:"max_tokens"`
+		Messages  []struct {
+			Role    string `json:"role"`
+			Content string `json:"content"`
+		} `json:"messages"`
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&captured); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"Hello from the relay-backed test model."}}]}`))
+	}))
+	defer server.Close()
+
+	analyzer := llm.NewAnalyzer(config.LLMConfig{}, nil, zap.NewNop())
+	configPath := t.TempDir() + "/config.yaml"
+	if err := os.WriteFile(configPath, []byte("analysis:\n  llm:\n    max_tokens_per_scan: 100000\n"), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	sh := NewSettingsHandler(configPath, config.RelayConfig{
+		URL:    server.URL,
+		APIKey: "sk-test-key",
+		Model:  "gpt-5.4",
+	}, analyzer, zap.NewNop())
+
+	r := gin.New()
+	r.POST("/llm/test", sh.TestLLMConnection)
+
+	req := httptest.NewRequest(http.MethodPost, "/llm/test", nil)
+	resp := httptest.NewRecorder()
+	r.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body: %s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	if !strings.Contains(resp.Body.String(), `"response":"Hello from the relay-backed test model."`) {
+		t.Fatalf("expected relay reply preview in response, got: %s", resp.Body.String())
+	}
+	if captured.Model != "gpt-5.4" {
+		t.Fatalf("model = %q, want %q", captured.Model, "gpt-5.4")
+	}
+	if captured.MaxTokens != 64 {
+		t.Fatalf("max_tokens = %d, want %d", captured.MaxTokens, 64)
+	}
+	if len(captured.Messages) != 1 {
+		t.Fatalf("messages length = %d, want %d", len(captured.Messages), 1)
+	}
+	if captured.Messages[0].Role != "user" {
+		t.Fatalf("first message role = %q, want %q", captured.Messages[0].Role, "user")
+	}
+	if captured.Messages[0].Content != "Hi" {
+		t.Fatalf("prompt = %q", captured.Messages[0].Content)
+	}
+}
+
+func TestTestLLMConnectionUsesCustomPromptFromRequest(t *testing.T) {
+	var captured struct {
+		Messages []struct {
+			Content string `json:"content"`
+		} `json:"messages"`
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&captured); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"Custom prompt worked."}}]}`))
+	}))
+	defer server.Close()
+
+	analyzer := llm.NewAnalyzer(config.LLMConfig{}, nil, zap.NewNop())
+	configPath := t.TempDir() + "/config.yaml"
+	if err := os.WriteFile(configPath, []byte("analysis:\n  llm:\n    max_tokens_per_scan: 100000\n"), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	sh := NewSettingsHandler(configPath, config.RelayConfig{
+		URL:    server.URL,
+		APIKey: "sk-test-key",
+		Model:  "gpt-5.4",
+	}, analyzer, zap.NewNop())
+
+	r := gin.New()
+	r.POST("/llm/test", sh.TestLLMConnection)
+
+	req := httptest.NewRequest(http.MethodPost, "/llm/test", bytes.NewBufferString(`{"prompt":"Say hello from custom test"}`))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+	r.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body: %s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	if len(captured.Messages) != 1 || captured.Messages[0].Content != "Say hello from custom test" {
+		t.Fatalf("captured messages = %+v", captured.Messages)
+	}
+}
+
 func TestTestLLMConnectionRequiresAdmin(t *testing.T) {
 	env := setupFullTestEnv(t)
 	nonAdminToken := createFullNonAdminToken(t, env)

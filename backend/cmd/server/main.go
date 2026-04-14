@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -70,10 +71,25 @@ func main() {
 	defer logger.Sync()
 
 	// Load config
-	configPath := os.Getenv("AE_CONFIG_PATH")
-	cfg, err := config.Load(configPath)
+	explicitConfigPath := strings.TrimSpace(os.Getenv("AE_CONFIG_PATH"))
+	settingsConfigPath := config.ResolveWritableConfigPath(explicitConfigPath, os.Getenv("AE_DEPLOYMENT_STATE_DIR"))
+	loadConfigPath := settingsConfigPath
+	if explicitConfigPath == "" {
+		if _, statErr := os.Stat(loadConfigPath); statErr != nil {
+			if os.IsNotExist(statErr) {
+				loadConfigPath = ""
+			} else {
+				logger.Fatal("stat writable config", zap.String("path", loadConfigPath), zap.Error(statErr))
+			}
+		}
+	}
+
+	cfg, err := config.Load(loadConfigPath)
 	if err != nil {
 		logger.Fatal("load config", zap.Error(err))
+	}
+	if err := config.EnsureWritableConfigFile(settingsConfigPath, cfg); err != nil {
+		logger.Fatal("ensure writable config", zap.String("path", settingsConfigPath), zap.Error(err))
 	}
 	versionInfo := deployment.CurrentVersion()
 	if len(os.Args) > 1 && (os.Args[1] == "--version" || os.Args[1] == "version") {
@@ -195,10 +211,6 @@ func main() {
 	optimizer := analysis.NewOptimizer(llmAnalyzer, logger)
 
 	// Setup router
-	settingsConfigPath := "config.yaml"
-	if cp := os.Getenv("AE_CONFIG_PATH"); cp != "" {
-		settingsConfigPath = cp
-	}
 	var relayRuntimeUpdater interface {
 		SetAdminAPIKey(string)
 		SetModel(string)

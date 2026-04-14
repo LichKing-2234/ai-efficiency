@@ -32,6 +32,8 @@ const llmError = ref('')
 const llmSuccess = ref('')
 const llmTesting = ref(false)
 const llmTestResult = ref<{ success: boolean; message: string; response?: string } | null>(null)
+const showLLMTestDialog = ref(false)
+const llmTestPromptDraft = ref('Hi')
 
 // Deployment status
 const deployment = ref<DeploymentStatus | null>(null)
@@ -173,17 +175,32 @@ async function handleSaveLLM() {
   }
 }
 
-async function handleTestLLM() {
+function openLLMTestDialog() {
+  llmTestPromptDraft.value = 'Hi'
+  showLLMTestDialog.value = true
+}
+
+function closeLLMTestDialog() {
+  showLLMTestDialog.value = false
+}
+
+async function handleTestLLM(prompt: string) {
   llmTestResult.value = null
   llmTesting.value = true
   try {
-    const res = await testLLMConnection()
+    const res = await testLLMConnection({ prompt })
     llmTestResult.value = res.data.data ?? null
   } catch (e: any) {
     llmTestResult.value = { success: false, message: e.response?.data?.message || e.message || 'Request failed' }
   } finally {
     llmTesting.value = false
   }
+}
+
+async function confirmTestLLM() {
+  const prompt = llmTestPromptDraft.value
+  closeLLMTestDialog()
+  await handleTestLLM(prompt)
 }
 
 async function fetchDeploymentStatus() {
@@ -461,7 +478,7 @@ async function handleTestLDAP() {
           </div>
 
           <div class="flex justify-end space-x-3">
-            <button @click="handleTestLLM" :disabled="llmTesting" class="rounded-md border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50">
+            <button @click="openLLMTestDialog" :disabled="llmTesting" class="rounded-md border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50">
               {{ llmTesting ? 'Testing...' : 'Test Connection' }}
             </button>
             <button @click="handleSaveLLM" :disabled="llmSaving" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50">
@@ -572,6 +589,28 @@ async function handleTestLDAP() {
               {{ ldapSaving ? 'Saving...' : 'Save' }}
             </button>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Add/Edit Dialog -->
+    <div v-if="showLLMTestDialog" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div class="w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
+        <h2 class="mb-4 text-lg font-semibold text-gray-900">Test Prompt</h2>
+
+        <div class="space-y-3">
+          <div>
+            <label class="block text-sm font-medium text-gray-700">Test Prompt</label>
+            <input v-model="llmTestPromptDraft" type="text" placeholder="Hi" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
+            <p class="mt-1 text-xs text-gray-400">Used only for this Test Connection request. It is not saved.</p>
+          </div>
+        </div>
+
+        <div class="mt-5 flex justify-end space-x-3">
+          <button @click="closeLLMTestDialog" :disabled="llmTesting" class="rounded-md border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50">Cancel</button>
+          <button @click="confirmTestLLM" :disabled="llmTesting" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50">
+            {{ llmTesting ? 'Testing...' : 'Run Test' }}
+          </button>
         </div>
       </div>
     </div>

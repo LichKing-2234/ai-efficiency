@@ -21,6 +21,10 @@ export interface LLMTestResult {
   response?: string
 }
 
+export interface LLMTestRequest {
+  prompt?: string
+}
+
 export function getLLMConfig() {
   return client.get<ApiResponse<LLMConfig>>('/settings/llm')
 }
@@ -29,6 +33,6 @@ export function updateLLMConfig(data: Partial<LLMConfig>) {
   return client.put<ApiResponse<LLMConfig>>('/settings/llm', data)
 }
 
-export function testLLMConnection() {
-  return client.post<ApiResponse<LLMTestResult>>('/settings/llm/test')
+export function testLLMConnection(data?: LLMTestRequest) {
+  return client.post<ApiResponse<LLMTestResult>>('/settings/llm/test', data)
 }

@@ -54,6 +54,7 @@ flowchart LR
 - Official production deployment now has two supported paths: Docker Compose and Linux systemd.
 - The business entrypoint remains the backend service that also serves the frontend bundle.
 - Docker/Compose mode now runs the backend from a persistent runtime binary under the deployment state directory and updates that runtime binary directly instead of using an updater sidecar.
+- When `AE_CONFIG_PATH` is unset, Docker/Compose and local runtime modes materialize a writable config file under the deployment state directory (or the current working directory outside managed deployment) so admin settings can persist.
 - Linux systemd mode installs the backend under `/opt/ai-efficiency`, keeps config in `/etc/ai-efficiency/config.yaml`, and performs binary self-update plus `.backup` rollback.
 - `deploy/` also includes non-production `dev` / `local` compose paths for local verification.
 - Public health endpoints expose liveness/readiness, and admin settings expose deployment status plus update controls.

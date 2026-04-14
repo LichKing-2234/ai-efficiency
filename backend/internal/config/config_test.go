@@ -408,3 +408,148 @@ func TestDeploymentDefaultsPointAtGitHubPrimaryRepo(t *testing.T) {
 		t.Fatalf("image_repository = %q", cfg.Deployment.Update.ImageRepository)
 	}
 }
+
+func TestResolveWritableConfigPath(t *testing.T) {
+	tests := []struct {
+		name         string
+		explicitPath string
+		stateDir     string
+		want         string
+	}{
+		{
+			name:         "explicit path wins",
+			explicitPath: "/etc/ai-efficiency/config.yaml",
+			stateDir:     "/var/lib/ai-efficiency",
+			want:         "/etc/ai-efficiency/config.yaml",
+		},
+		{
+			name:     "state dir fallback",
+			stateDir: "/var/lib/ai-efficiency",
+			want:     "/var/lib/ai-efficiency/config.yaml",
+		},
+		{
+			name: "cwd fallback",
+			want: "config.yaml",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ResolveWritableConfigPath(tt.explicitPath, tt.stateDir)
+			if got != tt.want {
+				t.Fatalf("ResolveWritableConfigPath(%q, %q) = %q, want %q", tt.explicitPath, tt.stateDir, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestEnsureWritableConfigFileCreatesReloadableConfig(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "runtime", "config.yaml")
+
+	cfg := &Config{
+		Server: ServerConfig{
+			Port:        8081,
+			Mode:        "release",
+			FrontendURL: "http://localhost:8081",
+		},
+		DB: DBConfig{
+			DSN:             "postgres://postgres:postgres@localhost:5432/ai_efficiency?sslmode=disable",
+			MaxOpenConns:    25,
+			MaxIdleConns:    5,
+			ConnMaxLifetime: 300,
+		},
+		Redis: RedisConfig{
+			Addr:     "redis:6379",
+			Password: "",
+			DB:       0,
+		},
+		Relay: RelayConfig{
+			Provider:       "sub2api",
+			URL:            "http://relay.example.com",
+			APIKey:         "sk-live",
+			AdminAPIKey:    "admin-live",
+			Model:          "gpt-5.4",
+			DefaultGroupID: "42",
+		},
+		Auth: AuthConfig{
+			JWTSecret:       "jwt-secret",
+			AccessTokenTTL:  7200,
+			RefreshTokenTTL: 604800,
+			LDAP: LDAPConfig{
+				URL:          "ldap://ldap.example.com:389",
+				BaseDN:       "dc=example,dc=com",
+				BindDN:       "cn=admin,dc=example,dc=com",
+				BindPassword: "secret",
+				UserFilter:   "(uid=%s)",
+				TLS:          true,
+			},
+		},
+		Encryption: EncryptionConfig{
+			Key: "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+		},
+		Analysis: AnalysisConfig{
+			LLM: LLMConfig{
+				MaxTokensPerScan:   64000,
+				MaxScansPerRepoDay: 3,
+				SystemPrompt:       "system prompt",
+				UserPromptTemplate: "user prompt",
+			},
+		},
+		Deployment: DeploymentConfig{
+			Mode:     "bundled",
+			StateDir: "/var/lib/ai-efficiency",
+			Update: UpdateConfig{
+				Enabled:         true,
+				ApplyEnabled:    true,
+				ReleaseAPIURL:   "https://example.com/releases/latest",
+				UpdaterURL:      "",
+				ImageRepository: "ghcr.io/example/ai-efficiency",
+				Channel:         "stable",
+			},
+		},
+	}
+
+	if err := EnsureWritableConfigFile(cfgFile, cfg); err != nil {
+		t.Fatalf("EnsureWritableConfigFile() error = %v", err)
+	}
+
+	loaded, err := Load(cfgFile)
+	if err != nil {
+		t.Fatalf("Load(%q) error = %v", cfgFile, err)
+	}
+
+	if loaded.Relay.Model != "gpt-5.4" {
+		t.Fatalf("relay.model = %q, want %q", loaded.Relay.Model, "gpt-5.4")
+	}
+	if loaded.Relay.AdminAPIKey != "admin-live" {
+		t.Fatalf("relay.admin_api_key = %q, want %q", loaded.Relay.AdminAPIKey, "admin-live")
+	}
+	if loaded.Analysis.LLM.SystemPrompt != "system prompt" {
+		t.Fatalf("analysis.llm.system_prompt = %q, want %q", loaded.Analysis.LLM.SystemPrompt, "system prompt")
+	}
+	if loaded.Auth.LDAP.BindPassword != "secret" {
+		t.Fatalf("auth.ldap.bind_password = %q, want %q", loaded.Auth.LDAP.BindPassword, "secret")
+	}
+}
+
+func TestEnsureWritableConfigFilePreservesExistingFile(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "config.yaml")
+	original := []byte("server:\n  port: 9000\n")
+	if err := os.WriteFile(cfgFile, original, 0o644); err != nil {
+		t.Fatalf("write original config: %v", err)
+	}
+
+	if err := EnsureWritableConfigFile(cfgFile, &Config{Server: ServerConfig{Port: 8081}}); err != nil {
+		t.Fatalf("EnsureWritableConfigFile() error = %v", err)
+	}
+
+	content, err := os.ReadFile(cfgFile)
+	if err != nil {
+		t.Fatalf("read preserved config: %v", err)
+	}
+	if string(content) != string(original) {
+		t.Fatalf("EnsureWritableConfigFile should not overwrite existing file, got:\n%s", string(content))
+	}
+}

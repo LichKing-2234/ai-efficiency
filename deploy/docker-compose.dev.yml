@@ -47,6 +47,7 @@ services:
         APP_VERSION: local-dev
         APP_COMMIT: local
         APP_BUILD_TIME: ""
+    restart: unless-stopped
     environment:
       AE_SERVER_PORT: "8081"
       AE_SERVER_MODE: "debug"
@@ -68,6 +69,7 @@ services:
       AE_ENCRYPTION_KEY: "${AE_ENCRYPTION_KEY:-0000000000000000000000000000000000000000000000000000000000000000}"
       AE_DEPLOYMENT_MODE: "local-dev"
       AE_DEPLOYMENT_STATE_DIR: "/var/lib/ai-efficiency"
+      AE_DEPLOYMENT_FORCE_BOOTSTRAP: "true"
       AE_DEPLOYMENT_UPDATE_ENABLED: "false"
       AE_DEPLOYMENT_UPDATE_APPLY_ENABLED: "false"
       AE_DEPLOYMENT_UPDATE_RELEASE_API_URL: "${AE_DEPLOYMENT_UPDATE_RELEASE_API_URL:-https://api.github.com/repos/LichKing-2234/ai-efficiency/releases/latest}"

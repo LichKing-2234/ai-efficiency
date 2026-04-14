@@ -241,8 +241,8 @@ describe('settings API', () => {
 
   it('testLLMConnection calls POST /settings/llm/test', async () => {
     mockClient.post.mockResolvedValue({ data: { data: { success: true, message: 'OK' } } })
-    await testLLMConnection()
-    expect(mockClient.post).toHaveBeenCalledWith('/settings/llm/test')
+    await testLLMConnection({ prompt: 'Hi' })
+    expect(mockClient.post).toHaveBeenCalledWith('/settings/llm/test', { prompt: 'Hi' })
   })
 })
 

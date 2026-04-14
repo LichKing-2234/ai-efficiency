@@ -3,6 +3,7 @@ package handler
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"strings"
 
@@ -58,6 +59,15 @@ type llmConfigRequest struct {
 	SystemPrompt       string `json:"system_prompt"`
 	UserPromptTemplate string `json:"user_prompt_template"`
 }
+
+type llmConnectionTestRequest struct {
+	Prompt string `json:"prompt"`
+}
+
+const (
+	llmConnectionTestPrompt    = "Hi"
+	llmConnectionTestMaxTokens = 64
+)
 
 func maskAPIKey(key string) string {
 	if len(key) <= 8 {
@@ -166,6 +176,25 @@ func (h *SettingsHandler) TestLLMConnection(c *gin.Context) {
 		return
 	}
 
+	prompt := llmConnectionTestPrompt
+	if c.Request.Body != nil {
+		reqBody, err := io.ReadAll(c.Request.Body)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "invalid request"})
+			return
+		}
+		if len(bytes.TrimSpace(reqBody)) > 0 {
+			var testReq llmConnectionTestRequest
+			if err := json.Unmarshal(reqBody, &testReq); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "invalid request"})
+				return
+			}
+			if v := strings.TrimSpace(testReq.Prompt); v != "" {
+				prompt = v
+			}
+		}
+	}
+
 	// Send a minimal chat completion request
 	client := &http.Client{}
 	type chatMsg struct {
@@ -186,8 +215,8 @@ func (h *SettingsHandler) TestLLMConnection(c *gin.Context) {
 	}
 	body := chatReq{
 		Model:     h.relayCfg.Model,
-		Messages:  []chatMsg{{Role: "user", Content: "ping"}},
-		MaxTokens: 5,
+		Messages:  []chatMsg{{Role: "user", Content: prompt}},
+		MaxTokens: llmConnectionTestMaxTokens,
 	}
 	bodyBytes, _ := json.Marshal(body)
 	url := strings.TrimRight(h.relayCfg.URL, "/") + "/v1/chat/completions"

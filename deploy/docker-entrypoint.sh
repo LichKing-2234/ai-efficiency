@@ -2,9 +2,9 @@
 set -eu
 
 STATE_DIR="${AE_DEPLOYMENT_STATE_DIR:-/var/lib/ai-efficiency}"
-RUNTIME_DIR="${STATE_DIR}/runtime"
-RUNTIME_BINARY="${RUNTIME_DIR}/ai-efficiency-server"
-BOOTSTRAP_BINARY="/opt/ai-efficiency/bootstrap/ai-efficiency-server"
+RUNTIME_BINARY="${AE_DEPLOYMENT_RUNTIME_BINARY_PATH:-${STATE_DIR}/runtime/ai-efficiency-server}"
+BOOTSTRAP_BINARY="${AE_DEPLOYMENT_BOOTSTRAP_BINARY_PATH:-/opt/ai-efficiency/bootstrap/ai-efficiency-server}"
+FORCE_BOOTSTRAP="${AE_DEPLOYMENT_FORCE_BOOTSTRAP:-false}"
 
 mkdir -p "$(dirname "$RUNTIME_BINARY")"
 
@@ -53,7 +53,9 @@ copy_bootstrap_binary() {
   chmod 755 "$RUNTIME_BINARY"
 }
 
-if [ ! -x "$RUNTIME_BINARY" ]; then
+if [ "$FORCE_BOOTSTRAP" = "true" ]; then
+  copy_bootstrap_binary
+elif [ ! -x "$RUNTIME_BINARY" ]; then
   copy_bootstrap_binary
 else
   runtime_version="$(read_version "$RUNTIME_BINARY" || true)"
