@@ -75,6 +75,16 @@ func TestHasEmbeddedFrontendAndMiddleware(t *testing.T) {
 	}
 }
 
+func TestHasEmbeddedFrontendForReleaseBuilds(t *testing.T) {
+	if os.Getenv("AE_ASSERT_EMBEDDED_FRONTEND") != "1" {
+		t.Skip("set AE_ASSERT_EMBEDDED_FRONTEND=1 to assert embedded frontend presence")
+	}
+
+	if !HasEmbeddedFrontend() {
+		t.Fatal("expected embedded frontend bundle to include index.html")
+	}
+}
+
 func TestHasEmbeddedFrontendFalseWithoutIndex(t *testing.T) {
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, "dist"), 0o755); err != nil {

@@ -125,9 +125,8 @@ jobs:
       - name: Test frontend
         working-directory: frontend
         run: npm test
-      - name: Build frontend
-        working-directory: frontend
-        run: npm run build
+      - name: Validate release frontend embedding
+        run: bash deploy/test/release-frontend-embed-test.sh
       - name: Validate deploy shell script
         run: bash -n deploy/docker-deploy.sh
       - name: Validate compose configs
@@ -180,6 +179,16 @@ jobs:
           cache-dependency-path: |
             backend/go.sum
             ae-cli/go.sum
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: Stage frontend bundle for backend release assets
+        run: bash deploy/prepare-release-frontend.sh
 
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
