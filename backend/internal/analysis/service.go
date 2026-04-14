@@ -8,9 +8,13 @@ import (
 
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/ent/aiscanresult"
+	entcredential "github.com/ai-efficiency/backend/ent/credential"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/internal/analysis/llm"
 	"github.com/ai-efficiency/backend/internal/analysis/rules"
+	"github.com/ai-efficiency/backend/internal/credential"
+	"github.com/ai-efficiency/backend/internal/pkg"
+	scminternal "github.com/ai-efficiency/backend/internal/scm"
 	"go.uber.org/zap"
 )
 
@@ -20,16 +24,22 @@ type Service struct {
 	cloner        *Cloner
 	staticScanner *StaticScanner
 	llmAnalyzer   *llm.Analyzer
+	encryptionKey string
 	logger        *zap.Logger
 }
 
 // NewService creates a new analysis service.
-func NewService(entClient *ent.Client, cloner *Cloner, llmAnalyzer *llm.Analyzer, logger *zap.Logger) *Service {
+func NewService(entClient *ent.Client, cloner *Cloner, llmAnalyzer *llm.Analyzer, logger *zap.Logger, encryptionKeys ...string) *Service {
+	encryptionKey := ""
+	if len(encryptionKeys) > 0 {
+		encryptionKey = encryptionKeys[0]
+	}
 	return &Service{
 		entClient:     entClient,
 		cloner:        cloner,
 		staticScanner: NewStaticScanner(),
 		llmAnalyzer:   llmAnalyzer,
+		encryptionKey: encryptionKey,
 		logger:        logger,
 	}
 }
@@ -37,13 +47,24 @@ func NewService(entClient *ent.Client, cloner *Cloner, llmAnalyzer *llm.Analyzer
 // RunScan clones/updates the repo and runs analysis (static + optional LLM).
 func (s *Service) RunScan(ctx context.Context, repoConfigID int) (*ent.AiScanResult, error) {
 	// Get repo config
-	rc, err := s.entClient.RepoConfig.Get(ctx, repoConfigID)
+	rc, err := s.entClient.RepoConfig.Query().
+		Where(repoconfig.IDEQ(repoConfigID)).
+		WithScmProvider(func(query *ent.ScmProviderQuery) {
+			query.WithAPICredential()
+			query.WithCloneCredential()
+		}).
+		Only(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("get repo config: %w", err)
 	}
 
+	cloneReq, err := s.buildCloneRequest(ctx, rc)
+	if err != nil {
+		return nil, fmt.Errorf("build clone request: %w", err)
+	}
+
 	// Clone or update
-	repoPath, err := s.cloner.CloneOrUpdate(rc.CloneURL, repoConfigID)
+	repoPath, err := s.cloner.CloneOrUpdateWithAuth(cloneReq)
 	if err != nil {
 		return nil, fmt.Errorf("clone repo: %w", err)
 	}
@@ -106,6 +127,81 @@ func (s *Service) RunScan(ctx context.Context, repoConfigID int) (*ent.AiScanRes
 	}
 
 	return scanResult, nil
+}
+
+func (s *Service) buildCloneRequest(ctx context.Context, rc *ent.RepoConfig) (CloneRequest, error) {
+	req := CloneRequest{
+		CloneURL:     rc.CloneURL,
+		RepoConfigID: rc.ID,
+	}
+
+	provider := rc.Edges.ScmProvider
+	if provider == nil {
+		return req, nil
+	}
+	req.ProviderID = provider.ID
+
+	apiPayload, err := s.resolveCredentialPayload(ctx, provider.Edges.APICredential, provider.APICredentialID, provider.Credentials, true)
+	if err != nil {
+		return CloneRequest{}, err
+	}
+
+	var clonePayload credential.Payload
+	if provider.CloneCredentialID != nil && *provider.CloneCredentialID != 0 {
+		clonePayload, err = s.resolveCredentialPayload(ctx, provider.Edges.CloneCredential, *provider.CloneCredentialID, "", false)
+		if err != nil {
+			return CloneRequest{}, err
+		}
+	}
+
+	cloneProtocol := provider.CloneProtocol.String()
+	if cloneProtocol == "" {
+		cloneProtocol = "https"
+	}
+	authCfg, err := scminternal.BuildCloneAuthConfig(provider.Type, cloneProtocol, apiPayload, clonePayload)
+	if err != nil {
+		return CloneRequest{}, err
+	}
+	req.Auth = authCfg
+	return req, nil
+}
+
+func (s *Service) resolveCredentialPayload(ctx context.Context, edge *ent.Credential, credentialID int, legacyEncrypted string, allowLegacy bool) (credential.Payload, error) {
+	cred := edge
+	if cred == nil && credentialID != 0 {
+		row, err := s.entClient.Credential.Get(ctx, credentialID)
+		if err != nil {
+			return nil, fmt.Errorf("get credential %d: %w", credentialID, err)
+		}
+		cred = row
+	}
+	if cred == nil {
+		if allowLegacy && legacyEncrypted != "" {
+			raw, err := pkg.Decrypt(legacyEncrypted, s.encryptionKey)
+			if err != nil {
+				return nil, fmt.Errorf("decrypt legacy provider credentials: %w", err)
+			}
+			payload, err := credential.ParseLegacySCMProviderSecret(raw)
+			if err != nil {
+				return nil, fmt.Errorf("parse legacy provider credentials: %w", err)
+			}
+			return payload, nil
+		}
+		return nil, fmt.Errorf("missing credential")
+	}
+
+	raw, err := pkg.Decrypt(cred.Payload, s.encryptionKey)
+	if err != nil {
+		return nil, fmt.Errorf("decrypt credential %d: %w", cred.ID, err)
+	}
+	payload, err := credential.ParsePayload(credential.Kind(cred.Kind), []byte(raw))
+	if err != nil {
+		return nil, fmt.Errorf("parse credential %d payload: %w", cred.ID, err)
+	}
+	if allowLegacy && cred.Kind == entcredential.KindSSHUsernameWithPrivateKey {
+		return nil, fmt.Errorf("api credential cannot be ssh_username_with_private_key")
+	}
+	return payload, nil
 }
 
 func (s *Service) saveScanResult(

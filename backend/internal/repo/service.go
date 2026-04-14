@@ -388,6 +388,17 @@ func (s *Service) resolveAPICredentialPayload(ctx context.Context, provider *ent
 		cred = row
 	}
 	if cred == nil {
+		if provider.Credentials != "" {
+			raw, err := pkg.Decrypt(provider.Credentials, s.encryptionKey)
+			if err != nil {
+				return nil, fmt.Errorf("decrypt legacy scm provider credentials: %w", err)
+			}
+			payload, err := credential.ParseLegacySCMProviderSecret(raw)
+			if err != nil {
+				return nil, fmt.Errorf("parse legacy scm provider credentials: %w", err)
+			}
+			return payload, nil
+		}
 		return nil, fmt.Errorf("scm provider has no api credential")
 	}
 

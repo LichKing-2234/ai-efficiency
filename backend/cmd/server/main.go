@@ -201,7 +201,7 @@ func main() {
 	}
 	analysisCloner := analysis.NewCloner(dataDir, logger)
 	llmAnalyzer := llm.NewAnalyzer(cfg.Analysis.LLM, relayProvider, logger)
-	analysisService := analysis.NewService(entClient, analysisCloner, llmAnalyzer, logger)
+	analysisService := analysis.NewService(entClient, analysisCloner, llmAnalyzer, logger, cfg.Encryption.Key)
 
 	// Init PR labeler (with optional relay usage stats lookup)
 	labeler := efficiency.NewLabeler(entClient, relayProvider, logger)

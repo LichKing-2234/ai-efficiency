@@ -13,13 +13,17 @@ import (
 	"time"
 
 	"github.com/ai-efficiency/backend/ent"
+	entcredential "github.com/ai-efficiency/backend/ent/credential"
 	"github.com/ai-efficiency/backend/internal/analysis/llm"
 	"github.com/ai-efficiency/backend/internal/analysis/rules"
 	"github.com/ai-efficiency/backend/internal/config"
+	"github.com/ai-efficiency/backend/internal/pkg"
 	"github.com/ai-efficiency/backend/internal/relay"
 	"github.com/ai-efficiency/backend/internal/testdb"
 	"go.uber.org/zap"
 )
+
+const testEncryptionKey = "0000000000000000000000000000000000000000000000000000000000000000"
 
 // ---------------------------------------------------------------------------
 // helpers
@@ -32,11 +36,25 @@ func setupEntClient(t *testing.T) *ent.Client {
 
 func createTestSCMProvider(t *testing.T, client *ent.Client) *ent.ScmProvider {
 	t.Helper()
+	encrypted, err := pkg.Encrypt(`{"text":"ghp_test"}`, testEncryptionKey)
+	if err != nil {
+		t.Fatalf("encrypt credential payload: %v", err)
+	}
+	cred, err := client.Credential.Create().
+		SetName("test-github-pat").
+		SetDescription("test api credential").
+		SetKind(entcredential.KindSecretText).
+		SetPayload(encrypted).
+		Save(context.Background())
+	if err != nil {
+		t.Fatalf("create credential: %v", err)
+	}
 	p, err := client.ScmProvider.Create().
 		SetName("test-github").
 		SetType("github").
 		SetBaseURL("https://api.github.com").
-		SetCredentials("encrypted-creds").
+		SetAPICredentialID(cred.ID).
+		SetCloneProtocol("https").
 		Save(context.Background())
 	if err != nil {
 		t.Fatalf("create scm provider: %v", err)
@@ -101,7 +119,7 @@ func TestClonerRepoPathDifferentIDs(t *testing.T) {
 func TestNewService(t *testing.T) {
 	client := setupEntClient(t)
 	c := NewCloner(t.TempDir(), zap.NewNop())
-	svc := NewService(client, c, nil, zap.NewNop())
+	svc := NewService(client, c, nil, zap.NewNop(), testEncryptionKey)
 	if svc == nil {
 		t.Fatal("NewService returned nil")
 	}
@@ -110,7 +128,7 @@ func TestNewService(t *testing.T) {
 func TestGetLatestScanNoResults(t *testing.T) {
 	client := setupEntClient(t)
 	c := NewCloner(t.TempDir(), zap.NewNop())
-	svc := NewService(client, c, nil, zap.NewNop())
+	svc := NewService(client, c, nil, zap.NewNop(), testEncryptionKey)
 
 	p := createTestSCMProvider(t, client)
 	rc := createTestRepoConfig(t, client, p.ID)
@@ -124,7 +142,7 @@ func TestGetLatestScanNoResults(t *testing.T) {
 func TestGetLatestScanWithResults(t *testing.T) {
 	client := setupEntClient(t)
 	c := NewCloner(t.TempDir(), zap.NewNop())
-	svc := NewService(client, c, nil, zap.NewNop())
+	svc := NewService(client, c, nil, zap.NewNop(), testEncryptionKey)
 	ctx := context.Background()
 
 	p := createTestSCMProvider(t, client)
@@ -165,7 +183,7 @@ func TestGetLatestScanWithResults(t *testing.T) {
 func TestListScansDefaultLimit(t *testing.T) {
 	client := setupEntClient(t)
 	c := NewCloner(t.TempDir(), zap.NewNop())
-	svc := NewService(client, c, nil, zap.NewNop())
+	svc := NewService(client, c, nil, zap.NewNop(), testEncryptionKey)
 	ctx := context.Background()
 
 	p := createTestSCMProvider(t, client)
@@ -195,7 +213,7 @@ func TestListScansDefaultLimit(t *testing.T) {
 func TestListScansCustomLimit(t *testing.T) {
 	client := setupEntClient(t)
 	c := NewCloner(t.TempDir(), zap.NewNop())
-	svc := NewService(client, c, nil, zap.NewNop())
+	svc := NewService(client, c, nil, zap.NewNop(), testEncryptionKey)
 	ctx := context.Background()
 
 	p := createTestSCMProvider(t, client)
@@ -223,7 +241,7 @@ func TestListScansCustomLimit(t *testing.T) {
 func TestListScansOrdering(t *testing.T) {
 	client := setupEntClient(t)
 	c := NewCloner(t.TempDir(), zap.NewNop())
-	svc := NewService(client, c, nil, zap.NewNop())
+	svc := NewService(client, c, nil, zap.NewNop(), testEncryptionKey)
 	ctx := context.Background()
 
 	p := createTestSCMProvider(t, client)
@@ -291,7 +309,7 @@ func initTestGitRepo(t *testing.T, repoDir string) {
 func TestRunScanRepoConfigNotFound(t *testing.T) {
 	client := setupEntClient(t)
 	c := NewCloner(t.TempDir(), zap.NewNop())
-	svc := NewService(client, c, nil, zap.NewNop())
+	svc := NewService(client, c, nil, zap.NewNop(), testEncryptionKey)
 
 	_, err := svc.RunScan(context.Background(), 99999)
 	if err == nil {
@@ -305,7 +323,7 @@ func TestRunScanRepoConfigNotFound(t *testing.T) {
 func TestRunScanCloneError(t *testing.T) {
 	client := setupEntClient(t)
 	c := NewCloner(t.TempDir(), zap.NewNop())
-	svc := NewService(client, c, nil, zap.NewNop())
+	svc := NewService(client, c, nil, zap.NewNop(), testEncryptionKey)
 
 	p := createTestSCMProvider(t, client)
 	rc, err := client.RepoConfig.Create().
@@ -332,7 +350,7 @@ func TestRunScanStaticOnly(t *testing.T) {
 	client := setupEntClient(t)
 	dataDir := t.TempDir()
 	c := NewCloner(dataDir, zap.NewNop())
-	svc := NewService(client, c, nil, zap.NewNop())
+	svc := NewService(client, c, nil, zap.NewNop(), testEncryptionKey)
 	ctx := context.Background()
 
 	p := createTestSCMProvider(t, client)
@@ -403,7 +421,7 @@ func TestRunScanWithLLMEnabled(t *testing.T) {
 	rp := relay.NewSub2apiProvider(server.Client(), server.URL+"/v1", server.URL, "sk-test", "gpt-4", zap.NewNop())
 	llmAnalyzer := llm.NewAnalyzer(config.LLMConfig{}, rp, zap.NewNop())
 
-	svc := NewService(client, c, llmAnalyzer, zap.NewNop())
+	svc := NewService(client, c, llmAnalyzer, zap.NewNop(), testEncryptionKey)
 
 	p := createTestSCMProvider(t, client)
 	rc := createTestRepoConfig(t, client, p.ID)
@@ -440,7 +458,7 @@ func TestRunScanWithLLMFailure(t *testing.T) {
 	rp := relay.NewSub2apiProvider(server.Client(), server.URL+"/v1", server.URL, "sk-test", "gpt-4", zap.NewNop())
 	llmAnalyzer := llm.NewAnalyzer(config.LLMConfig{}, rp, zap.NewNop())
 
-	svc := NewService(client, c, llmAnalyzer, zap.NewNop())
+	svc := NewService(client, c, llmAnalyzer, zap.NewNop(), testEncryptionKey)
 
 	p := createTestSCMProvider(t, client)
 	rc := createTestRepoConfig(t, client, p.ID)
@@ -482,7 +500,7 @@ func TestRunScanWithPromptOverride(t *testing.T) {
 	rp := relay.NewSub2apiProvider(server.Client(), server.URL+"/v1", server.URL, "sk-test", "gpt-4", zap.NewNop())
 	llmAnalyzer := llm.NewAnalyzer(config.LLMConfig{}, rp, zap.NewNop())
 
-	svc := NewService(client, c, llmAnalyzer, zap.NewNop())
+	svc := NewService(client, c, llmAnalyzer, zap.NewNop(), testEncryptionKey)
 
 	p := createTestSCMProvider(t, client)
 	rc, err := client.RepoConfig.Create().
