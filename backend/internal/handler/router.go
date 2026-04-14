@@ -62,6 +62,7 @@ func SetupRouter(
 
 	// Handlers
 	authHandler := NewAuthHandler(authService)
+	credentialHandler := NewCredentialHandler(entClient, encryptionKey)
 	scmProviderHandler := NewSCMProviderHandler(entClient, encryptionKey)
 	repoHandler := NewRepoHandler(repoService)
 	analysisHandler := NewAnalysisHandler(analysisService, optimizer, repoService)
@@ -198,6 +199,16 @@ func SetupRouter(
 			adminProviderGroup.PUT("/:id", providerHandler.Update)
 			adminProviderGroup.DELETE("/:id", providerHandler.Delete)
 		}
+	}
+
+	adminCredentialGroup := protected.Group("/admin/credentials")
+	adminCredentialGroup.Use(auth.RequireAdmin())
+	{
+		adminCredentialGroup.GET("", credentialHandler.List)
+		adminCredentialGroup.POST("", credentialHandler.Create)
+		adminCredentialGroup.GET("/:id", credentialHandler.Get)
+		adminCredentialGroup.PUT("/:id", credentialHandler.Update)
+		adminCredentialGroup.DELETE("/:id", credentialHandler.Delete)
 	}
 
 	// LDAP settings — admin only
