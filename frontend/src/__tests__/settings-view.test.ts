@@ -57,6 +57,13 @@ vi.mock('@/api/scmProvider', () => ({
   deleteProvider: vi.fn(),
 }))
 
+vi.mock('@/api/credential', () => ({
+  listCredentials: vi.fn(),
+  createCredential: vi.fn(),
+  updateCredential: vi.fn(),
+  deleteCredential: vi.fn(),
+}))
+
 vi.mock('@/api/settings', () => ({
   getLLMConfig: vi.fn(),
   updateLLMConfig: vi.fn(),
@@ -87,6 +94,12 @@ async function resetApiMocks() {
   scmProvider.createProvider.mockReset().mockResolvedValue({ data: { data: { id: 1 } } })
   scmProvider.updateProvider.mockReset().mockResolvedValue({ data: { data: { id: 1 } } })
   scmProvider.deleteProvider.mockReset().mockResolvedValue({ data: { data: null } })
+
+  const credentialApi = await import('@/api/credential') as any
+  credentialApi.listCredentials.mockReset().mockResolvedValue({ data: { data: [] } })
+  credentialApi.createCredential.mockReset().mockResolvedValue({ data: { data: { id: 11 } } })
+  credentialApi.updateCredential.mockReset().mockResolvedValue({ data: { data: { id: 11 } } })
+  credentialApi.deleteCredential.mockReset().mockResolvedValue({ data: { data: null } })
 
   const settingsApi = await import('@/api/settings') as any
   settingsApi.getLLMConfig.mockReset().mockResolvedValue(createDefaultLLMConfigResponse())
@@ -166,6 +179,38 @@ describe('SettingsView', () => {
     expect(wrapper.find('h1').text()).toBe('SCM Providers')
     const addBtn = wrapper.findAll('button').find((b) => b.text().includes('Add Provider'))
     expect(addBtn).toBeTruthy()
+  })
+
+  it('renders credentials section and add credential button', async () => {
+    const wrapper = await mountSettings()
+    expect(wrapper.text()).toContain('Credentials')
+    expect(wrapper.text()).toContain('Add Credential')
+  })
+
+  it('creates a secret text credential', async () => {
+    const { createCredential } = await import('@/api/credential')
+    const wrapper = await mountSettings()
+
+    const addBtn = wrapper.findAll('button').find((b) => b.text().includes('Add Credential'))
+    expect(addBtn).toBeTruthy()
+    await addBtn!.trigger('click')
+    await flushPromises()
+
+    await wrapper.find('input[name="credential-name"]').setValue('GitHub PAT')
+    await wrapper.find('select[name="credential-kind"]').setValue('secret_text')
+    await wrapper.find('textarea[name="credential-secret-text"]').setValue('ghp_test')
+
+    const saveBtn = wrapper.findAll('button').find((b) => b.text().includes('Save Credential'))
+    expect(saveBtn).toBeTruthy()
+    await saveBtn!.trigger('click')
+    await flushPromises()
+
+    expect(createCredential).toHaveBeenCalledWith({
+      name: 'GitHub PAT',
+      description: '',
+      kind: 'secret_text',
+      payload: { text: 'ghp_test' },
+    })
   })
 
   it('renders LLM Configuration section', async () => {

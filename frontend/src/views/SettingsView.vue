@@ -2,13 +2,15 @@
 import { onMounted, ref } from 'vue'
 import AppLayout from '@/components/AppLayout.vue'
 import { listProviders, createProvider, updateProvider, deleteProvider } from '@/api/scmProvider'
+import { listCredentials, createCredential, updateCredential, deleteCredential } from '@/api/credential'
 import { getLLMConfig, updateLLMConfig, testLLMConnection } from '@/api/settings'
 import { getDeploymentStatus, checkForUpdate, applyUpdate, rollbackUpdate, restartDeployment } from '@/api/deployment'
 import { waitForServiceRecovery } from '@/utils/deploymentRecovery'
 import client from '@/api/client'
-import type { DeploymentStatus, SCMProvider, UpdateStatus } from '@/types'
+import type { Credential, DeploymentStatus, SCMProvider, UpdateStatus } from '@/types'
 
 const providers = ref<SCMProvider[]>([])
+const credentials = ref<Credential[]>([])
 const loading = ref(true)
 
 // Add/Edit dialog
@@ -20,6 +22,23 @@ const formLoading = ref(false)
 
 // Delete confirm
 const showDeleteConfirm = ref<number | null>(null)
+
+// Credential dialog
+const showCredentialDialog = ref(false)
+const editingCredentialId = ref<number | null>(null)
+const credentialForm = ref({
+  name: '',
+  description: '',
+  kind: 'secret_text',
+  text: '',
+  username: '',
+  password: '',
+  private_key: '',
+  passphrase: '',
+})
+const credentialFormError = ref('')
+const credentialFormLoading = ref(false)
+const showCredentialDeleteConfirm = ref<number | null>(null)
 
 // LLM config
 const llmForm = ref({ model: 'gpt-4', max_tokens_per_scan: 100000, system_prompt: '', user_prompt_template: '' })
@@ -50,7 +69,7 @@ const ldapError = ref('')
 const ldapSuccess = ref('')
 
 onMounted(async () => {
-  await Promise.all([fetchProviders(), fetchLLMConfig(), fetchDeploymentStatus(), fetchLDAPConfig()])
+  await Promise.all([fetchProviders(), fetchCredentials(), fetchLLMConfig(), fetchDeploymentStatus(), fetchLDAPConfig()])
 })
 
 async function fetchProviders() {
@@ -63,6 +82,16 @@ async function fetchProviders() {
     providers.value = []
   } finally {
     loading.value = false
+  }
+}
+
+async function fetchCredentials() {
+  try {
+    const res = await listCredentials()
+    const data = res.data.data
+    credentials.value = Array.isArray(data) ? data : []
+  } catch {
+    credentials.value = []
   }
 }
 
@@ -123,6 +152,92 @@ async function confirmDelete(id: number) {
     await deleteProvider(id)
     showDeleteConfirm.value = null
     await fetchProviders()
+  } catch {
+    // delete failed
+  }
+}
+
+function openAddCredentialDialog() {
+  editingCredentialId.value = null
+  credentialForm.value = {
+    name: '',
+    description: '',
+    kind: 'secret_text',
+    text: '',
+    username: '',
+    password: '',
+    private_key: '',
+    passphrase: '',
+  }
+  credentialFormError.value = ''
+  showCredentialDialog.value = true
+}
+
+function openEditCredentialDialog(credential: Credential) {
+  editingCredentialId.value = credential.id
+  credentialForm.value = {
+    name: credential.name,
+    description: credential.description || '',
+    kind: credential.kind,
+    text: '',
+    username: String(credential.summary?.username || ''),
+    password: '',
+    private_key: '',
+    passphrase: '',
+  }
+  credentialFormError.value = ''
+  showCredentialDialog.value = true
+}
+
+function buildCredentialPayload() {
+  switch (credentialForm.value.kind) {
+    case 'secret_text':
+      return { text: credentialForm.value.text }
+    case 'username_password':
+      return { username: credentialForm.value.username, password: credentialForm.value.password }
+    default:
+      return {
+        username: credentialForm.value.username,
+        private_key: credentialForm.value.private_key,
+        passphrase: credentialForm.value.passphrase,
+      }
+  }
+}
+
+async function handleCredentialSubmit() {
+  credentialFormError.value = ''
+  if (!credentialForm.value.name) {
+    credentialFormError.value = 'Name is required'
+    return
+  }
+
+  credentialFormLoading.value = true
+  try {
+    const payload = {
+      name: credentialForm.value.name,
+      description: credentialForm.value.description,
+      kind: credentialForm.value.kind,
+      payload: buildCredentialPayload(),
+    }
+    if (editingCredentialId.value) {
+      await updateCredential(editingCredentialId.value, payload)
+    } else {
+      await createCredential(payload)
+    }
+    showCredentialDialog.value = false
+    await fetchCredentials()
+  } catch (e: any) {
+    credentialFormError.value = e.response?.data?.message || 'Operation failed'
+  } finally {
+    credentialFormLoading.value = false
+  }
+}
+
+async function confirmDeleteCredential(id: number) {
+  try {
+    await deleteCredential(id)
+    showCredentialDeleteConfirm.value = null
+    await fetchCredentials()
   } catch {
     // delete failed
   }
@@ -370,7 +485,58 @@ async function handleTestLDAP() {
 
       <div v-if="loading" class="text-center text-gray-500 py-12">Loading...</div>
 
-      <div v-else class="overflow-hidden rounded-lg bg-white shadow">
+      <div class="space-y-4">
+        <div class="flex items-center justify-between">
+          <h2 class="text-xl font-bold text-gray-900">Credentials</h2>
+          <button
+            class="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-black"
+            @click="openAddCredentialDialog"
+          >
+            Add Credential
+          </button>
+        </div>
+
+        <div class="overflow-hidden rounded-lg bg-white shadow">
+          <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
+              <tr>
+                <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Name</th>
+                <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Kind</th>
+                <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Usage</th>
+                <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Summary</th>
+                <th class="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Actions</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-200">
+              <tr v-for="cred in credentials" :key="cred.id">
+                <td class="whitespace-nowrap px-6 py-4 text-sm font-medium text-gray-900">{{ cred.name }}</td>
+                <td class="whitespace-nowrap px-6 py-4 text-sm text-gray-600">{{ cred.kind }}</td>
+                <td class="whitespace-nowrap px-6 py-4 text-sm text-gray-600">{{ cred.usage_count }}</td>
+                <td class="px-6 py-4 text-xs font-mono text-gray-500">{{ JSON.stringify(cred.summary || {}) }}</td>
+                <td class="whitespace-nowrap px-6 py-4 text-right text-sm space-x-3">
+                  <button class="text-indigo-600 hover:text-indigo-800" @click="openEditCredentialDialog(cred)">Edit</button>
+                  <button
+                    v-if="showCredentialDeleteConfirm !== cred.id"
+                    class="text-red-600 hover:text-red-800"
+                    @click="showCredentialDeleteConfirm = cred.id"
+                  >Delete</button>
+                  <span v-else class="space-x-2">
+                    <button class="text-red-700 font-medium" @click="confirmDeleteCredential(cred.id)">Confirm</button>
+                    <button class="text-gray-500" @click="showCredentialDeleteConfirm = null">Cancel</button>
+                  </span>
+                </td>
+              </tr>
+              <tr v-if="credentials.length === 0">
+                <td colspan="5" class="px-6 py-12 text-center text-sm text-gray-500">
+                  No credentials configured. Click "Add Credential" to create one.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div v-if="!loading" class="overflow-hidden rounded-lg bg-white shadow">
         <table class="min-w-full divide-y divide-gray-200">
           <thead class="bg-gray-50">
             <tr>
@@ -587,6 +753,76 @@ async function handleTestLDAP() {
             </button>
             <button @click="handleSaveLDAP" :disabled="ldapSaving" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50">
               {{ ldapSaving ? 'Saving...' : 'Save' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Add/Edit Credential Dialog -->
+    <div v-if="showCredentialDialog" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div class="w-full max-w-2xl rounded-lg bg-white p-6 shadow-xl">
+        <h2 class="mb-4 text-lg font-semibold text-gray-900">
+          {{ editingCredentialId ? 'Edit Credential' : 'Add Credential' }}
+        </h2>
+
+        <div class="space-y-3">
+          <div>
+            <label class="block text-sm font-medium text-gray-700">Name</label>
+            <input name="credential-name" v-model="credentialForm.name" type="text" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium text-gray-700">Description</label>
+            <input v-model="credentialForm.description" type="text" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium text-gray-700">Kind</label>
+            <select name="credential-kind" v-model="credentialForm.kind" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm">
+              <option value="secret_text">Secret text</option>
+              <option value="username_password">Username with password</option>
+              <option value="ssh_username_with_private_key">SSH Username with private key</option>
+            </select>
+          </div>
+
+          <div v-if="credentialForm.kind === 'secret_text'">
+            <label class="block text-sm font-medium text-gray-700">Secret Text</label>
+            <textarea name="credential-secret-text" v-model="credentialForm.text" rows="4" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono" />
+          </div>
+
+          <template v-else-if="credentialForm.kind === 'username_password'">
+            <div>
+              <label class="block text-sm font-medium text-gray-700">Username</label>
+              <input v-model="credentialForm.username" type="text" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700">Password</label>
+              <input v-model="credentialForm.password" type="password" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
+            </div>
+          </template>
+
+          <template v-else>
+            <div>
+              <label class="block text-sm font-medium text-gray-700">SSH Username</label>
+              <input v-model="credentialForm.username" type="text" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700">Private Key</label>
+              <textarea v-model="credentialForm.private_key" rows="6" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono" />
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700">Passphrase</label>
+              <input v-model="credentialForm.passphrase" type="password" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
+            </div>
+          </template>
+
+          <div v-if="credentialFormError" class="rounded-md bg-red-50 p-3 text-sm text-red-700">{{ credentialFormError }}</div>
+
+          <div class="flex justify-end space-x-3">
+            <button @click="showCredentialDialog = false" class="rounded-md border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">Cancel</button>
+            <button @click="handleCredentialSubmit" :disabled="credentialFormLoading" class="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-black disabled:opacity-50">
+              {{ credentialFormLoading ? 'Saving...' : 'Save Credential' }}
             </button>
           </div>
         </div>
