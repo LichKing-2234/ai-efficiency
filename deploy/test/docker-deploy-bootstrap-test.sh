@@ -25,11 +25,9 @@ mkdir -p "$FIXTURE_DIR/deploy" "$WORK_DIR" "$RELEASE_DIR" "$BAD_RELEASE_DIR" "$B
 cp "$ROOT_DIR/deploy/.env.example" "$FIXTURE_DIR/deploy/.env.example"
 cp "$ROOT_DIR/deploy/docker-deploy.sh" "$FIXTURE_DIR/deploy/docker-deploy.sh"
 cp "$ROOT_DIR/deploy/docker-compose.bootstrap.yml" "$FIXTURE_DIR/deploy/docker-compose.bootstrap.yml"
-cp "$ROOT_DIR/deploy/init-db.sql" "$FIXTURE_DIR/deploy/init-db.sql"
 
 cp "$ROOT_DIR/deploy/.env.example" "$MISSING_ASSET_FIXTURE_DIR/deploy/.env.example"
 cp "$ROOT_DIR/deploy/docker-deploy.sh" "$MISSING_ASSET_FIXTURE_DIR/deploy/docker-deploy.sh"
-cp "$ROOT_DIR/deploy/init-db.sql" "$MISSING_ASSET_FIXTURE_DIR/deploy/init-db.sql"
 
 tar -czf "$RELEASE_DIR/ai-efficiency-backend_0.1.0-test_linux_amd64.tar.gz" -C "$FIXTURE_DIR" deploy
 RELEASE_ARCHIVE="$RELEASE_DIR/ai-efficiency-backend_0.1.0-test_linux_amd64.tar.gz"
@@ -65,6 +63,7 @@ test -d "$WORK_DIR/postgres_data"
 test -d "$WORK_DIR/redis_data"
 cmp -s "$WORK_DIR/.env.example" "$WORK_DIR/deploy/.env.example"
 cmp -s "$WORK_DIR/docker-compose.yml" "$WORK_DIR/deploy/docker-compose.bootstrap.yml"
+! grep -q 'init-db.sql' "$WORK_DIR/docker-compose.yml"
 for hidden_var in AE_IMAGE_REPOSITORY AE_IMAGE_TAG AE_UPDATER_IMAGE_REPOSITORY AE_UPDATER_IMAGE_TAG; do
   if grep -q "^${hidden_var}=" "$WORK_DIR/.env"; then
     echo "unexpected ${hidden_var} in bootstrap env" >&2

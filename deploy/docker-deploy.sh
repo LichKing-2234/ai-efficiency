@@ -327,8 +327,6 @@ prepare_bootstrap_root() {
   [[ -f "$TMP_DIR/deploy/docker-compose.bootstrap.yml" ]] || { echo "release bundle missing required asset: deploy/docker-compose.bootstrap.yml" >&2; exit 1; }
   [[ -f "$TMP_DIR/deploy/.env.example" ]] || { echo "release bundle missing required asset: deploy/.env.example" >&2; exit 1; }
   [[ -f "$TMP_DIR/deploy/docker-deploy.sh" ]] || { echo "release bundle missing required asset: deploy/docker-deploy.sh" >&2; exit 1; }
-  [[ -f "$TMP_DIR/deploy/init-db.sql" ]] || { echo "release bundle missing required asset: deploy/init-db.sql" >&2; exit 1; }
-
   mkdir -p "$ROOT_DIR/deploy"
   cp -R "${TMP_DIR}/deploy/." "$ROOT_DIR/deploy/"
   cp "$ROOT_DIR/deploy/docker-compose.bootstrap.yml" "$ROOT_DIR/docker-compose.yml"
