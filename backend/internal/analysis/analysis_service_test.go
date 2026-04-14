@@ -125,6 +125,19 @@ func TestNewService(t *testing.T) {
 	}
 }
 
+func TestNewServicePanicsWithoutEncryptionKey(t *testing.T) {
+	client := setupEntClient(t)
+	c := NewCloner(t.TempDir(), zap.NewNop())
+
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("expected NewService to panic without encryption key")
+		}
+	}()
+
+	_ = NewService(client, c, nil, zap.NewNop(), "")
+}
+
 func TestGetLatestScanNoResults(t *testing.T) {
 	client := setupEntClient(t)
 	c := NewCloner(t.TempDir(), zap.NewNop())

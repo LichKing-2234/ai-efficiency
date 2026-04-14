@@ -18,9 +18,9 @@ This design explicitly does **not** let repos bind directly to credentials. Repo
 
 ## Relationship To Existing Specs
 
-- This spec extends the platform-level module boundaries in [`docs/architecture.md`](/Users/admin/ai-efficiency/docs/architecture.md) with a new credentials module but does not change the modular-monolith direction.
-- This spec supersedes the ad hoc SCM credential storage implied by the historical baseline in [`2026-03-17-ai-efficiency-platform-design.md`](/Users/admin/ai-efficiency/docs/superpowers/specs/2026-03-17-ai-efficiency-platform-design.md).
-- This spec does not change relay/provider delivery from [`2026-03-24-oauth-cli-login-design.md`](/Users/admin/ai-efficiency/docs/superpowers/specs/2026-03-24-oauth-cli-login-design.md); relay providers and SCM providers remain separate concepts.
+- This spec extends the platform-level module boundaries in [`docs/architecture.md`](/docs/architecture.md) with a new credentials module but does not change the modular-monolith direction.
+- This spec supersedes the ad hoc SCM credential storage implied by the historical baseline in [`2026-03-17-ai-efficiency-platform-design.md`](/docs/superpowers/specs/2026-03-17-ai-efficiency-platform-design.md).
+- This spec does not change relay/provider delivery from [`2026-03-24-oauth-cli-login-design.md`](/docs/superpowers/specs/2026-03-24-oauth-cli-login-design.md); relay providers and SCM providers remain separate concepts.
 
 ## Problems In Current Code
 

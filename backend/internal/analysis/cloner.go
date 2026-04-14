@@ -133,8 +133,6 @@ func (c *Cloner) gitCommand(repoDir string, req CloneRequest, name string, args 
 		cleanup = func() {
 			_ = os.Remove(keyPath)
 		}
-
-		sshCommand := fmt.Sprintf("ssh -i %s -o IdentitiesOnly=yes -o UserKnownHostsFile=%s -o StrictHostKeyChecking=%s", keyPath, knownHostsPath, strictMode)
 		if strings.TrimSpace(req.Auth.SSHPassphrase) != "" {
 			askPassPath, err := c.writeAskPassScript(true)
 			if err != nil {
@@ -153,7 +151,24 @@ func (c *Cloner) gitCommand(repoDir string, req CloneRequest, name string, args 
 				"AE_SSH_PASSPHRASE="+req.Auth.SSHPassphrase,
 			)
 		}
-		env = append(env, "GIT_SSH_COMMAND="+sshCommand)
+		sshWrapperPath, err := c.writeSSHWrapperScript()
+		if err != nil {
+			cleanup()
+			return nil, func() {}, err
+		}
+		prevCleanup := cleanup
+		cleanup = func() {
+			prevCleanup()
+			_ = os.Remove(sshWrapperPath)
+		}
+		env = append(env,
+			"GIT_SSH="+sshWrapperPath,
+			"GIT_SSH_VARIANT=ssh",
+			"AE_SSH_USERNAME="+req.Auth.SSHUsername,
+			"AE_SSH_KEY_PATH="+keyPath,
+			"AE_SSH_KNOWN_HOSTS="+knownHostsPath,
+			"AE_SSH_STRICT_HOST_KEY_CHECKING="+strictMode,
+		)
 	}
 
 	cmd.Env = env
@@ -178,6 +193,27 @@ func (c *Cloner) writeAskPassScript(sshOnly bool) (string, error) {
 	}
 	if err := os.WriteFile(path, []byte(body), 0o700); err != nil {
 		return "", fmt.Errorf("write askpass script: %w", err)
+	}
+	return path, nil
+}
+
+func (c *Cloner) writeSSHWrapperScript() (string, error) {
+	dir := filepath.Join(c.dataDir, "tmp")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", fmt.Errorf("mkdir ssh wrapper dir: %w", err)
+	}
+
+	path := filepath.Join(dir, fmt.Sprintf("git-ssh-%d.sh", os.Getpid()))
+	body := "#!/bin/sh\n" +
+		"exec ssh \\\n" +
+		"  -l \"$AE_SSH_USERNAME\" \\\n" +
+		"  -i \"$AE_SSH_KEY_PATH\" \\\n" +
+		"  -o IdentitiesOnly=yes \\\n" +
+		"  -o UserKnownHostsFile=\"$AE_SSH_KNOWN_HOSTS\" \\\n" +
+		"  -o StrictHostKeyChecking=\"$AE_SSH_STRICT_HOST_KEY_CHECKING\" \\\n" +
+		"  \"$@\"\n"
+	if err := os.WriteFile(path, []byte(body), 0o700); err != nil {
+		return "", fmt.Errorf("write ssh wrapper script: %w", err)
 	}
 	return path, nil
 }

@@ -32,10 +32,9 @@ type Service struct {
 }
 
 // NewService creates a new analysis service.
-func NewService(entClient *ent.Client, cloner *Cloner, llmAnalyzer *llm.Analyzer, logger *zap.Logger, encryptionKeys ...string) *Service {
-	encryptionKey := ""
-	if len(encryptionKeys) > 0 {
-		encryptionKey = encryptionKeys[0]
+func NewService(entClient *ent.Client, cloner *Cloner, llmAnalyzer *llm.Analyzer, logger *zap.Logger, encryptionKey string) *Service {
+	if encryptionKey == "" {
+		panic(fmt.Sprintf("%s requires a non-empty encryption key", "analysis.NewService"))
 	}
 	return &Service{
 		entClient:     entClient,

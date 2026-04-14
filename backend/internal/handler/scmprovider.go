@@ -2,10 +2,10 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
-	"strings"
 
 	"github.com/ai-efficiency/backend/ent"
 	entcredential "github.com/ai-efficiency/backend/ent/credential"
@@ -15,6 +15,8 @@ import (
 	"github.com/ai-efficiency/backend/internal/pkg"
 	"github.com/gin-gonic/gin"
 )
+
+var errEncryptSCMCredentials = errors.New("encrypt scm credentials")
 
 // SCMProviderHandler handles SCM provider CRUD operations.
 type SCMProviderHandler struct {
@@ -77,7 +79,7 @@ func (h *SCMProviderHandler) Create(c *gin.Context) {
 	apiCredentialID, apiPayload, err := h.resolveAPICredentialForCreate(c, req.Name, req.APICredentialID, req.Credentials)
 	if err != nil {
 		code := http.StatusBadRequest
-		if strings.Contains(err.Error(), "failed to encrypt credentials") {
+		if errors.Is(err, errEncryptSCMCredentials) {
 			code = http.StatusInternalServerError
 		}
 		pkg.Error(c, code, err.Error())
@@ -160,7 +162,7 @@ func (h *SCMProviderHandler) Update(c *gin.Context) {
 	apiCredentialID, apiPayload, err := h.resolveAPICredentialForUpdate(c, current, req.APICredentialID, req.Credentials)
 	if err != nil {
 		code := http.StatusBadRequest
-		if strings.Contains(err.Error(), "failed to encrypt credentials") {
+		if errors.Is(err, errEncryptSCMCredentials) {
 			code = http.StatusInternalServerError
 		}
 		pkg.Error(c, code, err.Error())
@@ -310,7 +312,7 @@ func (h *SCMProviderHandler) createCredentialFromLegacy(c *gin.Context, provider
 	}
 	encrypted, err := pkg.Encrypt(string(rawPayload), h.encryptionKey)
 	if err != nil {
-		return 0, nil, fmt.Errorf("failed to encrypt credentials")
+		return 0, nil, fmt.Errorf("failed to encrypt credentials: %w", errEncryptSCMCredentials)
 	}
 	row, err := h.entClient.Credential.Create().
 		SetName(providerName + " API credential").
@@ -335,7 +337,7 @@ func (h *SCMProviderHandler) updateCredentialFromLegacy(c *gin.Context, credenti
 	}
 	encrypted, err := pkg.Encrypt(string(rawPayload), h.encryptionKey)
 	if err != nil {
-		return nil, fmt.Errorf("failed to encrypt credentials")
+		return nil, fmt.Errorf("failed to encrypt credentials: %w", errEncryptSCMCredentials)
 	}
 	if _, err := h.entClient.Credential.UpdateOneID(credentialID).
 		SetKind(entcredential.KindSecretText).

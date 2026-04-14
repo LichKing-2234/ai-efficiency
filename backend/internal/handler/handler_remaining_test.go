@@ -42,7 +42,7 @@ func setupDebugTestEnv(t *testing.T) *fullTestEnv {
 	repoSvc := repo.NewService(client, "0000000000000000000000000000000000000000000000000000000000000000", logger)
 	webhookHandler := webhook.NewHandler(client, nil, logger)
 	analysisCloner := analysis.NewCloner(t.TempDir(), logger)
-	analysisSvc := analysis.NewService(client, analysisCloner, nil, logger)
+	analysisSvc := analysis.NewService(client, analysisCloner, nil, logger, "0000000000000000000000000000000000000000000000000000000000000000")
 
 	rp := relay.NewSub2apiProvider(http.DefaultClient, "http://localhost:19876/v1", "http://localhost:19876", "sk-test-key-12345678", "gpt-4", logger)
 	llmAnalyzer := llm.NewAnalyzer(config.LLMConfig{}, rp, logger)
@@ -291,7 +291,7 @@ func TestChatLLMNotConfigured(t *testing.T) {
 	repoSvc := repo.NewService(client, "0000000000000000000000000000000000000000000000000000000000000000", logger)
 	webhookHandler := webhook.NewHandler(client, nil, logger)
 	analysisCloner := analysis.NewCloner(t.TempDir(), logger)
-	analysisSvc := analysis.NewService(client, analysisCloner, nil, logger)
+	analysisSvc := analysis.NewService(client, analysisCloner, nil, logger, "0000000000000000000000000000000000000000000000000000000000000000")
 
 	// Empty LLM config -> Enabled() returns false
 	llmAnalyzer := llm.NewAnalyzer(config.LLMConfig{}, nil, logger)

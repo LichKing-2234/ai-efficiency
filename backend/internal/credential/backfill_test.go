@@ -27,8 +27,12 @@ func TestBackfillLegacySCMCredentials(t *testing.T) {
 		SetCredentials(encrypted).
 		SaveX(ctx)
 
-	if err := BackfillLegacySCMCredentials(ctx, client, key); err != nil {
+	result, err := BackfillLegacySCMCredentials(ctx, client, key)
+	if err != nil {
 		t.Fatalf("BackfillLegacySCMCredentials: %v", err)
+	}
+	if result.Migrated != 1 {
+		t.Fatalf("migrated = %d, want 1", result.Migrated)
 	}
 
 	updated := client.ScmProvider.GetX(ctx, legacy.ID)
@@ -57,8 +61,12 @@ func TestBackfillLegacySCMCredentialsSkipsUndecryptableRows(t *testing.T) {
 		SaveX(ctx)
 
 	key := "0000000000000000000000000000000000000000000000000000000000000000"
-	if err := BackfillLegacySCMCredentials(ctx, client, key); err != nil {
+	result, err := BackfillLegacySCMCredentials(ctx, client, key)
+	if err != nil {
 		t.Fatalf("BackfillLegacySCMCredentials: %v", err)
+	}
+	if len(result.Skipped) != 1 {
+		t.Fatalf("skipped = %v, want 1 entry", result.Skipped)
 	}
 
 	updated := client.ScmProvider.GetX(ctx, legacy.ID)

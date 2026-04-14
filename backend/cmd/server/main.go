@@ -136,8 +136,12 @@ func main() {
 		logger.Fatal("ent auto-migrate", zap.Error(err))
 	}
 	logger.Info("database schema migrated")
-	if err := credential.BackfillLegacySCMCredentials(context.Background(), entClient, cfg.Encryption.Key); err != nil {
+	backfillResult, err := credential.BackfillLegacySCMCredentials(context.Background(), entClient, cfg.Encryption.Key)
+	if err != nil {
 		logger.Fatal("backfill legacy scm credentials", zap.Error(err))
+	}
+	if backfillResult != nil && len(backfillResult.Skipped) > 0 {
+		logger.Warn("skipped legacy scm credential backfill rows", zap.Strings("providers", backfillResult.Skipped))
 	}
 
 	// Init relay provider
