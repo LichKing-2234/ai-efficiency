@@ -54,6 +54,9 @@ func (m *mockRelayProvider) FindUserByUsername(_ context.Context, _ string) (*re
 func (m *mockRelayProvider) CreateUser(_ context.Context, _ relay.CreateUserRequest) (*relay.User, error) {
 	return nil, nil
 }
+func (m *mockRelayProvider) UpdateUser(_ context.Context, _ int64, _ relay.UpdateUserRequest) (*relay.User, error) {
+	return nil, nil
+}
 func (m *mockRelayProvider) ChatCompletion(_ context.Context, _ relay.ChatCompletionRequest) (*relay.ChatCompletionResponse, error) {
 	return nil, nil
 }

@@ -41,6 +41,9 @@ func (f *fakeRelayProviderForBootstrap) FindUserByUsername(ctx context.Context, 
 func (f *fakeRelayProviderForBootstrap) CreateUser(ctx context.Context, req relay.CreateUserRequest) (*relay.User, error) {
 	return nil, nil
 }
+func (f *fakeRelayProviderForBootstrap) UpdateUser(ctx context.Context, userID int64, req relay.UpdateUserRequest) (*relay.User, error) {
+	return nil, nil
+}
 func (f *fakeRelayProviderForBootstrap) ChatCompletion(ctx context.Context, req relay.ChatCompletionRequest) (*relay.ChatCompletionResponse, error) {
 	return nil, nil
 }

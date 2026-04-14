@@ -136,6 +136,14 @@ func main() {
 	}
 	logger.Info("database schema migrated")
 
+	runtimeRelayCfg, relayConfigSource, err := resolveRuntimeRelayConfig(context.Background(), cfg.Relay, func(ctx context.Context) (*config.RelayConfig, error) {
+		return loadPrimaryRelayConfig(ctx, entClient, cfg.Encryption.Key)
+	})
+	if err != nil {
+		logger.Fatal("resolve runtime relay config", zap.Error(err))
+	}
+	cfg.Relay = runtimeRelayCfg
+
 	// Init relay provider
 	var relayProvider relay.Provider
 	if cfg.Relay.URL != "" {
@@ -150,7 +158,11 @@ func main() {
 		if updater, ok := relayProvider.(interface{ SetAdminAPIKey(string) }); ok {
 			updater.SetAdminAPIKey(cfg.Relay.AdminAPIKey)
 		}
-		logger.Info("relay provider initialized", zap.String("provider", cfg.Relay.Provider), zap.String("url", cfg.Relay.URL))
+		logger.Info("relay provider initialized",
+			zap.String("provider", cfg.Relay.Provider),
+			zap.String("url", cfg.Relay.URL),
+			zap.String("source", relayConfigSource),
+		)
 	}
 
 	redisClient := redis.NewClient(&redis.Options{

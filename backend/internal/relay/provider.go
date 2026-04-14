@@ -47,6 +47,7 @@ type Provider interface {
 	FindUserByEmail(ctx context.Context, email string) (*User, error)
 	FindUserByUsername(ctx context.Context, username string) (*User, error)
 	CreateUser(ctx context.Context, req CreateUserRequest) (*User, error)
+	UpdateUser(ctx context.Context, userID int64, req UpdateUserRequest) (*User, error)
 
 	ChatCompletion(ctx context.Context, req ChatCompletionRequest) (*ChatCompletionResponse, error)
 	ChatCompletionWithTools(ctx context.Context, req ChatCompletionRequest, tools []ToolDef) (*ChatCompletionWithToolsResponse, error)

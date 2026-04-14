@@ -485,6 +485,56 @@ func TestEnsureLocalUserFindsExisting(t *testing.T) {
 	}
 }
 
+func TestEnsureLocalUserRepairsWrongStoredRelayUserIDForLDAP(t *testing.T) {
+	svc, client := newTestServiceWithDB(t)
+	ctx := context.Background()
+
+	_, err := client.User.Create().
+		SetUsername("liupenghui@agora.io").
+		SetEmail("liupenghui@agora.io").
+		SetAuthSource(entuser.AuthSourceLdap).
+		SetRole(entuser.RoleUser).
+		SetRelayUserID(15).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	api := &fakeRelayIdentityAPI{
+		findResult: &relay.User{ID: 21, Username: "liupenghui", Email: "liupenghui@agora.io"},
+	}
+	svc.SetRelayIdentityResolver(NewRelayIdentityResolver(api, "ldap.local"))
+
+	info := &UserInfo{
+		Username:   "liupenghui@agora.io",
+		Email:      "liupenghui@agora.io",
+		Role:       "user",
+		AuthSource: "ldap",
+	}
+
+	u, err := svc.ensureLocalUser(ctx, info)
+	if err != nil {
+		t.Fatalf("ensureLocalUser error: %v", err)
+	}
+	if u.RelayUserID == nil || *u.RelayUserID != 21 {
+		t.Fatalf("relay_user_id = %v, want 21", u.RelayUserID)
+	}
+	if info.RelayUserID == nil || *info.RelayUserID != 21 {
+		t.Fatalf("info.RelayUserID = %v, want 21", info.RelayUserID)
+	}
+	if len(api.findByUsernameCalls) != 1 || api.findByUsernameCalls[0] != "liupenghui" {
+		t.Fatalf("expected resolver lookup for liupenghui, got %+v", api.findByUsernameCalls)
+	}
+
+	dbUser, err := client.User.Query().Where(entuser.UsernameEQ("liupenghui@agora.io")).Only(ctx)
+	if err != nil {
+		t.Fatalf("query user: %v", err)
+	}
+	if dbUser.RelayUserID == nil || *dbUser.RelayUserID != 21 {
+		t.Fatalf("db relay_user_id = %v, want 21", dbUser.RelayUserID)
+	}
+}
+
 func TestEnsureLocalUserWithSub2apiID(t *testing.T) {
 	svc, _ := newTestServiceWithDB(t)
 	ctx := context.Background()
@@ -952,6 +1002,44 @@ func TestLDAPProviderAuthenticateUserNotFound(t *testing.T) {
 	}
 }
 
+func TestLDAPProviderAuthenticateReturnsRelayAuthPassword(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer ln.Close()
+
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go handleLDAPBindOKSearchEntry(conn, "alice", "alice@example.com")
+		}
+	}()
+
+	cfg := config.LDAPConfig{
+		URL:          fmt.Sprintf("ldap://%s", ln.Addr().String()),
+		BaseDN:       "dc=example,dc=com",
+		BindDN:       "cn=admin,dc=example,dc=com",
+		BindPassword: "admin",
+		UserFilter:   "(uid=%s)",
+	}
+	p := newTestLDAPProvider(cfg)
+
+	info, err := p.Authenticate(context.Background(), "alice", "ldap-pass")
+	if err != nil {
+		t.Fatalf("Authenticate() unexpected error: %v", err)
+	}
+	if info == nil {
+		t.Fatal("expected non-nil user info")
+	}
+	if info.RelayAuthPassword != "ldap-pass" {
+		t.Fatalf("RelayAuthPassword = %q, want %q", info.RelayAuthPassword, "ldap-pass")
+	}
+}
+
 // handleLDAPBindOKSearchEmpty responds with bind success, then empty search result.
 func handleLDAPBindOKSearchEmpty(conn net.Conn) {
 	defer conn.Close()
@@ -976,6 +1064,36 @@ func handleLDAPBindOKSearchEmpty(conn net.Conn) {
 
 	// Send SearchResultDone with success but no entries
 	conn.Write(buildLDAPSearchDone(msgID, 0, ""))
+}
+
+func handleLDAPBindOKSearchEntry(conn net.Conn, uid, mail string) {
+	defer conn.Close()
+	buf := make([]byte, 4096)
+
+	n, err := conn.Read(buf)
+	if err != nil || n == 0 {
+		return
+	}
+	msgID := extractLDAPMsgID(buf[:n])
+	conn.Write(buildLDAPBindResponse(msgID, 0, ""))
+
+	n, err = conn.Read(buf)
+	if err != nil || n == 0 {
+		return
+	}
+	msgID = extractLDAPMsgID(buf[:n])
+	conn.Write(buildLDAPSearchEntry(msgID, "uid="+uid+",dc=example,dc=com", map[string][]string{
+		"uid":  {uid},
+		"mail": {mail},
+	}))
+	conn.Write(buildLDAPSearchDone(msgID, 0, ""))
+
+	n, err = conn.Read(buf)
+	if err != nil || n == 0 {
+		return
+	}
+	msgID = extractLDAPMsgID(buf[:n])
+	conn.Write(buildLDAPBindResponse(msgID, 0, ""))
 }
 
 // ---------------------------------------------------------------------------
@@ -1029,6 +1147,43 @@ func buildLDAPSearchDone(msgID byte, resultCode byte, diag string) []byte {
 
 	msgIDBytes := []byte{0x02, 0x01, msgID}
 	seqValue := append(msgIDBytes, done...)
+	msg := []byte{0x30, byte(len(seqValue))}
+	msg = append(msg, seqValue...)
+	return msg
+}
+
+func buildLDAPSearchEntry(msgID byte, dn string, attrs map[string][]string) []byte {
+	dnBytes := []byte(dn)
+	entryValue := []byte{0x04, byte(len(dnBytes))}
+	entryValue = append(entryValue, dnBytes...)
+
+	attrSeq := make([]byte, 0)
+	for name, values := range attrs {
+		nameBytes := []byte(name)
+		attrValue := []byte{0x04, byte(len(nameBytes))}
+		attrValue = append(attrValue, nameBytes...)
+
+		valueSet := make([]byte, 0)
+		for _, value := range values {
+			valueBytes := []byte(value)
+			valueSet = append(valueSet, 0x04, byte(len(valueBytes)))
+			valueSet = append(valueSet, valueBytes...)
+		}
+		attrValue = append(attrValue, 0x31, byte(len(valueSet)))
+		attrValue = append(attrValue, valueSet...)
+
+		attrSeq = append(attrSeq, 0x30, byte(len(attrValue)))
+		attrSeq = append(attrSeq, attrValue...)
+	}
+
+	entryValue = append(entryValue, 0x30, byte(len(attrSeq)))
+	entryValue = append(entryValue, attrSeq...)
+
+	entry := []byte{0x64, byte(len(entryValue))}
+	entry = append(entry, entryValue...)
+
+	msgIDBytes := []byte{0x02, 0x01, msgID}
+	seqValue := append(msgIDBytes, entry...)
 	msg := []byte{0x30, byte(len(seqValue))}
 	msg = append(msg, seqValue...)
 	return msg
@@ -1136,6 +1291,55 @@ func TestLoginReusesExistingUser(t *testing.T) {
 	// Role should be synced from provider on each login
 	if info.Role != "user" {
 		t.Errorf("role = %q, want 'user' (synced from provider)", info.Role)
+	}
+}
+
+func TestLoginSSOReusesExistingUserByEmailWhenUsernameDiffers(t *testing.T) {
+	client := setupAuthEntClient(t)
+	svc := NewService(client, "test-secret-key-for-unit-tests!!", 7200, 604800, zap.NewNop(), "0000000000000000000000000000000000000000000000000000000000000000")
+	ctx := context.Background()
+
+	existing, err := client.User.Create().
+		SetUsername("alice@example.com").
+		SetEmail("alice@example.com").
+		SetAuthSource(entuser.AuthSourceLdap).
+		SetRole(entuser.RoleUser).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	relayID := 42
+	svc.RegisterProvider(&mockAuthProvider{
+		name: "sso",
+		userInfo: &UserInfo{
+			Username:          "alice",
+			Email:             "alice@example.com",
+			Role:              "user",
+			AuthSource:        "relay_sso",
+			RelayUserID:       &relayID,
+			RelayAuthPassword: "relay-pass",
+		},
+	})
+
+	_, info, err := svc.Login(ctx, LoginRequest{
+		Username: "alice@example.com",
+		Password: "relay-pass",
+		Source:   "sso",
+	})
+	if err != nil {
+		t.Fatalf("Login error: %v", err)
+	}
+	if info.ID != existing.ID {
+		t.Fatalf("user ID = %d, want %d", info.ID, existing.ID)
+	}
+
+	u, err := client.User.Get(ctx, existing.ID)
+	if err != nil {
+		t.Fatalf("get user: %v", err)
+	}
+	if u.RelayUserID == nil || *u.RelayUserID != relayID {
+		t.Fatalf("relay_user_id = %v, want %d", u.RelayUserID, relayID)
 	}
 }
 

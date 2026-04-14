@@ -15,12 +15,12 @@ import (
 
 // UserInfo represents authenticated user information.
 type UserInfo struct {
-	ID          int    `json:"id"`
-	Username    string `json:"username"`
-	Email       string `json:"email"`
-	Role        string `json:"role"`
-	AuthSource  string `json:"auth_source"`
-	RelayUserID *int   `json:"relay_user_id,omitempty"`
+	ID                int    `json:"id"`
+	Username          string `json:"username"`
+	Email             string `json:"email"`
+	Role              string `json:"role"`
+	AuthSource        string `json:"auth_source"`
+	RelayUserID       *int   `json:"relay_user_id,omitempty"`
 	RelayAuthPassword string `json:"-"`
 }
 
@@ -189,55 +189,26 @@ func (s *Service) ensureLocalUser(ctx context.Context, info *UserInfo) (*ent.Use
 		Where(entuser.UsernameEQ(info.Username)).
 		Only(ctx)
 	if err == nil {
-		// If we already have a relay user ID stored, copy it to the session user info.
-		if info.RelayUserID == nil && u.RelayUserID != nil {
-			info.RelayUserID = u.RelayUserID
-		}
-
-		// LDAP path: provision relay-side identity when we don't have it yet.
-		if info.RelayUserID == nil && s.relayIdentityResolver != nil {
-			relayUser, relayPassword, err := s.relayIdentityResolver.ResolveOrProvisionWithPassword(ctx, info.Username, info.Email)
-			if err != nil {
-				return nil, fmt.Errorf("resolve relay identity: %w", err)
-			}
-			relayID := int(relayUser.ID)
-			info.RelayUserID = &relayID
-			if strings.TrimSpace(relayPassword) != "" {
-				info.RelayAuthPassword = relayPassword
-			}
-			info.Email = ensureNonEmptyEmail(info.Email, relayUser.Email, "")
-			u, err = u.Update().SetRelayUserID(relayID).Save(ctx)
-			if err != nil {
-				return nil, fmt.Errorf("persist relay user id: %w", err)
-			}
-		}
-
-		// Sync role from auth provider on each login
-		if string(u.Role) != info.Role && info.Role != "" {
-			u, err = u.Update().
-				SetRole(entuser.Role(info.Role)).
-				Save(ctx)
-			if err != nil {
-				return nil, fmt.Errorf("sync user role: %w", err)
-			}
-		}
-		if err := s.persistRelayAuthPassword(ctx, u.ID, info.RelayAuthPassword); err != nil {
-			return nil, err
-		}
-		if info.RelayAuthPassword != "" {
-			u, err = s.entClient.User.Get(ctx, u.ID)
-			if err != nil {
-				return nil, fmt.Errorf("reload user: %w", err)
-			}
-		}
-		return u, nil
+		return s.syncExistingLocalUser(ctx, u, info)
 	}
 	if !ent.IsNotFound(err) {
 		return nil, err
 	}
 
+	if strings.TrimSpace(info.Email) != "" {
+		u, err = s.entClient.User.Query().
+			Where(entuser.EmailEQ(info.Email)).
+			Only(ctx)
+		if err == nil {
+			return s.syncExistingLocalUser(ctx, u, info)
+		}
+		if err != nil && !ent.IsNotFound(err) {
+			return nil, err
+		}
+	}
+
 	if info.RelayUserID == nil && s.relayIdentityResolver != nil {
-		relayUser, relayPassword, err := s.relayIdentityResolver.ResolveOrProvisionWithPassword(ctx, info.Username, info.Email)
+		relayUser, relayPassword, err := s.relayIdentityResolver.ResolveOrProvisionWithPassword(ctx, info.Username, info.Email, info.RelayAuthPassword)
 		if err != nil {
 			return nil, fmt.Errorf("resolve relay identity: %w", err)
 		}
@@ -272,6 +243,64 @@ func (s *Service) ensureLocalUser(ctx context.Context, info *UserInfo) (*ent.Use
 	}
 
 	return create.Save(ctx)
+}
+
+func (s *Service) syncExistingLocalUser(ctx context.Context, u *ent.User, info *UserInfo) (*ent.User, error) {
+	if info.RelayUserID == nil && u.RelayUserID != nil {
+		info.RelayUserID = u.RelayUserID
+	}
+
+	// LDAP path: always re-resolve the relay identity so we can repair historical
+	// misbindings caused by stale/ignored lookup filters on the relay side.
+	if strings.EqualFold(info.AuthSource, "ldap") && s.relayIdentityResolver != nil {
+		relayUser, relayPassword, err := s.relayIdentityResolver.ResolveOrProvisionWithPassword(ctx, info.Username, info.Email, info.RelayAuthPassword)
+		if err != nil {
+			return nil, fmt.Errorf("resolve relay identity: %w", err)
+		}
+		relayID := int(relayUser.ID)
+		info.RelayUserID = &relayID
+		if strings.TrimSpace(relayPassword) != "" {
+			info.RelayAuthPassword = relayPassword
+		}
+		info.Email = ensureNonEmptyEmail(info.Email, relayUser.Email, "")
+	}
+
+	if info.RelayUserID != nil && (u.RelayUserID == nil || *u.RelayUserID != *info.RelayUserID) {
+		if u.RelayUserID != nil {
+			s.logger.Warn("repairing stored relay user binding",
+				zap.String("username", info.Username),
+				zap.Int("old_relay_user_id", *u.RelayUserID),
+				zap.Int("new_relay_user_id", *info.RelayUserID),
+			)
+		}
+		updated, err := u.Update().SetRelayUserID(*info.RelayUserID).Save(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("persist relay user id: %w", err)
+		}
+		u = updated
+	}
+
+	// Sync role from auth provider on each login
+	if string(u.Role) != info.Role && info.Role != "" {
+		updated, err := u.Update().
+			SetRole(entuser.Role(info.Role)).
+			Save(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("sync user role: %w", err)
+		}
+		u = updated
+	}
+	if err := s.persistRelayAuthPassword(ctx, u.ID, info.RelayAuthPassword); err != nil {
+		return nil, err
+	}
+	if info.RelayAuthPassword != "" {
+		reloaded, err := s.entClient.User.Get(ctx, u.ID)
+		if err != nil {
+			return nil, fmt.Errorf("reload user: %w", err)
+		}
+		u = reloaded
+	}
+	return u, nil
 }
 
 func (s *Service) encryptRelayAuthPassword(password string) (string, error) {

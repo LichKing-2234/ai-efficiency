@@ -234,21 +234,24 @@ func (s *sub2apiRelay) FindUserByEmail(ctx context.Context, email string) (*User
 		return nil, fmt.Errorf("relay: find user by email: unexpected status %d", resp.StatusCode)
 	}
 
-	var result struct {
-		envelopeStatus
-		Data []User `json:"data"`
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("relay: find user by email: read body: %w", err)
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+
+	users, ok, err := decodeUserLookupResponse(body)
+	if err != nil {
 		return nil, fmt.Errorf("relay: find user by email: decode: %w", err)
 	}
-	if !result.ok() {
+	if !ok {
 		return nil, fmt.Errorf("relay: find user by email: request failed")
 	}
 
-	if len(result.Data) == 0 {
+	user := exactUserByEmail(users, email)
+	if user == nil {
 		return nil, nil
 	}
-	return &result.Data[0], nil
+	return user, nil
 }
 
 func (s *sub2apiRelay) FindUserByUsername(ctx context.Context, username string) (*User, error) {
@@ -262,21 +265,107 @@ func (s *sub2apiRelay) FindUserByUsername(ctx context.Context, username string) 
 		return nil, fmt.Errorf("relay: find user by username: unexpected status %d", resp.StatusCode)
 	}
 
-	var result struct {
-		envelopeStatus
-		Data []User `json:"data"`
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("relay: find user by username: read body: %w", err)
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+
+	users, ok, err := decodeUserLookupResponse(body)
+	if err != nil {
 		return nil, fmt.Errorf("relay: find user by username: decode: %w", err)
 	}
-	if !result.ok() {
+	if !ok {
 		return nil, fmt.Errorf("relay: find user by username: request failed")
 	}
 
-	if len(result.Data) == 0 {
+	user := exactUserByUsername(users, username)
+	if user == nil {
 		return nil, nil
 	}
-	return &result.Data[0], nil
+	return user, nil
+}
+
+// decodeUserLookupResponse accepts both legacy list payloads and newer paginated user envelopes.
+func decodeUserLookupResponse(body []byte) ([]User, bool, error) {
+	var envelope struct {
+		envelopeStatus
+		Data json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		return nil, false, err
+	}
+	if !envelope.ok() {
+		return nil, false, nil
+	}
+
+	users, err := decodeUserLookupData(envelope.Data)
+	if err != nil {
+		return nil, false, err
+	}
+	return users, true, nil
+}
+
+func decodeUserLookupData(data json.RawMessage) ([]User, error) {
+	data = bytes.TrimSpace(data)
+	if len(data) == 0 || bytes.Equal(data, []byte("null")) {
+		return nil, nil
+	}
+
+	switch data[0] {
+	case '[':
+		var users []User
+		if err := json.Unmarshal(data, &users); err != nil {
+			return nil, err
+		}
+		return users, nil
+	case '{':
+		var page struct {
+			Items []User `json:"items"`
+		}
+		if err := json.Unmarshal(data, &page); err == nil && page.Items != nil {
+			return page.Items, nil
+		}
+
+		var user User
+		if err := json.Unmarshal(data, &user); err != nil {
+			return nil, err
+		}
+		if user.ID == 0 && user.Username == "" && user.Email == "" && user.Role == "" {
+			return nil, fmt.Errorf("unsupported user lookup data shape")
+		}
+		return []User{user}, nil
+	default:
+		return nil, fmt.Errorf("unsupported user lookup data shape")
+	}
+}
+
+func exactUserByEmail(users []User, email string) *User {
+	email = strings.TrimSpace(email)
+	if email == "" {
+		return nil
+	}
+	for i := range users {
+		if strings.EqualFold(strings.TrimSpace(users[i].Email), email) {
+			return &users[i]
+		}
+	}
+	return nil
+}
+
+func exactUserByUsername(users []User, username string) *User {
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return nil
+	}
+	for i := range users {
+		if strings.EqualFold(strings.TrimSpace(users[i].Username), username) {
+			return &users[i]
+		}
+	}
+	if strings.Contains(username, "@") {
+		return exactUserByEmail(users, username)
+	}
+	return nil
 }
 
 func (s *sub2apiRelay) CreateUser(ctx context.Context, req CreateUserRequest) (*User, error) {
@@ -304,6 +393,36 @@ func (s *sub2apiRelay) CreateUser(ctx context.Context, req CreateUserRequest) (*
 	}
 	if !result.ok() {
 		return nil, fmt.Errorf("relay: create user: request failed")
+	}
+
+	return &result.Data, nil
+}
+
+func (s *sub2apiRelay) UpdateUser(ctx context.Context, userID int64, req UpdateUserRequest) (*User, error) {
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("relay: update user: marshal: %w", err)
+	}
+
+	resp, err := s.doAdminRequest(ctx, http.MethodPut, fmt.Sprintf("/api/v1/admin/users/%d", userID), bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("relay: update user: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("relay: update user: unexpected status %d", resp.StatusCode)
+	}
+
+	var result struct {
+		envelopeStatus
+		Data User `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("relay: update user: decode: %w", err)
+	}
+	if !result.ok() {
+		return nil, fmt.Errorf("relay: update user: request failed")
 	}
 
 	return &result.Data, nil
