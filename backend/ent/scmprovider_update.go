@@ -11,6 +11,7 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/ai-efficiency/backend/ent/credential"
 	"github.com/ai-efficiency/backend/ent/predicate"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/scmprovider"
@@ -85,6 +86,66 @@ func (spu *ScmProviderUpdate) SetNillableCredentials(s *string) *ScmProviderUpda
 	return spu
 }
 
+// ClearCredentials clears the value of the "credentials" field.
+func (spu *ScmProviderUpdate) ClearCredentials() *ScmProviderUpdate {
+	spu.mutation.ClearCredentials()
+	return spu
+}
+
+// SetAPICredentialID sets the "api_credential_id" field.
+func (spu *ScmProviderUpdate) SetAPICredentialID(i int) *ScmProviderUpdate {
+	spu.mutation.SetAPICredentialID(i)
+	return spu
+}
+
+// SetNillableAPICredentialID sets the "api_credential_id" field if the given value is not nil.
+func (spu *ScmProviderUpdate) SetNillableAPICredentialID(i *int) *ScmProviderUpdate {
+	if i != nil {
+		spu.SetAPICredentialID(*i)
+	}
+	return spu
+}
+
+// ClearAPICredentialID clears the value of the "api_credential_id" field.
+func (spu *ScmProviderUpdate) ClearAPICredentialID() *ScmProviderUpdate {
+	spu.mutation.ClearAPICredentialID()
+	return spu
+}
+
+// SetCloneCredentialID sets the "clone_credential_id" field.
+func (spu *ScmProviderUpdate) SetCloneCredentialID(i int) *ScmProviderUpdate {
+	spu.mutation.SetCloneCredentialID(i)
+	return spu
+}
+
+// SetNillableCloneCredentialID sets the "clone_credential_id" field if the given value is not nil.
+func (spu *ScmProviderUpdate) SetNillableCloneCredentialID(i *int) *ScmProviderUpdate {
+	if i != nil {
+		spu.SetCloneCredentialID(*i)
+	}
+	return spu
+}
+
+// ClearCloneCredentialID clears the value of the "clone_credential_id" field.
+func (spu *ScmProviderUpdate) ClearCloneCredentialID() *ScmProviderUpdate {
+	spu.mutation.ClearCloneCredentialID()
+	return spu
+}
+
+// SetCloneProtocol sets the "clone_protocol" field.
+func (spu *ScmProviderUpdate) SetCloneProtocol(sp scmprovider.CloneProtocol) *ScmProviderUpdate {
+	spu.mutation.SetCloneProtocol(sp)
+	return spu
+}
+
+// SetNillableCloneProtocol sets the "clone_protocol" field if the given value is not nil.
+func (spu *ScmProviderUpdate) SetNillableCloneProtocol(sp *scmprovider.CloneProtocol) *ScmProviderUpdate {
+	if sp != nil {
+		spu.SetCloneProtocol(*sp)
+	}
+	return spu
+}
+
 // SetStatus sets the "status" field.
 func (spu *ScmProviderUpdate) SetStatus(s scmprovider.Status) *ScmProviderUpdate {
 	spu.mutation.SetStatus(s)
@@ -105,6 +166,16 @@ func (spu *ScmProviderUpdate) SetUpdatedAt(t time.Time) *ScmProviderUpdate {
 	return spu
 }
 
+// SetAPICredential sets the "api_credential" edge to the Credential entity.
+func (spu *ScmProviderUpdate) SetAPICredential(c *Credential) *ScmProviderUpdate {
+	return spu.SetAPICredentialID(c.ID)
+}
+
+// SetCloneCredential sets the "clone_credential" edge to the Credential entity.
+func (spu *ScmProviderUpdate) SetCloneCredential(c *Credential) *ScmProviderUpdate {
+	return spu.SetCloneCredentialID(c.ID)
+}
+
 // AddRepoConfigIDs adds the "repo_configs" edge to the RepoConfig entity by IDs.
 func (spu *ScmProviderUpdate) AddRepoConfigIDs(ids ...int) *ScmProviderUpdate {
 	spu.mutation.AddRepoConfigIDs(ids...)
@@ -123,6 +194,18 @@ func (spu *ScmProviderUpdate) AddRepoConfigs(r ...*RepoConfig) *ScmProviderUpdat
 // Mutation returns the ScmProviderMutation object of the builder.
 func (spu *ScmProviderUpdate) Mutation() *ScmProviderMutation {
 	return spu.mutation
+}
+
+// ClearAPICredential clears the "api_credential" edge to the Credential entity.
+func (spu *ScmProviderUpdate) ClearAPICredential() *ScmProviderUpdate {
+	spu.mutation.ClearAPICredential()
+	return spu
+}
+
+// ClearCloneCredential clears the "clone_credential" edge to the Credential entity.
+func (spu *ScmProviderUpdate) ClearCloneCredential() *ScmProviderUpdate {
+	spu.mutation.ClearCloneCredential()
+	return spu
 }
 
 // ClearRepoConfigs clears all "repo_configs" edges to the RepoConfig entity.
@@ -199,6 +282,11 @@ func (spu *ScmProviderUpdate) check() error {
 			return &ValidationError{Name: "base_url", err: fmt.Errorf(`ent: validator failed for field "ScmProvider.base_url": %w`, err)}
 		}
 	}
+	if v, ok := spu.mutation.CloneProtocol(); ok {
+		if err := scmprovider.CloneProtocolValidator(v); err != nil {
+			return &ValidationError{Name: "clone_protocol", err: fmt.Errorf(`ent: validator failed for field "ScmProvider.clone_protocol": %w`, err)}
+		}
+	}
 	if v, ok := spu.mutation.Status(); ok {
 		if err := scmprovider.StatusValidator(v); err != nil {
 			return &ValidationError{Name: "status", err: fmt.Errorf(`ent: validator failed for field "ScmProvider.status": %w`, err)}
@@ -231,11 +319,75 @@ func (spu *ScmProviderUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if value, ok := spu.mutation.Credentials(); ok {
 		_spec.SetField(scmprovider.FieldCredentials, field.TypeString, value)
 	}
+	if spu.mutation.CredentialsCleared() {
+		_spec.ClearField(scmprovider.FieldCredentials, field.TypeString)
+	}
+	if value, ok := spu.mutation.CloneProtocol(); ok {
+		_spec.SetField(scmprovider.FieldCloneProtocol, field.TypeEnum, value)
+	}
 	if value, ok := spu.mutation.Status(); ok {
 		_spec.SetField(scmprovider.FieldStatus, field.TypeEnum, value)
 	}
 	if value, ok := spu.mutation.UpdatedAt(); ok {
 		_spec.SetField(scmprovider.FieldUpdatedAt, field.TypeTime, value)
+	}
+	if spu.mutation.APICredentialCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   scmprovider.APICredentialTable,
+			Columns: []string{scmprovider.APICredentialColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(credential.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := spu.mutation.APICredentialIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   scmprovider.APICredentialTable,
+			Columns: []string{scmprovider.APICredentialColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(credential.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if spu.mutation.CloneCredentialCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   scmprovider.CloneCredentialTable,
+			Columns: []string{scmprovider.CloneCredentialColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(credential.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := spu.mutation.CloneCredentialIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   scmprovider.CloneCredentialTable,
+			Columns: []string{scmprovider.CloneCredentialColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(credential.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
 	if spu.mutation.RepoConfigsCleared() {
 		edge := &sqlgraph.EdgeSpec{
@@ -358,6 +510,66 @@ func (spuo *ScmProviderUpdateOne) SetNillableCredentials(s *string) *ScmProvider
 	return spuo
 }
 
+// ClearCredentials clears the value of the "credentials" field.
+func (spuo *ScmProviderUpdateOne) ClearCredentials() *ScmProviderUpdateOne {
+	spuo.mutation.ClearCredentials()
+	return spuo
+}
+
+// SetAPICredentialID sets the "api_credential_id" field.
+func (spuo *ScmProviderUpdateOne) SetAPICredentialID(i int) *ScmProviderUpdateOne {
+	spuo.mutation.SetAPICredentialID(i)
+	return spuo
+}
+
+// SetNillableAPICredentialID sets the "api_credential_id" field if the given value is not nil.
+func (spuo *ScmProviderUpdateOne) SetNillableAPICredentialID(i *int) *ScmProviderUpdateOne {
+	if i != nil {
+		spuo.SetAPICredentialID(*i)
+	}
+	return spuo
+}
+
+// ClearAPICredentialID clears the value of the "api_credential_id" field.
+func (spuo *ScmProviderUpdateOne) ClearAPICredentialID() *ScmProviderUpdateOne {
+	spuo.mutation.ClearAPICredentialID()
+	return spuo
+}
+
+// SetCloneCredentialID sets the "clone_credential_id" field.
+func (spuo *ScmProviderUpdateOne) SetCloneCredentialID(i int) *ScmProviderUpdateOne {
+	spuo.mutation.SetCloneCredentialID(i)
+	return spuo
+}
+
+// SetNillableCloneCredentialID sets the "clone_credential_id" field if the given value is not nil.
+func (spuo *ScmProviderUpdateOne) SetNillableCloneCredentialID(i *int) *ScmProviderUpdateOne {
+	if i != nil {
+		spuo.SetCloneCredentialID(*i)
+	}
+	return spuo
+}
+
+// ClearCloneCredentialID clears the value of the "clone_credential_id" field.
+func (spuo *ScmProviderUpdateOne) ClearCloneCredentialID() *ScmProviderUpdateOne {
+	spuo.mutation.ClearCloneCredentialID()
+	return spuo
+}
+
+// SetCloneProtocol sets the "clone_protocol" field.
+func (spuo *ScmProviderUpdateOne) SetCloneProtocol(sp scmprovider.CloneProtocol) *ScmProviderUpdateOne {
+	spuo.mutation.SetCloneProtocol(sp)
+	return spuo
+}
+
+// SetNillableCloneProtocol sets the "clone_protocol" field if the given value is not nil.
+func (spuo *ScmProviderUpdateOne) SetNillableCloneProtocol(sp *scmprovider.CloneProtocol) *ScmProviderUpdateOne {
+	if sp != nil {
+		spuo.SetCloneProtocol(*sp)
+	}
+	return spuo
+}
+
 // SetStatus sets the "status" field.
 func (spuo *ScmProviderUpdateOne) SetStatus(s scmprovider.Status) *ScmProviderUpdateOne {
 	spuo.mutation.SetStatus(s)
@@ -378,6 +590,16 @@ func (spuo *ScmProviderUpdateOne) SetUpdatedAt(t time.Time) *ScmProviderUpdateOn
 	return spuo
 }
 
+// SetAPICredential sets the "api_credential" edge to the Credential entity.
+func (spuo *ScmProviderUpdateOne) SetAPICredential(c *Credential) *ScmProviderUpdateOne {
+	return spuo.SetAPICredentialID(c.ID)
+}
+
+// SetCloneCredential sets the "clone_credential" edge to the Credential entity.
+func (spuo *ScmProviderUpdateOne) SetCloneCredential(c *Credential) *ScmProviderUpdateOne {
+	return spuo.SetCloneCredentialID(c.ID)
+}
+
 // AddRepoConfigIDs adds the "repo_configs" edge to the RepoConfig entity by IDs.
 func (spuo *ScmProviderUpdateOne) AddRepoConfigIDs(ids ...int) *ScmProviderUpdateOne {
 	spuo.mutation.AddRepoConfigIDs(ids...)
@@ -396,6 +618,18 @@ func (spuo *ScmProviderUpdateOne) AddRepoConfigs(r ...*RepoConfig) *ScmProviderU
 // Mutation returns the ScmProviderMutation object of the builder.
 func (spuo *ScmProviderUpdateOne) Mutation() *ScmProviderMutation {
 	return spuo.mutation
+}
+
+// ClearAPICredential clears the "api_credential" edge to the Credential entity.
+func (spuo *ScmProviderUpdateOne) ClearAPICredential() *ScmProviderUpdateOne {
+	spuo.mutation.ClearAPICredential()
+	return spuo
+}
+
+// ClearCloneCredential clears the "clone_credential" edge to the Credential entity.
+func (spuo *ScmProviderUpdateOne) ClearCloneCredential() *ScmProviderUpdateOne {
+	spuo.mutation.ClearCloneCredential()
+	return spuo
 }
 
 // ClearRepoConfigs clears all "repo_configs" edges to the RepoConfig entity.
@@ -485,6 +719,11 @@ func (spuo *ScmProviderUpdateOne) check() error {
 			return &ValidationError{Name: "base_url", err: fmt.Errorf(`ent: validator failed for field "ScmProvider.base_url": %w`, err)}
 		}
 	}
+	if v, ok := spuo.mutation.CloneProtocol(); ok {
+		if err := scmprovider.CloneProtocolValidator(v); err != nil {
+			return &ValidationError{Name: "clone_protocol", err: fmt.Errorf(`ent: validator failed for field "ScmProvider.clone_protocol": %w`, err)}
+		}
+	}
 	if v, ok := spuo.mutation.Status(); ok {
 		if err := scmprovider.StatusValidator(v); err != nil {
 			return &ValidationError{Name: "status", err: fmt.Errorf(`ent: validator failed for field "ScmProvider.status": %w`, err)}
@@ -534,11 +773,75 @@ func (spuo *ScmProviderUpdateOne) sqlSave(ctx context.Context) (_node *ScmProvid
 	if value, ok := spuo.mutation.Credentials(); ok {
 		_spec.SetField(scmprovider.FieldCredentials, field.TypeString, value)
 	}
+	if spuo.mutation.CredentialsCleared() {
+		_spec.ClearField(scmprovider.FieldCredentials, field.TypeString)
+	}
+	if value, ok := spuo.mutation.CloneProtocol(); ok {
+		_spec.SetField(scmprovider.FieldCloneProtocol, field.TypeEnum, value)
+	}
 	if value, ok := spuo.mutation.Status(); ok {
 		_spec.SetField(scmprovider.FieldStatus, field.TypeEnum, value)
 	}
 	if value, ok := spuo.mutation.UpdatedAt(); ok {
 		_spec.SetField(scmprovider.FieldUpdatedAt, field.TypeTime, value)
+	}
+	if spuo.mutation.APICredentialCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   scmprovider.APICredentialTable,
+			Columns: []string{scmprovider.APICredentialColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(credential.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := spuo.mutation.APICredentialIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   scmprovider.APICredentialTable,
+			Columns: []string{scmprovider.APICredentialColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(credential.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if spuo.mutation.CloneCredentialCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   scmprovider.CloneCredentialTable,
+			Columns: []string{scmprovider.CloneCredentialColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(credential.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := spuo.mutation.CloneCredentialIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   scmprovider.CloneCredentialTable,
+			Columns: []string{scmprovider.CloneCredentialColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(credential.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
 	if spuo.mutation.RepoConfigsCleared() {
 		edge := &sqlgraph.EdgeSpec{

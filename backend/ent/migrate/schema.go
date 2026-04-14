@@ -146,6 +146,22 @@ var (
 			},
 		},
 	}
+	// CredentialsColumns holds the columns for the "credentials" table.
+	CredentialsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "name", Type: field.TypeString},
+		{Name: "description", Type: field.TypeString, Default: ""},
+		{Name: "kind", Type: field.TypeEnum, Enums: []string{"secret_text", "username_password", "ssh_username_with_private_key"}},
+		{Name: "payload", Type: field.TypeString},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+	}
+	// CredentialsTable holds the schema information for the "credentials" table.
+	CredentialsTable = &schema.Table{
+		Name:       "credentials",
+		Columns:    CredentialsColumns,
+		PrimaryKey: []*schema.Column{CredentialsColumns[0]},
+	}
 	// EfficiencyMetricsColumns holds the columns for the "efficiency_metrics" table.
 	EfficiencyMetricsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
@@ -339,16 +355,33 @@ var (
 		{Name: "name", Type: field.TypeString},
 		{Name: "type", Type: field.TypeEnum, Enums: []string{"github", "bitbucket_server"}},
 		{Name: "base_url", Type: field.TypeString},
-		{Name: "credentials", Type: field.TypeString},
+		{Name: "credentials", Type: field.TypeString, Nullable: true},
+		{Name: "clone_protocol", Type: field.TypeEnum, Enums: []string{"https", "ssh"}, Default: "https"},
 		{Name: "status", Type: field.TypeEnum, Enums: []string{"active", "inactive", "error"}, Default: "active"},
 		{Name: "created_at", Type: field.TypeTime},
 		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "api_credential_id", Type: field.TypeInt, Nullable: true},
+		{Name: "clone_credential_id", Type: field.TypeInt, Nullable: true},
 	}
 	// ScmProvidersTable holds the schema information for the "scm_providers" table.
 	ScmProvidersTable = &schema.Table{
 		Name:       "scm_providers",
 		Columns:    ScmProvidersColumns,
 		PrimaryKey: []*schema.Column{ScmProvidersColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "scm_providers_credentials_api_scm_providers",
+				Columns:    []*schema.Column{ScmProvidersColumns[9]},
+				RefColumns: []*schema.Column{CredentialsColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
+			{
+				Symbol:     "scm_providers_credentials_clone_scm_providers",
+				Columns:    []*schema.Column{ScmProvidersColumns[10]},
+				RefColumns: []*schema.Column{CredentialsColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
+		},
 	}
 	// SessionsColumns holds the columns for the "sessions" table.
 	SessionsColumns = []*schema.Column{
@@ -563,6 +596,7 @@ var (
 		AiScanResultsTable,
 		CommitCheckpointsTable,
 		CommitRewritesTable,
+		CredentialsTable,
 		EfficiencyMetricsTable,
 		PrAttributionRunsTable,
 		PrRecordsTable,
@@ -591,6 +625,8 @@ func init() {
 	PrRecordsTable.ForeignKeys[0].RefTable = PrAttributionRunsTable
 	PrRecordsTable.ForeignKeys[1].RefTable = RepoConfigsTable
 	RepoConfigsTable.ForeignKeys[0].RefTable = ScmProvidersTable
+	ScmProvidersTable.ForeignKeys[0].RefTable = CredentialsTable
+	ScmProvidersTable.ForeignKeys[1].RefTable = CredentialsTable
 	SessionsTable.ForeignKeys[0].RefTable = RepoConfigsTable
 	SessionsTable.ForeignKeys[1].RefTable = UsersTable
 	SessionEventsTable.ForeignKeys[0].RefTable = SessionsTable

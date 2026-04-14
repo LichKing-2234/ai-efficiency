@@ -12,6 +12,7 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/ai-efficiency/backend/ent/credential"
 	"github.com/ai-efficiency/backend/ent/predicate"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/scmprovider"
@@ -20,11 +21,13 @@ import (
 // ScmProviderQuery is the builder for querying ScmProvider entities.
 type ScmProviderQuery struct {
 	config
-	ctx             *QueryContext
-	order           []scmprovider.OrderOption
-	inters          []Interceptor
-	predicates      []predicate.ScmProvider
-	withRepoConfigs *RepoConfigQuery
+	ctx                 *QueryContext
+	order               []scmprovider.OrderOption
+	inters              []Interceptor
+	predicates          []predicate.ScmProvider
+	withAPICredential   *CredentialQuery
+	withCloneCredential *CredentialQuery
+	withRepoConfigs     *RepoConfigQuery
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
 	path func(context.Context) (*sql.Selector, error)
@@ -59,6 +62,50 @@ func (spq *ScmProviderQuery) Unique(unique bool) *ScmProviderQuery {
 func (spq *ScmProviderQuery) Order(o ...scmprovider.OrderOption) *ScmProviderQuery {
 	spq.order = append(spq.order, o...)
 	return spq
+}
+
+// QueryAPICredential chains the current query on the "api_credential" edge.
+func (spq *ScmProviderQuery) QueryAPICredential() *CredentialQuery {
+	query := (&CredentialClient{config: spq.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := spq.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := spq.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(scmprovider.Table, scmprovider.FieldID, selector),
+			sqlgraph.To(credential.Table, credential.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, scmprovider.APICredentialTable, scmprovider.APICredentialColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(spq.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryCloneCredential chains the current query on the "clone_credential" edge.
+func (spq *ScmProviderQuery) QueryCloneCredential() *CredentialQuery {
+	query := (&CredentialClient{config: spq.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := spq.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := spq.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(scmprovider.Table, scmprovider.FieldID, selector),
+			sqlgraph.To(credential.Table, credential.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, scmprovider.CloneCredentialTable, scmprovider.CloneCredentialColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(spq.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
 }
 
 // QueryRepoConfigs chains the current query on the "repo_configs" edge.
@@ -270,16 +317,40 @@ func (spq *ScmProviderQuery) Clone() *ScmProviderQuery {
 		return nil
 	}
 	return &ScmProviderQuery{
-		config:          spq.config,
-		ctx:             spq.ctx.Clone(),
-		order:           append([]scmprovider.OrderOption{}, spq.order...),
-		inters:          append([]Interceptor{}, spq.inters...),
-		predicates:      append([]predicate.ScmProvider{}, spq.predicates...),
-		withRepoConfigs: spq.withRepoConfigs.Clone(),
+		config:              spq.config,
+		ctx:                 spq.ctx.Clone(),
+		order:               append([]scmprovider.OrderOption{}, spq.order...),
+		inters:              append([]Interceptor{}, spq.inters...),
+		predicates:          append([]predicate.ScmProvider{}, spq.predicates...),
+		withAPICredential:   spq.withAPICredential.Clone(),
+		withCloneCredential: spq.withCloneCredential.Clone(),
+		withRepoConfigs:     spq.withRepoConfigs.Clone(),
 		// clone intermediate query.
 		sql:  spq.sql.Clone(),
 		path: spq.path,
 	}
+}
+
+// WithAPICredential tells the query-builder to eager-load the nodes that are connected to
+// the "api_credential" edge. The optional arguments are used to configure the query builder of the edge.
+func (spq *ScmProviderQuery) WithAPICredential(opts ...func(*CredentialQuery)) *ScmProviderQuery {
+	query := (&CredentialClient{config: spq.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	spq.withAPICredential = query
+	return spq
+}
+
+// WithCloneCredential tells the query-builder to eager-load the nodes that are connected to
+// the "clone_credential" edge. The optional arguments are used to configure the query builder of the edge.
+func (spq *ScmProviderQuery) WithCloneCredential(opts ...func(*CredentialQuery)) *ScmProviderQuery {
+	query := (&CredentialClient{config: spq.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	spq.withCloneCredential = query
+	return spq
 }
 
 // WithRepoConfigs tells the query-builder to eager-load the nodes that are connected to
@@ -371,7 +442,9 @@ func (spq *ScmProviderQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]
 	var (
 		nodes       = []*ScmProvider{}
 		_spec       = spq.querySpec()
-		loadedTypes = [1]bool{
+		loadedTypes = [3]bool{
+			spq.withAPICredential != nil,
+			spq.withCloneCredential != nil,
 			spq.withRepoConfigs != nil,
 		}
 	)
@@ -393,6 +466,18 @@ func (spq *ScmProviderQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]
 	if len(nodes) == 0 {
 		return nodes, nil
 	}
+	if query := spq.withAPICredential; query != nil {
+		if err := spq.loadAPICredential(ctx, query, nodes, nil,
+			func(n *ScmProvider, e *Credential) { n.Edges.APICredential = e }); err != nil {
+			return nil, err
+		}
+	}
+	if query := spq.withCloneCredential; query != nil {
+		if err := spq.loadCloneCredential(ctx, query, nodes, nil,
+			func(n *ScmProvider, e *Credential) { n.Edges.CloneCredential = e }); err != nil {
+			return nil, err
+		}
+	}
 	if query := spq.withRepoConfigs; query != nil {
 		if err := spq.loadRepoConfigs(ctx, query, nodes,
 			func(n *ScmProvider) { n.Edges.RepoConfigs = []*RepoConfig{} },
@@ -403,6 +488,67 @@ func (spq *ScmProviderQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]
 	return nodes, nil
 }
 
+func (spq *ScmProviderQuery) loadAPICredential(ctx context.Context, query *CredentialQuery, nodes []*ScmProvider, init func(*ScmProvider), assign func(*ScmProvider, *Credential)) error {
+	ids := make([]int, 0, len(nodes))
+	nodeids := make(map[int][]*ScmProvider)
+	for i := range nodes {
+		fk := nodes[i].APICredentialID
+		if _, ok := nodeids[fk]; !ok {
+			ids = append(ids, fk)
+		}
+		nodeids[fk] = append(nodeids[fk], nodes[i])
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	query.Where(credential.IDIn(ids...))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		nodes, ok := nodeids[n.ID]
+		if !ok {
+			return fmt.Errorf(`unexpected foreign-key "api_credential_id" returned %v`, n.ID)
+		}
+		for i := range nodes {
+			assign(nodes[i], n)
+		}
+	}
+	return nil
+}
+func (spq *ScmProviderQuery) loadCloneCredential(ctx context.Context, query *CredentialQuery, nodes []*ScmProvider, init func(*ScmProvider), assign func(*ScmProvider, *Credential)) error {
+	ids := make([]int, 0, len(nodes))
+	nodeids := make(map[int][]*ScmProvider)
+	for i := range nodes {
+		if nodes[i].CloneCredentialID == nil {
+			continue
+		}
+		fk := *nodes[i].CloneCredentialID
+		if _, ok := nodeids[fk]; !ok {
+			ids = append(ids, fk)
+		}
+		nodeids[fk] = append(nodeids[fk], nodes[i])
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	query.Where(credential.IDIn(ids...))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		nodes, ok := nodeids[n.ID]
+		if !ok {
+			return fmt.Errorf(`unexpected foreign-key "clone_credential_id" returned %v`, n.ID)
+		}
+		for i := range nodes {
+			assign(nodes[i], n)
+		}
+	}
+	return nil
+}
 func (spq *ScmProviderQuery) loadRepoConfigs(ctx context.Context, query *RepoConfigQuery, nodes []*ScmProvider, init func(*ScmProvider), assign func(*ScmProvider, *RepoConfig)) error {
 	fks := make([]driver.Value, 0, len(nodes))
 	nodeids := make(map[int]*ScmProvider)
@@ -459,6 +605,12 @@ func (spq *ScmProviderQuery) querySpec() *sqlgraph.QuerySpec {
 			if fields[i] != scmprovider.FieldID {
 				_spec.Node.Columns = append(_spec.Node.Columns, fields[i])
 			}
+		}
+		if spq.withAPICredential != nil {
+			_spec.Node.AddColumnOnce(scmprovider.FieldAPICredentialID)
+		}
+		if spq.withCloneCredential != nil {
+			_spec.Node.AddColumnOnce(scmprovider.FieldCloneCredentialID)
 		}
 	}
 	if ps := spq.predicates; len(ps) > 0 {

@@ -20,6 +20,7 @@ import (
 	"github.com/ai-efficiency/backend/ent/aiscanresult"
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
 	"github.com/ai-efficiency/backend/ent/commitrewrite"
+	"github.com/ai-efficiency/backend/ent/credential"
 	"github.com/ai-efficiency/backend/ent/efficiencymetric"
 	"github.com/ai-efficiency/backend/ent/prattributionrun"
 	"github.com/ai-efficiency/backend/ent/prrecord"
@@ -48,6 +49,8 @@ type Client struct {
 	CommitCheckpoint *CommitCheckpointClient
 	// CommitRewrite is the client for interacting with the CommitRewrite builders.
 	CommitRewrite *CommitRewriteClient
+	// Credential is the client for interacting with the Credential builders.
+	Credential *CredentialClient
 	// EfficiencyMetric is the client for interacting with the EfficiencyMetric builders.
 	EfficiencyMetric *EfficiencyMetricClient
 	// PrAttributionRun is the client for interacting with the PrAttributionRun builders.
@@ -89,6 +92,7 @@ func (c *Client) init() {
 	c.AiScanResult = NewAiScanResultClient(c.config)
 	c.CommitCheckpoint = NewCommitCheckpointClient(c.config)
 	c.CommitRewrite = NewCommitRewriteClient(c.config)
+	c.Credential = NewCredentialClient(c.config)
 	c.EfficiencyMetric = NewEfficiencyMetricClient(c.config)
 	c.PrAttributionRun = NewPrAttributionRunClient(c.config)
 	c.PrRecord = NewPrRecordClient(c.config)
@@ -198,6 +202,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		AiScanResult:       NewAiScanResultClient(cfg),
 		CommitCheckpoint:   NewCommitCheckpointClient(cfg),
 		CommitRewrite:      NewCommitRewriteClient(cfg),
+		Credential:         NewCredentialClient(cfg),
 		EfficiencyMetric:   NewEfficiencyMetricClient(cfg),
 		PrAttributionRun:   NewPrAttributionRunClient(cfg),
 		PrRecord:           NewPrRecordClient(cfg),
@@ -234,6 +239,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		AiScanResult:       NewAiScanResultClient(cfg),
 		CommitCheckpoint:   NewCommitCheckpointClient(cfg),
 		CommitRewrite:      NewCommitRewriteClient(cfg),
+		Credential:         NewCredentialClient(cfg),
 		EfficiencyMetric:   NewEfficiencyMetricClient(cfg),
 		PrAttributionRun:   NewPrAttributionRunClient(cfg),
 		PrRecord:           NewPrRecordClient(cfg),
@@ -277,9 +283,10 @@ func (c *Client) Close() error {
 func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
 		c.AgentMetadataEvent, c.AiScanResult, c.CommitCheckpoint, c.CommitRewrite,
-		c.EfficiencyMetric, c.PrAttributionRun, c.PrRecord, c.RelayProvider,
-		c.RepoConfig, c.ScmProvider, c.Session, c.SessionEvent, c.SessionUsageEvent,
-		c.SessionWorkspace, c.SystemSetting, c.User, c.WebhookDeadLetter,
+		c.Credential, c.EfficiencyMetric, c.PrAttributionRun, c.PrRecord,
+		c.RelayProvider, c.RepoConfig, c.ScmProvider, c.Session, c.SessionEvent,
+		c.SessionUsageEvent, c.SessionWorkspace, c.SystemSetting, c.User,
+		c.WebhookDeadLetter,
 	} {
 		n.Use(hooks...)
 	}
@@ -290,9 +297,10 @@ func (c *Client) Use(hooks ...Hook) {
 func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
 		c.AgentMetadataEvent, c.AiScanResult, c.CommitCheckpoint, c.CommitRewrite,
-		c.EfficiencyMetric, c.PrAttributionRun, c.PrRecord, c.RelayProvider,
-		c.RepoConfig, c.ScmProvider, c.Session, c.SessionEvent, c.SessionUsageEvent,
-		c.SessionWorkspace, c.SystemSetting, c.User, c.WebhookDeadLetter,
+		c.Credential, c.EfficiencyMetric, c.PrAttributionRun, c.PrRecord,
+		c.RelayProvider, c.RepoConfig, c.ScmProvider, c.Session, c.SessionEvent,
+		c.SessionUsageEvent, c.SessionWorkspace, c.SystemSetting, c.User,
+		c.WebhookDeadLetter,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -309,6 +317,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.CommitCheckpoint.mutate(ctx, m)
 	case *CommitRewriteMutation:
 		return c.CommitRewrite.mutate(ctx, m)
+	case *CredentialMutation:
+		return c.Credential.mutate(ctx, m)
 	case *EfficiencyMetricMutation:
 		return c.EfficiencyMetric.mutate(ctx, m)
 	case *PrAttributionRunMutation:
@@ -965,6 +975,171 @@ func (c *CommitRewriteClient) mutate(ctx context.Context, m *CommitRewriteMutati
 		return (&CommitRewriteDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown CommitRewrite mutation op: %q", m.Op())
+	}
+}
+
+// CredentialClient is a client for the Credential schema.
+type CredentialClient struct {
+	config
+}
+
+// NewCredentialClient returns a client for the Credential from the given config.
+func NewCredentialClient(c config) *CredentialClient {
+	return &CredentialClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `credential.Hooks(f(g(h())))`.
+func (c *CredentialClient) Use(hooks ...Hook) {
+	c.hooks.Credential = append(c.hooks.Credential, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `credential.Intercept(f(g(h())))`.
+func (c *CredentialClient) Intercept(interceptors ...Interceptor) {
+	c.inters.Credential = append(c.inters.Credential, interceptors...)
+}
+
+// Create returns a builder for creating a Credential entity.
+func (c *CredentialClient) Create() *CredentialCreate {
+	mutation := newCredentialMutation(c.config, OpCreate)
+	return &CredentialCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of Credential entities.
+func (c *CredentialClient) CreateBulk(builders ...*CredentialCreate) *CredentialCreateBulk {
+	return &CredentialCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *CredentialClient) MapCreateBulk(slice any, setFunc func(*CredentialCreate, int)) *CredentialCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &CredentialCreateBulk{err: fmt.Errorf("calling to CredentialClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*CredentialCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &CredentialCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for Credential.
+func (c *CredentialClient) Update() *CredentialUpdate {
+	mutation := newCredentialMutation(c.config, OpUpdate)
+	return &CredentialUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *CredentialClient) UpdateOne(cr *Credential) *CredentialUpdateOne {
+	mutation := newCredentialMutation(c.config, OpUpdateOne, withCredential(cr))
+	return &CredentialUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *CredentialClient) UpdateOneID(id int) *CredentialUpdateOne {
+	mutation := newCredentialMutation(c.config, OpUpdateOne, withCredentialID(id))
+	return &CredentialUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for Credential.
+func (c *CredentialClient) Delete() *CredentialDelete {
+	mutation := newCredentialMutation(c.config, OpDelete)
+	return &CredentialDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *CredentialClient) DeleteOne(cr *Credential) *CredentialDeleteOne {
+	return c.DeleteOneID(cr.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *CredentialClient) DeleteOneID(id int) *CredentialDeleteOne {
+	builder := c.Delete().Where(credential.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &CredentialDeleteOne{builder}
+}
+
+// Query returns a query builder for Credential.
+func (c *CredentialClient) Query() *CredentialQuery {
+	return &CredentialQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeCredential},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a Credential entity by its id.
+func (c *CredentialClient) Get(ctx context.Context, id int) (*Credential, error) {
+	return c.Query().Where(credential.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *CredentialClient) GetX(ctx context.Context, id int) *Credential {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryAPIScmProviders queries the api_scm_providers edge of a Credential.
+func (c *CredentialClient) QueryAPIScmProviders(cr *Credential) *ScmProviderQuery {
+	query := (&ScmProviderClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := cr.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(credential.Table, credential.FieldID, id),
+			sqlgraph.To(scmprovider.Table, scmprovider.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, credential.APIScmProvidersTable, credential.APIScmProvidersColumn),
+		)
+		fromV = sqlgraph.Neighbors(cr.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryCloneScmProviders queries the clone_scm_providers edge of a Credential.
+func (c *CredentialClient) QueryCloneScmProviders(cr *Credential) *ScmProviderQuery {
+	query := (&ScmProviderClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := cr.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(credential.Table, credential.FieldID, id),
+			sqlgraph.To(scmprovider.Table, scmprovider.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, credential.CloneScmProvidersTable, credential.CloneScmProvidersColumn),
+		)
+		fromV = sqlgraph.Neighbors(cr.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *CredentialClient) Hooks() []Hook {
+	return c.hooks.Credential
+}
+
+// Interceptors returns the client interceptors.
+func (c *CredentialClient) Interceptors() []Interceptor {
+	return c.inters.Credential
+}
+
+func (c *CredentialClient) mutate(ctx context.Context, m *CredentialMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&CredentialCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&CredentialUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&CredentialUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&CredentialDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown Credential mutation op: %q", m.Op())
 	}
 }
 
@@ -1949,6 +2124,38 @@ func (c *ScmProviderClient) GetX(ctx context.Context, id int) *ScmProvider {
 		panic(err)
 	}
 	return obj
+}
+
+// QueryAPICredential queries the api_credential edge of a ScmProvider.
+func (c *ScmProviderClient) QueryAPICredential(sp *ScmProvider) *CredentialQuery {
+	query := (&CredentialClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := sp.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(scmprovider.Table, scmprovider.FieldID, id),
+			sqlgraph.To(credential.Table, credential.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, scmprovider.APICredentialTable, scmprovider.APICredentialColumn),
+		)
+		fromV = sqlgraph.Neighbors(sp.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryCloneCredential queries the clone_credential edge of a ScmProvider.
+func (c *ScmProviderClient) QueryCloneCredential(sp *ScmProvider) *CredentialQuery {
+	query := (&CredentialClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := sp.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(scmprovider.Table, scmprovider.FieldID, id),
+			sqlgraph.To(credential.Table, credential.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, scmprovider.CloneCredentialTable, scmprovider.CloneCredentialColumn),
+		)
+		fromV = sqlgraph.Neighbors(sp.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
 }
 
 // QueryRepoConfigs queries the repo_configs edge of a ScmProvider.
@@ -3134,13 +3341,13 @@ func (c *WebhookDeadLetterClient) mutate(ctx context.Context, m *WebhookDeadLett
 // hooks and interceptors per client, for fast access.
 type (
 	hooks struct {
-		AgentMetadataEvent, AiScanResult, CommitCheckpoint, CommitRewrite,
+		AgentMetadataEvent, AiScanResult, CommitCheckpoint, CommitRewrite, Credential,
 		EfficiencyMetric, PrAttributionRun, PrRecord, RelayProvider, RepoConfig,
 		ScmProvider, Session, SessionEvent, SessionUsageEvent, SessionWorkspace,
 		SystemSetting, User, WebhookDeadLetter []ent.Hook
 	}
 	inters struct {
-		AgentMetadataEvent, AiScanResult, CommitCheckpoint, CommitRewrite,
+		AgentMetadataEvent, AiScanResult, CommitCheckpoint, CommitRewrite, Credential,
 		EfficiencyMetric, PrAttributionRun, PrRecord, RelayProvider, RepoConfig,
 		ScmProvider, Session, SessionEvent, SessionUsageEvent, SessionWorkspace,
 		SystemSetting, User, WebhookDeadLetter []ent.Interceptor

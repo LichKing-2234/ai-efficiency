@@ -21,6 +21,7 @@ import (
 	"github.com/ai-efficiency/backend/internal/auth"
 	"github.com/ai-efficiency/backend/internal/checkpoint"
 	"github.com/ai-efficiency/backend/internal/config"
+	"github.com/ai-efficiency/backend/internal/credential"
 	"github.com/ai-efficiency/backend/internal/deployment"
 	"github.com/ai-efficiency/backend/internal/efficiency"
 	"github.com/ai-efficiency/backend/internal/handler"
@@ -135,6 +136,13 @@ func main() {
 		logger.Fatal("ent auto-migrate", zap.Error(err))
 	}
 	logger.Info("database schema migrated")
+	backfillResult, err := credential.BackfillLegacySCMCredentials(context.Background(), entClient, cfg.Encryption.Key)
+	if err != nil {
+		logger.Fatal("backfill legacy scm credentials", zap.Error(err))
+	}
+	if backfillResult != nil && len(backfillResult.Skipped) > 0 {
+		logger.Warn("skipped legacy scm credential backfill rows", zap.Strings("providers", backfillResult.Skipped))
+	}
 
 	runtimeRelayCfg, relayConfigSource, err := resolveRuntimeRelayConfig(context.Background(), cfg.Relay, func(ctx context.Context) (*config.RelayConfig, error) {
 		return loadPrimaryRelayConfig(ctx, entClient, cfg.Encryption.Key)
@@ -209,7 +217,7 @@ func main() {
 	}
 	analysisCloner := analysis.NewCloner(dataDir, logger)
 	llmAnalyzer := llm.NewAnalyzer(cfg.Analysis.LLM, relayProvider, logger)
-	analysisService := analysis.NewService(entClient, analysisCloner, llmAnalyzer, logger)
+	analysisService := analysis.NewService(entClient, analysisCloner, llmAnalyzer, logger, cfg.Encryption.Key)
 
 	// Init PR labeler (with optional relay usage stats lookup)
 	labeler := efficiency.NewLabeler(entClient, relayProvider, logger)
