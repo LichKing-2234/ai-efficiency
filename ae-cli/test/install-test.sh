@@ -112,6 +112,7 @@ PINNED_HOME="$TMP_ROOT/home-pinned"
 BAD_HOME="$TMP_ROOT/home-bad"
 MISSING_HOME="$TMP_ROOT/home-missing"
 PATH_WARNING_HOME="$TMP_ROOT/home-path-warning"
+CONFIG_HOME="$TMP_ROOT/home-config"
 mkdir -p "$LATEST_HOME" "$PINNED_HOME" "$BAD_HOME" "$MISSING_HOME" "$PATH_WARNING_HOME"
 
 LATEST_LOG="$TMP_ROOT/latest.log"
@@ -204,6 +205,22 @@ grep -q "Warning: $PATH_WARNING_HOME/.local/bin is not in PATH." "$PATH_WARNING_
 grep -q "export PATH=\"$PATH_WARNING_HOME/.local/bin:\$PATH\"" "$PATH_WARNING_LOG"
 cmp -s "$PATH_WARNING_HOME/.zshrc" "$TMP_ROOT/zshrc.expected"
 cmp -s "$PATH_WARNING_HOME/.bashrc" "$TMP_ROOT/bashrc.expected"
+
+CONFIG_LOG="$TMP_ROOT/config.log"
+env -i \
+  HOME="$CONFIG_HOME" \
+  PATH="$CONFIG_HOME/.local/bin:/usr/bin:/bin" \
+  AE_CLI_INSTALL_TEST_OS=linux \
+  AE_CLI_INSTALL_TEST_ARCH=amd64 \
+  AE_CLI_INSTALL_RELEASE_API_URL="file://$TMP_ROOT/latest.json" \
+  AE_CLI_INSTALL_RELEASE_DOWNLOAD_BASE="file://$RELEASE_ROOT" \
+  AE_CLI_INSTALL_SERVER_URL="https://ae.example.com" \
+  bash "$INSTALLER" "$LATEST_TAG" \
+  >"$CONFIG_LOG" 2>&1
+
+test -x "$CONFIG_HOME/.local/bin/ae-cli"
+test -f "$CONFIG_HOME/.ae-cli/config.yaml"
+grep -q 'url: "https://ae.example.com"' "$CONFIG_HOME/.ae-cli/config.yaml"
 
 HOMELESS_LOG="$TMP_ROOT/homeless.log"
 set +e

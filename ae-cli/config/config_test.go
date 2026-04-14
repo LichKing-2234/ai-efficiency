@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -10,8 +11,11 @@ import (
 func TestLoadDefaults(t *testing.T) {
 	// Use a temp HOME so no real ~/.ae-cli/config.yaml is picked up.
 	origHome := os.Getenv("HOME")
+	origPath := os.Getenv("PATH")
 	t.Cleanup(func() { os.Setenv("HOME", origHome) })
+	t.Cleanup(func() { os.Setenv("PATH", origPath) })
 	os.Setenv("HOME", t.TempDir())
+	os.Setenv("PATH", t.TempDir())
 
 	cfg, err := Load("")
 	if err != nil {
@@ -160,6 +164,9 @@ func TestLoadEmptyFile(t *testing.T) {
 func TestLoadPartialConfig(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.yaml")
+	origPath := os.Getenv("PATH")
+	os.Setenv("PATH", t.TempDir())
+	t.Cleanup(func() { os.Setenv("PATH", origPath) })
 
 	content := `server:
   url: "http://partial:8080"
@@ -209,6 +216,32 @@ func TestLoadFromHomeDir(t *testing.T) {
 	}
 	if cfg.Server.Token != "home-token" {
 		t.Errorf("server.token = %q, want %q", cfg.Server.Token, "home-token")
+	}
+}
+
+func TestLoadFromHomeDirYML(t *testing.T) {
+	origHome := os.Getenv("HOME")
+	tmpHome := t.TempDir()
+	os.Setenv("HOME", tmpHome)
+	t.Cleanup(func() { os.Setenv("HOME", origHome) })
+
+	cfgDir := filepath.Join(tmpHome, ".ae-cli")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	content := `server:
+  url: "http://home-config-yml:9090"
+`
+	if err := os.WriteFile(filepath.Join(cfgDir, "config.yml"), []byte(content), 0o644); err != nil {
+		t.Fatalf("WriteFile(config.yml): %v", err)
+	}
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load from home dir config.yml: %v", err)
+	}
+	if cfg.Server.URL != "http://home-config-yml:9090" {
+		t.Errorf("server.url = %q, want %q", cfg.Server.URL, "http://home-config-yml:9090")
 	}
 }
 
@@ -339,5 +372,85 @@ func TestLoadMultipleToolArgs(t *testing.T) {
 	}
 	if len(tool.Args) != 5 {
 		t.Errorf("args length = %d, want 5", len(tool.Args))
+	}
+}
+
+func TestLoadAutoDetectsToolsWhenConfigMissing(t *testing.T) {
+	origHome := os.Getenv("HOME")
+	origPath := os.Getenv("PATH")
+	tmpHome := t.TempDir()
+	tmpBin := t.TempDir()
+	os.Setenv("HOME", tmpHome)
+	os.Setenv("PATH", tmpBin)
+	t.Cleanup(func() {
+		os.Setenv("HOME", origHome)
+		os.Setenv("PATH", origPath)
+	})
+
+	writeTestExecutable(t, tmpBin, "claude")
+	writeTestExecutable(t, tmpBin, "codex")
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg == nil {
+		t.Fatal("expected non-nil config")
+	}
+	if len(cfg.Tools) != 2 {
+		t.Fatalf("expected 2 auto-detected tools, got %d", len(cfg.Tools))
+	}
+	if got := cfg.Tools["claude"].Command; got != "claude" {
+		t.Errorf("claude.command = %q, want %q", got, "claude")
+	}
+	if got := cfg.Tools["codex"].Command; got != "codex" {
+		t.Errorf("codex.command = %q, want %q", got, "codex")
+	}
+	if _, ok := cfg.Tools["kiro"]; ok {
+		t.Fatal("did not expect kiro without executable on PATH")
+	}
+}
+
+func TestLoadAutoDetectsToolsWhenConfigHasNoTools(t *testing.T) {
+	origPath := os.Getenv("PATH")
+	tmpDir := t.TempDir()
+	tmpBin := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "config.yaml")
+	os.Setenv("PATH", tmpBin)
+	t.Cleanup(func() { os.Setenv("PATH", origPath) })
+
+	writeTestExecutable(t, tmpBin, "kiro")
+
+	content := `server:
+  url: "https://ae.example.com"
+`
+	if err := os.WriteFile(cfgPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("WriteFile(config): %v", err)
+	}
+
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Server.URL != "https://ae.example.com" {
+		t.Errorf("server.url = %q, want %q", cfg.Server.URL, "https://ae.example.com")
+	}
+	if len(cfg.Tools) != 1 {
+		t.Fatalf("expected 1 auto-detected tool, got %d", len(cfg.Tools))
+	}
+	if got := cfg.Tools["kiro"].Command; got != "kiro" {
+		t.Errorf("kiro.command = %q, want %q", got, "kiro")
+	}
+}
+
+func writeTestExecutable(t *testing.T, dir, name string) {
+	t.Helper()
+	path := filepath.Join(dir, name)
+	content := "#!/usr/bin/env bash\nexit 0\n"
+	if runtimePath, err := exec.LookPath("bash"); err == nil && runtimePath != "" {
+		content = "#!" + runtimePath + "\nexit 0\n"
+	}
+	if err := os.WriteFile(path, []byte(content), 0o755); err != nil {
+		t.Fatalf("WriteFile(%s): %v", name, err)
 	}
 }

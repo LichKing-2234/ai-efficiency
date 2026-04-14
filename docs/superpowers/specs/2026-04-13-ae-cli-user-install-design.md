@@ -1,6 +1,6 @@
 # ae-cli User Install Design
 
-**Status:** Proposed contract for user-level `ae-cli` installation via GitHub Releases
+**Status:** Current contract for user-level `ae-cli` installation via GitHub Releases
 
 ## Overview
 
@@ -9,6 +9,7 @@
 - `ae-cli` 通过 GitHub Releases 的独立归档发布
 - 用户通过远程 shell 脚本安装到 `~/.local/bin/ae-cli`
 - 安装脚本负责平台识别、版本解析、checksum 校验与落盘
+- 首装时安装脚本负责引导 backend URL，并写入 `~/.ae-cli/config.yaml`
 - 安装脚本不修改 shell profile，只在 `PATH` 缺失时给出明确提示
 
 本文解决的是“开发者如何快速拿到 CLI”，不是“如何管理后端服务部署”。
@@ -55,14 +56,11 @@
   - archive: `ae-cli_<version>_<os>_<arch>.tar.gz`
 - release 已生成全局 `checksums.txt`
 - `deploy/install.sh` 已作为 backend/systemd 路线的远程安装入口存在
+- `ae-cli/install.sh` 已提供远程安装入口
+- `ae-cli/README.md` 已提供安装文档入口
+- `ae-cli/test/install-test.sh` 已覆盖安装成功/失败与配置写入场景
 
-当前代码未具备：
-
-- `ae-cli/install.sh`
-- `ae-cli` 的官方远程安装文档入口
-- `ae-cli` 安装失败/成功的自动化 shell fixture 测试
-
-因此本文是一个新增合同，而不是对已落地行为的复述。
+因此本文描述的是当前已落地合同，而不是待实现草案。
 
 ## Design
 
@@ -87,6 +85,13 @@ curl -fsSL https://raw.githubusercontent.com/LichKing-2234/ai-efficiency/main/ae
 - `tag`
 
 无参数时安装 latest release；有参数时安装指定 tag。
+
+非交互场景可通过环境变量预置 backend URL：
+
+```bash
+AE_CLI_INSTALL_SERVER_URL=https://ae.example.com \
+curl -fsSL https://raw.githubusercontent.com/LichKing-2234/ai-efficiency/main/ae-cli/install.sh | bash
+```
 
 ### Why A Separate Script
 
@@ -195,9 +200,54 @@ Windows 不走本 bash 安装路径。
 7. 创建 `~/.local/bin`
 8. 将 `ae-cli` 拷贝到 `~/.local/bin/ae-cli`
 9. `chmod 0755`
-10. 输出安装结果摘要
+10. 如果本地不存在 CLI 配置，则尝试获取 backend URL 并写入 `~/.ae-cli/config.yaml`
+11. 输出安装结果摘要
 
 安装脚本允许覆盖已存在的 `~/.local/bin/ae-cli`。这视为重装/升级，不额外保留 backup 文件。
+
+## CLI Config Bootstrap Contract
+
+安装脚本除了安装 binary，还负责首装时的最小 CLI 配置引导。
+
+### Config Path
+
+安装脚本写入：
+
+- `~/.ae-cli/config.yaml`
+
+CLI 运行时同时兼容读取：
+
+- `~/.ae-cli/config.yaml`
+- `~/.ae-cli/config.yml`
+
+### Backend URL Bootstrap
+
+如果本地尚不存在 CLI config：
+
+1. 先读取 `AE_CLI_INSTALL_SERVER_URL`
+2. 若未设置且当前安装是交互式终端，提示用户输入 backend URL
+3. 若拿到非空 URL，则写入 `server.url`
+4. 若用户留空或当前环境非交互，则跳过写入并打印后续配置提示
+
+如果本地已存在 `config.yaml` 或 `config.yml`：
+
+- 安装脚本不得覆盖
+- 只打印 “using existing config” 类提示
+
+### Written Config Shape
+
+最小写入内容为：
+
+```yaml
+server:
+  url: "https://ae.example.com"
+```
+
+安装脚本不负责写入 token，也不负责生成 `tools` 列表。
+
+### Tool Availability
+
+当前 CLI 实现在 `tools` 字段缺失时，会从本地 `PATH` 自动探测常见工具（`claude`、`codex`、`kiro`）。因此安装脚本不再需要为了“让 CLI 有工具可用”而生成冗长的 `tools` 配置块。
 
 ## PATH Handling Contract
 
@@ -224,6 +274,7 @@ Windows 不走本 bash 安装路径。
 脚本输出应保持简洁、可扫读，至少包括：
 
 - 正在安装哪个 tag
+- 若写入或复用 CLI config，打印对应结果
 - 安装到哪个路径
 - 安装完成提示
 - 若 PATH 缺失，则打印单独 warning

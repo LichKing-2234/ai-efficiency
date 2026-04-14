@@ -501,7 +501,15 @@ ae-cli HTTP client 每次请求前检查 `expires_at`：
 
 ### Token 文件中的 server_url
 
-`token.json` 中的 `server_url` 记录登录时使用的 server 地址，用于 token 刷新。如果与编译时固化的 server URL 不一致（如切换了环境），ae-cli 提示用户重新 `login`。
+`token.json` 中的 `server_url` 记录登录时使用的 server 地址，用于 token 刷新。
+
+> **Implementation note (2026-04-14):** 当前代码的 server URL 解析顺序已经从本文最初的“仅编译时固化”演进为：
+> 1. `--server`
+> 2. `~/.ae-cli/config.yaml` / `~/.ae-cli/config.yml`
+> 3. `~/.ae-cli/token.json` 中的 `server_url`
+> 4. 编译时注入的 `buildinfo.ServerURL`
+>
+> 这样 release 安装器可以在首装时写入后端地址，而本地 token 仍保留登录时所用 server 的刷新上下文。
 
 ### 新增包结构
 
@@ -520,9 +528,9 @@ ae-cli/
 
 ### ae-cli 配置简化
 
-#### server.url 编译时固化
+#### server.url 编译时注入 + 本地覆盖
 
-`server.url` 通过 `go build -ldflags` 在编译时注入，不再需要用户配置：
+`server.url` 仍然通过 `go build -ldflags` 在编译时注入，作为 release binary 和本地开发的兜底值：
 
 ```go
 // ae-cli/internal/buildinfo/buildinfo.go
@@ -537,6 +545,12 @@ var (
 go build -ldflags "-X ae-cli/internal/buildinfo.ServerURL=https://ae.example.com" ./cmd/ae-cli
 ```
 
+但当前实现不再要求“只能使用编译时地址”：
+
+- 交互式 `ae-cli/install.sh` 首装时会提示 backend URL，并写入 `~/.ae-cli/config.yaml`
+- 非交互安装可通过 `AE_CLI_INSTALL_SERVER_URL` 预置同一地址
+- 手动 `--server` 仍然具有最高优先级
+
 #### 移除 sub2api 客户端配置
 
 ae-cli 不再需要用户手动配置 relay provider 相关参数：
@@ -545,32 +559,24 @@ ae-cli 不再需要用户手动配置 relay provider 相关参数：
 - 移除 `ServerConfig.Token`（改用 `token.json`）
 - API key 按用户隔离，用量天然按用户区分
 
-#### 移除 config.yaml
+#### 保留轻量 config.yaml
 
-OAuth 后 ae-cli 不再需要 `~/.ae-cli/config.yaml`：
+当前代码没有完全移除 `~/.ae-cli/config.yaml`。它保留为一个轻量本地覆盖层，主要承载：
+
+- `server.url` 的首装写入或手动覆盖
+- legacy `tools` 配置（若用户显式声明）
+- legacy `sub2api` 配置读取
+
+当前实现的最小推荐配置通常只有：
 
 ```yaml
-# 旧配置（全部移除）
 server:
-  url: "http://localhost:8081"       # → 编译时固化
-  token: "jwt-token-here"           # → token.json
-sub2api:
-  url: "http://..."                 # → 后端自动下发
-  api_key: "sk-..."                 # → 后端自动下发
-  model: "claude-sonnet-4-20250514" # → 后端自动下发
-tools:
-  claude:
-    command: claude                  # → Spec 2: LLM 自动发现
-    args: ["-p"]
+  url: "https://ae.example.com"
 ```
 
-ae-cli 只需要：
-- 编译时注入的 server URL
-- `~/.ae-cli/token.json`（OAuth 登录后自动生成）
+`token.json` 仍是登录态与 refresh 上下文的权威存储；`config.yaml` 不再承担 token 持久化职责。
 
-Provider 配置（base URL + API key）通过 `GET /api/v1/providers` 自动获取（见 Section 7）。工具发现和原生配置文件写入由独立的 **Spec 2: ae-cli 智能工具发现与自动配置** 处理。
-
-向后兼容：如果检测到旧 `config.yaml`，打印 deprecation warning 并忽略。
+Provider 配置（base URL + API key）以及完整的工具原生配置写入仍由后续独立能力演进处理。与本文最初版本不同的是，当前代码在 `tools` 字段缺失时，会先从本地 `PATH` 自动探测常见工具（`claude`、`codex`、`kiro`），以避免首装时因为没有 `tools` 配置而得到空工具集。
 
 ## 5. 前端 OAuth 授权页
 

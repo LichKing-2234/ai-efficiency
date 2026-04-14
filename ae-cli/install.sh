@@ -10,10 +10,13 @@ fi
 
 INSTALL_DIR="${HOME}/.local/bin"
 TARGET_PATH="${INSTALL_DIR}/ae-cli"
+CONFIG_DIR="${HOME}/.ae-cli"
+CONFIG_PATH="${CONFIG_DIR}/config.yaml"
 RELEASE_API_URL="${AE_CLI_INSTALL_RELEASE_API_URL:-https://api.github.com/repos/${GITHUB_REPO}/releases/latest}"
 RELEASE_DOWNLOAD_BASE="${AE_CLI_INSTALL_RELEASE_DOWNLOAD_BASE:-https://github.com/${GITHUB_REPO}/releases/download}"
 TMP_DIR=""
 TEMP_TARGET=""
+CONFIG_SERVER_URL="${AE_CLI_INSTALL_SERVER_URL:-}"
 OS=""
 ARCH=""
 
@@ -33,6 +36,30 @@ require_cmd() {
     echo "missing required command: $1" >&2
     exit 1
   }
+}
+
+trim_whitespace() {
+  local value="$1"
+  value="${value#"${value%%[![:space:]]*}"}"
+  value="${value%"${value##*[![:space:]]}"}"
+  printf '%s' "$value"
+}
+
+validate_server_url() {
+  local value="$1"
+  [[ "$value" =~ ^https?://[^[:space:]]+$ ]]
+}
+
+existing_config_path() {
+  if [[ -f "${CONFIG_DIR}/config.yaml" ]]; then
+    printf '%s\n' "${CONFIG_DIR}/config.yaml"
+    return 0
+  fi
+  if [[ -f "${CONFIG_DIR}/config.yml" ]]; then
+    printf '%s\n' "${CONFIG_DIR}/config.yml"
+    return 0
+  fi
+  return 1
 }
 
 sha256_file() {
@@ -142,6 +169,72 @@ path_contains_install_dir() {
   esac
 }
 
+prompt_server_url() {
+  if [[ -n "$(existing_config_path 2>/dev/null || true)" ]]; then
+    return 0
+  fi
+
+  CONFIG_SERVER_URL="$(trim_whitespace "$CONFIG_SERVER_URL")"
+  if [[ -n "$CONFIG_SERVER_URL" ]]; then
+    if ! validate_server_url "$CONFIG_SERVER_URL"; then
+      echo "invalid AE_CLI_INSTALL_SERVER_URL: must start with http:// or https://" >&2
+      exit 1
+    fi
+    return 0
+  fi
+
+  if [[ ! -r /dev/tty || ! -w /dev/tty ]]; then
+    return 0
+  fi
+
+  if [[ ! -t 1 ]]; then
+    return 0
+  fi
+
+  if ! exec 9<>/dev/tty; then
+    return 0
+  fi
+
+  while true; do
+    printf 'AI Efficiency backend URL (optional, e.g. https://ae.example.com): ' >&9
+    IFS= read -r CONFIG_SERVER_URL <&9 || CONFIG_SERVER_URL=""
+    CONFIG_SERVER_URL="$(trim_whitespace "$CONFIG_SERVER_URL")"
+    if [[ -z "$CONFIG_SERVER_URL" ]]; then
+      exec 9>&-
+      exec 9<&-
+      return 0
+    fi
+    if validate_server_url "$CONFIG_SERVER_URL"; then
+      exec 9>&-
+      exec 9<&-
+      return 0
+    fi
+    echo "Please enter a full http:// or https:// URL, or leave blank to skip." >&9
+  done
+}
+
+write_cli_config() {
+  local existing=""
+
+  if existing="$(existing_config_path 2>/dev/null || true)" && [[ -n "$existing" ]]; then
+    echo "Using existing CLI config at ${existing}"
+    return 0
+  fi
+
+  if [[ -z "$CONFIG_SERVER_URL" ]]; then
+    echo "No CLI config written. Configure the backend URL later in ${CONFIG_PATH} or pass --server."
+    return 0
+  fi
+
+  mkdir -p "$CONFIG_DIR"
+  cat >"$CONFIG_PATH" <<EOF
+server:
+  url: "${CONFIG_SERVER_URL}"
+EOF
+  chmod 0600 "$CONFIG_PATH"
+  echo "Wrote CLI config to ${CONFIG_PATH}"
+}
+
 main() {
   require_cmd curl
   require_cmd tar
@@ -152,6 +245,8 @@ main() {
   echo "Installing ae-cli ${tag}..."
   download_release "$tag"
   install_binary
+  prompt_server_url
+  write_cli_config
   echo "Installed ae-cli ${tag} to ${TARGET_PATH}"
 
   if ! path_contains_install_dir; then
