@@ -46,6 +46,7 @@ curl -fsSL https://raw.githubusercontent.com/LichKing-2234/ai-efficiency/main/de
 By default the Docker stack pulls `ghcr.io/lichking-2234/ai-efficiency:latest`.
 Docker mode now runs the backend from a persistent runtime binary under `AE_DEPLOYMENT_STATE_DIR`.
 Online update and rollback no longer depend on a separate updater sidecar or Docker socket access.
+The production compose assets configure `backend` with `restart: unless-stopped` and use `GET /api/v1/health/live` for container health checks.
 
 Before starting services, edit `.env` for operator-facing settings.
 At minimum, set:

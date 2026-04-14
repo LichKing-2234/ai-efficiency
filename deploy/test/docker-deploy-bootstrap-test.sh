@@ -81,6 +81,9 @@ else
   exit 1
 fi
 grep -F 'image: ghcr.io/lichking-2234/ai-efficiency:latest' "$COMPOSE_CONFIG"
+grep -q 'restart: unless-stopped' "$COMPOSE_CONFIG"
+grep -F 'http://localhost:8081/api/v1/health/live' "$COMPOSE_CONFIG" >/dev/null
+! grep -F 'http://localhost:8081/api/v1/auth/me' "$COMPOSE_CONFIG" >/dev/null
 grep -q "AI Efficiency Deployment Preparation" "$BOOTSTRAP_LOG"
 grep -q "\[INFO\] Downloading deploy assets..." "$BOOTSTRAP_LOG"
 grep -q "\[SUCCESS\] Prepared docker-compose.yml" "$BOOTSTRAP_LOG"
@@ -117,7 +120,6 @@ validate_compose() {
 }
 
 validate_compose "$WORK_DIR/docker-compose.yml"
-grep -F 'http://localhost:8081/api/v1/auth/me' "$COMPOSE_CONFIG" >/dev/null
 
 ENV_WITHOUT_PORT="$TMP_ROOT/no-port.env"
 grep -v '^AE_SERVER_PORT=' "$ROOT_DIR/deploy/.env.example" >"$ENV_WITHOUT_PORT"
@@ -152,6 +154,12 @@ config_with_env "$ENV_WITHOUT_PORT" "$ROOT_DIR/deploy/docker-compose.external.ym
 grep -q 'published: "8081"' "$NO_PORT_MAIN"
 grep -q 'published: "8081"' "$NO_PORT_BOOTSTRAP"
 grep -q 'published: "8081"' "$NO_PORT_EXTERNAL"
+grep -q 'restart: unless-stopped' "$NO_PORT_MAIN"
+grep -q 'restart: unless-stopped' "$NO_PORT_BOOTSTRAP"
+grep -q 'restart: unless-stopped' "$NO_PORT_EXTERNAL"
+grep -F 'http://localhost:8081/api/v1/health/live' "$NO_PORT_MAIN" >/dev/null
+grep -F 'http://localhost:8081/api/v1/health/live' "$NO_PORT_BOOTSTRAP" >/dev/null
+grep -F 'http://localhost:8081/api/v1/health/live' "$NO_PORT_EXTERNAL" >/dev/null
 
 set +e
 (

@@ -3,6 +3,7 @@
 services:
   backend:
     image: "${AE_IMAGE_REPOSITORY:-ghcr.io/lichking-2234/ai-efficiency}:${AE_IMAGE_TAG:-latest}"
+    restart: unless-stopped
     environment:
       AE_SERVER_PORT: "${AE_SERVER_PORT:-8081}"
       AE_SERVER_MODE: "${AE_SERVER_MODE:-release}"
@@ -33,7 +34,7 @@ services:
     volumes:
       - appstate:/var/lib/ai-efficiency
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8081/api/v1/auth/me"]
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8081/api/v1/health/live"]
       interval: 10s
       timeout: 5s
       retries: 3
