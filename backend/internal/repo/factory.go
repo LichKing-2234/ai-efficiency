@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"github.com/ai-efficiency/backend/internal/credential"
@@ -11,6 +12,12 @@ import (
 )
 
 func parseToken(raw string) string {
+	var legacy struct {
+		Token string `json:"token"`
+	}
+	if err := json.Unmarshal([]byte(raw), &legacy); err == nil {
+		return legacy.Token
+	}
 	payload, err := credential.ParseLegacySCMProviderSecret(raw)
 	if err != nil {
 		return raw

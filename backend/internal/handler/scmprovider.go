@@ -1,11 +1,14 @@
 package handler
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/ai-efficiency/backend/ent"
+	entcredential "github.com/ai-efficiency/backend/ent/credential"
 	"github.com/ai-efficiency/backend/ent/scmprovider"
 	"github.com/ai-efficiency/backend/internal/auth"
 	"github.com/ai-efficiency/backend/internal/credential"
@@ -28,21 +31,23 @@ func NewSCMProviderHandler(entClient *ent.Client, encryptionKey string) *SCMProv
 }
 
 type createSCMProviderRequest struct {
-	Name              string `json:"name" binding:"required"`
-	Type              string `json:"type" binding:"required,oneof=github bitbucket_server"`
-	BaseURL           string `json:"base_url" binding:"required"`
-	APICredentialID   int    `json:"api_credential_id" binding:"required"`
-	CloneProtocol     string `json:"clone_protocol" binding:"required,oneof=https ssh"`
-	CloneCredentialID *int   `json:"clone_credential_id"`
+	Name              string          `json:"name" binding:"required"`
+	Type              string          `json:"type" binding:"required,oneof=github bitbucket_server"`
+	BaseURL           string          `json:"base_url" binding:"required"`
+	APICredentialID   int             `json:"api_credential_id"`
+	Credentials       json.RawMessage `json:"credentials"`
+	CloneProtocol     string          `json:"clone_protocol"`
+	CloneCredentialID *int            `json:"clone_credential_id"`
 }
 
 type updateSCMProviderRequest struct {
-	Name              string `json:"name"`
-	BaseURL           string `json:"base_url"`
-	APICredentialID   *int   `json:"api_credential_id"`
-	CloneProtocol     string `json:"clone_protocol"`
-	CloneCredentialID *int   `json:"clone_credential_id"`
-	Status            string `json:"status"`
+	Name              string          `json:"name"`
+	BaseURL           string          `json:"base_url"`
+	Credentials       json.RawMessage `json:"credentials"`
+	APICredentialID   *int            `json:"api_credential_id"`
+	CloneProtocol     string          `json:"clone_protocol"`
+	CloneCredentialID *int            `json:"clone_credential_id"`
+	Status            string          `json:"status"`
 }
 
 // List handles GET /api/v1/scm-providers
@@ -65,9 +70,17 @@ func (h *SCMProviderHandler) Create(c *gin.Context) {
 		return
 	}
 
-	_, apiPayload, err := h.loadCredential(c, req.APICredentialID)
+	cloneProtocol := req.CloneProtocol
+	if cloneProtocol == "" {
+		cloneProtocol = "https"
+	}
+	apiCredentialID, apiPayload, err := h.resolveAPICredentialForCreate(c, req.Name, req.APICredentialID, req.Credentials)
 	if err != nil {
-		pkg.Error(c, http.StatusBadRequest, err.Error())
+		code := http.StatusBadRequest
+		if strings.Contains(err.Error(), "failed to encrypt credentials") {
+			code = http.StatusInternalServerError
+		}
+		pkg.Error(c, code, err.Error())
 		return
 	}
 	cloneCredentialID := 0
@@ -80,7 +93,7 @@ func (h *SCMProviderHandler) Create(c *gin.Context) {
 			return
 		}
 	}
-	if err := credential.ValidateProviderCredentialRefs(apiPayload.Kind(), req.CloneProtocol, cloneKind(clonePayload)); err != nil {
+	if err := credential.ValidateProviderCredentialRefs(apiPayload.Kind(), cloneProtocol, cloneKind(clonePayload)); err != nil {
 		pkg.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -89,8 +102,8 @@ func (h *SCMProviderHandler) Create(c *gin.Context) {
 		SetName(req.Name).
 		SetType(scmprovider.Type(req.Type)).
 		SetBaseURL(req.BaseURL).
-		SetAPICredentialID(req.APICredentialID).
-		SetCloneProtocol(scmprovider.CloneProtocol(req.CloneProtocol)).
+		SetAPICredentialID(apiCredentialID).
+		SetCloneProtocol(scmprovider.CloneProtocol(cloneProtocol)).
 		SetNillableCloneCredentialID(req.CloneCredentialID).
 		Save(c.Request.Context())
 	if err != nil {
@@ -132,12 +145,6 @@ func (h *SCMProviderHandler) Update(c *gin.Context) {
 	if req.BaseURL != "" {
 		update.SetBaseURL(req.BaseURL)
 	}
-	apiCredentialID := current.APICredentialID
-	if req.APICredentialID != nil {
-		apiCredentialID = *req.APICredentialID
-		update.SetAPICredentialID(apiCredentialID)
-	}
-
 	cloneCredentialID := current.CloneCredentialID
 	if req.CloneCredentialID != nil {
 		cloneCredentialID = req.CloneCredentialID
@@ -150,11 +157,16 @@ func (h *SCMProviderHandler) Update(c *gin.Context) {
 		update.SetCloneProtocol(scmprovider.CloneProtocol(req.CloneProtocol))
 	}
 
-	_, apiPayload, err := h.loadCredential(c, apiCredentialID)
+	apiCredentialID, apiPayload, err := h.resolveAPICredentialForUpdate(c, current, req.APICredentialID, req.Credentials)
 	if err != nil {
-		pkg.Error(c, http.StatusBadRequest, err.Error())
+		code := http.StatusBadRequest
+		if strings.Contains(err.Error(), "failed to encrypt credentials") {
+			code = http.StatusInternalServerError
+		}
+		pkg.Error(c, code, err.Error())
 		return
 	}
+	update.SetAPICredentialID(apiCredentialID)
 	var clonePayload credential.Payload
 	if cloneCredentialID != nil {
 		_, clonePayload, err = h.loadCredential(c, *cloneCredentialID)
@@ -226,12 +238,20 @@ func (h *SCMProviderHandler) Test(c *gin.Context) {
 	}
 
 	if provider.Edges.APICredential == nil {
-		pkg.Error(c, http.StatusBadRequest, "provider has no api credential")
-		return
-	}
-	if _, _, err = h.loadCredential(c, provider.Edges.APICredential.ID); err != nil {
-		pkg.Error(c, http.StatusInternalServerError, "failed to decrypt credentials")
-		return
+		if provider.Credentials != "" {
+			if _, err = h.loadLegacyProviderPayload(c, provider.Credentials); err != nil {
+				pkg.Error(c, http.StatusInternalServerError, "failed to decrypt credentials")
+				return
+			}
+		} else {
+			pkg.Error(c, http.StatusBadRequest, "provider has no api credential")
+			return
+		}
+	} else {
+		if _, _, err = h.loadCredential(c, provider.Edges.APICredential.ID); err != nil {
+			pkg.Error(c, http.StatusInternalServerError, "failed to decrypt credentials")
+			return
+		}
 	}
 
 	// TODO: Instantiate provider and test connectivity
@@ -241,6 +261,101 @@ func (h *SCMProviderHandler) Test(c *gin.Context) {
 		"status":  "ok",
 		"message": "connection test passed",
 	})
+}
+
+func (h *SCMProviderHandler) resolveAPICredentialForCreate(c *gin.Context, providerName string, apiCredentialID int, legacyRaw json.RawMessage) (int, credential.Payload, error) {
+	switch {
+	case apiCredentialID > 0:
+		_, payload, err := h.loadCredential(c, apiCredentialID)
+		return apiCredentialID, payload, err
+	case len(legacyRaw) > 0:
+		id, payload, err := h.createCredentialFromLegacy(c, providerName, legacyRaw)
+		return id, payload, err
+	default:
+		return 0, nil, fmt.Errorf("api_credential_id is required")
+	}
+}
+
+func (h *SCMProviderHandler) resolveAPICredentialForUpdate(c *gin.Context, provider *ent.ScmProvider, requestedID *int, legacyRaw json.RawMessage) (int, credential.Payload, error) {
+	switch {
+	case requestedID != nil && *requestedID > 0:
+		_, payload, err := h.loadCredential(c, *requestedID)
+		return *requestedID, payload, err
+	case len(legacyRaw) > 0:
+		if provider.APICredentialID > 0 {
+			payload, err := h.updateCredentialFromLegacy(c, provider.APICredentialID, legacyRaw)
+			return provider.APICredentialID, payload, err
+		}
+		id, payload, err := h.createCredentialFromLegacy(c, provider.Name, legacyRaw)
+		return id, payload, err
+	case provider.APICredentialID > 0:
+		_, payload, err := h.loadCredential(c, provider.APICredentialID)
+		return provider.APICredentialID, payload, err
+	case provider.Credentials != "":
+		payload, err := h.loadLegacyProviderPayload(c, provider.Credentials)
+		return 0, payload, err
+	default:
+		return 0, nil, fmt.Errorf("api_credential_id is required")
+	}
+}
+
+func (h *SCMProviderHandler) createCredentialFromLegacy(c *gin.Context, providerName string, legacyRaw json.RawMessage) (int, credential.Payload, error) {
+	payload, err := credential.ParseLegacySCMProviderSecret(string(legacyRaw))
+	if err != nil {
+		return 0, nil, err
+	}
+	rawPayload, err := json.Marshal(payload)
+	if err != nil {
+		return 0, nil, err
+	}
+	encrypted, err := pkg.Encrypt(string(rawPayload), h.encryptionKey)
+	if err != nil {
+		return 0, nil, fmt.Errorf("failed to encrypt credentials")
+	}
+	row, err := h.entClient.Credential.Create().
+		SetName(providerName + " API credential").
+		SetDescription("Auto-migrated from legacy scm_provider.credentials request payload").
+		SetKind(entcredential.KindSecretText).
+		SetPayload(encrypted).
+		Save(c.Request.Context())
+	if err != nil {
+		return 0, nil, err
+	}
+	return row.ID, payload, nil
+}
+
+func (h *SCMProviderHandler) updateCredentialFromLegacy(c *gin.Context, credentialID int, legacyRaw json.RawMessage) (credential.Payload, error) {
+	payload, err := credential.ParseLegacySCMProviderSecret(string(legacyRaw))
+	if err != nil {
+		return nil, err
+	}
+	rawPayload, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+	encrypted, err := pkg.Encrypt(string(rawPayload), h.encryptionKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encrypt credentials")
+	}
+	if _, err := h.entClient.Credential.UpdateOneID(credentialID).
+		SetKind(entcredential.KindSecretText).
+		SetPayload(encrypted).
+		Save(c.Request.Context()); err != nil {
+		return nil, err
+	}
+	return payload, nil
+}
+
+func (h *SCMProviderHandler) loadLegacyProviderPayload(c *gin.Context, encryptedLegacy string) (credential.Payload, error) {
+	raw, err := pkg.Decrypt(encryptedLegacy, h.encryptionKey)
+	if err != nil {
+		return nil, err
+	}
+	payload, err := credential.ParseLegacySCMProviderSecret(raw)
+	if err != nil {
+		return nil, err
+	}
+	return payload, nil
 }
 
 func (h *SCMProviderHandler) loadCredential(c *gin.Context, id int) (*ent.Credential, credential.Payload, error) {
