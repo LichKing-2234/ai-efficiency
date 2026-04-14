@@ -139,3 +139,63 @@ func TestServeEmbeddedIndexUsesEmbeddedFrontendRoot(t *testing.T) {
 		t.Fatalf("body=%q", w.Body.String())
 	}
 }
+
+func TestCanonicalPathRedirectsExtraSlashBrowserRequests(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	router := gin.New()
+	router.RemoveExtraSlash = true
+	router.Use(RedirectCanonicalBrowserPath())
+	router.GET("/oauth/authorize", func(c *gin.Context) {
+		c.String(http.StatusOK, "oauth-authorize")
+	})
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"//oauth/authorize?response_type=code&client_id=ae-cli",
+		nil,
+	)
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusTemporaryRedirect {
+		t.Fatalf("status=%d want=%d body=%s", w.Code, http.StatusTemporaryRedirect, w.Body.String())
+	}
+	if loc := w.Header().Get("Location"); loc != "/oauth/authorize?response_type=code&client_id=ae-cli" {
+		t.Fatalf("location=%q", loc)
+	}
+}
+
+func TestServeEmbeddedFrontendBypassesNormalizedOAuthTokenPath(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "dist"), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "dist", "index.html"), []byte("<html><body>app</body></html>"), 0o644); err != nil {
+		t.Fatalf("WriteFile index: %v", err)
+	}
+
+	restore := SetFrontendFSForTest(os.DirFS(root))
+	defer restore()
+
+	router := gin.New()
+	router.RemoveExtraSlash = true
+	router.Use(ServeEmbeddedFrontend())
+	router.POST("/oauth/token", func(c *gin.Context) {
+		c.String(http.StatusOK, "token")
+	})
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "//oauth/token", strings.NewReader("grant_type=authorization_code"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d want=%d body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+	if w.Body.String() != "token" {
+		t.Fatalf("body=%q", w.Body.String())
+	}
+}

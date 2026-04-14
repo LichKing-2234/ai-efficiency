@@ -42,8 +42,10 @@ func SetupRouter(
 	deploymentHandler *DeploymentHandler,
 ) *gin.Engine {
 	r := gin.New()
+	r.RemoveExtraSlash = true
 	r.Use(gin.Recovery())
 	r.Use(corsMiddleware)
+	r.Use(web.RedirectCanonicalBrowserPath())
 	if web.HasEmbeddedFrontend() {
 		r.Use(web.ServeEmbeddedFrontend())
 	}

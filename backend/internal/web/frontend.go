@@ -41,6 +41,29 @@ func HasEmbeddedFrontend() bool {
 	return true
 }
 
+func RedirectCanonicalBrowserPath() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if c.Request == nil || c.Request.URL == nil {
+			c.Next()
+			return
+		}
+
+		canonicalPath := canonicalRequestPath(c.Request.URL.Path)
+		if canonicalPath != c.Request.URL.Path &&
+			(c.Request.Method == http.MethodGet || c.Request.Method == http.MethodHead) {
+			target := canonicalPath
+			if c.Request.URL.RawQuery != "" {
+				target += "?" + c.Request.URL.RawQuery
+			}
+			c.Redirect(http.StatusTemporaryRedirect, target)
+			c.Abort()
+			return
+		}
+
+		c.Next()
+	}
+}
+
 func ServeEmbeddedFrontend() gin.HandlerFunc {
 	dist, err := distFS()
 	if err != nil {
@@ -51,7 +74,7 @@ func ServeEmbeddedFrontend() gin.HandlerFunc {
 	fileServer := http.FileServer(http.FS(dist))
 
 	return func(c *gin.Context) {
-		requestPath := c.Request.URL.Path
+		requestPath := canonicalRequestPath(c.Request.URL.Path)
 		if shouldBypassEmbeddedFrontend(requestPath) {
 			c.Next()
 			return
@@ -128,4 +151,12 @@ func cloneURL(u *url.URL) *url.URL {
 	}
 	dup := *u
 	return &dup
+}
+
+func canonicalRequestPath(requestPath string) string {
+	cleanPath := path.Clean("/" + strings.TrimSpace(requestPath))
+	if cleanPath == "." || cleanPath == "" {
+		return "/"
+	}
+	return cleanPath
 }
