@@ -16,7 +16,14 @@ const loading = ref(true)
 // Add/Edit dialog
 const showDialog = ref(false)
 const editingId = ref<number | null>(null)
-const form = ref({ name: '', type: 'github', base_url: 'https://api.github.com', token: '' })
+const form = ref({
+  name: '',
+  type: 'github',
+  base_url: 'https://api.github.com',
+  api_credential_id: 0,
+  clone_protocol: 'https' as 'https' | 'ssh',
+  clone_credential_id: null as number | null,
+})
 const formError = ref('')
 const formLoading = ref(false)
 
@@ -97,14 +104,30 @@ async function fetchCredentials() {
 
 function openAddDialog() {
   editingId.value = null
-  form.value = { name: '', type: 'github', base_url: 'https://api.github.com', token: '' }
+  const defaultAPICredential = credentials.value.find((c) => c.kind !== 'ssh_username_with_private_key')?.id ?? 0
+  form.value = {
+    name: '',
+    type: 'github',
+    base_url: 'https://api.github.com',
+    api_credential_id: defaultAPICredential,
+    clone_protocol: 'https',
+    clone_credential_id: null,
+  }
   formError.value = ''
   showDialog.value = true
 }
 
 function openEditDialog(p: SCMProvider) {
   editingId.value = p.id
-  form.value = { name: p.name, type: p.type, base_url: p.base_url, token: '' }
+  const defaultAPICredential = credentials.value.find((c) => c.kind !== 'ssh_username_with_private_key')?.id ?? 0
+  form.value = {
+    name: p.name,
+    type: p.type,
+    base_url: p.base_url,
+    api_credential_id: p.api_credential_id || defaultAPICredential,
+    clone_protocol: p.clone_protocol || 'https',
+    clone_credential_id: p.clone_credential_id ?? null,
+  }
   formError.value = ''
   showDialog.value = true
 }
@@ -121,13 +144,18 @@ async function handleSubmit() {
   formError.value = ''
   if (!form.value.name) { formError.value = 'Name is required'; return }
   if (!form.value.base_url) { formError.value = 'Base URL is required'; return }
+  if (!form.value.api_credential_id) { formError.value = 'API credential is required'; return }
+  if (form.value.clone_protocol === 'ssh' && !form.value.clone_credential_id) { formError.value = 'SSH clone credential is required'; return }
 
   formLoading.value = true
   try {
     if (editingId.value) {
-      const data: any = { name: form.value.name, base_url: form.value.base_url }
-      if (form.value.token) {
-        data.credentials = { token: form.value.token }
+      const data: any = {
+        name: form.value.name,
+        base_url: form.value.base_url,
+        api_credential_id: form.value.api_credential_id,
+        clone_protocol: form.value.clone_protocol,
+        clone_credential_id: form.value.clone_protocol === 'ssh' ? form.value.clone_credential_id : null,
       }
       await updateProvider(editingId.value, data)
     } else {
@@ -135,7 +163,9 @@ async function handleSubmit() {
         name: form.value.name,
         type: form.value.type,
         base_url: form.value.base_url,
-        credentials: { token: form.value.token },
+        api_credential_id: form.value.api_credential_id,
+        clone_protocol: form.value.clone_protocol,
+        clone_credential_id: form.value.clone_protocol === 'ssh' ? form.value.clone_credential_id : null,
       } as any)
     }
     showDialog.value = false
@@ -565,15 +595,16 @@ async function handleTestLDAP() {
               </td>
               <td class="whitespace-nowrap px-6 py-4 text-sm text-gray-500">{{ formatDate(p.created_at) }}</td>
               <td class="whitespace-nowrap px-6 py-4 text-right text-sm space-x-3">
-                <button class="text-indigo-600 hover:text-indigo-800" @click="openEditDialog(p)">Edit</button>
+                <button :data-testid="`provider-edit-${p.id}`" class="text-indigo-600 hover:text-indigo-800" @click="openEditDialog(p)">Edit</button>
                 <button
                   v-if="showDeleteConfirm !== p.id"
+                  :data-testid="`provider-delete-${p.id}`"
                   class="text-red-600 hover:text-red-800"
                   @click="showDeleteConfirm = p.id"
                 >Delete</button>
                 <span v-else class="space-x-2">
-                  <button class="text-red-700 font-medium" @click="confirmDelete(p.id)">Confirm</button>
-                  <button class="text-gray-500" @click="showDeleteConfirm = null">Cancel</button>
+                  <button :data-testid="`provider-confirm-delete-${p.id}`" class="text-red-700 font-medium" @click="confirmDelete(p.id)">Confirm</button>
+                  <button :data-testid="`provider-cancel-delete-${p.id}`" class="text-gray-500" @click="showDeleteConfirm = null">Cancel</button>
                 </span>
               </td>
             </tr>
@@ -861,7 +892,7 @@ async function handleTestLDAP() {
         <div class="space-y-3">
           <div>
             <label class="block text-sm font-medium text-gray-700">Name</label>
-            <input v-model="form.name" type="text" placeholder="e.g. GitHub" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
+            <input name="provider-name" v-model="form.name" type="text" placeholder="e.g. GitHub" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
           </div>
 
           <div v-if="!editingId">
@@ -878,12 +909,32 @@ async function handleTestLDAP() {
           </div>
 
           <div>
-            <label class="block text-sm font-medium text-gray-700">
-              Access Token
-              <span v-if="editingId" class="text-gray-400 font-normal">(leave empty to keep current)</span>
-            </label>
-            <input v-model="form.token" type="password" placeholder="ghp_xxxx or personal access token" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
-            <p class="mt-1 text-xs text-gray-400">For public repos, leave empty. For private repos, provide a token with repo scope.</p>
+            <label class="block text-sm font-medium text-gray-700">API Credential</label>
+            <select name="provider-api-credential" v-model.number="form.api_credential_id" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm">
+              <option :value="0" disabled>Select API credential</option>
+              <option v-for="cred in credentials.filter(c => c.kind !== 'ssh_username_with_private_key')" :key="cred.id" :value="cred.id">
+                {{ cred.name }} ({{ cred.kind }})
+              </option>
+            </select>
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium text-gray-700">Clone Protocol</label>
+            <select name="provider-clone-protocol" v-model="form.clone_protocol" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm">
+              <option value="https">https</option>
+              <option value="ssh">ssh</option>
+            </select>
+          </div>
+
+          <div v-if="form.clone_protocol === 'ssh'">
+            <label class="block text-sm font-medium text-gray-700">Clone Credential</label>
+            <select name="provider-clone-credential" v-model.number="form.clone_credential_id" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm">
+              <option :value="null">Select SSH credential</option>
+              <option v-for="cred in credentials.filter(c => c.kind === 'ssh_username_with_private_key')" :key="cred.id" :value="cred.id">
+                {{ cred.name }}
+              </option>
+            </select>
+            <p class="mt-1 text-xs text-gray-400">SSH clone still requires an API credential for SCM platform APIs.</p>
           </div>
 
           <div v-if="formError" class="rounded-md bg-red-50 p-3 text-sm text-red-700">{{ formError }}</div>
