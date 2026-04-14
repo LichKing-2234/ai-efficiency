@@ -9,11 +9,13 @@ import (
 
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/ent/aiscanresult"
+	entcredential "github.com/ai-efficiency/backend/ent/credential"
 	"github.com/ai-efficiency/backend/ent/efficiencymetric"
 	"github.com/ai-efficiency/backend/ent/prrecord"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/scmprovider"
 	"github.com/ai-efficiency/backend/ent/session"
+	"github.com/ai-efficiency/backend/internal/credential"
 	"github.com/ai-efficiency/backend/internal/pkg"
 	"github.com/ai-efficiency/backend/internal/scm"
 	"go.uber.org/zap"
@@ -30,25 +32,25 @@ type CreateRequest struct {
 
 // CreateDirectRequest creates a repo without SCM validation (dev mode).
 type CreateDirectRequest struct {
-	SCMProviderID int    `json:"scm_provider_id" binding:"required"`
-	Name          string `json:"name" binding:"required"`
-	FullName      string `json:"full_name" binding:"required"`
-	CloneURL      string `json:"clone_url" binding:"required"`
-	DefaultBranch string `json:"default_branch" binding:"required"`
-	GroupID       string `json:"group_id"`
+	SCMProviderID     int    `json:"scm_provider_id" binding:"required"`
+	Name              string `json:"name" binding:"required"`
+	FullName          string `json:"full_name" binding:"required"`
+	CloneURL          string `json:"clone_url" binding:"required"`
+	DefaultBranch     string `json:"default_branch" binding:"required"`
+	GroupID           string `json:"group_id"`
 	RelayProviderName string `json:"relay_provider_name"`
 	RelayGroupID      string `json:"relay_group_id"`
 }
 
 // UpdateRequest is the request to update a repo config.
 type UpdateRequest struct {
-	Name                string            `json:"name"`
-	GroupID             string            `json:"group_id"`
-	Status              string            `json:"status"`
-	RelayProviderName   *string           `json:"relay_provider_name"`
-	RelayGroupID        *string           `json:"relay_group_id"`
-	ScanPromptOverride  map[string]string `json:"scan_prompt_override,omitempty"`
-	ClearScanPrompt     bool              `json:"clear_scan_prompt,omitempty"`
+	Name               string            `json:"name"`
+	GroupID            string            `json:"group_id"`
+	Status             string            `json:"status"`
+	RelayProviderName  *string           `json:"relay_provider_name"`
+	RelayGroupID       *string           `json:"relay_group_id"`
+	ScanPromptOverride map[string]string `json:"scan_prompt_override,omitempty"`
+	ClearScanPrompt    bool              `json:"clear_scan_prompt,omitempty"`
 }
 
 // ListOpts are options for listing repos.
@@ -79,19 +81,21 @@ func NewService(entClient *ent.Client, encryptionKey string, logger *zap.Logger)
 // Create creates a new repo config with automatic webhook registration.
 func (s *Service) Create(ctx context.Context, req CreateRequest) (*ent.RepoConfig, error) {
 	// Get SCM provider
-	provider, err := s.entClient.ScmProvider.Get(ctx, req.SCMProviderID)
+	provider, err := s.entClient.ScmProvider.Query().
+		Where(scmprovider.IDEQ(req.SCMProviderID)).
+		WithAPICredential().
+		Only(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("get scm provider: %w", err)
 	}
 
-	// Decrypt credentials
-	creds, err := pkg.Decrypt(provider.Credentials, s.encryptionKey)
+	apiPayload, err := s.resolveAPICredentialPayload(ctx, provider)
 	if err != nil {
-		return nil, fmt.Errorf("decrypt credentials: %w", err)
+		return nil, fmt.Errorf("resolve api credential: %w", err)
 	}
 
 	// Create SCM provider instance
-	scmProvider, err := s.newSCMProvider(string(provider.Type), provider.BaseURL, creds)
+	scmProvider, err := s.newSCMProvider(string(provider.Type), provider.BaseURL, apiPayload)
 	if err != nil {
 		return nil, fmt.Errorf("create scm provider: %w", err)
 	}
@@ -267,7 +271,9 @@ func (s *Service) Update(ctx context.Context, id int, req UpdateRequest) (*ent.R
 func (s *Service) Delete(ctx context.Context, id int) error {
 	rc, err := s.entClient.RepoConfig.Query().
 		Where(repoconfig.IDEQ(id)).
-		WithScmProvider().
+		WithScmProvider(func(query *ent.ScmProviderQuery) {
+			query.WithAPICredential()
+		}).
 		Only(ctx)
 	if err != nil {
 		return fmt.Errorf("get repo: %w", err)
@@ -277,9 +283,9 @@ func (s *Service) Delete(ctx context.Context, id int) error {
 	if rc.WebhookID != nil && *rc.WebhookID != "" {
 		provider := rc.Edges.ScmProvider
 		if provider != nil {
-			creds, err := pkg.Decrypt(provider.Credentials, s.encryptionKey)
+			apiPayload, err := s.resolveAPICredentialPayload(ctx, provider)
 			if err == nil {
-				scmProvider, err := s.newSCMProvider(string(provider.Type), provider.BaseURL, creds)
+				scmProvider, err := s.newSCMProvider(string(provider.Type), provider.BaseURL, apiPayload)
 				if err == nil {
 					if err := scmProvider.DeleteWebhook(ctx, rc.FullName, *rc.WebhookID); err != nil {
 						s.logger.Warn("failed to delete webhook", zap.String("repo", rc.FullName), zap.Error(err))
@@ -329,7 +335,9 @@ func (s *Service) TriggerScan(ctx context.Context, id int) error {
 func (s *Service) GetSCMProvider(ctx context.Context, repoConfigID int) (scm.SCMProvider, *ent.RepoConfig, error) {
 	rc, err := s.entClient.RepoConfig.Query().
 		Where(repoconfig.IDEQ(repoConfigID)).
-		WithScmProvider().
+		WithScmProvider(func(query *ent.ScmProviderQuery) {
+			query.WithAPICredential()
+		}).
 		Only(ctx)
 	if err != nil {
 		return nil, nil, fmt.Errorf("get repo config: %w", err)
@@ -340,12 +348,12 @@ func (s *Service) GetSCMProvider(ctx context.Context, repoConfigID int) (scm.SCM
 		return nil, nil, fmt.Errorf("repo config has no scm provider")
 	}
 
-	creds, err := pkg.Decrypt(provider.Credentials, s.encryptionKey)
+	apiPayload, err := s.resolveAPICredentialPayload(ctx, provider)
 	if err != nil {
-		return nil, nil, fmt.Errorf("decrypt credentials: %w", err)
+		return nil, nil, fmt.Errorf("resolve api credential: %w", err)
 	}
 
-	scmProvider, err := s.newSCMProvider(string(provider.Type), provider.BaseURL, creds)
+	scmProvider, err := s.newSCMProvider(string(provider.Type), provider.BaseURL, apiPayload)
 	if err != nil {
 		return nil, nil, fmt.Errorf("create scm provider: %w", err)
 	}
@@ -353,17 +361,48 @@ func (s *Service) GetSCMProvider(ctx context.Context, repoConfigID int) (scm.SCM
 	return scmProvider, rc, nil
 }
 
-func (s *Service) newSCMProvider(providerType, baseURL, credentials string) (scm.SCMProvider, error) {
+func (s *Service) newSCMProvider(providerType, baseURL string, apiCredential any) (scm.SCMProvider, error) {
 	// Import cycle prevention: use a factory approach
 	// For now, we only support GitHub
 	switch providerType {
 	case "github":
-		return newGitHubProvider(baseURL, credentials, s.logger)
+		return newGitHubProvider(baseURL, apiCredential, s.logger)
 	case "bitbucket_server":
-		return newBitbucketProvider(baseURL, credentials, s.logger)
+		return newBitbucketProvider(baseURL, apiCredential, s.logger)
 	default:
 		return nil, fmt.Errorf("unsupported provider type: %s", providerType)
 	}
+}
+
+func (s *Service) resolveAPICredentialPayload(ctx context.Context, provider *ent.ScmProvider) (credential.Payload, error) {
+	if provider == nil {
+		return nil, fmt.Errorf("scm provider is nil")
+	}
+
+	cred := provider.Edges.APICredential
+	if cred == nil && provider.APICredentialID != 0 {
+		row, err := s.entClient.Credential.Get(ctx, provider.APICredentialID)
+		if err != nil {
+			return nil, fmt.Errorf("get api credential: %w", err)
+		}
+		cred = row
+	}
+	if cred == nil {
+		return nil, fmt.Errorf("scm provider has no api credential")
+	}
+
+	raw, err := pkg.Decrypt(cred.Payload, s.encryptionKey)
+	if err != nil {
+		return nil, fmt.Errorf("decrypt api credential: %w", err)
+	}
+	payload, err := credential.ParsePayload(credential.Kind(cred.Kind), []byte(raw))
+	if err != nil {
+		return nil, fmt.Errorf("parse api credential payload: %w", err)
+	}
+	if cred.Kind == entcredential.KindSSHUsernameWithPrivateKey {
+		return nil, fmt.Errorf("api credential cannot be ssh_username_with_private_key")
+	}
+	return payload, nil
 }
 
 func generateSecret(length int) (string, error) {

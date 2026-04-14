@@ -1,13 +1,14 @@
 package handler
 
 import (
-	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/ent/scmprovider"
 	"github.com/ai-efficiency/backend/internal/auth"
+	"github.com/ai-efficiency/backend/internal/credential"
 	"github.com/ai-efficiency/backend/internal/pkg"
 	"github.com/gin-gonic/gin"
 )
@@ -27,17 +28,21 @@ func NewSCMProviderHandler(entClient *ent.Client, encryptionKey string) *SCMProv
 }
 
 type createSCMProviderRequest struct {
-	Name        string          `json:"name" binding:"required"`
-	Type        string          `json:"type" binding:"required,oneof=github bitbucket_server"`
-	BaseURL     string          `json:"base_url" binding:"required"`
-	Credentials json.RawMessage `json:"credentials" binding:"required"`
+	Name              string `json:"name" binding:"required"`
+	Type              string `json:"type" binding:"required,oneof=github bitbucket_server"`
+	BaseURL           string `json:"base_url" binding:"required"`
+	APICredentialID   int    `json:"api_credential_id" binding:"required"`
+	CloneProtocol     string `json:"clone_protocol" binding:"required,oneof=https ssh"`
+	CloneCredentialID *int   `json:"clone_credential_id"`
 }
 
 type updateSCMProviderRequest struct {
-	Name        string          `json:"name"`
-	BaseURL     string          `json:"base_url"`
-	Credentials json.RawMessage `json:"credentials"`
-	Status      string          `json:"status"`
+	Name              string `json:"name"`
+	BaseURL           string `json:"base_url"`
+	APICredentialID   *int   `json:"api_credential_id"`
+	CloneProtocol     string `json:"clone_protocol"`
+	CloneCredentialID *int   `json:"clone_credential_id"`
+	Status            string `json:"status"`
 }
 
 // List handles GET /api/v1/scm-providers
@@ -60,10 +65,23 @@ func (h *SCMProviderHandler) Create(c *gin.Context) {
 		return
 	}
 
-	// Encrypt credentials
-	encrypted, err := pkg.Encrypt(string(req.Credentials), h.encryptionKey)
+	_, apiPayload, err := h.loadCredential(c, req.APICredentialID)
 	if err != nil {
-		pkg.Error(c, http.StatusInternalServerError, "failed to encrypt credentials")
+		pkg.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	cloneCredentialID := 0
+	var clonePayload credential.Payload
+	if req.CloneCredentialID != nil {
+		cloneCredentialID = *req.CloneCredentialID
+		_, clonePayload, err = h.loadCredential(c, cloneCredentialID)
+		if err != nil {
+			pkg.Error(c, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+	if err := credential.ValidateProviderCredentialRefs(apiPayload.Kind(), req.CloneProtocol, cloneKind(clonePayload)); err != nil {
+		pkg.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -71,7 +89,9 @@ func (h *SCMProviderHandler) Create(c *gin.Context) {
 		SetName(req.Name).
 		SetType(scmprovider.Type(req.Type)).
 		SetBaseURL(req.BaseURL).
-		SetCredentials(encrypted).
+		SetAPICredentialID(req.APICredentialID).
+		SetCloneProtocol(scmprovider.CloneProtocol(req.CloneProtocol)).
+		SetNillableCloneCredentialID(req.CloneCredentialID).
 		Save(c.Request.Context())
 	if err != nil {
 		pkg.Error(c, http.StatusInternalServerError, "failed to create provider")
@@ -95,20 +115,57 @@ func (h *SCMProviderHandler) Update(c *gin.Context) {
 		return
 	}
 
-	update := h.entClient.ScmProvider.UpdateOneID(id)
+	current, err := h.entClient.ScmProvider.Get(c.Request.Context(), id)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			pkg.Error(c, http.StatusNotFound, "provider not found")
+			return
+		}
+		pkg.Error(c, http.StatusInternalServerError, "failed to get provider")
+		return
+	}
+
+	update := h.entClient.ScmProvider.UpdateOne(current)
 	if req.Name != "" {
 		update.SetName(req.Name)
 	}
 	if req.BaseURL != "" {
 		update.SetBaseURL(req.BaseURL)
 	}
-	if req.Credentials != nil {
-		encrypted, err := pkg.Encrypt(string(req.Credentials), h.encryptionKey)
+	apiCredentialID := current.APICredentialID
+	if req.APICredentialID != nil {
+		apiCredentialID = *req.APICredentialID
+		update.SetAPICredentialID(apiCredentialID)
+	}
+
+	cloneCredentialID := current.CloneCredentialID
+	if req.CloneCredentialID != nil {
+		cloneCredentialID = req.CloneCredentialID
+		update.SetNillableCloneCredentialID(req.CloneCredentialID)
+	}
+
+	cloneProtocol := current.CloneProtocol.String()
+	if req.CloneProtocol != "" {
+		cloneProtocol = req.CloneProtocol
+		update.SetCloneProtocol(scmprovider.CloneProtocol(req.CloneProtocol))
+	}
+
+	_, apiPayload, err := h.loadCredential(c, apiCredentialID)
+	if err != nil {
+		pkg.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	var clonePayload credential.Payload
+	if cloneCredentialID != nil {
+		_, clonePayload, err = h.loadCredential(c, *cloneCredentialID)
 		if err != nil {
-			pkg.Error(c, http.StatusInternalServerError, "failed to encrypt credentials")
+			pkg.Error(c, http.StatusBadRequest, err.Error())
 			return
 		}
-		update.SetCredentials(encrypted)
+	}
+	if err := credential.ValidateProviderCredentialRefs(apiPayload.Kind(), cloneProtocol, cloneKind(clonePayload)); err != nil {
+		pkg.Error(c, http.StatusBadRequest, err.Error())
+		return
 	}
 	if req.Status != "" {
 		update.SetStatus(scmprovider.Status(req.Status))
@@ -155,7 +212,10 @@ func (h *SCMProviderHandler) Test(c *gin.Context) {
 		return
 	}
 
-	provider, err := h.entClient.ScmProvider.Get(c.Request.Context(), id)
+	provider, err := h.entClient.ScmProvider.Query().
+		Where(scmprovider.IDEQ(id)).
+		WithAPICredential().
+		Only(c.Request.Context())
 	if err != nil {
 		if ent.IsNotFound(err) {
 			pkg.Error(c, http.StatusNotFound, "provider not found")
@@ -165,9 +225,11 @@ func (h *SCMProviderHandler) Test(c *gin.Context) {
 		return
 	}
 
-	// Decrypt credentials
-	_, err = pkg.Decrypt(provider.Credentials, h.encryptionKey)
-	if err != nil {
+	if provider.Edges.APICredential == nil {
+		pkg.Error(c, http.StatusBadRequest, "provider has no api credential")
+		return
+	}
+	if _, _, err = h.loadCredential(c, provider.Edges.APICredential.ID); err != nil {
 		pkg.Error(c, http.StatusInternalServerError, "failed to decrypt credentials")
 		return
 	}
@@ -179,4 +241,31 @@ func (h *SCMProviderHandler) Test(c *gin.Context) {
 		"status":  "ok",
 		"message": "connection test passed",
 	})
+}
+
+func (h *SCMProviderHandler) loadCredential(c *gin.Context, id int) (*ent.Credential, credential.Payload, error) {
+	row, err := h.entClient.Credential.Get(c.Request.Context(), id)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return nil, nil, fmt.Errorf("credential %d not found", id)
+		}
+		return nil, nil, err
+	}
+
+	raw, err := pkg.Decrypt(row.Payload, h.encryptionKey)
+	if err != nil {
+		return nil, nil, err
+	}
+	payload, err := credential.ParsePayload(credential.Kind(row.Kind), []byte(raw))
+	if err != nil {
+		return nil, nil, err
+	}
+	return row, payload, nil
+}
+
+func cloneKind(payload credential.Payload) credential.Kind {
+	if payload == nil {
+		return ""
+	}
+	return payload.Kind()
 }

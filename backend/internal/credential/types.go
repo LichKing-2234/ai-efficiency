@@ -119,6 +119,33 @@ func ValidateProviderCredentialRefs(apiKind Kind, cloneProtocol string, cloneKin
 	return nil
 }
 
+func ResolveAPISecret(payload Payload) (string, error) {
+	switch p := payload.(type) {
+	case SecretTextPayload:
+		return p.Text, nil
+	case UsernamePasswordPayload:
+		return p.Password, nil
+	default:
+		return "", fmt.Errorf("unsupported api credential kind %s", payload.Kind())
+	}
+}
+
+func ParseLegacySCMProviderSecret(raw string) (SecretTextPayload, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return SecretTextPayload{}, errors.New("legacy scm provider secret is empty")
+	}
+
+	var legacy struct {
+		Token string `json:"token"`
+	}
+	if err := json.Unmarshal([]byte(trimmed), &legacy); err == nil && strings.TrimSpace(legacy.Token) != "" {
+		return SecretTextPayload{Text: legacy.Token}, nil
+	}
+
+	return SecretTextPayload{Text: trimmed}, nil
+}
+
 func MaskSecret(value string) string {
 	trimmed := strings.TrimSpace(value)
 	switch {

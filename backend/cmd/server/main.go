@@ -21,6 +21,7 @@ import (
 	"github.com/ai-efficiency/backend/internal/auth"
 	"github.com/ai-efficiency/backend/internal/checkpoint"
 	"github.com/ai-efficiency/backend/internal/config"
+	"github.com/ai-efficiency/backend/internal/credential"
 	"github.com/ai-efficiency/backend/internal/deployment"
 	"github.com/ai-efficiency/backend/internal/efficiency"
 	"github.com/ai-efficiency/backend/internal/handler"
@@ -135,6 +136,9 @@ func main() {
 		logger.Fatal("ent auto-migrate", zap.Error(err))
 	}
 	logger.Info("database schema migrated")
+	if err := credential.BackfillLegacySCMCredentials(context.Background(), entClient, cfg.Encryption.Key); err != nil {
+		logger.Fatal("backfill legacy scm credentials", zap.Error(err))
+	}
 
 	// Init relay provider
 	var relayProvider relay.Provider
