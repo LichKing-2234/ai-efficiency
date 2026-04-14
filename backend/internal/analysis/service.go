@@ -10,11 +10,14 @@ import (
 	"github.com/ai-efficiency/backend/ent/aiscanresult"
 	entcredential "github.com/ai-efficiency/backend/ent/credential"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
+	entscmprovider "github.com/ai-efficiency/backend/ent/scmprovider"
 	"github.com/ai-efficiency/backend/internal/analysis/llm"
 	"github.com/ai-efficiency/backend/internal/analysis/rules"
 	"github.com/ai-efficiency/backend/internal/credential"
 	"github.com/ai-efficiency/backend/internal/pkg"
 	scminternal "github.com/ai-efficiency/backend/internal/scm"
+	scmbitbucket "github.com/ai-efficiency/backend/internal/scm/bitbucket"
+	scmgithub "github.com/ai-efficiency/backend/internal/scm/github"
 	"go.uber.org/zap"
 )
 
@@ -131,7 +134,6 @@ func (s *Service) RunScan(ctx context.Context, repoConfigID int) (*ent.AiScanRes
 
 func (s *Service) buildCloneRequest(ctx context.Context, rc *ent.RepoConfig) (CloneRequest, error) {
 	req := CloneRequest{
-		CloneURL:     rc.CloneURL,
 		RepoConfigID: rc.ID,
 	}
 
@@ -157,6 +159,14 @@ func (s *Service) buildCloneRequest(ctx context.Context, rc *ent.RepoConfig) (Cl
 	cloneProtocol := provider.CloneProtocol.String()
 	if cloneProtocol == "" {
 		cloneProtocol = "https"
+	}
+	req.CloneURL = rc.CloneURL
+	if cloneProtocol == "https" {
+		cloneURL, err := s.resolveHTTPSCloneURL(ctx, provider, apiPayload, rc)
+		if err != nil {
+			return CloneRequest{}, err
+		}
+		req.CloneURL = cloneURL
 	}
 	authCfg, err := scminternal.BuildCloneAuthConfig(provider.Type, cloneProtocol, apiPayload, clonePayload)
 	if err != nil {
@@ -202,6 +212,37 @@ func (s *Service) resolveCredentialPayload(ctx context.Context, edge *ent.Creden
 		return nil, fmt.Errorf("api credential cannot be ssh_username_with_private_key")
 	}
 	return payload, nil
+}
+
+func (s *Service) resolveHTTPSCloneURL(ctx context.Context, provider *ent.ScmProvider, apiPayload credential.Payload, rc *ent.RepoConfig) (string, error) {
+	scmProvider, err := s.newSCMProviderForLookup(provider.Type, provider.BaseURL, apiPayload)
+	if err != nil {
+		return rc.CloneURL, nil
+	}
+	repoInfo, err := scmProvider.GetRepo(ctx, rc.FullName)
+	if err != nil {
+		return rc.CloneURL, nil
+	}
+	if repoInfo == nil || repoInfo.CloneURL == "" {
+		return rc.CloneURL, nil
+	}
+	return repoInfo.CloneURL, nil
+}
+
+func (s *Service) newSCMProviderForLookup(providerType entscmprovider.Type, baseURL string, apiPayload credential.Payload) (scminternal.SCMProvider, error) {
+	secret, err := credential.ResolveAPISecret(apiPayload)
+	if err != nil {
+		return nil, err
+	}
+
+	switch providerType {
+	case "github":
+		return scmgithub.New(baseURL, secret, s.logger)
+	case "bitbucket_server":
+		return scmbitbucket.New(baseURL, secret, s.logger)
+	default:
+		return nil, fmt.Errorf("unsupported provider type: %s", providerType)
+	}
 }
 
 func (s *Service) saveScanResult(

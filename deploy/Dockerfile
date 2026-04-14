@@ -25,7 +25,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
 
 # Stage 3: Final image
 FROM alpine:3.20
-RUN apk add --no-cache ca-certificates tzdata
+RUN apk add --no-cache ca-certificates tzdata git openssh-client
 WORKDIR /app
 COPY --from=backend-builder /app/server /opt/ai-efficiency/bootstrap/ai-efficiency-server
 COPY deploy/docker-entrypoint.sh /docker-entrypoint.sh

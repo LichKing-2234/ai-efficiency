@@ -25,12 +25,12 @@ func BackfillLegacySCMCredentials(ctx context.Context, client *ent.Client, encry
 
 		decrypted, err := pkg.Decrypt(provider.Credentials, encryptionKey)
 		if err != nil {
-			return fmt.Errorf("decrypt legacy scm credentials for provider %d: %w", provider.ID, err)
+			continue
 		}
 
 		payload, err := ParseLegacySCMProviderSecret(decrypted)
 		if err != nil {
-			return fmt.Errorf("parse legacy scm credentials for provider %d: %w", provider.ID, err)
+			continue
 		}
 
 		rawPayload, err := json.Marshal(payload)

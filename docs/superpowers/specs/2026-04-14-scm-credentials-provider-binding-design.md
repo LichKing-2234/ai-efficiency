@@ -201,6 +201,8 @@ Use the provider's effective clone credential:
 - if `clone_credential_id` is set, it must be `secret_text` or `username_password`
 - else fall back to `api_credential_id`
 
+When `clone_protocol=https`, runtime should prefer the SCM provider's current HTTPS clone URL for the repo, resolved from the provider API by `repo.full_name`, rather than blindly trusting a stale stored `repo.clone_url`. If that lookup is unavailable, runtime may fall back to the stored clone URL as a compatibility path.
+
 Credential application rules:
 
 - `secret_text`
@@ -395,6 +397,8 @@ For each existing SCM provider:
 5. set `clone_credential_id=NULL`
 
 This preserves current behavior while enabling reuse going forward.
+
+If a legacy `scm_providers.credentials` value cannot be decrypted with the active encryption key, the backfill must skip that provider, leave its new credential references unset, and allow the service to start. That provider remains admin-repairable rather than startup-blocking.
 
 ### Phase 3: Runtime Switch
 
