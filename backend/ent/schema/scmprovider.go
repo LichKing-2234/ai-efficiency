@@ -21,7 +21,16 @@ func (ScmProvider) Fields() []ent.Field {
 		field.String("base_url").
 			NotEmpty(),
 		field.String("credentials").
-			Sensitive(),
+			Sensitive().
+			Optional(),
+		field.Int("api_credential_id").
+			Optional(),
+		field.Int("clone_credential_id").
+			Optional().
+			Nillable(),
+		field.Enum("clone_protocol").
+			Values("https", "ssh").
+			Default("https"),
 		field.Enum("status").
 			Values("active", "inactive", "error").
 			Default("active"),
@@ -37,6 +46,14 @@ func (ScmProvider) Fields() []ent.Field {
 // Edges of the ScmProvider.
 func (ScmProvider) Edges() []ent.Edge {
 	return []ent.Edge{
+		edge.From("api_credential", Credential.Type).
+			Ref("api_scm_providers").
+			Field("api_credential_id").
+			Unique(),
+		edge.From("clone_credential", Credential.Type).
+			Ref("clone_scm_providers").
+			Field("clone_credential_id").
+			Unique(),
 		edge.To("repo_configs", RepoConfig.Type),
 	}
 }

@@ -70,6 +70,16 @@ func Credentials(v string) predicate.ScmProvider {
 	return predicate.ScmProvider(sql.FieldEQ(FieldCredentials, v))
 }
 
+// APICredentialID applies equality check predicate on the "api_credential_id" field. It's identical to APICredentialIDEQ.
+func APICredentialID(v int) predicate.ScmProvider {
+	return predicate.ScmProvider(sql.FieldEQ(FieldAPICredentialID, v))
+}
+
+// CloneCredentialID applies equality check predicate on the "clone_credential_id" field. It's identical to CloneCredentialIDEQ.
+func CloneCredentialID(v int) predicate.ScmProvider {
+	return predicate.ScmProvider(sql.FieldEQ(FieldCloneCredentialID, v))
+}
+
 // CreatedAt applies equality check predicate on the "created_at" field. It's identical to CreatedAtEQ.
 func CreatedAt(v time.Time) predicate.ScmProvider {
 	return predicate.ScmProvider(sql.FieldEQ(FieldCreatedAt, v))
@@ -285,6 +295,16 @@ func CredentialsHasSuffix(v string) predicate.ScmProvider {
 	return predicate.ScmProvider(sql.FieldHasSuffix(FieldCredentials, v))
 }
 
+// CredentialsIsNil applies the IsNil predicate on the "credentials" field.
+func CredentialsIsNil() predicate.ScmProvider {
+	return predicate.ScmProvider(sql.FieldIsNull(FieldCredentials))
+}
+
+// CredentialsNotNil applies the NotNil predicate on the "credentials" field.
+func CredentialsNotNil() predicate.ScmProvider {
+	return predicate.ScmProvider(sql.FieldNotNull(FieldCredentials))
+}
+
 // CredentialsEqualFold applies the EqualFold predicate on the "credentials" field.
 func CredentialsEqualFold(v string) predicate.ScmProvider {
 	return predicate.ScmProvider(sql.FieldEqualFold(FieldCredentials, v))
@@ -293,6 +313,86 @@ func CredentialsEqualFold(v string) predicate.ScmProvider {
 // CredentialsContainsFold applies the ContainsFold predicate on the "credentials" field.
 func CredentialsContainsFold(v string) predicate.ScmProvider {
 	return predicate.ScmProvider(sql.FieldContainsFold(FieldCredentials, v))
+}
+
+// APICredentialIDEQ applies the EQ predicate on the "api_credential_id" field.
+func APICredentialIDEQ(v int) predicate.ScmProvider {
+	return predicate.ScmProvider(sql.FieldEQ(FieldAPICredentialID, v))
+}
+
+// APICredentialIDNEQ applies the NEQ predicate on the "api_credential_id" field.
+func APICredentialIDNEQ(v int) predicate.ScmProvider {
+	return predicate.ScmProvider(sql.FieldNEQ(FieldAPICredentialID, v))
+}
+
+// APICredentialIDIn applies the In predicate on the "api_credential_id" field.
+func APICredentialIDIn(vs ...int) predicate.ScmProvider {
+	return predicate.ScmProvider(sql.FieldIn(FieldAPICredentialID, vs...))
+}
+
+// APICredentialIDNotIn applies the NotIn predicate on the "api_credential_id" field.
+func APICredentialIDNotIn(vs ...int) predicate.ScmProvider {
+	return predicate.ScmProvider(sql.FieldNotIn(FieldAPICredentialID, vs...))
+}
+
+// APICredentialIDIsNil applies the IsNil predicate on the "api_credential_id" field.
+func APICredentialIDIsNil() predicate.ScmProvider {
+	return predicate.ScmProvider(sql.FieldIsNull(FieldAPICredentialID))
+}
+
+// APICredentialIDNotNil applies the NotNil predicate on the "api_credential_id" field.
+func APICredentialIDNotNil() predicate.ScmProvider {
+	return predicate.ScmProvider(sql.FieldNotNull(FieldAPICredentialID))
+}
+
+// CloneCredentialIDEQ applies the EQ predicate on the "clone_credential_id" field.
+func CloneCredentialIDEQ(v int) predicate.ScmProvider {
+	return predicate.ScmProvider(sql.FieldEQ(FieldCloneCredentialID, v))
+}
+
+// CloneCredentialIDNEQ applies the NEQ predicate on the "clone_credential_id" field.
+func CloneCredentialIDNEQ(v int) predicate.ScmProvider {
+	return predicate.ScmProvider(sql.FieldNEQ(FieldCloneCredentialID, v))
+}
+
+// CloneCredentialIDIn applies the In predicate on the "clone_credential_id" field.
+func CloneCredentialIDIn(vs ...int) predicate.ScmProvider {
+	return predicate.ScmProvider(sql.FieldIn(FieldCloneCredentialID, vs...))
+}
+
+// CloneCredentialIDNotIn applies the NotIn predicate on the "clone_credential_id" field.
+func CloneCredentialIDNotIn(vs ...int) predicate.ScmProvider {
+	return predicate.ScmProvider(sql.FieldNotIn(FieldCloneCredentialID, vs...))
+}
+
+// CloneCredentialIDIsNil applies the IsNil predicate on the "clone_credential_id" field.
+func CloneCredentialIDIsNil() predicate.ScmProvider {
+	return predicate.ScmProvider(sql.FieldIsNull(FieldCloneCredentialID))
+}
+
+// CloneCredentialIDNotNil applies the NotNil predicate on the "clone_credential_id" field.
+func CloneCredentialIDNotNil() predicate.ScmProvider {
+	return predicate.ScmProvider(sql.FieldNotNull(FieldCloneCredentialID))
+}
+
+// CloneProtocolEQ applies the EQ predicate on the "clone_protocol" field.
+func CloneProtocolEQ(v CloneProtocol) predicate.ScmProvider {
+	return predicate.ScmProvider(sql.FieldEQ(FieldCloneProtocol, v))
+}
+
+// CloneProtocolNEQ applies the NEQ predicate on the "clone_protocol" field.
+func CloneProtocolNEQ(v CloneProtocol) predicate.ScmProvider {
+	return predicate.ScmProvider(sql.FieldNEQ(FieldCloneProtocol, v))
+}
+
+// CloneProtocolIn applies the In predicate on the "clone_protocol" field.
+func CloneProtocolIn(vs ...CloneProtocol) predicate.ScmProvider {
+	return predicate.ScmProvider(sql.FieldIn(FieldCloneProtocol, vs...))
+}
+
+// CloneProtocolNotIn applies the NotIn predicate on the "clone_protocol" field.
+func CloneProtocolNotIn(vs ...CloneProtocol) predicate.ScmProvider {
+	return predicate.ScmProvider(sql.FieldNotIn(FieldCloneProtocol, vs...))
 }
 
 // StatusEQ applies the EQ predicate on the "status" field.
@@ -393,6 +493,52 @@ func UpdatedAtLT(v time.Time) predicate.ScmProvider {
 // UpdatedAtLTE applies the LTE predicate on the "updated_at" field.
 func UpdatedAtLTE(v time.Time) predicate.ScmProvider {
 	return predicate.ScmProvider(sql.FieldLTE(FieldUpdatedAt, v))
+}
+
+// HasAPICredential applies the HasEdge predicate on the "api_credential" edge.
+func HasAPICredential() predicate.ScmProvider {
+	return predicate.ScmProvider(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, APICredentialTable, APICredentialColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasAPICredentialWith applies the HasEdge predicate on the "api_credential" edge with a given conditions (other predicates).
+func HasAPICredentialWith(preds ...predicate.Credential) predicate.ScmProvider {
+	return predicate.ScmProvider(func(s *sql.Selector) {
+		step := newAPICredentialStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasCloneCredential applies the HasEdge predicate on the "clone_credential" edge.
+func HasCloneCredential() predicate.ScmProvider {
+	return predicate.ScmProvider(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, CloneCredentialTable, CloneCredentialColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasCloneCredentialWith applies the HasEdge predicate on the "clone_credential" edge with a given conditions (other predicates).
+func HasCloneCredentialWith(preds ...predicate.Credential) predicate.ScmProvider {
+	return predicate.ScmProvider(func(s *sql.Selector) {
+		step := newCloneCredentialStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
 }
 
 // HasRepoConfigs applies the HasEdge predicate on the "repo_configs" edge.

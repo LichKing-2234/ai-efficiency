@@ -10,6 +10,7 @@ import (
 
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/ai-efficiency/backend/ent/credential"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/scmprovider"
 )
@@ -42,6 +43,56 @@ func (spc *ScmProviderCreate) SetBaseURL(s string) *ScmProviderCreate {
 // SetCredentials sets the "credentials" field.
 func (spc *ScmProviderCreate) SetCredentials(s string) *ScmProviderCreate {
 	spc.mutation.SetCredentials(s)
+	return spc
+}
+
+// SetNillableCredentials sets the "credentials" field if the given value is not nil.
+func (spc *ScmProviderCreate) SetNillableCredentials(s *string) *ScmProviderCreate {
+	if s != nil {
+		spc.SetCredentials(*s)
+	}
+	return spc
+}
+
+// SetAPICredentialID sets the "api_credential_id" field.
+func (spc *ScmProviderCreate) SetAPICredentialID(i int) *ScmProviderCreate {
+	spc.mutation.SetAPICredentialID(i)
+	return spc
+}
+
+// SetNillableAPICredentialID sets the "api_credential_id" field if the given value is not nil.
+func (spc *ScmProviderCreate) SetNillableAPICredentialID(i *int) *ScmProviderCreate {
+	if i != nil {
+		spc.SetAPICredentialID(*i)
+	}
+	return spc
+}
+
+// SetCloneCredentialID sets the "clone_credential_id" field.
+func (spc *ScmProviderCreate) SetCloneCredentialID(i int) *ScmProviderCreate {
+	spc.mutation.SetCloneCredentialID(i)
+	return spc
+}
+
+// SetNillableCloneCredentialID sets the "clone_credential_id" field if the given value is not nil.
+func (spc *ScmProviderCreate) SetNillableCloneCredentialID(i *int) *ScmProviderCreate {
+	if i != nil {
+		spc.SetCloneCredentialID(*i)
+	}
+	return spc
+}
+
+// SetCloneProtocol sets the "clone_protocol" field.
+func (spc *ScmProviderCreate) SetCloneProtocol(sp scmprovider.CloneProtocol) *ScmProviderCreate {
+	spc.mutation.SetCloneProtocol(sp)
+	return spc
+}
+
+// SetNillableCloneProtocol sets the "clone_protocol" field if the given value is not nil.
+func (spc *ScmProviderCreate) SetNillableCloneProtocol(sp *scmprovider.CloneProtocol) *ScmProviderCreate {
+	if sp != nil {
+		spc.SetCloneProtocol(*sp)
+	}
 	return spc
 }
 
@@ -85,6 +136,16 @@ func (spc *ScmProviderCreate) SetNillableUpdatedAt(t *time.Time) *ScmProviderCre
 		spc.SetUpdatedAt(*t)
 	}
 	return spc
+}
+
+// SetAPICredential sets the "api_credential" edge to the Credential entity.
+func (spc *ScmProviderCreate) SetAPICredential(c *Credential) *ScmProviderCreate {
+	return spc.SetAPICredentialID(c.ID)
+}
+
+// SetCloneCredential sets the "clone_credential" edge to the Credential entity.
+func (spc *ScmProviderCreate) SetCloneCredential(c *Credential) *ScmProviderCreate {
+	return spc.SetCloneCredentialID(c.ID)
 }
 
 // AddRepoConfigIDs adds the "repo_configs" edge to the RepoConfig entity by IDs.
@@ -137,6 +198,10 @@ func (spc *ScmProviderCreate) ExecX(ctx context.Context) {
 
 // defaults sets the default values of the builder before save.
 func (spc *ScmProviderCreate) defaults() {
+	if _, ok := spc.mutation.CloneProtocol(); !ok {
+		v := scmprovider.DefaultCloneProtocol
+		spc.mutation.SetCloneProtocol(v)
+	}
 	if _, ok := spc.mutation.Status(); !ok {
 		v := scmprovider.DefaultStatus
 		spc.mutation.SetStatus(v)
@@ -177,8 +242,13 @@ func (spc *ScmProviderCreate) check() error {
 			return &ValidationError{Name: "base_url", err: fmt.Errorf(`ent: validator failed for field "ScmProvider.base_url": %w`, err)}
 		}
 	}
-	if _, ok := spc.mutation.Credentials(); !ok {
-		return &ValidationError{Name: "credentials", err: errors.New(`ent: missing required field "ScmProvider.credentials"`)}
+	if _, ok := spc.mutation.CloneProtocol(); !ok {
+		return &ValidationError{Name: "clone_protocol", err: errors.New(`ent: missing required field "ScmProvider.clone_protocol"`)}
+	}
+	if v, ok := spc.mutation.CloneProtocol(); ok {
+		if err := scmprovider.CloneProtocolValidator(v); err != nil {
+			return &ValidationError{Name: "clone_protocol", err: fmt.Errorf(`ent: validator failed for field "ScmProvider.clone_protocol": %w`, err)}
+		}
 	}
 	if _, ok := spc.mutation.Status(); !ok {
 		return &ValidationError{Name: "status", err: errors.New(`ent: missing required field "ScmProvider.status"`)}
@@ -236,6 +306,10 @@ func (spc *ScmProviderCreate) createSpec() (*ScmProvider, *sqlgraph.CreateSpec) 
 		_spec.SetField(scmprovider.FieldCredentials, field.TypeString, value)
 		_node.Credentials = value
 	}
+	if value, ok := spc.mutation.CloneProtocol(); ok {
+		_spec.SetField(scmprovider.FieldCloneProtocol, field.TypeEnum, value)
+		_node.CloneProtocol = value
+	}
 	if value, ok := spc.mutation.Status(); ok {
 		_spec.SetField(scmprovider.FieldStatus, field.TypeEnum, value)
 		_node.Status = value
@@ -247,6 +321,40 @@ func (spc *ScmProviderCreate) createSpec() (*ScmProvider, *sqlgraph.CreateSpec) 
 	if value, ok := spc.mutation.UpdatedAt(); ok {
 		_spec.SetField(scmprovider.FieldUpdatedAt, field.TypeTime, value)
 		_node.UpdatedAt = value
+	}
+	if nodes := spc.mutation.APICredentialIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   scmprovider.APICredentialTable,
+			Columns: []string{scmprovider.APICredentialColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(credential.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_node.APICredentialID = nodes[0]
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := spc.mutation.CloneCredentialIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   scmprovider.CloneCredentialTable,
+			Columns: []string{scmprovider.CloneCredentialColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(credential.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_node.CloneCredentialID = &nodes[0]
+		_spec.Edges = append(_spec.Edges, edge)
 	}
 	if nodes := spc.mutation.RepoConfigsIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{

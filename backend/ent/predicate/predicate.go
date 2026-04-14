@@ -18,6 +18,9 @@ type CommitCheckpoint func(*sql.Selector)
 // CommitRewrite is the predicate function for commitrewrite builders.
 type CommitRewrite func(*sql.Selector)
 
+// Credential is the predicate function for credential builders.
+type Credential func(*sql.Selector)
+
 // EfficiencyMetric is the predicate function for efficiencymetric builders.
 type EfficiencyMetric func(*sql.Selector)
 

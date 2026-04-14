@@ -9,6 +9,7 @@ import (
 	"github.com/ai-efficiency/backend/ent/aiscanresult"
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
 	"github.com/ai-efficiency/backend/ent/commitrewrite"
+	"github.com/ai-efficiency/backend/ent/credential"
 	"github.com/ai-efficiency/backend/ent/efficiencymetric"
 	"github.com/ai-efficiency/backend/ent/prattributionrun"
 	"github.com/ai-efficiency/backend/ent/prrecord"
@@ -118,6 +119,26 @@ func init() {
 	commitrewriteDescCapturedAt := commitrewriteFields[8].Descriptor()
 	// commitrewrite.DefaultCapturedAt holds the default value on creation for the captured_at field.
 	commitrewrite.DefaultCapturedAt = commitrewriteDescCapturedAt.Default.(func() time.Time)
+	credentialFields := schema.Credential{}.Fields()
+	_ = credentialFields
+	// credentialDescName is the schema descriptor for name field.
+	credentialDescName := credentialFields[0].Descriptor()
+	// credential.NameValidator is a validator for the "name" field. It is called by the builders before save.
+	credential.NameValidator = credentialDescName.Validators[0].(func(string) error)
+	// credentialDescDescription is the schema descriptor for description field.
+	credentialDescDescription := credentialFields[1].Descriptor()
+	// credential.DefaultDescription holds the default value on creation for the description field.
+	credential.DefaultDescription = credentialDescDescription.Default.(string)
+	// credentialDescCreatedAt is the schema descriptor for created_at field.
+	credentialDescCreatedAt := credentialFields[4].Descriptor()
+	// credential.DefaultCreatedAt holds the default value on creation for the created_at field.
+	credential.DefaultCreatedAt = credentialDescCreatedAt.Default.(func() time.Time)
+	// credentialDescUpdatedAt is the schema descriptor for updated_at field.
+	credentialDescUpdatedAt := credentialFields[5].Descriptor()
+	// credential.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	credential.DefaultUpdatedAt = credentialDescUpdatedAt.Default.(func() time.Time)
+	// credential.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	credential.UpdateDefaultUpdatedAt = credentialDescUpdatedAt.UpdateDefault.(func() time.Time)
 	efficiencymetricFields := schema.EfficiencyMetric{}.Fields()
 	_ = efficiencymetricFields
 	// efficiencymetricDescTotalPrs is the schema descriptor for total_prs field.
@@ -301,11 +322,11 @@ func init() {
 	// scmprovider.BaseURLValidator is a validator for the "base_url" field. It is called by the builders before save.
 	scmprovider.BaseURLValidator = scmproviderDescBaseURL.Validators[0].(func(string) error)
 	// scmproviderDescCreatedAt is the schema descriptor for created_at field.
-	scmproviderDescCreatedAt := scmproviderFields[5].Descriptor()
+	scmproviderDescCreatedAt := scmproviderFields[8].Descriptor()
 	// scmprovider.DefaultCreatedAt holds the default value on creation for the created_at field.
 	scmprovider.DefaultCreatedAt = scmproviderDescCreatedAt.Default.(func() time.Time)
 	// scmproviderDescUpdatedAt is the schema descriptor for updated_at field.
-	scmproviderDescUpdatedAt := scmproviderFields[6].Descriptor()
+	scmproviderDescUpdatedAt := scmproviderFields[9].Descriptor()
 	// scmprovider.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	scmprovider.DefaultUpdatedAt = scmproviderDescUpdatedAt.Default.(func() time.Time)
 	// scmprovider.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.

@@ -15,6 +15,7 @@ import (
 	"github.com/ai-efficiency/backend/ent/aiscanresult"
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
 	"github.com/ai-efficiency/backend/ent/commitrewrite"
+	"github.com/ai-efficiency/backend/ent/credential"
 	"github.com/ai-efficiency/backend/ent/efficiencymetric"
 	"github.com/ai-efficiency/backend/ent/prattributionrun"
 	"github.com/ai-efficiency/backend/ent/predicate"
@@ -45,6 +46,7 @@ const (
 	TypeAiScanResult       = "AiScanResult"
 	TypeCommitCheckpoint   = "CommitCheckpoint"
 	TypeCommitRewrite      = "CommitRewrite"
+	TypeCredential         = "Credential"
 	TypeEfficiencyMetric   = "EfficiencyMetric"
 	TypePrAttributionRun   = "PrAttributionRun"
 	TypePrRecord           = "PrRecord"
@@ -4070,6 +4072,778 @@ func (m *CommitRewriteMutation) ResetEdge(name string) error {
 		return nil
 	}
 	return fmt.Errorf("unknown CommitRewrite edge %s", name)
+}
+
+// CredentialMutation represents an operation that mutates the Credential nodes in the graph.
+type CredentialMutation struct {
+	config
+	op                         Op
+	typ                        string
+	id                         *int
+	name                       *string
+	description                *string
+	kind                       *credential.Kind
+	payload                    *string
+	created_at                 *time.Time
+	updated_at                 *time.Time
+	clearedFields              map[string]struct{}
+	api_scm_providers          map[int]struct{}
+	removedapi_scm_providers   map[int]struct{}
+	clearedapi_scm_providers   bool
+	clone_scm_providers        map[int]struct{}
+	removedclone_scm_providers map[int]struct{}
+	clearedclone_scm_providers bool
+	done                       bool
+	oldValue                   func(context.Context) (*Credential, error)
+	predicates                 []predicate.Credential
+}
+
+var _ ent.Mutation = (*CredentialMutation)(nil)
+
+// credentialOption allows management of the mutation configuration using functional options.
+type credentialOption func(*CredentialMutation)
+
+// newCredentialMutation creates new mutation for the Credential entity.
+func newCredentialMutation(c config, op Op, opts ...credentialOption) *CredentialMutation {
+	m := &CredentialMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeCredential,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withCredentialID sets the ID field of the mutation.
+func withCredentialID(id int) credentialOption {
+	return func(m *CredentialMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *Credential
+		)
+		m.oldValue = func(ctx context.Context) (*Credential, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().Credential.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withCredential sets the old Credential of the mutation.
+func withCredential(node *Credential) credentialOption {
+	return func(m *CredentialMutation) {
+		m.oldValue = func(context.Context) (*Credential, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m CredentialMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m CredentialMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *CredentialMutation) ID() (id int, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *CredentialMutation) IDs(ctx context.Context) ([]int, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().Credential.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetName sets the "name" field.
+func (m *CredentialMutation) SetName(s string) {
+	m.name = &s
+}
+
+// Name returns the value of the "name" field in the mutation.
+func (m *CredentialMutation) Name() (r string, exists bool) {
+	v := m.name
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldName returns the old "name" field's value of the Credential entity.
+// If the Credential object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CredentialMutation) OldName(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldName is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldName requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldName: %w", err)
+	}
+	return oldValue.Name, nil
+}
+
+// ResetName resets all changes to the "name" field.
+func (m *CredentialMutation) ResetName() {
+	m.name = nil
+}
+
+// SetDescription sets the "description" field.
+func (m *CredentialMutation) SetDescription(s string) {
+	m.description = &s
+}
+
+// Description returns the value of the "description" field in the mutation.
+func (m *CredentialMutation) Description() (r string, exists bool) {
+	v := m.description
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDescription returns the old "description" field's value of the Credential entity.
+// If the Credential object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CredentialMutation) OldDescription(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDescription is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDescription requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDescription: %w", err)
+	}
+	return oldValue.Description, nil
+}
+
+// ResetDescription resets all changes to the "description" field.
+func (m *CredentialMutation) ResetDescription() {
+	m.description = nil
+}
+
+// SetKind sets the "kind" field.
+func (m *CredentialMutation) SetKind(c credential.Kind) {
+	m.kind = &c
+}
+
+// Kind returns the value of the "kind" field in the mutation.
+func (m *CredentialMutation) Kind() (r credential.Kind, exists bool) {
+	v := m.kind
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldKind returns the old "kind" field's value of the Credential entity.
+// If the Credential object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CredentialMutation) OldKind(ctx context.Context) (v credential.Kind, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldKind is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldKind requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldKind: %w", err)
+	}
+	return oldValue.Kind, nil
+}
+
+// ResetKind resets all changes to the "kind" field.
+func (m *CredentialMutation) ResetKind() {
+	m.kind = nil
+}
+
+// SetPayload sets the "payload" field.
+func (m *CredentialMutation) SetPayload(s string) {
+	m.payload = &s
+}
+
+// Payload returns the value of the "payload" field in the mutation.
+func (m *CredentialMutation) Payload() (r string, exists bool) {
+	v := m.payload
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPayload returns the old "payload" field's value of the Credential entity.
+// If the Credential object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CredentialMutation) OldPayload(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPayload is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPayload requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPayload: %w", err)
+	}
+	return oldValue.Payload, nil
+}
+
+// ResetPayload resets all changes to the "payload" field.
+func (m *CredentialMutation) ResetPayload() {
+	m.payload = nil
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *CredentialMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *CredentialMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the Credential entity.
+// If the Credential object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CredentialMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *CredentialMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *CredentialMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *CredentialMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the Credential entity.
+// If the Credential object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CredentialMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *CredentialMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// AddAPIScmProviderIDs adds the "api_scm_providers" edge to the ScmProvider entity by ids.
+func (m *CredentialMutation) AddAPIScmProviderIDs(ids ...int) {
+	if m.api_scm_providers == nil {
+		m.api_scm_providers = make(map[int]struct{})
+	}
+	for i := range ids {
+		m.api_scm_providers[ids[i]] = struct{}{}
+	}
+}
+
+// ClearAPIScmProviders clears the "api_scm_providers" edge to the ScmProvider entity.
+func (m *CredentialMutation) ClearAPIScmProviders() {
+	m.clearedapi_scm_providers = true
+}
+
+// APIScmProvidersCleared reports if the "api_scm_providers" edge to the ScmProvider entity was cleared.
+func (m *CredentialMutation) APIScmProvidersCleared() bool {
+	return m.clearedapi_scm_providers
+}
+
+// RemoveAPIScmProviderIDs removes the "api_scm_providers" edge to the ScmProvider entity by IDs.
+func (m *CredentialMutation) RemoveAPIScmProviderIDs(ids ...int) {
+	if m.removedapi_scm_providers == nil {
+		m.removedapi_scm_providers = make(map[int]struct{})
+	}
+	for i := range ids {
+		delete(m.api_scm_providers, ids[i])
+		m.removedapi_scm_providers[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedAPIScmProviders returns the removed IDs of the "api_scm_providers" edge to the ScmProvider entity.
+func (m *CredentialMutation) RemovedAPIScmProvidersIDs() (ids []int) {
+	for id := range m.removedapi_scm_providers {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// APIScmProvidersIDs returns the "api_scm_providers" edge IDs in the mutation.
+func (m *CredentialMutation) APIScmProvidersIDs() (ids []int) {
+	for id := range m.api_scm_providers {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetAPIScmProviders resets all changes to the "api_scm_providers" edge.
+func (m *CredentialMutation) ResetAPIScmProviders() {
+	m.api_scm_providers = nil
+	m.clearedapi_scm_providers = false
+	m.removedapi_scm_providers = nil
+}
+
+// AddCloneScmProviderIDs adds the "clone_scm_providers" edge to the ScmProvider entity by ids.
+func (m *CredentialMutation) AddCloneScmProviderIDs(ids ...int) {
+	if m.clone_scm_providers == nil {
+		m.clone_scm_providers = make(map[int]struct{})
+	}
+	for i := range ids {
+		m.clone_scm_providers[ids[i]] = struct{}{}
+	}
+}
+
+// ClearCloneScmProviders clears the "clone_scm_providers" edge to the ScmProvider entity.
+func (m *CredentialMutation) ClearCloneScmProviders() {
+	m.clearedclone_scm_providers = true
+}
+
+// CloneScmProvidersCleared reports if the "clone_scm_providers" edge to the ScmProvider entity was cleared.
+func (m *CredentialMutation) CloneScmProvidersCleared() bool {
+	return m.clearedclone_scm_providers
+}
+
+// RemoveCloneScmProviderIDs removes the "clone_scm_providers" edge to the ScmProvider entity by IDs.
+func (m *CredentialMutation) RemoveCloneScmProviderIDs(ids ...int) {
+	if m.removedclone_scm_providers == nil {
+		m.removedclone_scm_providers = make(map[int]struct{})
+	}
+	for i := range ids {
+		delete(m.clone_scm_providers, ids[i])
+		m.removedclone_scm_providers[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedCloneScmProviders returns the removed IDs of the "clone_scm_providers" edge to the ScmProvider entity.
+func (m *CredentialMutation) RemovedCloneScmProvidersIDs() (ids []int) {
+	for id := range m.removedclone_scm_providers {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// CloneScmProvidersIDs returns the "clone_scm_providers" edge IDs in the mutation.
+func (m *CredentialMutation) CloneScmProvidersIDs() (ids []int) {
+	for id := range m.clone_scm_providers {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetCloneScmProviders resets all changes to the "clone_scm_providers" edge.
+func (m *CredentialMutation) ResetCloneScmProviders() {
+	m.clone_scm_providers = nil
+	m.clearedclone_scm_providers = false
+	m.removedclone_scm_providers = nil
+}
+
+// Where appends a list predicates to the CredentialMutation builder.
+func (m *CredentialMutation) Where(ps ...predicate.Credential) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the CredentialMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *CredentialMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.Credential, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *CredentialMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *CredentialMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (Credential).
+func (m *CredentialMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *CredentialMutation) Fields() []string {
+	fields := make([]string, 0, 6)
+	if m.name != nil {
+		fields = append(fields, credential.FieldName)
+	}
+	if m.description != nil {
+		fields = append(fields, credential.FieldDescription)
+	}
+	if m.kind != nil {
+		fields = append(fields, credential.FieldKind)
+	}
+	if m.payload != nil {
+		fields = append(fields, credential.FieldPayload)
+	}
+	if m.created_at != nil {
+		fields = append(fields, credential.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, credential.FieldUpdatedAt)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *CredentialMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case credential.FieldName:
+		return m.Name()
+	case credential.FieldDescription:
+		return m.Description()
+	case credential.FieldKind:
+		return m.Kind()
+	case credential.FieldPayload:
+		return m.Payload()
+	case credential.FieldCreatedAt:
+		return m.CreatedAt()
+	case credential.FieldUpdatedAt:
+		return m.UpdatedAt()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *CredentialMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case credential.FieldName:
+		return m.OldName(ctx)
+	case credential.FieldDescription:
+		return m.OldDescription(ctx)
+	case credential.FieldKind:
+		return m.OldKind(ctx)
+	case credential.FieldPayload:
+		return m.OldPayload(ctx)
+	case credential.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case credential.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	}
+	return nil, fmt.Errorf("unknown Credential field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *CredentialMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case credential.FieldName:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetName(v)
+		return nil
+	case credential.FieldDescription:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDescription(v)
+		return nil
+	case credential.FieldKind:
+		v, ok := value.(credential.Kind)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetKind(v)
+		return nil
+	case credential.FieldPayload:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPayload(v)
+		return nil
+	case credential.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case credential.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	}
+	return fmt.Errorf("unknown Credential field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *CredentialMutation) AddedFields() []string {
+	return nil
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *CredentialMutation) AddedField(name string) (ent.Value, bool) {
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *CredentialMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	}
+	return fmt.Errorf("unknown Credential numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *CredentialMutation) ClearedFields() []string {
+	return nil
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *CredentialMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *CredentialMutation) ClearField(name string) error {
+	return fmt.Errorf("unknown Credential nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *CredentialMutation) ResetField(name string) error {
+	switch name {
+	case credential.FieldName:
+		m.ResetName()
+		return nil
+	case credential.FieldDescription:
+		m.ResetDescription()
+		return nil
+	case credential.FieldKind:
+		m.ResetKind()
+		return nil
+	case credential.FieldPayload:
+		m.ResetPayload()
+		return nil
+	case credential.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case credential.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown Credential field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *CredentialMutation) AddedEdges() []string {
+	edges := make([]string, 0, 2)
+	if m.api_scm_providers != nil {
+		edges = append(edges, credential.EdgeAPIScmProviders)
+	}
+	if m.clone_scm_providers != nil {
+		edges = append(edges, credential.EdgeCloneScmProviders)
+	}
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *CredentialMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case credential.EdgeAPIScmProviders:
+		ids := make([]ent.Value, 0, len(m.api_scm_providers))
+		for id := range m.api_scm_providers {
+			ids = append(ids, id)
+		}
+		return ids
+	case credential.EdgeCloneScmProviders:
+		ids := make([]ent.Value, 0, len(m.clone_scm_providers))
+		for id := range m.clone_scm_providers {
+			ids = append(ids, id)
+		}
+		return ids
+	}
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *CredentialMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 2)
+	if m.removedapi_scm_providers != nil {
+		edges = append(edges, credential.EdgeAPIScmProviders)
+	}
+	if m.removedclone_scm_providers != nil {
+		edges = append(edges, credential.EdgeCloneScmProviders)
+	}
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *CredentialMutation) RemovedIDs(name string) []ent.Value {
+	switch name {
+	case credential.EdgeAPIScmProviders:
+		ids := make([]ent.Value, 0, len(m.removedapi_scm_providers))
+		for id := range m.removedapi_scm_providers {
+			ids = append(ids, id)
+		}
+		return ids
+	case credential.EdgeCloneScmProviders:
+		ids := make([]ent.Value, 0, len(m.removedclone_scm_providers))
+		for id := range m.removedclone_scm_providers {
+			ids = append(ids, id)
+		}
+		return ids
+	}
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *CredentialMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 2)
+	if m.clearedapi_scm_providers {
+		edges = append(edges, credential.EdgeAPIScmProviders)
+	}
+	if m.clearedclone_scm_providers {
+		edges = append(edges, credential.EdgeCloneScmProviders)
+	}
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *CredentialMutation) EdgeCleared(name string) bool {
+	switch name {
+	case credential.EdgeAPIScmProviders:
+		return m.clearedapi_scm_providers
+	case credential.EdgeCloneScmProviders:
+		return m.clearedclone_scm_providers
+	}
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *CredentialMutation) ClearEdge(name string) error {
+	switch name {
+	}
+	return fmt.Errorf("unknown Credential unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *CredentialMutation) ResetEdge(name string) error {
+	switch name {
+	case credential.EdgeAPIScmProviders:
+		m.ResetAPIScmProviders()
+		return nil
+	case credential.EdgeCloneScmProviders:
+		m.ResetCloneScmProviders()
+		return nil
+	}
+	return fmt.Errorf("unknown Credential edge %s", name)
 }
 
 // EfficiencyMetricMutation represents an operation that mutates the EfficiencyMetric nodes in the graph.
@@ -11637,23 +12411,28 @@ func (m *RepoConfigMutation) ResetEdge(name string) error {
 // ScmProviderMutation represents an operation that mutates the ScmProvider nodes in the graph.
 type ScmProviderMutation struct {
 	config
-	op                  Op
-	typ                 string
-	id                  *int
-	name                *string
-	_type               *scmprovider.Type
-	base_url            *string
-	credentials         *string
-	status              *scmprovider.Status
-	created_at          *time.Time
-	updated_at          *time.Time
-	clearedFields       map[string]struct{}
-	repo_configs        map[int]struct{}
-	removedrepo_configs map[int]struct{}
-	clearedrepo_configs bool
-	done                bool
-	oldValue            func(context.Context) (*ScmProvider, error)
-	predicates          []predicate.ScmProvider
+	op                      Op
+	typ                     string
+	id                      *int
+	name                    *string
+	_type                   *scmprovider.Type
+	base_url                *string
+	credentials             *string
+	clone_protocol          *scmprovider.CloneProtocol
+	status                  *scmprovider.Status
+	created_at              *time.Time
+	updated_at              *time.Time
+	clearedFields           map[string]struct{}
+	api_credential          *int
+	clearedapi_credential   bool
+	clone_credential        *int
+	clearedclone_credential bool
+	repo_configs            map[int]struct{}
+	removedrepo_configs     map[int]struct{}
+	clearedrepo_configs     bool
+	done                    bool
+	oldValue                func(context.Context) (*ScmProvider, error)
+	predicates              []predicate.ScmProvider
 }
 
 var _ ent.Mutation = (*ScmProviderMutation)(nil)
@@ -11893,9 +12672,156 @@ func (m *ScmProviderMutation) OldCredentials(ctx context.Context) (v string, err
 	return oldValue.Credentials, nil
 }
 
+// ClearCredentials clears the value of the "credentials" field.
+func (m *ScmProviderMutation) ClearCredentials() {
+	m.credentials = nil
+	m.clearedFields[scmprovider.FieldCredentials] = struct{}{}
+}
+
+// CredentialsCleared returns if the "credentials" field was cleared in this mutation.
+func (m *ScmProviderMutation) CredentialsCleared() bool {
+	_, ok := m.clearedFields[scmprovider.FieldCredentials]
+	return ok
+}
+
 // ResetCredentials resets all changes to the "credentials" field.
 func (m *ScmProviderMutation) ResetCredentials() {
 	m.credentials = nil
+	delete(m.clearedFields, scmprovider.FieldCredentials)
+}
+
+// SetAPICredentialID sets the "api_credential_id" field.
+func (m *ScmProviderMutation) SetAPICredentialID(i int) {
+	m.api_credential = &i
+}
+
+// APICredentialID returns the value of the "api_credential_id" field in the mutation.
+func (m *ScmProviderMutation) APICredentialID() (r int, exists bool) {
+	v := m.api_credential
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAPICredentialID returns the old "api_credential_id" field's value of the ScmProvider entity.
+// If the ScmProvider object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ScmProviderMutation) OldAPICredentialID(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAPICredentialID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAPICredentialID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAPICredentialID: %w", err)
+	}
+	return oldValue.APICredentialID, nil
+}
+
+// ClearAPICredentialID clears the value of the "api_credential_id" field.
+func (m *ScmProviderMutation) ClearAPICredentialID() {
+	m.api_credential = nil
+	m.clearedFields[scmprovider.FieldAPICredentialID] = struct{}{}
+}
+
+// APICredentialIDCleared returns if the "api_credential_id" field was cleared in this mutation.
+func (m *ScmProviderMutation) APICredentialIDCleared() bool {
+	_, ok := m.clearedFields[scmprovider.FieldAPICredentialID]
+	return ok
+}
+
+// ResetAPICredentialID resets all changes to the "api_credential_id" field.
+func (m *ScmProviderMutation) ResetAPICredentialID() {
+	m.api_credential = nil
+	delete(m.clearedFields, scmprovider.FieldAPICredentialID)
+}
+
+// SetCloneCredentialID sets the "clone_credential_id" field.
+func (m *ScmProviderMutation) SetCloneCredentialID(i int) {
+	m.clone_credential = &i
+}
+
+// CloneCredentialID returns the value of the "clone_credential_id" field in the mutation.
+func (m *ScmProviderMutation) CloneCredentialID() (r int, exists bool) {
+	v := m.clone_credential
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCloneCredentialID returns the old "clone_credential_id" field's value of the ScmProvider entity.
+// If the ScmProvider object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ScmProviderMutation) OldCloneCredentialID(ctx context.Context) (v *int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCloneCredentialID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCloneCredentialID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCloneCredentialID: %w", err)
+	}
+	return oldValue.CloneCredentialID, nil
+}
+
+// ClearCloneCredentialID clears the value of the "clone_credential_id" field.
+func (m *ScmProviderMutation) ClearCloneCredentialID() {
+	m.clone_credential = nil
+	m.clearedFields[scmprovider.FieldCloneCredentialID] = struct{}{}
+}
+
+// CloneCredentialIDCleared returns if the "clone_credential_id" field was cleared in this mutation.
+func (m *ScmProviderMutation) CloneCredentialIDCleared() bool {
+	_, ok := m.clearedFields[scmprovider.FieldCloneCredentialID]
+	return ok
+}
+
+// ResetCloneCredentialID resets all changes to the "clone_credential_id" field.
+func (m *ScmProviderMutation) ResetCloneCredentialID() {
+	m.clone_credential = nil
+	delete(m.clearedFields, scmprovider.FieldCloneCredentialID)
+}
+
+// SetCloneProtocol sets the "clone_protocol" field.
+func (m *ScmProviderMutation) SetCloneProtocol(sp scmprovider.CloneProtocol) {
+	m.clone_protocol = &sp
+}
+
+// CloneProtocol returns the value of the "clone_protocol" field in the mutation.
+func (m *ScmProviderMutation) CloneProtocol() (r scmprovider.CloneProtocol, exists bool) {
+	v := m.clone_protocol
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCloneProtocol returns the old "clone_protocol" field's value of the ScmProvider entity.
+// If the ScmProvider object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ScmProviderMutation) OldCloneProtocol(ctx context.Context) (v scmprovider.CloneProtocol, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCloneProtocol is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCloneProtocol requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCloneProtocol: %w", err)
+	}
+	return oldValue.CloneProtocol, nil
+}
+
+// ResetCloneProtocol resets all changes to the "clone_protocol" field.
+func (m *ScmProviderMutation) ResetCloneProtocol() {
+	m.clone_protocol = nil
 }
 
 // SetStatus sets the "status" field.
@@ -12006,6 +12932,60 @@ func (m *ScmProviderMutation) ResetUpdatedAt() {
 	m.updated_at = nil
 }
 
+// ClearAPICredential clears the "api_credential" edge to the Credential entity.
+func (m *ScmProviderMutation) ClearAPICredential() {
+	m.clearedapi_credential = true
+	m.clearedFields[scmprovider.FieldAPICredentialID] = struct{}{}
+}
+
+// APICredentialCleared reports if the "api_credential" edge to the Credential entity was cleared.
+func (m *ScmProviderMutation) APICredentialCleared() bool {
+	return m.APICredentialIDCleared() || m.clearedapi_credential
+}
+
+// APICredentialIDs returns the "api_credential" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// APICredentialID instead. It exists only for internal usage by the builders.
+func (m *ScmProviderMutation) APICredentialIDs() (ids []int) {
+	if id := m.api_credential; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetAPICredential resets all changes to the "api_credential" edge.
+func (m *ScmProviderMutation) ResetAPICredential() {
+	m.api_credential = nil
+	m.clearedapi_credential = false
+}
+
+// ClearCloneCredential clears the "clone_credential" edge to the Credential entity.
+func (m *ScmProviderMutation) ClearCloneCredential() {
+	m.clearedclone_credential = true
+	m.clearedFields[scmprovider.FieldCloneCredentialID] = struct{}{}
+}
+
+// CloneCredentialCleared reports if the "clone_credential" edge to the Credential entity was cleared.
+func (m *ScmProviderMutation) CloneCredentialCleared() bool {
+	return m.CloneCredentialIDCleared() || m.clearedclone_credential
+}
+
+// CloneCredentialIDs returns the "clone_credential" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// CloneCredentialID instead. It exists only for internal usage by the builders.
+func (m *ScmProviderMutation) CloneCredentialIDs() (ids []int) {
+	if id := m.clone_credential; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetCloneCredential resets all changes to the "clone_credential" edge.
+func (m *ScmProviderMutation) ResetCloneCredential() {
+	m.clone_credential = nil
+	m.clearedclone_credential = false
+}
+
 // AddRepoConfigIDs adds the "repo_configs" edge to the RepoConfig entity by ids.
 func (m *ScmProviderMutation) AddRepoConfigIDs(ids ...int) {
 	if m.repo_configs == nil {
@@ -12094,7 +13074,7 @@ func (m *ScmProviderMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *ScmProviderMutation) Fields() []string {
-	fields := make([]string, 0, 7)
+	fields := make([]string, 0, 10)
 	if m.name != nil {
 		fields = append(fields, scmprovider.FieldName)
 	}
@@ -12106,6 +13086,15 @@ func (m *ScmProviderMutation) Fields() []string {
 	}
 	if m.credentials != nil {
 		fields = append(fields, scmprovider.FieldCredentials)
+	}
+	if m.api_credential != nil {
+		fields = append(fields, scmprovider.FieldAPICredentialID)
+	}
+	if m.clone_credential != nil {
+		fields = append(fields, scmprovider.FieldCloneCredentialID)
+	}
+	if m.clone_protocol != nil {
+		fields = append(fields, scmprovider.FieldCloneProtocol)
 	}
 	if m.status != nil {
 		fields = append(fields, scmprovider.FieldStatus)
@@ -12132,6 +13121,12 @@ func (m *ScmProviderMutation) Field(name string) (ent.Value, bool) {
 		return m.BaseURL()
 	case scmprovider.FieldCredentials:
 		return m.Credentials()
+	case scmprovider.FieldAPICredentialID:
+		return m.APICredentialID()
+	case scmprovider.FieldCloneCredentialID:
+		return m.CloneCredentialID()
+	case scmprovider.FieldCloneProtocol:
+		return m.CloneProtocol()
 	case scmprovider.FieldStatus:
 		return m.Status()
 	case scmprovider.FieldCreatedAt:
@@ -12155,6 +13150,12 @@ func (m *ScmProviderMutation) OldField(ctx context.Context, name string) (ent.Va
 		return m.OldBaseURL(ctx)
 	case scmprovider.FieldCredentials:
 		return m.OldCredentials(ctx)
+	case scmprovider.FieldAPICredentialID:
+		return m.OldAPICredentialID(ctx)
+	case scmprovider.FieldCloneCredentialID:
+		return m.OldCloneCredentialID(ctx)
+	case scmprovider.FieldCloneProtocol:
+		return m.OldCloneProtocol(ctx)
 	case scmprovider.FieldStatus:
 		return m.OldStatus(ctx)
 	case scmprovider.FieldCreatedAt:
@@ -12198,6 +13199,27 @@ func (m *ScmProviderMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetCredentials(v)
 		return nil
+	case scmprovider.FieldAPICredentialID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAPICredentialID(v)
+		return nil
+	case scmprovider.FieldCloneCredentialID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCloneCredentialID(v)
+		return nil
+	case scmprovider.FieldCloneProtocol:
+		v, ok := value.(scmprovider.CloneProtocol)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCloneProtocol(v)
+		return nil
 	case scmprovider.FieldStatus:
 		v, ok := value.(scmprovider.Status)
 		if !ok {
@@ -12226,13 +13248,16 @@ func (m *ScmProviderMutation) SetField(name string, value ent.Value) error {
 // AddedFields returns all numeric fields that were incremented/decremented during
 // this mutation.
 func (m *ScmProviderMutation) AddedFields() []string {
-	return nil
+	var fields []string
+	return fields
 }
 
 // AddedField returns the numeric value that was incremented/decremented on a field
 // with the given name. The second boolean return value indicates that this field
 // was not set, or was not defined in the schema.
 func (m *ScmProviderMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	}
 	return nil, false
 }
 
@@ -12248,7 +13273,17 @@ func (m *ScmProviderMutation) AddField(name string, value ent.Value) error {
 // ClearedFields returns all nullable fields that were cleared during this
 // mutation.
 func (m *ScmProviderMutation) ClearedFields() []string {
-	return nil
+	var fields []string
+	if m.FieldCleared(scmprovider.FieldCredentials) {
+		fields = append(fields, scmprovider.FieldCredentials)
+	}
+	if m.FieldCleared(scmprovider.FieldAPICredentialID) {
+		fields = append(fields, scmprovider.FieldAPICredentialID)
+	}
+	if m.FieldCleared(scmprovider.FieldCloneCredentialID) {
+		fields = append(fields, scmprovider.FieldCloneCredentialID)
+	}
+	return fields
 }
 
 // FieldCleared returns a boolean indicating if a field with the given name was
@@ -12261,6 +13296,17 @@ func (m *ScmProviderMutation) FieldCleared(name string) bool {
 // ClearField clears the value of the field with the given name. It returns an
 // error if the field is not defined in the schema.
 func (m *ScmProviderMutation) ClearField(name string) error {
+	switch name {
+	case scmprovider.FieldCredentials:
+		m.ClearCredentials()
+		return nil
+	case scmprovider.FieldAPICredentialID:
+		m.ClearAPICredentialID()
+		return nil
+	case scmprovider.FieldCloneCredentialID:
+		m.ClearCloneCredentialID()
+		return nil
+	}
 	return fmt.Errorf("unknown ScmProvider nullable field %s", name)
 }
 
@@ -12280,6 +13326,15 @@ func (m *ScmProviderMutation) ResetField(name string) error {
 	case scmprovider.FieldCredentials:
 		m.ResetCredentials()
 		return nil
+	case scmprovider.FieldAPICredentialID:
+		m.ResetAPICredentialID()
+		return nil
+	case scmprovider.FieldCloneCredentialID:
+		m.ResetCloneCredentialID()
+		return nil
+	case scmprovider.FieldCloneProtocol:
+		m.ResetCloneProtocol()
+		return nil
 	case scmprovider.FieldStatus:
 		m.ResetStatus()
 		return nil
@@ -12295,7 +13350,13 @@ func (m *ScmProviderMutation) ResetField(name string) error {
 
 // AddedEdges returns all edge names that were set/added in this mutation.
 func (m *ScmProviderMutation) AddedEdges() []string {
-	edges := make([]string, 0, 1)
+	edges := make([]string, 0, 3)
+	if m.api_credential != nil {
+		edges = append(edges, scmprovider.EdgeAPICredential)
+	}
+	if m.clone_credential != nil {
+		edges = append(edges, scmprovider.EdgeCloneCredential)
+	}
 	if m.repo_configs != nil {
 		edges = append(edges, scmprovider.EdgeRepoConfigs)
 	}
@@ -12306,6 +13367,14 @@ func (m *ScmProviderMutation) AddedEdges() []string {
 // name in this mutation.
 func (m *ScmProviderMutation) AddedIDs(name string) []ent.Value {
 	switch name {
+	case scmprovider.EdgeAPICredential:
+		if id := m.api_credential; id != nil {
+			return []ent.Value{*id}
+		}
+	case scmprovider.EdgeCloneCredential:
+		if id := m.clone_credential; id != nil {
+			return []ent.Value{*id}
+		}
 	case scmprovider.EdgeRepoConfigs:
 		ids := make([]ent.Value, 0, len(m.repo_configs))
 		for id := range m.repo_configs {
@@ -12318,7 +13387,7 @@ func (m *ScmProviderMutation) AddedIDs(name string) []ent.Value {
 
 // RemovedEdges returns all edge names that were removed in this mutation.
 func (m *ScmProviderMutation) RemovedEdges() []string {
-	edges := make([]string, 0, 1)
+	edges := make([]string, 0, 3)
 	if m.removedrepo_configs != nil {
 		edges = append(edges, scmprovider.EdgeRepoConfigs)
 	}
@@ -12341,7 +13410,13 @@ func (m *ScmProviderMutation) RemovedIDs(name string) []ent.Value {
 
 // ClearedEdges returns all edge names that were cleared in this mutation.
 func (m *ScmProviderMutation) ClearedEdges() []string {
-	edges := make([]string, 0, 1)
+	edges := make([]string, 0, 3)
+	if m.clearedapi_credential {
+		edges = append(edges, scmprovider.EdgeAPICredential)
+	}
+	if m.clearedclone_credential {
+		edges = append(edges, scmprovider.EdgeCloneCredential)
+	}
 	if m.clearedrepo_configs {
 		edges = append(edges, scmprovider.EdgeRepoConfigs)
 	}
@@ -12352,6 +13427,10 @@ func (m *ScmProviderMutation) ClearedEdges() []string {
 // was cleared in this mutation.
 func (m *ScmProviderMutation) EdgeCleared(name string) bool {
 	switch name {
+	case scmprovider.EdgeAPICredential:
+		return m.clearedapi_credential
+	case scmprovider.EdgeCloneCredential:
+		return m.clearedclone_credential
 	case scmprovider.EdgeRepoConfigs:
 		return m.clearedrepo_configs
 	}
@@ -12362,6 +13441,12 @@ func (m *ScmProviderMutation) EdgeCleared(name string) bool {
 // if that edge is not defined in the schema.
 func (m *ScmProviderMutation) ClearEdge(name string) error {
 	switch name {
+	case scmprovider.EdgeAPICredential:
+		m.ClearAPICredential()
+		return nil
+	case scmprovider.EdgeCloneCredential:
+		m.ClearCloneCredential()
+		return nil
 	}
 	return fmt.Errorf("unknown ScmProvider unique edge %s", name)
 }
@@ -12370,6 +13455,12 @@ func (m *ScmProviderMutation) ClearEdge(name string) error {
 // It returns an error if the edge is not defined in the schema.
 func (m *ScmProviderMutation) ResetEdge(name string) error {
 	switch name {
+	case scmprovider.EdgeAPICredential:
+		m.ResetAPICredential()
+		return nil
+	case scmprovider.EdgeCloneCredential:
+		m.ResetCloneCredential()
+		return nil
 	case scmprovider.EdgeRepoConfigs:
 		m.ResetRepoConfigs()
 		return nil
