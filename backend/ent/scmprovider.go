@@ -9,6 +9,7 @@ import (
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
+	"github.com/ai-efficiency/backend/ent/credential"
 	"github.com/ai-efficiency/backend/ent/scmprovider"
 )
 
@@ -25,6 +26,12 @@ type ScmProvider struct {
 	BaseURL string `json:"base_url,omitempty"`
 	// Credentials holds the value of the "credentials" field.
 	Credentials string `json:"-"`
+	// APICredentialID holds the value of the "api_credential_id" field.
+	APICredentialID int `json:"api_credential_id,omitempty"`
+	// CloneCredentialID holds the value of the "clone_credential_id" field.
+	CloneCredentialID *int `json:"clone_credential_id,omitempty"`
+	// CloneProtocol holds the value of the "clone_protocol" field.
+	CloneProtocol scmprovider.CloneProtocol `json:"clone_protocol,omitempty"`
 	// Status holds the value of the "status" field.
 	Status scmprovider.Status `json:"status,omitempty"`
 	// CreatedAt holds the value of the "created_at" field.
@@ -39,17 +46,43 @@ type ScmProvider struct {
 
 // ScmProviderEdges holds the relations/edges for other nodes in the graph.
 type ScmProviderEdges struct {
+	// APICredential holds the value of the api_credential edge.
+	APICredential *Credential `json:"api_credential,omitempty"`
+	// CloneCredential holds the value of the clone_credential edge.
+	CloneCredential *Credential `json:"clone_credential,omitempty"`
 	// RepoConfigs holds the value of the repo_configs edge.
 	RepoConfigs []*RepoConfig `json:"repo_configs,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [1]bool
+	loadedTypes [3]bool
+}
+
+// APICredentialOrErr returns the APICredential value or an error if the edge
+// was not loaded in eager-loading, or loaded but was not found.
+func (e ScmProviderEdges) APICredentialOrErr() (*Credential, error) {
+	if e.APICredential != nil {
+		return e.APICredential, nil
+	} else if e.loadedTypes[0] {
+		return nil, &NotFoundError{label: credential.Label}
+	}
+	return nil, &NotLoadedError{edge: "api_credential"}
+}
+
+// CloneCredentialOrErr returns the CloneCredential value or an error if the edge
+// was not loaded in eager-loading, or loaded but was not found.
+func (e ScmProviderEdges) CloneCredentialOrErr() (*Credential, error) {
+	if e.CloneCredential != nil {
+		return e.CloneCredential, nil
+	} else if e.loadedTypes[1] {
+		return nil, &NotFoundError{label: credential.Label}
+	}
+	return nil, &NotLoadedError{edge: "clone_credential"}
 }
 
 // RepoConfigsOrErr returns the RepoConfigs value or an error if the edge
 // was not loaded in eager-loading.
 func (e ScmProviderEdges) RepoConfigsOrErr() ([]*RepoConfig, error) {
-	if e.loadedTypes[0] {
+	if e.loadedTypes[2] {
 		return e.RepoConfigs, nil
 	}
 	return nil, &NotLoadedError{edge: "repo_configs"}
@@ -60,9 +93,9 @@ func (*ScmProvider) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case scmprovider.FieldID:
+		case scmprovider.FieldID, scmprovider.FieldAPICredentialID, scmprovider.FieldCloneCredentialID:
 			values[i] = new(sql.NullInt64)
-		case scmprovider.FieldName, scmprovider.FieldType, scmprovider.FieldBaseURL, scmprovider.FieldCredentials, scmprovider.FieldStatus:
+		case scmprovider.FieldName, scmprovider.FieldType, scmprovider.FieldBaseURL, scmprovider.FieldCredentials, scmprovider.FieldCloneProtocol, scmprovider.FieldStatus:
 			values[i] = new(sql.NullString)
 		case scmprovider.FieldCreatedAt, scmprovider.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -111,6 +144,25 @@ func (sp *ScmProvider) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				sp.Credentials = value.String
 			}
+		case scmprovider.FieldAPICredentialID:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field api_credential_id", values[i])
+			} else if value.Valid {
+				sp.APICredentialID = int(value.Int64)
+			}
+		case scmprovider.FieldCloneCredentialID:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field clone_credential_id", values[i])
+			} else if value.Valid {
+				sp.CloneCredentialID = new(int)
+				*sp.CloneCredentialID = int(value.Int64)
+			}
+		case scmprovider.FieldCloneProtocol:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field clone_protocol", values[i])
+			} else if value.Valid {
+				sp.CloneProtocol = scmprovider.CloneProtocol(value.String)
+			}
 		case scmprovider.FieldStatus:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field status", values[i])
@@ -140,6 +192,16 @@ func (sp *ScmProvider) assignValues(columns []string, values []any) error {
 // This includes values selected through modifiers, order, etc.
 func (sp *ScmProvider) Value(name string) (ent.Value, error) {
 	return sp.selectValues.Get(name)
+}
+
+// QueryAPICredential queries the "api_credential" edge of the ScmProvider entity.
+func (sp *ScmProvider) QueryAPICredential() *CredentialQuery {
+	return NewScmProviderClient(sp.config).QueryAPICredential(sp)
+}
+
+// QueryCloneCredential queries the "clone_credential" edge of the ScmProvider entity.
+func (sp *ScmProvider) QueryCloneCredential() *CredentialQuery {
+	return NewScmProviderClient(sp.config).QueryCloneCredential(sp)
 }
 
 // QueryRepoConfigs queries the "repo_configs" edge of the ScmProvider entity.
@@ -180,6 +242,17 @@ func (sp *ScmProvider) String() string {
 	builder.WriteString(sp.BaseURL)
 	builder.WriteString(", ")
 	builder.WriteString("credentials=<sensitive>")
+	builder.WriteString(", ")
+	builder.WriteString("api_credential_id=")
+	builder.WriteString(fmt.Sprintf("%v", sp.APICredentialID))
+	builder.WriteString(", ")
+	if v := sp.CloneCredentialID; v != nil {
+		builder.WriteString("clone_credential_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	builder.WriteString("clone_protocol=")
+	builder.WriteString(fmt.Sprintf("%v", sp.CloneProtocol))
 	builder.WriteString(", ")
 	builder.WriteString("status=")
 	builder.WriteString(fmt.Sprintf("%v", sp.Status))

@@ -146,6 +146,8 @@ sequenceDiagram
 - `ae-cli` owns local session setup, workspace state, hooks, collector wiring, and the lifecycle of the local session proxy.
 - The backend owns durable state, repo configuration, user/provider mapping, attribution, and SCM/webhook handling.
 - Relay/sub2api remains the upstream auth/LLM/usage integration boundary and attribution fallback source.
+- SCM providers now reference reusable credentials instead of storing raw secret blobs inline.
+- Repos still bind to exactly one SCM provider; clone protocol and clone credentials are provider-owned runtime concerns.
 
 ## Local Session Proxy Rollout
 
@@ -181,9 +183,10 @@ flowchart LR
 | Area | Paths | Responsibility |
 | --- | --- | --- |
 | Auth and identity | `backend/internal/auth`, `backend/internal/oauth` | Relay SSO, LDAP auth, local token issuance, user identity mapping |
+| Credentials | `backend/internal/credential` | Reusable encrypted secret assets, payload validation, provider credential migration, and credential masking |
 | Relay integration | `backend/internal/relay` | Unified relay/sub2api adapter and usage/API key operations |
 | SCM integration | `backend/internal/scm`, `backend/internal/webhook`, `backend/internal/prsync` | SCM provider abstraction, webhook ingestion, PR synchronization |
-| Repo and analysis | `backend/internal/repo`, `backend/internal/analysis`, `backend/internal/efficiency` | Repo config, AI-friendliness scanning, efficiency aggregation and labeling |
+| Repo and analysis | `backend/internal/repo`, `backend/internal/analysis`, `backend/internal/efficiency` | Repo-to-provider binding, provider-backed clone/auth resolution, AI-friendliness scanning, efficiency aggregation and labeling |
 | Session and attribution | `backend/internal/sessionbootstrap`, `backend/internal/checkpoint`, `backend/internal/attribution` | Session bootstrap lifecycle, commit checkpoints, PR/session attribution |
 | API surface | `backend/internal/handler`, `backend/internal/middleware` | HTTP handlers, routing, auth middleware, settings endpoints |
 

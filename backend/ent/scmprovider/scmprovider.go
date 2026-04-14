@@ -23,16 +23,40 @@ const (
 	FieldBaseURL = "base_url"
 	// FieldCredentials holds the string denoting the credentials field in the database.
 	FieldCredentials = "credentials"
+	// FieldAPICredentialID holds the string denoting the api_credential_id field in the database.
+	FieldAPICredentialID = "api_credential_id"
+	// FieldCloneCredentialID holds the string denoting the clone_credential_id field in the database.
+	FieldCloneCredentialID = "clone_credential_id"
+	// FieldCloneProtocol holds the string denoting the clone_protocol field in the database.
+	FieldCloneProtocol = "clone_protocol"
 	// FieldStatus holds the string denoting the status field in the database.
 	FieldStatus = "status"
 	// FieldCreatedAt holds the string denoting the created_at field in the database.
 	FieldCreatedAt = "created_at"
 	// FieldUpdatedAt holds the string denoting the updated_at field in the database.
 	FieldUpdatedAt = "updated_at"
+	// EdgeAPICredential holds the string denoting the api_credential edge name in mutations.
+	EdgeAPICredential = "api_credential"
+	// EdgeCloneCredential holds the string denoting the clone_credential edge name in mutations.
+	EdgeCloneCredential = "clone_credential"
 	// EdgeRepoConfigs holds the string denoting the repo_configs edge name in mutations.
 	EdgeRepoConfigs = "repo_configs"
 	// Table holds the table name of the scmprovider in the database.
 	Table = "scm_providers"
+	// APICredentialTable is the table that holds the api_credential relation/edge.
+	APICredentialTable = "scm_providers"
+	// APICredentialInverseTable is the table name for the Credential entity.
+	// It exists in this package in order to avoid circular dependency with the "credential" package.
+	APICredentialInverseTable = "credentials"
+	// APICredentialColumn is the table column denoting the api_credential relation/edge.
+	APICredentialColumn = "api_credential_id"
+	// CloneCredentialTable is the table that holds the clone_credential relation/edge.
+	CloneCredentialTable = "scm_providers"
+	// CloneCredentialInverseTable is the table name for the Credential entity.
+	// It exists in this package in order to avoid circular dependency with the "credential" package.
+	CloneCredentialInverseTable = "credentials"
+	// CloneCredentialColumn is the table column denoting the clone_credential relation/edge.
+	CloneCredentialColumn = "clone_credential_id"
 	// RepoConfigsTable is the table that holds the repo_configs relation/edge.
 	RepoConfigsTable = "repo_configs"
 	// RepoConfigsInverseTable is the table name for the RepoConfig entity.
@@ -49,6 +73,9 @@ var Columns = []string{
 	FieldType,
 	FieldBaseURL,
 	FieldCredentials,
+	FieldAPICredentialID,
+	FieldCloneCredentialID,
+	FieldCloneProtocol,
 	FieldStatus,
 	FieldCreatedAt,
 	FieldUpdatedAt,
@@ -97,6 +124,32 @@ func TypeValidator(_type Type) error {
 		return nil
 	default:
 		return fmt.Errorf("scmprovider: invalid enum value for type field: %q", _type)
+	}
+}
+
+// CloneProtocol defines the type for the "clone_protocol" enum field.
+type CloneProtocol string
+
+// CloneProtocolHTTPS is the default value of the CloneProtocol enum.
+const DefaultCloneProtocol = CloneProtocolHTTPS
+
+// CloneProtocol values.
+const (
+	CloneProtocolHTTPS CloneProtocol = "https"
+	CloneProtocolSSH   CloneProtocol = "ssh"
+)
+
+func (cp CloneProtocol) String() string {
+	return string(cp)
+}
+
+// CloneProtocolValidator is a validator for the "clone_protocol" field enum values. It is called by the builders before save.
+func CloneProtocolValidator(cp CloneProtocol) error {
+	switch cp {
+	case CloneProtocolHTTPS, CloneProtocolSSH:
+		return nil
+	default:
+		return fmt.Errorf("scmprovider: invalid enum value for clone_protocol field: %q", cp)
 	}
 }
 
@@ -155,6 +208,21 @@ func ByCredentials(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldCredentials, opts...).ToFunc()
 }
 
+// ByAPICredentialID orders the results by the api_credential_id field.
+func ByAPICredentialID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldAPICredentialID, opts...).ToFunc()
+}
+
+// ByCloneCredentialID orders the results by the clone_credential_id field.
+func ByCloneCredentialID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCloneCredentialID, opts...).ToFunc()
+}
+
+// ByCloneProtocol orders the results by the clone_protocol field.
+func ByCloneProtocol(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCloneProtocol, opts...).ToFunc()
+}
+
 // ByStatus orders the results by the status field.
 func ByStatus(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldStatus, opts...).ToFunc()
@@ -170,6 +238,20 @@ func ByUpdatedAt(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldUpdatedAt, opts...).ToFunc()
 }
 
+// ByAPICredentialField orders the results by api_credential field.
+func ByAPICredentialField(field string, opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newAPICredentialStep(), sql.OrderByField(field, opts...))
+	}
+}
+
+// ByCloneCredentialField orders the results by clone_credential field.
+func ByCloneCredentialField(field string, opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newCloneCredentialStep(), sql.OrderByField(field, opts...))
+	}
+}
+
 // ByRepoConfigsCount orders the results by repo_configs count.
 func ByRepoConfigsCount(opts ...sql.OrderTermOption) OrderOption {
 	return func(s *sql.Selector) {
@@ -182,6 +264,20 @@ func ByRepoConfigs(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
 	return func(s *sql.Selector) {
 		sqlgraph.OrderByNeighborTerms(s, newRepoConfigsStep(), append([]sql.OrderTerm{term}, terms...)...)
 	}
+}
+func newAPICredentialStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(APICredentialInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.M2O, true, APICredentialTable, APICredentialColumn),
+	)
+}
+func newCloneCredentialStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(CloneCredentialInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.M2O, true, CloneCredentialTable, CloneCredentialColumn),
+	)
 }
 func newRepoConfigsStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(

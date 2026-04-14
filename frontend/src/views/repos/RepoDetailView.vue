@@ -19,6 +19,7 @@ const prsPageSize = 10
 const prsMonths = ref(3)
 const loading = ref(true)
 const scanning = ref(false)
+const scanError = ref('')
 const syncing = ref(false)
 const settlingPRId = ref<number | null>(null)
 const chatRef = ref<InstanceType<typeof RepoChat> | null>(null)
@@ -59,12 +60,15 @@ onMounted(async () => {
 
 async function handleScan() {
   scanning.value = true
+  scanError.value = ''
   try {
     const res = await triggerScan(repoId)
     if (res.data.data) scans.value.unshift(res.data.data)
     const repoRes = await getRepo(repoId)
     repo.value = repoRes.data.data ?? null
-  } catch { /* scan failed */ } finally {
+  } catch (error: any) {
+    scanError.value = error?.response?.data?.message || error?.message || 'Scan failed'
+  } finally {
     scanning.value = false
   }
 }
@@ -217,6 +221,7 @@ async function handleClearScanPrompt() {
             >Auto-Optimize</button>
           </div>
         </div>
+        <div v-if="scanError" class="mt-3 rounded-md bg-red-50 p-3 text-sm text-red-700">{{ scanError }}</div>
       </div>
 
       <!-- Overview: Score + Info + Dimensions in one row -->

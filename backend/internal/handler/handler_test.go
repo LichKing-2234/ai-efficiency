@@ -51,7 +51,7 @@ func setupTestEnv(t *testing.T) *testEnv {
 	repoSvc := repo.NewService(client, "0000000000000000000000000000000000000000000000000000000000000000", logger)
 	webhookHandler := webhook.NewHandler(client, nil, logger)
 	analysisCloner := analysis.NewCloner(t.TempDir(), logger)
-	analysisSvc := analysis.NewService(client, analysisCloner, nil, logger)
+	analysisSvc := analysis.NewService(client, analysisCloner, nil, logger, "0000000000000000000000000000000000000000000000000000000000000000")
 
 	router := SetupRouter(
 		client,

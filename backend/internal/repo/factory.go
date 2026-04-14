@@ -2,32 +2,66 @@ package repo
 
 import (
 	"encoding/json"
+	"fmt"
 
+	"github.com/ai-efficiency/backend/internal/credential"
 	"github.com/ai-efficiency/backend/internal/scm"
 	"github.com/ai-efficiency/backend/internal/scm/bitbucket"
 	"github.com/ai-efficiency/backend/internal/scm/github"
 	"go.uber.org/zap"
 )
 
-type credentialsJSON struct {
-	Token string `json:"token"`
-}
-
-func parseToken(credentials string) string {
-	var creds credentialsJSON
-	if err := json.Unmarshal([]byte(credentials), &creds); err != nil {
-		// If not JSON, treat the whole string as the token
-		return credentials
+func parseToken(raw string) string {
+	var legacy struct {
+		Token string `json:"token"`
 	}
-	return creds.Token
+	if err := json.Unmarshal([]byte(raw), &legacy); err == nil {
+		return legacy.Token
+	}
+	payload, err := credential.ParseLegacySCMProviderSecret(raw)
+	if err != nil {
+		return raw
+	}
+	return payload.Text
 }
 
-// newGitHubProvider creates a GitHub SCM provider from credentials.
-func newGitHubProvider(baseURL, credentials string, logger *zap.Logger) (scm.SCMProvider, error) {
-	return github.New(baseURL, parseToken(credentials), logger)
+func normalizeAPIPayload(input any) (credential.Payload, error) {
+	switch v := input.(type) {
+	case credential.Payload:
+		return v, nil
+	case string:
+		payload, err := credential.ParseLegacySCMProviderSecret(v)
+		if err != nil {
+			return nil, err
+		}
+		return payload, nil
+	default:
+		return nil, fmt.Errorf("unsupported api credential type %T", input)
+	}
 }
 
-// newBitbucketProvider creates a Bitbucket Server SCM provider from credentials.
-func newBitbucketProvider(baseURL, credentials string, logger *zap.Logger) (scm.SCMProvider, error) {
-	return bitbucket.New(baseURL, parseToken(credentials), logger)
+// newGitHubProvider creates a GitHub SCM provider from an API credential payload.
+func newGitHubProvider(baseURL string, apiCredential any, logger *zap.Logger) (scm.SCMProvider, error) {
+	apiPayload, err := normalizeAPIPayload(apiCredential)
+	if err != nil {
+		return nil, err
+	}
+	secret, err := credential.ResolveAPISecret(apiPayload)
+	if err != nil {
+		return nil, err
+	}
+	return github.New(baseURL, secret, logger)
+}
+
+// newBitbucketProvider creates a Bitbucket Server SCM provider from an API credential payload.
+func newBitbucketProvider(baseURL string, apiCredential any, logger *zap.Logger) (scm.SCMProvider, error) {
+	apiPayload, err := normalizeAPIPayload(apiCredential)
+	if err != nil {
+		return nil, err
+	}
+	secret, err := credential.ResolveAPISecret(apiPayload)
+	if err != nil {
+		return nil, err
+	}
+	return bitbucket.New(baseURL, secret, logger)
 }

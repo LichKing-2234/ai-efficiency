@@ -57,6 +57,13 @@ vi.mock('@/api/scmProvider', () => ({
   deleteProvider: vi.fn(),
 }))
 
+vi.mock('@/api/credential', () => ({
+  listCredentials: vi.fn(),
+  createCredential: vi.fn(),
+  updateCredential: vi.fn(),
+  deleteCredential: vi.fn(),
+}))
+
 vi.mock('@/api/settings', () => ({
   getLLMConfig: vi.fn(),
   updateLLMConfig: vi.fn(),
@@ -87,6 +94,27 @@ async function resetApiMocks() {
   scmProvider.createProvider.mockReset().mockResolvedValue({ data: { data: { id: 1 } } })
   scmProvider.updateProvider.mockReset().mockResolvedValue({ data: { data: { id: 1 } } })
   scmProvider.deleteProvider.mockReset().mockResolvedValue({ data: { data: null } })
+
+  const credentialApi = await import('@/api/credential') as any
+  credentialApi.listCredentials.mockReset().mockResolvedValue({
+    data: {
+      data: [
+        {
+          id: 12,
+          name: 'GitHub PAT',
+          description: '',
+          kind: 'secret_text',
+          usage_count: 0,
+          summary: {},
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:00:00Z',
+        },
+      ],
+    },
+  })
+  credentialApi.createCredential.mockReset().mockResolvedValue({ data: { data: { id: 11 } } })
+  credentialApi.updateCredential.mockReset().mockResolvedValue({ data: { data: { id: 11 } } })
+  credentialApi.deleteCredential.mockReset().mockResolvedValue({ data: { data: null } })
 
   const settingsApi = await import('@/api/settings') as any
   settingsApi.getLLMConfig.mockReset().mockResolvedValue(createDefaultLLMConfigResponse())
@@ -124,8 +152,9 @@ function createTestRouter() {
   })
 }
 
-async function mountSettings(overrides?: { providers?: any[]; llmConfig?: any; deploymentStatus?: any }) {
+async function mountSettings(overrides?: { providers?: any[]; credentials?: any[]; llmConfig?: any; deploymentStatus?: any }) {
   const { listProviders } = await import('@/api/scmProvider')
+  const { listCredentials } = await import('@/api/credential')
   const { getLLMConfig } = await import('@/api/settings')
   const { getDeploymentStatus } = await import('@/api/deployment')
 
@@ -133,6 +162,9 @@ async function mountSettings(overrides?: { providers?: any[]; llmConfig?: any; d
     ;(listProviders as any).mockResolvedValue({
       data: { data: { items: overrides.providers, total: overrides.providers.length } },
     })
+  }
+  if (overrides?.credentials) {
+    ;(listCredentials as any).mockResolvedValue({ data: { data: overrides.credentials } })
   }
   if (overrides?.llmConfig) {
     ;(getLLMConfig as any).mockResolvedValue({ data: { data: overrides.llmConfig } })
@@ -166,6 +198,73 @@ describe('SettingsView', () => {
     expect(wrapper.find('h1').text()).toBe('SCM Providers')
     const addBtn = wrapper.findAll('button').find((b) => b.text().includes('Add Provider'))
     expect(addBtn).toBeTruthy()
+  })
+
+  it('renders credentials section and add credential button', async () => {
+    const wrapper = await mountSettings()
+    expect(wrapper.text()).toContain('Credentials')
+    expect(wrapper.text()).toContain('Add Credential')
+  })
+
+  it('creates a secret text credential', async () => {
+    const { createCredential } = await import('@/api/credential')
+    const wrapper = await mountSettings()
+
+    const addBtn = wrapper.findAll('button').find((b) => b.text().includes('Add Credential'))
+    expect(addBtn).toBeTruthy()
+    await addBtn!.trigger('click')
+    await flushPromises()
+
+    await wrapper.find('input[name="credential-name"]').setValue('GitHub PAT')
+    await wrapper.find('select[name="credential-kind"]').setValue('secret_text')
+    await wrapper.find('textarea[name="credential-secret-text"]').setValue('ghp_test')
+
+    const saveBtn = wrapper.findAll('button').find((b) => b.text().includes('Save Credential'))
+    expect(saveBtn).toBeTruthy()
+    await saveBtn!.trigger('click')
+    await flushPromises()
+
+    expect(createCredential).toHaveBeenCalledWith({
+      name: 'GitHub PAT',
+      description: '',
+      kind: 'secret_text',
+      payload: { text: 'ghp_test' },
+    })
+  })
+
+  it('sends credential ids when creating a provider', async () => {
+    const { createProvider } = await import('@/api/scmProvider')
+    const wrapper = await mountSettings({
+      credentials: [
+        { id: 12, name: 'GitHub PAT', description: '', kind: 'secret_text', usage_count: 0, summary: {}, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' },
+        { id: 13, name: 'Bitbucket SSH', description: '', kind: 'ssh_username_with_private_key', usage_count: 0, summary: {}, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' },
+      ],
+    })
+
+    const addBtn = wrapper.findAll('button').find((b) => b.text().includes('Add Provider'))
+    expect(addBtn).toBeTruthy()
+    await addBtn!.trigger('click')
+    await flushPromises()
+
+    const nameInput = wrapper.find('input[name="provider-name"]')
+    await nameInput.setValue('GitHub Extensions')
+    await wrapper.find('select[name="provider-api-credential"]').setValue('12')
+    await wrapper.find('select[name="provider-clone-protocol"]').setValue('ssh')
+    await wrapper.find('select[name="provider-clone-credential"]').setValue('13')
+
+    const saveBtn = wrapper.findAll('button').find((b) => b.text() === 'Create')
+    expect(saveBtn).toBeTruthy()
+    await saveBtn!.trigger('click')
+    await flushPromises()
+
+    expect(createProvider).toHaveBeenCalledWith({
+      name: 'GitHub Extensions',
+      type: 'github',
+      base_url: 'https://api.github.com',
+      api_credential_id: 12,
+      clone_protocol: 'ssh',
+      clone_credential_id: 13,
+    })
   })
 
   it('renders LLM Configuration section', async () => {
@@ -420,7 +519,7 @@ describe('SettingsView', () => {
       ],
     })
 
-    const editBtn = wrapper.findAll('button').find((b) => b.text() === 'Edit')
+    const editBtn = wrapper.find('[data-testid="provider-edit-1"]')
     await editBtn!.trigger('click')
     await wrapper.vm.$nextTick()
 
@@ -431,17 +530,17 @@ describe('SettingsView', () => {
     const { updateProvider, listProviders } = await import('@/api/scmProvider')
     ;(updateProvider as any).mockResolvedValue({ data: { data: { id: 1, name: 'Updated' } } })
     ;(listProviders as any).mockResolvedValue({
-      data: { data: { items: [{ id: 1, name: 'GitHub', type: 'github', base_url: 'https://api.github.com', status: 'active', created_at: '2026-01-01T00:00:00Z' }], total: 1 } },
+      data: { data: { items: [{ id: 1, name: 'GitHub', type: 'github', base_url: 'https://api.github.com', api_credential_id: 12, clone_protocol: 'https', clone_credential_id: null, status: 'active', created_at: '2026-01-01T00:00:00Z' }], total: 1 } },
     })
 
     const wrapper = await mountSettings({
       providers: [
-        { id: 1, name: 'GitHub', type: 'github', base_url: 'https://api.github.com', status: 'active', created_at: '2026-01-01T00:00:00Z' },
+        { id: 1, name: 'GitHub', type: 'github', base_url: 'https://api.github.com', api_credential_id: 12, clone_protocol: 'https', clone_credential_id: null, status: 'active', created_at: '2026-01-01T00:00:00Z' },
       ],
     })
 
     // Open edit dialog
-    const editBtn = wrapper.findAll('button').find((b) => b.text() === 'Edit')
+    const editBtn = wrapper.find('[data-testid="provider-edit-1"]')
     await editBtn!.trigger('click')
     await wrapper.vm.$nextTick()
 
@@ -450,31 +549,39 @@ describe('SettingsView', () => {
     await updateBtn!.trigger('click')
     await flushPromises()
 
-    expect(updateProvider).toHaveBeenCalledWith(1, { name: 'GitHub', base_url: 'https://api.github.com' })
+    expect(updateProvider).toHaveBeenCalledWith(1, {
+      name: 'GitHub',
+      base_url: 'https://api.github.com',
+      api_credential_id: 12,
+      clone_protocol: 'https',
+      clone_credential_id: null,
+    })
   })
 
-  it('updates provider with token when provided', async () => {
+  it('updates provider with ssh clone credential when selected', async () => {
     const { updateProvider, listProviders } = await import('@/api/scmProvider')
     ;(updateProvider as any).mockResolvedValue({ data: { data: { id: 1 } } })
     ;(listProviders as any).mockResolvedValue({
-      data: { data: { items: [{ id: 1, name: 'GitHub', type: 'github', base_url: 'https://api.github.com', status: 'active', created_at: '2026-01-01T00:00:00Z' }], total: 1 } },
+      data: { data: { items: [{ id: 1, name: 'GitHub', type: 'github', base_url: 'https://api.github.com', api_credential_id: 12, clone_protocol: 'https', clone_credential_id: null, status: 'active', created_at: '2026-01-01T00:00:00Z' }], total: 1 } },
     })
 
     const wrapper = await mountSettings({
+      credentials: [
+        { id: 12, name: 'GitHub PAT', description: '', kind: 'secret_text', usage_count: 0, summary: {}, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' },
+        { id: 13, name: 'GitHub SSH', description: '', kind: 'ssh_username_with_private_key', usage_count: 0, summary: {}, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' },
+      ],
       providers: [
-        { id: 1, name: 'GitHub', type: 'github', base_url: 'https://api.github.com', status: 'active', created_at: '2026-01-01T00:00:00Z' },
+        { id: 1, name: 'GitHub', type: 'github', base_url: 'https://api.github.com', api_credential_id: 12, clone_protocol: 'https', clone_credential_id: null, status: 'active', created_at: '2026-01-01T00:00:00Z' },
       ],
     })
 
     // Open edit dialog
-    const editBtn = wrapper.findAll('button').find((b) => b.text() === 'Edit')
+    const editBtn = wrapper.find('[data-testid="provider-edit-1"]')
     await editBtn!.trigger('click')
     await wrapper.vm.$nextTick()
 
-    // Fill token — the dialog's password input has placeholder containing "ghp_" or "personal access token"
-    const passwordInputs = wrapper.findAll('input[type="password"]')
-    const tokenInput = passwordInputs.find((i) => i.attributes('placeholder')?.includes('ghp_'))
-    await tokenInput!.setValue('ghp_newtoken')
+    await wrapper.find('select[name="provider-clone-protocol"]').setValue('ssh')
+    await wrapper.find('select[name="provider-clone-credential"]').setValue('13')
     await wrapper.vm.$nextTick()
 
     // Submit
@@ -485,7 +592,9 @@ describe('SettingsView', () => {
     expect(updateProvider).toHaveBeenCalledWith(1, {
       name: 'GitHub',
       base_url: 'https://api.github.com',
-      credentials: { token: 'ghp_newtoken' },
+      api_credential_id: 12,
+      clone_protocol: 'ssh',
+      clone_credential_id: 13,
     })
   })
 
@@ -545,12 +654,12 @@ describe('SettingsView', () => {
     })
 
     // Click Delete
-    const deleteBtn = wrapper.findAll('button').find((b) => b.text() === 'Delete')
+    const deleteBtn = wrapper.find('[data-testid="provider-delete-1"]')
     await deleteBtn!.trigger('click')
     await wrapper.vm.$nextTick()
 
     // Confirm
-    const confirmBtn = wrapper.findAll('button').find((b) => b.text() === 'Confirm')
+    const confirmBtn = wrapper.find('[data-testid="provider-confirm-delete-1"]')
     await confirmBtn!.trigger('click')
     await flushPromises()
 
@@ -565,12 +674,12 @@ describe('SettingsView', () => {
     })
 
     // Click Delete
-    const deleteBtn = wrapper.findAll('button').find((b) => b.text() === 'Delete')
+    const deleteBtn = wrapper.find('[data-testid="provider-delete-1"]')
     await deleteBtn!.trigger('click')
     await wrapper.vm.$nextTick()
 
     // Cancel
-    const cancelDeleteBtn = wrapper.findAll('button').find((b) => b.text() === 'Cancel')
+    const cancelDeleteBtn = wrapper.find('[data-testid="provider-cancel-delete-1"]')
     await cancelDeleteBtn!.trigger('click')
     await wrapper.vm.$nextTick()
 
@@ -589,11 +698,11 @@ describe('SettingsView', () => {
       ],
     })
 
-    const deleteBtn = wrapper.findAll('button').find((b) => b.text() === 'Delete')
+    const deleteBtn = wrapper.find('[data-testid="provider-delete-1"]')
     await deleteBtn!.trigger('click')
     await wrapper.vm.$nextTick()
 
-    const confirmBtn = wrapper.findAll('button').find((b) => b.text() === 'Confirm')
+    const confirmBtn = wrapper.find('[data-testid="provider-confirm-delete-1"]')
     await confirmBtn!.trigger('click')
     await flushPromises()
 

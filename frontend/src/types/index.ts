@@ -11,8 +11,22 @@ export interface SCMProvider {
   name: string
   type: string
   base_url: string
+  api_credential_id?: number
+  clone_protocol?: 'https' | 'ssh'
+  clone_credential_id?: number | null
   status: string
   created_at: string
+}
+
+export interface Credential {
+  id: number
+  name: string
+  description: string
+  kind: 'secret_text' | 'username_password' | 'ssh_username_with_private_key'
+  usage_count: number
+  summary: Record<string, unknown>
+  created_at: string
+  updated_at: string
 }
 
 export interface RepoConfig {

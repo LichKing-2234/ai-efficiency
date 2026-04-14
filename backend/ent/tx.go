@@ -20,6 +20,8 @@ type Tx struct {
 	CommitCheckpoint *CommitCheckpointClient
 	// CommitRewrite is the client for interacting with the CommitRewrite builders.
 	CommitRewrite *CommitRewriteClient
+	// Credential is the client for interacting with the Credential builders.
+	Credential *CredentialClient
 	// EfficiencyMetric is the client for interacting with the EfficiencyMetric builders.
 	EfficiencyMetric *EfficiencyMetricClient
 	// PrAttributionRun is the client for interacting with the PrAttributionRun builders.
@@ -181,6 +183,7 @@ func (tx *Tx) init() {
 	tx.AiScanResult = NewAiScanResultClient(tx.config)
 	tx.CommitCheckpoint = NewCommitCheckpointClient(tx.config)
 	tx.CommitRewrite = NewCommitRewriteClient(tx.config)
+	tx.Credential = NewCredentialClient(tx.config)
 	tx.EfficiencyMetric = NewEfficiencyMetricClient(tx.config)
 	tx.PrAttributionRun = NewPrAttributionRunClient(tx.config)
 	tx.PrRecord = NewPrRecordClient(tx.config)

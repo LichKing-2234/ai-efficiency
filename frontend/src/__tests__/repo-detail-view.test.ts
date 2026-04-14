@@ -136,4 +136,24 @@ describe('RepoDetailView', () => {
     expect(settlePR).toHaveBeenCalledWith(101)
     expect((listPRs as any).mock.calls.length).toBeGreaterThanOrEqual(2)
   })
+
+  it('shows the backend error when scan fails', async () => {
+    const { triggerScan } = await import('@/api/analysis')
+    ;(triggerScan as any).mockRejectedValue({
+      response: {
+        data: {
+          message: 'clone repo: git clone: : exec: "git": executable file not found in $PATH',
+        },
+      },
+    })
+
+    const { wrapper } = await mountRepoDetail()
+    const scanButton = wrapper.findAll('button').find((b) => b.text() === 'Run Scan')
+    expect(scanButton).toBeTruthy()
+
+    await scanButton!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('exec: "git": executable file not found in $PATH')
+  })
 })
