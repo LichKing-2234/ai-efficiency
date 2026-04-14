@@ -39,8 +39,8 @@ import (
 )
 
 const (
-	sessionStaleSweepInterval   = 1 * time.Minute
-	sessionStaleAbandonAfter    = 5 * time.Minute
+	sessionStaleSweepInterval = 1 * time.Minute
+	sessionStaleAbandonAfter  = 5 * time.Minute
 )
 
 // authTokenAdapter adapts auth.Service to the oauth.TokenGenerator interface.
@@ -199,11 +199,17 @@ func main() {
 	if cp := os.Getenv("AE_CONFIG_PATH"); cp != "" {
 		settingsConfigPath = cp
 	}
-	var relayAdminUpdater interface{ SetAdminAPIKey(string) }
-	if u, ok := relayProvider.(interface{ SetAdminAPIKey(string) }); ok {
-		relayAdminUpdater = u
+	var relayRuntimeUpdater interface {
+		SetAdminAPIKey(string)
+		SetModel(string)
 	}
-	settingsHandler := handler.NewSettingsHandler(settingsConfigPath, cfg.Relay, llmAnalyzer, logger, relayAdminUpdater)
+	if u, ok := relayProvider.(interface {
+		SetAdminAPIKey(string)
+		SetModel(string)
+	}); ok {
+		relayRuntimeUpdater = u
+	}
+	settingsHandler := handler.NewSettingsHandler(settingsConfigPath, cfg.Relay, llmAnalyzer, logger, relayRuntimeUpdater)
 	chatHandler := handler.NewChatHandler(entClient, llmAnalyzer, dataDir, logger)
 
 	// Init OAuth handler

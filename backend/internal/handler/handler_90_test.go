@@ -93,8 +93,7 @@ func TestTestLLMConnectionSuccess(t *testing.T) {
 	}))
 	defer server.Close()
 
-	analyzer := llm.NewAnalyzer(config.LLMConfig{
-	}, nil, zap.NewNop())
+	analyzer := llm.NewAnalyzer(config.LLMConfig{}, nil, zap.NewNop())
 
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config.yaml")
@@ -115,6 +114,9 @@ func TestTestLLMConnectionSuccess(t *testing.T) {
 	if !strings.Contains(w.Body.String(), `"success":true`) {
 		t.Errorf("expected success:true, got: %s", w.Body.String())
 	}
+	if !strings.Contains(w.Body.String(), `"response":"pong"`) {
+		t.Errorf("expected response preview, got: %s", w.Body.String())
+	}
 }
 
 func TestTestLLMConnectionAPIError(t *testing.T) {
@@ -124,8 +126,7 @@ func TestTestLLMConnectionAPIError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	analyzer := llm.NewAnalyzer(config.LLMConfig{
-	}, nil, zap.NewNop())
+	analyzer := llm.NewAnalyzer(config.LLMConfig{}, nil, zap.NewNop())
 
 	relayCfg := config.RelayConfig{URL: server.URL, APIKey: "sk-bad-key"}
 	sh := NewSettingsHandler(t.TempDir()+"/config.yaml", relayCfg, analyzer, zap.NewNop())
@@ -150,8 +151,7 @@ func TestTestLLMConnectionAPIError(t *testing.T) {
 // =====================
 
 func TestUpdateLLMConfigPersistError(t *testing.T) {
-	analyzer := llm.NewAnalyzer(config.LLMConfig{
-	}, nil, zap.NewNop())
+	analyzer := llm.NewAnalyzer(config.LLMConfig{}, nil, zap.NewNop())
 
 	// Point to non-existent path so persistLLMConfig fails on ReadFile
 	relayCfg := config.RelayConfig{URL: "http://localhost:1", APIKey: "sk-test"}

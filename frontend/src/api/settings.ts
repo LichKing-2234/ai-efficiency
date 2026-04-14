@@ -18,6 +18,7 @@ export interface LLMConfig {
 export interface LLMTestResult {
   success: boolean
   message: string
+  response?: string
 }
 
 export function getLLMConfig() {

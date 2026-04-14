@@ -82,10 +82,22 @@ func (s *sub2apiRelay) SetAdminAPIKey(apiKey string) {
 	s.adminKey = strings.TrimSpace(apiKey)
 }
 
+func (s *sub2apiRelay) SetModel(model string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.model = strings.TrimSpace(model)
+}
+
 func (s *sub2apiRelay) inferenceAPIKey() string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return strings.TrimSpace(s.apiKey)
+}
+
+func (s *sub2apiRelay) inferenceModel() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return strings.TrimSpace(s.model)
 }
 
 func (s *sub2apiRelay) Ping(ctx context.Context) error {
@@ -298,7 +310,7 @@ func (s *sub2apiRelay) CreateUser(ctx context.Context, req CreateUserRequest) (*
 }
 
 func (s *sub2apiRelay) ChatCompletion(ctx context.Context, req ChatCompletionRequest) (*ChatCompletionResponse, error) {
-	req.Model = s.model
+	req.Model = s.inferenceModel()
 
 	body, err := json.Marshal(req)
 	if err != nil {
@@ -339,7 +351,7 @@ func (s *sub2apiRelay) ChatCompletion(ctx context.Context, req ChatCompletionReq
 }
 
 func (s *sub2apiRelay) ChatCompletionWithTools(ctx context.Context, req ChatCompletionRequest, tools []ToolDef) (*ChatCompletionWithToolsResponse, error) {
-	req.Model = s.model
+	req.Model = s.inferenceModel()
 
 	payload := struct {
 		ChatCompletionRequest

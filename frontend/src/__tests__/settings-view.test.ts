@@ -92,7 +92,7 @@ async function resetApiMocks() {
   settingsApi.getLLMConfig.mockReset().mockResolvedValue(createDefaultLLMConfigResponse())
   settingsApi.updateLLMConfig.mockReset().mockResolvedValue({ data: { data: {} } })
   settingsApi.testLLMConnection.mockReset().mockResolvedValue({
-    data: { data: { success: true, message: 'Connection OK' } },
+    data: { data: { success: true, message: 'Connection OK', response: 'pong' } },
   })
 
   const deploymentApi = await import('@/api/deployment') as any
@@ -740,7 +740,7 @@ describe('SettingsView', () => {
   it('tests LLM connection successfully', async () => {
     const { testLLMConnection } = await import('@/api/settings')
     ;(testLLMConnection as any).mockResolvedValue({
-      data: { data: { success: true, message: 'Connection OK' } },
+      data: { data: { success: true, message: 'Connection OK', response: 'pong from relay' } },
     })
 
     const wrapper = await mountSettings()
@@ -751,6 +751,7 @@ describe('SettingsView', () => {
 
     expect(testLLMConnection).toHaveBeenCalled()
     expect(wrapper.text()).toContain('Connection OK')
+    expect(wrapper.text()).toContain('pong from relay')
   })
 
   it('tests LLM connection with failure', async () => {

@@ -12,6 +12,7 @@ This document is the project-level architecture overview for `ai-efficiency`.
 ## Source-of-Truth Order
 
 1. Topic-specific current specs:
+   - `docs/superpowers/specs/2026-04-14-llm-settings-runtime-editing-design.md`
    - `docs/superpowers/specs/2026-04-02-local-session-proxy-design.md`
    - `docs/superpowers/specs/2026-03-26-session-pr-attribution-design.md`
    - `docs/superpowers/specs/2026-03-24-oauth-cli-login-design.md`

@@ -1,10 +1,18 @@
 package handler
 
 import (
+	"bytes"
+	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/ai-efficiency/backend/internal/analysis/llm"
+	"github.com/ai-efficiency/backend/internal/config"
+	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 )
 
 func TestGetLLMConfig(t *testing.T) {
@@ -74,6 +82,7 @@ func TestUpdateLLMConfig(t *testing.T) {
 	body := map[string]interface{}{
 		"max_tokens_per_scan": 50000,
 		"relay_admin_api_key": "admin-new-key-12345678",
+		"model":               "gpt-4o-mini",
 	}
 
 	w := doFullRequest(env, http.MethodPut, "/api/v1/settings/llm", body)
@@ -87,10 +96,10 @@ func TestUpdateLLMConfig(t *testing.T) {
 		t.Fatalf("expected data map, got %T", resp["data"])
 	}
 
-	// Model comes from relay config (read-only)
+	// Model should reflect the updated relay config value
 	model, _ := data["model"].(string)
-	if model != "gpt-4" {
-		t.Errorf("expected model 'gpt-4' (from relay config), got %q", model)
+	if model != "gpt-4o-mini" {
+		t.Errorf("expected model 'gpt-4o-mini', got %q", model)
 	}
 
 	// relay_url should still be present (read-only from relay config)
@@ -120,6 +129,70 @@ func TestUpdateLLMConfig(t *testing.T) {
 	}
 	if !strings.Contains(configStr, "admin_api_key: admin-new-key-12345678") {
 		t.Errorf("config file should contain updated relay admin api key, got:\n%s", configStr)
+	}
+	if !strings.Contains(configStr, "model: gpt-4o-mini") {
+		t.Errorf("config file should contain updated relay model, got:\n%s", configStr)
+	}
+}
+
+func TestUpdateLLMConfigUpdatesModelUsedByConnectionTest(t *testing.T) {
+	var captured struct {
+		Model string `json:"model"`
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/chat/completions" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&captured); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"pong"}}]}`))
+	}))
+	defer server.Close()
+
+	tmpDir := t.TempDir()
+	configPath := tmpDir + "/config.yaml"
+	if err := os.WriteFile(configPath, []byte("analysis:\n  llm:\n    max_tokens_per_scan: 100000\nrelay:\n  url: http://old.example\n  api_key: sk-old\n  model: old-model\n"), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	analyzer := llm.NewAnalyzer(config.LLMConfig{}, nil, zap.NewNop())
+	sh := NewSettingsHandler(configPath, config.RelayConfig{
+		URL:    server.URL,
+		APIKey: "sk-test-key",
+		Model:  "old-model",
+	}, analyzer, zap.NewNop())
+
+	r := gin.New()
+	r.PUT("/llm", sh.UpdateLLMConfig)
+	r.POST("/llm/test", sh.TestLLMConnection)
+
+	updateReq := httptest.NewRequest(http.MethodPut, "/llm", bytes.NewBufferString(`{"model":"new-model"}`))
+	updateReq.Header.Set("Content-Type", "application/json")
+	updateResp := httptest.NewRecorder()
+	r.ServeHTTP(updateResp, updateReq)
+	if updateResp.Code != http.StatusOK {
+		t.Fatalf("update status = %d, want %d, body: %s", updateResp.Code, http.StatusOK, updateResp.Body.String())
+	}
+
+	testReq := httptest.NewRequest(http.MethodPost, "/llm/test", nil)
+	testResp := httptest.NewRecorder()
+	r.ServeHTTP(testResp, testReq)
+	if testResp.Code != http.StatusOK {
+		t.Fatalf("test status = %d, want %d, body: %s", testResp.Code, http.StatusOK, testResp.Body.String())
+	}
+
+	configData, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	if !strings.Contains(string(configData), "model: new-model") {
+		t.Fatalf("config file should contain updated model, got:\n%s", string(configData))
+	}
+
+	if captured.Model != "new-model" {
+		t.Fatalf("connection test used model %q, want %q", captured.Model, "new-model")
 	}
 }
 

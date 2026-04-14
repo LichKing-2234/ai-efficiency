@@ -31,7 +31,7 @@ const llmSaving = ref(false)
 const llmError = ref('')
 const llmSuccess = ref('')
 const llmTesting = ref(false)
-const llmTestResult = ref<{ success: boolean; message: string } | null>(null)
+const llmTestResult = ref<{ success: boolean; message: string; response?: string } | null>(null)
 
 // Deployment status
 const deployment = ref<DeploymentStatus | null>(null)
@@ -131,22 +131,24 @@ function formatDate(date: string) {
 }
 
 // LLM config functions
+function applyLLMConfig(data: any) {
+  if (!data) return
+  llmRelayURL.value = data.sub2api_url || data.relay_url || ''
+  llmRelayAPIKey.value = data.sub2api_api_key || data.relay_api_key || ''
+  llmRelayAdminAPIKey.value = data.relay_admin_api_key || ''
+  llmForm.value = {
+    model: data.model || 'gpt-4',
+    max_tokens_per_scan: data.max_tokens_per_scan || 100000,
+    system_prompt: data.system_prompt || '',
+    user_prompt_template: data.user_prompt_template || '',
+  }
+  llmEnabled.value = !!data.enabled
+}
+
 async function fetchLLMConfig() {
   try {
     const res = await getLLMConfig()
-    const data = res.data.data
-    if (data) {
-      llmRelayURL.value = data.sub2api_url || data.relay_url || ''
-      llmRelayAPIKey.value = data.sub2api_api_key || data.relay_api_key || ''
-      llmRelayAdminAPIKey.value = data.relay_admin_api_key || ''
-      llmForm.value = {
-        model: data.model || 'gpt-4',
-        max_tokens_per_scan: data.max_tokens_per_scan || 100000,
-        system_prompt: data.system_prompt || '',
-        user_prompt_template: data.user_prompt_template || '',
-      }
-      llmEnabled.value = !!data.enabled
-    }
+    applyLLMConfig(res.data.data)
   } catch {
     // not configured yet
   }
@@ -157,14 +159,15 @@ async function handleSaveLLM() {
   llmSuccess.value = ''
   llmSaving.value = true
   try {
-    await updateLLMConfig({
+    const res = await updateLLMConfig({
       ...llmForm.value,
       relay_admin_api_key: llmRelayAdminAPIKey.value,
     })
+    applyLLMConfig(res.data.data)
     llmSuccess.value = 'LLM configuration saved'
     setTimeout(() => { llmSuccess.value = '' }, 3000)
   } catch (e: any) {
-    llmError.value = e.response?.data?.message || 'Failed to save'
+    llmError.value = e.response?.data?.message || e.message || 'Failed to save'
   } finally {
     llmSaving.value = false
   }
@@ -177,7 +180,7 @@ async function handleTestLLM() {
     const res = await testLLMConnection()
     llmTestResult.value = res.data.data ?? null
   } catch (e: any) {
-    llmTestResult.value = { success: false, message: e.message || 'Request failed' }
+    llmTestResult.value = { success: false, message: e.response?.data?.message || e.message || 'Request failed' }
   } finally {
     llmTesting.value = false
   }
@@ -453,7 +456,8 @@ async function handleTestLDAP() {
           <div v-if="llmSuccess" class="rounded-md bg-green-50 p-3 text-sm text-green-700">{{ llmSuccess }}</div>
 
           <div v-if="llmTestResult" class="rounded-md p-3 text-sm" :class="llmTestResult.success ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'">
-            {{ llmTestResult.message }}
+            <div>{{ llmTestResult.message }}</div>
+            <pre v-if="llmTestResult.response" class="mt-2 whitespace-pre-wrap rounded-md bg-white/70 px-3 py-2 font-mono text-xs text-gray-700">{{ llmTestResult.response }}</pre>
           </div>
 
           <div class="flex justify-end space-x-3">
