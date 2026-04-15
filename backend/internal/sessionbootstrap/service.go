@@ -418,6 +418,12 @@ func (s *Service) resolveProviderCredentialOnce(ctx context.Context, localUserID
 		APIKey:       selected.Key,
 		BaseURL:      s.providerBaseURL,
 	}
+	if _, err := s.entClient.Session.UpdateOneID(sess.ID).
+		SetRelayAPIKeyID(int(selected.ID)).
+		SetProviderName(resp.ProviderName).
+		Save(ctx); err != nil {
+		return nil, fmt.Errorf("resolve provider credential: persist session key metadata: %w", err)
+	}
 	s.storeCredential(cacheKey, resp)
 	return resp, nil
 }

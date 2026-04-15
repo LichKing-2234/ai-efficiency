@@ -62,6 +62,10 @@ watch(
         <table class="mt-3 w-full text-sm">
           <tbody>
             <tr>
+              <td class="py-1 pr-4 text-gray-400">Owner</td>
+              <td class="py-1 text-gray-900">{{ session.edges?.user?.username || '—' }}</td>
+            </tr>
+            <tr>
               <td class="py-1 pr-4 text-gray-400">Provider</td>
               <td class="py-1 text-gray-900">{{ session.provider_name || '—' }}</td>
             </tr>

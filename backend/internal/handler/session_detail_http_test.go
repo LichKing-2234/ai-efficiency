@@ -425,6 +425,8 @@ func TestSessionListReturnsOnlyCurrentUserSessions(t *testing.T) {
 		SetID(ownerSessionID).
 		SetRepoConfigID(repo.ID).
 		SetUserID(owner.ID).
+		SetProviderName("sub2api").
+		SetRelayAPIKeyID(900).
 		SetBranch("feat/owner").
 		SetStartedAt(time.Now().UTC()).
 		SaveX(ctx)
@@ -467,5 +469,101 @@ func TestSessionListReturnsOnlyCurrentUserSessions(t *testing.T) {
 	item, _ := items[0].(map[string]any)
 	if item["id"] != ownerSessionID.String() {
 		t.Fatalf("session id = %v, want %s", item["id"], ownerSessionID.String())
+	}
+	if item["relay_api_key_id"] != float64(900) {
+		t.Fatalf("relay_api_key_id = %v, want %d", item["relay_api_key_id"], 900)
+	}
+	edges, _ := item["edges"].(map[string]any)
+	ownerEdge, _ := edges["user"].(map[string]any)
+	if ownerEdge["username"] != owner.Username {
+		t.Fatalf("owner username = %v, want %q", ownerEdge["username"], owner.Username)
+	}
+}
+
+func TestSessionListAdminCanFilterByOwnerQuery(t *testing.T) {
+	t.Parallel()
+	gin.SetMode(gin.TestMode)
+
+	client := testdb.Open(t)
+	defer client.Close()
+
+	ctx := t.Context()
+	sp := client.ScmProvider.Create().
+		SetName("github-test").
+		SetType("github").
+		SetBaseURL("https://api.github.com").
+		SetCredentials("enc").
+		SaveX(ctx)
+	repo := client.RepoConfig.Create().
+		SetScmProviderID(sp.ID).
+		SetName("demo").
+		SetFullName("org/demo").
+		SetCloneURL("https://github.com/org/demo.git").
+		SetDefaultBranch("main").
+		SaveX(ctx)
+
+	alice := client.User.Create().
+		SetUsername("alice").
+		SetEmail("alice@example.com").
+		SetAuthSource(user.AuthSourceLdap).
+		SaveX(ctx)
+	bob := client.User.Create().
+		SetUsername("bob").
+		SetEmail("bob@example.com").
+		SetAuthSource(user.AuthSourceLdap).
+		SaveX(ctx)
+
+	aliceSessionID := uuid.New()
+	client.Session.Create().
+		SetID(aliceSessionID).
+		SetRepoConfigID(repo.ID).
+		SetUserID(alice.ID).
+		SetBranch("feat/alice").
+		SetStartedAt(time.Now().UTC()).
+		SaveX(ctx)
+	client.Session.Create().
+		SetID(uuid.New()).
+		SetRepoConfigID(repo.ID).
+		SetUserID(bob.ID).
+		SetBranch("feat/bob").
+		SetStartedAt(time.Now().UTC().Add(-1 * time.Minute)).
+		SaveX(ctx)
+
+	h := NewSessionHandler(client, nil)
+	r := gin.New()
+	r.Use(func(c *gin.Context) {
+		c.Set(auth.ContextKeyUser, &auth.UserContext{
+			UserID:   999,
+			Username: "admin",
+			Role:     "admin",
+		})
+		c.Next()
+	})
+	r.GET("/sessions", h.List)
+
+	req := httptest.NewRequest(http.MethodGet, "/sessions?owner_scope=all&owner_query=ali", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body=%s", w.Code, w.Body.String())
+	}
+
+	var body map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	data, _ := body["data"].(map[string]any)
+	items, _ := data["items"].([]any)
+	if len(items) != 1 {
+		t.Fatalf("items len = %d, want 1", len(items))
+	}
+	item, _ := items[0].(map[string]any)
+	if item["id"] != aliceSessionID.String() {
+		t.Fatalf("session id = %v, want %s", item["id"], aliceSessionID.String())
+	}
+	edges, _ := item["edges"].(map[string]any)
+	owner, _ := edges["user"].(map[string]any)
+	if owner["username"] != "alice" {
+		t.Fatalf("owner username = %v, want %q", owner["username"], "alice")
 	}
 }

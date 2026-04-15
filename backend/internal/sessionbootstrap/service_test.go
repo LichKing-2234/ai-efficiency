@@ -506,6 +506,14 @@ func TestResolveProviderCredentialReusesUsernameMatchBeforeCreating(t *testing.T
 	if rp.lastCreateUserAPIKeyUserID != 0 {
 		t.Fatalf("unexpected CreateUserAPIKey call: %d", rp.lastCreateUserAPIKeyUserID)
 	}
+
+	stored := client.Session.GetX(ctx, sid)
+	if stored.RelayAPIKeyID == nil || *stored.RelayAPIKeyID != 900 {
+		t.Fatalf("stored relay_api_key_id = %v, want %d", stored.RelayAPIKeyID, 900)
+	}
+	if stored.ProviderName == nil || *stored.ProviderName != "sub2api" {
+		t.Fatalf("stored provider_name = %v, want %q", stored.ProviderName, "sub2api")
+	}
 }
 
 func TestResolveProviderCredentialFallsBackToEmailPrefixThenCreates(t *testing.T) {

@@ -44,7 +44,10 @@ function buildListResponse() {
           relay_api_key_id: 123,
           last_seen_at: '2026-03-30T01:23:45Z',
           tool_invocations: [],
-          edges: { repo_config: { full_name: 'org/repo' } },
+          edges: {
+            repo_config: { full_name: 'org/repo' },
+            user: { id: 9, username: 'alice', email: 'alice@example.com', role: 'user', auth_source: 'sso' },
+          },
         }],
         total: 1,
       },
@@ -88,7 +91,7 @@ describe('SessionListView', () => {
     expect(router.currentRoute.value.params.id).toBe('sess-1')
   })
 
-  it('renders owner scope for admins and sends repo and branch filters', async () => {
+  it('renders owner filters for admins and sends repo, branch, and owner query filters', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
 
@@ -111,15 +114,18 @@ describe('SessionListView', () => {
 
     const repoQueryInput = wrapper.find('input[name="repo_query"]')
     const branchInput = wrapper.find('input[name="branch"]')
+    const ownerQueryInput = wrapper.find('input[name="owner_query"]')
     const ownerScopeSelect = wrapper.find('select[name="owner_scope"]')
     const applyButton = wrapper.find('button[type="button"][data-testid="apply-session-filters"]')
 
     expect(repoQueryInput.exists()).toBe(true)
     expect(branchInput.exists()).toBe(true)
+    expect(ownerQueryInput.exists()).toBe(true)
     expect(ownerScopeSelect.exists()).toBe(true)
 
     await repoQueryInput.setValue('team/repo')
     await branchInput.setValue('feat/session-filter')
+    await ownerQueryInput.setValue('alice')
     await ownerScopeSelect.setValue('unowned')
     await applyButton.trigger('click')
     await flushPromises()
@@ -129,6 +135,7 @@ describe('SessionListView', () => {
       page_size: 20,
       repo_query: 'team/repo',
       branch: 'feat/session-filter',
+      owner_query: 'alice',
       owner_scope: 'unowned',
     })
   })
@@ -156,7 +163,7 @@ describe('SessionListView', () => {
     expect(listSessions).toHaveBeenCalledWith({ page: 1, page_size: 20, owner_scope: 'mine' })
   })
 
-  it('renders provider, relay key id, and last seen summary for each session', async () => {
+  it('renders owner, provider, relay key id, and last seen summary for each session', async () => {
     const { listSessions } = await import('@/api/session')
     ;(listSessions as any).mockResolvedValue(buildListResponse())
 
@@ -169,6 +176,7 @@ describe('SessionListView', () => {
     })
     await flushPromises()
 
+    expect(wrapper.text()).toContain('alice')
     expect(wrapper.text()).toContain('sub2api-claude')
     expect(wrapper.text()).toContain('123')
     expect(wrapper.text()).toContain(new Date('2026-03-30T01:23:45Z').toLocaleString())

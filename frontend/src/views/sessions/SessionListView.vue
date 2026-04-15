@@ -17,11 +17,13 @@ const statusFilter = ref('')
 // Draft filter inputs (bound to the UI). These should not affect fetching until Apply is clicked.
 const repoQuery = ref('')
 const branchFilter = ref('')
+const ownerQuery = ref('')
 const ownerScope = ref<'all' | 'mine' | 'unowned'>('all')
 
 // Applied filter state (used for fetching). Promoted from draft state only via Apply/Reset.
 const appliedRepoQuery = ref('')
 const appliedBranchFilter = ref('')
+const appliedOwnerQuery = ref('')
 const appliedOwnerScope = ref<'all' | 'mine' | 'unowned'>('all')
 const isAdmin = computed(() => auth.isAdmin)
 
@@ -32,6 +34,7 @@ async function fetchSessions() {
     if (statusFilter.value) params.status = statusFilter.value
     if (appliedRepoQuery.value.trim()) params.repo_query = appliedRepoQuery.value.trim()
     if (appliedBranchFilter.value.trim()) params.branch = appliedBranchFilter.value.trim()
+    if (appliedOwnerQuery.value.trim()) params.owner_query = appliedOwnerQuery.value.trim()
     params.owner_scope = isAdmin.value ? appliedOwnerScope.value : 'mine'
     const res = await listSessions(params)
     sessions.value = res.data.data?.items ?? []
@@ -45,6 +48,7 @@ function applyFilters() {
   page.value = 1
   appliedRepoQuery.value = repoQuery.value
   appliedBranchFilter.value = branchFilter.value
+  appliedOwnerQuery.value = ownerQuery.value
   appliedOwnerScope.value = ownerScope.value
   fetchSessions()
 }
@@ -53,9 +57,11 @@ function resetFilters() {
   statusFilter.value = ''
   repoQuery.value = ''
   branchFilter.value = ''
+  ownerQuery.value = ''
   ownerScope.value = 'all'
   appliedRepoQuery.value = ''
   appliedBranchFilter.value = ''
+  appliedOwnerQuery.value = ''
   appliedOwnerScope.value = 'all'
   page.value = 1
   fetchSessions()
@@ -126,6 +132,16 @@ onMounted(fetchSessions)
             placeholder="Filter by branch"
             @keyup.enter="applyFilters"
           />
+          <input
+            v-if="isAdmin"
+            v-model="ownerQuery"
+            data-test="owner-query"
+            name="owner_query"
+            type="text"
+            class="rounded-md border border-gray-300 px-3 py-1.5 text-sm"
+            placeholder="Filter by owner"
+            @keyup.enter="applyFilters"
+          />
           <select
             v-if="isAdmin"
             v-model="ownerScope"
@@ -174,6 +190,7 @@ onMounted(fetchSessions)
               <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
               <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Duration</th>
               <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Started</th>
+              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Owner</th>
               <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Summary</th>
               <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
             </tr>
@@ -195,6 +212,9 @@ onMounted(fetchSessions)
               </td>
               <td class="px-4 py-3 text-sm text-gray-600">{{ duration(s) }}</td>
               <td class="px-4 py-3 text-sm text-gray-500">{{ formatDate(s.started_at) }}</td>
+              <td class="px-4 py-3 text-sm text-gray-600">
+                {{ s.edges?.user?.username || '—' }}
+              </td>
               <td class="px-4 py-3 text-xs text-gray-500">
                 <div>Provider: {{ s.provider_name || '—' }}</div>
                 <div>Key ID: {{ s.relay_api_key_id ?? '—' }}</div>

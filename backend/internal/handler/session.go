@@ -278,6 +278,7 @@ func (h *SessionHandler) Stop(c *gin.Context) {
 func (h *SessionHandler) List(c *gin.Context) {
 	query := h.entClient.Session.Query().
 		WithRepoConfig().
+		WithUser().
 		Order(ent.Desc(session.FieldStartedAt))
 	if uc := auth.GetUserContext(c); uc != nil {
 		switch requestedOwnerScope(c) {
@@ -312,6 +313,15 @@ func (h *SessionHandler) List(c *gin.Context) {
 			repoconfig.Or(
 				repoconfig.FullNameContainsFold(repoQuery),
 				repoconfig.CloneURLContainsFold(repoQuery),
+			),
+		))
+	}
+
+	if ownerQuery := strings.TrimSpace(c.Query("owner_query")); ownerQuery != "" {
+		query = query.Where(session.HasUserWith(
+			user.Or(
+				user.UsernameContainsFold(ownerQuery),
+				user.EmailContainsFold(ownerQuery),
 			),
 		))
 	}
@@ -365,6 +375,7 @@ func (h *SessionHandler) Get(c *gin.Context) {
 
 	s, err := query.
 		WithRepoConfig().
+		WithUser().
 		WithSessionWorkspaces(func(q *ent.SessionWorkspaceQuery) {
 			q.Order(ent.Desc(sessionworkspace.FieldLastSeenAt)).
 				Limit(20)
