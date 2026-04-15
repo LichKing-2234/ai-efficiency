@@ -19,6 +19,7 @@ func TestResolveRuntimeRelayConfigPrefersStaticConfig(t *testing.T) {
 	static := config.RelayConfig{
 		Provider:       "sub2api",
 		URL:            "http://static-relay.local",
+		AdminURL:       "http://static-admin.local",
 		APIKey:         "static-api-key",
 		AdminAPIKey:    "static-admin-key",
 		Model:          "static-model",
@@ -39,7 +40,7 @@ func TestResolveRuntimeRelayConfigPrefersStaticConfig(t *testing.T) {
 	if source != relayConfigSourceStatic {
 		t.Fatalf("source = %q, want %q", source, relayConfigSourceStatic)
 	}
-	if resolved.URL != static.URL || resolved.APIKey != static.APIKey || resolved.AdminAPIKey != static.AdminAPIKey {
+	if resolved.URL != static.URL || resolved.AdminURL != static.AdminURL || resolved.APIKey != static.APIKey || resolved.AdminAPIKey != static.AdminAPIKey {
 		t.Fatalf("resolved config = %+v, want static %+v", resolved, static)
 	}
 }
@@ -56,6 +57,7 @@ func TestResolveRuntimeRelayConfigFallsBackToPrimaryProvider(t *testing.T) {
 		return &config.RelayConfig{
 			Provider:    "sub2api",
 			URL:         "http://db-relay.local",
+			AdminURL:    "http://db-admin.local",
 			APIKey:      "db-admin-key",
 			AdminAPIKey: "db-admin-key",
 			Model:       "db-model",
@@ -69,6 +71,9 @@ func TestResolveRuntimeRelayConfigFallsBackToPrimaryProvider(t *testing.T) {
 	}
 	if resolved.URL != "http://db-relay.local" {
 		t.Fatalf("resolved.URL = %q, want %q", resolved.URL, "http://db-relay.local")
+	}
+	if resolved.AdminURL != "http://db-admin.local" {
+		t.Fatalf("resolved.AdminURL = %q, want %q", resolved.AdminURL, "http://db-admin.local")
 	}
 	if resolved.AdminAPIKey != "db-admin-key" || resolved.APIKey != "db-admin-key" {
 		t.Fatalf("resolved API keys = (%q, %q), want db-admin-key", resolved.APIKey, resolved.AdminAPIKey)
@@ -102,11 +107,31 @@ func TestRelayConfigFromPrimaryProviderDecryptsAdminKey(t *testing.T) {
 	if cfg.URL != "http://relay-base.local" {
 		t.Fatalf("cfg.URL = %q, want %q", cfg.URL, "http://relay-base.local")
 	}
+	if cfg.AdminURL != "http://relay-admin.local" {
+		t.Fatalf("cfg.AdminURL = %q, want %q", cfg.AdminURL, "http://relay-admin.local")
+	}
 	if cfg.APIKey != "relay-admin-key" || cfg.AdminAPIKey != "relay-admin-key" {
 		t.Fatalf("cfg API keys = (%q, %q), want relay-admin-key", cfg.APIKey, cfg.AdminAPIKey)
 	}
 	if cfg.Model != "gpt-5.4" {
 		t.Fatalf("cfg.Model = %q, want %q", cfg.Model, "gpt-5.4")
+	}
+}
+
+func TestRelayConfigFromPrimaryProviderReturnsErrorWhenAdminKeyDecryptFails(t *testing.T) {
+	t.Helper()
+
+	provider := &ent.RelayProvider{
+		Name:         "primary",
+		BaseURL:      "http://relay-base.local",
+		AdminURL:     "http://relay-admin.local",
+		AdminAPIKey:  "not-hex",
+		DefaultModel: "gpt-5.4",
+	}
+
+	_, err := relayConfigFromPrimaryProvider(provider, "0000000000000000000000000000000000000000000000000000000000000000")
+	if err == nil {
+		t.Fatal("expected error when decrypting admin api key fails")
 	}
 }
 

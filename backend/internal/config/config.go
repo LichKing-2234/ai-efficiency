@@ -26,6 +26,7 @@ type ServerConfig struct {
 type RelayConfig struct {
 	Provider       string `mapstructure:"provider"`
 	URL            string `mapstructure:"url"`
+	AdminURL       string `mapstructure:"admin_url"`
 	APIKey         string `mapstructure:"api_key"`
 	AdminAPIKey    string `mapstructure:"admin_api_key"`
 	Model          string `mapstructure:"model"`
@@ -46,10 +47,10 @@ type RedisConfig struct {
 }
 
 type AuthConfig struct {
-	JWTSecret        string     `mapstructure:"jwt_secret"`
-	AccessTokenTTL   int        `mapstructure:"access_token_ttl"`  // seconds, default 7200 (2h)
-	RefreshTokenTTL  int        `mapstructure:"refresh_token_ttl"` // seconds, default 604800 (7d)
-	LDAP             LDAPConfig `mapstructure:"ldap"`
+	JWTSecret       string     `mapstructure:"jwt_secret"`
+	AccessTokenTTL  int        `mapstructure:"access_token_ttl"`  // seconds, default 7200 (2h)
+	RefreshTokenTTL int        `mapstructure:"refresh_token_ttl"` // seconds, default 604800 (7d)
+	LDAP            LDAPConfig `mapstructure:"ldap"`
 }
 
 type LDAPConfig struct {
@@ -70,10 +71,10 @@ type AnalysisConfig struct {
 }
 
 type LLMConfig struct {
-	MaxTokensPerScan    int    `mapstructure:"max_tokens_per_scan"`
-	MaxScansPerRepoDay  int    `mapstructure:"max_scans_per_repo_per_day"`
-	SystemPrompt        string `mapstructure:"system_prompt"`
-	UserPromptTemplate  string `mapstructure:"user_prompt_template"`
+	MaxTokensPerScan   int    `mapstructure:"max_tokens_per_scan"`
+	MaxScansPerRepoDay int    `mapstructure:"max_scans_per_repo_per_day"`
+	SystemPrompt       string `mapstructure:"system_prompt"`
+	UserPromptTemplate string `mapstructure:"user_prompt_template"`
 }
 
 type DeploymentConfig struct {
@@ -143,6 +144,7 @@ func Load(path string) (*Config, error) {
 		"db.conn_max_lifetime",
 		"relay.provider",
 		"relay.url",
+		"relay.admin_url",
 		"relay.api_key",
 		"relay.admin_api_key",
 		"relay.model",

@@ -275,9 +275,9 @@ Section 1 的 `relay.*` 配置优先用于创建后端的"主 provider"实例（
 
 Section 7 的 `RelayProvider` Ent 记录用于为每个用户下发 API key。后端为每个 `enabled=true` 的 RelayProvider Ent 记录调用 `NewSub2apiProvider()`，使用该记录的 `admin_url` + `admin_api_key` 创建独立的 Provider 实例。
 
-若 `relay.*` 未配置 URL，当前实现会在启动时回退到 `enabled=true && is_primary=true` 的 `RelayProvider` Ent 记录来构建这个主 provider。该回退路径使用该记录的 `base_url` / `admin_url` / `admin_api_key` / `default_model`。
+若 `relay.*` 未配置 URL，当前实现会在启动时回退到 `enabled=true && is_primary=true` 的 `RelayProvider` Ent 记录来构建这个主 provider。该回退路径使用该记录的 `base_url` 作为 `relay.url`、`admin_url` 作为 `relay.admin_url`，并结合 `admin_api_key` / `default_model` 完成初始化。
 
-`is_primary=true` 的 RelayProvider Ent 记录应与 Section 1 的 `relay.*` 配置指向同一个 relay server。当前实现保留“静态配置优先、primary provider 回退”的双轨模式；后续仍可进一步移除 `relay.*` 配置，完全从数据库加载。
+`is_primary=true` 的 RelayProvider Ent 记录应与 Section 1 的 `relay.*` 配置指向同一个 relay server。当前实现保留“静态配置优先、primary provider 回退”的双轨模式；当回退路径生效时，要求 primary provider 的 `base_url` / `admin_url` 与目标 relay 的 inference/admin 端点一致。后续仍可进一步移除 `relay.*` 配置，完全从数据库加载。
 
 ### 消费方改造
 
