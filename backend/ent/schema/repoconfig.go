@@ -1,20 +1,28 @@
 package schema
 
 import (
-	"entgo.io/ent"
+	"context"
+	"fmt"
+	"strings"
+
+	entgo "entgo.io/ent"
 	"entgo.io/ent/schema/edge"
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
+
+	genent "github.com/ai-efficiency/backend/ent"
+	genhook "github.com/ai-efficiency/backend/ent/hook"
+	repoidentity "github.com/ai-efficiency/backend/internal/repoidentity"
 )
 
 // RepoConfig holds the schema definition for the RepoConfig entity.
 type RepoConfig struct {
-	ent.Schema
+	entgo.Schema
 }
 
 // Fields of the RepoConfig.
-func (RepoConfig) Fields() []ent.Field {
-	return []ent.Field{
+func (RepoConfig) Fields() []entgo.Field {
+	return []entgo.Field{
 		field.String("repo_key").
 			Optional(),
 		field.String("name").
@@ -62,8 +70,8 @@ func (RepoConfig) Fields() []ent.Field {
 }
 
 // Edges of the RepoConfig.
-func (RepoConfig) Edges() []ent.Edge {
-	return []ent.Edge{
+func (RepoConfig) Edges() []entgo.Edge {
+	return []entgo.Edge{
 		edge.From("scm_provider", ScmProvider.Type).
 			Ref("repo_configs").
 			Unique(),
@@ -78,12 +86,53 @@ func (RepoConfig) Edges() []ent.Edge {
 }
 
 // Indexes of the RepoConfig.
-func (RepoConfig) Indexes() []ent.Index {
-	return []ent.Index{
+func (RepoConfig) Indexes() []entgo.Index {
+	return []entgo.Index{
 		index.Fields("repo_key").
 			Unique(),
 		index.Fields("full_name").
 			Edges("scm_provider").
 			Unique(),
+	}
+}
+
+func (RepoConfig) Hooks() []genent.Hook {
+	return []genent.Hook{
+		func(next genent.Mutator) genent.Mutator {
+			return genhook.RepoConfigFunc(func(ctx context.Context, m *genent.RepoConfigMutation) (genent.Value, error) {
+				if !m.Op().Is(genent.OpCreate | genent.OpUpdateOne | genent.OpUpdate) {
+					return next.Mutate(ctx, m)
+				}
+				if repoKey, ok := m.RepoKey(); ok && strings.TrimSpace(repoKey) != "" {
+					return next.Mutate(ctx, m)
+				}
+
+				cloneURL, _ := m.CloneURL()
+				if strings.TrimSpace(cloneURL) == "" && m.Op().Is(genent.OpUpdateOne) {
+					oldCloneURL, err := m.OldCloneURL(ctx)
+					if err == nil {
+						cloneURL = oldCloneURL
+					}
+				}
+
+				fullName, _ := m.FullName()
+				if strings.TrimSpace(fullName) == "" && m.Op().Is(genent.OpUpdateOne) {
+					oldFullName, err := m.OldFullName(ctx)
+					if err == nil {
+						fullName = oldFullName
+					}
+				}
+
+				identity, err := repoidentity.DeriveRepoIdentity(strings.TrimSpace(cloneURL))
+				if err != nil {
+					identity = repoidentity.FallbackRepoIdentity(cloneURL, fullName)
+				}
+				if strings.TrimSpace(identity.RepoKey) == "" {
+					return nil, fmt.Errorf("repoconfig: repo_key is required")
+				}
+				m.SetRepoKey(identity.RepoKey)
+				return next.Mutate(ctx, m)
+			})
+		},
 	}
 }

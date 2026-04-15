@@ -576,7 +576,9 @@ func (rcu *RepoConfigUpdate) RemoveEfficiencyMetrics(e ...*EfficiencyMetric) *Re
 
 // Save executes the query and returns the number of nodes affected by the update operation.
 func (rcu *RepoConfigUpdate) Save(ctx context.Context) (int, error) {
-	rcu.defaults()
+	if err := rcu.defaults(); err != nil {
+		return 0, err
+	}
 	return withHooks(ctx, rcu.sqlSave, rcu.mutation, rcu.hooks)
 }
 
@@ -603,11 +605,15 @@ func (rcu *RepoConfigUpdate) ExecX(ctx context.Context) {
 }
 
 // defaults sets the default values of the builder before save.
-func (rcu *RepoConfigUpdate) defaults() {
+func (rcu *RepoConfigUpdate) defaults() error {
 	if _, ok := rcu.mutation.UpdatedAt(); !ok {
+		if repoconfig.UpdateDefaultUpdatedAt == nil {
+			return fmt.Errorf("ent: uninitialized repoconfig.UpdateDefaultUpdatedAt (forgotten import ent/runtime?)")
+		}
 		v := repoconfig.UpdateDefaultUpdatedAt()
 		rcu.mutation.SetUpdatedAt(v)
 	}
+	return nil
 }
 
 // check runs all checks and user-defined validators on the builder.
@@ -1638,7 +1644,9 @@ func (rcuo *RepoConfigUpdateOne) Select(field string, fields ...string) *RepoCon
 
 // Save executes the query and returns the updated RepoConfig entity.
 func (rcuo *RepoConfigUpdateOne) Save(ctx context.Context) (*RepoConfig, error) {
-	rcuo.defaults()
+	if err := rcuo.defaults(); err != nil {
+		return nil, err
+	}
 	return withHooks(ctx, rcuo.sqlSave, rcuo.mutation, rcuo.hooks)
 }
 
@@ -1665,11 +1673,15 @@ func (rcuo *RepoConfigUpdateOne) ExecX(ctx context.Context) {
 }
 
 // defaults sets the default values of the builder before save.
-func (rcuo *RepoConfigUpdateOne) defaults() {
+func (rcuo *RepoConfigUpdateOne) defaults() error {
 	if _, ok := rcuo.mutation.UpdatedAt(); !ok {
+		if repoconfig.UpdateDefaultUpdatedAt == nil {
+			return fmt.Errorf("ent: uninitialized repoconfig.UpdateDefaultUpdatedAt (forgotten import ent/runtime?)")
+		}
 		v := repoconfig.UpdateDefaultUpdatedAt()
 		rcuo.mutation.SetUpdatedAt(v)
 	}
+	return nil
 }
 
 // check runs all checks and user-defined validators on the builder.

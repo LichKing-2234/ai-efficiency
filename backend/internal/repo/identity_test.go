@@ -25,6 +25,13 @@ func TestDeriveRepoIdentityNormalizesCommonRemotes(t *testing.T) {
 			repoName: "platform",
 		},
 		{
+			name:     "generic scp ssh",
+			remote:   "svc@bitbucket.example.com:PROJ/platform.git",
+			repoKey:  "bitbucket.example.com/proj/platform",
+			fullName: "PROJ/platform",
+			repoName: "platform",
+		},
+		{
 			name:     "bitbucket http clone",
 			remote:   "https://bitbucket.example.com/scm/PROJ/platform.git",
 			repoKey:  "bitbucket.example.com/proj/platform",

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -139,7 +140,12 @@ func (h *RepoHandler) Update(c *gin.Context) {
 
 	r, err := h.repoService.Update(c.Request.Context(), id, req)
 	if err != nil {
-		pkg.Error(c, http.StatusInternalServerError, err.Error())
+		switch {
+		case errors.Is(err, repo.ErrSCMProviderNotFound):
+			pkg.Error(c, http.StatusNotFound, "provider not found")
+		default:
+			pkg.Error(c, http.StatusInternalServerError, err.Error())
+		}
 		return
 	}
 

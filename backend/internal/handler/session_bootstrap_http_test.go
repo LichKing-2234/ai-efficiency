@@ -196,10 +196,9 @@ func TestSessionBootstrapHTTP_Success(t *testing.T) {
 	}
 }
 
-func TestSessionBootstrapHTTP_Failure_ServiceErrorStill422(t *testing.T) {
+func TestSessionBootstrapHTTP_MissingRepoFullNameAutoCreates(t *testing.T) {
 	env := setupBootstrapHTTPTestEnv(t)
 
-	// Repo does not exist -> bootstrap service returns an error, handler maps to 422.
 	w := doRequest(env, "POST", "/api/v1/sessions/bootstrap", map[string]interface{}{
 		"repo_full_name":  "org/missing",
 		"branch_snapshot": "main",
@@ -209,8 +208,8 @@ func TestSessionBootstrapHTTP_Failure_ServiceErrorStill422(t *testing.T) {
 		"git_common_dir":  "/tmp/ws/.git",
 		"workspace_id":    "ws-1",
 	})
-	if w.Code != http.StatusUnprocessableEntity {
-		t.Fatalf("status = %d, want %d, body: %s", w.Code, http.StatusUnprocessableEntity, w.Body.String())
+	if w.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d, body: %s", w.Code, http.StatusCreated, w.Body.String())
 	}
 }
 

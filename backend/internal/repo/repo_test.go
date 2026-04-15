@@ -232,6 +232,84 @@ func TestCreateDirect_AllowsUnboundRepo(t *testing.T) {
 	}
 }
 
+func TestRepoConfigHookDerivesRepoKeyOnRawCreate(t *testing.T) {
+	client := testdb.Open(t)
+
+	rc, err := client.RepoConfig.Create().
+		SetName("raw-repo").
+		SetFullName("org/raw-repo").
+		SetCloneURL("https://github.com/org/raw-repo.git").
+		SetDefaultBranch("main").
+		Save(context.Background())
+	if err != nil {
+		t.Fatalf("raw create repo config: %v", err)
+	}
+	if rc.RepoKey != "github.com/org/raw-repo" {
+		t.Fatalf("repo_key = %q, want %q", rc.RepoKey, "github.com/org/raw-repo")
+	}
+}
+
+func TestFindOrCreateFromRemote_RequeriesAfterConstraintConflict(t *testing.T) {
+	client, svc := setupTest(t)
+	ctx := context.Background()
+	identity, err := DeriveRepoIdentity("https://github.com/acme/platform.git")
+	if err != nil {
+		t.Fatalf("DeriveRepoIdentity: %v", err)
+	}
+
+	injected := false
+	client.RepoConfig.Use(func(next ent.Mutator) ent.Mutator {
+		return ent.MutateFunc(func(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+			if !m.Op().Is(ent.OpCreate) || injected {
+				return next.Mutate(ctx, m)
+			}
+			injected = true
+			if _, err := client.RepoConfig.Create().
+				SetRepoKey(identity.RepoKey).
+				SetName(identity.Name).
+				SetFullName(identity.FullName).
+				SetCloneURL(identity.CloneURL).
+				SetDefaultBranch("main").
+				SetStatus(repoconfig.StatusActive).
+				Save(ctx); err != nil {
+				return nil, err
+			}
+			return next.Mutate(ctx, m)
+		})
+	})
+
+	rc, err := svc.FindOrCreateFromRemote(ctx, identity.CloneURL, "main")
+	if err != nil {
+		t.Fatalf("FindOrCreateFromRemote: %v", err)
+	}
+	if rc.RepoKey != identity.RepoKey {
+		t.Fatalf("repo_key = %q, want %q", rc.RepoKey, identity.RepoKey)
+	}
+	count, err := client.RepoConfig.Query().Where(repoconfig.RepoKeyEQ(identity.RepoKey)).Count(ctx)
+	if err != nil {
+		t.Fatalf("count repo configs: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("repo count = %d, want 1", count)
+	}
+}
+
+func TestFindOrCreateFromRemote_FallsBackWhenIdentityParsingFails(t *testing.T) {
+	_, svc := setupTest(t)
+	ctx := context.Background()
+
+	rc, err := svc.FindOrCreateFromRemote(ctx, "ssh://git@repo-host.example.com/platform.git", "main")
+	if err != nil {
+		t.Fatalf("FindOrCreateFromRemote: %v", err)
+	}
+	if rc.CloneURL != "ssh://git@repo-host.example.com/platform.git" {
+		t.Fatalf("clone_url = %q, want original remote", rc.CloneURL)
+	}
+	if rc.RepoKey == "" {
+		t.Fatal("expected fallback repo_key to be populated")
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Get
 // ---------------------------------------------------------------------------

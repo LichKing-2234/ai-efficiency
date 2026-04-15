@@ -24,6 +24,7 @@ import (
 )
 
 var ErrRepoUnbound = errors.New("repo is not bound to an scm provider")
+var ErrSCMProviderNotFound = errors.New("scm provider not found")
 
 // CreateRequest is the request to create a repo config.
 type CreateRequest struct {
@@ -92,7 +93,7 @@ func IsRepoUnbound(err error) bool {
 func deriveRepoKeyFromCloneURL(cloneURL string) (string, error) {
 	identity, err := DeriveRepoIdentity(cloneURL)
 	if err != nil {
-		return "", err
+		identity = FallbackRepoIdentity(cloneURL, "")
 	}
 	return identity.RepoKey, nil
 }
@@ -225,75 +226,105 @@ func (s *Service) FindOrCreateFromRemote(ctx context.Context, remoteURL, branch 
 		return nil, fmt.Errorf("find or create repo: remote URL is empty")
 	}
 
-	if identity, err := DeriveRepoIdentity(remoteURL); err == nil {
-		if existing, err := s.entClient.RepoConfig.Query().
-			Where(repoconfig.RepoKeyEQ(identity.RepoKey)).
-			WithScmProvider().
-			Only(ctx); err == nil {
-			return s.refreshRepoMetadata(ctx, existing.ID, identity, branch)
-		} else if err != nil && !ent.IsNotFound(err) {
-			return nil, fmt.Errorf("find or create repo: query by repo_key: %w", err)
-		}
-
-		if existing, err := s.entClient.RepoConfig.Query().
-			Where(repoconfig.CloneURLEQ(remoteURL)).
-			WithScmProvider().
-			Only(ctx); err == nil {
-			return s.refreshRepoMetadata(ctx, existing.ID, identity, branch)
-		} else if err != nil && !ent.IsNotFound(err) {
-			return nil, fmt.Errorf("find or create repo: query by clone_url: %w", err)
-		}
-
-		if existing, err := s.entClient.RepoConfig.Query().
-			Where(repoconfig.FullNameEQ(identity.FullName)).
-			WithScmProvider().
-			Only(ctx); err == nil {
-			return s.refreshRepoMetadata(ctx, existing.ID, identity, branch)
-		} else if err != nil && !ent.IsNotFound(err) {
-			return nil, fmt.Errorf("find or create repo: query by full_name: %w", err)
-		}
-
-		defaultBranch := strings.TrimSpace(branch)
-		if defaultBranch == "" {
-			defaultBranch = "main"
-		}
-
-		rc, err := s.entClient.RepoConfig.Create().
-			SetRepoKey(identity.RepoKey).
-			SetName(identity.Name).
-			SetFullName(identity.FullName).
-			SetCloneURL(identity.CloneURL).
-			SetDefaultBranch(defaultBranch).
-			SetStatus(repoconfig.StatusActive).
-			Save(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("find or create repo: create repo: %w", err)
-		}
-		return rc, nil
+	if existing, err := s.findExistingRepoByExactLookup(ctx, remoteURL); err == nil && existing != nil {
+		return existing, nil
+	} else if err != nil {
+		return nil, err
 	}
 
-	rc, err := s.entClient.RepoConfig.Query().
-		Where(repoconfig.FullNameEQ(remoteURL)).
-		WithScmProvider().
-		Only(ctx)
-	if err == nil {
-		return rc, nil
-	}
-	if err != nil && !ent.IsNotFound(err) {
-		return nil, fmt.Errorf("find or create repo: query by full_name: %w", err)
-	}
-
-	rc, err = s.entClient.RepoConfig.Query().
-		Where(repoconfig.CloneURLEQ(remoteURL)).
-		WithScmProvider().
-		Only(ctx)
+	identity, err := DeriveRepoIdentity(remoteURL)
 	if err != nil {
-		if ent.IsNotFound(err) {
-			return nil, fmt.Errorf("find or create repo: repo not found: %s", remoteURL)
+		identity = FallbackRepoIdentity(remoteURL, remoteURL)
+	}
+
+	if existing, err := s.findExistingRepoByIdentity(ctx, identity, remoteURL); err == nil && existing != nil {
+		return s.refreshRepoMetadata(ctx, existing.ID, identity, branch)
+	} else if err != nil {
+		return nil, err
+	}
+
+	defaultBranch := strings.TrimSpace(branch)
+	if defaultBranch == "" {
+		defaultBranch = "main"
+	}
+
+	rc, err := s.entClient.RepoConfig.Create().
+		SetRepoKey(identity.RepoKey).
+		SetName(identity.Name).
+		SetFullName(identity.FullName).
+		SetCloneURL(identity.CloneURL).
+		SetDefaultBranch(defaultBranch).
+		SetStatus(repoconfig.StatusActive).
+		Save(ctx)
+	if err != nil {
+		if ent.IsConstraintError(err) {
+			if existing, findErr := s.findExistingRepoByIdentity(ctx, identity, remoteURL); findErr == nil && existing != nil {
+				return s.refreshRepoMetadata(ctx, existing.ID, identity, branch)
+			}
 		}
-		return nil, fmt.Errorf("find or create repo: query by clone_url: %w", err)
+		return nil, fmt.Errorf("find or create repo: create repo: %w", err)
 	}
 	return rc, nil
+}
+
+func (s *Service) findExistingRepoByIdentity(ctx context.Context, identity RepoIdentity, remoteURL string) (*ent.RepoConfig, error) {
+	if existing, err := s.entClient.RepoConfig.Query().
+		Where(repoconfig.RepoKeyEQ(identity.RepoKey)).
+		WithScmProvider().
+		Only(ctx); err == nil {
+		return existing, nil
+	} else if err != nil && !ent.IsNotFound(err) {
+		return nil, fmt.Errorf("find or create repo: query by repo_key: %w", err)
+	}
+
+	if existing, err := s.entClient.RepoConfig.Query().
+		Where(repoconfig.CloneURLEQ(remoteURL)).
+		WithScmProvider().
+		Only(ctx); err == nil {
+		return existing, nil
+	} else if err != nil && !ent.IsNotFound(err) {
+		return nil, fmt.Errorf("find or create repo: query by clone_url: %w", err)
+	}
+
+	fullNameMatches, err := s.entClient.RepoConfig.Query().
+		Where(repoconfig.FullNameEQ(identity.FullName)).
+		WithScmProvider().
+		Limit(2).
+		All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("find or create repo: query by full_name: %w", err)
+	}
+	if len(fullNameMatches) == 1 {
+		return fullNameMatches[0], nil
+	}
+	if len(fullNameMatches) > 1 {
+		return nil, nil
+	}
+	return nil, nil
+}
+
+func (s *Service) findExistingRepoByExactLookup(ctx context.Context, candidate string) (*ent.RepoConfig, error) {
+	if existing, err := s.entClient.RepoConfig.Query().
+		Where(repoconfig.CloneURLEQ(candidate)).
+		WithScmProvider().
+		Only(ctx); err == nil {
+		return existing, nil
+	} else if err != nil && !ent.IsNotFound(err) {
+		return nil, fmt.Errorf("find or create repo: query by exact clone_url: %w", err)
+	}
+
+	fullNameMatches, err := s.entClient.RepoConfig.Query().
+		Where(repoconfig.FullNameEQ(candidate)).
+		WithScmProvider().
+		Limit(2).
+		All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("find or create repo: query by exact full_name: %w", err)
+	}
+	if len(fullNameMatches) == 1 {
+		return fullNameMatches[0], nil
+	}
+	return nil, nil
 }
 
 func (s *Service) refreshRepoMetadata(ctx context.Context, repoID int, identity RepoIdentity, branch string) (*ent.RepoConfig, error) {
@@ -376,6 +407,12 @@ func (s *Service) Update(ctx context.Context, id int, req UpdateRequest) (*ent.R
 	if req.ClearSCMProvider {
 		update.ClearScmProvider()
 	} else if req.SCMProviderID != nil {
+		if _, err := s.entClient.ScmProvider.Get(ctx, *req.SCMProviderID); err != nil {
+			if ent.IsNotFound(err) {
+				return nil, ErrSCMProviderNotFound
+			}
+			return nil, fmt.Errorf("load scm provider: %w", err)
+		}
 		update.SetScmProviderID(*req.SCMProviderID)
 	}
 	if req.RelayProviderName != nil {

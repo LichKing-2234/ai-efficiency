@@ -4,14 +4,14 @@
 **Status:** Review Requested  
 **Scope:** `ae-cli/`, `backend/`, `frontend/`, `docs/`  
 **Related:**  
-- [2026-03-26-session-pr-attribution-design.md](/Users/admin/ai-efficiency/docs/superpowers/specs/2026-03-26-session-pr-attribution-design.md)  
-- [2026-04-14-scm-credentials-provider-binding-design.md](/Users/admin/ai-efficiency/docs/superpowers/specs/2026-04-14-scm-credentials-provider-binding-design.md)
+- [2026-03-26-session-pr-attribution-design.md](./2026-03-26-session-pr-attribution-design.md)  
+- [2026-04-14-scm-credentials-provider-binding-design.md](./2026-04-14-scm-credentials-provider-binding-design.md)
 
 项目级架构总览与当前实现状态见 [`docs/architecture.md`](../../architecture.md)。
 
 **Spec Relationship:**
-- 本文修改 [`2026-03-26-session-pr-attribution-design.md`](/Users/admin/ai-efficiency/docs/superpowers/specs/2026-03-26-session-pr-attribution-design.md) 中 `ae-cli start` 必须命中已存在 `repo_config` 的 bootstrap 假设。新的合同改为：bootstrap 对 repo 采用 `find-or-create`，未知 repo 不再因为“未预注册”而失败。
-- 本文修改 [`2026-04-14-scm-credentials-provider-binding-design.md`](/Users/admin/ai-efficiency/docs/superpowers/specs/2026-04-14-scm-credentials-provider-binding-design.md) 中“每个 repo 必须始终绑定一个 active SCM provider”的约束。新的合同改为：repo 与 SCM provider 的关系由 admin 管理，repo 可以先存在于 unbound 状态，后续再绑定。
+- 本文修改 [`2026-03-26-session-pr-attribution-design.md`](./2026-03-26-session-pr-attribution-design.md) 中 `ae-cli start` 必须命中已存在 `repo_config` 的 bootstrap 假设。新的合同改为：bootstrap 对 repo 采用 `find-or-create`，未知 repo 不再因为“未预注册”而失败。
+- 本文修改 [`2026-04-14-scm-credentials-provider-binding-design.md`](./2026-04-14-scm-credentials-provider-binding-design.md) 中“每个 repo 必须始终绑定一个 active SCM provider”的约束。新的合同改为：repo 与 SCM provider 的关系由 admin 管理，repo 可以先存在于 unbound 状态，后续再绑定。
 - 前述历史 spec 保留其各自时间点的设计背景与取舍，不回写其正文来伪装当前演进方向。
 
 ## 概述

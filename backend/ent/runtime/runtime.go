@@ -279,6 +279,8 @@ func init() {
 	relayprovider.DefaultUpdatedAt = relayproviderDescUpdatedAt.Default.(func() time.Time)
 	// relayprovider.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	relayprovider.UpdateDefaultUpdatedAt = relayproviderDescUpdatedAt.UpdateDefault.(func() time.Time)
+	repoconfigHooks := schema.RepoConfig{}.Hooks()
+	repoconfig.Hooks[0] = repoconfigHooks[0]
 	repoconfigFields := schema.RepoConfig{}.Fields()
 	_ = repoconfigFields
 	// repoconfigDescName is the schema descriptor for name field.

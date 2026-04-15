@@ -352,7 +352,9 @@ func (rcc *RepoConfigCreate) Mutation() *RepoConfigMutation {
 
 // Save creates the RepoConfig in the database.
 func (rcc *RepoConfigCreate) Save(ctx context.Context) (*RepoConfig, error) {
-	rcc.defaults()
+	if err := rcc.defaults(); err != nil {
+		return nil, err
+	}
 	return withHooks(ctx, rcc.sqlSave, rcc.mutation, rcc.hooks)
 }
 
@@ -379,7 +381,7 @@ func (rcc *RepoConfigCreate) ExecX(ctx context.Context) {
 }
 
 // defaults sets the default values of the builder before save.
-func (rcc *RepoConfigCreate) defaults() {
+func (rcc *RepoConfigCreate) defaults() error {
 	if _, ok := rcc.mutation.DefaultBranch(); !ok {
 		v := repoconfig.DefaultDefaultBranch
 		rcc.mutation.SetDefaultBranch(v)
@@ -393,13 +395,20 @@ func (rcc *RepoConfigCreate) defaults() {
 		rcc.mutation.SetStatus(v)
 	}
 	if _, ok := rcc.mutation.CreatedAt(); !ok {
+		if repoconfig.DefaultCreatedAt == nil {
+			return fmt.Errorf("ent: uninitialized repoconfig.DefaultCreatedAt (forgotten import ent/runtime?)")
+		}
 		v := repoconfig.DefaultCreatedAt()
 		rcc.mutation.SetCreatedAt(v)
 	}
 	if _, ok := rcc.mutation.UpdatedAt(); !ok {
+		if repoconfig.DefaultUpdatedAt == nil {
+			return fmt.Errorf("ent: uninitialized repoconfig.DefaultUpdatedAt (forgotten import ent/runtime?)")
+		}
 		v := repoconfig.DefaultUpdatedAt()
 		rcc.mutation.SetUpdatedAt(v)
 	}
+	return nil
 }
 
 // check runs all checks and user-defined validators on the builder.
