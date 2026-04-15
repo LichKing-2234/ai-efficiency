@@ -1,8 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
+import type { Pinia } from 'pinia'
 import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import RepoDetailView from '@/views/repos/RepoDetailView.vue'
+import { useAuthStore } from '@/stores/auth'
 
 vi.mock('@/api/repo', () => ({
   getRepo: vi.fn(),
@@ -18,6 +20,12 @@ vi.mock('@/api/pr', () => ({
   listPRs: vi.fn(),
   syncPRs: vi.fn(),
   settlePR: vi.fn(),
+}))
+
+vi.mock('@/api/scmProvider', () => ({
+  listProviders: vi.fn().mockResolvedValue({
+    data: { data: [{ id: 1, name: 'GitHub', type: 'github', base_url: 'https://api.github.com', status: 'active' }] },
+  }),
 }))
 
 vi.mock('@/api/auth', () => ({
@@ -39,7 +47,7 @@ function createTestRouter() {
   })
 }
 
-async function mountRepoDetail() {
+async function mountRepoDetail(repoOverride?: Record<string, unknown>, pinia?: Pinia) {
   const { getRepo } = await import('@/api/repo')
   const { listScans } = await import('@/api/analysis')
   const { listPRs, settlePR } = await import('@/api/pr')
@@ -48,15 +56,19 @@ async function mountRepoDetail() {
     data: {
       data: {
         id: 9,
+        repo_key: 'github.com/org/repo-a',
         name: 'repo-a',
         full_name: 'org/repo-a',
         clone_url: 'https://github.com/org/repo-a.git',
         default_branch: 'main',
         ai_score: 82,
         status: 'active',
+        binding_state: 'bound',
+        edges: { scm_provider: { id: 1, name: 'GitHub', type: 'github', base_url: 'https://api.github.com', status: 'active' } },
         last_scan_at: '2026-03-30T00:00:00Z',
         group_id: 1,
         created_at: '2026-01-01T00:00:00Z',
+        ...repoOverride,
       },
     },
   })
@@ -99,9 +111,10 @@ async function mountRepoDetail() {
   await router.push('/repos/9')
   await router.isReady()
 
+  const activePinia = pinia ?? createPinia()
   const wrapper = mount(RepoDetailView, {
     global: {
-      plugins: [createPinia(), router],
+      plugins: [activePinia, router],
       stubs: {
         RepoChat: { template: '<div />' },
       },
@@ -155,5 +168,21 @@ describe('RepoDetailView', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('exec: "git": executable file not found in $PATH')
+  })
+
+  it('disables scan and shows binding controls for admin on an unbound repo', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const auth = useAuthStore(pinia)
+    auth.user = { id: 1, username: 'admin', email: 'a@b.com', role: 'admin', auth_source: 'sso' }
+
+    const { wrapper } = await mountRepoDetail({
+      binding_state: 'unbound',
+      last_scan_at: null,
+      edges: {},
+    }, pinia)
+    expect(wrapper.text()).toContain('SCM Provider Binding')
+    const scanButton = wrapper.findAll('button').find((b) => b.text() === 'Run Scan')
+    expect(scanButton?.attributes('disabled')).toBeDefined()
   })
 })

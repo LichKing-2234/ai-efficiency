@@ -1,15 +1,18 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppLayout from '@/components/AppLayout.vue'
 import RepoChat from '@/components/RepoChat.vue'
 import { getRepo, updateRepo } from '@/api/repo'
 import { triggerScan, listScans } from '@/api/analysis'
 import { listPRs, syncPRs, settlePR } from '@/api/pr'
-import type { RepoConfig, ScanResult, PRRecord } from '@/types'
+import { listProviders } from '@/api/scmProvider'
+import { useAuthStore } from '@/stores/auth'
+import type { RepoConfig, ScanResult, PRRecord, SCMProvider } from '@/types'
 
 const route = useRoute()
 const router = useRouter()
+const auth = useAuthStore()
 const repo = ref<RepoConfig | null>(null)
 const scans = ref<ScanResult[]>([])
 const prs = ref<PRRecord[]>([])
@@ -29,6 +32,11 @@ const showScanSettings = ref(false)
 const scanPrompt = ref({ system_prompt: '', user_prompt_template: '' })
 const scanPromptSaving = ref(false)
 const scanPromptSuccess = ref('')
+const providers = ref<SCMProvider[]>([])
+const selectedProviderId = ref<number | null>(null)
+const bindingSaving = ref(false)
+const bindingMessage = ref('')
+const isRepoUnbound = computed(() => repo.value?.binding_state === 'unbound')
 
 const repoId = Number(route.params.id)
 
@@ -51,6 +59,12 @@ onMounted(async () => {
         user_prompt_template: repo.value.scan_prompt_override.user_prompt_template || '',
       }
     }
+    selectedProviderId.value = repo.value?.edges?.scm_provider?.id ?? repo.value?.scm_provider_id ?? null
+    if (auth.isAdmin) {
+      const providersRes = await listProviders().catch(() => ({ data: { data: [] } }))
+      const providerData = providersRes.data.data
+      providers.value = Array.isArray(providerData) ? providerData : (providerData as any)?.items ?? []
+    }
   } catch {
     router.push('/repos')
   } finally {
@@ -71,6 +85,12 @@ async function handleScan() {
   } finally {
     scanning.value = false
   }
+}
+
+async function refreshRepo() {
+  const repoRes = await getRepo(repoId)
+  repo.value = repoRes.data.data ?? null
+  selectedProviderId.value = repo.value?.edges?.scm_provider?.id ?? repo.value?.scm_provider_id ?? null
 }
 
 function formatDate(date: string | null) {
@@ -112,6 +132,25 @@ async function handleSyncPRs() {
   } catch { /* sync failed */ } finally {
     syncing.value = false
   }
+}
+
+async function saveBinding() {
+  bindingSaving.value = true
+  bindingMessage.value = ''
+  try {
+    await updateRepo(repoId, { scm_provider_id: selectedProviderId.value ?? undefined, clear_scm_provider: selectedProviderId.value == null } as any)
+    await refreshRepo()
+    bindingMessage.value = 'SCM provider binding saved'
+  } catch (error: any) {
+    bindingMessage.value = error?.response?.data?.message || 'Failed to save SCM provider binding'
+  } finally {
+    bindingSaving.value = false
+  }
+}
+
+async function clearBinding() {
+  selectedProviderId.value = null
+  await saveBinding()
 }
 
 async function loadPRs() {
@@ -209,19 +248,62 @@ async function handleClearScanPrompt() {
           <div class="flex items-center space-x-2">
             <button
               class="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
-              :disabled="scanning" @click="handleScan"
+              :disabled="scanning || isRepoUnbound" @click="handleScan"
             >{{ scanning ? 'Scanning...' : 'Run Scan' }}</button>
             <button
               class="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-              :disabled="syncing" @click="handleSyncPRs"
+              :disabled="syncing || isRepoUnbound" @click="handleSyncPRs"
             >{{ syncing ? 'Syncing...' : 'Sync PRs' }}</button>
             <button
               class="rounded-md bg-green-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50"
-              :disabled="scans.length === 0" @click="handleOptimize"
+              :disabled="scans.length === 0 || isRepoUnbound" @click="handleOptimize"
             >Auto-Optimize</button>
           </div>
         </div>
         <div v-if="scanError" class="mt-3 rounded-md bg-red-50 p-3 text-sm text-red-700">{{ scanError }}</div>
+      </div>
+
+      <div v-if="auth.isAdmin" class="rounded-lg bg-white p-5 shadow">
+        <div class="flex items-center justify-between">
+          <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-900">SCM Provider Binding</h2>
+          <span
+            class="rounded px-2 py-0.5 text-xs font-medium"
+            :class="isRepoUnbound ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'"
+          >
+            {{ isRepoUnbound ? 'Unbound' : 'Bound' }}
+          </span>
+        </div>
+        <p class="mt-3 text-sm text-gray-500">
+          {{ isRepoUnbound ? 'This repo was auto-discovered by ae-cli start and still needs an SCM provider binding.' : 'This repo is currently bound to an SCM provider.' }}
+        </p>
+        <div class="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+          <select
+            v-model="selectedProviderId"
+            class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 sm:max-w-sm"
+          >
+            <option :value="null">Unbound</option>
+            <option v-for="provider in providers" :key="provider.id" :value="provider.id">
+              {{ provider.name }}
+            </option>
+          </select>
+          <div class="flex gap-2">
+            <button
+              class="rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+              :disabled="bindingSaving"
+              @click="saveBinding"
+            >
+              {{ bindingSaving ? 'Saving...' : 'Save Binding' }}
+            </button>
+            <button
+              class="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 disabled:opacity-50"
+              :disabled="bindingSaving || selectedProviderId == null"
+              @click="clearBinding"
+            >
+              Clear Binding
+            </button>
+          </div>
+        </div>
+        <div v-if="bindingMessage" class="mt-3 rounded-md bg-gray-50 p-3 text-sm text-gray-700">{{ bindingMessage }}</div>
       </div>
 
       <!-- Overview: Score + Info + Dimensions in one row -->
@@ -244,6 +326,10 @@ async function handleClearScanPrompt() {
                 <tr>
                   <td class="text-gray-400 py-1 pr-4 align-middle whitespace-nowrap">Status</td>
                   <td class="text-gray-900 py-1 align-middle">{{ repo.status }}</td>
+                </tr>
+                <tr>
+                  <td class="text-gray-400 py-1 pr-4 align-middle whitespace-nowrap">Binding</td>
+                  <td class="text-gray-900 py-1 align-middle">{{ repo.binding_state }}</td>
                 </tr>
                 <tr>
                   <td class="text-gray-400 py-1 pr-4 align-middle whitespace-nowrap">Last Scan</td>

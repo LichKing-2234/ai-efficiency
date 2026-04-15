@@ -37,9 +37,9 @@ function createTestRouter() {
 }
 
 const sampleRepos = [
-  { id: 1, name: 'repo-a', full_name: 'org/repo-a', clone_url: 'https://github.com/org/repo-a.git', default_branch: 'main', ai_score: 85, status: 'active', last_scan_at: '2026-03-01T00:00:00Z', group_id: 0, created_at: '2026-01-01', edges: { scm_provider: { name: 'GitHub', type: 'github' } } },
-  { id: 2, name: 'repo-b', full_name: 'org/repo-b', clone_url: 'https://github.com/org/repo-b.git', default_branch: 'main', ai_score: 35, status: 'active', last_scan_at: null, group_id: 0, created_at: '2026-01-01', edges: { scm_provider: { name: 'GitHub', type: 'github' } } },
-  { id: 3, name: 'repo-c', full_name: 'team/repo-c', clone_url: 'https://bb.example.com/scm/team/repo-c.git', default_branch: 'main', ai_score: 55, status: 'active', last_scan_at: null, group_id: 0, created_at: '2026-01-01', edges: { scm_provider: { name: 'Bitbucket', type: 'bitbucket_server' } } },
+  { id: 1, repo_key: 'github.com/org/repo-a', name: 'repo-a', full_name: 'org/repo-a', clone_url: 'https://github.com/org/repo-a.git', default_branch: 'main', ai_score: 85, status: 'active', binding_state: 'bound', last_scan_at: '2026-03-01T00:00:00Z', group_id: 0, created_at: '2026-01-01', edges: { scm_provider: { id: 1, name: 'GitHub', type: 'github', base_url: 'https://api.github.com', status: 'active' } } },
+  { id: 2, repo_key: 'github.com/org/repo-b', name: 'repo-b', full_name: 'org/repo-b', clone_url: 'https://github.com/org/repo-b.git', default_branch: 'main', ai_score: 35, status: 'active', binding_state: 'bound', last_scan_at: null, group_id: 0, created_at: '2026-01-01', edges: { scm_provider: { id: 1, name: 'GitHub', type: 'github', base_url: 'https://api.github.com', status: 'active' } } },
+  { id: 3, repo_key: 'bb.example.com/team/repo-c', name: 'repo-c', full_name: 'team/repo-c', clone_url: 'https://bb.example.com/scm/team/repo-c.git', default_branch: 'main', ai_score: 55, status: 'active', binding_state: 'bound', last_scan_at: null, group_id: 0, created_at: '2026-01-01', edges: { scm_provider: { id: 2, name: 'Bitbucket', type: 'bitbucket_server', base_url: 'https://bb.example.com', status: 'active' } } },
 ]
 
 async function mountRepoList(repos?: any[]) {
@@ -80,6 +80,28 @@ describe('RepoListView', () => {
   it('shows empty state when no repos', async () => {
     const { wrapper } = await mountRepoList([])
     expect(wrapper.text()).toContain('No repositories found')
+  })
+
+  it('shows an Unbound badge for repos without scm_provider', async () => {
+    const { wrapper } = await mountRepoList([
+      {
+        id: 7,
+        repo_key: 'github.com/acme/repo-unbound',
+        name: 'repo-unbound',
+        full_name: 'acme/repo-unbound',
+        clone_url: 'https://github.com/acme/repo-unbound.git',
+        default_branch: 'main',
+        ai_score: 0,
+        status: 'active',
+        binding_state: 'unbound',
+        last_scan_at: null,
+        group_id: 0,
+        created_at: '2026-01-01T00:00:00Z',
+        edges: {},
+      },
+    ])
+
+    expect(wrapper.text()).toContain('Unbound')
   })
 
   it('opens add dialog on button click', async () => {
@@ -461,7 +483,7 @@ describe('RepoListView', () => {
     await wrapper.vm.$nextTick()
 
     // The select should have the BB provider selected
-    const select = wrapper.find('select')
+    const select = wrapper.findAll('select').at(-1)
     expect((select.element as HTMLSelectElement).value).toBe('2')
   })
 

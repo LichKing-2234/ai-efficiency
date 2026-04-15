@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/internal/pkg"
 	"github.com/ai-efficiency/backend/internal/repo"
 	"github.com/gin-gonic/gin"
@@ -12,6 +13,12 @@ import (
 // RepoHandler handles repo configuration HTTP requests.
 type RepoHandler struct {
 	repoService *repo.Service
+}
+
+type repoResponse struct {
+	*ent.RepoConfig
+	BindingState  string `json:"binding_state"`
+	SCMProviderID *int   `json:"scm_provider_id,omitempty"`
 }
 
 // NewRepoHandler creates a new repo handler.
@@ -41,7 +48,12 @@ func (h *RepoHandler) List(c *gin.Context) {
 		return
 	}
 
-	pkg.Paged(c, total, page, pageSize, repos)
+	items := make([]repoResponse, 0, len(repos))
+	for _, r := range repos {
+		items = append(items, buildRepoResponse(r))
+	}
+
+	pkg.Paged(c, total, page, pageSize, items)
 }
 
 // Create handles POST /api/v1/repos
@@ -58,7 +70,13 @@ func (h *RepoHandler) Create(c *gin.Context) {
 		return
 	}
 
-	pkg.Created(c, r)
+	loaded, err := h.repoService.Get(c.Request.Context(), r.ID)
+	if err != nil {
+		pkg.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	pkg.Created(c, buildRepoResponse(loaded))
 }
 
 // CreateDirect handles POST /api/v1/repos/direct (skips SCM validation)
@@ -75,7 +93,13 @@ func (h *RepoHandler) CreateDirect(c *gin.Context) {
 		return
 	}
 
-	pkg.Created(c, r)
+	loaded, err := h.repoService.Get(c.Request.Context(), r.ID)
+	if err != nil {
+		pkg.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	pkg.Created(c, buildRepoResponse(loaded))
 }
 
 // Get handles GET /api/v1/repos/:id
@@ -92,7 +116,7 @@ func (h *RepoHandler) Get(c *gin.Context) {
 		return
 	}
 
-	pkg.Success(c, r)
+	pkg.Success(c, buildRepoResponse(r))
 }
 
 // Update handles PUT /api/v1/repos/:id
@@ -108,6 +132,10 @@ func (h *RepoHandler) Update(c *gin.Context) {
 		pkg.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
+	if (req.SCMProviderID != nil || req.ClearSCMProvider) && !isAdminUser(c) {
+		pkg.Error(c, http.StatusForbidden, "admin required")
+		return
+	}
 
 	r, err := h.repoService.Update(c.Request.Context(), id, req)
 	if err != nil {
@@ -115,7 +143,13 @@ func (h *RepoHandler) Update(c *gin.Context) {
 		return
 	}
 
-	pkg.Success(c, r)
+	loaded, err := h.repoService.Get(c.Request.Context(), r.ID)
+	if err != nil {
+		pkg.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	pkg.Success(c, buildRepoResponse(loaded))
 }
 
 // Delete handles DELETE /api/v1/repos/:id
@@ -148,4 +182,17 @@ func (h *RepoHandler) TriggerScan(c *gin.Context) {
 	}
 
 	pkg.Success(c, gin.H{"message": "scan triggered"})
+}
+
+func buildRepoResponse(r *ent.RepoConfig) repoResponse {
+	resp := repoResponse{
+		RepoConfig:   r,
+		BindingState: "unbound",
+	}
+	if r != nil && r.Edges.ScmProvider != nil {
+		resp.BindingState = "bound"
+		id := r.Edges.ScmProvider.ID
+		resp.SCMProviderID = &id
+	}
+	return resp
 }
