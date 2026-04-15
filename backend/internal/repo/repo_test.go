@@ -3,6 +3,7 @@ package repo
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -700,6 +701,30 @@ func TestGetSCMProvider_Success(t *testing.T) {
 	}
 	if gotRC.ID != rc.ID {
 		t.Errorf("repo config ID = %d, want %d", gotRC.ID, rc.ID)
+	}
+}
+
+func TestGetSCMProvider_UnboundRepo(t *testing.T) {
+	_, svc := setupTest(t)
+	ctx := context.Background()
+
+	rc, err := svc.CreateDirect(ctx, CreateDirectRequest{
+		RepoKey:       "github.com/org/unbound-repo",
+		Name:          "unbound-repo",
+		FullName:      "org/unbound-repo",
+		CloneURL:      "https://github.com/org/unbound-repo.git",
+		DefaultBranch: "main",
+	})
+	if err != nil {
+		t.Fatalf("create repo: %v", err)
+	}
+
+	_, gotRC, err := svc.GetSCMProvider(ctx, rc.ID)
+	if !errors.Is(err, ErrRepoUnbound) {
+		t.Fatalf("GetSCMProvider error = %v, want ErrRepoUnbound", err)
+	}
+	if gotRC == nil || gotRC.ID != rc.ID {
+		t.Fatalf("repo config = %#v, want ID %d", gotRC, rc.ID)
 	}
 }
 

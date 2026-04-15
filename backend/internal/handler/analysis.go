@@ -34,6 +34,9 @@ func (h *AnalysisHandler) TriggerScan(c *gin.Context) {
 
 	result, err := h.analysisService.RunScan(c.Request.Context(), id)
 	if err != nil {
+		if handleRepoBindingError(c, err) {
+			return
+		}
 		pkg.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -101,6 +104,9 @@ func (h *AnalysisHandler) Optimize(c *gin.Context) {
 	// Get SCM provider for this repo
 	scmProvider, rc, err := h.repoService.GetSCMProvider(ctx, id)
 	if err != nil {
+		if handleRepoBindingError(c, err) {
+			return
+		}
 		pkg.Error(c, http.StatusInternalServerError, "failed to get SCM provider: "+err.Error())
 		return
 	}
@@ -142,6 +148,9 @@ func (h *AnalysisHandler) OptimizePreview(c *gin.Context) {
 
 	scmProvider, rc, err := h.repoService.GetSCMProvider(ctx, id)
 	if err != nil {
+		if handleRepoBindingError(c, err) {
+			return
+		}
 		pkg.Error(c, http.StatusInternalServerError, "failed to get SCM provider: "+err.Error())
 		return
 	}
@@ -186,6 +195,9 @@ func (h *AnalysisHandler) OptimizeConfirm(c *gin.Context) {
 
 	scmProvider, rc, err := h.repoService.GetSCMProvider(ctx, id)
 	if err != nil {
+		if handleRepoBindingError(c, err) {
+			return
+		}
 		pkg.Error(c, http.StatusInternalServerError, "failed to get SCM provider: "+err.Error())
 		return
 	}

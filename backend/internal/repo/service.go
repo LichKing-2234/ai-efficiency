@@ -486,7 +486,7 @@ func (s *Service) GetSCMProvider(ctx context.Context, repoConfigID int) (scm.SCM
 
 	provider := rc.Edges.ScmProvider
 	if provider == nil {
-		return nil, nil, fmt.Errorf("repo config has no scm provider")
+		return nil, rc, ErrRepoUnbound
 	}
 
 	apiPayload, err := s.resolveAPICredentialPayload(ctx, provider)

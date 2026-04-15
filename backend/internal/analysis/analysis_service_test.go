@@ -3,6 +3,7 @@ package analysis
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -19,6 +20,7 @@ import (
 	"github.com/ai-efficiency/backend/internal/config"
 	"github.com/ai-efficiency/backend/internal/pkg"
 	"github.com/ai-efficiency/backend/internal/relay"
+	"github.com/ai-efficiency/backend/internal/repo"
 	"github.com/ai-efficiency/backend/internal/testdb"
 	"go.uber.org/zap"
 )
@@ -330,6 +332,25 @@ func TestRunScanRepoConfigNotFound(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "get repo config") {
 		t.Errorf("error = %q, want 'get repo config'", err.Error())
+	}
+}
+
+func TestRunScan_UnboundRepoReturnsRepoUnbound(t *testing.T) {
+	client := setupEntClient(t)
+	c := NewCloner(t.TempDir(), zap.NewNop())
+	svc := NewService(client, c, nil, zap.NewNop(), testEncryptionKey)
+
+	rc := client.RepoConfig.Create().
+		SetRepoKey("github.com/acme/platform").
+		SetName("platform").
+		SetFullName("acme/platform").
+		SetCloneURL("https://github.com/acme/platform.git").
+		SetDefaultBranch("main").
+		SaveX(context.Background())
+
+	_, err := svc.RunScan(context.Background(), rc.ID)
+	if !errors.Is(err, repo.ErrRepoUnbound) {
+		t.Fatalf("RunScan error = %v, want repo.ErrRepoUnbound", err)
 	}
 }
 

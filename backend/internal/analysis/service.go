@@ -15,6 +15,7 @@ import (
 	"github.com/ai-efficiency/backend/internal/analysis/rules"
 	"github.com/ai-efficiency/backend/internal/credential"
 	"github.com/ai-efficiency/backend/internal/pkg"
+	repomodule "github.com/ai-efficiency/backend/internal/repo"
 	scminternal "github.com/ai-efficiency/backend/internal/scm"
 	scmbitbucket "github.com/ai-efficiency/backend/internal/scm/bitbucket"
 	scmgithub "github.com/ai-efficiency/backend/internal/scm/github"
@@ -58,6 +59,9 @@ func (s *Service) RunScan(ctx context.Context, repoConfigID int) (*ent.AiScanRes
 		Only(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("get repo config: %w", err)
+	}
+	if rc.Edges.ScmProvider == nil {
+		return nil, repomodule.ErrRepoUnbound
 	}
 
 	cloneReq, err := s.buildCloneRequest(ctx, rc)
