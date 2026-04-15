@@ -103,11 +103,13 @@ func TestLoginCommandForceBypassesExistingToken(t *testing.T) {
 	oldCfg := cfg
 	oldForce := loginForce
 	oldLogin := loginFlow
+	oldHeadless := headlessBrowserEnv
 	defer func() {
 		_ = os.Setenv("HOME", oldHome)
 		cfg = oldCfg
 		loginForce = oldForce
 		loginFlow = oldLogin
+		headlessBrowserEnv = oldHeadless
 	}()
 
 	if err := os.Setenv("HOME", tmpHome); err != nil {
@@ -115,6 +117,7 @@ func TestLoginCommandForceBypassesExistingToken(t *testing.T) {
 	}
 	cfg = &config.Config{Server: config.ServerConfig{URL: "http://localhost:18081"}}
 	loginForce = true
+	headlessBrowserEnv = func(func(string) string, string) bool { return false }
 
 	tokenPath, err := auth.DefaultTokenPath()
 	if err != nil {
