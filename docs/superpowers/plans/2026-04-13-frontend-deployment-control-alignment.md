@@ -8,6 +8,12 @@
 
 **Tech Stack:** Vue 3, Vue Router, Vitest, Vue Test Utils, TypeScript, Vite
 
+**Status:** ✅ 已完成（2026-04-15）
+
+**Replay Status:** 历史完成记录。不要直接按本文逐 task 重跑；如需再次执行或扩展，请基于当前前端实现、router/recovery 辅助模块和最新 spec 重写执行计划。
+
+> **Updated:** 2026-04-15 — 基于 focused deployment/frontend tests 与当前实现回填 checkbox。
+
 ---
 
 ## File Structure
@@ -36,7 +42,7 @@
 - Modify: `frontend/vite.config.ts:24-27`
 - Test: `frontend/src/__tests__/auth-store.test.ts`
 
-- [ ] **Step 1: Write the failing test command**
+- [x] **Step 1: Write the failing test command**
 
 Run:
 
@@ -46,7 +52,7 @@ cd frontend && pnpm test auth-store.test.ts
 
 Expected: FAIL with `TypeError: localStorage.clear is not a function` in `src/__tests__/auth-store.test.ts`.
 
-- [ ] **Step 2: Add a deterministic in-memory storage setup**
+- [x] **Step 2: Add a deterministic in-memory storage setup**
 
 Create `frontend/vitest.setup.ts` with:
 
@@ -102,7 +108,7 @@ if (typeof window !== 'undefined') {
 }
 ```
 
-- [ ] **Step 3: Register the setup file in Vitest**
+- [x] **Step 3: Register the setup file in Vitest**
 
 Update the `test` block in `frontend/vite.config.ts` to:
 
@@ -114,7 +120,7 @@ Update the `test` block in `frontend/vite.config.ts` to:
   },
 ```
 
-- [ ] **Step 4: Run the storage verification test**
+- [x] **Step 4: Run the storage verification test**
 
 Run:
 
@@ -124,7 +130,7 @@ cd frontend && pnpm test auth-store.test.ts
 
 Expected: PASS with all auth store tests green.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add frontend/vitest.setup.ts frontend/vite.config.ts
@@ -137,7 +143,7 @@ git commit -m "test(frontend): stabilize browser storage in vitest"
 - Create: `frontend/src/utils/deploymentRecovery.ts`
 - Create: `frontend/src/__tests__/deployment-recovery.test.ts`
 
-- [ ] **Step 1: Write the failing helper tests**
+- [x] **Step 1: Write the failing helper tests**
 
 Create `frontend/src/__tests__/deployment-recovery.test.ts` with:
 
@@ -212,7 +218,7 @@ describe('deploymentRecovery', () => {
 })
 ```
 
-- [ ] **Step 2: Run the helper test to verify it fails**
+- [x] **Step 2: Run the helper test to verify it fails**
 
 Run:
 
@@ -222,7 +228,7 @@ cd frontend && pnpm test deployment-recovery.test.ts
 
 Expected: FAIL because `@/utils/deploymentRecovery` does not exist yet.
 
-- [ ] **Step 3: Implement the minimal helper**
+- [x] **Step 3: Implement the minimal helper**
 
 Create `frontend/src/utils/deploymentRecovery.ts` with:
 
@@ -313,7 +319,7 @@ export function reloadOnceForChunkError(error: unknown, options: ChunkReloadOpti
 }
 ```
 
-- [ ] **Step 4: Run the helper tests again**
+- [x] **Step 4: Run the helper tests again**
 
 Run:
 
@@ -323,7 +329,7 @@ cd frontend && pnpm test deployment-recovery.test.ts
 
 Expected: PASS with all recovery helper tests green.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add frontend/src/utils/deploymentRecovery.ts frontend/src/__tests__/deployment-recovery.test.ts
@@ -336,7 +342,7 @@ git commit -m "fix(frontend): add deployment recovery helpers"
 - Modify: `frontend/src/views/SettingsView.vue:1-320`
 - Modify: `frontend/src/__tests__/settings-view.test.ts`
 
-- [ ] **Step 1: Write the failing settings-page branching tests**
+- [x] **Step 1: Write the failing settings-page branching tests**
 
 Add this mock near the top of `frontend/src/__tests__/settings-view.test.ts`:
 
@@ -419,7 +425,7 @@ it('does not wait for recovery after systemd apply update', async () => {
 })
 ```
 
-- [ ] **Step 2: Run the settings test to verify it fails**
+- [x] **Step 2: Run the settings test to verify it fails**
 
 Run:
 
@@ -429,7 +435,7 @@ cd frontend && pnpm test settings-view.test.ts
 
 Expected: FAIL because the settings page does not yet branch recovery behavior through the helper.
 
-- [ ] **Step 3: Implement the minimal settings-page wiring**
+- [x] **Step 3: Implement the minimal settings-page wiring**
 
 Update the deployment section of `frontend/src/views/SettingsView.vue` with:
 
@@ -506,7 +512,7 @@ async function handleRestartDeployment() {
 }
 ```
 
-- [ ] **Step 4: Run the settings-page test suite**
+- [x] **Step 4: Run the settings-page test suite**
 
 Run:
 
@@ -516,7 +522,7 @@ cd frontend && pnpm test settings-view.test.ts
 
 Expected: PASS with all settings view tests green.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add frontend/src/views/SettingsView.vue frontend/src/__tests__/settings-view.test.ts
@@ -529,7 +535,7 @@ git commit -m "fix(frontend): align settings deployment controls"
 - Modify: `frontend/src/router/index.ts:1-90`
 - Test: `frontend/src/__tests__/router.test.ts`
 
-- [ ] **Step 1: Write the router-level smoke verification**
+- [x] **Step 1: Write the router-level smoke verification**
 
 Run:
 
@@ -539,7 +545,7 @@ cd frontend && pnpm test router.test.ts
 
 Expected: PASS before and after the router change; this suite protects the router import and guard wiring.
 
-- [ ] **Step 2: Add the chunk reload hook**
+- [x] **Step 2: Add the chunk reload hook**
 
 Update `frontend/src/router/index.ts` to:
 
@@ -560,7 +566,7 @@ router.onError((error) => {
 export default router
 ```
 
-- [ ] **Step 3: Run the router smoke test again**
+- [x] **Step 3: Run the router smoke test again**
 
 Run:
 
@@ -570,7 +576,7 @@ cd frontend && pnpm test router.test.ts
 
 Expected: PASS with all router tests green.
 
-- [ ] **Step 4: Run the focused deployment-related tests together**
+- [x] **Step 4: Run the focused deployment-related tests together**
 
 Run:
 
@@ -580,7 +586,7 @@ cd frontend && pnpm test deployment-recovery.test.ts settings-view.test.ts route
 
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add frontend/src/router/index.ts
@@ -593,7 +599,7 @@ git commit -m "fix(frontend): reload once after upgraded chunks expire"
 - Modify: `docs/superpowers/specs/2026-04-13-frontend-deployment-control-alignment-design.md`
 - Modify: `docs/architecture.md` (only if implementation changed the project-level architecture wording; otherwise no change)
 
-- [ ] **Step 1: Re-read the approved spec against the implementation**
+- [x] **Step 1: Re-read the approved spec against the implementation**
 
 Checklist:
 
@@ -607,7 +613,7 @@ Checklist:
 - Router keeps chunk reload protection
 ```
 
-- [ ] **Step 2: Run the full frontend verification**
+- [x] **Step 2: Run the full frontend verification**
 
 Run:
 
@@ -623,11 +629,11 @@ All frontend tests pass
 Production build succeeds
 ```
 
-- [ ] **Step 3: Update docs only if the code diverged from the approved spec**
+- [x] **Step 3: Update docs only if the code diverged from the approved spec**
 
 If no divergence is found, leave `docs/architecture.md` unchanged and keep the new spec as the contract. If divergence is found, fix the spec inline before finishing.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add docs/superpowers/specs/2026-04-13-frontend-deployment-control-alignment-design.md docs/superpowers/plans/2026-04-13-frontend-deployment-control-alignment.md

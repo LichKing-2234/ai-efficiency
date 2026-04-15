@@ -8,6 +8,14 @@
 
 **Tech Stack:** Go (`cobra`, `tmux`, existing `toolconfig` package), Kiro CLI managed agent JSON, local proxy event ingress, existing backend session/session_event tables.
 
+**Status:** 待实施（当前仓库仅具备 Kiro collector；managed session integration 未落地）
+
+**Replay Status:** 可以继续按本文执行，但应以前置已实现的 local session proxy/runtime 为基础，而不是假设本文范围已经落地。
+
+**Source Of Truth:** 当前状态以现有代码、`docs/architecture.md`、`2026-03-26-session-pr-attribution-design.md` 与 `2026-04-02-local-session-proxy-design.md` 为准。本文仍是待执行的 Kiro 扩展计划。
+
+> **Updated:** 2026-04-15 — 基于当前代码核对：Kiro collector 已存在于 attribution 链路，但 session-local config、launcher 参数注入和 proxy hook integration 尚未落地。
+
 ---
 
 ## File Map

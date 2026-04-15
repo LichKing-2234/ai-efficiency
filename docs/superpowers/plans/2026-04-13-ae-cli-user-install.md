@@ -8,6 +8,12 @@
 
 **Tech Stack:** Bash, GitHub Release asset conventions from `.goreleaser.yaml`, `curl`, `tar`, `sha256sum`/`shasum`, Markdown.
 
+**Status:** ✅ 已完成（2026-04-15）
+
+**Replay Status:** 历史完成记录。不要直接按本文逐 task 重跑；如需再次执行或扩展，请基于当前安装脚本、README 和最新 spec 重写执行计划。
+
+> **Updated:** 2026-04-15 — 基于 shell fixture、`bash -n` 和文档检查回填 checkbox。
+
 ---
 
 ## File Map
@@ -50,7 +56,7 @@
 - Create: `ae-cli/install.sh`
 - Test: `ae-cli/test/install-test.sh`
 
-- [ ] **Step 1: Write the failing shell fixture test**
+- [x] **Step 1: Write the failing shell fixture test**
 
 Create `ae-cli/test/install-test.sh`:
 
@@ -226,7 +232,7 @@ cmp -s "$PATH_WARNING_HOME/.zshrc" "$TMP_ROOT/zshrc.expected"
 cmp -s "$PATH_WARNING_HOME/.bashrc" "$TMP_ROOT/bashrc.expected"
 ```
 
-- [ ] **Step 2: Run the shell fixture to verify the red state**
+- [x] **Step 2: Run the shell fixture to verify the red state**
 
 Run:
 
@@ -239,7 +245,7 @@ Expected:
 - FAIL because `ae-cli/install.sh` does not exist yet.
 - The first visible failure should be the `cp "$ROOT_DIR/ae-cli/install.sh" "$INSTALLER"` line.
 
-- [ ] **Step 3: Write the minimal installer to satisfy the fixture**
+- [x] **Step 3: Write the minimal installer to satisfy the fixture**
 
 Create `ae-cli/install.sh`:
 
@@ -390,7 +396,7 @@ main() {
 main "$@"
 ```
 
-- [ ] **Step 4: Run the shell fixture to verify green**
+- [x] **Step 4: Run the shell fixture to verify green**
 
 Run:
 
@@ -404,7 +410,7 @@ Expected:
 - PASS with no output from `ae-cli/test/install-test.sh`
 - PASS from `bash -n ae-cli/install.sh`
 
-- [ ] **Step 5: Commit the installer slice**
+- [x] **Step 5: Commit the installer slice**
 
 Run:
 
@@ -426,7 +432,7 @@ Expected:
 - Modify: `deploy/README.md`
 - Test: `ae-cli/README.md`
 
-- [ ] **Step 1: Write the failing documentation checks**
+- [x] **Step 1: Write the failing documentation checks**
 
 Run:
 
@@ -440,7 +446,7 @@ Expected:
 - `test -f ae-cli/README.md` fails because the file does not exist yet.
 - The `rg` command returns no match because `deploy/README.md` does not yet separate backend deploy docs from CLI install docs explicitly.
 
-- [ ] **Step 2: Create the CLI README and add the deploy cross-reference**
+- [x] **Step 2: Create the CLI README and add the deploy cross-reference**
 
 Create `ae-cli/README.md`:
 
@@ -492,7 +498,7 @@ Update `deploy/README.md` by inserting this section after the overview block and
 This guide covers backend deployment only. For the user-level CLI installer, see [`../ae-cli/README.md`](../ae-cli/README.md).
 ```
 
-- [ ] **Step 3: Verify the documentation contract**
+- [x] **Step 3: Verify the documentation contract**
 
 Run:
 
@@ -510,7 +516,7 @@ Expected:
 - `ae-cli/README.md` contains the official remote install commands, the `~/.local/bin` target, and the Windows manual-install note.
 - `deploy/README.md` now explicitly points CLI users to the separate CLI documentation.
 
-- [ ] **Step 4: Commit the documentation slice**
+- [x] **Step 4: Commit the documentation slice**
 
 Run:
 
@@ -527,7 +533,7 @@ Expected:
 
 ## Final Verification
 
-- [ ] **Step 1: Re-run the full installer verification and documentation checks**
+- [x] **Step 1: Re-run the full installer verification and documentation checks**
 
 Run:
 

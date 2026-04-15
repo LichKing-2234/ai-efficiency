@@ -8,6 +8,16 @@
 
 **Tech Stack:** Go, Gin, Ent, PostgreSQL, Vue 3, Vite, Pinia, Vitest, Docker Compose
 
+**Status:** ⚠️ 实现与自动化验证已完成（2026-04-15）；dev-stack / real-provider 验证未重跑
+
+**Replay Status:** 不建议直接按本文逐 task 重跑。若要补齐剩余验证或继续扩展，请基于当前代码、`docs/architecture.md` 和最新 spec 单独拆 follow-up plan。
+
+**Source Of Truth:** 当前 credentials 模块、provider credential binding、clone auth 与前端设置页行为以现有代码、`docs/architecture.md` 和 `2026-04-14-scm-credentials-provider-binding-design.md` 为准。
+
+**Known Remaining Gaps:** 截至 2026-04-15，`backend/internal/credential`、`backend/internal/repo`、`backend/internal/analysis`、`backend/internal/sessionbootstrap`、`backend/internal/deployment` 相关测试，以及 frontend focused settings/deployment tests 已验证通过；但 Task 7 / Step 2 的 dev stack 检查和 Step 4 的真实 HTTPS/SSH repo scan 未在本轮环境重跑，因此仅保留这两项未勾选。
+
+> **Updated:** 2026-04-15 — 基于当前代码、focused backend tests、frontend focused tests 和架构文档回填 checkbox；环境敏感验证仍待单独重跑。
+
 ---
 
 ## File Map
@@ -80,7 +90,7 @@
 - Modify: `backend/ent/schema/scmprovider.go`
 - Modify: `backend/ent/generate.go`
 
-- [ ] **Step 1: Write the failing credential validation tests**
+- [x] **Step 1: Write the failing credential validation tests**
 
 ```go
 package credential
@@ -117,13 +127,13 @@ func TestValidateProviderCredentialRefs(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the credential package tests to verify they fail**
+- [x] **Step 2: Run the credential package tests to verify they fail**
 
 Run: `cd backend && go test ./internal/credential -run 'TestParsePayload|TestValidateProviderCredentialRefs'`
 
 Expected: FAIL with `undefined: ParsePayload`, `undefined: KindSSHUsernameWithPrivateKey`, or missing package/build errors because the credential module does not exist yet.
 
-- [ ] **Step 3: Implement the credential kinds and validation helpers**
+- [x] **Step 3: Implement the credential kinds and validation helpers**
 
 ```go
 package credential
@@ -232,7 +242,7 @@ func ValidateProviderCredentialRefs(apiKind Kind, cloneProtocol string, cloneKin
 }
 ```
 
-- [ ] **Step 4: Add the Ent schema and regenerate models**
+- [x] **Step 4: Add the Ent schema and regenerate models**
 
 ```go
 // backend/ent/schema/credential.go
@@ -279,7 +289,7 @@ Run: `cd backend && go generate ./ent`
 
 Expected: generated Ent files update successfully with a new `Credential` entity and new `ScmProvider` fields.
 
-- [ ] **Step 5: Re-run credential tests and commit**
+- [x] **Step 5: Re-run credential tests and commit**
 
 Run: `cd backend && go test ./internal/credential -run 'TestParsePayload|TestValidateProviderCredentialRefs'`
 
@@ -299,7 +309,7 @@ git commit -m "feat(backend): add credential domain and schema"
 - Modify: `backend/internal/handler/router.go`
 - Modify: `backend/internal/pkg/response.go`
 
-- [ ] **Step 1: Write the failing credential handler tests**
+- [x] **Step 1: Write the failing credential handler tests**
 
 ```go
 func TestCredentialCRUD(t *testing.T) {
@@ -341,13 +351,13 @@ func TestCredentialDeleteRejectsProviderInUse(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the credential handler tests to verify they fail**
+- [x] **Step 2: Run the credential handler tests to verify they fail**
 
 Run: `cd backend && go test ./internal/handler -run 'TestCredentialCRUD|TestCredentialDeleteRejectsProviderInUse'`
 
 Expected: FAIL with missing routes, missing `Credential` entity wiring, or missing handler/build errors.
 
-- [ ] **Step 3: Implement the credential handler**
+- [x] **Step 3: Implement the credential handler**
 
 ```go
 type createCredentialRequest struct {
@@ -398,7 +408,7 @@ func (h *CredentialHandler) Create(c *gin.Context) {
 }
 ```
 
-- [ ] **Step 4: Wire the routes into the admin section**
+- [x] **Step 4: Wire the routes into the admin section**
 
 ```go
 credentialHandler := NewCredentialHandler(entClient, encryptionKey)
@@ -414,7 +424,7 @@ adminCredentialGroup.Use(auth.RequireAdmin())
 }
 ```
 
-- [ ] **Step 5: Re-run the handler tests and commit**
+- [x] **Step 5: Re-run the handler tests and commit**
 
 Run: `cd backend && go test ./internal/handler -run 'TestCredentialCRUD|TestCredentialDeleteRejectsProviderInUse'`
 
@@ -438,7 +448,7 @@ git commit -m "feat(backend): add credential admin api"
 - Modify: `backend/internal/repo/repo_test.go`
 - Modify: `backend/cmd/server/main.go`
 
-- [ ] **Step 1: Write failing tests for provider request validation and legacy backfill**
+- [x] **Step 1: Write failing tests for provider request validation and legacy backfill**
 
 ```go
 func TestCreateSCMProviderRequiresApiCredential(t *testing.T) {
@@ -470,13 +480,13 @@ func TestBackfillLegacySCMCredentials(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the provider/backfill tests to verify they fail**
+- [x] **Step 2: Run the provider/backfill tests to verify they fail**
 
 Run: `cd backend && go test ./internal/handler -run 'TestCreateSCMProviderRequiresApiCredential' && go test ./internal/credential -run 'TestBackfillLegacySCMCredentials'`
 
 Expected: FAIL with missing fields, missing backfill function, or outdated handler request schema.
 
-- [ ] **Step 3: Refactor provider requests and provider factory**
+- [x] **Step 3: Refactor provider requests and provider factory**
 
 ```go
 type createSCMProviderRequest struct {
@@ -497,7 +507,7 @@ func newGitHubProvider(baseURL string, apiCredential credential.Payload, logger 
 }
 ```
 
-- [ ] **Step 4: Add startup backfill after Ent migration**
+- [x] **Step 4: Add startup backfill after Ent migration**
 
 ```go
 if err := credential.BackfillLegacySCMCredentials(ctx, entClient, cfg.Encryption.Key); err != nil {
@@ -505,7 +515,7 @@ if err := credential.BackfillLegacySCMCredentials(ctx, entClient, cfg.Encryption
 }
 ```
 
-- [ ] **Step 5: Re-run the provider/backfill tests and commit**
+- [x] **Step 5: Re-run the provider/backfill tests and commit**
 
 Run: `cd backend && go test ./internal/credential -run 'TestBackfillLegacySCMCredentials' && go test ./internal/handler -run 'TestCreateSCMProviderRequiresApiCredential'`
 
@@ -526,7 +536,7 @@ git commit -m "refactor(backend): bind scm providers to credentials"
 - Modify: `backend/internal/analysis/service.go`
 - Modify: `backend/internal/analysis/analysis_service_test.go`
 
-- [ ] **Step 1: Write the failing clone auth tests**
+- [x] **Step 1: Write the failing clone auth tests**
 
 ```go
 func TestBuildHTTPSCloneConfigFromSecretText(t *testing.T) {
@@ -547,13 +557,13 @@ func TestBuildSSHCloneConfigRequiresPrivateKey(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the clone auth tests to verify they fail**
+- [x] **Step 2: Run the clone auth tests to verify they fail**
 
 Run: `cd backend && go test ./internal/scm -run 'TestBuildHTTPSCloneConfigFromSecretText|TestBuildSSHCloneConfigRequiresPrivateKey'`
 
 Expected: FAIL with missing `BuildCloneAuthConfig` or incorrect clone auth behavior.
 
-- [ ] **Step 3: Implement clone auth resolution**
+- [x] **Step 3: Implement clone auth resolution**
 
 ```go
 type CloneAuthConfig struct {
@@ -596,7 +606,7 @@ func BuildCloneAuthConfig(providerType scmprovider.Type, cloneProtocol string, a
 }
 ```
 
-- [ ] **Step 4: Refactor the cloner to execute authenticated Git commands**
+- [x] **Step 4: Refactor the cloner to execute authenticated Git commands**
 
 ```go
 func (c *Cloner) CloneOrUpdate(req CloneRequest) (string, error) {
@@ -622,7 +632,7 @@ func (c *Cloner) cloneHTTPS(req CloneRequest) (string, error) {
 }
 ```
 
-- [ ] **Step 5: Run clone-related tests and commit**
+- [x] **Step 5: Run clone-related tests and commit**
 
 Run: `cd backend && go test ./internal/scm -run 'TestBuildHTTPSCloneConfigFromSecretText|TestBuildSSHCloneConfigRequiresPrivateKey' && go test ./internal/analysis -run 'TestRunScanCloneError|TestRunScanStaticOnly'`
 
@@ -642,7 +652,7 @@ git commit -m "fix(backend): clone repos with provider credentials"
 - Modify: `frontend/src/views/SettingsView.vue`
 - Modify: `frontend/src/__tests__/settings-view.test.ts`
 
-- [ ] **Step 1: Write the failing frontend tests for credential UI**
+- [x] **Step 1: Write the failing frontend tests for credential UI**
 
 ```ts
 it('renders credentials section and add credential dialog', async () => {
@@ -673,13 +683,13 @@ it('creates a secret text credential', async () => {
 })
 ```
 
-- [ ] **Step 2: Run the settings tests to verify they fail**
+- [x] **Step 2: Run the settings tests to verify they fail**
 
 Run: `cd frontend && pnpm test settings-view.test.ts`
 
 Expected: FAIL because no credentials API or credentials section exists yet.
 
-- [ ] **Step 3: Add frontend types and API client**
+- [x] **Step 3: Add frontend types and API client**
 
 ```ts
 export interface Credential {
@@ -707,7 +717,7 @@ export function createCredential(data: Record<string, unknown>) {
 }
 ```
 
-- [ ] **Step 4: Implement the credentials section in Settings**
+- [x] **Step 4: Implement the credentials section in Settings**
 
 ```ts
 const credentials = ref<Credential[]>([])
@@ -739,7 +749,7 @@ function credentialPayload() {
 }
 ```
 
-- [ ] **Step 5: Re-run settings tests and commit**
+- [x] **Step 5: Re-run settings tests and commit**
 
 Run: `cd frontend && pnpm test settings-view.test.ts`
 
@@ -759,7 +769,7 @@ git commit -m "feat(frontend): add credentials management"
 - Modify: `frontend/src/views/SettingsView.vue`
 - Modify: `frontend/src/__tests__/settings-view.test.ts`
 
-- [ ] **Step 1: Write the failing provider form tests**
+- [x] **Step 1: Write the failing provider form tests**
 
 ```ts
 it('sends credential ids when creating a provider', async () => {
@@ -787,13 +797,13 @@ it('sends credential ids when creating a provider', async () => {
 })
 ```
 
-- [ ] **Step 2: Run the provider form tests to verify they fail**
+- [x] **Step 2: Run the provider form tests to verify they fail**
 
 Run: `cd frontend && pnpm test settings-view.test.ts`
 
 Expected: FAIL because the provider form still submits raw `credentials`.
 
-- [ ] **Step 3: Update the provider request and UI model**
+- [x] **Step 3: Update the provider request and UI model**
 
 ```ts
 export interface SCMProvider {
@@ -820,7 +830,7 @@ const form = ref({
 })
 ```
 
-- [ ] **Step 4: Replace raw token inputs with credential selectors**
+- [x] **Step 4: Replace raw token inputs with credential selectors**
 
 ```vue
 <label class="block text-sm font-medium text-gray-700">API Credential</label>
@@ -845,7 +855,7 @@ const form = ref({
 </select>
 ```
 
-- [ ] **Step 5: Re-run settings tests and commit**
+- [x] **Step 5: Re-run settings tests and commit**
 
 Run: `cd frontend && pnpm test settings-view.test.ts`
 
@@ -863,7 +873,7 @@ git commit -m "refactor(frontend): bind scm providers to credentials"
 - Modify: `docs/architecture.md`
 - Modify: `docs/superpowers/specs/2026-04-14-scm-credentials-provider-binding-design.md` (only if implementation changed the contract)
 
-- [ ] **Step 1: Add the credentials module to architecture**
+- [x] **Step 1: Add the credentials module to architecture**
 
 ```md
 | Credentials | `backend/internal/credential` | Generic secret assets, payload validation, masking, migration, and provider credential resolution |
@@ -889,7 +899,7 @@ Expected:
 - backend container starts
 - `git` and `ssh` exist in the runtime image
 
-- [ ] **Step 3: Run backend and frontend test commands**
+- [x] **Step 3: Run backend and frontend test commands**
 
 Run:
 
@@ -917,7 +927,7 @@ Expected:
 - HTTPS private repo no longer fails with `could not read Username`
 - SSH repo no longer fails with `Host key verification failed`
 
-- [ ] **Step 5: Commit the docs and verification updates**
+- [x] **Step 5: Commit the docs and verification updates**
 
 ```bash
 cd /Users/admin/ai-efficiency/.worktrees/scm-credentials-provider-binding

@@ -8,6 +8,12 @@
 
 **Tech Stack:** Go, Gin, Ent, Vue 3, Pinia, Vitest
 
+**Status:** ✅ 已完成（2026-04-15）
+
+**Replay Status:** 历史完成记录。不要直接按本文逐 task 重跑；如需再次执行或扩展，请基于当前 repo identity/bootstrap/unbound UX 代码和最新 spec 重写执行计划。
+
+> **Updated:** 2026-04-15 — 基于 repo/bootstrap/analysis/handler tests、repo-focused frontend tests 与 ae-cli session/client tests 回填 checkbox。
+
 ---
 
 ## File Map
@@ -63,7 +69,7 @@
 - Create: `backend/internal/repo/identity.go`
 - Test: `backend/internal/repo/identity_test.go`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```go
 package repo
@@ -121,12 +127,12 @@ func TestDeriveRepoIdentityNormalizesCommonRemotes(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cd backend && go test ./internal/repo -run 'TestDeriveRepoIdentityNormalizesCommonRemotes' -v`
 Expected: FAIL with `undefined: DeriveRepoIdentity`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```go
 package repo
@@ -198,12 +204,12 @@ func splitRepoPath(p string) []string {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `cd backend && go test ./internal/repo -run 'TestDeriveRepoIdentityNormalizesCommonRemotes' -v`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/internal/repo/identity.go backend/internal/repo/identity_test.go
@@ -222,7 +228,7 @@ git commit -m "feat(backend): add repo identity normalization"
 - Modify: `backend/cmd/server/main.go`
 - Generate: `backend/ent/*`
 
-- [ ] **Step 1: Write the failing bootstrap regression test**
+- [x] **Step 1: Write the failing bootstrap regression test**
 
 ```go
 func TestBootstrapCreatesUnboundRepoWhenMissing(t *testing.T) {
@@ -266,12 +272,12 @@ func TestBootstrapCreatesUnboundRepoWhenMissing(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cd backend && go test ./internal/sessionbootstrap -run 'TestBootstrapCreatesUnboundRepoWhenMissing' -v`
 Expected: FAIL with `bootstrap: repo not found`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```go
 // backend/ent/schema/repoconfig.go
@@ -374,12 +380,12 @@ sessionBootstrapSvc = sessionbootstrap.NewService(
 )
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `cd backend && go test ./internal/repo ./internal/sessionbootstrap ./internal/handler -run 'TestBootstrapCreatesUnboundRepoWhenMissing|TestSessionBootstrapHTTP' -v`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/ent/schema/repoconfig.go backend/ent backend/internal/repo/service.go backend/internal/repo/repo_test.go backend/internal/sessionbootstrap/service.go backend/internal/sessionbootstrap/service_test.go backend/internal/handler/session_bootstrap_http_test.go backend/cmd/server/main.go
@@ -396,7 +402,7 @@ git commit -m "feat(backend): auto-create repos during session bootstrap"
 - Modify: `backend/internal/handler/pr.go`
 - Modify: `backend/internal/handler/handler_mock_test.go`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```go
 func TestRunScan_UnboundRepoReturnsRepoUnbound(t *testing.T) {
@@ -433,14 +439,14 @@ func TestSyncPRs_GetSCMProviderUnboundReturns409(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `cd backend && go test ./internal/analysis ./internal/handler -run 'TestRunScan_UnboundRepoReturnsRepoUnbound|TestSyncPRs_GetSCMProviderUnboundReturns409' -v`
 Expected:
 - `TestRunScan_UnboundRepoReturnsRepoUnbound`: FAIL because `RunScan` tries to clone without a provider
 - `TestSyncPRs_GetSCMProviderUnboundReturns409`: FAIL because handler still returns `500`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```go
 // backend/internal/repo/service.go
@@ -480,12 +486,12 @@ if repo.IsRepoUnbound(err) {
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `cd backend && go test ./internal/repo ./internal/analysis ./internal/handler -run 'UnboundRepo|GetSCMProviderUnboundReturns409' -v`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/internal/repo/service.go backend/internal/analysis/service.go backend/internal/analysis/analysis_service_test.go backend/internal/handler/analysis.go backend/internal/handler/pr.go backend/internal/handler/handler_mock_test.go
@@ -504,7 +510,7 @@ git commit -m "fix(backend): return explicit repo unbound errors"
 - Modify: `frontend/src/__tests__/repo-list-view.test.ts`
 - Modify: `frontend/src/__tests__/repo-detail-view.test.ts`
 
-- [ ] **Step 1: Write the failing frontend tests**
+- [x] **Step 1: Write the failing frontend tests**
 
 ```ts
 it('shows an Unbound badge for repos without scm_provider', async () => {
@@ -542,14 +548,14 @@ it('disables scan and shows binding controls for admin on an unbound repo', asyn
 })
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `cd frontend && pnpm test -- --run src/__tests__/repo-list-view.test.ts src/__tests__/repo-detail-view.test.ts`
 Expected:
 - `shows an Unbound badge...`: FAIL because no badge is rendered
 - `disables scan...`: FAIL because the detail page has no binding panel and scan remains enabled
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```go
 // backend/internal/repo/service.go
@@ -653,12 +659,12 @@ export interface RepoConfig {
 </section>
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `cd frontend && pnpm test -- --run src/__tests__/repo-list-view.test.ts src/__tests__/repo-detail-view.test.ts`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/internal/handler/repo.go backend/internal/repo/service.go frontend/src/types/index.ts frontend/src/api/repo.ts frontend/src/views/repos/RepoListView.vue frontend/src/views/repos/RepoDetailView.vue frontend/src/__tests__/repo-list-view.test.ts frontend/src/__tests__/repo-detail-view.test.ts
@@ -670,7 +676,7 @@ git commit -m "feat(frontend): surface unbound repo binding state"
 **Files:**
 - Modify: `docs/architecture.md`
 
-- [ ] **Step 1: Update the architecture document**
+- [x] **Step 1: Update the architecture document**
 
 ```md
 ### Runtime Boundaries
@@ -680,22 +686,22 @@ git commit -m "feat(frontend): surface unbound repo binding state"
 - SCM-dependent features such as scan, PR sync, optimize, and webhook registration require a bound repo and return `repo_unbound` when invoked before binding.
 ```
 
-- [ ] **Step 2: Run backend verification**
+- [x] **Step 2: Run backend verification**
 
 Run: `cd backend && go test ./internal/repo ./internal/sessionbootstrap ./internal/analysis ./internal/handler`
 Expected: PASS
 
-- [ ] **Step 3: Run frontend verification**
+- [x] **Step 3: Run frontend verification**
 
 Run: `cd frontend && pnpm test -- --run src/__tests__/repo-list-view.test.ts src/__tests__/repo-detail-view.test.ts`
 Expected: PASS
 
-- [ ] **Step 4: Run ae-cli verification**
+- [x] **Step 4: Run ae-cli verification**
 
 Run: `cd ae-cli && go test ./internal/session ./internal/client`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add docs/architecture.md

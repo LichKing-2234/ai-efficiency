@@ -8,15 +8,15 @@
 
 **Tech Stack:** Go (`cobra`, `net/http`, `httputil`, `ent`, `gin`), Vue 3 already unchanged for phase 1, existing `ae-cli` runtime/hook infrastructure, existing backend checkpoint/attribution pipeline, OpenAI-compatible and Anthropic-compatible HTTP payloads.
 
-**Status:** ⚠️ 核心链路已实现（2026-04-12）；proxy-first rollout 仍在进行中
+**Status:** ⚠️ 核心链路与自动化验证已完成（2026-04-15）；proxy-first rollout 与手动 e2e 未重跑
 
 **Replay Status:** 不建议直接按本文逐 task 重跑。若要补齐剩余 rollout 项，请基于当前代码、`docs/architecture.md` 和最新 spec 单独拆新的 follow-up plan。
 
 **Source Of Truth:** 当前已落地的是 Codex/Claude 本地 proxy、session usage / event ingest，以及 attribution 对本地 usage 的优先使用；整体 rollout 状态以 `docs/architecture.md` 为准。
 
-**Known Remaining Gaps:** 更广泛的 tool coverage、统一事件语义和更完整的 proxy-first attribution 仍在推进中；本文 checkbox 未逐项回填以避免误报未验证项。
+**Known Remaining Gaps:** 截至 2026-04-15，相关 backend packages、`ae-cli` proxy/session/toolconfig/hooks packages、frontend `pnpm test` 与 `pnpm build` 已验证通过；但 Task 8 / Step 3 的手动 session-proxy e2e 未在本轮环境重跑，且更广泛的 proxy-first rollout 仍在继续，因此仅保留该手动验收项未勾选。
 
-> **Updated:** 2026-04-12 — 基于代码审查补充当前状态与剩余缺口说明。
+> **Updated:** 2026-04-15 — 基于当前代码、focused backend/ae-cli proxy tests、以及 frontend 全量验证回填 checkbox；手动 e2e 仍待环境内重跑。
 
 ---
 
@@ -131,7 +131,7 @@
 - Test: `backend/internal/sessionevent/service_test.go`
 - Test: `backend/internal/handler/session_usage_test.go`
 
-- [ ] **Step 1: Write the failing backend ingest tests**
+- [x] **Step 1: Write the failing backend ingest tests**
 
 ```go
 func TestSessionUsageIngest_CreatesUsageEvent(t *testing.T) {
@@ -176,7 +176,7 @@ func TestSessionEventIngest_CreatesPromptEvent(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run:
 
@@ -191,7 +191,7 @@ Expected:
 FAIL ... 404/route missing or handler unresolved
 ```
 
-- [ ] **Step 3: Add Ent schemas and generate code**
+- [x] **Step 3: Add Ent schemas and generate code**
 
 ```go
 // backend/ent/schema/session_usage_event.go
@@ -246,7 +246,7 @@ Expected:
 exit 0
 ```
 
-- [ ] **Step 4: Implement minimal services and HTTP handlers**
+- [x] **Step 4: Implement minimal services and HTTP handlers**
 
 ```go
 // backend/internal/sessionusage/service.go
@@ -314,7 +314,7 @@ sessionEventGroup := protected.Group("/session-events")
 sessionEventGroup.POST("", sessionUsageHandler.CreateEvent)
 ```
 
-- [ ] **Step 5: Re-run targeted tests**
+- [x] **Step 5: Re-run targeted tests**
 
 Run:
 
@@ -329,7 +329,7 @@ Expected:
 PASS
 ```
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add backend/ent/schema/session_usage_event.go \
@@ -356,7 +356,7 @@ git commit -m "feat(backend): add session usage and event ingest"
 - Test: `backend/internal/attribution/service_test.go`
 - Test: `backend/internal/handler/session_detail_http_test.go`
 
-- [ ] **Step 1: Write the failing attribution test**
+- [x] **Step 1: Write the failing attribution test**
 
 ```go
 func TestSettlePR_PrefersSessionUsageEventsOverRelayLedger(t *testing.T) {
@@ -367,7 +367,7 @@ func TestSettlePR_PrefersSessionUsageEventsOverRelayLedger(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the attribution test and verify it fails**
+- [x] **Step 2: Run the attribution test and verify it fails**
 
 Run:
 
@@ -382,7 +382,7 @@ Expected:
 FAIL with relay-ledger path still used or token count mismatch
 ```
 
-- [ ] **Step 3: Implement local-usage-first interval loading**
+- [x] **Step 3: Implement local-usage-first interval loading**
 
 ```go
 func (s *Service) loadIntervalUsage(ctx context.Context, sessionID uuid.UUID, from, to time.Time, fallbackAPIKeyID int64) (int64, float64, map[string]any, error) {
@@ -411,7 +411,7 @@ func (s *Service) loadIntervalUsage(ctx context.Context, sessionID uuid.UUID, fr
 }
 ```
 
-- [ ] **Step 4: Add session detail edges for usage/events**
+- [x] **Step 4: Add session detail edges for usage/events**
 
 ```go
 // backend/internal/handler/session.go
@@ -429,7 +429,7 @@ edges["session_usage_events"] = usageEvents
 edges["session_events"] = sessionEvents
 ```
 
-- [ ] **Step 5: Re-run targeted tests**
+- [x] **Step 5: Re-run targeted tests**
 
 Run:
 
@@ -444,7 +444,7 @@ Expected:
 PASS
 ```
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add backend/internal/attribution/service.go \
@@ -469,7 +469,7 @@ git commit -m "feat(backend): prefer local session usage during attribution"
 - Test: `ae-cli/internal/proxy/server_test.go`
 - Test: `ae-cli/internal/session/session_test.go`
 
-- [ ] **Step 1: Write the failing proxy lifecycle test**
+- [x] **Step 1: Write the failing proxy lifecycle test**
 
 ```go
 func TestManagerStartLaunchesLocalProxyAndStoresRuntimeMetadata(t *testing.T) {
@@ -487,7 +487,7 @@ func TestManagerStartLaunchesLocalProxyAndStoresRuntimeMetadata(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the lifecycle test and verify it fails**
+- [x] **Step 2: Run the lifecycle test and verify it fails**
 
 Run:
 
@@ -502,7 +502,7 @@ Expected:
 FAIL because runtime bundle has no proxy metadata and no process is started
 ```
 
-- [ ] **Step 3: Add runtime bundle fields and proxy child-process launcher**
+- [x] **Step 3: Add runtime bundle fields and proxy child-process launcher**
 
 ```go
 // ae-cli/internal/proxy/config.go
@@ -547,7 +547,7 @@ func (m *Manager) startLocalProxy(rt *RuntimeBundle, provider providerConfig) er
 }
 ```
 
-- [ ] **Step 4: Verify start/stop behavior**
+- [x] **Step 4: Verify start/stop behavior**
 
 Run:
 
@@ -562,7 +562,7 @@ Expected:
 PASS
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add ae-cli/internal/proxy/config.go \
@@ -585,7 +585,7 @@ git commit -m "feat(ae-cli): add session-bound local proxy runtime"
 - Modify: `ae-cli/internal/proxy/server_test.go`
 - Test: `ae-cli/internal/proxy/server_test.go`
 
-- [ ] **Step 1: Write the failing Codex proxy test**
+- [x] **Step 1: Write the failing Codex proxy test**
 
 ```go
 func TestProxyOpenAIResponses_ForwardsRequestAndRecordsUsage(t *testing.T) {
@@ -607,7 +607,7 @@ func TestProxyOpenAIResponses_ForwardsRequestAndRecordsUsage(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run:
 
@@ -622,7 +622,7 @@ Expected:
 FAIL because /openai/v1/chat/completions is unhandled
 ```
 
-- [ ] **Step 3: Implement OpenAI-compatible forwarding and usage extraction**
+- [x] **Step 3: Implement OpenAI-compatible forwarding and usage extraction**
 
 ```go
 func (s *Server) handleOpenAIChatCompletions(w http.ResponseWriter, r *http.Request) {
@@ -662,7 +662,7 @@ func (s *Server) handleOpenAIChatCompletions(w http.ResponseWriter, r *http.Requ
 }
 ```
 
-- [ ] **Step 4: Re-run the OpenAI proxy test**
+- [x] **Step 4: Re-run the OpenAI proxy test**
 
 Run:
 
@@ -677,7 +677,7 @@ Expected:
 PASS
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add ae-cli/internal/proxy/openai.go \
@@ -694,7 +694,7 @@ git commit -m "feat(ae-cli): proxy codex requests through local openai endpoint"
 - Modify: `ae-cli/internal/proxy/server_test.go`
 - Test: `ae-cli/internal/proxy/server_test.go`
 
-- [ ] **Step 1: Write the failing Claude proxy test**
+- [x] **Step 1: Write the failing Claude proxy test**
 
 ```go
 func TestProxyAnthropicMessages_ForwardsRequestAndRecordsUsage(t *testing.T) {
@@ -713,7 +713,7 @@ func TestProxyAnthropicMessages_ForwardsRequestAndRecordsUsage(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run:
 
@@ -728,7 +728,7 @@ Expected:
 FAIL because /anthropic/v1/messages is unhandled
 ```
 
-- [ ] **Step 3: Implement Anthropic-compatible forwarding**
+- [x] **Step 3: Implement Anthropic-compatible forwarding**
 
 ```go
 func (s *Server) handleAnthropicMessages(w http.ResponseWriter, r *http.Request) {
@@ -769,7 +769,7 @@ func (s *Server) handleAnthropicMessages(w http.ResponseWriter, r *http.Request)
 }
 ```
 
-- [ ] **Step 4: Re-run the Anthropic proxy test**
+- [x] **Step 4: Re-run the Anthropic proxy test**
 
 Run:
 
@@ -784,7 +784,7 @@ Expected:
 PASS
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add ae-cli/internal/proxy/anthropic.go \
@@ -804,7 +804,7 @@ git commit -m "feat(ae-cli): proxy claude requests through local anthropic endpo
 - Test: `ae-cli/internal/hooks/handler_test.go`
 - Test: `ae-cli/internal/client/client_test.go`
 
-- [ ] **Step 1: Write the failing hook-to-proxy test**
+- [x] **Step 1: Write the failing hook-to-proxy test**
 
 ```go
 func TestPostCommitSendsEventToLocalProxyBeforeQueueFallback(t *testing.T) {
@@ -824,7 +824,7 @@ func TestPostCommitSendsEventToLocalProxyBeforeQueueFallback(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the hook test to verify it fails**
+- [x] **Step 2: Run the hook test to verify it fails**
 
 Run:
 
@@ -839,7 +839,7 @@ Expected:
 FAIL because hooks still only enqueue/backend-upload directly
 ```
 
-- [ ] **Step 3: Add event ingress client and proxy-first hook path**
+- [x] **Step 3: Add event ingress client and proxy-first hook path**
 
 ```go
 // ae-cli/internal/client/client.go
@@ -879,7 +879,7 @@ if rt, err := session.ReadRuntimeBundle(sessionID); err == nil && rt.Proxy != ni
 }
 ```
 
-- [ ] **Step 4: Re-run hook and client tests**
+- [x] **Step 4: Re-run hook and client tests**
 
 Run:
 
@@ -894,7 +894,7 @@ Expected:
 PASS
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add ae-cli/internal/proxy/events.go \
@@ -916,7 +916,7 @@ git commit -m "feat(ae-cli): send local hook events through session proxy"
 - Test: `ae-cli/internal/toolconfig/toolconfig_test.go`
 - Test: `ae-cli/internal/session/session_test.go`
 
-- [ ] **Step 1: Write the failing tool configuration tests**
+- [x] **Step 1: Write the failing tool configuration tests**
 
 ```go
 func TestWriteCodexSessionConfig(t *testing.T) {
@@ -947,7 +947,7 @@ func TestWriteClaudeSessionEnv(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run:
 
@@ -962,7 +962,7 @@ Expected:
 FAIL because toolconfig package does not exist yet
 ```
 
-- [ ] **Step 3: Implement session-local Codex/Claude config generation**
+- [x] **Step 3: Implement session-local Codex/Claude config generation**
 
 ```go
 // ae-cli/internal/toolconfig/codex.go
@@ -995,7 +995,7 @@ func BuildClaudeEnv(cfg ClaudeEnv) map[string]string {
 }
 ```
 
-- [ ] **Step 4: Wire tool config generation into start/shell**
+- [x] **Step 4: Wire tool config generation into start/shell**
 
 ```go
 // ae-cli/internal/session/manager.go
@@ -1011,7 +1011,7 @@ rt.EnvBundle["ANTHROPIC_BASE_URL"] = "http://" + rt.Proxy.ListenAddr + "/anthrop
 rt.EnvBundle["ANTHROPIC_AUTH_TOKEN"] = rt.Proxy.AuthToken
 ```
 
-- [ ] **Step 5: Re-run tool config and session tests**
+- [x] **Step 5: Re-run tool config and session tests**
 
 Run:
 
@@ -1026,7 +1026,7 @@ Expected:
 PASS
 ```
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add ae-cli/internal/toolconfig/codex.go \
@@ -1044,7 +1044,7 @@ git commit -m "feat(ae-cli): auto-configure codex and claude for local proxy"
 - Modify: `docs/superpowers/specs/2026-04-02-local-session-proxy-design.md` (only if implementation reveals required deltas)
 - Test: manual verification commands only
 
-- [ ] **Step 1: Write the end-to-end verification checklist**
+- [x] **Step 1: Write the end-to-end verification checklist**
 
 ```md
 1. Start backend on a clean local SQLite DB
@@ -1058,7 +1058,7 @@ git commit -m "feat(ae-cli): auto-configure codex and claude for local proxy"
 9. Stop session and confirm proxy exits
 ```
 
-- [ ] **Step 2: Run automated verification**
+- [x] **Step 2: Run automated verification**
 
 Run:
 
@@ -1102,7 +1102,7 @@ Expected:
 - no upstream provider key appears in Codex/Claude user-facing config
 ```
 
-- [ ] **Step 4: Update operator docs**
+- [x] **Step 4: Update operator docs**
 
 ```md
 ## Local Session Proxy
@@ -1114,7 +1114,7 @@ Expected:
 - Use `ae-cli stop` to flush events and tear down the proxy.
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add docs/ae-cli/session-pr-attribution.md \

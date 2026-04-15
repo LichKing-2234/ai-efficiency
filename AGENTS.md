@@ -116,6 +116,16 @@ ai-efficiency/
 - 不要把所有旧 spec 都机械同步到最新实现；要保留架构和设计的演进脉络。
 - 一旦某份 spec 成为历史设计记录，后续演进应优先写入新的 spec，并由新的 spec 解释它与历史 spec 的关系；不要反向修改历史 spec 来追最新实现。
 
+### Plan Tracking
+
+当仓库中已经存在 `docs/superpowers/plans/*.md` 且当前工作与该 plan 对应时，执行 agent 必须把 plan 当作**活的执行台账**维护，而不是只在最后补文档。
+
+- 每完成一个 step，必须在同一轮工作中及时更新对应 checkbox；不要等到整份 plan 做完后再一次性回填。
+- 只有在**本轮实际完成**对应动作后才能勾选该 step。尤其是测试、build、手动验收、环境验证类 step，没有实际跑过就必须保持未勾选。
+- 如果代码主体已完成，但仍有手动验收、环境敏感验证、外部依赖验证未跑，必须在 plan 顶部明确写出当前状态与剩余未勾选项；不要让顶部 `Status` 与下方 checkbox 相互矛盾。
+- 若某份 plan 已被替代、暂停、或只作为历史记录保留，必须在顶部显式标注 `Status` / `Replay Status`，避免执行者误以为 checkbox 只是忘了更新。
+- plan 的状态说明语言必须与文档主体的主语言保持一致。英文 plan 的 `Status`、`Replay Status`、`Known Remaining Gaps` 等说明也应使用英文；中文 plan 则使用中文。除非有明确理由，不要在同一份 plan 中混用中英文状态说明。
+
 ## Testing
 
 - 后端单元测试：`cd backend && go test ./...`

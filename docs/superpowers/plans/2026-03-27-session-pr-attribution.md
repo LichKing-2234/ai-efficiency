@@ -12,15 +12,15 @@
 
 **Execution Note:** This stays one plan because bootstrap, checkpoints, and settlement all depend on the same identity/session schema. The tasks still land in independently testable slices so the chain can be verified incrementally.
 
-**Status:** ⚠️ 实现与自动化验证已完成（2026-04-12）；环境敏感手动验收未重跑
+**Status:** ⚠️ 实现与自动化验证已完成（2026-04-15）；环境敏感手动验收未重跑
 
 **Replay Status:** 不建议直接按本文逐 task 重跑。若要补齐剩余项，请基于当前代码和最新 spec 单独拆新的 follow-up plan。
 
 **Source Of Truth:** 已实现的 bootstrap / checkpoint / attribution / session audit 以当前代码、`docs/architecture.md` 和 `2026-03-26-session-pr-attribution-design.md` 为准。
 
-**Known Remaining Gaps:** 本轮已补齐 `docs/ae-cli/session-pr-attribution.md` 和 Sessions 列表页的 provider/key/last-seen 摘要；但本文中的环境敏感手动验收 checklist 尚未在本轮重跑，因此 checkbox 仍未逐项回填。
+**Known Remaining Gaps:** 截至 2026-04-15，backend `go test ./...`、`ae-cli go test ./...`、frontend `pnpm test` 与 `pnpm build` 已重新验证通过；环境敏感的手动验收 checklist 仍未重跑，因此仅保留 Task 10 / Step 5 未勾选。
 
-> **Updated:** 2026-04-12 — 基于代码修改、前端全量测试/构建、以及 backend + ae-cli 全量测试刷新当前状态说明。
+> **Updated:** 2026-04-15 — 基于当前代码、backend + ae-cli 全量测试、以及 frontend 全量测试/构建回填 checkbox；手动验收仍待环境内重跑。
 
 ---
 
@@ -119,7 +119,7 @@
 - Modify: `backend/internal/auth/auth.go`
 - Modify: `backend/internal/auth/ldap.go`
 
-- [ ] **Step 1: Write failing relay identity and usage-log tests**
+- [x] **Step 1: Write failing relay identity and usage-log tests**
 
 Create `backend/internal/auth/relay_identity_test.go` with:
 
@@ -296,13 +296,13 @@ func TestListUsageLogsByAPIKeyExact(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the new auth/relay tests to verify the gap**
+- [x] **Step 2: Run the new auth/relay tests to verify the gap**
 
 Run: `cd backend && go test ./internal/auth/... ./internal/relay/... -run 'TestResolveOrProvisionRelayUser|TestCreateUserAPIKeyWithExpiryAndGroup|TestListUsageLogsByAPIKeyExact' -v`
 
 Expected: FAIL because `relay.Provider` does not yet expose `FindUserByUsername`, `CreateUser`, `RevokeUserAPIKey`, or `ListUsageLogsByAPIKeyExact`, and `NewRelayIdentityResolver` does not exist.
 
-- [ ] **Step 3: Expand relay types and the sub2api implementation**
+- [x] **Step 3: Expand relay types and the sub2api implementation**
 
 Update `backend/internal/relay/provider.go` and `backend/internal/relay/types.go` to:
 
@@ -452,7 +452,7 @@ func (s *sub2apiRelay) ListUsageLogsByAPIKeyExact(ctx context.Context, apiKeyID 
 }
 ```
 
-- [ ] **Step 4: Add username-first relay identity resolution and wire auth to use it**
+- [x] **Step 4: Add username-first relay identity resolution and wire auth to use it**
 
 Create `backend/internal/auth/relay_identity.go` with:
 
@@ -569,13 +569,13 @@ return &UserInfo{
 }, nil
 ```
 
-- [ ] **Step 5: Run the auth/relay tests again**
+- [x] **Step 5: Run the auth/relay tests again**
 
 Run: `cd backend && go test ./internal/auth/... ./internal/relay/... -run 'TestResolveOrProvisionRelayUser|TestCreateUserAPIKeyWithExpiryAndGroup|TestListUsageLogsByAPIKeyExact' -v`
 
 Expected: PASS for the new resolver and relay-provider methods.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add backend/internal/relay/provider.go backend/internal/relay/types.go backend/internal/relay/sub2api.go backend/internal/relay/sub2api_test.go backend/internal/auth/relay_identity.go backend/internal/auth/relay_identity_test.go backend/internal/auth/auth.go backend/internal/auth/ldap.go
@@ -597,7 +597,7 @@ git commit -m "feat(backend): add relay identity and exact usage log APIs"
 - Create: `backend/internal/attribution/schema_test.go`
 - Modify: `backend/internal/repo/service.go`
 
-- [ ] **Step 1: Write a failing Ent schema smoke test**
+- [x] **Step 1: Write a failing Ent schema smoke test**
 
 Create `backend/internal/attribution/schema_test.go` with:
 
@@ -700,13 +700,13 @@ func TestAttributionSchemasCreateAndQuery(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the schema smoke test to confirm the model is incomplete**
+- [x] **Step 2: Run the schema smoke test to confirm the model is incomplete**
 
 Run: `cd backend && go test ./internal/attribution -run TestAttributionSchemasCreateAndQuery -v`
 
 Expected: FAIL because the repo/session/PR fields and the new Ent schemas do not exist yet.
 
-- [ ] **Step 3: Add repo/session/PR fields and the new attribution schemas**
+- [x] **Step 3: Add repo/session/PR fields and the new attribution schemas**
 
 Update `backend/internal/config/config.go` so relay config exposes a default group fallback:
 
@@ -884,7 +884,7 @@ type UpdateRequest struct {
 }
 ```
 
-- [ ] **Step 4: Regenerate Ent code and rerun the schema smoke test**
+- [x] **Step 4: Regenerate Ent code and rerun the schema smoke test**
 
 Run:
 
@@ -896,7 +896,7 @@ go test ./internal/attribution -run TestAttributionSchemasCreateAndQuery -v
 
 Expected: the Ent generation completes cleanly and the schema smoke test PASSes.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/internal/config/config.go backend/ent/schema/repoconfig.go backend/ent/schema/session.go backend/ent/schema/prrecord.go backend/ent/schema/session_workspace.go backend/ent/schema/agent_metadata_event.go backend/ent/schema/commit_checkpoint.go backend/ent/schema/commit_rewrite.go backend/ent/schema/pr_attribution_run.go backend/internal/attribution/schema_test.go backend/internal/repo/service.go backend/ent
@@ -912,7 +912,7 @@ git commit -m "feat(backend): add attribution schemas and repo relay bindings"
 - Modify: `backend/internal/handler/router.go`
 - Modify: `backend/cmd/server/main.go`
 
-- [ ] **Step 1: Write failing bootstrap lifecycle tests**
+- [x] **Step 1: Write failing bootstrap lifecycle tests**
 
 Create `backend/internal/sessionbootstrap/service_test.go` with:
 
@@ -1105,13 +1105,13 @@ func TestStopRevokesRelayKey(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the bootstrap tests to capture the missing service/API**
+- [x] **Step 2: Run the bootstrap tests to capture the missing service/API**
 
 Run: `cd backend && go test ./internal/sessionbootstrap -run 'TestBootstrapCreatesSessionKeyAndEnvBundle|TestStopRevokesRelayKey' -v`
 
 Expected: FAIL because `NewService`, `BootstrapRequest`, and the lifecycle methods do not exist yet.
 
-- [ ] **Step 3: Implement bootstrap orchestration and the new handler contract**
+- [x] **Step 3: Implement bootstrap orchestration and the new handler contract**
 
 Create `backend/internal/sessionbootstrap/service.go` with:
 
@@ -1331,7 +1331,7 @@ func (h *SessionHandler) Bootstrap(c *gin.Context) {
 }
 ```
 
-- [ ] **Step 4: Wire heartbeat/stop/main/router through the new service**
+- [x] **Step 4: Wire heartbeat/stop/main/router through the new service**
 
 Update the remaining integration points:
 
@@ -1375,13 +1375,13 @@ bootstrapService := sessionbootstrap.NewService(entClient, relayProvider, relayI
 sessionHandler := NewSessionHandler(entClient, bootstrapService)
 ```
 
-- [ ] **Step 5: Run the bootstrap tests again**
+- [x] **Step 5: Run the bootstrap tests again**
 
 Run: `cd backend && go test ./internal/sessionbootstrap ./internal/handler -run 'TestBootstrapCreatesSessionKeyAndEnvBundle|TestStopRevokesRelayKey' -v`
 
 Expected: PASS for the lifecycle service and handler wiring.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add backend/internal/sessionbootstrap/service.go backend/internal/sessionbootstrap/service_test.go backend/internal/handler/session.go backend/internal/handler/router.go backend/cmd/server/main.go
@@ -1405,7 +1405,7 @@ git commit -m "feat(backend): add session bootstrap lifecycle"
 - Modify: `ae-cli/cmd/run.go`
 - Modify: `ae-cli/internal/dispatcher/dispatcher.go`
 
-- [ ] **Step 1: Write failing ae-cli bootstrap and workspace-state tests**
+- [x] **Step 1: Write failing ae-cli bootstrap and workspace-state tests**
 
 Create `ae-cli/internal/session/workspace_test.go` with:
 
@@ -1554,13 +1554,13 @@ func TestBootstrapSession(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the ae-cli workspace/client tests to confirm the current state model is insufficient**
+- [x] **Step 2: Run the ae-cli workspace/client tests to confirm the current state model is insufficient**
 
 Run: `cd ae-cli && go test ./internal/client ./internal/session -run 'TestBootstrapSession|TestDeriveWorkspaceIDUsesCanonicalGitContext|TestCurrentPrefersWorkspaceMarkerOverLegacyState|TestWriteRuntimeBundleUsesRestrictedPermissions' -v`
 
 Expected: FAIL because the bootstrap client request/response types, runtime helpers, and workspace marker logic do not exist.
 
-- [ ] **Step 3: Add workspace derivation, marker I/O, runtime bundle helpers, and the bootstrap client**
+- [x] **Step 3: Add workspace derivation, marker I/O, runtime bundle helpers, and the bootstrap client**
 
 Create `ae-cli/internal/session/workspace.go` with:
 
@@ -1789,7 +1789,7 @@ func (c *Client) BootstrapSession(ctx context.Context, req BootstrapSessionReque
 }
 ```
 
-- [ ] **Step 4: Move ae-cli session lifecycle onto bootstrap + marker/runtime state**
+- [x] **Step 4: Move ae-cli session lifecycle onto bootstrap + marker/runtime state**
 
 Update `ae-cli/internal/session/manager.go`, `ae-cli/cmd/start.go`, `ae-cli/cmd/stop.go`, `ae-cli/cmd/shell.go`, `ae-cli/cmd/run.go`, and `ae-cli/internal/dispatcher/dispatcher.go` so start/stop/read flows use the new state model:
 
@@ -1929,13 +1929,13 @@ if err != nil {
 cmd.Env = append(os.Environ(), envPairs(bundle.Env)...)
 ```
 
-- [ ] **Step 5: Run the ae-cli lifecycle tests again**
+- [x] **Step 5: Run the ae-cli lifecycle tests again**
 
 Run: `cd ae-cli && go test ./internal/client ./internal/session ./internal/dispatcher -run 'TestBootstrapSession|TestDeriveWorkspaceIDUsesCanonicalGitContext|TestCurrentPrefersWorkspaceMarkerOverLegacyState|TestWriteRuntimeBundleUsesRestrictedPermissions' -v`
 
 Expected: PASS for the bootstrap client, workspace derivation, and runtime bundle behavior.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add ae-cli/internal/client/client.go ae-cli/internal/client/client_test.go ae-cli/internal/session/workspace.go ae-cli/internal/session/workspace_test.go ae-cli/internal/session/runtime.go ae-cli/internal/session/runtime_test.go ae-cli/internal/session/manager.go ae-cli/internal/session/session_test.go ae-cli/cmd/start.go ae-cli/cmd/stop.go ae-cli/cmd/shell.go ae-cli/cmd/run.go ae-cli/internal/dispatcher/dispatcher.go
@@ -1955,7 +1955,7 @@ git commit -m "feat(ae-cli): bootstrap sessions into workspace markers and runti
 - Create: `ae-cli/cmd/flush.go`
 - Modify: `ae-cli/cmd/start.go`
 
-- [ ] **Step 1: Write failing hook-install and fail-open queue tests**
+- [x] **Step 1: Write failing hook-install and fail-open queue tests**
 
 Create `ae-cli/internal/hooks/install_test.go` with:
 
@@ -2087,13 +2087,13 @@ func TestFlushReplaysQueuedEvents(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the hook tests to verify the shared-hook path does not exist yet**
+- [x] **Step 2: Run the hook tests to verify the shared-hook path does not exist yet**
 
 Run: `cd ae-cli && go test ./internal/hooks -run 'TestInstallSharedHooks|TestPostCommit|TestFlush' -v`
 
 Expected: FAIL because the hooks package, queue logic, and hidden CLI commands do not exist.
 
-- [ ] **Step 3: Implement shared hook installation with safe legacy chaining**
+- [x] **Step 3: Implement shared hook installation with safe legacy chaining**
 
 Create `ae-cli/internal/hooks/install.go` with:
 
@@ -2194,7 +2194,7 @@ func Flush(ctx context.Context, queueDir string, sender Sender) error {
 }
 ```
 
-- [ ] **Step 4: Implement hook handlers and hidden `hook` / `flush` commands**
+- [x] **Step 4: Implement hook handlers and hidden `hook` / `flush` commands**
 
 Create `ae-cli/internal/hooks/handler.go` and `ae-cli/cmd/hook.go` / `ae-cli/cmd/flush.go` with:
 
@@ -2331,13 +2331,13 @@ if err := hooks.Install(gitCtx.GitCommonDir, selfPath, "", filepath.Join(gitCtx.
 }
 ```
 
-- [ ] **Step 5: Run the hook tests again**
+- [x] **Step 5: Run the hook tests again**
 
 Run: `cd ae-cli && go test ./internal/hooks -run 'TestInstallSharedHooks|TestPostCommit|TestFlush' -v`
 
 Expected: PASS, including the fail-open queue behavior.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add ae-cli/internal/hooks/install.go ae-cli/internal/hooks/install_test.go ae-cli/internal/hooks/handler.go ae-cli/internal/hooks/handler_test.go ae-cli/internal/hooks/queue.go ae-cli/internal/hooks/queue_test.go ae-cli/cmd/hook.go ae-cli/cmd/flush.go ae-cli/cmd/start.go
@@ -2358,7 +2358,7 @@ git commit -m "feat(ae-cli): add shared hook capture and retry queue"
 - Create: `ae-cli/internal/collector/testdata/kiro-session.json`
 - Modify: `ae-cli/internal/hooks/handler.go`
 
-- [ ] **Step 1: Add real-shape collector fixtures and failing parser tests**
+- [x] **Step 1: Add real-shape collector fixtures and failing parser tests**
 
 Create the fixture files with these contents:
 
@@ -2417,13 +2417,13 @@ func TestBuildSnapshotAggregatesCodexClaudeAndKiro(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the collector test to confirm the parsers do not exist yet**
+- [x] **Step 2: Run the collector test to confirm the parsers do not exist yet**
 
 Run: `cd ae-cli && go test ./internal/collector -run TestBuildSnapshotAggregatesCodexClaudeAndKiro -v`
 
 Expected: FAIL because the collector package and snapshot types do not exist.
 
-- [ ] **Step 3: Implement the three tool readers and the shared snapshot type**
+- [x] **Step 3: Implement the three tool readers and the shared snapshot type**
 
 Create `ae-cli/internal/collector/types.go` with:
 
@@ -2560,7 +2560,7 @@ func readKiroSnapshot(path, workspaceRoot string) (*KiroSnapshot, error) {
 }
 ```
 
-- [ ] **Step 4: Integrate snapshot building into hook capture and runtime cache**
+- [x] **Step 4: Integrate snapshot building into hook capture and runtime cache**
 
 Create `ae-cli/internal/collector/collector.go` and update `ae-cli/internal/hooks/handler.go`:
 
@@ -2605,13 +2605,13 @@ if err == nil && state.SessionID != "" {
 }
 ```
 
-- [ ] **Step 5: Run the collector tests again**
+- [x] **Step 5: Run the collector tests again**
 
 Run: `cd ae-cli && go test ./internal/collector -run TestBuildSnapshotAggregatesCodexClaudeAndKiro -v`
 
 Expected: PASS for the three snapshot readers and the aggregate snapshot builder.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add ae-cli/internal/collector/types.go ae-cli/internal/collector/collector.go ae-cli/internal/collector/codex.go ae-cli/internal/collector/claude.go ae-cli/internal/collector/kiro.go ae-cli/internal/collector/collector_test.go ae-cli/internal/collector/testdata/codex-session.jsonl ae-cli/internal/collector/testdata/claude-session.jsonl ae-cli/internal/collector/testdata/kiro-session.json ae-cli/internal/hooks/handler.go
@@ -2629,7 +2629,7 @@ git commit -m "feat(ae-cli): collect codex claude and kiro snapshots"
 - Modify: `backend/internal/handler/session.go`
 - Modify: `backend/cmd/server/main.go`
 
-- [ ] **Step 1: Write failing checkpoint ingestion tests**
+- [x] **Step 1: Write failing checkpoint ingestion tests**
 
 Create `backend/internal/checkpoint/service_test.go` with:
 
@@ -2705,13 +2705,13 @@ func TestRecordRewriteAcceptsUnboundEvents(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the checkpoint ingestion tests to confirm the service is missing**
+- [x] **Step 2: Run the checkpoint ingestion tests to confirm the service is missing**
 
 Run: `cd backend && go test ./internal/checkpoint -run 'TestRecordCheckpointUpsertsByEventIDAndWritesMetadataEvents|TestRecordRewriteAcceptsUnboundEvents' -v`
 
 Expected: FAIL because the checkpoint service and request types do not exist.
 
-- [ ] **Step 3: Implement idempotent checkpoint/rewrite persistence**
+- [x] **Step 3: Implement idempotent checkpoint/rewrite persistence**
 
 Create `backend/internal/checkpoint/service.go` with:
 
@@ -2823,7 +2823,7 @@ func (s *Service) RecordRewrite(ctx context.Context, req CommitRewriteRequest) e
 }
 ```
 
-- [ ] **Step 4: Expose checkpoint endpoints and wire them into the server**
+- [x] **Step 4: Expose checkpoint endpoints and wire them into the server**
 
 Create `backend/internal/handler/checkpoint.go` and register routes:
 
@@ -2864,13 +2864,13 @@ checkpointService := checkpoint.NewService(entClient)
 checkpointHandler := handler.NewCheckpointHandler(checkpointService)
 ```
 
-- [ ] **Step 5: Run the checkpoint tests again**
+- [x] **Step 5: Run the checkpoint tests again**
 
 Run: `cd backend && go test ./internal/checkpoint ./internal/handler -run 'TestRecordCheckpointUpsertsByEventIDAndWritesMetadataEvents|TestRecordRewriteAcceptsUnboundEvents' -v`
 
 Expected: PASS for service idempotency and endpoint plumbing.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add backend/internal/checkpoint/service.go backend/internal/checkpoint/service_test.go backend/internal/handler/checkpoint.go backend/internal/handler/checkpoint_test.go backend/internal/handler/router.go backend/internal/handler/session.go backend/cmd/server/main.go
@@ -2893,7 +2893,7 @@ git commit -m "feat(backend): ingest checkpoint and rewrite events"
 - Modify: `backend/internal/handler/router.go`
 - Modify: `backend/cmd/server/main.go`
 
-- [ ] **Step 1: Write failing SCM and attribution tests**
+- [x] **Step 1: Write failing SCM and attribution tests**
 
 Create `backend/internal/attribution/service_test.go` with:
 
@@ -2929,13 +2929,13 @@ func TestListPRCommits(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the attribution and SCM tests to verify settlement is still missing**
+- [x] **Step 2: Run the attribution and SCM tests to verify settlement is still missing**
 
 Run: `cd backend && go test ./internal/scm/... ./internal/attribution -run 'TestListPRCommits|TestSettlePR_' -v`
 
 Expected: FAIL because `SCMProvider` does not expose `ListPRCommits` and the attribution service does not exist.
 
-- [ ] **Step 3: Add PR commit enumeration to the SCM providers**
+- [x] **Step 3: Add PR commit enumeration to the SCM providers**
 
 Update `backend/internal/scm/provider.go`, `backend/internal/scm/github/github.go`, and `backend/internal/scm/bitbucket/bitbucket.go`:
 
@@ -2997,7 +2997,7 @@ func (p *Provider) ListPRCommits(ctx context.Context, repoFullName string, prID 
 }
 ```
 
-- [ ] **Step 4: Implement the manual settlement algorithm and `POST /prs/:id/settle`**
+- [x] **Step 4: Implement the manual settlement algorithm and `POST /prs/:id/settle`**
 
 Create `backend/internal/attribution/service.go` with:
 
@@ -3251,13 +3251,13 @@ func (h *PRHandler) Settle(c *gin.Context) {
 prGroup.POST("/:id/settle", prHandler.Settle)
 ```
 
-- [ ] **Step 5: Run the settlement tests again**
+- [x] **Step 5: Run the settlement tests again**
 
 Run: `cd backend && go test ./internal/scm/... ./internal/attribution ./internal/handler -run 'TestListPRCommits|TestSettlePR_|TestPRHandlerSettle' -v`
 
 Expected: PASS for GitHub/Bitbucket commit enumeration, the interval algorithm, and the settle endpoint.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add backend/internal/scm/provider.go backend/internal/scm/github/github.go backend/internal/scm/github/github_test.go backend/internal/scm/bitbucket/bitbucket.go backend/internal/scm/bitbucket/bitbucket_test.go backend/internal/attribution/service.go backend/internal/attribution/service_test.go backend/internal/handler/interfaces.go backend/internal/handler/pr.go backend/internal/handler/pr_attribution_test.go backend/internal/handler/router.go backend/cmd/server/main.go
@@ -3278,7 +3278,7 @@ git commit -m "feat(backend): add manual PR attribution settlement"
 - Create: `frontend/src/__tests__/repo-detail-view.test.ts`
 - Create: `frontend/src/__tests__/session-detail-view.test.ts`
 
-- [ ] **Step 1: Write failing frontend API and view tests**
+- [x] **Step 1: Write failing frontend API and view tests**
 
 Append this test to `frontend/src/__tests__/api-modules.test.ts`:
 
@@ -3366,13 +3366,13 @@ it('renders workspace and checkpoint details for one session', async () => {
 })
 ```
 
-- [ ] **Step 2: Run the frontend tests to confirm the new UI/API surface is still absent**
+- [x] **Step 2: Run the frontend tests to confirm the new UI/API surface is still absent**
 
 Run: `cd frontend && pnpm test -- --run api-modules repo-detail-view session-detail-view`
 
 Expected: FAIL because `settlePR`, `SessionDetailView`, and the new attribution/session fields are not implemented.
 
-- [ ] **Step 3: Extend the frontend types and API clients**
+- [x] **Step 3: Extend the frontend types and API clients**
 
 Update `frontend/src/types/index.ts` and `frontend/src/api/pr.ts`:
 
@@ -3427,7 +3427,7 @@ export function settlePR(prId: number) {
 }
 ```
 
-- [ ] **Step 4: Render attribution summaries and a real session detail page**
+- [x] **Step 4: Render attribution summaries and a real session detail page**
 
 Update `frontend/src/views/repos/RepoDetailView.vue`, `frontend/src/views/sessions/SessionListView.vue`, `frontend/src/views/sessions/SessionDetailView.vue`, and `frontend/src/router/index.ts`:
 
@@ -3516,7 +3516,7 @@ onMounted(async () => {
 }
 ```
 
-- [ ] **Step 5: Run the frontend tests and build again**
+- [x] **Step 5: Run the frontend tests and build again**
 
 Run:
 
@@ -3528,7 +3528,7 @@ pnpm build
 
 Expected: tests PASS and `vite build` completes without type errors.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add frontend/src/types/index.ts frontend/src/api/session.ts frontend/src/api/pr.ts frontend/src/views/repos/RepoDetailView.vue frontend/src/views/sessions/SessionListView.vue frontend/src/views/sessions/SessionDetailView.vue frontend/src/router/index.ts frontend/src/__tests__/api-modules.test.ts frontend/src/__tests__/repo-detail-view.test.ts frontend/src/__tests__/session-detail-view.test.ts
@@ -3540,7 +3540,7 @@ git commit -m "feat(frontend): surface session audits and pr attribution"
 **Files:**
 - Create: `docs/ae-cli/session-pr-attribution.md`
 
-- [ ] **Step 1: Write the operator-facing lifecycle guide**
+- [x] **Step 1: Write the operator-facing lifecycle guide**
 
 Create `docs/ae-cli/session-pr-attribution.md` with:
 
@@ -3569,19 +3569,19 @@ Create `docs/ae-cli/session-pr-attribution.md` with:
 - Queued events: inspect `queue/` and replay with `ae-cli flush`
 ```
 
-- [ ] **Step 2: Run the backend full test suite**
+- [x] **Step 2: Run the backend full test suite**
 
 Run: `cd backend && go test ./...`
 
 Expected: PASS. If a specific package is flaky or environment-sensitive, capture the exact failure and fix it before proceeding.
 
-- [ ] **Step 3: Run the ae-cli full test suite**
+- [x] **Step 3: Run the ae-cli full test suite**
 
 Run: `cd ae-cli && go test ./...`
 
 Expected: PASS, including the new workspace/runtime/hooks/collector packages.
 
-- [ ] **Step 4: Run the frontend tests and production build**
+- [x] **Step 4: Run the frontend tests and production build**
 
 Run:
 
@@ -3611,7 +3611,7 @@ Expected:
 - `ae-cli flush` drains any queued events
 - `/prs/:id/settle` returns a summary with `attribution_status`, `primary_token_count`, `primary_token_cost`, and `validation_summary`
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add docs/ae-cli/session-pr-attribution.md

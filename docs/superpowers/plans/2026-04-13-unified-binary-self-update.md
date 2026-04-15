@@ -8,6 +8,12 @@
 
 **Tech Stack:** Go (`gin`, `net/http`, `os`, `filepath`), Bash, Docker Compose, release bundles, Markdown docs, shell regression tests.
 
+**Status:** ✅ 已完成（2026-04-15）
+
+**Replay Status:** 历史完成记录。不要直接按本文逐 task 重跑；如需再次执行或扩展，请基于当前 deployment 资产、deployment 服务和最新 spec 重写执行计划。
+
+> **Updated:** 2026-04-15 — 基于 `backend/internal/deployment` focused tests、`deploy/test/docker-deploy-*.sh` 和 frontend focused tests 回填 checkbox。
+
 ---
 
 ## File Map
@@ -117,7 +123,7 @@
 - Test: `deploy/test/docker-deploy-bootstrap-test.sh`
 - Test: `deploy/test/docker-deploy-preflight-test.sh`
 
-- [ ] **Step 1: Add failing backend tests that describe sidecar removal and unified self-update behavior**
+- [x] **Step 1: Add failing backend tests that describe sidecar removal and unified self-update behavior**
 
 Append to `backend/internal/config/config_test.go`:
 
@@ -152,7 +158,7 @@ func TestUnifiedSelfUpdateWillReplaceRuntimeBinaryWithoutComposeTagMutation(t *t
 }
 ```
 
-- [ ] **Step 2: Add failing deploy shell assertions for no-sidecar Docker mode**
+- [x] **Step 2: Add failing deploy shell assertions for no-sidecar Docker mode**
 
 In `deploy/test/docker-deploy-bootstrap-test.sh`, add assertions after successful bootstrap:
 
@@ -188,7 +194,7 @@ test "$legacy_status" -ne 0
 grep -q "legacy Docker updater-sidecar deployment detected" "$TMP_ROOT/legacy-preflight.log"
 ```
 
-- [ ] **Step 3: Run the targeted tests and confirm they fail**
+- [x] **Step 3: Run the targeted tests and confirm they fail**
 
 Run:
 
@@ -205,7 +211,7 @@ Expected:
 - backend tests fail because config and deployment code still assume updater-sidecar semantics
 - bootstrap/preflight shell tests fail because production compose files still include updater sidecar and `docker.sock`
 
-- [ ] **Step 4: Commit the failing-test checkpoint**
+- [x] **Step 4: Commit the failing-test checkpoint**
 
 ```bash
 git add backend/internal/config/config_test.go backend/internal/deployment/updater_server_test.go deploy/test/docker-deploy-bootstrap-test.sh deploy/test/docker-deploy-preflight-test.sh
@@ -227,7 +233,7 @@ git commit -m "test(deploy): lock unified self-update model"
 - Test: `backend/internal/deployment/selfupdate_test.go`
 - Test: `backend/internal/config/config_test.go`
 
-- [ ] **Step 1: Write failing unit tests for runtime path resolution and binary replacement**
+- [x] **Step 1: Write failing unit tests for runtime path resolution and binary replacement**
 
 Create `backend/internal/deployment/runtime_binary_test.go`:
 
@@ -316,7 +322,7 @@ func TestApplyBinaryUpdateReplacesRuntimeBinaryAndCreatesBackup(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the new targeted tests to confirm they fail**
+- [x] **Step 2: Run the new targeted tests to confirm they fail**
 
 Run:
 
@@ -327,7 +333,7 @@ go test ./internal/deployment ./internal/config -run 'TestRuntimeBinaryPaths|Tes
 
 Expected: FAIL because the new runtime/self-update helpers and relaxed config do not exist yet.
 
-- [ ] **Step 3: Implement the runtime-binary helpers and config defaults**
+- [x] **Step 3: Implement the runtime-binary helpers and config defaults**
 
 Create `backend/internal/deployment/runtime_binary.go` with:
 
@@ -448,7 +454,7 @@ v.SetDefault("deployment.update.updater_url", "")
 
 And ensure `UpdateConfig` no longer requires a non-empty updater URL in code paths that remain after refactor.
 
-- [ ] **Step 4: Re-run the targeted tests and confirm they pass**
+- [x] **Step 4: Re-run the targeted tests and confirm they pass**
 
 Run:
 
@@ -459,7 +465,7 @@ go test ./internal/deployment ./internal/config -run 'TestRuntimeBinaryPaths|Tes
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit the shared runtime/self-update primitives**
+- [x] **Step 5: Commit the shared runtime/self-update primitives**
 
 ```bash
 git add backend/internal/deployment/runtime_binary.go backend/internal/deployment/runtime_binary_test.go backend/internal/deployment/selfupdate.go backend/internal/deployment/selfupdate_test.go backend/internal/config/config.go backend/internal/config/config_test.go
@@ -482,7 +488,7 @@ git commit -m "feat(backend): add shared binary self-update primitives"
 - Test: `deploy/test/docker-deploy-bootstrap-test.sh`
 - Test: `deploy/test/docker-deploy-preflight-test.sh`
 
-- [ ] **Step 1: Add failing shell assertions for no-sidecar launcher mode**
+- [x] **Step 1: Add failing shell assertions for no-sidecar launcher mode**
 
 In `deploy/test/docker-deploy-bootstrap-test.sh`, after the successful bootstrap assertions, add:
 
@@ -518,7 +524,7 @@ test "$legacy_status" -ne 0
 grep -q "legacy Docker updater-sidecar deployment detected" "$TMP_ROOT/legacy-preflight.log"
 ```
 
-- [ ] **Step 2: Run the shell tests and confirm they fail**
+- [x] **Step 2: Run the shell tests and confirm they fail**
 
 Run:
 
@@ -529,7 +535,7 @@ bash deploy/test/docker-deploy-preflight-test.sh
 
 Expected: FAIL because compose files still include the sidecar and no launcher/runtime binary path exists yet.
 
-- [ ] **Step 3: Implement the launcher and remove the sidecar from production compose**
+- [x] **Step 3: Implement the launcher and remove the sidecar from production compose**
 
 Create `deploy/docker-entrypoint.sh`:
 
@@ -589,7 +595,7 @@ In `deploy/.env.example`, remove any remaining updater-sidecar variables and add
 # AE_DEPLOYMENT_STATE_DIR (default: /var/lib/ai-efficiency) inside the mounted app state volume.
 ```
 
-- [ ] **Step 4: Teach preflight to reject legacy sidecar layouts**
+- [x] **Step 4: Teach preflight to reject legacy sidecar layouts**
 
 Add to `deploy/docker-deploy.sh` a check before compose validation:
 
@@ -600,7 +606,7 @@ if grep -q '^[[:space:]]*updater:' "$COMPOSE_FILE"; then
 fi
 ```
 
-- [ ] **Step 5: Re-run the shell tests and confirm they pass**
+- [x] **Step 5: Re-run the shell tests and confirm they pass**
 
 Run:
 
@@ -611,7 +617,7 @@ bash deploy/test/docker-deploy-preflight-test.sh
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit the Docker launcher migration**
+- [x] **Step 6: Commit the Docker launcher migration**
 
 ```bash
 git add deploy/docker-entrypoint.sh deploy/Dockerfile deploy/docker-compose.yml deploy/docker-compose.bootstrap.yml deploy/docker-compose.external.yml deploy/.env.example deploy/docker-deploy.sh deploy/test/docker-deploy-bootstrap-test.sh deploy/test/docker-deploy-preflight-test.sh
@@ -633,7 +639,7 @@ git commit -m "refactor(deploy): replace docker updater sidecar with launcher"
 - Test: `backend/internal/deployment/service_test.go`
 - Test: `backend/internal/handler/deployment_http_test.go`
 
-- [ ] **Step 1: Add failing service tests for unified self-update orchestration**
+- [x] **Step 1: Add failing service tests for unified self-update orchestration**
 
 Append to `backend/internal/deployment/service_test.go`:
 
@@ -655,7 +661,7 @@ func TestApplyUpdateReturnsNeedRestartForSelfUpdate(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the targeted backend tests to confirm they fail**
+- [x] **Step 2: Run the targeted backend tests to confirm they fail**
 
 Run:
 
@@ -666,7 +672,7 @@ go test ./internal/deployment ./internal/handler -run 'TestApplyUpdateUsesSelfUp
 
 Expected: FAIL because deployment service still routes through updater client semantics.
 
-- [ ] **Step 3: Implement the unified self-update service**
+- [x] **Step 3: Implement the unified self-update service**
 
 In `backend/internal/deployment/service.go`, replace updater-client orchestration with a direct self-update executor. The service should own:
 
@@ -696,7 +702,7 @@ In `backend/cmd/server/main.go`, stop constructing an updater HTTP client for Do
 
 `backend/internal/handler/deployment.go` should keep returning the same API envelope but populate it from the unified update service.
 
-- [ ] **Step 4: Re-run the targeted backend tests and confirm they pass**
+- [x] **Step 4: Re-run the targeted backend tests and confirm they pass**
 
 Run:
 
@@ -707,7 +713,7 @@ go test ./internal/deployment ./internal/handler -run 'TestApplyUpdateUsesSelfUp
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit the unified update service migration**
+- [x] **Step 5: Commit the unified update service migration**
 
 ```bash
 git add backend/internal/deployment/service.go backend/internal/deployment/updater_client.go backend/internal/deployment/updater_client_test.go backend/internal/deployment/updater_server.go backend/internal/deployment/updater_server_test.go backend/cmd/server/main.go backend/internal/handler/deployment.go backend/internal/deployment/service_test.go backend/internal/handler/deployment_http_test.go
@@ -730,7 +736,7 @@ git commit -m "feat(backend): unify deployment self-update flow"
 - Test: `deploy/test/docker-deploy-bootstrap-test.sh`
 - Test: `deploy/test/docker-deploy-preflight-test.sh`
 
-- [ ] **Step 1: Update frontend deployment copy for unified self-update**
+- [x] **Step 1: Update frontend deployment copy for unified self-update**
 
 In `frontend/src/views/SettingsView.vue`, change any updater-sidecar-specific wording to text like:
 
@@ -742,7 +748,7 @@ and ensure any Docker-mode-specific copy no longer mentions pulling images or up
 
 In `frontend/src/__tests__/settings-view.test.ts`, update assertions to match the new copy.
 
-- [ ] **Step 2: Update architecture and spec relationship docs**
+- [x] **Step 2: Update architecture and spec relationship docs**
 
 In `docs/architecture.md`, replace lines describing:
 
@@ -766,7 +772,7 @@ In `docs/superpowers/specs/2026-04-09-binary-systemd-install-update-design.md`, 
 > Relationship note (2026-04-13): The binary self-update model described here is now the baseline for both Docker and non-Docker runtime modes; this spec remains the historical design entry for the non-Docker path.
 ```
 
-- [ ] **Step 3: Rewrite `deploy/README.md` to match the unified update model**
+- [x] **Step 3: Rewrite `deploy/README.md` to match the unified update model**
 
 Add language such as:
 
@@ -778,7 +784,7 @@ After an update or rollback request completes, restart the service/container to 
 
 Remove any remaining mention of updater sidecars from the operator docs.
 
-- [ ] **Step 4: Run the full verification suite for this feature**
+- [x] **Step 4: Run the full verification suite for this feature**
 
 Run:
 
@@ -794,7 +800,7 @@ pnpm test --runInBand src/__tests__/settings-view.test.ts
 
 Expected: all commands pass.
 
-- [ ] **Step 5: Review the diff and commit the docs/UI alignment**
+- [x] **Step 5: Review the diff and commit the docs/UI alignment**
 
 Run:
 

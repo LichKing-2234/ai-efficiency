@@ -42,7 +42,7 @@ encryption:
   key: "0000000000000000000000000000000000000000000000000000000000000000"
 
 deployment:
-  # bundled/external use Docker Compose + updater sidecar; systemd uses binary self-update on Linux
+  # bundled/external use Docker Compose with a persisted runtime binary under state_dir; systemd uses an installed runtime binary on Linux
   mode: bundled
   state_dir: "/var/lib/ai-efficiency"
   update:
@@ -50,6 +50,6 @@ deployment:
     apply_enabled: true
     channel: stable
     release_api_url: "https://api.github.com/repos/LichKing-2234/ai-efficiency/releases/latest"
-    # Used by Docker/Compose mode only. systemd mode uses GitHub Release backend bundles instead.
-    updater_url: "http://updater:8090"
+    # Legacy compatibility field. The default unified self-update path typically leaves this empty.
+    updater_url: ""
     image_repository: "ghcr.io/lichking-2234/ai-efficiency"
