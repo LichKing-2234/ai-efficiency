@@ -59,6 +59,16 @@ type providerCredentialQuery struct {
 	Platform string `form:"platform" binding:"required"`
 }
 
+func applyPublicUserSelect(q *ent.UserQuery) {
+	q.Select(
+		user.FieldID,
+		user.FieldUsername,
+		user.FieldEmail,
+		user.FieldRole,
+		user.FieldAuthSource,
+	)
+}
+
 func isAdminUser(c *gin.Context) bool {
 	uc := auth.GetUserContext(c)
 	return uc != nil && uc.Role == "admin"
@@ -278,9 +288,12 @@ func (h *SessionHandler) Stop(c *gin.Context) {
 func (h *SessionHandler) List(c *gin.Context) {
 	query := h.entClient.Session.Query().
 		WithRepoConfig().
+		WithUser(applyPublicUserSelect).
 		Order(ent.Desc(session.FieldStartedAt))
+	ownerScope := ""
 	if uc := auth.GetUserContext(c); uc != nil {
-		switch requestedOwnerScope(c) {
+		ownerScope = requestedOwnerScope(c)
+		switch ownerScope {
 		case "mine":
 			query = query.Where(session.HasUserWith(user.IDEQ(uc.UserID)))
 		case "unowned":
@@ -312,6 +325,15 @@ func (h *SessionHandler) List(c *gin.Context) {
 			repoconfig.Or(
 				repoconfig.FullNameContainsFold(repoQuery),
 				repoconfig.CloneURLContainsFold(repoQuery),
+			),
+		))
+	}
+
+	if ownerQuery := strings.TrimSpace(c.Query("owner_query")); ownerQuery != "" && ownerScope != "unowned" {
+		query = query.Where(session.HasUserWith(
+			user.Or(
+				user.UsernameContainsFold(ownerQuery),
+				user.EmailContainsFold(ownerQuery),
 			),
 		))
 	}
@@ -365,6 +387,7 @@ func (h *SessionHandler) Get(c *gin.Context) {
 
 	s, err := query.
 		WithRepoConfig().
+		WithUser(applyPublicUserSelect).
 		WithSessionWorkspaces(func(q *ent.SessionWorkspaceQuery) {
 			q.Order(ent.Desc(sessionworkspace.FieldLastSeenAt)).
 				Limit(20)

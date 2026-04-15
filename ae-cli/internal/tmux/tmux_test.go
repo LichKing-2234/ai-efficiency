@@ -1,10 +1,12 @@
 package tmux
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -103,6 +105,29 @@ func TestNewSessionAndCleanup(t *testing.T) {
 	}
 	if SessionExists(name) {
 		t.Error("session should not exist after kill")
+	}
+}
+
+func TestNewSessionIncludesTmuxOutputOnFailure(t *testing.T) {
+	origRun := tmuxRun
+	tmuxRun = func(args ...string) ([]byte, error) {
+		want := []string{"new-session", "-d", "-s", "broken-session", "-x", "200", "-y", "50"}
+		if !reflect.DeepEqual(args, want) {
+			t.Fatalf("args = %v, want %v", args, want)
+		}
+		return []byte("duplicate session: broken-session"), errors.New("exit status 1")
+	}
+	t.Cleanup(func() { tmuxRun = origRun })
+
+	err := NewSession("broken-session")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "exit status 1") {
+		t.Fatalf("error = %q, want exit status", err)
+	}
+	if !strings.Contains(err.Error(), "duplicate session: broken-session") {
+		t.Fatalf("error = %q, want tmux output", err)
 	}
 }
 

@@ -62,6 +62,7 @@ export interface Session {
   last_seen_at?: string | null
   tool_invocations: Array<{ tool: string; start: string; end: string }>
   edges?: {
+    user?: User
     repo_config?: RepoConfig
     session_workspaces?: SessionWorkspace[]
     commit_checkpoints?: CommitCheckpoint[]
@@ -230,5 +231,6 @@ export interface SessionListParams {
   repo_id?: number
   repo_query?: string
   branch?: string
+  owner_query?: string
   owner_scope?: 'all' | 'mine' | 'unowned'
 }
