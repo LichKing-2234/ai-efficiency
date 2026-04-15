@@ -53,11 +53,14 @@ func SetupRouter(
 	// OAuth endpoints — at root /oauth/* (not under /api/v1)
 	if oauthHandler != nil {
 		r.GET("/oauth/authorize", oauthHandler.Authorize)
+		r.GET("/oauth/device", oauthHandler.DevicePage)
+		r.POST("/oauth/device/code", oauthHandler.DeviceCode)
 		r.POST("/oauth/token", oauthHandler.Token)
 
 		oauthAuth := r.Group("/oauth")
 		oauthAuth.Use(auth.RequireAuth(authService))
 		oauthAuth.POST("/authorize/approve", oauthHandler.Approve)
+		oauthAuth.POST("/device/verify", oauthHandler.VerifyDevice)
 	}
 
 	// Handlers

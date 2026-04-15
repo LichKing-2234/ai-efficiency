@@ -13,6 +13,7 @@ import (
 	"github.com/ai-efficiency/backend/internal/analysis"
 	"github.com/ai-efficiency/backend/internal/auth"
 	"github.com/ai-efficiency/backend/internal/middleware"
+	"github.com/ai-efficiency/backend/internal/oauth"
 	"github.com/ai-efficiency/backend/internal/repo"
 	"github.com/ai-efficiency/backend/internal/testdb"
 	"github.com/ai-efficiency/backend/internal/webhook"
@@ -42,6 +43,10 @@ type testEnv struct {
 }
 
 func setupTestEnv(t *testing.T) *testEnv {
+	return setupTestEnvWithOAuth(t, nil)
+}
+
+func setupTestEnvWithOAuth(t *testing.T, oauthHandler *oauth.Handler) *testEnv {
 	t.Helper()
 
 	client := testdb.Open(t)
@@ -66,7 +71,7 @@ func setupTestEnv(t *testing.T) *testEnv {
 		nil, // optimizer
 		"0000000000000000000000000000000000000000000000000000000000000000",
 		middleware.CORS(nil),
-		nil, nil, nil, nil, nil,
+		oauthHandler, nil, nil, nil, nil,
 		nil,
 	)
 

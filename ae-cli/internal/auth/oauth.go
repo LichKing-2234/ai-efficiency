@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -19,9 +20,12 @@ import (
 
 // OAuthConfig holds the OAuth login configuration.
 type OAuthConfig struct {
-	ServerURL string
-	ClientID  string
-	Timeout   time.Duration
+	ServerURL  string
+	ClientID   string
+	Timeout    time.Duration
+	HTTPClient *http.Client
+	Output     io.Writer
+	Sleep      func(time.Duration)
 }
 
 // OAuthResult contains the result of a successful OAuth login.
@@ -33,12 +37,7 @@ type OAuthResult struct {
 
 // Login performs the full OAuth2 Authorization Code Flow with PKCE.
 func Login(ctx context.Context, cfg OAuthConfig) (*OAuthResult, error) {
-	if cfg.ClientID == "" {
-		cfg.ClientID = "ae-cli"
-	}
-	if cfg.Timeout == 0 {
-		cfg.Timeout = 3 * time.Minute
-	}
+	cfg = withOAuthDefaults(cfg)
 
 	verifier, challenge, err := generatePKCE()
 	if err != nil {
@@ -100,14 +99,14 @@ func Login(ctx context.Context, cfg OAuthConfig) (*OAuthResult, error) {
 		url.QueryEscape(state),
 	)
 
-	fmt.Printf("Opening browser for login...\n")
-	fmt.Printf("If the browser doesn't open, visit:\n%s\n\n", authURL)
+	fmt.Fprintf(cfg.Output, "Opening browser for login...\n")
+	fmt.Fprintf(cfg.Output, "If the browser doesn't open, visit:\n%s\n\n", authURL)
 	openBrowser(authURL)
 
-	fmt.Printf("Waiting for authorization (timeout: %s)...\n", cfg.Timeout)
+	fmt.Fprintf(cfg.Output, "Waiting for authorization (timeout: %s)...\n", cfg.Timeout)
 	select {
 	case code := <-codeCh:
-		return ExchangeCode(ctx, cfg.ServerURL, code, redirectURI, verifier)
+		return exchangeCodeWithClient(ctx, cfg.HTTPClient, cfg.ServerURL, code, redirectURI, verifier)
 	case err := <-errCh:
 		return nil, err
 	case <-time.After(cfg.Timeout):
@@ -119,6 +118,10 @@ func Login(ctx context.Context, cfg OAuthConfig) (*OAuthResult, error) {
 
 // ExchangeCode exchanges an authorization code for tokens.
 func ExchangeCode(ctx context.Context, serverURL, code, redirectURI, verifier string) (*OAuthResult, error) {
+	return exchangeCodeWithClient(ctx, http.DefaultClient, serverURL, code, redirectURI, verifier)
+}
+
+func exchangeCodeWithClient(ctx context.Context, client *http.Client, serverURL, code, redirectURI, verifier string) (*OAuthResult, error) {
 	data := url.Values{
 		"grant_type":    {"authorization_code"},
 		"code":          {code},
@@ -133,7 +136,7 @@ func ExchangeCode(ctx context.Context, serverURL, code, redirectURI, verifier st
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("token request: %w", err)
 	}

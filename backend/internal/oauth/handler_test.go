@@ -26,6 +26,8 @@ func setupTestRouter() (*gin.Engine, *oauth.Handler) {
 
 	r := gin.New()
 	r.GET("/oauth/authorize", handler.Authorize)
+	r.GET("/oauth/device", handler.DevicePage)
+	r.POST("/oauth/device/code", handler.DeviceCode)
 	r.POST("/oauth/token", handler.Token)
 	return r, handler
 }
@@ -127,5 +129,36 @@ func TestAuthorizeRejectsMissingCodeChallenge(t *testing.T) {
 
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestDeviceCodeRejectsUnknownClient(t *testing.T) {
+	r, _ := setupTestRouter()
+
+	req := httptest.NewRequest(http.MethodPost, "/oauth/device/code", strings.NewReader("client_id=unknown"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "invalid_client") {
+		t.Fatalf("body=%s", w.Body.String())
+	}
+}
+
+func TestDevicePageRedirectsToFrontend(t *testing.T) {
+	r, _ := setupTestRouter()
+
+	req := httptest.NewRequest(http.MethodGet, "/oauth/device", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusFound {
+		t.Fatalf("expected 302, got %d", w.Code)
+	}
+	if loc := w.Header().Get("Location"); !strings.Contains(loc, "/oauth/device") {
+		t.Fatalf("location=%q", loc)
 	}
 }

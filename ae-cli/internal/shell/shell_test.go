@@ -1063,33 +1063,24 @@ func TestBroadcastWithTmux(t *testing.T) {
 // --- Exit with active panes tests ---
 
 func TestExitWithActivePanesConfirmKill(t *testing.T) {
-	if !tmux.HasTmux() {
-		t.Skip("tmux not installed")
-	}
 	t.Setenv("HOME", t.TempDir())
-
-	tmuxName := fmt.Sprintf("ae-cli-shell-test-exit-kill-%d", time.Now().UnixNano())
-	tmux.KillSession(tmuxName)
-	if err := tmux.NewSession(tmuxName); err != nil {
-		t.Fatalf("NewSession: %v", err)
-	}
 
 	s := newTestShell(map[string]config.ToolConfig{
 		"sleep-tool": {Command: "sleep", Args: []string{"60"}},
 	})
-	s.state.TmuxSession = tmuxName
+	s.state.TmuxSession = "ae-cli-shell-test-exit-kill"
 	m := newModel(s)
 	m.lines = nil
 
-	// Launch a tool pane
-	m.launchToolInstance("sleep-tool", "")
-	items, err := session.ListToolPanes(s.state.ID)
-	if err != nil {
-		t.Fatalf("ListToolPanes: %v", err)
+	if _, err := session.RegisterToolPane(s.state.ID, "sleep-tool", "%901", "shell"); err != nil {
+		t.Fatalf("RegisterToolPane: %v", err)
 	}
-	if len(items) != 1 {
-		t.Fatalf("expected one sleep-tool pane, got %d", len(items))
+
+	origList := shellListPanes
+	shellListPanes = func(string) ([]tmux.Pane, error) {
+		return []tmux.Pane{{ID: "%901", Tool: "sleep", Active: true}}, nil
 	}
+	t.Cleanup(func() { shellListPanes = origList })
 
 	// Type "exit" — should prompt for confirmation
 	m, cmd := sendLine(m, "exit")
@@ -1106,30 +1097,26 @@ func TestExitWithActivePanesConfirmKill(t *testing.T) {
 	if !s.killTmuxOnExit {
 		t.Error("expected killTmuxOnExit to be true")
 	}
-
-	tmux.KillSession(tmuxName)
 }
 
 func TestExitWithActivePanesDecline(t *testing.T) {
-	if !tmux.HasTmux() {
-		t.Skip("tmux not installed")
-	}
 	t.Setenv("HOME", t.TempDir())
-
-	tmuxName := fmt.Sprintf("ae-cli-shell-test-exit-nkill-%d", time.Now().UnixNano())
-	tmux.KillSession(tmuxName)
-	if err := tmux.NewSession(tmuxName); err != nil {
-		t.Fatalf("NewSession: %v", err)
-	}
-	defer tmux.KillSession(tmuxName)
 
 	s := newTestShell(map[string]config.ToolConfig{
 		"sleep-tool": {Command: "sleep", Args: []string{"60"}},
 	})
-	s.state.TmuxSession = tmuxName
+	s.state.TmuxSession = "ae-cli-shell-test-exit-nkill"
 	m := newModel(s)
 
-	m.launchToolInstance("sleep-tool", "")
+	if _, err := session.RegisterToolPane(s.state.ID, "sleep-tool", "%902", "shell"); err != nil {
+		t.Fatalf("RegisterToolPane: %v", err)
+	}
+
+	origList := shellListPanes
+	shellListPanes = func(string) ([]tmux.Pane, error) {
+		return []tmux.Pane{{ID: "%902", Tool: "sleep", Active: true}}, nil
+	}
+	t.Cleanup(func() { shellListPanes = origList })
 
 	// Type "exit"
 	m, _ = sendLine(m, "exit")
@@ -1142,10 +1129,11 @@ func TestExitWithActivePanesDecline(t *testing.T) {
 	if m.confirmKill {
 		t.Error("confirmKill should be reset after declining")
 	}
-	_ = cmd
-
-	if !tmux.SessionExists(tmuxName) {
-		t.Error("tmux session should still exist")
+	if cmd != nil {
+		t.Error("declining should not quit")
+	}
+	if s.killTmuxOnExit {
+		t.Error("killTmuxOnExit should remain false after declining")
 	}
 }
 

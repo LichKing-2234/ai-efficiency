@@ -12,6 +12,7 @@ This document is the project-level architecture overview for `ai-efficiency`.
 ## Source-of-Truth Order
 
 1. Topic-specific current specs:
+   - `docs/superpowers/specs/2026-04-15-oauth-device-login-design.md`
    - `docs/superpowers/specs/2026-04-14-llm-settings-runtime-editing-design.md`
    - `docs/superpowers/specs/2026-04-02-local-session-proxy-design.md`
    - `docs/superpowers/specs/2026-03-26-session-pr-attribution-design.md`
@@ -59,6 +60,7 @@ flowchart LR
 - Linux systemd mode installs the backend under `/opt/ai-efficiency`, keeps config in `/etc/ai-efficiency/config.yaml`, and performs binary self-update plus `.backup` rollback.
 - `deploy/` also includes non-production `dev` / `local` compose paths for local verification.
 - Public health endpoints expose liveness/readiness, and admin settings expose deployment status plus update controls.
+- `ae-cli login` now supports both browser PKCE and OAuth device flow. Headless Linux environments are expected to use `ae-cli login --device`, while desktop/browser-capable environments still default to PKCE.
 
 ## Current Production Deployment
 
@@ -121,6 +123,7 @@ The implemented runtime centers on backend bootstrap plus a session-bound local 
 sequenceDiagram
     participant Dev as Developer
     participant CLI as ae-cli
+    participant Browser as Browser
     participant BE as Backend
     participant Proxy as Local Session Proxy
     participant Relay as Relay / sub2api
@@ -128,7 +131,13 @@ sequenceDiagram
     participant Tool as AI Tooling
 
     Dev->>CLI: ae-cli login / start
-    CLI->>BE: OAuth + session bootstrap
+    alt Browser PKCE login
+        CLI->>BE: /oauth/authorize + /oauth/token
+    else Device login
+        CLI->>BE: /oauth/device/code + /oauth/token polling
+        Browser->>BE: /oauth/device/verify
+    end
+    CLI->>BE: session bootstrap
     BE->>BE: find or create repo from local git remote
     BE->>Relay: resolve relay identity / manage API key
     Relay-->>BE: user + key metadata
@@ -146,7 +155,9 @@ sequenceDiagram
 ### Runtime Boundaries
 
 - `ae-cli` owns local session setup, workspace state, hooks, collector wiring, and the lifecycle of the local session proxy.
+- `ae-cli` login selection is split between browser PKCE and device flow, but both paths still end in the same backend-issued JWT and `~/.ae-cli/token.json` storage model.
 - The backend owns durable state, repo discovery during bootstrap, repo configuration, user/provider mapping, attribution, and SCM/webhook handling.
+- The backend OAuth handler now manages both short-lived authorization codes and short-lived device entries in memory.
 - Relay/sub2api remains the upstream auth/LLM/usage integration boundary and attribution fallback source.
 - SCM providers now reference reusable credentials instead of storing raw secret blobs inline.
 - `ae-cli start` now treats repo discovery as part of session bootstrap. If the backend does not already know the repo, bootstrap auto-creates an unbound `repo_config` from the local Git remote and continues.

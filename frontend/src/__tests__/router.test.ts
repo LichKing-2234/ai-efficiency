@@ -116,6 +116,12 @@ describe('Router Guards', () => {
     expect(mod.default).toBe(SessionDetailView)
   })
 
+  it('includes oauth device route in the router', () => {
+    const oauthDevice = router.getRoutes().find((r) => r.name === 'OAuthDevice')
+    expect(oauthDevice?.path).toBe('/oauth/device')
+    expect(oauthDevice?.meta.public).toBe(true)
+  })
+
   it('redirects authenticated users away from login using a safe redirect target', async () => {
     const { getMe: mockGetMe } = await import('@/api/auth')
     ;(mockGetMe as any).mockResolvedValue({

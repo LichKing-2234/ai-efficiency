@@ -31,6 +31,12 @@ const router = createRouter({
       meta: { public: true },
     },
     {
+      path: '/oauth/device',
+      name: 'OAuthDevice',
+      component: () => import('@/views/oauth/DevicePage.vue'),
+      meta: { public: true },
+    },
+    {
       path: '/',
       name: 'Dashboard',
       component: () => import('@/views/DashboardView.vue'),
