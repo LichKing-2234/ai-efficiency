@@ -1,10 +1,10 @@
 # OAuth Device Login Design
 
-**Status:** Review Requested
+**Status:** Current contract for OAuth device login
 **Scope:** `backend/internal/oauth`, `ae-cli/internal/auth`, `ae-cli/cmd`, `frontend/src/views/oauth`, `docs/`
 **Related:** [2026-03-24-oauth-cli-login-design.md](/Users/admin/ai-efficiency/docs/superpowers/specs/2026-03-24-oauth-cli-login-design.md), [2026-03-26-session-pr-attribution-design.md](/Users/admin/ai-efficiency/docs/superpowers/specs/2026-03-26-session-pr-attribution-design.md), [docs/architecture.md](/Users/admin/ai-efficiency/docs/architecture.md)
 
-**Implementation Note:** 当前代码中的 `ae-cli login` 只支持浏览器 + 本地回调的 Authorization Code Flow with PKCE，不支持 Device Authorization Flow。本文定义下一步要补齐的 device login 合同；在代码实现落地前，运行时现状仍以当前代码为准。
+**Implementation Note:** Device Authorization Flow 已在 `backend/internal/oauth`、`ae-cli login --device` 和前端 `/oauth/device` 页面中落地；普通浏览器 PKCE 登录仍是默认路径。
 
 ## Context
 
@@ -27,7 +27,7 @@
 - 本文扩展 [`2026-03-24-oauth-cli-login-design.md`](/Users/admin/ai-efficiency/docs/superpowers/specs/2026-03-24-oauth-cli-login-design.md) 中的 ae-cli OAuth 登录合同。
 - 相比 `2026-03-24` 中“Device Authorization Flow（RFC 8628），后续单独实现”的约束，本文将该后续实现收敛为具体合同。
 - `2026-03-24` 中关于 relay/provider、LDAP、浏览器 PKCE 登录、`token.json`、以及 relay API key delivery 的其余内容仍保持有效；仅 device login 相关主题以本文为准。
-- 本文是设计文档更新，不代表当前实现已经具备 device flow。`docs/architecture.md` 应在代码真正落地后再更新为当前状态。
+- 本文现已成为 device login 的当前生效合同；项目级运行时描述同步以 [`docs/architecture.md`](/Users/admin/ai-efficiency/docs/architecture.md) 为准。
 
 ## Goals
 
