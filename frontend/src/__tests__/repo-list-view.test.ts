@@ -483,7 +483,8 @@ describe('RepoListView', () => {
     await wrapper.vm.$nextTick()
 
     // The select should have the BB provider selected
-    const select = wrapper.findAll('select').at(-1)
+    const selects = wrapper.findAll('select')
+    const select = selects[selects.length - 1]
     expect((select.element as HTMLSelectElement).value).toBe('2')
   })
 
