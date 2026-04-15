@@ -420,7 +420,7 @@ func TestCreateUser(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Fatalf("failed to decode create user body: %v", err)
 		}
-		if body.Username != "newuser" || body.Email != "newuser@example.com" || body.Password != "pw" {
+		if body.Username != "newuser" || body.Email != "newuser@example.com" || body.Password != "pw" || body.Concurrency != 5 {
 			t.Fatalf("unexpected body: %+v", body)
 		}
 
@@ -438,10 +438,11 @@ func TestCreateUser(t *testing.T) {
 
 	p := newTestProvider(t, mux)
 	u, err := p.CreateUser(context.Background(), relay.CreateUserRequest{
-		Username: "newuser",
-		Email:    "newuser@example.com",
-		Password: "pw",
-		Notes:    "test",
+		Username:    "newuser",
+		Email:       "newuser@example.com",
+		Password:    "pw",
+		Notes:       "test",
+		Concurrency: 5,
 	})
 	if err != nil {
 		t.Fatalf("CreateUser() unexpected error: %v", err)
@@ -469,6 +470,52 @@ func TestCreateUserSuccessFalse(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("CreateUser() expected error for success=false, got nil")
+	}
+}
+
+func TestUpdateUser(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/users/7", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut {
+			t.Errorf("expected PUT, got %s", r.Method)
+		}
+		if r.Header.Get("X-API-Key") != "test-admin-key" {
+			t.Errorf("expected admin API key in X-API-Key header")
+		}
+		var body relay.UpdateUserRequest
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("failed to decode update user body: %v", err)
+		}
+		if body.Password != "ldap-pass" {
+			t.Fatalf("unexpected body: %+v", body)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"success": true,
+			"data": map[string]any{
+				"id":       7,
+				"email":    "alice@example.com",
+				"username": "alice",
+				"role":     "user",
+			},
+		})
+	})
+
+	p := newTestProvider(t, mux)
+	updater, ok := p.(interface {
+		UpdateUser(context.Context, int64, relay.UpdateUserRequest) (*relay.User, error)
+	})
+	if !ok {
+		t.Fatal("provider does not support UpdateUser")
+	}
+
+	u, err := updater.UpdateUser(context.Background(), 7, relay.UpdateUserRequest{Password: "ldap-pass"})
+	if err != nil {
+		t.Fatalf("UpdateUser() unexpected error: %v", err)
+	}
+	if u == nil || u.ID != 7 || u.Username != "alice" {
+		t.Fatalf("UpdateUser() unexpected user: %+v", u)
 	}
 }
 
@@ -841,6 +888,185 @@ func TestFindUserByUsernameAcceptsCodeEnvelope(t *testing.T) {
 		t.Fatalf("FindUserByUsername() unexpected error: %v", err)
 	}
 	if user == nil || user.Username != "alice" {
+		t.Fatalf("unexpected user: %+v", user)
+	}
+}
+
+func TestFindUserByUsernameAcceptsPaginatedEnvelope(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/users", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code":    0,
+			"message": "success",
+			"data": map[string]any{
+				"items": []any{
+					map[string]any{
+						"id":       12,
+						"email":    "alice@example.com",
+						"username": "alice",
+						"role":     "user",
+					},
+				},
+				"page":      1,
+				"page_size": 1,
+				"pages":     1,
+				"total":     1,
+			},
+		})
+	})
+
+	p := newTestProvider(t, mux)
+	user, err := p.FindUserByUsername(context.Background(), "alice")
+	if err != nil {
+		t.Fatalf("FindUserByUsername() unexpected error: %v", err)
+	}
+	if user == nil || user.Username != "alice" {
+		t.Fatalf("unexpected user: %+v", user)
+	}
+}
+
+func TestFindUserByEmailAcceptsPaginatedEnvelope(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/users", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"success": true,
+			"data": map[string]any{
+				"items": []any{
+					map[string]any{
+						"id":       13,
+						"email":    "alice@example.com",
+						"username": "alice",
+						"role":     "user",
+					},
+				},
+				"page":      1,
+				"page_size": 1,
+				"pages":     1,
+				"total":     1,
+			},
+		})
+	})
+
+	p := newTestProvider(t, mux)
+	user, err := p.FindUserByEmail(context.Background(), "alice@example.com")
+	if err != nil {
+		t.Fatalf("FindUserByEmail() unexpected error: %v", err)
+	}
+	if user == nil || user.Email != "alice@example.com" {
+		t.Fatalf("unexpected user: %+v", user)
+	}
+}
+
+func TestFindUserByUsernameRequiresExactMatchInPaginatedEnvelope(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/users", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code":    0,
+			"message": "success",
+			"data": map[string]any{
+				"items": []any{
+					map[string]any{
+						"id":       15,
+						"email":    "wangjingbo@shengwang.cn",
+						"username": "",
+						"role":     "user",
+					},
+					map[string]any{
+						"id":       21,
+						"email":    "liupenghui@agora.io",
+						"username": "liupenghui@agora.io",
+						"role":     "user",
+					},
+				},
+				"page":      1,
+				"page_size": 20,
+				"pages":     1,
+				"total":     2,
+			},
+		})
+	})
+
+	p := newTestProvider(t, mux)
+	user, err := p.FindUserByUsername(context.Background(), "liupenghui@agora.io")
+	if err != nil {
+		t.Fatalf("FindUserByUsername() unexpected error: %v", err)
+	}
+	if user == nil || user.ID != 21 {
+		t.Fatalf("unexpected user: %+v", user)
+	}
+}
+
+func TestFindUserByUsernameReturnsNilWhenPaginatedEnvelopeHasNoExactMatch(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/users", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"success": true,
+			"data": map[string]any{
+				"items": []any{
+					map[string]any{
+						"id":       15,
+						"email":    "wangjingbo@shengwang.cn",
+						"username": "",
+						"role":     "user",
+					},
+				},
+				"page":      1,
+				"page_size": 20,
+				"pages":     1,
+				"total":     1,
+			},
+		})
+	})
+
+	p := newTestProvider(t, mux)
+	user, err := p.FindUserByUsername(context.Background(), "liupenghui@agora.io")
+	if err != nil {
+		t.Fatalf("FindUserByUsername() unexpected error: %v", err)
+	}
+	if user != nil {
+		t.Fatalf("expected nil for no exact match, got %+v", user)
+	}
+}
+
+func TestFindUserByEmailRequiresExactMatchInPaginatedEnvelope(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/users", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"success": true,
+			"data": map[string]any{
+				"items": []any{
+					map[string]any{
+						"id":       15,
+						"email":    "wangjingbo@shengwang.cn",
+						"username": "",
+						"role":     "user",
+					},
+					map[string]any{
+						"id":       21,
+						"email":    "liupenghui@agora.io",
+						"username": "",
+						"role":     "user",
+					},
+				},
+				"page":      1,
+				"page_size": 20,
+				"pages":     1,
+				"total":     2,
+			},
+		})
+	})
+
+	p := newTestProvider(t, mux)
+	user, err := p.FindUserByEmail(context.Background(), "liupenghui@agora.io")
+	if err != nil {
+		t.Fatalf("FindUserByEmail() unexpected error: %v", err)
+	}
+	if user == nil || user.ID != 21 {
 		t.Fatalf("unexpected user: %+v", user)
 	}
 }

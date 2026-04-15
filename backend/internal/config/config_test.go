@@ -467,6 +467,7 @@ func TestEnsureWritableConfigFileCreatesReloadableConfig(t *testing.T) {
 		Relay: RelayConfig{
 			Provider:       "sub2api",
 			URL:            "http://relay.example.com",
+			AdminURL:       "http://relay-admin.example.com",
 			APIKey:         "sk-live",
 			AdminAPIKey:    "admin-live",
 			Model:          "gpt-5.4",
@@ -524,6 +525,9 @@ func TestEnsureWritableConfigFileCreatesReloadableConfig(t *testing.T) {
 	}
 	if loaded.Relay.AdminAPIKey != "admin-live" {
 		t.Fatalf("relay.admin_api_key = %q, want %q", loaded.Relay.AdminAPIKey, "admin-live")
+	}
+	if loaded.Relay.AdminURL != "http://relay-admin.example.com" {
+		t.Fatalf("relay.admin_url = %q, want %q", loaded.Relay.AdminURL, "http://relay-admin.example.com")
 	}
 	if loaded.Analysis.LLM.SystemPrompt != "system prompt" {
 		t.Fatalf("analysis.llm.system_prompt = %q, want %q", loaded.Analysis.LLM.SystemPrompt, "system prompt")

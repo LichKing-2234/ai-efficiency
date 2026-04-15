@@ -6,18 +6,28 @@ import (
 )
 
 type User struct {
-	ID       int64  `json:"id"`
-	Email    string `json:"email"`
-	Username string `json:"username"`
-	Role     string `json:"role"`
+	ID          int64  `json:"id"`
+	Email       string `json:"email"`
+	Username    string `json:"username"`
+	Role        string `json:"role"`
+	Concurrency int    `json:"concurrency,omitempty"`
 }
 
 type CreateUserRequest struct {
-	Username string `json:"username"`
-	Email    string `json:"email"`
-	Password string `json:"password"`
-	Role     string `json:"role,omitempty"`
-	Notes    string `json:"notes,omitempty"`
+	Username    string `json:"username"`
+	Email       string `json:"email"`
+	Password    string `json:"password"`
+	Role        string `json:"role,omitempty"`
+	Notes       string `json:"notes,omitempty"`
+	Concurrency int    `json:"concurrency,omitempty"`
+}
+
+type UpdateUserRequest struct {
+	Email       string `json:"email,omitempty"`
+	Password    string `json:"password,omitempty"`
+	Username    string `json:"username,omitempty"`
+	Notes       string `json:"notes,omitempty"`
+	Concurrency *int   `json:"concurrency,omitempty"`
 }
 
 type APIKey struct {

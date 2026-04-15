@@ -183,17 +183,26 @@ commit 时由 hook 上报的锚点事件。它记录 commit 所在的 session、
 
 当 LDAP 用户在 sub2api 中不存在时：
 
-1. 使用 `username` 作为稳定主键
+1. 使用 relay 稳定 `username` 作为主键；当 LDAP 登录名看起来是邮箱时，取 `@` 前的 local-part 作为 relay `username`
 2. `email` 直接使用 LDAP 返回邮箱；若 LDAP 缺失邮箱，则使用可追溯的企业兜底邮箱
-3. `password` 使用高熵随机值，由 `ai-efficiency` 生成且**不回传用户**
-4. `notes` 或等价字段写入来源标记，例如 `provisioned_by_ai_efficiency_ldap`
-5. 若 sub2api 中已存在同 `username` 用户，则只绑定，不自动覆盖其邮箱
+3. `password` 使用本次 LDAP 登录已验证通过的明文密码；若当前调用上下文拿不到 LDAP 密码，再退回到高熵随机值
+4. 新建 relay user 时显式设置 `concurrency=5`，不依赖 relay 侧隐式默认值
+5. `notes` 或等价字段写入来源标记，例如 `provisioned_by_ai_efficiency_ldap`
+6. 若 sub2api 中已存在同 `username` 用户，则只绑定，不自动覆盖其邮箱
+7. 后续 LDAP 登录时，若已存在同 `username` 的 sub2api 用户，则将其密码同步为当前 LDAP 密码；若历史用户名仍是完整邮箱，则迁移为 local-part
 
 这保证：
 
 - 主身份由 `username` 决定
 - 邮箱差异不会造成错绑
-- 不要求用户后续使用 sub2api 本地密码登录
+- relay 本地密码可持续跟随 LDAP 登录密码演进
+- `foo@shengwang.cn` 与 `foo@agora.io` 会统一映射到 relay `username=foo`
+
+实现要求补充：
+
+- relay adapter 不能把 `/api/v1/admin/users?username=...` 或 `?email=...` 返回列表的第一条直接当作命中；必须在返回结果中做精确匹配后才能绑定
+- 若 relay server 忽略查询过滤条件并返回分页列表，未命中精确 username/email 时必须视为“未找到”，转入建人路径，而不是错绑到无关 user
+- 对已经落库的 LDAP 用户，若其 `relay_user_id` 与重新解析出的稳定身份不一致，后续登录应修正该错绑
 
 ### Relay Provider 能力扩展
 

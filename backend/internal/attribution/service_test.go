@@ -110,6 +110,9 @@ func (f *fakeRelayProvider) FindUserByUsername(ctx context.Context, username str
 func (f *fakeRelayProvider) CreateUser(ctx context.Context, req relay.CreateUserRequest) (*relay.User, error) {
 	return nil, nil
 }
+func (f *fakeRelayProvider) UpdateUser(ctx context.Context, userID int64, req relay.UpdateUserRequest) (*relay.User, error) {
+	return nil, nil
+}
 func (f *fakeRelayProvider) ChatCompletion(ctx context.Context, req relay.ChatCompletionRequest) (*relay.ChatCompletionResponse, error) {
 	return nil, nil
 }

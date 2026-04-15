@@ -50,6 +50,7 @@ flowchart LR
 
 - `ai-efficiency` is a standalone system. It integrates with `sub2api` through relay/provider HTTP APIs rather than direct database coupling.
 - The backend is the central orchestration point for auth, repo configuration, analysis, attribution, and SCM/webhook workflows.
+- Backend runtime relay consumers currently resolve their primary relay instance from `relay.*` config first, and fall back to the enabled primary `RelayProvider` database record when static relay URL config is absent.
 - The frontend is built separately and embedded into the backend binary during Docker build, so the backend process serves both API routes and the SPA entrypoint in deployed images.
 - Official production deployment now has two supported paths: Docker Compose and Linux systemd.
 - The business entrypoint remains the backend service that also serves the frontend bundle.
