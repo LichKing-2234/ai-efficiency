@@ -3,6 +3,8 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"os"
+	"runtime"
 	"strings"
 	"time"
 
@@ -13,14 +15,17 @@ import (
 )
 
 var (
-	loginForce bool
-	loginFlow  = auth.Login
+	loginForce         bool
+	loginDevice        bool
+	loginFlow          = auth.Login
+	loginDeviceFlow    = auth.LoginDevice
+	headlessBrowserEnv = auth.IsHeadlessLinux
 )
 
 var loginCmd = &cobra.Command{
 	Use:   "login",
-	Short: "Login to the AI Efficiency Platform via browser",
-	Long:  "Opens a browser window for OAuth2 login. After approval, a token is saved locally.",
+	Short: "Login to the AI Efficiency Platform",
+	Long:  "Uses browser PKCE by default and supports OAuth device authorization with --device.",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		serverURL := resolveLoginServerURL(cfg, buildinfo.ServerURL)
 		if serverURL == "" {
@@ -38,11 +43,22 @@ var loginCmd = &cobra.Command{
 			}
 		}
 
-		result, err := loginFlow(context.Background(), auth.OAuthConfig{
+		oauthCfg := auth.OAuthConfig{
 			ServerURL: serverURL,
 			ClientID:  "ae-cli",
 			Timeout:   3 * time.Minute,
-		})
+			Output:    cmd.OutOrStdout(),
+		}
+
+		var result *auth.OAuthResult
+		switch {
+		case loginDevice:
+			result, err = loginDeviceFlow(context.Background(), oauthCfg)
+		case headlessBrowserEnv(os.Getenv, runtime.GOOS):
+			return fmt.Errorf("No browser environment detected. Use 'ae-cli login --device'.")
+		default:
+			result, err = loginFlow(context.Background(), oauthCfg)
+		}
 		if err != nil {
 			return fmt.Errorf("login failed: %w", err)
 		}
@@ -58,7 +74,7 @@ var loginCmd = &cobra.Command{
 			return fmt.Errorf("save token: %w", err)
 		}
 
-		fmt.Printf("Login successful! Token saved to %s\n", tokenPath)
+		fmt.Fprintf(cmd.OutOrStdout(), "Login successful! Token saved to %s\n", tokenPath)
 		return nil
 	},
 }
@@ -66,6 +82,7 @@ var loginCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(loginCmd)
 	loginCmd.Flags().BoolVar(&loginForce, "force", false, "Force re-login even if already logged in")
+	loginCmd.Flags().BoolVar(&loginDevice, "device", false, "Use OAuth device authorization flow")
 }
 
 func resolveLoginServerURL(cfg *config.Config, fallback string) string {
