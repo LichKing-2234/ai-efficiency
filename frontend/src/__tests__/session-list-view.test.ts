@@ -126,7 +126,7 @@ describe('SessionListView', () => {
     await repoQueryInput.setValue('team/repo')
     await branchInput.setValue('feat/session-filter')
     await ownerQueryInput.setValue('alice')
-    await ownerScopeSelect.setValue('unowned')
+    await ownerScopeSelect.setValue('all')
     await applyButton.trigger('click')
     await flushPromises()
 
@@ -136,7 +136,7 @@ describe('SessionListView', () => {
       repo_query: 'team/repo',
       branch: 'feat/session-filter',
       owner_query: 'alice',
-      owner_scope: 'unowned',
+      owner_scope: 'all',
     })
   })
 
@@ -350,6 +350,45 @@ describe('SessionListView', () => {
       page: 1,
       page_size: 20,
       owner_scope: 'all',
+    })
+  })
+
+  it('clears and suppresses owner query when owner scope switches to unowned', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+
+    const { listSessions } = await import('@/api/session')
+    ;(listSessions as any).mockResolvedValue(buildListResponse())
+
+    const auth = useAuthStore(pinia)
+    auth.user = { id: 1, username: 'admin', email: 'admin@example.com', role: 'admin', auth_source: 'sso' }
+
+    const router = createTestRouter()
+    await router.push('/sessions')
+    await router.isReady()
+
+    const wrapper = mount(SessionListView, {
+      global: { plugins: [pinia, router] },
+    })
+    await flushPromises()
+
+    const ownerQueryInput = wrapper.find('input[name="owner_query"]')
+    const ownerScopeSelect = wrapper.find('select[name="owner_scope"]')
+    const applyButton = wrapper.find('button[type="button"][data-testid="apply-session-filters"]')
+
+    await ownerQueryInput.setValue('alice')
+    await ownerScopeSelect.setValue('unowned')
+    await flushPromises()
+
+    expect((ownerQueryInput.element as HTMLInputElement).value).toBe('')
+
+    await applyButton.trigger('click')
+    await flushPromises()
+
+    expect(listSessions).toHaveBeenLastCalledWith({
+      page: 1,
+      page_size: 20,
+      owner_scope: 'unowned',
     })
   })
 })

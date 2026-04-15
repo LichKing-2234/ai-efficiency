@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import AppLayout from '@/components/AppLayout.vue'
 import { listSessions } from '@/api/session'
@@ -48,7 +48,7 @@ function applyFilters() {
   page.value = 1
   appliedRepoQuery.value = repoQuery.value
   appliedBranchFilter.value = branchFilter.value
-  appliedOwnerQuery.value = ownerQuery.value
+  appliedOwnerQuery.value = ownerScope.value === 'unowned' ? '' : ownerQuery.value
   appliedOwnerScope.value = ownerScope.value
   fetchSessions()
 }
@@ -93,6 +93,12 @@ function statusClass(status: string) {
 }
 
 const totalPages = () => Math.ceil(total.value / pageSize)
+
+watch(ownerScope, (scope) => {
+  if (scope === 'unowned') {
+    ownerQuery.value = ''
+  }
+})
 
 onMounted(fetchSessions)
 </script>
@@ -139,6 +145,7 @@ onMounted(fetchSessions)
             name="owner_query"
             type="text"
             class="rounded-md border border-gray-300 px-3 py-1.5 text-sm"
+            :disabled="ownerScope === 'unowned'"
             placeholder="Filter by owner"
             @keyup.enter="applyFilters"
           />
