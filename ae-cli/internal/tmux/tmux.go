@@ -8,6 +8,10 @@ import (
 	"strings"
 )
 
+var tmuxRun = func(args ...string) ([]byte, error) {
+	return exec.Command("tmux", args...).CombinedOutput()
+}
+
 // Pane represents a tmux pane running a tool.
 type Pane struct {
 	ID     string
@@ -56,8 +60,13 @@ func SessionExists(name string) bool {
 
 // NewSession creates a new tmux session (detached) with aggressive resize enabled.
 func NewSession(name string) error {
-	if err := exec.Command("tmux", "new-session", "-d", "-s", name, "-x", "200", "-y", "50").Run(); err != nil {
-		return err
+	out, err := tmuxRun("new-session", "-d", "-s", name, "-x", "200", "-y", "50")
+	if err != nil {
+		msg := strings.TrimSpace(string(out))
+		if msg == "" {
+			return err
+		}
+		return fmt.Errorf("%w: %s", err, msg)
 	}
 	_ = exec.Command("tmux", "set-option", "-t", name, "-g", "aggressive-resize", "on").Run()
 	return nil
