@@ -1,5 +1,3 @@
-import client from './client'
-
 export interface ApproveRequest {
   client_id: string
   redirect_uri: string
@@ -14,6 +12,46 @@ export interface ApproveResponse {
 }
 
 export async function approveAuthorization(req: ApproveRequest): Promise<ApproveResponse> {
-  const { data } = await client.post('/oauth/authorize/approve', req)
-  return data.data
+  const token = localStorage.getItem('token')
+  const resp = await fetch('/oauth/authorize/approve', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(req),
+  })
+  const data = await resp.json()
+  if (!resp.ok) {
+    throw new Error(data?.message || data?.error || 'Authorization failed')
+  }
+  return data.data ?? data
+}
+
+export interface DeviceVerifyRequest {
+  user_code: string
+  approved: boolean
+}
+
+export interface DeviceVerifyResponse {
+  status: 'approved' | 'denied'
+}
+
+export async function verifyDeviceAuthorization(req: DeviceVerifyRequest): Promise<DeviceVerifyResponse> {
+  const token = localStorage.getItem('token')
+  const resp = await fetch('/oauth/device/verify', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(req),
+  })
+  const data = await resp.json()
+  if (!resp.ok) {
+    const err: any = new Error(data?.message || data?.error || 'Code invalid or expired')
+    err.response = { data }
+    throw err
+  }
+  return data.data ?? data
 }
