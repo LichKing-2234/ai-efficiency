@@ -89,7 +89,7 @@ func setupBootstrapHTTPTestEnv(t *testing.T) *testEnv {
 	webhookHandler := webhook.NewHandler(client, nil, logger)
 
 	rp := &fakeRelayProviderForBootstrap{}
-	bootstrapSvc := sessionbootstrap.NewService(client, rp, nil, "sub2api", "http://relay.local/v1", "g-default", 2*time.Hour)
+	bootstrapSvc := sessionbootstrap.NewService(client, repoSvc, rp, nil, "sub2api", "http://relay.local/v1", "g-default", 2*time.Hour)
 
 	router := SetupRouter(
 		client,
@@ -214,6 +214,28 @@ func TestSessionBootstrapHTTP_Failure_ServiceErrorStill422(t *testing.T) {
 	}
 }
 
+func TestSessionBootstrapHTTP_CreatesRepoWhenMissing(t *testing.T) {
+	env := setupBootstrapHTTPTestEnv(t)
+
+	w := doRequest(env, "POST", "/api/v1/sessions/bootstrap", map[string]interface{}{
+		"repo_full_name":  "git@github.com:acme/platform.git",
+		"branch_snapshot": "main",
+		"head_sha":        "abc123",
+		"workspace_root":  "/tmp/ws",
+		"git_dir":         "/tmp/ws/.git",
+		"git_common_dir":  "/tmp/ws/.git",
+		"workspace_id":    "ws-1",
+	})
+	if w.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d, body: %s", w.Code, http.StatusCreated, w.Body.String())
+	}
+
+	got := env.client.RepoConfig.Query().OnlyX(context.Background())
+	if got.FullName != "acme/platform" {
+		t.Fatalf("full_name = %q, want %q", got.FullName, "acme/platform")
+	}
+}
+
 func TestSessionProviderCredentialHTTP_ReusesExistingOpenAIKey(t *testing.T) {
 	env := setupBootstrapHTTPTestEnv(t)
 	ctx := context.Background()
@@ -259,7 +281,7 @@ func TestSessionProviderCredentialHTTP_ReusesExistingOpenAIKey(t *testing.T) {
 			}, nil
 		},
 	}
-	bootstrapSvc := sessionbootstrap.NewService(env.client, rp, nil, "sub2api", "http://relay.local/v1", "42", 2*time.Hour)
+	bootstrapSvc := sessionbootstrap.NewService(env.client, repo.NewService(env.client, "0000000000000000000000000000000000000000000000000000000000000000", zap.NewNop()), rp, nil, "sub2api", "http://relay.local/v1", "42", 2*time.Hour)
 	env.router = SetupRouter(
 		env.client,
 		env.authSvc,

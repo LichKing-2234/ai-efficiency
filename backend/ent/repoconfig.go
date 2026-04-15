@@ -19,6 +19,8 @@ type RepoConfig struct {
 	config `json:"-"`
 	// ID of the ent.
 	ID int `json:"id,omitempty"`
+	// RepoKey holds the value of the "repo_key" field.
+	RepoKey string `json:"repo_key,omitempty"`
 	// Name holds the value of the "name" field.
 	Name string `json:"name,omitempty"`
 	// FullName holds the value of the "full_name" field.
@@ -162,7 +164,7 @@ func (*RepoConfig) scanValues(columns []string) ([]any, error) {
 			values[i] = new([]byte)
 		case repoconfig.FieldID, repoconfig.FieldAiScore:
 			values[i] = new(sql.NullInt64)
-		case repoconfig.FieldName, repoconfig.FieldFullName, repoconfig.FieldCloneURL, repoconfig.FieldDefaultBranch, repoconfig.FieldWebhookID, repoconfig.FieldWebhookSecret, repoconfig.FieldGroupID, repoconfig.FieldRelayProviderName, repoconfig.FieldRelayGroupID, repoconfig.FieldStatus:
+		case repoconfig.FieldRepoKey, repoconfig.FieldName, repoconfig.FieldFullName, repoconfig.FieldCloneURL, repoconfig.FieldDefaultBranch, repoconfig.FieldWebhookID, repoconfig.FieldWebhookSecret, repoconfig.FieldGroupID, repoconfig.FieldRelayProviderName, repoconfig.FieldRelayGroupID, repoconfig.FieldStatus:
 			values[i] = new(sql.NullString)
 		case repoconfig.FieldLastScanAt, repoconfig.FieldCreatedAt, repoconfig.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -189,6 +191,12 @@ func (rc *RepoConfig) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field id", value)
 			}
 			rc.ID = int(value.Int64)
+		case repoconfig.FieldRepoKey:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field repo_key", values[i])
+			} else if value.Valid {
+				rc.RepoKey = value.String
+			}
 		case repoconfig.FieldName:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field name", values[i])
@@ -370,6 +378,9 @@ func (rc *RepoConfig) String() string {
 	var builder strings.Builder
 	builder.WriteString("RepoConfig(")
 	builder.WriteString(fmt.Sprintf("id=%v, ", rc.ID))
+	builder.WriteString("repo_key=")
+	builder.WriteString(rc.RepoKey)
+	builder.WriteString(", ")
 	builder.WriteString("name=")
 	builder.WriteString(rc.Name)
 	builder.WriteString(", ")

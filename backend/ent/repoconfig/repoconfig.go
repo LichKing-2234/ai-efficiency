@@ -15,6 +15,8 @@ const (
 	Label = "repo_config"
 	// FieldID holds the string denoting the id field in the database.
 	FieldID = "id"
+	// FieldRepoKey holds the string denoting the repo_key field in the database.
+	FieldRepoKey = "repo_key"
 	// FieldName holds the string denoting the name field in the database.
 	FieldName = "name"
 	// FieldFullName holds the string denoting the full_name field in the database.
@@ -124,6 +126,7 @@ const (
 // Columns holds all SQL columns for repoconfig fields.
 var Columns = []string{
 	FieldID,
+	FieldRepoKey,
 	FieldName,
 	FieldFullName,
 	FieldCloneURL,
@@ -214,6 +217,11 @@ type OrderOption func(*sql.Selector)
 // ByID orders the results by the id field.
 func ByID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldID, opts...).ToFunc()
+}
+
+// ByRepoKey orders the results by the repo_key field.
+func ByRepoKey(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldRepoKey, opts...).ToFunc()
 }
 
 // ByName orders the results by the name field.

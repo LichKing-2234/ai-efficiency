@@ -14,8 +14,10 @@ import (
 	"github.com/ai-efficiency/backend/internal/auth"
 	"github.com/ai-efficiency/backend/internal/pkg"
 	"github.com/ai-efficiency/backend/internal/relay"
+	"github.com/ai-efficiency/backend/internal/repo"
 	"github.com/ai-efficiency/backend/internal/testdb"
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 )
 
 type fakeRelayProvider struct {
@@ -125,6 +127,21 @@ func ptrTime(v time.Time) *time.Time {
 	return &v
 }
 
+func newBootstrapServiceForTest(
+	client *ent.Client,
+	rp relay.Provider,
+	resolver *auth.RelayIdentityResolver,
+	defaultProviderName string,
+	providerBaseURL string,
+	defaultGroupID string,
+	keyTTL time.Duration,
+	encryptionKeys ...string,
+) *Service {
+	repoSvc := repo.NewService(client, "0000000000000000000000000000000000000000000000000000000000000000", zap.NewNop())
+	args := append([]string(nil), encryptionKeys...)
+	return NewService(client, repoSvc, rp, resolver, defaultProviderName, providerBaseURL, defaultGroupID, keyTTL, args...)
+}
+
 func TestBootstrapCreatesSessionAndMetadataEnvBundle(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)
@@ -167,7 +184,7 @@ func TestBootstrapCreatesSessionAndMetadataEnvBundle(t *testing.T) {
 	}
 	resolver := auth.NewRelayIdentityResolver(rp, "ldap.local")
 
-	svc := NewService(client, rp, resolver, "sub2api", "http://relay.local/v1", "g-default", 2*time.Hour)
+	svc := newBootstrapServiceForTest(client, rp, resolver, "sub2api", "http://relay.local/v1", "g-default", 2*time.Hour)
 
 	resp, err := svc.Bootstrap(ctx, u.ID, BootstrapRequest{
 		RepoFullName:   rc.FullName,
@@ -258,6 +275,47 @@ func TestBootstrapCreatesSessionAndMetadataEnvBundle(t *testing.T) {
 	}
 }
 
+func TestBootstrapCreatesUnboundRepoWhenMissing(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+
+	u := client.User.Create().
+		SetUsername("alice").
+		SetEmail("alice@example.com").
+		SetAuthSource("ldap").
+		SaveX(ctx)
+
+	rp := &fakeRelayProvider{
+		findUserByUsernameFn: func(_ context.Context, username string) (*relay.User, error) {
+			return &relay.User{ID: 99, Username: username}, nil
+		},
+	}
+	resolver := auth.NewRelayIdentityResolver(rp, "ldap.local")
+	repoSvc := repo.NewService(client, "0000000000000000000000000000000000000000000000000000000000000000", zap.NewNop())
+	svc := NewService(client, repoSvc, rp, resolver, "sub2api", "http://relay.local/v1", "g-default", 2*time.Hour)
+
+	_, err := svc.Bootstrap(ctx, u.ID, BootstrapRequest{
+		RepoFullName:   "git@github.com:acme/platform.git",
+		BranchSnapshot: "main",
+		HeadSHA:        "abc123",
+		WorkspaceRoot:  "/tmp/ws",
+		GitDir:         "/tmp/ws/.git",
+		GitCommonDir:   "/tmp/ws/.git",
+		WorkspaceID:    "ws-1",
+	})
+	if err != nil {
+		t.Fatalf("bootstrap: %v", err)
+	}
+
+	got := client.RepoConfig.Query().OnlyX(ctx)
+	if got.CloneURL != "git@github.com:acme/platform.git" {
+		t.Fatalf("clone_url = %q, want %q", got.CloneURL, "git@github.com:acme/platform.git")
+	}
+	if got.FullName != "acme/platform" {
+		t.Fatalf("full_name = %q, want %q", got.FullName, "acme/platform")
+	}
+}
+
 func TestBootstrapNoLongerCreatesRelayKeyOrEnvSecrets(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)
@@ -284,7 +342,7 @@ func TestBootstrapNoLongerCreatesRelayKeyOrEnvSecrets(t *testing.T) {
 		SaveX(ctx)
 
 	rp := &fakeRelayProvider{}
-	svc := NewService(client, rp, nil, "sub2api", "http://relay.local/v1", "g-default", 2*time.Hour)
+	svc := newBootstrapServiceForTest(client, rp, nil, "sub2api", "http://relay.local/v1", "g-default", 2*time.Hour)
 
 	resp, err := svc.Bootstrap(ctx, u.ID, BootstrapRequest{
 		RepoFullName:   rc.FullName,
@@ -353,7 +411,7 @@ func TestExpireStaleSessionsMarksOnlyOldActiveSessionsAbandoned(t *testing.T) {
 		SetEndedAt(time.Now().Add(-20 * time.Minute)).
 		SaveX(ctx)
 
-	svc := NewService(client, &fakeRelayProvider{}, nil, "sub2api", "http://relay.local/v1", "42", 2*time.Hour)
+	svc := newBootstrapServiceForTest(client, &fakeRelayProvider{}, nil, "sub2api", "http://relay.local/v1", "42", 2*time.Hour)
 	count, err := svc.ExpireStaleSessions(ctx, time.Now().Add(-5*time.Minute))
 	if err != nil {
 		t.Fatalf("ExpireStaleSessions: %v", err)
@@ -433,7 +491,7 @@ func TestResolveProviderCredentialReusesUsernameMatchBeforeCreating(t *testing.T
 		},
 	}
 
-	svc := NewService(client, rp, nil, "sub2api", "http://relay.local/v1", "42", 2*time.Hour)
+	svc := newBootstrapServiceForTest(client, rp, nil, "sub2api", "http://relay.local/v1", "42", 2*time.Hour)
 	cred, err := svc.ResolveProviderCredential(ctx, u.ID, sid, "openai")
 	if err != nil {
 		t.Fatalf("ResolveProviderCredential: %v", err)
@@ -514,7 +572,7 @@ func TestResolveProviderCredentialFallsBackToEmailPrefixThenCreates(t *testing.T
 		},
 	}
 
-	svc := NewService(client, rp, nil, "sub2api", "http://relay.local/v1", "77", 2*time.Hour)
+	svc := newBootstrapServiceForTest(client, rp, nil, "sub2api", "http://relay.local/v1", "77", 2*time.Hour)
 	cred, err := svc.ResolveProviderCredential(ctx, u.ID, sid, "anthropic")
 	if err != nil {
 		t.Fatalf("ResolveProviderCredential: %v", err)
@@ -589,7 +647,7 @@ func TestResolveProviderCredentialCreatesUsingPlatformSpecificGroup(t *testing.T
 		},
 	}
 
-	svc := NewService(client, rp, nil, "sub2api", "http://relay.local/v1", "77", 2*time.Hour)
+	svc := newBootstrapServiceForTest(client, rp, nil, "sub2api", "http://relay.local/v1", "77", 2*time.Hour)
 	cred, err := svc.ResolveProviderCredential(ctx, u.ID, sid, "openai")
 	if err != nil {
 		t.Fatalf("ResolveProviderCredential: %v", err)
@@ -657,7 +715,7 @@ func TestResolveProviderCredentialCreatesEmailPrefixNameWhenUsernameIsEmailAlias
 		},
 	}
 
-	svc := NewService(client, rp, nil, "sub2api", "http://relay.local/v1", "77", 2*time.Hour)
+	svc := newBootstrapServiceForTest(client, rp, nil, "sub2api", "http://relay.local/v1", "77", 2*time.Hour)
 	cred, err := svc.ResolveProviderCredential(ctx, u.ID, sid, "openai")
 	if err != nil {
 		t.Fatalf("ResolveProviderCredential: %v", err)
@@ -720,7 +778,7 @@ func TestResolveProviderCredentialReactivatesInactiveMatchingKey(t *testing.T) {
 		},
 	}
 
-	svc := NewService(client, rp, nil, "sub2api", "http://relay.local/v1", "77", 2*time.Hour)
+	svc := newBootstrapServiceForTest(client, rp, nil, "sub2api", "http://relay.local/v1", "77", 2*time.Hour)
 	cred, err := svc.ResolveProviderCredential(ctx, u.ID, sid, "anthropic")
 	if err != nil {
 		t.Fatalf("ResolveProviderCredential: %v", err)
@@ -798,7 +856,7 @@ func TestResolveProviderCredentialDeduplicatesConcurrentCreate(t *testing.T) {
 		},
 	}
 
-	svc := NewService(client, rp, nil, "sub2api", "http://relay.local/v1", "77", 2*time.Hour)
+	svc := newBootstrapServiceForTest(client, rp, nil, "sub2api", "http://relay.local/v1", "77", 2*time.Hour)
 
 	var wg sync.WaitGroup
 	type result struct {
@@ -873,7 +931,7 @@ func TestResolveProviderCredentialRejectsNonOwner(t *testing.T) {
 		SetStartedAt(time.Now()).
 		SaveX(ctx)
 
-	svc := NewService(client, &fakeRelayProvider{}, nil, "sub2api", "http://relay.local/v1", "42", 2*time.Hour)
+	svc := newBootstrapServiceForTest(client, &fakeRelayProvider{}, nil, "sub2api", "http://relay.local/v1", "42", 2*time.Hour)
 	if _, err := svc.ResolveProviderCredential(ctx, other.ID, sid, "openai"); err == nil {
 		t.Fatalf("expected ownership error")
 	}
@@ -918,7 +976,7 @@ func TestStopRevokesRelayKey(t *testing.T) {
 	}
 
 	rp := &fakeRelayProvider{}
-	svc := NewService(client, rp, nil, "sub2api", "http://relay.local/v1", "g-default", 2*time.Hour)
+	svc := newBootstrapServiceForTest(client, rp, nil, "sub2api", "http://relay.local/v1", "g-default", 2*time.Hour)
 
 	stopped, err := svc.Stop(ctx, sid)
 	if err != nil {
@@ -978,7 +1036,7 @@ func TestBootstrapFallsBackToRelayResolvedDefaultGroup(t *testing.T) {
 		},
 	}
 	resolver := auth.NewRelayIdentityResolver(rp, "ldap.local")
-	svc := NewService(client, rp, resolver, "sub2api", "http://relay.local/v1", "", 2*time.Hour)
+	svc := newBootstrapServiceForTest(client, rp, resolver, "sub2api", "http://relay.local/v1", "", 2*time.Hour)
 
 	resp, err := svc.Bootstrap(ctx, u.ID, BootstrapRequest{
 		RepoFullName:   rc.FullName,
@@ -1064,7 +1122,7 @@ func TestBootstrapWithStoredRelayCredentialsDoesNotCreateKey(t *testing.T) {
 		},
 	}
 
-	svc := NewService(client, rp, nil, "sub2api", "http://relay.local/v1", "g-default", 2*time.Hour, encryptionKey)
+	svc := newBootstrapServiceForTest(client, rp, nil, "sub2api", "http://relay.local/v1", "g-default", 2*time.Hour, encryptionKey)
 	resp, err := svc.Bootstrap(ctx, u.ID, BootstrapRequest{
 		RepoFullName:   rc.FullName,
 		BranchSnapshot: "main",
@@ -1138,7 +1196,7 @@ func TestBootstrapSessionSaveFailureDoesNotAttemptRelayKeyCleanup(t *testing.T) 
 			}, nil
 		},
 	}
-	svc := NewService(client, rp, nil, "sub2api", "http://relay.local/v1", "g-default", 2*time.Hour)
+	svc := newBootstrapServiceForTest(client, rp, nil, "sub2api", "http://relay.local/v1", "g-default", 2*time.Hour)
 
 	_, err = svc.Bootstrap(ctx, u.ID, BootstrapRequest{
 		RepoFullName:   rc.FullName,
@@ -1206,7 +1264,7 @@ func TestBootstrapUsesRelayProviderNameWhenConfigEmpty(t *testing.T) {
 	}
 
 	// Config provider name is empty; the service should still use the relay provider identity.
-	svc := NewService(client, rp, nil, "", "http://relay.local/v1", "g-default", 2*time.Hour)
+	svc := newBootstrapServiceForTest(client, rp, nil, "", "http://relay.local/v1", "g-default", 2*time.Hour)
 
 	resp, err := svc.Bootstrap(ctx, u.ID, BootstrapRequest{
 		RepoFullName:   rc.FullName,

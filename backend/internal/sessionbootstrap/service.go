@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/ai-efficiency/backend/ent"
-	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/session"
 	"github.com/ai-efficiency/backend/ent/sessionworkspace"
 	"github.com/ai-efficiency/backend/ent/user"
@@ -49,7 +48,12 @@ type ProviderCredentialResponse struct {
 	BaseURL      string `json:"base_url"`
 }
 
+type repoBootstrapService interface {
+	FindOrCreateFromRemote(ctx context.Context, remoteURL, branch string) (*ent.RepoConfig, error)
+}
+
 type Service struct {
+	repoService           repoBootstrapService
 	entClient             *ent.Client
 	relayProvider         relay.Provider
 	relayIdentityResolver *auth.RelayIdentityResolver
@@ -67,6 +71,7 @@ type Service struct {
 
 func NewService(
 	entClient *ent.Client,
+	repoService repoBootstrapService,
 	relayProvider relay.Provider,
 	relayIdentityResolver *auth.RelayIdentityResolver,
 	defaultProviderName string,
@@ -79,6 +84,7 @@ func NewService(
 		keyTTL = 24 * time.Hour
 	}
 	return &Service{
+		repoService:           repoService,
 		entClient:             entClient,
 		relayProvider:         relayProvider,
 		relayIdentityResolver: relayIdentityResolver,
@@ -184,23 +190,16 @@ func (s *Service) Bootstrap(ctx context.Context, localUserID int, req BootstrapR
 	if s.entClient == nil {
 		return nil, fmt.Errorf("bootstrap: ent client is required")
 	}
+	if s.repoService == nil {
+		return nil, fmt.Errorf("bootstrap: repo service is not configured")
+	}
 	if s.relayProvider == nil {
 		return nil, fmt.Errorf("bootstrap: relay provider is not configured")
 	}
 
-	rc, err := s.entClient.RepoConfig.Query().
-		Where(repoconfig.FullNameEQ(req.RepoFullName)).
-		Only(ctx)
-	if err != nil && ent.IsNotFound(err) {
-		rc, err = s.entClient.RepoConfig.Query().
-			Where(repoconfig.CloneURLEQ(req.RepoFullName)).
-			Only(ctx)
-	}
+	rc, err := s.repoService.FindOrCreateFromRemote(ctx, req.RepoFullName, req.BranchSnapshot)
 	if err != nil {
-		if ent.IsNotFound(err) {
-			return nil, fmt.Errorf("bootstrap: repo not found: %s", req.RepoFullName)
-		}
-		return nil, fmt.Errorf("bootstrap: query repo: %w", err)
+		return nil, fmt.Errorf("bootstrap: resolve repo: %w", err)
 	}
 
 	binding, err := s.resolveRouteBinding(ctx, rc)

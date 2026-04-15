@@ -29,6 +29,20 @@ type RepoConfigCreate struct {
 	hooks    []Hook
 }
 
+// SetRepoKey sets the "repo_key" field.
+func (rcc *RepoConfigCreate) SetRepoKey(s string) *RepoConfigCreate {
+	rcc.mutation.SetRepoKey(s)
+	return rcc
+}
+
+// SetNillableRepoKey sets the "repo_key" field if the given value is not nil.
+func (rcc *RepoConfigCreate) SetNillableRepoKey(s *string) *RepoConfigCreate {
+	if s != nil {
+		rcc.SetRepoKey(*s)
+	}
+	return rcc
+}
+
 // SetName sets the "name" field.
 func (rcc *RepoConfigCreate) SetName(s string) *RepoConfigCreate {
 	rcc.mutation.SetName(s)
@@ -210,6 +224,14 @@ func (rcc *RepoConfigCreate) SetScanPromptOverride(m map[string]string) *RepoCon
 // SetScmProviderID sets the "scm_provider" edge to the ScmProvider entity by ID.
 func (rcc *RepoConfigCreate) SetScmProviderID(id int) *RepoConfigCreate {
 	rcc.mutation.SetScmProviderID(id)
+	return rcc
+}
+
+// SetNillableScmProviderID sets the "scm_provider" edge to the ScmProvider entity by ID if the given value is not nil.
+func (rcc *RepoConfigCreate) SetNillableScmProviderID(id *int) *RepoConfigCreate {
+	if id != nil {
+		rcc = rcc.SetScmProviderID(*id)
+	}
 	return rcc
 }
 
@@ -423,9 +445,6 @@ func (rcc *RepoConfigCreate) check() error {
 	if _, ok := rcc.mutation.UpdatedAt(); !ok {
 		return &ValidationError{Name: "updated_at", err: errors.New(`ent: missing required field "RepoConfig.updated_at"`)}
 	}
-	if len(rcc.mutation.ScmProviderIDs()) == 0 {
-		return &ValidationError{Name: "scm_provider", err: errors.New(`ent: missing required edge "RepoConfig.scm_provider"`)}
-	}
 	return nil
 }
 
@@ -452,6 +471,10 @@ func (rcc *RepoConfigCreate) createSpec() (*RepoConfig, *sqlgraph.CreateSpec) {
 		_node = &RepoConfig{config: rcc.config}
 		_spec = sqlgraph.NewCreateSpec(repoconfig.Table, sqlgraph.NewFieldSpec(repoconfig.FieldID, field.TypeInt))
 	)
+	if value, ok := rcc.mutation.RepoKey(); ok {
+		_spec.SetField(repoconfig.FieldRepoKey, field.TypeString, value)
+		_node.RepoKey = value
+	}
 	if value, ok := rcc.mutation.Name(); ok {
 		_spec.SetField(repoconfig.FieldName, field.TypeString, value)
 		_node.Name = value

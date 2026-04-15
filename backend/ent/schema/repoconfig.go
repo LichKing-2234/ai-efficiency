@@ -15,6 +15,8 @@ type RepoConfig struct {
 // Fields of the RepoConfig.
 func (RepoConfig) Fields() []ent.Field {
 	return []ent.Field{
+		field.String("repo_key").
+			Optional(),
 		field.String("name").
 			NotEmpty(),
 		field.String("full_name").
@@ -64,8 +66,7 @@ func (RepoConfig) Edges() []ent.Edge {
 	return []ent.Edge{
 		edge.From("scm_provider", ScmProvider.Type).
 			Ref("repo_configs").
-			Unique().
-			Required(),
+			Unique(),
 		edge.To("sessions", Session.Type),
 		edge.To("commit_checkpoints", CommitCheckpoint.Type),
 		edge.To("commit_rewrites", CommitRewrite.Type),
@@ -79,6 +80,8 @@ func (RepoConfig) Edges() []ent.Edge {
 // Indexes of the RepoConfig.
 func (RepoConfig) Indexes() []ent.Index {
 	return []ent.Index{
+		index.Fields("repo_key").
+			Unique(),
 		index.Fields("full_name").
 			Edges("scm_provider").
 			Unique(),

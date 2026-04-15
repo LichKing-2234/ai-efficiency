@@ -263,6 +263,7 @@ func main() {
 	if relayProvider != nil {
 		sessionBootstrapSvc = sessionbootstrap.NewService(
 			entClient,
+			repoService,
 			relayProvider,
 			relayIdentityResolver,
 			cfg.Relay.Provider,

@@ -282,31 +282,31 @@ func init() {
 	repoconfigFields := schema.RepoConfig{}.Fields()
 	_ = repoconfigFields
 	// repoconfigDescName is the schema descriptor for name field.
-	repoconfigDescName := repoconfigFields[0].Descriptor()
+	repoconfigDescName := repoconfigFields[1].Descriptor()
 	// repoconfig.NameValidator is a validator for the "name" field. It is called by the builders before save.
 	repoconfig.NameValidator = repoconfigDescName.Validators[0].(func(string) error)
 	// repoconfigDescFullName is the schema descriptor for full_name field.
-	repoconfigDescFullName := repoconfigFields[1].Descriptor()
+	repoconfigDescFullName := repoconfigFields[2].Descriptor()
 	// repoconfig.FullNameValidator is a validator for the "full_name" field. It is called by the builders before save.
 	repoconfig.FullNameValidator = repoconfigDescFullName.Validators[0].(func(string) error)
 	// repoconfigDescCloneURL is the schema descriptor for clone_url field.
-	repoconfigDescCloneURL := repoconfigFields[2].Descriptor()
+	repoconfigDescCloneURL := repoconfigFields[3].Descriptor()
 	// repoconfig.CloneURLValidator is a validator for the "clone_url" field. It is called by the builders before save.
 	repoconfig.CloneURLValidator = repoconfigDescCloneURL.Validators[0].(func(string) error)
 	// repoconfigDescDefaultBranch is the schema descriptor for default_branch field.
-	repoconfigDescDefaultBranch := repoconfigFields[3].Descriptor()
+	repoconfigDescDefaultBranch := repoconfigFields[4].Descriptor()
 	// repoconfig.DefaultDefaultBranch holds the default value on creation for the default_branch field.
 	repoconfig.DefaultDefaultBranch = repoconfigDescDefaultBranch.Default.(string)
 	// repoconfigDescAiScore is the schema descriptor for ai_score field.
-	repoconfigDescAiScore := repoconfigFields[6].Descriptor()
+	repoconfigDescAiScore := repoconfigFields[7].Descriptor()
 	// repoconfig.DefaultAiScore holds the default value on creation for the ai_score field.
 	repoconfig.DefaultAiScore = repoconfigDescAiScore.Default.(int)
 	// repoconfigDescCreatedAt is the schema descriptor for created_at field.
-	repoconfigDescCreatedAt := repoconfigFields[12].Descriptor()
+	repoconfigDescCreatedAt := repoconfigFields[13].Descriptor()
 	// repoconfig.DefaultCreatedAt holds the default value on creation for the created_at field.
 	repoconfig.DefaultCreatedAt = repoconfigDescCreatedAt.Default.(func() time.Time)
 	// repoconfigDescUpdatedAt is the schema descriptor for updated_at field.
-	repoconfigDescUpdatedAt := repoconfigFields[13].Descriptor()
+	repoconfigDescUpdatedAt := repoconfigFields[14].Descriptor()
 	// repoconfig.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	repoconfig.DefaultUpdatedAt = repoconfigDescUpdatedAt.Default.(func() time.Time)
 	// repoconfig.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.

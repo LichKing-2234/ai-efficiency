@@ -210,6 +210,27 @@ func TestCreateDirect_NoGroupID(t *testing.T) {
 	}
 }
 
+func TestCreateDirect_AllowsUnboundRepo(t *testing.T) {
+	_, svc := setupTest(t)
+
+	rc, err := svc.CreateDirect(context.Background(), CreateDirectRequest{
+		RepoKey:       "github.com/org/repo-unbound",
+		Name:          "repo-unbound",
+		FullName:      "org/repo-unbound",
+		CloneURL:      "https://github.com/org/repo-unbound.git",
+		DefaultBranch: "main",
+	})
+	if err != nil {
+		t.Fatalf("CreateDirect error: %v", err)
+	}
+	if rc.RepoKey != "github.com/org/repo-unbound" {
+		t.Fatalf("RepoKey = %q, want %q", rc.RepoKey, "github.com/org/repo-unbound")
+	}
+	if rc.Edges.ScmProvider != nil {
+		t.Fatalf("expected nil scm provider edge, got %#v", rc.Edges.ScmProvider)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Get
 // ---------------------------------------------------------------------------
