@@ -3,6 +3,7 @@ package oauth
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"net/http"
 	"net/url"
 	"strings"
@@ -25,6 +26,12 @@ const (
 	deviceStatusExpired      = "expired"
 	deviceStatusConsumed     = "consumed"
 	deviceGrantType          = "urn:ietf:params:oauth:grant-type:device_code"
+)
+
+var (
+	errRandomRead      = errors.New("oauth: random read failed")
+	generateCodeFunc   = generateCode
+	generateUserCodeFunc = generateUserCode
 )
 
 // authCodeEntry stores a pending authorization code with its metadata.
@@ -66,6 +73,7 @@ type Handler struct {
 	mu      sync.Mutex
 	codes   map[string]*authCodeEntry
 	devices map[string]*deviceEntry
+	devicesByUserCode map[string]*deviceEntry
 }
 
 // NewHandler creates a new OAuth handler.
@@ -79,6 +87,7 @@ func NewHandler(server *Server, frontendURL string, tokenGen TokenGenerator) *Ha
 		devicePollInterval: devicePollIntervalDefault,
 		codes:              make(map[string]*authCodeEntry),
 		devices:            make(map[string]*deviceEntry),
+		devicesByUserCode:  make(map[string]*deviceEntry),
 	}
 	// Background goroutine to reap expired auth codes every minute.
 	go h.reapExpiredCodes()
@@ -99,6 +108,7 @@ func (h *Handler) reapExpiredCodes() {
 		}
 		for code, entry := range h.devices {
 			if h.isDeviceExpiredLocked(entry) || entry.Status == deviceStatusConsumed {
+				delete(h.devicesByUserCode, entry.UserCode)
 				delete(h.devices, code)
 			}
 		}
@@ -233,7 +243,11 @@ func (h *Handler) Approve(c *gin.Context) {
 	username := uc.Username
 	role := uc.Role
 
-	code := generateCode()
+	code, err := generateCodeFunc()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
+		return
+	}
 
 	h.mu.Lock()
 	h.codes[code] = &authCodeEntry{
@@ -266,19 +280,31 @@ func (h *Handler) DeviceCode(c *gin.Context) {
 	}
 
 	now := h.now()
-	deviceCode := generateCode()
-	userCode := generateUserCode()
+	deviceCode, err := generateCodeFunc()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
+		return
+	}
 
 	h.mu.Lock()
-	h.devices[deviceCode] = &deviceEntry{
+	userCode, normalizedUserCode, err := h.issueUniqueUserCodeLocked()
+	if err != nil {
+		h.mu.Unlock()
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
+		return
+	}
+
+	entry := &deviceEntry{
 		DeviceCode:      deviceCode,
-		UserCode:        normalizeUserCode(userCode),
+		UserCode:        normalizedUserCode,
 		ClientID:        clientID,
 		Status:          deviceStatusPending,
 		CreatedAt:       now,
 		ExpiresAt:       now.Add(h.deviceCodeExpiry),
 		PollIntervalSec: int(h.devicePollInterval / time.Second),
 	}
+	h.devices[deviceCode] = entry
+	h.devicesByUserCode[normalizedUserCode] = entry
 	h.mu.Unlock()
 
 	c.JSON(http.StatusOK, gin.H{
@@ -478,31 +504,45 @@ func (h *Handler) exchangeDeviceToken(c *gin.Context) {
 
 func (h *Handler) findDeviceByUserCodeLocked(userCode string) *deviceEntry {
 	normalized := normalizeUserCode(userCode)
-	for _, entry := range h.devices {
-		if entry.UserCode == normalized {
-			return entry
-		}
-	}
-	return nil
+	return h.devicesByUserCode[normalized]
 }
 
 func (h *Handler) isDeviceExpiredLocked(entry *deviceEntry) bool {
 	return !h.now().Before(entry.ExpiresAt)
 }
 
-func generateCode() string {
-	b := make([]byte, 32)
-	rand.Read(b)
-	return hex.EncodeToString(b)
+func (h *Handler) issueUniqueUserCodeLocked() (string, string, error) {
+	for range 8 {
+		userCode, err := generateUserCodeFunc()
+		if err != nil {
+			return "", "", err
+		}
+		normalized := normalizeUserCode(userCode)
+		if _, exists := h.devicesByUserCode[normalized]; exists {
+			continue
+		}
+		return userCode, normalized, nil
+	}
+	return "", "", errRandomRead
 }
 
-func generateUserCode() string {
+func generateCode() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", errors.Join(errRandomRead, err)
+	}
+	return hex.EncodeToString(b), nil
+}
+
+func generateUserCode() (string, error) {
 	const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 	const groupSize = 4
 	const groups = 2
 
 	random := make([]byte, groupSize*groups)
-	rand.Read(random)
+	if _, err := rand.Read(random); err != nil {
+		return "", errors.Join(errRandomRead, err)
+	}
 
 	code := make([]byte, 0, len(random)+1)
 	for i, b := range random {
@@ -511,10 +551,16 @@ func generateUserCode() string {
 		}
 		code = append(code, alphabet[int(b)%len(alphabet)])
 	}
-	return string(code)
+	return string(code), nil
 }
 
 func normalizeUserCode(code string) string {
 	code = strings.ToUpper(strings.TrimSpace(code))
-	return strings.ReplaceAll(code, " ", "")
+	replacer := strings.NewReplacer(
+		" ", "",
+		"-", "",
+		"_", "",
+		".", "",
+	)
+	return replacer.Replace(code)
 }

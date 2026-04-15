@@ -49,10 +49,9 @@ func TestSetupRouterServesEmbeddedFrontendAtOAuthDevice(t *testing.T) {
 	restore := web.SetFrontendFSForTest(os.DirFS(root))
 	defer restore()
 
-	env := setupTestEnv(t)
 	oauthServer := oauth.NewServer()
 	oauthHandler := oauth.NewHandler(oauthServer, "http://localhost:18081", nil)
-	env.router.GET("/oauth/device", oauthHandler.DevicePage)
+	env := setupTestEnvWithOAuth(t, oauthHandler)
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "http://localhost:18081/oauth/device", nil)

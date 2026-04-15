@@ -135,7 +135,7 @@ sequenceDiagram
         CLI->>BE: /oauth/authorize + /oauth/token
     else Device login
         CLI->>BE: /oauth/device/code + /oauth/token polling
-        Browser->>BE: /oauth/device verify
+        Browser->>BE: /oauth/device/verify
     end
     CLI->>BE: session bootstrap
     BE->>BE: find or create repo from local git remote

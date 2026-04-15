@@ -58,6 +58,7 @@ describe('DevicePage', () => {
       global: { plugins: [pinia, router] },
     })
 
+    expect(wrapper.find('label[for="user-code"]').text()).toBe('User code')
     await wrapper.find('input#user-code').setValue('abcd-efgh')
     await wrapper.find('button[data-action="approve"]').trigger('click')
     await flushPromises()

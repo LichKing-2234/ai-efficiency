@@ -170,3 +170,78 @@ func TestTokenDeviceGrantDeniedExpiredAndSlowDown(t *testing.T) {
 		t.Fatalf("expired body=%s", expiredW.Body.String())
 	}
 }
+
+func TestVerifyDeviceAcceptsUserCodeWithoutDash(t *testing.T) {
+	router, _, _ := setupDeviceRouter(t)
+	payload, _ := issueDeviceCode(t, router)
+
+	userCode := strings.ReplaceAll(payload["user_code"].(string), "-", "")
+	verifyBody := bytes.NewBufferString(`{"user_code":"` + userCode + `","approved":true}`)
+	verifyReq := httptest.NewRequest(http.MethodPost, "/oauth/device/verify", verifyBody)
+	verifyReq.Header.Set("Content-Type", "application/json")
+	verifyW := httptest.NewRecorder()
+	router.ServeHTTP(verifyW, verifyReq)
+
+	if verifyW.Code != http.StatusOK {
+		t.Fatalf("verify status=%d body=%s", verifyW.Code, verifyW.Body.String())
+	}
+	if !strings.Contains(verifyW.Body.String(), "approved") {
+		t.Fatalf("verify body=%s", verifyW.Body.String())
+	}
+}
+
+func TestDeviceCodeRegeneratesDuplicateUserCodes(t *testing.T) {
+	router, handler, _ := setupDeviceRouter(t)
+
+	oldGenerateCode := generateCodeFunc
+	oldGenerateUserCode := generateUserCodeFunc
+	t.Cleanup(func() {
+		generateCodeFunc = oldGenerateCode
+		generateUserCodeFunc = oldGenerateUserCode
+	})
+
+	deviceCodes := []string{"device-1", "device-2", "device-3"}
+	userCodes := []string{"ABCD-EFGH", "ABCD-EFGH", "WXYZ-1234"}
+	generateCodeFunc = func() (string, error) {
+		code := deviceCodes[0]
+		deviceCodes = deviceCodes[1:]
+		return code, nil
+	}
+	generateUserCodeFunc = func() (string, error) {
+		code := userCodes[0]
+		userCodes = userCodes[1:]
+		return code, nil
+	}
+
+	firstPayload, _ := issueDeviceCode(t, router)
+	secondPayload, _ := issueDeviceCode(t, router)
+
+	if firstPayload["user_code"] == secondPayload["user_code"] {
+		t.Fatalf("expected regenerated unique user_code, got duplicate %q", firstPayload["user_code"])
+	}
+	if got := handler.devicesByUserCode[normalizeUserCode(secondPayload["user_code"].(string))]; got == nil {
+		t.Fatal("expected secondary user_code index to contain second device entry")
+	}
+}
+
+func TestDeviceCodeReturnsServerErrorWhenRandomGenerationFails(t *testing.T) {
+	router, _, _ := setupDeviceRouter(t)
+
+	oldGenerateCode := generateCodeFunc
+	t.Cleanup(func() { generateCodeFunc = oldGenerateCode })
+	generateCodeFunc = func() (string, error) {
+		return "", errRandomRead
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/oauth/device/code", strings.NewReader("client_id=ae-cli"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "server_error") {
+		t.Fatalf("body=%s", w.Body.String())
+	}
+}

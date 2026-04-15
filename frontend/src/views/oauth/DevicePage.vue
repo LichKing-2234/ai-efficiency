@@ -45,6 +45,9 @@ async function submit(approved: boolean) {
       <h1 class="mb-4 text-2xl font-bold text-gray-900">Device Login</h1>
       <p class="mb-4 text-sm text-gray-600">Enter the code shown by <code>ae-cli login --device</code>.</p>
 
+      <label for="user-code" class="mb-2 block text-sm font-medium text-gray-700">
+        User code
+      </label>
       <input
         id="user-code"
         v-model="userCode"

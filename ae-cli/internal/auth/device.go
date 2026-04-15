@@ -42,7 +42,7 @@ func LoginDevice(ctx context.Context, cfg OAuthConfig) (*OAuthResult, error) {
 	fmt.Fprintf(cfg.Output, "Enter this code:\n%s\n\n", deviceResp.UserCode)
 	fmt.Fprintf(cfg.Output, "This code expires in %d seconds.\n", deviceResp.ExpiresIn)
 
-	interval := time.Duration(deviceResp.Interval) * time.Second
+	interval := normalizePollInterval(deviceResp.Interval)
 	for {
 		token, oauthErr, err := pollDeviceToken(ctx, cfg, deviceResp.DeviceCode)
 		if err != nil {
@@ -67,6 +67,13 @@ func LoginDevice(ctx context.Context, cfg OAuthConfig) (*OAuthResult, error) {
 		default:
 		}
 	}
+}
+
+func normalizePollInterval(seconds int) time.Duration {
+	if seconds < 1 {
+		seconds = 1
+	}
+	return time.Duration(seconds) * time.Second
 }
 
 func IsHeadlessLinux(lookupEnv func(string) string, goos string) bool {

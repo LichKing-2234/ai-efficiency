@@ -105,6 +105,57 @@ func TestLoginDeviceReturnsServerErrors(t *testing.T) {
 	}
 }
 
+func TestLoginDeviceUsesMinimumPollInterval(t *testing.T) {
+	polls := 0
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/oauth/device/code":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"device_code":      "device-123",
+				"user_code":        "ABCD-EFGH",
+				"verification_uri": server.URL + "/oauth/device",
+				"expires_in":       900,
+				"interval":         0,
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/oauth/token":
+			polls++
+			if polls == 1 {
+				w.WriteHeader(http.StatusBadRequest)
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": "authorization_pending"})
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"access_token":  "access-token",
+				"refresh_token": "refresh-token",
+				"token_type":    "Bearer",
+				"expires_in":    7200,
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	var sleeps []time.Duration
+	_, err := LoginDevice(context.Background(), OAuthConfig{
+		ServerURL:  server.URL,
+		ClientID:   "ae-cli",
+		Timeout:    30 * time.Second,
+		HTTPClient: server.Client(),
+		Output:     &bytes.Buffer{},
+		Sleep: func(d time.Duration) {
+			sleeps = append(sleeps, d)
+		},
+	})
+	if err != nil {
+		t.Fatalf("LoginDevice() error = %v", err)
+	}
+	if len(sleeps) == 0 || sleeps[0] != time.Second {
+		t.Fatalf("sleeps = %v, want first sleep of 1s", sleeps)
+	}
+}
+
 func TestIsHeadlessLinux(t *testing.T) {
 	if !IsHeadlessLinux(func(string) string { return "" }, "linux") {
 		t.Fatal("expected linux with empty DISPLAY/WAYLAND_DISPLAY to be headless")

@@ -12,7 +12,7 @@
 
 ## Scope Check
 
-This remains one plan. Backend OAuth state, CLI login selection, and the frontend device page are separate code paths, but they all implement one user-visible feature and share the same contract from [`2026-04-15-oauth-device-login-design.md`](/Users/admin/ai-efficiency/.worktrees/oauth-device-login/docs/superpowers/specs/2026-04-15-oauth-device-login-design.md).
+This remains one plan. Backend OAuth state, CLI login selection, and the frontend device page are separate code paths, but they all implement one user-visible feature and share the same contract from [`2026-04-15-oauth-device-login-design.md`](../specs/2026-04-15-oauth-device-login-design.md).
 
 ## File Structure
 
