@@ -74,6 +74,27 @@ describe('Auth Store', () => {
     expect(store.user).toBeNull()
   })
 
+  it('fetchMe clears stored tokens on unauthorized error', async () => {
+    const { getMe: mockGetMe } = await import('@/api/auth')
+    ;(mockGetMe as any).mockRejectedValue({
+      response: { status: 401 },
+    })
+
+    localStorage.setItem('token', 'saved-token')
+    localStorage.setItem('refresh_token', 'saved-refresh')
+
+    const store = useAuthStore()
+    store.user = { id: 1, username: 'admin', email: 'a@b.com', role: 'admin', auth_source: 'sso' }
+
+    await store.fetchMe()
+
+    expect(store.user).toBeNull()
+    expect(store.token).toBeNull()
+    expect(store.isAuthenticated).toBe(false)
+    expect(localStorage.getItem('token')).toBeNull()
+    expect(localStorage.getItem('refresh_token')).toBeNull()
+  })
+
   // --- New tests for uncovered branches ---
 
   it('login with no data does not set token', async () => {

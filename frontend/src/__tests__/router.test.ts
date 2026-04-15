@@ -5,6 +5,12 @@ import { useAuthStore } from '@/stores/auth'
 import router, { handleRouterError } from '@/router'
 import SessionDetailView from '@/views/sessions/SessionDetailView.vue'
 
+vi.mock('@/api/auth', () => ({
+  login: vi.fn(),
+  getMe: vi.fn(),
+  devLogin: vi.fn(),
+}))
+
 vi.mock('@/utils/deploymentRecovery', () => ({
   reloadOnceForChunkError: vi.fn(),
 }))
@@ -108,6 +114,35 @@ describe('Router Guards', () => {
     expect(componentLoader).toBeTypeOf('function')
     const mod = await componentLoader!()
     expect(mod.default).toBe(SessionDetailView)
+  })
+
+  it('redirects authenticated users away from login using a safe redirect target', async () => {
+    const { getMe: mockGetMe } = await import('@/api/auth')
+    ;(mockGetMe as any).mockResolvedValue({
+      data: { data: { id: 1, username: 'admin', email: 'a@b.com', role: 'admin', auth_source: 'sso' } },
+    })
+
+    localStorage.setItem('token', 'valid-token')
+
+    await router.push('/login?redirect=/repos&case=authenticated')
+
+    expect(router.currentRoute.value.path).toBe('/repos')
+  })
+
+  it('keeps invalid-token users on login after hydration fails with 401', async () => {
+    const { getMe: mockGetMe } = await import('@/api/auth')
+    ;(mockGetMe as any).mockRejectedValue({
+      response: { status: 401 },
+    })
+
+    localStorage.setItem('token', 'expired-token')
+    localStorage.setItem('refresh_token', 'expired-refresh')
+
+    await router.push('/login?case=expired')
+
+    expect(router.currentRoute.value.path).toBe('/login')
+    expect(localStorage.getItem('token')).toBeNull()
+    expect(localStorage.getItem('refresh_token')).toBeNull()
   })
 })
 

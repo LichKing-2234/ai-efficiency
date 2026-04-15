@@ -12,6 +12,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var (
+	loginForce bool
+	loginFlow  = auth.Login
+)
+
 var loginCmd = &cobra.Command{
 	Use:   "login",
 	Short: "Login to the AI Efficiency Platform via browser",
@@ -22,18 +27,24 @@ var loginCmd = &cobra.Command{
 			return fmt.Errorf("server URL not configured")
 		}
 
-		result, err := auth.Login(context.Background(), auth.OAuthConfig{
+		tokenPath, err := auth.DefaultTokenPath()
+		if err != nil {
+			return fmt.Errorf("get token path: %w", err)
+		}
+		if !loginForce {
+			if token, err := auth.ReadToken(tokenPath); err == nil && token.IsValid() {
+				cmd.Println("Already logged in. Use --force to re-login.")
+				return nil
+			}
+		}
+
+		result, err := loginFlow(context.Background(), auth.OAuthConfig{
 			ServerURL: serverURL,
 			ClientID:  "ae-cli",
 			Timeout:   3 * time.Minute,
 		})
 		if err != nil {
 			return fmt.Errorf("login failed: %w", err)
-		}
-
-		tokenPath, err := auth.DefaultTokenPath()
-		if err != nil {
-			return fmt.Errorf("get token path: %w", err)
 		}
 
 		token := &auth.TokenFile{
@@ -54,6 +65,7 @@ var loginCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(loginCmd)
+	loginCmd.Flags().BoolVar(&loginForce, "force", false, "Force re-login even if already logged in")
 }
 
 func resolveLoginServerURL(cfg *config.Config, fallback string) string {
