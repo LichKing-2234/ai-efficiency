@@ -13,6 +13,7 @@ import (
 	"github.com/ai-efficiency/backend/internal/analysis"
 	"github.com/ai-efficiency/backend/internal/auth"
 	"github.com/ai-efficiency/backend/internal/prsync"
+	"github.com/ai-efficiency/backend/internal/repo"
 	"github.com/ai-efficiency/backend/internal/scm"
 	"github.com/ai-efficiency/backend/internal/testdb"
 	"github.com/gin-gonic/gin"
@@ -339,6 +340,32 @@ func TestOptimize_GetSCMProviderError(t *testing.T) {
 	}
 }
 
+func TestOptimize_GetSCMProviderUnboundReturns409(t *testing.T) {
+	scanner := &mockAnalysisScanner{
+		getLatestScanFn: func(_ context.Context, _ int) (*ent.AiScanResult, error) {
+			return &ent.AiScanResult{ID: 1, Score: 60}, nil
+		},
+	}
+	opt := &mockOptimizer{}
+	repoSCM := &mockRepoSCMProvider{
+		getSCMProviderFn: func(_ context.Context, _ int) (scm.SCMProvider, *ent.RepoConfig, error) {
+			return nil, nil, repo.ErrRepoUnbound
+		},
+	}
+	env := setupMockTestEnv(t, scanner, opt, repoSCM, nil)
+	rc := createMockTestRepo(t, env.client)
+
+	w := doMockRequest(env, "POST", fmt.Sprintf("/api/v1/repos/%d/optimize", rc.ID), nil)
+	if w.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusConflict)
+	}
+	resp := parseMockResponse(t, w)
+	details := resp["details"].(map[string]interface{})
+	if details["error_code"] != "repo_unbound" {
+		t.Fatalf("error_code = %v, want repo_unbound", details["error_code"])
+	}
+}
+
 func TestOptimize_NoScanResult(t *testing.T) {
 	scanner := &mockAnalysisScanner{
 		getLatestScanFn: func(_ context.Context, _ int) (*ent.AiScanResult, error) {
@@ -469,6 +496,32 @@ func TestOptimizePreview_GetSCMProviderError(t *testing.T) {
 	}
 }
 
+func TestOptimizePreview_GetSCMProviderUnboundReturns409(t *testing.T) {
+	scanner := &mockAnalysisScanner{
+		getLatestScanFn: func(_ context.Context, _ int) (*ent.AiScanResult, error) {
+			return &ent.AiScanResult{ID: 1, Score: 60}, nil
+		},
+	}
+	opt := &mockOptimizer{}
+	repoSCM := &mockRepoSCMProvider{
+		getSCMProviderFn: func(_ context.Context, _ int) (scm.SCMProvider, *ent.RepoConfig, error) {
+			return nil, nil, repo.ErrRepoUnbound
+		},
+	}
+	env := setupMockTestEnv(t, scanner, opt, repoSCM, nil)
+	rc := createMockTestRepo(t, env.client)
+
+	w := doMockRequest(env, "POST", fmt.Sprintf("/api/v1/repos/%d/optimize/preview", rc.ID), nil)
+	if w.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusConflict)
+	}
+	resp := parseMockResponse(t, w)
+	details := resp["details"].(map[string]interface{})
+	if details["error_code"] != "repo_unbound" {
+		t.Fatalf("error_code = %v, want repo_unbound", details["error_code"])
+	}
+}
+
 func TestOptimizePreview_NoScanResult(t *testing.T) {
 	scanner := &mockAnalysisScanner{
 		getLatestScanFn: func(_ context.Context, _ int) (*ent.AiScanResult, error) {
@@ -562,6 +615,31 @@ func TestOptimizeConfirm_GetSCMProviderError(t *testing.T) {
 	}
 }
 
+func TestOptimizeConfirm_GetSCMProviderUnboundReturns409(t *testing.T) {
+	opt := &mockOptimizer{}
+	repoSCM := &mockRepoSCMProvider{
+		getSCMProviderFn: func(_ context.Context, _ int) (scm.SCMProvider, *ent.RepoConfig, error) {
+			return nil, nil, repo.ErrRepoUnbound
+		},
+	}
+	env := setupMockTestEnv(t, &mockAnalysisScanner{}, opt, repoSCM, nil)
+	rc := createMockTestRepo(t, env.client)
+
+	body := map[string]interface{}{
+		"files": map[string]string{".editorconfig": "root = true"},
+		"score": 75,
+	}
+	w := doMockRequest(env, "POST", fmt.Sprintf("/api/v1/repos/%d/optimize/confirm", rc.ID), body)
+	if w.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusConflict)
+	}
+	resp := parseMockResponse(t, w)
+	details := resp["details"].(map[string]interface{})
+	if details["error_code"] != "repo_unbound" {
+		t.Fatalf("error_code = %v, want repo_unbound", details["error_code"])
+	}
+}
+
 func TestOptimizeConfirm_InvalidBody(t *testing.T) {
 	opt := &mockOptimizer{}
 	repoSCM := &mockRepoSCMProvider{}
@@ -637,6 +715,27 @@ func TestSyncPRs_GetSCMProviderError(t *testing.T) {
 	w := doMockRequest(env, "POST", fmt.Sprintf("/api/v1/repos/%d/sync-prs", rc.ID), nil)
 	if w.Code != http.StatusInternalServerError {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusInternalServerError)
+	}
+}
+
+func TestSyncPRs_GetSCMProviderUnboundReturns409(t *testing.T) {
+	repoSCM := &mockRepoSCMProvider{
+		getSCMProviderFn: func(_ context.Context, _ int) (scm.SCMProvider, *ent.RepoConfig, error) {
+			return nil, nil, repo.ErrRepoUnbound
+		},
+	}
+	syncer := &mockPRSyncer{}
+	env := setupMockTestEnv(t, &mockAnalysisScanner{}, nil, repoSCM, syncer)
+	rc := createMockTestRepo(t, env.client)
+
+	w := doMockRequest(env, "POST", fmt.Sprintf("/api/v1/repos/%d/sync-prs", rc.ID), nil)
+	if w.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusConflict)
+	}
+	resp := parseMockResponse(t, w)
+	details := resp["details"].(map[string]interface{})
+	if details["error_code"] != "repo_unbound" {
+		t.Fatalf("error_code = %v, want repo_unbound", details["error_code"])
 	}
 }
 

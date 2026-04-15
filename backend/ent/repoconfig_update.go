@@ -37,6 +37,26 @@ func (rcu *RepoConfigUpdate) Where(ps ...predicate.RepoConfig) *RepoConfigUpdate
 	return rcu
 }
 
+// SetRepoKey sets the "repo_key" field.
+func (rcu *RepoConfigUpdate) SetRepoKey(s string) *RepoConfigUpdate {
+	rcu.mutation.SetRepoKey(s)
+	return rcu
+}
+
+// SetNillableRepoKey sets the "repo_key" field if the given value is not nil.
+func (rcu *RepoConfigUpdate) SetNillableRepoKey(s *string) *RepoConfigUpdate {
+	if s != nil {
+		rcu.SetRepoKey(*s)
+	}
+	return rcu
+}
+
+// ClearRepoKey clears the value of the "repo_key" field.
+func (rcu *RepoConfigUpdate) ClearRepoKey() *RepoConfigUpdate {
+	rcu.mutation.ClearRepoKey()
+	return rcu
+}
+
 // SetName sets the "name" field.
 func (rcu *RepoConfigUpdate) SetName(s string) *RepoConfigUpdate {
 	rcu.mutation.SetName(s)
@@ -275,6 +295,14 @@ func (rcu *RepoConfigUpdate) ClearScanPromptOverride() *RepoConfigUpdate {
 // SetScmProviderID sets the "scm_provider" edge to the ScmProvider entity by ID.
 func (rcu *RepoConfigUpdate) SetScmProviderID(id int) *RepoConfigUpdate {
 	rcu.mutation.SetScmProviderID(id)
+	return rcu
+}
+
+// SetNillableScmProviderID sets the "scm_provider" edge to the ScmProvider entity by ID if the given value is not nil.
+func (rcu *RepoConfigUpdate) SetNillableScmProviderID(id *int) *RepoConfigUpdate {
+	if id != nil {
+		rcu = rcu.SetScmProviderID(*id)
+	}
 	return rcu
 }
 
@@ -548,7 +576,9 @@ func (rcu *RepoConfigUpdate) RemoveEfficiencyMetrics(e ...*EfficiencyMetric) *Re
 
 // Save executes the query and returns the number of nodes affected by the update operation.
 func (rcu *RepoConfigUpdate) Save(ctx context.Context) (int, error) {
-	rcu.defaults()
+	if err := rcu.defaults(); err != nil {
+		return 0, err
+	}
 	return withHooks(ctx, rcu.sqlSave, rcu.mutation, rcu.hooks)
 }
 
@@ -575,11 +605,15 @@ func (rcu *RepoConfigUpdate) ExecX(ctx context.Context) {
 }
 
 // defaults sets the default values of the builder before save.
-func (rcu *RepoConfigUpdate) defaults() {
+func (rcu *RepoConfigUpdate) defaults() error {
 	if _, ok := rcu.mutation.UpdatedAt(); !ok {
+		if repoconfig.UpdateDefaultUpdatedAt == nil {
+			return fmt.Errorf("ent: uninitialized repoconfig.UpdateDefaultUpdatedAt (forgotten import ent/runtime?)")
+		}
 		v := repoconfig.UpdateDefaultUpdatedAt()
 		rcu.mutation.SetUpdatedAt(v)
 	}
+	return nil
 }
 
 // check runs all checks and user-defined validators on the builder.
@@ -604,9 +638,6 @@ func (rcu *RepoConfigUpdate) check() error {
 			return &ValidationError{Name: "status", err: fmt.Errorf(`ent: validator failed for field "RepoConfig.status": %w`, err)}
 		}
 	}
-	if rcu.mutation.ScmProviderCleared() && len(rcu.mutation.ScmProviderIDs()) > 0 {
-		return errors.New(`ent: clearing a required unique edge "RepoConfig.scm_provider"`)
-	}
 	return nil
 }
 
@@ -621,6 +652,12 @@ func (rcu *RepoConfigUpdate) sqlSave(ctx context.Context) (n int, err error) {
 				ps[i](selector)
 			}
 		}
+	}
+	if value, ok := rcu.mutation.RepoKey(); ok {
+		_spec.SetField(repoconfig.FieldRepoKey, field.TypeString, value)
+	}
+	if rcu.mutation.RepoKeyCleared() {
+		_spec.ClearField(repoconfig.FieldRepoKey, field.TypeString)
 	}
 	if value, ok := rcu.mutation.Name(); ok {
 		_spec.SetField(repoconfig.FieldName, field.TypeString, value)
@@ -1055,6 +1092,26 @@ type RepoConfigUpdateOne struct {
 	mutation *RepoConfigMutation
 }
 
+// SetRepoKey sets the "repo_key" field.
+func (rcuo *RepoConfigUpdateOne) SetRepoKey(s string) *RepoConfigUpdateOne {
+	rcuo.mutation.SetRepoKey(s)
+	return rcuo
+}
+
+// SetNillableRepoKey sets the "repo_key" field if the given value is not nil.
+func (rcuo *RepoConfigUpdateOne) SetNillableRepoKey(s *string) *RepoConfigUpdateOne {
+	if s != nil {
+		rcuo.SetRepoKey(*s)
+	}
+	return rcuo
+}
+
+// ClearRepoKey clears the value of the "repo_key" field.
+func (rcuo *RepoConfigUpdateOne) ClearRepoKey() *RepoConfigUpdateOne {
+	rcuo.mutation.ClearRepoKey()
+	return rcuo
+}
+
 // SetName sets the "name" field.
 func (rcuo *RepoConfigUpdateOne) SetName(s string) *RepoConfigUpdateOne {
 	rcuo.mutation.SetName(s)
@@ -1293,6 +1350,14 @@ func (rcuo *RepoConfigUpdateOne) ClearScanPromptOverride() *RepoConfigUpdateOne 
 // SetScmProviderID sets the "scm_provider" edge to the ScmProvider entity by ID.
 func (rcuo *RepoConfigUpdateOne) SetScmProviderID(id int) *RepoConfigUpdateOne {
 	rcuo.mutation.SetScmProviderID(id)
+	return rcuo
+}
+
+// SetNillableScmProviderID sets the "scm_provider" edge to the ScmProvider entity by ID if the given value is not nil.
+func (rcuo *RepoConfigUpdateOne) SetNillableScmProviderID(id *int) *RepoConfigUpdateOne {
+	if id != nil {
+		rcuo = rcuo.SetScmProviderID(*id)
+	}
 	return rcuo
 }
 
@@ -1579,7 +1644,9 @@ func (rcuo *RepoConfigUpdateOne) Select(field string, fields ...string) *RepoCon
 
 // Save executes the query and returns the updated RepoConfig entity.
 func (rcuo *RepoConfigUpdateOne) Save(ctx context.Context) (*RepoConfig, error) {
-	rcuo.defaults()
+	if err := rcuo.defaults(); err != nil {
+		return nil, err
+	}
 	return withHooks(ctx, rcuo.sqlSave, rcuo.mutation, rcuo.hooks)
 }
 
@@ -1606,11 +1673,15 @@ func (rcuo *RepoConfigUpdateOne) ExecX(ctx context.Context) {
 }
 
 // defaults sets the default values of the builder before save.
-func (rcuo *RepoConfigUpdateOne) defaults() {
+func (rcuo *RepoConfigUpdateOne) defaults() error {
 	if _, ok := rcuo.mutation.UpdatedAt(); !ok {
+		if repoconfig.UpdateDefaultUpdatedAt == nil {
+			return fmt.Errorf("ent: uninitialized repoconfig.UpdateDefaultUpdatedAt (forgotten import ent/runtime?)")
+		}
 		v := repoconfig.UpdateDefaultUpdatedAt()
 		rcuo.mutation.SetUpdatedAt(v)
 	}
+	return nil
 }
 
 // check runs all checks and user-defined validators on the builder.
@@ -1634,9 +1705,6 @@ func (rcuo *RepoConfigUpdateOne) check() error {
 		if err := repoconfig.StatusValidator(v); err != nil {
 			return &ValidationError{Name: "status", err: fmt.Errorf(`ent: validator failed for field "RepoConfig.status": %w`, err)}
 		}
-	}
-	if rcuo.mutation.ScmProviderCleared() && len(rcuo.mutation.ScmProviderIDs()) > 0 {
-		return errors.New(`ent: clearing a required unique edge "RepoConfig.scm_provider"`)
 	}
 	return nil
 }
@@ -1669,6 +1737,12 @@ func (rcuo *RepoConfigUpdateOne) sqlSave(ctx context.Context) (_node *RepoConfig
 				ps[i](selector)
 			}
 		}
+	}
+	if value, ok := rcuo.mutation.RepoKey(); ok {
+		_spec.SetField(repoconfig.FieldRepoKey, field.TypeString, value)
+	}
+	if rcuo.mutation.RepoKeyCleared() {
+		_spec.ClearField(repoconfig.FieldRepoKey, field.TypeString)
 	}
 	if value, ok := rcuo.mutation.Name(); ok {
 		_spec.SetField(repoconfig.FieldName, field.TypeString, value)

@@ -3,6 +3,7 @@ package repo
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -207,6 +208,105 @@ func TestCreateDirect_NoGroupID(t *testing.T) {
 	}
 	if rc.GroupID != nil {
 		t.Errorf("GroupID = %v, want nil", rc.GroupID)
+	}
+}
+
+func TestCreateDirect_AllowsUnboundRepo(t *testing.T) {
+	_, svc := setupTest(t)
+
+	rc, err := svc.CreateDirect(context.Background(), CreateDirectRequest{
+		RepoKey:       "github.com/org/repo-unbound",
+		Name:          "repo-unbound",
+		FullName:      "org/repo-unbound",
+		CloneURL:      "https://github.com/org/repo-unbound.git",
+		DefaultBranch: "main",
+	})
+	if err != nil {
+		t.Fatalf("CreateDirect error: %v", err)
+	}
+	if rc.RepoKey != "github.com/org/repo-unbound" {
+		t.Fatalf("RepoKey = %q, want %q", rc.RepoKey, "github.com/org/repo-unbound")
+	}
+	if rc.Edges.ScmProvider != nil {
+		t.Fatalf("expected nil scm provider edge, got %#v", rc.Edges.ScmProvider)
+	}
+}
+
+func TestRepoConfigHookDerivesRepoKeyOnRawCreate(t *testing.T) {
+	client := testdb.Open(t)
+
+	rc, err := client.RepoConfig.Create().
+		SetName("raw-repo").
+		SetFullName("org/raw-repo").
+		SetCloneURL("https://github.com/org/raw-repo.git").
+		SetDefaultBranch("main").
+		Save(context.Background())
+	if err != nil {
+		t.Fatalf("raw create repo config: %v", err)
+	}
+	if rc.RepoKey != "github.com/org/raw-repo" {
+		t.Fatalf("repo_key = %q, want %q", rc.RepoKey, "github.com/org/raw-repo")
+	}
+}
+
+func TestFindOrCreateFromRemote_RequeriesAfterConstraintConflict(t *testing.T) {
+	client, svc := setupTest(t)
+	ctx := context.Background()
+	identity, err := DeriveRepoIdentity("https://github.com/acme/platform.git")
+	if err != nil {
+		t.Fatalf("DeriveRepoIdentity: %v", err)
+	}
+
+	injected := false
+	client.RepoConfig.Use(func(next ent.Mutator) ent.Mutator {
+		return ent.MutateFunc(func(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+			if !m.Op().Is(ent.OpCreate) || injected {
+				return next.Mutate(ctx, m)
+			}
+			injected = true
+			if _, err := client.RepoConfig.Create().
+				SetRepoKey(identity.RepoKey).
+				SetName(identity.Name).
+				SetFullName(identity.FullName).
+				SetCloneURL(identity.CloneURL).
+				SetDefaultBranch("main").
+				SetStatus(repoconfig.StatusActive).
+				Save(ctx); err != nil {
+				return nil, err
+			}
+			return next.Mutate(ctx, m)
+		})
+	})
+
+	rc, err := svc.FindOrCreateFromRemote(ctx, identity.CloneURL, "main")
+	if err != nil {
+		t.Fatalf("FindOrCreateFromRemote: %v", err)
+	}
+	if rc.RepoKey != identity.RepoKey {
+		t.Fatalf("repo_key = %q, want %q", rc.RepoKey, identity.RepoKey)
+	}
+	count, err := client.RepoConfig.Query().Where(repoconfig.RepoKeyEQ(identity.RepoKey)).Count(ctx)
+	if err != nil {
+		t.Fatalf("count repo configs: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("repo count = %d, want 1", count)
+	}
+}
+
+func TestFindOrCreateFromRemote_FallsBackWhenIdentityParsingFails(t *testing.T) {
+	_, svc := setupTest(t)
+	ctx := context.Background()
+
+	rc, err := svc.FindOrCreateFromRemote(ctx, "ssh://git@repo-host.example.com/platform.git", "main")
+	if err != nil {
+		t.Fatalf("FindOrCreateFromRemote: %v", err)
+	}
+	if rc.CloneURL != "ssh://git@repo-host.example.com/platform.git" {
+		t.Fatalf("clone_url = %q, want original remote", rc.CloneURL)
+	}
+	if rc.RepoKey == "" {
+		t.Fatal("expected fallback repo_key to be populated")
 	}
 }
 
@@ -679,6 +779,30 @@ func TestGetSCMProvider_Success(t *testing.T) {
 	}
 	if gotRC.ID != rc.ID {
 		t.Errorf("repo config ID = %d, want %d", gotRC.ID, rc.ID)
+	}
+}
+
+func TestGetSCMProvider_UnboundRepo(t *testing.T) {
+	_, svc := setupTest(t)
+	ctx := context.Background()
+
+	rc, err := svc.CreateDirect(ctx, CreateDirectRequest{
+		RepoKey:       "github.com/org/unbound-repo",
+		Name:          "unbound-repo",
+		FullName:      "org/unbound-repo",
+		CloneURL:      "https://github.com/org/unbound-repo.git",
+		DefaultBranch: "main",
+	})
+	if err != nil {
+		t.Fatalf("create repo: %v", err)
+	}
+
+	_, gotRC, err := svc.GetSCMProvider(ctx, rc.ID)
+	if !errors.Is(err, ErrRepoUnbound) {
+		t.Fatalf("GetSCMProvider error = %v, want ErrRepoUnbound", err)
+	}
+	if gotRC == nil || gotRC.ID != rc.ID {
+		t.Fatalf("repo config = %#v, want ID %d", gotRC, rc.ID)
 	}
 }
 

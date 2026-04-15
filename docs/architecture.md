@@ -129,6 +129,7 @@ sequenceDiagram
 
     Dev->>CLI: ae-cli login / start
     CLI->>BE: OAuth + session bootstrap
+    BE->>BE: find or create repo from local git remote
     BE->>Relay: resolve relay identity / manage API key
     Relay-->>BE: user + key metadata
     BE-->>CLI: session metadata + env bundle
@@ -145,10 +146,12 @@ sequenceDiagram
 ### Runtime Boundaries
 
 - `ae-cli` owns local session setup, workspace state, hooks, collector wiring, and the lifecycle of the local session proxy.
-- The backend owns durable state, repo configuration, user/provider mapping, attribution, and SCM/webhook handling.
+- The backend owns durable state, repo discovery during bootstrap, repo configuration, user/provider mapping, attribution, and SCM/webhook handling.
 - Relay/sub2api remains the upstream auth/LLM/usage integration boundary and attribution fallback source.
 - SCM providers now reference reusable credentials instead of storing raw secret blobs inline.
-- Repos still bind to exactly one SCM provider; clone protocol and clone credentials are provider-owned runtime concerns.
+- `ae-cli start` now treats repo discovery as part of session bootstrap. If the backend does not already know the repo, bootstrap auto-creates an unbound `repo_config` from the local Git remote and continues.
+- Repo-to-`scm_provider` binding is now an admin-managed lifecycle step rather than a hard precondition for starting a session.
+- SCM-dependent features such as scan, PR sync, optimize, and webhook registration require a bound repo and return `repo_unbound` when invoked before binding.
 
 ## Local Session Proxy Rollout
 

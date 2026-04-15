@@ -311,6 +311,7 @@ var (
 	// RepoConfigsColumns holds the columns for the "repo_configs" table.
 	RepoConfigsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "repo_key", Type: field.TypeString, Nullable: true},
 		{Name: "name", Type: field.TypeString},
 		{Name: "full_name", Type: field.TypeString},
 		{Name: "clone_url", Type: field.TypeString},
@@ -326,7 +327,7 @@ var (
 		{Name: "created_at", Type: field.TypeTime},
 		{Name: "updated_at", Type: field.TypeTime},
 		{Name: "scan_prompt_override", Type: field.TypeJSON, Nullable: true},
-		{Name: "scm_provider_repo_configs", Type: field.TypeInt},
+		{Name: "scm_provider_repo_configs", Type: field.TypeInt, Nullable: true},
 	}
 	// RepoConfigsTable holds the schema information for the "repo_configs" table.
 	RepoConfigsTable = &schema.Table{
@@ -336,16 +337,21 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "repo_configs_scm_providers_repo_configs",
-				Columns:    []*schema.Column{RepoConfigsColumns[16]},
+				Columns:    []*schema.Column{RepoConfigsColumns[17]},
 				RefColumns: []*schema.Column{ScmProvidersColumns[0]},
-				OnDelete:   schema.NoAction,
+				OnDelete:   schema.SetNull,
 			},
 		},
 		Indexes: []*schema.Index{
 			{
+				Name:    "repoconfig_repo_key",
+				Unique:  true,
+				Columns: []*schema.Column{RepoConfigsColumns[1]},
+			},
+			{
 				Name:    "repoconfig_full_name_scm_provider_repo_configs",
 				Unique:  true,
-				Columns: []*schema.Column{RepoConfigsColumns[2], RepoConfigsColumns[16]},
+				Columns: []*schema.Column{RepoConfigsColumns[3], RepoConfigsColumns[17]},
 			},
 		},
 	}

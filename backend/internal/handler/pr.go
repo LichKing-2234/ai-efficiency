@@ -132,6 +132,9 @@ func (h *PRHandler) SyncPRs(c *gin.Context) {
 
 	scmProvider, rc, err := h.repoService.GetSCMProvider(c.Request.Context(), repoID)
 	if err != nil {
+		if handleRepoBindingError(c, err) {
+			return
+		}
 		pkg.Error(c, http.StatusInternalServerError, "failed to get SCM provider: "+err.Error())
 		return
 	}
@@ -188,6 +191,9 @@ func (h *PRHandler) Settle(c *gin.Context) {
 
 	scmProvider, _, err := h.repoService.GetSCMProvider(c.Request.Context(), rc.ID)
 	if err != nil {
+		if handleRepoBindingError(c, err) {
+			return
+		}
 		pkg.Error(c, http.StatusInternalServerError, "failed to get SCM provider: "+err.Error())
 		return
 	}

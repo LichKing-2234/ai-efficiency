@@ -76,8 +76,8 @@ describe('Repo Store', () => {
 
     const store = useRepoStore()
     store.repos = [
-      { id: 1, name: 'repo-a', full_name: 'org/repo-a', clone_url: '', default_branch: 'main', ai_score: 0, status: 'active', last_scan_at: null, group_id: 0, created_at: '' },
-      { id: 2, name: 'repo-b', full_name: 'org/repo-b', clone_url: '', default_branch: 'main', ai_score: 0, status: 'active', last_scan_at: null, group_id: 0, created_at: '' },
+      { id: 1, repo_key: 'github.com/org/repo-a', name: 'repo-a', full_name: 'org/repo-a', clone_url: '', default_branch: 'main', ai_score: 0, status: 'active', binding_state: 'bound', last_scan_at: null, group_id: 0, created_at: '' },
+      { id: 2, repo_key: 'github.com/org/repo-b', name: 'repo-b', full_name: 'org/repo-b', clone_url: '', default_branch: 'main', ai_score: 0, status: 'active', binding_state: 'bound', last_scan_at: null, group_id: 0, created_at: '' },
     ]
 
     await store.deleteRepo(1)

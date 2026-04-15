@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 )
@@ -15,6 +16,8 @@ const (
 	Label = "repo_config"
 	// FieldID holds the string denoting the id field in the database.
 	FieldID = "id"
+	// FieldRepoKey holds the string denoting the repo_key field in the database.
+	FieldRepoKey = "repo_key"
 	// FieldName holds the string denoting the name field in the database.
 	FieldName = "name"
 	// FieldFullName holds the string denoting the full_name field in the database.
@@ -124,6 +127,7 @@ const (
 // Columns holds all SQL columns for repoconfig fields.
 var Columns = []string{
 	FieldID,
+	FieldRepoKey,
 	FieldName,
 	FieldFullName,
 	FieldCloneURL,
@@ -162,7 +166,13 @@ func ValidColumn(column string) bool {
 	return false
 }
 
+// Note that the variables below are initialized by the runtime
+// package on the initialization of the application. Therefore,
+// it should be imported in the main as follows:
+//
+//	import _ "github.com/ai-efficiency/backend/ent/runtime"
 var (
+	Hooks [1]ent.Hook
 	// NameValidator is a validator for the "name" field. It is called by the builders before save.
 	NameValidator func(string) error
 	// FullNameValidator is a validator for the "full_name" field. It is called by the builders before save.
@@ -214,6 +224,11 @@ type OrderOption func(*sql.Selector)
 // ByID orders the results by the id field.
 func ByID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldID, opts...).ToFunc()
+}
+
+// ByRepoKey orders the results by the repo_key field.
+func ByRepoKey(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldRepoKey, opts...).ToFunc()
 }
 
 // ByName orders the results by the name field.

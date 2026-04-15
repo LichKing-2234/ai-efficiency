@@ -29,6 +29,20 @@ type RepoConfigCreate struct {
 	hooks    []Hook
 }
 
+// SetRepoKey sets the "repo_key" field.
+func (rcc *RepoConfigCreate) SetRepoKey(s string) *RepoConfigCreate {
+	rcc.mutation.SetRepoKey(s)
+	return rcc
+}
+
+// SetNillableRepoKey sets the "repo_key" field if the given value is not nil.
+func (rcc *RepoConfigCreate) SetNillableRepoKey(s *string) *RepoConfigCreate {
+	if s != nil {
+		rcc.SetRepoKey(*s)
+	}
+	return rcc
+}
+
 // SetName sets the "name" field.
 func (rcc *RepoConfigCreate) SetName(s string) *RepoConfigCreate {
 	rcc.mutation.SetName(s)
@@ -213,6 +227,14 @@ func (rcc *RepoConfigCreate) SetScmProviderID(id int) *RepoConfigCreate {
 	return rcc
 }
 
+// SetNillableScmProviderID sets the "scm_provider" edge to the ScmProvider entity by ID if the given value is not nil.
+func (rcc *RepoConfigCreate) SetNillableScmProviderID(id *int) *RepoConfigCreate {
+	if id != nil {
+		rcc = rcc.SetScmProviderID(*id)
+	}
+	return rcc
+}
+
 // SetScmProvider sets the "scm_provider" edge to the ScmProvider entity.
 func (rcc *RepoConfigCreate) SetScmProvider(s *ScmProvider) *RepoConfigCreate {
 	return rcc.SetScmProviderID(s.ID)
@@ -330,7 +352,9 @@ func (rcc *RepoConfigCreate) Mutation() *RepoConfigMutation {
 
 // Save creates the RepoConfig in the database.
 func (rcc *RepoConfigCreate) Save(ctx context.Context) (*RepoConfig, error) {
-	rcc.defaults()
+	if err := rcc.defaults(); err != nil {
+		return nil, err
+	}
 	return withHooks(ctx, rcc.sqlSave, rcc.mutation, rcc.hooks)
 }
 
@@ -357,7 +381,7 @@ func (rcc *RepoConfigCreate) ExecX(ctx context.Context) {
 }
 
 // defaults sets the default values of the builder before save.
-func (rcc *RepoConfigCreate) defaults() {
+func (rcc *RepoConfigCreate) defaults() error {
 	if _, ok := rcc.mutation.DefaultBranch(); !ok {
 		v := repoconfig.DefaultDefaultBranch
 		rcc.mutation.SetDefaultBranch(v)
@@ -371,13 +395,20 @@ func (rcc *RepoConfigCreate) defaults() {
 		rcc.mutation.SetStatus(v)
 	}
 	if _, ok := rcc.mutation.CreatedAt(); !ok {
+		if repoconfig.DefaultCreatedAt == nil {
+			return fmt.Errorf("ent: uninitialized repoconfig.DefaultCreatedAt (forgotten import ent/runtime?)")
+		}
 		v := repoconfig.DefaultCreatedAt()
 		rcc.mutation.SetCreatedAt(v)
 	}
 	if _, ok := rcc.mutation.UpdatedAt(); !ok {
+		if repoconfig.DefaultUpdatedAt == nil {
+			return fmt.Errorf("ent: uninitialized repoconfig.DefaultUpdatedAt (forgotten import ent/runtime?)")
+		}
 		v := repoconfig.DefaultUpdatedAt()
 		rcc.mutation.SetUpdatedAt(v)
 	}
+	return nil
 }
 
 // check runs all checks and user-defined validators on the builder.
@@ -423,9 +454,6 @@ func (rcc *RepoConfigCreate) check() error {
 	if _, ok := rcc.mutation.UpdatedAt(); !ok {
 		return &ValidationError{Name: "updated_at", err: errors.New(`ent: missing required field "RepoConfig.updated_at"`)}
 	}
-	if len(rcc.mutation.ScmProviderIDs()) == 0 {
-		return &ValidationError{Name: "scm_provider", err: errors.New(`ent: missing required edge "RepoConfig.scm_provider"`)}
-	}
 	return nil
 }
 
@@ -452,6 +480,10 @@ func (rcc *RepoConfigCreate) createSpec() (*RepoConfig, *sqlgraph.CreateSpec) {
 		_node = &RepoConfig{config: rcc.config}
 		_spec = sqlgraph.NewCreateSpec(repoconfig.Table, sqlgraph.NewFieldSpec(repoconfig.FieldID, field.TypeInt))
 	)
+	if value, ok := rcc.mutation.RepoKey(); ok {
+		_spec.SetField(repoconfig.FieldRepoKey, field.TypeString, value)
+		_node.RepoKey = value
+	}
 	if value, ok := rcc.mutation.Name(); ok {
 		_spec.SetField(repoconfig.FieldName, field.TypeString, value)
 		_node.Name = value

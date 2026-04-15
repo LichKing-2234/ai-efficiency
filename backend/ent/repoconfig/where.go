@@ -55,6 +55,11 @@ func IDLTE(id int) predicate.RepoConfig {
 	return predicate.RepoConfig(sql.FieldLTE(FieldID, id))
 }
 
+// RepoKey applies equality check predicate on the "repo_key" field. It's identical to RepoKeyEQ.
+func RepoKey(v string) predicate.RepoConfig {
+	return predicate.RepoConfig(sql.FieldEQ(FieldRepoKey, v))
+}
+
 // Name applies equality check predicate on the "name" field. It's identical to NameEQ.
 func Name(v string) predicate.RepoConfig {
 	return predicate.RepoConfig(sql.FieldEQ(FieldName, v))
@@ -118,6 +123,81 @@ func CreatedAt(v time.Time) predicate.RepoConfig {
 // UpdatedAt applies equality check predicate on the "updated_at" field. It's identical to UpdatedAtEQ.
 func UpdatedAt(v time.Time) predicate.RepoConfig {
 	return predicate.RepoConfig(sql.FieldEQ(FieldUpdatedAt, v))
+}
+
+// RepoKeyEQ applies the EQ predicate on the "repo_key" field.
+func RepoKeyEQ(v string) predicate.RepoConfig {
+	return predicate.RepoConfig(sql.FieldEQ(FieldRepoKey, v))
+}
+
+// RepoKeyNEQ applies the NEQ predicate on the "repo_key" field.
+func RepoKeyNEQ(v string) predicate.RepoConfig {
+	return predicate.RepoConfig(sql.FieldNEQ(FieldRepoKey, v))
+}
+
+// RepoKeyIn applies the In predicate on the "repo_key" field.
+func RepoKeyIn(vs ...string) predicate.RepoConfig {
+	return predicate.RepoConfig(sql.FieldIn(FieldRepoKey, vs...))
+}
+
+// RepoKeyNotIn applies the NotIn predicate on the "repo_key" field.
+func RepoKeyNotIn(vs ...string) predicate.RepoConfig {
+	return predicate.RepoConfig(sql.FieldNotIn(FieldRepoKey, vs...))
+}
+
+// RepoKeyGT applies the GT predicate on the "repo_key" field.
+func RepoKeyGT(v string) predicate.RepoConfig {
+	return predicate.RepoConfig(sql.FieldGT(FieldRepoKey, v))
+}
+
+// RepoKeyGTE applies the GTE predicate on the "repo_key" field.
+func RepoKeyGTE(v string) predicate.RepoConfig {
+	return predicate.RepoConfig(sql.FieldGTE(FieldRepoKey, v))
+}
+
+// RepoKeyLT applies the LT predicate on the "repo_key" field.
+func RepoKeyLT(v string) predicate.RepoConfig {
+	return predicate.RepoConfig(sql.FieldLT(FieldRepoKey, v))
+}
+
+// RepoKeyLTE applies the LTE predicate on the "repo_key" field.
+func RepoKeyLTE(v string) predicate.RepoConfig {
+	return predicate.RepoConfig(sql.FieldLTE(FieldRepoKey, v))
+}
+
+// RepoKeyContains applies the Contains predicate on the "repo_key" field.
+func RepoKeyContains(v string) predicate.RepoConfig {
+	return predicate.RepoConfig(sql.FieldContains(FieldRepoKey, v))
+}
+
+// RepoKeyHasPrefix applies the HasPrefix predicate on the "repo_key" field.
+func RepoKeyHasPrefix(v string) predicate.RepoConfig {
+	return predicate.RepoConfig(sql.FieldHasPrefix(FieldRepoKey, v))
+}
+
+// RepoKeyHasSuffix applies the HasSuffix predicate on the "repo_key" field.
+func RepoKeyHasSuffix(v string) predicate.RepoConfig {
+	return predicate.RepoConfig(sql.FieldHasSuffix(FieldRepoKey, v))
+}
+
+// RepoKeyIsNil applies the IsNil predicate on the "repo_key" field.
+func RepoKeyIsNil() predicate.RepoConfig {
+	return predicate.RepoConfig(sql.FieldIsNull(FieldRepoKey))
+}
+
+// RepoKeyNotNil applies the NotNil predicate on the "repo_key" field.
+func RepoKeyNotNil() predicate.RepoConfig {
+	return predicate.RepoConfig(sql.FieldNotNull(FieldRepoKey))
+}
+
+// RepoKeyEqualFold applies the EqualFold predicate on the "repo_key" field.
+func RepoKeyEqualFold(v string) predicate.RepoConfig {
+	return predicate.RepoConfig(sql.FieldEqualFold(FieldRepoKey, v))
+}
+
+// RepoKeyContainsFold applies the ContainsFold predicate on the "repo_key" field.
+func RepoKeyContainsFold(v string) predicate.RepoConfig {
+	return predicate.RepoConfig(sql.FieldContainsFold(FieldRepoKey, v))
 }
 
 // NameEQ applies the EQ predicate on the "name" field.

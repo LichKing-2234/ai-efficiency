@@ -552,12 +552,12 @@ func (rcq *RepoConfigQuery) WithEfficiencyMetrics(opts ...func(*EfficiencyMetric
 // Example:
 //
 //	var v []struct {
-//		Name string `json:"name,omitempty"`
+//		RepoKey string `json:"repo_key,omitempty"`
 //		Count int `json:"count,omitempty"`
 //	}
 //
 //	client.RepoConfig.Query().
-//		GroupBy(repoconfig.FieldName).
+//		GroupBy(repoconfig.FieldRepoKey).
 //		Aggregate(ent.Count()).
 //		Scan(ctx, &v)
 func (rcq *RepoConfigQuery) GroupBy(field string, fields ...string) *RepoConfigGroupBy {
@@ -575,11 +575,11 @@ func (rcq *RepoConfigQuery) GroupBy(field string, fields ...string) *RepoConfigG
 // Example:
 //
 //	var v []struct {
-//		Name string `json:"name,omitempty"`
+//		RepoKey string `json:"repo_key,omitempty"`
 //	}
 //
 //	client.RepoConfig.Query().
-//		Select(repoconfig.FieldName).
+//		Select(repoconfig.FieldRepoKey).
 //		Scan(ctx, &v)
 func (rcq *RepoConfigQuery) Select(fields ...string) *RepoConfigSelect {
 	rcq.ctx.Fields = append(rcq.ctx.Fields, fields...)

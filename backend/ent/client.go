@@ -1995,7 +1995,8 @@ func (c *RepoConfigClient) QueryEfficiencyMetrics(rc *RepoConfig) *EfficiencyMet
 
 // Hooks returns the client hooks.
 func (c *RepoConfigClient) Hooks() []Hook {
-	return c.hooks.RepoConfig
+	hooks := c.hooks.RepoConfig
+	return append(hooks[:len(hooks):len(hooks)], repoconfig.Hooks[:]...)
 }
 
 // Interceptors returns the client interceptors.

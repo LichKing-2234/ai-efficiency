@@ -11,6 +11,7 @@ const router = useRouter()
 const repoStore = useRepoStore()
 const showDeleteConfirm = ref<number | null>(null)
 const collapsedGroups = ref<Set<string>>(new Set())
+const bindingFilter = ref<'all' | 'bound' | 'unbound'>('all')
 
 interface RepoGroup {
   key: string
@@ -20,9 +21,16 @@ interface RepoGroup {
   repos: RepoConfig[]
 }
 
+const filteredRepos = computed(() => {
+  if (bindingFilter.value === 'all') {
+    return repoStore.repos
+  }
+  return repoStore.repos.filter((repo) => repo.binding_state === bindingFilter.value)
+})
+
 const groupedRepos = computed<RepoGroup[]>(() => {
   const map = new Map<string, RepoGroup>()
-  for (const repo of repoStore.repos) {
+  for (const repo of filteredRepos.value) {
     const scm = repo.edges?.scm_provider
     const scmName = scm?.name ?? 'Unknown'
     const scmType = scm?.type ?? ''
@@ -215,12 +223,19 @@ function formatDate(date: string | null) {
     <div class="space-y-6">
       <div class="flex items-center justify-between">
         <h1 class="text-2xl font-bold text-gray-900">Repositories</h1>
-        <button
-          class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
-          @click="openAddDialog"
-        >
-          Add Repo
-        </button>
+        <div class="flex items-center gap-3">
+          <select v-model="bindingFilter" class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700">
+            <option value="all">All Bindings</option>
+            <option value="bound">Bound</option>
+            <option value="unbound">Unbound</option>
+          </select>
+          <button
+            class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+            @click="openAddDialog"
+          >
+            Add Repo
+          </button>
+        </div>
       </div>
 
       <div v-if="repoStore.loading" class="text-center text-gray-500 py-12">Loading...</div>
@@ -271,7 +286,15 @@ function formatDate(date: string | null) {
                 @click="goToDetail(repo)"
               >
                 <td class="whitespace-nowrap px-5 py-3">
-                  <div class="text-sm font-medium text-gray-900">{{ repo.name }}</div>
+                  <div class="flex items-center gap-2">
+                    <div class="text-sm font-medium text-gray-900">{{ repo.name }}</div>
+                    <span
+                      v-if="repo.binding_state === 'unbound'"
+                      class="rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800"
+                    >
+                      Unbound
+                    </span>
+                  </div>
                 </td>
                 <td class="whitespace-nowrap px-5 py-3">
                   <span

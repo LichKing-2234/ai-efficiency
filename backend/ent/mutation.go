@@ -10490,6 +10490,7 @@ type RepoConfigMutation struct {
 	op                          Op
 	typ                         string
 	id                          *int
+	repo_key                    *string
 	name                        *string
 	full_name                   *string
 	clone_url                   *string
@@ -10631,6 +10632,55 @@ func (m *RepoConfigMutation) IDs(ctx context.Context) ([]int, error) {
 	default:
 		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
 	}
+}
+
+// SetRepoKey sets the "repo_key" field.
+func (m *RepoConfigMutation) SetRepoKey(s string) {
+	m.repo_key = &s
+}
+
+// RepoKey returns the value of the "repo_key" field in the mutation.
+func (m *RepoConfigMutation) RepoKey() (r string, exists bool) {
+	v := m.repo_key
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRepoKey returns the old "repo_key" field's value of the RepoConfig entity.
+// If the RepoConfig object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RepoConfigMutation) OldRepoKey(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRepoKey is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRepoKey requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRepoKey: %w", err)
+	}
+	return oldValue.RepoKey, nil
+}
+
+// ClearRepoKey clears the value of the "repo_key" field.
+func (m *RepoConfigMutation) ClearRepoKey() {
+	m.repo_key = nil
+	m.clearedFields[repoconfig.FieldRepoKey] = struct{}{}
+}
+
+// RepoKeyCleared returns if the "repo_key" field was cleared in this mutation.
+func (m *RepoConfigMutation) RepoKeyCleared() bool {
+	_, ok := m.clearedFields[repoconfig.FieldRepoKey]
+	return ok
+}
+
+// ResetRepoKey resets all changes to the "repo_key" field.
+func (m *RepoConfigMutation) ResetRepoKey() {
+	m.repo_key = nil
+	delete(m.clearedFields, repoconfig.FieldRepoKey)
 }
 
 // SetName sets the "name" field.
@@ -11749,7 +11799,10 @@ func (m *RepoConfigMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *RepoConfigMutation) Fields() []string {
-	fields := make([]string, 0, 15)
+	fields := make([]string, 0, 16)
+	if m.repo_key != nil {
+		fields = append(fields, repoconfig.FieldRepoKey)
+	}
 	if m.name != nil {
 		fields = append(fields, repoconfig.FieldName)
 	}
@@ -11803,6 +11856,8 @@ func (m *RepoConfigMutation) Fields() []string {
 // schema.
 func (m *RepoConfigMutation) Field(name string) (ent.Value, bool) {
 	switch name {
+	case repoconfig.FieldRepoKey:
+		return m.RepoKey()
 	case repoconfig.FieldName:
 		return m.Name()
 	case repoconfig.FieldFullName:
@@ -11842,6 +11897,8 @@ func (m *RepoConfigMutation) Field(name string) (ent.Value, bool) {
 // database failed.
 func (m *RepoConfigMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
 	switch name {
+	case repoconfig.FieldRepoKey:
+		return m.OldRepoKey(ctx)
 	case repoconfig.FieldName:
 		return m.OldName(ctx)
 	case repoconfig.FieldFullName:
@@ -11881,6 +11938,13 @@ func (m *RepoConfigMutation) OldField(ctx context.Context, name string) (ent.Val
 // type.
 func (m *RepoConfigMutation) SetField(name string, value ent.Value) error {
 	switch name {
+	case repoconfig.FieldRepoKey:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRepoKey(v)
+		return nil
 	case repoconfig.FieldName:
 		v, ok := value.(string)
 		if !ok {
@@ -12031,6 +12095,9 @@ func (m *RepoConfigMutation) AddField(name string, value ent.Value) error {
 // mutation.
 func (m *RepoConfigMutation) ClearedFields() []string {
 	var fields []string
+	if m.FieldCleared(repoconfig.FieldRepoKey) {
+		fields = append(fields, repoconfig.FieldRepoKey)
+	}
 	if m.FieldCleared(repoconfig.FieldWebhookID) {
 		fields = append(fields, repoconfig.FieldWebhookID)
 	}
@@ -12069,6 +12136,9 @@ func (m *RepoConfigMutation) FieldCleared(name string) bool {
 // error if the field is not defined in the schema.
 func (m *RepoConfigMutation) ClearField(name string) error {
 	switch name {
+	case repoconfig.FieldRepoKey:
+		m.ClearRepoKey()
+		return nil
 	case repoconfig.FieldWebhookID:
 		m.ClearWebhookID()
 		return nil
@@ -12101,6 +12171,9 @@ func (m *RepoConfigMutation) ClearField(name string) error {
 // It returns an error if the field is not defined in the schema.
 func (m *RepoConfigMutation) ResetField(name string) error {
 	switch name {
+	case repoconfig.FieldRepoKey:
+		m.ResetRepoKey()
+		return nil
 	case repoconfig.FieldName:
 		m.ResetName()
 		return nil

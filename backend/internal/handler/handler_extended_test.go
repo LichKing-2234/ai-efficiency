@@ -68,6 +68,18 @@ func TestRepoUpdate_InvalidID(t *testing.T) {
 	}
 }
 
+func TestRepoUpdate_InvalidSCMProviderID(t *testing.T) {
+	env := setupTestEnv(t)
+	repoID := createTestRepo(t, env.client)
+
+	w := doRequest(env, "PUT", fmt.Sprintf("/api/v1/repos/%d", repoID), map[string]interface{}{
+		"scm_provider_id": 99999,
+	})
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d, body: %s", w.Code, http.StatusNotFound, w.Body.String())
+	}
+}
+
 func TestRepoDelete_InvalidID(t *testing.T) {
 	env := setupTestEnv(t)
 	w := doRequest(env, "DELETE", "/api/v1/repos/abc", nil)
