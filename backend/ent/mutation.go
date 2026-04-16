@@ -16426,6 +16426,7 @@ type SessionUsageEventMutation struct {
 	addtotal_tokens  *int64
 	status           *string
 	raw_metadata     *map[string]interface{}
+	raw_response     *map[string]interface{}
 	created_at       *time.Time
 	clearedFields    map[string]struct{}
 	session          *uuid.UUID
@@ -17074,6 +17075,55 @@ func (m *SessionUsageEventMutation) ResetRawMetadata() {
 	delete(m.clearedFields, sessionusageevent.FieldRawMetadata)
 }
 
+// SetRawResponse sets the "raw_response" field.
+func (m *SessionUsageEventMutation) SetRawResponse(value map[string]interface{}) {
+	m.raw_response = &value
+}
+
+// RawResponse returns the value of the "raw_response" field in the mutation.
+func (m *SessionUsageEventMutation) RawResponse() (r map[string]interface{}, exists bool) {
+	v := m.raw_response
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRawResponse returns the old "raw_response" field's value of the SessionUsageEvent entity.
+// If the SessionUsageEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SessionUsageEventMutation) OldRawResponse(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRawResponse is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRawResponse requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRawResponse: %w", err)
+	}
+	return oldValue.RawResponse, nil
+}
+
+// ClearRawResponse clears the value of the "raw_response" field.
+func (m *SessionUsageEventMutation) ClearRawResponse() {
+	m.raw_response = nil
+	m.clearedFields[sessionusageevent.FieldRawResponse] = struct{}{}
+}
+
+// RawResponseCleared returns if the "raw_response" field was cleared in this mutation.
+func (m *SessionUsageEventMutation) RawResponseCleared() bool {
+	_, ok := m.clearedFields[sessionusageevent.FieldRawResponse]
+	return ok
+}
+
+// ResetRawResponse resets all changes to the "raw_response" field.
+func (m *SessionUsageEventMutation) ResetRawResponse() {
+	m.raw_response = nil
+	delete(m.clearedFields, sessionusageevent.FieldRawResponse)
+}
+
 // SetCreatedAt sets the "created_at" field.
 func (m *SessionUsageEventMutation) SetCreatedAt(t time.Time) {
 	m.created_at = &t
@@ -17171,7 +17221,7 @@ func (m *SessionUsageEventMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *SessionUsageEventMutation) Fields() []string {
-	fields := make([]string, 0, 14)
+	fields := make([]string, 0, 15)
 	if m.event_id != nil {
 		fields = append(fields, sessionusageevent.FieldEventID)
 	}
@@ -17211,6 +17261,9 @@ func (m *SessionUsageEventMutation) Fields() []string {
 	if m.raw_metadata != nil {
 		fields = append(fields, sessionusageevent.FieldRawMetadata)
 	}
+	if m.raw_response != nil {
+		fields = append(fields, sessionusageevent.FieldRawResponse)
+	}
 	if m.created_at != nil {
 		fields = append(fields, sessionusageevent.FieldCreatedAt)
 	}
@@ -17248,6 +17301,8 @@ func (m *SessionUsageEventMutation) Field(name string) (ent.Value, bool) {
 		return m.Status()
 	case sessionusageevent.FieldRawMetadata:
 		return m.RawMetadata()
+	case sessionusageevent.FieldRawResponse:
+		return m.RawResponse()
 	case sessionusageevent.FieldCreatedAt:
 		return m.CreatedAt()
 	}
@@ -17285,6 +17340,8 @@ func (m *SessionUsageEventMutation) OldField(ctx context.Context, name string) (
 		return m.OldStatus(ctx)
 	case sessionusageevent.FieldRawMetadata:
 		return m.OldRawMetadata(ctx)
+	case sessionusageevent.FieldRawResponse:
+		return m.OldRawResponse(ctx)
 	case sessionusageevent.FieldCreatedAt:
 		return m.OldCreatedAt(ctx)
 	}
@@ -17387,6 +17444,13 @@ func (m *SessionUsageEventMutation) SetField(name string, value ent.Value) error
 		}
 		m.SetRawMetadata(v)
 		return nil
+	case sessionusageevent.FieldRawResponse:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRawResponse(v)
+		return nil
 	case sessionusageevent.FieldCreatedAt:
 		v, ok := value.(time.Time)
 		if !ok {
@@ -17466,6 +17530,9 @@ func (m *SessionUsageEventMutation) ClearedFields() []string {
 	if m.FieldCleared(sessionusageevent.FieldRawMetadata) {
 		fields = append(fields, sessionusageevent.FieldRawMetadata)
 	}
+	if m.FieldCleared(sessionusageevent.FieldRawResponse) {
+		fields = append(fields, sessionusageevent.FieldRawResponse)
+	}
 	return fields
 }
 
@@ -17482,6 +17549,9 @@ func (m *SessionUsageEventMutation) ClearField(name string) error {
 	switch name {
 	case sessionusageevent.FieldRawMetadata:
 		m.ClearRawMetadata()
+		return nil
+	case sessionusageevent.FieldRawResponse:
+		m.ClearRawResponse()
 		return nil
 	}
 	return fmt.Errorf("unknown SessionUsageEvent nullable field %s", name)
@@ -17529,6 +17599,9 @@ func (m *SessionUsageEventMutation) ResetField(name string) error {
 		return nil
 	case sessionusageevent.FieldRawMetadata:
 		m.ResetRawMetadata()
+		return nil
+	case sessionusageevent.FieldRawResponse:
+		m.ResetRawResponse()
 		return nil
 	case sessionusageevent.FieldCreatedAt:
 		m.ResetCreatedAt()

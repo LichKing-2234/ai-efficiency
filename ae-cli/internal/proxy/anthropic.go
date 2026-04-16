@@ -10,10 +10,15 @@ import (
 )
 
 type anthropicUsage struct {
-	Model        string
-	InputTokens  int
-	OutputTokens int
-	TotalTokens  int
+	Model                       string
+	InputTokens                 int
+	CacheCreationInputTokens    int
+	CacheReadInputTokens        int
+	OutputTokens                int
+	TotalTokens                 int
+	HasCacheCreationInputTokens bool
+	HasCacheReadInputTokens     bool
+	HasCachedInputTokens        bool
 }
 
 func (s *Server) handleAnthropicMessages(w http.ResponseWriter, r *http.Request) {
@@ -138,18 +143,25 @@ func (s *Server) handleAnthropicMessages(w http.ResponseWriter, r *http.Request)
 		status = "upstream_http_error"
 	}
 	s.recordUsage(UsageEvent{
-		SessionID:    s.cfg.SessionID,
-		WorkspaceID:  s.cfg.WorkspaceID,
-		RequestID:    reqID,
-		ProviderName: firstNonEmptyProviderName(cred.ProviderName, "sub2api"),
-		Model:        usage.Model,
-		StartedAt:    startedAt,
-		FinishedAt:   time.Now().UTC(),
-		InputTokens:  usage.InputTokens,
-		OutputTokens: usage.OutputTokens,
-		TotalTokens:  usage.TotalTokens,
-		HTTPStatus:   resp.StatusCode,
-		Status:       status,
+		SessionID:                   s.cfg.SessionID,
+		WorkspaceID:                 s.cfg.WorkspaceID,
+		RequestID:                   reqID,
+		ProviderName:                firstNonEmptyProviderName(cred.ProviderName, "sub2api"),
+		Model:                       usage.Model,
+		StartedAt:                   startedAt,
+		FinishedAt:                  time.Now().UTC(),
+		InputTokens:                 usage.InputTokens,
+		CachedInputTokens:           usage.CacheCreationInputTokens + usage.CacheReadInputTokens,
+		CacheCreationInputTokens:    usage.CacheCreationInputTokens,
+		CacheReadInputTokens:        usage.CacheReadInputTokens,
+		HasCachedInputTokens:        usage.HasCachedInputTokens,
+		HasCacheCreationInputTokens: usage.HasCacheCreationInputTokens,
+		HasCacheReadInputTokens:     usage.HasCacheReadInputTokens,
+		OutputTokens:                usage.OutputTokens,
+		TotalTokens:                 usage.TotalTokens,
+		HTTPStatus:                  resp.StatusCode,
+		RawResponse:                 parseRawResponseObject(body),
+		Status:                      status,
 	})
 
 	copyResponse(w, resp.StatusCode, resp.Header, body)
@@ -182,25 +194,76 @@ func parseAnthropicRequestMeta(body []byte) anthropicRequestMeta {
 }
 
 type anthropicUsageFields struct {
-	InputTokens              int `json:"input_tokens"`
-	OutputTokens             int `json:"output_tokens"`
-	TotalTokens              int `json:"total_tokens"`
-	CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
-	CacheReadInputTokens     int `json:"cache_read_input_tokens"`
+	InputTokens              int  `json:"input_tokens"`
+	OutputTokens             int  `json:"output_tokens"`
+	TotalTokens              int  `json:"total_tokens"`
+	CacheCreationInputTokens *int `json:"cache_creation_input_tokens"`
+	CacheReadInputTokens     *int `json:"cache_read_input_tokens"`
+	CachedTokens             *int `json:"cached_tokens"`
+	CacheCreation            *struct {
+		Ephemeral5mInputTokens *int `json:"ephemeral_5m_input_tokens"`
+		Ephemeral1hInputTokens *int `json:"ephemeral_1h_input_tokens"`
+	} `json:"cache_creation"`
 }
 
 func composeAnthropicUsage(model string, usage anthropicUsageFields) anthropicUsage {
-	inputTotal := usage.InputTokens + usage.CacheCreationInputTokens + usage.CacheReadInputTokens
+	cacheCreationInputTokens, hasCacheCreationInputTokens := anthropicCacheCreationInputTokens(usage)
+	cacheReadInputTokens, hasCacheReadInputTokens := anthropicCacheReadInputTokens(usage)
 	total := usage.TotalTokens
-	if inputTotal+usage.OutputTokens > total {
-		total = inputTotal + usage.OutputTokens
+	if usage.InputTokens+cacheCreationInputTokens+cacheReadInputTokens+usage.OutputTokens > total {
+		total = usage.InputTokens + cacheCreationInputTokens + cacheReadInputTokens + usage.OutputTokens
 	}
 	return anthropicUsage{
-		Model:        model,
-		InputTokens:  inputTotal,
-		OutputTokens: usage.OutputTokens,
-		TotalTokens:  total,
+		Model:                       model,
+		InputTokens:                 usage.InputTokens,
+		CacheCreationInputTokens:    cacheCreationInputTokens,
+		CacheReadInputTokens:        cacheReadInputTokens,
+		OutputTokens:                usage.OutputTokens,
+		TotalTokens:                 total,
+		HasCacheCreationInputTokens: hasCacheCreationInputTokens,
+		HasCacheReadInputTokens:     hasCacheReadInputTokens,
+		HasCachedInputTokens:        hasCacheCreationInputTokens || hasCacheReadInputTokens,
 	}
+}
+
+func anthropicCacheCreationInputTokens(usage anthropicUsageFields) (int, bool) {
+	if usage.CacheCreationInputTokens != nil && *usage.CacheCreationInputTokens > 0 {
+		return *usage.CacheCreationInputTokens, true
+	}
+	v5m := 0
+	v1h := 0
+	has5m := false
+	has1h := false
+	if usage.CacheCreation != nil {
+		has5m = usage.CacheCreation.Ephemeral5mInputTokens != nil
+		has1h = usage.CacheCreation.Ephemeral1hInputTokens != nil
+		if has5m {
+			v5m = *usage.CacheCreation.Ephemeral5mInputTokens
+		}
+		if has1h {
+			v1h = *usage.CacheCreation.Ephemeral1hInputTokens
+		}
+	}
+	if has5m || has1h {
+		return v5m + v1h, true
+	}
+	if usage.CacheCreationInputTokens != nil {
+		return *usage.CacheCreationInputTokens, true
+	}
+	return 0, false
+}
+
+func anthropicCacheReadInputTokens(usage anthropicUsageFields) (int, bool) {
+	if usage.CacheReadInputTokens != nil && *usage.CacheReadInputTokens > 0 {
+		return *usage.CacheReadInputTokens, true
+	}
+	if usage.CachedTokens != nil {
+		return *usage.CachedTokens, true
+	}
+	if usage.CacheReadInputTokens != nil {
+		return *usage.CacheReadInputTokens, true
+	}
+	return 0, false
 }
 
 func firstNonEmptyHeader(values ...string) string {
@@ -279,35 +342,45 @@ func (s *Server) proxyAnthropicStream(w http.ResponseWriter, resp *http.Response
 func (s *Server) recordAnthropicUsage(reqID string, startedAt time.Time, httpStatus int, usage anthropicUsage, hasUsage bool, status string, errMessage string) {
 	model := usage.Model
 	inputTokens := usage.InputTokens
+	cacheCreationInputTokens := usage.CacheCreationInputTokens
+	cacheReadInputTokens := usage.CacheReadInputTokens
 	outputTokens := usage.OutputTokens
 	totalTokens := usage.TotalTokens
 	if !hasUsage {
 		model = ""
 		inputTokens = 0
+		cacheCreationInputTokens = 0
+		cacheReadInputTokens = 0
 		outputTokens = 0
 		totalTokens = 0
 	}
 	s.recordUsage(UsageEvent{
-		SessionID:    s.cfg.SessionID,
-		WorkspaceID:  s.cfg.WorkspaceID,
-		RequestID:    reqID,
-		ProviderName: "sub2api",
-		Model:        model,
-		StartedAt:    startedAt,
-		FinishedAt:   time.Now().UTC(),
-		InputTokens:  inputTokens,
-		OutputTokens: outputTokens,
-		TotalTokens:  totalTokens,
-		HTTPStatus:   httpStatus,
-		Error:        errMessage,
-		Status:       status,
+		SessionID:                   s.cfg.SessionID,
+		WorkspaceID:                 s.cfg.WorkspaceID,
+		RequestID:                   reqID,
+		ProviderName:                "sub2api",
+		Model:                       model,
+		StartedAt:                   startedAt,
+		FinishedAt:                  time.Now().UTC(),
+		InputTokens:                 inputTokens,
+		CachedInputTokens:           cacheCreationInputTokens + cacheReadInputTokens,
+		CacheCreationInputTokens:    cacheCreationInputTokens,
+		CacheReadInputTokens:        cacheReadInputTokens,
+		HasCachedInputTokens:        usage.HasCachedInputTokens,
+		HasCacheCreationInputTokens: usage.HasCacheCreationInputTokens,
+		HasCacheReadInputTokens:     usage.HasCacheReadInputTokens,
+		OutputTokens:                outputTokens,
+		TotalTokens:                 totalTokens,
+		HTTPStatus:                  httpStatus,
+		Error:                       errMessage,
+		Status:                      status,
 	})
 }
 
 type anthropicSSEUsageAccumulator struct {
 	pending string
 	model   string
-	usage   anthropicUsageFields
+	usage   anthropicUsage
 	seen    bool
 }
 
@@ -361,12 +434,18 @@ func (a *anthropicSSEUsageAccumulator) applyUsage(usage anthropicUsageFields) {
 		a.usage.OutputTokens = max(a.usage.OutputTokens, usage.OutputTokens)
 		a.seen = true
 	}
-	if usage.CacheCreationInputTokens > 0 {
-		a.usage.CacheCreationInputTokens = max(a.usage.CacheCreationInputTokens, usage.CacheCreationInputTokens)
+	cacheCreationInputTokens, hasCacheCreationInputTokens := anthropicCacheCreationInputTokens(usage)
+	if hasCacheCreationInputTokens {
+		a.usage.CacheCreationInputTokens = max(a.usage.CacheCreationInputTokens, cacheCreationInputTokens)
+		a.usage.HasCacheCreationInputTokens = true
+		a.usage.HasCachedInputTokens = true
 		a.seen = true
 	}
-	if usage.CacheReadInputTokens > 0 {
-		a.usage.CacheReadInputTokens = max(a.usage.CacheReadInputTokens, usage.CacheReadInputTokens)
+	cacheReadInputTokens, hasCacheReadInputTokens := anthropicCacheReadInputTokens(usage)
+	if hasCacheReadInputTokens {
+		a.usage.CacheReadInputTokens = max(a.usage.CacheReadInputTokens, cacheReadInputTokens)
+		a.usage.HasCacheReadInputTokens = true
+		a.usage.HasCachedInputTokens = true
 		a.seen = true
 	}
 	if usage.TotalTokens > 0 {
@@ -379,5 +458,9 @@ func (a *anthropicSSEUsageAccumulator) Usage() (anthropicUsage, bool) {
 	if !a.seen {
 		return anthropicUsage{}, false
 	}
-	return composeAnthropicUsage(a.model, a.usage), true
+	a.usage.Model = a.model
+	if a.usage.TotalTokens == 0 && (a.usage.InputTokens > 0 || a.usage.CacheCreationInputTokens > 0 || a.usage.CacheReadInputTokens > 0 || a.usage.OutputTokens > 0) {
+		a.usage.TotalTokens = a.usage.InputTokens + a.usage.CacheCreationInputTokens + a.usage.CacheReadInputTokens + a.usage.OutputTokens
+	}
+	return a.usage, true
 }

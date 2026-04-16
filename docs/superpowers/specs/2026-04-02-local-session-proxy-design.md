@@ -165,6 +165,28 @@ proxy 生命周期与 session 绑定，不做用户级常驻服务。
 - `total_tokens`
 - `status`
 
+当前实现补充说明（2026-04-16）：
+
+- 已验证 relay 的 OpenAI-compatible `/responses` 原始响应可以返回嵌套 usage detail，例如：
+  - `usage.input_tokens_details.cached_tokens`
+  - `usage.output_tokens_details.reasoning_tokens`
+- 已验证 Anthropic-compatible `/v1/messages` 原始响应会使用不同字段表达 cache 明细，例如：
+  - `usage.cache_creation_input_tokens`
+  - `usage.cache_read_input_tokens`
+  - `usage.cached_tokens`
+  - `usage.cache_creation.ephemeral_5m_input_tokens`
+  - `usage.cache_creation.ephemeral_1h_input_tokens`
+- 当前 local proxy 会把 request-level 基本字段持久化到 `session_usage_events`，并把解析到的 cache / reasoning detail 写入：
+  - `raw_metadata.cached_input_tokens`
+  - `raw_metadata.reasoning_output_tokens`
+- 对 Anthropic-compatible 请求，`raw_metadata.cached_input_tokens` 表示 `cache_creation_input_tokens + cache_read_input_tokens` 的聚合值，并额外保留：
+  - `raw_metadata.cache_creation_input_tokens`
+  - `raw_metadata.cache_read_input_tokens`
+- 对新的 non-stream request usage rows，`session_usage_events.raw_response` 会保存原始 upstream response body
+- 经 2026-04-16 的真实 Codex e2e 复测，请求级 `session_usage_events.raw_metadata` 已可与 transcript-side `token_count` 中的 cache / reasoning token 明细对齐
+- `agent_metadata_events` 仍不会由 request usage ingest 自动生成；它们依赖 `post_commit` 时附带的 collector snapshot
+- 当前 collector 已优先读取 workspace session-local Codex transcript（`<workspace>/.ae/codex-home/`），因此真实 commit 之后可以生成包含 `cached_input_tokens` / `reasoning_tokens` 的 `agent_metadata_events`
+
 ### Event Ingress
 
 工具 hooks 与 git hooks 向 local proxy 报送的事件入口。事件种类包括：

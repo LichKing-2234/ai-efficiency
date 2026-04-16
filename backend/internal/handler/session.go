@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/ai-efficiency/backend/ent"
+	"github.com/ai-efficiency/backend/ent/agentmetadataevent"
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/session"
@@ -395,6 +396,10 @@ func (h *SessionHandler) Get(c *gin.Context) {
 		WithCommitCheckpoints(func(q *ent.CommitCheckpointQuery) {
 			q.Order(ent.Desc(commitcheckpoint.FieldCapturedAt)).
 				Limit(50)
+		}).
+		WithAgentMetadataEvents(func(q *ent.AgentMetadataEventQuery) {
+			q.Order(ent.Desc(agentmetadataevent.FieldObservedAt)).
+				Limit(100)
 		}).
 		WithSessionUsageEvents(func(q *ent.SessionUsageEventQuery) {
 			q.Order(ent.Desc(sessionusageevent.FieldStartedAt)).

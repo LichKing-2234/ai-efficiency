@@ -200,3 +200,32 @@ func TestCreate_LinksUsageEventToSessionEdge(t *testing.T) {
 		t.Fatalf("session_usage_events = %d, want 1", len(s.Edges.SessionUsageEvents))
 	}
 }
+
+func TestCreate_PersistsRawResponse(t *testing.T) {
+	t.Parallel()
+	client, ctx, sessionID, ownerID, _ := createOwnedSession(t)
+	svc := NewService(client)
+
+	req := validUsageReq(sessionID, "usage-evt-raw-response-1")
+	req.RawResponse = map[string]any{
+		"id":    "resp_1",
+		"model": "gpt-5.4",
+		"usage": map[string]any{
+			"input_tokens":  27,
+			"output_tokens": 10,
+			"total_tokens":  37,
+		},
+	}
+
+	err := svc.Create(ctx, ownerID, req)
+	if err != nil {
+		t.Fatalf("create usage event: %v", err)
+	}
+
+	ev := client.SessionUsageEvent.Query().
+		Where(sessionusageevent.EventIDEQ("usage-evt-raw-response-1")).
+		OnlyX(ctx)
+	if ev.RawResponse == nil || ev.RawResponse["id"] != "resp_1" {
+		t.Fatalf("raw_response = %+v, want id=resp_1", ev.RawResponse)
+	}
+}

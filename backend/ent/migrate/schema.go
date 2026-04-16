@@ -479,6 +479,7 @@ var (
 		{Name: "total_tokens", Type: field.TypeInt64, Default: 0},
 		{Name: "status", Type: field.TypeString},
 		{Name: "raw_metadata", Type: field.TypeJSON, Nullable: true},
+		{Name: "raw_response", Type: field.TypeJSON, Nullable: true},
 		{Name: "created_at", Type: field.TypeTime},
 		{Name: "session_id", Type: field.TypeUUID},
 	}
@@ -490,7 +491,7 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "session_usage_events_sessions_session_usage_events",
-				Columns:    []*schema.Column{SessionUsageEventsColumns[14]},
+				Columns:    []*schema.Column{SessionUsageEventsColumns[15]},
 				RefColumns: []*schema.Column{SessionsColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
@@ -499,7 +500,7 @@ var (
 			{
 				Name:    "sessionusageevent_session_id_started_at",
 				Unique:  false,
-				Columns: []*schema.Column{SessionUsageEventsColumns[14], SessionUsageEventsColumns[6]},
+				Columns: []*schema.Column{SessionUsageEventsColumns[15], SessionUsageEventsColumns[6]},
 			},
 		},
 	}

@@ -16,19 +16,28 @@ import (
 )
 
 type UsageEvent struct {
-	SessionID    string
-	WorkspaceID  string
-	RequestID    string
-	ProviderName string
-	Model        string
-	StartedAt    time.Time
-	FinishedAt   time.Time
-	InputTokens  int
-	OutputTokens int
-	TotalTokens  int
-	HTTPStatus   int
-	Error        string
-	Status       string
+	SessionID                   string
+	WorkspaceID                 string
+	RequestID                   string
+	ProviderName                string
+	Model                       string
+	StartedAt                   time.Time
+	FinishedAt                  time.Time
+	InputTokens                 int
+	CachedInputTokens           int
+	CacheCreationInputTokens    int
+	CacheReadInputTokens        int
+	OutputTokens                int
+	ReasoningOutputTokens       int
+	HasCachedInputTokens        bool
+	HasCacheCreationInputTokens bool
+	HasCacheReadInputTokens     bool
+	HasReasoningOutputTokens    bool
+	TotalTokens                 int
+	HTTPStatus                  int
+	RawResponse                 map[string]any
+	Error                       string
+	Status                      string
 }
 
 type UsageRecorder interface {
@@ -88,18 +97,28 @@ func NewServer(cfg RuntimeConfig, recorder UsageRecorder, httpClient *http.Clien
 }
 
 type openAIUsage struct {
-	Model        string
-	InputTokens  int
-	OutputTokens int
-	TotalTokens  int
+	Model                    string
+	InputTokens              int
+	CachedInputTokens        int
+	OutputTokens             int
+	ReasoningOutputTokens    int
+	HasCachedInputTokens     bool
+	HasReasoningOutputTokens bool
+	TotalTokens              int
 }
 
 type openAIUsageFields struct {
-	PromptTokens     int `json:"prompt_tokens"`
-	CompletionTokens int `json:"completion_tokens"`
-	InputTokens      int `json:"input_tokens"`
-	OutputTokens     int `json:"output_tokens"`
-	TotalTokens      int `json:"total_tokens"`
+	PromptTokens       int `json:"prompt_tokens"`
+	CompletionTokens   int `json:"completion_tokens"`
+	InputTokens        int `json:"input_tokens"`
+	OutputTokens       int `json:"output_tokens"`
+	TotalTokens        int `json:"total_tokens"`
+	InputTokensDetails *struct {
+		CachedTokens *int `json:"cached_tokens"`
+	} `json:"input_tokens_details"`
+	OutputTokensDetails *struct {
+		ReasoningTokens *int `json:"reasoning_tokens"`
+	} `json:"output_tokens_details"`
 }
 
 func (s *Server) handleOpenAIChatCompletions(w http.ResponseWriter, r *http.Request) {
@@ -206,18 +225,23 @@ func (s *Server) handleOpenAIRequest(w http.ResponseWriter, r *http.Request, ups
 		status = "upstream_http_error"
 	}
 	s.recordUsage(UsageEvent{
-		SessionID:    s.cfg.SessionID,
-		WorkspaceID:  s.cfg.WorkspaceID,
-		RequestID:    reqID,
-		ProviderName: firstNonEmptyProviderName(cred.ProviderName, "sub2api"),
-		Model:        usage.Model,
-		StartedAt:    startedAt,
-		FinishedAt:   time.Now().UTC(),
-		InputTokens:  usage.InputTokens,
-		OutputTokens: usage.OutputTokens,
-		TotalTokens:  usage.TotalTokens,
-		HTTPStatus:   resp.StatusCode,
-		Status:       status,
+		SessionID:                s.cfg.SessionID,
+		WorkspaceID:              s.cfg.WorkspaceID,
+		RequestID:                reqID,
+		ProviderName:             firstNonEmptyProviderName(cred.ProviderName, "sub2api"),
+		Model:                    usage.Model,
+		StartedAt:                startedAt,
+		FinishedAt:               time.Now().UTC(),
+		InputTokens:              usage.InputTokens,
+		CachedInputTokens:        usage.CachedInputTokens,
+		OutputTokens:             usage.OutputTokens,
+		ReasoningOutputTokens:    usage.ReasoningOutputTokens,
+		HasCachedInputTokens:     usage.HasCachedInputTokens,
+		HasReasoningOutputTokens: usage.HasReasoningOutputTokens,
+		TotalTokens:              usage.TotalTokens,
+		HTTPStatus:               resp.StatusCode,
+		RawResponse:              parseRawResponseObject(body),
+		Status:                   status,
 	})
 
 	copyResponse(w, resp.StatusCode, resp.Header, body)
@@ -318,10 +342,25 @@ func (s *Server) usageRequestFromEvent(event UsageEvent) client.SessionUsageEven
 	raw := map[string]any{
 		"http_status": event.HTTPStatus,
 	}
+	if event.HasCachedInputTokens {
+		raw["cached_input_tokens"] = event.CachedInputTokens
+	}
+	if event.HasCacheCreationInputTokens {
+		raw["cache_creation_input_tokens"] = event.CacheCreationInputTokens
+	}
+	if event.HasCacheReadInputTokens {
+		raw["cache_read_input_tokens"] = event.CacheReadInputTokens
+	}
+	if event.HasReasoningOutputTokens {
+		raw["reasoning_output_tokens"] = event.ReasoningOutputTokens
+	}
 	if strings.TrimSpace(event.Error) != "" {
 		raw["error"] = event.Error
 	}
 	req.RawMetadata = raw
+	if event.RawResponse != nil {
+		req.RawResponse = event.RawResponse
+	}
 	return req
 }
 
@@ -345,12 +384,21 @@ func parseOpenAIUsage(body []byte) openAIUsage {
 	if totalTokens == 0 && (inputTokens > 0 || outputTokens > 0) {
 		totalTokens = inputTokens + outputTokens
 	}
-	return openAIUsage{
+	out := openAIUsage{
 		Model:        payload.Model,
 		InputTokens:  inputTokens,
 		OutputTokens: outputTokens,
 		TotalTokens:  totalTokens,
 	}
+	if payload.Usage.InputTokensDetails != nil && payload.Usage.InputTokensDetails.CachedTokens != nil {
+		out.CachedInputTokens = *payload.Usage.InputTokensDetails.CachedTokens
+		out.HasCachedInputTokens = true
+	}
+	if payload.Usage.OutputTokensDetails != nil && payload.Usage.OutputTokensDetails.ReasoningTokens != nil {
+		out.ReasoningOutputTokens = *payload.Usage.OutputTokensDetails.ReasoningTokens
+		out.HasReasoningOutputTokens = true
+	}
+	return out
 }
 
 func (s *Server) proxyOpenAIStream(w http.ResponseWriter, resp *http.Response, reqID string, startedAt time.Time) {
@@ -405,28 +453,36 @@ func (s *Server) proxyOpenAIStream(w http.ResponseWriter, resp *http.Response, r
 func (s *Server) recordOpenAIUsage(reqID string, startedAt time.Time, httpStatus int, usage openAIUsage, hasUsage bool, status string, errMessage string) {
 	model := usage.Model
 	inputTokens := usage.InputTokens
+	cachedInputTokens := usage.CachedInputTokens
 	outputTokens := usage.OutputTokens
+	reasoningOutputTokens := usage.ReasoningOutputTokens
 	totalTokens := usage.TotalTokens
 	if !hasUsage {
 		model = ""
 		inputTokens = 0
+		cachedInputTokens = 0
 		outputTokens = 0
+		reasoningOutputTokens = 0
 		totalTokens = 0
 	}
 	s.recordUsage(UsageEvent{
-		SessionID:    s.cfg.SessionID,
-		WorkspaceID:  s.cfg.WorkspaceID,
-		RequestID:    reqID,
-		ProviderName: "sub2api",
-		Model:        model,
-		StartedAt:    startedAt,
-		FinishedAt:   time.Now().UTC(),
-		InputTokens:  inputTokens,
-		OutputTokens: outputTokens,
-		TotalTokens:  totalTokens,
-		HTTPStatus:   httpStatus,
-		Error:        errMessage,
-		Status:       status,
+		SessionID:                s.cfg.SessionID,
+		WorkspaceID:              s.cfg.WorkspaceID,
+		RequestID:                reqID,
+		ProviderName:             "sub2api",
+		Model:                    model,
+		StartedAt:                startedAt,
+		FinishedAt:               time.Now().UTC(),
+		InputTokens:              inputTokens,
+		CachedInputTokens:        cachedInputTokens,
+		OutputTokens:             outputTokens,
+		ReasoningOutputTokens:    reasoningOutputTokens,
+		HasCachedInputTokens:     usage.HasCachedInputTokens,
+		HasReasoningOutputTokens: usage.HasReasoningOutputTokens,
+		TotalTokens:              totalTokens,
+		HTTPStatus:               httpStatus,
+		Error:                    errMessage,
+		Status:                   status,
 	})
 }
 
@@ -494,8 +550,18 @@ func (a *openAISSEUsageAccumulator) applyUsage(usage openAIUsageFields) {
 		a.usage.InputTokens = max(a.usage.InputTokens, inputTokens)
 		a.seen = true
 	}
+	if usage.InputTokensDetails != nil && usage.InputTokensDetails.CachedTokens != nil {
+		a.usage.CachedInputTokens = max(a.usage.CachedInputTokens, *usage.InputTokensDetails.CachedTokens)
+		a.usage.HasCachedInputTokens = true
+		a.seen = true
+	}
 	if outputTokens > 0 {
 		a.usage.OutputTokens = max(a.usage.OutputTokens, outputTokens)
+		a.seen = true
+	}
+	if usage.OutputTokensDetails != nil && usage.OutputTokensDetails.ReasoningTokens != nil {
+		a.usage.ReasoningOutputTokens = max(a.usage.ReasoningOutputTokens, *usage.OutputTokensDetails.ReasoningTokens)
+		a.usage.HasReasoningOutputTokens = true
 		a.seen = true
 	}
 	if totalTokens > 0 {
@@ -538,4 +604,18 @@ func newRequestID() string {
 		return "req-" + time.Now().UTC().Format("20060102150405.000000000")
 	}
 	return "req-" + hex.EncodeToString(b)
+}
+
+func parseRawResponseObject(body []byte) map[string]any {
+	if len(body) == 0 {
+		return nil
+	}
+	var out map[string]any
+	if err := json.Unmarshal(body, &out); err != nil {
+		return nil
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }

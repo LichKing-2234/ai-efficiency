@@ -16,7 +16,12 @@ import (
 func BuildSnapshot(paths Paths) (*Snapshot, error) {
 	out := &Snapshot{}
 
-	for _, p := range orderFilesByModTime(paths.CodexFiles) {
+	codexFiles := orderFilesByModTime(paths.CodexFiles)
+	workspaceCodexRoot := strings.TrimSpace(session.WorkspaceCodexHome(paths.WorkspaceRoot))
+	if workspaceCodexRoot != "" {
+		codexFiles = preferPathsUnderRoot(codexFiles, workspaceCodexRoot)
+	}
+	for _, p := range codexFiles {
 		s, err := readCodexSnapshot(p, paths.WorkspaceRoot)
 		if err != nil {
 			continue
@@ -56,6 +61,26 @@ func BuildSnapshot(paths Paths) (*Snapshot, error) {
 		return nil, nil
 	}
 	return out, nil
+}
+
+func preferPathsUnderRoot(paths []string, root string) []string {
+	root = strings.TrimSpace(root)
+	if root == "" || len(paths) == 0 {
+		return paths
+	}
+	root = filepath.Clean(root)
+
+	preferred := make([]string, 0, len(paths))
+	fallback := make([]string, 0, len(paths))
+	for _, path := range paths {
+		cleaned := filepath.Clean(strings.TrimSpace(path))
+		if cleaned == root || strings.HasPrefix(cleaned, root+string(filepath.Separator)) {
+			preferred = append(preferred, path)
+			continue
+		}
+		fallback = append(fallback, path)
+	}
+	return append(preferred, fallback...)
 }
 
 func WriteCache(sessionID string, snapshot *Snapshot) error {
@@ -103,7 +128,8 @@ func DefaultPaths(workspaceRoot string) Paths {
 	}
 
 	if len(out.CodexFiles) == 0 {
-		out.CodexFiles = walkFiles(filepath.Join(home, ".codex"), ".jsonl")
+		out.CodexFiles = append(out.CodexFiles, walkFiles(session.WorkspaceCodexHome(workspaceRoot), ".jsonl")...)
+		out.CodexFiles = append(out.CodexFiles, walkFiles(filepath.Join(home, ".codex"), ".jsonl")...)
 	}
 	if len(out.ClaudeFiles) == 0 {
 		out.ClaudeFiles = walkFiles(filepath.Join(home, ".claude"), ".jsonl")

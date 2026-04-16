@@ -33,6 +33,87 @@ The runtime bundle may contain sensitive env values and local proxy metadata, so
 - The current session appears in the Sessions UI and shows the expected provider, key ID, runtime ref, and last-seen metadata.
 - `commit_checkpoints` rows are created after commits.
 - `session_usage_events` and `session_events` continue arriving while the local proxy is active.
+- The session detail page shows recent `Agent Usage Snapshots` as well as `Session Usage`, so cached-input / reasoning token snapshots should appear there when collectors have reported them.
+- New non-stream request rows may also carry `session_usage_events.raw_response`, which the session detail page exposes as `Raw Response`.
+- `Agent Usage Snapshots` raw expansion is sourced from `agent_metadata_events.raw_payload` and shown as `Raw Event`.
+
+## Verified Usage Shapes
+
+The current implementation has two different usage shapes that should not be conflated.
+
+### Relay raw response usage
+
+In a verified local-proxy e2e run on 2026-04-16, the raw OpenAI-compatible `/responses` body returned by relay included nested usage details rather than flattened cache/reasoning fields:
+
+```json
+{
+  "usage": {
+    "input_tokens": 27,
+    "input_tokens_details": {
+      "cached_tokens": 0
+    },
+    "output_tokens": 10,
+    "output_tokens_details": {
+      "reasoning_tokens": 0
+    },
+    "total_tokens": 37
+  }
+}
+```
+
+This means the upstream gateway can expose cache / reasoning token information, but it does so under:
+
+- `usage.input_tokens_details.cached_tokens`
+- `usage.output_tokens_details.reasoning_tokens`
+
+For Anthropic-compatible `/v1/messages`, the verified relay-side shape differs. Cache details may appear as:
+
+- `usage.cache_creation_input_tokens`
+- `usage.cache_read_input_tokens`
+- `usage.cached_tokens` (compat fallback)
+- `usage.cache_creation.ephemeral_5m_input_tokens`
+- `usage.cache_creation.ephemeral_1h_input_tokens`
+
+### Persisted `session_usage_events`
+
+The current proxy persistence path stores flattened request facts plus a small raw metadata slice:
+
+- `input_tokens`
+- `output_tokens`
+- `total_tokens`
+- `status`
+- `raw_metadata.http_status`
+- `raw_metadata.cached_input_tokens`
+- `raw_metadata.reasoning_output_tokens`
+- `raw_response` (original upstream non-stream response body, when available)
+
+This preserves cache / reasoning detail when the relay raw response exposes it through the parsed OpenAI-compatible usage shape.
+
+A verified Codex e2e rerun on 2026-04-16 confirmed the persisted request-level metadata now matches the transcript-side token facts for this flow:
+
+- transcript `token_count.total_token_usage.cached_input_tokens = 9216`
+- transcript `token_count.total_token_usage.reasoning_output_tokens = 11`
+- persisted `session_usage_events.raw_metadata.cached_input_tokens = 9216`
+- persisted `session_usage_events.raw_metadata.reasoning_output_tokens = 11`
+
+Anthropic-compatible request usage is also normalized now:
+
+- `raw_metadata.cached_input_tokens` stores the aggregate of cache-creation plus cache-read tokens
+- `raw_metadata.cache_creation_input_tokens` preserves the creation slice
+- `raw_metadata.cache_read_input_tokens` preserves the read slice
+- when relay omits the aggregate fields, the proxy falls back to `cached_tokens` and `cache_creation.ephemeral_*`
+
+### Persisted `agent_metadata_events`
+
+`agent_metadata_events` remain commit/checkpoint-driven. They are created from collector snapshots attached to `post_commit`, not from request usage ingest.
+
+After the 2026-04-16 collector fix, `post_commit` in a workspace session now reads session-local Codex transcripts from `<workspace>/.ae/codex-home/` before falling back to `~/.codex`. A verified e2e run showed:
+
+- request usage was persisted under `session_usage_events` with matching cache / reasoning detail in `raw_metadata`
+- a real commit created `commit_checkpoints`
+- the same commit also created `agent_metadata_events` with non-zero `cached_input_tokens` and `reasoning_tokens`
+
+For Codex today, request-level cache / reasoning detail is available in `session_usage_events.raw_metadata`, `Raw Response` is available from `session_usage_events.raw_response` for new non-stream rows, and checkpoint-driven `agent_metadata_events` remain the richer post-commit snapshot source used to bind those facts to commits and PR attribution intervals.
 
 ## Recovery
 
