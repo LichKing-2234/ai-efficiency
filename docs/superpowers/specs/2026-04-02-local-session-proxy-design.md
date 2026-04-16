@@ -182,7 +182,9 @@ proxy 生命周期与 session 绑定，不做用户级常驻服务。
 - 对 Anthropic-compatible 请求，`raw_metadata.cached_input_tokens` 表示 `cache_creation_input_tokens + cache_read_input_tokens` 的聚合值，并额外保留：
   - `raw_metadata.cache_creation_input_tokens`
   - `raw_metadata.cache_read_input_tokens`
-- 对新的 non-stream request usage rows，`session_usage_events.raw_response` 会保存原始 upstream response body
+- 对新的 request usage rows，`session_usage_events.raw_response` 会保存原始 upstream response envelope：
+  - non-stream: `{ "kind": "json", "body": ... }`
+  - stream: `{ "kind": "sse", "events": [...] }`
 - 经 2026-04-16 的真实 Codex e2e 复测，请求级 `session_usage_events.raw_metadata` 已可与 transcript-side `token_count` 中的 cache / reasoning token 明细对齐
 - `agent_metadata_events` 仍不会由 request usage ingest 自动生成；它们依赖 `post_commit` 时附带的 collector snapshot
 - 当前 collector 已优先读取 workspace session-local Codex transcript（`<workspace>/.ae/codex-home/`），因此真实 commit 之后可以生成包含 `cached_input_tokens` / `reasoning_tokens` 的 `agent_metadata_events`

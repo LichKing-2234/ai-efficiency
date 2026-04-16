@@ -240,7 +240,7 @@ func (s *Server) handleOpenAIRequest(w http.ResponseWriter, r *http.Request, ups
 		HasReasoningOutputTokens: usage.HasReasoningOutputTokens,
 		TotalTokens:              usage.TotalTokens,
 		HTTPStatus:               resp.StatusCode,
-		RawResponse:              parseRawResponseObject(body),
+		RawResponse:              wrapJSONRawResponse(body),
 		Status:                   status,
 	})
 
@@ -419,7 +419,7 @@ func (s *Server) proxyOpenAIStream(w http.ResponseWriter, resp *http.Response, r
 			acc.Consume(chunk)
 			if _, writeErr := w.Write(chunk); writeErr != nil {
 				usage, ok := acc.Usage()
-				s.recordOpenAIUsage(reqID, startedAt, resp.StatusCode, usage, ok, "downstream_write_error", writeErr.Error())
+				s.recordOpenAIUsage(reqID, startedAt, resp.StatusCode, usage, wrapSSERawResponse(acc.RawEvents()), ok, "downstream_write_error", writeErr.Error())
 				return
 			}
 			if flusher != nil {
@@ -432,7 +432,7 @@ func (s *Server) proxyOpenAIStream(w http.ResponseWriter, resp *http.Response, r
 		}
 		if err != nil {
 			usage, ok := acc.Usage()
-			s.recordOpenAIUsage(reqID, startedAt, resp.StatusCode, usage, ok, "upstream_read_error", err.Error())
+			s.recordOpenAIUsage(reqID, startedAt, resp.StatusCode, usage, wrapSSERawResponse(acc.RawEvents()), ok, "upstream_read_error", err.Error())
 			return
 		}
 	}
@@ -447,10 +447,10 @@ func (s *Server) proxyOpenAIStream(w http.ResponseWriter, resp *http.Response, r
 		status = "stream_usage_unavailable"
 		errMessage = "stream completed without usage payload"
 	}
-	s.recordOpenAIUsage(reqID, startedAt, resp.StatusCode, usage, ok, status, errMessage)
+	s.recordOpenAIUsage(reqID, startedAt, resp.StatusCode, usage, wrapSSERawResponse(acc.RawEvents()), ok, status, errMessage)
 }
 
-func (s *Server) recordOpenAIUsage(reqID string, startedAt time.Time, httpStatus int, usage openAIUsage, hasUsage bool, status string, errMessage string) {
+func (s *Server) recordOpenAIUsage(reqID string, startedAt time.Time, httpStatus int, usage openAIUsage, rawResponse map[string]any, hasUsage bool, status string, errMessage string) {
 	model := usage.Model
 	inputTokens := usage.InputTokens
 	cachedInputTokens := usage.CachedInputTokens
@@ -481,15 +481,18 @@ func (s *Server) recordOpenAIUsage(reqID string, startedAt time.Time, httpStatus
 		HasReasoningOutputTokens: usage.HasReasoningOutputTokens,
 		TotalTokens:              totalTokens,
 		HTTPStatus:               httpStatus,
+		RawResponse:              rawResponse,
 		Error:                    errMessage,
 		Status:                   status,
 	})
 }
 
 type openAISSEUsageAccumulator struct {
-	pending string
-	usage   openAIUsage
-	seen    bool
+	pending      string
+	usage        openAIUsage
+	seen         bool
+	currentEvent string
+	rawEvents    []map[string]any
 }
 
 func (a *openAISSEUsageAccumulator) Consume(chunk []byte) {
@@ -502,6 +505,14 @@ func (a *openAISSEUsageAccumulator) Consume(chunk []byte) {
 }
 
 func (a *openAISSEUsageAccumulator) consumeLine(line string) {
+	if line == "" {
+		a.currentEvent = ""
+		return
+	}
+	if strings.HasPrefix(line, "event:") {
+		a.currentEvent = strings.TrimSpace(strings.TrimPrefix(line, "event:"))
+		return
+	}
 	if !strings.HasPrefix(line, "data:") {
 		return
 	}
@@ -521,6 +532,13 @@ func (a *openAISSEUsageAccumulator) consumeLine(line string) {
 	}
 	if err := json.Unmarshal([]byte(payload), &event); err != nil {
 		return
+	}
+	var raw map[string]any
+	if err := json.Unmarshal([]byte(payload), &raw); err == nil && len(raw) > 0 {
+		a.rawEvents = append(a.rawEvents, map[string]any{
+			"event": a.currentEvent,
+			"data":  raw,
+		})
 	}
 
 	if event.Response.Model != "" {
@@ -577,6 +595,17 @@ func (a *openAISSEUsageAccumulator) Usage() (openAIUsage, bool) {
 	return a.usage, true
 }
 
+func (a *openAISSEUsageAccumulator) RawEvents() []map[string]any {
+	if len(a.rawEvents) == 0 {
+		return nil
+	}
+	out := make([]map[string]any, 0, len(a.rawEvents))
+	for _, event := range a.rawEvents {
+		out = append(out, event)
+	}
+	return out
+}
+
 func copyJSONHeaders(dst, src http.Header) {
 	for k, values := range src {
 		if !strings.EqualFold(k, "Content-Type") && !strings.EqualFold(k, "Accept") {
@@ -618,4 +647,29 @@ func parseRawResponseObject(body []byte) map[string]any {
 		return nil
 	}
 	return out
+}
+
+func wrapJSONRawResponse(body []byte) map[string]any {
+	obj := parseRawResponseObject(body)
+	if obj == nil {
+		return nil
+	}
+	return map[string]any{
+		"kind": "json",
+		"body": obj,
+	}
+}
+
+func wrapSSERawResponse(events []map[string]any) map[string]any {
+	if len(events) == 0 {
+		return nil
+	}
+	items := make([]any, 0, len(events))
+	for _, event := range events {
+		items = append(items, event)
+	}
+	return map[string]any{
+		"kind":   "sse",
+		"events": items,
+	}
 }

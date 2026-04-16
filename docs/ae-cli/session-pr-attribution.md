@@ -34,7 +34,9 @@ The runtime bundle may contain sensitive env values and local proxy metadata, so
 - `commit_checkpoints` rows are created after commits.
 - `session_usage_events` and `session_events` continue arriving while the local proxy is active.
 - The session detail page shows recent `Agent Usage Snapshots` as well as `Session Usage`, so cached-input / reasoning token snapshots should appear there when collectors have reported them.
-- New non-stream request rows may also carry `session_usage_events.raw_response`, which the session detail page exposes as `Raw Response`.
+- New request rows may also carry `session_usage_events.raw_response`, which the session detail page exposes as `Raw Response`.
+- `raw_response.kind == "json"` means a non-stream upstream body was stored under `raw_response.body`.
+- `raw_response.kind == "sse"` means the row stores a parsed SSE event array under `raw_response.events`.
 - `Agent Usage Snapshots` raw expansion is sourced from `agent_metadata_events.raw_payload` and shown as `Raw Event`.
 
 ## Verified Usage Shapes
@@ -85,7 +87,7 @@ The current proxy persistence path stores flattened request facts plus a small r
 - `raw_metadata.http_status`
 - `raw_metadata.cached_input_tokens`
 - `raw_metadata.reasoning_output_tokens`
-- `raw_response` (original upstream non-stream response body, when available)
+- `raw_response` (original upstream response envelope, when available)
 
 This preserves cache / reasoning detail when the relay raw response exposes it through the parsed OpenAI-compatible usage shape.
 

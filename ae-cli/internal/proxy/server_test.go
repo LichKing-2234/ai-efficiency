@@ -1183,8 +1183,12 @@ func TestProxyAnthropicMessages_BackendUploadPreservesCacheBreakdown(t *testing.
 	if _, ok := usageReq.RawMetadata["reasoning_output_tokens"]; ok {
 		t.Fatalf("raw_metadata.reasoning_output_tokens should be absent for anthropic request usage, got %v", usageReq.RawMetadata["reasoning_output_tokens"])
 	}
-	if usageReq.RawResponse["id"] != "msg_1" {
-		t.Fatalf("raw_response = %+v, want id=msg_1", usageReq.RawResponse)
+	if usageReq.RawResponse["kind"] != "json" {
+		t.Fatalf("raw_response.kind = %v, want json", usageReq.RawResponse["kind"])
+	}
+	body, ok := usageReq.RawResponse["body"].(map[string]any)
+	if !ok || body["id"] != "msg_1" {
+		t.Fatalf("raw_response.body = %#v, want id=msg_1", usageReq.RawResponse["body"])
 	}
 }
 
@@ -1310,8 +1314,12 @@ func TestProxyOpenAIUsageUploadsToBackend(t *testing.T) {
 	if usageReq.TotalTokens != 24 || usageReq.InputTokens != 11 || usageReq.OutputTokens != 13 {
 		t.Fatalf("usage tokens = in:%d out:%d total:%d, want 11/13/24", usageReq.InputTokens, usageReq.OutputTokens, usageReq.TotalTokens)
 	}
-	if usageReq.RawResponse["id"] != "chatcmpl-1" {
-		t.Fatalf("raw_response = %+v, want id=chatcmpl-1", usageReq.RawResponse)
+	if usageReq.RawResponse["kind"] != "json" {
+		t.Fatalf("raw_response.kind = %v, want json", usageReq.RawResponse["kind"])
+	}
+	body, ok := usageReq.RawResponse["body"].(map[string]any)
+	if !ok || body["id"] != "chatcmpl-1" {
+		t.Fatalf("raw_response.body = %#v, want id=chatcmpl-1", usageReq.RawResponse["body"])
 	}
 	if _, err := os.Stat(EventSpoolPath(cfg.SessionID)); !os.IsNotExist(err) {
 		t.Fatalf("expected no local spool file on successful backend delivery, stat err=%v", err)
@@ -1423,8 +1431,12 @@ func TestProxyOpenAIResponsesUsageUploadsCacheAndReasoningDetailsToRawMetadata(t
 	if usageReq.RawMetadata["reasoning_output_tokens"] != float64(4) {
 		t.Fatalf("raw_metadata.reasoning_output_tokens = %v, want 4", usageReq.RawMetadata["reasoning_output_tokens"])
 	}
-	if usageReq.RawResponse["id"] != "resp-1" {
-		t.Fatalf("raw_response = %+v, want id=resp-1", usageReq.RawResponse)
+	if usageReq.RawResponse["kind"] != "json" {
+		t.Fatalf("raw_response.kind = %v, want json", usageReq.RawResponse["kind"])
+	}
+	body, ok := usageReq.RawResponse["body"].(map[string]any)
+	if !ok || body["id"] != "resp-1" {
+		t.Fatalf("raw_response.body = %#v, want id=resp-1", usageReq.RawResponse["body"])
 	}
 }
 
@@ -1514,8 +1526,23 @@ func TestProxyOpenAIStreamingUsageUploadLeavesRawResponseEmpty(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
 	}
-	if usageReq.RawResponse != nil {
-		t.Fatalf("raw_response = %+v, want nil for streaming responses", usageReq.RawResponse)
+	if _, err := io.ReadAll(resp.Body); err != nil {
+		t.Fatalf("read stream body: %v", err)
+	}
+	if usageReq.RawResponse["kind"] != "sse" {
+		t.Fatalf("raw_response.kind = %v, want sse", usageReq.RawResponse["kind"])
+	}
+	events, ok := usageReq.RawResponse["events"].([]any)
+	if !ok || len(events) != 2 {
+		t.Fatalf("raw_response.events = %#v, want 2 parsed events", usageReq.RawResponse["events"])
+	}
+	first, _ := events[0].(map[string]any)
+	if first["event"] != "response.created" {
+		t.Fatalf("first event = %v, want response.created", first["event"])
+	}
+	last, _ := events[len(events)-1].(map[string]any)
+	if last["event"] != "response.completed" {
+		t.Fatalf("last event = %v, want response.completed", last["event"])
 	}
 }
 
@@ -1606,8 +1633,23 @@ func TestProxyAnthropicStreamingUsageUploadLeavesRawResponseEmpty(t *testing.T) 
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
 	}
-	if usageReq.RawResponse != nil {
-		t.Fatalf("raw_response = %+v, want nil for streaming responses", usageReq.RawResponse)
+	if _, err := io.ReadAll(resp.Body); err != nil {
+		t.Fatalf("read stream body: %v", err)
+	}
+	if usageReq.RawResponse["kind"] != "sse" {
+		t.Fatalf("raw_response.kind = %v, want sse", usageReq.RawResponse["kind"])
+	}
+	events, ok := usageReq.RawResponse["events"].([]any)
+	if !ok || len(events) != 2 {
+		t.Fatalf("raw_response.events = %#v, want 2 parsed events", usageReq.RawResponse["events"])
+	}
+	first, _ := events[0].(map[string]any)
+	if first["event"] != "message_start" {
+		t.Fatalf("first event = %v, want message_start", first["event"])
+	}
+	last, _ := events[len(events)-1].(map[string]any)
+	if last["event"] != "message_delta" {
+		t.Fatalf("last event = %v, want message_delta", last["event"])
 	}
 }
 

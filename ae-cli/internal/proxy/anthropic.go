@@ -160,7 +160,7 @@ func (s *Server) handleAnthropicMessages(w http.ResponseWriter, r *http.Request)
 		OutputTokens:                usage.OutputTokens,
 		TotalTokens:                 usage.TotalTokens,
 		HTTPStatus:                  resp.StatusCode,
-		RawResponse:                 parseRawResponseObject(body),
+		RawResponse:                 wrapJSONRawResponse(body),
 		Status:                      status,
 	})
 
@@ -308,7 +308,7 @@ func (s *Server) proxyAnthropicStream(w http.ResponseWriter, resp *http.Response
 			acc.Consume(chunk)
 			if _, writeErr := w.Write(chunk); writeErr != nil {
 				usage, ok := acc.Usage()
-				s.recordAnthropicUsage(reqID, startedAt, resp.StatusCode, usage, ok, "downstream_write_error", writeErr.Error())
+				s.recordAnthropicUsage(reqID, startedAt, resp.StatusCode, usage, wrapSSERawResponse(acc.RawEvents()), ok, "downstream_write_error", writeErr.Error())
 				return
 			}
 			if flusher != nil {
@@ -321,7 +321,7 @@ func (s *Server) proxyAnthropicStream(w http.ResponseWriter, resp *http.Response
 		}
 		if err != nil {
 			usage, ok := acc.Usage()
-			s.recordAnthropicUsage(reqID, startedAt, resp.StatusCode, usage, ok, "upstream_read_error", err.Error())
+			s.recordAnthropicUsage(reqID, startedAt, resp.StatusCode, usage, wrapSSERawResponse(acc.RawEvents()), ok, "upstream_read_error", err.Error())
 			return
 		}
 	}
@@ -336,10 +336,10 @@ func (s *Server) proxyAnthropicStream(w http.ResponseWriter, resp *http.Response
 		status = "stream_usage_unavailable"
 		errMessage = "stream completed without usage payload"
 	}
-	s.recordAnthropicUsage(reqID, startedAt, resp.StatusCode, usage, ok, status, errMessage)
+	s.recordAnthropicUsage(reqID, startedAt, resp.StatusCode, usage, wrapSSERawResponse(acc.RawEvents()), ok, status, errMessage)
 }
 
-func (s *Server) recordAnthropicUsage(reqID string, startedAt time.Time, httpStatus int, usage anthropicUsage, hasUsage bool, status string, errMessage string) {
+func (s *Server) recordAnthropicUsage(reqID string, startedAt time.Time, httpStatus int, usage anthropicUsage, rawResponse map[string]any, hasUsage bool, status string, errMessage string) {
 	model := usage.Model
 	inputTokens := usage.InputTokens
 	cacheCreationInputTokens := usage.CacheCreationInputTokens
@@ -372,16 +372,19 @@ func (s *Server) recordAnthropicUsage(reqID string, startedAt time.Time, httpSta
 		OutputTokens:                outputTokens,
 		TotalTokens:                 totalTokens,
 		HTTPStatus:                  httpStatus,
+		RawResponse:                 rawResponse,
 		Error:                       errMessage,
 		Status:                      status,
 	})
 }
 
 type anthropicSSEUsageAccumulator struct {
-	pending string
-	model   string
-	usage   anthropicUsage
-	seen    bool
+	pending      string
+	model        string
+	usage        anthropicUsage
+	seen         bool
+	currentEvent string
+	rawEvents    []map[string]any
 }
 
 func newAnthropicSSEUsageAccumulator(model string) *anthropicSSEUsageAccumulator {
@@ -398,6 +401,14 @@ func (a *anthropicSSEUsageAccumulator) Consume(chunk []byte) {
 }
 
 func (a *anthropicSSEUsageAccumulator) consumeLine(line string) {
+	if line == "" {
+		a.currentEvent = ""
+		return
+	}
+	if strings.HasPrefix(line, "event:") {
+		a.currentEvent = strings.TrimSpace(strings.TrimPrefix(line, "event:"))
+		return
+	}
 	if !strings.HasPrefix(line, "data:") {
 		return
 	}
@@ -416,6 +427,13 @@ func (a *anthropicSSEUsageAccumulator) consumeLine(line string) {
 	}
 	if err := json.Unmarshal([]byte(payload), &event); err != nil {
 		return
+	}
+	var raw map[string]any
+	if err := json.Unmarshal([]byte(payload), &raw); err == nil && len(raw) > 0 {
+		a.rawEvents = append(a.rawEvents, map[string]any{
+			"event": a.currentEvent,
+			"data":  raw,
+		})
 	}
 
 	if event.Message.Model != "" {
@@ -463,4 +481,15 @@ func (a *anthropicSSEUsageAccumulator) Usage() (anthropicUsage, bool) {
 		a.usage.TotalTokens = a.usage.InputTokens + a.usage.CacheCreationInputTokens + a.usage.CacheReadInputTokens + a.usage.OutputTokens
 	}
 	return a.usage, true
+}
+
+func (a *anthropicSSEUsageAccumulator) RawEvents() []map[string]any {
+	if len(a.rawEvents) == 0 {
+		return nil
+	}
+	out := make([]map[string]any, 0, len(a.rawEvents))
+	for _, event := range a.rawEvents {
+		out = append(out, event)
+	}
+	return out
 }

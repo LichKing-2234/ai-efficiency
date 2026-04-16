@@ -83,17 +83,20 @@ describe('SessionDetailView', () => {
                 reasoning_output_tokens: 444,
               },
               raw_response: {
-                id: 'resp_1',
-                usage: {
-                  input_tokens: 100,
-                  input_tokens_details: {
-                    cached_tokens: 333,
+                kind: 'json',
+                body: {
+                  id: 'resp_1',
+                  usage: {
+                    input_tokens: 100,
+                    input_tokens_details: {
+                      cached_tokens: 333,
+                    },
+                    output_tokens: 40,
+                    output_tokens_details: {
+                      reasoning_tokens: 444,
+                    },
+                    total_tokens: 140,
                   },
-                  output_tokens: 40,
-                  output_tokens_details: {
-                    reasoning_tokens: 444,
-                  },
-                  total_tokens: 140,
                 },
               },
             }],
@@ -195,17 +198,20 @@ describe('SessionDetailView', () => {
                 http_status: 200,
               },
               raw_response: {
-                id: 'resp_1',
-                usage: {
-                  input_tokens: 100,
-                  input_tokens_details: {
-                    cached_tokens: 333,
+                kind: 'json',
+                body: {
+                  id: 'resp_1',
+                  usage: {
+                    input_tokens: 100,
+                    input_tokens_details: {
+                      cached_tokens: 333,
+                    },
+                    output_tokens: 40,
+                    output_tokens_details: {
+                      reasoning_tokens: 444,
+                    },
+                    total_tokens: 140,
                   },
-                  output_tokens: 40,
-                  output_tokens_details: {
-                    reasoning_tokens: 444,
-                  },
-                  total_tokens: 140,
                 },
               },
             }],
@@ -250,6 +256,7 @@ describe('SessionDetailView', () => {
     expect(rawButtons).toHaveLength(2)
 
     await rawResponseButtons[0].trigger('click')
+    expect(wrapper.text()).toContain('"kind": "json"')
     expect(wrapper.text()).toContain('"id": "resp_1"')
     expect(wrapper.text()).toContain('"cached_tokens": 333')
     expect(wrapper.text()).toContain('"reasoning_tokens": 444')
@@ -317,6 +324,78 @@ describe('SessionDetailView', () => {
 
     await rawEventButtons[0].trigger('click')
     expect(wrapper.text()).toContain('No raw event.')
+  })
+
+  it('renders wrapped sse raw responses', async () => {
+    const { getSession } = await import('@/api/session')
+    ;(getSession as any).mockResolvedValue({
+      data: {
+        data: {
+          id: 'sess-sse-raw',
+          branch: 'feat/raw-sse',
+          status: 'active',
+          started_at: '2026-03-30T00:00:00Z',
+          ended_at: null,
+          tool_invocations: [],
+          edges: {
+            session_usage_events: [{
+              event_id: 'usage-sse-1',
+              provider_name: 'sub2api',
+              model: 'gpt-5.4',
+              started_at: '2026-03-30T00:31:00Z',
+              finished_at: '2026-03-30T00:31:05Z',
+              input_tokens: 100,
+              output_tokens: 40,
+              total_tokens: 140,
+              status: 'completed',
+              workspace_id: 'ws-1',
+              raw_response: {
+                kind: 'sse',
+                events: [
+                  {
+                    event: 'response.created',
+                    data: {
+                      type: 'response.created',
+                    },
+                  },
+                  {
+                    event: 'response.completed',
+                    data: {
+                      type: 'response.completed',
+                      response: {
+                        usage: {
+                          input_tokens_details: {
+                            cached_tokens: 3,
+                          },
+                        },
+                      },
+                    },
+                  },
+                ],
+              },
+            }],
+          },
+        },
+      },
+    })
+
+    const router = createTestRouter()
+    await router.push('/sessions/sess-sse-raw')
+    await router.isReady()
+
+    const wrapper = mount(SessionDetailView, {
+      global: { plugins: [createPinia(), router] },
+    })
+    await flushPromises()
+
+    const rawResponseButtons = wrapper.findAll('button').filter((node) => node.text() === 'Raw Response')
+    expect(rawResponseButtons).toHaveLength(1)
+
+    await rawResponseButtons[0].trigger('click')
+    expect(wrapper.text()).toContain('"kind": "sse"')
+    expect(wrapper.text()).toContain('"event": "response.created"')
+    expect(wrapper.text()).toContain('"event": "response.completed"')
+    expect(wrapper.text()).toContain('"cached_tokens": 3')
   })
 
   it('shows reasoning as dash only when the raw value is missing', async () => {

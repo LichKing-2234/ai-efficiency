@@ -61,10 +61,13 @@ Semantics:
 
 Storage rules:
 
-- OpenAI non-stream success: persist the original JSON response body
-- Anthropic non-stream success: persist the original JSON response body
+- OpenAI non-stream success: persist `{ "kind": "json", "body": <original JSON body> }`
+- Anthropic non-stream success: persist `{ "kind": "json", "body": <original JSON body> }`
+- OpenAI stream success: persist `{ "kind": "sse", "events": [...] }`
+- Anthropic stream success: persist `{ "kind": "sse", "events": [...] }`
 - transport errors / body read failures: `raw_response` stays empty
-- streaming responses: `raw_response` stays empty in this phase
+
+The streaming envelope details are further elaborated by `2026-04-16-session-stream-raw-response-design.md`.
 
 ### `agent_metadata_events`
 
@@ -118,7 +121,7 @@ Session detail continues returning `session_usage_events` and `agent_metadata_ev
 Expected request-level response shape:
 
 - `session_usage_events[*].raw_metadata` remains normalized
-- `session_usage_events[*].raw_response` contains the original upstream response when available
+- `session_usage_events[*].raw_response` contains the original upstream response envelope when available
 - `agent_metadata_events[*].raw_payload` remains unchanged
 
 ## Testing
@@ -127,9 +130,10 @@ Expected request-level response shape:
 
 Add coverage for:
 
-1. OpenAI non-stream usage ingest stores `raw_response`
-2. Anthropic non-stream usage ingest stores `raw_response`
-3. streaming usage ingest keeps `raw_response` empty
+1. OpenAI non-stream usage ingest stores `{kind:"json", body:...}`
+2. Anthropic non-stream usage ingest stores `{kind:"json", body:...}`
+3. OpenAI streaming usage ingest stores `{kind:"sse", events:[...]}`
+4. Anthropic streaming usage ingest stores `{kind:"sse", events:[...]}`
 
 ### Frontend
 
