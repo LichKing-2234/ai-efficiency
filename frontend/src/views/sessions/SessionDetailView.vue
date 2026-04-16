@@ -5,12 +5,16 @@ import AppLayout from '@/components/AppLayout.vue'
 import { getSession } from '@/api/session'
 import type { AgentMetadataEvent, Session, SessionUsageEvent } from '@/types'
 
+type RawPanel = {
+  title: string
+  content: string
+}
+
 const route = useRoute()
 const router = useRouter()
 const loading = ref(true)
 const session = ref<Session | null>(null)
-const expandedUsageRaw = ref<string[]>([])
-const expandedAgentRaw = ref<string[]>([])
+const rawPanel = ref<RawPanel | null>(null)
 let currentLoadToken = 0
 
 function formatDate(value?: string | null) {
@@ -33,24 +37,22 @@ function formatRawJSON(value?: unknown, emptyLabel = 'No raw data.') {
   return JSON.stringify(value, null, 2)
 }
 
-function toggleUsageRaw(eventID: string) {
-  if (expandedUsageRaw.value.includes(eventID)) {
-    expandedUsageRaw.value = expandedUsageRaw.value.filter((value) => value !== eventID)
-    return
+function openUsageRaw(usage: SessionUsageEvent) {
+  rawPanel.value = {
+    title: 'Raw Response',
+    content: formatRawJSON(usage.raw_response, 'No raw response.'),
   }
-  expandedUsageRaw.value = [...expandedUsageRaw.value, eventID]
 }
 
-function toggleAgentRaw(key: string) {
-  if (expandedAgentRaw.value.includes(key)) {
-    expandedAgentRaw.value = expandedAgentRaw.value.filter((value) => value !== key)
-    return
+function openAgentRaw(event: AgentMetadataEvent) {
+  rawPanel.value = {
+    title: 'Raw Event',
+    content: formatRawJSON(event.raw_payload, 'No raw event.'),
   }
-  expandedAgentRaw.value = [...expandedAgentRaw.value, key]
 }
 
-function usageRawKey(usage: SessionUsageEvent) {
-  return usage.event_id
+function closeRawPanel() {
+  rawPanel.value = null
 }
 
 function agentRawKey(event: AgentMetadataEvent) {
@@ -70,6 +72,7 @@ function agentTokenTotal(event: AgentMetadataEvent) {
 async function loadSession(sessionId: string) {
   const loadToken = ++currentLoadToken
   loading.value = true
+  rawPanel.value = null
   try {
     const res = await getSession(sessionId)
     if (loadToken != currentLoadToken) return
@@ -219,14 +222,9 @@ watch(
                   <td class="px-3 py-2 text-xs text-gray-600">{{ usage.status }}</td>
                   <td class="px-3 py-2 text-xs text-gray-500">{{ formatDate(usage.started_at) }}</td>
                   <td class="px-3 py-2 text-xs text-gray-600">
-                    <button class="text-xs text-indigo-600 hover:text-indigo-800" @click="toggleUsageRaw(usageRawKey(usage))">
+                    <button class="text-xs text-indigo-600 hover:text-indigo-800" @click="openUsageRaw(usage)">
                       Raw Response
                     </button>
-                  </td>
-                </tr>
-                <tr v-if="expandedUsageRaw.includes(usageRawKey(usage))" class="bg-gray-50">
-                  <td colspan="10" class="px-3 py-3">
-                    <pre class="overflow-x-auto rounded bg-gray-900 p-3 text-xs text-gray-100">{{ formatRawJSON(usage.raw_response, 'No raw response.') }}</pre>
                   </td>
                 </tr>
               </template>
@@ -271,14 +269,9 @@ watch(
                   <td class="px-3 py-2 text-xs text-gray-600">{{ formatPercent(event.context_usage_pct) }}</td>
                   <td class="px-3 py-2 text-xs text-gray-500">{{ formatDate(event.observed_at) }}</td>
                   <td class="px-3 py-2 text-xs text-gray-600">
-                    <button class="text-xs text-indigo-600 hover:text-indigo-800" @click="toggleAgentRaw(agentRawKey(event))">
+                    <button class="text-xs text-indigo-600 hover:text-indigo-800" @click="openAgentRaw(event)">
                       Raw Event
                     </button>
-                  </td>
-                </tr>
-                <tr v-if="expandedAgentRaw.includes(agentRawKey(event))" class="bg-gray-50">
-                  <td colspan="12" class="px-3 py-3">
-                    <pre class="overflow-x-auto rounded bg-gray-900 p-3 text-xs text-gray-100">{{ formatRawJSON(event.raw_payload, 'No raw event.') }}</pre>
                   </td>
                 </tr>
               </template>
@@ -309,6 +302,38 @@ watch(
           </table>
         </div>
         <p v-else class="mt-3 text-sm text-gray-400">No session events.</p>
+      </div>
+    </div>
+
+    <div v-if="rawPanel" class="fixed inset-0 z-40">
+      <button
+        aria-label="Close raw panel backdrop"
+        class="absolute inset-0 bg-gray-900/30"
+        @click="closeRawPanel"
+      />
+      <div class="absolute inset-y-0 right-0 flex w-full max-w-3xl">
+        <div
+          data-testid="raw-panel"
+          class="ml-auto flex h-full w-full flex-col bg-white shadow-2xl ring-1 ring-gray-200"
+        >
+          <div class="flex items-start justify-between border-b border-gray-200 px-4 py-3 sm:px-6">
+            <h2 data-testid="raw-panel-title" class="text-sm font-semibold uppercase tracking-wide text-gray-900">
+              {{ rawPanel.title }}
+            </h2>
+            <button
+              class="rounded px-2 py-1 text-sm text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+              @click="closeRawPanel"
+            >
+              Close
+            </button>
+          </div>
+          <div class="min-h-0 flex-1 p-4 sm:p-6">
+            <pre
+              data-testid="raw-panel-content"
+              class="h-full overflow-auto rounded bg-gray-900 p-4 text-xs text-gray-100"
+            >{{ rawPanel.content }}</pre>
+          </div>
+        </div>
       </div>
     </div>
 

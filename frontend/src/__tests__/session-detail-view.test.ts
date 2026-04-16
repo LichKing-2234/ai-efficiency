@@ -254,17 +254,21 @@ describe('SessionDetailView', () => {
     const rawEventButtons = wrapper.findAll('button').filter((node) => node.text() === 'Raw Event')
     const rawButtons = [...rawResponseButtons, ...rawEventButtons]
     expect(rawButtons).toHaveLength(2)
+    expect(wrapper.find('[data-testid="raw-panel"]').exists()).toBe(false)
 
     await rawResponseButtons[0].trigger('click')
-    expect(wrapper.text()).toContain('"kind": "json"')
-    expect(wrapper.text()).toContain('"id": "resp_1"')
-    expect(wrapper.text()).toContain('"cached_tokens": 333')
-    expect(wrapper.text()).toContain('"reasoning_tokens": 444')
+    expect(wrapper.find('[data-testid="raw-panel"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="raw-panel-title"]').text()).toBe('Raw Response')
+    expect(wrapper.find('[data-testid="raw-panel-content"]').text()).toContain('"kind": "json"')
+    expect(wrapper.find('[data-testid="raw-panel-content"]').text()).toContain('"id": "resp_1"')
+    expect(wrapper.find('[data-testid="raw-panel-content"]').text()).toContain('"cached_tokens": 333')
+    expect(wrapper.find('[data-testid="raw-panel-content"]').text()).toContain('"reasoning_tokens": 444')
 
     await rawEventButtons[0].trigger('click')
-    expect(wrapper.text()).toContain('"total_token_usage"')
-    expect(wrapper.text()).toContain('"cached_input_tokens": 30')
-    expect(wrapper.text()).toContain('"reasoning_output_tokens": 10')
+    expect(wrapper.find('[data-testid="raw-panel-title"]').text()).toBe('Raw Event')
+    expect(wrapper.find('[data-testid="raw-panel-content"]').text()).toContain('"total_token_usage"')
+    expect(wrapper.find('[data-testid="raw-panel-content"]').text()).toContain('"cached_input_tokens": 30')
+    expect(wrapper.find('[data-testid="raw-panel-content"]').text()).toContain('"reasoning_output_tokens": 10')
   })
 
   it('shows empty raw response and raw event labels when data is missing', async () => {
@@ -320,10 +324,10 @@ describe('SessionDetailView', () => {
     const rawEventButtons = wrapper.findAll('button').filter((node) => node.text() === 'Raw Event')
 
     await rawResponseButtons[0].trigger('click')
-    expect(wrapper.text()).toContain('No raw response.')
+    expect(wrapper.find('[data-testid="raw-panel-content"]').text()).toContain('No raw response.')
 
     await rawEventButtons[0].trigger('click')
-    expect(wrapper.text()).toContain('No raw event.')
+    expect(wrapper.find('[data-testid="raw-panel-content"]').text()).toContain('No raw event.')
   })
 
   it('renders wrapped sse raw responses', async () => {
@@ -392,10 +396,10 @@ describe('SessionDetailView', () => {
     expect(rawResponseButtons).toHaveLength(1)
 
     await rawResponseButtons[0].trigger('click')
-    expect(wrapper.text()).toContain('"kind": "sse"')
-    expect(wrapper.text()).toContain('"event": "response.created"')
-    expect(wrapper.text()).toContain('"event": "response.completed"')
-    expect(wrapper.text()).toContain('"cached_tokens": 3')
+    expect(wrapper.find('[data-testid="raw-panel-content"]').text()).toContain('"kind": "sse"')
+    expect(wrapper.find('[data-testid="raw-panel-content"]').text()).toContain('"event": "response.created"')
+    expect(wrapper.find('[data-testid="raw-panel-content"]').text()).toContain('"event": "response.completed"')
+    expect(wrapper.find('[data-testid="raw-panel-content"]').text()).toContain('"cached_tokens": 3')
   })
 
   it('shows reasoning as dash only when the raw value is missing', async () => {
