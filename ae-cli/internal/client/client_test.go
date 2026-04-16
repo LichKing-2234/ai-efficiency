@@ -962,6 +962,9 @@ func TestSendSessionUsageEvent(t *testing.T) {
 		if req.RawMetadata["http_status"] != float64(200) {
 			t.Fatalf("raw_metadata.http_status = %v, want 200", req.RawMetadata["http_status"])
 		}
+		if req.RawResponse["id"] != "resp_1" {
+			t.Fatalf("raw_response = %+v, want id=resp_1", req.RawResponse)
+		}
 		w.WriteHeader(http.StatusCreated)
 	}))
 	defer srv.Close()
@@ -981,6 +984,7 @@ func TestSendSessionUsageEvent(t *testing.T) {
 		TotalTokens:  12,
 		Status:       "completed",
 		RawMetadata:  map[string]any{"http_status": 200},
+		RawResponse:  map[string]any{"id": "resp_1"},
 	})
 	if err != nil {
 		t.Fatalf("SendSessionUsageEvent: %v", err)

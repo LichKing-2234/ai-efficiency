@@ -741,6 +741,16 @@ func RawMetadataNotNil() predicate.SessionUsageEvent {
 	return predicate.SessionUsageEvent(sql.FieldNotNull(FieldRawMetadata))
 }
 
+// RawResponseIsNil applies the IsNil predicate on the "raw_response" field.
+func RawResponseIsNil() predicate.SessionUsageEvent {
+	return predicate.SessionUsageEvent(sql.FieldIsNull(FieldRawResponse))
+}
+
+// RawResponseNotNil applies the NotNil predicate on the "raw_response" field.
+func RawResponseNotNil() predicate.SessionUsageEvent {
+	return predicate.SessionUsageEvent(sql.FieldNotNull(FieldRawResponse))
+}
+
 // CreatedAtEQ applies the EQ predicate on the "created_at" field.
 func CreatedAtEQ(v time.Time) predicate.SessionUsageEvent {
 	return predicate.SessionUsageEvent(sql.FieldEQ(FieldCreatedAt, v))

@@ -124,6 +124,12 @@ func (suec *SessionUsageEventCreate) SetRawMetadata(m map[string]interface{}) *S
 	return suec
 }
 
+// SetRawResponse sets the "raw_response" field.
+func (suec *SessionUsageEventCreate) SetRawResponse(m map[string]interface{}) *SessionUsageEventCreate {
+	suec.mutation.SetRawResponse(m)
+	return suec
+}
+
 // SetCreatedAt sets the "created_at" field.
 func (suec *SessionUsageEventCreate) SetCreatedAt(t time.Time) *SessionUsageEventCreate {
 	suec.mutation.SetCreatedAt(t)
@@ -343,6 +349,10 @@ func (suec *SessionUsageEventCreate) createSpec() (*SessionUsageEvent, *sqlgraph
 	if value, ok := suec.mutation.RawMetadata(); ok {
 		_spec.SetField(sessionusageevent.FieldRawMetadata, field.TypeJSON, value)
 		_node.RawMetadata = value
+	}
+	if value, ok := suec.mutation.RawResponse(); ok {
+		_spec.SetField(sessionusageevent.FieldRawResponse, field.TypeJSON, value)
+		_node.RawResponse = value
 	}
 	if value, ok := suec.mutation.CreatedAt(); ok {
 		_spec.SetField(sessionusageevent.FieldCreatedAt, field.TypeTime, value)

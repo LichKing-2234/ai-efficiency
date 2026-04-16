@@ -231,6 +231,18 @@ func (sueu *SessionUsageEventUpdate) ClearRawMetadata() *SessionUsageEventUpdate
 	return sueu
 }
 
+// SetRawResponse sets the "raw_response" field.
+func (sueu *SessionUsageEventUpdate) SetRawResponse(m map[string]interface{}) *SessionUsageEventUpdate {
+	sueu.mutation.SetRawResponse(m)
+	return sueu
+}
+
+// ClearRawResponse clears the value of the "raw_response" field.
+func (sueu *SessionUsageEventUpdate) ClearRawResponse() *SessionUsageEventUpdate {
+	sueu.mutation.ClearRawResponse()
+	return sueu
+}
+
 // SetCreatedAt sets the "created_at" field.
 func (sueu *SessionUsageEventUpdate) SetCreatedAt(t time.Time) *SessionUsageEventUpdate {
 	sueu.mutation.SetCreatedAt(t)
@@ -385,6 +397,12 @@ func (sueu *SessionUsageEventUpdate) sqlSave(ctx context.Context) (n int, err er
 	}
 	if sueu.mutation.RawMetadataCleared() {
 		_spec.ClearField(sessionusageevent.FieldRawMetadata, field.TypeJSON)
+	}
+	if value, ok := sueu.mutation.RawResponse(); ok {
+		_spec.SetField(sessionusageevent.FieldRawResponse, field.TypeJSON, value)
+	}
+	if sueu.mutation.RawResponseCleared() {
+		_spec.ClearField(sessionusageevent.FieldRawResponse, field.TypeJSON)
 	}
 	if value, ok := sueu.mutation.CreatedAt(); ok {
 		_spec.SetField(sessionusageevent.FieldCreatedAt, field.TypeTime, value)
@@ -639,6 +657,18 @@ func (sueuo *SessionUsageEventUpdateOne) ClearRawMetadata() *SessionUsageEventUp
 	return sueuo
 }
 
+// SetRawResponse sets the "raw_response" field.
+func (sueuo *SessionUsageEventUpdateOne) SetRawResponse(m map[string]interface{}) *SessionUsageEventUpdateOne {
+	sueuo.mutation.SetRawResponse(m)
+	return sueuo
+}
+
+// ClearRawResponse clears the value of the "raw_response" field.
+func (sueuo *SessionUsageEventUpdateOne) ClearRawResponse() *SessionUsageEventUpdateOne {
+	sueuo.mutation.ClearRawResponse()
+	return sueuo
+}
+
 // SetCreatedAt sets the "created_at" field.
 func (sueuo *SessionUsageEventUpdateOne) SetCreatedAt(t time.Time) *SessionUsageEventUpdateOne {
 	sueuo.mutation.SetCreatedAt(t)
@@ -823,6 +853,12 @@ func (sueuo *SessionUsageEventUpdateOne) sqlSave(ctx context.Context) (_node *Se
 	}
 	if sueuo.mutation.RawMetadataCleared() {
 		_spec.ClearField(sessionusageevent.FieldRawMetadata, field.TypeJSON)
+	}
+	if value, ok := sueuo.mutation.RawResponse(); ok {
+		_spec.SetField(sessionusageevent.FieldRawResponse, field.TypeJSON, value)
+	}
+	if sueuo.mutation.RawResponseCleared() {
+		_spec.ClearField(sessionusageevent.FieldRawResponse, field.TypeJSON)
 	}
 	if value, ok := sueuo.mutation.CreatedAt(); ok {
 		_spec.SetField(sessionusageevent.FieldCreatedAt, field.TypeTime, value)

@@ -15,7 +15,7 @@ import (
 	"github.com/google/uuid"
 )
 
-func TestSessionDetailIncludesWorkspaceCheckpointUsageAndSessionEventEdges(t *testing.T) {
+func TestSessionDetailIncludesWorkspaceCheckpointUsageAgentMetadataAndSessionEventEdges(t *testing.T) {
 	t.Parallel()
 	gin.SetMode(gin.TestMode)
 
@@ -77,6 +77,19 @@ func TestSessionDetailIncludesWorkspaceCheckpointUsageAndSessionEventEdges(t *te
 		SetStatus("completed").
 		SetRawMetadata(map[string]any{"k": "v"}).
 		SaveX(ctx)
+	client.AgentMetadataEvent.Create().
+		SetSessionID(sessionID).
+		SetWorkspaceID("ws-1").
+		SetSource("codex").
+		SetSourceSessionID("codex-sess-1").
+		SetUsageUnit("token").
+		SetInputTokens(120).
+		SetCachedInputTokens(30).
+		SetOutputTokens(25).
+		SetReasoningTokens(10).
+		SetObservedAt(time.Now().UTC().Add(-45 * time.Second)).
+		SetRawPayload(map[string]any{"source_session_id": "codex-sess-1"}).
+		SaveX(ctx)
 	client.SessionEvent.Create().
 		SetEventID("evt-1").
 		SetSessionID(sessionID).
@@ -116,13 +129,21 @@ func TestSessionDetailIncludesWorkspaceCheckpointUsageAndSessionEventEdges(t *te
 	if len(usageEvents) != 1 {
 		t.Fatalf("session_usage_events len = %d, want 1", len(usageEvents))
 	}
+	agentMetadataEvents, _ := edges["agent_metadata_events"].([]any)
+	if len(agentMetadataEvents) != 1 {
+		t.Fatalf("agent_metadata_events len = %d, want 1", len(agentMetadataEvents))
+	}
+	firstAgentMetadata, _ := agentMetadataEvents[0].(map[string]any)
+	if firstAgentMetadata["cached_input_tokens"] != float64(30) {
+		t.Fatalf("cached_input_tokens = %v, want 30", firstAgentMetadata["cached_input_tokens"])
+	}
 	sessionEvents, _ := edges["session_events"].([]any)
 	if len(sessionEvents) != 1 {
 		t.Fatalf("session_events len = %d, want 1", len(sessionEvents))
 	}
 }
 
-func TestSessionDetailOrdersAndLimitsCheckpointUsageAndSessionEventEdges(t *testing.T) {
+func TestSessionDetailOrdersAndLimitsCheckpointUsageAgentMetadataAndSessionEventEdges(t *testing.T) {
 	t.Parallel()
 	gin.SetMode(gin.TestMode)
 
@@ -195,6 +216,22 @@ func TestSessionDetailOrdersAndLimitsCheckpointUsageAndSessionEventEdges(t *test
 			SetRawMetadata(map[string]any{"i": i}).
 			SaveX(ctx)
 	}
+	metadataBase := time.Now().UTC().Add(-85 * time.Minute)
+	for i := 0; i < 120; i++ {
+		client.AgentMetadataEvent.Create().
+			SetSessionID(sessionID).
+			SetWorkspaceID("ws-1").
+			SetSource("codex").
+			SetSourceSessionID("codex-" + uuid.NewString()).
+			SetUsageUnit("token").
+			SetInputTokens(int64(100 + i)).
+			SetCachedInputTokens(int64(10 + i)).
+			SetOutputTokens(int64(20 + i)).
+			SetReasoningTokens(int64(i)).
+			SetObservedAt(metadataBase.Add(time.Duration(i) * time.Minute)).
+			SetRawPayload(map[string]any{"i": i}).
+			SaveX(ctx)
+	}
 
 	eventBase := time.Now().UTC().Add(-80 * time.Minute)
 	for i := 0; i < 120; i++ {
@@ -254,6 +291,16 @@ func TestSessionDetailOrdersAndLimitsCheckpointUsageAndSessionEventEdges(t *test
 	lastUsage, _ := usageEvents[len(usageEvents)-1].(map[string]any)
 	if firstUsage["started_at"].(string) <= lastUsage["started_at"].(string) {
 		t.Fatalf("expected usage events ordered desc by started_at, got first=%v last=%v", firstUsage["started_at"], lastUsage["started_at"])
+	}
+
+	agentMetadataEvents, _ := edges["agent_metadata_events"].([]any)
+	if len(agentMetadataEvents) != 100 {
+		t.Fatalf("agent_metadata_events len = %d, want 100", len(agentMetadataEvents))
+	}
+	firstAgentMetadata, _ := agentMetadataEvents[0].(map[string]any)
+	lastAgentMetadata, _ := agentMetadataEvents[len(agentMetadataEvents)-1].(map[string]any)
+	if firstAgentMetadata["observed_at"].(string) <= lastAgentMetadata["observed_at"].(string) {
+		t.Fatalf("expected agent metadata ordered desc by observed_at, got first=%v last=%v", firstAgentMetadata["observed_at"], lastAgentMetadata["observed_at"])
 	}
 
 	sessionEvents, _ := edges["session_events"].([]any)
