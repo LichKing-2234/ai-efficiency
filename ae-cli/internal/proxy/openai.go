@@ -419,7 +419,7 @@ func (s *Server) proxyOpenAIStream(w http.ResponseWriter, resp *http.Response, r
 			acc.Consume(chunk)
 			if _, writeErr := w.Write(chunk); writeErr != nil {
 				usage, ok := acc.Usage()
-				s.recordOpenAIUsage(reqID, startedAt, resp.StatusCode, usage, wrapSSERawResponse(acc.RawEvents()), ok, "downstream_write_error", writeErr.Error())
+				s.recordOpenAIUsage(reqID, startedAt, resp.StatusCode, usage, nil, ok, "downstream_write_error", writeErr.Error())
 				return
 			}
 			if flusher != nil {
@@ -432,7 +432,7 @@ func (s *Server) proxyOpenAIStream(w http.ResponseWriter, resp *http.Response, r
 		}
 		if err != nil {
 			usage, ok := acc.Usage()
-			s.recordOpenAIUsage(reqID, startedAt, resp.StatusCode, usage, wrapSSERawResponse(acc.RawEvents()), ok, "upstream_read_error", err.Error())
+			s.recordOpenAIUsage(reqID, startedAt, resp.StatusCode, usage, nil, ok, "upstream_read_error", err.Error())
 			return
 		}
 	}

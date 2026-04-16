@@ -3,9 +3,9 @@
 **Date:** 2026-04-16  
 **Status:** Draft for Review  
 **Scope:** `backend/`, `frontend/`, `docs/`  
-**Related:**  
-- [2026-04-02-local-session-proxy-design.md](/Users/admin/ai-efficiency/docs/superpowers/specs/2026-04-02-local-session-proxy-design.md)  
-- [2026-03-26-session-pr-attribution-design.md](/Users/admin/ai-efficiency/docs/superpowers/specs/2026-03-26-session-pr-attribution-design.md)
+**Related:**
+- [2026-04-02-local-session-proxy-design.md](./2026-04-02-local-session-proxy-design.md)
+- [2026-03-26-session-pr-attribution-design.md](./2026-03-26-session-pr-attribution-design.md)
 
 ## Summary
 

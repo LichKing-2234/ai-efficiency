@@ -167,6 +167,7 @@ describe('SessionDetailView', () => {
     expect(wrapper.text()).toContain('10')
     expect(wrapper.text()).toContain('user_prompt_submit')
     expect(wrapper.text()).toContain('codex_hook')
+    expect(wrapper.text()).not.toContain('Session not found.')
   })
 
   it('expands raw response and raw event payloads', async () => {

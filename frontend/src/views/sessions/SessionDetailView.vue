@@ -337,6 +337,6 @@ watch(
       </div>
     </div>
 
-    <div v-else class="text-center text-gray-500 py-12">Session not found.</div>
+    <div v-if="!loading && !session" class="text-center text-gray-500 py-12">Session not found.</div>
   </AppLayout>
 </template>

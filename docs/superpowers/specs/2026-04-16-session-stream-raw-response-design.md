@@ -3,9 +3,9 @@
 **Date:** 2026-04-16  
 **Status:** Draft for Review  
 **Scope:** `backend/`, `ae-cli/`, `frontend/`, `docs/`  
-**Related:**  
-- [2026-04-16-session-raw-response-design.md](/Users/admin/ai-efficiency/.worktrees/session-raw-response/docs/superpowers/specs/2026-04-16-session-raw-response-design.md)  
-- [2026-04-02-local-session-proxy-design.md](/Users/admin/ai-efficiency/.worktrees/session-raw-response/docs/superpowers/specs/2026-04-02-local-session-proxy-design.md)
+**Related:**
+- [2026-04-16-session-raw-response-design.md](./2026-04-16-session-raw-response-design.md)
+- [2026-04-02-local-session-proxy-design.md](./2026-04-02-local-session-proxy-design.md)
 
 ## Summary
 

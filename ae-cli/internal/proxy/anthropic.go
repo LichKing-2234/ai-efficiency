@@ -308,7 +308,7 @@ func (s *Server) proxyAnthropicStream(w http.ResponseWriter, resp *http.Response
 			acc.Consume(chunk)
 			if _, writeErr := w.Write(chunk); writeErr != nil {
 				usage, ok := acc.Usage()
-				s.recordAnthropicUsage(reqID, startedAt, resp.StatusCode, usage, wrapSSERawResponse(acc.RawEvents()), ok, "downstream_write_error", writeErr.Error())
+				s.recordAnthropicUsage(reqID, startedAt, resp.StatusCode, usage, nil, ok, "downstream_write_error", writeErr.Error())
 				return
 			}
 			if flusher != nil {
@@ -321,7 +321,7 @@ func (s *Server) proxyAnthropicStream(w http.ResponseWriter, resp *http.Response
 		}
 		if err != nil {
 			usage, ok := acc.Usage()
-			s.recordAnthropicUsage(reqID, startedAt, resp.StatusCode, usage, wrapSSERawResponse(acc.RawEvents()), ok, "upstream_read_error", err.Error())
+			s.recordAnthropicUsage(reqID, startedAt, resp.StatusCode, usage, nil, ok, "upstream_read_error", err.Error())
 			return
 		}
 	}

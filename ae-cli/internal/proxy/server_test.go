@@ -1440,7 +1440,7 @@ func TestProxyOpenAIResponsesUsageUploadsCacheAndReasoningDetailsToRawMetadata(t
 	}
 }
 
-func TestProxyOpenAIStreamingUsageUploadLeavesRawResponseEmpty(t *testing.T) {
+func TestProxyOpenAIStreamingUsageUploadStoresSSERawResponseEnvelope(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1546,7 +1546,7 @@ func TestProxyOpenAIStreamingUsageUploadLeavesRawResponseEmpty(t *testing.T) {
 	}
 }
 
-func TestProxyAnthropicStreamingUsageUploadLeavesRawResponseEmpty(t *testing.T) {
+func TestProxyAnthropicStreamingUsageUploadStoresSSERawResponseEnvelope(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1650,6 +1650,209 @@ func TestProxyAnthropicStreamingUsageUploadLeavesRawResponseEmpty(t *testing.T) 
 	last, _ := events[len(events)-1].(map[string]any)
 	if last["event"] != "message_delta" {
 		t.Fatalf("last event = %v, want message_delta", last["event"])
+	}
+}
+
+func TestProxyOpenAIStreamingUpstreamReadErrorLeavesRawResponseEmpty(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/responses" {
+			http.NotFound(w, r)
+			return
+		}
+		hj, ok := w.(http.Hijacker)
+		if !ok {
+			t.Fatalf("response writer does not support hijacking")
+		}
+		conn, rw, err := hj.Hijack()
+		if err != nil {
+			t.Fatalf("hijack response: %v", err)
+		}
+		payload := "event: response.created\ndata: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_1\",\"model\":\"gpt-5.4\"}}\n\n"
+		fmt.Fprintf(rw, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\n\r\n")
+		fmt.Fprintf(rw, "%x\r\n%s\r\n", len(payload), payload)
+		if err := rw.Flush(); err != nil {
+			t.Fatalf("flush hijacked response: %v", err)
+		}
+		_ = conn.Close()
+	}))
+	defer upstream.Close()
+
+	var usageReq struct {
+		Status      string         `json:"status"`
+		RawResponse map[string]any `json:"raw_response"`
+	}
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/session-usage-events" {
+			http.NotFound(w, r)
+			return
+		}
+		if err := json.NewDecoder(r.Body).Decode(&usageReq); err != nil {
+			t.Fatalf("decode usage event: %v", err)
+		}
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer backend.Close()
+
+	fetcher := &staticCredentialFetcher{
+		creds: map[string]*client.ProviderCredential{
+			"openai": providerCredential("openai", upstream.URL, "provider-key"),
+		},
+	}
+	origNewProxyServer := newProxyServer
+	newProxyServer = func(cfg RuntimeConfig) *Server {
+		return newServerWithCredentialFetcher(cfg, nil, nil, fetcher)
+	}
+	t.Cleanup(func() {
+		newProxyServer = origNewProxyServer
+	})
+
+	cfg := RuntimeConfig{
+		SessionID:    "sess-openai-stream-read-error",
+		WorkspaceID:  "ws-openai-stream-read-error",
+		ListenAddr:   reserveListenAddrForTest(t),
+		AuthToken:    "tok-openai",
+		BackendURL:   backend.URL,
+		BackendToken: "backend-token",
+	}
+	srv, err := Spawn(cfg)
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = Stop(StopRequest{
+			PID:        srv.PID,
+			ListenAddr: srv.ListenAddr,
+			AuthToken:  cfg.AuthToken,
+			ConfigPath: srv.ConfigPath,
+		})
+	})
+
+	req, err := http.NewRequest(http.MethodPost, "http://"+srv.ListenAddr+"/openai/v1/responses", strings.NewReader(`{"model":"gpt-5.4","stream":true,"input":"hello"}`))
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+cfg.AuthToken)
+
+	resp, err := (&http.Client{Timeout: 1 * time.Second}).Do(req)
+	if err != nil {
+		t.Fatalf("post proxy: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+	_, _ = io.ReadAll(resp.Body)
+
+	if usageReq.Status != "upstream_read_error" {
+		t.Fatalf("status = %q, want upstream_read_error", usageReq.Status)
+	}
+	if usageReq.RawResponse != nil {
+		t.Fatalf("raw_response = %#v, want nil on read error", usageReq.RawResponse)
+	}
+}
+
+func TestProxyAnthropicStreamingUpstreamReadErrorLeavesRawResponseEmpty(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/messages" {
+			http.NotFound(w, r)
+			return
+		}
+		hj, ok := w.(http.Hijacker)
+		if !ok {
+			t.Fatalf("response writer does not support hijacking")
+		}
+		conn, rw, err := hj.Hijack()
+		if err != nil {
+			t.Fatalf("hijack response: %v", err)
+		}
+		payload := "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_1\",\"model\":\"claude-sonnet-4-20250514\",\"usage\":{\"input_tokens\":11}}}\n\n"
+		fmt.Fprintf(rw, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\n\r\n")
+		fmt.Fprintf(rw, "%x\r\n%s\r\n", len(payload), payload)
+		if err := rw.Flush(); err != nil {
+			t.Fatalf("flush hijacked response: %v", err)
+		}
+		_ = conn.Close()
+	}))
+	defer upstream.Close()
+
+	var usageReq struct {
+		Status      string         `json:"status"`
+		RawResponse map[string]any `json:"raw_response"`
+	}
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/session-usage-events" {
+			http.NotFound(w, r)
+			return
+		}
+		if err := json.NewDecoder(r.Body).Decode(&usageReq); err != nil {
+			t.Fatalf("decode usage event: %v", err)
+		}
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer backend.Close()
+
+	fetcher := &staticCredentialFetcher{
+		creds: map[string]*client.ProviderCredential{
+			"anthropic": providerCredential("anthropic", upstream.URL, "provider-key"),
+		},
+	}
+	origNewProxyServer := newProxyServer
+	newProxyServer = func(cfg RuntimeConfig) *Server {
+		return newServerWithCredentialFetcher(cfg, nil, nil, fetcher)
+	}
+	t.Cleanup(func() {
+		newProxyServer = origNewProxyServer
+	})
+
+	cfg := RuntimeConfig{
+		SessionID:    "sess-anthropic-stream-read-error",
+		WorkspaceID:  "ws-anthropic-stream-read-error",
+		ListenAddr:   reserveListenAddrForTest(t),
+		AuthToken:    "tok-anthropic",
+		BackendURL:   backend.URL,
+		BackendToken: "backend-token",
+	}
+	srv, err := Spawn(cfg)
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = Stop(StopRequest{
+			PID:        srv.PID,
+			ListenAddr: srv.ListenAddr,
+			AuthToken:  cfg.AuthToken,
+			ConfigPath: srv.ConfigPath,
+		})
+	})
+
+	req, err := http.NewRequest(http.MethodPost, "http://"+srv.ListenAddr+"/anthropic/v1/messages", strings.NewReader(`{"model":"claude-sonnet-4-20250514","stream":true,"messages":[{"role":"user","content":"hello"}],"max_tokens":64}`))
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-api-key", cfg.AuthToken)
+	req.Header.Set("anthropic-version", "2023-06-01")
+
+	resp, err := (&http.Client{Timeout: 1 * time.Second}).Do(req)
+	if err != nil {
+		t.Fatalf("post proxy: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+	_, _ = io.ReadAll(resp.Body)
+
+	if usageReq.Status != "upstream_read_error" {
+		t.Fatalf("status = %q, want upstream_read_error", usageReq.Status)
+	}
+	if usageReq.RawResponse != nil {
+		t.Fatalf("raw_response = %#v, want nil on read error", usageReq.RawResponse)
 	}
 }
 
