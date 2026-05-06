@@ -46,6 +46,8 @@ type SessionUsageEvent struct {
 	Status string `json:"status,omitempty"`
 	// RawMetadata holds the value of the "raw_metadata" field.
 	RawMetadata map[string]interface{} `json:"raw_metadata,omitempty"`
+	// RawResponse holds the value of the "raw_response" field.
+	RawResponse map[string]interface{} `json:"raw_response,omitempty"`
 	// CreatedAt holds the value of the "created_at" field.
 	CreatedAt time.Time `json:"created_at,omitempty"`
 	// Edges holds the relations/edges for other nodes in the graph.
@@ -79,7 +81,7 @@ func (*SessionUsageEvent) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case sessionusageevent.FieldRawMetadata:
+		case sessionusageevent.FieldRawMetadata, sessionusageevent.FieldRawResponse:
 			values[i] = new([]byte)
 		case sessionusageevent.FieldID, sessionusageevent.FieldInputTokens, sessionusageevent.FieldOutputTokens, sessionusageevent.FieldTotalTokens:
 			values[i] = new(sql.NullInt64)
@@ -190,6 +192,14 @@ func (sue *SessionUsageEvent) assignValues(columns []string, values []any) error
 					return fmt.Errorf("unmarshal field raw_metadata: %w", err)
 				}
 			}
+		case sessionusageevent.FieldRawResponse:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field raw_response", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &sue.RawResponse); err != nil {
+					return fmt.Errorf("unmarshal field raw_response: %w", err)
+				}
+			}
 		case sessionusageevent.FieldCreatedAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
 				return fmt.Errorf("unexpected type %T for field created_at", values[i])
@@ -275,6 +285,9 @@ func (sue *SessionUsageEvent) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("raw_metadata=")
 	builder.WriteString(fmt.Sprintf("%v", sue.RawMetadata))
+	builder.WriteString(", ")
+	builder.WriteString("raw_response=")
+	builder.WriteString(fmt.Sprintf("%v", sue.RawResponse))
 	builder.WriteString(", ")
 	builder.WriteString("created_at=")
 	builder.WriteString(sue.CreatedAt.Format(time.ANSIC))

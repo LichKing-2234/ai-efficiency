@@ -121,6 +121,7 @@ type SessionUsageEventRequest struct {
 	TotalTokens  int64          `json:"total_tokens"`
 	Status       string         `json:"status"`
 	RawMetadata  map[string]any `json:"raw_metadata,omitempty"`
+	RawResponse  map[string]any `json:"raw_response,omitempty"`
 }
 
 func New(baseURL, token string) *Client {

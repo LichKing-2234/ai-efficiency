@@ -40,6 +40,8 @@ const (
 	FieldStatus = "status"
 	// FieldRawMetadata holds the string denoting the raw_metadata field in the database.
 	FieldRawMetadata = "raw_metadata"
+	// FieldRawResponse holds the string denoting the raw_response field in the database.
+	FieldRawResponse = "raw_response"
 	// FieldCreatedAt holds the string denoting the created_at field in the database.
 	FieldCreatedAt = "created_at"
 	// EdgeSession holds the string denoting the session edge name in mutations.
@@ -71,6 +73,7 @@ var Columns = []string{
 	FieldTotalTokens,
 	FieldStatus,
 	FieldRawMetadata,
+	FieldRawResponse,
 	FieldCreatedAt,
 }
 

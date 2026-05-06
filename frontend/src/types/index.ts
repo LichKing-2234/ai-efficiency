@@ -66,6 +66,7 @@ export interface Session {
     repo_config?: RepoConfig
     session_workspaces?: SessionWorkspace[]
     commit_checkpoints?: CommitCheckpoint[]
+    agent_metadata_events?: AgentMetadataEvent[]
     session_usage_events?: SessionUsageEvent[]
     session_events?: SessionEvent[]
   }
@@ -109,6 +110,31 @@ export interface SessionUsageEvent {
   output_tokens?: number
   total_tokens?: number
   status: string
+  raw_response?: Record<string, unknown>
+  raw_metadata?: {
+    http_status?: number
+    error?: string
+    cached_input_tokens?: number
+    cache_creation_input_tokens?: number
+    cache_read_input_tokens?: number
+    reasoning_output_tokens?: number
+  }
+}
+
+export interface AgentMetadataEvent {
+  session_id?: string
+  workspace_id?: string | null
+  source: 'codex' | 'claude' | 'kiro'
+  source_session_id?: string | null
+  usage_unit: 'token' | 'credit' | 'unknown'
+  input_tokens?: number
+  output_tokens?: number
+  cached_input_tokens?: number
+  reasoning_tokens?: number
+  credit_usage?: number
+  context_usage_pct?: number
+  observed_at: string
+  raw_payload?: Record<string, unknown>
 }
 
 export interface SessionEvent {

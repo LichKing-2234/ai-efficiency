@@ -28,6 +28,7 @@ type CreateUsageEventRequest struct {
 	TotalTokens  int64          `json:"total_tokens"`
 	Status       string         `json:"status" binding:"required"`
 	RawMetadata  map[string]any `json:"raw_metadata"`
+	RawResponse  map[string]any `json:"raw_response"`
 }
 
 type Service struct {
@@ -143,6 +144,9 @@ func (s *Service) Create(ctx context.Context, userID int, req CreateUsageEventRe
 
 	if req.RawMetadata != nil {
 		create.SetRawMetadata(req.RawMetadata)
+	}
+	if req.RawResponse != nil {
+		create.SetRawResponse(req.RawResponse)
 	}
 
 	if err := create.Exec(ctx); err != nil {

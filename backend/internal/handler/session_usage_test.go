@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/ai-efficiency/backend/ent/sessionusageevent"
 	entuser "github.com/ai-efficiency/backend/ent/user"
 	"github.com/google/uuid"
 )
@@ -174,5 +175,38 @@ func TestSessionUsageIngest_RejectsMissingSession(t *testing.T) {
 	})
 	if w.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("status = %d, want %d, body=%s", w.Code, http.StatusUnprocessableEntity, w.Body.String())
+	}
+}
+
+func TestSessionUsageIngest_StoresRawResponse(t *testing.T) {
+	env := setupFullTestEnv(t)
+	sessionID := createOwnedSessionForUser(t, env, fullAdminUserID(t, env))
+
+	w := doFullRequest(env, http.MethodPost, "/api/v1/session-usage-events", map[string]any{
+		"event_id":      "usage-evt-raw-http-1",
+		"session_id":    sessionID.String(),
+		"workspace_id":  "ws-1",
+		"request_id":    "req-raw-1",
+		"provider_name": "sub2api",
+		"model":         "gpt-5.4",
+		"started_at":    "2026-04-16T10:00:00Z",
+		"finished_at":   "2026-04-16T10:00:01Z",
+		"input_tokens":  27,
+		"output_tokens": 10,
+		"total_tokens":  37,
+		"status":        "completed",
+		"raw_response": map[string]any{
+			"id": "resp_1",
+		},
+	})
+	if w.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d, body=%s", w.Code, http.StatusCreated, w.Body.String())
+	}
+
+	ev := env.client.SessionUsageEvent.Query().
+		Where(sessionusageevent.EventIDEQ("usage-evt-raw-http-1")).
+		OnlyX(context.Background())
+	if ev.RawResponse == nil || ev.RawResponse["id"] != "resp_1" {
+		t.Fatalf("raw_response = %+v, want id=resp_1", ev.RawResponse)
 	}
 }

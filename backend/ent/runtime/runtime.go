@@ -420,7 +420,7 @@ func init() {
 	// sessionusageevent.StatusValidator is a validator for the "status" field. It is called by the builders before save.
 	sessionusageevent.StatusValidator = sessionusageeventDescStatus.Validators[0].(func(string) error)
 	// sessionusageeventDescCreatedAt is the schema descriptor for created_at field.
-	sessionusageeventDescCreatedAt := sessionusageeventFields[13].Descriptor()
+	sessionusageeventDescCreatedAt := sessionusageeventFields[14].Descriptor()
 	// sessionusageevent.DefaultCreatedAt holds the default value on creation for the created_at field.
 	sessionusageevent.DefaultCreatedAt = sessionusageeventDescCreatedAt.Default.(func() time.Time)
 	sessionworkspaceFields := schema.SessionWorkspace{}.Fields()

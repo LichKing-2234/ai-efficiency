@@ -39,6 +39,8 @@ func (SessionUsageEvent) Fields() []ent.Field {
 			NotEmpty(),
 		field.JSON("raw_metadata", map[string]any{}).
 			Optional(),
+		field.JSON("raw_response", map[string]any{}).
+			Optional(),
 		field.Time("created_at").
 			Default(timeNow),
 	}

@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ai-efficiency/ae-cli/internal/session"
 )
 
 func TestBuildSnapshotAggregatesCodexClaudeAndKiro(t *testing.T) {
@@ -235,6 +237,50 @@ func TestDefaultPathsOrdersNewestDefaultFilesFirst(t *testing.T) {
 	}
 	if got := filepath.Base(paths.CodexFiles[0]); got != "codex-11.jsonl" {
 		t.Fatalf("first CodexFiles entry = %s, want newest file", got)
+	}
+}
+
+func TestDefaultPathsPrefersWorkspaceCodexHomeSessions(t *testing.T) {
+	origHome := os.Getenv("HOME")
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+	t.Cleanup(func() { _ = os.Setenv("HOME", origHome) })
+
+	workspaceRoot := t.TempDir()
+	workspaceCodexDir := filepath.Join(session.WorkspaceCodexHome(workspaceRoot), "sessions")
+	if err := os.MkdirAll(workspaceCodexDir, 0o700); err != nil {
+		t.Fatalf("mkdir workspace codex dir: %v", err)
+	}
+	workspaceCodex := filepath.Join(workspaceCodexDir, "workspace-codex.jsonl")
+	if err := os.WriteFile(workspaceCodex, []byte(`{"timestamp":"2026-04-16T03:07:04Z","type":"session_meta","payload":{"id":"codex-workspace","cwd":"`+workspaceRoot+`"}}
+{"timestamp":"2026-04-16T03:07:07Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":13748,"cached_input_tokens":9216,"output_tokens":23,"reasoning_output_tokens":11,"total_tokens":13771}}}}`), 0o600); err != nil {
+		t.Fatalf("write workspace codex file: %v", err)
+	}
+
+	globalCodexDir := filepath.Join(tmpHome, ".codex")
+	if err := os.MkdirAll(globalCodexDir, 0o700); err != nil {
+		t.Fatalf("mkdir global codex dir: %v", err)
+	}
+	globalCodex := filepath.Join(globalCodexDir, "global-codex.jsonl")
+	if err := os.WriteFile(globalCodex, []byte(`{"timestamp":"2026-04-15T09:00:00Z","type":"session_meta","payload":{"id":"codex-global","cwd":"`+workspaceRoot+`"}}
+{"timestamp":"2026-04-15T09:05:00Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":1,"cached_input_tokens":0,"output_tokens":2,"reasoning_output_tokens":0,"total_tokens":3}}}}`), 0o600); err != nil {
+		t.Fatalf("write global codex file: %v", err)
+	}
+
+	paths := DefaultPaths(workspaceRoot)
+	if len(paths.CodexFiles) == 0 || paths.CodexFiles[0] != workspaceCodex {
+		t.Fatalf("CodexFiles = %v, want workspace-local file first", paths.CodexFiles)
+	}
+
+	snapshot, err := BuildSnapshot(paths)
+	if err != nil {
+		t.Fatalf("BuildSnapshot() error = %v", err)
+	}
+	if snapshot == nil || snapshot.Codex == nil {
+		t.Fatalf("expected codex snapshot from workspace-local file, got %+v", snapshot)
+	}
+	if snapshot.Codex.SourceSessionID != "codex-workspace" || snapshot.Codex.CachedInputTokens != 9216 || snapshot.Codex.ReasoningTokens != 11 {
+		t.Fatalf("Codex snapshot = %+v, want workspace-local token details", snapshot.Codex)
 	}
 }
 
