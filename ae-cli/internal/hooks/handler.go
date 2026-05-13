@@ -219,6 +219,8 @@ func (h *Handler) PostCommit(ctx context.Context, cwd string) error {
 		return nil
 	}
 
+	_ = runAttributionSync(ctx, repoRoot)
+
 	ev := HookEvent{
 		Kind:           "post-commit",
 		EventID:        eventID,
@@ -250,7 +252,6 @@ func (h *Handler) PostCommit(ctx context.Context, cwd string) error {
 		if err == nil {
 			_ = q.Enqueue(ev)
 		}
-		_ = runAttributionSync(ctx, repoRoot)
 		return nil
 	}
 
@@ -260,11 +261,9 @@ func (h *Handler) PostCommit(ctx context.Context, cwd string) error {
 		if qerr == nil {
 			_ = q.Enqueue(ev)
 		}
-		_ = runAttributionSync(ctx, repoRoot)
 		return nil
 	}
 
-	_ = runAttributionSync(ctx, repoRoot)
 	return nil
 }
 
@@ -350,6 +349,9 @@ func (h *Handler) PostRewrite(ctx context.Context, cwd string, rewriteType strin
 		if err != nil {
 			continue
 		}
+
+		_ = runAttributionSync(ctx, repoRoot)
+
 		ev := HookEvent{
 			Kind:          "post-rewrite",
 			EventID:       eid,
@@ -370,7 +372,6 @@ func (h *Handler) PostRewrite(ctx context.Context, cwd string, rewriteType strin
 				SessionID: sessionID,
 				Payload:   ev,
 			}); err == nil {
-				_ = runAttributionSync(ctx, repoRoot)
 				continue
 			}
 		}
@@ -379,7 +380,6 @@ func (h *Handler) PostRewrite(ctx context.Context, cwd string, rewriteType strin
 			if q != nil {
 				_ = q.Enqueue(ev)
 			}
-			_ = runAttributionSync(ctx, repoRoot)
 			continue
 		}
 		if err := h.uploader.UploadHookEvent(ctx, ev); err != nil {
@@ -387,7 +387,6 @@ func (h *Handler) PostRewrite(ctx context.Context, cwd string, rewriteType strin
 				_ = q.Enqueue(ev)
 			}
 		}
-		_ = runAttributionSync(ctx, repoRoot)
 	}
 
 	return nil

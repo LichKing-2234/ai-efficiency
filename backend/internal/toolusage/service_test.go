@@ -17,12 +17,26 @@ func TestCreateUsageEvent_DedupesByDedupeKey(t *testing.T) {
 	svc := NewService(client)
 
 	scope := seedToolUsageScope(t, client)
+	ctx = context.Background()
+	client.Session.Create().
+		SetRepoConfigID(scope.RepoConfigID).
+		SetBranch("main").
+		SetUserID(scope.UserID).
+		SetStartedAt(time.Unix(100, 0).UTC()).
+		SaveX(ctx)
+	client.CommitCheckpoint.Create().
+		SetEventID("cp-seed-scope").
+		SetWorkspaceID(scope.WorkspaceID).
+		SetRepoConfigID(scope.RepoConfigID).
+		SetCommitSha("seed-sha").
+		SetParentShas([]string{"base"}).
+		SetBindingSource("unbound").
+		SetCapturedAt(time.Unix(110, 0).UTC()).
+		SaveX(ctx)
 
 	req := CreateUsageEventRequest{
 		Tool:            "codex",
 		WorkspaceID:     scope.WorkspaceID,
-		RepoConfigID:    scope.RepoConfigID,
-		UserID:          scope.UserID,
 		ToolSessionID:   "codex-sess-1",
 		ToolEventID:     "resp-1",
 		DedupeKey:       "codex:codex-sess-1:resp-1",

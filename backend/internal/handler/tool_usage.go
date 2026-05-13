@@ -20,8 +20,6 @@ func NewToolUsageHandler(service *toolusage.Service) *ToolUsageHandler {
 type createToolUsageEventRequest struct {
 	Tool              string         `json:"tool" binding:"required"`
 	WorkspaceID       string         `json:"workspace_id" binding:"required"`
-	RepoConfigID      int            `json:"repo_config_id" binding:"required"`
-	UserID            int            `json:"user_id" binding:"required"`
 	ToolSessionID     string         `json:"tool_session_id" binding:"required"`
 	ToolEventID       string         `json:"tool_event_id"`
 	DedupeKey         string         `json:"dedupe_key" binding:"required"`
@@ -57,8 +55,6 @@ func (h *ToolUsageHandler) Create(c *gin.Context) {
 	if err := h.service.CreateUsageEvent(c.Request.Context(), toolusage.CreateUsageEventRequest{
 		Tool:              req.Tool,
 		WorkspaceID:       req.WorkspaceID,
-		RepoConfigID:      req.RepoConfigID,
-		UserID:            req.UserID,
 		ToolSessionID:     req.ToolSessionID,
 		ToolEventID:       req.ToolEventID,
 		DedupeKey:         req.DedupeKey,

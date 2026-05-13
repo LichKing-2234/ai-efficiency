@@ -26,8 +26,24 @@ type httpBindingFixture struct {
 func seedToolUsageScopeHTTP(t *testing.T, env *fullTestEnv) httpToolUsageScope {
 	t.Helper()
 
+	ctx := context.Background()
 	repoID := createFullTestRepo(t, env.client)
 	userID := fullAdminUserID(t, env)
+	env.client.Session.Create().
+		SetRepoConfigID(repoID).
+		SetBranch("main").
+		SetUserID(userID).
+		SetStartedAt(time.Unix(100, 0).UTC()).
+		SaveX(ctx)
+	env.client.CommitCheckpoint.Create().
+		SetEventID("cp-http-seed-scope").
+		SetWorkspaceID("ws-1").
+		SetRepoConfigID(repoID).
+		SetCommitSha("seed-sha").
+		SetParentShas([]string{"base"}).
+		SetBindingSource(commitcheckpoint.BindingSourceUnbound).
+		SetCapturedAt(time.Unix(110, 0).UTC()).
+		SaveX(ctx)
 
 	return httpToolUsageScope{
 		UserID:       userID,
@@ -97,8 +113,6 @@ func TestToolUsageHandler_CreateUsageEvent(t *testing.T) {
 	w := doFullRequest(env, http.MethodPost, "/api/v1/tool-usage-events", map[string]any{
 		"tool":               "claude",
 		"workspace_id":       scope.WorkspaceID,
-		"repo_config_id":     scope.RepoConfigID,
-		"user_id":            scope.UserID,
 		"tool_session_id":    "claude-sess-1",
 		"tool_event_id":      "msg-1",
 		"dedupe_key":         "claude:claude-sess-1:msg-1",
