@@ -543,6 +543,75 @@ var (
 		Columns:    SystemSettingsColumns,
 		PrimaryKey: []*schema.Column{SystemSettingsColumns[0]},
 	}
+	// ToolUsageEventsColumns holds the columns for the "tool_usage_events" table.
+	ToolUsageEventsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "tool", Type: field.TypeString},
+		{Name: "workspace_id", Type: field.TypeString},
+		{Name: "tool_session_id", Type: field.TypeString},
+		{Name: "tool_event_id", Type: field.TypeString, Nullable: true},
+		{Name: "observed_start_at", Type: field.TypeTime},
+		{Name: "observed_end_at", Type: field.TypeTime},
+		{Name: "request_count", Type: field.TypeInt, Default: 0},
+		{Name: "usage_unit", Type: field.TypeEnum, Enums: []string{"token", "credit"}, Default: "token"},
+		{Name: "input_tokens", Type: field.TypeInt64, Default: 0},
+		{Name: "output_tokens", Type: field.TypeInt64, Default: 0},
+		{Name: "cached_input_tokens", Type: field.TypeInt64, Default: 0},
+		{Name: "reasoning_tokens", Type: field.TypeInt64, Default: 0},
+		{Name: "credit_usage", Type: field.TypeFloat64, Default: 0},
+		{Name: "context_usage_pct", Type: field.TypeFloat64, Default: 0},
+		{Name: "dedupe_key", Type: field.TypeString, Unique: true},
+		{Name: "raw_source_path", Type: field.TypeString, Nullable: true},
+		{Name: "raw_source_locator", Type: field.TypeString, Nullable: true},
+		{Name: "raw_payload", Type: field.TypeJSON, Nullable: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "commit_checkpoint_id", Type: field.TypeInt, Nullable: true},
+		{Name: "repo_config_id", Type: field.TypeInt},
+		{Name: "user_id", Type: field.TypeInt},
+	}
+	// ToolUsageEventsTable holds the schema information for the "tool_usage_events" table.
+	ToolUsageEventsTable = &schema.Table{
+		Name:       "tool_usage_events",
+		Columns:    ToolUsageEventsColumns,
+		PrimaryKey: []*schema.Column{ToolUsageEventsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "tool_usage_events_commit_checkpoints_tool_usage_events",
+				Columns:    []*schema.Column{ToolUsageEventsColumns[20]},
+				RefColumns: []*schema.Column{CommitCheckpointsColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
+			{
+				Symbol:     "tool_usage_events_repo_configs_tool_usage_events",
+				Columns:    []*schema.Column{ToolUsageEventsColumns[21]},
+				RefColumns: []*schema.Column{RepoConfigsColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+			{
+				Symbol:     "tool_usage_events_users_tool_usage_events",
+				Columns:    []*schema.Column{ToolUsageEventsColumns[22]},
+				RefColumns: []*schema.Column{UsersColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "toolusageevent_workspace_id_observed_end_at",
+				Unique:  false,
+				Columns: []*schema.Column{ToolUsageEventsColumns[2], ToolUsageEventsColumns[6]},
+			},
+			{
+				Name:    "toolusageevent_commit_checkpoint_id",
+				Unique:  false,
+				Columns: []*schema.Column{ToolUsageEventsColumns[20]},
+			},
+			{
+				Name:    "toolusageevent_tool_tool_session_id",
+				Unique:  false,
+				Columns: []*schema.Column{ToolUsageEventsColumns[1], ToolUsageEventsColumns[3]},
+			},
+		},
+	}
 	// UsersColumns holds the columns for the "users" table.
 	UsersColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
@@ -615,6 +684,7 @@ var (
 		SessionUsageEventsTable,
 		SessionWorkspacesTable,
 		SystemSettingsTable,
+		ToolUsageEventsTable,
 		UsersTable,
 		WebhookDeadLettersTable,
 	}
@@ -639,5 +709,8 @@ func init() {
 	SessionEventsTable.ForeignKeys[0].RefTable = SessionsTable
 	SessionUsageEventsTable.ForeignKeys[0].RefTable = SessionsTable
 	SessionWorkspacesTable.ForeignKeys[0].RefTable = SessionsTable
+	ToolUsageEventsTable.ForeignKeys[0].RefTable = CommitCheckpointsTable
+	ToolUsageEventsTable.ForeignKeys[1].RefTable = RepoConfigsTable
+	ToolUsageEventsTable.ForeignKeys[2].RefTable = UsersTable
 	WebhookDeadLettersTable.ForeignKeys[0].RefTable = RepoConfigsTable
 }

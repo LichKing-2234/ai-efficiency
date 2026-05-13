@@ -201,6 +201,18 @@ func (f SystemSettingFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Valu
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.SystemSettingMutation", m)
 }
 
+// The ToolUsageEventFunc type is an adapter to allow the use of ordinary
+// function as ToolUsageEvent mutator.
+type ToolUsageEventFunc func(context.Context, *ent.ToolUsageEventMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f ToolUsageEventFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.ToolUsageEventMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ToolUsageEventMutation", m)
+}
+
 // The UserFunc type is an adapter to allow the use of ordinary
 // function as User mutator.
 type UserFunc func(context.Context, *ent.UserMutation) (ent.Value, error)

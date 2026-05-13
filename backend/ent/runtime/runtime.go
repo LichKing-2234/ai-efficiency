@@ -22,6 +22,7 @@ import (
 	"github.com/ai-efficiency/backend/ent/sessionusageevent"
 	"github.com/ai-efficiency/backend/ent/sessionworkspace"
 	"github.com/ai-efficiency/backend/ent/systemsetting"
+	"github.com/ai-efficiency/backend/ent/toolusageevent"
 	"github.com/ai-efficiency/backend/ent/user"
 	"github.com/ai-efficiency/backend/ent/webhookdeadletter"
 	"github.com/google/uuid"
@@ -467,6 +468,56 @@ func init() {
 	systemsetting.DefaultUpdatedAt = systemsettingDescUpdatedAt.Default.(func() time.Time)
 	// systemsetting.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	systemsetting.UpdateDefaultUpdatedAt = systemsettingDescUpdatedAt.UpdateDefault.(func() time.Time)
+	toolusageeventFields := schema.ToolUsageEvent{}.Fields()
+	_ = toolusageeventFields
+	// toolusageeventDescTool is the schema descriptor for tool field.
+	toolusageeventDescTool := toolusageeventFields[0].Descriptor()
+	// toolusageevent.ToolValidator is a validator for the "tool" field. It is called by the builders before save.
+	toolusageevent.ToolValidator = toolusageeventDescTool.Validators[0].(func(string) error)
+	// toolusageeventDescWorkspaceID is the schema descriptor for workspace_id field.
+	toolusageeventDescWorkspaceID := toolusageeventFields[1].Descriptor()
+	// toolusageevent.WorkspaceIDValidator is a validator for the "workspace_id" field. It is called by the builders before save.
+	toolusageevent.WorkspaceIDValidator = toolusageeventDescWorkspaceID.Validators[0].(func(string) error)
+	// toolusageeventDescToolSessionID is the schema descriptor for tool_session_id field.
+	toolusageeventDescToolSessionID := toolusageeventFields[4].Descriptor()
+	// toolusageevent.ToolSessionIDValidator is a validator for the "tool_session_id" field. It is called by the builders before save.
+	toolusageevent.ToolSessionIDValidator = toolusageeventDescToolSessionID.Validators[0].(func(string) error)
+	// toolusageeventDescRequestCount is the schema descriptor for request_count field.
+	toolusageeventDescRequestCount := toolusageeventFields[8].Descriptor()
+	// toolusageevent.DefaultRequestCount holds the default value on creation for the request_count field.
+	toolusageevent.DefaultRequestCount = toolusageeventDescRequestCount.Default.(int)
+	// toolusageeventDescInputTokens is the schema descriptor for input_tokens field.
+	toolusageeventDescInputTokens := toolusageeventFields[10].Descriptor()
+	// toolusageevent.DefaultInputTokens holds the default value on creation for the input_tokens field.
+	toolusageevent.DefaultInputTokens = toolusageeventDescInputTokens.Default.(int64)
+	// toolusageeventDescOutputTokens is the schema descriptor for output_tokens field.
+	toolusageeventDescOutputTokens := toolusageeventFields[11].Descriptor()
+	// toolusageevent.DefaultOutputTokens holds the default value on creation for the output_tokens field.
+	toolusageevent.DefaultOutputTokens = toolusageeventDescOutputTokens.Default.(int64)
+	// toolusageeventDescCachedInputTokens is the schema descriptor for cached_input_tokens field.
+	toolusageeventDescCachedInputTokens := toolusageeventFields[12].Descriptor()
+	// toolusageevent.DefaultCachedInputTokens holds the default value on creation for the cached_input_tokens field.
+	toolusageevent.DefaultCachedInputTokens = toolusageeventDescCachedInputTokens.Default.(int64)
+	// toolusageeventDescReasoningTokens is the schema descriptor for reasoning_tokens field.
+	toolusageeventDescReasoningTokens := toolusageeventFields[13].Descriptor()
+	// toolusageevent.DefaultReasoningTokens holds the default value on creation for the reasoning_tokens field.
+	toolusageevent.DefaultReasoningTokens = toolusageeventDescReasoningTokens.Default.(int64)
+	// toolusageeventDescCreditUsage is the schema descriptor for credit_usage field.
+	toolusageeventDescCreditUsage := toolusageeventFields[14].Descriptor()
+	// toolusageevent.DefaultCreditUsage holds the default value on creation for the credit_usage field.
+	toolusageevent.DefaultCreditUsage = toolusageeventDescCreditUsage.Default.(float64)
+	// toolusageeventDescContextUsagePct is the schema descriptor for context_usage_pct field.
+	toolusageeventDescContextUsagePct := toolusageeventFields[15].Descriptor()
+	// toolusageevent.DefaultContextUsagePct holds the default value on creation for the context_usage_pct field.
+	toolusageevent.DefaultContextUsagePct = toolusageeventDescContextUsagePct.Default.(float64)
+	// toolusageeventDescDedupeKey is the schema descriptor for dedupe_key field.
+	toolusageeventDescDedupeKey := toolusageeventFields[17].Descriptor()
+	// toolusageevent.DedupeKeyValidator is a validator for the "dedupe_key" field. It is called by the builders before save.
+	toolusageevent.DedupeKeyValidator = toolusageeventDescDedupeKey.Validators[0].(func(string) error)
+	// toolusageeventDescCreatedAt is the schema descriptor for created_at field.
+	toolusageeventDescCreatedAt := toolusageeventFields[21].Descriptor()
+	// toolusageevent.DefaultCreatedAt holds the default value on creation for the created_at field.
+	toolusageevent.DefaultCreatedAt = toolusageeventDescCreatedAt.Default.(func() time.Time)
 	userFields := schema.User{}.Fields()
 	_ = userFields
 	// userDescUsername is the schema descriptor for username field.

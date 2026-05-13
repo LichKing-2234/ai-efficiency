@@ -35,6 +35,8 @@ const (
 	FieldUpdatedAt = "updated_at"
 	// EdgeSessions holds the string denoting the sessions edge name in mutations.
 	EdgeSessions = "sessions"
+	// EdgeToolUsageEvents holds the string denoting the tool_usage_events edge name in mutations.
+	EdgeToolUsageEvents = "tool_usage_events"
 	// Table holds the table name of the user in the database.
 	Table = "users"
 	// SessionsTable is the table that holds the sessions relation/edge.
@@ -44,6 +46,13 @@ const (
 	SessionsInverseTable = "sessions"
 	// SessionsColumn is the table column denoting the sessions relation/edge.
 	SessionsColumn = "user_sessions"
+	// ToolUsageEventsTable is the table that holds the tool_usage_events relation/edge.
+	ToolUsageEventsTable = "tool_usage_events"
+	// ToolUsageEventsInverseTable is the table name for the ToolUsageEvent entity.
+	// It exists in this package in order to avoid circular dependency with the "toolusageevent" package.
+	ToolUsageEventsInverseTable = "tool_usage_events"
+	// ToolUsageEventsColumn is the table column denoting the tool_usage_events relation/edge.
+	ToolUsageEventsColumn = "user_id"
 )
 
 // Columns holds all SQL columns for user fields.
@@ -199,10 +208,31 @@ func BySessions(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
 		sqlgraph.OrderByNeighborTerms(s, newSessionsStep(), append([]sql.OrderTerm{term}, terms...)...)
 	}
 }
+
+// ByToolUsageEventsCount orders the results by tool_usage_events count.
+func ByToolUsageEventsCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newToolUsageEventsStep(), opts...)
+	}
+}
+
+// ByToolUsageEvents orders the results by tool_usage_events terms.
+func ByToolUsageEvents(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newToolUsageEventsStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
 func newSessionsStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(SessionsInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.O2M, false, SessionsTable, SessionsColumn),
+	)
+}
+func newToolUsageEventsStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(ToolUsageEventsInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, ToolUsageEventsTable, ToolUsageEventsColumn),
 	)
 }

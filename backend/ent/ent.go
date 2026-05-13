@@ -28,6 +28,7 @@ import (
 	"github.com/ai-efficiency/backend/ent/sessionusageevent"
 	"github.com/ai-efficiency/backend/ent/sessionworkspace"
 	"github.com/ai-efficiency/backend/ent/systemsetting"
+	"github.com/ai-efficiency/backend/ent/toolusageevent"
 	"github.com/ai-efficiency/backend/ent/user"
 	"github.com/ai-efficiency/backend/ent/webhookdeadletter"
 )
@@ -106,6 +107,7 @@ func checkColumn(table, column string) error {
 			sessionusageevent.Table:  sessionusageevent.ValidColumn,
 			sessionworkspace.Table:   sessionworkspace.ValidColumn,
 			systemsetting.Table:      systemsetting.ValidColumn,
+			toolusageevent.Table:     toolusageevent.ValidColumn,
 			user.Table:               user.ValidColumn,
 			webhookdeadletter.Table:  webhookdeadletter.ValidColumn,
 		})

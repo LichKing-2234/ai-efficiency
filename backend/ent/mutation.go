@@ -28,6 +28,7 @@ import (
 	"github.com/ai-efficiency/backend/ent/sessionusageevent"
 	"github.com/ai-efficiency/backend/ent/sessionworkspace"
 	"github.com/ai-efficiency/backend/ent/systemsetting"
+	"github.com/ai-efficiency/backend/ent/toolusageevent"
 	"github.com/ai-efficiency/backend/ent/user"
 	"github.com/ai-efficiency/backend/ent/webhookdeadletter"
 	"github.com/google/uuid"
@@ -58,6 +59,7 @@ const (
 	TypeSessionUsageEvent  = "SessionUsageEvent"
 	TypeSessionWorkspace   = "SessionWorkspace"
 	TypeSystemSetting      = "SystemSetting"
+	TypeToolUsageEvent     = "ToolUsageEvent"
 	TypeUser               = "User"
 	TypeWebhookDeadLetter  = "WebhookDeadLetter"
 )
@@ -2130,27 +2132,30 @@ func (m *AiScanResultMutation) ResetEdge(name string) error {
 // CommitCheckpointMutation represents an operation that mutates the CommitCheckpoint nodes in the graph.
 type CommitCheckpointMutation struct {
 	config
-	op                 Op
-	typ                string
-	id                 *int
-	event_id           *string
-	workspace_id       *string
-	commit_sha         *string
-	parent_shas        *[]string
-	appendparent_shas  []string
-	branch_snapshot    *string
-	head_snapshot      *string
-	binding_source     *commitcheckpoint.BindingSource
-	agent_snapshot     *map[string]interface{}
-	captured_at        *time.Time
-	clearedFields      map[string]struct{}
-	session            *uuid.UUID
-	clearedsession     bool
-	repo_config        *int
-	clearedrepo_config bool
-	done               bool
-	oldValue           func(context.Context) (*CommitCheckpoint, error)
-	predicates         []predicate.CommitCheckpoint
+	op                       Op
+	typ                      string
+	id                       *int
+	event_id                 *string
+	workspace_id             *string
+	commit_sha               *string
+	parent_shas              *[]string
+	appendparent_shas        []string
+	branch_snapshot          *string
+	head_snapshot            *string
+	binding_source           *commitcheckpoint.BindingSource
+	agent_snapshot           *map[string]interface{}
+	captured_at              *time.Time
+	clearedFields            map[string]struct{}
+	session                  *uuid.UUID
+	clearedsession           bool
+	repo_config              *int
+	clearedrepo_config       bool
+	tool_usage_events        map[int]struct{}
+	removedtool_usage_events map[int]struct{}
+	clearedtool_usage_events bool
+	done                     bool
+	oldValue                 func(context.Context) (*CommitCheckpoint, error)
+	predicates               []predicate.CommitCheckpoint
 }
 
 var _ ent.Mutation = (*CommitCheckpointMutation)(nil)
@@ -2768,6 +2773,60 @@ func (m *CommitCheckpointMutation) ResetRepoConfig() {
 	m.clearedrepo_config = false
 }
 
+// AddToolUsageEventIDs adds the "tool_usage_events" edge to the ToolUsageEvent entity by ids.
+func (m *CommitCheckpointMutation) AddToolUsageEventIDs(ids ...int) {
+	if m.tool_usage_events == nil {
+		m.tool_usage_events = make(map[int]struct{})
+	}
+	for i := range ids {
+		m.tool_usage_events[ids[i]] = struct{}{}
+	}
+}
+
+// ClearToolUsageEvents clears the "tool_usage_events" edge to the ToolUsageEvent entity.
+func (m *CommitCheckpointMutation) ClearToolUsageEvents() {
+	m.clearedtool_usage_events = true
+}
+
+// ToolUsageEventsCleared reports if the "tool_usage_events" edge to the ToolUsageEvent entity was cleared.
+func (m *CommitCheckpointMutation) ToolUsageEventsCleared() bool {
+	return m.clearedtool_usage_events
+}
+
+// RemoveToolUsageEventIDs removes the "tool_usage_events" edge to the ToolUsageEvent entity by IDs.
+func (m *CommitCheckpointMutation) RemoveToolUsageEventIDs(ids ...int) {
+	if m.removedtool_usage_events == nil {
+		m.removedtool_usage_events = make(map[int]struct{})
+	}
+	for i := range ids {
+		delete(m.tool_usage_events, ids[i])
+		m.removedtool_usage_events[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedToolUsageEvents returns the removed IDs of the "tool_usage_events" edge to the ToolUsageEvent entity.
+func (m *CommitCheckpointMutation) RemovedToolUsageEventsIDs() (ids []int) {
+	for id := range m.removedtool_usage_events {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ToolUsageEventsIDs returns the "tool_usage_events" edge IDs in the mutation.
+func (m *CommitCheckpointMutation) ToolUsageEventsIDs() (ids []int) {
+	for id := range m.tool_usage_events {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetToolUsageEvents resets all changes to the "tool_usage_events" edge.
+func (m *CommitCheckpointMutation) ResetToolUsageEvents() {
+	m.tool_usage_events = nil
+	m.clearedtool_usage_events = false
+	m.removedtool_usage_events = nil
+}
+
 // Where appends a list predicates to the CommitCheckpointMutation builder.
 func (m *CommitCheckpointMutation) Where(ps ...predicate.CommitCheckpoint) {
 	m.predicates = append(m.predicates, ps...)
@@ -3101,12 +3160,15 @@ func (m *CommitCheckpointMutation) ResetField(name string) error {
 
 // AddedEdges returns all edge names that were set/added in this mutation.
 func (m *CommitCheckpointMutation) AddedEdges() []string {
-	edges := make([]string, 0, 2)
+	edges := make([]string, 0, 3)
 	if m.session != nil {
 		edges = append(edges, commitcheckpoint.EdgeSession)
 	}
 	if m.repo_config != nil {
 		edges = append(edges, commitcheckpoint.EdgeRepoConfig)
+	}
+	if m.tool_usage_events != nil {
+		edges = append(edges, commitcheckpoint.EdgeToolUsageEvents)
 	}
 	return edges
 }
@@ -3123,30 +3185,50 @@ func (m *CommitCheckpointMutation) AddedIDs(name string) []ent.Value {
 		if id := m.repo_config; id != nil {
 			return []ent.Value{*id}
 		}
+	case commitcheckpoint.EdgeToolUsageEvents:
+		ids := make([]ent.Value, 0, len(m.tool_usage_events))
+		for id := range m.tool_usage_events {
+			ids = append(ids, id)
+		}
+		return ids
 	}
 	return nil
 }
 
 // RemovedEdges returns all edge names that were removed in this mutation.
 func (m *CommitCheckpointMutation) RemovedEdges() []string {
-	edges := make([]string, 0, 2)
+	edges := make([]string, 0, 3)
+	if m.removedtool_usage_events != nil {
+		edges = append(edges, commitcheckpoint.EdgeToolUsageEvents)
+	}
 	return edges
 }
 
 // RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
 // the given name in this mutation.
 func (m *CommitCheckpointMutation) RemovedIDs(name string) []ent.Value {
+	switch name {
+	case commitcheckpoint.EdgeToolUsageEvents:
+		ids := make([]ent.Value, 0, len(m.removedtool_usage_events))
+		for id := range m.removedtool_usage_events {
+			ids = append(ids, id)
+		}
+		return ids
+	}
 	return nil
 }
 
 // ClearedEdges returns all edge names that were cleared in this mutation.
 func (m *CommitCheckpointMutation) ClearedEdges() []string {
-	edges := make([]string, 0, 2)
+	edges := make([]string, 0, 3)
 	if m.clearedsession {
 		edges = append(edges, commitcheckpoint.EdgeSession)
 	}
 	if m.clearedrepo_config {
 		edges = append(edges, commitcheckpoint.EdgeRepoConfig)
+	}
+	if m.clearedtool_usage_events {
+		edges = append(edges, commitcheckpoint.EdgeToolUsageEvents)
 	}
 	return edges
 }
@@ -3159,6 +3241,8 @@ func (m *CommitCheckpointMutation) EdgeCleared(name string) bool {
 		return m.clearedsession
 	case commitcheckpoint.EdgeRepoConfig:
 		return m.clearedrepo_config
+	case commitcheckpoint.EdgeToolUsageEvents:
+		return m.clearedtool_usage_events
 	}
 	return false
 }
@@ -3186,6 +3270,9 @@ func (m *CommitCheckpointMutation) ResetEdge(name string) error {
 		return nil
 	case commitcheckpoint.EdgeRepoConfig:
 		m.ResetRepoConfig()
+		return nil
+	case commitcheckpoint.EdgeToolUsageEvents:
+		m.ResetToolUsageEvents()
 		return nil
 	}
 	return fmt.Errorf("unknown CommitCheckpoint edge %s", name)
@@ -10519,6 +10606,9 @@ type RepoConfigMutation struct {
 	commit_rewrites             map[int]struct{}
 	removedcommit_rewrites      map[int]struct{}
 	clearedcommit_rewrites      bool
+	tool_usage_events           map[int]struct{}
+	removedtool_usage_events    map[int]struct{}
+	clearedtool_usage_events    bool
 	webhook_dead_letters        map[int]struct{}
 	removedwebhook_dead_letters map[int]struct{}
 	clearedwebhook_dead_letters bool
@@ -11549,6 +11639,60 @@ func (m *RepoConfigMutation) ResetCommitRewrites() {
 	m.removedcommit_rewrites = nil
 }
 
+// AddToolUsageEventIDs adds the "tool_usage_events" edge to the ToolUsageEvent entity by ids.
+func (m *RepoConfigMutation) AddToolUsageEventIDs(ids ...int) {
+	if m.tool_usage_events == nil {
+		m.tool_usage_events = make(map[int]struct{})
+	}
+	for i := range ids {
+		m.tool_usage_events[ids[i]] = struct{}{}
+	}
+}
+
+// ClearToolUsageEvents clears the "tool_usage_events" edge to the ToolUsageEvent entity.
+func (m *RepoConfigMutation) ClearToolUsageEvents() {
+	m.clearedtool_usage_events = true
+}
+
+// ToolUsageEventsCleared reports if the "tool_usage_events" edge to the ToolUsageEvent entity was cleared.
+func (m *RepoConfigMutation) ToolUsageEventsCleared() bool {
+	return m.clearedtool_usage_events
+}
+
+// RemoveToolUsageEventIDs removes the "tool_usage_events" edge to the ToolUsageEvent entity by IDs.
+func (m *RepoConfigMutation) RemoveToolUsageEventIDs(ids ...int) {
+	if m.removedtool_usage_events == nil {
+		m.removedtool_usage_events = make(map[int]struct{})
+	}
+	for i := range ids {
+		delete(m.tool_usage_events, ids[i])
+		m.removedtool_usage_events[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedToolUsageEvents returns the removed IDs of the "tool_usage_events" edge to the ToolUsageEvent entity.
+func (m *RepoConfigMutation) RemovedToolUsageEventsIDs() (ids []int) {
+	for id := range m.removedtool_usage_events {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ToolUsageEventsIDs returns the "tool_usage_events" edge IDs in the mutation.
+func (m *RepoConfigMutation) ToolUsageEventsIDs() (ids []int) {
+	for id := range m.tool_usage_events {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetToolUsageEvents resets all changes to the "tool_usage_events" edge.
+func (m *RepoConfigMutation) ResetToolUsageEvents() {
+	m.tool_usage_events = nil
+	m.clearedtool_usage_events = false
+	m.removedtool_usage_events = nil
+}
+
 // AddWebhookDeadLetterIDs adds the "webhook_dead_letters" edge to the WebhookDeadLetter entity by ids.
 func (m *RepoConfigMutation) AddWebhookDeadLetterIDs(ids ...int) {
 	if m.webhook_dead_letters == nil {
@@ -12225,7 +12369,7 @@ func (m *RepoConfigMutation) ResetField(name string) error {
 
 // AddedEdges returns all edge names that were set/added in this mutation.
 func (m *RepoConfigMutation) AddedEdges() []string {
-	edges := make([]string, 0, 8)
+	edges := make([]string, 0, 9)
 	if m.scm_provider != nil {
 		edges = append(edges, repoconfig.EdgeScmProvider)
 	}
@@ -12237,6 +12381,9 @@ func (m *RepoConfigMutation) AddedEdges() []string {
 	}
 	if m.commit_rewrites != nil {
 		edges = append(edges, repoconfig.EdgeCommitRewrites)
+	}
+	if m.tool_usage_events != nil {
+		edges = append(edges, repoconfig.EdgeToolUsageEvents)
 	}
 	if m.webhook_dead_letters != nil {
 		edges = append(edges, repoconfig.EdgeWebhookDeadLetters)
@@ -12279,6 +12426,12 @@ func (m *RepoConfigMutation) AddedIDs(name string) []ent.Value {
 			ids = append(ids, id)
 		}
 		return ids
+	case repoconfig.EdgeToolUsageEvents:
+		ids := make([]ent.Value, 0, len(m.tool_usage_events))
+		for id := range m.tool_usage_events {
+			ids = append(ids, id)
+		}
+		return ids
 	case repoconfig.EdgeWebhookDeadLetters:
 		ids := make([]ent.Value, 0, len(m.webhook_dead_letters))
 		for id := range m.webhook_dead_letters {
@@ -12309,7 +12462,7 @@ func (m *RepoConfigMutation) AddedIDs(name string) []ent.Value {
 
 // RemovedEdges returns all edge names that were removed in this mutation.
 func (m *RepoConfigMutation) RemovedEdges() []string {
-	edges := make([]string, 0, 8)
+	edges := make([]string, 0, 9)
 	if m.removedsessions != nil {
 		edges = append(edges, repoconfig.EdgeSessions)
 	}
@@ -12318,6 +12471,9 @@ func (m *RepoConfigMutation) RemovedEdges() []string {
 	}
 	if m.removedcommit_rewrites != nil {
 		edges = append(edges, repoconfig.EdgeCommitRewrites)
+	}
+	if m.removedtool_usage_events != nil {
+		edges = append(edges, repoconfig.EdgeToolUsageEvents)
 	}
 	if m.removedwebhook_dead_letters != nil {
 		edges = append(edges, repoconfig.EdgeWebhookDeadLetters)
@@ -12356,6 +12512,12 @@ func (m *RepoConfigMutation) RemovedIDs(name string) []ent.Value {
 			ids = append(ids, id)
 		}
 		return ids
+	case repoconfig.EdgeToolUsageEvents:
+		ids := make([]ent.Value, 0, len(m.removedtool_usage_events))
+		for id := range m.removedtool_usage_events {
+			ids = append(ids, id)
+		}
+		return ids
 	case repoconfig.EdgeWebhookDeadLetters:
 		ids := make([]ent.Value, 0, len(m.removedwebhook_dead_letters))
 		for id := range m.removedwebhook_dead_letters {
@@ -12386,7 +12548,7 @@ func (m *RepoConfigMutation) RemovedIDs(name string) []ent.Value {
 
 // ClearedEdges returns all edge names that were cleared in this mutation.
 func (m *RepoConfigMutation) ClearedEdges() []string {
-	edges := make([]string, 0, 8)
+	edges := make([]string, 0, 9)
 	if m.clearedscm_provider {
 		edges = append(edges, repoconfig.EdgeScmProvider)
 	}
@@ -12398,6 +12560,9 @@ func (m *RepoConfigMutation) ClearedEdges() []string {
 	}
 	if m.clearedcommit_rewrites {
 		edges = append(edges, repoconfig.EdgeCommitRewrites)
+	}
+	if m.clearedtool_usage_events {
+		edges = append(edges, repoconfig.EdgeToolUsageEvents)
 	}
 	if m.clearedwebhook_dead_letters {
 		edges = append(edges, repoconfig.EdgeWebhookDeadLetters)
@@ -12426,6 +12591,8 @@ func (m *RepoConfigMutation) EdgeCleared(name string) bool {
 		return m.clearedcommit_checkpoints
 	case repoconfig.EdgeCommitRewrites:
 		return m.clearedcommit_rewrites
+	case repoconfig.EdgeToolUsageEvents:
+		return m.clearedtool_usage_events
 	case repoconfig.EdgeWebhookDeadLetters:
 		return m.clearedwebhook_dead_letters
 	case repoconfig.EdgeAiScanResults:
@@ -12464,6 +12631,9 @@ func (m *RepoConfigMutation) ResetEdge(name string) error {
 		return nil
 	case repoconfig.EdgeCommitRewrites:
 		m.ResetCommitRewrites()
+		return nil
+	case repoconfig.EdgeToolUsageEvents:
+		m.ResetToolUsageEvents()
 		return nil
 	case repoconfig.EdgeWebhookDeadLetters:
 		m.ResetWebhookDeadLetters()
@@ -18876,29 +19046,1970 @@ func (m *SystemSettingMutation) ResetEdge(name string) error {
 	return fmt.Errorf("unknown SystemSetting edge %s", name)
 }
 
+// ToolUsageEventMutation represents an operation that mutates the ToolUsageEvent nodes in the graph.
+type ToolUsageEventMutation struct {
+	config
+	op                       Op
+	typ                      string
+	id                       *int
+	tool                     *string
+	workspace_id             *string
+	tool_session_id          *string
+	tool_event_id            *string
+	observed_start_at        *time.Time
+	observed_end_at          *time.Time
+	request_count            *int
+	addrequest_count         *int
+	usage_unit               *toolusageevent.UsageUnit
+	input_tokens             *int64
+	addinput_tokens          *int64
+	output_tokens            *int64
+	addoutput_tokens         *int64
+	cached_input_tokens      *int64
+	addcached_input_tokens   *int64
+	reasoning_tokens         *int64
+	addreasoning_tokens      *int64
+	credit_usage             *float64
+	addcredit_usage          *float64
+	context_usage_pct        *float64
+	addcontext_usage_pct     *float64
+	dedupe_key               *string
+	raw_source_path          *string
+	raw_source_locator       *string
+	raw_payload              *map[string]interface{}
+	created_at               *time.Time
+	clearedFields            map[string]struct{}
+	repo_config              *int
+	clearedrepo_config       bool
+	user                     *int
+	cleareduser              bool
+	commit_checkpoint        *int
+	clearedcommit_checkpoint bool
+	done                     bool
+	oldValue                 func(context.Context) (*ToolUsageEvent, error)
+	predicates               []predicate.ToolUsageEvent
+}
+
+var _ ent.Mutation = (*ToolUsageEventMutation)(nil)
+
+// toolusageeventOption allows management of the mutation configuration using functional options.
+type toolusageeventOption func(*ToolUsageEventMutation)
+
+// newToolUsageEventMutation creates new mutation for the ToolUsageEvent entity.
+func newToolUsageEventMutation(c config, op Op, opts ...toolusageeventOption) *ToolUsageEventMutation {
+	m := &ToolUsageEventMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeToolUsageEvent,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withToolUsageEventID sets the ID field of the mutation.
+func withToolUsageEventID(id int) toolusageeventOption {
+	return func(m *ToolUsageEventMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *ToolUsageEvent
+		)
+		m.oldValue = func(ctx context.Context) (*ToolUsageEvent, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().ToolUsageEvent.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withToolUsageEvent sets the old ToolUsageEvent of the mutation.
+func withToolUsageEvent(node *ToolUsageEvent) toolusageeventOption {
+	return func(m *ToolUsageEventMutation) {
+		m.oldValue = func(context.Context) (*ToolUsageEvent, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m ToolUsageEventMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m ToolUsageEventMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *ToolUsageEventMutation) ID() (id int, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *ToolUsageEventMutation) IDs(ctx context.Context) ([]int, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().ToolUsageEvent.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetTool sets the "tool" field.
+func (m *ToolUsageEventMutation) SetTool(s string) {
+	m.tool = &s
+}
+
+// Tool returns the value of the "tool" field in the mutation.
+func (m *ToolUsageEventMutation) Tool() (r string, exists bool) {
+	v := m.tool
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTool returns the old "tool" field's value of the ToolUsageEvent entity.
+// If the ToolUsageEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ToolUsageEventMutation) OldTool(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTool is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTool requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTool: %w", err)
+	}
+	return oldValue.Tool, nil
+}
+
+// ResetTool resets all changes to the "tool" field.
+func (m *ToolUsageEventMutation) ResetTool() {
+	m.tool = nil
+}
+
+// SetWorkspaceID sets the "workspace_id" field.
+func (m *ToolUsageEventMutation) SetWorkspaceID(s string) {
+	m.workspace_id = &s
+}
+
+// WorkspaceID returns the value of the "workspace_id" field in the mutation.
+func (m *ToolUsageEventMutation) WorkspaceID() (r string, exists bool) {
+	v := m.workspace_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldWorkspaceID returns the old "workspace_id" field's value of the ToolUsageEvent entity.
+// If the ToolUsageEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ToolUsageEventMutation) OldWorkspaceID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldWorkspaceID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldWorkspaceID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldWorkspaceID: %w", err)
+	}
+	return oldValue.WorkspaceID, nil
+}
+
+// ResetWorkspaceID resets all changes to the "workspace_id" field.
+func (m *ToolUsageEventMutation) ResetWorkspaceID() {
+	m.workspace_id = nil
+}
+
+// SetRepoConfigID sets the "repo_config_id" field.
+func (m *ToolUsageEventMutation) SetRepoConfigID(i int) {
+	m.repo_config = &i
+}
+
+// RepoConfigID returns the value of the "repo_config_id" field in the mutation.
+func (m *ToolUsageEventMutation) RepoConfigID() (r int, exists bool) {
+	v := m.repo_config
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRepoConfigID returns the old "repo_config_id" field's value of the ToolUsageEvent entity.
+// If the ToolUsageEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ToolUsageEventMutation) OldRepoConfigID(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRepoConfigID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRepoConfigID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRepoConfigID: %w", err)
+	}
+	return oldValue.RepoConfigID, nil
+}
+
+// ResetRepoConfigID resets all changes to the "repo_config_id" field.
+func (m *ToolUsageEventMutation) ResetRepoConfigID() {
+	m.repo_config = nil
+}
+
+// SetUserID sets the "user_id" field.
+func (m *ToolUsageEventMutation) SetUserID(i int) {
+	m.user = &i
+}
+
+// UserID returns the value of the "user_id" field in the mutation.
+func (m *ToolUsageEventMutation) UserID() (r int, exists bool) {
+	v := m.user
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUserID returns the old "user_id" field's value of the ToolUsageEvent entity.
+// If the ToolUsageEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ToolUsageEventMutation) OldUserID(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUserID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUserID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUserID: %w", err)
+	}
+	return oldValue.UserID, nil
+}
+
+// ResetUserID resets all changes to the "user_id" field.
+func (m *ToolUsageEventMutation) ResetUserID() {
+	m.user = nil
+}
+
+// SetToolSessionID sets the "tool_session_id" field.
+func (m *ToolUsageEventMutation) SetToolSessionID(s string) {
+	m.tool_session_id = &s
+}
+
+// ToolSessionID returns the value of the "tool_session_id" field in the mutation.
+func (m *ToolUsageEventMutation) ToolSessionID() (r string, exists bool) {
+	v := m.tool_session_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldToolSessionID returns the old "tool_session_id" field's value of the ToolUsageEvent entity.
+// If the ToolUsageEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ToolUsageEventMutation) OldToolSessionID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldToolSessionID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldToolSessionID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldToolSessionID: %w", err)
+	}
+	return oldValue.ToolSessionID, nil
+}
+
+// ResetToolSessionID resets all changes to the "tool_session_id" field.
+func (m *ToolUsageEventMutation) ResetToolSessionID() {
+	m.tool_session_id = nil
+}
+
+// SetToolEventID sets the "tool_event_id" field.
+func (m *ToolUsageEventMutation) SetToolEventID(s string) {
+	m.tool_event_id = &s
+}
+
+// ToolEventID returns the value of the "tool_event_id" field in the mutation.
+func (m *ToolUsageEventMutation) ToolEventID() (r string, exists bool) {
+	v := m.tool_event_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldToolEventID returns the old "tool_event_id" field's value of the ToolUsageEvent entity.
+// If the ToolUsageEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ToolUsageEventMutation) OldToolEventID(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldToolEventID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldToolEventID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldToolEventID: %w", err)
+	}
+	return oldValue.ToolEventID, nil
+}
+
+// ClearToolEventID clears the value of the "tool_event_id" field.
+func (m *ToolUsageEventMutation) ClearToolEventID() {
+	m.tool_event_id = nil
+	m.clearedFields[toolusageevent.FieldToolEventID] = struct{}{}
+}
+
+// ToolEventIDCleared returns if the "tool_event_id" field was cleared in this mutation.
+func (m *ToolUsageEventMutation) ToolEventIDCleared() bool {
+	_, ok := m.clearedFields[toolusageevent.FieldToolEventID]
+	return ok
+}
+
+// ResetToolEventID resets all changes to the "tool_event_id" field.
+func (m *ToolUsageEventMutation) ResetToolEventID() {
+	m.tool_event_id = nil
+	delete(m.clearedFields, toolusageevent.FieldToolEventID)
+}
+
+// SetObservedStartAt sets the "observed_start_at" field.
+func (m *ToolUsageEventMutation) SetObservedStartAt(t time.Time) {
+	m.observed_start_at = &t
+}
+
+// ObservedStartAt returns the value of the "observed_start_at" field in the mutation.
+func (m *ToolUsageEventMutation) ObservedStartAt() (r time.Time, exists bool) {
+	v := m.observed_start_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldObservedStartAt returns the old "observed_start_at" field's value of the ToolUsageEvent entity.
+// If the ToolUsageEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ToolUsageEventMutation) OldObservedStartAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldObservedStartAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldObservedStartAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldObservedStartAt: %w", err)
+	}
+	return oldValue.ObservedStartAt, nil
+}
+
+// ResetObservedStartAt resets all changes to the "observed_start_at" field.
+func (m *ToolUsageEventMutation) ResetObservedStartAt() {
+	m.observed_start_at = nil
+}
+
+// SetObservedEndAt sets the "observed_end_at" field.
+func (m *ToolUsageEventMutation) SetObservedEndAt(t time.Time) {
+	m.observed_end_at = &t
+}
+
+// ObservedEndAt returns the value of the "observed_end_at" field in the mutation.
+func (m *ToolUsageEventMutation) ObservedEndAt() (r time.Time, exists bool) {
+	v := m.observed_end_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldObservedEndAt returns the old "observed_end_at" field's value of the ToolUsageEvent entity.
+// If the ToolUsageEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ToolUsageEventMutation) OldObservedEndAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldObservedEndAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldObservedEndAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldObservedEndAt: %w", err)
+	}
+	return oldValue.ObservedEndAt, nil
+}
+
+// ResetObservedEndAt resets all changes to the "observed_end_at" field.
+func (m *ToolUsageEventMutation) ResetObservedEndAt() {
+	m.observed_end_at = nil
+}
+
+// SetRequestCount sets the "request_count" field.
+func (m *ToolUsageEventMutation) SetRequestCount(i int) {
+	m.request_count = &i
+	m.addrequest_count = nil
+}
+
+// RequestCount returns the value of the "request_count" field in the mutation.
+func (m *ToolUsageEventMutation) RequestCount() (r int, exists bool) {
+	v := m.request_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRequestCount returns the old "request_count" field's value of the ToolUsageEvent entity.
+// If the ToolUsageEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ToolUsageEventMutation) OldRequestCount(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRequestCount is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRequestCount requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRequestCount: %w", err)
+	}
+	return oldValue.RequestCount, nil
+}
+
+// AddRequestCount adds i to the "request_count" field.
+func (m *ToolUsageEventMutation) AddRequestCount(i int) {
+	if m.addrequest_count != nil {
+		*m.addrequest_count += i
+	} else {
+		m.addrequest_count = &i
+	}
+}
+
+// AddedRequestCount returns the value that was added to the "request_count" field in this mutation.
+func (m *ToolUsageEventMutation) AddedRequestCount() (r int, exists bool) {
+	v := m.addrequest_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetRequestCount resets all changes to the "request_count" field.
+func (m *ToolUsageEventMutation) ResetRequestCount() {
+	m.request_count = nil
+	m.addrequest_count = nil
+}
+
+// SetUsageUnit sets the "usage_unit" field.
+func (m *ToolUsageEventMutation) SetUsageUnit(tu toolusageevent.UsageUnit) {
+	m.usage_unit = &tu
+}
+
+// UsageUnit returns the value of the "usage_unit" field in the mutation.
+func (m *ToolUsageEventMutation) UsageUnit() (r toolusageevent.UsageUnit, exists bool) {
+	v := m.usage_unit
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUsageUnit returns the old "usage_unit" field's value of the ToolUsageEvent entity.
+// If the ToolUsageEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ToolUsageEventMutation) OldUsageUnit(ctx context.Context) (v toolusageevent.UsageUnit, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUsageUnit is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUsageUnit requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUsageUnit: %w", err)
+	}
+	return oldValue.UsageUnit, nil
+}
+
+// ResetUsageUnit resets all changes to the "usage_unit" field.
+func (m *ToolUsageEventMutation) ResetUsageUnit() {
+	m.usage_unit = nil
+}
+
+// SetInputTokens sets the "input_tokens" field.
+func (m *ToolUsageEventMutation) SetInputTokens(i int64) {
+	m.input_tokens = &i
+	m.addinput_tokens = nil
+}
+
+// InputTokens returns the value of the "input_tokens" field in the mutation.
+func (m *ToolUsageEventMutation) InputTokens() (r int64, exists bool) {
+	v := m.input_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldInputTokens returns the old "input_tokens" field's value of the ToolUsageEvent entity.
+// If the ToolUsageEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ToolUsageEventMutation) OldInputTokens(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldInputTokens is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldInputTokens requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldInputTokens: %w", err)
+	}
+	return oldValue.InputTokens, nil
+}
+
+// AddInputTokens adds i to the "input_tokens" field.
+func (m *ToolUsageEventMutation) AddInputTokens(i int64) {
+	if m.addinput_tokens != nil {
+		*m.addinput_tokens += i
+	} else {
+		m.addinput_tokens = &i
+	}
+}
+
+// AddedInputTokens returns the value that was added to the "input_tokens" field in this mutation.
+func (m *ToolUsageEventMutation) AddedInputTokens() (r int64, exists bool) {
+	v := m.addinput_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetInputTokens resets all changes to the "input_tokens" field.
+func (m *ToolUsageEventMutation) ResetInputTokens() {
+	m.input_tokens = nil
+	m.addinput_tokens = nil
+}
+
+// SetOutputTokens sets the "output_tokens" field.
+func (m *ToolUsageEventMutation) SetOutputTokens(i int64) {
+	m.output_tokens = &i
+	m.addoutput_tokens = nil
+}
+
+// OutputTokens returns the value of the "output_tokens" field in the mutation.
+func (m *ToolUsageEventMutation) OutputTokens() (r int64, exists bool) {
+	v := m.output_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldOutputTokens returns the old "output_tokens" field's value of the ToolUsageEvent entity.
+// If the ToolUsageEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ToolUsageEventMutation) OldOutputTokens(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldOutputTokens is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldOutputTokens requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldOutputTokens: %w", err)
+	}
+	return oldValue.OutputTokens, nil
+}
+
+// AddOutputTokens adds i to the "output_tokens" field.
+func (m *ToolUsageEventMutation) AddOutputTokens(i int64) {
+	if m.addoutput_tokens != nil {
+		*m.addoutput_tokens += i
+	} else {
+		m.addoutput_tokens = &i
+	}
+}
+
+// AddedOutputTokens returns the value that was added to the "output_tokens" field in this mutation.
+func (m *ToolUsageEventMutation) AddedOutputTokens() (r int64, exists bool) {
+	v := m.addoutput_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetOutputTokens resets all changes to the "output_tokens" field.
+func (m *ToolUsageEventMutation) ResetOutputTokens() {
+	m.output_tokens = nil
+	m.addoutput_tokens = nil
+}
+
+// SetCachedInputTokens sets the "cached_input_tokens" field.
+func (m *ToolUsageEventMutation) SetCachedInputTokens(i int64) {
+	m.cached_input_tokens = &i
+	m.addcached_input_tokens = nil
+}
+
+// CachedInputTokens returns the value of the "cached_input_tokens" field in the mutation.
+func (m *ToolUsageEventMutation) CachedInputTokens() (r int64, exists bool) {
+	v := m.cached_input_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCachedInputTokens returns the old "cached_input_tokens" field's value of the ToolUsageEvent entity.
+// If the ToolUsageEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ToolUsageEventMutation) OldCachedInputTokens(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCachedInputTokens is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCachedInputTokens requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCachedInputTokens: %w", err)
+	}
+	return oldValue.CachedInputTokens, nil
+}
+
+// AddCachedInputTokens adds i to the "cached_input_tokens" field.
+func (m *ToolUsageEventMutation) AddCachedInputTokens(i int64) {
+	if m.addcached_input_tokens != nil {
+		*m.addcached_input_tokens += i
+	} else {
+		m.addcached_input_tokens = &i
+	}
+}
+
+// AddedCachedInputTokens returns the value that was added to the "cached_input_tokens" field in this mutation.
+func (m *ToolUsageEventMutation) AddedCachedInputTokens() (r int64, exists bool) {
+	v := m.addcached_input_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetCachedInputTokens resets all changes to the "cached_input_tokens" field.
+func (m *ToolUsageEventMutation) ResetCachedInputTokens() {
+	m.cached_input_tokens = nil
+	m.addcached_input_tokens = nil
+}
+
+// SetReasoningTokens sets the "reasoning_tokens" field.
+func (m *ToolUsageEventMutation) SetReasoningTokens(i int64) {
+	m.reasoning_tokens = &i
+	m.addreasoning_tokens = nil
+}
+
+// ReasoningTokens returns the value of the "reasoning_tokens" field in the mutation.
+func (m *ToolUsageEventMutation) ReasoningTokens() (r int64, exists bool) {
+	v := m.reasoning_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldReasoningTokens returns the old "reasoning_tokens" field's value of the ToolUsageEvent entity.
+// If the ToolUsageEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ToolUsageEventMutation) OldReasoningTokens(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldReasoningTokens is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldReasoningTokens requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldReasoningTokens: %w", err)
+	}
+	return oldValue.ReasoningTokens, nil
+}
+
+// AddReasoningTokens adds i to the "reasoning_tokens" field.
+func (m *ToolUsageEventMutation) AddReasoningTokens(i int64) {
+	if m.addreasoning_tokens != nil {
+		*m.addreasoning_tokens += i
+	} else {
+		m.addreasoning_tokens = &i
+	}
+}
+
+// AddedReasoningTokens returns the value that was added to the "reasoning_tokens" field in this mutation.
+func (m *ToolUsageEventMutation) AddedReasoningTokens() (r int64, exists bool) {
+	v := m.addreasoning_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetReasoningTokens resets all changes to the "reasoning_tokens" field.
+func (m *ToolUsageEventMutation) ResetReasoningTokens() {
+	m.reasoning_tokens = nil
+	m.addreasoning_tokens = nil
+}
+
+// SetCreditUsage sets the "credit_usage" field.
+func (m *ToolUsageEventMutation) SetCreditUsage(f float64) {
+	m.credit_usage = &f
+	m.addcredit_usage = nil
+}
+
+// CreditUsage returns the value of the "credit_usage" field in the mutation.
+func (m *ToolUsageEventMutation) CreditUsage() (r float64, exists bool) {
+	v := m.credit_usage
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreditUsage returns the old "credit_usage" field's value of the ToolUsageEvent entity.
+// If the ToolUsageEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ToolUsageEventMutation) OldCreditUsage(ctx context.Context) (v float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreditUsage is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreditUsage requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreditUsage: %w", err)
+	}
+	return oldValue.CreditUsage, nil
+}
+
+// AddCreditUsage adds f to the "credit_usage" field.
+func (m *ToolUsageEventMutation) AddCreditUsage(f float64) {
+	if m.addcredit_usage != nil {
+		*m.addcredit_usage += f
+	} else {
+		m.addcredit_usage = &f
+	}
+}
+
+// AddedCreditUsage returns the value that was added to the "credit_usage" field in this mutation.
+func (m *ToolUsageEventMutation) AddedCreditUsage() (r float64, exists bool) {
+	v := m.addcredit_usage
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetCreditUsage resets all changes to the "credit_usage" field.
+func (m *ToolUsageEventMutation) ResetCreditUsage() {
+	m.credit_usage = nil
+	m.addcredit_usage = nil
+}
+
+// SetContextUsagePct sets the "context_usage_pct" field.
+func (m *ToolUsageEventMutation) SetContextUsagePct(f float64) {
+	m.context_usage_pct = &f
+	m.addcontext_usage_pct = nil
+}
+
+// ContextUsagePct returns the value of the "context_usage_pct" field in the mutation.
+func (m *ToolUsageEventMutation) ContextUsagePct() (r float64, exists bool) {
+	v := m.context_usage_pct
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldContextUsagePct returns the old "context_usage_pct" field's value of the ToolUsageEvent entity.
+// If the ToolUsageEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ToolUsageEventMutation) OldContextUsagePct(ctx context.Context) (v float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldContextUsagePct is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldContextUsagePct requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldContextUsagePct: %w", err)
+	}
+	return oldValue.ContextUsagePct, nil
+}
+
+// AddContextUsagePct adds f to the "context_usage_pct" field.
+func (m *ToolUsageEventMutation) AddContextUsagePct(f float64) {
+	if m.addcontext_usage_pct != nil {
+		*m.addcontext_usage_pct += f
+	} else {
+		m.addcontext_usage_pct = &f
+	}
+}
+
+// AddedContextUsagePct returns the value that was added to the "context_usage_pct" field in this mutation.
+func (m *ToolUsageEventMutation) AddedContextUsagePct() (r float64, exists bool) {
+	v := m.addcontext_usage_pct
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetContextUsagePct resets all changes to the "context_usage_pct" field.
+func (m *ToolUsageEventMutation) ResetContextUsagePct() {
+	m.context_usage_pct = nil
+	m.addcontext_usage_pct = nil
+}
+
+// SetCommitCheckpointID sets the "commit_checkpoint_id" field.
+func (m *ToolUsageEventMutation) SetCommitCheckpointID(i int) {
+	m.commit_checkpoint = &i
+}
+
+// CommitCheckpointID returns the value of the "commit_checkpoint_id" field in the mutation.
+func (m *ToolUsageEventMutation) CommitCheckpointID() (r int, exists bool) {
+	v := m.commit_checkpoint
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCommitCheckpointID returns the old "commit_checkpoint_id" field's value of the ToolUsageEvent entity.
+// If the ToolUsageEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ToolUsageEventMutation) OldCommitCheckpointID(ctx context.Context) (v *int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCommitCheckpointID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCommitCheckpointID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCommitCheckpointID: %w", err)
+	}
+	return oldValue.CommitCheckpointID, nil
+}
+
+// ClearCommitCheckpointID clears the value of the "commit_checkpoint_id" field.
+func (m *ToolUsageEventMutation) ClearCommitCheckpointID() {
+	m.commit_checkpoint = nil
+	m.clearedFields[toolusageevent.FieldCommitCheckpointID] = struct{}{}
+}
+
+// CommitCheckpointIDCleared returns if the "commit_checkpoint_id" field was cleared in this mutation.
+func (m *ToolUsageEventMutation) CommitCheckpointIDCleared() bool {
+	_, ok := m.clearedFields[toolusageevent.FieldCommitCheckpointID]
+	return ok
+}
+
+// ResetCommitCheckpointID resets all changes to the "commit_checkpoint_id" field.
+func (m *ToolUsageEventMutation) ResetCommitCheckpointID() {
+	m.commit_checkpoint = nil
+	delete(m.clearedFields, toolusageevent.FieldCommitCheckpointID)
+}
+
+// SetDedupeKey sets the "dedupe_key" field.
+func (m *ToolUsageEventMutation) SetDedupeKey(s string) {
+	m.dedupe_key = &s
+}
+
+// DedupeKey returns the value of the "dedupe_key" field in the mutation.
+func (m *ToolUsageEventMutation) DedupeKey() (r string, exists bool) {
+	v := m.dedupe_key
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDedupeKey returns the old "dedupe_key" field's value of the ToolUsageEvent entity.
+// If the ToolUsageEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ToolUsageEventMutation) OldDedupeKey(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDedupeKey is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDedupeKey requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDedupeKey: %w", err)
+	}
+	return oldValue.DedupeKey, nil
+}
+
+// ResetDedupeKey resets all changes to the "dedupe_key" field.
+func (m *ToolUsageEventMutation) ResetDedupeKey() {
+	m.dedupe_key = nil
+}
+
+// SetRawSourcePath sets the "raw_source_path" field.
+func (m *ToolUsageEventMutation) SetRawSourcePath(s string) {
+	m.raw_source_path = &s
+}
+
+// RawSourcePath returns the value of the "raw_source_path" field in the mutation.
+func (m *ToolUsageEventMutation) RawSourcePath() (r string, exists bool) {
+	v := m.raw_source_path
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRawSourcePath returns the old "raw_source_path" field's value of the ToolUsageEvent entity.
+// If the ToolUsageEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ToolUsageEventMutation) OldRawSourcePath(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRawSourcePath is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRawSourcePath requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRawSourcePath: %w", err)
+	}
+	return oldValue.RawSourcePath, nil
+}
+
+// ClearRawSourcePath clears the value of the "raw_source_path" field.
+func (m *ToolUsageEventMutation) ClearRawSourcePath() {
+	m.raw_source_path = nil
+	m.clearedFields[toolusageevent.FieldRawSourcePath] = struct{}{}
+}
+
+// RawSourcePathCleared returns if the "raw_source_path" field was cleared in this mutation.
+func (m *ToolUsageEventMutation) RawSourcePathCleared() bool {
+	_, ok := m.clearedFields[toolusageevent.FieldRawSourcePath]
+	return ok
+}
+
+// ResetRawSourcePath resets all changes to the "raw_source_path" field.
+func (m *ToolUsageEventMutation) ResetRawSourcePath() {
+	m.raw_source_path = nil
+	delete(m.clearedFields, toolusageevent.FieldRawSourcePath)
+}
+
+// SetRawSourceLocator sets the "raw_source_locator" field.
+func (m *ToolUsageEventMutation) SetRawSourceLocator(s string) {
+	m.raw_source_locator = &s
+}
+
+// RawSourceLocator returns the value of the "raw_source_locator" field in the mutation.
+func (m *ToolUsageEventMutation) RawSourceLocator() (r string, exists bool) {
+	v := m.raw_source_locator
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRawSourceLocator returns the old "raw_source_locator" field's value of the ToolUsageEvent entity.
+// If the ToolUsageEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ToolUsageEventMutation) OldRawSourceLocator(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRawSourceLocator is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRawSourceLocator requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRawSourceLocator: %w", err)
+	}
+	return oldValue.RawSourceLocator, nil
+}
+
+// ClearRawSourceLocator clears the value of the "raw_source_locator" field.
+func (m *ToolUsageEventMutation) ClearRawSourceLocator() {
+	m.raw_source_locator = nil
+	m.clearedFields[toolusageevent.FieldRawSourceLocator] = struct{}{}
+}
+
+// RawSourceLocatorCleared returns if the "raw_source_locator" field was cleared in this mutation.
+func (m *ToolUsageEventMutation) RawSourceLocatorCleared() bool {
+	_, ok := m.clearedFields[toolusageevent.FieldRawSourceLocator]
+	return ok
+}
+
+// ResetRawSourceLocator resets all changes to the "raw_source_locator" field.
+func (m *ToolUsageEventMutation) ResetRawSourceLocator() {
+	m.raw_source_locator = nil
+	delete(m.clearedFields, toolusageevent.FieldRawSourceLocator)
+}
+
+// SetRawPayload sets the "raw_payload" field.
+func (m *ToolUsageEventMutation) SetRawPayload(value map[string]interface{}) {
+	m.raw_payload = &value
+}
+
+// RawPayload returns the value of the "raw_payload" field in the mutation.
+func (m *ToolUsageEventMutation) RawPayload() (r map[string]interface{}, exists bool) {
+	v := m.raw_payload
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRawPayload returns the old "raw_payload" field's value of the ToolUsageEvent entity.
+// If the ToolUsageEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ToolUsageEventMutation) OldRawPayload(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRawPayload is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRawPayload requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRawPayload: %w", err)
+	}
+	return oldValue.RawPayload, nil
+}
+
+// ClearRawPayload clears the value of the "raw_payload" field.
+func (m *ToolUsageEventMutation) ClearRawPayload() {
+	m.raw_payload = nil
+	m.clearedFields[toolusageevent.FieldRawPayload] = struct{}{}
+}
+
+// RawPayloadCleared returns if the "raw_payload" field was cleared in this mutation.
+func (m *ToolUsageEventMutation) RawPayloadCleared() bool {
+	_, ok := m.clearedFields[toolusageevent.FieldRawPayload]
+	return ok
+}
+
+// ResetRawPayload resets all changes to the "raw_payload" field.
+func (m *ToolUsageEventMutation) ResetRawPayload() {
+	m.raw_payload = nil
+	delete(m.clearedFields, toolusageevent.FieldRawPayload)
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *ToolUsageEventMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *ToolUsageEventMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the ToolUsageEvent entity.
+// If the ToolUsageEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ToolUsageEventMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *ToolUsageEventMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// ClearRepoConfig clears the "repo_config" edge to the RepoConfig entity.
+func (m *ToolUsageEventMutation) ClearRepoConfig() {
+	m.clearedrepo_config = true
+	m.clearedFields[toolusageevent.FieldRepoConfigID] = struct{}{}
+}
+
+// RepoConfigCleared reports if the "repo_config" edge to the RepoConfig entity was cleared.
+func (m *ToolUsageEventMutation) RepoConfigCleared() bool {
+	return m.clearedrepo_config
+}
+
+// RepoConfigIDs returns the "repo_config" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// RepoConfigID instead. It exists only for internal usage by the builders.
+func (m *ToolUsageEventMutation) RepoConfigIDs() (ids []int) {
+	if id := m.repo_config; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetRepoConfig resets all changes to the "repo_config" edge.
+func (m *ToolUsageEventMutation) ResetRepoConfig() {
+	m.repo_config = nil
+	m.clearedrepo_config = false
+}
+
+// ClearUser clears the "user" edge to the User entity.
+func (m *ToolUsageEventMutation) ClearUser() {
+	m.cleareduser = true
+	m.clearedFields[toolusageevent.FieldUserID] = struct{}{}
+}
+
+// UserCleared reports if the "user" edge to the User entity was cleared.
+func (m *ToolUsageEventMutation) UserCleared() bool {
+	return m.cleareduser
+}
+
+// UserIDs returns the "user" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// UserID instead. It exists only for internal usage by the builders.
+func (m *ToolUsageEventMutation) UserIDs() (ids []int) {
+	if id := m.user; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetUser resets all changes to the "user" edge.
+func (m *ToolUsageEventMutation) ResetUser() {
+	m.user = nil
+	m.cleareduser = false
+}
+
+// ClearCommitCheckpoint clears the "commit_checkpoint" edge to the CommitCheckpoint entity.
+func (m *ToolUsageEventMutation) ClearCommitCheckpoint() {
+	m.clearedcommit_checkpoint = true
+	m.clearedFields[toolusageevent.FieldCommitCheckpointID] = struct{}{}
+}
+
+// CommitCheckpointCleared reports if the "commit_checkpoint" edge to the CommitCheckpoint entity was cleared.
+func (m *ToolUsageEventMutation) CommitCheckpointCleared() bool {
+	return m.CommitCheckpointIDCleared() || m.clearedcommit_checkpoint
+}
+
+// CommitCheckpointIDs returns the "commit_checkpoint" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// CommitCheckpointID instead. It exists only for internal usage by the builders.
+func (m *ToolUsageEventMutation) CommitCheckpointIDs() (ids []int) {
+	if id := m.commit_checkpoint; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetCommitCheckpoint resets all changes to the "commit_checkpoint" edge.
+func (m *ToolUsageEventMutation) ResetCommitCheckpoint() {
+	m.commit_checkpoint = nil
+	m.clearedcommit_checkpoint = false
+}
+
+// Where appends a list predicates to the ToolUsageEventMutation builder.
+func (m *ToolUsageEventMutation) Where(ps ...predicate.ToolUsageEvent) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the ToolUsageEventMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *ToolUsageEventMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.ToolUsageEvent, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *ToolUsageEventMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *ToolUsageEventMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (ToolUsageEvent).
+func (m *ToolUsageEventMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *ToolUsageEventMutation) Fields() []string {
+	fields := make([]string, 0, 22)
+	if m.tool != nil {
+		fields = append(fields, toolusageevent.FieldTool)
+	}
+	if m.workspace_id != nil {
+		fields = append(fields, toolusageevent.FieldWorkspaceID)
+	}
+	if m.repo_config != nil {
+		fields = append(fields, toolusageevent.FieldRepoConfigID)
+	}
+	if m.user != nil {
+		fields = append(fields, toolusageevent.FieldUserID)
+	}
+	if m.tool_session_id != nil {
+		fields = append(fields, toolusageevent.FieldToolSessionID)
+	}
+	if m.tool_event_id != nil {
+		fields = append(fields, toolusageevent.FieldToolEventID)
+	}
+	if m.observed_start_at != nil {
+		fields = append(fields, toolusageevent.FieldObservedStartAt)
+	}
+	if m.observed_end_at != nil {
+		fields = append(fields, toolusageevent.FieldObservedEndAt)
+	}
+	if m.request_count != nil {
+		fields = append(fields, toolusageevent.FieldRequestCount)
+	}
+	if m.usage_unit != nil {
+		fields = append(fields, toolusageevent.FieldUsageUnit)
+	}
+	if m.input_tokens != nil {
+		fields = append(fields, toolusageevent.FieldInputTokens)
+	}
+	if m.output_tokens != nil {
+		fields = append(fields, toolusageevent.FieldOutputTokens)
+	}
+	if m.cached_input_tokens != nil {
+		fields = append(fields, toolusageevent.FieldCachedInputTokens)
+	}
+	if m.reasoning_tokens != nil {
+		fields = append(fields, toolusageevent.FieldReasoningTokens)
+	}
+	if m.credit_usage != nil {
+		fields = append(fields, toolusageevent.FieldCreditUsage)
+	}
+	if m.context_usage_pct != nil {
+		fields = append(fields, toolusageevent.FieldContextUsagePct)
+	}
+	if m.commit_checkpoint != nil {
+		fields = append(fields, toolusageevent.FieldCommitCheckpointID)
+	}
+	if m.dedupe_key != nil {
+		fields = append(fields, toolusageevent.FieldDedupeKey)
+	}
+	if m.raw_source_path != nil {
+		fields = append(fields, toolusageevent.FieldRawSourcePath)
+	}
+	if m.raw_source_locator != nil {
+		fields = append(fields, toolusageevent.FieldRawSourceLocator)
+	}
+	if m.raw_payload != nil {
+		fields = append(fields, toolusageevent.FieldRawPayload)
+	}
+	if m.created_at != nil {
+		fields = append(fields, toolusageevent.FieldCreatedAt)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *ToolUsageEventMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case toolusageevent.FieldTool:
+		return m.Tool()
+	case toolusageevent.FieldWorkspaceID:
+		return m.WorkspaceID()
+	case toolusageevent.FieldRepoConfigID:
+		return m.RepoConfigID()
+	case toolusageevent.FieldUserID:
+		return m.UserID()
+	case toolusageevent.FieldToolSessionID:
+		return m.ToolSessionID()
+	case toolusageevent.FieldToolEventID:
+		return m.ToolEventID()
+	case toolusageevent.FieldObservedStartAt:
+		return m.ObservedStartAt()
+	case toolusageevent.FieldObservedEndAt:
+		return m.ObservedEndAt()
+	case toolusageevent.FieldRequestCount:
+		return m.RequestCount()
+	case toolusageevent.FieldUsageUnit:
+		return m.UsageUnit()
+	case toolusageevent.FieldInputTokens:
+		return m.InputTokens()
+	case toolusageevent.FieldOutputTokens:
+		return m.OutputTokens()
+	case toolusageevent.FieldCachedInputTokens:
+		return m.CachedInputTokens()
+	case toolusageevent.FieldReasoningTokens:
+		return m.ReasoningTokens()
+	case toolusageevent.FieldCreditUsage:
+		return m.CreditUsage()
+	case toolusageevent.FieldContextUsagePct:
+		return m.ContextUsagePct()
+	case toolusageevent.FieldCommitCheckpointID:
+		return m.CommitCheckpointID()
+	case toolusageevent.FieldDedupeKey:
+		return m.DedupeKey()
+	case toolusageevent.FieldRawSourcePath:
+		return m.RawSourcePath()
+	case toolusageevent.FieldRawSourceLocator:
+		return m.RawSourceLocator()
+	case toolusageevent.FieldRawPayload:
+		return m.RawPayload()
+	case toolusageevent.FieldCreatedAt:
+		return m.CreatedAt()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *ToolUsageEventMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case toolusageevent.FieldTool:
+		return m.OldTool(ctx)
+	case toolusageevent.FieldWorkspaceID:
+		return m.OldWorkspaceID(ctx)
+	case toolusageevent.FieldRepoConfigID:
+		return m.OldRepoConfigID(ctx)
+	case toolusageevent.FieldUserID:
+		return m.OldUserID(ctx)
+	case toolusageevent.FieldToolSessionID:
+		return m.OldToolSessionID(ctx)
+	case toolusageevent.FieldToolEventID:
+		return m.OldToolEventID(ctx)
+	case toolusageevent.FieldObservedStartAt:
+		return m.OldObservedStartAt(ctx)
+	case toolusageevent.FieldObservedEndAt:
+		return m.OldObservedEndAt(ctx)
+	case toolusageevent.FieldRequestCount:
+		return m.OldRequestCount(ctx)
+	case toolusageevent.FieldUsageUnit:
+		return m.OldUsageUnit(ctx)
+	case toolusageevent.FieldInputTokens:
+		return m.OldInputTokens(ctx)
+	case toolusageevent.FieldOutputTokens:
+		return m.OldOutputTokens(ctx)
+	case toolusageevent.FieldCachedInputTokens:
+		return m.OldCachedInputTokens(ctx)
+	case toolusageevent.FieldReasoningTokens:
+		return m.OldReasoningTokens(ctx)
+	case toolusageevent.FieldCreditUsage:
+		return m.OldCreditUsage(ctx)
+	case toolusageevent.FieldContextUsagePct:
+		return m.OldContextUsagePct(ctx)
+	case toolusageevent.FieldCommitCheckpointID:
+		return m.OldCommitCheckpointID(ctx)
+	case toolusageevent.FieldDedupeKey:
+		return m.OldDedupeKey(ctx)
+	case toolusageevent.FieldRawSourcePath:
+		return m.OldRawSourcePath(ctx)
+	case toolusageevent.FieldRawSourceLocator:
+		return m.OldRawSourceLocator(ctx)
+	case toolusageevent.FieldRawPayload:
+		return m.OldRawPayload(ctx)
+	case toolusageevent.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	}
+	return nil, fmt.Errorf("unknown ToolUsageEvent field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *ToolUsageEventMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case toolusageevent.FieldTool:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTool(v)
+		return nil
+	case toolusageevent.FieldWorkspaceID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetWorkspaceID(v)
+		return nil
+	case toolusageevent.FieldRepoConfigID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRepoConfigID(v)
+		return nil
+	case toolusageevent.FieldUserID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUserID(v)
+		return nil
+	case toolusageevent.FieldToolSessionID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetToolSessionID(v)
+		return nil
+	case toolusageevent.FieldToolEventID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetToolEventID(v)
+		return nil
+	case toolusageevent.FieldObservedStartAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetObservedStartAt(v)
+		return nil
+	case toolusageevent.FieldObservedEndAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetObservedEndAt(v)
+		return nil
+	case toolusageevent.FieldRequestCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRequestCount(v)
+		return nil
+	case toolusageevent.FieldUsageUnit:
+		v, ok := value.(toolusageevent.UsageUnit)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUsageUnit(v)
+		return nil
+	case toolusageevent.FieldInputTokens:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetInputTokens(v)
+		return nil
+	case toolusageevent.FieldOutputTokens:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetOutputTokens(v)
+		return nil
+	case toolusageevent.FieldCachedInputTokens:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCachedInputTokens(v)
+		return nil
+	case toolusageevent.FieldReasoningTokens:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetReasoningTokens(v)
+		return nil
+	case toolusageevent.FieldCreditUsage:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreditUsage(v)
+		return nil
+	case toolusageevent.FieldContextUsagePct:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetContextUsagePct(v)
+		return nil
+	case toolusageevent.FieldCommitCheckpointID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCommitCheckpointID(v)
+		return nil
+	case toolusageevent.FieldDedupeKey:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDedupeKey(v)
+		return nil
+	case toolusageevent.FieldRawSourcePath:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRawSourcePath(v)
+		return nil
+	case toolusageevent.FieldRawSourceLocator:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRawSourceLocator(v)
+		return nil
+	case toolusageevent.FieldRawPayload:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRawPayload(v)
+		return nil
+	case toolusageevent.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	}
+	return fmt.Errorf("unknown ToolUsageEvent field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *ToolUsageEventMutation) AddedFields() []string {
+	var fields []string
+	if m.addrequest_count != nil {
+		fields = append(fields, toolusageevent.FieldRequestCount)
+	}
+	if m.addinput_tokens != nil {
+		fields = append(fields, toolusageevent.FieldInputTokens)
+	}
+	if m.addoutput_tokens != nil {
+		fields = append(fields, toolusageevent.FieldOutputTokens)
+	}
+	if m.addcached_input_tokens != nil {
+		fields = append(fields, toolusageevent.FieldCachedInputTokens)
+	}
+	if m.addreasoning_tokens != nil {
+		fields = append(fields, toolusageevent.FieldReasoningTokens)
+	}
+	if m.addcredit_usage != nil {
+		fields = append(fields, toolusageevent.FieldCreditUsage)
+	}
+	if m.addcontext_usage_pct != nil {
+		fields = append(fields, toolusageevent.FieldContextUsagePct)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *ToolUsageEventMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case toolusageevent.FieldRequestCount:
+		return m.AddedRequestCount()
+	case toolusageevent.FieldInputTokens:
+		return m.AddedInputTokens()
+	case toolusageevent.FieldOutputTokens:
+		return m.AddedOutputTokens()
+	case toolusageevent.FieldCachedInputTokens:
+		return m.AddedCachedInputTokens()
+	case toolusageevent.FieldReasoningTokens:
+		return m.AddedReasoningTokens()
+	case toolusageevent.FieldCreditUsage:
+		return m.AddedCreditUsage()
+	case toolusageevent.FieldContextUsagePct:
+		return m.AddedContextUsagePct()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *ToolUsageEventMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case toolusageevent.FieldRequestCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddRequestCount(v)
+		return nil
+	case toolusageevent.FieldInputTokens:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddInputTokens(v)
+		return nil
+	case toolusageevent.FieldOutputTokens:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddOutputTokens(v)
+		return nil
+	case toolusageevent.FieldCachedInputTokens:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddCachedInputTokens(v)
+		return nil
+	case toolusageevent.FieldReasoningTokens:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddReasoningTokens(v)
+		return nil
+	case toolusageevent.FieldCreditUsage:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddCreditUsage(v)
+		return nil
+	case toolusageevent.FieldContextUsagePct:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddContextUsagePct(v)
+		return nil
+	}
+	return fmt.Errorf("unknown ToolUsageEvent numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *ToolUsageEventMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(toolusageevent.FieldToolEventID) {
+		fields = append(fields, toolusageevent.FieldToolEventID)
+	}
+	if m.FieldCleared(toolusageevent.FieldCommitCheckpointID) {
+		fields = append(fields, toolusageevent.FieldCommitCheckpointID)
+	}
+	if m.FieldCleared(toolusageevent.FieldRawSourcePath) {
+		fields = append(fields, toolusageevent.FieldRawSourcePath)
+	}
+	if m.FieldCleared(toolusageevent.FieldRawSourceLocator) {
+		fields = append(fields, toolusageevent.FieldRawSourceLocator)
+	}
+	if m.FieldCleared(toolusageevent.FieldRawPayload) {
+		fields = append(fields, toolusageevent.FieldRawPayload)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *ToolUsageEventMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *ToolUsageEventMutation) ClearField(name string) error {
+	switch name {
+	case toolusageevent.FieldToolEventID:
+		m.ClearToolEventID()
+		return nil
+	case toolusageevent.FieldCommitCheckpointID:
+		m.ClearCommitCheckpointID()
+		return nil
+	case toolusageevent.FieldRawSourcePath:
+		m.ClearRawSourcePath()
+		return nil
+	case toolusageevent.FieldRawSourceLocator:
+		m.ClearRawSourceLocator()
+		return nil
+	case toolusageevent.FieldRawPayload:
+		m.ClearRawPayload()
+		return nil
+	}
+	return fmt.Errorf("unknown ToolUsageEvent nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *ToolUsageEventMutation) ResetField(name string) error {
+	switch name {
+	case toolusageevent.FieldTool:
+		m.ResetTool()
+		return nil
+	case toolusageevent.FieldWorkspaceID:
+		m.ResetWorkspaceID()
+		return nil
+	case toolusageevent.FieldRepoConfigID:
+		m.ResetRepoConfigID()
+		return nil
+	case toolusageevent.FieldUserID:
+		m.ResetUserID()
+		return nil
+	case toolusageevent.FieldToolSessionID:
+		m.ResetToolSessionID()
+		return nil
+	case toolusageevent.FieldToolEventID:
+		m.ResetToolEventID()
+		return nil
+	case toolusageevent.FieldObservedStartAt:
+		m.ResetObservedStartAt()
+		return nil
+	case toolusageevent.FieldObservedEndAt:
+		m.ResetObservedEndAt()
+		return nil
+	case toolusageevent.FieldRequestCount:
+		m.ResetRequestCount()
+		return nil
+	case toolusageevent.FieldUsageUnit:
+		m.ResetUsageUnit()
+		return nil
+	case toolusageevent.FieldInputTokens:
+		m.ResetInputTokens()
+		return nil
+	case toolusageevent.FieldOutputTokens:
+		m.ResetOutputTokens()
+		return nil
+	case toolusageevent.FieldCachedInputTokens:
+		m.ResetCachedInputTokens()
+		return nil
+	case toolusageevent.FieldReasoningTokens:
+		m.ResetReasoningTokens()
+		return nil
+	case toolusageevent.FieldCreditUsage:
+		m.ResetCreditUsage()
+		return nil
+	case toolusageevent.FieldContextUsagePct:
+		m.ResetContextUsagePct()
+		return nil
+	case toolusageevent.FieldCommitCheckpointID:
+		m.ResetCommitCheckpointID()
+		return nil
+	case toolusageevent.FieldDedupeKey:
+		m.ResetDedupeKey()
+		return nil
+	case toolusageevent.FieldRawSourcePath:
+		m.ResetRawSourcePath()
+		return nil
+	case toolusageevent.FieldRawSourceLocator:
+		m.ResetRawSourceLocator()
+		return nil
+	case toolusageevent.FieldRawPayload:
+		m.ResetRawPayload()
+		return nil
+	case toolusageevent.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown ToolUsageEvent field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *ToolUsageEventMutation) AddedEdges() []string {
+	edges := make([]string, 0, 3)
+	if m.repo_config != nil {
+		edges = append(edges, toolusageevent.EdgeRepoConfig)
+	}
+	if m.user != nil {
+		edges = append(edges, toolusageevent.EdgeUser)
+	}
+	if m.commit_checkpoint != nil {
+		edges = append(edges, toolusageevent.EdgeCommitCheckpoint)
+	}
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *ToolUsageEventMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case toolusageevent.EdgeRepoConfig:
+		if id := m.repo_config; id != nil {
+			return []ent.Value{*id}
+		}
+	case toolusageevent.EdgeUser:
+		if id := m.user; id != nil {
+			return []ent.Value{*id}
+		}
+	case toolusageevent.EdgeCommitCheckpoint:
+		if id := m.commit_checkpoint; id != nil {
+			return []ent.Value{*id}
+		}
+	}
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *ToolUsageEventMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 3)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *ToolUsageEventMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *ToolUsageEventMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 3)
+	if m.clearedrepo_config {
+		edges = append(edges, toolusageevent.EdgeRepoConfig)
+	}
+	if m.cleareduser {
+		edges = append(edges, toolusageevent.EdgeUser)
+	}
+	if m.clearedcommit_checkpoint {
+		edges = append(edges, toolusageevent.EdgeCommitCheckpoint)
+	}
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *ToolUsageEventMutation) EdgeCleared(name string) bool {
+	switch name {
+	case toolusageevent.EdgeRepoConfig:
+		return m.clearedrepo_config
+	case toolusageevent.EdgeUser:
+		return m.cleareduser
+	case toolusageevent.EdgeCommitCheckpoint:
+		return m.clearedcommit_checkpoint
+	}
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *ToolUsageEventMutation) ClearEdge(name string) error {
+	switch name {
+	case toolusageevent.EdgeRepoConfig:
+		m.ClearRepoConfig()
+		return nil
+	case toolusageevent.EdgeUser:
+		m.ClearUser()
+		return nil
+	case toolusageevent.EdgeCommitCheckpoint:
+		m.ClearCommitCheckpoint()
+		return nil
+	}
+	return fmt.Errorf("unknown ToolUsageEvent unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *ToolUsageEventMutation) ResetEdge(name string) error {
+	switch name {
+	case toolusageevent.EdgeRepoConfig:
+		m.ResetRepoConfig()
+		return nil
+	case toolusageevent.EdgeUser:
+		m.ResetUser()
+		return nil
+	case toolusageevent.EdgeCommitCheckpoint:
+		m.ResetCommitCheckpoint()
+		return nil
+	}
+	return fmt.Errorf("unknown ToolUsageEvent edge %s", name)
+}
+
 // UserMutation represents an operation that mutates the User nodes in the graph.
 type UserMutation struct {
 	config
-	op                  Op
-	typ                 string
-	id                  *int
-	username            *string
-	email               *string
-	auth_source         *user.AuthSource
-	relay_user_id       *int
-	addrelay_user_id    *int
-	relay_auth_password *string
-	ldap_dn             *string
-	role                *user.Role
-	created_at          *time.Time
-	updated_at          *time.Time
-	clearedFields       map[string]struct{}
-	sessions            map[uuid.UUID]struct{}
-	removedsessions     map[uuid.UUID]struct{}
-	clearedsessions     bool
-	done                bool
-	oldValue            func(context.Context) (*User, error)
-	predicates          []predicate.User
+	op                       Op
+	typ                      string
+	id                       *int
+	username                 *string
+	email                    *string
+	auth_source              *user.AuthSource
+	relay_user_id            *int
+	addrelay_user_id         *int
+	relay_auth_password      *string
+	ldap_dn                  *string
+	role                     *user.Role
+	created_at               *time.Time
+	updated_at               *time.Time
+	clearedFields            map[string]struct{}
+	sessions                 map[uuid.UUID]struct{}
+	removedsessions          map[uuid.UUID]struct{}
+	clearedsessions          bool
+	tool_usage_events        map[int]struct{}
+	removedtool_usage_events map[int]struct{}
+	clearedtool_usage_events bool
+	done                     bool
+	oldValue                 func(context.Context) (*User, error)
+	predicates               []predicate.User
 }
 
 var _ ent.Mutation = (*UserMutation)(nil)
@@ -19437,6 +21548,60 @@ func (m *UserMutation) ResetSessions() {
 	m.removedsessions = nil
 }
 
+// AddToolUsageEventIDs adds the "tool_usage_events" edge to the ToolUsageEvent entity by ids.
+func (m *UserMutation) AddToolUsageEventIDs(ids ...int) {
+	if m.tool_usage_events == nil {
+		m.tool_usage_events = make(map[int]struct{})
+	}
+	for i := range ids {
+		m.tool_usage_events[ids[i]] = struct{}{}
+	}
+}
+
+// ClearToolUsageEvents clears the "tool_usage_events" edge to the ToolUsageEvent entity.
+func (m *UserMutation) ClearToolUsageEvents() {
+	m.clearedtool_usage_events = true
+}
+
+// ToolUsageEventsCleared reports if the "tool_usage_events" edge to the ToolUsageEvent entity was cleared.
+func (m *UserMutation) ToolUsageEventsCleared() bool {
+	return m.clearedtool_usage_events
+}
+
+// RemoveToolUsageEventIDs removes the "tool_usage_events" edge to the ToolUsageEvent entity by IDs.
+func (m *UserMutation) RemoveToolUsageEventIDs(ids ...int) {
+	if m.removedtool_usage_events == nil {
+		m.removedtool_usage_events = make(map[int]struct{})
+	}
+	for i := range ids {
+		delete(m.tool_usage_events, ids[i])
+		m.removedtool_usage_events[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedToolUsageEvents returns the removed IDs of the "tool_usage_events" edge to the ToolUsageEvent entity.
+func (m *UserMutation) RemovedToolUsageEventsIDs() (ids []int) {
+	for id := range m.removedtool_usage_events {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ToolUsageEventsIDs returns the "tool_usage_events" edge IDs in the mutation.
+func (m *UserMutation) ToolUsageEventsIDs() (ids []int) {
+	for id := range m.tool_usage_events {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetToolUsageEvents resets all changes to the "tool_usage_events" edge.
+func (m *UserMutation) ResetToolUsageEvents() {
+	m.tool_usage_events = nil
+	m.clearedtool_usage_events = false
+	m.removedtool_usage_events = nil
+}
+
 // Where appends a list predicates to the UserMutation builder.
 func (m *UserMutation) Where(ps ...predicate.User) {
 	m.predicates = append(m.predicates, ps...)
@@ -19742,9 +21907,12 @@ func (m *UserMutation) ResetField(name string) error {
 
 // AddedEdges returns all edge names that were set/added in this mutation.
 func (m *UserMutation) AddedEdges() []string {
-	edges := make([]string, 0, 1)
+	edges := make([]string, 0, 2)
 	if m.sessions != nil {
 		edges = append(edges, user.EdgeSessions)
+	}
+	if m.tool_usage_events != nil {
+		edges = append(edges, user.EdgeToolUsageEvents)
 	}
 	return edges
 }
@@ -19759,15 +21927,24 @@ func (m *UserMutation) AddedIDs(name string) []ent.Value {
 			ids = append(ids, id)
 		}
 		return ids
+	case user.EdgeToolUsageEvents:
+		ids := make([]ent.Value, 0, len(m.tool_usage_events))
+		for id := range m.tool_usage_events {
+			ids = append(ids, id)
+		}
+		return ids
 	}
 	return nil
 }
 
 // RemovedEdges returns all edge names that were removed in this mutation.
 func (m *UserMutation) RemovedEdges() []string {
-	edges := make([]string, 0, 1)
+	edges := make([]string, 0, 2)
 	if m.removedsessions != nil {
 		edges = append(edges, user.EdgeSessions)
+	}
+	if m.removedtool_usage_events != nil {
+		edges = append(edges, user.EdgeToolUsageEvents)
 	}
 	return edges
 }
@@ -19782,15 +21959,24 @@ func (m *UserMutation) RemovedIDs(name string) []ent.Value {
 			ids = append(ids, id)
 		}
 		return ids
+	case user.EdgeToolUsageEvents:
+		ids := make([]ent.Value, 0, len(m.removedtool_usage_events))
+		for id := range m.removedtool_usage_events {
+			ids = append(ids, id)
+		}
+		return ids
 	}
 	return nil
 }
 
 // ClearedEdges returns all edge names that were cleared in this mutation.
 func (m *UserMutation) ClearedEdges() []string {
-	edges := make([]string, 0, 1)
+	edges := make([]string, 0, 2)
 	if m.clearedsessions {
 		edges = append(edges, user.EdgeSessions)
+	}
+	if m.clearedtool_usage_events {
+		edges = append(edges, user.EdgeToolUsageEvents)
 	}
 	return edges
 }
@@ -19801,6 +21987,8 @@ func (m *UserMutation) EdgeCleared(name string) bool {
 	switch name {
 	case user.EdgeSessions:
 		return m.clearedsessions
+	case user.EdgeToolUsageEvents:
+		return m.clearedtool_usage_events
 	}
 	return false
 }
@@ -19819,6 +22007,9 @@ func (m *UserMutation) ResetEdge(name string) error {
 	switch name {
 	case user.EdgeSessions:
 		m.ResetSessions()
+		return nil
+	case user.EdgeToolUsageEvents:
+		m.ResetToolUsageEvents()
 		return nil
 	}
 	return fmt.Errorf("unknown User edge %s", name)

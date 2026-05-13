@@ -4,6 +4,7 @@ package ent
 
 import (
 	"context"
+	"database/sql/driver"
 	"fmt"
 	"math"
 
@@ -15,18 +16,20 @@ import (
 	"github.com/ai-efficiency/backend/ent/predicate"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/session"
+	"github.com/ai-efficiency/backend/ent/toolusageevent"
 	"github.com/google/uuid"
 )
 
 // CommitCheckpointQuery is the builder for querying CommitCheckpoint entities.
 type CommitCheckpointQuery struct {
 	config
-	ctx            *QueryContext
-	order          []commitcheckpoint.OrderOption
-	inters         []Interceptor
-	predicates     []predicate.CommitCheckpoint
-	withSession    *SessionQuery
-	withRepoConfig *RepoConfigQuery
+	ctx                 *QueryContext
+	order               []commitcheckpoint.OrderOption
+	inters              []Interceptor
+	predicates          []predicate.CommitCheckpoint
+	withSession         *SessionQuery
+	withRepoConfig      *RepoConfigQuery
+	withToolUsageEvents *ToolUsageEventQuery
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
 	path func(context.Context) (*sql.Selector, error)
@@ -100,6 +103,28 @@ func (ccq *CommitCheckpointQuery) QueryRepoConfig() *RepoConfigQuery {
 			sqlgraph.From(commitcheckpoint.Table, commitcheckpoint.FieldID, selector),
 			sqlgraph.To(repoconfig.Table, repoconfig.FieldID),
 			sqlgraph.Edge(sqlgraph.M2O, true, commitcheckpoint.RepoConfigTable, commitcheckpoint.RepoConfigColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(ccq.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryToolUsageEvents chains the current query on the "tool_usage_events" edge.
+func (ccq *CommitCheckpointQuery) QueryToolUsageEvents() *ToolUsageEventQuery {
+	query := (&ToolUsageEventClient{config: ccq.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := ccq.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := ccq.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(commitcheckpoint.Table, commitcheckpoint.FieldID, selector),
+			sqlgraph.To(toolusageevent.Table, toolusageevent.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, commitcheckpoint.ToolUsageEventsTable, commitcheckpoint.ToolUsageEventsColumn),
 		)
 		fromU = sqlgraph.SetNeighbors(ccq.driver.Dialect(), step)
 		return fromU, nil
@@ -294,13 +319,14 @@ func (ccq *CommitCheckpointQuery) Clone() *CommitCheckpointQuery {
 		return nil
 	}
 	return &CommitCheckpointQuery{
-		config:         ccq.config,
-		ctx:            ccq.ctx.Clone(),
-		order:          append([]commitcheckpoint.OrderOption{}, ccq.order...),
-		inters:         append([]Interceptor{}, ccq.inters...),
-		predicates:     append([]predicate.CommitCheckpoint{}, ccq.predicates...),
-		withSession:    ccq.withSession.Clone(),
-		withRepoConfig: ccq.withRepoConfig.Clone(),
+		config:              ccq.config,
+		ctx:                 ccq.ctx.Clone(),
+		order:               append([]commitcheckpoint.OrderOption{}, ccq.order...),
+		inters:              append([]Interceptor{}, ccq.inters...),
+		predicates:          append([]predicate.CommitCheckpoint{}, ccq.predicates...),
+		withSession:         ccq.withSession.Clone(),
+		withRepoConfig:      ccq.withRepoConfig.Clone(),
+		withToolUsageEvents: ccq.withToolUsageEvents.Clone(),
 		// clone intermediate query.
 		sql:  ccq.sql.Clone(),
 		path: ccq.path,
@@ -326,6 +352,17 @@ func (ccq *CommitCheckpointQuery) WithRepoConfig(opts ...func(*RepoConfigQuery))
 		opt(query)
 	}
 	ccq.withRepoConfig = query
+	return ccq
+}
+
+// WithToolUsageEvents tells the query-builder to eager-load the nodes that are connected to
+// the "tool_usage_events" edge. The optional arguments are used to configure the query builder of the edge.
+func (ccq *CommitCheckpointQuery) WithToolUsageEvents(opts ...func(*ToolUsageEventQuery)) *CommitCheckpointQuery {
+	query := (&ToolUsageEventClient{config: ccq.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	ccq.withToolUsageEvents = query
 	return ccq
 }
 
@@ -407,9 +444,10 @@ func (ccq *CommitCheckpointQuery) sqlAll(ctx context.Context, hooks ...queryHook
 	var (
 		nodes       = []*CommitCheckpoint{}
 		_spec       = ccq.querySpec()
-		loadedTypes = [2]bool{
+		loadedTypes = [3]bool{
 			ccq.withSession != nil,
 			ccq.withRepoConfig != nil,
+			ccq.withToolUsageEvents != nil,
 		}
 	)
 	_spec.ScanValues = func(columns []string) ([]any, error) {
@@ -439,6 +477,15 @@ func (ccq *CommitCheckpointQuery) sqlAll(ctx context.Context, hooks ...queryHook
 	if query := ccq.withRepoConfig; query != nil {
 		if err := ccq.loadRepoConfig(ctx, query, nodes, nil,
 			func(n *CommitCheckpoint, e *RepoConfig) { n.Edges.RepoConfig = e }); err != nil {
+			return nil, err
+		}
+	}
+	if query := ccq.withToolUsageEvents; query != nil {
+		if err := ccq.loadToolUsageEvents(ctx, query, nodes,
+			func(n *CommitCheckpoint) { n.Edges.ToolUsageEvents = []*ToolUsageEvent{} },
+			func(n *CommitCheckpoint, e *ToolUsageEvent) {
+				n.Edges.ToolUsageEvents = append(n.Edges.ToolUsageEvents, e)
+			}); err != nil {
 			return nil, err
 		}
 	}
@@ -503,6 +550,39 @@ func (ccq *CommitCheckpointQuery) loadRepoConfig(ctx context.Context, query *Rep
 		for i := range nodes {
 			assign(nodes[i], n)
 		}
+	}
+	return nil
+}
+func (ccq *CommitCheckpointQuery) loadToolUsageEvents(ctx context.Context, query *ToolUsageEventQuery, nodes []*CommitCheckpoint, init func(*CommitCheckpoint), assign func(*CommitCheckpoint, *ToolUsageEvent)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int]*CommitCheckpoint)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(toolusageevent.FieldCommitCheckpointID)
+	}
+	query.Where(predicate.ToolUsageEvent(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(commitcheckpoint.ToolUsageEventsColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.CommitCheckpointID
+		if fk == nil {
+			return fmt.Errorf(`foreign-key "commit_checkpoint_id" is nil for node %v`, n.ID)
+		}
+		node, ok := nodeids[*fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "commit_checkpoint_id" returned %v for node %v`, *fk, n.ID)
+		}
+		assign(node, n)
 	}
 	return nil
 }

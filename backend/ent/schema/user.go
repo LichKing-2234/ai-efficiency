@@ -49,6 +49,7 @@ func (User) Fields() []ent.Field {
 func (User) Edges() []ent.Edge {
 	return []ent.Edge{
 		edge.To("sessions", Session.Type),
+		edge.To("tool_usage_events", ToolUsageEvent.Type),
 	}
 }
 

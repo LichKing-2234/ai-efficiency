@@ -56,6 +56,8 @@ const (
 	EdgeCommitCheckpoints = "commit_checkpoints"
 	// EdgeCommitRewrites holds the string denoting the commit_rewrites edge name in mutations.
 	EdgeCommitRewrites = "commit_rewrites"
+	// EdgeToolUsageEvents holds the string denoting the tool_usage_events edge name in mutations.
+	EdgeToolUsageEvents = "tool_usage_events"
 	// EdgeWebhookDeadLetters holds the string denoting the webhook_dead_letters edge name in mutations.
 	EdgeWebhookDeadLetters = "webhook_dead_letters"
 	// EdgeAiScanResults holds the string denoting the ai_scan_results edge name in mutations.
@@ -94,6 +96,13 @@ const (
 	CommitRewritesInverseTable = "commit_rewrites"
 	// CommitRewritesColumn is the table column denoting the commit_rewrites relation/edge.
 	CommitRewritesColumn = "repo_config_id"
+	// ToolUsageEventsTable is the table that holds the tool_usage_events relation/edge.
+	ToolUsageEventsTable = "tool_usage_events"
+	// ToolUsageEventsInverseTable is the table name for the ToolUsageEvent entity.
+	// It exists in this package in order to avoid circular dependency with the "toolusageevent" package.
+	ToolUsageEventsInverseTable = "tool_usage_events"
+	// ToolUsageEventsColumn is the table column denoting the tool_usage_events relation/edge.
+	ToolUsageEventsColumn = "repo_config_id"
 	// WebhookDeadLettersTable is the table that holds the webhook_dead_letters relation/edge.
 	WebhookDeadLettersTable = "webhook_dead_letters"
 	// WebhookDeadLettersInverseTable is the table name for the WebhookDeadLetter entity.
@@ -350,6 +359,20 @@ func ByCommitRewrites(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
 	}
 }
 
+// ByToolUsageEventsCount orders the results by tool_usage_events count.
+func ByToolUsageEventsCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newToolUsageEventsStep(), opts...)
+	}
+}
+
+// ByToolUsageEvents orders the results by tool_usage_events terms.
+func ByToolUsageEvents(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newToolUsageEventsStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+
 // ByWebhookDeadLettersCount orders the results by webhook_dead_letters count.
 func ByWebhookDeadLettersCount(opts ...sql.OrderTermOption) OrderOption {
 	return func(s *sql.Selector) {
@@ -431,6 +454,13 @@ func newCommitRewritesStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(CommitRewritesInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.O2M, false, CommitRewritesTable, CommitRewritesColumn),
+	)
+}
+func newToolUsageEventsStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(ToolUsageEventsInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, ToolUsageEventsTable, ToolUsageEventsColumn),
 	)
 }
 func newWebhookDeadLettersStep() *sqlgraph.Step {

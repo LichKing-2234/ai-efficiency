@@ -14,17 +14,19 @@ import (
 	"entgo.io/ent/schema/field"
 	"github.com/ai-efficiency/backend/ent/predicate"
 	"github.com/ai-efficiency/backend/ent/session"
+	"github.com/ai-efficiency/backend/ent/toolusageevent"
 	"github.com/ai-efficiency/backend/ent/user"
 )
 
 // UserQuery is the builder for querying User entities.
 type UserQuery struct {
 	config
-	ctx          *QueryContext
-	order        []user.OrderOption
-	inters       []Interceptor
-	predicates   []predicate.User
-	withSessions *SessionQuery
+	ctx                 *QueryContext
+	order               []user.OrderOption
+	inters              []Interceptor
+	predicates          []predicate.User
+	withSessions        *SessionQuery
+	withToolUsageEvents *ToolUsageEventQuery
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
 	path func(context.Context) (*sql.Selector, error)
@@ -76,6 +78,28 @@ func (uq *UserQuery) QuerySessions() *SessionQuery {
 			sqlgraph.From(user.Table, user.FieldID, selector),
 			sqlgraph.To(session.Table, session.FieldID),
 			sqlgraph.Edge(sqlgraph.O2M, false, user.SessionsTable, user.SessionsColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(uq.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryToolUsageEvents chains the current query on the "tool_usage_events" edge.
+func (uq *UserQuery) QueryToolUsageEvents() *ToolUsageEventQuery {
+	query := (&ToolUsageEventClient{config: uq.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := uq.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := uq.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, selector),
+			sqlgraph.To(toolusageevent.Table, toolusageevent.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.ToolUsageEventsTable, user.ToolUsageEventsColumn),
 		)
 		fromU = sqlgraph.SetNeighbors(uq.driver.Dialect(), step)
 		return fromU, nil
@@ -270,12 +294,13 @@ func (uq *UserQuery) Clone() *UserQuery {
 		return nil
 	}
 	return &UserQuery{
-		config:       uq.config,
-		ctx:          uq.ctx.Clone(),
-		order:        append([]user.OrderOption{}, uq.order...),
-		inters:       append([]Interceptor{}, uq.inters...),
-		predicates:   append([]predicate.User{}, uq.predicates...),
-		withSessions: uq.withSessions.Clone(),
+		config:              uq.config,
+		ctx:                 uq.ctx.Clone(),
+		order:               append([]user.OrderOption{}, uq.order...),
+		inters:              append([]Interceptor{}, uq.inters...),
+		predicates:          append([]predicate.User{}, uq.predicates...),
+		withSessions:        uq.withSessions.Clone(),
+		withToolUsageEvents: uq.withToolUsageEvents.Clone(),
 		// clone intermediate query.
 		sql:  uq.sql.Clone(),
 		path: uq.path,
@@ -290,6 +315,17 @@ func (uq *UserQuery) WithSessions(opts ...func(*SessionQuery)) *UserQuery {
 		opt(query)
 	}
 	uq.withSessions = query
+	return uq
+}
+
+// WithToolUsageEvents tells the query-builder to eager-load the nodes that are connected to
+// the "tool_usage_events" edge. The optional arguments are used to configure the query builder of the edge.
+func (uq *UserQuery) WithToolUsageEvents(opts ...func(*ToolUsageEventQuery)) *UserQuery {
+	query := (&ToolUsageEventClient{config: uq.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	uq.withToolUsageEvents = query
 	return uq
 }
 
@@ -371,8 +407,9 @@ func (uq *UserQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*User, e
 	var (
 		nodes       = []*User{}
 		_spec       = uq.querySpec()
-		loadedTypes = [1]bool{
+		loadedTypes = [2]bool{
 			uq.withSessions != nil,
+			uq.withToolUsageEvents != nil,
 		}
 	)
 	_spec.ScanValues = func(columns []string) ([]any, error) {
@@ -397,6 +434,13 @@ func (uq *UserQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*User, e
 		if err := uq.loadSessions(ctx, query, nodes,
 			func(n *User) { n.Edges.Sessions = []*Session{} },
 			func(n *User, e *Session) { n.Edges.Sessions = append(n.Edges.Sessions, e) }); err != nil {
+			return nil, err
+		}
+	}
+	if query := uq.withToolUsageEvents; query != nil {
+		if err := uq.loadToolUsageEvents(ctx, query, nodes,
+			func(n *User) { n.Edges.ToolUsageEvents = []*ToolUsageEvent{} },
+			func(n *User, e *ToolUsageEvent) { n.Edges.ToolUsageEvents = append(n.Edges.ToolUsageEvents, e) }); err != nil {
 			return nil, err
 		}
 	}
@@ -429,6 +473,36 @@ func (uq *UserQuery) loadSessions(ctx context.Context, query *SessionQuery, node
 		node, ok := nodeids[*fk]
 		if !ok {
 			return fmt.Errorf(`unexpected referenced foreign-key "user_sessions" returned %v for node %v`, *fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (uq *UserQuery) loadToolUsageEvents(ctx context.Context, query *ToolUsageEventQuery, nodes []*User, init func(*User), assign func(*User, *ToolUsageEvent)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int]*User)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(toolusageevent.FieldUserID)
+	}
+	query.Where(predicate.ToolUsageEvent(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(user.ToolUsageEventsColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.UserID
+		node, ok := nodeids[fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "user_id" returned %v for node %v`, fk, n.ID)
 		}
 		assign(node, n)
 	}

@@ -21,6 +21,7 @@ import (
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/scmprovider"
 	"github.com/ai-efficiency/backend/ent/session"
+	"github.com/ai-efficiency/backend/ent/toolusageevent"
 	"github.com/ai-efficiency/backend/ent/webhookdeadletter"
 )
 
@@ -35,6 +36,7 @@ type RepoConfigQuery struct {
 	withSessions           *SessionQuery
 	withCommitCheckpoints  *CommitCheckpointQuery
 	withCommitRewrites     *CommitRewriteQuery
+	withToolUsageEvents    *ToolUsageEventQuery
 	withWebhookDeadLetters *WebhookDeadLetterQuery
 	withAiScanResults      *AiScanResultQuery
 	withPrRecords          *PrRecordQuery
@@ -157,6 +159,28 @@ func (rcq *RepoConfigQuery) QueryCommitRewrites() *CommitRewriteQuery {
 			sqlgraph.From(repoconfig.Table, repoconfig.FieldID, selector),
 			sqlgraph.To(commitrewrite.Table, commitrewrite.FieldID),
 			sqlgraph.Edge(sqlgraph.O2M, false, repoconfig.CommitRewritesTable, repoconfig.CommitRewritesColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(rcq.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryToolUsageEvents chains the current query on the "tool_usage_events" edge.
+func (rcq *RepoConfigQuery) QueryToolUsageEvents() *ToolUsageEventQuery {
+	query := (&ToolUsageEventClient{config: rcq.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := rcq.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := rcq.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(repoconfig.Table, repoconfig.FieldID, selector),
+			sqlgraph.To(toolusageevent.Table, toolusageevent.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, repoconfig.ToolUsageEventsTable, repoconfig.ToolUsageEventsColumn),
 		)
 		fromU = sqlgraph.SetNeighbors(rcq.driver.Dialect(), step)
 		return fromU, nil
@@ -448,6 +472,7 @@ func (rcq *RepoConfigQuery) Clone() *RepoConfigQuery {
 		withSessions:           rcq.withSessions.Clone(),
 		withCommitCheckpoints:  rcq.withCommitCheckpoints.Clone(),
 		withCommitRewrites:     rcq.withCommitRewrites.Clone(),
+		withToolUsageEvents:    rcq.withToolUsageEvents.Clone(),
 		withWebhookDeadLetters: rcq.withWebhookDeadLetters.Clone(),
 		withAiScanResults:      rcq.withAiScanResults.Clone(),
 		withPrRecords:          rcq.withPrRecords.Clone(),
@@ -499,6 +524,17 @@ func (rcq *RepoConfigQuery) WithCommitRewrites(opts ...func(*CommitRewriteQuery)
 		opt(query)
 	}
 	rcq.withCommitRewrites = query
+	return rcq
+}
+
+// WithToolUsageEvents tells the query-builder to eager-load the nodes that are connected to
+// the "tool_usage_events" edge. The optional arguments are used to configure the query builder of the edge.
+func (rcq *RepoConfigQuery) WithToolUsageEvents(opts ...func(*ToolUsageEventQuery)) *RepoConfigQuery {
+	query := (&ToolUsageEventClient{config: rcq.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	rcq.withToolUsageEvents = query
 	return rcq
 }
 
@@ -625,11 +661,12 @@ func (rcq *RepoConfigQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*
 		nodes       = []*RepoConfig{}
 		withFKs     = rcq.withFKs
 		_spec       = rcq.querySpec()
-		loadedTypes = [8]bool{
+		loadedTypes = [9]bool{
 			rcq.withScmProvider != nil,
 			rcq.withSessions != nil,
 			rcq.withCommitCheckpoints != nil,
 			rcq.withCommitRewrites != nil,
+			rcq.withToolUsageEvents != nil,
 			rcq.withWebhookDeadLetters != nil,
 			rcq.withAiScanResults != nil,
 			rcq.withPrRecords != nil,
@@ -686,6 +723,13 @@ func (rcq *RepoConfigQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*
 		if err := rcq.loadCommitRewrites(ctx, query, nodes,
 			func(n *RepoConfig) { n.Edges.CommitRewrites = []*CommitRewrite{} },
 			func(n *RepoConfig, e *CommitRewrite) { n.Edges.CommitRewrites = append(n.Edges.CommitRewrites, e) }); err != nil {
+			return nil, err
+		}
+	}
+	if query := rcq.withToolUsageEvents; query != nil {
+		if err := rcq.loadToolUsageEvents(ctx, query, nodes,
+			func(n *RepoConfig) { n.Edges.ToolUsageEvents = []*ToolUsageEvent{} },
+			func(n *RepoConfig, e *ToolUsageEvent) { n.Edges.ToolUsageEvents = append(n.Edges.ToolUsageEvents, e) }); err != nil {
 			return nil, err
 		}
 	}
@@ -832,6 +876,36 @@ func (rcq *RepoConfigQuery) loadCommitRewrites(ctx context.Context, query *Commi
 	}
 	query.Where(predicate.CommitRewrite(func(s *sql.Selector) {
 		s.Where(sql.InValues(s.C(repoconfig.CommitRewritesColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.RepoConfigID
+		node, ok := nodeids[fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "repo_config_id" returned %v for node %v`, fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (rcq *RepoConfigQuery) loadToolUsageEvents(ctx context.Context, query *ToolUsageEventQuery, nodes []*RepoConfig, init func(*RepoConfig), assign func(*RepoConfig, *ToolUsageEvent)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int]*RepoConfig)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(toolusageevent.FieldRepoConfigID)
+	}
+	query.Where(predicate.ToolUsageEvent(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(repoconfig.ToolUsageEventsColumn), fks...))
 	}))
 	neighbors, err := query.All(ctx)
 	if err != nil {

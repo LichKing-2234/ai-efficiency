@@ -78,6 +78,7 @@ func (RepoConfig) Edges() []entgo.Edge {
 		edge.To("sessions", Session.Type),
 		edge.To("commit_checkpoints", CommitCheckpoint.Type),
 		edge.To("commit_rewrites", CommitRewrite.Type),
+		edge.To("tool_usage_events", ToolUsageEvent.Type),
 		edge.To("webhook_dead_letters", WebhookDeadLetter.Type),
 		edge.To("ai_scan_results", AiScanResult.Type),
 		edge.To("pr_records", PrRecord.Type),
