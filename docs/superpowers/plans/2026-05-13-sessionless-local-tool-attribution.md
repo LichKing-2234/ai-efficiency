@@ -980,7 +980,7 @@ Expected:
 PASS
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add ae-cli/internal/attributionlocal/test_helpers_test.go
@@ -1206,7 +1206,7 @@ Expected:
 PASS
 ```
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add ae-cli/go.mod ae-cli/go.sum \
@@ -1521,7 +1521,7 @@ Expected:
 PASS
 ```
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add ae-cli/internal/attributionlocal/codex_jsonl.go \
@@ -1766,7 +1766,7 @@ Expected:
 PASS
 ```
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add ae-cli/internal/attributionlocal/scanner.go \
@@ -1788,7 +1788,7 @@ git commit -m "feat(ae-cli): add local attribution scanner and sync engine"
 - Modify: `ae-cli/internal/hooks/install.go`
 - Test: `ae-cli/internal/hooks/handler_test.go`
 
-- [ ] **Step 1: Write the failing git-hook sync tests**
+- [x] **Step 1: Write the failing git-hook sync tests**
 
 ```go
 func TestPostCommit_TriggersAttributionSync(t *testing.T) {
@@ -1810,7 +1810,7 @@ func TestPostCommit_TriggersAttributionSync(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run:
 
@@ -1825,7 +1825,7 @@ Expected:
 FAIL ... undefined: runAttributionSync
 ```
 
-- [ ] **Step 3: Add the sync trigger to `PostCommit` and `PostRewrite`**
+- [x] **Step 3: Add the sync trigger to `PostCommit` and `PostRewrite`**
 
 ```go
 // ae-cli/internal/hooks/handler.go
@@ -1847,7 +1847,7 @@ func (h *Handler) PostRewrite(ctx context.Context, cwd, rewriteType string, stdi
 }
 ```
 
-- [ ] **Step 4: Verify shared hook scripts still chain legacy hooks**
+- [x] **Step 4: Verify shared hook scripts still chain legacy hooks**
 
 Run:
 
@@ -1880,7 +1880,7 @@ git commit -m "feat(ae-cli): trigger attribution sync from git hooks"
 - Modify: `backend/ent/schema/prrecord.go`
 - Test: `backend/internal/attribution/service_test.go`
 
-- [ ] **Step 1: Write the failing attribution tests**
+- [x] **Step 1: Write the failing attribution tests**
 
 ```go
 func TestSettlePR_AggregatesToolUsageEventsByCheckpoint(t *testing.T) {
@@ -1902,7 +1902,7 @@ func TestSettlePR_AggregatesToolUsageEventsByCheckpoint(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run:
 
@@ -1917,7 +1917,7 @@ Expected:
 FAIL ... result counts still sourced from session_usage_events or zero
 ```
 
-- [ ] **Step 3: Change attribution interval loading to read `tool_usage_events`**
+- [x] **Step 3: Change attribution interval loading to read `tool_usage_events`**
 
 ```go
 // backend/internal/attribution/service.go
@@ -1937,7 +1937,7 @@ func (s *Service) loadIntervalToolUsage(ctx context.Context, checkpointID int) (
 }
 ```
 
-- [ ] **Step 4: Persist credit-aware metadata summaries**
+- [x] **Step 4: Persist credit-aware metadata summaries**
 
 ```go
 // backend/internal/attribution/service.go
@@ -1955,7 +1955,7 @@ metadataSummary := map[string]any{
 field.JSON("metadata_summary", map[string]any{}).Optional()
 ```
 
-- [ ] **Step 5: Run the attribution tests to verify they pass**
+- [x] **Step 5: Run the attribution tests to verify they pass**
 
 Run:
 
@@ -1987,14 +1987,14 @@ git commit -m "feat(attribution): aggregate local tool usage by checkpoint"
 - Modify: `docs/architecture.md`
 - Test: `docs/superpowers/specs/2026-05-13-sessionless-local-tool-attribution-design.md`
 
-- [ ] **Step 1: Write the failing documentation checklist**
+- [x] **Step 1: Write the failing documentation checklist**
 
 ```text
 Confirm architecture.md still describes ae-cli start + local proxy as the only runtime path.
 Expected: it is now stale once the new implementation lands.
 ```
 
-- [ ] **Step 2: Update the architecture overview**
+- [x] **Step 2: Update the architecture overview**
 
 ```md
 ## Current Runtime Flow
@@ -2004,7 +2004,7 @@ Tool-local artifacts plus git hooks are the primary source for commit/PR attribu
 agent hooks act as repair triggers for local sync.
 ```
 
-- [ ] **Step 3: Run lightweight verification on docs and targeted tests**
+- [x] **Step 3: Run lightweight verification on docs and targeted tests**
 
 Run:
 

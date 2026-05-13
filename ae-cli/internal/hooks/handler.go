@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ai-efficiency/ae-cli/internal/attributionlocal"
 	"github.com/ai-efficiency/ae-cli/internal/collector"
 	"github.com/ai-efficiency/ae-cli/internal/proxy"
 	"github.com/ai-efficiency/ae-cli/internal/session"
@@ -37,6 +38,11 @@ type UnsupportedUploader struct{}
 
 func (u UnsupportedUploader) UploadHookEvent(ctx context.Context, ev HookEvent) error {
 	return fmt.Errorf("hook upload not implemented")
+}
+
+var runAttributionSync = func(ctx context.Context, cwd string) error {
+	engine := attributionlocal.NewSyncEngine(nil)
+	return engine.RunForWorkspace(ctx, cwd)
 }
 
 func repoEventHint(cwd string, m *session.Marker) string {
@@ -244,6 +250,7 @@ func (h *Handler) PostCommit(ctx context.Context, cwd string) error {
 		if err == nil {
 			_ = q.Enqueue(ev)
 		}
+		_ = runAttributionSync(ctx, repoRoot)
 		return nil
 	}
 
@@ -253,9 +260,11 @@ func (h *Handler) PostCommit(ctx context.Context, cwd string) error {
 		if qerr == nil {
 			_ = q.Enqueue(ev)
 		}
+		_ = runAttributionSync(ctx, repoRoot)
 		return nil
 	}
 
+	_ = runAttributionSync(ctx, repoRoot)
 	return nil
 }
 
@@ -361,6 +370,7 @@ func (h *Handler) PostRewrite(ctx context.Context, cwd string, rewriteType strin
 				SessionID: sessionID,
 				Payload:   ev,
 			}); err == nil {
+				_ = runAttributionSync(ctx, repoRoot)
 				continue
 			}
 		}
@@ -369,6 +379,7 @@ func (h *Handler) PostRewrite(ctx context.Context, cwd string, rewriteType strin
 			if q != nil {
 				_ = q.Enqueue(ev)
 			}
+			_ = runAttributionSync(ctx, repoRoot)
 			continue
 		}
 		if err := h.uploader.UploadHookEvent(ctx, ev); err != nil {
@@ -376,6 +387,7 @@ func (h *Handler) PostRewrite(ctx context.Context, cwd string, rewriteType strin
 				_ = q.Enqueue(ev)
 			}
 		}
+		_ = runAttributionSync(ctx, repoRoot)
 	}
 
 	return nil

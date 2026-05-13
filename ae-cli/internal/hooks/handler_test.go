@@ -506,6 +506,33 @@ func TestPostCommitUsesRepoScopedEventID(t *testing.T) {
 	}
 }
 
+func TestPostCommit_TriggersAttributionSync(t *testing.T) {
+	repo := initRepoWithCommit2(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	marker := &session.Marker{SessionID: "sess-1", RepoFullName: "origin", Branch: "main", HeadSHA: git2(t, repo, "rev-parse", "HEAD")}
+	if err := session.WriteMarker(repo, marker); err != nil {
+		t.Fatalf("WriteMarker: %v", err)
+	}
+
+	calls := 0
+	old := runAttributionSync
+	runAttributionSync = func(ctx context.Context, cwd string) error {
+		calls++
+		return nil
+	}
+	t.Cleanup(func() { runAttributionSync = old })
+
+	h := NewHandler(&fakeUploader{})
+	if err := h.PostCommit(context.Background(), repo); err != nil {
+		t.Fatalf("PostCommit: %v", err)
+	}
+	if calls != 1 {
+		t.Fatalf("sync calls = %d, want 1", calls)
+	}
+}
+
 func TestPostRewriteUsesRepoScopedEventID(t *testing.T) {
 	repo := initRepoWithCommit2(t)
 
