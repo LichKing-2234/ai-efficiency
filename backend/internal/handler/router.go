@@ -9,6 +9,7 @@ import (
 	"github.com/ai-efficiency/backend/internal/sessionbootstrap"
 	"github.com/ai-efficiency/backend/internal/sessionevent"
 	"github.com/ai-efficiency/backend/internal/sessionusage"
+	"github.com/ai-efficiency/backend/internal/toolusage"
 	"github.com/ai-efficiency/backend/internal/web"
 	"github.com/ai-efficiency/backend/internal/webhook"
 	"github.com/gin-gonic/gin"
@@ -76,6 +77,7 @@ func SetupRouter(
 		sessionusage.NewService(entClient),
 		sessionevent.NewService(entClient),
 	)
+	toolUsageHandler := NewToolUsageHandler(toolusage.NewService(entClient))
 
 	api := r.Group("/api/v1")
 
@@ -181,6 +183,10 @@ func SetupRouter(
 
 	sessionEventGroup := protected.Group("/session-events")
 	sessionEventGroup.POST("", sessionUsageHandler.CreateEvent)
+
+	toolUsageGroup := protected.Group("/tool-usage-events")
+	toolUsageGroup.POST("", toolUsageHandler.Create)
+	toolUsageGroup.POST("/bind", toolUsageHandler.Bind)
 
 	if checkpointHandler != nil {
 		checkpointGroup := protected.Group("/checkpoints")

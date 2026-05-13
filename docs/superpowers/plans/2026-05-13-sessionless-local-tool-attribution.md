@@ -446,7 +446,7 @@ Expected:
 PASS
 ```
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add backend/ent/schema/workspace.go \
@@ -465,7 +465,7 @@ git commit -m "feat(backend): add workspace and tool usage event schemas"
 - Modify: `backend/internal/attribution/service_test.go`
 - Test: `backend/internal/toolusage/test_helpers_test.go`
 
-- [ ] **Step 1: Write the failing fixture helper tests**
+- [x] **Step 1: Write the failing fixture helper tests**
 
 ```go
 func TestSeedWorkspaceForToolUsage_CreatesWorkspaceAndRepo(t *testing.T) {
@@ -493,7 +493,7 @@ func TestCreateToolUsageBindingFixture_SeedsBoundAndUnboundRows(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run:
 
@@ -508,7 +508,7 @@ Expected:
 FAIL ... undefined: seedWorkspaceForToolUsage / createToolUsageBindingFixture
 ```
 
-- [ ] **Step 3: Add explicit fixture helpers**
+- [x] **Step 3: Add explicit fixture helpers**
 
 ```go
 // backend/internal/toolusage/test_helpers_test.go
@@ -609,7 +609,7 @@ func createToolUsageBindingFixture(t *testing.T, client *ent.Client) bindingFixt
 }
 ```
 
-- [ ] **Step 4: Run the fixture helper tests to verify they pass**
+- [x] **Step 4: Run the fixture helper tests to verify they pass**
 
 Run:
 
@@ -642,7 +642,7 @@ git commit -m "test(backend): add tool usage attribution fixtures"
 - Modify: `backend/cmd/server/main.go`
 - Test: `backend/internal/handler/tool_usage_test.go`
 
-- [ ] **Step 1: Write the failing handler tests**
+- [x] **Step 1: Write the failing handler tests**
 
 ```go
 func TestToolUsageHandler_CreateUsageEvent(t *testing.T) {
@@ -686,7 +686,7 @@ func TestToolUsageHandler_BindUsageEvents(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run:
 
@@ -701,7 +701,7 @@ Expected:
 FAIL ... 404 route not found
 ```
 
-- [ ] **Step 3: Add the handler implementation**
+- [x] **Step 3: Add the handler implementation**
 
 ```go
 // backend/internal/handler/tool_usage.go
@@ -771,7 +771,7 @@ func (h *ToolUsageHandler) Bind(c *gin.Context) {
 }
 ```
 
-- [ ] **Step 4: Register the routes and wiring**
+- [x] **Step 4: Register the routes and wiring**
 
 ```go
 // backend/internal/handler/router.go
@@ -782,7 +782,7 @@ toolUsageGroup.POST("", toolUsageHandler.Create)
 toolUsageGroup.POST("/bind", toolUsageHandler.Bind)
 ```
 
-- [ ] **Step 5: Run the handler tests to verify they pass**
+- [x] **Step 5: Run the handler tests to verify they pass**
 
 Run:
 
