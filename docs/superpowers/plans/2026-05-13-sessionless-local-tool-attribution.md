@@ -624,7 +624,7 @@ Expected:
 PASS
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/internal/toolusage/test_helpers_test.go \
@@ -797,7 +797,7 @@ Expected:
 PASS
 ```
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add backend/internal/handler/tool_usage.go \
@@ -812,7 +812,7 @@ git commit -m "feat(backend): add tool usage ingest endpoints"
 - Create: `ae-cli/internal/attributionlocal/test_helpers_test.go`
 - Test: `ae-cli/internal/attributionlocal/test_helpers_test.go`
 
-- [ ] **Step 1: Write the failing local fixture tests**
+- [x] **Step 1: Write the failing local fixture tests**
 
 ```go
 func TestWriteFile_WritesFixtureContent(t *testing.T) {
@@ -834,7 +834,7 @@ func TestBuildCodexSQLiteFixture_CreatesLogsDB(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run:
 
@@ -849,7 +849,7 @@ Expected:
 FAIL ... undefined: writeFile / buildCodexSQLiteFixture
 ```
 
-- [ ] **Step 3: Add explicit local fixture helpers**
+- [x] **Step 3: Add explicit local fixture helpers**
 
 ```go
 // ae-cli/internal/attributionlocal/test_helpers_test.go
@@ -965,7 +965,7 @@ func fixtureRepoRoot(t *testing.T) string {
 }
 ```
 
-- [ ] **Step 4: Run the local fixture tests to verify they pass**
+- [x] **Step 4: Run the local fixture tests to verify they pass**
 
 Run:
 
@@ -999,7 +999,7 @@ git commit -m "test(ae-cli): add local attribution fixtures"
 - Test: `ae-cli/internal/attributionlocal/state_test.go`
 - Test: `ae-cli/internal/attributionlocal/codex_sqlite_test.go`
 
-- [ ] **Step 1: Write the failing parser test**
+- [x] **Step 1: Write the failing parser test**
 
 ```go
 func TestParseCodexSQLite_ExtractsResponseCompletedUsage(t *testing.T) {
@@ -1024,7 +1024,7 @@ func TestParseCodexSQLite_ExtractsResponseCompletedUsage(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run:
 
@@ -1039,7 +1039,7 @@ Expected:
 FAIL ... package github.com/ai-efficiency/ae-cli/internal/attributionlocal: no Go files
 ```
 
-- [ ] **Step 3: Add the SQLite dependency**
+- [x] **Step 3: Add the SQLite dependency**
 
 ```go
 // ae-cli/go.mod
@@ -1061,7 +1061,7 @@ Expected:
 go: downloading github.com/glebarez/go-sqlite ...
 ```
 
-- [ ] **Step 4: Add normalized event and watermark types**
+- [x] **Step 4: Add normalized event and watermark types**
 
 ```go
 // ae-cli/internal/attributionlocal/types.go
@@ -1133,7 +1133,7 @@ func LoadJSON(path string, dest any) error {
 }
 ```
 
-- [ ] **Step 5: Implement the parser**
+- [x] **Step 5: Implement the parser**
 
 ```go
 // ae-cli/internal/attributionlocal/codex_sqlite.go
@@ -1191,7 +1191,7 @@ func (p *CodexSQLiteParser) Parse(dbPath string, wm CodexSQLiteWatermark) ([]Loc
 }
 ```
 
-- [ ] **Step 6: Run the parser tests to verify they pass**
+- [x] **Step 6: Run the parser tests to verify they pass**
 
 Run:
 
@@ -1231,7 +1231,7 @@ git commit -m "feat(ae-cli): add codex sqlite attribution parser"
 - Test: `ae-cli/internal/attributionlocal/claude_jsonl_test.go`
 - Test: `ae-cli/internal/attributionlocal/kiro_json_test.go`
 
-- [ ] **Step 1: Write the failing fallback/parser tests**
+- [x] **Step 1: Write the failing fallback/parser tests**
 
 ```go
 func TestParseCodexJSONL_PrefersLastTokenUsage(t *testing.T) {
@@ -1277,7 +1277,7 @@ func TestParseKiroJSON_UsesCreditAndConversationID(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run:
 
@@ -1292,7 +1292,7 @@ Expected:
 FAIL ... undefined: ParseCodexJSONLFallback / ParseClaudeJSONL / ParseKiroJSON
 ```
 
-- [ ] **Step 3: Implement Codex JSONL fallback**
+- [x] **Step 3: Implement Codex JSONL fallback**
 
 ```go
 // ae-cli/internal/attributionlocal/codex_jsonl.go
@@ -1359,7 +1359,7 @@ func ParseCodexJSONLFallback(path, workspaceRoot string) ([]LocalToolUsageEvent,
 }
 ```
 
-- [ ] **Step 4: Implement Claude JSONL parsing**
+- [x] **Step 4: Implement Claude JSONL parsing**
 
 ```go
 // ae-cli/internal/attributionlocal/claude_jsonl.go
@@ -1434,7 +1434,7 @@ func ParseClaudeJSONL(path, workspaceRoot string) ([]LocalToolUsageEvent, error)
 }
 ```
 
-- [ ] **Step 5: Implement Kiro JSON parsing**
+- [x] **Step 5: Implement Kiro JSON parsing**
 
 ```go
 // ae-cli/internal/attributionlocal/kiro_json.go
@@ -1506,7 +1506,7 @@ func ParseKiroJSON(path, workspaceRoot string) ([]LocalToolUsageEvent, error) {
 }
 ```
 
-- [ ] **Step 6: Run the parser tests to verify they pass**
+- [x] **Step 6: Run the parser tests to verify they pass**
 
 Run:
 
@@ -1548,7 +1548,7 @@ git commit -m "feat(ae-cli): add claude and kiro attribution parsers"
 - Test: `ae-cli/internal/attributionlocal/sync_test.go`
 - Test: `ae-cli/internal/client/client_test.go`
 
-- [ ] **Step 1: Write the failing scanner/sync tests**
+- [x] **Step 1: Write the failing scanner/sync tests**
 
 ```go
 func TestScanner_SkipsAlreadyWatermarkedCodexRows(t *testing.T) {
@@ -1583,7 +1583,7 @@ func TestSync_ReplaysSpooledEventsBeforeNewScan(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run:
 
@@ -1598,7 +1598,7 @@ Expected:
 FAIL ... undefined: attributionlocal.NewScanner / setupSyncEngineWithSpool
 ```
 
-- [ ] **Step 3: Extend the backend client**
+- [x] **Step 3: Extend the backend client**
 
 ```go
 // ae-cli/internal/client/client.go
@@ -1639,7 +1639,7 @@ func (c *Client) BindToolUsageEvents(ctx context.Context, req BindToolUsageEvent
 }
 ```
 
-- [ ] **Step 4: Implement the scanner and sync engine**
+- [x] **Step 4: Implement the scanner and sync engine**
 
 ```go
 // ae-cli/internal/attributionlocal/scanner.go
@@ -1732,7 +1732,7 @@ func (e *SyncEngine) Replay(ctx context.Context, workspaceRoot string) error {
 }
 ```
 
-- [ ] **Step 5: Wire a hidden sync command through `ae-cli hook`**
+- [x] **Step 5: Wire a hidden sync command through `ae-cli hook`**
 
 ```go
 // ae-cli/cmd/hook.go
@@ -1751,7 +1751,7 @@ func init() {
 }
 ```
 
-- [ ] **Step 6: Run the ae-cli tests to verify they pass**
+- [x] **Step 6: Run the ae-cli tests to verify they pass**
 
 Run:
 

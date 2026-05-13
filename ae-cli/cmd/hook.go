@@ -5,6 +5,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/ai-efficiency/ae-cli/internal/attributionlocal"
 	"github.com/ai-efficiency/ae-cli/internal/hooks"
 	"github.com/ai-efficiency/ae-cli/internal/proxy"
 	"github.com/spf13/cobra"
@@ -72,10 +73,22 @@ var hookSessionEventCmd = &cobra.Command{
 	},
 }
 
+var hookAttributionSyncCmd = &cobra.Command{
+	Use:    "attribution-sync",
+	Short:  "Run local attribution sync (hidden)",
+	Hidden: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cwd, _ := os.Getwd()
+		engine := attributionlocal.NewSyncEngine(apiClient)
+		return engine.RunForWorkspace(context.Background(), cwd)
+	},
+}
+
 func init() {
 	hookCmd.AddCommand(hookPostCommitCmd)
 	hookCmd.AddCommand(hookPostRewriteCmd)
 	hookSessionEventCmd.Flags().String("tool", "", "originating tool name")
 	hookCmd.AddCommand(hookSessionEventCmd)
+	hookCmd.AddCommand(hookAttributionSyncCmd)
 	rootCmd.AddCommand(hookCmd)
 }
