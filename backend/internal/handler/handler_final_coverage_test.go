@@ -655,46 +655,6 @@ func TestAuthMeNilUserContext(t *testing.T) {
 }
 
 // =====================
-// session.go List — error paths for count/list
-// =====================
-
-func TestSessionListPaginationEdgeCases(t *testing.T) {
-	env := setupTestEnv(t)
-	repoID := createTestRepo(t, env.client)
-	ctx := context.Background()
-
-	// Create a session
-	sid := uuid.MustParse("550e8400-e29b-41d4-a716-446655440050")
-	_, err := env.client.Session.Create().
-		SetID(sid).
-		SetRepoConfigID(repoID).
-		SetBranch("main").
-		SetStartedAt(time.Now()).
-		Save(ctx)
-	if err != nil {
-		t.Fatalf("create session: %v", err)
-	}
-
-	// page=0 should be clamped to 1
-	w := doRequest(env, "GET", "/api/v1/sessions?page=0", nil)
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
-	}
-
-	// page_size=0 should be clamped to 20
-	w = doRequest(env, "GET", "/api/v1/sessions?page_size=0", nil)
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
-	}
-
-	// page_size=200 should be clamped to 20
-	w = doRequest(env, "GET", "/api/v1/sessions?page_size=200", nil)
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
-	}
-}
-
-// =====================
 // Helpers for the TestLLMConnection unconfigured test
 // =====================
 

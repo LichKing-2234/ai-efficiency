@@ -153,6 +153,55 @@
 - [x] **Step 2: Mark local proxy and session pages as compatibility/debug paths only**
 - [x] **Step 3: Re-read the changed docs for consistency with the new spec**
 
+## Task 8: Remove Legacy Session Write Data Plane
+
+**Files:**
+- Modify: `backend/internal/handler/router.go`
+- Modify: `backend/internal/handler/session_usage_test.go`
+- Modify: `ae-cli/cmd/start.go`
+
+- [x] **Step 1: Remove `/session-usage-events` and `/session-events` from the backend router**
+- [x] **Step 2: Update handler tests so those routes now assert `404`**
+- [x] **Step 3: Remove `proxy-serve-internal` from the CLI command tree**
+- [x] **Step 4: Re-run backend handler, CLI command, and frontend tests to confirm pass**
+
+## Task 9: Remove Legacy Session Read Surface
+
+**Files:**
+- Modify: `backend/internal/handler/router.go`
+- Modify: `backend/internal/handler/session.go`
+- Modify: `backend/internal/handler/handler_extended_test.go`
+- Modify: `backend/internal/handler/handler_90_test.go`
+- Modify: `backend/internal/handler/handler_final_coverage_test.go`
+- Modify: `backend/internal/handler/session_bootstrap_http_test.go`
+- Delete: `backend/internal/handler/session_detail_http_test.go`
+- Modify: `frontend/src/router/index.ts`
+- Modify: `frontend/src/views/attribution/AttributionLandingView.vue`
+- Delete: `frontend/src/views/sessions/SessionListView.vue`
+- Delete: `frontend/src/views/sessions/SessionDetailView.vue`
+- Delete: `frontend/src/api/session.ts`
+- Delete: `frontend/src/__tests__/session-list-view.test.ts`
+- Delete: `frontend/src/__tests__/session-detail-view.test.ts`
+- Modify: `frontend/src/__tests__/router.test.ts`
+- Modify: `frontend/src/__tests__/api-modules.test.ts`
+- Modify: `frontend/src/types/index.ts`
+
+- [x] **Step 1: Remove frontend `/sessions` routes, pages, and API wrapper**
+- [x] **Step 2: Remove backend `/sessions` read routes and delete read-surface-specific tests**
+- [x] **Step 3: Re-run frontend and backend handler verification to confirm pass**
+
+## Task 10: Remove Proxy As A Hook Data Plane
+
+**Files:**
+- Modify: `ae-cli/internal/hooks/handler.go`
+- Modify: `ae-cli/internal/hooks/handler_test.go`
+- Modify: `ae-cli/cmd/hook.go`
+- Modify: `ae-cli/cmd/hook_test.go`
+
+- [x] **Step 1: Remove local-proxy posting from post-commit and post-rewrite hook handling**
+- [x] **Step 2: Remove the hidden `ae-cli hook session-event` path**
+- [x] **Step 3: Re-run CLI/hooks verification to confirm pass**
+
 ## Verification
 
 - [x] `cd /Users/admin/ai-efficiency/ae-cli && go test ./cmd ./internal/hooks ./internal/attributionlocal ./internal/client`

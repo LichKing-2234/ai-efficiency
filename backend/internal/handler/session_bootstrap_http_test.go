@@ -13,7 +13,6 @@ import (
 	"github.com/ai-efficiency/backend/internal/sessionbootstrap"
 	"github.com/ai-efficiency/backend/internal/testdb"
 	"github.com/ai-efficiency/backend/internal/webhook"
-	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
@@ -232,87 +231,5 @@ func TestSessionBootstrapHTTP_CreatesRepoWhenMissing(t *testing.T) {
 	got := env.client.RepoConfig.Query().OnlyX(context.Background())
 	if got.FullName != "acme/platform" {
 		t.Fatalf("full_name = %q, want %q", got.FullName, "acme/platform")
-	}
-}
-
-func TestSessionProviderCredentialHTTP_ReusesExistingOpenAIKey(t *testing.T) {
-	env := setupBootstrapHTTPTestEnv(t)
-	ctx := context.Background()
-
-	sp := env.client.ScmProvider.Create().
-		SetName("mock-gh").
-		SetType("github").
-		SetBaseURL("https://api.github.com").
-		SetCredentials("enc").
-		SaveX(ctx)
-	rc := env.client.RepoConfig.Create().
-		SetScmProviderID(sp.ID).
-		SetName("mock-repo").
-		SetFullName("org/mock-repo").
-		SetCloneURL("https://github.com/org/mock-repo.git").
-		SetDefaultBranch("main").
-		SetRelayGroupID("42").
-		SaveX(ctx)
-
-	u := env.client.User.Query().OnlyX(ctx)
-	sid := uuid.New()
-	env.client.Session.Create().
-		SetID(sid).
-		SetRepoConfigID(rc.ID).
-		SetUserID(u.ID).
-		SetBranch("main").
-		SetProviderName("sub2api").
-		SetStartedAt(time.Now()).
-		SaveX(ctx)
-
-	rp := &fakeRelayProviderForBootstrap{
-		listUserAPIKeysFn: func(_ context.Context, userID int64) ([]relay.APIKey, error) {
-			return []relay.APIKey{
-				{
-					ID:        900,
-					UserID:    userID,
-					Key:       "sk-existing-openai",
-					Name:      "admin",
-					Status:    "active",
-					CreatedAt: time.Now(),
-					Group:     &relay.Group{ID: 42, Platform: "openai"},
-				},
-			}, nil
-		},
-	}
-	bootstrapSvc := sessionbootstrap.NewService(env.client, repo.NewService(env.client, "0000000000000000000000000000000000000000000000000000000000000000", zap.NewNop()), rp, nil, "sub2api", "http://relay.local/v1", "42", 2*time.Hour)
-	env.router = SetupRouter(
-		env.client,
-		env.authSvc,
-		repo.NewService(env.client, "0000000000000000000000000000000000000000000000000000000000000000", zap.NewNop()),
-		nil,
-		webhook.NewHandler(env.client, nil, zap.NewNop()),
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		"0000000000000000000000000000000000000000000000000000000000000000",
-		middleware.CORS(nil),
-		nil,
-		nil,
-		nil,
-		bootstrapSvc,
-		nil,
-		nil,
-	)
-
-	w := doRequest(env, "GET", "/api/v1/sessions/"+sid.String()+"/provider-credentials?platform=openai", nil)
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d, body: %s", w.Code, http.StatusOK, w.Body.String())
-	}
-
-	resp := parseResponse(t, w)
-	data := resp["data"].(map[string]interface{})
-	if data["api_key_id"] != float64(900) {
-		t.Fatalf("api_key_id = %v, want 900", data["api_key_id"])
-	}
-	if data["api_key"] != "sk-existing-openai" {
-		t.Fatalf("api_key = %v, want sk-existing-openai", data["api_key"])
 	}
 }

@@ -7,8 +7,6 @@ import (
 	"github.com/ai-efficiency/backend/internal/oauth"
 	"github.com/ai-efficiency/backend/internal/repo"
 	"github.com/ai-efficiency/backend/internal/sessionbootstrap"
-	"github.com/ai-efficiency/backend/internal/sessionevent"
-	"github.com/ai-efficiency/backend/internal/sessionusage"
 	"github.com/ai-efficiency/backend/internal/toolusage"
 	"github.com/ai-efficiency/backend/internal/web"
 	"github.com/ai-efficiency/backend/internal/webhook"
@@ -73,10 +71,6 @@ func SetupRouter(
 	prHandler := NewPRHandler(entClient, repoService, syncService, prAttributionService)
 	efficiencyHandler := NewEfficiencyHandler(entClient, aggregator)
 	sessionHandler := NewSessionHandler(entClient, sessionBootstrapSvc)
-	sessionUsageHandler := NewSessionUsageHandler(
-		sessionusage.NewService(entClient),
-		sessionevent.NewService(entClient),
-	)
 	toolUsageHandler := NewToolUsageHandler(toolusage.NewService(entClient))
 
 	api := r.Group("/api/v1")
@@ -168,21 +162,12 @@ func SetupRouter(
 	// Sessions (ae-cli)
 	sessionGroup := protected.Group("/sessions")
 	{
-		sessionGroup.GET("", sessionHandler.List)
-		sessionGroup.GET("/:id", sessionHandler.Get)
-		sessionGroup.GET("/:id/provider-credentials", sessionHandler.ProviderCredential)
 		sessionGroup.POST("/bootstrap", sessionHandler.Bootstrap)
 		sessionGroup.POST("", sessionHandler.Create)
 		sessionGroup.PUT("/:id", sessionHandler.Update)
 		sessionGroup.POST("/:id/stop", sessionHandler.Stop)
 		sessionGroup.POST("/:id/invocations", sessionHandler.AddInvocation)
 	}
-
-	sessionUsageGroup := protected.Group("/session-usage-events")
-	sessionUsageGroup.POST("", sessionUsageHandler.CreateUsage)
-
-	sessionEventGroup := protected.Group("/session-events")
-	sessionEventGroup.POST("", sessionUsageHandler.CreateEvent)
 
 	toolUsageGroup := protected.Group("/tool-usage-events")
 	toolUsageGroup.POST("", toolUsageHandler.Create)

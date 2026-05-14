@@ -794,18 +794,6 @@ func TestSessionFullLifecycle(t *testing.T) {
 		t.Fatalf("set session owner: %v", err)
 	}
 
-	// List sessions
-	w = doRequest(env, "GET", "/api/v1/sessions", nil)
-	if w.Code != http.StatusOK {
-		t.Fatalf("list: %d", w.Code)
-	}
-
-	// Get session
-	w = doRequest(env, "GET", "/api/v1/sessions/"+sessionID, nil)
-	if w.Code != http.StatusOK {
-		t.Fatalf("get: %d", w.Code)
-	}
-
 	// Heartbeat
 	w = doRequest(env, "PUT", "/api/v1/sessions/"+sessionID, nil)
 	if w.Code != http.StatusOK {
@@ -826,17 +814,6 @@ func TestSessionFullLifecycle(t *testing.T) {
 		t.Fatalf("stop: %d", w.Code)
 	}
 
-	// List with status filter
-	w = doRequest(env, "GET", "/api/v1/sessions?status=completed", nil)
-	if w.Code != http.StatusOK {
-		t.Fatalf("list completed: %d", w.Code)
-	}
-
-	// List with repo_id filter
-	w = doRequest(env, "GET", fmt.Sprintf("/api/v1/sessions?repo_id=%d", rc.ID), nil)
-	if w.Code != http.StatusOK {
-		t.Fatalf("list by repo: %d", w.Code)
-	}
 }
 
 // =====================

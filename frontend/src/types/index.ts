@@ -49,103 +49,6 @@ export interface RepoConfig {
   }
 }
 
-export interface Session {
-  id: string
-  branch: string
-  status: string
-  started_at: string
-  ended_at: string | null
-  provider_name?: string | null
-  relay_api_key_id?: number | null
-  runtime_ref?: string | null
-  initial_workspace_root?: string | null
-  last_seen_at?: string | null
-  tool_invocations: Array<{ tool: string; start: string; end: string }>
-  edges?: {
-    user?: User
-    repo_config?: RepoConfig
-    session_workspaces?: SessionWorkspace[]
-    commit_checkpoints?: CommitCheckpoint[]
-    agent_metadata_events?: AgentMetadataEvent[]
-    session_usage_events?: SessionUsageEvent[]
-    session_events?: SessionEvent[]
-  }
-}
-
-export interface SessionWorkspace {
-  session_id?: string
-  workspace_id: string
-  workspace_root: string
-  git_dir: string
-  git_common_dir: string
-  first_seen_at: string
-  last_seen_at: string
-  binding_source: string
-}
-
-export interface CommitCheckpoint {
-  event_id?: string
-  session_id?: string
-  workspace_id: string
-  repo_config_id?: number
-  commit_sha: string
-  parent_shas?: string[]
-  branch_snapshot?: string | null
-  head_snapshot?: string | null
-  binding_source: string
-  agent_snapshot?: Record<string, any>
-  captured_at: string
-}
-
-export interface SessionUsageEvent {
-  event_id: string
-  session_id?: string
-  workspace_id: string
-  request_id?: string
-  provider_name: string
-  model: string
-  started_at: string
-  finished_at: string
-  input_tokens?: number
-  output_tokens?: number
-  total_tokens?: number
-  status: string
-  raw_response?: Record<string, unknown>
-  raw_metadata?: {
-    http_status?: number
-    error?: string
-    cached_input_tokens?: number
-    cache_creation_input_tokens?: number
-    cache_read_input_tokens?: number
-    reasoning_output_tokens?: number
-  }
-}
-
-export interface AgentMetadataEvent {
-  session_id?: string
-  workspace_id?: string | null
-  source: 'codex' | 'claude' | 'kiro'
-  source_session_id?: string | null
-  usage_unit: 'token' | 'credit' | 'unknown'
-  input_tokens?: number
-  output_tokens?: number
-  cached_input_tokens?: number
-  reasoning_tokens?: number
-  credit_usage?: number
-  context_usage_pct?: number
-  observed_at: string
-  raw_payload?: Record<string, unknown>
-}
-
-export interface SessionEvent {
-  event_id: string
-  session_id?: string
-  workspace_id: string
-  event_type: string
-  source: string
-  captured_at: string
-}
-
 export interface ScanResult {
   id: number
   score: number
@@ -248,15 +151,4 @@ export interface DeploymentStatus {
 
 export interface ApplyUpdateRequest {
   target_version: string
-}
-
-export interface SessionListParams {
-  page?: number
-  page_size?: number
-  status?: string
-  repo_id?: number
-  repo_query?: string
-  branch?: string
-  owner_query?: string
-  owner_scope?: 'all' | 'mine' | 'unowned'
 }

@@ -3,7 +3,6 @@ import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import router, { handleRouterError } from '@/router'
-import SessionDetailView from '@/views/sessions/SessionDetailView.vue'
 
 vi.mock('@/api/auth', () => ({
   login: vi.fn(),
@@ -25,8 +24,6 @@ function createTestRouter() {
       { path: '/', name: 'Dashboard', component: { template: '<div>Dashboard</div>' } },
       { path: '/attribution', name: 'Attribution', component: { template: '<div>Attribution</div>' } },
       { path: '/repos', name: 'RepoList', component: { template: '<div>Repos</div>' } },
-      { path: '/sessions', name: 'SessionList', component: { template: '<div>Sessions</div>' } },
-      { path: '/sessions/:id', name: 'SessionDetail', component: { template: '<div>Session Detail</div>' } },
     ],
   })
 }
@@ -108,18 +105,16 @@ describe('Router Guards', () => {
     expect(localRouter.currentRoute.value.query.redirect).toBe('/repos')
   })
 
-  it('includes session detail route in the router', async () => {
-    const sessionDetail = router.getRoutes().find((r) => r.name === 'SessionDetail')
-    expect(sessionDetail?.path).toBe('/sessions/:id')
-    const componentLoader = sessionDetail?.components?.default as undefined | (() => Promise<{ default: unknown }>)
-    expect(componentLoader).toBeTypeOf('function')
-    const mod = await componentLoader!()
-    expect(mod.default).toBe(SessionDetailView)
-  })
-
   it('includes attribution route in the router', () => {
     const attribution = router.getRoutes().find((r) => r.name === 'Attribution')
     expect(attribution?.path).toBe('/attribution')
+  })
+
+  it('does not include legacy session routes in the router', () => {
+    const sessionList = router.getRoutes().find((r) => r.name === 'SessionList')
+    const sessionDetail = router.getRoutes().find((r) => r.name === 'SessionDetail')
+    expect(sessionList).toBeUndefined()
+    expect(sessionDetail).toBeUndefined()
   })
 
   it('includes oauth device route in the router', () => {
