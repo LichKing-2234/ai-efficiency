@@ -2,6 +2,7 @@ package toolusage
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -47,10 +48,10 @@ func TestCreateUsageEvent_DedupesByDedupeKey(t *testing.T) {
 		ObservedEndAt:   time.Unix(121, 0).UTC(),
 	}
 
-	if err := svc.CreateUsageEvent(ctx, req); err != nil {
+	if err := svc.CreateUsageEvent(ctx, scope.UserID, req); err != nil {
 		t.Fatalf("first insert: %v", err)
 	}
-	if err := svc.CreateUsageEvent(ctx, req); err != nil {
+	if err := svc.CreateUsageEvent(ctx, scope.UserID, req); err != nil {
 		t.Fatalf("second insert: %v", err)
 	}
 
@@ -131,5 +132,51 @@ func TestBindUsageEventsToCheckpoint_DoesNotCrossRepoScope(t *testing.T) {
 	}
 	if bound != 2 {
 		t.Fatalf("bound count = %d, want 2", bound)
+	}
+}
+
+func TestCreateUsageEvent_RejectsCrossUserScope(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	client := testdb.Open(t)
+	svc := NewService(client)
+
+	scope := seedToolUsageScope(t, client)
+	client.Session.Create().
+		SetRepoConfigID(scope.RepoConfigID).
+		SetBranch("main").
+		SetUserID(scope.UserID).
+		SetStartedAt(time.Unix(100, 0).UTC()).
+		SaveX(ctx)
+	client.CommitCheckpoint.Create().
+		SetEventID("cp-cross-user-scope").
+		SetWorkspaceID(scope.WorkspaceID).
+		SetRepoConfigID(scope.RepoConfigID).
+		SetCommitSha("seed-sha").
+		SetParentShas([]string{"base"}).
+		SetBindingSource("unbound").
+		SetCapturedAt(time.Unix(110, 0).UTC()).
+		SaveX(ctx)
+
+	req := CreateUsageEventRequest{
+		Tool:            "codex",
+		WorkspaceID:     scope.WorkspaceID,
+		ToolSessionID:   "codex-sess-1",
+		ToolEventID:     "resp-cross-user-1",
+		DedupeKey:       "codex:codex-sess-1:resp-cross-user-1",
+		UsageUnit:       "token",
+		InputTokens:     10,
+		OutputTokens:    5,
+		ObservedStartAt: time.Unix(120, 0).UTC(),
+		ObservedEndAt:   time.Unix(121, 0).UTC(),
+	}
+
+	err := svc.CreateUsageEvent(ctx, scope.UserID+999, req)
+	if err == nil {
+		t.Fatal("expected cross-user scope validation to fail")
+	}
+	if !errors.Is(err, ErrUsageEventForbidden) {
+		t.Fatalf("err = %v, want %v", err, ErrUsageEventForbidden)
 	}
 }

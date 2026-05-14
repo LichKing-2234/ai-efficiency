@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	"github.com/ai-efficiency/backend/ent"
+	"github.com/ai-efficiency/backend/ent/session"
+	"github.com/ai-efficiency/backend/ent/user"
 	"github.com/ai-efficiency/backend/internal/analysis"
 	"github.com/ai-efficiency/backend/internal/auth"
 	"github.com/ai-efficiency/backend/internal/middleware"
@@ -327,6 +329,18 @@ func TestSessionLifecycle(t *testing.T) {
 	s, err := env.client.Session.Get(context.Background(), mustParseUUID(sessionID))
 	if err != nil {
 		t.Fatalf("get session: %v", err)
+	}
+	ownedByCreator, err := env.client.Session.Query().
+		Where(
+			session.IDEQ(mustParseUUID(sessionID)),
+			session.HasUserWith(user.IDEQ(env.userID)),
+		).
+		Exist(context.Background())
+	if err != nil {
+		t.Fatalf("query session owner: %v", err)
+	}
+	if !ownedByCreator {
+		t.Fatal("expected created session to belong to the authenticated caller")
 	}
 	if s.Status != "completed" {
 		t.Errorf("session status = %s, want completed", s.Status)

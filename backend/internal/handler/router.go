@@ -186,7 +186,6 @@ func SetupRouter(
 
 	toolUsageGroup := protected.Group("/tool-usage-events")
 	toolUsageGroup.POST("", toolUsageHandler.Create)
-	toolUsageGroup.POST("/bind", toolUsageHandler.Bind)
 
 	if checkpointHandler != nil {
 		checkpointGroup := protected.Group("/checkpoints")

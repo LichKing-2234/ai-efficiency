@@ -2,6 +2,7 @@ package toolusage
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -45,13 +46,18 @@ type Service struct {
 	entClient *ent.Client
 }
 
+var ErrUsageEventForbidden = errors.New("tool usage event does not belong to authenticated user")
+
 func NewService(entClient *ent.Client) *Service {
 	return &Service{entClient: entClient}
 }
 
-func (s *Service) CreateUsageEvent(ctx context.Context, req CreateUsageEventRequest) error {
+func (s *Service) CreateUsageEvent(ctx context.Context, userID int, req CreateUsageEventRequest) error {
 	if s.entClient == nil {
 		return fmt.Errorf("create tool usage event: ent client is required")
+	}
+	if userID <= 0 {
+		return fmt.Errorf("create tool usage event: authenticated user is required")
 	}
 
 	workspaceID := strings.TrimSpace(req.WorkspaceID)
@@ -66,6 +72,9 @@ func (s *Service) CreateUsageEvent(ctx context.Context, req CreateUsageEventRequ
 	scope, err := s.resolveScopeByWorkspace(ctx, workspaceID)
 	if err != nil {
 		return err
+	}
+	if scope.UserID != userID {
+		return fmt.Errorf("create tool usage event: %w", ErrUsageEventForbidden)
 	}
 
 	exists, err := s.entClient.ToolUsageEvent.Query().

@@ -1,6 +1,6 @@
 # Sessionless Local Tool Attribution Implementation Plan
 
-> **Status:** In progress. Task 1 is partially implemented with a narrower first slice than the original draft: `tool_usage_events` and the backend `toolusage` service are landing first, while the standalone `workspaces` table has been deferred because the initial Ent modeling caused generated-code conflicts around `workspace_id`. Follow-up tasks should treat `workspace_id` as a business key first and only add a dedicated `workspaces` table after the ingest/bind path is stable.
+> **Status:** Completed for the merged first slice. PR #23 landed the initial sessionless local attribution rollout: `tool_usage_events`, backend `toolusage`, local artifact parsing, hook-triggered sync, and checkpoint-time binding. The standalone `workspaces` table remains deferred, and post-merge cleanup is tracked separately in `docs/superpowers/plans/2026-05-14-sessionless-attribution-post-merge-cleanup.md`.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

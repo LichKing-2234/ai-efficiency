@@ -15,6 +15,7 @@ import (
 	"github.com/ai-efficiency/backend/internal/analysis"
 	"github.com/ai-efficiency/backend/internal/analysis/llm"
 	"github.com/ai-efficiency/backend/internal/auth"
+	"github.com/ai-efficiency/backend/internal/checkpoint"
 	"github.com/ai-efficiency/backend/internal/config"
 	"github.com/ai-efficiency/backend/internal/efficiency"
 	"github.com/ai-efficiency/backend/internal/middleware"
@@ -75,7 +76,7 @@ func setupFullTestEnvWithDeployment(t *testing.T, deploymentHandler *DeploymentH
 		nil, // optimizer
 		"0000000000000000000000000000000000000000000000000000000000000000",
 		middleware.CORS(nil),
-		nil, nil, nil, nil, nil,
+		nil, nil, nil, nil, handlerCheckpoint(client),
 		deploymentHandler,
 	)
 
@@ -106,6 +107,10 @@ func setupFullTestEnvWithDeployment(t *testing.T, deploymentHandler *DeploymentH
 		token:      pair.AccessToken,
 		configPath: configPath,
 	}
+}
+
+func handlerCheckpoint(client *ent.Client) *CheckpointHandler {
+	return NewCheckpointHandler(checkpoint.NewService(client))
 }
 
 type fullTestEnv struct {

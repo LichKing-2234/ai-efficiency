@@ -1,6 +1,8 @@
 # Session / PR Attribution Operations
 
-This guide describes the current `ae-cli` session lifecycle, the local files it writes, and the normal recovery steps when session attribution data is missing or delayed.
+> This runbook covers the legacy `ae-cli start` + local-session-proxy workflow. It is not the source of truth for the newer sessionless local attribution pipeline.
+
+This guide describes the legacy `ae-cli` session lifecycle, the local files it writes, and the normal recovery steps when session-bound attribution data is missing or delayed.
 
 ## Local State
 
@@ -109,13 +111,13 @@ Anthropic-compatible request usage is also normalized now:
 
 `agent_metadata_events` remain commit/checkpoint-driven. They are created from collector snapshots attached to `post_commit`, not from request usage ingest.
 
-After the 2026-04-16 collector fix, `post_commit` in a workspace session now reads session-local Codex transcripts from `<workspace>/.ae/codex-home/` before falling back to `~/.codex`. A verified e2e run showed:
+After the 2026-04-16 collector fix, the legacy `post_commit` collector path can recover Codex transcript details from local Codex storage while producing commit-driven snapshots. A verified e2e run showed:
 
 - request usage was persisted under `session_usage_events` with matching cache / reasoning detail in `raw_metadata`
 - a real commit created `commit_checkpoints`
 - the same commit also created `agent_metadata_events` with non-zero `cached_input_tokens` and `reasoning_tokens`
 
-For Codex today, request-level cache / reasoning detail is available in `session_usage_events.raw_metadata`, `Raw Response` is available from `session_usage_events.raw_response` for new non-stream rows, and checkpoint-driven `agent_metadata_events` remain the richer post-commit snapshot source used to bind those facts to commits and PR attribution intervals.
+For Codex on this legacy path today, request-level cache / reasoning detail is available in `session_usage_events.raw_metadata`, `Raw Response` is available from `session_usage_events.raw_response` for new non-stream rows, and checkpoint-driven `agent_metadata_events` remain the richer post-commit snapshot source used to bind those facts to commits and PR attribution intervals. The newer sessionless attribution path no longer depends on a workspace-scoped Codex home as a required fact source.
 
 ## Recovery
 

@@ -76,6 +76,29 @@ func buildAttributionFixture(t *testing.T) attributionFixture {
 	root := fixtureRepoRoot(t)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	codexSessions := filepath.Join(home, ".codex", "sessions", "2026", "05", "13")
+	if err := os.MkdirAll(codexSessions, 0o700); err != nil {
+		t.Fatalf("mkdir codex home: %v", err)
+	}
+	codexJSONL := filepath.Join(codexSessions, "sess-1.jsonl")
+	codexBody := `{"type":"session_meta","payload":{"id":"sess-1","cwd":"` + root + `"}}
+{"type":"event_msg","payload":{"type":"token_count","response_id":"resp-1","info":{"last_token_usage":{"input_tokens":12,"cached_input_tokens":4,"output_tokens":5,"reasoning_output_tokens":2,"total_tokens":23}}}}`
+	if err := os.WriteFile(codexJSONL, []byte(codexBody), 0o600); err != nil {
+		t.Fatalf("write codex jsonl: %v", err)
+	}
+
+	return attributionFixture{
+		WorkspaceRoot: root,
+		HomeDir:       home,
+	}
+}
+
+func buildSQLiteOnlyAttributionFixture(t *testing.T) attributionFixture {
+	t.Helper()
+
+	root := fixtureRepoRoot(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
 	if err := os.MkdirAll(filepath.Join(home, ".codex"), 0o700); err != nil {
 		t.Fatalf("mkdir codex home: %v", err)
 	}
@@ -139,10 +162,6 @@ func (s *syncBackendClientStub) SendToolUsageEvent(_ context.Context, req client
 		return fmt.Errorf("upload failed for %s", req.DedupeKey)
 	}
 	s.uploads = append(s.uploads, req.DedupeKey)
-	return nil
-}
-
-func (s *syncBackendClientStub) BindToolUsageEvents(_ context.Context, _ client.BindToolUsageEventsRequest) error {
 	return nil
 }
 

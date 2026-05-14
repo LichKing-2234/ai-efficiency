@@ -199,9 +199,9 @@ func (h *SessionHandler) Create(c *gin.Context) {
 		SetBranch(req.Branch).
 		SetStartedAt(time.Now())
 
-	// Set user edge from JWT
-	if userID, exists := c.Get("user_id"); exists {
-		create.SetUserID(userID.(int))
+	// Set user edge from authenticated context when available.
+	if uc := auth.GetUserContext(c); uc != nil && uc.UserID > 0 {
+		create.SetUserID(uc.UserID)
 	}
 
 	// Set tool_configs if provided

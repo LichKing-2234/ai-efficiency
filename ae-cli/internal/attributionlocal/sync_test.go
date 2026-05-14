@@ -2,6 +2,8 @@ package attributionlocal
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -45,5 +47,51 @@ func TestSync_ReplayDropsAlreadyUploadedPrefixOnFailure(t *testing.T) {
 	}
 	if len(remaining) != 1 || remaining[0].DedupeKey != "second-dedupe-key" {
 		t.Fatalf("remaining = %+v, want only second item", remaining)
+	}
+}
+
+func TestSync_RunForWorkspaceWithoutClientSpoolsNewEvents(t *testing.T) {
+	fixture := buildAttributionFixture(t)
+	engine := &SyncEngine{
+		Scanner: NewScanner(),
+	}
+
+	if err := engine.RunForWorkspace(context.Background(), fixture.WorkspaceRoot); err != nil {
+		t.Fatalf("RunForWorkspace: %v", err)
+	}
+
+	spooled, err := loadSpooledEvents(filepath.Join(AttributionRootDir(), "spool.json"))
+	if err != nil {
+		t.Fatalf("loadSpooledEvents: %v", err)
+	}
+	if len(spooled) == 0 {
+		t.Fatal("expected new events to be spooled when no backend client is configured")
+	}
+}
+
+func TestSync_RunForWorkspaceSpoolsNewEventsWhenUploadFails(t *testing.T) {
+	fixture := buildAttributionFixture(t)
+
+	engine := &SyncEngine{
+		Scanner: NewScanner(),
+		Client: &syncBackendClientStub{
+			failOn: "codex-jsonl:sess-1:resp-1",
+		},
+	}
+
+	if err := engine.RunForWorkspace(context.Background(), fixture.WorkspaceRoot); err != nil {
+		t.Fatalf("RunForWorkspace: %v", err)
+	}
+
+	spoolPath := filepath.Join(AttributionRootDir(), "spool.json")
+	spooled, err := loadSpooledEvents(spoolPath)
+	if err != nil {
+		t.Fatalf("loadSpooledEvents: %v", err)
+	}
+	if len(spooled) != 1 || spooled[0].DedupeKey != "codex-jsonl:sess-1:resp-1" {
+		t.Fatalf("spooled = %+v, want the failed scanned event", spooled)
+	}
+	if _, err := os.Stat(filepath.Join(AttributionRootDir(), "scan-state.json")); err != nil {
+		t.Fatalf("expected scan state to be persisted after spooling, stat err=%v", err)
 	}
 }

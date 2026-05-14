@@ -10,15 +10,12 @@ import (
 )
 
 type ScanState struct {
-	CodexSQLite CodexSQLiteWatermark `json:"codex_sqlite"`
 }
 
-type Scanner struct {
-	codexSQLite *CodexSQLiteParser
-}
+type Scanner struct{}
 
 func NewScanner() *Scanner {
-	return &Scanner{codexSQLite: NewCodexSQLiteParser()}
+	return &Scanner{}
 }
 
 func (s *Scanner) ScanWorkspace(workspaceRoot string, state ScanState) ([]LocalToolUsageEvent, ScanState, error) {
@@ -28,19 +25,6 @@ func (s *Scanner) ScanWorkspace(workspaceRoot string, state ScanState) ([]LocalT
 		return nil, state, err
 	}
 	homeDir, _ := os.UserHomeDir()
-
-	codexDB := filepath.Join(homeDir, ".codex", "logs_2.sqlite")
-	if _, err := os.Stat(codexDB); err == nil {
-		items, wm, err := s.codexSQLite.Parse(codexDB, state.CodexSQLite)
-		if err != nil {
-			return nil, state, err
-		}
-		for _, item := range items {
-			item.WorkspaceID = workspaceID
-			out = append(out, item)
-		}
-		state.CodexSQLite = wm
-	}
 
 	for _, path := range findCodexJSONLFiles(workspaceRoot, homeDir) {
 		items, err := ParseCodexJSONLFallback(path, workspaceRoot)
@@ -104,11 +88,8 @@ func dedupeAndSort(items []LocalToolUsageEvent) []LocalToolUsageEvent {
 }
 
 func findCodexJSONLFiles(workspaceRoot, homeDir string) []string {
-	var out []string
-	workspaceCodex := filepath.Join(workspaceRoot, ".ae", "codex-home")
-	out = append(out, walkFiles(workspaceCodex, ".jsonl")...)
-	out = append(out, walkFiles(filepath.Join(homeDir, ".codex"), ".jsonl")...)
-	return out
+	_ = workspaceRoot
+	return walkFiles(filepath.Join(homeDir, ".codex"), ".jsonl")
 }
 
 func findClaudeJSONLFiles(homeDir string) []string {
