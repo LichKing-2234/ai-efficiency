@@ -2,6 +2,7 @@ package toolusage
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -31,6 +32,7 @@ func seedToolUsageScope(t *testing.T, client *ent.Client) testToolUsageScope {
 	t.Helper()
 
 	ctx := context.Background()
+	suffix := time.Now().UnixNano()
 
 	scm := client.ScmProvider.Create().
 		SetName("github-test").
@@ -40,16 +42,16 @@ func seedToolUsageScope(t *testing.T, client *ent.Client) testToolUsageScope {
 		SaveX(ctx)
 
 	user := client.User.Create().
-		SetUsername("alice").
-		SetEmail("alice@test.com").
+		SetUsername(fmt.Sprintf("alice-%d", suffix)).
+		SetEmail(fmt.Sprintf("alice-%d@test.com", suffix)).
 		SetAuthSource("ldap").
 		SaveX(ctx)
 
 	repoCfg := client.RepoConfig.Create().
 		SetScmProviderID(scm.ID).
-		SetName("repo").
-		SetFullName("org/repo").
-		SetCloneURL("https://github.com/org/repo.git").
+		SetName(fmt.Sprintf("repo-%d", suffix)).
+		SetFullName(fmt.Sprintf("org/repo-%d", suffix)).
+		SetCloneURL(fmt.Sprintf("https://github.com/org/repo-%d.git", suffix)).
 		SetDefaultBranch("main").
 		SaveX(ctx)
 

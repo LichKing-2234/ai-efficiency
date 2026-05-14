@@ -27,8 +27,9 @@ func (s *Scanner) ScanWorkspace(workspaceRoot string, state ScanState) ([]LocalT
 	if err != nil {
 		return nil, state, err
 	}
+	homeDir, _ := os.UserHomeDir()
 
-	codexDB := filepath.Join(os.Getenv("HOME"), ".codex", "logs_2.sqlite")
+	codexDB := filepath.Join(homeDir, ".codex", "logs_2.sqlite")
 	if _, err := os.Stat(codexDB); err == nil {
 		items, wm, err := s.codexSQLite.Parse(codexDB, state.CodexSQLite)
 		if err != nil {
@@ -41,7 +42,7 @@ func (s *Scanner) ScanWorkspace(workspaceRoot string, state ScanState) ([]LocalT
 		state.CodexSQLite = wm
 	}
 
-	for _, path := range findCodexJSONLFiles(workspaceRoot) {
+	for _, path := range findCodexJSONLFiles(workspaceRoot, homeDir) {
 		items, err := ParseCodexJSONLFallback(path, workspaceRoot)
 		if err != nil {
 			continue
@@ -52,7 +53,7 @@ func (s *Scanner) ScanWorkspace(workspaceRoot string, state ScanState) ([]LocalT
 		}
 	}
 
-	for _, path := range findClaudeJSONLFiles() {
+	for _, path := range findClaudeJSONLFiles(homeDir) {
 		items, err := ParseClaudeJSONL(path, workspaceRoot)
 		if err != nil {
 			continue
@@ -63,7 +64,7 @@ func (s *Scanner) ScanWorkspace(workspaceRoot string, state ScanState) ([]LocalT
 		}
 	}
 
-	for _, path := range findKiroJSONFiles() {
+	for _, path := range findKiroJSONFiles(homeDir) {
 		items, err := ParseKiroJSON(path, workspaceRoot)
 		if err != nil {
 			continue
@@ -102,20 +103,20 @@ func dedupeAndSort(items []LocalToolUsageEvent) []LocalToolUsageEvent {
 	return out
 }
 
-func findCodexJSONLFiles(workspaceRoot string) []string {
+func findCodexJSONLFiles(workspaceRoot, homeDir string) []string {
 	var out []string
 	workspaceCodex := filepath.Join(workspaceRoot, ".ae", "codex-home")
 	out = append(out, walkFiles(workspaceCodex, ".jsonl")...)
-	out = append(out, walkFiles(filepath.Join(os.Getenv("HOME"), ".codex"), ".jsonl")...)
+	out = append(out, walkFiles(filepath.Join(homeDir, ".codex"), ".jsonl")...)
 	return out
 }
 
-func findClaudeJSONLFiles() []string {
-	return walkFiles(filepath.Join(os.Getenv("HOME"), ".claude"), ".jsonl")
+func findClaudeJSONLFiles(homeDir string) []string {
+	return walkFiles(filepath.Join(homeDir, ".claude"), ".jsonl")
 }
 
-func findKiroJSONFiles() []string {
-	return walkFiles(filepath.Join(os.Getenv("HOME"), ".kiro"), ".json")
+func findKiroJSONFiles(homeDir string) []string {
+	return walkFiles(filepath.Join(homeDir, ".kiro"), ".json")
 }
 
 func walkFiles(root string, ext string) []string {

@@ -14,7 +14,7 @@ func ParseCodexJSONLFallback(path, workspaceRoot string) ([]LocalToolUsageEvent,
 	}
 
 	var sessionID string
-	var event *LocalToolUsageEvent
+	var events []LocalToolUsageEvent
 	for _, raw := range strings.Split(string(lines), "\n") {
 		raw = strings.TrimSpace(raw)
 		if raw == "" {
@@ -50,11 +50,15 @@ func ParseCodexJSONLFallback(path, workspaceRoot string) ([]LocalToolUsageEvent,
 			if len(selected) == 0 {
 				continue
 			}
-			event = &LocalToolUsageEvent{
+			responseID := strings.TrimSpace(asString(payload["response_id"]))
+			if responseID == "" {
+				responseID = filepath.Base(path)
+			}
+			events = append(events, LocalToolUsageEvent{
 				Tool:              "codex",
 				ToolSessionID:     sessionID,
-				ToolEventID:       strings.TrimSpace(asString(payload["response_id"])),
-				DedupeKey:         "codex-jsonl:" + sessionID + ":" + filepath.Base(path),
+				ToolEventID:       responseID,
+				DedupeKey:         "codex-jsonl:" + sessionID + ":" + responseID,
 				UsageUnit:         UsageUnitToken,
 				RequestCount:      1,
 				InputTokens:       asInt64(selected["input_tokens"]),
@@ -63,12 +67,12 @@ func ParseCodexJSONLFallback(path, workspaceRoot string) ([]LocalToolUsageEvent,
 				ReasoningTokens:   asInt64(selected["reasoning_output_tokens"]),
 				RawSourcePath:     path,
 				RawPayload:        payload,
-			}
+			})
 		}
 	}
 
-	if event == nil {
+	if len(events) == 0 {
 		return nil, nil
 	}
-	return []LocalToolUsageEvent{*event}, nil
+	return events, nil
 }

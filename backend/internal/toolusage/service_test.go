@@ -97,3 +97,39 @@ func TestBindUsageEventsToCheckpoint_BindsOnlyUnboundWindowMatches(t *testing.T)
 		t.Fatalf("bound row count = %d, want 3 including pre-bound row", boundCount)
 	}
 }
+
+func TestBindUsageEventsToCheckpoint_DoesNotCrossRepoScope(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	client := testdb.Open(t)
+	seed := createToolUsageBindingFixture(t, client)
+	svc := NewService(client)
+
+	otherScope := seedToolUsageScope(t, client)
+	client.ToolUsageEvent.Create().
+		SetTool("codex").
+		SetWorkspaceID(seed.WorkspaceID).
+		SetRepoConfigID(otherScope.RepoConfigID).
+		SetUserID(otherScope.UserID).
+		SetToolSessionID("other-sess").
+		SetToolEventID("other-resp").
+		SetDedupeKey("other:cross-repo").
+		SetUsageUnit("token").
+		SetObservedStartAt(seed.PreviousCapturedAt.Add(3 * time.Second)).
+		SetObservedEndAt(seed.PreviousCapturedAt.Add(4 * time.Second)).
+		SaveX(ctx)
+
+	bound, err := svc.BindUsageEventsToCheckpoint(ctx, BindUsageEventsRequest{
+		WorkspaceID:        seed.WorkspaceID,
+		CommitCheckpointID: seed.CheckpointID,
+		CommitCapturedAt:   seed.CommitCapturedAt,
+		PreviousCapturedAt: seed.PreviousCapturedAt,
+	})
+	if err != nil {
+		t.Fatalf("BindUsageEventsToCheckpoint: %v", err)
+	}
+	if bound != 2 {
+		t.Fatalf("bound count = %d, want 2", bound)
+	}
+}

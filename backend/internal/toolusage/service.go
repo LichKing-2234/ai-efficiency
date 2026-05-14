@@ -187,9 +187,15 @@ func (s *Service) BindUsageEventsToCheckpoint(ctx context.Context, req BindUsage
 		return 0, fmt.Errorf("bind tool usage events: workspace_id is required")
 	}
 
+	checkpoint, err := s.entClient.CommitCheckpoint.Get(ctx, req.CommitCheckpointID)
+	if err != nil {
+		return 0, fmt.Errorf("load checkpoint: %w", err)
+	}
+
 	items, err := s.entClient.ToolUsageEvent.Query().
 		Where(
 			toolusageevent.WorkspaceIDEQ(workspaceID),
+			toolusageevent.RepoConfigIDEQ(checkpoint.RepoConfigID),
 			toolusageevent.CommitCheckpointIDIsNil(),
 			toolusageevent.ObservedEndAtLTE(req.CommitCapturedAt),
 			toolusageevent.ObservedEndAtGT(req.PreviousCapturedAt),
