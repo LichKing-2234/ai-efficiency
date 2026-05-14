@@ -1,7 +1,7 @@
 # Legacy Session / Local Proxy Staged Cutover 设计文档
 
 **Date:** 2026-05-14  
-**Status:** Partially Implemented  
+**Status:** Implemented in codebase; historical schema cleanup remains  
 **Scope:** `ae-cli/`, `backend/`, `frontend/`, `docs/`  
 **Related:**  
 - [2026-03-26-session-pr-attribution-design.md](./2026-03-26-session-pr-attribution-design.md)  
@@ -52,6 +52,7 @@
   - `/sessions` 前端页与 backend 读接口
   - `/session-usage-events`、`/session-events`
   - local proxy package 与对应 CLI client 面
+  - legacy session lifecycle CLI entrypoints 与 hidden runtime data plane
 
 ## 目标
 

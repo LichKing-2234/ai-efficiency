@@ -158,12 +158,12 @@ sequenceDiagram
 - The backend OAuth handler now manages both short-lived authorization codes and short-lived device entries in memory.
 - Relay/sub2api remains the upstream auth/LLM/usage integration boundary and attribution fallback source.
 - SCM providers now reference reusable credentials instead of storing raw secret blobs inline.
-- Repo-to-`scm_provider` binding is now an admin-managed lifecycle step rather than a hard precondition for starting a session.
+- Repo-to-`scm_provider` binding is an admin-managed lifecycle step rather than a hard precondition for attribution.
 - SCM-dependent features such as scan, PR sync, optimize, and webhook registration require a bound repo and return `repo_unbound` when invoked before binding.
 
 ## Attribution Runtime Status
 
-The formal workflow uses the sessionless local attribution path that reads local tool artifacts and binds them to checkpoints without requiring a long-lived local daemon. The old session/local-proxy runtime has been retired from the product surface.
+The formal workflow uses the sessionless local attribution path that reads local tool artifacts and binds them to checkpoints without requiring a long-lived local daemon. The old session/local-proxy runtime has been retired.
 
 ```mermaid
 flowchart LR
@@ -197,14 +197,14 @@ flowchart LR
 | Relay integration | `backend/internal/relay` | Unified relay/sub2api adapter and usage/API key operations |
 | SCM integration | `backend/internal/scm`, `backend/internal/webhook`, `backend/internal/prsync` | SCM provider abstraction, webhook ingestion, PR synchronization |
 | Repo and analysis | `backend/internal/repo`, `backend/internal/analysis`, `backend/internal/efficiency` | Repo-to-provider binding, provider-backed clone/auth resolution, AI-friendliness scanning, efficiency aggregation and labeling |
-| Session and attribution | `backend/internal/sessionbootstrap`, `backend/internal/checkpoint`, `backend/internal/attribution` | Session bootstrap lifecycle, commit checkpoints, PR/session attribution |
+| Session and attribution | `backend/internal/sessionbootstrap`, `backend/internal/checkpoint`, `backend/internal/attribution` | Historical session bootstrap compatibility, commit checkpoints, PR/session attribution |
 | API surface | `backend/internal/handler`, `backend/internal/middleware` | HTTP handlers, routing, auth middleware, settings endpoints |
 
 ### Frontend
 
 | Area | Paths | Responsibility |
 | --- | --- | --- |
-| Views | `frontend/src/views` | Dashboard, repos, sessions, oauth, analysis-facing pages |
+| Views | `frontend/src/views` | Dashboard, attribution, repos, oauth, analysis-facing pages |
 | Data access | `frontend/src/api`, `frontend/src/stores` | Backend API clients, state management, request orchestration |
 | App shell | `frontend/src/components`, `frontend/src/router` | Layout, navigation, route composition |
 
@@ -213,8 +213,8 @@ flowchart LR
 | Area | Paths | Responsibility |
 | --- | --- | --- |
 | Auth and backend access | `ae-cli/internal/auth`, `ae-cli/internal/client` | Login flow, backend API calls, token usage |
-| Session runtime | `ae-cli/internal/session`, `ae-cli/internal/hooks`, `ae-cli/internal/collector` | Session lifecycle, workspace marker/hook management, local metadata collection |
-| Tool execution | `ae-cli/internal/dispatcher`, `ae-cli/internal/router`, `ae-cli/internal/shell`, `ae-cli/internal/tmux` | Command dispatch, environment routing, shell/tmux integration |
+| Sessionless runtime | `ae-cli/internal/session`, `ae-cli/internal/hooks`, `ae-cli/internal/collector` | Workspace marker helpers, hook management, local metadata collection |
+| Tool execution | `ae-cli/internal/router`, `ae-cli/internal/shell`, `ae-cli/internal/tmux` | Tool routing helpers, shell/tmux primitives, terminal utilities |
 
 ## Documentation Expectations
 

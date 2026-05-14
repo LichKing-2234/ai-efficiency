@@ -4,7 +4,7 @@
 
 **Goal:** Make sessionless attribution the only formal user-facing workflow and retire legacy session/local-proxy runtime surfaces.
 
-**Architecture:** The cutover now has two landed slices. First, the user entrypoints moved to `init/sync/doctor` and `Attribution` replaced `Sessions` in primary navigation. Second, the legacy session read surface, proxy data plane, and proxy-specific CLI/client paths were removed from the active product/runtime path while historical schema cleanup remains deferred.
+**Architecture:** The cutover now has multiple landed slices. First, the user entrypoints moved to `init/sync/doctor` and `Attribution` replaced `Sessions` in primary navigation. Second, the legacy session read surface, proxy data plane, and proxy-specific CLI/client paths were removed from the active product/runtime path. Third, dormant proxy, dispatcher, and toolconfig runtime packages were deleted. Historical schema cleanup remains deferred.
 
 **Tech Stack:** Go, Cobra, Gin, Vue 3, Pinia, Vitest, Markdown docs
 
@@ -201,6 +201,49 @@
 - [x] **Step 1: Remove local-proxy posting from post-commit and post-rewrite hook handling**
 - [x] **Step 2: Remove the hidden `ae-cli hook session-event` path**
 - [x] **Step 3: Re-run CLI/hooks verification to confirm pass**
+
+## Task 11: Remove Session Lifecycle And Read Surfaces Completely
+
+**Files:**
+- Modify: `backend/internal/handler/router.go`
+- Modify: `backend/internal/handler/handler_test.go`
+- Modify: `backend/internal/handler/handler_extended_test.go`
+- Modify: `backend/internal/handler/handler_boost_test.go`
+- Modify: `backend/internal/handler/handler_90_test.go`
+- Modify: `backend/internal/handler/handler_final_coverage_test.go`
+- Delete: `backend/internal/handler/session.go`
+- Delete: `backend/internal/handler/session_bootstrap_http_test.go`
+- Modify: `frontend/src/router/index.ts`
+- Modify: `frontend/src/__tests__/router.test.ts`
+- Modify: `frontend/src/__tests__/api-modules.test.ts`
+- Delete: `frontend/src/api/session.ts`
+- Delete: `frontend/src/views/sessions/SessionListView.vue`
+- Delete: `frontend/src/views/sessions/SessionDetailView.vue`
+- Delete: `frontend/src/__tests__/session-list-view.test.ts`
+- Delete: `frontend/src/__tests__/session-detail-view.test.ts`
+
+- [x] **Step 1: Remove backend `/sessions*` lifecycle/read routes from the public router**
+- [x] **Step 2: Delete session-only handler files and tests that exercised the retired surface**
+- [x] **Step 3: Remove frontend `/sessions` routes, API module, and pages**
+- [x] **Step 4: Re-run backend handler and frontend tests to confirm pass**
+
+## Task 12: Delete Dormant Proxy Runtime Packages
+
+**Files:**
+- Delete: `ae-cli/internal/proxy/*`
+- Delete: `ae-cli/internal/dispatcher/*`
+- Delete: `ae-cli/internal/toolconfig/*`
+- Modify: `ae-cli/internal/client/client.go`
+- Modify: `ae-cli/internal/client/client_test.go`
+- Modify: `ae-cli/internal/session/manager.go`
+- Delete: `ae-cli/internal/session/session_test.go`
+- Modify: `ae-cli/cmd/shell.go`
+- Modify: `ae-cli/internal/tmux/tmux_test.go`
+
+- [x] **Step 1: Remove client methods and test coverage that existed only for the retired proxy/session runtime**
+- [x] **Step 2: Replace `session.Manager` with minimal local-state helpers so it no longer drags proxy/runtime behavior into builds**
+- [x] **Step 3: Delete dormant proxy, dispatcher, and toolconfig packages**
+- [x] **Step 4: Re-run `ae-cli go test ./...` to confirm the CLI/runtime tree still passes**
 
 ## Verification
 
