@@ -3,6 +3,7 @@ package attributionlocal
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -130,9 +131,13 @@ func setupSyncEngineWithSpool(t *testing.T) syncEngineFixture {
 
 type syncBackendClientStub struct {
 	uploads []string
+	failOn  string
 }
 
 func (s *syncBackendClientStub) SendToolUsageEvent(_ context.Context, req client.ToolUsageEventRequest) error {
+	if s.failOn != "" && req.DedupeKey == s.failOn {
+		return fmt.Errorf("upload failed for %s", req.DedupeKey)
+	}
 	s.uploads = append(s.uploads, req.DedupeKey)
 	return nil
 }

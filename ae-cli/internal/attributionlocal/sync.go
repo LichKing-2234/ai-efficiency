@@ -31,8 +31,17 @@ func (e *SyncEngine) Replay(ctx context.Context, workspaceRoot string) error {
 	if err != nil {
 		return err
 	}
-	for _, ev := range spooled {
+	if len(spooled) == 0 {
+		return nil
+	}
+
+	remaining := make([]LocalToolUsageEvent, 0, len(spooled))
+	for idx, ev := range spooled {
 		if err := e.Client.SendToolUsageEvent(ctx, toClientUsageRequest(ev)); err != nil {
+			remaining = append(remaining, spooled[idx:]...)
+			if err := SaveJSON(e.spoolPath, remaining); err != nil {
+				return err
+			}
 			return err
 		}
 	}
