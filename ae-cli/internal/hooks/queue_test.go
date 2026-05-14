@@ -10,12 +10,12 @@ func TestQueuePersistsAndDedupByEventID(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
-	q, err := NewLocalQueue("sess-1")
+	q, err := NewWorkspaceQueue("ws-1")
 	if err != nil {
-		t.Fatalf("NewLocalQueue: %v", err)
+		t.Fatalf("NewWorkspaceQueue: %v", err)
 	}
 
-	ev := HookEvent{Kind: "post-commit", SessionID: "sess-1", CommitSHA: "deadbeef", EventID: "evt-1"}
+	ev := HookEvent{Kind: "post-commit", WorkspaceID: "ws-1", CommitSHA: "deadbeef", EventID: "evt-1"}
 	if err := q.Enqueue(ev); err != nil {
 		t.Fatalf("Enqueue: %v", err)
 	}
@@ -33,9 +33,9 @@ func TestQueuePersistsAndDedupByEventID(t *testing.T) {
 	}
 
 	// Reload should see the same item.
-	q2, err := NewLocalQueue("sess-1")
+	q2, err := NewWorkspaceQueue("ws-1")
 	if err != nil {
-		t.Fatalf("NewLocalQueue 2: %v", err)
+		t.Fatalf("NewWorkspaceQueue 2: %v", err)
 	}
 	items2, err := q2.List()
 	if err != nil {
@@ -55,14 +55,14 @@ func TestQueueRejectsMissingEventID(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
-	q, err := NewLocalQueue("sess-1")
+	q, err := NewWorkspaceQueue("ws-1")
 	if err != nil {
-		t.Fatalf("NewLocalQueue: %v", err)
+		t.Fatalf("NewWorkspaceQueue: %v", err)
 	}
 
 	// Task 5 contract: hook events must carry an explicit, stable event_id
 	// before entering the queue (no queue-generated fallback IDs).
-	ev := HookEvent{Kind: "post-commit", SessionID: "sess-1", CommitSHA: "deadbeef"}
+	ev := HookEvent{Kind: "post-commit", WorkspaceID: "ws-1", CommitSHA: "deadbeef"}
 	if err := q.Enqueue(ev); err == nil {
 		t.Fatalf("expected enqueue to fail due to missing event_id, got nil")
 	}
@@ -72,16 +72,16 @@ func TestQueueReadsLargeAgentSnapshotPayload(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
-	q, err := NewLocalQueue("sess-1")
+	q, err := NewWorkspaceQueue("ws-1")
 	if err != nil {
-		t.Fatalf("NewLocalQueue: %v", err)
+		t.Fatalf("NewWorkspaceQueue: %v", err)
 	}
 
 	ev := HookEvent{
-		Kind:      "post-commit",
-		SessionID: "sess-1",
-		CommitSHA: "deadbeef",
-		EventID:   "evt-large",
+		Kind:        "post-commit",
+		WorkspaceID: "ws-1",
+		CommitSHA:   "deadbeef",
+		EventID:     "evt-large",
 		AgentSnapshot: map[string]any{
 			"codex": map[string]any{
 				"raw_payload": map[string]any{

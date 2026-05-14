@@ -13,39 +13,37 @@ This document is the project-level architecture overview for `ai-efficiency`.
 
 1. Topic-specific current specs:
    - `docs/superpowers/specs/2026-05-14-legacy-session-staged-cutover-design.md`
+   - `docs/superpowers/specs/2026-05-13-sessionless-local-tool-attribution-design.md`
    - `docs/superpowers/specs/2026-04-15-oauth-device-login-design.md`
    - `docs/superpowers/specs/2026-04-14-llm-settings-runtime-editing-design.md`
-   - `docs/superpowers/specs/2026-04-02-local-session-proxy-design.md`
-   - `docs/superpowers/specs/2026-03-26-session-pr-attribution-design.md`
    - `docs/superpowers/specs/2026-03-24-oauth-cli-login-design.md`
 2. This architecture overview
-3. `docs/superpowers/specs/2026-03-17-ai-efficiency-platform-design.md` as the historical baseline
+3. Historical design context when needed:
+   - `docs/superpowers/specs/2026-04-02-local-session-proxy-design.md`
+   - `docs/superpowers/specs/2026-03-26-session-pr-attribution-design.md`
+   - `docs/superpowers/specs/2026-03-17-ai-efficiency-platform-design.md`
 
 ## Current System Context
 
 ```mermaid
 flowchart LR
     Browser["Browser UI<br/>Vue 3 + Vite + Pinia"]
-    CLI["ae-cli<br/>session tooling + hooks + collectors"]
-    Proxy["Local Session Proxy<br/>(ae-cli child process)"]
+    CLI["ae-cli<br/>login + init/sync/doctor"]
     Tool["Codex / Claude"]
     Backend["ai-efficiency backend<br/>Gin + Ent modular monolith"]
     DB[("ai_efficiency database<br/>PostgreSQL")]
     SCM["SCM providers<br/>GitHub / Bitbucket Server"]
     Relay["Relay provider<br/>sub2api HTTP APIs"]
-    Workspace["Developer workspace<br/>repo, git hooks, session marker"]
+    Workspace["Developer workspace<br/>repo, git hooks, local artifacts"]
 
     Browser <-->|REST API / OAuth| Backend
-    CLI <-->|login / bootstrap / events| Backend
-    CLI --> Proxy
-    Tool --> Proxy
-    Proxy --> Relay
-    Proxy --> Backend
+    CLI <-->|login / diagnostics| Backend
+    CLI --> Workspace
+    Tool --> Workspace
+    Workspace --> Backend
     Backend <--> DB
     Backend <--> SCM
     Backend <--> Relay
-    CLI --> Workspace
-    Workspace --> Backend
 ```
 
 ### Notes
@@ -62,6 +60,7 @@ flowchart LR
 - `deploy/` also includes non-production `dev` / `local` compose paths for local verification.
 - Public health endpoints expose liveness/readiness, and admin settings expose deployment status plus update controls.
 - `ae-cli login` now supports both browser PKCE and OAuth device flow. Headless Linux environments are expected to use `ae-cli login --device`, while desktop/browser-capable environments still default to PKCE.
+- Historical `sessionbootstrap` code and legacy session tables still exist in the repo/data model, but they are no longer wired into the current public runtime or frontend surface.
 
 ## Current Production Deployment
 
@@ -169,12 +168,14 @@ The formal workflow uses the sessionless local attribution path that reads local
 flowchart LR
     Codex["Codex"]
     Claude["Claude"]
+    Workspace["Workspace artifacts"]
     Hooks["Tool hooks + Git hooks"]
     Backend["ai-efficiency backend"]
     Relay["sub2api / relay"]
 
-    Codex --> Backend
-    Claude --> Backend
+    Codex --> Workspace
+    Claude --> Workspace
+    Workspace --> Backend
     Hooks --> Backend
     Relay --> Backend
 ```
@@ -197,7 +198,7 @@ flowchart LR
 | Relay integration | `backend/internal/relay` | Unified relay/sub2api adapter and usage/API key operations |
 | SCM integration | `backend/internal/scm`, `backend/internal/webhook`, `backend/internal/prsync` | SCM provider abstraction, webhook ingestion, PR synchronization |
 | Repo and analysis | `backend/internal/repo`, `backend/internal/analysis`, `backend/internal/efficiency` | Repo-to-provider binding, provider-backed clone/auth resolution, AI-friendliness scanning, efficiency aggregation and labeling |
-| Session and attribution | `backend/internal/sessionbootstrap`, `backend/internal/checkpoint`, `backend/internal/attribution` | Historical session bootstrap compatibility, commit checkpoints, PR/session attribution |
+| Session and attribution | `backend/internal/sessionbootstrap`, `backend/internal/checkpoint`, `backend/internal/attribution` | Historical session compatibility code/data model, commit checkpoints, PR/session attribution |
 | API surface | `backend/internal/handler`, `backend/internal/middleware` | HTTP handlers, routing, auth middleware, settings endpoints |
 
 ### Frontend
@@ -221,7 +222,7 @@ flowchart LR
 Update this file when any of the following changes:
 
 - component boundaries between frontend, backend, ae-cli, SCM, or relay
-- runtime flow for login, session bootstrap, hooks, attribution, or local proxying
+- runtime flow for login, hooks, attribution, or legacy compatibility boundaries
 - source-of-truth precedence across the core specs
 
 Also update the relevant spec in `docs/superpowers/specs/` when the change is contract-level rather than only diagram-level.

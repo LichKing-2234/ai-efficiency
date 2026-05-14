@@ -15,15 +15,16 @@
 - 本文不回写历史 session / local-proxy 设计文档，而是定义一个新的阶段性 cutover 合同。
 - 本文承接 [`2026-05-13-sessionless-local-tool-attribution-design.md`](./2026-05-13-sessionless-local-tool-attribution-design.md) 的方向，但明确区分：
   - sessionless attribution 是新的正式归因路径
-  - legacy session / local proxy 在 phase 1 中仅保留为历史兼容与排障对象
+  - legacy session / local proxy 最初在 phase 1 中仅保留为历史兼容与排障对象
 - 本文相对 [`2026-03-26-session-pr-attribution-design.md`](./2026-03-26-session-pr-attribution-design.md) 与 [`2026-04-02-local-session-proxy-design.md`](./2026-04-02-local-session-proxy-design.md) 的核心变化是：
   - `session` 不再是开发者的正式工作流主语
   - local proxy 不再是正式数据面
   - CLI、前端导航和文档都要切到 sessionless 主入口
+  - 当前代码已经进一步删除 public/runtime legacy surfaces；本文同时保留最初 staged cutover 的演进脉络
 
 ## 概述
 
-当前代码已经形成双轨：
+最初设计本文时，代码处于“legacy 轨 + sessionless 轨”并存的 cutover 中间态：
 
 1. legacy 轨：
    - `ae-cli start/stop/run/...`
@@ -38,7 +39,7 @@
    - checkpoint-time binding
    - PR attribution 读 checkpoint-bound usage
 
-问题不在于“双轨共存”，而在于**用户主入口仍然站在 legacy 轨上**。这会带来三个结果：
+当时的问题不在于“双轨共存”，而在于**用户主入口仍然站在 legacy 轨上**。这会带来三个结果：
 
 1. CLI 用户心智仍然是 “先 start 一个 session”
 2. 前端用户心智仍然是 “Sessions 是主视图”
@@ -54,21 +55,39 @@
   - local proxy package 与对应 CLI client 面
   - legacy session lifecycle CLI entrypoints 与 hidden runtime data plane
 
+## 当前实现落点
+
+当前代码已经超过最初 phase 1 的“兼容壳子”范围，落点如下：
+
+1. CLI：
+   - `ae-cli init` / `sync` / `doctor` 是正式入口
+   - `start/stop/run/attach/ps/shell/flush` 仅保留极薄迁移报错壳子
+2. Frontend：
+   - `Attribution` 取代 `Sessions` 成为正式入口
+   - `/sessions` 页面与对应 API wrapper 已删除
+   - Dashboard 不再把 `Active Sessions` 作为首页主指标
+3. Backend：
+   - `/sessions*`、`/session-usage-events`、`/session-events` 已从 public router 移除
+   - server runtime 不再启动 legacy session bootstrap lifecycle wiring
+4. 仍然暂存的 legacy footprint：
+   - 历史 session 表与 ent schema
+   - `backend/internal/sessionbootstrap` 等历史代码，作为后续 schema/data cleanup 的候选对象
+
 ## 目标
 
 1. `ae-cli` 正式入口改成 sessionless 工作流
 2. `Sessions` 退出前端主导航
 3. 新功能与新文档不再依赖 local proxy / session runtime
-4. legacy session / local proxy 保留最小兼容能力，避免一次性破坏历史数据和旧链接
+4. legacy session / local proxy 不再保留 public/runtime surface，只允许留下历史数据与后续清理所需代码
 5. PR attribution、repo attribution、workspace checkpoint 继续正常工作
 
 ## 非目标
 
 1. phase 1 不删除 legacy 数据表
-2. phase 1 不立即删除 backend 所有 `/sessions*` 读接口
-3. phase 1 不重写整个前端信息架构
-4. phase 1 不一次性删掉所有历史测试
-5. phase 1 不把 workspace / commit / repo attribution 新页面一步做到完整
+2. 不回写历史 spec，把它们强行改写成现状
+3. 不重写整个前端信息架构
+4. 不一次性删掉所有历史测试与 schema
+5. 不把 workspace / commit / repo attribution 新页面一步做到完整
 
 ## 核心决策
 
@@ -78,12 +97,13 @@
 | CLI 主入口 | 使用 `ae-cli init` / `ae-cli sync` / `ae-cli doctor` | 避免继续强化 `start/stop` 心智 |
 | 旧 CLI 命令 | 保留极薄兼容壳子，但从帮助和主文档中移除 | 受控切换，降低突然 break 风险 |
 | 前端导航 | `Sessions` 退出主导航，换成 `Attribution` | 用户主入口必须反映正式模型 |
-| `Sessions` 页面 | 降级为隐藏 debug 页面 | 历史排障仍有价值，但不应是主视图 |
+| `Sessions` 页面 | 已删除 | 当前产品不再暴露 session 读面 |
 | local proxy | 不再作为正式数据面 | 新归因只走 sessionless 链 |
-| backend legacy API | phase 1 保留读兼容，停止继续依赖写链路 | 避免一次性大爆炸 |
+| backend legacy API | public `/sessions*` 与 session 写链路已移除 | 防止“表面切换，实则双轨” |
+| server runtime | 不再启动 session bootstrap lifecycle service | 避免遗留死运行时继续消耗维护成本 |
 | schema cleanup | 延后到 phase 2 | 先切用户面和运行时，再做 destructive cleanup |
 
-## Phase 1 范围
+## 历史实施路径（保留 staged cutover 演进脉络）
 
 ### CLI
 
@@ -135,7 +155,7 @@ phase 1 处理：
 3. repo / PR 现有视图继续保留
 4. 文案上明确 attribution 是正式入口
 
-`Sessions`：
+`Sessions`（历史阶段设想）：
 
 1. 从侧边栏移除
 2. 路由保留
@@ -147,7 +167,7 @@ Dashboard：
 1. 不再把 `Active Sessions` 当成首页主指标
 2. phase 1 允许先替换成中性 attribution/usage 占位指标
 
-### Backend
+### Backend（历史阶段设想）
 
 phase 1 保留但降级：
 
@@ -166,7 +186,7 @@ phase 1 保留但降级：
    - commit rewrite
    - PR settlement
 
-### Runtime
+### Runtime（历史阶段设想）
 
 local proxy 在 phase 1 中不再是正式数据面。
 
@@ -178,7 +198,7 @@ local proxy 在 phase 1 中不再是正式数据面。
 
 ## 兼容策略
 
-### 为什么不立刻硬删
+### 为什么最初没有立刻硬删
 
 如果现在直接删除：
 
@@ -210,25 +230,24 @@ phase 1 采用 **入口切换 + 兼容壳子 + 历史只读** 的方式：
 
 1. 侧边栏不再显示 `Sessions`
 2. 新增 `Attribution` 导航入口
-3. `/sessions` 页面文案明确标成 legacy/debug
+3. 当前代码中 `/sessions` 页面已删除，不再作为测试对象
 
 ### Backend
 
 必须覆盖：
 
 1. `toolusage/checkpoint/handler` 现有正式归因链保持通过
-2. legacy session 读接口仍然可访问
+2. 当前代码中 legacy session public routes 已移除；历史兼容只剩数据/代码待清理对象
 3. 不再有新调用路径依赖 `/tool-usage-events/bind`
 
 ## Phase 2 方向
 
 phase 2 再做真正删除：
 
-1. 删除 local proxy runtime
-2. 删除 `start/stop/run/attach/ps/shell/flush` 命令实现
-3. 收缩或删除 `/sessions*`、`/session-usage-events`、`/session-events`
-4. 删除前端 `Sessions` 页面
-5. 清理 legacy schema / tests / docs
+1. 删除仍保留的 legacy session schema / ent edges / 相关迁移负担
+2. 评估是否彻底删除 `start/stop/run/attach/ps/shell/flush` 迁移壳子
+3. 清理 `backend/internal/sessionbootstrap` 等历史兼容代码
+4. 清理不再需要的 legacy tests / docs
 
 ## 风险
 
@@ -238,10 +257,10 @@ phase 2 再做真正删除：
 
 ## 验收标准
 
-phase 1 完成后，应满足：
+cutover 完成后，应满足：
 
 1. 新用户文档不再要求 `ae-cli start/stop/flush`
-2. `Sessions` 不再是主导航
+2. `Sessions` 不再是主导航，也不再是产品页面
 3. CLI 新正式入口变为 `init/sync/doctor`
 4. 旧 CLI 命令明确提示已下线
 5. 正式归因链只依赖 sessionless 路径

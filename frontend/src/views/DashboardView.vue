@@ -35,7 +35,7 @@ onMounted(async () => {
         </div>
         <div class="rounded-lg bg-white p-6 shadow">
           <p class="text-sm font-medium text-gray-500">Tracked Workflows</p>
-          <p class="mt-2 text-3xl font-semibold text-gray-900">{{ dashboard?.active_sessions ?? '--' }}</p>
+          <p class="mt-2 text-3xl font-semibold text-gray-900">{{ dashboard?.tracked_workflows ?? '--' }}</p>
         </div>
         <div class="rounded-lg bg-white p-6 shadow">
           <p class="text-sm font-medium text-gray-500">Avg AI Score</p>

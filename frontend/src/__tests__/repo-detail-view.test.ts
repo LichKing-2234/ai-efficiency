@@ -182,6 +182,7 @@ describe('RepoDetailView', () => {
       edges: {},
     }, pinia)
     expect(wrapper.text()).toContain('SCM Provider Binding')
+    expect(wrapper.text()).toContain('auto-discovered by ae-cli attribution sync')
     const scanButton = wrapper.findAll('button').find((b) => b.text() === 'Run Scan')
     expect(scanButton?.attributes('disabled')).toBeDefined()
   })

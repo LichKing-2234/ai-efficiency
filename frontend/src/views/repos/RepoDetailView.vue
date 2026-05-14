@@ -274,7 +274,7 @@ async function handleClearScanPrompt() {
           </span>
         </div>
         <p class="mt-3 text-sm text-gray-500">
-          {{ isRepoUnbound ? 'This repo was auto-discovered by ae-cli start and still needs an SCM provider binding.' : 'This repo is currently bound to an SCM provider.' }}
+          {{ isRepoUnbound ? 'This repo was auto-discovered by ae-cli attribution sync and still needs an SCM provider binding.' : 'This repo is currently bound to an SCM provider.' }}
         </p>
         <div class="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
           <select

@@ -147,8 +147,8 @@ def test_dashboard_page(page: Page):
            page.locator("h1:has-text('Welcome back')").is_visible())
     report("Dashboard card: Total Repos",
            page.locator("text=Total Repos").is_visible())
-    report("Dashboard card: Active Sessions",
-           page.locator("text=Active Sessions").is_visible())
+    report("Dashboard card: Tracked Workflows",
+           page.locator("text=Tracked Workflows").is_visible())
     report("Dashboard card: Avg AI Score",
            page.locator("text=Avg AI Score").is_visible())
     report("Dashboard card: AI PRs",

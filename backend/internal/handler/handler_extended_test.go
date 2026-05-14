@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/ai-efficiency/backend/ent/prrecord"
-	"github.com/google/uuid"
 )
 
 // =====================
@@ -162,16 +161,19 @@ func TestDashboardWithData(t *testing.T) {
 	ctx := context.Background()
 	repoID := createTestRepo(t, env.client)
 
-	// Create a session so active_sessions > 0
-	sessionID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440030")
-	_, err := env.client.Session.Create().
-		SetID(sessionID).
+	err := env.client.ToolUsageEvent.Create().
+		SetTool("codex").
+		SetWorkspaceID("ws-dashboard-1").
 		SetRepoConfigID(repoID).
-		SetBranch("main").
-		SetStartedAt(time.Now()).
-		Save(ctx)
+		SetUserID(env.userID).
+		SetToolSessionID("tool-sess-1").
+		SetDedupeKey("dashboard:tool:1").
+		SetUsageUnit("token").
+		SetObservedStartAt(time.Now().Add(-time.Minute)).
+		SetObservedEndAt(time.Now()).
+		Exec(ctx)
 	if err != nil {
-		t.Fatalf("create session: %v", err)
+		t.Fatalf("create tool usage event: %v", err)
 	}
 
 	// Create an AI PR so total_ai_prs > 0
@@ -201,9 +203,9 @@ func TestDashboardWithData(t *testing.T) {
 		t.Errorf("total_repos = %d, want >= 1", totalRepos)
 	}
 
-	activeSessions := int(data["active_sessions"].(float64))
-	if activeSessions < 1 {
-		t.Errorf("active_sessions = %d, want >= 1", activeSessions)
+	trackedWorkflows := int(data["tracked_workflows"].(float64))
+	if trackedWorkflows < 1 {
+		t.Errorf("tracked_workflows = %d, want >= 1", trackedWorkflows)
 	}
 
 	totalAIPRs := int(data["total_ai_prs"].(float64))
@@ -217,28 +219,34 @@ func TestDashboardCountsOnlyActiveSessions(t *testing.T) {
 	repoID := createTestRepo(t, env.client)
 	ctx := context.Background()
 
-	_, err := env.client.Session.Create().
-		SetID(uuid.MustParse("550e8400-e29b-41d4-a716-446655440100")).
+	err := env.client.ToolUsageEvent.Create().
+		SetTool("codex").
+		SetWorkspaceID("ws-dashboard-a").
 		SetRepoConfigID(repoID).
 		SetUserID(env.userID).
-		SetBranch("main").
-		SetStartedAt(time.Now()).
-		SetStatus("active").
-		Save(ctx)
+		SetToolSessionID("tool-a").
+		SetDedupeKey("dashboard:tool:a").
+		SetUsageUnit("token").
+		SetObservedStartAt(time.Now().Add(-2 * time.Minute)).
+		SetObservedEndAt(time.Now().Add(-time.Minute)).
+		Exec(ctx)
 	if err != nil {
-		t.Fatalf("create active session: %v", err)
+		t.Fatalf("create first tool usage event: %v", err)
 	}
 
-	_, err = env.client.Session.Create().
-		SetID(uuid.MustParse("550e8400-e29b-41d4-a716-446655440101")).
+	err = env.client.ToolUsageEvent.Create().
+		SetTool("claude").
+		SetWorkspaceID("ws-dashboard-a").
 		SetRepoConfigID(repoID).
 		SetUserID(env.userID).
-		SetBranch("release").
-		SetStartedAt(time.Now()).
-		SetStatus("completed").
-		Save(ctx)
+		SetToolSessionID("tool-b").
+		SetDedupeKey("dashboard:tool:b").
+		SetUsageUnit("token").
+		SetObservedStartAt(time.Now().Add(-30 * time.Second)).
+		SetObservedEndAt(time.Now()).
+		Exec(ctx)
 	if err != nil {
-		t.Fatalf("create completed session: %v", err)
+		t.Fatalf("create second tool usage event: %v", err)
 	}
 
 	w := doRequest(env, "GET", "/api/v1/efficiency/dashboard", nil)
@@ -248,8 +256,8 @@ func TestDashboardCountsOnlyActiveSessions(t *testing.T) {
 
 	resp := parseResponse(t, w)
 	data := resp["data"].(map[string]interface{})
-	activeSessions := int(data["active_sessions"].(float64))
-	if activeSessions != 1 {
-		t.Fatalf("active_sessions = %d, want %d", activeSessions, 1)
+	trackedWorkflows := int(data["tracked_workflows"].(float64))
+	if trackedWorkflows != 1 {
+		t.Fatalf("tracked_workflows = %d, want %d", trackedWorkflows, 1)
 	}
 }

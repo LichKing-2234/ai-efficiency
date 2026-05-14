@@ -76,7 +76,7 @@ func setupFullTestEnvWithDeployment(t *testing.T, deploymentHandler *DeploymentH
 		nil, // optimizer
 		"0000000000000000000000000000000000000000000000000000000000000000",
 		middleware.CORS(nil),
-		nil, nil, nil, nil, handlerCheckpoint(client),
+		nil, nil, nil, handlerCheckpoint(client),
 		deploymentHandler,
 	)
 

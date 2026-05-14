@@ -135,6 +135,18 @@ func collectSnapshotForHook(workspaceRoot string, sessionID string) *collector.S
 	return snapshot
 }
 
+func persistSnapshotCache(workspaceID, sessionID string, snapshot *collector.Snapshot) {
+	if snapshot == nil {
+		return
+	}
+	if strings.TrimSpace(workspaceID) != "" {
+		_ = collector.WriteWorkspaceCache(workspaceID, snapshot)
+	}
+	if strings.TrimSpace(sessionID) != "" {
+		_ = collector.WriteCache(sessionID, snapshot)
+	}
+}
+
 func snapshotPayload(snapshot *collector.Snapshot) map[string]any {
 	if snapshot == nil {
 		return nil
@@ -180,7 +192,7 @@ func (h *Handler) PostCommit(ctx context.Context, cwd string) error {
 		return nil
 	}
 
-	bindingSource := "marker"
+	bindingSource := "unbound"
 	m, err := session.ReadMarker(repoRoot)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -195,6 +207,8 @@ func (h *Handler) PostCommit(ctx context.Context, cwd string) error {
 			// Marker read errors should not block commits.
 			m = nil
 		}
+	} else {
+		bindingSource = bindingSourceFromMarker(strings.TrimSpace(m.SessionID))
 	}
 
 	sessionID := ""
@@ -203,11 +217,26 @@ func (h *Handler) PostCommit(ctx context.Context, cwd string) error {
 		sessionID = strings.TrimSpace(m.SessionID)
 		workspaceID = strings.TrimSpace(m.WorkspaceID)
 	}
-	if sessionID == "" {
-		// Unbound: no marker and no env bootstrap.
+	if workspaceID == "" {
+		gitDirAbs, gerr := gitOutput(cwd, "rev-parse", "--absolute-git-dir")
+		gitCommonRel, gcerr := gitOutput(cwd, "rev-parse", "--git-common-dir")
+		if gerr != nil || gcerr != nil {
+			return nil
+		}
+		gitCommonAbs, err := absUnder(repoRoot, gitCommonRel)
+		if err != nil {
+			return nil
+		}
+		workspaceID, err = session.DeriveWorkspaceID(repoRoot, repoRoot, gitDirAbs, gitCommonAbs)
+		if err != nil {
+			return nil
+		}
+	}
+	if workspaceID == "" {
 		return nil
 	}
 	snapshot := collectSnapshotForHook(repoRoot, sessionID)
+	persistSnapshotCache(workspaceID, sessionID, snapshot)
 	agentSnapshot := snapshotPayload(snapshot)
 
 	repoHint := repoEventHint(cwd, m)
@@ -237,7 +266,7 @@ func (h *Handler) PostCommit(ctx context.Context, cwd string) error {
 
 	if h == nil || h.uploader == nil {
 		// No uploader wired; behave like upload failure (queue best-effort).
-		q, err := NewLocalQueue(sessionID)
+		q, err := NewWorkspaceQueue(workspaceID)
 		if err == nil {
 			_ = q.Enqueue(ev)
 		}
@@ -246,7 +275,7 @@ func (h *Handler) PostCommit(ctx context.Context, cwd string) error {
 
 	if err := h.uploader.UploadHookEvent(ctx, ev); err != nil {
 		// Fail-open: queue for retry and do not fail the commit.
-		q, qerr := NewLocalQueue(sessionID)
+		q, qerr := NewWorkspaceQueue(workspaceID)
 		if qerr == nil {
 			_ = q.Enqueue(ev)
 		}
@@ -299,6 +328,10 @@ func (h *Handler) PostRewrite(ctx context.Context, cwd string, rewriteType strin
 			m = nil
 		}
 	}
+	bindingSource := "unbound"
+	if m != nil {
+		bindingSource = bindingSourceFromMarker(strings.TrimSpace(m.SessionID))
+	}
 
 	sessionID := ""
 	workspaceID := ""
@@ -306,10 +339,26 @@ func (h *Handler) PostRewrite(ctx context.Context, cwd string, rewriteType strin
 		sessionID = strings.TrimSpace(m.SessionID)
 		workspaceID = strings.TrimSpace(m.WorkspaceID)
 	}
-	if sessionID == "" {
+	if workspaceID == "" {
+		gitDirAbs, gerr := gitOutput(cwd, "rev-parse", "--absolute-git-dir")
+		gitCommonRel, gcerr := gitOutput(cwd, "rev-parse", "--git-common-dir")
+		if gerr != nil || gcerr != nil {
+			return nil
+		}
+		gitCommonAbs, err := absUnder(repoRoot, gitCommonRel)
+		if err != nil {
+			return nil
+		}
+		workspaceID, err = session.DeriveWorkspaceID(repoRoot, repoRoot, gitDirAbs, gitCommonAbs)
+		if err != nil {
+			return nil
+		}
+	}
+	if workspaceID == "" {
 		return nil
 	}
 	snapshot := collectSnapshotForHook(repoRoot, sessionID)
+	persistSnapshotCache(workspaceID, sessionID, snapshot)
 	agentSnapshot := snapshotPayload(snapshot)
 	repoHint := repoEventHint(cwd, m)
 	if repoHint == "" || rewriteType == "" {
@@ -326,7 +375,7 @@ func (h *Handler) PostRewrite(ctx context.Context, cwd string, rewriteType strin
 		return nil
 	}
 
-	q, qerr := NewLocalQueue(sessionID)
+	q, qerr := NewWorkspaceQueue(workspaceID)
 	if qerr != nil {
 		q = nil
 	}
@@ -347,7 +396,7 @@ func (h *Handler) PostRewrite(ctx context.Context, cwd string, rewriteType strin
 			SessionID:     sessionID,
 			RepoFullName:  repoHint,
 			WorkspaceID:   workspaceID,
-			BindingSource: "marker",
+			BindingSource: bindingSource,
 			AgentSnapshot: agentSnapshot,
 			RewriteType:   rewriteType,
 			OldCommitSHA:  oldSHA,
@@ -433,43 +482,43 @@ func (h *Handler) bootstrapMarkerFromEnv(repoRoot, cwd, headSHA string) (*sessio
 
 func (h *Handler) Flush(ctx context.Context, cwd string) error {
 	seen := make(map[string]struct{})
-	var sessionIDs []string
-	addSessionID := func(sessionID string) {
-		sessionID = strings.TrimSpace(sessionID)
-		if sessionID == "" {
+	var workspaceIDs []string
+	addWorkspaceID := func(workspaceID string) {
+		workspaceID = strings.TrimSpace(workspaceID)
+		if workspaceID == "" {
 			return
 		}
-		if _, ok := seen[sessionID]; ok {
+		if _, ok := seen[workspaceID]; ok {
 			return
 		}
-		seen[sessionID] = struct{}{}
-		sessionIDs = append(sessionIDs, sessionID)
+		seen[workspaceID] = struct{}{}
+		workspaceIDs = append(workspaceIDs, workspaceID)
 	}
 
 	if repoRoot, err := gitOutput(cwd, "rev-parse", "--show-toplevel"); err == nil {
 		if m, err := session.ReadMarker(repoRoot); err == nil && m != nil {
-			addSessionID(m.SessionID)
+			addWorkspaceID(m.WorkspaceID)
 		}
 	}
 
-	pendingSessionIDs, err := PendingSessionIDs()
+	pendingWorkspaceIDs, err := PendingWorkspaceIDs()
 	if err != nil {
 		return err
 	}
-	for _, sessionID := range pendingSessionIDs {
-		addSessionID(sessionID)
+	for _, workspaceID := range pendingWorkspaceIDs {
+		addWorkspaceID(workspaceID)
 	}
 
-	for _, sessionID := range sessionIDs {
-		if err := h.flushSession(ctx, sessionID); err != nil {
+	for _, workspaceID := range workspaceIDs {
+		if err := h.flushWorkspace(ctx, workspaceID); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (h *Handler) flushSession(ctx context.Context, sessionID string) error {
-	q, err := NewLocalQueue(sessionID)
+func (h *Handler) flushWorkspace(ctx context.Context, workspaceID string) error {
+	q, err := NewWorkspaceQueue(workspaceID)
 	if err != nil {
 		return err
 	}
@@ -492,4 +541,20 @@ func (h *Handler) flushSession(ctx context.Context, sessionID string) error {
 		}
 	}
 	return q.rewrite(keep)
+}
+
+func bindingSourceFromMarker(sessionID string) string {
+	if strings.TrimSpace(sessionID) != "" {
+		return "marker"
+	}
+	return "unbound"
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }

@@ -1,10 +1,12 @@
 # Legacy Session / Local Proxy Staged Cutover Implementation Plan
 
+> **Status:** Completed. The codebase moved beyond the original phase-1 cutover: `init/sync/doctor` are the formal CLI path, `Attribution` replaced `Sessions`, frontend/backend `/sessions*` and session write routes were removed, dormant proxy runtime packages were deleted, and backend server wiring no longer starts the legacy session bootstrap lifecycle.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make sessionless attribution the only formal user-facing workflow and retire legacy session/local-proxy runtime surfaces.
 
-**Architecture:** The cutover now has multiple landed slices. First, the user entrypoints moved to `init/sync/doctor` and `Attribution` replaced `Sessions` in primary navigation. Second, the legacy session read surface, proxy data plane, and proxy-specific CLI/client paths were removed from the active product/runtime path. Third, dormant proxy, dispatcher, and toolconfig runtime packages were deleted. Historical schema cleanup remains deferred.
+**Architecture:** The cutover landed in multiple slices. First, the user entrypoints moved to `init/sync/doctor` and `Attribution` replaced `Sessions` in primary navigation. Second, the legacy session read surface, proxy data plane, and proxy-specific CLI/client paths were removed from the active product/runtime path. Third, dormant proxy, dispatcher, and toolconfig runtime packages were deleted. Fourth, the backend server stopped wiring the unused session bootstrap lifecycle runtime. Historical schema cleanup remains deferred.
 
 **Tech Stack:** Go, Cobra, Gin, Vue 3, Pinia, Vitest, Markdown docs
 
@@ -253,6 +255,6 @@
 
 ## Known Remaining Gaps
 
-- Phase 1 does not delete legacy backend tables or read APIs.
-- Phase 1 does not remove proxy implementation files; it only removes them from the formal user workflow.
-- Phase 1 does not yet build a full workspace/commit attribution UI beyond the new `Attribution` entrypoint and messaging.
+- Legacy backend tables and ent schema still exist and have not been destructively cleaned.
+- `backend/internal/sessionbootstrap` historical code still exists in-tree even though it is no longer wired into the public runtime.
+- The frontend still does not provide a richer workspace/commit attribution UI beyond the `Attribution` landing entrypoint and existing repo/PR surfaces.

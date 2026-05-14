@@ -6,7 +6,6 @@ import (
 	"github.com/ai-efficiency/backend/internal/efficiency"
 	"github.com/ai-efficiency/backend/internal/oauth"
 	"github.com/ai-efficiency/backend/internal/repo"
-	"github.com/ai-efficiency/backend/internal/sessionbootstrap"
 	"github.com/ai-efficiency/backend/internal/toolusage"
 	"github.com/ai-efficiency/backend/internal/web"
 	"github.com/ai-efficiency/backend/internal/webhook"
@@ -36,7 +35,6 @@ func SetupRouter(
 	oauthHandler *oauth.Handler,
 	providerHandler *ProviderHandler,
 	adminSettingsHandler *AdminSettingsHandler,
-	sessionBootstrapSvc *sessionbootstrap.Service,
 	checkpointHandler *CheckpointHandler,
 	deploymentHandler *DeploymentHandler,
 ) *gin.Engine {
