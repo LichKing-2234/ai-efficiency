@@ -106,7 +106,11 @@ watch(
           &larr; Back to Sessions
         </button>
         <div class="mt-2">
-          <h1 class="text-2xl font-bold text-gray-900">Session {{ session.id }}</h1>
+          <h1 class="text-2xl font-bold text-gray-900">Legacy Session Debug</h1>
+          <p class="mt-1 text-xs text-amber-700">
+            This page reflects legacy session/local-proxy state and is no longer the primary workflow surface.
+          </p>
+          <p class="mt-2 text-sm font-mono text-gray-500">Session {{ session.id }}</p>
           <p class="text-sm text-gray-500">{{ session.status }} · {{ session.branch }}</p>
         </div>
       </div>

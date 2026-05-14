@@ -19,8 +19,8 @@ AI Efficiency Platform (`ai-efficiency`) is a standalone system for measuring an
 
 - The backend is the central orchestration point for auth, repo management, analysis, attribution, deployment control, and webhook handling.
 - The frontend is built separately and embedded into the backend binary for deployment.
-- `ae-cli start` remains the primary interactive CLI workflow: it bootstraps a session with the backend, writes local workspace/runtime state, and can start a local session proxy for Codex and Claude.
-- A newer sessionless local attribution path has landed partially for tool-local ingest and checkpoint binding, but it has not yet replaced the session/local-proxy workflow.
+- The formal CLI workflow is now sessionless: `ae-cli init`, `ae-cli sync`, and `ae-cli doctor`.
+- Legacy `ae-cli start/stop/run/...` commands remain only as hidden compatibility shims that return migration guidance.
 - Production deployment currently supports Docker Compose and Linux systemd.
 
 ## Repository Layout

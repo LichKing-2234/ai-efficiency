@@ -70,8 +70,8 @@
 **Files:**
 - Create: `docs/superpowers/specs/2026-05-14-legacy-session-staged-cutover-design.md`
 
-- [ ] **Step 1: Save the approved phase-1 cutover design**
-- [ ] **Step 2: Self-check the spec for contradictions with current architecture docs**
+- [x] **Step 1: Save the approved phase-1 cutover design**
+- [x] **Step 2: Self-check the spec for contradictions with current architecture docs**
 
 ## Task 2: Add Public Sessionless CLI Entry Points
 
@@ -82,10 +82,10 @@
 - Create: `ae-cli/cmd/doctor.go`
 - Modify: `ae-cli/cmd/*_test.go` and/or `ae-cli/cmd/version_test.go`
 
-- [ ] **Step 1: Write failing CLI tests for `init`, `sync`, and `doctor` command registration**
-- [ ] **Step 2: Run the targeted CLI tests to verify failure**
-- [ ] **Step 3: Implement minimal public commands using existing hook/sync/runtime helpers**
-- [ ] **Step 4: Re-run targeted CLI tests to verify pass**
+- [x] **Step 1: Write failing CLI tests for `init`, `sync`, and `doctor` command registration**
+- [x] **Step 2: Run the targeted CLI tests to verify failure**
+- [x] **Step 3: Implement minimal public commands using existing hook/sync/runtime helpers**
+- [x] **Step 4: Re-run targeted CLI tests to verify pass**
 
 ## Task 3: Retire Legacy CLI Commands From The User Workflow
 
@@ -99,10 +99,10 @@
 - Modify: `ae-cli/cmd/flush.go`
 - Modify: `ae-cli/cmd/*_test.go` and/or `ae-cli/cmd/version_test.go`
 
-- [ ] **Step 1: Write failing tests that old commands now return explicit migration guidance**
-- [ ] **Step 2: Run the targeted CLI tests to verify failure**
-- [ ] **Step 3: Replace legacy command bodies with consistent “legacy workflow retired” errors that point to `init/sync/doctor`**
-- [ ] **Step 4: Re-run targeted CLI tests to verify pass**
+- [x] **Step 1: Write failing tests that old commands now return explicit migration guidance**
+- [x] **Step 2: Run the targeted CLI tests to verify failure**
+- [x] **Step 3: Replace legacy command bodies with consistent “legacy workflow retired” errors that point to `init/sync/doctor`**
+- [x] **Step 4: Re-run targeted CLI tests to verify pass**
 
 ## Task 4: Switch Frontend Primary Navigation To Attribution
 
@@ -113,10 +113,10 @@
 - Modify: `frontend/src/__tests__/app-sidebar.test.ts`
 - Modify: `frontend/src/__tests__/router.test.ts`
 
-- [ ] **Step 1: Write failing frontend tests for `Attribution` nav visibility and `Sessions` nav removal**
-- [ ] **Step 2: Run the targeted frontend tests to verify failure**
-- [ ] **Step 3: Add the `Attribution` route and sidebar entry, keeping legacy session routes reachable but not primary**
-- [ ] **Step 4: Re-run targeted frontend tests to verify pass**
+- [x] **Step 1: Write failing frontend tests for `Attribution` nav visibility and `Sessions` nav removal**
+- [x] **Step 2: Run the targeted frontend tests to verify failure**
+- [x] **Step 3: Add the `Attribution` route and sidebar entry, keeping legacy session routes reachable but not primary**
+- [x] **Step 4: Re-run targeted frontend tests to verify pass**
 
 ## Task 5: Downgrade Session Pages To Legacy Debug
 
@@ -126,10 +126,10 @@
 - Modify: `frontend/src/__tests__/session-list-view.test.ts`
 - Modify: `frontend/src/__tests__/session-detail-view.test.ts`
 
-- [ ] **Step 1: Write failing view tests for legacy/debug wording**
-- [ ] **Step 2: Run the targeted frontend tests to verify failure**
-- [ ] **Step 3: Update page titles and helper text so `Sessions` is clearly marked as legacy/debug**
-- [ ] **Step 4: Re-run targeted frontend tests to verify pass**
+- [x] **Step 1: Write failing view tests for legacy/debug wording**
+- [x] **Step 2: Run the targeted frontend tests to verify failure**
+- [x] **Step 3: Update page titles and helper text so `Sessions` is clearly marked as legacy/debug**
+- [x] **Step 4: Re-run targeted frontend tests to verify pass**
 
 ## Task 6: Remove Session As A Primary Dashboard Metric
 
@@ -137,10 +137,10 @@
 - Modify: `frontend/src/views/DashboardView.vue`
 - Modify: `frontend/src/__tests__/dashboard-view.test.ts`
 
-- [ ] **Step 1: Write failing dashboard tests for the new top-level metric wording**
-- [ ] **Step 2: Run the targeted frontend tests to verify failure**
-- [ ] **Step 3: Replace `Active Sessions` with a neutral attribution/usage-facing metric presentation**
-- [ ] **Step 4: Re-run targeted frontend tests to verify pass**
+- [x] **Step 1: Write failing dashboard tests for the new top-level metric wording**
+- [x] **Step 2: Run the targeted frontend tests to verify failure**
+- [x] **Step 3: Replace `Active Sessions` with a neutral attribution/usage-facing metric presentation**
+- [x] **Step 4: Re-run targeted frontend tests to verify pass**
 
 ## Task 7: Align Docs And User-Facing Copy
 
@@ -149,15 +149,15 @@
 - Modify: `docs/architecture.md`
 - Modify: `docs/ae-cli/session-pr-attribution.md`
 
-- [ ] **Step 1: Update user-facing docs so they no longer recommend `ae-cli start/stop/flush`**
-- [ ] **Step 2: Mark local proxy and session pages as compatibility/debug paths only**
-- [ ] **Step 3: Re-read the changed docs for consistency with the new spec**
+- [x] **Step 1: Update user-facing docs so they no longer recommend `ae-cli start/stop/flush`**
+- [x] **Step 2: Mark local proxy and session pages as compatibility/debug paths only**
+- [x] **Step 3: Re-read the changed docs for consistency with the new spec**
 
 ## Verification
 
-- [ ] `cd /Users/admin/ai-efficiency/ae-cli && go test ./cmd ./internal/hooks ./internal/attributionlocal ./internal/client`
-- [ ] `cd /Users/admin/ai-efficiency/frontend && pnpm test`
-- [ ] `cd /Users/admin/ai-efficiency/backend && AE_TEST_POSTGRES_DSN='postgres://postgres:postgres@127.0.0.1:15432/postgres?sslmode=disable' go test ./internal/toolusage ./internal/checkpoint ./internal/handler`
+- [x] `cd /Users/admin/ai-efficiency/ae-cli && go test ./cmd ./internal/hooks ./internal/attributionlocal ./internal/client`
+- [x] `cd /Users/admin/ai-efficiency/frontend && pnpm test`
+- [x] `cd /Users/admin/ai-efficiency/backend && AE_TEST_POSTGRES_DSN='postgres://postgres:postgres@127.0.0.1:15432/postgres?sslmode=disable' go test ./internal/toolusage ./internal/checkpoint ./internal/handler`
 
 ## Known Remaining Gaps
 

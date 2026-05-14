@@ -1,6 +1,13 @@
 # Session / PR Attribution Operations
 
 > This runbook covers the legacy `ae-cli start` + local-session-proxy workflow. It is not the source of truth for the newer sessionless local attribution pipeline.
+>
+> Formal day-to-day CLI entrypoints are now:
+> - `ae-cli init`
+> - `ae-cli sync`
+> - `ae-cli doctor`
+>
+> Legacy `start/stop/flush` commands are compatibility/debug shims only.
 
 This guide describes the legacy `ae-cli` session lifecycle, the local files it writes, and the normal recovery steps when session-bound attribution data is missing or delayed.
 
@@ -21,10 +28,10 @@ The runtime bundle may contain sensitive env values and local proxy metadata, so
 ## Normal Flow
 
 1. Run `ae-cli login` to create or refresh `~/.ae-cli/token.json`.
-2. Run `ae-cli start` inside a repo or worktree.
+2. If you are explicitly debugging historical legacy behavior, run `ae-cli start` inside a repo or worktree.
 3. `ae-cli start` bootstraps the backend session, writes the workspace marker, writes the runtime bundle, installs shared git hooks, and starts the local session proxy.
 4. Commit normally. Git hooks upload checkpoints fail-open; if the backend or proxy is temporarily unavailable, events are queued locally.
-5. If local queues accumulate, run `ae-cli flush` to replay queued hook events.
+5. If local queues accumulate, the historical path used `ae-cli flush` to replay queued hook events.
 6. End the session with `ae-cli stop` or let `ae-cli` best-effort stop it during shutdown.
 7. Trigger PR settlement with `POST /api/v1/prs/:id/settle` from the backend API or the repo detail UI.
 
@@ -32,7 +39,7 @@ The runtime bundle may contain sensitive env values and local proxy metadata, so
 
 - Marker exists under `/.ae/session.json` in the active workspace.
 - Runtime bundle exists under `~/.ae-cli/runtime/<session-id>/runtime.json`.
-- The current session appears in the Sessions UI and shows the expected provider, key ID, runtime ref, and last-seen metadata.
+- The current session appears in the legacy Sessions UI and shows the expected provider, key ID, runtime ref, and last-seen metadata.
 - `commit_checkpoints` rows are created after commits.
 - `session_usage_events` and `session_events` continue arriving while the local proxy is active.
 - The session detail page shows recent `Agent Usage Snapshots` as well as `Session Usage`, so cached-input / reasoning token snapshots should appear there when collectors have reported them.
@@ -137,6 +144,7 @@ ae-cli start
 - Replay queued hook events with:
 
 ```bash
+# historical legacy path only
 ae-cli flush
 ```
 
@@ -154,7 +162,7 @@ ae-cli flush
 ### Credential or provider issues
 
 - Session-scoped provider credentials are resolved lazily through `GET /api/v1/sessions/:id/provider-credentials?platform=...`.
-- If a tool stops receiving credentials, restart the session so `ae-cli` can re-bootstrap local state and re-resolve provider credentials on demand.
+- If a tool stops receiving credentials on the legacy path, restart the session so `ae-cli` can re-bootstrap local state and re-resolve provider credentials on demand.
 
 ## Manual Settlement Checklist
 
@@ -162,6 +170,6 @@ When PR attribution looks incomplete, verify the following before re-running set
 
 1. The target PR has matching `commit_checkpoints` for the relevant commit SHAs.
 2. The related session rows still have the expected `provider_name`, `relay_api_key_id`, and `runtime_ref`.
-3. Local queues are drained with `ae-cli flush`.
+3. Local queues are drained on the old path with `ae-cli flush`.
 4. The backend can read the PR repo config and SCM provider normally.
 5. `POST /api/v1/prs/:id/settle` returns a result with `attribution_status`, `primary_token_count`, `primary_token_cost`, and `validation_summary`.

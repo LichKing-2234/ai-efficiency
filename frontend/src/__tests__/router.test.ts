@@ -23,6 +23,7 @@ function createTestRouter() {
     routes: [
       { path: '/login', name: 'Login', component: { template: '<div>Login</div>' }, meta: { public: true } },
       { path: '/', name: 'Dashboard', component: { template: '<div>Dashboard</div>' } },
+      { path: '/attribution', name: 'Attribution', component: { template: '<div>Attribution</div>' } },
       { path: '/repos', name: 'RepoList', component: { template: '<div>Repos</div>' } },
       { path: '/sessions', name: 'SessionList', component: { template: '<div>Sessions</div>' } },
       { path: '/sessions/:id', name: 'SessionDetail', component: { template: '<div>Session Detail</div>' } },
@@ -114,6 +115,11 @@ describe('Router Guards', () => {
     expect(componentLoader).toBeTypeOf('function')
     const mod = await componentLoader!()
     expect(mod.default).toBe(SessionDetailView)
+  })
+
+  it('includes attribution route in the router', () => {
+    const attribution = router.getRoutes().find((r) => r.name === 'Attribution')
+    expect(attribution?.path).toBe('/attribution')
   })
 
   it('includes oauth device route in the router', () => {

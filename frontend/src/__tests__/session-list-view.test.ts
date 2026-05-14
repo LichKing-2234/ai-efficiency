@@ -82,6 +82,9 @@ describe('SessionListView', () => {
     })
     await flushPromises()
 
+    expect(wrapper.text()).toContain('Legacy Sessions')
+    expect(wrapper.text()).toContain('legacy/debug')
+
     const viewButton = wrapper.findAll('button').find((b) => b.text() === 'View')
     expect(viewButton).toBeTruthy()
     await viewButton!.trigger('click')

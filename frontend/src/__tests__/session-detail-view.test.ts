@@ -142,6 +142,8 @@ describe('SessionDetailView', () => {
     })
     await flushPromises()
 
+    expect(wrapper.text()).toContain('Legacy Session Debug')
+    expect(wrapper.text()).toContain('legacy session/local-proxy')
     expect(wrapper.text()).toContain('codex')
     expect(wrapper.text()).toContain('/workspace/root')
     expect(wrapper.text()).toContain('abc12345def67890')

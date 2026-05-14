@@ -47,6 +47,11 @@ const router = createRouter({
       component: () => import('@/views/repos/RepoListView.vue'),
     },
     {
+      path: '/attribution',
+      name: 'Attribution',
+      component: () => import('@/views/attribution/AttributionLandingView.vue'),
+    },
+    {
       path: '/repos/:id',
       name: 'RepoDetail',
       component: () => import('@/views/repos/RepoDetailView.vue'),
