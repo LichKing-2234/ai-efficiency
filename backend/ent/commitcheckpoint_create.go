@@ -13,6 +13,7 @@ import (
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/session"
+	"github.com/ai-efficiency/backend/ent/toolusageevent"
 	"github.com/google/uuid"
 )
 
@@ -129,6 +130,21 @@ func (ccc *CommitCheckpointCreate) SetSession(s *Session) *CommitCheckpointCreat
 // SetRepoConfig sets the "repo_config" edge to the RepoConfig entity.
 func (ccc *CommitCheckpointCreate) SetRepoConfig(r *RepoConfig) *CommitCheckpointCreate {
 	return ccc.SetRepoConfigID(r.ID)
+}
+
+// AddToolUsageEventIDs adds the "tool_usage_events" edge to the ToolUsageEvent entity by IDs.
+func (ccc *CommitCheckpointCreate) AddToolUsageEventIDs(ids ...int) *CommitCheckpointCreate {
+	ccc.mutation.AddToolUsageEventIDs(ids...)
+	return ccc
+}
+
+// AddToolUsageEvents adds the "tool_usage_events" edges to the ToolUsageEvent entity.
+func (ccc *CommitCheckpointCreate) AddToolUsageEvents(t ...*ToolUsageEvent) *CommitCheckpointCreate {
+	ids := make([]int, len(t))
+	for i := range t {
+		ids[i] = t[i].ID
+	}
+	return ccc.AddToolUsageEventIDs(ids...)
 }
 
 // Mutation returns the CommitCheckpointMutation object of the builder.
@@ -307,6 +323,22 @@ func (ccc *CommitCheckpointCreate) createSpec() (*CommitCheckpoint, *sqlgraph.Cr
 			edge.Target.Nodes = append(edge.Target.Nodes, k)
 		}
 		_node.RepoConfigID = nodes[0]
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := ccc.mutation.ToolUsageEventsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   commitcheckpoint.ToolUsageEventsTable,
+			Columns: []string{commitcheckpoint.ToolUsageEventsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(toolusageevent.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
 		_spec.Edges = append(_spec.Edges, edge)
 	}
 	return _node, _spec

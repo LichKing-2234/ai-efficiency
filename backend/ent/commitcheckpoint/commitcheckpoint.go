@@ -41,6 +41,8 @@ const (
 	EdgeSession = "session"
 	// EdgeRepoConfig holds the string denoting the repo_config edge name in mutations.
 	EdgeRepoConfig = "repo_config"
+	// EdgeToolUsageEvents holds the string denoting the tool_usage_events edge name in mutations.
+	EdgeToolUsageEvents = "tool_usage_events"
 	// Table holds the table name of the commitcheckpoint in the database.
 	Table = "commit_checkpoints"
 	// SessionTable is the table that holds the session relation/edge.
@@ -57,6 +59,13 @@ const (
 	RepoConfigInverseTable = "repo_configs"
 	// RepoConfigColumn is the table column denoting the repo_config relation/edge.
 	RepoConfigColumn = "repo_config_id"
+	// ToolUsageEventsTable is the table that holds the tool_usage_events relation/edge.
+	ToolUsageEventsTable = "tool_usage_events"
+	// ToolUsageEventsInverseTable is the table name for the ToolUsageEvent entity.
+	// It exists in this package in order to avoid circular dependency with the "toolusageevent" package.
+	ToolUsageEventsInverseTable = "tool_usage_events"
+	// ToolUsageEventsColumn is the table column denoting the tool_usage_events relation/edge.
+	ToolUsageEventsColumn = "commit_checkpoint_id"
 )
 
 // Columns holds all SQL columns for commitcheckpoint fields.
@@ -185,6 +194,20 @@ func ByRepoConfigField(field string, opts ...sql.OrderTermOption) OrderOption {
 		sqlgraph.OrderByNeighborTerms(s, newRepoConfigStep(), sql.OrderByField(field, opts...))
 	}
 }
+
+// ByToolUsageEventsCount orders the results by tool_usage_events count.
+func ByToolUsageEventsCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newToolUsageEventsStep(), opts...)
+	}
+}
+
+// ByToolUsageEvents orders the results by tool_usage_events terms.
+func ByToolUsageEvents(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newToolUsageEventsStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
 func newSessionStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
@@ -197,5 +220,12 @@ func newRepoConfigStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(RepoConfigInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.M2O, true, RepoConfigTable, RepoConfigColumn),
+	)
+}
+func newToolUsageEventsStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(ToolUsageEventsInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, ToolUsageEventsTable, ToolUsageEventsColumn),
 	)
 }

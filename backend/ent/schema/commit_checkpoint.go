@@ -52,6 +52,7 @@ func (CommitCheckpoint) Edges() []ent.Edge {
 			Field("repo_config_id").
 			Unique().
 			Required(),
+		edge.To("tool_usage_events", ToolUsageEvent.Type),
 	}
 }
 

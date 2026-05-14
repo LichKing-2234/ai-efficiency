@@ -3,10 +3,12 @@ package checkpoint
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/ai-efficiency/backend/ent/agentmetadataevent"
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
 	"github.com/ai-efficiency/backend/ent/commitrewrite"
+	"github.com/ai-efficiency/backend/ent/toolusageevent"
 	"github.com/ai-efficiency/backend/internal/testdb"
 	"github.com/google/uuid"
 )
@@ -258,6 +260,87 @@ func TestRecordCheckpointWritesMetadataEventsFromAggregateSnapshot(t *testing.T)
 	if count := client.AgentMetadataEvent.Query().CountX(ctx); count != 3 {
 		t.Fatalf("metadata event count = %d, want 3", count)
 	}
+}
+
+func TestRecordCheckpoint_BindsToolUsageEventsForWorkspaceWindow(t *testing.T) {
+	t.Parallel()
+
+	client := testdb.Open(t)
+	ctx := context.Background()
+
+	sp := client.ScmProvider.Create().
+		SetName("github-test").
+		SetType("github").
+		SetBaseURL("https://api.github.com").
+		SetCredentials("enc").
+		SaveX(ctx)
+
+	repo := client.RepoConfig.Create().
+		SetScmProviderID(sp.ID).
+		SetName("demo").
+		SetFullName("org/demo").
+		SetCloneURL("https://github.com/org/demo.git").
+		SetDefaultBranch("main").
+		SaveX(ctx)
+
+	userID := client.User.Create().
+		SetUsername("tool-user").
+		SetEmail("tool-user@test.com").
+		SetAuthSource("ldap").
+		SaveX(ctx).ID
+
+	client.CommitCheckpoint.Create().
+		SetEventID("cp-prev").
+		SetWorkspaceID("ws-1").
+		SetRepoConfigID(repo.ID).
+		SetCommitSha("base-sha").
+		SetParentShas([]string{"p0"}).
+		SetBindingSource("unbound").
+		SetCapturedAt(time.Unix(150, 0).UTC()).
+		SaveX(ctx)
+
+	client.ToolUsageEvent.Create().
+		SetTool("codex").
+		SetWorkspaceID("ws-1").
+		SetRepoConfigID(repo.ID).
+		SetUserID(userID).
+		SetToolSessionID("conv-1").
+		SetToolEventID("resp-1").
+		SetObservedStartAt(time.Unix(160, 0).UTC()).
+		SetObservedEndAt(time.Unix(161, 0).UTC()).
+		SetUsageUnit("token").
+		SetInputTokens(10).
+		SetOutputTokens(5).
+		SetDedupeKey("codex:bind-1").
+		SaveX(ctx)
+
+	svc := NewService(client)
+	if err := svc.RecordCheckpoint(ctx, CommitCheckpointRequest{
+		EventID:       "cp-bind-1",
+		RepoFullName:  repo.FullName,
+		WorkspaceID:   "ws-1",
+		CommitSHA:     "head-sha",
+		ParentSHAs:    []string{"base-sha"},
+		BindingSource: "unbound",
+		CapturedAt:    ptrTime(time.Unix(200, 0).UTC()),
+	}); err != nil {
+		t.Fatalf("RecordCheckpoint: %v", err)
+	}
+
+	created := client.CommitCheckpoint.Query().
+		Where(commitcheckpoint.EventIDEQ("cp-bind-1")).
+		OnlyX(ctx)
+
+	bound := client.ToolUsageEvent.Query().
+		Where(toolusageevent.CommitCheckpointIDEQ(created.ID)).
+		AllX(ctx)
+	if len(bound) != 1 {
+		t.Fatalf("bound tool usage events = %d, want 1", len(bound))
+	}
+}
+
+func ptrTime(v time.Time) *time.Time {
+	return &v
 }
 
 func TestRecordCheckpointRejectsSessionFromDifferentRepo(t *testing.T) {

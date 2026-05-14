@@ -590,3 +590,81 @@ func TestSettlePR_AssignsBoundarySpanningUsageByFinishedAtOnce(t *testing.T) {
 		t.Fatalf("primary_token_count = %d, want 70", result.PrimaryTokenCount)
 	}
 }
+
+func TestSettlePR_AggregatesToolUsageEventsByCheckpoint(t *testing.T) {
+	client := testdb.Open(t)
+	defer client.Close()
+	ctx := context.Background()
+
+	repo, pr, sess := testRepoPRSession(t, client, 0)
+	t1 := sess.StartedAt.Add(10 * time.Minute)
+	t2 := t1.Add(20 * time.Minute)
+	userID := client.User.Create().
+		SetUsername("toolusage-user").
+		SetEmail("toolusage-user@test.com").
+		SetAuthSource("ldap").
+		SaveX(ctx).ID
+
+	checkpoint := client.CommitCheckpoint.Create().
+		SetEventID("cp-tool-usage-1").
+		SetSessionID(sess.ID).
+		SetWorkspaceID("ws-tool-usage").
+		SetRepoConfigID(repo.ID).
+		SetBindingSource(commitcheckpoint.BindingSourceMarker).
+		SetCommitSha("pr-tool-usage").
+		SetParentShas([]string{"base"}).
+		SetCapturedAt(t2).
+		SaveX(ctx)
+
+	client.ToolUsageEvent.Create().
+		SetTool("codex").
+		SetWorkspaceID("ws-tool-usage").
+		SetRepoConfigID(repo.ID).
+		SetUserID(userID).
+		SetToolSessionID("codex-1").
+		SetToolEventID("resp-1").
+		SetObservedStartAt(t1.Add(1 * time.Minute)).
+		SetObservedEndAt(t1.Add(2 * time.Minute)).
+		SetUsageUnit("token").
+		SetInputTokens(100).
+		SetOutputTokens(40).
+		SetCachedInputTokens(10).
+		SetDedupeKey("codex:1").
+		SetCommitCheckpointID(checkpoint.ID).
+		SaveX(ctx)
+
+	client.ToolUsageEvent.Create().
+		SetTool("kiro").
+		SetWorkspaceID("ws-tool-usage").
+		SetRepoConfigID(repo.ID).
+		SetUserID(userID).
+		SetToolSessionID("kiro-1").
+		SetToolEventID("turn-1").
+		SetObservedStartAt(t1.Add(3 * time.Minute)).
+		SetObservedEndAt(t1.Add(4 * time.Minute)).
+		SetUsageUnit("credit").
+		SetRequestCount(2).
+		SetCreditUsage(0.6).
+		SetDedupeKey("kiro:1").
+		SetCommitCheckpointID(checkpoint.ID).
+		SaveX(ctx)
+
+	fakeRelay := &fakeRelayProvider{}
+	fakeProvider := &fakeSCMProvider{
+		listPRCommitsFn: func(ctx context.Context, repoFullName string, prID int) ([]string, error) {
+			return []string{"pr-tool-usage"}, nil
+		},
+	}
+
+	svc := NewService(client, fakeRelay)
+	result, err := svc.Settle(ctx, fakeProvider, pr, "tester")
+	if err != nil {
+		t.Fatalf("Settle: %v", err)
+	}
+	if result.PrimaryTokenCount != 150 {
+		t.Fatalf("PrimaryTokenCount = %d, want 150", result.PrimaryTokenCount)
+	}
+	if result.MetadataSummary["kiro_credit_usage"] != 0.6 {
+		t.Fatalf("MetadataSummary = %+v", result.MetadataSummary)
+	}
+}

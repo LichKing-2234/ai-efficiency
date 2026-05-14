@@ -18,6 +18,7 @@ import (
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/scmprovider"
 	"github.com/ai-efficiency/backend/ent/session"
+	"github.com/ai-efficiency/backend/ent/toolusageevent"
 	"github.com/ai-efficiency/backend/ent/webhookdeadletter"
 	"github.com/google/uuid"
 )
@@ -283,6 +284,21 @@ func (rcc *RepoConfigCreate) AddCommitRewrites(c ...*CommitRewrite) *RepoConfigC
 		ids[i] = c[i].ID
 	}
 	return rcc.AddCommitRewriteIDs(ids...)
+}
+
+// AddToolUsageEventIDs adds the "tool_usage_events" edge to the ToolUsageEvent entity by IDs.
+func (rcc *RepoConfigCreate) AddToolUsageEventIDs(ids ...int) *RepoConfigCreate {
+	rcc.mutation.AddToolUsageEventIDs(ids...)
+	return rcc
+}
+
+// AddToolUsageEvents adds the "tool_usage_events" edges to the ToolUsageEvent entity.
+func (rcc *RepoConfigCreate) AddToolUsageEvents(t ...*ToolUsageEvent) *RepoConfigCreate {
+	ids := make([]int, len(t))
+	for i := range t {
+		ids[i] = t[i].ID
+	}
+	return rcc.AddToolUsageEventIDs(ids...)
 }
 
 // AddWebhookDeadLetterIDs adds the "webhook_dead_letters" edge to the WebhookDeadLetter entity by IDs.
@@ -602,6 +618,22 @@ func (rcc *RepoConfigCreate) createSpec() (*RepoConfig, *sqlgraph.CreateSpec) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(commitrewrite.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := rcc.mutation.ToolUsageEventsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   repoconfig.ToolUsageEventsTable,
+			Columns: []string{repoconfig.ToolUsageEventsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(toolusageevent.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {

@@ -20,6 +20,7 @@ import (
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/scmprovider"
 	"github.com/ai-efficiency/backend/ent/session"
+	"github.com/ai-efficiency/backend/ent/toolusageevent"
 	"github.com/ai-efficiency/backend/ent/webhookdeadletter"
 	"github.com/google/uuid"
 )
@@ -356,6 +357,21 @@ func (rcu *RepoConfigUpdate) AddCommitRewrites(c ...*CommitRewrite) *RepoConfigU
 	return rcu.AddCommitRewriteIDs(ids...)
 }
 
+// AddToolUsageEventIDs adds the "tool_usage_events" edge to the ToolUsageEvent entity by IDs.
+func (rcu *RepoConfigUpdate) AddToolUsageEventIDs(ids ...int) *RepoConfigUpdate {
+	rcu.mutation.AddToolUsageEventIDs(ids...)
+	return rcu
+}
+
+// AddToolUsageEvents adds the "tool_usage_events" edges to the ToolUsageEvent entity.
+func (rcu *RepoConfigUpdate) AddToolUsageEvents(t ...*ToolUsageEvent) *RepoConfigUpdate {
+	ids := make([]int, len(t))
+	for i := range t {
+		ids[i] = t[i].ID
+	}
+	return rcu.AddToolUsageEventIDs(ids...)
+}
+
 // AddWebhookDeadLetterIDs adds the "webhook_dead_letters" edge to the WebhookDeadLetter entity by IDs.
 func (rcu *RepoConfigUpdate) AddWebhookDeadLetterIDs(ids ...int) *RepoConfigUpdate {
 	rcu.mutation.AddWebhookDeadLetterIDs(ids...)
@@ -488,6 +504,27 @@ func (rcu *RepoConfigUpdate) RemoveCommitRewrites(c ...*CommitRewrite) *RepoConf
 		ids[i] = c[i].ID
 	}
 	return rcu.RemoveCommitRewriteIDs(ids...)
+}
+
+// ClearToolUsageEvents clears all "tool_usage_events" edges to the ToolUsageEvent entity.
+func (rcu *RepoConfigUpdate) ClearToolUsageEvents() *RepoConfigUpdate {
+	rcu.mutation.ClearToolUsageEvents()
+	return rcu
+}
+
+// RemoveToolUsageEventIDs removes the "tool_usage_events" edge to ToolUsageEvent entities by IDs.
+func (rcu *RepoConfigUpdate) RemoveToolUsageEventIDs(ids ...int) *RepoConfigUpdate {
+	rcu.mutation.RemoveToolUsageEventIDs(ids...)
+	return rcu
+}
+
+// RemoveToolUsageEvents removes "tool_usage_events" edges to ToolUsageEvent entities.
+func (rcu *RepoConfigUpdate) RemoveToolUsageEvents(t ...*ToolUsageEvent) *RepoConfigUpdate {
+	ids := make([]int, len(t))
+	for i := range t {
+		ids[i] = t[i].ID
+	}
+	return rcu.RemoveToolUsageEventIDs(ids...)
 }
 
 // ClearWebhookDeadLetters clears all "webhook_dead_letters" edges to the WebhookDeadLetter entity.
@@ -885,6 +922,51 @@ func (rcu *RepoConfigUpdate) sqlSave(ctx context.Context) (n int, err error) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(commitrewrite.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if rcu.mutation.ToolUsageEventsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   repoconfig.ToolUsageEventsTable,
+			Columns: []string{repoconfig.ToolUsageEventsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(toolusageevent.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := rcu.mutation.RemovedToolUsageEventsIDs(); len(nodes) > 0 && !rcu.mutation.ToolUsageEventsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   repoconfig.ToolUsageEventsTable,
+			Columns: []string{repoconfig.ToolUsageEventsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(toolusageevent.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := rcu.mutation.ToolUsageEventsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   repoconfig.ToolUsageEventsTable,
+			Columns: []string{repoconfig.ToolUsageEventsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(toolusageevent.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {
@@ -1411,6 +1493,21 @@ func (rcuo *RepoConfigUpdateOne) AddCommitRewrites(c ...*CommitRewrite) *RepoCon
 	return rcuo.AddCommitRewriteIDs(ids...)
 }
 
+// AddToolUsageEventIDs adds the "tool_usage_events" edge to the ToolUsageEvent entity by IDs.
+func (rcuo *RepoConfigUpdateOne) AddToolUsageEventIDs(ids ...int) *RepoConfigUpdateOne {
+	rcuo.mutation.AddToolUsageEventIDs(ids...)
+	return rcuo
+}
+
+// AddToolUsageEvents adds the "tool_usage_events" edges to the ToolUsageEvent entity.
+func (rcuo *RepoConfigUpdateOne) AddToolUsageEvents(t ...*ToolUsageEvent) *RepoConfigUpdateOne {
+	ids := make([]int, len(t))
+	for i := range t {
+		ids[i] = t[i].ID
+	}
+	return rcuo.AddToolUsageEventIDs(ids...)
+}
+
 // AddWebhookDeadLetterIDs adds the "webhook_dead_letters" edge to the WebhookDeadLetter entity by IDs.
 func (rcuo *RepoConfigUpdateOne) AddWebhookDeadLetterIDs(ids ...int) *RepoConfigUpdateOne {
 	rcuo.mutation.AddWebhookDeadLetterIDs(ids...)
@@ -1543,6 +1640,27 @@ func (rcuo *RepoConfigUpdateOne) RemoveCommitRewrites(c ...*CommitRewrite) *Repo
 		ids[i] = c[i].ID
 	}
 	return rcuo.RemoveCommitRewriteIDs(ids...)
+}
+
+// ClearToolUsageEvents clears all "tool_usage_events" edges to the ToolUsageEvent entity.
+func (rcuo *RepoConfigUpdateOne) ClearToolUsageEvents() *RepoConfigUpdateOne {
+	rcuo.mutation.ClearToolUsageEvents()
+	return rcuo
+}
+
+// RemoveToolUsageEventIDs removes the "tool_usage_events" edge to ToolUsageEvent entities by IDs.
+func (rcuo *RepoConfigUpdateOne) RemoveToolUsageEventIDs(ids ...int) *RepoConfigUpdateOne {
+	rcuo.mutation.RemoveToolUsageEventIDs(ids...)
+	return rcuo
+}
+
+// RemoveToolUsageEvents removes "tool_usage_events" edges to ToolUsageEvent entities.
+func (rcuo *RepoConfigUpdateOne) RemoveToolUsageEvents(t ...*ToolUsageEvent) *RepoConfigUpdateOne {
+	ids := make([]int, len(t))
+	for i := range t {
+		ids[i] = t[i].ID
+	}
+	return rcuo.RemoveToolUsageEventIDs(ids...)
 }
 
 // ClearWebhookDeadLetters clears all "webhook_dead_letters" edges to the WebhookDeadLetter entity.
@@ -1970,6 +2088,51 @@ func (rcuo *RepoConfigUpdateOne) sqlSave(ctx context.Context) (_node *RepoConfig
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(commitrewrite.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if rcuo.mutation.ToolUsageEventsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   repoconfig.ToolUsageEventsTable,
+			Columns: []string{repoconfig.ToolUsageEventsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(toolusageevent.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := rcuo.mutation.RemovedToolUsageEventsIDs(); len(nodes) > 0 && !rcuo.mutation.ToolUsageEventsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   repoconfig.ToolUsageEventsTable,
+			Columns: []string{repoconfig.ToolUsageEventsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(toolusageevent.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := rcuo.mutation.ToolUsageEventsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   repoconfig.ToolUsageEventsTable,
+			Columns: []string{repoconfig.ToolUsageEventsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(toolusageevent.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {

@@ -14,6 +14,7 @@ import (
 	"github.com/ai-efficiency/backend/ent/prattributionrun"
 	"github.com/ai-efficiency/backend/ent/prrecord"
 	"github.com/ai-efficiency/backend/ent/sessionusageevent"
+	"github.com/ai-efficiency/backend/ent/toolusageevent"
 	"github.com/ai-efficiency/backend/internal/relay"
 	"github.com/ai-efficiency/backend/internal/scm"
 	"github.com/google/uuid"
@@ -111,14 +112,18 @@ func (s *Service) Settle(ctx context.Context, provider scm.SCMProvider, pr *ent.
 	intervals := make([]map[string]interface{}, 0, len(matchedCheckpoints))
 	accountTokenTotals := map[string]int64{}
 	accountCostTotals := map[string]float64{}
+	workspaceSet := map[string]struct{}{}
 	var totalTokens int64
 	var totalCost float64
 	var totalUsageLogs int64
+	var totalRequests int64
+	var totalCreditUsage float64
 	usedSessionStartFallback := false
 
 	for _, cp := range matchedCheckpoints {
 		sessionID := *cp.SessionID
 		matchedSessionSet[sessionID.String()] = struct{}{}
+		workspaceSet[strings.TrimSpace(cp.WorkspaceID)] = struct{}{}
 
 		sess, err := s.entClient.Session.Get(ctx, sessionID)
 		if err != nil {
@@ -143,7 +148,7 @@ func (s *Service) Settle(ctx context.Context, provider scm.SCMProvider, pr *ent.
 		}
 
 		to := cp.CapturedAt
-		intervalTokens, intervalCost, usageSummary, err := s.loadIntervalUsage(ctx, sessionID, from, to, sess.RelayAPIKeyID)
+		intervalTokens, intervalCost, usageSummary, err := s.loadIntervalUsage(ctx, cp.ID, sessionID, from, to, sess.RelayAPIKeyID)
 		if err != nil {
 			if errors.Is(err, errSessionMissingAPIKey) {
 				return s.persistAmbiguous(ctx, pr, triggeredBy, "session_missing_api_key", commitSet)
@@ -153,6 +158,12 @@ func (s *Service) Settle(ctx context.Context, provider scm.SCMProvider, pr *ent.
 
 		if usageLogCount, ok := usageSummary["usage_log_count"].(int); ok {
 			totalUsageLogs += int64(usageLogCount)
+		}
+		if requestCount, ok := usageSummary["request_count"].(int64); ok {
+			totalRequests += requestCount
+		}
+		if creditUsage, ok := usageSummary["kiro_credit_usage"].(float64); ok {
+			totalCreditUsage += creditUsage
 		}
 		if intervalAccountTokens, ok := usageSummary["account_token_totals"].(map[string]int64); ok {
 			for accountID, tokens := range intervalAccountTokens {
@@ -205,6 +216,14 @@ func (s *Service) Settle(ctx context.Context, provider scm.SCMProvider, pr *ent.
 		matchedSessions = append(matchedSessions, sessionID)
 	}
 	slices.Sort(matchedSessions)
+	matchedWorkspaceIDs := make([]string, 0, len(workspaceSet))
+	for workspaceID := range workspaceSet {
+		if strings.TrimSpace(workspaceID) == "" {
+			continue
+		}
+		matchedWorkspaceIDs = append(matchedWorkspaceIDs, workspaceID)
+	}
+	slices.Sort(matchedWorkspaceIDs)
 
 	attributionConfidence := prrecord.AttributionConfidenceHigh
 	validationConfidence := "high"
@@ -224,6 +243,9 @@ func (s *Service) Settle(ctx context.Context, provider scm.SCMProvider, pr *ent.
 	metadataSummary := map[string]interface{}{
 		"matched_commit_count":  len(matchedCommits),
 		"matched_session_count": len(matchedSessions),
+		"matched_workspace_ids": matchedWorkspaceIDs,
+		"kiro_credit_usage":     totalCreditUsage,
+		"request_count":         totalRequests,
 		"intervals":             intervals,
 		"account_token_totals":  accountTokenTotals,
 		"account_cost_totals":   accountCostTotals,
@@ -414,10 +436,40 @@ func (s *Service) persistResult(
 
 func (s *Service) loadIntervalUsage(
 	ctx context.Context,
+	checkpointID int,
 	sessionID uuid.UUID,
 	from, to time.Time,
 	fallbackAPIKeyID *int,
 ) (int64, float64, map[string]any, error) {
+	toolItems, err := s.entClient.ToolUsageEvent.Query().
+		Where(toolusageevent.CommitCheckpointIDEQ(checkpointID)).
+		All(ctx)
+	if err != nil {
+		return 0, 0, nil, fmt.Errorf("query tool usage events: %w", err)
+	}
+	if len(toolItems) > 0 {
+		var totalTokens int64
+		var totalCredits float64
+		var totalRequests int64
+		var tokenEventCount int
+		for _, item := range toolItems {
+			totalTokens += item.InputTokens + item.OutputTokens + item.CachedInputTokens
+			totalCredits += item.CreditUsage
+			totalRequests += int64(item.RequestCount)
+			if item.UsageUnit == toolusageevent.UsageUnitToken {
+				tokenEventCount++
+			}
+		}
+		return totalTokens, 0, map[string]any{
+			"source":             "tool_usage_events",
+			"event_count":        len(toolItems),
+			"token_event_count":  tokenEventCount,
+			"request_count":      totalRequests,
+			"kiro_credit_usage":  totalCredits,
+			"checkpoint_id":      checkpointID,
+		}, nil
+	}
+
 	events, err := s.entClient.SessionUsageEvent.Query().
 		Where(
 			sessionusageevent.SessionIDEQ(sessionID),

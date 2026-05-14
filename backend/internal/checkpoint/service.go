@@ -14,6 +14,7 @@ import (
 	"github.com/ai-efficiency/backend/ent/commitrewrite"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/session"
+	"github.com/ai-efficiency/backend/internal/toolusage"
 	"github.com/google/uuid"
 )
 
@@ -139,7 +140,8 @@ func (s *Service) RecordCheckpoint(ctx context.Context, req CommitCheckpointRequ
 		create.SetCapturedAt(req.CapturedAt.UTC())
 	}
 
-	if _, err := create.Save(ctx); err != nil {
+	savedCheckpoint, err := create.Save(ctx)
+	if err != nil {
 		if ent.IsConstraintError(err) {
 			_ = tx.Rollback()
 			txDone = true
@@ -152,6 +154,33 @@ func (s *Service) RecordCheckpoint(ctx context.Context, req CommitCheckpointRequ
 		}
 		return fmt.Errorf("record checkpoint: create checkpoint: %w", err)
 	}
+
+	previousCapturedAt := time.Time{}
+	prevCP, err := txSvc.entClient.CommitCheckpoint.Query().
+		Where(
+			commitcheckpoint.RepoConfigIDEQ(rc.ID),
+			commitcheckpoint.WorkspaceIDEQ(workspaceID),
+			commitcheckpoint.CapturedAtLT(savedCheckpoint.CapturedAt),
+		).
+		Order(ent.Desc(commitcheckpoint.FieldCapturedAt)).
+		First(ctx)
+	if err != nil && !ent.IsNotFound(err) {
+		return fmt.Errorf("record checkpoint: load previous checkpoint: %w", err)
+	}
+	if prevCP != nil {
+		previousCapturedAt = prevCP.CapturedAt
+	}
+
+	boundCount, err := toolusage.NewService(txSvc.entClient).BindUsageEventsToCheckpoint(ctx, toolusage.BindUsageEventsRequest{
+		WorkspaceID:        workspaceID,
+		CommitCheckpointID: savedCheckpoint.ID,
+		CommitCapturedAt:   savedCheckpoint.CapturedAt,
+		PreviousCapturedAt: previousCapturedAt,
+	})
+	if err != nil {
+		return fmt.Errorf("record checkpoint: bind tool usage events: %w", err)
+	}
+	_ = boundCount
 
 	if len(req.AgentSnapshot) > 0 && hasSession {
 		if err := txSvc.createAgentMetadataEvents(ctx, sessionID, workspaceID, req.AgentSnapshot); err != nil {

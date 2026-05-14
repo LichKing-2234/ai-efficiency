@@ -11,6 +11,7 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/ai-efficiency/backend/ent/session"
+	"github.com/ai-efficiency/backend/ent/toolusageevent"
 	"github.com/ai-efficiency/backend/ent/user"
 	"github.com/google/uuid"
 )
@@ -137,6 +138,21 @@ func (uc *UserCreate) AddSessions(s ...*Session) *UserCreate {
 		ids[i] = s[i].ID
 	}
 	return uc.AddSessionIDs(ids...)
+}
+
+// AddToolUsageEventIDs adds the "tool_usage_events" edge to the ToolUsageEvent entity by IDs.
+func (uc *UserCreate) AddToolUsageEventIDs(ids ...int) *UserCreate {
+	uc.mutation.AddToolUsageEventIDs(ids...)
+	return uc
+}
+
+// AddToolUsageEvents adds the "tool_usage_events" edges to the ToolUsageEvent entity.
+func (uc *UserCreate) AddToolUsageEvents(t ...*ToolUsageEvent) *UserCreate {
+	ids := make([]int, len(t))
+	for i := range t {
+		ids[i] = t[i].ID
+	}
+	return uc.AddToolUsageEventIDs(ids...)
 }
 
 // Mutation returns the UserMutation object of the builder.
@@ -299,6 +315,22 @@ func (uc *UserCreate) createSpec() (*User, *sqlgraph.CreateSpec) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(session.FieldID, field.TypeUUID),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := uc.mutation.ToolUsageEventsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.ToolUsageEventsTable,
+			Columns: []string{user.ToolUsageEventsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(toolusageevent.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {

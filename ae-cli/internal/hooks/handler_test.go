@@ -20,9 +20,13 @@ import (
 type fakeUploader struct {
 	err    error
 	events []HookEvent
+	onCall func()
 }
 
 func (f *fakeUploader) UploadHookEvent(ctx context.Context, ev HookEvent) error {
+	if f.onCall != nil {
+		f.onCall()
+	}
 	f.events = append(f.events, ev)
 	return f.err
 }
@@ -503,6 +507,64 @@ func TestPostCommitUsesRepoScopedEventID(t *testing.T) {
 	}
 	if got := u.events[0].EventID; got != wantID {
 		t.Fatalf("uploaded event_id = %q, want %q", got, wantID)
+	}
+}
+
+func TestPostCommit_TriggersAttributionSync(t *testing.T) {
+	repo := initRepoWithCommit2(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	marker := &session.Marker{SessionID: "sess-1", RepoFullName: "origin", Branch: "main", HeadSHA: git2(t, repo, "rev-parse", "HEAD")}
+	if err := session.WriteMarker(repo, marker); err != nil {
+		t.Fatalf("WriteMarker: %v", err)
+	}
+
+	calls := 0
+	old := runAttributionSync
+	runAttributionSync = func(ctx context.Context, cwd string) error {
+		calls++
+		return nil
+	}
+	t.Cleanup(func() { runAttributionSync = old })
+
+	h := NewHandler(&fakeUploader{})
+	if err := h.PostCommit(context.Background(), repo); err != nil {
+		t.Fatalf("PostCommit: %v", err)
+	}
+	if calls != 1 {
+		t.Fatalf("sync calls = %d, want 1", calls)
+	}
+}
+
+func TestPostCommit_TriggersAttributionSyncBeforeUpload(t *testing.T) {
+	repo := initRepoWithCommit2(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	marker := &session.Marker{SessionID: "sess-1", RepoFullName: "origin", Branch: "main", HeadSHA: git2(t, repo, "rev-parse", "HEAD")}
+	if err := session.WriteMarker(repo, marker); err != nil {
+		t.Fatalf("WriteMarker: %v", err)
+	}
+
+	synced := false
+	old := runAttributionSync
+	runAttributionSync = func(ctx context.Context, cwd string) error {
+		synced = true
+		return nil
+	}
+	t.Cleanup(func() { runAttributionSync = old })
+
+	u := &fakeUploader{
+		onCall: func() {
+			if !synced {
+				t.Fatal("expected attribution sync before upload")
+			}
+		},
+	}
+	h := NewHandler(u)
+	if err := h.PostCommit(context.Background(), repo); err != nil {
+		t.Fatalf("PostCommit: %v", err)
 	}
 }
 

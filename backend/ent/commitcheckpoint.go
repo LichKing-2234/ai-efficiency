@@ -55,9 +55,11 @@ type CommitCheckpointEdges struct {
 	Session *Session `json:"session,omitempty"`
 	// RepoConfig holds the value of the repo_config edge.
 	RepoConfig *RepoConfig `json:"repo_config,omitempty"`
+	// ToolUsageEvents holds the value of the tool_usage_events edge.
+	ToolUsageEvents []*ToolUsageEvent `json:"tool_usage_events,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [2]bool
+	loadedTypes [3]bool
 }
 
 // SessionOrErr returns the Session value or an error if the edge
@@ -80,6 +82,15 @@ func (e CommitCheckpointEdges) RepoConfigOrErr() (*RepoConfig, error) {
 		return nil, &NotFoundError{label: repoconfig.Label}
 	}
 	return nil, &NotLoadedError{edge: "repo_config"}
+}
+
+// ToolUsageEventsOrErr returns the ToolUsageEvents value or an error if the edge
+// was not loaded in eager-loading.
+func (e CommitCheckpointEdges) ToolUsageEventsOrErr() ([]*ToolUsageEvent, error) {
+	if e.loadedTypes[2] {
+		return e.ToolUsageEvents, nil
+	}
+	return nil, &NotLoadedError{edge: "tool_usage_events"}
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -212,6 +223,11 @@ func (cc *CommitCheckpoint) QuerySession() *SessionQuery {
 // QueryRepoConfig queries the "repo_config" edge of the CommitCheckpoint entity.
 func (cc *CommitCheckpoint) QueryRepoConfig() *RepoConfigQuery {
 	return NewCommitCheckpointClient(cc.config).QueryRepoConfig(cc)
+}
+
+// QueryToolUsageEvents queries the "tool_usage_events" edge of the CommitCheckpoint entity.
+func (cc *CommitCheckpoint) QueryToolUsageEvents() *ToolUsageEventQuery {
+	return NewCommitCheckpointClient(cc.config).QueryToolUsageEvents(cc)
 }
 
 // Update returns a builder for updating this CommitCheckpoint.

@@ -32,6 +32,7 @@ import (
 	"github.com/ai-efficiency/backend/ent/sessionusageevent"
 	"github.com/ai-efficiency/backend/ent/sessionworkspace"
 	"github.com/ai-efficiency/backend/ent/systemsetting"
+	"github.com/ai-efficiency/backend/ent/toolusageevent"
 	"github.com/ai-efficiency/backend/ent/user"
 	"github.com/ai-efficiency/backend/ent/webhookdeadletter"
 )
@@ -73,6 +74,8 @@ type Client struct {
 	SessionWorkspace *SessionWorkspaceClient
 	// SystemSetting is the client for interacting with the SystemSetting builders.
 	SystemSetting *SystemSettingClient
+	// ToolUsageEvent is the client for interacting with the ToolUsageEvent builders.
+	ToolUsageEvent *ToolUsageEventClient
 	// User is the client for interacting with the User builders.
 	User *UserClient
 	// WebhookDeadLetter is the client for interacting with the WebhookDeadLetter builders.
@@ -104,6 +107,7 @@ func (c *Client) init() {
 	c.SessionUsageEvent = NewSessionUsageEventClient(c.config)
 	c.SessionWorkspace = NewSessionWorkspaceClient(c.config)
 	c.SystemSetting = NewSystemSettingClient(c.config)
+	c.ToolUsageEvent = NewToolUsageEventClient(c.config)
 	c.User = NewUserClient(c.config)
 	c.WebhookDeadLetter = NewWebhookDeadLetterClient(c.config)
 }
@@ -214,6 +218,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		SessionUsageEvent:  NewSessionUsageEventClient(cfg),
 		SessionWorkspace:   NewSessionWorkspaceClient(cfg),
 		SystemSetting:      NewSystemSettingClient(cfg),
+		ToolUsageEvent:     NewToolUsageEventClient(cfg),
 		User:               NewUserClient(cfg),
 		WebhookDeadLetter:  NewWebhookDeadLetterClient(cfg),
 	}, nil
@@ -251,6 +256,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		SessionUsageEvent:  NewSessionUsageEventClient(cfg),
 		SessionWorkspace:   NewSessionWorkspaceClient(cfg),
 		SystemSetting:      NewSystemSettingClient(cfg),
+		ToolUsageEvent:     NewToolUsageEventClient(cfg),
 		User:               NewUserClient(cfg),
 		WebhookDeadLetter:  NewWebhookDeadLetterClient(cfg),
 	}, nil
@@ -285,8 +291,8 @@ func (c *Client) Use(hooks ...Hook) {
 		c.AgentMetadataEvent, c.AiScanResult, c.CommitCheckpoint, c.CommitRewrite,
 		c.Credential, c.EfficiencyMetric, c.PrAttributionRun, c.PrRecord,
 		c.RelayProvider, c.RepoConfig, c.ScmProvider, c.Session, c.SessionEvent,
-		c.SessionUsageEvent, c.SessionWorkspace, c.SystemSetting, c.User,
-		c.WebhookDeadLetter,
+		c.SessionUsageEvent, c.SessionWorkspace, c.SystemSetting, c.ToolUsageEvent,
+		c.User, c.WebhookDeadLetter,
 	} {
 		n.Use(hooks...)
 	}
@@ -299,8 +305,8 @@ func (c *Client) Intercept(interceptors ...Interceptor) {
 		c.AgentMetadataEvent, c.AiScanResult, c.CommitCheckpoint, c.CommitRewrite,
 		c.Credential, c.EfficiencyMetric, c.PrAttributionRun, c.PrRecord,
 		c.RelayProvider, c.RepoConfig, c.ScmProvider, c.Session, c.SessionEvent,
-		c.SessionUsageEvent, c.SessionWorkspace, c.SystemSetting, c.User,
-		c.WebhookDeadLetter,
+		c.SessionUsageEvent, c.SessionWorkspace, c.SystemSetting, c.ToolUsageEvent,
+		c.User, c.WebhookDeadLetter,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -341,6 +347,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.SessionWorkspace.mutate(ctx, m)
 	case *SystemSettingMutation:
 		return c.SystemSetting.mutate(ctx, m)
+	case *ToolUsageEventMutation:
+		return c.ToolUsageEvent.mutate(ctx, m)
 	case *UserMutation:
 		return c.User.mutate(ctx, m)
 	case *WebhookDeadLetterMutation:
@@ -781,6 +789,22 @@ func (c *CommitCheckpointClient) QueryRepoConfig(cc *CommitCheckpoint) *RepoConf
 			sqlgraph.From(commitcheckpoint.Table, commitcheckpoint.FieldID, id),
 			sqlgraph.To(repoconfig.Table, repoconfig.FieldID),
 			sqlgraph.Edge(sqlgraph.M2O, true, commitcheckpoint.RepoConfigTable, commitcheckpoint.RepoConfigColumn),
+		)
+		fromV = sqlgraph.Neighbors(cc.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryToolUsageEvents queries the tool_usage_events edge of a CommitCheckpoint.
+func (c *CommitCheckpointClient) QueryToolUsageEvents(cc *CommitCheckpoint) *ToolUsageEventQuery {
+	query := (&ToolUsageEventClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := cc.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(commitcheckpoint.Table, commitcheckpoint.FieldID, id),
+			sqlgraph.To(toolusageevent.Table, toolusageevent.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, commitcheckpoint.ToolUsageEventsTable, commitcheckpoint.ToolUsageEventsColumn),
 		)
 		fromV = sqlgraph.Neighbors(cc.driver.Dialect(), step)
 		return fromV, nil
@@ -1929,6 +1953,22 @@ func (c *RepoConfigClient) QueryCommitRewrites(rc *RepoConfig) *CommitRewriteQue
 	return query
 }
 
+// QueryToolUsageEvents queries the tool_usage_events edge of a RepoConfig.
+func (c *RepoConfigClient) QueryToolUsageEvents(rc *RepoConfig) *ToolUsageEventQuery {
+	query := (&ToolUsageEventClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := rc.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(repoconfig.Table, repoconfig.FieldID, id),
+			sqlgraph.To(toolusageevent.Table, toolusageevent.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, repoconfig.ToolUsageEventsTable, repoconfig.ToolUsageEventsColumn),
+		)
+		fromV = sqlgraph.Neighbors(rc.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
 // QueryWebhookDeadLetters queries the webhook_dead_letters edge of a RepoConfig.
 func (c *RepoConfigClient) QueryWebhookDeadLetters(rc *RepoConfig) *WebhookDeadLetterQuery {
 	query := (&WebhookDeadLetterClient{config: c.config}).Query()
@@ -3041,6 +3081,187 @@ func (c *SystemSettingClient) mutate(ctx context.Context, m *SystemSettingMutati
 	}
 }
 
+// ToolUsageEventClient is a client for the ToolUsageEvent schema.
+type ToolUsageEventClient struct {
+	config
+}
+
+// NewToolUsageEventClient returns a client for the ToolUsageEvent from the given config.
+func NewToolUsageEventClient(c config) *ToolUsageEventClient {
+	return &ToolUsageEventClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `toolusageevent.Hooks(f(g(h())))`.
+func (c *ToolUsageEventClient) Use(hooks ...Hook) {
+	c.hooks.ToolUsageEvent = append(c.hooks.ToolUsageEvent, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `toolusageevent.Intercept(f(g(h())))`.
+func (c *ToolUsageEventClient) Intercept(interceptors ...Interceptor) {
+	c.inters.ToolUsageEvent = append(c.inters.ToolUsageEvent, interceptors...)
+}
+
+// Create returns a builder for creating a ToolUsageEvent entity.
+func (c *ToolUsageEventClient) Create() *ToolUsageEventCreate {
+	mutation := newToolUsageEventMutation(c.config, OpCreate)
+	return &ToolUsageEventCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of ToolUsageEvent entities.
+func (c *ToolUsageEventClient) CreateBulk(builders ...*ToolUsageEventCreate) *ToolUsageEventCreateBulk {
+	return &ToolUsageEventCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *ToolUsageEventClient) MapCreateBulk(slice any, setFunc func(*ToolUsageEventCreate, int)) *ToolUsageEventCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &ToolUsageEventCreateBulk{err: fmt.Errorf("calling to ToolUsageEventClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*ToolUsageEventCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &ToolUsageEventCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for ToolUsageEvent.
+func (c *ToolUsageEventClient) Update() *ToolUsageEventUpdate {
+	mutation := newToolUsageEventMutation(c.config, OpUpdate)
+	return &ToolUsageEventUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *ToolUsageEventClient) UpdateOne(tue *ToolUsageEvent) *ToolUsageEventUpdateOne {
+	mutation := newToolUsageEventMutation(c.config, OpUpdateOne, withToolUsageEvent(tue))
+	return &ToolUsageEventUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *ToolUsageEventClient) UpdateOneID(id int) *ToolUsageEventUpdateOne {
+	mutation := newToolUsageEventMutation(c.config, OpUpdateOne, withToolUsageEventID(id))
+	return &ToolUsageEventUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for ToolUsageEvent.
+func (c *ToolUsageEventClient) Delete() *ToolUsageEventDelete {
+	mutation := newToolUsageEventMutation(c.config, OpDelete)
+	return &ToolUsageEventDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *ToolUsageEventClient) DeleteOne(tue *ToolUsageEvent) *ToolUsageEventDeleteOne {
+	return c.DeleteOneID(tue.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *ToolUsageEventClient) DeleteOneID(id int) *ToolUsageEventDeleteOne {
+	builder := c.Delete().Where(toolusageevent.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &ToolUsageEventDeleteOne{builder}
+}
+
+// Query returns a query builder for ToolUsageEvent.
+func (c *ToolUsageEventClient) Query() *ToolUsageEventQuery {
+	return &ToolUsageEventQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeToolUsageEvent},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a ToolUsageEvent entity by its id.
+func (c *ToolUsageEventClient) Get(ctx context.Context, id int) (*ToolUsageEvent, error) {
+	return c.Query().Where(toolusageevent.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *ToolUsageEventClient) GetX(ctx context.Context, id int) *ToolUsageEvent {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryRepoConfig queries the repo_config edge of a ToolUsageEvent.
+func (c *ToolUsageEventClient) QueryRepoConfig(tue *ToolUsageEvent) *RepoConfigQuery {
+	query := (&RepoConfigClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := tue.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(toolusageevent.Table, toolusageevent.FieldID, id),
+			sqlgraph.To(repoconfig.Table, repoconfig.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, toolusageevent.RepoConfigTable, toolusageevent.RepoConfigColumn),
+		)
+		fromV = sqlgraph.Neighbors(tue.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryUser queries the user edge of a ToolUsageEvent.
+func (c *ToolUsageEventClient) QueryUser(tue *ToolUsageEvent) *UserQuery {
+	query := (&UserClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := tue.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(toolusageevent.Table, toolusageevent.FieldID, id),
+			sqlgraph.To(user.Table, user.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, toolusageevent.UserTable, toolusageevent.UserColumn),
+		)
+		fromV = sqlgraph.Neighbors(tue.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryCommitCheckpoint queries the commit_checkpoint edge of a ToolUsageEvent.
+func (c *ToolUsageEventClient) QueryCommitCheckpoint(tue *ToolUsageEvent) *CommitCheckpointQuery {
+	query := (&CommitCheckpointClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := tue.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(toolusageevent.Table, toolusageevent.FieldID, id),
+			sqlgraph.To(commitcheckpoint.Table, commitcheckpoint.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, toolusageevent.CommitCheckpointTable, toolusageevent.CommitCheckpointColumn),
+		)
+		fromV = sqlgraph.Neighbors(tue.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *ToolUsageEventClient) Hooks() []Hook {
+	return c.hooks.ToolUsageEvent
+}
+
+// Interceptors returns the client interceptors.
+func (c *ToolUsageEventClient) Interceptors() []Interceptor {
+	return c.inters.ToolUsageEvent
+}
+
+func (c *ToolUsageEventClient) mutate(ctx context.Context, m *ToolUsageEventMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&ToolUsageEventCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&ToolUsageEventUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&ToolUsageEventUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&ToolUsageEventDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown ToolUsageEvent mutation op: %q", m.Op())
+	}
+}
+
 // UserClient is a client for the User schema.
 type UserClient struct {
 	config
@@ -3158,6 +3379,22 @@ func (c *UserClient) QuerySessions(u *User) *SessionQuery {
 			sqlgraph.From(user.Table, user.FieldID, id),
 			sqlgraph.To(session.Table, session.FieldID),
 			sqlgraph.Edge(sqlgraph.O2M, false, user.SessionsTable, user.SessionsColumn),
+		)
+		fromV = sqlgraph.Neighbors(u.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryToolUsageEvents queries the tool_usage_events edge of a User.
+func (c *UserClient) QueryToolUsageEvents(u *User) *ToolUsageEventQuery {
+	query := (&ToolUsageEventClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := u.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, id),
+			sqlgraph.To(toolusageevent.Table, toolusageevent.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.ToolUsageEventsTable, user.ToolUsageEventsColumn),
 		)
 		fromV = sqlgraph.Neighbors(u.driver.Dialect(), step)
 		return fromV, nil
@@ -3345,12 +3582,12 @@ type (
 		AgentMetadataEvent, AiScanResult, CommitCheckpoint, CommitRewrite, Credential,
 		EfficiencyMetric, PrAttributionRun, PrRecord, RelayProvider, RepoConfig,
 		ScmProvider, Session, SessionEvent, SessionUsageEvent, SessionWorkspace,
-		SystemSetting, User, WebhookDeadLetter []ent.Hook
+		SystemSetting, ToolUsageEvent, User, WebhookDeadLetter []ent.Hook
 	}
 	inters struct {
 		AgentMetadataEvent, AiScanResult, CommitCheckpoint, CommitRewrite, Credential,
 		EfficiencyMetric, PrAttributionRun, PrRecord, RelayProvider, RepoConfig,
 		ScmProvider, Session, SessionEvent, SessionUsageEvent, SessionWorkspace,
-		SystemSetting, User, WebhookDeadLetter []ent.Interceptor
+		SystemSetting, ToolUsageEvent, User, WebhookDeadLetter []ent.Interceptor
 	}
 )

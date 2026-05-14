@@ -1137,6 +1137,29 @@ func HasCommitRewritesWith(preds ...predicate.CommitRewrite) predicate.RepoConfi
 	})
 }
 
+// HasToolUsageEvents applies the HasEdge predicate on the "tool_usage_events" edge.
+func HasToolUsageEvents() predicate.RepoConfig {
+	return predicate.RepoConfig(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, ToolUsageEventsTable, ToolUsageEventsColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasToolUsageEventsWith applies the HasEdge predicate on the "tool_usage_events" edge with a given conditions (other predicates).
+func HasToolUsageEventsWith(preds ...predicate.ToolUsageEvent) predicate.RepoConfig {
+	return predicate.RepoConfig(func(s *sql.Selector) {
+		step := newToolUsageEventsStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
 // HasWebhookDeadLetters applies the HasEdge predicate on the "webhook_dead_letters" edge.
 func HasWebhookDeadLetters() predicate.RepoConfig {
 	return predicate.RepoConfig(func(s *sql.Selector) {

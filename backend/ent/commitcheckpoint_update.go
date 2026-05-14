@@ -16,6 +16,7 @@ import (
 	"github.com/ai-efficiency/backend/ent/predicate"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/session"
+	"github.com/ai-efficiency/backend/ent/toolusageevent"
 	"github.com/google/uuid"
 )
 
@@ -210,6 +211,21 @@ func (ccu *CommitCheckpointUpdate) SetRepoConfig(r *RepoConfig) *CommitCheckpoin
 	return ccu.SetRepoConfigID(r.ID)
 }
 
+// AddToolUsageEventIDs adds the "tool_usage_events" edge to the ToolUsageEvent entity by IDs.
+func (ccu *CommitCheckpointUpdate) AddToolUsageEventIDs(ids ...int) *CommitCheckpointUpdate {
+	ccu.mutation.AddToolUsageEventIDs(ids...)
+	return ccu
+}
+
+// AddToolUsageEvents adds the "tool_usage_events" edges to the ToolUsageEvent entity.
+func (ccu *CommitCheckpointUpdate) AddToolUsageEvents(t ...*ToolUsageEvent) *CommitCheckpointUpdate {
+	ids := make([]int, len(t))
+	for i := range t {
+		ids[i] = t[i].ID
+	}
+	return ccu.AddToolUsageEventIDs(ids...)
+}
+
 // Mutation returns the CommitCheckpointMutation object of the builder.
 func (ccu *CommitCheckpointUpdate) Mutation() *CommitCheckpointMutation {
 	return ccu.mutation
@@ -225,6 +241,27 @@ func (ccu *CommitCheckpointUpdate) ClearSession() *CommitCheckpointUpdate {
 func (ccu *CommitCheckpointUpdate) ClearRepoConfig() *CommitCheckpointUpdate {
 	ccu.mutation.ClearRepoConfig()
 	return ccu
+}
+
+// ClearToolUsageEvents clears all "tool_usage_events" edges to the ToolUsageEvent entity.
+func (ccu *CommitCheckpointUpdate) ClearToolUsageEvents() *CommitCheckpointUpdate {
+	ccu.mutation.ClearToolUsageEvents()
+	return ccu
+}
+
+// RemoveToolUsageEventIDs removes the "tool_usage_events" edge to ToolUsageEvent entities by IDs.
+func (ccu *CommitCheckpointUpdate) RemoveToolUsageEventIDs(ids ...int) *CommitCheckpointUpdate {
+	ccu.mutation.RemoveToolUsageEventIDs(ids...)
+	return ccu
+}
+
+// RemoveToolUsageEvents removes "tool_usage_events" edges to ToolUsageEvent entities.
+func (ccu *CommitCheckpointUpdate) RemoveToolUsageEvents(t ...*ToolUsageEvent) *CommitCheckpointUpdate {
+	ids := make([]int, len(t))
+	for i := range t {
+		ids[i] = t[i].ID
+	}
+	return ccu.RemoveToolUsageEventIDs(ids...)
 }
 
 // Save executes the query and returns the number of nodes affected by the update operation.
@@ -381,6 +418,51 @@ func (ccu *CommitCheckpointUpdate) sqlSave(ctx context.Context) (n int, err erro
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(repoconfig.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if ccu.mutation.ToolUsageEventsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   commitcheckpoint.ToolUsageEventsTable,
+			Columns: []string{commitcheckpoint.ToolUsageEventsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(toolusageevent.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := ccu.mutation.RemovedToolUsageEventsIDs(); len(nodes) > 0 && !ccu.mutation.ToolUsageEventsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   commitcheckpoint.ToolUsageEventsTable,
+			Columns: []string{commitcheckpoint.ToolUsageEventsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(toolusageevent.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := ccu.mutation.ToolUsageEventsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   commitcheckpoint.ToolUsageEventsTable,
+			Columns: []string{commitcheckpoint.ToolUsageEventsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(toolusageevent.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {
@@ -586,6 +668,21 @@ func (ccuo *CommitCheckpointUpdateOne) SetRepoConfig(r *RepoConfig) *CommitCheck
 	return ccuo.SetRepoConfigID(r.ID)
 }
 
+// AddToolUsageEventIDs adds the "tool_usage_events" edge to the ToolUsageEvent entity by IDs.
+func (ccuo *CommitCheckpointUpdateOne) AddToolUsageEventIDs(ids ...int) *CommitCheckpointUpdateOne {
+	ccuo.mutation.AddToolUsageEventIDs(ids...)
+	return ccuo
+}
+
+// AddToolUsageEvents adds the "tool_usage_events" edges to the ToolUsageEvent entity.
+func (ccuo *CommitCheckpointUpdateOne) AddToolUsageEvents(t ...*ToolUsageEvent) *CommitCheckpointUpdateOne {
+	ids := make([]int, len(t))
+	for i := range t {
+		ids[i] = t[i].ID
+	}
+	return ccuo.AddToolUsageEventIDs(ids...)
+}
+
 // Mutation returns the CommitCheckpointMutation object of the builder.
 func (ccuo *CommitCheckpointUpdateOne) Mutation() *CommitCheckpointMutation {
 	return ccuo.mutation
@@ -601,6 +698,27 @@ func (ccuo *CommitCheckpointUpdateOne) ClearSession() *CommitCheckpointUpdateOne
 func (ccuo *CommitCheckpointUpdateOne) ClearRepoConfig() *CommitCheckpointUpdateOne {
 	ccuo.mutation.ClearRepoConfig()
 	return ccuo
+}
+
+// ClearToolUsageEvents clears all "tool_usage_events" edges to the ToolUsageEvent entity.
+func (ccuo *CommitCheckpointUpdateOne) ClearToolUsageEvents() *CommitCheckpointUpdateOne {
+	ccuo.mutation.ClearToolUsageEvents()
+	return ccuo
+}
+
+// RemoveToolUsageEventIDs removes the "tool_usage_events" edge to ToolUsageEvent entities by IDs.
+func (ccuo *CommitCheckpointUpdateOne) RemoveToolUsageEventIDs(ids ...int) *CommitCheckpointUpdateOne {
+	ccuo.mutation.RemoveToolUsageEventIDs(ids...)
+	return ccuo
+}
+
+// RemoveToolUsageEvents removes "tool_usage_events" edges to ToolUsageEvent entities.
+func (ccuo *CommitCheckpointUpdateOne) RemoveToolUsageEvents(t ...*ToolUsageEvent) *CommitCheckpointUpdateOne {
+	ids := make([]int, len(t))
+	for i := range t {
+		ids[i] = t[i].ID
+	}
+	return ccuo.RemoveToolUsageEventIDs(ids...)
 }
 
 // Where appends a list predicates to the CommitCheckpointUpdate builder.
@@ -787,6 +905,51 @@ func (ccuo *CommitCheckpointUpdateOne) sqlSave(ctx context.Context) (_node *Comm
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(repoconfig.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if ccuo.mutation.ToolUsageEventsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   commitcheckpoint.ToolUsageEventsTable,
+			Columns: []string{commitcheckpoint.ToolUsageEventsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(toolusageevent.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := ccuo.mutation.RemovedToolUsageEventsIDs(); len(nodes) > 0 && !ccuo.mutation.ToolUsageEventsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   commitcheckpoint.ToolUsageEventsTable,
+			Columns: []string{commitcheckpoint.ToolUsageEventsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(toolusageevent.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := ccuo.mutation.ToolUsageEventsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   commitcheckpoint.ToolUsageEventsTable,
+			Columns: []string{commitcheckpoint.ToolUsageEventsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(toolusageevent.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {

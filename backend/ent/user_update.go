@@ -13,6 +13,7 @@ import (
 	"entgo.io/ent/schema/field"
 	"github.com/ai-efficiency/backend/ent/predicate"
 	"github.com/ai-efficiency/backend/ent/session"
+	"github.com/ai-efficiency/backend/ent/toolusageevent"
 	"github.com/ai-efficiency/backend/ent/user"
 	"github.com/google/uuid"
 )
@@ -174,6 +175,21 @@ func (uu *UserUpdate) AddSessions(s ...*Session) *UserUpdate {
 	return uu.AddSessionIDs(ids...)
 }
 
+// AddToolUsageEventIDs adds the "tool_usage_events" edge to the ToolUsageEvent entity by IDs.
+func (uu *UserUpdate) AddToolUsageEventIDs(ids ...int) *UserUpdate {
+	uu.mutation.AddToolUsageEventIDs(ids...)
+	return uu
+}
+
+// AddToolUsageEvents adds the "tool_usage_events" edges to the ToolUsageEvent entity.
+func (uu *UserUpdate) AddToolUsageEvents(t ...*ToolUsageEvent) *UserUpdate {
+	ids := make([]int, len(t))
+	for i := range t {
+		ids[i] = t[i].ID
+	}
+	return uu.AddToolUsageEventIDs(ids...)
+}
+
 // Mutation returns the UserMutation object of the builder.
 func (uu *UserUpdate) Mutation() *UserMutation {
 	return uu.mutation
@@ -198,6 +214,27 @@ func (uu *UserUpdate) RemoveSessions(s ...*Session) *UserUpdate {
 		ids[i] = s[i].ID
 	}
 	return uu.RemoveSessionIDs(ids...)
+}
+
+// ClearToolUsageEvents clears all "tool_usage_events" edges to the ToolUsageEvent entity.
+func (uu *UserUpdate) ClearToolUsageEvents() *UserUpdate {
+	uu.mutation.ClearToolUsageEvents()
+	return uu
+}
+
+// RemoveToolUsageEventIDs removes the "tool_usage_events" edge to ToolUsageEvent entities by IDs.
+func (uu *UserUpdate) RemoveToolUsageEventIDs(ids ...int) *UserUpdate {
+	uu.mutation.RemoveToolUsageEventIDs(ids...)
+	return uu
+}
+
+// RemoveToolUsageEvents removes "tool_usage_events" edges to ToolUsageEvent entities.
+func (uu *UserUpdate) RemoveToolUsageEvents(t ...*ToolUsageEvent) *UserUpdate {
+	ids := make([]int, len(t))
+	for i := range t {
+		ids[i] = t[i].ID
+	}
+	return uu.RemoveToolUsageEventIDs(ids...)
 }
 
 // Save executes the query and returns the number of nodes affected by the update operation.
@@ -347,6 +384,51 @@ func (uu *UserUpdate) sqlSave(ctx context.Context) (n int, err error) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(session.FieldID, field.TypeUUID),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if uu.mutation.ToolUsageEventsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.ToolUsageEventsTable,
+			Columns: []string{user.ToolUsageEventsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(toolusageevent.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := uu.mutation.RemovedToolUsageEventsIDs(); len(nodes) > 0 && !uu.mutation.ToolUsageEventsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.ToolUsageEventsTable,
+			Columns: []string{user.ToolUsageEventsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(toolusageevent.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := uu.mutation.ToolUsageEventsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.ToolUsageEventsTable,
+			Columns: []string{user.ToolUsageEventsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(toolusageevent.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {
@@ -518,6 +600,21 @@ func (uuo *UserUpdateOne) AddSessions(s ...*Session) *UserUpdateOne {
 	return uuo.AddSessionIDs(ids...)
 }
 
+// AddToolUsageEventIDs adds the "tool_usage_events" edge to the ToolUsageEvent entity by IDs.
+func (uuo *UserUpdateOne) AddToolUsageEventIDs(ids ...int) *UserUpdateOne {
+	uuo.mutation.AddToolUsageEventIDs(ids...)
+	return uuo
+}
+
+// AddToolUsageEvents adds the "tool_usage_events" edges to the ToolUsageEvent entity.
+func (uuo *UserUpdateOne) AddToolUsageEvents(t ...*ToolUsageEvent) *UserUpdateOne {
+	ids := make([]int, len(t))
+	for i := range t {
+		ids[i] = t[i].ID
+	}
+	return uuo.AddToolUsageEventIDs(ids...)
+}
+
 // Mutation returns the UserMutation object of the builder.
 func (uuo *UserUpdateOne) Mutation() *UserMutation {
 	return uuo.mutation
@@ -542,6 +639,27 @@ func (uuo *UserUpdateOne) RemoveSessions(s ...*Session) *UserUpdateOne {
 		ids[i] = s[i].ID
 	}
 	return uuo.RemoveSessionIDs(ids...)
+}
+
+// ClearToolUsageEvents clears all "tool_usage_events" edges to the ToolUsageEvent entity.
+func (uuo *UserUpdateOne) ClearToolUsageEvents() *UserUpdateOne {
+	uuo.mutation.ClearToolUsageEvents()
+	return uuo
+}
+
+// RemoveToolUsageEventIDs removes the "tool_usage_events" edge to ToolUsageEvent entities by IDs.
+func (uuo *UserUpdateOne) RemoveToolUsageEventIDs(ids ...int) *UserUpdateOne {
+	uuo.mutation.RemoveToolUsageEventIDs(ids...)
+	return uuo
+}
+
+// RemoveToolUsageEvents removes "tool_usage_events" edges to ToolUsageEvent entities.
+func (uuo *UserUpdateOne) RemoveToolUsageEvents(t ...*ToolUsageEvent) *UserUpdateOne {
+	ids := make([]int, len(t))
+	for i := range t {
+		ids[i] = t[i].ID
+	}
+	return uuo.RemoveToolUsageEventIDs(ids...)
 }
 
 // Where appends a list predicates to the UserUpdate builder.
@@ -721,6 +839,51 @@ func (uuo *UserUpdateOne) sqlSave(ctx context.Context) (_node *User, err error) 
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(session.FieldID, field.TypeUUID),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if uuo.mutation.ToolUsageEventsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.ToolUsageEventsTable,
+			Columns: []string{user.ToolUsageEventsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(toolusageevent.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := uuo.mutation.RemovedToolUsageEventsIDs(); len(nodes) > 0 && !uuo.mutation.ToolUsageEventsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.ToolUsageEventsTable,
+			Columns: []string{user.ToolUsageEventsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(toolusageevent.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := uuo.mutation.ToolUsageEventsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.ToolUsageEventsTable,
+			Columns: []string{user.ToolUsageEventsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(toolusageevent.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {

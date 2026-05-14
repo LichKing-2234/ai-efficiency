@@ -45,9 +45,11 @@ type User struct {
 type UserEdges struct {
 	// Sessions holds the value of the sessions edge.
 	Sessions []*Session `json:"sessions,omitempty"`
+	// ToolUsageEvents holds the value of the tool_usage_events edge.
+	ToolUsageEvents []*ToolUsageEvent `json:"tool_usage_events,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [1]bool
+	loadedTypes [2]bool
 }
 
 // SessionsOrErr returns the Sessions value or an error if the edge
@@ -57,6 +59,15 @@ func (e UserEdges) SessionsOrErr() ([]*Session, error) {
 		return e.Sessions, nil
 	}
 	return nil, &NotLoadedError{edge: "sessions"}
+}
+
+// ToolUsageEventsOrErr returns the ToolUsageEvents value or an error if the edge
+// was not loaded in eager-loading.
+func (e UserEdges) ToolUsageEventsOrErr() ([]*ToolUsageEvent, error) {
+	if e.loadedTypes[1] {
+		return e.ToolUsageEvents, nil
+	}
+	return nil, &NotLoadedError{edge: "tool_usage_events"}
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -164,6 +175,11 @@ func (u *User) Value(name string) (ent.Value, error) {
 // QuerySessions queries the "sessions" edge of the User entity.
 func (u *User) QuerySessions() *SessionQuery {
 	return NewUserClient(u.config).QuerySessions(u)
+}
+
+// QueryToolUsageEvents queries the "tool_usage_events" edge of the User entity.
+func (u *User) QueryToolUsageEvents() *ToolUsageEventQuery {
+	return NewUserClient(u.config).QueryToolUsageEvents(u)
 }
 
 // Update returns a builder for updating this User.

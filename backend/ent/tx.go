@@ -44,6 +44,8 @@ type Tx struct {
 	SessionWorkspace *SessionWorkspaceClient
 	// SystemSetting is the client for interacting with the SystemSetting builders.
 	SystemSetting *SystemSettingClient
+	// ToolUsageEvent is the client for interacting with the ToolUsageEvent builders.
+	ToolUsageEvent *ToolUsageEventClient
 	// User is the client for interacting with the User builders.
 	User *UserClient
 	// WebhookDeadLetter is the client for interacting with the WebhookDeadLetter builders.
@@ -195,6 +197,7 @@ func (tx *Tx) init() {
 	tx.SessionUsageEvent = NewSessionUsageEventClient(tx.config)
 	tx.SessionWorkspace = NewSessionWorkspaceClient(tx.config)
 	tx.SystemSetting = NewSystemSettingClient(tx.config)
+	tx.ToolUsageEvent = NewToolUsageEventClient(tx.config)
 	tx.User = NewUserClient(tx.config)
 	tx.WebhookDeadLetter = NewWebhookDeadLetterClient(tx.config)
 }
