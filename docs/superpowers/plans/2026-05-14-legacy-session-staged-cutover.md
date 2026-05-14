@@ -256,5 +256,5 @@
 ## Known Remaining Gaps
 
 - Legacy backend tables and ent schema still exist and have not been destructively cleaned.
-- `backend/internal/sessionbootstrap` historical code still exists in-tree even though it is no longer wired into the public runtime.
+- Legacy session-backed ent schema and attribution fallback paths still exist and have not been destructively cleaned.
 - The frontend still does not provide a richer workspace/commit attribution UI beyond the `Attribution` landing entrypoint and existing repo/PR surfaces.

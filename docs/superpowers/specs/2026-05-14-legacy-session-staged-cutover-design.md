@@ -71,7 +71,7 @@
    - server runtime 不再启动 legacy session bootstrap lifecycle wiring
 4. 仍然暂存的 legacy footprint：
    - 历史 session 表与 ent schema
-   - `backend/internal/sessionbootstrap` 等历史代码，作为后续 schema/data cleanup 的候选对象
+   - 仍有部分 legacy session-backed schema / attribution fallback 逻辑，作为后续 data cleanup 的候选对象
 
 ## 目标
 
@@ -246,7 +246,7 @@ phase 2 再做真正删除：
 
 1. 删除仍保留的 legacy session schema / ent edges / 相关迁移负担
 2. 评估是否彻底删除 `start/stop/run/attach/ps/shell/flush` 迁移壳子
-3. 清理 `backend/internal/sessionbootstrap` 等历史兼容代码
+3. 清理剩余 legacy session-backed schema / attribution fallback 逻辑
 4. 清理不再需要的 legacy tests / docs
 
 ## 风险

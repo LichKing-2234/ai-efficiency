@@ -60,7 +60,7 @@ flowchart LR
 - `deploy/` also includes non-production `dev` / `local` compose paths for local verification.
 - Public health endpoints expose liveness/readiness, and admin settings expose deployment status plus update controls.
 - `ae-cli login` now supports both browser PKCE and OAuth device flow. Headless Linux environments are expected to use `ae-cli login --device`, while desktop/browser-capable environments still default to PKCE.
-- Historical `sessionbootstrap` code and legacy session tables still exist in the repo/data model, but they are no longer wired into the current public runtime or frontend surface.
+- Legacy session tables and ent schema still exist in the repo/data model, but the old session runtime/helper packages are no longer present in the active code path.
 
 ## Current Production Deployment
 
@@ -198,7 +198,7 @@ flowchart LR
 | Relay integration | `backend/internal/relay` | Unified relay/sub2api adapter and usage/API key operations |
 | SCM integration | `backend/internal/scm`, `backend/internal/webhook`, `backend/internal/prsync` | SCM provider abstraction, webhook ingestion, PR synchronization |
 | Repo and analysis | `backend/internal/repo`, `backend/internal/analysis`, `backend/internal/efficiency` | Repo-to-provider binding, provider-backed clone/auth resolution, AI-friendliness scanning, efficiency aggregation and labeling |
-| Session and attribution | `backend/internal/sessionbootstrap`, `backend/internal/checkpoint`, `backend/internal/attribution` | Historical session compatibility code/data model, commit checkpoints, PR/session attribution |
+| Session and attribution | `backend/internal/checkpoint`, `backend/internal/attribution` | Commit checkpoints, PR attribution, and remaining legacy session-backed data compatibility |
 | API surface | `backend/internal/handler`, `backend/internal/middleware` | HTTP handlers, routing, auth middleware, settings endpoints |
 
 ### Frontend
