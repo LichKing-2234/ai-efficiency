@@ -96,57 +96,6 @@ func TestRepoDelete_NotFound(t *testing.T) {
 	}
 }
 
-func TestSessionUpdate_NotFound(t *testing.T) {
-	env := setupTestEnv(t)
-	w := doRequest(env, "PUT", "/api/v1/sessions/550e8400-e29b-41d4-a716-446655440099", nil)
-	if w.Code != http.StatusNotFound {
-		t.Errorf("status = %d, want %d, body: %s", w.Code, http.StatusNotFound, w.Body.String())
-	}
-}
-
-func TestSessionUpdate_InvalidID(t *testing.T) {
-	env := setupTestEnv(t)
-	w := doRequest(env, "PUT", "/api/v1/sessions/bad-id", nil)
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("status = %d, want %d, body: %s", w.Code, http.StatusBadRequest, w.Body.String())
-	}
-}
-
-func TestSessionAddInvocation_InvalidID(t *testing.T) {
-	env := setupTestEnv(t)
-	w := doRequest(env, "POST", "/api/v1/sessions/bad-id/invocations", map[string]interface{}{
-		"tool":  "claude-code",
-		"start": "2026-03-17T10:00:00Z",
-		"end":   "2026-03-17T10:05:00Z",
-	})
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("status = %d, want %d, body: %s", w.Code, http.StatusBadRequest, w.Body.String())
-	}
-}
-
-func TestSessionAddInvocation_InvalidBody(t *testing.T) {
-	env := setupTestEnv(t)
-	// Valid UUID but missing required fields (tool, start)
-	w := doRequest(env, "POST", "/api/v1/sessions/550e8400-e29b-41d4-a716-446655440010/invocations", map[string]interface{}{
-		"bad_field": "value",
-	})
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("status = %d, want %d, body: %s", w.Code, http.StatusBadRequest, w.Body.String())
-	}
-}
-
-func TestSessionAddInvocation_NotFound(t *testing.T) {
-	env := setupTestEnv(t)
-	w := doRequest(env, "POST", "/api/v1/sessions/550e8400-e29b-41d4-a716-446655440099/invocations", map[string]interface{}{
-		"tool":  "claude-code",
-		"start": "2026-03-17T10:00:00Z",
-		"end":   "2026-03-17T10:05:00Z",
-	})
-	if w.Code != http.StatusNotFound {
-		t.Errorf("status = %d, want %d, body: %s", w.Code, http.StatusNotFound, w.Body.String())
-	}
-}
-
 // =====================
 // Efficiency handler tests
 // =====================

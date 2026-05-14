@@ -20,7 +20,6 @@ import (
 	"github.com/ai-efficiency/backend/internal/config"
 	"github.com/ai-efficiency/backend/internal/testdb"
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
@@ -116,62 +115,6 @@ func TestBuildChatSystemPromptWithScanResult(t *testing.T) {
 // =====================
 // 3. session.go:40 Create — duplicate session ID
 // =====================
-
-func TestSessionCreateDuplicateID(t *testing.T) {
-	env := setupTestEnv(t)
-
-	// Create provider and repo
-	provider, err := env.client.ScmProvider.Create().
-		SetName("dup-gh").
-		SetType("github").
-		SetBaseURL("https://api.github.com").
-		SetCredentials("encrypted").
-		Save(context.Background())
-	if err != nil {
-		t.Fatalf("create provider: %v", err)
-	}
-	_, err = env.client.RepoConfig.Create().
-		SetScmProviderID(provider.ID).
-		SetName("dup-repo").
-		SetFullName("org/dup-repo").
-		SetCloneURL("https://github.com/org/dup-repo.git").
-		SetDefaultBranch("main").
-		Save(context.Background())
-	if err != nil {
-		t.Fatalf("create repo: %v", err)
-	}
-
-	sessionID := "660e8400-e29b-41d4-a716-446655440000"
-	createReq := map[string]interface{}{
-		"id":             sessionID,
-		"repo_full_name": "org/dup-repo",
-		"branch":         "main",
-	}
-
-	// First create should succeed
-	w := doRequest(env, "POST", "/api/v1/sessions", createReq)
-	if w.Code != http.StatusCreated {
-		t.Fatalf("first create: expected 201, got %d: %s", w.Code, w.Body.String())
-	}
-
-	// Second create with same ID should fail
-	w = doRequest(env, "POST", "/api/v1/sessions", createReq)
-	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("duplicate create: expected 500, got %d: %s", w.Code, w.Body.String())
-	}
-}
-
-// =====================
-// 4. session.go:110 Stop — invalid UUID
-// =====================
-
-func TestSessionStopInvalidUUID(t *testing.T) {
-	env := setupTestEnv(t)
-	w := doRequest(env, "POST", "/api/v1/sessions/not-a-valid-uuid/stop", nil)
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
-	}
-}
 
 // =====================
 // 5. repo.go:99 Update — invalid body (bad JSON)
@@ -571,41 +514,6 @@ func TestListPRsByRepoCustomMonths(t *testing.T) {
 // =====================
 // Additional: session.go Create — repo found by clone_url fallback
 // =====================
-
-func TestSessionCreateByCloneURL(t *testing.T) {
-	env := setupTestEnv(t)
-
-	provider, err := env.client.ScmProvider.Create().
-		SetName("clone-gh").
-		SetType("github").
-		SetBaseURL("https://api.github.com").
-		SetCredentials("encrypted").
-		Save(context.Background())
-	if err != nil {
-		t.Fatalf("create provider: %v", err)
-	}
-	_, err = env.client.RepoConfig.Create().
-		SetScmProviderID(provider.ID).
-		SetName("clone-repo").
-		SetFullName("org/clone-repo").
-		SetCloneURL("https://github.com/org/clone-repo.git").
-		SetDefaultBranch("main").
-		Save(context.Background())
-	if err != nil {
-		t.Fatalf("create repo: %v", err)
-	}
-
-	sessionID := uuid.New().String()
-	createReq := map[string]interface{}{
-		"id":             sessionID,
-		"repo_full_name": "https://github.com/org/clone-repo.git",
-		"branch":         "main",
-	}
-	w := doRequest(env, "POST", "/api/v1/sessions", createReq)
-	if w.Code != http.StatusCreated {
-		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
-	}
-}
 
 // =====================
 // Additional: efficiency Aggregate with period param

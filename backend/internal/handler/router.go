@@ -70,7 +70,6 @@ func SetupRouter(
 	analysisHandler := NewAnalysisHandler(analysisService, optimizer, repoService)
 	prHandler := NewPRHandler(entClient, repoService, syncService, prAttributionService)
 	efficiencyHandler := NewEfficiencyHandler(entClient, aggregator)
-	sessionHandler := NewSessionHandler(entClient, sessionBootstrapSvc)
 	toolUsageHandler := NewToolUsageHandler(toolusage.NewService(entClient))
 
 	api := r.Group("/api/v1")
@@ -157,16 +156,6 @@ func SetupRouter(
 		effGroup.GET("/repos/:id/metrics", efficiencyHandler.RepoMetrics)
 		effGroup.GET("/repos/:id/trend", efficiencyHandler.Trend)
 		effGroup.POST("/aggregate", auth.RequireAdmin(), efficiencyHandler.Aggregate)
-	}
-
-	// Sessions (ae-cli)
-	sessionGroup := protected.Group("/sessions")
-	{
-		sessionGroup.POST("/bootstrap", sessionHandler.Bootstrap)
-		sessionGroup.POST("", sessionHandler.Create)
-		sessionGroup.PUT("/:id", sessionHandler.Update)
-		sessionGroup.POST("/:id/stop", sessionHandler.Stop)
-		sessionGroup.POST("/:id/invocations", sessionHandler.AddInvocation)
 	}
 
 	toolUsageGroup := protected.Group("/tool-usage-events")

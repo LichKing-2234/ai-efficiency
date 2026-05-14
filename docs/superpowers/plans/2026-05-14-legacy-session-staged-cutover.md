@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make sessionless attribution the only formal user-facing workflow while keeping legacy session/local-proxy code in minimal compatibility mode.
+**Goal:** Make sessionless attribution the only formal user-facing workflow and retire legacy session/local-proxy runtime surfaces.
 
-**Architecture:** Phase 1 does not delete the legacy backend/session schema. Instead it changes the user entrypoints: new CLI commands (`init/sync/doctor`), hidden legacy commands that fail with migration guidance, `Attribution` replacing `Sessions` in primary navigation, and docs updated so local proxy is no longer described as the formal runtime data plane.
+**Architecture:** The cutover now has two landed slices. First, the user entrypoints moved to `init/sync/doctor` and `Attribution` replaced `Sessions` in primary navigation. Second, the legacy session read surface, proxy data plane, and proxy-specific CLI/client paths were removed from the active product/runtime path while historical schema cleanup remains deferred.
 
 **Tech Stack:** Go, Cobra, Gin, Vue 3, Pinia, Vitest, Markdown docs
 

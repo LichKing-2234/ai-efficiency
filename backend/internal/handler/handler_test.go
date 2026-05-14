@@ -10,8 +10,6 @@ import (
 	"testing"
 
 	"github.com/ai-efficiency/backend/ent"
-	"github.com/ai-efficiency/backend/ent/session"
-	"github.com/ai-efficiency/backend/ent/user"
 	"github.com/ai-efficiency/backend/internal/analysis"
 	"github.com/ai-efficiency/backend/internal/auth"
 	"github.com/ai-efficiency/backend/internal/middleware"
@@ -262,125 +260,6 @@ func TestSCMProviderRequiresAdmin(t *testing.T) {
 	}
 }
 
-// --- Sessions ---
-
-func TestSessionLifecycle(t *testing.T) {
-	env := setupTestEnv(t)
-
-	// First create an SCM provider and repo for the session
-	provider, err := env.client.ScmProvider.Create().
-		SetName("test-github").
-		SetType("github").
-		SetBaseURL("https://api.github.com").
-		SetCredentials("encrypted").
-		Save(context.Background())
-	if err != nil {
-		t.Fatalf("create provider: %v", err)
-	}
-
-	rc, err := env.client.RepoConfig.Create().
-		SetScmProviderID(provider.ID).
-		SetName("test-repo").
-		SetFullName("org/test-repo").
-		SetCloneURL("https://github.com/org/test-repo.git").
-		SetDefaultBranch("main").
-		Save(context.Background())
-	if err != nil {
-		t.Fatalf("create repo: %v", err)
-	}
-	_ = rc
-
-	// Create session
-	sessionID := "550e8400-e29b-41d4-a716-446655440000"
-	createReq := map[string]interface{}{
-		"id":             sessionID,
-		"repo_full_name": "org/test-repo",
-		"branch":         "feature-x",
-	}
-	w := doRequest(env, "POST", "/api/v1/sessions", createReq)
-	if w.Code != http.StatusCreated {
-		t.Fatalf("create session status = %d, want %d, body: %s", w.Code, http.StatusCreated, w.Body.String())
-	}
-
-	// Heartbeat
-	w = doRequest(env, "PUT", "/api/v1/sessions/"+sessionID, nil)
-	if w.Code != http.StatusOK {
-		t.Errorf("heartbeat status = %d, want %d, body: %s", w.Code, http.StatusOK, w.Body.String())
-	}
-
-	// Add invocation
-	invReq := map[string]interface{}{
-		"tool":  "claude-code",
-		"start": "2026-03-17T10:00:00Z",
-		"end":   "2026-03-17T10:05:00Z",
-	}
-	w = doRequest(env, "POST", "/api/v1/sessions/"+sessionID+"/invocations", invReq)
-	if w.Code != http.StatusOK {
-		t.Errorf("add invocation status = %d, want %d, body: %s", w.Code, http.StatusOK, w.Body.String())
-	}
-
-	// Stop session
-	w = doRequest(env, "POST", "/api/v1/sessions/"+sessionID+"/stop", nil)
-	if w.Code != http.StatusOK {
-		t.Errorf("stop session status = %d, want %d, body: %s", w.Code, http.StatusOK, w.Body.String())
-	}
-
-	// Verify session is completed
-	s, err := env.client.Session.Get(context.Background(), mustParseUUID(sessionID))
-	if err != nil {
-		t.Fatalf("get session: %v", err)
-	}
-	ownedByCreator, err := env.client.Session.Query().
-		Where(
-			session.IDEQ(mustParseUUID(sessionID)),
-			session.HasUserWith(user.IDEQ(env.userID)),
-		).
-		Exist(context.Background())
-	if err != nil {
-		t.Fatalf("query session owner: %v", err)
-	}
-	if !ownedByCreator {
-		t.Fatal("expected created session to belong to the authenticated caller")
-	}
-	if s.Status != "completed" {
-		t.Errorf("session status = %s, want completed", s.Status)
-	}
-	if s.EndedAt == nil {
-		t.Error("session ended_at should not be nil")
-	}
-	if len(s.ToolInvocations) != 1 {
-		t.Errorf("tool_invocations len = %d, want 1", len(s.ToolInvocations))
-	}
-}
-
-func TestSessionCreateInvalidUUID(t *testing.T) {
-	env := setupTestEnv(t)
-
-	req := map[string]interface{}{
-		"id":             "not-a-uuid",
-		"repo_full_name": "org/repo",
-		"branch":         "main",
-	}
-	w := doRequest(env, "POST", "/api/v1/sessions", req)
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("status = %d, want %d", w.Code, http.StatusBadRequest)
-	}
-}
-
-func TestSessionCreateUnknownRepo(t *testing.T) {
-	env := setupTestEnv(t)
-
-	req := map[string]interface{}{
-		"id":             "550e8400-e29b-41d4-a716-446655440001",
-		"repo_full_name": "org/nonexistent",
-		"branch":         "main",
-	}
-	w := doRequest(env, "POST", "/api/v1/sessions", req)
-	if w.Code != http.StatusNotFound {
-		t.Errorf("status = %d, want %d, body: %s", w.Code, http.StatusNotFound, w.Body.String())
-	}
-}
-
 // --- Repos (direct create, no SCM validation) ---
 
 func TestRepoDirectCreateAndList(t *testing.T) {
@@ -442,14 +321,5 @@ func TestRepoDirectCreateAndList(t *testing.T) {
 	w = doRequest(env, "DELETE", fmt.Sprintf("/api/v1/repos/%d", repoID), nil)
 	if w.Code != http.StatusOK {
 		t.Errorf("delete repo status = %d, want %d, body: %s", w.Code, http.StatusOK, w.Body.String())
-	}
-}
-
-func TestSessionStopNotFound(t *testing.T) {
-	env := setupTestEnv(t)
-
-	w := doRequest(env, "POST", "/api/v1/sessions/550e8400-e29b-41d4-a716-446655440099/stop", nil)
-	if w.Code != http.StatusNotFound {
-		t.Errorf("status = %d, want %d", w.Code, http.StatusNotFound)
 	}
 }

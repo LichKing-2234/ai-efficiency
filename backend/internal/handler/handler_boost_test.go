@@ -23,7 +23,6 @@ import (
 	"github.com/ai-efficiency/backend/internal/testdb"
 	"github.com/ai-efficiency/backend/internal/webhook"
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
@@ -244,21 +243,6 @@ func TestAggregateForRepo_Error(t *testing.T) {
 }
 
 // =====================
-// Session — Create with missing required fields
-// =====================
-
-func TestSessionCreate_MissingFields(t *testing.T) {
-	env := setupTestEnv(t)
-	// Missing repo_full_name and branch
-	w := doRequest(env, "POST", "/api/v1/sessions", map[string]interface{}{
-		"id": uuid.New().String(),
-	})
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("status = %d, want %d", w.Code, http.StatusBadRequest)
-	}
-}
-
-// =====================
 // PR — ListByRepo with status filter covering the status query branch
 // =====================
 
@@ -418,62 +402,6 @@ func TestRepoList_WithAllFilters(t *testing.T) {
 	w := doRequest(env, "GET", "/api/v1/repos?page=1&page_size=10&scm_provider_id=1&status=active&group_id=team-a", nil)
 	if w.Code != http.StatusOK {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusOK)
-	}
-}
-
-// =====================
-// Session — AddInvocation update error (save after tx.Session.Get succeeds but update fails)
-// This is hard to trigger with real DB, but we can cover the commit success path more thoroughly
-// =====================
-
-func TestSessionAddInvocation_MultipleInvocations(t *testing.T) {
-	env := setupTestEnv(t)
-
-	p, _ := env.client.ScmProvider.Create().
-		SetName("gh").SetType("github").
-		SetBaseURL("https://api.github.com").SetCredentials("enc").
-		Save(context.Background())
-	rc, _ := env.client.RepoConfig.Create().
-		SetScmProviderID(p.ID).SetName("r").SetFullName("org/inv-repo").
-		SetCloneURL("https://github.com/org/inv-repo.git").SetDefaultBranch("main").
-		Save(context.Background())
-
-	sid := "550e8400-e29b-41d4-a716-446655440060"
-	w := doRequest(env, "POST", "/api/v1/sessions", map[string]interface{}{
-		"id": sid, "repo_full_name": rc.FullName, "branch": "main",
-	})
-	if w.Code != http.StatusCreated {
-		t.Fatalf("create session: %d, %s", w.Code, w.Body.String())
-	}
-
-	// Add 3 invocations sequentially to cover the append logic
-	for i := 0; i < 3; i++ {
-		inv := map[string]interface{}{
-			"tool":  fmt.Sprintf("tool-%d", i),
-			"start": fmt.Sprintf("2026-03-17T%02d:00:00Z", 10+i),
-		}
-		w = doRequest(env, "POST", fmt.Sprintf("/api/v1/sessions/%s/invocations", sid), inv)
-		if w.Code != http.StatusOK {
-			t.Fatalf("invocation %d: %d, %s", i, w.Code, w.Body.String())
-		}
-	}
-
-	// Verify all 3 invocations were stored
-	s, _ := env.client.Session.Get(context.Background(), uuid.MustParse(sid))
-	if len(s.ToolInvocations) != 3 {
-		t.Errorf("invocations = %d, want 3", len(s.ToolInvocations))
-	}
-}
-
-// =====================
-// Session — Stop not found (covers the ent.IsNotFound branch)
-// =====================
-
-func TestSessionStop_NotFoundBranch(t *testing.T) {
-	env := setupTestEnv(t)
-	w := doRequest(env, "POST", "/api/v1/sessions/550e8400-e29b-41d4-a716-446655440077/stop", nil)
-	if w.Code != http.StatusNotFound {
-		t.Errorf("status = %d, want %d", w.Code, http.StatusNotFound)
 	}
 }
 
