@@ -108,10 +108,23 @@ func TestCheckpointRewriteHappyPath(t *testing.T) {
 		SetDefaultBranch("main").
 		SaveX(ctx)
 
+	owner := client.User.Create().
+		SetUsername("checkpoint-rewrite-owner").
+		SetEmail("checkpoint-rewrite-owner@test.com").
+		SetAuthSource("ldap").
+		SaveX(ctx)
+
 	h := NewCheckpointHandler(checkpoint.NewService(client))
 	r := gin.New()
-	r.Use(withAuthUser(1, "user"))
+	r.Use(withAuthUser(owner.ID, "user"))
 	r.POST("/rewrite", h.Rewrite)
+
+	client.Session.Create().
+		SetID(uuid.New()).
+		SetRepoConfigID(rc.ID).
+		SetBranch("main").
+		SetUserID(owner.ID).
+		SaveX(ctx)
 
 	body := map[string]any{
 		"event_id":       "evt-http-rewrite-1",
