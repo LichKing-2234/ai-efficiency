@@ -23,6 +23,21 @@ func TestHookCommandHasPostRewriteSubcommand(t *testing.T) {
 	}
 }
 
+func TestHookCommandHasSessionEventSubcommand(t *testing.T) {
+	var found bool
+	for _, c := range hookCmd.Commands() {
+		if c.Name() == "session-event" {
+			found = true
+			if !c.Hidden {
+				t.Fatalf("expected hook session-event to be hidden")
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("expected hidden subcommand 'ae-cli hook session-event' to exist")
+	}
+}
+
 func TestHookPostCommitCommandQueuesWhenUploaderUnsupported(t *testing.T) {
 	repo := initRepoWithCommitForCmdTests(t)
 

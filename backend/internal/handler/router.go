@@ -162,6 +162,9 @@ func SetupRouter(
 	// Sessions (ae-cli)
 	sessionGroup := protected.Group("/sessions")
 	{
+		sessionGroup.GET("", sessionHandler.List)
+		sessionGroup.GET("/:id", sessionHandler.Get)
+		sessionGroup.GET("/:id/provider-credentials", sessionHandler.ProviderCredential)
 		sessionGroup.POST("/bootstrap", sessionHandler.Bootstrap)
 		sessionGroup.POST("", sessionHandler.Create)
 		sessionGroup.PUT("/:id", sessionHandler.Update)

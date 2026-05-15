@@ -198,9 +198,12 @@
 - Modify: `ae-cli/cmd/hook.go`
 - Modify: `ae-cli/cmd/hook_test.go`
 
-- [x] **Step 1: Remove local-proxy posting from post-commit and post-rewrite hook handling**
-- [x] **Step 2: Remove the hidden `ae-cli hook session-event` path**
-- [x] **Step 3: Re-run CLI/hooks verification to confirm pass**
+- [ ] **Step 1: Remove local-proxy posting from post-commit and post-rewrite hook handling**
+- [ ] **Step 2: Remove the hidden `ae-cli hook session-event` path**
+- [ ] **Step 3: Re-run CLI/hooks verification to confirm pass**
+
+Current note:
+- This PR now focuses on legacy read-surface removal only. Proxy credential/runtime-hook cutover remains in the following stacked PRs so ae-cli provider-credential and local-proxy dependencies are retired together.
 
 ## Verification
 

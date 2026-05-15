@@ -16,6 +16,7 @@ import (
 
 	"github.com/ai-efficiency/ae-cli/internal/attributionlocal"
 	"github.com/ai-efficiency/ae-cli/internal/collector"
+	"github.com/ai-efficiency/ae-cli/internal/proxy"
 	"github.com/ai-efficiency/ae-cli/internal/session"
 )
 
@@ -235,6 +236,16 @@ func (h *Handler) PostCommit(ctx context.Context, cwd string) error {
 		CapturedAt:     time.Now().UTC().Format(time.RFC3339),
 	}
 
+	if rt, err := session.ReadRuntimeBundle(sessionID); err == nil && rt != nil && rt.Proxy != nil {
+		if err := proxy.PostEvent(ctx, rt.Proxy.ListenAddr, rt.Proxy.AuthToken, proxy.EventEnvelope{
+			EventType: "post_commit",
+			SessionID: sessionID,
+			Payload:   ev,
+		}); err == nil {
+			return nil
+		}
+	}
+
 	if h == nil || h.uploader == nil {
 		// No uploader wired; behave like upload failure (queue best-effort).
 		q, err := NewLocalQueue(sessionID)
@@ -353,6 +364,16 @@ func (h *Handler) PostRewrite(ctx context.Context, cwd string, rewriteType strin
 			OldCommitSHA:  oldSHA,
 			NewCommitSHA:  newSHA,
 			CapturedAt:    time.Now().UTC().Format(time.RFC3339),
+		}
+
+		if rt, err := session.ReadRuntimeBundle(sessionID); err == nil && rt != nil && rt.Proxy != nil {
+			if err := proxy.PostEvent(ctx, rt.Proxy.ListenAddr, rt.Proxy.AuthToken, proxy.EventEnvelope{
+				EventType: "post_rewrite",
+				SessionID: sessionID,
+				Payload:   ev,
+			}); err == nil {
+				continue
+			}
 		}
 
 		if h == nil || h.uploader == nil {

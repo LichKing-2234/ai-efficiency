@@ -2,11 +2,19 @@ package handler
 
 import (
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/ai-efficiency/backend/ent"
+	"github.com/ai-efficiency/backend/ent/agentmetadataevent"
+	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/session"
+	"github.com/ai-efficiency/backend/ent/sessionevent"
+	"github.com/ai-efficiency/backend/ent/sessionusageevent"
+	"github.com/ai-efficiency/backend/ent/sessionworkspace"
+	"github.com/ai-efficiency/backend/ent/user"
 	"github.com/ai-efficiency/backend/internal/auth"
 	"github.com/ai-efficiency/backend/internal/pkg"
 	"github.com/ai-efficiency/backend/internal/sessionbootstrap"
@@ -48,6 +56,39 @@ type addInvocationRequest struct {
 	End   string `json:"end"`
 }
 
+type providerCredentialQuery struct {
+	Platform string `form:"platform" binding:"required"`
+}
+
+func applyPublicUserSelect(q *ent.UserQuery) {
+	q.Select(
+		user.FieldID,
+		user.FieldUsername,
+		user.FieldEmail,
+		user.FieldRole,
+		user.FieldAuthSource,
+	)
+}
+
+func requestedOwnerScope(c *gin.Context) string {
+	scope := strings.TrimSpace(c.DefaultQuery("owner_scope", ""))
+	if scope == "" {
+		if isAdminUser(c) {
+			return "all"
+		}
+		return "mine"
+	}
+	if !isAdminUser(c) {
+		return "mine"
+	}
+	switch scope {
+	case "all", "mine", "unowned":
+		return scope
+	default:
+		return "all"
+	}
+}
+
 // Bootstrap handles POST /api/v1/sessions/bootstrap
 func (h *SessionHandler) Bootstrap(c *gin.Context) {
 	if h.bootstrapSvc == nil {
@@ -84,6 +125,36 @@ func (h *SessionHandler) Bootstrap(c *gin.Context) {
 
 	pkg.Created(c, resp)
 }
+
+// ProviderCredential handles GET /api/v1/sessions/:id/provider-credentials
+func (h *SessionHandler) ProviderCredential(c *gin.Context) {
+	if h.bootstrapSvc == nil {
+		pkg.Error(c, http.StatusServiceUnavailable, "bootstrap service not configured")
+		return
+	}
+	sessionID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		pkg.Error(c, http.StatusBadRequest, "invalid session id")
+		return
+	}
+	var query providerCredentialQuery
+	if err := c.ShouldBindQuery(&query); err != nil {
+		pkg.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	uc := auth.GetUserContext(c)
+	if uc == nil {
+		pkg.Error(c, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	resp, err := h.bootstrapSvc.ResolveProviderCredential(c.Request.Context(), uc.UserID, sessionID, strings.TrimSpace(query.Platform))
+	if err != nil {
+		pkg.Error(c, http.StatusUnprocessableEntity, err.Error())
+		return
+	}
+	pkg.Success(c, resp)
+}
+
 // Create handles POST /api/v1/sessions
 func (h *SessionHandler) Create(c *gin.Context) {
 	var req createSessionRequest
@@ -203,6 +274,143 @@ func (h *SessionHandler) Stop(c *gin.Context) {
 			return
 		}
 		pkg.Error(c, http.StatusInternalServerError, "failed to stop session")
+		return
+	}
+
+	pkg.Success(c, s)
+}
+
+// List handles GET /api/v1/sessions
+func (h *SessionHandler) List(c *gin.Context) {
+	query := h.entClient.Session.Query().
+		WithRepoConfig().
+		WithUser(applyPublicUserSelect).
+		Order(ent.Desc(session.FieldStartedAt))
+	ownerScope := ""
+	if uc := auth.GetUserContext(c); uc != nil {
+		ownerScope = requestedOwnerScope(c)
+		switch ownerScope {
+		case "mine":
+			query = query.Where(session.HasUserWith(user.IDEQ(uc.UserID)))
+		case "unowned":
+			query = query.Where(session.Not(session.HasUser()))
+		case "all":
+			// Admin users can view all sessions.
+		}
+	}
+
+	// Filter by status
+	if status := c.Query("status"); status != "" {
+		query = query.Where(session.StatusEQ(session.Status(status)))
+	}
+
+	// Filter by repo_config_id
+	if repoID := c.Query("repo_id"); repoID != "" {
+		id, err := strconv.Atoi(repoID)
+		if err == nil {
+			query = query.Where(session.HasRepoConfigWith(repoconfig.IDEQ(id)))
+		}
+	}
+
+	if branch := strings.TrimSpace(c.Query("branch")); branch != "" {
+		query = query.Where(session.BranchContainsFold(branch))
+	}
+
+	if repoQuery := strings.TrimSpace(c.Query("repo_query")); repoQuery != "" {
+		query = query.Where(session.HasRepoConfigWith(
+			repoconfig.Or(
+				repoconfig.FullNameContainsFold(repoQuery),
+				repoconfig.CloneURLContainsFold(repoQuery),
+			),
+		))
+	}
+
+	if ownerQuery := strings.TrimSpace(c.Query("owner_query")); ownerQuery != "" && ownerScope != "unowned" {
+		query = query.Where(session.HasUserWith(
+			user.Or(
+				user.UsernameContainsFold(ownerQuery),
+				user.EmailContainsFold(ownerQuery),
+			),
+		))
+	}
+
+	// Pagination
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 || pageSize > 100 {
+		pageSize = 20
+	}
+
+	total, err := query.Clone().Count(c.Request.Context())
+	if err != nil {
+		pkg.Error(c, http.StatusInternalServerError, "failed to count sessions")
+		return
+	}
+
+	sessions, err := query.
+		Offset((page - 1) * pageSize).
+		Limit(pageSize).
+		All(c.Request.Context())
+	if err != nil {
+		pkg.Error(c, http.StatusInternalServerError, "failed to list sessions")
+		return
+	}
+
+	pkg.Success(c, gin.H{
+		"items":     sessions,
+		"total":     total,
+		"page":      page,
+		"page_size": pageSize,
+	})
+}
+
+// Get handles GET /api/v1/sessions/:id
+func (h *SessionHandler) Get(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		pkg.Error(c, http.StatusBadRequest, "invalid session id")
+		return
+	}
+
+	query := h.entClient.Session.Query().
+		Where(session.IDEQ(id))
+	if uc := auth.GetUserContext(c); uc != nil && uc.Role != "admin" {
+		query = query.Where(session.HasUserWith(user.IDEQ(uc.UserID)))
+	}
+
+	s, err := query.
+		WithRepoConfig().
+		WithUser(applyPublicUserSelect).
+		WithSessionWorkspaces(func(q *ent.SessionWorkspaceQuery) {
+			q.Order(ent.Desc(sessionworkspace.FieldLastSeenAt)).
+				Limit(20)
+		}).
+		WithCommitCheckpoints(func(q *ent.CommitCheckpointQuery) {
+			q.Order(ent.Desc(commitcheckpoint.FieldCapturedAt)).
+				Limit(50)
+		}).
+		WithAgentMetadataEvents(func(q *ent.AgentMetadataEventQuery) {
+			q.Order(ent.Desc(agentmetadataevent.FieldObservedAt)).
+				Limit(100)
+		}).
+		WithSessionUsageEvents(func(q *ent.SessionUsageEventQuery) {
+			q.Order(ent.Desc(sessionusageevent.FieldStartedAt)).
+				Limit(100)
+		}).
+		WithSessionEvents(func(q *ent.SessionEventQuery) {
+			q.Order(ent.Desc(sessionevent.FieldCapturedAt)).
+				Limit(100)
+		}).
+		Only(c.Request.Context())
+	if err != nil {
+		if ent.IsNotFound(err) {
+			pkg.Error(c, http.StatusNotFound, "session not found")
+			return
+		}
+		pkg.Error(c, http.StatusInternalServerError, "failed to get session")
 		return
 	}
 
