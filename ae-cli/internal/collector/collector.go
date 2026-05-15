@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ai-efficiency/ae-cli/internal/attributionlocal"
 	"github.com/ai-efficiency/ae-cli/internal/session"
 )
 
@@ -103,6 +104,30 @@ func WriteCache(sessionID string, snapshot *Snapshot) error {
 	}
 	if err := os.WriteFile(filepath.Join(dir, "latest.json"), data, 0o600); err != nil {
 		return fmt.Errorf("write snapshot cache: %w", err)
+	}
+	return nil
+}
+
+func WriteWorkspaceCache(workspaceID string, snapshot *Snapshot) error {
+	workspaceID = strings.TrimSpace(workspaceID)
+	if workspaceID == "" {
+		return fmt.Errorf("workspace_id is required")
+	}
+	if snapshot == nil {
+		return fmt.Errorf("snapshot is nil")
+	}
+
+	dir := filepath.Join(attributionlocal.AttributionRootDir(), "workspaces", workspaceID, "collectors")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return fmt.Errorf("create workspace collectors dir: %w", err)
+	}
+
+	data, err := json.MarshalIndent(snapshot, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal snapshot: %w", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "latest.json"), data, 0o600); err != nil {
+		return fmt.Errorf("write workspace snapshot cache: %w", err)
 	}
 	return nil
 }

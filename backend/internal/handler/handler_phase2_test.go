@@ -243,7 +243,7 @@ func TestDashboard(t *testing.T) {
 	data := resp["data"].(map[string]interface{})
 
 	// Verify expected keys exist
-	for _, key := range []string{"total_repos", "active_sessions", "avg_ai_score", "total_ai_prs"} {
+	for _, key := range []string{"total_repos", "tracked_workflows", "avg_ai_score", "total_ai_prs"} {
 		if _, ok := data[key]; !ok {
 			t.Errorf("missing key %q in dashboard response", key)
 		}
@@ -305,7 +305,7 @@ func TestMaskAPIKey(t *testing.T) {
 	}{
 		{"sk-1234567890abcdef", "sk-****cdef"},
 		{"short", "****"},
-		{"12345678", "****"},       // exactly 8 chars
+		{"12345678", "****"},         // exactly 8 chars
 		{"123456789", "123****6789"}, // 9 chars — first 3 + **** + last 4
 	}
 

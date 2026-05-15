@@ -8,7 +8,6 @@ import (
 	"github.com/ai-efficiency/backend/ent/efficiencymetric"
 	"github.com/ai-efficiency/backend/ent/prrecord"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
-	"github.com/ai-efficiency/backend/ent/session"
 	"github.com/ai-efficiency/backend/internal/efficiency"
 	"github.com/ai-efficiency/backend/internal/pkg"
 	"github.com/gin-gonic/gin"
@@ -30,9 +29,11 @@ func (h *EfficiencyHandler) Dashboard(c *gin.Context) {
 	ctx := c.Request.Context()
 
 	totalRepos, _ := h.entClient.RepoConfig.Query().Count(ctx)
-	activeSessions, _ := h.entClient.Session.Query().
-		Where(session.StatusEQ(session.StatusActive)).
-		Count(ctx)
+	workspaceIDs, _ := h.entClient.ToolUsageEvent.Query().
+		Unique(true).
+		Select("workspace_id").
+		Strings(ctx)
+	trackedWorkflows := len(workspaceIDs)
 
 	// Compute average AI score across all repos
 	repos, _ := h.entClient.RepoConfig.Query().All(ctx)
@@ -51,10 +52,10 @@ func (h *EfficiencyHandler) Dashboard(c *gin.Context) {
 		Count(ctx)
 
 	pkg.Success(c, gin.H{
-		"total_repos":     totalRepos,
-		"active_sessions": activeSessions,
-		"avg_ai_score":    avgScore,
-		"total_ai_prs":    aiPRs,
+		"total_repos":       totalRepos,
+		"tracked_workflows": trackedWorkflows,
+		"avg_ai_score":      avgScore,
+		"total_ai_prs":      aiPRs,
 	})
 }
 

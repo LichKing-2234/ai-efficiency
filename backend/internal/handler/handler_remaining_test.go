@@ -69,7 +69,7 @@ func setupDebugTestEnv(t *testing.T) *fullTestEnv {
 		nil, // optimizer
 		"0000000000000000000000000000000000000000000000000000000000000000",
 		middleware.CORS(nil),
-		nil, nil, nil, nil, nil,
+		nil, nil, nil, nil,
 		nil,
 	)
 
@@ -302,7 +302,7 @@ func TestChatLLMNotConfigured(t *testing.T) {
 		nil, nil, chatHandler, nil, nil,
 		"0000000000000000000000000000000000000000000000000000000000000000",
 		middleware.CORS(nil),
-		nil, nil, nil, nil, nil,
+		nil, nil, nil, nil,
 		nil,
 	)
 

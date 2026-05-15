@@ -117,11 +117,6 @@ describe('Router Guards', () => {
     expect(sessionDetail).toBeUndefined()
   })
 
-  it('includes attribution route in the router', () => {
-    const attribution = router.getRoutes().find((r) => r.name === 'Attribution')
-    expect(attribution?.path).toBe('/attribution')
-  })
-
   it('includes oauth device route in the router', () => {
     const oauthDevice = router.getRoutes().find((r) => r.name === 'OAuthDevice')
     expect(oauthDevice?.path).toBe('/oauth/device')

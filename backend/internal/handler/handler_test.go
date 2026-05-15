@@ -71,7 +71,7 @@ func setupTestEnvWithOAuth(t *testing.T, oauthHandler *oauth.Handler) *testEnv {
 		nil, // optimizer
 		"0000000000000000000000000000000000000000000000000000000000000000",
 		middleware.CORS(nil),
-		oauthHandler, nil, nil, nil, nil,
+		oauthHandler, nil, nil, nil,
 		nil,
 	)
 

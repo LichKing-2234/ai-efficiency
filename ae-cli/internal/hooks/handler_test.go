@@ -31,7 +31,13 @@ func (f *fakeUploader) UploadHookEvent(ctx context.Context, ev HookEvent) error 
 
 func writeMarker(t *testing.T, repo, sessionID string) {
 	t.Helper()
-	if err := session.WriteMarker(repo, &session.Marker{SessionID: sessionID, RepoFullName: "origin"}); err != nil {
+	gitDir := git2(t, repo, "rev-parse", "--absolute-git-dir")
+	gitCommonDir := git2(t, repo, "rev-parse", "--git-common-dir")
+	workspaceID, err := session.DeriveWorkspaceID(repo, repo, gitDir, filepath.Join(repo, gitCommonDir))
+	if err != nil {
+		t.Fatalf("DeriveWorkspaceID: %v", err)
+	}
+	if err := session.WriteMarker(repo, &session.Marker{SessionID: sessionID, WorkspaceID: workspaceID, RepoFullName: "origin"}); err != nil {
 		t.Fatalf("WriteMarker: %v", err)
 	}
 }
@@ -56,6 +62,7 @@ func initRepoWithCommit2(t *testing.T) string {
 	git2(t, dir, "init")
 	git2(t, dir, "config", "user.email", "t@example.com")
 	git2(t, dir, "config", "user.name", "t")
+	git2(t, dir, "remote", "add", "origin", "https://github.com/acme/repo.git")
 	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a\n"), 0o644); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
@@ -139,10 +146,7 @@ func TestPostCommitQueuesEventWhenUploadFails(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
-	marker := &session.Marker{SessionID: "sess-1", RepoFullName: "origin", Branch: "main", HeadSHA: git2(t, repo, "rev-parse", "HEAD")}
-	if err := session.WriteMarker(repo, marker); err != nil {
-		t.Fatalf("WriteMarker: %v", err)
-	}
+	writeMarker(t, repo, "sess-1")
 
 	u := &fakeUploader{err: errors.New("upload failed")}
 	h := NewHandler(u)
@@ -151,9 +155,13 @@ func TestPostCommitQueuesEventWhenUploadFails(t *testing.T) {
 		t.Fatalf("PostCommit should be fail-open, got: %v", err)
 	}
 
-	q, err := NewLocalQueue("sess-1")
+	marker, err := session.ReadMarker(repo)
 	if err != nil {
-		t.Fatalf("NewLocalQueue: %v", err)
+		t.Fatalf("ReadMarker: %v", err)
+	}
+	q, err := NewWorkspaceQueue(marker.WorkspaceID)
+	if err != nil {
+		t.Fatalf("NewWorkspaceQueue: %v", err)
 	}
 	items, err := q.List()
 	if err != nil {
@@ -165,6 +173,9 @@ func TestPostCommitQueuesEventWhenUploadFails(t *testing.T) {
 	if items[0].Event.SessionID != "sess-1" {
 		t.Fatalf("queued session_id = %q, want %q", items[0].Event.SessionID, "sess-1")
 	}
+	if strings.TrimSpace(items[0].Event.WorkspaceID) == "" {
+		t.Fatalf("queued workspace_id is empty")
+	}
 }
 
 func TestFlushReplaysQueuedEvents(t *testing.T) {
@@ -173,14 +184,15 @@ func TestFlushReplaysQueuedEvents(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
-	marker := &session.Marker{SessionID: "sess-1", RepoFullName: "origin", Branch: "main", HeadSHA: git2(t, repo, "rev-parse", "HEAD")}
-	if err := session.WriteMarker(repo, marker); err != nil {
-		t.Fatalf("WriteMarker: %v", err)
-	}
+	writeMarker(t, repo, "sess-1")
 
-	q, err := NewLocalQueue("sess-1")
+	marker, err := session.ReadMarker(repo)
 	if err != nil {
-		t.Fatalf("NewLocalQueue: %v", err)
+		t.Fatalf("ReadMarker: %v", err)
+	}
+	q, err := NewWorkspaceQueue(marker.WorkspaceID)
+	if err != nil {
+		t.Fatalf("NewWorkspaceQueue: %v", err)
 	}
 	// Seed queue with two events.
 	for i := 0; i < 2; i++ {
@@ -189,7 +201,7 @@ func TestFlushReplaysQueuedEvents(t *testing.T) {
 		if err != nil {
 			t.Fatalf("CheckpointEventID: %v", err)
 		}
-		ev := HookEvent{Kind: "post-commit", SessionID: "sess-1", CommitSHA: sha, EventID: eid}
+		ev := HookEvent{Kind: "post-commit", SessionID: "sess-1", WorkspaceID: marker.WorkspaceID, CommitSHA: sha, EventID: eid}
 		if err := q.Enqueue(ev); err != nil {
 			t.Fatalf("Enqueue: %v", err)
 		}
@@ -221,7 +233,12 @@ func TestPostRewriteQueuesEventsWhenUploadFails(t *testing.T) {
 	t.Setenv("HOME", home)
 
 	repoHint := "github.com/acme/repo"
-	marker := &session.Marker{SessionID: "sess-1", RepoFullName: repoHint}
+	writeMarker(t, repo, "sess-1")
+	marker, err := session.ReadMarker(repo)
+	if err != nil {
+		t.Fatalf("ReadMarker: %v", err)
+	}
+	marker.RepoFullName = repoHint
 	if err := session.WriteMarker(repo, marker); err != nil {
 		t.Fatalf("WriteMarker: %v", err)
 	}
@@ -234,9 +251,13 @@ func TestPostRewriteQueuesEventsWhenUploadFails(t *testing.T) {
 		t.Fatalf("PostRewrite should be fail-open, got: %v", err)
 	}
 
-	q, err := NewLocalQueue("sess-1")
+	marker, err = session.ReadMarker(repo)
 	if err != nil {
-		t.Fatalf("NewLocalQueue: %v", err)
+		t.Fatalf("ReadMarker: %v", err)
+	}
+	q, err := NewWorkspaceQueue(marker.WorkspaceID)
+	if err != nil {
+		t.Fatalf("NewWorkspaceQueue: %v", err)
 	}
 	items, err := q.List()
 	if err != nil {
@@ -262,16 +283,40 @@ func TestPostRewriteQueuesEventsWhenUploadFails(t *testing.T) {
 	}
 }
 
+func TestPostCommitWithoutMarkerUploadsUnboundCheckpoint(t *testing.T) {
+	repo := initRepoWithCommit2(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	_ = runAttributionSync(context.Background(), repo)
+	u := &fakeUploader{}
+	h := NewHandler(u)
+	if err := h.PostCommit(context.Background(), repo); err != nil {
+		t.Fatalf("PostCommit: %v", err)
+	}
+
+	if len(u.events) != 1 {
+		t.Fatalf("uploaded events = %d, want 1", len(u.events))
+	}
+	ev := u.events[0]
+	if ev.BindingSource != "unbound" {
+		t.Fatalf("binding_source = %q, want unbound", ev.BindingSource)
+	}
+	if strings.TrimSpace(ev.WorkspaceID) == "" {
+		t.Fatalf("workspace_id is empty")
+	}
+	if strings.TrimSpace(ev.SessionID) != "" {
+		t.Fatalf("session_id = %q, want empty", ev.SessionID)
+	}
+}
+
 func TestPostCommitSetsEventIDBeforeUpload(t *testing.T) {
 	repo := initRepoWithCommit2(t)
 
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
-	marker := &session.Marker{SessionID: "sess-1", RepoFullName: "origin", Branch: "main", HeadSHA: git2(t, repo, "rev-parse", "HEAD")}
-	if err := session.WriteMarker(repo, marker); err != nil {
-		t.Fatalf("WriteMarker: %v", err)
-	}
+	writeMarker(t, repo, "sess-1")
 
 	u := &fakeUploader{}
 	h := NewHandler(u)
@@ -294,7 +339,12 @@ func TestPostCommitUsesRepoScopedEventID(t *testing.T) {
 	t.Setenv("HOME", home)
 
 	repoHint := "github.com/acme/repo"
-	marker := &session.Marker{SessionID: "sess-1", RepoFullName: repoHint}
+	writeMarker(t, repo, "sess-1")
+	marker, err := session.ReadMarker(repo)
+	if err != nil {
+		t.Fatalf("ReadMarker: %v", err)
+	}
+	marker.RepoFullName = repoHint
 	if err := session.WriteMarker(repo, marker); err != nil {
 		t.Fatalf("WriteMarker: %v", err)
 	}
@@ -323,10 +373,7 @@ func TestPostCommit_TriggersAttributionSync(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
-	marker := &session.Marker{SessionID: "sess-1", RepoFullName: "origin", Branch: "main", HeadSHA: git2(t, repo, "rev-parse", "HEAD")}
-	if err := session.WriteMarker(repo, marker); err != nil {
-		t.Fatalf("WriteMarker: %v", err)
-	}
+	writeMarker(t, repo, "sess-1")
 
 	calls := 0
 	old := runAttributionSync
@@ -350,10 +397,7 @@ func TestPostCommit_TriggersAttributionSyncBeforeUpload(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
-	marker := &session.Marker{SessionID: "sess-1", RepoFullName: "origin", Branch: "main", HeadSHA: git2(t, repo, "rev-parse", "HEAD")}
-	if err := session.WriteMarker(repo, marker); err != nil {
-		t.Fatalf("WriteMarker: %v", err)
-	}
+	writeMarker(t, repo, "sess-1")
 
 	synced := false
 	old := runAttributionSync
@@ -383,7 +427,12 @@ func TestPostRewriteUsesRepoScopedEventID(t *testing.T) {
 	t.Setenv("HOME", home)
 
 	repoHint := "github.com/acme/repo"
-	marker := &session.Marker{SessionID: "sess-1", RepoFullName: repoHint}
+	writeMarker(t, repo, "sess-1")
+	marker, err := session.ReadMarker(repo)
+	if err != nil {
+		t.Fatalf("ReadMarker: %v", err)
+	}
+	marker.RepoFullName = repoHint
 	if err := session.WriteMarker(repo, marker); err != nil {
 		t.Fatalf("WriteMarker: %v", err)
 	}
@@ -432,10 +481,7 @@ func TestPostCommitAttachesCollectorSnapshotAndWritesCache(t *testing.T) {
 	t.Setenv("AE_CLAUDE_SESSION_FILES", claude)
 	t.Setenv("AE_KIRO_SESSION_FILES", kiro)
 
-	marker := &session.Marker{SessionID: "sess-collector", RepoFullName: "github.com/acme/repo"}
-	if err := session.WriteMarker(repo, marker); err != nil {
-		t.Fatalf("WriteMarker: %v", err)
-	}
+	writeMarker(t, repo, "sess-collector")
 
 	u := &fakeUploader{}
 	h := NewHandler(u)
@@ -454,7 +500,8 @@ func TestPostCommitAttachesCollectorSnapshotAndWritesCache(t *testing.T) {
 		t.Fatalf("codex source_session_id = %v, want codex-sess-1", got)
 	}
 
-	cacheFile := filepath.Join(session.RuntimeCollectorsDir("sess-collector"), "latest.json")
+	workspaceID := u.events[0].WorkspaceID
+	cacheFile := filepath.Join(home, ".ai-efficiency", "attribution", "workspaces", workspaceID, "collectors", "latest.json")
 	data, err := os.ReadFile(cacheFile)
 	if err != nil {
 		t.Fatalf("read cache file: %v", err)
@@ -476,10 +523,7 @@ func TestPostCommitQueuesCollectorSnapshotWhenUploadFails(t *testing.T) {
 	t.Setenv("AE_CLAUDE_SESSION_FILES", claude)
 	t.Setenv("AE_KIRO_SESSION_FILES", kiro)
 
-	marker := &session.Marker{SessionID: "sess-collector", RepoFullName: "github.com/acme/repo"}
-	if err := session.WriteMarker(repo, marker); err != nil {
-		t.Fatalf("WriteMarker: %v", err)
-	}
+	writeMarker(t, repo, "sess-collector")
 
 	u := &fakeUploader{err: errors.New("upload failed")}
 	h := NewHandler(u)
@@ -487,9 +531,13 @@ func TestPostCommitQueuesCollectorSnapshotWhenUploadFails(t *testing.T) {
 		t.Fatalf("PostCommit should fail-open, got: %v", err)
 	}
 
-	q, err := NewLocalQueue("sess-collector")
+	marker, err := session.ReadMarker(repo)
 	if err != nil {
-		t.Fatalf("NewLocalQueue: %v", err)
+		t.Fatalf("ReadMarker: %v", err)
+	}
+	q, err := NewWorkspaceQueue(marker.WorkspaceID)
+	if err != nil {
+		t.Fatalf("NewWorkspaceQueue: %v", err)
 	}
 	items, err := q.List()
 	if err != nil {
@@ -513,15 +561,16 @@ func TestPostCommitPreservesCollectorCacheWhenNoSnapshot(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
-	marker := &session.Marker{SessionID: "sess-cache", RepoFullName: "github.com/acme/repo"}
-	if err := session.WriteMarker(repo, marker); err != nil {
-		t.Fatalf("WriteMarker: %v", err)
-	}
+	writeMarker(t, repo, "sess-cache")
 	original := &collector.Snapshot{
 		Codex: &collector.CodexSnapshot{SourceSessionID: "codex-prev", TotalTokens: 999},
 	}
-	if err := collector.WriteCache("sess-cache", original); err != nil {
-		t.Fatalf("WriteCache: %v", err)
+	marker, err := session.ReadMarker(repo)
+	if err != nil {
+		t.Fatalf("ReadMarker: %v", err)
+	}
+	if err := collector.WriteWorkspaceCache(marker.WorkspaceID, original); err != nil {
+		t.Fatalf("WriteWorkspaceCache: %v", err)
 	}
 
 	u := &fakeUploader{}
@@ -530,7 +579,11 @@ func TestPostCommitPreservesCollectorCacheWhenNoSnapshot(t *testing.T) {
 		t.Fatalf("PostCommit: %v", err)
 	}
 
-	cacheFile := filepath.Join(session.RuntimeCollectorsDir("sess-cache"), "latest.json")
+	marker, err = session.ReadMarker(repo)
+	if err != nil {
+		t.Fatalf("ReadMarker: %v", err)
+	}
+	cacheFile := filepath.Join(home, ".ai-efficiency", "attribution", "workspaces", marker.WorkspaceID, "collectors", "latest.json")
 	data, err := os.ReadFile(cacheFile)
 	if err != nil {
 		t.Fatalf("read cache file: %v", err)

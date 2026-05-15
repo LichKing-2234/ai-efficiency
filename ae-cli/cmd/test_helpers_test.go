@@ -14,6 +14,7 @@ func initRepoWithCommitForCmdTests(t *testing.T) string {
 	runGit(t, dir, "init")
 	runGit(t, dir, "config", "user.email", "t@example.com")
 	runGit(t, dir, "config", "user.name", "t")
+	runGit(t, dir, "remote", "add", "origin", "https://github.com/acme/repo.git")
 	if err := os.WriteFile(dir+"/a.txt", []byte("a\n"), 0o644); err != nil {
 		t.Fatalf("write file: %v", err)
 	}

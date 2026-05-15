@@ -100,7 +100,7 @@ export interface EfficiencyMetric {
 
 export interface DashboardData {
   total_repos: number
-  active_sessions: number
+  tracked_workflows: number
   avg_ai_score: number
   total_ai_prs: number
 }

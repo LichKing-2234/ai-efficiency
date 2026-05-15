@@ -12,15 +12,15 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/ai-efficiency/ae-cli/internal/session"
+	"github.com/ai-efficiency/ae-cli/internal/attributionlocal"
 )
 
 type HookEvent struct {
 	Kind          string `json:"kind"`
 	EventID       string `json:"event_id,omitempty"`
 	SessionID     string `json:"session_id,omitempty"`
-	RepoFullName  string `json:"repo_full_name,omitempty"`
 	WorkspaceID   string `json:"workspace_id,omitempty"`
+	RepoFullName  string `json:"repo_full_name,omitempty"`
 	BindingSource string `json:"binding_source,omitempty"`
 
 	AgentSnapshot map[string]any `json:"agent_snapshot,omitempty"`
@@ -50,11 +50,29 @@ func queuePath(sessionID string) (string, error) {
 	if strings.TrimSpace(sessionID) == "" {
 		return "", fmt.Errorf("session_id is required")
 	}
-	return session.RuntimeQueueFilePath(sessionID), nil
+	return filepath.Join(attributionlocal.AttributionRootDir(), "legacy-session-queue", sessionID, "hooks.jsonl"), nil
 }
 
 func NewLocalQueue(sessionID string) (*Queue, error) {
 	p, err := queuePath(sessionID)
+	if err != nil {
+		return nil, err
+	}
+	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+		return nil, fmt.Errorf("creating queue dir: %w", err)
+	}
+	return &Queue{path: p}, nil
+}
+
+func workspaceQueuePath(workspaceID string) (string, error) {
+	if strings.TrimSpace(workspaceID) == "" {
+		return "", fmt.Errorf("workspace_id is required")
+	}
+	return filepath.Join(attributionlocal.AttributionRootDir(), "workspaces", workspaceID, "hooks.jsonl"), nil
+}
+
+func NewWorkspaceQueue(workspaceID string) (*Queue, error) {
+	p, err := workspaceQueuePath(workspaceID)
 	if err != nil {
 		return nil, err
 	}
@@ -192,7 +210,7 @@ func (q *Queue) rewrite(items []QueueItem) error {
 }
 
 func PendingSessionIDs() ([]string, error) {
-	root := session.RuntimeRootDir()
+	root := filepath.Join(attributionlocal.AttributionRootDir(), "legacy-session-queue")
 	if strings.TrimSpace(root) == "" {
 		return nil, fmt.Errorf("runtime root is empty")
 	}
@@ -213,12 +231,58 @@ func PendingSessionIDs() ([]string, error) {
 		if sessionID == "" {
 			continue
 		}
-		hasPending, err := session.HasPendingQueue(sessionID)
+		path, err := queuePath(sessionID)
 		if err != nil {
 			return nil, err
 		}
+		info, err := os.Stat(path)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return nil, fmt.Errorf("stat queue file: %w", err)
+		}
+		hasPending := info.Size() > 0
 		if hasPending {
 			out = append(out, sessionID)
+		}
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
+func PendingWorkspaceIDs() ([]string, error) {
+	root := filepath.Join(attributionlocal.AttributionRootDir(), "workspaces")
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("read workspace root: %w", err)
+	}
+
+	var out []string
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		workspaceID := strings.TrimSpace(entry.Name())
+		if workspaceID == "" {
+			continue
+		}
+		p, err := workspaceQueuePath(workspaceID)
+		if err != nil {
+			return nil, err
+		}
+		info, err := os.Stat(p)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return nil, fmt.Errorf("stat workspace queue: %w", err)
+		}
+		if info.Size() > 0 {
+			out = append(out, workspaceID)
 		}
 	}
 	sort.Strings(out)
