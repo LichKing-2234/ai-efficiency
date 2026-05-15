@@ -86,6 +86,8 @@ describe('DashboardView', () => {
     expect(wrapper.text()).toContain('3')
     expect(wrapper.text()).toContain('85')
     expect(wrapper.text()).toContain('42')
+    expect(wrapper.text()).toContain('Tracked Workflows')
+    expect(wrapper.text()).not.toContain('Active Sessions')
   })
 
   it('shows placeholder values when API fails', async () => {

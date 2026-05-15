@@ -45,6 +45,16 @@ Then run:
 ae-cli login
 ```
 
+Primary workflow after login:
+
+```bash
+ae-cli init
+ae-cli sync
+ae-cli doctor
+```
+
+Legacy `ae-cli start/stop/run/...` session commands are retired from the formal workflow and kept only as hidden compatibility shims with migration guidance.
+
 ## Windows
 
 Windows users should download `ae-cli_<version>_<os>_<arch>.zip` from GitHub Releases and place `ae-cli.exe` on `PATH` manually.

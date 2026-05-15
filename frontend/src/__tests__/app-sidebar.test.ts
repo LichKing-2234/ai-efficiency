@@ -16,6 +16,7 @@ function createTestRouter(initialPath = '/') {
     routes: [
       { path: '/', component: { template: '<div>Dashboard</div>' } },
       { path: '/repos', component: { template: '<div>Repos</div>' } },
+      { path: '/attribution', component: { template: '<div>Attribution</div>' } },
       { path: '/sessions', component: { template: '<div>Sessions</div>' } },
       { path: '/settings', component: { template: '<div>Settings</div>' } },
       { path: '/login', component: { template: '<div>Login</div>' } },
@@ -42,7 +43,7 @@ describe('AppSidebar', () => {
     expect(wrapper.text()).toContain('AI Efficiency')
   })
 
-  it('renders navigation links for Dashboard, Repos, and Sessions', async () => {
+  it('renders navigation links for Dashboard, Repos, and Attribution', async () => {
     const router = createTestRouter()
     await router.push('/')
     await router.isReady()
@@ -56,7 +57,8 @@ describe('AppSidebar', () => {
 
     expect(linkTexts).toContain('Dashboard')
     expect(linkTexts).toContain('Repos')
-    expect(linkTexts).toContain('Sessions')
+    expect(linkTexts).toContain('Attribution')
+    expect(linkTexts).not.toContain('Sessions')
     expect(linkTexts).not.toContain('Settings')
   })
 

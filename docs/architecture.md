@@ -12,6 +12,7 @@ This document is the project-level architecture overview for `ai-efficiency`.
 ## Source-of-Truth Order
 
 1. Topic-specific current specs:
+   - `docs/superpowers/specs/2026-05-14-legacy-session-staged-cutover-design.md`
    - `docs/superpowers/specs/2026-04-15-oauth-device-login-design.md`
    - `docs/superpowers/specs/2026-04-14-llm-settings-runtime-editing-design.md`
    - `docs/superpowers/specs/2026-04-02-local-session-proxy-design.md`
@@ -117,10 +118,10 @@ flowchart TD
 
 ## Current Runtime Flow
 
-The current implementation exposes two attribution paths:
+The current implementation still contains two attribution paths, but only one is the formal user-facing workflow:
 
-- legacy/session-bound flow centered on `ae-cli start`, backend bootstrap, and the local proxy
-- sessionless local attribution flow centered on tool-local artifacts, short-lived local sync, and git checkpoints
+- formal/sessionless flow centered on `ae-cli init`, `ae-cli sync`, tool-local artifacts, and git checkpoints
+- legacy/session-bound compatibility flow centered on `ae-cli start`, backend bootstrap, and the local proxy
 
 ```mermaid
 sequenceDiagram
@@ -140,7 +141,10 @@ sequenceDiagram
         CLI->>BE: /oauth/device/code + /oauth/token polling
         Browser->>BE: /oauth/device/verify
     end
-    opt Legacy session-bound path
+    Dev->>CLI: ae-cli init
+    CLI->>WS: install hooks / maintain local attribution state
+    Dev->>Tool: run Codex / Claude / other tools
+    opt Legacy session-bound compatibility path
         Dev->>CLI: ae-cli start
         CLI->>BE: session bootstrap
         BE->>BE: find or create repo from local git remote
@@ -148,10 +152,6 @@ sequenceDiagram
         Relay-->>BE: user + key metadata
         BE-->>CLI: session metadata + env bundle
         CLI->>Proxy: start proxy with session runtime config
-    end
-    CLI->>WS: install hooks / maintain local attribution state
-    Dev->>Tool: run Codex / Claude / other tools
-    opt Proxy-managed tools
         Tool->>Proxy: local OpenAI / Anthropic request
         Proxy->>Relay: upstream model request
         Proxy->>BE: session usage + session events\n(spool fallback on failure)
@@ -166,19 +166,19 @@ sequenceDiagram
 
 ### Runtime Boundaries
 
-- `ae-cli` still owns the primary interactive CLI workflow: local session setup, workspace state, hooks, collector wiring, local proxy startup, and short-lived attribution sync.
+- `ae-cli` owns the primary sessionless CLI workflow: repo-local init, hook management, short-lived attribution sync, and diagnostics.
 - `ae-cli` login selection is split between browser PKCE and device flow, but both paths still end in the same backend-issued JWT and `~/.ae-cli/token.json` storage model.
 - The backend owns durable state, repo discovery during bootstrap, repo configuration, user/provider mapping, attribution, and SCM/webhook handling.
 - The backend OAuth handler now manages both short-lived authorization codes and short-lived device entries in memory.
 - Relay/sub2api remains the upstream auth/LLM/usage integration boundary and attribution fallback source.
 - SCM providers now reference reusable credentials instead of storing raw secret blobs inline.
-- `ae-cli start` still treats repo discovery as part of session bootstrap for the legacy proxy path. If the backend does not already know the repo, bootstrap auto-creates an unbound `repo_config` from the local Git remote and continues.
+- `ae-cli start` is now a hidden legacy compatibility entrypoint. If invoked, it refers users to the sessionless workflow instead of remaining a formal primary path.
 - Repo-to-`scm_provider` binding is now an admin-managed lifecycle step rather than a hard precondition for starting a session.
 - SCM-dependent features such as scan, PR sync, optimize, and webhook registration require a bound repo and return `repo_unbound` when invoked before binding.
 
 ## Attribution Runtime Status
 
-The local session proxy from `2026-04-02-local-session-proxy-design.md` remains the current CLI/runtime primary path for `ae-cli start`. The codebase also contains a partially implemented sessionless local attribution path that reads local tool artifacts and binds them to checkpoints without requiring a long-lived local daemon.
+The local session proxy from `2026-04-02-local-session-proxy-design.md` remains in the codebase only as a compatibility/debug path. The formal workflow now uses the sessionless local attribution path that reads local tool artifacts and binds them to checkpoints without requiring a long-lived local daemon.
 
 ```mermaid
 flowchart LR
@@ -200,12 +200,14 @@ flowchart LR
 
 ### Status
 
-- Current primary CLI/runtime path:
+- Current formal CLI/runtime path:
+  `ae-cli init`, `ae-cli sync`, and `ae-cli doctor`; local artifact parsing; hook-driven sync; `tool_usage_events`; checkpoint binding; PR attribution over checkpoint-bound usage
+- Legacy compatibility/debug path:
   backend bootstrap, relay provider integration, session metadata, ae-cli-managed local proxy for Codex and Claude, session usage/session event ingest, and session-focused audit/debug surfaces
 - Implemented sessionless pieces:
   `ae-cli` local artifact parsers for Codex JSONL, Claude JSONL, and Kiro JSON; short-lived local sync; git-hook-triggered sync; `tool_usage_events` ingest; checkpoint-time binding; PR attribution that can read checkpoint-bound `tool_usage_events`
 - Remaining direction:
-  stronger sync fail-open/recovery behavior, clearer ownership and auth boundaries, frontend/reporting surfaces for non-session attribution outputs, and any future decision about demoting the legacy session/local-proxy path
+  richer Attribution UI, further shrinking legacy read surfaces, and eventual phase-2 deletion of session/local-proxy runtime code and routes
 
 ## Module Responsibilities
 

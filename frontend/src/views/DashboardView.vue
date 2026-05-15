@@ -34,7 +34,7 @@ onMounted(async () => {
           <p class="mt-2 text-3xl font-semibold text-gray-900">{{ dashboard?.total_repos ?? '--' }}</p>
         </div>
         <div class="rounded-lg bg-white p-6 shadow">
-          <p class="text-sm font-medium text-gray-500">Active Sessions</p>
+          <p class="text-sm font-medium text-gray-500">Tracked Workflows</p>
           <p class="mt-2 text-3xl font-semibold text-gray-900">{{ dashboard?.active_sessions ?? '--' }}</p>
         </div>
         <div class="rounded-lg bg-white p-6 shadow">

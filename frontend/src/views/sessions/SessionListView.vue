@@ -107,7 +107,12 @@ onMounted(fetchSessions)
   <AppLayout>
     <div class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
       <div class="flex items-center justify-between mb-6">
-        <h1 class="text-xl font-semibold text-gray-900">Sessions</h1>
+        <div>
+          <h1 class="text-xl font-semibold text-gray-900">Legacy Sessions</h1>
+          <p class="mt-1 text-xs text-amber-700">
+            This legacy/debug page is kept only for historical session/local-proxy troubleshooting.
+          </p>
+        </div>
         <div class="flex items-center gap-3">
           <select
             v-model="statusFilter"
