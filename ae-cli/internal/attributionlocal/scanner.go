@@ -63,8 +63,23 @@ func (s *Scanner) ScanWorkspace(workspaceRoot string, state ScanState) ([]LocalT
 }
 
 func mustWorkspaceID(workspaceRoot string) (string, error) {
-	gitDir := filepath.Join(workspaceRoot, ".git")
-	return session.DeriveWorkspaceID(workspaceRoot, workspaceRoot, gitDir, gitDir)
+	gitDir, err := filepath.EvalSymlinks(filepath.Join(workspaceRoot, ".git"))
+	if err != nil {
+		gitDir = filepath.Join(workspaceRoot, ".git")
+	}
+	gitCommonDir := gitDir
+	commonPath := filepath.Join(gitDir, "commondir")
+	if data, err := os.ReadFile(commonPath); err == nil {
+		rel := strings.TrimSpace(string(data))
+		if rel != "" {
+			if filepath.IsAbs(rel) {
+				gitCommonDir = filepath.Clean(rel)
+			} else {
+				gitCommonDir = filepath.Clean(filepath.Join(gitDir, rel))
+			}
+		}
+	}
+	return session.DeriveWorkspaceID(workspaceRoot, workspaceRoot, gitDir, gitCommonDir)
 }
 
 func dedupeAndSort(items []LocalToolUsageEvent) []LocalToolUsageEvent {

@@ -120,6 +120,15 @@ func (s *Service) recordCheckpoint(ctx context.Context, userID int, req CommitCh
 	if err != nil {
 		return fmt.Errorf("record checkpoint: %w", err)
 	}
+	if userID > 0 {
+		if hasSession {
+			if err := txSvc.validateSessionOwner(ctx, sessionID, userID); err != nil {
+				return fmt.Errorf("record checkpoint: %w", err)
+			}
+		} else if err := txSvc.validateRepoOwner(ctx, rc.ID, userID); err != nil {
+			return fmt.Errorf("record checkpoint: %w", err)
+		}
+	}
 	if hasSession {
 		if userID > 0 {
 			if err := txSvc.validateSessionOwner(ctx, sessionID, userID); err != nil {
@@ -267,6 +276,15 @@ func (s *Service) recordRewrite(ctx context.Context, userID int, req CommitRewri
 	if err != nil {
 		return fmt.Errorf("record rewrite: %w", err)
 	}
+	if userID > 0 {
+		if hasSession {
+			if err := s.validateSessionOwner(ctx, sessionID, userID); err != nil {
+				return fmt.Errorf("record rewrite: %w", err)
+			}
+		} else if err := s.validateRepoOwner(ctx, rc.ID, userID); err != nil {
+			return fmt.Errorf("record rewrite: %w", err)
+		}
+	}
 	if hasSession {
 		if userID > 0 {
 			if err := s.validateSessionOwner(ctx, sessionID, userID); err != nil {
@@ -337,6 +355,22 @@ func (s *Service) validateSessionRepo(ctx context.Context, sessionID uuid.UUID, 
 	}
 	if !ok {
 		return fmt.Errorf("session %s does not belong to repo %d", sessionID, repoConfigID)
+	}
+	return nil
+}
+
+func (s *Service) validateRepoOwner(ctx context.Context, repoConfigID int, userID int) error {
+	ok, err := s.entClient.Session.Query().
+		Where(
+			session.HasRepoConfigWith(repoconfig.IDEQ(repoConfigID)),
+			session.HasUserWith(user.IDEQ(userID)),
+		).
+		Exist(ctx)
+	if err != nil {
+		return fmt.Errorf("load repo owner scope: %w", err)
+	}
+	if !ok {
+		return ErrCheckpointForbidden
 	}
 	return nil
 }
