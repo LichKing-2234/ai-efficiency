@@ -549,12 +549,3 @@ func bindingSourceFromMarker(sessionID string) string {
 	}
 	return "unbound"
 }
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return strings.TrimSpace(value)
-		}
-	}
-	return ""
-}

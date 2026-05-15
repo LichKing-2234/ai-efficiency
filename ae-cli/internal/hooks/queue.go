@@ -231,11 +231,11 @@ func PendingSessionIDs() ([]string, error) {
 		if sessionID == "" {
 			continue
 		}
-		queuePath, err := queuePath(sessionID)
+		path, err := queuePath(sessionID)
 		if err != nil {
 			return nil, err
 		}
-		info, err := os.Stat(queuePath)
+		info, err := os.Stat(path)
 		if err != nil {
 			if os.IsNotExist(err) {
 				continue
