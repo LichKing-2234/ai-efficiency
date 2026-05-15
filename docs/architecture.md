@@ -117,7 +117,7 @@ flowchart TD
 
 ## Current Runtime Flow
 
-The current implementation now has two attribution paths:
+The current implementation exposes two attribution paths:
 
 - legacy/session-bound flow centered on `ae-cli start`, backend bootstrap, and the local proxy
 - sessionless local attribution flow centered on tool-local artifacts, short-lived local sync, and git checkpoints
@@ -166,7 +166,7 @@ sequenceDiagram
 
 ### Runtime Boundaries
 
-- `ae-cli` owns local session setup, workspace state, hooks, collector wiring, local artifact parsing, and short-lived attribution sync.
+- `ae-cli` still owns the primary interactive CLI workflow: local session setup, workspace state, hooks, collector wiring, local proxy startup, and short-lived attribution sync.
 - `ae-cli` login selection is split between browser PKCE and device flow, but both paths still end in the same backend-issued JWT and `~/.ae-cli/token.json` storage model.
 - The backend owns durable state, repo discovery during bootstrap, repo configuration, user/provider mapping, attribution, and SCM/webhook handling.
 - The backend OAuth handler now manages both short-lived authorization codes and short-lived device entries in memory.
@@ -178,7 +178,7 @@ sequenceDiagram
 
 ## Attribution Runtime Status
 
-The local session proxy from `2026-04-02-local-session-proxy-design.md` remains implemented for the legacy `ae-cli start` path, but it is no longer the only attribution path. The codebase now also implements a sessionless local attribution path that reads local tool artifacts and binds them to checkpoints without requiring a long-lived local daemon.
+The local session proxy from `2026-04-02-local-session-proxy-design.md` remains the current CLI/runtime primary path for `ae-cli start`. The codebase also contains a partially implemented sessionless local attribution path that reads local tool artifacts and binds them to checkpoints without requiring a long-lived local daemon.
 
 ```mermaid
 flowchart LR
@@ -200,12 +200,12 @@ flowchart LR
 
 ### Status
 
-- Current:
-  backend bootstrap, relay provider integration, session metadata, ae-cli-managed local proxy for Codex and Claude, session usage/session event ingest, local tool usage ingest, checkpoint binding, and PR attribution that can read checkpoint-bound `tool_usage_events`
-- Current sessionless path:
-  `ae-cli` local artifact parsers for Codex SQLite, Codex JSONL fallback, Claude JSONL, and Kiro JSON; short-lived local sync; git-hook-triggered sync; checkpoint-time binding of `tool_usage_events`
+- Current primary CLI/runtime path:
+  backend bootstrap, relay provider integration, session metadata, ae-cli-managed local proxy for Codex and Claude, session usage/session event ingest, and session-focused audit/debug surfaces
+- Implemented sessionless pieces:
+  `ae-cli` local artifact parsers for Codex JSONL, Claude JSONL, and Kiro JSON; short-lived local sync; git-hook-triggered sync; `tool_usage_events` ingest; checkpoint-time binding; PR attribution that can read checkpoint-bound `tool_usage_events`
 - Remaining direction:
-  broader sync orchestration, stronger end-to-end hook coverage, and fuller replacement of session-bound usage sources in all read paths
+  stronger sync fail-open/recovery behavior, clearer ownership and auth boundaries, frontend/reporting surfaces for non-session attribution outputs, and any future decision about demoting the legacy session/local-proxy path
 
 ## Module Responsibilities
 

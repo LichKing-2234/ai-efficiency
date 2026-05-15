@@ -145,13 +145,6 @@ type ToolUsageEventRequest struct {
 	RawPayload        map[string]any `json:"raw_payload,omitempty"`
 }
 
-type BindToolUsageEventsRequest struct {
-	WorkspaceID        string    `json:"workspace_id"`
-	CommitCheckpointID int       `json:"commit_checkpoint_id"`
-	CommitCapturedAt   time.Time `json:"commit_captured_at"`
-	PreviousCapturedAt time.Time `json:"previous_captured_at"`
-}
-
 func New(baseURL, token string) *Client {
 	return &Client{
 		baseURL: baseURL,
@@ -476,28 +469,6 @@ func (c *Client) SendToolUsageEvent(ctx context.Context, req ToolUsageEventReque
 	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("unexpected tool usage status %d: %s", resp.StatusCode, string(respBody))
-	}
-	return nil
-}
-
-func (c *Client) BindToolUsageEvents(ctx context.Context, req BindToolUsageEventsRequest) error {
-	body, err := json.Marshal(req)
-	if err != nil {
-		return fmt.Errorf("marshal tool usage bind request: %w", err)
-	}
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/api/v1/tool-usage-events/bind", bytes.NewReader(body))
-	if err != nil {
-		return fmt.Errorf("create tool usage bind request: %w", err)
-	}
-	c.setHeaders(httpReq)
-	resp, err := c.httpClient.Do(httpReq)
-	if err != nil {
-		return fmt.Errorf("send tool usage bind request: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		respBody, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("unexpected tool usage bind status %d: %s", resp.StatusCode, string(respBody))
 	}
 	return nil
 }

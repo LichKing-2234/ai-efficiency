@@ -575,30 +575,6 @@ func TestSendToolUsageEvent(t *testing.T) {
 	}
 }
 
-func TestBindToolUsageEvents(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			t.Errorf("method = %s, want POST", r.Method)
-		}
-		if r.URL.Path != "/api/v1/tool-usage-events/bind" {
-			t.Errorf("path = %s, want /api/v1/tool-usage-events/bind", r.URL.Path)
-		}
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer srv.Close()
-
-	c := New(srv.URL, "tok")
-	err := c.BindToolUsageEvents(context.Background(), BindToolUsageEventsRequest{
-		WorkspaceID:        "ws-1",
-		CommitCheckpointID: 101,
-		CommitCapturedAt:   time.Now().UTC(),
-		PreviousCapturedAt: time.Now().UTC().Add(-1 * time.Minute),
-	})
-	if err != nil {
-		t.Fatalf("BindToolUsageEvents: %v", err)
-	}
-}
-
 func TestHeartbeatNotFound(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)

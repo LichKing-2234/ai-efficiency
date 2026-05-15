@@ -14,11 +14,13 @@ import (
 	"github.com/ai-efficiency/backend/ent/commitrewrite"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/session"
+	"github.com/ai-efficiency/backend/ent/user"
 	"github.com/ai-efficiency/backend/internal/toolusage"
 	"github.com/google/uuid"
 )
 
 var errRepoNotFound = errors.New("repo not found")
+var ErrCheckpointForbidden = errors.New("checkpoint session does not belong to authenticated user")
 
 type CommitCheckpointRequest struct {
 	EventID        string         `json:"event_id" binding:"required"`
@@ -57,6 +59,14 @@ func NewService(entClient *ent.Client) *Service {
 }
 
 func (s *Service) RecordCheckpoint(ctx context.Context, req CommitCheckpointRequest) error {
+	return s.recordCheckpoint(ctx, 0, req)
+}
+
+func (s *Service) RecordCheckpointForUser(ctx context.Context, userID int, req CommitCheckpointRequest) error {
+	return s.recordCheckpoint(ctx, userID, req)
+}
+
+func (s *Service) recordCheckpoint(ctx context.Context, userID int, req CommitCheckpointRequest) error {
 	if s.entClient == nil {
 		return fmt.Errorf("record checkpoint: ent client is required")
 	}
@@ -109,6 +119,15 @@ func (s *Service) RecordCheckpoint(ctx context.Context, req CommitCheckpointRequ
 	rc, err := txSvc.resolveRepoConfig(ctx, req.RepoFullName, req.CloneURL)
 	if err != nil {
 		return fmt.Errorf("record checkpoint: %w", err)
+	}
+	if userID > 0 {
+		if hasSession {
+			if err := txSvc.validateSessionOwner(ctx, sessionID, userID); err != nil {
+				return fmt.Errorf("record checkpoint: %w", err)
+			}
+		} else if err := txSvc.validateRepoOwner(ctx, rc.ID, userID); err != nil {
+			return fmt.Errorf("record checkpoint: %w", err)
+		}
 	}
 	if hasSession {
 		if err := txSvc.validateSessionRepo(ctx, sessionID, rc.ID); err != nil {
@@ -196,6 +215,14 @@ func (s *Service) RecordCheckpoint(ctx context.Context, req CommitCheckpointRequ
 }
 
 func (s *Service) RecordRewrite(ctx context.Context, req CommitRewriteRequest) error {
+	return s.recordRewrite(ctx, 0, req)
+}
+
+func (s *Service) RecordRewriteForUser(ctx context.Context, userID int, req CommitRewriteRequest) error {
+	return s.recordRewrite(ctx, userID, req)
+}
+
+func (s *Service) recordRewrite(ctx context.Context, userID int, req CommitRewriteRequest) error {
 	if s.entClient == nil {
 		return fmt.Errorf("record rewrite: ent client is required")
 	}
@@ -244,6 +271,15 @@ func (s *Service) RecordRewrite(ctx context.Context, req CommitRewriteRequest) e
 	if err != nil {
 		return fmt.Errorf("record rewrite: %w", err)
 	}
+	if userID > 0 {
+		if hasSession {
+			if err := s.validateSessionOwner(ctx, sessionID, userID); err != nil {
+				return fmt.Errorf("record rewrite: %w", err)
+			}
+		} else if err := s.validateRepoOwner(ctx, rc.ID, userID); err != nil {
+			return fmt.Errorf("record rewrite: %w", err)
+		}
+	}
 	if hasSession {
 		if err := s.validateSessionRepo(ctx, sessionID, rc.ID); err != nil {
 			return fmt.Errorf("record rewrite: %w", err)
@@ -281,6 +317,22 @@ func (s *Service) RecordRewrite(ctx context.Context, req CommitRewriteRequest) e
 	return nil
 }
 
+func (s *Service) validateSessionOwner(ctx context.Context, sessionID uuid.UUID, userID int) error {
+	exists, err := s.entClient.Session.Query().
+		Where(
+			session.IDEQ(sessionID),
+			session.HasUserWith(user.IDEQ(userID)),
+		).
+		Exist(ctx)
+	if err != nil {
+		return fmt.Errorf("validate session owner: %w", err)
+	}
+	if !exists {
+		return ErrCheckpointForbidden
+	}
+	return nil
+}
+
 func (s *Service) validateSessionRepo(ctx context.Context, sessionID uuid.UUID, repoConfigID int) error {
 	ok, err := s.entClient.Session.Query().
 		Where(
@@ -293,6 +345,22 @@ func (s *Service) validateSessionRepo(ctx context.Context, sessionID uuid.UUID, 
 	}
 	if !ok {
 		return fmt.Errorf("session %s does not belong to repo %d", sessionID, repoConfigID)
+	}
+	return nil
+}
+
+func (s *Service) validateRepoOwner(ctx context.Context, repoConfigID int, userID int) error {
+	ok, err := s.entClient.Session.Query().
+		Where(
+			session.HasRepoConfigWith(repoconfig.IDEQ(repoConfigID)),
+			session.HasUserWith(user.IDEQ(userID)),
+		).
+		Exist(ctx)
+	if err != nil {
+		return fmt.Errorf("load repo owner scope: %w", err)
+	}
+	if !ok {
+		return ErrCheckpointForbidden
 	}
 	return nil
 }

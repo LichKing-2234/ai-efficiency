@@ -10,7 +10,6 @@ import (
 
 type BackendClient interface {
 	SendToolUsageEvent(ctx context.Context, req client.ToolUsageEventRequest) error
-	BindToolUsageEvents(ctx context.Context, req client.BindToolUsageEventsRequest) error
 }
 
 type SyncEngine struct {
@@ -27,6 +26,9 @@ func NewSyncEngine(c BackendClient) *SyncEngine {
 }
 
 func (e *SyncEngine) Replay(ctx context.Context, workspaceRoot string) error {
+	if e == nil || e.Client == nil {
+		return nil
+	}
 	spooled, err := loadSpooledEvents(e.spoolPath)
 	if err != nil {
 		return err
@@ -69,9 +71,20 @@ func (e *SyncEngine) RunForWorkspace(ctx context.Context, workspaceRoot string) 
 	if err != nil {
 		return err
 	}
-	for _, ev := range events {
-		if err := e.Client.SendToolUsageEvent(ctx, toClientUsageRequest(ev)); err != nil {
+
+	if e.Client == nil {
+		if err := appendSpooledEvents(spoolPath, events); err != nil {
 			return err
+		}
+		return SaveJSON(statePath, nextState)
+	}
+
+	for idx, ev := range events {
+		if err := e.Client.SendToolUsageEvent(ctx, toClientUsageRequest(ev)); err != nil {
+			if err := appendSpooledEvents(spoolPath, events[idx:]); err != nil {
+				return err
+			}
+			return SaveJSON(statePath, nextState)
 		}
 	}
 	return SaveJSON(statePath, nextState)
@@ -106,9 +119,24 @@ func loadSpooledEvents(path string) ([]LocalToolUsageEvent, error) {
 	}
 	var out []LocalToolUsageEvent
 	if err := LoadJSON(path, &out); err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
 		return nil, err
 	}
 	return out, nil
+}
+
+func appendSpooledEvents(path string, events []LocalToolUsageEvent) error {
+	if path == "" || len(events) == 0 {
+		return nil
+	}
+	existing, err := loadSpooledEvents(path)
+	if err != nil {
+		return err
+	}
+	merged := append(existing, events...)
+	return SaveJSON(path, dedupeAndSort(merged))
 }
 
 func clearSpooledEvents(path string) error {

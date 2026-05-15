@@ -1,9 +1,11 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 	"time"
 
+	"github.com/ai-efficiency/backend/internal/auth"
 	"github.com/ai-efficiency/backend/internal/pkg"
 	"github.com/ai-efficiency/backend/internal/toolusage"
 	"github.com/gin-gonic/gin"
@@ -38,21 +40,20 @@ type createToolUsageEventRequest struct {
 	RawPayload        map[string]any `json:"raw_payload"`
 }
 
-type bindToolUsageEventsRequest struct {
-	WorkspaceID        string    `json:"workspace_id" binding:"required"`
-	CommitCheckpointID int       `json:"commit_checkpoint_id" binding:"required"`
-	CommitCapturedAt   time.Time `json:"commit_captured_at" binding:"required"`
-	PreviousCapturedAt time.Time `json:"previous_captured_at" binding:"required"`
-}
-
 func (h *ToolUsageHandler) Create(c *gin.Context) {
+	uc := auth.GetUserContext(c)
+	if uc == nil {
+		pkg.Error(c, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
 	var req createToolUsageEventRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		pkg.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	if err := h.service.CreateUsageEvent(c.Request.Context(), toolusage.CreateUsageEventRequest{
+	if err := h.service.CreateUsageEvent(c.Request.Context(), uc.UserID, toolusage.CreateUsageEventRequest{
 		Tool:              req.Tool,
 		WorkspaceID:       req.WorkspaceID,
 		ToolSessionID:     req.ToolSessionID,
@@ -72,30 +73,13 @@ func (h *ToolUsageHandler) Create(c *gin.Context) {
 		RawSourceLocator:  req.RawSourceLocator,
 		RawPayload:        req.RawPayload,
 	}); err != nil {
+		if errors.Is(err, toolusage.ErrUsageEventForbidden) {
+			pkg.Error(c, http.StatusForbidden, err.Error())
+			return
+		}
 		pkg.Error(c, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
 
 	pkg.Created(c, gin.H{"dedupe_key": req.DedupeKey})
-}
-
-func (h *ToolUsageHandler) Bind(c *gin.Context) {
-	var req bindToolUsageEventsRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		pkg.Error(c, http.StatusBadRequest, err.Error())
-		return
-	}
-
-	bound, err := h.service.BindUsageEventsToCheckpoint(c.Request.Context(), toolusage.BindUsageEventsRequest{
-		WorkspaceID:        req.WorkspaceID,
-		CommitCheckpointID: req.CommitCheckpointID,
-		CommitCapturedAt:   req.CommitCapturedAt,
-		PreviousCapturedAt: req.PreviousCapturedAt,
-	})
-	if err != nil {
-		pkg.Error(c, http.StatusUnprocessableEntity, err.Error())
-		return
-	}
-
-	pkg.Success(c, gin.H{"bound_count": bound})
 }

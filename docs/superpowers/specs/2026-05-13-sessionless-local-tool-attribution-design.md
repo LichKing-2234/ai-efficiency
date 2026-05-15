@@ -1,7 +1,7 @@
 # Sessionless Local Tool Attribution 设计文档
 
 **Date:** 2026-05-13  
-**Status:** Review Requested  
+**Status:** 部分实现，继续收口中  
 **Scope:** `backend/`, `ae-cli/`, `docs/`  
 **Related:**  
 - [2026-03-26-session-pr-attribution-design.md](./2026-03-26-session-pr-attribution-design.md)  
@@ -9,8 +9,9 @@
 - [docs/architecture.md](../../architecture.md)
 
 **Implementation Note:**
-- 本文是新的运行时设计文档，不代表当前代码已实现。
-- 当前已实现架构仍以 `ae-cli login/start`、workspace marker、session bootstrap、local proxy 为主；项目级当前状态仍以 [`docs/architecture.md`](../../architecture.md) 和现有代码为准。
+- 本文定义的是新的运行时方向，不代表其中所有能力都已完整落地。
+- 当前代码已经落地了部分 sessionless local attribution 组件，例如本地 artifact 解析、`tool_usage_events` ingest、checkpoint-time binding。
+- 当前 CLI 主工作流仍以 `ae-cli login/start`、workspace marker、session bootstrap、local proxy 为主；项目级当前状态仍以 [`docs/architecture.md`](../../architecture.md) 和现有代码为准。
 
 **Spec Relationship:**
 - 本文修改 [`2026-03-26-session-pr-attribution-design.md`](./2026-03-26-session-pr-attribution-design.md) 中“平台 session 是本地运行时主语”的合同。新的设计改为：`session` 不再是用户必须显式操作的概念，commit / PR attribution 的主事实源改为本地工具落盘数据加 git checkpoint。
@@ -730,4 +731,3 @@ PR attribution 时：
 
 - 第一版先用 checkpoint window binding
 - `change_id` 作为后续精度升级方向，在未来新 spec 中单独定义
-
