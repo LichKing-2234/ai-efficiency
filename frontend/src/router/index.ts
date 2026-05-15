@@ -68,16 +68,6 @@ const router = createRouter({
       component: () => import('@/views/analysis/ScanResultView.vue'),
     },
     {
-      path: '/sessions',
-      name: 'SessionList',
-      component: () => import('@/views/sessions/SessionListView.vue'),
-    },
-    {
-      path: '/sessions/:id',
-      name: 'SessionDetail',
-      component: () => import('@/views/sessions/SessionDetailView.vue'),
-    },
-    {
       path: '/settings',
       name: 'Settings',
       component: () => import('@/views/SettingsView.vue'),

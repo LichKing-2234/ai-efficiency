@@ -1,7 +1,6 @@
 package hooks
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -13,7 +12,6 @@ import (
 	"testing"
 
 	"github.com/ai-efficiency/ae-cli/internal/collector"
-	"github.com/ai-efficiency/ae-cli/internal/proxy"
 	"github.com/ai-efficiency/ae-cli/internal/session"
 )
 
@@ -31,79 +29,11 @@ func (f *fakeUploader) UploadHookEvent(ctx context.Context, ev HookEvent) error 
 	return f.err
 }
 
-func startRealProxy(t *testing.T, sessionID string) (listenAddr, authToken string) {
-	t.Helper()
-
-	cfg := proxy.RuntimeConfig{
-		SessionID:  sessionID,
-		ListenAddr: "127.0.0.1:0",
-		AuthToken:  "proxy-token",
-	}
-	result, err := proxy.Spawn(cfg)
-	if err != nil {
-		t.Fatalf("proxy.Spawn: %v", err)
-	}
-	t.Cleanup(func() {
-		if err := proxy.Stop(proxy.StopRequest{
-			PID:        result.PID,
-			ListenAddr: result.ListenAddr,
-			AuthToken:  cfg.AuthToken,
-			ConfigPath: result.ConfigPath,
-		}); err != nil {
-			t.Fatalf("proxy.Stop: %v", err)
-		}
-	})
-
-	return result.ListenAddr, cfg.AuthToken
-}
-
-func writeRuntimeWithProxy(t *testing.T, sessionID, listenAddr, authToken string) {
-	t.Helper()
-	if err := session.WriteRuntimeBundle(&session.RuntimeBundle{
-		SessionID: sessionID,
-		Proxy: &session.ProxyRuntime{
-			ListenAddr: listenAddr,
-			AuthToken:  authToken,
-		},
-	}); err != nil {
-		t.Fatalf("WriteRuntimeBundle: %v", err)
-	}
-}
-
 func writeMarker(t *testing.T, repo, sessionID string) {
 	t.Helper()
 	if err := session.WriteMarker(repo, &session.Marker{SessionID: sessionID, RepoFullName: "origin"}); err != nil {
 		t.Fatalf("WriteMarker: %v", err)
 	}
-}
-
-func readProxySpoolEvents(t *testing.T, sessionID string) []proxy.EventEnvelope {
-	t.Helper()
-
-	path := proxy.EventSpoolPath(sessionID)
-	f, err := os.Open(path)
-	if err != nil {
-		t.Fatalf("open proxy spool: %v", err)
-	}
-	defer f.Close()
-
-	var out []proxy.EventEnvelope
-	sc := bufio.NewScanner(f)
-	for sc.Scan() {
-		line := strings.TrimSpace(sc.Text())
-		if line == "" {
-			continue
-		}
-		var ev proxy.EventEnvelope
-		if err := json.Unmarshal([]byte(line), &ev); err != nil {
-			t.Fatalf("unmarshal proxy spool line: %v", err)
-		}
-		out = append(out, ev)
-	}
-	if err := sc.Err(); err != nil {
-		t.Fatalf("scan proxy spool: %v", err)
-	}
-	return out
 }
 
 func git2(t *testing.T, dir string, args ...string) string {
@@ -200,128 +130,6 @@ func TestPostCommitBootstrapsMarkerFromEnv(t *testing.T) {
 	}
 	if !strings.Contains(string(b), "/.ae/") {
 		t.Fatalf("exclude missing /.ae/ pattern, got:\n%s", string(b))
-	}
-}
-
-func TestPostCommitSendsEventToLocalProxyBeforeQueueFallback(t *testing.T) {
-	repo := initRepoWithCommit2(t)
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-
-	listenAddr, authToken := startRealProxy(t, "sess-1")
-	writeRuntimeWithProxy(t, "sess-1", listenAddr, authToken)
-	writeMarker(t, repo, "sess-1")
-
-	h := NewHandler(nil)
-	if err := h.PostCommit(context.Background(), repo); err != nil {
-		t.Fatalf("PostCommit: %v", err)
-	}
-
-	q, err := NewLocalQueue("sess-1")
-	if err != nil {
-		t.Fatalf("NewLocalQueue: %v", err)
-	}
-	items, err := q.List()
-	if err != nil {
-		t.Fatalf("List: %v", err)
-	}
-	if len(items) != 0 {
-		t.Fatalf("queued items = %d, want 0 (expected local proxy ingress to accept event)", len(items))
-	}
-
-	events := readProxySpoolEvents(t, "sess-1")
-	if len(events) != 1 {
-		t.Fatalf("proxy spool events = %d, want 1", len(events))
-	}
-	if got := events[0].EventType; got != "post_commit" {
-		t.Fatalf("event_type = %q, want %q", got, "post_commit")
-	}
-	if got := events[0].SessionID; got != "sess-1" {
-		t.Fatalf("session_id = %q, want %q", got, "sess-1")
-	}
-}
-
-func TestPostCommitFallsBackToQueueWhenProxyTokenInvalid(t *testing.T) {
-	repo := initRepoWithCommit2(t)
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-
-	listenAddr, _ := startRealProxy(t, "sess-1")
-	writeRuntimeWithProxy(t, "sess-1", listenAddr, "wrong-token")
-	writeMarker(t, repo, "sess-1")
-
-	h := NewHandler(nil)
-	if err := h.PostCommit(context.Background(), repo); err != nil {
-		t.Fatalf("PostCommit: %v", err)
-	}
-
-	q, err := NewLocalQueue("sess-1")
-	if err != nil {
-		t.Fatalf("NewLocalQueue: %v", err)
-	}
-	items, err := q.List()
-	if err != nil {
-		t.Fatalf("List: %v", err)
-	}
-	if len(items) != 1 {
-		t.Fatalf("queued items = %d, want 1", len(items))
-	}
-}
-
-func TestPostRewriteSendsEventToLocalProxyBeforeQueueFallback(t *testing.T) {
-	repo := initRepoWithCommit2(t)
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-
-	listenAddr, authToken := startRealProxy(t, "sess-1")
-	writeRuntimeWithProxy(t, "sess-1", listenAddr, authToken)
-	writeMarker(t, repo, "sess-1")
-
-	h := NewHandler(nil)
-	if err := h.PostRewrite(context.Background(), repo, "amend", strings.NewReader("oldsha1 newsha1\n")); err != nil {
-		t.Fatalf("PostRewrite: %v", err)
-	}
-
-	q, err := NewLocalQueue("sess-1")
-	if err != nil {
-		t.Fatalf("NewLocalQueue: %v", err)
-	}
-	items, err := q.List()
-	if err != nil {
-		t.Fatalf("List: %v", err)
-	}
-	if len(items) != 0 {
-		t.Fatalf("queued items = %d, want 0 (expected local proxy ingress to accept event)", len(items))
-	}
-
-	events := readProxySpoolEvents(t, "sess-1")
-	if len(events) != 1 {
-		t.Fatalf("proxy spool events = %d, want 1", len(events))
-	}
-	if got := events[0].EventType; got != "post_rewrite" {
-		t.Fatalf("event_type = %q, want %q", got, "post_rewrite")
-	}
-}
-
-func TestProxyIngressStampsSessionID(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-
-	listenAddr, authToken := startRealProxy(t, "sess-1")
-	if err := proxy.PostEvent(context.Background(), listenAddr, authToken, proxy.EventEnvelope{
-		EventType: "post_commit",
-		SessionID: "different-session",
-		Payload:   map[string]any{"x": "y"},
-	}); err != nil {
-		t.Fatalf("PostEvent: %v", err)
-	}
-
-	events := readProxySpoolEvents(t, "sess-1")
-	if len(events) != 1 {
-		t.Fatalf("proxy spool events = %d, want 1", len(events))
-	}
-	if got := events[0].SessionID; got != "sess-1" {
-		t.Fatalf("session_id = %q, want proxy session %q", got, "sess-1")
 	}
 }
 

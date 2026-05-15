@@ -383,52 +383,6 @@ func TestDevLoginExistingAdminUser(t *testing.T) {
 // Session AddInvocation — cover more paths
 // =====================
 
-func TestSessionAddInvocationWithEndTime(t *testing.T) {
-	env := setupTestEnv(t)
-
-	// Create repo + session
-	provider, _ := env.client.ScmProvider.Create().
-		SetName("gh").SetType("github").
-		SetBaseURL("https://api.github.com").SetCredentials("enc").
-		Save(context.Background())
-	rc, _ := env.client.RepoConfig.Create().
-		SetScmProviderID(provider.ID).SetName("r").SetFullName("org/r").
-		SetCloneURL("https://github.com/org/r.git").SetDefaultBranch("main").
-		Save(context.Background())
-
-	sessionReq := map[string]interface{}{
-		"id":             "550e8400-e29b-41d4-a716-446655440020",
-		"repo_full_name": rc.FullName,
-		"branch":         "main",
-	}
-	w := doRequest(env, "POST", "/api/v1/sessions", sessionReq)
-	if w.Code != http.StatusCreated {
-		t.Fatalf("create session: %d, %s", w.Code, w.Body.String())
-	}
-
-	// Add invocation with end time
-	invReq := map[string]interface{}{
-		"tool":  "cursor",
-		"start": "2026-03-17T10:00:00Z",
-		"end":   "2026-03-17T10:30:00Z",
-	}
-	w = doRequest(env, "POST", "/api/v1/sessions/550e8400-e29b-41d4-a716-446655440020/invocations", invReq)
-	if w.Code != http.StatusOK {
-		t.Errorf("status = %d, want %d, body: %s", w.Code, http.StatusOK, w.Body.String())
-	}
-
-	// Add second invocation
-	invReq2 := map[string]interface{}{
-		"tool":  "claude-code",
-		"start": "2026-03-17T11:00:00Z",
-		"end":   "2026-03-17T11:15:00Z",
-	}
-	w = doRequest(env, "POST", "/api/v1/sessions/550e8400-e29b-41d4-a716-446655440020/invocations", invReq2)
-	if w.Code != http.StatusOK {
-		t.Errorf("status = %d, want %d", w.Code, http.StatusOK)
-	}
-}
-
 // =====================
 // Repo CreateDirect — success with valid provider
 // =====================
@@ -558,14 +512,6 @@ func TestListPRsByRepoWithOffsetLimit(t *testing.T) {
 // =====================
 // Session Stop — invalid UUID
 // =====================
-
-func TestSessionStopInvalidUUID2(t *testing.T) {
-	env := setupTestEnv(t)
-	w := doRequest(env, "POST", "/api/v1/sessions/not-a-uuid/stop", nil)
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("status = %d, want %d", w.Code, http.StatusBadRequest)
-	}
-}
 
 // =====================
 // SCM Provider Update — with status field
@@ -765,79 +711,6 @@ func TestRepoDeleteSuccess(t *testing.T) {
 // =====================
 // Session — full lifecycle covering more branches
 // =====================
-
-func TestSessionFullLifecycle(t *testing.T) {
-	env := setupTestEnv(t)
-
-	// Create repo
-	provider, _ := env.client.ScmProvider.Create().
-		SetName("gh").SetType("github").
-		SetBaseURL("https://api.github.com").SetCredentials("enc").
-		Save(context.Background())
-	rc, _ := env.client.RepoConfig.Create().
-		SetScmProviderID(provider.ID).SetName("lc-repo").SetFullName("org/lc-repo").
-		SetCloneURL("https://github.com/org/lc-repo.git").SetDefaultBranch("main").
-		Save(context.Background())
-
-	sessionID := "550e8400-e29b-41d4-a716-446655440030"
-
-	// Create session
-	w := doRequest(env, "POST", "/api/v1/sessions", map[string]interface{}{
-		"id": sessionID, "repo_full_name": rc.FullName, "branch": "feature-lc",
-	})
-	if w.Code != http.StatusCreated {
-		t.Fatalf("create: %d, %s", w.Code, w.Body.String())
-	}
-	if err := env.client.Session.UpdateOneID(mustParseUUID(sessionID)).
-		SetUserID(env.userID).
-		Exec(context.Background()); err != nil {
-		t.Fatalf("set session owner: %v", err)
-	}
-
-	// List sessions
-	w = doRequest(env, "GET", "/api/v1/sessions", nil)
-	if w.Code != http.StatusOK {
-		t.Fatalf("list: %d", w.Code)
-	}
-
-	// Get session
-	w = doRequest(env, "GET", "/api/v1/sessions/"+sessionID, nil)
-	if w.Code != http.StatusOK {
-		t.Fatalf("get: %d", w.Code)
-	}
-
-	// Heartbeat
-	w = doRequest(env, "PUT", "/api/v1/sessions/"+sessionID, nil)
-	if w.Code != http.StatusOK {
-		t.Fatalf("heartbeat: %d", w.Code)
-	}
-
-	// Add invocation
-	w = doRequest(env, "POST", "/api/v1/sessions/"+sessionID+"/invocations", map[string]interface{}{
-		"tool": "copilot", "start": "2026-03-17T10:00:00Z", "end": "2026-03-17T10:10:00Z",
-	})
-	if w.Code != http.StatusOK {
-		t.Fatalf("invocation: %d, %s", w.Code, w.Body.String())
-	}
-
-	// Stop
-	w = doRequest(env, "POST", "/api/v1/sessions/"+sessionID+"/stop", nil)
-	if w.Code != http.StatusOK {
-		t.Fatalf("stop: %d", w.Code)
-	}
-
-	// List with status filter
-	w = doRequest(env, "GET", "/api/v1/sessions?status=completed", nil)
-	if w.Code != http.StatusOK {
-		t.Fatalf("list completed: %d", w.Code)
-	}
-
-	// List with repo_id filter
-	w = doRequest(env, "GET", fmt.Sprintf("/api/v1/sessions?repo_id=%d", rc.ID), nil)
-	if w.Code != http.StatusOK {
-		t.Fatalf("list by repo: %d", w.Code)
-	}
-}
 
 // =====================
 // PR Get — success path

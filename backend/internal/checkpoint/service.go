@@ -130,6 +130,11 @@ func (s *Service) recordCheckpoint(ctx context.Context, userID int, req CommitCh
 		}
 	}
 	if hasSession {
+		if userID > 0 {
+			if err := txSvc.validateSessionOwner(ctx, sessionID, userID); err != nil {
+				return fmt.Errorf("record checkpoint: %w", err)
+			}
+		}
 		if err := txSvc.validateSessionRepo(ctx, sessionID, rc.ID); err != nil {
 			return fmt.Errorf("record checkpoint: %w", err)
 		}
@@ -281,6 +286,11 @@ func (s *Service) recordRewrite(ctx context.Context, userID int, req CommitRewri
 		}
 	}
 	if hasSession {
+		if userID > 0 {
+			if err := s.validateSessionOwner(ctx, sessionID, userID); err != nil {
+				return fmt.Errorf("record rewrite: %w", err)
+			}
+		}
 		if err := s.validateSessionRepo(ctx, sessionID, rc.ID); err != nil {
 			return fmt.Errorf("record rewrite: %w", err)
 		}

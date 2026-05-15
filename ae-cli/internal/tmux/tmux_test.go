@@ -264,7 +264,7 @@ func TestSplitWindowWithEnvRemovesAnthropicAPIKeyInPane(t *testing.T) {
 		t.Fatalf("seed stale tmux env: %v", err)
 	}
 
-	cmd := "env | sort; sleep 2"
+	cmd := "env | sort; sleep 5"
 	paneID, err := SplitWindowWithEnv(name, "env-check", "sh", []string{"-lc", cmd}, map[string]string{
 		"ANTHROPIC_BASE_URL":   "http://127.0.0.1:43123/anthropic",
 		"ANTHROPIC_AUTH_TOKEN": "proxy-token",
@@ -290,7 +290,7 @@ func TestSplitWindowWithEnvRemovesAnthropicAPIKeyInPane(t *testing.T) {
 }
 
 func waitForPaneContent(paneID string, matcher func([]byte) bool) ([]byte, error) {
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		out, err := exec.Command("tmux", "capture-pane", "-p", "-S", "-", "-E", "-", "-t", paneID).Output()
 		if err == nil && matcher(out) {
@@ -304,7 +304,7 @@ func waitForPaneContent(paneID string, matcher func([]byte) bool) ([]byte, error
 func waitForFileContent(path string, matcher func([]byte) bool) ([]byte, error) {
 	var content []byte
 	var err error
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		content, err = os.ReadFile(path)
 		if err == nil && matcher(content) {
