@@ -114,17 +114,17 @@ func TestCheckpointRewriteHappyPath(t *testing.T) {
 		SetAuthSource("ldap").
 		SaveX(ctx)
 
-	h := NewCheckpointHandler(checkpoint.NewService(client))
-	r := gin.New()
-	r.Use(withAuthUser(owner.ID, "user"))
-	r.POST("/rewrite", h.Rewrite)
-
 	client.Session.Create().
 		SetID(uuid.New()).
 		SetRepoConfigID(rc.ID).
 		SetBranch("main").
 		SetUserID(owner.ID).
 		SaveX(ctx)
+
+	h := NewCheckpointHandler(checkpoint.NewService(client))
+	r := gin.New()
+	r.Use(withAuthUser(owner.ID, "user"))
+	r.POST("/rewrite", h.Rewrite)
 
 	body := map[string]any{
 		"event_id":       "evt-http-rewrite-1",
@@ -189,6 +189,63 @@ func TestCheckpointCommitRejectsCrossUserSession(t *testing.T) {
 		"commit_sha":     "abc123",
 		"parent_shas":    []string{"p1"},
 		"binding_source": "marker",
+	}, otherToken)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d, body: %s", w.Code, http.StatusForbidden, w.Body.String())
+	}
+}
+
+func TestCheckpointCommitRejectsCrossUserUnboundScope(t *testing.T) {
+	env := setupFullTestEnv(t)
+	repoID := createFullTestRepo(t, env.client)
+	ownerID := fullAdminUserID(t, env)
+	otherToken := createFullNonAdminToken(t, env)
+
+	env.client.Session.Create().
+		SetID(uuid.New()).
+		SetRepoConfigID(repoID).
+		SetBranch("main").
+		SetUserID(ownerID).
+		SaveX(context.Background())
+
+	repoCfg := env.client.RepoConfig.GetX(context.Background(), repoID)
+	w := doFullRequestWithToken(env, http.MethodPost, "/api/v1/checkpoints/commit", map[string]any{
+		"event_id":       "evt-http-cross-user-unbound-commit-1",
+		"repo_full_name": repoCfg.FullName,
+		"workspace_id":   "ws-cross-user-unbound",
+		"commit_sha":     "abc123",
+		"parent_shas":    []string{"p1"},
+		"binding_source": "unbound",
+	}, otherToken)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d, body: %s", w.Code, http.StatusForbidden, w.Body.String())
+	}
+}
+
+func TestCheckpointRewriteRejectsCrossUserUnboundScope(t *testing.T) {
+	env := setupFullTestEnv(t)
+	repoID := createFullTestRepo(t, env.client)
+	ownerID := fullAdminUserID(t, env)
+	otherToken := createFullNonAdminToken(t, env)
+
+	env.client.Session.Create().
+		SetID(uuid.New()).
+		SetRepoConfigID(repoID).
+		SetBranch("main").
+		SetUserID(ownerID).
+		SaveX(context.Background())
+
+	repoCfg := env.client.RepoConfig.GetX(context.Background(), repoID)
+	w := doFullRequestWithToken(env, http.MethodPost, "/api/v1/checkpoints/rewrite", map[string]any{
+		"event_id":       "evt-http-cross-user-unbound-rewrite-1",
+		"repo_full_name": repoCfg.FullName,
+		"workspace_id":   "ws-cross-user-unbound",
+		"rewrite_type":   "amend",
+		"old_commit_sha": "old123",
+		"new_commit_sha": "new123",
+		"binding_source": "unbound",
 	}, otherToken)
 
 	if w.Code != http.StatusForbidden {
