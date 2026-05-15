@@ -6,7 +6,6 @@ var runCmd = &cobra.Command{
 	Use:    "run <tool> [args...]",
 	Short:  "Legacy session workflow entrypoint (retired)",
 	Hidden: true,
-	Args:  cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return legacyWorkflowRetiredError()
 	},
