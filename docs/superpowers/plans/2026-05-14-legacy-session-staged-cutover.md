@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make sessionless attribution the only formal user-facing workflow and retire legacy session/local-proxy runtime surfaces.
+**Goal:** Make sessionless attribution the only formal user-facing workflow while keeping legacy session/local-proxy code in minimal compatibility mode.
 
-**Architecture:** The cutover now has multiple landed slices. First, the user entrypoints moved to `init/sync/doctor` and `Attribution` replaced `Sessions` in primary navigation. Second, the legacy session read surface, proxy data plane, and proxy-specific CLI/client paths were removed from the active product/runtime path. Third, dormant proxy, dispatcher, and toolconfig runtime packages were deleted. Historical schema cleanup remains deferred.
+**Architecture:** Phase 1 does not delete the legacy backend/session schema. Instead it changes the user entrypoints: new CLI commands (`init/sync/doctor`), hidden legacy commands that fail with migration guidance, `Attribution` replacing `Sessions` in primary navigation, and docs updated so local proxy is no longer described as the formal runtime data plane.
 
 **Tech Stack:** Go, Cobra, Gin, Vue 3, Pinia, Vitest, Markdown docs
 
@@ -152,98 +152,6 @@
 - [x] **Step 1: Update user-facing docs so they no longer recommend `ae-cli start/stop/flush`**
 - [x] **Step 2: Mark local proxy and session pages as compatibility/debug paths only**
 - [x] **Step 3: Re-read the changed docs for consistency with the new spec**
-
-## Task 8: Remove Legacy Session Write Data Plane
-
-**Files:**
-- Modify: `backend/internal/handler/router.go`
-- Modify: `backend/internal/handler/session_usage_test.go`
-- Modify: `ae-cli/cmd/start.go`
-
-- [x] **Step 1: Remove `/session-usage-events` and `/session-events` from the backend router**
-- [x] **Step 2: Update handler tests so those routes now assert `404`**
-- [x] **Step 3: Remove `proxy-serve-internal` from the CLI command tree**
-- [x] **Step 4: Re-run backend handler, CLI command, and frontend tests to confirm pass**
-
-## Task 9: Remove Legacy Session Read Surface
-
-**Files:**
-- Modify: `backend/internal/handler/router.go`
-- Modify: `backend/internal/handler/session.go`
-- Modify: `backend/internal/handler/handler_extended_test.go`
-- Modify: `backend/internal/handler/handler_90_test.go`
-- Modify: `backend/internal/handler/handler_final_coverage_test.go`
-- Modify: `backend/internal/handler/session_bootstrap_http_test.go`
-- Delete: `backend/internal/handler/session_detail_http_test.go`
-- Modify: `frontend/src/router/index.ts`
-- Modify: `frontend/src/views/attribution/AttributionLandingView.vue`
-- Delete: `frontend/src/views/sessions/SessionListView.vue`
-- Delete: `frontend/src/views/sessions/SessionDetailView.vue`
-- Delete: `frontend/src/api/session.ts`
-- Delete: `frontend/src/__tests__/session-list-view.test.ts`
-- Delete: `frontend/src/__tests__/session-detail-view.test.ts`
-- Modify: `frontend/src/__tests__/router.test.ts`
-- Modify: `frontend/src/__tests__/api-modules.test.ts`
-- Modify: `frontend/src/types/index.ts`
-
-- [x] **Step 1: Remove frontend `/sessions` routes, pages, and API wrapper**
-- [x] **Step 2: Remove backend `/sessions` read routes and delete read-surface-specific tests**
-- [x] **Step 3: Re-run frontend and backend handler verification to confirm pass**
-
-## Task 10: Remove Proxy As A Hook Data Plane
-
-**Files:**
-- Modify: `ae-cli/internal/hooks/handler.go`
-- Modify: `ae-cli/internal/hooks/handler_test.go`
-- Modify: `ae-cli/cmd/hook.go`
-- Modify: `ae-cli/cmd/hook_test.go`
-
-- [x] **Step 1: Remove local-proxy posting from post-commit and post-rewrite hook handling**
-- [x] **Step 2: Remove the hidden `ae-cli hook session-event` path**
-- [x] **Step 3: Re-run CLI/hooks verification to confirm pass**
-
-## Task 11: Remove Session Lifecycle And Read Surfaces Completely
-
-**Files:**
-- Modify: `backend/internal/handler/router.go`
-- Modify: `backend/internal/handler/handler_test.go`
-- Modify: `backend/internal/handler/handler_extended_test.go`
-- Modify: `backend/internal/handler/handler_boost_test.go`
-- Modify: `backend/internal/handler/handler_90_test.go`
-- Modify: `backend/internal/handler/handler_final_coverage_test.go`
-- Delete: `backend/internal/handler/session.go`
-- Delete: `backend/internal/handler/session_bootstrap_http_test.go`
-- Modify: `frontend/src/router/index.ts`
-- Modify: `frontend/src/__tests__/router.test.ts`
-- Modify: `frontend/src/__tests__/api-modules.test.ts`
-- Delete: `frontend/src/api/session.ts`
-- Delete: `frontend/src/views/sessions/SessionListView.vue`
-- Delete: `frontend/src/views/sessions/SessionDetailView.vue`
-- Delete: `frontend/src/__tests__/session-list-view.test.ts`
-- Delete: `frontend/src/__tests__/session-detail-view.test.ts`
-
-- [x] **Step 1: Remove backend `/sessions*` lifecycle/read routes from the public router**
-- [x] **Step 2: Delete session-only handler files and tests that exercised the retired surface**
-- [x] **Step 3: Remove frontend `/sessions` routes, API module, and pages**
-- [x] **Step 4: Re-run backend handler and frontend tests to confirm pass**
-
-## Task 12: Delete Dormant Proxy Runtime Packages
-
-**Files:**
-- Delete: `ae-cli/internal/proxy/*`
-- Delete: `ae-cli/internal/dispatcher/*`
-- Delete: `ae-cli/internal/toolconfig/*`
-- Modify: `ae-cli/internal/client/client.go`
-- Modify: `ae-cli/internal/client/client_test.go`
-- Modify: `ae-cli/internal/session/manager.go`
-- Delete: `ae-cli/internal/session/session_test.go`
-- Modify: `ae-cli/cmd/shell.go`
-- Modify: `ae-cli/internal/tmux/tmux_test.go`
-
-- [x] **Step 1: Remove client methods and test coverage that existed only for the retired proxy/session runtime**
-- [x] **Step 2: Replace `session.Manager` with minimal local-state helpers so it no longer drags proxy/runtime behavior into builds**
-- [x] **Step 3: Delete dormant proxy, dispatcher, and toolconfig packages**
-- [x] **Step 4: Re-run `ae-cli go test ./...` to confirm the CLI/runtime tree still passes**
 
 ## Verification
 

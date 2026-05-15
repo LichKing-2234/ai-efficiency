@@ -9,11 +9,11 @@ import AppLayout from '@/components/AppLayout.vue'
         <h1 class="text-2xl font-bold text-gray-900">Attribution</h1>
         <p class="mt-2 max-w-3xl text-sm text-gray-600">
           Attribution is the primary entrypoint for the sessionless workflow. Use repo and PR views as the formal path for usage,
-          checkpoint, and settlement data.
+          checkpoint, and settlement data. The old Sessions pages remain available only for legacy/debug inspection.
         </p>
       </div>
 
-      <div class="grid gap-4 md:grid-cols-1">
+      <div class="grid gap-4 md:grid-cols-2">
         <router-link
           to="/repos"
           class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm transition hover:border-indigo-300 hover:shadow"
@@ -24,6 +24,15 @@ import AppLayout from '@/components/AppLayout.vue'
           </p>
         </router-link>
 
+        <router-link
+          to="/sessions"
+          class="rounded-lg border border-amber-200 bg-amber-50 p-5 shadow-sm transition hover:border-amber-300 hover:shadow"
+        >
+          <h2 class="text-base font-semibold text-amber-900">Legacy Session Debug</h2>
+          <p class="mt-2 text-sm text-amber-800">
+            Use this only for historical session/local-proxy troubleshooting. It is no longer the primary user workflow.
+          </p>
+        </router-link>
       </div>
     </div>
   </AppLayout>
