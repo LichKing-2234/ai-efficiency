@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/ai-efficiency/backend/ent"
-	"github.com/ai-efficiency/backend/internal/analysis"
 	"github.com/ai-efficiency/backend/internal/auth"
 	"github.com/ai-efficiency/backend/internal/middleware"
 	"github.com/ai-efficiency/backend/internal/oauth"
@@ -55,20 +54,15 @@ func setupTestEnvWithOAuth(t *testing.T, oauthHandler *oauth.Handler) *testEnv {
 	authSvc := auth.NewService(client, "test-jwt-secret-32-bytes-long!!!", 7200, 604800, logger)
 	repoSvc := repo.NewService(client, "0000000000000000000000000000000000000000000000000000000000000000", logger)
 	webhookHandler := webhook.NewHandler(client, nil, logger)
-	analysisCloner := analysis.NewCloner(t.TempDir(), logger)
-	analysisSvc := analysis.NewService(client, analysisCloner, nil, logger, "0000000000000000000000000000000000000000000000000000000000000000")
 
 	router := SetupRouter(
 		client,
 		authSvc,
 		repoSvc,
-		analysisSvc,
 		webhookHandler,
 		nil, // syncService
 		nil, // settingsHandler
-		nil, // chatHandler
 		nil, // aggregator
-		nil, // optimizer
 		"0000000000000000000000000000000000000000000000000000000000000000",
 		middleware.CORS(nil),
 		oauthHandler, nil, nil, nil,

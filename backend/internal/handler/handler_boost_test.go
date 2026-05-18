@@ -459,8 +459,8 @@ func TestAggregateAllWithFullEnv(t *testing.T) {
 	webhookHandler := webhook.NewHandler(client, nil, logger)
 
 	router := SetupRouter(
-		client, authSvc, repoSvc, nil, webhookHandler,
-		nil, nil, nil, aggregator, nil,
+		client, authSvc, repoSvc, webhookHandler,
+		nil, nil, aggregator,
 		"0000000000000000000000000000000000000000000000000000000000000000",
 		middleware.CORS(nil),
 		nil, nil, nil, nil,

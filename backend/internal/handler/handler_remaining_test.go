@@ -13,7 +13,6 @@ import (
 	"testing"
 
 	entuser "github.com/ai-efficiency/backend/ent/user"
-	"github.com/ai-efficiency/backend/internal/analysis"
 	"github.com/ai-efficiency/backend/internal/analysis/llm"
 	"github.com/ai-efficiency/backend/internal/auth"
 	"github.com/ai-efficiency/backend/internal/config"
@@ -41,8 +40,6 @@ func setupDebugTestEnv(t *testing.T) *fullTestEnv {
 	authSvc := auth.NewService(client, "test-jwt-secret-32-bytes-long!!!", 7200, 604800, logger)
 	repoSvc := repo.NewService(client, "0000000000000000000000000000000000000000000000000000000000000000", logger)
 	webhookHandler := webhook.NewHandler(client, nil, logger)
-	analysisCloner := analysis.NewCloner(t.TempDir(), logger)
-	analysisSvc := analysis.NewService(client, analysisCloner, nil, logger, "0000000000000000000000000000000000000000000000000000000000000000")
 
 	rp := relay.NewSub2apiProvider(http.DefaultClient, "http://localhost:19876/v1", "http://localhost:19876", "sk-test-key-12345678", "gpt-4", logger)
 	llmAnalyzer := llm.NewAnalyzer(config.LLMConfig{}, rp, logger)
@@ -52,21 +49,16 @@ func setupDebugTestEnv(t *testing.T) *fullTestEnv {
 	os.WriteFile(configPath, []byte("analysis:\n  llm:\n    model: gpt-4\n"), 0o644)
 	relayCfg := config.RelayConfig{URL: "http://localhost:19876", APIKey: "sk-test-key-12345678"}
 	settingsHandler := NewSettingsHandler(configPath, relayCfg, llmAnalyzer, logger)
-
-	chatHandler := NewChatHandler(client, llmAnalyzer, t.TempDir(), logger)
 	aggregator := efficiency.NewAggregator(client, logger)
 
 	router := SetupRouter(
 		client,
 		authSvc,
 		repoSvc,
-		analysisSvc,
 		webhookHandler,
 		nil, // syncService
 		settingsHandler,
-		chatHandler,
 		aggregator,
-		nil, // optimizer
 		"0000000000000000000000000000000000000000000000000000000000000000",
 		middleware.CORS(nil),
 		nil, nil, nil, nil,
@@ -284,16 +276,10 @@ func TestChatLLMNotConfigured(t *testing.T) {
 	authSvc := auth.NewService(client, "test-jwt-secret-32-bytes-long!!!", 7200, 604800, logger)
 	repoSvc := repo.NewService(client, "0000000000000000000000000000000000000000000000000000000000000000", logger)
 	webhookHandler := webhook.NewHandler(client, nil, logger)
-	analysisCloner := analysis.NewCloner(t.TempDir(), logger)
-	analysisSvc := analysis.NewService(client, analysisCloner, nil, logger, "0000000000000000000000000000000000000000000000000000000000000000")
-
-	// Empty LLM config -> Enabled() returns false
-	llmAnalyzer := llm.NewAnalyzer(config.LLMConfig{}, nil, logger)
-	chatHandler := NewChatHandler(client, llmAnalyzer, t.TempDir(), logger)
 
 	router := SetupRouter(
-		client, authSvc, repoSvc, analysisSvc, webhookHandler,
-		nil, nil, chatHandler, nil, nil,
+		client, authSvc, repoSvc, webhookHandler,
+		nil, nil, nil,
 		"0000000000000000000000000000000000000000000000000000000000000000",
 		middleware.CORS(nil),
 		nil, nil, nil, nil,
