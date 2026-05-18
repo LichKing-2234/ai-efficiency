@@ -11,11 +11,6 @@ vi.mock('@/api/repo', () => ({
   updateRepo: vi.fn(),
 }))
 
-vi.mock('@/api/analysis', () => ({
-  triggerScan: vi.fn(),
-  listScans: vi.fn(),
-}))
-
 vi.mock('@/api/pr', () => ({
   listPRs: vi.fn(),
   syncPRs: vi.fn(),
@@ -42,14 +37,12 @@ function createTestRouter() {
       { path: '/repos/:id', component: RepoDetailView },
       { path: '/login', component: { template: '<div>Login</div>' } },
       { path: '/settings', component: { template: '<div>Settings</div>' } },
-      { path: '/sessions', component: { template: '<div>Sessions</div>' } },
     ],
   })
 }
 
 async function mountRepoDetail(repoOverride?: Record<string, unknown>, pinia?: Pinia) {
   const { getRepo } = await import('@/api/repo')
-  const { listScans } = await import('@/api/analysis')
   const { listPRs, settlePR } = await import('@/api/pr')
 
   ;(getRepo as any).mockResolvedValue({
@@ -61,7 +54,6 @@ async function mountRepoDetail(repoOverride?: Record<string, unknown>, pinia?: P
         full_name: 'org/repo-a',
         clone_url: 'https://github.com/org/repo-a.git',
         default_branch: 'main',
-        ai_score: 82,
         status: 'active',
         binding_state: 'bound',
         edges: { scm_provider: { id: 1, name: 'GitHub', type: 'github', base_url: 'https://api.github.com', status: 'active' } },
@@ -72,7 +64,6 @@ async function mountRepoDetail(repoOverride?: Record<string, unknown>, pinia?: P
       },
     },
   })
-  ;(listScans as any).mockResolvedValue({ data: { data: [] } })
   ;(listPRs as any).mockResolvedValue({
     data: {
       data: {
@@ -115,9 +106,6 @@ async function mountRepoDetail(repoOverride?: Record<string, unknown>, pinia?: P
   const wrapper = mount(RepoDetailView, {
     global: {
       plugins: [activePinia, router],
-      stubs: {
-        RepoChat: { template: '<div />' },
-      },
     },
   })
 
@@ -150,27 +138,7 @@ describe('RepoDetailView', () => {
     expect((listPRs as any).mock.calls.length).toBeGreaterThanOrEqual(2)
   })
 
-  it('shows the backend error when scan fails', async () => {
-    const { triggerScan } = await import('@/api/analysis')
-    ;(triggerScan as any).mockRejectedValue({
-      response: {
-        data: {
-          message: 'clone repo: git clone: : exec: "git": executable file not found in $PATH',
-        },
-      },
-    })
-
-    const { wrapper } = await mountRepoDetail()
-    const scanButton = wrapper.findAll('button').find((b) => b.text() === 'Run Scan')
-    expect(scanButton).toBeTruthy()
-
-    await scanButton!.trigger('click')
-    await flushPromises()
-
-    expect(wrapper.text()).toContain('exec: "git": executable file not found in $PATH')
-  })
-
-  it('disables scan and shows binding controls for admin on an unbound repo', async () => {
+  it('shows binding controls for admin on an unbound repo', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
     const auth = useAuthStore(pinia)
@@ -183,7 +151,7 @@ describe('RepoDetailView', () => {
     }, pinia)
     expect(wrapper.text()).toContain('SCM Provider Binding')
     expect(wrapper.text()).toContain('auto-discovered by ae-cli attribution sync')
-    const scanButton = wrapper.findAll('button').find((b) => b.text() === 'Run Scan')
-    expect(scanButton?.attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).not.toContain('Run Scan')
+    expect(wrapper.text()).not.toContain('Auto-Optimize')
   })
 })

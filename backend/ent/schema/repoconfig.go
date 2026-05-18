@@ -40,9 +40,6 @@ func (RepoConfig) Fields() []entgo.Field {
 			Optional().
 			Nillable().
 			Sensitive(),
-		field.Int("ai_score").
-			Optional().
-			Default(0),
 		field.Time("last_scan_at").
 			Optional().
 			Nillable(),

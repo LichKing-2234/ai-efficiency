@@ -123,13 +123,12 @@ func (s *Service) RunScan(ctx context.Context, repoConfigID int) (*ent.AiScanRes
 		return nil, err
 	}
 
-	// Update repo's ai_score and last_scan_at
+	// Update repo's last_scan_at so repo views can reflect recent scan activity.
 	now := time.Now()
 	if err := s.entClient.RepoConfig.UpdateOneID(repoConfigID).
-		SetAiScore(finalScore).
 		SetLastScanAt(now).
 		Exec(ctx); err != nil {
-		s.logger.Warn("failed to update repo ai_score", zap.Error(err))
+		s.logger.Warn("failed to update repo last_scan_at", zap.Error(err))
 	}
 
 	return scanResult, nil

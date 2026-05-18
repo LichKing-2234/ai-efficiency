@@ -58,16 +58,6 @@ const router = createRouter({
       props: true,
     },
     {
-      path: '/repos/:repoId/scans',
-      name: 'ScanResult',
-      component: () => import('@/views/analysis/ScanResultView.vue'),
-    },
-    {
-      path: '/repos/:repoId/scans/:scanId',
-      name: 'ScanResultDetail',
-      component: () => import('@/views/analysis/ScanResultView.vue'),
-    },
-    {
       path: '/settings',
       name: 'Settings',
       component: () => import('@/views/SettingsView.vue'),

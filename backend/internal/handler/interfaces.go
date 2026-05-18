@@ -19,7 +19,6 @@ type analysisScanner interface {
 
 // optimizerService abstracts analysis.Optimizer for testability.
 type optimizerService interface {
-	CreateOptimizationPR(ctx context.Context, provider scm.SCMProvider, rc *ent.RepoConfig, scanResult *ent.AiScanResult) (*analysis.OptimizeResult, error)
 	PreviewOptimization(ctx context.Context, provider scm.SCMProvider, rc *ent.RepoConfig, scanResult *ent.AiScanResult) (*analysis.OptimizePreview, error)
 	ConfirmOptimization(ctx context.Context, provider scm.SCMProvider, rc *ent.RepoConfig, files map[string]string, score int) (*analysis.OptimizeResult, error)
 }

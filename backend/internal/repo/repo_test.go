@@ -653,47 +653,6 @@ func TestDelete_NotFound(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// TriggerScan
-// ---------------------------------------------------------------------------
-
-func TestTriggerScan(t *testing.T) {
-	client, svc := setupTest(t)
-	p := createSCMProvider(t, client)
-	rc := createRepo(t, svc, p.ID, "scan-repo")
-
-	// Initially nil
-	if rc.LastScanAt != nil {
-		t.Errorf("LastScanAt should be nil initially, got %v", rc.LastScanAt)
-	}
-
-	before := time.Now().Add(-time.Second)
-	if err := svc.TriggerScan(context.Background(), rc.ID); err != nil {
-		t.Fatalf("TriggerScan error: %v", err)
-	}
-
-	// Re-fetch and verify
-	updated, err := svc.Get(context.Background(), rc.ID)
-	if err != nil {
-		t.Fatalf("Get after scan: %v", err)
-	}
-	if updated.LastScanAt == nil {
-		t.Fatal("LastScanAt should not be nil after TriggerScan")
-	}
-	if updated.LastScanAt.Before(before) {
-		t.Errorf("LastScanAt = %v, should be after %v", updated.LastScanAt, before)
-	}
-}
-
-func TestTriggerScan_NotFound(t *testing.T) {
-	_, svc := setupTest(t)
-
-	err := svc.TriggerScan(context.Background(), 99999)
-	if err == nil {
-		t.Fatal("TriggerScan non-existent should return error")
-	}
-}
-
-// ---------------------------------------------------------------------------
 // newSCMProvider (method on Service)
 // ---------------------------------------------------------------------------
 

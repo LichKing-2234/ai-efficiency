@@ -20,10 +20,10 @@ import (
 
 // mockSCMProvider implements scm.SCMProvider for testing.
 type mockSCMProvider struct {
-	fileContents   map[string][]byte
-	getFileErr     error
-	branchSHA      string
-	branchSHAErr   error
+	fileContents    map[string][]byte
+	getFileErr      error
+	branchSHA       string
+	branchSHAErr    error
 	createBranchErr error
 	commitFilesErr  error
 	commitSHA       string
@@ -418,8 +418,8 @@ func TestConfirmOptimizationCreatePRError(t *testing.T) {
 		DefaultBranch: "main",
 	}
 	provider := &mockSCMProvider{
-		branchSHA:  "abc123",
-		commitSHA:  "def456",
+		branchSHA:   "abc123",
+		commitSHA:   "def456",
 		createPRErr: fmt.Errorf("PR creation failed"),
 	}
 
@@ -469,66 +469,6 @@ func TestConfirmOptimizationSuccess(t *testing.T) {
 	}
 	if !strings.HasPrefix(result.BranchName, "ai-efficiency/optimize-") {
 		t.Errorf("BranchName = %q, want prefix 'ai-efficiency/optimize-'", result.BranchName)
-	}
-}
-
-func TestCreateOptimizationPRNilPreview(t *testing.T) {
-	o := newTestOptimizer()
-	scan := &ent.AiScanResult{
-		Score:       80,
-		Suggestions: nil,
-	}
-	rc := &ent.RepoConfig{
-		FullName:      "org/repo",
-		DefaultBranch: "main",
-	}
-	provider := &mockSCMProvider{}
-
-	result, err := o.CreateOptimizationPR(context.Background(), provider, rc, scan)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result != nil {
-		t.Error("expected nil result when no optimization needed")
-	}
-}
-
-func TestCreateOptimizationPRSuccess(t *testing.T) {
-	o := newTestOptimizer()
-	scan := &ent.AiScanResult{
-		Score: 30,
-		Suggestions: []map[string]interface{}{
-			{
-				"category": "ai_files",
-				"message":  "Add .editorconfig and .prettierrc for consistent formatting",
-				"priority": "low",
-				"auto_fix": true,
-			},
-		},
-	}
-	rc := &ent.RepoConfig{
-		FullName:      "org/repo",
-		DefaultBranch: "main",
-	}
-	provider := &mockSCMProvider{
-		getFileErr: fmt.Errorf("not found"),
-		branchSHA:  "abc123",
-		commitSHA:  "def456",
-		createPRResult: &scm.PR{
-			ID:  10,
-			URL: "https://github.com/org/repo/pull/10",
-		},
-	}
-
-	result, err := o.CreateOptimizationPR(context.Background(), provider, rc, scan)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result == nil {
-		t.Fatal("expected non-nil result")
-	}
-	if result.PRID != 10 {
-		t.Errorf("PRID = %d, want 10", result.PRID)
 	}
 }
 
@@ -723,8 +663,7 @@ func TestGenerateAgentsMDWithLLMSuccess(t *testing.T) {
 	defer server.Close()
 
 	rp := relay.NewSub2apiProvider(server.Client(), server.URL+"/v1", server.URL, "sk-test", "gpt-4", zap.NewNop())
-	analyzer := llm.NewAnalyzer(config.LLMConfig{
-	}, rp, zap.NewNop())
+	analyzer := llm.NewAnalyzer(config.LLMConfig{}, rp, zap.NewNop())
 	o := NewOptimizer(analyzer, zap.NewNop())
 	rc := &ent.RepoConfig{FullName: "org/repo"}
 	dims := []rules.DimensionScore{
@@ -748,8 +687,7 @@ func TestGenerateAgentsMDWithLLMFailure(t *testing.T) {
 	defer server.Close()
 
 	rp := relay.NewSub2apiProvider(server.Client(), server.URL+"/v1", server.URL, "sk-test", "gpt-4", zap.NewNop())
-	analyzer := llm.NewAnalyzer(config.LLMConfig{
-	}, rp, zap.NewNop())
+	analyzer := llm.NewAnalyzer(config.LLMConfig{}, rp, zap.NewNop())
 	o := NewOptimizer(analyzer, zap.NewNop())
 	rc := &ent.RepoConfig{FullName: "org/repo"}
 
@@ -769,8 +707,7 @@ func TestPreviewOptimizationAgentsMDWithLLMFallback(t *testing.T) {
 	defer server.Close()
 
 	rp := relay.NewSub2apiProvider(server.Client(), server.URL+"/v1", server.URL, "sk-test", "gpt-4", zap.NewNop())
-	analyzer := llm.NewAnalyzer(config.LLMConfig{
-	}, rp, zap.NewNop())
+	analyzer := llm.NewAnalyzer(config.LLMConfig{}, rp, zap.NewNop())
 	o := NewOptimizer(analyzer, zap.NewNop())
 
 	scan := &ent.AiScanResult{

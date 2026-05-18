@@ -36,7 +36,6 @@ export interface RepoConfig {
   full_name: string
   clone_url: string
   default_branch: string
-  ai_score: number
   status: string
   binding_state: 'bound' | 'unbound'
   last_scan_at: string | null
@@ -47,16 +46,6 @@ export interface RepoConfig {
   edges?: {
     scm_provider?: SCMProvider
   }
-}
-
-export interface ScanResult {
-  id: number
-  score: number
-  dimensions: Record<string, { score: number; max_score: number; details: string }>
-  suggestions: Array<{ category: string; message: string; priority: string; auto_fix: boolean }>
-  scan_type: string
-  commit_sha: string | null
-  created_at: string
 }
 
 export interface PRRecord {
@@ -101,7 +90,6 @@ export interface EfficiencyMetric {
 export interface DashboardData {
   total_repos: number
   tracked_workflows: number
-  avg_ai_score: number
   total_ai_prs: number
 }
 

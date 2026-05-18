@@ -2,36 +2,24 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppLayout from '@/components/AppLayout.vue'
-import RepoChat from '@/components/RepoChat.vue'
 import { getRepo, updateRepo } from '@/api/repo'
-import { triggerScan, listScans } from '@/api/analysis'
 import { listPRs, syncPRs, settlePR } from '@/api/pr'
 import { listProviders } from '@/api/scmProvider'
 import { useAuthStore } from '@/stores/auth'
-import type { RepoConfig, ScanResult, PRRecord, SCMProvider } from '@/types'
+import type { RepoConfig, PRRecord, SCMProvider } from '@/types'
 
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 const repo = ref<RepoConfig | null>(null)
-const scans = ref<ScanResult[]>([])
 const prs = ref<PRRecord[]>([])
 const prsTotal = ref(0)
 const prsPage = ref(0)
 const prsPageSize = 10
 const prsMonths = ref(3)
 const loading = ref(true)
-const scanning = ref(false)
-const scanError = ref('')
 const syncing = ref(false)
 const settlingPRId = ref<number | null>(null)
-const chatRef = ref<InstanceType<typeof RepoChat> | null>(null)
-
-// Scan Settings
-const showScanSettings = ref(false)
-const scanPrompt = ref({ system_prompt: '', user_prompt_template: '' })
-const scanPromptSaving = ref(false)
-const scanPromptSuccess = ref('')
 const providers = ref<SCMProvider[]>([])
 const selectedProviderId = ref<number | null>(null)
 const bindingSaving = ref(false)
@@ -42,23 +30,15 @@ const repoId = Number(route.params.id)
 
 onMounted(async () => {
   try {
-    const [repoRes, scansRes, prsRes] = await Promise.all([
+    const [repoRes, prsRes] = await Promise.all([
       getRepo(repoId),
-      listScans(repoId, 10).catch(() => ({ data: { data: [] } })),
       listPRs(repoId, { limit: 10, months: 3 }).catch(() => ({ data: { data: { items: [] } } })),
     ])
     repo.value = repoRes.data.data ?? null
-    scans.value = scansRes.data.data ?? []
     const prData = prsRes.data.data
     prs.value = prData && 'items' in prData ? prData.items : []
     prsTotal.value = prData && 'total' in prData ? prData.total : 0
 
-    if (repo.value?.scan_prompt_override) {
-      scanPrompt.value = {
-        system_prompt: repo.value.scan_prompt_override.system_prompt || '',
-        user_prompt_template: repo.value.scan_prompt_override.user_prompt_template || '',
-      }
-    }
     selectedProviderId.value = repo.value?.edges?.scm_provider?.id ?? repo.value?.scm_provider_id ?? null
     if (auth.isAdmin) {
       const providersRes = await listProviders().catch(() => ({ data: { data: [] } }))
@@ -72,21 +52,6 @@ onMounted(async () => {
   }
 })
 
-async function handleScan() {
-  scanning.value = true
-  scanError.value = ''
-  try {
-    const res = await triggerScan(repoId)
-    if (res.data.data) scans.value.unshift(res.data.data)
-    const repoRes = await getRepo(repoId)
-    repo.value = repoRes.data.data ?? null
-  } catch (error: any) {
-    scanError.value = error?.response?.data?.message || error?.message || 'Scan failed'
-  } finally {
-    scanning.value = false
-  }
-}
-
 async function refreshRepo() {
   const repoRes = await getRepo(repoId)
   repo.value = repoRes.data.data ?? null
@@ -96,25 +61,6 @@ async function refreshRepo() {
 function formatDate(date: string | null) {
   if (!date) return '—'
   return new Date(date).toLocaleString()
-}
-
-function scoreColor(score: number) {
-  if (score >= 70) return 'text-green-600'
-  if (score >= 40) return 'text-yellow-600'
-  return 'text-red-600'
-}
-
-function scoreBadgeColor(score: number) {
-  if (score >= 70) return 'bg-green-100 text-green-800'
-  if (score >= 40) return 'bg-yellow-100 text-yellow-800'
-  return 'bg-red-100 text-red-800'
-}
-
-function scoreBarColor(score: number, max: number) {
-  const pct = max > 0 ? score / max : 0
-  if (pct >= 0.7) return 'bg-green-500'
-  if (pct >= 0.4) return 'bg-yellow-500'
-  return 'bg-red-500'
 }
 
 function labelColor(label: string) {
@@ -176,10 +122,6 @@ function prsNextPage() {
   if ((prsPage.value + 1) * prsPageSize < prsTotal.value) { prsPage.value++; loadPRs() }
 }
 
-function handleOptimize() {
-  chatRef.value?.startOptimizePreview()
-}
-
 function formatConfidence(value?: PRRecord['attribution_confidence']) {
   if (!value) return '—'
   return value
@@ -199,42 +141,13 @@ async function handleSettlePR(prId: number) {
     settlingPRId.value = null
   }
 }
-
-async function handleSaveScanPrompt() {
-  scanPromptSaving.value = true
-  scanPromptSuccess.value = ''
-  try {
-    const override: Record<string, string> = {}
-    if (scanPrompt.value.system_prompt) override.system_prompt = scanPrompt.value.system_prompt
-    if (scanPrompt.value.user_prompt_template) override.user_prompt_template = scanPrompt.value.user_prompt_template
-    await updateRepo(repoId, { scan_prompt_override: Object.keys(override).length > 0 ? override : undefined } as any)
-    scanPromptSuccess.value = 'Scan prompt override saved'
-    setTimeout(() => { scanPromptSuccess.value = '' }, 3000)
-  } catch { /* save failed */ } finally {
-    scanPromptSaving.value = false
-  }
-}
-
-async function handleClearScanPrompt() {
-  scanPromptSaving.value = true
-  scanPromptSuccess.value = ''
-  try {
-    await updateRepo(repoId, { clear_scan_prompt: true } as any)
-    scanPrompt.value = { system_prompt: '', user_prompt_template: '' }
-    scanPromptSuccess.value = 'Scan prompt override cleared (using global defaults)'
-    setTimeout(() => { scanPromptSuccess.value = '' }, 3000)
-  } catch { /* clear failed */ } finally {
-    scanPromptSaving.value = false
-  }
-}
 </script>
 
 <template>
   <AppLayout>
-    <div v-if="loading" class="text-center text-gray-500 py-12">Loading...</div>
+    <div v-if="loading" class="py-12 text-center text-gray-500">Loading...</div>
 
     <div v-else-if="repo" class="space-y-5">
-      <!-- Header -->
       <div>
         <button class="text-sm text-indigo-600 hover:text-indigo-800" @click="router.push('/repos')">
           &larr; Back to Repos
@@ -243,24 +156,16 @@ async function handleClearScanPrompt() {
           <div>
             <h1 class="text-2xl font-bold text-gray-900">{{ repo.name }}</h1>
             <p class="text-sm text-gray-500">{{ repo.full_name }}</p>
-            <p v-if="repo.clone_url" class="mt-0.5 text-xs text-gray-400 font-mono select-all">{{ repo.clone_url }}</p>
+            <p v-if="repo.clone_url" class="mt-0.5 select-all font-mono text-xs text-gray-400">{{ repo.clone_url }}</p>
           </div>
           <div class="flex items-center space-x-2">
             <button
-              class="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
-              :disabled="scanning || isRepoUnbound" @click="handleScan"
-            >{{ scanning ? 'Scanning...' : 'Run Scan' }}</button>
-            <button
               class="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-              :disabled="syncing || isRepoUnbound" @click="handleSyncPRs"
+              :disabled="syncing || isRepoUnbound"
+              @click="handleSyncPRs"
             >{{ syncing ? 'Syncing...' : 'Sync PRs' }}</button>
-            <button
-              class="rounded-md bg-green-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50"
-              :disabled="scans.length === 0 || isRepoUnbound" @click="handleOptimize"
-            >Auto-Optimize</button>
           </div>
         </div>
-        <div v-if="scanError" class="mt-3 rounded-md bg-red-50 p-3 text-sm text-red-700">{{ scanError }}</div>
       </div>
 
       <div v-if="auth.isAdmin" class="rounded-lg bg-white p-5 shadow">
@@ -306,130 +211,34 @@ async function handleClearScanPrompt() {
         <div v-if="bindingMessage" class="mt-3 rounded-md bg-gray-50 p-3 text-sm text-gray-700">{{ bindingMessage }}</div>
       </div>
 
-      <!-- Overview: Score + Info + Dimensions in one row -->
-      <div class="rounded-lg bg-white shadow">
-        <div class="grid grid-cols-12 divide-x divide-gray-100">
-          <!-- Score -->
-          <div class="col-span-2 flex flex-col items-center justify-center p-6">
-            <div class="text-4xl font-bold" :class="scoreColor(repo.ai_score)">{{ repo.ai_score }}</div>
-            <div class="mt-1 text-xs text-gray-500 uppercase tracking-wide">AI Score</div>
-          </div>
-
-          <!-- Basic Info -->
-          <div class="col-span-3 p-5">
-            <table class="w-full text-sm">
-              <tbody>
-                <tr>
-                  <td class="text-gray-400 py-1 pr-4 align-middle whitespace-nowrap">Branch</td>
-                  <td class="text-gray-900 py-1 align-middle">{{ repo.default_branch }}</td>
-                </tr>
-                <tr>
-                  <td class="text-gray-400 py-1 pr-4 align-middle whitespace-nowrap">Status</td>
-                  <td class="text-gray-900 py-1 align-middle">{{ repo.status }}</td>
-                </tr>
-                <tr>
-                  <td class="text-gray-400 py-1 pr-4 align-middle whitespace-nowrap">Binding</td>
-                  <td class="text-gray-900 py-1 align-middle">{{ repo.binding_state }}</td>
-                </tr>
-                <tr>
-                  <td class="text-gray-400 py-1 pr-4 align-middle whitespace-nowrap">Last Scan</td>
-                  <td class="text-gray-900 py-1 align-middle">{{ formatDate(repo.last_scan_at) }}</td>
-                </tr>
-                <tr>
-                  <td class="text-gray-400 py-1 pr-4 align-middle whitespace-nowrap">Created</td>
-                  <td class="text-gray-900 py-1 align-middle">{{ formatDate(repo.created_at) }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-
-          <!-- Score Breakdown -->
-          <div class="col-span-7 p-5">
-            <div v-if="scans.length > 0" class="grid grid-cols-2 gap-x-6 gap-y-2">
-              <div v-for="(dim, key) in scans[0].dimensions" :key="String(key)">
-                <div class="flex items-center justify-between text-sm">
-                  <span class="text-gray-600 truncate">{{ String(key) }}</span>
-                  <span class="ml-2 font-medium text-gray-900 shrink-0">{{ dim.score }}/{{ dim.max_score }}</span>
-                </div>
-                <div class="mt-1 h-1.5 rounded-full bg-gray-100">
-                  <div
-                    class="h-1.5 rounded-full transition-all"
-                    :class="scoreBarColor(dim.score, dim.max_score)"
-                    :style="{ width: `${dim.max_score > 0 ? (dim.score / dim.max_score) * 100 : 0}%` }"
-                  />
-                </div>
-                <p class="mt-0.5 text-xs text-gray-400 line-clamp-1" :title="dim.details">{{ dim.details }}</p>
-              </div>
-            </div>
-            <p v-else class="text-sm text-gray-400">No scan results yet. Click "Run Scan" to analyze.</p>
-          </div>
-        </div>
-      </div>
-
-      <!-- Scan History (compact) -->
       <div class="rounded-lg bg-white p-5 shadow">
-        <h2 class="text-sm font-semibold text-gray-900 uppercase tracking-wide">Scan History</h2>
-        <div v-if="scans.length > 0" class="mt-3 flex flex-wrap gap-2">
-          <router-link v-for="scan in scans" :key="scan.id"
-            :to="`/repos/${repoId}/scans/${scan.id}`"
-            class="inline-flex items-center space-x-2 rounded-md border border-gray-200 px-3 py-1.5 text-sm hover:bg-gray-50 transition-colors"
-          >
-            <span class="inline-flex rounded-full px-2 text-xs font-semibold leading-5" :class="scoreBadgeColor(scan.score)">
-              {{ scan.score }}
-            </span>
-            <span class="text-gray-500">{{ scan.scan_type }}</span>
-            <span class="text-gray-400 text-xs">{{ formatDate(scan.created_at) }}</span>
-          </router-link>
-        </div>
-        <p v-else class="mt-3 text-sm text-gray-400">No scans yet.</p>
+        <table class="w-full text-sm">
+          <tbody>
+            <tr>
+              <td class="whitespace-nowrap py-1 pr-4 align-middle text-gray-400">Branch</td>
+              <td class="py-1 align-middle text-gray-900">{{ repo.default_branch }}</td>
+            </tr>
+            <tr>
+              <td class="whitespace-nowrap py-1 pr-4 align-middle text-gray-400">Status</td>
+              <td class="py-1 align-middle text-gray-900">{{ repo.status }}</td>
+            </tr>
+            <tr>
+              <td class="whitespace-nowrap py-1 pr-4 align-middle text-gray-400">Binding</td>
+              <td class="py-1 align-middle text-gray-900">{{ repo.binding_state }}</td>
+            </tr>
+            <tr>
+              <td class="whitespace-nowrap py-1 pr-4 align-middle text-gray-400">Created</td>
+              <td class="py-1 align-middle text-gray-900">{{ formatDate(repo.created_at) }}</td>
+            </tr>
+          </tbody>
+        </table>
       </div>
 
-      <!-- Scan Settings (collapsible) -->
-      <div class="rounded-lg bg-white shadow">
-        <button
-          class="flex w-full items-center justify-between px-5 py-3 text-left"
-          @click="showScanSettings = !showScanSettings"
-        >
-          <h2 class="text-sm font-semibold text-gray-900 uppercase tracking-wide">Scan Settings</h2>
-          <svg
-            class="h-4 w-4 text-gray-400 transition-transform" :class="{ 'rotate-180': showScanSettings }"
-            xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"
-          >
-            <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd" />
-          </svg>
-        </button>
-        <div v-if="showScanSettings" class="border-t border-gray-100 px-5 py-4 space-y-4">
-          <p class="text-sm text-gray-500">Override the global scan prompts for this repo. Leave empty to use global defaults.</p>
-          <div>
-            <label class="block text-sm font-medium text-gray-700">System Prompt</label>
-            <textarea v-model="scanPrompt.system_prompt" rows="3" placeholder="Leave empty to use global default" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono" />
-          </div>
-          <div>
-            <label class="block text-sm font-medium text-gray-700">User Prompt Template</label>
-            <textarea v-model="scanPrompt.user_prompt_template" rows="4" placeholder="Leave empty to use global default. Use {repo_context} as placeholder." class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono" />
-            <p class="mt-1 text-xs text-gray-400">Use <code class="bg-gray-100 px-1 rounded">{repo_context}</code> placeholder for repo content.</p>
-          </div>
-          <div v-if="scanPromptSuccess" class="rounded-md bg-green-50 p-3 text-sm text-green-700">{{ scanPromptSuccess }}</div>
-          <div class="flex justify-end space-x-3">
-            <button @click="handleClearScanPrompt" :disabled="scanPromptSaving"
-              class="rounded-md border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50">
-              Clear Override
-            </button>
-            <button @click="handleSaveScanPrompt" :disabled="scanPromptSaving"
-              class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50">
-              {{ scanPromptSaving ? 'Saving...' : 'Save Override' }}
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <!-- PR Records -->
       <div class="rounded-lg bg-white p-5 shadow">
         <div class="flex items-center justify-between">
-          <h2 class="text-sm font-semibold text-gray-900 uppercase tracking-wide">Pull Requests</h2>
+          <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-900">Pull Requests</h2>
           <div class="flex items-center space-x-3">
-            <select :value="prsMonths" @change="handleMonthsChange"
-              class="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-600">
+            <select :value="prsMonths" @change="handleMonthsChange" class="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-600">
               <option :value="1">Last 1 month</option>
               <option :value="3">Last 3 months</option>
               <option :value="6">Last 6 months</option>
@@ -442,7 +251,7 @@ async function handleClearScanPrompt() {
         <div v-if="prs.length > 0" class="mt-3 overflow-x-auto">
           <table class="min-w-full divide-y divide-gray-100 text-sm">
             <thead>
-              <tr class="text-xs text-gray-400 uppercase">
+              <tr class="text-xs uppercase text-gray-400">
                 <th class="px-3 py-2 text-left font-medium">Title</th>
                 <th class="px-3 py-2 text-left font-medium">Author</th>
                 <th class="px-3 py-2 text-left font-medium">Status</th>
@@ -456,7 +265,7 @@ async function handleClearScanPrompt() {
             </thead>
             <tbody class="divide-y divide-gray-50">
               <tr v-for="pr in prs" :key="pr.id" class="hover:bg-gray-50">
-                <td class="px-3 py-2 max-w-xs truncate">
+                <td class="max-w-xs truncate px-3 py-2">
                   <a v-if="pr.scm_pr_url" :href="pr.scm_pr_url" target="_blank" class="text-indigo-600 hover:text-indigo-800">
                     {{ pr.title }}
                   </a>
@@ -464,7 +273,8 @@ async function handleClearScanPrompt() {
                 </td>
                 <td class="px-3 py-2 text-gray-500">{{ pr.author }}</td>
                 <td class="px-3 py-2">
-                  <span class="inline-flex rounded-full px-2 text-xs font-medium leading-5"
+                  <span
+                    class="inline-flex rounded-full px-2 text-xs font-medium leading-5"
                     :class="pr.status === 'merged' ? 'bg-purple-50 text-purple-700' : pr.status === 'open' ? 'bg-green-50 text-green-700' : 'bg-gray-50 text-gray-500'"
                   >{{ pr.status }}</span>
                 </td>
@@ -473,10 +283,10 @@ async function handleClearScanPrompt() {
                     {{ pr.ai_label }}
                   </span>
                 </td>
-                <td class="px-3 py-2 text-gray-600 text-xs">{{ pr.attribution_status || 'not_run' }}</td>
-                <td class="px-3 py-2 text-gray-600 text-xs">{{ formatConfidence(pr.attribution_confidence) }}</td>
-                <td class="px-3 py-2 text-gray-600 text-xs">{{ formatCurrency(pr.primary_token_cost) }}</td>
-                <td class="px-3 py-2 text-gray-400 text-xs whitespace-nowrap">{{ formatDate(pr.created_at) }}</td>
+                <td class="px-3 py-2 text-xs text-gray-600">{{ pr.attribution_status || 'not_run' }}</td>
+                <td class="px-3 py-2 text-xs text-gray-600">{{ formatConfidence(pr.attribution_confidence) }}</td>
+                <td class="px-3 py-2 text-xs text-gray-600">{{ formatCurrency(pr.primary_token_cost) }}</td>
+                <td class="whitespace-nowrap px-3 py-2 text-xs text-gray-400">{{ formatDate(pr.created_at) }}</td>
                 <td class="px-3 py-2">
                   <button
                     class="rounded border border-gray-200 px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-40"
@@ -492,18 +302,13 @@ async function handleClearScanPrompt() {
               {{ prsPage * prsPageSize + 1 }}–{{ Math.min((prsPage + 1) * prsPageSize, prsTotal) }} of {{ prsTotal }}
             </span>
             <div class="flex space-x-2">
-              <button class="rounded border border-gray-200 px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-40"
-                :disabled="prsPage === 0" @click="prsPrevPage">Prev</button>
-              <button class="rounded border border-gray-200 px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-40"
-                :disabled="(prsPage + 1) * prsPageSize >= prsTotal" @click="prsNextPage">Next</button>
+              <button class="rounded border border-gray-200 px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-40" :disabled="prsPage === 0" @click="prsPrevPage">Prev</button>
+              <button class="rounded border border-gray-200 px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-40" :disabled="(prsPage + 1) * prsPageSize >= prsTotal" @click="prsNextPage">Next</button>
             </div>
           </div>
         </div>
         <p v-else class="mt-3 text-sm text-gray-400">No pull requests recorded yet.</p>
       </div>
     </div>
-
-    <!-- Chat -->
-    <RepoChat ref="chatRef" :repo-id="repoId" />
   </AppLayout>
 </template>

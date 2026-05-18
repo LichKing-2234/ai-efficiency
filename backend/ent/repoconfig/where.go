@@ -90,11 +90,6 @@ func WebhookSecret(v string) predicate.RepoConfig {
 	return predicate.RepoConfig(sql.FieldEQ(FieldWebhookSecret, v))
 }
 
-// AiScore applies equality check predicate on the "ai_score" field. It's identical to AiScoreEQ.
-func AiScore(v int) predicate.RepoConfig {
-	return predicate.RepoConfig(sql.FieldEQ(FieldAiScore, v))
-}
-
 // LastScanAt applies equality check predicate on the "last_scan_at" field. It's identical to LastScanAtEQ.
 func LastScanAt(v time.Time) predicate.RepoConfig {
 	return predicate.RepoConfig(sql.FieldEQ(FieldLastScanAt, v))
@@ -608,56 +603,6 @@ func WebhookSecretEqualFold(v string) predicate.RepoConfig {
 // WebhookSecretContainsFold applies the ContainsFold predicate on the "webhook_secret" field.
 func WebhookSecretContainsFold(v string) predicate.RepoConfig {
 	return predicate.RepoConfig(sql.FieldContainsFold(FieldWebhookSecret, v))
-}
-
-// AiScoreEQ applies the EQ predicate on the "ai_score" field.
-func AiScoreEQ(v int) predicate.RepoConfig {
-	return predicate.RepoConfig(sql.FieldEQ(FieldAiScore, v))
-}
-
-// AiScoreNEQ applies the NEQ predicate on the "ai_score" field.
-func AiScoreNEQ(v int) predicate.RepoConfig {
-	return predicate.RepoConfig(sql.FieldNEQ(FieldAiScore, v))
-}
-
-// AiScoreIn applies the In predicate on the "ai_score" field.
-func AiScoreIn(vs ...int) predicate.RepoConfig {
-	return predicate.RepoConfig(sql.FieldIn(FieldAiScore, vs...))
-}
-
-// AiScoreNotIn applies the NotIn predicate on the "ai_score" field.
-func AiScoreNotIn(vs ...int) predicate.RepoConfig {
-	return predicate.RepoConfig(sql.FieldNotIn(FieldAiScore, vs...))
-}
-
-// AiScoreGT applies the GT predicate on the "ai_score" field.
-func AiScoreGT(v int) predicate.RepoConfig {
-	return predicate.RepoConfig(sql.FieldGT(FieldAiScore, v))
-}
-
-// AiScoreGTE applies the GTE predicate on the "ai_score" field.
-func AiScoreGTE(v int) predicate.RepoConfig {
-	return predicate.RepoConfig(sql.FieldGTE(FieldAiScore, v))
-}
-
-// AiScoreLT applies the LT predicate on the "ai_score" field.
-func AiScoreLT(v int) predicate.RepoConfig {
-	return predicate.RepoConfig(sql.FieldLT(FieldAiScore, v))
-}
-
-// AiScoreLTE applies the LTE predicate on the "ai_score" field.
-func AiScoreLTE(v int) predicate.RepoConfig {
-	return predicate.RepoConfig(sql.FieldLTE(FieldAiScore, v))
-}
-
-// AiScoreIsNil applies the IsNil predicate on the "ai_score" field.
-func AiScoreIsNil() predicate.RepoConfig {
-	return predicate.RepoConfig(sql.FieldIsNull(FieldAiScore))
-}
-
-// AiScoreNotNil applies the NotNil predicate on the "ai_score" field.
-func AiScoreNotNil() predicate.RepoConfig {
-	return predicate.RepoConfig(sql.FieldNotNull(FieldAiScore))
 }
 
 // LastScanAtEQ applies the EQ predicate on the "last_scan_at" field.

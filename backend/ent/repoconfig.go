@@ -33,8 +33,6 @@ type RepoConfig struct {
 	WebhookID *string `json:"webhook_id,omitempty"`
 	// WebhookSecret holds the value of the "webhook_secret" field.
 	WebhookSecret *string `json:"-"`
-	// AiScore holds the value of the "ai_score" field.
-	AiScore int `json:"ai_score,omitempty"`
 	// LastScanAt holds the value of the "last_scan_at" field.
 	LastScanAt *time.Time `json:"last_scan_at,omitempty"`
 	// GroupID holds the value of the "group_id" field.
@@ -173,7 +171,7 @@ func (*RepoConfig) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case repoconfig.FieldScanPromptOverride:
 			values[i] = new([]byte)
-		case repoconfig.FieldID, repoconfig.FieldAiScore:
+		case repoconfig.FieldID:
 			values[i] = new(sql.NullInt64)
 		case repoconfig.FieldRepoKey, repoconfig.FieldName, repoconfig.FieldFullName, repoconfig.FieldCloneURL, repoconfig.FieldDefaultBranch, repoconfig.FieldWebhookID, repoconfig.FieldWebhookSecret, repoconfig.FieldGroupID, repoconfig.FieldRelayProviderName, repoconfig.FieldRelayGroupID, repoconfig.FieldStatus:
 			values[i] = new(sql.NullString)
@@ -245,12 +243,6 @@ func (rc *RepoConfig) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				rc.WebhookSecret = new(string)
 				*rc.WebhookSecret = value.String
-			}
-		case repoconfig.FieldAiScore:
-			if value, ok := values[i].(*sql.NullInt64); !ok {
-				return fmt.Errorf("unexpected type %T for field ai_score", values[i])
-			} else if value.Valid {
-				rc.AiScore = int(value.Int64)
 			}
 		case repoconfig.FieldLastScanAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
@@ -415,9 +407,6 @@ func (rc *RepoConfig) String() string {
 	}
 	builder.WriteString(", ")
 	builder.WriteString("webhook_secret=<sensitive>")
-	builder.WriteString(", ")
-	builder.WriteString("ai_score=")
-	builder.WriteString(fmt.Sprintf("%v", rc.AiScore))
 	builder.WriteString(", ")
 	if v := rc.LastScanAt; v != nil {
 		builder.WriteString("last_scan_at=")

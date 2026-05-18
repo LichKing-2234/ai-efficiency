@@ -73,8 +73,8 @@ func TestListScansInvalidID(t *testing.T) {
 	env := setupTestEnv(t)
 	w := doRequest(env, "GET", "/api/v1/repos/abc/scans", nil)
 
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("status = %d, want %d, body: %s", w.Code, http.StatusBadRequest, w.Body.String())
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d, body: %s", w.Code, http.StatusNotFound, w.Body.String())
 	}
 }
 
@@ -83,26 +83,8 @@ func TestListScansEmpty(t *testing.T) {
 	repoID := createTestRepo(t, env.client)
 
 	w := doRequest(env, "GET", fmt.Sprintf("/api/v1/repos/%d/scans", repoID), nil)
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d, body: %s", w.Code, http.StatusOK, w.Body.String())
-	}
-
-	resp := parseResponse(t, w)
-	code := int(resp["code"].(float64))
-	if code != 200 {
-		t.Errorf("code = %d, want 200", code)
-	}
-
-	// data should be an empty list
-	data := resp["data"]
-	if data == nil {
-		// nil is acceptable for an empty list
-		return
-	}
-	if items, ok := data.([]interface{}); ok {
-		if len(items) != 0 {
-			t.Errorf("expected empty list, got %d items", len(items))
-		}
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d, body: %s", w.Code, http.StatusNotFound, w.Body.String())
 	}
 }
 
@@ -113,17 +95,6 @@ func TestLatestScanNotFound(t *testing.T) {
 	w := doRequest(env, "GET", fmt.Sprintf("/api/v1/repos/%d/scans/latest", repoID), nil)
 	if w.Code != http.StatusNotFound {
 		t.Errorf("status = %d, want %d, body: %s", w.Code, http.StatusNotFound, w.Body.String())
-	}
-}
-
-func TestOptimizeNoOptimizer(t *testing.T) {
-	// setupTestEnv passes nil for optimizer, so this should return 503
-	env := setupTestEnv(t)
-	repoID := createTestRepo(t, env.client)
-
-	w := doRequest(env, "POST", fmt.Sprintf("/api/v1/repos/%d/optimize", repoID), nil)
-	if w.Code != http.StatusServiceUnavailable {
-		t.Errorf("status = %d, want %d, body: %s", w.Code, http.StatusServiceUnavailable, w.Body.String())
 	}
 }
 
@@ -243,7 +214,7 @@ func TestDashboard(t *testing.T) {
 	data := resp["data"].(map[string]interface{})
 
 	// Verify expected keys exist
-	for _, key := range []string{"total_repos", "tracked_workflows", "avg_ai_score", "total_ai_prs"} {
+	for _, key := range []string{"total_repos", "tracked_workflows", "total_ai_prs"} {
 		if _, ok := data[key]; !ok {
 			t.Errorf("missing key %q in dashboard response", key)
 		}

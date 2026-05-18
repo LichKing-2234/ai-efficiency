@@ -406,43 +406,6 @@ func TestRepoList_WithAllFilters(t *testing.T) {
 }
 
 // =====================
-// Efficiency — Dashboard with repos that have ai_score > 0 (covers avgScore branch)
-// =====================
-
-func TestDashboardWithAIScore(t *testing.T) {
-	env := setupTestEnv(t)
-	ctx := context.Background()
-
-	p, _ := env.client.ScmProvider.Create().
-		SetName("gh").SetType("github").
-		SetBaseURL("https://api.github.com").SetCredentials("enc").
-		Save(ctx)
-
-	// Create repos with different AI scores
-	env.client.RepoConfig.Create().
-		SetScmProviderID(p.ID).SetName("r1").SetFullName("org/r1").
-		SetCloneURL("https://github.com/org/r1.git").SetDefaultBranch("main").
-		SetAiScore(80).
-		SaveX(ctx)
-	env.client.RepoConfig.Create().
-		SetScmProviderID(p.ID).SetName("r2").SetFullName("org/r2").
-		SetCloneURL("https://github.com/org/r2.git").SetDefaultBranch("main").
-		SetAiScore(60).
-		SaveX(ctx)
-
-	w := doRequest(env, "GET", "/api/v1/efficiency/dashboard", nil)
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d", w.Code)
-	}
-	resp := parseResponse(t, w)
-	data := resp["data"].(map[string]interface{})
-	avgScore := int(data["avg_ai_score"].(float64))
-	if avgScore != 70 {
-		t.Errorf("avg_ai_score = %d, want 70", avgScore)
-	}
-}
-
-// =====================
 // Settings — TestLLMConnection with invalid URL (covers http.NewRequestWithContext error)
 // =====================
 

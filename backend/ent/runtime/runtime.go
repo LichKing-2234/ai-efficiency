@@ -300,16 +300,12 @@ func init() {
 	repoconfigDescDefaultBranch := repoconfigFields[4].Descriptor()
 	// repoconfig.DefaultDefaultBranch holds the default value on creation for the default_branch field.
 	repoconfig.DefaultDefaultBranch = repoconfigDescDefaultBranch.Default.(string)
-	// repoconfigDescAiScore is the schema descriptor for ai_score field.
-	repoconfigDescAiScore := repoconfigFields[7].Descriptor()
-	// repoconfig.DefaultAiScore holds the default value on creation for the ai_score field.
-	repoconfig.DefaultAiScore = repoconfigDescAiScore.Default.(int)
 	// repoconfigDescCreatedAt is the schema descriptor for created_at field.
-	repoconfigDescCreatedAt := repoconfigFields[13].Descriptor()
+	repoconfigDescCreatedAt := repoconfigFields[12].Descriptor()
 	// repoconfig.DefaultCreatedAt holds the default value on creation for the created_at field.
 	repoconfig.DefaultCreatedAt = repoconfigDescCreatedAt.Default.(func() time.Time)
 	// repoconfigDescUpdatedAt is the schema descriptor for updated_at field.
-	repoconfigDescUpdatedAt := repoconfigFields[14].Descriptor()
+	repoconfigDescUpdatedAt := repoconfigFields[13].Descriptor()
 	// repoconfig.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	repoconfig.DefaultUpdatedAt = repoconfigDescUpdatedAt.Default.(func() time.Time)
 	// repoconfig.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.

@@ -35,17 +35,6 @@ func (h *EfficiencyHandler) Dashboard(c *gin.Context) {
 		Strings(ctx)
 	trackedWorkflows := len(workspaceIDs)
 
-	// Compute average AI score across all repos
-	repos, _ := h.entClient.RepoConfig.Query().All(ctx)
-	var totalScore int
-	for _, r := range repos {
-		totalScore += r.AiScore
-	}
-	avgScore := 0
-	if len(repos) > 0 {
-		avgScore = totalScore / len(repos)
-	}
-
 	// Count AI PRs
 	aiPRs, _ := h.entClient.PrRecord.Query().
 		Where(prrecord.AiLabelEQ(prrecord.AiLabelAiViaSub2api)).
@@ -54,7 +43,6 @@ func (h *EfficiencyHandler) Dashboard(c *gin.Context) {
 	pkg.Success(c, gin.H{
 		"total_repos":       totalRepos,
 		"tracked_workflows": trackedWorkflows,
-		"avg_ai_score":      avgScore,
 		"total_ai_prs":      aiPRs,
 	})
 }

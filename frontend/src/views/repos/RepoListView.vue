@@ -272,7 +272,6 @@ function formatDate(date: string | null) {
             <thead>
               <tr class="text-xs text-gray-400 uppercase">
                 <th class="px-5 py-2 text-left font-medium">Name</th>
-                <th class="px-5 py-2 text-left font-medium">AI Score</th>
                 <th class="px-5 py-2 text-left font-medium">Status</th>
                 <th class="px-5 py-2 text-left font-medium">Last Scan</th>
                 <th class="px-5 py-2 text-right font-medium">Actions</th>
@@ -295,12 +294,6 @@ function formatDate(date: string | null) {
                       Unbound
                     </span>
                   </div>
-                </td>
-                <td class="whitespace-nowrap px-5 py-3">
-                  <span
-                    class="inline-flex rounded-full px-2 text-xs font-semibold leading-5"
-                    :class="repo.ai_score >= 70 ? 'bg-green-100 text-green-800' : repo.ai_score >= 40 ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'"
-                  >{{ repo.ai_score }}</span>
                 </td>
                 <td class="whitespace-nowrap px-5 py-3 text-sm text-gray-500">{{ repo.status }}</td>
                 <td class="whitespace-nowrap px-5 py-3 text-sm text-gray-500">{{ formatDate(repo.last_scan_at) }}</td>

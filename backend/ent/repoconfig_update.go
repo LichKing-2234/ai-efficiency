@@ -154,33 +154,6 @@ func (rcu *RepoConfigUpdate) ClearWebhookSecret() *RepoConfigUpdate {
 	return rcu
 }
 
-// SetAiScore sets the "ai_score" field.
-func (rcu *RepoConfigUpdate) SetAiScore(i int) *RepoConfigUpdate {
-	rcu.mutation.ResetAiScore()
-	rcu.mutation.SetAiScore(i)
-	return rcu
-}
-
-// SetNillableAiScore sets the "ai_score" field if the given value is not nil.
-func (rcu *RepoConfigUpdate) SetNillableAiScore(i *int) *RepoConfigUpdate {
-	if i != nil {
-		rcu.SetAiScore(*i)
-	}
-	return rcu
-}
-
-// AddAiScore adds i to the "ai_score" field.
-func (rcu *RepoConfigUpdate) AddAiScore(i int) *RepoConfigUpdate {
-	rcu.mutation.AddAiScore(i)
-	return rcu
-}
-
-// ClearAiScore clears the value of the "ai_score" field.
-func (rcu *RepoConfigUpdate) ClearAiScore() *RepoConfigUpdate {
-	rcu.mutation.ClearAiScore()
-	return rcu
-}
-
 // SetLastScanAt sets the "last_scan_at" field.
 func (rcu *RepoConfigUpdate) SetLastScanAt(t time.Time) *RepoConfigUpdate {
 	rcu.mutation.SetLastScanAt(t)
@@ -719,15 +692,6 @@ func (rcu *RepoConfigUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	}
 	if rcu.mutation.WebhookSecretCleared() {
 		_spec.ClearField(repoconfig.FieldWebhookSecret, field.TypeString)
-	}
-	if value, ok := rcu.mutation.AiScore(); ok {
-		_spec.SetField(repoconfig.FieldAiScore, field.TypeInt, value)
-	}
-	if value, ok := rcu.mutation.AddedAiScore(); ok {
-		_spec.AddField(repoconfig.FieldAiScore, field.TypeInt, value)
-	}
-	if rcu.mutation.AiScoreCleared() {
-		_spec.ClearField(repoconfig.FieldAiScore, field.TypeInt)
 	}
 	if value, ok := rcu.mutation.LastScanAt(); ok {
 		_spec.SetField(repoconfig.FieldLastScanAt, field.TypeTime, value)
@@ -1287,33 +1251,6 @@ func (rcuo *RepoConfigUpdateOne) SetNillableWebhookSecret(s *string) *RepoConfig
 // ClearWebhookSecret clears the value of the "webhook_secret" field.
 func (rcuo *RepoConfigUpdateOne) ClearWebhookSecret() *RepoConfigUpdateOne {
 	rcuo.mutation.ClearWebhookSecret()
-	return rcuo
-}
-
-// SetAiScore sets the "ai_score" field.
-func (rcuo *RepoConfigUpdateOne) SetAiScore(i int) *RepoConfigUpdateOne {
-	rcuo.mutation.ResetAiScore()
-	rcuo.mutation.SetAiScore(i)
-	return rcuo
-}
-
-// SetNillableAiScore sets the "ai_score" field if the given value is not nil.
-func (rcuo *RepoConfigUpdateOne) SetNillableAiScore(i *int) *RepoConfigUpdateOne {
-	if i != nil {
-		rcuo.SetAiScore(*i)
-	}
-	return rcuo
-}
-
-// AddAiScore adds i to the "ai_score" field.
-func (rcuo *RepoConfigUpdateOne) AddAiScore(i int) *RepoConfigUpdateOne {
-	rcuo.mutation.AddAiScore(i)
-	return rcuo
-}
-
-// ClearAiScore clears the value of the "ai_score" field.
-func (rcuo *RepoConfigUpdateOne) ClearAiScore() *RepoConfigUpdateOne {
-	rcuo.mutation.ClearAiScore()
 	return rcuo
 }
 
@@ -1885,15 +1822,6 @@ func (rcuo *RepoConfigUpdateOne) sqlSave(ctx context.Context) (_node *RepoConfig
 	}
 	if rcuo.mutation.WebhookSecretCleared() {
 		_spec.ClearField(repoconfig.FieldWebhookSecret, field.TypeString)
-	}
-	if value, ok := rcuo.mutation.AiScore(); ok {
-		_spec.SetField(repoconfig.FieldAiScore, field.TypeInt, value)
-	}
-	if value, ok := rcuo.mutation.AddedAiScore(); ok {
-		_spec.AddField(repoconfig.FieldAiScore, field.TypeInt, value)
-	}
-	if rcuo.mutation.AiScoreCleared() {
-		_spec.ClearField(repoconfig.FieldAiScore, field.TypeInt)
 	}
 	if value, ok := rcuo.mutation.LastScanAt(); ok {
 		_spec.SetField(repoconfig.FieldLastScanAt, field.TypeTime, value)

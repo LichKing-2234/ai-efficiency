@@ -318,7 +318,6 @@ var (
 		{Name: "default_branch", Type: field.TypeString, Default: "main"},
 		{Name: "webhook_id", Type: field.TypeString, Nullable: true},
 		{Name: "webhook_secret", Type: field.TypeString, Nullable: true},
-		{Name: "ai_score", Type: field.TypeInt, Nullable: true, Default: 0},
 		{Name: "last_scan_at", Type: field.TypeTime, Nullable: true},
 		{Name: "group_id", Type: field.TypeString, Nullable: true},
 		{Name: "relay_provider_name", Type: field.TypeString, Nullable: true},
@@ -337,7 +336,7 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "repo_configs_scm_providers_repo_configs",
-				Columns:    []*schema.Column{RepoConfigsColumns[17]},
+				Columns:    []*schema.Column{RepoConfigsColumns[16]},
 				RefColumns: []*schema.Column{ScmProvidersColumns[0]},
 				OnDelete:   schema.SetNull,
 			},
@@ -351,7 +350,7 @@ var (
 			{
 				Name:    "repoconfig_full_name_scm_provider_repo_configs",
 				Unique:  true,
-				Columns: []*schema.Column{RepoConfigsColumns[3], RepoConfigsColumns[17]},
+				Columns: []*schema.Column{RepoConfigsColumns[3], RepoConfigsColumns[16]},
 			},
 		},
 	}
