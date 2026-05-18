@@ -11,21 +11,17 @@ import (
 	"testing"
 
 	"github.com/ai-efficiency/backend/ent"
-	"github.com/ai-efficiency/backend/internal/analysis"
 	"github.com/ai-efficiency/backend/internal/analysis/llm"
 	"github.com/ai-efficiency/backend/internal/config"
-	"github.com/ai-efficiency/backend/internal/scm"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 )
 
 // =====================
-// Chat handler — cover preview files path + history edge cases
+// Retired chat routes — ensure the old endpoints stay unavailable
 // =====================
 
 func TestChatWithPreviewFiles(t *testing.T) {
-	// Chat with preview_files triggers the tool-calling path.
-	// LLM is enabled (relay provider set) but server not running -> 503.
 	env := setupFullTestEnv(t)
 	repoID := createFullTestRepo(t, env.client)
 
@@ -36,9 +32,8 @@ func TestChatWithPreviewFiles(t *testing.T) {
 		},
 	}
 	w := doFullRequest(env, "POST", fmt.Sprintf("/api/v1/repos/%d/chat", repoID), body)
-	// LLM enabled but server unreachable -> 503
-	if w.Code != http.StatusServiceUnavailable {
-		t.Errorf("status = %d, want %d, body: %s", w.Code, http.StatusServiceUnavailable, w.Body.String())
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d, body: %s", w.Code, http.StatusNotFound, w.Body.String())
 	}
 }
 
@@ -60,9 +55,8 @@ func TestChatHistoryTruncation(t *testing.T) {
 		"history": history,
 	}
 	w := doFullRequest(env, "POST", fmt.Sprintf("/api/v1/repos/%d/chat", repoID), body)
-	// LLM enabled but server unreachable -> 503
-	if w.Code != http.StatusServiceUnavailable {
-		t.Errorf("status = %d, want %d", w.Code, http.StatusServiceUnavailable)
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusNotFound)
 	}
 }
 
@@ -77,8 +71,8 @@ func TestChatHistoryContentTooLong2(t *testing.T) {
 		},
 	}
 	w := doFullRequest(env, "POST", fmt.Sprintf("/api/v1/repos/%d/chat", repoID), body)
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusNotFound)
 	}
 }
 
@@ -314,39 +308,6 @@ func TestSCMProviderTestNotFoundByID(t *testing.T) {
 	w := doRequest(env, "POST", "/api/v1/scm-providers/99999/test", nil)
 	if w.Code != http.StatusNotFound {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusNotFound)
-	}
-}
-
-// =====================
-// Optimize — mock ListScans error path in Optimize
-// =====================
-
-func TestOptimize_MockListScansError(t *testing.T) {
-	scanner := &mockAnalysisScanner{
-		getLatestScanFn: func(_ context.Context, _ int) (*ent.AiScanResult, error) {
-			return &ent.AiScanResult{ID: 1, Score: 60}, nil
-		},
-		listScansFn: func(_ context.Context, _ int, _ int) ([]*ent.AiScanResult, error) {
-			return nil, fmt.Errorf("db error")
-		},
-	}
-	opt := &mockOptimizer{
-		createPRFn: func(_ context.Context, _ scm.SCMProvider, _ *ent.RepoConfig, _ *ent.AiScanResult) (*analysis.OptimizeResult, error) {
-			return &analysis.OptimizeResult{BranchName: "b", FilesAdded: 1}, nil
-		},
-	}
-	repoSCM := &mockRepoSCMProvider{
-		getSCMProviderFn: func(_ context.Context, _ int) (scm.SCMProvider, *ent.RepoConfig, error) {
-			return &mockSCMProvider{}, &ent.RepoConfig{ID: 1}, nil
-		},
-	}
-	env := setupMockTestEnv(t, scanner, opt, repoSCM, nil)
-	rc := createMockTestRepo(t, env.client)
-
-	// ListScans error doesn't affect Optimize (it uses GetLatestScan)
-	w := doMockRequest(env, "POST", fmt.Sprintf("/api/v1/repos/%d/optimize", rc.ID), nil)
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d, body: %s", w.Code, http.StatusOK, w.Body.String())
 	}
 }
 

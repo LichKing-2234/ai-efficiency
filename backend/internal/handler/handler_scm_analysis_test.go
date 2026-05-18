@@ -158,8 +158,8 @@ func TestAnalysisTriggerScan_InvalidID(t *testing.T) {
 	env := setupTestEnv(t)
 
 	w := doRequest(env, "POST", "/api/v1/repos/abc/scan", nil)
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("status = %d, want %d, body: %s", w.Code, http.StatusBadRequest, w.Body.String())
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d, body: %s", w.Code, http.StatusNotFound, w.Body.String())
 	}
 }
 
@@ -168,8 +168,8 @@ func TestOptimizePreview_NoOptimizer(t *testing.T) {
 	repoID := createTestRepo(t, env.client)
 
 	w := doRequest(env, "POST", fmt.Sprintf("/api/v1/repos/%d/optimize/preview", repoID), nil)
-	if w.Code != http.StatusServiceUnavailable {
-		t.Errorf("status = %d, want %d, body: %s", w.Code, http.StatusServiceUnavailable, w.Body.String())
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d, body: %s", w.Code, http.StatusNotFound, w.Body.String())
 	}
 }
 
@@ -177,8 +177,8 @@ func TestOptimizePreview_InvalidID(t *testing.T) {
 	env := setupTestEnv(t)
 
 	w := doRequest(env, "POST", "/api/v1/repos/abc/optimize/preview", nil)
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("status = %d, want %d, body: %s", w.Code, http.StatusBadRequest, w.Body.String())
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d, body: %s", w.Code, http.StatusNotFound, w.Body.String())
 	}
 }
 
@@ -191,8 +191,8 @@ func TestOptimizeConfirm_NoOptimizer(t *testing.T) {
 		"score": 85,
 	}
 	w := doRequest(env, "POST", fmt.Sprintf("/api/v1/repos/%d/optimize/confirm", repoID), body)
-	if w.Code != http.StatusServiceUnavailable {
-		t.Errorf("status = %d, want %d, body: %s", w.Code, http.StatusServiceUnavailable, w.Body.String())
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d, body: %s", w.Code, http.StatusNotFound, w.Body.String())
 	}
 }
 
@@ -200,8 +200,8 @@ func TestOptimizeConfirm_InvalidID(t *testing.T) {
 	env := setupTestEnv(t)
 
 	w := doRequest(env, "POST", "/api/v1/repos/abc/optimize/confirm", nil)
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("status = %d, want %d, body: %s", w.Code, http.StatusBadRequest, w.Body.String())
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d, body: %s", w.Code, http.StatusNotFound, w.Body.String())
 	}
 }
 
@@ -209,8 +209,8 @@ func TestLatestScan_InvalidID(t *testing.T) {
 	env := setupTestEnv(t)
 
 	w := doRequest(env, "GET", "/api/v1/repos/abc/scans/latest", nil)
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("status = %d, want %d, body: %s", w.Code, http.StatusBadRequest, w.Body.String())
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d, body: %s", w.Code, http.StatusNotFound, w.Body.String())
 	}
 }
 
@@ -239,29 +239,8 @@ func TestListScans_WithResults(t *testing.T) {
 	}
 
 	w := doRequest(env, "GET", fmt.Sprintf("/api/v1/repos/%d/scans", repoID), nil)
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d, body: %s", w.Code, http.StatusOK, w.Body.String())
-	}
-
-	resp := parseResponse(t, w)
-	data, ok := resp["data"].([]interface{})
-	if !ok {
-		t.Fatalf("expected data to be a list, got: %T", resp["data"])
-	}
-	if len(data) != 3 {
-		t.Errorf("scans count = %d, want 3", len(data))
-	}
-
-	// Verify the latest scan endpoint also works now
-	w = doRequest(env, "GET", fmt.Sprintf("/api/v1/repos/%d/scans/latest", repoID), nil)
-	if w.Code != http.StatusOK {
-		t.Fatalf("latest scan status = %d, want %d, body: %s", w.Code, http.StatusOK, w.Body.String())
-	}
-	resp = parseResponse(t, w)
-	scanData := resp["data"].(map[string]interface{})
-	score := int(scanData["score"].(float64))
-	if score < 60 || score > 80 {
-		t.Errorf("score = %d, want between 60 and 80", score)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d, body: %s", w.Code, http.StatusNotFound, w.Body.String())
 	}
 }
 

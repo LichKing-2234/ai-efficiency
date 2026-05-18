@@ -30,8 +30,6 @@ const (
 	FieldWebhookID = "webhook_id"
 	// FieldWebhookSecret holds the string denoting the webhook_secret field in the database.
 	FieldWebhookSecret = "webhook_secret"
-	// FieldAiScore holds the string denoting the ai_score field in the database.
-	FieldAiScore = "ai_score"
 	// FieldLastScanAt holds the string denoting the last_scan_at field in the database.
 	FieldLastScanAt = "last_scan_at"
 	// FieldGroupID holds the string denoting the group_id field in the database.
@@ -143,7 +141,6 @@ var Columns = []string{
 	FieldDefaultBranch,
 	FieldWebhookID,
 	FieldWebhookSecret,
-	FieldAiScore,
 	FieldLastScanAt,
 	FieldGroupID,
 	FieldRelayProviderName,
@@ -190,8 +187,6 @@ var (
 	CloneURLValidator func(string) error
 	// DefaultDefaultBranch holds the default value on creation for the "default_branch" field.
 	DefaultDefaultBranch string
-	// DefaultAiScore holds the default value on creation for the "ai_score" field.
-	DefaultAiScore int
 	// DefaultCreatedAt holds the default value on creation for the "created_at" field.
 	DefaultCreatedAt func() time.Time
 	// DefaultUpdatedAt holds the default value on creation for the "updated_at" field.
@@ -268,11 +263,6 @@ func ByWebhookID(opts ...sql.OrderTermOption) OrderOption {
 // ByWebhookSecret orders the results by the webhook_secret field.
 func ByWebhookSecret(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldWebhookSecret, opts...).ToFunc()
-}
-
-// ByAiScore orders the results by the ai_score field.
-func ByAiScore(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldAiScore, opts...).ToFunc()
 }
 
 // ByLastScanAt orders the results by the last_scan_at field.

@@ -35,7 +35,7 @@ describe('DashboardView', () => {
   it('renders dashboard title', async () => {
     const { getDashboard } = await import('@/api/efficiency')
     ;(getDashboard as any).mockResolvedValue({
-      data: { data: { total_repos: 5, tracked_workflows: 2, avg_ai_score: 72, total_ai_prs: 10 } },
+      data: { data: { total_repos: 5, tracked_workflows: 2, total_ai_prs: 10 } },
     })
 
     const router = createTestRouter()
@@ -68,7 +68,7 @@ describe('DashboardView', () => {
   it('displays dashboard data after loading', async () => {
     const { getDashboard } = await import('@/api/efficiency')
     ;(getDashboard as any).mockResolvedValue({
-      data: { data: { total_repos: 12, tracked_workflows: 3, avg_ai_score: 85, total_ai_prs: 42 } },
+      data: { data: { total_repos: 12, tracked_workflows: 3, total_ai_prs: 42 } },
     })
 
     const router = createTestRouter()
@@ -84,10 +84,10 @@ describe('DashboardView', () => {
 
     expect(wrapper.text()).toContain('12')
     expect(wrapper.text()).toContain('3')
-    expect(wrapper.text()).toContain('85')
     expect(wrapper.text()).toContain('42')
     expect(wrapper.text()).toContain('Tracked Workflows')
     expect(wrapper.text()).not.toContain('Active Sessions')
+    expect(wrapper.text()).not.toContain('Avg AI Score')
   })
 
   it('shows placeholder values when API fails', async () => {

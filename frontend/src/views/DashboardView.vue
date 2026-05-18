@@ -28,7 +28,7 @@ onMounted(async () => {
         Welcome back{{ auth.user?.username ? `, ${auth.user.username}` : '' }}
       </h1>
 
-      <div class="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+      <div class="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
         <div class="rounded-lg bg-white p-6 shadow">
           <p class="text-sm font-medium text-gray-500">Total Repos</p>
           <p class="mt-2 text-3xl font-semibold text-gray-900">{{ dashboard?.total_repos ?? '--' }}</p>
@@ -36,10 +36,6 @@ onMounted(async () => {
         <div class="rounded-lg bg-white p-6 shadow">
           <p class="text-sm font-medium text-gray-500">Tracked Workflows</p>
           <p class="mt-2 text-3xl font-semibold text-gray-900">{{ dashboard?.tracked_workflows ?? '--' }}</p>
-        </div>
-        <div class="rounded-lg bg-white p-6 shadow">
-          <p class="text-sm font-medium text-gray-500">Avg AI Score</p>
-          <p class="mt-2 text-3xl font-semibold text-indigo-600">{{ dashboard?.avg_ai_score ?? '--' }}</p>
         </div>
         <div class="rounded-lg bg-white p-6 shadow">
           <p class="text-sm font-medium text-gray-500">AI PRs</p>

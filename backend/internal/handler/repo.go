@@ -174,22 +174,6 @@ func (h *RepoHandler) Delete(c *gin.Context) {
 	pkg.Success(c, gin.H{"deleted": true})
 }
 
-// TriggerScan handles POST /api/v1/repos/:id/scan
-func (h *RepoHandler) TriggerScan(c *gin.Context) {
-	id, err := strconv.Atoi(c.Param("id"))
-	if err != nil {
-		pkg.Error(c, http.StatusBadRequest, "invalid id")
-		return
-	}
-
-	if err := h.repoService.TriggerScan(c.Request.Context(), id); err != nil {
-		pkg.Error(c, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	pkg.Success(c, gin.H{"message": "scan triggered"})
-}
-
 func buildRepoResponse(r *ent.RepoConfig) repoResponse {
 	resp := repoResponse{
 		RepoConfig:   r,

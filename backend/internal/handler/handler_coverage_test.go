@@ -12,7 +12,6 @@ import (
 
 	"github.com/ai-efficiency/backend/ent"
 	entuser "github.com/ai-efficiency/backend/ent/user"
-	"github.com/ai-efficiency/backend/internal/analysis"
 	"github.com/ai-efficiency/backend/internal/analysis/llm"
 	"github.com/ai-efficiency/backend/internal/auth"
 	"github.com/ai-efficiency/backend/internal/checkpoint"
@@ -42,8 +41,6 @@ func setupFullTestEnvWithDeployment(t *testing.T, deploymentHandler *DeploymentH
 	authSvc := auth.NewService(client, "test-jwt-secret-32-bytes-long!!!", 7200, 604800, logger)
 	repoSvc := repo.NewService(client, "0000000000000000000000000000000000000000000000000000000000000000", logger)
 	webhookHandler := webhook.NewHandler(client, nil, logger)
-	analysisCloner := analysis.NewCloner(t.TempDir(), logger)
-	analysisSvc := analysis.NewService(client, analysisCloner, nil, logger, "0000000000000000000000000000000000000000000000000000000000000000")
 
 	// LLM analyzer with config — use a relay provider pointing to a non-listening address
 	// so Enabled()=true but actual LLM calls fail (connection refused).
@@ -57,9 +54,6 @@ func setupFullTestEnvWithDeployment(t *testing.T, deploymentHandler *DeploymentH
 	relayCfg := config.RelayConfig{URL: "http://localhost:19876", APIKey: "sk-test-key-12345678", Model: "gpt-4"}
 	settingsHandler := NewSettingsHandler(configPath, relayCfg, llmAnalyzer, logger)
 
-	// Chat handler
-	chatHandler := NewChatHandler(client, llmAnalyzer, t.TempDir(), logger)
-
 	// Aggregator
 	aggregator := efficiency.NewAggregator(client, logger)
 
@@ -67,13 +61,10 @@ func setupFullTestEnvWithDeployment(t *testing.T, deploymentHandler *DeploymentH
 		client,
 		authSvc,
 		repoSvc,
-		analysisSvc,
 		webhookHandler,
 		nil, // syncService
 		settingsHandler,
-		chatHandler,
 		aggregator,
-		nil, // optimizer
 		"0000000000000000000000000000000000000000000000000000000000000000",
 		middleware.CORS(nil),
 		nil, nil, nil, handlerCheckpoint(client),

@@ -158,7 +158,9 @@ sequenceDiagram
 - Relay/sub2api remains the upstream auth/LLM/usage integration boundary and attribution fallback source.
 - SCM providers now reference reusable credentials instead of storing raw secret blobs inline.
 - Repo-to-`scm_provider` binding is an admin-managed lifecycle step rather than a hard precondition for attribution.
-- SCM-dependent features such as scan, PR sync, optimize, and webhook registration require a bound repo and return `repo_unbound` when invoked before binding.
+- Active SCM-dependent product features such as PR sync and webhook registration require a bound repo and return `repo_unbound` when invoked before binding.
+- The repo scan, optimize-preview, and repo-chat product surfaces have been retired from the active API and frontend.
+- Repo-level cached AI score summaries are no longer part of the active dashboard or repo UI/API contract.
 
 ## Attribution Runtime Status
 
@@ -197,7 +199,7 @@ flowchart LR
 | Credentials | `backend/internal/credential` | Reusable encrypted secret assets, payload validation, provider credential migration, and credential masking |
 | Relay integration | `backend/internal/relay` | Unified relay/sub2api adapter and usage/API key operations |
 | SCM integration | `backend/internal/scm`, `backend/internal/webhook`, `backend/internal/prsync` | SCM provider abstraction, webhook ingestion, PR synchronization |
-| Repo and analysis | `backend/internal/repo`, `backend/internal/analysis`, `backend/internal/efficiency` | Repo-to-provider binding, provider-backed clone/auth resolution, AI-friendliness scanning, efficiency aggregation and labeling |
+| Repo and efficiency | `backend/internal/repo`, `backend/internal/efficiency` | Repo-to-provider binding, provider-backed clone/auth resolution, and efficiency aggregation/labeling for active product flows |
 | Session and attribution | `backend/internal/checkpoint`, `backend/internal/attribution` | Commit checkpoints, PR attribution, and remaining legacy session-backed data compatibility |
 | API surface | `backend/internal/handler`, `backend/internal/middleware` | HTTP handlers, routing, auth middleware, settings endpoints |
 
@@ -205,7 +207,7 @@ flowchart LR
 
 | Area | Paths | Responsibility |
 | --- | --- | --- |
-| Views | `frontend/src/views` | Dashboard, attribution, repos, oauth, analysis-facing pages |
+| Views | `frontend/src/views` | Dashboard, attribution, repos, oauth, and admin/settings pages |
 | Data access | `frontend/src/api`, `frontend/src/stores` | Backend API clients, state management, request orchestration |
 | App shell | `frontend/src/components`, `frontend/src/router` | Layout, navigation, route composition |
 

@@ -104,20 +104,6 @@ func (rcc *RepoConfigCreate) SetNillableWebhookSecret(s *string) *RepoConfigCrea
 	return rcc
 }
 
-// SetAiScore sets the "ai_score" field.
-func (rcc *RepoConfigCreate) SetAiScore(i int) *RepoConfigCreate {
-	rcc.mutation.SetAiScore(i)
-	return rcc
-}
-
-// SetNillableAiScore sets the "ai_score" field if the given value is not nil.
-func (rcc *RepoConfigCreate) SetNillableAiScore(i *int) *RepoConfigCreate {
-	if i != nil {
-		rcc.SetAiScore(*i)
-	}
-	return rcc
-}
-
 // SetLastScanAt sets the "last_scan_at" field.
 func (rcc *RepoConfigCreate) SetLastScanAt(t time.Time) *RepoConfigCreate {
 	rcc.mutation.SetLastScanAt(t)
@@ -402,10 +388,6 @@ func (rcc *RepoConfigCreate) defaults() error {
 		v := repoconfig.DefaultDefaultBranch
 		rcc.mutation.SetDefaultBranch(v)
 	}
-	if _, ok := rcc.mutation.AiScore(); !ok {
-		v := repoconfig.DefaultAiScore
-		rcc.mutation.SetAiScore(v)
-	}
 	if _, ok := rcc.mutation.Status(); !ok {
 		v := repoconfig.DefaultStatus
 		rcc.mutation.SetStatus(v)
@@ -523,10 +505,6 @@ func (rcc *RepoConfigCreate) createSpec() (*RepoConfig, *sqlgraph.CreateSpec) {
 	if value, ok := rcc.mutation.WebhookSecret(); ok {
 		_spec.SetField(repoconfig.FieldWebhookSecret, field.TypeString, value)
 		_node.WebhookSecret = &value
-	}
-	if value, ok := rcc.mutation.AiScore(); ok {
-		_spec.SetField(repoconfig.FieldAiScore, field.TypeInt, value)
-		_node.AiScore = value
 	}
 	if value, ok := rcc.mutation.LastScanAt(); ok {
 		_spec.SetField(repoconfig.FieldLastScanAt, field.TypeTime, value)

@@ -14,10 +14,8 @@ vi.mock('@/api/client', () => {
 
 import client from '@/api/client'
 import { listProviders, getProvider, createProvider, updateProvider, deleteProvider } from '@/api/scmProvider'
-import { triggerScan, listScans, getLatestScan, triggerOptimize, optimizePreview, optimizeConfirm } from '@/api/analysis'
 import { listPRs, getPR, syncPRs, settlePR } from '@/api/pr'
 import { getDashboard, getRepoMetrics, getRepoTrend } from '@/api/efficiency'
-import { sendChatMessage } from '@/api/chat'
 import { getLLMConfig, updateLLMConfig, testLLMConnection } from '@/api/settings'
 import { getDeploymentStatus, checkForUpdate, applyUpdate, rollbackUpdate, restartDeployment } from '@/api/deployment'
 
@@ -69,51 +67,6 @@ describe('scmProvider API', () => {
     mockClient.delete.mockResolvedValue({ data: { data: null } })
     await deleteProvider(7)
     expect(mockClient.delete).toHaveBeenCalledWith('/scm-providers/7')
-  })
-})
-
-describe('analysis API', () => {
-  it('triggerScan calls POST /repos/:id/scan with extended timeout', async () => {
-    mockClient.post.mockResolvedValue({ data: { data: { id: 1, score: 80 } } })
-    await triggerScan(10)
-    expect(mockClient.post).toHaveBeenCalledWith('/repos/10/scan', null, { timeout: 120000 })
-  })
-
-  it('listScans calls GET /repos/:id/scans with limit', async () => {
-    mockClient.get.mockResolvedValue({ data: { data: [] } })
-    await listScans(10, 5)
-    expect(mockClient.get).toHaveBeenCalledWith('/repos/10/scans', { params: { limit: 5 } })
-  })
-
-  it('listScans uses default limit of 20', async () => {
-    mockClient.get.mockResolvedValue({ data: { data: [] } })
-    await listScans(10)
-    expect(mockClient.get).toHaveBeenCalledWith('/repos/10/scans', { params: { limit: 20 } })
-  })
-
-  it('getLatestScan calls GET /repos/:id/scans/latest', async () => {
-    mockClient.get.mockResolvedValue({ data: { data: { id: 1, score: 75 } } })
-    await getLatestScan(10)
-    expect(mockClient.get).toHaveBeenCalledWith('/repos/10/scans/latest')
-  })
-
-  it('triggerOptimize calls POST /repos/:id/optimize with extended timeout', async () => {
-    mockClient.post.mockResolvedValue({ data: { data: { branch_name: 'ai/opt' } } })
-    await triggerOptimize(10)
-    expect(mockClient.post).toHaveBeenCalledWith('/repos/10/optimize', null, { timeout: 120000 })
-  })
-
-  it('optimizePreview calls POST /repos/:id/optimize/preview with extended timeout', async () => {
-    mockClient.post.mockResolvedValue({ data: { data: { files: [], score: 90 } } })
-    await optimizePreview(10)
-    expect(mockClient.post).toHaveBeenCalledWith('/repos/10/optimize/preview', null, { timeout: 120000 })
-  })
-
-  it('optimizeConfirm calls POST /repos/:id/optimize/confirm with files and score', async () => {
-    const files = { 'README.md': '# Hello' }
-    mockClient.post.mockResolvedValue({ data: { data: { pr_url: 'http://pr' } } })
-    await optimizeConfirm(10, files, 85)
-    expect(mockClient.post).toHaveBeenCalledWith('/repos/10/optimize/confirm', { files, score: 85 }, { timeout: 120000 })
   })
 })
 
@@ -180,19 +133,6 @@ describe('efficiency API', () => {
     mockClient.get.mockResolvedValue({ data: { data: [] } })
     await getRepoTrend(3)
     expect(mockClient.get).toHaveBeenCalledWith('/efficiency/repos/3/trend', { params: { period: 'weekly', limit: 12 } })
-  })
-})
-
-describe('chat API', () => {
-  it('sendChatMessage calls POST /repos/:id/chat with message and history', async () => {
-    const history = [{ role: 'user' as const, content: 'hello' }]
-    mockClient.post.mockResolvedValue({ data: { data: { role: 'assistant', content: 'hi' } } })
-    await sendChatMessage(8, 'how to improve?', history)
-    expect(mockClient.post).toHaveBeenCalledWith('/repos/8/chat', {
-      message: 'how to improve?',
-      history,
-      preview_files: undefined,
-    }, { timeout: 120000 })
   })
 })
 

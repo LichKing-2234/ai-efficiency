@@ -39,14 +39,10 @@ func (m *mockAnalysisScanner) GetLatestScan(ctx context.Context, id int) (*ent.A
 }
 
 type mockOptimizer struct {
-	createPRFn func(ctx context.Context, provider scm.SCMProvider, rc *ent.RepoConfig, scan *ent.AiScanResult) (*analysis.OptimizeResult, error)
-	previewFn  func(ctx context.Context, provider scm.SCMProvider, rc *ent.RepoConfig, scan *ent.AiScanResult) (*analysis.OptimizePreview, error)
-	confirmFn  func(ctx context.Context, provider scm.SCMProvider, rc *ent.RepoConfig, files map[string]string, score int) (*analysis.OptimizeResult, error)
+	previewFn func(ctx context.Context, provider scm.SCMProvider, rc *ent.RepoConfig, scan *ent.AiScanResult) (*analysis.OptimizePreview, error)
+	confirmFn func(ctx context.Context, provider scm.SCMProvider, rc *ent.RepoConfig, files map[string]string, score int) (*analysis.OptimizeResult, error)
 }
 
-func (m *mockOptimizer) CreateOptimizationPR(ctx context.Context, provider scm.SCMProvider, rc *ent.RepoConfig, scan *ent.AiScanResult) (*analysis.OptimizeResult, error) {
-	return m.createPRFn(ctx, provider, rc, scan)
-}
 func (m *mockOptimizer) PreviewOptimization(ctx context.Context, provider scm.SCMProvider, rc *ent.RepoConfig, scan *ent.AiScanResult) (*analysis.OptimizePreview, error) {
 	return m.previewFn(ctx, provider, rc, scan)
 }
@@ -158,7 +154,6 @@ func setupMockTestEnv(t *testing.T, scanner analysisScanner, opt optimizerServic
 		api.POST("/repos/:id/scan", analysisHandler.TriggerScan)
 		api.GET("/repos/:id/scans", analysisHandler.ListScans)
 		api.GET("/repos/:id/scans/latest", analysisHandler.LatestScan)
-		api.POST("/repos/:id/optimize", analysisHandler.Optimize)
 		api.POST("/repos/:id/optimize/preview", analysisHandler.OptimizePreview)
 		api.POST("/repos/:id/optimize/confirm", analysisHandler.OptimizeConfirm)
 		api.POST("/repos/:id/sync-prs", prHandler.SyncPRs)
@@ -228,159 +223,6 @@ func createMockTestRepo(t *testing.T, client *ent.Client) *ent.RepoConfig {
 		t.Fatalf("create repo: %v", err)
 	}
 	return rc
-}
-
-// =====================
-// Optimize handler tests (mocked)
-// =====================
-
-func TestOptimize_Success(t *testing.T) {
-	scanner := &mockAnalysisScanner{
-		getLatestScanFn: func(_ context.Context, _ int) (*ent.AiScanResult, error) {
-			return &ent.AiScanResult{ID: 1, Score: 60}, nil
-		},
-	}
-	opt := &mockOptimizer{
-		createPRFn: func(_ context.Context, _ scm.SCMProvider, _ *ent.RepoConfig, _ *ent.AiScanResult) (*analysis.OptimizeResult, error) {
-			return &analysis.OptimizeResult{BranchName: "ai-optimize-1", PRURL: "https://github.com/org/repo/pull/1", PRID: 1, FilesAdded: 3}, nil
-		},
-	}
-	repoSCM := &mockRepoSCMProvider{
-		getSCMProviderFn: func(_ context.Context, _ int) (scm.SCMProvider, *ent.RepoConfig, error) {
-			return &mockSCMProvider{}, &ent.RepoConfig{ID: 1}, nil
-		},
-	}
-	env := setupMockTestEnv(t, scanner, opt, repoSCM, nil)
-	rc := createMockTestRepo(t, env.client)
-
-	w := doMockRequest(env, "POST", fmt.Sprintf("/api/v1/repos/%d/optimize", rc.ID), nil)
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d, body: %s", w.Code, http.StatusOK, w.Body.String())
-	}
-	resp := parseMockResponse(t, w)
-	data := resp["data"].(map[string]interface{})
-	if data["branch_name"] != "ai-optimize-1" {
-		t.Errorf("branch_name = %v, want ai-optimize-1", data["branch_name"])
-	}
-}
-
-func TestOptimize_NilResult(t *testing.T) {
-	scanner := &mockAnalysisScanner{
-		getLatestScanFn: func(_ context.Context, _ int) (*ent.AiScanResult, error) {
-			return &ent.AiScanResult{ID: 1, Score: 100}, nil
-		},
-	}
-	opt := &mockOptimizer{
-		createPRFn: func(_ context.Context, _ scm.SCMProvider, _ *ent.RepoConfig, _ *ent.AiScanResult) (*analysis.OptimizeResult, error) {
-			return nil, nil
-		},
-	}
-	repoSCM := &mockRepoSCMProvider{
-		getSCMProviderFn: func(_ context.Context, _ int) (scm.SCMProvider, *ent.RepoConfig, error) {
-			return &mockSCMProvider{}, &ent.RepoConfig{ID: 1}, nil
-		},
-	}
-	env := setupMockTestEnv(t, scanner, opt, repoSCM, nil)
-	rc := createMockTestRepo(t, env.client)
-
-	w := doMockRequest(env, "POST", fmt.Sprintf("/api/v1/repos/%d/optimize", rc.ID), nil)
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d, body: %s", w.Code, http.StatusOK, w.Body.String())
-	}
-	resp := parseMockResponse(t, w)
-	data := resp["data"].(map[string]interface{})
-	if data["message"] != "no auto-fixable issues found" {
-		t.Errorf("message = %v", data["message"])
-	}
-}
-
-func TestOptimize_OptimizerError(t *testing.T) {
-	scanner := &mockAnalysisScanner{
-		getLatestScanFn: func(_ context.Context, _ int) (*ent.AiScanResult, error) {
-			return &ent.AiScanResult{ID: 1, Score: 60}, nil
-		},
-	}
-	opt := &mockOptimizer{
-		createPRFn: func(_ context.Context, _ scm.SCMProvider, _ *ent.RepoConfig, _ *ent.AiScanResult) (*analysis.OptimizeResult, error) {
-			return nil, fmt.Errorf("LLM timeout")
-		},
-	}
-	repoSCM := &mockRepoSCMProvider{
-		getSCMProviderFn: func(_ context.Context, _ int) (scm.SCMProvider, *ent.RepoConfig, error) {
-			return &mockSCMProvider{}, &ent.RepoConfig{ID: 1}, nil
-		},
-	}
-	env := setupMockTestEnv(t, scanner, opt, repoSCM, nil)
-	rc := createMockTestRepo(t, env.client)
-
-	w := doMockRequest(env, "POST", fmt.Sprintf("/api/v1/repos/%d/optimize", rc.ID), nil)
-	if w.Code != http.StatusInternalServerError {
-		t.Errorf("status = %d, want %d", w.Code, http.StatusInternalServerError)
-	}
-}
-
-func TestOptimize_GetSCMProviderError(t *testing.T) {
-	scanner := &mockAnalysisScanner{
-		getLatestScanFn: func(_ context.Context, _ int) (*ent.AiScanResult, error) {
-			return &ent.AiScanResult{ID: 1, Score: 60}, nil
-		},
-	}
-	opt := &mockOptimizer{}
-	repoSCM := &mockRepoSCMProvider{
-		getSCMProviderFn: func(_ context.Context, _ int) (scm.SCMProvider, *ent.RepoConfig, error) {
-			return nil, nil, fmt.Errorf("provider not found")
-		},
-	}
-	env := setupMockTestEnv(t, scanner, opt, repoSCM, nil)
-	rc := createMockTestRepo(t, env.client)
-
-	w := doMockRequest(env, "POST", fmt.Sprintf("/api/v1/repos/%d/optimize", rc.ID), nil)
-	if w.Code != http.StatusInternalServerError {
-		t.Errorf("status = %d, want %d", w.Code, http.StatusInternalServerError)
-	}
-}
-
-func TestOptimize_GetSCMProviderUnboundReturns409(t *testing.T) {
-	scanner := &mockAnalysisScanner{
-		getLatestScanFn: func(_ context.Context, _ int) (*ent.AiScanResult, error) {
-			return &ent.AiScanResult{ID: 1, Score: 60}, nil
-		},
-	}
-	opt := &mockOptimizer{}
-	repoSCM := &mockRepoSCMProvider{
-		getSCMProviderFn: func(_ context.Context, _ int) (scm.SCMProvider, *ent.RepoConfig, error) {
-			return nil, nil, repo.ErrRepoUnbound
-		},
-	}
-	env := setupMockTestEnv(t, scanner, opt, repoSCM, nil)
-	rc := createMockTestRepo(t, env.client)
-
-	w := doMockRequest(env, "POST", fmt.Sprintf("/api/v1/repos/%d/optimize", rc.ID), nil)
-	if w.Code != http.StatusConflict {
-		t.Fatalf("status = %d, want %d", w.Code, http.StatusConflict)
-	}
-	resp := parseMockResponse(t, w)
-	details := resp["details"].(map[string]interface{})
-	if details["error_code"] != "repo_unbound" {
-		t.Fatalf("error_code = %v, want repo_unbound", details["error_code"])
-	}
-}
-
-func TestOptimize_NoScanResult(t *testing.T) {
-	scanner := &mockAnalysisScanner{
-		getLatestScanFn: func(_ context.Context, _ int) (*ent.AiScanResult, error) {
-			return nil, fmt.Errorf("not found")
-		},
-	}
-	opt := &mockOptimizer{}
-	repoSCM := &mockRepoSCMProvider{}
-	env := setupMockTestEnv(t, scanner, opt, repoSCM, nil)
-	rc := createMockTestRepo(t, env.client)
-
-	w := doMockRequest(env, "POST", fmt.Sprintf("/api/v1/repos/%d/optimize", rc.ID), nil)
-	if w.Code != http.StatusNotFound {
-		t.Errorf("status = %d, want %d", w.Code, http.StatusNotFound)
-	}
 }
 
 // =====================

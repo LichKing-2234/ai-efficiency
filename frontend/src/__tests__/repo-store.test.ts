@@ -28,8 +28,8 @@ describe('Repo Store', () => {
       data: {
         data: {
           items: [
-            { id: 1, name: 'repo-a', full_name: 'org/repo-a', status: 'active', ai_score: 80 },
-            { id: 2, name: 'repo-b', full_name: 'org/repo-b', status: 'active', ai_score: 50 },
+            { id: 1, name: 'repo-a', full_name: 'org/repo-a', status: 'active' },
+            { id: 2, name: 'repo-b', full_name: 'org/repo-b', status: 'active' },
           ],
           total: 2,
           page: 1,
@@ -60,7 +60,7 @@ describe('Repo Store', () => {
 
   it('createRepo adds to list', async () => {
     const { createRepo } = await import('@/api/repo')
-    const newRepo = { id: 3, name: 'repo-c', full_name: 'org/repo-c', status: 'active', ai_score: 0 }
+    const newRepo = { id: 3, name: 'repo-c', full_name: 'org/repo-c', status: 'active' }
     ;(createRepo as any).mockResolvedValue({ data: { data: newRepo } })
 
     const store = useRepoStore()
@@ -76,8 +76,8 @@ describe('Repo Store', () => {
 
     const store = useRepoStore()
     store.repos = [
-      { id: 1, repo_key: 'github.com/org/repo-a', name: 'repo-a', full_name: 'org/repo-a', clone_url: '', default_branch: 'main', ai_score: 0, status: 'active', binding_state: 'bound', last_scan_at: null, group_id: 0, created_at: '' },
-      { id: 2, repo_key: 'github.com/org/repo-b', name: 'repo-b', full_name: 'org/repo-b', clone_url: '', default_branch: 'main', ai_score: 0, status: 'active', binding_state: 'bound', last_scan_at: null, group_id: 0, created_at: '' },
+      { id: 1, repo_key: 'github.com/org/repo-a', name: 'repo-a', full_name: 'org/repo-a', clone_url: '', default_branch: 'main', status: 'active', binding_state: 'bound', last_scan_at: null, group_id: 0, created_at: '' },
+      { id: 2, repo_key: 'github.com/org/repo-b', name: 'repo-b', full_name: 'org/repo-b', clone_url: '', default_branch: 'main', status: 'active', binding_state: 'bound', last_scan_at: null, group_id: 0, created_at: '' },
     ]
 
     await store.deleteRepo(1)

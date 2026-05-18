@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/ent/aiscanresult"
@@ -499,14 +498,6 @@ func (s *Service) Delete(ctx context.Context, id int) error {
 	}
 
 	return tx.Commit()
-}
-
-// TriggerScan is a placeholder for Phase 2 — just updates last_scan_at.
-func (s *Service) TriggerScan(ctx context.Context, id int) error {
-	now := time.Now()
-	return s.entClient.RepoConfig.UpdateOneID(id).
-		SetLastScanAt(now).
-		Exec(ctx)
 }
 
 // GetSCMProvider returns an SCM provider instance for the given repo config ID.

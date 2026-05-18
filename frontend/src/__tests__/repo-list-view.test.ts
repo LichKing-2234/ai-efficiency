@@ -37,9 +37,9 @@ function createTestRouter() {
 }
 
 const sampleRepos = [
-  { id: 1, repo_key: 'github.com/org/repo-a', name: 'repo-a', full_name: 'org/repo-a', clone_url: 'https://github.com/org/repo-a.git', default_branch: 'main', ai_score: 85, status: 'active', binding_state: 'bound', last_scan_at: '2026-03-01T00:00:00Z', group_id: 0, created_at: '2026-01-01', edges: { scm_provider: { id: 1, name: 'GitHub', type: 'github', base_url: 'https://api.github.com', status: 'active' } } },
-  { id: 2, repo_key: 'github.com/org/repo-b', name: 'repo-b', full_name: 'org/repo-b', clone_url: 'https://github.com/org/repo-b.git', default_branch: 'main', ai_score: 35, status: 'active', binding_state: 'bound', last_scan_at: null, group_id: 0, created_at: '2026-01-01', edges: { scm_provider: { id: 1, name: 'GitHub', type: 'github', base_url: 'https://api.github.com', status: 'active' } } },
-  { id: 3, repo_key: 'bb.example.com/team/repo-c', name: 'repo-c', full_name: 'team/repo-c', clone_url: 'https://bb.example.com/scm/team/repo-c.git', default_branch: 'main', ai_score: 55, status: 'active', binding_state: 'bound', last_scan_at: null, group_id: 0, created_at: '2026-01-01', edges: { scm_provider: { id: 2, name: 'Bitbucket', type: 'bitbucket_server', base_url: 'https://bb.example.com', status: 'active' } } },
+  { id: 1, repo_key: 'github.com/org/repo-a', name: 'repo-a', full_name: 'org/repo-a', clone_url: 'https://github.com/org/repo-a.git', default_branch: 'main', status: 'active', binding_state: 'bound', last_scan_at: '2026-03-01T00:00:00Z', group_id: 0, created_at: '2026-01-01', edges: { scm_provider: { id: 1, name: 'GitHub', type: 'github', base_url: 'https://api.github.com', status: 'active' } } },
+  { id: 2, repo_key: 'github.com/org/repo-b', name: 'repo-b', full_name: 'org/repo-b', clone_url: 'https://github.com/org/repo-b.git', default_branch: 'main', status: 'active', binding_state: 'bound', last_scan_at: null, group_id: 0, created_at: '2026-01-01', edges: { scm_provider: { id: 1, name: 'GitHub', type: 'github', base_url: 'https://api.github.com', status: 'active' } } },
+  { id: 3, repo_key: 'bb.example.com/team/repo-c', name: 'repo-c', full_name: 'team/repo-c', clone_url: 'https://bb.example.com/scm/team/repo-c.git', default_branch: 'main', status: 'active', binding_state: 'bound', last_scan_at: null, group_id: 0, created_at: '2026-01-01', edges: { scm_provider: { id: 2, name: 'Bitbucket', type: 'bitbucket_server', base_url: 'https://bb.example.com', status: 'active' } } },
 ]
 
 async function mountRepoList(repos?: any[]) {
@@ -91,7 +91,6 @@ describe('RepoListView', () => {
         full_name: 'acme/repo-unbound',
         clone_url: 'https://github.com/acme/repo-unbound.git',
         default_branch: 'main',
-        ai_score: 0,
         status: 'active',
         binding_state: 'unbound',
         last_scan_at: null,
@@ -182,8 +181,7 @@ describe('RepoListView', () => {
     expect(wrapper.text()).toContain('repo-c')
     expect(wrapper.text()).toContain('org')
     expect(wrapper.text()).toContain('team')
-    expect(wrapper.text()).toContain('85')
-    expect(wrapper.text()).toContain('35')
+    expect(wrapper.text()).toContain('active')
   })
 
   it('navigates to repo detail on row click', async () => {
@@ -509,23 +507,6 @@ describe('RepoListView', () => {
     // repo-a has last_scan_at, repo-b has null
     // null should show dash
     expect(wrapper.text()).toContain('—')
-  })
-
-  it('shows score color coding', async () => {
-    const { wrapper } = await mountRepoList(sampleRepos)
-
-    // Score 85 should have green class
-    const scoreSpans = wrapper.findAll('span.rounded-full')
-    const greenScore = scoreSpans.find((s) => s.text() === '85')
-    expect(greenScore?.classes()).toContain('bg-green-100')
-
-    // Score 35 should have red class
-    const redScore = scoreSpans.find((s) => s.text() === '35')
-    expect(redScore?.classes()).toContain('bg-red-100')
-
-    // Score 55 should have yellow class
-    const yellowScore = scoreSpans.find((s) => s.text() === '55')
-    expect(yellowScore?.classes()).toContain('bg-yellow-100')
   })
 
   it('handles URL that does not match any pattern', async () => {

@@ -23,13 +23,10 @@ func SetupRouter(
 	entClient *ent.Client,
 	authService *auth.Service,
 	repoService *repo.Service,
-	analysisService analysisScanner,
 	webhookHandler *webhook.Handler,
 	syncService prSyncer,
 	settingsHandler *SettingsHandler,
-	chatHandler *ChatHandler,
 	aggregator *efficiency.Aggregator,
-	optimizer optimizerService,
 	encryptionKey string,
 	corsMiddleware gin.HandlerFunc,
 	oauthHandler *oauth.Handler,
@@ -65,7 +62,6 @@ func SetupRouter(
 	credentialHandler := NewCredentialHandler(entClient, encryptionKey)
 	scmProviderHandler := NewSCMProviderHandler(entClient, encryptionKey)
 	repoHandler := NewRepoHandler(repoService)
-	analysisHandler := NewAnalysisHandler(analysisService, optimizer, repoService)
 	prHandler := NewPRHandler(entClient, repoService, syncService, prAttributionService)
 	efficiencyHandler := NewEfficiencyHandler(entClient, aggregator)
 	toolUsageHandler := NewToolUsageHandler(toolusage.NewService(entClient))
@@ -127,17 +123,8 @@ func SetupRouter(
 		repoGroup.GET("/:id", repoHandler.Get)
 		repoGroup.PUT("/:id", repoHandler.Update)
 		repoGroup.DELETE("/:id", repoHandler.Delete)
-		repoGroup.POST("/:id/scan", analysisHandler.TriggerScan)
-		repoGroup.GET("/:id/scans", analysisHandler.ListScans)
-		repoGroup.GET("/:id/scans/latest", analysisHandler.LatestScan)
-		repoGroup.POST("/:id/optimize", analysisHandler.Optimize)
-		repoGroup.POST("/:id/optimize/preview", analysisHandler.OptimizePreview)
-		repoGroup.POST("/:id/optimize/confirm", analysisHandler.OptimizeConfirm)
 		repoGroup.GET("/:id/prs", prHandler.ListByRepo)
 		repoGroup.POST("/:id/sync-prs", prHandler.SyncPRs)
-		if chatHandler != nil {
-			repoGroup.POST("/:id/chat", chatHandler.Chat)
-		}
 	}
 
 	// PRs

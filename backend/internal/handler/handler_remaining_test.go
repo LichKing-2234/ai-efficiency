@@ -13,7 +13,6 @@ import (
 	"testing"
 
 	entuser "github.com/ai-efficiency/backend/ent/user"
-	"github.com/ai-efficiency/backend/internal/analysis"
 	"github.com/ai-efficiency/backend/internal/analysis/llm"
 	"github.com/ai-efficiency/backend/internal/auth"
 	"github.com/ai-efficiency/backend/internal/config"
@@ -41,8 +40,6 @@ func setupDebugTestEnv(t *testing.T) *fullTestEnv {
 	authSvc := auth.NewService(client, "test-jwt-secret-32-bytes-long!!!", 7200, 604800, logger)
 	repoSvc := repo.NewService(client, "0000000000000000000000000000000000000000000000000000000000000000", logger)
 	webhookHandler := webhook.NewHandler(client, nil, logger)
-	analysisCloner := analysis.NewCloner(t.TempDir(), logger)
-	analysisSvc := analysis.NewService(client, analysisCloner, nil, logger, "0000000000000000000000000000000000000000000000000000000000000000")
 
 	rp := relay.NewSub2apiProvider(http.DefaultClient, "http://localhost:19876/v1", "http://localhost:19876", "sk-test-key-12345678", "gpt-4", logger)
 	llmAnalyzer := llm.NewAnalyzer(config.LLMConfig{}, rp, logger)
@@ -52,21 +49,16 @@ func setupDebugTestEnv(t *testing.T) *fullTestEnv {
 	os.WriteFile(configPath, []byte("analysis:\n  llm:\n    model: gpt-4\n"), 0o644)
 	relayCfg := config.RelayConfig{URL: "http://localhost:19876", APIKey: "sk-test-key-12345678"}
 	settingsHandler := NewSettingsHandler(configPath, relayCfg, llmAnalyzer, logger)
-
-	chatHandler := NewChatHandler(client, llmAnalyzer, t.TempDir(), logger)
 	aggregator := efficiency.NewAggregator(client, logger)
 
 	router := SetupRouter(
 		client,
 		authSvc,
 		repoSvc,
-		analysisSvc,
 		webhookHandler,
 		nil, // syncService
 		settingsHandler,
-		chatHandler,
 		aggregator,
-		nil, // optimizer
 		"0000000000000000000000000000000000000000000000000000000000000000",
 		middleware.CORS(nil),
 		nil, nil, nil, nil,
@@ -188,14 +180,14 @@ func TestDevLoginNotRegisteredInTestMode(t *testing.T) {
 }
 
 // =====================
-// Chat handler tests
+// Retired chat route tests
 // =====================
 
 func TestChatInvalidID(t *testing.T) {
 	env := setupFullTestEnv(t)
 	w := doFullRequest(env, "POST", "/api/v1/repos/abc/chat", map[string]interface{}{"message": "hello"})
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d: %s", w.Code, w.Body.String())
 	}
 }
 
@@ -204,8 +196,8 @@ func TestChatInvalidBody(t *testing.T) {
 	repoID := createFullTestRepo(t, env.client)
 	// Send a string instead of JSON object — ShouldBindJSON will fail
 	w := doFullRequestWithToken(env, "POST", fmt.Sprintf("/api/v1/repos/%d/chat", repoID), "not json", env.token)
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d: %s", w.Code, w.Body.String())
 	}
 }
 
@@ -213,8 +205,8 @@ func TestChatEmptyMessage(t *testing.T) {
 	env := setupFullTestEnv(t)
 	repoID := createFullTestRepo(t, env.client)
 	w := doFullRequest(env, "POST", fmt.Sprintf("/api/v1/repos/%d/chat", repoID), map[string]interface{}{"message": ""})
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d: %s", w.Code, w.Body.String())
 	}
 }
 
@@ -222,8 +214,8 @@ func TestChatWhitespaceOnlyMessage(t *testing.T) {
 	env := setupFullTestEnv(t)
 	repoID := createFullTestRepo(t, env.client)
 	w := doFullRequest(env, "POST", fmt.Sprintf("/api/v1/repos/%d/chat", repoID), map[string]interface{}{"message": "   \t\n  "})
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d: %s", w.Code, w.Body.String())
 	}
 }
 
@@ -232,8 +224,8 @@ func TestChatMessageTooLong(t *testing.T) {
 	repoID := createFullTestRepo(t, env.client)
 	longMsg := strings.Repeat("a", 4001)
 	w := doFullRequest(env, "POST", fmt.Sprintf("/api/v1/repos/%d/chat", repoID), map[string]interface{}{"message": longMsg})
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d: %s", w.Code, w.Body.String())
 	}
 }
 
@@ -244,8 +236,8 @@ func TestChatInvalidHistoryRole(t *testing.T) {
 		"message": "hello",
 		"history": []map[string]string{{"role": "system", "content": "hack"}},
 	})
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d: %s", w.Code, w.Body.String())
 	}
 }
 
@@ -256,8 +248,8 @@ func TestChatHistoryContentTooLong(t *testing.T) {
 		"message": "hello",
 		"history": []map[string]string{{"role": "user", "content": strings.Repeat("x", 4001)}},
 	})
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d: %s", w.Code, w.Body.String())
 	}
 }
 
@@ -270,36 +262,24 @@ func TestChatRepoNotFound(t *testing.T) {
 }
 
 func TestChatLLMServiceUnavailable(t *testing.T) {
-	// LLM is enabled (relay provider set), repo exists, but localhost:19876 not running -> 503
 	env := setupFullTestEnv(t)
 	repoID := createFullTestRepo(t, env.client)
 	w := doFullRequest(env, "POST", fmt.Sprintf("/api/v1/repos/%d/chat", repoID), map[string]interface{}{"message": "hello"})
-	if w.Code != http.StatusServiceUnavailable {
-		t.Fatalf("expected 503, got %d: %s", w.Code, w.Body.String())
-	}
-	resp := parseFullResponse(t, w)
-	if msg, _ := resp["message"].(string); !strings.Contains(msg, "LLM service unavailable") {
-		t.Fatalf("unexpected message: %v", msg)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d: %s", w.Code, w.Body.String())
 	}
 }
 
 func TestChatLLMNotConfigured(t *testing.T) {
-	// Create a fullTestEnv-like setup but with empty LLM config so Enabled() returns false
 	client := testdb.Open(t)
 	logger := zap.NewNop()
 	authSvc := auth.NewService(client, "test-jwt-secret-32-bytes-long!!!", 7200, 604800, logger)
 	repoSvc := repo.NewService(client, "0000000000000000000000000000000000000000000000000000000000000000", logger)
 	webhookHandler := webhook.NewHandler(client, nil, logger)
-	analysisCloner := analysis.NewCloner(t.TempDir(), logger)
-	analysisSvc := analysis.NewService(client, analysisCloner, nil, logger, "0000000000000000000000000000000000000000000000000000000000000000")
-
-	// Empty LLM config -> Enabled() returns false
-	llmAnalyzer := llm.NewAnalyzer(config.LLMConfig{}, nil, logger)
-	chatHandler := NewChatHandler(client, llmAnalyzer, t.TempDir(), logger)
 
 	router := SetupRouter(
-		client, authSvc, repoSvc, analysisSvc, webhookHandler,
-		nil, nil, chatHandler, nil, nil,
+		client, authSvc, repoSvc, webhookHandler,
+		nil, nil, nil,
 		"0000000000000000000000000000000000000000000000000000000000000000",
 		middleware.CORS(nil),
 		nil, nil, nil, nil,
@@ -326,12 +306,8 @@ func TestChatLLMNotConfigured(t *testing.T) {
 	repoID := createFullTestRepo(t, env.client)
 
 	w := doFullRequest(env, "POST", fmt.Sprintf("/api/v1/repos/%d/chat", repoID), map[string]interface{}{"message": "hello"})
-	if w.Code != http.StatusUnprocessableEntity {
-		t.Fatalf("expected 422, got %d: %s", w.Code, w.Body.String())
-	}
-	resp := parseFullResponse(t, w)
-	if msg, _ := resp["message"].(string); !strings.Contains(msg, "LLM not configured") {
-		t.Fatalf("unexpected message: %v", msg)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d: %s", w.Code, w.Body.String())
 	}
 }
 
@@ -357,54 +333,6 @@ func TestRepoCreate_ProviderNotFound(t *testing.T) {
 	})
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("expected 500, got %d: %s", w.Code, w.Body.String())
-	}
-}
-
-// =====================
-// Repo TriggerScan tests (repo handler, not analysis handler)
-// =====================
-
-func TestRepoTriggerScan_InvalidID(t *testing.T) {
-	// repoHandler.TriggerScan is not wired to the main router,
-	// so we test it by registering it on a temporary router.
-	env := setupTestEnv(t)
-	repoHandler := NewRepoHandler(repo.NewService(env.client, "0000000000000000000000000000000000000000000000000000000000000000", zap.NewNop()))
-
-	r := gin.New()
-	r.POST("/test/:id/scan", repoHandler.TriggerScan)
-
-	w := doCustomRequest(r, "POST", "/test/abc/scan", nil)
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
-	}
-}
-
-func TestRepoTriggerScan_NotFound(t *testing.T) {
-	env := setupTestEnv(t)
-	repoHandler := NewRepoHandler(repo.NewService(env.client, "0000000000000000000000000000000000000000000000000000000000000000", zap.NewNop()))
-
-	r := gin.New()
-	r.POST("/test/:id/scan", repoHandler.TriggerScan)
-
-	w := doCustomRequest(r, "POST", "/test/99999/scan", nil)
-	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("expected 500, got %d: %s", w.Code, w.Body.String())
-	}
-}
-
-func TestRepoTriggerScan_Success(t *testing.T) {
-	env := setupTestEnv(t)
-	repoSvc := repo.NewService(env.client, "0000000000000000000000000000000000000000000000000000000000000000", zap.NewNop())
-	repoHandler := NewRepoHandler(repoSvc)
-
-	repoID := createTestRepo(t, env.client)
-
-	r := gin.New()
-	r.POST("/test/:id/scan", repoHandler.TriggerScan)
-
-	w := doCustomRequest(r, "POST", fmt.Sprintf("/test/%d/scan", repoID), nil)
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
 }
 

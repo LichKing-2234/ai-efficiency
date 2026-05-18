@@ -10584,8 +10584,6 @@ type RepoConfigMutation struct {
 	default_branch              *string
 	webhook_id                  *string
 	webhook_secret              *string
-	ai_score                    *int
-	addai_score                 *int
 	last_scan_at                *time.Time
 	group_id                    *string
 	relay_provider_name         *string
@@ -11013,76 +11011,6 @@ func (m *RepoConfigMutation) WebhookSecretCleared() bool {
 func (m *RepoConfigMutation) ResetWebhookSecret() {
 	m.webhook_secret = nil
 	delete(m.clearedFields, repoconfig.FieldWebhookSecret)
-}
-
-// SetAiScore sets the "ai_score" field.
-func (m *RepoConfigMutation) SetAiScore(i int) {
-	m.ai_score = &i
-	m.addai_score = nil
-}
-
-// AiScore returns the value of the "ai_score" field in the mutation.
-func (m *RepoConfigMutation) AiScore() (r int, exists bool) {
-	v := m.ai_score
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// OldAiScore returns the old "ai_score" field's value of the RepoConfig entity.
-// If the RepoConfig object wasn't provided to the builder, the object is fetched from the database.
-// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *RepoConfigMutation) OldAiScore(ctx context.Context) (v int, err error) {
-	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldAiScore is only allowed on UpdateOne operations")
-	}
-	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldAiScore requires an ID field in the mutation")
-	}
-	oldValue, err := m.oldValue(ctx)
-	if err != nil {
-		return v, fmt.Errorf("querying old value for OldAiScore: %w", err)
-	}
-	return oldValue.AiScore, nil
-}
-
-// AddAiScore adds i to the "ai_score" field.
-func (m *RepoConfigMutation) AddAiScore(i int) {
-	if m.addai_score != nil {
-		*m.addai_score += i
-	} else {
-		m.addai_score = &i
-	}
-}
-
-// AddedAiScore returns the value that was added to the "ai_score" field in this mutation.
-func (m *RepoConfigMutation) AddedAiScore() (r int, exists bool) {
-	v := m.addai_score
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// ClearAiScore clears the value of the "ai_score" field.
-func (m *RepoConfigMutation) ClearAiScore() {
-	m.ai_score = nil
-	m.addai_score = nil
-	m.clearedFields[repoconfig.FieldAiScore] = struct{}{}
-}
-
-// AiScoreCleared returns if the "ai_score" field was cleared in this mutation.
-func (m *RepoConfigMutation) AiScoreCleared() bool {
-	_, ok := m.clearedFields[repoconfig.FieldAiScore]
-	return ok
-}
-
-// ResetAiScore resets all changes to the "ai_score" field.
-func (m *RepoConfigMutation) ResetAiScore() {
-	m.ai_score = nil
-	m.addai_score = nil
-	delete(m.clearedFields, repoconfig.FieldAiScore)
 }
 
 // SetLastScanAt sets the "last_scan_at" field.
@@ -11943,7 +11871,7 @@ func (m *RepoConfigMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *RepoConfigMutation) Fields() []string {
-	fields := make([]string, 0, 16)
+	fields := make([]string, 0, 15)
 	if m.repo_key != nil {
 		fields = append(fields, repoconfig.FieldRepoKey)
 	}
@@ -11964,9 +11892,6 @@ func (m *RepoConfigMutation) Fields() []string {
 	}
 	if m.webhook_secret != nil {
 		fields = append(fields, repoconfig.FieldWebhookSecret)
-	}
-	if m.ai_score != nil {
-		fields = append(fields, repoconfig.FieldAiScore)
 	}
 	if m.last_scan_at != nil {
 		fields = append(fields, repoconfig.FieldLastScanAt)
@@ -12014,8 +11939,6 @@ func (m *RepoConfigMutation) Field(name string) (ent.Value, bool) {
 		return m.WebhookID()
 	case repoconfig.FieldWebhookSecret:
 		return m.WebhookSecret()
-	case repoconfig.FieldAiScore:
-		return m.AiScore()
 	case repoconfig.FieldLastScanAt:
 		return m.LastScanAt()
 	case repoconfig.FieldGroupID:
@@ -12055,8 +11978,6 @@ func (m *RepoConfigMutation) OldField(ctx context.Context, name string) (ent.Val
 		return m.OldWebhookID(ctx)
 	case repoconfig.FieldWebhookSecret:
 		return m.OldWebhookSecret(ctx)
-	case repoconfig.FieldAiScore:
-		return m.OldAiScore(ctx)
 	case repoconfig.FieldLastScanAt:
 		return m.OldLastScanAt(ctx)
 	case repoconfig.FieldGroupID:
@@ -12131,13 +12052,6 @@ func (m *RepoConfigMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetWebhookSecret(v)
 		return nil
-	case repoconfig.FieldAiScore:
-		v, ok := value.(int)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.SetAiScore(v)
-		return nil
 	case repoconfig.FieldLastScanAt:
 		v, ok := value.(time.Time)
 		if !ok {
@@ -12201,21 +12115,13 @@ func (m *RepoConfigMutation) SetField(name string, value ent.Value) error {
 // AddedFields returns all numeric fields that were incremented/decremented during
 // this mutation.
 func (m *RepoConfigMutation) AddedFields() []string {
-	var fields []string
-	if m.addai_score != nil {
-		fields = append(fields, repoconfig.FieldAiScore)
-	}
-	return fields
+	return nil
 }
 
 // AddedField returns the numeric value that was incremented/decremented on a field
 // with the given name. The second boolean return value indicates that this field
 // was not set, or was not defined in the schema.
 func (m *RepoConfigMutation) AddedField(name string) (ent.Value, bool) {
-	switch name {
-	case repoconfig.FieldAiScore:
-		return m.AddedAiScore()
-	}
 	return nil, false
 }
 
@@ -12224,13 +12130,6 @@ func (m *RepoConfigMutation) AddedField(name string) (ent.Value, bool) {
 // type.
 func (m *RepoConfigMutation) AddField(name string, value ent.Value) error {
 	switch name {
-	case repoconfig.FieldAiScore:
-		v, ok := value.(int)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.AddAiScore(v)
-		return nil
 	}
 	return fmt.Errorf("unknown RepoConfig numeric field %s", name)
 }
@@ -12247,9 +12146,6 @@ func (m *RepoConfigMutation) ClearedFields() []string {
 	}
 	if m.FieldCleared(repoconfig.FieldWebhookSecret) {
 		fields = append(fields, repoconfig.FieldWebhookSecret)
-	}
-	if m.FieldCleared(repoconfig.FieldAiScore) {
-		fields = append(fields, repoconfig.FieldAiScore)
 	}
 	if m.FieldCleared(repoconfig.FieldLastScanAt) {
 		fields = append(fields, repoconfig.FieldLastScanAt)
@@ -12288,9 +12184,6 @@ func (m *RepoConfigMutation) ClearField(name string) error {
 		return nil
 	case repoconfig.FieldWebhookSecret:
 		m.ClearWebhookSecret()
-		return nil
-	case repoconfig.FieldAiScore:
-		m.ClearAiScore()
 		return nil
 	case repoconfig.FieldLastScanAt:
 		m.ClearLastScanAt()
@@ -12335,9 +12228,6 @@ func (m *RepoConfigMutation) ResetField(name string) error {
 		return nil
 	case repoconfig.FieldWebhookSecret:
 		m.ResetWebhookSecret()
-		return nil
-	case repoconfig.FieldAiScore:
-		m.ResetAiScore()
 		return nil
 	case repoconfig.FieldLastScanAt:
 		m.ResetLastScanAt()

@@ -15,7 +15,6 @@ import (
 
 	"github.com/ai-efficiency/backend/ent"
 	_ "github.com/ai-efficiency/backend/ent/runtime"
-	"github.com/ai-efficiency/backend/internal/analysis"
 	"github.com/ai-efficiency/backend/internal/analysis/llm"
 	"github.com/ai-efficiency/backend/internal/attribution"
 	"github.com/ai-efficiency/backend/internal/auth"
@@ -208,14 +207,7 @@ func main() {
 	// Init repo service
 	repoService := repo.NewService(entClient, cfg.Encryption.Key, logger)
 
-	// Init analysis service
-	dataDir := os.Getenv("AE_DATA_DIR")
-	if dataDir == "" {
-		dataDir = "data"
-	}
-	analysisCloner := analysis.NewCloner(dataDir, logger)
 	llmAnalyzer := llm.NewAnalyzer(cfg.Analysis.LLM, relayProvider, logger)
-	analysisService := analysis.NewService(entClient, analysisCloner, llmAnalyzer, logger, cfg.Encryption.Key)
 
 	// Init PR labeler (with optional relay usage stats lookup)
 	labeler := efficiency.NewLabeler(entClient, relayProvider, logger)
@@ -224,9 +216,6 @@ func main() {
 	// Init webhook handler (with labeler for auto-labeling on PR events)
 	webhookHandler := webhook.NewHandler(entClient, labeler, logger)
 	syncService := prsync.NewService(entClient, labeler, aggregator, logger)
-
-	// Init optimizer
-	optimizer := analysis.NewOptimizer(llmAnalyzer, logger)
 
 	// Setup router
 	var relayRuntimeUpdater interface {
@@ -240,7 +229,6 @@ func main() {
 		relayRuntimeUpdater = u
 	}
 	settingsHandler := handler.NewSettingsHandler(settingsConfigPath, cfg.Relay, llmAnalyzer, logger, relayRuntimeUpdater)
-	chatHandler := handler.NewChatHandler(entClient, llmAnalyzer, dataDir, logger)
 
 	// Init OAuth handler
 	oauthServer := oauth.NewServer()
@@ -331,13 +319,10 @@ func main() {
 		entClient,
 		authService,
 		repoService,
-		analysisService,
 		webhookHandler,
 		syncService,
 		settingsHandler,
-		chatHandler,
 		aggregator,
-		optimizer,
 		cfg.Encryption.Key,
 		middleware.CORS(nil),
 		oauthHandler,

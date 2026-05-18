@@ -176,28 +176,6 @@ func (o *Optimizer) ConfirmOptimization(
 	}, nil
 }
 
-// CreateOptimizationPR creates a PR with auto-fix files based on scan suggestions (legacy one-step flow).
-func (o *Optimizer) CreateOptimizationPR(
-	ctx context.Context,
-	provider scm.SCMProvider,
-	rc *ent.RepoConfig,
-	scanResult *ent.AiScanResult,
-) (*OptimizeResult, error) {
-	preview, err := o.PreviewOptimization(ctx, provider, rc, scanResult)
-	if err != nil {
-		return nil, err
-	}
-	if preview == nil {
-		return nil, nil
-	}
-
-	files := make(map[string]string)
-	for _, f := range preview.Files {
-		files[f.Path] = f.NewContent
-	}
-	return o.ConfirmOptimization(ctx, provider, rc, files, scanResult.Score)
-}
-
 // generateAgentsMD uses LLM if available, otherwise falls back to template.
 func (o *Optimizer) generateAgentsMD(ctx context.Context, rc *ent.RepoConfig, dims []rules.DimensionScore, score int) (string, error) {
 	if o.llmAnalyzer == nil || !o.llmAnalyzer.Enabled() {

@@ -425,8 +425,8 @@ func TestRunScanStaticOnly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get repo config: %v", err)
 	}
-	if updatedRC.AiScore != result.Score {
-		t.Errorf("repo ai_score = %d, want %d", updatedRC.AiScore, result.Score)
+	if updatedRC.LastScanAt == nil {
+		t.Error("repo last_scan_at should be updated after a scan")
 	}
 }
 

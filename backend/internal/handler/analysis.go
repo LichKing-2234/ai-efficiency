@@ -79,52 +79,6 @@ func (h *AnalysisHandler) LatestScan(c *gin.Context) {
 	pkg.Success(c, scan)
 }
 
-// Optimize handles POST /api/v1/repos/:id/optimize — creates an auto-optimization PR.
-func (h *AnalysisHandler) Optimize(c *gin.Context) {
-	id, err := strconv.Atoi(c.Param("id"))
-	if err != nil {
-		pkg.Error(c, http.StatusBadRequest, "invalid id")
-		return
-	}
-
-	if h.optimizer == nil {
-		pkg.Error(c, http.StatusServiceUnavailable, "optimizer not available")
-		return
-	}
-
-	ctx := c.Request.Context()
-
-	// Get latest scan
-	scan, err := h.analysisService.GetLatestScan(ctx, id)
-	if err != nil {
-		pkg.Error(c, http.StatusNotFound, "no scan results found, run a scan first")
-		return
-	}
-
-	// Get SCM provider for this repo
-	scmProvider, rc, err := h.repoService.GetSCMProvider(ctx, id)
-	if err != nil {
-		if handleRepoBindingError(c, err) {
-			return
-		}
-		pkg.Error(c, http.StatusInternalServerError, "failed to get SCM provider: "+err.Error())
-		return
-	}
-
-	result, err := h.optimizer.CreateOptimizationPR(ctx, scmProvider, rc, scan)
-	if err != nil {
-		pkg.Error(c, http.StatusInternalServerError, "optimization failed: "+err.Error())
-		return
-	}
-
-	if result == nil {
-		pkg.Success(c, gin.H{"message": "no auto-fixable issues found"})
-		return
-	}
-
-	pkg.Success(c, result)
-}
-
 // OptimizePreview handles POST /api/v1/repos/:id/optimize/preview — returns file diffs for review.
 func (h *AnalysisHandler) OptimizePreview(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
