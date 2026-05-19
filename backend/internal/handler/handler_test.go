@@ -182,6 +182,76 @@ func TestAuthMeWithoutToken(t *testing.T) {
 	}
 }
 
+func TestListProvidersForUserWithValidToken(t *testing.T) {
+	env := setupTestEnvWithProvider(t)
+	w := doRequest(env, "GET", "/api/v1/providers", nil)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	resp := parseResponse(t, w)
+	data, ok := resp["data"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected data object, got: %v", resp)
+	}
+	if _, ok := data["providers"]; !ok {
+		t.Fatalf("expected providers field, got: %v", data)
+	}
+}
+
+func setupTestEnvWithProvider(t *testing.T) *testEnv {
+	t.Helper()
+
+	client := testdb.Open(t)
+
+	logger := zap.NewNop()
+	authSvc := auth.NewService(client, "test-jwt-secret-32-bytes-long!!!", 7200, 604800, logger)
+	repoSvc := repo.NewService(client, "0000000000000000000000000000000000000000000000000000000000000000", logger)
+	webhookHandler := webhook.NewHandler(client, nil, logger)
+	providerHandler := NewProviderHandler(client, "0000000000000000000000000000000000000000000000000000000000000000", logger)
+
+	router := SetupRouter(
+		client,
+		authSvc,
+		repoSvc,
+		webhookHandler,
+		nil,
+		nil,
+		nil,
+		"0000000000000000000000000000000000000000000000000000000000000000",
+		middleware.CORS(nil),
+		nil, providerHandler, nil, nil,
+		nil,
+	)
+
+	u, err := client.User.Create().
+		SetUsername("admin").
+		SetEmail("admin@test.com").
+		SetAuthSource("sub2api_sso").
+		SetRole("admin").
+		Save(context.Background())
+	if err != nil {
+		t.Fatalf("create test user: %v", err)
+	}
+
+	pair, err := authSvc.GenerateTokenPairForUser(&auth.UserInfo{
+		ID:       u.ID,
+		Username: "admin",
+		Role:     "admin",
+	})
+	if err != nil {
+		t.Fatalf("generate token: %v", err)
+	}
+
+	return &testEnv{
+		client:  client,
+		router:  router,
+		authSvc: authSvc,
+		token:   pair.AccessToken,
+		userID:  u.ID,
+	}
+}
+
 // --- SCM Providers ---
 
 func TestSCMProviderCRUD(t *testing.T) {

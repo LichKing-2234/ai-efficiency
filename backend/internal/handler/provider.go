@@ -13,6 +13,7 @@ import (
 
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/ent/relayprovider"
+	authpkg "github.com/ai-efficiency/backend/internal/auth"
 	"github.com/ai-efficiency/backend/internal/pkg"
 	"github.com/ai-efficiency/backend/internal/relay"
 	"github.com/gin-gonic/gin"
@@ -88,9 +89,13 @@ type providerResponse struct {
 func (h *ProviderHandler) ListForUser(c *gin.Context) {
 	ctx := c.Request.Context()
 
-	userID, _ := c.Get("user_id")
+	uc := authpkg.GetUserContext(c)
+	if uc == nil {
+		pkg.Error(c, http.StatusUnauthorized, "unauthorized")
+		return
+	}
 
-	user, err := h.entClient.User.Get(ctx, userID.(int))
+	user, err := h.entClient.User.Get(ctx, uc.UserID)
 	if err != nil {
 		pkg.Error(c, http.StatusInternalServerError, "failed to get user")
 		return

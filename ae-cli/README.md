@@ -45,6 +45,14 @@ Then run:
 ae-cli login
 ```
 
+To configure supported local AI tools from your current relay provider:
+
+```bash
+ae-cli discover
+```
+
+Use `ae-cli discover --dry-run` to preview the file changes without writing them, or `ae-cli discover --provider <name>` to override the primary provider.
+
 Primary workflow after login:
 
 ```bash

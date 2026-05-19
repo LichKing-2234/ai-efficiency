@@ -75,6 +75,7 @@ var loginCmd = &cobra.Command{
 		}
 
 		fmt.Fprintf(cmd.OutOrStdout(), "Login successful! Token saved to %s\n", tokenPath)
+		fmt.Fprintln(cmd.OutOrStdout(), "Run 'ae-cli discover' to configure supported local AI tools.")
 		return nil
 	},
 }
