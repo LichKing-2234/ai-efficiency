@@ -223,7 +223,7 @@ flowchart LR
 | --- | --- | --- |
 | Auth and backend access | `ae-cli/internal/auth`, `ae-cli/internal/client` | Login flow, backend API calls, token usage |
 | Sessionless runtime | `ae-cli/internal/session`, `ae-cli/internal/hooks`, `ae-cli/internal/collector` | Workspace marker helpers, hook management, local metadata collection |
-| Tool execution | `ae-cli/internal/router`, `ae-cli/internal/shell`, `ae-cli/internal/tmux` | Tool routing helpers, shell/tmux primitives, terminal utilities |
+| Tool selection | `ae-cli/internal/router` | Lightweight tool-routing helpers used by the current CLI surface |
 
 ## Documentation Expectations
 

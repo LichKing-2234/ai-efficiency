@@ -180,3 +180,63 @@ func TestCreateUsageEvent_RejectsCrossUserScope(t *testing.T) {
 		t.Fatalf("err = %v, want %v", err, ErrUsageEventForbidden)
 	}
 }
+
+func TestCreateUsageEvent_AutoBindsToLatestCheckpointWindow(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	client := testdb.Open(t)
+	svc := NewService(client)
+
+	scope := seedToolUsageScope(t, client)
+	client.Session.Create().
+		SetRepoConfigID(scope.RepoConfigID).
+		SetBranch("main").
+		SetUserID(scope.UserID).
+		SetStartedAt(time.Unix(100, 0).UTC()).
+		SaveX(ctx)
+
+	prev := client.CommitCheckpoint.Create().
+		SetEventID("cp-auto-bind-prev").
+		SetWorkspaceID(scope.WorkspaceID).
+		SetRepoConfigID(scope.RepoConfigID).
+		SetCommitSha("base-sha").
+		SetParentShas([]string{"base-parent"}).
+		SetBindingSource("unbound").
+		SetCapturedAt(time.Unix(110, 0).UTC()).
+		SaveX(ctx)
+	current := client.CommitCheckpoint.Create().
+		SetEventID("cp-auto-bind-current").
+		SetWorkspaceID(scope.WorkspaceID).
+		SetRepoConfigID(scope.RepoConfigID).
+		SetCommitSha("head-sha").
+		SetParentShas([]string{prev.CommitSha}).
+		SetBindingSource("unbound").
+		SetCapturedAt(time.Unix(140, 0).UTC()).
+		SaveX(ctx)
+
+	req := CreateUsageEventRequest{
+		Tool:              "codex",
+		WorkspaceID:       scope.WorkspaceID,
+		ToolSessionID:     "codex-sess-auto-bind",
+		ToolEventID:       "resp-auto-bind",
+		DedupeKey:         "codex:codex-sess-auto-bind:resp-auto-bind",
+		UsageUnit:         "token",
+		InputTokens:       21,
+		OutputTokens:      8,
+		CachedInputTokens: 3,
+		ObservedStartAt:   time.Unix(120, 0).UTC(),
+		ObservedEndAt:     time.Unix(121, 0).UTC(),
+	}
+
+	if err := svc.CreateUsageEvent(ctx, scope.UserID, req); err != nil {
+		t.Fatalf("CreateUsageEvent: %v", err)
+	}
+
+	row := client.ToolUsageEvent.Query().
+		Where(toolusageevent.DedupeKeyEQ(req.DedupeKey)).
+		OnlyX(ctx)
+	if row.CommitCheckpointID == nil || *row.CommitCheckpointID != current.ID {
+		t.Fatalf("commit_checkpoint_id = %v, want %d", row.CommitCheckpointID, current.ID)
+	}
+}

@@ -7,7 +7,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -16,7 +15,6 @@ import (
 	"github.com/ai-efficiency/ae-cli/internal/buildinfo"
 	"github.com/ai-efficiency/ae-cli/internal/client"
 	"github.com/ai-efficiency/ae-cli/internal/session"
-	"github.com/ai-efficiency/ae-cli/internal/shell"
 )
 
 func TestMain(m *testing.M) {
@@ -470,7 +468,7 @@ func TestPsCommandNoTmux(t *testing.T) {
 	cleanup := setupTestGlobals(t, srv)
 	defer cleanup()
 
-	// Session without tmux
+	// Legacy session state still returns a migration error.
 	stateDir := filepath.Join(tmpHome, ".ae-cli")
 	os.MkdirAll(stateDir, 0o755)
 	state := session.State{ID: "test-ps-sess", Repo: "org/repo", Branch: "main"}
@@ -479,7 +477,7 @@ func TestPsCommandNoTmux(t *testing.T) {
 
 	err := psCmd.RunE(psCmd, nil)
 	if err == nil {
-		t.Fatal("expected error when session has no tmux")
+		t.Fatal("expected migration error for legacy ps command")
 	}
 }
 
@@ -525,7 +523,7 @@ func TestAttachCommandNoTmux(t *testing.T) {
 
 	err := attachCmd.RunE(attachCmd, nil)
 	if err == nil {
-		t.Fatal("expected error when session has no tmux")
+		t.Fatal("expected migration error for legacy attach command")
 	}
 }
 
@@ -549,29 +547,11 @@ func TestShellCommandNoSession(t *testing.T) {
 	}
 }
 
-func TestShellBannerLinesIncludesMultiInstanceHelp(t *testing.T) {
-	output := strings.Join(shell.BannerLines("claude"), "\n")
-	expected := []string{
-		"Auto-route through the configured router",
-		"@<tool> <msg>",
-		"@<tool>#<n> <msg>",
-		"@all <msg>",
-		"!<cmd>           Run a local shell command",
-		"List running labeled panes",
-		"Tool instances keep the labels <tool>#<n>",
-	}
-	for _, substring := range expected {
-		if !strings.Contains(output, substring) {
-			t.Fatalf("banner output = %q, want %q", output, substring)
-		}
-	}
-}
-
 func TestKillCommandRunE(t *testing.T) {
-	// Kill a non-existent pane — should error
+	// Legacy kill command should still error via migration guidance.
 	err := killCmd.RunE(killCmd, []string{"%999999"})
 	if err == nil {
-		t.Log("kill command on non-existent pane may succeed if tmux is not installed")
+		t.Fatal("expected migration error for legacy kill command")
 	}
 }
 
@@ -839,21 +819,20 @@ func TestPsCommandListPanesError(t *testing.T) {
 	cleanup := setupTestGlobals(t, srv)
 	defer cleanup()
 
-	// Session with a non-existent tmux session — ListPanes will fail
+	// Legacy session state still returns a migration error.
 	stateDir := filepath.Join(tmpHome, ".ae-cli")
 	os.MkdirAll(stateDir, 0o755)
 	state := session.State{
-		ID:          "test-ps-err",
-		Repo:        "org/repo",
-		Branch:      "main",
-		TmuxSession: "ae-nonexistent-tmux-99999",
+		ID:     "test-ps-err",
+		Repo:   "org/repo",
+		Branch: "main",
 	}
 	data, _ := json.MarshalIndent(state, "", "  ")
 	os.WriteFile(filepath.Join(stateDir, "current-session.json"), data, 0o600)
 
 	err := psCmd.RunE(psCmd, nil)
 	if err == nil {
-		t.Fatal("expected error when tmux session doesn't exist")
+		t.Fatal("expected migration error for legacy ps command")
 	}
 }
 

@@ -24,7 +24,6 @@ type Marker struct {
 	RepoFullName  string `json:"repo_full_name,omitempty"`
 	Branch        string `json:"branch_snapshot,omitempty"`
 	HeadSHA       string `json:"head_sha,omitempty"`
-	TmuxSession   string `json:"tmux_session,omitempty"`
 }
 
 var workspaceNamespace = uuid.NewSHA1(uuid.NameSpaceDNS, []byte("ae-workspace"))

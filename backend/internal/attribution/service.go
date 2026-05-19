@@ -104,9 +104,6 @@ func (s *Service) Settle(ctx context.Context, provider scm.SCMProvider, pr *ent.
 	matchedSessionSet := map[string]struct{}{}
 	for _, cp := range matchedCheckpoints {
 		commitSet[cp.CommitSha] = struct{}{}
-		if cp.BindingSource == commitcheckpoint.BindingSourceUnbound || cp.SessionID == nil {
-			return s.persistAmbiguous(ctx, pr, triggeredBy, "unbound_checkpoint", commitSet)
-		}
 	}
 
 	intervals := make([]map[string]interface{}, 0, len(matchedCheckpoints))
@@ -121,9 +118,65 @@ func (s *Service) Settle(ctx context.Context, provider scm.SCMProvider, pr *ent.
 	usedSessionStartFallback := false
 
 	for _, cp := range matchedCheckpoints {
+		workspaceSet[strings.TrimSpace(cp.WorkspaceID)] = struct{}{}
+
+		if intervalTokens, intervalCost, usageSummary, hasToolUsage, err := s.loadCheckpointToolUsage(ctx, cp.ID); err != nil {
+			return nil, fmt.Errorf("settle pr: load checkpoint tool usage: %w", err)
+		} else if hasToolUsage {
+			if cp.SessionID != nil {
+				matchedSessionSet[cp.SessionID.String()] = struct{}{}
+			}
+
+			from := cp.CapturedAt
+			prevCP, err := s.entClient.CommitCheckpoint.Query().
+				Where(
+					commitcheckpoint.RepoConfigIDEQ(rc.ID),
+					commitcheckpoint.WorkspaceIDEQ(cp.WorkspaceID),
+					commitcheckpoint.CapturedAtLT(cp.CapturedAt),
+				).
+				Order(ent.Desc(commitcheckpoint.FieldCapturedAt)).
+				First(ctx)
+			if err != nil && !ent.IsNotFound(err) {
+				return nil, fmt.Errorf("settle pr: load previous workspace checkpoint: %w", err)
+			}
+			if prevCP != nil {
+				from = prevCP.CapturedAt
+			}
+
+			if requestCount, ok := usageSummary["request_count"].(int64); ok {
+				totalRequests += requestCount
+			}
+			if creditUsage, ok := usageSummary["kiro_credit_usage"].(float64); ok {
+				totalCreditUsage += creditUsage
+			}
+
+			totalTokens += intervalTokens
+			totalCost += intervalCost
+
+			intervalMetadata := map[string]interface{}{
+				"checkpoint_id": cp.ID,
+				"commit_sha":    cp.CommitSha,
+				"from":          from,
+				"to":            cp.CapturedAt,
+				"total_tokens":  intervalTokens,
+				"total_cost":    intervalCost,
+			}
+			if cp.SessionID != nil {
+				intervalMetadata["session_id"] = cp.SessionID.String()
+			}
+			for key, value := range usageSummary {
+				intervalMetadata[key] = value
+			}
+			intervals = append(intervals, intervalMetadata)
+			continue
+		}
+
+		if cp.BindingSource == commitcheckpoint.BindingSourceUnbound || cp.SessionID == nil {
+			return s.persistAmbiguous(ctx, pr, triggeredBy, "unbound_checkpoint", commitSet)
+		}
+
 		sessionID := *cp.SessionID
 		matchedSessionSet[sessionID.String()] = struct{}{}
-		workspaceSet[strings.TrimSpace(cp.WorkspaceID)] = struct{}{}
 
 		sess, err := s.entClient.Session.Get(ctx, sessionID)
 		if err != nil {
@@ -432,6 +485,40 @@ func (s *Service) persistResult(
 		MetadataSummary:       metadataSummary,
 		ValidationSummary:     validationSummary,
 	}, nil
+}
+
+func (s *Service) loadCheckpointToolUsage(ctx context.Context, checkpointID int) (int64, float64, map[string]any, bool, error) {
+	toolItems, err := s.entClient.ToolUsageEvent.Query().
+		Where(toolusageevent.CommitCheckpointIDEQ(checkpointID)).
+		All(ctx)
+	if err != nil {
+		return 0, 0, nil, false, fmt.Errorf("query tool usage events: %w", err)
+	}
+	if len(toolItems) == 0 {
+		return 0, 0, nil, false, nil
+	}
+
+	var totalTokens int64
+	var totalCredits float64
+	var totalRequests int64
+	var tokenEventCount int
+	for _, item := range toolItems {
+		totalTokens += item.InputTokens + item.OutputTokens + item.CachedInputTokens
+		totalCredits += item.CreditUsage
+		totalRequests += int64(item.RequestCount)
+		if item.UsageUnit == toolusageevent.UsageUnitToken {
+			tokenEventCount++
+		}
+	}
+
+	return totalTokens, 0, map[string]any{
+		"source":            "tool_usage_events",
+		"event_count":       len(toolItems),
+		"token_event_count": tokenEventCount,
+		"request_count":     totalRequests,
+		"kiro_credit_usage": totalCredits,
+		"checkpoint_id":     checkpointID,
+	}, true, nil
 }
 
 func (s *Service) loadIntervalUsage(

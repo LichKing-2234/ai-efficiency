@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/ai-efficiency/ae-cli/internal/attributionlocal"
 	"github.com/ai-efficiency/ae-cli/internal/client"
 )
 
@@ -19,6 +20,13 @@ type BackendUploader struct {
 
 func NewBackendUploader(c checkpointSender) BackendUploader {
 	return BackendUploader{client: c}
+}
+
+func (u BackendUploader) ToolUsageClient() attributionlocal.BackendClient {
+	if c, ok := u.client.(attributionlocal.BackendClient); ok {
+		return c
+	}
+	return nil
 }
 
 func (u BackendUploader) UploadHookEvent(ctx context.Context, ev HookEvent) error {

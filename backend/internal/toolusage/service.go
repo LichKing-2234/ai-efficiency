@@ -105,6 +105,12 @@ func (s *Service) CreateUsageEvent(ctx context.Context, userID int, req CreateUs
 		SetObservedStartAt(req.ObservedStartAt.UTC()).
 		SetObservedEndAt(req.ObservedEndAt.UTC())
 
+	if checkpointID, ok, err := s.resolveCheckpointBinding(ctx, scope.RepoConfigID, workspaceID, req.ObservedEndAt.UTC()); err != nil {
+		return fmt.Errorf("resolve checkpoint binding: %w", err)
+	} else if ok {
+		create.SetCommitCheckpointID(checkpointID)
+	}
+
 	if v := strings.TrimSpace(req.ToolEventID); v != "" {
 		create.SetToolEventID(v)
 	}
@@ -184,6 +190,29 @@ func firstUserIDForRepo(ctx context.Context, entClient *ent.Client, repoConfigID
 		return sess.Edges.User.ID
 	}
 	return 0
+}
+
+func (s *Service) resolveCheckpointBinding(ctx context.Context, repoConfigID int, workspaceID string, observedEndAt time.Time) (int, bool, error) {
+	if observedEndAt.IsZero() {
+		return 0, false, nil
+	}
+
+	checkpoint, err := s.entClient.CommitCheckpoint.Query().
+		Where(
+			commitcheckpoint.WorkspaceIDEQ(workspaceID),
+			commitcheckpoint.RepoConfigIDEQ(repoConfigID),
+			commitcheckpoint.CapturedAtGTE(observedEndAt),
+		).
+		Order(ent.Asc(commitcheckpoint.FieldCapturedAt)).
+		First(ctx)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return 0, false, nil
+		}
+		return 0, false, fmt.Errorf("query candidate checkpoint: %w", err)
+	}
+
+	return checkpoint.ID, true, nil
 }
 
 func (s *Service) BindUsageEventsToCheckpoint(ctx context.Context, req BindUsageEventsRequest) (int, error) {
