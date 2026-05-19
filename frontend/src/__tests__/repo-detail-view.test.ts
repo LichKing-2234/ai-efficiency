@@ -13,6 +13,7 @@ vi.mock('@/api/repo', () => ({
 
 vi.mock('@/api/pr', () => ({
   listPRs: vi.fn(),
+  getPR: vi.fn(),
   syncPRs: vi.fn(),
   settlePR: vi.fn(),
 }))
@@ -43,7 +44,7 @@ function createTestRouter() {
 
 async function mountRepoDetail(repoOverride?: Record<string, unknown>, pinia?: Pinia) {
   const { getRepo } = await import('@/api/repo')
-  const { listPRs, settlePR } = await import('@/api/pr')
+  const { listPRs, getPR, settlePR } = await import('@/api/pr')
 
   ;(getRepo as any).mockResolvedValue({
     data: {
@@ -97,6 +98,49 @@ async function mountRepoDetail(repoOverride?: Record<string, unknown>, pinia?: P
     },
   })
   ;(settlePR as any).mockResolvedValue({ data: { data: { attribution_status: 'clear' } } })
+  ;(getPR as any).mockResolvedValue({
+    data: {
+      data: {
+        id: 101,
+        scm_pr_id: 88,
+        scm_pr_url: 'https://github.com/org/repo-a/pull/88',
+        author: 'alice',
+        title: 'Add attribution',
+        source_branch: 'feat/a',
+        target_branch: 'main',
+        status: 'merged',
+        labels: [],
+        lines_added: 10,
+        lines_deleted: 2,
+        ai_label: 'ai_via_sub2api',
+        ai_ratio: 0.8,
+        token_cost: 3.2,
+        cycle_time_hours: 5,
+        merged_at: '2026-03-30T00:00:00Z',
+        created_at: '2026-03-29T00:00:00Z',
+        attribution_status: 'clear',
+        attribution_confidence: 'high',
+        primary_token_count: 1200,
+        primary_token_cost: 1.25,
+        metadata_summary: {
+          intervals: [{
+            commit_sha: 'abc123',
+            total_tokens: 1200,
+            total_cost: 1.25,
+            source: 'tool_usage_events',
+            checkpoint_id: 7,
+          }],
+        },
+        last_attributed_at: '2026-03-30T01:00:00Z',
+        edges: {
+          last_attribution_run: {
+            matched_commit_shas: ['abc123', 'def456'],
+            validation_summary: { reason: 'all_matched_checkpoints_bound', result: 'consistent' },
+          },
+        },
+      },
+    },
+  })
 
   const router = createTestRouter()
   await router.push('/repos/9')
@@ -110,7 +154,7 @@ async function mountRepoDetail(repoOverride?: Record<string, unknown>, pinia?: P
   })
 
   await flushPromises()
-  return { wrapper, listPRs, settlePR }
+  return { wrapper, listPRs, getPR, settlePR }
 }
 
 describe('RepoDetailView', () => {
@@ -136,6 +180,22 @@ describe('RepoDetailView', () => {
 
     expect(settlePR).toHaveBeenCalledWith(101)
     expect((listPRs as any).mock.calls.length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('loads and renders attribution details for a PR', async () => {
+    const { wrapper, getPR } = await mountRepoDetail()
+    const detailsButton = wrapper.findAll('button').find((b) => b.text() === 'Details')
+    expect(detailsButton).toBeTruthy()
+
+    await detailsButton!.trigger('click')
+    await flushPromises()
+
+    expect(getPR).toHaveBeenCalledWith(101)
+    expect(wrapper.text()).toContain('1,200')
+    expect(wrapper.text()).toContain('all_matched_checkpoints_bound')
+    expect(wrapper.text()).toContain('abc123')
+    expect(wrapper.text()).toContain('def456')
+    expect(wrapper.text()).toContain('tool_usage_events')
   })
 
   it('shows binding controls for admin on an unbound repo', async () => {
