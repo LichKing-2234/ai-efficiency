@@ -405,6 +405,40 @@ describe('RepoDetailView', () => {
     expect(wrapper.findAll('button').some((button) => button.text() === 'Details')).toBe(true)
   })
 
+  it('keeps previously loaded PR details when settle refresh fails', async () => {
+    let detailCalls = 0
+    const { wrapper, getPR, settlePR } = await mountRepoDetail(undefined, undefined, {
+      getPRImpl: vi.fn(async () => {
+        detailCalls += 1
+        if (detailCalls === 1) {
+          return detailFor(101, 88)
+        }
+        throw new Error('refresh failed')
+      }),
+    })
+
+    const detailsButton = wrapper.findAll('button').find((button) => button.text() === 'Details')
+    expect(detailsButton).toBeTruthy()
+
+    await detailsButton!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('abc123')
+    expect(wrapper.text()).toContain('def456')
+
+    const settleButton = wrapper.findAll('button').find((button) => button.text() === 'Settle')
+    expect(settleButton).toBeTruthy()
+
+    await settleButton!.trigger('click')
+    await flushPromises()
+
+    expect(settlePR).toHaveBeenCalledWith(101)
+    expect(getPR).toHaveBeenCalledTimes(2)
+    expect(wrapper.text()).toContain('abc123')
+    expect(wrapper.text()).toContain('def456')
+    expect(wrapper.findAll('button').some((button) => button.text() === 'Hide')).toBe(true)
+  })
+
   it('adds noopener protection to external PR links', async () => {
     const { wrapper } = await mountRepoDetail()
     const link = wrapper.find('a[href="https://github.com/org/repo-a/pull/88"]')

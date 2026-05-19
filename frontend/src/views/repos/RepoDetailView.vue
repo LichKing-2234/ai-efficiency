@@ -176,8 +176,9 @@ function setPRDetailLoading(prId: number, loading: boolean) {
   detailsLoadingIds.value = rest
 }
 
-async function ensurePRDetail(prId: number) {
-  if (prDetails.value[prId]) return true
+async function ensurePRDetail(prId: number, options?: { force?: boolean }) {
+  const forceRefresh = options?.force === true
+  if (!forceRefresh && prDetails.value[prId]) return true
 
   const existingRequest = prDetailRequests.get(prId)
   if (existingRequest) return existingRequest
@@ -223,8 +224,7 @@ async function handleSettlePR(prId: number) {
     await settlePR(prId)
     await loadPRs()
     if (expandedPRId.value === prId || prDetails.value[prId]) {
-      delete prDetails.value[prId]
-      await ensurePRDetail(prId)
+      await ensurePRDetail(prId, { force: true })
     }
   } catch { /* settle failed */ } finally {
     settlingPRId.value = null
