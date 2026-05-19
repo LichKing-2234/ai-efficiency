@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/ai-efficiency/ae-cli/internal/session"
 )
 
 func TestScanner_ScanWorkspaceReadsMatchingCodexJSONL(t *testing.T) {
@@ -58,5 +60,36 @@ func TestFindCodexJSONLFiles_IgnoresWorkspaceScopedCodexHome(t *testing.T) {
 	paths := findCodexJSONLFiles(workspaceRoot, homeDir)
 	if len(paths) != 1 || paths[0] != globalCodex {
 		t.Fatalf("paths = %v, want only %s", paths, globalCodex)
+	}
+}
+
+func TestMustWorkspaceID_UsesGitdirFileForLinkedWorktreeLayout(t *testing.T) {
+	workspaceRoot := t.TempDir()
+	gitDir := filepath.Join(t.TempDir(), "gitdir")
+	gitCommonDir := filepath.Join(t.TempDir(), "git-common")
+	if err := os.MkdirAll(gitDir, 0o700); err != nil {
+		t.Fatalf("mkdir gitDir: %v", err)
+	}
+	if err := os.MkdirAll(gitCommonDir, 0o700); err != nil {
+		t.Fatalf("mkdir gitCommonDir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(gitDir, "commondir"), []byte(gitCommonDir+"\n"), 0o600); err != nil {
+		t.Fatalf("write commondir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(workspaceRoot, ".git"), []byte("gitdir: "+gitDir+"\n"), 0o600); err != nil {
+		t.Fatalf("write .git file: %v", err)
+	}
+
+	got, err := mustWorkspaceID(workspaceRoot)
+	if err != nil {
+		t.Fatalf("mustWorkspaceID: %v", err)
+	}
+
+	want, err := session.DeriveWorkspaceID(workspaceRoot, workspaceRoot, gitDir, gitCommonDir)
+	if err != nil {
+		t.Fatalf("DeriveWorkspaceID: %v", err)
+	}
+	if got != want {
+		t.Fatalf("workspaceID = %q, want %q", got, want)
 	}
 }

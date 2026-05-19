@@ -23,6 +23,11 @@ type Uploader interface {
 	UploadHookEvent(ctx context.Context, ev HookEvent) error
 }
 
+type syncCapableUploader interface {
+	Uploader
+	ToolUsageClient() attributionlocal.BackendClient
+}
+
 type Handler struct {
 	uploader Uploader
 }
@@ -39,9 +44,20 @@ func (u UnsupportedUploader) UploadHookEvent(ctx context.Context, ev HookEvent) 
 	return fmt.Errorf("hook upload not implemented")
 }
 
-var runAttributionSync = func(ctx context.Context, cwd string) error {
-	engine := attributionlocal.NewSyncEngine(nil)
+var runAttributionSync = func(ctx context.Context, cwd string, syncClient attributionlocal.BackendClient) error {
+	engine := attributionlocal.NewSyncEngine(syncClient)
 	return engine.RunForWorkspace(ctx, cwd)
+}
+
+func (h *Handler) attributionSyncClient() attributionlocal.BackendClient {
+	if h == nil || h.uploader == nil {
+		return nil
+	}
+	u, ok := h.uploader.(syncCapableUploader)
+	if !ok {
+		return nil
+	}
+	return u.ToolUsageClient()
 }
 
 func repoEventHint(cwd string, m *session.Marker) string {
@@ -247,8 +263,6 @@ func (h *Handler) PostCommit(ctx context.Context, cwd string) error {
 		return nil
 	}
 
-	_ = runAttributionSync(ctx, repoRoot)
-
 	ev := HookEvent{
 		Kind:           "post-commit",
 		EventID:        eventID,
@@ -263,6 +277,21 @@ func (h *Handler) PostCommit(ctx context.Context, cwd string) error {
 		HeadSnapshot:   head,
 		CapturedAt:     time.Now().UTC().Format(time.RFC3339),
 	}
+
+	syncClient := h.attributionSyncClient()
+	if syncClient != nil && h != nil && h.uploader != nil {
+		if err := h.uploader.UploadHookEvent(ctx, ev); err != nil {
+			q, qerr := NewWorkspaceQueue(workspaceID)
+			if qerr == nil {
+				_ = q.Enqueue(ev)
+			}
+			return nil
+		}
+		_ = runAttributionSync(ctx, repoRoot, syncClient)
+		return nil
+	}
+
+	_ = runAttributionSync(ctx, repoRoot, nil)
 
 	if h == nil || h.uploader == nil {
 		// No uploader wired; behave like upload failure (queue best-effort).
@@ -388,7 +417,7 @@ func (h *Handler) PostRewrite(ctx context.Context, cwd string, rewriteType strin
 			continue
 		}
 
-		_ = runAttributionSync(ctx, repoRoot)
+		_ = runAttributionSync(ctx, repoRoot, nil)
 
 		ev := HookEvent{
 			Kind:          "post-rewrite",

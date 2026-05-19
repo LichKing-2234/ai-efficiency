@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ai-efficiency/ae-cli/internal/client"
+	"github.com/ai-efficiency/ae-cli/internal/attributionlocal"
 	"github.com/ai-efficiency/ae-cli/internal/collector"
 	"github.com/ai-efficiency/ae-cli/internal/session"
 )
@@ -27,6 +29,28 @@ func (f *fakeUploader) UploadHookEvent(ctx context.Context, ev HookEvent) error 
 	}
 	f.events = append(f.events, ev)
 	return f.err
+}
+
+type recordingBackendHookClient struct {
+	checkpoints []client.CommitCheckpointRequest
+	toolUsage   []client.ToolUsageEventRequest
+	order       []string
+}
+
+func (r *recordingBackendHookClient) SendCommitCheckpoint(ctx context.Context, req client.CommitCheckpointRequest) error {
+	r.order = append(r.order, "checkpoint")
+	r.checkpoints = append(r.checkpoints, req)
+	return nil
+}
+
+func (r *recordingBackendHookClient) SendCommitRewrite(ctx context.Context, req client.CommitRewriteRequest) error {
+	return nil
+}
+
+func (r *recordingBackendHookClient) SendToolUsageEvent(ctx context.Context, req client.ToolUsageEventRequest) error {
+	r.order = append(r.order, "tool_usage")
+	r.toolUsage = append(r.toolUsage, req)
+	return nil
 }
 
 func writeMarker(t *testing.T, repo, sessionID string) {
@@ -288,7 +312,7 @@ func TestPostCommitWithoutMarkerUploadsUnboundCheckpoint(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
-	_ = runAttributionSync(context.Background(), repo)
+	_ = runAttributionSync(context.Background(), repo, nil)
 	u := &fakeUploader{}
 	h := NewHandler(u)
 	if err := h.PostCommit(context.Background(), repo); err != nil {
@@ -377,7 +401,7 @@ func TestPostCommit_TriggersAttributionSync(t *testing.T) {
 
 	calls := 0
 	old := runAttributionSync
-	runAttributionSync = func(ctx context.Context, cwd string) error {
+	runAttributionSync = func(ctx context.Context, cwd string, syncClient attributionlocal.BackendClient) error {
 		calls++
 		return nil
 	}
@@ -401,7 +425,7 @@ func TestPostCommit_TriggersAttributionSyncBeforeUpload(t *testing.T) {
 
 	synced := false
 	old := runAttributionSync
-	runAttributionSync = func(ctx context.Context, cwd string) error {
+	runAttributionSync = func(ctx context.Context, cwd string, syncClient attributionlocal.BackendClient) error {
 		synced = true
 		return nil
 	}
@@ -417,6 +441,44 @@ func TestPostCommit_TriggersAttributionSyncBeforeUpload(t *testing.T) {
 	h := NewHandler(u)
 	if err := h.PostCommit(context.Background(), repo); err != nil {
 		t.Fatalf("PostCommit: %v", err)
+	}
+}
+
+func TestPostCommit_WithBackendUploaderUploadsCheckpointBeforeToolUsageSync(t *testing.T) {
+	repo := initRepoWithCommit2(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	workspaceRoot := git2(t, repo, "rev-parse", "--show-toplevel")
+	codexDir := filepath.Join(home, ".codex", "sessions", "2026", "05", "19")
+	if err := os.MkdirAll(codexDir, 0o700); err != nil {
+		t.Fatalf("mkdir codex dir: %v", err)
+	}
+	codexPath := filepath.Join(codexDir, "sess-hook-sync.jsonl")
+	codexBody := `{"timestamp":"2026-05-19T07:05:07Z","type":"session_meta","payload":{"id":"codex-hook-sync-1","cwd":"` + workspaceRoot + `"}}
+{"timestamp":"2026-05-19T07:05:08Z","type":"event_msg","payload":{"type":"token_count","response_id":"resp-hook-sync-1","info":{"last_token_usage":{"input_tokens":12,"cached_input_tokens":4,"output_tokens":5,"reasoning_output_tokens":2,"total_tokens":21}}}}`
+	if err := os.WriteFile(codexPath, []byte(codexBody), 0o600); err != nil {
+		t.Fatalf("write codex jsonl: %v", err)
+	}
+	writeMarker(t, repo, "sess-1")
+
+	clientStub := &recordingBackendHookClient{}
+	h := NewHandler(NewBackendUploader(clientStub))
+	if err := h.PostCommit(context.Background(), repo); err != nil {
+		t.Fatalf("PostCommit: %v", err)
+	}
+
+	if len(clientStub.checkpoints) != 1 {
+		t.Fatalf("checkpoint uploads = %d, want 1", len(clientStub.checkpoints))
+	}
+	if len(clientStub.toolUsage) == 0 {
+		t.Fatal("expected tool usage uploads during post-commit sync")
+	}
+	if len(clientStub.order) < 2 {
+		t.Fatalf("upload order = %v, want checkpoint then tool usage", clientStub.order)
+	}
+	if clientStub.order[0] != "checkpoint" || clientStub.order[1] != "tool_usage" {
+		t.Fatalf("upload order = %v, want checkpoint before tool usage", clientStub.order)
 	}
 }
 

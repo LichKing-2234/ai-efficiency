@@ -668,3 +668,69 @@ func TestSettlePR_AggregatesToolUsageEventsByCheckpoint(t *testing.T) {
 		t.Fatalf("MetadataSummary = %+v", result.MetadataSummary)
 	}
 }
+
+func TestSettlePR_AllowsUnboundCheckpointWhenToolUsageIsAlreadyBound(t *testing.T) {
+	client := testdb.Open(t)
+	defer client.Close()
+	ctx := context.Background()
+
+	repo, pr, _ := testRepoPRSession(t, client, 0)
+	userID := client.User.Create().
+		SetUsername("sessionless-user").
+		SetEmail("sessionless-user@test.com").
+		SetAuthSource("ldap").
+		SaveX(ctx).ID
+
+	checkpoint := client.CommitCheckpoint.Create().
+		SetEventID("cp-sessionless-1").
+		SetWorkspaceID("ws-sessionless").
+		SetRepoConfigID(repo.ID).
+		SetBindingSource(commitcheckpoint.BindingSourceUnbound).
+		SetCommitSha("pr-sessionless-1").
+		SetParentShas([]string{"base"}).
+		SetCapturedAt(time.Now().Add(-5 * time.Minute)).
+		SaveX(ctx)
+
+	client.ToolUsageEvent.Create().
+		SetTool("codex").
+		SetWorkspaceID("ws-sessionless").
+		SetRepoConfigID(repo.ID).
+		SetUserID(userID).
+		SetToolSessionID("codex-sessionless-1").
+		SetToolEventID("resp-sessionless-1").
+		SetObservedStartAt(checkpoint.CapturedAt.Add(-30 * time.Second)).
+		SetObservedEndAt(checkpoint.CapturedAt.Add(-5 * time.Second)).
+		SetUsageUnit("token").
+		SetInputTokens(70).
+		SetOutputTokens(11).
+		SetCachedInputTokens(9).
+		SetReasoningTokens(4).
+		SetDedupeKey("codex:sessionless:1").
+		SetCommitCheckpointID(checkpoint.ID).
+		SaveX(ctx)
+
+	fakeRelay := &fakeRelayProvider{}
+	fakeProvider := &fakeSCMProvider{
+		listPRCommitsFn: func(ctx context.Context, repoFullName string, prID int) ([]string, error) {
+			return []string{"pr-sessionless-1"}, nil
+		},
+	}
+
+	svc := NewService(client, fakeRelay)
+	result, err := svc.Settle(ctx, fakeProvider, pr, "tester")
+	if err != nil {
+		t.Fatalf("Settle: %v", err)
+	}
+	if result.ResultClassification != "clear" {
+		t.Fatalf("ResultClassification = %q, want clear", result.ResultClassification)
+	}
+	if result.PrimaryTokenCount != 90 {
+		t.Fatalf("PrimaryTokenCount = %d, want 90", result.PrimaryTokenCount)
+	}
+	if got := result.MetadataSummary["matched_session_count"]; got != 0 {
+		t.Fatalf("matched_session_count = %v, want 0", got)
+	}
+	if len(fakeRelay.calls) != 0 {
+		t.Fatalf("relay fallback should not run for checkpoint-bound tool usage")
+	}
+}

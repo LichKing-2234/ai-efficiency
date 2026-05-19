@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/ai-efficiency/ae-cli/internal/client"
 )
@@ -58,9 +59,14 @@ func (e *SyncEngine) RunForWorkspace(ctx context.Context, workspaceRoot string) 
 	if e.Scanner == nil {
 		e.Scanner = NewScanner()
 	}
-	statePath := filepath.Join(AttributionRootDir(), "scan-state.json")
-	spoolPath := filepath.Join(AttributionRootDir(), "spool.json")
+	statePath, spoolPath, workspaceID, err := workspaceStatePaths(workspaceRoot)
+	if err != nil {
+		return err
+	}
 	e.spoolPath = spoolPath
+	if err := migrateLegacyWorkspaceSpool(workspaceID, spoolPath); err != nil {
+		return err
+	}
 
 	var state ScanState
 	if err := LoadJSON(statePath, &state); err != nil && !os.IsNotExist(err) {
@@ -154,4 +160,57 @@ func clearSpooledEvents(path string) error {
 		return err
 	}
 	return nil
+}
+
+func workspaceStatePaths(workspaceRoot string) (statePath, spoolPath, workspaceID string, err error) {
+	workspaceID, err = mustWorkspaceID(workspaceRoot)
+	if err != nil {
+		return "", "", "", err
+	}
+	base := filepath.Join(AttributionRootDir(), "workspaces", workspaceID)
+	return filepath.Join(base, "scan-state.json"), filepath.Join(base, "spool.json"), workspaceID, nil
+}
+
+func legacyGlobalSpoolPath() string {
+	return filepath.Join(AttributionRootDir(), "spool.json")
+}
+
+func migrateLegacyWorkspaceSpool(workspaceID, targetPath string) error {
+	workspaceID = filepath.Clean(workspaceID)
+	targetPath = strings.TrimSpace(targetPath)
+	if workspaceID == "" || targetPath == "" {
+		return nil
+	}
+
+	legacyPath := legacyGlobalSpoolPath()
+	legacyEvents, err := loadSpooledEvents(legacyPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	if len(legacyEvents) == 0 {
+		return nil
+	}
+
+	matched := make([]LocalToolUsageEvent, 0)
+	remaining := make([]LocalToolUsageEvent, 0, len(legacyEvents))
+	for _, ev := range legacyEvents {
+		if strings.TrimSpace(ev.WorkspaceID) == workspaceID {
+			matched = append(matched, ev)
+			continue
+		}
+		remaining = append(remaining, ev)
+	}
+	if len(matched) == 0 {
+		return nil
+	}
+	if err := appendSpooledEvents(targetPath, matched); err != nil {
+		return err
+	}
+	if len(remaining) == 0 {
+		return clearSpooledEvents(legacyPath)
+	}
+	return SaveJSON(legacyPath, remaining)
 }

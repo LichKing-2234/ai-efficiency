@@ -151,12 +151,20 @@ func TestSync_RunForWorkspaceWithoutClientSpoolsNewEvents(t *testing.T) {
 		t.Fatalf("RunForWorkspace: %v", err)
 	}
 
-	spooled, err := loadSpooledEvents(filepath.Join(AttributionRootDir(), "spool.json"))
+	workspaceID, err := mustWorkspaceID(fixture.WorkspaceRoot)
+	if err != nil {
+		t.Fatalf("mustWorkspaceID: %v", err)
+	}
+	spoolPath := filepath.Join(AttributionRootDir(), "workspaces", workspaceID, "spool.json")
+	spooled, err := loadSpooledEvents(spoolPath)
 	if err != nil {
 		t.Fatalf("loadSpooledEvents: %v", err)
 	}
 	if len(spooled) == 0 {
 		t.Fatal("expected new events to be spooled when no backend client is configured")
+	}
+	if _, err := os.Stat(filepath.Join(AttributionRootDir(), "spool.json")); !os.IsNotExist(err) {
+		t.Fatalf("expected legacy global spool path to stay unused, stat err=%v", err)
 	}
 }
 
@@ -174,7 +182,11 @@ func TestSync_RunForWorkspaceSpoolsNewEventsWhenUploadFails(t *testing.T) {
 		t.Fatalf("RunForWorkspace: %v", err)
 	}
 
-	spoolPath := filepath.Join(AttributionRootDir(), "spool.json")
+	workspaceID, err := mustWorkspaceID(fixture.WorkspaceRoot)
+	if err != nil {
+		t.Fatalf("mustWorkspaceID: %v", err)
+	}
+	spoolPath := filepath.Join(AttributionRootDir(), "workspaces", workspaceID, "spool.json")
 	spooled, err := loadSpooledEvents(spoolPath)
 	if err != nil {
 		t.Fatalf("loadSpooledEvents: %v", err)
@@ -182,7 +194,37 @@ func TestSync_RunForWorkspaceSpoolsNewEventsWhenUploadFails(t *testing.T) {
 	if len(spooled) != 1 || spooled[0].DedupeKey != "codex-jsonl:sess-1:resp-1" {
 		t.Fatalf("spooled = %+v, want the failed scanned event", spooled)
 	}
-	if _, err := os.Stat(filepath.Join(AttributionRootDir(), "scan-state.json")); err != nil {
+	if _, err := os.Stat(filepath.Join(AttributionRootDir(), "workspaces", workspaceID, "scan-state.json")); err != nil {
 		t.Fatalf("expected scan state to be persisted after spooling, stat err=%v", err)
+	}
+}
+
+func TestSync_RunForWorkspaceIgnoresLegacyGlobalSpoolFromOtherWorkspace(t *testing.T) {
+	fixture := buildAttributionFixture(t)
+
+	legacySpoolPath := filepath.Join(AttributionRootDir(), "spool.json")
+	legacyPayload := []LocalToolUsageEvent{{
+		Tool:            "codex",
+		WorkspaceID:     "ws-other",
+		ToolSessionID:   "other-sess",
+		ToolEventID:     "other-event",
+		DedupeKey:       "legacy-other-workspace",
+		UsageUnit:       UsageUnitToken,
+		RequestCount:    1,
+		ObservedStartAt: jsonTime("2026-05-13T10:00:00Z"),
+		ObservedEndAt:   jsonTime("2026-05-13T10:00:01Z"),
+	}}
+	if err := SaveJSON(legacySpoolPath, legacyPayload); err != nil {
+		t.Fatalf("SaveJSON(legacy spool): %v", err)
+	}
+
+	engine := &SyncEngine{
+		Scanner: NewScanner(),
+		Client: &syncBackendClientStub{
+			failOn: "legacy-other-workspace",
+		},
+	}
+	if err := engine.RunForWorkspace(context.Background(), fixture.WorkspaceRoot); err != nil {
+		t.Fatalf("RunForWorkspace should ignore unrelated legacy spool entries, got: %v", err)
 	}
 }

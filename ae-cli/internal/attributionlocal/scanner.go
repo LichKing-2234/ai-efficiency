@@ -63,7 +63,7 @@ func (s *Scanner) ScanWorkspace(workspaceRoot string, state ScanState) ([]LocalT
 }
 
 func mustWorkspaceID(workspaceRoot string) (string, error) {
-	gitDir, err := filepath.EvalSymlinks(filepath.Join(workspaceRoot, ".git"))
+	gitDir, err := resolveWorkspaceGitDir(workspaceRoot)
 	if err != nil {
 		gitDir = filepath.Join(workspaceRoot, ".git")
 	}
@@ -80,6 +80,36 @@ func mustWorkspaceID(workspaceRoot string) (string, error) {
 		}
 	}
 	return session.DeriveWorkspaceID(workspaceRoot, workspaceRoot, gitDir, gitCommonDir)
+}
+
+func resolveWorkspaceGitDir(workspaceRoot string) (string, error) {
+	gitPath := filepath.Join(workspaceRoot, ".git")
+	info, err := os.Stat(gitPath)
+	if err != nil {
+		return "", err
+	}
+	if info.IsDir() {
+		return filepath.EvalSymlinks(gitPath)
+	}
+
+	data, err := os.ReadFile(gitPath)
+	if err != nil {
+		return "", err
+	}
+	line := strings.TrimSpace(string(data))
+	const prefix = "gitdir:"
+	if !strings.HasPrefix(strings.ToLower(line), prefix) {
+		return filepath.EvalSymlinks(gitPath)
+	}
+
+	rawGitDir := strings.TrimSpace(line[len(prefix):])
+	if rawGitDir == "" {
+		return "", os.ErrInvalid
+	}
+	if !filepath.IsAbs(rawGitDir) {
+		rawGitDir = filepath.Join(workspaceRoot, rawGitDir)
+	}
+	return filepath.EvalSymlinks(rawGitDir)
 }
 
 func dedupeAndSort(items []LocalToolUsageEvent) []LocalToolUsageEvent {
