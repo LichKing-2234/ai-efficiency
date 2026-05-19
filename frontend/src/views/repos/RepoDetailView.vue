@@ -171,7 +171,9 @@ async function ensurePRDetail(prId: number) {
       prDetails.value = { ...prDetails.value, [prId]: detail }
     }
   } finally {
-    detailsLoadingId.value = null
+    if (detailsLoadingId.value === prId) {
+      detailsLoadingId.value = null
+    }
   }
 }
 
@@ -324,7 +326,7 @@ async function handleSettlePR(prId: number) {
               <template v-for="pr in prs" :key="pr.id">
                 <tr class="hover:bg-gray-50">
                   <td class="max-w-xs truncate px-3 py-2">
-                    <a v-if="pr.scm_pr_url" :href="pr.scm_pr_url" target="_blank" class="text-indigo-600 hover:text-indigo-800">
+                    <a v-if="pr.scm_pr_url" :href="pr.scm_pr_url" target="_blank" rel="noopener noreferrer" class="text-indigo-600 hover:text-indigo-800">
                       {{ pr.title }}
                     </a>
                     <span v-else>{{ pr.title }}</span>
