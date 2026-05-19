@@ -12,6 +12,7 @@
 - [x] Fix `backend/internal/handler/provider.go` to read the authenticated user from `auth.GetUserContext`.
 - [x] Update CLI docs and add a current-contract spec for deterministic tool configuration.
 - [x] Run `cd ae-cli && go test ./...`.
+- [x] Add CI coverage for the mock `ae-cli discover` end-to-end path and verify it locally with `bash ae-cli/test/discover-e2e.sh <built-binary>`.
 - [x] Run `cd backend && AE_TEST_POSTGRES_DSN='postgres://postgres:postgres@127.0.0.1:15432/postgres?sslmode=disable' go test ./internal/handler -run TestListProvidersForUserWithValidToken -v`.
 - [x] Run a mock end-to-end `ae-cli discover` execution against a local stub `/api/v1/providers` server and verify the generated files under a temporary `HOME`.
 

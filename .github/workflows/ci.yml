@@ -55,6 +55,11 @@ jobs:
       - name: Test ae-cli
         working-directory: ae-cli
         run: go test ./...
+      - name: E2E ae-cli discover
+        working-directory: ae-cli
+        run: |
+          go build -o /tmp/ae-cli-e2e .
+          bash test/discover-e2e.sh /tmp/ae-cli-e2e
 
   frontend:
     runs-on: ubuntu-latest
