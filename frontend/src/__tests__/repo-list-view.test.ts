@@ -37,9 +37,9 @@ function createTestRouter() {
 }
 
 const sampleRepos = [
-  { id: 1, repo_key: 'github.com/org/repo-a', name: 'repo-a', full_name: 'org/repo-a', clone_url: 'https://github.com/org/repo-a.git', default_branch: 'main', status: 'active', binding_state: 'bound', last_scan_at: '2026-03-01T00:00:00Z', group_id: 0, created_at: '2026-01-01', edges: { scm_provider: { id: 1, name: 'GitHub', type: 'github', base_url: 'https://api.github.com', status: 'active' } } },
-  { id: 2, repo_key: 'github.com/org/repo-b', name: 'repo-b', full_name: 'org/repo-b', clone_url: 'https://github.com/org/repo-b.git', default_branch: 'main', status: 'active', binding_state: 'bound', last_scan_at: null, group_id: 0, created_at: '2026-01-01', edges: { scm_provider: { id: 1, name: 'GitHub', type: 'github', base_url: 'https://api.github.com', status: 'active' } } },
-  { id: 3, repo_key: 'bb.example.com/team/repo-c', name: 'repo-c', full_name: 'team/repo-c', clone_url: 'https://bb.example.com/scm/team/repo-c.git', default_branch: 'main', status: 'active', binding_state: 'bound', last_scan_at: null, group_id: 0, created_at: '2026-01-01', edges: { scm_provider: { id: 2, name: 'Bitbucket', type: 'bitbucket_server', base_url: 'https://bb.example.com', status: 'active' } } },
+  { id: 1, repo_key: 'github.com/org/repo-a', name: 'repo-a', full_name: 'org/repo-a', clone_url: 'https://github.com/org/repo-a.git', default_branch: 'main', status: 'active', binding_state: 'bound', group_id: 0, created_at: '2026-01-01', edges: { scm_provider: { id: 1, name: 'GitHub', type: 'github', base_url: 'https://api.github.com', status: 'active' } } },
+  { id: 2, repo_key: 'github.com/org/repo-b', name: 'repo-b', full_name: 'org/repo-b', clone_url: 'https://github.com/org/repo-b.git', default_branch: 'main', status: 'active', binding_state: 'bound', group_id: 0, created_at: '2026-01-01', edges: { scm_provider: { id: 1, name: 'GitHub', type: 'github', base_url: 'https://api.github.com', status: 'active' } } },
+  { id: 3, repo_key: 'bb.example.com/team/repo-c', name: 'repo-c', full_name: 'team/repo-c', clone_url: 'https://bb.example.com/scm/team/repo-c.git', default_branch: 'main', status: 'active', binding_state: 'bound', group_id: 0, created_at: '2026-01-01', edges: { scm_provider: { id: 2, name: 'Bitbucket', type: 'bitbucket_server', base_url: 'https://bb.example.com', status: 'active' } } },
 ]
 
 async function mountRepoList(repos?: any[]) {
@@ -93,7 +93,6 @@ describe('RepoListView', () => {
         default_branch: 'main',
         status: 'active',
         binding_state: 'unbound',
-        last_scan_at: null,
         group_id: 0,
         created_at: '2026-01-01T00:00:00Z',
         edges: {},

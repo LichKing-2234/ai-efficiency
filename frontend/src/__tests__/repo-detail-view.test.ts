@@ -145,7 +145,6 @@ async function mountRepoDetail(
         status: 'active',
         binding_state: 'bound',
         edges: { scm_provider: { id: 1, name: 'GitHub', type: 'github', base_url: 'https://api.github.com', status: 'active' } },
-        last_scan_at: '2026-03-30T00:00:00Z',
         group_id: 1,
         created_at: '2026-01-01T00:00:00Z',
         ...repoOverride,
@@ -511,7 +510,6 @@ describe('RepoDetailView', () => {
 
     const { wrapper } = await mountRepoDetail({
       binding_state: 'unbound',
-      last_scan_at: null,
       edges: {},
     }, pinia)
     expect(wrapper.text()).toContain('SCM Provider Binding')
