@@ -307,6 +307,104 @@ describe('RepoDetailView', () => {
     expect(wrapper.findAll('button').some((button) => button.text() === 'Loading...')).toBe(false)
   })
 
+  it('does not issue a duplicate details request for the same PR while one is already in flight', async () => {
+    const firstDetail = createDeferred<any>()
+    const secondDetail = createDeferred<any>()
+    const { wrapper, getPR } = await mountRepoDetail(undefined, undefined, {
+      prs: [
+        {
+          id: 101,
+          scm_pr_id: 88,
+          scm_pr_url: 'https://github.com/org/repo-a/pull/88',
+          author: 'alice',
+          title: 'Add attribution',
+          source_branch: 'feat/a',
+          target_branch: 'main',
+          status: 'merged',
+          labels: [],
+          lines_added: 10,
+          lines_deleted: 2,
+          ai_label: 'ai_via_sub2api',
+          ai_ratio: 0.8,
+          token_cost: 3.2,
+          cycle_time_hours: 5,
+          merged_at: '2026-03-30T00:00:00Z',
+          created_at: '2026-03-29T00:00:00Z',
+          attribution_status: 'clear',
+          attribution_confidence: 'high',
+          primary_token_count: 1200,
+          primary_token_cost: 1.25,
+          metadata_summary: {},
+          last_attributed_at: '2026-03-30T01:00:00Z',
+        },
+        {
+          id: 102,
+          scm_pr_id: 89,
+          scm_pr_url: 'https://github.com/org/repo-a/pull/89',
+          author: 'bob',
+          title: 'Refine attribution',
+          source_branch: 'feat/b',
+          target_branch: 'main',
+          status: 'open',
+          labels: [],
+          lines_added: 4,
+          lines_deleted: 1,
+          ai_label: 'ai_via_sub2api',
+          ai_ratio: 0.6,
+          token_cost: 1.1,
+          cycle_time_hours: 2,
+          merged_at: null,
+          created_at: '2026-03-30T00:00:00Z',
+          attribution_status: 'clear',
+          attribution_confidence: 'medium',
+          primary_token_count: 400,
+          primary_token_cost: 0.5,
+          metadata_summary: {},
+          last_attributed_at: '2026-03-30T02:00:00Z',
+        },
+      ],
+      getPRImpl: vi.fn((prId: number) => {
+        if (prId === 101) return firstDetail.promise
+        return secondDetail.promise
+      }),
+    })
+
+    const detailButtons = () => wrapper.findAll('button').filter((button) => ['Details', 'Hide', 'Loading...'].includes(button.text()))
+
+    await detailButtons()[0].trigger('click')
+    await nextTick()
+    await detailButtons()[1].trigger('click')
+    await nextTick()
+    await detailButtons()[0].trigger('click')
+    await nextTick()
+
+    expect(getPR).toHaveBeenCalledTimes(2)
+    expect(getPR).toHaveBeenNthCalledWith(1, 101)
+    expect(getPR).toHaveBeenNthCalledWith(2, 102)
+
+    firstDetail.resolve(detailFor(101, 88))
+    secondDetail.resolve(detailFor(102, 89))
+    await flushPromises()
+  })
+
+  it('collapses PR details when loading the detail request fails', async () => {
+    const { wrapper } = await mountRepoDetail(undefined, undefined, {
+      getPRImpl: vi.fn(async () => {
+        throw new Error('detail fetch failed')
+      }),
+    })
+
+    const detailsButton = wrapper.findAll('button').find((button) => button.text() === 'Details')
+    expect(detailsButton).toBeTruthy()
+
+    await detailsButton!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('Matched Commits')
+    expect(wrapper.findAll('button').some((button) => button.text() === 'Hide')).toBe(false)
+    expect(wrapper.findAll('button').some((button) => button.text() === 'Details')).toBe(true)
+  })
+
   it('adds noopener protection to external PR links', async () => {
     const { wrapper } = await mountRepoDetail()
     const link = wrapper.find('a[href="https://github.com/org/repo-a/pull/88"]')

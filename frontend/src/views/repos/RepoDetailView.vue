@@ -20,9 +20,10 @@ const prsMonths = ref(3)
 const loading = ref(true)
 const syncing = ref(false)
 const settlingPRId = ref<number | null>(null)
-const detailsLoadingId = ref<number | null>(null)
+const detailsLoadingIds = ref<Record<number, boolean>>({})
 const expandedPRId = ref<number | null>(null)
 const prDetails = ref<Record<number, PRRecord>>({})
+const prDetailRequests = new Map<number, Promise<boolean>>()
 const providers = ref<SCMProvider[]>([])
 const selectedProviderId = ref<number | null>(null)
 const bindingSaving = ref(false)
@@ -161,20 +162,47 @@ function attributionIntervals(pr: PRRecord) {
   return Array.isArray(intervals) ? intervals : []
 }
 
-async function ensurePRDetail(prId: number) {
-  if (prDetails.value[prId]) return
-  detailsLoadingId.value = prId
-  try {
-    const res = await getPR(prId)
-    const detail = res.data.data
-    if (detail) {
-      prDetails.value = { ...prDetails.value, [prId]: detail }
-    }
-  } finally {
-    if (detailsLoadingId.value === prId) {
-      detailsLoadingId.value = null
-    }
+function isPRDetailLoading(prId: number) {
+  return Boolean(detailsLoadingIds.value[prId])
+}
+
+function setPRDetailLoading(prId: number, loading: boolean) {
+  if (loading) {
+    detailsLoadingIds.value = { ...detailsLoadingIds.value, [prId]: true }
+    return
   }
+
+  const { [prId]: _removed, ...rest } = detailsLoadingIds.value
+  detailsLoadingIds.value = rest
+}
+
+async function ensurePRDetail(prId: number) {
+  if (prDetails.value[prId]) return true
+
+  const existingRequest = prDetailRequests.get(prId)
+  if (existingRequest) return existingRequest
+
+  setPRDetailLoading(prId, true)
+
+  const request = (async () => {
+    try {
+      const res = await getPR(prId)
+      const detail = res.data.data
+      if (detail) {
+        prDetails.value = { ...prDetails.value, [prId]: detail }
+        return true
+      }
+      return false
+    } catch {
+      return false
+    } finally {
+      prDetailRequests.delete(prId)
+      setPRDetailLoading(prId, false)
+    }
+  })()
+
+  prDetailRequests.set(prId, request)
+  return request
 }
 
 async function togglePRDetails(prId: number) {
@@ -183,7 +211,10 @@ async function togglePRDetails(prId: number) {
     return
   }
   expandedPRId.value = prId
-  await ensurePRDetail(prId)
+  const loaded = await ensurePRDetail(prId)
+  if (!loaded && expandedPRId.value === prId && !prDetails.value[prId]) {
+    expandedPRId.value = null
+  }
 }
 
 async function handleSettlePR(prId: number) {
@@ -357,9 +388,9 @@ async function handleSettlePR(prId: number) {
                       >{{ settlingPRId === pr.id ? 'Settling...' : 'Settle' }}</button>
                       <button
                         class="rounded border border-gray-200 px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-40"
-                        :disabled="detailsLoadingId === pr.id"
+                        :disabled="isPRDetailLoading(pr.id)"
                         @click="togglePRDetails(pr.id)"
-                      >{{ detailsLoadingId === pr.id ? 'Loading...' : expandedPRId === pr.id ? 'Hide' : 'Details' }}</button>
+                      >{{ isPRDetailLoading(pr.id) ? 'Loading...' : expandedPRId === pr.id ? 'Hide' : 'Details' }}</button>
                     </div>
                   </td>
                 </tr>
