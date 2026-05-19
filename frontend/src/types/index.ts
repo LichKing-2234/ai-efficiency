@@ -69,9 +69,22 @@ export interface PRRecord {
   primary_token_cost?: number
   metadata_summary?: Record<string, any>
   last_attributed_at?: string | null
+  edges?: {
+    last_attribution_run?: PRAttributionRun | null
+  }
   cycle_time_hours: number
   merged_at: string | null
   created_at: string
+}
+
+export interface PRAttributionRun {
+  id?: number
+  result_classification?: string
+  matched_commit_shas?: string[]
+  matched_session_ids?: string[]
+  primary_usage_summary?: Record<string, any>
+  metadata_summary?: Record<string, any>
+  validation_summary?: Record<string, any>
 }
 
 export interface EfficiencyMetric {

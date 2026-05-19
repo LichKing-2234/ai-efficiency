@@ -39,8 +39,12 @@ func (e *SyncEngine) Replay(ctx context.Context, workspaceRoot string) error {
 
 	remaining := make([]LocalToolUsageEvent, 0, len(spooled))
 	for idx, ev := range spooled {
+		ev = normalizeObservedWindow(ev)
 		if err := e.Client.SendToolUsageEvent(ctx, toClientUsageRequest(ev)); err != nil {
-			remaining = append(remaining, spooled[idx:]...)
+			remaining = append(remaining, ev)
+			for _, queued := range spooled[idx+1:] {
+				remaining = append(remaining, normalizeObservedWindow(queued))
+			}
 			if err := SaveJSON(e.spoolPath, remaining); err != nil {
 				return err
 			}
@@ -70,6 +74,9 @@ func (e *SyncEngine) RunForWorkspace(ctx context.Context, workspaceRoot string) 
 	events, nextState, err := e.Scanner.ScanWorkspace(workspaceRoot, state)
 	if err != nil {
 		return err
+	}
+	for idx := range events {
+		events[idx] = normalizeObservedWindow(events[idx])
 	}
 
 	if e.Client == nil {

@@ -144,3 +144,63 @@ func TestPRHandlerSettle_Success(t *testing.T) {
 		t.Fatalf("result_classification = %v, want clear", data["result_classification"])
 	}
 }
+
+func TestPRHandlerGet_IncludesLastAttributionRunDetails(t *testing.T) {
+	env := setupMockTestEnv(t, nil, nil, nil, nil)
+	rc := createMockTestRepo(t, env.client)
+	pr := env.client.PrRecord.Create().
+		SetRepoConfigID(rc.ID).
+		SetScmPrID(31).
+		SetTitle("Attribution details").
+		SetAuthor("alice").
+		SetSourceBranch("feat/details").
+		SetTargetBranch("main").
+		SetStatus("open").
+		SetAttributionStatus("clear").
+		SetPrimaryTokenCount(321).
+		SetPrimaryTokenCost(1.23).
+		SetMetadataSummary(map[string]any{
+			"intervals": []map[string]any{{
+				"commit_sha":    "abc123",
+				"total_tokens":  321,
+				"total_cost":    1.23,
+				"source":        "tool_usage_events",
+				"checkpoint_id": 7,
+			}},
+		}).
+		SaveX(context.Background())
+
+	run := env.client.PrAttributionRun.Create().
+		SetPrRecordID(pr.ID).
+		SetTriggerMode("manual").
+		SetTriggeredBy("alice").
+		SetStatus("completed").
+		SetResultClassification("clear").
+		SetMatchedCommitShas([]string{"abc123", "def456"}).
+		SetMatchedSessionIds([]string{"sess-1"}).
+		SetPrimaryUsageSummary(map[string]any{"total_tokens": 321, "total_cost": 1.23}).
+		SetMetadataSummary(map[string]any{"matched_commit_count": 2}).
+		SetValidationSummary(map[string]any{"result": "consistent", "reason": "all_matched_checkpoints_bound"}).
+		SaveX(context.Background())
+
+	env.client.PrRecord.UpdateOneID(pr.ID).
+		SetLastAttributionRunID(run.ID).
+		SaveX(context.Background())
+
+	w := doMockRequest(env, "GET", fmt.Sprintf("/api/v1/prs/%d", pr.ID), nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body: %s", w.Code, w.Body.String())
+	}
+	resp := parseMockResponse(t, w)
+	data := resp["data"].(map[string]interface{})
+	edges := data["edges"].(map[string]interface{})
+	lastRun := edges["last_attribution_run"].(map[string]interface{})
+	matched := lastRun["matched_commit_shas"].([]interface{})
+	if len(matched) != 2 || matched[0] != "abc123" || matched[1] != "def456" {
+		t.Fatalf("matched_commit_shas = %v, want [abc123 def456]", matched)
+	}
+	validation := lastRun["validation_summary"].(map[string]interface{})
+	if validation["reason"] != "all_matched_checkpoints_bound" {
+		t.Fatalf("validation_summary.reason = %v, want all_matched_checkpoints_bound", validation["reason"])
+	}
+}

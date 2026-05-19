@@ -3,6 +3,7 @@ package attributionlocal
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -70,4 +71,60 @@ func asInt64(v any) int64 {
 	default:
 		return 0
 	}
+}
+
+func parseObservedAt(raw any) time.Time {
+	value := strings.TrimSpace(asString(raw))
+	if value == "" {
+		return time.Time{}
+	}
+	for _, layout := range []string{time.RFC3339Nano, time.RFC3339} {
+		if parsed, err := time.Parse(layout, value); err == nil {
+			return parsed.UTC()
+		}
+	}
+	return time.Time{}
+}
+
+func sourceFileObservedAt(path string) time.Time {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return time.Time{}
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return time.Time{}
+	}
+	return info.ModTime().UTC()
+}
+
+func normalizeObservedWindow(ev LocalToolUsageEvent) LocalToolUsageEvent {
+	if !ev.ObservedStartAt.IsZero() && !ev.ObservedEndAt.IsZero() {
+		return ev
+	}
+
+	observedAt := time.Time{}
+	if len(ev.RawPayload) > 0 {
+		observedAt = parseObservedAt(ev.RawPayload["timestamp"])
+		if observedAt.IsZero() {
+			if payload, _ := ev.RawPayload["payload"].(map[string]any); len(payload) > 0 {
+				observedAt = parseObservedAt(payload["timestamp"])
+			}
+		}
+		if observedAt.IsZero() {
+			if message, _ := ev.RawPayload["message"].(map[string]any); len(message) > 0 {
+				observedAt = parseObservedAt(message["timestamp"])
+			}
+		}
+	}
+	if observedAt.IsZero() {
+		observedAt = sourceFileObservedAt(ev.RawSourcePath)
+	}
+	if ev.ObservedStartAt.IsZero() {
+		ev.ObservedStartAt = observedAt
+	}
+	if ev.ObservedEndAt.IsZero() {
+		ev.ObservedEndAt = observedAt
+	}
+	return ev
 }

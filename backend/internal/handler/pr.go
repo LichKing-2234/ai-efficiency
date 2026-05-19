@@ -109,7 +109,10 @@ func (h *PRHandler) Get(c *gin.Context) {
 		return
 	}
 
-	pr, err := h.entClient.PrRecord.Get(c.Request.Context(), id)
+	pr, err := h.entClient.PrRecord.Query().
+		Where(prrecord.IDEQ(id)).
+		WithLastAttributionRun().
+		Only(c.Request.Context())
 	if err != nil {
 		if ent.IsNotFound(err) {
 			pkg.Error(c, http.StatusNotFound, "PR not found")
