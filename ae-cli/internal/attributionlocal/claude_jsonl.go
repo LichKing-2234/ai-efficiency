@@ -63,6 +63,8 @@ func ParseClaudeJSONL(path, workspaceRoot string) ([]LocalToolUsageEvent, error)
 				InputTokens:       asInt64(usage["input_tokens"]),
 				OutputTokens:      asInt64(usage["output_tokens"]),
 				CachedInputTokens: asInt64(usage["cache_creation_input_tokens"]) + asInt64(usage["cache_read_input_tokens"]),
+				ObservedStartAt:   parseObservedAt(row["timestamp"]),
+				ObservedEndAt:     parseObservedAt(row["timestamp"]),
 				RawSourcePath:     path,
 				RawPayload:        row,
 			},
@@ -81,7 +83,7 @@ func ParseClaudeJSONL(path, workspaceRoot string) ([]LocalToolUsageEvent, error)
 
 	out := make([]LocalToolUsageEvent, 0, len(best))
 	for _, item := range best {
-		out = append(out, item.event)
+		out = append(out, normalizeObservedWindow(item.event))
 	}
 	slices.SortFunc(out, func(a, b LocalToolUsageEvent) int { return strings.Compare(a.DedupeKey, b.DedupeKey) })
 	return out, nil

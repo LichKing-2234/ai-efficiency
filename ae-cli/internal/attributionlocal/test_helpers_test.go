@@ -154,6 +154,7 @@ func setupSyncEngineWithSpool(t *testing.T) syncEngineFixture {
 
 type syncBackendClientStub struct {
 	uploads []string
+	requests []client.ToolUsageEventRequest
 	failOn  string
 }
 
@@ -162,6 +163,7 @@ func (s *syncBackendClientStub) SendToolUsageEvent(_ context.Context, req client
 		return fmt.Errorf("upload failed for %s", req.DedupeKey)
 	}
 	s.uploads = append(s.uploads, req.DedupeKey)
+	s.requests = append(s.requests, req)
 	return nil
 }
 

@@ -54,6 +54,7 @@ func ParseCodexJSONLFallback(path, workspaceRoot string) ([]LocalToolUsageEvent,
 			if responseID == "" {
 				responseID = filepath.Base(path)
 			}
+			observedAt := parseObservedAt(row["timestamp"])
 			events = append(events, LocalToolUsageEvent{
 				Tool:              "codex",
 				ToolSessionID:     sessionID,
@@ -65,6 +66,8 @@ func ParseCodexJSONLFallback(path, workspaceRoot string) ([]LocalToolUsageEvent,
 				OutputTokens:      asInt64(selected["output_tokens"]),
 				CachedInputTokens: asInt64(selected["cached_input_tokens"]),
 				ReasoningTokens:   asInt64(selected["reasoning_output_tokens"]),
+				ObservedStartAt:   observedAt,
+				ObservedEndAt:     observedAt,
 				RawSourcePath:     path,
 				RawPayload:        payload,
 			})

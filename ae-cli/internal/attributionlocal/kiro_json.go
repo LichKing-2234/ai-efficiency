@@ -50,6 +50,7 @@ func ParseKiroJSON(path, workspaceRoot string) ([]LocalToolUsageEvent, error) {
 	if sessionID == "" {
 		return nil, nil
 	}
+	observedAt := sourceFileObservedAt(path)
 
 	out := make([]LocalToolUsageEvent, 0, len(doc.SessionState.ConversationMetadata.UserTurnMetadatas))
 	for idx, turn := range doc.SessionState.ConversationMetadata.UserTurnMetadatas {
@@ -70,6 +71,8 @@ func ParseKiroJSON(path, workspaceRoot string) ([]LocalToolUsageEvent, error) {
 			ContextUsagePct:  turn.ContextUsagePercentage,
 			InputTokens:      turn.InputTokenCount,
 			OutputTokens:     turn.OutputTokenCount,
+			ObservedStartAt:  observedAt,
+			ObservedEndAt:    observedAt,
 			RawSourcePath:    path,
 			RawSourceLocator: fmt.Sprintf("turn:%d", idx),
 			RawPayload: map[string]any{

@@ -3,6 +3,7 @@ package attributionlocal
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestParseCodexJSONL_PrefersLastTokenUsage(t *testing.T) {
@@ -10,7 +11,7 @@ func TestParseCodexJSONL_PrefersLastTokenUsage(t *testing.T) {
 
 	path := writeFile(t, "codex.jsonl", strings.Join([]string{
 		`{"type":"session_meta","payload":{"id":"sess-1","cwd":"/tmp/repo"}}`,
-		`{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"cached_input_tokens":10,"output_tokens":20,"reasoning_output_tokens":5,"total_tokens":120},"last_token_usage":{"input_tokens":7,"cached_input_tokens":1,"output_tokens":2,"reasoning_output_tokens":1,"total_tokens":9}}}}`,
+		`{"type":"event_msg","timestamp":"2026-05-19T10:00:00Z","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"cached_input_tokens":10,"output_tokens":20,"reasoning_output_tokens":5,"total_tokens":120},"last_token_usage":{"input_tokens":7,"cached_input_tokens":1,"output_tokens":2,"reasoning_output_tokens":1,"total_tokens":9}}}}`,
 	}, "\n"))
 
 	events, err := ParseCodexJSONLFallback(path, "/tmp/repo")
@@ -19,6 +20,10 @@ func TestParseCodexJSONL_PrefersLastTokenUsage(t *testing.T) {
 	}
 	if len(events) != 1 || events[0].InputTokens != 7 || events[0].OutputTokens != 2 {
 		t.Fatalf("events = %+v", events)
+	}
+	want := time.Date(2026, 5, 19, 10, 0, 0, 0, time.UTC)
+	if !events[0].ObservedStartAt.Equal(want) || !events[0].ObservedEndAt.Equal(want) {
+		t.Fatalf("observed timestamps = %s / %s, want %s", events[0].ObservedStartAt, events[0].ObservedEndAt, want)
 	}
 }
 
