@@ -92,6 +92,55 @@ func TestSync_ReplayDropsAlreadyUploadedPrefixOnFailure(t *testing.T) {
 	}
 }
 
+func TestSync_ReplayPersistsBackfilledObservedTimesOnFailure(t *testing.T) {
+	t.Parallel()
+
+	fixture := setupSyncEngineWithSpool(t)
+	fixture.Client.failOn = "legacy-zero-time"
+
+	sourcePath := writeFile(t, "legacy.jsonl", "{}\n")
+	want := time.Date(2026, 5, 19, 12, 34, 56, 0, time.UTC)
+	if err := os.Chtimes(sourcePath, want, want); err != nil {
+		t.Fatalf("Chtimes: %v", err)
+	}
+
+	payload := []LocalToolUsageEvent{{
+		Tool:          "claude",
+		WorkspaceID:   "ws-1",
+		ToolSessionID: "claude-1",
+		ToolEventID:   "msg-1",
+		DedupeKey:     "legacy-zero-time",
+		UsageUnit:     UsageUnitToken,
+		RequestCount:  1,
+		RawSourcePath: sourcePath,
+		RawPayload: map[string]any{
+			"timestamp": "2026-05-19T12:34:56Z",
+		},
+	}}
+	if err := SaveJSON(fixture.Engine.spoolPath, payload); err != nil {
+		t.Fatalf("SaveJSON: %v", err)
+	}
+
+	err := fixture.Engine.Replay(context.Background(), "/tmp/repo")
+	if err == nil {
+		t.Fatal("expected replay failure")
+	}
+
+	remaining, err := loadSpooledEvents(fixture.Engine.spoolPath)
+	if err != nil {
+		t.Fatalf("loadSpooledEvents: %v", err)
+	}
+	if len(remaining) != 1 {
+		t.Fatalf("remaining count = %d, want 1", len(remaining))
+	}
+	if remaining[0].ObservedStartAt.IsZero() || remaining[0].ObservedEndAt.IsZero() {
+		t.Fatalf("expected observed timestamps to be persisted, got %+v", remaining[0])
+	}
+	if !remaining[0].ObservedStartAt.Equal(want) || !remaining[0].ObservedEndAt.Equal(want) {
+		t.Fatalf("observed timestamps = %s / %s, want %s", remaining[0].ObservedStartAt, remaining[0].ObservedEndAt, want)
+	}
+}
+
 func TestSync_RunForWorkspaceWithoutClientSpoolsNewEvents(t *testing.T) {
 	fixture := buildAttributionFixture(t)
 	engine := &SyncEngine{

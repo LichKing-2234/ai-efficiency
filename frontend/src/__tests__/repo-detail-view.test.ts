@@ -439,6 +439,38 @@ describe('RepoDetailView', () => {
     expect(wrapper.findAll('button').some((button) => button.text() === 'Hide')).toBe(true)
   })
 
+  it('forces a fresh PR detail fetch after settle even if an older request was already in flight', async () => {
+    const firstDetail = createDeferred<any>()
+    let detailCalls = 0
+    const { wrapper, getPR, settlePR } = await mountRepoDetail(undefined, undefined, {
+      getPRImpl: vi.fn(async () => {
+        detailCalls += 1
+        if (detailCalls === 1) {
+          return firstDetail.promise
+        }
+        return detailFor(101, 88)
+      }),
+    })
+
+    const detailsButton = wrapper.findAll('button').find((button) => button.text() === 'Details')
+    const settleButton = wrapper.findAll('button').find((button) => button.text() === 'Settle')
+    expect(detailsButton).toBeTruthy()
+    expect(settleButton).toBeTruthy()
+
+    await detailsButton!.trigger('click')
+    await nextTick()
+    await settleButton!.trigger('click')
+    await nextTick()
+
+    expect(getPR).toHaveBeenCalledTimes(1)
+
+    firstDetail.resolve(detailFor(101, 88))
+    await flushPromises()
+
+    expect(settlePR).toHaveBeenCalledWith(101)
+    expect(getPR).toHaveBeenCalledTimes(2)
+  })
+
   it('adds noopener protection to external PR links', async () => {
     const { wrapper } = await mountRepoDetail()
     const link = wrapper.find('a[href="https://github.com/org/repo-a/pull/88"]')

@@ -181,7 +181,10 @@ async function ensurePRDetail(prId: number, options?: { force?: boolean }) {
   if (!forceRefresh && prDetails.value[prId]) return true
 
   const existingRequest = prDetailRequests.get(prId)
-  if (existingRequest) return existingRequest
+  if (existingRequest) {
+    if (!forceRefresh) return existingRequest
+    await existingRequest
+  }
 
   setPRDetailLoading(prId, true)
 
