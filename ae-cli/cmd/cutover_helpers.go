@@ -11,15 +11,11 @@ import (
 	"github.com/ai-efficiency/ae-cli/internal/session"
 )
 
-func legacyWorkflowRetiredError() error {
-	return fmt.Errorf("legacy workflow retired: use 'ae-cli init', 'ae-cli sync', or 'ae-cli doctor'")
-}
-
 type attributionContext struct {
-	repoRoot      string
-	gitDir        string
-	gitCommonDir  string
-	workspaceID   string
+	repoRoot        string
+	gitDir          string
+	gitCommonDir    string
+	workspaceID     string
 	attributionRoot string
 }
 

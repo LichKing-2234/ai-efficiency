@@ -1013,29 +1013,6 @@ func HasScmProviderWith(preds ...predicate.ScmProvider) predicate.RepoConfig {
 	})
 }
 
-// HasSessions applies the HasEdge predicate on the "sessions" edge.
-func HasSessions() predicate.RepoConfig {
-	return predicate.RepoConfig(func(s *sql.Selector) {
-		step := sqlgraph.NewStep(
-			sqlgraph.From(Table, FieldID),
-			sqlgraph.Edge(sqlgraph.O2M, false, SessionsTable, SessionsColumn),
-		)
-		sqlgraph.HasNeighbors(s, step)
-	})
-}
-
-// HasSessionsWith applies the HasEdge predicate on the "sessions" edge with a given conditions (other predicates).
-func HasSessionsWith(preds ...predicate.Session) predicate.RepoConfig {
-	return predicate.RepoConfig(func(s *sql.Selector) {
-		step := newSessionsStep()
-		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
-			for _, p := range preds {
-				p(s)
-			}
-		})
-	})
-}
-
 // HasCommitCheckpoints applies the HasEdge predicate on the "commit_checkpoints" edge.
 func HasCommitCheckpoints() predicate.RepoConfig {
 	return predicate.RepoConfig(func(s *sql.Selector) {

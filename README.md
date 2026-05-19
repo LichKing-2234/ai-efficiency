@@ -11,7 +11,7 @@ AI Efficiency Platform (`ai-efficiency`) is a standalone system for measuring an
 
 - Backend: Go (`Gin` + `Ent`) modular monolith
 - Frontend: Vue 3 (`Vite` + `Pinia` + `TailwindCSS`)
-- CLI: `ae-cli` for login, session bootstrap, hooks, collectors, and local tool runtime
+- CLI: `ae-cli` for login, provider discovery, hooks, collectors, and local tool configuration
 - Relay integration: HTTP provider boundary to `sub2api`, not direct DB coupling
 - SCM integration: unified provider interface for GitHub and Bitbucket Server
 
@@ -20,7 +20,7 @@ AI Efficiency Platform (`ai-efficiency`) is a standalone system for measuring an
 - The backend is the central orchestration point for auth, repo management, analysis, attribution, deployment control, and webhook handling.
 - The frontend is built separately and embedded into the backend binary for deployment.
 - The formal CLI workflow is now sessionless: `ae-cli init`, `ae-cli sync`, and `ae-cli doctor`.
-- Legacy `ae-cli start/stop/run/...` session commands and local-proxy runtime are retired.
+- Legacy `ae-cli start/stop/run/...` session commands are no longer shipped in the current CLI binary, and the local-proxy runtime is retired.
 - Production deployment currently supports Docker Compose and Linux systemd.
 
 ## Repository Layout

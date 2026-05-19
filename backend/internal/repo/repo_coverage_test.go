@@ -120,12 +120,6 @@ func TestDelete_WithAllChildTypes(t *testing.T) {
 	p := createSCMProvider(t, client)
 	rc := createRepo(t, svc, p.ID, "all-children-repo")
 
-	// Create session
-	client.Session.Create().
-		SetRepoConfigID(rc.ID).
-		SetBranch("main").
-		SaveX(ctx)
-
 	// Create AI scan result
 	client.AiScanResult.Create().
 		SetRepoConfigID(rc.ID).

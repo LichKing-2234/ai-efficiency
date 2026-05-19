@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/ai-efficiency/ae-cli/internal/attributionlocal"
-	"github.com/spf13/cobra"
 )
 
 func TestRootCommandHasSessionlessPrimaryCommands(t *testing.T) {
@@ -31,59 +30,23 @@ func TestRootCommandHasSessionlessPrimaryCommands(t *testing.T) {
 	}
 }
 
-func TestLegacyWorkflowCommandsAreHidden(t *testing.T) {
-	legacy := []*cobraCommandRef{
-		{name: "start", cmd: startCmd},
-		{name: "stop", cmd: stopCmd},
-		{name: "run", cmd: runCmd},
-		{name: "attach", cmd: attachCmd},
-		{name: "ps", cmd: psCmd},
-		{name: "kill", cmd: killCmd},
-		{name: "shell", cmd: shellCmd},
-		{name: "flush", cmd: flushCmd},
+func TestRootCommandDoesNotExposeLegacyWorkflowCommands(t *testing.T) {
+	legacy := map[string]struct{}{
+		"start":  {},
+		"stop":   {},
+		"run":    {},
+		"attach": {},
+		"ps":     {},
+		"kill":   {},
+		"shell":  {},
+		"flush":  {},
 	}
 
-	for _, item := range legacy {
-		if !item.cmd.Hidden {
-			t.Fatalf("expected legacy command %q to be hidden", item.name)
+	for _, cmd := range rootCmd.Commands() {
+		if _, ok := legacy[cmd.Name()]; ok {
+			t.Fatalf("unexpected legacy command %q still registered", cmd.Name())
 		}
 	}
-}
-
-func TestLegacyWorkflowCommandsReturnMigrationGuidance(t *testing.T) {
-	tests := []struct {
-		name string
-		run  func() error
-	}{
-		{name: "start", run: func() error { return startCmd.RunE(startCmd, nil) }},
-		{name: "stop", run: func() error { return stopCmd.RunE(stopCmd, nil) }},
-		{name: "run", run: func() error { return runCmd.RunE(runCmd, []string{"claude"}) }},
-		{name: "attach", run: func() error { return attachCmd.RunE(attachCmd, nil) }},
-		{name: "ps", run: func() error { return psCmd.RunE(psCmd, nil) }},
-		{name: "kill", run: func() error { return killCmd.RunE(killCmd, []string{"%1"}) }},
-		{name: "shell", run: func() error { return shellCmd.RunE(shellCmd, nil) }},
-		{name: "flush", run: func() error { return flushCmd.RunE(flushCmd, nil) }},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			err := tc.run()
-			if err == nil {
-				t.Fatal("expected migration error")
-			}
-			msg := err.Error()
-			for _, want := range []string{"legacy workflow", "ae-cli init", "ae-cli sync", "ae-cli doctor"} {
-				if !strings.Contains(msg, want) {
-					t.Fatalf("error = %q, want substring %q", msg, want)
-				}
-			}
-		})
-	}
-}
-
-type cobraCommandRef struct {
-	name string
-	cmd  *cobra.Command
 }
 
 func TestInitCommandCreatesAttributionStateDir(t *testing.T) {

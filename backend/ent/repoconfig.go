@@ -60,8 +60,6 @@ type RepoConfig struct {
 type RepoConfigEdges struct {
 	// ScmProvider holds the value of the scm_provider edge.
 	ScmProvider *ScmProvider `json:"scm_provider,omitempty"`
-	// Sessions holds the value of the sessions edge.
-	Sessions []*Session `json:"sessions,omitempty"`
 	// CommitCheckpoints holds the value of the commit_checkpoints edge.
 	CommitCheckpoints []*CommitCheckpoint `json:"commit_checkpoints,omitempty"`
 	// CommitRewrites holds the value of the commit_rewrites edge.
@@ -78,7 +76,7 @@ type RepoConfigEdges struct {
 	EfficiencyMetrics []*EfficiencyMetric `json:"efficiency_metrics,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [9]bool
+	loadedTypes [8]bool
 }
 
 // ScmProviderOrErr returns the ScmProvider value or an error if the edge
@@ -92,19 +90,10 @@ func (e RepoConfigEdges) ScmProviderOrErr() (*ScmProvider, error) {
 	return nil, &NotLoadedError{edge: "scm_provider"}
 }
 
-// SessionsOrErr returns the Sessions value or an error if the edge
-// was not loaded in eager-loading.
-func (e RepoConfigEdges) SessionsOrErr() ([]*Session, error) {
-	if e.loadedTypes[1] {
-		return e.Sessions, nil
-	}
-	return nil, &NotLoadedError{edge: "sessions"}
-}
-
 // CommitCheckpointsOrErr returns the CommitCheckpoints value or an error if the edge
 // was not loaded in eager-loading.
 func (e RepoConfigEdges) CommitCheckpointsOrErr() ([]*CommitCheckpoint, error) {
-	if e.loadedTypes[2] {
+	if e.loadedTypes[1] {
 		return e.CommitCheckpoints, nil
 	}
 	return nil, &NotLoadedError{edge: "commit_checkpoints"}
@@ -113,7 +102,7 @@ func (e RepoConfigEdges) CommitCheckpointsOrErr() ([]*CommitCheckpoint, error) {
 // CommitRewritesOrErr returns the CommitRewrites value or an error if the edge
 // was not loaded in eager-loading.
 func (e RepoConfigEdges) CommitRewritesOrErr() ([]*CommitRewrite, error) {
-	if e.loadedTypes[3] {
+	if e.loadedTypes[2] {
 		return e.CommitRewrites, nil
 	}
 	return nil, &NotLoadedError{edge: "commit_rewrites"}
@@ -122,7 +111,7 @@ func (e RepoConfigEdges) CommitRewritesOrErr() ([]*CommitRewrite, error) {
 // ToolUsageEventsOrErr returns the ToolUsageEvents value or an error if the edge
 // was not loaded in eager-loading.
 func (e RepoConfigEdges) ToolUsageEventsOrErr() ([]*ToolUsageEvent, error) {
-	if e.loadedTypes[4] {
+	if e.loadedTypes[3] {
 		return e.ToolUsageEvents, nil
 	}
 	return nil, &NotLoadedError{edge: "tool_usage_events"}
@@ -131,7 +120,7 @@ func (e RepoConfigEdges) ToolUsageEventsOrErr() ([]*ToolUsageEvent, error) {
 // WebhookDeadLettersOrErr returns the WebhookDeadLetters value or an error if the edge
 // was not loaded in eager-loading.
 func (e RepoConfigEdges) WebhookDeadLettersOrErr() ([]*WebhookDeadLetter, error) {
-	if e.loadedTypes[5] {
+	if e.loadedTypes[4] {
 		return e.WebhookDeadLetters, nil
 	}
 	return nil, &NotLoadedError{edge: "webhook_dead_letters"}
@@ -140,7 +129,7 @@ func (e RepoConfigEdges) WebhookDeadLettersOrErr() ([]*WebhookDeadLetter, error)
 // AiScanResultsOrErr returns the AiScanResults value or an error if the edge
 // was not loaded in eager-loading.
 func (e RepoConfigEdges) AiScanResultsOrErr() ([]*AiScanResult, error) {
-	if e.loadedTypes[6] {
+	if e.loadedTypes[5] {
 		return e.AiScanResults, nil
 	}
 	return nil, &NotLoadedError{edge: "ai_scan_results"}
@@ -149,7 +138,7 @@ func (e RepoConfigEdges) AiScanResultsOrErr() ([]*AiScanResult, error) {
 // PrRecordsOrErr returns the PrRecords value or an error if the edge
 // was not loaded in eager-loading.
 func (e RepoConfigEdges) PrRecordsOrErr() ([]*PrRecord, error) {
-	if e.loadedTypes[7] {
+	if e.loadedTypes[6] {
 		return e.PrRecords, nil
 	}
 	return nil, &NotLoadedError{edge: "pr_records"}
@@ -158,7 +147,7 @@ func (e RepoConfigEdges) PrRecordsOrErr() ([]*PrRecord, error) {
 // EfficiencyMetricsOrErr returns the EfficiencyMetrics value or an error if the edge
 // was not loaded in eager-loading.
 func (e RepoConfigEdges) EfficiencyMetricsOrErr() ([]*EfficiencyMetric, error) {
-	if e.loadedTypes[8] {
+	if e.loadedTypes[7] {
 		return e.EfficiencyMetrics, nil
 	}
 	return nil, &NotLoadedError{edge: "efficiency_metrics"}
@@ -321,11 +310,6 @@ func (rc *RepoConfig) Value(name string) (ent.Value, error) {
 // QueryScmProvider queries the "scm_provider" edge of the RepoConfig entity.
 func (rc *RepoConfig) QueryScmProvider() *ScmProviderQuery {
 	return NewRepoConfigClient(rc.config).QueryScmProvider(rc)
-}
-
-// QuerySessions queries the "sessions" edge of the RepoConfig entity.
-func (rc *RepoConfig) QuerySessions() *SessionQuery {
-	return NewRepoConfigClient(rc.config).QuerySessions(rc)
 }
 
 // QueryCommitCheckpoints queries the "commit_checkpoints" edge of the RepoConfig entity.

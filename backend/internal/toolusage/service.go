@@ -9,8 +9,6 @@ import (
 
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
-	"github.com/ai-efficiency/backend/ent/repoconfig"
-	"github.com/ai-efficiency/backend/ent/session"
 	"github.com/ai-efficiency/backend/ent/toolusageevent"
 )
 
@@ -164,13 +162,12 @@ func (s *Service) resolveScopeByWorkspace(ctx context.Context, workspaceID strin
 		Order(ent.Desc(commitcheckpoint.FieldCapturedAt)).
 		First(ctx)
 	if err == nil {
-		userID := firstUserIDForRepo(ctx, s.entClient, checkpoint.RepoConfigID)
-		if userID <= 0 {
+		if checkpoint.UserID == nil || *checkpoint.UserID <= 0 {
 			return nil, fmt.Errorf("create tool usage event: workspace_id %q has no known user scope", workspaceID)
 		}
 		return &scopeResolution{
 			RepoConfigID: checkpoint.RepoConfigID,
-			UserID:       userID,
+			UserID:       *checkpoint.UserID,
 		}, nil
 	}
 	if err != nil && !ent.IsNotFound(err) {
@@ -178,18 +175,6 @@ func (s *Service) resolveScopeByWorkspace(ctx context.Context, workspaceID strin
 	}
 
 	return nil, fmt.Errorf("create tool usage event: workspace_id %q has no known repo/user scope", workspaceID)
-}
-
-func firstUserIDForRepo(ctx context.Context, entClient *ent.Client, repoConfigID int) int {
-	sess, err := entClient.Session.Query().
-		Where(session.HasRepoConfigWith(repoconfig.IDEQ(repoConfigID))).
-		WithUser().
-		Order(ent.Desc(session.FieldStartedAt)).
-		First(ctx)
-	if err == nil && sess.Edges.User != nil {
-		return sess.Edges.User.ID
-	}
-	return 0
 }
 
 func (s *Service) resolveCheckpointBinding(ctx context.Context, repoConfigID int, workspaceID string, observedEndAt time.Time) (int, bool, error) {

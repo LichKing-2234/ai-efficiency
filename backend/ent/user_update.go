@@ -11,11 +11,11 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
+	"github.com/ai-efficiency/backend/ent/commitrewrite"
 	"github.com/ai-efficiency/backend/ent/predicate"
-	"github.com/ai-efficiency/backend/ent/session"
 	"github.com/ai-efficiency/backend/ent/toolusageevent"
 	"github.com/ai-efficiency/backend/ent/user"
-	"github.com/google/uuid"
 )
 
 // UserUpdate is the builder for updating User entities.
@@ -160,19 +160,34 @@ func (uu *UserUpdate) SetUpdatedAt(t time.Time) *UserUpdate {
 	return uu
 }
 
-// AddSessionIDs adds the "sessions" edge to the Session entity by IDs.
-func (uu *UserUpdate) AddSessionIDs(ids ...uuid.UUID) *UserUpdate {
-	uu.mutation.AddSessionIDs(ids...)
+// AddCommitCheckpointIDs adds the "commit_checkpoints" edge to the CommitCheckpoint entity by IDs.
+func (uu *UserUpdate) AddCommitCheckpointIDs(ids ...int) *UserUpdate {
+	uu.mutation.AddCommitCheckpointIDs(ids...)
 	return uu
 }
 
-// AddSessions adds the "sessions" edges to the Session entity.
-func (uu *UserUpdate) AddSessions(s ...*Session) *UserUpdate {
-	ids := make([]uuid.UUID, len(s))
-	for i := range s {
-		ids[i] = s[i].ID
+// AddCommitCheckpoints adds the "commit_checkpoints" edges to the CommitCheckpoint entity.
+func (uu *UserUpdate) AddCommitCheckpoints(c ...*CommitCheckpoint) *UserUpdate {
+	ids := make([]int, len(c))
+	for i := range c {
+		ids[i] = c[i].ID
 	}
-	return uu.AddSessionIDs(ids...)
+	return uu.AddCommitCheckpointIDs(ids...)
+}
+
+// AddCommitRewriteIDs adds the "commit_rewrites" edge to the CommitRewrite entity by IDs.
+func (uu *UserUpdate) AddCommitRewriteIDs(ids ...int) *UserUpdate {
+	uu.mutation.AddCommitRewriteIDs(ids...)
+	return uu
+}
+
+// AddCommitRewrites adds the "commit_rewrites" edges to the CommitRewrite entity.
+func (uu *UserUpdate) AddCommitRewrites(c ...*CommitRewrite) *UserUpdate {
+	ids := make([]int, len(c))
+	for i := range c {
+		ids[i] = c[i].ID
+	}
+	return uu.AddCommitRewriteIDs(ids...)
 }
 
 // AddToolUsageEventIDs adds the "tool_usage_events" edge to the ToolUsageEvent entity by IDs.
@@ -195,25 +210,46 @@ func (uu *UserUpdate) Mutation() *UserMutation {
 	return uu.mutation
 }
 
-// ClearSessions clears all "sessions" edges to the Session entity.
-func (uu *UserUpdate) ClearSessions() *UserUpdate {
-	uu.mutation.ClearSessions()
+// ClearCommitCheckpoints clears all "commit_checkpoints" edges to the CommitCheckpoint entity.
+func (uu *UserUpdate) ClearCommitCheckpoints() *UserUpdate {
+	uu.mutation.ClearCommitCheckpoints()
 	return uu
 }
 
-// RemoveSessionIDs removes the "sessions" edge to Session entities by IDs.
-func (uu *UserUpdate) RemoveSessionIDs(ids ...uuid.UUID) *UserUpdate {
-	uu.mutation.RemoveSessionIDs(ids...)
+// RemoveCommitCheckpointIDs removes the "commit_checkpoints" edge to CommitCheckpoint entities by IDs.
+func (uu *UserUpdate) RemoveCommitCheckpointIDs(ids ...int) *UserUpdate {
+	uu.mutation.RemoveCommitCheckpointIDs(ids...)
 	return uu
 }
 
-// RemoveSessions removes "sessions" edges to Session entities.
-func (uu *UserUpdate) RemoveSessions(s ...*Session) *UserUpdate {
-	ids := make([]uuid.UUID, len(s))
-	for i := range s {
-		ids[i] = s[i].ID
+// RemoveCommitCheckpoints removes "commit_checkpoints" edges to CommitCheckpoint entities.
+func (uu *UserUpdate) RemoveCommitCheckpoints(c ...*CommitCheckpoint) *UserUpdate {
+	ids := make([]int, len(c))
+	for i := range c {
+		ids[i] = c[i].ID
 	}
-	return uu.RemoveSessionIDs(ids...)
+	return uu.RemoveCommitCheckpointIDs(ids...)
+}
+
+// ClearCommitRewrites clears all "commit_rewrites" edges to the CommitRewrite entity.
+func (uu *UserUpdate) ClearCommitRewrites() *UserUpdate {
+	uu.mutation.ClearCommitRewrites()
+	return uu
+}
+
+// RemoveCommitRewriteIDs removes the "commit_rewrites" edge to CommitRewrite entities by IDs.
+func (uu *UserUpdate) RemoveCommitRewriteIDs(ids ...int) *UserUpdate {
+	uu.mutation.RemoveCommitRewriteIDs(ids...)
+	return uu
+}
+
+// RemoveCommitRewrites removes "commit_rewrites" edges to CommitRewrite entities.
+func (uu *UserUpdate) RemoveCommitRewrites(c ...*CommitRewrite) *UserUpdate {
+	ids := make([]int, len(c))
+	for i := range c {
+		ids[i] = c[i].ID
+	}
+	return uu.RemoveCommitRewriteIDs(ids...)
 }
 
 // ClearToolUsageEvents clears all "tool_usage_events" edges to the ToolUsageEvent entity.
@@ -346,28 +382,28 @@ func (uu *UserUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if value, ok := uu.mutation.UpdatedAt(); ok {
 		_spec.SetField(user.FieldUpdatedAt, field.TypeTime, value)
 	}
-	if uu.mutation.SessionsCleared() {
+	if uu.mutation.CommitCheckpointsCleared() {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.O2M,
 			Inverse: false,
-			Table:   user.SessionsTable,
-			Columns: []string{user.SessionsColumn},
+			Table:   user.CommitCheckpointsTable,
+			Columns: []string{user.CommitCheckpointsColumn},
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(session.FieldID, field.TypeUUID),
+				IDSpec: sqlgraph.NewFieldSpec(commitcheckpoint.FieldID, field.TypeInt),
 			},
 		}
 		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
 	}
-	if nodes := uu.mutation.RemovedSessionsIDs(); len(nodes) > 0 && !uu.mutation.SessionsCleared() {
+	if nodes := uu.mutation.RemovedCommitCheckpointsIDs(); len(nodes) > 0 && !uu.mutation.CommitCheckpointsCleared() {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.O2M,
 			Inverse: false,
-			Table:   user.SessionsTable,
-			Columns: []string{user.SessionsColumn},
+			Table:   user.CommitCheckpointsTable,
+			Columns: []string{user.CommitCheckpointsColumn},
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(session.FieldID, field.TypeUUID),
+				IDSpec: sqlgraph.NewFieldSpec(commitcheckpoint.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {
@@ -375,15 +411,60 @@ func (uu *UserUpdate) sqlSave(ctx context.Context) (n int, err error) {
 		}
 		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
 	}
-	if nodes := uu.mutation.SessionsIDs(); len(nodes) > 0 {
+	if nodes := uu.mutation.CommitCheckpointsIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.O2M,
 			Inverse: false,
-			Table:   user.SessionsTable,
-			Columns: []string{user.SessionsColumn},
+			Table:   user.CommitCheckpointsTable,
+			Columns: []string{user.CommitCheckpointsColumn},
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(session.FieldID, field.TypeUUID),
+				IDSpec: sqlgraph.NewFieldSpec(commitcheckpoint.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if uu.mutation.CommitRewritesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.CommitRewritesTable,
+			Columns: []string{user.CommitRewritesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(commitrewrite.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := uu.mutation.RemovedCommitRewritesIDs(); len(nodes) > 0 && !uu.mutation.CommitRewritesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.CommitRewritesTable,
+			Columns: []string{user.CommitRewritesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(commitrewrite.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := uu.mutation.CommitRewritesIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.CommitRewritesTable,
+			Columns: []string{user.CommitRewritesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(commitrewrite.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {
@@ -585,19 +666,34 @@ func (uuo *UserUpdateOne) SetUpdatedAt(t time.Time) *UserUpdateOne {
 	return uuo
 }
 
-// AddSessionIDs adds the "sessions" edge to the Session entity by IDs.
-func (uuo *UserUpdateOne) AddSessionIDs(ids ...uuid.UUID) *UserUpdateOne {
-	uuo.mutation.AddSessionIDs(ids...)
+// AddCommitCheckpointIDs adds the "commit_checkpoints" edge to the CommitCheckpoint entity by IDs.
+func (uuo *UserUpdateOne) AddCommitCheckpointIDs(ids ...int) *UserUpdateOne {
+	uuo.mutation.AddCommitCheckpointIDs(ids...)
 	return uuo
 }
 
-// AddSessions adds the "sessions" edges to the Session entity.
-func (uuo *UserUpdateOne) AddSessions(s ...*Session) *UserUpdateOne {
-	ids := make([]uuid.UUID, len(s))
-	for i := range s {
-		ids[i] = s[i].ID
+// AddCommitCheckpoints adds the "commit_checkpoints" edges to the CommitCheckpoint entity.
+func (uuo *UserUpdateOne) AddCommitCheckpoints(c ...*CommitCheckpoint) *UserUpdateOne {
+	ids := make([]int, len(c))
+	for i := range c {
+		ids[i] = c[i].ID
 	}
-	return uuo.AddSessionIDs(ids...)
+	return uuo.AddCommitCheckpointIDs(ids...)
+}
+
+// AddCommitRewriteIDs adds the "commit_rewrites" edge to the CommitRewrite entity by IDs.
+func (uuo *UserUpdateOne) AddCommitRewriteIDs(ids ...int) *UserUpdateOne {
+	uuo.mutation.AddCommitRewriteIDs(ids...)
+	return uuo
+}
+
+// AddCommitRewrites adds the "commit_rewrites" edges to the CommitRewrite entity.
+func (uuo *UserUpdateOne) AddCommitRewrites(c ...*CommitRewrite) *UserUpdateOne {
+	ids := make([]int, len(c))
+	for i := range c {
+		ids[i] = c[i].ID
+	}
+	return uuo.AddCommitRewriteIDs(ids...)
 }
 
 // AddToolUsageEventIDs adds the "tool_usage_events" edge to the ToolUsageEvent entity by IDs.
@@ -620,25 +716,46 @@ func (uuo *UserUpdateOne) Mutation() *UserMutation {
 	return uuo.mutation
 }
 
-// ClearSessions clears all "sessions" edges to the Session entity.
-func (uuo *UserUpdateOne) ClearSessions() *UserUpdateOne {
-	uuo.mutation.ClearSessions()
+// ClearCommitCheckpoints clears all "commit_checkpoints" edges to the CommitCheckpoint entity.
+func (uuo *UserUpdateOne) ClearCommitCheckpoints() *UserUpdateOne {
+	uuo.mutation.ClearCommitCheckpoints()
 	return uuo
 }
 
-// RemoveSessionIDs removes the "sessions" edge to Session entities by IDs.
-func (uuo *UserUpdateOne) RemoveSessionIDs(ids ...uuid.UUID) *UserUpdateOne {
-	uuo.mutation.RemoveSessionIDs(ids...)
+// RemoveCommitCheckpointIDs removes the "commit_checkpoints" edge to CommitCheckpoint entities by IDs.
+func (uuo *UserUpdateOne) RemoveCommitCheckpointIDs(ids ...int) *UserUpdateOne {
+	uuo.mutation.RemoveCommitCheckpointIDs(ids...)
 	return uuo
 }
 
-// RemoveSessions removes "sessions" edges to Session entities.
-func (uuo *UserUpdateOne) RemoveSessions(s ...*Session) *UserUpdateOne {
-	ids := make([]uuid.UUID, len(s))
-	for i := range s {
-		ids[i] = s[i].ID
+// RemoveCommitCheckpoints removes "commit_checkpoints" edges to CommitCheckpoint entities.
+func (uuo *UserUpdateOne) RemoveCommitCheckpoints(c ...*CommitCheckpoint) *UserUpdateOne {
+	ids := make([]int, len(c))
+	for i := range c {
+		ids[i] = c[i].ID
 	}
-	return uuo.RemoveSessionIDs(ids...)
+	return uuo.RemoveCommitCheckpointIDs(ids...)
+}
+
+// ClearCommitRewrites clears all "commit_rewrites" edges to the CommitRewrite entity.
+func (uuo *UserUpdateOne) ClearCommitRewrites() *UserUpdateOne {
+	uuo.mutation.ClearCommitRewrites()
+	return uuo
+}
+
+// RemoveCommitRewriteIDs removes the "commit_rewrites" edge to CommitRewrite entities by IDs.
+func (uuo *UserUpdateOne) RemoveCommitRewriteIDs(ids ...int) *UserUpdateOne {
+	uuo.mutation.RemoveCommitRewriteIDs(ids...)
+	return uuo
+}
+
+// RemoveCommitRewrites removes "commit_rewrites" edges to CommitRewrite entities.
+func (uuo *UserUpdateOne) RemoveCommitRewrites(c ...*CommitRewrite) *UserUpdateOne {
+	ids := make([]int, len(c))
+	for i := range c {
+		ids[i] = c[i].ID
+	}
+	return uuo.RemoveCommitRewriteIDs(ids...)
 }
 
 // ClearToolUsageEvents clears all "tool_usage_events" edges to the ToolUsageEvent entity.
@@ -801,28 +918,28 @@ func (uuo *UserUpdateOne) sqlSave(ctx context.Context) (_node *User, err error) 
 	if value, ok := uuo.mutation.UpdatedAt(); ok {
 		_spec.SetField(user.FieldUpdatedAt, field.TypeTime, value)
 	}
-	if uuo.mutation.SessionsCleared() {
+	if uuo.mutation.CommitCheckpointsCleared() {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.O2M,
 			Inverse: false,
-			Table:   user.SessionsTable,
-			Columns: []string{user.SessionsColumn},
+			Table:   user.CommitCheckpointsTable,
+			Columns: []string{user.CommitCheckpointsColumn},
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(session.FieldID, field.TypeUUID),
+				IDSpec: sqlgraph.NewFieldSpec(commitcheckpoint.FieldID, field.TypeInt),
 			},
 		}
 		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
 	}
-	if nodes := uuo.mutation.RemovedSessionsIDs(); len(nodes) > 0 && !uuo.mutation.SessionsCleared() {
+	if nodes := uuo.mutation.RemovedCommitCheckpointsIDs(); len(nodes) > 0 && !uuo.mutation.CommitCheckpointsCleared() {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.O2M,
 			Inverse: false,
-			Table:   user.SessionsTable,
-			Columns: []string{user.SessionsColumn},
+			Table:   user.CommitCheckpointsTable,
+			Columns: []string{user.CommitCheckpointsColumn},
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(session.FieldID, field.TypeUUID),
+				IDSpec: sqlgraph.NewFieldSpec(commitcheckpoint.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {
@@ -830,15 +947,60 @@ func (uuo *UserUpdateOne) sqlSave(ctx context.Context) (_node *User, err error) 
 		}
 		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
 	}
-	if nodes := uuo.mutation.SessionsIDs(); len(nodes) > 0 {
+	if nodes := uuo.mutation.CommitCheckpointsIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.O2M,
 			Inverse: false,
-			Table:   user.SessionsTable,
-			Columns: []string{user.SessionsColumn},
+			Table:   user.CommitCheckpointsTable,
+			Columns: []string{user.CommitCheckpointsColumn},
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(session.FieldID, field.TypeUUID),
+				IDSpec: sqlgraph.NewFieldSpec(commitcheckpoint.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if uuo.mutation.CommitRewritesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.CommitRewritesTable,
+			Columns: []string{user.CommitRewritesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(commitrewrite.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := uuo.mutation.RemovedCommitRewritesIDs(); len(nodes) > 0 && !uuo.mutation.CommitRewritesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.CommitRewritesTable,
+			Columns: []string{user.CommitRewritesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(commitrewrite.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := uuo.mutation.CommitRewritesIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.CommitRewritesTable,
+			Columns: []string{user.CommitRewritesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(commitrewrite.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {

@@ -12,9 +12,8 @@ import (
 	"entgo.io/ent/schema/field"
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
-	"github.com/ai-efficiency/backend/ent/session"
 	"github.com/ai-efficiency/backend/ent/toolusageevent"
-	"github.com/google/uuid"
+	"github.com/ai-efficiency/backend/ent/user"
 )
 
 // CommitCheckpointCreate is the builder for creating a CommitCheckpoint entity.
@@ -30,16 +29,16 @@ func (ccc *CommitCheckpointCreate) SetEventID(s string) *CommitCheckpointCreate 
 	return ccc
 }
 
-// SetSessionID sets the "session_id" field.
-func (ccc *CommitCheckpointCreate) SetSessionID(u uuid.UUID) *CommitCheckpointCreate {
-	ccc.mutation.SetSessionID(u)
+// SetUserID sets the "user_id" field.
+func (ccc *CommitCheckpointCreate) SetUserID(i int) *CommitCheckpointCreate {
+	ccc.mutation.SetUserID(i)
 	return ccc
 }
 
-// SetNillableSessionID sets the "session_id" field if the given value is not nil.
-func (ccc *CommitCheckpointCreate) SetNillableSessionID(u *uuid.UUID) *CommitCheckpointCreate {
-	if u != nil {
-		ccc.SetSessionID(*u)
+// SetNillableUserID sets the "user_id" field if the given value is not nil.
+func (ccc *CommitCheckpointCreate) SetNillableUserID(i *int) *CommitCheckpointCreate {
+	if i != nil {
+		ccc.SetUserID(*i)
 	}
 	return ccc
 }
@@ -122,9 +121,9 @@ func (ccc *CommitCheckpointCreate) SetNillableCapturedAt(t *time.Time) *CommitCh
 	return ccc
 }
 
-// SetSession sets the "session" edge to the Session entity.
-func (ccc *CommitCheckpointCreate) SetSession(s *Session) *CommitCheckpointCreate {
-	return ccc.SetSessionID(s.ID)
+// SetUser sets the "user" edge to the User entity.
+func (ccc *CommitCheckpointCreate) SetUser(u *User) *CommitCheckpointCreate {
+	return ccc.SetUserID(u.ID)
 }
 
 // SetRepoConfig sets the "repo_config" edge to the RepoConfig entity.
@@ -291,21 +290,21 @@ func (ccc *CommitCheckpointCreate) createSpec() (*CommitCheckpoint, *sqlgraph.Cr
 		_spec.SetField(commitcheckpoint.FieldCapturedAt, field.TypeTime, value)
 		_node.CapturedAt = value
 	}
-	if nodes := ccc.mutation.SessionIDs(); len(nodes) > 0 {
+	if nodes := ccc.mutation.UserIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.M2O,
 			Inverse: true,
-			Table:   commitcheckpoint.SessionTable,
-			Columns: []string{commitcheckpoint.SessionColumn},
+			Table:   commitcheckpoint.UserTable,
+			Columns: []string{commitcheckpoint.UserColumn},
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(session.FieldID, field.TypeUUID),
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {
 			edge.Target.Nodes = append(edge.Target.Nodes, k)
 		}
-		_node.SessionID = &nodes[0]
+		_node.UserID = &nodes[0]
 		_spec.Edges = append(_spec.Edges, edge)
 	}
 	if nodes := ccc.mutation.RepoConfigIDs(); len(nodes) > 0 {

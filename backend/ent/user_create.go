@@ -10,10 +10,10 @@ import (
 
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
-	"github.com/ai-efficiency/backend/ent/session"
+	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
+	"github.com/ai-efficiency/backend/ent/commitrewrite"
 	"github.com/ai-efficiency/backend/ent/toolusageevent"
 	"github.com/ai-efficiency/backend/ent/user"
-	"github.com/google/uuid"
 )
 
 // UserCreate is the builder for creating a User entity.
@@ -125,19 +125,34 @@ func (uc *UserCreate) SetNillableUpdatedAt(t *time.Time) *UserCreate {
 	return uc
 }
 
-// AddSessionIDs adds the "sessions" edge to the Session entity by IDs.
-func (uc *UserCreate) AddSessionIDs(ids ...uuid.UUID) *UserCreate {
-	uc.mutation.AddSessionIDs(ids...)
+// AddCommitCheckpointIDs adds the "commit_checkpoints" edge to the CommitCheckpoint entity by IDs.
+func (uc *UserCreate) AddCommitCheckpointIDs(ids ...int) *UserCreate {
+	uc.mutation.AddCommitCheckpointIDs(ids...)
 	return uc
 }
 
-// AddSessions adds the "sessions" edges to the Session entity.
-func (uc *UserCreate) AddSessions(s ...*Session) *UserCreate {
-	ids := make([]uuid.UUID, len(s))
-	for i := range s {
-		ids[i] = s[i].ID
+// AddCommitCheckpoints adds the "commit_checkpoints" edges to the CommitCheckpoint entity.
+func (uc *UserCreate) AddCommitCheckpoints(c ...*CommitCheckpoint) *UserCreate {
+	ids := make([]int, len(c))
+	for i := range c {
+		ids[i] = c[i].ID
 	}
-	return uc.AddSessionIDs(ids...)
+	return uc.AddCommitCheckpointIDs(ids...)
+}
+
+// AddCommitRewriteIDs adds the "commit_rewrites" edge to the CommitRewrite entity by IDs.
+func (uc *UserCreate) AddCommitRewriteIDs(ids ...int) *UserCreate {
+	uc.mutation.AddCommitRewriteIDs(ids...)
+	return uc
+}
+
+// AddCommitRewrites adds the "commit_rewrites" edges to the CommitRewrite entity.
+func (uc *UserCreate) AddCommitRewrites(c ...*CommitRewrite) *UserCreate {
+	ids := make([]int, len(c))
+	for i := range c {
+		ids[i] = c[i].ID
+	}
+	return uc.AddCommitRewriteIDs(ids...)
 }
 
 // AddToolUsageEventIDs adds the "tool_usage_events" edge to the ToolUsageEvent entity by IDs.
@@ -306,15 +321,31 @@ func (uc *UserCreate) createSpec() (*User, *sqlgraph.CreateSpec) {
 		_spec.SetField(user.FieldUpdatedAt, field.TypeTime, value)
 		_node.UpdatedAt = value
 	}
-	if nodes := uc.mutation.SessionsIDs(); len(nodes) > 0 {
+	if nodes := uc.mutation.CommitCheckpointsIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.O2M,
 			Inverse: false,
-			Table:   user.SessionsTable,
-			Columns: []string{user.SessionsColumn},
+			Table:   user.CommitCheckpointsTable,
+			Columns: []string{user.CommitCheckpointsColumn},
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(session.FieldID, field.TypeUUID),
+				IDSpec: sqlgraph.NewFieldSpec(commitcheckpoint.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := uc.mutation.CommitRewritesIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.CommitRewritesTable,
+			Columns: []string{user.CommitRewritesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(commitrewrite.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {

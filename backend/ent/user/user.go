@@ -33,19 +33,28 @@ const (
 	FieldCreatedAt = "created_at"
 	// FieldUpdatedAt holds the string denoting the updated_at field in the database.
 	FieldUpdatedAt = "updated_at"
-	// EdgeSessions holds the string denoting the sessions edge name in mutations.
-	EdgeSessions = "sessions"
+	// EdgeCommitCheckpoints holds the string denoting the commit_checkpoints edge name in mutations.
+	EdgeCommitCheckpoints = "commit_checkpoints"
+	// EdgeCommitRewrites holds the string denoting the commit_rewrites edge name in mutations.
+	EdgeCommitRewrites = "commit_rewrites"
 	// EdgeToolUsageEvents holds the string denoting the tool_usage_events edge name in mutations.
 	EdgeToolUsageEvents = "tool_usage_events"
 	// Table holds the table name of the user in the database.
 	Table = "users"
-	// SessionsTable is the table that holds the sessions relation/edge.
-	SessionsTable = "sessions"
-	// SessionsInverseTable is the table name for the Session entity.
-	// It exists in this package in order to avoid circular dependency with the "session" package.
-	SessionsInverseTable = "sessions"
-	// SessionsColumn is the table column denoting the sessions relation/edge.
-	SessionsColumn = "user_sessions"
+	// CommitCheckpointsTable is the table that holds the commit_checkpoints relation/edge.
+	CommitCheckpointsTable = "commit_checkpoints"
+	// CommitCheckpointsInverseTable is the table name for the CommitCheckpoint entity.
+	// It exists in this package in order to avoid circular dependency with the "commitcheckpoint" package.
+	CommitCheckpointsInverseTable = "commit_checkpoints"
+	// CommitCheckpointsColumn is the table column denoting the commit_checkpoints relation/edge.
+	CommitCheckpointsColumn = "user_id"
+	// CommitRewritesTable is the table that holds the commit_rewrites relation/edge.
+	CommitRewritesTable = "commit_rewrites"
+	// CommitRewritesInverseTable is the table name for the CommitRewrite entity.
+	// It exists in this package in order to avoid circular dependency with the "commitrewrite" package.
+	CommitRewritesInverseTable = "commit_rewrites"
+	// CommitRewritesColumn is the table column denoting the commit_rewrites relation/edge.
+	CommitRewritesColumn = "user_id"
 	// ToolUsageEventsTable is the table that holds the tool_usage_events relation/edge.
 	ToolUsageEventsTable = "tool_usage_events"
 	// ToolUsageEventsInverseTable is the table name for the ToolUsageEvent entity.
@@ -195,17 +204,31 @@ func ByUpdatedAt(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldUpdatedAt, opts...).ToFunc()
 }
 
-// BySessionsCount orders the results by sessions count.
-func BySessionsCount(opts ...sql.OrderTermOption) OrderOption {
+// ByCommitCheckpointsCount orders the results by commit_checkpoints count.
+func ByCommitCheckpointsCount(opts ...sql.OrderTermOption) OrderOption {
 	return func(s *sql.Selector) {
-		sqlgraph.OrderByNeighborsCount(s, newSessionsStep(), opts...)
+		sqlgraph.OrderByNeighborsCount(s, newCommitCheckpointsStep(), opts...)
 	}
 }
 
-// BySessions orders the results by sessions terms.
-func BySessions(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+// ByCommitCheckpoints orders the results by commit_checkpoints terms.
+func ByCommitCheckpoints(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
 	return func(s *sql.Selector) {
-		sqlgraph.OrderByNeighborTerms(s, newSessionsStep(), append([]sql.OrderTerm{term}, terms...)...)
+		sqlgraph.OrderByNeighborTerms(s, newCommitCheckpointsStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+
+// ByCommitRewritesCount orders the results by commit_rewrites count.
+func ByCommitRewritesCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newCommitRewritesStep(), opts...)
+	}
+}
+
+// ByCommitRewrites orders the results by commit_rewrites terms.
+func ByCommitRewrites(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newCommitRewritesStep(), append([]sql.OrderTerm{term}, terms...)...)
 	}
 }
 
@@ -222,11 +245,18 @@ func ByToolUsageEvents(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
 		sqlgraph.OrderByNeighborTerms(s, newToolUsageEventsStep(), append([]sql.OrderTerm{term}, terms...)...)
 	}
 }
-func newSessionsStep() *sqlgraph.Step {
+func newCommitCheckpointsStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
-		sqlgraph.To(SessionsInverseTable, FieldID),
-		sqlgraph.Edge(sqlgraph.O2M, false, SessionsTable, SessionsColumn),
+		sqlgraph.To(CommitCheckpointsInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, CommitCheckpointsTable, CommitCheckpointsColumn),
+	)
+}
+func newCommitRewritesStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(CommitRewritesInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, CommitRewritesTable, CommitRewritesColumn),
 	)
 }
 func newToolUsageEventsStep() *sqlgraph.Step {

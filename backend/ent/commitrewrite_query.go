@@ -14,8 +14,7 @@ import (
 	"github.com/ai-efficiency/backend/ent/commitrewrite"
 	"github.com/ai-efficiency/backend/ent/predicate"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
-	"github.com/ai-efficiency/backend/ent/session"
-	"github.com/google/uuid"
+	"github.com/ai-efficiency/backend/ent/user"
 )
 
 // CommitRewriteQuery is the builder for querying CommitRewrite entities.
@@ -25,7 +24,7 @@ type CommitRewriteQuery struct {
 	order          []commitrewrite.OrderOption
 	inters         []Interceptor
 	predicates     []predicate.CommitRewrite
-	withSession    *SessionQuery
+	withUser       *UserQuery
 	withRepoConfig *RepoConfigQuery
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
@@ -63,9 +62,9 @@ func (crq *CommitRewriteQuery) Order(o ...commitrewrite.OrderOption) *CommitRewr
 	return crq
 }
 
-// QuerySession chains the current query on the "session" edge.
-func (crq *CommitRewriteQuery) QuerySession() *SessionQuery {
-	query := (&SessionClient{config: crq.config}).Query()
+// QueryUser chains the current query on the "user" edge.
+func (crq *CommitRewriteQuery) QueryUser() *UserQuery {
+	query := (&UserClient{config: crq.config}).Query()
 	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
 		if err := crq.prepareQuery(ctx); err != nil {
 			return nil, err
@@ -76,8 +75,8 @@ func (crq *CommitRewriteQuery) QuerySession() *SessionQuery {
 		}
 		step := sqlgraph.NewStep(
 			sqlgraph.From(commitrewrite.Table, commitrewrite.FieldID, selector),
-			sqlgraph.To(session.Table, session.FieldID),
-			sqlgraph.Edge(sqlgraph.M2O, true, commitrewrite.SessionTable, commitrewrite.SessionColumn),
+			sqlgraph.To(user.Table, user.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, commitrewrite.UserTable, commitrewrite.UserColumn),
 		)
 		fromU = sqlgraph.SetNeighbors(crq.driver.Dialect(), step)
 		return fromU, nil
@@ -299,7 +298,7 @@ func (crq *CommitRewriteQuery) Clone() *CommitRewriteQuery {
 		order:          append([]commitrewrite.OrderOption{}, crq.order...),
 		inters:         append([]Interceptor{}, crq.inters...),
 		predicates:     append([]predicate.CommitRewrite{}, crq.predicates...),
-		withSession:    crq.withSession.Clone(),
+		withUser:       crq.withUser.Clone(),
 		withRepoConfig: crq.withRepoConfig.Clone(),
 		// clone intermediate query.
 		sql:  crq.sql.Clone(),
@@ -307,14 +306,14 @@ func (crq *CommitRewriteQuery) Clone() *CommitRewriteQuery {
 	}
 }
 
-// WithSession tells the query-builder to eager-load the nodes that are connected to
-// the "session" edge. The optional arguments are used to configure the query builder of the edge.
-func (crq *CommitRewriteQuery) WithSession(opts ...func(*SessionQuery)) *CommitRewriteQuery {
-	query := (&SessionClient{config: crq.config}).Query()
+// WithUser tells the query-builder to eager-load the nodes that are connected to
+// the "user" edge. The optional arguments are used to configure the query builder of the edge.
+func (crq *CommitRewriteQuery) WithUser(opts ...func(*UserQuery)) *CommitRewriteQuery {
+	query := (&UserClient{config: crq.config}).Query()
 	for _, opt := range opts {
 		opt(query)
 	}
-	crq.withSession = query
+	crq.withUser = query
 	return crq
 }
 
@@ -408,7 +407,7 @@ func (crq *CommitRewriteQuery) sqlAll(ctx context.Context, hooks ...queryHook) (
 		nodes       = []*CommitRewrite{}
 		_spec       = crq.querySpec()
 		loadedTypes = [2]bool{
-			crq.withSession != nil,
+			crq.withUser != nil,
 			crq.withRepoConfig != nil,
 		}
 	)
@@ -430,9 +429,9 @@ func (crq *CommitRewriteQuery) sqlAll(ctx context.Context, hooks ...queryHook) (
 	if len(nodes) == 0 {
 		return nodes, nil
 	}
-	if query := crq.withSession; query != nil {
-		if err := crq.loadSession(ctx, query, nodes, nil,
-			func(n *CommitRewrite, e *Session) { n.Edges.Session = e }); err != nil {
+	if query := crq.withUser; query != nil {
+		if err := crq.loadUser(ctx, query, nodes, nil,
+			func(n *CommitRewrite, e *User) { n.Edges.User = e }); err != nil {
 			return nil, err
 		}
 	}
@@ -445,14 +444,14 @@ func (crq *CommitRewriteQuery) sqlAll(ctx context.Context, hooks ...queryHook) (
 	return nodes, nil
 }
 
-func (crq *CommitRewriteQuery) loadSession(ctx context.Context, query *SessionQuery, nodes []*CommitRewrite, init func(*CommitRewrite), assign func(*CommitRewrite, *Session)) error {
-	ids := make([]uuid.UUID, 0, len(nodes))
-	nodeids := make(map[uuid.UUID][]*CommitRewrite)
+func (crq *CommitRewriteQuery) loadUser(ctx context.Context, query *UserQuery, nodes []*CommitRewrite, init func(*CommitRewrite), assign func(*CommitRewrite, *User)) error {
+	ids := make([]int, 0, len(nodes))
+	nodeids := make(map[int][]*CommitRewrite)
 	for i := range nodes {
-		if nodes[i].SessionID == nil {
+		if nodes[i].UserID == nil {
 			continue
 		}
-		fk := *nodes[i].SessionID
+		fk := *nodes[i].UserID
 		if _, ok := nodeids[fk]; !ok {
 			ids = append(ids, fk)
 		}
@@ -461,7 +460,7 @@ func (crq *CommitRewriteQuery) loadSession(ctx context.Context, query *SessionQu
 	if len(ids) == 0 {
 		return nil
 	}
-	query.Where(session.IDIn(ids...))
+	query.Where(user.IDIn(ids...))
 	neighbors, err := query.All(ctx)
 	if err != nil {
 		return err
@@ -469,7 +468,7 @@ func (crq *CommitRewriteQuery) loadSession(ctx context.Context, query *SessionQu
 	for _, n := range neighbors {
 		nodes, ok := nodeids[n.ID]
 		if !ok {
-			return fmt.Errorf(`unexpected foreign-key "session_id" returned %v`, n.ID)
+			return fmt.Errorf(`unexpected foreign-key "user_id" returned %v`, n.ID)
 		}
 		for i := range nodes {
 			assign(nodes[i], n)
@@ -532,8 +531,8 @@ func (crq *CommitRewriteQuery) querySpec() *sqlgraph.QuerySpec {
 				_spec.Node.Columns = append(_spec.Node.Columns, fields[i])
 			}
 		}
-		if crq.withSession != nil {
-			_spec.Node.AddColumnOnce(commitrewrite.FieldSessionID)
+		if crq.withUser != nil {
+			_spec.Node.AddColumnOnce(commitrewrite.FieldUserID)
 		}
 		if crq.withRepoConfig != nil {
 			_spec.Node.AddColumnOnce(commitrewrite.FieldRepoConfigID)

@@ -33,30 +33,15 @@ func TestAttributionSchemasCreateAndQuery(t *testing.T) {
 		SetRelayGroupID("g-default").
 		SaveX(ctx)
 
-	sess := client.Session.Create().
-		SetRepoConfigID(repo.ID).
-		SetBranch("main").
-		SetProviderName("codex").
-		SetRuntimeRef("rt-1").
-		SetInitialWorkspaceRoot("/tmp/repo").
-		SetInitialGitDir("/tmp/repo/.git").
-		SetInitialGitCommonDir("/tmp/repo/.git").
-		SetHeadShaAtStart("abc123").
-		SetLastSeenAt(time.Now()).
-		SaveX(ctx)
-
-	client.SessionWorkspace.Create().
-		SetSessionID(sess.ID).
-		SetWorkspaceID("ws-1").
-		SetWorkspaceRoot("/tmp/repo").
-		SetGitDir("/tmp/repo/.git").
-		SetGitCommonDir("/tmp/repo/.git").
-		SetBindingSource("marker").
-		SaveX(ctx)
+	userID := client.User.Create().
+		SetUsername("schema-user").
+		SetEmail("schema-user@test.com").
+		SetAuthSource("ldap").
+		SaveX(ctx).ID
 
 	client.CommitCheckpoint.Create().
 		SetEventID("cp-1").
-		SetSessionID(sess.ID).
+		SetUserID(userID).
 		SetWorkspaceID("ws-1").
 		SetRepoConfigID(repo.ID).
 		SetBindingSource("marker").
@@ -72,7 +57,7 @@ func TestAttributionSchemasCreateAndQuery(t *testing.T) {
 	// Expect duplicate inserts to fail.
 	if _, err := client.CommitCheckpoint.Create().
 		SetEventID("cp-dup").
-		SetSessionID(sess.ID).
+		SetUserID(userID).
 		SetWorkspaceID("ws-1").
 		SetRepoConfigID(repo.ID).
 		SetBindingSource("marker").
@@ -98,7 +83,7 @@ func TestAttributionSchemasCreateAndQuery(t *testing.T) {
 
 	client.CommitRewrite.Create().
 		SetEventID("rw-1").
-		SetSessionID(sess.ID).
+		SetUserID(userID).
 		SetWorkspaceID("ws-1").
 		SetRepoConfigID(repo.ID).
 		SetRewriteType("amend").
@@ -111,7 +96,7 @@ func TestAttributionSchemasCreateAndQuery(t *testing.T) {
 	// Uniqueness semantics for rewrites: (repo_config_id, old_commit_sha, new_commit_sha, rewrite_type) must be unique.
 	if _, err := client.CommitRewrite.Create().
 		SetEventID("rw-dup").
-		SetSessionID(sess.ID).
+		SetUserID(userID).
 		SetWorkspaceID("ws-1").
 		SetRepoConfigID(repo.ID).
 		SetRewriteType("amend").
@@ -122,17 +107,6 @@ func TestAttributionSchemasCreateAndQuery(t *testing.T) {
 		Save(ctx); err == nil {
 		t.Fatalf("expected duplicate commit_rewrite composite key to fail")
 	}
-
-	client.AgentMetadataEvent.Create().
-		SetSessionID(sess.ID).
-		SetWorkspaceID("ws-1").
-		SetSource("codex").
-		SetUsageUnit("token").
-		SetInputTokens(10).
-		SetOutputTokens(20).
-		SetRawPayload(map[string]any{"k": "v"}).
-		SetObservedAt(time.Now()).
-		SaveX(ctx)
 
 	pr := client.PrRecord.Create().
 		SetRepoConfigID(repo.ID).
@@ -165,7 +139,7 @@ func TestAttributionSchemasCreateAndQuery(t *testing.T) {
 		SetStatus("completed").
 		SetResultClassification("clear").
 		SetMatchedCommitShas([]string{"abc123"}).
-		SetMatchedSessionIds([]string{sess.ID.String()}).
+		SetMatchedSessionIds([]string{"codex-sess-1"}).
 		SetPrimaryUsageSummary(map[string]any{"total_tokens": 500}).
 		SetMetadataSummary(map[string]any{"codex": map[string]any{"total_tokens": 500}}).
 		SetValidationSummary(map[string]any{"result": "consistent", "confidence": "high"}).

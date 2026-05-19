@@ -12,8 +12,6 @@ import (
 // Tx is a transactional client that is created by calling Client.Tx().
 type Tx struct {
 	config
-	// AgentMetadataEvent is the client for interacting with the AgentMetadataEvent builders.
-	AgentMetadataEvent *AgentMetadataEventClient
 	// AiScanResult is the client for interacting with the AiScanResult builders.
 	AiScanResult *AiScanResultClient
 	// CommitCheckpoint is the client for interacting with the CommitCheckpoint builders.
@@ -34,14 +32,6 @@ type Tx struct {
 	RepoConfig *RepoConfigClient
 	// ScmProvider is the client for interacting with the ScmProvider builders.
 	ScmProvider *ScmProviderClient
-	// Session is the client for interacting with the Session builders.
-	Session *SessionClient
-	// SessionEvent is the client for interacting with the SessionEvent builders.
-	SessionEvent *SessionEventClient
-	// SessionUsageEvent is the client for interacting with the SessionUsageEvent builders.
-	SessionUsageEvent *SessionUsageEventClient
-	// SessionWorkspace is the client for interacting with the SessionWorkspace builders.
-	SessionWorkspace *SessionWorkspaceClient
 	// SystemSetting is the client for interacting with the SystemSetting builders.
 	SystemSetting *SystemSettingClient
 	// ToolUsageEvent is the client for interacting with the ToolUsageEvent builders.
@@ -181,7 +171,6 @@ func (tx *Tx) Client() *Client {
 }
 
 func (tx *Tx) init() {
-	tx.AgentMetadataEvent = NewAgentMetadataEventClient(tx.config)
 	tx.AiScanResult = NewAiScanResultClient(tx.config)
 	tx.CommitCheckpoint = NewCommitCheckpointClient(tx.config)
 	tx.CommitRewrite = NewCommitRewriteClient(tx.config)
@@ -192,10 +181,6 @@ func (tx *Tx) init() {
 	tx.RelayProvider = NewRelayProviderClient(tx.config)
 	tx.RepoConfig = NewRepoConfigClient(tx.config)
 	tx.ScmProvider = NewScmProviderClient(tx.config)
-	tx.Session = NewSessionClient(tx.config)
-	tx.SessionEvent = NewSessionEventClient(tx.config)
-	tx.SessionUsageEvent = NewSessionUsageEventClient(tx.config)
-	tx.SessionWorkspace = NewSessionWorkspaceClient(tx.config)
 	tx.SystemSetting = NewSystemSettingClient(tx.config)
 	tx.ToolUsageEvent = NewToolUsageEventClient(tx.config)
 	tx.User = NewUserClient(tx.config)
@@ -209,7 +194,7 @@ func (tx *Tx) init() {
 // of them in order to commit or rollback the transaction.
 //
 // If a closed transaction is embedded in one of the generated entities, and the entity
-// applies a query, for example: AgentMetadataEvent.QueryXXX(), the query will be executed
+// applies a query, for example: AiScanResult.QueryXXX(), the query will be executed
 // through the driver which created this transaction.
 //
 // Note that txDriver is not goroutine safe.

@@ -72,7 +72,6 @@ func (RepoConfig) Edges() []entgo.Edge {
 		edge.From("scm_provider", ScmProvider.Type).
 			Ref("repo_configs").
 			Unique(),
-		edge.To("sessions", Session.Type),
 		edge.To("commit_checkpoints", CommitCheckpoint.Type),
 		edge.To("commit_rewrites", CommitRewrite.Type),
 		edge.To("tool_usage_events", ToolUsageEvent.Type),

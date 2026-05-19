@@ -20,7 +20,6 @@ import (
 	"github.com/ai-efficiency/backend/ent/prrecord"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/scmprovider"
-	"github.com/ai-efficiency/backend/ent/session"
 	"github.com/ai-efficiency/backend/ent/toolusageevent"
 	"github.com/ai-efficiency/backend/ent/webhookdeadletter"
 )
@@ -33,7 +32,6 @@ type RepoConfigQuery struct {
 	inters                 []Interceptor
 	predicates             []predicate.RepoConfig
 	withScmProvider        *ScmProviderQuery
-	withSessions           *SessionQuery
 	withCommitCheckpoints  *CommitCheckpointQuery
 	withCommitRewrites     *CommitRewriteQuery
 	withToolUsageEvents    *ToolUsageEventQuery
@@ -93,28 +91,6 @@ func (rcq *RepoConfigQuery) QueryScmProvider() *ScmProviderQuery {
 			sqlgraph.From(repoconfig.Table, repoconfig.FieldID, selector),
 			sqlgraph.To(scmprovider.Table, scmprovider.FieldID),
 			sqlgraph.Edge(sqlgraph.M2O, true, repoconfig.ScmProviderTable, repoconfig.ScmProviderColumn),
-		)
-		fromU = sqlgraph.SetNeighbors(rcq.driver.Dialect(), step)
-		return fromU, nil
-	}
-	return query
-}
-
-// QuerySessions chains the current query on the "sessions" edge.
-func (rcq *RepoConfigQuery) QuerySessions() *SessionQuery {
-	query := (&SessionClient{config: rcq.config}).Query()
-	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
-		if err := rcq.prepareQuery(ctx); err != nil {
-			return nil, err
-		}
-		selector := rcq.sqlQuery(ctx)
-		if err := selector.Err(); err != nil {
-			return nil, err
-		}
-		step := sqlgraph.NewStep(
-			sqlgraph.From(repoconfig.Table, repoconfig.FieldID, selector),
-			sqlgraph.To(session.Table, session.FieldID),
-			sqlgraph.Edge(sqlgraph.O2M, false, repoconfig.SessionsTable, repoconfig.SessionsColumn),
 		)
 		fromU = sqlgraph.SetNeighbors(rcq.driver.Dialect(), step)
 		return fromU, nil
@@ -469,7 +445,6 @@ func (rcq *RepoConfigQuery) Clone() *RepoConfigQuery {
 		inters:                 append([]Interceptor{}, rcq.inters...),
 		predicates:             append([]predicate.RepoConfig{}, rcq.predicates...),
 		withScmProvider:        rcq.withScmProvider.Clone(),
-		withSessions:           rcq.withSessions.Clone(),
 		withCommitCheckpoints:  rcq.withCommitCheckpoints.Clone(),
 		withCommitRewrites:     rcq.withCommitRewrites.Clone(),
 		withToolUsageEvents:    rcq.withToolUsageEvents.Clone(),
@@ -491,17 +466,6 @@ func (rcq *RepoConfigQuery) WithScmProvider(opts ...func(*ScmProviderQuery)) *Re
 		opt(query)
 	}
 	rcq.withScmProvider = query
-	return rcq
-}
-
-// WithSessions tells the query-builder to eager-load the nodes that are connected to
-// the "sessions" edge. The optional arguments are used to configure the query builder of the edge.
-func (rcq *RepoConfigQuery) WithSessions(opts ...func(*SessionQuery)) *RepoConfigQuery {
-	query := (&SessionClient{config: rcq.config}).Query()
-	for _, opt := range opts {
-		opt(query)
-	}
-	rcq.withSessions = query
 	return rcq
 }
 
@@ -661,9 +625,8 @@ func (rcq *RepoConfigQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*
 		nodes       = []*RepoConfig{}
 		withFKs     = rcq.withFKs
 		_spec       = rcq.querySpec()
-		loadedTypes = [9]bool{
+		loadedTypes = [8]bool{
 			rcq.withScmProvider != nil,
-			rcq.withSessions != nil,
 			rcq.withCommitCheckpoints != nil,
 			rcq.withCommitRewrites != nil,
 			rcq.withToolUsageEvents != nil,
@@ -700,13 +663,6 @@ func (rcq *RepoConfigQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*
 	if query := rcq.withScmProvider; query != nil {
 		if err := rcq.loadScmProvider(ctx, query, nodes, nil,
 			func(n *RepoConfig, e *ScmProvider) { n.Edges.ScmProvider = e }); err != nil {
-			return nil, err
-		}
-	}
-	if query := rcq.withSessions; query != nil {
-		if err := rcq.loadSessions(ctx, query, nodes,
-			func(n *RepoConfig) { n.Edges.Sessions = []*Session{} },
-			func(n *RepoConfig, e *Session) { n.Edges.Sessions = append(n.Edges.Sessions, e) }); err != nil {
 			return nil, err
 		}
 	}
@@ -797,37 +753,6 @@ func (rcq *RepoConfigQuery) loadScmProvider(ctx context.Context, query *ScmProvi
 		for i := range nodes {
 			assign(nodes[i], n)
 		}
-	}
-	return nil
-}
-func (rcq *RepoConfigQuery) loadSessions(ctx context.Context, query *SessionQuery, nodes []*RepoConfig, init func(*RepoConfig), assign func(*RepoConfig, *Session)) error {
-	fks := make([]driver.Value, 0, len(nodes))
-	nodeids := make(map[int]*RepoConfig)
-	for i := range nodes {
-		fks = append(fks, nodes[i].ID)
-		nodeids[nodes[i].ID] = nodes[i]
-		if init != nil {
-			init(nodes[i])
-		}
-	}
-	query.withFKs = true
-	query.Where(predicate.Session(func(s *sql.Selector) {
-		s.Where(sql.InValues(s.C(repoconfig.SessionsColumn), fks...))
-	}))
-	neighbors, err := query.All(ctx)
-	if err != nil {
-		return err
-	}
-	for _, n := range neighbors {
-		fk := n.repo_config_sessions
-		if fk == nil {
-			return fmt.Errorf(`foreign-key "repo_config_sessions" is nil for node %v`, n.ID)
-		}
-		node, ok := nodeids[*fk]
-		if !ok {
-			return fmt.Errorf(`unexpected referenced foreign-key "repo_config_sessions" returned %v for node %v`, *fk, n.ID)
-		}
-		assign(node, n)
 	}
 	return nil
 }

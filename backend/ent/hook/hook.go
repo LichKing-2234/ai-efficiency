@@ -9,18 +9,6 @@ import (
 	"github.com/ai-efficiency/backend/ent"
 )
 
-// The AgentMetadataEventFunc type is an adapter to allow the use of ordinary
-// function as AgentMetadataEvent mutator.
-type AgentMetadataEventFunc func(context.Context, *ent.AgentMetadataEventMutation) (ent.Value, error)
-
-// Mutate calls f(ctx, m).
-func (f AgentMetadataEventFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
-	if mv, ok := m.(*ent.AgentMetadataEventMutation); ok {
-		return f(ctx, mv)
-	}
-	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.AgentMetadataEventMutation", m)
-}
-
 // The AiScanResultFunc type is an adapter to allow the use of ordinary
 // function as AiScanResult mutator.
 type AiScanResultFunc func(context.Context, *ent.AiScanResultMutation) (ent.Value, error)
@@ -139,54 +127,6 @@ func (f ScmProviderFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value,
 		return f(ctx, mv)
 	}
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ScmProviderMutation", m)
-}
-
-// The SessionFunc type is an adapter to allow the use of ordinary
-// function as Session mutator.
-type SessionFunc func(context.Context, *ent.SessionMutation) (ent.Value, error)
-
-// Mutate calls f(ctx, m).
-func (f SessionFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
-	if mv, ok := m.(*ent.SessionMutation); ok {
-		return f(ctx, mv)
-	}
-	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.SessionMutation", m)
-}
-
-// The SessionEventFunc type is an adapter to allow the use of ordinary
-// function as SessionEvent mutator.
-type SessionEventFunc func(context.Context, *ent.SessionEventMutation) (ent.Value, error)
-
-// Mutate calls f(ctx, m).
-func (f SessionEventFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
-	if mv, ok := m.(*ent.SessionEventMutation); ok {
-		return f(ctx, mv)
-	}
-	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.SessionEventMutation", m)
-}
-
-// The SessionUsageEventFunc type is an adapter to allow the use of ordinary
-// function as SessionUsageEvent mutator.
-type SessionUsageEventFunc func(context.Context, *ent.SessionUsageEventMutation) (ent.Value, error)
-
-// Mutate calls f(ctx, m).
-func (f SessionUsageEventFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
-	if mv, ok := m.(*ent.SessionUsageEventMutation); ok {
-		return f(ctx, mv)
-	}
-	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.SessionUsageEventMutation", m)
-}
-
-// The SessionWorkspaceFunc type is an adapter to allow the use of ordinary
-// function as SessionWorkspace mutator.
-type SessionWorkspaceFunc func(context.Context, *ent.SessionWorkspaceMutation) (ent.Value, error)
-
-// Mutate calls f(ctx, m).
-func (f SessionWorkspaceFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
-	if mv, ok := m.(*ent.SessionWorkspaceMutation); ok {
-		return f(ctx, mv)
-	}
-	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.SessionWorkspaceMutation", m)
 }
 
 // The SystemSettingFunc type is an adapter to allow the use of ordinary

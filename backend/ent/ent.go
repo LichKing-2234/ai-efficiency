@@ -12,7 +12,6 @@ import (
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
-	"github.com/ai-efficiency/backend/ent/agentmetadataevent"
 	"github.com/ai-efficiency/backend/ent/aiscanresult"
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
 	"github.com/ai-efficiency/backend/ent/commitrewrite"
@@ -23,10 +22,6 @@ import (
 	"github.com/ai-efficiency/backend/ent/relayprovider"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/scmprovider"
-	"github.com/ai-efficiency/backend/ent/session"
-	"github.com/ai-efficiency/backend/ent/sessionevent"
-	"github.com/ai-efficiency/backend/ent/sessionusageevent"
-	"github.com/ai-efficiency/backend/ent/sessionworkspace"
 	"github.com/ai-efficiency/backend/ent/systemsetting"
 	"github.com/ai-efficiency/backend/ent/toolusageevent"
 	"github.com/ai-efficiency/backend/ent/user"
@@ -91,25 +86,20 @@ var (
 func checkColumn(table, column string) error {
 	initCheck.Do(func() {
 		columnCheck = sql.NewColumnCheck(map[string]func(string) bool{
-			agentmetadataevent.Table: agentmetadataevent.ValidColumn,
-			aiscanresult.Table:       aiscanresult.ValidColumn,
-			commitcheckpoint.Table:   commitcheckpoint.ValidColumn,
-			commitrewrite.Table:      commitrewrite.ValidColumn,
-			credential.Table:         credential.ValidColumn,
-			efficiencymetric.Table:   efficiencymetric.ValidColumn,
-			prattributionrun.Table:   prattributionrun.ValidColumn,
-			prrecord.Table:           prrecord.ValidColumn,
-			relayprovider.Table:      relayprovider.ValidColumn,
-			repoconfig.Table:         repoconfig.ValidColumn,
-			scmprovider.Table:        scmprovider.ValidColumn,
-			session.Table:            session.ValidColumn,
-			sessionevent.Table:       sessionevent.ValidColumn,
-			sessionusageevent.Table:  sessionusageevent.ValidColumn,
-			sessionworkspace.Table:   sessionworkspace.ValidColumn,
-			systemsetting.Table:      systemsetting.ValidColumn,
-			toolusageevent.Table:     toolusageevent.ValidColumn,
-			user.Table:               user.ValidColumn,
-			webhookdeadletter.Table:  webhookdeadletter.ValidColumn,
+			aiscanresult.Table:      aiscanresult.ValidColumn,
+			commitcheckpoint.Table:  commitcheckpoint.ValidColumn,
+			commitrewrite.Table:     commitrewrite.ValidColumn,
+			credential.Table:        credential.ValidColumn,
+			efficiencymetric.Table:  efficiencymetric.ValidColumn,
+			prattributionrun.Table:  prattributionrun.ValidColumn,
+			prrecord.Table:          prrecord.ValidColumn,
+			relayprovider.Table:     relayprovider.ValidColumn,
+			repoconfig.Table:        repoconfig.ValidColumn,
+			scmprovider.Table:       scmprovider.ValidColumn,
+			systemsetting.Table:     systemsetting.ValidColumn,
+			toolusageevent.Table:    toolusageevent.ValidColumn,
+			user.Table:              user.ValidColumn,
+			webhookdeadletter.Table: webhookdeadletter.ValidColumn,
 		})
 	})
 	return columnCheck(table, column)

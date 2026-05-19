@@ -2,16 +2,18 @@ package efficiency
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
 	"github.com/ai-efficiency/backend/ent"
+	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
 	"github.com/ai-efficiency/backend/ent/efficiencymetric"
 	"github.com/ai-efficiency/backend/ent/prrecord"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/scmprovider"
+	"github.com/ai-efficiency/backend/ent/toolusageevent"
 	"github.com/ai-efficiency/backend/internal/testdb"
-	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
@@ -477,13 +479,55 @@ func TestNewLabeler(t *testing.T) {
 	}
 }
 
-func TestLabelPRNoSessions(t *testing.T) {
+func seedLabelerCheckpointUsage(t *testing.T, ctx context.Context, client *ent.Client, repoID int, branch string, capturedAt time.Time, toolSessionIDs ...string) {
+	t.Helper()
+
+	userID := client.User.Create().
+		SetUsername(fmt.Sprintf("labeler-user-%d", capturedAt.UnixNano())).
+		SetEmail(fmt.Sprintf("labeler-user-%d@test.com", capturedAt.UnixNano())).
+		SetAuthSource("ldap").
+		SaveX(ctx).ID
+
+	checkpoint := client.CommitCheckpoint.Create().
+		SetEventID(fmt.Sprintf("cp-%d-%s", capturedAt.UnixNano(), branch)).
+		SetUserID(userID).
+		SetWorkspaceID(fmt.Sprintf("ws-%s", branch)).
+		SetRepoConfigID(repoID).
+		SetCommitSha(fmt.Sprintf("sha-%d", capturedAt.UnixNano())).
+		SetParentShas([]string{"base"}).
+		SetBranchSnapshot(branch).
+		SetHeadSnapshot(fmt.Sprintf("sha-%d", capturedAt.UnixNano())).
+		SetBindingSource(commitcheckpoint.BindingSourceMarker).
+		SetCapturedAt(capturedAt).
+		SaveX(ctx)
+
+	for idx, toolSessionID := range toolSessionIDs {
+		client.ToolUsageEvent.Create().
+			SetTool("codex").
+			SetWorkspaceID(checkpoint.WorkspaceID).
+			SetRepoConfigID(repoID).
+			SetUserID(userID).
+			SetToolSessionID(toolSessionID).
+			SetToolEventID(fmt.Sprintf("resp-%d-%d", capturedAt.UnixNano(), idx)).
+			SetObservedStartAt(capturedAt.Add(time.Duration(idx+1) * time.Minute)).
+			SetObservedEndAt(capturedAt.Add(time.Duration(idx+1)*time.Minute + time.Second)).
+			SetUsageUnit(toolusageevent.UsageUnitToken).
+			SetInputTokens(10).
+			SetOutputTokens(5).
+			SetCachedInputTokens(1).
+			SetDedupeKey(fmt.Sprintf("dedupe-%d-%d", capturedAt.UnixNano(), idx)).
+			SetCommitCheckpointID(checkpoint.ID).
+			SaveX(ctx)
+	}
+}
+
+func TestLabelPRNoToolUsage(t *testing.T) {
 	client := newTestClient(t)
 	defer client.Close()
 	ctx := context.Background()
 	logger := zap.NewNop()
 
-	rc := createTestRepo(t, ctx, client, "no-sessions-repo")
+	rc := createTestRepo(t, ctx, client, "no-tool-usage-repo")
 
 	pr := client.PrRecord.Create().
 		SetRepoConfigID(rc.ID).
@@ -520,13 +564,13 @@ func TestLabelPRNoSessions(t *testing.T) {
 	}
 }
 
-func TestLabelPRWithSessions(t *testing.T) {
+func TestLabelPRWithBoundToolUsage(t *testing.T) {
 	client := newTestClient(t)
 	defer client.Close()
 	ctx := context.Background()
 	logger := zap.NewNop()
 
-	rc := createTestRepo(t, ctx, client, "sessions-repo")
+	rc := createTestRepo(t, ctx, client, "bound-usage-repo")
 
 	prCreatedAt := time.Date(2026, 3, 19, 12, 0, 0, 0, time.UTC)
 	pr := client.PrRecord.Create().
@@ -539,23 +583,7 @@ func TestLabelPRWithSessions(t *testing.T) {
 		SetCreatedAt(prCreatedAt).
 		SaveX(ctx)
 
-	// Create 2 matching sessions: same repo, same branch, within 7 days
-	sessionTime := prCreatedAt.Add(-2 * 24 * time.Hour) // 2 days before PR
-	client.Session.Create().
-		SetID(uuid.New()).
-		SetRepoConfigID(rc.ID).
-		SetBranch("feat-ai").
-		SetStartedAt(sessionTime).
-		SetCreatedAt(sessionTime).
-		SaveX(ctx)
-
-	client.Session.Create().
-		SetID(uuid.New()).
-		SetRepoConfigID(rc.ID).
-		SetBranch("feat-ai").
-		SetStartedAt(sessionTime.Add(time.Hour)).
-		SetCreatedAt(sessionTime.Add(time.Hour)).
-		SaveX(ctx)
+	seedLabelerCheckpointUsage(t, ctx, client, rc.ID, "feat-ai", prCreatedAt.Add(-2*24*time.Hour), "codex-1", "claude-1")
 
 	lab := NewLabeler(client, nil, logger)
 	result, err := lab.LabelPR(ctx, pr.ID)
@@ -570,12 +598,10 @@ func TestLabelPRWithSessions(t *testing.T) {
 		t.Errorf("session_ids count = %d, want 2", len(result.SessionIDs))
 	}
 
-	// AI ratio: sessions exist but no token cost (sub2api client is nil) → 0.5
-	if result.AIRatio != 0.5 {
-		t.Errorf("ai_ratio = %f, want 0.5", result.AIRatio)
+	if result.AIRatio != 1.0 {
+		t.Errorf("ai_ratio = %f, want 1.0", result.AIRatio)
 	}
 
-	// Verify DB update
 	updated, err := client.PrRecord.Get(ctx, pr.ID)
 	if err != nil {
 		t.Fatalf("get PR: %v", err)
@@ -585,7 +611,7 @@ func TestLabelPRWithSessions(t *testing.T) {
 	}
 }
 
-func TestLabelPRSessionBranchMismatch(t *testing.T) {
+func TestLabelPRCheckpointBranchMismatch(t *testing.T) {
 	client := newTestClient(t)
 	defer client.Close()
 	ctx := context.Background()
@@ -604,15 +630,7 @@ func TestLabelPRSessionBranchMismatch(t *testing.T) {
 		SetCreatedAt(prCreatedAt).
 		SaveX(ctx)
 
-	// Session on a DIFFERENT branch
-	sessionTime := prCreatedAt.Add(-1 * 24 * time.Hour)
-	client.Session.Create().
-		SetID(uuid.New()).
-		SetRepoConfigID(rc.ID).
-		SetBranch("feat-other-branch").
-		SetStartedAt(sessionTime).
-		SetCreatedAt(sessionTime).
-		SaveX(ctx)
+	seedLabelerCheckpointUsage(t, ctx, client, rc.ID, "feat-other-branch", prCreatedAt.Add(-24*time.Hour), "codex-other")
 
 	lab := NewLabeler(client, nil, logger)
 	result, err := lab.LabelPR(ctx, pr.ID)
@@ -628,7 +646,7 @@ func TestLabelPRSessionBranchMismatch(t *testing.T) {
 	}
 }
 
-func TestLabelPRSessionOutsideTimeWindow(t *testing.T) {
+func TestLabelPRCheckpointOutsideTimeWindow(t *testing.T) {
 	client := newTestClient(t)
 	defer client.Close()
 	ctx := context.Background()
@@ -647,15 +665,7 @@ func TestLabelPRSessionOutsideTimeWindow(t *testing.T) {
 		SetCreatedAt(prCreatedAt).
 		SaveX(ctx)
 
-	// Session older than 7 days before PR creation
-	oldSessionTime := prCreatedAt.Add(-10 * 24 * time.Hour) // 10 days before
-	client.Session.Create().
-		SetID(uuid.New()).
-		SetRepoConfigID(rc.ID).
-		SetBranch("feat-old").
-		SetStartedAt(oldSessionTime).
-		SetCreatedAt(oldSessionTime).
-		SaveX(ctx)
+	seedLabelerCheckpointUsage(t, ctx, client, rc.ID, "feat-old", prCreatedAt.Add(-10*24*time.Hour), "codex-old")
 
 	lab := NewLabeler(client, nil, logger)
 	result, err := lab.LabelPR(ctx, pr.ID)
@@ -684,7 +694,7 @@ func TestLabelPRNonExistentID(t *testing.T) {
 	}
 }
 
-func TestLabelPRZeroLinesChanged(t *testing.T) {
+func TestLabelPRZeroLinesChangedStillDetectsToolUsage(t *testing.T) {
 	client := newTestClient(t)
 	defer client.Close()
 	ctx := context.Background()
@@ -704,15 +714,7 @@ func TestLabelPRZeroLinesChanged(t *testing.T) {
 		SetCreatedAt(prCreatedAt).
 		SaveX(ctx)
 
-	// Create a matching session so we hit the AI ratio calculation path
-	sessionTime := prCreatedAt.Add(-1 * 24 * time.Hour)
-	client.Session.Create().
-		SetID(uuid.New()).
-		SetRepoConfigID(rc.ID).
-		SetBranch("feat-empty").
-		SetStartedAt(sessionTime).
-		SetCreatedAt(sessionTime).
-		SaveX(ctx)
+	seedLabelerCheckpointUsage(t, ctx, client, rc.ID, "feat-empty", prCreatedAt.Add(-24*time.Hour), "codex-empty")
 
 	lab := NewLabeler(client, nil, logger)
 	result, err := lab.LabelPR(ctx, pr.ID)
@@ -723,54 +725,12 @@ func TestLabelPRZeroLinesChanged(t *testing.T) {
 	if result.AILabel != "ai_via_sub2api" {
 		t.Errorf("ai_label = %q, want %q", result.AILabel, "ai_via_sub2api")
 	}
-	// With 0 lines changed and sessions but no token cost → AI ratio = 0.5
-	if result.AIRatio != 0.5 {
-		t.Errorf("ai_ratio = %f, want 0.5 (sessions exist, no token cost)", result.AIRatio)
+	if result.AIRatio != 1.0 {
+		t.Errorf("ai_ratio = %f, want 1.0", result.AIRatio)
 	}
 }
 
-func TestLabelPRAIRatioUncapped(t *testing.T) {
-	client := newTestClient(t)
-	defer client.Close()
-	ctx := context.Background()
-	logger := zap.NewNop()
-
-	rc := createTestRepo(t, ctx, client, "ratio-uncapped-repo")
-
-	prCreatedAt := time.Date(2026, 3, 19, 12, 0, 0, 0, time.UTC)
-	// PR with many lines — sessions exist but no token cost
-	pr := client.PrRecord.Create().
-		SetRepoConfigID(rc.ID).
-		SetScmPrID(801).
-		SetSourceBranch("feat-big").
-		SetTargetBranch("main").
-		SetLinesAdded(150).
-		SetLinesDeleted(50).
-		SetCreatedAt(prCreatedAt).
-		SaveX(ctx)
-
-	sessionTime := prCreatedAt.Add(-1 * 24 * time.Hour)
-	client.Session.Create().
-		SetID(uuid.New()).
-		SetRepoConfigID(rc.ID).
-		SetBranch("feat-big").
-		SetStartedAt(sessionTime).
-		SetCreatedAt(sessionTime).
-		SaveX(ctx)
-
-	lab := NewLabeler(client, nil, logger)
-	result, err := lab.LabelPR(ctx, pr.ID)
-	if err != nil {
-		t.Fatalf("LabelPR: %v", err)
-	}
-
-	// Sessions exist but no token cost (sub2api client nil) → AI ratio = 0.5
-	if result.AIRatio != 0.5 {
-		t.Errorf("ai_ratio = %f, want 0.5", result.AIRatio)
-	}
-}
-
-func TestLabelPRSessionDifferentRepo(t *testing.T) {
+func TestLabelPRCheckpointDifferentRepo(t *testing.T) {
 	client := newTestClient(t)
 	defer client.Close()
 	ctx := context.Background()
@@ -790,15 +750,7 @@ func TestLabelPRSessionDifferentRepo(t *testing.T) {
 		SetCreatedAt(prCreatedAt).
 		SaveX(ctx)
 
-	// Session on a DIFFERENT repo but same branch and within time window
-	sessionTime := prCreatedAt.Add(-1 * 24 * time.Hour)
-	client.Session.Create().
-		SetID(uuid.New()).
-		SetRepoConfigID(rc2.ID).
-		SetBranch("feat-cross").
-		SetStartedAt(sessionTime).
-		SetCreatedAt(sessionTime).
-		SaveX(ctx)
+	seedLabelerCheckpointUsage(t, ctx, client, rc2.ID, "feat-cross", prCreatedAt.Add(-24*time.Hour), "codex-cross")
 
 	lab := NewLabeler(client, nil, logger)
 	result, err := lab.LabelPR(ctx, pr.ID)
@@ -1299,7 +1251,7 @@ func TestLabelPRRepoConfigNilEdge(t *testing.T) {
 	}
 }
 
-func TestLabelPRMultipleSessionsTokenCostZero(t *testing.T) {
+func TestLabelPRMultipleToolSessions(t *testing.T) {
 	client := newTestClient(t)
 	defer client.Close()
 	ctx := context.Background()
@@ -1318,16 +1270,17 @@ func TestLabelPRMultipleSessionsTokenCostZero(t *testing.T) {
 		SetCreatedAt(prCreatedAt).
 		SaveX(ctx)
 
-	// Create 5 matching sessions
+	// Create 5 matching tool sessions via checkpoint-bound usage.
 	for i := 0; i < 5; i++ {
-		sessionTime := prCreatedAt.Add(-time.Duration(i+1) * 24 * time.Hour)
-		client.Session.Create().
-			SetID(uuid.New()).
-			SetRepoConfigID(rc.ID).
-			SetBranch("feat-multi").
-			SetStartedAt(sessionTime).
-			SetCreatedAt(sessionTime).
-			SaveX(ctx)
+		seedLabelerCheckpointUsage(
+			t,
+			ctx,
+			client,
+			rc.ID,
+			"feat-multi",
+			prCreatedAt.Add(-time.Duration(i+1)*24*time.Hour),
+			fmt.Sprintf("tool-%d", i),
+		)
 	}
 
 	lab := NewLabeler(client, nil, logger)
@@ -1342,15 +1295,13 @@ func TestLabelPRMultipleSessionsTokenCostZero(t *testing.T) {
 	if len(result.SessionIDs) != 5 {
 		t.Errorf("session_ids count = %d, want 5", len(result.SessionIDs))
 	}
-	// No sub2api client → token cost = 0, ratio = 0.5
 	if result.TokenCost != 0 {
 		t.Errorf("token_cost = %f, want 0", result.TokenCost)
 	}
-	if result.AIRatio != 0.5 {
-		t.Errorf("ai_ratio = %f, want 0.5", result.AIRatio)
+	if result.AIRatio != 1.0 {
+		t.Errorf("ai_ratio = %f, want 1.0", result.AIRatio)
 	}
 
-	// Verify DB was updated with session IDs
 	updated, err := client.PrRecord.Get(ctx, pr.ID)
 	if err != nil {
 		t.Fatalf("get PR: %v", err)
@@ -1358,8 +1309,8 @@ func TestLabelPRMultipleSessionsTokenCostZero(t *testing.T) {
 	if len(updated.SessionIds) != 5 {
 		t.Errorf("DB session_ids count = %d, want 5", len(updated.SessionIds))
 	}
-	if updated.AiRatio != 0.5 {
-		t.Errorf("DB ai_ratio = %f, want 0.5", updated.AiRatio)
+	if updated.AiRatio != 1.0 {
+		t.Errorf("DB ai_ratio = %f, want 1.0", updated.AiRatio)
 	}
 }
 

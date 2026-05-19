@@ -19,10 +19,8 @@ import (
 	"github.com/ai-efficiency/backend/ent/prrecord"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/scmprovider"
-	"github.com/ai-efficiency/backend/ent/session"
 	"github.com/ai-efficiency/backend/ent/toolusageevent"
 	"github.com/ai-efficiency/backend/ent/webhookdeadletter"
-	"github.com/google/uuid"
 )
 
 // RepoConfigUpdate is the builder for updating RepoConfig entities.
@@ -285,21 +283,6 @@ func (rcu *RepoConfigUpdate) SetScmProvider(s *ScmProvider) *RepoConfigUpdate {
 	return rcu.SetScmProviderID(s.ID)
 }
 
-// AddSessionIDs adds the "sessions" edge to the Session entity by IDs.
-func (rcu *RepoConfigUpdate) AddSessionIDs(ids ...uuid.UUID) *RepoConfigUpdate {
-	rcu.mutation.AddSessionIDs(ids...)
-	return rcu
-}
-
-// AddSessions adds the "sessions" edges to the Session entity.
-func (rcu *RepoConfigUpdate) AddSessions(s ...*Session) *RepoConfigUpdate {
-	ids := make([]uuid.UUID, len(s))
-	for i := range s {
-		ids[i] = s[i].ID
-	}
-	return rcu.AddSessionIDs(ids...)
-}
-
 // AddCommitCheckpointIDs adds the "commit_checkpoints" edge to the CommitCheckpoint entity by IDs.
 func (rcu *RepoConfigUpdate) AddCommitCheckpointIDs(ids ...int) *RepoConfigUpdate {
 	rcu.mutation.AddCommitCheckpointIDs(ids...)
@@ -414,27 +397,6 @@ func (rcu *RepoConfigUpdate) Mutation() *RepoConfigMutation {
 func (rcu *RepoConfigUpdate) ClearScmProvider() *RepoConfigUpdate {
 	rcu.mutation.ClearScmProvider()
 	return rcu
-}
-
-// ClearSessions clears all "sessions" edges to the Session entity.
-func (rcu *RepoConfigUpdate) ClearSessions() *RepoConfigUpdate {
-	rcu.mutation.ClearSessions()
-	return rcu
-}
-
-// RemoveSessionIDs removes the "sessions" edge to Session entities by IDs.
-func (rcu *RepoConfigUpdate) RemoveSessionIDs(ids ...uuid.UUID) *RepoConfigUpdate {
-	rcu.mutation.RemoveSessionIDs(ids...)
-	return rcu
-}
-
-// RemoveSessions removes "sessions" edges to Session entities.
-func (rcu *RepoConfigUpdate) RemoveSessions(s ...*Session) *RepoConfigUpdate {
-	ids := make([]uuid.UUID, len(s))
-	for i := range s {
-		ids[i] = s[i].ID
-	}
-	return rcu.RemoveSessionIDs(ids...)
 }
 
 // ClearCommitCheckpoints clears all "commit_checkpoints" edges to the CommitCheckpoint entity.
@@ -751,51 +713,6 @@ func (rcu *RepoConfigUpdate) sqlSave(ctx context.Context) (n int, err error) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(scmprovider.FieldID, field.TypeInt),
-			},
-		}
-		for _, k := range nodes {
-			edge.Target.Nodes = append(edge.Target.Nodes, k)
-		}
-		_spec.Edges.Add = append(_spec.Edges.Add, edge)
-	}
-	if rcu.mutation.SessionsCleared() {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   repoconfig.SessionsTable,
-			Columns: []string{repoconfig.SessionsColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(session.FieldID, field.TypeUUID),
-			},
-		}
-		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
-	}
-	if nodes := rcu.mutation.RemovedSessionsIDs(); len(nodes) > 0 && !rcu.mutation.SessionsCleared() {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   repoconfig.SessionsTable,
-			Columns: []string{repoconfig.SessionsColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(session.FieldID, field.TypeUUID),
-			},
-		}
-		for _, k := range nodes {
-			edge.Target.Nodes = append(edge.Target.Nodes, k)
-		}
-		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
-	}
-	if nodes := rcu.mutation.SessionsIDs(); len(nodes) > 0 {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   repoconfig.SessionsTable,
-			Columns: []string{repoconfig.SessionsColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(session.FieldID, field.TypeUUID),
 			},
 		}
 		for _, k := range nodes {
@@ -1385,21 +1302,6 @@ func (rcuo *RepoConfigUpdateOne) SetScmProvider(s *ScmProvider) *RepoConfigUpdat
 	return rcuo.SetScmProviderID(s.ID)
 }
 
-// AddSessionIDs adds the "sessions" edge to the Session entity by IDs.
-func (rcuo *RepoConfigUpdateOne) AddSessionIDs(ids ...uuid.UUID) *RepoConfigUpdateOne {
-	rcuo.mutation.AddSessionIDs(ids...)
-	return rcuo
-}
-
-// AddSessions adds the "sessions" edges to the Session entity.
-func (rcuo *RepoConfigUpdateOne) AddSessions(s ...*Session) *RepoConfigUpdateOne {
-	ids := make([]uuid.UUID, len(s))
-	for i := range s {
-		ids[i] = s[i].ID
-	}
-	return rcuo.AddSessionIDs(ids...)
-}
-
 // AddCommitCheckpointIDs adds the "commit_checkpoints" edge to the CommitCheckpoint entity by IDs.
 func (rcuo *RepoConfigUpdateOne) AddCommitCheckpointIDs(ids ...int) *RepoConfigUpdateOne {
 	rcuo.mutation.AddCommitCheckpointIDs(ids...)
@@ -1514,27 +1416,6 @@ func (rcuo *RepoConfigUpdateOne) Mutation() *RepoConfigMutation {
 func (rcuo *RepoConfigUpdateOne) ClearScmProvider() *RepoConfigUpdateOne {
 	rcuo.mutation.ClearScmProvider()
 	return rcuo
-}
-
-// ClearSessions clears all "sessions" edges to the Session entity.
-func (rcuo *RepoConfigUpdateOne) ClearSessions() *RepoConfigUpdateOne {
-	rcuo.mutation.ClearSessions()
-	return rcuo
-}
-
-// RemoveSessionIDs removes the "sessions" edge to Session entities by IDs.
-func (rcuo *RepoConfigUpdateOne) RemoveSessionIDs(ids ...uuid.UUID) *RepoConfigUpdateOne {
-	rcuo.mutation.RemoveSessionIDs(ids...)
-	return rcuo
-}
-
-// RemoveSessions removes "sessions" edges to Session entities.
-func (rcuo *RepoConfigUpdateOne) RemoveSessions(s ...*Session) *RepoConfigUpdateOne {
-	ids := make([]uuid.UUID, len(s))
-	for i := range s {
-		ids[i] = s[i].ID
-	}
-	return rcuo.RemoveSessionIDs(ids...)
 }
 
 // ClearCommitCheckpoints clears all "commit_checkpoints" edges to the CommitCheckpoint entity.
@@ -1881,51 +1762,6 @@ func (rcuo *RepoConfigUpdateOne) sqlSave(ctx context.Context) (_node *RepoConfig
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(scmprovider.FieldID, field.TypeInt),
-			},
-		}
-		for _, k := range nodes {
-			edge.Target.Nodes = append(edge.Target.Nodes, k)
-		}
-		_spec.Edges.Add = append(_spec.Edges.Add, edge)
-	}
-	if rcuo.mutation.SessionsCleared() {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   repoconfig.SessionsTable,
-			Columns: []string{repoconfig.SessionsColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(session.FieldID, field.TypeUUID),
-			},
-		}
-		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
-	}
-	if nodes := rcuo.mutation.RemovedSessionsIDs(); len(nodes) > 0 && !rcuo.mutation.SessionsCleared() {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   repoconfig.SessionsTable,
-			Columns: []string{repoconfig.SessionsColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(session.FieldID, field.TypeUUID),
-			},
-		}
-		for _, k := range nodes {
-			edge.Target.Nodes = append(edge.Target.Nodes, k)
-		}
-		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
-	}
-	if nodes := rcuo.mutation.SessionsIDs(); len(nodes) > 0 {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   repoconfig.SessionsTable,
-			Columns: []string{repoconfig.SessionsColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(session.FieldID, field.TypeUUID),
 			},
 		}
 		for _, k := range nodes {

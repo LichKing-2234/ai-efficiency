@@ -6,9 +6,6 @@ import (
 	"entgo.io/ent/dialect/sql"
 )
 
-// AgentMetadataEvent is the predicate function for agentmetadataevent builders.
-type AgentMetadataEvent func(*sql.Selector)
-
 // AiScanResult is the predicate function for aiscanresult builders.
 type AiScanResult func(*sql.Selector)
 
@@ -38,18 +35,6 @@ type RepoConfig func(*sql.Selector)
 
 // ScmProvider is the predicate function for scmprovider builders.
 type ScmProvider func(*sql.Selector)
-
-// Session is the predicate function for session builders.
-type Session func(*sql.Selector)
-
-// SessionEvent is the predicate function for sessionevent builders.
-type SessionEvent func(*sql.Selector)
-
-// SessionUsageEvent is the predicate function for sessionusageevent builders.
-type SessionUsageEvent func(*sql.Selector)
-
-// SessionWorkspace is the predicate function for sessionworkspace builders.
-type SessionWorkspace func(*sql.Selector)
 
 // SystemSetting is the predicate function for systemsetting builders.
 type SystemSetting func(*sql.Selector)

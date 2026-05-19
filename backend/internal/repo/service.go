@@ -10,12 +10,16 @@ import (
 
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/ent/aiscanresult"
+	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
+	"github.com/ai-efficiency/backend/ent/commitrewrite"
 	entcredential "github.com/ai-efficiency/backend/ent/credential"
 	"github.com/ai-efficiency/backend/ent/efficiencymetric"
+	"github.com/ai-efficiency/backend/ent/prattributionrun"
 	"github.com/ai-efficiency/backend/ent/prrecord"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/scmprovider"
-	"github.com/ai-efficiency/backend/ent/session"
+	"github.com/ai-efficiency/backend/ent/toolusageevent"
+	"github.com/ai-efficiency/backend/ent/webhookdeadletter"
 	"github.com/ai-efficiency/backend/internal/credential"
 	"github.com/ai-efficiency/backend/internal/pkg"
 	"github.com/ai-efficiency/backend/internal/scm"
@@ -483,14 +487,28 @@ func (s *Service) Delete(ctx context.Context, id int) error {
 	if _, err := tx.AiScanResult.Delete().Where(aiscanresult.HasRepoConfigWith(repoconfig.IDEQ(id))).Exec(ctx); err != nil {
 		return fmt.Errorf("delete scan results: %w", err)
 	}
+	if _, err := tx.ToolUsageEvent.Delete().Where(toolusageevent.HasRepoConfigWith(repoconfig.IDEQ(id))).Exec(ctx); err != nil {
+		return fmt.Errorf("delete tool usage events: %w", err)
+	}
+	if _, err := tx.CommitRewrite.Delete().Where(commitrewrite.HasRepoConfigWith(repoconfig.IDEQ(id))).Exec(ctx); err != nil {
+		return fmt.Errorf("delete commit rewrites: %w", err)
+	}
+	if _, err := tx.CommitCheckpoint.Delete().Where(commitcheckpoint.HasRepoConfigWith(repoconfig.IDEQ(id))).Exec(ctx); err != nil {
+		return fmt.Errorf("delete commit checkpoints: %w", err)
+	}
+	if _, err := tx.PrAttributionRun.Delete().
+		Where(prattributionrun.HasPrRecordWith(prrecord.HasRepoConfigWith(repoconfig.IDEQ(id)))).
+		Exec(ctx); err != nil {
+		return fmt.Errorf("delete pr attribution runs: %w", err)
+	}
 	if _, err := tx.PrRecord.Delete().Where(prrecord.HasRepoConfigWith(repoconfig.IDEQ(id))).Exec(ctx); err != nil {
 		return fmt.Errorf("delete pr records: %w", err)
 	}
 	if _, err := tx.EfficiencyMetric.Delete().Where(efficiencymetric.HasRepoConfigWith(repoconfig.IDEQ(id))).Exec(ctx); err != nil {
 		return fmt.Errorf("delete efficiency metrics: %w", err)
 	}
-	if _, err := tx.Session.Delete().Where(session.HasRepoConfigWith(repoconfig.IDEQ(id))).Exec(ctx); err != nil {
-		return fmt.Errorf("delete sessions: %w", err)
+	if _, err := tx.WebhookDeadLetter.Delete().Where(webhookdeadletter.HasRepoConfigWith(repoconfig.IDEQ(id))).Exec(ctx); err != nil {
+		return fmt.Errorf("delete webhook dead letters: %w", err)
 	}
 
 	if err := tx.RepoConfig.DeleteOneID(id).Exec(ctx); err != nil {

@@ -48,8 +48,6 @@ const (
 	FieldScanPromptOverride = "scan_prompt_override"
 	// EdgeScmProvider holds the string denoting the scm_provider edge name in mutations.
 	EdgeScmProvider = "scm_provider"
-	// EdgeSessions holds the string denoting the sessions edge name in mutations.
-	EdgeSessions = "sessions"
 	// EdgeCommitCheckpoints holds the string denoting the commit_checkpoints edge name in mutations.
 	EdgeCommitCheckpoints = "commit_checkpoints"
 	// EdgeCommitRewrites holds the string denoting the commit_rewrites edge name in mutations.
@@ -73,13 +71,6 @@ const (
 	ScmProviderInverseTable = "scm_providers"
 	// ScmProviderColumn is the table column denoting the scm_provider relation/edge.
 	ScmProviderColumn = "scm_provider_repo_configs"
-	// SessionsTable is the table that holds the sessions relation/edge.
-	SessionsTable = "sessions"
-	// SessionsInverseTable is the table name for the Session entity.
-	// It exists in this package in order to avoid circular dependency with the "session" package.
-	SessionsInverseTable = "sessions"
-	// SessionsColumn is the table column denoting the sessions relation/edge.
-	SessionsColumn = "repo_config_sessions"
 	// CommitCheckpointsTable is the table that holds the commit_checkpoints relation/edge.
 	CommitCheckpointsTable = "commit_checkpoints"
 	// CommitCheckpointsInverseTable is the table name for the CommitCheckpoint entity.
@@ -307,20 +298,6 @@ func ByScmProviderField(field string, opts ...sql.OrderTermOption) OrderOption {
 	}
 }
 
-// BySessionsCount orders the results by sessions count.
-func BySessionsCount(opts ...sql.OrderTermOption) OrderOption {
-	return func(s *sql.Selector) {
-		sqlgraph.OrderByNeighborsCount(s, newSessionsStep(), opts...)
-	}
-}
-
-// BySessions orders the results by sessions terms.
-func BySessions(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
-	return func(s *sql.Selector) {
-		sqlgraph.OrderByNeighborTerms(s, newSessionsStep(), append([]sql.OrderTerm{term}, terms...)...)
-	}
-}
-
 // ByCommitCheckpointsCount orders the results by commit_checkpoints count.
 func ByCommitCheckpointsCount(opts ...sql.OrderTermOption) OrderOption {
 	return func(s *sql.Selector) {
@@ -423,13 +400,6 @@ func newScmProviderStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(ScmProviderInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.M2O, true, ScmProviderTable, ScmProviderColumn),
-	)
-}
-func newSessionsStep() *sqlgraph.Step {
-	return sqlgraph.NewStep(
-		sqlgraph.From(Table, FieldID),
-		sqlgraph.To(SessionsInverseTable, FieldID),
-		sqlgraph.Edge(sqlgraph.O2M, false, SessionsTable, SessionsColumn),
 	)
 }
 func newCommitCheckpointsStep() *sqlgraph.Step {

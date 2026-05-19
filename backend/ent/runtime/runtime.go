@@ -5,7 +5,6 @@ package runtime
 import (
 	"time"
 
-	"github.com/ai-efficiency/backend/ent/agentmetadataevent"
 	"github.com/ai-efficiency/backend/ent/aiscanresult"
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
 	"github.com/ai-efficiency/backend/ent/commitrewrite"
@@ -17,51 +16,16 @@ import (
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/schema"
 	"github.com/ai-efficiency/backend/ent/scmprovider"
-	"github.com/ai-efficiency/backend/ent/session"
-	"github.com/ai-efficiency/backend/ent/sessionevent"
-	"github.com/ai-efficiency/backend/ent/sessionusageevent"
-	"github.com/ai-efficiency/backend/ent/sessionworkspace"
 	"github.com/ai-efficiency/backend/ent/systemsetting"
 	"github.com/ai-efficiency/backend/ent/toolusageevent"
 	"github.com/ai-efficiency/backend/ent/user"
 	"github.com/ai-efficiency/backend/ent/webhookdeadletter"
-	"github.com/google/uuid"
 )
 
 // The init function reads all schema descriptors with runtime code
 // (default values, validators, hooks and policies) and stitches it
 // to their package variables.
 func init() {
-	agentmetadataeventFields := schema.AgentMetadataEvent{}.Fields()
-	_ = agentmetadataeventFields
-	// agentmetadataeventDescInputTokens is the schema descriptor for input_tokens field.
-	agentmetadataeventDescInputTokens := agentmetadataeventFields[5].Descriptor()
-	// agentmetadataevent.DefaultInputTokens holds the default value on creation for the input_tokens field.
-	agentmetadataevent.DefaultInputTokens = agentmetadataeventDescInputTokens.Default.(int64)
-	// agentmetadataeventDescOutputTokens is the schema descriptor for output_tokens field.
-	agentmetadataeventDescOutputTokens := agentmetadataeventFields[6].Descriptor()
-	// agentmetadataevent.DefaultOutputTokens holds the default value on creation for the output_tokens field.
-	agentmetadataevent.DefaultOutputTokens = agentmetadataeventDescOutputTokens.Default.(int64)
-	// agentmetadataeventDescCachedInputTokens is the schema descriptor for cached_input_tokens field.
-	agentmetadataeventDescCachedInputTokens := agentmetadataeventFields[7].Descriptor()
-	// agentmetadataevent.DefaultCachedInputTokens holds the default value on creation for the cached_input_tokens field.
-	agentmetadataevent.DefaultCachedInputTokens = agentmetadataeventDescCachedInputTokens.Default.(int64)
-	// agentmetadataeventDescReasoningTokens is the schema descriptor for reasoning_tokens field.
-	agentmetadataeventDescReasoningTokens := agentmetadataeventFields[8].Descriptor()
-	// agentmetadataevent.DefaultReasoningTokens holds the default value on creation for the reasoning_tokens field.
-	agentmetadataevent.DefaultReasoningTokens = agentmetadataeventDescReasoningTokens.Default.(int64)
-	// agentmetadataeventDescCreditUsage is the schema descriptor for credit_usage field.
-	agentmetadataeventDescCreditUsage := agentmetadataeventFields[9].Descriptor()
-	// agentmetadataevent.DefaultCreditUsage holds the default value on creation for the credit_usage field.
-	agentmetadataevent.DefaultCreditUsage = agentmetadataeventDescCreditUsage.Default.(float64)
-	// agentmetadataeventDescContextUsagePct is the schema descriptor for context_usage_pct field.
-	agentmetadataeventDescContextUsagePct := agentmetadataeventFields[10].Descriptor()
-	// agentmetadataevent.DefaultContextUsagePct holds the default value on creation for the context_usage_pct field.
-	agentmetadataevent.DefaultContextUsagePct = agentmetadataeventDescContextUsagePct.Default.(float64)
-	// agentmetadataeventDescObservedAt is the schema descriptor for observed_at field.
-	agentmetadataeventDescObservedAt := agentmetadataeventFields[12].Descriptor()
-	// agentmetadataevent.DefaultObservedAt holds the default value on creation for the observed_at field.
-	agentmetadataevent.DefaultObservedAt = agentmetadataeventDescObservedAt.Default.(func() time.Time)
 	aiscanresultFields := schema.AiScanResult{}.Fields()
 	_ = aiscanresultFields
 	// aiscanresultDescScore is the schema descriptor for score field.
@@ -330,124 +294,6 @@ func init() {
 	scmprovider.DefaultUpdatedAt = scmproviderDescUpdatedAt.Default.(func() time.Time)
 	// scmprovider.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	scmprovider.UpdateDefaultUpdatedAt = scmproviderDescUpdatedAt.UpdateDefault.(func() time.Time)
-	sessionFields := schema.Session{}.Fields()
-	_ = sessionFields
-	// sessionDescBranch is the schema descriptor for branch field.
-	sessionDescBranch := sessionFields[1].Descriptor()
-	// session.BranchValidator is a validator for the "branch" field. It is called by the builders before save.
-	session.BranchValidator = sessionDescBranch.Validators[0].(func(string) error)
-	// sessionDescToolConfigs is the schema descriptor for tool_configs field.
-	sessionDescToolConfigs := sessionFields[11].Descriptor()
-	// session.DefaultToolConfigs holds the default value on creation for the tool_configs field.
-	session.DefaultToolConfigs = sessionDescToolConfigs.Default.([]map[string]interface{})
-	// sessionDescStartedAt is the schema descriptor for started_at field.
-	sessionDescStartedAt := sessionFields[12].Descriptor()
-	// session.DefaultStartedAt holds the default value on creation for the started_at field.
-	session.DefaultStartedAt = sessionDescStartedAt.Default.(func() time.Time)
-	// sessionDescToolInvocations is the schema descriptor for tool_invocations field.
-	sessionDescToolInvocations := sessionFields[14].Descriptor()
-	// session.DefaultToolInvocations holds the default value on creation for the tool_invocations field.
-	session.DefaultToolInvocations = sessionDescToolInvocations.Default.([]map[string]interface{})
-	// sessionDescCreatedAt is the schema descriptor for created_at field.
-	sessionDescCreatedAt := sessionFields[16].Descriptor()
-	// session.DefaultCreatedAt holds the default value on creation for the created_at field.
-	session.DefaultCreatedAt = sessionDescCreatedAt.Default.(func() time.Time)
-	// sessionDescID is the schema descriptor for id field.
-	sessionDescID := sessionFields[0].Descriptor()
-	// session.DefaultID holds the default value on creation for the id field.
-	session.DefaultID = sessionDescID.Default.(func() uuid.UUID)
-	sessioneventFields := schema.SessionEvent{}.Fields()
-	_ = sessioneventFields
-	// sessioneventDescEventID is the schema descriptor for event_id field.
-	sessioneventDescEventID := sessioneventFields[0].Descriptor()
-	// sessionevent.EventIDValidator is a validator for the "event_id" field. It is called by the builders before save.
-	sessionevent.EventIDValidator = sessioneventDescEventID.Validators[0].(func(string) error)
-	// sessioneventDescWorkspaceID is the schema descriptor for workspace_id field.
-	sessioneventDescWorkspaceID := sessioneventFields[2].Descriptor()
-	// sessionevent.WorkspaceIDValidator is a validator for the "workspace_id" field. It is called by the builders before save.
-	sessionevent.WorkspaceIDValidator = sessioneventDescWorkspaceID.Validators[0].(func(string) error)
-	// sessioneventDescEventType is the schema descriptor for event_type field.
-	sessioneventDescEventType := sessioneventFields[3].Descriptor()
-	// sessionevent.EventTypeValidator is a validator for the "event_type" field. It is called by the builders before save.
-	sessionevent.EventTypeValidator = sessioneventDescEventType.Validators[0].(func(string) error)
-	// sessioneventDescSource is the schema descriptor for source field.
-	sessioneventDescSource := sessioneventFields[4].Descriptor()
-	// sessionevent.SourceValidator is a validator for the "source" field. It is called by the builders before save.
-	sessionevent.SourceValidator = sessioneventDescSource.Validators[0].(func(string) error)
-	// sessioneventDescCreatedAt is the schema descriptor for created_at field.
-	sessioneventDescCreatedAt := sessioneventFields[7].Descriptor()
-	// sessionevent.DefaultCreatedAt holds the default value on creation for the created_at field.
-	sessionevent.DefaultCreatedAt = sessioneventDescCreatedAt.Default.(func() time.Time)
-	sessionusageeventFields := schema.SessionUsageEvent{}.Fields()
-	_ = sessionusageeventFields
-	// sessionusageeventDescEventID is the schema descriptor for event_id field.
-	sessionusageeventDescEventID := sessionusageeventFields[0].Descriptor()
-	// sessionusageevent.EventIDValidator is a validator for the "event_id" field. It is called by the builders before save.
-	sessionusageevent.EventIDValidator = sessionusageeventDescEventID.Validators[0].(func(string) error)
-	// sessionusageeventDescWorkspaceID is the schema descriptor for workspace_id field.
-	sessionusageeventDescWorkspaceID := sessionusageeventFields[2].Descriptor()
-	// sessionusageevent.WorkspaceIDValidator is a validator for the "workspace_id" field. It is called by the builders before save.
-	sessionusageevent.WorkspaceIDValidator = sessionusageeventDescWorkspaceID.Validators[0].(func(string) error)
-	// sessionusageeventDescRequestID is the schema descriptor for request_id field.
-	sessionusageeventDescRequestID := sessionusageeventFields[3].Descriptor()
-	// sessionusageevent.RequestIDValidator is a validator for the "request_id" field. It is called by the builders before save.
-	sessionusageevent.RequestIDValidator = sessionusageeventDescRequestID.Validators[0].(func(string) error)
-	// sessionusageeventDescProviderName is the schema descriptor for provider_name field.
-	sessionusageeventDescProviderName := sessionusageeventFields[4].Descriptor()
-	// sessionusageevent.ProviderNameValidator is a validator for the "provider_name" field. It is called by the builders before save.
-	sessionusageevent.ProviderNameValidator = sessionusageeventDescProviderName.Validators[0].(func(string) error)
-	// sessionusageeventDescModel is the schema descriptor for model field.
-	sessionusageeventDescModel := sessionusageeventFields[5].Descriptor()
-	// sessionusageevent.ModelValidator is a validator for the "model" field. It is called by the builders before save.
-	sessionusageevent.ModelValidator = sessionusageeventDescModel.Validators[0].(func(string) error)
-	// sessionusageeventDescInputTokens is the schema descriptor for input_tokens field.
-	sessionusageeventDescInputTokens := sessionusageeventFields[8].Descriptor()
-	// sessionusageevent.DefaultInputTokens holds the default value on creation for the input_tokens field.
-	sessionusageevent.DefaultInputTokens = sessionusageeventDescInputTokens.Default.(int64)
-	// sessionusageeventDescOutputTokens is the schema descriptor for output_tokens field.
-	sessionusageeventDescOutputTokens := sessionusageeventFields[9].Descriptor()
-	// sessionusageevent.DefaultOutputTokens holds the default value on creation for the output_tokens field.
-	sessionusageevent.DefaultOutputTokens = sessionusageeventDescOutputTokens.Default.(int64)
-	// sessionusageeventDescTotalTokens is the schema descriptor for total_tokens field.
-	sessionusageeventDescTotalTokens := sessionusageeventFields[10].Descriptor()
-	// sessionusageevent.DefaultTotalTokens holds the default value on creation for the total_tokens field.
-	sessionusageevent.DefaultTotalTokens = sessionusageeventDescTotalTokens.Default.(int64)
-	// sessionusageeventDescStatus is the schema descriptor for status field.
-	sessionusageeventDescStatus := sessionusageeventFields[11].Descriptor()
-	// sessionusageevent.StatusValidator is a validator for the "status" field. It is called by the builders before save.
-	sessionusageevent.StatusValidator = sessionusageeventDescStatus.Validators[0].(func(string) error)
-	// sessionusageeventDescCreatedAt is the schema descriptor for created_at field.
-	sessionusageeventDescCreatedAt := sessionusageeventFields[14].Descriptor()
-	// sessionusageevent.DefaultCreatedAt holds the default value on creation for the created_at field.
-	sessionusageevent.DefaultCreatedAt = sessionusageeventDescCreatedAt.Default.(func() time.Time)
-	sessionworkspaceFields := schema.SessionWorkspace{}.Fields()
-	_ = sessionworkspaceFields
-	// sessionworkspaceDescWorkspaceID is the schema descriptor for workspace_id field.
-	sessionworkspaceDescWorkspaceID := sessionworkspaceFields[1].Descriptor()
-	// sessionworkspace.WorkspaceIDValidator is a validator for the "workspace_id" field. It is called by the builders before save.
-	sessionworkspace.WorkspaceIDValidator = sessionworkspaceDescWorkspaceID.Validators[0].(func(string) error)
-	// sessionworkspaceDescWorkspaceRoot is the schema descriptor for workspace_root field.
-	sessionworkspaceDescWorkspaceRoot := sessionworkspaceFields[2].Descriptor()
-	// sessionworkspace.WorkspaceRootValidator is a validator for the "workspace_root" field. It is called by the builders before save.
-	sessionworkspace.WorkspaceRootValidator = sessionworkspaceDescWorkspaceRoot.Validators[0].(func(string) error)
-	// sessionworkspaceDescGitDir is the schema descriptor for git_dir field.
-	sessionworkspaceDescGitDir := sessionworkspaceFields[3].Descriptor()
-	// sessionworkspace.GitDirValidator is a validator for the "git_dir" field. It is called by the builders before save.
-	sessionworkspace.GitDirValidator = sessionworkspaceDescGitDir.Validators[0].(func(string) error)
-	// sessionworkspaceDescGitCommonDir is the schema descriptor for git_common_dir field.
-	sessionworkspaceDescGitCommonDir := sessionworkspaceFields[4].Descriptor()
-	// sessionworkspace.GitCommonDirValidator is a validator for the "git_common_dir" field. It is called by the builders before save.
-	sessionworkspace.GitCommonDirValidator = sessionworkspaceDescGitCommonDir.Validators[0].(func(string) error)
-	// sessionworkspaceDescFirstSeenAt is the schema descriptor for first_seen_at field.
-	sessionworkspaceDescFirstSeenAt := sessionworkspaceFields[5].Descriptor()
-	// sessionworkspace.DefaultFirstSeenAt holds the default value on creation for the first_seen_at field.
-	sessionworkspace.DefaultFirstSeenAt = sessionworkspaceDescFirstSeenAt.Default.(func() time.Time)
-	// sessionworkspaceDescLastSeenAt is the schema descriptor for last_seen_at field.
-	sessionworkspaceDescLastSeenAt := sessionworkspaceFields[6].Descriptor()
-	// sessionworkspace.DefaultLastSeenAt holds the default value on creation for the last_seen_at field.
-	sessionworkspace.DefaultLastSeenAt = sessionworkspaceDescLastSeenAt.Default.(func() time.Time)
-	// sessionworkspace.UpdateDefaultLastSeenAt holds the default value on update for the last_seen_at field.
-	sessionworkspace.UpdateDefaultLastSeenAt = sessionworkspaceDescLastSeenAt.UpdateDefault.(func() time.Time)
 	systemsettingFields := schema.SystemSetting{}.Fields()
 	_ = systemsettingFields
 	// systemsettingDescKey is the schema descriptor for key field.

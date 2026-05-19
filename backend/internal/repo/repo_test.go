@@ -576,17 +576,8 @@ func TestDelete_CascadingRelations(t *testing.T) {
 	p := createSCMProvider(t, client)
 	rc := createRepo(t, svc, p.ID, "delete-me")
 
-	// Create child: session
-	_, err := client.Session.Create().
-		SetRepoConfigID(rc.ID).
-		SetBranch("feature-x").
-		Save(ctx)
-	if err != nil {
-		t.Fatalf("create session: %v", err)
-	}
-
 	// Create child: AI scan result
-	_, err = client.AiScanResult.Create().
+	_, err := client.AiScanResult.Create().
 		SetRepoConfigID(rc.ID).
 		SetScore(85).
 		Save(ctx)
@@ -625,10 +616,6 @@ func TestDelete_CascadingRelations(t *testing.T) {
 	}
 
 	// Verify all children are gone
-	sessions, _ := client.Session.Query().All(ctx)
-	if len(sessions) != 0 {
-		t.Errorf("sessions count = %d, want 0", len(sessions))
-	}
 	scans, _ := client.AiScanResult.Query().All(ctx)
 	if len(scans) != 0 {
 		t.Errorf("scan results count = %d, want 0", len(scans))

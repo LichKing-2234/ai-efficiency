@@ -17,10 +17,8 @@ import (
 	"github.com/ai-efficiency/backend/ent/prrecord"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/scmprovider"
-	"github.com/ai-efficiency/backend/ent/session"
 	"github.com/ai-efficiency/backend/ent/toolusageevent"
 	"github.com/ai-efficiency/backend/ent/webhookdeadletter"
-	"github.com/google/uuid"
 )
 
 // RepoConfigCreate is the builder for creating a RepoConfig entity.
@@ -225,21 +223,6 @@ func (rcc *RepoConfigCreate) SetNillableScmProviderID(id *int) *RepoConfigCreate
 // SetScmProvider sets the "scm_provider" edge to the ScmProvider entity.
 func (rcc *RepoConfigCreate) SetScmProvider(s *ScmProvider) *RepoConfigCreate {
 	return rcc.SetScmProviderID(s.ID)
-}
-
-// AddSessionIDs adds the "sessions" edge to the Session entity by IDs.
-func (rcc *RepoConfigCreate) AddSessionIDs(ids ...uuid.UUID) *RepoConfigCreate {
-	rcc.mutation.AddSessionIDs(ids...)
-	return rcc
-}
-
-// AddSessions adds the "sessions" edges to the Session entity.
-func (rcc *RepoConfigCreate) AddSessions(s ...*Session) *RepoConfigCreate {
-	ids := make([]uuid.UUID, len(s))
-	for i := range s {
-		ids[i] = s[i].ID
-	}
-	return rcc.AddSessionIDs(ids...)
 }
 
 // AddCommitCheckpointIDs adds the "commit_checkpoints" edge to the CommitCheckpoint entity by IDs.
@@ -553,22 +536,6 @@ func (rcc *RepoConfigCreate) createSpec() (*RepoConfig, *sqlgraph.CreateSpec) {
 			edge.Target.Nodes = append(edge.Target.Nodes, k)
 		}
 		_node.scm_provider_repo_configs = &nodes[0]
-		_spec.Edges = append(_spec.Edges, edge)
-	}
-	if nodes := rcc.mutation.SessionsIDs(); len(nodes) > 0 {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   repoconfig.SessionsTable,
-			Columns: []string{repoconfig.SessionsColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(session.FieldID, field.TypeUUID),
-			},
-		}
-		for _, k := range nodes {
-			edge.Target.Nodes = append(edge.Target.Nodes, k)
-		}
 		_spec.Edges = append(_spec.Edges, edge)
 	}
 	if nodes := rcc.mutation.CommitCheckpointsIDs(); len(nodes) > 0 {

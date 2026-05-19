@@ -10,7 +10,6 @@ import (
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/ent/scmprovider"
 	"github.com/ai-efficiency/backend/internal/testdb"
-	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
@@ -135,7 +134,7 @@ func TestAggregateForRepoClosedDB(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// LabelPR – cover the "no sessions" update error path (line 80-83)
+// LabelPR – cover the "no usage" update error path
 // Use a hook to inject an error on PrRecord update.
 // ---------------------------------------------------------------------------
 
@@ -172,7 +171,7 @@ func TestLabelPRNoSessionsUpdateErrorViaHook(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// LabelPR – cover the "sessions found, update PR record" error path (line 138)
+// LabelPR – cover the "usage found, update PR record" error path
 // ---------------------------------------------------------------------------
 
 func TestLabelPRWithSessionsUpdateErrorViaHook(t *testing.T) {
@@ -192,14 +191,7 @@ func TestLabelPRWithSessionsUpdateErrorViaHook(t *testing.T) {
 		SetCreatedAt(prCreatedAt).
 		SaveX(ctx)
 
-	sessionTime := prCreatedAt.Add(-1 * 24 * time.Hour)
-	client.Session.Create().
-		SetID(uuid.New()).
-		SetRepoConfigID(rc.ID).
-		SetBranch("feat-sess-hook").
-		SetStartedAt(sessionTime).
-		SetCreatedAt(sessionTime).
-		SaveX(ctx)
+	seedLabelerCheckpointUsage(t, ctx, client, rc.ID, "feat-sess-hook", prCreatedAt.Add(-24*time.Hour), "codex-hook")
 
 	// Install a hook that makes PrRecord updates fail
 	client.PrRecord.Use(func(next ent.Mutator) ent.Mutator {
@@ -214,12 +206,12 @@ func TestLabelPRWithSessionsUpdateErrorViaHook(t *testing.T) {
 	lab := NewLabeler(client, nil, logger)
 	_, err := lab.LabelPR(ctx, pr.ID)
 	if err == nil {
-		t.Fatal("expected error from injected hook on sessions path")
+		t.Fatal("expected error from injected hook on usage path")
 	}
 }
 
 // ---------------------------------------------------------------------------
-// LabelPR – cover the session query error path (line 69-71)
+// LabelPR – cover the checkpoint query error path
 // ---------------------------------------------------------------------------
 
 func TestLabelPRSessionQueryError(t *testing.T) {
@@ -237,13 +229,13 @@ func TestLabelPRSessionQueryError(t *testing.T) {
 		SetTargetBranch("main").
 		SaveX(ctx)
 
-	// Drop the sessions table to make the session query fail
+	// Drop the checkpoints table to make the checkpoint query fail
 	rawDB, err := sql.Open("postgres", dsn)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer rawDB.Close()
-	if _, err := rawDB.Exec("DROP TABLE IF EXISTS sessions CASCADE"); err != nil {
+	if _, err := rawDB.Exec("DROP TABLE IF EXISTS commit_checkpoints CASCADE"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -255,102 +247,7 @@ func TestLabelPRSessionQueryError(t *testing.T) {
 	}
 	_, err = lab.LabelPR(ctx, prs[0].ID)
 	if err == nil {
-		t.Fatal("expected error when sessions table is dropped")
-	}
-}
-
-// ---------------------------------------------------------------------------
-// LabelPR – sessions with API key but no relay provider
-// ---------------------------------------------------------------------------
-
-func TestLabelPRWithSessionsHavingAPIKeyButNoRelayProvider(t *testing.T) {
-	client := testdb.Open(t)
-	defer client.Close()
-	ctx := context.Background()
-	logger := zap.NewNop()
-
-	rc := createTestRepo(t, ctx, client, "apikey-no-client-repo")
-
-	prCreatedAt := time.Date(2026, 3, 19, 12, 0, 0, 0, time.UTC)
-	pr := client.PrRecord.Create().
-		SetRepoConfigID(rc.ID).
-		SetScmPrID(5001).
-		SetSourceBranch("feat-apikey").
-		SetTargetBranch("main").
-		SetLinesAdded(60).
-		SetLinesDeleted(15).
-		SetCreatedAt(prCreatedAt).
-		SaveX(ctx)
-
-	sessionTime := prCreatedAt.Add(-1 * 24 * time.Hour)
-	apiKeyID := 42
-	client.Session.Create().
-		SetID(uuid.New()).
-		SetRepoConfigID(rc.ID).
-		SetBranch("feat-apikey").
-		SetStartedAt(sessionTime).
-		SetCreatedAt(sessionTime).
-		SetRelayAPIKeyID(apiKeyID).
-		SaveX(ctx)
-
-	lab := NewLabeler(client, nil, logger)
-	result, err := lab.LabelPR(ctx, pr.ID)
-	if err != nil {
-		t.Fatalf("LabelPR: %v", err)
-	}
-
-	if result.AILabel != "ai_via_sub2api" {
-		t.Errorf("ai_label = %q, want %q", result.AILabel, "ai_via_sub2api")
-	}
-	if result.TokenCost != 0 {
-		t.Errorf("token_cost = %f, want 0", result.TokenCost)
-	}
-	if result.AIRatio != 0.5 {
-		t.Errorf("ai_ratio = %f, want 0.5", result.AIRatio)
-	}
-}
-
-func TestLabelPRWithSessionHavingEndedAt(t *testing.T) {
-	client := testdb.Open(t)
-	defer client.Close()
-	ctx := context.Background()
-	logger := zap.NewNop()
-
-	rc := createTestRepo(t, ctx, client, "ended-at-repo")
-
-	prCreatedAt := time.Date(2026, 3, 19, 12, 0, 0, 0, time.UTC)
-	pr := client.PrRecord.Create().
-		SetRepoConfigID(rc.ID).
-		SetScmPrID(5002).
-		SetSourceBranch("feat-ended").
-		SetTargetBranch("main").
-		SetLinesAdded(40).
-		SetLinesDeleted(10).
-		SetCreatedAt(prCreatedAt).
-		SaveX(ctx)
-
-	sessionTime := prCreatedAt.Add(-1 * 24 * time.Hour)
-	endedAt := sessionTime.Add(2 * time.Hour)
-	client.Session.Create().
-		SetID(uuid.New()).
-		SetRepoConfigID(rc.ID).
-		SetBranch("feat-ended").
-		SetStartedAt(sessionTime).
-		SetCreatedAt(sessionTime).
-		SetEndedAt(endedAt).
-		SaveX(ctx)
-
-	lab := NewLabeler(client, nil, logger)
-	result, err := lab.LabelPR(ctx, pr.ID)
-	if err != nil {
-		t.Fatalf("LabelPR: %v", err)
-	}
-
-	if result.AILabel != "ai_via_sub2api" {
-		t.Errorf("ai_label = %q, want %q", result.AILabel, "ai_via_sub2api")
-	}
-	if result.AIRatio != 0.5 {
-		t.Errorf("ai_ratio = %f, want 0.5", result.AIRatio)
+		t.Fatal("expected error when commit_checkpoints table is dropped")
 	}
 }
 

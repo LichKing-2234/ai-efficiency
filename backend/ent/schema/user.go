@@ -48,7 +48,8 @@ func (User) Fields() []ent.Field {
 // Edges of the User.
 func (User) Edges() []ent.Edge {
 	return []ent.Edge{
-		edge.To("sessions", Session.Type),
+		edge.To("commit_checkpoints", CommitCheckpoint.Type),
+		edge.To("commit_rewrites", CommitRewrite.Type),
 		edge.To("tool_usage_events", ToolUsageEvent.Type),
 	}
 }

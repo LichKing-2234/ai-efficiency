@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"errors"
 	"net/http"
 
 	"github.com/ai-efficiency/backend/internal/auth"
@@ -32,10 +31,6 @@ func (h *CheckpointHandler) Commit(c *gin.Context) {
 	}
 
 	if err := h.service.RecordCheckpointForUser(c.Request.Context(), uc.UserID, req); err != nil {
-		if errors.Is(err, checkpoint.ErrCheckpointForbidden) {
-			pkg.Error(c, http.StatusForbidden, err.Error())
-			return
-		}
 		pkg.Error(c, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
@@ -57,10 +52,6 @@ func (h *CheckpointHandler) Rewrite(c *gin.Context) {
 	}
 
 	if err := h.service.RecordRewriteForUser(c.Request.Context(), uc.UserID, req); err != nil {
-		if errors.Is(err, checkpoint.ErrCheckpointForbidden) {
-			pkg.Error(c, http.StatusForbidden, err.Error())
-			return
-		}
 		pkg.Error(c, http.StatusUnprocessableEntity, err.Error())
 		return
 	}

@@ -14,15 +14,17 @@ AI Efficiency Platform（AI 效能平台）是一个独立于 `sub2api` 的系�
 
 1. 当前代码
 2. 最新且最贴近问题域的 spec：
-   - `docs/superpowers/specs/2026-04-02-local-session-proxy-design.md`
-   - `docs/superpowers/specs/2026-03-26-session-pr-attribution-design.md`
+   - `docs/superpowers/specs/2026-05-19-ae-cli-deterministic-tool-configuration-design.md`
+   - `docs/superpowers/specs/2026-05-14-legacy-session-staged-cutover-design.md`
+   - `docs/superpowers/specs/2026-05-13-sessionless-local-tool-attribution-design.md`
+   - `docs/superpowers/specs/2026-04-15-oauth-device-login-design.md`
    - `docs/superpowers/specs/2026-03-24-oauth-cli-login-design.md`
 3. `docs/architecture.md` 中的项目级架构图和模块说明
 4. `docs/superpowers/specs/2026-03-17-ai-efficiency-platform-design.md` 作为历史基线
 
 执行要求：
 
-- 修改 `auth`、`relay`、`sessionbootstrap`、`checkpoint`、`attribution`、`hooks`、`collector`、`proxy` 相关逻辑前，先读对应 spec。
+- 修改 `auth`、`relay`、`checkpoint`、`attribution`、`hooks`、`collector`、legacy session compatibility、`proxy` 相关逻辑前，先读对应 spec。
 - 不要让历史文档里的旧设计覆盖最新合同。
 - 如果你发现“代码已变，但文档还停留在旧说法”，应同时更新文档，而不是继续传播旧描述。
 - `docs/architecture.md` 必须始终反映**当前最新**的项目级架构、运行时关系和模块边界。
@@ -39,7 +41,7 @@ AI Efficiency Platform（AI 效能平台）是一个独立于 `sub2api` 的系�
 - SCM 集成必须遵循 `backend/internal/scm.SCMProvider` 统一接口。
 - Session / PR attribution 相关改动必须明确区分：
   - relay identity / user mapping
-  - session bootstrap / runtime metadata
+  - workspace marker / legacy runtime metadata
   - git checkpoint
   - attribution / usage aggregation
 - `2026-04-02-local-session-proxy-design.md` 目前是设计草案；除非代码里已经实现，否则不要把 local session proxy 写成现状。
@@ -64,7 +66,6 @@ ai-efficiency/
 │       ├── relay/           # Relay/sub2api 抽象
 │       ├── repo/            # Repo 配置
 │       ├── scm/             # SCM provider 接口与实现
-│       ├── sessionbootstrap/ # ae-cli start 生命周期
 │       ├── webhook/         # Webhook 处理
 │       ├── handler/         # HTTP handlers
 │       └── middleware/      # 中间件
@@ -98,7 +99,7 @@ ai-efficiency/
 - 使用 `cobra` 组织命令
 - 当前登录态存储在 `~/.ae-cli/token.json`
 - legacy config 仍可能从 `~/.ae-cli/config.yaml` 读取；在明确迁移完成前不要假设它已经彻底移除
-- 涉及 workspace marker、runtime bundle、hooks、collector 的行为时，先核对最新 session 相关 spec 与当前代码实现
+- 涉及 workspace marker、hooks、collector 的行为时，先核对最新 session 相关 spec 与当前代码实现
 
 ## Documentation Rules
 
@@ -111,7 +112,7 @@ ai-efficiency/
 
 特别要求：
 
-- 若改动影响 login、OAuth、relay provider、session bootstrap、checkpoint、attribution、local proxy 方向，提交里必须明确这是“当前实现变更”还是“设计文档更新”。
+- 若改动影响 login、OAuth、relay provider、legacy session compatibility、checkpoint、attribution、local proxy 方向，提交里必须明确这是“当前实现变更”还是“设计文档更新”。
 - 不要只改代码不改 spec，也不要只改 spec 却继续让 `AGENTS.md` 保留过时约束。
 - 不要把所有旧 spec 都机械同步到最新实现；要保留架构和设计的演进脉络。
 - 一旦某份 spec 成为历史设计记录，后续演进应优先写入新的 spec，并由新的 spec 解释它与历史 spec 的关系；不要反向修改历史 spec 来追最新实现。
@@ -171,6 +172,9 @@ chore(deploy): update Docker Compose configuration
 ## Important Files
 
 - `docs/architecture.md` — 项目级架构总览与图示
+- `docs/superpowers/specs/2026-05-19-ae-cli-deterministic-tool-configuration-design.md` — 当前 `ae-cli discover` / tool config 主设计
+- `docs/superpowers/specs/2026-05-14-legacy-session-staged-cutover-design.md` — 当前 legacy session cutover 主设计
+- `docs/superpowers/specs/2026-05-13-sessionless-local-tool-attribution-design.md` — 当前 sessionless attribution 主设计
 - `docs/superpowers/specs/2026-03-17-ai-efficiency-platform-design.md` — 平台历史基线设计文档
 - `docs/superpowers/specs/2026-03-24-oauth-cli-login-design.md` — relay/OAuth/provider 基础设计
 - `docs/superpowers/specs/2026-03-26-session-pr-attribution-design.md` — session / PR attribution 当前主设计

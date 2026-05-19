@@ -22,14 +22,9 @@ func seedToolUsageScopeHTTP(t *testing.T, env *fullTestEnv) httpToolUsageScope {
 	ctx := context.Background()
 	repoID := createFullTestRepo(t, env.client)
 	userID := fullAdminUserID(t, env)
-	env.client.Session.Create().
-		SetRepoConfigID(repoID).
-		SetBranch("main").
-		SetUserID(userID).
-		SetStartedAt(time.Unix(100, 0).UTC()).
-		SaveX(ctx)
 	env.client.CommitCheckpoint.Create().
 		SetEventID("cp-http-seed-scope").
+		SetUserID(userID).
 		SetWorkspaceID("ws-1").
 		SetRepoConfigID(repoID).
 		SetCommitSha("seed-sha").

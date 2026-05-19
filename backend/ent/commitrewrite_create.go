@@ -12,8 +12,7 @@ import (
 	"entgo.io/ent/schema/field"
 	"github.com/ai-efficiency/backend/ent/commitrewrite"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
-	"github.com/ai-efficiency/backend/ent/session"
-	"github.com/google/uuid"
+	"github.com/ai-efficiency/backend/ent/user"
 )
 
 // CommitRewriteCreate is the builder for creating a CommitRewrite entity.
@@ -29,16 +28,16 @@ func (crc *CommitRewriteCreate) SetEventID(s string) *CommitRewriteCreate {
 	return crc
 }
 
-// SetSessionID sets the "session_id" field.
-func (crc *CommitRewriteCreate) SetSessionID(u uuid.UUID) *CommitRewriteCreate {
-	crc.mutation.SetSessionID(u)
+// SetUserID sets the "user_id" field.
+func (crc *CommitRewriteCreate) SetUserID(i int) *CommitRewriteCreate {
+	crc.mutation.SetUserID(i)
 	return crc
 }
 
-// SetNillableSessionID sets the "session_id" field if the given value is not nil.
-func (crc *CommitRewriteCreate) SetNillableSessionID(u *uuid.UUID) *CommitRewriteCreate {
-	if u != nil {
-		crc.SetSessionID(*u)
+// SetNillableUserID sets the "user_id" field if the given value is not nil.
+func (crc *CommitRewriteCreate) SetNillableUserID(i *int) *CommitRewriteCreate {
+	if i != nil {
+		crc.SetUserID(*i)
 	}
 	return crc
 }
@@ -101,9 +100,9 @@ func (crc *CommitRewriteCreate) SetNillableCapturedAt(t *time.Time) *CommitRewri
 	return crc
 }
 
-// SetSession sets the "session" edge to the Session entity.
-func (crc *CommitRewriteCreate) SetSession(s *Session) *CommitRewriteCreate {
-	return crc.SetSessionID(s.ID)
+// SetUser sets the "user" edge to the User entity.
+func (crc *CommitRewriteCreate) SetUser(u *User) *CommitRewriteCreate {
+	return crc.SetUserID(u.ID)
 }
 
 // SetRepoConfig sets the "repo_config" edge to the RepoConfig entity.
@@ -264,21 +263,21 @@ func (crc *CommitRewriteCreate) createSpec() (*CommitRewrite, *sqlgraph.CreateSp
 		_spec.SetField(commitrewrite.FieldCapturedAt, field.TypeTime, value)
 		_node.CapturedAt = value
 	}
-	if nodes := crc.mutation.SessionIDs(); len(nodes) > 0 {
+	if nodes := crc.mutation.UserIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.M2O,
 			Inverse: true,
-			Table:   commitrewrite.SessionTable,
-			Columns: []string{commitrewrite.SessionColumn},
+			Table:   commitrewrite.UserTable,
+			Columns: []string{commitrewrite.UserColumn},
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(session.FieldID, field.TypeUUID),
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {
 			edge.Target.Nodes = append(edge.Target.Nodes, k)
 		}
-		_node.SessionID = &nodes[0]
+		_node.UserID = &nodes[0]
 		_spec.Edges = append(_spec.Edges, edge)
 	}
 	if nodes := crc.mutation.RepoConfigIDs(); len(nodes) > 0 {

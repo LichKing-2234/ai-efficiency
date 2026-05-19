@@ -43,28 +43,39 @@ type User struct {
 
 // UserEdges holds the relations/edges for other nodes in the graph.
 type UserEdges struct {
-	// Sessions holds the value of the sessions edge.
-	Sessions []*Session `json:"sessions,omitempty"`
+	// CommitCheckpoints holds the value of the commit_checkpoints edge.
+	CommitCheckpoints []*CommitCheckpoint `json:"commit_checkpoints,omitempty"`
+	// CommitRewrites holds the value of the commit_rewrites edge.
+	CommitRewrites []*CommitRewrite `json:"commit_rewrites,omitempty"`
 	// ToolUsageEvents holds the value of the tool_usage_events edge.
 	ToolUsageEvents []*ToolUsageEvent `json:"tool_usage_events,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [2]bool
+	loadedTypes [3]bool
 }
 
-// SessionsOrErr returns the Sessions value or an error if the edge
+// CommitCheckpointsOrErr returns the CommitCheckpoints value or an error if the edge
 // was not loaded in eager-loading.
-func (e UserEdges) SessionsOrErr() ([]*Session, error) {
+func (e UserEdges) CommitCheckpointsOrErr() ([]*CommitCheckpoint, error) {
 	if e.loadedTypes[0] {
-		return e.Sessions, nil
+		return e.CommitCheckpoints, nil
 	}
-	return nil, &NotLoadedError{edge: "sessions"}
+	return nil, &NotLoadedError{edge: "commit_checkpoints"}
+}
+
+// CommitRewritesOrErr returns the CommitRewrites value or an error if the edge
+// was not loaded in eager-loading.
+func (e UserEdges) CommitRewritesOrErr() ([]*CommitRewrite, error) {
+	if e.loadedTypes[1] {
+		return e.CommitRewrites, nil
+	}
+	return nil, &NotLoadedError{edge: "commit_rewrites"}
 }
 
 // ToolUsageEventsOrErr returns the ToolUsageEvents value or an error if the edge
 // was not loaded in eager-loading.
 func (e UserEdges) ToolUsageEventsOrErr() ([]*ToolUsageEvent, error) {
-	if e.loadedTypes[1] {
+	if e.loadedTypes[2] {
 		return e.ToolUsageEvents, nil
 	}
 	return nil, &NotLoadedError{edge: "tool_usage_events"}
@@ -172,9 +183,14 @@ func (u *User) Value(name string) (ent.Value, error) {
 	return u.selectValues.Get(name)
 }
 
-// QuerySessions queries the "sessions" edge of the User entity.
-func (u *User) QuerySessions() *SessionQuery {
-	return NewUserClient(u.config).QuerySessions(u)
+// QueryCommitCheckpoints queries the "commit_checkpoints" edge of the User entity.
+func (u *User) QueryCommitCheckpoints() *CommitCheckpointQuery {
+	return NewUserClient(u.config).QueryCommitCheckpoints(u)
+}
+
+// QueryCommitRewrites queries the "commit_rewrites" edge of the User entity.
+func (u *User) QueryCommitRewrites() *CommitRewriteQuery {
+	return NewUserClient(u.config).QueryCommitRewrites(u)
 }
 
 // QueryToolUsageEvents queries the "tool_usage_events" edge of the User entity.
