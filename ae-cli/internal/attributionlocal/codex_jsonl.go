@@ -69,7 +69,10 @@ func ParseCodexJSONLFallback(path, workspaceRoot string) ([]LocalToolUsageEvent,
 				ObservedStartAt:   observedAt,
 				ObservedEndAt:     observedAt,
 				RawSourcePath:     path,
-				RawPayload:        payload,
+				RawPayload: map[string]any{
+					"timestamp": row["timestamp"],
+					"payload":   payload,
+				},
 			})
 		}
 	}
