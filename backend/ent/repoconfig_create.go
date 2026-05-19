@@ -10,7 +10,6 @@ import (
 
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
-	"github.com/ai-efficiency/backend/ent/aiscanresult"
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
 	"github.com/ai-efficiency/backend/ent/commitrewrite"
 	"github.com/ai-efficiency/backend/ent/efficiencymetric"
@@ -102,20 +101,6 @@ func (rcc *RepoConfigCreate) SetNillableWebhookSecret(s *string) *RepoConfigCrea
 	return rcc
 }
 
-// SetLastScanAt sets the "last_scan_at" field.
-func (rcc *RepoConfigCreate) SetLastScanAt(t time.Time) *RepoConfigCreate {
-	rcc.mutation.SetLastScanAt(t)
-	return rcc
-}
-
-// SetNillableLastScanAt sets the "last_scan_at" field if the given value is not nil.
-func (rcc *RepoConfigCreate) SetNillableLastScanAt(t *time.Time) *RepoConfigCreate {
-	if t != nil {
-		rcc.SetLastScanAt(*t)
-	}
-	return rcc
-}
-
 // SetGroupID sets the "group_id" field.
 func (rcc *RepoConfigCreate) SetGroupID(s string) *RepoConfigCreate {
 	rcc.mutation.SetGroupID(s)
@@ -200,12 +185,6 @@ func (rcc *RepoConfigCreate) SetNillableUpdatedAt(t *time.Time) *RepoConfigCreat
 	return rcc
 }
 
-// SetScanPromptOverride sets the "scan_prompt_override" field.
-func (rcc *RepoConfigCreate) SetScanPromptOverride(m map[string]string) *RepoConfigCreate {
-	rcc.mutation.SetScanPromptOverride(m)
-	return rcc
-}
-
 // SetScmProviderID sets the "scm_provider" edge to the ScmProvider entity by ID.
 func (rcc *RepoConfigCreate) SetScmProviderID(id int) *RepoConfigCreate {
 	rcc.mutation.SetScmProviderID(id)
@@ -283,21 +262,6 @@ func (rcc *RepoConfigCreate) AddWebhookDeadLetters(w ...*WebhookDeadLetter) *Rep
 		ids[i] = w[i].ID
 	}
 	return rcc.AddWebhookDeadLetterIDs(ids...)
-}
-
-// AddAiScanResultIDs adds the "ai_scan_results" edge to the AiScanResult entity by IDs.
-func (rcc *RepoConfigCreate) AddAiScanResultIDs(ids ...int) *RepoConfigCreate {
-	rcc.mutation.AddAiScanResultIDs(ids...)
-	return rcc
-}
-
-// AddAiScanResults adds the "ai_scan_results" edges to the AiScanResult entity.
-func (rcc *RepoConfigCreate) AddAiScanResults(a ...*AiScanResult) *RepoConfigCreate {
-	ids := make([]int, len(a))
-	for i := range a {
-		ids[i] = a[i].ID
-	}
-	return rcc.AddAiScanResultIDs(ids...)
 }
 
 // AddPrRecordIDs adds the "pr_records" edge to the PrRecord entity by IDs.
@@ -489,10 +453,6 @@ func (rcc *RepoConfigCreate) createSpec() (*RepoConfig, *sqlgraph.CreateSpec) {
 		_spec.SetField(repoconfig.FieldWebhookSecret, field.TypeString, value)
 		_node.WebhookSecret = &value
 	}
-	if value, ok := rcc.mutation.LastScanAt(); ok {
-		_spec.SetField(repoconfig.FieldLastScanAt, field.TypeTime, value)
-		_node.LastScanAt = &value
-	}
 	if value, ok := rcc.mutation.GroupID(); ok {
 		_spec.SetField(repoconfig.FieldGroupID, field.TypeString, value)
 		_node.GroupID = &value
@@ -516,10 +476,6 @@ func (rcc *RepoConfigCreate) createSpec() (*RepoConfig, *sqlgraph.CreateSpec) {
 	if value, ok := rcc.mutation.UpdatedAt(); ok {
 		_spec.SetField(repoconfig.FieldUpdatedAt, field.TypeTime, value)
 		_node.UpdatedAt = value
-	}
-	if value, ok := rcc.mutation.ScanPromptOverride(); ok {
-		_spec.SetField(repoconfig.FieldScanPromptOverride, field.TypeJSON, value)
-		_node.ScanPromptOverride = value
 	}
 	if nodes := rcc.mutation.ScmProviderIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{
@@ -595,22 +551,6 @@ func (rcc *RepoConfigCreate) createSpec() (*RepoConfig, *sqlgraph.CreateSpec) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(webhookdeadletter.FieldID, field.TypeInt),
-			},
-		}
-		for _, k := range nodes {
-			edge.Target.Nodes = append(edge.Target.Nodes, k)
-		}
-		_spec.Edges = append(_spec.Edges, edge)
-	}
-	if nodes := rcc.mutation.AiScanResultsIDs(); len(nodes) > 0 {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   repoconfig.AiScanResultsTable,
-			Columns: []string{repoconfig.AiScanResultsColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(aiscanresult.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {

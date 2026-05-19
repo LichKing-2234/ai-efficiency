@@ -30,8 +30,6 @@ const (
 	FieldWebhookID = "webhook_id"
 	// FieldWebhookSecret holds the string denoting the webhook_secret field in the database.
 	FieldWebhookSecret = "webhook_secret"
-	// FieldLastScanAt holds the string denoting the last_scan_at field in the database.
-	FieldLastScanAt = "last_scan_at"
 	// FieldGroupID holds the string denoting the group_id field in the database.
 	FieldGroupID = "group_id"
 	// FieldRelayProviderName holds the string denoting the relay_provider_name field in the database.
@@ -44,8 +42,6 @@ const (
 	FieldCreatedAt = "created_at"
 	// FieldUpdatedAt holds the string denoting the updated_at field in the database.
 	FieldUpdatedAt = "updated_at"
-	// FieldScanPromptOverride holds the string denoting the scan_prompt_override field in the database.
-	FieldScanPromptOverride = "scan_prompt_override"
 	// EdgeScmProvider holds the string denoting the scm_provider edge name in mutations.
 	EdgeScmProvider = "scm_provider"
 	// EdgeCommitCheckpoints holds the string denoting the commit_checkpoints edge name in mutations.
@@ -56,8 +52,6 @@ const (
 	EdgeToolUsageEvents = "tool_usage_events"
 	// EdgeWebhookDeadLetters holds the string denoting the webhook_dead_letters edge name in mutations.
 	EdgeWebhookDeadLetters = "webhook_dead_letters"
-	// EdgeAiScanResults holds the string denoting the ai_scan_results edge name in mutations.
-	EdgeAiScanResults = "ai_scan_results"
 	// EdgePrRecords holds the string denoting the pr_records edge name in mutations.
 	EdgePrRecords = "pr_records"
 	// EdgeEfficiencyMetrics holds the string denoting the efficiency_metrics edge name in mutations.
@@ -99,13 +93,6 @@ const (
 	WebhookDeadLettersInverseTable = "webhook_dead_letters"
 	// WebhookDeadLettersColumn is the table column denoting the webhook_dead_letters relation/edge.
 	WebhookDeadLettersColumn = "repo_config_webhook_dead_letters"
-	// AiScanResultsTable is the table that holds the ai_scan_results relation/edge.
-	AiScanResultsTable = "ai_scan_results"
-	// AiScanResultsInverseTable is the table name for the AiScanResult entity.
-	// It exists in this package in order to avoid circular dependency with the "aiscanresult" package.
-	AiScanResultsInverseTable = "ai_scan_results"
-	// AiScanResultsColumn is the table column denoting the ai_scan_results relation/edge.
-	AiScanResultsColumn = "repo_config_ai_scan_results"
 	// PrRecordsTable is the table that holds the pr_records relation/edge.
 	PrRecordsTable = "pr_records"
 	// PrRecordsInverseTable is the table name for the PrRecord entity.
@@ -132,14 +119,12 @@ var Columns = []string{
 	FieldDefaultBranch,
 	FieldWebhookID,
 	FieldWebhookSecret,
-	FieldLastScanAt,
 	FieldGroupID,
 	FieldRelayProviderName,
 	FieldRelayGroupID,
 	FieldStatus,
 	FieldCreatedAt,
 	FieldUpdatedAt,
-	FieldScanPromptOverride,
 }
 
 // ForeignKeys holds the SQL foreign-keys that are owned by the "repo_configs"
@@ -256,11 +241,6 @@ func ByWebhookSecret(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldWebhookSecret, opts...).ToFunc()
 }
 
-// ByLastScanAt orders the results by the last_scan_at field.
-func ByLastScanAt(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldLastScanAt, opts...).ToFunc()
-}
-
 // ByGroupID orders the results by the group_id field.
 func ByGroupID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldGroupID, opts...).ToFunc()
@@ -354,20 +334,6 @@ func ByWebhookDeadLetters(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOptio
 	}
 }
 
-// ByAiScanResultsCount orders the results by ai_scan_results count.
-func ByAiScanResultsCount(opts ...sql.OrderTermOption) OrderOption {
-	return func(s *sql.Selector) {
-		sqlgraph.OrderByNeighborsCount(s, newAiScanResultsStep(), opts...)
-	}
-}
-
-// ByAiScanResults orders the results by ai_scan_results terms.
-func ByAiScanResults(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
-	return func(s *sql.Selector) {
-		sqlgraph.OrderByNeighborTerms(s, newAiScanResultsStep(), append([]sql.OrderTerm{term}, terms...)...)
-	}
-}
-
 // ByPrRecordsCount orders the results by pr_records count.
 func ByPrRecordsCount(opts ...sql.OrderTermOption) OrderOption {
 	return func(s *sql.Selector) {
@@ -428,13 +394,6 @@ func newWebhookDeadLettersStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(WebhookDeadLettersInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.O2M, false, WebhookDeadLettersTable, WebhookDeadLettersColumn),
-	)
-}
-func newAiScanResultsStep() *sqlgraph.Step {
-	return sqlgraph.NewStep(
-		sqlgraph.From(Table, FieldID),
-		sqlgraph.To(AiScanResultsInverseTable, FieldID),
-		sqlgraph.Edge(sqlgraph.O2M, false, AiScanResultsTable, AiScanResultsColumn),
 	)
 }
 func newPrRecordsStep() *sqlgraph.Step {

@@ -501,12 +501,12 @@ describe('RepoListView', () => {
     expect(wrapper.text()).toContain('No SCM providers found')
   })
 
-  it('formats date for last_scan_at', async () => {
+  it('renders repo rows without the retired last scan column', async () => {
     const { wrapper } = await mountRepoList(sampleRepos)
 
-    // repo-a has last_scan_at, repo-b has null
-    // null should show dash
-    expect(wrapper.text()).toContain('—')
+    expect(wrapper.text()).not.toContain('Last Scan')
+    expect(wrapper.text()).toContain('repo-a')
+    expect(wrapper.text()).toContain('repo-b')
   })
 
   it('handles URL that does not match any pattern', async () => {

@@ -83,7 +83,7 @@ describe('AppSidebar', () => {
     expect(linkTexts).toContain('Settings')
   })
 
-  it('renders disabled Analysis and Gating items', async () => {
+  it('renders disabled Gating item', async () => {
     const router = createTestRouter()
     await router.push('/')
     await router.isReady()
@@ -92,12 +92,11 @@ describe('AppSidebar', () => {
       global: { plugins: [createPinia(), router] },
     })
 
-    expect(wrapper.text()).toContain('Analysis')
     expect(wrapper.text()).toContain('Gating')
 
     // These should be spans (not links), with cursor-not-allowed
     const disabledItems = wrapper.findAll('span.cursor-not-allowed')
-    expect(disabledItems.length).toBe(2)
+    expect(disabledItems.length).toBe(1)
   })
 
   it('applies active class to current route link', async () => {

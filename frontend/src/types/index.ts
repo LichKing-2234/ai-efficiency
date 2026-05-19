@@ -38,10 +38,8 @@ export interface RepoConfig {
   default_branch: string
   status: string
   binding_state: 'bound' | 'unbound'
-  last_scan_at: string | null
   group_id: number | string | null
   scm_provider_id?: number | null
-  scan_prompt_override?: { system_prompt?: string; user_prompt_template?: string }
   created_at: string
   edges?: {
     scm_provider?: SCMProvider

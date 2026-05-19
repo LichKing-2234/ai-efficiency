@@ -5,7 +5,6 @@ package runtime
 import (
 	"time"
 
-	"github.com/ai-efficiency/backend/ent/aiscanresult"
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
 	"github.com/ai-efficiency/backend/ent/commitrewrite"
 	"github.com/ai-efficiency/backend/ent/credential"
@@ -26,32 +25,6 @@ import (
 // (default values, validators, hooks and policies) and stitches it
 // to their package variables.
 func init() {
-	aiscanresultFields := schema.AiScanResult{}.Fields()
-	_ = aiscanresultFields
-	// aiscanresultDescScore is the schema descriptor for score field.
-	aiscanresultDescScore := aiscanresultFields[0].Descriptor()
-	// aiscanresult.DefaultScore holds the default value on creation for the score field.
-	aiscanresult.DefaultScore = aiscanresultDescScore.Default.(int)
-	// aiscanresult.ScoreValidator is a validator for the "score" field. It is called by the builders before save.
-	aiscanresult.ScoreValidator = func() func(int) error {
-		validators := aiscanresultDescScore.Validators
-		fns := [...]func(int) error{
-			validators[0].(func(int) error),
-			validators[1].(func(int) error),
-		}
-		return func(score int) error {
-			for _, fn := range fns {
-				if err := fn(score); err != nil {
-					return err
-				}
-			}
-			return nil
-		}
-	}()
-	// aiscanresultDescCreatedAt is the schema descriptor for created_at field.
-	aiscanresultDescCreatedAt := aiscanresultFields[5].Descriptor()
-	// aiscanresult.DefaultCreatedAt holds the default value on creation for the created_at field.
-	aiscanresult.DefaultCreatedAt = aiscanresultDescCreatedAt.Default.(func() time.Time)
 	commitcheckpointFields := schema.CommitCheckpoint{}.Fields()
 	_ = commitcheckpointFields
 	// commitcheckpointDescWorkspaceID is the schema descriptor for workspace_id field.
@@ -265,11 +238,11 @@ func init() {
 	// repoconfig.DefaultDefaultBranch holds the default value on creation for the default_branch field.
 	repoconfig.DefaultDefaultBranch = repoconfigDescDefaultBranch.Default.(string)
 	// repoconfigDescCreatedAt is the schema descriptor for created_at field.
-	repoconfigDescCreatedAt := repoconfigFields[12].Descriptor()
+	repoconfigDescCreatedAt := repoconfigFields[11].Descriptor()
 	// repoconfig.DefaultCreatedAt holds the default value on creation for the created_at field.
 	repoconfig.DefaultCreatedAt = repoconfigDescCreatedAt.Default.(func() time.Time)
 	// repoconfigDescUpdatedAt is the schema descriptor for updated_at field.
-	repoconfigDescUpdatedAt := repoconfigFields[13].Descriptor()
+	repoconfigDescUpdatedAt := repoconfigFields[12].Descriptor()
 	// repoconfig.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	repoconfig.DefaultUpdatedAt = repoconfigDescUpdatedAt.Default.(func() time.Time)
 	// repoconfig.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.

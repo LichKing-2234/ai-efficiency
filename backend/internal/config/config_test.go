@@ -147,12 +147,6 @@ func TestLoadAllDefaults(t *testing.T) {
 	if cfg.Auth.LDAP.UserFilter != "(uid=%s)" {
 		t.Errorf("default ldap user_filter = %q, want %q", cfg.Auth.LDAP.UserFilter, "(uid=%s)")
 	}
-	if cfg.Analysis.LLM.MaxTokensPerScan != 100000 {
-		t.Errorf("default max_tokens_per_scan = %d, want 100000", cfg.Analysis.LLM.MaxTokensPerScan)
-	}
-	if cfg.Analysis.LLM.MaxScansPerRepoDay != 3 {
-		t.Errorf("default max_scans_per_repo_per_day = %d, want 3", cfg.Analysis.LLM.MaxScansPerRepoDay)
-	}
 }
 
 func TestLoadEnvOverrideNested(t *testing.T) {
@@ -215,11 +209,6 @@ auth:
     tls: true
 encryption:
   key: "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
-analysis:
-  llm:
-    model: "gpt-3.5-turbo"
-    max_tokens_per_scan: 50000
-    max_scans_per_repo_per_day: 5
 `
 	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
 		t.Fatal(err)
@@ -277,12 +266,6 @@ analysis:
 	}
 	if cfg.Encryption.Key != "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789" {
 		t.Errorf("encryption key = %q", cfg.Encryption.Key)
-	}
-	if cfg.Analysis.LLM.MaxTokensPerScan != 50000 {
-		t.Errorf("llm max_tokens_per_scan = %d", cfg.Analysis.LLM.MaxTokensPerScan)
-	}
-	if cfg.Analysis.LLM.MaxScansPerRepoDay != 5 {
-		t.Errorf("llm max_scans_per_repo_per_day = %d", cfg.Analysis.LLM.MaxScansPerRepoDay)
 	}
 }
 
@@ -489,14 +472,6 @@ func TestEnsureWritableConfigFileCreatesReloadableConfig(t *testing.T) {
 		Encryption: EncryptionConfig{
 			Key: "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
 		},
-		Analysis: AnalysisConfig{
-			LLM: LLMConfig{
-				MaxTokensPerScan:   64000,
-				MaxScansPerRepoDay: 3,
-				SystemPrompt:       "system prompt",
-				UserPromptTemplate: "user prompt",
-			},
-		},
 		Deployment: DeploymentConfig{
 			Mode:     "bundled",
 			StateDir: "/var/lib/ai-efficiency",
@@ -528,9 +503,6 @@ func TestEnsureWritableConfigFileCreatesReloadableConfig(t *testing.T) {
 	}
 	if loaded.Relay.AdminURL != "http://relay-admin.example.com" {
 		t.Fatalf("relay.admin_url = %q, want %q", loaded.Relay.AdminURL, "http://relay-admin.example.com")
-	}
-	if loaded.Analysis.LLM.SystemPrompt != "system prompt" {
-		t.Fatalf("analysis.llm.system_prompt = %q, want %q", loaded.Analysis.LLM.SystemPrompt, "system prompt")
 	}
 	if loaded.Auth.LDAP.BindPassword != "secret" {
 		t.Fatalf("auth.ldap.bind_password = %q, want %q", loaded.Auth.LDAP.BindPassword, "secret")

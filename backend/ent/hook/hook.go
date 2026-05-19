@@ -9,18 +9,6 @@ import (
 	"github.com/ai-efficiency/backend/ent"
 )
 
-// The AiScanResultFunc type is an adapter to allow the use of ordinary
-// function as AiScanResult mutator.
-type AiScanResultFunc func(context.Context, *ent.AiScanResultMutation) (ent.Value, error)
-
-// Mutate calls f(ctx, m).
-func (f AiScanResultFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
-	if mv, ok := m.(*ent.AiScanResultMutation); ok {
-		return f(ctx, mv)
-	}
-	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.AiScanResultMutation", m)
-}
-
 // The CommitCheckpointFunc type is an adapter to allow the use of ordinary
 // function as CommitCheckpoint mutator.
 type CommitCheckpointFunc func(context.Context, *ent.CommitCheckpointMutation) (ent.Value, error)

@@ -90,11 +90,6 @@ func WebhookSecret(v string) predicate.RepoConfig {
 	return predicate.RepoConfig(sql.FieldEQ(FieldWebhookSecret, v))
 }
 
-// LastScanAt applies equality check predicate on the "last_scan_at" field. It's identical to LastScanAtEQ.
-func LastScanAt(v time.Time) predicate.RepoConfig {
-	return predicate.RepoConfig(sql.FieldEQ(FieldLastScanAt, v))
-}
-
 // GroupID applies equality check predicate on the "group_id" field. It's identical to GroupIDEQ.
 func GroupID(v string) predicate.RepoConfig {
 	return predicate.RepoConfig(sql.FieldEQ(FieldGroupID, v))
@@ -605,56 +600,6 @@ func WebhookSecretContainsFold(v string) predicate.RepoConfig {
 	return predicate.RepoConfig(sql.FieldContainsFold(FieldWebhookSecret, v))
 }
 
-// LastScanAtEQ applies the EQ predicate on the "last_scan_at" field.
-func LastScanAtEQ(v time.Time) predicate.RepoConfig {
-	return predicate.RepoConfig(sql.FieldEQ(FieldLastScanAt, v))
-}
-
-// LastScanAtNEQ applies the NEQ predicate on the "last_scan_at" field.
-func LastScanAtNEQ(v time.Time) predicate.RepoConfig {
-	return predicate.RepoConfig(sql.FieldNEQ(FieldLastScanAt, v))
-}
-
-// LastScanAtIn applies the In predicate on the "last_scan_at" field.
-func LastScanAtIn(vs ...time.Time) predicate.RepoConfig {
-	return predicate.RepoConfig(sql.FieldIn(FieldLastScanAt, vs...))
-}
-
-// LastScanAtNotIn applies the NotIn predicate on the "last_scan_at" field.
-func LastScanAtNotIn(vs ...time.Time) predicate.RepoConfig {
-	return predicate.RepoConfig(sql.FieldNotIn(FieldLastScanAt, vs...))
-}
-
-// LastScanAtGT applies the GT predicate on the "last_scan_at" field.
-func LastScanAtGT(v time.Time) predicate.RepoConfig {
-	return predicate.RepoConfig(sql.FieldGT(FieldLastScanAt, v))
-}
-
-// LastScanAtGTE applies the GTE predicate on the "last_scan_at" field.
-func LastScanAtGTE(v time.Time) predicate.RepoConfig {
-	return predicate.RepoConfig(sql.FieldGTE(FieldLastScanAt, v))
-}
-
-// LastScanAtLT applies the LT predicate on the "last_scan_at" field.
-func LastScanAtLT(v time.Time) predicate.RepoConfig {
-	return predicate.RepoConfig(sql.FieldLT(FieldLastScanAt, v))
-}
-
-// LastScanAtLTE applies the LTE predicate on the "last_scan_at" field.
-func LastScanAtLTE(v time.Time) predicate.RepoConfig {
-	return predicate.RepoConfig(sql.FieldLTE(FieldLastScanAt, v))
-}
-
-// LastScanAtIsNil applies the IsNil predicate on the "last_scan_at" field.
-func LastScanAtIsNil() predicate.RepoConfig {
-	return predicate.RepoConfig(sql.FieldIsNull(FieldLastScanAt))
-}
-
-// LastScanAtNotNil applies the NotNil predicate on the "last_scan_at" field.
-func LastScanAtNotNil() predicate.RepoConfig {
-	return predicate.RepoConfig(sql.FieldNotNull(FieldLastScanAt))
-}
-
 // GroupIDEQ applies the EQ predicate on the "group_id" field.
 func GroupIDEQ(v string) predicate.RepoConfig {
 	return predicate.RepoConfig(sql.FieldEQ(FieldGroupID, v))
@@ -980,16 +925,6 @@ func UpdatedAtLTE(v time.Time) predicate.RepoConfig {
 	return predicate.RepoConfig(sql.FieldLTE(FieldUpdatedAt, v))
 }
 
-// ScanPromptOverrideIsNil applies the IsNil predicate on the "scan_prompt_override" field.
-func ScanPromptOverrideIsNil() predicate.RepoConfig {
-	return predicate.RepoConfig(sql.FieldIsNull(FieldScanPromptOverride))
-}
-
-// ScanPromptOverrideNotNil applies the NotNil predicate on the "scan_prompt_override" field.
-func ScanPromptOverrideNotNil() predicate.RepoConfig {
-	return predicate.RepoConfig(sql.FieldNotNull(FieldScanPromptOverride))
-}
-
 // HasScmProvider applies the HasEdge predicate on the "scm_provider" edge.
 func HasScmProvider() predicate.RepoConfig {
 	return predicate.RepoConfig(func(s *sql.Selector) {
@@ -1097,29 +1032,6 @@ func HasWebhookDeadLetters() predicate.RepoConfig {
 func HasWebhookDeadLettersWith(preds ...predicate.WebhookDeadLetter) predicate.RepoConfig {
 	return predicate.RepoConfig(func(s *sql.Selector) {
 		step := newWebhookDeadLettersStep()
-		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
-			for _, p := range preds {
-				p(s)
-			}
-		})
-	})
-}
-
-// HasAiScanResults applies the HasEdge predicate on the "ai_scan_results" edge.
-func HasAiScanResults() predicate.RepoConfig {
-	return predicate.RepoConfig(func(s *sql.Selector) {
-		step := sqlgraph.NewStep(
-			sqlgraph.From(Table, FieldID),
-			sqlgraph.Edge(sqlgraph.O2M, false, AiScanResultsTable, AiScanResultsColumn),
-		)
-		sqlgraph.HasNeighbors(s, step)
-	})
-}
-
-// HasAiScanResultsWith applies the HasEdge predicate on the "ai_scan_results" edge with a given conditions (other predicates).
-func HasAiScanResultsWith(preds ...predicate.AiScanResult) predicate.RepoConfig {
-	return predicate.RepoConfig(func(s *sql.Selector) {
-		step := newAiScanResultsStep()
 		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
 			for _, p := range preds {
 				p(s)

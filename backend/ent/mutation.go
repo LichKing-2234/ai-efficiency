@@ -11,7 +11,6 @@ import (
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
-	"github.com/ai-efficiency/backend/ent/aiscanresult"
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
 	"github.com/ai-efficiency/backend/ent/commitrewrite"
 	"github.com/ai-efficiency/backend/ent/credential"
@@ -37,7 +36,6 @@ const (
 	OpUpdateOne = ent.OpUpdateOne
 
 	// Node types.
-	TypeAiScanResult      = "AiScanResult"
 	TypeCommitCheckpoint  = "CommitCheckpoint"
 	TypeCommitRewrite     = "CommitRewrite"
 	TypeCredential        = "Credential"
@@ -52,782 +50,6 @@ const (
 	TypeUser              = "User"
 	TypeWebhookDeadLetter = "WebhookDeadLetter"
 )
-
-// AiScanResultMutation represents an operation that mutates the AiScanResult nodes in the graph.
-type AiScanResultMutation struct {
-	config
-	op                 Op
-	typ                string
-	id                 *int
-	score              *int
-	addscore           *int
-	dimensions         *map[string]interface{}
-	suggestions        *[]map[string]interface{}
-	appendsuggestions  []map[string]interface{}
-	scan_type          *aiscanresult.ScanType
-	commit_sha         *string
-	created_at         *time.Time
-	clearedFields      map[string]struct{}
-	repo_config        *int
-	clearedrepo_config bool
-	done               bool
-	oldValue           func(context.Context) (*AiScanResult, error)
-	predicates         []predicate.AiScanResult
-}
-
-var _ ent.Mutation = (*AiScanResultMutation)(nil)
-
-// aiscanresultOption allows management of the mutation configuration using functional options.
-type aiscanresultOption func(*AiScanResultMutation)
-
-// newAiScanResultMutation creates new mutation for the AiScanResult entity.
-func newAiScanResultMutation(c config, op Op, opts ...aiscanresultOption) *AiScanResultMutation {
-	m := &AiScanResultMutation{
-		config:        c,
-		op:            op,
-		typ:           TypeAiScanResult,
-		clearedFields: make(map[string]struct{}),
-	}
-	for _, opt := range opts {
-		opt(m)
-	}
-	return m
-}
-
-// withAiScanResultID sets the ID field of the mutation.
-func withAiScanResultID(id int) aiscanresultOption {
-	return func(m *AiScanResultMutation) {
-		var (
-			err   error
-			once  sync.Once
-			value *AiScanResult
-		)
-		m.oldValue = func(ctx context.Context) (*AiScanResult, error) {
-			once.Do(func() {
-				if m.done {
-					err = errors.New("querying old values post mutation is not allowed")
-				} else {
-					value, err = m.Client().AiScanResult.Get(ctx, id)
-				}
-			})
-			return value, err
-		}
-		m.id = &id
-	}
-}
-
-// withAiScanResult sets the old AiScanResult of the mutation.
-func withAiScanResult(node *AiScanResult) aiscanresultOption {
-	return func(m *AiScanResultMutation) {
-		m.oldValue = func(context.Context) (*AiScanResult, error) {
-			return node, nil
-		}
-		m.id = &node.ID
-	}
-}
-
-// Client returns a new `ent.Client` from the mutation. If the mutation was
-// executed in a transaction (ent.Tx), a transactional client is returned.
-func (m AiScanResultMutation) Client() *Client {
-	client := &Client{config: m.config}
-	client.init()
-	return client
-}
-
-// Tx returns an `ent.Tx` for mutations that were executed in transactions;
-// it returns an error otherwise.
-func (m AiScanResultMutation) Tx() (*Tx, error) {
-	if _, ok := m.driver.(*txDriver); !ok {
-		return nil, errors.New("ent: mutation is not running in a transaction")
-	}
-	tx := &Tx{config: m.config}
-	tx.init()
-	return tx, nil
-}
-
-// ID returns the ID value in the mutation. Note that the ID is only available
-// if it was provided to the builder or after it was returned from the database.
-func (m *AiScanResultMutation) ID() (id int, exists bool) {
-	if m.id == nil {
-		return
-	}
-	return *m.id, true
-}
-
-// IDs queries the database and returns the entity ids that match the mutation's predicate.
-// That means, if the mutation is applied within a transaction with an isolation level such
-// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
-// or updated by the mutation.
-func (m *AiScanResultMutation) IDs(ctx context.Context) ([]int, error) {
-	switch {
-	case m.op.Is(OpUpdateOne | OpDeleteOne):
-		id, exists := m.ID()
-		if exists {
-			return []int{id}, nil
-		}
-		fallthrough
-	case m.op.Is(OpUpdate | OpDelete):
-		return m.Client().AiScanResult.Query().Where(m.predicates...).IDs(ctx)
-	default:
-		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
-	}
-}
-
-// SetScore sets the "score" field.
-func (m *AiScanResultMutation) SetScore(i int) {
-	m.score = &i
-	m.addscore = nil
-}
-
-// Score returns the value of the "score" field in the mutation.
-func (m *AiScanResultMutation) Score() (r int, exists bool) {
-	v := m.score
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// OldScore returns the old "score" field's value of the AiScanResult entity.
-// If the AiScanResult object wasn't provided to the builder, the object is fetched from the database.
-// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *AiScanResultMutation) OldScore(ctx context.Context) (v int, err error) {
-	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldScore is only allowed on UpdateOne operations")
-	}
-	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldScore requires an ID field in the mutation")
-	}
-	oldValue, err := m.oldValue(ctx)
-	if err != nil {
-		return v, fmt.Errorf("querying old value for OldScore: %w", err)
-	}
-	return oldValue.Score, nil
-}
-
-// AddScore adds i to the "score" field.
-func (m *AiScanResultMutation) AddScore(i int) {
-	if m.addscore != nil {
-		*m.addscore += i
-	} else {
-		m.addscore = &i
-	}
-}
-
-// AddedScore returns the value that was added to the "score" field in this mutation.
-func (m *AiScanResultMutation) AddedScore() (r int, exists bool) {
-	v := m.addscore
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// ResetScore resets all changes to the "score" field.
-func (m *AiScanResultMutation) ResetScore() {
-	m.score = nil
-	m.addscore = nil
-}
-
-// SetDimensions sets the "dimensions" field.
-func (m *AiScanResultMutation) SetDimensions(value map[string]interface{}) {
-	m.dimensions = &value
-}
-
-// Dimensions returns the value of the "dimensions" field in the mutation.
-func (m *AiScanResultMutation) Dimensions() (r map[string]interface{}, exists bool) {
-	v := m.dimensions
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// OldDimensions returns the old "dimensions" field's value of the AiScanResult entity.
-// If the AiScanResult object wasn't provided to the builder, the object is fetched from the database.
-// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *AiScanResultMutation) OldDimensions(ctx context.Context) (v map[string]interface{}, err error) {
-	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldDimensions is only allowed on UpdateOne operations")
-	}
-	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldDimensions requires an ID field in the mutation")
-	}
-	oldValue, err := m.oldValue(ctx)
-	if err != nil {
-		return v, fmt.Errorf("querying old value for OldDimensions: %w", err)
-	}
-	return oldValue.Dimensions, nil
-}
-
-// ClearDimensions clears the value of the "dimensions" field.
-func (m *AiScanResultMutation) ClearDimensions() {
-	m.dimensions = nil
-	m.clearedFields[aiscanresult.FieldDimensions] = struct{}{}
-}
-
-// DimensionsCleared returns if the "dimensions" field was cleared in this mutation.
-func (m *AiScanResultMutation) DimensionsCleared() bool {
-	_, ok := m.clearedFields[aiscanresult.FieldDimensions]
-	return ok
-}
-
-// ResetDimensions resets all changes to the "dimensions" field.
-func (m *AiScanResultMutation) ResetDimensions() {
-	m.dimensions = nil
-	delete(m.clearedFields, aiscanresult.FieldDimensions)
-}
-
-// SetSuggestions sets the "suggestions" field.
-func (m *AiScanResultMutation) SetSuggestions(value []map[string]interface{}) {
-	m.suggestions = &value
-	m.appendsuggestions = nil
-}
-
-// Suggestions returns the value of the "suggestions" field in the mutation.
-func (m *AiScanResultMutation) Suggestions() (r []map[string]interface{}, exists bool) {
-	v := m.suggestions
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// OldSuggestions returns the old "suggestions" field's value of the AiScanResult entity.
-// If the AiScanResult object wasn't provided to the builder, the object is fetched from the database.
-// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *AiScanResultMutation) OldSuggestions(ctx context.Context) (v []map[string]interface{}, err error) {
-	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldSuggestions is only allowed on UpdateOne operations")
-	}
-	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldSuggestions requires an ID field in the mutation")
-	}
-	oldValue, err := m.oldValue(ctx)
-	if err != nil {
-		return v, fmt.Errorf("querying old value for OldSuggestions: %w", err)
-	}
-	return oldValue.Suggestions, nil
-}
-
-// AppendSuggestions adds value to the "suggestions" field.
-func (m *AiScanResultMutation) AppendSuggestions(value []map[string]interface{}) {
-	m.appendsuggestions = append(m.appendsuggestions, value...)
-}
-
-// AppendedSuggestions returns the list of values that were appended to the "suggestions" field in this mutation.
-func (m *AiScanResultMutation) AppendedSuggestions() ([]map[string]interface{}, bool) {
-	if len(m.appendsuggestions) == 0 {
-		return nil, false
-	}
-	return m.appendsuggestions, true
-}
-
-// ClearSuggestions clears the value of the "suggestions" field.
-func (m *AiScanResultMutation) ClearSuggestions() {
-	m.suggestions = nil
-	m.appendsuggestions = nil
-	m.clearedFields[aiscanresult.FieldSuggestions] = struct{}{}
-}
-
-// SuggestionsCleared returns if the "suggestions" field was cleared in this mutation.
-func (m *AiScanResultMutation) SuggestionsCleared() bool {
-	_, ok := m.clearedFields[aiscanresult.FieldSuggestions]
-	return ok
-}
-
-// ResetSuggestions resets all changes to the "suggestions" field.
-func (m *AiScanResultMutation) ResetSuggestions() {
-	m.suggestions = nil
-	m.appendsuggestions = nil
-	delete(m.clearedFields, aiscanresult.FieldSuggestions)
-}
-
-// SetScanType sets the "scan_type" field.
-func (m *AiScanResultMutation) SetScanType(at aiscanresult.ScanType) {
-	m.scan_type = &at
-}
-
-// ScanType returns the value of the "scan_type" field in the mutation.
-func (m *AiScanResultMutation) ScanType() (r aiscanresult.ScanType, exists bool) {
-	v := m.scan_type
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// OldScanType returns the old "scan_type" field's value of the AiScanResult entity.
-// If the AiScanResult object wasn't provided to the builder, the object is fetched from the database.
-// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *AiScanResultMutation) OldScanType(ctx context.Context) (v aiscanresult.ScanType, err error) {
-	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldScanType is only allowed on UpdateOne operations")
-	}
-	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldScanType requires an ID field in the mutation")
-	}
-	oldValue, err := m.oldValue(ctx)
-	if err != nil {
-		return v, fmt.Errorf("querying old value for OldScanType: %w", err)
-	}
-	return oldValue.ScanType, nil
-}
-
-// ResetScanType resets all changes to the "scan_type" field.
-func (m *AiScanResultMutation) ResetScanType() {
-	m.scan_type = nil
-}
-
-// SetCommitSha sets the "commit_sha" field.
-func (m *AiScanResultMutation) SetCommitSha(s string) {
-	m.commit_sha = &s
-}
-
-// CommitSha returns the value of the "commit_sha" field in the mutation.
-func (m *AiScanResultMutation) CommitSha() (r string, exists bool) {
-	v := m.commit_sha
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// OldCommitSha returns the old "commit_sha" field's value of the AiScanResult entity.
-// If the AiScanResult object wasn't provided to the builder, the object is fetched from the database.
-// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *AiScanResultMutation) OldCommitSha(ctx context.Context) (v *string, err error) {
-	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldCommitSha is only allowed on UpdateOne operations")
-	}
-	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldCommitSha requires an ID field in the mutation")
-	}
-	oldValue, err := m.oldValue(ctx)
-	if err != nil {
-		return v, fmt.Errorf("querying old value for OldCommitSha: %w", err)
-	}
-	return oldValue.CommitSha, nil
-}
-
-// ClearCommitSha clears the value of the "commit_sha" field.
-func (m *AiScanResultMutation) ClearCommitSha() {
-	m.commit_sha = nil
-	m.clearedFields[aiscanresult.FieldCommitSha] = struct{}{}
-}
-
-// CommitShaCleared returns if the "commit_sha" field was cleared in this mutation.
-func (m *AiScanResultMutation) CommitShaCleared() bool {
-	_, ok := m.clearedFields[aiscanresult.FieldCommitSha]
-	return ok
-}
-
-// ResetCommitSha resets all changes to the "commit_sha" field.
-func (m *AiScanResultMutation) ResetCommitSha() {
-	m.commit_sha = nil
-	delete(m.clearedFields, aiscanresult.FieldCommitSha)
-}
-
-// SetCreatedAt sets the "created_at" field.
-func (m *AiScanResultMutation) SetCreatedAt(t time.Time) {
-	m.created_at = &t
-}
-
-// CreatedAt returns the value of the "created_at" field in the mutation.
-func (m *AiScanResultMutation) CreatedAt() (r time.Time, exists bool) {
-	v := m.created_at
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// OldCreatedAt returns the old "created_at" field's value of the AiScanResult entity.
-// If the AiScanResult object wasn't provided to the builder, the object is fetched from the database.
-// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *AiScanResultMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
-	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
-	}
-	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
-	}
-	oldValue, err := m.oldValue(ctx)
-	if err != nil {
-		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
-	}
-	return oldValue.CreatedAt, nil
-}
-
-// ResetCreatedAt resets all changes to the "created_at" field.
-func (m *AiScanResultMutation) ResetCreatedAt() {
-	m.created_at = nil
-}
-
-// SetRepoConfigID sets the "repo_config" edge to the RepoConfig entity by id.
-func (m *AiScanResultMutation) SetRepoConfigID(id int) {
-	m.repo_config = &id
-}
-
-// ClearRepoConfig clears the "repo_config" edge to the RepoConfig entity.
-func (m *AiScanResultMutation) ClearRepoConfig() {
-	m.clearedrepo_config = true
-}
-
-// RepoConfigCleared reports if the "repo_config" edge to the RepoConfig entity was cleared.
-func (m *AiScanResultMutation) RepoConfigCleared() bool {
-	return m.clearedrepo_config
-}
-
-// RepoConfigID returns the "repo_config" edge ID in the mutation.
-func (m *AiScanResultMutation) RepoConfigID() (id int, exists bool) {
-	if m.repo_config != nil {
-		return *m.repo_config, true
-	}
-	return
-}
-
-// RepoConfigIDs returns the "repo_config" edge IDs in the mutation.
-// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
-// RepoConfigID instead. It exists only for internal usage by the builders.
-func (m *AiScanResultMutation) RepoConfigIDs() (ids []int) {
-	if id := m.repo_config; id != nil {
-		ids = append(ids, *id)
-	}
-	return
-}
-
-// ResetRepoConfig resets all changes to the "repo_config" edge.
-func (m *AiScanResultMutation) ResetRepoConfig() {
-	m.repo_config = nil
-	m.clearedrepo_config = false
-}
-
-// Where appends a list predicates to the AiScanResultMutation builder.
-func (m *AiScanResultMutation) Where(ps ...predicate.AiScanResult) {
-	m.predicates = append(m.predicates, ps...)
-}
-
-// WhereP appends storage-level predicates to the AiScanResultMutation builder. Using this method,
-// users can use type-assertion to append predicates that do not depend on any generated package.
-func (m *AiScanResultMutation) WhereP(ps ...func(*sql.Selector)) {
-	p := make([]predicate.AiScanResult, len(ps))
-	for i := range ps {
-		p[i] = ps[i]
-	}
-	m.Where(p...)
-}
-
-// Op returns the operation name.
-func (m *AiScanResultMutation) Op() Op {
-	return m.op
-}
-
-// SetOp allows setting the mutation operation.
-func (m *AiScanResultMutation) SetOp(op Op) {
-	m.op = op
-}
-
-// Type returns the node type of this mutation (AiScanResult).
-func (m *AiScanResultMutation) Type() string {
-	return m.typ
-}
-
-// Fields returns all fields that were changed during this mutation. Note that in
-// order to get all numeric fields that were incremented/decremented, call
-// AddedFields().
-func (m *AiScanResultMutation) Fields() []string {
-	fields := make([]string, 0, 6)
-	if m.score != nil {
-		fields = append(fields, aiscanresult.FieldScore)
-	}
-	if m.dimensions != nil {
-		fields = append(fields, aiscanresult.FieldDimensions)
-	}
-	if m.suggestions != nil {
-		fields = append(fields, aiscanresult.FieldSuggestions)
-	}
-	if m.scan_type != nil {
-		fields = append(fields, aiscanresult.FieldScanType)
-	}
-	if m.commit_sha != nil {
-		fields = append(fields, aiscanresult.FieldCommitSha)
-	}
-	if m.created_at != nil {
-		fields = append(fields, aiscanresult.FieldCreatedAt)
-	}
-	return fields
-}
-
-// Field returns the value of a field with the given name. The second boolean
-// return value indicates that this field was not set, or was not defined in the
-// schema.
-func (m *AiScanResultMutation) Field(name string) (ent.Value, bool) {
-	switch name {
-	case aiscanresult.FieldScore:
-		return m.Score()
-	case aiscanresult.FieldDimensions:
-		return m.Dimensions()
-	case aiscanresult.FieldSuggestions:
-		return m.Suggestions()
-	case aiscanresult.FieldScanType:
-		return m.ScanType()
-	case aiscanresult.FieldCommitSha:
-		return m.CommitSha()
-	case aiscanresult.FieldCreatedAt:
-		return m.CreatedAt()
-	}
-	return nil, false
-}
-
-// OldField returns the old value of the field from the database. An error is
-// returned if the mutation operation is not UpdateOne, or the query to the
-// database failed.
-func (m *AiScanResultMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
-	switch name {
-	case aiscanresult.FieldScore:
-		return m.OldScore(ctx)
-	case aiscanresult.FieldDimensions:
-		return m.OldDimensions(ctx)
-	case aiscanresult.FieldSuggestions:
-		return m.OldSuggestions(ctx)
-	case aiscanresult.FieldScanType:
-		return m.OldScanType(ctx)
-	case aiscanresult.FieldCommitSha:
-		return m.OldCommitSha(ctx)
-	case aiscanresult.FieldCreatedAt:
-		return m.OldCreatedAt(ctx)
-	}
-	return nil, fmt.Errorf("unknown AiScanResult field %s", name)
-}
-
-// SetField sets the value of a field with the given name. It returns an error if
-// the field is not defined in the schema, or if the type mismatched the field
-// type.
-func (m *AiScanResultMutation) SetField(name string, value ent.Value) error {
-	switch name {
-	case aiscanresult.FieldScore:
-		v, ok := value.(int)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.SetScore(v)
-		return nil
-	case aiscanresult.FieldDimensions:
-		v, ok := value.(map[string]interface{})
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.SetDimensions(v)
-		return nil
-	case aiscanresult.FieldSuggestions:
-		v, ok := value.([]map[string]interface{})
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.SetSuggestions(v)
-		return nil
-	case aiscanresult.FieldScanType:
-		v, ok := value.(aiscanresult.ScanType)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.SetScanType(v)
-		return nil
-	case aiscanresult.FieldCommitSha:
-		v, ok := value.(string)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.SetCommitSha(v)
-		return nil
-	case aiscanresult.FieldCreatedAt:
-		v, ok := value.(time.Time)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.SetCreatedAt(v)
-		return nil
-	}
-	return fmt.Errorf("unknown AiScanResult field %s", name)
-}
-
-// AddedFields returns all numeric fields that were incremented/decremented during
-// this mutation.
-func (m *AiScanResultMutation) AddedFields() []string {
-	var fields []string
-	if m.addscore != nil {
-		fields = append(fields, aiscanresult.FieldScore)
-	}
-	return fields
-}
-
-// AddedField returns the numeric value that was incremented/decremented on a field
-// with the given name. The second boolean return value indicates that this field
-// was not set, or was not defined in the schema.
-func (m *AiScanResultMutation) AddedField(name string) (ent.Value, bool) {
-	switch name {
-	case aiscanresult.FieldScore:
-		return m.AddedScore()
-	}
-	return nil, false
-}
-
-// AddField adds the value to the field with the given name. It returns an error if
-// the field is not defined in the schema, or if the type mismatched the field
-// type.
-func (m *AiScanResultMutation) AddField(name string, value ent.Value) error {
-	switch name {
-	case aiscanresult.FieldScore:
-		v, ok := value.(int)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.AddScore(v)
-		return nil
-	}
-	return fmt.Errorf("unknown AiScanResult numeric field %s", name)
-}
-
-// ClearedFields returns all nullable fields that were cleared during this
-// mutation.
-func (m *AiScanResultMutation) ClearedFields() []string {
-	var fields []string
-	if m.FieldCleared(aiscanresult.FieldDimensions) {
-		fields = append(fields, aiscanresult.FieldDimensions)
-	}
-	if m.FieldCleared(aiscanresult.FieldSuggestions) {
-		fields = append(fields, aiscanresult.FieldSuggestions)
-	}
-	if m.FieldCleared(aiscanresult.FieldCommitSha) {
-		fields = append(fields, aiscanresult.FieldCommitSha)
-	}
-	return fields
-}
-
-// FieldCleared returns a boolean indicating if a field with the given name was
-// cleared in this mutation.
-func (m *AiScanResultMutation) FieldCleared(name string) bool {
-	_, ok := m.clearedFields[name]
-	return ok
-}
-
-// ClearField clears the value of the field with the given name. It returns an
-// error if the field is not defined in the schema.
-func (m *AiScanResultMutation) ClearField(name string) error {
-	switch name {
-	case aiscanresult.FieldDimensions:
-		m.ClearDimensions()
-		return nil
-	case aiscanresult.FieldSuggestions:
-		m.ClearSuggestions()
-		return nil
-	case aiscanresult.FieldCommitSha:
-		m.ClearCommitSha()
-		return nil
-	}
-	return fmt.Errorf("unknown AiScanResult nullable field %s", name)
-}
-
-// ResetField resets all changes in the mutation for the field with the given name.
-// It returns an error if the field is not defined in the schema.
-func (m *AiScanResultMutation) ResetField(name string) error {
-	switch name {
-	case aiscanresult.FieldScore:
-		m.ResetScore()
-		return nil
-	case aiscanresult.FieldDimensions:
-		m.ResetDimensions()
-		return nil
-	case aiscanresult.FieldSuggestions:
-		m.ResetSuggestions()
-		return nil
-	case aiscanresult.FieldScanType:
-		m.ResetScanType()
-		return nil
-	case aiscanresult.FieldCommitSha:
-		m.ResetCommitSha()
-		return nil
-	case aiscanresult.FieldCreatedAt:
-		m.ResetCreatedAt()
-		return nil
-	}
-	return fmt.Errorf("unknown AiScanResult field %s", name)
-}
-
-// AddedEdges returns all edge names that were set/added in this mutation.
-func (m *AiScanResultMutation) AddedEdges() []string {
-	edges := make([]string, 0, 1)
-	if m.repo_config != nil {
-		edges = append(edges, aiscanresult.EdgeRepoConfig)
-	}
-	return edges
-}
-
-// AddedIDs returns all IDs (to other nodes) that were added for the given edge
-// name in this mutation.
-func (m *AiScanResultMutation) AddedIDs(name string) []ent.Value {
-	switch name {
-	case aiscanresult.EdgeRepoConfig:
-		if id := m.repo_config; id != nil {
-			return []ent.Value{*id}
-		}
-	}
-	return nil
-}
-
-// RemovedEdges returns all edge names that were removed in this mutation.
-func (m *AiScanResultMutation) RemovedEdges() []string {
-	edges := make([]string, 0, 1)
-	return edges
-}
-
-// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
-// the given name in this mutation.
-func (m *AiScanResultMutation) RemovedIDs(name string) []ent.Value {
-	return nil
-}
-
-// ClearedEdges returns all edge names that were cleared in this mutation.
-func (m *AiScanResultMutation) ClearedEdges() []string {
-	edges := make([]string, 0, 1)
-	if m.clearedrepo_config {
-		edges = append(edges, aiscanresult.EdgeRepoConfig)
-	}
-	return edges
-}
-
-// EdgeCleared returns a boolean which indicates if the edge with the given name
-// was cleared in this mutation.
-func (m *AiScanResultMutation) EdgeCleared(name string) bool {
-	switch name {
-	case aiscanresult.EdgeRepoConfig:
-		return m.clearedrepo_config
-	}
-	return false
-}
-
-// ClearEdge clears the value of the edge with the given name. It returns an error
-// if that edge is not defined in the schema.
-func (m *AiScanResultMutation) ClearEdge(name string) error {
-	switch name {
-	case aiscanresult.EdgeRepoConfig:
-		m.ClearRepoConfig()
-		return nil
-	}
-	return fmt.Errorf("unknown AiScanResult unique edge %s", name)
-}
-
-// ResetEdge resets all changes to the edge with the given name in this mutation.
-// It returns an error if the edge is not defined in the schema.
-func (m *AiScanResultMutation) ResetEdge(name string) error {
-	switch name {
-	case aiscanresult.EdgeRepoConfig:
-		m.ResetRepoConfig()
-		return nil
-	}
-	return fmt.Errorf("unknown AiScanResult edge %s", name)
-}
 
 // CommitCheckpointMutation represents an operation that mutates the CommitCheckpoint nodes in the graph.
 type CommitCheckpointMutation struct {
@@ -9284,14 +8506,12 @@ type RepoConfigMutation struct {
 	default_branch              *string
 	webhook_id                  *string
 	webhook_secret              *string
-	last_scan_at                *time.Time
 	group_id                    *string
 	relay_provider_name         *string
 	relay_group_id              *string
 	status                      *repoconfig.Status
 	created_at                  *time.Time
 	updated_at                  *time.Time
-	scan_prompt_override        *map[string]string
 	clearedFields               map[string]struct{}
 	scm_provider                *int
 	clearedscm_provider         bool
@@ -9307,9 +8527,6 @@ type RepoConfigMutation struct {
 	webhook_dead_letters        map[int]struct{}
 	removedwebhook_dead_letters map[int]struct{}
 	clearedwebhook_dead_letters bool
-	ai_scan_results             map[int]struct{}
-	removedai_scan_results      map[int]struct{}
-	clearedai_scan_results      bool
 	pr_records                  map[int]struct{}
 	removedpr_records           map[int]struct{}
 	clearedpr_records           bool
@@ -9710,55 +8927,6 @@ func (m *RepoConfigMutation) ResetWebhookSecret() {
 	delete(m.clearedFields, repoconfig.FieldWebhookSecret)
 }
 
-// SetLastScanAt sets the "last_scan_at" field.
-func (m *RepoConfigMutation) SetLastScanAt(t time.Time) {
-	m.last_scan_at = &t
-}
-
-// LastScanAt returns the value of the "last_scan_at" field in the mutation.
-func (m *RepoConfigMutation) LastScanAt() (r time.Time, exists bool) {
-	v := m.last_scan_at
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// OldLastScanAt returns the old "last_scan_at" field's value of the RepoConfig entity.
-// If the RepoConfig object wasn't provided to the builder, the object is fetched from the database.
-// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *RepoConfigMutation) OldLastScanAt(ctx context.Context) (v *time.Time, err error) {
-	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldLastScanAt is only allowed on UpdateOne operations")
-	}
-	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldLastScanAt requires an ID field in the mutation")
-	}
-	oldValue, err := m.oldValue(ctx)
-	if err != nil {
-		return v, fmt.Errorf("querying old value for OldLastScanAt: %w", err)
-	}
-	return oldValue.LastScanAt, nil
-}
-
-// ClearLastScanAt clears the value of the "last_scan_at" field.
-func (m *RepoConfigMutation) ClearLastScanAt() {
-	m.last_scan_at = nil
-	m.clearedFields[repoconfig.FieldLastScanAt] = struct{}{}
-}
-
-// LastScanAtCleared returns if the "last_scan_at" field was cleared in this mutation.
-func (m *RepoConfigMutation) LastScanAtCleared() bool {
-	_, ok := m.clearedFields[repoconfig.FieldLastScanAt]
-	return ok
-}
-
-// ResetLastScanAt resets all changes to the "last_scan_at" field.
-func (m *RepoConfigMutation) ResetLastScanAt() {
-	m.last_scan_at = nil
-	delete(m.clearedFields, repoconfig.FieldLastScanAt)
-}
-
 // SetGroupID sets the "group_id" field.
 func (m *RepoConfigMutation) SetGroupID(s string) {
 	m.group_id = &s
@@ -10012,55 +9180,6 @@ func (m *RepoConfigMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err
 // ResetUpdatedAt resets all changes to the "updated_at" field.
 func (m *RepoConfigMutation) ResetUpdatedAt() {
 	m.updated_at = nil
-}
-
-// SetScanPromptOverride sets the "scan_prompt_override" field.
-func (m *RepoConfigMutation) SetScanPromptOverride(value map[string]string) {
-	m.scan_prompt_override = &value
-}
-
-// ScanPromptOverride returns the value of the "scan_prompt_override" field in the mutation.
-func (m *RepoConfigMutation) ScanPromptOverride() (r map[string]string, exists bool) {
-	v := m.scan_prompt_override
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// OldScanPromptOverride returns the old "scan_prompt_override" field's value of the RepoConfig entity.
-// If the RepoConfig object wasn't provided to the builder, the object is fetched from the database.
-// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *RepoConfigMutation) OldScanPromptOverride(ctx context.Context) (v map[string]string, err error) {
-	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldScanPromptOverride is only allowed on UpdateOne operations")
-	}
-	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldScanPromptOverride requires an ID field in the mutation")
-	}
-	oldValue, err := m.oldValue(ctx)
-	if err != nil {
-		return v, fmt.Errorf("querying old value for OldScanPromptOverride: %w", err)
-	}
-	return oldValue.ScanPromptOverride, nil
-}
-
-// ClearScanPromptOverride clears the value of the "scan_prompt_override" field.
-func (m *RepoConfigMutation) ClearScanPromptOverride() {
-	m.scan_prompt_override = nil
-	m.clearedFields[repoconfig.FieldScanPromptOverride] = struct{}{}
-}
-
-// ScanPromptOverrideCleared returns if the "scan_prompt_override" field was cleared in this mutation.
-func (m *RepoConfigMutation) ScanPromptOverrideCleared() bool {
-	_, ok := m.clearedFields[repoconfig.FieldScanPromptOverride]
-	return ok
-}
-
-// ResetScanPromptOverride resets all changes to the "scan_prompt_override" field.
-func (m *RepoConfigMutation) ResetScanPromptOverride() {
-	m.scan_prompt_override = nil
-	delete(m.clearedFields, repoconfig.FieldScanPromptOverride)
 }
 
 // SetScmProviderID sets the "scm_provider" edge to the ScmProvider entity by id.
@@ -10318,60 +9437,6 @@ func (m *RepoConfigMutation) ResetWebhookDeadLetters() {
 	m.removedwebhook_dead_letters = nil
 }
 
-// AddAiScanResultIDs adds the "ai_scan_results" edge to the AiScanResult entity by ids.
-func (m *RepoConfigMutation) AddAiScanResultIDs(ids ...int) {
-	if m.ai_scan_results == nil {
-		m.ai_scan_results = make(map[int]struct{})
-	}
-	for i := range ids {
-		m.ai_scan_results[ids[i]] = struct{}{}
-	}
-}
-
-// ClearAiScanResults clears the "ai_scan_results" edge to the AiScanResult entity.
-func (m *RepoConfigMutation) ClearAiScanResults() {
-	m.clearedai_scan_results = true
-}
-
-// AiScanResultsCleared reports if the "ai_scan_results" edge to the AiScanResult entity was cleared.
-func (m *RepoConfigMutation) AiScanResultsCleared() bool {
-	return m.clearedai_scan_results
-}
-
-// RemoveAiScanResultIDs removes the "ai_scan_results" edge to the AiScanResult entity by IDs.
-func (m *RepoConfigMutation) RemoveAiScanResultIDs(ids ...int) {
-	if m.removedai_scan_results == nil {
-		m.removedai_scan_results = make(map[int]struct{})
-	}
-	for i := range ids {
-		delete(m.ai_scan_results, ids[i])
-		m.removedai_scan_results[ids[i]] = struct{}{}
-	}
-}
-
-// RemovedAiScanResults returns the removed IDs of the "ai_scan_results" edge to the AiScanResult entity.
-func (m *RepoConfigMutation) RemovedAiScanResultsIDs() (ids []int) {
-	for id := range m.removedai_scan_results {
-		ids = append(ids, id)
-	}
-	return
-}
-
-// AiScanResultsIDs returns the "ai_scan_results" edge IDs in the mutation.
-func (m *RepoConfigMutation) AiScanResultsIDs() (ids []int) {
-	for id := range m.ai_scan_results {
-		ids = append(ids, id)
-	}
-	return
-}
-
-// ResetAiScanResults resets all changes to the "ai_scan_results" edge.
-func (m *RepoConfigMutation) ResetAiScanResults() {
-	m.ai_scan_results = nil
-	m.clearedai_scan_results = false
-	m.removedai_scan_results = nil
-}
-
 // AddPrRecordIDs adds the "pr_records" edge to the PrRecord entity by ids.
 func (m *RepoConfigMutation) AddPrRecordIDs(ids ...int) {
 	if m.pr_records == nil {
@@ -10514,7 +9579,7 @@ func (m *RepoConfigMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *RepoConfigMutation) Fields() []string {
-	fields := make([]string, 0, 15)
+	fields := make([]string, 0, 13)
 	if m.repo_key != nil {
 		fields = append(fields, repoconfig.FieldRepoKey)
 	}
@@ -10536,9 +9601,6 @@ func (m *RepoConfigMutation) Fields() []string {
 	if m.webhook_secret != nil {
 		fields = append(fields, repoconfig.FieldWebhookSecret)
 	}
-	if m.last_scan_at != nil {
-		fields = append(fields, repoconfig.FieldLastScanAt)
-	}
 	if m.group_id != nil {
 		fields = append(fields, repoconfig.FieldGroupID)
 	}
@@ -10556,9 +9618,6 @@ func (m *RepoConfigMutation) Fields() []string {
 	}
 	if m.updated_at != nil {
 		fields = append(fields, repoconfig.FieldUpdatedAt)
-	}
-	if m.scan_prompt_override != nil {
-		fields = append(fields, repoconfig.FieldScanPromptOverride)
 	}
 	return fields
 }
@@ -10582,8 +9641,6 @@ func (m *RepoConfigMutation) Field(name string) (ent.Value, bool) {
 		return m.WebhookID()
 	case repoconfig.FieldWebhookSecret:
 		return m.WebhookSecret()
-	case repoconfig.FieldLastScanAt:
-		return m.LastScanAt()
 	case repoconfig.FieldGroupID:
 		return m.GroupID()
 	case repoconfig.FieldRelayProviderName:
@@ -10596,8 +9653,6 @@ func (m *RepoConfigMutation) Field(name string) (ent.Value, bool) {
 		return m.CreatedAt()
 	case repoconfig.FieldUpdatedAt:
 		return m.UpdatedAt()
-	case repoconfig.FieldScanPromptOverride:
-		return m.ScanPromptOverride()
 	}
 	return nil, false
 }
@@ -10621,8 +9676,6 @@ func (m *RepoConfigMutation) OldField(ctx context.Context, name string) (ent.Val
 		return m.OldWebhookID(ctx)
 	case repoconfig.FieldWebhookSecret:
 		return m.OldWebhookSecret(ctx)
-	case repoconfig.FieldLastScanAt:
-		return m.OldLastScanAt(ctx)
 	case repoconfig.FieldGroupID:
 		return m.OldGroupID(ctx)
 	case repoconfig.FieldRelayProviderName:
@@ -10635,8 +9688,6 @@ func (m *RepoConfigMutation) OldField(ctx context.Context, name string) (ent.Val
 		return m.OldCreatedAt(ctx)
 	case repoconfig.FieldUpdatedAt:
 		return m.OldUpdatedAt(ctx)
-	case repoconfig.FieldScanPromptOverride:
-		return m.OldScanPromptOverride(ctx)
 	}
 	return nil, fmt.Errorf("unknown RepoConfig field %s", name)
 }
@@ -10695,13 +9746,6 @@ func (m *RepoConfigMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetWebhookSecret(v)
 		return nil
-	case repoconfig.FieldLastScanAt:
-		v, ok := value.(time.Time)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.SetLastScanAt(v)
-		return nil
 	case repoconfig.FieldGroupID:
 		v, ok := value.(string)
 		if !ok {
@@ -10744,13 +9788,6 @@ func (m *RepoConfigMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetUpdatedAt(v)
 		return nil
-	case repoconfig.FieldScanPromptOverride:
-		v, ok := value.(map[string]string)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.SetScanPromptOverride(v)
-		return nil
 	}
 	return fmt.Errorf("unknown RepoConfig field %s", name)
 }
@@ -10790,9 +9827,6 @@ func (m *RepoConfigMutation) ClearedFields() []string {
 	if m.FieldCleared(repoconfig.FieldWebhookSecret) {
 		fields = append(fields, repoconfig.FieldWebhookSecret)
 	}
-	if m.FieldCleared(repoconfig.FieldLastScanAt) {
-		fields = append(fields, repoconfig.FieldLastScanAt)
-	}
 	if m.FieldCleared(repoconfig.FieldGroupID) {
 		fields = append(fields, repoconfig.FieldGroupID)
 	}
@@ -10801,9 +9835,6 @@ func (m *RepoConfigMutation) ClearedFields() []string {
 	}
 	if m.FieldCleared(repoconfig.FieldRelayGroupID) {
 		fields = append(fields, repoconfig.FieldRelayGroupID)
-	}
-	if m.FieldCleared(repoconfig.FieldScanPromptOverride) {
-		fields = append(fields, repoconfig.FieldScanPromptOverride)
 	}
 	return fields
 }
@@ -10828,9 +9859,6 @@ func (m *RepoConfigMutation) ClearField(name string) error {
 	case repoconfig.FieldWebhookSecret:
 		m.ClearWebhookSecret()
 		return nil
-	case repoconfig.FieldLastScanAt:
-		m.ClearLastScanAt()
-		return nil
 	case repoconfig.FieldGroupID:
 		m.ClearGroupID()
 		return nil
@@ -10839,9 +9867,6 @@ func (m *RepoConfigMutation) ClearField(name string) error {
 		return nil
 	case repoconfig.FieldRelayGroupID:
 		m.ClearRelayGroupID()
-		return nil
-	case repoconfig.FieldScanPromptOverride:
-		m.ClearScanPromptOverride()
 		return nil
 	}
 	return fmt.Errorf("unknown RepoConfig nullable field %s", name)
@@ -10872,9 +9897,6 @@ func (m *RepoConfigMutation) ResetField(name string) error {
 	case repoconfig.FieldWebhookSecret:
 		m.ResetWebhookSecret()
 		return nil
-	case repoconfig.FieldLastScanAt:
-		m.ResetLastScanAt()
-		return nil
 	case repoconfig.FieldGroupID:
 		m.ResetGroupID()
 		return nil
@@ -10893,16 +9915,13 @@ func (m *RepoConfigMutation) ResetField(name string) error {
 	case repoconfig.FieldUpdatedAt:
 		m.ResetUpdatedAt()
 		return nil
-	case repoconfig.FieldScanPromptOverride:
-		m.ResetScanPromptOverride()
-		return nil
 	}
 	return fmt.Errorf("unknown RepoConfig field %s", name)
 }
 
 // AddedEdges returns all edge names that were set/added in this mutation.
 func (m *RepoConfigMutation) AddedEdges() []string {
-	edges := make([]string, 0, 8)
+	edges := make([]string, 0, 7)
 	if m.scm_provider != nil {
 		edges = append(edges, repoconfig.EdgeScmProvider)
 	}
@@ -10917,9 +9936,6 @@ func (m *RepoConfigMutation) AddedEdges() []string {
 	}
 	if m.webhook_dead_letters != nil {
 		edges = append(edges, repoconfig.EdgeWebhookDeadLetters)
-	}
-	if m.ai_scan_results != nil {
-		edges = append(edges, repoconfig.EdgeAiScanResults)
 	}
 	if m.pr_records != nil {
 		edges = append(edges, repoconfig.EdgePrRecords)
@@ -10962,12 +9978,6 @@ func (m *RepoConfigMutation) AddedIDs(name string) []ent.Value {
 			ids = append(ids, id)
 		}
 		return ids
-	case repoconfig.EdgeAiScanResults:
-		ids := make([]ent.Value, 0, len(m.ai_scan_results))
-		for id := range m.ai_scan_results {
-			ids = append(ids, id)
-		}
-		return ids
 	case repoconfig.EdgePrRecords:
 		ids := make([]ent.Value, 0, len(m.pr_records))
 		for id := range m.pr_records {
@@ -10986,7 +9996,7 @@ func (m *RepoConfigMutation) AddedIDs(name string) []ent.Value {
 
 // RemovedEdges returns all edge names that were removed in this mutation.
 func (m *RepoConfigMutation) RemovedEdges() []string {
-	edges := make([]string, 0, 8)
+	edges := make([]string, 0, 7)
 	if m.removedcommit_checkpoints != nil {
 		edges = append(edges, repoconfig.EdgeCommitCheckpoints)
 	}
@@ -10998,9 +10008,6 @@ func (m *RepoConfigMutation) RemovedEdges() []string {
 	}
 	if m.removedwebhook_dead_letters != nil {
 		edges = append(edges, repoconfig.EdgeWebhookDeadLetters)
-	}
-	if m.removedai_scan_results != nil {
-		edges = append(edges, repoconfig.EdgeAiScanResults)
 	}
 	if m.removedpr_records != nil {
 		edges = append(edges, repoconfig.EdgePrRecords)
@@ -11039,12 +10046,6 @@ func (m *RepoConfigMutation) RemovedIDs(name string) []ent.Value {
 			ids = append(ids, id)
 		}
 		return ids
-	case repoconfig.EdgeAiScanResults:
-		ids := make([]ent.Value, 0, len(m.removedai_scan_results))
-		for id := range m.removedai_scan_results {
-			ids = append(ids, id)
-		}
-		return ids
 	case repoconfig.EdgePrRecords:
 		ids := make([]ent.Value, 0, len(m.removedpr_records))
 		for id := range m.removedpr_records {
@@ -11063,7 +10064,7 @@ func (m *RepoConfigMutation) RemovedIDs(name string) []ent.Value {
 
 // ClearedEdges returns all edge names that were cleared in this mutation.
 func (m *RepoConfigMutation) ClearedEdges() []string {
-	edges := make([]string, 0, 8)
+	edges := make([]string, 0, 7)
 	if m.clearedscm_provider {
 		edges = append(edges, repoconfig.EdgeScmProvider)
 	}
@@ -11078,9 +10079,6 @@ func (m *RepoConfigMutation) ClearedEdges() []string {
 	}
 	if m.clearedwebhook_dead_letters {
 		edges = append(edges, repoconfig.EdgeWebhookDeadLetters)
-	}
-	if m.clearedai_scan_results {
-		edges = append(edges, repoconfig.EdgeAiScanResults)
 	}
 	if m.clearedpr_records {
 		edges = append(edges, repoconfig.EdgePrRecords)
@@ -11105,8 +10103,6 @@ func (m *RepoConfigMutation) EdgeCleared(name string) bool {
 		return m.clearedtool_usage_events
 	case repoconfig.EdgeWebhookDeadLetters:
 		return m.clearedwebhook_dead_letters
-	case repoconfig.EdgeAiScanResults:
-		return m.clearedai_scan_results
 	case repoconfig.EdgePrRecords:
 		return m.clearedpr_records
 	case repoconfig.EdgeEfficiencyMetrics:
@@ -11144,9 +10140,6 @@ func (m *RepoConfigMutation) ResetEdge(name string) error {
 		return nil
 	case repoconfig.EdgeWebhookDeadLetters:
 		m.ResetWebhookDeadLetters()
-		return nil
-	case repoconfig.EdgeAiScanResults:
-		m.ResetAiScanResults()
 		return nil
 	case repoconfig.EdgePrRecords:
 		m.ResetPrRecords()

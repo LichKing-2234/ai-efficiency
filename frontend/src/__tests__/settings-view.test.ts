@@ -267,9 +267,9 @@ describe('SettingsView', () => {
     })
   })
 
-  it('renders LLM Configuration section', async () => {
+  it('renders relay configuration section', async () => {
     const wrapper = await mountSettings()
-    expect(wrapper.text()).toContain('LLM Configuration')
+    expect(wrapper.text()).toContain('Relay Configuration')
   })
 
   it('renders deployment status and update controls', async () => {
@@ -401,8 +401,6 @@ describe('SettingsView', () => {
     expect(wrapper.text()).toContain('Relay API Key')
     expect(wrapper.text()).toContain('Relay Admin API Key')
     expect(wrapper.text()).toContain('Model')
-    expect(wrapper.text()).toContain('System Prompt')
-    expect(wrapper.text()).toContain('User Prompt Template')
   })
 
   it('renders Save and Test Connection buttons', async () => {
@@ -945,7 +943,7 @@ describe('SettingsView', () => {
     await wrapper.vm.$nextTick()
 
     // Should still render without crashing
-    expect(wrapper.text()).toContain('LLM Configuration')
+    expect(wrapper.text()).toContain('Relay Configuration')
     expect(wrapper.text()).toContain('Not configured')
   })
 

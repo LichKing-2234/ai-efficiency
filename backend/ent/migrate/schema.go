@@ -8,31 +8,6 @@ import (
 )
 
 var (
-	// AiScanResultsColumns holds the columns for the "ai_scan_results" table.
-	AiScanResultsColumns = []*schema.Column{
-		{Name: "id", Type: field.TypeInt, Increment: true},
-		{Name: "score", Type: field.TypeInt, Default: 0},
-		{Name: "dimensions", Type: field.TypeJSON, Nullable: true},
-		{Name: "suggestions", Type: field.TypeJSON, Nullable: true},
-		{Name: "scan_type", Type: field.TypeEnum, Enums: []string{"static", "llm", "full"}, Default: "static"},
-		{Name: "commit_sha", Type: field.TypeString, Nullable: true},
-		{Name: "created_at", Type: field.TypeTime},
-		{Name: "repo_config_ai_scan_results", Type: field.TypeInt},
-	}
-	// AiScanResultsTable holds the schema information for the "ai_scan_results" table.
-	AiScanResultsTable = &schema.Table{
-		Name:       "ai_scan_results",
-		Columns:    AiScanResultsColumns,
-		PrimaryKey: []*schema.Column{AiScanResultsColumns[0]},
-		ForeignKeys: []*schema.ForeignKey{
-			{
-				Symbol:     "ai_scan_results_repo_configs_ai_scan_results",
-				Columns:    []*schema.Column{AiScanResultsColumns[7]},
-				RefColumns: []*schema.Column{RepoConfigsColumns[0]},
-				OnDelete:   schema.NoAction,
-			},
-		},
-	}
 	// CommitCheckpointsColumns holds the columns for the "commit_checkpoints" table.
 	CommitCheckpointsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
@@ -287,14 +262,12 @@ var (
 		{Name: "default_branch", Type: field.TypeString, Default: "main"},
 		{Name: "webhook_id", Type: field.TypeString, Nullable: true},
 		{Name: "webhook_secret", Type: field.TypeString, Nullable: true},
-		{Name: "last_scan_at", Type: field.TypeTime, Nullable: true},
 		{Name: "group_id", Type: field.TypeString, Nullable: true},
 		{Name: "relay_provider_name", Type: field.TypeString, Nullable: true},
 		{Name: "relay_group_id", Type: field.TypeString, Nullable: true},
 		{Name: "status", Type: field.TypeEnum, Enums: []string{"active", "webhook_failed", "inactive"}, Default: "active"},
 		{Name: "created_at", Type: field.TypeTime},
 		{Name: "updated_at", Type: field.TypeTime},
-		{Name: "scan_prompt_override", Type: field.TypeJSON, Nullable: true},
 		{Name: "scm_provider_repo_configs", Type: field.TypeInt, Nullable: true},
 	}
 	// RepoConfigsTable holds the schema information for the "repo_configs" table.
@@ -305,7 +278,7 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "repo_configs_scm_providers_repo_configs",
-				Columns:    []*schema.Column{RepoConfigsColumns[16]},
+				Columns:    []*schema.Column{RepoConfigsColumns[14]},
 				RefColumns: []*schema.Column{ScmProvidersColumns[0]},
 				OnDelete:   schema.SetNull,
 			},
@@ -319,7 +292,7 @@ var (
 			{
 				Name:    "repoconfig_full_name_scm_provider_repo_configs",
 				Unique:  true,
-				Columns: []*schema.Column{RepoConfigsColumns[3], RepoConfigsColumns[16]},
+				Columns: []*schema.Column{RepoConfigsColumns[3], RepoConfigsColumns[14]},
 			},
 		},
 	}
@@ -495,7 +468,6 @@ var (
 	}
 	// Tables holds all the tables in the schema.
 	Tables = []*schema.Table{
-		AiScanResultsTable,
 		CommitCheckpointsTable,
 		CommitRewritesTable,
 		CredentialsTable,
@@ -513,7 +485,6 @@ var (
 )
 
 func init() {
-	AiScanResultsTable.ForeignKeys[0].RefTable = RepoConfigsTable
 	CommitCheckpointsTable.ForeignKeys[0].RefTable = RepoConfigsTable
 	CommitCheckpointsTable.ForeignKeys[1].RefTable = UsersTable
 	CommitRewritesTable.ForeignKeys[0].RefTable = RepoConfigsTable

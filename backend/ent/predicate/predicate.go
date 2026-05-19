@@ -6,9 +6,6 @@ import (
 	"entgo.io/ent/dialect/sql"
 )
 
-// AiScanResult is the predicate function for aiscanresult builders.
-type AiScanResult func(*sql.Selector)
-
 // CommitCheckpoint is the predicate function for commitcheckpoint builders.
 type CommitCheckpoint func(*sql.Selector)
 

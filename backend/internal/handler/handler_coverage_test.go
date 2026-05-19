@@ -12,13 +12,11 @@ import (
 
 	"github.com/ai-efficiency/backend/ent"
 	entuser "github.com/ai-efficiency/backend/ent/user"
-	"github.com/ai-efficiency/backend/internal/analysis/llm"
 	"github.com/ai-efficiency/backend/internal/auth"
 	"github.com/ai-efficiency/backend/internal/checkpoint"
 	"github.com/ai-efficiency/backend/internal/config"
 	"github.com/ai-efficiency/backend/internal/efficiency"
 	"github.com/ai-efficiency/backend/internal/middleware"
-	"github.com/ai-efficiency/backend/internal/relay"
 	"github.com/ai-efficiency/backend/internal/repo"
 	"github.com/ai-efficiency/backend/internal/testdb"
 	"github.com/ai-efficiency/backend/internal/webhook"
@@ -42,17 +40,12 @@ func setupFullTestEnvWithDeployment(t *testing.T, deploymentHandler *DeploymentH
 	repoSvc := repo.NewService(client, "0000000000000000000000000000000000000000000000000000000000000000", logger)
 	webhookHandler := webhook.NewHandler(client, nil, logger)
 
-	// LLM analyzer with config — use a relay provider pointing to a non-listening address
-	// so Enabled()=true but actual LLM calls fail (connection refused).
-	rp := relay.NewSub2apiProvider(http.DefaultClient, "http://localhost:19876/v1", "http://localhost:19876", "sk-test-key-12345678", "gpt-4", logger)
-	llmAnalyzer := llm.NewAnalyzer(config.LLMConfig{}, rp, logger)
-
 	// Settings handler with temp config file
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config.yaml")
-	os.WriteFile(configPath, []byte("analysis:\n  llm:\n    max_tokens_per_scan: 100000\n"), 0o644)
+	os.WriteFile(configPath, []byte("relay:\n  url: http://localhost:19876\n  api_key: sk-test-key-12345678\n  model: gpt-4\n"), 0o644)
 	relayCfg := config.RelayConfig{URL: "http://localhost:19876", APIKey: "sk-test-key-12345678", Model: "gpt-4"}
-	settingsHandler := NewSettingsHandler(configPath, relayCfg, llmAnalyzer, logger)
+	settingsHandler := NewSettingsHandler(configPath, relayCfg, logger)
 
 	// Aggregator
 	aggregator := efficiency.NewAggregator(client, logger)

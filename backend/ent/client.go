@@ -15,7 +15,6 @@ import (
 	"entgo.io/ent/dialect"
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
-	"github.com/ai-efficiency/backend/ent/aiscanresult"
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
 	"github.com/ai-efficiency/backend/ent/commitrewrite"
 	"github.com/ai-efficiency/backend/ent/credential"
@@ -36,8 +35,6 @@ type Client struct {
 	config
 	// Schema is the client for creating, migrating and dropping schema.
 	Schema *migrate.Schema
-	// AiScanResult is the client for interacting with the AiScanResult builders.
-	AiScanResult *AiScanResultClient
 	// CommitCheckpoint is the client for interacting with the CommitCheckpoint builders.
 	CommitCheckpoint *CommitCheckpointClient
 	// CommitRewrite is the client for interacting with the CommitRewrite builders.
@@ -75,7 +72,6 @@ func NewClient(opts ...Option) *Client {
 
 func (c *Client) init() {
 	c.Schema = migrate.NewSchema(c.driver)
-	c.AiScanResult = NewAiScanResultClient(c.config)
 	c.CommitCheckpoint = NewCommitCheckpointClient(c.config)
 	c.CommitRewrite = NewCommitRewriteClient(c.config)
 	c.Credential = NewCredentialClient(c.config)
@@ -181,7 +177,6 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 	return &Tx{
 		ctx:               ctx,
 		config:            cfg,
-		AiScanResult:      NewAiScanResultClient(cfg),
 		CommitCheckpoint:  NewCommitCheckpointClient(cfg),
 		CommitRewrite:     NewCommitRewriteClient(cfg),
 		Credential:        NewCredentialClient(cfg),
@@ -214,7 +209,6 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 	return &Tx{
 		ctx:               ctx,
 		config:            cfg,
-		AiScanResult:      NewAiScanResultClient(cfg),
 		CommitCheckpoint:  NewCommitCheckpointClient(cfg),
 		CommitRewrite:     NewCommitRewriteClient(cfg),
 		Credential:        NewCredentialClient(cfg),
@@ -234,7 +228,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 // Debug returns a new debug-client. It's used to get verbose logging on specific operations.
 //
 //	client.Debug().
-//		AiScanResult.
+//		CommitCheckpoint.
 //		Query().
 //		Count(ctx)
 func (c *Client) Debug() *Client {
@@ -257,10 +251,9 @@ func (c *Client) Close() error {
 // In order to add hooks to a specific client, call: `client.Node.Use(...)`.
 func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
-		c.AiScanResult, c.CommitCheckpoint, c.CommitRewrite, c.Credential,
-		c.EfficiencyMetric, c.PrAttributionRun, c.PrRecord, c.RelayProvider,
-		c.RepoConfig, c.ScmProvider, c.SystemSetting, c.ToolUsageEvent, c.User,
-		c.WebhookDeadLetter,
+		c.CommitCheckpoint, c.CommitRewrite, c.Credential, c.EfficiencyMetric,
+		c.PrAttributionRun, c.PrRecord, c.RelayProvider, c.RepoConfig, c.ScmProvider,
+		c.SystemSetting, c.ToolUsageEvent, c.User, c.WebhookDeadLetter,
 	} {
 		n.Use(hooks...)
 	}
@@ -270,10 +263,9 @@ func (c *Client) Use(hooks ...Hook) {
 // In order to add interceptors to a specific client, call: `client.Node.Intercept(...)`.
 func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
-		c.AiScanResult, c.CommitCheckpoint, c.CommitRewrite, c.Credential,
-		c.EfficiencyMetric, c.PrAttributionRun, c.PrRecord, c.RelayProvider,
-		c.RepoConfig, c.ScmProvider, c.SystemSetting, c.ToolUsageEvent, c.User,
-		c.WebhookDeadLetter,
+		c.CommitCheckpoint, c.CommitRewrite, c.Credential, c.EfficiencyMetric,
+		c.PrAttributionRun, c.PrRecord, c.RelayProvider, c.RepoConfig, c.ScmProvider,
+		c.SystemSetting, c.ToolUsageEvent, c.User, c.WebhookDeadLetter,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -282,8 +274,6 @@ func (c *Client) Intercept(interceptors ...Interceptor) {
 // Mutate implements the ent.Mutator interface.
 func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 	switch m := m.(type) {
-	case *AiScanResultMutation:
-		return c.AiScanResult.mutate(ctx, m)
 	case *CommitCheckpointMutation:
 		return c.CommitCheckpoint.mutate(ctx, m)
 	case *CommitRewriteMutation:
@@ -312,155 +302,6 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.WebhookDeadLetter.mutate(ctx, m)
 	default:
 		return nil, fmt.Errorf("ent: unknown mutation type %T", m)
-	}
-}
-
-// AiScanResultClient is a client for the AiScanResult schema.
-type AiScanResultClient struct {
-	config
-}
-
-// NewAiScanResultClient returns a client for the AiScanResult from the given config.
-func NewAiScanResultClient(c config) *AiScanResultClient {
-	return &AiScanResultClient{config: c}
-}
-
-// Use adds a list of mutation hooks to the hooks stack.
-// A call to `Use(f, g, h)` equals to `aiscanresult.Hooks(f(g(h())))`.
-func (c *AiScanResultClient) Use(hooks ...Hook) {
-	c.hooks.AiScanResult = append(c.hooks.AiScanResult, hooks...)
-}
-
-// Intercept adds a list of query interceptors to the interceptors stack.
-// A call to `Intercept(f, g, h)` equals to `aiscanresult.Intercept(f(g(h())))`.
-func (c *AiScanResultClient) Intercept(interceptors ...Interceptor) {
-	c.inters.AiScanResult = append(c.inters.AiScanResult, interceptors...)
-}
-
-// Create returns a builder for creating a AiScanResult entity.
-func (c *AiScanResultClient) Create() *AiScanResultCreate {
-	mutation := newAiScanResultMutation(c.config, OpCreate)
-	return &AiScanResultCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// CreateBulk returns a builder for creating a bulk of AiScanResult entities.
-func (c *AiScanResultClient) CreateBulk(builders ...*AiScanResultCreate) *AiScanResultCreateBulk {
-	return &AiScanResultCreateBulk{config: c.config, builders: builders}
-}
-
-// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
-// a builder and applies setFunc on it.
-func (c *AiScanResultClient) MapCreateBulk(slice any, setFunc func(*AiScanResultCreate, int)) *AiScanResultCreateBulk {
-	rv := reflect.ValueOf(slice)
-	if rv.Kind() != reflect.Slice {
-		return &AiScanResultCreateBulk{err: fmt.Errorf("calling to AiScanResultClient.MapCreateBulk with wrong type %T, need slice", slice)}
-	}
-	builders := make([]*AiScanResultCreate, rv.Len())
-	for i := 0; i < rv.Len(); i++ {
-		builders[i] = c.Create()
-		setFunc(builders[i], i)
-	}
-	return &AiScanResultCreateBulk{config: c.config, builders: builders}
-}
-
-// Update returns an update builder for AiScanResult.
-func (c *AiScanResultClient) Update() *AiScanResultUpdate {
-	mutation := newAiScanResultMutation(c.config, OpUpdate)
-	return &AiScanResultUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// UpdateOne returns an update builder for the given entity.
-func (c *AiScanResultClient) UpdateOne(asr *AiScanResult) *AiScanResultUpdateOne {
-	mutation := newAiScanResultMutation(c.config, OpUpdateOne, withAiScanResult(asr))
-	return &AiScanResultUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// UpdateOneID returns an update builder for the given id.
-func (c *AiScanResultClient) UpdateOneID(id int) *AiScanResultUpdateOne {
-	mutation := newAiScanResultMutation(c.config, OpUpdateOne, withAiScanResultID(id))
-	return &AiScanResultUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// Delete returns a delete builder for AiScanResult.
-func (c *AiScanResultClient) Delete() *AiScanResultDelete {
-	mutation := newAiScanResultMutation(c.config, OpDelete)
-	return &AiScanResultDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// DeleteOne returns a builder for deleting the given entity.
-func (c *AiScanResultClient) DeleteOne(asr *AiScanResult) *AiScanResultDeleteOne {
-	return c.DeleteOneID(asr.ID)
-}
-
-// DeleteOneID returns a builder for deleting the given entity by its id.
-func (c *AiScanResultClient) DeleteOneID(id int) *AiScanResultDeleteOne {
-	builder := c.Delete().Where(aiscanresult.ID(id))
-	builder.mutation.id = &id
-	builder.mutation.op = OpDeleteOne
-	return &AiScanResultDeleteOne{builder}
-}
-
-// Query returns a query builder for AiScanResult.
-func (c *AiScanResultClient) Query() *AiScanResultQuery {
-	return &AiScanResultQuery{
-		config: c.config,
-		ctx:    &QueryContext{Type: TypeAiScanResult},
-		inters: c.Interceptors(),
-	}
-}
-
-// Get returns a AiScanResult entity by its id.
-func (c *AiScanResultClient) Get(ctx context.Context, id int) (*AiScanResult, error) {
-	return c.Query().Where(aiscanresult.ID(id)).Only(ctx)
-}
-
-// GetX is like Get, but panics if an error occurs.
-func (c *AiScanResultClient) GetX(ctx context.Context, id int) *AiScanResult {
-	obj, err := c.Get(ctx, id)
-	if err != nil {
-		panic(err)
-	}
-	return obj
-}
-
-// QueryRepoConfig queries the repo_config edge of a AiScanResult.
-func (c *AiScanResultClient) QueryRepoConfig(asr *AiScanResult) *RepoConfigQuery {
-	query := (&RepoConfigClient{config: c.config}).Query()
-	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
-		id := asr.ID
-		step := sqlgraph.NewStep(
-			sqlgraph.From(aiscanresult.Table, aiscanresult.FieldID, id),
-			sqlgraph.To(repoconfig.Table, repoconfig.FieldID),
-			sqlgraph.Edge(sqlgraph.M2O, true, aiscanresult.RepoConfigTable, aiscanresult.RepoConfigColumn),
-		)
-		fromV = sqlgraph.Neighbors(asr.driver.Dialect(), step)
-		return fromV, nil
-	}
-	return query
-}
-
-// Hooks returns the client hooks.
-func (c *AiScanResultClient) Hooks() []Hook {
-	return c.hooks.AiScanResult
-}
-
-// Interceptors returns the client interceptors.
-func (c *AiScanResultClient) Interceptors() []Interceptor {
-	return c.inters.AiScanResult
-}
-
-func (c *AiScanResultClient) mutate(ctx context.Context, m *AiScanResultMutation) (Value, error) {
-	switch m.Op() {
-	case OpCreate:
-		return (&AiScanResultCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
-	case OpUpdate:
-		return (&AiScanResultUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
-	case OpUpdateOne:
-		return (&AiScanResultUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
-	case OpDelete, OpDeleteOne:
-		return (&AiScanResultDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
-	default:
-		return nil, fmt.Errorf("ent: unknown AiScanResult mutation op: %q", m.Op())
 	}
 }
 
@@ -1777,22 +1618,6 @@ func (c *RepoConfigClient) QueryWebhookDeadLetters(rc *RepoConfig) *WebhookDeadL
 	return query
 }
 
-// QueryAiScanResults queries the ai_scan_results edge of a RepoConfig.
-func (c *RepoConfigClient) QueryAiScanResults(rc *RepoConfig) *AiScanResultQuery {
-	query := (&AiScanResultClient{config: c.config}).Query()
-	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
-		id := rc.ID
-		step := sqlgraph.NewStep(
-			sqlgraph.From(repoconfig.Table, repoconfig.FieldID, id),
-			sqlgraph.To(aiscanresult.Table, aiscanresult.FieldID),
-			sqlgraph.Edge(sqlgraph.O2M, false, repoconfig.AiScanResultsTable, repoconfig.AiScanResultsColumn),
-		)
-		fromV = sqlgraph.Neighbors(rc.driver.Dialect(), step)
-		return fromV, nil
-	}
-	return query
-}
-
 // QueryPrRecords queries the pr_records edge of a RepoConfig.
 func (c *RepoConfigClient) QueryPrRecords(rc *RepoConfig) *PrRecordQuery {
 	query := (&PrRecordClient{config: c.config}).Query()
@@ -2679,13 +2504,13 @@ func (c *WebhookDeadLetterClient) mutate(ctx context.Context, m *WebhookDeadLett
 // hooks and interceptors per client, for fast access.
 type (
 	hooks struct {
-		AiScanResult, CommitCheckpoint, CommitRewrite, Credential, EfficiencyMetric,
-		PrAttributionRun, PrRecord, RelayProvider, RepoConfig, ScmProvider,
-		SystemSetting, ToolUsageEvent, User, WebhookDeadLetter []ent.Hook
+		CommitCheckpoint, CommitRewrite, Credential, EfficiencyMetric, PrAttributionRun,
+		PrRecord, RelayProvider, RepoConfig, ScmProvider, SystemSetting,
+		ToolUsageEvent, User, WebhookDeadLetter []ent.Hook
 	}
 	inters struct {
-		AiScanResult, CommitCheckpoint, CommitRewrite, Credential, EfficiencyMetric,
-		PrAttributionRun, PrRecord, RelayProvider, RepoConfig, ScmProvider,
-		SystemSetting, ToolUsageEvent, User, WebhookDeadLetter []ent.Interceptor
+		CommitCheckpoint, CommitRewrite, Credential, EfficiencyMetric, PrAttributionRun,
+		PrRecord, RelayProvider, RepoConfig, ScmProvider, SystemSetting,
+		ToolUsageEvent, User, WebhookDeadLetter []ent.Interceptor
 	}
 )

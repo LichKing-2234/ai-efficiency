@@ -273,7 +273,6 @@ function formatDate(date: string | null) {
               <tr class="text-xs text-gray-400 uppercase">
                 <th class="px-5 py-2 text-left font-medium">Name</th>
                 <th class="px-5 py-2 text-left font-medium">Status</th>
-                <th class="px-5 py-2 text-left font-medium">Last Scan</th>
                 <th class="px-5 py-2 text-right font-medium">Actions</th>
               </tr>
             </thead>
@@ -296,7 +295,6 @@ function formatDate(date: string | null) {
                   </div>
                 </td>
                 <td class="whitespace-nowrap px-5 py-3 text-sm text-gray-500">{{ repo.status }}</td>
-                <td class="whitespace-nowrap px-5 py-3 text-sm text-gray-500">{{ formatDate(repo.last_scan_at) }}</td>
                 <td class="whitespace-nowrap px-5 py-3 text-right text-sm" @click.stop>
                   <button
                     v-if="showDeleteConfirm !== repo.id"
