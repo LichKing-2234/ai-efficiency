@@ -12,9 +12,10 @@ import (
 
 func TestRootCommandHasSessionlessPrimaryCommands(t *testing.T) {
 	expected := map[string]bool{
-		"init":   false,
-		"sync":   false,
-		"doctor": false,
+		"discover": false,
+		"init":     false,
+		"sync":     false,
+		"doctor":   false,
 	}
 
 	for _, cmd := range rootCmd.Commands() {

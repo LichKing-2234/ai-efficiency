@@ -20,6 +20,16 @@ type Client struct {
 	httpClient *http.Client
 }
 
+type ProviderInfo struct {
+	Name         string `json:"name"`
+	DisplayName  string `json:"display_name"`
+	BaseURL      string `json:"base_url"`
+	APIKey       string `json:"api_key"`
+	APIKeyID     int64  `json:"api_key_id"`
+	DefaultModel string `json:"default_model"`
+	IsPrimary    bool   `json:"is_primary"`
+}
+
 type CommitCheckpointRequest struct {
 	EventID        string         `json:"event_id"`
 	SessionID      string         `json:"session_id,omitempty"`
@@ -145,6 +155,35 @@ func (c *Client) SendToolUsageEvent(ctx context.Context, req ToolUsageEventReque
 		return fmt.Errorf("unexpected tool usage status %d: %s", resp.StatusCode, string(respBody))
 	}
 	return nil
+}
+
+func (c *Client) ListProviders(ctx context.Context) ([]ProviderInfo, error) {
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/api/v1/providers", nil)
+	if err != nil {
+		return nil, fmt.Errorf("create providers request: %w", err)
+	}
+	c.setHeaders(httpReq)
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("send providers request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("unexpected providers status %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var envelope struct {
+		Data struct {
+			Providers []ProviderInfo `json:"providers"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
+		return nil, fmt.Errorf("decode providers response: %w", err)
+	}
+	return envelope.Data.Providers, nil
 }
 
 func (c *Client) BaseURL() string {

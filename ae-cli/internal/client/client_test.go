@@ -140,3 +140,44 @@ func TestSendToolUsageEvent(t *testing.T) {
 		t.Fatalf("SendToolUsageEvent: %v", err)
 	}
 }
+
+func TestListProviders(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Errorf("method = %s, want GET", r.Method)
+		}
+		if r.URL.Path != "/api/v1/providers" {
+			t.Errorf("path = %s, want /api/v1/providers", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 200,
+			"data": map[string]any{
+				"providers": []map[string]any{
+					{
+						"name":          "primary",
+						"display_name":  "Primary",
+						"base_url":      "https://relay.example.com/v1",
+						"api_key":       "sk-test",
+						"api_key_id":    123,
+						"default_model": "gpt-5.3-codex",
+						"is_primary":    true,
+					},
+				},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "test-token")
+	providers, err := c.ListProviders(context.Background())
+	if err != nil {
+		t.Fatalf("ListProviders: %v", err)
+	}
+	if len(providers) != 1 {
+		t.Fatalf("providers len = %d, want 1", len(providers))
+	}
+	if providers[0].Name != "primary" || providers[0].APIKey != "sk-test" || !providers[0].IsPrimary {
+		t.Fatalf("unexpected provider payload: %+v", providers[0])
+	}
+}

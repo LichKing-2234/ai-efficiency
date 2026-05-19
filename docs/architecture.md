@@ -12,6 +12,7 @@ This document is the project-level architecture overview for `ai-efficiency`.
 ## Source-of-Truth Order
 
 1. Topic-specific current specs:
+   - `docs/superpowers/specs/2026-05-19-ae-cli-deterministic-tool-configuration-design.md`
    - `docs/superpowers/specs/2026-05-14-legacy-session-staged-cutover-design.md`
    - `docs/superpowers/specs/2026-05-13-sessionless-local-tool-attribution-design.md`
    - `docs/superpowers/specs/2026-04-15-oauth-device-login-design.md`
@@ -28,7 +29,7 @@ This document is the project-level architecture overview for `ai-efficiency`.
 ```mermaid
 flowchart LR
     Browser["Browser UI<br/>Vue 3 + Vite + Pinia"]
-    CLI["ae-cli<br/>login + init/sync/doctor"]
+    CLI["ae-cli<br/>login + discover + init/sync/doctor"]
     Tool["Codex / Claude"]
     Backend["ai-efficiency backend<br/>Gin + Ent modular monolith"]
     DB[("ai_efficiency database<br/>PostgreSQL")]
@@ -60,6 +61,7 @@ flowchart LR
 - `deploy/` also includes non-production `dev` / `local` compose paths for local verification.
 - Public health endpoints expose liveness/readiness, and admin settings expose deployment status plus update controls.
 - `ae-cli login` now supports both browser PKCE and OAuth device flow. Headless Linux environments are expected to use `ae-cli login --device`, while desktop/browser-capable environments still default to PKCE.
+- `ae-cli discover` now provides the current user-facing tool-configuration path for supported local agents. It fetches provider-delivered base URLs and API keys from the backend, detects installed tools locally, and writes deterministic local config for Codex, Claude, and Gemini.
 - Legacy session tables and ent schema still exist in the repo/data model, but the old session runtime/helper packages are no longer present in the active code path.
 
 ## Current Production Deployment
@@ -138,6 +140,9 @@ sequenceDiagram
         CLI->>BE: /oauth/device/code + /oauth/token polling
         Browser->>BE: /oauth/device/verify
     end
+    Dev->>CLI: ae-cli discover
+    CLI->>BE: GET /api/v1/providers
+    CLI->>Tool: configure Codex / Claude / Gemini locally
     Dev->>CLI: ae-cli init
     CLI->>WS: install hooks / maintain local attribution state
     Dev->>Tool: run Codex / Claude / other tools
@@ -152,6 +157,7 @@ sequenceDiagram
 ### Runtime Boundaries
 
 - `ae-cli` owns the sessionless CLI workflow: repo-local init, hook management, short-lived attribution sync, and diagnostics.
+- `ae-cli discover` is intentionally deterministic in the current codebase: no backend LLM loop, no `/api/v1/tools/discover` endpoint, and no per-tool provider inference. It uses the selected provider directly (primary by default, `--provider` to override) and writes tool-native config files or environment hooks.
 - `ae-cli` login selection is split between browser PKCE and device flow, but both paths still end in the same backend-issued JWT and `~/.ae-cli/token.json` storage model.
 - The backend owns durable state, repo discovery during bootstrap, repo configuration, user/provider mapping, attribution, and SCM/webhook handling.
 - The backend OAuth handler now manages both short-lived authorization codes and short-lived device entries in memory.
