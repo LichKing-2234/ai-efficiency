@@ -1,11 +1,6 @@
 package cmd
 
-import (
-	"github.com/ai-efficiency/ae-cli/internal/tmux"
-	"github.com/spf13/cobra"
-)
-
-var killPane = tmux.KillPane
+import "github.com/spf13/cobra"
 
 var killCmd = &cobra.Command{
 	Use:    "kill <pane-id>",

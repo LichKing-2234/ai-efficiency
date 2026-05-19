@@ -1,11 +1,6 @@
 package cmd
 
-import (
-	"github.com/ai-efficiency/ae-cli/internal/tmux"
-	"github.com/spf13/cobra"
-)
-
-var listPanes = tmux.ListPanes
+import "github.com/spf13/cobra"
 
 var psCmd = &cobra.Command{
 	Use:    "ps",

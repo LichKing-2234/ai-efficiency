@@ -18,7 +18,6 @@ type State struct {
 	Branch        string    `json:"branch"`
 	WorkspaceRoot string    `json:"workspace_root,omitempty"`
 	StartedAt     time.Time `json:"started_at"`
-	TmuxSession   string    `json:"tmux_session,omitempty"`
 }
 
 type Manager struct {
@@ -37,7 +36,6 @@ func (m *Manager) SaveState(state *State) error {
 	if bound, err := ResolveBoundState(""); err != nil {
 		return err
 	} else if bound != nil && bound.Marker != nil && strings.TrimSpace(bound.Marker.SessionID) != "" && bound.Marker.SessionID == state.ID {
-		bound.Marker.TmuxSession = state.TmuxSession
 		if err := WriteMarker(bound.WorkspaceRoot, bound.Marker); err != nil {
 			return fmt.Errorf("writing workspace marker: %w", err)
 		}
@@ -54,7 +52,6 @@ func (m *Manager) Current() (*State, error) {
 			Repo:          bound.Marker.RepoFullName,
 			Branch:        bound.Marker.Branch,
 			WorkspaceRoot: bound.WorkspaceRoot,
-			TmuxSession:   bound.Marker.TmuxSession,
 		}, nil
 	}
 
