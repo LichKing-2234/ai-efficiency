@@ -405,6 +405,29 @@ describe('RepoDetailView', () => {
     expect(wrapper.findAll('button').some((button) => button.text() === 'Details')).toBe(true)
   })
 
+  it('shows a loading state instead of empty detail placeholders while first detail fetch is pending', async () => {
+    const firstDetail = createDeferred<any>()
+    const { wrapper } = await mountRepoDetail(undefined, undefined, {
+      getPRImpl: vi.fn(async () => firstDetail.promise),
+    })
+
+    const detailsButton = wrapper.findAll('button').find((button) => button.text() === 'Details')
+    expect(detailsButton).toBeTruthy()
+
+    await detailsButton!.trigger('click')
+    await nextTick()
+
+    expect(wrapper.text()).toContain('Loading PR details...')
+    expect(wrapper.text()).not.toContain('No matched commits recorded.')
+    expect(wrapper.text()).not.toContain('No interval breakdown recorded.')
+
+    firstDetail.resolve(detailFor(101, 88))
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('abc123')
+    expect(wrapper.text()).toContain('tool_usage_events')
+  })
+
   it('keeps previously loaded PR details when settle refresh fails', async () => {
     let detailCalls = 0
     const { wrapper, getPR, settlePR } = await mountRepoDetail(undefined, undefined, {

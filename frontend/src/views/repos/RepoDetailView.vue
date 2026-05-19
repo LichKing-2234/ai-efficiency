@@ -399,7 +399,10 @@ async function handleSettlePR(prId: number) {
                 </tr>
                 <tr v-if="expandedPRId === pr.id" class="bg-gray-50/70">
                   <td colspan="10" class="px-4 py-4">
-                    <div class="space-y-4 text-xs text-gray-700">
+                    <div v-if="isPRDetailLoading(pr.id) && !prDetails[pr.id]" class="py-6 text-center text-xs text-gray-500">
+                      Loading PR details...
+                    </div>
+                    <div v-else class="space-y-4 text-xs text-gray-700">
                       <div class="grid gap-3 sm:grid-cols-4">
                         <div>
                           <div class="text-gray-400">Primary Tokens</div>
