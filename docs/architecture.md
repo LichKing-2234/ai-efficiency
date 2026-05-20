@@ -144,14 +144,16 @@ sequenceDiagram
     CLI->>BE: GET /api/v1/providers
     CLI->>Tool: configure Codex / Claude / Gemini locally
     Dev->>CLI: ae-cli init
+    CLI->>BE: ensure repo exists from local git remote
     CLI->>WS: install hooks / maintain local attribution state
     Dev->>Tool: run Codex / Claude / other tools
     Tool->>WS: write local Codex / Claude / Kiro artifacts
+    WS->>BE: ensure repo exists from local git remote
     WS->>WS: short-lived sync scans local artifacts
     WS->>BE: tool_usage_events ingest
     WS->>BE: checkpoint events + rewrite events
     BE->>BE: bind tool_usage_events to commit checkpoints
-    BE->>BE: classify unmatched checkpoints as ambiguous when no bound tool usage exists
+    BE->>BE: refresh active PR usage snapshots from checkpoint-bound usage
 ```
 
 ### Runtime Boundaries
@@ -159,7 +161,7 @@ sequenceDiagram
 - `ae-cli` owns the sessionless CLI workflow: repo-local init, hook management, short-lived attribution sync, and diagnostics.
 - `ae-cli discover` is intentionally deterministic in the current codebase: no backend LLM loop, no `/api/v1/tools/discover` endpoint, and no per-tool provider inference. It uses the selected provider directly (primary by default, `--provider` to override) and writes tool-native config files or environment hooks.
 - `ae-cli` login selection is split between browser PKCE and device flow, but both paths still end in the same backend-issued JWT and `~/.ae-cli/token.json` storage model.
-- The backend owns durable state, repo discovery during bootstrap, repo configuration, user/provider mapping, attribution, and SCM/webhook handling.
+- The backend owns durable state, repo discovery/ensure from local git remotes, repo configuration, user/provider mapping, attribution, PR usage snapshots, and SCM/webhook handling.
 - The backend OAuth handler now manages both short-lived authorization codes and short-lived device entries in memory.
 - Relay/sub2api remains the upstream auth/LLM/usage integration boundary and attribution fallback source.
 - SCM providers now reference reusable credentials instead of storing raw secret blobs inline.
@@ -191,9 +193,11 @@ flowchart LR
 ### Status
 
 - Current formal CLI/runtime path:
-  `ae-cli` local artifact parsers for Codex JSONL, Claude JSONL, and Kiro JSON; short-lived local sync; git-hook-triggered sync; `tool_usage_events` ingest; checkpoint-time binding; PR attribution that can read checkpoint-bound `tool_usage_events`
+  `ae-cli init`, `sync`, and git hooks all best-effort ensure the backend repo exists from the local git remote; local attribution scans use Codex sqlite transport logs as the primary token source with JSONL session metadata/fallback, plus Claude JSONL and Kiro JSON; backend ingests `tool_usage_events`, binds them to checkpoints, and refreshes PR usage snapshots from checkpoint-bound usage.
+- Current formal frontend surface:
+  repo detail pages show PR usage summaries and commit usage details directly, rather than user-facing attribution status controls.
 - Remaining direction:
-  richer Attribution UI and any later schema cleanup for historical legacy tables
+  richer reporting surfaces and any later cleanup of historical attribution-only fields/tables that are no longer product-primary
 
 ## Module Responsibilities
 
@@ -204,9 +208,9 @@ flowchart LR
 | Auth and identity | `backend/internal/auth`, `backend/internal/oauth` | Relay SSO, LDAP auth, local token issuance, user identity mapping |
 | Credentials | `backend/internal/credential` | Reusable encrypted secret assets, payload validation, provider credential migration, and credential masking |
 | Relay integration | `backend/internal/relay` | Unified relay/sub2api adapter and usage/API key operations |
-| SCM integration | `backend/internal/scm`, `backend/internal/webhook`, `backend/internal/prsync` | SCM provider abstraction, webhook ingestion, PR synchronization |
-| Repo and efficiency | `backend/internal/repo`, `backend/internal/efficiency` | Repo-to-provider binding, provider-backed clone/auth resolution, PR labeling, and dashboard-facing summary inputs |
-| Session and attribution | `backend/internal/checkpoint`, `backend/internal/attribution` | Commit checkpoints, PR attribution, and tool-native session-id propagation inside `tool_usage_events` |
+| SCM integration | `backend/internal/scm`, `backend/internal/webhook`, `backend/internal/prsync` | SCM provider abstraction, webhook ingestion, PR synchronization, and active-PR usage snapshot refresh |
+| Repo and efficiency | `backend/internal/repo`, `backend/internal/efficiency` | Repo ensure/binding from local git remotes, provider-backed clone/auth resolution, PR labeling, and dashboard-facing summary inputs |
+| Session and attribution | `backend/internal/checkpoint`, `backend/internal/attribution`, `backend/internal/prusage` | Commit checkpoints, rewrite mapping, checkpoint-bound tool usage propagation, and PR usage summary/detail snapshot generation |
 | API surface | `backend/internal/handler`, `backend/internal/middleware` | HTTP handlers, routing, auth middleware, settings endpoints |
 
 ### Frontend
