@@ -11,6 +11,7 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/ai-efficiency/backend/ent/prattributionrun"
+	"github.com/ai-efficiency/backend/ent/prcommitusagesnapshot"
 	"github.com/ai-efficiency/backend/ent/prrecord"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 )
@@ -256,6 +257,132 @@ func (prc *PrRecordCreate) SetNillablePrimaryTokenCost(f *float64) *PrRecordCrea
 	return prc
 }
 
+// SetUsageInputTokens sets the "usage_input_tokens" field.
+func (prc *PrRecordCreate) SetUsageInputTokens(i int64) *PrRecordCreate {
+	prc.mutation.SetUsageInputTokens(i)
+	return prc
+}
+
+// SetNillableUsageInputTokens sets the "usage_input_tokens" field if the given value is not nil.
+func (prc *PrRecordCreate) SetNillableUsageInputTokens(i *int64) *PrRecordCreate {
+	if i != nil {
+		prc.SetUsageInputTokens(*i)
+	}
+	return prc
+}
+
+// SetUsageOutputTokens sets the "usage_output_tokens" field.
+func (prc *PrRecordCreate) SetUsageOutputTokens(i int64) *PrRecordCreate {
+	prc.mutation.SetUsageOutputTokens(i)
+	return prc
+}
+
+// SetNillableUsageOutputTokens sets the "usage_output_tokens" field if the given value is not nil.
+func (prc *PrRecordCreate) SetNillableUsageOutputTokens(i *int64) *PrRecordCreate {
+	if i != nil {
+		prc.SetUsageOutputTokens(*i)
+	}
+	return prc
+}
+
+// SetUsageCachedInputTokens sets the "usage_cached_input_tokens" field.
+func (prc *PrRecordCreate) SetUsageCachedInputTokens(i int64) *PrRecordCreate {
+	prc.mutation.SetUsageCachedInputTokens(i)
+	return prc
+}
+
+// SetNillableUsageCachedInputTokens sets the "usage_cached_input_tokens" field if the given value is not nil.
+func (prc *PrRecordCreate) SetNillableUsageCachedInputTokens(i *int64) *PrRecordCreate {
+	if i != nil {
+		prc.SetUsageCachedInputTokens(*i)
+	}
+	return prc
+}
+
+// SetUsageReasoningTokens sets the "usage_reasoning_tokens" field.
+func (prc *PrRecordCreate) SetUsageReasoningTokens(i int64) *PrRecordCreate {
+	prc.mutation.SetUsageReasoningTokens(i)
+	return prc
+}
+
+// SetNillableUsageReasoningTokens sets the "usage_reasoning_tokens" field if the given value is not nil.
+func (prc *PrRecordCreate) SetNillableUsageReasoningTokens(i *int64) *PrRecordCreate {
+	if i != nil {
+		prc.SetUsageReasoningTokens(*i)
+	}
+	return prc
+}
+
+// SetUsageCreditUsage sets the "usage_credit_usage" field.
+func (prc *PrRecordCreate) SetUsageCreditUsage(f float64) *PrRecordCreate {
+	prc.mutation.SetUsageCreditUsage(f)
+	return prc
+}
+
+// SetNillableUsageCreditUsage sets the "usage_credit_usage" field if the given value is not nil.
+func (prc *PrRecordCreate) SetNillableUsageCreditUsage(f *float64) *PrRecordCreate {
+	if f != nil {
+		prc.SetUsageCreditUsage(*f)
+	}
+	return prc
+}
+
+// SetUsageRequestCount sets the "usage_request_count" field.
+func (prc *PrRecordCreate) SetUsageRequestCount(i int) *PrRecordCreate {
+	prc.mutation.SetUsageRequestCount(i)
+	return prc
+}
+
+// SetNillableUsageRequestCount sets the "usage_request_count" field if the given value is not nil.
+func (prc *PrRecordCreate) SetNillableUsageRequestCount(i *int) *PrRecordCreate {
+	if i != nil {
+		prc.SetUsageRequestCount(*i)
+	}
+	return prc
+}
+
+// SetUsageCommitCount sets the "usage_commit_count" field.
+func (prc *PrRecordCreate) SetUsageCommitCount(i int) *PrRecordCreate {
+	prc.mutation.SetUsageCommitCount(i)
+	return prc
+}
+
+// SetNillableUsageCommitCount sets the "usage_commit_count" field if the given value is not nil.
+func (prc *PrRecordCreate) SetNillableUsageCommitCount(i *int) *PrRecordCreate {
+	if i != nil {
+		prc.SetUsageCommitCount(*i)
+	}
+	return prc
+}
+
+// SetUsageRefreshedAt sets the "usage_refreshed_at" field.
+func (prc *PrRecordCreate) SetUsageRefreshedAt(t time.Time) *PrRecordCreate {
+	prc.mutation.SetUsageRefreshedAt(t)
+	return prc
+}
+
+// SetNillableUsageRefreshedAt sets the "usage_refreshed_at" field if the given value is not nil.
+func (prc *PrRecordCreate) SetNillableUsageRefreshedAt(t *time.Time) *PrRecordCreate {
+	if t != nil {
+		prc.SetUsageRefreshedAt(*t)
+	}
+	return prc
+}
+
+// SetUsageCommitSnapshotHash sets the "usage_commit_snapshot_hash" field.
+func (prc *PrRecordCreate) SetUsageCommitSnapshotHash(s string) *PrRecordCreate {
+	prc.mutation.SetUsageCommitSnapshotHash(s)
+	return prc
+}
+
+// SetNillableUsageCommitSnapshotHash sets the "usage_commit_snapshot_hash" field if the given value is not nil.
+func (prc *PrRecordCreate) SetNillableUsageCommitSnapshotHash(s *string) *PrRecordCreate {
+	if s != nil {
+		prc.SetUsageCommitSnapshotHash(*s)
+	}
+	return prc
+}
+
 // SetMetadataSummary sets the "metadata_summary" field.
 func (prc *PrRecordCreate) SetMetadataSummary(m map[string]interface{}) *PrRecordCreate {
 	prc.mutation.SetMetadataSummary(m)
@@ -357,6 +484,21 @@ func (prc *PrRecordCreate) SetRepoConfig(r *RepoConfig) *PrRecordCreate {
 	return prc.SetRepoConfigID(r.ID)
 }
 
+// AddPrCommitUsageSnapshotIDs adds the "pr_commit_usage_snapshots" edge to the PRCommitUsageSnapshot entity by IDs.
+func (prc *PrRecordCreate) AddPrCommitUsageSnapshotIDs(ids ...int) *PrRecordCreate {
+	prc.mutation.AddPrCommitUsageSnapshotIDs(ids...)
+	return prc
+}
+
+// AddPrCommitUsageSnapshots adds the "pr_commit_usage_snapshots" edges to the PRCommitUsageSnapshot entity.
+func (prc *PrRecordCreate) AddPrCommitUsageSnapshots(p ...*PRCommitUsageSnapshot) *PrRecordCreate {
+	ids := make([]int, len(p))
+	for i := range p {
+		ids[i] = p[i].ID
+	}
+	return prc.AddPrCommitUsageSnapshotIDs(ids...)
+}
+
 // AddAttributionRunIDs adds the "attribution_runs" edge to the PrAttributionRun entity by IDs.
 func (prc *PrRecordCreate) AddAttributionRunIDs(ids ...int) *PrRecordCreate {
 	prc.mutation.AddAttributionRunIDs(ids...)
@@ -450,6 +592,34 @@ func (prc *PrRecordCreate) defaults() error {
 		v := prrecord.DefaultPrimaryTokenCost
 		prc.mutation.SetPrimaryTokenCost(v)
 	}
+	if _, ok := prc.mutation.UsageInputTokens(); !ok {
+		v := prrecord.DefaultUsageInputTokens
+		prc.mutation.SetUsageInputTokens(v)
+	}
+	if _, ok := prc.mutation.UsageOutputTokens(); !ok {
+		v := prrecord.DefaultUsageOutputTokens
+		prc.mutation.SetUsageOutputTokens(v)
+	}
+	if _, ok := prc.mutation.UsageCachedInputTokens(); !ok {
+		v := prrecord.DefaultUsageCachedInputTokens
+		prc.mutation.SetUsageCachedInputTokens(v)
+	}
+	if _, ok := prc.mutation.UsageReasoningTokens(); !ok {
+		v := prrecord.DefaultUsageReasoningTokens
+		prc.mutation.SetUsageReasoningTokens(v)
+	}
+	if _, ok := prc.mutation.UsageCreditUsage(); !ok {
+		v := prrecord.DefaultUsageCreditUsage
+		prc.mutation.SetUsageCreditUsage(v)
+	}
+	if _, ok := prc.mutation.UsageRequestCount(); !ok {
+		v := prrecord.DefaultUsageRequestCount
+		prc.mutation.SetUsageRequestCount(v)
+	}
+	if _, ok := prc.mutation.UsageCommitCount(); !ok {
+		v := prrecord.DefaultUsageCommitCount
+		prc.mutation.SetUsageCommitCount(v)
+	}
 	if _, ok := prc.mutation.CycleTimeHours(); !ok {
 		v := prrecord.DefaultCycleTimeHours
 		prc.mutation.SetCycleTimeHours(v)
@@ -522,6 +692,27 @@ func (prc *PrRecordCreate) check() error {
 	}
 	if _, ok := prc.mutation.PrimaryTokenCost(); !ok {
 		return &ValidationError{Name: "primary_token_cost", err: errors.New(`ent: missing required field "PrRecord.primary_token_cost"`)}
+	}
+	if _, ok := prc.mutation.UsageInputTokens(); !ok {
+		return &ValidationError{Name: "usage_input_tokens", err: errors.New(`ent: missing required field "PrRecord.usage_input_tokens"`)}
+	}
+	if _, ok := prc.mutation.UsageOutputTokens(); !ok {
+		return &ValidationError{Name: "usage_output_tokens", err: errors.New(`ent: missing required field "PrRecord.usage_output_tokens"`)}
+	}
+	if _, ok := prc.mutation.UsageCachedInputTokens(); !ok {
+		return &ValidationError{Name: "usage_cached_input_tokens", err: errors.New(`ent: missing required field "PrRecord.usage_cached_input_tokens"`)}
+	}
+	if _, ok := prc.mutation.UsageReasoningTokens(); !ok {
+		return &ValidationError{Name: "usage_reasoning_tokens", err: errors.New(`ent: missing required field "PrRecord.usage_reasoning_tokens"`)}
+	}
+	if _, ok := prc.mutation.UsageCreditUsage(); !ok {
+		return &ValidationError{Name: "usage_credit_usage", err: errors.New(`ent: missing required field "PrRecord.usage_credit_usage"`)}
+	}
+	if _, ok := prc.mutation.UsageRequestCount(); !ok {
+		return &ValidationError{Name: "usage_request_count", err: errors.New(`ent: missing required field "PrRecord.usage_request_count"`)}
+	}
+	if _, ok := prc.mutation.UsageCommitCount(); !ok {
+		return &ValidationError{Name: "usage_commit_count", err: errors.New(`ent: missing required field "PrRecord.usage_commit_count"`)}
 	}
 	if _, ok := prc.mutation.CycleTimeHours(); !ok {
 		return &ValidationError{Name: "cycle_time_hours", err: errors.New(`ent: missing required field "PrRecord.cycle_time_hours"`)}
@@ -637,6 +828,42 @@ func (prc *PrRecordCreate) createSpec() (*PrRecord, *sqlgraph.CreateSpec) {
 		_spec.SetField(prrecord.FieldPrimaryTokenCost, field.TypeFloat64, value)
 		_node.PrimaryTokenCost = value
 	}
+	if value, ok := prc.mutation.UsageInputTokens(); ok {
+		_spec.SetField(prrecord.FieldUsageInputTokens, field.TypeInt64, value)
+		_node.UsageInputTokens = value
+	}
+	if value, ok := prc.mutation.UsageOutputTokens(); ok {
+		_spec.SetField(prrecord.FieldUsageOutputTokens, field.TypeInt64, value)
+		_node.UsageOutputTokens = value
+	}
+	if value, ok := prc.mutation.UsageCachedInputTokens(); ok {
+		_spec.SetField(prrecord.FieldUsageCachedInputTokens, field.TypeInt64, value)
+		_node.UsageCachedInputTokens = value
+	}
+	if value, ok := prc.mutation.UsageReasoningTokens(); ok {
+		_spec.SetField(prrecord.FieldUsageReasoningTokens, field.TypeInt64, value)
+		_node.UsageReasoningTokens = value
+	}
+	if value, ok := prc.mutation.UsageCreditUsage(); ok {
+		_spec.SetField(prrecord.FieldUsageCreditUsage, field.TypeFloat64, value)
+		_node.UsageCreditUsage = value
+	}
+	if value, ok := prc.mutation.UsageRequestCount(); ok {
+		_spec.SetField(prrecord.FieldUsageRequestCount, field.TypeInt, value)
+		_node.UsageRequestCount = value
+	}
+	if value, ok := prc.mutation.UsageCommitCount(); ok {
+		_spec.SetField(prrecord.FieldUsageCommitCount, field.TypeInt, value)
+		_node.UsageCommitCount = value
+	}
+	if value, ok := prc.mutation.UsageRefreshedAt(); ok {
+		_spec.SetField(prrecord.FieldUsageRefreshedAt, field.TypeTime, value)
+		_node.UsageRefreshedAt = &value
+	}
+	if value, ok := prc.mutation.UsageCommitSnapshotHash(); ok {
+		_spec.SetField(prrecord.FieldUsageCommitSnapshotHash, field.TypeString, value)
+		_node.UsageCommitSnapshotHash = &value
+	}
 	if value, ok := prc.mutation.MetadataSummary(); ok {
 		_spec.SetField(prrecord.FieldMetadataSummary, field.TypeJSON, value)
 		_node.MetadataSummary = value
@@ -676,6 +903,22 @@ func (prc *PrRecordCreate) createSpec() (*PrRecord, *sqlgraph.CreateSpec) {
 			edge.Target.Nodes = append(edge.Target.Nodes, k)
 		}
 		_node.repo_config_pr_records = &nodes[0]
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := prc.mutation.PrCommitUsageSnapshotsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   prrecord.PrCommitUsageSnapshotsTable,
+			Columns: []string{prrecord.PrCommitUsageSnapshotsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(prcommitusagesnapshot.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
 		_spec.Edges = append(_spec.Edges, edge)
 	}
 	if nodes := prc.mutation.AttributionRunsIDs(); len(nodes) > 0 {

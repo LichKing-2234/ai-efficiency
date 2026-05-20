@@ -63,6 +63,26 @@ func (PrRecord) Fields() []entgo.Field {
 			Default(0),
 		field.Float("primary_token_cost").
 			Default(0),
+		field.Int64("usage_input_tokens").
+			Default(0),
+		field.Int64("usage_output_tokens").
+			Default(0),
+		field.Int64("usage_cached_input_tokens").
+			Default(0),
+		field.Int64("usage_reasoning_tokens").
+			Default(0),
+		field.Float("usage_credit_usage").
+			Default(0),
+		field.Int("usage_request_count").
+			Default(0),
+		field.Int("usage_commit_count").
+			Default(0),
+		field.Time("usage_refreshed_at").
+			Optional().
+			Nillable(),
+		field.String("usage_commit_snapshot_hash").
+			Optional().
+			Nillable(),
 		field.JSON("metadata_summary", map[string]any{}).
 			Optional(),
 		field.Time("last_attributed_at").
@@ -91,6 +111,7 @@ func (PrRecord) Edges() []entgo.Edge {
 			Ref("pr_records").
 			Unique().
 			Required(),
+		edge.To("pr_commit_usage_snapshots", PRCommitUsageSnapshot.Type),
 		edge.To("attribution_runs", PrAttributionRun.Type),
 		edge.To("last_attribution_run", PrAttributionRun.Type).
 			Unique().

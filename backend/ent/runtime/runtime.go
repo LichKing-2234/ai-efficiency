@@ -9,6 +9,7 @@ import (
 	"github.com/ai-efficiency/backend/ent/commitrewrite"
 	"github.com/ai-efficiency/backend/ent/credential"
 	"github.com/ai-efficiency/backend/ent/prattributionrun"
+	"github.com/ai-efficiency/backend/ent/prcommitusagesnapshot"
 	"github.com/ai-efficiency/backend/ent/prrecord"
 	"github.com/ai-efficiency/backend/ent/relayprovider"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
@@ -76,6 +77,50 @@ func init() {
 	credential.DefaultUpdatedAt = credentialDescUpdatedAt.Default.(func() time.Time)
 	// credential.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	credential.UpdateDefaultUpdatedAt = credentialDescUpdatedAt.UpdateDefault.(func() time.Time)
+	prcommitusagesnapshotFields := schema.PRCommitUsageSnapshot{}.Fields()
+	_ = prcommitusagesnapshotFields
+	// prcommitusagesnapshotDescCommitSha is the schema descriptor for commit_sha field.
+	prcommitusagesnapshotDescCommitSha := prcommitusagesnapshotFields[1].Descriptor()
+	// prcommitusagesnapshot.CommitShaValidator is a validator for the "commit_sha" field. It is called by the builders before save.
+	prcommitusagesnapshot.CommitShaValidator = prcommitusagesnapshotDescCommitSha.Validators[0].(func(string) error)
+	// prcommitusagesnapshotDescInputTokens is the schema descriptor for input_tokens field.
+	prcommitusagesnapshotDescInputTokens := prcommitusagesnapshotFields[4].Descriptor()
+	// prcommitusagesnapshot.DefaultInputTokens holds the default value on creation for the input_tokens field.
+	prcommitusagesnapshot.DefaultInputTokens = prcommitusagesnapshotDescInputTokens.Default.(int64)
+	// prcommitusagesnapshotDescOutputTokens is the schema descriptor for output_tokens field.
+	prcommitusagesnapshotDescOutputTokens := prcommitusagesnapshotFields[5].Descriptor()
+	// prcommitusagesnapshot.DefaultOutputTokens holds the default value on creation for the output_tokens field.
+	prcommitusagesnapshot.DefaultOutputTokens = prcommitusagesnapshotDescOutputTokens.Default.(int64)
+	// prcommitusagesnapshotDescCachedInputTokens is the schema descriptor for cached_input_tokens field.
+	prcommitusagesnapshotDescCachedInputTokens := prcommitusagesnapshotFields[6].Descriptor()
+	// prcommitusagesnapshot.DefaultCachedInputTokens holds the default value on creation for the cached_input_tokens field.
+	prcommitusagesnapshot.DefaultCachedInputTokens = prcommitusagesnapshotDescCachedInputTokens.Default.(int64)
+	// prcommitusagesnapshotDescReasoningTokens is the schema descriptor for reasoning_tokens field.
+	prcommitusagesnapshotDescReasoningTokens := prcommitusagesnapshotFields[7].Descriptor()
+	// prcommitusagesnapshot.DefaultReasoningTokens holds the default value on creation for the reasoning_tokens field.
+	prcommitusagesnapshot.DefaultReasoningTokens = prcommitusagesnapshotDescReasoningTokens.Default.(int64)
+	// prcommitusagesnapshotDescCreditUsage is the schema descriptor for credit_usage field.
+	prcommitusagesnapshotDescCreditUsage := prcommitusagesnapshotFields[8].Descriptor()
+	// prcommitusagesnapshot.DefaultCreditUsage holds the default value on creation for the credit_usage field.
+	prcommitusagesnapshot.DefaultCreditUsage = prcommitusagesnapshotDescCreditUsage.Default.(float64)
+	// prcommitusagesnapshotDescRequestCount is the schema descriptor for request_count field.
+	prcommitusagesnapshotDescRequestCount := prcommitusagesnapshotFields[9].Descriptor()
+	// prcommitusagesnapshot.DefaultRequestCount holds the default value on creation for the request_count field.
+	prcommitusagesnapshot.DefaultRequestCount = prcommitusagesnapshotDescRequestCount.Default.(int)
+	// prcommitusagesnapshotDescSortOrder is the schema descriptor for sort_order field.
+	prcommitusagesnapshotDescSortOrder := prcommitusagesnapshotFields[10].Descriptor()
+	// prcommitusagesnapshot.DefaultSortOrder holds the default value on creation for the sort_order field.
+	prcommitusagesnapshot.DefaultSortOrder = prcommitusagesnapshotDescSortOrder.Default.(int)
+	// prcommitusagesnapshotDescCreatedAt is the schema descriptor for created_at field.
+	prcommitusagesnapshotDescCreatedAt := prcommitusagesnapshotFields[11].Descriptor()
+	// prcommitusagesnapshot.DefaultCreatedAt holds the default value on creation for the created_at field.
+	prcommitusagesnapshot.DefaultCreatedAt = prcommitusagesnapshotDescCreatedAt.Default.(func() time.Time)
+	// prcommitusagesnapshotDescUpdatedAt is the schema descriptor for updated_at field.
+	prcommitusagesnapshotDescUpdatedAt := prcommitusagesnapshotFields[12].Descriptor()
+	// prcommitusagesnapshot.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	prcommitusagesnapshot.DefaultUpdatedAt = prcommitusagesnapshotDescUpdatedAt.Default.(func() time.Time)
+	// prcommitusagesnapshot.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	prcommitusagesnapshot.UpdateDefaultUpdatedAt = prcommitusagesnapshotDescUpdatedAt.UpdateDefault.(func() time.Time)
 	prattributionrunHooks := schema.PrAttributionRun{}.Hooks()
 	prattributionrun.Hooks[0] = prattributionrunHooks[0]
 	prattributionrunFields := schema.PrAttributionRun{}.Fields()
@@ -124,16 +169,44 @@ func init() {
 	prrecordDescPrimaryTokenCost := prrecordFields[18].Descriptor()
 	// prrecord.DefaultPrimaryTokenCost holds the default value on creation for the primary_token_cost field.
 	prrecord.DefaultPrimaryTokenCost = prrecordDescPrimaryTokenCost.Default.(float64)
+	// prrecordDescUsageInputTokens is the schema descriptor for usage_input_tokens field.
+	prrecordDescUsageInputTokens := prrecordFields[19].Descriptor()
+	// prrecord.DefaultUsageInputTokens holds the default value on creation for the usage_input_tokens field.
+	prrecord.DefaultUsageInputTokens = prrecordDescUsageInputTokens.Default.(int64)
+	// prrecordDescUsageOutputTokens is the schema descriptor for usage_output_tokens field.
+	prrecordDescUsageOutputTokens := prrecordFields[20].Descriptor()
+	// prrecord.DefaultUsageOutputTokens holds the default value on creation for the usage_output_tokens field.
+	prrecord.DefaultUsageOutputTokens = prrecordDescUsageOutputTokens.Default.(int64)
+	// prrecordDescUsageCachedInputTokens is the schema descriptor for usage_cached_input_tokens field.
+	prrecordDescUsageCachedInputTokens := prrecordFields[21].Descriptor()
+	// prrecord.DefaultUsageCachedInputTokens holds the default value on creation for the usage_cached_input_tokens field.
+	prrecord.DefaultUsageCachedInputTokens = prrecordDescUsageCachedInputTokens.Default.(int64)
+	// prrecordDescUsageReasoningTokens is the schema descriptor for usage_reasoning_tokens field.
+	prrecordDescUsageReasoningTokens := prrecordFields[22].Descriptor()
+	// prrecord.DefaultUsageReasoningTokens holds the default value on creation for the usage_reasoning_tokens field.
+	prrecord.DefaultUsageReasoningTokens = prrecordDescUsageReasoningTokens.Default.(int64)
+	// prrecordDescUsageCreditUsage is the schema descriptor for usage_credit_usage field.
+	prrecordDescUsageCreditUsage := prrecordFields[23].Descriptor()
+	// prrecord.DefaultUsageCreditUsage holds the default value on creation for the usage_credit_usage field.
+	prrecord.DefaultUsageCreditUsage = prrecordDescUsageCreditUsage.Default.(float64)
+	// prrecordDescUsageRequestCount is the schema descriptor for usage_request_count field.
+	prrecordDescUsageRequestCount := prrecordFields[24].Descriptor()
+	// prrecord.DefaultUsageRequestCount holds the default value on creation for the usage_request_count field.
+	prrecord.DefaultUsageRequestCount = prrecordDescUsageRequestCount.Default.(int)
+	// prrecordDescUsageCommitCount is the schema descriptor for usage_commit_count field.
+	prrecordDescUsageCommitCount := prrecordFields[25].Descriptor()
+	// prrecord.DefaultUsageCommitCount holds the default value on creation for the usage_commit_count field.
+	prrecord.DefaultUsageCommitCount = prrecordDescUsageCommitCount.Default.(int)
 	// prrecordDescCycleTimeHours is the schema descriptor for cycle_time_hours field.
-	prrecordDescCycleTimeHours := prrecordFields[23].Descriptor()
+	prrecordDescCycleTimeHours := prrecordFields[32].Descriptor()
 	// prrecord.DefaultCycleTimeHours holds the default value on creation for the cycle_time_hours field.
 	prrecord.DefaultCycleTimeHours = prrecordDescCycleTimeHours.Default.(float64)
 	// prrecordDescCreatedAt is the schema descriptor for created_at field.
-	prrecordDescCreatedAt := prrecordFields[24].Descriptor()
+	prrecordDescCreatedAt := prrecordFields[33].Descriptor()
 	// prrecord.DefaultCreatedAt holds the default value on creation for the created_at field.
 	prrecord.DefaultCreatedAt = prrecordDescCreatedAt.Default.(func() time.Time)
 	// prrecordDescUpdatedAt is the schema descriptor for updated_at field.
-	prrecordDescUpdatedAt := prrecordFields[25].Descriptor()
+	prrecordDescUpdatedAt := prrecordFields[34].Descriptor()
 	// prrecord.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	prrecord.DefaultUpdatedAt = prrecordDescUpdatedAt.Default.(func() time.Time)
 	// prrecord.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.

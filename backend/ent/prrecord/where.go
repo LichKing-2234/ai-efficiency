@@ -115,6 +115,51 @@ func PrimaryTokenCost(v float64) predicate.PrRecord {
 	return predicate.PrRecord(sql.FieldEQ(FieldPrimaryTokenCost, v))
 }
 
+// UsageInputTokens applies equality check predicate on the "usage_input_tokens" field. It's identical to UsageInputTokensEQ.
+func UsageInputTokens(v int64) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldEQ(FieldUsageInputTokens, v))
+}
+
+// UsageOutputTokens applies equality check predicate on the "usage_output_tokens" field. It's identical to UsageOutputTokensEQ.
+func UsageOutputTokens(v int64) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldEQ(FieldUsageOutputTokens, v))
+}
+
+// UsageCachedInputTokens applies equality check predicate on the "usage_cached_input_tokens" field. It's identical to UsageCachedInputTokensEQ.
+func UsageCachedInputTokens(v int64) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldEQ(FieldUsageCachedInputTokens, v))
+}
+
+// UsageReasoningTokens applies equality check predicate on the "usage_reasoning_tokens" field. It's identical to UsageReasoningTokensEQ.
+func UsageReasoningTokens(v int64) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldEQ(FieldUsageReasoningTokens, v))
+}
+
+// UsageCreditUsage applies equality check predicate on the "usage_credit_usage" field. It's identical to UsageCreditUsageEQ.
+func UsageCreditUsage(v float64) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldEQ(FieldUsageCreditUsage, v))
+}
+
+// UsageRequestCount applies equality check predicate on the "usage_request_count" field. It's identical to UsageRequestCountEQ.
+func UsageRequestCount(v int) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldEQ(FieldUsageRequestCount, v))
+}
+
+// UsageCommitCount applies equality check predicate on the "usage_commit_count" field. It's identical to UsageCommitCountEQ.
+func UsageCommitCount(v int) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldEQ(FieldUsageCommitCount, v))
+}
+
+// UsageRefreshedAt applies equality check predicate on the "usage_refreshed_at" field. It's identical to UsageRefreshedAtEQ.
+func UsageRefreshedAt(v time.Time) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldEQ(FieldUsageRefreshedAt, v))
+}
+
+// UsageCommitSnapshotHash applies equality check predicate on the "usage_commit_snapshot_hash" field. It's identical to UsageCommitSnapshotHashEQ.
+func UsageCommitSnapshotHash(v string) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldEQ(FieldUsageCommitSnapshotHash, v))
+}
+
 // LastAttributedAt applies equality check predicate on the "last_attributed_at" field. It's identical to LastAttributedAtEQ.
 func LastAttributedAt(v time.Time) predicate.PrRecord {
 	return predicate.PrRecord(sql.FieldEQ(FieldLastAttributedAt, v))
@@ -920,6 +965,411 @@ func PrimaryTokenCostLTE(v float64) predicate.PrRecord {
 	return predicate.PrRecord(sql.FieldLTE(FieldPrimaryTokenCost, v))
 }
 
+// UsageInputTokensEQ applies the EQ predicate on the "usage_input_tokens" field.
+func UsageInputTokensEQ(v int64) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldEQ(FieldUsageInputTokens, v))
+}
+
+// UsageInputTokensNEQ applies the NEQ predicate on the "usage_input_tokens" field.
+func UsageInputTokensNEQ(v int64) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldNEQ(FieldUsageInputTokens, v))
+}
+
+// UsageInputTokensIn applies the In predicate on the "usage_input_tokens" field.
+func UsageInputTokensIn(vs ...int64) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldIn(FieldUsageInputTokens, vs...))
+}
+
+// UsageInputTokensNotIn applies the NotIn predicate on the "usage_input_tokens" field.
+func UsageInputTokensNotIn(vs ...int64) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldNotIn(FieldUsageInputTokens, vs...))
+}
+
+// UsageInputTokensGT applies the GT predicate on the "usage_input_tokens" field.
+func UsageInputTokensGT(v int64) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldGT(FieldUsageInputTokens, v))
+}
+
+// UsageInputTokensGTE applies the GTE predicate on the "usage_input_tokens" field.
+func UsageInputTokensGTE(v int64) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldGTE(FieldUsageInputTokens, v))
+}
+
+// UsageInputTokensLT applies the LT predicate on the "usage_input_tokens" field.
+func UsageInputTokensLT(v int64) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldLT(FieldUsageInputTokens, v))
+}
+
+// UsageInputTokensLTE applies the LTE predicate on the "usage_input_tokens" field.
+func UsageInputTokensLTE(v int64) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldLTE(FieldUsageInputTokens, v))
+}
+
+// UsageOutputTokensEQ applies the EQ predicate on the "usage_output_tokens" field.
+func UsageOutputTokensEQ(v int64) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldEQ(FieldUsageOutputTokens, v))
+}
+
+// UsageOutputTokensNEQ applies the NEQ predicate on the "usage_output_tokens" field.
+func UsageOutputTokensNEQ(v int64) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldNEQ(FieldUsageOutputTokens, v))
+}
+
+// UsageOutputTokensIn applies the In predicate on the "usage_output_tokens" field.
+func UsageOutputTokensIn(vs ...int64) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldIn(FieldUsageOutputTokens, vs...))
+}
+
+// UsageOutputTokensNotIn applies the NotIn predicate on the "usage_output_tokens" field.
+func UsageOutputTokensNotIn(vs ...int64) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldNotIn(FieldUsageOutputTokens, vs...))
+}
+
+// UsageOutputTokensGT applies the GT predicate on the "usage_output_tokens" field.
+func UsageOutputTokensGT(v int64) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldGT(FieldUsageOutputTokens, v))
+}
+
+// UsageOutputTokensGTE applies the GTE predicate on the "usage_output_tokens" field.
+func UsageOutputTokensGTE(v int64) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldGTE(FieldUsageOutputTokens, v))
+}
+
+// UsageOutputTokensLT applies the LT predicate on the "usage_output_tokens" field.
+func UsageOutputTokensLT(v int64) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldLT(FieldUsageOutputTokens, v))
+}
+
+// UsageOutputTokensLTE applies the LTE predicate on the "usage_output_tokens" field.
+func UsageOutputTokensLTE(v int64) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldLTE(FieldUsageOutputTokens, v))
+}
+
+// UsageCachedInputTokensEQ applies the EQ predicate on the "usage_cached_input_tokens" field.
+func UsageCachedInputTokensEQ(v int64) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldEQ(FieldUsageCachedInputTokens, v))
+}
+
+// UsageCachedInputTokensNEQ applies the NEQ predicate on the "usage_cached_input_tokens" field.
+func UsageCachedInputTokensNEQ(v int64) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldNEQ(FieldUsageCachedInputTokens, v))
+}
+
+// UsageCachedInputTokensIn applies the In predicate on the "usage_cached_input_tokens" field.
+func UsageCachedInputTokensIn(vs ...int64) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldIn(FieldUsageCachedInputTokens, vs...))
+}
+
+// UsageCachedInputTokensNotIn applies the NotIn predicate on the "usage_cached_input_tokens" field.
+func UsageCachedInputTokensNotIn(vs ...int64) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldNotIn(FieldUsageCachedInputTokens, vs...))
+}
+
+// UsageCachedInputTokensGT applies the GT predicate on the "usage_cached_input_tokens" field.
+func UsageCachedInputTokensGT(v int64) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldGT(FieldUsageCachedInputTokens, v))
+}
+
+// UsageCachedInputTokensGTE applies the GTE predicate on the "usage_cached_input_tokens" field.
+func UsageCachedInputTokensGTE(v int64) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldGTE(FieldUsageCachedInputTokens, v))
+}
+
+// UsageCachedInputTokensLT applies the LT predicate on the "usage_cached_input_tokens" field.
+func UsageCachedInputTokensLT(v int64) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldLT(FieldUsageCachedInputTokens, v))
+}
+
+// UsageCachedInputTokensLTE applies the LTE predicate on the "usage_cached_input_tokens" field.
+func UsageCachedInputTokensLTE(v int64) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldLTE(FieldUsageCachedInputTokens, v))
+}
+
+// UsageReasoningTokensEQ applies the EQ predicate on the "usage_reasoning_tokens" field.
+func UsageReasoningTokensEQ(v int64) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldEQ(FieldUsageReasoningTokens, v))
+}
+
+// UsageReasoningTokensNEQ applies the NEQ predicate on the "usage_reasoning_tokens" field.
+func UsageReasoningTokensNEQ(v int64) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldNEQ(FieldUsageReasoningTokens, v))
+}
+
+// UsageReasoningTokensIn applies the In predicate on the "usage_reasoning_tokens" field.
+func UsageReasoningTokensIn(vs ...int64) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldIn(FieldUsageReasoningTokens, vs...))
+}
+
+// UsageReasoningTokensNotIn applies the NotIn predicate on the "usage_reasoning_tokens" field.
+func UsageReasoningTokensNotIn(vs ...int64) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldNotIn(FieldUsageReasoningTokens, vs...))
+}
+
+// UsageReasoningTokensGT applies the GT predicate on the "usage_reasoning_tokens" field.
+func UsageReasoningTokensGT(v int64) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldGT(FieldUsageReasoningTokens, v))
+}
+
+// UsageReasoningTokensGTE applies the GTE predicate on the "usage_reasoning_tokens" field.
+func UsageReasoningTokensGTE(v int64) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldGTE(FieldUsageReasoningTokens, v))
+}
+
+// UsageReasoningTokensLT applies the LT predicate on the "usage_reasoning_tokens" field.
+func UsageReasoningTokensLT(v int64) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldLT(FieldUsageReasoningTokens, v))
+}
+
+// UsageReasoningTokensLTE applies the LTE predicate on the "usage_reasoning_tokens" field.
+func UsageReasoningTokensLTE(v int64) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldLTE(FieldUsageReasoningTokens, v))
+}
+
+// UsageCreditUsageEQ applies the EQ predicate on the "usage_credit_usage" field.
+func UsageCreditUsageEQ(v float64) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldEQ(FieldUsageCreditUsage, v))
+}
+
+// UsageCreditUsageNEQ applies the NEQ predicate on the "usage_credit_usage" field.
+func UsageCreditUsageNEQ(v float64) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldNEQ(FieldUsageCreditUsage, v))
+}
+
+// UsageCreditUsageIn applies the In predicate on the "usage_credit_usage" field.
+func UsageCreditUsageIn(vs ...float64) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldIn(FieldUsageCreditUsage, vs...))
+}
+
+// UsageCreditUsageNotIn applies the NotIn predicate on the "usage_credit_usage" field.
+func UsageCreditUsageNotIn(vs ...float64) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldNotIn(FieldUsageCreditUsage, vs...))
+}
+
+// UsageCreditUsageGT applies the GT predicate on the "usage_credit_usage" field.
+func UsageCreditUsageGT(v float64) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldGT(FieldUsageCreditUsage, v))
+}
+
+// UsageCreditUsageGTE applies the GTE predicate on the "usage_credit_usage" field.
+func UsageCreditUsageGTE(v float64) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldGTE(FieldUsageCreditUsage, v))
+}
+
+// UsageCreditUsageLT applies the LT predicate on the "usage_credit_usage" field.
+func UsageCreditUsageLT(v float64) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldLT(FieldUsageCreditUsage, v))
+}
+
+// UsageCreditUsageLTE applies the LTE predicate on the "usage_credit_usage" field.
+func UsageCreditUsageLTE(v float64) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldLTE(FieldUsageCreditUsage, v))
+}
+
+// UsageRequestCountEQ applies the EQ predicate on the "usage_request_count" field.
+func UsageRequestCountEQ(v int) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldEQ(FieldUsageRequestCount, v))
+}
+
+// UsageRequestCountNEQ applies the NEQ predicate on the "usage_request_count" field.
+func UsageRequestCountNEQ(v int) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldNEQ(FieldUsageRequestCount, v))
+}
+
+// UsageRequestCountIn applies the In predicate on the "usage_request_count" field.
+func UsageRequestCountIn(vs ...int) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldIn(FieldUsageRequestCount, vs...))
+}
+
+// UsageRequestCountNotIn applies the NotIn predicate on the "usage_request_count" field.
+func UsageRequestCountNotIn(vs ...int) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldNotIn(FieldUsageRequestCount, vs...))
+}
+
+// UsageRequestCountGT applies the GT predicate on the "usage_request_count" field.
+func UsageRequestCountGT(v int) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldGT(FieldUsageRequestCount, v))
+}
+
+// UsageRequestCountGTE applies the GTE predicate on the "usage_request_count" field.
+func UsageRequestCountGTE(v int) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldGTE(FieldUsageRequestCount, v))
+}
+
+// UsageRequestCountLT applies the LT predicate on the "usage_request_count" field.
+func UsageRequestCountLT(v int) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldLT(FieldUsageRequestCount, v))
+}
+
+// UsageRequestCountLTE applies the LTE predicate on the "usage_request_count" field.
+func UsageRequestCountLTE(v int) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldLTE(FieldUsageRequestCount, v))
+}
+
+// UsageCommitCountEQ applies the EQ predicate on the "usage_commit_count" field.
+func UsageCommitCountEQ(v int) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldEQ(FieldUsageCommitCount, v))
+}
+
+// UsageCommitCountNEQ applies the NEQ predicate on the "usage_commit_count" field.
+func UsageCommitCountNEQ(v int) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldNEQ(FieldUsageCommitCount, v))
+}
+
+// UsageCommitCountIn applies the In predicate on the "usage_commit_count" field.
+func UsageCommitCountIn(vs ...int) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldIn(FieldUsageCommitCount, vs...))
+}
+
+// UsageCommitCountNotIn applies the NotIn predicate on the "usage_commit_count" field.
+func UsageCommitCountNotIn(vs ...int) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldNotIn(FieldUsageCommitCount, vs...))
+}
+
+// UsageCommitCountGT applies the GT predicate on the "usage_commit_count" field.
+func UsageCommitCountGT(v int) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldGT(FieldUsageCommitCount, v))
+}
+
+// UsageCommitCountGTE applies the GTE predicate on the "usage_commit_count" field.
+func UsageCommitCountGTE(v int) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldGTE(FieldUsageCommitCount, v))
+}
+
+// UsageCommitCountLT applies the LT predicate on the "usage_commit_count" field.
+func UsageCommitCountLT(v int) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldLT(FieldUsageCommitCount, v))
+}
+
+// UsageCommitCountLTE applies the LTE predicate on the "usage_commit_count" field.
+func UsageCommitCountLTE(v int) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldLTE(FieldUsageCommitCount, v))
+}
+
+// UsageRefreshedAtEQ applies the EQ predicate on the "usage_refreshed_at" field.
+func UsageRefreshedAtEQ(v time.Time) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldEQ(FieldUsageRefreshedAt, v))
+}
+
+// UsageRefreshedAtNEQ applies the NEQ predicate on the "usage_refreshed_at" field.
+func UsageRefreshedAtNEQ(v time.Time) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldNEQ(FieldUsageRefreshedAt, v))
+}
+
+// UsageRefreshedAtIn applies the In predicate on the "usage_refreshed_at" field.
+func UsageRefreshedAtIn(vs ...time.Time) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldIn(FieldUsageRefreshedAt, vs...))
+}
+
+// UsageRefreshedAtNotIn applies the NotIn predicate on the "usage_refreshed_at" field.
+func UsageRefreshedAtNotIn(vs ...time.Time) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldNotIn(FieldUsageRefreshedAt, vs...))
+}
+
+// UsageRefreshedAtGT applies the GT predicate on the "usage_refreshed_at" field.
+func UsageRefreshedAtGT(v time.Time) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldGT(FieldUsageRefreshedAt, v))
+}
+
+// UsageRefreshedAtGTE applies the GTE predicate on the "usage_refreshed_at" field.
+func UsageRefreshedAtGTE(v time.Time) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldGTE(FieldUsageRefreshedAt, v))
+}
+
+// UsageRefreshedAtLT applies the LT predicate on the "usage_refreshed_at" field.
+func UsageRefreshedAtLT(v time.Time) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldLT(FieldUsageRefreshedAt, v))
+}
+
+// UsageRefreshedAtLTE applies the LTE predicate on the "usage_refreshed_at" field.
+func UsageRefreshedAtLTE(v time.Time) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldLTE(FieldUsageRefreshedAt, v))
+}
+
+// UsageRefreshedAtIsNil applies the IsNil predicate on the "usage_refreshed_at" field.
+func UsageRefreshedAtIsNil() predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldIsNull(FieldUsageRefreshedAt))
+}
+
+// UsageRefreshedAtNotNil applies the NotNil predicate on the "usage_refreshed_at" field.
+func UsageRefreshedAtNotNil() predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldNotNull(FieldUsageRefreshedAt))
+}
+
+// UsageCommitSnapshotHashEQ applies the EQ predicate on the "usage_commit_snapshot_hash" field.
+func UsageCommitSnapshotHashEQ(v string) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldEQ(FieldUsageCommitSnapshotHash, v))
+}
+
+// UsageCommitSnapshotHashNEQ applies the NEQ predicate on the "usage_commit_snapshot_hash" field.
+func UsageCommitSnapshotHashNEQ(v string) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldNEQ(FieldUsageCommitSnapshotHash, v))
+}
+
+// UsageCommitSnapshotHashIn applies the In predicate on the "usage_commit_snapshot_hash" field.
+func UsageCommitSnapshotHashIn(vs ...string) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldIn(FieldUsageCommitSnapshotHash, vs...))
+}
+
+// UsageCommitSnapshotHashNotIn applies the NotIn predicate on the "usage_commit_snapshot_hash" field.
+func UsageCommitSnapshotHashNotIn(vs ...string) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldNotIn(FieldUsageCommitSnapshotHash, vs...))
+}
+
+// UsageCommitSnapshotHashGT applies the GT predicate on the "usage_commit_snapshot_hash" field.
+func UsageCommitSnapshotHashGT(v string) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldGT(FieldUsageCommitSnapshotHash, v))
+}
+
+// UsageCommitSnapshotHashGTE applies the GTE predicate on the "usage_commit_snapshot_hash" field.
+func UsageCommitSnapshotHashGTE(v string) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldGTE(FieldUsageCommitSnapshotHash, v))
+}
+
+// UsageCommitSnapshotHashLT applies the LT predicate on the "usage_commit_snapshot_hash" field.
+func UsageCommitSnapshotHashLT(v string) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldLT(FieldUsageCommitSnapshotHash, v))
+}
+
+// UsageCommitSnapshotHashLTE applies the LTE predicate on the "usage_commit_snapshot_hash" field.
+func UsageCommitSnapshotHashLTE(v string) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldLTE(FieldUsageCommitSnapshotHash, v))
+}
+
+// UsageCommitSnapshotHashContains applies the Contains predicate on the "usage_commit_snapshot_hash" field.
+func UsageCommitSnapshotHashContains(v string) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldContains(FieldUsageCommitSnapshotHash, v))
+}
+
+// UsageCommitSnapshotHashHasPrefix applies the HasPrefix predicate on the "usage_commit_snapshot_hash" field.
+func UsageCommitSnapshotHashHasPrefix(v string) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldHasPrefix(FieldUsageCommitSnapshotHash, v))
+}
+
+// UsageCommitSnapshotHashHasSuffix applies the HasSuffix predicate on the "usage_commit_snapshot_hash" field.
+func UsageCommitSnapshotHashHasSuffix(v string) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldHasSuffix(FieldUsageCommitSnapshotHash, v))
+}
+
+// UsageCommitSnapshotHashIsNil applies the IsNil predicate on the "usage_commit_snapshot_hash" field.
+func UsageCommitSnapshotHashIsNil() predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldIsNull(FieldUsageCommitSnapshotHash))
+}
+
+// UsageCommitSnapshotHashNotNil applies the NotNil predicate on the "usage_commit_snapshot_hash" field.
+func UsageCommitSnapshotHashNotNil() predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldNotNull(FieldUsageCommitSnapshotHash))
+}
+
+// UsageCommitSnapshotHashEqualFold applies the EqualFold predicate on the "usage_commit_snapshot_hash" field.
+func UsageCommitSnapshotHashEqualFold(v string) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldEqualFold(FieldUsageCommitSnapshotHash, v))
+}
+
+// UsageCommitSnapshotHashContainsFold applies the ContainsFold predicate on the "usage_commit_snapshot_hash" field.
+func UsageCommitSnapshotHashContainsFold(v string) predicate.PrRecord {
+	return predicate.PrRecord(sql.FieldContainsFold(FieldUsageCommitSnapshotHash, v))
+}
+
 // MetadataSummaryIsNil applies the IsNil predicate on the "metadata_summary" field.
 func MetadataSummaryIsNil() predicate.PrRecord {
 	return predicate.PrRecord(sql.FieldIsNull(FieldMetadataSummary))
@@ -1195,6 +1645,29 @@ func HasRepoConfig() predicate.PrRecord {
 func HasRepoConfigWith(preds ...predicate.RepoConfig) predicate.PrRecord {
 	return predicate.PrRecord(func(s *sql.Selector) {
 		step := newRepoConfigStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasPrCommitUsageSnapshots applies the HasEdge predicate on the "pr_commit_usage_snapshots" edge.
+func HasPrCommitUsageSnapshots() predicate.PrRecord {
+	return predicate.PrRecord(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, PrCommitUsageSnapshotsTable, PrCommitUsageSnapshotsColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasPrCommitUsageSnapshotsWith applies the HasEdge predicate on the "pr_commit_usage_snapshots" edge with a given conditions (other predicates).
+func HasPrCommitUsageSnapshotsWith(preds ...predicate.PRCommitUsageSnapshot) predicate.PrRecord {
+	return predicate.PrRecord(func(s *sql.Selector) {
+		step := newPrCommitUsageSnapshotsStep()
 		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
 			for _, p := range preds {
 				p(s)

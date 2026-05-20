@@ -54,6 +54,24 @@ const (
 	FieldPrimaryTokenCount = "primary_token_count"
 	// FieldPrimaryTokenCost holds the string denoting the primary_token_cost field in the database.
 	FieldPrimaryTokenCost = "primary_token_cost"
+	// FieldUsageInputTokens holds the string denoting the usage_input_tokens field in the database.
+	FieldUsageInputTokens = "usage_input_tokens"
+	// FieldUsageOutputTokens holds the string denoting the usage_output_tokens field in the database.
+	FieldUsageOutputTokens = "usage_output_tokens"
+	// FieldUsageCachedInputTokens holds the string denoting the usage_cached_input_tokens field in the database.
+	FieldUsageCachedInputTokens = "usage_cached_input_tokens"
+	// FieldUsageReasoningTokens holds the string denoting the usage_reasoning_tokens field in the database.
+	FieldUsageReasoningTokens = "usage_reasoning_tokens"
+	// FieldUsageCreditUsage holds the string denoting the usage_credit_usage field in the database.
+	FieldUsageCreditUsage = "usage_credit_usage"
+	// FieldUsageRequestCount holds the string denoting the usage_request_count field in the database.
+	FieldUsageRequestCount = "usage_request_count"
+	// FieldUsageCommitCount holds the string denoting the usage_commit_count field in the database.
+	FieldUsageCommitCount = "usage_commit_count"
+	// FieldUsageRefreshedAt holds the string denoting the usage_refreshed_at field in the database.
+	FieldUsageRefreshedAt = "usage_refreshed_at"
+	// FieldUsageCommitSnapshotHash holds the string denoting the usage_commit_snapshot_hash field in the database.
+	FieldUsageCommitSnapshotHash = "usage_commit_snapshot_hash"
 	// FieldMetadataSummary holds the string denoting the metadata_summary field in the database.
 	FieldMetadataSummary = "metadata_summary"
 	// FieldLastAttributedAt holds the string denoting the last_attributed_at field in the database.
@@ -70,6 +88,8 @@ const (
 	FieldUpdatedAt = "updated_at"
 	// EdgeRepoConfig holds the string denoting the repo_config edge name in mutations.
 	EdgeRepoConfig = "repo_config"
+	// EdgePrCommitUsageSnapshots holds the string denoting the pr_commit_usage_snapshots edge name in mutations.
+	EdgePrCommitUsageSnapshots = "pr_commit_usage_snapshots"
 	// EdgeAttributionRuns holds the string denoting the attribution_runs edge name in mutations.
 	EdgeAttributionRuns = "attribution_runs"
 	// EdgeLastAttributionRun holds the string denoting the last_attribution_run edge name in mutations.
@@ -83,6 +103,13 @@ const (
 	RepoConfigInverseTable = "repo_configs"
 	// RepoConfigColumn is the table column denoting the repo_config relation/edge.
 	RepoConfigColumn = "repo_config_pr_records"
+	// PrCommitUsageSnapshotsTable is the table that holds the pr_commit_usage_snapshots relation/edge.
+	PrCommitUsageSnapshotsTable = "pr_commit_usage_snapshots"
+	// PrCommitUsageSnapshotsInverseTable is the table name for the PRCommitUsageSnapshot entity.
+	// It exists in this package in order to avoid circular dependency with the "prcommitusagesnapshot" package.
+	PrCommitUsageSnapshotsInverseTable = "pr_commit_usage_snapshots"
+	// PrCommitUsageSnapshotsColumn is the table column denoting the pr_commit_usage_snapshots relation/edge.
+	PrCommitUsageSnapshotsColumn = "pr_record_id"
 	// AttributionRunsTable is the table that holds the attribution_runs relation/edge.
 	AttributionRunsTable = "pr_attribution_runs"
 	// AttributionRunsInverseTable is the table name for the PrAttributionRun entity.
@@ -121,6 +148,15 @@ var Columns = []string{
 	FieldAttributionConfidence,
 	FieldPrimaryTokenCount,
 	FieldPrimaryTokenCost,
+	FieldUsageInputTokens,
+	FieldUsageOutputTokens,
+	FieldUsageCachedInputTokens,
+	FieldUsageReasoningTokens,
+	FieldUsageCreditUsage,
+	FieldUsageRequestCount,
+	FieldUsageCommitCount,
+	FieldUsageRefreshedAt,
+	FieldUsageCommitSnapshotHash,
 	FieldMetadataSummary,
 	FieldLastAttributedAt,
 	FieldLastAttributionRunID,
@@ -170,6 +206,20 @@ var (
 	DefaultPrimaryTokenCount int64
 	// DefaultPrimaryTokenCost holds the default value on creation for the "primary_token_cost" field.
 	DefaultPrimaryTokenCost float64
+	// DefaultUsageInputTokens holds the default value on creation for the "usage_input_tokens" field.
+	DefaultUsageInputTokens int64
+	// DefaultUsageOutputTokens holds the default value on creation for the "usage_output_tokens" field.
+	DefaultUsageOutputTokens int64
+	// DefaultUsageCachedInputTokens holds the default value on creation for the "usage_cached_input_tokens" field.
+	DefaultUsageCachedInputTokens int64
+	// DefaultUsageReasoningTokens holds the default value on creation for the "usage_reasoning_tokens" field.
+	DefaultUsageReasoningTokens int64
+	// DefaultUsageCreditUsage holds the default value on creation for the "usage_credit_usage" field.
+	DefaultUsageCreditUsage float64
+	// DefaultUsageRequestCount holds the default value on creation for the "usage_request_count" field.
+	DefaultUsageRequestCount int
+	// DefaultUsageCommitCount holds the default value on creation for the "usage_commit_count" field.
+	DefaultUsageCommitCount int
 	// DefaultCycleTimeHours holds the default value on creation for the "cycle_time_hours" field.
 	DefaultCycleTimeHours float64
 	// DefaultCreatedAt holds the default value on creation for the "created_at" field.
@@ -374,6 +424,51 @@ func ByPrimaryTokenCost(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldPrimaryTokenCost, opts...).ToFunc()
 }
 
+// ByUsageInputTokens orders the results by the usage_input_tokens field.
+func ByUsageInputTokens(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldUsageInputTokens, opts...).ToFunc()
+}
+
+// ByUsageOutputTokens orders the results by the usage_output_tokens field.
+func ByUsageOutputTokens(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldUsageOutputTokens, opts...).ToFunc()
+}
+
+// ByUsageCachedInputTokens orders the results by the usage_cached_input_tokens field.
+func ByUsageCachedInputTokens(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldUsageCachedInputTokens, opts...).ToFunc()
+}
+
+// ByUsageReasoningTokens orders the results by the usage_reasoning_tokens field.
+func ByUsageReasoningTokens(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldUsageReasoningTokens, opts...).ToFunc()
+}
+
+// ByUsageCreditUsage orders the results by the usage_credit_usage field.
+func ByUsageCreditUsage(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldUsageCreditUsage, opts...).ToFunc()
+}
+
+// ByUsageRequestCount orders the results by the usage_request_count field.
+func ByUsageRequestCount(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldUsageRequestCount, opts...).ToFunc()
+}
+
+// ByUsageCommitCount orders the results by the usage_commit_count field.
+func ByUsageCommitCount(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldUsageCommitCount, opts...).ToFunc()
+}
+
+// ByUsageRefreshedAt orders the results by the usage_refreshed_at field.
+func ByUsageRefreshedAt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldUsageRefreshedAt, opts...).ToFunc()
+}
+
+// ByUsageCommitSnapshotHash orders the results by the usage_commit_snapshot_hash field.
+func ByUsageCommitSnapshotHash(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldUsageCommitSnapshotHash, opts...).ToFunc()
+}
+
 // ByLastAttributedAt orders the results by the last_attributed_at field.
 func ByLastAttributedAt(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldLastAttributedAt, opts...).ToFunc()
@@ -411,6 +506,20 @@ func ByRepoConfigField(field string, opts ...sql.OrderTermOption) OrderOption {
 	}
 }
 
+// ByPrCommitUsageSnapshotsCount orders the results by pr_commit_usage_snapshots count.
+func ByPrCommitUsageSnapshotsCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newPrCommitUsageSnapshotsStep(), opts...)
+	}
+}
+
+// ByPrCommitUsageSnapshots orders the results by pr_commit_usage_snapshots terms.
+func ByPrCommitUsageSnapshots(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newPrCommitUsageSnapshotsStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+
 // ByAttributionRunsCount orders the results by attribution_runs count.
 func ByAttributionRunsCount(opts ...sql.OrderTermOption) OrderOption {
 	return func(s *sql.Selector) {
@@ -436,6 +545,13 @@ func newRepoConfigStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(RepoConfigInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.M2O, true, RepoConfigTable, RepoConfigColumn),
+	)
+}
+func newPrCommitUsageSnapshotsStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(PrCommitUsageSnapshotsInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, PrCommitUsageSnapshotsTable, PrCommitUsageSnapshotsColumn),
 	)
 }
 func newAttributionRunsStep() *sqlgraph.Step {

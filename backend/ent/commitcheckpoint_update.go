@@ -13,6 +13,7 @@ import (
 	"entgo.io/ent/dialect/sql/sqljson"
 	"entgo.io/ent/schema/field"
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
+	"github.com/ai-efficiency/backend/ent/prcommitusagesnapshot"
 	"github.com/ai-efficiency/backend/ent/predicate"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/toolusageevent"
@@ -225,6 +226,21 @@ func (ccu *CommitCheckpointUpdate) AddToolUsageEvents(t ...*ToolUsageEvent) *Com
 	return ccu.AddToolUsageEventIDs(ids...)
 }
 
+// AddPrCommitUsageSnapshotIDs adds the "pr_commit_usage_snapshots" edge to the PRCommitUsageSnapshot entity by IDs.
+func (ccu *CommitCheckpointUpdate) AddPrCommitUsageSnapshotIDs(ids ...int) *CommitCheckpointUpdate {
+	ccu.mutation.AddPrCommitUsageSnapshotIDs(ids...)
+	return ccu
+}
+
+// AddPrCommitUsageSnapshots adds the "pr_commit_usage_snapshots" edges to the PRCommitUsageSnapshot entity.
+func (ccu *CommitCheckpointUpdate) AddPrCommitUsageSnapshots(p ...*PRCommitUsageSnapshot) *CommitCheckpointUpdate {
+	ids := make([]int, len(p))
+	for i := range p {
+		ids[i] = p[i].ID
+	}
+	return ccu.AddPrCommitUsageSnapshotIDs(ids...)
+}
+
 // Mutation returns the CommitCheckpointMutation object of the builder.
 func (ccu *CommitCheckpointUpdate) Mutation() *CommitCheckpointMutation {
 	return ccu.mutation
@@ -261,6 +277,27 @@ func (ccu *CommitCheckpointUpdate) RemoveToolUsageEvents(t ...*ToolUsageEvent) *
 		ids[i] = t[i].ID
 	}
 	return ccu.RemoveToolUsageEventIDs(ids...)
+}
+
+// ClearPrCommitUsageSnapshots clears all "pr_commit_usage_snapshots" edges to the PRCommitUsageSnapshot entity.
+func (ccu *CommitCheckpointUpdate) ClearPrCommitUsageSnapshots() *CommitCheckpointUpdate {
+	ccu.mutation.ClearPrCommitUsageSnapshots()
+	return ccu
+}
+
+// RemovePrCommitUsageSnapshotIDs removes the "pr_commit_usage_snapshots" edge to PRCommitUsageSnapshot entities by IDs.
+func (ccu *CommitCheckpointUpdate) RemovePrCommitUsageSnapshotIDs(ids ...int) *CommitCheckpointUpdate {
+	ccu.mutation.RemovePrCommitUsageSnapshotIDs(ids...)
+	return ccu
+}
+
+// RemovePrCommitUsageSnapshots removes "pr_commit_usage_snapshots" edges to PRCommitUsageSnapshot entities.
+func (ccu *CommitCheckpointUpdate) RemovePrCommitUsageSnapshots(p ...*PRCommitUsageSnapshot) *CommitCheckpointUpdate {
+	ids := make([]int, len(p))
+	for i := range p {
+		ids[i] = p[i].ID
+	}
+	return ccu.RemovePrCommitUsageSnapshotIDs(ids...)
 }
 
 // Save executes the query and returns the number of nodes affected by the update operation.
@@ -462,6 +499,51 @@ func (ccu *CommitCheckpointUpdate) sqlSave(ctx context.Context) (n int, err erro
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(toolusageevent.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if ccu.mutation.PrCommitUsageSnapshotsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   commitcheckpoint.PrCommitUsageSnapshotsTable,
+			Columns: []string{commitcheckpoint.PrCommitUsageSnapshotsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(prcommitusagesnapshot.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := ccu.mutation.RemovedPrCommitUsageSnapshotsIDs(); len(nodes) > 0 && !ccu.mutation.PrCommitUsageSnapshotsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   commitcheckpoint.PrCommitUsageSnapshotsTable,
+			Columns: []string{commitcheckpoint.PrCommitUsageSnapshotsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(prcommitusagesnapshot.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := ccu.mutation.PrCommitUsageSnapshotsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   commitcheckpoint.PrCommitUsageSnapshotsTable,
+			Columns: []string{commitcheckpoint.PrCommitUsageSnapshotsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(prcommitusagesnapshot.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {
@@ -682,6 +764,21 @@ func (ccuo *CommitCheckpointUpdateOne) AddToolUsageEvents(t ...*ToolUsageEvent) 
 	return ccuo.AddToolUsageEventIDs(ids...)
 }
 
+// AddPrCommitUsageSnapshotIDs adds the "pr_commit_usage_snapshots" edge to the PRCommitUsageSnapshot entity by IDs.
+func (ccuo *CommitCheckpointUpdateOne) AddPrCommitUsageSnapshotIDs(ids ...int) *CommitCheckpointUpdateOne {
+	ccuo.mutation.AddPrCommitUsageSnapshotIDs(ids...)
+	return ccuo
+}
+
+// AddPrCommitUsageSnapshots adds the "pr_commit_usage_snapshots" edges to the PRCommitUsageSnapshot entity.
+func (ccuo *CommitCheckpointUpdateOne) AddPrCommitUsageSnapshots(p ...*PRCommitUsageSnapshot) *CommitCheckpointUpdateOne {
+	ids := make([]int, len(p))
+	for i := range p {
+		ids[i] = p[i].ID
+	}
+	return ccuo.AddPrCommitUsageSnapshotIDs(ids...)
+}
+
 // Mutation returns the CommitCheckpointMutation object of the builder.
 func (ccuo *CommitCheckpointUpdateOne) Mutation() *CommitCheckpointMutation {
 	return ccuo.mutation
@@ -718,6 +815,27 @@ func (ccuo *CommitCheckpointUpdateOne) RemoveToolUsageEvents(t ...*ToolUsageEven
 		ids[i] = t[i].ID
 	}
 	return ccuo.RemoveToolUsageEventIDs(ids...)
+}
+
+// ClearPrCommitUsageSnapshots clears all "pr_commit_usage_snapshots" edges to the PRCommitUsageSnapshot entity.
+func (ccuo *CommitCheckpointUpdateOne) ClearPrCommitUsageSnapshots() *CommitCheckpointUpdateOne {
+	ccuo.mutation.ClearPrCommitUsageSnapshots()
+	return ccuo
+}
+
+// RemovePrCommitUsageSnapshotIDs removes the "pr_commit_usage_snapshots" edge to PRCommitUsageSnapshot entities by IDs.
+func (ccuo *CommitCheckpointUpdateOne) RemovePrCommitUsageSnapshotIDs(ids ...int) *CommitCheckpointUpdateOne {
+	ccuo.mutation.RemovePrCommitUsageSnapshotIDs(ids...)
+	return ccuo
+}
+
+// RemovePrCommitUsageSnapshots removes "pr_commit_usage_snapshots" edges to PRCommitUsageSnapshot entities.
+func (ccuo *CommitCheckpointUpdateOne) RemovePrCommitUsageSnapshots(p ...*PRCommitUsageSnapshot) *CommitCheckpointUpdateOne {
+	ids := make([]int, len(p))
+	for i := range p {
+		ids[i] = p[i].ID
+	}
+	return ccuo.RemovePrCommitUsageSnapshotIDs(ids...)
 }
 
 // Where appends a list predicates to the CommitCheckpointUpdate builder.
@@ -949,6 +1067,51 @@ func (ccuo *CommitCheckpointUpdateOne) sqlSave(ctx context.Context) (_node *Comm
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(toolusageevent.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if ccuo.mutation.PrCommitUsageSnapshotsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   commitcheckpoint.PrCommitUsageSnapshotsTable,
+			Columns: []string{commitcheckpoint.PrCommitUsageSnapshotsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(prcommitusagesnapshot.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := ccuo.mutation.RemovedPrCommitUsageSnapshotsIDs(); len(nodes) > 0 && !ccuo.mutation.PrCommitUsageSnapshotsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   commitcheckpoint.PrCommitUsageSnapshotsTable,
+			Columns: []string{commitcheckpoint.PrCommitUsageSnapshotsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(prcommitusagesnapshot.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := ccuo.mutation.PrCommitUsageSnapshotsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   commitcheckpoint.PrCommitUsageSnapshotsTable,
+			Columns: []string{commitcheckpoint.PrCommitUsageSnapshotsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(prcommitusagesnapshot.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {

@@ -43,6 +43,8 @@ const (
 	EdgeRepoConfig = "repo_config"
 	// EdgeToolUsageEvents holds the string denoting the tool_usage_events edge name in mutations.
 	EdgeToolUsageEvents = "tool_usage_events"
+	// EdgePrCommitUsageSnapshots holds the string denoting the pr_commit_usage_snapshots edge name in mutations.
+	EdgePrCommitUsageSnapshots = "pr_commit_usage_snapshots"
 	// Table holds the table name of the commitcheckpoint in the database.
 	Table = "commit_checkpoints"
 	// UserTable is the table that holds the user relation/edge.
@@ -66,6 +68,13 @@ const (
 	ToolUsageEventsInverseTable = "tool_usage_events"
 	// ToolUsageEventsColumn is the table column denoting the tool_usage_events relation/edge.
 	ToolUsageEventsColumn = "commit_checkpoint_id"
+	// PrCommitUsageSnapshotsTable is the table that holds the pr_commit_usage_snapshots relation/edge.
+	PrCommitUsageSnapshotsTable = "pr_commit_usage_snapshots"
+	// PrCommitUsageSnapshotsInverseTable is the table name for the PRCommitUsageSnapshot entity.
+	// It exists in this package in order to avoid circular dependency with the "prcommitusagesnapshot" package.
+	PrCommitUsageSnapshotsInverseTable = "pr_commit_usage_snapshots"
+	// PrCommitUsageSnapshotsColumn is the table column denoting the pr_commit_usage_snapshots relation/edge.
+	PrCommitUsageSnapshotsColumn = "commit_checkpoint_id"
 )
 
 // Columns holds all SQL columns for commitcheckpoint fields.
@@ -208,6 +217,20 @@ func ByToolUsageEvents(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
 		sqlgraph.OrderByNeighborTerms(s, newToolUsageEventsStep(), append([]sql.OrderTerm{term}, terms...)...)
 	}
 }
+
+// ByPrCommitUsageSnapshotsCount orders the results by pr_commit_usage_snapshots count.
+func ByPrCommitUsageSnapshotsCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newPrCommitUsageSnapshotsStep(), opts...)
+	}
+}
+
+// ByPrCommitUsageSnapshots orders the results by pr_commit_usage_snapshots terms.
+func ByPrCommitUsageSnapshots(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newPrCommitUsageSnapshotsStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
 func newUserStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
@@ -227,5 +250,12 @@ func newToolUsageEventsStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(ToolUsageEventsInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.O2M, false, ToolUsageEventsTable, ToolUsageEventsColumn),
+	)
+}
+func newPrCommitUsageSnapshotsStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(PrCommitUsageSnapshotsInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, PrCommitUsageSnapshotsTable, PrCommitUsageSnapshotsColumn),
 	)
 }

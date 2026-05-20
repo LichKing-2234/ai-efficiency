@@ -13,6 +13,7 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
+	"github.com/ai-efficiency/backend/ent/prcommitusagesnapshot"
 	"github.com/ai-efficiency/backend/ent/predicate"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/toolusageevent"
@@ -22,13 +23,14 @@ import (
 // CommitCheckpointQuery is the builder for querying CommitCheckpoint entities.
 type CommitCheckpointQuery struct {
 	config
-	ctx                 *QueryContext
-	order               []commitcheckpoint.OrderOption
-	inters              []Interceptor
-	predicates          []predicate.CommitCheckpoint
-	withUser            *UserQuery
-	withRepoConfig      *RepoConfigQuery
-	withToolUsageEvents *ToolUsageEventQuery
+	ctx                        *QueryContext
+	order                      []commitcheckpoint.OrderOption
+	inters                     []Interceptor
+	predicates                 []predicate.CommitCheckpoint
+	withUser                   *UserQuery
+	withRepoConfig             *RepoConfigQuery
+	withToolUsageEvents        *ToolUsageEventQuery
+	withPrCommitUsageSnapshots *PRCommitUsageSnapshotQuery
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
 	path func(context.Context) (*sql.Selector, error)
@@ -124,6 +126,28 @@ func (ccq *CommitCheckpointQuery) QueryToolUsageEvents() *ToolUsageEventQuery {
 			sqlgraph.From(commitcheckpoint.Table, commitcheckpoint.FieldID, selector),
 			sqlgraph.To(toolusageevent.Table, toolusageevent.FieldID),
 			sqlgraph.Edge(sqlgraph.O2M, false, commitcheckpoint.ToolUsageEventsTable, commitcheckpoint.ToolUsageEventsColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(ccq.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryPrCommitUsageSnapshots chains the current query on the "pr_commit_usage_snapshots" edge.
+func (ccq *CommitCheckpointQuery) QueryPrCommitUsageSnapshots() *PRCommitUsageSnapshotQuery {
+	query := (&PRCommitUsageSnapshotClient{config: ccq.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := ccq.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := ccq.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(commitcheckpoint.Table, commitcheckpoint.FieldID, selector),
+			sqlgraph.To(prcommitusagesnapshot.Table, prcommitusagesnapshot.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, commitcheckpoint.PrCommitUsageSnapshotsTable, commitcheckpoint.PrCommitUsageSnapshotsColumn),
 		)
 		fromU = sqlgraph.SetNeighbors(ccq.driver.Dialect(), step)
 		return fromU, nil
@@ -318,14 +342,15 @@ func (ccq *CommitCheckpointQuery) Clone() *CommitCheckpointQuery {
 		return nil
 	}
 	return &CommitCheckpointQuery{
-		config:              ccq.config,
-		ctx:                 ccq.ctx.Clone(),
-		order:               append([]commitcheckpoint.OrderOption{}, ccq.order...),
-		inters:              append([]Interceptor{}, ccq.inters...),
-		predicates:          append([]predicate.CommitCheckpoint{}, ccq.predicates...),
-		withUser:            ccq.withUser.Clone(),
-		withRepoConfig:      ccq.withRepoConfig.Clone(),
-		withToolUsageEvents: ccq.withToolUsageEvents.Clone(),
+		config:                     ccq.config,
+		ctx:                        ccq.ctx.Clone(),
+		order:                      append([]commitcheckpoint.OrderOption{}, ccq.order...),
+		inters:                     append([]Interceptor{}, ccq.inters...),
+		predicates:                 append([]predicate.CommitCheckpoint{}, ccq.predicates...),
+		withUser:                   ccq.withUser.Clone(),
+		withRepoConfig:             ccq.withRepoConfig.Clone(),
+		withToolUsageEvents:        ccq.withToolUsageEvents.Clone(),
+		withPrCommitUsageSnapshots: ccq.withPrCommitUsageSnapshots.Clone(),
 		// clone intermediate query.
 		sql:  ccq.sql.Clone(),
 		path: ccq.path,
@@ -362,6 +387,17 @@ func (ccq *CommitCheckpointQuery) WithToolUsageEvents(opts ...func(*ToolUsageEve
 		opt(query)
 	}
 	ccq.withToolUsageEvents = query
+	return ccq
+}
+
+// WithPrCommitUsageSnapshots tells the query-builder to eager-load the nodes that are connected to
+// the "pr_commit_usage_snapshots" edge. The optional arguments are used to configure the query builder of the edge.
+func (ccq *CommitCheckpointQuery) WithPrCommitUsageSnapshots(opts ...func(*PRCommitUsageSnapshotQuery)) *CommitCheckpointQuery {
+	query := (&PRCommitUsageSnapshotClient{config: ccq.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	ccq.withPrCommitUsageSnapshots = query
 	return ccq
 }
 
@@ -443,10 +479,11 @@ func (ccq *CommitCheckpointQuery) sqlAll(ctx context.Context, hooks ...queryHook
 	var (
 		nodes       = []*CommitCheckpoint{}
 		_spec       = ccq.querySpec()
-		loadedTypes = [3]bool{
+		loadedTypes = [4]bool{
 			ccq.withUser != nil,
 			ccq.withRepoConfig != nil,
 			ccq.withToolUsageEvents != nil,
+			ccq.withPrCommitUsageSnapshots != nil,
 		}
 	)
 	_spec.ScanValues = func(columns []string) ([]any, error) {
@@ -484,6 +521,15 @@ func (ccq *CommitCheckpointQuery) sqlAll(ctx context.Context, hooks ...queryHook
 			func(n *CommitCheckpoint) { n.Edges.ToolUsageEvents = []*ToolUsageEvent{} },
 			func(n *CommitCheckpoint, e *ToolUsageEvent) {
 				n.Edges.ToolUsageEvents = append(n.Edges.ToolUsageEvents, e)
+			}); err != nil {
+			return nil, err
+		}
+	}
+	if query := ccq.withPrCommitUsageSnapshots; query != nil {
+		if err := ccq.loadPrCommitUsageSnapshots(ctx, query, nodes,
+			func(n *CommitCheckpoint) { n.Edges.PrCommitUsageSnapshots = []*PRCommitUsageSnapshot{} },
+			func(n *CommitCheckpoint, e *PRCommitUsageSnapshot) {
+				n.Edges.PrCommitUsageSnapshots = append(n.Edges.PrCommitUsageSnapshots, e)
 			}); err != nil {
 			return nil, err
 		}
@@ -567,6 +613,39 @@ func (ccq *CommitCheckpointQuery) loadToolUsageEvents(ctx context.Context, query
 	}
 	query.Where(predicate.ToolUsageEvent(func(s *sql.Selector) {
 		s.Where(sql.InValues(s.C(commitcheckpoint.ToolUsageEventsColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.CommitCheckpointID
+		if fk == nil {
+			return fmt.Errorf(`foreign-key "commit_checkpoint_id" is nil for node %v`, n.ID)
+		}
+		node, ok := nodeids[*fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "commit_checkpoint_id" returned %v for node %v`, *fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (ccq *CommitCheckpointQuery) loadPrCommitUsageSnapshots(ctx context.Context, query *PRCommitUsageSnapshotQuery, nodes []*CommitCheckpoint, init func(*CommitCheckpoint), assign func(*CommitCheckpoint, *PRCommitUsageSnapshot)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int]*CommitCheckpoint)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(prcommitusagesnapshot.FieldCommitCheckpointID)
+	}
+	query.Where(predicate.PRCommitUsageSnapshot(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(commitcheckpoint.PrCommitUsageSnapshotsColumn), fks...))
 	}))
 	neighbors, err := query.All(ctx)
 	if err != nil {

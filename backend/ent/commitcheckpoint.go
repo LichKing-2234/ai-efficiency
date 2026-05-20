@@ -56,9 +56,11 @@ type CommitCheckpointEdges struct {
 	RepoConfig *RepoConfig `json:"repo_config,omitempty"`
 	// ToolUsageEvents holds the value of the tool_usage_events edge.
 	ToolUsageEvents []*ToolUsageEvent `json:"tool_usage_events,omitempty"`
+	// PrCommitUsageSnapshots holds the value of the pr_commit_usage_snapshots edge.
+	PrCommitUsageSnapshots []*PRCommitUsageSnapshot `json:"pr_commit_usage_snapshots,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [3]bool
+	loadedTypes [4]bool
 }
 
 // UserOrErr returns the User value or an error if the edge
@@ -90,6 +92,15 @@ func (e CommitCheckpointEdges) ToolUsageEventsOrErr() ([]*ToolUsageEvent, error)
 		return e.ToolUsageEvents, nil
 	}
 	return nil, &NotLoadedError{edge: "tool_usage_events"}
+}
+
+// PrCommitUsageSnapshotsOrErr returns the PrCommitUsageSnapshots value or an error if the edge
+// was not loaded in eager-loading.
+func (e CommitCheckpointEdges) PrCommitUsageSnapshotsOrErr() ([]*PRCommitUsageSnapshot, error) {
+	if e.loadedTypes[3] {
+		return e.PrCommitUsageSnapshots, nil
+	}
+	return nil, &NotLoadedError{edge: "pr_commit_usage_snapshots"}
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -225,6 +236,11 @@ func (cc *CommitCheckpoint) QueryRepoConfig() *RepoConfigQuery {
 // QueryToolUsageEvents queries the "tool_usage_events" edge of the CommitCheckpoint entity.
 func (cc *CommitCheckpoint) QueryToolUsageEvents() *ToolUsageEventQuery {
 	return NewCommitCheckpointClient(cc.config).QueryToolUsageEvents(cc)
+}
+
+// QueryPrCommitUsageSnapshots queries the "pr_commit_usage_snapshots" edge of the CommitCheckpoint entity.
+func (cc *CommitCheckpoint) QueryPrCommitUsageSnapshots() *PRCommitUsageSnapshotQuery {
+	return NewCommitCheckpointClient(cc.config).QueryPrCommitUsageSnapshots(cc)
 }
 
 // Update returns a builder for updating this CommitCheckpoint.

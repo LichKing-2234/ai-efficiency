@@ -13,6 +13,7 @@ import (
 	"entgo.io/ent/dialect/sql/sqljson"
 	"entgo.io/ent/schema/field"
 	"github.com/ai-efficiency/backend/ent/prattributionrun"
+	"github.com/ai-efficiency/backend/ent/prcommitusagesnapshot"
 	"github.com/ai-efficiency/backend/ent/predicate"
 	"github.com/ai-efficiency/backend/ent/prrecord"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
@@ -394,6 +395,193 @@ func (pru *PrRecordUpdate) AddPrimaryTokenCost(f float64) *PrRecordUpdate {
 	return pru
 }
 
+// SetUsageInputTokens sets the "usage_input_tokens" field.
+func (pru *PrRecordUpdate) SetUsageInputTokens(i int64) *PrRecordUpdate {
+	pru.mutation.ResetUsageInputTokens()
+	pru.mutation.SetUsageInputTokens(i)
+	return pru
+}
+
+// SetNillableUsageInputTokens sets the "usage_input_tokens" field if the given value is not nil.
+func (pru *PrRecordUpdate) SetNillableUsageInputTokens(i *int64) *PrRecordUpdate {
+	if i != nil {
+		pru.SetUsageInputTokens(*i)
+	}
+	return pru
+}
+
+// AddUsageInputTokens adds i to the "usage_input_tokens" field.
+func (pru *PrRecordUpdate) AddUsageInputTokens(i int64) *PrRecordUpdate {
+	pru.mutation.AddUsageInputTokens(i)
+	return pru
+}
+
+// SetUsageOutputTokens sets the "usage_output_tokens" field.
+func (pru *PrRecordUpdate) SetUsageOutputTokens(i int64) *PrRecordUpdate {
+	pru.mutation.ResetUsageOutputTokens()
+	pru.mutation.SetUsageOutputTokens(i)
+	return pru
+}
+
+// SetNillableUsageOutputTokens sets the "usage_output_tokens" field if the given value is not nil.
+func (pru *PrRecordUpdate) SetNillableUsageOutputTokens(i *int64) *PrRecordUpdate {
+	if i != nil {
+		pru.SetUsageOutputTokens(*i)
+	}
+	return pru
+}
+
+// AddUsageOutputTokens adds i to the "usage_output_tokens" field.
+func (pru *PrRecordUpdate) AddUsageOutputTokens(i int64) *PrRecordUpdate {
+	pru.mutation.AddUsageOutputTokens(i)
+	return pru
+}
+
+// SetUsageCachedInputTokens sets the "usage_cached_input_tokens" field.
+func (pru *PrRecordUpdate) SetUsageCachedInputTokens(i int64) *PrRecordUpdate {
+	pru.mutation.ResetUsageCachedInputTokens()
+	pru.mutation.SetUsageCachedInputTokens(i)
+	return pru
+}
+
+// SetNillableUsageCachedInputTokens sets the "usage_cached_input_tokens" field if the given value is not nil.
+func (pru *PrRecordUpdate) SetNillableUsageCachedInputTokens(i *int64) *PrRecordUpdate {
+	if i != nil {
+		pru.SetUsageCachedInputTokens(*i)
+	}
+	return pru
+}
+
+// AddUsageCachedInputTokens adds i to the "usage_cached_input_tokens" field.
+func (pru *PrRecordUpdate) AddUsageCachedInputTokens(i int64) *PrRecordUpdate {
+	pru.mutation.AddUsageCachedInputTokens(i)
+	return pru
+}
+
+// SetUsageReasoningTokens sets the "usage_reasoning_tokens" field.
+func (pru *PrRecordUpdate) SetUsageReasoningTokens(i int64) *PrRecordUpdate {
+	pru.mutation.ResetUsageReasoningTokens()
+	pru.mutation.SetUsageReasoningTokens(i)
+	return pru
+}
+
+// SetNillableUsageReasoningTokens sets the "usage_reasoning_tokens" field if the given value is not nil.
+func (pru *PrRecordUpdate) SetNillableUsageReasoningTokens(i *int64) *PrRecordUpdate {
+	if i != nil {
+		pru.SetUsageReasoningTokens(*i)
+	}
+	return pru
+}
+
+// AddUsageReasoningTokens adds i to the "usage_reasoning_tokens" field.
+func (pru *PrRecordUpdate) AddUsageReasoningTokens(i int64) *PrRecordUpdate {
+	pru.mutation.AddUsageReasoningTokens(i)
+	return pru
+}
+
+// SetUsageCreditUsage sets the "usage_credit_usage" field.
+func (pru *PrRecordUpdate) SetUsageCreditUsage(f float64) *PrRecordUpdate {
+	pru.mutation.ResetUsageCreditUsage()
+	pru.mutation.SetUsageCreditUsage(f)
+	return pru
+}
+
+// SetNillableUsageCreditUsage sets the "usage_credit_usage" field if the given value is not nil.
+func (pru *PrRecordUpdate) SetNillableUsageCreditUsage(f *float64) *PrRecordUpdate {
+	if f != nil {
+		pru.SetUsageCreditUsage(*f)
+	}
+	return pru
+}
+
+// AddUsageCreditUsage adds f to the "usage_credit_usage" field.
+func (pru *PrRecordUpdate) AddUsageCreditUsage(f float64) *PrRecordUpdate {
+	pru.mutation.AddUsageCreditUsage(f)
+	return pru
+}
+
+// SetUsageRequestCount sets the "usage_request_count" field.
+func (pru *PrRecordUpdate) SetUsageRequestCount(i int) *PrRecordUpdate {
+	pru.mutation.ResetUsageRequestCount()
+	pru.mutation.SetUsageRequestCount(i)
+	return pru
+}
+
+// SetNillableUsageRequestCount sets the "usage_request_count" field if the given value is not nil.
+func (pru *PrRecordUpdate) SetNillableUsageRequestCount(i *int) *PrRecordUpdate {
+	if i != nil {
+		pru.SetUsageRequestCount(*i)
+	}
+	return pru
+}
+
+// AddUsageRequestCount adds i to the "usage_request_count" field.
+func (pru *PrRecordUpdate) AddUsageRequestCount(i int) *PrRecordUpdate {
+	pru.mutation.AddUsageRequestCount(i)
+	return pru
+}
+
+// SetUsageCommitCount sets the "usage_commit_count" field.
+func (pru *PrRecordUpdate) SetUsageCommitCount(i int) *PrRecordUpdate {
+	pru.mutation.ResetUsageCommitCount()
+	pru.mutation.SetUsageCommitCount(i)
+	return pru
+}
+
+// SetNillableUsageCommitCount sets the "usage_commit_count" field if the given value is not nil.
+func (pru *PrRecordUpdate) SetNillableUsageCommitCount(i *int) *PrRecordUpdate {
+	if i != nil {
+		pru.SetUsageCommitCount(*i)
+	}
+	return pru
+}
+
+// AddUsageCommitCount adds i to the "usage_commit_count" field.
+func (pru *PrRecordUpdate) AddUsageCommitCount(i int) *PrRecordUpdate {
+	pru.mutation.AddUsageCommitCount(i)
+	return pru
+}
+
+// SetUsageRefreshedAt sets the "usage_refreshed_at" field.
+func (pru *PrRecordUpdate) SetUsageRefreshedAt(t time.Time) *PrRecordUpdate {
+	pru.mutation.SetUsageRefreshedAt(t)
+	return pru
+}
+
+// SetNillableUsageRefreshedAt sets the "usage_refreshed_at" field if the given value is not nil.
+func (pru *PrRecordUpdate) SetNillableUsageRefreshedAt(t *time.Time) *PrRecordUpdate {
+	if t != nil {
+		pru.SetUsageRefreshedAt(*t)
+	}
+	return pru
+}
+
+// ClearUsageRefreshedAt clears the value of the "usage_refreshed_at" field.
+func (pru *PrRecordUpdate) ClearUsageRefreshedAt() *PrRecordUpdate {
+	pru.mutation.ClearUsageRefreshedAt()
+	return pru
+}
+
+// SetUsageCommitSnapshotHash sets the "usage_commit_snapshot_hash" field.
+func (pru *PrRecordUpdate) SetUsageCommitSnapshotHash(s string) *PrRecordUpdate {
+	pru.mutation.SetUsageCommitSnapshotHash(s)
+	return pru
+}
+
+// SetNillableUsageCommitSnapshotHash sets the "usage_commit_snapshot_hash" field if the given value is not nil.
+func (pru *PrRecordUpdate) SetNillableUsageCommitSnapshotHash(s *string) *PrRecordUpdate {
+	if s != nil {
+		pru.SetUsageCommitSnapshotHash(*s)
+	}
+	return pru
+}
+
+// ClearUsageCommitSnapshotHash clears the value of the "usage_commit_snapshot_hash" field.
+func (pru *PrRecordUpdate) ClearUsageCommitSnapshotHash() *PrRecordUpdate {
+	pru.mutation.ClearUsageCommitSnapshotHash()
+	return pru
+}
+
 // SetMetadataSummary sets the "metadata_summary" field.
 func (pru *PrRecordUpdate) SetMetadataSummary(m map[string]interface{}) *PrRecordUpdate {
 	pru.mutation.SetMetadataSummary(m)
@@ -518,6 +706,21 @@ func (pru *PrRecordUpdate) SetRepoConfig(r *RepoConfig) *PrRecordUpdate {
 	return pru.SetRepoConfigID(r.ID)
 }
 
+// AddPrCommitUsageSnapshotIDs adds the "pr_commit_usage_snapshots" edge to the PRCommitUsageSnapshot entity by IDs.
+func (pru *PrRecordUpdate) AddPrCommitUsageSnapshotIDs(ids ...int) *PrRecordUpdate {
+	pru.mutation.AddPrCommitUsageSnapshotIDs(ids...)
+	return pru
+}
+
+// AddPrCommitUsageSnapshots adds the "pr_commit_usage_snapshots" edges to the PRCommitUsageSnapshot entity.
+func (pru *PrRecordUpdate) AddPrCommitUsageSnapshots(p ...*PRCommitUsageSnapshot) *PrRecordUpdate {
+	ids := make([]int, len(p))
+	for i := range p {
+		ids[i] = p[i].ID
+	}
+	return pru.AddPrCommitUsageSnapshotIDs(ids...)
+}
+
 // AddAttributionRunIDs adds the "attribution_runs" edge to the PrAttributionRun entity by IDs.
 func (pru *PrRecordUpdate) AddAttributionRunIDs(ids ...int) *PrRecordUpdate {
 	pru.mutation.AddAttributionRunIDs(ids...)
@@ -547,6 +750,27 @@ func (pru *PrRecordUpdate) Mutation() *PrRecordMutation {
 func (pru *PrRecordUpdate) ClearRepoConfig() *PrRecordUpdate {
 	pru.mutation.ClearRepoConfig()
 	return pru
+}
+
+// ClearPrCommitUsageSnapshots clears all "pr_commit_usage_snapshots" edges to the PRCommitUsageSnapshot entity.
+func (pru *PrRecordUpdate) ClearPrCommitUsageSnapshots() *PrRecordUpdate {
+	pru.mutation.ClearPrCommitUsageSnapshots()
+	return pru
+}
+
+// RemovePrCommitUsageSnapshotIDs removes the "pr_commit_usage_snapshots" edge to PRCommitUsageSnapshot entities by IDs.
+func (pru *PrRecordUpdate) RemovePrCommitUsageSnapshotIDs(ids ...int) *PrRecordUpdate {
+	pru.mutation.RemovePrCommitUsageSnapshotIDs(ids...)
+	return pru
+}
+
+// RemovePrCommitUsageSnapshots removes "pr_commit_usage_snapshots" edges to PRCommitUsageSnapshot entities.
+func (pru *PrRecordUpdate) RemovePrCommitUsageSnapshots(p ...*PRCommitUsageSnapshot) *PrRecordUpdate {
+	ids := make([]int, len(p))
+	for i := range p {
+		ids[i] = p[i].ID
+	}
+	return pru.RemovePrCommitUsageSnapshotIDs(ids...)
 }
 
 // ClearAttributionRuns clears all "attribution_runs" edges to the PrAttributionRun entity.
@@ -778,6 +1002,60 @@ func (pru *PrRecordUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if value, ok := pru.mutation.AddedPrimaryTokenCost(); ok {
 		_spec.AddField(prrecord.FieldPrimaryTokenCost, field.TypeFloat64, value)
 	}
+	if value, ok := pru.mutation.UsageInputTokens(); ok {
+		_spec.SetField(prrecord.FieldUsageInputTokens, field.TypeInt64, value)
+	}
+	if value, ok := pru.mutation.AddedUsageInputTokens(); ok {
+		_spec.AddField(prrecord.FieldUsageInputTokens, field.TypeInt64, value)
+	}
+	if value, ok := pru.mutation.UsageOutputTokens(); ok {
+		_spec.SetField(prrecord.FieldUsageOutputTokens, field.TypeInt64, value)
+	}
+	if value, ok := pru.mutation.AddedUsageOutputTokens(); ok {
+		_spec.AddField(prrecord.FieldUsageOutputTokens, field.TypeInt64, value)
+	}
+	if value, ok := pru.mutation.UsageCachedInputTokens(); ok {
+		_spec.SetField(prrecord.FieldUsageCachedInputTokens, field.TypeInt64, value)
+	}
+	if value, ok := pru.mutation.AddedUsageCachedInputTokens(); ok {
+		_spec.AddField(prrecord.FieldUsageCachedInputTokens, field.TypeInt64, value)
+	}
+	if value, ok := pru.mutation.UsageReasoningTokens(); ok {
+		_spec.SetField(prrecord.FieldUsageReasoningTokens, field.TypeInt64, value)
+	}
+	if value, ok := pru.mutation.AddedUsageReasoningTokens(); ok {
+		_spec.AddField(prrecord.FieldUsageReasoningTokens, field.TypeInt64, value)
+	}
+	if value, ok := pru.mutation.UsageCreditUsage(); ok {
+		_spec.SetField(prrecord.FieldUsageCreditUsage, field.TypeFloat64, value)
+	}
+	if value, ok := pru.mutation.AddedUsageCreditUsage(); ok {
+		_spec.AddField(prrecord.FieldUsageCreditUsage, field.TypeFloat64, value)
+	}
+	if value, ok := pru.mutation.UsageRequestCount(); ok {
+		_spec.SetField(prrecord.FieldUsageRequestCount, field.TypeInt, value)
+	}
+	if value, ok := pru.mutation.AddedUsageRequestCount(); ok {
+		_spec.AddField(prrecord.FieldUsageRequestCount, field.TypeInt, value)
+	}
+	if value, ok := pru.mutation.UsageCommitCount(); ok {
+		_spec.SetField(prrecord.FieldUsageCommitCount, field.TypeInt, value)
+	}
+	if value, ok := pru.mutation.AddedUsageCommitCount(); ok {
+		_spec.AddField(prrecord.FieldUsageCommitCount, field.TypeInt, value)
+	}
+	if value, ok := pru.mutation.UsageRefreshedAt(); ok {
+		_spec.SetField(prrecord.FieldUsageRefreshedAt, field.TypeTime, value)
+	}
+	if pru.mutation.UsageRefreshedAtCleared() {
+		_spec.ClearField(prrecord.FieldUsageRefreshedAt, field.TypeTime)
+	}
+	if value, ok := pru.mutation.UsageCommitSnapshotHash(); ok {
+		_spec.SetField(prrecord.FieldUsageCommitSnapshotHash, field.TypeString, value)
+	}
+	if pru.mutation.UsageCommitSnapshotHashCleared() {
+		_spec.ClearField(prrecord.FieldUsageCommitSnapshotHash, field.TypeString)
+	}
 	if value, ok := pru.mutation.MetadataSummary(); ok {
 		_spec.SetField(prrecord.FieldMetadataSummary, field.TypeJSON, value)
 	}
@@ -830,6 +1108,51 @@ func (pru *PrRecordUpdate) sqlSave(ctx context.Context) (n int, err error) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(repoconfig.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if pru.mutation.PrCommitUsageSnapshotsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   prrecord.PrCommitUsageSnapshotsTable,
+			Columns: []string{prrecord.PrCommitUsageSnapshotsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(prcommitusagesnapshot.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := pru.mutation.RemovedPrCommitUsageSnapshotsIDs(); len(nodes) > 0 && !pru.mutation.PrCommitUsageSnapshotsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   prrecord.PrCommitUsageSnapshotsTable,
+			Columns: []string{prrecord.PrCommitUsageSnapshotsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(prcommitusagesnapshot.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := pru.mutation.PrCommitUsageSnapshotsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   prrecord.PrCommitUsageSnapshotsTable,
+			Columns: []string{prrecord.PrCommitUsageSnapshotsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(prcommitusagesnapshot.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {
@@ -1294,6 +1617,193 @@ func (pruo *PrRecordUpdateOne) AddPrimaryTokenCost(f float64) *PrRecordUpdateOne
 	return pruo
 }
 
+// SetUsageInputTokens sets the "usage_input_tokens" field.
+func (pruo *PrRecordUpdateOne) SetUsageInputTokens(i int64) *PrRecordUpdateOne {
+	pruo.mutation.ResetUsageInputTokens()
+	pruo.mutation.SetUsageInputTokens(i)
+	return pruo
+}
+
+// SetNillableUsageInputTokens sets the "usage_input_tokens" field if the given value is not nil.
+func (pruo *PrRecordUpdateOne) SetNillableUsageInputTokens(i *int64) *PrRecordUpdateOne {
+	if i != nil {
+		pruo.SetUsageInputTokens(*i)
+	}
+	return pruo
+}
+
+// AddUsageInputTokens adds i to the "usage_input_tokens" field.
+func (pruo *PrRecordUpdateOne) AddUsageInputTokens(i int64) *PrRecordUpdateOne {
+	pruo.mutation.AddUsageInputTokens(i)
+	return pruo
+}
+
+// SetUsageOutputTokens sets the "usage_output_tokens" field.
+func (pruo *PrRecordUpdateOne) SetUsageOutputTokens(i int64) *PrRecordUpdateOne {
+	pruo.mutation.ResetUsageOutputTokens()
+	pruo.mutation.SetUsageOutputTokens(i)
+	return pruo
+}
+
+// SetNillableUsageOutputTokens sets the "usage_output_tokens" field if the given value is not nil.
+func (pruo *PrRecordUpdateOne) SetNillableUsageOutputTokens(i *int64) *PrRecordUpdateOne {
+	if i != nil {
+		pruo.SetUsageOutputTokens(*i)
+	}
+	return pruo
+}
+
+// AddUsageOutputTokens adds i to the "usage_output_tokens" field.
+func (pruo *PrRecordUpdateOne) AddUsageOutputTokens(i int64) *PrRecordUpdateOne {
+	pruo.mutation.AddUsageOutputTokens(i)
+	return pruo
+}
+
+// SetUsageCachedInputTokens sets the "usage_cached_input_tokens" field.
+func (pruo *PrRecordUpdateOne) SetUsageCachedInputTokens(i int64) *PrRecordUpdateOne {
+	pruo.mutation.ResetUsageCachedInputTokens()
+	pruo.mutation.SetUsageCachedInputTokens(i)
+	return pruo
+}
+
+// SetNillableUsageCachedInputTokens sets the "usage_cached_input_tokens" field if the given value is not nil.
+func (pruo *PrRecordUpdateOne) SetNillableUsageCachedInputTokens(i *int64) *PrRecordUpdateOne {
+	if i != nil {
+		pruo.SetUsageCachedInputTokens(*i)
+	}
+	return pruo
+}
+
+// AddUsageCachedInputTokens adds i to the "usage_cached_input_tokens" field.
+func (pruo *PrRecordUpdateOne) AddUsageCachedInputTokens(i int64) *PrRecordUpdateOne {
+	pruo.mutation.AddUsageCachedInputTokens(i)
+	return pruo
+}
+
+// SetUsageReasoningTokens sets the "usage_reasoning_tokens" field.
+func (pruo *PrRecordUpdateOne) SetUsageReasoningTokens(i int64) *PrRecordUpdateOne {
+	pruo.mutation.ResetUsageReasoningTokens()
+	pruo.mutation.SetUsageReasoningTokens(i)
+	return pruo
+}
+
+// SetNillableUsageReasoningTokens sets the "usage_reasoning_tokens" field if the given value is not nil.
+func (pruo *PrRecordUpdateOne) SetNillableUsageReasoningTokens(i *int64) *PrRecordUpdateOne {
+	if i != nil {
+		pruo.SetUsageReasoningTokens(*i)
+	}
+	return pruo
+}
+
+// AddUsageReasoningTokens adds i to the "usage_reasoning_tokens" field.
+func (pruo *PrRecordUpdateOne) AddUsageReasoningTokens(i int64) *PrRecordUpdateOne {
+	pruo.mutation.AddUsageReasoningTokens(i)
+	return pruo
+}
+
+// SetUsageCreditUsage sets the "usage_credit_usage" field.
+func (pruo *PrRecordUpdateOne) SetUsageCreditUsage(f float64) *PrRecordUpdateOne {
+	pruo.mutation.ResetUsageCreditUsage()
+	pruo.mutation.SetUsageCreditUsage(f)
+	return pruo
+}
+
+// SetNillableUsageCreditUsage sets the "usage_credit_usage" field if the given value is not nil.
+func (pruo *PrRecordUpdateOne) SetNillableUsageCreditUsage(f *float64) *PrRecordUpdateOne {
+	if f != nil {
+		pruo.SetUsageCreditUsage(*f)
+	}
+	return pruo
+}
+
+// AddUsageCreditUsage adds f to the "usage_credit_usage" field.
+func (pruo *PrRecordUpdateOne) AddUsageCreditUsage(f float64) *PrRecordUpdateOne {
+	pruo.mutation.AddUsageCreditUsage(f)
+	return pruo
+}
+
+// SetUsageRequestCount sets the "usage_request_count" field.
+func (pruo *PrRecordUpdateOne) SetUsageRequestCount(i int) *PrRecordUpdateOne {
+	pruo.mutation.ResetUsageRequestCount()
+	pruo.mutation.SetUsageRequestCount(i)
+	return pruo
+}
+
+// SetNillableUsageRequestCount sets the "usage_request_count" field if the given value is not nil.
+func (pruo *PrRecordUpdateOne) SetNillableUsageRequestCount(i *int) *PrRecordUpdateOne {
+	if i != nil {
+		pruo.SetUsageRequestCount(*i)
+	}
+	return pruo
+}
+
+// AddUsageRequestCount adds i to the "usage_request_count" field.
+func (pruo *PrRecordUpdateOne) AddUsageRequestCount(i int) *PrRecordUpdateOne {
+	pruo.mutation.AddUsageRequestCount(i)
+	return pruo
+}
+
+// SetUsageCommitCount sets the "usage_commit_count" field.
+func (pruo *PrRecordUpdateOne) SetUsageCommitCount(i int) *PrRecordUpdateOne {
+	pruo.mutation.ResetUsageCommitCount()
+	pruo.mutation.SetUsageCommitCount(i)
+	return pruo
+}
+
+// SetNillableUsageCommitCount sets the "usage_commit_count" field if the given value is not nil.
+func (pruo *PrRecordUpdateOne) SetNillableUsageCommitCount(i *int) *PrRecordUpdateOne {
+	if i != nil {
+		pruo.SetUsageCommitCount(*i)
+	}
+	return pruo
+}
+
+// AddUsageCommitCount adds i to the "usage_commit_count" field.
+func (pruo *PrRecordUpdateOne) AddUsageCommitCount(i int) *PrRecordUpdateOne {
+	pruo.mutation.AddUsageCommitCount(i)
+	return pruo
+}
+
+// SetUsageRefreshedAt sets the "usage_refreshed_at" field.
+func (pruo *PrRecordUpdateOne) SetUsageRefreshedAt(t time.Time) *PrRecordUpdateOne {
+	pruo.mutation.SetUsageRefreshedAt(t)
+	return pruo
+}
+
+// SetNillableUsageRefreshedAt sets the "usage_refreshed_at" field if the given value is not nil.
+func (pruo *PrRecordUpdateOne) SetNillableUsageRefreshedAt(t *time.Time) *PrRecordUpdateOne {
+	if t != nil {
+		pruo.SetUsageRefreshedAt(*t)
+	}
+	return pruo
+}
+
+// ClearUsageRefreshedAt clears the value of the "usage_refreshed_at" field.
+func (pruo *PrRecordUpdateOne) ClearUsageRefreshedAt() *PrRecordUpdateOne {
+	pruo.mutation.ClearUsageRefreshedAt()
+	return pruo
+}
+
+// SetUsageCommitSnapshotHash sets the "usage_commit_snapshot_hash" field.
+func (pruo *PrRecordUpdateOne) SetUsageCommitSnapshotHash(s string) *PrRecordUpdateOne {
+	pruo.mutation.SetUsageCommitSnapshotHash(s)
+	return pruo
+}
+
+// SetNillableUsageCommitSnapshotHash sets the "usage_commit_snapshot_hash" field if the given value is not nil.
+func (pruo *PrRecordUpdateOne) SetNillableUsageCommitSnapshotHash(s *string) *PrRecordUpdateOne {
+	if s != nil {
+		pruo.SetUsageCommitSnapshotHash(*s)
+	}
+	return pruo
+}
+
+// ClearUsageCommitSnapshotHash clears the value of the "usage_commit_snapshot_hash" field.
+func (pruo *PrRecordUpdateOne) ClearUsageCommitSnapshotHash() *PrRecordUpdateOne {
+	pruo.mutation.ClearUsageCommitSnapshotHash()
+	return pruo
+}
+
 // SetMetadataSummary sets the "metadata_summary" field.
 func (pruo *PrRecordUpdateOne) SetMetadataSummary(m map[string]interface{}) *PrRecordUpdateOne {
 	pruo.mutation.SetMetadataSummary(m)
@@ -1418,6 +1928,21 @@ func (pruo *PrRecordUpdateOne) SetRepoConfig(r *RepoConfig) *PrRecordUpdateOne {
 	return pruo.SetRepoConfigID(r.ID)
 }
 
+// AddPrCommitUsageSnapshotIDs adds the "pr_commit_usage_snapshots" edge to the PRCommitUsageSnapshot entity by IDs.
+func (pruo *PrRecordUpdateOne) AddPrCommitUsageSnapshotIDs(ids ...int) *PrRecordUpdateOne {
+	pruo.mutation.AddPrCommitUsageSnapshotIDs(ids...)
+	return pruo
+}
+
+// AddPrCommitUsageSnapshots adds the "pr_commit_usage_snapshots" edges to the PRCommitUsageSnapshot entity.
+func (pruo *PrRecordUpdateOne) AddPrCommitUsageSnapshots(p ...*PRCommitUsageSnapshot) *PrRecordUpdateOne {
+	ids := make([]int, len(p))
+	for i := range p {
+		ids[i] = p[i].ID
+	}
+	return pruo.AddPrCommitUsageSnapshotIDs(ids...)
+}
+
 // AddAttributionRunIDs adds the "attribution_runs" edge to the PrAttributionRun entity by IDs.
 func (pruo *PrRecordUpdateOne) AddAttributionRunIDs(ids ...int) *PrRecordUpdateOne {
 	pruo.mutation.AddAttributionRunIDs(ids...)
@@ -1447,6 +1972,27 @@ func (pruo *PrRecordUpdateOne) Mutation() *PrRecordMutation {
 func (pruo *PrRecordUpdateOne) ClearRepoConfig() *PrRecordUpdateOne {
 	pruo.mutation.ClearRepoConfig()
 	return pruo
+}
+
+// ClearPrCommitUsageSnapshots clears all "pr_commit_usage_snapshots" edges to the PRCommitUsageSnapshot entity.
+func (pruo *PrRecordUpdateOne) ClearPrCommitUsageSnapshots() *PrRecordUpdateOne {
+	pruo.mutation.ClearPrCommitUsageSnapshots()
+	return pruo
+}
+
+// RemovePrCommitUsageSnapshotIDs removes the "pr_commit_usage_snapshots" edge to PRCommitUsageSnapshot entities by IDs.
+func (pruo *PrRecordUpdateOne) RemovePrCommitUsageSnapshotIDs(ids ...int) *PrRecordUpdateOne {
+	pruo.mutation.RemovePrCommitUsageSnapshotIDs(ids...)
+	return pruo
+}
+
+// RemovePrCommitUsageSnapshots removes "pr_commit_usage_snapshots" edges to PRCommitUsageSnapshot entities.
+func (pruo *PrRecordUpdateOne) RemovePrCommitUsageSnapshots(p ...*PRCommitUsageSnapshot) *PrRecordUpdateOne {
+	ids := make([]int, len(p))
+	for i := range p {
+		ids[i] = p[i].ID
+	}
+	return pruo.RemovePrCommitUsageSnapshotIDs(ids...)
 }
 
 // ClearAttributionRuns clears all "attribution_runs" edges to the PrAttributionRun entity.
@@ -1708,6 +2254,60 @@ func (pruo *PrRecordUpdateOne) sqlSave(ctx context.Context) (_node *PrRecord, er
 	if value, ok := pruo.mutation.AddedPrimaryTokenCost(); ok {
 		_spec.AddField(prrecord.FieldPrimaryTokenCost, field.TypeFloat64, value)
 	}
+	if value, ok := pruo.mutation.UsageInputTokens(); ok {
+		_spec.SetField(prrecord.FieldUsageInputTokens, field.TypeInt64, value)
+	}
+	if value, ok := pruo.mutation.AddedUsageInputTokens(); ok {
+		_spec.AddField(prrecord.FieldUsageInputTokens, field.TypeInt64, value)
+	}
+	if value, ok := pruo.mutation.UsageOutputTokens(); ok {
+		_spec.SetField(prrecord.FieldUsageOutputTokens, field.TypeInt64, value)
+	}
+	if value, ok := pruo.mutation.AddedUsageOutputTokens(); ok {
+		_spec.AddField(prrecord.FieldUsageOutputTokens, field.TypeInt64, value)
+	}
+	if value, ok := pruo.mutation.UsageCachedInputTokens(); ok {
+		_spec.SetField(prrecord.FieldUsageCachedInputTokens, field.TypeInt64, value)
+	}
+	if value, ok := pruo.mutation.AddedUsageCachedInputTokens(); ok {
+		_spec.AddField(prrecord.FieldUsageCachedInputTokens, field.TypeInt64, value)
+	}
+	if value, ok := pruo.mutation.UsageReasoningTokens(); ok {
+		_spec.SetField(prrecord.FieldUsageReasoningTokens, field.TypeInt64, value)
+	}
+	if value, ok := pruo.mutation.AddedUsageReasoningTokens(); ok {
+		_spec.AddField(prrecord.FieldUsageReasoningTokens, field.TypeInt64, value)
+	}
+	if value, ok := pruo.mutation.UsageCreditUsage(); ok {
+		_spec.SetField(prrecord.FieldUsageCreditUsage, field.TypeFloat64, value)
+	}
+	if value, ok := pruo.mutation.AddedUsageCreditUsage(); ok {
+		_spec.AddField(prrecord.FieldUsageCreditUsage, field.TypeFloat64, value)
+	}
+	if value, ok := pruo.mutation.UsageRequestCount(); ok {
+		_spec.SetField(prrecord.FieldUsageRequestCount, field.TypeInt, value)
+	}
+	if value, ok := pruo.mutation.AddedUsageRequestCount(); ok {
+		_spec.AddField(prrecord.FieldUsageRequestCount, field.TypeInt, value)
+	}
+	if value, ok := pruo.mutation.UsageCommitCount(); ok {
+		_spec.SetField(prrecord.FieldUsageCommitCount, field.TypeInt, value)
+	}
+	if value, ok := pruo.mutation.AddedUsageCommitCount(); ok {
+		_spec.AddField(prrecord.FieldUsageCommitCount, field.TypeInt, value)
+	}
+	if value, ok := pruo.mutation.UsageRefreshedAt(); ok {
+		_spec.SetField(prrecord.FieldUsageRefreshedAt, field.TypeTime, value)
+	}
+	if pruo.mutation.UsageRefreshedAtCleared() {
+		_spec.ClearField(prrecord.FieldUsageRefreshedAt, field.TypeTime)
+	}
+	if value, ok := pruo.mutation.UsageCommitSnapshotHash(); ok {
+		_spec.SetField(prrecord.FieldUsageCommitSnapshotHash, field.TypeString, value)
+	}
+	if pruo.mutation.UsageCommitSnapshotHashCleared() {
+		_spec.ClearField(prrecord.FieldUsageCommitSnapshotHash, field.TypeString)
+	}
 	if value, ok := pruo.mutation.MetadataSummary(); ok {
 		_spec.SetField(prrecord.FieldMetadataSummary, field.TypeJSON, value)
 	}
@@ -1760,6 +2360,51 @@ func (pruo *PrRecordUpdateOne) sqlSave(ctx context.Context) (_node *PrRecord, er
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(repoconfig.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if pruo.mutation.PrCommitUsageSnapshotsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   prrecord.PrCommitUsageSnapshotsTable,
+			Columns: []string{prrecord.PrCommitUsageSnapshotsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(prcommitusagesnapshot.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := pruo.mutation.RemovedPrCommitUsageSnapshotsIDs(); len(nodes) > 0 && !pruo.mutation.PrCommitUsageSnapshotsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   prrecord.PrCommitUsageSnapshotsTable,
+			Columns: []string{prrecord.PrCommitUsageSnapshotsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(prcommitusagesnapshot.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := pruo.mutation.PrCommitUsageSnapshotsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   prrecord.PrCommitUsageSnapshotsTable,
+			Columns: []string{prrecord.PrCommitUsageSnapshotsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(prcommitusagesnapshot.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {
