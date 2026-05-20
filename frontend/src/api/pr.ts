@@ -16,3 +16,7 @@ export function syncPRs(repoId: number) {
 export function settlePR(prId: number) {
   return client.post<ApiResponse<{ attribution_status: string }>>(`/prs/${prId}/settle`)
 }
+
+export function refreshPRUsage(prId: number) {
+  return client.post<ApiResponse<PRRecord>>(`/prs/${prId}/refresh-usage`)
+}

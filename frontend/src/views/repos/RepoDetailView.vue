@@ -3,14 +3,15 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppLayout from '@/components/AppLayout.vue'
 import { getRepo, updateRepo } from '@/api/repo'
-import { getPR, listPRs, syncPRs, settlePR } from '@/api/pr'
+import { getPR, listPRs, refreshPRUsage, syncPRs } from '@/api/pr'
 import { listProviders } from '@/api/scmProvider'
 import { useAuthStore } from '@/stores/auth'
-import type { RepoConfig, PRRecord, SCMProvider } from '@/types'
+import type { PRCommitUsageSnapshot, PRRecord, RepoConfig, SCMProvider } from '@/types'
 
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
+
 const repo = ref<RepoConfig | null>(null)
 const prs = ref<PRRecord[]>([])
 const prsTotal = ref(0)
@@ -19,7 +20,6 @@ const prsPageSize = 10
 const prsMonths = ref(3)
 const loading = ref(true)
 const syncing = ref(false)
-const settlingPRId = ref<number | null>(null)
 const detailsLoadingIds = ref<Record<number, boolean>>({})
 const expandedPRId = ref<number | null>(null)
 const prDetails = ref<Record<number, PRRecord>>({})
@@ -28,15 +28,15 @@ const providers = ref<SCMProvider[]>([])
 const selectedProviderId = ref<number | null>(null)
 const bindingSaving = ref(false)
 const bindingMessage = ref('')
-const isRepoUnbound = computed(() => repo.value?.binding_state === 'unbound')
 
 const repoId = Number(route.params.id)
+const isRepoUnbound = computed(() => repo.value?.binding_state === 'unbound')
 
 onMounted(async () => {
   try {
     const [repoRes, prsRes] = await Promise.all([
       getRepo(repoId),
-      listPRs(repoId, { limit: 10, months: 3 }).catch(() => ({ data: { data: { items: [] } } })),
+      listPRs(repoId, { limit: prsPageSize, months: prsMonths.value }).catch(() => ({ data: { data: { items: [] } } })),
     ])
     repo.value = repoRes.data.data ?? null
     const prData = prsRes.data.data
@@ -62,15 +62,13 @@ async function refreshRepo() {
   selectedProviderId.value = repo.value?.edges?.scm_provider?.id ?? repo.value?.scm_provider_id ?? null
 }
 
-function formatDate(date: string | null) {
-  if (!date) return '—'
-  return new Date(date).toLocaleString()
-}
-
-function labelColor(label: string) {
-  if (label === 'ai_via_sub2api') return 'bg-indigo-100 text-indigo-800'
-  if (label === 'no_ai_detected') return 'bg-gray-100 text-gray-600'
-  return 'bg-yellow-100 text-yellow-700'
+async function loadPRs() {
+  try {
+    const prsRes = await listPRs(repoId, { limit: prsPageSize, offset: prsPage.value * prsPageSize, months: prsMonths.value })
+    const prData = prsRes.data.data
+    prs.value = prData && 'items' in prData ? prData.items : []
+    prsTotal.value = prData && 'total' in prData ? prData.total : 0
+  } catch { /* load failed */ }
 }
 
 async function handleSyncPRs() {
@@ -103,15 +101,6 @@ async function clearBinding() {
   await saveBinding()
 }
 
-async function loadPRs() {
-  try {
-    const prsRes = await listPRs(repoId, { limit: prsPageSize, offset: prsPage.value * prsPageSize, months: prsMonths.value })
-    const prData = prsRes.data.data
-    prs.value = prData && 'items' in prData ? prData.items : []
-    prsTotal.value = prData && 'total' in prData ? prData.total : 0
-  } catch { /* load failed */ }
-}
-
 function handleMonthsChange(e: Event) {
   prsMonths.value = Number((e.target as HTMLSelectElement).value)
   prsPage.value = 0
@@ -119,47 +108,51 @@ function handleMonthsChange(e: Event) {
 }
 
 function prsPrevPage() {
-  if (prsPage.value > 0) { prsPage.value--; loadPRs() }
+  if (prsPage.value > 0) {
+    prsPage.value--
+    loadPRs()
+  }
 }
 
 function prsNextPage() {
-  if ((prsPage.value + 1) * prsPageSize < prsTotal.value) { prsPage.value++; loadPRs() }
+  if ((prsPage.value + 1) * prsPageSize < prsTotal.value) {
+    prsPage.value++
+    loadPRs()
+  }
 }
 
-function formatConfidence(value?: PRRecord['attribution_confidence']) {
-  if (!value) return '—'
-  return value
+function formatDate(date: string | null | undefined) {
+  if (!date) return '—'
+  return new Date(date).toLocaleString()
 }
 
-function formatCurrency(value?: number) {
-  if (value == null || Number.isNaN(value)) return '—'
-  return `$${value.toFixed(2)}`
-}
-
-function formatTokenCount(value?: number) {
+function formatCount(value?: number | null) {
   if (value == null || Number.isNaN(value)) return '—'
   return value.toLocaleString()
+}
+
+function formatDecimal(value?: number | null) {
+  if (value == null || Number.isNaN(value)) return '—'
+  return value.toFixed(2)
 }
 
 function resolvedPR(pr: PRRecord) {
   return prDetails.value[pr.id] ?? pr
 }
 
-function matchedCommitShas(pr: PRRecord) {
-  return resolvedPR(pr).edges?.last_attribution_run?.matched_commit_shas ?? []
+function commitSnapshots(pr: PRRecord): PRCommitUsageSnapshot[] {
+  const detail = resolvedPR(pr)
+  const snapshots = detail.edges?.pr_commit_usage_snapshots
+  return Array.isArray(snapshots) ? [...snapshots].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)) : []
 }
 
-function validationReason(pr: PRRecord) {
-  const detail = resolvedPR(pr)
-  return detail.edges?.last_attribution_run?.validation_summary?.reason
-    ?? detail.metadata_summary?.reason
-    ?? '—'
+function hasUsageSnapshot(pr: PRRecord) {
+  return commitSnapshots(pr).length > 0
 }
 
-function attributionIntervals(pr: PRRecord) {
+function usageSummaryNeedsRefresh(pr: PRRecord) {
   const detail = resolvedPR(pr)
-  const intervals = detail.metadata_summary?.intervals
-  return Array.isArray(intervals) ? intervals : []
+  return !hasUsageSnapshot(detail) && !detail.usage_refreshed_at
 }
 
 function isPRDetailLoading(prId: number) {
@@ -171,7 +164,6 @@ function setPRDetailLoading(prId: number, loading: boolean) {
     detailsLoadingIds.value = { ...detailsLoadingIds.value, [prId]: true }
     return
   }
-
   const { [prId]: _removed, ...rest } = detailsLoadingIds.value
   detailsLoadingIds.value = rest
 }
@@ -187,7 +179,6 @@ async function ensurePRDetail(prId: number, options?: { force?: boolean }) {
   }
 
   setPRDetailLoading(prId, true)
-
   const request = (async () => {
     try {
       const res = await getPR(prId)
@@ -209,28 +200,43 @@ async function ensurePRDetail(prId: number, options?: { force?: boolean }) {
   return request
 }
 
+async function refreshUsageDetail(prId: number) {
+  setPRDetailLoading(prId, true)
+  try {
+    const res = await refreshPRUsage(prId)
+    const detail = res.data.data
+    if (detail) {
+      prDetails.value = { ...prDetails.value, [prId]: detail }
+      prs.value = prs.value.map((pr) => (pr.id === prId ? { ...pr, ...detail } : pr))
+      return true
+    }
+    return false
+  } catch {
+    return false
+  } finally {
+    setPRDetailLoading(prId, false)
+  }
+}
+
 async function togglePRDetails(prId: number) {
   if (expandedPRId.value === prId) {
     expandedPRId.value = null
     return
   }
+
   expandedPRId.value = prId
   const loaded = await ensurePRDetail(prId)
   if (!loaded && expandedPRId.value === prId && !prDetails.value[prId]) {
     expandedPRId.value = null
+    return
   }
-}
 
-async function handleSettlePR(prId: number) {
-  settlingPRId.value = prId
-  try {
-    await settlePR(prId)
-    await loadPRs()
-    if (expandedPRId.value === prId || prDetails.value[prId]) {
-      await ensurePRDetail(prId, { force: true })
+  const row = prDetails.value[prId] ?? prs.value.find((item) => item.id === prId)
+  if (row && usageSummaryNeedsRefresh(row)) {
+    const refreshed = await refreshUsageDetail(prId)
+    if (!refreshed && expandedPRId.value === prId && !prDetails.value[prId]) {
+      expandedPRId.value = null
     }
-  } catch { /* settle failed */ } finally {
-    settlingPRId.value = null
   }
 }
 </script>
@@ -340,6 +346,7 @@ async function handleSettlePR(prId: number) {
             <span v-if="prsTotal > 0" class="text-xs text-gray-400">{{ prsTotal }} total</span>
           </div>
         </div>
+
         <div v-if="prs.length > 0" class="mt-3 overflow-x-auto">
           <table class="min-w-full divide-y divide-gray-100 text-sm">
             <thead>
@@ -347,11 +354,12 @@ async function handleSettlePR(prId: number) {
                 <th class="px-3 py-2 text-left font-medium">Title</th>
                 <th class="px-3 py-2 text-left font-medium">Author</th>
                 <th class="px-3 py-2 text-left font-medium">Status</th>
-                <th class="px-3 py-2 text-left font-medium">AI Label</th>
-                <th class="px-3 py-2 text-left font-medium">Attribution</th>
-                <th class="px-3 py-2 text-left font-medium">Confidence</th>
-                <th class="px-3 py-2 text-left font-medium">Primary Tokens</th>
-                <th class="px-3 py-2 text-left font-medium">Primary Cost</th>
+                <th class="px-3 py-2 text-left font-medium">Input</th>
+                <th class="px-3 py-2 text-left font-medium">Output</th>
+                <th class="px-3 py-2 text-left font-medium">Cache</th>
+                <th class="px-3 py-2 text-left font-medium">Reasoning</th>
+                <th class="px-3 py-2 text-left font-medium">Credits</th>
+                <th class="px-3 py-2 text-left font-medium">Requests</th>
                 <th class="px-3 py-2 text-left font-medium">Created</th>
                 <th class="px-3 py-2 text-left font-medium">Actions</th>
               </tr>
@@ -372,87 +380,77 @@ async function handleSettlePR(prId: number) {
                       :class="pr.status === 'merged' ? 'bg-purple-50 text-purple-700' : pr.status === 'open' ? 'bg-green-50 text-green-700' : 'bg-gray-50 text-gray-500'"
                     >{{ pr.status }}</span>
                   </td>
-                  <td class="px-3 py-2">
-                    <span class="inline-flex rounded-full px-2 text-xs font-medium leading-5" :class="labelColor(pr.ai_label)">
-                      {{ pr.ai_label }}
-                    </span>
-                  </td>
-                  <td class="px-3 py-2 text-xs text-gray-600">{{ pr.attribution_status || 'not_run' }}</td>
-                  <td class="px-3 py-2 text-xs text-gray-600">{{ formatConfidence(pr.attribution_confidence) }}</td>
-                  <td class="px-3 py-2 text-xs text-gray-600">{{ formatTokenCount(pr.primary_token_count) }}</td>
-                  <td class="px-3 py-2 text-xs text-gray-600">{{ formatCurrency(pr.primary_token_cost) }}</td>
+                  <td class="px-3 py-2 text-xs text-gray-600">{{ formatCount(pr.usage_input_tokens) }}</td>
+                  <td class="px-3 py-2 text-xs text-gray-600">{{ formatCount(pr.usage_output_tokens) }}</td>
+                  <td class="px-3 py-2 text-xs text-gray-600">{{ formatCount(pr.usage_cached_input_tokens) }}</td>
+                  <td class="px-3 py-2 text-xs text-gray-600">{{ formatCount(pr.usage_reasoning_tokens) }}</td>
+                  <td class="px-3 py-2 text-xs text-gray-600">{{ formatDecimal(pr.usage_credit_usage) }}</td>
+                  <td class="px-3 py-2 text-xs text-gray-600">{{ formatCount(pr.usage_request_count) }}</td>
                   <td class="whitespace-nowrap px-3 py-2 text-xs text-gray-400">{{ formatDate(pr.created_at) }}</td>
                   <td class="px-3 py-2">
-                    <div class="flex items-center gap-2">
-                      <button
-                        class="rounded border border-gray-200 px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-40"
-                        :disabled="settlingPRId === pr.id"
-                        @click="handleSettlePR(pr.id)"
-                      >{{ settlingPRId === pr.id ? 'Settling...' : 'Settle' }}</button>
-                      <button
-                        class="rounded border border-gray-200 px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-40"
-                        :disabled="isPRDetailLoading(pr.id)"
-                        @click="togglePRDetails(pr.id)"
-                      >{{ isPRDetailLoading(pr.id) ? 'Loading...' : expandedPRId === pr.id ? 'Hide' : 'Details' }}</button>
-                    </div>
+                    <button
+                      class="rounded border border-gray-200 px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-40"
+                      :disabled="isPRDetailLoading(pr.id)"
+                      @click="togglePRDetails(pr.id)"
+                    >{{ isPRDetailLoading(pr.id) ? 'Loading...' : expandedPRId === pr.id ? 'Hide' : 'Details' }}</button>
                   </td>
                 </tr>
                 <tr v-if="expandedPRId === pr.id" class="bg-gray-50/70">
-                  <td colspan="10" class="px-4 py-4">
+                  <td colspan="11" class="px-4 py-4">
                     <div v-if="isPRDetailLoading(pr.id) && !prDetails[pr.id]" class="py-6 text-center text-xs text-gray-500">
                       Loading PR details...
                     </div>
                     <div v-else class="space-y-4 text-xs text-gray-700">
                       <div class="grid gap-3 sm:grid-cols-4">
                         <div>
-                          <div class="text-gray-400">Primary Tokens</div>
-                          <div class="mt-1 font-medium text-gray-900">{{ formatTokenCount(resolvedPR(pr).primary_token_count) }}</div>
+                          <div class="text-gray-400">Input</div>
+                          <div class="mt-1 font-medium text-gray-900">{{ formatCount(resolvedPR(pr).usage_input_tokens) }}</div>
                         </div>
                         <div>
-                          <div class="text-gray-400">Primary Cost</div>
-                          <div class="mt-1 font-medium text-gray-900">{{ formatCurrency(resolvedPR(pr).primary_token_cost) }}</div>
+                          <div class="text-gray-400">Output</div>
+                          <div class="mt-1 font-medium text-gray-900">{{ formatCount(resolvedPR(pr).usage_output_tokens) }}</div>
                         </div>
                         <div>
-                          <div class="text-gray-400">Validation Reason</div>
-                          <div class="mt-1 font-medium text-gray-900">{{ validationReason(pr) }}</div>
+                          <div class="text-gray-400">Credits</div>
+                          <div class="mt-1 font-medium text-gray-900">{{ formatDecimal(resolvedPR(pr).usage_credit_usage) }}</div>
                         </div>
                         <div>
-                          <div class="text-gray-400">Last Attributed</div>
-                          <div class="mt-1 font-medium text-gray-900">{{ formatDate(resolvedPR(pr).last_attributed_at || null) }}</div>
+                          <div class="text-gray-400">Last Refreshed</div>
+                          <div class="mt-1 font-medium text-gray-900">{{ formatDate(resolvedPR(pr).usage_refreshed_at || null) }}</div>
                         </div>
                       </div>
 
                       <div>
-                        <div class="text-gray-400">Matched Commits</div>
-                        <div v-if="matchedCommitShas(pr).length > 0" class="mt-1 flex flex-wrap gap-2">
-                          <code v-for="sha in matchedCommitShas(pr)" :key="sha" class="rounded bg-white px-2 py-1 text-[11px] text-gray-800">{{ sha }}</code>
-                        </div>
-                        <div v-else class="mt-1 text-gray-500">No matched commits recorded.</div>
-                      </div>
-
-                      <div>
-                        <div class="text-gray-400">Intervals</div>
-                        <div v-if="attributionIntervals(pr).length > 0" class="mt-2 overflow-x-auto">
+                        <div class="text-gray-400">Commits</div>
+                        <div v-if="commitSnapshots(pr).length > 0" class="mt-2 overflow-x-auto">
                           <table class="min-w-full divide-y divide-gray-200 text-[11px]">
                             <thead>
                               <tr class="uppercase text-gray-400">
-                                <th class="px-2 py-1 text-left font-medium">Commit</th>
-                                <th class="px-2 py-1 text-left font-medium">Tokens</th>
-                                <th class="px-2 py-1 text-left font-medium">Cost</th>
-                                <th class="px-2 py-1 text-left font-medium">Source</th>
+                                <th class="px-2 py-1 text-left font-medium">Commit SHA</th>
+                                <th class="px-2 py-1 text-left font-medium">Captured At</th>
+                                <th class="px-2 py-1 text-left font-medium">Input</th>
+                                <th class="px-2 py-1 text-left font-medium">Output</th>
+                                <th class="px-2 py-1 text-left font-medium">Cache</th>
+                                <th class="px-2 py-1 text-left font-medium">Reasoning</th>
+                                <th class="px-2 py-1 text-left font-medium">Credits</th>
+                                <th class="px-2 py-1 text-left font-medium">Requests</th>
                               </tr>
                             </thead>
                             <tbody class="divide-y divide-gray-100">
-                              <tr v-for="(interval, idx) in attributionIntervals(pr)" :key="interval.checkpoint_id ?? interval.commit_sha ?? idx">
-                                <td class="px-2 py-1 font-mono text-gray-800">{{ interval.commit_sha || '—' }}</td>
-                                <td class="px-2 py-1 text-gray-700">{{ formatTokenCount(interval.total_tokens) }}</td>
-                                <td class="px-2 py-1 text-gray-700">{{ formatCurrency(interval.total_cost) }}</td>
-                                <td class="px-2 py-1 text-gray-700">{{ interval.source || '—' }}</td>
+                              <tr v-for="snapshot in commitSnapshots(pr)" :key="snapshot.commit_sha">
+                                <td class="px-2 py-1 font-mono text-gray-800">{{ snapshot.commit_sha }}</td>
+                                <td class="px-2 py-1 text-gray-700">{{ formatDate(snapshot.captured_at || null) }}</td>
+                                <td class="px-2 py-1 text-gray-700">{{ formatCount(snapshot.input_tokens) }}</td>
+                                <td class="px-2 py-1 text-gray-700">{{ formatCount(snapshot.output_tokens) }}</td>
+                                <td class="px-2 py-1 text-gray-700">{{ formatCount(snapshot.cached_input_tokens) }}</td>
+                                <td class="px-2 py-1 text-gray-700">{{ formatCount(snapshot.reasoning_tokens) }}</td>
+                                <td class="px-2 py-1 text-gray-700">{{ formatDecimal(snapshot.credit_usage) }}</td>
+                                <td class="px-2 py-1 text-gray-700">{{ formatCount(snapshot.request_count) }}</td>
                               </tr>
                             </tbody>
                           </table>
                         </div>
-                        <div v-else class="mt-1 text-gray-500">No interval breakdown recorded.</div>
+                        <div v-else class="mt-1 text-gray-500">No commit usage snapshot yet.</div>
                       </div>
                     </div>
                   </td>
