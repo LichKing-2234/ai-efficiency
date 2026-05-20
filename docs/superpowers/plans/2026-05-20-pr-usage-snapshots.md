@@ -8,6 +8,8 @@
 
 **Tech Stack:** Go 1.23/1.24, Ent, Gin, Vue 3, TypeScript, Vitest, Cobra
 
+**Status:** Completed in this rollout
+
 ---
 
 ## File Map
@@ -863,7 +865,7 @@ Run: `cd frontend && pnpm test`
 
 Expected: PASS across all three workspaces, with Ent generation producing no unstaged follow-up changes after the final test run.
 
-- [ ] **Step 5: Commit the docs sync and full verification pass**
+- [x] **Step 5: Commit the docs sync and full verification pass**
 
 ```bash
 git add docs/architecture.md docs/superpowers/specs/2026-05-20-pr-usage-snapshots-design.md
