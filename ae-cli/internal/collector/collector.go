@@ -161,6 +161,10 @@ func DefaultPaths(workspaceRoot string) Paths {
 	}
 	if len(out.KiroFiles) == 0 {
 		out.KiroFiles = walkFiles(filepath.Join(home, ".kiro"), ".json")
+		kiroCLIDB := filepath.Join(home, "Library", "Application Support", "kiro-cli", "data.sqlite3")
+		if _, err := os.Stat(kiroCLIDB); err == nil {
+			out.KiroFiles = append([]string{kiroCLIDB}, out.KiroFiles...)
+		}
 	}
 	return out
 }

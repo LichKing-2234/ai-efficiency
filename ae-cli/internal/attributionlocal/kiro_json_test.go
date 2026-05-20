@@ -27,3 +27,41 @@ func TestParseKiroJSON_UsesCreditAndConversationID(t *testing.T) {
 		t.Fatalf("observed timestamps = %s / %s, want %s", events[0].ObservedStartAt, events[0].ObservedEndAt, want)
 	}
 }
+
+func TestParseKiroCLISQLite_UsesCreditAndMessageID(t *testing.T) {
+	t.Parallel()
+
+	dbPath := buildKiroCLISQLiteFixture(t, "/tmp/repo")
+
+	events, err := ParseKiroCLISQLite(dbPath, "/tmp/repo")
+	if err != nil {
+		t.Fatalf("ParseKiroCLISQLite: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("event count = %d, want 1", len(events))
+	}
+	ev := events[0]
+	if ev.ToolSessionID != "conv-1" {
+		t.Fatalf("tool session id = %q, want conv-1", ev.ToolSessionID)
+	}
+	if ev.ToolEventID != "msg-1" {
+		t.Fatalf("tool event id = %q, want msg-1", ev.ToolEventID)
+	}
+	if ev.DedupeKey != "kiro-cli:conv-1:msg-1" {
+		t.Fatalf("dedupe key = %q, want %q", ev.DedupeKey, "kiro-cli:conv-1:msg-1")
+	}
+	if math.Abs(ev.CreditUsage-0.10903188126036485) > 1e-12 {
+		t.Fatalf("credit usage = %v", ev.CreditUsage)
+	}
+	if ev.RequestCount != 1 {
+		t.Fatalf("request count = %d, want 1", ev.RequestCount)
+	}
+	if math.Abs(ev.ContextUsagePct-3.2832) > 1e-9 {
+		t.Fatalf("context usage pct = %v", ev.ContextUsagePct)
+	}
+	wantStart := time.UnixMilli(1779285309036).UTC()
+	wantEnd := time.UnixMilli(1779285314178).UTC()
+	if !ev.ObservedStartAt.Equal(wantStart) || !ev.ObservedEndAt.Equal(wantEnd) {
+		t.Fatalf("observed timestamps = %s / %s, want %s / %s", ev.ObservedStartAt, ev.ObservedEndAt, wantStart, wantEnd)
+	}
+}

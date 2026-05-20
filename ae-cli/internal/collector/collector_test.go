@@ -1,7 +1,9 @@
 package collector
 
 import (
+	"database/sql"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,6 +11,7 @@ import (
 	"time"
 
 	"github.com/ai-efficiency/ae-cli/internal/session"
+	_ "github.com/glebarez/go-sqlite"
 )
 
 func TestBuildSnapshotAggregatesCodexClaudeAndKiro(t *testing.T) {
@@ -132,6 +135,31 @@ func TestBuildSnapshotSkipsBrokenFilesAndKeepsOtherTools(t *testing.T) {
 	}
 	if snapshot.Kiro == nil || snapshot.Kiro.ConversationID != "conv-good" {
 		t.Fatalf("Kiro snapshot = %+v", snapshot.Kiro)
+	}
+}
+
+func TestBuildSnapshotReadsKiroCLISQLite(t *testing.T) {
+	workspaceRoot := "/tmp/repo"
+	dbPath := buildKiroCLISQLiteSnapshotFixture(t, workspaceRoot)
+
+	snapshot, err := BuildSnapshot(Paths{
+		KiroFiles:     []string{dbPath},
+		WorkspaceRoot: workspaceRoot,
+	})
+	if err != nil {
+		t.Fatalf("BuildSnapshot() error = %v", err)
+	}
+	if snapshot == nil || snapshot.Kiro == nil {
+		t.Fatalf("expected kiro snapshot, got %+v", snapshot)
+	}
+	if snapshot.Kiro.ConversationID != "conv-kiro-cli-1" {
+		t.Fatalf("conversation id = %q, want conv-kiro-cli-1", snapshot.Kiro.ConversationID)
+	}
+	if math.Abs(snapshot.Kiro.CreditUsage-0.10903188126036485) > 1e-12 {
+		t.Fatalf("credit usage = %v", snapshot.Kiro.CreditUsage)
+	}
+	if math.Abs(snapshot.Kiro.ContextUsagePct-3.2832) > 1e-9 {
+		t.Fatalf("context usage = %v", snapshot.Kiro.ContextUsagePct)
 	}
 }
 
@@ -369,4 +397,27 @@ func TestBuildSnapshotReadsLargeCodexAndClaudeJSONLLines(t *testing.T) {
 	if snapshot.Claude == nil || snapshot.Claude.SourceSessionID != "claude-large" {
 		t.Fatalf("Claude snapshot = %+v", snapshot.Claude)
 	}
+}
+
+func buildKiroCLISQLiteSnapshotFixture(t *testing.T, workspaceRoot string) string {
+	t.Helper()
+
+	base := filepath.Join(t.TempDir(), "Library", "Application Support", "kiro-cli")
+	if err := os.MkdirAll(base, 0o700); err != nil {
+		t.Fatalf("mkdir kiro-cli dir: %v", err)
+	}
+	path := filepath.Join(base, "data.sqlite3")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("sql.Open: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if _, err := db.Exec(`CREATE TABLE conversations_v2 (key TEXT NOT NULL, conversation_id TEXT NOT NULL, value TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY (key, conversation_id))`); err != nil {
+		t.Fatalf("create conversations_v2: %v", err)
+	}
+	value := `{"conversation_id":"conv-kiro-cli-1","history":[{"assistant":{"Response":{"message_id":"msg-kiro-cli-1","content":"reply"}},"request_metadata":{"context_usage_percentage":3.2832,"message_id":"msg-kiro-cli-1","request_start_timestamp_ms":1779285309036,"stream_end_timestamp_ms":1779285314178}}],"user_turn_metadata":{"usage_info":[{"value":0.10903188126036485,"unit":"credit","unit_plural":"credits"}]}}`
+	if _, err := db.Exec(`INSERT INTO conversations_v2 (key, conversation_id, value, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`, workspaceRoot, "conv-kiro-cli-1", value, 1779285314178, 1779285314178); err != nil {
+		t.Fatalf("insert conversations_v2: %v", err)
+	}
+	return path
 }

@@ -60,6 +60,22 @@ func TestScanner_SecondScanWithStateReturnsNoDuplicateSQLiteEvents(t *testing.T)
 	}
 }
 
+func TestScanner_ScanWorkspaceReadsMatchingKiroCLISQLite(t *testing.T) {
+	fixture := buildKiroCLISQLiteAttributionFixture(t)
+	scanner := NewScanner()
+
+	first, _, err := scanner.ScanWorkspace(fixture.WorkspaceRoot, ScanState{})
+	if err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	if len(first) != 1 {
+		t.Fatalf("first scan events = %d, want 1", len(first))
+	}
+	if first[0].DedupeKey != "kiro-cli:conv-1:msg-1" {
+		t.Fatalf("dedupe key = %q, want %q", first[0].DedupeKey, "kiro-cli:conv-1:msg-1")
+	}
+}
+
 func TestFindCodexJSONLFiles_IgnoresWorkspaceScopedCodexHome(t *testing.T) {
 	workspaceRoot := t.TempDir()
 	homeDir := t.TempDir()

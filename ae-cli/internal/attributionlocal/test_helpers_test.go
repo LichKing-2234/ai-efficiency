@@ -130,6 +130,54 @@ func buildSQLiteOnlyAttributionFixture(t *testing.T) attributionFixture {
 	}
 }
 
+func buildKiroCLISQLiteFixture(t *testing.T, workspaceRoot string) string {
+	t.Helper()
+
+	base := filepath.Join(t.TempDir(), "Library", "Application Support", "kiro-cli")
+	if err := os.MkdirAll(base, 0o700); err != nil {
+		t.Fatalf("mkdir kiro-cli dir: %v", err)
+	}
+	path := filepath.Join(base, "data.sqlite3")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("sql.Open: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if _, err := db.Exec(`CREATE TABLE conversations_v2 (key TEXT NOT NULL, conversation_id TEXT NOT NULL, value TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY (key, conversation_id))`); err != nil {
+		t.Fatalf("create conversations_v2: %v", err)
+	}
+	value := fmt.Sprintf(`{"conversation_id":"conv-1","history":[{"user":{"timestamp":"2026-05-20T21:55:09.029671+08:00","content":{"Prompt":{"prompt":"test"}}},"assistant":{"Response":{"message_id":"msg-1","content":"reply"}},"request_metadata":{"request_id":"req-1","context_usage_percentage":3.2832,"message_id":"msg-1","request_start_timestamp_ms":1779285309036,"stream_end_timestamp_ms":1779285314178}}],"model_info":{"model_id":"auto","rate_unit":"Credit"},"user_turn_metadata":{"requests":[],"usage_info":[{"value":0.10903188126036485,"unit":"credit","unit_plural":"credits"}]}}`)
+	if _, err := db.Exec(`INSERT INTO conversations_v2 (key, conversation_id, value, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`, workspaceRoot, "conv-1", value, 1779285314178, 1779285314178); err != nil {
+		t.Fatalf("insert conversations_v2: %v", err)
+	}
+	return path
+}
+
+func buildKiroCLISQLiteAttributionFixture(t *testing.T) attributionFixture {
+	t.Helper()
+
+	root := fixtureRepoRoot(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if err := os.MkdirAll(filepath.Join(home, "Library", "Application Support", "kiro-cli"), 0o700); err != nil {
+		t.Fatalf("mkdir kiro-cli home: %v", err)
+	}
+	src := buildKiroCLISQLiteFixture(t, root)
+	dst := filepath.Join(home, "Library", "Application Support", "kiro-cli", "data.sqlite3")
+	data, err := os.ReadFile(src)
+	if err != nil {
+		t.Fatalf("read kiro-cli fixture: %v", err)
+	}
+	if err := os.WriteFile(dst, data, 0o600); err != nil {
+		t.Fatalf("write kiro-cli fixture: %v", err)
+	}
+
+	return attributionFixture{
+		WorkspaceRoot: root,
+		HomeDir:       home,
+	}
+}
+
 type syncEngineFixture struct {
 	Engine *SyncEngine
 	Client *syncBackendClientStub

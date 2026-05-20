@@ -98,6 +98,21 @@ func (s *Scanner) ScanWorkspace(workspaceRoot string, state ScanState) ([]LocalT
 		}
 	}
 
+	for _, path := range findKiroCLISQLiteFiles(homeDir) {
+		if !shouldScanFile(path, state) {
+			continue
+		}
+		items, err := ParseKiroCLISQLite(path, workspaceRoot)
+		if err != nil {
+			continue
+		}
+		rememberFileScan(&nextState, path)
+		for _, item := range items {
+			item.WorkspaceID = workspaceID
+			out = append(out, item)
+		}
+	}
+
 	return dedupeAndSort(out), nextState, nil
 }
 
@@ -193,6 +208,17 @@ func findClaudeJSONLFiles(homeDir string) []string {
 
 func findKiroJSONFiles(homeDir string) []string {
 	return walkFiles(filepath.Join(homeDir, ".kiro"), ".json")
+}
+
+func findKiroCLISQLiteFiles(homeDir string) []string {
+	dbPath := filepath.Join(strings.TrimSpace(homeDir), "Library", "Application Support", "kiro-cli", "data.sqlite3")
+	if strings.TrimSpace(homeDir) == "" {
+		return nil
+	}
+	if _, err := os.Stat(dbPath); err != nil {
+		return nil
+	}
+	return []string{dbPath}
 }
 
 func walkFiles(root string, ext string) []string {

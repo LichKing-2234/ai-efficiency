@@ -178,13 +178,22 @@
 
 主要数据源：
 
-1. `~/.kiro/sessions/cli/*.json`
-2. `~/.kiro/sessions/cli/*.jsonl`
+1. 现代 `kiro-cli` 会话存储：`~/Library/Application Support/kiro-cli/data.sqlite3`
+2. 旧摘要文件路径：`~/.kiro/sessions/cli/*.json`
+3. 辅助 transcript 路径：`~/.kiro/sessions/cli/*.jsonl`
 
-当前更稳定的主数据源是 `*.json` 摘要文件。
+当前正式主路径需要区分两类实现：
+
+1. `kiro-cli` 终端会话以 `data.sqlite3 -> conversations_v2` 为主
+2. 旧桌面摘要文件仍可作为兼容路径保留
 
 已观察到的关键信号：
 
+- `kiro-cli/data.sqlite3`
+  - `conversations_v2.key` = workspace cwd
+  - `conversations_v2.conversation_id`
+  - `value.history[].request_metadata.*`
+  - `value.user_turn_metadata.usage_info[]`
 - 根级：
   - `session_id`
   - `cwd`
@@ -203,7 +212,7 @@
 已观察到的限制：
 
 1. 当前机器样本中的 `input_token_count` / `output_token_count` 基本为 `0`
-2. `metering_usage[]` 和 `total_request_count` 是稳定的
+2. `kiro-cli` 的 `user_turn_metadata.usage_info[]` 与旧摘要文件中的 `metering_usage[]` / `total_request_count` 都能稳定提供 credit / request 事实
 3. 因此 `Kiro` 第一版适合作为 **credit / request_count** 数据源，而不是 token 真值源
 
 ## 目标
@@ -390,18 +399,27 @@ flowchart LR
 
 主数据源：
 
-1. `~/.kiro/sessions/cli/*.json`
+1. `kiro-cli`：`~/Library/Application Support/kiro-cli/data.sqlite3`
+2. 兼容路径：`~/.kiro/sessions/cli/*.json`
 
 归一化规则：
 
-1. `tool_session_id` 优先取 `session_state.rts_model_state.conversation_id`
-2. 若缺失，回退到根级 `session_id`
-3. 每个 `user_turn_metadata` 视为一个 turn-level usage event
-4. `request_count = total_request_count`
-5. `credit_usage = sum(metering_usage[].value where unit == "credit")`
-6. `context_usage_pct = context_usage_percentage`
-7. `input_tokens` / `output_tokens` 仅在非零且可信时写入
-8. 第一版不从 `Kiro` 推导 token 总量
+1. `kiro-cli` 路径：
+   - `tool_session_id = conversation_id`
+   - `tool_event_id` 优先取最近一次 assistant turn 的 `request_metadata.message_id`
+   - `credit_usage = sum(user_turn_metadata.usage_info[].value where unit == "credit")`
+   - `request_count` 至少为 1；若底层显式记录多次 request，则按记录值写入
+   - `context_usage_pct = request_metadata.context_usage_percentage`
+   - `ObservedAt` 优先取 `request_start_timestamp_ms` / `stream_end_timestamp_ms`
+2. 旧摘要文件路径：
+   - `tool_session_id` 优先取 `session_state.rts_model_state.conversation_id`
+   - 若缺失，回退到根级 `session_id`
+   - 每个 `user_turn_metadata` 视为一个 turn-level usage event
+   - `request_count = total_request_count`
+   - `credit_usage = sum(metering_usage[].value where unit == "credit")`
+   - `context_usage_pct = context_usage_percentage`
+3. `input_tokens` / `output_tokens` 仅在非零且可信时写入
+4. 第一版不从 `Kiro` 推导 token 总量
 
 ## hooks 的角色
 

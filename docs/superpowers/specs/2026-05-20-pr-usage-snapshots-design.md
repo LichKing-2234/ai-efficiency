@@ -93,7 +93,7 @@
 1. 当前正式 `Codex` 路径已经收口到 session `jsonl`，不再把 `logs_2.sqlite` 视为 PR usage 路径的必需依赖；实现方不得把 sqlite 适配缺口描述成当前 spec blocker
 2. 部分真实 `Codex` session `jsonl` 的 `token_count` 不带 `response_id`；因此 scanner / parser 必须为同一文件中的每条 usage 更新生成稳定的行级 event identity，而不是把整文件压成一条记录
 3. 当前 attributionlocal scanner 的 `ScanState` 仍只跟踪文件修改时间，尚未形成按行 watermark 的完成态增量扫描；在 parser identity 规则变化后，历史 session 文件可能触发一次性 backfill
-4. `Kiro` 当前 `ObservedAt` 主要来自文件修改时间而非每个 turn 的精确事件时间，因此 commit 级绑定精度弱于 `Claude` / `Codex`
+4. `Kiro` 当前需要同时覆盖旧 `~/.kiro` 摘要文件和现代 `kiro-cli/data.sqlite3` 会话存储；前者的 `ObservedAt` 仍主要来自文件修改时间，后者则可直接使用 request 时间戳，因此实现方不得再把 `Kiro` 简化描述成“只有一种本地文件路径”
 
 本文要求实现方在代码和文档中明确承认这些 gap，不得把当前采集现状表述成“已 fully done”。
 
