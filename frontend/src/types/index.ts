@@ -85,19 +85,6 @@ export interface PRAttributionRun {
   validation_summary?: Record<string, any>
 }
 
-export interface EfficiencyMetric {
-  id: number
-  period_type: string
-  period_start: string
-  total_prs: number
-  ai_prs: number
-  human_prs: number
-  avg_cycle_time_hours: number
-  total_tokens: number
-  total_token_cost: number
-  ai_vs_human_ratio: number
-}
-
 export interface DashboardData {
   total_repos: number
   tracked_workflows: number

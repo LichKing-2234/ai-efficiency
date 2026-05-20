@@ -138,8 +138,6 @@ func SetupRouter(
 	effGroup := protected.Group("/efficiency")
 	{
 		effGroup.GET("/dashboard", efficiencyHandler.Dashboard)
-		effGroup.GET("/repos/:id/metrics", efficiencyHandler.RepoMetrics)
-		effGroup.GET("/repos/:id/trend", efficiencyHandler.Trend)
 		effGroup.POST("/aggregate", auth.RequireAdmin(), efficiencyHandler.Aggregate)
 	}
 

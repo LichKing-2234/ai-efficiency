@@ -140,22 +140,6 @@ func TestAggregateInvalidRepoID(t *testing.T) {
 	}
 }
 
-func TestRepoMetrics_InvalidID(t *testing.T) {
-	env := setupTestEnv(t)
-	w := doRequest(env, "GET", "/api/v1/efficiency/repos/abc/metrics", nil)
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("status = %d, want %d, body: %s", w.Code, http.StatusBadRequest, w.Body.String())
-	}
-}
-
-func TestTrend_InvalidID(t *testing.T) {
-	env := setupTestEnv(t)
-	w := doRequest(env, "GET", "/api/v1/efficiency/repos/abc/trend", nil)
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("status = %d, want %d, body: %s", w.Code, http.StatusBadRequest, w.Body.String())
-	}
-}
-
 func TestDashboardWithData(t *testing.T) {
 	env := setupTestEnv(t)
 	ctx := context.Background()

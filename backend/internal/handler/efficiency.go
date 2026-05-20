@@ -5,9 +5,7 @@ import (
 	"strconv"
 
 	"github.com/ai-efficiency/backend/ent"
-	"github.com/ai-efficiency/backend/ent/efficiencymetric"
 	"github.com/ai-efficiency/backend/ent/prrecord"
-	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/internal/efficiency"
 	"github.com/ai-efficiency/backend/internal/pkg"
 	"github.com/gin-gonic/gin"
@@ -45,59 +43,6 @@ func (h *EfficiencyHandler) Dashboard(c *gin.Context) {
 		"tracked_workflows": trackedWorkflows,
 		"total_ai_prs":      aiPRs,
 	})
-}
-
-// RepoMetrics handles GET /api/v1/efficiency/repos/:id/metrics
-func (h *EfficiencyHandler) RepoMetrics(c *gin.Context) {
-	repoID, err := strconv.Atoi(c.Param("id"))
-	if err != nil {
-		pkg.Error(c, http.StatusBadRequest, "invalid id")
-		return
-	}
-
-	periodType := c.DefaultQuery("period", "daily")
-
-	metrics, err := h.entClient.EfficiencyMetric.Query().
-		Where(
-			efficiencymetric.HasRepoConfigWith(repoconfig.IDEQ(repoID)),
-			efficiencymetric.PeriodTypeEQ(efficiencymetric.PeriodType(periodType)),
-		).
-		Order(ent.Desc(efficiencymetric.FieldPeriodStart)).
-		Limit(30).
-		All(c.Request.Context())
-	if err != nil {
-		pkg.Error(c, http.StatusInternalServerError, "failed to get metrics")
-		return
-	}
-
-	pkg.Success(c, metrics)
-}
-
-// Trend handles GET /api/v1/efficiency/repos/:id/trend
-func (h *EfficiencyHandler) Trend(c *gin.Context) {
-	repoID, err := strconv.Atoi(c.Param("id"))
-	if err != nil {
-		pkg.Error(c, http.StatusBadRequest, "invalid id")
-		return
-	}
-
-	periodType := c.DefaultQuery("period", "weekly")
-	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "12"))
-
-	metrics, err := h.entClient.EfficiencyMetric.Query().
-		Where(
-			efficiencymetric.HasRepoConfigWith(repoconfig.IDEQ(repoID)),
-			efficiencymetric.PeriodTypeEQ(efficiencymetric.PeriodType(periodType)),
-		).
-		Order(ent.Asc(efficiencymetric.FieldPeriodStart)).
-		Limit(limit).
-		All(c.Request.Context())
-	if err != nil {
-		pkg.Error(c, http.StatusInternalServerError, "failed to get trend")
-		return
-	}
-
-	pkg.Success(c, metrics)
 }
 
 // Aggregate handles POST /api/v1/efficiency/aggregate — triggers metric aggregation.

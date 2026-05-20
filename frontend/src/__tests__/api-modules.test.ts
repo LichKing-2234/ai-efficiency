@@ -13,9 +13,9 @@ vi.mock('@/api/client', () => {
 })
 
 import client from '@/api/client'
-import { listProviders, getProvider, createProvider, updateProvider, deleteProvider } from '@/api/scmProvider'
+import { listProviders, createProvider, updateProvider, deleteProvider } from '@/api/scmProvider'
 import { listPRs, getPR, syncPRs, settlePR } from '@/api/pr'
-import { getDashboard, getRepoMetrics, getRepoTrend } from '@/api/efficiency'
+import { getDashboard } from '@/api/efficiency'
 import { getLLMConfig, updateLLMConfig, testLLMConnection } from '@/api/settings'
 import { getDeploymentStatus, checkForUpdate, applyUpdate, rollbackUpdate, restartDeployment } from '@/api/deployment'
 
@@ -41,12 +41,6 @@ describe('scmProvider API', () => {
     mockClient.get.mockResolvedValue({ data: { data: { items: [], total: 0 } } })
     await listProviders()
     expect(mockClient.get).toHaveBeenCalledWith('/scm-providers', { params: { page: 1, page_size: 20 } })
-  })
-
-  it('getProvider calls GET /scm-providers/:id', async () => {
-    mockClient.get.mockResolvedValue({ data: { data: { id: 5 } } })
-    await getProvider(5)
-    expect(mockClient.get).toHaveBeenCalledWith('/scm-providers/5')
   })
 
   it('createProvider calls POST /scm-providers', async () => {
@@ -109,30 +103,6 @@ describe('efficiency API', () => {
     mockClient.get.mockResolvedValue({ data: { data: { total_repos: 5 } } })
     await getDashboard()
     expect(mockClient.get).toHaveBeenCalledWith('/efficiency/dashboard')
-  })
-
-  it('getRepoMetrics calls GET with period param', async () => {
-    mockClient.get.mockResolvedValue({ data: { data: [] } })
-    await getRepoMetrics(3, 'weekly')
-    expect(mockClient.get).toHaveBeenCalledWith('/efficiency/repos/3/metrics', { params: { period: 'weekly' } })
-  })
-
-  it('getRepoMetrics uses default period of daily', async () => {
-    mockClient.get.mockResolvedValue({ data: { data: [] } })
-    await getRepoMetrics(3)
-    expect(mockClient.get).toHaveBeenCalledWith('/efficiency/repos/3/metrics', { params: { period: 'daily' } })
-  })
-
-  it('getRepoTrend calls GET with period and limit params', async () => {
-    mockClient.get.mockResolvedValue({ data: { data: [] } })
-    await getRepoTrend(3, 'monthly', 6)
-    expect(mockClient.get).toHaveBeenCalledWith('/efficiency/repos/3/trend', { params: { period: 'monthly', limit: 6 } })
-  })
-
-  it('getRepoTrend uses default period weekly and limit 12', async () => {
-    mockClient.get.mockResolvedValue({ data: { data: [] } })
-    await getRepoTrend(3)
-    expect(mockClient.get).toHaveBeenCalledWith('/efficiency/repos/3/trend', { params: { period: 'weekly', limit: 12 } })
   })
 })
 
