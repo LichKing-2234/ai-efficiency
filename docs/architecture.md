@@ -176,17 +176,45 @@ The formal workflow uses the sessionless local attribution path that reads local
 
 ```mermaid
 flowchart LR
-    Codex["Codex"]
-    Claude["Claude"]
-    Workspace["Workspace artifacts"]
-    Hooks["Tool hooks + Git hooks"]
-    Backend["ai-efficiency backend"]
+    Tools["Codex / Claude / Kiro"]
+
+    subgraph Local["Developer machine"]
+        CLI["ae-cli init / sync / doctor"]
+        Hooks["Git hooks"]
+        Artifacts["Local tool artifacts<br/>~/.codex / ~/.claude / ~/.kiro / Kiro globalStorage"]
+        Collector["collector<br/>build latest Snapshot"]
+        Scanner["attributionlocal scanner<br/>build LocalToolUsageEvent[]"]
+    end
+
+    subgraph Backend["ai-efficiency backend"]
+        Ensure["repo ensure from git remote"]
+        Checkpoint["commit_checkpoint / commit_rewrite ingest<br/>stores agent_snapshot"]
+        Usage["tool_usage_events ingest"]
+        Bind["bind usage to checkpoints"]
+        PRUsage["refresh active PR usage snapshots"]
+    end
+
+    UI["Repo PR list / details view"]
     Relay["sub2api / relay"]
 
-    Codex --> Workspace
-    Claude --> Workspace
-    Workspace --> Backend
-    Hooks --> Backend
+    CLI --> Ensure
+    CLI -->|"install/manage"| Hooks
+    CLI -->|"manual sync"| Scanner
+    Tools --> Artifacts
+    Hooks -->|"post-commit / post-rewrite"| Collector
+    Hooks -->|"post-commit checkpoint upload"| Checkpoint
+    Hooks -->|"post-rewrite rewrite upload"| Checkpoint
+    Hooks -->|"auto attribution-sync"| Scanner
+    Artifacts --> Collector
+    Artifacts --> Scanner
+    Collector -->|"Snapshot -> agent_snapshot"| Checkpoint
+    Scanner -->|"normalized tool_usage_events"| Usage
+    Ensure --> Checkpoint
+    Ensure --> Usage
+    Usage --> Bind
+    Checkpoint --> Bind
+    Bind --> PRUsage
+    PRUsage --> UI
     Relay --> Backend
 ```
 
@@ -194,6 +222,8 @@ flowchart LR
 
 - Current formal CLI/runtime path:
   `ae-cli init`, `sync`, and git hooks all best-effort ensure the backend repo exists from the local git remote. The local collection layer is split in two: `ae-cli/internal/collector` builds hook-time `agent_snapshot` caches, while `ae-cli/internal/attributionlocal` extracts `tool_usage_events` for backend ingest. `Codex` is normalized under `tool = "codex"`; the scanner currently reads global `~/.codex/sessions/**/*.jsonl` plus a compatibility `~/.codex/logs_2.sqlite` branch gated by jsonl-discovered session ids. `Kiro` is normalized under `tool = "kiro"` across legacy `~/.kiro/sessions/cli/*.json`, modern `~/Library/Application Support/kiro-cli/data.sqlite3`, and Kiro IDE execution metadata under `~/Library/Application Support/Kiro/User/globalStorage/kiro.kiroagent/**`; Kiro IDE attribution uses `workspace-sessions/<workspace>/sessions.json` as the chat-session index and execution detail JSON files with `usageSummary[].unit=credit` as the durable credit fact source, so the current stable Kiro contract is credits/request-count rather than tokens. Backend ingests `tool_usage_events`, binds them to checkpoints, and refreshes PR usage snapshots from checkpoint-bound usage.
+- Trigger boundary:
+  `collector` is only triggered inside git-hook handling (`post-commit` / `post-rewrite`) and writes hook-time `Snapshot` data into checkpoint `agent_snapshot`, while `attributionlocal` scanning is triggered by `ae-cli sync`, hidden `ae-cli hook attribution-sync`, and the hook-driven auto sync path, and is the only source that produces `tool_usage_events` for PR/commit aggregation.
 - Current formal frontend surface:
   repo detail pages show PR usage summaries and commit usage details directly, rather than user-facing attribution status controls.
 - Remaining direction:
