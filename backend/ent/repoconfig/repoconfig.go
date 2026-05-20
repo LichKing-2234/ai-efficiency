@@ -54,8 +54,6 @@ const (
 	EdgeWebhookDeadLetters = "webhook_dead_letters"
 	// EdgePrRecords holds the string denoting the pr_records edge name in mutations.
 	EdgePrRecords = "pr_records"
-	// EdgeEfficiencyMetrics holds the string denoting the efficiency_metrics edge name in mutations.
-	EdgeEfficiencyMetrics = "efficiency_metrics"
 	// Table holds the table name of the repoconfig in the database.
 	Table = "repo_configs"
 	// ScmProviderTable is the table that holds the scm_provider relation/edge.
@@ -100,13 +98,6 @@ const (
 	PrRecordsInverseTable = "pr_records"
 	// PrRecordsColumn is the table column denoting the pr_records relation/edge.
 	PrRecordsColumn = "repo_config_pr_records"
-	// EfficiencyMetricsTable is the table that holds the efficiency_metrics relation/edge.
-	EfficiencyMetricsTable = "efficiency_metrics"
-	// EfficiencyMetricsInverseTable is the table name for the EfficiencyMetric entity.
-	// It exists in this package in order to avoid circular dependency with the "efficiencymetric" package.
-	EfficiencyMetricsInverseTable = "efficiency_metrics"
-	// EfficiencyMetricsColumn is the table column denoting the efficiency_metrics relation/edge.
-	EfficiencyMetricsColumn = "repo_config_efficiency_metrics"
 )
 
 // Columns holds all SQL columns for repoconfig fields.
@@ -347,20 +338,6 @@ func ByPrRecords(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
 		sqlgraph.OrderByNeighborTerms(s, newPrRecordsStep(), append([]sql.OrderTerm{term}, terms...)...)
 	}
 }
-
-// ByEfficiencyMetricsCount orders the results by efficiency_metrics count.
-func ByEfficiencyMetricsCount(opts ...sql.OrderTermOption) OrderOption {
-	return func(s *sql.Selector) {
-		sqlgraph.OrderByNeighborsCount(s, newEfficiencyMetricsStep(), opts...)
-	}
-}
-
-// ByEfficiencyMetrics orders the results by efficiency_metrics terms.
-func ByEfficiencyMetrics(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
-	return func(s *sql.Selector) {
-		sqlgraph.OrderByNeighborTerms(s, newEfficiencyMetricsStep(), append([]sql.OrderTerm{term}, terms...)...)
-	}
-}
 func newScmProviderStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
@@ -401,12 +378,5 @@ func newPrRecordsStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(PrRecordsInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.O2M, false, PrRecordsTable, PrRecordsColumn),
-	)
-}
-func newEfficiencyMetricsStep() *sqlgraph.Step {
-	return sqlgraph.NewStep(
-		sqlgraph.From(Table, FieldID),
-		sqlgraph.To(EfficiencyMetricsInverseTable, FieldID),
-		sqlgraph.Edge(sqlgraph.O2M, false, EfficiencyMetricsTable, EfficiencyMetricsColumn),
 	)
 }

@@ -15,9 +15,6 @@ type CommitRewrite func(*sql.Selector)
 // Credential is the predicate function for credential builders.
 type Credential func(*sql.Selector)
 
-// EfficiencyMetric is the predicate function for efficiencymetric builders.
-type EfficiencyMetric func(*sql.Selector)
-
 // PrAttributionRun is the predicate function for prattributionrun builders.
 type PrAttributionRun func(*sql.Selector)
 

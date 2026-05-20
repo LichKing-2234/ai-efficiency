@@ -65,11 +65,9 @@ type RepoConfigEdges struct {
 	WebhookDeadLetters []*WebhookDeadLetter `json:"webhook_dead_letters,omitempty"`
 	// PrRecords holds the value of the pr_records edge.
 	PrRecords []*PrRecord `json:"pr_records,omitempty"`
-	// EfficiencyMetrics holds the value of the efficiency_metrics edge.
-	EfficiencyMetrics []*EfficiencyMetric `json:"efficiency_metrics,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [7]bool
+	loadedTypes [6]bool
 }
 
 // ScmProviderOrErr returns the ScmProvider value or an error if the edge
@@ -126,15 +124,6 @@ func (e RepoConfigEdges) PrRecordsOrErr() ([]*PrRecord, error) {
 		return e.PrRecords, nil
 	}
 	return nil, &NotLoadedError{edge: "pr_records"}
-}
-
-// EfficiencyMetricsOrErr returns the EfficiencyMetrics value or an error if the edge
-// was not loaded in eager-loading.
-func (e RepoConfigEdges) EfficiencyMetricsOrErr() ([]*EfficiencyMetric, error) {
-	if e.loadedTypes[6] {
-		return e.EfficiencyMetrics, nil
-	}
-	return nil, &NotLoadedError{edge: "efficiency_metrics"}
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -302,11 +291,6 @@ func (rc *RepoConfig) QueryWebhookDeadLetters() *WebhookDeadLetterQuery {
 // QueryPrRecords queries the "pr_records" edge of the RepoConfig entity.
 func (rc *RepoConfig) QueryPrRecords() *PrRecordQuery {
 	return NewRepoConfigClient(rc.config).QueryPrRecords(rc)
-}
-
-// QueryEfficiencyMetrics queries the "efficiency_metrics" edge of the RepoConfig entity.
-func (rc *RepoConfig) QueryEfficiencyMetrics() *EfficiencyMetricQuery {
-	return NewRepoConfigClient(rc.config).QueryEfficiencyMetrics(rc)
 }
 
 // Update returns a builder for updating this RepoConfig.

@@ -12,7 +12,6 @@ import (
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
 	"github.com/ai-efficiency/backend/ent/commitrewrite"
 	entcredential "github.com/ai-efficiency/backend/ent/credential"
-	"github.com/ai-efficiency/backend/ent/efficiencymetric"
 	"github.com/ai-efficiency/backend/ent/prattributionrun"
 	"github.com/ai-efficiency/backend/ent/prrecord"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
@@ -491,9 +490,6 @@ func (s *Service) Delete(ctx context.Context, id int) error {
 	}
 	if _, err := tx.PrRecord.Delete().Where(prrecord.HasRepoConfigWith(repoconfig.IDEQ(id))).Exec(ctx); err != nil {
 		return fmt.Errorf("delete pr records: %w", err)
-	}
-	if _, err := tx.EfficiencyMetric.Delete().Where(efficiencymetric.HasRepoConfigWith(repoconfig.IDEQ(id))).Exec(ctx); err != nil {
-		return fmt.Errorf("delete efficiency metrics: %w", err)
 	}
 	if _, err := tx.WebhookDeadLetter.Delete().Where(webhookdeadletter.HasRepoConfigWith(repoconfig.IDEQ(id))).Exec(ctx); err != nil {
 		return fmt.Errorf("delete webhook dead letters: %w", err)

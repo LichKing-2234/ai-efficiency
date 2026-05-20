@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/internal/pkg"
@@ -124,13 +123,6 @@ func TestDelete_WithAllChildTypes(t *testing.T) {
 	client.PrRecord.Create().
 		SetRepoConfigID(rc.ID).
 		SetScmPrID(1).
-		SaveX(ctx)
-
-	// Create efficiency metric
-	client.EfficiencyMetric.Create().
-		SetRepoConfigID(rc.ID).
-		SetPeriodType("daily").
-		SetPeriodStart(time.Now()).
 		SaveX(ctx)
 
 	if err := svc.Delete(ctx, rc.ID); err != nil {

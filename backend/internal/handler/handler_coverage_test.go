@@ -15,7 +15,6 @@ import (
 	"github.com/ai-efficiency/backend/internal/auth"
 	"github.com/ai-efficiency/backend/internal/checkpoint"
 	"github.com/ai-efficiency/backend/internal/config"
-	"github.com/ai-efficiency/backend/internal/efficiency"
 	"github.com/ai-efficiency/backend/internal/middleware"
 	"github.com/ai-efficiency/backend/internal/repo"
 	"github.com/ai-efficiency/backend/internal/testdb"
@@ -24,8 +23,7 @@ import (
 	"go.uber.org/zap"
 )
 
-// setupFullTestEnv creates a test environment with all handlers wired up,
-// including settings, chat, and aggregator (unlike setupTestEnv which passes nil).
+// setupFullTestEnv creates a test environment with all handlers wired up.
 func setupFullTestEnv(t *testing.T) *fullTestEnv {
 	return setupFullTestEnvWithDeployment(t, nil)
 }
@@ -47,9 +45,6 @@ func setupFullTestEnvWithDeployment(t *testing.T, deploymentHandler *DeploymentH
 	relayCfg := config.RelayConfig{URL: "http://localhost:19876", APIKey: "sk-test-key-12345678", Model: "gpt-4"}
 	settingsHandler := NewSettingsHandler(configPath, relayCfg, logger)
 
-	// Aggregator
-	aggregator := efficiency.NewAggregator(client, logger)
-
 	router := SetupRouter(
 		client,
 		authSvc,
@@ -57,7 +52,6 @@ func setupFullTestEnvWithDeployment(t *testing.T, deploymentHandler *DeploymentH
 		webhookHandler,
 		nil, // syncService
 		settingsHandler,
-		aggregator,
 		"0000000000000000000000000000000000000000000000000000000000000000",
 		middleware.CORS(nil),
 		nil, nil, nil, handlerCheckpoint(client),

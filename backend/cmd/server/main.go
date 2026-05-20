@@ -208,11 +208,10 @@ func main() {
 
 	// Init PR labeler (with optional relay usage stats lookup)
 	labeler := efficiency.NewLabeler(entClient, relayProvider, logger)
-	aggregator := efficiency.NewAggregator(entClient, logger)
 
 	// Init webhook handler (with labeler for auto-labeling on PR events)
 	webhookHandler := webhook.NewHandler(entClient, labeler, logger)
-	syncService := prsync.NewService(entClient, labeler, aggregator, logger)
+	syncService := prsync.NewService(entClient, labeler, logger)
 
 	// Setup router
 	var relayRuntimeUpdater interface {
@@ -319,7 +318,6 @@ func main() {
 		webhookHandler,
 		syncService,
 		settingsHandler,
-		aggregator,
 		cfg.Encryption.Key,
 		middleware.CORS(nil),
 		oauthHandler,

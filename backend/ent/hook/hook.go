@@ -45,18 +45,6 @@ func (f CredentialFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, 
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.CredentialMutation", m)
 }
 
-// The EfficiencyMetricFunc type is an adapter to allow the use of ordinary
-// function as EfficiencyMetric mutator.
-type EfficiencyMetricFunc func(context.Context, *ent.EfficiencyMetricMutation) (ent.Value, error)
-
-// Mutate calls f(ctx, m).
-func (f EfficiencyMetricFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
-	if mv, ok := m.(*ent.EfficiencyMetricMutation); ok {
-		return f(ctx, mv)
-	}
-	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.EfficiencyMetricMutation", m)
-}
-
 // The PrAttributionRunFunc type is an adapter to allow the use of ordinary
 // function as PrAttributionRun mutator.
 type PrAttributionRunFunc func(context.Context, *ent.PrAttributionRunMutation) (ent.Value, error)

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"testing"
-	"time"
 
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
@@ -545,16 +544,6 @@ func TestDelete_CascadingRelations(t *testing.T) {
 		t.Fatalf("create pr record: %v", err)
 	}
 
-	// Create child: efficiency metric
-	_, err = client.EfficiencyMetric.Create().
-		SetRepoConfigID(rc.ID).
-		SetPeriodType("daily").
-		SetPeriodStart(time.Now()).
-		Save(ctx)
-	if err != nil {
-		t.Fatalf("create efficiency metric: %v", err)
-	}
-
 	// Delete the repo
 	if err := svc.Delete(ctx, rc.ID); err != nil {
 		t.Fatalf("Delete error: %v", err)
@@ -570,10 +559,6 @@ func TestDelete_CascadingRelations(t *testing.T) {
 	prs, _ := client.PrRecord.Query().All(ctx)
 	if len(prs) != 0 {
 		t.Errorf("pr records count = %d, want 0", len(prs))
-	}
-	metrics, _ := client.EfficiencyMetric.Query().All(ctx)
-	if len(metrics) != 0 {
-		t.Errorf("efficiency metrics count = %d, want 0", len(metrics))
 	}
 }
 

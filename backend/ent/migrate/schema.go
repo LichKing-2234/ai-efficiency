@@ -106,43 +106,6 @@ var (
 		Columns:    CredentialsColumns,
 		PrimaryKey: []*schema.Column{CredentialsColumns[0]},
 	}
-	// EfficiencyMetricsColumns holds the columns for the "efficiency_metrics" table.
-	EfficiencyMetricsColumns = []*schema.Column{
-		{Name: "id", Type: field.TypeInt, Increment: true},
-		{Name: "user_id", Type: field.TypeInt, Nullable: true},
-		{Name: "period_type", Type: field.TypeEnum, Enums: []string{"daily", "weekly", "monthly"}},
-		{Name: "period_start", Type: field.TypeTime},
-		{Name: "total_prs", Type: field.TypeInt, Default: 0},
-		{Name: "ai_prs", Type: field.TypeInt, Default: 0},
-		{Name: "human_prs", Type: field.TypeInt, Default: 0},
-		{Name: "avg_cycle_time_hours", Type: field.TypeFloat64, Default: 0},
-		{Name: "total_tokens", Type: field.TypeInt, Default: 0},
-		{Name: "total_token_cost", Type: field.TypeFloat64, Default: 0},
-		{Name: "ai_vs_human_ratio", Type: field.TypeFloat64, Default: 0},
-		{Name: "created_at", Type: field.TypeTime},
-		{Name: "repo_config_efficiency_metrics", Type: field.TypeInt},
-	}
-	// EfficiencyMetricsTable holds the schema information for the "efficiency_metrics" table.
-	EfficiencyMetricsTable = &schema.Table{
-		Name:       "efficiency_metrics",
-		Columns:    EfficiencyMetricsColumns,
-		PrimaryKey: []*schema.Column{EfficiencyMetricsColumns[0]},
-		ForeignKeys: []*schema.ForeignKey{
-			{
-				Symbol:     "efficiency_metrics_repo_configs_efficiency_metrics",
-				Columns:    []*schema.Column{EfficiencyMetricsColumns[12]},
-				RefColumns: []*schema.Column{RepoConfigsColumns[0]},
-				OnDelete:   schema.NoAction,
-			},
-		},
-		Indexes: []*schema.Index{
-			{
-				Name:    "efficiencymetric_period_type_period_start_repo_config_efficiency_metrics",
-				Unique:  true,
-				Columns: []*schema.Column{EfficiencyMetricsColumns[2], EfficiencyMetricsColumns[3], EfficiencyMetricsColumns[12]},
-			},
-		},
-	}
 	// PrAttributionRunsColumns holds the columns for the "pr_attribution_runs" table.
 	PrAttributionRunsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
@@ -471,7 +434,6 @@ var (
 		CommitCheckpointsTable,
 		CommitRewritesTable,
 		CredentialsTable,
-		EfficiencyMetricsTable,
 		PrAttributionRunsTable,
 		PrRecordsTable,
 		RelayProvidersTable,
@@ -489,7 +451,6 @@ func init() {
 	CommitCheckpointsTable.ForeignKeys[1].RefTable = UsersTable
 	CommitRewritesTable.ForeignKeys[0].RefTable = RepoConfigsTable
 	CommitRewritesTable.ForeignKeys[1].RefTable = UsersTable
-	EfficiencyMetricsTable.ForeignKeys[0].RefTable = RepoConfigsTable
 	PrAttributionRunsTable.ForeignKeys[0].RefTable = PrRecordsTable
 	PrRecordsTable.ForeignKeys[0].RefTable = PrAttributionRunsTable
 	PrRecordsTable.ForeignKeys[1].RefTable = RepoConfigsTable

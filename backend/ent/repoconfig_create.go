@@ -12,7 +12,6 @@ import (
 	"entgo.io/ent/schema/field"
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
 	"github.com/ai-efficiency/backend/ent/commitrewrite"
-	"github.com/ai-efficiency/backend/ent/efficiencymetric"
 	"github.com/ai-efficiency/backend/ent/prrecord"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/scmprovider"
@@ -277,21 +276,6 @@ func (rcc *RepoConfigCreate) AddPrRecords(p ...*PrRecord) *RepoConfigCreate {
 		ids[i] = p[i].ID
 	}
 	return rcc.AddPrRecordIDs(ids...)
-}
-
-// AddEfficiencyMetricIDs adds the "efficiency_metrics" edge to the EfficiencyMetric entity by IDs.
-func (rcc *RepoConfigCreate) AddEfficiencyMetricIDs(ids ...int) *RepoConfigCreate {
-	rcc.mutation.AddEfficiencyMetricIDs(ids...)
-	return rcc
-}
-
-// AddEfficiencyMetrics adds the "efficiency_metrics" edges to the EfficiencyMetric entity.
-func (rcc *RepoConfigCreate) AddEfficiencyMetrics(e ...*EfficiencyMetric) *RepoConfigCreate {
-	ids := make([]int, len(e))
-	for i := range e {
-		ids[i] = e[i].ID
-	}
-	return rcc.AddEfficiencyMetricIDs(ids...)
 }
 
 // Mutation returns the RepoConfigMutation object of the builder.
@@ -567,22 +551,6 @@ func (rcc *RepoConfigCreate) createSpec() (*RepoConfig, *sqlgraph.CreateSpec) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(prrecord.FieldID, field.TypeInt),
-			},
-		}
-		for _, k := range nodes {
-			edge.Target.Nodes = append(edge.Target.Nodes, k)
-		}
-		_spec.Edges = append(_spec.Edges, edge)
-	}
-	if nodes := rcc.mutation.EfficiencyMetricsIDs(); len(nodes) > 0 {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   repoconfig.EfficiencyMetricsTable,
-			Columns: []string{repoconfig.EfficiencyMetricsColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(efficiencymetric.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {

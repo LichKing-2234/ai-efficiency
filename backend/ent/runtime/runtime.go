@@ -8,7 +8,6 @@ import (
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
 	"github.com/ai-efficiency/backend/ent/commitrewrite"
 	"github.com/ai-efficiency/backend/ent/credential"
-	"github.com/ai-efficiency/backend/ent/efficiencymetric"
 	"github.com/ai-efficiency/backend/ent/prattributionrun"
 	"github.com/ai-efficiency/backend/ent/prrecord"
 	"github.com/ai-efficiency/backend/ent/relayprovider"
@@ -77,40 +76,6 @@ func init() {
 	credential.DefaultUpdatedAt = credentialDescUpdatedAt.Default.(func() time.Time)
 	// credential.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	credential.UpdateDefaultUpdatedAt = credentialDescUpdatedAt.UpdateDefault.(func() time.Time)
-	efficiencymetricFields := schema.EfficiencyMetric{}.Fields()
-	_ = efficiencymetricFields
-	// efficiencymetricDescTotalPrs is the schema descriptor for total_prs field.
-	efficiencymetricDescTotalPrs := efficiencymetricFields[3].Descriptor()
-	// efficiencymetric.DefaultTotalPrs holds the default value on creation for the total_prs field.
-	efficiencymetric.DefaultTotalPrs = efficiencymetricDescTotalPrs.Default.(int)
-	// efficiencymetricDescAiPrs is the schema descriptor for ai_prs field.
-	efficiencymetricDescAiPrs := efficiencymetricFields[4].Descriptor()
-	// efficiencymetric.DefaultAiPrs holds the default value on creation for the ai_prs field.
-	efficiencymetric.DefaultAiPrs = efficiencymetricDescAiPrs.Default.(int)
-	// efficiencymetricDescHumanPrs is the schema descriptor for human_prs field.
-	efficiencymetricDescHumanPrs := efficiencymetricFields[5].Descriptor()
-	// efficiencymetric.DefaultHumanPrs holds the default value on creation for the human_prs field.
-	efficiencymetric.DefaultHumanPrs = efficiencymetricDescHumanPrs.Default.(int)
-	// efficiencymetricDescAvgCycleTimeHours is the schema descriptor for avg_cycle_time_hours field.
-	efficiencymetricDescAvgCycleTimeHours := efficiencymetricFields[6].Descriptor()
-	// efficiencymetric.DefaultAvgCycleTimeHours holds the default value on creation for the avg_cycle_time_hours field.
-	efficiencymetric.DefaultAvgCycleTimeHours = efficiencymetricDescAvgCycleTimeHours.Default.(float64)
-	// efficiencymetricDescTotalTokens is the schema descriptor for total_tokens field.
-	efficiencymetricDescTotalTokens := efficiencymetricFields[7].Descriptor()
-	// efficiencymetric.DefaultTotalTokens holds the default value on creation for the total_tokens field.
-	efficiencymetric.DefaultTotalTokens = efficiencymetricDescTotalTokens.Default.(int)
-	// efficiencymetricDescTotalTokenCost is the schema descriptor for total_token_cost field.
-	efficiencymetricDescTotalTokenCost := efficiencymetricFields[8].Descriptor()
-	// efficiencymetric.DefaultTotalTokenCost holds the default value on creation for the total_token_cost field.
-	efficiencymetric.DefaultTotalTokenCost = efficiencymetricDescTotalTokenCost.Default.(float64)
-	// efficiencymetricDescAiVsHumanRatio is the schema descriptor for ai_vs_human_ratio field.
-	efficiencymetricDescAiVsHumanRatio := efficiencymetricFields[9].Descriptor()
-	// efficiencymetric.DefaultAiVsHumanRatio holds the default value on creation for the ai_vs_human_ratio field.
-	efficiencymetric.DefaultAiVsHumanRatio = efficiencymetricDescAiVsHumanRatio.Default.(float64)
-	// efficiencymetricDescCreatedAt is the schema descriptor for created_at field.
-	efficiencymetricDescCreatedAt := efficiencymetricFields[10].Descriptor()
-	// efficiencymetric.DefaultCreatedAt holds the default value on creation for the created_at field.
-	efficiencymetric.DefaultCreatedAt = efficiencymetricDescCreatedAt.Default.(func() time.Time)
 	prattributionrunHooks := schema.PrAttributionRun{}.Hooks()
 	prattributionrun.Hooks[0] = prattributionrunHooks[0]
 	prattributionrunFields := schema.PrAttributionRun{}.Fields()

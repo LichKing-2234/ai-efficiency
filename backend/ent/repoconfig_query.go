@@ -14,7 +14,6 @@ import (
 	"entgo.io/ent/schema/field"
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
 	"github.com/ai-efficiency/backend/ent/commitrewrite"
-	"github.com/ai-efficiency/backend/ent/efficiencymetric"
 	"github.com/ai-efficiency/backend/ent/predicate"
 	"github.com/ai-efficiency/backend/ent/prrecord"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
@@ -36,7 +35,6 @@ type RepoConfigQuery struct {
 	withToolUsageEvents    *ToolUsageEventQuery
 	withWebhookDeadLetters *WebhookDeadLetterQuery
 	withPrRecords          *PrRecordQuery
-	withEfficiencyMetrics  *EfficiencyMetricQuery
 	withFKs                bool
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
@@ -199,28 +197,6 @@ func (rcq *RepoConfigQuery) QueryPrRecords() *PrRecordQuery {
 			sqlgraph.From(repoconfig.Table, repoconfig.FieldID, selector),
 			sqlgraph.To(prrecord.Table, prrecord.FieldID),
 			sqlgraph.Edge(sqlgraph.O2M, false, repoconfig.PrRecordsTable, repoconfig.PrRecordsColumn),
-		)
-		fromU = sqlgraph.SetNeighbors(rcq.driver.Dialect(), step)
-		return fromU, nil
-	}
-	return query
-}
-
-// QueryEfficiencyMetrics chains the current query on the "efficiency_metrics" edge.
-func (rcq *RepoConfigQuery) QueryEfficiencyMetrics() *EfficiencyMetricQuery {
-	query := (&EfficiencyMetricClient{config: rcq.config}).Query()
-	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
-		if err := rcq.prepareQuery(ctx); err != nil {
-			return nil, err
-		}
-		selector := rcq.sqlQuery(ctx)
-		if err := selector.Err(); err != nil {
-			return nil, err
-		}
-		step := sqlgraph.NewStep(
-			sqlgraph.From(repoconfig.Table, repoconfig.FieldID, selector),
-			sqlgraph.To(efficiencymetric.Table, efficiencymetric.FieldID),
-			sqlgraph.Edge(sqlgraph.O2M, false, repoconfig.EfficiencyMetricsTable, repoconfig.EfficiencyMetricsColumn),
 		)
 		fromU = sqlgraph.SetNeighbors(rcq.driver.Dialect(), step)
 		return fromU, nil
@@ -426,7 +402,6 @@ func (rcq *RepoConfigQuery) Clone() *RepoConfigQuery {
 		withToolUsageEvents:    rcq.withToolUsageEvents.Clone(),
 		withWebhookDeadLetters: rcq.withWebhookDeadLetters.Clone(),
 		withPrRecords:          rcq.withPrRecords.Clone(),
-		withEfficiencyMetrics:  rcq.withEfficiencyMetrics.Clone(),
 		// clone intermediate query.
 		sql:  rcq.sql.Clone(),
 		path: rcq.path,
@@ -496,17 +471,6 @@ func (rcq *RepoConfigQuery) WithPrRecords(opts ...func(*PrRecordQuery)) *RepoCon
 		opt(query)
 	}
 	rcq.withPrRecords = query
-	return rcq
-}
-
-// WithEfficiencyMetrics tells the query-builder to eager-load the nodes that are connected to
-// the "efficiency_metrics" edge. The optional arguments are used to configure the query builder of the edge.
-func (rcq *RepoConfigQuery) WithEfficiencyMetrics(opts ...func(*EfficiencyMetricQuery)) *RepoConfigQuery {
-	query := (&EfficiencyMetricClient{config: rcq.config}).Query()
-	for _, opt := range opts {
-		opt(query)
-	}
-	rcq.withEfficiencyMetrics = query
 	return rcq
 }
 
@@ -589,14 +553,13 @@ func (rcq *RepoConfigQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*
 		nodes       = []*RepoConfig{}
 		withFKs     = rcq.withFKs
 		_spec       = rcq.querySpec()
-		loadedTypes = [7]bool{
+		loadedTypes = [6]bool{
 			rcq.withScmProvider != nil,
 			rcq.withCommitCheckpoints != nil,
 			rcq.withCommitRewrites != nil,
 			rcq.withToolUsageEvents != nil,
 			rcq.withWebhookDeadLetters != nil,
 			rcq.withPrRecords != nil,
-			rcq.withEfficiencyMetrics != nil,
 		}
 	)
 	if rcq.withScmProvider != nil {
@@ -665,15 +628,6 @@ func (rcq *RepoConfigQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*
 		if err := rcq.loadPrRecords(ctx, query, nodes,
 			func(n *RepoConfig) { n.Edges.PrRecords = []*PrRecord{} },
 			func(n *RepoConfig, e *PrRecord) { n.Edges.PrRecords = append(n.Edges.PrRecords, e) }); err != nil {
-			return nil, err
-		}
-	}
-	if query := rcq.withEfficiencyMetrics; query != nil {
-		if err := rcq.loadEfficiencyMetrics(ctx, query, nodes,
-			func(n *RepoConfig) { n.Edges.EfficiencyMetrics = []*EfficiencyMetric{} },
-			func(n *RepoConfig, e *EfficiencyMetric) {
-				n.Edges.EfficiencyMetrics = append(n.Edges.EfficiencyMetrics, e)
-			}); err != nil {
 			return nil, err
 		}
 	}
@@ -859,37 +813,6 @@ func (rcq *RepoConfigQuery) loadPrRecords(ctx context.Context, query *PrRecordQu
 		node, ok := nodeids[*fk]
 		if !ok {
 			return fmt.Errorf(`unexpected referenced foreign-key "repo_config_pr_records" returned %v for node %v`, *fk, n.ID)
-		}
-		assign(node, n)
-	}
-	return nil
-}
-func (rcq *RepoConfigQuery) loadEfficiencyMetrics(ctx context.Context, query *EfficiencyMetricQuery, nodes []*RepoConfig, init func(*RepoConfig), assign func(*RepoConfig, *EfficiencyMetric)) error {
-	fks := make([]driver.Value, 0, len(nodes))
-	nodeids := make(map[int]*RepoConfig)
-	for i := range nodes {
-		fks = append(fks, nodes[i].ID)
-		nodeids[nodes[i].ID] = nodes[i]
-		if init != nil {
-			init(nodes[i])
-		}
-	}
-	query.withFKs = true
-	query.Where(predicate.EfficiencyMetric(func(s *sql.Selector) {
-		s.Where(sql.InValues(s.C(repoconfig.EfficiencyMetricsColumn), fks...))
-	}))
-	neighbors, err := query.All(ctx)
-	if err != nil {
-		return err
-	}
-	for _, n := range neighbors {
-		fk := n.repo_config_efficiency_metrics
-		if fk == nil {
-			return fmt.Errorf(`foreign-key "repo_config_efficiency_metrics" is nil for node %v`, n.ID)
-		}
-		node, ok := nodeids[*fk]
-		if !ok {
-			return fmt.Errorf(`unexpected referenced foreign-key "repo_config_efficiency_metrics" returned %v for node %v`, *fk, n.ID)
 		}
 		assign(node, n)
 	}

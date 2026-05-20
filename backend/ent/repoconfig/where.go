@@ -1063,29 +1063,6 @@ func HasPrRecordsWith(preds ...predicate.PrRecord) predicate.RepoConfig {
 	})
 }
 
-// HasEfficiencyMetrics applies the HasEdge predicate on the "efficiency_metrics" edge.
-func HasEfficiencyMetrics() predicate.RepoConfig {
-	return predicate.RepoConfig(func(s *sql.Selector) {
-		step := sqlgraph.NewStep(
-			sqlgraph.From(Table, FieldID),
-			sqlgraph.Edge(sqlgraph.O2M, false, EfficiencyMetricsTable, EfficiencyMetricsColumn),
-		)
-		sqlgraph.HasNeighbors(s, step)
-	})
-}
-
-// HasEfficiencyMetricsWith applies the HasEdge predicate on the "efficiency_metrics" edge with a given conditions (other predicates).
-func HasEfficiencyMetricsWith(preds ...predicate.EfficiencyMetric) predicate.RepoConfig {
-	return predicate.RepoConfig(func(s *sql.Selector) {
-		step := newEfficiencyMetricsStep()
-		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
-			for _, p := range preds {
-				p(s)
-			}
-		})
-	})
-}
-
 // And groups predicates with the AND operator between them.
 func And(predicates ...predicate.RepoConfig) predicate.RepoConfig {
 	return predicate.RepoConfig(sql.AndPredicates(predicates...))

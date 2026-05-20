@@ -13,7 +13,6 @@ import (
 	"entgo.io/ent/schema/field"
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
 	"github.com/ai-efficiency/backend/ent/commitrewrite"
-	"github.com/ai-efficiency/backend/ent/efficiencymetric"
 	"github.com/ai-efficiency/backend/ent/predicate"
 	"github.com/ai-efficiency/backend/ent/prrecord"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
@@ -325,21 +324,6 @@ func (rcu *RepoConfigUpdate) AddPrRecords(p ...*PrRecord) *RepoConfigUpdate {
 	return rcu.AddPrRecordIDs(ids...)
 }
 
-// AddEfficiencyMetricIDs adds the "efficiency_metrics" edge to the EfficiencyMetric entity by IDs.
-func (rcu *RepoConfigUpdate) AddEfficiencyMetricIDs(ids ...int) *RepoConfigUpdate {
-	rcu.mutation.AddEfficiencyMetricIDs(ids...)
-	return rcu
-}
-
-// AddEfficiencyMetrics adds the "efficiency_metrics" edges to the EfficiencyMetric entity.
-func (rcu *RepoConfigUpdate) AddEfficiencyMetrics(e ...*EfficiencyMetric) *RepoConfigUpdate {
-	ids := make([]int, len(e))
-	for i := range e {
-		ids[i] = e[i].ID
-	}
-	return rcu.AddEfficiencyMetricIDs(ids...)
-}
-
 // Mutation returns the RepoConfigMutation object of the builder.
 func (rcu *RepoConfigUpdate) Mutation() *RepoConfigMutation {
 	return rcu.mutation
@@ -454,27 +438,6 @@ func (rcu *RepoConfigUpdate) RemovePrRecords(p ...*PrRecord) *RepoConfigUpdate {
 		ids[i] = p[i].ID
 	}
 	return rcu.RemovePrRecordIDs(ids...)
-}
-
-// ClearEfficiencyMetrics clears all "efficiency_metrics" edges to the EfficiencyMetric entity.
-func (rcu *RepoConfigUpdate) ClearEfficiencyMetrics() *RepoConfigUpdate {
-	rcu.mutation.ClearEfficiencyMetrics()
-	return rcu
-}
-
-// RemoveEfficiencyMetricIDs removes the "efficiency_metrics" edge to EfficiencyMetric entities by IDs.
-func (rcu *RepoConfigUpdate) RemoveEfficiencyMetricIDs(ids ...int) *RepoConfigUpdate {
-	rcu.mutation.RemoveEfficiencyMetricIDs(ids...)
-	return rcu
-}
-
-// RemoveEfficiencyMetrics removes "efficiency_metrics" edges to EfficiencyMetric entities.
-func (rcu *RepoConfigUpdate) RemoveEfficiencyMetrics(e ...*EfficiencyMetric) *RepoConfigUpdate {
-	ids := make([]int, len(e))
-	for i := range e {
-		ids[i] = e[i].ID
-	}
-	return rcu.RemoveEfficiencyMetricIDs(ids...)
 }
 
 // Save executes the query and returns the number of nodes affected by the update operation.
@@ -864,51 +827,6 @@ func (rcu *RepoConfigUpdate) sqlSave(ctx context.Context) (n int, err error) {
 		}
 		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
-	if rcu.mutation.EfficiencyMetricsCleared() {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   repoconfig.EfficiencyMetricsTable,
-			Columns: []string{repoconfig.EfficiencyMetricsColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(efficiencymetric.FieldID, field.TypeInt),
-			},
-		}
-		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
-	}
-	if nodes := rcu.mutation.RemovedEfficiencyMetricsIDs(); len(nodes) > 0 && !rcu.mutation.EfficiencyMetricsCleared() {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   repoconfig.EfficiencyMetricsTable,
-			Columns: []string{repoconfig.EfficiencyMetricsColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(efficiencymetric.FieldID, field.TypeInt),
-			},
-		}
-		for _, k := range nodes {
-			edge.Target.Nodes = append(edge.Target.Nodes, k)
-		}
-		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
-	}
-	if nodes := rcu.mutation.EfficiencyMetricsIDs(); len(nodes) > 0 {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   repoconfig.EfficiencyMetricsTable,
-			Columns: []string{repoconfig.EfficiencyMetricsColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(efficiencymetric.FieldID, field.TypeInt),
-			},
-		}
-		for _, k := range nodes {
-			edge.Target.Nodes = append(edge.Target.Nodes, k)
-		}
-		_spec.Edges.Add = append(_spec.Edges.Add, edge)
-	}
 	if n, err = sqlgraph.UpdateNodes(ctx, rcu.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
 			err = &NotFoundError{repoconfig.Label}
@@ -1219,21 +1137,6 @@ func (rcuo *RepoConfigUpdateOne) AddPrRecords(p ...*PrRecord) *RepoConfigUpdateO
 	return rcuo.AddPrRecordIDs(ids...)
 }
 
-// AddEfficiencyMetricIDs adds the "efficiency_metrics" edge to the EfficiencyMetric entity by IDs.
-func (rcuo *RepoConfigUpdateOne) AddEfficiencyMetricIDs(ids ...int) *RepoConfigUpdateOne {
-	rcuo.mutation.AddEfficiencyMetricIDs(ids...)
-	return rcuo
-}
-
-// AddEfficiencyMetrics adds the "efficiency_metrics" edges to the EfficiencyMetric entity.
-func (rcuo *RepoConfigUpdateOne) AddEfficiencyMetrics(e ...*EfficiencyMetric) *RepoConfigUpdateOne {
-	ids := make([]int, len(e))
-	for i := range e {
-		ids[i] = e[i].ID
-	}
-	return rcuo.AddEfficiencyMetricIDs(ids...)
-}
-
 // Mutation returns the RepoConfigMutation object of the builder.
 func (rcuo *RepoConfigUpdateOne) Mutation() *RepoConfigMutation {
 	return rcuo.mutation
@@ -1348,27 +1251,6 @@ func (rcuo *RepoConfigUpdateOne) RemovePrRecords(p ...*PrRecord) *RepoConfigUpda
 		ids[i] = p[i].ID
 	}
 	return rcuo.RemovePrRecordIDs(ids...)
-}
-
-// ClearEfficiencyMetrics clears all "efficiency_metrics" edges to the EfficiencyMetric entity.
-func (rcuo *RepoConfigUpdateOne) ClearEfficiencyMetrics() *RepoConfigUpdateOne {
-	rcuo.mutation.ClearEfficiencyMetrics()
-	return rcuo
-}
-
-// RemoveEfficiencyMetricIDs removes the "efficiency_metrics" edge to EfficiencyMetric entities by IDs.
-func (rcuo *RepoConfigUpdateOne) RemoveEfficiencyMetricIDs(ids ...int) *RepoConfigUpdateOne {
-	rcuo.mutation.RemoveEfficiencyMetricIDs(ids...)
-	return rcuo
-}
-
-// RemoveEfficiencyMetrics removes "efficiency_metrics" edges to EfficiencyMetric entities.
-func (rcuo *RepoConfigUpdateOne) RemoveEfficiencyMetrics(e ...*EfficiencyMetric) *RepoConfigUpdateOne {
-	ids := make([]int, len(e))
-	for i := range e {
-		ids[i] = e[i].ID
-	}
-	return rcuo.RemoveEfficiencyMetricIDs(ids...)
 }
 
 // Where appends a list predicates to the RepoConfigUpdate builder.
@@ -1781,51 +1663,6 @@ func (rcuo *RepoConfigUpdateOne) sqlSave(ctx context.Context) (_node *RepoConfig
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(prrecord.FieldID, field.TypeInt),
-			},
-		}
-		for _, k := range nodes {
-			edge.Target.Nodes = append(edge.Target.Nodes, k)
-		}
-		_spec.Edges.Add = append(_spec.Edges.Add, edge)
-	}
-	if rcuo.mutation.EfficiencyMetricsCleared() {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   repoconfig.EfficiencyMetricsTable,
-			Columns: []string{repoconfig.EfficiencyMetricsColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(efficiencymetric.FieldID, field.TypeInt),
-			},
-		}
-		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
-	}
-	if nodes := rcuo.mutation.RemovedEfficiencyMetricsIDs(); len(nodes) > 0 && !rcuo.mutation.EfficiencyMetricsCleared() {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   repoconfig.EfficiencyMetricsTable,
-			Columns: []string{repoconfig.EfficiencyMetricsColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(efficiencymetric.FieldID, field.TypeInt),
-			},
-		}
-		for _, k := range nodes {
-			edge.Target.Nodes = append(edge.Target.Nodes, k)
-		}
-		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
-	}
-	if nodes := rcuo.mutation.EfficiencyMetricsIDs(); len(nodes) > 0 {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   repoconfig.EfficiencyMetricsTable,
-			Columns: []string{repoconfig.EfficiencyMetricsColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(efficiencymetric.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {

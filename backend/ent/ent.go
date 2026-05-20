@@ -15,7 +15,6 @@ import (
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
 	"github.com/ai-efficiency/backend/ent/commitrewrite"
 	"github.com/ai-efficiency/backend/ent/credential"
-	"github.com/ai-efficiency/backend/ent/efficiencymetric"
 	"github.com/ai-efficiency/backend/ent/prattributionrun"
 	"github.com/ai-efficiency/backend/ent/prrecord"
 	"github.com/ai-efficiency/backend/ent/relayprovider"
@@ -88,7 +87,6 @@ func checkColumn(table, column string) error {
 			commitcheckpoint.Table:  commitcheckpoint.ValidColumn,
 			commitrewrite.Table:     commitrewrite.ValidColumn,
 			credential.Table:        credential.ValidColumn,
-			efficiencymetric.Table:  efficiencymetric.ValidColumn,
 			prattributionrun.Table:  prattributionrun.ValidColumn,
 			prrecord.Table:          prrecord.ValidColumn,
 			relayprovider.Table:     relayprovider.ValidColumn,

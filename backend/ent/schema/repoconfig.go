@@ -72,7 +72,6 @@ func (RepoConfig) Edges() []entgo.Edge {
 		edge.To("tool_usage_events", ToolUsageEvent.Type),
 		edge.To("webhook_dead_letters", WebhookDeadLetter.Type),
 		edge.To("pr_records", PrRecord.Type),
-		edge.To("efficiency_metrics", EfficiencyMetric.Type),
 	}
 }
 

@@ -21,19 +21,17 @@ type SyncResult struct {
 
 // Service handles PR synchronization from SCM providers.
 type Service struct {
-	entClient  *ent.Client
-	labeler    *efficiency.Labeler
-	aggregator *efficiency.Aggregator
-	logger     *zap.Logger
+	entClient *ent.Client
+	labeler   *efficiency.Labeler
+	logger    *zap.Logger
 }
 
 // NewService creates a new PR sync service.
-func NewService(entClient *ent.Client, labeler *efficiency.Labeler, aggregator *efficiency.Aggregator, logger *zap.Logger) *Service {
+func NewService(entClient *ent.Client, labeler *efficiency.Labeler, logger *zap.Logger) *Service {
 	return &Service{
-		entClient:  entClient,
-		labeler:    labeler,
-		aggregator: aggregator,
-		logger:     logger,
+		entClient: entClient,
+		labeler:   labeler,
+		logger:    logger,
 	}
 }
 
@@ -76,19 +74,6 @@ func (s *Service) Sync(ctx context.Context, scmProvider scm.SCMProvider, rc *ent
 		zap.Int("updated", result.Updated),
 		zap.Int("total", result.Total),
 	)
-
-	// Auto-aggregate metrics after sync
-	if s.aggregator != nil {
-		for _, period := range []string{"daily", "weekly", "monthly"} {
-			if err := s.aggregator.AggregateForRepo(ctx, rc.ID, period, efficiency.ComputePeriodStart(period)); err != nil {
-				s.logger.Warn("post-sync aggregation failed",
-					zap.Int("repo_id", rc.ID),
-					zap.String("period", period),
-					zap.Error(err),
-				)
-			}
-		}
-	}
 
 	return result, nil
 }

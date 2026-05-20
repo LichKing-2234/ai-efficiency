@@ -18,7 +18,6 @@ import (
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
 	"github.com/ai-efficiency/backend/ent/commitrewrite"
 	"github.com/ai-efficiency/backend/ent/credential"
-	"github.com/ai-efficiency/backend/ent/efficiencymetric"
 	"github.com/ai-efficiency/backend/ent/prattributionrun"
 	"github.com/ai-efficiency/backend/ent/prrecord"
 	"github.com/ai-efficiency/backend/ent/relayprovider"
@@ -41,8 +40,6 @@ type Client struct {
 	CommitRewrite *CommitRewriteClient
 	// Credential is the client for interacting with the Credential builders.
 	Credential *CredentialClient
-	// EfficiencyMetric is the client for interacting with the EfficiencyMetric builders.
-	EfficiencyMetric *EfficiencyMetricClient
 	// PrAttributionRun is the client for interacting with the PrAttributionRun builders.
 	PrAttributionRun *PrAttributionRunClient
 	// PrRecord is the client for interacting with the PrRecord builders.
@@ -75,7 +72,6 @@ func (c *Client) init() {
 	c.CommitCheckpoint = NewCommitCheckpointClient(c.config)
 	c.CommitRewrite = NewCommitRewriteClient(c.config)
 	c.Credential = NewCredentialClient(c.config)
-	c.EfficiencyMetric = NewEfficiencyMetricClient(c.config)
 	c.PrAttributionRun = NewPrAttributionRunClient(c.config)
 	c.PrRecord = NewPrRecordClient(c.config)
 	c.RelayProvider = NewRelayProviderClient(c.config)
@@ -180,7 +176,6 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		CommitCheckpoint:  NewCommitCheckpointClient(cfg),
 		CommitRewrite:     NewCommitRewriteClient(cfg),
 		Credential:        NewCredentialClient(cfg),
-		EfficiencyMetric:  NewEfficiencyMetricClient(cfg),
 		PrAttributionRun:  NewPrAttributionRunClient(cfg),
 		PrRecord:          NewPrRecordClient(cfg),
 		RelayProvider:     NewRelayProviderClient(cfg),
@@ -212,7 +207,6 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		CommitCheckpoint:  NewCommitCheckpointClient(cfg),
 		CommitRewrite:     NewCommitRewriteClient(cfg),
 		Credential:        NewCredentialClient(cfg),
-		EfficiencyMetric:  NewEfficiencyMetricClient(cfg),
 		PrAttributionRun:  NewPrAttributionRunClient(cfg),
 		PrRecord:          NewPrRecordClient(cfg),
 		RelayProvider:     NewRelayProviderClient(cfg),
@@ -251,9 +245,9 @@ func (c *Client) Close() error {
 // In order to add hooks to a specific client, call: `client.Node.Use(...)`.
 func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
-		c.CommitCheckpoint, c.CommitRewrite, c.Credential, c.EfficiencyMetric,
-		c.PrAttributionRun, c.PrRecord, c.RelayProvider, c.RepoConfig, c.ScmProvider,
-		c.SystemSetting, c.ToolUsageEvent, c.User, c.WebhookDeadLetter,
+		c.CommitCheckpoint, c.CommitRewrite, c.Credential, c.PrAttributionRun,
+		c.PrRecord, c.RelayProvider, c.RepoConfig, c.ScmProvider, c.SystemSetting,
+		c.ToolUsageEvent, c.User, c.WebhookDeadLetter,
 	} {
 		n.Use(hooks...)
 	}
@@ -263,9 +257,9 @@ func (c *Client) Use(hooks ...Hook) {
 // In order to add interceptors to a specific client, call: `client.Node.Intercept(...)`.
 func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
-		c.CommitCheckpoint, c.CommitRewrite, c.Credential, c.EfficiencyMetric,
-		c.PrAttributionRun, c.PrRecord, c.RelayProvider, c.RepoConfig, c.ScmProvider,
-		c.SystemSetting, c.ToolUsageEvent, c.User, c.WebhookDeadLetter,
+		c.CommitCheckpoint, c.CommitRewrite, c.Credential, c.PrAttributionRun,
+		c.PrRecord, c.RelayProvider, c.RepoConfig, c.ScmProvider, c.SystemSetting,
+		c.ToolUsageEvent, c.User, c.WebhookDeadLetter,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -280,8 +274,6 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.CommitRewrite.mutate(ctx, m)
 	case *CredentialMutation:
 		return c.Credential.mutate(ctx, m)
-	case *EfficiencyMetricMutation:
-		return c.EfficiencyMetric.mutate(ctx, m)
 	case *PrAttributionRunMutation:
 		return c.PrAttributionRun.mutate(ctx, m)
 	case *PrRecordMutation:
@@ -813,155 +805,6 @@ func (c *CredentialClient) mutate(ctx context.Context, m *CredentialMutation) (V
 		return (&CredentialDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown Credential mutation op: %q", m.Op())
-	}
-}
-
-// EfficiencyMetricClient is a client for the EfficiencyMetric schema.
-type EfficiencyMetricClient struct {
-	config
-}
-
-// NewEfficiencyMetricClient returns a client for the EfficiencyMetric from the given config.
-func NewEfficiencyMetricClient(c config) *EfficiencyMetricClient {
-	return &EfficiencyMetricClient{config: c}
-}
-
-// Use adds a list of mutation hooks to the hooks stack.
-// A call to `Use(f, g, h)` equals to `efficiencymetric.Hooks(f(g(h())))`.
-func (c *EfficiencyMetricClient) Use(hooks ...Hook) {
-	c.hooks.EfficiencyMetric = append(c.hooks.EfficiencyMetric, hooks...)
-}
-
-// Intercept adds a list of query interceptors to the interceptors stack.
-// A call to `Intercept(f, g, h)` equals to `efficiencymetric.Intercept(f(g(h())))`.
-func (c *EfficiencyMetricClient) Intercept(interceptors ...Interceptor) {
-	c.inters.EfficiencyMetric = append(c.inters.EfficiencyMetric, interceptors...)
-}
-
-// Create returns a builder for creating a EfficiencyMetric entity.
-func (c *EfficiencyMetricClient) Create() *EfficiencyMetricCreate {
-	mutation := newEfficiencyMetricMutation(c.config, OpCreate)
-	return &EfficiencyMetricCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// CreateBulk returns a builder for creating a bulk of EfficiencyMetric entities.
-func (c *EfficiencyMetricClient) CreateBulk(builders ...*EfficiencyMetricCreate) *EfficiencyMetricCreateBulk {
-	return &EfficiencyMetricCreateBulk{config: c.config, builders: builders}
-}
-
-// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
-// a builder and applies setFunc on it.
-func (c *EfficiencyMetricClient) MapCreateBulk(slice any, setFunc func(*EfficiencyMetricCreate, int)) *EfficiencyMetricCreateBulk {
-	rv := reflect.ValueOf(slice)
-	if rv.Kind() != reflect.Slice {
-		return &EfficiencyMetricCreateBulk{err: fmt.Errorf("calling to EfficiencyMetricClient.MapCreateBulk with wrong type %T, need slice", slice)}
-	}
-	builders := make([]*EfficiencyMetricCreate, rv.Len())
-	for i := 0; i < rv.Len(); i++ {
-		builders[i] = c.Create()
-		setFunc(builders[i], i)
-	}
-	return &EfficiencyMetricCreateBulk{config: c.config, builders: builders}
-}
-
-// Update returns an update builder for EfficiencyMetric.
-func (c *EfficiencyMetricClient) Update() *EfficiencyMetricUpdate {
-	mutation := newEfficiencyMetricMutation(c.config, OpUpdate)
-	return &EfficiencyMetricUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// UpdateOne returns an update builder for the given entity.
-func (c *EfficiencyMetricClient) UpdateOne(em *EfficiencyMetric) *EfficiencyMetricUpdateOne {
-	mutation := newEfficiencyMetricMutation(c.config, OpUpdateOne, withEfficiencyMetric(em))
-	return &EfficiencyMetricUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// UpdateOneID returns an update builder for the given id.
-func (c *EfficiencyMetricClient) UpdateOneID(id int) *EfficiencyMetricUpdateOne {
-	mutation := newEfficiencyMetricMutation(c.config, OpUpdateOne, withEfficiencyMetricID(id))
-	return &EfficiencyMetricUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// Delete returns a delete builder for EfficiencyMetric.
-func (c *EfficiencyMetricClient) Delete() *EfficiencyMetricDelete {
-	mutation := newEfficiencyMetricMutation(c.config, OpDelete)
-	return &EfficiencyMetricDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// DeleteOne returns a builder for deleting the given entity.
-func (c *EfficiencyMetricClient) DeleteOne(em *EfficiencyMetric) *EfficiencyMetricDeleteOne {
-	return c.DeleteOneID(em.ID)
-}
-
-// DeleteOneID returns a builder for deleting the given entity by its id.
-func (c *EfficiencyMetricClient) DeleteOneID(id int) *EfficiencyMetricDeleteOne {
-	builder := c.Delete().Where(efficiencymetric.ID(id))
-	builder.mutation.id = &id
-	builder.mutation.op = OpDeleteOne
-	return &EfficiencyMetricDeleteOne{builder}
-}
-
-// Query returns a query builder for EfficiencyMetric.
-func (c *EfficiencyMetricClient) Query() *EfficiencyMetricQuery {
-	return &EfficiencyMetricQuery{
-		config: c.config,
-		ctx:    &QueryContext{Type: TypeEfficiencyMetric},
-		inters: c.Interceptors(),
-	}
-}
-
-// Get returns a EfficiencyMetric entity by its id.
-func (c *EfficiencyMetricClient) Get(ctx context.Context, id int) (*EfficiencyMetric, error) {
-	return c.Query().Where(efficiencymetric.ID(id)).Only(ctx)
-}
-
-// GetX is like Get, but panics if an error occurs.
-func (c *EfficiencyMetricClient) GetX(ctx context.Context, id int) *EfficiencyMetric {
-	obj, err := c.Get(ctx, id)
-	if err != nil {
-		panic(err)
-	}
-	return obj
-}
-
-// QueryRepoConfig queries the repo_config edge of a EfficiencyMetric.
-func (c *EfficiencyMetricClient) QueryRepoConfig(em *EfficiencyMetric) *RepoConfigQuery {
-	query := (&RepoConfigClient{config: c.config}).Query()
-	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
-		id := em.ID
-		step := sqlgraph.NewStep(
-			sqlgraph.From(efficiencymetric.Table, efficiencymetric.FieldID, id),
-			sqlgraph.To(repoconfig.Table, repoconfig.FieldID),
-			sqlgraph.Edge(sqlgraph.M2O, true, efficiencymetric.RepoConfigTable, efficiencymetric.RepoConfigColumn),
-		)
-		fromV = sqlgraph.Neighbors(em.driver.Dialect(), step)
-		return fromV, nil
-	}
-	return query
-}
-
-// Hooks returns the client hooks.
-func (c *EfficiencyMetricClient) Hooks() []Hook {
-	return c.hooks.EfficiencyMetric
-}
-
-// Interceptors returns the client interceptors.
-func (c *EfficiencyMetricClient) Interceptors() []Interceptor {
-	return c.inters.EfficiencyMetric
-}
-
-func (c *EfficiencyMetricClient) mutate(ctx context.Context, m *EfficiencyMetricMutation) (Value, error) {
-	switch m.Op() {
-	case OpCreate:
-		return (&EfficiencyMetricCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
-	case OpUpdate:
-		return (&EfficiencyMetricUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
-	case OpUpdateOne:
-		return (&EfficiencyMetricUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
-	case OpDelete, OpDeleteOne:
-		return (&EfficiencyMetricDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
-	default:
-		return nil, fmt.Errorf("ent: unknown EfficiencyMetric mutation op: %q", m.Op())
 	}
 }
 
@@ -1627,22 +1470,6 @@ func (c *RepoConfigClient) QueryPrRecords(rc *RepoConfig) *PrRecordQuery {
 			sqlgraph.From(repoconfig.Table, repoconfig.FieldID, id),
 			sqlgraph.To(prrecord.Table, prrecord.FieldID),
 			sqlgraph.Edge(sqlgraph.O2M, false, repoconfig.PrRecordsTable, repoconfig.PrRecordsColumn),
-		)
-		fromV = sqlgraph.Neighbors(rc.driver.Dialect(), step)
-		return fromV, nil
-	}
-	return query
-}
-
-// QueryEfficiencyMetrics queries the efficiency_metrics edge of a RepoConfig.
-func (c *RepoConfigClient) QueryEfficiencyMetrics(rc *RepoConfig) *EfficiencyMetricQuery {
-	query := (&EfficiencyMetricClient{config: c.config}).Query()
-	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
-		id := rc.ID
-		step := sqlgraph.NewStep(
-			sqlgraph.From(repoconfig.Table, repoconfig.FieldID, id),
-			sqlgraph.To(efficiencymetric.Table, efficiencymetric.FieldID),
-			sqlgraph.Edge(sqlgraph.O2M, false, repoconfig.EfficiencyMetricsTable, repoconfig.EfficiencyMetricsColumn),
 		)
 		fromV = sqlgraph.Neighbors(rc.driver.Dialect(), step)
 		return fromV, nil
@@ -2504,13 +2331,13 @@ func (c *WebhookDeadLetterClient) mutate(ctx context.Context, m *WebhookDeadLett
 // hooks and interceptors per client, for fast access.
 type (
 	hooks struct {
-		CommitCheckpoint, CommitRewrite, Credential, EfficiencyMetric, PrAttributionRun,
-		PrRecord, RelayProvider, RepoConfig, ScmProvider, SystemSetting,
-		ToolUsageEvent, User, WebhookDeadLetter []ent.Hook
+		CommitCheckpoint, CommitRewrite, Credential, PrAttributionRun, PrRecord,
+		RelayProvider, RepoConfig, ScmProvider, SystemSetting, ToolUsageEvent, User,
+		WebhookDeadLetter []ent.Hook
 	}
 	inters struct {
-		CommitCheckpoint, CommitRewrite, Credential, EfficiencyMetric, PrAttributionRun,
-		PrRecord, RelayProvider, RepoConfig, ScmProvider, SystemSetting,
-		ToolUsageEvent, User, WebhookDeadLetter []ent.Interceptor
+		CommitCheckpoint, CommitRewrite, Credential, PrAttributionRun, PrRecord,
+		RelayProvider, RepoConfig, ScmProvider, SystemSetting, ToolUsageEvent, User,
+		WebhookDeadLetter []ent.Interceptor
 	}
 )
