@@ -187,7 +187,7 @@ proxy 生命周期与 session 绑定，不做用户级常驻服务。
   - stream: `{ "kind": "sse", "events": [...] }`
 - 经 2026-04-16 的真实 Codex e2e 复测，请求级 `session_usage_events.raw_metadata` 已可与 transcript-side `token_count` 中的 cache / reasoning token 明细对齐
 - `agent_metadata_events` 仍不会由 request usage ingest 自动生成；它们依赖 `post_commit` 时附带的 collector snapshot
-- 当前 collector 已优先读取 workspace session-local Codex transcript（`<workspace>/.ae/codex-home/`），因此真实 commit 之后可以生成包含 `cached_input_tokens` / `reasoning_tokens` 的 `agent_metadata_events`
+- 该草案当时假定 collector 会优先读取 workspace session-local Codex transcript，因此真实 commit 之后可以生成包含 `cached_input_tokens` / `reasoning_tokens` 的 `agent_metadata_events`
 
 ### Event Ingress
 

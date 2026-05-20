@@ -193,7 +193,7 @@ flowchart LR
 ### Status
 
 - Current formal CLI/runtime path:
-  `ae-cli init`, `sync`, and git hooks all best-effort ensure the backend repo exists from the local git remote; local attribution scans currently rely on Codex JSONL session files (`~/.codex/sessions/**/*.jsonl`) as the formal token path, plus Claude JSONL and two Kiro paths: legacy `~/.kiro/sessions/cli/*.json` summaries and modern `~/Library/Application Support/kiro-cli/data.sqlite3` conversations. Codex session files may omit `response_id`, so the CLI derives stable line-level event ids from each `token_count` row to avoid collapsing multiple usage updates from one session file. The tree still contains additional sqlite parsing code, but only the paths explicitly wired into scanner/collector are part of the current product contract. Backend ingests `tool_usage_events`, binds them to checkpoints, and refreshes PR usage snapshots from checkpoint-bound usage.
+  `ae-cli init`, `sync`, and git hooks all best-effort ensure the backend repo exists from the local git remote. The local collection layer is split in two: `ae-cli/internal/collector` builds hook-time `agent_snapshot` caches, while `ae-cli/internal/attributionlocal` extracts `tool_usage_events` for backend ingest. `Codex` is normalized under `tool = "codex"`; the scanner currently reads global `~/.codex/sessions/**/*.jsonl` plus a compatibility `~/.codex/logs_2.sqlite` branch gated by jsonl-discovered session ids. `Kiro` is normalized under `tool = "kiro"` across legacy `~/.kiro/sessions/cli/*.json`, modern `~/Library/Application Support/kiro-cli/data.sqlite3`, and Kiro IDE execution metadata under `~/Library/Application Support/Kiro/User/globalStorage/kiro.kiroagent/**`; Kiro IDE attribution uses `workspace-sessions/<workspace>/sessions.json` as the chat-session index and execution detail JSON files with `usageSummary[].unit=credit` as the durable credit fact source, so the current stable Kiro contract is credits/request-count rather than tokens. Backend ingests `tool_usage_events`, binds them to checkpoints, and refreshes PR usage snapshots from checkpoint-bound usage.
 - Current formal frontend surface:
   repo detail pages show PR usage summaries and commit usage details directly, rather than user-facing attribution status controls.
 - Remaining direction:
@@ -226,7 +226,7 @@ flowchart LR
 | Area | Paths | Responsibility |
 | --- | --- | --- |
 | Auth and backend access | `ae-cli/internal/auth`, `ae-cli/internal/client` | Login flow, backend API calls, token usage |
-| Sessionless runtime | `ae-cli/internal/session`, `ae-cli/internal/hooks`, `ae-cli/internal/collector` | Workspace marker helpers, hook management, local metadata collection |
+| Sessionless runtime | `ae-cli/internal/session`, `ae-cli/internal/hooks`, `ae-cli/internal/collector`, `ae-cli/internal/attributionlocal` | Workspace marker helpers, hook management, hook-time snapshot collection, and local tool-usage event extraction/upload |
 | Tool selection | `ae-cli/internal/router` | Lightweight tool-routing helpers used by the current CLI surface |
 
 ## Documentation Expectations

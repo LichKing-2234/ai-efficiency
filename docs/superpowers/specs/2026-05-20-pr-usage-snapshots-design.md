@@ -1,7 +1,7 @@
 # PR Usage Snapshots 设计文档
 
 **Date:** 2026-05-20  
-**Status:** 设计已确认，待实现  
+**Status:** 主链已实现，继续校正采集边界  
 **Scope:** `frontend/`, `backend/`, `ae-cli/`, `docs/`  
 **Related:**  
 - [2026-05-13-sessionless-local-tool-attribution-design.md](./2026-05-13-sessionless-local-tool-attribution-design.md)  
@@ -10,6 +10,10 @@
 - [docs/architecture.md](../../architecture.md)
 
 项目级当前实现状态见 [`docs/architecture.md`](../../architecture.md)。
+
+**Implementation Note:**
+- PR usage summary / commit snapshot 的 backend、API 与 frontend 视图已落地。
+- 当前剩余工作主要是把采集层的来源语义写清楚，尤其是 `Codex` 的 jsonl/sqlite 双来源现实，以及 `Kiro` 的 credits-first 合同边界。
 
 ## Spec Relationship
 
@@ -90,10 +94,10 @@
 
 虽然主链方向已具备，但当前采集层还不能被描述成“已完全满足目标合同”。至少存在以下 gap：
 
-1. 当前正式 `Codex` 路径已经收口到 session `jsonl`，不再把 `logs_2.sqlite` 视为 PR usage 路径的必需依赖；实现方不得把 sqlite 适配缺口描述成当前 spec blocker
+1. 当前 `Codex` PR usage 扫描实际会同时接入 session `jsonl` 与 `~/.codex/logs_2.sqlite`；其中 jsonl 仍承担 workspace/session 识别与行级 identity，sqlite 只是 compatibility path。实现方不得把 `codexapp` 当成独立后端 tool 维度，也不得把 sqlite 适配缺口描述成当前 spec blocker
 2. 部分真实 `Codex` session `jsonl` 的 `token_count` 不带 `response_id`；因此 scanner / parser 必须为同一文件中的每条 usage 更新生成稳定的行级 event identity，而不是把整文件压成一条记录
 3. 当前 attributionlocal scanner 的 `ScanState` 仍只跟踪文件修改时间，尚未形成按行 watermark 的完成态增量扫描；在 parser identity 规则变化后，历史 session 文件可能触发一次性 backfill
-4. `Kiro` 当前需要同时覆盖旧 `~/.kiro` 摘要文件和现代 `kiro-cli/data.sqlite3` 会话存储；前者的 `ObservedAt` 仍主要来自文件修改时间，后者则可直接使用 request 时间戳，因此实现方不得再把 `Kiro` 简化描述成“只有一种本地文件路径”
+4. `Kiro` 当前需要同时覆盖三类本地路径：旧 `~/.kiro` 摘要文件、现代 `kiro-cli/data.sqlite3` 会话存储，以及 Kiro IDE `~/Library/Application Support/Kiro/User/globalStorage/kiro.kiroagent/**` execution metadata；三条来源虽然 dedupe namespace 不同，但后端聚合仍统一记为 `tool = "kiro"`，而当前稳定真值仍是 `credit_usage / request_count`，不是 token 总量
 
 本文要求实现方在代码和文档中明确承认这些 gap，不得把当前采集现状表述成“已 fully done”。
 
