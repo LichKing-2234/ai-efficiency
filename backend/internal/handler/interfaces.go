@@ -6,6 +6,7 @@ import (
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/internal/attribution"
 	"github.com/ai-efficiency/backend/internal/prsync"
+	"github.com/ai-efficiency/backend/internal/prusage"
 	"github.com/ai-efficiency/backend/internal/scm"
 )
 
@@ -21,4 +22,8 @@ type prSyncer interface {
 
 type prAttributionSettler interface {
 	Settle(ctx context.Context, provider scm.SCMProvider, pr *ent.PrRecord, triggeredBy string) (*attribution.SettleResult, error)
+}
+
+type prUsageRefresher interface {
+	RefreshPR(ctx context.Context, provider scm.SCMProvider, pr *ent.PrRecord) (*prusage.Result, error)
 }

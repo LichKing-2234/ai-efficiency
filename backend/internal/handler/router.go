@@ -12,9 +12,14 @@ import (
 )
 
 var prAttributionService prAttributionSettler
+var prUsageService prUsageRefresher
 
 func SetPRAttributionService(service prAttributionSettler) {
 	prAttributionService = service
+}
+
+func SetPRUsageService(service prUsageRefresher) {
+	prUsageService = service
 }
 
 // SetupRouter creates and configures the Gin router with all route groups.
@@ -60,7 +65,7 @@ func SetupRouter(
 	credentialHandler := NewCredentialHandler(entClient, encryptionKey)
 	scmProviderHandler := NewSCMProviderHandler(entClient, encryptionKey)
 	repoHandler := NewRepoHandler(repoService)
-	prHandler := NewPRHandler(entClient, repoService, syncService, prAttributionService)
+	prHandler := NewPRHandler(entClient, repoService, syncService, prAttributionService, prUsageService)
 	efficiencyHandler := NewEfficiencyHandler(entClient)
 	toolUsageHandler := NewToolUsageHandler(toolusage.NewService(entClient))
 
@@ -129,6 +134,7 @@ func SetupRouter(
 	prGroup := protected.Group("/prs")
 	{
 		prGroup.GET("/:id", prHandler.Get)
+		prGroup.POST("/:id/refresh-usage", prHandler.RefreshUsage)
 		prGroup.POST("/:id/settle", prHandler.Settle)
 	}
 

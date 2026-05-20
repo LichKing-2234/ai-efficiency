@@ -3,9 +3,11 @@ package prsync
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"testing"
 	"time"
 
+	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/ent/prrecord"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/scmprovider"
@@ -14,6 +16,19 @@ import (
 	"github.com/ai-efficiency/backend/internal/testdb"
 	"go.uber.org/zap"
 )
+
+type recordingUsageRefresher struct {
+	ids []int
+}
+
+func (r *recordingUsageRefresher) RefreshPR(ctx context.Context, provider scm.SCMProvider, pr *ent.PrRecord) (any, error) {
+	r.ids = append(r.ids, pr.ID)
+	return nil, nil
+}
+
+func (r *recordingUsageRefresher) PRIDs() []int {
+	return append([]int(nil), r.ids...)
+}
 
 // ---------------------------------------------------------------------------
 // Sync – cover the upsertPR error warn path (line 53-54)
@@ -255,6 +270,60 @@ func TestSyncUpdateWithZeroTimestamps(t *testing.T) {
 		Only(ctx)
 	if pr.Title != "Updated no timestamps" {
 		t.Errorf("title = %q, want %q", pr.Title, "Updated no timestamps")
+	}
+}
+
+func TestSyncPRs_RefreshesOnlyActivePRs(t *testing.T) {
+	client := testdb.Open(t)
+	defer client.Close()
+	ctx := context.Background()
+	logger := zap.NewNop()
+
+	rc := createTestRepo(t, ctx, client, "active-refresh-repo")
+	refresher := &recordingUsageRefresher{}
+	svc := NewService(client, nil, logger, refresher)
+
+	oldClosedAt := time.Now().AddDate(0, -6, 0)
+	client.PrRecord.Create().
+		SetRepoConfigID(rc.ID).
+		SetScmPrID(77).
+		SetTitle("old closed").
+		SetAuthor("legacy").
+		SetSourceBranch("legacy").
+		SetTargetBranch("main").
+		SetStatus(prrecord.StatusClosed).
+		SetCreatedAt(oldClosedAt).
+		SaveX(ctx)
+
+	recentCreatedAt := time.Now().AddDate(0, -1, 0)
+	mock := &mockSCMProvider{
+		listPRsFunc: func(ctx context.Context, repoFullName string, opts scm.PRListOpts) ([]*scm.PR, error) {
+			return []*scm.PR{
+				{ID: 11, Title: "open pr", Author: "alice", SourceBranch: "feat-1", TargetBranch: "main", State: "open", URL: "https://example.com/pr/11", CreatedAt: recentCreatedAt},
+				{ID: 14, Title: "recent merged", Author: "bob", SourceBranch: "feat-2", TargetBranch: "main", State: "merged", URL: "https://example.com/pr/14", CreatedAt: recentCreatedAt},
+				{ID: 77, Title: "old closed", Author: "legacy", SourceBranch: "legacy", TargetBranch: "main", State: "closed", URL: "https://example.com/pr/77", CreatedAt: oldClosedAt},
+			}, nil
+		},
+	}
+
+	_, err := svc.Sync(ctx, mock, rc)
+	if err != nil {
+		t.Fatalf("Sync error: %v", err)
+	}
+
+	got := refresher.PRIDs()
+	want := []int{}
+	for _, scmPRID := range []int{11, 14} {
+		id, err := client.PrRecord.Query().
+			Where(prrecord.ScmPrIDEQ(scmPRID), prrecord.HasRepoConfigWith(repoconfig.IDEQ(rc.ID))).
+			OnlyID(ctx)
+		if err != nil {
+			t.Fatalf("load PR id for scm_pr_id=%d: %v", scmPRID, err)
+		}
+		want = append(want, id)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("refreshed PR IDs = %v, want %v", got, want)
 	}
 }
 
