@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/ai-efficiency/ae-cli/internal/attributionlocal"
+	"github.com/ai-efficiency/ae-cli/internal/repolink"
 	"github.com/spf13/cobra"
 )
 
@@ -24,6 +25,9 @@ var syncCmd = &cobra.Command{
 		ctx, err := detectAttributionContext()
 		if err != nil {
 			return err
+		}
+		if _, err := repolink.Ensure(context.Background(), apiClient, gitRemoteURLForCutover(), gitBranchForCutover()); err != nil {
+			return fmt.Errorf("ensure repo link: %w", err)
 		}
 		engine := newSyncEngine(apiClient)
 		if err := engine.RunForWorkspace(context.Background(), ctx.repoRoot); err != nil {

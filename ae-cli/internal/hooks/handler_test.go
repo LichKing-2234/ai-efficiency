@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ai-efficiency/ae-cli/internal/client"
 	"github.com/ai-efficiency/ae-cli/internal/attributionlocal"
+	"github.com/ai-efficiency/ae-cli/internal/client"
 	"github.com/ai-efficiency/ae-cli/internal/collector"
 	"github.com/ai-efficiency/ae-cli/internal/session"
 )
@@ -35,6 +35,17 @@ type recordingBackendHookClient struct {
 	checkpoints []client.CommitCheckpointRequest
 	toolUsage   []client.ToolUsageEventRequest
 	order       []string
+}
+
+func (r *recordingBackendHookClient) EnsureRepoFromRemote(ctx context.Context, remoteURL, branch string) (*client.RepoEnsureResponse, error) {
+	r.order = append(r.order, "ensure_repo")
+	return &client.RepoEnsureResponse{
+		ID:            1,
+		RepoKey:       "github.com/acme/repo",
+		FullName:      remoteURL,
+		DefaultBranch: branch,
+		BindingState:  "unbound",
+	}, nil
 }
 
 func (r *recordingBackendHookClient) SendCommitCheckpoint(ctx context.Context, req client.CommitCheckpointRequest) error {
@@ -474,11 +485,11 @@ func TestPostCommit_WithBackendUploaderUploadsCheckpointBeforeToolUsageSync(t *t
 	if len(clientStub.toolUsage) == 0 {
 		t.Fatal("expected tool usage uploads during post-commit sync")
 	}
-	if len(clientStub.order) < 2 {
-		t.Fatalf("upload order = %v, want checkpoint then tool usage", clientStub.order)
+	if len(clientStub.order) < 3 {
+		t.Fatalf("upload order = %v, want ensure_repo then checkpoint then tool usage", clientStub.order)
 	}
-	if clientStub.order[0] != "checkpoint" || clientStub.order[1] != "tool_usage" {
-		t.Fatalf("upload order = %v, want checkpoint before tool usage", clientStub.order)
+	if clientStub.order[0] != "ensure_repo" || clientStub.order[1] != "checkpoint" || clientStub.order[2] != "tool_usage" {
+		t.Fatalf("upload order = %v, want ensure_repo before checkpoint before tool usage", clientStub.order)
 	}
 }
 

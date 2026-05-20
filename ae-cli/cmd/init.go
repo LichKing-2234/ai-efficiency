@@ -1,10 +1,12 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 
 	"github.com/ai-efficiency/ae-cli/internal/hooks"
+	"github.com/ai-efficiency/ae-cli/internal/repolink"
 	"github.com/spf13/cobra"
 )
 
@@ -24,11 +26,24 @@ var initCmd = &cobra.Command{
 		if err := installSharedHooks(ctx.repoRoot, bestEffortSelfPath()); err != nil {
 			return fmt.Errorf("install shared hooks: %w", err)
 		}
+		repoLinkStatus := "skipped"
+		configToken := ""
+		if cfg != nil {
+			configToken = cfg.Server.Token
+		}
+		if resolveToken(configToken, "") != "" {
+			status, linkErr := repolink.Ensure(context.Background(), apiClient, gitRemoteURLForCutover(), gitBranchForCutover())
+			repoLinkStatus = status
+			if linkErr != nil {
+				repoLinkStatus = "failed"
+			}
+		}
 		out := cmd.OutOrStdout()
 		fmt.Fprintf(out, "Initialized sessionless attribution.\n")
 		fmt.Fprintf(out, "  Repo:          %s\n", ctx.repoRoot)
 		fmt.Fprintf(out, "  Workspace ID:  %s\n", ctx.workspaceID)
 		fmt.Fprintf(out, "  State Dir:     %s\n", ctx.attributionRoot)
+		fmt.Fprintf(out, "  Repo Link:     %s\n", repoLinkStatus)
 		return nil
 	},
 }

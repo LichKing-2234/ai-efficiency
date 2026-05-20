@@ -82,3 +82,19 @@ func bestEffortSelfPath() string {
 	}
 	return "ae-cli"
 }
+
+func gitRemoteURLForCutover() string {
+	remote, err := gitOutputForCutover("config", "--get", "remote.origin.url")
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(remote)
+}
+
+func gitBranchForCutover() string {
+	branch, err := gitOutputForCutover("symbolic-ref", "--short", "-q", "HEAD")
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(branch)
+}

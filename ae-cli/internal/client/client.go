@@ -77,6 +77,16 @@ type ToolUsageEventRequest struct {
 	RawPayload        map[string]any `json:"raw_payload,omitempty"`
 }
 
+type RepoEnsureResponse struct {
+	ID            int    `json:"id"`
+	RepoKey       string `json:"repo_key"`
+	FullName      string `json:"full_name"`
+	CloneURL      string `json:"clone_url"`
+	DefaultBranch string `json:"default_branch"`
+	BindingState  string `json:"binding_state"`
+	SCMProviderID *int   `json:"scm_provider_id,omitempty"`
+}
+
 func New(baseURL, token string) *Client {
 	return &Client{
 		baseURL: baseURL,
@@ -155,6 +165,44 @@ func (c *Client) SendToolUsageEvent(ctx context.Context, req ToolUsageEventReque
 		return fmt.Errorf("unexpected tool usage status %d: %s", resp.StatusCode, string(respBody))
 	}
 	return nil
+}
+
+func (c *Client) EnsureRepoFromRemote(ctx context.Context, remoteURL, branch string) (*RepoEnsureResponse, error) {
+	payload := map[string]string{
+		"remote_url": remoteURL,
+		"branch":     branch,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("marshal ensure repo request: %w", err)
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/api/v1/repos/ensure-remote", bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("create ensure repo request: %w", err)
+	}
+	c.setHeaders(httpReq)
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("send ensure repo request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read ensure repo response: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		return nil, fmt.Errorf("unexpected ensure repo status %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var envelope struct {
+		Data RepoEnsureResponse `json:"data"`
+	}
+	if err := json.Unmarshal(respBody, &envelope); err != nil {
+		return nil, fmt.Errorf("decode ensure repo response: %w", err)
+	}
+	return &envelope.Data, nil
 }
 
 func (c *Client) ListProviders(ctx context.Context) ([]ProviderInfo, error) {

@@ -1,9 +1,11 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 
+	"github.com/ai-efficiency/ae-cli/internal/repolink"
 	"github.com/spf13/cobra"
 )
 
@@ -21,6 +23,14 @@ var doctorCmd = &cobra.Command{
 		}
 		token := resolveToken(configToken, "")
 		out := cmd.OutOrStdout()
+		repoLinkStatus := "skipped"
+		if token != "" {
+			status, err := repolink.Ensure(context.Background(), apiClient, gitRemoteURLForCutover(), gitBranchForCutover())
+			repoLinkStatus = status
+			if err != nil {
+				repoLinkStatus = "failed"
+			}
+		}
 		fmt.Fprintf(out, "Sessionless attribution doctor\n")
 		fmt.Fprintf(out, "  Repo:          %s\n", ctx.repoRoot)
 		fmt.Fprintf(out, "  Workspace ID:  %s\n", ctx.workspaceID)
@@ -28,6 +38,7 @@ var doctorCmd = &cobra.Command{
 		fmt.Fprintf(out, "  Git Common:    %s\n", ctx.gitCommonDir)
 		fmt.Fprintf(out, "  State Dir:     %s\n", ctx.attributionRoot)
 		fmt.Fprintf(out, "  Logged In:     %t\n", token != "")
+		fmt.Fprintf(out, "  Repo Link:     %s\n", repoLinkStatus)
 		if _, err := os.Stat(ctx.attributionRoot); err == nil {
 			fmt.Fprintf(out, "  State Exists:  true\n")
 		} else if os.IsNotExist(err) {

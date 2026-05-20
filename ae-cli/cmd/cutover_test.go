@@ -2,11 +2,15 @@ package cmd
 
 import (
 	"bytes"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
 
+	"github.com/ai-efficiency/ae-cli/config"
 	"github.com/ai-efficiency/ae-cli/internal/attributionlocal"
+	"github.com/ai-efficiency/ae-cli/internal/client"
 )
 
 func TestRootCommandHasSessionlessPrimaryCommands(t *testing.T) {
@@ -63,9 +67,30 @@ func TestInitCommandCreatesAttributionStateDir(t *testing.T) {
 		t.Fatalf("Chdir(repo): %v", err)
 	}
 
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/repos/ensure-remote" {
+			t.Fatalf("path = %s, want /api/v1/repos/ensure-remote", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"code":0,"data":{"id":1,"repo_key":"github.com/acme/repo","full_name":"github.com/acme/repo","clone_url":"https://github.com/acme/repo.git","default_branch":"main","binding_state":"unbound"}}`))
+	}))
+	defer srv.Close()
+
 	origInstallSharedHooks := installSharedHooks
-	installSharedHooks = func(cwd, selfPath string) error { return nil }
-	t.Cleanup(func() { installSharedHooks = origInstallSharedHooks })
+	called := false
+	installSharedHooks = func(cwd, selfPath string) error {
+		called = true
+		return nil
+	}
+	origCfg := cfg
+	origClient := apiClient
+	cfg = &config.Config{Server: config.ServerConfig{Token: "tok"}}
+	apiClient = client.New(srv.URL, "tok")
+	t.Cleanup(func() {
+		installSharedHooks = origInstallSharedHooks
+		cfg = origCfg
+		apiClient = origClient
+	})
 
 	buf := new(bytes.Buffer)
 	initCmd.SetOut(buf)
@@ -78,8 +103,14 @@ func TestInitCommandCreatesAttributionStateDir(t *testing.T) {
 	if _, err := os.Stat(attributionlocal.AttributionRootDir()); err != nil {
 		t.Fatalf("expected attribution root dir to exist, stat err=%v", err)
 	}
+	if !called {
+		t.Fatal("expected installSharedHooks to be called")
+	}
 	if !strings.Contains(buf.String(), "Initialized sessionless attribution.") {
 		t.Fatalf("output = %q, want init success summary", buf.String())
+	}
+	if !strings.Contains(buf.String(), "Repo Link:     linked") {
+		t.Fatalf("output = %q, want repo link status", buf.String())
 	}
 }
 
@@ -97,6 +128,24 @@ func TestDoctorCommandPrintsWorkspaceIdentity(t *testing.T) {
 		t.Fatalf("Chdir(repo): %v", err)
 	}
 
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/repos/ensure-remote" {
+			t.Fatalf("path = %s, want /api/v1/repos/ensure-remote", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"code":0,"data":{"id":1,"repo_key":"github.com/acme/repo","full_name":"github.com/acme/repo","clone_url":"https://github.com/acme/repo.git","default_branch":"main","binding_state":"unbound"}}`))
+	}))
+	defer srv.Close()
+
+	origCfg := cfg
+	origClient := apiClient
+	cfg = &config.Config{Server: config.ServerConfig{Token: "tok"}}
+	apiClient = client.New(srv.URL, "tok")
+	t.Cleanup(func() {
+		cfg = origCfg
+		apiClient = origClient
+	})
+
 	buf := new(bytes.Buffer)
 	doctorCmd.SetOut(buf)
 	doctorCmd.SetErr(buf)
@@ -106,7 +155,7 @@ func TestDoctorCommandPrintsWorkspaceIdentity(t *testing.T) {
 	}
 
 	output := buf.String()
-	for _, want := range []string{"Sessionless attribution doctor", "Workspace ID:", "State Dir:"} {
+	for _, want := range []string{"Sessionless attribution doctor", "Workspace ID:", "State Dir:", "Repo Link:     linked"} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("output = %q, want substring %q", output, want)
 		}

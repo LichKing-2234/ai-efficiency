@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/ai-efficiency/ae-cli/internal/attributionlocal"
+	"github.com/ai-efficiency/ae-cli/internal/client"
 	"github.com/ai-efficiency/ae-cli/internal/collector"
 	"github.com/ai-efficiency/ae-cli/internal/session"
 )
@@ -30,6 +31,10 @@ type syncCapableUploader interface {
 
 type Handler struct {
 	uploader Uploader
+}
+
+type repoEnsureClient interface {
+	EnsureRepoFromRemote(ctx context.Context, remoteURL, branch string) (*client.RepoEnsureResponse, error)
 }
 
 func NewHandler(u Uploader) *Handler {
@@ -280,6 +285,15 @@ func (h *Handler) PostCommit(ctx context.Context, cwd string) error {
 
 	syncClient := h.attributionSyncClient()
 	if syncClient != nil && h != nil && h.uploader != nil {
+		if ensureClient, ok := syncClient.(repoEnsureClient); ok && strings.TrimSpace(repoHint) != "" {
+			if _, err := ensureClient.EnsureRepoFromRemote(ctx, repoHint, ev.BranchSnapshot); err != nil {
+				q, qerr := NewWorkspaceQueue(workspaceID)
+				if qerr == nil {
+					_ = q.Enqueue(ev)
+				}
+				return nil
+			}
+		}
 		if err := h.uploader.UploadHookEvent(ctx, ev); err != nil {
 			q, qerr := NewWorkspaceQueue(workspaceID)
 			if qerr == nil {
@@ -431,6 +445,17 @@ func (h *Handler) PostRewrite(ctx context.Context, cwd string, rewriteType strin
 			OldCommitSHA:  oldSHA,
 			NewCommitSHA:  newSHA,
 			CapturedAt:    time.Now().UTC().Format(time.RFC3339),
+		}
+
+		if syncClient := h.attributionSyncClient(); syncClient != nil {
+			if ensureClient, ok := syncClient.(repoEnsureClient); ok && strings.TrimSpace(repoHint) != "" {
+				if _, err := ensureClient.EnsureRepoFromRemote(ctx, repoHint, branchSnapshot(cwd)); err != nil {
+					if q != nil {
+						_ = q.Enqueue(ev)
+					}
+					continue
+				}
+			}
 		}
 
 		if h == nil || h.uploader == nil {

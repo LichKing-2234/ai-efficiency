@@ -141,6 +141,47 @@ func TestSendToolUsageEvent(t *testing.T) {
 	}
 }
 
+func TestEnsureRepoFromRemote(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("method = %s, want POST", r.Method)
+		}
+		if r.URL.Path != "/api/v1/repos/ensure-remote" {
+			t.Errorf("path = %s, want /api/v1/repos/ensure-remote", r.URL.Path)
+		}
+		var req map[string]string
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		if req["remote_url"] != "https://github.com/acme/platform.git" || req["branch"] != "main" {
+			t.Fatalf("unexpected ensure repo request: %+v", req)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": map[string]any{
+				"id":              17,
+				"repo_key":        "github.com/acme/platform",
+				"full_name":       "github.com/acme/platform",
+				"clone_url":       "https://github.com/acme/platform.git",
+				"default_branch":  "main",
+				"binding_state":   "unbound",
+				"scm_provider_id": nil,
+			},
+		})
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "tok")
+	resp, err := c.EnsureRepoFromRemote(context.Background(), "https://github.com/acme/platform.git", "main")
+	if err != nil {
+		t.Fatalf("EnsureRepoFromRemote: %v", err)
+	}
+	if resp.RepoKey != "github.com/acme/platform" {
+		t.Fatalf("repo_key = %q, want %q", resp.RepoKey, "github.com/acme/platform")
+	}
+}
+
 func TestListProviders(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
