@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/ai-efficiency/ae-cli/internal/attributionlocal"
 	_ "github.com/glebarez/go-sqlite"
 )
 
@@ -21,9 +22,43 @@ type kiroSession struct {
 	} `json:"session_state"`
 }
 
-func readKiroSnapshot(path, workspaceRoot string) (*KiroSnapshot, error) {
+func readKiroSnapshot(paths []string, workspaceRoot string) (*KiroSnapshot, error) {
+	ideSessionIDs := collectKiroIDESessionIDs(paths, workspaceRoot)
+	for _, path := range orderFilesByModTime(paths) {
+		s, err := readSingleKiroSnapshot(path, workspaceRoot, ideSessionIDs)
+		if err != nil {
+			continue
+		}
+		if s == nil {
+			continue
+		}
+		return s, nil
+	}
+	return nil, nil
+}
+
+func readSingleKiroSnapshot(path, workspaceRoot string, ideSessionIDs map[string]struct{}) (*KiroSnapshot, error) {
 	if strings.EqualFold(filepath.Base(path), "data.sqlite3") {
 		return readKiroCLISnapshot(path, workspaceRoot)
+	}
+	if strings.EqualFold(filepath.Base(path), "sessions.json") {
+		return nil, nil
+	}
+
+	if len(ideSessionIDs) > 0 {
+		events, err := attributionlocal.ParseKiroIDEExecution(path, ideSessionIDs)
+		if err != nil {
+			return nil, err
+		}
+		if len(events) > 0 {
+			ev := events[0]
+			return &KiroSnapshot{
+				ConversationID:  strings.TrimSpace(ev.ToolSessionID),
+				CreditUsage:     ev.CreditUsage,
+				ContextUsagePct: ev.ContextUsagePct,
+				RawPayload:      ev.RawPayload,
+			}, nil
+		}
 	}
 
 	data, err := os.ReadFile(path)
@@ -107,4 +142,39 @@ func readKiroCLISnapshot(path, workspaceRoot string) (*KiroSnapshot, error) {
 		ContextUsagePct: contextUsage,
 		RawPayload:      raw,
 	}, nil
+}
+
+func collectKiroIDESessionIDs(paths []string, workspaceRoot string) map[string]struct{} {
+	out := make(map[string]struct{})
+	for _, path := range paths {
+		if !strings.EqualFold(filepath.Base(path), "sessions.json") {
+			continue
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+
+		var index []struct {
+			SessionID          string `json:"sessionId"`
+			WorkspaceDirectory string `json:"workspaceDirectory"`
+		}
+		if err := json.Unmarshal(data, &index); err != nil {
+			continue
+		}
+		for _, item := range index {
+			if !samePath(item.WorkspaceDirectory, workspaceRoot) {
+				continue
+			}
+			sessionID := strings.TrimSpace(item.SessionID)
+			if sessionID == "" {
+				continue
+			}
+			out[sessionID] = struct{}{}
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }

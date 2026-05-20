@@ -76,17 +76,24 @@ func TestScanner_ScanWorkspaceReadsMatchingKiroCLISQLite(t *testing.T) {
 	}
 }
 
-func TestFindCodexJSONLFiles_IgnoresWorkspaceScopedCodexHome(t *testing.T) {
-	workspaceRoot := t.TempDir()
-	homeDir := t.TempDir()
+func TestScanner_ScanWorkspaceReadsMatchingKiroIDEExecution(t *testing.T) {
+	fixture := buildKiroIDEAttributionFixture(t)
+	scanner := NewScanner()
 
-	workspaceCodex := filepath.Join(workspaceRoot, ".ae", "codex-home", "sessions", "workspace.jsonl")
-	if err := os.MkdirAll(filepath.Dir(workspaceCodex), 0o700); err != nil {
-		t.Fatalf("mkdir workspace codex dir: %v", err)
+	first, _, err := scanner.ScanWorkspace(fixture.WorkspaceRoot, ScanState{})
+	if err != nil {
+		t.Fatalf("scan: %v", err)
 	}
-	if err := os.WriteFile(workspaceCodex, []byte("{}\n"), 0o600); err != nil {
-		t.Fatalf("write workspace codex file: %v", err)
+	if len(first) != 1 {
+		t.Fatalf("first scan events = %d, want 1", len(first))
 	}
+	if first[0].DedupeKey != "kiro-ide:chat-sess-1:exec-1" {
+		t.Fatalf("dedupe key = %q, want %q", first[0].DedupeKey, "kiro-ide:chat-sess-1:exec-1")
+	}
+}
+
+func TestFindCodexJSONLFiles_UsesGlobalCodexHome(t *testing.T) {
+	homeDir := t.TempDir()
 
 	globalCodex := filepath.Join(homeDir, ".codex", "sessions", "global.jsonl")
 	if err := os.MkdirAll(filepath.Dir(globalCodex), 0o700); err != nil {
@@ -96,7 +103,7 @@ func TestFindCodexJSONLFiles_IgnoresWorkspaceScopedCodexHome(t *testing.T) {
 		t.Fatalf("write global codex file: %v", err)
 	}
 
-	paths := findCodexJSONLFiles(workspaceRoot, homeDir)
+	paths := findCodexJSONLFiles(t.TempDir(), homeDir)
 	if len(paths) != 1 || paths[0] != globalCodex {
 		t.Fatalf("paths = %v, want only %s", paths, globalCodex)
 	}

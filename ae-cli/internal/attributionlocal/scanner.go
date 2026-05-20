@@ -113,6 +113,22 @@ func (s *Scanner) ScanWorkspace(workspaceRoot string, state ScanState) ([]LocalT
 		}
 	}
 
+	kiroIDESessionIDs := FindKiroIDESessionIDs(homeDir, workspaceRoot)
+	for _, path := range FindKiroIDEExecutionFiles(homeDir) {
+		if !shouldScanFile(path, state) {
+			continue
+		}
+		items, err := ParseKiroIDEExecution(path, kiroIDESessionIDs)
+		if err != nil {
+			continue
+		}
+		rememberFileScan(&nextState, path)
+		for _, item := range items {
+			item.WorkspaceID = workspaceID
+			out = append(out, item)
+		}
+	}
+
 	return dedupeAndSort(out), nextState, nil
 }
 

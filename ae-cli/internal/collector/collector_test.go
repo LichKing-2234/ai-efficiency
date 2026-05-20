@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ai-efficiency/ae-cli/internal/session"
 	_ "github.com/glebarez/go-sqlite"
 )
 
@@ -163,6 +162,31 @@ func TestBuildSnapshotReadsKiroCLISQLite(t *testing.T) {
 	}
 }
 
+func TestBuildSnapshotReadsKiroIDEExecution(t *testing.T) {
+	workspaceRoot := "/tmp/repo"
+	sessionIndexPath, execPath := buildKiroIDESnapshotFixture(t, workspaceRoot)
+
+	snapshot, err := BuildSnapshot(Paths{
+		KiroFiles:     []string{sessionIndexPath, execPath},
+		WorkspaceRoot: workspaceRoot,
+	})
+	if err != nil {
+		t.Fatalf("BuildSnapshot() error = %v", err)
+	}
+	if snapshot == nil || snapshot.Kiro == nil {
+		t.Fatalf("expected kiro snapshot, got %+v", snapshot)
+	}
+	if snapshot.Kiro.ConversationID != "chat-sess-1" {
+		t.Fatalf("conversation id = %q, want chat-sess-1", snapshot.Kiro.ConversationID)
+	}
+	if math.Abs(snapshot.Kiro.CreditUsage-(0.007750866932006633+0.05991760597014926)) > 1e-12 {
+		t.Fatalf("credit usage = %v", snapshot.Kiro.CreditUsage)
+	}
+	if math.Abs(snapshot.Kiro.ContextUsagePct-23.259000778198242) > 1e-9 {
+		t.Fatalf("context usage = %v", snapshot.Kiro.ContextUsagePct)
+	}
+}
+
 func TestDefaultPathsMergesEnvOverridesWithDefaults(t *testing.T) {
 	origHome := os.Getenv("HOME")
 	tmpHome := t.TempDir()
@@ -268,23 +292,13 @@ func TestDefaultPathsOrdersNewestDefaultFilesFirst(t *testing.T) {
 	}
 }
 
-func TestDefaultPathsPrefersWorkspaceCodexHomeSessions(t *testing.T) {
+func TestDefaultPathsUsesGlobalCodexSessionsOnly(t *testing.T) {
 	origHome := os.Getenv("HOME")
 	tmpHome := t.TempDir()
 	t.Setenv("HOME", tmpHome)
 	t.Cleanup(func() { _ = os.Setenv("HOME", origHome) })
 
 	workspaceRoot := t.TempDir()
-	workspaceCodexDir := filepath.Join(session.WorkspaceCodexHome(workspaceRoot), "sessions")
-	if err := os.MkdirAll(workspaceCodexDir, 0o700); err != nil {
-		t.Fatalf("mkdir workspace codex dir: %v", err)
-	}
-	workspaceCodex := filepath.Join(workspaceCodexDir, "workspace-codex.jsonl")
-	if err := os.WriteFile(workspaceCodex, []byte(`{"timestamp":"2026-04-16T03:07:04Z","type":"session_meta","payload":{"id":"codex-workspace","cwd":"`+workspaceRoot+`"}}
-{"timestamp":"2026-04-16T03:07:07Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":13748,"cached_input_tokens":9216,"output_tokens":23,"reasoning_output_tokens":11,"total_tokens":13771}}}}`), 0o600); err != nil {
-		t.Fatalf("write workspace codex file: %v", err)
-	}
-
 	globalCodexDir := filepath.Join(tmpHome, ".codex")
 	if err := os.MkdirAll(globalCodexDir, 0o700); err != nil {
 		t.Fatalf("mkdir global codex dir: %v", err)
@@ -296,8 +310,8 @@ func TestDefaultPathsPrefersWorkspaceCodexHomeSessions(t *testing.T) {
 	}
 
 	paths := DefaultPaths(workspaceRoot)
-	if len(paths.CodexFiles) == 0 || paths.CodexFiles[0] != workspaceCodex {
-		t.Fatalf("CodexFiles = %v, want workspace-local file first", paths.CodexFiles)
+	if len(paths.CodexFiles) != 1 || paths.CodexFiles[0] != globalCodex {
+		t.Fatalf("CodexFiles = %v, want only global file %s", paths.CodexFiles, globalCodex)
 	}
 
 	snapshot, err := BuildSnapshot(paths)
@@ -305,10 +319,10 @@ func TestDefaultPathsPrefersWorkspaceCodexHomeSessions(t *testing.T) {
 		t.Fatalf("BuildSnapshot() error = %v", err)
 	}
 	if snapshot == nil || snapshot.Codex == nil {
-		t.Fatalf("expected codex snapshot from workspace-local file, got %+v", snapshot)
+		t.Fatalf("expected codex snapshot from global file, got %+v", snapshot)
 	}
-	if snapshot.Codex.SourceSessionID != "codex-workspace" || snapshot.Codex.CachedInputTokens != 9216 || snapshot.Codex.ReasoningTokens != 11 {
-		t.Fatalf("Codex snapshot = %+v, want workspace-local token details", snapshot.Codex)
+	if snapshot.Codex.SourceSessionID != "codex-global" || snapshot.Codex.TotalTokens != 3 {
+		t.Fatalf("Codex snapshot = %+v, want global token details", snapshot.Codex)
 	}
 }
 
@@ -420,4 +434,44 @@ func buildKiroCLISQLiteSnapshotFixture(t *testing.T, workspaceRoot string) strin
 		t.Fatalf("insert conversations_v2: %v", err)
 	}
 	return path
+}
+
+func buildKiroIDESnapshotFixture(t *testing.T, workspaceRoot string) (string, string) {
+	t.Helper()
+
+	base := filepath.Join(t.TempDir(), "Library", "Application Support", "Kiro", "User", "globalStorage", "kiro.kiroagent")
+	sessionDir := filepath.Join(base, "workspace-sessions", "L3RtcC9yZXBv")
+	if err := os.MkdirAll(sessionDir, 0o700); err != nil {
+		t.Fatalf("mkdir kiro ide session dir: %v", err)
+	}
+	sessionIndexPath := filepath.Join(sessionDir, "sessions.json")
+	sessionIndex := fmt.Sprintf(`[{"sessionId":"chat-sess-1","title":"hi","dateCreated":"1779284885045","workspaceDirectory":%q}]`, workspaceRoot)
+	if err := os.WriteFile(sessionIndexPath, []byte(sessionIndex), 0o600); err != nil {
+		t.Fatalf("write kiro ide session index: %v", err)
+	}
+
+	execDir := filepath.Join(base, "8794d1d6b05461c486ae3c70a25dbd02", "414d1636299d2b9e4ce7e17fb11f63e9")
+	if err := os.MkdirAll(execDir, 0o700); err != nil {
+		t.Fatalf("mkdir kiro ide exec dir: %v", err)
+	}
+	execPath := filepath.Join(execDir, "71d22ce2a62c4cdc077c824e07bd8650")
+	body := fmt.Sprintf(`{
+  "executionId": "exec-1",
+  "workflowType": "chat-agent",
+  "status": "succeed",
+  "startTime": 1779288013500,
+  "chatSessionID": "",
+  "chatSessionId": "chat-sess-1",
+  "endTime": 1779288019211,
+  "usageSummary": [
+    {"usage": 0.007750866932006633, "unit": "credit", "unitPlural": "credits"},
+    {"usage": 0.05991760597014926, "unit": "credit", "unitPlural": "credits"}
+  ],
+  "contextUsagePercentage": 23.259000778198242,
+  "workspaceContext": {"cwd": %q}
+}`, workspaceRoot)
+	if err := os.WriteFile(execPath, []byte(body), 0o600); err != nil {
+		t.Fatalf("write kiro ide execution: %v", err)
+	}
+	return sessionIndexPath, execPath
 }

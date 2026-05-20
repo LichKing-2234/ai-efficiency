@@ -3,6 +3,7 @@ package attributionlocal
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"fmt"
 	"os"
 	"os/exec"
@@ -170,6 +171,79 @@ func buildKiroCLISQLiteAttributionFixture(t *testing.T) attributionFixture {
 	}
 	if err := os.WriteFile(dst, data, 0o600); err != nil {
 		t.Fatalf("write kiro-cli fixture: %v", err)
+	}
+
+	return attributionFixture{
+		WorkspaceRoot: root,
+		HomeDir:       home,
+	}
+}
+
+func buildKiroIDEExecutionFixture(t *testing.T, workspaceRoot, sessionID string) string {
+	t.Helper()
+
+	root := filepath.Join(t.TempDir(), "kiro-ide", "8794d1d6b05461c486ae3c70a25dbd02", "414d1636299d2b9e4ce7e17fb11f63e9")
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		t.Fatalf("mkdir kiro ide root: %v", err)
+	}
+	path := filepath.Join(root, "71d22ce2a62c4cdc077c824e07bd8650")
+	body := fmt.Sprintf(`{
+  "executionId": "exec-1",
+  "workflowType": "chat-agent",
+  "status": "succeed",
+  "startTime": 1779288013500,
+  "chatSessionId": %q,
+  "endTime": 1779288019211,
+  "usageSummary": [
+    {"usage": 0.007750866932006633, "unit": "credit", "unitPlural": "credits"},
+    {"usage": 0.05991760597014926, "unit": "credit", "unitPlural": "credits"}
+  ],
+  "contextUsagePercentage": 23.259000778198242,
+  "workspaceContext": {"cwd": %q}
+}`, sessionID, workspaceRoot)
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatalf("write kiro ide execution: %v", err)
+	}
+	return path
+}
+
+func buildKiroIDEAttributionFixture(t *testing.T) attributionFixture {
+	t.Helper()
+
+	root := fixtureRepoRoot(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	encoded := base64.RawURLEncoding.EncodeToString([]byte(root))
+	sessionDir := filepath.Join(home, "Library", "Application Support", "Kiro", "User", "globalStorage", "kiro.kiroagent", "workspace-sessions", encoded)
+	if err := os.MkdirAll(sessionDir, 0o700); err != nil {
+		t.Fatalf("mkdir kiro ide session dir: %v", err)
+	}
+	sessionIndexPath := filepath.Join(sessionDir, "sessions.json")
+	sessionIndex := fmt.Sprintf(`[{"sessionId":"chat-sess-1","title":"hi","dateCreated":"1779284885045","workspaceDirectory":%q}]`, root)
+	if err := os.WriteFile(sessionIndexPath, []byte(sessionIndex), 0o600); err != nil {
+		t.Fatalf("write kiro ide session index: %v", err)
+	}
+
+	execPath := filepath.Join(home, "Library", "Application Support", "Kiro", "User", "globalStorage", "kiro.kiroagent", "8794d1d6b05461c486ae3c70a25dbd02", "414d1636299d2b9e4ce7e17fb11f63e9", "71d22ce2a62c4cdc077c824e07bd8650")
+	if err := os.MkdirAll(filepath.Dir(execPath), 0o700); err != nil {
+		t.Fatalf("mkdir kiro ide exec dir: %v", err)
+	}
+	body := fmt.Sprintf(`{
+  "executionId": "exec-1",
+  "workflowType": "chat-agent",
+  "status": "succeed",
+  "startTime": 1779288013500,
+  "chatSessionId": "chat-sess-1",
+  "endTime": 1779288019211,
+  "usageSummary": [
+    {"usage": 0.007750866932006633, "unit": "credit", "unitPlural": "credits"},
+    {"usage": 0.05991760597014926, "unit": "credit", "unitPlural": "credits"}
+  ],
+  "contextUsagePercentage": 23.259000778198242,
+  "workspaceContext": {"cwd": %q}
+}`, root)
+	if err := os.WriteFile(execPath, []byte(body), 0o600); err != nil {
+		t.Fatalf("write kiro ide execution: %v", err)
 	}
 
 	return attributionFixture{
