@@ -22,6 +22,11 @@ type repoResponse struct {
 	SCMProviderID *int   `json:"scm_provider_id,omitempty"`
 }
 
+type ensureRemoteRequest struct {
+	RemoteURL string `json:"remote_url" binding:"required"`
+	Branch    string `json:"branch"`
+}
+
 // NewRepoHandler creates a new repo handler.
 func NewRepoHandler(repoService *repo.Service) *RepoHandler {
 	return &RepoHandler{repoService: repoService}
@@ -101,6 +106,29 @@ func (h *RepoHandler) CreateDirect(c *gin.Context) {
 	}
 
 	pkg.Created(c, buildRepoResponse(loaded))
+}
+
+// EnsureRemote handles POST /api/v1/repos/ensure-remote.
+func (h *RepoHandler) EnsureRemote(c *gin.Context) {
+	var req ensureRemoteRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pkg.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	r, err := h.repoService.EnsureFromRemote(c.Request.Context(), req.RemoteURL, req.Branch)
+	if err != nil {
+		pkg.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	loaded, err := h.repoService.Get(c.Request.Context(), r.ID)
+	if err != nil {
+		pkg.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	pkg.Success(c, buildRepoResponse(loaded))
 }
 
 // Get handles GET /api/v1/repos/:id

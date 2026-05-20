@@ -117,6 +117,7 @@ func SetupRouter(
 		repoGroup.GET("", repoHandler.List)
 		repoGroup.POST("", repoHandler.Create)
 		repoGroup.POST("/direct", repoHandler.CreateDirect)
+		repoGroup.POST("/ensure-remote", repoHandler.EnsureRemote)
 		repoGroup.GET("/:id", repoHandler.Get)
 		repoGroup.PUT("/:id", repoHandler.Update)
 		repoGroup.DELETE("/:id", repoHandler.Delete)

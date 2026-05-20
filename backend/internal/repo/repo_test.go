@@ -293,6 +293,27 @@ func TestFindOrCreateFromRemote_RequeriesAfterConstraintConflict(t *testing.T) {
 	}
 }
 
+func TestEnsureFromRemote_CreatesUnboundRepo(t *testing.T) {
+	client, svc := setupTest(t)
+	ctx := context.Background()
+
+	rc, err := svc.EnsureFromRemote(ctx, "https://github.com/acme/platform.git", "main")
+	if err != nil {
+		t.Fatalf("EnsureFromRemote error: %v", err)
+	}
+	if rc.RepoKey != "github.com/acme/platform" {
+		t.Fatalf("RepoKey = %q, want %q", rc.RepoKey, "github.com/acme/platform")
+	}
+	if rc.Edges.ScmProvider != nil {
+		t.Fatalf("ScmProvider edge = %#v, want nil", rc.Edges.ScmProvider)
+	}
+
+	count := client.RepoConfig.Query().CountX(ctx)
+	if count != 1 {
+		t.Fatalf("repo count = %d, want 1", count)
+	}
+}
+
 func TestFindOrCreateFromRemote_FallsBackWhenIdentityParsingFails(t *testing.T) {
 	_, svc := setupTest(t)
 	ctx := context.Background()

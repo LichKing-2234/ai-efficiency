@@ -11,6 +11,7 @@ import (
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
 	"github.com/ai-efficiency/backend/ent/commitrewrite"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
+	reposvc "github.com/ai-efficiency/backend/internal/repo"
 	"github.com/ai-efficiency/backend/internal/toolusage"
 )
 
@@ -103,7 +104,7 @@ func (s *Service) recordCheckpoint(ctx context.Context, userID int, req CommitCh
 		return nil
 	}
 
-	rc, err := txSvc.resolveRepoConfig(ctx, req.RepoFullName, req.CloneURL)
+	rc, err := txSvc.resolveOrEnsureRepoConfig(ctx, req.RepoFullName, req.CloneURL, req.BranchSnapshot)
 	if err != nil {
 		return fmt.Errorf("record checkpoint: %w", err)
 	}
@@ -229,7 +230,7 @@ func (s *Service) recordRewrite(ctx context.Context, userID int, req CommitRewri
 		return nil
 	}
 
-	rc, err := s.resolveRepoConfig(ctx, req.RepoFullName, req.CloneURL)
+	rc, err := s.resolveOrEnsureRepoConfig(ctx, req.RepoFullName, req.CloneURL, "")
 	if err != nil {
 		return fmt.Errorf("record rewrite: %w", err)
 	}
@@ -318,6 +319,24 @@ func (s *Service) resolveRepoConfig(ctx context.Context, repoFullName, cloneURL 
 	}
 
 	return nil, fmt.Errorf("repo not found: %s", firstNonEmpty(repoFullName, cloneURL))
+}
+
+func (s *Service) resolveOrEnsureRepoConfig(ctx context.Context, repoFullName, cloneURL, branch string) (*ent.RepoConfig, error) {
+	rc, err := s.resolveRepoConfig(ctx, repoFullName, cloneURL)
+	if err == nil {
+		return rc, nil
+	}
+	if !strings.Contains(err.Error(), "repo not found") {
+		return nil, err
+	}
+
+	remoteURL := firstNonEmpty(cloneURL, repoFullName)
+	if remoteURL == "" {
+		return nil, err
+	}
+
+	repoService := reposvc.NewService(s.entClient, "", nil)
+	return repoService.EnsureFromRemote(ctx, remoteURL, branch)
 }
 
 func firstNonEmpty(values ...string) string {
