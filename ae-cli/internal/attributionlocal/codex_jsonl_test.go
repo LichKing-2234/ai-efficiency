@@ -49,6 +49,40 @@ func TestParseCodexJSONL_EmitsMultipleEventsPerFile(t *testing.T) {
 	}
 }
 
+func TestParseCodexJSONL_EmitsDistinctEventsWithoutResponseID(t *testing.T) {
+	t.Parallel()
+
+	path := writeFile(t, "codex.jsonl", strings.Join([]string{
+		`{"type":"session_meta","payload":{"id":"sess-1","cwd":"/tmp/repo"}}`,
+		`{"type":"event_msg","timestamp":"2026-05-20T13:09:02.118Z","payload":{"type":"token_count","info":null}}`,
+		`{"type":"event_msg","timestamp":"2026-05-20T13:09:10.936Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":24342,"cached_input_tokens":2432,"output_tokens":410,"reasoning_output_tokens":211,"total_tokens":24752}}}}`,
+		`{"type":"event_msg","timestamp":"2026-05-20T13:09:20.111Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":30798,"cached_input_tokens":23936,"output_tokens":390,"reasoning_output_tokens":172,"total_tokens":31188}}}}`,
+		`{"type":"event_msg","timestamp":"2026-05-20T13:09:37.056Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":37059,"cached_input_tokens":30592,"output_tokens":750,"reasoning_output_tokens":516,"total_tokens":37809}}}}`,
+	}, "\n"))
+
+	events, err := ParseCodexJSONLFallback(path, "/tmp/repo")
+	if err != nil {
+		t.Fatalf("ParseCodexJSONLFallback: %v", err)
+	}
+	if len(events) != 3 {
+		t.Fatalf("event count = %d, want 3", len(events))
+	}
+	for idx, ev := range events {
+		if ev.ToolEventID == "" {
+			t.Fatalf("events[%d] missing tool event id: %+v", idx, ev)
+		}
+		if ev.DedupeKey == "" {
+			t.Fatalf("events[%d] missing dedupe key: %+v", idx, ev)
+		}
+	}
+	if events[0].ToolEventID == events[1].ToolEventID || events[1].ToolEventID == events[2].ToolEventID || events[0].ToolEventID == events[2].ToolEventID {
+		t.Fatalf("tool event ids should differ: %+v", events)
+	}
+	if events[0].DedupeKey == events[1].DedupeKey || events[1].DedupeKey == events[2].DedupeKey || events[0].DedupeKey == events[2].DedupeKey {
+		t.Fatalf("dedupe keys should differ: %+v", events)
+	}
+}
+
 func TestParseCodexJSONL_PreservesTimestampForLegacyReplayBackfill(t *testing.T) {
 	t.Parallel()
 

@@ -353,23 +353,22 @@ flowchart LR
 
 主次顺序：
 
-1. 主数据源：`~/.codex/logs_2.sqlite`
-2. 辅助数据源：`~/.codex/sessions/**/*.jsonl`
+1. 当前正式数据源：`~/.codex/sessions/**/*.jsonl`
+2. sqlite 相关解析代码可作为兼容性实验保留在代码树中，但**不属于当前主合同**，也不是 PR / commit usage 路径的必需依赖
 
 归一化规则：
 
-1. 若 sqlite 中存在 `response.completed`：
-   - `tool_session_id = conversation.id`
-   - `tool_event_id = response.id`
-   - token 字段直接取 `*_token_count`
-2. 若同一 `(conversation.id, response.id)` 出现多次：
-   - 只保留最后一个完整 `response.completed`
-3. jsonl 仅作为：
-   - `cwd` / session metadata 补充
-   - sqlite 不可用时的 fallback
+1. `tool_session_id = session_meta.id`
+2. 若某条 `token_count` 带 `response_id`：
+   - `tool_event_id = response_id`
+3. 若某条 `token_count` **不带** `response_id`：
+   - `tool_event_id` 必须从同一 session 文件中的稳定位置派生
+   - 当前实现使用 `line:<n>`，即该 `token_count` 在源 `jsonl` 文件中的行号
+   - 目标是避免“同一个 session 文件内多次 usage 更新被压成一条 event”
 4. 若 jsonl `token_count` 同时包含累计值和最近一次 usage：
    - 优先使用 `last_token_usage`
-   - 仅在其缺失时，才对累计值做增量推导
+   - 仅在 `last_token_usage` 缺失时，才直接回退到该行的 `total_token_usage`
+5. `raw_source_locator` 应记录稳定源定位信息，当前实现使用 `line:<n>`
 
 ### Claude 解析规则
 
