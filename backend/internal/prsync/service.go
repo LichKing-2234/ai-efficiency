@@ -9,6 +9,7 @@ import (
 	"github.com/ai-efficiency/backend/ent/prrecord"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/internal/efficiency"
+	"github.com/ai-efficiency/backend/internal/prusage"
 	"github.com/ai-efficiency/backend/internal/scm"
 	"go.uber.org/zap"
 )
@@ -104,7 +105,7 @@ func (s *Service) Sync(ctx context.Context, scmProvider scm.SCMProvider, rc *ent
 }
 
 type usageRefresher interface {
-	RefreshPR(ctx context.Context, provider scm.SCMProvider, pr *ent.PrRecord) (any, error)
+	RefreshPR(ctx context.Context, provider scm.SCMProvider, pr *ent.PrRecord) (*prusage.Result, error)
 }
 
 func (s *Service) fetchAllPRs(ctx context.Context, provider scm.SCMProvider, repoFullName string) ([]*scm.PR, error) {

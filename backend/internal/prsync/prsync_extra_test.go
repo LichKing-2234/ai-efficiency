@@ -12,6 +12,7 @@ import (
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/scmprovider"
 	"github.com/ai-efficiency/backend/internal/efficiency"
+	"github.com/ai-efficiency/backend/internal/prusage"
 	"github.com/ai-efficiency/backend/internal/scm"
 	"github.com/ai-efficiency/backend/internal/testdb"
 	"go.uber.org/zap"
@@ -21,7 +22,7 @@ type recordingUsageRefresher struct {
 	ids []int
 }
 
-func (r *recordingUsageRefresher) RefreshPR(ctx context.Context, provider scm.SCMProvider, pr *ent.PrRecord) (any, error) {
+func (r *recordingUsageRefresher) RefreshPR(ctx context.Context, provider scm.SCMProvider, pr *ent.PrRecord) (*prusage.Result, error) {
 	r.ids = append(r.ids, pr.ID)
 	return nil, nil
 }
