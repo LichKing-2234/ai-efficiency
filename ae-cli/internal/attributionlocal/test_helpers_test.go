@@ -102,6 +102,15 @@ func buildSQLiteOnlyAttributionFixture(t *testing.T) attributionFixture {
 	if err := os.MkdirAll(filepath.Join(home, ".codex"), 0o700); err != nil {
 		t.Fatalf("mkdir codex home: %v", err)
 	}
+	codexSessions := filepath.Join(home, ".codex", "sessions", "2026", "05", "13")
+	if err := os.MkdirAll(codexSessions, 0o700); err != nil {
+		t.Fatalf("mkdir codex sessions: %v", err)
+	}
+	codexJSONL := filepath.Join(codexSessions, "sess-1.jsonl")
+	codexBody := `{"type":"session_meta","payload":{"id":"conv-1","cwd":"` + root + `"}}`
+	if err := os.WriteFile(codexJSONL, []byte(codexBody), 0o600); err != nil {
+		t.Fatalf("write codex session metadata: %v", err)
+	}
 	dbPath := filepath.Join(home, ".codex", "logs_2.sqlite")
 	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
@@ -135,13 +144,13 @@ func setupSyncEngineWithSpool(t *testing.T) syncEngineFixture {
 	}
 	spoolPath := filepath.Join(t.TempDir(), "spool.json")
 	payload := []LocalToolUsageEvent{{
-		Tool:           "codex",
-		WorkspaceID:    "ws-1",
-		ToolSessionID:  "conv-1",
-		ToolEventID:    "resp-1",
-		DedupeKey:      "spooled-dedupe-key",
-		UsageUnit:      UsageUnitToken,
-		RequestCount:   1,
+		Tool:            "codex",
+		WorkspaceID:     "ws-1",
+		ToolSessionID:   "conv-1",
+		ToolEventID:     "resp-1",
+		DedupeKey:       "spooled-dedupe-key",
+		UsageUnit:       UsageUnitToken,
+		RequestCount:    1,
 		ObservedStartAt: jsonTime("2026-05-13T10:00:00Z"),
 		ObservedEndAt:   jsonTime("2026-05-13T10:00:01Z"),
 	}}
@@ -153,9 +162,9 @@ func setupSyncEngineWithSpool(t *testing.T) syncEngineFixture {
 }
 
 type syncBackendClientStub struct {
-	uploads []string
+	uploads  []string
 	requests []client.ToolUsageEventRequest
-	failOn  string
+	failOn   string
 }
 
 func (s *syncBackendClientStub) SendToolUsageEvent(_ context.Context, req client.ToolUsageEventRequest) error {

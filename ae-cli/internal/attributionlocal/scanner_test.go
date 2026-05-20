@@ -24,7 +24,7 @@ func TestScanner_ScanWorkspaceReadsMatchingCodexJSONL(t *testing.T) {
 	}
 }
 
-func TestScanner_IgnoresGlobalCodexSQLiteTransportLogs(t *testing.T) {
+func TestScanner_UsesCodexSQLiteBeforeJSONLFallback(t *testing.T) {
 	fixture := buildSQLiteOnlyAttributionFixture(t)
 	scanner := NewScanner()
 
@@ -32,8 +32,31 @@ func TestScanner_IgnoresGlobalCodexSQLiteTransportLogs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("scan: %v", err)
 	}
-	if len(first) != 0 {
-		t.Fatal("expected first scan events")
+	if len(first) != 1 {
+		t.Fatalf("first scan events = %d, want 1", len(first))
+	}
+	if first[0].DedupeKey != "codex:conv-1:resp-1" {
+		t.Fatalf("dedupe key = %q, want %q", first[0].DedupeKey, "codex:conv-1:resp-1")
+	}
+}
+
+func TestScanner_SecondScanWithStateReturnsNoDuplicateSQLiteEvents(t *testing.T) {
+	fixture := buildSQLiteOnlyAttributionFixture(t)
+	scanner := NewScanner()
+
+	first, state, err := scanner.ScanWorkspace(fixture.WorkspaceRoot, ScanState{})
+	if err != nil {
+		t.Fatalf("first scan: %v", err)
+	}
+	second, _, err := scanner.ScanWorkspace(fixture.WorkspaceRoot, state)
+	if err != nil {
+		t.Fatalf("second scan: %v", err)
+	}
+	if len(first) != 1 {
+		t.Fatalf("first scan events = %d, want 1", len(first))
+	}
+	if len(second) != 0 {
+		t.Fatalf("second scan events = %d, want 0", len(second))
 	}
 }
 
