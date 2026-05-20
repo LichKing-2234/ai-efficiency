@@ -2,7 +2,6 @@ package attribution
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -13,14 +12,10 @@ import (
 	"github.com/ai-efficiency/backend/ent/commitrewrite"
 	"github.com/ai-efficiency/backend/ent/prattributionrun"
 	"github.com/ai-efficiency/backend/ent/prrecord"
-	"github.com/ai-efficiency/backend/ent/sessionusageevent"
 	"github.com/ai-efficiency/backend/ent/toolusageevent"
 	"github.com/ai-efficiency/backend/internal/relay"
 	"github.com/ai-efficiency/backend/internal/scm"
-	"github.com/google/uuid"
 )
-
-var errSessionMissingAPIKey = errors.New("session missing relay api key for fallback")
 
 type Service struct {
 	entClient     *ent.Client
@@ -115,7 +110,6 @@ func (s *Service) Settle(ctx context.Context, provider scm.SCMProvider, pr *ent.
 	var totalUsageLogs int64
 	var totalRequests int64
 	var totalCreditUsage float64
-	usedSessionStartFallback := false
 
 	for _, cp := range matchedCheckpoints {
 		workspaceSet[strings.TrimSpace(cp.WorkspaceID)] = struct{}{}
@@ -123,8 +117,14 @@ func (s *Service) Settle(ctx context.Context, provider scm.SCMProvider, pr *ent.
 		if intervalTokens, intervalCost, usageSummary, hasToolUsage, err := s.loadCheckpointToolUsage(ctx, cp.ID); err != nil {
 			return nil, fmt.Errorf("settle pr: load checkpoint tool usage: %w", err)
 		} else if hasToolUsage {
-			if cp.SessionID != nil {
-				matchedSessionSet[cp.SessionID.String()] = struct{}{}
+			if toolSessionIDs, ok := usageSummary["tool_session_ids"].([]string); ok {
+				for _, toolSessionID := range toolSessionIDs {
+					toolSessionID = strings.TrimSpace(toolSessionID)
+					if toolSessionID == "" {
+						continue
+					}
+					matchedSessionSet[toolSessionID] = struct{}{}
+				}
 			}
 
 			from := cp.CapturedAt
@@ -161,9 +161,6 @@ func (s *Service) Settle(ctx context.Context, provider scm.SCMProvider, pr *ent.
 				"total_tokens":  intervalTokens,
 				"total_cost":    intervalCost,
 			}
-			if cp.SessionID != nil {
-				intervalMetadata["session_id"] = cp.SessionID.String()
-			}
 			for key, value := range usageSummary {
 				intervalMetadata[key] = value
 			}
@@ -171,80 +168,7 @@ func (s *Service) Settle(ctx context.Context, provider scm.SCMProvider, pr *ent.
 			continue
 		}
 
-		if cp.BindingSource == commitcheckpoint.BindingSourceUnbound || cp.SessionID == nil {
-			return s.persistAmbiguous(ctx, pr, triggeredBy, "unbound_checkpoint", commitSet)
-		}
-
-		sessionID := *cp.SessionID
-		matchedSessionSet[sessionID.String()] = struct{}{}
-
-		sess, err := s.entClient.Session.Get(ctx, sessionID)
-		if err != nil {
-			return nil, fmt.Errorf("settle pr: load session %s: %w", sessionID, err)
-		}
-
-		from := sess.StartedAt
-		prevCP, err := s.entClient.CommitCheckpoint.Query().
-			Where(
-				commitcheckpoint.SessionIDEQ(sessionID),
-				commitcheckpoint.CapturedAtLT(cp.CapturedAt),
-			).
-			Order(ent.Desc(commitcheckpoint.FieldCapturedAt)).
-			First(ctx)
-		if err != nil && !ent.IsNotFound(err) {
-			return nil, fmt.Errorf("settle pr: load previous checkpoint: %w", err)
-		}
-		if prevCP != nil {
-			from = prevCP.CapturedAt
-		} else {
-			usedSessionStartFallback = true
-		}
-
-		to := cp.CapturedAt
-		intervalTokens, intervalCost, usageSummary, err := s.loadIntervalUsage(ctx, cp.ID, sessionID, from, to, sess.RelayAPIKeyID)
-		if err != nil {
-			if errors.Is(err, errSessionMissingAPIKey) {
-				return s.persistAmbiguous(ctx, pr, triggeredBy, "session_missing_api_key", commitSet)
-			}
-			return nil, fmt.Errorf("settle pr: load interval usage: %w", err)
-		}
-
-		if usageLogCount, ok := usageSummary["usage_log_count"].(int); ok {
-			totalUsageLogs += int64(usageLogCount)
-		}
-		if requestCount, ok := usageSummary["request_count"].(int64); ok {
-			totalRequests += requestCount
-		}
-		if creditUsage, ok := usageSummary["kiro_credit_usage"].(float64); ok {
-			totalCreditUsage += creditUsage
-		}
-		if intervalAccountTokens, ok := usageSummary["account_token_totals"].(map[string]int64); ok {
-			for accountID, tokens := range intervalAccountTokens {
-				accountTokenTotals[accountID] += tokens
-			}
-		}
-		if intervalAccountCosts, ok := usageSummary["account_cost_totals"].(map[string]float64); ok {
-			for accountID, cost := range intervalAccountCosts {
-				accountCostTotals[accountID] += cost
-			}
-		}
-
-		totalTokens += intervalTokens
-		totalCost += intervalCost
-
-		intervalMetadata := map[string]interface{}{
-			"session_id":    sessionID.String(),
-			"checkpoint_id": cp.ID,
-			"commit_sha":    cp.CommitSha,
-			"from":          from,
-			"to":            to,
-			"total_tokens":  intervalTokens,
-			"total_cost":    intervalCost,
-		}
-		for key, value := range usageSummary {
-			intervalMetadata[key] = value
-		}
-		intervals = append(intervals, intervalMetadata)
+		return s.persistAmbiguous(ctx, pr, triggeredBy, "no_bound_tool_usage", commitSet)
 	}
 
 	matchedCommits := make([]string, 0, len(prCommitSHAs))
@@ -278,15 +202,6 @@ func (s *Service) Settle(ctx context.Context, provider scm.SCMProvider, pr *ent.
 	}
 	slices.Sort(matchedWorkspaceIDs)
 
-	attributionConfidence := prrecord.AttributionConfidenceHigh
-	validationConfidence := "high"
-	validationReason := "all_matched_checkpoints_bound"
-	if usedSessionStartFallback {
-		attributionConfidence = prrecord.AttributionConfidenceMedium
-		validationConfidence = "medium"
-		validationReason = "session_start_fallback"
-	}
-
 	primarySummary := map[string]interface{}{
 		"total_tokens":    totalTokens,
 		"total_cost":      totalCost,
@@ -305,8 +220,8 @@ func (s *Service) Settle(ctx context.Context, provider scm.SCMProvider, pr *ent.
 	}
 	validationSummary := map[string]interface{}{
 		"result":           "consistent",
-		"confidence":       validationConfidence,
-		"reason":           validationReason,
+		"confidence":       "high",
+		"reason":           "all_matched_checkpoints_bound",
 		"matched_commits":  len(matchedCommits),
 		"matched_sessions": len(matchedSessions),
 	}
@@ -317,7 +232,7 @@ func (s *Service) Settle(ctx context.Context, provider scm.SCMProvider, pr *ent.
 		triggeredBy,
 		prattributionrun.ResultClassificationClear,
 		prrecord.AttributionStatusClear,
-		attributionConfidence,
+		prrecord.AttributionConfidenceHigh,
 		totalTokens,
 		totalCost,
 		matchedCommits,
@@ -502,6 +417,7 @@ func (s *Service) loadCheckpointToolUsage(ctx context.Context, checkpointID int)
 	var totalCredits float64
 	var totalRequests int64
 	var tokenEventCount int
+	toolSessionSet := map[string]struct{}{}
 	for _, item := range toolItems {
 		totalTokens += item.InputTokens + item.OutputTokens + item.CachedInputTokens
 		totalCredits += item.CreditUsage
@@ -509,7 +425,17 @@ func (s *Service) loadCheckpointToolUsage(ctx context.Context, checkpointID int)
 		if item.UsageUnit == toolusageevent.UsageUnitToken {
 			tokenEventCount++
 		}
+		toolSessionID := strings.TrimSpace(item.ToolSessionID)
+		if toolSessionID != "" {
+			toolSessionSet[toolSessionID] = struct{}{}
+		}
 	}
+
+	toolSessionIDs := make([]string, 0, len(toolSessionSet))
+	for sessionID := range toolSessionSet {
+		toolSessionIDs = append(toolSessionIDs, sessionID)
+	}
+	slices.Sort(toolSessionIDs)
 
 	return totalTokens, 0, map[string]any{
 		"source":            "tool_usage_events",
@@ -518,102 +444,6 @@ func (s *Service) loadCheckpointToolUsage(ctx context.Context, checkpointID int)
 		"request_count":     totalRequests,
 		"kiro_credit_usage": totalCredits,
 		"checkpoint_id":     checkpointID,
+		"tool_session_ids":  toolSessionIDs,
 	}, true, nil
-}
-
-func (s *Service) loadIntervalUsage(
-	ctx context.Context,
-	checkpointID int,
-	sessionID uuid.UUID,
-	from, to time.Time,
-	fallbackAPIKeyID *int,
-) (int64, float64, map[string]any, error) {
-	toolItems, err := s.entClient.ToolUsageEvent.Query().
-		Where(toolusageevent.CommitCheckpointIDEQ(checkpointID)).
-		All(ctx)
-	if err != nil {
-		return 0, 0, nil, fmt.Errorf("query tool usage events: %w", err)
-	}
-	if len(toolItems) > 0 {
-		var totalTokens int64
-		var totalCredits float64
-		var totalRequests int64
-		var tokenEventCount int
-		for _, item := range toolItems {
-			totalTokens += item.InputTokens + item.OutputTokens + item.CachedInputTokens
-			totalCredits += item.CreditUsage
-			totalRequests += int64(item.RequestCount)
-			if item.UsageUnit == toolusageevent.UsageUnitToken {
-				tokenEventCount++
-			}
-		}
-		return totalTokens, 0, map[string]any{
-			"source":             "tool_usage_events",
-			"event_count":        len(toolItems),
-			"token_event_count":  tokenEventCount,
-			"request_count":      totalRequests,
-			"kiro_credit_usage":  totalCredits,
-			"checkpoint_id":      checkpointID,
-		}, nil
-	}
-
-	events, err := s.entClient.SessionUsageEvent.Query().
-		Where(
-			sessionusageevent.SessionIDEQ(sessionID),
-			sessionusageevent.FinishedAtGT(from),
-			sessionusageevent.FinishedAtLTE(to),
-			sessionusageevent.StatusEQ("completed"),
-		).
-		All(ctx)
-	if err != nil {
-		return 0, 0, nil, fmt.Errorf("query session usage events: %w", err)
-	}
-	if len(events) > 0 {
-		var totalTokens int64
-		for _, ev := range events {
-			totalTokens += ev.TotalTokens
-		}
-		return totalTokens, 0, map[string]any{
-			"source":      "local_proxy",
-			"event_count": len(events),
-		}, nil
-	}
-	if fallbackAPIKeyID == nil {
-		return 0, 0, nil, errSessionMissingAPIKey
-	}
-	return s.loadRelayLedgerFallback(ctx, int64(*fallbackAPIKeyID), from, to)
-}
-
-func (s *Service) loadRelayLedgerFallback(
-	ctx context.Context,
-	apiKeyID int64,
-	from, to time.Time,
-) (int64, float64, map[string]any, error) {
-	logs, err := s.relayProvider.ListUsageLogsByAPIKeyExact(ctx, apiKeyID, from, to)
-	if err != nil {
-		return 0, 0, nil, fmt.Errorf("list usage logs: %w", err)
-	}
-
-	var totalTokens int64
-	var totalCost float64
-	accountTokenTotals := map[string]int64{}
-	accountCostTotals := map[string]float64{}
-	for _, log := range logs {
-		totalTokens += log.TotalTokens
-		totalCost += log.TotalCost
-
-		accountID := strings.TrimSpace(log.AccountID)
-		if accountID == "" {
-			accountID = "unknown"
-		}
-		accountTokenTotals[accountID] += log.TotalTokens
-		accountCostTotals[accountID] += log.TotalCost
-	}
-
-	return totalTokens, totalCost, map[string]any{
-		"source":               "relay_ledger",
-		"usage_log_count":      len(logs),
-		"account_token_totals": accountTokenTotals,
-		"account_cost_totals":  accountCostTotals,
-	}, nil
 }

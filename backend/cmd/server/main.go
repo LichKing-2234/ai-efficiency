@@ -15,7 +15,6 @@ import (
 
 	"github.com/ai-efficiency/backend/ent"
 	_ "github.com/ai-efficiency/backend/ent/runtime"
-	"github.com/ai-efficiency/backend/internal/analysis/llm"
 	"github.com/ai-efficiency/backend/internal/attribution"
 	"github.com/ai-efficiency/backend/internal/auth"
 	"github.com/ai-efficiency/backend/internal/checkpoint"
@@ -207,15 +206,12 @@ func main() {
 	// Init repo service
 	repoService := repo.NewService(entClient, cfg.Encryption.Key, logger)
 
-	llmAnalyzer := llm.NewAnalyzer(cfg.Analysis.LLM, relayProvider, logger)
-
 	// Init PR labeler (with optional relay usage stats lookup)
 	labeler := efficiency.NewLabeler(entClient, relayProvider, logger)
-	aggregator := efficiency.NewAggregator(entClient, logger)
 
 	// Init webhook handler (with labeler for auto-labeling on PR events)
 	webhookHandler := webhook.NewHandler(entClient, labeler, logger)
-	syncService := prsync.NewService(entClient, labeler, aggregator, logger)
+	syncService := prsync.NewService(entClient, labeler, logger)
 
 	// Setup router
 	var relayRuntimeUpdater interface {
@@ -228,7 +224,7 @@ func main() {
 	}); ok {
 		relayRuntimeUpdater = u
 	}
-	settingsHandler := handler.NewSettingsHandler(settingsConfigPath, cfg.Relay, llmAnalyzer, logger, relayRuntimeUpdater)
+	settingsHandler := handler.NewSettingsHandler(settingsConfigPath, cfg.Relay, logger, relayRuntimeUpdater)
 
 	// Init OAuth handler
 	oauthServer := oauth.NewServer()
@@ -322,7 +318,6 @@ func main() {
 		webhookHandler,
 		syncService,
 		settingsHandler,
-		aggregator,
 		cfg.Encryption.Key,
 		middleware.CORS(nil),
 		oauthHandler,

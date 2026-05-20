@@ -30,8 +30,6 @@ const (
 	FieldWebhookID = "webhook_id"
 	// FieldWebhookSecret holds the string denoting the webhook_secret field in the database.
 	FieldWebhookSecret = "webhook_secret"
-	// FieldLastScanAt holds the string denoting the last_scan_at field in the database.
-	FieldLastScanAt = "last_scan_at"
 	// FieldGroupID holds the string denoting the group_id field in the database.
 	FieldGroupID = "group_id"
 	// FieldRelayProviderName holds the string denoting the relay_provider_name field in the database.
@@ -44,12 +42,8 @@ const (
 	FieldCreatedAt = "created_at"
 	// FieldUpdatedAt holds the string denoting the updated_at field in the database.
 	FieldUpdatedAt = "updated_at"
-	// FieldScanPromptOverride holds the string denoting the scan_prompt_override field in the database.
-	FieldScanPromptOverride = "scan_prompt_override"
 	// EdgeScmProvider holds the string denoting the scm_provider edge name in mutations.
 	EdgeScmProvider = "scm_provider"
-	// EdgeSessions holds the string denoting the sessions edge name in mutations.
-	EdgeSessions = "sessions"
 	// EdgeCommitCheckpoints holds the string denoting the commit_checkpoints edge name in mutations.
 	EdgeCommitCheckpoints = "commit_checkpoints"
 	// EdgeCommitRewrites holds the string denoting the commit_rewrites edge name in mutations.
@@ -58,12 +52,8 @@ const (
 	EdgeToolUsageEvents = "tool_usage_events"
 	// EdgeWebhookDeadLetters holds the string denoting the webhook_dead_letters edge name in mutations.
 	EdgeWebhookDeadLetters = "webhook_dead_letters"
-	// EdgeAiScanResults holds the string denoting the ai_scan_results edge name in mutations.
-	EdgeAiScanResults = "ai_scan_results"
 	// EdgePrRecords holds the string denoting the pr_records edge name in mutations.
 	EdgePrRecords = "pr_records"
-	// EdgeEfficiencyMetrics holds the string denoting the efficiency_metrics edge name in mutations.
-	EdgeEfficiencyMetrics = "efficiency_metrics"
 	// Table holds the table name of the repoconfig in the database.
 	Table = "repo_configs"
 	// ScmProviderTable is the table that holds the scm_provider relation/edge.
@@ -73,13 +63,6 @@ const (
 	ScmProviderInverseTable = "scm_providers"
 	// ScmProviderColumn is the table column denoting the scm_provider relation/edge.
 	ScmProviderColumn = "scm_provider_repo_configs"
-	// SessionsTable is the table that holds the sessions relation/edge.
-	SessionsTable = "sessions"
-	// SessionsInverseTable is the table name for the Session entity.
-	// It exists in this package in order to avoid circular dependency with the "session" package.
-	SessionsInverseTable = "sessions"
-	// SessionsColumn is the table column denoting the sessions relation/edge.
-	SessionsColumn = "repo_config_sessions"
 	// CommitCheckpointsTable is the table that holds the commit_checkpoints relation/edge.
 	CommitCheckpointsTable = "commit_checkpoints"
 	// CommitCheckpointsInverseTable is the table name for the CommitCheckpoint entity.
@@ -108,13 +91,6 @@ const (
 	WebhookDeadLettersInverseTable = "webhook_dead_letters"
 	// WebhookDeadLettersColumn is the table column denoting the webhook_dead_letters relation/edge.
 	WebhookDeadLettersColumn = "repo_config_webhook_dead_letters"
-	// AiScanResultsTable is the table that holds the ai_scan_results relation/edge.
-	AiScanResultsTable = "ai_scan_results"
-	// AiScanResultsInverseTable is the table name for the AiScanResult entity.
-	// It exists in this package in order to avoid circular dependency with the "aiscanresult" package.
-	AiScanResultsInverseTable = "ai_scan_results"
-	// AiScanResultsColumn is the table column denoting the ai_scan_results relation/edge.
-	AiScanResultsColumn = "repo_config_ai_scan_results"
 	// PrRecordsTable is the table that holds the pr_records relation/edge.
 	PrRecordsTable = "pr_records"
 	// PrRecordsInverseTable is the table name for the PrRecord entity.
@@ -122,13 +98,6 @@ const (
 	PrRecordsInverseTable = "pr_records"
 	// PrRecordsColumn is the table column denoting the pr_records relation/edge.
 	PrRecordsColumn = "repo_config_pr_records"
-	// EfficiencyMetricsTable is the table that holds the efficiency_metrics relation/edge.
-	EfficiencyMetricsTable = "efficiency_metrics"
-	// EfficiencyMetricsInverseTable is the table name for the EfficiencyMetric entity.
-	// It exists in this package in order to avoid circular dependency with the "efficiencymetric" package.
-	EfficiencyMetricsInverseTable = "efficiency_metrics"
-	// EfficiencyMetricsColumn is the table column denoting the efficiency_metrics relation/edge.
-	EfficiencyMetricsColumn = "repo_config_efficiency_metrics"
 )
 
 // Columns holds all SQL columns for repoconfig fields.
@@ -141,14 +110,12 @@ var Columns = []string{
 	FieldDefaultBranch,
 	FieldWebhookID,
 	FieldWebhookSecret,
-	FieldLastScanAt,
 	FieldGroupID,
 	FieldRelayProviderName,
 	FieldRelayGroupID,
 	FieldStatus,
 	FieldCreatedAt,
 	FieldUpdatedAt,
-	FieldScanPromptOverride,
 }
 
 // ForeignKeys holds the SQL foreign-keys that are owned by the "repo_configs"
@@ -265,11 +232,6 @@ func ByWebhookSecret(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldWebhookSecret, opts...).ToFunc()
 }
 
-// ByLastScanAt orders the results by the last_scan_at field.
-func ByLastScanAt(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldLastScanAt, opts...).ToFunc()
-}
-
 // ByGroupID orders the results by the group_id field.
 func ByGroupID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldGroupID, opts...).ToFunc()
@@ -304,20 +266,6 @@ func ByUpdatedAt(opts ...sql.OrderTermOption) OrderOption {
 func ByScmProviderField(field string, opts ...sql.OrderTermOption) OrderOption {
 	return func(s *sql.Selector) {
 		sqlgraph.OrderByNeighborTerms(s, newScmProviderStep(), sql.OrderByField(field, opts...))
-	}
-}
-
-// BySessionsCount orders the results by sessions count.
-func BySessionsCount(opts ...sql.OrderTermOption) OrderOption {
-	return func(s *sql.Selector) {
-		sqlgraph.OrderByNeighborsCount(s, newSessionsStep(), opts...)
-	}
-}
-
-// BySessions orders the results by sessions terms.
-func BySessions(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
-	return func(s *sql.Selector) {
-		sqlgraph.OrderByNeighborTerms(s, newSessionsStep(), append([]sql.OrderTerm{term}, terms...)...)
 	}
 }
 
@@ -377,20 +325,6 @@ func ByWebhookDeadLetters(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOptio
 	}
 }
 
-// ByAiScanResultsCount orders the results by ai_scan_results count.
-func ByAiScanResultsCount(opts ...sql.OrderTermOption) OrderOption {
-	return func(s *sql.Selector) {
-		sqlgraph.OrderByNeighborsCount(s, newAiScanResultsStep(), opts...)
-	}
-}
-
-// ByAiScanResults orders the results by ai_scan_results terms.
-func ByAiScanResults(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
-	return func(s *sql.Selector) {
-		sqlgraph.OrderByNeighborTerms(s, newAiScanResultsStep(), append([]sql.OrderTerm{term}, terms...)...)
-	}
-}
-
 // ByPrRecordsCount orders the results by pr_records count.
 func ByPrRecordsCount(opts ...sql.OrderTermOption) OrderOption {
 	return func(s *sql.Selector) {
@@ -404,32 +338,11 @@ func ByPrRecords(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
 		sqlgraph.OrderByNeighborTerms(s, newPrRecordsStep(), append([]sql.OrderTerm{term}, terms...)...)
 	}
 }
-
-// ByEfficiencyMetricsCount orders the results by efficiency_metrics count.
-func ByEfficiencyMetricsCount(opts ...sql.OrderTermOption) OrderOption {
-	return func(s *sql.Selector) {
-		sqlgraph.OrderByNeighborsCount(s, newEfficiencyMetricsStep(), opts...)
-	}
-}
-
-// ByEfficiencyMetrics orders the results by efficiency_metrics terms.
-func ByEfficiencyMetrics(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
-	return func(s *sql.Selector) {
-		sqlgraph.OrderByNeighborTerms(s, newEfficiencyMetricsStep(), append([]sql.OrderTerm{term}, terms...)...)
-	}
-}
 func newScmProviderStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(ScmProviderInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.M2O, true, ScmProviderTable, ScmProviderColumn),
-	)
-}
-func newSessionsStep() *sqlgraph.Step {
-	return sqlgraph.NewStep(
-		sqlgraph.From(Table, FieldID),
-		sqlgraph.To(SessionsInverseTable, FieldID),
-		sqlgraph.Edge(sqlgraph.O2M, false, SessionsTable, SessionsColumn),
 	)
 }
 func newCommitCheckpointsStep() *sqlgraph.Step {
@@ -460,24 +373,10 @@ func newWebhookDeadLettersStep() *sqlgraph.Step {
 		sqlgraph.Edge(sqlgraph.O2M, false, WebhookDeadLettersTable, WebhookDeadLettersColumn),
 	)
 }
-func newAiScanResultsStep() *sqlgraph.Step {
-	return sqlgraph.NewStep(
-		sqlgraph.From(Table, FieldID),
-		sqlgraph.To(AiScanResultsInverseTable, FieldID),
-		sqlgraph.Edge(sqlgraph.O2M, false, AiScanResultsTable, AiScanResultsColumn),
-	)
-}
 func newPrRecordsStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(PrRecordsInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.O2M, false, PrRecordsTable, PrRecordsColumn),
-	)
-}
-func newEfficiencyMetricsStep() *sqlgraph.Step {
-	return sqlgraph.NewStep(
-		sqlgraph.From(Table, FieldID),
-		sqlgraph.To(EfficiencyMetricsInverseTable, FieldID),
-		sqlgraph.Edge(sqlgraph.O2M, false, EfficiencyMetricsTable, EfficiencyMetricsColumn),
 	)
 }

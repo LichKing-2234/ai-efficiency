@@ -15,9 +15,8 @@ import (
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
 	"github.com/ai-efficiency/backend/ent/predicate"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
-	"github.com/ai-efficiency/backend/ent/session"
 	"github.com/ai-efficiency/backend/ent/toolusageevent"
-	"github.com/google/uuid"
+	"github.com/ai-efficiency/backend/ent/user"
 )
 
 // CommitCheckpointQuery is the builder for querying CommitCheckpoint entities.
@@ -27,7 +26,7 @@ type CommitCheckpointQuery struct {
 	order               []commitcheckpoint.OrderOption
 	inters              []Interceptor
 	predicates          []predicate.CommitCheckpoint
-	withSession         *SessionQuery
+	withUser            *UserQuery
 	withRepoConfig      *RepoConfigQuery
 	withToolUsageEvents *ToolUsageEventQuery
 	// intermediate query (i.e. traversal path).
@@ -66,9 +65,9 @@ func (ccq *CommitCheckpointQuery) Order(o ...commitcheckpoint.OrderOption) *Comm
 	return ccq
 }
 
-// QuerySession chains the current query on the "session" edge.
-func (ccq *CommitCheckpointQuery) QuerySession() *SessionQuery {
-	query := (&SessionClient{config: ccq.config}).Query()
+// QueryUser chains the current query on the "user" edge.
+func (ccq *CommitCheckpointQuery) QueryUser() *UserQuery {
+	query := (&UserClient{config: ccq.config}).Query()
 	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
 		if err := ccq.prepareQuery(ctx); err != nil {
 			return nil, err
@@ -79,8 +78,8 @@ func (ccq *CommitCheckpointQuery) QuerySession() *SessionQuery {
 		}
 		step := sqlgraph.NewStep(
 			sqlgraph.From(commitcheckpoint.Table, commitcheckpoint.FieldID, selector),
-			sqlgraph.To(session.Table, session.FieldID),
-			sqlgraph.Edge(sqlgraph.M2O, true, commitcheckpoint.SessionTable, commitcheckpoint.SessionColumn),
+			sqlgraph.To(user.Table, user.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, commitcheckpoint.UserTable, commitcheckpoint.UserColumn),
 		)
 		fromU = sqlgraph.SetNeighbors(ccq.driver.Dialect(), step)
 		return fromU, nil
@@ -324,7 +323,7 @@ func (ccq *CommitCheckpointQuery) Clone() *CommitCheckpointQuery {
 		order:               append([]commitcheckpoint.OrderOption{}, ccq.order...),
 		inters:              append([]Interceptor{}, ccq.inters...),
 		predicates:          append([]predicate.CommitCheckpoint{}, ccq.predicates...),
-		withSession:         ccq.withSession.Clone(),
+		withUser:            ccq.withUser.Clone(),
 		withRepoConfig:      ccq.withRepoConfig.Clone(),
 		withToolUsageEvents: ccq.withToolUsageEvents.Clone(),
 		// clone intermediate query.
@@ -333,14 +332,14 @@ func (ccq *CommitCheckpointQuery) Clone() *CommitCheckpointQuery {
 	}
 }
 
-// WithSession tells the query-builder to eager-load the nodes that are connected to
-// the "session" edge. The optional arguments are used to configure the query builder of the edge.
-func (ccq *CommitCheckpointQuery) WithSession(opts ...func(*SessionQuery)) *CommitCheckpointQuery {
-	query := (&SessionClient{config: ccq.config}).Query()
+// WithUser tells the query-builder to eager-load the nodes that are connected to
+// the "user" edge. The optional arguments are used to configure the query builder of the edge.
+func (ccq *CommitCheckpointQuery) WithUser(opts ...func(*UserQuery)) *CommitCheckpointQuery {
+	query := (&UserClient{config: ccq.config}).Query()
 	for _, opt := range opts {
 		opt(query)
 	}
-	ccq.withSession = query
+	ccq.withUser = query
 	return ccq
 }
 
@@ -445,7 +444,7 @@ func (ccq *CommitCheckpointQuery) sqlAll(ctx context.Context, hooks ...queryHook
 		nodes       = []*CommitCheckpoint{}
 		_spec       = ccq.querySpec()
 		loadedTypes = [3]bool{
-			ccq.withSession != nil,
+			ccq.withUser != nil,
 			ccq.withRepoConfig != nil,
 			ccq.withToolUsageEvents != nil,
 		}
@@ -468,9 +467,9 @@ func (ccq *CommitCheckpointQuery) sqlAll(ctx context.Context, hooks ...queryHook
 	if len(nodes) == 0 {
 		return nodes, nil
 	}
-	if query := ccq.withSession; query != nil {
-		if err := ccq.loadSession(ctx, query, nodes, nil,
-			func(n *CommitCheckpoint, e *Session) { n.Edges.Session = e }); err != nil {
+	if query := ccq.withUser; query != nil {
+		if err := ccq.loadUser(ctx, query, nodes, nil,
+			func(n *CommitCheckpoint, e *User) { n.Edges.User = e }); err != nil {
 			return nil, err
 		}
 	}
@@ -492,14 +491,14 @@ func (ccq *CommitCheckpointQuery) sqlAll(ctx context.Context, hooks ...queryHook
 	return nodes, nil
 }
 
-func (ccq *CommitCheckpointQuery) loadSession(ctx context.Context, query *SessionQuery, nodes []*CommitCheckpoint, init func(*CommitCheckpoint), assign func(*CommitCheckpoint, *Session)) error {
-	ids := make([]uuid.UUID, 0, len(nodes))
-	nodeids := make(map[uuid.UUID][]*CommitCheckpoint)
+func (ccq *CommitCheckpointQuery) loadUser(ctx context.Context, query *UserQuery, nodes []*CommitCheckpoint, init func(*CommitCheckpoint), assign func(*CommitCheckpoint, *User)) error {
+	ids := make([]int, 0, len(nodes))
+	nodeids := make(map[int][]*CommitCheckpoint)
 	for i := range nodes {
-		if nodes[i].SessionID == nil {
+		if nodes[i].UserID == nil {
 			continue
 		}
-		fk := *nodes[i].SessionID
+		fk := *nodes[i].UserID
 		if _, ok := nodeids[fk]; !ok {
 			ids = append(ids, fk)
 		}
@@ -508,7 +507,7 @@ func (ccq *CommitCheckpointQuery) loadSession(ctx context.Context, query *Sessio
 	if len(ids) == 0 {
 		return nil
 	}
-	query.Where(session.IDIn(ids...))
+	query.Where(user.IDIn(ids...))
 	neighbors, err := query.All(ctx)
 	if err != nil {
 		return err
@@ -516,7 +515,7 @@ func (ccq *CommitCheckpointQuery) loadSession(ctx context.Context, query *Sessio
 	for _, n := range neighbors {
 		nodes, ok := nodeids[n.ID]
 		if !ok {
-			return fmt.Errorf(`unexpected foreign-key "session_id" returned %v`, n.ID)
+			return fmt.Errorf(`unexpected foreign-key "user_id" returned %v`, n.ID)
 		}
 		for i := range nodes {
 			assign(nodes[i], n)
@@ -612,8 +611,8 @@ func (ccq *CommitCheckpointQuery) querySpec() *sqlgraph.QuerySpec {
 				_spec.Node.Columns = append(_spec.Node.Columns, fields[i])
 			}
 		}
-		if ccq.withSession != nil {
-			_spec.Node.AddColumnOnce(commitcheckpoint.FieldSessionID)
+		if ccq.withUser != nil {
+			_spec.Node.AddColumnOnce(commitcheckpoint.FieldUserID)
 		}
 		if ccq.withRepoConfig != nil {
 			_spec.Node.AddColumnOnce(commitcheckpoint.FieldRepoConfigID)

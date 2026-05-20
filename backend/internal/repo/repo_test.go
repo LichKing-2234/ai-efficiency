@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"testing"
-	"time"
 
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
@@ -526,46 +525,6 @@ func TestUpdate_NotFound(t *testing.T) {
 	}
 }
 
-func TestUpdate_ScanPromptOverride(t *testing.T) {
-	client, svc := setupTest(t)
-	p := createSCMProvider(t, client)
-	rc := createRepo(t, svc, p.ID, "prompt-repo")
-
-	prompt := map[string]string{"system": "You are a code reviewer."}
-	updated, err := svc.Update(context.Background(), rc.ID, UpdateRequest{ScanPromptOverride: prompt})
-	if err != nil {
-		t.Fatalf("Update error: %v", err)
-	}
-	if updated.ScanPromptOverride == nil {
-		t.Fatal("ScanPromptOverride should not be nil")
-	}
-	if updated.ScanPromptOverride["system"] != "You are a code reviewer." {
-		t.Errorf("ScanPromptOverride[system] = %q", updated.ScanPromptOverride["system"])
-	}
-}
-
-func TestUpdate_ClearScanPrompt(t *testing.T) {
-	client, svc := setupTest(t)
-	p := createSCMProvider(t, client)
-	rc := createRepo(t, svc, p.ID, "clear-prompt-repo")
-
-	// Set a prompt first
-	prompt := map[string]string{"system": "prompt"}
-	_, err := svc.Update(context.Background(), rc.ID, UpdateRequest{ScanPromptOverride: prompt})
-	if err != nil {
-		t.Fatalf("set prompt: %v", err)
-	}
-
-	// Clear it
-	updated, err := svc.Update(context.Background(), rc.ID, UpdateRequest{ClearScanPrompt: true})
-	if err != nil {
-		t.Fatalf("clear prompt: %v", err)
-	}
-	if updated.ScanPromptOverride != nil {
-		t.Errorf("ScanPromptOverride = %v, want nil", updated.ScanPromptOverride)
-	}
-}
-
 // ---------------------------------------------------------------------------
 // Delete (cascading)
 // ---------------------------------------------------------------------------
@@ -576,41 +535,13 @@ func TestDelete_CascadingRelations(t *testing.T) {
 	p := createSCMProvider(t, client)
 	rc := createRepo(t, svc, p.ID, "delete-me")
 
-	// Create child: session
-	_, err := client.Session.Create().
-		SetRepoConfigID(rc.ID).
-		SetBranch("feature-x").
-		Save(ctx)
-	if err != nil {
-		t.Fatalf("create session: %v", err)
-	}
-
-	// Create child: AI scan result
-	_, err = client.AiScanResult.Create().
-		SetRepoConfigID(rc.ID).
-		SetScore(85).
-		Save(ctx)
-	if err != nil {
-		t.Fatalf("create scan result: %v", err)
-	}
-
 	// Create child: PR record
-	_, err = client.PrRecord.Create().
+	_, err := client.PrRecord.Create().
 		SetRepoConfigID(rc.ID).
 		SetScmPrID(42).
 		Save(ctx)
 	if err != nil {
 		t.Fatalf("create pr record: %v", err)
-	}
-
-	// Create child: efficiency metric
-	_, err = client.EfficiencyMetric.Create().
-		SetRepoConfigID(rc.ID).
-		SetPeriodType("daily").
-		SetPeriodStart(time.Now()).
-		Save(ctx)
-	if err != nil {
-		t.Fatalf("create efficiency metric: %v", err)
 	}
 
 	// Delete the repo
@@ -625,21 +556,9 @@ func TestDelete_CascadingRelations(t *testing.T) {
 	}
 
 	// Verify all children are gone
-	sessions, _ := client.Session.Query().All(ctx)
-	if len(sessions) != 0 {
-		t.Errorf("sessions count = %d, want 0", len(sessions))
-	}
-	scans, _ := client.AiScanResult.Query().All(ctx)
-	if len(scans) != 0 {
-		t.Errorf("scan results count = %d, want 0", len(scans))
-	}
 	prs, _ := client.PrRecord.Query().All(ctx)
 	if len(prs) != 0 {
 		t.Errorf("pr records count = %d, want 0", len(prs))
-	}
-	metrics, _ := client.EfficiencyMetric.Query().All(ctx)
-	if len(metrics) != 0 {
-		t.Errorf("efficiency metrics count = %d, want 0", len(metrics))
 	}
 }
 

@@ -95,67 +95,6 @@ func TestRepoDelete_NotFound(t *testing.T) {
 	}
 }
 
-// =====================
-// Efficiency handler tests
-// =====================
-
-func TestAggregateAdminSuccess(t *testing.T) {
-	env := setupFullTestEnv(t)
-	w := doFullRequest(env, "POST", "/api/v1/efficiency/aggregate", nil)
-	if w.Code != http.StatusOK {
-		t.Errorf("status = %d, want %d, body: %s", w.Code, http.StatusOK, w.Body.String())
-	}
-
-	resp := parseFullResponse(t, w)
-	data := resp["data"].(map[string]interface{})
-	if data["status"] != "ok" {
-		t.Errorf("status = %v, want ok", data["status"])
-	}
-}
-
-func TestAggregateSingleRepo(t *testing.T) {
-	env := setupFullTestEnv(t)
-	repoID := createFullTestRepo(t, env.client)
-
-	w := doFullRequest(env, "POST", fmt.Sprintf("/api/v1/efficiency/aggregate?repo_id=%d", repoID), nil)
-	if w.Code != http.StatusOK {
-		t.Errorf("status = %d, want %d, body: %s", w.Code, http.StatusOK, w.Body.String())
-	}
-
-	resp := parseFullResponse(t, w)
-	data := resp["data"].(map[string]interface{})
-	if data["status"] != "ok" {
-		t.Errorf("status = %v, want ok", data["status"])
-	}
-	if int(data["repo_id"].(float64)) != repoID {
-		t.Errorf("repo_id = %v, want %d", data["repo_id"], repoID)
-	}
-}
-
-func TestAggregateInvalidRepoID(t *testing.T) {
-	env := setupFullTestEnv(t)
-	w := doFullRequest(env, "POST", "/api/v1/efficiency/aggregate?repo_id=abc", nil)
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("status = %d, want %d, body: %s", w.Code, http.StatusBadRequest, w.Body.String())
-	}
-}
-
-func TestRepoMetrics_InvalidID(t *testing.T) {
-	env := setupTestEnv(t)
-	w := doRequest(env, "GET", "/api/v1/efficiency/repos/abc/metrics", nil)
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("status = %d, want %d, body: %s", w.Code, http.StatusBadRequest, w.Body.String())
-	}
-}
-
-func TestTrend_InvalidID(t *testing.T) {
-	env := setupTestEnv(t)
-	w := doRequest(env, "GET", "/api/v1/efficiency/repos/abc/trend", nil)
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("status = %d, want %d, body: %s", w.Code, http.StatusBadRequest, w.Body.String())
-	}
-}
-
 func TestDashboardWithData(t *testing.T) {
 	env := setupTestEnv(t)
 	ctx := context.Background()

@@ -50,7 +50,7 @@ flowchart LR
 ### Notes
 
 - `ai-efficiency` is a standalone system. It integrates with `sub2api` through relay/provider HTTP APIs rather than direct database coupling.
-- The backend is the central orchestration point for auth, repo configuration, analysis, attribution, and SCM/webhook workflows.
+- The backend is the central orchestration point for auth, repo configuration, attribution, provider management, and SCM/webhook workflows.
 - Backend runtime relay consumers currently resolve their primary relay instance from `relay.*` config first, and fall back to the enabled primary `RelayProvider` database record when static relay URL config is absent.
 - The frontend is built separately and embedded into the backend binary during Docker build, so the backend process serves both API routes and the SPA entrypoint in deployed images.
 - Official production deployment now has two supported paths: Docker Compose and Linux systemd.
@@ -62,7 +62,7 @@ flowchart LR
 - Public health endpoints expose liveness/readiness, and admin settings expose deployment status plus update controls.
 - `ae-cli login` now supports both browser PKCE and OAuth device flow. Headless Linux environments are expected to use `ae-cli login --device`, while desktop/browser-capable environments still default to PKCE.
 - `ae-cli discover` now provides the current user-facing tool-configuration path for supported local agents. It fetches provider-delivered base URLs and API keys from the backend, detects installed tools locally, and writes deterministic local config for Codex, Claude, and Gemini.
-- Legacy session tables and ent schema still exist in the repo/data model, but the old session runtime/helper packages are no longer present in the active code path.
+- The old ae-cli session runtime/helper packages are no longer present in the active code path. Backend-side legacy `session` schema and runtime compatibility have also been removed; the remaining `matched_session_ids` / `session_ids` fields are historical names that now carry tool-native session identifiers.
 
 ## Current Production Deployment
 
@@ -151,7 +151,7 @@ sequenceDiagram
     WS->>BE: tool_usage_events ingest
     WS->>BE: checkpoint events + rewrite events
     BE->>BE: bind tool_usage_events to commit checkpoints
-    BE->>Relay: relay usage lookup fallback for attribution when local usage is absent
+    BE->>BE: classify unmatched checkpoints as ambiguous when no bound tool usage exists
 ```
 
 ### Runtime Boundaries
@@ -205,15 +205,15 @@ flowchart LR
 | Credentials | `backend/internal/credential` | Reusable encrypted secret assets, payload validation, provider credential migration, and credential masking |
 | Relay integration | `backend/internal/relay` | Unified relay/sub2api adapter and usage/API key operations |
 | SCM integration | `backend/internal/scm`, `backend/internal/webhook`, `backend/internal/prsync` | SCM provider abstraction, webhook ingestion, PR synchronization |
-| Repo and efficiency | `backend/internal/repo`, `backend/internal/efficiency` | Repo-to-provider binding, provider-backed clone/auth resolution, and efficiency aggregation/labeling for active product flows |
-| Session and attribution | `backend/internal/checkpoint`, `backend/internal/attribution` | Commit checkpoints, PR attribution, and remaining legacy session-backed data compatibility |
+| Repo and efficiency | `backend/internal/repo`, `backend/internal/efficiency` | Repo-to-provider binding, provider-backed clone/auth resolution, PR labeling, and dashboard-facing summary inputs |
+| Session and attribution | `backend/internal/checkpoint`, `backend/internal/attribution` | Commit checkpoints, PR attribution, and tool-native session-id propagation inside `tool_usage_events` |
 | API surface | `backend/internal/handler`, `backend/internal/middleware` | HTTP handlers, routing, auth middleware, settings endpoints |
 
 ### Frontend
 
 | Area | Paths | Responsibility |
 | --- | --- | --- |
-| Views | `frontend/src/views` | Dashboard, attribution, repos, oauth, and admin/settings pages |
+| Views | `frontend/src/views` | Dashboard, repos, oauth, and admin/settings pages |
 | Data access | `frontend/src/api`, `frontend/src/stores` | Backend API clients, state management, request orchestration |
 | App shell | `frontend/src/components`, `frontend/src/router` | Layout, navigation, route composition |
 

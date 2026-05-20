@@ -22,7 +22,6 @@ function createTestRouter() {
     routes: [
       { path: '/login', name: 'Login', component: { template: '<div>Login</div>' }, meta: { public: true } },
       { path: '/', name: 'Dashboard', component: { template: '<div>Dashboard</div>' } },
-      { path: '/attribution', name: 'Attribution', component: { template: '<div>Attribution</div>' } },
       { path: '/repos', name: 'RepoList', component: { template: '<div>Repos</div>' } },
     ],
   })
@@ -103,11 +102,6 @@ describe('Router Guards', () => {
 
     expect(localRouter.currentRoute.value.path).toBe('/login')
     expect(localRouter.currentRoute.value.query.redirect).toBe('/repos')
-  })
-
-  it('includes attribution route in the router', () => {
-    const attribution = router.getRoutes().find((r) => r.name === 'Attribution')
-    expect(attribution?.path).toBe('/attribution')
   })
 
   it('does not include legacy session routes in the router', () => {

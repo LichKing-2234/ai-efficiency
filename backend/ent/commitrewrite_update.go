@@ -14,8 +14,7 @@ import (
 	"github.com/ai-efficiency/backend/ent/commitrewrite"
 	"github.com/ai-efficiency/backend/ent/predicate"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
-	"github.com/ai-efficiency/backend/ent/session"
-	"github.com/google/uuid"
+	"github.com/ai-efficiency/backend/ent/user"
 )
 
 // CommitRewriteUpdate is the builder for updating CommitRewrite entities.
@@ -45,23 +44,23 @@ func (cru *CommitRewriteUpdate) SetNillableEventID(s *string) *CommitRewriteUpda
 	return cru
 }
 
-// SetSessionID sets the "session_id" field.
-func (cru *CommitRewriteUpdate) SetSessionID(u uuid.UUID) *CommitRewriteUpdate {
-	cru.mutation.SetSessionID(u)
+// SetUserID sets the "user_id" field.
+func (cru *CommitRewriteUpdate) SetUserID(i int) *CommitRewriteUpdate {
+	cru.mutation.SetUserID(i)
 	return cru
 }
 
-// SetNillableSessionID sets the "session_id" field if the given value is not nil.
-func (cru *CommitRewriteUpdate) SetNillableSessionID(u *uuid.UUID) *CommitRewriteUpdate {
-	if u != nil {
-		cru.SetSessionID(*u)
+// SetNillableUserID sets the "user_id" field if the given value is not nil.
+func (cru *CommitRewriteUpdate) SetNillableUserID(i *int) *CommitRewriteUpdate {
+	if i != nil {
+		cru.SetUserID(*i)
 	}
 	return cru
 }
 
-// ClearSessionID clears the value of the "session_id" field.
-func (cru *CommitRewriteUpdate) ClearSessionID() *CommitRewriteUpdate {
-	cru.mutation.ClearSessionID()
+// ClearUserID clears the value of the "user_id" field.
+func (cru *CommitRewriteUpdate) ClearUserID() *CommitRewriteUpdate {
+	cru.mutation.ClearUserID()
 	return cru
 }
 
@@ -163,9 +162,9 @@ func (cru *CommitRewriteUpdate) SetNillableCapturedAt(t *time.Time) *CommitRewri
 	return cru
 }
 
-// SetSession sets the "session" edge to the Session entity.
-func (cru *CommitRewriteUpdate) SetSession(s *Session) *CommitRewriteUpdate {
-	return cru.SetSessionID(s.ID)
+// SetUser sets the "user" edge to the User entity.
+func (cru *CommitRewriteUpdate) SetUser(u *User) *CommitRewriteUpdate {
+	return cru.SetUserID(u.ID)
 }
 
 // SetRepoConfig sets the "repo_config" edge to the RepoConfig entity.
@@ -178,9 +177,9 @@ func (cru *CommitRewriteUpdate) Mutation() *CommitRewriteMutation {
 	return cru.mutation
 }
 
-// ClearSession clears the "session" edge to the Session entity.
-func (cru *CommitRewriteUpdate) ClearSession() *CommitRewriteUpdate {
-	cru.mutation.ClearSession()
+// ClearUser clears the "user" edge to the User entity.
+func (cru *CommitRewriteUpdate) ClearUser() *CommitRewriteUpdate {
+	cru.mutation.ClearUser()
 	return cru
 }
 
@@ -283,28 +282,28 @@ func (cru *CommitRewriteUpdate) sqlSave(ctx context.Context) (n int, err error) 
 	if value, ok := cru.mutation.CapturedAt(); ok {
 		_spec.SetField(commitrewrite.FieldCapturedAt, field.TypeTime, value)
 	}
-	if cru.mutation.SessionCleared() {
+	if cru.mutation.UserCleared() {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.M2O,
 			Inverse: true,
-			Table:   commitrewrite.SessionTable,
-			Columns: []string{commitrewrite.SessionColumn},
+			Table:   commitrewrite.UserTable,
+			Columns: []string{commitrewrite.UserColumn},
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(session.FieldID, field.TypeUUID),
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt),
 			},
 		}
 		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
 	}
-	if nodes := cru.mutation.SessionIDs(); len(nodes) > 0 {
+	if nodes := cru.mutation.UserIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.M2O,
 			Inverse: true,
-			Table:   commitrewrite.SessionTable,
-			Columns: []string{commitrewrite.SessionColumn},
+			Table:   commitrewrite.UserTable,
+			Columns: []string{commitrewrite.UserColumn},
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(session.FieldID, field.TypeUUID),
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {
@@ -375,23 +374,23 @@ func (cruo *CommitRewriteUpdateOne) SetNillableEventID(s *string) *CommitRewrite
 	return cruo
 }
 
-// SetSessionID sets the "session_id" field.
-func (cruo *CommitRewriteUpdateOne) SetSessionID(u uuid.UUID) *CommitRewriteUpdateOne {
-	cruo.mutation.SetSessionID(u)
+// SetUserID sets the "user_id" field.
+func (cruo *CommitRewriteUpdateOne) SetUserID(i int) *CommitRewriteUpdateOne {
+	cruo.mutation.SetUserID(i)
 	return cruo
 }
 
-// SetNillableSessionID sets the "session_id" field if the given value is not nil.
-func (cruo *CommitRewriteUpdateOne) SetNillableSessionID(u *uuid.UUID) *CommitRewriteUpdateOne {
-	if u != nil {
-		cruo.SetSessionID(*u)
+// SetNillableUserID sets the "user_id" field if the given value is not nil.
+func (cruo *CommitRewriteUpdateOne) SetNillableUserID(i *int) *CommitRewriteUpdateOne {
+	if i != nil {
+		cruo.SetUserID(*i)
 	}
 	return cruo
 }
 
-// ClearSessionID clears the value of the "session_id" field.
-func (cruo *CommitRewriteUpdateOne) ClearSessionID() *CommitRewriteUpdateOne {
-	cruo.mutation.ClearSessionID()
+// ClearUserID clears the value of the "user_id" field.
+func (cruo *CommitRewriteUpdateOne) ClearUserID() *CommitRewriteUpdateOne {
+	cruo.mutation.ClearUserID()
 	return cruo
 }
 
@@ -493,9 +492,9 @@ func (cruo *CommitRewriteUpdateOne) SetNillableCapturedAt(t *time.Time) *CommitR
 	return cruo
 }
 
-// SetSession sets the "session" edge to the Session entity.
-func (cruo *CommitRewriteUpdateOne) SetSession(s *Session) *CommitRewriteUpdateOne {
-	return cruo.SetSessionID(s.ID)
+// SetUser sets the "user" edge to the User entity.
+func (cruo *CommitRewriteUpdateOne) SetUser(u *User) *CommitRewriteUpdateOne {
+	return cruo.SetUserID(u.ID)
 }
 
 // SetRepoConfig sets the "repo_config" edge to the RepoConfig entity.
@@ -508,9 +507,9 @@ func (cruo *CommitRewriteUpdateOne) Mutation() *CommitRewriteMutation {
 	return cruo.mutation
 }
 
-// ClearSession clears the "session" edge to the Session entity.
-func (cruo *CommitRewriteUpdateOne) ClearSession() *CommitRewriteUpdateOne {
-	cruo.mutation.ClearSession()
+// ClearUser clears the "user" edge to the User entity.
+func (cruo *CommitRewriteUpdateOne) ClearUser() *CommitRewriteUpdateOne {
+	cruo.mutation.ClearUser()
 	return cruo
 }
 
@@ -643,28 +642,28 @@ func (cruo *CommitRewriteUpdateOne) sqlSave(ctx context.Context) (_node *CommitR
 	if value, ok := cruo.mutation.CapturedAt(); ok {
 		_spec.SetField(commitrewrite.FieldCapturedAt, field.TypeTime, value)
 	}
-	if cruo.mutation.SessionCleared() {
+	if cruo.mutation.UserCleared() {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.M2O,
 			Inverse: true,
-			Table:   commitrewrite.SessionTable,
-			Columns: []string{commitrewrite.SessionColumn},
+			Table:   commitrewrite.UserTable,
+			Columns: []string{commitrewrite.UserColumn},
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(session.FieldID, field.TypeUUID),
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt),
 			},
 		}
 		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
 	}
-	if nodes := cruo.mutation.SessionIDs(); len(nodes) > 0 {
+	if nodes := cruo.mutation.UserIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.M2O,
 			Inverse: true,
-			Table:   commitrewrite.SessionTable,
-			Columns: []string{commitrewrite.SessionColumn},
+			Table:   commitrewrite.UserTable,
+			Columns: []string{commitrewrite.UserColumn},
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(session.FieldID, field.TypeUUID),
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {

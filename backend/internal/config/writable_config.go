@@ -88,14 +88,6 @@ func configToYAMLMap(cfg *Config) map[string]any {
 		"encryption": map[string]any{
 			"key": cfg.Encryption.Key,
 		},
-		"analysis": map[string]any{
-			"llm": map[string]any{
-				"max_tokens_per_scan":        cfg.Analysis.LLM.MaxTokensPerScan,
-				"max_scans_per_repo_per_day": cfg.Analysis.LLM.MaxScansPerRepoDay,
-				"system_prompt":              cfg.Analysis.LLM.SystemPrompt,
-				"user_prompt_template":       cfg.Analysis.LLM.UserPromptTemplate,
-			},
-		},
 		"deployment": map[string]any{
 			"mode":      cfg.Deployment.Mode,
 			"state_dir": cfg.Deployment.StateDir,

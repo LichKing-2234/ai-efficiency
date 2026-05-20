@@ -11,8 +11,7 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"github.com/ai-efficiency/backend/ent/commitrewrite"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
-	"github.com/ai-efficiency/backend/ent/session"
-	"github.com/google/uuid"
+	"github.com/ai-efficiency/backend/ent/user"
 )
 
 // CommitRewrite is the model entity for the CommitRewrite schema.
@@ -22,8 +21,8 @@ type CommitRewrite struct {
 	ID int `json:"id,omitempty"`
 	// EventID holds the value of the "event_id" field.
 	EventID string `json:"event_id,omitempty"`
-	// SessionID holds the value of the "session_id" field.
-	SessionID *uuid.UUID `json:"session_id,omitempty"`
+	// UserID holds the value of the "user_id" field.
+	UserID *int `json:"user_id,omitempty"`
 	// WorkspaceID holds the value of the "workspace_id" field.
 	WorkspaceID string `json:"workspace_id,omitempty"`
 	// RepoConfigID holds the value of the "repo_config_id" field.
@@ -46,8 +45,8 @@ type CommitRewrite struct {
 
 // CommitRewriteEdges holds the relations/edges for other nodes in the graph.
 type CommitRewriteEdges struct {
-	// Session holds the value of the session edge.
-	Session *Session `json:"session,omitempty"`
+	// User holds the value of the user edge.
+	User *User `json:"user,omitempty"`
 	// RepoConfig holds the value of the repo_config edge.
 	RepoConfig *RepoConfig `json:"repo_config,omitempty"`
 	// loadedTypes holds the information for reporting if a
@@ -55,15 +54,15 @@ type CommitRewriteEdges struct {
 	loadedTypes [2]bool
 }
 
-// SessionOrErr returns the Session value or an error if the edge
+// UserOrErr returns the User value or an error if the edge
 // was not loaded in eager-loading, or loaded but was not found.
-func (e CommitRewriteEdges) SessionOrErr() (*Session, error) {
-	if e.Session != nil {
-		return e.Session, nil
+func (e CommitRewriteEdges) UserOrErr() (*User, error) {
+	if e.User != nil {
+		return e.User, nil
 	} else if e.loadedTypes[0] {
-		return nil, &NotFoundError{label: session.Label}
+		return nil, &NotFoundError{label: user.Label}
 	}
-	return nil, &NotLoadedError{edge: "session"}
+	return nil, &NotLoadedError{edge: "user"}
 }
 
 // RepoConfigOrErr returns the RepoConfig value or an error if the edge
@@ -82,9 +81,7 @@ func (*CommitRewrite) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case commitrewrite.FieldSessionID:
-			values[i] = &sql.NullScanner{S: new(uuid.UUID)}
-		case commitrewrite.FieldID, commitrewrite.FieldRepoConfigID:
+		case commitrewrite.FieldID, commitrewrite.FieldUserID, commitrewrite.FieldRepoConfigID:
 			values[i] = new(sql.NullInt64)
 		case commitrewrite.FieldEventID, commitrewrite.FieldWorkspaceID, commitrewrite.FieldRewriteType, commitrewrite.FieldOldCommitSha, commitrewrite.FieldNewCommitSha, commitrewrite.FieldBindingSource:
 			values[i] = new(sql.NullString)
@@ -117,12 +114,12 @@ func (cr *CommitRewrite) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				cr.EventID = value.String
 			}
-		case commitrewrite.FieldSessionID:
-			if value, ok := values[i].(*sql.NullScanner); !ok {
-				return fmt.Errorf("unexpected type %T for field session_id", values[i])
+		case commitrewrite.FieldUserID:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field user_id", values[i])
 			} else if value.Valid {
-				cr.SessionID = new(uuid.UUID)
-				*cr.SessionID = *value.S.(*uuid.UUID)
+				cr.UserID = new(int)
+				*cr.UserID = int(value.Int64)
 			}
 		case commitrewrite.FieldWorkspaceID:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -179,9 +176,9 @@ func (cr *CommitRewrite) Value(name string) (ent.Value, error) {
 	return cr.selectValues.Get(name)
 }
 
-// QuerySession queries the "session" edge of the CommitRewrite entity.
-func (cr *CommitRewrite) QuerySession() *SessionQuery {
-	return NewCommitRewriteClient(cr.config).QuerySession(cr)
+// QueryUser queries the "user" edge of the CommitRewrite entity.
+func (cr *CommitRewrite) QueryUser() *UserQuery {
+	return NewCommitRewriteClient(cr.config).QueryUser(cr)
 }
 
 // QueryRepoConfig queries the "repo_config" edge of the CommitRewrite entity.
@@ -215,8 +212,8 @@ func (cr *CommitRewrite) String() string {
 	builder.WriteString("event_id=")
 	builder.WriteString(cr.EventID)
 	builder.WriteString(", ")
-	if v := cr.SessionID; v != nil {
-		builder.WriteString("session_id=")
+	if v := cr.UserID; v != nil {
+		builder.WriteString("user_id=")
 		builder.WriteString(fmt.Sprintf("%v", *v))
 	}
 	builder.WriteString(", ")

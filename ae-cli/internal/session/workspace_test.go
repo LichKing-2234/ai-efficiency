@@ -1,15 +1,10 @@
 package session
 
 import (
-	"encoding/json"
+	"github.com/google/uuid"
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
-
-	"github.com/ai-efficiency/ae-cli/config"
-	"github.com/ai-efficiency/ae-cli/internal/client"
-	"github.com/google/uuid"
 )
 
 func TestDeriveWorkspaceIDUsesCanonicalGitContext(t *testing.T) {
@@ -77,75 +72,30 @@ func TestDeriveWorkspaceIDUsesCanonicalGitContext(t *testing.T) {
 	}
 }
 
-func TestCurrentPrefersWorkspaceMarkerOverLegacyState(t *testing.T) {
-	origHome := os.Getenv("HOME")
-	tmpHome := t.TempDir()
-	os.Setenv("HOME", tmpHome)
-	t.Cleanup(func() { os.Setenv("HOME", origHome) })
-
-	// Legacy global state file.
-	legacy := &State{
-		ID:        "legacy-id",
-		Repo:      "legacy-repo",
-		Branch:    "legacy-branch",
-		StartedAt: time.Now().UTC().Truncate(time.Second),
-	}
-	if err := writeState(legacy); err != nil {
-		t.Fatalf("writeState(legacy): %v", err)
-	}
-
-	// Workspace marker in cwd should take precedence.
+func TestWriteAndReadMarkerRoundTrip(t *testing.T) {
 	ws := t.TempDir()
-	marker := &Marker{
-		SessionID:    "marker-id",
-		WorkspaceID:  "wsid-1",
-		RuntimeRef:   "rt-1",
-		ProviderName: "sub2api",
+	want := &Marker{
+		SessionID:     "marker-id",
+		WorkspaceID:   "wsid-1",
+		RuntimeRef:    "rt-1",
+		ProviderName:  "sub2api",
+		RelayAPIKeyID: 42,
+		RepoFullName:  "org/repo",
+		Branch:        "main",
+		HeadSHA:       "deadbeef",
 	}
-	if err := WriteMarker(ws, marker); err != nil {
+	if err := WriteMarker(ws, want); err != nil {
 		t.Fatalf("WriteMarker: %v", err)
 	}
-	if err := WriteRuntimeBundle(&RuntimeBundle{
-		SessionID:     "marker-id",
-		RuntimeRef:    "rt-1",
-		WorkspaceRoot: ws,
-		EnvBundle:     map[string]string{"AE_SESSION_ID": "marker-id"},
-		KeyExpiresAt:  time.Now().UTC().Add(time.Hour),
-	}); err != nil {
-		t.Fatalf("WriteRuntimeBundle: %v", err)
-	}
 
-	oldWD, _ := os.Getwd()
-	if err := os.Chdir(ws); err != nil {
-		t.Fatalf("chdir: %v", err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(oldWD) })
-
-	c := client.New("http://localhost:8080", "tok")
-	cfg := &config.Config{}
-	mgr := NewManager(c, cfg)
-
-	got, err := mgr.Current()
+	got, err := ReadMarker(ws)
 	if err != nil {
-		t.Fatalf("Current: %v", err)
+		t.Fatalf("ReadMarker: %v", err)
 	}
 	if got == nil {
-		t.Fatal("Current returned nil, expected state")
+		t.Fatal("ReadMarker returned nil")
 	}
-	if got.ID != "marker-id" {
-		t.Fatalf("Current ID = %q, want %q", got.ID, "marker-id")
-	}
-
-	// Ensure marker on disk is valid JSON for forward compatibility.
-	data, err := os.ReadFile(markerPath(ws))
-	if err != nil {
-		t.Fatalf("read marker: %v", err)
-	}
-	var decoded map[string]interface{}
-	if err := json.Unmarshal(data, &decoded); err != nil {
-		t.Fatalf("marker json: %v", err)
-	}
-	if decoded["session_id"] != "marker-id" {
-		t.Fatalf("marker session_id = %v, want %v", decoded["session_id"], "marker-id")
+	if *got != *want {
+		t.Fatalf("ReadMarker = %+v, want %+v", *got, *want)
 	}
 }

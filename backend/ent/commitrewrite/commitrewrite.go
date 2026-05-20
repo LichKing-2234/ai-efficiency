@@ -17,8 +17,8 @@ const (
 	FieldID = "id"
 	// FieldEventID holds the string denoting the event_id field in the database.
 	FieldEventID = "event_id"
-	// FieldSessionID holds the string denoting the session_id field in the database.
-	FieldSessionID = "session_id"
+	// FieldUserID holds the string denoting the user_id field in the database.
+	FieldUserID = "user_id"
 	// FieldWorkspaceID holds the string denoting the workspace_id field in the database.
 	FieldWorkspaceID = "workspace_id"
 	// FieldRepoConfigID holds the string denoting the repo_config_id field in the database.
@@ -33,19 +33,19 @@ const (
 	FieldBindingSource = "binding_source"
 	// FieldCapturedAt holds the string denoting the captured_at field in the database.
 	FieldCapturedAt = "captured_at"
-	// EdgeSession holds the string denoting the session edge name in mutations.
-	EdgeSession = "session"
+	// EdgeUser holds the string denoting the user edge name in mutations.
+	EdgeUser = "user"
 	// EdgeRepoConfig holds the string denoting the repo_config edge name in mutations.
 	EdgeRepoConfig = "repo_config"
 	// Table holds the table name of the commitrewrite in the database.
 	Table = "commit_rewrites"
-	// SessionTable is the table that holds the session relation/edge.
-	SessionTable = "commit_rewrites"
-	// SessionInverseTable is the table name for the Session entity.
-	// It exists in this package in order to avoid circular dependency with the "session" package.
-	SessionInverseTable = "sessions"
-	// SessionColumn is the table column denoting the session relation/edge.
-	SessionColumn = "session_id"
+	// UserTable is the table that holds the user relation/edge.
+	UserTable = "commit_rewrites"
+	// UserInverseTable is the table name for the User entity.
+	// It exists in this package in order to avoid circular dependency with the "user" package.
+	UserInverseTable = "users"
+	// UserColumn is the table column denoting the user relation/edge.
+	UserColumn = "user_id"
 	// RepoConfigTable is the table that holds the repo_config relation/edge.
 	RepoConfigTable = "commit_rewrites"
 	// RepoConfigInverseTable is the table name for the RepoConfig entity.
@@ -59,7 +59,7 @@ const (
 var Columns = []string{
 	FieldID,
 	FieldEventID,
-	FieldSessionID,
+	FieldUserID,
 	FieldWorkspaceID,
 	FieldRepoConfigID,
 	FieldRewriteType,
@@ -156,9 +156,9 @@ func ByEventID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldEventID, opts...).ToFunc()
 }
 
-// BySessionID orders the results by the session_id field.
-func BySessionID(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldSessionID, opts...).ToFunc()
+// ByUserID orders the results by the user_id field.
+func ByUserID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldUserID, opts...).ToFunc()
 }
 
 // ByWorkspaceID orders the results by the workspace_id field.
@@ -196,10 +196,10 @@ func ByCapturedAt(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldCapturedAt, opts...).ToFunc()
 }
 
-// BySessionField orders the results by session field.
-func BySessionField(field string, opts ...sql.OrderTermOption) OrderOption {
+// ByUserField orders the results by user field.
+func ByUserField(field string, opts ...sql.OrderTermOption) OrderOption {
 	return func(s *sql.Selector) {
-		sqlgraph.OrderByNeighborTerms(s, newSessionStep(), sql.OrderByField(field, opts...))
+		sqlgraph.OrderByNeighborTerms(s, newUserStep(), sql.OrderByField(field, opts...))
 	}
 }
 
@@ -209,11 +209,11 @@ func ByRepoConfigField(field string, opts ...sql.OrderTermOption) OrderOption {
 		sqlgraph.OrderByNeighborTerms(s, newRepoConfigStep(), sql.OrderByField(field, opts...))
 	}
 }
-func newSessionStep() *sqlgraph.Step {
+func newUserStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
-		sqlgraph.To(SessionInverseTable, FieldID),
-		sqlgraph.Edge(sqlgraph.M2O, true, SessionTable, SessionColumn),
+		sqlgraph.To(UserInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.M2O, true, UserTable, UserColumn),
 	)
 }
 func newRepoConfigStep() *sqlgraph.Step {

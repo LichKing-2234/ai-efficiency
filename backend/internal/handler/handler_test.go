@@ -62,7 +62,6 @@ func setupTestEnvWithOAuth(t *testing.T, oauthHandler *oauth.Handler) *testEnv {
 		webhookHandler,
 		nil, // syncService
 		nil, // settingsHandler
-		nil, // aggregator
 		"0000000000000000000000000000000000000000000000000000000000000000",
 		middleware.CORS(nil),
 		oauthHandler, nil, nil, nil,
@@ -215,7 +214,6 @@ func setupTestEnvWithProvider(t *testing.T) *testEnv {
 		authSvc,
 		repoSvc,
 		webhookHandler,
-		nil,
 		nil,
 		nil,
 		"0000000000000000000000000000000000000000000000000000000000000000",

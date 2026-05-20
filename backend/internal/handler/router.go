@@ -3,7 +3,6 @@ package handler
 import (
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/internal/auth"
-	"github.com/ai-efficiency/backend/internal/efficiency"
 	"github.com/ai-efficiency/backend/internal/oauth"
 	"github.com/ai-efficiency/backend/internal/repo"
 	"github.com/ai-efficiency/backend/internal/toolusage"
@@ -26,7 +25,6 @@ func SetupRouter(
 	webhookHandler *webhook.Handler,
 	syncService prSyncer,
 	settingsHandler *SettingsHandler,
-	aggregator *efficiency.Aggregator,
 	encryptionKey string,
 	corsMiddleware gin.HandlerFunc,
 	oauthHandler *oauth.Handler,
@@ -63,7 +61,7 @@ func SetupRouter(
 	scmProviderHandler := NewSCMProviderHandler(entClient, encryptionKey)
 	repoHandler := NewRepoHandler(repoService)
 	prHandler := NewPRHandler(entClient, repoService, syncService, prAttributionService)
-	efficiencyHandler := NewEfficiencyHandler(entClient, aggregator)
+	efficiencyHandler := NewEfficiencyHandler(entClient)
 	toolUsageHandler := NewToolUsageHandler(toolusage.NewService(entClient))
 
 	api := r.Group("/api/v1")
@@ -111,7 +109,6 @@ func SetupRouter(
 		scmGroup.POST("", scmProviderHandler.Create)
 		scmGroup.PUT("/:id", scmProviderHandler.Update)
 		scmGroup.DELETE("/:id", scmProviderHandler.Delete)
-		scmGroup.POST("/:id/test", scmProviderHandler.Test)
 	}
 
 	// Repos
@@ -138,9 +135,6 @@ func SetupRouter(
 	effGroup := protected.Group("/efficiency")
 	{
 		effGroup.GET("/dashboard", efficiencyHandler.Dashboard)
-		effGroup.GET("/repos/:id/metrics", efficiencyHandler.RepoMetrics)
-		effGroup.GET("/repos/:id/trend", efficiencyHandler.Trend)
-		effGroup.POST("/aggregate", auth.RequireAdmin(), efficiencyHandler.Aggregate)
 	}
 
 	toolUsageGroup := protected.Group("/tool-usage-events")

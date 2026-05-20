@@ -8,7 +8,6 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"github.com/ai-efficiency/backend/ent/predicate"
-	"github.com/google/uuid"
 )
 
 // ID filters vertices based on their ID field.
@@ -61,9 +60,9 @@ func EventID(v string) predicate.CommitCheckpoint {
 	return predicate.CommitCheckpoint(sql.FieldEQ(FieldEventID, v))
 }
 
-// SessionID applies equality check predicate on the "session_id" field. It's identical to SessionIDEQ.
-func SessionID(v uuid.UUID) predicate.CommitCheckpoint {
-	return predicate.CommitCheckpoint(sql.FieldEQ(FieldSessionID, v))
+// UserID applies equality check predicate on the "user_id" field. It's identical to UserIDEQ.
+func UserID(v int) predicate.CommitCheckpoint {
+	return predicate.CommitCheckpoint(sql.FieldEQ(FieldUserID, v))
 }
 
 // WorkspaceID applies equality check predicate on the "workspace_id" field. It's identical to WorkspaceIDEQ.
@@ -161,34 +160,34 @@ func EventIDContainsFold(v string) predicate.CommitCheckpoint {
 	return predicate.CommitCheckpoint(sql.FieldContainsFold(FieldEventID, v))
 }
 
-// SessionIDEQ applies the EQ predicate on the "session_id" field.
-func SessionIDEQ(v uuid.UUID) predicate.CommitCheckpoint {
-	return predicate.CommitCheckpoint(sql.FieldEQ(FieldSessionID, v))
+// UserIDEQ applies the EQ predicate on the "user_id" field.
+func UserIDEQ(v int) predicate.CommitCheckpoint {
+	return predicate.CommitCheckpoint(sql.FieldEQ(FieldUserID, v))
 }
 
-// SessionIDNEQ applies the NEQ predicate on the "session_id" field.
-func SessionIDNEQ(v uuid.UUID) predicate.CommitCheckpoint {
-	return predicate.CommitCheckpoint(sql.FieldNEQ(FieldSessionID, v))
+// UserIDNEQ applies the NEQ predicate on the "user_id" field.
+func UserIDNEQ(v int) predicate.CommitCheckpoint {
+	return predicate.CommitCheckpoint(sql.FieldNEQ(FieldUserID, v))
 }
 
-// SessionIDIn applies the In predicate on the "session_id" field.
-func SessionIDIn(vs ...uuid.UUID) predicate.CommitCheckpoint {
-	return predicate.CommitCheckpoint(sql.FieldIn(FieldSessionID, vs...))
+// UserIDIn applies the In predicate on the "user_id" field.
+func UserIDIn(vs ...int) predicate.CommitCheckpoint {
+	return predicate.CommitCheckpoint(sql.FieldIn(FieldUserID, vs...))
 }
 
-// SessionIDNotIn applies the NotIn predicate on the "session_id" field.
-func SessionIDNotIn(vs ...uuid.UUID) predicate.CommitCheckpoint {
-	return predicate.CommitCheckpoint(sql.FieldNotIn(FieldSessionID, vs...))
+// UserIDNotIn applies the NotIn predicate on the "user_id" field.
+func UserIDNotIn(vs ...int) predicate.CommitCheckpoint {
+	return predicate.CommitCheckpoint(sql.FieldNotIn(FieldUserID, vs...))
 }
 
-// SessionIDIsNil applies the IsNil predicate on the "session_id" field.
-func SessionIDIsNil() predicate.CommitCheckpoint {
-	return predicate.CommitCheckpoint(sql.FieldIsNull(FieldSessionID))
+// UserIDIsNil applies the IsNil predicate on the "user_id" field.
+func UserIDIsNil() predicate.CommitCheckpoint {
+	return predicate.CommitCheckpoint(sql.FieldIsNull(FieldUserID))
 }
 
-// SessionIDNotNil applies the NotNil predicate on the "session_id" field.
-func SessionIDNotNil() predicate.CommitCheckpoint {
-	return predicate.CommitCheckpoint(sql.FieldNotNull(FieldSessionID))
+// UserIDNotNil applies the NotNil predicate on the "user_id" field.
+func UserIDNotNil() predicate.CommitCheckpoint {
+	return predicate.CommitCheckpoint(sql.FieldNotNull(FieldUserID))
 }
 
 // WorkspaceIDEQ applies the EQ predicate on the "workspace_id" field.
@@ -561,21 +560,21 @@ func CapturedAtLTE(v time.Time) predicate.CommitCheckpoint {
 	return predicate.CommitCheckpoint(sql.FieldLTE(FieldCapturedAt, v))
 }
 
-// HasSession applies the HasEdge predicate on the "session" edge.
-func HasSession() predicate.CommitCheckpoint {
+// HasUser applies the HasEdge predicate on the "user" edge.
+func HasUser() predicate.CommitCheckpoint {
 	return predicate.CommitCheckpoint(func(s *sql.Selector) {
 		step := sqlgraph.NewStep(
 			sqlgraph.From(Table, FieldID),
-			sqlgraph.Edge(sqlgraph.M2O, true, SessionTable, SessionColumn),
+			sqlgraph.Edge(sqlgraph.M2O, true, UserTable, UserColumn),
 		)
 		sqlgraph.HasNeighbors(s, step)
 	})
 }
 
-// HasSessionWith applies the HasEdge predicate on the "session" edge with a given conditions (other predicates).
-func HasSessionWith(preds ...predicate.Session) predicate.CommitCheckpoint {
+// HasUserWith applies the HasEdge predicate on the "user" edge with a given conditions (other predicates).
+func HasUserWith(preds ...predicate.User) predicate.CommitCheckpoint {
 	return predicate.CommitCheckpoint(func(s *sql.Selector) {
-		step := newSessionStep()
+		step := newUserStep()
 		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
 			for _, p := range preds {
 				p(s)

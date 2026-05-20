@@ -3,7 +3,6 @@
 package ent
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -33,8 +32,6 @@ type RepoConfig struct {
 	WebhookID *string `json:"webhook_id,omitempty"`
 	// WebhookSecret holds the value of the "webhook_secret" field.
 	WebhookSecret *string `json:"-"`
-	// LastScanAt holds the value of the "last_scan_at" field.
-	LastScanAt *time.Time `json:"last_scan_at,omitempty"`
 	// GroupID holds the value of the "group_id" field.
 	GroupID *string `json:"group_id,omitempty"`
 	// RelayProviderName holds the value of the "relay_provider_name" field.
@@ -47,8 +44,6 @@ type RepoConfig struct {
 	CreatedAt time.Time `json:"created_at,omitempty"`
 	// UpdatedAt holds the value of the "updated_at" field.
 	UpdatedAt time.Time `json:"updated_at,omitempty"`
-	// ScanPromptOverride holds the value of the "scan_prompt_override" field.
-	ScanPromptOverride map[string]string `json:"scan_prompt_override,omitempty"`
 	// Edges holds the relations/edges for other nodes in the graph.
 	// The values are being populated by the RepoConfigQuery when eager-loading is set.
 	Edges                     RepoConfigEdges `json:"edges"`
@@ -60,8 +55,6 @@ type RepoConfig struct {
 type RepoConfigEdges struct {
 	// ScmProvider holds the value of the scm_provider edge.
 	ScmProvider *ScmProvider `json:"scm_provider,omitempty"`
-	// Sessions holds the value of the sessions edge.
-	Sessions []*Session `json:"sessions,omitempty"`
 	// CommitCheckpoints holds the value of the commit_checkpoints edge.
 	CommitCheckpoints []*CommitCheckpoint `json:"commit_checkpoints,omitempty"`
 	// CommitRewrites holds the value of the commit_rewrites edge.
@@ -70,15 +63,11 @@ type RepoConfigEdges struct {
 	ToolUsageEvents []*ToolUsageEvent `json:"tool_usage_events,omitempty"`
 	// WebhookDeadLetters holds the value of the webhook_dead_letters edge.
 	WebhookDeadLetters []*WebhookDeadLetter `json:"webhook_dead_letters,omitempty"`
-	// AiScanResults holds the value of the ai_scan_results edge.
-	AiScanResults []*AiScanResult `json:"ai_scan_results,omitempty"`
 	// PrRecords holds the value of the pr_records edge.
 	PrRecords []*PrRecord `json:"pr_records,omitempty"`
-	// EfficiencyMetrics holds the value of the efficiency_metrics edge.
-	EfficiencyMetrics []*EfficiencyMetric `json:"efficiency_metrics,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [9]bool
+	loadedTypes [6]bool
 }
 
 // ScmProviderOrErr returns the ScmProvider value or an error if the edge
@@ -92,19 +81,10 @@ func (e RepoConfigEdges) ScmProviderOrErr() (*ScmProvider, error) {
 	return nil, &NotLoadedError{edge: "scm_provider"}
 }
 
-// SessionsOrErr returns the Sessions value or an error if the edge
-// was not loaded in eager-loading.
-func (e RepoConfigEdges) SessionsOrErr() ([]*Session, error) {
-	if e.loadedTypes[1] {
-		return e.Sessions, nil
-	}
-	return nil, &NotLoadedError{edge: "sessions"}
-}
-
 // CommitCheckpointsOrErr returns the CommitCheckpoints value or an error if the edge
 // was not loaded in eager-loading.
 func (e RepoConfigEdges) CommitCheckpointsOrErr() ([]*CommitCheckpoint, error) {
-	if e.loadedTypes[2] {
+	if e.loadedTypes[1] {
 		return e.CommitCheckpoints, nil
 	}
 	return nil, &NotLoadedError{edge: "commit_checkpoints"}
@@ -113,7 +93,7 @@ func (e RepoConfigEdges) CommitCheckpointsOrErr() ([]*CommitCheckpoint, error) {
 // CommitRewritesOrErr returns the CommitRewrites value or an error if the edge
 // was not loaded in eager-loading.
 func (e RepoConfigEdges) CommitRewritesOrErr() ([]*CommitRewrite, error) {
-	if e.loadedTypes[3] {
+	if e.loadedTypes[2] {
 		return e.CommitRewrites, nil
 	}
 	return nil, &NotLoadedError{edge: "commit_rewrites"}
@@ -122,7 +102,7 @@ func (e RepoConfigEdges) CommitRewritesOrErr() ([]*CommitRewrite, error) {
 // ToolUsageEventsOrErr returns the ToolUsageEvents value or an error if the edge
 // was not loaded in eager-loading.
 func (e RepoConfigEdges) ToolUsageEventsOrErr() ([]*ToolUsageEvent, error) {
-	if e.loadedTypes[4] {
+	if e.loadedTypes[3] {
 		return e.ToolUsageEvents, nil
 	}
 	return nil, &NotLoadedError{edge: "tool_usage_events"}
@@ -131,37 +111,19 @@ func (e RepoConfigEdges) ToolUsageEventsOrErr() ([]*ToolUsageEvent, error) {
 // WebhookDeadLettersOrErr returns the WebhookDeadLetters value or an error if the edge
 // was not loaded in eager-loading.
 func (e RepoConfigEdges) WebhookDeadLettersOrErr() ([]*WebhookDeadLetter, error) {
-	if e.loadedTypes[5] {
+	if e.loadedTypes[4] {
 		return e.WebhookDeadLetters, nil
 	}
 	return nil, &NotLoadedError{edge: "webhook_dead_letters"}
 }
 
-// AiScanResultsOrErr returns the AiScanResults value or an error if the edge
-// was not loaded in eager-loading.
-func (e RepoConfigEdges) AiScanResultsOrErr() ([]*AiScanResult, error) {
-	if e.loadedTypes[6] {
-		return e.AiScanResults, nil
-	}
-	return nil, &NotLoadedError{edge: "ai_scan_results"}
-}
-
 // PrRecordsOrErr returns the PrRecords value or an error if the edge
 // was not loaded in eager-loading.
 func (e RepoConfigEdges) PrRecordsOrErr() ([]*PrRecord, error) {
-	if e.loadedTypes[7] {
+	if e.loadedTypes[5] {
 		return e.PrRecords, nil
 	}
 	return nil, &NotLoadedError{edge: "pr_records"}
-}
-
-// EfficiencyMetricsOrErr returns the EfficiencyMetrics value or an error if the edge
-// was not loaded in eager-loading.
-func (e RepoConfigEdges) EfficiencyMetricsOrErr() ([]*EfficiencyMetric, error) {
-	if e.loadedTypes[8] {
-		return e.EfficiencyMetrics, nil
-	}
-	return nil, &NotLoadedError{edge: "efficiency_metrics"}
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -169,13 +131,11 @@ func (*RepoConfig) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case repoconfig.FieldScanPromptOverride:
-			values[i] = new([]byte)
 		case repoconfig.FieldID:
 			values[i] = new(sql.NullInt64)
 		case repoconfig.FieldRepoKey, repoconfig.FieldName, repoconfig.FieldFullName, repoconfig.FieldCloneURL, repoconfig.FieldDefaultBranch, repoconfig.FieldWebhookID, repoconfig.FieldWebhookSecret, repoconfig.FieldGroupID, repoconfig.FieldRelayProviderName, repoconfig.FieldRelayGroupID, repoconfig.FieldStatus:
 			values[i] = new(sql.NullString)
-		case repoconfig.FieldLastScanAt, repoconfig.FieldCreatedAt, repoconfig.FieldUpdatedAt:
+		case repoconfig.FieldCreatedAt, repoconfig.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
 		case repoconfig.ForeignKeys[0]: // scm_provider_repo_configs
 			values[i] = new(sql.NullInt64)
@@ -244,13 +204,6 @@ func (rc *RepoConfig) assignValues(columns []string, values []any) error {
 				rc.WebhookSecret = new(string)
 				*rc.WebhookSecret = value.String
 			}
-		case repoconfig.FieldLastScanAt:
-			if value, ok := values[i].(*sql.NullTime); !ok {
-				return fmt.Errorf("unexpected type %T for field last_scan_at", values[i])
-			} else if value.Valid {
-				rc.LastScanAt = new(time.Time)
-				*rc.LastScanAt = value.Time
-			}
 		case repoconfig.FieldGroupID:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field group_id", values[i])
@@ -290,14 +243,6 @@ func (rc *RepoConfig) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				rc.UpdatedAt = value.Time
 			}
-		case repoconfig.FieldScanPromptOverride:
-			if value, ok := values[i].(*[]byte); !ok {
-				return fmt.Errorf("unexpected type %T for field scan_prompt_override", values[i])
-			} else if value != nil && len(*value) > 0 {
-				if err := json.Unmarshal(*value, &rc.ScanPromptOverride); err != nil {
-					return fmt.Errorf("unmarshal field scan_prompt_override: %w", err)
-				}
-			}
 		case repoconfig.ForeignKeys[0]:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
 				return fmt.Errorf("unexpected type %T for edge-field scm_provider_repo_configs", value)
@@ -323,11 +268,6 @@ func (rc *RepoConfig) QueryScmProvider() *ScmProviderQuery {
 	return NewRepoConfigClient(rc.config).QueryScmProvider(rc)
 }
 
-// QuerySessions queries the "sessions" edge of the RepoConfig entity.
-func (rc *RepoConfig) QuerySessions() *SessionQuery {
-	return NewRepoConfigClient(rc.config).QuerySessions(rc)
-}
-
 // QueryCommitCheckpoints queries the "commit_checkpoints" edge of the RepoConfig entity.
 func (rc *RepoConfig) QueryCommitCheckpoints() *CommitCheckpointQuery {
 	return NewRepoConfigClient(rc.config).QueryCommitCheckpoints(rc)
@@ -348,19 +288,9 @@ func (rc *RepoConfig) QueryWebhookDeadLetters() *WebhookDeadLetterQuery {
 	return NewRepoConfigClient(rc.config).QueryWebhookDeadLetters(rc)
 }
 
-// QueryAiScanResults queries the "ai_scan_results" edge of the RepoConfig entity.
-func (rc *RepoConfig) QueryAiScanResults() *AiScanResultQuery {
-	return NewRepoConfigClient(rc.config).QueryAiScanResults(rc)
-}
-
 // QueryPrRecords queries the "pr_records" edge of the RepoConfig entity.
 func (rc *RepoConfig) QueryPrRecords() *PrRecordQuery {
 	return NewRepoConfigClient(rc.config).QueryPrRecords(rc)
-}
-
-// QueryEfficiencyMetrics queries the "efficiency_metrics" edge of the RepoConfig entity.
-func (rc *RepoConfig) QueryEfficiencyMetrics() *EfficiencyMetricQuery {
-	return NewRepoConfigClient(rc.config).QueryEfficiencyMetrics(rc)
 }
 
 // Update returns a builder for updating this RepoConfig.
@@ -408,11 +338,6 @@ func (rc *RepoConfig) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("webhook_secret=<sensitive>")
 	builder.WriteString(", ")
-	if v := rc.LastScanAt; v != nil {
-		builder.WriteString("last_scan_at=")
-		builder.WriteString(v.Format(time.ANSIC))
-	}
-	builder.WriteString(", ")
 	if v := rc.GroupID; v != nil {
 		builder.WriteString("group_id=")
 		builder.WriteString(*v)
@@ -436,9 +361,6 @@ func (rc *RepoConfig) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("updated_at=")
 	builder.WriteString(rc.UpdatedAt.Format(time.ANSIC))
-	builder.WriteString(", ")
-	builder.WriteString("scan_prompt_override=")
-	builder.WriteString(fmt.Sprintf("%v", rc.ScanPromptOverride))
 	builder.WriteByte(')')
 	return builder.String()
 }

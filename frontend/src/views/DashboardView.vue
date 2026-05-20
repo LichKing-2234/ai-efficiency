@@ -46,7 +46,7 @@ onMounted(async () => {
       <div class="rounded-lg bg-white p-6 shadow">
         <h2 class="text-lg font-semibold text-gray-900">Recent Activity</h2>
         <p v-if="loading" class="mt-4 text-sm text-gray-500">Loading...</p>
-        <p v-else class="mt-4 text-sm text-gray-500">Dashboard data loaded from API. Navigate to Repos for detailed analysis.</p>
+        <p v-else class="mt-4 text-sm text-gray-500">Dashboard data loaded from API. Navigate to Repos and PRs for detailed tracking.</p>
       </div>
     </div>
   </AppLayout>

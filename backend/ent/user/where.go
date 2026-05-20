@@ -540,21 +540,44 @@ func UpdatedAtLTE(v time.Time) predicate.User {
 	return predicate.User(sql.FieldLTE(FieldUpdatedAt, v))
 }
 
-// HasSessions applies the HasEdge predicate on the "sessions" edge.
-func HasSessions() predicate.User {
+// HasCommitCheckpoints applies the HasEdge predicate on the "commit_checkpoints" edge.
+func HasCommitCheckpoints() predicate.User {
 	return predicate.User(func(s *sql.Selector) {
 		step := sqlgraph.NewStep(
 			sqlgraph.From(Table, FieldID),
-			sqlgraph.Edge(sqlgraph.O2M, false, SessionsTable, SessionsColumn),
+			sqlgraph.Edge(sqlgraph.O2M, false, CommitCheckpointsTable, CommitCheckpointsColumn),
 		)
 		sqlgraph.HasNeighbors(s, step)
 	})
 }
 
-// HasSessionsWith applies the HasEdge predicate on the "sessions" edge with a given conditions (other predicates).
-func HasSessionsWith(preds ...predicate.Session) predicate.User {
+// HasCommitCheckpointsWith applies the HasEdge predicate on the "commit_checkpoints" edge with a given conditions (other predicates).
+func HasCommitCheckpointsWith(preds ...predicate.CommitCheckpoint) predicate.User {
 	return predicate.User(func(s *sql.Selector) {
-		step := newSessionsStep()
+		step := newCommitCheckpointsStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasCommitRewrites applies the HasEdge predicate on the "commit_rewrites" edge.
+func HasCommitRewrites() predicate.User {
+	return predicate.User(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, CommitRewritesTable, CommitRewritesColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasCommitRewritesWith applies the HasEdge predicate on the "commit_rewrites" edge with a given conditions (other predicates).
+func HasCommitRewritesWith(preds ...predicate.CommitRewrite) predicate.User {
+	return predicate.User(func(s *sql.Selector) {
+		step := newCommitRewritesStep()
 		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
 			for _, p := range preds {
 				p(s)

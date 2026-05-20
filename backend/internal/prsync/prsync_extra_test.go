@@ -55,7 +55,7 @@ func TestSyncUpsertError(t *testing.T) {
 	// Close client2 to force upsert errors
 	client2.Close()
 
-	svc := NewService(client2, nil, nil, logger)
+	svc := NewService(client2, nil, logger)
 
 	mock := &mockSCMProvider{
 		listPRsFunc: func(ctx context.Context, repoFullName string, opts scm.PRListOpts) ([]*scm.PR, error) {
@@ -109,7 +109,7 @@ func TestSyncWithLabelerError(t *testing.T) {
 	client2.Close()
 	labeler := efficiency.NewLabeler(client2, nil, logger)
 
-	svc := NewService(client, labeler, nil, logger)
+	svc := NewService(client, labeler, logger)
 
 	mock := &mockSCMProvider{
 		listPRsFunc: func(ctx context.Context, repoFullName string, opts scm.PRListOpts) ([]*scm.PR, error) {
@@ -135,48 +135,6 @@ func TestSyncWithLabelerError(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Sync – cover the aggregator error warn path (line 83-89)
-// ---------------------------------------------------------------------------
-
-func TestSyncWithAggregatorError(t *testing.T) {
-	client := testdb.Open(t)
-	defer client.Close()
-	ctx := context.Background()
-	logger := zap.NewNop()
-
-	rc := createTestRepo(t, ctx, client, "agg-err-repo")
-
-	// Create an aggregator with a closed client to force errors
-	client2 := testdb.Open(t)
-	client2.Close()
-	aggregator := efficiency.NewAggregator(client2, logger)
-
-	svc := NewService(client, nil, aggregator, logger)
-
-	mock := &mockSCMProvider{
-		listPRsFunc: func(ctx context.Context, repoFullName string, opts scm.PRListOpts) ([]*scm.PR, error) {
-			return []*scm.PR{
-				{
-					ID: 1, Title: "PR for agg error", Author: "alice",
-					SourceBranch: "feat-1", TargetBranch: "main",
-					State: "open", URL: "https://example.com/pr/1",
-					CreatedAt: time.Now(),
-				},
-			}, nil
-		},
-	}
-
-	// Sync should succeed even though aggregator fails
-	result, err := svc.Sync(ctx, mock, rc)
-	if err != nil {
-		t.Fatalf("Sync: %v", err)
-	}
-	if result.Created != 1 {
-		t.Errorf("created = %d, want 1", result.Created)
-	}
-}
-
-// ---------------------------------------------------------------------------
 // upsertPR – cover the query error path (non-NotFound error, line 127-129)
 // ---------------------------------------------------------------------------
 
@@ -187,7 +145,7 @@ func TestUpsertPRQueryError(t *testing.T) {
 
 	rc := createTestRepo(t, ctx, client, "query-err-repo")
 
-	svc := NewService(client, nil, nil, logger)
+	svc := NewService(client, nil, logger)
 
 	// Close the client to force query errors
 	client.Close()
@@ -228,7 +186,7 @@ func TestUpsertPRUpdateExecError(t *testing.T) {
 		SetStatus(prrecord.StatusOpen).
 		SaveX(ctx)
 
-	svc := NewService(client, nil, nil, logger)
+	svc := NewService(client, nil, logger)
 
 	// Close the client to force update errors
 	client.Close()
@@ -256,7 +214,7 @@ func TestSyncUpdateWithZeroTimestamps(t *testing.T) {
 	logger := zap.NewNop()
 
 	rc := createTestRepo(t, ctx, client, "update-zero-ts-repo")
-	svc := NewService(client, nil, nil, logger)
+	svc := NewService(client, nil, logger)
 
 	// Pre-create a PR
 	client.PrRecord.Create().
@@ -309,7 +267,7 @@ func TestFetchAllPRsError(t *testing.T) {
 	defer client.Close()
 	logger := zap.NewNop()
 
-	svc := NewService(client, nil, nil, logger)
+	svc := NewService(client, nil, logger)
 
 	mock := &mockSCMProvider{
 		listPRsFunc: func(ctx context.Context, repoFullName string, opts scm.PRListOpts) ([]*scm.PR, error) {
@@ -332,7 +290,7 @@ func TestFetchAllPRsPaginationError(t *testing.T) {
 	defer client.Close()
 	logger := zap.NewNop()
 
-	svc := NewService(client, nil, nil, logger)
+	svc := NewService(client, nil, logger)
 
 	callCount := 0
 	mock := &mockSCMProvider{
@@ -370,7 +328,7 @@ func TestUpsertPRCreateError(t *testing.T) {
 	ctx := context.Background()
 	logger := zap.NewNop()
 
-	svc := NewService(client, nil, nil, logger)
+	svc := NewService(client, nil, logger)
 
 	// Use a non-existent repoConfigID to trigger FK constraint error
 	pr := &scm.PR{
@@ -395,28 +353,20 @@ func TestNewServiceAllFields(t *testing.T) {
 	logger := zap.NewNop()
 
 	labeler := efficiency.NewLabeler(client, nil, logger)
-	aggregator := efficiency.NewAggregator(client, logger)
 
-	svc := NewService(client, labeler, aggregator, logger)
+	svc := NewService(client, labeler, logger)
 	if svc.entClient != client {
 		t.Error("entClient not set")
 	}
 	if svc.labeler != labeler {
 		t.Error("labeler not set")
 	}
-	if svc.aggregator != aggregator {
-		t.Error("aggregator not set")
-	}
 	if svc.logger != logger {
 		t.Error("logger not set")
 	}
 }
 
-// ---------------------------------------------------------------------------
-// Sync – cover both labeler and aggregator error paths together
-// ---------------------------------------------------------------------------
-
-func TestSyncWithLabelerAndAggregatorErrors(t *testing.T) {
+func TestSyncWithLabelerErrors(t *testing.T) {
 	client := testdb.Open(t)
 	defer client.Close()
 	ctx := context.Background()
@@ -424,14 +374,12 @@ func TestSyncWithLabelerAndAggregatorErrors(t *testing.T) {
 
 	rc := createTestRepo(t, ctx, client, "both-err-repo")
 
-	// Both labeler and aggregator use closed clients
 	closedClient := testdb.Open(t)
 	closedClient.Close()
 
 	labeler := efficiency.NewLabeler(closedClient, nil, logger)
-	aggregator := efficiency.NewAggregator(closedClient, logger)
 
-	svc := NewService(client, labeler, aggregator, logger)
+	svc := NewService(client, labeler, logger)
 
 	mock := &mockSCMProvider{
 		listPRsFunc: func(ctx context.Context, repoFullName string, opts scm.PRListOpts) ([]*scm.PR, error) {
@@ -448,7 +396,7 @@ func TestSyncWithLabelerAndAggregatorErrors(t *testing.T) {
 
 	result, err := svc.Sync(ctx, mock, rc)
 	if err != nil {
-		t.Fatalf("Sync should succeed despite labeler/aggregator errors: %v", err)
+		t.Fatalf("Sync should succeed despite labeler errors: %v", err)
 	}
 	if result.Created != 1 {
 		t.Errorf("created = %d, want 1", result.Created)

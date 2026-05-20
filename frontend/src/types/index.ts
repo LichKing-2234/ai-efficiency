@@ -38,10 +38,8 @@ export interface RepoConfig {
   default_branch: string
   status: string
   binding_state: 'bound' | 'unbound'
-  last_scan_at: string | null
   group_id: number | string | null
   scm_provider_id?: number | null
-  scan_prompt_override?: { system_prompt?: string; user_prompt_template?: string }
   created_at: string
   edges?: {
     scm_provider?: SCMProvider
@@ -85,19 +83,6 @@ export interface PRAttributionRun {
   primary_usage_summary?: Record<string, any>
   metadata_summary?: Record<string, any>
   validation_summary?: Record<string, any>
-}
-
-export interface EfficiencyMetric {
-  id: number
-  period_type: string
-  period_start: string
-  total_prs: number
-  ai_prs: number
-  human_prs: number
-  avg_cycle_time_hours: number
-  total_tokens: number
-  total_token_cost: number
-  ai_vs_human_ratio: number
 }
 
 export interface DashboardData {

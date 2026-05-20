@@ -10,7 +10,6 @@ import (
 	"github.com/ai-efficiency/backend/ent"
 	entcredential "github.com/ai-efficiency/backend/ent/credential"
 	"github.com/ai-efficiency/backend/ent/scmprovider"
-	"github.com/ai-efficiency/backend/internal/auth"
 	"github.com/ai-efficiency/backend/internal/credential"
 	"github.com/ai-efficiency/backend/internal/pkg"
 	"github.com/gin-gonic/gin"
@@ -216,53 +215,6 @@ func (h *SCMProviderHandler) Delete(c *gin.Context) {
 	}
 
 	pkg.Success(c, gin.H{"deleted": true})
-}
-
-// Test handles POST /api/v1/scm-providers/:id/test
-func (h *SCMProviderHandler) Test(c *gin.Context) {
-	id, err := strconv.Atoi(c.Param("id"))
-	if err != nil {
-		pkg.Error(c, http.StatusBadRequest, "invalid id")
-		return
-	}
-
-	provider, err := h.entClient.ScmProvider.Query().
-		Where(scmprovider.IDEQ(id)).
-		WithAPICredential().
-		Only(c.Request.Context())
-	if err != nil {
-		if ent.IsNotFound(err) {
-			pkg.Error(c, http.StatusNotFound, "provider not found")
-			return
-		}
-		pkg.Error(c, http.StatusInternalServerError, "failed to get provider")
-		return
-	}
-
-	if provider.Edges.APICredential == nil {
-		if provider.Credentials != "" {
-			if _, err = h.loadLegacyProviderPayload(c, provider.Credentials); err != nil {
-				pkg.Error(c, http.StatusInternalServerError, "failed to decrypt credentials")
-				return
-			}
-		} else {
-			pkg.Error(c, http.StatusBadRequest, "provider has no api credential")
-			return
-		}
-	} else {
-		if _, _, err = h.loadCredential(c, provider.Edges.APICredential.ID); err != nil {
-			pkg.Error(c, http.StatusInternalServerError, "failed to decrypt credentials")
-			return
-		}
-	}
-
-	// TODO: Instantiate provider and test connectivity
-	_ = auth.GetUserContext(c) // suppress unused import
-
-	pkg.Success(c, gin.H{
-		"status":  "ok",
-		"message": "connection test passed",
-	})
 }
 
 func (h *SCMProviderHandler) resolveAPICredentialForCreate(c *gin.Context, providerName string, apiCredentialID int, legacyRaw json.RawMessage) (int, credential.Payload, error) {

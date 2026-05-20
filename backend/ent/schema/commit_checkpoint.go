@@ -5,8 +5,6 @@ import (
 	"entgo.io/ent/schema/edge"
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
-
-	"github.com/google/uuid"
 )
 
 type CommitCheckpoint struct {
@@ -17,7 +15,7 @@ func (CommitCheckpoint) Fields() []ent.Field {
 	return []ent.Field{
 		field.String("event_id").
 			Unique(),
-		field.UUID("session_id", uuid.UUID{}).
+		field.Int("user_id").
 			Optional().
 			Nillable(),
 		field.String("workspace_id").
@@ -43,9 +41,9 @@ func (CommitCheckpoint) Fields() []ent.Field {
 
 func (CommitCheckpoint) Edges() []ent.Edge {
 	return []ent.Edge{
-		edge.From("session", Session.Type).
+		edge.From("user", User.Type).
 			Ref("commit_checkpoints").
-			Field("session_id").
+			Field("user_id").
 			Unique(),
 		edge.From("repo_config", RepoConfig.Type).
 			Ref("commit_checkpoints").

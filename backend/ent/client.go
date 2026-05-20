@@ -10,27 +10,19 @@ import (
 	"reflect"
 
 	"github.com/ai-efficiency/backend/ent/migrate"
-	"github.com/google/uuid"
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect"
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
-	"github.com/ai-efficiency/backend/ent/agentmetadataevent"
-	"github.com/ai-efficiency/backend/ent/aiscanresult"
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
 	"github.com/ai-efficiency/backend/ent/commitrewrite"
 	"github.com/ai-efficiency/backend/ent/credential"
-	"github.com/ai-efficiency/backend/ent/efficiencymetric"
 	"github.com/ai-efficiency/backend/ent/prattributionrun"
 	"github.com/ai-efficiency/backend/ent/prrecord"
 	"github.com/ai-efficiency/backend/ent/relayprovider"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/scmprovider"
-	"github.com/ai-efficiency/backend/ent/session"
-	"github.com/ai-efficiency/backend/ent/sessionevent"
-	"github.com/ai-efficiency/backend/ent/sessionusageevent"
-	"github.com/ai-efficiency/backend/ent/sessionworkspace"
 	"github.com/ai-efficiency/backend/ent/systemsetting"
 	"github.com/ai-efficiency/backend/ent/toolusageevent"
 	"github.com/ai-efficiency/backend/ent/user"
@@ -42,18 +34,12 @@ type Client struct {
 	config
 	// Schema is the client for creating, migrating and dropping schema.
 	Schema *migrate.Schema
-	// AgentMetadataEvent is the client for interacting with the AgentMetadataEvent builders.
-	AgentMetadataEvent *AgentMetadataEventClient
-	// AiScanResult is the client for interacting with the AiScanResult builders.
-	AiScanResult *AiScanResultClient
 	// CommitCheckpoint is the client for interacting with the CommitCheckpoint builders.
 	CommitCheckpoint *CommitCheckpointClient
 	// CommitRewrite is the client for interacting with the CommitRewrite builders.
 	CommitRewrite *CommitRewriteClient
 	// Credential is the client for interacting with the Credential builders.
 	Credential *CredentialClient
-	// EfficiencyMetric is the client for interacting with the EfficiencyMetric builders.
-	EfficiencyMetric *EfficiencyMetricClient
 	// PrAttributionRun is the client for interacting with the PrAttributionRun builders.
 	PrAttributionRun *PrAttributionRunClient
 	// PrRecord is the client for interacting with the PrRecord builders.
@@ -64,14 +50,6 @@ type Client struct {
 	RepoConfig *RepoConfigClient
 	// ScmProvider is the client for interacting with the ScmProvider builders.
 	ScmProvider *ScmProviderClient
-	// Session is the client for interacting with the Session builders.
-	Session *SessionClient
-	// SessionEvent is the client for interacting with the SessionEvent builders.
-	SessionEvent *SessionEventClient
-	// SessionUsageEvent is the client for interacting with the SessionUsageEvent builders.
-	SessionUsageEvent *SessionUsageEventClient
-	// SessionWorkspace is the client for interacting with the SessionWorkspace builders.
-	SessionWorkspace *SessionWorkspaceClient
 	// SystemSetting is the client for interacting with the SystemSetting builders.
 	SystemSetting *SystemSettingClient
 	// ToolUsageEvent is the client for interacting with the ToolUsageEvent builders.
@@ -91,21 +69,14 @@ func NewClient(opts ...Option) *Client {
 
 func (c *Client) init() {
 	c.Schema = migrate.NewSchema(c.driver)
-	c.AgentMetadataEvent = NewAgentMetadataEventClient(c.config)
-	c.AiScanResult = NewAiScanResultClient(c.config)
 	c.CommitCheckpoint = NewCommitCheckpointClient(c.config)
 	c.CommitRewrite = NewCommitRewriteClient(c.config)
 	c.Credential = NewCredentialClient(c.config)
-	c.EfficiencyMetric = NewEfficiencyMetricClient(c.config)
 	c.PrAttributionRun = NewPrAttributionRunClient(c.config)
 	c.PrRecord = NewPrRecordClient(c.config)
 	c.RelayProvider = NewRelayProviderClient(c.config)
 	c.RepoConfig = NewRepoConfigClient(c.config)
 	c.ScmProvider = NewScmProviderClient(c.config)
-	c.Session = NewSessionClient(c.config)
-	c.SessionEvent = NewSessionEventClient(c.config)
-	c.SessionUsageEvent = NewSessionUsageEventClient(c.config)
-	c.SessionWorkspace = NewSessionWorkspaceClient(c.config)
 	c.SystemSetting = NewSystemSettingClient(c.config)
 	c.ToolUsageEvent = NewToolUsageEventClient(c.config)
 	c.User = NewUserClient(c.config)
@@ -200,27 +171,20 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 	cfg := c.config
 	cfg.driver = tx
 	return &Tx{
-		ctx:                ctx,
-		config:             cfg,
-		AgentMetadataEvent: NewAgentMetadataEventClient(cfg),
-		AiScanResult:       NewAiScanResultClient(cfg),
-		CommitCheckpoint:   NewCommitCheckpointClient(cfg),
-		CommitRewrite:      NewCommitRewriteClient(cfg),
-		Credential:         NewCredentialClient(cfg),
-		EfficiencyMetric:   NewEfficiencyMetricClient(cfg),
-		PrAttributionRun:   NewPrAttributionRunClient(cfg),
-		PrRecord:           NewPrRecordClient(cfg),
-		RelayProvider:      NewRelayProviderClient(cfg),
-		RepoConfig:         NewRepoConfigClient(cfg),
-		ScmProvider:        NewScmProviderClient(cfg),
-		Session:            NewSessionClient(cfg),
-		SessionEvent:       NewSessionEventClient(cfg),
-		SessionUsageEvent:  NewSessionUsageEventClient(cfg),
-		SessionWorkspace:   NewSessionWorkspaceClient(cfg),
-		SystemSetting:      NewSystemSettingClient(cfg),
-		ToolUsageEvent:     NewToolUsageEventClient(cfg),
-		User:               NewUserClient(cfg),
-		WebhookDeadLetter:  NewWebhookDeadLetterClient(cfg),
+		ctx:               ctx,
+		config:            cfg,
+		CommitCheckpoint:  NewCommitCheckpointClient(cfg),
+		CommitRewrite:     NewCommitRewriteClient(cfg),
+		Credential:        NewCredentialClient(cfg),
+		PrAttributionRun:  NewPrAttributionRunClient(cfg),
+		PrRecord:          NewPrRecordClient(cfg),
+		RelayProvider:     NewRelayProviderClient(cfg),
+		RepoConfig:        NewRepoConfigClient(cfg),
+		ScmProvider:       NewScmProviderClient(cfg),
+		SystemSetting:     NewSystemSettingClient(cfg),
+		ToolUsageEvent:    NewToolUsageEventClient(cfg),
+		User:              NewUserClient(cfg),
+		WebhookDeadLetter: NewWebhookDeadLetterClient(cfg),
 	}, nil
 }
 
@@ -238,34 +202,27 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 	cfg := c.config
 	cfg.driver = &txDriver{tx: tx, drv: c.driver}
 	return &Tx{
-		ctx:                ctx,
-		config:             cfg,
-		AgentMetadataEvent: NewAgentMetadataEventClient(cfg),
-		AiScanResult:       NewAiScanResultClient(cfg),
-		CommitCheckpoint:   NewCommitCheckpointClient(cfg),
-		CommitRewrite:      NewCommitRewriteClient(cfg),
-		Credential:         NewCredentialClient(cfg),
-		EfficiencyMetric:   NewEfficiencyMetricClient(cfg),
-		PrAttributionRun:   NewPrAttributionRunClient(cfg),
-		PrRecord:           NewPrRecordClient(cfg),
-		RelayProvider:      NewRelayProviderClient(cfg),
-		RepoConfig:         NewRepoConfigClient(cfg),
-		ScmProvider:        NewScmProviderClient(cfg),
-		Session:            NewSessionClient(cfg),
-		SessionEvent:       NewSessionEventClient(cfg),
-		SessionUsageEvent:  NewSessionUsageEventClient(cfg),
-		SessionWorkspace:   NewSessionWorkspaceClient(cfg),
-		SystemSetting:      NewSystemSettingClient(cfg),
-		ToolUsageEvent:     NewToolUsageEventClient(cfg),
-		User:               NewUserClient(cfg),
-		WebhookDeadLetter:  NewWebhookDeadLetterClient(cfg),
+		ctx:               ctx,
+		config:            cfg,
+		CommitCheckpoint:  NewCommitCheckpointClient(cfg),
+		CommitRewrite:     NewCommitRewriteClient(cfg),
+		Credential:        NewCredentialClient(cfg),
+		PrAttributionRun:  NewPrAttributionRunClient(cfg),
+		PrRecord:          NewPrRecordClient(cfg),
+		RelayProvider:     NewRelayProviderClient(cfg),
+		RepoConfig:        NewRepoConfigClient(cfg),
+		ScmProvider:       NewScmProviderClient(cfg),
+		SystemSetting:     NewSystemSettingClient(cfg),
+		ToolUsageEvent:    NewToolUsageEventClient(cfg),
+		User:              NewUserClient(cfg),
+		WebhookDeadLetter: NewWebhookDeadLetterClient(cfg),
 	}, nil
 }
 
 // Debug returns a new debug-client. It's used to get verbose logging on specific operations.
 //
 //	client.Debug().
-//		AgentMetadataEvent.
+//		CommitCheckpoint.
 //		Query().
 //		Count(ctx)
 func (c *Client) Debug() *Client {
@@ -288,11 +245,9 @@ func (c *Client) Close() error {
 // In order to add hooks to a specific client, call: `client.Node.Use(...)`.
 func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
-		c.AgentMetadataEvent, c.AiScanResult, c.CommitCheckpoint, c.CommitRewrite,
-		c.Credential, c.EfficiencyMetric, c.PrAttributionRun, c.PrRecord,
-		c.RelayProvider, c.RepoConfig, c.ScmProvider, c.Session, c.SessionEvent,
-		c.SessionUsageEvent, c.SessionWorkspace, c.SystemSetting, c.ToolUsageEvent,
-		c.User, c.WebhookDeadLetter,
+		c.CommitCheckpoint, c.CommitRewrite, c.Credential, c.PrAttributionRun,
+		c.PrRecord, c.RelayProvider, c.RepoConfig, c.ScmProvider, c.SystemSetting,
+		c.ToolUsageEvent, c.User, c.WebhookDeadLetter,
 	} {
 		n.Use(hooks...)
 	}
@@ -302,11 +257,9 @@ func (c *Client) Use(hooks ...Hook) {
 // In order to add interceptors to a specific client, call: `client.Node.Intercept(...)`.
 func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
-		c.AgentMetadataEvent, c.AiScanResult, c.CommitCheckpoint, c.CommitRewrite,
-		c.Credential, c.EfficiencyMetric, c.PrAttributionRun, c.PrRecord,
-		c.RelayProvider, c.RepoConfig, c.ScmProvider, c.Session, c.SessionEvent,
-		c.SessionUsageEvent, c.SessionWorkspace, c.SystemSetting, c.ToolUsageEvent,
-		c.User, c.WebhookDeadLetter,
+		c.CommitCheckpoint, c.CommitRewrite, c.Credential, c.PrAttributionRun,
+		c.PrRecord, c.RelayProvider, c.RepoConfig, c.ScmProvider, c.SystemSetting,
+		c.ToolUsageEvent, c.User, c.WebhookDeadLetter,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -315,18 +268,12 @@ func (c *Client) Intercept(interceptors ...Interceptor) {
 // Mutate implements the ent.Mutator interface.
 func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 	switch m := m.(type) {
-	case *AgentMetadataEventMutation:
-		return c.AgentMetadataEvent.mutate(ctx, m)
-	case *AiScanResultMutation:
-		return c.AiScanResult.mutate(ctx, m)
 	case *CommitCheckpointMutation:
 		return c.CommitCheckpoint.mutate(ctx, m)
 	case *CommitRewriteMutation:
 		return c.CommitRewrite.mutate(ctx, m)
 	case *CredentialMutation:
 		return c.Credential.mutate(ctx, m)
-	case *EfficiencyMetricMutation:
-		return c.EfficiencyMetric.mutate(ctx, m)
 	case *PrAttributionRunMutation:
 		return c.PrAttributionRun.mutate(ctx, m)
 	case *PrRecordMutation:
@@ -337,14 +284,6 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.RepoConfig.mutate(ctx, m)
 	case *ScmProviderMutation:
 		return c.ScmProvider.mutate(ctx, m)
-	case *SessionMutation:
-		return c.Session.mutate(ctx, m)
-	case *SessionEventMutation:
-		return c.SessionEvent.mutate(ctx, m)
-	case *SessionUsageEventMutation:
-		return c.SessionUsageEvent.mutate(ctx, m)
-	case *SessionWorkspaceMutation:
-		return c.SessionWorkspace.mutate(ctx, m)
 	case *SystemSettingMutation:
 		return c.SystemSetting.mutate(ctx, m)
 	case *ToolUsageEventMutation:
@@ -355,304 +294,6 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.WebhookDeadLetter.mutate(ctx, m)
 	default:
 		return nil, fmt.Errorf("ent: unknown mutation type %T", m)
-	}
-}
-
-// AgentMetadataEventClient is a client for the AgentMetadataEvent schema.
-type AgentMetadataEventClient struct {
-	config
-}
-
-// NewAgentMetadataEventClient returns a client for the AgentMetadataEvent from the given config.
-func NewAgentMetadataEventClient(c config) *AgentMetadataEventClient {
-	return &AgentMetadataEventClient{config: c}
-}
-
-// Use adds a list of mutation hooks to the hooks stack.
-// A call to `Use(f, g, h)` equals to `agentmetadataevent.Hooks(f(g(h())))`.
-func (c *AgentMetadataEventClient) Use(hooks ...Hook) {
-	c.hooks.AgentMetadataEvent = append(c.hooks.AgentMetadataEvent, hooks...)
-}
-
-// Intercept adds a list of query interceptors to the interceptors stack.
-// A call to `Intercept(f, g, h)` equals to `agentmetadataevent.Intercept(f(g(h())))`.
-func (c *AgentMetadataEventClient) Intercept(interceptors ...Interceptor) {
-	c.inters.AgentMetadataEvent = append(c.inters.AgentMetadataEvent, interceptors...)
-}
-
-// Create returns a builder for creating a AgentMetadataEvent entity.
-func (c *AgentMetadataEventClient) Create() *AgentMetadataEventCreate {
-	mutation := newAgentMetadataEventMutation(c.config, OpCreate)
-	return &AgentMetadataEventCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// CreateBulk returns a builder for creating a bulk of AgentMetadataEvent entities.
-func (c *AgentMetadataEventClient) CreateBulk(builders ...*AgentMetadataEventCreate) *AgentMetadataEventCreateBulk {
-	return &AgentMetadataEventCreateBulk{config: c.config, builders: builders}
-}
-
-// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
-// a builder and applies setFunc on it.
-func (c *AgentMetadataEventClient) MapCreateBulk(slice any, setFunc func(*AgentMetadataEventCreate, int)) *AgentMetadataEventCreateBulk {
-	rv := reflect.ValueOf(slice)
-	if rv.Kind() != reflect.Slice {
-		return &AgentMetadataEventCreateBulk{err: fmt.Errorf("calling to AgentMetadataEventClient.MapCreateBulk with wrong type %T, need slice", slice)}
-	}
-	builders := make([]*AgentMetadataEventCreate, rv.Len())
-	for i := 0; i < rv.Len(); i++ {
-		builders[i] = c.Create()
-		setFunc(builders[i], i)
-	}
-	return &AgentMetadataEventCreateBulk{config: c.config, builders: builders}
-}
-
-// Update returns an update builder for AgentMetadataEvent.
-func (c *AgentMetadataEventClient) Update() *AgentMetadataEventUpdate {
-	mutation := newAgentMetadataEventMutation(c.config, OpUpdate)
-	return &AgentMetadataEventUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// UpdateOne returns an update builder for the given entity.
-func (c *AgentMetadataEventClient) UpdateOne(ame *AgentMetadataEvent) *AgentMetadataEventUpdateOne {
-	mutation := newAgentMetadataEventMutation(c.config, OpUpdateOne, withAgentMetadataEvent(ame))
-	return &AgentMetadataEventUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// UpdateOneID returns an update builder for the given id.
-func (c *AgentMetadataEventClient) UpdateOneID(id int) *AgentMetadataEventUpdateOne {
-	mutation := newAgentMetadataEventMutation(c.config, OpUpdateOne, withAgentMetadataEventID(id))
-	return &AgentMetadataEventUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// Delete returns a delete builder for AgentMetadataEvent.
-func (c *AgentMetadataEventClient) Delete() *AgentMetadataEventDelete {
-	mutation := newAgentMetadataEventMutation(c.config, OpDelete)
-	return &AgentMetadataEventDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// DeleteOne returns a builder for deleting the given entity.
-func (c *AgentMetadataEventClient) DeleteOne(ame *AgentMetadataEvent) *AgentMetadataEventDeleteOne {
-	return c.DeleteOneID(ame.ID)
-}
-
-// DeleteOneID returns a builder for deleting the given entity by its id.
-func (c *AgentMetadataEventClient) DeleteOneID(id int) *AgentMetadataEventDeleteOne {
-	builder := c.Delete().Where(agentmetadataevent.ID(id))
-	builder.mutation.id = &id
-	builder.mutation.op = OpDeleteOne
-	return &AgentMetadataEventDeleteOne{builder}
-}
-
-// Query returns a query builder for AgentMetadataEvent.
-func (c *AgentMetadataEventClient) Query() *AgentMetadataEventQuery {
-	return &AgentMetadataEventQuery{
-		config: c.config,
-		ctx:    &QueryContext{Type: TypeAgentMetadataEvent},
-		inters: c.Interceptors(),
-	}
-}
-
-// Get returns a AgentMetadataEvent entity by its id.
-func (c *AgentMetadataEventClient) Get(ctx context.Context, id int) (*AgentMetadataEvent, error) {
-	return c.Query().Where(agentmetadataevent.ID(id)).Only(ctx)
-}
-
-// GetX is like Get, but panics if an error occurs.
-func (c *AgentMetadataEventClient) GetX(ctx context.Context, id int) *AgentMetadataEvent {
-	obj, err := c.Get(ctx, id)
-	if err != nil {
-		panic(err)
-	}
-	return obj
-}
-
-// QuerySession queries the session edge of a AgentMetadataEvent.
-func (c *AgentMetadataEventClient) QuerySession(ame *AgentMetadataEvent) *SessionQuery {
-	query := (&SessionClient{config: c.config}).Query()
-	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
-		id := ame.ID
-		step := sqlgraph.NewStep(
-			sqlgraph.From(agentmetadataevent.Table, agentmetadataevent.FieldID, id),
-			sqlgraph.To(session.Table, session.FieldID),
-			sqlgraph.Edge(sqlgraph.M2O, true, agentmetadataevent.SessionTable, agentmetadataevent.SessionColumn),
-		)
-		fromV = sqlgraph.Neighbors(ame.driver.Dialect(), step)
-		return fromV, nil
-	}
-	return query
-}
-
-// Hooks returns the client hooks.
-func (c *AgentMetadataEventClient) Hooks() []Hook {
-	return c.hooks.AgentMetadataEvent
-}
-
-// Interceptors returns the client interceptors.
-func (c *AgentMetadataEventClient) Interceptors() []Interceptor {
-	return c.inters.AgentMetadataEvent
-}
-
-func (c *AgentMetadataEventClient) mutate(ctx context.Context, m *AgentMetadataEventMutation) (Value, error) {
-	switch m.Op() {
-	case OpCreate:
-		return (&AgentMetadataEventCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
-	case OpUpdate:
-		return (&AgentMetadataEventUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
-	case OpUpdateOne:
-		return (&AgentMetadataEventUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
-	case OpDelete, OpDeleteOne:
-		return (&AgentMetadataEventDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
-	default:
-		return nil, fmt.Errorf("ent: unknown AgentMetadataEvent mutation op: %q", m.Op())
-	}
-}
-
-// AiScanResultClient is a client for the AiScanResult schema.
-type AiScanResultClient struct {
-	config
-}
-
-// NewAiScanResultClient returns a client for the AiScanResult from the given config.
-func NewAiScanResultClient(c config) *AiScanResultClient {
-	return &AiScanResultClient{config: c}
-}
-
-// Use adds a list of mutation hooks to the hooks stack.
-// A call to `Use(f, g, h)` equals to `aiscanresult.Hooks(f(g(h())))`.
-func (c *AiScanResultClient) Use(hooks ...Hook) {
-	c.hooks.AiScanResult = append(c.hooks.AiScanResult, hooks...)
-}
-
-// Intercept adds a list of query interceptors to the interceptors stack.
-// A call to `Intercept(f, g, h)` equals to `aiscanresult.Intercept(f(g(h())))`.
-func (c *AiScanResultClient) Intercept(interceptors ...Interceptor) {
-	c.inters.AiScanResult = append(c.inters.AiScanResult, interceptors...)
-}
-
-// Create returns a builder for creating a AiScanResult entity.
-func (c *AiScanResultClient) Create() *AiScanResultCreate {
-	mutation := newAiScanResultMutation(c.config, OpCreate)
-	return &AiScanResultCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// CreateBulk returns a builder for creating a bulk of AiScanResult entities.
-func (c *AiScanResultClient) CreateBulk(builders ...*AiScanResultCreate) *AiScanResultCreateBulk {
-	return &AiScanResultCreateBulk{config: c.config, builders: builders}
-}
-
-// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
-// a builder and applies setFunc on it.
-func (c *AiScanResultClient) MapCreateBulk(slice any, setFunc func(*AiScanResultCreate, int)) *AiScanResultCreateBulk {
-	rv := reflect.ValueOf(slice)
-	if rv.Kind() != reflect.Slice {
-		return &AiScanResultCreateBulk{err: fmt.Errorf("calling to AiScanResultClient.MapCreateBulk with wrong type %T, need slice", slice)}
-	}
-	builders := make([]*AiScanResultCreate, rv.Len())
-	for i := 0; i < rv.Len(); i++ {
-		builders[i] = c.Create()
-		setFunc(builders[i], i)
-	}
-	return &AiScanResultCreateBulk{config: c.config, builders: builders}
-}
-
-// Update returns an update builder for AiScanResult.
-func (c *AiScanResultClient) Update() *AiScanResultUpdate {
-	mutation := newAiScanResultMutation(c.config, OpUpdate)
-	return &AiScanResultUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// UpdateOne returns an update builder for the given entity.
-func (c *AiScanResultClient) UpdateOne(asr *AiScanResult) *AiScanResultUpdateOne {
-	mutation := newAiScanResultMutation(c.config, OpUpdateOne, withAiScanResult(asr))
-	return &AiScanResultUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// UpdateOneID returns an update builder for the given id.
-func (c *AiScanResultClient) UpdateOneID(id int) *AiScanResultUpdateOne {
-	mutation := newAiScanResultMutation(c.config, OpUpdateOne, withAiScanResultID(id))
-	return &AiScanResultUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// Delete returns a delete builder for AiScanResult.
-func (c *AiScanResultClient) Delete() *AiScanResultDelete {
-	mutation := newAiScanResultMutation(c.config, OpDelete)
-	return &AiScanResultDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// DeleteOne returns a builder for deleting the given entity.
-func (c *AiScanResultClient) DeleteOne(asr *AiScanResult) *AiScanResultDeleteOne {
-	return c.DeleteOneID(asr.ID)
-}
-
-// DeleteOneID returns a builder for deleting the given entity by its id.
-func (c *AiScanResultClient) DeleteOneID(id int) *AiScanResultDeleteOne {
-	builder := c.Delete().Where(aiscanresult.ID(id))
-	builder.mutation.id = &id
-	builder.mutation.op = OpDeleteOne
-	return &AiScanResultDeleteOne{builder}
-}
-
-// Query returns a query builder for AiScanResult.
-func (c *AiScanResultClient) Query() *AiScanResultQuery {
-	return &AiScanResultQuery{
-		config: c.config,
-		ctx:    &QueryContext{Type: TypeAiScanResult},
-		inters: c.Interceptors(),
-	}
-}
-
-// Get returns a AiScanResult entity by its id.
-func (c *AiScanResultClient) Get(ctx context.Context, id int) (*AiScanResult, error) {
-	return c.Query().Where(aiscanresult.ID(id)).Only(ctx)
-}
-
-// GetX is like Get, but panics if an error occurs.
-func (c *AiScanResultClient) GetX(ctx context.Context, id int) *AiScanResult {
-	obj, err := c.Get(ctx, id)
-	if err != nil {
-		panic(err)
-	}
-	return obj
-}
-
-// QueryRepoConfig queries the repo_config edge of a AiScanResult.
-func (c *AiScanResultClient) QueryRepoConfig(asr *AiScanResult) *RepoConfigQuery {
-	query := (&RepoConfigClient{config: c.config}).Query()
-	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
-		id := asr.ID
-		step := sqlgraph.NewStep(
-			sqlgraph.From(aiscanresult.Table, aiscanresult.FieldID, id),
-			sqlgraph.To(repoconfig.Table, repoconfig.FieldID),
-			sqlgraph.Edge(sqlgraph.M2O, true, aiscanresult.RepoConfigTable, aiscanresult.RepoConfigColumn),
-		)
-		fromV = sqlgraph.Neighbors(asr.driver.Dialect(), step)
-		return fromV, nil
-	}
-	return query
-}
-
-// Hooks returns the client hooks.
-func (c *AiScanResultClient) Hooks() []Hook {
-	return c.hooks.AiScanResult
-}
-
-// Interceptors returns the client interceptors.
-func (c *AiScanResultClient) Interceptors() []Interceptor {
-	return c.inters.AiScanResult
-}
-
-func (c *AiScanResultClient) mutate(ctx context.Context, m *AiScanResultMutation) (Value, error) {
-	switch m.Op() {
-	case OpCreate:
-		return (&AiScanResultCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
-	case OpUpdate:
-		return (&AiScanResultUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
-	case OpUpdateOne:
-		return (&AiScanResultUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
-	case OpDelete, OpDeleteOne:
-		return (&AiScanResultDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
-	default:
-		return nil, fmt.Errorf("ent: unknown AiScanResult mutation op: %q", m.Op())
 	}
 }
 
@@ -764,15 +405,15 @@ func (c *CommitCheckpointClient) GetX(ctx context.Context, id int) *CommitCheckp
 	return obj
 }
 
-// QuerySession queries the session edge of a CommitCheckpoint.
-func (c *CommitCheckpointClient) QuerySession(cc *CommitCheckpoint) *SessionQuery {
-	query := (&SessionClient{config: c.config}).Query()
+// QueryUser queries the user edge of a CommitCheckpoint.
+func (c *CommitCheckpointClient) QueryUser(cc *CommitCheckpoint) *UserQuery {
+	query := (&UserClient{config: c.config}).Query()
 	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
 		id := cc.ID
 		step := sqlgraph.NewStep(
 			sqlgraph.From(commitcheckpoint.Table, commitcheckpoint.FieldID, id),
-			sqlgraph.To(session.Table, session.FieldID),
-			sqlgraph.Edge(sqlgraph.M2O, true, commitcheckpoint.SessionTable, commitcheckpoint.SessionColumn),
+			sqlgraph.To(user.Table, user.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, commitcheckpoint.UserTable, commitcheckpoint.UserColumn),
 		)
 		fromV = sqlgraph.Neighbors(cc.driver.Dialect(), step)
 		return fromV, nil
@@ -945,15 +586,15 @@ func (c *CommitRewriteClient) GetX(ctx context.Context, id int) *CommitRewrite {
 	return obj
 }
 
-// QuerySession queries the session edge of a CommitRewrite.
-func (c *CommitRewriteClient) QuerySession(cr *CommitRewrite) *SessionQuery {
-	query := (&SessionClient{config: c.config}).Query()
+// QueryUser queries the user edge of a CommitRewrite.
+func (c *CommitRewriteClient) QueryUser(cr *CommitRewrite) *UserQuery {
+	query := (&UserClient{config: c.config}).Query()
 	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
 		id := cr.ID
 		step := sqlgraph.NewStep(
 			sqlgraph.From(commitrewrite.Table, commitrewrite.FieldID, id),
-			sqlgraph.To(session.Table, session.FieldID),
-			sqlgraph.Edge(sqlgraph.M2O, true, commitrewrite.SessionTable, commitrewrite.SessionColumn),
+			sqlgraph.To(user.Table, user.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, commitrewrite.UserTable, commitrewrite.UserColumn),
 		)
 		fromV = sqlgraph.Neighbors(cr.driver.Dialect(), step)
 		return fromV, nil
@@ -1164,155 +805,6 @@ func (c *CredentialClient) mutate(ctx context.Context, m *CredentialMutation) (V
 		return (&CredentialDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown Credential mutation op: %q", m.Op())
-	}
-}
-
-// EfficiencyMetricClient is a client for the EfficiencyMetric schema.
-type EfficiencyMetricClient struct {
-	config
-}
-
-// NewEfficiencyMetricClient returns a client for the EfficiencyMetric from the given config.
-func NewEfficiencyMetricClient(c config) *EfficiencyMetricClient {
-	return &EfficiencyMetricClient{config: c}
-}
-
-// Use adds a list of mutation hooks to the hooks stack.
-// A call to `Use(f, g, h)` equals to `efficiencymetric.Hooks(f(g(h())))`.
-func (c *EfficiencyMetricClient) Use(hooks ...Hook) {
-	c.hooks.EfficiencyMetric = append(c.hooks.EfficiencyMetric, hooks...)
-}
-
-// Intercept adds a list of query interceptors to the interceptors stack.
-// A call to `Intercept(f, g, h)` equals to `efficiencymetric.Intercept(f(g(h())))`.
-func (c *EfficiencyMetricClient) Intercept(interceptors ...Interceptor) {
-	c.inters.EfficiencyMetric = append(c.inters.EfficiencyMetric, interceptors...)
-}
-
-// Create returns a builder for creating a EfficiencyMetric entity.
-func (c *EfficiencyMetricClient) Create() *EfficiencyMetricCreate {
-	mutation := newEfficiencyMetricMutation(c.config, OpCreate)
-	return &EfficiencyMetricCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// CreateBulk returns a builder for creating a bulk of EfficiencyMetric entities.
-func (c *EfficiencyMetricClient) CreateBulk(builders ...*EfficiencyMetricCreate) *EfficiencyMetricCreateBulk {
-	return &EfficiencyMetricCreateBulk{config: c.config, builders: builders}
-}
-
-// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
-// a builder and applies setFunc on it.
-func (c *EfficiencyMetricClient) MapCreateBulk(slice any, setFunc func(*EfficiencyMetricCreate, int)) *EfficiencyMetricCreateBulk {
-	rv := reflect.ValueOf(slice)
-	if rv.Kind() != reflect.Slice {
-		return &EfficiencyMetricCreateBulk{err: fmt.Errorf("calling to EfficiencyMetricClient.MapCreateBulk with wrong type %T, need slice", slice)}
-	}
-	builders := make([]*EfficiencyMetricCreate, rv.Len())
-	for i := 0; i < rv.Len(); i++ {
-		builders[i] = c.Create()
-		setFunc(builders[i], i)
-	}
-	return &EfficiencyMetricCreateBulk{config: c.config, builders: builders}
-}
-
-// Update returns an update builder for EfficiencyMetric.
-func (c *EfficiencyMetricClient) Update() *EfficiencyMetricUpdate {
-	mutation := newEfficiencyMetricMutation(c.config, OpUpdate)
-	return &EfficiencyMetricUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// UpdateOne returns an update builder for the given entity.
-func (c *EfficiencyMetricClient) UpdateOne(em *EfficiencyMetric) *EfficiencyMetricUpdateOne {
-	mutation := newEfficiencyMetricMutation(c.config, OpUpdateOne, withEfficiencyMetric(em))
-	return &EfficiencyMetricUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// UpdateOneID returns an update builder for the given id.
-func (c *EfficiencyMetricClient) UpdateOneID(id int) *EfficiencyMetricUpdateOne {
-	mutation := newEfficiencyMetricMutation(c.config, OpUpdateOne, withEfficiencyMetricID(id))
-	return &EfficiencyMetricUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// Delete returns a delete builder for EfficiencyMetric.
-func (c *EfficiencyMetricClient) Delete() *EfficiencyMetricDelete {
-	mutation := newEfficiencyMetricMutation(c.config, OpDelete)
-	return &EfficiencyMetricDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// DeleteOne returns a builder for deleting the given entity.
-func (c *EfficiencyMetricClient) DeleteOne(em *EfficiencyMetric) *EfficiencyMetricDeleteOne {
-	return c.DeleteOneID(em.ID)
-}
-
-// DeleteOneID returns a builder for deleting the given entity by its id.
-func (c *EfficiencyMetricClient) DeleteOneID(id int) *EfficiencyMetricDeleteOne {
-	builder := c.Delete().Where(efficiencymetric.ID(id))
-	builder.mutation.id = &id
-	builder.mutation.op = OpDeleteOne
-	return &EfficiencyMetricDeleteOne{builder}
-}
-
-// Query returns a query builder for EfficiencyMetric.
-func (c *EfficiencyMetricClient) Query() *EfficiencyMetricQuery {
-	return &EfficiencyMetricQuery{
-		config: c.config,
-		ctx:    &QueryContext{Type: TypeEfficiencyMetric},
-		inters: c.Interceptors(),
-	}
-}
-
-// Get returns a EfficiencyMetric entity by its id.
-func (c *EfficiencyMetricClient) Get(ctx context.Context, id int) (*EfficiencyMetric, error) {
-	return c.Query().Where(efficiencymetric.ID(id)).Only(ctx)
-}
-
-// GetX is like Get, but panics if an error occurs.
-func (c *EfficiencyMetricClient) GetX(ctx context.Context, id int) *EfficiencyMetric {
-	obj, err := c.Get(ctx, id)
-	if err != nil {
-		panic(err)
-	}
-	return obj
-}
-
-// QueryRepoConfig queries the repo_config edge of a EfficiencyMetric.
-func (c *EfficiencyMetricClient) QueryRepoConfig(em *EfficiencyMetric) *RepoConfigQuery {
-	query := (&RepoConfigClient{config: c.config}).Query()
-	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
-		id := em.ID
-		step := sqlgraph.NewStep(
-			sqlgraph.From(efficiencymetric.Table, efficiencymetric.FieldID, id),
-			sqlgraph.To(repoconfig.Table, repoconfig.FieldID),
-			sqlgraph.Edge(sqlgraph.M2O, true, efficiencymetric.RepoConfigTable, efficiencymetric.RepoConfigColumn),
-		)
-		fromV = sqlgraph.Neighbors(em.driver.Dialect(), step)
-		return fromV, nil
-	}
-	return query
-}
-
-// Hooks returns the client hooks.
-func (c *EfficiencyMetricClient) Hooks() []Hook {
-	return c.hooks.EfficiencyMetric
-}
-
-// Interceptors returns the client interceptors.
-func (c *EfficiencyMetricClient) Interceptors() []Interceptor {
-	return c.inters.EfficiencyMetric
-}
-
-func (c *EfficiencyMetricClient) mutate(ctx context.Context, m *EfficiencyMetricMutation) (Value, error) {
-	switch m.Op() {
-	case OpCreate:
-		return (&EfficiencyMetricCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
-	case OpUpdate:
-		return (&EfficiencyMetricUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
-	case OpUpdateOne:
-		return (&EfficiencyMetricUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
-	case OpDelete, OpDeleteOne:
-		return (&EfficiencyMetricDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
-	default:
-		return nil, fmt.Errorf("ent: unknown EfficiencyMetric mutation op: %q", m.Op())
 	}
 }
 
@@ -1905,22 +1397,6 @@ func (c *RepoConfigClient) QueryScmProvider(rc *RepoConfig) *ScmProviderQuery {
 	return query
 }
 
-// QuerySessions queries the sessions edge of a RepoConfig.
-func (c *RepoConfigClient) QuerySessions(rc *RepoConfig) *SessionQuery {
-	query := (&SessionClient{config: c.config}).Query()
-	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
-		id := rc.ID
-		step := sqlgraph.NewStep(
-			sqlgraph.From(repoconfig.Table, repoconfig.FieldID, id),
-			sqlgraph.To(session.Table, session.FieldID),
-			sqlgraph.Edge(sqlgraph.O2M, false, repoconfig.SessionsTable, repoconfig.SessionsColumn),
-		)
-		fromV = sqlgraph.Neighbors(rc.driver.Dialect(), step)
-		return fromV, nil
-	}
-	return query
-}
-
 // QueryCommitCheckpoints queries the commit_checkpoints edge of a RepoConfig.
 func (c *RepoConfigClient) QueryCommitCheckpoints(rc *RepoConfig) *CommitCheckpointQuery {
 	query := (&CommitCheckpointClient{config: c.config}).Query()
@@ -1985,22 +1461,6 @@ func (c *RepoConfigClient) QueryWebhookDeadLetters(rc *RepoConfig) *WebhookDeadL
 	return query
 }
 
-// QueryAiScanResults queries the ai_scan_results edge of a RepoConfig.
-func (c *RepoConfigClient) QueryAiScanResults(rc *RepoConfig) *AiScanResultQuery {
-	query := (&AiScanResultClient{config: c.config}).Query()
-	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
-		id := rc.ID
-		step := sqlgraph.NewStep(
-			sqlgraph.From(repoconfig.Table, repoconfig.FieldID, id),
-			sqlgraph.To(aiscanresult.Table, aiscanresult.FieldID),
-			sqlgraph.Edge(sqlgraph.O2M, false, repoconfig.AiScanResultsTable, repoconfig.AiScanResultsColumn),
-		)
-		fromV = sqlgraph.Neighbors(rc.driver.Dialect(), step)
-		return fromV, nil
-	}
-	return query
-}
-
 // QueryPrRecords queries the pr_records edge of a RepoConfig.
 func (c *RepoConfigClient) QueryPrRecords(rc *RepoConfig) *PrRecordQuery {
 	query := (&PrRecordClient{config: c.config}).Query()
@@ -2010,22 +1470,6 @@ func (c *RepoConfigClient) QueryPrRecords(rc *RepoConfig) *PrRecordQuery {
 			sqlgraph.From(repoconfig.Table, repoconfig.FieldID, id),
 			sqlgraph.To(prrecord.Table, prrecord.FieldID),
 			sqlgraph.Edge(sqlgraph.O2M, false, repoconfig.PrRecordsTable, repoconfig.PrRecordsColumn),
-		)
-		fromV = sqlgraph.Neighbors(rc.driver.Dialect(), step)
-		return fromV, nil
-	}
-	return query
-}
-
-// QueryEfficiencyMetrics queries the efficiency_metrics edge of a RepoConfig.
-func (c *RepoConfigClient) QueryEfficiencyMetrics(rc *RepoConfig) *EfficiencyMetricQuery {
-	query := (&EfficiencyMetricClient{config: c.config}).Query()
-	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
-		id := rc.ID
-		step := sqlgraph.NewStep(
-			sqlgraph.From(repoconfig.Table, repoconfig.FieldID, id),
-			sqlgraph.To(efficiencymetric.Table, efficiencymetric.FieldID),
-			sqlgraph.Edge(sqlgraph.O2M, false, repoconfig.EfficiencyMetricsTable, repoconfig.EfficiencyMetricsColumn),
 		)
 		fromV = sqlgraph.Neighbors(rc.driver.Dialect(), step)
 		return fromV, nil
@@ -2237,714 +1681,6 @@ func (c *ScmProviderClient) mutate(ctx context.Context, m *ScmProviderMutation) 
 		return (&ScmProviderDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown ScmProvider mutation op: %q", m.Op())
-	}
-}
-
-// SessionClient is a client for the Session schema.
-type SessionClient struct {
-	config
-}
-
-// NewSessionClient returns a client for the Session from the given config.
-func NewSessionClient(c config) *SessionClient {
-	return &SessionClient{config: c}
-}
-
-// Use adds a list of mutation hooks to the hooks stack.
-// A call to `Use(f, g, h)` equals to `session.Hooks(f(g(h())))`.
-func (c *SessionClient) Use(hooks ...Hook) {
-	c.hooks.Session = append(c.hooks.Session, hooks...)
-}
-
-// Intercept adds a list of query interceptors to the interceptors stack.
-// A call to `Intercept(f, g, h)` equals to `session.Intercept(f(g(h())))`.
-func (c *SessionClient) Intercept(interceptors ...Interceptor) {
-	c.inters.Session = append(c.inters.Session, interceptors...)
-}
-
-// Create returns a builder for creating a Session entity.
-func (c *SessionClient) Create() *SessionCreate {
-	mutation := newSessionMutation(c.config, OpCreate)
-	return &SessionCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// CreateBulk returns a builder for creating a bulk of Session entities.
-func (c *SessionClient) CreateBulk(builders ...*SessionCreate) *SessionCreateBulk {
-	return &SessionCreateBulk{config: c.config, builders: builders}
-}
-
-// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
-// a builder and applies setFunc on it.
-func (c *SessionClient) MapCreateBulk(slice any, setFunc func(*SessionCreate, int)) *SessionCreateBulk {
-	rv := reflect.ValueOf(slice)
-	if rv.Kind() != reflect.Slice {
-		return &SessionCreateBulk{err: fmt.Errorf("calling to SessionClient.MapCreateBulk with wrong type %T, need slice", slice)}
-	}
-	builders := make([]*SessionCreate, rv.Len())
-	for i := 0; i < rv.Len(); i++ {
-		builders[i] = c.Create()
-		setFunc(builders[i], i)
-	}
-	return &SessionCreateBulk{config: c.config, builders: builders}
-}
-
-// Update returns an update builder for Session.
-func (c *SessionClient) Update() *SessionUpdate {
-	mutation := newSessionMutation(c.config, OpUpdate)
-	return &SessionUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// UpdateOne returns an update builder for the given entity.
-func (c *SessionClient) UpdateOne(s *Session) *SessionUpdateOne {
-	mutation := newSessionMutation(c.config, OpUpdateOne, withSession(s))
-	return &SessionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// UpdateOneID returns an update builder for the given id.
-func (c *SessionClient) UpdateOneID(id uuid.UUID) *SessionUpdateOne {
-	mutation := newSessionMutation(c.config, OpUpdateOne, withSessionID(id))
-	return &SessionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// Delete returns a delete builder for Session.
-func (c *SessionClient) Delete() *SessionDelete {
-	mutation := newSessionMutation(c.config, OpDelete)
-	return &SessionDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// DeleteOne returns a builder for deleting the given entity.
-func (c *SessionClient) DeleteOne(s *Session) *SessionDeleteOne {
-	return c.DeleteOneID(s.ID)
-}
-
-// DeleteOneID returns a builder for deleting the given entity by its id.
-func (c *SessionClient) DeleteOneID(id uuid.UUID) *SessionDeleteOne {
-	builder := c.Delete().Where(session.ID(id))
-	builder.mutation.id = &id
-	builder.mutation.op = OpDeleteOne
-	return &SessionDeleteOne{builder}
-}
-
-// Query returns a query builder for Session.
-func (c *SessionClient) Query() *SessionQuery {
-	return &SessionQuery{
-		config: c.config,
-		ctx:    &QueryContext{Type: TypeSession},
-		inters: c.Interceptors(),
-	}
-}
-
-// Get returns a Session entity by its id.
-func (c *SessionClient) Get(ctx context.Context, id uuid.UUID) (*Session, error) {
-	return c.Query().Where(session.ID(id)).Only(ctx)
-}
-
-// GetX is like Get, but panics if an error occurs.
-func (c *SessionClient) GetX(ctx context.Context, id uuid.UUID) *Session {
-	obj, err := c.Get(ctx, id)
-	if err != nil {
-		panic(err)
-	}
-	return obj
-}
-
-// QueryRepoConfig queries the repo_config edge of a Session.
-func (c *SessionClient) QueryRepoConfig(s *Session) *RepoConfigQuery {
-	query := (&RepoConfigClient{config: c.config}).Query()
-	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
-		id := s.ID
-		step := sqlgraph.NewStep(
-			sqlgraph.From(session.Table, session.FieldID, id),
-			sqlgraph.To(repoconfig.Table, repoconfig.FieldID),
-			sqlgraph.Edge(sqlgraph.M2O, true, session.RepoConfigTable, session.RepoConfigColumn),
-		)
-		fromV = sqlgraph.Neighbors(s.driver.Dialect(), step)
-		return fromV, nil
-	}
-	return query
-}
-
-// QueryUser queries the user edge of a Session.
-func (c *SessionClient) QueryUser(s *Session) *UserQuery {
-	query := (&UserClient{config: c.config}).Query()
-	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
-		id := s.ID
-		step := sqlgraph.NewStep(
-			sqlgraph.From(session.Table, session.FieldID, id),
-			sqlgraph.To(user.Table, user.FieldID),
-			sqlgraph.Edge(sqlgraph.M2O, true, session.UserTable, session.UserColumn),
-		)
-		fromV = sqlgraph.Neighbors(s.driver.Dialect(), step)
-		return fromV, nil
-	}
-	return query
-}
-
-// QuerySessionWorkspaces queries the session_workspaces edge of a Session.
-func (c *SessionClient) QuerySessionWorkspaces(s *Session) *SessionWorkspaceQuery {
-	query := (&SessionWorkspaceClient{config: c.config}).Query()
-	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
-		id := s.ID
-		step := sqlgraph.NewStep(
-			sqlgraph.From(session.Table, session.FieldID, id),
-			sqlgraph.To(sessionworkspace.Table, sessionworkspace.FieldID),
-			sqlgraph.Edge(sqlgraph.O2M, false, session.SessionWorkspacesTable, session.SessionWorkspacesColumn),
-		)
-		fromV = sqlgraph.Neighbors(s.driver.Dialect(), step)
-		return fromV, nil
-	}
-	return query
-}
-
-// QueryAgentMetadataEvents queries the agent_metadata_events edge of a Session.
-func (c *SessionClient) QueryAgentMetadataEvents(s *Session) *AgentMetadataEventQuery {
-	query := (&AgentMetadataEventClient{config: c.config}).Query()
-	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
-		id := s.ID
-		step := sqlgraph.NewStep(
-			sqlgraph.From(session.Table, session.FieldID, id),
-			sqlgraph.To(agentmetadataevent.Table, agentmetadataevent.FieldID),
-			sqlgraph.Edge(sqlgraph.O2M, false, session.AgentMetadataEventsTable, session.AgentMetadataEventsColumn),
-		)
-		fromV = sqlgraph.Neighbors(s.driver.Dialect(), step)
-		return fromV, nil
-	}
-	return query
-}
-
-// QuerySessionUsageEvents queries the session_usage_events edge of a Session.
-func (c *SessionClient) QuerySessionUsageEvents(s *Session) *SessionUsageEventQuery {
-	query := (&SessionUsageEventClient{config: c.config}).Query()
-	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
-		id := s.ID
-		step := sqlgraph.NewStep(
-			sqlgraph.From(session.Table, session.FieldID, id),
-			sqlgraph.To(sessionusageevent.Table, sessionusageevent.FieldID),
-			sqlgraph.Edge(sqlgraph.O2M, false, session.SessionUsageEventsTable, session.SessionUsageEventsColumn),
-		)
-		fromV = sqlgraph.Neighbors(s.driver.Dialect(), step)
-		return fromV, nil
-	}
-	return query
-}
-
-// QuerySessionEvents queries the session_events edge of a Session.
-func (c *SessionClient) QuerySessionEvents(s *Session) *SessionEventQuery {
-	query := (&SessionEventClient{config: c.config}).Query()
-	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
-		id := s.ID
-		step := sqlgraph.NewStep(
-			sqlgraph.From(session.Table, session.FieldID, id),
-			sqlgraph.To(sessionevent.Table, sessionevent.FieldID),
-			sqlgraph.Edge(sqlgraph.O2M, false, session.SessionEventsTable, session.SessionEventsColumn),
-		)
-		fromV = sqlgraph.Neighbors(s.driver.Dialect(), step)
-		return fromV, nil
-	}
-	return query
-}
-
-// QueryCommitCheckpoints queries the commit_checkpoints edge of a Session.
-func (c *SessionClient) QueryCommitCheckpoints(s *Session) *CommitCheckpointQuery {
-	query := (&CommitCheckpointClient{config: c.config}).Query()
-	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
-		id := s.ID
-		step := sqlgraph.NewStep(
-			sqlgraph.From(session.Table, session.FieldID, id),
-			sqlgraph.To(commitcheckpoint.Table, commitcheckpoint.FieldID),
-			sqlgraph.Edge(sqlgraph.O2M, false, session.CommitCheckpointsTable, session.CommitCheckpointsColumn),
-		)
-		fromV = sqlgraph.Neighbors(s.driver.Dialect(), step)
-		return fromV, nil
-	}
-	return query
-}
-
-// QueryCommitRewrites queries the commit_rewrites edge of a Session.
-func (c *SessionClient) QueryCommitRewrites(s *Session) *CommitRewriteQuery {
-	query := (&CommitRewriteClient{config: c.config}).Query()
-	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
-		id := s.ID
-		step := sqlgraph.NewStep(
-			sqlgraph.From(session.Table, session.FieldID, id),
-			sqlgraph.To(commitrewrite.Table, commitrewrite.FieldID),
-			sqlgraph.Edge(sqlgraph.O2M, false, session.CommitRewritesTable, session.CommitRewritesColumn),
-		)
-		fromV = sqlgraph.Neighbors(s.driver.Dialect(), step)
-		return fromV, nil
-	}
-	return query
-}
-
-// Hooks returns the client hooks.
-func (c *SessionClient) Hooks() []Hook {
-	return c.hooks.Session
-}
-
-// Interceptors returns the client interceptors.
-func (c *SessionClient) Interceptors() []Interceptor {
-	return c.inters.Session
-}
-
-func (c *SessionClient) mutate(ctx context.Context, m *SessionMutation) (Value, error) {
-	switch m.Op() {
-	case OpCreate:
-		return (&SessionCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
-	case OpUpdate:
-		return (&SessionUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
-	case OpUpdateOne:
-		return (&SessionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
-	case OpDelete, OpDeleteOne:
-		return (&SessionDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
-	default:
-		return nil, fmt.Errorf("ent: unknown Session mutation op: %q", m.Op())
-	}
-}
-
-// SessionEventClient is a client for the SessionEvent schema.
-type SessionEventClient struct {
-	config
-}
-
-// NewSessionEventClient returns a client for the SessionEvent from the given config.
-func NewSessionEventClient(c config) *SessionEventClient {
-	return &SessionEventClient{config: c}
-}
-
-// Use adds a list of mutation hooks to the hooks stack.
-// A call to `Use(f, g, h)` equals to `sessionevent.Hooks(f(g(h())))`.
-func (c *SessionEventClient) Use(hooks ...Hook) {
-	c.hooks.SessionEvent = append(c.hooks.SessionEvent, hooks...)
-}
-
-// Intercept adds a list of query interceptors to the interceptors stack.
-// A call to `Intercept(f, g, h)` equals to `sessionevent.Intercept(f(g(h())))`.
-func (c *SessionEventClient) Intercept(interceptors ...Interceptor) {
-	c.inters.SessionEvent = append(c.inters.SessionEvent, interceptors...)
-}
-
-// Create returns a builder for creating a SessionEvent entity.
-func (c *SessionEventClient) Create() *SessionEventCreate {
-	mutation := newSessionEventMutation(c.config, OpCreate)
-	return &SessionEventCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// CreateBulk returns a builder for creating a bulk of SessionEvent entities.
-func (c *SessionEventClient) CreateBulk(builders ...*SessionEventCreate) *SessionEventCreateBulk {
-	return &SessionEventCreateBulk{config: c.config, builders: builders}
-}
-
-// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
-// a builder and applies setFunc on it.
-func (c *SessionEventClient) MapCreateBulk(slice any, setFunc func(*SessionEventCreate, int)) *SessionEventCreateBulk {
-	rv := reflect.ValueOf(slice)
-	if rv.Kind() != reflect.Slice {
-		return &SessionEventCreateBulk{err: fmt.Errorf("calling to SessionEventClient.MapCreateBulk with wrong type %T, need slice", slice)}
-	}
-	builders := make([]*SessionEventCreate, rv.Len())
-	for i := 0; i < rv.Len(); i++ {
-		builders[i] = c.Create()
-		setFunc(builders[i], i)
-	}
-	return &SessionEventCreateBulk{config: c.config, builders: builders}
-}
-
-// Update returns an update builder for SessionEvent.
-func (c *SessionEventClient) Update() *SessionEventUpdate {
-	mutation := newSessionEventMutation(c.config, OpUpdate)
-	return &SessionEventUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// UpdateOne returns an update builder for the given entity.
-func (c *SessionEventClient) UpdateOne(se *SessionEvent) *SessionEventUpdateOne {
-	mutation := newSessionEventMutation(c.config, OpUpdateOne, withSessionEvent(se))
-	return &SessionEventUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// UpdateOneID returns an update builder for the given id.
-func (c *SessionEventClient) UpdateOneID(id int) *SessionEventUpdateOne {
-	mutation := newSessionEventMutation(c.config, OpUpdateOne, withSessionEventID(id))
-	return &SessionEventUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// Delete returns a delete builder for SessionEvent.
-func (c *SessionEventClient) Delete() *SessionEventDelete {
-	mutation := newSessionEventMutation(c.config, OpDelete)
-	return &SessionEventDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// DeleteOne returns a builder for deleting the given entity.
-func (c *SessionEventClient) DeleteOne(se *SessionEvent) *SessionEventDeleteOne {
-	return c.DeleteOneID(se.ID)
-}
-
-// DeleteOneID returns a builder for deleting the given entity by its id.
-func (c *SessionEventClient) DeleteOneID(id int) *SessionEventDeleteOne {
-	builder := c.Delete().Where(sessionevent.ID(id))
-	builder.mutation.id = &id
-	builder.mutation.op = OpDeleteOne
-	return &SessionEventDeleteOne{builder}
-}
-
-// Query returns a query builder for SessionEvent.
-func (c *SessionEventClient) Query() *SessionEventQuery {
-	return &SessionEventQuery{
-		config: c.config,
-		ctx:    &QueryContext{Type: TypeSessionEvent},
-		inters: c.Interceptors(),
-	}
-}
-
-// Get returns a SessionEvent entity by its id.
-func (c *SessionEventClient) Get(ctx context.Context, id int) (*SessionEvent, error) {
-	return c.Query().Where(sessionevent.ID(id)).Only(ctx)
-}
-
-// GetX is like Get, but panics if an error occurs.
-func (c *SessionEventClient) GetX(ctx context.Context, id int) *SessionEvent {
-	obj, err := c.Get(ctx, id)
-	if err != nil {
-		panic(err)
-	}
-	return obj
-}
-
-// QuerySession queries the session edge of a SessionEvent.
-func (c *SessionEventClient) QuerySession(se *SessionEvent) *SessionQuery {
-	query := (&SessionClient{config: c.config}).Query()
-	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
-		id := se.ID
-		step := sqlgraph.NewStep(
-			sqlgraph.From(sessionevent.Table, sessionevent.FieldID, id),
-			sqlgraph.To(session.Table, session.FieldID),
-			sqlgraph.Edge(sqlgraph.M2O, true, sessionevent.SessionTable, sessionevent.SessionColumn),
-		)
-		fromV = sqlgraph.Neighbors(se.driver.Dialect(), step)
-		return fromV, nil
-	}
-	return query
-}
-
-// Hooks returns the client hooks.
-func (c *SessionEventClient) Hooks() []Hook {
-	return c.hooks.SessionEvent
-}
-
-// Interceptors returns the client interceptors.
-func (c *SessionEventClient) Interceptors() []Interceptor {
-	return c.inters.SessionEvent
-}
-
-func (c *SessionEventClient) mutate(ctx context.Context, m *SessionEventMutation) (Value, error) {
-	switch m.Op() {
-	case OpCreate:
-		return (&SessionEventCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
-	case OpUpdate:
-		return (&SessionEventUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
-	case OpUpdateOne:
-		return (&SessionEventUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
-	case OpDelete, OpDeleteOne:
-		return (&SessionEventDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
-	default:
-		return nil, fmt.Errorf("ent: unknown SessionEvent mutation op: %q", m.Op())
-	}
-}
-
-// SessionUsageEventClient is a client for the SessionUsageEvent schema.
-type SessionUsageEventClient struct {
-	config
-}
-
-// NewSessionUsageEventClient returns a client for the SessionUsageEvent from the given config.
-func NewSessionUsageEventClient(c config) *SessionUsageEventClient {
-	return &SessionUsageEventClient{config: c}
-}
-
-// Use adds a list of mutation hooks to the hooks stack.
-// A call to `Use(f, g, h)` equals to `sessionusageevent.Hooks(f(g(h())))`.
-func (c *SessionUsageEventClient) Use(hooks ...Hook) {
-	c.hooks.SessionUsageEvent = append(c.hooks.SessionUsageEvent, hooks...)
-}
-
-// Intercept adds a list of query interceptors to the interceptors stack.
-// A call to `Intercept(f, g, h)` equals to `sessionusageevent.Intercept(f(g(h())))`.
-func (c *SessionUsageEventClient) Intercept(interceptors ...Interceptor) {
-	c.inters.SessionUsageEvent = append(c.inters.SessionUsageEvent, interceptors...)
-}
-
-// Create returns a builder for creating a SessionUsageEvent entity.
-func (c *SessionUsageEventClient) Create() *SessionUsageEventCreate {
-	mutation := newSessionUsageEventMutation(c.config, OpCreate)
-	return &SessionUsageEventCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// CreateBulk returns a builder for creating a bulk of SessionUsageEvent entities.
-func (c *SessionUsageEventClient) CreateBulk(builders ...*SessionUsageEventCreate) *SessionUsageEventCreateBulk {
-	return &SessionUsageEventCreateBulk{config: c.config, builders: builders}
-}
-
-// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
-// a builder and applies setFunc on it.
-func (c *SessionUsageEventClient) MapCreateBulk(slice any, setFunc func(*SessionUsageEventCreate, int)) *SessionUsageEventCreateBulk {
-	rv := reflect.ValueOf(slice)
-	if rv.Kind() != reflect.Slice {
-		return &SessionUsageEventCreateBulk{err: fmt.Errorf("calling to SessionUsageEventClient.MapCreateBulk with wrong type %T, need slice", slice)}
-	}
-	builders := make([]*SessionUsageEventCreate, rv.Len())
-	for i := 0; i < rv.Len(); i++ {
-		builders[i] = c.Create()
-		setFunc(builders[i], i)
-	}
-	return &SessionUsageEventCreateBulk{config: c.config, builders: builders}
-}
-
-// Update returns an update builder for SessionUsageEvent.
-func (c *SessionUsageEventClient) Update() *SessionUsageEventUpdate {
-	mutation := newSessionUsageEventMutation(c.config, OpUpdate)
-	return &SessionUsageEventUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// UpdateOne returns an update builder for the given entity.
-func (c *SessionUsageEventClient) UpdateOne(sue *SessionUsageEvent) *SessionUsageEventUpdateOne {
-	mutation := newSessionUsageEventMutation(c.config, OpUpdateOne, withSessionUsageEvent(sue))
-	return &SessionUsageEventUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// UpdateOneID returns an update builder for the given id.
-func (c *SessionUsageEventClient) UpdateOneID(id int) *SessionUsageEventUpdateOne {
-	mutation := newSessionUsageEventMutation(c.config, OpUpdateOne, withSessionUsageEventID(id))
-	return &SessionUsageEventUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// Delete returns a delete builder for SessionUsageEvent.
-func (c *SessionUsageEventClient) Delete() *SessionUsageEventDelete {
-	mutation := newSessionUsageEventMutation(c.config, OpDelete)
-	return &SessionUsageEventDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// DeleteOne returns a builder for deleting the given entity.
-func (c *SessionUsageEventClient) DeleteOne(sue *SessionUsageEvent) *SessionUsageEventDeleteOne {
-	return c.DeleteOneID(sue.ID)
-}
-
-// DeleteOneID returns a builder for deleting the given entity by its id.
-func (c *SessionUsageEventClient) DeleteOneID(id int) *SessionUsageEventDeleteOne {
-	builder := c.Delete().Where(sessionusageevent.ID(id))
-	builder.mutation.id = &id
-	builder.mutation.op = OpDeleteOne
-	return &SessionUsageEventDeleteOne{builder}
-}
-
-// Query returns a query builder for SessionUsageEvent.
-func (c *SessionUsageEventClient) Query() *SessionUsageEventQuery {
-	return &SessionUsageEventQuery{
-		config: c.config,
-		ctx:    &QueryContext{Type: TypeSessionUsageEvent},
-		inters: c.Interceptors(),
-	}
-}
-
-// Get returns a SessionUsageEvent entity by its id.
-func (c *SessionUsageEventClient) Get(ctx context.Context, id int) (*SessionUsageEvent, error) {
-	return c.Query().Where(sessionusageevent.ID(id)).Only(ctx)
-}
-
-// GetX is like Get, but panics if an error occurs.
-func (c *SessionUsageEventClient) GetX(ctx context.Context, id int) *SessionUsageEvent {
-	obj, err := c.Get(ctx, id)
-	if err != nil {
-		panic(err)
-	}
-	return obj
-}
-
-// QuerySession queries the session edge of a SessionUsageEvent.
-func (c *SessionUsageEventClient) QuerySession(sue *SessionUsageEvent) *SessionQuery {
-	query := (&SessionClient{config: c.config}).Query()
-	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
-		id := sue.ID
-		step := sqlgraph.NewStep(
-			sqlgraph.From(sessionusageevent.Table, sessionusageevent.FieldID, id),
-			sqlgraph.To(session.Table, session.FieldID),
-			sqlgraph.Edge(sqlgraph.M2O, true, sessionusageevent.SessionTable, sessionusageevent.SessionColumn),
-		)
-		fromV = sqlgraph.Neighbors(sue.driver.Dialect(), step)
-		return fromV, nil
-	}
-	return query
-}
-
-// Hooks returns the client hooks.
-func (c *SessionUsageEventClient) Hooks() []Hook {
-	return c.hooks.SessionUsageEvent
-}
-
-// Interceptors returns the client interceptors.
-func (c *SessionUsageEventClient) Interceptors() []Interceptor {
-	return c.inters.SessionUsageEvent
-}
-
-func (c *SessionUsageEventClient) mutate(ctx context.Context, m *SessionUsageEventMutation) (Value, error) {
-	switch m.Op() {
-	case OpCreate:
-		return (&SessionUsageEventCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
-	case OpUpdate:
-		return (&SessionUsageEventUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
-	case OpUpdateOne:
-		return (&SessionUsageEventUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
-	case OpDelete, OpDeleteOne:
-		return (&SessionUsageEventDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
-	default:
-		return nil, fmt.Errorf("ent: unknown SessionUsageEvent mutation op: %q", m.Op())
-	}
-}
-
-// SessionWorkspaceClient is a client for the SessionWorkspace schema.
-type SessionWorkspaceClient struct {
-	config
-}
-
-// NewSessionWorkspaceClient returns a client for the SessionWorkspace from the given config.
-func NewSessionWorkspaceClient(c config) *SessionWorkspaceClient {
-	return &SessionWorkspaceClient{config: c}
-}
-
-// Use adds a list of mutation hooks to the hooks stack.
-// A call to `Use(f, g, h)` equals to `sessionworkspace.Hooks(f(g(h())))`.
-func (c *SessionWorkspaceClient) Use(hooks ...Hook) {
-	c.hooks.SessionWorkspace = append(c.hooks.SessionWorkspace, hooks...)
-}
-
-// Intercept adds a list of query interceptors to the interceptors stack.
-// A call to `Intercept(f, g, h)` equals to `sessionworkspace.Intercept(f(g(h())))`.
-func (c *SessionWorkspaceClient) Intercept(interceptors ...Interceptor) {
-	c.inters.SessionWorkspace = append(c.inters.SessionWorkspace, interceptors...)
-}
-
-// Create returns a builder for creating a SessionWorkspace entity.
-func (c *SessionWorkspaceClient) Create() *SessionWorkspaceCreate {
-	mutation := newSessionWorkspaceMutation(c.config, OpCreate)
-	return &SessionWorkspaceCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// CreateBulk returns a builder for creating a bulk of SessionWorkspace entities.
-func (c *SessionWorkspaceClient) CreateBulk(builders ...*SessionWorkspaceCreate) *SessionWorkspaceCreateBulk {
-	return &SessionWorkspaceCreateBulk{config: c.config, builders: builders}
-}
-
-// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
-// a builder and applies setFunc on it.
-func (c *SessionWorkspaceClient) MapCreateBulk(slice any, setFunc func(*SessionWorkspaceCreate, int)) *SessionWorkspaceCreateBulk {
-	rv := reflect.ValueOf(slice)
-	if rv.Kind() != reflect.Slice {
-		return &SessionWorkspaceCreateBulk{err: fmt.Errorf("calling to SessionWorkspaceClient.MapCreateBulk with wrong type %T, need slice", slice)}
-	}
-	builders := make([]*SessionWorkspaceCreate, rv.Len())
-	for i := 0; i < rv.Len(); i++ {
-		builders[i] = c.Create()
-		setFunc(builders[i], i)
-	}
-	return &SessionWorkspaceCreateBulk{config: c.config, builders: builders}
-}
-
-// Update returns an update builder for SessionWorkspace.
-func (c *SessionWorkspaceClient) Update() *SessionWorkspaceUpdate {
-	mutation := newSessionWorkspaceMutation(c.config, OpUpdate)
-	return &SessionWorkspaceUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// UpdateOne returns an update builder for the given entity.
-func (c *SessionWorkspaceClient) UpdateOne(sw *SessionWorkspace) *SessionWorkspaceUpdateOne {
-	mutation := newSessionWorkspaceMutation(c.config, OpUpdateOne, withSessionWorkspace(sw))
-	return &SessionWorkspaceUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// UpdateOneID returns an update builder for the given id.
-func (c *SessionWorkspaceClient) UpdateOneID(id int) *SessionWorkspaceUpdateOne {
-	mutation := newSessionWorkspaceMutation(c.config, OpUpdateOne, withSessionWorkspaceID(id))
-	return &SessionWorkspaceUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// Delete returns a delete builder for SessionWorkspace.
-func (c *SessionWorkspaceClient) Delete() *SessionWorkspaceDelete {
-	mutation := newSessionWorkspaceMutation(c.config, OpDelete)
-	return &SessionWorkspaceDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// DeleteOne returns a builder for deleting the given entity.
-func (c *SessionWorkspaceClient) DeleteOne(sw *SessionWorkspace) *SessionWorkspaceDeleteOne {
-	return c.DeleteOneID(sw.ID)
-}
-
-// DeleteOneID returns a builder for deleting the given entity by its id.
-func (c *SessionWorkspaceClient) DeleteOneID(id int) *SessionWorkspaceDeleteOne {
-	builder := c.Delete().Where(sessionworkspace.ID(id))
-	builder.mutation.id = &id
-	builder.mutation.op = OpDeleteOne
-	return &SessionWorkspaceDeleteOne{builder}
-}
-
-// Query returns a query builder for SessionWorkspace.
-func (c *SessionWorkspaceClient) Query() *SessionWorkspaceQuery {
-	return &SessionWorkspaceQuery{
-		config: c.config,
-		ctx:    &QueryContext{Type: TypeSessionWorkspace},
-		inters: c.Interceptors(),
-	}
-}
-
-// Get returns a SessionWorkspace entity by its id.
-func (c *SessionWorkspaceClient) Get(ctx context.Context, id int) (*SessionWorkspace, error) {
-	return c.Query().Where(sessionworkspace.ID(id)).Only(ctx)
-}
-
-// GetX is like Get, but panics if an error occurs.
-func (c *SessionWorkspaceClient) GetX(ctx context.Context, id int) *SessionWorkspace {
-	obj, err := c.Get(ctx, id)
-	if err != nil {
-		panic(err)
-	}
-	return obj
-}
-
-// QuerySession queries the session edge of a SessionWorkspace.
-func (c *SessionWorkspaceClient) QuerySession(sw *SessionWorkspace) *SessionQuery {
-	query := (&SessionClient{config: c.config}).Query()
-	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
-		id := sw.ID
-		step := sqlgraph.NewStep(
-			sqlgraph.From(sessionworkspace.Table, sessionworkspace.FieldID, id),
-			sqlgraph.To(session.Table, session.FieldID),
-			sqlgraph.Edge(sqlgraph.M2O, true, sessionworkspace.SessionTable, sessionworkspace.SessionColumn),
-		)
-		fromV = sqlgraph.Neighbors(sw.driver.Dialect(), step)
-		return fromV, nil
-	}
-	return query
-}
-
-// Hooks returns the client hooks.
-func (c *SessionWorkspaceClient) Hooks() []Hook {
-	return c.hooks.SessionWorkspace
-}
-
-// Interceptors returns the client interceptors.
-func (c *SessionWorkspaceClient) Interceptors() []Interceptor {
-	return c.inters.SessionWorkspace
-}
-
-func (c *SessionWorkspaceClient) mutate(ctx context.Context, m *SessionWorkspaceMutation) (Value, error) {
-	switch m.Op() {
-	case OpCreate:
-		return (&SessionWorkspaceCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
-	case OpUpdate:
-		return (&SessionWorkspaceUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
-	case OpUpdateOne:
-		return (&SessionWorkspaceUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
-	case OpDelete, OpDeleteOne:
-		return (&SessionWorkspaceDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
-	default:
-		return nil, fmt.Errorf("ent: unknown SessionWorkspace mutation op: %q", m.Op())
 	}
 }
 
@@ -3370,15 +2106,31 @@ func (c *UserClient) GetX(ctx context.Context, id int) *User {
 	return obj
 }
 
-// QuerySessions queries the sessions edge of a User.
-func (c *UserClient) QuerySessions(u *User) *SessionQuery {
-	query := (&SessionClient{config: c.config}).Query()
+// QueryCommitCheckpoints queries the commit_checkpoints edge of a User.
+func (c *UserClient) QueryCommitCheckpoints(u *User) *CommitCheckpointQuery {
+	query := (&CommitCheckpointClient{config: c.config}).Query()
 	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
 		id := u.ID
 		step := sqlgraph.NewStep(
 			sqlgraph.From(user.Table, user.FieldID, id),
-			sqlgraph.To(session.Table, session.FieldID),
-			sqlgraph.Edge(sqlgraph.O2M, false, user.SessionsTable, user.SessionsColumn),
+			sqlgraph.To(commitcheckpoint.Table, commitcheckpoint.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.CommitCheckpointsTable, user.CommitCheckpointsColumn),
+		)
+		fromV = sqlgraph.Neighbors(u.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryCommitRewrites queries the commit_rewrites edge of a User.
+func (c *UserClient) QueryCommitRewrites(u *User) *CommitRewriteQuery {
+	query := (&CommitRewriteClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := u.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, id),
+			sqlgraph.To(commitrewrite.Table, commitrewrite.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.CommitRewritesTable, user.CommitRewritesColumn),
 		)
 		fromV = sqlgraph.Neighbors(u.driver.Dialect(), step)
 		return fromV, nil
@@ -3579,15 +2331,13 @@ func (c *WebhookDeadLetterClient) mutate(ctx context.Context, m *WebhookDeadLett
 // hooks and interceptors per client, for fast access.
 type (
 	hooks struct {
-		AgentMetadataEvent, AiScanResult, CommitCheckpoint, CommitRewrite, Credential,
-		EfficiencyMetric, PrAttributionRun, PrRecord, RelayProvider, RepoConfig,
-		ScmProvider, Session, SessionEvent, SessionUsageEvent, SessionWorkspace,
-		SystemSetting, ToolUsageEvent, User, WebhookDeadLetter []ent.Hook
+		CommitCheckpoint, CommitRewrite, Credential, PrAttributionRun, PrRecord,
+		RelayProvider, RepoConfig, ScmProvider, SystemSetting, ToolUsageEvent, User,
+		WebhookDeadLetter []ent.Hook
 	}
 	inters struct {
-		AgentMetadataEvent, AiScanResult, CommitCheckpoint, CommitRewrite, Credential,
-		EfficiencyMetric, PrAttributionRun, PrRecord, RelayProvider, RepoConfig,
-		ScmProvider, Session, SessionEvent, SessionUsageEvent, SessionWorkspace,
-		SystemSetting, ToolUsageEvent, User, WebhookDeadLetter []ent.Interceptor
+		CommitCheckpoint, CommitRewrite, Credential, PrAttributionRun, PrRecord,
+		RelayProvider, RepoConfig, ScmProvider, SystemSetting, ToolUsageEvent, User,
+		WebhookDeadLetter []ent.Interceptor
 	}
 )

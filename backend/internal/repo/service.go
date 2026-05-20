@@ -9,13 +9,15 @@ import (
 	"strings"
 
 	"github.com/ai-efficiency/backend/ent"
-	"github.com/ai-efficiency/backend/ent/aiscanresult"
+	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
+	"github.com/ai-efficiency/backend/ent/commitrewrite"
 	entcredential "github.com/ai-efficiency/backend/ent/credential"
-	"github.com/ai-efficiency/backend/ent/efficiencymetric"
+	"github.com/ai-efficiency/backend/ent/prattributionrun"
 	"github.com/ai-efficiency/backend/ent/prrecord"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/scmprovider"
-	"github.com/ai-efficiency/backend/ent/session"
+	"github.com/ai-efficiency/backend/ent/toolusageevent"
+	"github.com/ai-efficiency/backend/ent/webhookdeadletter"
 	"github.com/ai-efficiency/backend/internal/credential"
 	"github.com/ai-efficiency/backend/internal/pkg"
 	"github.com/ai-efficiency/backend/internal/scm"
@@ -49,15 +51,13 @@ type CreateDirectRequest struct {
 
 // UpdateRequest is the request to update a repo config.
 type UpdateRequest struct {
-	Name               string            `json:"name"`
-	GroupID            string            `json:"group_id"`
-	Status             string            `json:"status"`
-	SCMProviderID      *int              `json:"scm_provider_id"`
-	ClearSCMProvider   bool              `json:"clear_scm_provider,omitempty"`
-	RelayProviderName  *string           `json:"relay_provider_name"`
-	RelayGroupID       *string           `json:"relay_group_id"`
-	ScanPromptOverride map[string]string `json:"scan_prompt_override,omitempty"`
-	ClearScanPrompt    bool              `json:"clear_scan_prompt,omitempty"`
+	Name              string  `json:"name"`
+	GroupID           string  `json:"group_id"`
+	Status            string  `json:"status"`
+	SCMProviderID     *int    `json:"scm_provider_id"`
+	ClearSCMProvider  bool    `json:"clear_scm_provider,omitempty"`
+	RelayProviderName *string `json:"relay_provider_name"`
+	RelayGroupID      *string `json:"relay_group_id"`
 }
 
 // ListOpts are options for listing repos.
@@ -428,12 +428,6 @@ func (s *Service) Update(ctx context.Context, id int, req UpdateRequest) (*ent.R
 			update.SetRelayGroupID(*req.RelayGroupID)
 		}
 	}
-	if req.ClearScanPrompt {
-		update.ClearScanPromptOverride()
-	} else if req.ScanPromptOverride != nil {
-		update.SetScanPromptOverride(req.ScanPromptOverride)
-	}
-
 	rc, err := update.Save(ctx)
 	if err != nil {
 		if ent.IsNotFound(err) {
@@ -480,17 +474,25 @@ func (s *Service) Delete(ctx context.Context, id int) error {
 	defer tx.Rollback()
 
 	// Delete child records
-	if _, err := tx.AiScanResult.Delete().Where(aiscanresult.HasRepoConfigWith(repoconfig.IDEQ(id))).Exec(ctx); err != nil {
-		return fmt.Errorf("delete scan results: %w", err)
+	if _, err := tx.ToolUsageEvent.Delete().Where(toolusageevent.HasRepoConfigWith(repoconfig.IDEQ(id))).Exec(ctx); err != nil {
+		return fmt.Errorf("delete tool usage events: %w", err)
+	}
+	if _, err := tx.CommitRewrite.Delete().Where(commitrewrite.HasRepoConfigWith(repoconfig.IDEQ(id))).Exec(ctx); err != nil {
+		return fmt.Errorf("delete commit rewrites: %w", err)
+	}
+	if _, err := tx.CommitCheckpoint.Delete().Where(commitcheckpoint.HasRepoConfigWith(repoconfig.IDEQ(id))).Exec(ctx); err != nil {
+		return fmt.Errorf("delete commit checkpoints: %w", err)
+	}
+	if _, err := tx.PrAttributionRun.Delete().
+		Where(prattributionrun.HasPrRecordWith(prrecord.HasRepoConfigWith(repoconfig.IDEQ(id)))).
+		Exec(ctx); err != nil {
+		return fmt.Errorf("delete pr attribution runs: %w", err)
 	}
 	if _, err := tx.PrRecord.Delete().Where(prrecord.HasRepoConfigWith(repoconfig.IDEQ(id))).Exec(ctx); err != nil {
 		return fmt.Errorf("delete pr records: %w", err)
 	}
-	if _, err := tx.EfficiencyMetric.Delete().Where(efficiencymetric.HasRepoConfigWith(repoconfig.IDEQ(id))).Exec(ctx); err != nil {
-		return fmt.Errorf("delete efficiency metrics: %w", err)
-	}
-	if _, err := tx.Session.Delete().Where(session.HasRepoConfigWith(repoconfig.IDEQ(id))).Exec(ctx); err != nil {
-		return fmt.Errorf("delete sessions: %w", err)
+	if _, err := tx.WebhookDeadLetter.Delete().Where(webhookdeadletter.HasRepoConfigWith(repoconfig.IDEQ(id))).Exec(ctx); err != nil {
+		return fmt.Errorf("delete webhook dead letters: %w", err)
 	}
 
 	if err := tx.RepoConfig.DeleteOneID(id).Exec(ctx); err != nil {

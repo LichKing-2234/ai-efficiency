@@ -11,18 +11,14 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
-	"github.com/ai-efficiency/backend/ent/aiscanresult"
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
 	"github.com/ai-efficiency/backend/ent/commitrewrite"
-	"github.com/ai-efficiency/backend/ent/efficiencymetric"
 	"github.com/ai-efficiency/backend/ent/predicate"
 	"github.com/ai-efficiency/backend/ent/prrecord"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/scmprovider"
-	"github.com/ai-efficiency/backend/ent/session"
 	"github.com/ai-efficiency/backend/ent/toolusageevent"
 	"github.com/ai-efficiency/backend/ent/webhookdeadletter"
-	"github.com/google/uuid"
 )
 
 // RepoConfigUpdate is the builder for updating RepoConfig entities.
@@ -154,26 +150,6 @@ func (rcu *RepoConfigUpdate) ClearWebhookSecret() *RepoConfigUpdate {
 	return rcu
 }
 
-// SetLastScanAt sets the "last_scan_at" field.
-func (rcu *RepoConfigUpdate) SetLastScanAt(t time.Time) *RepoConfigUpdate {
-	rcu.mutation.SetLastScanAt(t)
-	return rcu
-}
-
-// SetNillableLastScanAt sets the "last_scan_at" field if the given value is not nil.
-func (rcu *RepoConfigUpdate) SetNillableLastScanAt(t *time.Time) *RepoConfigUpdate {
-	if t != nil {
-		rcu.SetLastScanAt(*t)
-	}
-	return rcu
-}
-
-// ClearLastScanAt clears the value of the "last_scan_at" field.
-func (rcu *RepoConfigUpdate) ClearLastScanAt() *RepoConfigUpdate {
-	rcu.mutation.ClearLastScanAt()
-	return rcu
-}
-
 // SetGroupID sets the "group_id" field.
 func (rcu *RepoConfigUpdate) SetGroupID(s string) *RepoConfigUpdate {
 	rcu.mutation.SetGroupID(s)
@@ -254,18 +230,6 @@ func (rcu *RepoConfigUpdate) SetUpdatedAt(t time.Time) *RepoConfigUpdate {
 	return rcu
 }
 
-// SetScanPromptOverride sets the "scan_prompt_override" field.
-func (rcu *RepoConfigUpdate) SetScanPromptOverride(m map[string]string) *RepoConfigUpdate {
-	rcu.mutation.SetScanPromptOverride(m)
-	return rcu
-}
-
-// ClearScanPromptOverride clears the value of the "scan_prompt_override" field.
-func (rcu *RepoConfigUpdate) ClearScanPromptOverride() *RepoConfigUpdate {
-	rcu.mutation.ClearScanPromptOverride()
-	return rcu
-}
-
 // SetScmProviderID sets the "scm_provider" edge to the ScmProvider entity by ID.
 func (rcu *RepoConfigUpdate) SetScmProviderID(id int) *RepoConfigUpdate {
 	rcu.mutation.SetScmProviderID(id)
@@ -283,21 +247,6 @@ func (rcu *RepoConfigUpdate) SetNillableScmProviderID(id *int) *RepoConfigUpdate
 // SetScmProvider sets the "scm_provider" edge to the ScmProvider entity.
 func (rcu *RepoConfigUpdate) SetScmProvider(s *ScmProvider) *RepoConfigUpdate {
 	return rcu.SetScmProviderID(s.ID)
-}
-
-// AddSessionIDs adds the "sessions" edge to the Session entity by IDs.
-func (rcu *RepoConfigUpdate) AddSessionIDs(ids ...uuid.UUID) *RepoConfigUpdate {
-	rcu.mutation.AddSessionIDs(ids...)
-	return rcu
-}
-
-// AddSessions adds the "sessions" edges to the Session entity.
-func (rcu *RepoConfigUpdate) AddSessions(s ...*Session) *RepoConfigUpdate {
-	ids := make([]uuid.UUID, len(s))
-	for i := range s {
-		ids[i] = s[i].ID
-	}
-	return rcu.AddSessionIDs(ids...)
 }
 
 // AddCommitCheckpointIDs adds the "commit_checkpoints" edge to the CommitCheckpoint entity by IDs.
@@ -360,21 +309,6 @@ func (rcu *RepoConfigUpdate) AddWebhookDeadLetters(w ...*WebhookDeadLetter) *Rep
 	return rcu.AddWebhookDeadLetterIDs(ids...)
 }
 
-// AddAiScanResultIDs adds the "ai_scan_results" edge to the AiScanResult entity by IDs.
-func (rcu *RepoConfigUpdate) AddAiScanResultIDs(ids ...int) *RepoConfigUpdate {
-	rcu.mutation.AddAiScanResultIDs(ids...)
-	return rcu
-}
-
-// AddAiScanResults adds the "ai_scan_results" edges to the AiScanResult entity.
-func (rcu *RepoConfigUpdate) AddAiScanResults(a ...*AiScanResult) *RepoConfigUpdate {
-	ids := make([]int, len(a))
-	for i := range a {
-		ids[i] = a[i].ID
-	}
-	return rcu.AddAiScanResultIDs(ids...)
-}
-
 // AddPrRecordIDs adds the "pr_records" edge to the PrRecord entity by IDs.
 func (rcu *RepoConfigUpdate) AddPrRecordIDs(ids ...int) *RepoConfigUpdate {
 	rcu.mutation.AddPrRecordIDs(ids...)
@@ -390,21 +324,6 @@ func (rcu *RepoConfigUpdate) AddPrRecords(p ...*PrRecord) *RepoConfigUpdate {
 	return rcu.AddPrRecordIDs(ids...)
 }
 
-// AddEfficiencyMetricIDs adds the "efficiency_metrics" edge to the EfficiencyMetric entity by IDs.
-func (rcu *RepoConfigUpdate) AddEfficiencyMetricIDs(ids ...int) *RepoConfigUpdate {
-	rcu.mutation.AddEfficiencyMetricIDs(ids...)
-	return rcu
-}
-
-// AddEfficiencyMetrics adds the "efficiency_metrics" edges to the EfficiencyMetric entity.
-func (rcu *RepoConfigUpdate) AddEfficiencyMetrics(e ...*EfficiencyMetric) *RepoConfigUpdate {
-	ids := make([]int, len(e))
-	for i := range e {
-		ids[i] = e[i].ID
-	}
-	return rcu.AddEfficiencyMetricIDs(ids...)
-}
-
 // Mutation returns the RepoConfigMutation object of the builder.
 func (rcu *RepoConfigUpdate) Mutation() *RepoConfigMutation {
 	return rcu.mutation
@@ -414,27 +333,6 @@ func (rcu *RepoConfigUpdate) Mutation() *RepoConfigMutation {
 func (rcu *RepoConfigUpdate) ClearScmProvider() *RepoConfigUpdate {
 	rcu.mutation.ClearScmProvider()
 	return rcu
-}
-
-// ClearSessions clears all "sessions" edges to the Session entity.
-func (rcu *RepoConfigUpdate) ClearSessions() *RepoConfigUpdate {
-	rcu.mutation.ClearSessions()
-	return rcu
-}
-
-// RemoveSessionIDs removes the "sessions" edge to Session entities by IDs.
-func (rcu *RepoConfigUpdate) RemoveSessionIDs(ids ...uuid.UUID) *RepoConfigUpdate {
-	rcu.mutation.RemoveSessionIDs(ids...)
-	return rcu
-}
-
-// RemoveSessions removes "sessions" edges to Session entities.
-func (rcu *RepoConfigUpdate) RemoveSessions(s ...*Session) *RepoConfigUpdate {
-	ids := make([]uuid.UUID, len(s))
-	for i := range s {
-		ids[i] = s[i].ID
-	}
-	return rcu.RemoveSessionIDs(ids...)
 }
 
 // ClearCommitCheckpoints clears all "commit_checkpoints" edges to the CommitCheckpoint entity.
@@ -521,27 +419,6 @@ func (rcu *RepoConfigUpdate) RemoveWebhookDeadLetters(w ...*WebhookDeadLetter) *
 	return rcu.RemoveWebhookDeadLetterIDs(ids...)
 }
 
-// ClearAiScanResults clears all "ai_scan_results" edges to the AiScanResult entity.
-func (rcu *RepoConfigUpdate) ClearAiScanResults() *RepoConfigUpdate {
-	rcu.mutation.ClearAiScanResults()
-	return rcu
-}
-
-// RemoveAiScanResultIDs removes the "ai_scan_results" edge to AiScanResult entities by IDs.
-func (rcu *RepoConfigUpdate) RemoveAiScanResultIDs(ids ...int) *RepoConfigUpdate {
-	rcu.mutation.RemoveAiScanResultIDs(ids...)
-	return rcu
-}
-
-// RemoveAiScanResults removes "ai_scan_results" edges to AiScanResult entities.
-func (rcu *RepoConfigUpdate) RemoveAiScanResults(a ...*AiScanResult) *RepoConfigUpdate {
-	ids := make([]int, len(a))
-	for i := range a {
-		ids[i] = a[i].ID
-	}
-	return rcu.RemoveAiScanResultIDs(ids...)
-}
-
 // ClearPrRecords clears all "pr_records" edges to the PrRecord entity.
 func (rcu *RepoConfigUpdate) ClearPrRecords() *RepoConfigUpdate {
 	rcu.mutation.ClearPrRecords()
@@ -561,27 +438,6 @@ func (rcu *RepoConfigUpdate) RemovePrRecords(p ...*PrRecord) *RepoConfigUpdate {
 		ids[i] = p[i].ID
 	}
 	return rcu.RemovePrRecordIDs(ids...)
-}
-
-// ClearEfficiencyMetrics clears all "efficiency_metrics" edges to the EfficiencyMetric entity.
-func (rcu *RepoConfigUpdate) ClearEfficiencyMetrics() *RepoConfigUpdate {
-	rcu.mutation.ClearEfficiencyMetrics()
-	return rcu
-}
-
-// RemoveEfficiencyMetricIDs removes the "efficiency_metrics" edge to EfficiencyMetric entities by IDs.
-func (rcu *RepoConfigUpdate) RemoveEfficiencyMetricIDs(ids ...int) *RepoConfigUpdate {
-	rcu.mutation.RemoveEfficiencyMetricIDs(ids...)
-	return rcu
-}
-
-// RemoveEfficiencyMetrics removes "efficiency_metrics" edges to EfficiencyMetric entities.
-func (rcu *RepoConfigUpdate) RemoveEfficiencyMetrics(e ...*EfficiencyMetric) *RepoConfigUpdate {
-	ids := make([]int, len(e))
-	for i := range e {
-		ids[i] = e[i].ID
-	}
-	return rcu.RemoveEfficiencyMetricIDs(ids...)
 }
 
 // Save executes the query and returns the number of nodes affected by the update operation.
@@ -693,12 +549,6 @@ func (rcu *RepoConfigUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if rcu.mutation.WebhookSecretCleared() {
 		_spec.ClearField(repoconfig.FieldWebhookSecret, field.TypeString)
 	}
-	if value, ok := rcu.mutation.LastScanAt(); ok {
-		_spec.SetField(repoconfig.FieldLastScanAt, field.TypeTime, value)
-	}
-	if rcu.mutation.LastScanAtCleared() {
-		_spec.ClearField(repoconfig.FieldLastScanAt, field.TypeTime)
-	}
 	if value, ok := rcu.mutation.GroupID(); ok {
 		_spec.SetField(repoconfig.FieldGroupID, field.TypeString, value)
 	}
@@ -723,12 +573,6 @@ func (rcu *RepoConfigUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if value, ok := rcu.mutation.UpdatedAt(); ok {
 		_spec.SetField(repoconfig.FieldUpdatedAt, field.TypeTime, value)
 	}
-	if value, ok := rcu.mutation.ScanPromptOverride(); ok {
-		_spec.SetField(repoconfig.FieldScanPromptOverride, field.TypeJSON, value)
-	}
-	if rcu.mutation.ScanPromptOverrideCleared() {
-		_spec.ClearField(repoconfig.FieldScanPromptOverride, field.TypeJSON)
-	}
 	if rcu.mutation.ScmProviderCleared() {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.M2O,
@@ -751,51 +595,6 @@ func (rcu *RepoConfigUpdate) sqlSave(ctx context.Context) (n int, err error) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(scmprovider.FieldID, field.TypeInt),
-			},
-		}
-		for _, k := range nodes {
-			edge.Target.Nodes = append(edge.Target.Nodes, k)
-		}
-		_spec.Edges.Add = append(_spec.Edges.Add, edge)
-	}
-	if rcu.mutation.SessionsCleared() {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   repoconfig.SessionsTable,
-			Columns: []string{repoconfig.SessionsColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(session.FieldID, field.TypeUUID),
-			},
-		}
-		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
-	}
-	if nodes := rcu.mutation.RemovedSessionsIDs(); len(nodes) > 0 && !rcu.mutation.SessionsCleared() {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   repoconfig.SessionsTable,
-			Columns: []string{repoconfig.SessionsColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(session.FieldID, field.TypeUUID),
-			},
-		}
-		for _, k := range nodes {
-			edge.Target.Nodes = append(edge.Target.Nodes, k)
-		}
-		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
-	}
-	if nodes := rcu.mutation.SessionsIDs(); len(nodes) > 0 {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   repoconfig.SessionsTable,
-			Columns: []string{repoconfig.SessionsColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(session.FieldID, field.TypeUUID),
 			},
 		}
 		for _, k := range nodes {
@@ -983,51 +782,6 @@ func (rcu *RepoConfigUpdate) sqlSave(ctx context.Context) (n int, err error) {
 		}
 		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
-	if rcu.mutation.AiScanResultsCleared() {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   repoconfig.AiScanResultsTable,
-			Columns: []string{repoconfig.AiScanResultsColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(aiscanresult.FieldID, field.TypeInt),
-			},
-		}
-		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
-	}
-	if nodes := rcu.mutation.RemovedAiScanResultsIDs(); len(nodes) > 0 && !rcu.mutation.AiScanResultsCleared() {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   repoconfig.AiScanResultsTable,
-			Columns: []string{repoconfig.AiScanResultsColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(aiscanresult.FieldID, field.TypeInt),
-			},
-		}
-		for _, k := range nodes {
-			edge.Target.Nodes = append(edge.Target.Nodes, k)
-		}
-		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
-	}
-	if nodes := rcu.mutation.AiScanResultsIDs(); len(nodes) > 0 {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   repoconfig.AiScanResultsTable,
-			Columns: []string{repoconfig.AiScanResultsColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(aiscanresult.FieldID, field.TypeInt),
-			},
-		}
-		for _, k := range nodes {
-			edge.Target.Nodes = append(edge.Target.Nodes, k)
-		}
-		_spec.Edges.Add = append(_spec.Edges.Add, edge)
-	}
 	if rcu.mutation.PrRecordsCleared() {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.O2M,
@@ -1066,51 +820,6 @@ func (rcu *RepoConfigUpdate) sqlSave(ctx context.Context) (n int, err error) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(prrecord.FieldID, field.TypeInt),
-			},
-		}
-		for _, k := range nodes {
-			edge.Target.Nodes = append(edge.Target.Nodes, k)
-		}
-		_spec.Edges.Add = append(_spec.Edges.Add, edge)
-	}
-	if rcu.mutation.EfficiencyMetricsCleared() {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   repoconfig.EfficiencyMetricsTable,
-			Columns: []string{repoconfig.EfficiencyMetricsColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(efficiencymetric.FieldID, field.TypeInt),
-			},
-		}
-		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
-	}
-	if nodes := rcu.mutation.RemovedEfficiencyMetricsIDs(); len(nodes) > 0 && !rcu.mutation.EfficiencyMetricsCleared() {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   repoconfig.EfficiencyMetricsTable,
-			Columns: []string{repoconfig.EfficiencyMetricsColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(efficiencymetric.FieldID, field.TypeInt),
-			},
-		}
-		for _, k := range nodes {
-			edge.Target.Nodes = append(edge.Target.Nodes, k)
-		}
-		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
-	}
-	if nodes := rcu.mutation.EfficiencyMetricsIDs(); len(nodes) > 0 {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   repoconfig.EfficiencyMetricsTable,
-			Columns: []string{repoconfig.EfficiencyMetricsColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(efficiencymetric.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {
@@ -1254,26 +963,6 @@ func (rcuo *RepoConfigUpdateOne) ClearWebhookSecret() *RepoConfigUpdateOne {
 	return rcuo
 }
 
-// SetLastScanAt sets the "last_scan_at" field.
-func (rcuo *RepoConfigUpdateOne) SetLastScanAt(t time.Time) *RepoConfigUpdateOne {
-	rcuo.mutation.SetLastScanAt(t)
-	return rcuo
-}
-
-// SetNillableLastScanAt sets the "last_scan_at" field if the given value is not nil.
-func (rcuo *RepoConfigUpdateOne) SetNillableLastScanAt(t *time.Time) *RepoConfigUpdateOne {
-	if t != nil {
-		rcuo.SetLastScanAt(*t)
-	}
-	return rcuo
-}
-
-// ClearLastScanAt clears the value of the "last_scan_at" field.
-func (rcuo *RepoConfigUpdateOne) ClearLastScanAt() *RepoConfigUpdateOne {
-	rcuo.mutation.ClearLastScanAt()
-	return rcuo
-}
-
 // SetGroupID sets the "group_id" field.
 func (rcuo *RepoConfigUpdateOne) SetGroupID(s string) *RepoConfigUpdateOne {
 	rcuo.mutation.SetGroupID(s)
@@ -1354,18 +1043,6 @@ func (rcuo *RepoConfigUpdateOne) SetUpdatedAt(t time.Time) *RepoConfigUpdateOne 
 	return rcuo
 }
 
-// SetScanPromptOverride sets the "scan_prompt_override" field.
-func (rcuo *RepoConfigUpdateOne) SetScanPromptOverride(m map[string]string) *RepoConfigUpdateOne {
-	rcuo.mutation.SetScanPromptOverride(m)
-	return rcuo
-}
-
-// ClearScanPromptOverride clears the value of the "scan_prompt_override" field.
-func (rcuo *RepoConfigUpdateOne) ClearScanPromptOverride() *RepoConfigUpdateOne {
-	rcuo.mutation.ClearScanPromptOverride()
-	return rcuo
-}
-
 // SetScmProviderID sets the "scm_provider" edge to the ScmProvider entity by ID.
 func (rcuo *RepoConfigUpdateOne) SetScmProviderID(id int) *RepoConfigUpdateOne {
 	rcuo.mutation.SetScmProviderID(id)
@@ -1383,21 +1060,6 @@ func (rcuo *RepoConfigUpdateOne) SetNillableScmProviderID(id *int) *RepoConfigUp
 // SetScmProvider sets the "scm_provider" edge to the ScmProvider entity.
 func (rcuo *RepoConfigUpdateOne) SetScmProvider(s *ScmProvider) *RepoConfigUpdateOne {
 	return rcuo.SetScmProviderID(s.ID)
-}
-
-// AddSessionIDs adds the "sessions" edge to the Session entity by IDs.
-func (rcuo *RepoConfigUpdateOne) AddSessionIDs(ids ...uuid.UUID) *RepoConfigUpdateOne {
-	rcuo.mutation.AddSessionIDs(ids...)
-	return rcuo
-}
-
-// AddSessions adds the "sessions" edges to the Session entity.
-func (rcuo *RepoConfigUpdateOne) AddSessions(s ...*Session) *RepoConfigUpdateOne {
-	ids := make([]uuid.UUID, len(s))
-	for i := range s {
-		ids[i] = s[i].ID
-	}
-	return rcuo.AddSessionIDs(ids...)
 }
 
 // AddCommitCheckpointIDs adds the "commit_checkpoints" edge to the CommitCheckpoint entity by IDs.
@@ -1460,21 +1122,6 @@ func (rcuo *RepoConfigUpdateOne) AddWebhookDeadLetters(w ...*WebhookDeadLetter) 
 	return rcuo.AddWebhookDeadLetterIDs(ids...)
 }
 
-// AddAiScanResultIDs adds the "ai_scan_results" edge to the AiScanResult entity by IDs.
-func (rcuo *RepoConfigUpdateOne) AddAiScanResultIDs(ids ...int) *RepoConfigUpdateOne {
-	rcuo.mutation.AddAiScanResultIDs(ids...)
-	return rcuo
-}
-
-// AddAiScanResults adds the "ai_scan_results" edges to the AiScanResult entity.
-func (rcuo *RepoConfigUpdateOne) AddAiScanResults(a ...*AiScanResult) *RepoConfigUpdateOne {
-	ids := make([]int, len(a))
-	for i := range a {
-		ids[i] = a[i].ID
-	}
-	return rcuo.AddAiScanResultIDs(ids...)
-}
-
 // AddPrRecordIDs adds the "pr_records" edge to the PrRecord entity by IDs.
 func (rcuo *RepoConfigUpdateOne) AddPrRecordIDs(ids ...int) *RepoConfigUpdateOne {
 	rcuo.mutation.AddPrRecordIDs(ids...)
@@ -1490,21 +1137,6 @@ func (rcuo *RepoConfigUpdateOne) AddPrRecords(p ...*PrRecord) *RepoConfigUpdateO
 	return rcuo.AddPrRecordIDs(ids...)
 }
 
-// AddEfficiencyMetricIDs adds the "efficiency_metrics" edge to the EfficiencyMetric entity by IDs.
-func (rcuo *RepoConfigUpdateOne) AddEfficiencyMetricIDs(ids ...int) *RepoConfigUpdateOne {
-	rcuo.mutation.AddEfficiencyMetricIDs(ids...)
-	return rcuo
-}
-
-// AddEfficiencyMetrics adds the "efficiency_metrics" edges to the EfficiencyMetric entity.
-func (rcuo *RepoConfigUpdateOne) AddEfficiencyMetrics(e ...*EfficiencyMetric) *RepoConfigUpdateOne {
-	ids := make([]int, len(e))
-	for i := range e {
-		ids[i] = e[i].ID
-	}
-	return rcuo.AddEfficiencyMetricIDs(ids...)
-}
-
 // Mutation returns the RepoConfigMutation object of the builder.
 func (rcuo *RepoConfigUpdateOne) Mutation() *RepoConfigMutation {
 	return rcuo.mutation
@@ -1514,27 +1146,6 @@ func (rcuo *RepoConfigUpdateOne) Mutation() *RepoConfigMutation {
 func (rcuo *RepoConfigUpdateOne) ClearScmProvider() *RepoConfigUpdateOne {
 	rcuo.mutation.ClearScmProvider()
 	return rcuo
-}
-
-// ClearSessions clears all "sessions" edges to the Session entity.
-func (rcuo *RepoConfigUpdateOne) ClearSessions() *RepoConfigUpdateOne {
-	rcuo.mutation.ClearSessions()
-	return rcuo
-}
-
-// RemoveSessionIDs removes the "sessions" edge to Session entities by IDs.
-func (rcuo *RepoConfigUpdateOne) RemoveSessionIDs(ids ...uuid.UUID) *RepoConfigUpdateOne {
-	rcuo.mutation.RemoveSessionIDs(ids...)
-	return rcuo
-}
-
-// RemoveSessions removes "sessions" edges to Session entities.
-func (rcuo *RepoConfigUpdateOne) RemoveSessions(s ...*Session) *RepoConfigUpdateOne {
-	ids := make([]uuid.UUID, len(s))
-	for i := range s {
-		ids[i] = s[i].ID
-	}
-	return rcuo.RemoveSessionIDs(ids...)
 }
 
 // ClearCommitCheckpoints clears all "commit_checkpoints" edges to the CommitCheckpoint entity.
@@ -1621,27 +1232,6 @@ func (rcuo *RepoConfigUpdateOne) RemoveWebhookDeadLetters(w ...*WebhookDeadLette
 	return rcuo.RemoveWebhookDeadLetterIDs(ids...)
 }
 
-// ClearAiScanResults clears all "ai_scan_results" edges to the AiScanResult entity.
-func (rcuo *RepoConfigUpdateOne) ClearAiScanResults() *RepoConfigUpdateOne {
-	rcuo.mutation.ClearAiScanResults()
-	return rcuo
-}
-
-// RemoveAiScanResultIDs removes the "ai_scan_results" edge to AiScanResult entities by IDs.
-func (rcuo *RepoConfigUpdateOne) RemoveAiScanResultIDs(ids ...int) *RepoConfigUpdateOne {
-	rcuo.mutation.RemoveAiScanResultIDs(ids...)
-	return rcuo
-}
-
-// RemoveAiScanResults removes "ai_scan_results" edges to AiScanResult entities.
-func (rcuo *RepoConfigUpdateOne) RemoveAiScanResults(a ...*AiScanResult) *RepoConfigUpdateOne {
-	ids := make([]int, len(a))
-	for i := range a {
-		ids[i] = a[i].ID
-	}
-	return rcuo.RemoveAiScanResultIDs(ids...)
-}
-
 // ClearPrRecords clears all "pr_records" edges to the PrRecord entity.
 func (rcuo *RepoConfigUpdateOne) ClearPrRecords() *RepoConfigUpdateOne {
 	rcuo.mutation.ClearPrRecords()
@@ -1661,27 +1251,6 @@ func (rcuo *RepoConfigUpdateOne) RemovePrRecords(p ...*PrRecord) *RepoConfigUpda
 		ids[i] = p[i].ID
 	}
 	return rcuo.RemovePrRecordIDs(ids...)
-}
-
-// ClearEfficiencyMetrics clears all "efficiency_metrics" edges to the EfficiencyMetric entity.
-func (rcuo *RepoConfigUpdateOne) ClearEfficiencyMetrics() *RepoConfigUpdateOne {
-	rcuo.mutation.ClearEfficiencyMetrics()
-	return rcuo
-}
-
-// RemoveEfficiencyMetricIDs removes the "efficiency_metrics" edge to EfficiencyMetric entities by IDs.
-func (rcuo *RepoConfigUpdateOne) RemoveEfficiencyMetricIDs(ids ...int) *RepoConfigUpdateOne {
-	rcuo.mutation.RemoveEfficiencyMetricIDs(ids...)
-	return rcuo
-}
-
-// RemoveEfficiencyMetrics removes "efficiency_metrics" edges to EfficiencyMetric entities.
-func (rcuo *RepoConfigUpdateOne) RemoveEfficiencyMetrics(e ...*EfficiencyMetric) *RepoConfigUpdateOne {
-	ids := make([]int, len(e))
-	for i := range e {
-		ids[i] = e[i].ID
-	}
-	return rcuo.RemoveEfficiencyMetricIDs(ids...)
 }
 
 // Where appends a list predicates to the RepoConfigUpdate builder.
@@ -1823,12 +1392,6 @@ func (rcuo *RepoConfigUpdateOne) sqlSave(ctx context.Context) (_node *RepoConfig
 	if rcuo.mutation.WebhookSecretCleared() {
 		_spec.ClearField(repoconfig.FieldWebhookSecret, field.TypeString)
 	}
-	if value, ok := rcuo.mutation.LastScanAt(); ok {
-		_spec.SetField(repoconfig.FieldLastScanAt, field.TypeTime, value)
-	}
-	if rcuo.mutation.LastScanAtCleared() {
-		_spec.ClearField(repoconfig.FieldLastScanAt, field.TypeTime)
-	}
 	if value, ok := rcuo.mutation.GroupID(); ok {
 		_spec.SetField(repoconfig.FieldGroupID, field.TypeString, value)
 	}
@@ -1853,12 +1416,6 @@ func (rcuo *RepoConfigUpdateOne) sqlSave(ctx context.Context) (_node *RepoConfig
 	if value, ok := rcuo.mutation.UpdatedAt(); ok {
 		_spec.SetField(repoconfig.FieldUpdatedAt, field.TypeTime, value)
 	}
-	if value, ok := rcuo.mutation.ScanPromptOverride(); ok {
-		_spec.SetField(repoconfig.FieldScanPromptOverride, field.TypeJSON, value)
-	}
-	if rcuo.mutation.ScanPromptOverrideCleared() {
-		_spec.ClearField(repoconfig.FieldScanPromptOverride, field.TypeJSON)
-	}
 	if rcuo.mutation.ScmProviderCleared() {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.M2O,
@@ -1881,51 +1438,6 @@ func (rcuo *RepoConfigUpdateOne) sqlSave(ctx context.Context) (_node *RepoConfig
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(scmprovider.FieldID, field.TypeInt),
-			},
-		}
-		for _, k := range nodes {
-			edge.Target.Nodes = append(edge.Target.Nodes, k)
-		}
-		_spec.Edges.Add = append(_spec.Edges.Add, edge)
-	}
-	if rcuo.mutation.SessionsCleared() {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   repoconfig.SessionsTable,
-			Columns: []string{repoconfig.SessionsColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(session.FieldID, field.TypeUUID),
-			},
-		}
-		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
-	}
-	if nodes := rcuo.mutation.RemovedSessionsIDs(); len(nodes) > 0 && !rcuo.mutation.SessionsCleared() {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   repoconfig.SessionsTable,
-			Columns: []string{repoconfig.SessionsColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(session.FieldID, field.TypeUUID),
-			},
-		}
-		for _, k := range nodes {
-			edge.Target.Nodes = append(edge.Target.Nodes, k)
-		}
-		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
-	}
-	if nodes := rcuo.mutation.SessionsIDs(); len(nodes) > 0 {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   repoconfig.SessionsTable,
-			Columns: []string{repoconfig.SessionsColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(session.FieldID, field.TypeUUID),
 			},
 		}
 		for _, k := range nodes {
@@ -2113,51 +1625,6 @@ func (rcuo *RepoConfigUpdateOne) sqlSave(ctx context.Context) (_node *RepoConfig
 		}
 		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
-	if rcuo.mutation.AiScanResultsCleared() {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   repoconfig.AiScanResultsTable,
-			Columns: []string{repoconfig.AiScanResultsColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(aiscanresult.FieldID, field.TypeInt),
-			},
-		}
-		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
-	}
-	if nodes := rcuo.mutation.RemovedAiScanResultsIDs(); len(nodes) > 0 && !rcuo.mutation.AiScanResultsCleared() {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   repoconfig.AiScanResultsTable,
-			Columns: []string{repoconfig.AiScanResultsColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(aiscanresult.FieldID, field.TypeInt),
-			},
-		}
-		for _, k := range nodes {
-			edge.Target.Nodes = append(edge.Target.Nodes, k)
-		}
-		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
-	}
-	if nodes := rcuo.mutation.AiScanResultsIDs(); len(nodes) > 0 {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   repoconfig.AiScanResultsTable,
-			Columns: []string{repoconfig.AiScanResultsColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(aiscanresult.FieldID, field.TypeInt),
-			},
-		}
-		for _, k := range nodes {
-			edge.Target.Nodes = append(edge.Target.Nodes, k)
-		}
-		_spec.Edges.Add = append(_spec.Edges.Add, edge)
-	}
 	if rcuo.mutation.PrRecordsCleared() {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.O2M,
@@ -2196,51 +1663,6 @@ func (rcuo *RepoConfigUpdateOne) sqlSave(ctx context.Context) (_node *RepoConfig
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(prrecord.FieldID, field.TypeInt),
-			},
-		}
-		for _, k := range nodes {
-			edge.Target.Nodes = append(edge.Target.Nodes, k)
-		}
-		_spec.Edges.Add = append(_spec.Edges.Add, edge)
-	}
-	if rcuo.mutation.EfficiencyMetricsCleared() {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   repoconfig.EfficiencyMetricsTable,
-			Columns: []string{repoconfig.EfficiencyMetricsColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(efficiencymetric.FieldID, field.TypeInt),
-			},
-		}
-		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
-	}
-	if nodes := rcuo.mutation.RemovedEfficiencyMetricsIDs(); len(nodes) > 0 && !rcuo.mutation.EfficiencyMetricsCleared() {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   repoconfig.EfficiencyMetricsTable,
-			Columns: []string{repoconfig.EfficiencyMetricsColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(efficiencymetric.FieldID, field.TypeInt),
-			},
-		}
-		for _, k := range nodes {
-			edge.Target.Nodes = append(edge.Target.Nodes, k)
-		}
-		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
-	}
-	if nodes := rcuo.mutation.EfficiencyMetricsIDs(); len(nodes) > 0 {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   repoconfig.EfficiencyMetricsTable,
-			Columns: []string{repoconfig.EfficiencyMetricsColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(efficiencymetric.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {

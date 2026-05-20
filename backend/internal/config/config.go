@@ -12,7 +12,6 @@ type Config struct {
 	Redis      RedisConfig      `mapstructure:"redis"`
 	Auth       AuthConfig       `mapstructure:"auth"`
 	Encryption EncryptionConfig `mapstructure:"encryption"`
-	Analysis   AnalysisConfig   `mapstructure:"analysis"`
 	Relay      RelayConfig      `mapstructure:"relay"`
 	Deployment DeploymentConfig `mapstructure:"deployment"`
 }
@@ -66,17 +65,6 @@ type EncryptionConfig struct {
 	Key string `mapstructure:"key"` // 32-byte hex-encoded AES-256 key
 }
 
-type AnalysisConfig struct {
-	LLM LLMConfig `mapstructure:"llm"`
-}
-
-type LLMConfig struct {
-	MaxTokensPerScan   int    `mapstructure:"max_tokens_per_scan"`
-	MaxScansPerRepoDay int    `mapstructure:"max_scans_per_repo_per_day"`
-	SystemPrompt       string `mapstructure:"system_prompt"`
-	UserPromptTemplate string `mapstructure:"user_prompt_template"`
-}
-
 type DeploymentConfig struct {
 	Mode     string       `mapstructure:"mode"`
 	StateDir string       `mapstructure:"state_dir"`
@@ -110,8 +98,6 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("auth.access_token_ttl", 7200)
 	v.SetDefault("auth.refresh_token_ttl", 604800)
 	v.SetDefault("auth.ldap.user_filter", "(uid=%s)")
-	v.SetDefault("analysis.llm.max_tokens_per_scan", 100000)
-	v.SetDefault("analysis.llm.max_scans_per_repo_per_day", 3)
 	v.SetDefault("deployment.mode", "bundled")
 	v.SetDefault("deployment.state_dir", "/var/lib/ai-efficiency")
 	v.SetDefault("deployment.update.enabled", true)
@@ -159,10 +145,6 @@ func Load(path string) (*Config, error) {
 		"auth.ldap.user_filter",
 		"auth.ldap.tls",
 		"encryption.key",
-		"analysis.llm.max_tokens_per_scan",
-		"analysis.llm.max_scans_per_repo_per_day",
-		"analysis.llm.system_prompt",
-		"analysis.llm.user_prompt_template",
 		"redis.addr",
 		"redis.password",
 		"redis.db",

@@ -7,10 +7,6 @@ export function listProviders(page = 1, pageSize = 20) {
   })
 }
 
-export function getProvider(id: number) {
-  return client.get<ApiResponse<SCMProvider>>(`/scm-providers/${id}`)
-}
-
 export function createProvider(data: Partial<SCMProvider>) {
   return client.post<ApiResponse<SCMProvider>>('/scm-providers', data)
 }

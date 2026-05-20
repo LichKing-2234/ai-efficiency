@@ -8,62 +8,6 @@ import (
 )
 
 var (
-	// AgentMetadataEventsColumns holds the columns for the "agent_metadata_events" table.
-	AgentMetadataEventsColumns = []*schema.Column{
-		{Name: "id", Type: field.TypeInt, Increment: true},
-		{Name: "workspace_id", Type: field.TypeString, Nullable: true},
-		{Name: "source", Type: field.TypeEnum, Enums: []string{"codex", "claude", "kiro"}},
-		{Name: "source_session_id", Type: field.TypeString, Nullable: true},
-		{Name: "usage_unit", Type: field.TypeEnum, Enums: []string{"token", "credit", "unknown"}, Default: "unknown"},
-		{Name: "input_tokens", Type: field.TypeInt64, Default: 0},
-		{Name: "output_tokens", Type: field.TypeInt64, Default: 0},
-		{Name: "cached_input_tokens", Type: field.TypeInt64, Default: 0},
-		{Name: "reasoning_tokens", Type: field.TypeInt64, Default: 0},
-		{Name: "credit_usage", Type: field.TypeFloat64, Default: 0},
-		{Name: "context_usage_pct", Type: field.TypeFloat64, Default: 0},
-		{Name: "raw_payload", Type: field.TypeJSON, Nullable: true},
-		{Name: "observed_at", Type: field.TypeTime},
-		{Name: "session_id", Type: field.TypeUUID},
-	}
-	// AgentMetadataEventsTable holds the schema information for the "agent_metadata_events" table.
-	AgentMetadataEventsTable = &schema.Table{
-		Name:       "agent_metadata_events",
-		Columns:    AgentMetadataEventsColumns,
-		PrimaryKey: []*schema.Column{AgentMetadataEventsColumns[0]},
-		ForeignKeys: []*schema.ForeignKey{
-			{
-				Symbol:     "agent_metadata_events_sessions_agent_metadata_events",
-				Columns:    []*schema.Column{AgentMetadataEventsColumns[13]},
-				RefColumns: []*schema.Column{SessionsColumns[0]},
-				OnDelete:   schema.NoAction,
-			},
-		},
-	}
-	// AiScanResultsColumns holds the columns for the "ai_scan_results" table.
-	AiScanResultsColumns = []*schema.Column{
-		{Name: "id", Type: field.TypeInt, Increment: true},
-		{Name: "score", Type: field.TypeInt, Default: 0},
-		{Name: "dimensions", Type: field.TypeJSON, Nullable: true},
-		{Name: "suggestions", Type: field.TypeJSON, Nullable: true},
-		{Name: "scan_type", Type: field.TypeEnum, Enums: []string{"static", "llm", "full"}, Default: "static"},
-		{Name: "commit_sha", Type: field.TypeString, Nullable: true},
-		{Name: "created_at", Type: field.TypeTime},
-		{Name: "repo_config_ai_scan_results", Type: field.TypeInt},
-	}
-	// AiScanResultsTable holds the schema information for the "ai_scan_results" table.
-	AiScanResultsTable = &schema.Table{
-		Name:       "ai_scan_results",
-		Columns:    AiScanResultsColumns,
-		PrimaryKey: []*schema.Column{AiScanResultsColumns[0]},
-		ForeignKeys: []*schema.ForeignKey{
-			{
-				Symbol:     "ai_scan_results_repo_configs_ai_scan_results",
-				Columns:    []*schema.Column{AiScanResultsColumns[7]},
-				RefColumns: []*schema.Column{RepoConfigsColumns[0]},
-				OnDelete:   schema.NoAction,
-			},
-		},
-	}
 	// CommitCheckpointsColumns holds the columns for the "commit_checkpoints" table.
 	CommitCheckpointsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
@@ -77,7 +21,7 @@ var (
 		{Name: "agent_snapshot", Type: field.TypeJSON, Nullable: true},
 		{Name: "captured_at", Type: field.TypeTime},
 		{Name: "repo_config_id", Type: field.TypeInt},
-		{Name: "session_id", Type: field.TypeUUID, Nullable: true},
+		{Name: "user_id", Type: field.TypeInt, Nullable: true},
 	}
 	// CommitCheckpointsTable holds the schema information for the "commit_checkpoints" table.
 	CommitCheckpointsTable = &schema.Table{
@@ -92,9 +36,9 @@ var (
 				OnDelete:   schema.NoAction,
 			},
 			{
-				Symbol:     "commit_checkpoints_sessions_commit_checkpoints",
+				Symbol:     "commit_checkpoints_users_commit_checkpoints",
 				Columns:    []*schema.Column{CommitCheckpointsColumns[11]},
-				RefColumns: []*schema.Column{SessionsColumns[0]},
+				RefColumns: []*schema.Column{UsersColumns[0]},
 				OnDelete:   schema.SetNull,
 			},
 		},
@@ -117,7 +61,7 @@ var (
 		{Name: "binding_source", Type: field.TypeEnum, Enums: []string{"marker", "env_bootstrap", "manual", "unbound"}},
 		{Name: "captured_at", Type: field.TypeTime},
 		{Name: "repo_config_id", Type: field.TypeInt},
-		{Name: "session_id", Type: field.TypeUUID, Nullable: true},
+		{Name: "user_id", Type: field.TypeInt, Nullable: true},
 	}
 	// CommitRewritesTable holds the schema information for the "commit_rewrites" table.
 	CommitRewritesTable = &schema.Table{
@@ -132,9 +76,9 @@ var (
 				OnDelete:   schema.NoAction,
 			},
 			{
-				Symbol:     "commit_rewrites_sessions_commit_rewrites",
+				Symbol:     "commit_rewrites_users_commit_rewrites",
 				Columns:    []*schema.Column{CommitRewritesColumns[9]},
-				RefColumns: []*schema.Column{SessionsColumns[0]},
+				RefColumns: []*schema.Column{UsersColumns[0]},
 				OnDelete:   schema.SetNull,
 			},
 		},
@@ -161,43 +105,6 @@ var (
 		Name:       "credentials",
 		Columns:    CredentialsColumns,
 		PrimaryKey: []*schema.Column{CredentialsColumns[0]},
-	}
-	// EfficiencyMetricsColumns holds the columns for the "efficiency_metrics" table.
-	EfficiencyMetricsColumns = []*schema.Column{
-		{Name: "id", Type: field.TypeInt, Increment: true},
-		{Name: "user_id", Type: field.TypeInt, Nullable: true},
-		{Name: "period_type", Type: field.TypeEnum, Enums: []string{"daily", "weekly", "monthly"}},
-		{Name: "period_start", Type: field.TypeTime},
-		{Name: "total_prs", Type: field.TypeInt, Default: 0},
-		{Name: "ai_prs", Type: field.TypeInt, Default: 0},
-		{Name: "human_prs", Type: field.TypeInt, Default: 0},
-		{Name: "avg_cycle_time_hours", Type: field.TypeFloat64, Default: 0},
-		{Name: "total_tokens", Type: field.TypeInt, Default: 0},
-		{Name: "total_token_cost", Type: field.TypeFloat64, Default: 0},
-		{Name: "ai_vs_human_ratio", Type: field.TypeFloat64, Default: 0},
-		{Name: "created_at", Type: field.TypeTime},
-		{Name: "repo_config_efficiency_metrics", Type: field.TypeInt},
-	}
-	// EfficiencyMetricsTable holds the schema information for the "efficiency_metrics" table.
-	EfficiencyMetricsTable = &schema.Table{
-		Name:       "efficiency_metrics",
-		Columns:    EfficiencyMetricsColumns,
-		PrimaryKey: []*schema.Column{EfficiencyMetricsColumns[0]},
-		ForeignKeys: []*schema.ForeignKey{
-			{
-				Symbol:     "efficiency_metrics_repo_configs_efficiency_metrics",
-				Columns:    []*schema.Column{EfficiencyMetricsColumns[12]},
-				RefColumns: []*schema.Column{RepoConfigsColumns[0]},
-				OnDelete:   schema.NoAction,
-			},
-		},
-		Indexes: []*schema.Index{
-			{
-				Name:    "efficiencymetric_period_type_period_start_repo_config_efficiency_metrics",
-				Unique:  true,
-				Columns: []*schema.Column{EfficiencyMetricsColumns[2], EfficiencyMetricsColumns[3], EfficiencyMetricsColumns[12]},
-			},
-		},
 	}
 	// PrAttributionRunsColumns holds the columns for the "pr_attribution_runs" table.
 	PrAttributionRunsColumns = []*schema.Column{
@@ -318,14 +225,12 @@ var (
 		{Name: "default_branch", Type: field.TypeString, Default: "main"},
 		{Name: "webhook_id", Type: field.TypeString, Nullable: true},
 		{Name: "webhook_secret", Type: field.TypeString, Nullable: true},
-		{Name: "last_scan_at", Type: field.TypeTime, Nullable: true},
 		{Name: "group_id", Type: field.TypeString, Nullable: true},
 		{Name: "relay_provider_name", Type: field.TypeString, Nullable: true},
 		{Name: "relay_group_id", Type: field.TypeString, Nullable: true},
 		{Name: "status", Type: field.TypeEnum, Enums: []string{"active", "webhook_failed", "inactive"}, Default: "active"},
 		{Name: "created_at", Type: field.TypeTime},
 		{Name: "updated_at", Type: field.TypeTime},
-		{Name: "scan_prompt_override", Type: field.TypeJSON, Nullable: true},
 		{Name: "scm_provider_repo_configs", Type: field.TypeInt, Nullable: true},
 	}
 	// RepoConfigsTable holds the schema information for the "repo_configs" table.
@@ -336,7 +241,7 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "repo_configs_scm_providers_repo_configs",
-				Columns:    []*schema.Column{RepoConfigsColumns[16]},
+				Columns:    []*schema.Column{RepoConfigsColumns[14]},
 				RefColumns: []*schema.Column{ScmProvidersColumns[0]},
 				OnDelete:   schema.SetNull,
 			},
@@ -350,7 +255,7 @@ var (
 			{
 				Name:    "repoconfig_full_name_scm_provider_repo_configs",
 				Unique:  true,
-				Columns: []*schema.Column{RepoConfigsColumns[3], RepoConfigsColumns[16]},
+				Columns: []*schema.Column{RepoConfigsColumns[3], RepoConfigsColumns[14]},
 			},
 		},
 	}
@@ -385,147 +290,6 @@ var (
 				Columns:    []*schema.Column{ScmProvidersColumns[10]},
 				RefColumns: []*schema.Column{CredentialsColumns[0]},
 				OnDelete:   schema.SetNull,
-			},
-		},
-	}
-	// SessionsColumns holds the columns for the "sessions" table.
-	SessionsColumns = []*schema.Column{
-		{Name: "id", Type: field.TypeUUID},
-		{Name: "branch", Type: field.TypeString},
-		{Name: "relay_user_id", Type: field.TypeInt, Nullable: true},
-		{Name: "relay_api_key_id", Type: field.TypeInt, Nullable: true},
-		{Name: "provider_name", Type: field.TypeString, Nullable: true},
-		{Name: "runtime_ref", Type: field.TypeString, Nullable: true},
-		{Name: "initial_workspace_root", Type: field.TypeString, Nullable: true},
-		{Name: "initial_git_dir", Type: field.TypeString, Nullable: true},
-		{Name: "initial_git_common_dir", Type: field.TypeString, Nullable: true},
-		{Name: "head_sha_at_start", Type: field.TypeString, Nullable: true},
-		{Name: "last_seen_at", Type: field.TypeTime, Nullable: true},
-		{Name: "tool_configs", Type: field.TypeJSON, Nullable: true},
-		{Name: "started_at", Type: field.TypeTime},
-		{Name: "ended_at", Type: field.TypeTime, Nullable: true},
-		{Name: "tool_invocations", Type: field.TypeJSON},
-		{Name: "status", Type: field.TypeEnum, Enums: []string{"active", "completed", "abandoned"}, Default: "active"},
-		{Name: "created_at", Type: field.TypeTime},
-		{Name: "repo_config_sessions", Type: field.TypeInt},
-		{Name: "user_sessions", Type: field.TypeInt, Nullable: true},
-	}
-	// SessionsTable holds the schema information for the "sessions" table.
-	SessionsTable = &schema.Table{
-		Name:       "sessions",
-		Columns:    SessionsColumns,
-		PrimaryKey: []*schema.Column{SessionsColumns[0]},
-		ForeignKeys: []*schema.ForeignKey{
-			{
-				Symbol:     "sessions_repo_configs_sessions",
-				Columns:    []*schema.Column{SessionsColumns[17]},
-				RefColumns: []*schema.Column{RepoConfigsColumns[0]},
-				OnDelete:   schema.NoAction,
-			},
-			{
-				Symbol:     "sessions_users_sessions",
-				Columns:    []*schema.Column{SessionsColumns[18]},
-				RefColumns: []*schema.Column{UsersColumns[0]},
-				OnDelete:   schema.SetNull,
-			},
-		},
-	}
-	// SessionEventsColumns holds the columns for the "session_events" table.
-	SessionEventsColumns = []*schema.Column{
-		{Name: "id", Type: field.TypeInt, Increment: true},
-		{Name: "event_id", Type: field.TypeString, Unique: true},
-		{Name: "workspace_id", Type: field.TypeString},
-		{Name: "event_type", Type: field.TypeString},
-		{Name: "source", Type: field.TypeString},
-		{Name: "captured_at", Type: field.TypeTime},
-		{Name: "raw_payload", Type: field.TypeJSON, Nullable: true},
-		{Name: "created_at", Type: field.TypeTime},
-		{Name: "session_id", Type: field.TypeUUID},
-	}
-	// SessionEventsTable holds the schema information for the "session_events" table.
-	SessionEventsTable = &schema.Table{
-		Name:       "session_events",
-		Columns:    SessionEventsColumns,
-		PrimaryKey: []*schema.Column{SessionEventsColumns[0]},
-		ForeignKeys: []*schema.ForeignKey{
-			{
-				Symbol:     "session_events_sessions_session_events",
-				Columns:    []*schema.Column{SessionEventsColumns[8]},
-				RefColumns: []*schema.Column{SessionsColumns[0]},
-				OnDelete:   schema.NoAction,
-			},
-		},
-		Indexes: []*schema.Index{
-			{
-				Name:    "sessionevent_session_id_captured_at",
-				Unique:  false,
-				Columns: []*schema.Column{SessionEventsColumns[8], SessionEventsColumns[5]},
-			},
-		},
-	}
-	// SessionUsageEventsColumns holds the columns for the "session_usage_events" table.
-	SessionUsageEventsColumns = []*schema.Column{
-		{Name: "id", Type: field.TypeInt, Increment: true},
-		{Name: "event_id", Type: field.TypeString, Unique: true},
-		{Name: "workspace_id", Type: field.TypeString},
-		{Name: "request_id", Type: field.TypeString},
-		{Name: "provider_name", Type: field.TypeString},
-		{Name: "model", Type: field.TypeString},
-		{Name: "started_at", Type: field.TypeTime},
-		{Name: "finished_at", Type: field.TypeTime},
-		{Name: "input_tokens", Type: field.TypeInt64, Default: 0},
-		{Name: "output_tokens", Type: field.TypeInt64, Default: 0},
-		{Name: "total_tokens", Type: field.TypeInt64, Default: 0},
-		{Name: "status", Type: field.TypeString},
-		{Name: "raw_metadata", Type: field.TypeJSON, Nullable: true},
-		{Name: "raw_response", Type: field.TypeJSON, Nullable: true},
-		{Name: "created_at", Type: field.TypeTime},
-		{Name: "session_id", Type: field.TypeUUID},
-	}
-	// SessionUsageEventsTable holds the schema information for the "session_usage_events" table.
-	SessionUsageEventsTable = &schema.Table{
-		Name:       "session_usage_events",
-		Columns:    SessionUsageEventsColumns,
-		PrimaryKey: []*schema.Column{SessionUsageEventsColumns[0]},
-		ForeignKeys: []*schema.ForeignKey{
-			{
-				Symbol:     "session_usage_events_sessions_session_usage_events",
-				Columns:    []*schema.Column{SessionUsageEventsColumns[15]},
-				RefColumns: []*schema.Column{SessionsColumns[0]},
-				OnDelete:   schema.NoAction,
-			},
-		},
-		Indexes: []*schema.Index{
-			{
-				Name:    "sessionusageevent_session_id_started_at",
-				Unique:  false,
-				Columns: []*schema.Column{SessionUsageEventsColumns[15], SessionUsageEventsColumns[6]},
-			},
-		},
-	}
-	// SessionWorkspacesColumns holds the columns for the "session_workspaces" table.
-	SessionWorkspacesColumns = []*schema.Column{
-		{Name: "id", Type: field.TypeInt, Increment: true},
-		{Name: "workspace_id", Type: field.TypeString},
-		{Name: "workspace_root", Type: field.TypeString},
-		{Name: "git_dir", Type: field.TypeString},
-		{Name: "git_common_dir", Type: field.TypeString},
-		{Name: "first_seen_at", Type: field.TypeTime},
-		{Name: "last_seen_at", Type: field.TypeTime},
-		{Name: "binding_source", Type: field.TypeEnum, Enums: []string{"marker", "env_bootstrap", "manual"}},
-		{Name: "session_id", Type: field.TypeUUID},
-	}
-	// SessionWorkspacesTable holds the schema information for the "session_workspaces" table.
-	SessionWorkspacesTable = &schema.Table{
-		Name:       "session_workspaces",
-		Columns:    SessionWorkspacesColumns,
-		PrimaryKey: []*schema.Column{SessionWorkspacesColumns[0]},
-		ForeignKeys: []*schema.ForeignKey{
-			{
-				Symbol:     "session_workspaces_sessions_session_workspaces",
-				Columns:    []*schema.Column{SessionWorkspacesColumns[8]},
-				RefColumns: []*schema.Column{SessionsColumns[0]},
-				OnDelete:   schema.NoAction,
 			},
 		},
 	}
@@ -667,21 +431,14 @@ var (
 	}
 	// Tables holds all the tables in the schema.
 	Tables = []*schema.Table{
-		AgentMetadataEventsTable,
-		AiScanResultsTable,
 		CommitCheckpointsTable,
 		CommitRewritesTable,
 		CredentialsTable,
-		EfficiencyMetricsTable,
 		PrAttributionRunsTable,
 		PrRecordsTable,
 		RelayProvidersTable,
 		RepoConfigsTable,
 		ScmProvidersTable,
-		SessionsTable,
-		SessionEventsTable,
-		SessionUsageEventsTable,
-		SessionWorkspacesTable,
 		SystemSettingsTable,
 		ToolUsageEventsTable,
 		UsersTable,
@@ -690,24 +447,16 @@ var (
 )
 
 func init() {
-	AgentMetadataEventsTable.ForeignKeys[0].RefTable = SessionsTable
-	AiScanResultsTable.ForeignKeys[0].RefTable = RepoConfigsTable
 	CommitCheckpointsTable.ForeignKeys[0].RefTable = RepoConfigsTable
-	CommitCheckpointsTable.ForeignKeys[1].RefTable = SessionsTable
+	CommitCheckpointsTable.ForeignKeys[1].RefTable = UsersTable
 	CommitRewritesTable.ForeignKeys[0].RefTable = RepoConfigsTable
-	CommitRewritesTable.ForeignKeys[1].RefTable = SessionsTable
-	EfficiencyMetricsTable.ForeignKeys[0].RefTable = RepoConfigsTable
+	CommitRewritesTable.ForeignKeys[1].RefTable = UsersTable
 	PrAttributionRunsTable.ForeignKeys[0].RefTable = PrRecordsTable
 	PrRecordsTable.ForeignKeys[0].RefTable = PrAttributionRunsTable
 	PrRecordsTable.ForeignKeys[1].RefTable = RepoConfigsTable
 	RepoConfigsTable.ForeignKeys[0].RefTable = ScmProvidersTable
 	ScmProvidersTable.ForeignKeys[0].RefTable = CredentialsTable
 	ScmProvidersTable.ForeignKeys[1].RefTable = CredentialsTable
-	SessionsTable.ForeignKeys[0].RefTable = RepoConfigsTable
-	SessionsTable.ForeignKeys[1].RefTable = UsersTable
-	SessionEventsTable.ForeignKeys[0].RefTable = SessionsTable
-	SessionUsageEventsTable.ForeignKeys[0].RefTable = SessionsTable
-	SessionWorkspacesTable.ForeignKeys[0].RefTable = SessionsTable
 	ToolUsageEventsTable.ForeignKeys[0].RefTable = CommitCheckpointsTable
 	ToolUsageEventsTable.ForeignKeys[1].RefTable = RepoConfigsTable
 	ToolUsageEventsTable.ForeignKeys[2].RefTable = UsersTable

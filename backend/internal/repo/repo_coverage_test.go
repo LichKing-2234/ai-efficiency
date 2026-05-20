@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/internal/pkg"
@@ -120,29 +119,10 @@ func TestDelete_WithAllChildTypes(t *testing.T) {
 	p := createSCMProvider(t, client)
 	rc := createRepo(t, svc, p.ID, "all-children-repo")
 
-	// Create session
-	client.Session.Create().
-		SetRepoConfigID(rc.ID).
-		SetBranch("main").
-		SaveX(ctx)
-
-	// Create AI scan result
-	client.AiScanResult.Create().
-		SetRepoConfigID(rc.ID).
-		SetScore(90).
-		SaveX(ctx)
-
 	// Create PR record
 	client.PrRecord.Create().
 		SetRepoConfigID(rc.ID).
 		SetScmPrID(1).
-		SaveX(ctx)
-
-	// Create efficiency metric
-	client.EfficiencyMetric.Create().
-		SetRepoConfigID(rc.ID).
-		SetPeriodType("daily").
-		SetPeriodStart(time.Now()).
 		SaveX(ctx)
 
 	if err := svc.Delete(ctx, rc.ID); err != nil {
@@ -326,23 +306,6 @@ func TestUpdate_NoChanges(t *testing.T) {
 	}
 	if updated.Name != "no-change-repo" {
 		t.Errorf("Name = %q, want %q", updated.Name, "no-change-repo")
-	}
-}
-
-func TestUpdate_ScanPromptAndClearTogether(t *testing.T) {
-	client, svc := setupTest(t)
-	p := createSCMProvider(t, client)
-	rc := createRepo(t, svc, p.ID, "prompt-clear-repo")
-
-	updated, err := svc.Update(context.Background(), rc.ID, UpdateRequest{
-		ClearScanPrompt:    true,
-		ScanPromptOverride: map[string]string{"system": "test"},
-	})
-	if err != nil {
-		t.Fatalf("Update error: %v", err)
-	}
-	if updated.ScanPromptOverride != nil {
-		t.Errorf("ScanPromptOverride = %v, want nil (clear takes precedence)", updated.ScanPromptOverride)
 	}
 }
 

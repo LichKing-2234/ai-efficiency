@@ -112,7 +112,7 @@ func TestNewService(t *testing.T) {
 	defer client.Close()
 	logger := zap.NewNop()
 
-	svc := NewService(client, nil, nil, logger)
+	svc := NewService(client, nil, logger)
 	if svc == nil {
 		t.Fatal("expected non-nil Service")
 	}
@@ -162,7 +162,7 @@ func TestSyncEmptyPRList(t *testing.T) {
 	logger := zap.NewNop()
 
 	rc := createTestRepo(t, ctx, client, "empty-repo")
-	svc := NewService(client, nil, nil, logger)
+	svc := NewService(client, nil, logger)
 
 	mock := &mockSCMProvider{
 		listPRsFunc: func(ctx context.Context, repoFullName string, opts scm.PRListOpts) ([]*scm.PR, error) {
@@ -192,7 +192,7 @@ func TestSyncCreateNewPRs(t *testing.T) {
 	logger := zap.NewNop()
 
 	rc := createTestRepo(t, ctx, client, "new-prs-repo")
-	svc := NewService(client, nil, nil, logger)
+	svc := NewService(client, nil, logger)
 
 	mock := &mockSCMProvider{
 		listPRsFunc: func(ctx context.Context, repoFullName string, opts scm.PRListOpts) ([]*scm.PR, error) {
@@ -233,7 +233,7 @@ func TestSyncUpdateExistingPRs(t *testing.T) {
 	logger := zap.NewNop()
 
 	rc := createTestRepo(t, ctx, client, "update-prs-repo")
-	svc := NewService(client, nil, nil, logger)
+	svc := NewService(client, nil, logger)
 
 	// Pre-create a PR record
 	client.PrRecord.Create().
@@ -285,7 +285,7 @@ func TestSyncWithMergedAtAndLabels(t *testing.T) {
 	logger := zap.NewNop()
 
 	rc := createTestRepo(t, ctx, client, "labels-repo")
-	svc := NewService(client, nil, nil, logger)
+	svc := NewService(client, nil, logger)
 
 	mergedAt := time.Date(2026, 3, 15, 10, 0, 0, 0, time.UTC)
 	createdAt := time.Date(2026, 3, 14, 10, 0, 0, 0, time.UTC)
@@ -331,7 +331,7 @@ func TestSyncFetchError(t *testing.T) {
 	logger := zap.NewNop()
 
 	rc := createTestRepo(t, ctx, client, "error-repo")
-	svc := NewService(client, nil, nil, logger)
+	svc := NewService(client, nil, logger)
 
 	mock := &mockSCMProvider{
 		listPRsFunc: func(ctx context.Context, repoFullName string, opts scm.PRListOpts) ([]*scm.PR, error) {
@@ -352,7 +352,7 @@ func TestSyncPagination(t *testing.T) {
 	logger := zap.NewNop()
 
 	rc := createTestRepo(t, ctx, client, "paginated-repo")
-	svc := NewService(client, nil, nil, logger)
+	svc := NewService(client, nil, logger)
 
 	callCount := 0
 	mock := &mockSCMProvider{
@@ -396,7 +396,7 @@ func TestSyncNilLabelerAndAggregator(t *testing.T) {
 	logger := zap.NewNop()
 
 	rc := createTestRepo(t, ctx, client, "nil-deps-repo")
-	svc := NewService(client, nil, nil, logger)
+	svc := NewService(client, nil, logger)
 
 	mock := &mockSCMProvider{
 		listPRsFunc: func(ctx context.Context, repoFullName string, opts scm.PRListOpts) ([]*scm.PR, error) {
@@ -423,7 +423,7 @@ func TestSyncMixedCreateAndUpdate(t *testing.T) {
 	logger := zap.NewNop()
 
 	rc := createTestRepo(t, ctx, client, "mixed-repo")
-	svc := NewService(client, nil, nil, logger)
+	svc := NewService(client, nil, logger)
 
 	// Pre-create PR #1
 	client.PrRecord.Create().
@@ -461,7 +461,7 @@ func TestSyncMixedCreateAndUpdate(t *testing.T) {
 	}
 }
 
-func TestSyncWithLabeler(t *testing.T) {
+func TestSyncWithLabelerAndFollowupFetch(t *testing.T) {
 	client := newTestClient(t)
 	defer client.Close()
 	ctx := context.Background()
@@ -470,7 +470,7 @@ func TestSyncWithLabeler(t *testing.T) {
 	rc := createTestRepo(t, ctx, client, "labeler-repo")
 
 	labeler := efficiency.NewLabeler(client, nil, logger)
-	svc := NewService(client, labeler, nil, logger)
+	svc := NewService(client, labeler, logger)
 
 	mock := &mockSCMProvider{
 		listPRsFunc: func(ctx context.Context, repoFullName string, opts scm.PRListOpts) ([]*scm.PR, error) {
@@ -502,7 +502,7 @@ func TestSyncWithLabeler(t *testing.T) {
 	}
 }
 
-func TestSyncWithAggregator(t *testing.T) {
+func TestSyncWithoutAggregator(t *testing.T) {
 	client := newTestClient(t)
 	defer client.Close()
 	ctx := context.Background()
@@ -510,8 +510,7 @@ func TestSyncWithAggregator(t *testing.T) {
 
 	rc := createTestRepo(t, ctx, client, "aggregator-repo")
 
-	aggregator := efficiency.NewAggregator(client, logger)
-	svc := NewService(client, nil, aggregator, logger)
+	svc := NewService(client, nil, logger)
 
 	mock := &mockSCMProvider{
 		listPRsFunc: func(ctx context.Context, repoFullName string, opts scm.PRListOpts) ([]*scm.PR, error) {
@@ -533,15 +532,9 @@ func TestSyncWithAggregator(t *testing.T) {
 	if result.Created != 1 {
 		t.Errorf("created = %d, want 1", result.Created)
 	}
-
-	// Verify aggregator ran — should have efficiency metrics
-	count, _ := client.EfficiencyMetric.Query().Count(ctx)
-	if count == 0 {
-		t.Error("expected efficiency metrics to be created after aggregation")
-	}
 }
 
-func TestSyncWithLabelerAndAggregator(t *testing.T) {
+func TestSyncWithLabeler(t *testing.T) {
 	client := newTestClient(t)
 	defer client.Close()
 	ctx := context.Background()
@@ -550,8 +543,7 @@ func TestSyncWithLabelerAndAggregator(t *testing.T) {
 	rc := createTestRepo(t, ctx, client, "full-sync-repo")
 
 	labeler := efficiency.NewLabeler(client, nil, logger)
-	aggregator := efficiency.NewAggregator(client, logger)
-	svc := NewService(client, labeler, aggregator, logger)
+	svc := NewService(client, labeler, logger)
 
 	mock := &mockSCMProvider{
 		listPRsFunc: func(ctx context.Context, repoFullName string, opts scm.PRListOpts) ([]*scm.PR, error) {
@@ -582,7 +574,7 @@ func TestSyncUpdateWithMergedAtAndLabels(t *testing.T) {
 	logger := zap.NewNop()
 
 	rc := createTestRepo(t, ctx, client, "update-labels-repo")
-	svc := NewService(client, nil, nil, logger)
+	svc := NewService(client, nil, logger)
 
 	// Pre-create a PR
 	client.PrRecord.Create().
@@ -646,7 +638,7 @@ func TestSyncCreateWithZeroTimestamps(t *testing.T) {
 	logger := zap.NewNop()
 
 	rc := createTestRepo(t, ctx, client, "zero-ts-repo")
-	svc := NewService(client, nil, nil, logger)
+	svc := NewService(client, nil, logger)
 
 	mock := &mockSCMProvider{
 		listPRsFunc: func(ctx context.Context, repoFullName string, opts scm.PRListOpts) ([]*scm.PR, error) {
@@ -678,7 +670,7 @@ func TestSyncCreateWithAllFields(t *testing.T) {
 	logger := zap.NewNop()
 
 	rc := createTestRepo(t, ctx, client, "all-fields-repo")
-	svc := NewService(client, nil, nil, logger)
+	svc := NewService(client, nil, logger)
 
 	createdAt := time.Date(2026, 3, 14, 10, 0, 0, 0, time.UTC)
 	mergedAt := time.Date(2026, 3, 15, 10, 0, 0, 0, time.UTC)

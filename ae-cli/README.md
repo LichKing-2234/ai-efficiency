@@ -61,7 +61,7 @@ ae-cli sync
 ae-cli doctor
 ```
 
-Legacy `ae-cli start/stop/run/...` session commands are retired. Use the sessionless workflow only.
+Legacy `ae-cli start/stop/run/...` session commands are no longer included in the current binary. Use the sessionless workflow only.
 
 ## Windows
 

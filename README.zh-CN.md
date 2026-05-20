@@ -11,7 +11,7 @@ AI 效能平台（`ai-efficiency`）是一个独立系统，用于衡量和优�
 
 - 后端：Go（`Gin` + `Ent`）模块化单体
 - 前端：Vue 3（`Vite` + `Pinia` + `TailwindCSS`）
-- CLI：`ae-cli`，负责登录、session bootstrap、hooks、collector 和本地工具运行时
+- CLI：`ae-cli`，负责登录、provider 发现、hooks、collector 和本地工具配置
 - Relay 集成：通过 HTTP provider 边界接入 `sub2api`，不直接耦合数据库
 - SCM 集成：通过统一 provider 接口对接 GitHub 和 Bitbucket Server
 
@@ -19,7 +19,8 @@ AI 效能平台（`ai-efficiency`）是一个独立系统，用于衡量和优�
 
 - 后端是认证、仓库管理、分析、归因、部署控制和 webhook 处理的统一编排中心。
 - 前端单独构建，并在部署时嵌入后端二进制。
-- `ae-cli start` 会向后端完成 session bootstrap，写入本地 workspace/runtime 状态，并可为 Codex 和 Claude 启动本地 session proxy。
+- `ae-cli` 的正式工作流已经切到 sessionless：`ae-cli init`、`ae-cli sync`、`ae-cli doctor`。
+- 旧的 `ae-cli start/stop/run/...` 命令已不再包含在当前 CLI 二进制中，本地 session proxy 运行时也已退役。
 - 当前生产部署支持 Docker Compose 和 Linux systemd 两条路径。
 
 ## 仓库结构

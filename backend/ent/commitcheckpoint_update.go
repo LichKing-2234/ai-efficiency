@@ -15,9 +15,8 @@ import (
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
 	"github.com/ai-efficiency/backend/ent/predicate"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
-	"github.com/ai-efficiency/backend/ent/session"
 	"github.com/ai-efficiency/backend/ent/toolusageevent"
-	"github.com/google/uuid"
+	"github.com/ai-efficiency/backend/ent/user"
 )
 
 // CommitCheckpointUpdate is the builder for updating CommitCheckpoint entities.
@@ -47,23 +46,23 @@ func (ccu *CommitCheckpointUpdate) SetNillableEventID(s *string) *CommitCheckpoi
 	return ccu
 }
 
-// SetSessionID sets the "session_id" field.
-func (ccu *CommitCheckpointUpdate) SetSessionID(u uuid.UUID) *CommitCheckpointUpdate {
-	ccu.mutation.SetSessionID(u)
+// SetUserID sets the "user_id" field.
+func (ccu *CommitCheckpointUpdate) SetUserID(i int) *CommitCheckpointUpdate {
+	ccu.mutation.SetUserID(i)
 	return ccu
 }
 
-// SetNillableSessionID sets the "session_id" field if the given value is not nil.
-func (ccu *CommitCheckpointUpdate) SetNillableSessionID(u *uuid.UUID) *CommitCheckpointUpdate {
-	if u != nil {
-		ccu.SetSessionID(*u)
+// SetNillableUserID sets the "user_id" field if the given value is not nil.
+func (ccu *CommitCheckpointUpdate) SetNillableUserID(i *int) *CommitCheckpointUpdate {
+	if i != nil {
+		ccu.SetUserID(*i)
 	}
 	return ccu
 }
 
-// ClearSessionID clears the value of the "session_id" field.
-func (ccu *CommitCheckpointUpdate) ClearSessionID() *CommitCheckpointUpdate {
-	ccu.mutation.ClearSessionID()
+// ClearUserID clears the value of the "user_id" field.
+func (ccu *CommitCheckpointUpdate) ClearUserID() *CommitCheckpointUpdate {
+	ccu.mutation.ClearUserID()
 	return ccu
 }
 
@@ -201,9 +200,9 @@ func (ccu *CommitCheckpointUpdate) SetNillableCapturedAt(t *time.Time) *CommitCh
 	return ccu
 }
 
-// SetSession sets the "session" edge to the Session entity.
-func (ccu *CommitCheckpointUpdate) SetSession(s *Session) *CommitCheckpointUpdate {
-	return ccu.SetSessionID(s.ID)
+// SetUser sets the "user" edge to the User entity.
+func (ccu *CommitCheckpointUpdate) SetUser(u *User) *CommitCheckpointUpdate {
+	return ccu.SetUserID(u.ID)
 }
 
 // SetRepoConfig sets the "repo_config" edge to the RepoConfig entity.
@@ -231,9 +230,9 @@ func (ccu *CommitCheckpointUpdate) Mutation() *CommitCheckpointMutation {
 	return ccu.mutation
 }
 
-// ClearSession clears the "session" edge to the Session entity.
-func (ccu *CommitCheckpointUpdate) ClearSession() *CommitCheckpointUpdate {
-	ccu.mutation.ClearSession()
+// ClearUser clears the "user" edge to the User entity.
+func (ccu *CommitCheckpointUpdate) ClearUser() *CommitCheckpointUpdate {
+	ccu.mutation.ClearUser()
 	return ccu
 }
 
@@ -367,28 +366,28 @@ func (ccu *CommitCheckpointUpdate) sqlSave(ctx context.Context) (n int, err erro
 	if value, ok := ccu.mutation.CapturedAt(); ok {
 		_spec.SetField(commitcheckpoint.FieldCapturedAt, field.TypeTime, value)
 	}
-	if ccu.mutation.SessionCleared() {
+	if ccu.mutation.UserCleared() {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.M2O,
 			Inverse: true,
-			Table:   commitcheckpoint.SessionTable,
-			Columns: []string{commitcheckpoint.SessionColumn},
+			Table:   commitcheckpoint.UserTable,
+			Columns: []string{commitcheckpoint.UserColumn},
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(session.FieldID, field.TypeUUID),
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt),
 			},
 		}
 		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
 	}
-	if nodes := ccu.mutation.SessionIDs(); len(nodes) > 0 {
+	if nodes := ccu.mutation.UserIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.M2O,
 			Inverse: true,
-			Table:   commitcheckpoint.SessionTable,
-			Columns: []string{commitcheckpoint.SessionColumn},
+			Table:   commitcheckpoint.UserTable,
+			Columns: []string{commitcheckpoint.UserColumn},
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(session.FieldID, field.TypeUUID),
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {
@@ -504,23 +503,23 @@ func (ccuo *CommitCheckpointUpdateOne) SetNillableEventID(s *string) *CommitChec
 	return ccuo
 }
 
-// SetSessionID sets the "session_id" field.
-func (ccuo *CommitCheckpointUpdateOne) SetSessionID(u uuid.UUID) *CommitCheckpointUpdateOne {
-	ccuo.mutation.SetSessionID(u)
+// SetUserID sets the "user_id" field.
+func (ccuo *CommitCheckpointUpdateOne) SetUserID(i int) *CommitCheckpointUpdateOne {
+	ccuo.mutation.SetUserID(i)
 	return ccuo
 }
 
-// SetNillableSessionID sets the "session_id" field if the given value is not nil.
-func (ccuo *CommitCheckpointUpdateOne) SetNillableSessionID(u *uuid.UUID) *CommitCheckpointUpdateOne {
-	if u != nil {
-		ccuo.SetSessionID(*u)
+// SetNillableUserID sets the "user_id" field if the given value is not nil.
+func (ccuo *CommitCheckpointUpdateOne) SetNillableUserID(i *int) *CommitCheckpointUpdateOne {
+	if i != nil {
+		ccuo.SetUserID(*i)
 	}
 	return ccuo
 }
 
-// ClearSessionID clears the value of the "session_id" field.
-func (ccuo *CommitCheckpointUpdateOne) ClearSessionID() *CommitCheckpointUpdateOne {
-	ccuo.mutation.ClearSessionID()
+// ClearUserID clears the value of the "user_id" field.
+func (ccuo *CommitCheckpointUpdateOne) ClearUserID() *CommitCheckpointUpdateOne {
+	ccuo.mutation.ClearUserID()
 	return ccuo
 }
 
@@ -658,9 +657,9 @@ func (ccuo *CommitCheckpointUpdateOne) SetNillableCapturedAt(t *time.Time) *Comm
 	return ccuo
 }
 
-// SetSession sets the "session" edge to the Session entity.
-func (ccuo *CommitCheckpointUpdateOne) SetSession(s *Session) *CommitCheckpointUpdateOne {
-	return ccuo.SetSessionID(s.ID)
+// SetUser sets the "user" edge to the User entity.
+func (ccuo *CommitCheckpointUpdateOne) SetUser(u *User) *CommitCheckpointUpdateOne {
+	return ccuo.SetUserID(u.ID)
 }
 
 // SetRepoConfig sets the "repo_config" edge to the RepoConfig entity.
@@ -688,9 +687,9 @@ func (ccuo *CommitCheckpointUpdateOne) Mutation() *CommitCheckpointMutation {
 	return ccuo.mutation
 }
 
-// ClearSession clears the "session" edge to the Session entity.
-func (ccuo *CommitCheckpointUpdateOne) ClearSession() *CommitCheckpointUpdateOne {
-	ccuo.mutation.ClearSession()
+// ClearUser clears the "user" edge to the User entity.
+func (ccuo *CommitCheckpointUpdateOne) ClearUser() *CommitCheckpointUpdateOne {
+	ccuo.mutation.ClearUser()
 	return ccuo
 }
 
@@ -854,28 +853,28 @@ func (ccuo *CommitCheckpointUpdateOne) sqlSave(ctx context.Context) (_node *Comm
 	if value, ok := ccuo.mutation.CapturedAt(); ok {
 		_spec.SetField(commitcheckpoint.FieldCapturedAt, field.TypeTime, value)
 	}
-	if ccuo.mutation.SessionCleared() {
+	if ccuo.mutation.UserCleared() {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.M2O,
 			Inverse: true,
-			Table:   commitcheckpoint.SessionTable,
-			Columns: []string{commitcheckpoint.SessionColumn},
+			Table:   commitcheckpoint.UserTable,
+			Columns: []string{commitcheckpoint.UserColumn},
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(session.FieldID, field.TypeUUID),
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt),
 			},
 		}
 		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
 	}
-	if nodes := ccuo.mutation.SessionIDs(); len(nodes) > 0 {
+	if nodes := ccuo.mutation.UserIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.M2O,
 			Inverse: true,
-			Table:   commitcheckpoint.SessionTable,
-			Columns: []string{commitcheckpoint.SessionColumn},
+			Table:   commitcheckpoint.UserTable,
+			Columns: []string{commitcheckpoint.UserColumn},
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(session.FieldID, field.TypeUUID),
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {

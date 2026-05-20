@@ -12,8 +12,9 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
+	"github.com/ai-efficiency/backend/ent/commitrewrite"
 	"github.com/ai-efficiency/backend/ent/predicate"
-	"github.com/ai-efficiency/backend/ent/session"
 	"github.com/ai-efficiency/backend/ent/toolusageevent"
 	"github.com/ai-efficiency/backend/ent/user"
 )
@@ -21,12 +22,13 @@ import (
 // UserQuery is the builder for querying User entities.
 type UserQuery struct {
 	config
-	ctx                 *QueryContext
-	order               []user.OrderOption
-	inters              []Interceptor
-	predicates          []predicate.User
-	withSessions        *SessionQuery
-	withToolUsageEvents *ToolUsageEventQuery
+	ctx                   *QueryContext
+	order                 []user.OrderOption
+	inters                []Interceptor
+	predicates            []predicate.User
+	withCommitCheckpoints *CommitCheckpointQuery
+	withCommitRewrites    *CommitRewriteQuery
+	withToolUsageEvents   *ToolUsageEventQuery
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
 	path func(context.Context) (*sql.Selector, error)
@@ -63,9 +65,9 @@ func (uq *UserQuery) Order(o ...user.OrderOption) *UserQuery {
 	return uq
 }
 
-// QuerySessions chains the current query on the "sessions" edge.
-func (uq *UserQuery) QuerySessions() *SessionQuery {
-	query := (&SessionClient{config: uq.config}).Query()
+// QueryCommitCheckpoints chains the current query on the "commit_checkpoints" edge.
+func (uq *UserQuery) QueryCommitCheckpoints() *CommitCheckpointQuery {
+	query := (&CommitCheckpointClient{config: uq.config}).Query()
 	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
 		if err := uq.prepareQuery(ctx); err != nil {
 			return nil, err
@@ -76,8 +78,30 @@ func (uq *UserQuery) QuerySessions() *SessionQuery {
 		}
 		step := sqlgraph.NewStep(
 			sqlgraph.From(user.Table, user.FieldID, selector),
-			sqlgraph.To(session.Table, session.FieldID),
-			sqlgraph.Edge(sqlgraph.O2M, false, user.SessionsTable, user.SessionsColumn),
+			sqlgraph.To(commitcheckpoint.Table, commitcheckpoint.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.CommitCheckpointsTable, user.CommitCheckpointsColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(uq.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryCommitRewrites chains the current query on the "commit_rewrites" edge.
+func (uq *UserQuery) QueryCommitRewrites() *CommitRewriteQuery {
+	query := (&CommitRewriteClient{config: uq.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := uq.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := uq.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, selector),
+			sqlgraph.To(commitrewrite.Table, commitrewrite.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.CommitRewritesTable, user.CommitRewritesColumn),
 		)
 		fromU = sqlgraph.SetNeighbors(uq.driver.Dialect(), step)
 		return fromU, nil
@@ -294,27 +318,39 @@ func (uq *UserQuery) Clone() *UserQuery {
 		return nil
 	}
 	return &UserQuery{
-		config:              uq.config,
-		ctx:                 uq.ctx.Clone(),
-		order:               append([]user.OrderOption{}, uq.order...),
-		inters:              append([]Interceptor{}, uq.inters...),
-		predicates:          append([]predicate.User{}, uq.predicates...),
-		withSessions:        uq.withSessions.Clone(),
-		withToolUsageEvents: uq.withToolUsageEvents.Clone(),
+		config:                uq.config,
+		ctx:                   uq.ctx.Clone(),
+		order:                 append([]user.OrderOption{}, uq.order...),
+		inters:                append([]Interceptor{}, uq.inters...),
+		predicates:            append([]predicate.User{}, uq.predicates...),
+		withCommitCheckpoints: uq.withCommitCheckpoints.Clone(),
+		withCommitRewrites:    uq.withCommitRewrites.Clone(),
+		withToolUsageEvents:   uq.withToolUsageEvents.Clone(),
 		// clone intermediate query.
 		sql:  uq.sql.Clone(),
 		path: uq.path,
 	}
 }
 
-// WithSessions tells the query-builder to eager-load the nodes that are connected to
-// the "sessions" edge. The optional arguments are used to configure the query builder of the edge.
-func (uq *UserQuery) WithSessions(opts ...func(*SessionQuery)) *UserQuery {
-	query := (&SessionClient{config: uq.config}).Query()
+// WithCommitCheckpoints tells the query-builder to eager-load the nodes that are connected to
+// the "commit_checkpoints" edge. The optional arguments are used to configure the query builder of the edge.
+func (uq *UserQuery) WithCommitCheckpoints(opts ...func(*CommitCheckpointQuery)) *UserQuery {
+	query := (&CommitCheckpointClient{config: uq.config}).Query()
 	for _, opt := range opts {
 		opt(query)
 	}
-	uq.withSessions = query
+	uq.withCommitCheckpoints = query
+	return uq
+}
+
+// WithCommitRewrites tells the query-builder to eager-load the nodes that are connected to
+// the "commit_rewrites" edge. The optional arguments are used to configure the query builder of the edge.
+func (uq *UserQuery) WithCommitRewrites(opts ...func(*CommitRewriteQuery)) *UserQuery {
+	query := (&CommitRewriteClient{config: uq.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	uq.withCommitRewrites = query
 	return uq
 }
 
@@ -407,8 +443,9 @@ func (uq *UserQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*User, e
 	var (
 		nodes       = []*User{}
 		_spec       = uq.querySpec()
-		loadedTypes = [2]bool{
-			uq.withSessions != nil,
+		loadedTypes = [3]bool{
+			uq.withCommitCheckpoints != nil,
+			uq.withCommitRewrites != nil,
 			uq.withToolUsageEvents != nil,
 		}
 	)
@@ -430,10 +467,17 @@ func (uq *UserQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*User, e
 	if len(nodes) == 0 {
 		return nodes, nil
 	}
-	if query := uq.withSessions; query != nil {
-		if err := uq.loadSessions(ctx, query, nodes,
-			func(n *User) { n.Edges.Sessions = []*Session{} },
-			func(n *User, e *Session) { n.Edges.Sessions = append(n.Edges.Sessions, e) }); err != nil {
+	if query := uq.withCommitCheckpoints; query != nil {
+		if err := uq.loadCommitCheckpoints(ctx, query, nodes,
+			func(n *User) { n.Edges.CommitCheckpoints = []*CommitCheckpoint{} },
+			func(n *User, e *CommitCheckpoint) { n.Edges.CommitCheckpoints = append(n.Edges.CommitCheckpoints, e) }); err != nil {
+			return nil, err
+		}
+	}
+	if query := uq.withCommitRewrites; query != nil {
+		if err := uq.loadCommitRewrites(ctx, query, nodes,
+			func(n *User) { n.Edges.CommitRewrites = []*CommitRewrite{} },
+			func(n *User, e *CommitRewrite) { n.Edges.CommitRewrites = append(n.Edges.CommitRewrites, e) }); err != nil {
 			return nil, err
 		}
 	}
@@ -447,7 +491,7 @@ func (uq *UserQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*User, e
 	return nodes, nil
 }
 
-func (uq *UserQuery) loadSessions(ctx context.Context, query *SessionQuery, nodes []*User, init func(*User), assign func(*User, *Session)) error {
+func (uq *UserQuery) loadCommitCheckpoints(ctx context.Context, query *CommitCheckpointQuery, nodes []*User, init func(*User), assign func(*User, *CommitCheckpoint)) error {
 	fks := make([]driver.Value, 0, len(nodes))
 	nodeids := make(map[int]*User)
 	for i := range nodes {
@@ -457,22 +501,57 @@ func (uq *UserQuery) loadSessions(ctx context.Context, query *SessionQuery, node
 			init(nodes[i])
 		}
 	}
-	query.withFKs = true
-	query.Where(predicate.Session(func(s *sql.Selector) {
-		s.Where(sql.InValues(s.C(user.SessionsColumn), fks...))
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(commitcheckpoint.FieldUserID)
+	}
+	query.Where(predicate.CommitCheckpoint(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(user.CommitCheckpointsColumn), fks...))
 	}))
 	neighbors, err := query.All(ctx)
 	if err != nil {
 		return err
 	}
 	for _, n := range neighbors {
-		fk := n.user_sessions
+		fk := n.UserID
 		if fk == nil {
-			return fmt.Errorf(`foreign-key "user_sessions" is nil for node %v`, n.ID)
+			return fmt.Errorf(`foreign-key "user_id" is nil for node %v`, n.ID)
 		}
 		node, ok := nodeids[*fk]
 		if !ok {
-			return fmt.Errorf(`unexpected referenced foreign-key "user_sessions" returned %v for node %v`, *fk, n.ID)
+			return fmt.Errorf(`unexpected referenced foreign-key "user_id" returned %v for node %v`, *fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (uq *UserQuery) loadCommitRewrites(ctx context.Context, query *CommitRewriteQuery, nodes []*User, init func(*User), assign func(*User, *CommitRewrite)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int]*User)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(commitrewrite.FieldUserID)
+	}
+	query.Where(predicate.CommitRewrite(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(user.CommitRewritesColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.UserID
+		if fk == nil {
+			return fmt.Errorf(`foreign-key "user_id" is nil for node %v`, n.ID)
+		}
+		node, ok := nodeids[*fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "user_id" returned %v for node %v`, *fk, n.ID)
 		}
 		assign(node, n)
 	}

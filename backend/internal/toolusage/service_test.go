@@ -18,15 +18,9 @@ func TestCreateUsageEvent_DedupesByDedupeKey(t *testing.T) {
 	svc := NewService(client)
 
 	scope := seedToolUsageScope(t, client)
-	ctx = context.Background()
-	client.Session.Create().
-		SetRepoConfigID(scope.RepoConfigID).
-		SetBranch("main").
-		SetUserID(scope.UserID).
-		SetStartedAt(time.Unix(100, 0).UTC()).
-		SaveX(ctx)
 	client.CommitCheckpoint.Create().
 		SetEventID("cp-seed-scope").
+		SetUserID(scope.UserID).
 		SetWorkspaceID(scope.WorkspaceID).
 		SetRepoConfigID(scope.RepoConfigID).
 		SetCommitSha("seed-sha").
@@ -143,14 +137,9 @@ func TestCreateUsageEvent_RejectsCrossUserScope(t *testing.T) {
 	svc := NewService(client)
 
 	scope := seedToolUsageScope(t, client)
-	client.Session.Create().
-		SetRepoConfigID(scope.RepoConfigID).
-		SetBranch("main").
-		SetUserID(scope.UserID).
-		SetStartedAt(time.Unix(100, 0).UTC()).
-		SaveX(ctx)
 	client.CommitCheckpoint.Create().
 		SetEventID("cp-cross-user-scope").
+		SetUserID(scope.UserID).
 		SetWorkspaceID(scope.WorkspaceID).
 		SetRepoConfigID(scope.RepoConfigID).
 		SetCommitSha("seed-sha").
@@ -189,15 +178,9 @@ func TestCreateUsageEvent_AutoBindsToLatestCheckpointWindow(t *testing.T) {
 	svc := NewService(client)
 
 	scope := seedToolUsageScope(t, client)
-	client.Session.Create().
-		SetRepoConfigID(scope.RepoConfigID).
-		SetBranch("main").
-		SetUserID(scope.UserID).
-		SetStartedAt(time.Unix(100, 0).UTC()).
-		SaveX(ctx)
-
 	prev := client.CommitCheckpoint.Create().
 		SetEventID("cp-auto-bind-prev").
+		SetUserID(scope.UserID).
 		SetWorkspaceID(scope.WorkspaceID).
 		SetRepoConfigID(scope.RepoConfigID).
 		SetCommitSha("base-sha").
@@ -207,6 +190,7 @@ func TestCreateUsageEvent_AutoBindsToLatestCheckpointWindow(t *testing.T) {
 		SaveX(ctx)
 	current := client.CommitCheckpoint.Create().
 		SetEventID("cp-auto-bind-current").
+		SetUserID(scope.UserID).
 		SetWorkspaceID(scope.WorkspaceID).
 		SetRepoConfigID(scope.RepoConfigID).
 		SetCommitSha("head-sha").

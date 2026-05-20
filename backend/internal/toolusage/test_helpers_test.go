@@ -73,6 +73,7 @@ func createToolUsageBindingFixture(t *testing.T, client *ent.Client) bindingFixt
 
 	checkpoint := client.CommitCheckpoint.Create().
 		SetEventID("cp-1").
+		SetUserID(scope.UserID).
 		SetWorkspaceID(scope.WorkspaceID).
 		SetRepoConfigID(scope.RepoConfigID).
 		SetCommitSha("abc123").

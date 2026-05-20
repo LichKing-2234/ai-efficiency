@@ -1,7 +1,7 @@
 # Legacy Session / Local Proxy Staged Cutover 设计文档
 
 **Date:** 2026-05-14  
-**Status:** Implemented in codebase; historical schema cleanup remains  
+**Status:** Implemented in codebase; CLI/runtime shell cleanup landed and the backend legacy session schema/runtime has been removed
 **Scope:** `ae-cli/`, `backend/`, `frontend/`, `docs/`  
 **Related:**  
 - [2026-03-26-session-pr-attribution-design.md](./2026-03-26-session-pr-attribution-design.md)  
@@ -61,7 +61,8 @@
 
 1. CLI：
    - `ae-cli init` / `sync` / `doctor` 是正式入口
-   - `start/stop/run/attach/ps/shell/flush` 仅保留极薄迁移报错壳子
+   - `start/stop/run/attach/ps/shell/flush` 已从当前 CLI 二进制移除
+   - 仅为这些旧命令服务的 `current-session.json` / runtime bundle / tool pane helper 代码也已删除
 2. Frontend：
    - `Attribution` 取代 `Sessions` 成为正式入口
    - `/sessions` 页面与对应 API wrapper 已删除
@@ -69,9 +70,10 @@
 3. Backend：
    - `/sessions*`、`/session-usage-events`、`/session-events` 已从 public router 移除
    - server runtime 不再启动 legacy session bootstrap lifecycle wiring
+   - `session_usage_events`、`session_events`、`session_workspaces` 已不再保留在当前 active schema
 4. 仍然暂存的 legacy footprint：
-   - 历史 session 表与 ent schema
-   - 仍有部分 legacy session-backed schema / attribution fallback 逻辑，作为后续 data cleanup 的候选对象
+   - `session` 表及其少量 owner/fallback 语义
+   - 少量历史字段名仍保留 `session` 命名（例如 `matched_session_ids` / `session_ids`），但当前承载的是工具原生 session id
 
 ## 目标
 
@@ -95,7 +97,7 @@
 | --- | --- | --- |
 | 用户主语 | 从 `session` 切换到 `repo / PR / workspace / checkpoint` | 与 sessionless attribution 一致 |
 | CLI 主入口 | 使用 `ae-cli init` / `ae-cli sync` / `ae-cli doctor` | 避免继续强化 `start/stop` 心智 |
-| 旧 CLI 命令 | 保留极薄兼容壳子，但从帮助和主文档中移除 | 受控切换，降低突然 break 风险 |
+| 旧 CLI 命令 | 已从当前 CLI 二进制移除 | 当前仓库不再需要为未发布兼容壳子付维护成本 |
 | 前端导航 | `Sessions` 退出主导航，换成 `Attribution` | 用户主入口必须反映正式模型 |
 | `Sessions` 页面 | 已删除 | 当前产品不再暴露 session 读面 |
 | local proxy | 不再作为正式数据面 | 新归因只走 sessionless 链 |
@@ -124,7 +126,7 @@
 - `doctor`
   - 检查 hooks、workspace identity、本地 artifacts、spool、backend 连通性
 
-legacy 命令：
+legacy 命令（历史阶段设想）：
 
 - `start`
 - `stop`
@@ -134,13 +136,18 @@ legacy 命令：
 - `shell`
 - `flush`
 
-phase 1 处理：
+phase 1 处理（历史状态）：
 
 1. 不再出现在 README 主文档和用户推荐路径中
 2. 命令仍可存在于二进制中
 3. 执行时直接返回明确错误：
    - legacy workflow 已下线
    - 应使用 `init/sync/doctor`
+
+当前实现进一步收敛为：
+
+1. 这些 legacy 命令已从当前 CLI 二进制删除
+2. `current-session.json`、runtime bundle、tool pane registry 等仅为旧命令服务的 helper 代码已删除
 
 ### 前端
 
@@ -222,7 +229,7 @@ phase 1 采用 **入口切换 + 兼容壳子 + 历史只读** 的方式：
 1. `init` 成功初始化 hooks / 本地状态
 2. `sync` 成功触发本地扫描与补传
 3. `doctor` 能输出关键检查项
-4. `start/stop/run/attach/ps/shell/flush` 改为明确失败并提示迁移
+4. 当前代码中 `start/stop/run/attach/ps/shell/flush` 已不再出现在 CLI 二进制中
 
 ### Frontend
 
@@ -244,15 +251,14 @@ phase 1 采用 **入口切换 + 兼容壳子 + 历史只读** 的方式：
 
 phase 2 再做真正删除：
 
-1. 删除仍保留的 legacy session schema / ent edges / 相关迁移负担
-2. 评估是否彻底删除 `start/stop/run/attach/ps/shell/flush` 迁移壳子
-3. 清理剩余 legacy session-backed schema / attribution fallback 逻辑
-4. 清理不再需要的 legacy tests / docs
+1. 删除仍保留的 `session` 相关 schema / ent edges / 相关迁移负担
+2. 视需要进一步重命名仍保留 `session` 字段名的历史 API / schema 字段，避免与平台 session 概念混淆
+3. 清理不再需要的 legacy tests / docs
 
 ## 风险
 
 1. `Attribution` phase 1 如果只是换导航名但没有足够的信息承接，用户会觉得“只是改名”
-2. legacy CLI 命令如果直接 panic 或 silently no-op，会造成更难排障的问题；必须明确失败
+2. 任何新代码如果重新引入 user-visible session lifecycle 命令或 local-proxy 入口，会把已经完成的 cutover 拉回双轨状态
 3. backend 如果仍有隐藏路径依赖 local proxy 写链，会导致“表面切换，实则双轨”
 
 ## 验收标准
@@ -262,6 +268,6 @@ cutover 完成后，应满足：
 1. 新用户文档不再要求 `ae-cli start/stop/flush`
 2. `Sessions` 不再是主导航，也不再是产品页面
 3. CLI 新正式入口变为 `init/sync/doctor`
-4. 旧 CLI 命令明确提示已下线
+4. 旧 CLI 命令不再出现在当前 CLI 二进制中
 5. 正式归因链只依赖 sessionless 路径
 6. targeted tests 通过

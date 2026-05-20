@@ -48,7 +48,7 @@ const credentialFormLoading = ref(false)
 const showCredentialDeleteConfirm = ref<number | null>(null)
 
 // LLM config
-const llmForm = ref({ model: 'gpt-4', max_tokens_per_scan: 100000, system_prompt: '', user_prompt_template: '' })
+const llmForm = ref({ model: 'gpt-4' })
 const llmRelayURL = ref('')
 const llmRelayAPIKey = ref('')
 const llmRelayAdminAPIKey = ref('')
@@ -280,14 +280,11 @@ function formatDate(date: string) {
 // LLM config functions
 function applyLLMConfig(data: any) {
   if (!data) return
-  llmRelayURL.value = data.sub2api_url || data.relay_url || ''
-  llmRelayAPIKey.value = data.sub2api_api_key || data.relay_api_key || ''
+  llmRelayURL.value = data.relay_url || ''
+  llmRelayAPIKey.value = data.relay_api_key || ''
   llmRelayAdminAPIKey.value = data.relay_admin_api_key || ''
   llmForm.value = {
     model: data.model || 'gpt-4',
-    max_tokens_per_scan: data.max_tokens_per_scan || 100000,
-    system_prompt: data.system_prompt || '',
-    user_prompt_template: data.user_prompt_template || '',
   }
   llmEnabled.value = !!data.enabled
 }
@@ -620,7 +617,7 @@ async function handleTestLDAP() {
 
     <!-- LLM Configuration -->
     <div class="mt-8 space-y-4">
-      <h2 class="text-xl font-bold text-gray-900">LLM Configuration</h2>
+      <h2 class="text-xl font-bold text-gray-900">Relay Configuration</h2>
       <div class="overflow-hidden rounded-lg bg-white shadow p-6">
         <div class="space-y-4">
           <div class="flex items-center justify-between">
@@ -652,18 +649,6 @@ async function handleTestLDAP() {
           <div>
             <label class="block text-sm font-medium text-gray-700">Model</label>
             <input v-model="llmForm.model" type="text" placeholder="gpt-4" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
-          </div>
-
-          <div>
-            <label class="block text-sm font-medium text-gray-700">System Prompt</label>
-            <textarea v-model="llmForm.system_prompt" rows="3" placeholder="Leave empty to use default" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono" />
-            <p class="mt-1 text-xs text-gray-400">Override the system prompt used during LLM scan analysis. Leave empty for default.</p>
-          </div>
-
-          <div>
-            <label class="block text-sm font-medium text-gray-700">User Prompt Template</label>
-            <textarea v-model="llmForm.user_prompt_template" rows="4" placeholder="Leave empty to use default. Use {repo_context} as placeholder." class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono" />
-            <p class="mt-1 text-xs text-gray-400">Override the user prompt template. Use <code class="bg-gray-100 px-1 rounded">{repo_context}</code> placeholder for repo content.</p>
           </div>
 
           <div v-if="llmError" class="rounded-md bg-red-50 p-3 text-sm text-red-700">{{ llmError }}</div>

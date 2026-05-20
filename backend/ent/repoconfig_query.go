@@ -12,15 +12,12 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
-	"github.com/ai-efficiency/backend/ent/aiscanresult"
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
 	"github.com/ai-efficiency/backend/ent/commitrewrite"
-	"github.com/ai-efficiency/backend/ent/efficiencymetric"
 	"github.com/ai-efficiency/backend/ent/predicate"
 	"github.com/ai-efficiency/backend/ent/prrecord"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/scmprovider"
-	"github.com/ai-efficiency/backend/ent/session"
 	"github.com/ai-efficiency/backend/ent/toolusageevent"
 	"github.com/ai-efficiency/backend/ent/webhookdeadletter"
 )
@@ -33,14 +30,11 @@ type RepoConfigQuery struct {
 	inters                 []Interceptor
 	predicates             []predicate.RepoConfig
 	withScmProvider        *ScmProviderQuery
-	withSessions           *SessionQuery
 	withCommitCheckpoints  *CommitCheckpointQuery
 	withCommitRewrites     *CommitRewriteQuery
 	withToolUsageEvents    *ToolUsageEventQuery
 	withWebhookDeadLetters *WebhookDeadLetterQuery
-	withAiScanResults      *AiScanResultQuery
 	withPrRecords          *PrRecordQuery
-	withEfficiencyMetrics  *EfficiencyMetricQuery
 	withFKs                bool
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
@@ -93,28 +87,6 @@ func (rcq *RepoConfigQuery) QueryScmProvider() *ScmProviderQuery {
 			sqlgraph.From(repoconfig.Table, repoconfig.FieldID, selector),
 			sqlgraph.To(scmprovider.Table, scmprovider.FieldID),
 			sqlgraph.Edge(sqlgraph.M2O, true, repoconfig.ScmProviderTable, repoconfig.ScmProviderColumn),
-		)
-		fromU = sqlgraph.SetNeighbors(rcq.driver.Dialect(), step)
-		return fromU, nil
-	}
-	return query
-}
-
-// QuerySessions chains the current query on the "sessions" edge.
-func (rcq *RepoConfigQuery) QuerySessions() *SessionQuery {
-	query := (&SessionClient{config: rcq.config}).Query()
-	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
-		if err := rcq.prepareQuery(ctx); err != nil {
-			return nil, err
-		}
-		selector := rcq.sqlQuery(ctx)
-		if err := selector.Err(); err != nil {
-			return nil, err
-		}
-		step := sqlgraph.NewStep(
-			sqlgraph.From(repoconfig.Table, repoconfig.FieldID, selector),
-			sqlgraph.To(session.Table, session.FieldID),
-			sqlgraph.Edge(sqlgraph.O2M, false, repoconfig.SessionsTable, repoconfig.SessionsColumn),
 		)
 		fromU = sqlgraph.SetNeighbors(rcq.driver.Dialect(), step)
 		return fromU, nil
@@ -210,28 +182,6 @@ func (rcq *RepoConfigQuery) QueryWebhookDeadLetters() *WebhookDeadLetterQuery {
 	return query
 }
 
-// QueryAiScanResults chains the current query on the "ai_scan_results" edge.
-func (rcq *RepoConfigQuery) QueryAiScanResults() *AiScanResultQuery {
-	query := (&AiScanResultClient{config: rcq.config}).Query()
-	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
-		if err := rcq.prepareQuery(ctx); err != nil {
-			return nil, err
-		}
-		selector := rcq.sqlQuery(ctx)
-		if err := selector.Err(); err != nil {
-			return nil, err
-		}
-		step := sqlgraph.NewStep(
-			sqlgraph.From(repoconfig.Table, repoconfig.FieldID, selector),
-			sqlgraph.To(aiscanresult.Table, aiscanresult.FieldID),
-			sqlgraph.Edge(sqlgraph.O2M, false, repoconfig.AiScanResultsTable, repoconfig.AiScanResultsColumn),
-		)
-		fromU = sqlgraph.SetNeighbors(rcq.driver.Dialect(), step)
-		return fromU, nil
-	}
-	return query
-}
-
 // QueryPrRecords chains the current query on the "pr_records" edge.
 func (rcq *RepoConfigQuery) QueryPrRecords() *PrRecordQuery {
 	query := (&PrRecordClient{config: rcq.config}).Query()
@@ -247,28 +197,6 @@ func (rcq *RepoConfigQuery) QueryPrRecords() *PrRecordQuery {
 			sqlgraph.From(repoconfig.Table, repoconfig.FieldID, selector),
 			sqlgraph.To(prrecord.Table, prrecord.FieldID),
 			sqlgraph.Edge(sqlgraph.O2M, false, repoconfig.PrRecordsTable, repoconfig.PrRecordsColumn),
-		)
-		fromU = sqlgraph.SetNeighbors(rcq.driver.Dialect(), step)
-		return fromU, nil
-	}
-	return query
-}
-
-// QueryEfficiencyMetrics chains the current query on the "efficiency_metrics" edge.
-func (rcq *RepoConfigQuery) QueryEfficiencyMetrics() *EfficiencyMetricQuery {
-	query := (&EfficiencyMetricClient{config: rcq.config}).Query()
-	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
-		if err := rcq.prepareQuery(ctx); err != nil {
-			return nil, err
-		}
-		selector := rcq.sqlQuery(ctx)
-		if err := selector.Err(); err != nil {
-			return nil, err
-		}
-		step := sqlgraph.NewStep(
-			sqlgraph.From(repoconfig.Table, repoconfig.FieldID, selector),
-			sqlgraph.To(efficiencymetric.Table, efficiencymetric.FieldID),
-			sqlgraph.Edge(sqlgraph.O2M, false, repoconfig.EfficiencyMetricsTable, repoconfig.EfficiencyMetricsColumn),
 		)
 		fromU = sqlgraph.SetNeighbors(rcq.driver.Dialect(), step)
 		return fromU, nil
@@ -469,14 +397,11 @@ func (rcq *RepoConfigQuery) Clone() *RepoConfigQuery {
 		inters:                 append([]Interceptor{}, rcq.inters...),
 		predicates:             append([]predicate.RepoConfig{}, rcq.predicates...),
 		withScmProvider:        rcq.withScmProvider.Clone(),
-		withSessions:           rcq.withSessions.Clone(),
 		withCommitCheckpoints:  rcq.withCommitCheckpoints.Clone(),
 		withCommitRewrites:     rcq.withCommitRewrites.Clone(),
 		withToolUsageEvents:    rcq.withToolUsageEvents.Clone(),
 		withWebhookDeadLetters: rcq.withWebhookDeadLetters.Clone(),
-		withAiScanResults:      rcq.withAiScanResults.Clone(),
 		withPrRecords:          rcq.withPrRecords.Clone(),
-		withEfficiencyMetrics:  rcq.withEfficiencyMetrics.Clone(),
 		// clone intermediate query.
 		sql:  rcq.sql.Clone(),
 		path: rcq.path,
@@ -491,17 +416,6 @@ func (rcq *RepoConfigQuery) WithScmProvider(opts ...func(*ScmProviderQuery)) *Re
 		opt(query)
 	}
 	rcq.withScmProvider = query
-	return rcq
-}
-
-// WithSessions tells the query-builder to eager-load the nodes that are connected to
-// the "sessions" edge. The optional arguments are used to configure the query builder of the edge.
-func (rcq *RepoConfigQuery) WithSessions(opts ...func(*SessionQuery)) *RepoConfigQuery {
-	query := (&SessionClient{config: rcq.config}).Query()
-	for _, opt := range opts {
-		opt(query)
-	}
-	rcq.withSessions = query
 	return rcq
 }
 
@@ -549,17 +463,6 @@ func (rcq *RepoConfigQuery) WithWebhookDeadLetters(opts ...func(*WebhookDeadLett
 	return rcq
 }
 
-// WithAiScanResults tells the query-builder to eager-load the nodes that are connected to
-// the "ai_scan_results" edge. The optional arguments are used to configure the query builder of the edge.
-func (rcq *RepoConfigQuery) WithAiScanResults(opts ...func(*AiScanResultQuery)) *RepoConfigQuery {
-	query := (&AiScanResultClient{config: rcq.config}).Query()
-	for _, opt := range opts {
-		opt(query)
-	}
-	rcq.withAiScanResults = query
-	return rcq
-}
-
 // WithPrRecords tells the query-builder to eager-load the nodes that are connected to
 // the "pr_records" edge. The optional arguments are used to configure the query builder of the edge.
 func (rcq *RepoConfigQuery) WithPrRecords(opts ...func(*PrRecordQuery)) *RepoConfigQuery {
@@ -568,17 +471,6 @@ func (rcq *RepoConfigQuery) WithPrRecords(opts ...func(*PrRecordQuery)) *RepoCon
 		opt(query)
 	}
 	rcq.withPrRecords = query
-	return rcq
-}
-
-// WithEfficiencyMetrics tells the query-builder to eager-load the nodes that are connected to
-// the "efficiency_metrics" edge. The optional arguments are used to configure the query builder of the edge.
-func (rcq *RepoConfigQuery) WithEfficiencyMetrics(opts ...func(*EfficiencyMetricQuery)) *RepoConfigQuery {
-	query := (&EfficiencyMetricClient{config: rcq.config}).Query()
-	for _, opt := range opts {
-		opt(query)
-	}
-	rcq.withEfficiencyMetrics = query
 	return rcq
 }
 
@@ -661,16 +553,13 @@ func (rcq *RepoConfigQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*
 		nodes       = []*RepoConfig{}
 		withFKs     = rcq.withFKs
 		_spec       = rcq.querySpec()
-		loadedTypes = [9]bool{
+		loadedTypes = [6]bool{
 			rcq.withScmProvider != nil,
-			rcq.withSessions != nil,
 			rcq.withCommitCheckpoints != nil,
 			rcq.withCommitRewrites != nil,
 			rcq.withToolUsageEvents != nil,
 			rcq.withWebhookDeadLetters != nil,
-			rcq.withAiScanResults != nil,
 			rcq.withPrRecords != nil,
-			rcq.withEfficiencyMetrics != nil,
 		}
 	)
 	if rcq.withScmProvider != nil {
@@ -700,13 +589,6 @@ func (rcq *RepoConfigQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*
 	if query := rcq.withScmProvider; query != nil {
 		if err := rcq.loadScmProvider(ctx, query, nodes, nil,
 			func(n *RepoConfig, e *ScmProvider) { n.Edges.ScmProvider = e }); err != nil {
-			return nil, err
-		}
-	}
-	if query := rcq.withSessions; query != nil {
-		if err := rcq.loadSessions(ctx, query, nodes,
-			func(n *RepoConfig) { n.Edges.Sessions = []*Session{} },
-			func(n *RepoConfig, e *Session) { n.Edges.Sessions = append(n.Edges.Sessions, e) }); err != nil {
 			return nil, err
 		}
 	}
@@ -742,26 +624,10 @@ func (rcq *RepoConfigQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*
 			return nil, err
 		}
 	}
-	if query := rcq.withAiScanResults; query != nil {
-		if err := rcq.loadAiScanResults(ctx, query, nodes,
-			func(n *RepoConfig) { n.Edges.AiScanResults = []*AiScanResult{} },
-			func(n *RepoConfig, e *AiScanResult) { n.Edges.AiScanResults = append(n.Edges.AiScanResults, e) }); err != nil {
-			return nil, err
-		}
-	}
 	if query := rcq.withPrRecords; query != nil {
 		if err := rcq.loadPrRecords(ctx, query, nodes,
 			func(n *RepoConfig) { n.Edges.PrRecords = []*PrRecord{} },
 			func(n *RepoConfig, e *PrRecord) { n.Edges.PrRecords = append(n.Edges.PrRecords, e) }); err != nil {
-			return nil, err
-		}
-	}
-	if query := rcq.withEfficiencyMetrics; query != nil {
-		if err := rcq.loadEfficiencyMetrics(ctx, query, nodes,
-			func(n *RepoConfig) { n.Edges.EfficiencyMetrics = []*EfficiencyMetric{} },
-			func(n *RepoConfig, e *EfficiencyMetric) {
-				n.Edges.EfficiencyMetrics = append(n.Edges.EfficiencyMetrics, e)
-			}); err != nil {
 			return nil, err
 		}
 	}
@@ -797,37 +663,6 @@ func (rcq *RepoConfigQuery) loadScmProvider(ctx context.Context, query *ScmProvi
 		for i := range nodes {
 			assign(nodes[i], n)
 		}
-	}
-	return nil
-}
-func (rcq *RepoConfigQuery) loadSessions(ctx context.Context, query *SessionQuery, nodes []*RepoConfig, init func(*RepoConfig), assign func(*RepoConfig, *Session)) error {
-	fks := make([]driver.Value, 0, len(nodes))
-	nodeids := make(map[int]*RepoConfig)
-	for i := range nodes {
-		fks = append(fks, nodes[i].ID)
-		nodeids[nodes[i].ID] = nodes[i]
-		if init != nil {
-			init(nodes[i])
-		}
-	}
-	query.withFKs = true
-	query.Where(predicate.Session(func(s *sql.Selector) {
-		s.Where(sql.InValues(s.C(repoconfig.SessionsColumn), fks...))
-	}))
-	neighbors, err := query.All(ctx)
-	if err != nil {
-		return err
-	}
-	for _, n := range neighbors {
-		fk := n.repo_config_sessions
-		if fk == nil {
-			return fmt.Errorf(`foreign-key "repo_config_sessions" is nil for node %v`, n.ID)
-		}
-		node, ok := nodeids[*fk]
-		if !ok {
-			return fmt.Errorf(`unexpected referenced foreign-key "repo_config_sessions" returned %v for node %v`, *fk, n.ID)
-		}
-		assign(node, n)
 	}
 	return nil
 }
@@ -952,37 +787,6 @@ func (rcq *RepoConfigQuery) loadWebhookDeadLetters(ctx context.Context, query *W
 	}
 	return nil
 }
-func (rcq *RepoConfigQuery) loadAiScanResults(ctx context.Context, query *AiScanResultQuery, nodes []*RepoConfig, init func(*RepoConfig), assign func(*RepoConfig, *AiScanResult)) error {
-	fks := make([]driver.Value, 0, len(nodes))
-	nodeids := make(map[int]*RepoConfig)
-	for i := range nodes {
-		fks = append(fks, nodes[i].ID)
-		nodeids[nodes[i].ID] = nodes[i]
-		if init != nil {
-			init(nodes[i])
-		}
-	}
-	query.withFKs = true
-	query.Where(predicate.AiScanResult(func(s *sql.Selector) {
-		s.Where(sql.InValues(s.C(repoconfig.AiScanResultsColumn), fks...))
-	}))
-	neighbors, err := query.All(ctx)
-	if err != nil {
-		return err
-	}
-	for _, n := range neighbors {
-		fk := n.repo_config_ai_scan_results
-		if fk == nil {
-			return fmt.Errorf(`foreign-key "repo_config_ai_scan_results" is nil for node %v`, n.ID)
-		}
-		node, ok := nodeids[*fk]
-		if !ok {
-			return fmt.Errorf(`unexpected referenced foreign-key "repo_config_ai_scan_results" returned %v for node %v`, *fk, n.ID)
-		}
-		assign(node, n)
-	}
-	return nil
-}
 func (rcq *RepoConfigQuery) loadPrRecords(ctx context.Context, query *PrRecordQuery, nodes []*RepoConfig, init func(*RepoConfig), assign func(*RepoConfig, *PrRecord)) error {
 	fks := make([]driver.Value, 0, len(nodes))
 	nodeids := make(map[int]*RepoConfig)
@@ -1009,37 +813,6 @@ func (rcq *RepoConfigQuery) loadPrRecords(ctx context.Context, query *PrRecordQu
 		node, ok := nodeids[*fk]
 		if !ok {
 			return fmt.Errorf(`unexpected referenced foreign-key "repo_config_pr_records" returned %v for node %v`, *fk, n.ID)
-		}
-		assign(node, n)
-	}
-	return nil
-}
-func (rcq *RepoConfigQuery) loadEfficiencyMetrics(ctx context.Context, query *EfficiencyMetricQuery, nodes []*RepoConfig, init func(*RepoConfig), assign func(*RepoConfig, *EfficiencyMetric)) error {
-	fks := make([]driver.Value, 0, len(nodes))
-	nodeids := make(map[int]*RepoConfig)
-	for i := range nodes {
-		fks = append(fks, nodes[i].ID)
-		nodeids[nodes[i].ID] = nodes[i]
-		if init != nil {
-			init(nodes[i])
-		}
-	}
-	query.withFKs = true
-	query.Where(predicate.EfficiencyMetric(func(s *sql.Selector) {
-		s.Where(sql.InValues(s.C(repoconfig.EfficiencyMetricsColumn), fks...))
-	}))
-	neighbors, err := query.All(ctx)
-	if err != nil {
-		return err
-	}
-	for _, n := range neighbors {
-		fk := n.repo_config_efficiency_metrics
-		if fk == nil {
-			return fmt.Errorf(`foreign-key "repo_config_efficiency_metrics" is nil for node %v`, n.ID)
-		}
-		node, ok := nodeids[*fk]
-		if !ok {
-			return fmt.Errorf(`unexpected referenced foreign-key "repo_config_efficiency_metrics" returned %v for node %v`, *fk, n.ID)
 		}
 		assign(node, n)
 	}

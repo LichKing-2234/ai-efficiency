@@ -10,17 +10,13 @@ import (
 
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
-	"github.com/ai-efficiency/backend/ent/aiscanresult"
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
 	"github.com/ai-efficiency/backend/ent/commitrewrite"
-	"github.com/ai-efficiency/backend/ent/efficiencymetric"
 	"github.com/ai-efficiency/backend/ent/prrecord"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/scmprovider"
-	"github.com/ai-efficiency/backend/ent/session"
 	"github.com/ai-efficiency/backend/ent/toolusageevent"
 	"github.com/ai-efficiency/backend/ent/webhookdeadletter"
-	"github.com/google/uuid"
 )
 
 // RepoConfigCreate is the builder for creating a RepoConfig entity.
@@ -100,20 +96,6 @@ func (rcc *RepoConfigCreate) SetWebhookSecret(s string) *RepoConfigCreate {
 func (rcc *RepoConfigCreate) SetNillableWebhookSecret(s *string) *RepoConfigCreate {
 	if s != nil {
 		rcc.SetWebhookSecret(*s)
-	}
-	return rcc
-}
-
-// SetLastScanAt sets the "last_scan_at" field.
-func (rcc *RepoConfigCreate) SetLastScanAt(t time.Time) *RepoConfigCreate {
-	rcc.mutation.SetLastScanAt(t)
-	return rcc
-}
-
-// SetNillableLastScanAt sets the "last_scan_at" field if the given value is not nil.
-func (rcc *RepoConfigCreate) SetNillableLastScanAt(t *time.Time) *RepoConfigCreate {
-	if t != nil {
-		rcc.SetLastScanAt(*t)
 	}
 	return rcc
 }
@@ -202,12 +184,6 @@ func (rcc *RepoConfigCreate) SetNillableUpdatedAt(t *time.Time) *RepoConfigCreat
 	return rcc
 }
 
-// SetScanPromptOverride sets the "scan_prompt_override" field.
-func (rcc *RepoConfigCreate) SetScanPromptOverride(m map[string]string) *RepoConfigCreate {
-	rcc.mutation.SetScanPromptOverride(m)
-	return rcc
-}
-
 // SetScmProviderID sets the "scm_provider" edge to the ScmProvider entity by ID.
 func (rcc *RepoConfigCreate) SetScmProviderID(id int) *RepoConfigCreate {
 	rcc.mutation.SetScmProviderID(id)
@@ -225,21 +201,6 @@ func (rcc *RepoConfigCreate) SetNillableScmProviderID(id *int) *RepoConfigCreate
 // SetScmProvider sets the "scm_provider" edge to the ScmProvider entity.
 func (rcc *RepoConfigCreate) SetScmProvider(s *ScmProvider) *RepoConfigCreate {
 	return rcc.SetScmProviderID(s.ID)
-}
-
-// AddSessionIDs adds the "sessions" edge to the Session entity by IDs.
-func (rcc *RepoConfigCreate) AddSessionIDs(ids ...uuid.UUID) *RepoConfigCreate {
-	rcc.mutation.AddSessionIDs(ids...)
-	return rcc
-}
-
-// AddSessions adds the "sessions" edges to the Session entity.
-func (rcc *RepoConfigCreate) AddSessions(s ...*Session) *RepoConfigCreate {
-	ids := make([]uuid.UUID, len(s))
-	for i := range s {
-		ids[i] = s[i].ID
-	}
-	return rcc.AddSessionIDs(ids...)
 }
 
 // AddCommitCheckpointIDs adds the "commit_checkpoints" edge to the CommitCheckpoint entity by IDs.
@@ -302,21 +263,6 @@ func (rcc *RepoConfigCreate) AddWebhookDeadLetters(w ...*WebhookDeadLetter) *Rep
 	return rcc.AddWebhookDeadLetterIDs(ids...)
 }
 
-// AddAiScanResultIDs adds the "ai_scan_results" edge to the AiScanResult entity by IDs.
-func (rcc *RepoConfigCreate) AddAiScanResultIDs(ids ...int) *RepoConfigCreate {
-	rcc.mutation.AddAiScanResultIDs(ids...)
-	return rcc
-}
-
-// AddAiScanResults adds the "ai_scan_results" edges to the AiScanResult entity.
-func (rcc *RepoConfigCreate) AddAiScanResults(a ...*AiScanResult) *RepoConfigCreate {
-	ids := make([]int, len(a))
-	for i := range a {
-		ids[i] = a[i].ID
-	}
-	return rcc.AddAiScanResultIDs(ids...)
-}
-
 // AddPrRecordIDs adds the "pr_records" edge to the PrRecord entity by IDs.
 func (rcc *RepoConfigCreate) AddPrRecordIDs(ids ...int) *RepoConfigCreate {
 	rcc.mutation.AddPrRecordIDs(ids...)
@@ -330,21 +276,6 @@ func (rcc *RepoConfigCreate) AddPrRecords(p ...*PrRecord) *RepoConfigCreate {
 		ids[i] = p[i].ID
 	}
 	return rcc.AddPrRecordIDs(ids...)
-}
-
-// AddEfficiencyMetricIDs adds the "efficiency_metrics" edge to the EfficiencyMetric entity by IDs.
-func (rcc *RepoConfigCreate) AddEfficiencyMetricIDs(ids ...int) *RepoConfigCreate {
-	rcc.mutation.AddEfficiencyMetricIDs(ids...)
-	return rcc
-}
-
-// AddEfficiencyMetrics adds the "efficiency_metrics" edges to the EfficiencyMetric entity.
-func (rcc *RepoConfigCreate) AddEfficiencyMetrics(e ...*EfficiencyMetric) *RepoConfigCreate {
-	ids := make([]int, len(e))
-	for i := range e {
-		ids[i] = e[i].ID
-	}
-	return rcc.AddEfficiencyMetricIDs(ids...)
 }
 
 // Mutation returns the RepoConfigMutation object of the builder.
@@ -506,10 +437,6 @@ func (rcc *RepoConfigCreate) createSpec() (*RepoConfig, *sqlgraph.CreateSpec) {
 		_spec.SetField(repoconfig.FieldWebhookSecret, field.TypeString, value)
 		_node.WebhookSecret = &value
 	}
-	if value, ok := rcc.mutation.LastScanAt(); ok {
-		_spec.SetField(repoconfig.FieldLastScanAt, field.TypeTime, value)
-		_node.LastScanAt = &value
-	}
 	if value, ok := rcc.mutation.GroupID(); ok {
 		_spec.SetField(repoconfig.FieldGroupID, field.TypeString, value)
 		_node.GroupID = &value
@@ -534,10 +461,6 @@ func (rcc *RepoConfigCreate) createSpec() (*RepoConfig, *sqlgraph.CreateSpec) {
 		_spec.SetField(repoconfig.FieldUpdatedAt, field.TypeTime, value)
 		_node.UpdatedAt = value
 	}
-	if value, ok := rcc.mutation.ScanPromptOverride(); ok {
-		_spec.SetField(repoconfig.FieldScanPromptOverride, field.TypeJSON, value)
-		_node.ScanPromptOverride = value
-	}
 	if nodes := rcc.mutation.ScmProviderIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.M2O,
@@ -553,22 +476,6 @@ func (rcc *RepoConfigCreate) createSpec() (*RepoConfig, *sqlgraph.CreateSpec) {
 			edge.Target.Nodes = append(edge.Target.Nodes, k)
 		}
 		_node.scm_provider_repo_configs = &nodes[0]
-		_spec.Edges = append(_spec.Edges, edge)
-	}
-	if nodes := rcc.mutation.SessionsIDs(); len(nodes) > 0 {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   repoconfig.SessionsTable,
-			Columns: []string{repoconfig.SessionsColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(session.FieldID, field.TypeUUID),
-			},
-		}
-		for _, k := range nodes {
-			edge.Target.Nodes = append(edge.Target.Nodes, k)
-		}
 		_spec.Edges = append(_spec.Edges, edge)
 	}
 	if nodes := rcc.mutation.CommitCheckpointsIDs(); len(nodes) > 0 {
@@ -635,22 +542,6 @@ func (rcc *RepoConfigCreate) createSpec() (*RepoConfig, *sqlgraph.CreateSpec) {
 		}
 		_spec.Edges = append(_spec.Edges, edge)
 	}
-	if nodes := rcc.mutation.AiScanResultsIDs(); len(nodes) > 0 {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   repoconfig.AiScanResultsTable,
-			Columns: []string{repoconfig.AiScanResultsColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(aiscanresult.FieldID, field.TypeInt),
-			},
-		}
-		for _, k := range nodes {
-			edge.Target.Nodes = append(edge.Target.Nodes, k)
-		}
-		_spec.Edges = append(_spec.Edges, edge)
-	}
 	if nodes := rcc.mutation.PrRecordsIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.O2M,
@@ -660,22 +551,6 @@ func (rcc *RepoConfigCreate) createSpec() (*RepoConfig, *sqlgraph.CreateSpec) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(prrecord.FieldID, field.TypeInt),
-			},
-		}
-		for _, k := range nodes {
-			edge.Target.Nodes = append(edge.Target.Nodes, k)
-		}
-		_spec.Edges = append(_spec.Edges, edge)
-	}
-	if nodes := rcc.mutation.EfficiencyMetricsIDs(); len(nodes) > 0 {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   repoconfig.EfficiencyMetricsTable,
-			Columns: []string{repoconfig.EfficiencyMetricsColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(efficiencymetric.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {

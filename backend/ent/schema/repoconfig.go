@@ -40,9 +40,6 @@ func (RepoConfig) Fields() []entgo.Field {
 			Optional().
 			Nillable().
 			Sensitive(),
-		field.Time("last_scan_at").
-			Optional().
-			Nillable(),
 		field.String("group_id").
 			Optional().
 			Nillable(),
@@ -61,8 +58,6 @@ func (RepoConfig) Fields() []entgo.Field {
 		field.Time("updated_at").
 			Default(timeNow).
 			UpdateDefault(timeNow),
-		field.JSON("scan_prompt_override", map[string]string{}).
-			Optional(),
 	}
 }
 
@@ -72,14 +67,11 @@ func (RepoConfig) Edges() []entgo.Edge {
 		edge.From("scm_provider", ScmProvider.Type).
 			Ref("repo_configs").
 			Unique(),
-		edge.To("sessions", Session.Type),
 		edge.To("commit_checkpoints", CommitCheckpoint.Type),
 		edge.To("commit_rewrites", CommitRewrite.Type),
 		edge.To("tool_usage_events", ToolUsageEvent.Type),
 		edge.To("webhook_dead_letters", WebhookDeadLetter.Type),
-		edge.To("ai_scan_results", AiScanResult.Type),
 		edge.To("pr_records", PrRecord.Type),
-		edge.To("efficiency_metrics", EfficiencyMetric.Type),
 	}
 }
 
