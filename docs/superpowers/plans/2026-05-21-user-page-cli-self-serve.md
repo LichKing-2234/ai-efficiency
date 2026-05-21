@@ -865,7 +865,7 @@ git commit -m "feat(frontend): add user setup page"
 - Modify: `docs/architecture.md`
 - Modify: `AGENTS.md` only if the implementation introduces a durable repo-level working rule (do not edit if no new rule is created)
 
-- [ ] **Step 1: Write the failing documentation expectations as a checklist**
+- [x] **Step 1: Write the failing documentation expectations as a checklist**
 
 ```md
 - `docs/architecture.md` must mention `/user` as the ordinary developer self-serve page.
@@ -873,7 +873,7 @@ git commit -m "feat(frontend): add user setup page"
 - Runtime notes should mention that ordinary users can manage provider-aware CLI setup and managed keys from the embedded SPA.
 ```
 
-- [ ] **Step 2: Update `docs/architecture.md`**
+- [x] **Step 2: Update `docs/architecture.md`**
 
 ```md
 | Views | `frontend/src/views` | Dashboard, repos, events, oauth, user self-serve, and admin/settings pages |
@@ -881,7 +881,7 @@ git commit -m "feat(frontend): add user setup page"
 
 Add a short runtime note near the frontend/backend interaction section explaining that the embedded SPA now exposes a `/user` surface for install/login/discover guidance plus provider-scoped managed-key self-serve, while the CLI-facing `/api/v1/providers` contract remains separate.
 
-- [ ] **Step 3: Run a lightweight verification pass**
+- [x] **Step 3: Run a lightweight verification pass**
 
 Run:
 

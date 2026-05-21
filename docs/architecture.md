@@ -53,6 +53,7 @@ flowchart LR
 - The backend is the central orchestration point for auth, repo configuration, attribution, provider management, and SCM/webhook workflows.
 - Backend runtime relay consumers currently resolve their primary relay instance from `relay.*` config first, and fall back to the enabled primary `RelayProvider` database record when static relay URL config is absent.
 - The frontend is built separately and embedded into the backend binary during Docker build, so the backend process serves both API routes and the SPA entrypoint in deployed images.
+- The embedded SPA now exposes a regular-user `/user` surface for profile summary, provider-aware CLI install/login/discover guidance, managed-key self-serve, and lightweight pasted-output review. This browser surface is distinct from the CLI-facing `/api/v1/providers` contract used by `ae-cli discover`.
 - Official production deployment now has two supported paths: Docker Compose and Linux systemd.
 - The business entrypoint remains the backend service that also serves the frontend bundle.
 - Docker/Compose mode now runs the backend from a persistent runtime binary under the deployment state directory and updates that runtime binary directly instead of using an updater sidecar.
@@ -251,7 +252,7 @@ flowchart LR
 
 | Area | Paths | Responsibility |
 | --- | --- | --- |
-| Views | `frontend/src/views` | Dashboard, repos, oauth, and admin/settings pages |
+| Views | `frontend/src/views` | Dashboard, repos, events, oauth, user self-serve, and admin/settings pages |
 | Data access | `frontend/src/api`, `frontend/src/stores` | Backend API clients, state management, request orchestration |
 | App shell | `frontend/src/components`, `frontend/src/router` | Layout, navigation, route composition |
 
