@@ -608,7 +608,7 @@ backend/postgres/redis are healthy
 /events loads with 24h summary cards and event rows
 ```
 
-- [ ] **Step 4: Commit docs and verification adjustments**
+- [x] **Step 4: Commit docs and verification adjustments**
 
 ```bash
 git add docs/architecture.md
