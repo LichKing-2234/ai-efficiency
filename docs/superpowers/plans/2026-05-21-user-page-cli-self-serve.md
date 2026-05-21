@@ -346,7 +346,7 @@ ok      github.com/ai-efficiency/backend/internal/usersetup
 ok      github.com/ai-efficiency/backend/internal/relay
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/internal/usersetup/service.go backend/internal/usersetup/service_test.go
@@ -362,7 +362,7 @@ git commit -m "feat(backend): add user setup service"
 - Test: `backend/internal/handler/user_setup_test.go`
 - Modify: `backend/internal/handler/router.go`
 
-- [ ] **Step 1: Write failing handler tests for list, create, and regenerate**
+- [x] **Step 1: Write failing handler tests for list, create, and regenerate**
 
 ```go
 func TestUserProvidersRequiresAuth(t *testing.T) {
@@ -473,7 +473,7 @@ func TestRegenerateManagedKeyTranslatesProviderIDAndReturnsSecret(t *testing.T) 
 }
 ```
 
-- [ ] **Step 2: Run the handler tests to verify they fail**
+- [x] **Step 2: Run the handler tests to verify they fail**
 
 Run:
 
@@ -488,7 +488,7 @@ FAIL    github.com/ai-efficiency/backend/internal/handler
 ... undefined: NewUserSetupHandler
 ```
 
-- [ ] **Step 3: Implement the handler and wire the routes**
+- [x] **Step 3: Implement the handler and wire the routes**
 
 ```go
 type userSetupService interface {
@@ -536,7 +536,7 @@ userGroup := protected.Group("/user")
 }
 ```
 
-- [ ] **Step 4: Run the handler tests and a router sweep**
+- [x] **Step 4: Run the handler tests and a router sweep**
 
 Run:
 

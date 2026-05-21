@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
@@ -73,6 +74,14 @@ func (h *ProviderHandler) invalidateCache() {
 	h.mu.Lock()
 	h.providerCache = make(map[int]relay.Provider)
 	h.mu.Unlock()
+}
+
+func (h *ProviderHandler) Resolve(ctx context.Context, providerID int) (relay.Provider, error) {
+	p, err := h.entClient.RelayProvider.Get(ctx, providerID)
+	if err != nil {
+		return nil, err
+	}
+	return h.getOrCreateRelayProvider(p), nil
 }
 
 type providerResponse struct {

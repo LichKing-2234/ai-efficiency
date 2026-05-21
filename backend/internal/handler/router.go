@@ -6,6 +6,7 @@ import (
 	"github.com/ai-efficiency/backend/internal/oauth"
 	"github.com/ai-efficiency/backend/internal/repo"
 	"github.com/ai-efficiency/backend/internal/toolusage"
+	"github.com/ai-efficiency/backend/internal/usersetup"
 	"github.com/ai-efficiency/backend/internal/web"
 	"github.com/ai-efficiency/backend/internal/webhook"
 	"github.com/gin-gonic/gin"
@@ -69,6 +70,7 @@ func SetupRouter(
 	efficiencyHandler := NewEfficiencyHandler(entClient)
 	toolUsageHandler := NewToolUsageHandler(toolusage.NewService(entClient))
 	eventsHandler := NewEventsHandler(toolusage.NewQueryService(entClient))
+	userSetupHandler := NewUserSetupHandler(usersetup.NewService(entClient, providerHandler))
 
 	api := r.Group("/api/v1")
 
@@ -153,6 +155,13 @@ func SetupRouter(
 		eventsGroup.GET("/summary", eventsHandler.Summary)
 		eventsGroup.GET("", eventsHandler.List)
 		eventsGroup.GET("/:id", eventsHandler.Get)
+	}
+
+	userGroup := protected.Group("/user")
+	{
+		userGroup.GET("/providers", userSetupHandler.ListProviders)
+		userGroup.POST("/providers/:id/managed-key", userSetupHandler.CreateManagedKey)
+		userGroup.POST("/providers/:id/managed-key/regenerate", userSetupHandler.RegenerateManagedKey)
 	}
 
 	if checkpointHandler != nil {
