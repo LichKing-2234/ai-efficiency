@@ -161,3 +161,81 @@ export interface DeploymentStatus {
 export interface ApplyUpdateRequest {
   target_version: string
 }
+
+export interface ToolUsageEventSummary {
+  total_events: number
+  bound_events: number
+  unbound_events: number
+  tool_counts: Array<{
+    tool: string
+    count: number
+  }>
+}
+
+export interface ToolUsageEventRow {
+  id: number
+  tool: string
+  repo_id: number
+  repo_name: string
+  username?: string
+  tool_session_id: string
+  tool_event_id?: string | null
+  dedupe_key: string
+  observed_end_at: string
+  request_count: number
+  input_tokens: number
+  output_tokens: number
+  cached_input_tokens: number
+  reasoning_tokens: number
+  credit_usage: number
+  commit_checkpoint_id?: number | null
+  commit_sha?: string | null
+  source_basename: string
+  binding_status: 'bound' | 'unbound'
+}
+
+export interface MatchedPR {
+  pr_record_id: number
+  scm_pr_id: number
+  title: string
+  status: string
+  scm_pr_url: string
+}
+
+export interface ToolUsageEventDetail {
+  id: number
+  tool: string
+  repo_id: number
+  repo_name: string
+  user_id: number
+  username?: string
+  workspace_id: string
+  tool_session_id: string
+  tool_event_id?: string | null
+  dedupe_key: string
+  observed_start_at: string
+  observed_end_at: string
+  request_count: number
+  input_tokens: number
+  output_tokens: number
+  cached_input_tokens: number
+  reasoning_tokens: number
+  credit_usage: number
+  context_usage_pct: number
+  commit_checkpoint_id?: number | null
+  commit_sha?: string | null
+  checkpoint_captured_at?: string | null
+  source_basename: string
+  raw_source_path?: string
+  raw_source_locator?: string
+  raw_payload?: Record<string, unknown>
+  binding_status: 'bound' | 'unbound'
+  matched_prs: MatchedPR[]
+}
+
+export interface ToolUsageEventListResponse {
+  total: number
+  page: number
+  page_size: number
+  items: ToolUsageEventRow[]
+}

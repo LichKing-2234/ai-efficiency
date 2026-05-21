@@ -55,6 +55,7 @@ describe('AppSidebar', () => {
     const linkTexts = links.map((l) => l.text())
 
     expect(linkTexts).toContain('Dashboard')
+    expect(linkTexts).toContain('Events')
     expect(linkTexts).toContain('Repos')
     expect(linkTexts).not.toContain('Sessions')
     expect(linkTexts).not.toContain('Settings')
