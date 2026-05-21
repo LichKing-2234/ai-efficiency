@@ -228,6 +228,8 @@ flowchart LR
   `collector` is only triggered inside git-hook handling (`post-commit` / `post-rewrite`) and writes hook-time `Snapshot` data into checkpoint `agent_snapshot`. Before a new checkpoint or rewrite is uploaded, the current code now replays any queued workspace hook events left behind by earlier fail-open uploads, and `ae-cli sync` plus hidden `ae-cli hook attribution-sync` do the same replay before scanning local artifacts. `attributionlocal` scanning remains the only source that produces `tool_usage_events` for PR/commit aggregation.
 - Current formal frontend surface:
   repo detail pages show PR usage summaries and commit usage details directly, rather than user-facing attribution status controls.
+- Current global event surface:
+  `/events` is a protected top-level page for browsing backend-ingested `tool_usage_events`. It shows summary cards plus event-level rows, scopes regular users to their own events, and only exposes full raw source/path/payload detail to admins.
 - Remaining direction:
   richer reporting surfaces and any later cleanup of historical attribution-only fields/tables that are no longer product-primary
 

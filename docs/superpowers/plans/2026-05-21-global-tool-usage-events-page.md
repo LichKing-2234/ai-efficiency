@@ -10,6 +10,10 @@
 
 **Spec:** `docs/superpowers/specs/2026-05-21-global-tool-usage-events-page-design.md`
 
+**Status:** Implementation complete and automated verification passed; one manual browser-level verification step remains open.
+
+**Known Remaining Gaps:** Task 5 Step 3 is still unchecked. The rebuilt local backend serves `/events` with `HTTP 200`, but the browser UI was not fully inspected end-to-end in this execution log.
+
 ---
 
 ## File Structure
@@ -60,7 +64,7 @@
 - Create: `backend/internal/toolusage/query.go`
 - Test: `backend/internal/toolusage/query_test.go`
 
-- [ ] **Step 1: Write the failing query-layer tests**
+- [x] **Step 1: Write the failing query-layer tests**
 
 ```go
 func TestListEventsScopesRegularUserToOwnRows(t *testing.T) {
@@ -137,7 +141,7 @@ func TestGetEventDetailRedactsRawFieldsForRegularUser(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run query tests to verify they fail**
+- [x] **Step 2: Run query tests to verify they fail**
 
 Run:
 
@@ -152,7 +156,7 @@ FAIL    github.com/ai-efficiency/backend/internal/toolusage
 ... undefined: toolusage.NewQueryService
 ```
 
-- [ ] **Step 3: Implement the query service and DTOs**
+- [x] **Step 3: Implement the query service and DTOs**
 
 ```go
 type SummaryResponse struct {
@@ -201,7 +205,7 @@ func (s *QueryService) GetEventDetail(ctx context.Context, req GetEventDetailReq
 }
 ```
 
-- [ ] **Step 4: Run backend query tests and a package sweep**
+- [x] **Step 4: Run backend query tests and a package sweep**
 
 Run:
 
@@ -232,7 +236,7 @@ git commit -m "feat(backend): add tool usage event query service"
 - Test: `backend/internal/handler/events_test.go`
 - Modify: `backend/internal/handler/router.go`
 
-- [ ] **Step 1: Write failing handler tests for summary, list, and detail**
+- [x] **Step 1: Write failing handler tests for summary, list, and detail**
 
 ```go
 func TestEventsListRequiresAuthAndScopesNonAdmin(t *testing.T) {
@@ -246,7 +250,7 @@ func TestEventDetailReturnsRawFieldsOnlyForAdmin(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run handler tests to verify they fail**
+- [x] **Step 2: Run handler tests to verify they fail**
 
 Run:
 
@@ -261,7 +265,7 @@ FAIL    github.com/ai-efficiency/backend/internal/handler
 ... undefined: NewEventsHandler
 ```
 
-- [ ] **Step 3: Implement events handler and wire routes**
+- [x] **Step 3: Implement events handler and wire routes**
 
 ```go
 type EventsHandler struct {
@@ -296,7 +300,7 @@ eventsGroup := protected.Group("/events")
 }
 ```
 
-- [ ] **Step 4: Run handler tests and targeted backend integration tests**
+- [x] **Step 4: Run handler tests and targeted backend integration tests**
 
 Run:
 
@@ -328,7 +332,7 @@ git commit -m "feat(backend): add events read APIs"
 - Modify: `frontend/src/router/index.ts`
 - Modify: `frontend/src/components/AppSidebar.vue`
 
-- [ ] **Step 1: Write failing frontend API and route tests**
+- [x] **Step 1: Write failing frontend API and route tests**
 
 ```ts
 it('listEvents calls GET /events with query params', async () => {
@@ -343,7 +347,7 @@ it('registers the /events route', async () => {
 })
 ```
 
-- [ ] **Step 2: Run the failing frontend tests**
+- [x] **Step 2: Run the failing frontend tests**
 
 Run:
 
@@ -358,7 +362,7 @@ FAIL  src/__tests__/api-events.test.ts
 Error: Cannot find module '@/api/events'
 ```
 
-- [ ] **Step 3: Implement DTOs, API helpers, route, and nav entry**
+- [x] **Step 3: Implement DTOs, API helpers, route, and nav entry**
 
 ```ts
 export interface ToolUsageEventRow {
@@ -406,7 +410,7 @@ Router entry:
 }
 ```
 
-- [ ] **Step 4: Run the API/route tests**
+- [x] **Step 4: Run the API/route tests**
 
 Run:
 
@@ -436,7 +440,7 @@ git commit -m "feat(frontend): add events route and API client"
 - Create: `frontend/src/views/events/EventsView.vue`
 - Create: `frontend/src/__tests__/events-view.test.ts`
 
-- [ ] **Step 1: Write failing view tests**
+- [x] **Step 1: Write failing view tests**
 
 ```ts
 it('loads summary and event rows on mount with a 24h default range', async () => {
@@ -458,7 +462,7 @@ it('opens the detail drawer and hides raw payload for non-admin', async () => {
 })
 ```
 
-- [ ] **Step 2: Run the failing page tests**
+- [x] **Step 2: Run the failing page tests**
 
 Run:
 
@@ -473,7 +477,7 @@ FAIL  src/__tests__/events-view.test.ts
 Error: Cannot find module '@/views/events/EventsView.vue'
 ```
 
-- [ ] **Step 3: Implement the `/events` page**
+- [x] **Step 3: Implement the `/events` page**
 
 ```vue
 <script setup lang="ts">
@@ -533,7 +537,7 @@ Template sections:
 </table>
 ```
 
-- [ ] **Step 4: Run page tests and the focused frontend suite**
+- [x] **Step 4: Run page tests and the focused frontend suite**
 
 Run:
 
@@ -563,7 +567,7 @@ git commit -m "feat(frontend): add global events page"
 **Files:**
 - Modify: `docs/architecture.md`
 
-- [ ] **Step 1: Update architecture doc for the `/events` surface**
+- [x] **Step 1: Update architecture doc for the `/events` surface**
 
 ```md
 - Add `/events` as a new protected global page for browsing backend-ingested `tool_usage_events`.
@@ -571,7 +575,7 @@ git commit -m "feat(frontend): add global events page"
 - Clarify that raw event fields are admin-only while regular users are scoped to their own rows.
 ```
 
-- [ ] **Step 2: Run end-to-end targeted verification**
+- [x] **Step 2: Run end-to-end targeted verification**
 
 Run:
 
