@@ -122,6 +122,11 @@ describe('Router Guards', () => {
     expect(eventsRoute?.path).toBe('/events')
   })
 
+  it('includes user route in the router', () => {
+    const userRoute = router.getRoutes().find((r) => r.name === 'User')
+    expect(userRoute?.path).toBe('/user')
+  })
+
   it('redirects authenticated users away from login using a safe redirect target', async () => {
     const { getMe: mockGetMe } = await import('@/api/auth')
     ;(mockGetMe as any).mockResolvedValue({

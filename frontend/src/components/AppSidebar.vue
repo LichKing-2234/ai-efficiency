@@ -72,10 +72,10 @@ function handleLogout() {
 
     <div class="border-t border-gray-700 p-4">
       <div class="flex items-center justify-between">
-        <div class="text-sm">
+        <RouterLink to="/user" data-testid="sidebar-account-link" class="min-w-0 flex-1 text-sm rounded-md px-1 py-1 hover:bg-gray-800">
           <p class="font-medium">{{ auth.user?.username ?? 'User' }}</p>
           <p class="text-xs text-gray-400">{{ auth.user?.role ?? '' }}</p>
-        </div>
+        </RouterLink>
         <button
           class="rounded p-1.5 text-gray-400 hover:bg-gray-800 hover:text-white"
           title="Logout"

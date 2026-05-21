@@ -239,3 +239,45 @@ export interface ToolUsageEventListResponse {
   page_size: number
   items: ToolUsageEventRow[]
 }
+
+export interface ManagedKeySummary {
+  state: 'missing' | 'existing_hidden'
+  api_key_id?: number
+  name?: string
+  status?: string
+  created_at?: string | null
+  last_used_at?: string | null
+}
+
+export interface UserProviderSummary {
+  id: number
+  name: string
+  display_name: string
+  base_url: string
+  default_model: string
+  is_primary: boolean
+  managed_key: ManagedKeySummary
+}
+
+export interface UserProvidersResponse {
+  providers: UserProviderSummary[]
+  message?: string
+}
+
+export interface ManagedKeyMutationResult {
+  api_key_id: number
+  name: string
+  status: string
+  secret: string
+}
+
+export interface VerifyReviewItem {
+  status: 'looks_good' | 'needs_attention' | 'cannot_determine'
+  message: string
+}
+
+export interface VerifyReviewSummary {
+  version: VerifyReviewItem
+  discover: VerifyReviewItem
+  doctor: VerifyReviewItem
+}

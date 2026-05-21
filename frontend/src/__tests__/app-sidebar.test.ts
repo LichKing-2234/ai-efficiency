@@ -16,6 +16,7 @@ function createTestRouter(initialPath = '/') {
     routes: [
       { path: '/', component: { template: '<div>Dashboard</div>' } },
       { path: '/repos', component: { template: '<div>Repos</div>' } },
+      { path: '/user', component: { template: '<div>User</div>' } },
       { path: '/sessions', component: { template: '<div>Sessions</div>' } },
       { path: '/settings', component: { template: '<div>Settings</div>' } },
       { path: '/login', component: { template: '<div>Login</div>' } },
@@ -141,6 +142,28 @@ describe('AppSidebar', () => {
 
     expect(wrapper.text()).toContain('testuser')
     expect(wrapper.text()).toContain('admin')
+  })
+
+  it('navigates to /user when clicking the footer account area', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+
+    const router = createTestRouter()
+    await router.push('/')
+    await router.isReady()
+
+    const { useAuthStore } = await import('@/stores/auth')
+    const auth = useAuthStore(pinia)
+    auth.user = { id: 1, username: 'testuser', email: 'test@example.com', role: 'user', auth_source: 'sso' }
+
+    const wrapper = mount(AppSidebar, {
+      global: { plugins: [pinia, router] },
+    })
+
+    await wrapper.get('[data-testid="sidebar-account-link"]').trigger('click')
+    await flushPromises()
+
+    expect(router.currentRoute.value.path).toBe('/user')
   })
 
   // --- New tests for uncovered lines (handleLogout) ---

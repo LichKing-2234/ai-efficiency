@@ -18,6 +18,7 @@ import { listPRs, getPR, syncPRs, settlePR, refreshPRUsage } from '@/api/pr'
 import { getDashboard } from '@/api/efficiency'
 import { getLLMConfig, updateLLMConfig, testLLMConnection } from '@/api/settings'
 import { getDeploymentStatus, checkForUpdate, applyUpdate, rollbackUpdate, restartDeployment } from '@/api/deployment'
+import { getUserProviders, createManagedKey, regenerateManagedKey } from '@/api/user'
 
 const mockClient = client as unknown as {
   get: ReturnType<typeof vi.fn>
@@ -155,5 +156,21 @@ describe('deployment API', () => {
     mockClient.post.mockResolvedValue({ data: { data: { phase: 'restart_requested' } } })
     await restartDeployment()
     expect(mockClient.post).toHaveBeenCalledWith('/settings/deployment/restart')
+  })
+})
+
+describe('user API aggregate smoke', () => {
+  it('calls user setup endpoints', async () => {
+    mockClient.get.mockResolvedValue({ data: { data: { providers: [] } } })
+    mockClient.post.mockResolvedValue({ data: { data: { api_key_id: 1, name: 'ae-cli-auto', status: 'active', secret: 'sk-test' } } })
+
+    await getUserProviders()
+    expect(mockClient.get).toHaveBeenCalledWith('/user/providers')
+
+    await createManagedKey(7)
+    expect(mockClient.post).toHaveBeenCalledWith('/user/providers/7/managed-key')
+
+    await regenerateManagedKey(7)
+    expect(mockClient.post).toHaveBeenCalledWith('/user/providers/7/managed-key/regenerate')
   })
 })

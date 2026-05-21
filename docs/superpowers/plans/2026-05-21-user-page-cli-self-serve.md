@@ -569,7 +569,7 @@ git commit -m "feat(backend): add user setup endpoints"
 - Modify: `frontend/src/types/index.ts`
 - Modify: `frontend/src/__tests__/api-modules.test.ts`
 
-- [ ] **Step 1: Write failing API and utility tests**
+- [x] **Step 1: Write failing API and utility tests**
 
 ```ts
 it('getUserProviders calls GET /user/providers', async () => {
@@ -601,12 +601,12 @@ it('buildDiscoverCommand includes the selected provider and current origin', () 
 })
 ```
 
-- [ ] **Step 2: Run the frontend unit tests to verify they fail**
+- [x] **Step 2: Run the frontend unit tests to verify they fail**
 
 Run:
 
 ```bash
-cd frontend && pnpm test -- --run src/__tests__/api-user.test.ts src/__tests__/user-setup-review.test.ts
+cd frontend && pnpm test src/__tests__/api-user.test.ts src/__tests__/user-setup-review.test.ts
 ```
 
 Expected:
@@ -616,7 +616,7 @@ FAIL  src/__tests__/api-user.test.ts
 Error: Failed to resolve import "@/api/user"
 ```
 
-- [ ] **Step 3: Implement DTOs, API helpers, and pure review functions**
+- [x] **Step 3: Implement DTOs, API helpers, and pure review functions**
 
 ```ts
 export interface ManagedKeySummary {
@@ -674,12 +674,12 @@ export function buildDiscoverCommand(origin: string, providerName: string) {
 }
 ```
 
-- [ ] **Step 4: Run the focused tests and the aggregate API smoke test**
+- [x] **Step 4: Run the focused tests and the aggregate API smoke test**
 
 Run:
 
 ```bash
-cd frontend && pnpm test -- --run src/__tests__/api-user.test.ts src/__tests__/user-setup-review.test.ts src/__tests__/api-modules.test.ts
+cd frontend && pnpm test src/__tests__/api-user.test.ts src/__tests__/user-setup-review.test.ts src/__tests__/api-modules.test.ts
 ```
 
 Expected:
@@ -709,7 +709,7 @@ git commit -m "feat(frontend): add user setup client utilities"
 - Modify: `frontend/src/__tests__/router.test.ts`
 - Modify: `frontend/src/__tests__/app-sidebar.test.ts`
 
-- [ ] **Step 1: Write failing route, sidebar, and page tests**
+- [x] **Step 1: Write failing route, sidebar, and page tests**
 
 ```ts
 it('includes /user in the application router', () => {
@@ -749,12 +749,12 @@ it('shows regenerate confirmation for existing hidden keys', async () => {
 })
 ```
 
-- [ ] **Step 2: Run the frontend tests to verify they fail**
+- [x] **Step 2: Run the frontend tests to verify they fail**
 
 Run:
 
 ```bash
-cd frontend && pnpm test -- --run src/__tests__/router.test.ts src/__tests__/app-sidebar.test.ts src/__tests__/user-view.test.ts
+cd frontend && pnpm test src/__tests__/router.test.ts src/__tests__/app-sidebar.test.ts src/__tests__/user-view.test.ts
 ```
 
 Expected:
@@ -764,7 +764,7 @@ FAIL  src/__tests__/user-view.test.ts
 Error: Failed to resolve import "@/views/UserView.vue"
 ```
 
-- [ ] **Step 3: Implement the route, sidebar entry, and `UserView`**
+- [x] **Step 3: Implement the route, sidebar entry, and `UserView`**
 
 ```ts
 {
@@ -832,12 +832,12 @@ The rendered page must include:
 5. Verify textareas for version / discover dry-run / doctor and a `Review` button
 6. A short FAQ footer
 
-- [ ] **Step 4: Run the focused frontend tests and full unit suite**
+- [x] **Step 4: Run the focused frontend tests and full unit suite**
 
 Run:
 
 ```bash
-cd frontend && pnpm test -- --run src/__tests__/router.test.ts src/__tests__/app-sidebar.test.ts src/__tests__/user-view.test.ts && pnpm test
+cd frontend && pnpm test src/__tests__/router.test.ts src/__tests__/app-sidebar.test.ts src/__tests__/user-view.test.ts && pnpm test
 ```
 
 Expected:
