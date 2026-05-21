@@ -12,11 +12,11 @@
 
 ## Spec Relationship
 
-- 本文定义一个新的登录后普通用户页面 `/user`，用于承载账户信息、CLI 安装/登录/配置引导，以及用户自己的 managed API key 自助能力。
+- 本文定义一个新的登录后普通用户页面 `/user`，用于承载账户信息、CLI 安装/登录/配置引导，以及用户自己的 provider credential 自助能力。
 - 它**不改变** `ae-cli install.sh` 的分发合同；CLI 安装入口仍以 [`2026-04-13-ae-cli-user-install-design.md`](./2026-04-13-ae-cli-user-install-design.md) 为准。
 - 它**不改变** `ae-cli login` 的 PKCE / device flow 合同；CLI 登录协议仍以 [`2026-04-15-oauth-device-login-design.md`](./2026-04-15-oauth-device-login-design.md) 为准。
-- 它**不改变** `ae-cli discover` 的确定性配置合同；工具配置写入规则仍以 [`2026-05-19-ae-cli-deterministic-tool-configuration-design.md`](./2026-05-19-ae-cli-deterministic-tool-configuration-design.md) 为准。
-- 它补的是“普通开发者如何在 Web 里被引导完成 install -> login -> discover -> verify，并理解自己当前 provider / managed key 状态”的产品表面，不是新的 CLI runtime 协议。
+- 它**不直接改写** `ae-cli discover` 的写入路径或工具探测合同；工具配置写入规则仍以 [`2026-05-19-ae-cli-deterministic-tool-configuration-design.md`](./2026-05-19-ae-cli-deterministic-tool-configuration-design.md) 为准。
+- 它修正的是 `/user` 页面如何表达和调用用户态 credential provisioning，避免再引入独立于现有 provider credential 逻辑之外的 `ae-cli-auto` 专用合同。
 
 ## Overview
 
@@ -25,7 +25,7 @@
 1. 有登录页
 2. 有 repo / events / settings 等页面
 3. 没有面向普通开发者的账户页
-4. 没有一处把 `ae-cli` 的安装、登录、discover、自助验证和用户自己的 API key 信息收拢到一起
+4. 没有一处把 `ae-cli` 的安装、登录、discover、自助验证和用户自己的 provider credential 信息收拢到一起
 
 结果是：
 
@@ -34,8 +34,8 @@
 3. 用户无法在前端清楚区分：
    - 自己是谁
    - 当前有哪些 provider
-   - 哪个 provider 正在被用于 CLI discover
-   - 当前 managed key 是否存在
+   - 某个 provider 下有哪些可用 platform
+   - 当前平台是否已有可复用 credential
    - 为什么旧 key 不能直接 reveal
 
 因此新增一个普通登录用户可访问的新页面：
@@ -48,7 +48,7 @@
 
 1. 页面顶部展示只读 profile
 2. 页面主体以 CLI 自助配置为中心
-3. provider 选择和 managed key 状态与 CLI 命令块联动
+3. provider 选择与 platform 选择和 CLI 命令块联动
 4. 页面允许用户贴回本地 CLI 输出进行轻量验证，但**不直接探测或执行**本机命令
 
 ## Goals
@@ -59,76 +59,79 @@
    - login
    - discover
    - verify
-3. 让用户能看见自己当前有哪些 provider，并显式选择 CLI discover 将使用哪个 provider。
-4. 给用户提供自己的 managed API key 状态说明，以及安全受限的 reveal / copy / regenerate 交互。
+3. 让用户能看见自己当前有哪些 provider，并在进入 credential 自助时显式选择 platform。
+4. 给用户提供自己的 provider credential 状态说明，以及安全受限的一次性 reveal / copy / regenerate 交互。
 5. 保持后端与前端语义清晰分层：
    - CLI 程序消费接口继续服务 `ae-cli`
    - Web 账户页有自己的用户态接口
+   - provider 数据归 DB 所有，config 仅用于 startup bootstrap
 
 ## Non-Goals
 
 1. 第一版不做 profile 编辑、密码修改、认证设置修改。
 2. 第一版不做浏览器直接执行本地 CLI 命令，也不做本机探测。
-3. 第一版不把旧 key 的明文“重新读取”出来；历史 existing key 只能通过 regenerate 得到新的 secret。
-4. 第一版不做多 key 管理台；只围绕系统托管的 `ae-cli-auto` managed key。
-5. 第一版不改变 `ae-cli discover` 的写入路径、provider 选择合同或工具探测机制。
+3. 第一版不把旧 key 的明文“重新读取”出来；历史 existing key 只能通过重新创建得到新的 secret。
+4. 第一版不做完整的多 group / 多 key 管理台；只围绕“当前 provider 下按 platform 自助获取可用 credential”。
+5. 第一版不改变 `ae-cli discover` 的写入路径、工具探测机制或本地配置落点。
 6. 第一版不引入新的 LLM-based tool discovery。
 
 ## Approaches Considered
 
-### Option A: Task-First User Hub
+### Option A: Task-First User Hub with Shared Credential Provisioning
 
 - `/user` 是标准登录后页面
 - 顶部是轻量 profile
 - 中心是 CLI setup checklist
-- provider / managed key 紧贴 checklist 联动
+- provider / platform / credential 状态紧贴 checklist 联动
+- `/user` 复用统一的 provider credential provisioning 合同
 
 优点：
 
 1. 最符合普通开发者的首次接入和回访排障路径
-2. install / login / discover / verify 顺序清楚
-3. 页面虽然叫 `User`，但不会退化成纯资料展示页
+2. 避免 Web 页面再发明一套独立于现有逻辑之外的 key 语义
+3. install / login / discover / verify 顺序清楚
 
 缺点：
 
-1. 比传统账户页更强调任务，而不是 profile
+1. 需要把页面和后端都收敛到共享策略，而不是只做局部补丁
 
-### Option B: Standard Account Tabs
+### Option B: Task-First User Hub with User-Page-Specific Key Lifecycle
 
-- Profile / CLI Setup / API Keys 分成平级 tab
+- 页面仍采用 task-first 结构
+- 但 `/user` 单独维护一个 Web 专用的 key 命名和选择规则
 
 优点：
 
-1. 信息架构最传统
-2. 资料、命令、secret 区隔很清楚
+1. 局部实现速度快
 
 缺点：
 
-1. onboarding 路径被拆散
-2. install / login / discover / verify 不再是一个连续任务流
+1. 容易再次偏离既有 provider credential 逻辑
+2. 会重复制造 `ae-cli-auto` 一类的专用合同
 
-### Option C: Toolbox Overview
+### Option C: Read-Only User Hub
 
-- 把 profile、install、login、discover、keys、verify 全做成并列工具卡片
+- `/user` 只展示 profile / provider / platform 状态
+- 不直接执行 create / regenerate
 
 优点：
 
-1. 适合熟悉系统的回访用户
+1. 页面合同最小
 
 缺点：
 
-1. 首次使用的叙事弱
-2. 页面更像 utility dashboard，不像可自解释的用户页
+1. 用户必须退回 CLI/runtime 才能补齐 credential
+2. 自助能力不完整
 
 ### Recommendation
 
-采用 **Option A: Task-First User Hub**。
+采用 **Option A: Task-First User Hub with Shared Credential Provisioning**。
 
 原因：
 
 1. 目标用户是普通开发者，而不是管理员。
 2. 目标动作是“把 CLI 配通”，不是“浏览账户资料”。
-3. 该方案能在不破坏账户页语义的前提下，把 CLI setup 当成页面主任务。
+3. `/user` 不应重新定义 `ae-cli-auto` 之类的独立 key 语义，而应复用统一的 provider credential provisioning 合同。
 
 ## Information Architecture
 
@@ -144,14 +147,14 @@
 页面从上到下分成 4 个区块：
 
 1. `Profile Summary`
-2. `Provider & Managed Key`
+2. `Provider & Platform Credential`
 3. `CLI Setup Checklist`
 4. `Help / FAQ`
 
 在宽屏下可使用两列布局：
 
 - 左列：profile + provider switcher
-- 右列：CLI checklist + managed key
+- 右列：platform credential + CLI checklist
 
 在窄屏下按单列堆叠。
 
@@ -169,7 +172,7 @@
 1. 我当前是哪个账号
 2. 我现在将以哪个身份做 CLI login / provider 配置
 
-### Provider and Managed Key
+### Provider and Platform Credential
 
 该区块展示当前用户**可见的全部 enabled providers**，不只 primary。
 
@@ -180,12 +183,23 @@
 3. `base_url`
 4. `default_model`
 5. `is_primary`
-6. 当前 managed key 状态
 
 页面始终只允许单选一个 provider。默认选中规则：
 
 1. 优先 `is_primary=true`
 2. 否则第一项
+
+选中 provider 后，页面再展示该 provider 下可供当前用户操作的 platform 列表。每个 platform 至少显示：
+
+1. `platform`
+2. `group_id`
+3. `group_label`
+4. `credential.state`
+5. `credential.name`
+6. `credential.api_key_id`
+7. `credential.status`
+
+平台列表第一版的目标不是成为完整 group 管理台，而是把“用户在当前 provider 下对哪个 platform 做 credential 自助”表达清楚。
 
 ### CLI Setup Checklist
 
@@ -207,37 +221,45 @@ Checklist 固定为 4 步：
 3. `discover` 没有检测到工具
 4. 为什么历史 key 不能直接 reveal
 
-## Managed Key Semantics
+## Provider Credential Semantics
 
 ### Definition
 
-本页中的 “managed key” 指当前用户在某个 relay provider 下，由平台自助管理的：
+本页中的 credential 指当前用户在某个 `provider + platform` 视角下，由统一 provisioning 合同解析出的“当前可复用或可创建”的 API credential。
 
-```text
-name == "ae-cli-auto"
-status == "active"
-```
+它**不是**：
 
-的 API key。
+1. 固定名 `ae-cli-auto` key 的别名
+2. provider 级单把 key 的概念
+3. 页面专属的独立生命周期
 
-### Canonical Selection
+### Canonical Provisioning Contract
 
-如果某个 provider 下存在多个 active 的 `ae-cli-auto` key：
+`/user` 必须复用统一的 provider credential provisioning 合同：
 
-1. 列表页按 `created_at desc` 选择最新的一把作为当前 managed key
-2. 页面不在第一版暴露多 key 管理 UI
-3. `Regenerate` 时应撤销该 provider 下所有 active 的 `ae-cli-auto` key，再创建一把新的 managed key
+1. 先列出当前 relay user 在该 provider 下的 active keys
+2. 只在目标 `platform` 下筛选
+3. 优先匹配“用户同名 key”
+4. 如果 `username` 本身就是邮箱别名，则按既有逻辑退化成邮箱前缀，例如 `luxuhui`
+5. 没有可复用 key 时，按同样的命名规则创建
+6. 创建时必须带 `GroupID`
 
-这样可以把页面语义稳定成“每个用户-每个 provider 视角下只有一把当前 managed key”。
+### Group Resolution
+
+当前页面不直接暴露 group 解析细节，但其 provisioning 必须遵循统一策略：
+
+1. 优先走 platform-aware group 解析
+2. 如果 provider 不支持 platform-aware 解析，则回退到现有 route binding / default group 逻辑
+3. 该逻辑属于 provisioning 内部实现，不应在 `/user` 页面上表现为“runtime fallback provider”之类的额外配置面
 
 ### Server States
 
-后端对 managed key 只暴露两种持久状态：
+后端对 platform credential 只暴露两种持久状态：
 
 1. `missing`
-   - 当前 provider 下没有 active 的 `ae-cli-auto` key
+   - 当前 `provider + platform` 下没有可复用 credential
 2. `existing_hidden`
-   - 当前 provider 下有 active 的 `ae-cli-auto` key，但系统拿不到旧 secret 明文
+   - 当前 `provider + platform` 下已有可复用 credential，但系统拿不到旧 secret 明文
 
 ### Client Overlay State
 
@@ -257,8 +279,8 @@ status == "active"
 ### Create, Reveal, Copy, Regenerate Rules
 
 - `Create Key`
-  - 仅在 `missing` 状态可用
-  - 创建一把新的 managed key
+  - 仅在当前 `provider + platform` 处于 `missing` 状态时可用
+  - 执行一次 ensure/create，并返回新 secret
   - 成功后前端进入 `session_visible`
 - `Reveal`
   - 仅在 `session_visible` 状态可用
@@ -268,13 +290,13 @@ status == "active"
   - 将当前页面内存中的 secret 复制到剪贴板
 - `Regenerate`
   - 在 `existing_hidden` 或 `session_visible` 状态可用
-  - 先 revoke 当前 managed key，再 create
+  - 先撤销当前 `provider + platform` 下按统一合同识别出来的可复用同名 active key，再按同一合同新建
   - 成功后前端进入 `session_visible`
 
 页面必须明确解释：
 
 1. 历史旧 key 的明文不会被重新读取
-2. 如果需要重新拿到明文，只能通过 regenerate 新 key
+2. 如果需要重新拿到明文，只能通过 create / regenerate 得到一次性新 secret
 
 ## API Contract
 
@@ -299,8 +321,8 @@ GET /api/v1/providers
 是 `ae-cli discover` 的程序消费接口，当前语义包含：
 
 1. 以 CLI 配置为目标的数据形状
-2. 必要时自动创建 `ae-cli-auto` key 的副作用
-3. 不表达 Web 页需要的 managed-key 展示语义
+2. 当前实现里仍带有 provider 级自动创建 API key 的副作用
+3. 不表达 Web 页需要的 `provider + platform` credential 展示语义
 
 因此 `/user` 页面不应直接复用它。
 
@@ -319,8 +341,9 @@ GET /api/v1/providers
 用途：
 
 1. 返回当前用户可见的 enabled providers
-2. 返回每个 provider 的 managed key 持久状态
-3. **不自动创建** key
+2. 返回每个 provider 下可操作的 platform 摘要
+3. 返回每个 `provider + platform` 的 credential 持久状态
+4. **不自动创建** credential
 
 建议响应字段：
 
@@ -330,19 +353,26 @@ GET /api/v1/providers
     "providers": [
       {
         "id": 1,
-        "name": "sub2api-prod",
-        "display_name": "sub2api Production",
-        "base_url": "https://...",
-        "default_model": "claude-sonnet-4-20250514",
+        "name": "sub2api",
+        "display_name": "sub2api",
+        "base_url": "https://sub2api.example/v1",
+        "default_model": "gpt-5.4",
         "is_primary": true,
-        "managed_key": {
-          "state": "existing_hidden",
-          "api_key_id": 12345,
-          "name": "ae-cli-auto",
-          "status": "active",
-          "created_at": "2026-05-21T01:02:03Z",
-          "last_used_at": "2026-05-21T09:00:00Z"
-        }
+        "platforms": [
+          {
+            "platform": "openai",
+            "group_id": "42",
+            "group_label": "OpenAI / Group 42",
+            "credential": {
+              "state": "existing_hidden",
+              "api_key_id": 12345,
+              "name": "luxuhui",
+              "status": "active",
+              "created_at": "2026-05-21T01:02:03Z",
+              "last_used_at": "2026-05-21T09:00:00Z"
+            }
+          }
+        ]
       }
     ],
     "message": ""
@@ -352,19 +382,19 @@ GET /api/v1/providers
 
 约束：
 
-1. `managed_key.state` 只返回 `missing | existing_hidden`
+1. `credential.state` 只返回 `missing | existing_hidden`
 2. 不返回旧 secret
 3. 不返回 `session_visible`
 
-#### `POST /api/v1/user/providers/:id/managed-key`
+#### `POST /api/v1/user/providers/:id/platforms/:platform/credential`
 
 用途：
 
-1. 当 provider 处于 `missing` 时创建 managed key
+1. 当当前 `provider + platform` 处于 `missing` 时创建 credential
 
 行为：
 
-1. 如果当前 provider 已存在 active `ae-cli-auto` key，则返回冲突错误
+1. 如果当前 `provider + platform` 已存在可复用 credential，则返回冲突错误
 2. 成功时返回一次性 secret
 
 建议响应字段：
@@ -373,24 +403,24 @@ GET /api/v1/providers
 {
   "data": {
     "api_key_id": 12346,
-    "name": "ae-cli-auto",
+    "name": "luxuhui",
     "status": "active",
     "secret": "sk-..."
   }
 }
 ```
 
-#### `POST /api/v1/user/providers/:id/managed-key/regenerate`
+#### `POST /api/v1/user/providers/:id/platforms/:platform/credential/regenerate`
 
 用途：
 
-1. 撤销当前 provider 下旧的 active managed key
-2. 创建一把新的 managed key
+1. 撤销当前 `provider + platform` 下旧的可复用 credential
+2. 创建一把新的 credential
 3. 返回新 secret 的一次性明文
 
 行为：
 
-1. 如果当前 provider 下存在多个 active `ae-cli-auto` key，应一并撤销
+1. 如果当前合同匹配到多个 active 同名 key，应一并撤销
 2. 创建成功后返回新 key 的一次性 secret
 
 ### Backend Boundary
@@ -400,6 +430,8 @@ GET /api/v1/providers
 1. `ListUserAPIKeys`
 2. `CreateUserAPIKey`
 3. `RevokeUserAPIKey`
+
+并应共享统一的 provider credential provisioning 策略，而不是再为 `/user` 页面维护独立的 key 选择代码。
 
 不得绕过 provider 抽象重新引入 direct sub2api DB coupling。
 
@@ -437,17 +469,20 @@ ae-cli --server <current-origin> login --device
 
 ### Step 3: Discover
 
-命令必须跟当前选中的 provider 联动：
+命令仍跟当前选中的 provider 联动：
 
 ```bash
 ae-cli --server <current-origin> discover --provider <provider-name>
 ```
 
-页面同时说明 discover 可能写入的目标，例如：
+页面同时说明：
 
-1. `~/.codex/config.toml`
-2. `~/.ae-cli/env.sh`
-3. `~/.claude/settings.json`
+1. discover 当前仍按 provider 维度工作
+2. platform 选择是 `/user` 页面上的 credential 自助视图，不直接改写 discover CLI 形状
+3. discover 可能写入的目标，例如：
+   - `~/.codex/config.toml`
+   - `~/.ae-cli/env.sh`
+   - `~/.claude/settings.json`
 
 该说明只解释当前合同，不做本机探测。
 
@@ -493,15 +528,23 @@ ae-cli --server <current-origin> discover --provider <provider-name>
 1. install / login 文案保持全局稳定
 2. discover 命令切到当前 provider
 3. verify 输入草稿按 provider 维度切换
-4. managed key 面板切到当前 provider 的状态
+4. platform 列表切到当前 provider
+
+### Platform Switching
+
+切换 platform 时：
+
+1. credential 面板切到当前 `provider + platform` 的状态
+2. secret 展示按 `provider + platform` 维度切换和折叠
+3. 当前页面的一次性 secret 仅对对应的 `provider + platform` 有效
 
 ### Secret Display Rules
 
-即使当前 provider 处于 `session_visible`：
+即使当前 `provider + platform` 处于 `session_visible`：
 
 1. 页面初始仍以 masked 模式显示
 2. 用户需要点击 `Reveal` 才显示明文
-3. 页面可以在 provider 切换时自动重新折叠 secret 展示，但不应丢失当前 provider 的内存 secret，除非页面刷新或离开
+3. 页面可以在 provider 或 platform 切换时自动重新折叠 secret 展示，但不应丢失当前项的内存 secret，除非页面刷新或离开
 
 ### Regenerate Confirmation
 
@@ -518,67 +561,87 @@ ae-cli --server <current-origin> discover --provider <provider-name>
 
 1. 访问 `/user`
 2. 查看自己的 profile summary
-3. 查看自己可见的 providers
-4. 创建 / 重建自己的 managed key
-5. 在当前页面会话内 reveal / copy 新创建的 secret
+3. 查看当前用户可见 provider 及其 platform 摘要
+4. 对自己的 `provider + platform` credential 执行 create / regenerate
 
 ### Admin
 
-admin 使用相同页面，不额外获得另一个 admin-only 视角。  
-`/user` 的目标是“当前登录者的自助配置页”，不是用户管理台。
+Admin 也可以访问 `/user`，但：
+
+1. `/user` 仍是“当前登录用户自己的自助页”
+2. 它不替代 admin settings
+3. provider 的系统级配置仍在 admin surfaces 中维护
 
 ## Error Handling
 
-1. 当前账号未映射到 relay user 时，不返回 500；返回用户可读提示。
-2. 某个 provider 的 key 创建失败时，只影响该 provider 面板，不清空整页。
-3. `Regenerate` 中 revoke 成功但 create 失败时，要明确告知用户当前旧 key 已撤销，需要重试创建。
-4. `Verify` 无法判断时，返回 `Cannot determine`，而不是伪造成功。
+需要明确处理以下错误：
 
-## Security Notes
+1. 当前用户没有 `relay_user_id`
+2. 当前登录账号在 relay 中找不到映射用户
+3. provider 已禁用或不存在
+4. 当前 provider 下没有可操作的 platform
+5. create 时发现当前 `provider + platform` 已存在可复用 credential
+6. regenerate 中 revoke 成功但 create 失败
+7. clipboard API 不可用
 
-1. 一次性 secret 只保存在前端内存里。
-2. 不写入 `localStorage`。
-3. 不写入 URL。
-4. 不通过后续 `GET` 接口返回旧 secret。
-5. 历史 key 的明文永不回读。
+错误文案要求：
+
+1. 对用户可操作的错误，优先给明确下一步
+2. 不泄露旧 secret
+3. `Regenerate` 中 revoke 成功但 create 失败时，要明确告知用户当前旧 key 已撤销，需要重试创建
+
+## Runtime Boundary and Data Ownership
+
+### Provider Source of Truth
+
+provider 的 source of truth 是 DB，而不是 runtime fallback config 视图。
+
+具体约束：
+
+1. config 仅用于 `startup bootstrap`
+2. 第一次启动时，服务可根据 config 将 primary provider 落到 DB
+3. `/user`、`settings`、常规 provider 查询都只读写 DB
+4. 不再把 runtime fallback provider 当成产品合同暴露给用户界面
+
+### Why Keep Config at All
+
+保留 config/provider bootstrap 的原因仅是：
+
+1. 服务冷启动可用
+2. relay SSO/login 能找到 primary provider
+
+这不意味着 `/user` 或 `settings` 继续依赖 runtime config 视图。
 
 ## Testing
-
-### Backend
 
 至少覆盖：
 
 1. `GET /api/v1/user/providers`
    - 无 relay user
-   - 无 enabled provider
-   - `missing`
-   - `existing_hidden`
-   - 多个 active managed keys 时的 canonical selection
-2. `POST /api/v1/user/providers/:id/managed-key`
-   - 缺失时创建成功
-   - 已存在时冲突
-3. `POST /api/v1/user/providers/:id/managed-key/regenerate`
-   - revoke + create 成功
-   - revoke 失败
-   - revoke 成功但 create 失败
+   - 单 provider / 单 platform
+   - 单 provider / 多 platform
+   - 多个 active 同名 key 时的 canonical selection
+   - `username` 为邮箱别名时退化成邮箱前缀
+2. `POST /api/v1/user/providers/:id/platforms/:platform/credential`
+   - missing -> create
+   - 已存在可复用 credential -> 409
+   - create 时带 `GroupID`
+3. `POST /api/v1/user/providers/:id/platforms/:platform/credential/regenerate`
+   - revoke + recreate success
+   - revoke success but create failure
+4. 前端 `/user`
+   - provider 切换
+   - platform 切换
+   - secret reveal/copy 仅在本次页面会话有效
+   - `missing / existing_hidden / session_visible` 下的按钮状态
+5. 文档
+   - `docs/architecture.md` 反映 provider DB ownership 与 startup bootstrap only 边界
 
-### Frontend
+## Rollout Notes
 
-至少覆盖：
+推荐分两步：
 
-1. `/user` 路由与侧边栏入口
-2. provider 切换时命令联动
-3. managed key 在 `missing / existing_hidden / session_visible` 下的按钮状态
-4. secret reveal / copy 的前端内存语义
-5. verify 文本贴回后的轻量状态判断
+1. 先修正 `/user` 的后端合同与前端交互
+2. 再考虑是否收敛当前 `GET /api/v1/providers` 内部的 provider credential provisioning 实现，避免 CLI 与 `/user` 再次漂移
 
-## Documentation Impact
-
-本 spec 是**设计文档更新**，不是当前实现变更。
-
-在代码真正落地时，应同步更新：
-
-1. `docs/architecture.md`
-   - 增加 `/user` 页面及其与 `ae-cli` / relay provider 的关系
-2. 必要的前端导航说明
-3. 若实现阶段调整了用户态 key 接口合同，应回写本文而不是写散在 PR 描述里
+第一步的目标是纠正当前 `/user` 页面新引入的偏差；第二步才是更广泛的后端合同收敛。
