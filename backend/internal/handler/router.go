@@ -68,6 +68,7 @@ func SetupRouter(
 	prHandler := NewPRHandler(entClient, repoService, syncService, prAttributionService, prUsageService)
 	efficiencyHandler := NewEfficiencyHandler(entClient)
 	toolUsageHandler := NewToolUsageHandler(toolusage.NewService(entClient))
+	eventsHandler := NewEventsHandler(toolusage.NewQueryService(entClient))
 
 	api := r.Group("/api/v1")
 
@@ -146,6 +147,13 @@ func SetupRouter(
 
 	toolUsageGroup := protected.Group("/tool-usage-events")
 	toolUsageGroup.POST("", toolUsageHandler.Create)
+
+	eventsGroup := protected.Group("/events")
+	{
+		eventsGroup.GET("/summary", eventsHandler.Summary)
+		eventsGroup.GET("", eventsHandler.List)
+		eventsGroup.GET("/:id", eventsHandler.Get)
+	}
 
 	if checkpointHandler != nil {
 		checkpointGroup := protected.Group("/checkpoints")
