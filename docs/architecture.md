@@ -61,6 +61,7 @@ flowchart LR
 - `deploy/` also includes non-production `dev` / `local` compose paths for local verification.
 - Public health endpoints expose liveness/readiness, and admin settings expose deployment status plus update controls.
 - `ae-cli login` now supports both browser PKCE and OAuth device flow. Headless Linux environments are expected to use `ae-cli login --device`, while desktop/browser-capable environments still default to PKCE.
+- Backend-issued auth tokens currently default to a 2-hour access JWT plus a 7-day refresh token. The frontend retries a non-auth `401` once via `/api/v1/auth/refresh`, and `ae-cli` refreshes `~/.ae-cli/token.json` before authenticated commands when the token is expired or within the refresh window.
 - `ae-cli discover` now provides the current user-facing tool-configuration path for supported local agents. It fetches provider-delivered base URLs and API keys from the backend, detects installed tools locally, and writes deterministic local config for Codex, Claude, and Gemini.
 - The old ae-cli session runtime/helper packages are no longer present in the active code path. Backend-side legacy `session` schema and runtime compatibility have also been removed; the remaining `matched_session_ids` / `session_ids` fields are historical names that now carry tool-native session identifiers.
 
@@ -160,7 +161,7 @@ sequenceDiagram
 
 - `ae-cli` owns the sessionless CLI workflow: repo-local init, hook management, short-lived attribution sync, and diagnostics.
 - `ae-cli discover` is intentionally deterministic in the current codebase: no backend LLM loop, no `/api/v1/tools/discover` endpoint, and no per-tool provider inference. It uses the selected provider directly (primary by default, `--provider` to override) and writes tool-native config files or environment hooks.
-- `ae-cli` login selection is split between browser PKCE and device flow, but both paths still end in the same backend-issued JWT and `~/.ae-cli/token.json` storage model.
+- `ae-cli` login selection is split between browser PKCE and device flow, but both paths still end in the same backend-issued JWT and `~/.ae-cli/token.json` storage model, with automatic refresh against `/api/v1/auth/refresh` when the stored token is nearing expiry.
 - The backend owns durable state, repo discovery/ensure from local git remotes, repo configuration, user/provider mapping, attribution, PR usage snapshots, and SCM/webhook handling.
 - The backend OAuth handler now manages both short-lived authorization codes and short-lived device entries in memory.
 - Relay/sub2api remains the upstream auth/LLM/usage integration boundary and attribution fallback source.
@@ -202,6 +203,7 @@ flowchart LR
     CLI -->|"manual sync"| Scanner
     Tools --> Artifacts
     Hooks -->|"post-commit / post-rewrite"| Collector
+    Hooks -->|"flush pending hook queue"| Checkpoint
     Hooks -->|"post-commit checkpoint upload"| Checkpoint
     Hooks -->|"post-rewrite rewrite upload"| Checkpoint
     Hooks -->|"auto attribution-sync"| Scanner
@@ -223,7 +225,7 @@ flowchart LR
 - Current formal CLI/runtime path:
   `ae-cli init`, `sync`, and git hooks all best-effort ensure the backend repo exists from the local git remote. The local collection layer is split in two: `ae-cli/internal/collector` builds hook-time `agent_snapshot` caches, while `ae-cli/internal/attributionlocal` extracts `tool_usage_events` for backend ingest. `Codex` is normalized under `tool = "codex"`; the scanner currently reads global `~/.codex/sessions/**/*.jsonl` plus a compatibility `~/.codex/logs_2.sqlite` branch gated by jsonl-discovered session ids. `Kiro` is normalized under `tool = "kiro"` across legacy `~/.kiro/sessions/cli/*.json`, modern `~/Library/Application Support/kiro-cli/data.sqlite3`, and Kiro IDE execution metadata under `~/Library/Application Support/Kiro/User/globalStorage/kiro.kiroagent/**`; Kiro IDE attribution uses `workspace-sessions/<workspace>/sessions.json` as the chat-session index and execution detail JSON files with `usageSummary[].unit=credit` as the durable credit fact source, so the current stable Kiro contract is credits/request-count rather than tokens. Backend ingests `tool_usage_events`, binds them to checkpoints, and refreshes PR usage snapshots from checkpoint-bound usage.
 - Trigger boundary:
-  `collector` is only triggered inside git-hook handling (`post-commit` / `post-rewrite`) and writes hook-time `Snapshot` data into checkpoint `agent_snapshot`, while `attributionlocal` scanning is triggered by `ae-cli sync`, hidden `ae-cli hook attribution-sync`, and the hook-driven auto sync path, and is the only source that produces `tool_usage_events` for PR/commit aggregation.
+  `collector` is only triggered inside git-hook handling (`post-commit` / `post-rewrite`) and writes hook-time `Snapshot` data into checkpoint `agent_snapshot`. Before a new checkpoint or rewrite is uploaded, the current code now replays any queued workspace hook events left behind by earlier fail-open uploads, and `ae-cli sync` plus hidden `ae-cli hook attribution-sync` do the same replay before scanning local artifacts. `attributionlocal` scanning remains the only source that produces `tool_usage_events` for PR/commit aggregation.
 - Current formal frontend surface:
   repo detail pages show PR usage summaries and commit usage details directly, rather than user-facing attribution status controls.
 - Remaining direction:

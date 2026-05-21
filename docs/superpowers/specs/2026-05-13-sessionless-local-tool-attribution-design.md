@@ -636,17 +636,19 @@ Git hooks 是权威绑定层：
 `post-commit` 时：
 
 1. 解析当前 workspace 的稳定 `workspace_id`
-2. 找到该 workspace 的上一个 checkpoint
-3. 扫描并抽取“自上次 watermark 以来的新 usage events”
-4. 过滤出：
+2. 若该 workspace 存在之前 fail-open 留下的未上传 hook checkpoint / rewrite 事件，先按队列顺序 replay
+3. 找到该 workspace 的上一个 checkpoint
+4. 扫描并抽取“自上次 watermark 以来的新 usage events”
+5. 过滤出：
    - 同一 workspace
    - `observed_at <= 当前 commit captured_at`
    - 尚未绑定到其他 checkpoint
-5. 将其绑定到当前 checkpoint
+6. 将其绑定到当前 checkpoint
 
 这一定义的含义是：
 
 - **这批 usage events 归属于当前 commit 对应的开发区间**
+- fail-open 暂存的旧 hook 事件应先 replay，再记录新的 checkpoint，避免多次失败后的 usage window 被整体挤压到更晚的 commit
 
 ### Rewrite / Amend / Rebase
 

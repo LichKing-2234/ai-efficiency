@@ -53,8 +53,12 @@ var hookAttributionSyncCmd = &cobra.Command{
 	Hidden: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cwd, _ := os.Getwd()
+		h := hooks.NewHandler(newHookUploader())
+		if err := h.Flush(context.Background(), cwd); err != nil {
+			return err
+		}
 		engine := attributionlocal.NewSyncEngine(apiClient)
-		return engine.RunForWorkspace(context.Background(), cwd)
+		return runSyncEngineForWorkspace(engine, context.Background(), cwd)
 	},
 }
 

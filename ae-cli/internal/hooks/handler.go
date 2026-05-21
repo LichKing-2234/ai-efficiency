@@ -204,6 +204,8 @@ func parentSHAs(cwd string) []string {
 }
 
 func (h *Handler) PostCommit(ctx context.Context, cwd string) error {
+	_ = h.Flush(ctx, cwd)
+
 	repoRoot, err := gitOutput(cwd, "rev-parse", "--show-toplevel")
 	if err != nil {
 		return nil
@@ -353,6 +355,7 @@ func parsePostRewritePairs(r io.Reader) ([][2]string, error) {
 
 func (h *Handler) PostRewrite(ctx context.Context, cwd string, rewriteType string, stdin io.Reader) error {
 	rewriteType = strings.TrimSpace(rewriteType)
+	_ = h.Flush(ctx, cwd)
 
 	repoRoot, err := gitOutput(cwd, "rev-parse", "--show-toplevel")
 	if err != nil {
