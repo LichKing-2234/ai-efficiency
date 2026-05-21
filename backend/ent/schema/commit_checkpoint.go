@@ -51,6 +51,7 @@ func (CommitCheckpoint) Edges() []ent.Edge {
 			Unique().
 			Required(),
 		edge.To("tool_usage_events", ToolUsageEvent.Type),
+		edge.To("pr_commit_usage_snapshots", PRCommitUsageSnapshot.Type),
 	}
 }
 

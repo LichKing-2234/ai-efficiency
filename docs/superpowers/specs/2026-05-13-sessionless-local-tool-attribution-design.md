@@ -11,7 +11,7 @@
 **Implementation Note:**
 - 本文定义的是新的运行时方向，不代表其中所有能力都已完整落地。
 - 当前代码已经落地了部分 sessionless local attribution 组件，例如本地 artifact 解析、`tool_usage_events` ingest、checkpoint-time binding。
-- 当前 CLI 主工作流仍以 `ae-cli login/start`、workspace marker、session bootstrap、local proxy 为主；项目级当前状态仍以 [`docs/architecture.md`](../../architecture.md) 和现有代码为准。
+- 当前 CLI 正式主工作流已收口到 `ae-cli login/init/sync/doctor`、workspace marker、git hooks 与 tool-local artifact 扫描；旧的 `start` / local proxy / runtime bundle 代码仍可能留在代码树中，但不再是项目级当前产品路径。项目级当前状态仍以 [`docs/architecture.md`](../../architecture.md) 和现有代码为准。
 
 **Spec Relationship:**
 - 本文修改 [`2026-03-26-session-pr-attribution-design.md`](./2026-03-26-session-pr-attribution-design.md) 中“平台 session 是本地运行时主语”的合同。新的设计改为：`session` 不再是用户必须显式操作的概念，commit / PR attribution 的主事实源改为本地工具落盘数据加 git checkpoint。
@@ -178,13 +178,35 @@
 
 主要数据源：
 
-1. `~/.kiro/sessions/cli/*.json`
-2. `~/.kiro/sessions/cli/*.jsonl`
+1. Kiro IDE execution store：`~/Library/Application Support/Kiro/User/globalStorage/kiro.kiroagent/**`
+2. 现代 `kiro-cli` 会话存储：`~/Library/Application Support/kiro-cli/data.sqlite3`
+3. 旧摘要文件路径：`~/.kiro/sessions/cli/*.json`
+4. 辅助 transcript 路径：`~/.kiro/sessions/cli/*.jsonl`
 
-当前更稳定的主数据源是 `*.json` 摘要文件。
+当前正式主路径需要区分三类实现：
+
+1. Kiro IDE 会话以 `workspace-sessions/<workspace>/sessions.json -> execution detail JSON` 为主
+2. `kiro-cli` 终端会话以 `data.sqlite3 -> conversations_v2` 为主
+3. 旧桌面摘要文件仍可作为兼容路径保留
 
 已观察到的关键信号：
 
+- `Kiro/User/globalStorage/kiro.kiroagent`
+  - `workspace-sessions/<workspace>/sessions.json`
+    - `sessionId`
+    - `workspaceDirectory`
+  - execution detail JSON
+    - `chatSessionId`
+    - `executionId`
+    - `startTime`
+    - `endTime`
+    - `usageSummary[]`
+    - `contextUsagePercentage`
+- `kiro-cli/data.sqlite3`
+  - `conversations_v2.key` = workspace cwd
+  - `conversations_v2.conversation_id`
+  - `value.history[].request_metadata.*`
+  - `value.user_turn_metadata.usage_info[]`
 - 根级：
   - `session_id`
   - `cwd`
@@ -202,9 +224,12 @@
 
 已观察到的限制：
 
-1. 当前机器样本中的 `input_token_count` / `output_token_count` 基本为 `0`
-2. `metering_usage[]` 和 `total_request_count` 是稳定的
-3. 因此 `Kiro` 第一版适合作为 **credit / request_count** 数据源，而不是 token 真值源
+1. Kiro IDE 的 `workspace-sessions/*.json` 主要承载 chat transcript，本身不稳定提供 token / credit 真值；真正的 credit 事实落在 execution detail JSON 的 `usageSummary[]`
+2. `dev_data/tokens_generated.jsonl` 当前机器样本主要提供 `promptTokens`，`generatedTokens` 基本为 `0`，不能直接作为最终 token 真值源
+3. 当前机器样本中的旧摘要文件 `input_token_count` / `output_token_count` 也基本为 `0`
+4. `kiro-cli` 的 `user_turn_metadata.usage_info[]`、Kiro IDE execution detail 的 `usageSummary[]` 与旧摘要文件中的 `metering_usage[]` / `total_request_count` 都能稳定提供 credit / request 事实
+5. 因此 `Kiro` 第一版适合作为 **credit / request_count** 数据源，而不是 token 真值源
+6. 当前实现不会把 `kiro-cli` 或 Kiro IDE 单独写成后端 `tool` 维度；三条来源最终都聚合到 `tool = "kiro"`
 
 ## 目标
 
@@ -348,28 +373,37 @@ flowchart LR
 1. `Codex` / `Claude` 主要填 token 字段
 2. `Kiro` 主要填 `credit_usage` / `request_count`
 3. 没有的字段留空，不伪造
+4. 当前后端聚合维度只使用 `codex` / `claude` / `kiro` 三个归一化 tool key；`codexapp`、`kiro-cli`、`kiro-ide` 只作为本地来源变体存在于 parser / dedupe key 中，不是独立的 summary 维度
 
 ### Codex 解析规则
 
 主次顺序：
 
-1. 主数据源：`~/.codex/logs_2.sqlite`
-2. 辅助数据源：`~/.codex/sessions/**/*.jsonl`
+1. 当前 `tool_usage_events` 扫描实际会同时接入：
+   - `~/.codex/sessions/**/*.jsonl`
+   - `~/.codex/logs_2.sqlite`
+2. 其中 jsonl 仍承担当前主合同里的 workspace/session 识别、无 `response_id` 时的稳定行级 identity，以及 collector snapshot 的主真值语义
+3. sqlite 分支是兼容路径：
+   - 当前实现只有在 sqlite `conversation.id` 命中 jsonl 中发现的 workspace session id 时才会 ingest
+   - 它不应被描述成独立的 `codexapp` 后端 tool 维度
+   - 也不应被描述成当前 PR / commit usage 路径唯一必需依赖
 
 归一化规则：
 
-1. 若 sqlite 中存在 `response.completed`：
-   - `tool_session_id = conversation.id`
-   - `tool_event_id = response.id`
-   - token 字段直接取 `*_token_count`
-2. 若同一 `(conversation.id, response.id)` 出现多次：
-   - 只保留最后一个完整 `response.completed`
-3. jsonl 仅作为：
-   - `cwd` / session metadata 补充
-   - sqlite 不可用时的 fallback
+1. `tool_session_id = session_meta.id`
+2. 若某条 `token_count` 带 `response_id`：
+   - `tool_event_id = response_id`
+3. 若某条 `token_count` **不带** `response_id`：
+   - `tool_event_id` 必须从同一 session 文件中的稳定位置派生
+   - 当前实现使用 `line:<n>`，即该 `token_count` 在源 `jsonl` 文件中的行号
+   - 目标是避免“同一个 session 文件内多次 usage 更新被压成一条 event”
 4. 若 jsonl `token_count` 同时包含累计值和最近一次 usage：
    - 优先使用 `last_token_usage`
-   - 仅在其缺失时，才对累计值做增量推导
+   - 仅在 `last_token_usage` 缺失时，才直接回退到该行的 `total_token_usage`
+5. `raw_source_locator` 应记录稳定源定位信息，当前实现使用 `line:<n>`
+6. `dedupe_key` 当前按来源分 namespace：
+   - jsonl：`codex-jsonl:<tool_session_id>:<tool_event_id>`
+   - sqlite 兼容分支：`codex:<tool_session_id>:<tool_event_id>`
 
 ### Claude 解析规则
 
@@ -391,18 +425,46 @@ flowchart LR
 
 主数据源：
 
-1. `~/.kiro/sessions/cli/*.json`
+1. Kiro IDE：`~/Library/Application Support/Kiro/User/globalStorage/kiro.kiroagent/**`
+2. `kiro-cli`：`~/Library/Application Support/kiro-cli/data.sqlite3`
+3. 兼容路径：`~/.kiro/sessions/cli/*.json`
 
 归一化规则：
 
-1. `tool_session_id` 优先取 `session_state.rts_model_state.conversation_id`
-2. 若缺失，回退到根级 `session_id`
-3. 每个 `user_turn_metadata` 视为一个 turn-level usage event
-4. `request_count = total_request_count`
-5. `credit_usage = sum(metering_usage[].value where unit == "credit")`
-6. `context_usage_pct = context_usage_percentage`
-7. `input_tokens` / `output_tokens` 仅在非零且可信时写入
-8. 第一版不从 `Kiro` 推导 token 总量
+1. Kiro IDE 路径：
+   - `workspace-sessions/<workspace>/sessions.json` 提供当前 workspace 下的 `chatSessionId` 集合
+   - execution detail JSON 提供：
+     - `chatSessionId`
+     - `executionId`
+     - `usageSummary[]`
+     - `contextUsagePercentage`
+     - `startTime/endTime`
+   - `tool_session_id = chatSessionId`
+   - `tool_event_id = executionId`
+   - `credit_usage = sum(usageSummary[].usage where unit == "credit")`
+   - `request_count = 1`
+   - `context_usage_pct = contextUsagePercentage`
+   - `ObservedAt` 取 `startTime/endTime`
+2. `kiro-cli` 路径：
+   - `tool_session_id = conversation_id`
+   - `tool_event_id` 优先取最近一次 assistant turn 的 `request_metadata.message_id`
+   - `credit_usage = sum(user_turn_metadata.usage_info[].value where unit == "credit")`
+   - `request_count` 至少为 1；若底层显式记录多次 request，则按记录值写入
+   - `context_usage_pct = request_metadata.context_usage_percentage`
+   - `ObservedAt` 优先取 `request_start_timestamp_ms` / `stream_end_timestamp_ms`
+3. 旧摘要文件路径：
+   - `tool_session_id` 优先取 `session_state.rts_model_state.conversation_id`
+   - 若缺失，回退到根级 `session_id`
+   - 每个 `user_turn_metadata` 视为一个 turn-level usage event
+   - `request_count = total_request_count`
+   - `credit_usage = sum(metering_usage[].value where unit == "credit")`
+   - `context_usage_pct = context_usage_percentage`
+4. `dedupe_key` 当前按来源分 namespace：
+   - 旧摘要：`kiro:<tool_session_id>:<turn-identity>`
+   - `kiro-cli`：`kiro-cli:<tool_session_id>:<tool_event_id>`
+   - Kiro IDE：`kiro-ide:<tool_session_id>:<tool_event_id>`
+5. `input_tokens` / `output_tokens` 仅在非零且可信时写入；当前代码里只有旧摘要路径会机会性写入 token，`kiro-cli` 与 Kiro IDE 仍只产出 `credit_usage` / `request_count` / `context_usage_pct`
+6. 第一版不从 `Kiro` 推导 token 总量
 
 ## hooks 的角色
 
@@ -546,9 +608,12 @@ Git hooks 是权威绑定层：
 1. 一条 usage event 最终最多绑定到一个 checkpoint
 2. 一条 usage event 的幂等性由 `dedupe_key` 保证
 3. `dedupe_key` 由 provider-specific identity 生成，例如：
-   - Codex：`codex:<tool_session_id>:<tool_event_id>`
+   - Codex jsonl：`codex-jsonl:<tool_session_id>:<tool_event_id>`
+   - Codex sqlite：`codex:<tool_session_id>:<tool_event_id>`
    - Claude：`claude:<tool_session_id>:<tool_event_id>`
-   - Kiro：`kiro:<tool_session_id>:<turn-identity>`
+   - Kiro 旧摘要：`kiro:<tool_session_id>:<turn-identity>`
+   - `kiro-cli`：`kiro-cli:<tool_session_id>:<tool_event_id>`
+   - Kiro IDE：`kiro-ide:<tool_session_id>:<tool_event_id>`
 
 ### 为什么不再以 `session` 为主外键
 
@@ -571,17 +636,19 @@ Git hooks 是权威绑定层：
 `post-commit` 时：
 
 1. 解析当前 workspace 的稳定 `workspace_id`
-2. 找到该 workspace 的上一个 checkpoint
-3. 扫描并抽取“自上次 watermark 以来的新 usage events”
-4. 过滤出：
+2. 若该 workspace 存在之前 fail-open 留下的未上传 hook checkpoint / rewrite 事件，先按队列顺序 replay
+3. 找到该 workspace 的上一个 checkpoint
+4. 扫描并抽取“自上次 watermark 以来的新 usage events”
+5. 过滤出：
    - 同一 workspace
    - `observed_at <= 当前 commit captured_at`
    - 尚未绑定到其他 checkpoint
-5. 将其绑定到当前 checkpoint
+6. 将其绑定到当前 checkpoint
 
 这一定义的含义是：
 
 - **这批 usage events 归属于当前 commit 对应的开发区间**
+- fail-open 暂存的旧 hook 事件应先 replay，再记录新的 checkpoint，避免多次失败后的 usage window 被整体挤压到更晚的 commit
 
 ### Rewrite / Amend / Rebase
 

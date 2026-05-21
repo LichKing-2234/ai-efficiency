@@ -14,7 +14,7 @@ vi.mock('@/api/client', () => {
 
 import client from '@/api/client'
 import { listProviders, createProvider, updateProvider, deleteProvider } from '@/api/scmProvider'
-import { listPRs, getPR, syncPRs, settlePR } from '@/api/pr'
+import { listPRs, getPR, syncPRs, settlePR, refreshPRUsage } from '@/api/pr'
 import { getDashboard } from '@/api/efficiency'
 import { getLLMConfig, updateLLMConfig, testLLMConnection } from '@/api/settings'
 import { getDeploymentStatus, checkForUpdate, applyUpdate, rollbackUpdate, restartDeployment } from '@/api/deployment'
@@ -95,6 +95,12 @@ describe('pr API', () => {
     mockClient.post.mockResolvedValue({ data: { data: { attribution_status: 'clear' } } })
     await settlePR(88)
     expect(mockClient.post).toHaveBeenCalledWith('/prs/88/settle')
+  })
+
+  it('refreshPRUsage calls POST /prs/:id/refresh-usage', async () => {
+    mockClient.post.mockResolvedValue({ data: { data: { id: 88, usage_commit_count: 2 } } })
+    await refreshPRUsage(88)
+    expect(mockClient.post).toHaveBeenCalledWith('/prs/88/refresh-usage')
   })
 })
 

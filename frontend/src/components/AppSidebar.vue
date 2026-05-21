@@ -31,6 +31,18 @@ function handleLogout() {
       </RouterLink>
 
       <RouterLink
+        to="/events"
+        class="flex items-center rounded-md px-3 py-2 text-sm font-medium hover:bg-gray-800"
+        active-class="bg-gray-800"
+      >
+        <svg class="mr-3 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M9 17v-6m3 6V7m3 10v-4m3 8H6a2 2 0 01-2-2V5a2 2 0 012-2h12a2 2 0 012 2v14a2 2 0 01-2 2z" />
+        </svg>
+        Events
+      </RouterLink>
+
+      <RouterLink
         to="/repos"
         class="flex items-center rounded-md px-3 py-2 text-sm font-medium hover:bg-gray-800"
         active-class="bg-gray-800"

@@ -629,6 +629,29 @@ func HasToolUsageEventsWith(preds ...predicate.ToolUsageEvent) predicate.CommitC
 	})
 }
 
+// HasPrCommitUsageSnapshots applies the HasEdge predicate on the "pr_commit_usage_snapshots" edge.
+func HasPrCommitUsageSnapshots() predicate.CommitCheckpoint {
+	return predicate.CommitCheckpoint(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, PrCommitUsageSnapshotsTable, PrCommitUsageSnapshotsColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasPrCommitUsageSnapshotsWith applies the HasEdge predicate on the "pr_commit_usage_snapshots" edge with a given conditions (other predicates).
+func HasPrCommitUsageSnapshotsWith(preds ...predicate.PRCommitUsageSnapshot) predicate.CommitCheckpoint {
+	return predicate.CommitCheckpoint(func(s *sql.Selector) {
+		step := newPrCommitUsageSnapshotsStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
 // And groups predicates with the AND operator between them.
 func And(predicates ...predicate.CommitCheckpoint) predicate.CommitCheckpoint {
 	return predicate.CommitCheckpoint(sql.AndPredicates(predicates...))

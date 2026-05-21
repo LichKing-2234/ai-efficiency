@@ -493,11 +493,11 @@ SSO provider 仅在 `relay.Provider` 可用时注册。
 
 ### Token 自动刷新
 
-ae-cli HTTP client 每次请求前检查 `expires_at`：
-- 距过期 < 5 分钟：自动用 refresh_token 调用 `POST /api/v1/auth/refresh`（JSON body: `{"refresh_token": "..."}`）刷新
+`ae-cli` 在命令入口解析 `token.json` 时检查 `expires_at`：
+- 距过期 < 5 分钟，或 access token 已经过期但 refresh token 仍可用：自动用 refresh_token 调用 `POST /api/v1/auth/refresh`（JSON body: `{"refresh_token": "..."}`）刷新
 - 注意：现有 refresh 端点使用 JSON body 而非 OAuth2 标准的 form POST，ae-cli 直接调用此端点而不走 golang.org/x/oauth2 的 refresh 逻辑
-- 刷新成功：原子写入更新 token.json（先写临时文件再 rename，防止进程中断导致文件损坏）
-- 刷新失败：提示用户重新 `ae-cli login`
+- 刷新成功：原子写入更新 token.json（先写临时文件再 rename，防止进程中断导致文件损坏），并用新的 access token 继续本次命令
+- 刷新失败：如果旧 access token 仍未过期，则继续使用旧 token；如果旧 token 已过期，则要求用户重新 `ae-cli login`
 
 注意：ae-cli 使用两种不同的 HTTP 调用约定：
 - 初始 token 交换：`POST /oauth/token`，`application/x-www-form-urlencoded`（OAuth2 标准）
@@ -597,7 +597,7 @@ Provider 配置（base URL + API key）以及完整的工具原生配置写入�
 3. 未登录：显示登录表单（支持 LDAP 和 sub2api SSO 两种方式）
 4. 已登录：直接显示授权确认页面
 
-同一前端中的 `/login` 页面保持 `public route`，但只对未登录用户展示登录表单；若本地已有 token，前端应先调用 `/auth/me` 校验并 hydrate 当前用户，`401` 时清理残留 token，校验通过时将已登录用户重定向到经过净化的站内目标路径，而不是继续停留在登录页。
+同一前端中的 `/login` 页面保持 `public route`，但只对未登录用户展示登录表单；若本地已有 token，前端应先调用 `/auth/me` 校验并 hydrate 当前用户，校验通过时将已登录用户重定向到经过净化的站内目标路径，而不是继续停留在登录页。对于非 auth API 的运行时 `401`，前端应先尝试使用 localStorage 中的 `refresh_token` 调用 `/auth/refresh`，成功后重放原请求；仅在 refresh 失败时才清理本地 token 并跳转 `/login`。
 
 ### 授权确认页面
 

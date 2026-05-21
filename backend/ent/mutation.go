@@ -15,6 +15,7 @@ import (
 	"github.com/ai-efficiency/backend/ent/commitrewrite"
 	"github.com/ai-efficiency/backend/ent/credential"
 	"github.com/ai-efficiency/backend/ent/prattributionrun"
+	"github.com/ai-efficiency/backend/ent/prcommitusagesnapshot"
 	"github.com/ai-efficiency/backend/ent/predicate"
 	"github.com/ai-efficiency/backend/ent/prrecord"
 	"github.com/ai-efficiency/backend/ent/relayprovider"
@@ -35,47 +36,51 @@ const (
 	OpUpdateOne = ent.OpUpdateOne
 
 	// Node types.
-	TypeCommitCheckpoint  = "CommitCheckpoint"
-	TypeCommitRewrite     = "CommitRewrite"
-	TypeCredential        = "Credential"
-	TypePrAttributionRun  = "PrAttributionRun"
-	TypePrRecord          = "PrRecord"
-	TypeRelayProvider     = "RelayProvider"
-	TypeRepoConfig        = "RepoConfig"
-	TypeScmProvider       = "ScmProvider"
-	TypeSystemSetting     = "SystemSetting"
-	TypeToolUsageEvent    = "ToolUsageEvent"
-	TypeUser              = "User"
-	TypeWebhookDeadLetter = "WebhookDeadLetter"
+	TypeCommitCheckpoint      = "CommitCheckpoint"
+	TypeCommitRewrite         = "CommitRewrite"
+	TypeCredential            = "Credential"
+	TypePRCommitUsageSnapshot = "PRCommitUsageSnapshot"
+	TypePrAttributionRun      = "PrAttributionRun"
+	TypePrRecord              = "PrRecord"
+	TypeRelayProvider         = "RelayProvider"
+	TypeRepoConfig            = "RepoConfig"
+	TypeScmProvider           = "ScmProvider"
+	TypeSystemSetting         = "SystemSetting"
+	TypeToolUsageEvent        = "ToolUsageEvent"
+	TypeUser                  = "User"
+	TypeWebhookDeadLetter     = "WebhookDeadLetter"
 )
 
 // CommitCheckpointMutation represents an operation that mutates the CommitCheckpoint nodes in the graph.
 type CommitCheckpointMutation struct {
 	config
-	op                       Op
-	typ                      string
-	id                       *int
-	event_id                 *string
-	workspace_id             *string
-	commit_sha               *string
-	parent_shas              *[]string
-	appendparent_shas        []string
-	branch_snapshot          *string
-	head_snapshot            *string
-	binding_source           *commitcheckpoint.BindingSource
-	agent_snapshot           *map[string]interface{}
-	captured_at              *time.Time
-	clearedFields            map[string]struct{}
-	user                     *int
-	cleareduser              bool
-	repo_config              *int
-	clearedrepo_config       bool
-	tool_usage_events        map[int]struct{}
-	removedtool_usage_events map[int]struct{}
-	clearedtool_usage_events bool
-	done                     bool
-	oldValue                 func(context.Context) (*CommitCheckpoint, error)
-	predicates               []predicate.CommitCheckpoint
+	op                               Op
+	typ                              string
+	id                               *int
+	event_id                         *string
+	workspace_id                     *string
+	commit_sha                       *string
+	parent_shas                      *[]string
+	appendparent_shas                []string
+	branch_snapshot                  *string
+	head_snapshot                    *string
+	binding_source                   *commitcheckpoint.BindingSource
+	agent_snapshot                   *map[string]interface{}
+	captured_at                      *time.Time
+	clearedFields                    map[string]struct{}
+	user                             *int
+	cleareduser                      bool
+	repo_config                      *int
+	clearedrepo_config               bool
+	tool_usage_events                map[int]struct{}
+	removedtool_usage_events         map[int]struct{}
+	clearedtool_usage_events         bool
+	pr_commit_usage_snapshots        map[int]struct{}
+	removedpr_commit_usage_snapshots map[int]struct{}
+	clearedpr_commit_usage_snapshots bool
+	done                             bool
+	oldValue                         func(context.Context) (*CommitCheckpoint, error)
+	predicates                       []predicate.CommitCheckpoint
 }
 
 var _ ent.Mutation = (*CommitCheckpointMutation)(nil)
@@ -747,6 +752,60 @@ func (m *CommitCheckpointMutation) ResetToolUsageEvents() {
 	m.removedtool_usage_events = nil
 }
 
+// AddPrCommitUsageSnapshotIDs adds the "pr_commit_usage_snapshots" edge to the PRCommitUsageSnapshot entity by ids.
+func (m *CommitCheckpointMutation) AddPrCommitUsageSnapshotIDs(ids ...int) {
+	if m.pr_commit_usage_snapshots == nil {
+		m.pr_commit_usage_snapshots = make(map[int]struct{})
+	}
+	for i := range ids {
+		m.pr_commit_usage_snapshots[ids[i]] = struct{}{}
+	}
+}
+
+// ClearPrCommitUsageSnapshots clears the "pr_commit_usage_snapshots" edge to the PRCommitUsageSnapshot entity.
+func (m *CommitCheckpointMutation) ClearPrCommitUsageSnapshots() {
+	m.clearedpr_commit_usage_snapshots = true
+}
+
+// PrCommitUsageSnapshotsCleared reports if the "pr_commit_usage_snapshots" edge to the PRCommitUsageSnapshot entity was cleared.
+func (m *CommitCheckpointMutation) PrCommitUsageSnapshotsCleared() bool {
+	return m.clearedpr_commit_usage_snapshots
+}
+
+// RemovePrCommitUsageSnapshotIDs removes the "pr_commit_usage_snapshots" edge to the PRCommitUsageSnapshot entity by IDs.
+func (m *CommitCheckpointMutation) RemovePrCommitUsageSnapshotIDs(ids ...int) {
+	if m.removedpr_commit_usage_snapshots == nil {
+		m.removedpr_commit_usage_snapshots = make(map[int]struct{})
+	}
+	for i := range ids {
+		delete(m.pr_commit_usage_snapshots, ids[i])
+		m.removedpr_commit_usage_snapshots[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedPrCommitUsageSnapshots returns the removed IDs of the "pr_commit_usage_snapshots" edge to the PRCommitUsageSnapshot entity.
+func (m *CommitCheckpointMutation) RemovedPrCommitUsageSnapshotsIDs() (ids []int) {
+	for id := range m.removedpr_commit_usage_snapshots {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// PrCommitUsageSnapshotsIDs returns the "pr_commit_usage_snapshots" edge IDs in the mutation.
+func (m *CommitCheckpointMutation) PrCommitUsageSnapshotsIDs() (ids []int) {
+	for id := range m.pr_commit_usage_snapshots {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetPrCommitUsageSnapshots resets all changes to the "pr_commit_usage_snapshots" edge.
+func (m *CommitCheckpointMutation) ResetPrCommitUsageSnapshots() {
+	m.pr_commit_usage_snapshots = nil
+	m.clearedpr_commit_usage_snapshots = false
+	m.removedpr_commit_usage_snapshots = nil
+}
+
 // Where appends a list predicates to the CommitCheckpointMutation builder.
 func (m *CommitCheckpointMutation) Where(ps ...predicate.CommitCheckpoint) {
 	m.predicates = append(m.predicates, ps...)
@@ -1080,7 +1139,7 @@ func (m *CommitCheckpointMutation) ResetField(name string) error {
 
 // AddedEdges returns all edge names that were set/added in this mutation.
 func (m *CommitCheckpointMutation) AddedEdges() []string {
-	edges := make([]string, 0, 3)
+	edges := make([]string, 0, 4)
 	if m.user != nil {
 		edges = append(edges, commitcheckpoint.EdgeUser)
 	}
@@ -1089,6 +1148,9 @@ func (m *CommitCheckpointMutation) AddedEdges() []string {
 	}
 	if m.tool_usage_events != nil {
 		edges = append(edges, commitcheckpoint.EdgeToolUsageEvents)
+	}
+	if m.pr_commit_usage_snapshots != nil {
+		edges = append(edges, commitcheckpoint.EdgePrCommitUsageSnapshots)
 	}
 	return edges
 }
@@ -1111,15 +1173,24 @@ func (m *CommitCheckpointMutation) AddedIDs(name string) []ent.Value {
 			ids = append(ids, id)
 		}
 		return ids
+	case commitcheckpoint.EdgePrCommitUsageSnapshots:
+		ids := make([]ent.Value, 0, len(m.pr_commit_usage_snapshots))
+		for id := range m.pr_commit_usage_snapshots {
+			ids = append(ids, id)
+		}
+		return ids
 	}
 	return nil
 }
 
 // RemovedEdges returns all edge names that were removed in this mutation.
 func (m *CommitCheckpointMutation) RemovedEdges() []string {
-	edges := make([]string, 0, 3)
+	edges := make([]string, 0, 4)
 	if m.removedtool_usage_events != nil {
 		edges = append(edges, commitcheckpoint.EdgeToolUsageEvents)
+	}
+	if m.removedpr_commit_usage_snapshots != nil {
+		edges = append(edges, commitcheckpoint.EdgePrCommitUsageSnapshots)
 	}
 	return edges
 }
@@ -1134,13 +1205,19 @@ func (m *CommitCheckpointMutation) RemovedIDs(name string) []ent.Value {
 			ids = append(ids, id)
 		}
 		return ids
+	case commitcheckpoint.EdgePrCommitUsageSnapshots:
+		ids := make([]ent.Value, 0, len(m.removedpr_commit_usage_snapshots))
+		for id := range m.removedpr_commit_usage_snapshots {
+			ids = append(ids, id)
+		}
+		return ids
 	}
 	return nil
 }
 
 // ClearedEdges returns all edge names that were cleared in this mutation.
 func (m *CommitCheckpointMutation) ClearedEdges() []string {
-	edges := make([]string, 0, 3)
+	edges := make([]string, 0, 4)
 	if m.cleareduser {
 		edges = append(edges, commitcheckpoint.EdgeUser)
 	}
@@ -1149,6 +1226,9 @@ func (m *CommitCheckpointMutation) ClearedEdges() []string {
 	}
 	if m.clearedtool_usage_events {
 		edges = append(edges, commitcheckpoint.EdgeToolUsageEvents)
+	}
+	if m.clearedpr_commit_usage_snapshots {
+		edges = append(edges, commitcheckpoint.EdgePrCommitUsageSnapshots)
 	}
 	return edges
 }
@@ -1163,6 +1243,8 @@ func (m *CommitCheckpointMutation) EdgeCleared(name string) bool {
 		return m.clearedrepo_config
 	case commitcheckpoint.EdgeToolUsageEvents:
 		return m.clearedtool_usage_events
+	case commitcheckpoint.EdgePrCommitUsageSnapshots:
+		return m.clearedpr_commit_usage_snapshots
 	}
 	return false
 }
@@ -1193,6 +1275,9 @@ func (m *CommitCheckpointMutation) ResetEdge(name string) error {
 		return nil
 	case commitcheckpoint.EdgeToolUsageEvents:
 		m.ResetToolUsageEvents()
+		return nil
+	case commitcheckpoint.EdgePrCommitUsageSnapshots:
+		m.ResetPrCommitUsageSnapshots()
 		return nil
 	}
 	return fmt.Errorf("unknown CommitCheckpoint edge %s", name)
@@ -2853,6 +2938,1355 @@ func (m *CredentialMutation) ResetEdge(name string) error {
 	return fmt.Errorf("unknown Credential edge %s", name)
 }
 
+// PRCommitUsageSnapshotMutation represents an operation that mutates the PRCommitUsageSnapshot nodes in the graph.
+type PRCommitUsageSnapshotMutation struct {
+	config
+	op                       Op
+	typ                      string
+	id                       *int
+	commit_sha               *string
+	captured_at              *time.Time
+	input_tokens             *int64
+	addinput_tokens          *int64
+	output_tokens            *int64
+	addoutput_tokens         *int64
+	cached_input_tokens      *int64
+	addcached_input_tokens   *int64
+	reasoning_tokens         *int64
+	addreasoning_tokens      *int64
+	credit_usage             *float64
+	addcredit_usage          *float64
+	request_count            *int
+	addrequest_count         *int
+	sort_order               *int
+	addsort_order            *int
+	created_at               *time.Time
+	updated_at               *time.Time
+	clearedFields            map[string]struct{}
+	pr_record                *int
+	clearedpr_record         bool
+	commit_checkpoint        *int
+	clearedcommit_checkpoint bool
+	done                     bool
+	oldValue                 func(context.Context) (*PRCommitUsageSnapshot, error)
+	predicates               []predicate.PRCommitUsageSnapshot
+}
+
+var _ ent.Mutation = (*PRCommitUsageSnapshotMutation)(nil)
+
+// prcommitusagesnapshotOption allows management of the mutation configuration using functional options.
+type prcommitusagesnapshotOption func(*PRCommitUsageSnapshotMutation)
+
+// newPRCommitUsageSnapshotMutation creates new mutation for the PRCommitUsageSnapshot entity.
+func newPRCommitUsageSnapshotMutation(c config, op Op, opts ...prcommitusagesnapshotOption) *PRCommitUsageSnapshotMutation {
+	m := &PRCommitUsageSnapshotMutation{
+		config:        c,
+		op:            op,
+		typ:           TypePRCommitUsageSnapshot,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withPRCommitUsageSnapshotID sets the ID field of the mutation.
+func withPRCommitUsageSnapshotID(id int) prcommitusagesnapshotOption {
+	return func(m *PRCommitUsageSnapshotMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *PRCommitUsageSnapshot
+		)
+		m.oldValue = func(ctx context.Context) (*PRCommitUsageSnapshot, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().PRCommitUsageSnapshot.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withPRCommitUsageSnapshot sets the old PRCommitUsageSnapshot of the mutation.
+func withPRCommitUsageSnapshot(node *PRCommitUsageSnapshot) prcommitusagesnapshotOption {
+	return func(m *PRCommitUsageSnapshotMutation) {
+		m.oldValue = func(context.Context) (*PRCommitUsageSnapshot, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m PRCommitUsageSnapshotMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m PRCommitUsageSnapshotMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *PRCommitUsageSnapshotMutation) ID() (id int, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *PRCommitUsageSnapshotMutation) IDs(ctx context.Context) ([]int, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().PRCommitUsageSnapshot.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetPrRecordID sets the "pr_record_id" field.
+func (m *PRCommitUsageSnapshotMutation) SetPrRecordID(i int) {
+	m.pr_record = &i
+}
+
+// PrRecordID returns the value of the "pr_record_id" field in the mutation.
+func (m *PRCommitUsageSnapshotMutation) PrRecordID() (r int, exists bool) {
+	v := m.pr_record
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPrRecordID returns the old "pr_record_id" field's value of the PRCommitUsageSnapshot entity.
+// If the PRCommitUsageSnapshot object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PRCommitUsageSnapshotMutation) OldPrRecordID(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPrRecordID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPrRecordID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPrRecordID: %w", err)
+	}
+	return oldValue.PrRecordID, nil
+}
+
+// ResetPrRecordID resets all changes to the "pr_record_id" field.
+func (m *PRCommitUsageSnapshotMutation) ResetPrRecordID() {
+	m.pr_record = nil
+}
+
+// SetCommitSha sets the "commit_sha" field.
+func (m *PRCommitUsageSnapshotMutation) SetCommitSha(s string) {
+	m.commit_sha = &s
+}
+
+// CommitSha returns the value of the "commit_sha" field in the mutation.
+func (m *PRCommitUsageSnapshotMutation) CommitSha() (r string, exists bool) {
+	v := m.commit_sha
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCommitSha returns the old "commit_sha" field's value of the PRCommitUsageSnapshot entity.
+// If the PRCommitUsageSnapshot object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PRCommitUsageSnapshotMutation) OldCommitSha(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCommitSha is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCommitSha requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCommitSha: %w", err)
+	}
+	return oldValue.CommitSha, nil
+}
+
+// ResetCommitSha resets all changes to the "commit_sha" field.
+func (m *PRCommitUsageSnapshotMutation) ResetCommitSha() {
+	m.commit_sha = nil
+}
+
+// SetCommitCheckpointID sets the "commit_checkpoint_id" field.
+func (m *PRCommitUsageSnapshotMutation) SetCommitCheckpointID(i int) {
+	m.commit_checkpoint = &i
+}
+
+// CommitCheckpointID returns the value of the "commit_checkpoint_id" field in the mutation.
+func (m *PRCommitUsageSnapshotMutation) CommitCheckpointID() (r int, exists bool) {
+	v := m.commit_checkpoint
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCommitCheckpointID returns the old "commit_checkpoint_id" field's value of the PRCommitUsageSnapshot entity.
+// If the PRCommitUsageSnapshot object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PRCommitUsageSnapshotMutation) OldCommitCheckpointID(ctx context.Context) (v *int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCommitCheckpointID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCommitCheckpointID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCommitCheckpointID: %w", err)
+	}
+	return oldValue.CommitCheckpointID, nil
+}
+
+// ClearCommitCheckpointID clears the value of the "commit_checkpoint_id" field.
+func (m *PRCommitUsageSnapshotMutation) ClearCommitCheckpointID() {
+	m.commit_checkpoint = nil
+	m.clearedFields[prcommitusagesnapshot.FieldCommitCheckpointID] = struct{}{}
+}
+
+// CommitCheckpointIDCleared returns if the "commit_checkpoint_id" field was cleared in this mutation.
+func (m *PRCommitUsageSnapshotMutation) CommitCheckpointIDCleared() bool {
+	_, ok := m.clearedFields[prcommitusagesnapshot.FieldCommitCheckpointID]
+	return ok
+}
+
+// ResetCommitCheckpointID resets all changes to the "commit_checkpoint_id" field.
+func (m *PRCommitUsageSnapshotMutation) ResetCommitCheckpointID() {
+	m.commit_checkpoint = nil
+	delete(m.clearedFields, prcommitusagesnapshot.FieldCommitCheckpointID)
+}
+
+// SetCapturedAt sets the "captured_at" field.
+func (m *PRCommitUsageSnapshotMutation) SetCapturedAt(t time.Time) {
+	m.captured_at = &t
+}
+
+// CapturedAt returns the value of the "captured_at" field in the mutation.
+func (m *PRCommitUsageSnapshotMutation) CapturedAt() (r time.Time, exists bool) {
+	v := m.captured_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCapturedAt returns the old "captured_at" field's value of the PRCommitUsageSnapshot entity.
+// If the PRCommitUsageSnapshot object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PRCommitUsageSnapshotMutation) OldCapturedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCapturedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCapturedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCapturedAt: %w", err)
+	}
+	return oldValue.CapturedAt, nil
+}
+
+// ClearCapturedAt clears the value of the "captured_at" field.
+func (m *PRCommitUsageSnapshotMutation) ClearCapturedAt() {
+	m.captured_at = nil
+	m.clearedFields[prcommitusagesnapshot.FieldCapturedAt] = struct{}{}
+}
+
+// CapturedAtCleared returns if the "captured_at" field was cleared in this mutation.
+func (m *PRCommitUsageSnapshotMutation) CapturedAtCleared() bool {
+	_, ok := m.clearedFields[prcommitusagesnapshot.FieldCapturedAt]
+	return ok
+}
+
+// ResetCapturedAt resets all changes to the "captured_at" field.
+func (m *PRCommitUsageSnapshotMutation) ResetCapturedAt() {
+	m.captured_at = nil
+	delete(m.clearedFields, prcommitusagesnapshot.FieldCapturedAt)
+}
+
+// SetInputTokens sets the "input_tokens" field.
+func (m *PRCommitUsageSnapshotMutation) SetInputTokens(i int64) {
+	m.input_tokens = &i
+	m.addinput_tokens = nil
+}
+
+// InputTokens returns the value of the "input_tokens" field in the mutation.
+func (m *PRCommitUsageSnapshotMutation) InputTokens() (r int64, exists bool) {
+	v := m.input_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldInputTokens returns the old "input_tokens" field's value of the PRCommitUsageSnapshot entity.
+// If the PRCommitUsageSnapshot object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PRCommitUsageSnapshotMutation) OldInputTokens(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldInputTokens is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldInputTokens requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldInputTokens: %w", err)
+	}
+	return oldValue.InputTokens, nil
+}
+
+// AddInputTokens adds i to the "input_tokens" field.
+func (m *PRCommitUsageSnapshotMutation) AddInputTokens(i int64) {
+	if m.addinput_tokens != nil {
+		*m.addinput_tokens += i
+	} else {
+		m.addinput_tokens = &i
+	}
+}
+
+// AddedInputTokens returns the value that was added to the "input_tokens" field in this mutation.
+func (m *PRCommitUsageSnapshotMutation) AddedInputTokens() (r int64, exists bool) {
+	v := m.addinput_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetInputTokens resets all changes to the "input_tokens" field.
+func (m *PRCommitUsageSnapshotMutation) ResetInputTokens() {
+	m.input_tokens = nil
+	m.addinput_tokens = nil
+}
+
+// SetOutputTokens sets the "output_tokens" field.
+func (m *PRCommitUsageSnapshotMutation) SetOutputTokens(i int64) {
+	m.output_tokens = &i
+	m.addoutput_tokens = nil
+}
+
+// OutputTokens returns the value of the "output_tokens" field in the mutation.
+func (m *PRCommitUsageSnapshotMutation) OutputTokens() (r int64, exists bool) {
+	v := m.output_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldOutputTokens returns the old "output_tokens" field's value of the PRCommitUsageSnapshot entity.
+// If the PRCommitUsageSnapshot object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PRCommitUsageSnapshotMutation) OldOutputTokens(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldOutputTokens is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldOutputTokens requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldOutputTokens: %w", err)
+	}
+	return oldValue.OutputTokens, nil
+}
+
+// AddOutputTokens adds i to the "output_tokens" field.
+func (m *PRCommitUsageSnapshotMutation) AddOutputTokens(i int64) {
+	if m.addoutput_tokens != nil {
+		*m.addoutput_tokens += i
+	} else {
+		m.addoutput_tokens = &i
+	}
+}
+
+// AddedOutputTokens returns the value that was added to the "output_tokens" field in this mutation.
+func (m *PRCommitUsageSnapshotMutation) AddedOutputTokens() (r int64, exists bool) {
+	v := m.addoutput_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetOutputTokens resets all changes to the "output_tokens" field.
+func (m *PRCommitUsageSnapshotMutation) ResetOutputTokens() {
+	m.output_tokens = nil
+	m.addoutput_tokens = nil
+}
+
+// SetCachedInputTokens sets the "cached_input_tokens" field.
+func (m *PRCommitUsageSnapshotMutation) SetCachedInputTokens(i int64) {
+	m.cached_input_tokens = &i
+	m.addcached_input_tokens = nil
+}
+
+// CachedInputTokens returns the value of the "cached_input_tokens" field in the mutation.
+func (m *PRCommitUsageSnapshotMutation) CachedInputTokens() (r int64, exists bool) {
+	v := m.cached_input_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCachedInputTokens returns the old "cached_input_tokens" field's value of the PRCommitUsageSnapshot entity.
+// If the PRCommitUsageSnapshot object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PRCommitUsageSnapshotMutation) OldCachedInputTokens(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCachedInputTokens is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCachedInputTokens requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCachedInputTokens: %w", err)
+	}
+	return oldValue.CachedInputTokens, nil
+}
+
+// AddCachedInputTokens adds i to the "cached_input_tokens" field.
+func (m *PRCommitUsageSnapshotMutation) AddCachedInputTokens(i int64) {
+	if m.addcached_input_tokens != nil {
+		*m.addcached_input_tokens += i
+	} else {
+		m.addcached_input_tokens = &i
+	}
+}
+
+// AddedCachedInputTokens returns the value that was added to the "cached_input_tokens" field in this mutation.
+func (m *PRCommitUsageSnapshotMutation) AddedCachedInputTokens() (r int64, exists bool) {
+	v := m.addcached_input_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetCachedInputTokens resets all changes to the "cached_input_tokens" field.
+func (m *PRCommitUsageSnapshotMutation) ResetCachedInputTokens() {
+	m.cached_input_tokens = nil
+	m.addcached_input_tokens = nil
+}
+
+// SetReasoningTokens sets the "reasoning_tokens" field.
+func (m *PRCommitUsageSnapshotMutation) SetReasoningTokens(i int64) {
+	m.reasoning_tokens = &i
+	m.addreasoning_tokens = nil
+}
+
+// ReasoningTokens returns the value of the "reasoning_tokens" field in the mutation.
+func (m *PRCommitUsageSnapshotMutation) ReasoningTokens() (r int64, exists bool) {
+	v := m.reasoning_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldReasoningTokens returns the old "reasoning_tokens" field's value of the PRCommitUsageSnapshot entity.
+// If the PRCommitUsageSnapshot object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PRCommitUsageSnapshotMutation) OldReasoningTokens(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldReasoningTokens is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldReasoningTokens requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldReasoningTokens: %w", err)
+	}
+	return oldValue.ReasoningTokens, nil
+}
+
+// AddReasoningTokens adds i to the "reasoning_tokens" field.
+func (m *PRCommitUsageSnapshotMutation) AddReasoningTokens(i int64) {
+	if m.addreasoning_tokens != nil {
+		*m.addreasoning_tokens += i
+	} else {
+		m.addreasoning_tokens = &i
+	}
+}
+
+// AddedReasoningTokens returns the value that was added to the "reasoning_tokens" field in this mutation.
+func (m *PRCommitUsageSnapshotMutation) AddedReasoningTokens() (r int64, exists bool) {
+	v := m.addreasoning_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetReasoningTokens resets all changes to the "reasoning_tokens" field.
+func (m *PRCommitUsageSnapshotMutation) ResetReasoningTokens() {
+	m.reasoning_tokens = nil
+	m.addreasoning_tokens = nil
+}
+
+// SetCreditUsage sets the "credit_usage" field.
+func (m *PRCommitUsageSnapshotMutation) SetCreditUsage(f float64) {
+	m.credit_usage = &f
+	m.addcredit_usage = nil
+}
+
+// CreditUsage returns the value of the "credit_usage" field in the mutation.
+func (m *PRCommitUsageSnapshotMutation) CreditUsage() (r float64, exists bool) {
+	v := m.credit_usage
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreditUsage returns the old "credit_usage" field's value of the PRCommitUsageSnapshot entity.
+// If the PRCommitUsageSnapshot object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PRCommitUsageSnapshotMutation) OldCreditUsage(ctx context.Context) (v float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreditUsage is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreditUsage requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreditUsage: %w", err)
+	}
+	return oldValue.CreditUsage, nil
+}
+
+// AddCreditUsage adds f to the "credit_usage" field.
+func (m *PRCommitUsageSnapshotMutation) AddCreditUsage(f float64) {
+	if m.addcredit_usage != nil {
+		*m.addcredit_usage += f
+	} else {
+		m.addcredit_usage = &f
+	}
+}
+
+// AddedCreditUsage returns the value that was added to the "credit_usage" field in this mutation.
+func (m *PRCommitUsageSnapshotMutation) AddedCreditUsage() (r float64, exists bool) {
+	v := m.addcredit_usage
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetCreditUsage resets all changes to the "credit_usage" field.
+func (m *PRCommitUsageSnapshotMutation) ResetCreditUsage() {
+	m.credit_usage = nil
+	m.addcredit_usage = nil
+}
+
+// SetRequestCount sets the "request_count" field.
+func (m *PRCommitUsageSnapshotMutation) SetRequestCount(i int) {
+	m.request_count = &i
+	m.addrequest_count = nil
+}
+
+// RequestCount returns the value of the "request_count" field in the mutation.
+func (m *PRCommitUsageSnapshotMutation) RequestCount() (r int, exists bool) {
+	v := m.request_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRequestCount returns the old "request_count" field's value of the PRCommitUsageSnapshot entity.
+// If the PRCommitUsageSnapshot object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PRCommitUsageSnapshotMutation) OldRequestCount(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRequestCount is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRequestCount requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRequestCount: %w", err)
+	}
+	return oldValue.RequestCount, nil
+}
+
+// AddRequestCount adds i to the "request_count" field.
+func (m *PRCommitUsageSnapshotMutation) AddRequestCount(i int) {
+	if m.addrequest_count != nil {
+		*m.addrequest_count += i
+	} else {
+		m.addrequest_count = &i
+	}
+}
+
+// AddedRequestCount returns the value that was added to the "request_count" field in this mutation.
+func (m *PRCommitUsageSnapshotMutation) AddedRequestCount() (r int, exists bool) {
+	v := m.addrequest_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetRequestCount resets all changes to the "request_count" field.
+func (m *PRCommitUsageSnapshotMutation) ResetRequestCount() {
+	m.request_count = nil
+	m.addrequest_count = nil
+}
+
+// SetSortOrder sets the "sort_order" field.
+func (m *PRCommitUsageSnapshotMutation) SetSortOrder(i int) {
+	m.sort_order = &i
+	m.addsort_order = nil
+}
+
+// SortOrder returns the value of the "sort_order" field in the mutation.
+func (m *PRCommitUsageSnapshotMutation) SortOrder() (r int, exists bool) {
+	v := m.sort_order
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSortOrder returns the old "sort_order" field's value of the PRCommitUsageSnapshot entity.
+// If the PRCommitUsageSnapshot object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PRCommitUsageSnapshotMutation) OldSortOrder(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSortOrder is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSortOrder requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSortOrder: %w", err)
+	}
+	return oldValue.SortOrder, nil
+}
+
+// AddSortOrder adds i to the "sort_order" field.
+func (m *PRCommitUsageSnapshotMutation) AddSortOrder(i int) {
+	if m.addsort_order != nil {
+		*m.addsort_order += i
+	} else {
+		m.addsort_order = &i
+	}
+}
+
+// AddedSortOrder returns the value that was added to the "sort_order" field in this mutation.
+func (m *PRCommitUsageSnapshotMutation) AddedSortOrder() (r int, exists bool) {
+	v := m.addsort_order
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetSortOrder resets all changes to the "sort_order" field.
+func (m *PRCommitUsageSnapshotMutation) ResetSortOrder() {
+	m.sort_order = nil
+	m.addsort_order = nil
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *PRCommitUsageSnapshotMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *PRCommitUsageSnapshotMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the PRCommitUsageSnapshot entity.
+// If the PRCommitUsageSnapshot object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PRCommitUsageSnapshotMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *PRCommitUsageSnapshotMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *PRCommitUsageSnapshotMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *PRCommitUsageSnapshotMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the PRCommitUsageSnapshot entity.
+// If the PRCommitUsageSnapshot object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PRCommitUsageSnapshotMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *PRCommitUsageSnapshotMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// ClearPrRecord clears the "pr_record" edge to the PrRecord entity.
+func (m *PRCommitUsageSnapshotMutation) ClearPrRecord() {
+	m.clearedpr_record = true
+	m.clearedFields[prcommitusagesnapshot.FieldPrRecordID] = struct{}{}
+}
+
+// PrRecordCleared reports if the "pr_record" edge to the PrRecord entity was cleared.
+func (m *PRCommitUsageSnapshotMutation) PrRecordCleared() bool {
+	return m.clearedpr_record
+}
+
+// PrRecordIDs returns the "pr_record" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// PrRecordID instead. It exists only for internal usage by the builders.
+func (m *PRCommitUsageSnapshotMutation) PrRecordIDs() (ids []int) {
+	if id := m.pr_record; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetPrRecord resets all changes to the "pr_record" edge.
+func (m *PRCommitUsageSnapshotMutation) ResetPrRecord() {
+	m.pr_record = nil
+	m.clearedpr_record = false
+}
+
+// ClearCommitCheckpoint clears the "commit_checkpoint" edge to the CommitCheckpoint entity.
+func (m *PRCommitUsageSnapshotMutation) ClearCommitCheckpoint() {
+	m.clearedcommit_checkpoint = true
+	m.clearedFields[prcommitusagesnapshot.FieldCommitCheckpointID] = struct{}{}
+}
+
+// CommitCheckpointCleared reports if the "commit_checkpoint" edge to the CommitCheckpoint entity was cleared.
+func (m *PRCommitUsageSnapshotMutation) CommitCheckpointCleared() bool {
+	return m.CommitCheckpointIDCleared() || m.clearedcommit_checkpoint
+}
+
+// CommitCheckpointIDs returns the "commit_checkpoint" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// CommitCheckpointID instead. It exists only for internal usage by the builders.
+func (m *PRCommitUsageSnapshotMutation) CommitCheckpointIDs() (ids []int) {
+	if id := m.commit_checkpoint; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetCommitCheckpoint resets all changes to the "commit_checkpoint" edge.
+func (m *PRCommitUsageSnapshotMutation) ResetCommitCheckpoint() {
+	m.commit_checkpoint = nil
+	m.clearedcommit_checkpoint = false
+}
+
+// Where appends a list predicates to the PRCommitUsageSnapshotMutation builder.
+func (m *PRCommitUsageSnapshotMutation) Where(ps ...predicate.PRCommitUsageSnapshot) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the PRCommitUsageSnapshotMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *PRCommitUsageSnapshotMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.PRCommitUsageSnapshot, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *PRCommitUsageSnapshotMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *PRCommitUsageSnapshotMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (PRCommitUsageSnapshot).
+func (m *PRCommitUsageSnapshotMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *PRCommitUsageSnapshotMutation) Fields() []string {
+	fields := make([]string, 0, 13)
+	if m.pr_record != nil {
+		fields = append(fields, prcommitusagesnapshot.FieldPrRecordID)
+	}
+	if m.commit_sha != nil {
+		fields = append(fields, prcommitusagesnapshot.FieldCommitSha)
+	}
+	if m.commit_checkpoint != nil {
+		fields = append(fields, prcommitusagesnapshot.FieldCommitCheckpointID)
+	}
+	if m.captured_at != nil {
+		fields = append(fields, prcommitusagesnapshot.FieldCapturedAt)
+	}
+	if m.input_tokens != nil {
+		fields = append(fields, prcommitusagesnapshot.FieldInputTokens)
+	}
+	if m.output_tokens != nil {
+		fields = append(fields, prcommitusagesnapshot.FieldOutputTokens)
+	}
+	if m.cached_input_tokens != nil {
+		fields = append(fields, prcommitusagesnapshot.FieldCachedInputTokens)
+	}
+	if m.reasoning_tokens != nil {
+		fields = append(fields, prcommitusagesnapshot.FieldReasoningTokens)
+	}
+	if m.credit_usage != nil {
+		fields = append(fields, prcommitusagesnapshot.FieldCreditUsage)
+	}
+	if m.request_count != nil {
+		fields = append(fields, prcommitusagesnapshot.FieldRequestCount)
+	}
+	if m.sort_order != nil {
+		fields = append(fields, prcommitusagesnapshot.FieldSortOrder)
+	}
+	if m.created_at != nil {
+		fields = append(fields, prcommitusagesnapshot.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, prcommitusagesnapshot.FieldUpdatedAt)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *PRCommitUsageSnapshotMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case prcommitusagesnapshot.FieldPrRecordID:
+		return m.PrRecordID()
+	case prcommitusagesnapshot.FieldCommitSha:
+		return m.CommitSha()
+	case prcommitusagesnapshot.FieldCommitCheckpointID:
+		return m.CommitCheckpointID()
+	case prcommitusagesnapshot.FieldCapturedAt:
+		return m.CapturedAt()
+	case prcommitusagesnapshot.FieldInputTokens:
+		return m.InputTokens()
+	case prcommitusagesnapshot.FieldOutputTokens:
+		return m.OutputTokens()
+	case prcommitusagesnapshot.FieldCachedInputTokens:
+		return m.CachedInputTokens()
+	case prcommitusagesnapshot.FieldReasoningTokens:
+		return m.ReasoningTokens()
+	case prcommitusagesnapshot.FieldCreditUsage:
+		return m.CreditUsage()
+	case prcommitusagesnapshot.FieldRequestCount:
+		return m.RequestCount()
+	case prcommitusagesnapshot.FieldSortOrder:
+		return m.SortOrder()
+	case prcommitusagesnapshot.FieldCreatedAt:
+		return m.CreatedAt()
+	case prcommitusagesnapshot.FieldUpdatedAt:
+		return m.UpdatedAt()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *PRCommitUsageSnapshotMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case prcommitusagesnapshot.FieldPrRecordID:
+		return m.OldPrRecordID(ctx)
+	case prcommitusagesnapshot.FieldCommitSha:
+		return m.OldCommitSha(ctx)
+	case prcommitusagesnapshot.FieldCommitCheckpointID:
+		return m.OldCommitCheckpointID(ctx)
+	case prcommitusagesnapshot.FieldCapturedAt:
+		return m.OldCapturedAt(ctx)
+	case prcommitusagesnapshot.FieldInputTokens:
+		return m.OldInputTokens(ctx)
+	case prcommitusagesnapshot.FieldOutputTokens:
+		return m.OldOutputTokens(ctx)
+	case prcommitusagesnapshot.FieldCachedInputTokens:
+		return m.OldCachedInputTokens(ctx)
+	case prcommitusagesnapshot.FieldReasoningTokens:
+		return m.OldReasoningTokens(ctx)
+	case prcommitusagesnapshot.FieldCreditUsage:
+		return m.OldCreditUsage(ctx)
+	case prcommitusagesnapshot.FieldRequestCount:
+		return m.OldRequestCount(ctx)
+	case prcommitusagesnapshot.FieldSortOrder:
+		return m.OldSortOrder(ctx)
+	case prcommitusagesnapshot.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case prcommitusagesnapshot.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	}
+	return nil, fmt.Errorf("unknown PRCommitUsageSnapshot field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *PRCommitUsageSnapshotMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case prcommitusagesnapshot.FieldPrRecordID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPrRecordID(v)
+		return nil
+	case prcommitusagesnapshot.FieldCommitSha:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCommitSha(v)
+		return nil
+	case prcommitusagesnapshot.FieldCommitCheckpointID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCommitCheckpointID(v)
+		return nil
+	case prcommitusagesnapshot.FieldCapturedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCapturedAt(v)
+		return nil
+	case prcommitusagesnapshot.FieldInputTokens:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetInputTokens(v)
+		return nil
+	case prcommitusagesnapshot.FieldOutputTokens:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetOutputTokens(v)
+		return nil
+	case prcommitusagesnapshot.FieldCachedInputTokens:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCachedInputTokens(v)
+		return nil
+	case prcommitusagesnapshot.FieldReasoningTokens:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetReasoningTokens(v)
+		return nil
+	case prcommitusagesnapshot.FieldCreditUsage:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreditUsage(v)
+		return nil
+	case prcommitusagesnapshot.FieldRequestCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRequestCount(v)
+		return nil
+	case prcommitusagesnapshot.FieldSortOrder:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSortOrder(v)
+		return nil
+	case prcommitusagesnapshot.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case prcommitusagesnapshot.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	}
+	return fmt.Errorf("unknown PRCommitUsageSnapshot field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *PRCommitUsageSnapshotMutation) AddedFields() []string {
+	var fields []string
+	if m.addinput_tokens != nil {
+		fields = append(fields, prcommitusagesnapshot.FieldInputTokens)
+	}
+	if m.addoutput_tokens != nil {
+		fields = append(fields, prcommitusagesnapshot.FieldOutputTokens)
+	}
+	if m.addcached_input_tokens != nil {
+		fields = append(fields, prcommitusagesnapshot.FieldCachedInputTokens)
+	}
+	if m.addreasoning_tokens != nil {
+		fields = append(fields, prcommitusagesnapshot.FieldReasoningTokens)
+	}
+	if m.addcredit_usage != nil {
+		fields = append(fields, prcommitusagesnapshot.FieldCreditUsage)
+	}
+	if m.addrequest_count != nil {
+		fields = append(fields, prcommitusagesnapshot.FieldRequestCount)
+	}
+	if m.addsort_order != nil {
+		fields = append(fields, prcommitusagesnapshot.FieldSortOrder)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *PRCommitUsageSnapshotMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case prcommitusagesnapshot.FieldInputTokens:
+		return m.AddedInputTokens()
+	case prcommitusagesnapshot.FieldOutputTokens:
+		return m.AddedOutputTokens()
+	case prcommitusagesnapshot.FieldCachedInputTokens:
+		return m.AddedCachedInputTokens()
+	case prcommitusagesnapshot.FieldReasoningTokens:
+		return m.AddedReasoningTokens()
+	case prcommitusagesnapshot.FieldCreditUsage:
+		return m.AddedCreditUsage()
+	case prcommitusagesnapshot.FieldRequestCount:
+		return m.AddedRequestCount()
+	case prcommitusagesnapshot.FieldSortOrder:
+		return m.AddedSortOrder()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *PRCommitUsageSnapshotMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case prcommitusagesnapshot.FieldInputTokens:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddInputTokens(v)
+		return nil
+	case prcommitusagesnapshot.FieldOutputTokens:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddOutputTokens(v)
+		return nil
+	case prcommitusagesnapshot.FieldCachedInputTokens:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddCachedInputTokens(v)
+		return nil
+	case prcommitusagesnapshot.FieldReasoningTokens:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddReasoningTokens(v)
+		return nil
+	case prcommitusagesnapshot.FieldCreditUsage:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddCreditUsage(v)
+		return nil
+	case prcommitusagesnapshot.FieldRequestCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddRequestCount(v)
+		return nil
+	case prcommitusagesnapshot.FieldSortOrder:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddSortOrder(v)
+		return nil
+	}
+	return fmt.Errorf("unknown PRCommitUsageSnapshot numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *PRCommitUsageSnapshotMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(prcommitusagesnapshot.FieldCommitCheckpointID) {
+		fields = append(fields, prcommitusagesnapshot.FieldCommitCheckpointID)
+	}
+	if m.FieldCleared(prcommitusagesnapshot.FieldCapturedAt) {
+		fields = append(fields, prcommitusagesnapshot.FieldCapturedAt)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *PRCommitUsageSnapshotMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *PRCommitUsageSnapshotMutation) ClearField(name string) error {
+	switch name {
+	case prcommitusagesnapshot.FieldCommitCheckpointID:
+		m.ClearCommitCheckpointID()
+		return nil
+	case prcommitusagesnapshot.FieldCapturedAt:
+		m.ClearCapturedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown PRCommitUsageSnapshot nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *PRCommitUsageSnapshotMutation) ResetField(name string) error {
+	switch name {
+	case prcommitusagesnapshot.FieldPrRecordID:
+		m.ResetPrRecordID()
+		return nil
+	case prcommitusagesnapshot.FieldCommitSha:
+		m.ResetCommitSha()
+		return nil
+	case prcommitusagesnapshot.FieldCommitCheckpointID:
+		m.ResetCommitCheckpointID()
+		return nil
+	case prcommitusagesnapshot.FieldCapturedAt:
+		m.ResetCapturedAt()
+		return nil
+	case prcommitusagesnapshot.FieldInputTokens:
+		m.ResetInputTokens()
+		return nil
+	case prcommitusagesnapshot.FieldOutputTokens:
+		m.ResetOutputTokens()
+		return nil
+	case prcommitusagesnapshot.FieldCachedInputTokens:
+		m.ResetCachedInputTokens()
+		return nil
+	case prcommitusagesnapshot.FieldReasoningTokens:
+		m.ResetReasoningTokens()
+		return nil
+	case prcommitusagesnapshot.FieldCreditUsage:
+		m.ResetCreditUsage()
+		return nil
+	case prcommitusagesnapshot.FieldRequestCount:
+		m.ResetRequestCount()
+		return nil
+	case prcommitusagesnapshot.FieldSortOrder:
+		m.ResetSortOrder()
+		return nil
+	case prcommitusagesnapshot.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case prcommitusagesnapshot.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown PRCommitUsageSnapshot field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *PRCommitUsageSnapshotMutation) AddedEdges() []string {
+	edges := make([]string, 0, 2)
+	if m.pr_record != nil {
+		edges = append(edges, prcommitusagesnapshot.EdgePrRecord)
+	}
+	if m.commit_checkpoint != nil {
+		edges = append(edges, prcommitusagesnapshot.EdgeCommitCheckpoint)
+	}
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *PRCommitUsageSnapshotMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case prcommitusagesnapshot.EdgePrRecord:
+		if id := m.pr_record; id != nil {
+			return []ent.Value{*id}
+		}
+	case prcommitusagesnapshot.EdgeCommitCheckpoint:
+		if id := m.commit_checkpoint; id != nil {
+			return []ent.Value{*id}
+		}
+	}
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *PRCommitUsageSnapshotMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 2)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *PRCommitUsageSnapshotMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *PRCommitUsageSnapshotMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 2)
+	if m.clearedpr_record {
+		edges = append(edges, prcommitusagesnapshot.EdgePrRecord)
+	}
+	if m.clearedcommit_checkpoint {
+		edges = append(edges, prcommitusagesnapshot.EdgeCommitCheckpoint)
+	}
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *PRCommitUsageSnapshotMutation) EdgeCleared(name string) bool {
+	switch name {
+	case prcommitusagesnapshot.EdgePrRecord:
+		return m.clearedpr_record
+	case prcommitusagesnapshot.EdgeCommitCheckpoint:
+		return m.clearedcommit_checkpoint
+	}
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *PRCommitUsageSnapshotMutation) ClearEdge(name string) error {
+	switch name {
+	case prcommitusagesnapshot.EdgePrRecord:
+		m.ClearPrRecord()
+		return nil
+	case prcommitusagesnapshot.EdgeCommitCheckpoint:
+		m.ClearCommitCheckpoint()
+		return nil
+	}
+	return fmt.Errorf("unknown PRCommitUsageSnapshot unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *PRCommitUsageSnapshotMutation) ResetEdge(name string) error {
+	switch name {
+	case prcommitusagesnapshot.EdgePrRecord:
+		m.ResetPrRecord()
+		return nil
+	case prcommitusagesnapshot.EdgeCommitCheckpoint:
+		m.ResetCommitCheckpoint()
+		return nil
+	}
+	return fmt.Errorf("unknown PRCommitUsageSnapshot edge %s", name)
+}
+
 // PrAttributionRunMutation represents an operation that mutates the PrAttributionRun nodes in the graph.
 type PrAttributionRunMutation struct {
 	config
@@ -3963,56 +5397,75 @@ func (m *PrAttributionRunMutation) ResetEdge(name string) error {
 // PrRecordMutation represents an operation that mutates the PrRecord nodes in the graph.
 type PrRecordMutation struct {
 	config
-	op                          Op
-	typ                         string
-	id                          *int
-	scm_pr_id                   *int
-	addscm_pr_id                *int
-	scm_pr_url                  *string
-	author                      *string
-	title                       *string
-	source_branch               *string
-	target_branch               *string
-	status                      *prrecord.Status
-	labels                      *[]string
-	appendlabels                []string
-	lines_added                 *int
-	addlines_added              *int
-	lines_deleted               *int
-	addlines_deleted            *int
-	changed_files               *[]string
-	appendchanged_files         []string
-	session_ids                 *[]string
-	appendsession_ids           []string
-	token_cost                  *float64
-	addtoken_cost               *float64
-	ai_ratio                    *float64
-	addai_ratio                 *float64
-	ai_label                    *prrecord.AiLabel
-	attribution_status          *prrecord.AttributionStatus
-	attribution_confidence      *prrecord.AttributionConfidence
-	primary_token_count         *int64
-	addprimary_token_count      *int64
-	primary_token_cost          *float64
-	addprimary_token_cost       *float64
-	metadata_summary            *map[string]interface{}
-	last_attributed_at          *time.Time
-	merged_at                   *time.Time
-	cycle_time_hours            *float64
-	addcycle_time_hours         *float64
-	created_at                  *time.Time
-	updated_at                  *time.Time
-	clearedFields               map[string]struct{}
-	repo_config                 *int
-	clearedrepo_config          bool
-	attribution_runs            map[int]struct{}
-	removedattribution_runs     map[int]struct{}
-	clearedattribution_runs     bool
-	last_attribution_run        *int
-	clearedlast_attribution_run bool
-	done                        bool
-	oldValue                    func(context.Context) (*PrRecord, error)
-	predicates                  []predicate.PrRecord
+	op                               Op
+	typ                              string
+	id                               *int
+	scm_pr_id                        *int
+	addscm_pr_id                     *int
+	scm_pr_url                       *string
+	author                           *string
+	title                            *string
+	source_branch                    *string
+	target_branch                    *string
+	status                           *prrecord.Status
+	labels                           *[]string
+	appendlabels                     []string
+	lines_added                      *int
+	addlines_added                   *int
+	lines_deleted                    *int
+	addlines_deleted                 *int
+	changed_files                    *[]string
+	appendchanged_files              []string
+	session_ids                      *[]string
+	appendsession_ids                []string
+	token_cost                       *float64
+	addtoken_cost                    *float64
+	ai_ratio                         *float64
+	addai_ratio                      *float64
+	ai_label                         *prrecord.AiLabel
+	attribution_status               *prrecord.AttributionStatus
+	attribution_confidence           *prrecord.AttributionConfidence
+	primary_token_count              *int64
+	addprimary_token_count           *int64
+	primary_token_cost               *float64
+	addprimary_token_cost            *float64
+	usage_input_tokens               *int64
+	addusage_input_tokens            *int64
+	usage_output_tokens              *int64
+	addusage_output_tokens           *int64
+	usage_cached_input_tokens        *int64
+	addusage_cached_input_tokens     *int64
+	usage_reasoning_tokens           *int64
+	addusage_reasoning_tokens        *int64
+	usage_credit_usage               *float64
+	addusage_credit_usage            *float64
+	usage_request_count              *int
+	addusage_request_count           *int
+	usage_commit_count               *int
+	addusage_commit_count            *int
+	usage_refreshed_at               *time.Time
+	usage_commit_snapshot_hash       *string
+	metadata_summary                 *map[string]interface{}
+	last_attributed_at               *time.Time
+	merged_at                        *time.Time
+	cycle_time_hours                 *float64
+	addcycle_time_hours              *float64
+	created_at                       *time.Time
+	updated_at                       *time.Time
+	clearedFields                    map[string]struct{}
+	repo_config                      *int
+	clearedrepo_config               bool
+	pr_commit_usage_snapshots        map[int]struct{}
+	removedpr_commit_usage_snapshots map[int]struct{}
+	clearedpr_commit_usage_snapshots bool
+	attribution_runs                 map[int]struct{}
+	removedattribution_runs          map[int]struct{}
+	clearedattribution_runs          bool
+	last_attribution_run             *int
+	clearedlast_attribution_run      bool
+	done                             bool
+	oldValue                         func(context.Context) (*PrRecord, error)
+	predicates                       []predicate.PrRecord
 }
 
 var _ ent.Mutation = (*PrRecordMutation)(nil)
@@ -5102,6 +6555,496 @@ func (m *PrRecordMutation) ResetPrimaryTokenCost() {
 	m.addprimary_token_cost = nil
 }
 
+// SetUsageInputTokens sets the "usage_input_tokens" field.
+func (m *PrRecordMutation) SetUsageInputTokens(i int64) {
+	m.usage_input_tokens = &i
+	m.addusage_input_tokens = nil
+}
+
+// UsageInputTokens returns the value of the "usage_input_tokens" field in the mutation.
+func (m *PrRecordMutation) UsageInputTokens() (r int64, exists bool) {
+	v := m.usage_input_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUsageInputTokens returns the old "usage_input_tokens" field's value of the PrRecord entity.
+// If the PrRecord object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PrRecordMutation) OldUsageInputTokens(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUsageInputTokens is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUsageInputTokens requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUsageInputTokens: %w", err)
+	}
+	return oldValue.UsageInputTokens, nil
+}
+
+// AddUsageInputTokens adds i to the "usage_input_tokens" field.
+func (m *PrRecordMutation) AddUsageInputTokens(i int64) {
+	if m.addusage_input_tokens != nil {
+		*m.addusage_input_tokens += i
+	} else {
+		m.addusage_input_tokens = &i
+	}
+}
+
+// AddedUsageInputTokens returns the value that was added to the "usage_input_tokens" field in this mutation.
+func (m *PrRecordMutation) AddedUsageInputTokens() (r int64, exists bool) {
+	v := m.addusage_input_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetUsageInputTokens resets all changes to the "usage_input_tokens" field.
+func (m *PrRecordMutation) ResetUsageInputTokens() {
+	m.usage_input_tokens = nil
+	m.addusage_input_tokens = nil
+}
+
+// SetUsageOutputTokens sets the "usage_output_tokens" field.
+func (m *PrRecordMutation) SetUsageOutputTokens(i int64) {
+	m.usage_output_tokens = &i
+	m.addusage_output_tokens = nil
+}
+
+// UsageOutputTokens returns the value of the "usage_output_tokens" field in the mutation.
+func (m *PrRecordMutation) UsageOutputTokens() (r int64, exists bool) {
+	v := m.usage_output_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUsageOutputTokens returns the old "usage_output_tokens" field's value of the PrRecord entity.
+// If the PrRecord object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PrRecordMutation) OldUsageOutputTokens(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUsageOutputTokens is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUsageOutputTokens requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUsageOutputTokens: %w", err)
+	}
+	return oldValue.UsageOutputTokens, nil
+}
+
+// AddUsageOutputTokens adds i to the "usage_output_tokens" field.
+func (m *PrRecordMutation) AddUsageOutputTokens(i int64) {
+	if m.addusage_output_tokens != nil {
+		*m.addusage_output_tokens += i
+	} else {
+		m.addusage_output_tokens = &i
+	}
+}
+
+// AddedUsageOutputTokens returns the value that was added to the "usage_output_tokens" field in this mutation.
+func (m *PrRecordMutation) AddedUsageOutputTokens() (r int64, exists bool) {
+	v := m.addusage_output_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetUsageOutputTokens resets all changes to the "usage_output_tokens" field.
+func (m *PrRecordMutation) ResetUsageOutputTokens() {
+	m.usage_output_tokens = nil
+	m.addusage_output_tokens = nil
+}
+
+// SetUsageCachedInputTokens sets the "usage_cached_input_tokens" field.
+func (m *PrRecordMutation) SetUsageCachedInputTokens(i int64) {
+	m.usage_cached_input_tokens = &i
+	m.addusage_cached_input_tokens = nil
+}
+
+// UsageCachedInputTokens returns the value of the "usage_cached_input_tokens" field in the mutation.
+func (m *PrRecordMutation) UsageCachedInputTokens() (r int64, exists bool) {
+	v := m.usage_cached_input_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUsageCachedInputTokens returns the old "usage_cached_input_tokens" field's value of the PrRecord entity.
+// If the PrRecord object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PrRecordMutation) OldUsageCachedInputTokens(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUsageCachedInputTokens is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUsageCachedInputTokens requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUsageCachedInputTokens: %w", err)
+	}
+	return oldValue.UsageCachedInputTokens, nil
+}
+
+// AddUsageCachedInputTokens adds i to the "usage_cached_input_tokens" field.
+func (m *PrRecordMutation) AddUsageCachedInputTokens(i int64) {
+	if m.addusage_cached_input_tokens != nil {
+		*m.addusage_cached_input_tokens += i
+	} else {
+		m.addusage_cached_input_tokens = &i
+	}
+}
+
+// AddedUsageCachedInputTokens returns the value that was added to the "usage_cached_input_tokens" field in this mutation.
+func (m *PrRecordMutation) AddedUsageCachedInputTokens() (r int64, exists bool) {
+	v := m.addusage_cached_input_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetUsageCachedInputTokens resets all changes to the "usage_cached_input_tokens" field.
+func (m *PrRecordMutation) ResetUsageCachedInputTokens() {
+	m.usage_cached_input_tokens = nil
+	m.addusage_cached_input_tokens = nil
+}
+
+// SetUsageReasoningTokens sets the "usage_reasoning_tokens" field.
+func (m *PrRecordMutation) SetUsageReasoningTokens(i int64) {
+	m.usage_reasoning_tokens = &i
+	m.addusage_reasoning_tokens = nil
+}
+
+// UsageReasoningTokens returns the value of the "usage_reasoning_tokens" field in the mutation.
+func (m *PrRecordMutation) UsageReasoningTokens() (r int64, exists bool) {
+	v := m.usage_reasoning_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUsageReasoningTokens returns the old "usage_reasoning_tokens" field's value of the PrRecord entity.
+// If the PrRecord object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PrRecordMutation) OldUsageReasoningTokens(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUsageReasoningTokens is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUsageReasoningTokens requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUsageReasoningTokens: %w", err)
+	}
+	return oldValue.UsageReasoningTokens, nil
+}
+
+// AddUsageReasoningTokens adds i to the "usage_reasoning_tokens" field.
+func (m *PrRecordMutation) AddUsageReasoningTokens(i int64) {
+	if m.addusage_reasoning_tokens != nil {
+		*m.addusage_reasoning_tokens += i
+	} else {
+		m.addusage_reasoning_tokens = &i
+	}
+}
+
+// AddedUsageReasoningTokens returns the value that was added to the "usage_reasoning_tokens" field in this mutation.
+func (m *PrRecordMutation) AddedUsageReasoningTokens() (r int64, exists bool) {
+	v := m.addusage_reasoning_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetUsageReasoningTokens resets all changes to the "usage_reasoning_tokens" field.
+func (m *PrRecordMutation) ResetUsageReasoningTokens() {
+	m.usage_reasoning_tokens = nil
+	m.addusage_reasoning_tokens = nil
+}
+
+// SetUsageCreditUsage sets the "usage_credit_usage" field.
+func (m *PrRecordMutation) SetUsageCreditUsage(f float64) {
+	m.usage_credit_usage = &f
+	m.addusage_credit_usage = nil
+}
+
+// UsageCreditUsage returns the value of the "usage_credit_usage" field in the mutation.
+func (m *PrRecordMutation) UsageCreditUsage() (r float64, exists bool) {
+	v := m.usage_credit_usage
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUsageCreditUsage returns the old "usage_credit_usage" field's value of the PrRecord entity.
+// If the PrRecord object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PrRecordMutation) OldUsageCreditUsage(ctx context.Context) (v float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUsageCreditUsage is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUsageCreditUsage requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUsageCreditUsage: %w", err)
+	}
+	return oldValue.UsageCreditUsage, nil
+}
+
+// AddUsageCreditUsage adds f to the "usage_credit_usage" field.
+func (m *PrRecordMutation) AddUsageCreditUsage(f float64) {
+	if m.addusage_credit_usage != nil {
+		*m.addusage_credit_usage += f
+	} else {
+		m.addusage_credit_usage = &f
+	}
+}
+
+// AddedUsageCreditUsage returns the value that was added to the "usage_credit_usage" field in this mutation.
+func (m *PrRecordMutation) AddedUsageCreditUsage() (r float64, exists bool) {
+	v := m.addusage_credit_usage
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetUsageCreditUsage resets all changes to the "usage_credit_usage" field.
+func (m *PrRecordMutation) ResetUsageCreditUsage() {
+	m.usage_credit_usage = nil
+	m.addusage_credit_usage = nil
+}
+
+// SetUsageRequestCount sets the "usage_request_count" field.
+func (m *PrRecordMutation) SetUsageRequestCount(i int) {
+	m.usage_request_count = &i
+	m.addusage_request_count = nil
+}
+
+// UsageRequestCount returns the value of the "usage_request_count" field in the mutation.
+func (m *PrRecordMutation) UsageRequestCount() (r int, exists bool) {
+	v := m.usage_request_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUsageRequestCount returns the old "usage_request_count" field's value of the PrRecord entity.
+// If the PrRecord object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PrRecordMutation) OldUsageRequestCount(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUsageRequestCount is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUsageRequestCount requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUsageRequestCount: %w", err)
+	}
+	return oldValue.UsageRequestCount, nil
+}
+
+// AddUsageRequestCount adds i to the "usage_request_count" field.
+func (m *PrRecordMutation) AddUsageRequestCount(i int) {
+	if m.addusage_request_count != nil {
+		*m.addusage_request_count += i
+	} else {
+		m.addusage_request_count = &i
+	}
+}
+
+// AddedUsageRequestCount returns the value that was added to the "usage_request_count" field in this mutation.
+func (m *PrRecordMutation) AddedUsageRequestCount() (r int, exists bool) {
+	v := m.addusage_request_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetUsageRequestCount resets all changes to the "usage_request_count" field.
+func (m *PrRecordMutation) ResetUsageRequestCount() {
+	m.usage_request_count = nil
+	m.addusage_request_count = nil
+}
+
+// SetUsageCommitCount sets the "usage_commit_count" field.
+func (m *PrRecordMutation) SetUsageCommitCount(i int) {
+	m.usage_commit_count = &i
+	m.addusage_commit_count = nil
+}
+
+// UsageCommitCount returns the value of the "usage_commit_count" field in the mutation.
+func (m *PrRecordMutation) UsageCommitCount() (r int, exists bool) {
+	v := m.usage_commit_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUsageCommitCount returns the old "usage_commit_count" field's value of the PrRecord entity.
+// If the PrRecord object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PrRecordMutation) OldUsageCommitCount(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUsageCommitCount is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUsageCommitCount requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUsageCommitCount: %w", err)
+	}
+	return oldValue.UsageCommitCount, nil
+}
+
+// AddUsageCommitCount adds i to the "usage_commit_count" field.
+func (m *PrRecordMutation) AddUsageCommitCount(i int) {
+	if m.addusage_commit_count != nil {
+		*m.addusage_commit_count += i
+	} else {
+		m.addusage_commit_count = &i
+	}
+}
+
+// AddedUsageCommitCount returns the value that was added to the "usage_commit_count" field in this mutation.
+func (m *PrRecordMutation) AddedUsageCommitCount() (r int, exists bool) {
+	v := m.addusage_commit_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetUsageCommitCount resets all changes to the "usage_commit_count" field.
+func (m *PrRecordMutation) ResetUsageCommitCount() {
+	m.usage_commit_count = nil
+	m.addusage_commit_count = nil
+}
+
+// SetUsageRefreshedAt sets the "usage_refreshed_at" field.
+func (m *PrRecordMutation) SetUsageRefreshedAt(t time.Time) {
+	m.usage_refreshed_at = &t
+}
+
+// UsageRefreshedAt returns the value of the "usage_refreshed_at" field in the mutation.
+func (m *PrRecordMutation) UsageRefreshedAt() (r time.Time, exists bool) {
+	v := m.usage_refreshed_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUsageRefreshedAt returns the old "usage_refreshed_at" field's value of the PrRecord entity.
+// If the PrRecord object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PrRecordMutation) OldUsageRefreshedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUsageRefreshedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUsageRefreshedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUsageRefreshedAt: %w", err)
+	}
+	return oldValue.UsageRefreshedAt, nil
+}
+
+// ClearUsageRefreshedAt clears the value of the "usage_refreshed_at" field.
+func (m *PrRecordMutation) ClearUsageRefreshedAt() {
+	m.usage_refreshed_at = nil
+	m.clearedFields[prrecord.FieldUsageRefreshedAt] = struct{}{}
+}
+
+// UsageRefreshedAtCleared returns if the "usage_refreshed_at" field was cleared in this mutation.
+func (m *PrRecordMutation) UsageRefreshedAtCleared() bool {
+	_, ok := m.clearedFields[prrecord.FieldUsageRefreshedAt]
+	return ok
+}
+
+// ResetUsageRefreshedAt resets all changes to the "usage_refreshed_at" field.
+func (m *PrRecordMutation) ResetUsageRefreshedAt() {
+	m.usage_refreshed_at = nil
+	delete(m.clearedFields, prrecord.FieldUsageRefreshedAt)
+}
+
+// SetUsageCommitSnapshotHash sets the "usage_commit_snapshot_hash" field.
+func (m *PrRecordMutation) SetUsageCommitSnapshotHash(s string) {
+	m.usage_commit_snapshot_hash = &s
+}
+
+// UsageCommitSnapshotHash returns the value of the "usage_commit_snapshot_hash" field in the mutation.
+func (m *PrRecordMutation) UsageCommitSnapshotHash() (r string, exists bool) {
+	v := m.usage_commit_snapshot_hash
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUsageCommitSnapshotHash returns the old "usage_commit_snapshot_hash" field's value of the PrRecord entity.
+// If the PrRecord object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PrRecordMutation) OldUsageCommitSnapshotHash(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUsageCommitSnapshotHash is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUsageCommitSnapshotHash requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUsageCommitSnapshotHash: %w", err)
+	}
+	return oldValue.UsageCommitSnapshotHash, nil
+}
+
+// ClearUsageCommitSnapshotHash clears the value of the "usage_commit_snapshot_hash" field.
+func (m *PrRecordMutation) ClearUsageCommitSnapshotHash() {
+	m.usage_commit_snapshot_hash = nil
+	m.clearedFields[prrecord.FieldUsageCommitSnapshotHash] = struct{}{}
+}
+
+// UsageCommitSnapshotHashCleared returns if the "usage_commit_snapshot_hash" field was cleared in this mutation.
+func (m *PrRecordMutation) UsageCommitSnapshotHashCleared() bool {
+	_, ok := m.clearedFields[prrecord.FieldUsageCommitSnapshotHash]
+	return ok
+}
+
+// ResetUsageCommitSnapshotHash resets all changes to the "usage_commit_snapshot_hash" field.
+func (m *PrRecordMutation) ResetUsageCommitSnapshotHash() {
+	m.usage_commit_snapshot_hash = nil
+	delete(m.clearedFields, prrecord.FieldUsageCommitSnapshotHash)
+}
+
 // SetMetadataSummary sets the "metadata_summary" field.
 func (m *PrRecordMutation) SetMetadataSummary(value map[string]interface{}) {
 	m.metadata_summary = &value
@@ -5465,6 +7408,60 @@ func (m *PrRecordMutation) ResetRepoConfig() {
 	m.clearedrepo_config = false
 }
 
+// AddPrCommitUsageSnapshotIDs adds the "pr_commit_usage_snapshots" edge to the PRCommitUsageSnapshot entity by ids.
+func (m *PrRecordMutation) AddPrCommitUsageSnapshotIDs(ids ...int) {
+	if m.pr_commit_usage_snapshots == nil {
+		m.pr_commit_usage_snapshots = make(map[int]struct{})
+	}
+	for i := range ids {
+		m.pr_commit_usage_snapshots[ids[i]] = struct{}{}
+	}
+}
+
+// ClearPrCommitUsageSnapshots clears the "pr_commit_usage_snapshots" edge to the PRCommitUsageSnapshot entity.
+func (m *PrRecordMutation) ClearPrCommitUsageSnapshots() {
+	m.clearedpr_commit_usage_snapshots = true
+}
+
+// PrCommitUsageSnapshotsCleared reports if the "pr_commit_usage_snapshots" edge to the PRCommitUsageSnapshot entity was cleared.
+func (m *PrRecordMutation) PrCommitUsageSnapshotsCleared() bool {
+	return m.clearedpr_commit_usage_snapshots
+}
+
+// RemovePrCommitUsageSnapshotIDs removes the "pr_commit_usage_snapshots" edge to the PRCommitUsageSnapshot entity by IDs.
+func (m *PrRecordMutation) RemovePrCommitUsageSnapshotIDs(ids ...int) {
+	if m.removedpr_commit_usage_snapshots == nil {
+		m.removedpr_commit_usage_snapshots = make(map[int]struct{})
+	}
+	for i := range ids {
+		delete(m.pr_commit_usage_snapshots, ids[i])
+		m.removedpr_commit_usage_snapshots[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedPrCommitUsageSnapshots returns the removed IDs of the "pr_commit_usage_snapshots" edge to the PRCommitUsageSnapshot entity.
+func (m *PrRecordMutation) RemovedPrCommitUsageSnapshotsIDs() (ids []int) {
+	for id := range m.removedpr_commit_usage_snapshots {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// PrCommitUsageSnapshotsIDs returns the "pr_commit_usage_snapshots" edge IDs in the mutation.
+func (m *PrRecordMutation) PrCommitUsageSnapshotsIDs() (ids []int) {
+	for id := range m.pr_commit_usage_snapshots {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetPrCommitUsageSnapshots resets all changes to the "pr_commit_usage_snapshots" edge.
+func (m *PrRecordMutation) ResetPrCommitUsageSnapshots() {
+	m.pr_commit_usage_snapshots = nil
+	m.clearedpr_commit_usage_snapshots = false
+	m.removedpr_commit_usage_snapshots = nil
+}
+
 // AddAttributionRunIDs adds the "attribution_runs" edge to the PrAttributionRun entity by ids.
 func (m *PrRecordMutation) AddAttributionRunIDs(ids ...int) {
 	if m.attribution_runs == nil {
@@ -5580,7 +7577,7 @@ func (m *PrRecordMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *PrRecordMutation) Fields() []string {
-	fields := make([]string, 0, 26)
+	fields := make([]string, 0, 35)
 	if m.scm_pr_id != nil {
 		fields = append(fields, prrecord.FieldScmPrID)
 	}
@@ -5637,6 +7634,33 @@ func (m *PrRecordMutation) Fields() []string {
 	}
 	if m.primary_token_cost != nil {
 		fields = append(fields, prrecord.FieldPrimaryTokenCost)
+	}
+	if m.usage_input_tokens != nil {
+		fields = append(fields, prrecord.FieldUsageInputTokens)
+	}
+	if m.usage_output_tokens != nil {
+		fields = append(fields, prrecord.FieldUsageOutputTokens)
+	}
+	if m.usage_cached_input_tokens != nil {
+		fields = append(fields, prrecord.FieldUsageCachedInputTokens)
+	}
+	if m.usage_reasoning_tokens != nil {
+		fields = append(fields, prrecord.FieldUsageReasoningTokens)
+	}
+	if m.usage_credit_usage != nil {
+		fields = append(fields, prrecord.FieldUsageCreditUsage)
+	}
+	if m.usage_request_count != nil {
+		fields = append(fields, prrecord.FieldUsageRequestCount)
+	}
+	if m.usage_commit_count != nil {
+		fields = append(fields, prrecord.FieldUsageCommitCount)
+	}
+	if m.usage_refreshed_at != nil {
+		fields = append(fields, prrecord.FieldUsageRefreshedAt)
+	}
+	if m.usage_commit_snapshot_hash != nil {
+		fields = append(fields, prrecord.FieldUsageCommitSnapshotHash)
 	}
 	if m.metadata_summary != nil {
 		fields = append(fields, prrecord.FieldMetadataSummary)
@@ -5705,6 +7729,24 @@ func (m *PrRecordMutation) Field(name string) (ent.Value, bool) {
 		return m.PrimaryTokenCount()
 	case prrecord.FieldPrimaryTokenCost:
 		return m.PrimaryTokenCost()
+	case prrecord.FieldUsageInputTokens:
+		return m.UsageInputTokens()
+	case prrecord.FieldUsageOutputTokens:
+		return m.UsageOutputTokens()
+	case prrecord.FieldUsageCachedInputTokens:
+		return m.UsageCachedInputTokens()
+	case prrecord.FieldUsageReasoningTokens:
+		return m.UsageReasoningTokens()
+	case prrecord.FieldUsageCreditUsage:
+		return m.UsageCreditUsage()
+	case prrecord.FieldUsageRequestCount:
+		return m.UsageRequestCount()
+	case prrecord.FieldUsageCommitCount:
+		return m.UsageCommitCount()
+	case prrecord.FieldUsageRefreshedAt:
+		return m.UsageRefreshedAt()
+	case prrecord.FieldUsageCommitSnapshotHash:
+		return m.UsageCommitSnapshotHash()
 	case prrecord.FieldMetadataSummary:
 		return m.MetadataSummary()
 	case prrecord.FieldLastAttributedAt:
@@ -5766,6 +7808,24 @@ func (m *PrRecordMutation) OldField(ctx context.Context, name string) (ent.Value
 		return m.OldPrimaryTokenCount(ctx)
 	case prrecord.FieldPrimaryTokenCost:
 		return m.OldPrimaryTokenCost(ctx)
+	case prrecord.FieldUsageInputTokens:
+		return m.OldUsageInputTokens(ctx)
+	case prrecord.FieldUsageOutputTokens:
+		return m.OldUsageOutputTokens(ctx)
+	case prrecord.FieldUsageCachedInputTokens:
+		return m.OldUsageCachedInputTokens(ctx)
+	case prrecord.FieldUsageReasoningTokens:
+		return m.OldUsageReasoningTokens(ctx)
+	case prrecord.FieldUsageCreditUsage:
+		return m.OldUsageCreditUsage(ctx)
+	case prrecord.FieldUsageRequestCount:
+		return m.OldUsageRequestCount(ctx)
+	case prrecord.FieldUsageCommitCount:
+		return m.OldUsageCommitCount(ctx)
+	case prrecord.FieldUsageRefreshedAt:
+		return m.OldUsageRefreshedAt(ctx)
+	case prrecord.FieldUsageCommitSnapshotHash:
+		return m.OldUsageCommitSnapshotHash(ctx)
 	case prrecord.FieldMetadataSummary:
 		return m.OldMetadataSummary(ctx)
 	case prrecord.FieldLastAttributedAt:
@@ -5922,6 +7982,69 @@ func (m *PrRecordMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetPrimaryTokenCost(v)
 		return nil
+	case prrecord.FieldUsageInputTokens:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUsageInputTokens(v)
+		return nil
+	case prrecord.FieldUsageOutputTokens:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUsageOutputTokens(v)
+		return nil
+	case prrecord.FieldUsageCachedInputTokens:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUsageCachedInputTokens(v)
+		return nil
+	case prrecord.FieldUsageReasoningTokens:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUsageReasoningTokens(v)
+		return nil
+	case prrecord.FieldUsageCreditUsage:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUsageCreditUsage(v)
+		return nil
+	case prrecord.FieldUsageRequestCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUsageRequestCount(v)
+		return nil
+	case prrecord.FieldUsageCommitCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUsageCommitCount(v)
+		return nil
+	case prrecord.FieldUsageRefreshedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUsageRefreshedAt(v)
+		return nil
+	case prrecord.FieldUsageCommitSnapshotHash:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUsageCommitSnapshotHash(v)
+		return nil
 	case prrecord.FieldMetadataSummary:
 		v, ok := value.(map[string]interface{})
 		if !ok {
@@ -6000,6 +8123,27 @@ func (m *PrRecordMutation) AddedFields() []string {
 	if m.addprimary_token_cost != nil {
 		fields = append(fields, prrecord.FieldPrimaryTokenCost)
 	}
+	if m.addusage_input_tokens != nil {
+		fields = append(fields, prrecord.FieldUsageInputTokens)
+	}
+	if m.addusage_output_tokens != nil {
+		fields = append(fields, prrecord.FieldUsageOutputTokens)
+	}
+	if m.addusage_cached_input_tokens != nil {
+		fields = append(fields, prrecord.FieldUsageCachedInputTokens)
+	}
+	if m.addusage_reasoning_tokens != nil {
+		fields = append(fields, prrecord.FieldUsageReasoningTokens)
+	}
+	if m.addusage_credit_usage != nil {
+		fields = append(fields, prrecord.FieldUsageCreditUsage)
+	}
+	if m.addusage_request_count != nil {
+		fields = append(fields, prrecord.FieldUsageRequestCount)
+	}
+	if m.addusage_commit_count != nil {
+		fields = append(fields, prrecord.FieldUsageCommitCount)
+	}
 	if m.addcycle_time_hours != nil {
 		fields = append(fields, prrecord.FieldCycleTimeHours)
 	}
@@ -6025,6 +8169,20 @@ func (m *PrRecordMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedPrimaryTokenCount()
 	case prrecord.FieldPrimaryTokenCost:
 		return m.AddedPrimaryTokenCost()
+	case prrecord.FieldUsageInputTokens:
+		return m.AddedUsageInputTokens()
+	case prrecord.FieldUsageOutputTokens:
+		return m.AddedUsageOutputTokens()
+	case prrecord.FieldUsageCachedInputTokens:
+		return m.AddedUsageCachedInputTokens()
+	case prrecord.FieldUsageReasoningTokens:
+		return m.AddedUsageReasoningTokens()
+	case prrecord.FieldUsageCreditUsage:
+		return m.AddedUsageCreditUsage()
+	case prrecord.FieldUsageRequestCount:
+		return m.AddedUsageRequestCount()
+	case prrecord.FieldUsageCommitCount:
+		return m.AddedUsageCommitCount()
 	case prrecord.FieldCycleTimeHours:
 		return m.AddedCycleTimeHours()
 	}
@@ -6085,6 +8243,55 @@ func (m *PrRecordMutation) AddField(name string, value ent.Value) error {
 		}
 		m.AddPrimaryTokenCost(v)
 		return nil
+	case prrecord.FieldUsageInputTokens:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddUsageInputTokens(v)
+		return nil
+	case prrecord.FieldUsageOutputTokens:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddUsageOutputTokens(v)
+		return nil
+	case prrecord.FieldUsageCachedInputTokens:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddUsageCachedInputTokens(v)
+		return nil
+	case prrecord.FieldUsageReasoningTokens:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddUsageReasoningTokens(v)
+		return nil
+	case prrecord.FieldUsageCreditUsage:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddUsageCreditUsage(v)
+		return nil
+	case prrecord.FieldUsageRequestCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddUsageRequestCount(v)
+		return nil
+	case prrecord.FieldUsageCommitCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddUsageCommitCount(v)
+		return nil
 	case prrecord.FieldCycleTimeHours:
 		v, ok := value.(float64)
 		if !ok {
@@ -6126,6 +8333,12 @@ func (m *PrRecordMutation) ClearedFields() []string {
 	}
 	if m.FieldCleared(prrecord.FieldAttributionConfidence) {
 		fields = append(fields, prrecord.FieldAttributionConfidence)
+	}
+	if m.FieldCleared(prrecord.FieldUsageRefreshedAt) {
+		fields = append(fields, prrecord.FieldUsageRefreshedAt)
+	}
+	if m.FieldCleared(prrecord.FieldUsageCommitSnapshotHash) {
+		fields = append(fields, prrecord.FieldUsageCommitSnapshotHash)
 	}
 	if m.FieldCleared(prrecord.FieldMetadataSummary) {
 		fields = append(fields, prrecord.FieldMetadataSummary)
@@ -6179,6 +8392,12 @@ func (m *PrRecordMutation) ClearField(name string) error {
 		return nil
 	case prrecord.FieldAttributionConfidence:
 		m.ClearAttributionConfidence()
+		return nil
+	case prrecord.FieldUsageRefreshedAt:
+		m.ClearUsageRefreshedAt()
+		return nil
+	case prrecord.FieldUsageCommitSnapshotHash:
+		m.ClearUsageCommitSnapshotHash()
 		return nil
 	case prrecord.FieldMetadataSummary:
 		m.ClearMetadataSummary()
@@ -6257,6 +8476,33 @@ func (m *PrRecordMutation) ResetField(name string) error {
 	case prrecord.FieldPrimaryTokenCost:
 		m.ResetPrimaryTokenCost()
 		return nil
+	case prrecord.FieldUsageInputTokens:
+		m.ResetUsageInputTokens()
+		return nil
+	case prrecord.FieldUsageOutputTokens:
+		m.ResetUsageOutputTokens()
+		return nil
+	case prrecord.FieldUsageCachedInputTokens:
+		m.ResetUsageCachedInputTokens()
+		return nil
+	case prrecord.FieldUsageReasoningTokens:
+		m.ResetUsageReasoningTokens()
+		return nil
+	case prrecord.FieldUsageCreditUsage:
+		m.ResetUsageCreditUsage()
+		return nil
+	case prrecord.FieldUsageRequestCount:
+		m.ResetUsageRequestCount()
+		return nil
+	case prrecord.FieldUsageCommitCount:
+		m.ResetUsageCommitCount()
+		return nil
+	case prrecord.FieldUsageRefreshedAt:
+		m.ResetUsageRefreshedAt()
+		return nil
+	case prrecord.FieldUsageCommitSnapshotHash:
+		m.ResetUsageCommitSnapshotHash()
+		return nil
 	case prrecord.FieldMetadataSummary:
 		m.ResetMetadataSummary()
 		return nil
@@ -6284,9 +8530,12 @@ func (m *PrRecordMutation) ResetField(name string) error {
 
 // AddedEdges returns all edge names that were set/added in this mutation.
 func (m *PrRecordMutation) AddedEdges() []string {
-	edges := make([]string, 0, 3)
+	edges := make([]string, 0, 4)
 	if m.repo_config != nil {
 		edges = append(edges, prrecord.EdgeRepoConfig)
+	}
+	if m.pr_commit_usage_snapshots != nil {
+		edges = append(edges, prrecord.EdgePrCommitUsageSnapshots)
 	}
 	if m.attribution_runs != nil {
 		edges = append(edges, prrecord.EdgeAttributionRuns)
@@ -6305,6 +8554,12 @@ func (m *PrRecordMutation) AddedIDs(name string) []ent.Value {
 		if id := m.repo_config; id != nil {
 			return []ent.Value{*id}
 		}
+	case prrecord.EdgePrCommitUsageSnapshots:
+		ids := make([]ent.Value, 0, len(m.pr_commit_usage_snapshots))
+		for id := range m.pr_commit_usage_snapshots {
+			ids = append(ids, id)
+		}
+		return ids
 	case prrecord.EdgeAttributionRuns:
 		ids := make([]ent.Value, 0, len(m.attribution_runs))
 		for id := range m.attribution_runs {
@@ -6321,7 +8576,10 @@ func (m *PrRecordMutation) AddedIDs(name string) []ent.Value {
 
 // RemovedEdges returns all edge names that were removed in this mutation.
 func (m *PrRecordMutation) RemovedEdges() []string {
-	edges := make([]string, 0, 3)
+	edges := make([]string, 0, 4)
+	if m.removedpr_commit_usage_snapshots != nil {
+		edges = append(edges, prrecord.EdgePrCommitUsageSnapshots)
+	}
 	if m.removedattribution_runs != nil {
 		edges = append(edges, prrecord.EdgeAttributionRuns)
 	}
@@ -6332,6 +8590,12 @@ func (m *PrRecordMutation) RemovedEdges() []string {
 // the given name in this mutation.
 func (m *PrRecordMutation) RemovedIDs(name string) []ent.Value {
 	switch name {
+	case prrecord.EdgePrCommitUsageSnapshots:
+		ids := make([]ent.Value, 0, len(m.removedpr_commit_usage_snapshots))
+		for id := range m.removedpr_commit_usage_snapshots {
+			ids = append(ids, id)
+		}
+		return ids
 	case prrecord.EdgeAttributionRuns:
 		ids := make([]ent.Value, 0, len(m.removedattribution_runs))
 		for id := range m.removedattribution_runs {
@@ -6344,9 +8608,12 @@ func (m *PrRecordMutation) RemovedIDs(name string) []ent.Value {
 
 // ClearedEdges returns all edge names that were cleared in this mutation.
 func (m *PrRecordMutation) ClearedEdges() []string {
-	edges := make([]string, 0, 3)
+	edges := make([]string, 0, 4)
 	if m.clearedrepo_config {
 		edges = append(edges, prrecord.EdgeRepoConfig)
+	}
+	if m.clearedpr_commit_usage_snapshots {
+		edges = append(edges, prrecord.EdgePrCommitUsageSnapshots)
 	}
 	if m.clearedattribution_runs {
 		edges = append(edges, prrecord.EdgeAttributionRuns)
@@ -6363,6 +8630,8 @@ func (m *PrRecordMutation) EdgeCleared(name string) bool {
 	switch name {
 	case prrecord.EdgeRepoConfig:
 		return m.clearedrepo_config
+	case prrecord.EdgePrCommitUsageSnapshots:
+		return m.clearedpr_commit_usage_snapshots
 	case prrecord.EdgeAttributionRuns:
 		return m.clearedattribution_runs
 	case prrecord.EdgeLastAttributionRun:
@@ -6391,6 +8660,9 @@ func (m *PrRecordMutation) ResetEdge(name string) error {
 	switch name {
 	case prrecord.EdgeRepoConfig:
 		m.ResetRepoConfig()
+		return nil
+	case prrecord.EdgePrCommitUsageSnapshots:
+		m.ResetPrCommitUsageSnapshots()
 		return nil
 	case prrecord.EdgeAttributionRuns:
 		m.ResetAttributionRuns()

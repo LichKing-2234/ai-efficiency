@@ -3,11 +3,13 @@ package prsync
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/ent/prrecord"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/internal/efficiency"
+	"github.com/ai-efficiency/backend/internal/prusage"
 	"github.com/ai-efficiency/backend/internal/scm"
 	"go.uber.org/zap"
 )
@@ -21,17 +23,23 @@ type SyncResult struct {
 
 // Service handles PR synchronization from SCM providers.
 type Service struct {
-	entClient *ent.Client
-	labeler   *efficiency.Labeler
-	logger    *zap.Logger
+	entClient      *ent.Client
+	labeler        *efficiency.Labeler
+	usageRefresher usageRefresher
+	logger         *zap.Logger
 }
 
 // NewService creates a new PR sync service.
-func NewService(entClient *ent.Client, labeler *efficiency.Labeler, logger *zap.Logger) *Service {
+func NewService(entClient *ent.Client, labeler *efficiency.Labeler, logger *zap.Logger, usageRefreshers ...usageRefresher) *Service {
+	var refresher usageRefresher
+	if len(usageRefreshers) > 0 {
+		refresher = usageRefreshers[0]
+	}
 	return &Service{
-		entClient: entClient,
-		labeler:   labeler,
-		logger:    logger,
+		entClient:      entClient,
+		labeler:        labeler,
+		usageRefresher: refresher,
+		logger:         logger,
 	}
 }
 
@@ -44,6 +52,8 @@ func (s *Service) Sync(ctx context.Context, scmProvider scm.SCMProvider, rc *ent
 
 	result := &SyncResult{Total: len(allPRs)}
 	var labelIDs []int
+	activeCutoff := time.Now().AddDate(0, -3, 0)
+	activePRIDs := map[int]struct{}{}
 
 	for _, pr := range allPRs {
 		recordID, created, err := s.upsertPR(ctx, rc.ID, pr)
@@ -57,6 +67,9 @@ func (s *Service) Sync(ctx context.Context, scmProvider scm.SCMProvider, rc *ent
 			result.Updated++
 		}
 		labelIDs = append(labelIDs, recordID)
+		if created || mapPRStatus(pr.State) == prrecord.StatusOpen || (!pr.CreatedAt.IsZero() && !pr.CreatedAt.Before(activeCutoff)) {
+			activePRIDs[recordID] = struct{}{}
+		}
 	}
 
 	// Run labeler on all synced PRs
@@ -64,6 +77,19 @@ func (s *Service) Sync(ctx context.Context, scmProvider scm.SCMProvider, rc *ent
 		for _, id := range labelIDs {
 			if _, err := s.labeler.LabelPR(ctx, id); err != nil {
 				s.logger.Warn("failed to label PR", zap.Int("pr_record_id", id), zap.Error(err))
+			}
+		}
+	}
+
+	if s.usageRefresher != nil {
+		for prID := range activePRIDs {
+			pr, err := s.entClient.PrRecord.Get(ctx, prID)
+			if err != nil {
+				s.logger.Warn("failed to load PR for usage refresh", zap.Int("pr_record_id", prID), zap.Error(err))
+				continue
+			}
+			if _, err := s.usageRefresher.RefreshPR(ctx, scmProvider, pr); err != nil {
+				s.logger.Warn("failed to refresh PR usage", zap.Int("pr_record_id", prID), zap.Error(err))
 			}
 		}
 	}
@@ -76,6 +102,10 @@ func (s *Service) Sync(ctx context.Context, scmProvider scm.SCMProvider, rc *ent
 	)
 
 	return result, nil
+}
+
+type usageRefresher interface {
+	RefreshPR(ctx context.Context, provider scm.SCMProvider, pr *ent.PrRecord) (*prusage.Result, error)
 }
 
 func (s *Service) fetchAllPRs(ctx context.Context, provider scm.SCMProvider, repoFullName string) ([]*scm.PR, error) {

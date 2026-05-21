@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -15,7 +16,7 @@ func ParseCodexJSONLFallback(path, workspaceRoot string) ([]LocalToolUsageEvent,
 
 	var sessionID string
 	var events []LocalToolUsageEvent
-	for _, raw := range strings.Split(string(lines), "\n") {
+	for idx, raw := range strings.Split(string(lines), "\n") {
 		raw = strings.TrimSpace(raw)
 		if raw == "" {
 			continue
@@ -52,7 +53,7 @@ func ParseCodexJSONLFallback(path, workspaceRoot string) ([]LocalToolUsageEvent,
 			}
 			responseID := strings.TrimSpace(asString(payload["response_id"]))
 			if responseID == "" {
-				responseID = filepath.Base(path)
+				responseID = fallbackCodexJSONLEventID(idx + 1)
 			}
 			observedAt := parseObservedAt(row["timestamp"])
 			events = append(events, LocalToolUsageEvent{
@@ -69,6 +70,7 @@ func ParseCodexJSONLFallback(path, workspaceRoot string) ([]LocalToolUsageEvent,
 				ObservedStartAt:   observedAt,
 				ObservedEndAt:     observedAt,
 				RawSourcePath:     path,
+				RawSourceLocator:  "line:" + strconv.Itoa(idx+1),
 				RawPayload: map[string]any{
 					"timestamp": row["timestamp"],
 					"payload":   payload,
@@ -81,4 +83,51 @@ func ParseCodexJSONLFallback(path, workspaceRoot string) ([]LocalToolUsageEvent,
 		return nil, nil
 	}
 	return events, nil
+}
+
+func findCodexWorkspaceSessionIDs(path, workspaceRoot string) []string {
+	lines, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+
+	seen := map[string]struct{}{}
+	for _, raw := range strings.Split(string(lines), "\n") {
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			continue
+		}
+
+		var row map[string]any
+		if err := json.Unmarshal([]byte(raw), &row); err != nil {
+			continue
+		}
+		if strings.TrimSpace(asString(row["type"])) != "session_meta" {
+			continue
+		}
+
+		payload, _ := row["payload"].(map[string]any)
+		if filepath.Clean(asString(payload["cwd"])) != filepath.Clean(workspaceRoot) {
+			continue
+		}
+
+		sessionID := strings.TrimSpace(asString(payload["id"]))
+		if sessionID == "" {
+			continue
+		}
+		seen[sessionID] = struct{}{}
+	}
+
+	out := make([]string, 0, len(seen))
+	for sessionID := range seen {
+		out = append(out, sessionID)
+	}
+	return out
+}
+
+func fallbackCodexJSONLEventID(lineNumber int) string {
+	if lineNumber <= 0 {
+		return "line:unknown"
+	}
+	return "line:" + strconv.Itoa(lineNumber)
 }

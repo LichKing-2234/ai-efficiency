@@ -5,32 +5,35 @@ const interceptors = vi.hoisted(() => ({
   requestFn: null as ((config: any) => any) | null,
   responseFn: null as ((res: any) => any) | null,
   responseErrFn: null as ((err: any) => any) | null,
+  axiosPost: vi.fn(),
+  clientInstance: null as any,
 }))
 
 vi.mock('axios', () => {
-  const mockInstance = {
-    interceptors: {
-      request: {
-        use: vi.fn((onFulfilled: any) => {
-          interceptors.requestFn = onFulfilled
-        }),
-      },
-      response: {
-        use: vi.fn((onFulfilled: any, onRejected: any) => {
-          interceptors.responseFn = onFulfilled
-          interceptors.responseErrFn = onRejected
-        }),
-      },
+  const mockInstance: any = vi.fn()
+  mockInstance.interceptors = {
+    request: {
+      use: vi.fn((onFulfilled: any) => {
+        interceptors.requestFn = onFulfilled
+      }),
     },
-    get: vi.fn(),
-    post: vi.fn(),
-    put: vi.fn(),
-    delete: vi.fn(),
+    response: {
+      use: vi.fn((onFulfilled: any, onRejected: any) => {
+        interceptors.responseFn = onFulfilled
+        interceptors.responseErrFn = onRejected
+      }),
+    },
   }
+  mockInstance.get = vi.fn()
+  mockInstance.post = vi.fn()
+  mockInstance.put = vi.fn()
+  mockInstance.delete = vi.fn()
+  interceptors.clientInstance = mockInstance
 
   return {
     default: {
       create: vi.fn(() => mockInstance),
+      post: interceptors.axiosPost,
     },
   }
 })
@@ -41,6 +44,7 @@ import '@/api/client'
 describe('Axios client interceptors', () => {
   beforeEach(() => {
     localStorage.clear()
+    vi.clearAllMocks()
   })
 
   describe('request interceptor', () => {
@@ -65,8 +69,48 @@ describe('Axios client interceptors', () => {
       expect(result).toBe(response)
     })
 
-    it('clears token and redirects on 401 response', async () => {
+    it('refreshes token and retries the original request on 401 response', async () => {
       localStorage.setItem('token', 'old-token')
+      localStorage.setItem('refresh_token', 'refresh-token')
+
+      interceptors.axiosPost.mockResolvedValue({
+        data: {
+          data: {
+            tokens: {
+              access_token: 'new-token',
+              refresh_token: 'new-refresh-token',
+            },
+          },
+        },
+      })
+      const retriedResponse = { status: 200, data: { ok: true } }
+      interceptors.clientInstance.mockResolvedValue(retriedResponse)
+
+      const result = await interceptors.responseErrFn!({
+        response: { status: 401 },
+        config: { url: '/repos', headers: {} },
+      })
+
+      expect(interceptors.axiosPost).toHaveBeenCalledWith('/api/v1/auth/refresh', {
+        refresh_token: 'refresh-token',
+      })
+      expect(interceptors.clientInstance).toHaveBeenCalledWith(
+        expect.objectContaining({
+          url: '/repos',
+          headers: expect.objectContaining({
+            Authorization: 'Bearer new-token',
+          }),
+          _retry: true,
+        })
+      )
+      expect(localStorage.getItem('token')).toBe('new-token')
+      expect(localStorage.getItem('refresh_token')).toBe('new-refresh-token')
+      expect(result).toBe(retriedResponse)
+    })
+
+    it('clears tokens and redirects when refresh fails', async () => {
+      localStorage.setItem('token', 'old-token')
+      localStorage.setItem('refresh_token', 'refresh-token')
 
       const originalLocation = window.location
       Object.defineProperty(window, 'location', {
@@ -74,10 +118,13 @@ describe('Axios client interceptors', () => {
         value: { ...originalLocation, href: '' },
       })
 
-      const error = { response: { status: 401 }, config: { url: '/repos' } }
+      interceptors.axiosPost.mockRejectedValue(new Error('refresh failed'))
+
+      const error = { response: { status: 401 }, config: { url: '/repos', headers: {} } }
       await expect(interceptors.responseErrFn!(error)).rejects.toEqual(error)
 
       expect(localStorage.getItem('token')).toBeNull()
+      expect(localStorage.getItem('refresh_token')).toBeNull()
       expect(window.location.href).toBe('/login')
 
       Object.defineProperty(window, 'location', {
@@ -97,6 +144,7 @@ describe('Axios client interceptors', () => {
 
     it('does not redirect on 401 for auth endpoints', async () => {
       localStorage.setItem('token', 'old-token')
+      localStorage.setItem('refresh_token', 'old-refresh-token')
 
       const originalLocation = window.location
       Object.defineProperty(window, 'location', {
@@ -109,7 +157,9 @@ describe('Axios client interceptors', () => {
 
       // Token should NOT be cleared for auth endpoints
       expect(localStorage.getItem('token')).toBe('old-token')
+      expect(localStorage.getItem('refresh_token')).toBe('old-refresh-token')
       expect(window.location.href).toBe('/current')
+      expect(interceptors.axiosPost).not.toHaveBeenCalled()
 
       Object.defineProperty(window, 'location', {
         writable: true,

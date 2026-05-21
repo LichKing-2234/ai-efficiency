@@ -65,14 +65,37 @@ export interface PRRecord {
   attribution_confidence?: 'high' | 'medium' | 'low' | null
   primary_token_count?: number
   primary_token_cost?: number
+  usage_input_tokens?: number
+  usage_output_tokens?: number
+  usage_cached_input_tokens?: number
+  usage_reasoning_tokens?: number
+  usage_credit_usage?: number
+  usage_request_count?: number
+  usage_commit_count?: number
+  usage_refreshed_at?: string | null
   metadata_summary?: Record<string, any>
   last_attributed_at?: string | null
   edges?: {
     last_attribution_run?: PRAttributionRun | null
+    pr_commit_usage_snapshots?: PRCommitUsageSnapshot[] | null
   }
   cycle_time_hours: number
   merged_at: string | null
   created_at: string
+}
+
+export interface PRCommitUsageSnapshot {
+  id?: number
+  commit_sha: string
+  commit_checkpoint_id?: number | null
+  captured_at?: string | null
+  input_tokens: number
+  output_tokens: number
+  cached_input_tokens: number
+  reasoning_tokens: number
+  credit_usage: number
+  request_count: number
+  sort_order?: number
 }
 
 export interface PRAttributionRun {
@@ -137,4 +160,82 @@ export interface DeploymentStatus {
 
 export interface ApplyUpdateRequest {
   target_version: string
+}
+
+export interface ToolUsageEventSummary {
+  total_events: number
+  bound_events: number
+  unbound_events: number
+  tool_counts: Array<{
+    tool: string
+    count: number
+  }>
+}
+
+export interface ToolUsageEventRow {
+  id: number
+  tool: string
+  repo_id: number
+  repo_name: string
+  username?: string
+  tool_session_id: string
+  tool_event_id?: string | null
+  dedupe_key: string
+  observed_end_at: string
+  request_count: number
+  input_tokens: number
+  output_tokens: number
+  cached_input_tokens: number
+  reasoning_tokens: number
+  credit_usage: number
+  commit_checkpoint_id?: number | null
+  commit_sha?: string | null
+  source_basename: string
+  binding_status: 'bound' | 'unbound'
+}
+
+export interface MatchedPR {
+  pr_record_id: number
+  scm_pr_id: number
+  title: string
+  status: string
+  scm_pr_url: string
+}
+
+export interface ToolUsageEventDetail {
+  id: number
+  tool: string
+  repo_id: number
+  repo_name: string
+  user_id: number
+  username?: string
+  workspace_id: string
+  tool_session_id: string
+  tool_event_id?: string | null
+  dedupe_key: string
+  observed_start_at: string
+  observed_end_at: string
+  request_count: number
+  input_tokens: number
+  output_tokens: number
+  cached_input_tokens: number
+  reasoning_tokens: number
+  credit_usage: number
+  context_usage_pct: number
+  commit_checkpoint_id?: number | null
+  commit_sha?: string | null
+  checkpoint_captured_at?: string | null
+  source_basename: string
+  raw_source_path?: string
+  raw_source_locator?: string
+  raw_payload?: Record<string, unknown>
+  binding_status: 'bound' | 'unbound'
+  matched_prs: MatchedPR[]
+}
+
+export interface ToolUsageEventListResponse {
+  total: number
+  page: number
+  page_size: number
+  items: ToolUsageEventRow[]
 }

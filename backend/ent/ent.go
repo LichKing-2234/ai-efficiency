@@ -16,6 +16,7 @@ import (
 	"github.com/ai-efficiency/backend/ent/commitrewrite"
 	"github.com/ai-efficiency/backend/ent/credential"
 	"github.com/ai-efficiency/backend/ent/prattributionrun"
+	"github.com/ai-efficiency/backend/ent/prcommitusagesnapshot"
 	"github.com/ai-efficiency/backend/ent/prrecord"
 	"github.com/ai-efficiency/backend/ent/relayprovider"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
@@ -84,18 +85,19 @@ var (
 func checkColumn(table, column string) error {
 	initCheck.Do(func() {
 		columnCheck = sql.NewColumnCheck(map[string]func(string) bool{
-			commitcheckpoint.Table:  commitcheckpoint.ValidColumn,
-			commitrewrite.Table:     commitrewrite.ValidColumn,
-			credential.Table:        credential.ValidColumn,
-			prattributionrun.Table:  prattributionrun.ValidColumn,
-			prrecord.Table:          prrecord.ValidColumn,
-			relayprovider.Table:     relayprovider.ValidColumn,
-			repoconfig.Table:        repoconfig.ValidColumn,
-			scmprovider.Table:       scmprovider.ValidColumn,
-			systemsetting.Table:     systemsetting.ValidColumn,
-			toolusageevent.Table:    toolusageevent.ValidColumn,
-			user.Table:              user.ValidColumn,
-			webhookdeadletter.Table: webhookdeadletter.ValidColumn,
+			commitcheckpoint.Table:      commitcheckpoint.ValidColumn,
+			commitrewrite.Table:         commitrewrite.ValidColumn,
+			credential.Table:            credential.ValidColumn,
+			prcommitusagesnapshot.Table: prcommitusagesnapshot.ValidColumn,
+			prattributionrun.Table:      prattributionrun.ValidColumn,
+			prrecord.Table:              prrecord.ValidColumn,
+			relayprovider.Table:         relayprovider.ValidColumn,
+			repoconfig.Table:            repoconfig.ValidColumn,
+			scmprovider.Table:           scmprovider.ValidColumn,
+			systemsetting.Table:         systemsetting.ValidColumn,
+			toolusageevent.Table:        toolusageevent.ValidColumn,
+			user.Table:                  user.ValidColumn,
+			webhookdeadletter.Table:     webhookdeadletter.ValidColumn,
 		})
 	})
 	return columnCheck(table, column)

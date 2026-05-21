@@ -166,6 +166,38 @@ func TestRecordCheckpointBindsToolUsageEventsForWorkspaceWindow(t *testing.T) {
 	}
 }
 
+func TestRecordCheckpointForUser_AutoCreatesRepoOnRemoteMiss(t *testing.T) {
+	t.Parallel()
+
+	client := testdb.Open(t)
+	ctx := context.Background()
+	defer client.Close()
+
+	userID := client.User.Create().
+		SetUsername("checkpoint-owner-auto-create").
+		SetEmail("checkpoint-owner-auto-create@test.com").
+		SetAuthSource("ldap").
+		SaveX(ctx).ID
+
+	svc := NewService(client)
+	err := svc.RecordCheckpointForUser(ctx, userID, CommitCheckpointRequest{
+		EventID:        "cp-auto-create",
+		RepoFullName:   "https://github.com/acme/platform.git",
+		WorkspaceID:    "ws-1",
+		CommitSHA:      "abc123",
+		BranchSnapshot: "main",
+		BindingSource:  "marker",
+	})
+	if err != nil {
+		t.Fatalf("RecordCheckpointForUser error: %v", err)
+	}
+
+	rc := client.RepoConfig.Query().OnlyX(ctx)
+	if rc.RepoKey != "github.com/acme/platform" {
+		t.Fatalf("RepoKey = %q, want %q", rc.RepoKey, "github.com/acme/platform")
+	}
+}
+
 func ptrTime(v time.Time) *time.Time {
 	return &v
 }

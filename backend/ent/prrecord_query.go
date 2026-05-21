@@ -13,6 +13,7 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/ai-efficiency/backend/ent/prattributionrun"
+	"github.com/ai-efficiency/backend/ent/prcommitusagesnapshot"
 	"github.com/ai-efficiency/backend/ent/predicate"
 	"github.com/ai-efficiency/backend/ent/prrecord"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
@@ -21,14 +22,15 @@ import (
 // PrRecordQuery is the builder for querying PrRecord entities.
 type PrRecordQuery struct {
 	config
-	ctx                    *QueryContext
-	order                  []prrecord.OrderOption
-	inters                 []Interceptor
-	predicates             []predicate.PrRecord
-	withRepoConfig         *RepoConfigQuery
-	withAttributionRuns    *PrAttributionRunQuery
-	withLastAttributionRun *PrAttributionRunQuery
-	withFKs                bool
+	ctx                        *QueryContext
+	order                      []prrecord.OrderOption
+	inters                     []Interceptor
+	predicates                 []predicate.PrRecord
+	withRepoConfig             *RepoConfigQuery
+	withPrCommitUsageSnapshots *PRCommitUsageSnapshotQuery
+	withAttributionRuns        *PrAttributionRunQuery
+	withLastAttributionRun     *PrAttributionRunQuery
+	withFKs                    bool
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
 	path func(context.Context) (*sql.Selector, error)
@@ -80,6 +82,28 @@ func (prq *PrRecordQuery) QueryRepoConfig() *RepoConfigQuery {
 			sqlgraph.From(prrecord.Table, prrecord.FieldID, selector),
 			sqlgraph.To(repoconfig.Table, repoconfig.FieldID),
 			sqlgraph.Edge(sqlgraph.M2O, true, prrecord.RepoConfigTable, prrecord.RepoConfigColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(prq.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryPrCommitUsageSnapshots chains the current query on the "pr_commit_usage_snapshots" edge.
+func (prq *PrRecordQuery) QueryPrCommitUsageSnapshots() *PRCommitUsageSnapshotQuery {
+	query := (&PRCommitUsageSnapshotClient{config: prq.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := prq.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := prq.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(prrecord.Table, prrecord.FieldID, selector),
+			sqlgraph.To(prcommitusagesnapshot.Table, prcommitusagesnapshot.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, prrecord.PrCommitUsageSnapshotsTable, prrecord.PrCommitUsageSnapshotsColumn),
 		)
 		fromU = sqlgraph.SetNeighbors(prq.driver.Dialect(), step)
 		return fromU, nil
@@ -318,14 +342,15 @@ func (prq *PrRecordQuery) Clone() *PrRecordQuery {
 		return nil
 	}
 	return &PrRecordQuery{
-		config:                 prq.config,
-		ctx:                    prq.ctx.Clone(),
-		order:                  append([]prrecord.OrderOption{}, prq.order...),
-		inters:                 append([]Interceptor{}, prq.inters...),
-		predicates:             append([]predicate.PrRecord{}, prq.predicates...),
-		withRepoConfig:         prq.withRepoConfig.Clone(),
-		withAttributionRuns:    prq.withAttributionRuns.Clone(),
-		withLastAttributionRun: prq.withLastAttributionRun.Clone(),
+		config:                     prq.config,
+		ctx:                        prq.ctx.Clone(),
+		order:                      append([]prrecord.OrderOption{}, prq.order...),
+		inters:                     append([]Interceptor{}, prq.inters...),
+		predicates:                 append([]predicate.PrRecord{}, prq.predicates...),
+		withRepoConfig:             prq.withRepoConfig.Clone(),
+		withPrCommitUsageSnapshots: prq.withPrCommitUsageSnapshots.Clone(),
+		withAttributionRuns:        prq.withAttributionRuns.Clone(),
+		withLastAttributionRun:     prq.withLastAttributionRun.Clone(),
 		// clone intermediate query.
 		sql:  prq.sql.Clone(),
 		path: prq.path,
@@ -340,6 +365,17 @@ func (prq *PrRecordQuery) WithRepoConfig(opts ...func(*RepoConfigQuery)) *PrReco
 		opt(query)
 	}
 	prq.withRepoConfig = query
+	return prq
+}
+
+// WithPrCommitUsageSnapshots tells the query-builder to eager-load the nodes that are connected to
+// the "pr_commit_usage_snapshots" edge. The optional arguments are used to configure the query builder of the edge.
+func (prq *PrRecordQuery) WithPrCommitUsageSnapshots(opts ...func(*PRCommitUsageSnapshotQuery)) *PrRecordQuery {
+	query := (&PRCommitUsageSnapshotClient{config: prq.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	prq.withPrCommitUsageSnapshots = query
 	return prq
 }
 
@@ -444,8 +480,9 @@ func (prq *PrRecordQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*Pr
 		nodes       = []*PrRecord{}
 		withFKs     = prq.withFKs
 		_spec       = prq.querySpec()
-		loadedTypes = [3]bool{
+		loadedTypes = [4]bool{
 			prq.withRepoConfig != nil,
+			prq.withPrCommitUsageSnapshots != nil,
 			prq.withAttributionRuns != nil,
 			prq.withLastAttributionRun != nil,
 		}
@@ -477,6 +514,15 @@ func (prq *PrRecordQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*Pr
 	if query := prq.withRepoConfig; query != nil {
 		if err := prq.loadRepoConfig(ctx, query, nodes, nil,
 			func(n *PrRecord, e *RepoConfig) { n.Edges.RepoConfig = e }); err != nil {
+			return nil, err
+		}
+	}
+	if query := prq.withPrCommitUsageSnapshots; query != nil {
+		if err := prq.loadPrCommitUsageSnapshots(ctx, query, nodes,
+			func(n *PrRecord) { n.Edges.PrCommitUsageSnapshots = []*PRCommitUsageSnapshot{} },
+			func(n *PrRecord, e *PRCommitUsageSnapshot) {
+				n.Edges.PrCommitUsageSnapshots = append(n.Edges.PrCommitUsageSnapshots, e)
+			}); err != nil {
 			return nil, err
 		}
 	}
@@ -525,6 +571,36 @@ func (prq *PrRecordQuery) loadRepoConfig(ctx context.Context, query *RepoConfigQ
 		for i := range nodes {
 			assign(nodes[i], n)
 		}
+	}
+	return nil
+}
+func (prq *PrRecordQuery) loadPrCommitUsageSnapshots(ctx context.Context, query *PRCommitUsageSnapshotQuery, nodes []*PrRecord, init func(*PrRecord), assign func(*PrRecord, *PRCommitUsageSnapshot)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int]*PrRecord)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(prcommitusagesnapshot.FieldPrRecordID)
+	}
+	query.Where(predicate.PRCommitUsageSnapshot(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(prrecord.PrCommitUsageSnapshotsColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.PrRecordID
+		node, ok := nodeids[fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "pr_record_id" returned %v for node %v`, fk, n.ID)
+		}
+		assign(node, n)
 	}
 	return nil
 }

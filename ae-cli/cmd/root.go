@@ -1,8 +1,11 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"strings"
+	"time"
 
 	"github.com/ai-efficiency/ae-cli/config"
 	"github.com/ai-efficiency/ae-cli/internal/auth"
@@ -16,6 +19,8 @@ var (
 	cfg       *config.Config
 	apiClient *client.Client
 )
+
+var refreshAccessToken = auth.RefreshAccessToken
 
 var rootCmd = &cobra.Command{
 	Use:   "ae-cli",
@@ -37,11 +42,21 @@ var rootCmd = &cobra.Command{
 		}
 
 		tokenPath, _ := auth.DefaultTokenPath()
-		if tf, ok := resolveTokenFile(tokenPath); ok && cfg.Server.URL == "" && tf.ServerURL != "" {
+		if tf := readTokenFile(tokenPath); tf != nil && cfg.Server.URL == "" && tf.ServerURL != "" {
 			cfg.Server.URL = tf.ServerURL
 		}
 
-		token := resolveToken(cfg.Server.Token, tokenPath)
+		tf, ok := resolveTokenFileWithRefresh(cfg.Server.URL, tokenPath)
+		if ok && cfg.Server.URL == "" && tf.ServerURL != "" {
+			cfg.Server.URL = tf.ServerURL
+		}
+
+		token := cfg.Server.Token
+		if ok {
+			token = tf.AccessToken
+		} else {
+			token = resolveToken(cfg.Server.Token, tokenPath)
+		}
 		apiClient = client.New(cfg.Server.URL, token)
 		return nil
 	},
@@ -58,19 +73,77 @@ func resolveToken(configToken, tokenPath string) string {
 }
 
 func resolveTokenFile(tokenPath string) (*auth.TokenFile, bool) {
+	tf := readTokenFile(tokenPath)
+	if tf == nil {
+		return nil, false
+	}
+	if tf.IsValid() {
+		return tf, true
+	}
+	return nil, false
+}
+
+func readTokenFile(tokenPath string) *auth.TokenFile {
 	if tokenPath == "" {
 		var err error
 		tokenPath, err = auth.DefaultTokenPath()
 		if err != nil {
-			return nil, false
+			return nil
 		}
 	}
 
 	tf, err := auth.ReadToken(tokenPath)
-	if err == nil && tf.IsValid() {
+	if err != nil {
+		return nil
+	}
+	return tf
+}
+
+func resolveTokenFileWithRefresh(serverURL, tokenPath string) (*auth.TokenFile, bool) {
+	tf := readTokenFile(tokenPath)
+	if tf == nil {
+		return nil, false
+	}
+	if tf.IsValid() && !tf.NeedsRefresh() {
 		return tf, true
 	}
-	return nil, false
+
+	targetServerURL := strings.TrimSpace(serverURL)
+	if targetServerURL == "" {
+		targetServerURL = strings.TrimSpace(tf.ServerURL)
+	}
+	if targetServerURL == "" || strings.TrimSpace(tf.RefreshToken) == "" {
+		if tf.IsValid() {
+			return tf, true
+		}
+		return nil, false
+	}
+
+	refreshed, err := refreshAccessToken(context.Background(), targetServerURL, tf.RefreshToken)
+	if err != nil {
+		if tf.IsValid() {
+			return tf, true
+		}
+		return nil, false
+	}
+
+	nextRefreshToken := strings.TrimSpace(refreshed.RefreshToken)
+	if nextRefreshToken == "" {
+		nextRefreshToken = tf.RefreshToken
+	}
+	expiresIn := refreshed.ExpiresIn
+	if expiresIn <= 0 {
+		expiresIn = 7200
+	}
+
+	next := &auth.TokenFile{
+		AccessToken:  refreshed.AccessToken,
+		RefreshToken: nextRefreshToken,
+		ExpiresAt:    time.Now().Add(time.Duration(expiresIn) * time.Second),
+		ServerURL:    targetServerURL,
+	}
+	_ = auth.WriteToken(tokenPath, next)
+	return next, true
 }
 
 func Execute() {

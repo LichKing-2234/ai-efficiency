@@ -11,6 +11,7 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
+	"github.com/ai-efficiency/backend/ent/prcommitusagesnapshot"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/toolusageevent"
 	"github.com/ai-efficiency/backend/ent/user"
@@ -144,6 +145,21 @@ func (ccc *CommitCheckpointCreate) AddToolUsageEvents(t ...*ToolUsageEvent) *Com
 		ids[i] = t[i].ID
 	}
 	return ccc.AddToolUsageEventIDs(ids...)
+}
+
+// AddPrCommitUsageSnapshotIDs adds the "pr_commit_usage_snapshots" edge to the PRCommitUsageSnapshot entity by IDs.
+func (ccc *CommitCheckpointCreate) AddPrCommitUsageSnapshotIDs(ids ...int) *CommitCheckpointCreate {
+	ccc.mutation.AddPrCommitUsageSnapshotIDs(ids...)
+	return ccc
+}
+
+// AddPrCommitUsageSnapshots adds the "pr_commit_usage_snapshots" edges to the PRCommitUsageSnapshot entity.
+func (ccc *CommitCheckpointCreate) AddPrCommitUsageSnapshots(p ...*PRCommitUsageSnapshot) *CommitCheckpointCreate {
+	ids := make([]int, len(p))
+	for i := range p {
+		ids[i] = p[i].ID
+	}
+	return ccc.AddPrCommitUsageSnapshotIDs(ids...)
 }
 
 // Mutation returns the CommitCheckpointMutation object of the builder.
@@ -333,6 +349,22 @@ func (ccc *CommitCheckpointCreate) createSpec() (*CommitCheckpoint, *sqlgraph.Cr
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(toolusageevent.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := ccc.mutation.PrCommitUsageSnapshotsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   commitcheckpoint.PrCommitUsageSnapshotsTable,
+			Columns: []string{commitcheckpoint.PrCommitUsageSnapshotsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(prcommitusagesnapshot.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {

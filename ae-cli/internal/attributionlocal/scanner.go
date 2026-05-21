@@ -10,6 +10,8 @@ import (
 )
 
 type ScanState struct {
+	CodexSQLite map[string]CodexSQLiteWatermark `json:"codex_sqlite,omitempty"`
+	FileModUnix map[string]int64                `json:"file_mod_unix,omitempty"`
 }
 
 type Scanner struct{}
@@ -25,12 +27,41 @@ func (s *Scanner) ScanWorkspace(workspaceRoot string, state ScanState) ([]LocalT
 		return nil, state, err
 	}
 	homeDir, _ := os.UserHomeDir()
+	nextState := cloneScanState(state)
 
-	for _, path := range findCodexJSONLFiles(workspaceRoot, homeDir) {
+	codexJSONLFiles := findCodexJSONLFiles(workspaceRoot, homeDir)
+	codexSessionIDs := make(map[string]struct{})
+	for _, path := range codexJSONLFiles {
+		for _, sessionID := range findCodexWorkspaceSessionIDs(path, workspaceRoot) {
+			codexSessionIDs[sessionID] = struct{}{}
+		}
+	}
+
+	for _, path := range findCodexSQLiteFiles(homeDir) {
+		parser := NewCodexSQLiteParser()
+		events, watermark, err := parser.Parse(path, nextState.CodexSQLite[path])
+		if err != nil {
+			continue
+		}
+		nextState.CodexSQLite[path] = watermark
+		for _, item := range events {
+			if _, ok := codexSessionIDs[item.ToolSessionID]; !ok {
+				continue
+			}
+			item.WorkspaceID = workspaceID
+			out = append(out, item)
+		}
+	}
+
+	for _, path := range codexJSONLFiles {
+		if !shouldScanFile(path, state) {
+			continue
+		}
 		items, err := ParseCodexJSONLFallback(path, workspaceRoot)
 		if err != nil {
 			continue
 		}
+		rememberFileScan(&nextState, path)
 		for _, item := range items {
 			item.WorkspaceID = workspaceID
 			out = append(out, item)
@@ -38,10 +69,14 @@ func (s *Scanner) ScanWorkspace(workspaceRoot string, state ScanState) ([]LocalT
 	}
 
 	for _, path := range findClaudeJSONLFiles(homeDir) {
+		if !shouldScanFile(path, state) {
+			continue
+		}
 		items, err := ParseClaudeJSONL(path, workspaceRoot)
 		if err != nil {
 			continue
 		}
+		rememberFileScan(&nextState, path)
 		for _, item := range items {
 			item.WorkspaceID = workspaceID
 			out = append(out, item)
@@ -49,17 +84,52 @@ func (s *Scanner) ScanWorkspace(workspaceRoot string, state ScanState) ([]LocalT
 	}
 
 	for _, path := range findKiroJSONFiles(homeDir) {
+		if !shouldScanFile(path, state) {
+			continue
+		}
 		items, err := ParseKiroJSON(path, workspaceRoot)
 		if err != nil {
 			continue
 		}
+		rememberFileScan(&nextState, path)
 		for _, item := range items {
 			item.WorkspaceID = workspaceID
 			out = append(out, item)
 		}
 	}
 
-	return dedupeAndSort(out), state, nil
+	for _, path := range findKiroCLISQLiteFiles(homeDir) {
+		if !shouldScanFile(path, state) {
+			continue
+		}
+		items, err := ParseKiroCLISQLite(path, workspaceRoot)
+		if err != nil {
+			continue
+		}
+		rememberFileScan(&nextState, path)
+		for _, item := range items {
+			item.WorkspaceID = workspaceID
+			out = append(out, item)
+		}
+	}
+
+	kiroIDESessionIDs := FindKiroIDESessionIDs(homeDir, workspaceRoot)
+	for _, path := range FindKiroIDEExecutionFiles(homeDir) {
+		if !shouldScanFile(path, state) {
+			continue
+		}
+		items, err := ParseKiroIDEExecution(path, kiroIDESessionIDs)
+		if err != nil {
+			continue
+		}
+		rememberFileScan(&nextState, path)
+		for _, item := range items {
+			item.WorkspaceID = workspaceID
+			out = append(out, item)
+		}
+	}
+
+	return dedupeAndSort(out), nextState, nil
 }
 
 func mustWorkspaceID(workspaceRoot string) (string, error) {
@@ -137,12 +207,34 @@ func findCodexJSONLFiles(workspaceRoot, homeDir string) []string {
 	return walkFiles(filepath.Join(homeDir, ".codex"), ".jsonl")
 }
 
+func findCodexSQLiteFiles(homeDir string) []string {
+	dbPath := filepath.Join(strings.TrimSpace(homeDir), ".codex", "logs_2.sqlite")
+	if strings.TrimSpace(homeDir) == "" {
+		return nil
+	}
+	if _, err := os.Stat(dbPath); err != nil {
+		return nil
+	}
+	return []string{dbPath}
+}
+
 func findClaudeJSONLFiles(homeDir string) []string {
 	return walkFiles(filepath.Join(homeDir, ".claude"), ".jsonl")
 }
 
 func findKiroJSONFiles(homeDir string) []string {
 	return walkFiles(filepath.Join(homeDir, ".kiro"), ".json")
+}
+
+func findKiroCLISQLiteFiles(homeDir string) []string {
+	dbPath := filepath.Join(strings.TrimSpace(homeDir), "Library", "Application Support", "kiro-cli", "data.sqlite3")
+	if strings.TrimSpace(homeDir) == "" {
+		return nil
+	}
+	if _, err := os.Stat(dbPath); err != nil {
+		return nil
+	}
+	return []string{dbPath}
 }
 
 func walkFiles(root string, ext string) []string {
@@ -162,4 +254,43 @@ func walkFiles(root string, ext string) []string {
 	})
 	sort.Strings(out)
 	return out
+}
+
+func cloneScanState(state ScanState) ScanState {
+	next := ScanState{
+		CodexSQLite: make(map[string]CodexSQLiteWatermark, len(state.CodexSQLite)),
+		FileModUnix: make(map[string]int64, len(state.FileModUnix)),
+	}
+	for path, watermark := range state.CodexSQLite {
+		next.CodexSQLite[path] = watermark
+	}
+	for path, mod := range state.FileModUnix {
+		next.FileModUnix[path] = mod
+	}
+	return next
+}
+
+func shouldScanFile(path string, state ScanState) bool {
+	info, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
+	if state.FileModUnix == nil {
+		return true
+	}
+	return info.ModTime().Unix() > state.FileModUnix[path]
+}
+
+func rememberFileScan(state *ScanState, path string) {
+	if state == nil {
+		return
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return
+	}
+	if state.FileModUnix == nil {
+		state.FileModUnix = map[string]int64{}
+	}
+	state.FileModUnix[path] = info.ModTime().Unix()
 }

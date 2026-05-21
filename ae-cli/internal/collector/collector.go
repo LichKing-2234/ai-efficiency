@@ -17,12 +17,7 @@ import (
 func BuildSnapshot(paths Paths) (*Snapshot, error) {
 	out := &Snapshot{}
 
-	codexFiles := orderFilesByModTime(paths.CodexFiles)
-	workspaceCodexRoot := strings.TrimSpace(session.WorkspaceCodexHome(paths.WorkspaceRoot))
-	if workspaceCodexRoot != "" {
-		codexFiles = preferPathsUnderRoot(codexFiles, workspaceCodexRoot)
-	}
-	for _, p := range codexFiles {
+	for _, p := range orderFilesByModTime(paths.CodexFiles) {
 		s, err := readCodexSnapshot(p, paths.WorkspaceRoot)
 		if err != nil {
 			continue
@@ -46,42 +41,17 @@ func BuildSnapshot(paths Paths) (*Snapshot, error) {
 		break
 	}
 
-	for _, p := range orderFilesByModTime(paths.KiroFiles) {
-		s, err := readKiroSnapshot(p, paths.WorkspaceRoot)
-		if err != nil {
-			continue
+	if len(paths.KiroFiles) > 0 {
+		s, err := readKiroSnapshot(paths.KiroFiles, paths.WorkspaceRoot)
+		if err == nil && s != nil {
+			out.Kiro = s
 		}
-		if s == nil {
-			continue
-		}
-		out.Kiro = s
-		break
 	}
 
 	if out.Codex == nil && out.Claude == nil && out.Kiro == nil {
 		return nil, nil
 	}
 	return out, nil
-}
-
-func preferPathsUnderRoot(paths []string, root string) []string {
-	root = strings.TrimSpace(root)
-	if root == "" || len(paths) == 0 {
-		return paths
-	}
-	root = filepath.Clean(root)
-
-	preferred := make([]string, 0, len(paths))
-	fallback := make([]string, 0, len(paths))
-	for _, path := range paths {
-		cleaned := filepath.Clean(strings.TrimSpace(path))
-		if cleaned == root || strings.HasPrefix(cleaned, root+string(filepath.Separator)) {
-			preferred = append(preferred, path)
-			continue
-		}
-		fallback = append(fallback, path)
-	}
-	return append(preferred, fallback...)
 }
 
 func WriteCache(sessionID string, snapshot *Snapshot) error {
@@ -153,7 +123,6 @@ func DefaultPaths(workspaceRoot string) Paths {
 	}
 
 	if len(out.CodexFiles) == 0 {
-		out.CodexFiles = append(out.CodexFiles, walkFiles(session.WorkspaceCodexHome(workspaceRoot), ".jsonl")...)
 		out.CodexFiles = append(out.CodexFiles, walkFiles(filepath.Join(home, ".codex"), ".jsonl")...)
 	}
 	if len(out.ClaudeFiles) == 0 {
@@ -161,6 +130,18 @@ func DefaultPaths(workspaceRoot string) Paths {
 	}
 	if len(out.KiroFiles) == 0 {
 		out.KiroFiles = walkFiles(filepath.Join(home, ".kiro"), ".json")
+		kiroCLIDB := filepath.Join(home, "Library", "Application Support", "kiro-cli", "data.sqlite3")
+		if _, err := os.Stat(kiroCLIDB); err == nil {
+			out.KiroFiles = append([]string{kiroCLIDB}, out.KiroFiles...)
+		}
+		kiroIDESessionIndexFiles := attributionlocal.FindKiroIDEWorkspaceSessionIndexFilesForCollector(home, workspaceRoot)
+		if len(kiroIDESessionIndexFiles) > 0 {
+			out.KiroFiles = append(kiroIDESessionIndexFiles, out.KiroFiles...)
+		}
+		kiroIDEExecutionFiles := attributionlocal.FindKiroIDEExecutionFiles(home)
+		if len(kiroIDEExecutionFiles) > 0 {
+			out.KiroFiles = append(kiroIDEExecutionFiles, out.KiroFiles...)
+		}
 	}
 	return out
 }

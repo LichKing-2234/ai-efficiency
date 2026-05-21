@@ -61,6 +61,7 @@ flowchart LR
 - `deploy/` also includes non-production `dev` / `local` compose paths for local verification.
 - Public health endpoints expose liveness/readiness, and admin settings expose deployment status plus update controls.
 - `ae-cli login` now supports both browser PKCE and OAuth device flow. Headless Linux environments are expected to use `ae-cli login --device`, while desktop/browser-capable environments still default to PKCE.
+- Backend-issued auth tokens currently default to a 2-hour access JWT plus a 7-day refresh token. The frontend retries a non-auth `401` once via `/api/v1/auth/refresh`, and `ae-cli` refreshes `~/.ae-cli/token.json` before authenticated commands when the token is expired or within the refresh window.
 - `ae-cli discover` now provides the current user-facing tool-configuration path for supported local agents. It fetches provider-delivered base URLs and API keys from the backend, detects installed tools locally, and writes deterministic local config for Codex, Claude, and Gemini.
 - The old ae-cli session runtime/helper packages are no longer present in the active code path. Backend-side legacy `session` schema and runtime compatibility have also been removed; the remaining `matched_session_ids` / `session_ids` fields are historical names that now carry tool-native session identifiers.
 
@@ -144,22 +145,24 @@ sequenceDiagram
     CLI->>BE: GET /api/v1/providers
     CLI->>Tool: configure Codex / Claude / Gemini locally
     Dev->>CLI: ae-cli init
+    CLI->>BE: ensure repo exists from local git remote
     CLI->>WS: install hooks / maintain local attribution state
     Dev->>Tool: run Codex / Claude / other tools
     Tool->>WS: write local Codex / Claude / Kiro artifacts
+    WS->>BE: ensure repo exists from local git remote
     WS->>WS: short-lived sync scans local artifacts
     WS->>BE: tool_usage_events ingest
     WS->>BE: checkpoint events + rewrite events
     BE->>BE: bind tool_usage_events to commit checkpoints
-    BE->>BE: classify unmatched checkpoints as ambiguous when no bound tool usage exists
+    BE->>BE: refresh active PR usage snapshots from checkpoint-bound usage
 ```
 
 ### Runtime Boundaries
 
 - `ae-cli` owns the sessionless CLI workflow: repo-local init, hook management, short-lived attribution sync, and diagnostics.
 - `ae-cli discover` is intentionally deterministic in the current codebase: no backend LLM loop, no `/api/v1/tools/discover` endpoint, and no per-tool provider inference. It uses the selected provider directly (primary by default, `--provider` to override) and writes tool-native config files or environment hooks.
-- `ae-cli` login selection is split between browser PKCE and device flow, but both paths still end in the same backend-issued JWT and `~/.ae-cli/token.json` storage model.
-- The backend owns durable state, repo discovery during bootstrap, repo configuration, user/provider mapping, attribution, and SCM/webhook handling.
+- `ae-cli` login selection is split between browser PKCE and device flow, but both paths still end in the same backend-issued JWT and `~/.ae-cli/token.json` storage model, with automatic refresh against `/api/v1/auth/refresh` when the stored token is nearing expiry.
+- The backend owns durable state, repo discovery/ensure from local git remotes, repo configuration, user/provider mapping, attribution, PR usage snapshots, and SCM/webhook handling.
 - The backend OAuth handler now manages both short-lived authorization codes and short-lived device entries in memory.
 - Relay/sub2api remains the upstream auth/LLM/usage integration boundary and attribution fallback source.
 - SCM providers now reference reusable credentials instead of storing raw secret blobs inline.
@@ -174,26 +177,61 @@ The formal workflow uses the sessionless local attribution path that reads local
 
 ```mermaid
 flowchart LR
-    Codex["Codex"]
-    Claude["Claude"]
-    Workspace["Workspace artifacts"]
-    Hooks["Tool hooks + Git hooks"]
-    Backend["ai-efficiency backend"]
+    Tools["Codex / Claude / Kiro"]
+
+    subgraph Local["Developer machine"]
+        CLI["ae-cli init / sync / doctor"]
+        Hooks["Git hooks"]
+        Artifacts["Local tool artifacts<br/>~/.codex / ~/.claude / ~/.kiro / Kiro globalStorage"]
+        Collector["collector<br/>build latest Snapshot"]
+        Scanner["attributionlocal scanner<br/>build LocalToolUsageEvent[]"]
+    end
+
+    subgraph Backend["ai-efficiency backend"]
+        Ensure["repo ensure from git remote"]
+        Checkpoint["commit_checkpoint / commit_rewrite ingest<br/>stores agent_snapshot"]
+        Usage["tool_usage_events ingest"]
+        Bind["bind usage to checkpoints"]
+        PRUsage["refresh active PR usage snapshots"]
+    end
+
+    UI["Repo PR list / details view"]
     Relay["sub2api / relay"]
 
-    Codex --> Workspace
-    Claude --> Workspace
-    Workspace --> Backend
-    Hooks --> Backend
+    CLI --> Ensure
+    CLI -->|"install/manage"| Hooks
+    CLI -->|"manual sync"| Scanner
+    Tools --> Artifacts
+    Hooks -->|"post-commit / post-rewrite"| Collector
+    Hooks -->|"flush pending hook queue"| Checkpoint
+    Hooks -->|"post-commit checkpoint upload"| Checkpoint
+    Hooks -->|"post-rewrite rewrite upload"| Checkpoint
+    Hooks -->|"auto attribution-sync"| Scanner
+    Artifacts --> Collector
+    Artifacts --> Scanner
+    Collector -->|"Snapshot -> agent_snapshot"| Checkpoint
+    Scanner -->|"normalized tool_usage_events"| Usage
+    Ensure --> Checkpoint
+    Ensure --> Usage
+    Usage --> Bind
+    Checkpoint --> Bind
+    Bind --> PRUsage
+    PRUsage --> UI
     Relay --> Backend
 ```
 
 ### Status
 
 - Current formal CLI/runtime path:
-  `ae-cli` local artifact parsers for Codex JSONL, Claude JSONL, and Kiro JSON; short-lived local sync; git-hook-triggered sync; `tool_usage_events` ingest; checkpoint-time binding; PR attribution that can read checkpoint-bound `tool_usage_events`
+  `ae-cli init`, `sync`, and git hooks all best-effort ensure the backend repo exists from the local git remote. The local collection layer is split in two: `ae-cli/internal/collector` builds hook-time `agent_snapshot` caches, while `ae-cli/internal/attributionlocal` extracts `tool_usage_events` for backend ingest. `Codex` is normalized under `tool = "codex"`; the scanner currently reads global `~/.codex/sessions/**/*.jsonl` plus a compatibility `~/.codex/logs_2.sqlite` branch gated by jsonl-discovered session ids. `Kiro` is normalized under `tool = "kiro"` across legacy `~/.kiro/sessions/cli/*.json`, modern `~/Library/Application Support/kiro-cli/data.sqlite3`, and Kiro IDE execution metadata under `~/Library/Application Support/Kiro/User/globalStorage/kiro.kiroagent/**`; Kiro IDE attribution uses `workspace-sessions/<workspace>/sessions.json` as the chat-session index and execution detail JSON files with `usageSummary[].unit=credit` as the durable credit fact source, so the current stable Kiro contract is credits/request-count rather than tokens. Backend ingests `tool_usage_events`, binds them to checkpoints, and refreshes PR usage snapshots from checkpoint-bound usage.
+- Trigger boundary:
+  `collector` is only triggered inside git-hook handling (`post-commit` / `post-rewrite`) and writes hook-time `Snapshot` data into checkpoint `agent_snapshot`. Before a new checkpoint or rewrite is uploaded, the current code now replays any queued workspace hook events left behind by earlier fail-open uploads, and `ae-cli sync` plus hidden `ae-cli hook attribution-sync` do the same replay before scanning local artifacts. `attributionlocal` scanning remains the only source that produces `tool_usage_events` for PR/commit aggregation.
+- Current formal frontend surface:
+  repo detail pages show PR usage summaries and commit usage details directly, rather than user-facing attribution status controls.
+- Current global event surface:
+  `/events` is a protected top-level page for browsing backend-ingested `tool_usage_events`. It shows summary cards plus event-level rows, scopes regular users to their own events, and only exposes full raw source/path/payload detail to admins.
 - Remaining direction:
-  richer Attribution UI and any later schema cleanup for historical legacy tables
+  richer reporting surfaces and any later cleanup of historical attribution-only fields/tables that are no longer product-primary
 
 ## Module Responsibilities
 
@@ -204,9 +242,9 @@ flowchart LR
 | Auth and identity | `backend/internal/auth`, `backend/internal/oauth` | Relay SSO, LDAP auth, local token issuance, user identity mapping |
 | Credentials | `backend/internal/credential` | Reusable encrypted secret assets, payload validation, provider credential migration, and credential masking |
 | Relay integration | `backend/internal/relay` | Unified relay/sub2api adapter and usage/API key operations |
-| SCM integration | `backend/internal/scm`, `backend/internal/webhook`, `backend/internal/prsync` | SCM provider abstraction, webhook ingestion, PR synchronization |
-| Repo and efficiency | `backend/internal/repo`, `backend/internal/efficiency` | Repo-to-provider binding, provider-backed clone/auth resolution, PR labeling, and dashboard-facing summary inputs |
-| Session and attribution | `backend/internal/checkpoint`, `backend/internal/attribution` | Commit checkpoints, PR attribution, and tool-native session-id propagation inside `tool_usage_events` |
+| SCM integration | `backend/internal/scm`, `backend/internal/webhook`, `backend/internal/prsync` | SCM provider abstraction, webhook ingestion, PR synchronization, and active-PR usage snapshot refresh |
+| Repo and efficiency | `backend/internal/repo`, `backend/internal/efficiency` | Repo ensure/binding from local git remotes, provider-backed clone/auth resolution, PR labeling, and dashboard-facing summary inputs |
+| Session and attribution | `backend/internal/checkpoint`, `backend/internal/attribution`, `backend/internal/prusage` | Commit checkpoints, rewrite mapping, checkpoint-bound tool usage propagation, and PR usage summary/detail snapshot generation |
 | API surface | `backend/internal/handler`, `backend/internal/middleware` | HTTP handlers, routing, auth middleware, settings endpoints |
 
 ### Frontend
@@ -222,7 +260,7 @@ flowchart LR
 | Area | Paths | Responsibility |
 | --- | --- | --- |
 | Auth and backend access | `ae-cli/internal/auth`, `ae-cli/internal/client` | Login flow, backend API calls, token usage |
-| Sessionless runtime | `ae-cli/internal/session`, `ae-cli/internal/hooks`, `ae-cli/internal/collector` | Workspace marker helpers, hook management, local metadata collection |
+| Sessionless runtime | `ae-cli/internal/session`, `ae-cli/internal/hooks`, `ae-cli/internal/collector`, `ae-cli/internal/attributionlocal` | Workspace marker helpers, hook management, hook-time snapshot collection, and local tool-usage event extraction/upload |
 | Tool selection | `ae-cli/internal/router` | Lightweight tool-routing helpers used by the current CLI surface |
 
 ## Documentation Expectations

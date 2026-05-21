@@ -23,19 +23,25 @@ type PRHandler struct {
 	repoService        repoSCMProvider
 	syncService        prSyncer
 	attributionService prAttributionSettler
+	usageRefresher     prUsageRefresher
 }
 
 // NewPRHandler creates a new PR handler.
-func NewPRHandler(entClient *ent.Client, repoService repoSCMProvider, syncService prSyncer, attributionService ...prAttributionSettler) *PRHandler {
+func NewPRHandler(entClient *ent.Client, repoService repoSCMProvider, syncService prSyncer, attributionService prAttributionSettler, usageRefresher ...prUsageRefresher) *PRHandler {
 	var attrSvc prAttributionSettler
-	if len(attributionService) > 0 {
-		attrSvc = attributionService[0]
+	if attributionService != nil {
+		attrSvc = attributionService
+	}
+	var usageSvc prUsageRefresher
+	if len(usageRefresher) > 0 {
+		usageSvc = usageRefresher[0]
 	}
 	return &PRHandler{
 		entClient:          entClient,
 		repoService:        repoService,
 		syncService:        syncService,
 		attributionService: attrSvc,
+		usageRefresher:     usageSvc,
 	}
 }
 
@@ -111,6 +117,7 @@ func (h *PRHandler) Get(c *gin.Context) {
 
 	pr, err := h.entClient.PrRecord.Query().
 		Where(prrecord.IDEQ(id)).
+		WithPrCommitUsageSnapshots().
 		WithLastAttributionRun().
 		Only(c.Request.Context())
 	if err != nil {
@@ -123,6 +130,61 @@ func (h *PRHandler) Get(c *gin.Context) {
 	}
 
 	pkg.Success(c, pr)
+}
+
+// RefreshUsage handles POST /api/v1/prs/:id/refresh-usage.
+func (h *PRHandler) RefreshUsage(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		pkg.Error(c, http.StatusBadRequest, "invalid id")
+		return
+	}
+	if h.usageRefresher == nil {
+		pkg.Error(c, http.StatusServiceUnavailable, "pr usage refresher is not configured")
+		return
+	}
+
+	pr, err := h.entClient.PrRecord.Get(c.Request.Context(), id)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			pkg.Error(c, http.StatusNotFound, "PR not found")
+			return
+		}
+		pkg.Error(c, http.StatusInternalServerError, "failed to load PR")
+		return
+	}
+
+	rc, err := pr.QueryRepoConfig().Only(c.Request.Context())
+	if err != nil {
+		pkg.Error(c, http.StatusInternalServerError, "failed to load PR repo")
+		return
+	}
+
+	scmProvider, _, err := h.repoService.GetSCMProvider(c.Request.Context(), rc.ID)
+	if err != nil {
+		if handleRepoBindingError(c, err) {
+			return
+		}
+		pkg.Error(c, http.StatusInternalServerError, "failed to get SCM provider: "+err.Error())
+		return
+	}
+
+	if _, err := h.usageRefresher.RefreshPR(c.Request.Context(), scmProvider, pr); err != nil {
+		pkg.Error(c, http.StatusInternalServerError, "failed to refresh PR usage: "+err.Error())
+		return
+	}
+
+	loaded, err := h.entClient.PrRecord.Query().
+		Where(prrecord.IDEQ(id)).
+		WithPrCommitUsageSnapshots().
+		WithLastAttributionRun().
+		Only(c.Request.Context())
+	if err != nil {
+		pkg.Error(c, http.StatusInternalServerError, "failed to get PR")
+		return
+	}
+
+	pkg.Success(c, loaded)
 }
 
 // SyncPRs handles POST /api/v1/repos/:id/sync-prs

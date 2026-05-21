@@ -12,9 +12,14 @@ import (
 )
 
 var prAttributionService prAttributionSettler
+var prUsageService prUsageRefresher
 
 func SetPRAttributionService(service prAttributionSettler) {
 	prAttributionService = service
+}
+
+func SetPRUsageService(service prUsageRefresher) {
+	prUsageService = service
 }
 
 // SetupRouter creates and configures the Gin router with all route groups.
@@ -60,9 +65,10 @@ func SetupRouter(
 	credentialHandler := NewCredentialHandler(entClient, encryptionKey)
 	scmProviderHandler := NewSCMProviderHandler(entClient, encryptionKey)
 	repoHandler := NewRepoHandler(repoService)
-	prHandler := NewPRHandler(entClient, repoService, syncService, prAttributionService)
+	prHandler := NewPRHandler(entClient, repoService, syncService, prAttributionService, prUsageService)
 	efficiencyHandler := NewEfficiencyHandler(entClient)
 	toolUsageHandler := NewToolUsageHandler(toolusage.NewService(entClient))
+	eventsHandler := NewEventsHandler(toolusage.NewQueryService(entClient))
 
 	api := r.Group("/api/v1")
 
@@ -117,6 +123,7 @@ func SetupRouter(
 		repoGroup.GET("", repoHandler.List)
 		repoGroup.POST("", repoHandler.Create)
 		repoGroup.POST("/direct", repoHandler.CreateDirect)
+		repoGroup.POST("/ensure-remote", repoHandler.EnsureRemote)
 		repoGroup.GET("/:id", repoHandler.Get)
 		repoGroup.PUT("/:id", repoHandler.Update)
 		repoGroup.DELETE("/:id", repoHandler.Delete)
@@ -128,6 +135,7 @@ func SetupRouter(
 	prGroup := protected.Group("/prs")
 	{
 		prGroup.GET("/:id", prHandler.Get)
+		prGroup.POST("/:id/refresh-usage", prHandler.RefreshUsage)
 		prGroup.POST("/:id/settle", prHandler.Settle)
 	}
 
@@ -139,6 +147,13 @@ func SetupRouter(
 
 	toolUsageGroup := protected.Group("/tool-usage-events")
 	toolUsageGroup.POST("", toolUsageHandler.Create)
+
+	eventsGroup := protected.Group("/events")
+	{
+		eventsGroup.GET("/summary", eventsHandler.Summary)
+		eventsGroup.GET("", eventsHandler.List)
+		eventsGroup.GET("/:id", eventsHandler.Get)
+	}
 
 	if checkpointHandler != nil {
 		checkpointGroup := protected.Group("/checkpoints")

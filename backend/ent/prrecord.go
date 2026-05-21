@@ -58,6 +58,24 @@ type PrRecord struct {
 	PrimaryTokenCount int64 `json:"primary_token_count,omitempty"`
 	// PrimaryTokenCost holds the value of the "primary_token_cost" field.
 	PrimaryTokenCost float64 `json:"primary_token_cost,omitempty"`
+	// UsageInputTokens holds the value of the "usage_input_tokens" field.
+	UsageInputTokens int64 `json:"usage_input_tokens,omitempty"`
+	// UsageOutputTokens holds the value of the "usage_output_tokens" field.
+	UsageOutputTokens int64 `json:"usage_output_tokens,omitempty"`
+	// UsageCachedInputTokens holds the value of the "usage_cached_input_tokens" field.
+	UsageCachedInputTokens int64 `json:"usage_cached_input_tokens,omitempty"`
+	// UsageReasoningTokens holds the value of the "usage_reasoning_tokens" field.
+	UsageReasoningTokens int64 `json:"usage_reasoning_tokens,omitempty"`
+	// UsageCreditUsage holds the value of the "usage_credit_usage" field.
+	UsageCreditUsage float64 `json:"usage_credit_usage,omitempty"`
+	// UsageRequestCount holds the value of the "usage_request_count" field.
+	UsageRequestCount int `json:"usage_request_count,omitempty"`
+	// UsageCommitCount holds the value of the "usage_commit_count" field.
+	UsageCommitCount int `json:"usage_commit_count,omitempty"`
+	// UsageRefreshedAt holds the value of the "usage_refreshed_at" field.
+	UsageRefreshedAt *time.Time `json:"usage_refreshed_at,omitempty"`
+	// UsageCommitSnapshotHash holds the value of the "usage_commit_snapshot_hash" field.
+	UsageCommitSnapshotHash *string `json:"usage_commit_snapshot_hash,omitempty"`
 	// MetadataSummary holds the value of the "metadata_summary" field.
 	MetadataSummary map[string]interface{} `json:"metadata_summary,omitempty"`
 	// LastAttributedAt holds the value of the "last_attributed_at" field.
@@ -83,13 +101,15 @@ type PrRecord struct {
 type PrRecordEdges struct {
 	// RepoConfig holds the value of the repo_config edge.
 	RepoConfig *RepoConfig `json:"repo_config,omitempty"`
+	// PrCommitUsageSnapshots holds the value of the pr_commit_usage_snapshots edge.
+	PrCommitUsageSnapshots []*PRCommitUsageSnapshot `json:"pr_commit_usage_snapshots,omitempty"`
 	// AttributionRuns holds the value of the attribution_runs edge.
 	AttributionRuns []*PrAttributionRun `json:"attribution_runs,omitempty"`
 	// LastAttributionRun holds the value of the last_attribution_run edge.
 	LastAttributionRun *PrAttributionRun `json:"last_attribution_run,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [3]bool
+	loadedTypes [4]bool
 }
 
 // RepoConfigOrErr returns the RepoConfig value or an error if the edge
@@ -103,10 +123,19 @@ func (e PrRecordEdges) RepoConfigOrErr() (*RepoConfig, error) {
 	return nil, &NotLoadedError{edge: "repo_config"}
 }
 
+// PrCommitUsageSnapshotsOrErr returns the PrCommitUsageSnapshots value or an error if the edge
+// was not loaded in eager-loading.
+func (e PrRecordEdges) PrCommitUsageSnapshotsOrErr() ([]*PRCommitUsageSnapshot, error) {
+	if e.loadedTypes[1] {
+		return e.PrCommitUsageSnapshots, nil
+	}
+	return nil, &NotLoadedError{edge: "pr_commit_usage_snapshots"}
+}
+
 // AttributionRunsOrErr returns the AttributionRuns value or an error if the edge
 // was not loaded in eager-loading.
 func (e PrRecordEdges) AttributionRunsOrErr() ([]*PrAttributionRun, error) {
-	if e.loadedTypes[1] {
+	if e.loadedTypes[2] {
 		return e.AttributionRuns, nil
 	}
 	return nil, &NotLoadedError{edge: "attribution_runs"}
@@ -117,7 +146,7 @@ func (e PrRecordEdges) AttributionRunsOrErr() ([]*PrAttributionRun, error) {
 func (e PrRecordEdges) LastAttributionRunOrErr() (*PrAttributionRun, error) {
 	if e.LastAttributionRun != nil {
 		return e.LastAttributionRun, nil
-	} else if e.loadedTypes[2] {
+	} else if e.loadedTypes[3] {
 		return nil, &NotFoundError{label: prattributionrun.Label}
 	}
 	return nil, &NotLoadedError{edge: "last_attribution_run"}
@@ -130,13 +159,13 @@ func (*PrRecord) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case prrecord.FieldLabels, prrecord.FieldChangedFiles, prrecord.FieldSessionIds, prrecord.FieldMetadataSummary:
 			values[i] = new([]byte)
-		case prrecord.FieldTokenCost, prrecord.FieldAiRatio, prrecord.FieldPrimaryTokenCost, prrecord.FieldCycleTimeHours:
+		case prrecord.FieldTokenCost, prrecord.FieldAiRatio, prrecord.FieldPrimaryTokenCost, prrecord.FieldUsageCreditUsage, prrecord.FieldCycleTimeHours:
 			values[i] = new(sql.NullFloat64)
-		case prrecord.FieldID, prrecord.FieldScmPrID, prrecord.FieldLinesAdded, prrecord.FieldLinesDeleted, prrecord.FieldPrimaryTokenCount, prrecord.FieldLastAttributionRunID:
+		case prrecord.FieldID, prrecord.FieldScmPrID, prrecord.FieldLinesAdded, prrecord.FieldLinesDeleted, prrecord.FieldPrimaryTokenCount, prrecord.FieldUsageInputTokens, prrecord.FieldUsageOutputTokens, prrecord.FieldUsageCachedInputTokens, prrecord.FieldUsageReasoningTokens, prrecord.FieldUsageRequestCount, prrecord.FieldUsageCommitCount, prrecord.FieldLastAttributionRunID:
 			values[i] = new(sql.NullInt64)
-		case prrecord.FieldScmPrURL, prrecord.FieldAuthor, prrecord.FieldTitle, prrecord.FieldSourceBranch, prrecord.FieldTargetBranch, prrecord.FieldStatus, prrecord.FieldAiLabel, prrecord.FieldAttributionStatus, prrecord.FieldAttributionConfidence:
+		case prrecord.FieldScmPrURL, prrecord.FieldAuthor, prrecord.FieldTitle, prrecord.FieldSourceBranch, prrecord.FieldTargetBranch, prrecord.FieldStatus, prrecord.FieldAiLabel, prrecord.FieldAttributionStatus, prrecord.FieldAttributionConfidence, prrecord.FieldUsageCommitSnapshotHash:
 			values[i] = new(sql.NullString)
-		case prrecord.FieldLastAttributedAt, prrecord.FieldMergedAt, prrecord.FieldCreatedAt, prrecord.FieldUpdatedAt:
+		case prrecord.FieldUsageRefreshedAt, prrecord.FieldLastAttributedAt, prrecord.FieldMergedAt, prrecord.FieldCreatedAt, prrecord.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
 		case prrecord.ForeignKeys[0]: // repo_config_pr_records
 			values[i] = new(sql.NullInt64)
@@ -282,6 +311,62 @@ func (pr *PrRecord) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				pr.PrimaryTokenCost = value.Float64
 			}
+		case prrecord.FieldUsageInputTokens:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field usage_input_tokens", values[i])
+			} else if value.Valid {
+				pr.UsageInputTokens = value.Int64
+			}
+		case prrecord.FieldUsageOutputTokens:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field usage_output_tokens", values[i])
+			} else if value.Valid {
+				pr.UsageOutputTokens = value.Int64
+			}
+		case prrecord.FieldUsageCachedInputTokens:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field usage_cached_input_tokens", values[i])
+			} else if value.Valid {
+				pr.UsageCachedInputTokens = value.Int64
+			}
+		case prrecord.FieldUsageReasoningTokens:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field usage_reasoning_tokens", values[i])
+			} else if value.Valid {
+				pr.UsageReasoningTokens = value.Int64
+			}
+		case prrecord.FieldUsageCreditUsage:
+			if value, ok := values[i].(*sql.NullFloat64); !ok {
+				return fmt.Errorf("unexpected type %T for field usage_credit_usage", values[i])
+			} else if value.Valid {
+				pr.UsageCreditUsage = value.Float64
+			}
+		case prrecord.FieldUsageRequestCount:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field usage_request_count", values[i])
+			} else if value.Valid {
+				pr.UsageRequestCount = int(value.Int64)
+			}
+		case prrecord.FieldUsageCommitCount:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field usage_commit_count", values[i])
+			} else if value.Valid {
+				pr.UsageCommitCount = int(value.Int64)
+			}
+		case prrecord.FieldUsageRefreshedAt:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field usage_refreshed_at", values[i])
+			} else if value.Valid {
+				pr.UsageRefreshedAt = new(time.Time)
+				*pr.UsageRefreshedAt = value.Time
+			}
+		case prrecord.FieldUsageCommitSnapshotHash:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field usage_commit_snapshot_hash", values[i])
+			} else if value.Valid {
+				pr.UsageCommitSnapshotHash = new(string)
+				*pr.UsageCommitSnapshotHash = value.String
+			}
 		case prrecord.FieldMetadataSummary:
 			if value, ok := values[i].(*[]byte); !ok {
 				return fmt.Errorf("unexpected type %T for field metadata_summary", values[i])
@@ -352,6 +437,11 @@ func (pr *PrRecord) Value(name string) (ent.Value, error) {
 // QueryRepoConfig queries the "repo_config" edge of the PrRecord entity.
 func (pr *PrRecord) QueryRepoConfig() *RepoConfigQuery {
 	return NewPrRecordClient(pr.config).QueryRepoConfig(pr)
+}
+
+// QueryPrCommitUsageSnapshots queries the "pr_commit_usage_snapshots" edge of the PrRecord entity.
+func (pr *PrRecord) QueryPrCommitUsageSnapshots() *PRCommitUsageSnapshotQuery {
+	return NewPrRecordClient(pr.config).QueryPrCommitUsageSnapshots(pr)
 }
 
 // QueryAttributionRuns queries the "attribution_runs" edge of the PrRecord entity.
@@ -445,6 +535,37 @@ func (pr *PrRecord) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("primary_token_cost=")
 	builder.WriteString(fmt.Sprintf("%v", pr.PrimaryTokenCost))
+	builder.WriteString(", ")
+	builder.WriteString("usage_input_tokens=")
+	builder.WriteString(fmt.Sprintf("%v", pr.UsageInputTokens))
+	builder.WriteString(", ")
+	builder.WriteString("usage_output_tokens=")
+	builder.WriteString(fmt.Sprintf("%v", pr.UsageOutputTokens))
+	builder.WriteString(", ")
+	builder.WriteString("usage_cached_input_tokens=")
+	builder.WriteString(fmt.Sprintf("%v", pr.UsageCachedInputTokens))
+	builder.WriteString(", ")
+	builder.WriteString("usage_reasoning_tokens=")
+	builder.WriteString(fmt.Sprintf("%v", pr.UsageReasoningTokens))
+	builder.WriteString(", ")
+	builder.WriteString("usage_credit_usage=")
+	builder.WriteString(fmt.Sprintf("%v", pr.UsageCreditUsage))
+	builder.WriteString(", ")
+	builder.WriteString("usage_request_count=")
+	builder.WriteString(fmt.Sprintf("%v", pr.UsageRequestCount))
+	builder.WriteString(", ")
+	builder.WriteString("usage_commit_count=")
+	builder.WriteString(fmt.Sprintf("%v", pr.UsageCommitCount))
+	builder.WriteString(", ")
+	if v := pr.UsageRefreshedAt; v != nil {
+		builder.WriteString("usage_refreshed_at=")
+		builder.WriteString(v.Format(time.ANSIC))
+	}
+	builder.WriteString(", ")
+	if v := pr.UsageCommitSnapshotHash; v != nil {
+		builder.WriteString("usage_commit_snapshot_hash=")
+		builder.WriteString(*v)
+	}
 	builder.WriteString(", ")
 	builder.WriteString("metadata_summary=")
 	builder.WriteString(fmt.Sprintf("%v", pr.MetadataSummary))

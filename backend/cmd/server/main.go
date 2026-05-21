@@ -26,6 +26,7 @@ import (
 	"github.com/ai-efficiency/backend/internal/middleware"
 	"github.com/ai-efficiency/backend/internal/oauth"
 	"github.com/ai-efficiency/backend/internal/prsync"
+	"github.com/ai-efficiency/backend/internal/prusage"
 	"github.com/ai-efficiency/backend/internal/relay"
 	"github.com/ai-efficiency/backend/internal/repo"
 	"github.com/ai-efficiency/backend/internal/webhook"
@@ -211,7 +212,8 @@ func main() {
 
 	// Init webhook handler (with labeler for auto-labeling on PR events)
 	webhookHandler := webhook.NewHandler(entClient, labeler, logger)
-	syncService := prsync.NewService(entClient, labeler, logger)
+	prUsageService := prusage.NewService(entClient)
+	syncService := prsync.NewService(entClient, labeler, logger, prUsageService)
 
 	// Setup router
 	var relayRuntimeUpdater interface {
@@ -240,6 +242,7 @@ func main() {
 	checkpointHandler := handler.NewCheckpointHandler(checkpointService)
 	attributionService := attribution.NewService(entClient, relayProvider)
 	handler.SetPRAttributionService(attributionService)
+	handler.SetPRUsageService(prUsageService)
 	var relayPinger deployment.Pinger
 	if relayProvider != nil {
 		relayPinger = deployment.FuncPinger(func(ctx context.Context) error {

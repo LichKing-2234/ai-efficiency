@@ -15,6 +15,9 @@ type CommitRewrite func(*sql.Selector)
 // Credential is the predicate function for credential builders.
 type Credential func(*sql.Selector)
 
+// PRCommitUsageSnapshot is the predicate function for prcommitusagesnapshot builders.
+type PRCommitUsageSnapshot func(*sql.Selector)
+
 // PrAttributionRun is the predicate function for prattributionrun builders.
 type PrAttributionRun func(*sql.Selector)
 

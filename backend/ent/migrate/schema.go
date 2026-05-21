@@ -106,6 +106,50 @@ var (
 		Columns:    CredentialsColumns,
 		PrimaryKey: []*schema.Column{CredentialsColumns[0]},
 	}
+	// PrCommitUsageSnapshotsColumns holds the columns for the "pr_commit_usage_snapshots" table.
+	PrCommitUsageSnapshotsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "commit_sha", Type: field.TypeString},
+		{Name: "captured_at", Type: field.TypeTime, Nullable: true},
+		{Name: "input_tokens", Type: field.TypeInt64, Default: 0},
+		{Name: "output_tokens", Type: field.TypeInt64, Default: 0},
+		{Name: "cached_input_tokens", Type: field.TypeInt64, Default: 0},
+		{Name: "reasoning_tokens", Type: field.TypeInt64, Default: 0},
+		{Name: "credit_usage", Type: field.TypeFloat64, Default: 0},
+		{Name: "request_count", Type: field.TypeInt, Default: 0},
+		{Name: "sort_order", Type: field.TypeInt, Default: 0},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "commit_checkpoint_id", Type: field.TypeInt, Nullable: true},
+		{Name: "pr_record_id", Type: field.TypeInt},
+	}
+	// PrCommitUsageSnapshotsTable holds the schema information for the "pr_commit_usage_snapshots" table.
+	PrCommitUsageSnapshotsTable = &schema.Table{
+		Name:       "pr_commit_usage_snapshots",
+		Columns:    PrCommitUsageSnapshotsColumns,
+		PrimaryKey: []*schema.Column{PrCommitUsageSnapshotsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "pr_commit_usage_snapshots_commit_checkpoints_pr_commit_usage_snapshots",
+				Columns:    []*schema.Column{PrCommitUsageSnapshotsColumns[12]},
+				RefColumns: []*schema.Column{CommitCheckpointsColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
+			{
+				Symbol:     "pr_commit_usage_snapshots_pr_records_pr_commit_usage_snapshots",
+				Columns:    []*schema.Column{PrCommitUsageSnapshotsColumns[13]},
+				RefColumns: []*schema.Column{PrRecordsColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "prcommitusagesnapshot_pr_record_id_commit_sha",
+				Unique:  true,
+				Columns: []*schema.Column{PrCommitUsageSnapshotsColumns[13], PrCommitUsageSnapshotsColumns[1]},
+			},
+		},
+	}
 	// PrAttributionRunsColumns holds the columns for the "pr_attribution_runs" table.
 	PrAttributionRunsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
@@ -158,6 +202,15 @@ var (
 		{Name: "attribution_confidence", Type: field.TypeEnum, Nullable: true, Enums: []string{"high", "medium", "low"}},
 		{Name: "primary_token_count", Type: field.TypeInt64, Default: 0},
 		{Name: "primary_token_cost", Type: field.TypeFloat64, Default: 0},
+		{Name: "usage_input_tokens", Type: field.TypeInt64, Default: 0},
+		{Name: "usage_output_tokens", Type: field.TypeInt64, Default: 0},
+		{Name: "usage_cached_input_tokens", Type: field.TypeInt64, Default: 0},
+		{Name: "usage_reasoning_tokens", Type: field.TypeInt64, Default: 0},
+		{Name: "usage_credit_usage", Type: field.TypeFloat64, Default: 0},
+		{Name: "usage_request_count", Type: field.TypeInt, Default: 0},
+		{Name: "usage_commit_count", Type: field.TypeInt, Default: 0},
+		{Name: "usage_refreshed_at", Type: field.TypeTime, Nullable: true},
+		{Name: "usage_commit_snapshot_hash", Type: field.TypeString, Nullable: true},
 		{Name: "metadata_summary", Type: field.TypeJSON, Nullable: true},
 		{Name: "last_attributed_at", Type: field.TypeTime, Nullable: true},
 		{Name: "merged_at", Type: field.TypeTime, Nullable: true},
@@ -175,13 +228,13 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "pr_records_pr_attribution_runs_last_attribution_run",
-				Columns:    []*schema.Column{PrRecordsColumns[26]},
+				Columns:    []*schema.Column{PrRecordsColumns[35]},
 				RefColumns: []*schema.Column{PrAttributionRunsColumns[0]},
 				OnDelete:   schema.SetNull,
 			},
 			{
 				Symbol:     "pr_records_repo_configs_pr_records",
-				Columns:    []*schema.Column{PrRecordsColumns[27]},
+				Columns:    []*schema.Column{PrRecordsColumns[36]},
 				RefColumns: []*schema.Column{RepoConfigsColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
@@ -190,7 +243,7 @@ var (
 			{
 				Name:    "prrecord_scm_pr_id_repo_config_pr_records",
 				Unique:  true,
-				Columns: []*schema.Column{PrRecordsColumns[1], PrRecordsColumns[27]},
+				Columns: []*schema.Column{PrRecordsColumns[1], PrRecordsColumns[36]},
 			},
 		},
 	}
@@ -434,6 +487,7 @@ var (
 		CommitCheckpointsTable,
 		CommitRewritesTable,
 		CredentialsTable,
+		PrCommitUsageSnapshotsTable,
 		PrAttributionRunsTable,
 		PrRecordsTable,
 		RelayProvidersTable,
@@ -451,6 +505,8 @@ func init() {
 	CommitCheckpointsTable.ForeignKeys[1].RefTable = UsersTable
 	CommitRewritesTable.ForeignKeys[0].RefTable = RepoConfigsTable
 	CommitRewritesTable.ForeignKeys[1].RefTable = UsersTable
+	PrCommitUsageSnapshotsTable.ForeignKeys[0].RefTable = CommitCheckpointsTable
+	PrCommitUsageSnapshotsTable.ForeignKeys[1].RefTable = PrRecordsTable
 	PrAttributionRunsTable.ForeignKeys[0].RefTable = PrRecordsTable
 	PrRecordsTable.ForeignKeys[0].RefTable = PrAttributionRunsTable
 	PrRecordsTable.ForeignKeys[1].RefTable = RepoConfigsTable

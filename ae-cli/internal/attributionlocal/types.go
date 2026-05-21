@@ -86,6 +86,13 @@ func parseObservedAt(raw any) time.Time {
 	return time.Time{}
 }
 
+func parseUnixMillis(ms int64) time.Time {
+	if ms <= 0 {
+		return time.Time{}
+	}
+	return time.UnixMilli(ms).UTC()
+}
+
 func sourceFileObservedAt(path string) time.Time {
 	path = strings.TrimSpace(path)
 	if path == "" {
