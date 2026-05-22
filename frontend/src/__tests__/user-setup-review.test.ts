@@ -4,6 +4,7 @@ import {
   buildDiscoverCommand,
   buildInstallCommand,
   buildLoginCommand,
+  buildWindowsInstallCommand,
   reviewVerifyOutput,
 } from '@/utils/userSetupReview'
 
@@ -40,20 +41,26 @@ describe('userSetupReview', () => {
     expect(result.doctor.status).toBe('needs_attention')
   })
 
-  it('buildDiscoverCommand includes the selected provider and current origin', () => {
+  it('buildDiscoverCommand uses the installed server config and selected provider', () => {
     expect(buildDiscoverCommand('https://ae.example.com', 'sub2api-prod')).toBe(
-      'ae-cli --server https://ae.example.com discover --provider sub2api-prod'
+      'ae-cli discover --provider sub2api-prod'
     )
   })
 
-  it('buildInstallCommand injects AE_CLI_INSTALL_SERVER_URL', () => {
+  it('buildInstallCommand passes AE_CLI_INSTALL_SERVER_URL to bash', () => {
     expect(buildInstallCommand('https://ae.example.com')).toBe(
-      'AE_CLI_INSTALL_SERVER_URL=https://ae.example.com curl -fsSL https://raw.githubusercontent.com/LichKing-2234/ai-efficiency/main/ae-cli/install.sh | bash'
+      'curl -fsSL https://raw.githubusercontent.com/LichKing-2234/ai-efficiency/main/ae-cli/install.sh | AE_CLI_INSTALL_SERVER_URL=https://ae.example.com bash'
     )
   })
 
-  it('buildLoginCommand and buildDeviceLoginCommand include the current origin', () => {
-    expect(buildLoginCommand('https://ae.example.com')).toBe('ae-cli --server https://ae.example.com login')
-    expect(buildDeviceLoginCommand('https://ae.example.com')).toBe('ae-cli --server https://ae.example.com login --device')
+  it('buildWindowsInstallCommand passes AE_CLI_INSTALL_SERVER_URL to PowerShell', () => {
+    expect(buildWindowsInstallCommand('https://ae.example.com')).toBe(
+      '$env:AE_CLI_INSTALL_SERVER_URL = "https://ae.example.com"; iwr -UseB https://raw.githubusercontent.com/LichKing-2234/ai-efficiency/main/ae-cli/install.ps1 | iex'
+    )
+  })
+
+  it('buildLoginCommand and buildDeviceLoginCommand use the installed server config', () => {
+    expect(buildLoginCommand('https://ae.example.com')).toBe('ae-cli login')
+    expect(buildDeviceLoginCommand('https://ae.example.com')).toBe('ae-cli login --device')
   })
 })

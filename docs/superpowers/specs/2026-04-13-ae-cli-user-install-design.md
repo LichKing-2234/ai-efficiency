@@ -10,6 +10,7 @@
 - 用户通过远程 shell 脚本安装到 `~/.local/bin/ae-cli`
 - 安装脚本负责平台识别、版本解析、checksum 校验与落盘
 - 首装时安装脚本负责引导 backend URL，并写入 `~/.ae-cli/config.yaml`
+- 重装时默认保留已有 CLI 配置；如果显式传入 `AE_CLI_INSTALL_SERVER_URL`，则只更新已有配置中的 `server.url`，保留 token、tools 等其它字段
 - 安装脚本不修改 shell profile，只在 `PATH` 缺失时给出明确提示
 
 本文解决的是“开发者如何快速拿到 CLI”，不是“如何管理后端服务部署”。
@@ -43,7 +44,7 @@
 
 1. 不实现 `ae-cli install`、`ae-cli self-update`、`ae-cli uninstall` 子命令
 2. 不自动修改 `~/.zshrc`、`~/.bashrc` 或其它 shell profile
-3. 不支持 Windows PowerShell 安装脚本
+3. 不支持在 Bash 安装脚本内兼容 Windows；Windows 由独立 PowerShell 安装脚本负责
 4. 不把 backend 与 CLI 合并到同一个安装脚本
 5. 不引入 Homebrew/tap、apt、yum 等包管理器集成作为本合同的一部分
 
@@ -89,8 +90,7 @@ curl -fsSL https://raw.githubusercontent.com/LichKing-2234/ai-efficiency/main/ae
 非交互场景可通过环境变量预置 backend URL：
 
 ```bash
-AE_CLI_INSTALL_SERVER_URL=https://ae.example.com \
-curl -fsSL https://raw.githubusercontent.com/LichKing-2234/ai-efficiency/main/ae-cli/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/LichKing-2234/ai-efficiency/main/ae-cli/install.sh | AE_CLI_INSTALL_SERVER_URL=https://ae.example.com bash
 ```
 
 ### Why A Separate Script
@@ -138,9 +138,13 @@ curl -fsSL https://raw.githubusercontent.com/LichKing-2234/ai-efficiency/main/ae
 
 ### Windows
 
-Windows 不走本 bash 安装路径。
+Windows 不走本 bash 安装路径，使用独立 PowerShell 入口：
 
-脚本在 Windows-like 环境或不兼容 shell 中无需做兼容实现；文档只需提示用户使用 release 手动安装。
+```powershell
+iwr -UseB https://raw.githubusercontent.com/LichKing-2234/ai-efficiency/main/ae-cli/install.ps1 | iex
+```
+
+PowerShell 脚本下载 Windows release zip、校验 `checksums.txt`、安装到 `%USERPROFILE%\.local\bin\ae-cli.exe`，并在首装时写入 `%USERPROFILE%\.ae-cli\config.yaml`。如果已有 config 且显式设置 `$env:AE_CLI_INSTALL_SERVER_URL`，则只更新已有配置中的 `server.url`。
 
 ## Release Resolution Contract
 
@@ -201,7 +205,8 @@ Windows 不走本 bash 安装路径。
 8. 将 `ae-cli` 拷贝到 `~/.local/bin/ae-cli`
 9. `chmod 0755`
 10. 如果本地不存在 CLI 配置，则尝试获取 backend URL 并写入 `~/.ae-cli/config.yaml`
-11. 输出安装结果摘要
+11. 如果本地已存在 CLI 配置且显式传入 `AE_CLI_INSTALL_SERVER_URL`，则更新该配置中的 `server.url`
+12. 输出安装结果摘要
 
 安装脚本允许覆盖已存在的 `~/.local/bin/ae-cli`。这视为重装/升级，不额外保留 backup 文件。
 
@@ -225,14 +230,15 @@ CLI 运行时同时兼容读取：
 如果本地尚不存在 CLI config：
 
 1. 先读取 `AE_CLI_INSTALL_SERVER_URL`
-2. 若未设置且当前安装是交互式终端，提示用户输入 backend URL
+2. 若未设置，则使用默认 backend URL `https://ai-efficiency.la3.agoralab.co`
 3. 若拿到非空 URL，则写入 `server.url`
-4. 若用户留空或当前环境非交互，则跳过写入并打印后续配置提示
 
 如果本地已存在 `config.yaml` 或 `config.yml`：
 
-- 安装脚本不得覆盖
-- 只打印 “using existing config” 类提示
+- 默认重装不得覆盖已有配置
+- 如果没有显式传入 `AE_CLI_INSTALL_SERVER_URL`，只打印 “using existing config” 类提示
+- 如果显式传入 `AE_CLI_INSTALL_SERVER_URL`，只更新已有配置中的 `server.url`
+- 更新时必须保留已有 token、tools、legacy sub2api 等其它配置字段
 
 ### Written Config Shape
 
@@ -307,7 +313,7 @@ server:
 - `ae-cli` 安装文档入口
 - 远程安装命令示例
 - 指定版本安装示例
-- Windows 用户的手动安装提示
+- Windows PowerShell 安装入口
 
 文档主叙事应清楚区分：
 

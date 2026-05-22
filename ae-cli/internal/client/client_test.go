@@ -187,8 +187,8 @@ func TestListProviders(t *testing.T) {
 		if r.Method != http.MethodGet {
 			t.Errorf("method = %s, want GET", r.Method)
 		}
-		if r.URL.Path != "/api/v1/providers" {
-			t.Errorf("path = %s, want /api/v1/providers", r.URL.Path)
+		if r.URL.Path != "/api/v1/user/providers" {
+			t.Errorf("path = %s, want /api/v1/user/providers", r.URL.Path)
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
@@ -199,10 +199,18 @@ func TestListProviders(t *testing.T) {
 						"name":          "primary",
 						"display_name":  "Primary",
 						"base_url":      "https://relay.example.com/v1",
-						"api_key":       "sk-test",
-						"api_key_id":    123,
 						"default_model": "gpt-5.3-codex",
 						"is_primary":    true,
+						"groups": []map[string]any{
+							{
+								"group_id": "42",
+								"credential": map[string]any{
+									"api_key_id": 123,
+									"key":        "sk-test",
+									"status":     "active",
+								},
+							},
+						},
 					},
 				},
 			},
@@ -219,6 +227,56 @@ func TestListProviders(t *testing.T) {
 		t.Fatalf("providers len = %d, want 1", len(providers))
 	}
 	if providers[0].Name != "primary" || providers[0].APIKey != "sk-test" || !providers[0].IsPrimary {
+		t.Fatalf("unexpected provider payload: %+v", providers[0])
+	}
+}
+
+func TestListProvidersFallsBackToLegacyEndpoint(t *testing.T) {
+	var sawUserEndpoint bool
+	var sawLegacyEndpoint bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v1/user/providers":
+			sawUserEndpoint = true
+			http.NotFound(w, r)
+		case "/api/v1/providers":
+			sawLegacyEndpoint = true
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"code": 200,
+				"data": map[string]any{
+					"providers": []map[string]any{
+						{
+							"name":          "legacy",
+							"display_name":  "Legacy",
+							"base_url":      "https://legacy.example.com/v1",
+							"api_key":       "sk-legacy",
+							"api_key_id":    456,
+							"default_model": "gpt-5.3-codex",
+							"is_primary":    true,
+						},
+					},
+				},
+			})
+		default:
+			t.Errorf("unexpected path %s", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "test-token")
+	providers, err := c.ListProviders(context.Background())
+	if err != nil {
+		t.Fatalf("ListProviders: %v", err)
+	}
+	if !sawUserEndpoint || !sawLegacyEndpoint {
+		t.Fatalf("endpoint calls: user=%v legacy=%v, want both", sawUserEndpoint, sawLegacyEndpoint)
+	}
+	if len(providers) != 1 {
+		t.Fatalf("providers len = %d, want 1", len(providers))
+	}
+	if providers[0].Name != "legacy" || providers[0].APIKey != "sk-legacy" {
 		t.Fatalf("unexpected provider payload: %+v", providers[0])
 	}
 }

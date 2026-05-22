@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -28,6 +29,14 @@ type ProviderInfo struct {
 	APIKeyID     int64  `json:"api_key_id"`
 	DefaultModel string `json:"default_model"`
 	IsPrimary    bool   `json:"is_primary"`
+}
+
+type userProviderGroup struct {
+	Credential struct {
+		APIKeyID int64  `json:"api_key_id"`
+		Key      string `json:"key"`
+		Status   string `json:"status"`
+	} `json:"credential"`
 }
 
 type CommitCheckpointRequest struct {
@@ -206,6 +215,17 @@ func (c *Client) EnsureRepoFromRemote(ctx context.Context, remoteURL, branch str
 }
 
 func (c *Client) ListProviders(ctx context.Context) ([]ProviderInfo, error) {
+	providers, err := c.listUserProviders(ctx)
+	if err == nil && len(providers) > 0 {
+		return providers, nil
+	}
+	if err != nil && !errors.Is(err, ErrNotFound) {
+		return nil, err
+	}
+	return c.listLegacyProviders(ctx)
+}
+
+func (c *Client) listLegacyProviders(ctx context.Context) ([]ProviderInfo, error) {
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/api/v1/providers", nil)
 	if err != nil {
 		return nil, fmt.Errorf("create providers request: %w", err)
@@ -232,6 +252,77 @@ func (c *Client) ListProviders(ctx context.Context) ([]ProviderInfo, error) {
 		return nil, fmt.Errorf("decode providers response: %w", err)
 	}
 	return envelope.Data.Providers, nil
+}
+
+func (c *Client) listUserProviders(ctx context.Context) ([]ProviderInfo, error) {
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/api/v1/user/providers", nil)
+	if err != nil {
+		return nil, fmt.Errorf("create user providers request: %w", err)
+	}
+	c.setHeaders(httpReq)
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("send user providers request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, ErrNotFound
+	}
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("unexpected user providers status %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var envelope struct {
+		Data struct {
+			Providers []struct {
+				Name         string              `json:"name"`
+				DisplayName  string              `json:"display_name"`
+				BaseURL      string              `json:"base_url"`
+				DefaultModel string              `json:"default_model"`
+				IsPrimary    bool                `json:"is_primary"`
+				Groups       []userProviderGroup `json:"groups"`
+			} `json:"providers"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
+		return nil, fmt.Errorf("decode user providers response: %w", err)
+	}
+
+	out := make([]ProviderInfo, 0, len(envelope.Data.Providers))
+	for _, provider := range envelope.Data.Providers {
+		apiKey, apiKeyID := selectUserProviderCredential(provider.Groups)
+		if apiKey == "" {
+			continue
+		}
+		out = append(out, ProviderInfo{
+			Name:         provider.Name,
+			DisplayName:  provider.DisplayName,
+			BaseURL:      provider.BaseURL,
+			APIKey:       apiKey,
+			APIKeyID:     apiKeyID,
+			DefaultModel: provider.DefaultModel,
+			IsPrimary:    provider.IsPrimary,
+		})
+	}
+	return out, nil
+}
+
+func selectUserProviderCredential(groups []userProviderGroup) (string, int64) {
+	for _, group := range groups {
+		key := strings.TrimSpace(group.Credential.Key)
+		status := strings.TrimSpace(group.Credential.Status)
+		if key == "" {
+			continue
+		}
+		if status != "" && !strings.EqualFold(status, "active") {
+			continue
+		}
+		return key, group.Credential.APIKeyID
+	}
+	return "", 0
 }
 
 func (c *Client) BaseURL() string {

@@ -25,7 +25,7 @@ ae-cli discover
 
 该命令在登录后执行以下流程：
 
-1. 调用 `GET /api/v1/providers`
+1. 调用 `GET /api/v1/user/providers` 获取当前用户可用的 provider credential；若后端尚未提供该接口，兼容回退到旧 `GET /api/v1/providers`
 2. 选择一个 provider
    - 默认取 `is_primary=true`
    - 可通过 `--provider <name>` 显式覆盖
@@ -40,7 +40,7 @@ ae-cli discover
 1. 给当前代码库一个**真实可用**的工具配置入口，而不是停留在未实现 spec。
 2. 避免引入后端 LLM 会话管理、多轮 discover 协议、或本地文件读取 tool-call 执行器。
 3. 让 Codex、Claude、Gemini 都有明确的配置落点与测试覆盖。
-4. 尽量复用现有 `GET /api/v1/providers` 能力，而不是新造临时后端端点。
+4. 复用当前 `/user` 自助 credential 合同，避免继续依赖旧 provider 级自动创建 key 的接口语义。
 
 ## Non-Goals
 
@@ -53,7 +53,9 @@ ae-cli discover
 
 ### Provider selection
 
-- `ae-cli discover` 从 `GET /api/v1/providers` 获取用户可用 provider 列表。
+- `ae-cli discover` 优先从 `GET /api/v1/user/providers` 获取用户可用 provider 列表和 group-scoped credential。
+- 对每个 provider，当前 CLI 使用该 provider 下第一个可用 active credential 的 API key 来写入本地工具配置。
+- 若后端尚未实现 `/api/v1/user/providers`，CLI 可回退到旧 `GET /api/v1/providers`，以兼容旧部署。
 - 如果用户传入 `--provider <name>`，则按 provider `name` / `display_name` 精确匹配。
 - 否则优先使用 `is_primary=true` 的 provider；若不存在 primary，则回退到列表第一项。
 

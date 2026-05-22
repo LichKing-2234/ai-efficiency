@@ -16,7 +16,11 @@ RELEASE_API_URL="${AE_CLI_INSTALL_RELEASE_API_URL:-https://api.github.com/repos/
 RELEASE_DOWNLOAD_BASE="${AE_CLI_INSTALL_RELEASE_DOWNLOAD_BASE:-https://github.com/${GITHUB_REPO}/releases/download}"
 TMP_DIR=""
 TEMP_TARGET=""
-CONFIG_SERVER_URL="${AE_CLI_INSTALL_SERVER_URL:-}"
+CONFIG_SERVER_URL="${AE_CLI_INSTALL_SERVER_URL:-https://ai-efficiency.la3.agoralab.co}"
+CONFIG_SERVER_URL_EXPLICIT=0
+if [[ -n "${AE_CLI_INSTALL_SERVER_URL+x}" ]]; then
+  CONFIG_SERVER_URL_EXPLICIT=1
+fi
 OS=""
 ARCH=""
 
@@ -216,7 +220,18 @@ prompt_server_url() {
 write_cli_config() {
   local existing=""
 
+  CONFIG_SERVER_URL="$(trim_whitespace "$CONFIG_SERVER_URL")"
+  if [[ -n "$CONFIG_SERVER_URL" ]] && ! validate_server_url "$CONFIG_SERVER_URL"; then
+    echo "invalid AE_CLI_INSTALL_SERVER_URL: must start with http:// or https://" >&2
+    exit 1
+  fi
+
   if existing="$(existing_config_path 2>/dev/null || true)" && [[ -n "$existing" ]]; then
+    if [[ "$CONFIG_SERVER_URL_EXPLICIT" -eq 1 && -n "$CONFIG_SERVER_URL" ]]; then
+      update_existing_cli_config "$existing"
+      echo "Updated CLI config at ${existing}"
+      return 0
+    fi
     echo "Using existing CLI config at ${existing}"
     return 0
   fi
@@ -233,6 +248,59 @@ server:
 EOF
   chmod 0600 "$CONFIG_PATH"
   echo "Wrote CLI config to ${CONFIG_PATH}"
+}
+
+update_existing_cli_config() {
+  local existing="$1"
+  local tmp="${existing}.tmp.$$"
+
+  awk -v new_url="$CONFIG_SERVER_URL" '
+    BEGIN {
+      in_server = 0
+      saw_server = 0
+      wrote_url = 0
+    }
+    function emit_url(indent) {
+      print indent "url: \"" new_url "\""
+      wrote_url = 1
+    }
+    /^server:[[:space:]]*$/ {
+      if (in_server && !wrote_url) {
+        emit_url("  ")
+      }
+      in_server = 1
+      saw_server = 1
+      wrote_url = 0
+      print
+      next
+    }
+    in_server && /^[^[:space:]][^:]*:/ {
+      if (!wrote_url) {
+        emit_url("  ")
+      }
+      in_server = 0
+    }
+    in_server && /^[[:space:]]*url:[[:space:]]*/ {
+      match($0, /^[[:space:]]*/)
+      emit_url(substr($0, RSTART, RLENGTH))
+      next
+    }
+    {
+      print
+    }
+    END {
+      if (in_server && !wrote_url) {
+        emit_url("  ")
+      }
+      if (!saw_server) {
+        print ""
+        print "server:"
+        print "  url: \"" new_url "\""
+      }
+    }
+  ' "$existing" >"$tmp"
+  mv "$tmp" "$existing"
+  chmod 0600 "$existing"
 }
 
 main() {

@@ -16,6 +16,8 @@ SYMLINK_TAG="v0.2.5-symlink"
 
 cp "$ROOT_DIR/ae-cli/install.sh" "$INSTALLER"
 chmod +x "$INSTALLER"
+test -f "$ROOT_DIR/ae-cli/install.ps1"
+grep -q "AE_CLI_INSTALL_SERVER_URL" "$ROOT_DIR/ae-cli/install.ps1"
 
 make_cli_archive() {
   local tag="$1"
@@ -113,6 +115,7 @@ BAD_HOME="$TMP_ROOT/home-bad"
 MISSING_HOME="$TMP_ROOT/home-missing"
 PATH_WARNING_HOME="$TMP_ROOT/home-path-warning"
 CONFIG_HOME="$TMP_ROOT/home-config"
+EXISTING_CONFIG_HOME="$TMP_ROOT/home-existing-config"
 mkdir -p "$LATEST_HOME" "$PINNED_HOME" "$BAD_HOME" "$MISSING_HOME" "$PATH_WARNING_HOME"
 
 LATEST_LOG="$TMP_ROOT/latest.log"
@@ -124,6 +127,8 @@ run_installer \
 
 test -x "$LATEST_HOME/.local/bin/ae-cli"
 "$LATEST_HOME/.local/bin/ae-cli" | grep -q "ae-cli ${LATEST_TAG}"
+test -f "$LATEST_HOME/.ae-cli/config.yaml"
+grep -q 'url: "https://ai-efficiency.la3.agoralab.co"' "$LATEST_HOME/.ae-cli/config.yaml"
 grep -q "Installing ae-cli ${LATEST_TAG}" "$LATEST_LOG"
 grep -q "Installed ae-cli ${LATEST_TAG} to $LATEST_HOME/.local/bin/ae-cli" "$LATEST_LOG"
 ! grep -q "is not in PATH" "$LATEST_LOG"
@@ -221,6 +226,34 @@ env -i \
 test -x "$CONFIG_HOME/.local/bin/ae-cli"
 test -f "$CONFIG_HOME/.ae-cli/config.yaml"
 grep -q 'url: "https://ae.example.com"' "$CONFIG_HOME/.ae-cli/config.yaml"
+
+mkdir -p "$EXISTING_CONFIG_HOME/.ae-cli"
+cat >"$EXISTING_CONFIG_HOME/.ae-cli/config.yaml" <<'EOF'
+server:
+  url: "https://old.example.com"
+  token: "keep-token"
+tools:
+  codex:
+    command: "codex"
+EOF
+
+EXISTING_CONFIG_LOG="$TMP_ROOT/existing-config.log"
+env -i \
+  HOME="$EXISTING_CONFIG_HOME" \
+  PATH="$EXISTING_CONFIG_HOME/.local/bin:/usr/bin:/bin" \
+  AE_CLI_INSTALL_TEST_OS=linux \
+  AE_CLI_INSTALL_TEST_ARCH=amd64 \
+  AE_CLI_INSTALL_RELEASE_API_URL="file://$TMP_ROOT/latest.json" \
+  AE_CLI_INSTALL_RELEASE_DOWNLOAD_BASE="file://$RELEASE_ROOT" \
+  AE_CLI_INSTALL_SERVER_URL="http://localhost:18081" \
+  bash "$INSTALLER" "$LATEST_TAG" \
+  >"$EXISTING_CONFIG_LOG" 2>&1
+
+test -x "$EXISTING_CONFIG_HOME/.local/bin/ae-cli"
+grep -q 'url: "http://localhost:18081"' "$EXISTING_CONFIG_HOME/.ae-cli/config.yaml"
+grep -q 'token: "keep-token"' "$EXISTING_CONFIG_HOME/.ae-cli/config.yaml"
+grep -q 'command: "codex"' "$EXISTING_CONFIG_HOME/.ae-cli/config.yaml"
+grep -q "Updated CLI config at $EXISTING_CONFIG_HOME/.ae-cli/config.yaml" "$EXISTING_CONFIG_LOG"
 
 HOMELESS_LOG="$TMP_ROOT/homeless.log"
 set +e
