@@ -64,7 +64,7 @@ port = int(sys.argv[1])
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
-        if self.path != "/api/v1/providers":
+        if self.path != "/api/v1/user/providers":
             self.send_response(404)
             self.end_headers()
             return
@@ -76,10 +76,18 @@ class Handler(BaseHTTPRequestHandler):
                         "name": "primary",
                         "display_name": "Primary Relay",
                         "base_url": "https://relay.example.com/v1",
-                        "api_key": "sk-mock-123",
-                        "api_key_id": 123,
                         "default_model": "gpt-5.3-codex",
                         "is_primary": True,
+                        "groups": [
+                            {
+                                "group_id": "42",
+                                "credential": {
+                                    "api_key_id": 123,
+                                    "key": "sk-mock-123",
+                                    "status": "active",
+                                },
+                            }
+                        ],
                     }
                 ]
             },

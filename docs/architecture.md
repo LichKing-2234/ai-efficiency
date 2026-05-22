@@ -53,7 +53,7 @@ flowchart LR
 - The backend is the central orchestration point for auth, repo configuration, attribution, provider management, and SCM/webhook workflows.
 - Runtime config remains a startup bootstrap input, not the user-facing provider source of truth. On first startup the backend can seed the primary `RelayProvider` row from `relay.*` config, but `/user`, settings, and normal provider surfaces operate on DB-backed `RelayProvider` records rather than a runtime fallback provider contract.
 - The frontend is built separately and embedded into the backend binary during Docker build, so the backend process serves both API routes and the SPA entrypoint in deployed images.
-- The embedded SPA now exposes a regular-user `/user` surface for profile summary, provider-aware CLI install/login/discover guidance, and provider-first, group-second credential self-serve driven by the current relay user's allowed groups. User-owned API keys are partially masked in the browser but remain copyable when relay returns the key value. This browser surface is distinct from the CLI-facing `/api/v1/providers` contract used by `ae-cli discover`.
+- The embedded SPA now exposes a regular-user `/user` surface for profile summary, provider-aware CLI install/login/discover guidance, and provider-first, group-second credential self-serve driven by the current relay user's allowed groups. User-owned API keys are partially masked in the browser but remain copyable when relay returns the key value. `ae-cli discover` now consumes the same user-provider credential surface at `/api/v1/user/providers`, with `/api/v1/providers` kept only as an older backend compatibility fallback.
 - Official production deployment now has two supported paths: Docker Compose and Linux systemd.
 - The business entrypoint remains the backend service that also serves the frontend bundle.
 - Docker/Compose mode now runs the backend from a persistent runtime binary under the deployment state directory and updates that runtime binary directly instead of using an updater sidecar.
@@ -143,7 +143,7 @@ sequenceDiagram
         Browser->>BE: /oauth/device/verify
     end
     Dev->>CLI: ae-cli discover
-    CLI->>BE: GET /api/v1/providers
+    CLI->>BE: GET /api/v1/user/providers
     CLI->>Tool: configure Codex / Claude / Gemini locally
     Dev->>CLI: ae-cli init
     CLI->>BE: ensure repo exists from local git remote

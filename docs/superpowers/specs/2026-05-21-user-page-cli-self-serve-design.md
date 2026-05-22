@@ -30,7 +30,7 @@
 结果是：
 
 1. 普通开发者知道系统“有 CLI”，但缺少一个登录后常驻入口来完成自助配置
-2. 当前 `GET /api/v1/providers` 更像 `ae-cli discover` 的程序消费接口，不是为 Web 用户界面设计的账户能力
+2. 旧 `GET /api/v1/providers` 更像早期 `ae-cli discover` 的程序消费接口，不是为 Web 用户界面设计的账户能力
 3. 用户无法在前端清楚区分：
    - 自己是谁
    - 当前有哪些 provider
@@ -332,15 +332,15 @@ GET /api/v1/auth/me
 
 用于 `Profile Summary`。
 
-### Why Not Reuse `GET /api/v1/providers`
+### Why Not Build `/user` On Legacy `GET /api/v1/providers`
 
-现有：
+旧接口：
 
 ```text
 GET /api/v1/providers
 ```
 
-是 `ae-cli discover` 的程序消费接口，当前语义包含：
+曾是 `ae-cli discover` 的程序消费接口，语义包含：
 
 1. 以 CLI 配置为目标的数据形状
 2. 当前实现里仍带有 provider 级自动创建 API key 的副作用
@@ -459,8 +459,7 @@ GET /api/v1/providers
 显示官方安装命令：
 
 ```bash
-AE_CLI_INSTALL_SERVER_URL=<current-origin> \
-curl -fsSL https://raw.githubusercontent.com/LichKing-2234/ai-efficiency/main/ae-cli/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/LichKing-2234/ai-efficiency/main/ae-cli/install.sh | AE_CLI_INSTALL_SERVER_URL=<current-origin> bash
 ```
 
 ### Step 2: Login
@@ -468,13 +467,13 @@ curl -fsSL https://raw.githubusercontent.com/LichKing-2234/ai-efficiency/main/ae
 显示：
 
 ```bash
-ae-cli --server <current-origin> login
+ae-cli login
 ```
 
 并补充 headless 说明：
 
 ```bash
-ae-cli --server <current-origin> login --device
+ae-cli login --device
 ```
 
 ### Step 3: Discover
@@ -482,7 +481,7 @@ ae-cli --server <current-origin> login --device
 本 spec 本轮不改 discover 命令形状，仍沿用：
 
 ```bash
-ae-cli --server <current-origin> discover --provider <provider-name>
+ae-cli discover --provider <provider-name>
 ```
 
 但页面必须明确说明：
@@ -498,8 +497,8 @@ ae-cli --server <current-origin> discover --provider <provider-name>
 验证输入至少包括：
 
 1. `ae-cli version`
-2. `ae-cli --server <current-origin> discover --dry-run --provider <provider-name>`
-3. `ae-cli --server <current-origin> doctor`
+2. `ae-cli discover --dry-run --provider <provider-name>`
+3. `ae-cli doctor`
 
 ## Runtime Boundary and Data Ownership
 

@@ -16,7 +16,7 @@ RELEASE_API_URL="${AE_CLI_INSTALL_RELEASE_API_URL:-https://api.github.com/repos/
 RELEASE_DOWNLOAD_BASE="${AE_CLI_INSTALL_RELEASE_DOWNLOAD_BASE:-https://github.com/${GITHUB_REPO}/releases/download}"
 TMP_DIR=""
 TEMP_TARGET=""
-CONFIG_SERVER_URL="${AE_CLI_INSTALL_SERVER_URL:-}"
+CONFIG_SERVER_URL="${AE_CLI_INSTALL_SERVER_URL:-https://ai-efficiency.la3.agoralab.co}"
 OS=""
 ARCH=""
 

@@ -16,6 +16,8 @@ SYMLINK_TAG="v0.2.5-symlink"
 
 cp "$ROOT_DIR/ae-cli/install.sh" "$INSTALLER"
 chmod +x "$INSTALLER"
+test -f "$ROOT_DIR/ae-cli/install.ps1"
+grep -q "AE_CLI_INSTALL_SERVER_URL" "$ROOT_DIR/ae-cli/install.ps1"
 
 make_cli_archive() {
   local tag="$1"
@@ -124,6 +126,8 @@ run_installer \
 
 test -x "$LATEST_HOME/.local/bin/ae-cli"
 "$LATEST_HOME/.local/bin/ae-cli" | grep -q "ae-cli ${LATEST_TAG}"
+test -f "$LATEST_HOME/.ae-cli/config.yaml"
+grep -q 'url: "https://ai-efficiency.la3.agoralab.co"' "$LATEST_HOME/.ae-cli/config.yaml"
 grep -q "Installing ae-cli ${LATEST_TAG}" "$LATEST_LOG"
 grep -q "Installed ae-cli ${LATEST_TAG} to $LATEST_HOME/.local/bin/ae-cli" "$LATEST_LOG"
 ! grep -q "is not in PATH" "$LATEST_LOG"
