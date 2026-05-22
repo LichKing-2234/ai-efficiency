@@ -6,6 +6,7 @@ $ErrorActionPreference = "Stop"
 
 $Repo = "LichKing-2234/ai-efficiency"
 $DefaultServerUrl = "https://ai-efficiency.la3.agoralab.co"
+$ServerUrlExplicit = Test-Path Env:AE_CLI_INSTALL_SERVER_URL
 $ServerUrl = if ($env:AE_CLI_INSTALL_SERVER_URL) { $env:AE_CLI_INSTALL_SERVER_URL.Trim() } else { $DefaultServerUrl }
 $ReleaseApiUrl = if ($env:AE_CLI_INSTALL_RELEASE_API_URL) { $env:AE_CLI_INSTALL_RELEASE_API_URL } else { "https://api.github.com/repos/$Repo/releases/latest" }
 $ReleaseDownloadBase = if ($env:AE_CLI_INSTALL_RELEASE_DOWNLOAD_BASE) { $env:AE_CLI_INSTALL_RELEASE_DOWNLOAD_BASE.TrimEnd("/") } else { "https://github.com/$Repo/releases/download" }
@@ -48,6 +49,55 @@ function Expand-CliArchive([string]$ArchivePath, [string]$Destination) {
   return $binary
 }
 
+function Set-CliServerUrl([string]$Path, [string]$Url) {
+  $lines = if (Test-Path -LiteralPath $Path -PathType Leaf) { Get-Content -LiteralPath $Path } else { @() }
+  $out = New-Object System.Collections.Generic.List[string]
+  $inServer = $false
+  $sawServer = $false
+  $wroteUrl = $false
+
+  foreach ($line in $lines) {
+    if ($line -match "^server:\s*$") {
+      if ($inServer -and -not $wroteUrl) {
+        $out.Add("  url: `"$Url`"")
+      }
+      $inServer = $true
+      $sawServer = $true
+      $wroteUrl = $false
+      $out.Add($line)
+      continue
+    }
+
+    if ($inServer -and $line -match "^\S[^:]*:") {
+      if (-not $wroteUrl) {
+        $out.Add("  url: `"$Url`"")
+      }
+      $inServer = $false
+    }
+
+    if ($inServer -and $line -match "^(\s*)url:\s*") {
+      $out.Add($Matches[1] + "url: `"$Url`"")
+      $wroteUrl = $true
+      continue
+    }
+
+    $out.Add($line)
+  }
+
+  if ($inServer -and -not $wroteUrl) {
+    $out.Add("  url: `"$Url`"")
+  }
+  if (-not $sawServer) {
+    if ($out.Count -gt 0) {
+      $out.Add("")
+    }
+    $out.Add("server:")
+    $out.Add("  url: `"$Url`"")
+  }
+
+  $out | Set-Content -LiteralPath $Path -Encoding UTF8
+}
+
 if ($ServerUrl -and -not (Test-ServerUrl $ServerUrl)) {
   throw "invalid AE_CLI_INSTALL_SERVER_URL: must start with http:// or https://"
 }
@@ -84,7 +134,12 @@ try {
 
   $ExistingConfig = Get-ExistingConfigPath
   if ($ExistingConfig) {
-    Write-Host "Using existing CLI config at $ExistingConfig"
+    if ($ServerUrlExplicit -and $ServerUrl) {
+      Set-CliServerUrl $ExistingConfig $ServerUrl
+      Write-Host "Updated CLI config at $ExistingConfig"
+    } else {
+      Write-Host "Using existing CLI config at $ExistingConfig"
+    }
   } elseif ($ServerUrl) {
     New-Item -ItemType Directory -Force -Path $ConfigDir | Out-Null
     @"

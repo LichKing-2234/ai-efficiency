@@ -10,6 +10,7 @@
 - 用户通过远程 shell 脚本安装到 `~/.local/bin/ae-cli`
 - 安装脚本负责平台识别、版本解析、checksum 校验与落盘
 - 首装时安装脚本负责引导 backend URL，并写入 `~/.ae-cli/config.yaml`
+- 重装时默认保留已有 CLI 配置；如果显式传入 `AE_CLI_INSTALL_SERVER_URL`，则只更新已有配置中的 `server.url`，保留 token、tools 等其它字段
 - 安装脚本不修改 shell profile，只在 `PATH` 缺失时给出明确提示
 
 本文解决的是“开发者如何快速拿到 CLI”，不是“如何管理后端服务部署”。
@@ -143,7 +144,7 @@ Windows 不走本 bash 安装路径，使用独立 PowerShell 入口：
 iwr -UseB https://raw.githubusercontent.com/LichKing-2234/ai-efficiency/main/ae-cli/install.ps1 | iex
 ```
 
-PowerShell 脚本下载 Windows release zip、校验 `checksums.txt`、安装到 `%USERPROFILE%\.local\bin\ae-cli.exe`，并在首装时写入 `%USERPROFILE%\.ae-cli\config.yaml`。
+PowerShell 脚本下载 Windows release zip、校验 `checksums.txt`、安装到 `%USERPROFILE%\.local\bin\ae-cli.exe`，并在首装时写入 `%USERPROFILE%\.ae-cli\config.yaml`。如果已有 config 且显式设置 `$env:AE_CLI_INSTALL_SERVER_URL`，则只更新已有配置中的 `server.url`。
 
 ## Release Resolution Contract
 
@@ -204,7 +205,8 @@ PowerShell 脚本下载 Windows release zip、校验 `checksums.txt`、安装到
 8. 将 `ae-cli` 拷贝到 `~/.local/bin/ae-cli`
 9. `chmod 0755`
 10. 如果本地不存在 CLI 配置，则尝试获取 backend URL 并写入 `~/.ae-cli/config.yaml`
-11. 输出安装结果摘要
+11. 如果本地已存在 CLI 配置且显式传入 `AE_CLI_INSTALL_SERVER_URL`，则更新该配置中的 `server.url`
+12. 输出安装结果摘要
 
 安装脚本允许覆盖已存在的 `~/.local/bin/ae-cli`。这视为重装/升级，不额外保留 backup 文件。
 
@@ -233,8 +235,10 @@ CLI 运行时同时兼容读取：
 
 如果本地已存在 `config.yaml` 或 `config.yml`：
 
-- 安装脚本不得覆盖
-- 只打印 “using existing config” 类提示
+- 默认重装不得覆盖已有配置
+- 如果没有显式传入 `AE_CLI_INSTALL_SERVER_URL`，只打印 “using existing config” 类提示
+- 如果显式传入 `AE_CLI_INSTALL_SERVER_URL`，只更新已有配置中的 `server.url`
+- 更新时必须保留已有 token、tools、legacy sub2api 等其它配置字段
 
 ### Written Config Shape
 
