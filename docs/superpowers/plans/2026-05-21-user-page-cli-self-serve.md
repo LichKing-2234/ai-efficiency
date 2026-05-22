@@ -10,7 +10,13 @@
 
 **Spec:** `docs/superpowers/specs/2026-05-21-user-page-cli-self-serve-design.md`
 
-**Status:** Group-first implementation is largely landed in code and verified by backend/frontend tests. Live docker-dev `/api/v1/user/providers` now returns `groups[]`, but the list is currently empty because the upstream relay user payload available in this environment does not yet provide `allowed_groups`; that upstream fact source remains the current blocker for a populated UI. Separately, the admin Settings relay management UI is now aligned to DB-backed multi-`RelayProvider` CRUD via `/api/v1/admin/providers`; `/api/v1/settings/llm*` remains compatibility/runtime-edit surface only.
+**Status:** Group-first implementation is largely landed in code and verified by backend/frontend tests. Live docker-dev `/api/v1/user/providers` now returns `groups[]`, but the list is currently empty because the upstream relay user payload available in this environment does not yet provide `allowed_groups`; that upstream fact source remains the current blocker for a populated UI. Separately, the admin Settings relay management UI is now aligned to DB-backed multi-`RelayProvider` CRUD via `/api/v1/admin/providers`; `/api/v1/settings/llm*` remains compatibility/runtime-edit surface only. The 2026-05-22 API key visibility follow-up now aligns `/user` with sub2api-style behavior: existing user-owned keys are partially masked on screen and copy the full key when the relay list response includes `key`.
+
+## Follow-up: API Key Visibility Alignment
+
+- [x] Return the existing relay API key value in `/api/v1/user/providers` group credential summaries when `ListUserAPIKeys` includes it.
+- [x] Show API keys partially masked in `/user` while keeping the full key available to the Copy action.
+- [x] Update the current `/user` contract docs to replace the older one-time-only reveal/copy assumption.
 
 ---
 

@@ -37,7 +37,7 @@
    - 当前 provider 下自己到底有哪些已订阅 / 已授权 group
    - 每个 group 属于哪个 platform
    - 当前 group 是否已有可复用 credential
-   - 为什么旧 key 不能直接 reveal
+   - 为什么 key 默认只做部分 mask 展示，但仍可复制完整值
 
 因此新增一个普通登录用户可访问的新页面：
 
@@ -62,7 +62,7 @@
    - verify
 3. 让用户能看见自己当前有哪些 provider，并在进入 credential 自助时显式选择 group。
 4. 让 `/user` 只展示当前用户有订阅 / 有权限的 group，而不是把 provider 下的全部 active groups 暴露给用户。
-5. 给用户提供自己的 group-scoped provider credential 状态说明，以及安全受限的一次性 reveal / copy / regenerate 交互。
+5. 给用户提供自己的 group-scoped provider credential 状态说明，以及安全受限的 reveal / copy / regenerate 交互。
 6. 保持后端与前端语义清晰分层：
    - CLI 程序消费接口继续服务 `ae-cli`
    - Web 账户页有自己的用户态接口
@@ -72,7 +72,7 @@
 
 1. 第一版不做 profile 编辑、密码修改、认证设置修改。
 2. 第一版不做浏览器直接执行本地 CLI 命令，也不做本机探测。
-3. 第一版不把旧 key 的明文“重新读取”出来；历史 existing key 只能通过重新创建得到新的 secret。
+3. 第一版不在列表视图直接铺满展示 API key 明文；existing key 默认以部分 mask 展示，完整值通过 Copy 或 Reveal 获取。
 4. 第一版不做完整的 group 管理台；只围绕“当前用户在当前 provider 下有权使用的 groups”做自助 credential 页面。
 5. 第一版不在本 spec 内同时重写 `ae-cli discover` 为 group-first；如果 provider 下存在多个 allowed groups，discover 的 group selector 作为后续合同收口项单独处理。
 6. 第一版不引入新的 LLM-based tool discovery。
@@ -225,7 +225,7 @@ Checklist 固定为 4 步：
 1. `~/.local/bin` 不在 `PATH`
 2. `login` 需要使用 `--device`
 3. `discover` 没有检测到工具
-4. 为什么历史 key 不能直接 reveal
+4. 为什么 key 默认只显示部分 mask
 
 ## Provider Credential Semantics
 
@@ -278,7 +278,9 @@ Checklist 固定为 4 步：
 1. `missing`
    - 当前 `provider + group` 下没有可复用 credential
 2. `existing_hidden`
-   - 当前 `provider + group` 下已有可复用 credential，但系统拿不到旧 secret 明文
+   - 当前 `provider + group` 下已有可复用 credential
+   - 当 relay `ListUserAPIKeys` 返回 key 明文时，后端在该状态下返回 `credential.key`
+   - 前端默认只显示部分 mask 值，但复制动作使用完整 key
 
 ### Client Overlay State
 
@@ -293,7 +295,7 @@ Checklist 固定为 4 步：
 
 `session_visible` 不是后端事实，也不应通过 `GET` 接口重新读取出来。
 
-刷新页面、重新进入页面或丢失本地内存后，状态必须回退为 `existing_hidden`。
+刷新页面、重新进入页面或丢失本地内存后，状态仍以 `GET /api/v1/user/providers` 返回的 `existing_hidden` 为准；如果该响应带有 `credential.key`，页面仍可 mask 展示并复制完整 key。
 
 ### Create, Reveal, Copy, Regenerate Rules
 
@@ -302,11 +304,11 @@ Checklist 固定为 4 步：
   - 执行一次 ensure/create，并返回新 secret
   - 成功后前端进入 `session_visible`
 - `Reveal`
-  - 仅在 `session_visible` 状态可用
-  - 用于把当前页面内存中的 secret 明文显示出来
+  - 当当前页面内存存在新 secret，或 `GET` 返回了 `credential.key` 时可用
+  - 用于把当前 key 明文显示出来
 - `Copy`
-  - 仅在 `session_visible` 状态可用
-  - 将当前页面内存中的 secret 复制到剪贴板
+  - 当当前页面内存存在新 secret，或 `GET` 返回了 `credential.key` 时可用
+  - 将完整 key 复制到剪贴板
 - `Regenerate`
   - 在 `existing_hidden` 或 `session_visible` 状态可用
   - 先将当前 `provider + group` 下按统一合同识别出的旧 credential 标记为不可用，再按同一合同新建
@@ -314,8 +316,9 @@ Checklist 固定为 4 步：
 
 页面必须明确解释：
 
-1. 历史旧 key 的明文不会被重新读取
-2. 如果需要重新拿到明文，只能通过 create / regenerate 得到一次性新 secret
+1. 页面默认部分 mask 展示 API key，避免列表视图直接铺满明文
+2. 只要当前 relay 响应提供 key 值，用户随时可以复制完整 key
+3. 如果某个 relay 响应不提供 key 值，页面应说明该 key 当前不可复制，需要 regenerate 得到新 key
 
 ## API Contract
 
@@ -385,6 +388,7 @@ GET /api/v1/providers
             "credential": {
               "state": "existing_hidden",
               "api_key_id": 12345,
+              "key": "sk-...",
               "name": "alice",
               "status": "active",
               "created_at": "2026-05-21T01:02:03Z",
@@ -402,7 +406,7 @@ GET /api/v1/providers
 约束：
 
 1. `credential.state` 只返回 `missing | existing_hidden`
-2. 不返回旧 secret
+2. 对当前用户自己的现有 API key，如果 relay list 响应包含 `key`，则返回 `credential.key`；前端负责 mask 展示、完整复制
 3. 不返回 `session_visible`
 
 #### `POST /api/v1/user/providers/:id/groups/:group_id/credential`
@@ -529,7 +533,8 @@ group 的 source of truth 是当前 relay user 的 `allowed_groups`，不是 pro
 4. 前端 `/user`
    - provider 切换
    - group 切换
-   - secret reveal/copy 仅在本次页面会话有效
+   - API key 默认部分 mask 展示
+   - 完整 key 可从当前页面内存的新 secret 或 `credential.key` 复制
 
 ## Rollout Notes
 

@@ -46,9 +46,13 @@ const selectedSecretKey = computed(() => {
   return secretStateKey(selectedProvider.value.id, selectedGroup.value.group_id)
 })
 const selectedSecret = computed(() => (selectedSecretKey.value ? sessionSecrets[selectedSecretKey.value] ?? '' : ''))
-const canReveal = computed(() => !!selectedSecret.value)
+const selectedKeyValue = computed(() => selectedSecret.value || selectedGroup.value?.credential.key || '')
+const canReveal = computed(() => !!selectedKeyValue.value)
 const isSecretRevealed = computed(() => !!selectedSecretKey.value && !!revealedSecretKeys[selectedSecretKey.value])
-const displayedSecret = computed(() => (isSecretRevealed.value ? selectedSecret.value : ''))
+const displayedSecret = computed(() => {
+  if (!selectedKeyValue.value) return ''
+  return isSecretRevealed.value ? selectedKeyValue.value : maskApiKey(selectedKeyValue.value)
+})
 
 function ensureVerifyDraft(providerId: number) {
   if (!verifyDrafts[providerId]) {
@@ -103,7 +107,13 @@ async function loadProviders() {
   }
 }
 
-function updateSelectedGroupCredential(apiKeyId: number, name: string, status: string) {
+function maskApiKey(key: string) {
+  if (!key) return ''
+  if (key.length <= 12) return `${key.slice(0, 4)}***`
+  return `${key.slice(0, 6)}...${key.slice(-4)}`
+}
+
+function updateSelectedGroupCredential(apiKeyId: number, name: string, status: string, key: string) {
   if (!selectedProvider.value || !selectedGroup.value) return
   providers.value = providers.value.map((provider) => {
     if (provider.id !== selectedProvider.value?.id) {
@@ -119,6 +129,7 @@ function updateSelectedGroupCredential(apiKeyId: number, name: string, status: s
                 ...group.credential,
                 state: 'existing_hidden',
                 api_key_id: apiKeyId,
+                key,
                 name,
                 status,
               },
@@ -136,7 +147,7 @@ async function handleCreateKey() {
   if (!data) return
   sessionSecrets[selectedSecretKey.value] = data.secret
   revealedSecretKeys[selectedSecretKey.value] = false
-  updateSelectedGroupCredential(data.api_key_id, data.name, data.status)
+  updateSelectedGroupCredential(data.api_key_id, data.name, data.status, data.secret)
 }
 
 async function handleRegenerateKey() {
@@ -148,7 +159,7 @@ async function handleRegenerateKey() {
   if (!data) return
   sessionSecrets[selectedSecretKey.value] = data.secret
   revealedSecretKeys[selectedSecretKey.value] = true
-  updateSelectedGroupCredential(data.api_key_id, data.name, data.status)
+  updateSelectedGroupCredential(data.api_key_id, data.name, data.status, data.secret)
 }
 
 function handleRevealKey() {
@@ -157,8 +168,8 @@ function handleRevealKey() {
 }
 
 async function handleCopyKey() {
-  if (!selectedSecret.value) return
-  await navigator.clipboard.writeText(selectedSecret.value)
+  if (!selectedKeyValue.value) return
+  await navigator.clipboard.writeText(selectedKeyValue.value)
 }
 
 function handleReviewVerify() {
@@ -280,8 +291,11 @@ onMounted(loadProviders)
                   <div class="font-medium text-gray-900">Credential state: {{ selectedGroup.credential.state }}</div>
                   <div class="mt-2">Group: {{ selectedGroup.group_name }}</div>
                   <div class="mt-1">Platform: {{ selectedGroup.platform }}</div>
-                  <div v-if="selectedGroup.credential.state === 'existing_hidden'" class="mt-2">
-                    This group already has a reusable credential, but the old secret cannot be read back. Use Regenerate if you need a new revealable secret.
+                  <div v-if="selectedGroup.credential.state === 'existing_hidden' && selectedGroup.credential.key" class="mt-2">
+                    This group already has a reusable credential. The key is partially shown here and can be copied.
+                  </div>
+                  <div v-else-if="selectedGroup.credential.state === 'existing_hidden'" class="mt-2">
+                    This group already has a reusable credential, but the relay response did not include the key value.
                   </div>
                   <div v-else class="mt-2">
                     No reusable credential exists for this group yet.

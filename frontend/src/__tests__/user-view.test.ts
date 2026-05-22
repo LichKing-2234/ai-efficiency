@@ -62,7 +62,7 @@ async function mountUserView() {
                 group_id: '43',
                 group_name: 'Claude-RD',
                 platform: 'anthropic',
-                credential: { state: 'existing_hidden', api_key_id: 22, name: 'alice', status: 'active' },
+                credential: { state: 'existing_hidden', api_key_id: 22, name: 'alice', status: 'active', key: 'sk-existing-claude-123456' },
               },
               {
                 group_id: '42',
@@ -163,5 +163,15 @@ describe('UserView', () => {
     await wrapper.get('[data-testid="group-42"]').trigger('click')
     expect(wrapper.text()).toContain('sk-openai')
     expect(wrapper.text()).not.toContain('sk-claude')
+  })
+
+  it('shows an existing key partially and copies the full key', async () => {
+    const { wrapper } = await mountUserView()
+
+    expect(wrapper.text()).toContain('sk-exi...3456')
+    expect(wrapper.text()).not.toContain('sk-existing-claude-123456')
+
+    await wrapper.get('[data-testid="copy-key"]').trigger('click')
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith('sk-existing-claude-123456')
   })
 })

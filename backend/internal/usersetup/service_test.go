@@ -15,14 +15,14 @@ import (
 )
 
 type fakeRelayProvider struct {
-	keysByUser                         map[int64][]relay.APIKey
-	createResult                       *relay.APIKeyWithSecret
-	createErr                          error
-	updatedStatuses                    map[int64]string
-	updateCredentialLogin              string
-	updateCredentialPassword           string
-	lastCreateReq                      relay.APIKeyCreateRequest
-	listAllowedGroupsForUserFn         func(ctx context.Context, userID int64) ([]relay.Group, error)
+	keysByUser                 map[int64][]relay.APIKey
+	createResult               *relay.APIKeyWithSecret
+	createErr                  error
+	updatedStatuses            map[int64]string
+	updateCredentialLogin      string
+	updateCredentialPassword   string
+	lastCreateReq              relay.APIKeyCreateRequest
+	listAllowedGroupsForUserFn func(ctx context.Context, userID int64) ([]relay.Group, error)
 }
 
 func (f *fakeRelayProvider) Ping(ctx context.Context) error { return nil }
@@ -118,7 +118,7 @@ func TestListProvidersReturnsOnlyAllowedGroups(t *testing.T) {
 	fakeRelay := &fakeRelayProvider{
 		keysByUser: map[int64][]relay.APIKey{
 			1: {
-				{ID: 20, UserID: 1, Name: "alice", Status: "active", Group: &relay.Group{ID: 6, Name: "Group Alpha", Platform: "openai"}, CreatedAt: time.Now()},
+				{ID: 20, UserID: 1, Key: "sk-existing-openai-123456", Name: "alice", Status: "active", Group: &relay.Group{ID: 6, Name: "Group Alpha", Platform: "openai"}, CreatedAt: time.Now()},
 				{ID: 21, UserID: 1, Name: "other", Status: "active", Group: &relay.Group{ID: 99, Name: "Other", Platform: "openai"}, CreatedAt: time.Now()},
 			},
 		},
@@ -156,6 +156,9 @@ func TestListProvidersReturnsOnlyAllowedGroups(t *testing.T) {
 	}
 	if got.Groups[1].Credential.APIKeyID != 20 {
 		t.Fatalf("group credential api key id = %d, want 20", got.Groups[1].Credential.APIKeyID)
+	}
+	if got.Groups[1].Credential.Key != "sk-existing-openai-123456" {
+		t.Fatalf("group credential key = %q, want full API key", got.Groups[1].Credential.Key)
 	}
 }
 
