@@ -240,13 +240,20 @@ export interface ToolUsageEventListResponse {
   items: ToolUsageEventRow[]
 }
 
-export interface ManagedKeySummary {
+export interface UserGroupCredentialState {
   state: 'missing' | 'existing_hidden'
   api_key_id?: number
   name?: string
   status?: string
   created_at?: string | null
   last_used_at?: string | null
+}
+
+export interface UserGroupCredentialSummary {
+  group_id: string
+  group_name: string
+  platform: string
+  credential: UserGroupCredentialState
 }
 
 export interface UserProviderSummary {
@@ -256,7 +263,7 @@ export interface UserProviderSummary {
   base_url: string
   default_model: string
   is_primary: boolean
-  managed_key: ManagedKeySummary
+  groups: UserGroupCredentialSummary[]
 }
 
 export interface UserProvidersResponse {
@@ -264,7 +271,7 @@ export interface UserProvidersResponse {
   message?: string
 }
 
-export interface ManagedKeyMutationResult {
+export interface GroupCredentialMutationResult {
   api_key_id: number
   name: string
   status: string

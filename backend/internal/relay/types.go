@@ -6,11 +6,12 @@ import (
 )
 
 type User struct {
-	ID          int64  `json:"id"`
-	Email       string `json:"email"`
-	Username    string `json:"username"`
-	Role        string `json:"role"`
-	Concurrency int    `json:"concurrency,omitempty"`
+	ID            int64   `json:"id"`
+	Email         string  `json:"email"`
+	Username      string  `json:"username"`
+	Role          string  `json:"role"`
+	Concurrency   int     `json:"concurrency,omitempty"`
+	AllowedGroups []Group `json:"allowed_groups,omitempty"`
 }
 
 type CreateUserRequest struct {
@@ -43,6 +44,7 @@ type APIKey struct {
 
 type Group struct {
 	ID       int64  `json:"id"`
+	Name     string `json:"name"`
 	Platform string `json:"platform"`
 }
 

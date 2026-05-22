@@ -259,7 +259,7 @@ Checklist 固定为 4 步：
 1. 先列出当前 relay user 在该 provider 下的 active keys
 2. 只在目标 `group_id` 下筛选
 3. 优先匹配“用户同名 key”
-4. 如果 `username` 本身就是邮箱别名，则按既有逻辑退化成邮箱前缀，例如 `luxuhui`
+4. 如果 `username` 本身就是邮箱别名，则按既有逻辑退化成邮箱前缀，例如 `alice`
 5. 没有可复用 key 时，按同样的命名规则创建
 6. 创建时必须带目标 `GroupID`
 
@@ -385,7 +385,7 @@ GET /api/v1/providers
             "credential": {
               "state": "existing_hidden",
               "api_key_id": 12345,
-              "name": "luxuhui",
+              "name": "alice",
               "status": "active",
               "created_at": "2026-05-21T01:02:03Z",
               "last_used_at": "2026-05-21T09:00:00Z"
@@ -422,7 +422,7 @@ GET /api/v1/providers
 {
   "data": {
     "api_key_id": 12346,
-    "name": "luxuhui",
+    "name": "alice",
     "status": "active",
     "secret": "sk-..."
   }

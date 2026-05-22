@@ -129,6 +129,9 @@ func main() {
 		logger.Fatal("ent auto-migrate", zap.Error(err))
 	}
 	logger.Info("database schema migrated")
+	if err := ensurePrimaryRelayProviderFromConfig(context.Background(), entClient, cfg.Relay, cfg.Encryption.Key); err != nil {
+		logger.Fatal("bootstrap primary relay provider from config", zap.Error(err))
+	}
 	backfillResult, err := credential.BackfillLegacySCMCredentials(context.Background(), entClient, cfg.Encryption.Key)
 	if err != nil {
 		logger.Fatal("backfill legacy scm credentials", zap.Error(err))

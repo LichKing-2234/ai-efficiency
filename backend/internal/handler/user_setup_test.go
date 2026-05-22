@@ -13,15 +13,15 @@ import (
 )
 
 type stubUserSetupService struct {
-	listResponse      *usersetup.ListProvidersResponse
-	listErr           error
-	createResult      *usersetup.CreateManagedKeyResult
-	createErr         error
-	regenerateResult  *usersetup.CreateManagedKeyResult
-	regenerateErr     error
-	lastListReq       usersetup.ListProvidersRequest
-	lastCreateReq     usersetup.CreateManagedKeyRequest
-	lastRegenerateReq usersetup.RegenerateManagedKeyRequest
+	listResponse              *usersetup.ListProvidersResponse
+	listErr                   error
+	createGroupResult         *usersetup.CreateGroupCredentialResult
+	createGroupErr            error
+	regenerateGroupResult     *usersetup.CreateGroupCredentialResult
+	regenerateGroupErr        error
+	lastListReq               usersetup.ListProvidersRequest
+	lastCreateGroupReq        usersetup.CreateGroupCredentialRequest
+	lastRegenerateGroupReq    usersetup.RegenerateGroupCredentialRequest
 }
 
 func (s *stubUserSetupService) ListProviders(ctx context.Context, req usersetup.ListProvidersRequest) (*usersetup.ListProvidersResponse, error) {
@@ -29,14 +29,14 @@ func (s *stubUserSetupService) ListProviders(ctx context.Context, req usersetup.
 	return s.listResponse, s.listErr
 }
 
-func (s *stubUserSetupService) CreateManagedKey(ctx context.Context, req usersetup.CreateManagedKeyRequest) (*usersetup.CreateManagedKeyResult, error) {
-	s.lastCreateReq = req
-	return s.createResult, s.createErr
+func (s *stubUserSetupService) CreateGroupCredential(ctx context.Context, req usersetup.CreateGroupCredentialRequest) (*usersetup.CreateGroupCredentialResult, error) {
+	s.lastCreateGroupReq = req
+	return s.createGroupResult, s.createGroupErr
 }
 
-func (s *stubUserSetupService) RegenerateManagedKey(ctx context.Context, req usersetup.RegenerateManagedKeyRequest) (*usersetup.CreateManagedKeyResult, error) {
-	s.lastRegenerateReq = req
-	return s.regenerateResult, s.regenerateErr
+func (s *stubUserSetupService) RegenerateGroupCredential(ctx context.Context, req usersetup.RegenerateGroupCredentialRequest) (*usersetup.CreateGroupCredentialResult, error) {
+	s.lastRegenerateGroupReq = req
+	return s.regenerateGroupResult, s.regenerateGroupErr
 }
 
 func TestUserProvidersRequiresAuth(t *testing.T) {
@@ -47,23 +47,30 @@ func TestUserProvidersRequiresAuth(t *testing.T) {
 	}
 }
 
-func TestUserProvidersReturnsCurrentUserProviders(t *testing.T) {
+func TestUserProvidersReturnsGroupsPerProvider(t *testing.T) {
 	env := setupTestEnv(t)
 	stub := &stubUserSetupService{
 		listResponse: &usersetup.ListProvidersResponse{
 			Providers: []usersetup.ProviderSummary{
 				{
 					ID:           7,
-					Name:         "sub2api-prod",
-					DisplayName:  "sub2api Production",
-					BaseURL:      "https://relay.example.com",
-					DefaultModel: "claude-sonnet-4-20250514",
+					Name:         "sub2api",
+					DisplayName:  "sub2api",
+					BaseURL:      "https://sub2api.agoraio.cn/",
+					DefaultModel: "gpt-5.4",
 					IsPrimary:    true,
-					ManagedKey: usersetup.ManagedKeySummary{
-						State:    "existing_hidden",
-						APIKeyID: 44,
-						Name:     "ae-cli-auto",
-						Status:   "active",
+					Groups: []usersetup.GroupCredentialSummary{
+						{
+							GroupID:   "42",
+							GroupName: "OpenAI-RD",
+							Platform:  "openai",
+							Credential: usersetup.GroupCredentialState{
+								State:    "existing_hidden",
+								APIKeyID: 44,
+								Name:     "luxuhui",
+								Status:   "active",
+							},
+						},
 					},
 				},
 			},
@@ -83,25 +90,25 @@ func TestUserProvidersReturnsCurrentUserProviders(t *testing.T) {
 	if stub.lastListReq.UserID != env.userID {
 		t.Fatalf("user id = %d, want %d", stub.lastListReq.UserID, env.userID)
 	}
-	if strings.Contains(w.Body.String(), "secret") {
-		t.Fatalf("response should not contain secret: %s", w.Body.String())
+	if !strings.Contains(w.Body.String(), "\"groups\"") || strings.Contains(w.Body.String(), "\"platforms\"") {
+		t.Fatalf("response should contain groups and not platforms: %s", w.Body.String())
 	}
 }
 
-func TestCreateManagedKeyReturnsSecretOnce(t *testing.T) {
+func TestCreateGroupCredentialTranslatesRouteParams(t *testing.T) {
 	env := setupTestEnv(t)
 	stub := &stubUserSetupService{
-		createResult: &usersetup.CreateManagedKeyResult{
+		createGroupResult: &usersetup.CreateGroupCredentialResult{
 			APIKeyID: 77,
-			Name:     "ae-cli-auto",
+			Name:     "luxuhui",
 			Status:   "active",
 			Secret:   "sk-new",
 		},
 	}
 
 	router := gin.New()
-	router.POST("/api/v1/user/providers/:id/managed-key", authpkg.RequireAuth(env.authSvc), NewUserSetupHandler(stub).CreateManagedKey)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/user/providers/7/managed-key", nil)
+	router.POST("/api/v1/user/providers/:id/groups/:group_id/credential", authpkg.RequireAuth(env.authSvc), NewUserSetupHandler(stub).CreateGroupCredential)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/user/providers/7/groups/42/credential", nil)
 	req.Header.Set("Authorization", "Bearer "+env.token)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
@@ -109,44 +116,25 @@ func TestCreateManagedKeyReturnsSecretOnce(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
 	}
-	if stub.lastCreateReq.ProviderID != 7 {
-		t.Fatalf("provider id = %d, want 7", stub.lastCreateReq.ProviderID)
-	}
-	if !strings.Contains(w.Body.String(), "sk-new") {
-		t.Fatalf("response missing secret: %s", w.Body.String())
+	if stub.lastCreateGroupReq.ProviderID != 7 || stub.lastCreateGroupReq.GroupID != "42" {
+		t.Fatalf("unexpected request: %+v", stub.lastCreateGroupReq)
 	}
 }
 
-func TestCreateManagedKeyConflictsWhenManagedKeyExists(t *testing.T) {
-	env := setupTestEnv(t)
-	stub := &stubUserSetupService{createErr: usersetup.ErrManagedKeyAlreadyExists}
-
-	router := gin.New()
-	router.POST("/api/v1/user/providers/:id/managed-key", authpkg.RequireAuth(env.authSvc), NewUserSetupHandler(stub).CreateManagedKey)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/user/providers/7/managed-key", nil)
-	req.Header.Set("Authorization", "Bearer "+env.token)
-	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
-
-	if w.Code != http.StatusConflict {
-		t.Fatalf("status = %d, want %d", w.Code, http.StatusConflict)
-	}
-}
-
-func TestRegenerateManagedKeyTranslatesProviderIDAndReturnsSecret(t *testing.T) {
+func TestRegenerateGroupCredentialTranslatesRouteParams(t *testing.T) {
 	env := setupTestEnv(t)
 	stub := &stubUserSetupService{
-		regenerateResult: &usersetup.CreateManagedKeyResult{
+		regenerateGroupResult: &usersetup.CreateGroupCredentialResult{
 			APIKeyID: 88,
-			Name:     "ae-cli-auto",
+			Name:     "luxuhui",
 			Status:   "active",
 			Secret:   "sk-regen",
 		},
 	}
 
 	router := gin.New()
-	router.POST("/api/v1/user/providers/:id/managed-key/regenerate", authpkg.RequireAuth(env.authSvc), NewUserSetupHandler(stub).RegenerateManagedKey)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/user/providers/7/managed-key/regenerate", nil)
+	router.POST("/api/v1/user/providers/:id/groups/:group_id/credential/regenerate", authpkg.RequireAuth(env.authSvc), NewUserSetupHandler(stub).RegenerateGroupCredential)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/user/providers/7/groups/42/credential/regenerate", nil)
 	req.Header.Set("Authorization", "Bearer "+env.token)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
@@ -154,7 +142,7 @@ func TestRegenerateManagedKeyTranslatesProviderIDAndReturnsSecret(t *testing.T) 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
 	}
-	if stub.lastRegenerateReq.UserID != env.userID || stub.lastRegenerateReq.ProviderID != 7 {
-		t.Fatalf("got request %#v, want user=%d provider=7", stub.lastRegenerateReq, env.userID)
+	if stub.lastRegenerateGroupReq.UserID != env.userID || stub.lastRegenerateGroupReq.ProviderID != 7 || stub.lastRegenerateGroupReq.GroupID != "42" {
+		t.Fatalf("got request %#v, want user=%d provider=7 group=42", stub.lastRegenerateGroupReq, env.userID)
 	}
 }

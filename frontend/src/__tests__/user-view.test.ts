@@ -7,8 +7,8 @@ import UserView from '@/views/UserView.vue'
 
 vi.mock('@/api/user', () => ({
   getUserProviders: vi.fn(),
-  createManagedKey: vi.fn(),
-  regenerateManagedKey: vi.fn(),
+  createGroupCredential: vi.fn(),
+  regenerateGroupCredential: vi.fn(),
 }))
 
 Object.assign(navigator, {
@@ -41,7 +41,14 @@ async function mountUserView() {
             base_url: 'https://staging.example.com',
             default_model: 'claude-sonnet',
             is_primary: false,
-            managed_key: { state: 'missing' },
+            groups: [
+              {
+                group_id: '42',
+                group_name: 'OpenAI-Staging',
+                platform: 'openai',
+                credential: { state: 'missing' },
+              },
+            ],
           },
           {
             id: 2,
@@ -50,7 +57,20 @@ async function mountUserView() {
             base_url: 'https://prod.example.com',
             default_model: 'claude-sonnet',
             is_primary: true,
-            managed_key: { state: 'existing_hidden', api_key_id: 22 },
+            groups: [
+              {
+                group_id: '43',
+                group_name: 'Claude-RD',
+                platform: 'anthropic',
+                credential: { state: 'existing_hidden', api_key_id: 22, name: 'alice', status: 'active' },
+              },
+              {
+                group_id: '42',
+                group_name: 'OpenAI-RD',
+                platform: 'openai',
+                credential: { state: 'missing' },
+              },
+            ],
           },
         ],
         message: '',
@@ -88,49 +108,60 @@ describe('UserView', () => {
     vi.stubGlobal('confirm', vi.fn(() => true))
   })
 
-  it('loads profile and provider data, selects primary provider by default, and renders commands', async () => {
+  it('loads profile and provider data, selects primary provider by default, and renders group info', async () => {
     const { wrapper } = await mountUserView()
     expect(wrapper.text()).toContain('alice@example.com')
     expect(wrapper.text()).toContain('Production')
-    expect(wrapper.text()).toContain('ae-cli --server http://localhost')
     expect(wrapper.text()).toContain('discover --provider prod')
+    expect(wrapper.text()).toContain('Claude-RD')
+    expect(wrapper.text()).toContain('Platform: anthropic')
   })
 
-  it('switches providers and updates the discover command', async () => {
+  it('switches providers and updates the discover command and group list', async () => {
     const { wrapper } = await mountUserView()
     await wrapper.get('[data-testid="provider-1"]').trigger('click')
     expect(wrapper.text()).toContain('discover --provider staging')
+    expect(wrapper.text()).toContain('OpenAI-Staging')
   })
 
-  it('reveals and copies a newly created secret only from session state', async () => {
-    const { createManagedKey } = await import('@/api/user')
-    ;(createManagedKey as any).mockResolvedValue({
-      data: { data: { api_key_id: 7, name: 'ae-cli-auto', status: 'active', secret: 'sk-new' } },
+  it('calls createGroupCredential for the selected provider and group', async () => {
+    const { createGroupCredential } = await import('@/api/user')
+    ;(createGroupCredential as any).mockResolvedValue({
+      data: { data: { api_key_id: 7, name: 'alice', status: 'active', secret: 'sk-new' } },
     })
 
     const { wrapper } = await mountUserView()
-    await wrapper.get('[data-testid="provider-1"]').trigger('click')
+    await wrapper.get('[data-testid="group-42"]').trigger('click')
     await wrapper.get('[data-testid="create-key"]').trigger('click')
     await flushPromises()
 
-    expect(wrapper.text()).not.toContain('sk-new')
-    await wrapper.get('[data-testid="reveal-key"]').trigger('click')
-    expect(wrapper.text()).toContain('sk-new')
-    await wrapper.get('[data-testid="copy-key"]').trigger('click')
-    expect(navigator.clipboard.writeText).toHaveBeenCalledWith('sk-new')
+    expect(createGroupCredential).toHaveBeenCalledWith(2, '42')
   })
 
-  it('shows regenerate confirmation for existing hidden keys', async () => {
-    const { regenerateManagedKey } = await import('@/api/user')
-    ;(regenerateManagedKey as any).mockResolvedValue({
-      data: { data: { api_key_id: 8, name: 'ae-cli-auto', status: 'active', secret: 'sk-regen' } },
+  it('retains separate in-memory secrets per provider and group', async () => {
+    const { createGroupCredential, regenerateGroupCredential } = await import('@/api/user')
+    ;(createGroupCredential as any).mockResolvedValue({
+      data: { data: { api_key_id: 7, name: 'alice', status: 'active', secret: 'sk-openai' } },
+    })
+    ;(regenerateGroupCredential as any).mockResolvedValue({
+      data: { data: { api_key_id: 8, name: 'alice', status: 'active', secret: 'sk-claude' } },
     })
 
     const { wrapper } = await mountUserView()
+
+    await wrapper.get('[data-testid="group-42"]').trigger('click')
+    await wrapper.get('[data-testid="create-key"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="reveal-key"]').trigger('click')
+    expect(wrapper.text()).toContain('sk-openai')
+
+    await wrapper.get('[data-testid="group-43"]').trigger('click')
     await wrapper.get('[data-testid="regenerate-key"]').trigger('click')
     await flushPromises()
+    expect(wrapper.text()).toContain('sk-claude')
 
-    expect(globalThis.confirm).toHaveBeenCalled()
-    expect(wrapper.text()).toContain('sk-regen')
+    await wrapper.get('[data-testid="group-42"]').trigger('click')
+    expect(wrapper.text()).toContain('sk-openai')
+    expect(wrapper.text()).not.toContain('sk-claude')
   })
 })

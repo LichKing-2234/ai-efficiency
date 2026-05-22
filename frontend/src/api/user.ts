@@ -1,7 +1,7 @@
 import client from './client'
 import type {
   ApiResponse,
-  ManagedKeyMutationResult,
+  GroupCredentialMutationResult,
   UserProvidersResponse,
 } from '@/types'
 
@@ -9,10 +9,14 @@ export function getUserProviders() {
   return client.get<ApiResponse<UserProvidersResponse>>('/user/providers')
 }
 
-export function createManagedKey(providerId: number) {
-  return client.post<ApiResponse<ManagedKeyMutationResult>>(`/user/providers/${providerId}/managed-key`)
+export function createGroupCredential(providerId: number, groupId: string) {
+  return client.post<ApiResponse<GroupCredentialMutationResult>>(
+    `/user/providers/${providerId}/groups/${groupId}/credential`
+  )
 }
 
-export function regenerateManagedKey(providerId: number) {
-  return client.post<ApiResponse<ManagedKeyMutationResult>>(`/user/providers/${providerId}/managed-key/regenerate`)
+export function regenerateGroupCredential(providerId: number, groupId: string) {
+  return client.post<ApiResponse<GroupCredentialMutationResult>>(
+    `/user/providers/${providerId}/groups/${groupId}/credential/regenerate`
+  )
 }

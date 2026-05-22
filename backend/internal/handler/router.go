@@ -62,7 +62,7 @@ func SetupRouter(
 	}
 
 	// Handlers
-	authHandler := NewAuthHandler(authService)
+	authHandler := NewAuthHandler(authService, entClient)
 	credentialHandler := NewCredentialHandler(entClient, encryptionKey)
 	scmProviderHandler := NewSCMProviderHandler(entClient, encryptionKey)
 	repoHandler := NewRepoHandler(repoService)
@@ -70,7 +70,8 @@ func SetupRouter(
 	efficiencyHandler := NewEfficiencyHandler(entClient)
 	toolUsageHandler := NewToolUsageHandler(toolusage.NewService(entClient))
 	eventsHandler := NewEventsHandler(toolusage.NewQueryService(entClient))
-	userSetupHandler := NewUserSetupHandler(usersetup.NewService(entClient, providerHandler))
+	userSetupService := usersetup.NewService(entClient, providerHandler, encryptionKey)
+	userSetupHandler := NewUserSetupHandler(userSetupService)
 
 	api := r.Group("/api/v1")
 
@@ -160,8 +161,8 @@ func SetupRouter(
 	userGroup := protected.Group("/user")
 	{
 		userGroup.GET("/providers", userSetupHandler.ListProviders)
-		userGroup.POST("/providers/:id/managed-key", userSetupHandler.CreateManagedKey)
-		userGroup.POST("/providers/:id/managed-key/regenerate", userSetupHandler.RegenerateManagedKey)
+		userGroup.POST("/providers/:id/groups/:group_id/credential", userSetupHandler.CreateGroupCredential)
+		userGroup.POST("/providers/:id/groups/:group_id/credential/regenerate", userSetupHandler.RegenerateGroupCredential)
 	}
 
 	if checkpointHandler != nil {

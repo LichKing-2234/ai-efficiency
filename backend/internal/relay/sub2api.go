@@ -211,7 +211,13 @@ func (s *sub2apiRelay) GetUser(ctx context.Context, userID int64) (*User, error)
 
 	var result struct {
 		envelopeStatus
-		Data User `json:"data"`
+		Data struct {
+			User
+			Subscriptions []struct {
+				Status string `json:"status"`
+				Group  Group  `json:"group"`
+			} `json:"subscriptions"`
+		} `json:"data"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("relay: get user: decode: %w", err)
@@ -219,8 +225,87 @@ func (s *sub2apiRelay) GetUser(ctx context.Context, userID int64) (*User, error)
 	if !result.ok() {
 		return nil, fmt.Errorf("relay: get user: request failed")
 	}
+	user := result.Data.User
+	if len(result.Data.Subscriptions) > 0 {
+		user.AllowedGroups = make([]Group, 0, len(result.Data.Subscriptions))
+		seen := make(map[int64]struct{}, len(result.Data.Subscriptions))
+		for _, subscription := range result.Data.Subscriptions {
+			if !strings.EqualFold(strings.TrimSpace(subscription.Status), "active") {
+				continue
+			}
+			if subscription.Group.ID == 0 {
+				continue
+			}
+			if _, ok := seen[subscription.Group.ID]; ok {
+				continue
+			}
+			seen[subscription.Group.ID] = struct{}{}
+			user.AllowedGroups = append(user.AllowedGroups, Group{
+				ID:       subscription.Group.ID,
+				Name:     strings.TrimSpace(subscription.Group.Name),
+				Platform: strings.TrimSpace(subscription.Group.Platform),
+			})
+		}
+	}
+	return &user, nil
+}
 
-	return &result.Data, nil
+func (s *sub2apiRelay) ListAllowedGroupsForUser(ctx context.Context, userID int64) ([]Group, error) {
+	resp, err := s.doAdminRequest(ctx, http.MethodGet, "/api/v1/admin/users?page=1&page_size=200", nil)
+	if err != nil {
+		return nil, fmt.Errorf("relay: list allowed groups: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("relay: list allowed groups: unexpected status %d", resp.StatusCode)
+	}
+
+	var result struct {
+		envelopeStatus
+		Data struct {
+			Items []struct {
+				ID            int64 `json:"id"`
+				Subscriptions []struct {
+					Status string `json:"status"`
+					Group  Group  `json:"group"`
+				} `json:"subscriptions"`
+			} `json:"items"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("relay: list allowed groups: decode: %w", err)
+	}
+	if !result.ok() {
+		return nil, fmt.Errorf("relay: list allowed groups: request failed")
+	}
+
+	for _, item := range result.Data.Items {
+		if item.ID != userID {
+			continue
+		}
+		groups := make([]Group, 0, len(item.Subscriptions))
+		seen := make(map[int64]struct{}, len(item.Subscriptions))
+		for _, subscription := range item.Subscriptions {
+			if !strings.EqualFold(strings.TrimSpace(subscription.Status), "active") {
+				continue
+			}
+			if subscription.Group.ID == 0 {
+				continue
+			}
+			if _, ok := seen[subscription.Group.ID]; ok {
+				continue
+			}
+			seen[subscription.Group.ID] = struct{}{}
+			groups = append(groups, Group{
+				ID:       subscription.Group.ID,
+				Name:     strings.TrimSpace(subscription.Group.Name),
+				Platform: strings.TrimSpace(subscription.Group.Platform),
+			})
+		}
+		return groups, nil
+	}
+	return nil, nil
 }
 
 func (s *sub2apiRelay) FindUserByEmail(ctx context.Context, email string) (*User, error) {
@@ -778,9 +863,68 @@ func (s *sub2apiRelay) ResolveDefaultGroupIDForPlatform(ctx context.Context, pla
 	return s.resolveDefaultGroupID(ctx, platform)
 }
 
+func (s *sub2apiRelay) ListPlatformGroups(ctx context.Context) ([]Group, error) {
+	type groupItem struct {
+		ID       int64  `json:"id"`
+		Name     string `json:"name"`
+		Platform string `json:"platform"`
+		Status   string `json:"status"`
+	}
+	type pageData struct {
+		Items []groupItem `json:"items"`
+		Page  int         `json:"page"`
+		Pages int         `json:"pages"`
+	}
+
+	var groups []Group
+	for page := 1; ; page++ {
+		resp, err := s.doAdminRequest(ctx, http.MethodGet, fmt.Sprintf("/api/v1/admin/groups?page=%d&page_size=200", page), nil)
+		if err != nil {
+			return nil, fmt.Errorf("relay: list platform groups: %w", err)
+		}
+
+		var result struct {
+			Code int      `json:"code"`
+			Data pageData `json:"data"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			resp.Body.Close()
+			return nil, fmt.Errorf("relay: list platform groups: decode: %w", err)
+		}
+		resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("relay: list platform groups: unexpected status %d", resp.StatusCode)
+		}
+		if result.Code != 0 {
+			return nil, fmt.Errorf("relay: list platform groups: request failed")
+		}
+
+		for _, item := range result.Data.Items {
+			if !strings.EqualFold(strings.TrimSpace(item.Status), "active") {
+				continue
+			}
+			if strings.TrimSpace(item.Platform) == "" {
+				continue
+			}
+			groups = append(groups, Group{
+				ID:       item.ID,
+				Name:     strings.TrimSpace(item.Name),
+				Platform: strings.TrimSpace(item.Platform),
+			})
+		}
+
+		if result.Data.Pages <= 1 || page >= result.Data.Pages {
+			break
+		}
+	}
+	return groups, nil
+}
+
 func (s *sub2apiRelay) resolveDefaultGroupID(ctx context.Context, platform string) (string, error) {
 	type groupItem struct {
 		ID                 int64  `json:"id"`
+		Name               string `json:"name"`
 		Platform           string `json:"platform"`
 		Status             string `json:"status"`
 		AccountCount       int64  `json:"account_count"`

@@ -12,7 +12,7 @@ vi.mock('@/api/client', () => {
 })
 
 import client from '@/api/client'
-import { getUserProviders, createManagedKey, regenerateManagedKey } from '@/api/user'
+import { getUserProviders, createGroupCredential, regenerateGroupCredential } from '@/api/user'
 
 const mockClient = client as unknown as {
   get: ReturnType<typeof vi.fn>
@@ -30,15 +30,15 @@ describe('user API', () => {
     expect(mockClient.get).toHaveBeenCalledWith('/user/providers')
   })
 
-  it('createManagedKey posts to the provider-scoped endpoint', async () => {
+  it('createGroupCredential posts to the provider-and-group endpoint', async () => {
     mockClient.post.mockResolvedValue({ data: { data: { api_key_id: 7, secret: 'sk-new' } } })
-    await createManagedKey(7)
-    expect(mockClient.post).toHaveBeenCalledWith('/user/providers/7/managed-key')
+    await createGroupCredential(7, '42')
+    expect(mockClient.post).toHaveBeenCalledWith('/user/providers/7/groups/42/credential')
   })
 
-  it('regenerateManagedKey posts to the regenerate endpoint', async () => {
+  it('regenerateGroupCredential posts to the provider-and-group regenerate endpoint', async () => {
     mockClient.post.mockResolvedValue({ data: { data: { api_key_id: 7, secret: 'sk-regen' } } })
-    await regenerateManagedKey(7)
-    expect(mockClient.post).toHaveBeenCalledWith('/user/providers/7/managed-key/regenerate')
+    await regenerateGroupCredential(7, '42')
+    expect(mockClient.post).toHaveBeenCalledWith('/user/providers/7/groups/42/credential/regenerate')
   })
 })

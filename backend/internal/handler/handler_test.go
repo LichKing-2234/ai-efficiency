@@ -169,6 +169,14 @@ func TestAuthMeWithValidToken(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Errorf("status = %d, want %d, body: %s", w.Code, http.StatusOK, w.Body.String())
 	}
+	resp := parseResponse(t, w)
+	data := resp["data"].(map[string]interface{})
+	if data["email"] != "admin@test.com" {
+		t.Fatalf("email = %v, want admin@test.com", data["email"])
+	}
+	if data["auth_source"] != "sub2api_sso" {
+		t.Fatalf("auth_source = %v, want sub2api_sso", data["auth_source"])
+	}
 }
 
 func TestAuthMeWithoutToken(t *testing.T) {

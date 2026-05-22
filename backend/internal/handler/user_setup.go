@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/ai-efficiency/backend/internal/auth"
 	"github.com/ai-efficiency/backend/internal/pkg"
@@ -14,8 +15,8 @@ import (
 
 type userSetupService interface {
 	ListProviders(ctx context.Context, req usersetup.ListProvidersRequest) (*usersetup.ListProvidersResponse, error)
-	CreateManagedKey(ctx context.Context, req usersetup.CreateManagedKeyRequest) (*usersetup.CreateManagedKeyResult, error)
-	RegenerateManagedKey(ctx context.Context, req usersetup.RegenerateManagedKeyRequest) (*usersetup.CreateManagedKeyResult, error)
+	CreateGroupCredential(ctx context.Context, req usersetup.CreateGroupCredentialRequest) (*usersetup.CreateGroupCredentialResult, error)
+	RegenerateGroupCredential(ctx context.Context, req usersetup.RegenerateGroupCredentialRequest) (*usersetup.CreateGroupCredentialResult, error)
 }
 
 type UserSetupHandler struct {
@@ -45,7 +46,7 @@ func (h *UserSetupHandler) ListProviders(c *gin.Context) {
 	})
 }
 
-func (h *UserSetupHandler) CreateManagedKey(c *gin.Context) {
+func (h *UserSetupHandler) CreateGroupCredential(c *gin.Context) {
 	uc := auth.GetUserContext(c)
 	if uc == nil {
 		pkg.Error(c, http.StatusUnauthorized, "unauthorized")
@@ -57,10 +58,16 @@ func (h *UserSetupHandler) CreateManagedKey(c *gin.Context) {
 		pkg.Error(c, http.StatusBadRequest, "invalid provider id")
 		return
 	}
+	groupID := strings.TrimSpace(c.Param("group_id"))
+	if groupID == "" {
+		pkg.Error(c, http.StatusBadRequest, "invalid group id")
+		return
+	}
 
-	resp, err := h.service.CreateManagedKey(c.Request.Context(), usersetup.CreateManagedKeyRequest{
+	resp, err := h.service.CreateGroupCredential(c.Request.Context(), usersetup.CreateGroupCredentialRequest{
 		UserID:     uc.UserID,
 		ProviderID: providerID,
+		GroupID:    groupID,
 	})
 	if err != nil {
 		if errors.Is(err, usersetup.ErrManagedKeyAlreadyExists) {
@@ -74,7 +81,7 @@ func (h *UserSetupHandler) CreateManagedKey(c *gin.Context) {
 	pkg.Success(c, resp)
 }
 
-func (h *UserSetupHandler) RegenerateManagedKey(c *gin.Context) {
+func (h *UserSetupHandler) RegenerateGroupCredential(c *gin.Context) {
 	uc := auth.GetUserContext(c)
 	if uc == nil {
 		pkg.Error(c, http.StatusUnauthorized, "unauthorized")
@@ -86,10 +93,16 @@ func (h *UserSetupHandler) RegenerateManagedKey(c *gin.Context) {
 		pkg.Error(c, http.StatusBadRequest, "invalid provider id")
 		return
 	}
+	groupID := strings.TrimSpace(c.Param("group_id"))
+	if groupID == "" {
+		pkg.Error(c, http.StatusBadRequest, "invalid group id")
+		return
+	}
 
-	resp, err := h.service.RegenerateManagedKey(c.Request.Context(), usersetup.RegenerateManagedKeyRequest{
+	resp, err := h.service.RegenerateGroupCredential(c.Request.Context(), usersetup.RegenerateGroupCredentialRequest{
 		UserID:     uc.UserID,
 		ProviderID: providerID,
+		GroupID:    groupID,
 	})
 	if err != nil {
 		pkg.Error(c, http.StatusUnprocessableEntity, err.Error())

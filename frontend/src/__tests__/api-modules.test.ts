@@ -18,7 +18,7 @@ import { listPRs, getPR, syncPRs, settlePR, refreshPRUsage } from '@/api/pr'
 import { getDashboard } from '@/api/efficiency'
 import { getLLMConfig, updateLLMConfig, testLLMConnection } from '@/api/settings'
 import { getDeploymentStatus, checkForUpdate, applyUpdate, rollbackUpdate, restartDeployment } from '@/api/deployment'
-import { getUserProviders, createManagedKey, regenerateManagedKey } from '@/api/user'
+import { getUserProviders, createGroupCredential, regenerateGroupCredential } from '@/api/user'
 
 const mockClient = client as unknown as {
   get: ReturnType<typeof vi.fn>
@@ -162,15 +162,15 @@ describe('deployment API', () => {
 describe('user API aggregate smoke', () => {
   it('calls user setup endpoints', async () => {
     mockClient.get.mockResolvedValue({ data: { data: { providers: [] } } })
-    mockClient.post.mockResolvedValue({ data: { data: { api_key_id: 1, name: 'ae-cli-auto', status: 'active', secret: 'sk-test' } } })
+    mockClient.post.mockResolvedValue({ data: { data: { api_key_id: 1, name: 'alice', status: 'active', secret: 'sk-test' } } })
 
     await getUserProviders()
     expect(mockClient.get).toHaveBeenCalledWith('/user/providers')
 
-    await createManagedKey(7)
-    expect(mockClient.post).toHaveBeenCalledWith('/user/providers/7/managed-key')
+    await createGroupCredential(7, '42')
+    expect(mockClient.post).toHaveBeenCalledWith('/user/providers/7/groups/42/credential')
 
-    await regenerateManagedKey(7)
-    expect(mockClient.post).toHaveBeenCalledWith('/user/providers/7/managed-key/regenerate')
+    await regenerateGroupCredential(7, '42')
+    expect(mockClient.post).toHaveBeenCalledWith('/user/providers/7/groups/42/credential/regenerate')
   })
 })
