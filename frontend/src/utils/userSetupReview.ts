@@ -53,6 +53,10 @@ export function buildInstallCommand(origin: string) {
   return `curl -fsSL https://raw.githubusercontent.com/LichKing-2234/ai-efficiency/main/ae-cli/install.sh | AE_CLI_INSTALL_SERVER_URL=${origin} bash`
 }
 
+export function buildWindowsInstallCommand(origin: string) {
+  return `$env:AE_CLI_INSTALL_SERVER_URL = "${origin}"; iwr -UseB https://raw.githubusercontent.com/LichKing-2234/ai-efficiency/main/ae-cli/install.ps1 | iex`
+}
+
 export function buildLoginCommand(origin: string) {
   return 'ae-cli login'
 }

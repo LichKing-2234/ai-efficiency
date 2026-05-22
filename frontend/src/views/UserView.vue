@@ -12,6 +12,7 @@ import {
   buildDiscoverCommand,
   buildInstallCommand,
   buildLoginCommand,
+  buildWindowsInstallCommand,
   reviewVerifyOutput,
 } from '@/utils/userSetupReview'
 
@@ -33,6 +34,7 @@ const selectedProvider = computed(() => providers.value.find((provider) => provi
 const selectedGroup = computed(() => selectedProvider.value?.groups.find((group) => group.group_id === selectedGroupId.value) ?? null)
 const currentReview = computed(() => (selectedProvider.value ? reviewResults[selectedProvider.value.id] ?? null : null))
 const installCommand = computed(() => buildInstallCommand(currentOrigin.value))
+const windowsInstallCommand = computed(() => buildWindowsInstallCommand(currentOrigin.value))
 const loginCommand = computed(() => buildLoginCommand(currentOrigin.value))
 const deviceLoginCommand = computed(() => buildDeviceLoginCommand(currentOrigin.value))
 const discoverCommand = computed(() => selectedProvider.value ? buildDiscoverCommand(currentOrigin.value, selectedProvider.value.name) : '')
@@ -352,7 +354,10 @@ onMounted(loadProviders)
             <div class="mt-4 space-y-4 text-sm">
               <div class="rounded-md border border-gray-200 p-4">
                 <div class="font-medium text-gray-900">1. Install</div>
+                <div class="mt-3 text-xs font-medium uppercase tracking-wide text-gray-500">macOS / Linux</div>
                 <pre class="mt-2 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-xs text-green-300">{{ installCommand }}</pre>
+                <div class="mt-3 text-xs font-medium uppercase tracking-wide text-gray-500">Windows PowerShell</div>
+                <pre class="mt-2 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-xs text-green-300">{{ windowsInstallCommand }}</pre>
               </div>
 
               <div class="rounded-md border border-gray-200 p-4">

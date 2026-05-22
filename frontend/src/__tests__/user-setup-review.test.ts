@@ -4,6 +4,7 @@ import {
   buildDiscoverCommand,
   buildInstallCommand,
   buildLoginCommand,
+  buildWindowsInstallCommand,
   reviewVerifyOutput,
 } from '@/utils/userSetupReview'
 
@@ -49,6 +50,12 @@ describe('userSetupReview', () => {
   it('buildInstallCommand passes AE_CLI_INSTALL_SERVER_URL to bash', () => {
     expect(buildInstallCommand('https://ae.example.com')).toBe(
       'curl -fsSL https://raw.githubusercontent.com/LichKing-2234/ai-efficiency/main/ae-cli/install.sh | AE_CLI_INSTALL_SERVER_URL=https://ae.example.com bash'
+    )
+  })
+
+  it('buildWindowsInstallCommand passes AE_CLI_INSTALL_SERVER_URL to PowerShell', () => {
+    expect(buildWindowsInstallCommand('https://ae.example.com')).toBe(
+      '$env:AE_CLI_INSTALL_SERVER_URL = "https://ae.example.com"; iwr -UseB https://raw.githubusercontent.com/LichKing-2234/ai-efficiency/main/ae-cli/install.ps1 | iex'
     )
   })
 

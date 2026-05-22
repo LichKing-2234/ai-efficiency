@@ -462,6 +462,12 @@ GET /api/v1/providers
 curl -fsSL https://raw.githubusercontent.com/LichKing-2234/ai-efficiency/main/ae-cli/install.sh | AE_CLI_INSTALL_SERVER_URL=<current-origin> bash
 ```
 
+同时显示 Windows PowerShell 安装命令：
+
+```powershell
+$env:AE_CLI_INSTALL_SERVER_URL = "<current-origin>"; iwr -UseB https://raw.githubusercontent.com/LichKing-2234/ai-efficiency/main/ae-cli/install.ps1 | iex
+```
+
 ### Step 2: Login
 
 显示：
