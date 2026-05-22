@@ -17,7 +17,6 @@ import { listProviders, createProvider, updateProvider, deleteProvider } from '@
 import { listRelayProviders, createRelayProvider, updateRelayProvider, deleteRelayProvider, testRelayProvider } from '@/api/relayProvider'
 import { listPRs, getPR, syncPRs, settlePR, refreshPRUsage } from '@/api/pr'
 import { getDashboard } from '@/api/efficiency'
-import { getDeploymentStatus, checkForUpdate, applyUpdate, rollbackUpdate, restartDeployment } from '@/api/deployment'
 import { getUserProviders, createGroupCredential, regenerateGroupCredential } from '@/api/user'
 
 const mockClient = client as unknown as {
@@ -152,31 +151,6 @@ describe('efficiency API', () => {
     mockClient.get.mockResolvedValue({ data: { data: { total_repos: 5 } } })
     await getDashboard()
     expect(mockClient.get).toHaveBeenCalledWith('/efficiency/dashboard')
-  })
-})
-
-describe('deployment API', () => {
-  it('calls deployment endpoints', async () => {
-    mockClient.get.mockResolvedValue({ data: { data: {} } })
-    mockClient.post.mockResolvedValue({ data: { data: {} } })
-
-    await getDeploymentStatus()
-    expect(mockClient.get).toHaveBeenCalledWith('/settings/deployment')
-
-    await checkForUpdate()
-    expect(mockClient.post).toHaveBeenCalledWith('/settings/deployment/update/check')
-
-    await applyUpdate({ target_version: 'v0.5.0' })
-    expect(mockClient.post).toHaveBeenCalledWith('/settings/deployment/update/apply', { target_version: 'v0.5.0' })
-
-    await rollbackUpdate()
-    expect(mockClient.post).toHaveBeenCalledWith('/settings/deployment/update/rollback')
-  })
-
-  it('calls deployment restart endpoint', async () => {
-    mockClient.post.mockResolvedValue({ data: { data: { phase: 'restart_requested' } } })
-    await restartDeployment()
-    expect(mockClient.post).toHaveBeenCalledWith('/settings/deployment/restart')
   })
 })
 

@@ -1,10 +1,22 @@
 # Frontend Deployment Control Alignment Design
 
-**Status:** Current contract for settings-page deployment control behavior
+**Status:** Retired as of 2026-05-22. The settings page no longer exposes deployment status or backend self-update controls.
 
 ## Overview
 
-本文定义 `ai-efficiency` 前端在 deployment/update 方向的控制方式，目标是让管理端交互更接近 `sub2api` 当前做法，但保持与本仓库现有 backend deployment contract 一致。
+本文原本定义 `ai-efficiency` 前端在 deployment/update 方向的控制方式，目标是让管理端交互更接近 `sub2api` 当前做法，但保持与本仓库现有 backend deployment contract 一致。
+
+## 2026-05-22 Current Contract
+
+当前前端已经移除 settings page 的 Deployment 区域：
+
+- `frontend/src/views/SettingsView.vue` 不再加载 deployment status，也不再提供 check/apply/rollback/restart 按钮。
+- `frontend/src/api/deployment.ts` 已移除；前端不再封装或调用 `/settings/deployment*` 更新接口。
+- 服务重启后的 `/health` 恢复探测已随前端 deployment 控制入口一起移除。
+- router 层仍保留动态 chunk 加载失败后的一次性 reload 保护，但该逻辑现在归属于通用前端 bundle 恢复，不再命名为 deployment recovery。
+- backend deployment/update API、部署脚本和运行时自更新能力仍由 backend/deploy 相关 spec 约束；本次只退役前端控制面。
+
+下方内容保留为 2026-04-13 当时的历史设计背景，不再作为当前实现合同执行。
 
 这次对齐不是把 `sub2api` 的实现整套搬进来，而是只对齐以下原则：
 
@@ -18,7 +30,7 @@
 
 - 本文补充 [`2026-04-09-binary-systemd-install-update-design.md`](./2026-04-09-binary-systemd-install-update-design.md) 中“前端 deployment 设置页按 mode 分流”的 UI/交互合同。
 - 本文不改变 [`2026-04-08-production-deployment-packaging-design.md`](./2026-04-08-production-deployment-packaging-design.md) 与 [`2026-04-09-binary-systemd-install-update-design.md`](./2026-04-09-binary-systemd-install-update-design.md) 中 backend deployment API、compose updater sidecar、systemd binary update 的职责划分。
-- 当本文与更早的“前端可能演进到更强全局状态管理”的讨论冲突时，以本文为准：当前生效合同是 **settings page only**。
+- 当本文与更早的“前端可能演进到更强全局状态管理”的讨论冲突时，以本文为准：2026-04-13 当时的生效合同是 **settings page only**。
 
 ## Scope
 

@@ -8,11 +8,13 @@
 
 **Tech Stack:** Vue 3, Vue Router, Vitest, Vue Test Utils, TypeScript, Vite
 
-**Status:** ✅ 已完成（2026-04-15）
+**Status:** Completed on 2026-04-15; superseded on 2026-05-22 by removal of the frontend Deployment control surface.
 
-**Replay Status:** 历史完成记录。不要直接按本文逐 task 重跑；如需再次执行或扩展，请基于当前前端实现、router/recovery 辅助模块和最新 spec 重写执行计划。
+**Replay Status:** Historical record only. Do not replay these tasks; the current frontend no longer includes settings-page deployment status, update, rollback, or restart controls.
 
-> **Updated:** 2026-04-15 — 基于 focused deployment/frontend tests 与当前实现回填 checkbox。
+**Retirement Note:** The backend deployment/update APIs and deploy tooling remain available for operator workflows, but the Vue admin UI no longer calls them.
+
+> **Updated:** 2026-05-22 — marked superseded after removing the frontend deployment control surface.
 
 ---
 

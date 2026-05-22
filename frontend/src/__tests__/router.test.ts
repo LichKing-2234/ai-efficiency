@@ -10,7 +10,7 @@ vi.mock('@/api/auth', () => ({
   devLogin: vi.fn(),
 }))
 
-vi.mock('@/utils/deploymentRecovery', () => ({
+vi.mock('@/utils/chunkReload', () => ({
   reloadOnceForChunkError: vi.fn(),
 }))
 
@@ -161,7 +161,7 @@ describe('Router error handling', () => {
   let reloadOnceForChunkErrorMock: ReloadOnceMock
 
   beforeEach(async () => {
-    const recovery = await import('@/utils/deploymentRecovery')
+    const recovery = await import('@/utils/chunkReload')
     reloadOnceForChunkErrorMock = recovery.reloadOnceForChunkError as ReloadOnceMock
     reloadOnceForChunkErrorMock.mockReset()
   })

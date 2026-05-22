@@ -19,18 +19,6 @@ const createDefaultRelayProvidersResponse = () => ({
   },
 })
 
-const createDefaultDeploymentStatusResponse = () => ({
-  data: {
-    data: {
-      version: { version: 'v0.4.0', commit: 'abc1234', build_time: '2026-04-08T12:00:00Z' },
-      mode: 'bundled',
-      update_available: true,
-      latest_release: { version: 'v0.5.0', url: 'https://example.com/v0.5.0' },
-      update_status: { phase: 'idle' },
-    },
-  },
-})
-
 vi.mock('@/api/scmProvider', () => ({
   listProviders: vi.fn(),
   createProvider: vi.fn(),
@@ -57,22 +45,10 @@ vi.mock('@/api/user', () => ({
   getUserProviders: vi.fn(),
 }))
 
-vi.mock('@/api/deployment', () => ({
-  getDeploymentStatus: vi.fn(),
-  checkForUpdate: vi.fn(),
-  applyUpdate: vi.fn(),
-  rollbackUpdate: vi.fn(),
-  restartDeployment: vi.fn(),
-}))
-
 vi.mock('@/api/auth', () => ({
   login: vi.fn(),
   getMe: vi.fn(),
   devLogin: vi.fn(),
-}))
-
-vi.mock('@/utils/deploymentRecovery', () => ({
-  waitForServiceRecovery: vi.fn(),
 }))
 
 async function resetApiMocks() {
@@ -119,20 +95,10 @@ async function resetApiMocks() {
     },
   })
 
-  const deploymentApi = await import('@/api/deployment') as any
-  deploymentApi.getDeploymentStatus.mockReset().mockResolvedValue(createDefaultDeploymentStatusResponse())
-  deploymentApi.checkForUpdate.mockReset().mockResolvedValue({ data: { data: null } })
-  deploymentApi.applyUpdate.mockReset().mockResolvedValue({ data: { data: { phase: 'idle' } } })
-  deploymentApi.rollbackUpdate.mockReset().mockResolvedValue({ data: { data: { phase: 'idle' } } })
-  deploymentApi.restartDeployment.mockReset().mockResolvedValue({ data: { data: { phase: 'restart_requested' } } })
-
   const authApi = await import('@/api/auth') as any
   authApi.login.mockReset().mockResolvedValue({ data: { data: null } })
   authApi.getMe.mockReset().mockResolvedValue({ data: { data: {} } })
   authApi.devLogin.mockReset().mockResolvedValue({ data: { data: null } })
-
-  const recoveryApi = await import('@/utils/deploymentRecovery') as any
-  recoveryApi.waitForServiceRecovery.mockReset().mockResolvedValue(undefined)
 }
 
 function createTestRouter() {
@@ -148,12 +114,11 @@ function createTestRouter() {
   })
 }
 
-async function mountSettings(overrides?: { providers?: any[]; relayProviders?: any[]; userProviders?: any[]; credentials?: any[]; deploymentStatus?: any }) {
+async function mountSettings(overrides?: { providers?: any[]; relayProviders?: any[]; userProviders?: any[]; credentials?: any[] }) {
   const { listProviders } = await import('@/api/scmProvider')
   const { listRelayProviders } = await import('@/api/relayProvider')
   const { getUserProviders } = await import('@/api/user')
   const { listCredentials } = await import('@/api/credential')
-  const { getDeploymentStatus } = await import('@/api/deployment')
 
   if (overrides?.providers) {
     ;(listProviders as any).mockResolvedValue({
@@ -168,9 +133,6 @@ async function mountSettings(overrides?: { providers?: any[]; relayProviders?: a
   }
   if (overrides?.credentials) {
     ;(listCredentials as any).mockResolvedValue({ data: { data: overrides.credentials } })
-  }
-  if (overrides?.deploymentStatus) {
-    ;(getDeploymentStatus as any).mockResolvedValue({ data: { data: overrides.deploymentStatus } })
   }
 
   const router = createTestRouter()
@@ -439,31 +401,6 @@ describe('SettingsView', () => {
     expect(testRelayProvider).toHaveBeenCalledWith(1, { platform: 'openai', model: 'gpt-5.4', prompt: 'Say hello from relay provider test' })
     expect(wrapper.text()).toContain('Connection successful')
     expect(wrapper.text()).toContain('pong')
-  })
-
-  it('renders deployment status and update controls', async () => {
-    const wrapper = await mountSettings()
-    expect(wrapper.text()).toContain('Deployment')
-    expect(wrapper.text()).toContain('v0.4.0')
-    expect(wrapper.text()).toContain('v0.5.0')
-    expect(wrapper.text()).toContain('Check Updates')
-    expect(wrapper.text()).toContain('Apply Update')
-    expect(wrapper.text()).toContain('Rollback')
-    expect(wrapper.text()).toContain('Restart Service')
-  })
-
-  it('calls restart deployment when restart control is clicked', async () => {
-    const { restartDeployment } = await import('@/api/deployment')
-    const { waitForServiceRecovery } = await import('@/utils/deploymentRecovery')
-    ;(restartDeployment as any).mockResolvedValue({ data: { data: { phase: 'restart_requested' } } })
-
-    const wrapper = await mountSettings()
-    const button = wrapper.findAll('button').find((b) => b.text().includes('Restart Service'))
-    await button!.trigger('click')
-    await flushPromises()
-
-    expect(restartDeployment).toHaveBeenCalled()
-    expect(waitForServiceRecovery).toHaveBeenCalled()
   })
 
   it('shows loading state when SCM providers are still loading', async () => {
