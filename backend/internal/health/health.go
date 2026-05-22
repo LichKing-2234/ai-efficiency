@@ -1,6 +1,10 @@
-package deployment
+package health
 
-import "context"
+import (
+	"context"
+
+	"github.com/ai-efficiency/backend/internal/buildinfo"
+)
 
 type Pinger interface {
 	Ping(context.Context) error
@@ -19,20 +23,20 @@ type CheckResult struct {
 }
 
 type ReadyReport struct {
-	Status  string        `json:"status"`
-	Version VersionInfo   `json:"version"`
-	Checks  []CheckResult `json:"checks"`
+	Status  string                `json:"status"`
+	Version buildinfo.VersionInfo `json:"version"`
+	Checks  []CheckResult         `json:"checks"`
 }
 
-type HealthService struct {
+type Service struct {
 	db      Pinger
 	redis   Pinger
 	relay   Pinger
-	version VersionInfo
+	version buildinfo.VersionInfo
 }
 
-func NewHealthService(db, redis, relay Pinger, version VersionInfo) *HealthService {
-	return &HealthService{
+func NewService(db, redis, relay Pinger, version buildinfo.VersionInfo) *Service {
+	return &Service{
 		db:      db,
 		redis:   redis,
 		relay:   relay,
@@ -40,14 +44,14 @@ func NewHealthService(db, redis, relay Pinger, version VersionInfo) *HealthServi
 	}
 }
 
-func (s *HealthService) Live() map[string]any {
+func (s *Service) Live() map[string]any {
 	return map[string]any{
 		"status":  "live",
 		"version": s.version,
 	}
 }
 
-func (s *HealthService) Ready(ctx context.Context) ReadyReport {
+func (s *Service) Ready(ctx context.Context) ReadyReport {
 	dbCheck := runCheck(ctx, "database", s.db)
 	redisCheck := runCheck(ctx, "redis", s.redis)
 	relayCheck := runCheck(ctx, "relay", s.relay)

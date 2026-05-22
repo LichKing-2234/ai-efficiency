@@ -19,6 +19,17 @@ func ResolveWritableConfigPath(explicitPath, stateDir string) string {
 	return "config.yaml"
 }
 
+// ResolveRuntimeStateDir returns the state directory used for runtime-editable data.
+func ResolveRuntimeStateDir(getenv func(string) string) string {
+	if getenv == nil {
+		return ""
+	}
+	if v := strings.TrimSpace(getenv("AE_STATE_DIR")); v != "" {
+		return v
+	}
+	return strings.TrimSpace(getenv("AE_DEPLOYMENT_STATE_DIR"))
+}
+
 // EnsureWritableConfigFile materializes the current effective config to disk when no writable config exists yet.
 func EnsureWritableConfigFile(path string, cfg *Config) error {
 	if cfg == nil {
@@ -87,18 +98,6 @@ func configToYAMLMap(cfg *Config) map[string]any {
 		},
 		"encryption": map[string]any{
 			"key": cfg.Encryption.Key,
-		},
-		"deployment": map[string]any{
-			"mode":      cfg.Deployment.Mode,
-			"state_dir": cfg.Deployment.StateDir,
-			"update": map[string]any{
-				"enabled":          cfg.Deployment.Update.Enabled,
-				"apply_enabled":    cfg.Deployment.Update.ApplyEnabled,
-				"release_api_url":  cfg.Deployment.Update.ReleaseAPIURL,
-				"updater_url":      cfg.Deployment.Update.UpdaterURL,
-				"image_repository": cfg.Deployment.Update.ImageRepository,
-				"channel":          cfg.Deployment.Update.Channel,
-			},
 		},
 	}
 }

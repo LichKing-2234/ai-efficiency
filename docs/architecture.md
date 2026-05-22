@@ -56,11 +56,11 @@ flowchart LR
 - The embedded SPA now exposes a regular-user `/user` surface for profile summary, provider-aware CLI install/login/discover guidance, and provider-first, group-second credential self-serve driven by the current relay user's allowed groups. This browser surface is distinct from the CLI-facing `/api/v1/providers` contract used by `ae-cli discover`.
 - Official production deployment now has two supported paths: Docker Compose and Linux systemd.
 - The business entrypoint remains the backend service that also serves the frontend bundle.
-- Docker/Compose mode now runs the backend from a persistent runtime binary under the deployment state directory and updates that runtime binary directly instead of using an updater sidecar.
-- When `AE_CONFIG_PATH` is unset, Docker/Compose and local runtime modes materialize a writable config file under the deployment state directory (or the current working directory outside managed deployment) so admin settings can persist.
-- Linux systemd mode installs the backend under `/opt/ai-efficiency`, keeps config in `/etc/ai-efficiency/config.yaml`, and performs binary self-update plus `.backup` rollback.
+- Docker/Compose mode runs the backend from the image-provided server binary and uses the mounted state directory only for runtime-editable application config.
+- When `AE_CONFIG_PATH` is unset, Docker/Compose and local runtime modes materialize a writable config file under the runtime state directory (or the current working directory outside managed deployment) so admin settings can persist.
+- Linux systemd mode installs the backend under `/opt/ai-efficiency` and keeps config in `/etc/ai-efficiency/config.yaml`; upgrades are operator-driven through the install script or release assets.
 - `deploy/` also includes non-production `dev` / `local` compose paths for local verification.
-- Public health endpoints expose liveness/readiness. Backend deployment status/update APIs remain available for operator workflows, but the embedded SPA no longer exposes deployment status or backend self-update controls in admin settings.
+- Public health endpoints expose liveness/readiness. In-app deployment status, update, rollback, and restart APIs have been removed; upgrades are handled outside the application process.
 - `ae-cli login` now supports both browser PKCE and OAuth device flow. Headless Linux environments are expected to use `ae-cli login --device`, while desktop/browser-capable environments still default to PKCE.
 - Backend-issued auth tokens currently default to a 2-hour access JWT plus a 7-day refresh token. The frontend retries a non-auth `401` once via `/api/v1/auth/refresh`, and `ae-cli` refreshes `~/.ae-cli/token.json` before authenticated commands when the token is expired or within the refresh window.
 - `ae-cli discover` now provides the current user-facing tool-configuration path for supported local agents. It fetches provider-delivered base URLs and API keys from the backend, detects installed tools locally, and writes deterministic local config for Codex, Claude, and Gemini.
@@ -75,7 +75,7 @@ flowchart TD
     subgraph Compose["Docker Compose mode"]
     Browser["Browser"]
     Backend["Backend + Frontend bundle"]
-    Runtime["Persistent runtime binary<br/>/var/lib/ai-efficiency/runtime"]
+    State["Runtime config/state<br/>/var/lib/ai-efficiency"]
     DB[("Postgres")]
     Redis[("Redis")]
     Relay["sub2api / relay"]
@@ -84,13 +84,12 @@ flowchart TD
     Backend --> DB
     Backend --> Redis
     Backend --> Relay
-    Backend --> Runtime
+    Backend --> State
     end
 
     subgraph Systemd["Linux systemd mode"]
     Browser2["Browser"]
     Backend2["ai-efficiency-server"]
-    Systemctl["systemctl / ai-efficiency.service"]
     FS["/opt + /etc + /var/lib"]
     Relay2["sub2api / relay"]
     DB2[("Postgres")]
@@ -100,7 +99,6 @@ flowchart TD
     Backend2 --> DB2
     Backend2 --> Redis2
     Backend2 --> Relay2
-    Backend2 --> Systemctl
     Backend2 --> FS
     end
 ```
@@ -117,7 +115,7 @@ flowchart TD
 - `deploy/ai-efficiency.service` is the packaged systemd unit template.
 - `deploy/migrate-sqlite-to-postgres.sh` is the one-time bootstrap path from local SQLite data into the local Postgres test environment.
 - `deploy/.env.example` is the operator-facing configuration template.
-- Backend deployment status, update, rollback, and restart APIs remain runtime/operator surfaces across Docker and non-Docker modes. They are not exposed through the current Vue admin UI.
+- In-app deployment status, update, rollback, and restart APIs are no longer part of the runtime surface. Operators upgrade Docker deployments by refreshing the image and recreating the service, and upgrade systemd deployments through install/release tooling.
 
 ## Current Runtime Flow
 

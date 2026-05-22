@@ -14,7 +14,7 @@
 - `frontend/src/api/deployment.ts` 已移除；前端不再封装或调用 `/settings/deployment*` 更新接口。
 - 服务重启后的 `/health` 恢复探测已随前端 deployment 控制入口一起移除。
 - router 层仍保留动态 chunk 加载失败后的一次性 reload 保护，但该逻辑现在归属于通用前端 bundle 恢复，不再命名为 deployment recovery。
-- backend deployment/update API、部署脚本和运行时自更新能力仍由 backend/deploy 相关 spec 约束；本次只退役前端控制面。
+- backend deployment/status/update API 与运行时自更新能力也已退役；部署脚本仍作为外部运维入口保留，升级由操作员在应用进程外完成。
 
 下方内容保留为 2026-04-13 当时的历史设计背景，不再作为当前实现合同执行。
 

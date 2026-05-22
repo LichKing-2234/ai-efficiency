@@ -1,5 +1,5 @@
 # Local persistent validation stack.
-# Builds backend from the current checkout, uses bind-mounted local data directories, and skips the updater sidecar.
+# Builds backend from the current checkout and uses bind-mounted local data directories.
 services:
   postgres:
     image: postgres:16-alpine
@@ -67,12 +67,7 @@ services:
       AE_AUTH_LDAP_USER_FILTER: "${AE_AUTH_LDAP_USER_FILTER:-}"
       AE_AUTH_LDAP_TLS: "${AE_AUTH_LDAP_TLS:-false}"
       AE_ENCRYPTION_KEY: "${AE_ENCRYPTION_KEY:-}"
-      AE_DEPLOYMENT_MODE: "local"
-      AE_DEPLOYMENT_STATE_DIR: "/var/lib/ai-efficiency"
-      AE_DEPLOYMENT_FORCE_BOOTSTRAP: "true"
-      AE_DEPLOYMENT_UPDATE_ENABLED: "false"
-      AE_DEPLOYMENT_UPDATE_APPLY_ENABLED: "false"
-      AE_DEPLOYMENT_UPDATE_RELEASE_API_URL: "${AE_DEPLOYMENT_UPDATE_RELEASE_API_URL:-https://api.github.com/repos/LichKing-2234/ai-efficiency/releases/latest}"
+      AE_STATE_DIR: "/var/lib/ai-efficiency"
     ports:
       - "127.0.0.1:${LOCAL_SERVER_PORT:-18081}:8081"
     volumes:

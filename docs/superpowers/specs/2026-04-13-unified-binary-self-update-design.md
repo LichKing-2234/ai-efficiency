@@ -1,6 +1,8 @@
 # Unified Binary Self-Update Design
 
-**Status:** Current contract for unifying Docker and non-Docker updates around backend-managed binary self-update
+**Status:** Retired as of 2026-05-22. Backend-managed binary self-update and in-app deployment update APIs have been removed.
+
+> Retirement note (2026-05-22): Current code no longer contains `backend/internal/deployment`, `backend/cmd/updater`, or `/api/v1/settings/deployment*`. Docker upgrades are image/service operations; systemd upgrades are operator-driven through install/release tooling. This document is preserved as historical design context only.
 
 ## Overview
 

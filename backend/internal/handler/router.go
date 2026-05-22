@@ -37,7 +37,7 @@ func SetupRouter(
 	providerHandler *ProviderHandler,
 	adminSettingsHandler *AdminSettingsHandler,
 	checkpointHandler *CheckpointHandler,
-	deploymentHandler *DeploymentHandler,
+	healthHandler *HealthHandler,
 ) *gin.Engine {
 	r := gin.New()
 	r.RemoveExtraSlash = true
@@ -79,9 +79,9 @@ func SetupRouter(
 	api.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "ok", "service": "ai-efficiency"})
 	})
-	if deploymentHandler != nil {
-		api.GET("/health/live", deploymentHandler.Live)
-		api.GET("/health/ready", deploymentHandler.Ready)
+	if healthHandler != nil {
+		api.GET("/health/live", healthHandler.Live)
+		api.GET("/health/ready", healthHandler.Ready)
 	}
 
 	// Auth routes — no auth middleware
@@ -210,22 +210,13 @@ func SetupRouter(
 	}
 
 	// Settings — admin only
-	if settingsHandler != nil || deploymentHandler != nil {
+	if settingsHandler != nil {
 		settingsGroup := protected.Group("/settings")
 		settingsGroup.Use(auth.RequireAdmin())
 		{
-			if settingsHandler != nil {
-				settingsGroup.GET("/llm", settingsHandler.GetLLMConfig)
-				settingsGroup.PUT("/llm", settingsHandler.UpdateLLMConfig)
-				settingsGroup.POST("/llm/test", settingsHandler.TestLLMConnection)
-			}
-			if deploymentHandler != nil {
-				settingsGroup.GET("/deployment", deploymentHandler.Status)
-				settingsGroup.POST("/deployment/update/check", deploymentHandler.CheckForUpdate)
-				settingsGroup.POST("/deployment/update/apply", deploymentHandler.ApplyUpdate)
-				settingsGroup.POST("/deployment/update/rollback", deploymentHandler.RollbackUpdate)
-				settingsGroup.POST("/deployment/restart", deploymentHandler.Restart)
-			}
+			settingsGroup.GET("/llm", settingsHandler.GetLLMConfig)
+			settingsGroup.PUT("/llm", settingsHandler.UpdateLLMConfig)
+			settingsGroup.POST("/llm/test", settingsHandler.TestLLMConnection)
 		}
 	}
 

@@ -64,7 +64,7 @@ test -d "$WORK_DIR/redis_data"
 cmp -s "$WORK_DIR/.env.example" "$WORK_DIR/deploy/.env.example"
 cmp -s "$WORK_DIR/docker-compose.yml" "$WORK_DIR/deploy/docker-compose.bootstrap.yml"
 ! grep -q 'init-db.sql' "$WORK_DIR/docker-compose.yml"
-for hidden_var in AE_IMAGE_REPOSITORY AE_IMAGE_TAG AE_UPDATER_IMAGE_REPOSITORY AE_UPDATER_IMAGE_TAG; do
+for hidden_var in AE_IMAGE_REPOSITORY AE_IMAGE_TAG; do
   if grep -q "^${hidden_var}=" "$WORK_DIR/.env"; then
     echo "unexpected ${hidden_var} in bootstrap env" >&2
     exit 1

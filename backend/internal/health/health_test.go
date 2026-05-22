@@ -1,9 +1,11 @@
-package deployment
+package health
 
 import (
 	"context"
 	"errors"
 	"testing"
+
+	"github.com/ai-efficiency/backend/internal/buildinfo"
 )
 
 type pingStub struct {
@@ -14,12 +16,12 @@ func (p pingStub) Ping(context.Context) error {
 	return p.err
 }
 
-func TestHealthServiceReadyAndDegradedStates(t *testing.T) {
-	svc := NewHealthService(
+func TestServiceReadyAndDegradedStates(t *testing.T) {
+	svc := NewService(
 		pingStub{},
 		pingStub{},
 		pingStub{err: errors.New("relay down")},
-		CurrentVersion(),
+		buildinfo.CurrentVersion(),
 	)
 
 	report := svc.Ready(context.Background())
@@ -34,12 +36,12 @@ func TestHealthServiceReadyAndDegradedStates(t *testing.T) {
 	}
 }
 
-func TestHealthServiceDatabaseDownIsNotReady(t *testing.T) {
-	svc := NewHealthService(
+func TestServiceDatabaseDownIsNotReady(t *testing.T) {
+	svc := NewService(
 		pingStub{err: errors.New("db timeout")},
 		pingStub{},
 		pingStub{},
-		CurrentVersion(),
+		buildinfo.CurrentVersion(),
 	)
 
 	report := svc.Ready(context.Background())
@@ -48,12 +50,12 @@ func TestHealthServiceDatabaseDownIsNotReady(t *testing.T) {
 	}
 }
 
-func TestHealthServiceNilRelayPingerIsDegradedAndNotConfigured(t *testing.T) {
-	svc := NewHealthService(
+func TestServiceNilRelayPingerIsDegradedAndNotConfigured(t *testing.T) {
+	svc := NewService(
 		pingStub{},
 		pingStub{},
 		nil,
-		CurrentVersion(),
+		buildinfo.CurrentVersion(),
 	)
 
 	report := svc.Ready(context.Background())

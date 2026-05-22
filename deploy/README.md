@@ -3,10 +3,10 @@
 
 ## Overview
 
-`ai-efficiency` now ships with two production deployment paths:
+`ai-efficiency` ships with two production deployment paths:
 
-- Docker Compose with launcher-managed runtime binaries
-- Linux systemd with backend binary self-update
+- Docker Compose
+- Linux systemd
 
 In deployed images, the backend process serves both the API and the embedded frontend bundle.
 
@@ -44,10 +44,8 @@ curl -fsSL https://raw.githubusercontent.com/LichKing-2234/ai-efficiency/main/de
 - print a final summary with next steps
 
 By default the Docker stack pulls `ghcr.io/lichking-2234/ai-efficiency:latest`.
-Docker mode now runs the backend from a persistent runtime binary under `AE_DEPLOYMENT_STATE_DIR`.
-Online update and rollback no longer depend on a separate updater sidecar or Docker socket access.
 The production compose assets configure `backend` with `restart: unless-stopped` and use `GET /api/v1/health/live` for container health checks.
-When `AE_CONFIG_PATH` is not set, the backend also materializes a writable runtime config at `${AE_DEPLOYMENT_STATE_DIR}/config.yaml` so admin-edited settings persist.
+When `AE_CONFIG_PATH` is not set, the backend also materializes a writable runtime config at `${AE_STATE_DIR}/config.yaml` so admin-edited settings persist.
 
 Before starting services, edit `.env` for operator-facing settings.
 At minimum, set:
@@ -116,8 +114,7 @@ Notes:
 
 - builds `backend` from the local repository
 - starts local `postgres` and `redis`
-- forces the container entrypoint to refresh the persisted runtime binary from the newly built bootstrap binary on each recreate
-- disables deployment update/apply controls
+- runs the newly built backend binary directly
 
 ## Local Persistent Mode
 
@@ -133,8 +130,7 @@ Notes:
 - stores app state in `deploy/data`
 - stores Postgres data in `deploy/postgres_data`
 - stores Redis data in `deploy/redis_data`
-- uses bind-mounted local state directories for the backend runtime binary and app data
-- refreshes the persisted runtime binary from the newly built bootstrap binary on each recreate
+- uses bind-mounted local state directories for app data
 
 ## One-Time SQLite Bootstrap
 
@@ -174,15 +170,13 @@ These can be left blank on first run because `deploy/docker-deploy.sh` will gene
 
 ## Advanced Overrides
 
-The default path hides image repository/tag and updater implementation details.
+The default path hides image repository/tag details.
 If you need to override them, append values such as these to `.env` manually:
 
 - `AE_IMAGE_REPOSITORY`
 - `AE_IMAGE_TAG`
-- `AE_UPDATER_IMAGE_REPOSITORY`
-- `AE_UPDATER_IMAGE_TAG`
+- `AE_STATE_DIR`
 - `COMPOSE_PROJECT_NAME`
-- `AE_UPDATER_PROJECT_NAME`
 
 ## Health And Status
 
@@ -190,25 +184,10 @@ After startup:
 
 - public liveness: `GET /api/v1/health/live`
 - public readiness: `GET /api/v1/health/ready`
-- admin deployment status: `GET /api/v1/settings/deployment`
 
-## Online Update
+## Upgrades
 
-Admin users can use the Settings page to:
-
-- check for updates
-- apply an update
-- trigger rollback
-- request a service restart
-
-Docker/Compose mode and non-Docker mode both use backend-managed binary self-update.
-After an update or rollback request completes, restart the service/container to run the swapped binary.
-
-Linux systemd mode downloads the backend bundle from GitHub Releases, verifies `checksums.txt`, replaces `/opt/ai-efficiency/ai-efficiency-server`, and keeps `.backup` for rollback.
-
-The installer assigns ownership of `/opt/ai-efficiency` to the `ai-efficiency` service user, so binary replacement and rollback can happen in-place without extra write privileges.
-
-Restarts do not shell out to `systemctl restart` by default. The backend acknowledges the restart request and then exits; the packaged `ai-efficiency.service` uses `Restart=always`, so systemd brings the process back automatically.
+The application no longer exposes in-app deployment status, online update, rollback, or restart controls. Upgrade Docker deployments by pulling a newer image and recreating the service. Upgrade systemd deployments by rerunning `deploy/install.sh` with the target version.
 
 ## GitHub Release Artifacts
 
@@ -244,9 +223,8 @@ The installer downloads the backend bundle, verifies checksums, installs under `
 
 Edit `/etc/ai-efficiency/config.yaml` before first start.
 
-For binary/systemd mode set:
+For systemd installations set:
 
-- `deployment.mode: systemd`
 - production `db.dsn`
 - production `redis.addr`
 - relay connection settings

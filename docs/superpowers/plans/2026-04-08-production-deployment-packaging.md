@@ -8,13 +8,13 @@
 
 **Tech Stack:** Go (`gin`, `ent`, `viper`, `zap`, `go-redis/v9`), Vue 3 + Pinia + Vitest, Docker Compose, POSIX shell.
 
-**Status:** ✅ 已完成（2026-04-12）
+**Status:** Completed on 2026-04-12; in-app deployment/update control plane retired on 2026-05-22.
 
-**Replay Status:** 历史完成记录。不要直接按本文逐 task 重跑；如需再次执行或扩展，请基于当前 deployment 代码、`deploy/` 资产和最新 spec 重写执行计划。
+**Replay Status:** Historical record only. Do not replay updater-sidecar or deployment API tasks; current code keeps deploy packaging and health checks but removes backend deployment update APIs.
 
-**Source Of Truth:** 已实现的 Compose / updater sidecar / deployment API / local validation path 以当前代码和 `docs/architecture.md` 为准。本文保留实施切片与验收轨迹。
+**Source Of Truth:** Current Compose / local validation behavior is defined by current code, `deploy/`, and `docs/architecture.md`. Updater sidecar and deployment API content below is historical only.
 
-> **Updated:** 2026-04-12 — 基于代码审查回填状态与 checkbox。
+> **Updated:** 2026-05-22 — marked deployment update control plane retired.
 
 ---
 

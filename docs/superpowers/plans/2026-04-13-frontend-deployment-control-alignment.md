@@ -12,7 +12,7 @@
 
 **Replay Status:** Historical record only. Do not replay these tasks; the current frontend no longer includes settings-page deployment status, update, rollback, or restart controls.
 
-**Retirement Note:** The backend deployment/update APIs and deploy tooling remain available for operator workflows, but the Vue admin UI no longer calls them.
+**Retirement Note:** The backend deployment/update APIs were removed after this frontend surface was retired. Deploy tooling remains available for operator-driven upgrades outside the app process.
 
 > **Updated:** 2026-05-22 — marked superseded after removing the frontend deployment control surface.
 

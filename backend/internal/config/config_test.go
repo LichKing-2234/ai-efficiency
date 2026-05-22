@@ -188,19 +188,6 @@ func TestLoadEnvOverrideNested(t *testing.T) {
 	}
 }
 
-func TestLoadDeploymentConfigDoesNotRequireUpdaterURL(t *testing.T) {
-	t.Setenv("AE_DEPLOYMENT_MODE", "bundled")
-	t.Setenv("AE_DEPLOYMENT_STATE_DIR", "/var/lib/ai-efficiency")
-
-	cfg, err := Load("")
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
-	if cfg.Deployment.Update.UpdaterURL != "" {
-		t.Fatalf("deployment updater url = %q, want empty in unified self-update mode", cfg.Deployment.Update.UpdaterURL)
-	}
-}
-
 func TestLoadFileOverridesDefaults(t *testing.T) {
 	dir := t.TempDir()
 	cfgFile := filepath.Join(dir, "config.yaml")
@@ -347,17 +334,10 @@ server:
 	}
 }
 
-func TestLoadDeploymentAndRedisConfigFromEnv(t *testing.T) {
+func TestLoadRedisConfigFromEnv(t *testing.T) {
 	t.Setenv("AE_REDIS_ADDR", "redis:6379")
 	t.Setenv("AE_REDIS_PASSWORD", "redis-pass")
 	t.Setenv("AE_REDIS_DB", "2")
-	t.Setenv("AE_DEPLOYMENT_MODE", "bundled")
-	t.Setenv("AE_DEPLOYMENT_STATE_DIR", "/var/lib/ai-efficiency")
-	t.Setenv("AE_DEPLOYMENT_UPDATE_ENABLED", "true")
-	t.Setenv("AE_DEPLOYMENT_UPDATE_APPLY_ENABLED", "true")
-	t.Setenv("AE_DEPLOYMENT_UPDATE_RELEASE_API_URL", "https://api.github.com/repos/ai-efficiency/releases/latest")
-	t.Setenv("AE_DEPLOYMENT_UPDATE_UPDATER_URL", "http://updater:8090")
-	t.Setenv("AE_DEPLOYMENT_UPDATE_IMAGE_REPOSITORY", "ghcr.io/ai-efficiency/ai-efficiency")
 
 	cfg, err := Load("")
 	if err != nil {
@@ -373,45 +353,12 @@ func TestLoadDeploymentAndRedisConfigFromEnv(t *testing.T) {
 	if cfg.Redis.DB != 2 {
 		t.Errorf("redis db = %d, want %d", cfg.Redis.DB, 2)
 	}
-	if cfg.Deployment.Mode != "bundled" {
-		t.Errorf("deployment mode = %q, want %q", cfg.Deployment.Mode, "bundled")
-	}
-	if !cfg.Deployment.Update.Enabled {
-		t.Error("deployment update enabled = false, want true")
-	}
-	if !cfg.Deployment.Update.ApplyEnabled {
-		t.Error("deployment update apply enabled = false, want true")
-	}
-	if cfg.Deployment.Update.UpdaterURL != "http://updater:8090" {
-		t.Errorf("deployment updater url = %q, want %q", cfg.Deployment.Update.UpdaterURL, "http://updater:8090")
-	}
-	if cfg.Deployment.Update.ImageRepository != "ghcr.io/ai-efficiency/ai-efficiency" {
-		t.Errorf(
-			"deployment image repository = %q, want %q",
-			cfg.Deployment.Update.ImageRepository,
-			"ghcr.io/ai-efficiency/ai-efficiency",
-		)
-	}
 }
 
 func TestLoadExplicitMissingPathReturnsError(t *testing.T) {
 	_, err := Load("/nonexistent/config.yaml")
 	if err == nil {
 		t.Fatal("Load() expected error for missing explicit config path")
-	}
-}
-
-func TestDeploymentDefaultsPointAtGitHubPrimaryRepo(t *testing.T) {
-	cfg, err := Load("")
-	if err != nil {
-		t.Fatalf("Load(): %v", err)
-	}
-
-	if cfg.Deployment.Update.ReleaseAPIURL != "https://api.github.com/repos/LichKing-2234/ai-efficiency/releases/latest" {
-		t.Fatalf("release_api_url = %q", cfg.Deployment.Update.ReleaseAPIURL)
-	}
-	if cfg.Deployment.Update.ImageRepository != "ghcr.io/lichking-2234/ai-efficiency" {
-		t.Fatalf("image_repository = %q", cfg.Deployment.Update.ImageRepository)
 	}
 }
 
@@ -444,6 +391,46 @@ func TestResolveWritableConfigPath(t *testing.T) {
 			got := ResolveWritableConfigPath(tt.explicitPath, tt.stateDir)
 			if got != tt.want {
 				t.Fatalf("ResolveWritableConfigPath(%q, %q) = %q, want %q", tt.explicitPath, tt.stateDir, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestResolveRuntimeStateDir(t *testing.T) {
+	tests := []struct {
+		name string
+		env  map[string]string
+		want string
+	}{
+		{
+			name: "state dir env wins",
+			env: map[string]string{
+				"AE_STATE_DIR":            "/var/lib/ai-efficiency",
+				"AE_DEPLOYMENT_STATE_DIR": "/legacy/state",
+			},
+			want: "/var/lib/ai-efficiency",
+		},
+		{
+			name: "legacy deployment state dir remains fallback",
+			env: map[string]string{
+				"AE_DEPLOYMENT_STATE_DIR": "/legacy/state",
+			},
+			want: "/legacy/state",
+		},
+		{
+			name: "blank env returns empty",
+			want: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			getenv := func(key string) string {
+				return tt.env[key]
+			}
+			got := ResolveRuntimeStateDir(getenv)
+			if got != tt.want {
+				t.Fatalf("ResolveRuntimeStateDir() = %q, want %q", got, tt.want)
 			}
 		})
 	}
@@ -494,18 +481,6 @@ func TestEnsureWritableConfigFileCreatesReloadableConfig(t *testing.T) {
 		},
 		Encryption: EncryptionConfig{
 			Key: "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
-		},
-		Deployment: DeploymentConfig{
-			Mode:     "bundled",
-			StateDir: "/var/lib/ai-efficiency",
-			Update: UpdateConfig{
-				Enabled:         true,
-				ApplyEnabled:    true,
-				ReleaseAPIURL:   "https://example.com/releases/latest",
-				UpdaterURL:      "",
-				ImageRepository: "ghcr.io/example/ai-efficiency",
-				Channel:         "stable",
-			},
 		},
 	}
 
