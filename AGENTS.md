@@ -117,6 +117,17 @@ ai-efficiency/
 - 不要把所有旧 spec 都机械同步到最新实现；要保留架构和设计的演进脉络。
 - 一旦某份 spec 成为历史设计记录，后续演进应优先写入新的 spec，并由新的 spec 解释它与历史 spec 的关系；不要反向修改历史 spec 来追最新实现。
 
+### Test and Example Data Hygiene
+
+- 测试、fixture、spec、plan、示例 JSON/命令输出中**不要写入真实用户数据、真实公司域名邮箱、真实密码、真实 token、真实 API key、真实订阅组名**。
+- 统一使用脱敏占位值，例如：
+  - 邮箱：`alice@example.com`、`bob@example.org`
+  - 用户名：`alice`、`bob`
+  - 密码：`test-password`
+  - group 名：`Group Alpha`、`Group Beta`
+- 如果为了调试临时生成脚本、token、密文转换工具，只能放在临时目录或会话级临时文件中；**不要**把这类调试脚本留在仓库待提交状态。
+- 若发现仓库中的旧测试或历史文档包含真实样例，在不影响当前任务边界的前提下，优先一并做脱敏清理；若范围过大，至少不要继续复制、扩散这些真实值到新的文件和改动中。
+
 ### Plan Tracking
 
 当仓库中已经存在 `docs/superpowers/plans/*.md` 且当前工作与该 plan 对应时，执行 agent 必须把 plan 当作**活的执行台账**维护，而不是只在最后补文档。

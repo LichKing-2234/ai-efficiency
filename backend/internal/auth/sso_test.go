@@ -45,6 +45,9 @@ func (m *mockRelayProvider) Ping(_ context.Context) error { return nil }
 func (m *mockRelayProvider) GetUser(_ context.Context, _ int64) (*relay.User, error) {
 	return nil, nil
 }
+func (m *mockRelayProvider) ListAllowedGroupsForUser(_ context.Context, _ int64) ([]relay.Group, error) {
+	return nil, nil
+}
 func (m *mockRelayProvider) FindUserByEmail(_ context.Context, _ string) (*relay.User, error) {
 	return nil, nil
 }

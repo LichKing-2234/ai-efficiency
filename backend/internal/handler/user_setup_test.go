@@ -62,12 +62,12 @@ func TestUserProvidersReturnsGroupsPerProvider(t *testing.T) {
 					Groups: []usersetup.GroupCredentialSummary{
 						{
 							GroupID:   "42",
-							GroupName: "OpenAI-RD",
+							GroupName: "Group One",
 							Platform:  "openai",
 							Credential: usersetup.GroupCredentialState{
 								State:    "existing_hidden",
 								APIKeyID: 44,
-								Name:     "luxuhui",
+								Name:     "user_key",
 								Status:   "active",
 							},
 						},
@@ -100,7 +100,7 @@ func TestCreateGroupCredentialTranslatesRouteParams(t *testing.T) {
 	stub := &stubUserSetupService{
 		createGroupResult: &usersetup.CreateGroupCredentialResult{
 			APIKeyID: 77,
-			Name:     "luxuhui",
+			Name:     "user_key",
 			Status:   "active",
 			Secret:   "sk-new",
 		},
@@ -126,7 +126,7 @@ func TestRegenerateGroupCredentialTranslatesRouteParams(t *testing.T) {
 	stub := &stubUserSetupService{
 		regenerateGroupResult: &usersetup.CreateGroupCredentialResult{
 			APIKeyID: 88,
-			Name:     "luxuhui",
+			Name:     "user_key",
 			Status:   "active",
 			Secret:   "sk-regen",
 		},

@@ -89,7 +89,7 @@ func TestResolveOrProvisionRelayUser_ProvisionsCanonicalUsernameAndDefaultConcur
 	api := &fakeRelayIdentityAPI{findResult: nil}
 
 	r := NewRelayIdentityResolver(api, "ldap.local")
-	u, _, err := r.ResolveOrProvisionWithPassword(context.Background(), "carol@agora.io", "carol@agora.io", "ldap-pass")
+	u, _, err := r.ResolveOrProvisionWithPassword(context.Background(), "dana@example.org", "dana@example.org", "ldap-pass")
 	if err != nil {
 		t.Fatalf("ResolveOrProvisionWithPassword() unexpected error: %v", err)
 	}
@@ -101,11 +101,11 @@ func TestResolveOrProvisionRelayUser_ProvisionsCanonicalUsernameAndDefaultConcur
 	}
 
 	req := api.createUserCalls[0]
-	if req.Username != "carol" {
-		t.Fatalf("expected Username=carol, got %q", req.Username)
+	if req.Username != "dana" {
+		t.Fatalf("expected Username=dana, got %q", req.Username)
 	}
-	if req.Email != "carol@agora.io" {
-		t.Fatalf("expected Email=carol@agora.io, got %q", req.Email)
+	if req.Email != "dana@example.org" {
+		t.Fatalf("expected Email=dana@example.org, got %q", req.Email)
 	}
 	if req.Password != "ldap-pass" {
 		t.Fatalf("expected Password to use current LDAP password, got %q", req.Password)
@@ -124,7 +124,7 @@ func TestResolveOrProvisionRelayUser_UpdatesExistingUserPasswordAndConcurrency(t
 	}
 
 	r := NewRelayIdentityResolver(api, "ldap.local")
-	u, password, err := r.ResolveOrProvisionWithPassword(context.Background(), "alice@agora.io", "alice@agora.io", "ldap-pass")
+	u, password, err := r.ResolveOrProvisionWithPassword(context.Background(), "erin@example.org", "erin@example.org", "ldap-pass")
 	if err != nil {
 		t.Fatalf("ResolveOrProvisionWithPassword() unexpected error: %v", err)
 	}
@@ -156,7 +156,7 @@ func TestResolveOrProvisionRelayUser_FallsBackToLegacyEmailUsernameAndRenames(t 
 		findResult: nil,
 	}
 
-	rawUsername := "alice@agora.io"
+	rawUsername := "erin@example.org"
 	legacy := &relay.User{ID: 7, Username: rawUsername, Email: rawUsername, Concurrency: 1}
 	api.findByUsernameCalls = nil
 	api.findResult = nil
@@ -169,7 +169,7 @@ func TestResolveOrProvisionRelayUser_FallsBackToLegacyEmailUsernameAndRenames(t 
 		findFn: func(_ context.Context, username string) (*relay.User, error) {
 			lookupCount++
 			api2.findByUsernameCalls = append(api2.findByUsernameCalls, username)
-			if username == "alice" {
+			if username == "erin" {
 				return nil, nil
 			}
 			if username == rawUsername {
@@ -191,13 +191,13 @@ func TestResolveOrProvisionRelayUser_FallsBackToLegacyEmailUsernameAndRenames(t 
 	if lookupCount != 2 {
 		t.Fatalf("expected 2 lookups, got %d", lookupCount)
 	}
-	if got := api2.findByUsernameCalls; len(got) != 2 || got[0] != "alice" || got[1] != rawUsername {
+	if got := api2.findByUsernameCalls; len(got) != 2 || got[0] != "erin" || got[1] != rawUsername {
 		t.Fatalf("unexpected lookup sequence: %+v", got)
 	}
 	if len(api2.updateUserCalls) != 1 {
 		t.Fatalf("expected UpdateUser called once, got %d", len(api2.updateUserCalls))
 	}
-	if api2.updateUserCalls[0].req.Username != "alice" {
-		t.Fatalf("expected UpdateUser username rename to alice, got %q", api2.updateUserCalls[0].req.Username)
+	if api2.updateUserCalls[0].req.Username != "erin" {
+		t.Fatalf("expected UpdateUser username rename to erin, got %q", api2.updateUserCalls[0].req.Username)
 	}
 }

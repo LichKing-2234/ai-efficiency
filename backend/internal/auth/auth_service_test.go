@@ -490,8 +490,8 @@ func TestEnsureLocalUserRepairsWrongStoredRelayUserIDForLDAP(t *testing.T) {
 	ctx := context.Background()
 
 	_, err := client.User.Create().
-		SetUsername("liupenghui@agora.io").
-		SetEmail("liupenghui@agora.io").
+		SetUsername("carol@example.com").
+		SetEmail("carol@example.com").
 		SetAuthSource(entuser.AuthSourceLdap).
 		SetRole(entuser.RoleUser).
 		SetRelayUserID(15).
@@ -501,13 +501,13 @@ func TestEnsureLocalUserRepairsWrongStoredRelayUserIDForLDAP(t *testing.T) {
 	}
 
 	api := &fakeRelayIdentityAPI{
-		findResult: &relay.User{ID: 21, Username: "liupenghui", Email: "liupenghui@agora.io"},
+		findResult: &relay.User{ID: 21, Username: "carol", Email: "carol@example.com"},
 	}
 	svc.SetRelayIdentityResolver(NewRelayIdentityResolver(api, "ldap.local"))
 
 	info := &UserInfo{
-		Username:   "liupenghui@agora.io",
-		Email:      "liupenghui@agora.io",
+		Username:   "carol@example.com",
+		Email:      "carol@example.com",
 		Role:       "user",
 		AuthSource: "ldap",
 	}
@@ -522,11 +522,11 @@ func TestEnsureLocalUserRepairsWrongStoredRelayUserIDForLDAP(t *testing.T) {
 	if info.RelayUserID == nil || *info.RelayUserID != 21 {
 		t.Fatalf("info.RelayUserID = %v, want 21", info.RelayUserID)
 	}
-	if len(api.findByUsernameCalls) != 1 || api.findByUsernameCalls[0] != "liupenghui" {
-		t.Fatalf("expected resolver lookup for liupenghui, got %+v", api.findByUsernameCalls)
+	if len(api.findByUsernameCalls) != 1 || api.findByUsernameCalls[0] != "carol" {
+		t.Fatalf("expected resolver lookup for carol, got %+v", api.findByUsernameCalls)
 	}
 
-	dbUser, err := client.User.Query().Where(entuser.UsernameEQ("liupenghui@agora.io")).Only(ctx)
+	dbUser, err := client.User.Query().Where(entuser.UsernameEQ("carol@example.com")).Only(ctx)
 	if err != nil {
 		t.Fatalf("query user: %v", err)
 	}
