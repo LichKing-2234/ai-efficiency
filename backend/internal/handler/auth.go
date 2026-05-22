@@ -15,11 +15,12 @@ import (
 // AuthHandler handles authentication HTTP requests.
 type AuthHandler struct {
 	authService *auth.Service
+	entClient    *ent.Client
 }
 
 // NewAuthHandler creates a new auth handler.
-func NewAuthHandler(authService *auth.Service) *AuthHandler {
-	return &AuthHandler{authService: authService}
+func NewAuthHandler(authService *auth.Service, entClient *ent.Client) *AuthHandler {
+	return &AuthHandler{authService: authService, entClient: entClient}
 }
 
 // Login handles POST /api/v1/auth/login
@@ -71,7 +72,28 @@ func (h *AuthHandler) Me(c *gin.Context) {
 		pkg.Error(c, http.StatusUnauthorized, "not authenticated")
 		return
 	}
-	pkg.Success(c, uc)
+	if h.entClient == nil {
+		pkg.Success(c, gin.H{
+			"id":          uc.UserID,
+			"username":    uc.Username,
+			"email":       "",
+			"role":        uc.Role,
+			"auth_source": "",
+		})
+		return
+	}
+	u, err := h.entClient.User.Get(c.Request.Context(), uc.UserID)
+	if err != nil {
+		pkg.Error(c, http.StatusInternalServerError, "failed to load user")
+		return
+	}
+	pkg.Success(c, gin.H{
+		"id":          u.ID,
+		"username":    u.Username,
+		"email":       u.Email,
+		"role":        string(u.Role),
+		"auth_source": string(u.AuthSource),
+	})
 }
 
 // DevLogin handles POST /api/v1/auth/dev-login (debug mode only)

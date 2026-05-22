@@ -44,6 +44,7 @@ type Provider interface {
 
 	Authenticate(ctx context.Context, username, password string) (*User, error)
 	GetUser(ctx context.Context, userID int64) (*User, error)
+	ListAllowedGroupsForUser(ctx context.Context, userID int64) ([]Group, error)
 	FindUserByEmail(ctx context.Context, email string) (*User, error)
 	FindUserByUsername(ctx context.Context, username string) (*User, error)
 	CreateUser(ctx context.Context, req CreateUserRequest) (*User, error)

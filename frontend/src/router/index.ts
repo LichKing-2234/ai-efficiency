@@ -52,6 +52,11 @@ const router = createRouter({
       component: () => import('@/views/events/EventsView.vue'),
     },
     {
+      path: '/user',
+      name: 'User',
+      component: () => import('@/views/UserView.vue'),
+    },
+    {
       path: '/repos/:id',
       name: 'RepoDetail',
       component: () => import('@/views/repos/RepoDetailView.vue'),

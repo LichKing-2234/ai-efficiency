@@ -6,6 +6,7 @@ import (
 	"github.com/ai-efficiency/backend/internal/oauth"
 	"github.com/ai-efficiency/backend/internal/repo"
 	"github.com/ai-efficiency/backend/internal/toolusage"
+	"github.com/ai-efficiency/backend/internal/usersetup"
 	"github.com/ai-efficiency/backend/internal/web"
 	"github.com/ai-efficiency/backend/internal/webhook"
 	"github.com/gin-gonic/gin"
@@ -61,7 +62,7 @@ func SetupRouter(
 	}
 
 	// Handlers
-	authHandler := NewAuthHandler(authService)
+	authHandler := NewAuthHandler(authService, entClient)
 	credentialHandler := NewCredentialHandler(entClient, encryptionKey)
 	scmProviderHandler := NewSCMProviderHandler(entClient, encryptionKey)
 	repoHandler := NewRepoHandler(repoService)
@@ -69,6 +70,8 @@ func SetupRouter(
 	efficiencyHandler := NewEfficiencyHandler(entClient)
 	toolUsageHandler := NewToolUsageHandler(toolusage.NewService(entClient))
 	eventsHandler := NewEventsHandler(toolusage.NewQueryService(entClient))
+	userSetupService := usersetup.NewService(entClient, providerHandler, encryptionKey)
+	userSetupHandler := NewUserSetupHandler(userSetupService)
 
 	api := r.Group("/api/v1")
 
@@ -155,6 +158,13 @@ func SetupRouter(
 		eventsGroup.GET("/:id", eventsHandler.Get)
 	}
 
+	userGroup := protected.Group("/user")
+	{
+		userGroup.GET("/providers", userSetupHandler.ListProviders)
+		userGroup.POST("/providers/:id/groups/:group_id/credential", userSetupHandler.CreateGroupCredential)
+		userGroup.POST("/providers/:id/groups/:group_id/credential/regenerate", userSetupHandler.RegenerateGroupCredential)
+	}
+
 	if checkpointHandler != nil {
 		checkpointGroup := protected.Group("/checkpoints")
 		{
@@ -174,6 +184,7 @@ func SetupRouter(
 			adminProviderGroup.POST("", providerHandler.Create)
 			adminProviderGroup.PUT("/:id", providerHandler.Update)
 			adminProviderGroup.DELETE("/:id", providerHandler.Delete)
+			adminProviderGroup.POST("/:id/test", providerHandler.Test)
 		}
 	}
 

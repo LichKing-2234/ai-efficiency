@@ -2,14 +2,16 @@
 import { onMounted, ref } from 'vue'
 import AppLayout from '@/components/AppLayout.vue'
 import { listProviders, createProvider, updateProvider, deleteProvider } from '@/api/scmProvider'
+import { listRelayProviders, createRelayProvider, updateRelayProvider, deleteRelayProvider, testRelayProvider } from '@/api/relayProvider'
 import { listCredentials, createCredential, updateCredential, deleteCredential } from '@/api/credential'
-import { getLLMConfig, updateLLMConfig, testLLMConnection } from '@/api/settings'
+import { getUserProviders } from '@/api/user'
 import { getDeploymentStatus, checkForUpdate, applyUpdate, rollbackUpdate, restartDeployment } from '@/api/deployment'
 import { waitForServiceRecovery } from '@/utils/deploymentRecovery'
 import client from '@/api/client'
-import type { Credential, DeploymentStatus, SCMProvider, UpdateStatus } from '@/types'
+import type { Credential, DeploymentStatus, RelayProvider, SCMProvider, UpdateStatus, UserProviderSummary } from '@/types'
 
 const providers = ref<SCMProvider[]>([])
+const relayProviders = ref<RelayProvider[]>([])
 const credentials = ref<Credential[]>([])
 const loading = ref(true)
 
@@ -30,6 +32,31 @@ const formLoading = ref(false)
 // Delete confirm
 const showDeleteConfirm = ref<number | null>(null)
 
+// Relay provider dialog
+const relayLoading = ref(true)
+const showRelayDialog = ref(false)
+const editingRelayId = ref<number | null>(null)
+const relayForm = ref({
+  name: '',
+  display_name: '',
+  base_url: '',
+  admin_url: '',
+  admin_api_key: '',
+  is_primary: false,
+  enabled: true,
+})
+const relayFormError = ref('')
+const relayFormLoading = ref(false)
+const showRelayDeleteConfirm = ref<number | null>(null)
+const relayTesting = ref(false)
+const relayTestProviderId = ref<number | null>(null)
+const relayTestPromptDraft = ref('Hi')
+const relayTestPlatform = ref('')
+const relayTestModel = ref('')
+const showRelayTestDialog = ref(false)
+const relayTestResult = ref<{ providerId: number; success: boolean; message: string; response?: string } | null>(null)
+const userProviderSummaries = ref<UserProviderSummary[]>([])
+
 // Credential dialog
 const showCredentialDialog = ref(false)
 const editingCredentialId = ref<number | null>(null)
@@ -47,20 +74,6 @@ const credentialFormError = ref('')
 const credentialFormLoading = ref(false)
 const showCredentialDeleteConfirm = ref<number | null>(null)
 
-// LLM config
-const llmForm = ref({ model: 'gpt-4' })
-const llmRelayURL = ref('')
-const llmRelayAPIKey = ref('')
-const llmRelayAdminAPIKey = ref('')
-const llmEnabled = ref(false)
-const llmSaving = ref(false)
-const llmError = ref('')
-const llmSuccess = ref('')
-const llmTesting = ref(false)
-const llmTestResult = ref<{ success: boolean; message: string; response?: string } | null>(null)
-const showLLMTestDialog = ref(false)
-const llmTestPromptDraft = ref('Hi')
-
 // Deployment status
 const deployment = ref<DeploymentStatus | null>(null)
 const deploymentLoading = ref(false)
@@ -76,7 +89,7 @@ const ldapError = ref('')
 const ldapSuccess = ref('')
 
 onMounted(async () => {
-  await Promise.all([fetchProviders(), fetchCredentials(), fetchLLMConfig(), fetchDeploymentStatus(), fetchLDAPConfig()])
+  await Promise.all([fetchProviders(), fetchRelayProviders(), fetchUserProviders(), fetchCredentials(), fetchDeploymentStatus(), fetchLDAPConfig()])
 })
 
 async function fetchProviders() {
@@ -89,6 +102,28 @@ async function fetchProviders() {
     providers.value = []
   } finally {
     loading.value = false
+  }
+}
+
+async function fetchRelayProviders() {
+  relayLoading.value = true
+  try {
+    const res = await listRelayProviders()
+    const data = res.data.data
+    relayProviders.value = Array.isArray(data) ? data : []
+  } catch {
+    relayProviders.value = []
+  } finally {
+    relayLoading.value = false
+  }
+}
+
+async function fetchUserProviders() {
+  try {
+    const res = await getUserProviders()
+    userProviderSummaries.value = res.data.data?.providers ?? []
+  } catch {
+    userProviderSummaries.value = []
   }
 }
 
@@ -187,6 +222,129 @@ async function confirmDelete(id: number) {
   }
 }
 
+function openAddRelayDialog() {
+  editingRelayId.value = null
+  relayForm.value = {
+    name: '',
+    display_name: '',
+    base_url: '',
+    admin_url: '',
+    admin_api_key: '',
+    is_primary: relayProviders.value.length === 0,
+    enabled: true,
+  }
+  relayFormError.value = ''
+  showRelayDialog.value = true
+}
+
+function openEditRelayDialog(provider: RelayProvider) {
+  editingRelayId.value = provider.id
+  relayForm.value = {
+    name: provider.name,
+    display_name: provider.display_name,
+    base_url: provider.base_url,
+    admin_url: provider.admin_url,
+    admin_api_key: '',
+    is_primary: provider.is_primary,
+    enabled: provider.enabled,
+  }
+  relayFormError.value = ''
+  showRelayDialog.value = true
+}
+
+async function handleRelaySubmit() {
+  relayFormError.value = ''
+  if (!relayForm.value.name.trim()) { relayFormError.value = 'Name is required'; return }
+  if (!relayForm.value.display_name.trim()) { relayFormError.value = 'Display name is required'; return }
+  if (!relayForm.value.base_url.trim()) { relayFormError.value = 'Base URL is required'; return }
+  if (!relayForm.value.admin_url.trim()) { relayFormError.value = 'Admin URL is required'; return }
+  if (!editingRelayId.value && !relayForm.value.admin_api_key.trim()) { relayFormError.value = 'Admin API key is required'; return }
+
+  relayFormLoading.value = true
+  try {
+    if (editingRelayId.value) {
+      await updateRelayProvider(editingRelayId.value, {
+        display_name: relayForm.value.display_name,
+        base_url: relayForm.value.base_url,
+        admin_url: relayForm.value.admin_url,
+        admin_api_key: relayForm.value.admin_api_key.trim() || undefined,
+        is_primary: relayForm.value.is_primary,
+        enabled: relayForm.value.enabled,
+      })
+    } else {
+      await createRelayProvider({
+        name: relayForm.value.name,
+        display_name: relayForm.value.display_name,
+        base_url: relayForm.value.base_url,
+        admin_url: relayForm.value.admin_url,
+        admin_api_key: relayForm.value.admin_api_key,
+        is_primary: relayForm.value.is_primary,
+        enabled: relayForm.value.enabled,
+      })
+    }
+    showRelayDialog.value = false
+    await fetchRelayProviders()
+  } catch (e: any) {
+    relayFormError.value = e.response?.data?.message || 'Operation failed'
+  } finally {
+    relayFormLoading.value = false
+  }
+}
+
+async function confirmDeleteRelay(id: number) {
+  try {
+    await deleteRelayProvider(id)
+    showRelayDeleteConfirm.value = null
+    await fetchRelayProviders()
+  } catch {
+    // delete failed
+  }
+}
+
+function openRelayTestDialog(provider: RelayProvider) {
+  relayTestProviderId.value = provider.id
+  relayTestPromptDraft.value = 'Hi'
+  relayTestPlatform.value = relayTestPlatforms(provider.id)[0] ?? ''
+  relayTestModel.value = ''
+  showRelayTestDialog.value = true
+}
+
+function closeRelayTestDialog() {
+  showRelayTestDialog.value = false
+}
+
+async function confirmTestRelayProvider() {
+  if (!relayTestProviderId.value) return
+  const providerId = relayTestProviderId.value
+  const prompt = relayTestPromptDraft.value
+  const platform = relayTestPlatform.value
+  const model = relayTestModel.value
+
+  closeRelayTestDialog()
+  relayTesting.value = true
+  try {
+    const res = await testRelayProvider(providerId, { platform, model, prompt })
+    relayTestResult.value = {
+      providerId,
+      ...(res.data.data ?? { success: false, message: 'Request failed' }),
+    }
+  } catch (e: any) {
+    relayTestResult.value = {
+      providerId,
+      success: false,
+      message: e.response?.data?.message || e.message || 'Request failed',
+    }
+  } finally {
+    relayTesting.value = false
+  }
+}
+
+function relayTestPlatforms(providerId: number) {
+  const provider = userProviderSummaries.value.find((item) => item.id === providerId)
+  if (!provider) return []
+  return Array.from(new Set(provider.groups.map((group) => group.platform).filter(Boolean))).sort()
+}
+
 function openAddCredentialDialog() {
   editingCredentialId.value = null
   credentialForm.value = {
@@ -275,74 +433,6 @@ async function confirmDeleteCredential(id: number) {
 
 function formatDate(date: string) {
   return new Date(date).toLocaleDateString()
-}
-
-// LLM config functions
-function applyLLMConfig(data: any) {
-  if (!data) return
-  llmRelayURL.value = data.relay_url || ''
-  llmRelayAPIKey.value = data.relay_api_key || ''
-  llmRelayAdminAPIKey.value = data.relay_admin_api_key || ''
-  llmForm.value = {
-    model: data.model || 'gpt-4',
-  }
-  llmEnabled.value = !!data.enabled
-}
-
-async function fetchLLMConfig() {
-  try {
-    const res = await getLLMConfig()
-    applyLLMConfig(res.data.data)
-  } catch {
-    // not configured yet
-  }
-}
-
-async function handleSaveLLM() {
-  llmError.value = ''
-  llmSuccess.value = ''
-  llmSaving.value = true
-  try {
-    const res = await updateLLMConfig({
-      ...llmForm.value,
-      relay_admin_api_key: llmRelayAdminAPIKey.value,
-    })
-    applyLLMConfig(res.data.data)
-    llmSuccess.value = 'LLM configuration saved'
-    setTimeout(() => { llmSuccess.value = '' }, 3000)
-  } catch (e: any) {
-    llmError.value = e.response?.data?.message || e.message || 'Failed to save'
-  } finally {
-    llmSaving.value = false
-  }
-}
-
-function openLLMTestDialog() {
-  llmTestPromptDraft.value = 'Hi'
-  showLLMTestDialog.value = true
-}
-
-function closeLLMTestDialog() {
-  showLLMTestDialog.value = false
-}
-
-async function handleTestLLM(prompt: string) {
-  llmTestResult.value = null
-  llmTesting.value = true
-  try {
-    const res = await testLLMConnection({ prompt })
-    llmTestResult.value = res.data.data ?? null
-  } catch (e: any) {
-    llmTestResult.value = { success: false, message: e.response?.data?.message || e.message || 'Request failed' }
-  } finally {
-    llmTesting.value = false
-  }
-}
-
-async function confirmTestLLM() {
-  const prompt = llmTestPromptDraft.value
-  closeLLMTestDialog()
-  await handleTestLLM(prompt)
 }
 
 async function fetchDeploymentStatus() {
@@ -615,59 +705,89 @@ async function handleTestLDAP() {
       </div>
     </div>
 
-    <!-- LLM Configuration -->
+    <!-- Relay Providers -->
     <div class="mt-8 space-y-4">
-      <h2 class="text-xl font-bold text-gray-900">Relay Configuration</h2>
-      <div class="overflow-hidden rounded-lg bg-white shadow p-6">
-        <div class="space-y-4">
-          <div class="flex items-center justify-between">
-            <span class="text-sm text-gray-500">Status</span>
-            <span
-              class="inline-flex rounded-full px-2 text-xs font-semibold leading-5"
-              :class="llmEnabled ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-500'"
-            >{{ llmEnabled ? 'Enabled' : 'Not configured' }}</span>
-          </div>
-
-          <div>
-            <label class="block text-sm font-medium text-gray-700">Relay URL</label>
-            <input :value="llmRelayURL" type="text" disabled class="mt-1 block w-full rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-500" />
-            <p class="mt-1 text-xs text-gray-400">Configured via relay section in config.yaml</p>
-          </div>
-
-          <div>
-            <label class="block text-sm font-medium text-gray-700">Relay API Key</label>
-            <input :value="llmRelayAPIKey" type="text" disabled class="mt-1 block w-full rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-500" />
-            <p class="mt-1 text-xs text-gray-400">Used for relay LLM requests.</p>
-          </div>
-
-          <div>
-            <label class="block text-sm font-medium text-gray-700">Relay Admin API Key</label>
-            <input v-model="llmRelayAdminAPIKey" type="password" placeholder="admin-..." class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
-            <p class="mt-1 text-xs text-gray-400">Used as <code class="bg-gray-100 px-1 rounded">X-API-Key</code> for relay admin APIs.</p>
-          </div>
-
-          <div>
-            <label class="block text-sm font-medium text-gray-700">Model</label>
-            <input v-model="llmForm.model" type="text" placeholder="gpt-4" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
-          </div>
-
-          <div v-if="llmError" class="rounded-md bg-red-50 p-3 text-sm text-red-700">{{ llmError }}</div>
-          <div v-if="llmSuccess" class="rounded-md bg-green-50 p-3 text-sm text-green-700">{{ llmSuccess }}</div>
-
-          <div v-if="llmTestResult" class="rounded-md p-3 text-sm" :class="llmTestResult.success ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'">
-            <div>{{ llmTestResult.message }}</div>
-            <pre v-if="llmTestResult.response" class="mt-2 whitespace-pre-wrap rounded-md bg-white/70 px-3 py-2 font-mono text-xs text-gray-700">{{ llmTestResult.response }}</pre>
-          </div>
-
-          <div class="flex justify-end space-x-3">
-            <button @click="openLLMTestDialog" :disabled="llmTesting" class="rounded-md border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50">
-              {{ llmTesting ? 'Testing...' : 'Test Connection' }}
-            </button>
-            <button @click="handleSaveLLM" :disabled="llmSaving" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50">
-              {{ llmSaving ? 'Saving...' : 'Save' }}
-            </button>
-          </div>
+      <div class="flex items-center justify-between">
+        <div>
+          <h2 class="text-xl font-bold text-gray-900">Relay Providers</h2>
+          <p class="mt-1 text-sm text-gray-500">Manage DB-backed relay endpoints used for SSO, API key delivery, and CLI tool configuration.</p>
         </div>
+        <button
+          class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+          @click="openAddRelayDialog"
+        >
+          Add Relay Provider
+        </button>
+      </div>
+
+      <div v-if="relayLoading" class="text-center text-gray-500 py-12">Loading relay providers...</div>
+
+      <div v-else class="overflow-hidden rounded-lg bg-white shadow">
+        <table class="min-w-full divide-y divide-gray-200">
+          <thead class="bg-gray-50">
+            <tr>
+              <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Name</th>
+              <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Primary</th>
+              <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Base URL</th>
+              <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">State</th>
+              <th class="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Actions</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-200">
+            <tr v-for="provider in relayProviders" :key="provider.id">
+              <td class="px-6 py-4">
+                <div class="text-sm font-medium text-gray-900">{{ provider.display_name }}</div>
+                <div class="mt-1 font-mono text-xs text-gray-500">{{ provider.name }}</div>
+                <div
+                  v-if="relayTestResult?.providerId === provider.id"
+                  class="mt-3 rounded-md p-3 text-sm"
+                  :class="relayTestResult.success ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'"
+                >
+                  <div>{{ relayTestResult.message }}</div>
+                  <pre v-if="relayTestResult.response" class="mt-2 whitespace-pre-wrap rounded-md bg-white/70 px-3 py-2 font-mono text-xs text-gray-700">{{ relayTestResult.response }}</pre>
+                </div>
+              </td>
+              <td class="px-6 py-4">
+                <div v-if="provider.is_primary" class="inline-flex rounded-full bg-emerald-100 px-2 py-1 text-xs font-semibold text-emerald-700">Primary</div>
+                <div v-else class="inline-flex rounded-full bg-gray-100 px-2 py-1 text-xs font-semibold text-gray-500">Secondary</div>
+              </td>
+              <td class="px-6 py-4 font-mono text-xs text-gray-500">
+                <div>{{ provider.base_url }}</div>
+                <div class="mt-1">{{ provider.admin_url }}</div>
+              </td>
+              <td class="px-6 py-4">
+                <span
+                  class="inline-flex rounded-full px-2 py-1 text-xs font-semibold"
+                  :class="provider.enabled ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-500'"
+                >{{ provider.enabled ? 'Enabled' : 'Disabled' }}</span>
+              </td>
+              <td class="whitespace-nowrap px-6 py-4 text-right text-sm space-x-3">
+                <button
+                  :data-testid="`relay-provider-test-${provider.id}`"
+                  class="text-slate-600 hover:text-slate-800"
+                  :disabled="relayTesting"
+                  @click="openRelayTestDialog(provider)"
+                >{{ relayTesting && relayTestProviderId === provider.id ? 'Testing...' : 'Test' }}</button>
+                <button :data-testid="`relay-provider-edit-${provider.id}`" class="text-indigo-600 hover:text-indigo-800" @click="openEditRelayDialog(provider)">Edit</button>
+                <button
+                  v-if="showRelayDeleteConfirm !== provider.id"
+                  :data-testid="`relay-provider-delete-${provider.id}`"
+                  class="text-red-600 hover:text-red-800"
+                  @click="showRelayDeleteConfirm = provider.id"
+                >Delete</button>
+                <span v-else class="space-x-2">
+                  <button :data-testid="`relay-provider-confirm-delete-${provider.id}`" class="text-red-700 font-medium" @click="confirmDeleteRelay(provider.id)">Confirm</button>
+                  <button :data-testid="`relay-provider-cancel-delete-${provider.id}`" class="text-gray-500" @click="showRelayDeleteConfirm = null">Cancel</button>
+                </span>
+              </td>
+            </tr>
+            <tr v-if="relayProviders.length === 0">
+              <td colspan="5" class="px-6 py-12 text-center text-sm text-gray-500">
+                No relay providers configured. Add at least one primary provider so SSO login and CLI delivery have a DB-backed source of truth.
+              </td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </div>
 
@@ -845,23 +965,96 @@ async function handleTestLDAP() {
       </div>
     </div>
 
-    <!-- Add/Edit Dialog -->
-    <div v-if="showLLMTestDialog" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+    <!-- Add/Edit Relay Provider Dialog -->
+    <div v-if="showRelayDialog" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div class="w-full max-w-2xl rounded-lg bg-white p-6 shadow-xl">
+        <h2 class="mb-4 text-lg font-semibold text-gray-900">
+          {{ editingRelayId ? 'Edit Relay Provider' : 'Add Relay Provider' }}
+        </h2>
+
+        <div class="grid gap-4 md:grid-cols-2">
+          <div>
+            <label class="block text-sm font-medium text-gray-700">Name</label>
+            <input name="relay-provider-name" v-model="relayForm.name" :disabled="!!editingRelayId" type="text" placeholder="sub2api-main" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm disabled:bg-gray-50 disabled:text-gray-500" />
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium text-gray-700">Display Name</label>
+            <input name="relay-provider-display-name" v-model="relayForm.display_name" type="text" placeholder="Sub2API Main" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium text-gray-700">Base URL</label>
+            <input name="relay-provider-base-url" v-model="relayForm.base_url" type="text" placeholder="https://sub2api.agoraio.cn" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium text-gray-700">Admin URL</label>
+            <input name="relay-provider-admin-url" v-model="relayForm.admin_url" type="text" placeholder="https://sub2api.agoraio.cn" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
+          </div>
+
+          <div class="md:col-span-2">
+            <label class="block text-sm font-medium text-gray-700">Admin API Key</label>
+            <input name="relay-provider-admin-api-key" v-model="relayForm.admin_api_key" type="password" :placeholder="editingRelayId ? 'Leave empty to keep current key' : 'admin-...'" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
+            <p class="mt-1 text-xs text-gray-400">Stored encrypted in the database. Leave blank during edit to keep the current key.</p>
+          </div>
+
+          <div class="flex items-center">
+            <input id="relay-primary" v-model="relayForm.is_primary" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
+            <label for="relay-primary" class="ml-2 text-sm text-gray-700">Primary provider</label>
+          </div>
+
+          <div class="flex items-center">
+            <input id="relay-enabled" v-model="relayForm.enabled" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
+            <label for="relay-enabled" class="ml-2 text-sm text-gray-700">Enabled</label>
+          </div>
+        </div>
+
+        <div v-if="relayFormError" class="mt-4 rounded-md bg-red-50 p-3 text-sm text-red-700">{{ relayFormError }}</div>
+
+        <div class="mt-5 flex justify-end space-x-3">
+          <button @click="showRelayDialog = false" class="rounded-md border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">Cancel</button>
+          <button @click="handleRelaySubmit" :disabled="relayFormLoading" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50">
+            {{ relayFormLoading ? 'Saving...' : editingRelayId ? 'Update Relay Provider' : 'Create Relay Provider' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Relay Provider Test Dialog -->
+    <div v-if="showRelayTestDialog" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
       <div class="w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
-        <h2 class="mb-4 text-lg font-semibold text-gray-900">Test Prompt</h2>
+        <h2 class="mb-4 text-lg font-semibold text-gray-900">Test Relay Provider</h2>
 
         <div class="space-y-3">
           <div>
+            <label class="block text-sm font-medium text-gray-700">Platform</label>
+            <select v-model="relayTestPlatform" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm">
+              <option v-for="platform in relayTestProviderId ? relayTestPlatforms(relayTestProviderId) : []" :key="platform" :value="platform">
+                {{ platform }}
+              </option>
+            </select>
+            <p class="mt-1 text-xs text-gray-400">Uses the current admin user's active API key for the selected provider and platform.</p>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700">Model</label>
+            <input v-model="relayTestModel" type="text" placeholder="gpt-5.4" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
+            <p class="mt-1 text-xs text-gray-400">Pick the concrete model to test for the selected platform.</p>
+          </div>
+          <div>
             <label class="block text-sm font-medium text-gray-700">Test Prompt</label>
-            <input v-model="llmTestPromptDraft" type="text" placeholder="Hi" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
-            <p class="mt-1 text-xs text-gray-400">Used only for this Test Connection request. It is not saved.</p>
+            <input v-model="relayTestPromptDraft" type="text" placeholder="Hi" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
+            <p class="mt-1 text-xs text-gray-400">This sends a real chat completion through the selected relay provider and is not persisted.</p>
+          </div>
+          <div v-if="relayTestProviderId && relayTestPlatforms(relayTestProviderId).length === 0" class="rounded-md bg-amber-50 p-3 text-sm text-amber-700">
+            Current admin user has no visible platforms under this provider.
           </div>
         </div>
 
         <div class="mt-5 flex justify-end space-x-3">
-          <button @click="closeLLMTestDialog" :disabled="llmTesting" class="rounded-md border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50">Cancel</button>
-          <button @click="confirmTestLLM" :disabled="llmTesting" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50">
-            {{ llmTesting ? 'Testing...' : 'Run Test' }}
+          <button @click="closeRelayTestDialog" :disabled="relayTesting" class="rounded-md border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50">Cancel</button>
+          <button @click="confirmTestRelayProvider" :disabled="relayTesting || !relayTestPlatform || !relayTestModel" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50">
+            {{ relayTesting ? 'Testing...' : 'Run Test' }}
           </button>
         </div>
       </div>

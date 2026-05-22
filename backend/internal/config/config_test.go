@@ -95,6 +95,29 @@ func TestLoadEnvOverride(t *testing.T) {
 	}
 }
 
+func TestLoadUsesFileEncryptionKeyWhenEnvIsUnset(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "config.yaml")
+
+	content := `
+encryption:
+  key: "d98460dc58409c713d1586802217c23932d58c95479641e4b0fec1c740386696"
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("AE_ENCRYPTION_KEY", "")
+
+	cfg, err := Load(cfgFile)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Encryption.Key != "d98460dc58409c713d1586802217c23932d58c95479641e4b0fec1c740386696" {
+		t.Errorf("encryption key = %q, want file value", cfg.Encryption.Key)
+	}
+}
+
 func TestLoadInvalidYAML(t *testing.T) {
 	dir := t.TempDir()
 	cfgFile := filepath.Join(dir, "config.yaml")

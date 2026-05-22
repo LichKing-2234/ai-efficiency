@@ -15,7 +15,6 @@
   - `cd frontend && pnpm test`
   - `cd frontend && pnpm run test:e2e:role`
 - Primary remote: `https://github.com/LichKing-2234/ai-efficiency.git`
-- GitLab legacy remote: `ssh://git@git.agoralab.co/ai/ai-efficiency.git`
 
 ## Commit Convention
 

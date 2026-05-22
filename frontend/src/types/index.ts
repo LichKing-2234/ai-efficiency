@@ -18,6 +18,19 @@ export interface SCMProvider {
   created_at: string
 }
 
+export interface RelayProvider {
+  id: number
+  name: string
+  display_name: string
+  base_url: string
+  admin_url: string
+  relay_type: string
+  admin_api_key: string
+  default_model: string
+  is_primary: boolean
+  enabled: boolean
+}
+
 export interface Credential {
   id: number
   name: string
@@ -238,4 +251,53 @@ export interface ToolUsageEventListResponse {
   page: number
   page_size: number
   items: ToolUsageEventRow[]
+}
+
+export interface UserGroupCredentialState {
+  state: 'missing' | 'existing_hidden'
+  api_key_id?: number
+  name?: string
+  status?: string
+  created_at?: string | null
+  last_used_at?: string | null
+}
+
+export interface UserGroupCredentialSummary {
+  group_id: string
+  group_name: string
+  platform: string
+  credential: UserGroupCredentialState
+}
+
+export interface UserProviderSummary {
+  id: number
+  name: string
+  display_name: string
+  base_url: string
+  default_model: string
+  is_primary: boolean
+  groups: UserGroupCredentialSummary[]
+}
+
+export interface UserProvidersResponse {
+  providers: UserProviderSummary[]
+  message?: string
+}
+
+export interface GroupCredentialMutationResult {
+  api_key_id: number
+  name: string
+  status: string
+  secret: string
+}
+
+export interface VerifyReviewItem {
+  status: 'looks_good' | 'needs_attention' | 'cannot_determine'
+  message: string
+}
+
+export interface VerifyReviewSummary {
+  version: VerifyReviewItem
+  discover: VerifyReviewItem
+  doctor: VerifyReviewItem
 }

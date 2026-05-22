@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/ai-efficiency/backend/internal/relay"
+	"github.com/google/go-cmp/cmp"
 	"go.uber.org/zap"
 )
 
@@ -263,6 +264,113 @@ func TestGetUser(t *testing.T) {
 	}
 	if user.ID != 42 || user.Email != "bob@example.com" || user.Username != "bob" || user.Role != "admin" {
 		t.Fatalf("GetUser() unexpected user: %+v", user)
+	}
+}
+
+func TestGetUserIncludesSubscribedGroups(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/users/1", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": map[string]any{
+				"id":       1,
+				"email":    "alice@example.com",
+				"username": "alice@example.com",
+				"role":     "admin",
+				"subscriptions": []any{
+					map[string]any{
+						"id":       101,
+						"user_id":  1,
+						"group_id": 6,
+						"status":   "active",
+						"group":    map[string]any{"id": 6, "name": "Group Alpha", "platform": "openai"},
+					},
+					map[string]any{
+						"id":       102,
+						"user_id":  1,
+						"group_id": 10,
+						"status":   "active",
+						"group":    map[string]any{"id": 10, "name": "Group Delta", "platform": "gemini"},
+					},
+				},
+			},
+		})
+	})
+
+	p := newTestProvider(t, mux)
+	user, err := p.GetUser(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("GetUser() unexpected error: %v", err)
+	}
+	if diff := cmp.Diff([]relay.Group{
+		{ID: 6, Name: "Group Alpha", Platform: "openai"},
+		{ID: 10, Name: "Group Delta", Platform: "gemini"},
+	}, user.AllowedGroups); diff != "" {
+		t.Fatalf("subscribed groups mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestListAllowedGroupsForUserUsesActiveSubscriptions(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/users", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": map[string]any{
+				"items": []any{
+					map[string]any{
+						"id":       1,
+						"email":    "alice@example.com",
+						"username": "alice@example.com",
+						"role":     "admin",
+						"subscriptions": []any{
+							map[string]any{
+								"id":       201,
+								"user_id":  1,
+								"group_id": 5,
+								"status":   "active",
+								"group":    map[string]any{"id": 5, "name": "Group Gamma", "platform": "anthropic"},
+							},
+							map[string]any{
+								"id":       202,
+								"user_id":  1,
+								"group_id": 6,
+								"status":   "active",
+								"group":    map[string]any{"id": 6, "name": "Group Alpha", "platform": "openai"},
+							},
+							map[string]any{
+								"id":       203,
+								"user_id":  1,
+								"group_id": 7,
+								"status":   "inactive",
+								"group":    map[string]any{"id": 7, "name": "Inactive", "platform": "openai"},
+							},
+						},
+					},
+				},
+				"page":  1,
+				"pages": 1,
+			},
+		})
+	})
+
+	p := newTestProvider(t, mux)
+	lister, ok := p.(interface {
+		ListAllowedGroupsForUser(context.Context, int64) ([]relay.Group, error)
+	})
+	if !ok {
+		t.Fatal("provider does not implement ListAllowedGroupsForUser")
+	}
+	groups, err := lister.ListAllowedGroupsForUser(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("ListAllowedGroupsForUser() unexpected error: %v", err)
+	}
+	if diff := cmp.Diff([]relay.Group{
+		{ID: 5, Name: "Group Gamma", Platform: "anthropic"},
+		{ID: 6, Name: "Group Alpha", Platform: "openai"},
+	}, groups); diff != "" {
+		t.Fatalf("subscribed groups mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -970,14 +1078,14 @@ func TestFindUserByUsernameRequiresExactMatchInPaginatedEnvelope(t *testing.T) {
 				"items": []any{
 					map[string]any{
 						"id":       15,
-						"email":    "wangjingbo@shengwang.cn",
+						"email":    "bob@example.com",
 						"username": "",
 						"role":     "user",
 					},
 					map[string]any{
 						"id":       21,
-						"email":    "liupenghui@agora.io",
-						"username": "liupenghui@agora.io",
+						"email":    "carol@example.com",
+						"username": "carol@example.com",
 						"role":     "user",
 					},
 				},
@@ -990,7 +1098,7 @@ func TestFindUserByUsernameRequiresExactMatchInPaginatedEnvelope(t *testing.T) {
 	})
 
 	p := newTestProvider(t, mux)
-	user, err := p.FindUserByUsername(context.Background(), "liupenghui@agora.io")
+	user, err := p.FindUserByUsername(context.Background(), "carol@example.com")
 	if err != nil {
 		t.Fatalf("FindUserByUsername() unexpected error: %v", err)
 	}
@@ -1009,7 +1117,7 @@ func TestFindUserByUsernameReturnsNilWhenPaginatedEnvelopeHasNoExactMatch(t *tes
 				"items": []any{
 					map[string]any{
 						"id":       15,
-						"email":    "wangjingbo@shengwang.cn",
+						"email":    "bob@example.com",
 						"username": "",
 						"role":     "user",
 					},
@@ -1023,7 +1131,7 @@ func TestFindUserByUsernameReturnsNilWhenPaginatedEnvelopeHasNoExactMatch(t *tes
 	})
 
 	p := newTestProvider(t, mux)
-	user, err := p.FindUserByUsername(context.Background(), "liupenghui@agora.io")
+	user, err := p.FindUserByUsername(context.Background(), "carol@example.com")
 	if err != nil {
 		t.Fatalf("FindUserByUsername() unexpected error: %v", err)
 	}
@@ -1042,13 +1150,13 @@ func TestFindUserByEmailRequiresExactMatchInPaginatedEnvelope(t *testing.T) {
 				"items": []any{
 					map[string]any{
 						"id":       15,
-						"email":    "wangjingbo@shengwang.cn",
+						"email":    "bob@example.com",
 						"username": "",
 						"role":     "user",
 					},
 					map[string]any{
 						"id":       21,
-						"email":    "liupenghui@agora.io",
+						"email":    "carol@example.com",
 						"username": "",
 						"role":     "user",
 					},
@@ -1062,7 +1170,7 @@ func TestFindUserByEmailRequiresExactMatchInPaginatedEnvelope(t *testing.T) {
 	})
 
 	p := newTestProvider(t, mux)
-	user, err := p.FindUserByEmail(context.Background(), "liupenghui@agora.io")
+	user, err := p.FindUserByEmail(context.Background(), "carol@example.com")
 	if err != nil {
 		t.Fatalf("FindUserByEmail() unexpected error: %v", err)
 	}
@@ -1129,7 +1237,7 @@ func TestUpdateUserAPIKeyStatusWithJWT(t *testing.T) {
 			"code": 0,
 			"data": map[string]any{
 				"id":       1,
-				"email":    "luxuhui@shengwang.cn",
+				"email":    "alice@example.com",
 				"username": "",
 				"role":     "admin",
 			},
@@ -1159,7 +1267,7 @@ func TestUpdateUserAPIKeyStatusWithJWT(t *testing.T) {
 	})
 
 	p := newTestProvider(t, mux)
-	ctx := relay.WithUserCredentials(context.Background(), "luxuhui@shengwang.cn", "secret")
+	ctx := relay.WithUserCredentials(context.Background(), "alice@example.com", "secret")
 	if err := p.UpdateUserAPIKeyStatus(ctx, 2, "active"); err != nil {
 		t.Fatalf("UpdateUserAPIKeyStatus() unexpected error: %v", err)
 	}
@@ -1262,7 +1370,7 @@ func TestCreateUserAPIKeyWithJWTUserFlow(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Fatalf("decode login body: %v", err)
 		}
-		if body["email"] != "luxuhui@shengwang.cn" || body["password"] != "qq123456." {
+		if body["email"] != "alice@example.com" || body["password"] != "test-password" {
 			t.Fatalf("unexpected login body: %+v", body)
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -1280,8 +1388,8 @@ func TestCreateUserAPIKeyWithJWTUserFlow(t *testing.T) {
 			"code": 0,
 			"data": map[string]any{
 				"id":       1,
-				"email":    "luxuhui@shengwang.cn",
-				"username": "luxuhui@shengwang.cn",
+				"email":    "alice@example.com",
+				"username": "alice@example.com",
 				"role":     "admin",
 			},
 		})
@@ -1311,7 +1419,7 @@ func TestCreateUserAPIKeyWithJWTUserFlow(t *testing.T) {
 	})
 
 	p := newTestProvider(t, mux)
-	ctx := relay.WithUserCredentials(context.Background(), "luxuhui@shengwang.cn", "qq123456.")
+	ctx := relay.WithUserCredentials(context.Background(), "alice@example.com", "test-password")
 	key, err := p.CreateUserAPIKey(ctx, 1, relay.APIKeyCreateRequest{
 		Name:    "jwt-key",
 		GroupID: "6",
@@ -1462,5 +1570,42 @@ func TestResolveDefaultGroupIDForPlatformFiltersByPlatform(t *testing.T) {
 	}
 	if groupID != "7" {
 		t.Fatalf("groupID = %q, want %q", groupID, "7")
+	}
+}
+
+func TestListPlatformGroupsReturnsActivePlatformSummaries(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/groups", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": map[string]any{
+				"items": []any{
+					map[string]any{"id": 5, "name": "Group Gamma", "platform": "anthropic", "status": "active", "account_count": 4, "active_account_count": 3},
+					map[string]any{"id": 6, "name": "Group Alpha", "platform": "openai", "status": "active", "account_count": 14, "active_account_count": 13},
+					map[string]any{"id": 7, "name": "Disabled", "platform": "gemini", "status": "disabled", "account_count": 1, "active_account_count": 1},
+				},
+				"page":  1,
+				"pages": 1,
+			},
+		})
+	})
+
+	p := newTestProvider(t, mux)
+	lister, ok := p.(interface {
+		ListPlatformGroups(context.Context) ([]relay.Group, error)
+	})
+	if !ok {
+		t.Fatal("provider does not implement ListPlatformGroups")
+	}
+	groups, err := lister.ListPlatformGroups(context.Background())
+	if err != nil {
+		t.Fatalf("ListPlatformGroups() unexpected error: %v", err)
+	}
+	if diff := cmp.Diff([]relay.Group{
+		{ID: 5, Name: "Group Gamma", Platform: "anthropic"},
+		{ID: 6, Name: "Group Alpha", Platform: "openai"},
+	}, groups); diff != "" {
+		t.Fatalf("groups mismatch (-want +got):\n%s", diff)
 	}
 }

@@ -196,7 +196,7 @@ commit 时由 hook 上报的锚点事件。它记录 commit 所在的 session、
 - 主身份由 `username` 决定
 - 邮箱差异不会造成错绑
 - relay 本地密码可持续跟随 LDAP 登录密码演进
-- `foo@shengwang.cn` 与 `foo@agora.io` 会统一映射到 relay `username=foo`
+- `foo@example-a.test` 与 `foo@example-b.test` 会统一映射到 relay `username=foo`
 
 实现要求补充：
 

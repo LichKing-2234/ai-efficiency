@@ -1,14 +1,18 @@
 package handler
 
 import (
+	"bytes"
+	"context"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
+	"encoding/json"
 	"encoding/hex"
 	"fmt"
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/ai-efficiency/backend/ent"
@@ -73,6 +77,14 @@ func (h *ProviderHandler) invalidateCache() {
 	h.mu.Lock()
 	h.providerCache = make(map[int]relay.Provider)
 	h.mu.Unlock()
+}
+
+func (h *ProviderHandler) Resolve(ctx context.Context, providerID int) (relay.Provider, error) {
+	p, err := h.entClient.RelayProvider.Get(ctx, providerID)
+	if err != nil {
+		return nil, err
+	}
+	return h.getOrCreateRelayProvider(p), nil
 }
 
 type providerResponse struct {
@@ -185,6 +197,27 @@ type adminProviderResponse struct {
 	Enabled      bool   `json:"enabled"`
 }
 
+type adminProviderTestRequest struct {
+	Platform string `json:"platform"`
+	Model    string `json:"model"`
+	Prompt   string `json:"prompt"`
+}
+
+func toAdminProviderResponse(p *ent.RelayProvider) adminProviderResponse {
+	return adminProviderResponse{
+		ID:           p.ID,
+		Name:         p.Name,
+		DisplayName:  p.DisplayName,
+		BaseURL:      p.BaseURL,
+		AdminURL:     p.AdminURL,
+		RelayType:    p.RelayType,
+		AdminAPIKey:  "***",
+		DefaultModel: p.DefaultModel,
+		IsPrimary:    p.IsPrimary,
+		Enabled:      p.Enabled,
+	}
+}
+
 // List handles GET /api/v1/admin/providers — admin list all providers.
 func (h *ProviderHandler) List(c *gin.Context) {
 	ctx := c.Request.Context()
@@ -195,18 +228,7 @@ func (h *ProviderHandler) List(c *gin.Context) {
 	}
 	var result []adminProviderResponse
 	for _, p := range providers {
-		result = append(result, adminProviderResponse{
-			ID:           p.ID,
-			Name:         p.Name,
-			DisplayName:  p.DisplayName,
-			BaseURL:      p.BaseURL,
-			AdminURL:     p.AdminURL,
-			RelayType:    p.RelayType,
-			AdminAPIKey:  "***",
-			DefaultModel: p.DefaultModel,
-			IsPrimary:    p.IsPrimary,
-			Enabled:      p.Enabled,
-		})
+		result = append(result, toAdminProviderResponse(p))
 	}
 	pkg.Success(c, result)
 }
@@ -260,7 +282,10 @@ func (h *ProviderHandler) Create(c *gin.Context) {
 		return
 	}
 	h.invalidateCache()
-	pkg.Created(c, p)
+	c.JSON(http.StatusCreated, gin.H{
+		"code": 201,
+		"data": toAdminProviderResponse(p),
+	})
 }
 
 // Update handles PUT /api/v1/admin/providers/:id
@@ -325,7 +350,7 @@ func (h *ProviderHandler) Update(c *gin.Context) {
 		return
 	}
 	h.invalidateCache()
-	pkg.Success(c, p)
+	pkg.Success(c, toAdminProviderResponse(p))
 }
 
 // Delete handles DELETE /api/v1/admin/providers/:id
@@ -343,6 +368,130 @@ func (h *ProviderHandler) Delete(c *gin.Context) {
 	}
 	h.invalidateCache()
 	pkg.Success(c, gin.H{"message": "deleted"})
+}
+
+// Test handles POST /api/v1/admin/providers/:id/test.
+func (h *ProviderHandler) Test(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		pkg.Error(c, http.StatusBadRequest, "invalid provider id")
+		return
+	}
+
+	ctx := c.Request.Context()
+	uc := authpkg.GetUserContext(c)
+	if uc == nil {
+		pkg.Error(c, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	user, err := h.entClient.User.Get(ctx, uc.UserID)
+	if err != nil {
+		pkg.Error(c, http.StatusInternalServerError, "failed to get user")
+		return
+	}
+	if user.RelayUserID == nil {
+		pkg.Success(c, gin.H{
+			"success": false,
+			"message": "current account is not linked to a relay user",
+		})
+		return
+	}
+
+	provider, err := h.entClient.RelayProvider.Get(ctx, id)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			pkg.Error(c, http.StatusNotFound, "provider not found")
+			return
+		}
+		pkg.Error(c, http.StatusInternalServerError, "failed to get provider")
+		return
+	}
+
+	var req adminProviderTestRequest
+	if c.Request.Body != nil {
+		reqBody, err := io.ReadAll(c.Request.Body)
+		if err != nil {
+			pkg.Error(c, http.StatusBadRequest, "invalid request")
+			return
+		}
+		if len(bytes.TrimSpace(reqBody)) > 0 {
+			if err := json.Unmarshal(reqBody, &req); err != nil {
+				pkg.Error(c, http.StatusBadRequest, "invalid request")
+				return
+			}
+		}
+	}
+
+	prompt := strings.TrimSpace(req.Prompt)
+	if prompt == "" {
+		prompt = "Hi"
+	}
+	platform := strings.TrimSpace(req.Platform)
+	if platform == "" {
+		pkg.Error(c, http.StatusBadRequest, "platform is required")
+		return
+	}
+	model := strings.TrimSpace(req.Model)
+	if model == "" {
+		pkg.Error(c, http.StatusBadRequest, "model is required")
+		return
+	}
+
+	rp := h.getOrCreateRelayProvider(provider)
+	keys, err := rp.ListUserAPIKeys(ctx, int64(*user.RelayUserID))
+	if err != nil {
+		pkg.Success(c, gin.H{
+			"success": false,
+			"message": fmt.Sprintf("list user api keys: %v", err),
+		})
+		return
+	}
+
+	name := preferredRelayTestKeyName(strings.TrimSpace(user.Username), strings.TrimSpace(user.Email))
+	selected := pickRelayTestKey(filterRelayTestKeys(keys, platform, name))
+	if selected == nil {
+		selected = pickRelayTestKey(filterRelayTestKeys(keys, platform, ""))
+	}
+	if selected == nil || strings.TrimSpace(selected.Key) == "" {
+		pkg.Success(c, gin.H{
+			"success": false,
+			"message": fmt.Sprintf("no active API key found for platform %s", platform),
+		})
+		return
+	}
+
+	maxTokens := 64
+	resp, err := relay.NewSub2apiProvider(
+		http.DefaultClient,
+		provider.BaseURL,
+		provider.AdminURL,
+		selected.Key,
+		model,
+		h.logger,
+	).ChatCompletion(ctx, relay.ChatCompletionRequest{
+		Model: model,
+		Messages: []relay.ChatMessage{
+			{Role: "user", Content: prompt},
+		},
+		MaxTokens: &maxTokens,
+	})
+	if err != nil {
+		pkg.Success(c, gin.H{
+			"success": false,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	data := gin.H{
+		"success": true,
+		"message": "Connection successful",
+	}
+	if content := strings.TrimSpace(resp.Content); content != "" {
+		data["response"] = content
+	}
+	pkg.Success(c, data)
 }
 
 func encryptAESGCM(plaintext, keyHex string) (string, error) {
@@ -393,4 +542,69 @@ func decryptAESGCM(ciphertextHex, keyHex string) (string, error) {
 		return "", err
 	}
 	return string(plaintext), nil
+}
+
+func preferredRelayTestKeyName(username, email string) string {
+	username = strings.TrimSpace(username)
+	email = strings.TrimSpace(email)
+	if username != "" {
+		if strings.Contains(username, "@") && (email == "" || strings.EqualFold(username, email)) {
+			username = ""
+		}
+	}
+	if username != "" {
+		return username
+	}
+	if at := strings.Index(email, "@"); at > 0 {
+		return email[:at]
+	}
+	return email
+}
+
+func filterRelayTestKeys(keys []relay.APIKey, platform, name string) []relay.APIKey {
+	filtered := make([]relay.APIKey, 0, len(keys))
+	for _, key := range keys {
+		if !strings.EqualFold(strings.TrimSpace(key.Status), "active") {
+			continue
+		}
+		if key.Group == nil || !strings.EqualFold(strings.TrimSpace(key.Group.Platform), strings.TrimSpace(platform)) {
+			continue
+		}
+		if strings.TrimSpace(name) != "" && key.Name != name {
+			continue
+		}
+		if strings.TrimSpace(key.Key) == "" {
+			continue
+		}
+		filtered = append(filtered, key)
+	}
+	return filtered
+}
+
+func pickRelayTestKey(keys []relay.APIKey) *relay.APIKey {
+	if len(keys) == 0 {
+		return nil
+	}
+	best := keys[0]
+	for _, candidate := range keys[1:] {
+		switch {
+		case candidate.LastUsedAt != nil && best.LastUsedAt == nil:
+			best = candidate
+		case candidate.LastUsedAt == nil && best.LastUsedAt != nil:
+		case candidate.LastUsedAt != nil && best.LastUsedAt != nil:
+			if candidate.LastUsedAt.After(*best.LastUsedAt) {
+				best = candidate
+				continue
+			}
+			if best.LastUsedAt.After(*candidate.LastUsedAt) {
+				continue
+			}
+			fallthrough
+		default:
+			if candidate.CreatedAt.After(best.CreatedAt) {
+				best = candidate
+			}
+		}
+	}
+	return &best
 }
