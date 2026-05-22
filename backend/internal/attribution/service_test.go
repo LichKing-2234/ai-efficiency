@@ -91,6 +91,9 @@ func (f *fakeRelayProvider) Authenticate(ctx context.Context, username, password
 func (f *fakeRelayProvider) GetUser(ctx context.Context, userID int64) (*relay.User, error) {
 	return nil, nil
 }
+func (f *fakeRelayProvider) ListAllowedGroupsForUser(ctx context.Context, userID int64) ([]relay.Group, error) {
+	return nil, nil
+}
 func (f *fakeRelayProvider) FindUserByEmail(ctx context.Context, email string) (*relay.User, error) {
 	return nil, nil
 }

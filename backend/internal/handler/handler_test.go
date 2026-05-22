@@ -207,7 +207,7 @@ func TestListProvidersForUserWithValidToken(t *testing.T) {
 }
 
 func TestAdminRelayProviderCreateAndUpdateMaskAdminAPIKey(t *testing.T) {
-	env := setupTestEnv(t)
+	env := setupTestEnvWithProvider(t)
 
 	createReq := map[string]interface{}{
 		"name":          "sub2api-main",
