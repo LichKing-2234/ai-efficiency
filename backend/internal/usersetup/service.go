@@ -48,6 +48,7 @@ type ListProvidersResponse struct {
 type GroupCredentialState struct {
 	State      string     `json:"state"`
 	APIKeyID   int64      `json:"api_key_id,omitempty"`
+	Key        string     `json:"key,omitempty"`
 	Name       string     `json:"name,omitempty"`
 	Status     string     `json:"status,omitempty"`
 	CreatedAt  *time.Time `json:"created_at,omitempty"`
@@ -233,6 +234,7 @@ func (s *Service) summarizeGroups(ctx context.Context, rp relay.Provider, relayU
 			summary.Credential = GroupCredentialState{
 				State:      "existing_hidden",
 				APIKeyID:   selected.ID,
+				Key:        selected.Key,
 				Name:       selected.Name,
 				Status:     selected.Status,
 				CreatedAt:  timePtr(selected.CreatedAt),

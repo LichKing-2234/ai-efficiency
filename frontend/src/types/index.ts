@@ -256,6 +256,7 @@ export interface ToolUsageEventListResponse {
 export interface UserGroupCredentialState {
   state: 'missing' | 'existing_hidden'
   api_key_id?: number
+  key?: string
   name?: string
   status?: string
   created_at?: string | null
