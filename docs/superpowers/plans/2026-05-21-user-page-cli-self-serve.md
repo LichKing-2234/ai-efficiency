@@ -10,7 +10,7 @@
 
 **Spec:** `docs/superpowers/specs/2026-05-21-user-page-cli-self-serve-design.md`
 
-**Status:** Group-first implementation is largely landed in code and verified by backend/frontend tests. Live docker-dev `/api/v1/user/providers` now returns `groups[]`, but the list is currently empty because the upstream relay user payload available in this environment does not yet provide `allowed_groups`; that upstream fact source remains the current blocker for a populated UI.
+**Status:** Group-first implementation is largely landed in code and verified by backend/frontend tests. Live docker-dev `/api/v1/user/providers` now returns `groups[]`, but the list is currently empty because the upstream relay user payload available in this environment does not yet provide `allowed_groups`; that upstream fact source remains the current blocker for a populated UI. Separately, the admin Settings relay management UI is now aligned to DB-backed multi-`RelayProvider` CRUD via `/api/v1/admin/providers`; `/api/v1/settings/llm*` remains compatibility/runtime-edit surface only.
 
 ---
 

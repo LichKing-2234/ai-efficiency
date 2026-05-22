@@ -18,6 +18,19 @@ export interface SCMProvider {
   created_at: string
 }
 
+export interface RelayProvider {
+  id: number
+  name: string
+  display_name: string
+  base_url: string
+  admin_url: string
+  relay_type: string
+  admin_api_key: string
+  default_model: string
+  is_primary: boolean
+  enabled: boolean
+}
+
 export interface Credential {
   id: number
   name: string

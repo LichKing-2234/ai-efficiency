@@ -14,9 +14,9 @@ vi.mock('@/api/client', () => {
 
 import client from '@/api/client'
 import { listProviders, createProvider, updateProvider, deleteProvider } from '@/api/scmProvider'
+import { listRelayProviders, createRelayProvider, updateRelayProvider, deleteRelayProvider, testRelayProvider } from '@/api/relayProvider'
 import { listPRs, getPR, syncPRs, settlePR, refreshPRUsage } from '@/api/pr'
 import { getDashboard } from '@/api/efficiency'
-import { getLLMConfig, updateLLMConfig, testLLMConnection } from '@/api/settings'
 import { getDeploymentStatus, checkForUpdate, applyUpdate, rollbackUpdate, restartDeployment } from '@/api/deployment'
 import { getUserProviders, createGroupCredential, regenerateGroupCredential } from '@/api/user'
 
@@ -65,6 +65,48 @@ describe('scmProvider API', () => {
   })
 })
 
+describe('relayProvider API', () => {
+  it('listRelayProviders calls GET /admin/providers', async () => {
+    mockClient.get.mockResolvedValue({ data: { data: [] } })
+    await listRelayProviders()
+    expect(mockClient.get).toHaveBeenCalledWith('/admin/providers')
+  })
+
+  it('createRelayProvider calls POST /admin/providers', async () => {
+    const payload = {
+      name: 'sub2api-main',
+      display_name: 'Sub2API Main',
+      base_url: 'https://sub2api.agoraio.cn',
+      admin_url: 'https://sub2api.agoraio.cn',
+      admin_api_key: 'admin-key',
+      is_primary: true,
+      enabled: true,
+    }
+    mockClient.post.mockResolvedValue({ data: { data: { id: 1, ...payload } } })
+    await createRelayProvider(payload)
+    expect(mockClient.post).toHaveBeenCalledWith('/admin/providers', payload)
+  })
+
+  it('updateRelayProvider calls PUT /admin/providers/:id', async () => {
+    const payload = { display_name: 'Sub2API Secondary', enabled: false }
+    mockClient.put.mockResolvedValue({ data: { data: { id: 3, ...payload } } })
+    await updateRelayProvider(3, payload)
+    expect(mockClient.put).toHaveBeenCalledWith('/admin/providers/3', payload)
+  })
+
+  it('deleteRelayProvider calls DELETE /admin/providers/:id', async () => {
+    mockClient.delete.mockResolvedValue({ data: { data: null } })
+    await deleteRelayProvider(7)
+    expect(mockClient.delete).toHaveBeenCalledWith('/admin/providers/7')
+  })
+
+  it('testRelayProvider calls POST /admin/providers/:id/test', async () => {
+    mockClient.post.mockResolvedValue({ data: { data: { success: true, message: 'OK' } } })
+    await testRelayProvider(3, { platform: 'openai', model: 'gpt-5.4', prompt: 'Hi' })
+    expect(mockClient.post).toHaveBeenCalledWith('/admin/providers/3/test', { platform: 'openai', model: 'gpt-5.4', prompt: 'Hi' })
+  })
+})
+
 describe('pr API', () => {
   it('listPRs calls GET /repos/:id/prs with params', async () => {
     mockClient.get.mockResolvedValue({ data: { data: { items: [], total: 0 } } })
@@ -110,27 +152,6 @@ describe('efficiency API', () => {
     mockClient.get.mockResolvedValue({ data: { data: { total_repos: 5 } } })
     await getDashboard()
     expect(mockClient.get).toHaveBeenCalledWith('/efficiency/dashboard')
-  })
-})
-
-describe('settings API', () => {
-  it('getLLMConfig calls GET /settings/llm', async () => {
-    mockClient.get.mockResolvedValue({ data: { data: { model: 'gpt-4' } } })
-    await getLLMConfig()
-    expect(mockClient.get).toHaveBeenCalledWith('/settings/llm')
-  })
-
-  it('updateLLMConfig calls PUT /settings/llm with data', async () => {
-    const config = { sub2api_url: 'http://localhost:3000', sub2api_api_key: 'sk-test', relay_admin_api_key: 'admin-test', model: 'gpt-4' }
-    mockClient.put.mockResolvedValue({ data: { data: config } })
-    await updateLLMConfig(config)
-    expect(mockClient.put).toHaveBeenCalledWith('/settings/llm', config)
-  })
-
-  it('testLLMConnection calls POST /settings/llm/test', async () => {
-    mockClient.post.mockResolvedValue({ data: { data: { success: true, message: 'OK' } } })
-    await testLLMConnection({ prompt: 'Hi' })
-    expect(mockClient.post).toHaveBeenCalledWith('/settings/llm/test', { prompt: 'Hi' })
   })
 })
 

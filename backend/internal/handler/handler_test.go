@@ -206,6 +206,58 @@ func TestListProvidersForUserWithValidToken(t *testing.T) {
 	}
 }
 
+func TestAdminRelayProviderCreateAndUpdateMaskAdminAPIKey(t *testing.T) {
+	env := setupTestEnv(t)
+
+	createReq := map[string]interface{}{
+		"name":          "sub2api-main",
+		"display_name":  "Sub2API Main",
+		"base_url":      "https://sub2api.agoraio.cn",
+		"admin_url":     "https://sub2api.agoraio.cn",
+		"relay_type":    "sub2api",
+		"admin_api_key": "admin-secret-key",
+		"default_model": "gpt-5.4",
+		"is_primary":    true,
+		"enabled":       true,
+	}
+
+	w := doRequest(env, "POST", "/api/v1/admin/providers", createReq)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want %d, body: %s", w.Code, http.StatusCreated, w.Body.String())
+	}
+	resp := parseResponse(t, w)
+	data := resp["data"].(map[string]interface{})
+	if got := data["admin_api_key"]; got != "***" {
+		t.Fatalf("admin_api_key = %v, want ***", got)
+	}
+
+	providerID := int(data["id"].(float64))
+	updateReq := map[string]interface{}{
+		"display_name": "Sub2API Updated",
+	}
+	w = doRequest(env, "PUT", fmt.Sprintf("/api/v1/admin/providers/%d", providerID), updateReq)
+	if w.Code != http.StatusOK {
+		t.Fatalf("update status = %d, want %d, body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	resp = parseResponse(t, w)
+	data = resp["data"].(map[string]interface{})
+	if got := data["admin_api_key"]; got != "***" {
+		t.Fatalf("updated admin_api_key = %v, want ***", got)
+	}
+	if got := data["display_name"]; got != "Sub2API Updated" {
+		t.Fatalf("display_name = %v, want Sub2API Updated", got)
+	}
+}
+
+func TestAdminRelayProviderTestRequiresExistingProvider(t *testing.T) {
+	env := setupTestEnv(t)
+
+	w := doRequest(env, "POST", "/api/v1/admin/providers/99999/test", map[string]interface{}{"prompt": "Hi"})
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d, body: %s", w.Code, http.StatusNotFound, w.Body.String())
+	}
+}
+
 func setupTestEnvWithProvider(t *testing.T) *testEnv {
 	t.Helper()
 

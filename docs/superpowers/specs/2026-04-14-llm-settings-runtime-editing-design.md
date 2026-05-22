@@ -1,12 +1,14 @@
 # LLM Settings Runtime Editing Design
 
-**Status:** Current contract for admin-managed relay LLM settings runtime editing
+**Status:** Current compatibility contract for runtime relay LLM editing
 
 ## Context
 
 - [`2026-03-24-oauth-cli-login-design.md`](/Users/admin/ai-efficiency/docs/superpowers/specs/2026-03-24-oauth-cli-login-design.md) defines `relay.model` and relay credentials as part of the relay integration contract.
 - [`2026-03-17-ai-efficiency-platform-design.md`](/Users/admin/ai-efficiency/docs/superpowers/specs/2026-03-17-ai-efficiency-platform-design.md) introduced `/api/v1/settings/llm` as the admin surface for LLM settings, but it is now historical baseline material.
-- The scan/chat runtime has been retired. The implemented admin Settings page now manages only relay-backed LLM connectivity, not `analysis.llm` prompt or scan token settings.
+- The scan/chat runtime has been retired.
+- The primary admin Settings UI now manages DB-backed `RelayProvider` records through `/api/v1/admin/providers`, not a single-provider `Relay Configuration` form.
+- `/api/v1/settings/llm*` remains a compatibility and runtime-edit surface for the bootstrapped primary relay config, not the main multi-provider management surface.
 
 ## Scope
 
@@ -15,7 +17,7 @@ This spec covers:
 - `GET /api/v1/settings/llm`
 - `PUT /api/v1/settings/llm`
 - `POST /api/v1/settings/llm/test`
-- the runtime update behavior expected by the admin Settings page
+- the runtime update behavior expected by compatibility or operator-only flows that still edit the bootstrapped primary relay config
 
 This spec does not change broader relay provider architecture, multi-provider delivery, or local session proxy design.
 
@@ -75,11 +77,11 @@ If the request omits `prompt` or sends an empty string, the backend uses `Hi`.
 
 ## Frontend Expectations
 
-- The Settings page may edit `model` directly.
-- The Settings page may edit `relay_admin_api_key`.
-- After a successful save, the page should rehydrate its local form state from the response payload.
-- The Settings page may send a temporary `Test Prompt` value with `POST /api/v1/settings/llm/test`, defaulting to `Hi`.
-- Test Connection should render both the status message and the returned response preview when available.
+- The main Settings page should use `/api/v1/admin/providers` for multi-provider relay management.
+- If a compatibility UI still exposes `/api/v1/settings/llm`, it may edit `model` and `relay_admin_api_key` for the bootstrapped primary relay runtime.
+- After a successful compatibility save, that UI should rehydrate its local form state from the response payload.
+- A compatibility UI may send a temporary `Test Prompt` value with `POST /api/v1/settings/llm/test`, defaulting to `Hi`.
+- Compatibility test flows should render both the status message and the returned response preview when available.
 
 ## Relationship To Other Specs
 

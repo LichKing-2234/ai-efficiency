@@ -184,6 +184,7 @@ func SetupRouter(
 			adminProviderGroup.POST("", providerHandler.Create)
 			adminProviderGroup.PUT("/:id", providerHandler.Update)
 			adminProviderGroup.DELETE("/:id", providerHandler.Delete)
+			adminProviderGroup.POST("/:id/test", providerHandler.Test)
 		}
 	}
 
