@@ -36,14 +36,13 @@ func NewRelayIdentityResolver(api relayIdentityAPI, fallbackDomain string) *Rela
 }
 
 func (r *RelayIdentityResolver) ResolveOrProvision(ctx context.Context, username, email string) (*relay.User, error) {
-	u, _, err := r.ResolveOrProvisionWithPassword(ctx, username, email, "")
+	u, _, err := r.ResolveOrProvisionForLDAP(ctx, username, email)
 	return u, err
 }
 
-func (r *RelayIdentityResolver) ResolveOrProvisionWithPassword(ctx context.Context, username, email, password string) (*relay.User, string, error) {
+func (r *RelayIdentityResolver) ResolveOrProvisionForLDAP(ctx context.Context, username, email string) (*relay.User, string, error) {
 	username = strings.TrimSpace(username)
 	email = strings.TrimSpace(email)
-	password = strings.TrimSpace(password)
 	if username == "" {
 		return nil, "", fmt.Errorf("relay identity: username is required")
 	}
@@ -65,7 +64,7 @@ func (r *RelayIdentityResolver) ResolveOrProvisionWithPassword(ctx context.Conte
 		foundByLegacyUsername = u != nil
 	}
 	if u != nil {
-		updateReq, shouldUpdate := relayUserUpdateForLDAP(u, canonicalUsername, password, foundByLegacyUsername)
+		updateReq, shouldUpdate := relayUserUpdateForLDAP(u, canonicalUsername, foundByLegacyUsername)
 		if !shouldUpdate {
 			return u, "", nil
 		}
@@ -74,19 +73,16 @@ func (r *RelayIdentityResolver) ResolveOrProvisionWithPassword(ctx context.Conte
 			if err != nil {
 				return nil, "", fmt.Errorf("relay identity: update user: %w", err)
 			}
-			return updated, password, nil
+			return updated, "", nil
 		}
 		return u, "", nil
 	}
 
 	email = ensureNonEmptyEmail(email, username, r.fallbackDomain)
 
-	pw := password
-	if pw == "" {
-		pw, err = highEntropyPassword()
-		if err != nil {
-			return nil, "", fmt.Errorf("relay identity: generate password: %w", err)
-		}
+	pw, err := highEntropyPassword()
+	if err != nil {
+		return nil, "", fmt.Errorf("relay identity: generate password: %w", err)
 	}
 
 	created, err := r.api.CreateUser(ctx, relay.CreateUserRequest{
@@ -113,11 +109,8 @@ func relayProvisionUsername(username string) string {
 	return username
 }
 
-func relayUserUpdateForLDAP(u *relay.User, canonicalUsername, password string, foundByLegacyUsername bool) (relay.UpdateUserRequest, bool) {
+func relayUserUpdateForLDAP(u *relay.User, canonicalUsername string, foundByLegacyUsername bool) (relay.UpdateUserRequest, bool) {
 	var req relay.UpdateUserRequest
-	if password != "" {
-		req.Password = password
-	}
 	if foundByLegacyUsername && strings.TrimSpace(u.Username) != canonicalUsername {
 		req.Username = canonicalUsername
 	}

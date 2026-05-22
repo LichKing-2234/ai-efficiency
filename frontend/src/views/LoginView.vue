@@ -9,7 +9,7 @@ const router = useRouter()
 
 const username = ref('')
 const password = ref('')
-const source = ref('SSO')
+const source = ref('LDAP')
 const error = ref('')
 const loading = ref(false)
 
@@ -92,8 +92,8 @@ async function handleDevLogin() {
             v-model="source"
             class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
           >
-            <option value="SSO">SSO</option>
             <option value="LDAP">LDAP</option>
+            <option value="SSO">SSO</option>
           </select>
         </div>
 

@@ -85,13 +85,13 @@ func TestResolveOrProvisionRelayUser_UsesUsernameAsStableKey(t *testing.T) {
 	}
 }
 
-func TestResolveOrProvisionRelayUser_ProvisionsCanonicalUsernameAndDefaultConcurrency(t *testing.T) {
+func TestResolveOrProvisionRelayUser_GeneratesRelayPasswordAndDefaultConcurrency(t *testing.T) {
 	api := &fakeRelayIdentityAPI{findResult: nil}
 
 	r := NewRelayIdentityResolver(api, "ldap.local")
-	u, _, err := r.ResolveOrProvisionWithPassword(context.Background(), "dana@example.org", "dana@example.org", "ldap-pass")
+	u, _, err := r.ResolveOrProvisionForLDAP(context.Background(), "dana@example.org", "dana@example.org")
 	if err != nil {
-		t.Fatalf("ResolveOrProvisionWithPassword() unexpected error: %v", err)
+		t.Fatalf("ResolveOrProvisionForLDAP() unexpected error: %v", err)
 	}
 	if u == nil {
 		t.Fatal("expected non-nil relay user")
@@ -107,8 +107,11 @@ func TestResolveOrProvisionRelayUser_ProvisionsCanonicalUsernameAndDefaultConcur
 	if req.Email != "dana@example.org" {
 		t.Fatalf("expected Email=dana@example.org, got %q", req.Email)
 	}
-	if req.Password != "ldap-pass" {
-		t.Fatalf("expected Password to use current LDAP password, got %q", req.Password)
+	if req.Password == "" {
+		t.Fatal("expected generated relay password")
+	}
+	if req.Password == "ldap-pass" {
+		t.Fatal("expected generated relay password, got LDAP password")
 	}
 	if req.Concurrency != 5 {
 		t.Fatalf("expected Concurrency=5, got %d", req.Concurrency)
@@ -118,21 +121,21 @@ func TestResolveOrProvisionRelayUser_ProvisionsCanonicalUsernameAndDefaultConcur
 	}
 }
 
-func TestResolveOrProvisionRelayUser_UpdatesExistingUserPasswordAndConcurrency(t *testing.T) {
+func TestResolveOrProvisionRelayUser_UpdatesExistingUserConcurrencyWithoutPassword(t *testing.T) {
 	api := &fakeRelayIdentityAPI{
 		findResult: &relay.User{ID: 7, Username: "alice", Email: "alice@example.com", Concurrency: 0},
 	}
 
 	r := NewRelayIdentityResolver(api, "ldap.local")
-	u, password, err := r.ResolveOrProvisionWithPassword(context.Background(), "erin@example.org", "erin@example.org", "ldap-pass")
+	u, password, err := r.ResolveOrProvisionForLDAP(context.Background(), "erin@example.org", "erin@example.org")
 	if err != nil {
-		t.Fatalf("ResolveOrProvisionWithPassword() unexpected error: %v", err)
+		t.Fatalf("ResolveOrProvisionForLDAP() unexpected error: %v", err)
 	}
 	if u == nil || u.ID != 7 {
 		t.Fatalf("expected existing relay user ID=7, got %+v", u)
 	}
-	if password != "ldap-pass" {
-		t.Fatalf("returned password = %q, want %q", password, "ldap-pass")
+	if password != "" {
+		t.Fatalf("returned password = %q, want empty", password)
 	}
 	if len(api.createUserCalls) != 0 {
 		t.Fatalf("expected CreateUser not called when user exists, got %d calls", len(api.createUserCalls))
@@ -143,8 +146,8 @@ func TestResolveOrProvisionRelayUser_UpdatesExistingUserPasswordAndConcurrency(t
 	if api.updateUserCalls[0].userID != 7 {
 		t.Fatalf("expected UpdateUser userID=7, got %d", api.updateUserCalls[0].userID)
 	}
-	if api.updateUserCalls[0].req.Password != "ldap-pass" {
-		t.Fatalf("expected UpdateUser password ldap-pass, got %q", api.updateUserCalls[0].req.Password)
+	if api.updateUserCalls[0].req.Password != "" {
+		t.Fatalf("expected UpdateUser password empty, got %q", api.updateUserCalls[0].req.Password)
 	}
 	if api.updateUserCalls[0].req.Concurrency == nil || *api.updateUserCalls[0].req.Concurrency != 5 {
 		t.Fatalf("expected UpdateUser concurrency=5, got %+v", api.updateUserCalls[0].req.Concurrency)
@@ -181,9 +184,9 @@ func TestResolveOrProvisionRelayUser_FallsBackToLegacyEmailUsernameAndRenames(t 
 		updateFn: api2.UpdateUser,
 	}
 
-	u, _, err := r.ResolveOrProvisionWithPassword(context.Background(), rawUsername, rawUsername, "ldap-pass")
+	u, _, err := r.ResolveOrProvisionForLDAP(context.Background(), rawUsername, rawUsername)
 	if err != nil {
-		t.Fatalf("ResolveOrProvisionWithPassword() unexpected error: %v", err)
+		t.Fatalf("ResolveOrProvisionForLDAP() unexpected error: %v", err)
 	}
 	if u == nil || u.ID != 7 {
 		t.Fatalf("expected existing relay user ID=7, got %+v", u)
@@ -199,5 +202,8 @@ func TestResolveOrProvisionRelayUser_FallsBackToLegacyEmailUsernameAndRenames(t 
 	}
 	if api2.updateUserCalls[0].req.Username != "erin" {
 		t.Fatalf("expected UpdateUser username rename to erin, got %q", api2.updateUserCalls[0].req.Username)
+	}
+	if api2.updateUserCalls[0].req.Password != "" {
+		t.Fatalf("expected UpdateUser password empty, got %q", api2.updateUserCalls[0].req.Password)
 	}
 }

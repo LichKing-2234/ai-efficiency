@@ -86,6 +86,25 @@ func (s *Service) RegisterProvider(p AuthProvider) {
 	s.providers = append(s.providers, p)
 }
 
+func (s *Service) defaultLoginProviders() []AuthProvider {
+	if len(s.providers) < 2 {
+		return s.providers
+	}
+
+	ordered := make([]AuthProvider, 0, len(s.providers))
+	for _, p := range s.providers {
+		if strings.EqualFold(p.Name(), "ldap") {
+			ordered = append(ordered, p)
+		}
+	}
+	for _, p := range s.providers {
+		if !strings.EqualFold(p.Name(), "ldap") {
+			ordered = append(ordered, p)
+		}
+	}
+	return ordered
+}
+
 // Login authenticates a user and returns a token pair.
 func (s *Service) Login(ctx context.Context, req LoginRequest) (*TokenPair, *UserInfo, error) {
 	var userInfo *UserInfo
@@ -105,8 +124,8 @@ func (s *Service) Login(ctx context.Context, req LoginRequest) (*TokenPair, *Use
 			return nil, nil, fmt.Errorf("unknown auth source: %s", req.Source)
 		}
 	} else {
-		// Try all providers in order
-		for _, p := range s.providers {
+		// Default login prefers LDAP and falls back to the remaining providers.
+		for _, p := range s.defaultLoginProviders() {
 			userInfo, lastErr = p.Authenticate(ctx, req.Username, req.Password)
 			if userInfo != nil {
 				break
@@ -184,6 +203,11 @@ func (s *Service) GenerateTokenPairForUser(info *UserInfo) (*TokenPair, error) {
 }
 
 func (s *Service) ensureLocalUser(ctx context.Context, info *UserInfo) (*ent.User, error) {
+	ldapLogin := strings.EqualFold(info.AuthSource, "ldap")
+	if ldapLogin {
+		info.RelayAuthPassword = ""
+	}
+
 	// Try to find existing user by username
 	u, err := s.entClient.User.Query().
 		Where(entuser.UsernameEQ(info.Username)).
@@ -208,7 +232,7 @@ func (s *Service) ensureLocalUser(ctx context.Context, info *UserInfo) (*ent.Use
 	}
 
 	if info.RelayUserID == nil && s.relayIdentityResolver != nil {
-		relayUser, relayPassword, err := s.relayIdentityResolver.ResolveOrProvisionWithPassword(ctx, info.Username, info.Email, info.RelayAuthPassword)
+		relayUser, relayPassword, err := s.relayIdentityResolver.ResolveOrProvisionForLDAP(ctx, info.Username, info.Email)
 		if err != nil {
 			return nil, fmt.Errorf("resolve relay identity: %w", err)
 		}
@@ -246,14 +270,19 @@ func (s *Service) ensureLocalUser(ctx context.Context, info *UserInfo) (*ent.Use
 }
 
 func (s *Service) syncExistingLocalUser(ctx context.Context, u *ent.User, info *UserInfo) (*ent.User, error) {
+	ldapLogin := strings.EqualFold(info.AuthSource, "ldap")
+	if ldapLogin {
+		info.RelayAuthPassword = ""
+	}
+
 	if info.RelayUserID == nil && u.RelayUserID != nil {
 		info.RelayUserID = u.RelayUserID
 	}
 
 	// LDAP path: always re-resolve the relay identity so we can repair historical
 	// misbindings caused by stale/ignored lookup filters on the relay side.
-	if strings.EqualFold(info.AuthSource, "ldap") && s.relayIdentityResolver != nil {
-		relayUser, relayPassword, err := s.relayIdentityResolver.ResolveOrProvisionWithPassword(ctx, info.Username, info.Email, info.RelayAuthPassword)
+	if ldapLogin && s.relayIdentityResolver != nil {
+		relayUser, relayPassword, err := s.relayIdentityResolver.ResolveOrProvisionForLDAP(ctx, info.Username, info.Email)
 		if err != nil {
 			return nil, fmt.Errorf("resolve relay identity: %w", err)
 		}
@@ -287,6 +316,13 @@ func (s *Service) syncExistingLocalUser(ctx context.Context, u *ent.User, info *
 			Save(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("sync user role: %w", err)
+		}
+		u = updated
+	}
+	if ldapLogin && strings.TrimSpace(info.RelayAuthPassword) == "" && u.RelayAuthPassword != nil {
+		updated, err := u.Update().ClearRelayAuthPassword().Save(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("clear relay auth password: %w", err)
 		}
 		u = updated
 	}

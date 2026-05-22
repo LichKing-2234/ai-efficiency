@@ -104,11 +104,10 @@ func (p *LDAPProvider) Authenticate(ctx context.Context, username, password stri
 	)
 
 	return &UserInfo{
-		Username:          stableUsername,
-		Email:             email,
-		Role:              "user",
-		AuthSource:        "ldap",
-		RelayAuthPassword: password,
+		Username:   stableUsername,
+		Email:      email,
+		Role:       "user",
+		AuthSource: "ldap",
 	}, nil
 }
 

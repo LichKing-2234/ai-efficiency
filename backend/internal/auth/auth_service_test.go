@@ -150,6 +150,98 @@ func TestLoginSpecificProviderSuccess(t *testing.T) {
 	}
 }
 
+func TestLoginDefaultPrefersLDAPOverRelaySSO(t *testing.T) {
+	svc, _ := newTestServiceWithDB(t)
+	relayID := 42
+	svc.RegisterProvider(&mockAuthProvider{
+		name: "sso",
+		userInfo: &UserInfo{
+			Username:    "alice-relay",
+			Email:       "alice@example.com",
+			Role:        "user",
+			AuthSource:  "relay_sso",
+			RelayUserID: &relayID,
+		},
+	})
+	svc.RegisterProvider(&mockAuthProvider{
+		name: "ldap",
+		userInfo: &UserInfo{
+			Username:   "alice",
+			Email:      "alice@example.com",
+			Role:       "user",
+			AuthSource: "ldap",
+		},
+	})
+
+	_, info, err := svc.Login(context.Background(), LoginRequest{
+		Username: "alice",
+		Password: "test-password",
+	})
+	if err != nil {
+		t.Fatalf("Login error: %v", err)
+	}
+	if info.AuthSource != "ldap" {
+		t.Fatalf("AuthSource = %q, want ldap", info.AuthSource)
+	}
+	if info.Username != "alice" {
+		t.Fatalf("Username = %q, want alice", info.Username)
+	}
+}
+
+func TestLoginLDAPDoesNotPassLoginPasswordToRelayProvisioning(t *testing.T) {
+	client := setupAuthEntClient(t)
+	encryptionKey := "0000000000000000000000000000000000000000000000000000000000000000"
+	svc := NewService(client, "test-secret-key-for-unit-tests!!", 7200, 604800, zap.NewNop(), encryptionKey)
+	api := &fakeRelayIdentityAPI{findResult: nil}
+	svc.SetRelayIdentityResolver(NewRelayIdentityResolver(api, "ldap.local"))
+	svc.RegisterProvider(&mockAuthProvider{
+		name: "ldap",
+		userInfo: &UserInfo{
+			Username:          "alice",
+			Email:             "alice@example.com",
+			Role:              "user",
+			AuthSource:        "ldap",
+			RelayAuthPassword: "test-password",
+		},
+	})
+
+	_, info, err := svc.Login(context.Background(), LoginRequest{
+		Username: "alice",
+		Password: "test-password",
+		Source:   "ldap",
+	})
+	if err != nil {
+		t.Fatalf("Login error: %v", err)
+	}
+	if len(api.createUserCalls) != 1 {
+		t.Fatalf("expected CreateUser called once, got %d", len(api.createUserCalls))
+	}
+	if api.createUserCalls[0].Password == "" {
+		t.Fatal("expected generated relay password")
+	}
+	if api.createUserCalls[0].Password == "test-password" {
+		t.Fatal("LDAP login password was passed to relay provisioning")
+	}
+	if info.RelayAuthPassword == "test-password" {
+		t.Fatal("LDAP login password remained on UserInfo relay credentials")
+	}
+
+	u, err := client.User.Get(context.Background(), info.ID)
+	if err != nil {
+		t.Fatalf("get user: %v", err)
+	}
+	if u.RelayAuthPassword == nil || *u.RelayAuthPassword == "" {
+		t.Fatal("expected generated relay password to be stored")
+	}
+	decrypted, err := svc.DecryptRelayAuthPassword(*u.RelayAuthPassword)
+	if err != nil {
+		t.Fatalf("DecryptRelayAuthPassword error: %v", err)
+	}
+	if decrypted == "test-password" {
+		t.Fatal("stored relay password must not be the LDAP login password")
+	}
+}
+
 func TestLoginSSOPersistsEncryptedRelayAuthPassword(t *testing.T) {
 	client := setupAuthEntClient(t)
 	encryptionKey := "0000000000000000000000000000000000000000000000000000000000000000"
@@ -315,22 +407,21 @@ func TestLoginSpecificProviderAuthError(t *testing.T) {
 	}
 }
 
-func TestLoginFallthrough(t *testing.T) {
+func TestLoginFallthroughFromLDAPToRelaySSO(t *testing.T) {
 	svc, _ := newTestServiceWithDB(t)
-	// First provider returns nil (skip), second succeeds
 	svc.RegisterProvider(&mockAuthProvider{
-		name:     "sso",
-		userInfo: nil,
-		err:      nil,
-	})
-	svc.RegisterProvider(&mockAuthProvider{
-		name: "ldap",
+		name: "sso",
 		userInfo: &UserInfo{
-			Username:   "bob",
+			Username:   "bob-relay",
 			Email:      "bob@example.com",
 			Role:       "user",
-			AuthSource: "ldap",
+			AuthSource: "relay_sso",
 		},
+	})
+	svc.RegisterProvider(&mockAuthProvider{
+		name:     "ldap",
+		userInfo: nil,
+		err:      nil,
 	})
 
 	tokens, info, err := svc.Login(context.Background(), LoginRequest{
@@ -340,8 +431,11 @@ func TestLoginFallthrough(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Login error: %v", err)
 	}
-	if info.Username != "bob" {
-		t.Errorf("username = %q, want %q", info.Username, "bob")
+	if info.Username != "bob-relay" {
+		t.Errorf("username = %q, want %q", info.Username, "bob-relay")
+	}
+	if info.AuthSource != "relay_sso" {
+		t.Errorf("auth source = %q, want relay_sso", info.AuthSource)
 	}
 	if tokens == nil {
 		t.Fatal("expected non-nil tokens")
@@ -1002,7 +1096,7 @@ func TestLDAPProviderAuthenticateUserNotFound(t *testing.T) {
 	}
 }
 
-func TestLDAPProviderAuthenticateReturnsRelayAuthPassword(t *testing.T) {
+func TestLDAPProviderAuthenticateDoesNotExposeLoginPasswordForRelay(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("listen: %v", err)
@@ -1035,8 +1129,8 @@ func TestLDAPProviderAuthenticateReturnsRelayAuthPassword(t *testing.T) {
 	if info == nil {
 		t.Fatal("expected non-nil user info")
 	}
-	if info.RelayAuthPassword != "ldap-pass" {
-		t.Fatalf("RelayAuthPassword = %q, want %q", info.RelayAuthPassword, "ldap-pass")
+	if info.RelayAuthPassword != "" {
+		t.Fatalf("RelayAuthPassword = %q, want empty", info.RelayAuthPassword)
 	}
 }
 

@@ -6,7 +6,7 @@
 
 ## Overview
 
-为 ae-cli 实现 OAuth 授权登录流程，打通 relay server（当前为 sub2api）SSO 认证，新增 LDAP 前端管理界面。使 ae-cli 用户无需手动配置 token，通过浏览器授权即可完成登录。引入 Relay Provider 抽象层，统一封装所有 relay server 交互（认证、LLM 调用、用量查询、API key 管理），移除 sub2api 数据库直连，支持多个独立 relay provider 实例（每个即一个 LLM 端点），API key 和 base URL 通过 server 自动下发。
+为 ae-cli 实现 OAuth 授权登录流程，打通 LDAP 与 relay server（当前为 sub2api）SSO 认证，新增 LDAP 前端管理界面。当前默认登录路径优先使用 LDAP，relay SSO 保留为显式选择或 fallback。使 ae-cli 用户无需手动配置 token，通过浏览器授权即可完成登录。引入 Relay Provider 抽象层，统一封装所有 relay server 交互（认证、LLM 调用、用量查询、API key 管理），移除 sub2api 数据库直连，支持多个独立 relay provider 实例（每个即一个 LLM 端点），API key 和 base URL 通过 server 自动下发。
 
 本 spec 聚焦后端 Relay Provider 抽象、OAuth 登录、API Key 下发。ae-cli 侧的工具自动发现、provider-工具映射、以及各工具原生配置文件写入，由独立的 **Spec 2: ae-cli 智能工具发现与自动配置** 处理。
 
@@ -39,7 +39,7 @@
 | OAuth2 server 实现 | 轻量自定义实现（早期评估过 go-oauth2/oauth2） | 与当前 Gin/JWT 代码路径更一致，减少额外抽象层 |
 | PKCE 验证 | 自建（~50 行代码） | go-oauth2/oauth2 不原生支持 PKCE server 端验证，但逻辑简单（SHA256 + base64url 比对） |
 | ae-cli OAuth client | golang.org/x/oauth2 | Go 官方库，原生支持 PKCE client 端 |
-| Relay SSO | 通过 relay.Provider 接口调用 | 不直接读密码哈希，解耦且安全（relay server 有自己的安全机制） |
+| Relay SSO | 通过 relay.Provider 接口调用 | 不直接读密码哈希，解耦且安全；默认登录优先 LDAP，relay SSO 作为显式选择或 fallback |
 | LLM 调用 | ae-cli 直接调 provider（不走后端代理） | 用户用自己的 API key，用量天然按用户区分；延迟更低 |
 | API key 管理 | 后端自动查询/创建并下发 | 用户无需手动配置，登录后自动获取 |
 | 多 provider 支持 | 后端管理 RelayProvider 列表 | 管理员可配置多个独立 relay provider 实例，每个即一个 LLM 端点 |
@@ -442,13 +442,15 @@ func NewSSOProvider(relayProvider relay.Provider, logger *zap.Logger) *SSOProvid
 
 ### 错误处理
 
-- relay server 返回凭据错误：`relay.Provider.Authenticate` 返回 `ErrInvalidCredentials`，SSO provider fallthrough 到 LDAP
-- relay server 不可用（网络错误等）：`relay.Provider.Authenticate` 返回其他 error，SSO provider 记录 warn 日志，fallthrough 到 LDAP
-- relay server 要求额外验证（如 Turnstile、TOTP）：`relay.Provider.Authenticate` 返回 `ErrExtraVerificationRequired`，SSO provider fallthrough 到 LDAP。后续可在 OAuth 授权页中增加额外验证输入框
+- 默认登录先走 LDAP；LDAP 未认证成功时，才会继续尝试已注册的 relay SSO provider。
+- relay server 返回凭据错误：`relay.Provider.Authenticate` 返回 `ErrInvalidCredentials`，SSO provider 返回空结果并允许默认登录链继续处理失败结果。
+- relay server 不可用（网络错误等）：`relay.Provider.Authenticate` 返回其他 error，SSO provider 记录 warn 日志并返回空结果。
+- relay server 要求额外验证（如 Turnstile、TOTP）：`relay.Provider.Authenticate` 返回 `ErrExtraVerificationRequired`，SSO provider 记录 warn 日志并返回空结果。后续可在 OAuth 授权页中增加额外验证输入框。
+- LDAP 登录只使用用户输入密码完成 LDAP bind。后续 relay identity resolve/provision 不得把 LDAP 密码转发给 relay；创建 relay 用户时使用后端生成的高熵 relay-side password，已有 relay 用户只做 username/concurrency 等元数据修复，不更新密码。
 
 ### Provider Chain
 
-认证顺序不变：Relay SSO → LDAP → dev login
+默认 `/api/v1/auth/login` 认证顺序：LDAP → Relay SSO fallback。显式 `source=LDAP` 或 `source=SSO` 仍只尝试对应 provider。`dev-login` 是独立 debug endpoint，不参与普通 provider chain。
 
 SSO provider 仅在 `relay.Provider` 可用时注册。
 
@@ -598,7 +600,7 @@ Provider 配置（base URL + API key）以及完整的工具原生配置写入�
 
 1. 从 URL query 读取 `client_id`、`redirect_uri`、`code_challenge`、`code_challenge_method`、`state`
 2. 检查用户是否已登录（localStorage 中有有效 token，调用 `/auth/me` 验证）
-3. 未登录：显示登录表单（支持 LDAP 和 sub2api SSO 两种方式）
+3. 未登录：显示登录表单（支持 LDAP 和 sub2api SSO 两种方式，默认选择 LDAP）
 4. 已登录：直接显示授权确认页面
 
 同一前端中的 `/login` 页面保持 `public route`，但只对未登录用户展示登录表单；若本地已有 token，前端应先调用 `/auth/me` 校验并 hydrate 当前用户，校验通过时将已登录用户重定向到经过净化的站内目标路径，而不是继续停留在登录页。对于非 auth API 的运行时 `401`，前端应先尝试使用 localStorage 中的 `refresh_token` 调用 `/auth/refresh`，成功后重放原请求；仅在 refresh 失败时才清理本地 token 并跳转 `/login`。
@@ -765,8 +767,9 @@ ae-cli 直接调用 relay provider（不走后端代理），支持多个独立 
 `GET /api/v1/providers` 流程中，后端需要 relay user ID 来查询/创建 API key。用户的 `relay_user_id` 来源：
 
 - Relay SSO 用户：登录时已关联，直接使用
-- LDAP 用户：通过 `relay.Provider.FindUserByEmail(email)` 尝试关联。如果找到匹配的 relay 账号，将 `relay_user_id` 存入 Ent User 记录
-- LDAP-only 用户（无 relay 账号）：无法获取 API key。`GET /api/v1/providers` 返回空列表 `{"providers": []}`。ae-cli 收到空列表后提示用户："当前账号未关联 relay server，无法自动配置 AI 工具。请联系管理员。"
+- LDAP 用户：后端通过 stable username 解析 relay identity。当前实现优先用 canonical username（邮箱登录时取 `@` 前缀）查找 relay 用户；必要时兼容历史 full-email username，并可修复 username/concurrency 等元数据。
+- LDAP 用户首次没有 relay 账号时，后端可通过 relay admin API provision relay 用户，并使用后端生成的高熵 relay-side password。LDAP 登录密码只用于 LDAP bind，不能写入本地 `relay_auth_password`，也不能作为 relay create/update password 发送给 relay。
+- 当 relay provider 不可用或无法解析/provision relay 用户时，LDAP-only 用户无法获取 API key。`GET /api/v1/providers` 返回空列表 `{"providers": []}`。ae-cli 收到空列表后提示用户："当前账号未关联 relay server，无法自动配置 AI 工具。请联系管理员。"
 
 ### relay.Provider 接口扩展
 

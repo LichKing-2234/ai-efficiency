@@ -52,6 +52,16 @@ describe('LoginView', () => {
     expect(devBtn).toBeTruthy()
   })
 
+  it('defaults to LDAP auth source', () => {
+    const router = createTestRouter()
+    const wrapper = mount(LoginView, {
+      global: { plugins: [createPinia(), router] },
+    })
+
+    const select = wrapper.find('select#source')
+    expect((select.element as HTMLSelectElement).value).toBe('LDAP')
+  })
+
   it('shows error on failed login', async () => {
     const { login: mockLogin } = await import('@/api/auth')
     ;(mockLogin as any).mockRejectedValue({
@@ -122,6 +132,7 @@ describe('LoginView', () => {
     await wrapper.find('form').trigger('submit')
     await flushPromises()
 
+    expect(mockLogin).toHaveBeenCalledWith({ username: 'admin', password: 'pass', source: 'LDAP' })
     expect(router.currentRoute.value.path).toBe('/')
   })
 
