@@ -33,7 +33,11 @@ ae-cli discover
    - `codex`
    - `claude`
    - `gemini`
-4. 按工具的当前官方/本机配置机制写入本地配置
+4. 按工具对应的 relay `group.platform` 选择 credential
+   - `codex` -> `openai`
+   - `claude` -> `anthropic`
+   - `gemini` -> `gemini`
+5. 仅对已安装且存在匹配 platform credential 的工具写入本地配置
 
 ## Goals
 
@@ -46,7 +50,7 @@ ae-cli discover
 
 1. 当前版本不实现 `/api/v1/tools/discover`
 2. 当前版本不实现 `ae-cli login` 后自动执行 discover
-3. 当前版本不做 per-tool provider inference
+3. 当前版本不做 LLM 驱动的 per-tool provider inference；仅按后端返回的 `group.platform` 做确定性匹配
 4. 当前版本不做 live model request 验证；只保证 CLI 配置文件/环境变量写入合同
 
 ## Current Contract
@@ -54,8 +58,8 @@ ae-cli discover
 ### Provider selection
 
 - `ae-cli discover` 优先从 `GET /api/v1/user/providers` 获取用户可用 provider 列表和 group-scoped credential。
-- 对每个 provider，当前 CLI 使用该 provider 下第一个可用 active credential 的 API key 来写入本地工具配置。
-- 若后端尚未实现 `/api/v1/user/providers`，CLI 可回退到旧 `GET /api/v1/providers`，以兼容旧部署。
+- 对当前 `/user/providers` 合同，CLI 保留每个 `provider + group.platform` 的 active credential，不再把第一个 credential 套用到所有工具。
+- 若后端尚未实现 `/api/v1/user/providers`，CLI 可回退到旧 `GET /api/v1/providers`，以兼容旧部署；旧接口没有 group/platform 语义时，仍按 provider-level API key 走历史配置行为。
 - 如果用户传入 `--provider <name>`，则按 provider `name` / `display_name` 精确匹配。
 - 否则优先使用 `is_primary=true` 的 provider；若不存在 primary，则回退到列表第一项。
 
@@ -63,6 +67,7 @@ ae-cli discover
 
 - CLI 仅通过 `exec.LookPath` 检测本机是否安装 `codex`、`claude`、`gemini`。
 - 未安装的工具不会报错，只会跳过。
+- 已安装但没有匹配 platform credential 的工具也会跳过。例如选中的 provider 只有 `openai` group 时，CLI 只配置 Codex，不会改 Claude 或 Gemini。
 
 ### Config writes
 
@@ -70,25 +75,40 @@ ae-cli discover
 
 - 写入 `~/.codex/config.toml`
 - 当前写入字段：
-  - `openai_base_url = <provider.base_url>`
-  - `model = <provider.default_model>`（当后端提供该字段时）
-- API key 不直接写入 `config.toml`
-- API key 写入 `~/.ae-cli/env.sh` 中的：
-  - `OPENAI_API_KEY`
+  - `model_provider = "OpenAI"`
+  - `model = "gpt-5.4"`
+  - `review_model = <model>`
+  - `model_reasoning_effort = "xhigh"`
+  - `disable_response_storage = true`
+  - `network_access = "enabled"`
+  - `windows_wsl_setup_acknowledged = true`
+  - `model_context_window = 1000000`
+  - `model_auto_compact_token_limit = 900000`
+  - `[model_providers.OpenAI]`
+    - `name = "OpenAI"`
+    - `base_url = <provider.base_url>`
+    - `wire_api = "responses"`
+    - `requires_openai_auth = true`
+- API key 写入 `~/.codex/auth.json`：
+  - `OPENAI_API_KEY = <openai credential.key>`
+- Codex 不再通过 `~/.ae-cli/env.sh` 写入或提示 `OPENAI_API_KEY`。
+- Codex 不使用 provider 级 `default_model`。该字段不具备 openai group 专属语义，不能自动套用到 Codex 的 `model` / `review_model`。
 
 #### Claude
 
 - 写入 `~/.claude/settings.json`
 - 当前写入字段：
-  - `env.ANTHROPIC_API_KEY = <provider.api_key>`
   - `env.ANTHROPIC_BASE_URL = <provider.base_url>`
-  - `model = <provider.default_model>`（当后端提供该字段时）
+  - `env.ANTHROPIC_AUTH_TOKEN = <anthropic credential.key>`
+  - `env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = "1"`
+  - `env.CLAUDE_CODE_ATTRIBUTION_HEADER = "0"`
+- CLI 不再为 Claude 写入 top-level `model` 字段。
 
 #### Gemini
 
 - 当前实现**不写** `~/.gemini/settings.json`
 - API key / gateway URL 仅通过 `~/.ae-cli/env.sh` 提供：
-  - `GEMINI_API_KEY`
+  - `GEMINI_API_KEY = <gemini credential.key>`
   - `GOOGLE_GEMINI_BASE_URL`
 
 #### Shared env bootstrap

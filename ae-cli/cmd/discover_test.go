@@ -46,7 +46,13 @@ func TestDiscoverCommandConfiguresDetectedTools(t *testing.T) {
 	discoverInstalledTools = func([]string) ([]toolconfig.InstalledTool, error) {
 		return []toolconfig.InstalledTool{{Name: "codex", Path: "/usr/local/bin/codex"}}, nil
 	}
-	configureDiscoveredTools = func(toolconfig.Options) (toolconfig.Result, error) {
+	configureDiscoveredTools = func(opts toolconfig.Options) (toolconfig.Result, error) {
+		if len(opts.Provider.Credentials) != 1 {
+			t.Fatalf("provider credentials = %+v, want one openai credential", opts.Provider.Credentials)
+		}
+		if opts.Provider.Credentials[0].Platform != "openai" || opts.Provider.Credentials[0].APIKey != "sk-openai" {
+			t.Fatalf("provider credential = %+v, want openai/sk-openai", opts.Provider.Credentials[0])
+		}
 		return toolconfig.Result{Configured: []toolconfig.ConfiguredTool{{Name: "codex"}}}, nil
 	}
 	apiClient = &client.Client{}
@@ -57,8 +63,10 @@ func TestDiscoverCommandConfiguresDetectedTools(t *testing.T) {
 		return []client.ProviderInfo{{
 			Name:      "primary",
 			BaseURL:   "https://relay.example.com/v1",
-			APIKey:    "sk-test",
 			IsPrimary: true,
+			Credentials: []client.ProviderCredentialInfo{
+				{Platform: "openai", APIKey: "sk-openai"},
+			},
 		}}, nil
 	}
 	t.Cleanup(func() { listProvidersForDiscover = defaultListProvidersForDiscover })

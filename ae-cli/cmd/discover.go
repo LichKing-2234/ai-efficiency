@@ -74,6 +74,10 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	if len(result.Configured) == 0 {
+		fmt.Fprintf(cmd.OutOrStdout(), "No supported local tools matched provider %s credentials.\n", selected.Name)
+		return nil
+	}
 
 	mode := "Configured"
 	if discoverDryRun {
@@ -107,6 +111,21 @@ func mapProviders(items []client.ProviderInfo) []toolconfig.Provider {
 			APIKeyID:     item.APIKeyID,
 			DefaultModel: item.DefaultModel,
 			IsPrimary:    item.IsPrimary,
+			Credentials:  mapProviderCredentials(item.Credentials),
+		})
+	}
+	return out
+}
+
+func mapProviderCredentials(items []client.ProviderCredentialInfo) []toolconfig.PlatformCredential {
+	out := make([]toolconfig.PlatformCredential, 0, len(items))
+	for _, item := range items {
+		out = append(out, toolconfig.PlatformCredential{
+			Platform: item.Platform,
+			GroupID:  item.GroupID,
+			APIKey:   item.APIKey,
+			APIKeyID: item.APIKeyID,
+			Status:   item.Status,
 		})
 	}
 	return out
