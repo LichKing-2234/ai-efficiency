@@ -125,7 +125,7 @@ It should show:
 4. Which hook mode Git will actually use for the current repository: none, global, repo-local AE, or non-AE local hooks.
 5. Whether the current repository exists in the local eligibility cache.
 6. Whether the current repository resolves as eligible in the backend when online.
-7. Whether stale repo-local AE hooks from older contracts are still installed for the current repository.
+7. Whether the current effective repo-local `core.hooksPath` points to a stale AE-managed hook path from an older contract.
 8. Which `ae-cli` executable the hook dispatcher would run.
 9. Which managed hook script template version is installed and whether it is stale for the current `ae-cli` binary.
 10. Whether `AE_CLI_BIN` is overriding executable resolution.
@@ -138,7 +138,7 @@ Refreshes local hook eligibility cache entries from the backend.
 Behavior:
 
 1. Require a valid login token.
-2. Read locally observed repo keys from `~/.ae-cli/state/hooks/repos.json`.
+2. Read locally observed repo keys from `~/.ae-cli/state/hooks/observed-repos.json`.
 3. Call read-only backend resolve APIs only for those observed repo keys.
 4. Update positive and negative eligibility cache entries for observed repos.
 5. Preserve cache entries for repos that were not part of the refresh request.
@@ -218,6 +218,7 @@ The new CLI contract uses one user-owned config and state root:
     attribution/
     hooks/
       repos.json
+      observed-repos.json
       installations.json
 ```
 
@@ -227,8 +228,9 @@ Directory responsibilities:
 2. `~/.ae-cli/git-hooks/` holds the managed global Git hook scripts.
 3. `~/.ae-cli/state/attribution/` holds workspace scan state, hook queues, spooled usage events, collector snapshots, and upload ledgers.
 4. `~/.ae-cli/state/hooks/repos.json` holds the local repository eligibility cache.
-5. `~/.ae-cli/state/hooks/installations.json` tracks AE-managed hook installation locations and enabled/disabled state so `ae-cli` upgrades can rewrite only enabled managed scripts to the latest template.
-6. Repo-local hook mode still uses the Git-owned `$(git rev-parse --git-common-dir)/ae-hooks` directory through local or worktree `core.hooksPath`.
+5. `~/.ae-cli/state/hooks/observed-repos.json` holds durable locally observed repository identities for refresh.
+6. `~/.ae-cli/state/hooks/installations.json` tracks AE-managed hook installation locations and enabled/disabled state so `ae-cli` upgrades can rewrite only enabled managed scripts to the latest template.
+7. Repo-local hook mode still uses the Git-owned `$(git rev-parse --git-common-dir)/ae-hooks` directory through local or worktree `core.hooksPath`.
 
 The executable is not stored in the state root. The official user-installed binary path remains `~/.local/bin/ae-cli`, and managed hook scripts must not prefer or generate any local debug binary path.
 
@@ -371,19 +373,25 @@ The hook implementation must change the hook upload contract:
 
 Legacy clients that do not send `repo_config_id` may continue to use the old behavior where appropriate, but managed global and repo-local hooks must use the resolve-only path for checkpoint, rewrite, and tool usage uploads.
 
-## Local Eligibility Cache
+## Local Repository Cache
 
-Cache file:
+Eligibility cache file:
 
 ```text
 ~/.ae-cli/state/hooks/repos.json
 ```
 
-The cache is keyed by backend-compatible `repo_key`, not by local checkout path. This lets multiple clones or worktrees of the same repository share eligibility.
+Observed repo file:
 
-The cache is also the source of locally observed repo keys for `ae-cli hooks refresh`. A hook invocation may write an observed entry before the backend knows the repo. That observed entry is still not authorization; it only records that this machine has seen the repo and may refresh its eligibility later.
+```text
+~/.ae-cli/state/hooks/observed-repos.json
+```
 
-Example:
+The eligibility cache is keyed by backend-compatible `repo_key`, not by local checkout path. This lets multiple clones or worktrees of the same repository share eligibility.
+
+The observed repo file is the source of locally observed repo keys for `ae-cli hooks refresh`. A hook invocation writes an observed repo identity before the backend knows the repo. That observed identity is not authorization; it only records that this machine has seen the repo and may refresh its eligibility later.
+
+Eligibility cache example:
 
 ```json
 {
@@ -416,6 +424,23 @@ Example:
 }
 ```
 
+Observed repo example:
+
+```json
+{
+  "version": 1,
+  "updated_at": "2026-05-23T10:00:00Z",
+  "repos": {
+    "repo-host.example.com/org/repo": {
+      "repo_key": "repo-host.example.com/org/repo",
+      "remote_url": "git@repo-host.example.com:org/repo.git",
+      "first_observed_at": "2026-05-23T09:00:00Z",
+      "last_observed_at": "2026-05-23T10:00:00Z"
+    }
+  }
+}
+```
+
 Default TTLs:
 
 1. Positive entries: 24 hours.
@@ -427,7 +452,9 @@ The expiration is not data retention and it is not an upload ledger. It is a bou
 2. Negative TTL prevents repeated backend calls from every commit in an unknown repository, but stays short so a newly configured backend repo becomes eligible quickly.
 3. Backend ingest remains the final authority. Even if local cache is wrong, uploads with `repo_config_id` must be rechecked server-side.
 
-Expired positive entries do not authorize hook execution. The dispatcher may try the online resolve endpoint with a short timeout. If that lookup fails, it skips AE hook work for that commit.
+Expired eligibility entries do not authorize hook execution. The dispatcher may try the online resolve endpoint with a short timeout. If that lookup fails, it skips AE hook work for that commit.
+
+Observed repo identities do not expire as part of eligibility TTL cleanup. They may be pruned only by explicit cache maintenance policy such as a long inactivity cutoff or a user-facing purge command. Expiring or deleting an eligibility record must not remove the corresponding observed repo identity.
 
 ## Hook Installation Registry
 
@@ -589,7 +616,7 @@ Version rules:
 4. `ae-cli hooks status` and `ae-cli doctor` compare installed template headers with the current binary's expected template version and report stale scripts.
 5. Stale AE-managed scripts are not auto-rewritten from inside a Git hook invocation, because hooks must stay fast and fail-open.
 6. The official `ae-cli` installer or upgrade flow must rewrite AE-managed hook scripts to the latest template after the new binary is installed.
-7. Global hook scripts are rewritten at the fixed `~/.ae-cli/git-hooks` path.
+7. Global hook scripts are rewritten at the fixed `~/.ae-cli/git-hooks` path only when the global installation record is enabled or the current global `core.hooksPath` points to the AE-managed global path.
 8. Repo-local hook scripts are rewritten from enabled records in `~/.ae-cli/state/hooks/installations.json`, which records only AE-managed hook locations installed by `ae-cli hooks enable --repo`.
 9. Disabled records are ignored by installer/upgrade refresh.
 10. Missing or inaccessible recorded repo-local locations are skipped with diagnostics; upgrade must not fail because a repository was deleted or moved.
@@ -656,9 +683,12 @@ It must not upload local tool artifacts, prompts, raw payloads, file paths, or u
 18. `AE_CLI_BIN` overrides executable resolution and is reported by `hooks status`.
 19. Upload ledgers record pending, uploaded, failed, and skipped operational metadata without raw payloads.
 20. `hooks refresh` sends only locally observed repo identities to the batch eligibility endpoint and does not accept unrelated repos.
-21. `hooks enable --repo` records AE-managed repo-local hook locations as enabled in `~/.ae-cli/state/hooks/installations.json`.
-22. `hooks disable --repo` and `hooks disable --global` mark matching installation records disabled.
-23. The installer or upgrade refresh rewrites global hooks and enabled recorded repo-local AE hooks to the current template without preserving previous non-AE hooks.
+21. Expired eligibility entries do not remove durable observed repo identities.
+22. `hooks status` checks stale repo-local AE hooks only through the current effective `core.hooksPath`, not by scanning historical hook directories.
+23. `hooks enable --repo` records AE-managed repo-local hook locations as enabled in `~/.ae-cli/state/hooks/installations.json`.
+24. `hooks disable --repo` and `hooks disable --global` mark matching installation records disabled.
+25. The installer or upgrade refresh rewrites global hooks and enabled recorded repo-local AE hooks to the current template without preserving previous non-AE hooks.
+26. Disabled repo-local and global installation records are not rewritten or reactivated during installer/upgrade refresh.
 
 ### Backend unit tests
 
