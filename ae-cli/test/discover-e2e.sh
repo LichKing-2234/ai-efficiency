@@ -76,14 +76,36 @@ class Handler(BaseHTTPRequestHandler):
                         "name": "primary",
                         "display_name": "Primary Relay",
                         "base_url": "https://relay.example.com/v1",
-                        "default_model": "gpt-5.3-codex",
+                        "default_model": "claude-sonnet-4-20250514",
                         "is_primary": True,
                         "groups": [
                             {
                                 "group_id": "42",
+                                "group_name": "Group Alpha",
+                                "platform": "openai",
                                 "credential": {
                                     "api_key_id": 123,
-                                    "key": "sk-mock-123",
+                                    "key": "sk-openai-123",
+                                    "status": "active",
+                                },
+                            },
+                            {
+                                "group_id": "43",
+                                "group_name": "Group Beta",
+                                "platform": "anthropic",
+                                "credential": {
+                                    "api_key_id": 124,
+                                    "key": "sk-anthropic-123",
+                                    "status": "active",
+                                },
+                            },
+                            {
+                                "group_id": "44",
+                                "group_name": "Group Gamma",
+                                "platform": "gemini",
+                                "credential": {
+                                    "api_key_id": 125,
+                                    "key": "sk-gemini-123",
                                     "status": "active",
                                 },
                             }
@@ -111,6 +133,7 @@ OUTPUT_FILE="${TMP_HOME}/discover.out"
 HOME="${TMP_HOME}" PATH="${TMP_BIN}:${PATH}" SHELL=/bin/zsh "${BIN_PATH}" discover > "${OUTPUT_FILE}"
 
 test -f "${TMP_HOME}/.codex/config.toml"
+test -f "${TMP_HOME}/.codex/auth.json"
 test -f "${TMP_HOME}/.claude/settings.json"
 test -f "${TMP_HOME}/.ae-cli/env.sh"
 test -f "${TMP_HOME}/.zshrc"
@@ -121,9 +144,32 @@ grep -F "  - codex" "${OUTPUT_FILE}" >/dev/null
 grep -F "  - claude" "${OUTPUT_FILE}" >/dev/null
 grep -F "  - gemini" "${OUTPUT_FILE}" >/dev/null
 
-grep -F "openai_base_url = 'https://relay.example.com/v1'" "${TMP_HOME}/.codex/config.toml" >/dev/null
-grep -F '"ANTHROPIC_API_KEY": "sk-mock-123"' "${TMP_HOME}/.claude/settings.json" >/dev/null
-grep -F 'export OPENAI_API_KEY="sk-mock-123"' "${TMP_HOME}/.ae-cli/env.sh" >/dev/null
-grep -F 'export GEMINI_API_KEY="sk-mock-123"' "${TMP_HOME}/.ae-cli/env.sh" >/dev/null
+grep -F "model_provider = 'OpenAI'" "${TMP_HOME}/.codex/config.toml" >/dev/null
+grep -F "model = 'gpt-5.4'" "${TMP_HOME}/.codex/config.toml" >/dev/null
+grep -F "review_model = 'gpt-5.4'" "${TMP_HOME}/.codex/config.toml" >/dev/null
+if grep -F 'claude-sonnet-4-20250514' "${TMP_HOME}/.codex/config.toml" >/dev/null; then
+  echo "Codex config should not use provider default_model" >&2
+  exit 1
+fi
+grep -F "model_reasoning_effort = 'xhigh'" "${TMP_HOME}/.codex/config.toml" >/dev/null
+grep -F "disable_response_storage = true" "${TMP_HOME}/.codex/config.toml" >/dev/null
+grep -F "network_access = 'enabled'" "${TMP_HOME}/.codex/config.toml" >/dev/null
+grep -F "windows_wsl_setup_acknowledged = true" "${TMP_HOME}/.codex/config.toml" >/dev/null
+grep -F "model_context_window = 1000000" "${TMP_HOME}/.codex/config.toml" >/dev/null
+grep -F "model_auto_compact_token_limit = 900000" "${TMP_HOME}/.codex/config.toml" >/dev/null
+grep -F "[model_providers.OpenAI]" "${TMP_HOME}/.codex/config.toml" >/dev/null
+grep -F "base_url = 'https://relay.example.com/v1'" "${TMP_HOME}/.codex/config.toml" >/dev/null
+grep -F "wire_api = 'responses'" "${TMP_HOME}/.codex/config.toml" >/dev/null
+grep -F "requires_openai_auth = true" "${TMP_HOME}/.codex/config.toml" >/dev/null
+grep -F '"OPENAI_API_KEY": "sk-openai-123"' "${TMP_HOME}/.codex/auth.json" >/dev/null
+grep -F '"ANTHROPIC_AUTH_TOKEN": "sk-anthropic-123"' "${TMP_HOME}/.claude/settings.json" >/dev/null
+grep -F '"ANTHROPIC_BASE_URL": "https://relay.example.com/v1"' "${TMP_HOME}/.claude/settings.json" >/dev/null
+grep -F '"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"' "${TMP_HOME}/.claude/settings.json" >/dev/null
+grep -F '"CLAUDE_CODE_ATTRIBUTION_HEADER": "0"' "${TMP_HOME}/.claude/settings.json" >/dev/null
+grep -F 'export GEMINI_API_KEY="sk-gemini-123"' "${TMP_HOME}/.ae-cli/env.sh" >/dev/null
 grep -F 'export GOOGLE_GEMINI_BASE_URL="https://relay.example.com/v1"' "${TMP_HOME}/.ae-cli/env.sh" >/dev/null
+if grep -F 'OPENAI_API_KEY' "${TMP_HOME}/.ae-cli/env.sh" >/dev/null; then
+  echo "OPENAI_API_KEY should be stored in ~/.codex/auth.json, not env.sh" >&2
+  exit 1
+fi
 grep -F '[ -f "$HOME/.ae-cli/env.sh" ] && source "$HOME/.ae-cli/env.sh"' "${TMP_HOME}/.zshrc" >/dev/null

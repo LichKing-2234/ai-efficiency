@@ -22,19 +22,33 @@ type Client struct {
 }
 
 type ProviderInfo struct {
-	Name         string `json:"name"`
-	DisplayName  string `json:"display_name"`
-	BaseURL      string `json:"base_url"`
-	APIKey       string `json:"api_key"`
-	APIKeyID     int64  `json:"api_key_id"`
-	DefaultModel string `json:"default_model"`
-	IsPrimary    bool   `json:"is_primary"`
+	Name         string                   `json:"name"`
+	DisplayName  string                   `json:"display_name"`
+	BaseURL      string                   `json:"base_url"`
+	APIKey       string                   `json:"api_key"`
+	APIKeyID     int64                    `json:"api_key_id"`
+	DefaultModel string                   `json:"default_model"`
+	IsPrimary    bool                     `json:"is_primary"`
+	Credentials  []ProviderCredentialInfo `json:"credentials,omitempty"`
+}
+
+type ProviderCredentialInfo struct {
+	Platform  string `json:"platform"`
+	GroupID   string `json:"group_id,omitempty"`
+	GroupName string `json:"group_name,omitempty"`
+	APIKey    string `json:"api_key"`
+	APIKeyID  int64  `json:"api_key_id"`
+	Status    string `json:"status,omitempty"`
 }
 
 type userProviderGroup struct {
+	GroupID    string `json:"group_id"`
+	GroupName  string `json:"group_name"`
+	Platform   string `json:"platform"`
 	Credential struct {
 		APIKeyID int64  `json:"api_key_id"`
 		Key      string `json:"key"`
+		State    string `json:"state"`
 		Status   string `json:"status"`
 	} `json:"credential"`
 }
@@ -293,10 +307,8 @@ func (c *Client) listUserProviders(ctx context.Context) ([]ProviderInfo, error) 
 
 	out := make([]ProviderInfo, 0, len(envelope.Data.Providers))
 	for _, provider := range envelope.Data.Providers {
-		apiKey, apiKeyID := selectUserProviderCredential(provider.Groups)
-		if apiKey == "" {
-			continue
-		}
+		credentials := selectUserProviderCredentials(provider.Groups)
+		apiKey, apiKeyID := firstUserProviderCredential(credentials)
 		out = append(out, ProviderInfo{
 			Name:         provider.Name,
 			DisplayName:  provider.DisplayName,
@@ -305,24 +317,58 @@ func (c *Client) listUserProviders(ctx context.Context) ([]ProviderInfo, error) 
 			APIKeyID:     apiKeyID,
 			DefaultModel: provider.DefaultModel,
 			IsPrimary:    provider.IsPrimary,
+			Credentials:  credentials,
 		})
 	}
 	return out, nil
 }
 
 func selectUserProviderCredential(groups []userProviderGroup) (string, int64) {
+	return firstUserProviderCredential(selectUserProviderCredentials(groups))
+}
+
+func selectUserProviderCredentials(groups []userProviderGroup) []ProviderCredentialInfo {
+	out := make([]ProviderCredentialInfo, 0, len(groups))
 	for _, group := range groups {
 		key := strings.TrimSpace(group.Credential.Key)
 		status := strings.TrimSpace(group.Credential.Status)
-		if key == "" {
+		state := strings.TrimSpace(group.Credential.State)
+		platform := strings.TrimSpace(group.Platform)
+		if key == "" || platform == "" {
+			continue
+		}
+		if strings.EqualFold(state, "missing") {
 			continue
 		}
 		if status != "" && !strings.EqualFold(status, "active") {
 			continue
 		}
-		return key, group.Credential.APIKeyID
+		out = append(out, ProviderCredentialInfo{
+			Platform:  platform,
+			GroupID:   strings.TrimSpace(group.GroupID),
+			GroupName: strings.TrimSpace(group.GroupName),
+			APIKey:    key,
+			APIKeyID:  group.Credential.APIKeyID,
+			Status:    firstNonEmptyString(status, "active"),
+		})
 	}
-	return "", 0
+	return out
+}
+
+func firstUserProviderCredential(credentials []ProviderCredentialInfo) (string, int64) {
+	if len(credentials) == 0 {
+		return "", 0
+	}
+	return credentials[0].APIKey, credentials[0].APIKeyID
+}
+
+func firstNonEmptyString(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func (c *Client) BaseURL() string {

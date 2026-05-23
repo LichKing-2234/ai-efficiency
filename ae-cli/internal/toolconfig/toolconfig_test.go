@@ -64,15 +64,19 @@ func TestDetectInstalledToolsFindsKnownCommands(t *testing.T) {
 	}
 }
 
-func TestConfigureToolsWritesCodexClaudeAndGeminiEnvOnly(t *testing.T) {
+func TestConfigureToolsWritesCodexClaudeAndGeminiWithPlatformCredentials(t *testing.T) {
 	tmpHome := t.TempDir()
 	provider := Provider{
 		Name:         "relay-primary",
 		DisplayName:  "Relay Primary",
 		BaseURL:      "https://relay.example.com/v1",
-		APIKey:       "sk-test-123",
-		DefaultModel: "gpt-5.3-codex",
+		DefaultModel: "gpt-5.4",
 		IsPrimary:    true,
+		Credentials: []PlatformCredential{
+			{Platform: "openai", APIKey: "sk-openai"},
+			{Platform: "anthropic", APIKey: "sk-anthropic"},
+			{Platform: "gemini", APIKey: "sk-gemini"},
+		},
 	}
 
 	result, err := ConfigureTools(Options{
@@ -91,17 +95,25 @@ func TestConfigureToolsWritesCodexClaudeAndGeminiEnvOnly(t *testing.T) {
 	if len(result.Configured) != 3 {
 		t.Fatalf("configured count = %d, want 3", len(result.Configured))
 	}
+	if reflect.DeepEqual(result.Configured[0].Paths, []string{
+		filepath.Join(tmpHome, ".codex", "config.toml"),
+		filepath.Join(tmpHome, ".codex", "auth.json"),
+	}) == false {
+		t.Fatalf("codex paths = %v", result.Configured[0].Paths)
+	}
 
 	envPath := filepath.Join(tmpHome, ".ae-cli", "env.sh")
 	envBody := mustReadFile(t, envPath)
 	for _, want := range []string{
-		`export OPENAI_API_KEY="sk-test-123"`,
-		`export GEMINI_API_KEY="sk-test-123"`,
+		`export GEMINI_API_KEY="sk-gemini"`,
 		`export GOOGLE_GEMINI_BASE_URL="https://relay.example.com/v1"`,
 	} {
 		if !contains(envBody, want) {
 			t.Fatalf("%s missing %q\n%s", envPath, want, envBody)
 		}
+	}
+	if contains(envBody, "OPENAI_API_KEY") {
+		t.Fatalf("codex key should not be written to env.sh:\n%s", envBody)
 	}
 
 	zshrc := mustReadFile(t, filepath.Join(tmpHome, ".zshrc"))
@@ -111,27 +123,117 @@ func TestConfigureToolsWritesCodexClaudeAndGeminiEnvOnly(t *testing.T) {
 
 	codexCfg := mustReadFile(t, filepath.Join(tmpHome, ".codex", "config.toml"))
 	for _, want := range []string{
-		"openai_base_url = 'https://relay.example.com/v1'",
-		"model = 'gpt-5.3-codex'",
+		"model_provider = 'OpenAI'",
+		"model = 'gpt-5.4'",
+		"review_model = 'gpt-5.4'",
+		"model_reasoning_effort = 'xhigh'",
+		"disable_response_storage = true",
+		"network_access = 'enabled'",
+		"windows_wsl_setup_acknowledged = true",
+		"model_context_window = 1000000",
+		"model_auto_compact_token_limit = 900000",
+		"[model_providers.OpenAI]",
+		"name = 'OpenAI'",
+		"base_url = 'https://relay.example.com/v1'",
+		"wire_api = 'responses'",
+		"requires_openai_auth = true",
 	} {
 		if !contains(codexCfg, want) {
 			t.Fatalf("codex config missing %q\n%s", want, codexCfg)
 		}
 	}
+	codexAuth := mustReadFile(t, filepath.Join(tmpHome, ".codex", "auth.json"))
+	if !contains(codexAuth, `"OPENAI_API_KEY": "sk-openai"`) {
+		t.Fatalf("codex auth missing OPENAI_API_KEY:\n%s", codexAuth)
+	}
 
 	claudeCfg := mustReadFile(t, filepath.Join(tmpHome, ".claude", "settings.json"))
 	for _, want := range []string{
-		"\"ANTHROPIC_API_KEY\": \"sk-test-123\"",
+		"\"ANTHROPIC_AUTH_TOKEN\": \"sk-anthropic\"",
 		"\"ANTHROPIC_BASE_URL\": \"https://relay.example.com/v1\"",
-		"\"model\": \"gpt-5.3-codex\"",
+		"\"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC\": \"1\"",
+		"\"CLAUDE_CODE_ATTRIBUTION_HEADER\": \"0\"",
 	} {
 		if !contains(claudeCfg, want) {
 			t.Fatalf("claude settings missing %q\n%s", want, claudeCfg)
 		}
 	}
+	if contains(claudeCfg, "ANTHROPIC_API_KEY") {
+		t.Fatalf("claude settings should use ANTHROPIC_AUTH_TOKEN:\n%s", claudeCfg)
+	}
 
 	if _, err := os.Stat(filepath.Join(tmpHome, ".gemini", "settings.json")); !os.IsNotExist(err) {
 		t.Fatalf("expected no gemini settings file, got err=%v", err)
+	}
+}
+
+func TestConfigureToolsSkipsToolsWithoutMatchingPlatformCredential(t *testing.T) {
+	tmpHome := t.TempDir()
+	provider := Provider{
+		Name:         "openai-only",
+		BaseURL:      "https://relay.example.com/v1",
+		APIKey:       "sk-openai",
+		DefaultModel: "gpt-5.4",
+		Credentials: []PlatformCredential{
+			{Platform: "openai", APIKey: "sk-openai"},
+		},
+	}
+
+	result, err := ConfigureTools(Options{
+		HomeDir:   tmpHome,
+		ShellPath: "/bin/zsh",
+		Provider:  provider,
+		Tools: []InstalledTool{
+			{Name: "codex", Path: "/usr/local/bin/codex"},
+			{Name: "claude", Path: "/usr/local/bin/claude"},
+			{Name: "gemini", Path: "/usr/local/bin/gemini"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("ConfigureTools: %v", err)
+	}
+	if len(result.Configured) != 1 || result.Configured[0].Name != "codex" {
+		t.Fatalf("configured = %+v, want only codex", result.Configured)
+	}
+	if _, err := os.Stat(filepath.Join(tmpHome, ".claude", "settings.json")); !os.IsNotExist(err) {
+		t.Fatalf("claude settings should not be written without anthropic credential, err=%v", err)
+	}
+	if _, err := os.Stat(filepath.Join(tmpHome, ".ae-cli", "env.sh")); !os.IsNotExist(err) {
+		t.Fatalf("env.sh should not be written when only codex is configured, err=%v", err)
+	}
+}
+
+func TestConfigureCodexUsesCodexModelNotProviderDefaultModel(t *testing.T) {
+	tmpHome := t.TempDir()
+
+	_, err := ConfigureTools(Options{
+		HomeDir:   tmpHome,
+		ShellPath: "/bin/zsh",
+		Provider: Provider{
+			Name:         "sub2api",
+			BaseURL:      "https://relay.example.com/v1",
+			DefaultModel: "claude-sonnet-4-20250514",
+			Credentials: []PlatformCredential{
+				{Platform: "openai", APIKey: "sk-openai"},
+			},
+		},
+		Tools: []InstalledTool{{Name: "codex", Path: "/usr/local/bin/codex"}},
+	})
+	if err != nil {
+		t.Fatalf("ConfigureTools: %v", err)
+	}
+
+	codexCfg := mustReadFile(t, filepath.Join(tmpHome, ".codex", "config.toml"))
+	for _, want := range []string{
+		"model = 'gpt-5.4'",
+		"review_model = 'gpt-5.4'",
+	} {
+		if !contains(codexCfg, want) {
+			t.Fatalf("codex config missing %q\n%s", want, codexCfg)
+		}
+	}
+	if contains(codexCfg, "claude-sonnet-4-20250514") {
+		t.Fatalf("codex config should not use provider default model:\n%s", codexCfg)
 	}
 }
 
@@ -149,8 +251,10 @@ func TestConfigureToolsPreservesExistingUserSettings(t *testing.T) {
 		ShellPath: "/bin/zsh",
 		Provider: Provider{
 			BaseURL:      "https://relay.example.com/v1",
-			APIKey:       "sk-test-123",
 			DefaultModel: "claude-sonnet-4-20250514",
+			Credentials: []PlatformCredential{
+				{Platform: "anthropic", APIKey: "sk-test-123"},
+			},
 		},
 		Tools: []InstalledTool{{Name: "claude", Path: "/usr/local/bin/claude"}},
 	})

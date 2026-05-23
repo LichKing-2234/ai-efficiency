@@ -203,11 +203,33 @@ func TestListProviders(t *testing.T) {
 						"is_primary":    true,
 						"groups": []map[string]any{
 							{
-								"group_id": "42",
+								"group_id":   "42",
+								"group_name": "OpenAI",
+								"platform":   "openai",
 								"credential": map[string]any{
 									"api_key_id": 123,
 									"key":        "sk-test",
 									"status":     "active",
+								},
+							},
+							{
+								"group_id":   "43",
+								"group_name": "Claude",
+								"platform":   "anthropic",
+								"credential": map[string]any{
+									"api_key_id": 124,
+									"key":        "sk-claude",
+									"status":     "active",
+								},
+							},
+							{
+								"group_id":   "44",
+								"group_name": "Gemini",
+								"platform":   "gemini",
+								"credential": map[string]any{
+									"api_key_id": 125,
+									"key":        "sk-inactive",
+									"status":     "inactive",
 								},
 							},
 						},
@@ -228,6 +250,15 @@ func TestListProviders(t *testing.T) {
 	}
 	if providers[0].Name != "primary" || providers[0].APIKey != "sk-test" || !providers[0].IsPrimary {
 		t.Fatalf("unexpected provider payload: %+v", providers[0])
+	}
+	if len(providers[0].Credentials) != 2 {
+		t.Fatalf("credentials len = %d, want 2: %+v", len(providers[0].Credentials), providers[0].Credentials)
+	}
+	if providers[0].Credentials[0].Platform != "openai" || providers[0].Credentials[0].APIKey != "sk-test" {
+		t.Fatalf("openai credential = %+v", providers[0].Credentials[0])
+	}
+	if providers[0].Credentials[1].Platform != "anthropic" || providers[0].Credentials[1].APIKey != "sk-claude" {
+		t.Fatalf("anthropic credential = %+v", providers[0].Credentials[1])
 	}
 }
 
