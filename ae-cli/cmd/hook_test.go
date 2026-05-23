@@ -1,11 +1,13 @@
 package cmd
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ai-efficiency/ae-cli/internal/hooks"
 	"github.com/ai-efficiency/ae-cli/internal/session"
@@ -22,6 +24,57 @@ func runGitOutput(t *testing.T, dir string, args ...string) string {
 		t.Fatalf("git %s failed: %v stderr=%s", strings.Join(args, " "), err, stderr.String())
 	}
 	return strings.TrimSpace(string(out))
+}
+
+type blockingHookUploader struct{}
+
+func (blockingHookUploader) UploadHookEvent(ctx context.Context, _ hooks.HookEvent) error {
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+func TestHookPostCommitCommandUsesBoundedContext(t *testing.T) {
+	repo := initRepoWithCommitForCmdTests(t)
+
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	gitDir := runGitOutput(t, repo, "rev-parse", "--absolute-git-dir")
+	gitCommonDir := runGitOutput(t, repo, "rev-parse", "--git-common-dir")
+	workspaceID, err := session.DeriveWorkspaceID(repo, repo, gitDir, filepath.Join(repo, gitCommonDir))
+	if err != nil {
+		t.Fatalf("DeriveWorkspaceID: %v", err)
+	}
+	marker := &session.Marker{SessionID: "sess-1", WorkspaceID: workspaceID, RepoFullName: "github.com/acme/repo"}
+	if err := session.WriteMarker(repo, marker); err != nil {
+		t.Fatalf("WriteMarker: %v", err)
+	}
+
+	origUploader := newHookUploader
+	origTimeout := hookCommandTimeout
+	newHookUploader = func() hooks.Uploader { return blockingHookUploader{} }
+	hookCommandTimeout = 25 * time.Millisecond
+	t.Cleanup(func() {
+		newHookUploader = origUploader
+		hookCommandTimeout = origTimeout
+	})
+
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+	defer func() { _ = os.Chdir(wd) }()
+	if err := os.Chdir(repo); err != nil {
+		t.Fatalf("Chdir(repo): %v", err)
+	}
+
+	start := time.Now()
+	if err := hookPostCommitCmd.RunE(hookPostCommitCmd, nil); err != nil {
+		t.Fatalf("hook post-commit RunE: %v", err)
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("hook post-commit elapsed = %s, want bounded return", elapsed)
+	}
 }
 
 func TestHookCommandHasPostRewriteSubcommand(t *testing.T) {

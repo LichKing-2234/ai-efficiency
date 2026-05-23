@@ -1,6 +1,8 @@
 package attributionlocal
 
 import (
+	"context"
+	"errors"
 	"os"
 	"strings"
 	"testing"
@@ -25,6 +27,19 @@ func TestParseCodexJSONL_PrefersLastTokenUsage(t *testing.T) {
 	want := time.Date(2026, 5, 19, 10, 0, 0, 0, time.UTC)
 	if !events[0].ObservedStartAt.Equal(want) || !events[0].ObservedEndAt.Equal(want) {
 		t.Fatalf("observed timestamps = %s / %s, want %s", events[0].ObservedStartAt, events[0].ObservedEndAt, want)
+	}
+}
+
+func TestFindCodexWorkspaceSessionIDsHonorsCanceledContext(t *testing.T) {
+	t.Parallel()
+
+	path := writeFile(t, "codex.jsonl", `{"type":"session_meta","payload":{"id":"sess-1","cwd":"/tmp/repo"}}`)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := findCodexWorkspaceSessionIDsContext(ctx, path, "/tmp/repo")
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("error = %v, want context.Canceled", err)
 	}
 }
 

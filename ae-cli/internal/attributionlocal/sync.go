@@ -77,7 +77,7 @@ func (e *SyncEngine) RunForWorkspace(ctx context.Context, workspaceRoot string) 
 		return err
 	}
 
-	events, nextState, err := e.Scanner.ScanWorkspace(workspaceRoot, state)
+	events, nextState, err := e.Scanner.ScanWorkspaceContext(ctx, workspaceRoot, state)
 	if err != nil {
 		return err
 	}

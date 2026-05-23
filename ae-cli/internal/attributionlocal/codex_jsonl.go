@@ -1,61 +1,72 @@
 package attributionlocal
 
 import (
+	"bufio"
+	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 )
 
-func ParseCodexJSONLFallback(path, workspaceRoot string) ([]LocalToolUsageEvent, error) {
-	lines, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
+var errStopCodexJSONLScan = errors.New("stop codex jsonl scan")
 
+func ParseCodexJSONLFallback(path, workspaceRoot string) ([]LocalToolUsageEvent, error) {
+	return ParseCodexJSONLFallbackContext(context.Background(), path, workspaceRoot)
+}
+
+func ParseCodexJSONLFallbackContext(ctx context.Context, path, workspaceRoot string) ([]LocalToolUsageEvent, error) {
 	var sessionID string
 	var events []LocalToolUsageEvent
-	for idx, raw := range strings.Split(string(lines), "\n") {
-		raw = strings.TrimSpace(raw)
-		if raw == "" {
-			continue
+
+	err := forEachCodexJSONLLine(ctx, path, func(idx int, raw []byte) error {
+		var row struct {
+			Type      string `json:"type"`
+			Timestamp string `json:"timestamp"`
+			Payload   struct {
+				ID         string `json:"id"`
+				CWD        string `json:"cwd"`
+				Type       string `json:"type"`
+				ResponseID string `json:"response_id"`
+				Info       *struct {
+					LastTokenUsage  map[string]any `json:"last_token_usage"`
+					TotalTokenUsage map[string]any `json:"total_token_usage"`
+				} `json:"info"`
+			} `json:"payload"`
+		}
+		if err := json.Unmarshal(raw, &row); err != nil {
+			return nil
 		}
 
-		var row map[string]any
-		if err := json.Unmarshal([]byte(raw), &row); err != nil {
-			continue
-		}
-
-		switch strings.TrimSpace(asString(row["type"])) {
+		switch strings.TrimSpace(row.Type) {
 		case "session_meta":
-			payload, _ := row["payload"].(map[string]any)
-			if filepath.Clean(asString(payload["cwd"])) == filepath.Clean(workspaceRoot) {
-				sessionID = strings.TrimSpace(asString(payload["id"]))
+			if filepath.Clean(row.Payload.CWD) != filepath.Clean(workspaceRoot) {
+				return errStopCodexJSONLScan
 			}
+			sessionID = strings.TrimSpace(row.Payload.ID)
 		case "event_msg":
 			if sessionID == "" {
-				continue
+				return nil
 			}
-			payload, _ := row["payload"].(map[string]any)
-			if strings.TrimSpace(asString(payload["type"])) != "token_count" {
-				continue
+			if strings.TrimSpace(row.Payload.Type) != "token_count" || row.Payload.Info == nil {
+				return nil
 			}
-			info, _ := payload["info"].(map[string]any)
-			lastUsage, _ := info["last_token_usage"].(map[string]any)
-			totalUsage, _ := info["total_token_usage"].(map[string]any)
-			selected := lastUsage
+			selected := row.Payload.Info.LastTokenUsage
 			if len(selected) == 0 {
-				selected = totalUsage
+				selected = row.Payload.Info.TotalTokenUsage
 			}
 			if len(selected) == 0 {
-				continue
+				return nil
 			}
-			responseID := strings.TrimSpace(asString(payload["response_id"]))
+			responseID := strings.TrimSpace(row.Payload.ResponseID)
 			if responseID == "" {
 				responseID = fallbackCodexJSONLEventID(idx + 1)
 			}
-			observedAt := parseObservedAt(row["timestamp"])
+			observedAt := parseObservedAt(row.Timestamp)
 			events = append(events, LocalToolUsageEvent{
 				Tool:              "codex",
 				ToolSessionID:     sessionID,
@@ -72,11 +83,22 @@ func ParseCodexJSONLFallback(path, workspaceRoot string) ([]LocalToolUsageEvent,
 				RawSourcePath:     path,
 				RawSourceLocator:  "line:" + strconv.Itoa(idx+1),
 				RawPayload: map[string]any{
-					"timestamp": row["timestamp"],
-					"payload":   payload,
+					"timestamp": row.Timestamp,
+					"payload": map[string]any{
+						"type":        row.Payload.Type,
+						"response_id": row.Payload.ResponseID,
+						"info": map[string]any{
+							"last_token_usage":  row.Payload.Info.LastTokenUsage,
+							"total_token_usage": row.Payload.Info.TotalTokenUsage,
+						},
+					},
 				},
 			})
 		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 
 	if len(events) == 0 {
@@ -85,44 +107,80 @@ func ParseCodexJSONLFallback(path, workspaceRoot string) ([]LocalToolUsageEvent,
 	return events, nil
 }
 
+func forEachCodexJSONLLine(ctx context.Context, path string, visit func(idx int, raw []byte) error) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	r := bufio.NewReaderSize(f, 64*1024)
+	idx := 0
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		line, err := r.ReadBytes('\n')
+		if err != nil && !errors.Is(err, io.EOF) {
+			return err
+		}
+		raw := bytes.TrimSpace(line)
+		if len(raw) > 0 {
+			if visitErr := visit(idx, raw); visitErr != nil {
+				if errors.Is(visitErr, errStopCodexJSONLScan) {
+					return nil
+				}
+				return visitErr
+			}
+			idx++
+		}
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+	}
+}
+
 func findCodexWorkspaceSessionIDs(path, workspaceRoot string) []string {
-	lines, err := os.ReadFile(path)
+	ids, err := findCodexWorkspaceSessionIDsContext(context.Background(), path, workspaceRoot)
 	if err != nil {
 		return nil
 	}
+	return ids
+}
 
-	seen := map[string]struct{}{}
-	for _, raw := range strings.Split(string(lines), "\n") {
-		raw = strings.TrimSpace(raw)
-		if raw == "" {
-			continue
-		}
-
-		var row map[string]any
-		if err := json.Unmarshal([]byte(raw), &row); err != nil {
-			continue
-		}
-		if strings.TrimSpace(asString(row["type"])) != "session_meta" {
-			continue
+func findCodexWorkspaceSessionIDsContext(ctx context.Context, path, workspaceRoot string) ([]string, error) {
+	var out []string
+	err := forEachCodexJSONLLine(ctx, path, func(_ int, raw []byte) error {
+		if !bytes.Contains(raw, []byte("session_meta")) {
+			return nil
 		}
 
-		payload, _ := row["payload"].(map[string]any)
-		if filepath.Clean(asString(payload["cwd"])) != filepath.Clean(workspaceRoot) {
-			continue
+		var row struct {
+			Type    string `json:"type"`
+			Payload struct {
+				ID  string `json:"id"`
+				CWD string `json:"cwd"`
+			} `json:"payload"`
 		}
-
-		sessionID := strings.TrimSpace(asString(payload["id"]))
-		if sessionID == "" {
-			continue
+		if err := json.Unmarshal(raw, &row); err != nil {
+			return nil
 		}
-		seen[sessionID] = struct{}{}
+		if strings.TrimSpace(row.Type) != "session_meta" {
+			return nil
+		}
+		if filepath.Clean(row.Payload.CWD) != filepath.Clean(workspaceRoot) {
+			return errStopCodexJSONLScan
+		}
+		sessionID := strings.TrimSpace(row.Payload.ID)
+		if sessionID != "" {
+			out = append(out, sessionID)
+		}
+		return errStopCodexJSONLScan
+	})
+	if err != nil {
+		return nil, err
 	}
-
-	out := make([]string, 0, len(seen))
-	for sessionID := range seen {
-		out = append(out, sessionID)
-	}
-	return out
+	return out, nil
 }
 
 func fallbackCodexJSONLEventID(lineNumber int) string {

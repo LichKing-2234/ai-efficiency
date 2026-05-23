@@ -13,26 +13,21 @@ import (
 )
 
 type codexLine struct {
-	Type    string          `json:"type"`
-	Payload json.RawMessage `json:"payload"`
-}
-
-type codexSessionMeta struct {
-	ID  string `json:"id"`
-	CWD string `json:"cwd"`
-}
-
-type codexTokenPayload struct {
-	Type string `json:"type"`
-	Info struct {
-		TotalTokenUsage struct {
-			InputTokens       int64 `json:"input_tokens"`
-			CachedInputTokens int64 `json:"cached_input_tokens"`
-			OutputTokens      int64 `json:"output_tokens"`
-			ReasoningTokens   int64 `json:"reasoning_output_tokens"`
-			TotalTokens       int64 `json:"total_tokens"`
-		} `json:"total_token_usage"`
-	} `json:"info"`
+	Type    string `json:"type"`
+	Payload struct {
+		ID   string `json:"id"`
+		CWD  string `json:"cwd"`
+		Type string `json:"type"`
+		Info struct {
+			TotalTokenUsage struct {
+				InputTokens       int64 `json:"input_tokens"`
+				CachedInputTokens int64 `json:"cached_input_tokens"`
+				OutputTokens      int64 `json:"output_tokens"`
+				ReasoningTokens   int64 `json:"reasoning_output_tokens"`
+				TotalTokens       int64 `json:"total_tokens"`
+			} `json:"total_token_usage"`
+		} `json:"info"`
+	} `json:"payload"`
 }
 
 func readCodexSnapshot(path, workspaceRoot string) (*CodexSnapshot, error) {
@@ -67,34 +62,37 @@ func readCodexSnapshot(path, workspaceRoot string) (*CodexSnapshot, error) {
 
 		switch row.Type {
 		case "session_meta":
-			var meta codexSessionMeta
-			if err := json.Unmarshal(row.Payload, &meta); err != nil {
-				continue
+			if !samePath(row.Payload.CWD, wantCWD) {
+				return nil, nil
 			}
-			if samePath(meta.CWD, wantCWD) {
-				sourceSessionID = strings.TrimSpace(meta.ID)
-			}
+			sourceSessionID = strings.TrimSpace(row.Payload.ID)
 		case "event_msg":
 			if strings.TrimSpace(sourceSessionID) == "" {
 				continue
 			}
-			var payload codexTokenPayload
-			if err := json.Unmarshal(row.Payload, &payload); err != nil {
+			if row.Payload.Type != "token_count" {
 				continue
 			}
-			if payload.Type != "token_count" {
-				continue
-			}
-			var raw map[string]any
-			_ = json.Unmarshal(row.Payload, &raw)
+			usage := row.Payload.Info.TotalTokenUsage
 			snapshot = &CodexSnapshot{
 				SourceSessionID:   sourceSessionID,
-				InputTokens:       payload.Info.TotalTokenUsage.InputTokens,
-				CachedInputTokens: payload.Info.TotalTokenUsage.CachedInputTokens,
-				OutputTokens:      payload.Info.TotalTokenUsage.OutputTokens,
-				ReasoningTokens:   payload.Info.TotalTokenUsage.ReasoningTokens,
-				TotalTokens:       payload.Info.TotalTokenUsage.TotalTokens,
-				RawPayload:        raw,
+				InputTokens:       usage.InputTokens,
+				CachedInputTokens: usage.CachedInputTokens,
+				OutputTokens:      usage.OutputTokens,
+				ReasoningTokens:   usage.ReasoningTokens,
+				TotalTokens:       usage.TotalTokens,
+				RawPayload: map[string]any{
+					"type": "token_count",
+					"info": map[string]any{
+						"total_token_usage": map[string]any{
+							"input_tokens":            usage.InputTokens,
+							"cached_input_tokens":     usage.CachedInputTokens,
+							"output_tokens":           usage.OutputTokens,
+							"reasoning_output_tokens": usage.ReasoningTokens,
+							"total_tokens":            usage.TotalTokens,
+						},
+					},
+				},
 			}
 		}
 		if errors.Is(err, io.EOF) {

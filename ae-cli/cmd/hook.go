@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"os"
+	"time"
 
 	"github.com/ai-efficiency/ae-cli/internal/attributionlocal"
 	"github.com/ai-efficiency/ae-cli/internal/hooks"
@@ -15,11 +16,20 @@ var hookCmd = &cobra.Command{
 	Hidden: true,
 }
 
+var hookCommandTimeout = 10 * time.Second
+
 var newHookUploader = func() hooks.Uploader {
 	if apiClient == nil {
 		return hooks.UnsupportedUploader{}
 	}
 	return hooks.NewBackendUploader(apiClient)
+}
+
+func newHookCommandContext() (context.Context, context.CancelFunc) {
+	if hookCommandTimeout <= 0 {
+		return context.WithCancel(context.Background())
+	}
+	return context.WithTimeout(context.Background(), hookCommandTimeout)
 }
 
 var hookPostCommitCmd = &cobra.Command{
@@ -29,8 +39,10 @@ var hookPostCommitCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cwd, _ := os.Getwd()
 		h := hooks.NewHandler(newHookUploader())
+		ctx, cancel := newHookCommandContext()
+		defer cancel()
 		// Fail-open: handler itself should never return errors that block commits.
-		return h.PostCommit(context.Background(), cwd)
+		return h.PostCommit(ctx, cwd)
 	},
 }
 
@@ -42,8 +54,10 @@ var hookPostRewriteCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cwd, _ := os.Getwd()
 		h := hooks.NewHandler(newHookUploader())
+		ctx, cancel := newHookCommandContext()
+		defer cancel()
 		// Fail-open: handler itself should never return errors that block git workflows.
-		return h.PostRewrite(context.Background(), cwd, args[0], os.Stdin)
+		return h.PostRewrite(ctx, cwd, args[0], os.Stdin)
 	},
 }
 
@@ -54,11 +68,13 @@ var hookAttributionSyncCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cwd, _ := os.Getwd()
 		h := hooks.NewHandler(newHookUploader())
-		if err := h.Flush(context.Background(), cwd); err != nil {
+		ctx, cancel := newHookCommandContext()
+		defer cancel()
+		if err := h.Flush(ctx, cwd); err != nil {
 			return err
 		}
 		engine := attributionlocal.NewSyncEngine(apiClient)
-		return runSyncEngineForWorkspace(engine, context.Background(), cwd)
+		return runSyncEngineForWorkspace(engine, ctx, cwd)
 	},
 }
 

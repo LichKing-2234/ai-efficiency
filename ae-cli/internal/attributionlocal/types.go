@@ -41,6 +41,12 @@ type CodexSQLiteWatermark struct {
 	LastLogID int64 `json:"last_log_id"`
 }
 
+type CodexSessionIDCache struct {
+	ModUnix    int64    `json:"mod_unix"`
+	Size       int64    `json:"size"`
+	SessionIDs []string `json:"session_ids,omitempty"`
+}
+
 func asString(v any) string {
 	switch value := v.(type) {
 	case string:
