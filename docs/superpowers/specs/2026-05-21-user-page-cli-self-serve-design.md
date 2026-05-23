@@ -441,6 +441,33 @@ GET /api/v1/providers
 2. 创建一把新的 credential
 3. 返回新 secret 的一次性明文
 
+#### `POST /api/v1/user/providers/:id/test`
+
+用途：
+
+1. 让普通用户从 `/user` 页面测试自己在当前 provider 下的 active API key
+2. 使用页面当前选中 group 的 `platform` 和用户输入的具体 `model`
+3. 发送一次真实 chat completion 请求，返回连接结果和可选响应内容
+4. admin Settings 的 Relay Providers 表只保留管理 CRUD，不再提供 Test 入口
+
+请求字段：
+
+```json
+{
+  "platform": "openai",
+  "model": "gpt-5.4",
+  "prompt": "Hi"
+}
+```
+
+行为：
+
+1. 路由只要求登录态，不要求 admin role；不存在对应的 `/api/v1/admin/providers/:id/test` 管理端测试合同
+2. 后端仍通过 `relay.Provider` 列出当前 relay user 的 API keys
+3. 后端按 `platform` 选择当前用户自己的 active key，而不是使用 RelayProvider admin key
+4. `model` 必须由调用方提供；页面不把 provider `default_model` 当作测试合同
+5. 未找到当前用户在该 platform 下可用 key 时返回 `success: false`
+
 ### Backend Boundary
 
 这些接口应复用现有 `relay.Provider` 抽象：

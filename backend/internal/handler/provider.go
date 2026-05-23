@@ -6,8 +6,8 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
-	"encoding/json"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -197,7 +197,7 @@ type adminProviderResponse struct {
 	Enabled      bool   `json:"enabled"`
 }
 
-type adminProviderTestRequest struct {
+type userProviderTestRequest struct {
 	Platform string `json:"platform"`
 	Model    string `json:"model"`
 	Prompt   string `json:"prompt"`
@@ -370,7 +370,7 @@ func (h *ProviderHandler) Delete(c *gin.Context) {
 	pkg.Success(c, gin.H{"message": "deleted"})
 }
 
-// Test handles POST /api/v1/admin/providers/:id/test.
+// Test handles POST /api/v1/user/providers/:id/test.
 func (h *ProviderHandler) Test(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
@@ -408,7 +408,7 @@ func (h *ProviderHandler) Test(c *gin.Context) {
 		return
 	}
 
-	var req adminProviderTestRequest
+	var req userProviderTestRequest
 	if c.Request.Body != nil {
 		reqBody, err := io.ReadAll(c.Request.Body)
 		if err != nil {

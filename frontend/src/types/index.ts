@@ -292,6 +292,18 @@ export interface GroupCredentialMutationResult {
   secret: string
 }
 
+export interface UserProviderTestRequest {
+  platform: string
+  model: string
+  prompt?: string
+}
+
+export interface UserProviderTestResult {
+  success: boolean
+  message: string
+  response?: string
+}
+
 export interface VerifyReviewItem {
   status: 'looks_good' | 'needs_attention' | 'cannot_determine'
   message: string

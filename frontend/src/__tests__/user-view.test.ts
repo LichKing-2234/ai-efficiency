@@ -9,6 +9,7 @@ vi.mock('@/api/user', () => ({
   getUserProviders: vi.fn(),
   createGroupCredential: vi.fn(),
   regenerateGroupCredential: vi.fn(),
+  testUserProvider: vi.fn(),
 }))
 
 Object.assign(navigator, {
@@ -176,5 +177,26 @@ describe('UserView', () => {
 
     await wrapper.get('[data-testid="copy-key"]').trigger('click')
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith('sk-existing-claude-123456')
+  })
+
+  it('tests the selected provider with the current group platform', async () => {
+    const { testUserProvider } = await import('@/api/user')
+    ;(testUserProvider as any).mockResolvedValue({
+      data: { data: { success: true, message: 'Connection successful', response: 'pong' } },
+    })
+
+    const { wrapper } = await mountUserView()
+    await wrapper.get('[data-testid="user-provider-test-model"]').setValue('claude-3-5-sonnet')
+    await wrapper.get('[data-testid="user-provider-test-prompt"]').setValue('Say hello')
+    await wrapper.get('[data-testid="user-provider-test-run"]').trigger('click')
+    await flushPromises()
+
+    expect(testUserProvider).toHaveBeenCalledWith(2, {
+      platform: 'anthropic',
+      model: 'claude-3-5-sonnet',
+      prompt: 'Say hello',
+    })
+    expect(wrapper.text()).toContain('Connection successful')
+    expect(wrapper.text()).toContain('pong')
   })
 })

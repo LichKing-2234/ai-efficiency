@@ -161,6 +161,9 @@ func SetupRouter(
 	userGroup := protected.Group("/user")
 	{
 		userGroup.GET("/providers", userSetupHandler.ListProviders)
+		if providerHandler != nil {
+			userGroup.POST("/providers/:id/test", providerHandler.Test)
+		}
 		userGroup.POST("/providers/:id/groups/:group_id/credential", userSetupHandler.CreateGroupCredential)
 		userGroup.POST("/providers/:id/groups/:group_id/credential/regenerate", userSetupHandler.RegenerateGroupCredential)
 	}
@@ -184,7 +187,6 @@ func SetupRouter(
 			adminProviderGroup.POST("", providerHandler.Create)
 			adminProviderGroup.PUT("/:id", providerHandler.Update)
 			adminProviderGroup.DELETE("/:id", providerHandler.Delete)
-			adminProviderGroup.POST("/:id/test", providerHandler.Test)
 		}
 	}
 

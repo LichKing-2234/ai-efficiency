@@ -14,11 +14,11 @@ vi.mock('@/api/client', () => {
 
 import client from '@/api/client'
 import { listProviders, createProvider, updateProvider, deleteProvider } from '@/api/scmProvider'
-import { listRelayProviders, createRelayProvider, updateRelayProvider, deleteRelayProvider, testRelayProvider } from '@/api/relayProvider'
+import { listRelayProviders, createRelayProvider, updateRelayProvider, deleteRelayProvider } from '@/api/relayProvider'
 import { listPRs, getPR, syncPRs, settlePR, refreshPRUsage } from '@/api/pr'
 import { getDashboard } from '@/api/efficiency'
 import { getDeploymentStatus, checkForUpdate, applyUpdate, rollbackUpdate, restartDeployment } from '@/api/deployment'
-import { getUserProviders, createGroupCredential, regenerateGroupCredential } from '@/api/user'
+import { getUserProviders, createGroupCredential, regenerateGroupCredential, testUserProvider } from '@/api/user'
 
 const mockClient = client as unknown as {
   get: ReturnType<typeof vi.fn>
@@ -100,11 +100,6 @@ describe('relayProvider API', () => {
     expect(mockClient.delete).toHaveBeenCalledWith('/admin/providers/7')
   })
 
-  it('testRelayProvider calls POST /admin/providers/:id/test', async () => {
-    mockClient.post.mockResolvedValue({ data: { data: { success: true, message: 'OK' } } })
-    await testRelayProvider(3, { platform: 'openai', model: 'gpt-5.4', prompt: 'Hi' })
-    expect(mockClient.post).toHaveBeenCalledWith('/admin/providers/3/test', { platform: 'openai', model: 'gpt-5.4', prompt: 'Hi' })
-  })
 })
 
 describe('pr API', () => {
@@ -193,5 +188,8 @@ describe('user API aggregate smoke', () => {
 
     await regenerateGroupCredential(7, '42')
     expect(mockClient.post).toHaveBeenCalledWith('/user/providers/7/groups/42/credential/regenerate')
+
+    await testUserProvider(7, { platform: 'openai', model: 'gpt-5.4', prompt: 'Hi' })
+    expect(mockClient.post).toHaveBeenCalledWith('/user/providers/7/test', { platform: 'openai', model: 'gpt-5.4', prompt: 'Hi' })
   })
 })

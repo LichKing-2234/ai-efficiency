@@ -20,18 +20,6 @@ export interface RelayProviderUpdatePayload {
   enabled?: boolean
 }
 
-export interface RelayProviderTestRequest {
-  platform: string
-  model: string
-  prompt?: string
-}
-
-export interface RelayProviderTestResult {
-  success: boolean
-  message: string
-  response?: string
-}
-
 export function listRelayProviders() {
   return client.get<ApiResponse<RelayProvider[]>>('/admin/providers')
 }
@@ -46,8 +34,4 @@ export function updateRelayProvider(id: number, data: RelayProviderUpdatePayload
 
 export function deleteRelayProvider(id: number) {
   return client.delete<ApiResponse<{ message: string }>>(`/admin/providers/${id}`)
-}
-
-export function testRelayProvider(id: number, data?: RelayProviderTestRequest) {
-  return client.post<ApiResponse<RelayProviderTestResult>>(`/admin/providers/${id}/test`, data)
 }
