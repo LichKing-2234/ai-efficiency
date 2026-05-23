@@ -676,6 +676,31 @@ func TestChatCompletion(t *testing.T) {
 	}
 }
 
+func TestChatCompletionIncludesErrorMessageForNonOKResponse(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/chat/completions", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"error": map[string]any{
+				"message": "invalid API key",
+				"type":    "authentication_error",
+			},
+		})
+	})
+
+	p := newTestProvider(t, mux)
+	_, err := p.ChatCompletion(context.Background(), relay.ChatCompletionRequest{
+		Messages: []relay.ChatMessage{{Role: "user", Content: "Hi"}},
+	})
+	if err == nil {
+		t.Fatal("ChatCompletion() expected error")
+	}
+	if got, want := err.Error(), "relay: chat completion: unexpected status 401: invalid API key"; got != want {
+		t.Fatalf("ChatCompletion() error = %q, want %q", got, want)
+	}
+}
+
 func TestChatCompletionWithTools(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/chat/completions", func(w http.ResponseWriter, r *http.Request) {

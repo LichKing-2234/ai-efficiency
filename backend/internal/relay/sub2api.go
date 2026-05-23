@@ -535,7 +535,7 @@ func (s *sub2apiRelay) ChatCompletion(ctx context.Context, req ChatCompletionReq
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("relay: chat completion: unexpected status %d", resp.StatusCode)
+		return nil, fmt.Errorf("relay: chat completion: unexpected status %d%s", resp.StatusCode, relayErrorMessageSuffix(resp.Body))
 	}
 
 	var openAIResp openAIChatResponse
@@ -552,6 +552,37 @@ func (s *sub2apiRelay) ChatCompletion(ctx context.Context, req ChatCompletionReq
 		Content:    content,
 		TokensUsed: openAIResp.Usage.TotalTokens,
 	}, nil
+}
+
+func relayErrorMessageSuffix(body io.Reader) string {
+	if body == nil {
+		return ""
+	}
+	data, err := io.ReadAll(io.LimitReader(body, 4096))
+	if err != nil {
+		return ""
+	}
+	message := extractRelayErrorMessage(data)
+	if message == "" {
+		return ""
+	}
+	return ": " + message
+}
+
+func extractRelayErrorMessage(data []byte) string {
+	var payload struct {
+		Error struct {
+			Message string `json:"message"`
+		} `json:"error"`
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return strings.TrimSpace(string(data))
+	}
+	if message := strings.TrimSpace(payload.Error.Message); message != "" {
+		return message
+	}
+	return strings.TrimSpace(payload.Message)
 }
 
 func (s *sub2apiRelay) ChatCompletionWithTools(ctx context.Context, req ChatCompletionRequest, tools []ToolDef) (*ChatCompletionWithToolsResponse, error) {
