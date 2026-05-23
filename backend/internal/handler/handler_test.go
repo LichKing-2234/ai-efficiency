@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/internal/auth"
@@ -249,12 +250,343 @@ func TestAdminRelayProviderCreateAndUpdateMaskAdminAPIKey(t *testing.T) {
 	}
 }
 
-func TestAdminRelayProviderTestRequiresExistingProvider(t *testing.T) {
-	env := setupTestEnv(t)
+func TestAdminRelayProviderTestRouteRemoved(t *testing.T) {
+	env := setupTestEnvWithProvider(t)
+	provider := env.client.RelayProvider.Create().
+		SetName("relay-main").
+		SetDisplayName("Relay Main").
+		SetBaseURL("https://relay.example.com").
+		SetAdminURL("https://relay.example.com").
+		SetAdminAPIKey("***").
+		SetEnabled(true).
+		SetIsPrimary(true).
+		SaveX(context.Background())
 
-	w := doRequest(env, "POST", "/api/v1/admin/providers/99999/test", map[string]interface{}{"prompt": "Hi"})
+	w := doRequest(env, http.MethodPost, fmt.Sprintf("/api/v1/admin/providers/%d/test", provider.ID), map[string]interface{}{
+		"platform": "openai",
+		"model":    "gpt-5.4",
+		"prompt":   "Hi",
+	})
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want %d, body: %s", w.Code, http.StatusNotFound, w.Body.String())
+	}
+}
+
+func TestUserRelayProviderTestAllowsRegularUserOwnAPIKey(t *testing.T) {
+	var chatAuth string
+	var chatModel string
+	var chatPrompt string
+
+	relayServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/admin/users/42/api-keys":
+			if r.Header.Get("X-API-Key") != "test-admin-key" {
+				t.Fatalf("list keys api key = %q, want admin key", r.Header.Get("X-API-Key"))
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{
+				"success": true,
+				"data": map[string]any{
+					"items": []any{
+						map[string]any{
+							"id":         9,
+							"user_id":    42,
+							"key":        "sk-user-openai",
+							"name":       "alice",
+							"status":     "active",
+							"created_at": time.Now().Add(-time.Minute).Format(time.RFC3339),
+							"group": map[string]any{
+								"id":       5,
+								"name":     "Group Alpha",
+								"platform": "openai",
+							},
+						},
+					},
+					"page":  1,
+					"pages": 1,
+				},
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/chat/completions":
+			chatAuth = r.Header.Get("Authorization")
+			var body struct {
+				Model    string `json:"model"`
+				Messages []struct {
+					Role    string `json:"role"`
+					Content string `json:"content"`
+				} `json:"messages"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatalf("decode chat body: %v", err)
+			}
+			chatModel = body.Model
+			if len(body.Messages) > 0 {
+				chatPrompt = body.Messages[0].Content
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{
+				"choices": []any{
+					map[string]any{"message": map[string]any{"content": "pong"}},
+				},
+				"usage": map[string]any{"total_tokens": 3},
+			})
+		default:
+			t.Fatalf("unexpected relay request: %s %s", r.Method, r.URL.String())
+		}
+	}))
+	defer relayServer.Close()
+
+	env := setupTestEnvWithProvider(t)
+	ctx := context.Background()
+	env.client.User.UpdateOneID(env.userID).
+		SetUsername("alice@example.com").
+		SetEmail("alice@example.com").
+		SetRole("user").
+		SetRelayUserID(42).
+		SaveX(ctx)
+	env.token = issueTokenForUser(t, env, env.userID, "alice@example.com", "user")
+
+	adminKey, err := encryptAESGCM("test-admin-key", "0000000000000000000000000000000000000000000000000000000000000000")
+	if err != nil {
+		t.Fatalf("encrypt admin key: %v", err)
+	}
+	provider := env.client.RelayProvider.Create().
+		SetName("sub2api").
+		SetDisplayName("Sub2API").
+		SetBaseURL(relayServer.URL).
+		SetAdminURL(relayServer.URL).
+		SetAdminAPIKey(adminKey).
+		SetDefaultModel("default-model").
+		SetEnabled(true).
+		SetIsPrimary(true).
+		SaveX(ctx)
+
+	w := doRequest(env, http.MethodPost, fmt.Sprintf("/api/v1/user/providers/%d/test", provider.ID), map[string]any{
+		"platform": "openai",
+		"group_id": "5",
+		"model":    "gpt-5.4",
+		"prompt":   "Say hello",
+	})
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	resp := parseResponse(t, w)
+	data := resp["data"].(map[string]any)
+	if data["success"] != true || data["response"] != "pong" {
+		t.Fatalf("unexpected response data: %#v", data)
+	}
+	if chatAuth != "Bearer sk-user-openai" {
+		t.Fatalf("chat auth = %q, want user api key", chatAuth)
+	}
+	if chatModel != "gpt-5.4" || chatPrompt != "Say hello" {
+		t.Fatalf("chat request = (%q, %q), want model and prompt", chatModel, chatPrompt)
+	}
+}
+
+func TestUserRelayProviderTestUsesAnthropicMessagesEndpoint(t *testing.T) {
+	var messagesAuth string
+	var messagesAPIKey string
+	var messagesVersion string
+	var messagesModel string
+	var messagesPrompt string
+
+	relayServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/admin/users/42/api-keys":
+			if r.Header.Get("X-API-Key") != "test-admin-key" {
+				t.Fatalf("list keys api key = %q, want admin key", r.Header.Get("X-API-Key"))
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{
+				"success": true,
+				"data": map[string]any{
+					"items": []any{
+						map[string]any{
+							"id":         9,
+							"user_id":    42,
+							"key":        "sk-user-anthropic",
+							"name":       "alice",
+							"status":     "active",
+							"created_at": time.Now().Add(-time.Minute).Format(time.RFC3339),
+							"group": map[string]any{
+								"id":       5,
+								"name":     "Group Alpha",
+								"platform": "anthropic",
+							},
+						},
+					},
+					"page":  1,
+					"pages": 1,
+				},
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/messages":
+			messagesAuth = r.Header.Get("Authorization")
+			messagesAPIKey = r.Header.Get("x-api-key")
+			messagesVersion = r.Header.Get("anthropic-version")
+			var body struct {
+				Model    string `json:"model"`
+				Messages []struct {
+					Role    string `json:"role"`
+					Content string `json:"content"`
+				} `json:"messages"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatalf("decode messages body: %v", err)
+			}
+			messagesModel = body.Model
+			if len(body.Messages) > 0 {
+				messagesPrompt = body.Messages[0].Content
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{
+				"content": []any{
+					map[string]any{"type": "text", "text": "pong"},
+				},
+				"usage": map[string]any{
+					"input_tokens":  2,
+					"output_tokens": 1,
+				},
+			})
+		default:
+			t.Fatalf("unexpected relay request: %s %s", r.Method, r.URL.String())
+		}
+	}))
+	defer relayServer.Close()
+
+	env := setupTestEnvWithProvider(t)
+	ctx := context.Background()
+	env.client.User.UpdateOneID(env.userID).
+		SetUsername("alice@example.com").
+		SetEmail("alice@example.com").
+		SetRole("user").
+		SetRelayUserID(42).
+		SaveX(ctx)
+	env.token = issueTokenForUser(t, env, env.userID, "alice@example.com", "user")
+
+	adminKey, err := encryptAESGCM("test-admin-key", "0000000000000000000000000000000000000000000000000000000000000000")
+	if err != nil {
+		t.Fatalf("encrypt admin key: %v", err)
+	}
+	provider := env.client.RelayProvider.Create().
+		SetName("sub2api").
+		SetDisplayName("Sub2API").
+		SetBaseURL(relayServer.URL).
+		SetAdminURL(relayServer.URL).
+		SetAdminAPIKey(adminKey).
+		SetDefaultModel("default-model").
+		SetEnabled(true).
+		SetIsPrimary(true).
+		SaveX(ctx)
+
+	w := doRequest(env, http.MethodPost, fmt.Sprintf("/api/v1/user/providers/%d/test", provider.ID), map[string]any{
+		"platform": "anthropic",
+		"group_id": "5",
+		"model":    "claude-sonnet-4-6",
+		"prompt":   "Say hello",
+	})
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	resp := parseResponse(t, w)
+	data := resp["data"].(map[string]any)
+	if data["success"] != true || data["response"] != "pong" {
+		t.Fatalf("unexpected response data: %#v", data)
+	}
+	if messagesAuth != "Bearer sk-user-anthropic" {
+		t.Fatalf("messages auth = %q, want user api key", messagesAuth)
+	}
+	if messagesAPIKey != "sk-user-anthropic" {
+		t.Fatalf("messages x-api-key = %q, want user api key", messagesAPIKey)
+	}
+	if messagesVersion != "2023-06-01" {
+		t.Fatalf("anthropic-version = %q, want 2023-06-01", messagesVersion)
+	}
+	if messagesModel != "claude-sonnet-4-6" || messagesPrompt != "Say hello" {
+		t.Fatalf("messages request = (%q, %q), want model and prompt", messagesModel, messagesPrompt)
+	}
+}
+
+func TestUserRelayProviderTestRequiresSelectedGroupAPIKey(t *testing.T) {
+	chatCalled := false
+
+	relayServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/admin/users/42/api-keys":
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{
+				"success": true,
+				"data": map[string]any{
+					"items": []any{
+						map[string]any{
+							"id":         9,
+							"user_id":    42,
+							"key":        "sk-wrong-group-openai",
+							"name":       "alice",
+							"status":     "active",
+							"created_at": time.Now().Add(-time.Minute).Format(time.RFC3339),
+							"group": map[string]any{
+								"id":       5,
+								"name":     "Group Alpha",
+								"platform": "openai",
+							},
+						},
+					},
+					"page":  1,
+					"pages": 1,
+				},
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/chat/completions":
+			chatCalled = true
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{
+				"choices": []any{map[string]any{"message": map[string]any{"content": "pong"}}},
+			})
+		default:
+			t.Fatalf("unexpected relay request: %s %s", r.Method, r.URL.String())
+		}
+	}))
+	defer relayServer.Close()
+
+	env := setupTestEnvWithProvider(t)
+	ctx := context.Background()
+	env.client.User.UpdateOneID(env.userID).
+		SetUsername("alice@example.com").
+		SetEmail("alice@example.com").
+		SetRole("user").
+		SetRelayUserID(42).
+		SaveX(ctx)
+	env.token = issueTokenForUser(t, env, env.userID, "alice@example.com", "user")
+
+	adminKey, err := encryptAESGCM("test-admin-key", "0000000000000000000000000000000000000000000000000000000000000000")
+	if err != nil {
+		t.Fatalf("encrypt admin key: %v", err)
+	}
+	provider := env.client.RelayProvider.Create().
+		SetName("sub2api").
+		SetDisplayName("Sub2API").
+		SetBaseURL(relayServer.URL).
+		SetAdminURL(relayServer.URL).
+		SetAdminAPIKey(adminKey).
+		SetDefaultModel("default-model").
+		SetEnabled(true).
+		SetIsPrimary(true).
+		SaveX(ctx)
+
+	w := doRequest(env, http.MethodPost, fmt.Sprintf("/api/v1/user/providers/%d/test", provider.ID), map[string]any{
+		"platform": "openai",
+		"group_id": "6",
+		"model":    "gpt-5.4",
+		"prompt":   "Say hello",
+	})
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	resp := parseResponse(t, w)
+	data := resp["data"].(map[string]any)
+	if data["success"] != false {
+		t.Fatalf("success = %v, want false; data=%#v", data["success"], data)
+	}
+	if chatCalled {
+		t.Fatal("chat completion was called with a key from a different group")
 	}
 }
 

@@ -226,6 +226,8 @@ func NewSub2apiProvider(httpClient *http.Client, baseURL, adminURL, apiKey, mode
 | `ListUserAPIKeys` | `GET /api/v1/admin/users/:id/api-keys` | admin API key | 通过 admin 端点查询，不依赖用户 session |
 | `CreateUserAPIKey` | `POST /api/v1/keys`（以用户身份）或 admin 端点 | admin API key | 为指定用户创建 API key |
 
+> **Current implementation note:** `/api/v1/user/providers/:id/test` uses the current user's selected group API key, not the provider admin key. This test path uses a platform-native sub2api probe: OpenAI groups call `/v1/chat/completions`, Anthropic groups call `/v1/messages` with `anthropic-version`, and Gemini groups call `/v1beta/models/{model}:generateContent`.
+
 ### 移除 sub2apidb 包
 
 - 删除 `backend/internal/sub2apidb/` 整个包

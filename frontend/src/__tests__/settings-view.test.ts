@@ -43,7 +43,6 @@ vi.mock('@/api/relayProvider', () => ({
   createRelayProvider: vi.fn(),
   updateRelayProvider: vi.fn(),
   deleteRelayProvider: vi.fn(),
-  testRelayProvider: vi.fn(),
 }))
 
 vi.mock('@/api/credential', () => ({
@@ -51,10 +50,6 @@ vi.mock('@/api/credential', () => ({
   createCredential: vi.fn(),
   updateCredential: vi.fn(),
   deleteCredential: vi.fn(),
-}))
-
-vi.mock('@/api/user', () => ({
-  getUserProviders: vi.fn(),
 }))
 
 vi.mock('@/api/deployment', () => ({
@@ -87,7 +82,6 @@ async function resetApiMocks() {
   relayProvider.createRelayProvider.mockReset().mockResolvedValue({ data: { data: { id: 1 } } })
   relayProvider.updateRelayProvider.mockReset().mockResolvedValue({ data: { data: { id: 1 } } })
   relayProvider.deleteRelayProvider.mockReset().mockResolvedValue({ data: { data: null } })
-  relayProvider.testRelayProvider.mockReset().mockResolvedValue({ data: { data: { success: true, message: 'Connection successful', response: 'pong' } } })
 
   const credentialApi = await import('@/api/credential') as any
   credentialApi.listCredentials.mockReset().mockResolvedValue({
@@ -109,15 +103,6 @@ async function resetApiMocks() {
   credentialApi.createCredential.mockReset().mockResolvedValue({ data: { data: { id: 11 } } })
   credentialApi.updateCredential.mockReset().mockResolvedValue({ data: { data: { id: 11 } } })
   credentialApi.deleteCredential.mockReset().mockResolvedValue({ data: { data: null } })
-
-  const userApi = await import('@/api/user') as any
-  userApi.getUserProviders.mockReset().mockResolvedValue({
-    data: {
-      data: {
-        providers: [],
-      },
-    },
-  })
 
   const deploymentApi = await import('@/api/deployment') as any
   deploymentApi.getDeploymentStatus.mockReset().mockResolvedValue(createDefaultDeploymentStatusResponse())
@@ -148,10 +133,9 @@ function createTestRouter() {
   })
 }
 
-async function mountSettings(overrides?: { providers?: any[]; relayProviders?: any[]; userProviders?: any[]; credentials?: any[]; deploymentStatus?: any }) {
+async function mountSettings(overrides?: { providers?: any[]; relayProviders?: any[]; credentials?: any[]; deploymentStatus?: any }) {
   const { listProviders } = await import('@/api/scmProvider')
   const { listRelayProviders } = await import('@/api/relayProvider')
-  const { getUserProviders } = await import('@/api/user')
   const { listCredentials } = await import('@/api/credential')
   const { getDeploymentStatus } = await import('@/api/deployment')
 
@@ -162,9 +146,6 @@ async function mountSettings(overrides?: { providers?: any[]; relayProviders?: a
   }
   if (overrides?.relayProviders) {
     ;(listRelayProviders as any).mockResolvedValue({ data: { data: overrides.relayProviders } })
-  }
-  if (overrides?.userProviders) {
-    ;(getUserProviders as any).mockResolvedValue({ data: { data: { providers: overrides.userProviders } } })
   }
   if (overrides?.credentials) {
     ;(listCredentials as any).mockResolvedValue({ data: { data: overrides.credentials } })
@@ -280,6 +261,26 @@ describe('SettingsView', () => {
     expect(wrapper.text()).toContain('Enabled')
   })
 
+  it('does not expose relay provider testing from admin settings', async () => {
+    const wrapper = await mountSettings({
+      relayProviders: [
+        {
+          id: 1,
+          name: 'sub2api-main',
+          display_name: 'Sub2API Main',
+          base_url: 'https://sub2api.example.com',
+          admin_url: 'https://sub2api.example.com',
+          admin_api_key: '***',
+          is_primary: true,
+          enabled: true,
+        },
+      ],
+    })
+
+    expect(wrapper.find('[data-testid="relay-provider-test-1"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Test Relay Provider')
+  })
+
   it('shows relay provider empty state', async () => {
     const wrapper = await mountSettings({ relayProviders: [] })
     expect(wrapper.text()).toContain('No relay providers configured')
@@ -387,58 +388,6 @@ describe('SettingsView', () => {
     await flushPromises()
 
     expect(deleteRelayProvider).toHaveBeenCalledWith(1)
-  })
-
-  it('tests a relay provider with a custom prompt', async () => {
-    const { testRelayProvider } = await import('@/api/relayProvider')
-    const wrapper = await mountSettings({
-      relayProviders: [
-        {
-          id: 1,
-          name: 'sub2api-main',
-          display_name: 'Sub2API Main',
-          base_url: 'https://sub2api.agoraio.cn',
-          admin_url: 'https://sub2api.agoraio.cn',
-          admin_api_key: '***',
-          is_primary: true,
-          enabled: true,
-        },
-      ],
-      userProviders: [
-        {
-          id: 1,
-          name: 'sub2api-main',
-          display_name: 'Sub2API Main',
-          base_url: 'https://sub2api.agoraio.cn',
-          default_model: 'gpt-5.4',
-          is_primary: true,
-          groups: [
-            {
-              group_id: '42',
-              group_name: 'Group Alpha',
-              platform: 'openai',
-              credential: { state: 'existing_hidden', api_key_id: 1, name: 'alice', status: 'active' },
-            },
-          ],
-        },
-      ],
-    })
-
-    await wrapper.find('[data-testid="relay-provider-test-1"]').trigger('click')
-    await flushPromises()
-
-    const selects = wrapper.findAll('select')
-    await selects[selects.length - 1].setValue('openai')
-    await wrapper.find('input[placeholder="gpt-5.4"]').setValue('gpt-5.4')
-    await wrapper.find('input[placeholder="Hi"]').setValue('Say hello from relay provider test')
-
-    const runTestBtn = wrapper.findAll('button').find((b) => b.text() === 'Run Test')
-    await runTestBtn!.trigger('click')
-    await flushPromises()
-
-    expect(testRelayProvider).toHaveBeenCalledWith(1, { platform: 'openai', model: 'gpt-5.4', prompt: 'Say hello from relay provider test' })
-    expect(wrapper.text()).toContain('Connection successful')
-    expect(wrapper.text()).toContain('pong')
   })
 
   it('renders deployment status and update controls', async () => {

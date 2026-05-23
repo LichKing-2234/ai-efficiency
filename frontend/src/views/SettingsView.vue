@@ -2,13 +2,12 @@
 import { onMounted, ref } from 'vue'
 import AppLayout from '@/components/AppLayout.vue'
 import { listProviders, createProvider, updateProvider, deleteProvider } from '@/api/scmProvider'
-import { listRelayProviders, createRelayProvider, updateRelayProvider, deleteRelayProvider, testRelayProvider } from '@/api/relayProvider'
+import { listRelayProviders, createRelayProvider, updateRelayProvider, deleteRelayProvider } from '@/api/relayProvider'
 import { listCredentials, createCredential, updateCredential, deleteCredential } from '@/api/credential'
-import { getUserProviders } from '@/api/user'
 import { getDeploymentStatus, checkForUpdate, applyUpdate, rollbackUpdate, restartDeployment } from '@/api/deployment'
 import { waitForServiceRecovery } from '@/utils/deploymentRecovery'
 import client from '@/api/client'
-import type { Credential, DeploymentStatus, RelayProvider, SCMProvider, UpdateStatus, UserProviderSummary } from '@/types'
+import type { Credential, DeploymentStatus, RelayProvider, SCMProvider, UpdateStatus } from '@/types'
 
 const providers = ref<SCMProvider[]>([])
 const relayProviders = ref<RelayProvider[]>([])
@@ -48,14 +47,6 @@ const relayForm = ref({
 const relayFormError = ref('')
 const relayFormLoading = ref(false)
 const showRelayDeleteConfirm = ref<number | null>(null)
-const relayTesting = ref(false)
-const relayTestProviderId = ref<number | null>(null)
-const relayTestPromptDraft = ref('Hi')
-const relayTestPlatform = ref('')
-const relayTestModel = ref('')
-const showRelayTestDialog = ref(false)
-const relayTestResult = ref<{ providerId: number; success: boolean; message: string; response?: string } | null>(null)
-const userProviderSummaries = ref<UserProviderSummary[]>([])
 
 // Credential dialog
 const showCredentialDialog = ref(false)
@@ -89,7 +80,7 @@ const ldapError = ref('')
 const ldapSuccess = ref('')
 
 onMounted(async () => {
-  await Promise.all([fetchProviders(), fetchRelayProviders(), fetchUserProviders(), fetchCredentials(), fetchDeploymentStatus(), fetchLDAPConfig()])
+  await Promise.all([fetchProviders(), fetchRelayProviders(), fetchCredentials(), fetchDeploymentStatus(), fetchLDAPConfig()])
 })
 
 async function fetchProviders() {
@@ -115,15 +106,6 @@ async function fetchRelayProviders() {
     relayProviders.value = []
   } finally {
     relayLoading.value = false
-  }
-}
-
-async function fetchUserProviders() {
-  try {
-    const res = await getUserProviders()
-    userProviderSummaries.value = res.data.data?.providers ?? []
-  } catch {
-    userProviderSummaries.value = []
   }
 }
 
@@ -299,50 +281,6 @@ async function confirmDeleteRelay(id: number) {
   } catch {
     // delete failed
   }
-}
-
-function openRelayTestDialog(provider: RelayProvider) {
-  relayTestProviderId.value = provider.id
-  relayTestPromptDraft.value = 'Hi'
-  relayTestPlatform.value = relayTestPlatforms(provider.id)[0] ?? ''
-  relayTestModel.value = ''
-  showRelayTestDialog.value = true
-}
-
-function closeRelayTestDialog() {
-  showRelayTestDialog.value = false
-}
-
-async function confirmTestRelayProvider() {
-  if (!relayTestProviderId.value) return
-  const providerId = relayTestProviderId.value
-  const prompt = relayTestPromptDraft.value
-  const platform = relayTestPlatform.value
-  const model = relayTestModel.value
-
-  closeRelayTestDialog()
-  relayTesting.value = true
-  try {
-    const res = await testRelayProvider(providerId, { platform, model, prompt })
-    relayTestResult.value = {
-      providerId,
-      ...(res.data.data ?? { success: false, message: 'Request failed' }),
-    }
-  } catch (e: any) {
-    relayTestResult.value = {
-      providerId,
-      success: false,
-      message: e.response?.data?.message || e.message || 'Request failed',
-    }
-  } finally {
-    relayTesting.value = false
-  }
-}
-
-function relayTestPlatforms(providerId: number) {
-  const provider = userProviderSummaries.value.find((item) => item.id === providerId)
-  if (!provider) return []
-  return Array.from(new Set(provider.groups.map((group) => group.platform).filter(Boolean))).sort()
 }
 
 function openAddCredentialDialog() {
@@ -738,14 +676,6 @@ async function handleTestLDAP() {
               <td class="px-6 py-4">
                 <div class="text-sm font-medium text-gray-900">{{ provider.display_name }}</div>
                 <div class="mt-1 font-mono text-xs text-gray-500">{{ provider.name }}</div>
-                <div
-                  v-if="relayTestResult?.providerId === provider.id"
-                  class="mt-3 rounded-md p-3 text-sm"
-                  :class="relayTestResult.success ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'"
-                >
-                  <div>{{ relayTestResult.message }}</div>
-                  <pre v-if="relayTestResult.response" class="mt-2 whitespace-pre-wrap rounded-md bg-white/70 px-3 py-2 font-mono text-xs text-gray-700">{{ relayTestResult.response }}</pre>
-                </div>
               </td>
               <td class="px-6 py-4">
                 <div v-if="provider.is_primary" class="inline-flex rounded-full bg-emerald-100 px-2 py-1 text-xs font-semibold text-emerald-700">Primary</div>
@@ -762,12 +692,6 @@ async function handleTestLDAP() {
                 >{{ provider.enabled ? 'Enabled' : 'Disabled' }}</span>
               </td>
               <td class="whitespace-nowrap px-6 py-4 text-right text-sm space-x-3">
-                <button
-                  :data-testid="`relay-provider-test-${provider.id}`"
-                  class="text-slate-600 hover:text-slate-800"
-                  :disabled="relayTesting"
-                  @click="openRelayTestDialog(provider)"
-                >{{ relayTesting && relayTestProviderId === provider.id ? 'Testing...' : 'Test' }}</button>
                 <button :data-testid="`relay-provider-edit-${provider.id}`" class="text-indigo-600 hover:text-indigo-800" @click="openEditRelayDialog(provider)">Edit</button>
                 <button
                   v-if="showRelayDeleteConfirm !== provider.id"
@@ -1016,45 +940,6 @@ async function handleTestLDAP() {
           <button @click="showRelayDialog = false" class="rounded-md border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">Cancel</button>
           <button @click="handleRelaySubmit" :disabled="relayFormLoading" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50">
             {{ relayFormLoading ? 'Saving...' : editingRelayId ? 'Update Relay Provider' : 'Create Relay Provider' }}
-          </button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Relay Provider Test Dialog -->
-    <div v-if="showRelayTestDialog" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div class="w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
-        <h2 class="mb-4 text-lg font-semibold text-gray-900">Test Relay Provider</h2>
-
-        <div class="space-y-3">
-          <div>
-            <label class="block text-sm font-medium text-gray-700">Platform</label>
-            <select v-model="relayTestPlatform" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm">
-              <option v-for="platform in relayTestProviderId ? relayTestPlatforms(relayTestProviderId) : []" :key="platform" :value="platform">
-                {{ platform }}
-              </option>
-            </select>
-            <p class="mt-1 text-xs text-gray-400">Uses the current admin user's active API key for the selected provider and platform.</p>
-          </div>
-          <div>
-            <label class="block text-sm font-medium text-gray-700">Model</label>
-            <input v-model="relayTestModel" type="text" placeholder="gpt-5.4" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
-            <p class="mt-1 text-xs text-gray-400">Pick the concrete model to test for the selected platform.</p>
-          </div>
-          <div>
-            <label class="block text-sm font-medium text-gray-700">Test Prompt</label>
-            <input v-model="relayTestPromptDraft" type="text" placeholder="Hi" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
-            <p class="mt-1 text-xs text-gray-400">This sends a real chat completion through the selected relay provider and is not persisted.</p>
-          </div>
-          <div v-if="relayTestProviderId && relayTestPlatforms(relayTestProviderId).length === 0" class="rounded-md bg-amber-50 p-3 text-sm text-amber-700">
-            Current admin user has no visible platforms under this provider.
-          </div>
-        </div>
-
-        <div class="mt-5 flex justify-end space-x-3">
-          <button @click="closeRelayTestDialog" :disabled="relayTesting" class="rounded-md border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50">Cancel</button>
-          <button @click="confirmTestRelayProvider" :disabled="relayTesting || !relayTestPlatform || !relayTestModel" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50">
-            {{ relayTesting ? 'Testing...' : 'Run Test' }}
           </button>
         </div>
       </div>

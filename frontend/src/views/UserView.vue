@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import AppLayout from '@/components/AppLayout.vue'
-import { createGroupCredential, getUserProviders, regenerateGroupCredential } from '@/api/user'
+import { createGroupCredential, getUserProviders, regenerateGroupCredential, testUserProvider } from '@/api/user'
 import { useAuthStore } from '@/stores/auth'
 import type {
+  UserProviderTestResult,
   UserProviderSummary,
   VerifyReviewSummary,
 } from '@/types'
@@ -28,6 +29,10 @@ const sessionSecrets = reactive<Record<string, string>>({})
 const revealedSecretKeys = reactive<Record<string, boolean>>({})
 const verifyDrafts = reactive<Record<number, { version: string; discover: string; doctor: string }>>({})
 const reviewResults = reactive<Record<number, VerifyReviewSummary | null>>({})
+const providerTestModel = ref('')
+const providerTestPrompt = ref('Hi')
+const providerTestLoading = ref(false)
+const providerTestResult = ref<UserProviderTestResult | null>(null)
 
 const currentOrigin = computed(() => window.location.origin)
 const selectedProvider = computed(() => providers.value.find((provider) => provider.id === selectedProviderId.value) ?? null)
@@ -50,6 +55,7 @@ const selectedSecretKey = computed(() => {
 const selectedSecret = computed(() => (selectedSecretKey.value ? sessionSecrets[selectedSecretKey.value] ?? '' : ''))
 const selectedKeyValue = computed(() => selectedSecret.value || selectedGroup.value?.credential.key || '')
 const canReveal = computed(() => !!selectedKeyValue.value)
+const canTestProvider = computed(() => !!selectedKeyValue.value && !!providerTestModel.value.trim())
 const isSecretRevealed = computed(() => !!selectedSecretKey.value && !!revealedSecretKeys[selectedSecretKey.value])
 const displayedSecret = computed(() => {
   if (!selectedKeyValue.value) return ''
@@ -88,6 +94,7 @@ function selectProvider(providerId: number) {
 
 function selectGroup(groupId: string) {
   selectedGroupId.value = groupId
+  providerTestResult.value = null
 }
 
 async function loadProviders() {
@@ -172,6 +179,37 @@ function handleRevealKey() {
 async function handleCopyKey() {
   if (!selectedKeyValue.value) return
   await navigator.clipboard.writeText(selectedKeyValue.value)
+}
+
+async function handleTestProvider() {
+  if (!selectedProvider.value || !selectedGroup.value) return
+  if (!selectedKeyValue.value) {
+    providerTestResult.value = { success: false, message: 'Create an API key for this group before testing' }
+    return
+  }
+  const model = providerTestModel.value.trim()
+  if (!model) {
+    providerTestResult.value = { success: false, message: 'Model is required' }
+    return
+  }
+  providerTestLoading.value = true
+  providerTestResult.value = null
+  try {
+    const res = await testUserProvider(selectedProvider.value.id, {
+      platform: selectedGroup.value.platform,
+      group_id: selectedGroup.value.group_id,
+      model,
+      prompt: providerTestPrompt.value.trim() || 'Hi',
+    })
+    providerTestResult.value = res.data.data ?? { success: false, message: 'Request failed' }
+  } catch (err: any) {
+    providerTestResult.value = {
+      success: false,
+      message: err.response?.data?.message || err.message || 'Request failed',
+    }
+  } finally {
+    providerTestLoading.value = false
+  }
 }
 
 function handleReviewVerify() {
@@ -342,6 +380,59 @@ onMounted(loadProviders)
                     >
                       Copy
                     </button>
+                  </div>
+                </div>
+
+                <div class="rounded-md border border-gray-200 p-4">
+                  <div class="font-medium text-gray-900">Test Current Key</div>
+                  <p class="mt-1 text-xs text-gray-500">
+                    Sends a real chat completion through this provider using your active {{ selectedGroup.platform }} key.
+                  </p>
+                  <div class="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+                    <div>
+                      <label class="block text-xs font-medium uppercase tracking-wide text-gray-500">Platform</label>
+                      <input
+                        :value="selectedGroup.platform"
+                        disabled
+                        class="mt-1 w-full rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-500"
+                      />
+                    </div>
+                    <div>
+                      <label class="block text-xs font-medium uppercase tracking-wide text-gray-500">Model</label>
+                      <input
+                        v-model="providerTestModel"
+                        data-testid="user-provider-test-model"
+                        type="text"
+                        placeholder="gpt-5.4"
+                        class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                      />
+                    </div>
+                  </div>
+                  <div class="mt-3">
+                    <label class="block text-xs font-medium uppercase tracking-wide text-gray-500">Prompt</label>
+                    <input
+                      v-model="providerTestPrompt"
+                      data-testid="user-provider-test-prompt"
+                      type="text"
+                      placeholder="Hi"
+                      class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div class="mt-3 flex flex-wrap items-center gap-3">
+                    <button
+                      data-testid="user-provider-test-run"
+                      :disabled="providerTestLoading || !canTestProvider"
+                      class="rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-black disabled:opacity-50"
+                      @click="handleTestProvider"
+                    >
+                      {{ providerTestLoading ? 'Testing...' : 'Run Test' }}
+                    </button>
+                    <span v-if="providerTestResult" class="text-sm" :class="providerTestResult.success ? 'text-green-700' : 'text-red-700'">
+                      {{ providerTestResult.message }}
+                    </span>
+                  </div>
+                  <div v-if="providerTestResult?.response" class="mt-3 rounded-md bg-gray-50 p-3 text-sm text-gray-700">
+                    {{ providerTestResult.response }}
                   </div>
                 </div>
               </div>

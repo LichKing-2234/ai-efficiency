@@ -53,7 +53,8 @@ func (s *Service) Sync(ctx context.Context, scmProvider scm.SCMProvider, rc *ent
 	result := &SyncResult{Total: len(allPRs)}
 	var labelIDs []int
 	activeCutoff := time.Now().AddDate(0, -3, 0)
-	activePRIDs := map[int]struct{}{}
+	var activePRIDs []int
+	activePRIDSet := map[int]struct{}{}
 
 	for _, pr := range allPRs {
 		recordID, created, err := s.upsertPR(ctx, rc.ID, pr)
@@ -68,7 +69,10 @@ func (s *Service) Sync(ctx context.Context, scmProvider scm.SCMProvider, rc *ent
 		}
 		labelIDs = append(labelIDs, recordID)
 		if created || mapPRStatus(pr.State) == prrecord.StatusOpen || (!pr.CreatedAt.IsZero() && !pr.CreatedAt.Before(activeCutoff)) {
-			activePRIDs[recordID] = struct{}{}
+			if _, ok := activePRIDSet[recordID]; !ok {
+				activePRIDs = append(activePRIDs, recordID)
+				activePRIDSet[recordID] = struct{}{}
+			}
 		}
 	}
 
@@ -82,7 +86,7 @@ func (s *Service) Sync(ctx context.Context, scmProvider scm.SCMProvider, rc *ent
 	}
 
 	if s.usageRefresher != nil {
-		for prID := range activePRIDs {
+		for _, prID := range activePRIDs {
 			pr, err := s.entClient.PrRecord.Get(ctx, prID)
 			if err != nil {
 				s.logger.Warn("failed to load PR for usage refresh", zap.Int("pr_record_id", prID), zap.Error(err))
