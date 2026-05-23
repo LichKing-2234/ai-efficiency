@@ -193,6 +193,7 @@ describe('UserView', () => {
 
     expect(testUserProvider).toHaveBeenCalledWith(2, {
       platform: 'anthropic',
+      group_id: '43',
       model: 'claude-3-5-sonnet',
       prompt: 'Say hello',
     })

@@ -199,6 +199,7 @@ type adminProviderResponse struct {
 
 type userProviderTestRequest struct {
 	Platform string `json:"platform"`
+	GroupID  string `json:"group_id"`
 	Model    string `json:"model"`
 	Prompt   string `json:"prompt"`
 }
@@ -432,6 +433,11 @@ func (h *ProviderHandler) Test(c *gin.Context) {
 		pkg.Error(c, http.StatusBadRequest, "platform is required")
 		return
 	}
+	groupID := strings.TrimSpace(req.GroupID)
+	if groupID == "" {
+		pkg.Error(c, http.StatusBadRequest, "group_id is required")
+		return
+	}
 	model := strings.TrimSpace(req.Model)
 	if model == "" {
 		pkg.Error(c, http.StatusBadRequest, "model is required")
@@ -449,14 +455,14 @@ func (h *ProviderHandler) Test(c *gin.Context) {
 	}
 
 	name := preferredRelayTestKeyName(strings.TrimSpace(user.Username), strings.TrimSpace(user.Email))
-	selected := pickRelayTestKey(filterRelayTestKeys(keys, platform, name))
+	selected := pickRelayTestKey(filterRelayTestKeys(keys, platform, groupID, name))
 	if selected == nil {
-		selected = pickRelayTestKey(filterRelayTestKeys(keys, platform, ""))
+		selected = pickRelayTestKey(filterRelayTestKeys(keys, platform, groupID, ""))
 	}
 	if selected == nil || strings.TrimSpace(selected.Key) == "" {
 		pkg.Success(c, gin.H{
 			"success": false,
-			"message": fmt.Sprintf("no active API key found for platform %s", platform),
+			"message": fmt.Sprintf("no active API key found for group %s and platform %s", groupID, platform),
 		})
 		return
 	}
@@ -561,13 +567,16 @@ func preferredRelayTestKeyName(username, email string) string {
 	return email
 }
 
-func filterRelayTestKeys(keys []relay.APIKey, platform, name string) []relay.APIKey {
+func filterRelayTestKeys(keys []relay.APIKey, platform, groupID, name string) []relay.APIKey {
 	filtered := make([]relay.APIKey, 0, len(keys))
 	for _, key := range keys {
 		if !strings.EqualFold(strings.TrimSpace(key.Status), "active") {
 			continue
 		}
 		if key.Group == nil || !strings.EqualFold(strings.TrimSpace(key.Group.Platform), strings.TrimSpace(platform)) {
+			continue
+		}
+		if strconv.FormatInt(key.Group.ID, 10) != strings.TrimSpace(groupID) {
 			continue
 		}
 		if strings.TrimSpace(name) != "" && key.Name != name {

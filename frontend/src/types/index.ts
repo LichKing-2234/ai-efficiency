@@ -294,6 +294,7 @@ export interface GroupCredentialMutationResult {
 
 export interface UserProviderTestRequest {
   platform: string
+  group_id: string
   model: string
   prompt?: string
 }

@@ -455,6 +455,7 @@ GET /api/v1/providers
 ```json
 {
   "platform": "openai",
+  "group_id": "42",
   "model": "gpt-5.4",
   "prompt": "Hi"
 }
@@ -464,9 +465,9 @@ GET /api/v1/providers
 
 1. 路由只要求登录态，不要求 admin role；不存在对应的 `/api/v1/admin/providers/:id/test` 管理端测试合同
 2. 后端仍通过 `relay.Provider` 列出当前 relay user 的 API keys
-3. 后端按 `platform` 选择当前用户自己的 active key，而不是使用 RelayProvider admin key
+3. 后端按 `provider + group_id + platform` 选择当前用户自己的 active key，而不是使用 RelayProvider admin key 或同 platform 其他 group 的 key
 4. `model` 必须由调用方提供；页面不把 provider `default_model` 当作测试合同
-5. 未找到当前用户在该 platform 下可用 key 时返回 `success: false`
+5. 未找到当前用户在该 group + platform 下可用 key 时返回 `success: false`
 
 ### Backend Boundary
 

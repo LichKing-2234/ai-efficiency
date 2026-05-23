@@ -362,6 +362,7 @@ func TestUserRelayProviderTestAllowsRegularUserOwnAPIKey(t *testing.T) {
 
 	w := doRequest(env, http.MethodPost, fmt.Sprintf("/api/v1/user/providers/%d/test", provider.ID), map[string]any{
 		"platform": "openai",
+		"group_id": "5",
 		"model":    "gpt-5.4",
 		"prompt":   "Say hello",
 	})
@@ -378,6 +379,91 @@ func TestUserRelayProviderTestAllowsRegularUserOwnAPIKey(t *testing.T) {
 	}
 	if chatModel != "gpt-5.4" || chatPrompt != "Say hello" {
 		t.Fatalf("chat request = (%q, %q), want model and prompt", chatModel, chatPrompt)
+	}
+}
+
+func TestUserRelayProviderTestRequiresSelectedGroupAPIKey(t *testing.T) {
+	chatCalled := false
+
+	relayServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/admin/users/42/api-keys":
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{
+				"success": true,
+				"data": map[string]any{
+					"items": []any{
+						map[string]any{
+							"id":         9,
+							"user_id":    42,
+							"key":        "sk-wrong-group-openai",
+							"name":       "alice",
+							"status":     "active",
+							"created_at": time.Now().Add(-time.Minute).Format(time.RFC3339),
+							"group": map[string]any{
+								"id":       5,
+								"name":     "Group Alpha",
+								"platform": "openai",
+							},
+						},
+					},
+					"page":  1,
+					"pages": 1,
+				},
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/chat/completions":
+			chatCalled = true
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{
+				"choices": []any{map[string]any{"message": map[string]any{"content": "pong"}}},
+			})
+		default:
+			t.Fatalf("unexpected relay request: %s %s", r.Method, r.URL.String())
+		}
+	}))
+	defer relayServer.Close()
+
+	env := setupTestEnvWithProvider(t)
+	ctx := context.Background()
+	env.client.User.UpdateOneID(env.userID).
+		SetUsername("alice@example.com").
+		SetEmail("alice@example.com").
+		SetRole("user").
+		SetRelayUserID(42).
+		SaveX(ctx)
+	env.token = issueTokenForUser(t, env, env.userID, "alice@example.com", "user")
+
+	adminKey, err := encryptAESGCM("test-admin-key", "0000000000000000000000000000000000000000000000000000000000000000")
+	if err != nil {
+		t.Fatalf("encrypt admin key: %v", err)
+	}
+	provider := env.client.RelayProvider.Create().
+		SetName("sub2api").
+		SetDisplayName("Sub2API").
+		SetBaseURL(relayServer.URL).
+		SetAdminURL(relayServer.URL).
+		SetAdminAPIKey(adminKey).
+		SetDefaultModel("default-model").
+		SetEnabled(true).
+		SetIsPrimary(true).
+		SaveX(ctx)
+
+	w := doRequest(env, http.MethodPost, fmt.Sprintf("/api/v1/user/providers/%d/test", provider.ID), map[string]any{
+		"platform": "openai",
+		"group_id": "6",
+		"model":    "gpt-5.4",
+		"prompt":   "Say hello",
+	})
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	resp := parseResponse(t, w)
+	data := resp["data"].(map[string]any)
+	if data["success"] != false {
+		t.Fatalf("success = %v, want false; data=%#v", data["success"], data)
+	}
+	if chatCalled {
+		t.Fatal("chat completion was called with a key from a different group")
 	}
 }
 

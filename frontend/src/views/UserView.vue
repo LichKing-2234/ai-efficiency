@@ -192,6 +192,7 @@ async function handleTestProvider() {
   try {
     const res = await testUserProvider(selectedProvider.value.id, {
       platform: selectedGroup.value.platform,
+      group_id: selectedGroup.value.group_id,
       model,
       prompt: providerTestPrompt.value.trim() || 'Hi',
     })
