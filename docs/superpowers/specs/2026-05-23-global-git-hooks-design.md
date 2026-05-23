@@ -36,6 +36,7 @@ A machine-level hook installer can remove the per-repository install requirement
 5. Keep hook execution fail-open and bounded so commits are not blocked by backend latency or local scans.
 6. Preserve existing non-AE repository hooks where Git would otherwise skip them because of a global `core.hooksPath`.
 7. Make installed hooks follow normal `ae-cli` upgrades by resolving a stable executable path at runtime.
+8. Remove the workspace-root marker directory from the active hook and attribution contract.
 
 ## Non-Goals
 
@@ -45,6 +46,7 @@ A machine-level hook installer can remove the per-repository install requirement
 4. Do not require SCM provider binding as a hard precondition for attribution if the backend policy allows reporting to an active unbound repo.
 5. Do not remove existing repo-local AE hooks in the first implementation.
 6. Do not require users to enable global Git hooks if they only want attribution for one repository.
+7. Do not store new attribution state in the repository working tree.
 
 ## Command Surface
 
@@ -138,7 +140,7 @@ Behavior:
 2. Detect the current repository remote and branch.
 3. Call the existing create-or-ensure repository endpoint because this is an explicit user action, not an implicit hook action.
 4. Write a positive eligibility cache entry for the returned repository.
-5. Ensure local attribution state directories exist.
+5. Ensure user-level attribution state directories exist under `~/.ai-efficiency/`.
 6. Print the current global hook status and the next command if global hooks are not enabled.
 
 `ae-cli init` is no longer the primary hook installer. It is the current-repository registration and cache bootstrap command.
@@ -174,6 +176,22 @@ These commands remain internal:
 - `ae-cli hook attribution-sync`
 
 They become the Go dispatch layer for hook-time eligibility. Both global and repo-local managed shell scripts stay thin: resolve the `ae-cli` executable, preserve `post-rewrite` stdin, invoke the hidden hook command, and chain legacy hooks. The hidden Go command performs cache lookup, optional online resolve, and handler execution.
+
+## Local State Boundaries
+
+The new hook contract has only three local state locations:
+
+1. `~/.ae-cli/`
+   - CLI login and user-level CLI configuration.
+   - Examples: `token.json`, `config.yaml`, `env.sh`.
+2. `~/.ai-efficiency/`
+   - Attribution state, hook eligibility cache, upload queues, upload ledger, and global hook scripts.
+   - Examples: `~/.ai-efficiency/attribution/...`, `~/.ai-efficiency/hooks/repos.json`, `~/.ai-efficiency/git-hooks/...`.
+3. Git-owned hook directories.
+   - Global mode uses `~/.ai-efficiency/git-hooks` through global `core.hooksPath`.
+   - Repo-local mode uses `$(git rev-parse --git-common-dir)/ae-hooks` through local or worktree `core.hooksPath`.
+
+The implementation must not create, read, or trust any AE-managed marker directory under the repository working tree. Workspace identity is derived from the current Git context at hook runtime, and repository identity is resolved from the current Git remote plus backend eligibility. Existing workspace-root marker files from historical versions are ignored by the new hook path and must not be used as migration input for reporting decisions.
 
 ## Backend Contract
 
@@ -336,6 +354,18 @@ The CLI and backend must derive the same `repo_key` from common remote URL forms
 
 The implementation should introduce a CLI-side repository identity helper with tests that mirror the backend identity behavior. The cache lookup must not rely on raw remote URL string equality.
 
+## Workspace Identity
+
+The hook path must derive `workspace_id` from the current Git context every time it runs.
+
+Inputs:
+
+- `git rev-parse --show-toplevel`
+- `git rev-parse --absolute-git-dir`
+- `git rev-parse --git-common-dir`
+
+The derived value is the only active workspace identity for hook queues, scan state, spooled usage events, collector snapshots, and upload ledgers. The implementation must not trust a persisted workspace marker from the repository working tree. If historical marker files exist from older versions, the new hook path ignores them.
+
 ## Hook Dispatcher Flow
 
 In this section, "dispatcher" means the managed shell launcher plus the hidden Go hook command. Shell should not parse JSON, call HTTP APIs, or implement eligibility policy.
@@ -409,8 +439,10 @@ The dispatcher needs only local Git metadata and backend eligibility metadata:
 - Remote URL
 - Current branch
 - Git root and git directory
+- Git common directory
 - `repo_key`
 - `repo_config_id` after eligibility resolution
+- `workspace_id` derived from the current Git context
 
 It must not upload local tool artifacts, prompts, raw payloads, file paths, or usage events until repository eligibility has been confirmed.
 
@@ -428,6 +460,8 @@ It must not upload local tool artifacts, prompts, raw payloads, file paths, or u
 8. Cache miss resolve uses the configured hard timeout.
 9. Unknown repositories do not run hook handler upload logic.
 10. Eligible repositories pass `repo_config_id` to hook handler upload logic.
+11. Hook execution derives `workspace_id` from the current Git context and ignores historical workspace markers.
+12. `ae-cli init` creates only user-level attribution state, not repository working-tree state.
 
 ### Backend unit tests
 
@@ -447,6 +481,7 @@ It must not upload local tool artifacts, prompts, raw payloads, file paths, or u
 4. Commit in an unknown repository and verify no backend repository, checkpoint, rewrite, or usage event is created.
 5. Commit in a repository with a default `.git/hooks/post-commit` and verify the legacy hook still runs.
 6. Upgrade `~/.local/bin/ae-cli` and verify the dispatcher uses the upgraded binary.
+7. Put a stale historical workspace marker in a repository and verify the hook ignores it.
 
 ## Rollout Plan
 
@@ -455,8 +490,9 @@ It must not upload local tool artifacts, prompts, raw payloads, file paths, or u
 3. Add CLI repository identity and eligibility cache packages.
 4. Add global and repo-local hook install, disable, refresh, and status commands.
 5. Change `ae-cli init` to register the current repo and update cache instead of being the primary hook installer.
-6. Keep old repo-local hooks working for existing installations.
-7. Update `docs/architecture.md` after the implementation is merged so it reflects the new current runtime.
+6. Remove historical workspace marker read, write, and environment-bootstrap behavior from the active hook path.
+7. Keep old repo-local hooks working for existing installations.
+8. Update `docs/architecture.md` after the implementation is merged so it reflects the new current runtime.
 
 ## Final Contract
 
