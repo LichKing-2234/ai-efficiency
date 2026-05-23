@@ -2,7 +2,7 @@
 
 **Date:** 2026-05-23
 **Status:** Proposed design, not yet implemented
-**Scope:** `ae-cli/`, `ae-cli/install.sh`, `ae-cli/install.ps1`, `backend/internal/handler/repo.go`, `backend/internal/handler/tool_usage.go`, `backend/internal/checkpoint/`, `backend/internal/toolusage/`, `docs/`
+**Scope:** `ae-cli/`, `ae-cli/install.sh`, `ae-cli/install.ps1`, `backend/internal/handler/router.go`, `backend/internal/handler/repo.go`, `backend/internal/handler/checkpoint.go`, `backend/internal/handler/tool_usage.go`, `backend/internal/repo/`, `backend/internal/repoidentity/`, `backend/internal/checkpoint/`, `backend/internal/toolusage/`, `docs/`
 **Related:**
 - [2026-05-13-sessionless-local-tool-attribution-design.md](./2026-05-13-sessionless-local-tool-attribution-design.md)
 - [2026-05-20-pr-usage-snapshots-design.md](./2026-05-20-pr-usage-snapshots-design.md)
@@ -36,7 +36,7 @@ A machine-level hook installer can remove the per-repository install requirement
 5. Keep hook execution fail-open and bounded so commits are not blocked by backend latency or local scans.
 6. Make hook ownership explicit: AE-managed hook installation owns the selected `core.hooksPath` and does not preserve or chain previous non-AE hooks.
 7. Make installed hooks follow normal `ae-cli` upgrades by resolving a stable executable path at runtime.
-8. Remove the workspace-root marker directory from the active hook and attribution contract.
+8. Remove repository working-tree workspace metadata from the active hook and attribution contract.
 
 ## Non-Goals
 
@@ -248,7 +248,7 @@ The executable is not stored in the state root. The official user-installed bina
 
 There is no compatibility fallback for old user state roots. New code must not read from, write to, migrate from, or fall back to any user-level state directory outside `~/.ae-cli/`.
 
-The implementation must not create, read, or trust any AE-managed marker directory under the repository working tree. Workspace identity is derived from the current Git context at hook runtime, and repository identity is resolved from the current Git remote plus backend eligibility. Existing workspace-root marker files from historical versions are ignored by the new hook path and must not be used as migration input for reporting decisions.
+The implementation must not create, read, or trust any AE-managed workspace metadata under the repository working tree. Workspace identity is derived from the current Git context at hook runtime, and repository identity is resolved from the current Git remote plus backend eligibility. Existing repository-local workspace metadata from historical versions is ignored by the new hook path and must not be used as migration input for reporting decisions.
 
 ## Backend Contract
 
@@ -377,11 +377,14 @@ The hook implementation must change the hook upload contract:
 
 1. The hidden Go hook command resolves eligibility before running checkpoint, rewrite, or attribution sync logic.
 2. The resolved `repo_config_id` is passed through the internal hook handler and uploader path.
-3. Checkpoint and rewrite upload payloads include `repo_config_id`.
-4. When `repo_config_id` is present, backend checkpoint and rewrite ingest resolve the existing repository by ID and must not call create-or-ensure logic.
-5. If the repo is missing or inactive, ingest rejects the upload without creating any repository.
-6. Tool usage upload payloads produced by hook-time sync or `ae-cli sync` also include the resolved `repo_config_id`.
-7. Backend tool usage ingest uses `repo_config_id` plus the authenticated user to bind the workspace scope when no checkpoint exists yet. This avoids relying on an earlier checkpoint to infer which repository owns a workspace.
+3. The `ae-cli` client request structs for checkpoint, rewrite, and tool usage include optional `repo_config_id`.
+4. Backend handler request structs for checkpoint, rewrite, and tool usage accept optional `repo_config_id` and pass it to their services.
+5. Checkpoint and rewrite upload payloads produced by managed global and repo-local hooks include `repo_config_id`.
+6. When `repo_config_id` is present, backend checkpoint and rewrite ingest resolve the existing repository by ID and must not call create-or-ensure logic.
+7. If the repo is missing or inactive, ingest rejects the upload without creating any repository.
+8. Tool usage upload payloads produced by hook-time sync or `ae-cli sync` also include the resolved `repo_config_id`.
+9. Backend tool usage ingest uses `repo_config_id` plus the authenticated user to bind the workspace scope when no checkpoint exists yet. This avoids relying on an earlier checkpoint to infer which repository owns a workspace.
+10. If `repo_config_id` is omitted, backend tool usage ingest may retain the legacy workspace-scope lookup for non-managed clients. Managed global hooks, managed repo-local hooks, and `ae-cli sync` must not rely on that legacy path.
 
 Legacy clients that do not send `repo_config_id` may continue to use the old behavior where appropriate, but managed global and repo-local hooks must use the resolve-only path for checkpoint, rewrite, and tool usage uploads.
 
@@ -539,7 +542,17 @@ The implementation should introduce a CLI-side repository identity helper with t
 
 ## Workspace Identity
 
-The hook path must derive `workspace_id` from the current Git context every time it runs.
+The hook path must derive `workspace_id` from the current Git context every time it runs. It must use the same deterministic formula as the existing sessionless attribution design and `ae-cli/internal/session.DeriveWorkspaceID`:
+
+```text
+UUIDv5(
+  "ae-workspace",
+  canonical_repo_root + "\x1f" +
+  canonical_workspace_root + "\x1f" +
+  canonical_git_dir + "\x1f" +
+  canonical_git_common_dir
+)
+```
 
 Inputs:
 
@@ -547,7 +560,9 @@ Inputs:
 - `git rev-parse --absolute-git-dir`
 - `git rev-parse --git-common-dir`
 
-The derived value is the only active workspace identity for hook queues, scan state, spooled usage events, collector snapshots, and upload ledgers. The implementation must not trust a persisted workspace marker from the repository working tree. If historical marker files exist from older versions, the new hook path ignores them.
+For this hook contract, `canonical_repo_root` and `canonical_workspace_root` both come from the canonicalized Git top-level path. All canonical paths are absolute, cleaned, and symlink-resolved before hashing.
+
+The derived value is the only active workspace identity for hook queues, scan state, spooled usage events, collector snapshots, and upload ledgers. The same worktree must derive the same `workspace_id` across hook, `sync`, and status paths; different linked worktrees for the same repository must derive different `workspace_id` values because their absolute git directories differ. The implementation must not trust persisted workspace metadata from the repository working tree. If historical repository-local workspace metadata exists from older versions, the new hook path ignores it.
 
 ## Upload Ledger
 
@@ -683,7 +698,7 @@ The dispatcher needs only local Git metadata and backend eligibility metadata:
 - Git common directory
 - `repo_key`
 - `repo_config_id` after eligibility resolution
-- `workspace_id` derived from the current Git context
+- `workspace_id` derived with the shared deterministic formula from the current Git context
 
 It must not upload local tool artifacts, prompts, raw payloads, file paths, or usage events until repository eligibility has been confirmed.
 
@@ -700,8 +715,8 @@ It must not upload local tool artifacts, prompts, raw payloads, file paths, or u
 7. Eligibility cache handles positive, negative, expired, and malformed entries.
 8. Cache miss resolve uses the configured hard timeout.
 9. Unknown repositories do not run hook handler upload logic.
-10. Eligible repositories pass `repo_config_id` to hook handler upload logic.
-11. Hook execution derives `workspace_id` from the current Git context and ignores historical workspace markers.
+10. Eligible repositories pass `repo_config_id` through CLI client request structs, hook handler upload logic, and backend handler request structs.
+11. Hook execution derives `workspace_id` with the shared deterministic UUIDv5 formula and ignores historical repository-local workspace metadata.
 12. `ae-cli init` creates only user-level attribution state, not repository working-tree state.
 13. New code writes state only under `~/.ae-cli/` and does not read or migrate old user-level state roots.
 14. Managed hook scripts resolve `~/.local/bin/ae-cli` and do not prefer local debug binary paths or install-time executable paths.
@@ -724,6 +739,7 @@ It must not upload local tool artifacts, prompts, raw payloads, file paths, or u
 31. The installer or upgrade refresh rewrites active global hooks and enabled recorded repo-local AE hooks to the current template without preserving previous non-AE hooks.
 32. A disabled global record is reconciled back to enabled when global `core.hooksPath` still points to `~/.ae-cli/git-hooks`; a disabled global record is not rewritten or reactivated after that Git config value is unset.
 33. Disabled repo-local installation records are not rewritten or reactivated during installer/upgrade refresh.
+34. The same worktree derives one stable `workspace_id` across hook, `sync`, and status paths; two linked worktrees for the same repository derive different `workspace_id` values.
 
 ### Backend unit tests
 
@@ -732,9 +748,9 @@ It must not upload local tool artifacts, prompts, raw payloads, file paths, or u
 3. `resolve-remote` returns `inactive` for inactive repos.
 4. `resolve-remote` does not apply per-user repo reporting permission in v1; a valid authenticated user may report to any active backend-known repo.
 5. `hook-eligible` returns active backend-known matches only for requested repo identities.
-6. Checkpoint ingest with `repo_config_id` resolves by ID without create-or-ensure fallback.
-7. Rewrite ingest with `repo_config_id` resolves by ID without create-or-ensure fallback.
-8. Tool usage ingest accepts `repo_config_id` and binds workspace scope without requiring a previous checkpoint.
+6. Checkpoint handler and service accept `repo_config_id`; when present, ingest resolves by ID without create-or-ensure fallback.
+7. Rewrite handler and service accept `repo_config_id`; when present, ingest resolves by ID without create-or-ensure fallback.
+8. Tool usage handler and service accept `repo_config_id` and bind workspace scope without requiring a previous checkpoint.
 9. `hook-eligible` returns results only for requested repo identities and does not enumerate unrelated active repos.
 
 ### Integration checks
@@ -745,7 +761,7 @@ It must not upload local tool artifacts, prompts, raw payloads, file paths, or u
 4. Commit in an unknown repository and verify no backend repository, checkpoint, rewrite, or usage event is created.
 5. Commit in a repository with a default `.git/hooks/post-commit` and verify the legacy hook does not run after AE owns the selected hook path.
 6. Upgrade `~/.local/bin/ae-cli` and verify the dispatcher uses the upgraded binary.
-7. Put a stale historical workspace marker in a repository and verify the hook ignores it.
+7. Put stale historical repository-local workspace metadata in a repository and verify the hook ignores it.
 8. Put stale state under an old user-level state root and verify the new CLI ignores it.
 9. Configure a non-AE global or repo-local `core.hooksPath` and verify enable refuses without `--force` and succeeds with `--force`.
 10. Generate a stale managed hook script and verify status reports the current and installed template versions.
@@ -757,11 +773,11 @@ It must not upload local tool artifacts, prompts, raw payloads, file paths, or u
 ## Rollout Plan
 
 1. Add backend read-only repository eligibility endpoints.
-2. Add `repo_config_id` support to checkpoint, rewrite, and tool usage ingest.
+2. Add `repo_config_id` support to ae-cli client payloads, backend handler requests, and checkpoint, rewrite, and tool usage ingest.
 3. Add CLI repository identity and eligibility cache packages.
 4. Add global and repo-local hook install, disable, refresh, and status commands.
 5. Change `ae-cli init` to register the current repo and update cache instead of being the primary hook installer.
-6. Remove historical workspace marker read, write, and environment-bootstrap behavior from the active hook path.
+6. Remove historical repository-local workspace metadata read, write, and environment-bootstrap behavior from the active hook path.
 7. Move active attribution state paths to `~/.ae-cli/state/` without migration fallback from older user-level state roots.
 8. Mark only the current active older AE-managed repo-local hook path as stale in `ae-cli hooks status`; rewrite it when the user runs `ae-cli hooks enable --repo` or when the installer/upgrade refresh handles an enabled recorded repo-local installation.
 9. Add managed hook installation tracking and installer/upgrade script refresh for AE-managed hook templates.
