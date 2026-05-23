@@ -44,7 +44,7 @@ A machine-level hook installer can remove the per-repository install requirement
 2. Do not use directory prefixes as the source of truth for whether a repository may be reported.
 3. Do not make global hooks auto-register unknown repositories.
 4. Do not require SCM provider binding as a hard precondition for attribution if the backend policy allows reporting to an active unbound repo.
-5. Do not remove existing repo-local AE hooks in the first implementation.
+5. Do not migrate legacy AE-managed hook scripts or user-level state roots.
 6. Do not require users to enable global Git hooks if they only want attribution for one repository.
 7. Do not store new attribution state in the repository working tree.
 
@@ -57,8 +57,8 @@ Installs the global hook dispatcher.
 Behavior:
 
 1. Require a valid login token.
-2. Install managed hook scripts under `~/.ai-efficiency/git-hooks`.
-3. Set `git config --global core.hooksPath ~/.ai-efficiency/git-hooks`.
+2. Install managed hook scripts under `~/.ae-cli/git-hooks`.
+3. Set `git config --global core.hooksPath ~/.ae-cli/git-hooks`.
 4. Write scripts for `post-commit` and `post-rewrite`.
 5. Use runtime executable resolution in the scripts instead of embedding only the current binary path.
 
@@ -114,7 +114,7 @@ It should show:
 4. Which hook mode Git will actually use for the current repository: none, global, repo-local AE, or non-AE local hooks.
 5. Whether the current repository exists in the local eligibility cache.
 6. Whether the current repository resolves as eligible in the backend when online.
-7. Whether legacy repo-local AE hooks are still installed for the current repository.
+7. Whether stale repo-local AE hooks from older contracts are still installed for the current repository.
 8. Which `ae-cli` executable the hook dispatcher would run.
 
 ### `ae-cli hooks refresh`
@@ -140,7 +140,7 @@ Behavior:
 2. Detect the current repository remote and branch.
 3. Call the existing create-or-ensure repository endpoint because this is an explicit user action, not an implicit hook action.
 4. Write a positive eligibility cache entry for the returned repository.
-5. Ensure user-level attribution state directories exist under `~/.ai-efficiency/`.
+5. Ensure user-level attribution state directories exist under `~/.ae-cli/state/attribution/`.
 6. Print the current global hook status and the next command if global hooks are not enabled.
 
 `ae-cli init` is no longer the primary hook installer. It is the current-repository registration and cache bootstrap command.
@@ -179,17 +179,31 @@ They become the Go dispatch layer for hook-time eligibility. Both global and rep
 
 ## Local State Boundaries
 
-The new hook contract has only three local state locations:
+The new CLI contract uses one user-owned config and state root:
 
-1. `~/.ae-cli/`
-   - CLI login and user-level CLI configuration.
-   - Examples: `token.json`, `config.yaml`, `env.sh`.
-2. `~/.ai-efficiency/`
-   - Attribution state, hook eligibility cache, upload queues, upload ledger, and global hook scripts.
-   - Examples: `~/.ai-efficiency/attribution/...`, `~/.ai-efficiency/hooks/repos.json`, `~/.ai-efficiency/git-hooks/...`.
-3. Git-owned hook directories.
-   - Global mode uses `~/.ai-efficiency/git-hooks` through global `core.hooksPath`.
-   - Repo-local mode uses `$(git rev-parse --git-common-dir)/ae-hooks` through local or worktree `core.hooksPath`.
+```text
+~/.ae-cli/
+  token.json
+  config.yaml
+  env.sh
+  git-hooks/
+  state/
+    attribution/
+    hooks/
+      repos.json
+```
+
+Directory responsibilities:
+
+1. `~/.ae-cli/token.json`, `~/.ae-cli/config.yaml`, and `~/.ae-cli/env.sh` hold login, user-level CLI configuration, and shell environment bootstrap.
+2. `~/.ae-cli/git-hooks/` holds the managed global Git hook scripts.
+3. `~/.ae-cli/state/attribution/` holds workspace scan state, hook queues, spooled usage events, collector snapshots, and upload ledgers.
+4. `~/.ae-cli/state/hooks/repos.json` holds the local repository eligibility cache.
+5. Repo-local hook mode still uses the Git-owned `$(git rev-parse --git-common-dir)/ae-hooks` directory through local or worktree `core.hooksPath`.
+
+The executable is not stored in the state root. The official user-installed binary path remains `~/.local/bin/ae-cli`, and managed hook scripts must not prefer or generate any local debug binary path.
+
+There is no compatibility fallback for the old user state root. New code must not read from, write to, migrate from, or fall back to `~/.ai-efficiency/` or any other user-level state directory outside `~/.ae-cli/`.
 
 The implementation must not create, read, or trust any AE-managed marker directory under the repository working tree. Workspace identity is derived from the current Git context at hook runtime, and repository identity is resolved from the current Git remote plus backend eligibility. Existing workspace-root marker files from historical versions are ignored by the new hook path and must not be used as migration input for reporting decisions.
 
@@ -305,7 +319,7 @@ Legacy clients that do not send `repo_config_id` may continue to use the old beh
 Cache file:
 
 ```text
-~/.ai-efficiency/hooks/repos.json
+~/.ae-cli/state/hooks/repos.json
 ```
 
 The cache is keyed by backend-compatible `repo_key`, not by local checkout path. This lets multiple clones or worktrees of the same repository share eligibility.
@@ -405,9 +419,10 @@ Generated hook scripts must resolve the executable at runtime in this order:
 1. `AE_CLI_HOOK_BIN`
 2. `~/.local/bin/ae-cli`
 3. `command -v ae-cli`
-4. The install-time executable path as a final fallback
 
 This solves the current problem where hooks can remain pinned to an old binary path after `ae-cli` is upgraded.
+
+If no executable can be resolved, the managed hook script skips AE work and still chains non-AE repository hooks when present. Managed hook scripts must not embed the install-time executable path, because that can pin hooks to temporary or debug binaries.
 
 ## Existing Hook Compatibility
 
@@ -418,7 +433,7 @@ Compatibility rules:
 1. If a repository has a local `core.hooksPath`, Git uses that local path and the global AE hook does not run. `ae-cli hooks status` must report this clearly.
 2. If a repository has executable default hooks under `.git/hooks`, the global AE dispatcher runs them after AE's fail-open work.
 3. `ae-cli hooks enable --repo` preserves a pre-existing local hook path or executable default hook using the current legacy hook preservation model.
-4. If an existing repo-local AE hook is already installed under `.git/ae-hooks`, it may continue to work. The first implementation does not need to migrate or delete it unless the user explicitly runs `ae-cli hooks disable --repo`.
+4. If an existing repo-local AE hook is already installed under `.git/ae-hooks`, `ae-cli hooks status` reports it as stale. `ae-cli hooks enable --repo` rewrites it to the current contract, and `ae-cli hooks disable --repo` disables it when it is the active local hook path.
 5. Managed dispatchers must avoid recursive chaining into AE-managed global or repo-local hook directories.
 
 ## Failure Behavior
@@ -462,6 +477,8 @@ It must not upload local tool artifacts, prompts, raw payloads, file paths, or u
 10. Eligible repositories pass `repo_config_id` to hook handler upload logic.
 11. Hook execution derives `workspace_id` from the current Git context and ignores historical workspace markers.
 12. `ae-cli init` creates only user-level attribution state, not repository working-tree state.
+13. New code writes state only under `~/.ae-cli/` and does not read or migrate old user-level state roots.
+14. Managed hook scripts resolve `~/.local/bin/ae-cli` and do not prefer local debug binary paths or install-time executable paths.
 
 ### Backend unit tests
 
@@ -482,6 +499,7 @@ It must not upload local tool artifacts, prompts, raw payloads, file paths, or u
 5. Commit in a repository with a default `.git/hooks/post-commit` and verify the legacy hook still runs.
 6. Upgrade `~/.local/bin/ae-cli` and verify the dispatcher uses the upgraded binary.
 7. Put a stale historical workspace marker in a repository and verify the hook ignores it.
+8. Put stale state under an old user-level state root and verify the new CLI ignores it.
 
 ## Rollout Plan
 
@@ -491,8 +509,9 @@ It must not upload local tool artifacts, prompts, raw payloads, file paths, or u
 4. Add global and repo-local hook install, disable, refresh, and status commands.
 5. Change `ae-cli init` to register the current repo and update cache instead of being the primary hook installer.
 6. Remove historical workspace marker read, write, and environment-bootstrap behavior from the active hook path.
-7. Keep old repo-local hooks working for existing installations.
-8. Update `docs/architecture.md` after the implementation is merged so it reflects the new current runtime.
+7. Move active attribution state paths to `~/.ae-cli/state/` without migration fallback from older user-level state roots.
+8. Mark stale AE-managed repo-local hooks as stale in `ae-cli hooks status`; rewrite them only when the user runs `ae-cli hooks enable --repo`.
+9. Update `docs/architecture.md` after the implementation is merged so it reflects the new current runtime.
 
 ## Final Contract
 
@@ -506,3 +525,4 @@ The intended product contract is:
 6. Unknown repositories are skipped without upload.
 7. Existing repository hooks continue to run.
 8. Hook scripts follow normal CLI upgrades by resolving `ae-cli` at runtime.
+9. User-level CLI config, auth, hooks, cache, and attribution state all live under `~/.ae-cli/`.
