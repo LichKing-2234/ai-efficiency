@@ -15,7 +15,7 @@ The current project-level architecture remains documented in [`docs/architecture
 
 - This design separates repository registration from hook installation in the current `ae-cli init` flow.
 - It keeps the sessionless attribution model from the 2026-05-13 design: local tool artifacts remain the usage fact source, and git hooks remain checkpoint triggers.
-- It narrows the hook eligibility boundary: a globally installed hook may observe any Git repository, but it may only run AE attribution for repositories that already exist in the backend.
+- It narrows the hook eligibility boundary: a globally installed hook may observe any Git repository, but it may only run AE attribution for reporting-enabled repositories that already exist in the backend.
 - Repo-local hooks remain a first-class option for users who do not want global Git configuration changes.
 
 ## Problem
@@ -43,7 +43,7 @@ A machine-level hook installer can remove the per-repository install requirement
 1. Do not add a local daemon, launch agent, or background service.
 2. Do not use directory prefixes as the source of truth for whether a repository may be reported.
 3. Do not make global hooks auto-register unknown repositories.
-4. Do not require SCM provider binding as a hard precondition for attribution if the backend policy allows reporting to an active unbound repo.
+4. Do not require SCM provider binding or webhook health as a hard precondition for attribution if the backend policy allows reporting to a backend-known unbound repo.
 5. Do not broadly scan for or migrate legacy AE-managed hook scripts or user-level state roots. A current active stale AE-managed hook path may still be reported or replaced by an explicit `hooks enable --repo` operation.
 6. Do not require users to enable global Git hooks if they only want attribution for one repository.
 7. Do not store new attribution state in the repository working tree.
@@ -135,8 +135,8 @@ It should show:
 2. Whether the current repository has AE-managed repo-local hooks configured in local or worktree config.
 3. Whether the current repository has a local or worktree `core.hooksPath` that overrides any global hook path.
 4. Which hook mode Git will actually use for the current repository: no executable hook, default `.git/hooks`, AE global, AE repo-local, non-AE global, or non-AE local/worktree.
-5. Whether the current repository exists in the local eligibility cache.
-6. Whether the current repository has a durable observed identity in `~/.ae-cli/state/hooks/observed-repos.json`.
+5. Whether the current repository exists in the local eligibility cache for the current stable backend/account context.
+6. Whether the current repository has a context-bound durable observed identity or only an unbound local hint in `~/.ae-cli/state/hooks/observed-repos.json`.
 7. Whether the current repository resolves as eligible in the backend when online.
 8. Whether the current effective `core.hooksPath` points to a stale AE-managed hook path from an older contract.
 9. Which `ae-cli` executable the hook dispatcher would run.
@@ -161,7 +161,7 @@ Behavior:
 7. Update positive and negative eligibility cache entries for observed repos with the current context binding.
 8. Preserve cache entries for repos that were not part of the refresh request.
 
-`ae-cli hooks refresh --current` refreshes only the current repository by calling the read-only resolve endpoint. It requires a stable `auth_subject` before writing durable cache entries or attaching the current context binding to the current repository's observed identity.
+`ae-cli hooks refresh --current` refreshes only the current repository by calling the read-only resolve endpoint. It fails with a diagnostic if no stable `auth_subject` can be derived, because the command's purpose is to write durable cache state. It requires a stable `auth_subject` before writing durable cache entries or attaching the current context binding to the current repository's observed identity.
 
 For larger installations, the refresh contract may support batch reads of locally observed repo keys:
 
@@ -206,8 +206,8 @@ Keeps its user-facing meaning: manually scan local tool artifacts and upload usa
 New boundary:
 
 1. Detect the current repository identity and write or update its durable observed repo identity with the current context binding when a stable `auth_subject` is available; otherwise write only an unbound local hint.
-2. Resolve current repository eligibility first under the current context binding.
-3. If the repository is not backend-known or active, fail with a clear message that points to `ae-cli init` or admin repo configuration.
+2. Resolve current repository eligibility first using the current server and authenticated request. Durable cache or replay state is written only when a stable `auth_subject` is available.
+3. If the repository is not backend-known or reporting-enabled, fail with a clear message that points to `ae-cli init` or admin repo configuration.
 4. If no stable `auth_subject` exists, `sync` may perform an immediate authenticated upload for the current invocation after eligibility is resolved, but it must not write positive or negative eligibility cache entries, durable retry queues, tool-usage spools, or upload-ledger records.
 5. Do not create repositories implicitly from `sync`.
 
@@ -271,7 +271,7 @@ It may return an existing repository or create a new unbound repository from the
 
 `POST /api/v1/repos/resolve-remote`
 
-Purpose: determine whether a repository already exists and is active for hook attribution.
+Purpose: determine whether a repository already exists and is reporting-enabled for hook attribution.
 
 Request:
 
@@ -299,6 +299,8 @@ Eligible response:
 
 The request may include the client cache version that produced the lookup. The backend may ignore it, but it gives future implementations a cheap way to diagnose stale local state.
 
+The `status` field is informational for eligible repositories. With the current schema, eligible responses may return either `active` or `webhook_failed`; `webhook_failed` still means hook attribution is allowed.
+
 Ineligible response:
 
 ```json
@@ -318,11 +320,11 @@ The endpoint is read-only:
 The backend policy decides eligibility, but the default contract should be:
 
 1. The repo must already exist in `repo_configs`.
-2. The repo must be active.
+2. The repo must be reporting-enabled. With the current `repo_configs.status` enum, `active` and `webhook_failed` are reporting-enabled; `inactive` is not. Webhook health is not a hook attribution precondition.
 3. The authenticated user must be valid, but v1 does not apply an additional per-user repo reporting permission check.
 4. SCM binding is reported as metadata and is not a hard attribution precondition unless backend policy explicitly makes it one.
 
-The v1 product rule is intentionally broad: if the repository is backend-known and active, a valid local user who can create a Git commit may report hook attribution. The backend does not verify SCM push permission in this hook path.
+The v1 product rule is intentionally broad: if the repository is backend-known and reporting-enabled, a valid local user who can create a Git commit may report hook attribution. The backend does not verify SCM push permission in this hook path.
 
 Recommended ineligible reasons:
 
@@ -337,7 +339,7 @@ Recommended ineligible reasons:
 
 Purpose: let `ae-cli hooks refresh` update local cache entries for repositories the CLI has already observed locally, without probing each repository one at a time.
 
-The request contains locally observed repo identities. The response contains only active backend-known matches from that request. It does not include secrets and must not enumerate unrelated repositories.
+The request contains locally observed repo identities. The response contains only reporting-enabled backend-known matches from that request. It does not include secrets and must not enumerate unrelated repositories.
 
 Example request:
 
@@ -390,7 +392,7 @@ The hook implementation must change the hook upload contract:
 4. Backend handler request structs for checkpoint, rewrite, and tool usage accept optional `repo_config_id` and pass it to their services.
 5. Checkpoint and rewrite upload payloads produced by managed global and repo-local hooks include `repo_config_id`.
 6. When `repo_config_id` is present, backend checkpoint and rewrite ingest resolve the existing repository by ID and must not call create-or-ensure logic.
-7. If the repo is missing or inactive, ingest rejects the upload without creating any repository.
+7. If the repo is missing, inactive, or disabled by policy, ingest rejects the upload without creating any repository.
 8. Tool usage upload payloads produced by hook-time sync or `ae-cli sync` also include the resolved `repo_config_id`.
 9. Backend tool usage ingest uses `repo_config_id` plus the authenticated user to bind the workspace scope when no checkpoint exists yet. This avoids relying on an earlier checkpoint to infer which repository owns a workspace.
 10. When `repo_config_id` is present, backend tool usage ingest must ignore any conflicting legacy workspace scope and bind the event to `repo_config_id + authenticated user`.
@@ -634,17 +636,18 @@ For `post-commit`:
 1. Resolve the current Git repository and remote.
 2. Compute the canonical `repo_key`.
 3. Write or update the observed repo record on a best-effort basis. The record is context-bound only when a stable `auth_subject` is available; otherwise it is only an unbound local hint.
-4. Derive the current `server_url` and `auth_subject`.
-5. If no stable `auth_subject` exists, skip the local eligibility cache, positive and negative cache writes, durable hook queues, tool-usage spools, and upload-ledger writes for this invocation. The dispatcher may still attempt an immediate online resolve and immediate upload for the current commit if the request can be authenticated, but it must not leave durable replay state behind.
-6. If a stable `auth_subject` exists, check only local eligibility cache entries whose context binding matches.
-7. If positive and unexpired, run the existing AE hook handler logic with the cached `repo_config_id`.
-8. If negative and unexpired, skip AE work.
-9. On cache miss, cache bypass, or expiry, call `POST /api/v1/repos/resolve-remote` with a hard timeout.
-10. If resolve returns eligible and a stable `auth_subject` exists, update the positive cache with the current context binding and run the existing AE hook handler logic.
-11. If resolve returns eligible but no stable `auth_subject` exists, run only immediate non-replayable AE hook handler work for this invocation.
-12. If resolve returns ineligible and a stable `auth_subject` exists, update the negative cache with the current context binding and skip AE work.
-13. If resolve returns ineligible but no stable `auth_subject` exists, skip AE work without writing a negative cache entry.
-14. If resolve times out or fails, skip AE work.
+4. Load the current `server_url` and a usable authenticated request credential. A missing token, locally expired token, refresh failure, or malformed credential means skip AE work; a local positive cache entry must not authorize hook work without a usable credential.
+5. Derive the current `auth_subject`.
+6. If no stable `auth_subject` exists, skip the local eligibility cache, positive and negative cache writes, durable hook queues, tool-usage spools, and upload-ledger writes for this invocation. The dispatcher may still attempt an immediate online resolve and immediate upload for the current commit if the request can be authenticated, but it must not leave durable replay state behind.
+7. If a stable `auth_subject` exists, check only local eligibility cache entries whose context binding matches.
+8. If positive and unexpired, run the existing AE hook handler logic with the cached `repo_config_id`.
+9. If negative and unexpired, skip AE work.
+10. On cache miss, cache bypass, or expiry, call `POST /api/v1/repos/resolve-remote` with a hard timeout.
+11. If resolve returns eligible and a stable `auth_subject` exists, update the positive cache with the current context binding and run the existing AE hook handler logic.
+12. If resolve returns eligible but no stable `auth_subject` exists, run only immediate non-replayable AE hook handler work for this invocation.
+13. If resolve returns ineligible and a stable `auth_subject` exists, update the negative cache with the current context binding and skip AE work.
+14. If resolve returns ineligible but no stable `auth_subject` exists, skip AE work without writing a negative cache entry.
+15. If resolve times out or fails, skip AE work.
 
 For `post-rewrite`:
 
@@ -743,13 +746,14 @@ Binding fields:
 
 Rules:
 
-1. Positive eligibility cache entries are valid only when `server_url`, `auth_subject`, and `repo_key` match the current context and the entry contains a non-zero `repo_config_id`. A mismatch is a cache miss, not an authorization failure.
-2. Negative eligibility cache entries are valid only when `server_url`, `auth_subject`, and `repo_key` match the current context.
-3. Observed repo identities include `server_url`, `auth_subject`, and `repo_key` when written by an online command with a stable `auth_subject`. Hook-time observed identities may omit `server_url` and `auth_subject` if no configured server or stable account context is available, but such records are local hints only. Batch refresh uses only observed records whose `server_url` and `auth_subject` match the current context; `hooks refresh --current`, `ae-cli init`, or `ae-cli sync` may attach the current context to the current repository after deriving its identity and a stable `auth_subject`.
-4. Hook queues and spooled tool usage events must include `server_url`, `auth_subject`, `repo_config_id`, `repo_key`, and `workspace_id` before they can be replayed. If any of those fields are missing or do not match the current stable context, replay skips the item and records a `skipped` ledger entry instead of uploading it. If the current context has no stable `auth_subject`, replay is skipped without writing a durable ledger record.
-5. Upload ledger records include the same binding fields, so `hooks status --uploads` and `sync status` can separate history by backend, account, repo, and workspace.
-6. If the CLI cannot derive a stable `auth_subject`, it may still perform an online resolve and immediate upload for the current invocation, but it must not create positive or negative eligibility cache entries, context-bound observed repo records, durable replay records, or upload-ledger records that could later be used under an ambiguous account context.
-7. Login, logout, or server override commands do not need to delete old local state. Context mismatch is enough to prevent old cache entries, queues, or spooled events from authorizing uploads under the new context.
+1. `auth_subject` extraction from access-token claims is a local context-binding operation, not proof of authentication. Backend requests still rely on backend token validation.
+2. Positive eligibility cache entries are valid only when `server_url`, `auth_subject`, and `repo_key` match the current context, the entry contains a non-zero `repo_config_id`, and the CLI has a usable authenticated request credential. A mismatch is a cache miss, not an authorization failure.
+3. Negative eligibility cache entries are valid only when `server_url`, `auth_subject`, and `repo_key` match the current context and the CLI has a usable authenticated request credential.
+4. Observed repo identities include `server_url`, `auth_subject`, and `repo_key` when written by an online command with a stable `auth_subject`. Hook-time observed identities may omit `server_url` and `auth_subject` if no configured server or stable account context is available, but such records are local hints only. Batch refresh uses only observed records whose `server_url` and `auth_subject` match the current context; `hooks refresh --current`, `ae-cli init`, or `ae-cli sync` may attach the current context to the current repository after deriving its identity and a stable `auth_subject`.
+5. Hook queues and spooled tool usage events must include `server_url`, `auth_subject`, `repo_config_id`, `repo_key`, and `workspace_id` before they can be replayed. If any of those fields are missing or do not match the current stable context, replay skips the item and records a `skipped` ledger entry instead of uploading it. If the current context has no stable `auth_subject`, replay is skipped without writing a durable ledger record.
+6. Upload ledger records include the same binding fields, so `hooks status --uploads` and `sync status` can separate history by backend, account, repo, and workspace.
+7. If the CLI cannot derive a stable `auth_subject`, it may still perform an online resolve and immediate upload for the current invocation, but it must not create positive or negative eligibility cache entries, context-bound observed repo records, durable replay records, or upload-ledger records that could later be used under an ambiguous account context.
+8. Login, logout, or server override commands do not need to delete old local state. Context mismatch is enough to prevent old cache entries, queues, or spooled events from authorizing uploads under the new context.
 
 ## Testing Plan
 
@@ -778,7 +782,7 @@ Rules:
 21. `hooks refresh` sends only locally observed repo identities with matching stable context binding to the batch eligibility endpoint and does not accept unrelated repos.
 22. Expired eligibility entries do not remove durable observed repo identities.
 23. `ae-cli init`, `ae-cli sync`, hook-time resolve, and `hooks refresh --current` write or update context-bound observed repo identities only when a stable `auth_subject` exists; otherwise they write only unbound local hints.
-24. `hooks status` reports whether the current repository has a durable observed repo identity.
+24. `hooks status` reports whether the current repository has a context-bound durable observed repo identity or only an unbound local hint.
 25. `hooks status` reports executable default `.git/hooks` scripts and whether they are effective or bypassed by the effective hook mode.
 26. `hooks status` checks stale repo-local AE hooks only through the current effective `core.hooksPath`, not by scanning historical hook directories.
 27. `hooks enable --repo` records AE-managed repo-local hook locations as enabled in `~/.ae-cli/state/hooks/installations.json`.
@@ -794,23 +798,25 @@ Rules:
 37. `hooks disable --repo` unsets only AE-managed local or worktree hook config; it must not unset or rewrite global Git config, and it reports when AE-managed global hooks remain effective afterward.
 38. `hooks disable --repo` can unset the current active recognized stale AE-managed repo-local hook path from local or worktree config without scanning arbitrary historical directories.
 39. Eligibility cache lookups use a context-derived `cache_key`, treat mismatched `server_url`, `auth_subject`, or `repo_key` as misses, and reject positive entries that do not contain a non-zero `repo_config_id`.
-40. Hook queue and tool-usage spool replay skips items whose `server_url`, `auth_subject`, `repo_config_id`, `repo_key`, or `workspace_id` does not match the current stable context.
-41. Upload ledger status groups records by backend, account fingerprint, repo, and workspace.
-42. Managed hook and `ae-cli sync` tool-usage uploads omit `raw_source_path`, `raw_source_locator`, and `raw_payload` even when local parsers retain those fields for diagnostics.
-43. If no stable `auth_subject` can be derived, immediate online uploads may run but positive or negative eligibility cache entries, context-bound observed repo records, durable replay records, and upload-ledger records are not written.
+40. A local positive eligibility cache entry does not authorize hook work when the token is missing, locally expired, malformed, or cannot be refreshed.
+41. Hook queue and tool-usage spool replay skips items whose `server_url`, `auth_subject`, `repo_config_id`, `repo_key`, or `workspace_id` does not match the current stable context.
+42. Upload ledger status groups records by backend, account fingerprint, repo, and workspace.
+43. Managed hook and `ae-cli sync` tool-usage uploads omit `raw_source_path`, `raw_source_locator`, and `raw_payload` even when local parsers retain those fields for diagnostics.
+44. If no stable `auth_subject` can be derived, immediate online uploads may run but positive or negative eligibility cache entries, context-bound observed repo records, durable replay records, and upload-ledger records are not written.
 
 ### Backend unit tests
 
-1. `resolve-remote` returns eligible for an existing active backend-known repo.
+1. `resolve-remote` returns eligible for an existing reporting-enabled backend-known repo.
 2. `resolve-remote` returns `not_found` without creating a repo.
 3. `resolve-remote` returns `inactive` for inactive repos.
-4. `resolve-remote` does not apply per-user repo reporting permission in v1; a valid authenticated user may report to any active backend-known repo.
-5. `hook-eligible` returns active backend-known matches only for requested repo identities.
-6. Checkpoint handler and service accept `repo_config_id`; when present, ingest resolves by ID without create-or-ensure fallback.
-7. Rewrite handler and service accept `repo_config_id`; when present, ingest resolves by ID without create-or-ensure fallback.
-8. Tool usage handler and service accept `repo_config_id` and bind workspace scope without requiring a previous checkpoint.
-9. Tool usage ingest with `repo_config_id` binds events to `repo_config_id + authenticated user` and does not reuse a conflicting legacy workspace scope.
-10. `hook-eligible` returns results only for requested repo identities and does not enumerate unrelated active repos.
+4. `resolve-remote` treats `webhook_failed` as reporting-enabled because webhook health is not a hook attribution precondition.
+5. `resolve-remote` does not apply per-user repo reporting permission in v1; a valid authenticated user may report to any reporting-enabled backend-known repo.
+6. `hook-eligible` returns reporting-enabled backend-known matches only for requested repo identities.
+7. Checkpoint handler and service accept `repo_config_id`; when present, ingest resolves by ID without create-or-ensure fallback.
+8. Rewrite handler and service accept `repo_config_id`; when present, ingest resolves by ID without create-or-ensure fallback.
+9. Tool usage handler and service accept `repo_config_id` and bind workspace scope without requiring a previous checkpoint.
+10. Tool usage ingest with `repo_config_id` binds events to `repo_config_id + authenticated user` and does not reuse a conflicting legacy workspace scope.
+11. `hook-eligible` returns results only for requested repo identities and does not enumerate unrelated reporting-enabled repos.
 
 ### Integration checks
 
@@ -826,10 +832,11 @@ Rules:
 10. Generate a stale managed hook script and verify status reports the current and installed template versions.
 11. Upgrade `ae-cli` and verify managed hook scripts are rewritten to the latest template at fixed global and recorded repo-local locations.
 12. Enable repo-local hooks in two worktrees that share one common directory and verify the registry keeps separate worktree/local config records.
-13. Run `ae-cli init`, `ae-cli sync`, and a hook-time resolve in the same repository and verify each path updates the same durable observed repo identity.
+13. Run `ae-cli init`, `ae-cli sync`, and a hook-time resolve in the same repository under the same server and account context, and verify each path updates the same durable observed repo identity.
 14. Put executable default `.git/hooks/post-commit` and `.git/hooks/post-rewrite` scripts in a repo with empty `core.hooksPath` and verify `hooks enable --repo` refuses without `--force`.
 15. Configure an AE-managed global hook, enable repo-local hooks in one repository, then run `hooks disable --repo`; verify only the repo-local override is removed and the global AE hook remains active.
 16. Log in against one server or account, create cached eligibility and queued/spooled events, switch to another server or account, and verify the old entries are skipped rather than uploaded; only new entries produced after resolving under the new context may upload.
+17. Create a positive local eligibility cache entry, remove or expire the token, and verify a hook invocation skips AE work rather than uploading from cache alone.
 
 ## Rollout Plan
 
@@ -852,7 +859,7 @@ The intended product contract is:
 1. Users may install machine-level hooks once with `ae-cli hooks enable --global`.
 2. Users may instead install hooks only for the current repository with `ae-cli hooks enable --repo`.
 3. Admins may configure repos in the backend, and users may explicitly register a repo with `ae-cli init`.
-4. Hook execution only proceeds for backend-known active repositories.
+4. Hook execution only proceeds for backend-known reporting-enabled repositories.
 5. Hook execution never creates repositories.
 6. Unknown repositories are skipped without upload.
 7. Existing repository hooks are not preserved or chained after AE hook ownership is enabled.
