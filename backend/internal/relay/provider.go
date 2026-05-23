@@ -60,3 +60,9 @@ type Provider interface {
 	RevokeUserAPIKey(ctx context.Context, keyID int64) error
 	ListUsageLogsByAPIKeyExact(ctx context.Context, apiKeyID int64, from, to time.Time) ([]UsageLog, error)
 }
+
+// PlatformChatCompleter is an optional extension for relay implementations that
+// need platform-native protocol probes instead of a single OpenAI-compatible path.
+type PlatformChatCompleter interface {
+	ChatCompletionForPlatform(ctx context.Context, platform string, req ChatCompletionRequest) (*ChatCompletionResponse, error)
+}

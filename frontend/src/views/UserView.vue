@@ -55,6 +55,7 @@ const selectedSecretKey = computed(() => {
 const selectedSecret = computed(() => (selectedSecretKey.value ? sessionSecrets[selectedSecretKey.value] ?? '' : ''))
 const selectedKeyValue = computed(() => selectedSecret.value || selectedGroup.value?.credential.key || '')
 const canReveal = computed(() => !!selectedKeyValue.value)
+const canTestProvider = computed(() => !!selectedKeyValue.value && !!providerTestModel.value.trim())
 const isSecretRevealed = computed(() => !!selectedSecretKey.value && !!revealedSecretKeys[selectedSecretKey.value])
 const displayedSecret = computed(() => {
   if (!selectedKeyValue.value) return ''
@@ -182,6 +183,10 @@ async function handleCopyKey() {
 
 async function handleTestProvider() {
   if (!selectedProvider.value || !selectedGroup.value) return
+  if (!selectedKeyValue.value) {
+    providerTestResult.value = { success: false, message: 'Create an API key for this group before testing' }
+    return
+  }
   const model = providerTestModel.value.trim()
   if (!model) {
     providerTestResult.value = { success: false, message: 'Model is required' }
@@ -416,7 +421,7 @@ onMounted(loadProviders)
                   <div class="mt-3 flex flex-wrap items-center gap-3">
                     <button
                       data-testid="user-provider-test-run"
-                      :disabled="providerTestLoading || !providerTestModel.trim()"
+                      :disabled="providerTestLoading || !canTestProvider"
                       class="rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-black disabled:opacity-50"
                       @click="handleTestProvider"
                     >

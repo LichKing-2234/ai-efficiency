@@ -468,20 +468,27 @@ func (h *ProviderHandler) Test(c *gin.Context) {
 	}
 
 	maxTokens := 64
-	resp, err := relay.NewSub2apiProvider(
+	testProvider := relay.NewSub2apiProvider(
 		http.DefaultClient,
 		provider.BaseURL,
 		provider.AdminURL,
 		selected.Key,
 		model,
 		h.logger,
-	).ChatCompletion(ctx, relay.ChatCompletionRequest{
+	)
+	testReq := relay.ChatCompletionRequest{
 		Model: model,
 		Messages: []relay.ChatMessage{
 			{Role: "user", Content: prompt},
 		},
 		MaxTokens: &maxTokens,
-	})
+	}
+	var resp *relay.ChatCompletionResponse
+	if platformCompleter, ok := testProvider.(relay.PlatformChatCompleter); ok {
+		resp, err = platformCompleter.ChatCompletionForPlatform(ctx, platform, testReq)
+	} else {
+		resp, err = testProvider.ChatCompletion(ctx, testReq)
+	}
 	if err != nil {
 		pkg.Success(c, gin.H{
 			"success": false,

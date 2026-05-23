@@ -200,4 +200,18 @@ describe('UserView', () => {
     expect(wrapper.text()).toContain('Connection successful')
     expect(wrapper.text()).toContain('pong')
   })
+
+  it('disables provider test when the selected group has no API key', async () => {
+    const { testUserProvider } = await import('@/api/user')
+    const { wrapper } = await mountUserView()
+
+    await wrapper.get('[data-testid="group-42"]').trigger('click')
+    await wrapper.get('[data-testid="user-provider-test-model"]').setValue('gpt-5.4')
+
+    const runButton = wrapper.get('[data-testid="user-provider-test-run"]')
+    expect(runButton.attributes('disabled')).toBeDefined()
+
+    await runButton.trigger('click')
+    expect(testUserProvider).not.toHaveBeenCalled()
+  })
 })
