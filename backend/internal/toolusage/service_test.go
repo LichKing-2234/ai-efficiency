@@ -224,3 +224,77 @@ func TestCreateUsageEvent_AutoBindsToLatestCheckpointWindow(t *testing.T) {
 		t.Fatalf("commit_checkpoint_id = %v, want %d", row.CommitCheckpointID, current.ID)
 	}
 }
+
+func TestCreateUsageEventWithRepoConfigIDDoesNotNeedCheckpointScope(t *testing.T) {
+	t.Parallel()
+	client := testdb.Open(t)
+	ctx := context.Background()
+	defer client.Close()
+
+	repo := client.RepoConfig.Create().
+		SetName("demo").
+		SetFullName("org/demo").
+		SetCloneURL("https://repo-host.example.com/org/demo.git").
+		SetDefaultBranch("main").
+		SetStatus("active").
+		SaveX(ctx)
+	userID := client.User.Create().
+		SetUsername("tool-user").
+		SetEmail("tool-user@example.com").
+		SetAuthSource("ldap").
+		SaveX(ctx).ID
+
+	err := NewService(client).CreateUsageEvent(ctx, userID, CreateUsageEventRequest{
+		RepoConfigID:     repo.ID,
+		Tool:             "codex",
+		WorkspaceID:      "ws-direct",
+		ToolSessionID:    "codex-sess",
+		DedupeKey:        "codex:direct",
+		UsageUnit:        "token",
+		ObservedStartAt:  time.Unix(100, 0).UTC(),
+		ObservedEndAt:    time.Unix(101, 0).UTC(),
+		InputTokens:      10,
+		OutputTokens:     5,
+		RawSourcePath:    "/tmp/should-stay-supported-for-legacy",
+		RawSourceLocator: "line:1",
+		RawPayload:       map[string]any{"legacy": true},
+	})
+	if err != nil {
+		t.Fatalf("CreateUsageEvent: %v", err)
+	}
+	row := client.ToolUsageEvent.Query().Where(toolusageevent.DedupeKeyEQ("codex:direct")).OnlyX(ctx)
+	if row.RepoConfigID != repo.ID || row.UserID != userID {
+		t.Fatalf("scope = repo %d user %d, want repo %d user %d", row.RepoConfigID, row.UserID, repo.ID, userID)
+	}
+}
+
+func TestCreateUsageEventWithRepoConfigIDIgnoresConflictingWorkspaceScope(t *testing.T) {
+	t.Parallel()
+	client := testdb.Open(t)
+	ctx := context.Background()
+	defer client.Close()
+
+	scopeA := seedToolUsageScope(t, client)
+	scopeB := seedToolUsageScope(t, client)
+	userID := scopeB.UserID
+
+	err := NewService(client).CreateUsageEvent(ctx, userID, CreateUsageEventRequest{
+		RepoConfigID:    scopeB.RepoConfigID,
+		Tool:            "claude",
+		WorkspaceID:     scopeA.WorkspaceID,
+		ToolSessionID:   "claude-sess",
+		DedupeKey:       "claude:override",
+		UsageUnit:       "token",
+		ObservedStartAt: time.Unix(200, 0).UTC(),
+		ObservedEndAt:   time.Unix(201, 0).UTC(),
+		InputTokens:     8,
+		OutputTokens:    3,
+	})
+	if err != nil {
+		t.Fatalf("CreateUsageEvent: %v", err)
+	}
+	row := client.ToolUsageEvent.Query().Where(toolusageevent.DedupeKeyEQ("claude:override")).OnlyX(ctx)
+	if row.RepoConfigID != scopeB.RepoConfigID || row.UserID != scopeB.UserID {
+		t.Fatalf("scope = repo %d user %d, want repo %d user %d", row.RepoConfigID, row.UserID, scopeB.RepoConfigID, scopeB.UserID)
+	}
+}

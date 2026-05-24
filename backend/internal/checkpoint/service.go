@@ -19,6 +19,7 @@ var errRepoNotFound = errors.New("repo not found")
 
 type CommitCheckpointRequest struct {
 	EventID        string         `json:"event_id" binding:"required"`
+	RepoConfigID   int            `json:"repo_config_id,omitempty"`
 	RepoFullName   string         `json:"repo_full_name"`
 	CloneURL       string         `json:"clone_url"`
 	WorkspaceID    string         `json:"workspace_id" binding:"required"`
@@ -33,6 +34,7 @@ type CommitCheckpointRequest struct {
 
 type CommitRewriteRequest struct {
 	EventID       string     `json:"event_id" binding:"required"`
+	RepoConfigID  int        `json:"repo_config_id,omitempty"`
 	RepoFullName  string     `json:"repo_full_name"`
 	CloneURL      string     `json:"clone_url"`
 	WorkspaceID   string     `json:"workspace_id" binding:"required"`
@@ -104,7 +106,7 @@ func (s *Service) recordCheckpoint(ctx context.Context, userID int, req CommitCh
 		return nil
 	}
 
-	rc, err := txSvc.resolveOrEnsureRepoConfig(ctx, req.RepoFullName, req.CloneURL, req.BranchSnapshot)
+	rc, err := txSvc.resolveRepoConfigForIngest(ctx, req.RepoConfigID, req.RepoFullName, req.CloneURL, req.BranchSnapshot)
 	if err != nil {
 		return fmt.Errorf("record checkpoint: %w", err)
 	}
@@ -230,7 +232,7 @@ func (s *Service) recordRewrite(ctx context.Context, userID int, req CommitRewri
 		return nil
 	}
 
-	rc, err := s.resolveOrEnsureRepoConfig(ctx, req.RepoFullName, req.CloneURL, "")
+	rc, err := s.resolveRepoConfigForIngest(ctx, req.RepoConfigID, req.RepoFullName, req.CloneURL, "")
 	if err != nil {
 		return fmt.Errorf("record rewrite: %w", err)
 	}
@@ -337,6 +339,24 @@ func (s *Service) resolveOrEnsureRepoConfig(ctx context.Context, repoFullName, c
 
 	repoService := reposvc.NewService(s.entClient, "", nil)
 	return repoService.EnsureFromRemote(ctx, remoteURL, branch)
+}
+
+func (s *Service) resolveRepoConfigForIngest(ctx context.Context, repoConfigID int, repoFullName, cloneURL, branch string) (*ent.RepoConfig, error) {
+	if repoConfigID > 0 {
+		rc, err := s.entClient.RepoConfig.Query().
+			Where(repoconfig.IDEQ(repoConfigID)).
+			Only(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("repo_config_id %d not found: %w", repoConfigID, err)
+		}
+		switch rc.Status {
+		case repoconfig.StatusActive, repoconfig.StatusWebhookFailed:
+			return rc, nil
+		default:
+			return nil, fmt.Errorf("repo_config_id %d is not reporting-enabled", repoConfigID)
+		}
+	}
+	return s.resolveOrEnsureRepoConfig(ctx, repoFullName, cloneURL, branch)
 }
 
 func firstNonEmpty(values ...string) string {

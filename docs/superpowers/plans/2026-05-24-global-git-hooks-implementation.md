@@ -423,7 +423,7 @@ git -c core.hooksPath=/dev/null commit -m "feat(backend): add hook repo eligibil
 - Test: `backend/internal/toolusage/service_test.go`
 - Test: `backend/internal/handler/tool_usage_test.go`
 
-- [ ] **Step 1: Write failing checkpoint service tests**
+- [x] **Step 1: Write failing checkpoint service tests**
 
 Append to `backend/internal/checkpoint/service_test.go`:
 
@@ -502,13 +502,13 @@ func TestRecordRewriteWithRepoConfigIDDoesNotAutoCreate(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run checkpoint tests and verify failure**
+- [x] **Step 2: Run checkpoint tests and verify failure**
 
 Run: `cd backend && go test ./internal/checkpoint -run 'RepoConfigID|AutoCreatesRepo' -count=1`
 
 Expected: FAIL because `RepoConfigID` is not in request structs.
 
-- [ ] **Step 3: Implement checkpoint/rewrite `repo_config_id` path**
+- [x] **Step 3: Implement checkpoint/rewrite `repo_config_id` path**
 
 In `backend/internal/checkpoint/service.go`, add fields:
 
@@ -558,13 +558,13 @@ Replace rewrite's resolve call the same way:
 rc, err := s.resolveRepoConfigForIngest(ctx, req.RepoConfigID, req.RepoFullName, req.CloneURL, "")
 ```
 
-- [ ] **Step 4: Run checkpoint tests**
+- [x] **Step 4: Run checkpoint tests**
 
 Run: `cd backend && go test ./internal/checkpoint -run 'RepoConfigID|AutoCreatesRepo|RecordCheckpointDedupes|RecordRewrite' -count=1`
 
 Expected: PASS. The existing `TestRecordCheckpointForUser_AutoCreatesRepoOnRemoteMiss` must still pass when `repo_config_id` is omitted.
 
-- [ ] **Step 5: Write failing tool usage tests**
+- [x] **Step 5: Write failing tool usage tests**
 
 Append to `backend/internal/toolusage/service_test.go`:
 
@@ -644,7 +644,7 @@ func TestCreateUsageEventWithRepoConfigIDIgnoresConflictingWorkspaceScope(t *tes
 }
 ```
 
-- [ ] **Step 6: Implement tool usage `repo_config_id` binding**
+- [x] **Step 6: Implement tool usage `repo_config_id` binding**
 
 In `backend/internal/toolusage/service.go`, add to `CreateUsageEventRequest`:
 
@@ -687,7 +687,7 @@ Add import:
 "github.com/ai-efficiency/backend/ent/repoconfig"
 ```
 
-- [ ] **Step 7: Wire handler request fields**
+- [x] **Step 7: Wire handler request fields**
 
 In `backend/internal/handler/checkpoint.go`, make sure the handler-bound request structs include `repo_config_id` through the service request structs. If the handler imports service request structs directly, no extra code is needed after Task 2 Step 3.
 
@@ -703,7 +703,7 @@ and pass:
 RepoConfigID: req.RepoConfigID,
 ```
 
-- [ ] **Step 8: Run backend ingest tests**
+- [x] **Step 8: Run backend ingest tests**
 
 Run:
 
@@ -714,7 +714,7 @@ go test ./internal/checkpoint ./internal/toolusage ./internal/handler -run 'Repo
 
 Expected: PASS.
 
-- [ ] **Step 9: Commit backend ingest slice**
+- [x] **Step 9: Commit backend ingest slice**
 
 ```bash
 git add backend/internal/checkpoint/service.go backend/internal/handler/checkpoint.go backend/internal/toolusage/service.go backend/internal/handler/tool_usage.go backend/internal/checkpoint/service_test.go backend/internal/handler/checkpoint_test.go backend/internal/toolusage/service_test.go backend/internal/handler/tool_usage_test.go
