@@ -9,12 +9,14 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ai-efficiency/ae-cli/config"
 	"github.com/ai-efficiency/ae-cli/internal/attributionlocal"
+	"github.com/ai-efficiency/ae-cli/internal/auth"
 	"github.com/ai-efficiency/ae-cli/internal/client"
 	"github.com/ai-efficiency/ae-cli/internal/hooks"
-	"github.com/ai-efficiency/ae-cli/internal/session"
+	"github.com/ai-efficiency/ae-cli/internal/hookstate"
 )
 
 func TestRootCommandHasSessionlessPrimaryCommands(t *testing.T) {
@@ -199,48 +201,63 @@ func TestSyncCommandFlushesPendingHookQueueBeforeAttributionSync(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
-	gitDir := runGitOutput(t, repo, "rev-parse", "--absolute-git-dir")
-	gitCommonDir := runGitOutput(t, repo, "rev-parse", "--git-common-dir")
-	workspaceID, err := session.DeriveWorkspaceID(repo, repo, gitDir, filepath.Join(repo, gitCommonDir))
+	gitCtx, err := hooks.DetectGitContext(repo)
 	if err != nil {
-		t.Fatalf("DeriveWorkspaceID: %v", err)
+		t.Fatalf("DetectGitContext: %v", err)
 	}
-	if err := session.WriteMarker(repo, &session.Marker{
-		SessionID:    "sess-1",
-		WorkspaceID:  workspaceID,
-		RepoFullName: "https://github.com/acme/repo.git",
-	}); err != nil {
-		t.Fatalf("WriteMarker: %v", err)
-	}
+	workspaceID := gitCtx.WorkspaceID
 
 	q, err := hooks.NewWorkspaceQueue(workspaceID)
 	if err != nil {
 		t.Fatalf("NewWorkspaceQueue: %v", err)
 	}
-	eventID, err := hooks.CheckpointEventID("https://github.com/acme/repo.git", "queued-sha")
+	eventID, err := hooks.CheckpointEventID("repo_config_id:123", "queued-sha")
 	if err != nil {
 		t.Fatalf("CheckpointEventID: %v", err)
 	}
 	if err := q.Enqueue(hooks.HookEvent{
 		Kind:           "post-commit",
 		EventID:        eventID,
-		SessionID:      "sess-1",
 		WorkspaceID:    workspaceID,
-		RepoFullName:   "https://github.com/acme/repo.git",
+		ServerURL:      "https://ae.example.com",
+		AuthSubject:    "user:123",
+		RepoConfigID:   123,
+		RepoKey:        "github.com/acme/repo",
+		RepoFullName:   "acme/repo",
 		CommitSHA:      "queued-sha",
 		BindingSource:  "unbound",
 		BranchSnapshot: "main",
 	}); err != nil {
 		t.Fatalf("Enqueue: %v", err)
 	}
+	if err := auth.WriteToken(filepath.Join(home, ".ae-cli", "token.json"), &auth.TokenFile{
+		AccessToken:  "test-token",
+		RefreshToken: "refresh-token",
+		ExpiresAt:    time.Now().Add(time.Hour),
+		ServerURL:    "https://ae.example.com",
+		AuthSubject:  "user:123",
+	}); err != nil {
+		t.Fatalf("WriteToken: %v", err)
+	}
+	cache, err := hookstate.LoadEligibilityCache()
+	if err != nil {
+		t.Fatalf("LoadEligibilityCache: %v", err)
+	}
+	cache.PutPositive(hookstate.Context{ServerURL: "https://ae.example.com", AuthSubject: "user:123", RepoKey: "github.com/acme/repo"}, client.RepoEligibilityResponse{
+		Eligible:     true,
+		RepoConfigID: 123,
+		RepoKey:      "github.com/acme/repo",
+		FullName:     "acme/repo",
+		CloneURL:     "https://github.com/acme/repo.git",
+		Status:       "active",
+	}, time.Now())
+	if err := cache.Save(); err != nil {
+		t.Fatalf("Save cache: %v", err)
+	}
 
-	var ensureCalls, checkpointCalls, syncCalls int
+	var checkpointCalls, syncCalls int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/api/v1/repos/ensure-remote":
-			ensureCalls++
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"code":0,"data":{"id":1,"repo_key":"github.com/acme/repo","full_name":"github.com/acme/repo","clone_url":"https://github.com/acme/repo.git","default_branch":"main","binding_state":"unbound"}}`))
 		case "/api/v1/checkpoints/commit":
 			checkpointCalls++
 			w.WriteHeader(http.StatusCreated)
@@ -253,17 +270,20 @@ func TestSyncCommandFlushesPendingHookQueueBeforeAttributionSync(t *testing.T) {
 
 	oldCfg := cfg
 	oldClient := apiClient
-	oldRun := runSyncEngineForWorkspace
-	cfg = &config.Config{Server: config.ServerConfig{Token: "tok"}}
+	oldRun := runSyncEngine
+	cfg = &config.Config{Server: config.ServerConfig{URL: "https://ae.example.com", Token: "tok"}}
 	apiClient = client.New(srv.URL, "tok")
-	runSyncEngineForWorkspace = func(engine *attributionlocal.SyncEngine, ctx context.Context, repoRoot string) error {
+	runSyncEngine = func(engine *attributionlocal.SyncEngine, ctx context.Context, opts attributionlocal.RunOptions) error {
 		syncCalls++
+		if opts.RepoConfigID != 123 || opts.RepoKey != "github.com/acme/repo" {
+			t.Fatalf("sync opts = %+v, want repo_config_id 123", opts)
+		}
 		return nil
 	}
 	t.Cleanup(func() {
 		cfg = oldCfg
 		apiClient = oldClient
-		runSyncEngineForWorkspace = oldRun
+		runSyncEngine = oldRun
 	})
 
 	wd, err := os.Getwd()
@@ -279,9 +299,6 @@ func TestSyncCommandFlushesPendingHookQueueBeforeAttributionSync(t *testing.T) {
 		t.Fatalf("syncCmd.RunE: %v", err)
 	}
 
-	if ensureCalls != 1 {
-		t.Fatalf("ensure remote calls = %d, want 1", ensureCalls)
-	}
 	if checkpointCalls != 1 {
 		t.Fatalf("checkpoint calls = %d, want 1", checkpointCalls)
 	}

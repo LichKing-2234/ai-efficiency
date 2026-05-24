@@ -198,3 +198,96 @@ func TestSync_RunForWorkspaceSpoolsNewEventsWhenUploadFails(t *testing.T) {
 		t.Fatalf("expected scan state to be persisted after spooling, stat err=%v", err)
 	}
 }
+
+func TestSync_ManagedUploadSendsRepoConfigIDAndOmitsRawFields(t *testing.T) {
+	fixture := buildAttributionFixture(t)
+	client := &syncBackendClientStub{}
+	engine := &SyncEngine{
+		Scanner: NewScanner(),
+		Client:  client,
+	}
+
+	workspaceID, err := mustWorkspaceID(fixture.WorkspaceRoot)
+	if err != nil {
+		t.Fatalf("mustWorkspaceID: %v", err)
+	}
+	if err := engine.Run(context.Background(), RunOptions{
+		WorkspaceRoot: fixture.WorkspaceRoot,
+		WorkspaceID:   workspaceID,
+		ServerURL:     "https://ae.example.com",
+		AuthSubject:   "user:123",
+		RepoConfigID:  123,
+		RepoKey:       "github.com/acme/repo",
+		DurableReplay: true,
+		ManagedUpload: true,
+	}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(client.requests) != 1 {
+		t.Fatalf("requests = %d, want 1", len(client.requests))
+	}
+	req := client.requests[0]
+	if req.RepoConfigID != 123 {
+		t.Fatalf("repo_config_id = %d, want 123", req.RepoConfigID)
+	}
+	if req.RawSourcePath != "" || req.RawSourceLocator != "" || req.RawPayload != nil {
+		t.Fatalf("managed upload leaked raw fields: %+v", req)
+	}
+}
+
+func TestSync_RunSkipsSpooledEventsFromDifferentBinding(t *testing.T) {
+	fixture := buildAttributionFixture(t)
+	client := &syncBackendClientStub{}
+	workspaceID, err := mustWorkspaceID(fixture.WorkspaceRoot)
+	if err != nil {
+		t.Fatalf("mustWorkspaceID: %v", err)
+	}
+	spoolPath := filepath.Join(AttributionRootDir(), "workspaces", workspaceID, "spool.json")
+	if err := SaveJSON(spoolPath, []LocalToolUsageEvent{
+		{
+			Tool:            "codex",
+			WorkspaceID:     workspaceID,
+			ServerURL:       "https://ae.example.com",
+			AuthSubject:     "user:123",
+			RepoConfigID:    123,
+			RepoKey:         "github.com/acme/repo",
+			ManagedUpload:   true,
+			ToolSessionID:   "conv-1",
+			ToolEventID:     "stale",
+			DedupeKey:       "stale-binding",
+			UsageUnit:       UsageUnitToken,
+			RequestCount:    1,
+			ObservedStartAt: jsonTime("2026-05-13T10:00:00Z"),
+			ObservedEndAt:   jsonTime("2026-05-13T10:00:01Z"),
+		},
+	}); err != nil {
+		t.Fatalf("SaveJSON(spool): %v", err)
+	}
+
+	engine := &SyncEngine{
+		Scanner: NewScanner(),
+		Client:  client,
+	}
+	if err := engine.Run(context.Background(), RunOptions{
+		WorkspaceRoot: fixture.WorkspaceRoot,
+		WorkspaceID:   workspaceID,
+		ServerURL:     "https://ae.example.com",
+		AuthSubject:   "user:456",
+		RepoConfigID:  456,
+		RepoKey:       "github.com/acme/other",
+		DurableReplay: true,
+		ManagedUpload: true,
+	}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if client.SawUpload("stale-binding") {
+		t.Fatalf("stale binding was uploaded: %+v", client.requests)
+	}
+	remaining, err := loadSpooledEvents(spoolPath)
+	if err != nil {
+		t.Fatalf("loadSpooledEvents: %v", err)
+	}
+	if len(remaining) != 0 {
+		t.Fatalf("remaining spool = %+v, want stale mismatched event dropped", remaining)
+	}
+}

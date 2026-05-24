@@ -1826,7 +1826,7 @@ git -c core.hooksPath=/dev/null commit -m "feat(ae-cli): manage global and repo 
 - Test: `ae-cli/internal/hooks/uploader_backend_test.go`
 - Test: `ae-cli/internal/attributionlocal/sync_test.go`
 
-- [ ] **Step 1: Write failing dispatcher tests**
+- [x] **Step 1: Write failing dispatcher tests**
 
 In `ae-cli/cmd/hook_test.go`, replace marker-based tests with:
 
@@ -1883,7 +1883,7 @@ Use real helper implementations instead of pseudocode:
 - `writePositiveEligibility` uses `hookstate.LoadEligibilityCache` and `PutPositive`
 - `recordingHookUploader` implements `hooks.Uploader`
 
-- [ ] **Step 2: Extend `HookEvent` and uploader**
+- [x] **Step 2: Extend `HookEvent` and uploader**
 
 In `ae-cli/internal/hooks/queue.go`, add to `HookEvent`:
 
@@ -1896,7 +1896,7 @@ RepoKey      string `json:"repo_key,omitempty"`
 
 In `ae-cli/internal/hooks/uploader_backend.go`, pass `RepoConfigID` into checkpoint/rewrite requests.
 
-- [ ] **Step 3: Remove `.ae` marker dependency from active handler**
+- [x] **Step 3: Remove `.ae` marker dependency from active handler**
 
 In `ae-cli/internal/hooks/handler.go`:
 
@@ -1940,7 +1940,7 @@ Collector snapshot cache and attribution sync:
 - use `exec.WorkspaceID`
 - no `.ae` marker read/write
 
-- [ ] **Step 4: Add eligibility resolver in hidden command**
+- [x] **Step 4: Add eligibility resolver in hidden command**
 
 In `ae-cli/cmd/hook.go`, before creating handler work:
 
@@ -1968,7 +1968,7 @@ Implement `resolveHookExecutionContext` in `cmd/hook.go` or a focused helper fil
 
 For no stable `auth_subject` but usable authenticated credential, allow immediate resolve/upload with `DurableReplay: false`.
 
-- [ ] **Step 5: Bind attribution sync to repo context and omit raw fields**
+- [x] **Step 5: Bind attribution sync to repo context and omit raw fields**
 
 In `ae-cli/internal/attributionlocal/types.go`, add:
 
@@ -2008,7 +2008,7 @@ In `toClientUsageRequest`, when `ManagedUpload` is true:
 
 Replay skips spooled events when binding fields do not match current stable context. If no stable `auth_subject`, do not write spools or ledger.
 
-- [ ] **Step 6: Run dispatcher tests**
+- [x] **Step 6: Run dispatcher tests**
 
 Run:
 

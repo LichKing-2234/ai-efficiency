@@ -48,6 +48,7 @@ func (u BackendUploader) UploadHookEvent(ctx context.Context, ev HookEvent) erro
 		return u.client.SendCommitCheckpoint(ctx, client.CommitCheckpointRequest{
 			EventID:        ev.EventID,
 			SessionID:      ev.SessionID,
+			RepoConfigID:   ev.RepoConfigID,
 			RepoFullName:   ev.RepoFullName,
 			WorkspaceID:    ev.WorkspaceID,
 			CommitSHA:      ev.CommitSHA,
@@ -62,6 +63,7 @@ func (u BackendUploader) UploadHookEvent(ctx context.Context, ev HookEvent) erro
 		return u.client.SendCommitRewrite(ctx, client.CommitRewriteRequest{
 			EventID:       ev.EventID,
 			SessionID:     ev.SessionID,
+			RepoConfigID:  ev.RepoConfigID,
 			RepoFullName:  ev.RepoFullName,
 			WorkspaceID:   ev.WorkspaceID,
 			RewriteType:   ev.RewriteType,

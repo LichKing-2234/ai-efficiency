@@ -19,6 +19,11 @@ const (
 type LocalToolUsageEvent struct {
 	Tool              string
 	WorkspaceID       string
+	ServerURL         string
+	AuthSubject       string
+	RepoConfigID      int
+	RepoKey           string
+	ManagedUpload     bool
 	ToolSessionID     string
 	ToolEventID       string
 	DedupeKey         string

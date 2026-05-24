@@ -21,6 +21,10 @@ type HookEvent struct {
 	EventID       string `json:"event_id,omitempty"`
 	SessionID     string `json:"session_id,omitempty"`
 	WorkspaceID   string `json:"workspace_id,omitempty"`
+	ServerURL     string `json:"server_url,omitempty"`
+	AuthSubject   string `json:"auth_subject,omitempty"`
+	RepoConfigID  int    `json:"repo_config_id,omitempty"`
+	RepoKey       string `json:"repo_key,omitempty"`
 	RepoFullName  string `json:"repo_full_name,omitempty"`
 	BindingSource string `json:"binding_source,omitempty"`
 
