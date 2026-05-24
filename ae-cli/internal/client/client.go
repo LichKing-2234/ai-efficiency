@@ -56,6 +56,7 @@ type userProviderGroup struct {
 type CommitCheckpointRequest struct {
 	EventID        string         `json:"event_id"`
 	SessionID      string         `json:"session_id,omitempty"`
+	RepoConfigID   int            `json:"repo_config_id,omitempty"`
 	RepoFullName   string         `json:"repo_full_name"`
 	WorkspaceID    string         `json:"workspace_id"`
 	CommitSHA      string         `json:"commit_sha"`
@@ -70,6 +71,7 @@ type CommitCheckpointRequest struct {
 type CommitRewriteRequest struct {
 	EventID       string     `json:"event_id"`
 	SessionID     string     `json:"session_id,omitempty"`
+	RepoConfigID  int        `json:"repo_config_id,omitempty"`
 	RepoFullName  string     `json:"repo_full_name"`
 	WorkspaceID   string     `json:"workspace_id"`
 	RewriteType   string     `json:"rewrite_type"`
@@ -80,6 +82,7 @@ type CommitRewriteRequest struct {
 }
 
 type ToolUsageEventRequest struct {
+	RepoConfigID      int            `json:"repo_config_id,omitempty"`
 	Tool              string         `json:"tool"`
 	WorkspaceID       string         `json:"workspace_id"`
 	ToolSessionID     string         `json:"tool_session_id"`
@@ -108,6 +111,36 @@ type RepoEnsureResponse struct {
 	DefaultBranch string `json:"default_branch"`
 	BindingState  string `json:"binding_state"`
 	SCMProviderID *int   `json:"scm_provider_id,omitempty"`
+}
+
+const RepoEligibilityVersion = "repo-eligibility-v1"
+
+type ResolveRepoRequest struct {
+	RemoteURL          string `json:"remote_url"`
+	Branch             string `json:"branch,omitempty"`
+	ClientCacheVersion string `json:"client_cache_version,omitempty"`
+}
+
+type RepoEligibilityResponse struct {
+	Eligible     bool   `json:"eligible"`
+	RepoConfigID int    `json:"repo_config_id,omitempty"`
+	RepoKey      string `json:"repo_key,omitempty"`
+	FullName     string `json:"full_name,omitempty"`
+	CloneURL     string `json:"clone_url,omitempty"`
+	Status       string `json:"status,omitempty"`
+	BindingState string `json:"binding_state,omitempty"`
+	Reason       string `json:"reason,omitempty"`
+}
+
+type HookEligibleRepoRequest struct {
+	RepoKey   string `json:"repo_key"`
+	RemoteURL string `json:"remote_url"`
+}
+
+type BatchHookEligibleResponse struct {
+	Repos      []RepoEligibilityResponse `json:"repos"`
+	Ineligible []RepoEligibilityResponse `json:"ineligible"`
+	Version    string                    `json:"version"`
 }
 
 func New(baseURL, token string) *Client {
@@ -224,6 +257,29 @@ func (c *Client) EnsureRepoFromRemote(ctx context.Context, remoteURL, branch str
 	}
 	if err := json.Unmarshal(respBody, &envelope); err != nil {
 		return nil, fmt.Errorf("decode ensure repo response: %w", err)
+	}
+	return &envelope.Data, nil
+}
+
+func (c *Client) ResolveRepoFromRemote(ctx context.Context, req ResolveRepoRequest) (*RepoEligibilityResponse, error) {
+	if req.ClientCacheVersion == "" {
+		req.ClientCacheVersion = RepoEligibilityVersion
+	}
+	var envelope struct {
+		Data RepoEligibilityResponse `json:"data"`
+	}
+	if err := c.postJSON(ctx, "/api/v1/repos/resolve-remote", req, &envelope); err != nil {
+		return nil, err
+	}
+	return &envelope.Data, nil
+}
+
+func (c *Client) BatchHookEligible(ctx context.Context, repos []HookEligibleRepoRequest) (*BatchHookEligibleResponse, error) {
+	var envelope struct {
+		Data BatchHookEligibleResponse `json:"data"`
+	}
+	if err := c.postJSON(ctx, "/api/v1/repos/hook-eligible", map[string]any{"repos": repos}, &envelope); err != nil {
+		return nil, err
 	}
 	return &envelope.Data, nil
 }
@@ -383,6 +439,36 @@ func (c *Client) AuthToken() string {
 		return ""
 	}
 	return c.token
+}
+
+func (c *Client) postJSON(ctx context.Context, path string, in any, out any) error {
+	body, err := json.Marshal(in)
+	if err != nil {
+		return fmt.Errorf("marshal request: %w", err)
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+path, bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("create request: %w", err)
+	}
+	c.setHeaders(httpReq)
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return fmt.Errorf("send request: %w", err)
+	}
+	defer resp.Body.Close()
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("read response: %w", err)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("unexpected status %d: %s", resp.StatusCode, string(respBody))
+	}
+	if out != nil {
+		if err := json.Unmarshal(respBody, out); err != nil {
+			return fmt.Errorf("decode response: %w", err)
+		}
+	}
+	return nil
 }
 
 func (c *Client) setHeaders(req *http.Request) {

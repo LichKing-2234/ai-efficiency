@@ -1,30 +1,12 @@
 package session
 
 import (
-	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/google/uuid"
 )
-
-// Marker is the workspace-local session binding stored under <workspace>/.ae/session.json.
-//
-// It should never contain sensitive secrets; those belong in the RuntimeBundle.
-type Marker struct {
-	SessionID    string `json:"session_id"`
-	WorkspaceID  string `json:"workspace_id"`
-	RuntimeRef   string `json:"runtime_ref,omitempty"`
-	ProviderName string `json:"provider_name,omitempty"`
-
-	// Non-sensitive metadata that helps CLI UX / debugging.
-	RelayAPIKeyID int64  `json:"relay_api_key_id,omitempty"`
-	RepoFullName  string `json:"repo_full_name,omitempty"`
-	Branch        string `json:"branch_snapshot,omitempty"`
-	HeadSHA       string `json:"head_sha,omitempty"`
-}
 
 var workspaceNamespace = uuid.NewSHA1(uuid.NameSpaceDNS, []byte("ae-workspace"))
 
@@ -88,53 +70,4 @@ func deriveWorkspaceID(repoRoot, workspaceRoot, gitDir, gitCommonDir string) (st
 // It is a stable UUIDv5 derived from the canonical git context.
 func DeriveWorkspaceID(repoRoot, workspaceRoot, gitDir, gitCommonDir string) (string, error) {
 	return deriveWorkspaceID(repoRoot, workspaceRoot, gitDir, gitCommonDir)
-}
-
-func markerPath(workspaceRoot string) string {
-	return filepath.Join(workspaceRoot, ".ae", "session.json")
-}
-
-func WriteMarker(workspaceRoot string, m *Marker) error {
-	if m == nil {
-		return fmt.Errorf("marker is nil")
-	}
-	if strings.TrimSpace(workspaceRoot) == "" {
-		return fmt.Errorf("workspace root is empty")
-	}
-	p := markerPath(workspaceRoot)
-	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
-		return fmt.Errorf("creating marker dir: %w", err)
-	}
-	data, err := json.MarshalIndent(m, "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshaling marker: %w", err)
-	}
-	if err := os.WriteFile(p, data, 0o600); err != nil {
-		return fmt.Errorf("writing marker: %w", err)
-	}
-	return nil
-}
-
-func ReadMarker(workspaceRoot string) (*Marker, error) {
-	p := markerPath(workspaceRoot)
-	data, err := os.ReadFile(p)
-	if err != nil {
-		return nil, err
-	}
-	var m Marker
-	if err := json.Unmarshal(data, &m); err != nil {
-		return nil, fmt.Errorf("parsing marker: %w", err)
-	}
-	return &m, nil
-}
-
-func RemoveMarker(workspaceRoot string) error {
-	if strings.TrimSpace(workspaceRoot) == "" {
-		return fmt.Errorf("workspace root is empty")
-	}
-	p := markerPath(workspaceRoot)
-	if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("removing marker: %w", err)
-	}
-	return nil
 }

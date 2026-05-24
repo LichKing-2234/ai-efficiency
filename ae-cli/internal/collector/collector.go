@@ -14,6 +14,8 @@ import (
 	"github.com/ai-efficiency/ae-cli/internal/session"
 )
 
+const defaultMaxKiroIDEExecutionFiles = 50
+
 func BuildSnapshot(paths Paths) (*Snapshot, error) {
 	out := &Snapshot{}
 
@@ -123,7 +125,7 @@ func DefaultPaths(workspaceRoot string) Paths {
 	}
 
 	if len(out.CodexFiles) == 0 {
-		out.CodexFiles = append(out.CodexFiles, walkFiles(filepath.Join(home, ".codex"), ".jsonl")...)
+		out.CodexFiles = append(out.CodexFiles, walkFiles(filepath.Join(home, ".codex", "sessions"), ".jsonl")...)
 	}
 	if len(out.ClaudeFiles) == 0 {
 		out.ClaudeFiles = walkFiles(filepath.Join(home, ".claude"), ".jsonl")
@@ -140,6 +142,9 @@ func DefaultPaths(workspaceRoot string) Paths {
 		}
 		kiroIDEExecutionFiles := attributionlocal.FindKiroIDEExecutionFiles(home)
 		if len(kiroIDEExecutionFiles) > 0 {
+			if len(kiroIDEExecutionFiles) > defaultMaxKiroIDEExecutionFiles {
+				kiroIDEExecutionFiles = kiroIDEExecutionFiles[:defaultMaxKiroIDEExecutionFiles]
+			}
 			out.KiroFiles = append(kiroIDEExecutionFiles, out.KiroFiles...)
 		}
 	}

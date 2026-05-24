@@ -102,6 +102,17 @@ func TestFindCodexJSONLFiles_UsesGlobalCodexHome(t *testing.T) {
 	if err := os.WriteFile(globalCodex, []byte("{}\n"), 0o600); err != nil {
 		t.Fatalf("write global codex file: %v", err)
 	}
+	archivedCodex := filepath.Join(homeDir, ".codex", "archived_sessions", "old.jsonl")
+	if err := os.MkdirAll(filepath.Dir(archivedCodex), 0o700); err != nil {
+		t.Fatalf("mkdir archived codex dir: %v", err)
+	}
+	if err := os.WriteFile(archivedCodex, []byte("{}\n"), 0o600); err != nil {
+		t.Fatalf("write archived codex file: %v", err)
+	}
+	topLevelCodex := filepath.Join(homeDir, ".codex", "debug.jsonl")
+	if err := os.WriteFile(topLevelCodex, []byte("{}\n"), 0o600); err != nil {
+		t.Fatalf("write top-level codex file: %v", err)
+	}
 
 	paths := findCodexJSONLFiles(t.TempDir(), homeDir)
 	if len(paths) != 1 || paths[0] != globalCodex {

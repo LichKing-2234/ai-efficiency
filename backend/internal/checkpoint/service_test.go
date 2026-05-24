@@ -198,6 +198,79 @@ func TestRecordCheckpointForUser_AutoCreatesRepoOnRemoteMiss(t *testing.T) {
 	}
 }
 
+func TestRecordCheckpointWithRepoConfigIDDoesNotAutoCreateOnRemoteMiss(t *testing.T) {
+	t.Parallel()
+	client, ctx, userID, _, _ := createCheckpointTestRepo(t)
+	defer client.Close()
+	repo := client.RepoConfig.Query().OnlyX(ctx)
+
+	err := NewService(client).RecordCheckpointForUser(ctx, userID, CommitCheckpointRequest{
+		EventID:        "cp-by-id",
+		RepoConfigID:   repo.ID,
+		RepoFullName:   "https://repo-host.example.com/unknown/repo.git",
+		WorkspaceID:    "ws-by-id",
+		CommitSHA:      "abc123",
+		BranchSnapshot: "main",
+		BindingSource:  "unbound",
+	})
+	if err != nil {
+		t.Fatalf("RecordCheckpointForUser: %v", err)
+	}
+	if count := client.RepoConfig.Query().CountX(ctx); count != 1 {
+		t.Fatalf("repo count = %d, want 1", count)
+	}
+	row := client.CommitCheckpoint.Query().Where(commitcheckpoint.EventIDEQ("cp-by-id")).OnlyX(ctx)
+	if row.RepoConfigID != repo.ID {
+		t.Fatalf("repo_config_id = %d, want %d", row.RepoConfigID, repo.ID)
+	}
+}
+
+func TestRecordCheckpointWithInactiveRepoConfigIDRejected(t *testing.T) {
+	t.Parallel()
+	client, ctx, userID, _, _ := createCheckpointTestRepo(t)
+	defer client.Close()
+	repo := client.RepoConfig.Query().OnlyX(ctx)
+	client.RepoConfig.UpdateOneID(repo.ID).SetStatus("inactive").ExecX(ctx)
+
+	err := NewService(client).RecordCheckpointForUser(ctx, userID, CommitCheckpointRequest{
+		EventID:       "cp-inactive",
+		RepoConfigID:  repo.ID,
+		WorkspaceID:   "ws-inactive",
+		CommitSHA:     "abc123",
+		BindingSource: "unbound",
+	})
+	if err == nil {
+		t.Fatalf("expected inactive repo rejection")
+	}
+	if count := client.CommitCheckpoint.Query().Where(commitcheckpoint.EventIDEQ("cp-inactive")).CountX(ctx); count != 0 {
+		t.Fatalf("checkpoint count = %d, want 0", count)
+	}
+}
+
+func TestRecordRewriteWithRepoConfigIDDoesNotAutoCreate(t *testing.T) {
+	t.Parallel()
+	client, ctx, userID, _, _ := createCheckpointTestRepo(t)
+	defer client.Close()
+	repo := client.RepoConfig.Query().OnlyX(ctx)
+
+	err := NewService(client).RecordRewriteForUser(ctx, userID, CommitRewriteRequest{
+		EventID:       "rw-by-id",
+		RepoConfigID:  repo.ID,
+		RepoFullName:  "https://repo-host.example.com/unknown/repo.git",
+		WorkspaceID:   "ws-rw",
+		RewriteType:   "amend",
+		OldCommitSHA:  "old",
+		NewCommitSHA:  "new",
+		BindingSource: "unbound",
+	})
+	if err != nil {
+		t.Fatalf("RecordRewriteForUser: %v", err)
+	}
+	if count := client.RepoConfig.Query().CountX(ctx); count != 1 {
+		t.Fatalf("repo count = %d, want 1", count)
+	}
+}
+
 func ptrTime(v time.Time) *time.Time {
 	return &v
 }

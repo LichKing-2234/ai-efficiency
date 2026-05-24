@@ -141,9 +141,19 @@ func resolveTokenFileWithRefresh(serverURL, tokenPath string) (*auth.TokenFile, 
 		RefreshToken: nextRefreshToken,
 		ExpiresAt:    time.Now().Add(time.Duration(expiresIn) * time.Second),
 		ServerURL:    targetServerURL,
+		AuthSubject:  firstNonEmpty(auth.SubjectFromAccessToken(refreshed.AccessToken), tf.StableAuthSubject()),
 	}
 	_ = auth.WriteToken(tokenPath, next)
 	return next, true
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if strings.TrimSpace(v) != "" {
+			return strings.TrimSpace(v)
+		}
+	}
+	return ""
 }
 
 func Execute() {

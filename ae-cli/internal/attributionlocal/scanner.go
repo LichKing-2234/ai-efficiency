@@ -1,6 +1,7 @@
 package attributionlocal
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"sort"
@@ -10,8 +11,9 @@ import (
 )
 
 type ScanState struct {
-	CodexSQLite map[string]CodexSQLiteWatermark `json:"codex_sqlite,omitempty"`
-	FileModUnix map[string]int64                `json:"file_mod_unix,omitempty"`
+	CodexSQLite     map[string]CodexSQLiteWatermark `json:"codex_sqlite,omitempty"`
+	CodexSessionIDs map[string]CodexSessionIDCache  `json:"codex_session_ids,omitempty"`
+	FileModUnix     map[string]int64                `json:"file_mod_unix,omitempty"`
 }
 
 type Scanner struct{}
@@ -21,6 +23,10 @@ func NewScanner() *Scanner {
 }
 
 func (s *Scanner) ScanWorkspace(workspaceRoot string, state ScanState) ([]LocalToolUsageEvent, ScanState, error) {
+	return s.ScanWorkspaceContext(context.Background(), workspaceRoot, state)
+}
+
+func (s *Scanner) ScanWorkspaceContext(ctx context.Context, workspaceRoot string, state ScanState) ([]LocalToolUsageEvent, ScanState, error) {
 	var out []LocalToolUsageEvent
 	workspaceID, err := mustWorkspaceID(workspaceRoot)
 	if err != nil {
@@ -32,7 +38,11 @@ func (s *Scanner) ScanWorkspace(workspaceRoot string, state ScanState) ([]LocalT
 	codexJSONLFiles := findCodexJSONLFiles(workspaceRoot, homeDir)
 	codexSessionIDs := make(map[string]struct{})
 	for _, path := range codexJSONLFiles {
-		for _, sessionID := range findCodexWorkspaceSessionIDs(path, workspaceRoot) {
+		sessionIDs, err := cachedCodexWorkspaceSessionIDs(ctx, &nextState, path, workspaceRoot)
+		if err != nil {
+			return nil, state, err
+		}
+		for _, sessionID := range sessionIDs {
 			codexSessionIDs[sessionID] = struct{}{}
 		}
 	}
@@ -54,11 +64,17 @@ func (s *Scanner) ScanWorkspace(workspaceRoot string, state ScanState) ([]LocalT
 	}
 
 	for _, path := range codexJSONLFiles {
+		if err := ctx.Err(); err != nil {
+			return nil, state, err
+		}
 		if !shouldScanFile(path, state) {
 			continue
 		}
-		items, err := ParseCodexJSONLFallback(path, workspaceRoot)
+		items, err := ParseCodexJSONLFallbackContext(ctx, path, workspaceRoot)
 		if err != nil {
+			if ctx.Err() != nil {
+				return nil, state, ctx.Err()
+			}
 			continue
 		}
 		rememberFileScan(&nextState, path)
@@ -69,6 +85,9 @@ func (s *Scanner) ScanWorkspace(workspaceRoot string, state ScanState) ([]LocalT
 	}
 
 	for _, path := range findClaudeJSONLFiles(homeDir) {
+		if err := ctx.Err(); err != nil {
+			return nil, state, err
+		}
 		if !shouldScanFile(path, state) {
 			continue
 		}
@@ -84,6 +103,9 @@ func (s *Scanner) ScanWorkspace(workspaceRoot string, state ScanState) ([]LocalT
 	}
 
 	for _, path := range findKiroJSONFiles(homeDir) {
+		if err := ctx.Err(); err != nil {
+			return nil, state, err
+		}
 		if !shouldScanFile(path, state) {
 			continue
 		}
@@ -99,6 +121,9 @@ func (s *Scanner) ScanWorkspace(workspaceRoot string, state ScanState) ([]LocalT
 	}
 
 	for _, path := range findKiroCLISQLiteFiles(homeDir) {
+		if err := ctx.Err(); err != nil {
+			return nil, state, err
+		}
 		if !shouldScanFile(path, state) {
 			continue
 		}
@@ -115,6 +140,9 @@ func (s *Scanner) ScanWorkspace(workspaceRoot string, state ScanState) ([]LocalT
 
 	kiroIDESessionIDs := FindKiroIDESessionIDs(homeDir, workspaceRoot)
 	for _, path := range FindKiroIDEExecutionFiles(homeDir) {
+		if err := ctx.Err(); err != nil {
+			return nil, state, err
+		}
 		if !shouldScanFile(path, state) {
 			continue
 		}
@@ -204,7 +232,7 @@ func dedupeAndSort(items []LocalToolUsageEvent) []LocalToolUsageEvent {
 
 func findCodexJSONLFiles(workspaceRoot, homeDir string) []string {
 	_ = workspaceRoot
-	return walkFiles(filepath.Join(homeDir, ".codex"), ".jsonl")
+	return walkFiles(filepath.Join(homeDir, ".codex", "sessions"), ".jsonl")
 }
 
 func findCodexSQLiteFiles(homeDir string) []string {
@@ -258,16 +286,52 @@ func walkFiles(root string, ext string) []string {
 
 func cloneScanState(state ScanState) ScanState {
 	next := ScanState{
-		CodexSQLite: make(map[string]CodexSQLiteWatermark, len(state.CodexSQLite)),
-		FileModUnix: make(map[string]int64, len(state.FileModUnix)),
+		CodexSQLite:     make(map[string]CodexSQLiteWatermark, len(state.CodexSQLite)),
+		CodexSessionIDs: make(map[string]CodexSessionIDCache, len(state.CodexSessionIDs)),
+		FileModUnix:     make(map[string]int64, len(state.FileModUnix)),
 	}
 	for path, watermark := range state.CodexSQLite {
 		next.CodexSQLite[path] = watermark
+	}
+	for path, cache := range state.CodexSessionIDs {
+		next.CodexSessionIDs[path] = CodexSessionIDCache{
+			ModUnix:    cache.ModUnix,
+			Size:       cache.Size,
+			SessionIDs: append([]string(nil), cache.SessionIDs...),
+		}
 	}
 	for path, mod := range state.FileModUnix {
 		next.FileModUnix[path] = mod
 	}
 	return next
+}
+
+func cachedCodexWorkspaceSessionIDs(ctx context.Context, state *ScanState, path, workspaceRoot string) ([]string, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, nil
+	}
+	if state != nil && state.CodexSessionIDs != nil {
+		if cached, ok := state.CodexSessionIDs[path]; ok && cached.ModUnix == info.ModTime().Unix() && cached.Size == info.Size() {
+			return append([]string(nil), cached.SessionIDs...), nil
+		}
+	}
+
+	sessionIDs, err := findCodexWorkspaceSessionIDsContext(ctx, path, workspaceRoot)
+	if err != nil {
+		return nil, err
+	}
+	if state != nil {
+		if state.CodexSessionIDs == nil {
+			state.CodexSessionIDs = map[string]CodexSessionIDCache{}
+		}
+		state.CodexSessionIDs[path] = CodexSessionIDCache{
+			ModUnix:    info.ModTime().Unix(),
+			Size:       info.Size(),
+			SessionIDs: append([]string(nil), sessionIDs...),
+		}
+	}
+	return sessionIDs, nil
 }
 
 func shouldScanFile(path string, state ScanState) bool {

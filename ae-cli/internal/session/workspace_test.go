@@ -71,31 +71,3 @@ func TestDeriveWorkspaceIDUsesCanonicalGitContext(t *testing.T) {
 		t.Fatalf("workspace_id = %q, want %q", got, want)
 	}
 }
-
-func TestWriteAndReadMarkerRoundTrip(t *testing.T) {
-	ws := t.TempDir()
-	want := &Marker{
-		SessionID:     "marker-id",
-		WorkspaceID:   "wsid-1",
-		RuntimeRef:    "rt-1",
-		ProviderName:  "sub2api",
-		RelayAPIKeyID: 42,
-		RepoFullName:  "org/repo",
-		Branch:        "main",
-		HeadSHA:       "deadbeef",
-	}
-	if err := WriteMarker(ws, want); err != nil {
-		t.Fatalf("WriteMarker: %v", err)
-	}
-
-	got, err := ReadMarker(ws)
-	if err != nil {
-		t.Fatalf("ReadMarker: %v", err)
-	}
-	if got == nil {
-		t.Fatal("ReadMarker returned nil")
-	}
-	if *got != *want {
-		t.Fatalf("ReadMarker = %+v, want %+v", *got, *want)
-	}
-}

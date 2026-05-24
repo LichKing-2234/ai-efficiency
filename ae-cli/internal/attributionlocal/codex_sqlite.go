@@ -21,6 +21,8 @@ var (
 	reTimestamp      = regexp.MustCompile(`event\.timestamp=([^\s]+)`)
 )
 
+var codexSQLiteInitialLookbackRows int64 = 5000
+
 type CodexSQLiteParser struct{}
 
 func NewCodexSQLiteParser() *CodexSQLiteParser { return &CodexSQLiteParser{} }
@@ -32,13 +34,20 @@ func (p *CodexSQLiteParser) Parse(dbPath string, wm CodexSQLiteWatermark) ([]Loc
 	}
 	defer db.Close()
 
+	lowerBound := wm.LastLogID
+	if lowerBound <= 0 && codexSQLiteInitialLookbackRows > 0 {
+		var maxID int64
+		if err := db.QueryRow(`SELECT COALESCE(MAX(id), 0) FROM logs`).Scan(&maxID); err == nil && maxID > codexSQLiteInitialLookbackRows {
+			lowerBound = maxID - codexSQLiteInitialLookbackRows
+		}
+	}
+
 	rows, err := db.Query(`
 		SELECT id, feedback_log_body
 		FROM logs
 		WHERE id > ?
-		  AND feedback_log_body LIKE '%response.completed%'
 		ORDER BY id ASC
-	`, wm.LastLogID)
+	`, lowerBound)
 	if err != nil {
 		return nil, wm, err
 	}
@@ -77,6 +86,9 @@ func (p *CodexSQLiteParser) Parse(dbPath string, wm CodexSQLiteWatermark) ([]Loc
 }
 
 func parseCodexCompletedLine(path string, id int64, body string) *LocalToolUsageEvent {
+	if !strings.Contains(body, "response.completed") {
+		return nil
+	}
 	convID := regexValue(reConversationID, body)
 	respID := regexValue(reResponseID, body)
 	if convID == "" || respID == "" {

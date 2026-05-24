@@ -68,6 +68,7 @@ var loginCmd = &cobra.Command{
 			RefreshToken: result.RefreshToken,
 			ExpiresAt:    time.Now().Add(time.Duration(result.ExpiresIn) * time.Second),
 			ServerURL:    serverURL,
+			AuthSubject:  auth.SubjectFromAccessToken(result.AccessToken),
 		}
 
 		if err := auth.WriteToken(tokenPath, token); err != nil {

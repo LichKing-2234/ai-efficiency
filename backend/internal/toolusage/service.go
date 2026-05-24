@@ -9,10 +9,12 @@ import (
 
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
+	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/toolusageevent"
 )
 
 type CreateUsageEventRequest struct {
+	RepoConfigID      int
 	Tool              string
 	WorkspaceID       string
 	ToolSessionID     string
@@ -67,7 +69,7 @@ func (s *Service) CreateUsageEvent(ctx context.Context, userID int, req CreateUs
 		return fmt.Errorf("create tool usage event: dedupe_key is required")
 	}
 
-	scope, err := s.resolveScopeByWorkspace(ctx, workspaceID)
+	scope, err := s.resolveScope(ctx, userID, req.RepoConfigID, workspaceID)
 	if err != nil {
 		return err
 	}
@@ -140,6 +142,22 @@ func (s *Service) CreateUsageEvent(ctx context.Context, userID int, req CreateUs
 type scopeResolution struct {
 	RepoConfigID int
 	UserID       int
+}
+
+func (s *Service) resolveScope(ctx context.Context, userID, repoConfigID int, workspaceID string) (*scopeResolution, error) {
+	if repoConfigID > 0 {
+		exists, err := s.entClient.RepoConfig.Query().
+			Where(repoconfig.IDEQ(repoConfigID)).
+			Exist(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("create tool usage event: query repo_config_id: %w", err)
+		}
+		if !exists {
+			return nil, fmt.Errorf("create tool usage event: repo_config_id %d not found", repoConfigID)
+		}
+		return &scopeResolution{RepoConfigID: repoConfigID, UserID: userID}, nil
+	}
+	return s.resolveScopeByWorkspace(ctx, workspaceID)
 }
 
 func (s *Service) resolveScopeByWorkspace(ctx context.Context, workspaceID string) (*scopeResolution, error) {

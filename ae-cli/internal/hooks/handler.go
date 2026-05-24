@@ -7,17 +7,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/ai-efficiency/ae-cli/internal/attributionlocal"
-	"github.com/ai-efficiency/ae-cli/internal/client"
 	"github.com/ai-efficiency/ae-cli/internal/collector"
-	"github.com/ai-efficiency/ae-cli/internal/session"
 )
 
 type Uploader interface {
@@ -33,8 +29,16 @@ type Handler struct {
 	uploader Uploader
 }
 
-type repoEnsureClient interface {
-	EnsureRepoFromRemote(ctx context.Context, remoteURL, branch string) (*client.RepoEnsureResponse, error)
+type ExecutionContext struct {
+	ServerURL     string
+	AuthSubject   string
+	RepoConfigID  int
+	RepoKey       string
+	RepoFullName  string
+	WorkspaceID   string
+	RepoRoot      string
+	Branch        string
+	DurableReplay bool
 }
 
 func NewHandler(u Uploader) *Handler {
@@ -49,9 +53,9 @@ func (u UnsupportedUploader) UploadHookEvent(ctx context.Context, ev HookEvent) 
 	return fmt.Errorf("hook upload not implemented")
 }
 
-var runAttributionSync = func(ctx context.Context, cwd string, syncClient attributionlocal.BackendClient) error {
+var runAttributionSync = func(ctx context.Context, opts attributionlocal.RunOptions, syncClient attributionlocal.BackendClient) error {
 	engine := attributionlocal.NewSyncEngine(syncClient)
-	return engine.RunForWorkspace(ctx, cwd)
+	return engine.Run(ctx, opts)
 }
 
 func (h *Handler) attributionSyncClient() attributionlocal.BackendClient {
@@ -65,15 +69,118 @@ func (h *Handler) attributionSyncClient() attributionlocal.BackendClient {
 	return u.ToolUsageClient()
 }
 
-func repoEventHint(cwd string, m *session.Marker) string {
-	if m != nil && strings.TrimSpace(m.RepoFullName) != "" {
-		return strings.TrimSpace(m.RepoFullName)
+func (h *Handler) PostCommitResolved(ctx context.Context, execCtx ExecutionContext) error {
+	_ = h.FlushResolved(ctx, execCtx)
+	repoRoot := strings.TrimSpace(execCtx.RepoRoot)
+	if repoRoot == "" {
+		return nil
 	}
-	remote, err := gitOutput(cwd, "config", "--get", "remote.origin.url")
+	head, err := gitOutput(repoRoot, "rev-parse", "HEAD")
 	if err != nil {
-		return ""
+		return nil
 	}
-	return strings.TrimSpace(remote)
+	workspaceID := strings.TrimSpace(execCtx.WorkspaceID)
+	if workspaceID == "" {
+		return nil
+	}
+	snapshot := collectSnapshotForHook(repoRoot)
+	persistSnapshotCache(workspaceID, snapshot)
+	repoHint := firstNonEmptyValue(execCtx.RepoFullName, execCtx.RepoKey)
+	eventID, err := CheckpointEventID(eventIDRepoHint(execCtx), head)
+	if err != nil {
+		return nil
+	}
+	ev := HookEvent{
+		Kind:           "post-commit",
+		EventID:        eventID,
+		WorkspaceID:    workspaceID,
+		ServerURL:      execCtx.ServerURL,
+		AuthSubject:    execCtx.AuthSubject,
+		RepoConfigID:   execCtx.RepoConfigID,
+		RepoKey:        execCtx.RepoKey,
+		RepoFullName:   repoHint,
+		BindingSource:  "unbound",
+		AgentSnapshot:  snapshotPayload(snapshot),
+		CommitSHA:      head,
+		ParentSHAs:     parentSHAs(repoRoot),
+		BranchSnapshot: firstNonEmptyValue(execCtx.Branch, branchSnapshot(repoRoot)),
+		HeadSnapshot:   head,
+		CapturedAt:     time.Now().UTC().Format(time.RFC3339),
+	}
+	if h == nil || h.uploader == nil {
+		_ = enqueueForReplay(execCtx, ev)
+		return nil
+	}
+	if err := h.uploader.UploadHookEvent(ctx, ev); err != nil {
+		_ = enqueueForReplay(execCtx, ev)
+		return nil
+	}
+	if syncClient := h.attributionSyncClient(); syncClient != nil {
+		_ = runAttributionSync(ctx, attributionlocal.RunOptions{
+			WorkspaceRoot: repoRoot,
+			WorkspaceID:   workspaceID,
+			ServerURL:     execCtx.ServerURL,
+			AuthSubject:   execCtx.AuthSubject,
+			RepoConfigID:  execCtx.RepoConfigID,
+			RepoKey:       execCtx.RepoKey,
+			DurableReplay: execCtx.hasStableReplayBinding(),
+			ManagedUpload: true,
+		}, syncClient)
+	}
+	return nil
+}
+
+func (h *Handler) PostRewriteResolved(ctx context.Context, execCtx ExecutionContext, rewriteType string, stdin io.Reader) error {
+	rewriteType = strings.TrimSpace(rewriteType)
+	repoRoot := strings.TrimSpace(execCtx.RepoRoot)
+	workspaceID := strings.TrimSpace(execCtx.WorkspaceID)
+	if repoRoot == "" || workspaceID == "" || rewriteType == "" {
+		return nil
+	}
+	pairs, err := parsePostRewritePairs(stdin)
+	if err != nil || len(pairs) == 0 {
+		return nil
+	}
+	repoHint := firstNonEmptyValue(execCtx.RepoFullName, execCtx.RepoKey)
+	eventScope := eventIDRepoHint(execCtx)
+	for _, p := range pairs {
+		oldSHA := strings.TrimSpace(p[0])
+		newSHA := strings.TrimSpace(p[1])
+		eid, err := RewriteEventID(eventScope, oldSHA, newSHA, rewriteType)
+		if err != nil {
+			continue
+		}
+		ev := HookEvent{
+			Kind:          "post-rewrite",
+			EventID:       eid,
+			WorkspaceID:   workspaceID,
+			ServerURL:     execCtx.ServerURL,
+			AuthSubject:   execCtx.AuthSubject,
+			RepoConfigID:  execCtx.RepoConfigID,
+			RepoKey:       execCtx.RepoKey,
+			RepoFullName:  repoHint,
+			BindingSource: "unbound",
+			RewriteType:   rewriteType,
+			OldCommitSHA:  oldSHA,
+			NewCommitSHA:  newSHA,
+			CapturedAt:    time.Now().UTC().Format(time.RFC3339),
+		}
+		if h == nil || h.uploader == nil {
+			_ = enqueueForReplay(execCtx, ev)
+			continue
+		}
+		if err := h.uploader.UploadHookEvent(ctx, ev); err != nil {
+			_ = enqueueForReplay(execCtx, ev)
+		}
+	}
+	return nil
+}
+
+func (h *Handler) FlushResolved(ctx context.Context, execCtx ExecutionContext) error {
+	if !execCtx.hasStableReplayBinding() {
+		return nil
+	}
+	return h.flushWorkspace(ctx, execCtx)
 }
 
 func gitOutput(dir string, args ...string) (string, error) {
@@ -100,71 +207,20 @@ func absUnder(root, p string) (string, error) {
 	return filepath.Abs(filepath.Join(root, p))
 }
 
-func ensureGitInfoExcludeHas(gitDirAbs string, pattern string) error {
-	gitDirAbs = strings.TrimSpace(gitDirAbs)
-	pattern = strings.TrimSpace(pattern)
-	if gitDirAbs == "" {
-		return fmt.Errorf("git dir is empty")
-	}
-	if pattern == "" {
-		return fmt.Errorf("pattern is empty")
-	}
-
-	excludePath := filepath.Join(gitDirAbs, "info", "exclude")
-	if err := os.MkdirAll(filepath.Dir(excludePath), 0o755); err != nil {
-		return fmt.Errorf("creating exclude dir: %w", err)
-	}
-
-	var existing []byte
-	mode := os.FileMode(0o644)
-	if info, err := os.Stat(excludePath); err == nil {
-		mode = info.Mode().Perm()
-		if b, err := os.ReadFile(excludePath); err == nil {
-			existing = b
-		}
-	} else if !os.IsNotExist(err) {
-		return fmt.Errorf("stat exclude: %w", err)
-	}
-
-	lines := strings.Split(string(existing), "\n")
-	for _, line := range lines {
-		if strings.TrimSpace(line) == pattern {
-			return nil
-		}
-	}
-
-	out := string(existing)
-	if out != "" && !strings.HasSuffix(out, "\n") {
-		out += "\n"
-	}
-	out += pattern + "\n"
-
-	if err := os.WriteFile(excludePath, []byte(out), mode); err != nil {
-		return fmt.Errorf("writing exclude: %w", err)
-	}
-	return nil
-}
-
-func collectSnapshotForHook(workspaceRoot string, sessionID string) *collector.Snapshot {
+func collectSnapshotForHook(workspaceRoot string) *collector.Snapshot {
 	snapshot, err := collector.BuildSnapshot(collector.DefaultPaths(workspaceRoot))
 	if err != nil || snapshot == nil {
 		return nil
 	}
-	if strings.TrimSpace(sessionID) != "" {
-		_ = collector.WriteCache(sessionID, snapshot)
-	}
 	return snapshot
 }
 
-func persistSnapshotCache(workspaceID, sessionID string, snapshot *collector.Snapshot) {
+func persistSnapshotCache(workspaceID string, snapshot *collector.Snapshot) {
 	if snapshot == nil {
 		return
 	}
 	if strings.TrimSpace(workspaceID) != "" {
 		_ = collector.WriteWorkspaceCache(workspaceID, snapshot)
-	}
-	if strings.TrimSpace(sessionID) != "" {
-		_ = collector.WriteCache(sessionID, snapshot)
 	}
 }
 
@@ -204,130 +260,11 @@ func parentSHAs(cwd string) []string {
 }
 
 func (h *Handler) PostCommit(ctx context.Context, cwd string) error {
-	_ = h.Flush(ctx, cwd)
-
-	repoRoot, err := gitOutput(cwd, "rev-parse", "--show-toplevel")
+	gitCtx, err := DetectGitContext(cwd)
 	if err != nil {
 		return nil
 	}
-	head, err := gitOutput(cwd, "rev-parse", "HEAD")
-	if err != nil {
-		return nil
-	}
-
-	bindingSource := "unbound"
-	m, err := session.ReadMarker(repoRoot)
-	if err != nil {
-		if os.IsNotExist(err) {
-			m, err = h.bootstrapMarkerFromEnv(repoRoot, cwd, head)
-			if err != nil {
-				// Env bootstrap is best-effort; a failure here should not block commits.
-				m = nil
-			} else {
-				bindingSource = "env_bootstrap"
-			}
-		} else {
-			// Marker read errors should not block commits.
-			m = nil
-		}
-	} else {
-		bindingSource = bindingSourceFromMarker(strings.TrimSpace(m.SessionID))
-	}
-
-	sessionID := ""
-	workspaceID := ""
-	if m != nil {
-		sessionID = strings.TrimSpace(m.SessionID)
-		workspaceID = strings.TrimSpace(m.WorkspaceID)
-	}
-	if workspaceID == "" {
-		gitDirAbs, gerr := gitOutput(cwd, "rev-parse", "--absolute-git-dir")
-		gitCommonRel, gcerr := gitOutput(cwd, "rev-parse", "--git-common-dir")
-		if gerr != nil || gcerr != nil {
-			return nil
-		}
-		gitCommonAbs, err := absUnder(repoRoot, gitCommonRel)
-		if err != nil {
-			return nil
-		}
-		workspaceID, err = session.DeriveWorkspaceID(repoRoot, repoRoot, gitDirAbs, gitCommonAbs)
-		if err != nil {
-			return nil
-		}
-	}
-	if workspaceID == "" {
-		return nil
-	}
-	snapshot := collectSnapshotForHook(repoRoot, sessionID)
-	persistSnapshotCache(workspaceID, sessionID, snapshot)
-	agentSnapshot := snapshotPayload(snapshot)
-
-	repoHint := repoEventHint(cwd, m)
-
-	eventID, err := CheckpointEventID(repoHint, head)
-	if err != nil {
-		// Fail-open: do not block commits; treat as unbound.
-		return nil
-	}
-
-	ev := HookEvent{
-		Kind:           "post-commit",
-		EventID:        eventID,
-		SessionID:      sessionID,
-		RepoFullName:   repoHint,
-		WorkspaceID:    workspaceID,
-		BindingSource:  bindingSource,
-		AgentSnapshot:  agentSnapshot,
-		CommitSHA:      head,
-		ParentSHAs:     parentSHAs(cwd),
-		BranchSnapshot: branchSnapshot(cwd),
-		HeadSnapshot:   head,
-		CapturedAt:     time.Now().UTC().Format(time.RFC3339),
-	}
-
-	syncClient := h.attributionSyncClient()
-	if syncClient != nil && h != nil && h.uploader != nil {
-		if ensureClient, ok := syncClient.(repoEnsureClient); ok && strings.TrimSpace(repoHint) != "" {
-			if _, err := ensureClient.EnsureRepoFromRemote(ctx, repoHint, ev.BranchSnapshot); err != nil {
-				q, qerr := NewWorkspaceQueue(workspaceID)
-				if qerr == nil {
-					_ = q.Enqueue(ev)
-				}
-				return nil
-			}
-		}
-		if err := h.uploader.UploadHookEvent(ctx, ev); err != nil {
-			q, qerr := NewWorkspaceQueue(workspaceID)
-			if qerr == nil {
-				_ = q.Enqueue(ev)
-			}
-			return nil
-		}
-		_ = runAttributionSync(ctx, repoRoot, syncClient)
-		return nil
-	}
-
-	_ = runAttributionSync(ctx, repoRoot, nil)
-
-	if h == nil || h.uploader == nil {
-		// No uploader wired; behave like upload failure (queue best-effort).
-		q, err := NewWorkspaceQueue(workspaceID)
-		if err == nil {
-			_ = q.Enqueue(ev)
-		}
-		return nil
-	}
-
-	if err := h.uploader.UploadHookEvent(ctx, ev); err != nil {
-		// Fail-open: queue for retry and do not fail the commit.
-		q, qerr := NewWorkspaceQueue(workspaceID)
-		if qerr == nil {
-			_ = q.Enqueue(ev)
-		}
-		return nil
-	}
-
-	return nil
+	return h.PostCommitResolved(ctx, executionContextFromGit(gitCtx))
 }
 
 func parsePostRewritePairs(r io.Reader) ([][2]string, error) {
@@ -354,228 +291,23 @@ func parsePostRewritePairs(r io.Reader) ([][2]string, error) {
 }
 
 func (h *Handler) PostRewrite(ctx context.Context, cwd string, rewriteType string, stdin io.Reader) error {
-	rewriteType = strings.TrimSpace(rewriteType)
-	_ = h.Flush(ctx, cwd)
-
-	repoRoot, err := gitOutput(cwd, "rev-parse", "--show-toplevel")
+	gitCtx, err := DetectGitContext(cwd)
 	if err != nil {
 		return nil
 	}
-	head, _ := gitOutput(cwd, "rev-parse", "HEAD")
-
-	m, err := session.ReadMarker(repoRoot)
-	if err != nil {
-		if os.IsNotExist(err) {
-			m, err = h.bootstrapMarkerFromEnv(repoRoot, cwd, head)
-			if err != nil {
-				m = nil
-			}
-		} else {
-			m = nil
-		}
-	}
-	bindingSource := "unbound"
-	if m != nil {
-		bindingSource = bindingSourceFromMarker(strings.TrimSpace(m.SessionID))
-	}
-
-	sessionID := ""
-	workspaceID := ""
-	if m != nil {
-		sessionID = strings.TrimSpace(m.SessionID)
-		workspaceID = strings.TrimSpace(m.WorkspaceID)
-	}
-	if workspaceID == "" {
-		gitDirAbs, gerr := gitOutput(cwd, "rev-parse", "--absolute-git-dir")
-		gitCommonRel, gcerr := gitOutput(cwd, "rev-parse", "--git-common-dir")
-		if gerr != nil || gcerr != nil {
-			return nil
-		}
-		gitCommonAbs, err := absUnder(repoRoot, gitCommonRel)
-		if err != nil {
-			return nil
-		}
-		workspaceID, err = session.DeriveWorkspaceID(repoRoot, repoRoot, gitDirAbs, gitCommonAbs)
-		if err != nil {
-			return nil
-		}
-	}
-	if workspaceID == "" {
-		return nil
-	}
-	snapshot := collectSnapshotForHook(repoRoot, sessionID)
-	persistSnapshotCache(workspaceID, sessionID, snapshot)
-	agentSnapshot := snapshotPayload(snapshot)
-	repoHint := repoEventHint(cwd, m)
-	if repoHint == "" || rewriteType == "" {
-		// Fail-open: cannot build stable idempotent IDs without scope/type.
-		return nil
-	}
-
-	pairs, err := parsePostRewritePairs(stdin)
-	if err != nil {
-		// Fail-open: do not block developer workflows.
-		return nil
-	}
-	if len(pairs) == 0 {
-		return nil
-	}
-
-	q, qerr := NewWorkspaceQueue(workspaceID)
-	if qerr != nil {
-		q = nil
-	}
-
-	for _, p := range pairs {
-		oldSHA := strings.TrimSpace(p[0])
-		newSHA := strings.TrimSpace(p[1])
-		eid, err := RewriteEventID(repoHint, oldSHA, newSHA, rewriteType)
-		if err != nil {
-			continue
-		}
-
-		_ = runAttributionSync(ctx, repoRoot, nil)
-
-		ev := HookEvent{
-			Kind:          "post-rewrite",
-			EventID:       eid,
-			SessionID:     sessionID,
-			RepoFullName:  repoHint,
-			WorkspaceID:   workspaceID,
-			BindingSource: bindingSource,
-			AgentSnapshot: agentSnapshot,
-			RewriteType:   rewriteType,
-			OldCommitSHA:  oldSHA,
-			NewCommitSHA:  newSHA,
-			CapturedAt:    time.Now().UTC().Format(time.RFC3339),
-		}
-
-		if syncClient := h.attributionSyncClient(); syncClient != nil {
-			if ensureClient, ok := syncClient.(repoEnsureClient); ok && strings.TrimSpace(repoHint) != "" {
-				if _, err := ensureClient.EnsureRepoFromRemote(ctx, repoHint, branchSnapshot(cwd)); err != nil {
-					if q != nil {
-						_ = q.Enqueue(ev)
-					}
-					continue
-				}
-			}
-		}
-
-		if h == nil || h.uploader == nil {
-			if q != nil {
-				_ = q.Enqueue(ev)
-			}
-			continue
-		}
-		if err := h.uploader.UploadHookEvent(ctx, ev); err != nil {
-			if q != nil {
-				_ = q.Enqueue(ev)
-			}
-		}
-	}
-
-	return nil
-}
-
-func (h *Handler) bootstrapMarkerFromEnv(repoRoot, cwd, headSHA string) (*session.Marker, error) {
-	sid := strings.TrimSpace(os.Getenv("AE_SESSION_ID"))
-	if sid == "" {
-		return nil, os.ErrNotExist
-	}
-
-	gitDirAbs, err := gitOutput(cwd, "rev-parse", "--absolute-git-dir")
-	if err != nil {
-		return nil, err
-	}
-	gitCommonRel, err := gitOutput(cwd, "rev-parse", "--git-common-dir")
-	if err != nil {
-		return nil, err
-	}
-	gitCommonAbs, err := absUnder(repoRoot, gitCommonRel)
-	if err != nil {
-		return nil, err
-	}
-
-	// Prevent accidental commits of the marker.
-	_ = ensureGitInfoExcludeHas(gitCommonAbs, "/.ae/")
-	_ = ensureGitInfoExcludeHas(gitDirAbs, "/.ae/")
-
-	var relayKeyID int64
-	if v := strings.TrimSpace(os.Getenv("AE_RELAY_API_KEY_ID")); v != "" {
-		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
-			relayKeyID = n
-		}
-	}
-
-	branch := ""
-	if b, err := gitOutput(cwd, "symbolic-ref", "--short", "-q", "HEAD"); err == nil {
-		branch = b
-	}
-	repoFullName := ""
-	if remote, err := gitOutput(cwd, "config", "--get", "remote.origin.url"); err == nil {
-		repoFullName = strings.TrimSpace(remote)
-	}
-
-	workspaceID := ""
-	if id, err := session.DeriveWorkspaceID(repoRoot, repoRoot, gitDirAbs, gitCommonAbs); err == nil {
-		workspaceID = id
-	}
-
-	m := &session.Marker{
-		SessionID:     sid,
-		WorkspaceID:   workspaceID,
-		RuntimeRef:    strings.TrimSpace(os.Getenv("AE_RUNTIME_REF")),
-		ProviderName:  strings.TrimSpace(os.Getenv("AE_PROVIDER_NAME")),
-		RelayAPIKeyID: relayKeyID,
-		RepoFullName:  repoFullName,
-		Branch:        branch,
-		HeadSHA:       headSHA,
-	}
-	if err := session.WriteMarker(repoRoot, m); err != nil {
-		return nil, err
-	}
-	return m, nil
+	return h.PostRewriteResolved(ctx, executionContextFromGit(gitCtx), rewriteType, stdin)
 }
 
 func (h *Handler) Flush(ctx context.Context, cwd string) error {
-	seen := make(map[string]struct{})
-	var workspaceIDs []string
-	addWorkspaceID := func(workspaceID string) {
-		workspaceID = strings.TrimSpace(workspaceID)
-		if workspaceID == "" {
-			return
-		}
-		if _, ok := seen[workspaceID]; ok {
-			return
-		}
-		seen[workspaceID] = struct{}{}
-		workspaceIDs = append(workspaceIDs, workspaceID)
-	}
-
-	if repoRoot, err := gitOutput(cwd, "rev-parse", "--show-toplevel"); err == nil {
-		if m, err := session.ReadMarker(repoRoot); err == nil && m != nil {
-			addWorkspaceID(m.WorkspaceID)
-		}
-	}
-
-	pendingWorkspaceIDs, err := PendingWorkspaceIDs()
+	gitCtx, err := DetectGitContext(cwd)
 	if err != nil {
-		return err
+		return nil
 	}
-	for _, workspaceID := range pendingWorkspaceIDs {
-		addWorkspaceID(workspaceID)
-	}
-
-	for _, workspaceID := range workspaceIDs {
-		if err := h.flushWorkspace(ctx, workspaceID); err != nil {
-			return err
-		}
-	}
-	return nil
+	return h.FlushResolved(ctx, executionContextFromGit(gitCtx))
 }
 
-func (h *Handler) flushWorkspace(ctx context.Context, workspaceID string) error {
-	q, err := NewWorkspaceQueue(workspaceID)
+func (h *Handler) flushWorkspace(ctx context.Context, execCtx ExecutionContext) error {
+	q, err := NewWorkspaceQueue(execCtx.WorkspaceID)
 	if err != nil {
 		return err
 	}
@@ -589,20 +321,125 @@ func (h *Handler) flushWorkspace(ctx context.Context, workspaceID string) error 
 
 	var keep []QueueItem
 	for _, it := range items {
+		now := time.Now().UTC()
+		if !hookEventMatchesContext(it.Event, execCtx) {
+			_ = AppendLedger(execCtx.WorkspaceID, LedgerRecord{
+				Kind:         ledgerKind(it.Event.Kind),
+				DedupeKey:    it.Event.EventID,
+				ServerURL:    execCtx.ServerURL,
+				AuthSubject:  execCtx.AuthSubject,
+				RepoConfigID: execCtx.RepoConfigID,
+				RepoKey:      execCtx.RepoKey,
+				WorkspaceID:  execCtx.WorkspaceID,
+				Status:       "skipped",
+				AttemptCount: 1,
+				AttemptedAt:  now,
+				LastError:    "context mismatch",
+			})
+			continue
+		}
 		if h == nil || h.uploader == nil {
 			keep = append(keep, it)
 			continue
 		}
 		if err := h.uploader.UploadHookEvent(ctx, it.Event); err != nil {
+			_ = AppendLedger(execCtx.WorkspaceID, LedgerRecord{
+				Kind:         ledgerKind(it.Event.Kind),
+				DedupeKey:    it.Event.EventID,
+				ServerURL:    execCtx.ServerURL,
+				AuthSubject:  execCtx.AuthSubject,
+				RepoConfigID: execCtx.RepoConfigID,
+				RepoKey:      execCtx.RepoKey,
+				WorkspaceID:  execCtx.WorkspaceID,
+				Status:       "failed",
+				AttemptCount: 1,
+				AttemptedAt:  now,
+				LastError:    err.Error(),
+			})
 			keep = append(keep, it)
+			continue
 		}
+		_ = AppendLedger(execCtx.WorkspaceID, LedgerRecord{
+			Kind:         ledgerKind(it.Event.Kind),
+			DedupeKey:    it.Event.EventID,
+			ServerURL:    execCtx.ServerURL,
+			AuthSubject:  execCtx.AuthSubject,
+			RepoConfigID: execCtx.RepoConfigID,
+			RepoKey:      execCtx.RepoKey,
+			WorkspaceID:  execCtx.WorkspaceID,
+			Status:       "uploaded",
+			AttemptCount: 1,
+			AttemptedAt:  now,
+			UploadedAt:   &now,
+		})
 	}
 	return q.rewrite(keep)
 }
 
-func bindingSourceFromMarker(sessionID string) string {
-	if strings.TrimSpace(sessionID) != "" {
-		return "marker"
+func enqueueForReplay(execCtx ExecutionContext, ev HookEvent) error {
+	if !execCtx.hasStableReplayBinding() {
+		return nil
 	}
-	return "unbound"
+	q, err := NewWorkspaceQueue(execCtx.WorkspaceID)
+	if err != nil {
+		return err
+	}
+	return q.Enqueue(ev)
+}
+
+func (c ExecutionContext) hasStableReplayBinding() bool {
+	return c.DurableReplay &&
+		strings.TrimSpace(c.ServerURL) != "" &&
+		strings.TrimSpace(c.AuthSubject) != "" &&
+		c.RepoConfigID > 0 &&
+		strings.TrimSpace(c.RepoKey) != "" &&
+		strings.TrimSpace(c.WorkspaceID) != ""
+}
+
+func hookEventMatchesContext(ev HookEvent, execCtx ExecutionContext) bool {
+	return strings.TrimSpace(ev.ServerURL) == strings.TrimSpace(execCtx.ServerURL) &&
+		strings.TrimSpace(ev.AuthSubject) == strings.TrimSpace(execCtx.AuthSubject) &&
+		ev.RepoConfigID == execCtx.RepoConfigID &&
+		strings.TrimSpace(ev.RepoKey) == strings.TrimSpace(execCtx.RepoKey) &&
+		strings.TrimSpace(ev.WorkspaceID) == strings.TrimSpace(execCtx.WorkspaceID)
+}
+
+func eventIDRepoHint(execCtx ExecutionContext) string {
+	if execCtx.RepoConfigID > 0 {
+		return fmt.Sprintf("repo_config_id:%d", execCtx.RepoConfigID)
+	}
+	return firstNonEmptyValue(execCtx.RepoKey, execCtx.RepoFullName)
+}
+
+func executionContextFromGit(gitCtx *GitContext) ExecutionContext {
+	if gitCtx == nil {
+		return ExecutionContext{}
+	}
+	return ExecutionContext{
+		RepoKey:      gitCtx.RepoKey,
+		RepoFullName: firstNonEmptyValue(gitCtx.RepoKey, gitCtx.RemoteURL),
+		WorkspaceID:  gitCtx.WorkspaceID,
+		RepoRoot:     gitCtx.RepoRoot,
+		Branch:       gitCtx.Branch,
+	}
+}
+
+func ledgerKind(kind string) string {
+	switch strings.TrimSpace(kind) {
+	case "post-commit":
+		return "checkpoint"
+	case "post-rewrite":
+		return "rewrite"
+	default:
+		return kind
+	}
+}
+
+func firstNonEmptyValue(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }

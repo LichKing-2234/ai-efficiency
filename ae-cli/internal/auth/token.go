@@ -1,10 +1,12 @@
 package auth
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -14,6 +16,7 @@ type TokenFile struct {
 	RefreshToken string    `json:"refresh_token"`
 	ExpiresAt    time.Time `json:"expires_at"`
 	ServerURL    string    `json:"server_url"`
+	AuthSubject  string    `json:"auth_subject,omitempty"`
 }
 
 // DefaultTokenPath returns ~/.ae-cli/token.json.
@@ -33,6 +36,43 @@ func (t *TokenFile) IsValid() bool {
 // NeedsRefresh returns true if the token expires within 5 minutes.
 func (t *TokenFile) NeedsRefresh() bool {
 	return time.Until(t.ExpiresAt) < 5*time.Minute
+}
+
+func SubjectFromAccessToken(accessToken string) string {
+	parts := strings.Split(accessToken, ".")
+	if len(parts) < 2 {
+		return ""
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return ""
+	}
+	var claims map[string]any
+	if err := json.Unmarshal(payload, &claims); err != nil {
+		return ""
+	}
+	switch v := claims["user_id"].(type) {
+	case float64:
+		if v > 0 {
+			return fmt.Sprintf("user:%d", int(v))
+		}
+	case string:
+		v = strings.TrimSpace(v)
+		if v != "" {
+			return "user:" + v
+		}
+	}
+	return ""
+}
+
+func (t *TokenFile) StableAuthSubject() string {
+	if t == nil {
+		return ""
+	}
+	if s := strings.TrimSpace(t.AuthSubject); s != "" {
+		return s
+	}
+	return SubjectFromAccessToken(t.AccessToken)
 }
 
 // ReadToken reads and parses the token file.

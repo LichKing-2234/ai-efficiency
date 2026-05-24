@@ -4,14 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 )
 
 func ParseKiroJSON(path, workspaceRoot string) ([]LocalToolUsageEvent, error) {
 	var doc struct {
-		SessionID string `json:"session_id"`
-		CWD       string `json:"cwd"`
+		SessionID    string `json:"session_id"`
+		CWD          string `json:"cwd"`
 		SessionState struct {
 			ConversationMetadata struct {
 				UserTurnMetadatas []struct {
@@ -39,7 +38,7 @@ func ParseKiroJSON(path, workspaceRoot string) ([]LocalToolUsageEvent, error) {
 	if err := json.Unmarshal(data, &doc); err != nil {
 		return nil, err
 	}
-	if filepath.Clean(doc.CWD) != filepath.Clean(workspaceRoot) {
+	if !sameWorkspacePath(doc.CWD, workspaceRoot) {
 		return nil, nil
 	}
 

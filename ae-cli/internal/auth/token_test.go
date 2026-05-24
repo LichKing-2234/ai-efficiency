@@ -1,6 +1,7 @@
 package auth_test
 
 import (
+	"encoding/base64"
 	"os"
 	"path/filepath"
 	"testing"
@@ -81,5 +82,20 @@ func TestTokenNeedsRefresh(t *testing.T) {
 	}
 	if later.NeedsRefresh() {
 		t.Fatal("expected token expiring in 1h to not need refresh")
+	}
+}
+
+func TestSubjectFromAccessTokenUserID(t *testing.T) {
+	payload := base64.RawURLEncoding.EncodeToString([]byte(`{"user_id":123,"type":"access"}`))
+	token := "header." + payload + ".signature"
+	if got := auth.SubjectFromAccessToken(token); got != "user:123" {
+		t.Fatalf("subject = %q", got)
+	}
+}
+
+func TestStableAuthSubjectPrefersPersistedSubject(t *testing.T) {
+	tf := &auth.TokenFile{AccessToken: "bad", AuthSubject: "user:456"}
+	if got := tf.StableAuthSubject(); got != "user:456" {
+		t.Fatalf("subject = %q", got)
 	}
 }

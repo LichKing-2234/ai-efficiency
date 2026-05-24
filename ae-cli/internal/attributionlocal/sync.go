@@ -2,9 +2,10 @@ package attributionlocal
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
-	"strings"
+	"time"
 
 	"github.com/ai-efficiency/ae-cli/internal/client"
 )
@@ -19,6 +20,17 @@ type SyncEngine struct {
 	spoolPath string
 }
 
+type RunOptions struct {
+	WorkspaceRoot string
+	WorkspaceID   string
+	ServerURL     string
+	AuthSubject   string
+	RepoConfigID  int
+	RepoKey       string
+	DurableReplay bool
+	ManagedUpload bool
+}
+
 func NewSyncEngine(c BackendClient) *SyncEngine {
 	return &SyncEngine{
 		Scanner: NewScanner(),
@@ -27,6 +39,10 @@ func NewSyncEngine(c BackendClient) *SyncEngine {
 }
 
 func (e *SyncEngine) Replay(ctx context.Context, workspaceRoot string) error {
+	return e.replay(ctx, workspaceRoot, RunOptions{})
+}
+
+func (e *SyncEngine) replay(ctx context.Context, workspaceRoot string, opts RunOptions) error {
 	if e == nil || e.Client == nil {
 		return nil
 	}
@@ -39,12 +55,34 @@ func (e *SyncEngine) Replay(ctx context.Context, workspaceRoot string) error {
 	}
 
 	remaining := make([]LocalToolUsageEvent, 0, len(spooled))
+	filterByBinding := hasStableRunBinding(opts)
 	for idx, ev := range spooled {
 		ev = normalizeObservedWindow(ev)
+		if filterByBinding && !eventMatchesRunOptions(ev, opts) {
+			_ = appendToolUsageLedger(opts.WorkspaceID, toolUsageLedgerRecord{
+				Version:      1,
+				Kind:         "tool_usage",
+				DedupeKey:    ev.DedupeKey,
+				ServerURL:    opts.ServerURL,
+				AuthSubject:  opts.AuthSubject,
+				RepoConfigID: opts.RepoConfigID,
+				RepoKey:      opts.RepoKey,
+				WorkspaceID:  opts.WorkspaceID,
+				Status:       "skipped",
+				AttemptCount: 1,
+				AttemptedAt:  time.Now().UTC(),
+				LastError:    "context mismatch",
+			})
+			continue
+		}
 		if err := e.Client.SendToolUsageEvent(ctx, toClientUsageRequest(ev)); err != nil {
 			remaining = append(remaining, ev)
 			for _, queued := range spooled[idx+1:] {
-				remaining = append(remaining, normalizeObservedWindow(queued))
+				queued = normalizeObservedWindow(queued)
+				if filterByBinding && !eventMatchesRunOptions(queued, opts) {
+					continue
+				}
+				remaining = append(remaining, queued)
 			}
 			if err := SaveJSON(e.spoolPath, remaining); err != nil {
 				return err
@@ -56,6 +94,73 @@ func (e *SyncEngine) Replay(ctx context.Context, workspaceRoot string) error {
 }
 
 func (e *SyncEngine) RunForWorkspace(ctx context.Context, workspaceRoot string) error {
+	return e.Run(ctx, RunOptions{WorkspaceRoot: workspaceRoot, DurableReplay: true})
+}
+
+func (e *SyncEngine) Run(ctx context.Context, opts RunOptions) error {
+	if e.Scanner == nil {
+		e.Scanner = NewScanner()
+	}
+	statePath, spoolPath, workspaceID, err := workspaceStatePaths(opts.WorkspaceRoot)
+	if err != nil {
+		return err
+	}
+	if opts.WorkspaceID != "" {
+		workspaceID = opts.WorkspaceID
+		base := filepath.Join(AttributionRootDir(), "workspaces", workspaceID)
+		statePath = filepath.Join(base, "scan-state.json")
+		spoolPath = filepath.Join(base, "spool.json")
+	}
+	e.spoolPath = spoolPath
+
+	var state ScanState
+	if err := LoadJSON(statePath, &state); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+
+	if opts.DurableReplay {
+		if err := e.replay(ctx, opts.WorkspaceRoot, opts); err != nil {
+			return err
+		}
+	}
+
+	events, nextState, err := e.Scanner.ScanWorkspaceContext(ctx, opts.WorkspaceRoot, state)
+	if err != nil {
+		return err
+	}
+	for idx := range events {
+		events[idx] = normalizeObservedWindow(events[idx])
+		events[idx].WorkspaceID = workspaceID
+		events[idx].ServerURL = opts.ServerURL
+		events[idx].AuthSubject = opts.AuthSubject
+		events[idx].RepoConfigID = opts.RepoConfigID
+		events[idx].RepoKey = opts.RepoKey
+		events[idx].ManagedUpload = opts.ManagedUpload
+	}
+
+	if e.Client == nil {
+		if opts.DurableReplay {
+			if err := appendSpooledEvents(spoolPath, events); err != nil {
+				return err
+			}
+		}
+		return SaveJSON(statePath, nextState)
+	}
+
+	for idx, ev := range events {
+		if err := e.Client.SendToolUsageEvent(ctx, toClientUsageRequest(ev)); err != nil {
+			if opts.DurableReplay {
+				if err := appendSpooledEvents(spoolPath, events[idx:]); err != nil {
+					return err
+				}
+			}
+			return SaveJSON(statePath, nextState)
+		}
+	}
+	return SaveJSON(statePath, nextState)
+}
+
+func (e *SyncEngine) runLegacy(ctx context.Context, workspaceRoot string) error {
 	if e.Scanner == nil {
 		e.Scanner = NewScanner()
 	}
@@ -64,9 +169,7 @@ func (e *SyncEngine) RunForWorkspace(ctx context.Context, workspaceRoot string) 
 		return err
 	}
 	e.spoolPath = spoolPath
-	if err := migrateLegacyWorkspaceSpool(workspaceID, spoolPath); err != nil {
-		return err
-	}
+	_ = workspaceID
 
 	var state ScanState
 	if err := LoadJSON(statePath, &state); err != nil && !os.IsNotExist(err) {
@@ -77,7 +180,7 @@ func (e *SyncEngine) RunForWorkspace(ctx context.Context, workspaceRoot string) 
 		return err
 	}
 
-	events, nextState, err := e.Scanner.ScanWorkspace(workspaceRoot, state)
+	events, nextState, err := e.Scanner.ScanWorkspaceContext(ctx, workspaceRoot, state)
 	if err != nil {
 		return err
 	}
@@ -104,7 +207,8 @@ func (e *SyncEngine) RunForWorkspace(ctx context.Context, workspaceRoot string) 
 }
 
 func toClientUsageRequest(ev LocalToolUsageEvent) client.ToolUsageEventRequest {
-	return client.ToolUsageEventRequest{
+	req := client.ToolUsageEventRequest{
+		RepoConfigID:      ev.RepoConfigID,
 		Tool:              ev.Tool,
 		WorkspaceID:       ev.WorkspaceID,
 		ToolSessionID:     ev.ToolSessionID,
@@ -120,10 +224,30 @@ func toClientUsageRequest(ev LocalToolUsageEvent) client.ToolUsageEventRequest {
 		ContextUsagePct:   ev.ContextUsagePct,
 		ObservedStartAt:   ev.ObservedStartAt,
 		ObservedEndAt:     ev.ObservedEndAt,
-		RawSourcePath:     ev.RawSourcePath,
-		RawSourceLocator:  ev.RawSourceLocator,
-		RawPayload:        ev.RawPayload,
 	}
+	if !ev.ManagedUpload {
+		req.RawSourcePath = ev.RawSourcePath
+		req.RawSourceLocator = ev.RawSourceLocator
+		req.RawPayload = ev.RawPayload
+	}
+	return req
+}
+
+func eventMatchesRunOptions(ev LocalToolUsageEvent, opts RunOptions) bool {
+	return ev.WorkspaceID == opts.WorkspaceID &&
+		ev.ServerURL == opts.ServerURL &&
+		ev.AuthSubject == opts.AuthSubject &&
+		ev.RepoConfigID == opts.RepoConfigID &&
+		ev.RepoKey == opts.RepoKey
+}
+
+func hasStableRunBinding(opts RunOptions) bool {
+	return opts.DurableReplay &&
+		opts.WorkspaceID != "" &&
+		opts.ServerURL != "" &&
+		opts.AuthSubject != "" &&
+		opts.RepoConfigID > 0 &&
+		opts.RepoKey != ""
 }
 
 func loadSpooledEvents(path string) ([]LocalToolUsageEvent, error) {
@@ -162,6 +286,47 @@ func clearSpooledEvents(path string) error {
 	return nil
 }
 
+type toolUsageLedgerRecord struct {
+	Version      int        `json:"version"`
+	Kind         string     `json:"kind"`
+	DedupeKey    string     `json:"dedupe_key"`
+	ServerURL    string     `json:"server_url"`
+	AuthSubject  string     `json:"auth_subject"`
+	RepoConfigID int        `json:"repo_config_id"`
+	RepoKey      string     `json:"repo_key"`
+	WorkspaceID  string     `json:"workspace_id"`
+	Status       string     `json:"status"`
+	AttemptCount int        `json:"attempt_count"`
+	AttemptedAt  time.Time  `json:"attempted_at"`
+	UploadedAt   *time.Time `json:"uploaded_at,omitempty"`
+	HTTPStatus   int        `json:"http_status,omitempty"`
+	LastError    string     `json:"last_error,omitempty"`
+}
+
+func appendToolUsageLedger(workspaceID string, rec toolUsageLedgerRecord) error {
+	if workspaceID == "" {
+		return nil
+	}
+	path := filepath.Join(AttributionRootDir(), "workspaces", workspaceID, "upload-ledger.jsonl")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	if rec.Version == 0 {
+		rec.Version = 1
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	data, err := json.Marshal(rec)
+	if err != nil {
+		return err
+	}
+	_, err = f.Write(append(data, '\n'))
+	return err
+}
+
 func workspaceStatePaths(workspaceRoot string) (statePath, spoolPath, workspaceID string, err error) {
 	workspaceID, err = mustWorkspaceID(workspaceRoot)
 	if err != nil {
@@ -169,48 +334,4 @@ func workspaceStatePaths(workspaceRoot string) (statePath, spoolPath, workspaceI
 	}
 	base := filepath.Join(AttributionRootDir(), "workspaces", workspaceID)
 	return filepath.Join(base, "scan-state.json"), filepath.Join(base, "spool.json"), workspaceID, nil
-}
-
-func legacyGlobalSpoolPath() string {
-	return filepath.Join(AttributionRootDir(), "spool.json")
-}
-
-func migrateLegacyWorkspaceSpool(workspaceID, targetPath string) error {
-	workspaceID = filepath.Clean(workspaceID)
-	targetPath = strings.TrimSpace(targetPath)
-	if workspaceID == "" || targetPath == "" {
-		return nil
-	}
-
-	legacyPath := legacyGlobalSpoolPath()
-	legacyEvents, err := loadSpooledEvents(legacyPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return err
-	}
-	if len(legacyEvents) == 0 {
-		return nil
-	}
-
-	matched := make([]LocalToolUsageEvent, 0)
-	remaining := make([]LocalToolUsageEvent, 0, len(legacyEvents))
-	for _, ev := range legacyEvents {
-		if strings.TrimSpace(ev.WorkspaceID) == workspaceID {
-			matched = append(matched, ev)
-			continue
-		}
-		remaining = append(remaining, ev)
-	}
-	if len(matched) == 0 {
-		return nil
-	}
-	if err := appendSpooledEvents(targetPath, matched); err != nil {
-		return err
-	}
-	if len(remaining) == 0 {
-		return clearSpooledEvents(legacyPath)
-	}
-	return SaveJSON(legacyPath, remaining)
 }

@@ -182,6 +182,105 @@ func TestEnsureRepoFromRemote(t *testing.T) {
 	}
 }
 
+func TestResolveRepoFromRemote(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/repos/resolve-remote" {
+			t.Fatalf("path = %s", r.URL.Path)
+		}
+		var req map[string]string
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if req["remote_url"] != "git@repo-host.example.com:org/repo.git" || req["client_cache_version"] != "repo-eligibility-v1" {
+			t.Fatalf("request = %#v", req)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": map[string]any{
+				"eligible":       true,
+				"repo_config_id": 123,
+				"repo_key":       "repo-host.example.com/org/repo",
+				"full_name":      "org/repo",
+				"clone_url":      "git@repo-host.example.com:org/repo.git",
+				"status":         "active",
+				"binding_state":  "unbound",
+			},
+		})
+	}))
+	defer srv.Close()
+
+	resp, err := New(srv.URL, "tok").ResolveRepoFromRemote(context.Background(), ResolveRepoRequest{
+		RemoteURL:          "git@repo-host.example.com:org/repo.git",
+		ClientCacheVersion: "repo-eligibility-v1",
+	})
+	if err != nil {
+		t.Fatalf("ResolveRepoFromRemote: %v", err)
+	}
+	if !resp.Eligible || resp.RepoConfigID != 123 {
+		t.Fatalf("response = %+v", resp)
+	}
+}
+
+func TestBatchHookEligible(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/repos/hook-eligible" {
+			t.Fatalf("path = %s", r.URL.Path)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": map[string]any{
+				"version": "repo-eligibility-v1",
+				"repos": []map[string]any{{
+					"eligible":       true,
+					"repo_config_id": 123,
+					"repo_key":       "repo-host.example.com/org/repo",
+				}},
+				"ineligible": []map[string]any{{
+					"eligible": false,
+					"repo_key": "repo-host.example.com/org/missing",
+					"reason":   "not_found",
+				}},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	resp, err := New(srv.URL, "tok").BatchHookEligible(context.Background(), []HookEligibleRepoRequest{
+		{RepoKey: "repo-host.example.com/org/repo", RemoteURL: "https://repo-host.example.com/org/repo.git"},
+	})
+	if err != nil {
+		t.Fatalf("BatchHookEligible: %v", err)
+	}
+	if resp.Version != "repo-eligibility-v1" || len(resp.Repos) != 1 || len(resp.Ineligible) != 1 {
+		t.Fatalf("response = %+v", resp)
+	}
+}
+
+func TestManagedPayloadsIncludeRepoConfigID(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if payload["repo_config_id"].(float64) != 123 {
+			t.Fatalf("payload missing repo_config_id: %#v", payload)
+		}
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "tok")
+	if err := c.SendCommitCheckpoint(context.Background(), CommitCheckpointRequest{
+		EventID:       "cp",
+		RepoConfigID:  123,
+		WorkspaceID:   "ws",
+		CommitSHA:     "abc",
+		BindingSource: "unbound",
+	}); err != nil {
+		t.Fatalf("checkpoint: %v", err)
+	}
+}
+
 func TestListProviders(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {

@@ -149,6 +149,12 @@ server:
     Write-Host "Wrote CLI config to $ConfigPath"
   }
 
+  try {
+    & $TargetPath hooks refresh-installations *> $null
+  } catch {
+    Write-Host "Warning: installed ae-cli but failed to refresh managed hook scripts."
+  }
+
   Write-Host "Installed ae-cli $Tag to $TargetPath"
 
   $PathEntries = ($env:PATH -split ";") | ForEach-Object { $_.TrimEnd("\") }

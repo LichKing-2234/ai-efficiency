@@ -325,7 +325,7 @@ func main() {
 		syncService,
 		settingsHandler,
 		cfg.Encryption.Key,
-		middleware.CORS(nil),
+		middleware.CORS([]string{cfg.Server.FrontendURL}),
 		oauthHandler,
 		providerHandler,
 		adminSettingsHandler,

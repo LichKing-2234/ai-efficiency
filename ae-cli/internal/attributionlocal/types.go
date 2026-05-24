@@ -19,6 +19,11 @@ const (
 type LocalToolUsageEvent struct {
 	Tool              string
 	WorkspaceID       string
+	ServerURL         string
+	AuthSubject       string
+	RepoConfigID      int
+	RepoKey           string
+	ManagedUpload     bool
 	ToolSessionID     string
 	ToolEventID       string
 	DedupeKey         string
@@ -39,6 +44,12 @@ type LocalToolUsageEvent struct {
 
 type CodexSQLiteWatermark struct {
 	LastLogID int64 `json:"last_log_id"`
+}
+
+type CodexSessionIDCache struct {
+	ModUnix    int64    `json:"mod_unix"`
+	Size       int64    `json:"size"`
+	SessionIDs []string `json:"session_ids,omitempty"`
 }
 
 func asString(v any) string {
