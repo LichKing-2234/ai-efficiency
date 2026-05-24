@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/ai-efficiency/ae-cli/internal/attributionlocal"
 )
@@ -44,6 +45,31 @@ type QueueItem struct {
 
 type Queue struct {
 	path string
+}
+
+type Binding struct {
+	ServerURL    string `json:"server_url,omitempty"`
+	AuthSubject  string `json:"auth_subject,omitempty"`
+	RepoConfigID int    `json:"repo_config_id,omitempty"`
+	RepoKey      string `json:"repo_key,omitempty"`
+	WorkspaceID  string `json:"workspace_id,omitempty"`
+}
+
+type LedgerRecord struct {
+	Version      int        `json:"version"`
+	Kind         string     `json:"kind"`
+	DedupeKey    string     `json:"dedupe_key"`
+	ServerURL    string     `json:"server_url"`
+	AuthSubject  string     `json:"auth_subject"`
+	RepoConfigID int        `json:"repo_config_id"`
+	RepoKey      string     `json:"repo_key"`
+	WorkspaceID  string     `json:"workspace_id"`
+	Status       string     `json:"status"`
+	AttemptCount int        `json:"attempt_count"`
+	AttemptedAt  time.Time  `json:"attempted_at"`
+	UploadedAt   *time.Time `json:"uploaded_at,omitempty"`
+	HTTPStatus   int        `json:"http_status,omitempty"`
+	LastError    string     `json:"last_error,omitempty"`
 }
 
 func queuePath(sessionID string) (string, error) {
@@ -80,6 +106,79 @@ func NewWorkspaceQueue(workspaceID string) (*Queue, error) {
 		return nil, fmt.Errorf("creating queue dir: %w", err)
 	}
 	return &Queue{path: p}, nil
+}
+
+func LedgerPath(workspaceID string) (string, error) {
+	if strings.TrimSpace(workspaceID) == "" {
+		return "", fmt.Errorf("workspace_id is required")
+	}
+	return filepath.Join(attributionlocal.AttributionRootDir(), "workspaces", workspaceID, "upload-ledger.jsonl"), nil
+}
+
+func AppendLedger(workspaceID string, rec LedgerRecord) error {
+	p, err := LedgerPath(workspaceID)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+		return fmt.Errorf("creating ledger dir: %w", err)
+	}
+	f, err := os.OpenFile(p, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		return fmt.Errorf("open ledger for append: %w", err)
+	}
+	defer f.Close()
+	if rec.Version == 0 {
+		rec.Version = 1
+	}
+	b, err := json.Marshal(rec)
+	if err != nil {
+		return fmt.Errorf("marshal ledger record: %w", err)
+	}
+	if _, err := f.Write(append(b, '\n')); err != nil {
+		return fmt.Errorf("append ledger record: %w", err)
+	}
+	return nil
+}
+
+func ReadLedger(workspaceID string) ([]LedgerRecord, error) {
+	p, err := LedgerPath(workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	f, err := os.Open(p)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("open ledger: %w", err)
+	}
+	defer f.Close()
+
+	var out []LedgerRecord
+	r := bufio.NewReaderSize(f, 64*1024)
+	for {
+		line, err := r.ReadBytes('\n')
+		if err != nil && !errors.Is(err, io.EOF) {
+			return nil, fmt.Errorf("read ledger line: %w", err)
+		}
+		line = bytes.TrimSpace(line)
+		if len(line) == 0 {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			continue
+		}
+		var rec LedgerRecord
+		if err := json.Unmarshal(line, &rec); err != nil {
+			return nil, fmt.Errorf("parse ledger line: %w", err)
+		}
+		out = append(out, rec)
+		if errors.Is(err, io.EOF) {
+			break
+		}
+	}
+	return out, nil
 }
 
 func (q *Queue) Path() string {

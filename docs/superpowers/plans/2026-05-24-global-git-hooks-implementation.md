@@ -1123,6 +1123,8 @@ git -c core.hooksPath=/dev/null commit -m "feat(ae-cli): add hook repo identity 
 
 ## Task 4: Local State Root, Cache, Observed Repos, Registry, and Ledger
 
+Status: Completed in this branch. Implementation intentionally did not add a test that creates `~/.ai-efficiency`; that older step conflicted with this task's active contract that tests must not read or write the old state root. Coverage now asserts the active `~/.ae-cli/state/attribution` root and verifies the Task 4 implementation slice has no old-root references.
+
 **Files:**
 - Create: `ae-cli/internal/clistate/state.go`
 - Create: `ae-cli/internal/hookstate/context.go`
@@ -1138,7 +1140,7 @@ git -c core.hooksPath=/dev/null commit -m "feat(ae-cli): add hook repo identity 
 - Test: `ae-cli/internal/attributionlocal/sync_test.go`
 - Test: `ae-cli/internal/hooks/queue_test.go`
 
-- [ ] **Step 1: Add CLI state root helper**
+- [x] **Step 1: Add CLI state root helper**
 
 Create `ae-cli/internal/clistate/state.go`:
 
@@ -1197,7 +1199,7 @@ func LoadJSON(path string, dest any) error {
 }
 ```
 
-- [ ] **Step 2: Move attribution root without fallback**
+- [x] **Step 2: Move attribution root without fallback**
 
 In `ae-cli/internal/attributionlocal/state.go`, replace implementation with:
 
@@ -1216,7 +1218,7 @@ var LoadJSON = clistate.LoadJSON
 
 Do not read or migrate `~/.ai-efficiency`. Remove `migrateLegacyWorkspaceSpool` calls in `sync.go` and delete `legacyGlobalSpoolPath` / `migrateLegacyWorkspaceSpool` functions.
 
-- [ ] **Step 3: Update tests that asserted old state root**
+- [x] **Step 3: Update tests that asserted old state root**
 
 In `ae-cli/internal/attributionlocal/sync_test.go`, update paths to expect:
 
@@ -1247,7 +1249,7 @@ func TestRunForWorkspaceDoesNotReadOldAiEfficiencyRoot(t *testing.T) {
 }
 ```
 
-- [ ] **Step 4: Add context binding types and tests**
+- [x] **Step 4: Add context binding types and tests**
 
 Create `ae-cli/internal/hookstate/context.go`:
 
@@ -1321,7 +1323,7 @@ func TestContextCacheKeyIncludesServerSubjectAndRepo(t *testing.T) {
 }
 ```
 
-- [ ] **Step 5: Add eligibility cache**
+- [x] **Step 5: Add eligibility cache**
 
 Create `ae-cli/internal/hookstate/eligibility.go` with records:
 
@@ -1372,7 +1374,7 @@ Rules in code:
 - expired entries are misses
 - mismatched `server_url`, `auth_subject`, or `repo_key` are misses because the key differs and record fields are rechecked
 
-- [ ] **Step 6: Add observed repo and installation registry**
+- [x] **Step 6: Add observed repo and installation registry**
 
 Create `ae-cli/internal/hookstate/observed.go` with:
 
@@ -1422,7 +1424,7 @@ Implement upsert/disable matching rules exactly:
 - worktree repo identity: `mode + git_dir + config_scope + hooks_path`
 - local repo identity: `mode + git_common_dir + config_scope + hooks_path`
 
-- [ ] **Step 7: Add upload ledger skeleton**
+- [x] **Step 7: Add upload ledger skeleton**
 
 In `ae-cli/internal/hooks/queue.go`, add:
 
@@ -1463,7 +1465,7 @@ func ReadLedger(workspaceID string) ([]LedgerRecord, error)
 
 Do not include raw payloads or local file paths in ledger structs.
 
-- [ ] **Step 8: Add and pass state package tests**
+- [x] **Step 8: Add and pass state package tests**
 
 Tests must cover:
 
@@ -1482,7 +1484,7 @@ go test ./internal/clistate ./internal/hookstate ./internal/attributionlocal ./i
 
 Expected: PASS.
 
-- [ ] **Step 9: Commit state slice**
+- [x] **Step 9: Commit state slice**
 
 ```bash
 git add ae-cli/internal/clistate ae-cli/internal/hookstate ae-cli/internal/attributionlocal ae-cli/internal/hooks/queue.go ae-cli/internal/hooks/queue_test.go

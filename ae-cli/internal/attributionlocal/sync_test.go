@@ -198,33 +198,3 @@ func TestSync_RunForWorkspaceSpoolsNewEventsWhenUploadFails(t *testing.T) {
 		t.Fatalf("expected scan state to be persisted after spooling, stat err=%v", err)
 	}
 }
-
-func TestSync_RunForWorkspaceIgnoresLegacyGlobalSpoolFromOtherWorkspace(t *testing.T) {
-	fixture := buildAttributionFixture(t)
-
-	legacySpoolPath := filepath.Join(AttributionRootDir(), "spool.json")
-	legacyPayload := []LocalToolUsageEvent{{
-		Tool:            "codex",
-		WorkspaceID:     "ws-other",
-		ToolSessionID:   "other-sess",
-		ToolEventID:     "other-event",
-		DedupeKey:       "legacy-other-workspace",
-		UsageUnit:       UsageUnitToken,
-		RequestCount:    1,
-		ObservedStartAt: jsonTime("2026-05-13T10:00:00Z"),
-		ObservedEndAt:   jsonTime("2026-05-13T10:00:01Z"),
-	}}
-	if err := SaveJSON(legacySpoolPath, legacyPayload); err != nil {
-		t.Fatalf("SaveJSON(legacy spool): %v", err)
-	}
-
-	engine := &SyncEngine{
-		Scanner: NewScanner(),
-		Client: &syncBackendClientStub{
-			failOn: "legacy-other-workspace",
-		},
-	}
-	if err := engine.RunForWorkspace(context.Background(), fixture.WorkspaceRoot); err != nil {
-		t.Fatalf("RunForWorkspace should ignore unrelated legacy spool entries, got: %v", err)
-	}
-}
