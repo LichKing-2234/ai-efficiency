@@ -735,7 +735,7 @@ git -c core.hooksPath=/dev/null commit -m "feat(backend): bind hook ingest by re
 - Test: `ae-cli/cmd/login_test.go`
 - Test: `ae-cli/cmd/root_test.go`
 
-- [ ] **Step 1: Write failing client tests for new API and `repo_config_id` payloads**
+- [x] **Step 1: Write failing client tests for new API and `repo_config_id` payloads**
 
 Append to `ae-cli/internal/client/client_test.go`:
 
@@ -840,7 +840,7 @@ func TestManagedPayloadsIncludeRepoConfigID(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Implement client structs and methods**
+- [x] **Step 2: Implement client structs and methods**
 
 In `ae-cli/internal/client/client.go`, add fields:
 
@@ -945,7 +945,7 @@ func (c *Client) postJSON(ctx context.Context, path string, in any, out any) err
 }
 ```
 
-- [ ] **Step 3: Add CLI repo identity helper and tests**
+- [x] **Step 3: Add CLI repo identity helper and tests**
 
 Create `ae-cli/internal/repoidentity/identity_test.go`:
 
@@ -1000,7 +1000,7 @@ func Derive(remoteURL string) (Identity, error)
 
 Use the same normalization rules and test cases as backend. Do not import backend code into `ae-cli`.
 
-- [ ] **Step 4: Add stable auth subject support**
+- [x] **Step 4: Add stable auth subject support**
 
 In `ae-cli/internal/auth/token.go`, extend `TokenFile`:
 
@@ -1051,7 +1051,7 @@ func (t *TokenFile) StableAuthSubject() string {
 
 Update imports with `encoding/base64` and `strings`.
 
-- [ ] **Step 5: Write and pass auth subject tests**
+- [x] **Step 5: Write and pass auth subject tests**
 
 Add to `ae-cli/internal/auth/token_test.go`:
 
@@ -1076,7 +1076,7 @@ Run: `cd ae-cli && go test ./internal/auth -run 'Subject|Token' -count=1`
 
 Expected: PASS.
 
-- [ ] **Step 6: Persist subject during login and refresh**
+- [x] **Step 6: Persist subject during login and refresh**
 
 In `ae-cli/cmd/login.go`, when constructing `auth.TokenFile`, set:
 
@@ -1103,7 +1103,7 @@ func firstNonEmpty(values ...string) string {
 }
 ```
 
-- [ ] **Step 7: Run CLI client and auth tests**
+- [x] **Step 7: Run CLI client and auth tests**
 
 Run:
 
@@ -1114,7 +1114,7 @@ go test ./internal/client ./internal/repoidentity ./internal/auth ./cmd -run 'Re
 
 Expected: PASS.
 
-- [ ] **Step 8: Commit client and context slice**
+- [x] **Step 8: Commit client and context slice**
 
 ```bash
 git add ae-cli/internal/client/client.go ae-cli/internal/client/client_test.go ae-cli/internal/repoidentity ae-cli/internal/auth/token.go ae-cli/internal/auth/token_test.go ae-cli/cmd/login.go ae-cli/cmd/root.go ae-cli/cmd/login_test.go ae-cli/cmd/root_test.go
