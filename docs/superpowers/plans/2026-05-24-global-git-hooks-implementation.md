@@ -2276,7 +2276,7 @@ bash test/install-test.sh
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit installer slice**
+- [x] **Step 6: Commit installer slice**
 
 ```bash
 git add ae-cli/install.sh ae-cli/install.ps1 ae-cli/test/install-test.sh ae-cli/internal/hooks/install.go ae-cli/internal/hooks/install_test.go ae-cli/cmd/hooks.go ae-cli/cmd/hooks_test.go
@@ -2290,7 +2290,7 @@ git -c core.hooksPath=/dev/null commit -m "feat(ae-cli): refresh managed hooks a
 - Modify: `ae-cli/README.md`
 - Optional modify: `docs/ae-cli-hook-attribution-flow.md`
 
-- [ ] **Step 1: Update architecture after code is in place**
+- [x] **Step 1: Update architecture after code is in place**
 
 In `docs/architecture.md`, update only current-state sections:
 
@@ -2303,7 +2303,7 @@ In `docs/architecture.md`, update only current-state sections:
 - checkpoint, rewrite, and managed tool usage payloads carry `repo_config_id`
 - no active `.ae` workspace metadata in hook flow
 
-- [ ] **Step 2: Update CLI README examples**
+- [x] **Step 2: Update CLI README examples**
 
 In `ae-cli/README.md`, add examples:
 
@@ -2324,7 +2324,7 @@ Document ownership clearly:
 - official binary path is `~/.local/bin/ae-cli`
 - `AE_CLI_BIN` is an advanced override
 
-- [ ] **Step 3: Run documentation checks**
+- [x] **Step 3: Run documentation checks**
 
 Run:
 
