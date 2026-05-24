@@ -73,7 +73,7 @@ Create or modify these files. Keep package boundaries focused; do not move unrel
 - Modify: `backend/internal/handler/router.go`
 - Test: `backend/internal/handler/repo_eligibility_test.go`
 
-- [ ] **Step 1: Write failing HTTP tests for resolve eligibility**
+- [x] **Step 1: Write failing HTTP tests for resolve eligibility**
 
 Add `backend/internal/handler/repo_eligibility_test.go`:
 
@@ -177,13 +177,13 @@ func TestResolveRemoteWebhookFailedIsEligible(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run resolve tests and verify failure**
+- [x] **Step 2: Run resolve tests and verify failure**
 
 Run: `cd backend && go test ./internal/handler -run 'TestResolveRemote' -count=1`
 
 Expected: FAIL with `404` or missing `/api/v1/repos/resolve-remote`.
 
-- [ ] **Step 3: Add read-only eligibility service**
+- [x] **Step 3: Add read-only eligibility service**
 
 Create `backend/internal/repo/eligibility.go`:
 
@@ -298,7 +298,7 @@ func (s *Service) eligibilityForRepo(rc *ent.RepoConfig) *EligibilityResult {
 }
 ```
 
-- [ ] **Step 4: Wire HTTP handlers and routes**
+- [x] **Step 4: Wire HTTP handlers and routes**
 
 In `backend/internal/handler/repo.go`, add:
 
@@ -347,13 +347,13 @@ repoGroup.POST("/resolve-remote", repoHandler.ResolveRemote)
 repoGroup.POST("/hook-eligible", repoHandler.HookEligible)
 ```
 
-- [ ] **Step 5: Run resolve tests and verify pass**
+- [x] **Step 5: Run resolve tests and verify pass**
 
 Run: `cd backend && go test ./internal/handler -run 'TestResolveRemote' -count=1`
 
 Expected: PASS.
 
-- [ ] **Step 6: Write failing batch eligibility tests**
+- [x] **Step 6: Write failing batch eligibility tests**
 
 Append to `backend/internal/handler/repo_eligibility_test.go`:
 
@@ -398,13 +398,13 @@ func TestHookEligibleReturnsOnlyRequestedRepos(t *testing.T) {
 }
 ```
 
-- [ ] **Step 7: Run batch eligibility tests**
+- [x] **Step 7: Run batch eligibility tests**
 
 Run: `cd backend && go test ./internal/handler -run 'TestHookEligible|TestResolveRemote' -count=1`
 
 Expected: PASS.
 
-- [ ] **Step 8: Commit backend eligibility slice**
+- [x] **Step 8: Commit backend eligibility slice**
 
 ```bash
 git add backend/internal/repo/eligibility.go backend/internal/handler/repo.go backend/internal/handler/router.go backend/internal/handler/repo_eligibility_test.go

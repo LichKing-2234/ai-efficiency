@@ -27,6 +27,10 @@ type ensureRemoteRequest struct {
 	Branch    string `json:"branch"`
 }
 
+type hookEligibleRequest struct {
+	Repos []repo.HookEligibleRepoRequest `json:"repos" binding:"required"`
+}
+
 // NewRepoHandler creates a new repo handler.
 func NewRepoHandler(repoService *repo.Service) *RepoHandler {
 	return &RepoHandler{repoService: repoService}
@@ -129,6 +133,44 @@ func (h *RepoHandler) EnsureRemote(c *gin.Context) {
 	}
 
 	pkg.Success(c, buildRepoResponse(loaded))
+}
+
+// ResolveRemote handles POST /api/v1/repos/resolve-remote.
+func (h *RepoHandler) ResolveRemote(c *gin.Context) {
+	var req repo.ResolveRemoteRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pkg.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	result, err := h.repoService.ResolveRemoteEligibility(c.Request.Context(), req)
+	if err != nil {
+		pkg.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	pkg.Success(c, result)
+}
+
+// HookEligible handles POST /api/v1/repos/hook-eligible.
+func (h *RepoHandler) HookEligible(c *gin.Context) {
+	var req hookEligibleRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pkg.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	eligible, ineligible, err := h.repoService.BatchHookEligibility(c.Request.Context(), req.Repos)
+	if err != nil {
+		pkg.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	pkg.Success(c, gin.H{
+		"repos":      eligible,
+		"ineligible": ineligible,
+		"version":    repo.EligibilityVersion,
+	})
 }
 
 // Get handles GET /api/v1/repos/:id
