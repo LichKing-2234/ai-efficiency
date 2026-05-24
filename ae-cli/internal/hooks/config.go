@@ -62,7 +62,10 @@ func InspectEffectiveHookConfig(cwd string, gitCtx *GitContext) (*EffectiveHookC
 		}
 	}
 	localPath := gitConfigGet(cwd, "--local", "--get", "core.hooksPath")
-	worktreePath := gitConfigGet(cwd, "--worktree", "--get", "core.hooksPath")
+	worktreePath := ""
+	if strings.EqualFold(gitConfigGet(cwd, "--bool", "extensions.worktreeConfig"), "true") {
+		worktreePath = gitConfigGet(cwd, "--worktree", "--get", "core.hooksPath")
+	}
 	globalPath := gitConfigGet(cwd, "--global", "--get", "core.hooksPath")
 	effective := gitConfigGet(cwd, "--get", "core.hooksPath")
 	scope := ConfigScope("")

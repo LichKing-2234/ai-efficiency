@@ -28,19 +28,22 @@ type StatusOptions struct {
 }
 
 type Status struct {
-	GlobalEnabled          bool
-	RepoEnabled            bool
-	EffectiveMode          HookMode
-	EffectiveScope         ConfigScope
-	HooksPath              string
-	TemplateVersion        int
-	TemplateStale          bool
-	BinaryPath             string
-	BinaryOverride         bool
-	DefaultExecutableHooks []string
-	EligibilityCache       string
-	ObservedRepo           string
-	UploadGroups           []UploadGroup
+	GlobalEnabled           bool
+	RepoEnabled             bool
+	EffectiveMode           HookMode
+	EffectiveScope          ConfigScope
+	HooksPath               string
+	TemplateVersion         int
+	CurrentTemplateVersion  int
+	TemplateStale           bool
+	BinaryPath              string
+	BinaryOverride          bool
+	DefaultExecutableHooks  []string
+	DefaultHooksDisposition string
+	EligibilityCache        string
+	ObservedRepo            string
+	ContextFingerprint      string
+	UploadGroups            []UploadGroup
 }
 
 type UploadGroup struct {
@@ -55,6 +58,11 @@ type UploadGroup struct {
 	SkippedCount         int
 	LastSuccessfulUpload *time.Time
 	LastError            string
+}
+
+type DisableRepoResult struct {
+	DisabledScopes []ConfigScope
+	Reconciled     bool
 }
 
 type repoResolver interface {
@@ -113,7 +121,7 @@ func EnableRepo(opts InstallOptions) error {
 		if current.HooksPath != "" && !IsAEManagedPath(current.HooksPath, gitCtx) {
 			return fmt.Errorf("core.hooksPath already set to %s; use --force to overwrite", current.HooksPath)
 		}
-		if len(current.DefaultExecutableHooks) > 0 {
+		if current.HooksPath == "" && len(current.DefaultExecutableHooks) > 0 {
 			return fmt.Errorf("executable default hooks exist (%s); use --force to overwrite", strings.Join(current.DefaultExecutableHooks, ", "))
 		}
 	}
@@ -163,26 +171,37 @@ func DisableGlobal() error {
 }
 
 func DisableRepo(cwd string) error {
+	_, err := DisableRepoWithResult(cwd)
+	return err
+}
+
+func DisableRepoWithResult(cwd string) (DisableRepoResult, error) {
+	var result DisableRepoResult
 	gitCtx, err := DetectGitContext(cwd)
 	if err != nil {
-		return err
-	}
-	status, err := InspectEffectiveHookConfig(cwd, gitCtx)
-	if err != nil {
-		return err
-	}
-	if status.Mode == HookModeAERepo {
-		if err := UnsetRepoHooksPath(cwd, status.Scope); err != nil {
-			return err
-		}
+		return result, err
 	}
 	registry, err := hookstate.LoadInstallations()
 	if err != nil {
-		return err
+		return result, err
 	}
 	now := time.Now()
-	registry.Disable(hookstate.InstallationRecord{Mode: string(scopeToMode(status.Scope)), GitDir: gitCtx.GitDir, GitCommonDir: gitCtx.GitCommonDir, ConfigScope: string(status.Scope), HooksPath: status.HooksPath}, now)
-	return registry.Save()
+	for {
+		status, err := InspectEffectiveHookConfig(cwd, gitCtx)
+		if err != nil {
+			return result, err
+		}
+		if status.Mode != HookModeAERepo || (status.Scope != ConfigScopeLocal && status.Scope != ConfigScopeWorktree) {
+			break
+		}
+		if err := UnsetRepoHooksPath(cwd, status.Scope); err != nil {
+			return result, err
+		}
+		result.DisabledScopes = append(result.DisabledScopes, status.Scope)
+		registry.Disable(repoInstallationMatch(gitCtx, status.Scope, status.HooksPath), now)
+	}
+	result.Reconciled = reconcileInactiveRepoInstallations(registry, gitCtx, cwd, now)
+	return result, registry.Save()
 }
 
 func StatusForRepo(opts StatusOptions) (*Status, error) {
@@ -195,16 +214,19 @@ func StatusForRepo(opts StatusOptions) (*Status, error) {
 		return nil, err
 	}
 	status := &Status{
-		GlobalEnabled:          IsAEManagedPath(cfg.GlobalHooksPath, gitCtx),
-		RepoEnabled:            cfg.Mode == HookModeAERepo,
-		EffectiveMode:          cfg.Mode,
-		EffectiveScope:         cfg.Scope,
-		HooksPath:              cfg.HooksPath,
-		DefaultExecutableHooks: cfg.DefaultExecutableHooks,
-		BinaryPath:             bestBinaryPath(),
-		BinaryOverride:         strings.TrimSpace(os.Getenv("AE_CLI_BIN")) != "",
-		EligibilityCache:       "missing",
-		ObservedRepo:           "missing",
+		GlobalEnabled:           IsAEManagedPath(cfg.GlobalHooksPath, gitCtx),
+		RepoEnabled:             cfg.Mode == HookModeAERepo,
+		EffectiveMode:           cfg.Mode,
+		EffectiveScope:          cfg.Scope,
+		HooksPath:               cfg.HooksPath,
+		CurrentTemplateVersion:  hookstate.CurrentHookTemplateVersion,
+		DefaultExecutableHooks:  cfg.DefaultExecutableHooks,
+		DefaultHooksDisposition: defaultHooksDisposition(cfg),
+		BinaryPath:              bestBinaryPath(),
+		BinaryOverride:          strings.TrimSpace(os.Getenv("AE_CLI_BIN")) != "",
+		EligibilityCache:        "missing",
+		ObservedRepo:            "missing",
+		ContextFingerprint:      contextFingerprint(opts.Binding),
 	}
 	status.applyCurrentHookState(opts.Binding, gitCtx)
 	if cfg.HooksPath != "" {
@@ -372,6 +394,14 @@ func RefreshCurrent(ctx context.Context, c repoResolver, cwd string, binding hoo
 	}
 	now := time.Now()
 	binding.RepoKey = firstNonEmpty(binding.RepoKey, gitCtx.RepoKey)
+	observed, err := hookstate.LoadObservedRepos()
+	if err != nil {
+		return err
+	}
+	observed.Observe(binding, gitCtx.RemoteURL, now)
+	if err := observed.Save(); err != nil {
+		return err
+	}
 	if resp != nil && resp.Eligible {
 		cache.PutPositive(binding, *resp, now)
 	} else {
@@ -385,10 +415,71 @@ func RefreshCurrent(ctx context.Context, c repoResolver, cwd string, binding hoo
 }
 
 func RefreshObserved(ctx context.Context, c batchResolver, binding hookstate.Context) error {
-	_ = ctx
-	_ = c
-	_ = binding
-	return nil
+	if c == nil {
+		return nil
+	}
+	n := binding.Normalized()
+	if strings.TrimSpace(n.ServerURL) == "" || strings.TrimSpace(n.AuthSubject) == "" {
+		return fmt.Errorf("server_url and auth_subject are required")
+	}
+	observed, err := hookstate.LoadObservedRepos()
+	if err != nil {
+		return err
+	}
+	var repos []client.HookEligibleRepoRequest
+	for _, rec := range observed.Repos {
+		if hookstate.NormalizeServerURL(rec.ServerURL) != n.ServerURL || strings.TrimSpace(rec.AuthSubject) != n.AuthSubject {
+			continue
+		}
+		repoKey := strings.TrimSpace(rec.RepoKey)
+		if repoKey == "" {
+			continue
+		}
+		repos = append(repos, client.HookEligibleRepoRequest{
+			RepoKey:   repoKey,
+			RemoteURL: strings.TrimSpace(rec.RemoteURL),
+		})
+	}
+	sort.Slice(repos, func(i, j int) bool {
+		return repos[i].RepoKey < repos[j].RepoKey
+	})
+	if len(repos) == 0 {
+		return nil
+	}
+	resp, err := c.BatchHookEligible(ctx, repos)
+	if err != nil {
+		return err
+	}
+	cache, err := hookstate.LoadEligibilityCache()
+	if err != nil {
+		return err
+	}
+	now := time.Now()
+	remoteByRepo := map[string]string{}
+	for _, repo := range repos {
+		remoteByRepo[repo.RepoKey] = repo.RemoteURL
+	}
+	if resp != nil {
+		for _, item := range resp.Repos {
+			repoKey := strings.TrimSpace(item.RepoKey)
+			if repoKey == "" {
+				continue
+			}
+			cache.PutPositive(hookstate.Context{ServerURL: n.ServerURL, AuthSubject: n.AuthSubject, RepoKey: repoKey}, item, now)
+		}
+		for _, item := range resp.Ineligible {
+			repoKey := strings.TrimSpace(item.RepoKey)
+			if repoKey == "" {
+				continue
+			}
+			reason := strings.TrimSpace(item.Reason)
+			if reason == "" {
+				reason = "not_found"
+			}
+			cache.PutNegative(hookstate.Context{ServerURL: n.ServerURL, AuthSubject: n.AuthSubject, RepoKey: repoKey}, remoteByRepo[repoKey], reason, now)
+		}
+	}
+	return cache.Save()
 }
 
 func RefreshManagedInstallations(generatorVersion string, out io.Writer) error {
@@ -418,6 +509,12 @@ func RefreshManagedInstallations(generatorVersion string, out io.Writer) error {
 			continue
 		}
 		seen[key] = true
+		if isInaccessibleRepoLocalInstallation(rec) {
+			if out != nil {
+				fmt.Fprintf(out, "skipped %s: repository location unavailable\n", rec.HooksPath)
+			}
+			continue
+		}
 		if err := WriteManagedScripts(rec.HooksPath, generatorVersion); err != nil {
 			return err
 		}
@@ -429,6 +526,81 @@ func RefreshManagedInstallations(generatorVersion string, out io.Writer) error {
 		}
 	}
 	return registry.Save()
+}
+
+func repoInstallationMatch(gitCtx *GitContext, scope ConfigScope, hooksPath string) hookstate.InstallationRecord {
+	return hookstate.InstallationRecord{
+		Mode:         string(scopeToMode(scope)),
+		GitDir:       gitCtx.GitDir,
+		GitCommonDir: gitCtx.GitCommonDir,
+		ConfigScope:  string(scope),
+		HooksPath:    hooksPath,
+	}
+}
+
+func reconcileInactiveRepoInstallations(registry *hookstate.Installations, gitCtx *GitContext, cwd string, now time.Time) bool {
+	if registry == nil || gitCtx == nil {
+		return false
+	}
+	changed := false
+	localPath := gitConfigGet(cwd, "--local", "--get", "core.hooksPath")
+	worktreePath := ""
+	if strings.EqualFold(gitConfigGet(cwd, "--bool", "extensions.worktreeConfig"), "true") {
+		worktreePath = gitConfigGet(cwd, "--worktree", "--get", "core.hooksPath")
+	}
+	for _, rec := range registry.Records {
+		if !rec.Enabled || rec.ConfigScope == "" || rec.HooksPath == "" {
+			continue
+		}
+		switch rec.ConfigScope {
+		case string(ConfigScopeLocal):
+			if filepath.Clean(rec.GitCommonDir) != filepath.Clean(gitCtx.GitCommonDir) {
+				continue
+			}
+			if filepath.Clean(strings.TrimSpace(localPath)) == filepath.Clean(rec.HooksPath) {
+				continue
+			}
+			if registry.Disable(rec, now) {
+				changed = true
+			}
+		case string(ConfigScopeWorktree):
+			if filepath.Clean(rec.GitDir) != filepath.Clean(gitCtx.GitDir) {
+				continue
+			}
+			if filepath.Clean(strings.TrimSpace(worktreePath)) == filepath.Clean(rec.HooksPath) {
+				continue
+			}
+			if registry.Disable(rec, now) {
+				changed = true
+			}
+		}
+	}
+	return changed
+}
+
+func isInaccessibleRepoLocalInstallation(rec hookstate.InstallationRecord) bool {
+	switch strings.TrimSpace(rec.Mode) {
+	case "global":
+		return false
+	case "local", "worktree":
+	default:
+		return false
+	}
+	if strings.TrimSpace(rec.GitCommonDir) == "" {
+		return true
+	}
+	if _, err := os.Stat(rec.GitCommonDir); err != nil {
+		return true
+	}
+	if strings.TrimSpace(rec.ConfigScope) == string(ConfigScopeWorktree) {
+		if strings.TrimSpace(rec.GitDir) == "" {
+			return true
+		}
+		if _, err := os.Stat(rec.GitDir); err != nil {
+			return true
+		}
+	}
+	return false
 }
 
 // InstallSharedHooks is retained for existing init call sites. It now uses the
@@ -456,6 +628,28 @@ func bestBinaryPath() string {
 		}
 	}
 	return "ae-cli"
+}
+
+func defaultHooksDisposition(cfg *EffectiveHookConfig) string {
+	if cfg == nil || len(cfg.DefaultExecutableHooks) == 0 {
+		return "none"
+	}
+	if cfg.Mode == HookModeGitDefault {
+		return "effective"
+	}
+	return "bypassed"
+}
+
+func contextFingerprint(ctx hookstate.Context) string {
+	n := ctx.Normalized()
+	if !n.Stable() {
+		return "unstable"
+	}
+	key := n.CacheKey()
+	if len(key) > 12 {
+		return key[:12]
+	}
+	return key
 }
 
 func firstNonEmpty(values ...string) string {

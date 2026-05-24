@@ -99,18 +99,27 @@ func printHookStatus(out io.Writer, status *hooks.Status) {
 		if status.TemplateStale {
 			template = "stale"
 		}
+		template = fmt.Sprintf("%s (installed=%d current=%d)", template, status.TemplateVersion, status.CurrentTemplateVersion)
 	}
 	override := "unset"
 	if status.BinaryOverride {
 		override = "set"
 	}
+	defaultHooks := "none"
+	if len(status.DefaultExecutableHooks) > 0 {
+		defaultHooks = fmt.Sprintf("%s (%s)", status.DefaultHooksDisposition, strings.Join(status.DefaultExecutableHooks, ", "))
+	}
 	fmt.Fprintf(out, "Hook status\n")
 	fmt.Fprintf(out, "  Global:        %s\n", global)
 	fmt.Fprintf(out, "  Repo-local:    %s\n", repo)
 	fmt.Fprintf(out, "  Effective:     %s\n", status.EffectiveMode)
+	fmt.Fprintf(out, "  Scope:         %s\n", status.EffectiveScope)
 	fmt.Fprintf(out, "  Binary:        %s\n", status.BinaryPath)
 	fmt.Fprintf(out, "  AE_CLI_BIN:    %s\n", override)
 	fmt.Fprintf(out, "  Template:      %s\n", template)
+	fmt.Fprintf(out, "  Context:       %s\n", status.ContextFingerprint)
+	fmt.Fprintf(out, "  Observed Repo: %s\n", status.ObservedRepo)
+	fmt.Fprintf(out, "  Default Hooks: %s\n", defaultHooks)
 	fmt.Fprintf(out, "  Eligibility:   %s\n", status.EligibilityCache)
 	if len(status.UploadGroups) > 0 {
 		fmt.Fprintf(out, "Uploads:\n")

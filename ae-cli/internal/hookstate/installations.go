@@ -120,10 +120,10 @@ func (i *Installations) ensure() {
 func normalizeInstallation(rec InstallationRecord) InstallationRecord {
 	rec.Mode = strings.TrimSpace(rec.Mode)
 	rec.RepoKey = strings.TrimSpace(rec.RepoKey)
-	rec.GitDir = filepath.Clean(strings.TrimSpace(rec.GitDir))
-	rec.GitCommonDir = filepath.Clean(strings.TrimSpace(rec.GitCommonDir))
+	rec.GitDir = cleanPhysicalPath(rec.GitDir)
+	rec.GitCommonDir = cleanPhysicalPath(rec.GitCommonDir)
 	rec.ConfigScope = strings.TrimSpace(rec.ConfigScope)
-	rec.HooksPath = filepath.Clean(strings.TrimSpace(rec.HooksPath))
+	rec.HooksPath = cleanPhysicalPath(rec.HooksPath)
 	return rec
 }
 
@@ -137,4 +137,21 @@ func installationIdentity(rec InstallationRecord) string {
 	default:
 		return "local:" + rec.Mode + "\x1f" + rec.GitCommonDir + "\x1f" + rec.ConfigScope + "\x1f" + rec.HooksPath
 	}
+}
+
+func cleanPhysicalPath(path string) string {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return ""
+	}
+	path = filepath.Clean(path)
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		return filepath.Clean(resolved)
+	}
+	dir := filepath.Dir(path)
+	base := filepath.Base(path)
+	if resolvedDir, err := filepath.EvalSymlinks(dir); err == nil {
+		return filepath.Clean(filepath.Join(resolvedDir, base))
+	}
+	return path
 }

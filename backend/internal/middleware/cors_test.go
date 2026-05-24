@@ -22,6 +22,24 @@ func TestCORSWithEmptyOrigins(t *testing.T) {
 	}
 }
 
+func TestCORSWithBlankOriginsFallsBackToDefaults(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.Use(CORS([]string{""}))
+	r.GET("/test", func(c *gin.Context) {
+		c.String(http.StatusOK, "ok")
+	})
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/test", nil)
+	req.Header.Set("Origin", "http://localhost:5173")
+	r.ServeHTTP(w, req)
+
+	if w.Header().Get("Access-Control-Allow-Origin") != "http://localhost:5173" {
+		t.Errorf("Access-Control-Allow-Origin = %q, want default origin", w.Header().Get("Access-Control-Allow-Origin"))
+	}
+}
+
 func TestCORSWithCustomOrigins(t *testing.T) {
 	handler := CORS([]string{"https://example.com", "https://app.example.com"})
 	if handler == nil {
@@ -69,5 +87,23 @@ func TestCORSMiddlewareAllowsRequests(t *testing.T) {
 	}
 	if w.Body.String() != "ok" {
 		t.Errorf("body = %q, want %q", w.Body.String(), "ok")
+	}
+}
+
+func TestCORSMiddlewareAllowsLoopbackVariantForConfiguredFrontend(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.Use(CORS([]string{"http://localhost:19084"}))
+	r.GET("/test", func(c *gin.Context) {
+		c.String(http.StatusOK, "ok")
+	})
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/test", nil)
+	req.Header.Set("Origin", "http://127.0.0.1:19084")
+	r.ServeHTTP(w, req)
+
+	if w.Header().Get("Access-Control-Allow-Origin") != "http://127.0.0.1:19084" {
+		t.Errorf("Access-Control-Allow-Origin = %q, want loopback variant", w.Header().Get("Access-Control-Allow-Origin"))
 	}
 }

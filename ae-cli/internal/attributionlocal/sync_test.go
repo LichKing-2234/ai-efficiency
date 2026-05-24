@@ -2,6 +2,7 @@ package attributionlocal
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -289,5 +290,70 @@ func TestSync_RunSkipsSpooledEventsFromDifferentBinding(t *testing.T) {
 	}
 	if len(remaining) != 0 {
 		t.Fatalf("remaining spool = %+v, want stale mismatched event dropped", remaining)
+	}
+}
+
+func TestSync_RunWritesSkippedLedgerForMismatchedSpooledEvents(t *testing.T) {
+	fixture := buildAttributionFixture(t)
+	client := &syncBackendClientStub{}
+	workspaceID, err := mustWorkspaceID(fixture.WorkspaceRoot)
+	if err != nil {
+		t.Fatalf("mustWorkspaceID: %v", err)
+	}
+	spoolPath := filepath.Join(AttributionRootDir(), "workspaces", workspaceID, "spool.json")
+	if err := SaveJSON(spoolPath, []LocalToolUsageEvent{
+		{
+			Tool:            "codex",
+			WorkspaceID:     workspaceID,
+			ServerURL:       "https://ae.example.com",
+			AuthSubject:     "user:123",
+			RepoConfigID:    123,
+			RepoKey:         "github.com/acme/repo",
+			ManagedUpload:   true,
+			ToolSessionID:   "conv-1",
+			ToolEventID:     "stale",
+			DedupeKey:       "stale-binding",
+			UsageUnit:       UsageUnitToken,
+			RequestCount:    1,
+			ObservedStartAt: jsonTime("2026-05-13T10:00:00Z"),
+			ObservedEndAt:   jsonTime("2026-05-13T10:00:01Z"),
+		},
+	}); err != nil {
+		t.Fatalf("SaveJSON(spool): %v", err)
+	}
+
+	engine := &SyncEngine{
+		Scanner: NewScanner(),
+		Client:  client,
+	}
+	if err := engine.Run(context.Background(), RunOptions{
+		WorkspaceRoot: fixture.WorkspaceRoot,
+		WorkspaceID:   workspaceID,
+		ServerURL:     "https://ae.example.com",
+		AuthSubject:   "user:456",
+		RepoConfigID:  456,
+		RepoKey:       "github.com/acme/other",
+		DurableReplay: true,
+		ManagedUpload: true,
+	}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	ledgerPath := filepath.Join(AttributionRootDir(), "workspaces", workspaceID, "upload-ledger.jsonl")
+	data, err := os.ReadFile(ledgerPath)
+	if err != nil {
+		t.Fatalf("read upload ledger: %v", err)
+	}
+	var rec struct {
+		Kind      string `json:"kind"`
+		DedupeKey string `json:"dedupe_key"`
+		Status    string `json:"status"`
+		LastError string `json:"last_error"`
+	}
+	if err := json.Unmarshal(data, &rec); err != nil {
+		t.Fatalf("parse ledger: %v", err)
+	}
+	if rec.Kind != "tool_usage" || rec.DedupeKey != "stale-binding" || rec.Status != "skipped" || rec.LastError != "context mismatch" {
+		t.Fatalf("ledger = %+v, want skipped tool_usage context mismatch", rec)
 	}
 }

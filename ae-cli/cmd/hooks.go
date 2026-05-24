@@ -53,7 +53,19 @@ var hooksDisableCmd = &cobra.Command{
 		if hooksDisableGlobal {
 			return hooks.DisableGlobal()
 		}
-		return hooks.DisableRepo(".")
+		result, err := hooks.DisableRepoWithResult(".")
+		if err != nil {
+			return err
+		}
+		for _, scope := range result.DisabledScopes {
+			if scope == hooks.ConfigScopeLocal {
+				fmt.Fprintln(cmd.OutOrStdout(), "Disabled repo-local hooks from local Git config; local Git config is shared by linked worktrees for the same common directory.")
+			}
+		}
+		if len(result.DisabledScopes) == 0 && result.Reconciled {
+			fmt.Fprintln(cmd.OutOrStdout(), "Repo-local hook was already inactive; reconciled installation registry.")
+		}
+		return nil
 	},
 }
 

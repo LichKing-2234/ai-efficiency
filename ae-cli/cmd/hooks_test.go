@@ -105,6 +105,59 @@ func TestPrintHookStatusIncludesUploadSummary(t *testing.T) {
 	}
 }
 
+func TestPrintHookStatusIncludesSpecDiagnostics(t *testing.T) {
+	status := &hookspkg.Status{
+		EffectiveMode:           hookspkg.HookModeGitDefault,
+		EffectiveScope:          hookspkg.ConfigScopeLocal,
+		CurrentTemplateVersion:  2,
+		TemplateVersion:         1,
+		TemplateStale:           true,
+		ContextFingerprint:      "abc123",
+		ObservedRepo:            "bound",
+		DefaultExecutableHooks:  []string{"post-commit"},
+		DefaultHooksDisposition: "effective",
+	}
+	var buf bytes.Buffer
+	printHookStatus(&buf, status)
+	output := buf.String()
+	for _, want := range []string{
+		"Scope:         local",
+		"Template:      stale (installed=1 current=2)",
+		"Context:       abc123",
+		"Observed Repo: bound",
+		"Default Hooks: effective (post-commit)",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("output = %q, want %q", output, want)
+		}
+	}
+}
+
+func TestHooksDisableRepoPrintsSharedLocalScopeWarning(t *testing.T) {
+	repo := initRepoWithCommitForCmdTests(t)
+	t.Setenv("HOME", t.TempDir())
+	withWorkingDir(t, repo)
+	if err := hookspkg.EnableRepo(hookspkg.InstallOptions{CWD: repo, Force: true, GeneratorVersion: "test"}); err != nil {
+		t.Fatalf("EnableRepo: %v", err)
+	}
+	hooksDisableGlobal = false
+	hooksDisableRepo = true
+	var buf bytes.Buffer
+	hooksDisableCmd.SetOut(&buf)
+	t.Cleanup(func() {
+		hooksDisableCmd.SetOut(nil)
+		hooksDisableGlobal = false
+		hooksDisableRepo = false
+	})
+
+	if err := hooksDisableCmd.RunE(hooksDisableCmd, nil); err != nil {
+		t.Fatalf("hooks disable --repo: %v", err)
+	}
+	if !strings.Contains(buf.String(), "shared by linked worktrees") {
+		t.Fatalf("output = %q, want shared linked-worktree warning", buf.String())
+	}
+}
+
 func TestHooksRefreshRequiresStableAuthSubject(t *testing.T) {
 	repo := initRepoWithCommitForCmdTests(t)
 	home := t.TempDir()

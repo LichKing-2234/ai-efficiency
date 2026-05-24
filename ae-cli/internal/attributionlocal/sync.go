@@ -2,8 +2,10 @@ package attributionlocal
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/ai-efficiency/ae-cli/internal/client"
 )
@@ -57,6 +59,20 @@ func (e *SyncEngine) replay(ctx context.Context, workspaceRoot string, opts RunO
 	for idx, ev := range spooled {
 		ev = normalizeObservedWindow(ev)
 		if filterByBinding && !eventMatchesRunOptions(ev, opts) {
+			_ = appendToolUsageLedger(opts.WorkspaceID, toolUsageLedgerRecord{
+				Version:      1,
+				Kind:         "tool_usage",
+				DedupeKey:    ev.DedupeKey,
+				ServerURL:    opts.ServerURL,
+				AuthSubject:  opts.AuthSubject,
+				RepoConfigID: opts.RepoConfigID,
+				RepoKey:      opts.RepoKey,
+				WorkspaceID:  opts.WorkspaceID,
+				Status:       "skipped",
+				AttemptCount: 1,
+				AttemptedAt:  time.Now().UTC(),
+				LastError:    "context mismatch",
+			})
 			continue
 		}
 		if err := e.Client.SendToolUsageEvent(ctx, toClientUsageRequest(ev)); err != nil {
@@ -268,6 +284,47 @@ func clearSpooledEvents(path string) error {
 		return err
 	}
 	return nil
+}
+
+type toolUsageLedgerRecord struct {
+	Version      int        `json:"version"`
+	Kind         string     `json:"kind"`
+	DedupeKey    string     `json:"dedupe_key"`
+	ServerURL    string     `json:"server_url"`
+	AuthSubject  string     `json:"auth_subject"`
+	RepoConfigID int        `json:"repo_config_id"`
+	RepoKey      string     `json:"repo_key"`
+	WorkspaceID  string     `json:"workspace_id"`
+	Status       string     `json:"status"`
+	AttemptCount int        `json:"attempt_count"`
+	AttemptedAt  time.Time  `json:"attempted_at"`
+	UploadedAt   *time.Time `json:"uploaded_at,omitempty"`
+	HTTPStatus   int        `json:"http_status,omitempty"`
+	LastError    string     `json:"last_error,omitempty"`
+}
+
+func appendToolUsageLedger(workspaceID string, rec toolUsageLedgerRecord) error {
+	if workspaceID == "" {
+		return nil
+	}
+	path := filepath.Join(AttributionRootDir(), "workspaces", workspaceID, "upload-ledger.jsonl")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	if rec.Version == 0 {
+		rec.Version = 1
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	data, err := json.Marshal(rec)
+	if err != nil {
+		return err
+	}
+	_, err = f.Write(append(data, '\n'))
+	return err
 }
 
 func workspaceStatePaths(workspaceRoot string) (statePath, spoolPath, workspaceID string, err error) {

@@ -59,6 +59,20 @@ var syncCmd = &cobra.Command{
 	},
 }
 
+var syncStatusCmd = &cobra.Command{
+	Use:   "status",
+	Short: "Show local attribution sync status",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		status, err := hooks.StatusForRepo(hooks.StatusOptions{CWD: ".", Uploads: true, Binding: currentHookBinding()})
+		if err != nil {
+			return err
+		}
+		printHookStatus(cmd.OutOrStdout(), status)
+		return nil
+	},
+}
+
 func init() {
+	syncCmd.AddCommand(syncStatusCmd)
 	rootCmd.AddCommand(syncCmd)
 }
