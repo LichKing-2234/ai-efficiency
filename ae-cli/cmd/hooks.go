@@ -88,6 +88,15 @@ var hooksRefreshCmd = &cobra.Command{
 	},
 }
 
+var hooksRefreshInstallationsCmd = &cobra.Command{
+	Use:    "refresh-installations",
+	Short:  "Refresh installed managed hook scripts",
+	Hidden: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return hooks.RefreshManagedInstallations(buildinfo.Version, cmd.ErrOrStderr())
+	},
+}
+
 func init() {
 	hooksEnableCmd.Flags().BoolVar(&hooksEnableGlobal, "global", false, "enable global managed Git hooks")
 	hooksEnableCmd.Flags().BoolVar(&hooksEnableRepo, "repo", false, "enable repo-local managed Git hooks")
@@ -100,6 +109,7 @@ func init() {
 	hooksCmd.AddCommand(hooksDisableCmd)
 	hooksCmd.AddCommand(hooksStatusCmd)
 	hooksCmd.AddCommand(hooksRefreshCmd)
+	hooksCmd.AddCommand(hooksRefreshInstallationsCmd)
 	rootCmd.AddCommand(hooksCmd)
 }
 

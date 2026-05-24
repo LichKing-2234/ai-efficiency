@@ -2,11 +2,13 @@ package hooks
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ai-efficiency/ae-cli/internal/hookstate"
 )
@@ -195,6 +197,53 @@ func TestDisableRepoOnlyRemovesAEManagedRepoPath(t *testing.T) {
 	}
 	if got := gitConfigOptional(t, repo, "--local", "--get", "core.hooksPath"); got != "" {
 		t.Fatalf("local hooksPath = %q, want unset", got)
+	}
+}
+
+func TestRefreshManagedInstallationsRewritesActiveGlobalFromGitConfig(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("GIT_CONFIG_GLOBAL", filepath.Join(home, ".gitconfig"))
+	globalDir := filepath.Join(home, ".ae-cli", "git-hooks")
+	git(t, home, "config", "--global", "core.hooksPath", globalDir)
+
+	if err := RefreshManagedInstallations("test-version", io.Discard); err != nil {
+		t.Fatalf("RefreshManagedInstallations: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(globalDir, "post-commit"))
+	if err != nil {
+		t.Fatalf("read hook: %v", err)
+	}
+	if !strings.Contains(string(data), "template_version=2") {
+		t.Fatalf("stale script: %s", data)
+	}
+}
+
+func TestRefreshManagedInstallationsSkipsDisabledRepoRecords(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	disabledPath := filepath.Join(home, "repo", ".git", "ae-hooks")
+	registry, err := hookstate.LoadInstallations()
+	if err != nil {
+		t.Fatalf("LoadInstallations: %v", err)
+	}
+	registry.Upsert(hookstate.InstallationRecord{
+		Mode:            "repo",
+		GitCommonDir:    filepath.Join(home, "repo", ".git"),
+		ConfigScope:     "local",
+		HooksPath:       disabledPath,
+		Enabled:         false,
+		TemplateVersion: 1,
+		UpdatedAt:       time.Now(),
+	})
+	if err := registry.Save(); err != nil {
+		t.Fatalf("Save registry: %v", err)
+	}
+	if err := RefreshManagedInstallations("test-version", io.Discard); err != nil {
+		t.Fatalf("RefreshManagedInstallations: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(disabledPath, "post-commit")); !os.IsNotExist(err) {
+		t.Fatalf("disabled repo hook should not be rewritten, stat err=%v", err)
 	}
 }
 

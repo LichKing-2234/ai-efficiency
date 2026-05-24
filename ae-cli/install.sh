@@ -250,6 +250,14 @@ EOF
   echo "Wrote CLI config to ${CONFIG_PATH}"
 }
 
+refresh_managed_hooks() {
+  if [[ -x "$TARGET_PATH" ]]; then
+    "$TARGET_PATH" hooks refresh-installations >/dev/null 2>&1 || {
+      echo "Warning: installed ae-cli but failed to refresh managed hook scripts." >&2
+    }
+  fi
+}
+
 update_existing_cli_config() {
   local existing="$1"
   local tmp="${existing}.tmp.$$"
@@ -315,6 +323,7 @@ main() {
   install_binary
   prompt_server_url
   write_cli_config
+  refresh_managed_hooks
   echo "Installed ae-cli ${tag} to ${TARGET_PATH}"
 
   if ! path_contains_install_dir; then

@@ -108,6 +108,21 @@ func TestHooksRefreshRequiresStableAuthSubject(t *testing.T) {
 	}
 }
 
+func TestHooksRefreshInstallationsCommandIsHidden(t *testing.T) {
+	var found bool
+	for _, c := range hooksCmd.Commands() {
+		if c.Name() == "refresh-installations" {
+			found = true
+			if !c.Hidden {
+				t.Fatalf("refresh-installations should be hidden")
+			}
+		}
+	}
+	if !found {
+		t.Fatal("expected hooks refresh-installations command")
+	}
+}
+
 func resetHooksEnableFlagsForTest() {
 	hooksEnableGlobal = false
 	hooksEnableRepo = false

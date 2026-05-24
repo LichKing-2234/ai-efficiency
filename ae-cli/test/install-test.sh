@@ -32,6 +32,10 @@ make_cli_archive() {
   cat >"$stage_dir/ae-cli" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
+if [[ "\${1:-}" == "hooks" && "\${2:-}" == "refresh-installations" ]]; then
+  printf '%s\n' "${tag}" >> "\${HOME}/.ae-cli/refresh-installations.log"
+  exit 0
+fi
 echo "ae-cli ${tag}"
 EOF
   chmod +x "$stage_dir/ae-cli"
@@ -127,6 +131,7 @@ run_installer \
 
 test -x "$LATEST_HOME/.local/bin/ae-cli"
 "$LATEST_HOME/.local/bin/ae-cli" | grep -q "ae-cli ${LATEST_TAG}"
+grep -q "${LATEST_TAG}" "$LATEST_HOME/.ae-cli/refresh-installations.log"
 test -f "$LATEST_HOME/.ae-cli/config.yaml"
 grep -q 'url: "https://ai-efficiency.la3.agoralab.co"' "$LATEST_HOME/.ae-cli/config.yaml"
 grep -q "Installing ae-cli ${LATEST_TAG}" "$LATEST_LOG"

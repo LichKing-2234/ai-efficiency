@@ -2159,7 +2159,7 @@ go test ./cmd ./internal/repolink -run 'Init|Sync|Doctor|Ensure|Hooks' -count=1
 
 Expected: PASS. Existing `repolink.Ensure` tests may remain because `init` still uses explicit ensure.
 
-- [ ] **Step 6: Commit command contract slice**
+- [x] **Step 6: Commit command contract slice**
 
 ```bash
 git add ae-cli/cmd/init.go ae-cli/cmd/init_test.go ae-cli/cmd/sync.go ae-cli/cmd/sync_test.go ae-cli/cmd/doctor.go ae-cli/cmd/doctor_test.go ae-cli/internal/repolink
@@ -2176,7 +2176,7 @@ git -c core.hooksPath=/dev/null commit -m "feat(ae-cli): separate repo registrat
 - Test: `ae-cli/internal/hooks/install_test.go`
 - Test: `ae-cli/test/install-test.sh`
 
-- [ ] **Step 1: Add hook refresh command path**
+- [x] **Step 1: Add hook refresh command path**
 
 Add hidden command in `ae-cli/cmd/hooks.go`:
 
@@ -2192,7 +2192,7 @@ var hooksRefreshInstallationsCmd = &cobra.Command{
 
 Attach it under `hooksCmd`.
 
-- [ ] **Step 2: Implement refresh installation behavior tests**
+- [x] **Step 2: Implement refresh installation behavior tests**
 
 In `ae-cli/internal/hooks/install_test.go`, add:
 
@@ -2236,7 +2236,7 @@ func TestRefreshManagedInstallationsSkipsDisabledRepoRecords(t *testing.T) {
 
 Use a test-specific global Git config by setting `GIT_CONFIG_GLOBAL` in the test before running `git config --global`.
 
-- [ ] **Step 3: Update Unix installer**
+- [x] **Step 3: Update Unix installer**
 
 In `ae-cli/install.sh`, after `install_binary` and before final success output:
 
@@ -2252,7 +2252,7 @@ refresh_managed_hooks() {
 
 Call `refresh_managed_hooks` after `write_cli_config`.
 
-- [ ] **Step 4: Update Windows installer**
+- [x] **Step 4: Update Windows installer**
 
 In `ae-cli/install.ps1`, after binary copy and config writes:
 
@@ -2264,7 +2264,7 @@ try {
 }
 ```
 
-- [ ] **Step 5: Run install tests**
+- [x] **Step 5: Run install tests**
 
 Run:
 

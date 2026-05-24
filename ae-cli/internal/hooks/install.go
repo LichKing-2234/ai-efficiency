@@ -251,18 +251,39 @@ func RefreshManagedInstallations(generatorVersion string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	for _, rec := range registry.Records {
+	records := append([]hookstate.InstallationRecord(nil), registry.Records...)
+	if globalPath := gitConfigGet("", "--global", "--get", "core.hooksPath"); strings.TrimSpace(globalPath) != "" {
+		if managed, err := GlobalManagedHooksPath(); err == nil && filepath.Clean(globalPath) == filepath.Clean(managed) {
+			records = append(records, hookstate.InstallationRecord{
+				Mode:            "global",
+				HooksPath:       managed,
+				Enabled:         true,
+				TemplateVersion: hookstate.CurrentHookTemplateVersion,
+				UpdatedAt:       time.Now(),
+			})
+		}
+	}
+	seen := map[string]bool{}
+	for _, rec := range records {
 		if !rec.Enabled || strings.TrimSpace(rec.HooksPath) == "" {
 			continue
 		}
+		key := filepath.Clean(rec.HooksPath)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
 		if err := WriteManagedScripts(rec.HooksPath, generatorVersion); err != nil {
 			return err
 		}
+		rec.TemplateVersion = hookstate.CurrentHookTemplateVersion
+		rec.UpdatedAt = time.Now()
+		registry.Upsert(rec)
 		if out != nil {
 			fmt.Fprintf(out, "refreshed %s\n", rec.HooksPath)
 		}
 	}
-	return nil
+	return registry.Save()
 }
 
 // InstallSharedHooks is retained for existing init call sites. It now uses the
