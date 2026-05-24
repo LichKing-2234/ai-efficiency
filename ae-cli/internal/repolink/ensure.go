@@ -12,18 +12,23 @@ type Ensurer interface {
 }
 
 func Ensure(ctx context.Context, c Ensurer, remoteURL, branch string) (string, error) {
+	status, _, err := EnsureWithResponse(ctx, c, remoteURL, branch)
+	return status, err
+}
+
+func EnsureWithResponse(ctx context.Context, c Ensurer, remoteURL, branch string) (string, *client.RepoEnsureResponse, error) {
 	if c == nil {
-		return "skipped", nil
+		return "skipped", nil, nil
 	}
 	remoteURL = strings.TrimSpace(remoteURL)
 	branch = strings.TrimSpace(branch)
 	if remoteURL == "" {
-		return "skipped", nil
+		return "skipped", nil, nil
 	}
 
-	_, err := c.EnsureRepoFromRemote(ctx, remoteURL, branch)
+	resp, err := c.EnsureRepoFromRemote(ctx, remoteURL, branch)
 	if err != nil {
-		return "failed", err
+		return "failed", nil, err
 	}
-	return "linked", nil
+	return "linked", resp, nil
 }

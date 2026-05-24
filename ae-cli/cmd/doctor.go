@@ -1,10 +1,13 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
+	"github.com/ai-efficiency/ae-cli/internal/client"
 	"github.com/ai-efficiency/ae-cli/internal/hooks"
 	"github.com/spf13/cobra"
 )
@@ -40,8 +43,41 @@ var doctorCmd = &cobra.Command{
 		if status, err := hooks.StatusForRepo(hooks.StatusOptions{CWD: ctx.repoRoot}); err == nil {
 			printHookStatus(out, status)
 		}
+		printRepoEligibilityDiagnostic(out)
 		return nil
 	},
+}
+
+func printRepoEligibilityDiagnostic(out io.Writer) {
+	gitCtx, err := hooks.DetectGitContext(".")
+	if err != nil {
+		fmt.Fprintf(out, "Repo Eligibility: unavailable (%v)\n", err)
+		return
+	}
+	if apiClient == nil || strings.TrimSpace(apiClient.AuthToken()) == "" {
+		fmt.Fprintf(out, "Repo Eligibility: skipped (not logged in)\n")
+		return
+	}
+	resolveCtx, cancel := context.WithTimeout(context.Background(), hookEligibilityResolveTimeout)
+	defer cancel()
+	resp, err := apiClient.ResolveRepoFromRemote(resolveCtx, client.ResolveRepoRequest{
+		RemoteURL:          gitCtx.RemoteURL,
+		Branch:             gitCtx.Branch,
+		ClientCacheVersion: client.RepoEligibilityVersion,
+	})
+	if err != nil {
+		fmt.Fprintf(out, "Repo Eligibility: unavailable (%v)\n", err)
+		return
+	}
+	if resp != nil && resp.Eligible && resp.RepoConfigID > 0 {
+		fmt.Fprintf(out, "Repo Eligibility: eligible (repo_config_id=%d)\n", resp.RepoConfigID)
+		return
+	}
+	reason := "not_found"
+	if resp != nil && strings.TrimSpace(resp.Reason) != "" {
+		reason = strings.TrimSpace(resp.Reason)
+	}
+	fmt.Fprintf(out, "Repo Eligibility: ineligible (%s)\n", reason)
 }
 
 func printHookStatus(out io.Writer, status *hooks.Status) {

@@ -2019,7 +2019,7 @@ go test ./cmd ./internal/hooks ./internal/attributionlocal -run 'HookPost|PostCo
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit dispatcher slice**
+- [x] **Step 7: Commit dispatcher slice**
 
 ```bash
 git add ae-cli/cmd/hook.go ae-cli/cmd/hook_test.go ae-cli/internal/hooks ae-cli/internal/attributionlocal
@@ -2038,7 +2038,7 @@ git -c core.hooksPath=/dev/null commit -m "feat(ae-cli): resolve hook eligibilit
 - Test: `ae-cli/cmd/doctor_test.go`
 - Test: `ae-cli/internal/repolink/ensure_test.go`
 
-- [ ] **Step 1: Add init tests for default no hook install**
+- [x] **Step 1: Add init tests for default no hook install**
 
 Create `ae-cli/cmd/init_test.go`:
 
@@ -2079,7 +2079,7 @@ func TestInitDefaultsToNoHookInstall(t *testing.T) {
 
 Implement `withWorkingDir` helper in `ae-cli/cmd/test_helpers_test.go`.
 
-- [ ] **Step 2: Update init command**
+- [x] **Step 2: Update init command**
 
 In `ae-cli/cmd/init.go`:
 
@@ -2122,7 +2122,7 @@ var enableRepoHooks = hooks.EnableRepo
 var enableGlobalHooks = hooks.EnableGlobal
 ```
 
-- [ ] **Step 3: Update sync command**
+- [x] **Step 3: Update sync command**
 
 In `ae-cli/cmd/sync.go`:
 
@@ -2139,7 +2139,7 @@ repository is not registered or reporting-enabled; run 'ae-cli init' or ask an a
 - do not create repositories from sync
 - if no stable `auth_subject`, allow immediate upload after resolve but no durable cache/spool/ledger writes
 
-- [ ] **Step 4: Update doctor command**
+- [x] **Step 4: Update doctor command**
 
 In `ae-cli/cmd/doctor.go`:
 
@@ -2148,7 +2148,7 @@ In `ae-cli/cmd/doctor.go`:
 - print cache and hook diagnostics
 - make failure to contact backend a diagnostic line, not a repo creation side effect
 
-- [ ] **Step 5: Run command tests**
+- [x] **Step 5: Run command tests**
 
 Run:
 

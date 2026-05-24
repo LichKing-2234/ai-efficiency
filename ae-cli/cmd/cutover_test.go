@@ -83,20 +83,38 @@ func TestInitCommandCreatesAttributionStateDir(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	origInstallSharedHooks := installSharedHooks
-	called := false
-	installSharedHooks = func(cwd, selfPath string) error {
-		called = true
+	origRepoHooks := enableRepoHooks
+	origGlobalHooks := enableGlobalHooks
+	repoHooksCalled := false
+	globalHooksCalled := false
+	enableRepoHooks = func(opts hooks.InstallOptions) error {
+		repoHooksCalled = true
+		return nil
+	}
+	enableGlobalHooks = func(opts hooks.InstallOptions) error {
+		globalHooksCalled = true
 		return nil
 	}
 	origCfg := cfg
 	origClient := apiClient
-	cfg = &config.Config{Server: config.ServerConfig{Token: "tok"}}
+	cfg = &config.Config{Server: config.ServerConfig{URL: srv.URL, Token: "tok"}}
 	apiClient = client.New(srv.URL, "tok")
+	if err := auth.WriteToken(filepath.Join(home, ".ae-cli", "token.json"), &auth.TokenFile{
+		AccessToken:  "test-token",
+		RefreshToken: "refresh-token",
+		ExpiresAt:    time.Now().Add(time.Hour),
+		ServerURL:    srv.URL,
+		AuthSubject:  "user:123",
+	}); err != nil {
+		t.Fatalf("WriteToken: %v", err)
+	}
+	resetInitFlagsForTest()
 	t.Cleanup(func() {
-		installSharedHooks = origInstallSharedHooks
+		enableRepoHooks = origRepoHooks
+		enableGlobalHooks = origGlobalHooks
 		cfg = origCfg
 		apiClient = origClient
+		resetInitFlagsForTest()
 	})
 
 	buf := new(bytes.Buffer)
@@ -110,14 +128,66 @@ func TestInitCommandCreatesAttributionStateDir(t *testing.T) {
 	if _, err := os.Stat(attributionlocal.AttributionRootDir()); err != nil {
 		t.Fatalf("expected attribution root dir to exist, stat err=%v", err)
 	}
-	if !called {
-		t.Fatal("expected installSharedHooks to be called")
+	if repoHooksCalled || globalHooksCalled {
+		t.Fatalf("init default should not install hooks, repo=%t global=%t", repoHooksCalled, globalHooksCalled)
 	}
 	if !strings.Contains(buf.String(), "Initialized sessionless attribution.") {
 		t.Fatalf("output = %q, want init success summary", buf.String())
 	}
 	if !strings.Contains(buf.String(), "Repo Link:     linked") {
 		t.Fatalf("output = %q, want repo link status", buf.String())
+	}
+	cache, err := hookstate.LoadEligibilityCache()
+	if err != nil {
+		t.Fatalf("LoadEligibilityCache: %v", err)
+	}
+	rec, ok := cache.Lookup(hookstate.Context{ServerURL: srv.URL, AuthSubject: "user:123", RepoKey: "github.com/acme/repo"}, time.Now(), true)
+	if !ok || rec.RepoConfigID != 1 {
+		t.Fatalf("init eligibility cache = %+v, ok=%t", rec, ok)
+	}
+}
+
+func TestInitExplicitRepoHooksInstallsRepoHooks(t *testing.T) {
+	repo := initRepoWithCommitForCmdTests(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	withWorkingDir(t, repo)
+
+	var installed bool
+	origRepoHooks := enableRepoHooks
+	origGlobalHooks := enableGlobalHooks
+	enableRepoHooks = func(opts hooks.InstallOptions) error {
+		installed = true
+		if filepath.Clean(opts.CWD) != filepath.Clean(repo) && !strings.HasSuffix(filepath.Clean(opts.CWD), filepath.Clean(repo)) {
+			t.Fatalf("repo hook CWD = %q, want %q", opts.CWD, repo)
+		}
+		return nil
+	}
+	enableGlobalHooks = func(opts hooks.InstallOptions) error {
+		t.Fatalf("global hooks should not be installed for --hooks repo")
+		return nil
+	}
+	oldCfg := cfg
+	oldClient := apiClient
+	cfg = &config.Config{}
+	apiClient = nil
+	resetInitFlagsForTest()
+	initHooksMode = "repo"
+	t.Cleanup(func() {
+		enableRepoHooks = origRepoHooks
+		enableGlobalHooks = origGlobalHooks
+		cfg = oldCfg
+		apiClient = oldClient
+		resetInitFlagsForTest()
+	})
+
+	var buf bytes.Buffer
+	initCmd.SetOut(&buf)
+	if err := initCmd.RunE(initCmd, nil); err != nil {
+		t.Fatalf("init --hooks repo: %v", err)
+	}
+	if !installed {
+		t.Fatal("expected repo hooks to be installed for --hooks repo")
 	}
 }
 
@@ -136,17 +206,17 @@ func TestDoctorCommandPrintsWorkspaceIdentity(t *testing.T) {
 	}
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/v1/repos/ensure-remote" {
-			t.Fatalf("path = %s, want /api/v1/repos/ensure-remote", r.URL.Path)
+		if r.URL.Path != "/api/v1/repos/resolve-remote" {
+			t.Fatalf("path = %s, want /api/v1/repos/resolve-remote", r.URL.Path)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"code":0,"data":{"id":1,"repo_key":"github.com/acme/repo","full_name":"github.com/acme/repo","clone_url":"https://github.com/acme/repo.git","default_branch":"main","binding_state":"unbound"}}`))
+		_, _ = w.Write([]byte(`{"code":0,"data":{"eligible":true,"repo_config_id":123,"repo_key":"github.com/acme/repo","full_name":"acme/repo","clone_url":"https://github.com/acme/repo.git","status":"active"}}`))
 	}))
 	defer srv.Close()
 
 	origCfg := cfg
 	origClient := apiClient
-	cfg = &config.Config{Server: config.ServerConfig{Token: "tok"}}
+	cfg = &config.Config{Server: config.ServerConfig{URL: srv.URL, Token: "tok"}}
 	apiClient = client.New(srv.URL, "tok")
 	t.Cleanup(func() {
 		cfg = origCfg
@@ -162,7 +232,7 @@ func TestDoctorCommandPrintsWorkspaceIdentity(t *testing.T) {
 	}
 
 	output := buf.String()
-	for _, want := range []string{"Sessionless attribution doctor", "Workspace ID:", "State Dir:", "Hook status"} {
+	for _, want := range []string{"Sessionless attribution doctor", "Workspace ID:", "State Dir:", "Hook status", "Repo Eligibility: eligible"} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("output = %q, want substring %q", output, want)
 		}
@@ -313,4 +383,68 @@ func TestSyncCommandFlushesPendingHookQueueBeforeAttributionSync(t *testing.T) {
 	if len(items) != 0 {
 		t.Fatalf("queued items after sync = %d, want 0", len(items))
 	}
+}
+
+func TestSyncCommandResolvesRepoWithoutEnsuring(t *testing.T) {
+	repo := initRepoWithCommitForCmdTests(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	withWorkingDir(t, repo)
+
+	var resolveCalls, syncCalls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/repos/resolve-remote":
+			resolveCalls++
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"code":0,"data":{"eligible":true,"repo_config_id":321,"repo_key":"github.com/acme/repo","full_name":"acme/repo","clone_url":"https://github.com/acme/repo.git","status":"active"}}`))
+		case "/api/v1/repos/ensure-remote":
+			t.Fatalf("sync must not call ensure-remote")
+		default:
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+	if err := auth.WriteToken(filepath.Join(home, ".ae-cli", "token.json"), &auth.TokenFile{
+		AccessToken:  "test-token",
+		RefreshToken: "refresh-token",
+		ExpiresAt:    time.Now().Add(time.Hour),
+		ServerURL:    srv.URL,
+		AuthSubject:  "user:123",
+	}); err != nil {
+		t.Fatalf("WriteToken: %v", err)
+	}
+
+	oldCfg := cfg
+	oldClient := apiClient
+	oldRun := runSyncEngine
+	cfg = &config.Config{Server: config.ServerConfig{URL: srv.URL, Token: "tok"}}
+	apiClient = client.New(srv.URL, "tok")
+	runSyncEngine = func(engine *attributionlocal.SyncEngine, ctx context.Context, opts attributionlocal.RunOptions) error {
+		syncCalls++
+		if opts.RepoConfigID != 321 || opts.RepoKey != "github.com/acme/repo" {
+			t.Fatalf("sync opts = %+v, want resolved repo_config_id 321", opts)
+		}
+		return nil
+	}
+	t.Cleanup(func() {
+		cfg = oldCfg
+		apiClient = oldClient
+		runSyncEngine = oldRun
+	})
+
+	if err := syncCmd.RunE(syncCmd, nil); err != nil {
+		t.Fatalf("syncCmd.RunE: %v", err)
+	}
+	if resolveCalls != 1 {
+		t.Fatalf("resolve calls = %d, want 1", resolveCalls)
+	}
+	if syncCalls != 1 {
+		t.Fatalf("sync calls = %d, want 1", syncCalls)
+	}
+}
+
+func resetInitFlagsForTest() {
+	initHooksMode = "none"
+	initForce = false
 }
