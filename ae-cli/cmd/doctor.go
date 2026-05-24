@@ -1,11 +1,11 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
+	"io"
 	"os"
 
-	"github.com/ai-efficiency/ae-cli/internal/repolink"
+	"github.com/ai-efficiency/ae-cli/internal/hooks"
 	"github.com/spf13/cobra"
 )
 
@@ -23,14 +23,6 @@ var doctorCmd = &cobra.Command{
 		}
 		token := resolveToken(configToken, "")
 		out := cmd.OutOrStdout()
-		repoLinkStatus := "skipped"
-		if token != "" {
-			status, err := repolink.Ensure(context.Background(), apiClient, gitRemoteURLForCutover(), gitBranchForCutover())
-			repoLinkStatus = status
-			if err != nil {
-				repoLinkStatus = "failed"
-			}
-		}
 		fmt.Fprintf(out, "Sessionless attribution doctor\n")
 		fmt.Fprintf(out, "  Repo:          %s\n", ctx.repoRoot)
 		fmt.Fprintf(out, "  Workspace ID:  %s\n", ctx.workspaceID)
@@ -38,7 +30,6 @@ var doctorCmd = &cobra.Command{
 		fmt.Fprintf(out, "  Git Common:    %s\n", ctx.gitCommonDir)
 		fmt.Fprintf(out, "  State Dir:     %s\n", ctx.attributionRoot)
 		fmt.Fprintf(out, "  Logged In:     %t\n", token != "")
-		fmt.Fprintf(out, "  Repo Link:     %s\n", repoLinkStatus)
 		if _, err := os.Stat(ctx.attributionRoot); err == nil {
 			fmt.Fprintf(out, "  State Exists:  true\n")
 		} else if os.IsNotExist(err) {
@@ -46,8 +37,44 @@ var doctorCmd = &cobra.Command{
 		} else {
 			return fmt.Errorf("stat attribution state dir: %w", err)
 		}
+		if status, err := hooks.StatusForRepo(hooks.StatusOptions{CWD: ctx.repoRoot}); err == nil {
+			printHookStatus(out, status)
+		}
 		return nil
 	},
+}
+
+func printHookStatus(out io.Writer, status *hooks.Status) {
+	if status == nil {
+		return
+	}
+	global := "disabled"
+	if status.GlobalEnabled {
+		global = "enabled"
+	}
+	repo := "disabled"
+	if status.RepoEnabled {
+		repo = "enabled"
+	}
+	template := "missing"
+	if status.TemplateVersion > 0 {
+		template = "current"
+		if status.TemplateStale {
+			template = "stale"
+		}
+	}
+	override := "unset"
+	if status.BinaryOverride {
+		override = "set"
+	}
+	fmt.Fprintf(out, "Hook status\n")
+	fmt.Fprintf(out, "  Global:        %s\n", global)
+	fmt.Fprintf(out, "  Repo-local:    %s\n", repo)
+	fmt.Fprintf(out, "  Effective:     %s\n", status.EffectiveMode)
+	fmt.Fprintf(out, "  Binary:        %s\n", status.BinaryPath)
+	fmt.Fprintf(out, "  AE_CLI_BIN:    %s\n", override)
+	fmt.Fprintf(out, "  Template:      %s\n", template)
+	fmt.Fprintf(out, "  Eligibility:   %s\n", status.EligibilityCache)
 }
 
 func init() {

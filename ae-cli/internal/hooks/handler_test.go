@@ -633,7 +633,7 @@ func TestPostCommitAttachesCollectorSnapshotAndWritesCache(t *testing.T) {
 	}
 
 	workspaceID := u.events[0].WorkspaceID
-	cacheFile := filepath.Join(home, ".ai-efficiency", "attribution", "workspaces", workspaceID, "collectors", "latest.json")
+	cacheFile := filepath.Join(attributionlocal.AttributionRootDir(), "workspaces", workspaceID, "collectors", "latest.json")
 	data, err := os.ReadFile(cacheFile)
 	if err != nil {
 		t.Fatalf("read cache file: %v", err)
@@ -715,7 +715,7 @@ func TestPostCommitPreservesCollectorCacheWhenNoSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadMarker: %v", err)
 	}
-	cacheFile := filepath.Join(home, ".ai-efficiency", "attribution", "workspaces", marker.WorkspaceID, "collectors", "latest.json")
+	cacheFile := filepath.Join(attributionlocal.AttributionRootDir(), "workspaces", marker.WorkspaceID, "collectors", "latest.json")
 	data, err := os.ReadFile(cacheFile)
 	if err != nil {
 		t.Fatalf("read cache file: %v", err)

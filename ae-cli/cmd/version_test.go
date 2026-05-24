@@ -65,6 +65,7 @@ func TestRootCommandHasSubcommands(t *testing.T) {
 		"init":     false,
 		"sync":     false,
 		"doctor":   false,
+		"hooks":    false,
 		"hook":     false,
 	}
 

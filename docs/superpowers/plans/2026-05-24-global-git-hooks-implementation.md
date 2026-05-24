@@ -1493,6 +1493,8 @@ git -c core.hooksPath=/dev/null commit -m "feat(ae-cli): store hook state under 
 
 ## Task 5: Hook Installation, Status, Disable, and Refresh Commands
 
+Status: Completed in this branch. `doctor` now reports local hook status without calling `EnsureRepoFromRemote`; explicit repo creation remains scoped to `ae-cli init`.
+
 **Files:**
 - Create: `ae-cli/internal/hooks/gitcontext.go`
 - Create: `ae-cli/internal/hooks/script.go`
@@ -1507,7 +1509,7 @@ git -c core.hooksPath=/dev/null commit -m "feat(ae-cli): store hook state under 
 - Test: `ae-cli/cmd/hooks_test.go`
 - Test: `ae-cli/cmd/doctor_test.go`
 
-- [ ] **Step 1: Replace legacy install tests with ownership tests**
+- [x] **Step 1: Replace legacy install tests with ownership tests**
 
 In `ae-cli/internal/hooks/install_test.go`, remove tests asserting legacy hook chaining and add:
 
@@ -1568,7 +1570,7 @@ func TestEnableRepoRefusesExecutableDefaultHookWithoutForce(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Implement Git context helper**
+- [x] **Step 2: Implement Git context helper**
 
 Create `ae-cli/internal/hooks/gitcontext.go`:
 
@@ -1598,7 +1600,7 @@ Implementation details:
 - derive `WorkspaceID` with `session.DeriveWorkspaceID(repoRoot, repoRoot, gitDir, gitCommonDir)`
 - derive `RepoKey` with `ae-cli/internal/repoidentity.Derive`
 
-- [ ] **Step 3: Implement managed script rendering**
+- [x] **Step 3: Implement managed script rendering**
 
 Create `ae-cli/internal/hooks/script.go`:
 
@@ -1644,7 +1646,7 @@ rm -f "$tmp"
 
 Do not invoke any previous hook script.
 
-- [ ] **Step 4: Implement Git config inspection and mutation**
+- [x] **Step 4: Implement Git config inspection and mutation**
 
 Create `ae-cli/internal/hooks/config.go`:
 
@@ -1692,7 +1694,7 @@ Implement:
 
 Use `git config --show-origin --show-scope --get-all core.hooksPath` where helpful, but verify effective behavior with `git config --get core.hooksPath`. Local/worktree commands must use `git config --local` and `git config --worktree` explicitly.
 
-- [ ] **Step 5: Implement enable/disable/status/refresh helpers**
+- [x] **Step 5: Implement enable/disable/status/refresh helpers**
 
 Replace `InstallSharedHooks` in `ae-cli/internal/hooks/install.go` with:
 
@@ -1749,7 +1751,7 @@ Registry behavior:
 - disable marks records disabled only after Git config is unset or already absent
 - `DisableRepo` repeats unsetting only effective AE repo-local local/worktree layers until no AE repo-local layer remains effective
 
-- [ ] **Step 6: Add public `ae-cli hooks` command**
+- [x] **Step 6: Add public `ae-cli hooks` command**
 
 Create `ae-cli/cmd/hooks.go`:
 
@@ -1788,11 +1790,11 @@ Hook status
   Eligibility:   positive|negative|missing|expired|unbound
 ```
 
-- [ ] **Step 7: Extend doctor**
+- [x] **Step 7: Extend doctor**
 
 In `ae-cli/cmd/doctor.go`, call `hooks.StatusForRepo` and print hook status after existing sessionless attribution fields. Do not call `EnsureRepoFromRemote` from doctor; use resolve-only diagnostics.
 
-- [ ] **Step 8: Run hook command tests**
+- [x] **Step 8: Run hook command tests**
 
 Run:
 
@@ -1803,7 +1805,7 @@ go test ./internal/hooks ./cmd -run 'Hook|Hooks|Enable|Disable|Status|Refresh|Do
 
 Expected: PASS.
 
-- [ ] **Step 9: Commit command slice**
+- [x] **Step 9: Commit command slice**
 
 ```bash
 git add ae-cli/internal/hooks ae-cli/cmd/hooks.go ae-cli/cmd/hook_test.go ae-cli/cmd/hooks_test.go ae-cli/cmd/doctor.go ae-cli/cmd/doctor_test.go

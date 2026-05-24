@@ -23,6 +23,7 @@ func TestRootCommandHasSessionlessPrimaryCommands(t *testing.T) {
 		"init":     false,
 		"sync":     false,
 		"doctor":   false,
+		"hooks":    false,
 	}
 
 	for _, cmd := range rootCmd.Commands() {
@@ -159,7 +160,7 @@ func TestDoctorCommandPrintsWorkspaceIdentity(t *testing.T) {
 	}
 
 	output := buf.String()
-	for _, want := range []string{"Sessionless attribution doctor", "Workspace ID:", "State Dir:", "Repo Link:     linked"} {
+	for _, want := range []string{"Sessionless attribution doctor", "Workspace ID:", "State Dir:", "Hook status"} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("output = %q, want substring %q", output, want)
 		}
