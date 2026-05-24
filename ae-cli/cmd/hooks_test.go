@@ -10,6 +10,7 @@ import (
 	"github.com/ai-efficiency/ae-cli/config"
 	"github.com/ai-efficiency/ae-cli/internal/auth"
 	"github.com/ai-efficiency/ae-cli/internal/client"
+	hookspkg "github.com/ai-efficiency/ae-cli/internal/hooks"
 )
 
 func TestHooksCommandIsRegistered(t *testing.T) {
@@ -70,6 +71,34 @@ func TestHooksStatusPrintsHookStatus(t *testing.T) {
 	}
 	output := buf.String()
 	for _, want := range []string{"Hook status", "Global:", "Repo-local:", "Effective:", "Template:"} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("output = %q, want %q", output, want)
+		}
+	}
+}
+
+func TestPrintHookStatusIncludesUploadSummary(t *testing.T) {
+	uploadedAt := time.Date(2026, 5, 24, 12, 0, 0, 0, time.UTC)
+	status := &hookspkg.Status{
+		EffectiveMode: hookspkg.HookModeAEGlobal,
+		UploadGroups: []hookspkg.UploadGroup{{
+			ServerURL:            "https://ae.example.com",
+			AuthSubject:          "user:1",
+			RepoConfigID:         123,
+			RepoKey:              "repo-host.example.com/org/repo",
+			WorkspaceID:          "workspace-1",
+			PendingCount:         2,
+			UploadedCount:        3,
+			FailedCount:          1,
+			SkippedCount:         4,
+			LastSuccessfulUpload: &uploadedAt,
+			LastError:            "backend unavailable",
+		}},
+	}
+	var buf bytes.Buffer
+	printHookStatus(&buf, status)
+	output := buf.String()
+	for _, want := range []string{"Uploads:", "repo_config_id=123", "pending=2", "uploaded=3", "failed=1", "skipped=4", "last_success=2026-05-24T12:00:00Z", "last_error=backend unavailable"} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("output = %q, want %q", output, want)
 		}

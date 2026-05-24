@@ -2335,7 +2335,7 @@ rg -n '\.ai-efficiency|/\.ae/|AE_CLI_HOOK_BIN|ae-cli-local' docs/architecture.md
 
 Expected: `git diff --check` passes. The `rg` command may show historical mentions in the spec only where it explicitly forbids old roots; it must not show new architecture or README instructions using old roots.
 
-- [ ] **Step 4: Commit documentation slice**
+- [x] **Step 4: Commit documentation slice**
 
 ```bash
 git add docs/architecture.md ae-cli/README.md docs/ae-cli-hook-attribution-flow.md
@@ -2347,7 +2347,7 @@ git -c core.hooksPath=/dev/null commit -m "docs(ae-cli): document global git hoo
 **Files:**
 - No new files expected.
 
-- [ ] **Step 1: Run backend tests**
+- [x] **Step 1: Run backend tests**
 
 Run:
 
@@ -2358,7 +2358,9 @@ go test ./...
 
 Expected: PASS.
 
-- [ ] **Step 2: Run ae-cli tests**
+Verified: PASS with `AE_TEST_POSTGRES_DSN='postgres://postgres:postgres@127.0.0.1:15432/postgres?sslmode=disable' go test ./...`. The default local Postgres port is not available in this environment.
+
+- [x] **Step 2: Run ae-cli tests**
 
 Run:
 
@@ -2369,7 +2371,9 @@ go test ./...
 
 Expected: PASS.
 
-- [ ] **Step 3: Build CLI**
+Verified: PASS for `go test ./...`.
+
+- [x] **Step 3: Build CLI**
 
 Run:
 
@@ -2381,7 +2385,9 @@ go build -o /tmp/ae-cli-hook-contract ./main.go
 
 Expected: binary builds and prints version information.
 
-- [ ] **Step 4: Manual global hook smoke test**
+Verified: `/tmp/ae-cli-hook-contract version` prints `ae-cli v0.1.0`.
+
+- [x] **Step 4: Manual global hook smoke test**
 
 Use a temp HOME and temp global Git config:
 
@@ -2394,7 +2400,9 @@ HOME="$TMP_HOME" GIT_CONFIG_GLOBAL="$TMP_GLOBAL_CONFIG" git config --global --ge
 
 Expected: output is an absolute path ending in `.ae-cli/git-hooks`, and `post-commit` contains `AE_CLI_BIN`, `$HOME/.local/bin/ae-cli`, and `command -v ae-cli`.
 
-- [ ] **Step 5: Manual repo-local hook smoke test**
+Verified: temp global `core.hooksPath` ended in `.ae-cli/git-hooks`; `post-commit` contains `AE_CLI_BIN`, `$HOME/.local/bin/ae-cli`, and `command -v ae-cli`.
+
+- [x] **Step 5: Manual repo-local hook smoke test**
 
 ```bash
 REPO="$(mktemp -d)"
@@ -2411,7 +2419,9 @@ git -C "$REPO" config --get core.hooksPath
 
 Expected: repo-local `core.hooksPath` is an absolute path ending in `.git/ae-hooks`; global Git config is unchanged.
 
-- [ ] **Step 6: Unknown repo fail-open smoke test**
+Verified: repo-local `core.hooksPath` ended in `.git/ae-hooks`; temp global Git config remained unchanged.
+
+- [x] **Step 6: Unknown repo fail-open smoke test**
 
 In a temp repo without cache or reachable backend:
 
@@ -2423,7 +2433,9 @@ find "$TMP_HOME/.ae-cli/state/attribution" -type f -print 2>/dev/null || true
 
 Expected: commit completes quickly, no durable queue/spool/ledger is created for the unknown repository.
 
-- [ ] **Step 7: Context mismatch replay smoke test**
+Verified: commit completed in about 1.2 seconds with no files under `~/.ae-cli/state/attribution`.
+
+- [x] **Step 7: Context mismatch replay smoke test**
 
 Create a fake queue or spool item with `server_url` / `auth_subject` that differs from the current token context, then run:
 
@@ -2433,7 +2445,9 @@ HOME="$TMP_HOME" /tmp/ae-cli-hook-contract hooks status --uploads
 
 Expected: status groups by backend/account/repo/workspace and does not upload mismatched items. If a skipped ledger record is written, it must contain only operational metadata and no raw payloads or local file paths.
 
-- [ ] **Step 8: Final diff hygiene**
+Verified: hidden hook flush wrote a `skipped` ledger record for context mismatch, and `hooks status --uploads` grouped it by `server_url`, `auth_subject`, `repo_config_id`, `repo_key`, and `workspace_id`. Ledger and status output did not include raw payloads or local paths.
+
+- [x] **Step 8: Final diff hygiene**
 
 Run:
 
@@ -2450,7 +2464,9 @@ Expected:
 - placeholder scan has no hits in the plan
 - old root scan has hits only in deleted lines, historical docs, tests that assert old roots are ignored, or code comments explaining ignored historical state
 
-- [ ] **Step 9: Commit final fixes if verification required changes**
+Verified: `git diff --check` passed; placeholder scan had no hits; old-root scan only reports the defensive test assertion that the generated hook script does not contain `ae-cli-local` or `AE_CLI_HOOK_BIN`.
+
+- [x] **Step 9: Commit final fixes if verification required changes**
 
 If Step 1-8 required any changes:
 
@@ -2460,6 +2476,8 @@ git -c core.hooksPath=/dev/null commit -m "fix(ae-cli): harden hook contract ver
 ```
 
 Expected: clean working tree after commit.
+
+Verified: committed as `fix(ae-cli): harden hook contract verification` with `git -c core.hooksPath=/dev/null commit`.
 
 ## Implementation Notes and Conflict Checks
 

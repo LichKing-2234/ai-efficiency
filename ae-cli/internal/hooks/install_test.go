@@ -262,6 +262,83 @@ func TestStatusForRepoReportsAERepoTemplate(t *testing.T) {
 	}
 }
 
+func TestStatusForRepoWithUploadsSummarizesQueueAndLedger(t *testing.T) {
+	repo := initRepoWithCommit(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	gitCtx, err := DetectGitContext(repo)
+	if err != nil {
+		t.Fatalf("DetectGitContext: %v", err)
+	}
+	queue, err := NewWorkspaceQueue(gitCtx.WorkspaceID)
+	if err != nil {
+		t.Fatalf("NewWorkspaceQueue: %v", err)
+	}
+	if err := queue.Enqueue(HookEvent{
+		Kind:         "post-commit",
+		EventID:      "pending-1",
+		ServerURL:    "https://ae.example.com",
+		AuthSubject:  "user:1",
+		RepoConfigID: 123,
+		RepoKey:      gitCtx.RepoKey,
+		WorkspaceID:  gitCtx.WorkspaceID,
+		CommitSHA:    "abc123",
+	}); err != nil {
+		t.Fatalf("Enqueue: %v", err)
+	}
+	uploadedAt := time.Date(2026, 5, 24, 12, 0, 0, 0, time.UTC)
+	if err := AppendLedger(gitCtx.WorkspaceID, LedgerRecord{
+		Kind:         "checkpoint",
+		DedupeKey:    "uploaded-1",
+		ServerURL:    "https://ae.example.com",
+		AuthSubject:  "user:1",
+		RepoConfigID: 123,
+		RepoKey:      gitCtx.RepoKey,
+		WorkspaceID:  gitCtx.WorkspaceID,
+		Status:       "uploaded",
+		AttemptCount: 1,
+		AttemptedAt:  uploadedAt,
+		UploadedAt:   &uploadedAt,
+	}); err != nil {
+		t.Fatalf("AppendLedger uploaded: %v", err)
+	}
+	failedAt := uploadedAt.Add(time.Minute)
+	if err := AppendLedger(gitCtx.WorkspaceID, LedgerRecord{
+		Kind:         "tool_usage",
+		DedupeKey:    "failed-1",
+		ServerURL:    "https://ae.example.com",
+		AuthSubject:  "user:1",
+		RepoConfigID: 123,
+		RepoKey:      gitCtx.RepoKey,
+		WorkspaceID:  gitCtx.WorkspaceID,
+		Status:       "failed",
+		AttemptCount: 1,
+		AttemptedAt:  failedAt,
+		LastError:    "backend unavailable",
+	}); err != nil {
+		t.Fatalf("AppendLedger failed: %v", err)
+	}
+
+	status, err := StatusForRepo(StatusOptions{CWD: repo, Uploads: true})
+	if err != nil {
+		t.Fatalf("StatusForRepo: %v", err)
+	}
+	if len(status.UploadGroups) != 1 {
+		t.Fatalf("UploadGroups = %+v, want one group", status.UploadGroups)
+	}
+	group := status.UploadGroups[0]
+	if group.ServerURL != "https://ae.example.com" || group.AuthSubject != "user:1" || group.RepoConfigID != 123 || group.RepoKey != gitCtx.RepoKey || group.WorkspaceID != gitCtx.WorkspaceID {
+		t.Fatalf("group binding = %+v, want current binding", group)
+	}
+	if group.PendingCount != 1 || group.UploadedCount != 1 || group.FailedCount != 1 || group.LastError != "backend unavailable" {
+		t.Fatalf("group counts/error = %+v, want pending/uploaded/failed summary", group)
+	}
+	if group.LastSuccessfulUpload == nil || !group.LastSuccessfulUpload.Equal(uploadedAt) {
+		t.Fatalf("LastSuccessfulUpload = %v, want %v", group.LastSuccessfulUpload, uploadedAt)
+	}
+}
+
 func gitConfigOptional(t *testing.T, dir string, args ...string) string {
 	t.Helper()
 	cmd := exec.Command("git", append([]string{"config"}, args...)...)

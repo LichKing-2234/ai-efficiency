@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -38,6 +39,21 @@ type Status struct {
 	DefaultExecutableHooks []string
 	EligibilityCache       string
 	ObservedRepo           string
+	UploadGroups           []UploadGroup
+}
+
+type UploadGroup struct {
+	ServerURL            string
+	AuthSubject          string
+	RepoConfigID         int
+	RepoKey              string
+	WorkspaceID          string
+	PendingCount         int
+	UploadedCount        int
+	FailedCount          int
+	SkippedCount         int
+	LastSuccessfulUpload *time.Time
+	LastError            string
 }
 
 type repoResolver interface {
@@ -202,7 +218,101 @@ func StatusForRepo(opts StatusOptions) (*Status, error) {
 			status.TemplateStale = true
 		}
 	}
+	if opts.Uploads {
+		status.UploadGroups = summarizeUploads(gitCtx.WorkspaceID)
+	}
 	return status, nil
+}
+
+func summarizeUploads(workspaceID string) []UploadGroup {
+	groups := map[string]*UploadGroup{}
+	for _, item := range pendingQueueItems(workspaceID) {
+		ev := item.Event
+		g := uploadGroupFor(groups, Binding{
+			ServerURL:    ev.ServerURL,
+			AuthSubject:  ev.AuthSubject,
+			RepoConfigID: ev.RepoConfigID,
+			RepoKey:      ev.RepoKey,
+			WorkspaceID:  ev.WorkspaceID,
+		})
+		g.PendingCount++
+	}
+	records, err := ReadLedger(workspaceID)
+	if err == nil {
+		for _, rec := range records {
+			g := uploadGroupFor(groups, Binding{
+				ServerURL:    rec.ServerURL,
+				AuthSubject:  rec.AuthSubject,
+				RepoConfigID: rec.RepoConfigID,
+				RepoKey:      rec.RepoKey,
+				WorkspaceID:  rec.WorkspaceID,
+			})
+			switch strings.TrimSpace(rec.Status) {
+			case "uploaded":
+				g.UploadedCount++
+				if rec.UploadedAt != nil && (g.LastSuccessfulUpload == nil || rec.UploadedAt.After(*g.LastSuccessfulUpload)) {
+					t := *rec.UploadedAt
+					g.LastSuccessfulUpload = &t
+				}
+			case "failed":
+				g.FailedCount++
+			case "skipped":
+				g.SkippedCount++
+			case "pending":
+				g.PendingCount++
+			}
+			if strings.TrimSpace(rec.LastError) != "" {
+				g.LastError = strings.TrimSpace(rec.LastError)
+			}
+		}
+	}
+	out := make([]UploadGroup, 0, len(groups))
+	for _, g := range groups {
+		out = append(out, *g)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return uploadGroupKey(out[i]) < uploadGroupKey(out[j])
+	})
+	return out
+}
+
+func pendingQueueItems(workspaceID string) []QueueItem {
+	p, err := workspaceQueuePath(workspaceID)
+	if err != nil {
+		return nil
+	}
+	q := &Queue{path: p}
+	items, err := q.List()
+	if err != nil {
+		return nil
+	}
+	return items
+}
+
+func uploadGroupFor(groups map[string]*UploadGroup, b Binding) *UploadGroup {
+	g := UploadGroup{
+		ServerURL:    strings.TrimSpace(b.ServerURL),
+		AuthSubject:  strings.TrimSpace(b.AuthSubject),
+		RepoConfigID: b.RepoConfigID,
+		RepoKey:      strings.TrimSpace(b.RepoKey),
+		WorkspaceID:  strings.TrimSpace(b.WorkspaceID),
+	}
+	key := uploadGroupKey(g)
+	if existing := groups[key]; existing != nil {
+		return existing
+	}
+	groups[key] = &g
+	return &g
+}
+
+func uploadGroupKey(g UploadGroup) string {
+	return strings.Join([]string{
+		g.ServerURL,
+		g.AuthSubject,
+		fmt.Sprintf("%d", g.RepoConfigID),
+		g.RepoKey,
+		g.WorkspaceID,
+	}, "\x1f")
 }
 
 func RefreshCurrent(ctx context.Context, c repoResolver, cwd string, binding hookstate.Context) error {

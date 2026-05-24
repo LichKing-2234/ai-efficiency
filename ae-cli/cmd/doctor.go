@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/ai-efficiency/ae-cli/internal/client"
 	"github.com/ai-efficiency/ae-cli/internal/hooks"
@@ -111,6 +112,32 @@ func printHookStatus(out io.Writer, status *hooks.Status) {
 	fmt.Fprintf(out, "  AE_CLI_BIN:    %s\n", override)
 	fmt.Fprintf(out, "  Template:      %s\n", template)
 	fmt.Fprintf(out, "  Eligibility:   %s\n", status.EligibilityCache)
+	if len(status.UploadGroups) > 0 {
+		fmt.Fprintf(out, "Uploads:\n")
+		for _, group := range status.UploadGroups {
+			lastSuccess := "never"
+			if group.LastSuccessfulUpload != nil {
+				lastSuccess = group.LastSuccessfulUpload.UTC().Format(time.RFC3339)
+			}
+			lastError := group.LastError
+			if strings.TrimSpace(lastError) == "" {
+				lastError = "none"
+			}
+			fmt.Fprintf(out, "  repo_config_id=%d repo=%s workspace=%s server=%s account=%s pending=%d uploaded=%d failed=%d skipped=%d last_success=%s last_error=%s\n",
+				group.RepoConfigID,
+				group.RepoKey,
+				group.WorkspaceID,
+				group.ServerURL,
+				group.AuthSubject,
+				group.PendingCount,
+				group.UploadedCount,
+				group.FailedCount,
+				group.SkippedCount,
+				lastSuccess,
+				lastError,
+			)
+		}
+	}
 }
 
 func init() {
