@@ -2344,6 +2344,8 @@ git -c core.hooksPath=/dev/null commit -m "docs(ae-cli): document global git hoo
 
 ## Task 10: Full Verification and Manual Integration
 
+Status: Completed with extended real end-to-end verification. The final sign-off used a real local backend, isolated PostgreSQL database, real `ae-cli` binary, real Git hook invocation, and direct database assertions for the active global hook spec.
+
 **Files:**
 - No new files expected.
 
@@ -2478,6 +2480,38 @@ git -c core.hooksPath=/dev/null commit -m "fix(ae-cli): harden hook contract ver
 Expected: clean working tree after commit.
 
 Verified: committed as `fix(ae-cli): harden hook contract verification` with `git -c core.hooksPath=/dev/null commit`.
+
+- [x] **Step 10: Run real backend and Git hook contract verification**
+
+Run an isolated local backend and database, then exercise the actual managed hook scripts through Git:
+
+```bash
+cd backend
+AE_DB_DSN='postgres://postgres:postgres@127.0.0.1:15432/<isolated-db>?sslmode=disable' \
+AE_REDIS_ADDR='127.0.0.1:16379' \
+AE_SERVER_MODE=debug \
+AE_DEV_LOGIN_ENABLED=true \
+AE_SERVER_PORT=<free-port> \
+./ai-efficiency-server-e2e
+```
+
+In a temp HOME and temp Git config, create a dev login token, create backend repo configs, install global and repo-local hooks, perform real `git commit`, `git commit --amend`, `ae-cli sync`, and `ae-cli init --hooks none`, then assert backend rows directly in PostgreSQL.
+
+Expected: global hooks only upload for backend-known reporting-enabled repos; hidden hook paths never create repos; inactive and unknown repos fail open without checkpoint or usage rows; post-rewrite stdin reaches the backend; managed usage uploads include `repo_config_id` and omit raw source fields; `sync` does not create repos; `init --hooks none` explicitly registers the repo without installing hooks; repo-local hook mode leaves global Git config unchanged; state is written only under `~/.ae-cli`.
+
+Verified:
+
+- Active repo real commit wrote `commit_checkpoints` with `repo_config_id=1`, `user_id=1`, matching workspace ID, branch, and commit SHA.
+- Managed Codex usage upload wrote `tool_usage_events` with `repo_config_id=1`, `user_id=1`, expected token counts, and empty `raw_source_path`, `raw_source_locator`, and `raw_payload`.
+- Real `git commit --amend` wrote `commit_rewrites` with `rewrite_type=amend`, matching old/new SHAs, `repo_config_id=1`, and `user_id=1`.
+- Unknown repo commit completed fail-open and left repo/checkpoint counts unchanged.
+- Inactive backend-known repo commit completed fail-open and left checkpoint counts unchanged; local negative cache reason was `inactive`.
+- `ae-cli sync` in an unknown repo failed with the expected registration guidance and did not create a repo.
+- `ae-cli init --hooks none` in a temp repo created exactly one repo and left local/worktree `core.hooksPath` unset.
+- `ae-cli hooks enable --repo --force` wrote a repo-local absolute hook path and did not modify global Git config.
+- `hooks status --uploads` reported the current positive eligibility cache as `eligible repo_config_id=1`.
+- No `.ae` or `.ai-efficiency` directory was created in the temp HOME or temp repos.
+- The real test exposed and fixed canonical-equivalent workspace path matching for local tool artifacts, plus current eligibility reporting in `hooks status`.
 
 ## Implementation Notes and Conflict Checks
 

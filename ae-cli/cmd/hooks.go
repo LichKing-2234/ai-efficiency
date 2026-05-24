@@ -61,7 +61,7 @@ var hooksStatusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Show AE Git hook status",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		status, err := hooks.StatusForRepo(hooks.StatusOptions{CWD: ".", Uploads: hooksStatusUploads})
+		status, err := hooks.StatusForRepo(hooks.StatusOptions{CWD: ".", Uploads: hooksStatusUploads, Binding: currentHookBinding()})
 		if err != nil {
 			return err
 		}

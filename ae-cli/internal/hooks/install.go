@@ -24,6 +24,7 @@ type InstallOptions struct {
 type StatusOptions struct {
 	CWD     string
 	Uploads bool
+	Binding hookstate.Context
 }
 
 type Status struct {
@@ -205,6 +206,7 @@ func StatusForRepo(opts StatusOptions) (*Status, error) {
 		EligibilityCache:       "missing",
 		ObservedRepo:           "missing",
 	}
+	status.applyCurrentHookState(opts.Binding, gitCtx)
 	if cfg.HooksPath != "" {
 		data, err := os.ReadFile(filepath.Join(cfg.HooksPath, "post-commit"))
 		if err == nil {
@@ -222,6 +224,39 @@ func StatusForRepo(opts StatusOptions) (*Status, error) {
 		status.UploadGroups = summarizeUploads(gitCtx.WorkspaceID)
 	}
 	return status, nil
+}
+
+func (s *Status) applyCurrentHookState(binding hookstate.Context, gitCtx *GitContext) {
+	if s == nil || gitCtx == nil {
+		return
+	}
+	binding.RepoKey = firstNonEmpty(binding.RepoKey, gitCtx.RepoKey)
+	now := time.Now()
+	if binding.Stable() {
+		if cache, err := hookstate.LoadEligibilityCache(); err == nil {
+			if rec, ok := cache.Lookup(binding, now, true); ok {
+				if rec.Eligible && rec.RepoConfigID > 0 {
+					s.EligibilityCache = fmt.Sprintf("eligible repo_config_id=%d", rec.RepoConfigID)
+				} else {
+					reason := strings.TrimSpace(rec.Reason)
+					if reason == "" {
+						reason = "ineligible"
+					}
+					s.EligibilityCache = reason
+				}
+			}
+		}
+	}
+	if observed, err := hookstate.LoadObservedRepos(); err == nil {
+		for _, rec := range observed.Matching(binding) {
+			if strings.TrimSpace(rec.ServerURL) != "" && strings.TrimSpace(rec.AuthSubject) != "" {
+				s.ObservedRepo = "bound"
+			} else {
+				s.ObservedRepo = "unbound"
+			}
+			break
+		}
+	}
 }
 
 func summarizeUploads(workspaceID string) []UploadGroup {

@@ -8,7 +8,6 @@ import (
 	"errors"
 	"io"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -44,7 +43,7 @@ func ParseCodexJSONLFallbackContext(ctx context.Context, path, workspaceRoot str
 
 		switch strings.TrimSpace(row.Type) {
 		case "session_meta":
-			if filepath.Clean(row.Payload.CWD) != filepath.Clean(workspaceRoot) {
+			if !sameWorkspacePath(row.Payload.CWD, workspaceRoot) {
 				return errStopCodexJSONLScan
 			}
 			sessionID = strings.TrimSpace(row.Payload.ID)
@@ -168,7 +167,7 @@ func findCodexWorkspaceSessionIDsContext(ctx context.Context, path, workspaceRoo
 		if strings.TrimSpace(row.Type) != "session_meta" {
 			return nil
 		}
-		if filepath.Clean(row.Payload.CWD) != filepath.Clean(workspaceRoot) {
+		if !sameWorkspacePath(row.Payload.CWD, workspaceRoot) {
 			return errStopCodexJSONLScan
 		}
 		sessionID := strings.TrimSpace(row.Payload.ID)

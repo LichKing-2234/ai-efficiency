@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -126,5 +127,31 @@ func TestParseCodexJSONL_PreservesTimestampForLegacyReplayBackfill(t *testing.T)
 	want := time.Date(2026, 5, 19, 10, 0, 0, 0, time.UTC)
 	if !legacy.ObservedStartAt.Equal(want) || !legacy.ObservedEndAt.Equal(want) {
 		t.Fatalf("observed timestamps = %s / %s, want row timestamp %s", legacy.ObservedStartAt, legacy.ObservedEndAt, want)
+	}
+}
+
+func TestParseCodexJSONL_MatchesCanonicalEquivalentWorkspacePath(t *testing.T) {
+	t.Parallel()
+
+	realRoot := t.TempDir()
+	linkRoot := filepath.Join(t.TempDir(), "repo-link")
+	if err := os.Symlink(realRoot, linkRoot); err != nil {
+		t.Fatalf("Symlink: %v", err)
+	}
+
+	path := writeFile(t, "codex.jsonl", strings.Join([]string{
+		`{"type":"session_meta","payload":{"id":"sess-1","cwd":"` + linkRoot + `"}}`,
+		`{"type":"event_msg","timestamp":"2026-05-24T05:31:00Z","payload":{"type":"token_count","response_id":"resp-1","info":{"last_token_usage":{"input_tokens":11,"cached_input_tokens":3,"output_tokens":7,"reasoning_output_tokens":2}}}}`,
+	}, "\n"))
+
+	events, err := ParseCodexJSONLFallback(path, realRoot)
+	if err != nil {
+		t.Fatalf("ParseCodexJSONLFallback: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("event count = %d, want 1", len(events))
+	}
+	if events[0].InputTokens != 11 || events[0].OutputTokens != 7 {
+		t.Fatalf("event = %+v", events[0])
 	}
 }

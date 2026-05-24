@@ -41,7 +41,7 @@ var doctorCmd = &cobra.Command{
 		} else {
 			return fmt.Errorf("stat attribution state dir: %w", err)
 		}
-		if status, err := hooks.StatusForRepo(hooks.StatusOptions{CWD: ctx.repoRoot}); err == nil {
+		if status, err := hooks.StatusForRepo(hooks.StatusOptions{CWD: ctx.repoRoot, Binding: currentHookBinding()}); err == nil {
 			printHookStatus(out, status)
 		}
 		printRepoEligibilityDiagnostic(out)

@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ai-efficiency/ae-cli/internal/client"
 	"github.com/ai-efficiency/ae-cli/internal/hookstate"
 )
 
@@ -259,6 +260,53 @@ func TestStatusForRepoReportsAERepoTemplate(t *testing.T) {
 	}
 	if !status.RepoEnabled || status.EffectiveMode != HookModeAERepo || status.TemplateVersion != hookstate.CurrentHookTemplateVersion || status.TemplateStale {
 		t.Fatalf("status = %+v", status)
+	}
+}
+
+func TestStatusForRepoReportsCurrentEligibilityAndObservedRepo(t *testing.T) {
+	repo := initRepoWithCommit(t)
+	t.Setenv("HOME", t.TempDir())
+	gitCtx, err := DetectGitContext(repo)
+	if err != nil {
+		t.Fatalf("DetectGitContext: %v", err)
+	}
+	binding := hookstate.Context{
+		ServerURL:   "https://ae.example.com/",
+		AuthSubject: "user:1",
+		RepoKey:     gitCtx.RepoKey,
+	}
+	now := time.Date(2026, 5, 24, 12, 0, 0, 0, time.UTC)
+	cache, err := hookstate.LoadEligibilityCache()
+	if err != nil {
+		t.Fatalf("LoadEligibilityCache: %v", err)
+	}
+	cache.PutPositive(binding, client.RepoEligibilityResponse{
+		Eligible:     true,
+		RepoConfigID: 123,
+		RepoKey:      gitCtx.RepoKey,
+		Status:       "active",
+	}, now)
+	if err := cache.Save(); err != nil {
+		t.Fatalf("Save cache: %v", err)
+	}
+	observed, err := hookstate.LoadObservedRepos()
+	if err != nil {
+		t.Fatalf("LoadObservedRepos: %v", err)
+	}
+	observed.Observe(binding, gitCtx.RemoteURL, now)
+	if err := observed.Save(); err != nil {
+		t.Fatalf("Save observed: %v", err)
+	}
+
+	status, err := StatusForRepo(StatusOptions{CWD: repo, Binding: binding})
+	if err != nil {
+		t.Fatalf("StatusForRepo: %v", err)
+	}
+	if status.EligibilityCache != "eligible repo_config_id=123" {
+		t.Fatalf("EligibilityCache = %q", status.EligibilityCache)
+	}
+	if status.ObservedRepo != "bound" {
+		t.Fatalf("ObservedRepo = %q", status.ObservedRepo)
 	}
 }
 
