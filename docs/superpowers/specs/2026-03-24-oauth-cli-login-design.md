@@ -446,7 +446,7 @@ func NewSSOProvider(relayProvider relay.Provider, logger *zap.Logger) *SSOProvid
 - relay server 返回凭据错误：`relay.Provider.Authenticate` 返回 `ErrInvalidCredentials`，SSO provider 返回空结果并允许默认登录链继续处理失败结果。
 - relay server 不可用（网络错误等）：`relay.Provider.Authenticate` 返回其他 error，SSO provider 记录 warn 日志并返回空结果。
 - relay server 要求额外验证（如 Turnstile、TOTP）：`relay.Provider.Authenticate` 返回 `ErrExtraVerificationRequired`，SSO provider 记录 warn 日志并返回空结果。后续可在 OAuth 授权页中增加额外验证输入框。
-- LDAP 登录只使用用户输入密码完成 LDAP bind。后续 relay identity resolve/provision 不得把 LDAP 密码转发给 relay；创建 relay 用户时使用后端生成的高熵 relay-side password，已有 relay 用户只做 username/concurrency 等元数据修复，不更新密码。
+- LDAP 登录只使用用户输入密码完成 LDAP bind。后续 relay identity resolve/provision 不得把 LDAP 密码转发给 relay；创建 relay 用户时使用后端生成的高熵 relay-side password，已有 relay 用户只做 username/concurrency 等元数据修复，不更新密码。LDAP relay identity resolution must prefer an exact relay email match before canonical username lookup/provisioning. When the resolved relay user exposes a valid `admin` or `user` role, the local user role is synced from that relay role so LDAP login does not downgrade an existing relay admin account.
 
 ### Provider Chain
 
@@ -767,7 +767,7 @@ ae-cli 直接调用 relay provider（不走后端代理），支持多个独立 
 `GET /api/v1/providers` 流程中，后端需要 relay user ID 来查询/创建 API key。用户的 `relay_user_id` 来源：
 
 - Relay SSO 用户：登录时已关联，直接使用
-- LDAP 用户：后端通过 stable username 解析 relay identity。当前实现优先用 canonical username（邮箱登录时取 `@` 前缀）查找 relay 用户；必要时兼容历史 full-email username，并可修复 username/concurrency 等元数据。
+- LDAP 用户：后端先用 LDAP 派生邮箱精确查找 relay 用户，以复用现有 sub2api 账号和角色；未命中时再通过 stable username 解析 relay identity。username 路径使用 canonical username（邮箱登录时取 `@` 前缀）查找 relay 用户；必要时兼容历史 full-email username，并可修复 username/concurrency 等元数据。若解析出的 relay 用户角色为 `admin` 或 `user`，本地 `users.role` 跟随该 relay 角色。
 - LDAP 用户首次没有 relay 账号时，后端可通过 relay admin API provision relay 用户，并使用后端生成的高熵 relay-side password。LDAP 登录密码只用于 LDAP bind，不能写入本地 `relay_auth_password`，也不能作为 relay create/update password 发送给 relay。
 - 当 relay provider 不可用或无法解析/provision relay 用户时，LDAP-only 用户无法获取 API key。`GET /api/v1/providers` 返回空列表 `{"providers": []}`。ae-cli 收到空列表后提示用户："当前账号未关联 relay server，无法自动配置 AI 工具。请联系管理员。"
 

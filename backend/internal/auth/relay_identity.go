@@ -17,6 +17,10 @@ type relayIdentityAPI interface {
 	CreateUser(ctx context.Context, req relay.CreateUserRequest) (*relay.User, error)
 }
 
+type relayIdentityEmailLookupAPI interface {
+	FindUserByEmail(ctx context.Context, email string) (*relay.User, error)
+}
+
 type relayIdentityPasswordUpdater interface {
 	UpdateUser(ctx context.Context, userID int64, req relay.UpdateUserRequest) (*relay.User, error)
 }
@@ -51,6 +55,16 @@ func (r *RelayIdentityResolver) ResolveOrProvisionForLDAP(ctx context.Context, u
 		return nil, "", fmt.Errorf("relay identity: canonical username is required")
 	}
 
+	if email != "" {
+		u, err := r.findUserByEmail(ctx, email)
+		if err != nil {
+			return nil, "", err
+		}
+		if u != nil {
+			return r.updateExistingLDAPRelayUser(ctx, u, canonicalUsername, false)
+		}
+	}
+
 	u, err := r.api.FindUserByUsername(ctx, canonicalUsername)
 	if err != nil {
 		return nil, "", fmt.Errorf("relay identity: find user by username: %w", err)
@@ -64,18 +78,7 @@ func (r *RelayIdentityResolver) ResolveOrProvisionForLDAP(ctx context.Context, u
 		foundByLegacyUsername = u != nil
 	}
 	if u != nil {
-		updateReq, shouldUpdate := relayUserUpdateForLDAP(u, canonicalUsername, foundByLegacyUsername)
-		if !shouldUpdate {
-			return u, "", nil
-		}
-		if updater, ok := r.api.(relayIdentityPasswordUpdater); ok {
-			updated, err := updater.UpdateUser(ctx, u.ID, updateReq)
-			if err != nil {
-				return nil, "", fmt.Errorf("relay identity: update user: %w", err)
-			}
-			return updated, "", nil
-		}
-		return u, "", nil
+		return r.updateExistingLDAPRelayUser(ctx, u, canonicalUsername, foundByLegacyUsername)
 	}
 
 	email = ensureNonEmptyEmail(email, username, r.fallbackDomain)
@@ -96,6 +99,33 @@ func (r *RelayIdentityResolver) ResolveOrProvisionForLDAP(ctx context.Context, u
 		return nil, "", fmt.Errorf("relay identity: create user: %w", err)
 	}
 	return created, pw, nil
+}
+
+func (r *RelayIdentityResolver) findUserByEmail(ctx context.Context, email string) (*relay.User, error) {
+	lookup, ok := r.api.(relayIdentityEmailLookupAPI)
+	if !ok {
+		return nil, nil
+	}
+	u, err := lookup.FindUserByEmail(ctx, email)
+	if err != nil {
+		return nil, fmt.Errorf("relay identity: find user by email: %w", err)
+	}
+	return u, nil
+}
+
+func (r *RelayIdentityResolver) updateExistingLDAPRelayUser(ctx context.Context, u *relay.User, canonicalUsername string, foundByLegacyUsername bool) (*relay.User, string, error) {
+	updateReq, shouldUpdate := relayUserUpdateForLDAP(u, canonicalUsername, foundByLegacyUsername)
+	if !shouldUpdate {
+		return u, "", nil
+	}
+	if updater, ok := r.api.(relayIdentityPasswordUpdater); ok {
+		updated, err := updater.UpdateUser(ctx, u.ID, updateReq)
+		if err != nil {
+			return nil, "", fmt.Errorf("relay identity: update user: %w", err)
+		}
+		return updated, "", nil
+	}
+	return u, "", nil
 }
 
 func relayProvisionUsername(username string) string {

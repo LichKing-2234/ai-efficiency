@@ -242,6 +242,7 @@ func (s *Service) ensureLocalUser(ctx context.Context, info *UserInfo) (*ent.Use
 			info.RelayAuthPassword = relayPassword
 		}
 		info.Email = ensureNonEmptyEmail(info.Email, relayUser.Email, "")
+		info.Role = roleFromRelayIdentity(info.Role, relayUser.Role)
 	}
 
 	// LDAP may not provide a `mail` attribute; avoid creating a local user with an empty
@@ -292,6 +293,7 @@ func (s *Service) syncExistingLocalUser(ctx context.Context, u *ent.User, info *
 			info.RelayAuthPassword = relayPassword
 		}
 		info.Email = ensureNonEmptyEmail(info.Email, relayUser.Email, "")
+		info.Role = roleFromRelayIdentity(info.Role, relayUser.Role)
 	}
 
 	if info.RelayUserID != nil && (u.RelayUserID == nil || *u.RelayUserID != *info.RelayUserID) {
@@ -337,6 +339,16 @@ func (s *Service) syncExistingLocalUser(ctx context.Context, u *ent.User, info *
 		u = reloaded
 	}
 	return u, nil
+}
+
+func roleFromRelayIdentity(currentRole, relayRole string) string {
+	relayRole = strings.ToLower(strings.TrimSpace(relayRole))
+	switch relayRole {
+	case string(entuser.RoleAdmin), string(entuser.RoleUser):
+		return relayRole
+	default:
+		return currentRole
+	}
 }
 
 func (s *Service) encryptRelayAuthPassword(password string) (string, error) {

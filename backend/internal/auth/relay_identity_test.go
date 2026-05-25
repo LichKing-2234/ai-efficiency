@@ -18,6 +18,15 @@ type fakeRelayIdentityAPI struct {
 	findResult *relay.User
 }
 
+type emailFirstRelayIdentityAPI struct {
+	findByEmailCalls    []string
+	findByUsernameCalls []string
+	createUserCalls     []relay.CreateUserRequest
+
+	emailResult    *relay.User
+	usernameResult *relay.User
+}
+
 type relayIdentityLookupAPI struct {
 	findFn   func(context.Context, string) (*relay.User, error)
 	createFn func(context.Context, relay.CreateUserRequest) (*relay.User, error)
@@ -64,6 +73,26 @@ func (f *fakeRelayIdentityAPI) UpdateUser(_ context.Context, userID int64, req r
 	}, nil
 }
 
+func (f *emailFirstRelayIdentityAPI) FindUserByEmail(_ context.Context, email string) (*relay.User, error) {
+	f.findByEmailCalls = append(f.findByEmailCalls, email)
+	return f.emailResult, nil
+}
+
+func (f *emailFirstRelayIdentityAPI) FindUserByUsername(_ context.Context, username string) (*relay.User, error) {
+	f.findByUsernameCalls = append(f.findByUsernameCalls, username)
+	return f.usernameResult, nil
+}
+
+func (f *emailFirstRelayIdentityAPI) CreateUser(_ context.Context, req relay.CreateUserRequest) (*relay.User, error) {
+	f.createUserCalls = append(f.createUserCalls, req)
+	return &relay.User{
+		ID:       123,
+		Username: req.Username,
+		Email:    req.Email,
+		Role:     "user",
+	}, nil
+}
+
 func TestResolveOrProvisionRelayUser_UsesUsernameAsStableKey(t *testing.T) {
 	api := &fakeRelayIdentityAPI{
 		findResult: &relay.User{ID: 7, Username: "alice", Email: "alice@example.com"},
@@ -82,6 +111,34 @@ func TestResolveOrProvisionRelayUser_UsesUsernameAsStableKey(t *testing.T) {
 	}
 	if len(api.createUserCalls) != 0 {
 		t.Fatalf("expected CreateUser not called when user exists, got %d calls", len(api.createUserCalls))
+	}
+}
+
+func TestResolveOrProvisionRelayUser_PrefersEmailMatchForLDAP(t *testing.T) {
+	api := &emailFirstRelayIdentityAPI{
+		emailResult:    &relay.User{ID: 42, Username: "luxuhui@example.com", Email: "luxuhui@example.com", Role: "admin", Concurrency: defaultRelayUserConcurrency},
+		usernameResult: &relay.User{ID: 9, Username: "luxuhui", Email: "luxuhui@ldap.local", Role: "user", Concurrency: defaultRelayUserConcurrency},
+	}
+
+	r := NewRelayIdentityResolver(api, "ldap.local")
+	u, password, err := r.ResolveOrProvisionForLDAP(context.Background(), "luxuhui", "luxuhui@example.com")
+	if err != nil {
+		t.Fatalf("ResolveOrProvisionForLDAP() unexpected error: %v", err)
+	}
+	if u == nil || u.ID != 42 || u.Role != "admin" {
+		t.Fatalf("expected existing relay admin user ID=42, got %+v", u)
+	}
+	if password != "" {
+		t.Fatalf("password = %q, want empty for existing relay user", password)
+	}
+	if got := api.findByEmailCalls; len(got) != 1 || got[0] != "luxuhui@example.com" {
+		t.Fatalf("expected email lookup first, got %+v", got)
+	}
+	if len(api.findByUsernameCalls) != 0 {
+		t.Fatalf("expected no username lookup after email match, got %+v", api.findByUsernameCalls)
+	}
+	if len(api.createUserCalls) != 0 {
+		t.Fatalf("expected CreateUser not called when email matches, got %d calls", len(api.createUserCalls))
 	}
 }
 
