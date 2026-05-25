@@ -470,7 +470,7 @@ func TestStatusForRepoReportsCurrentEligibilityAndObservedRepo(t *testing.T) {
 		AuthSubject: "user:1",
 		RepoKey:     gitCtx.RepoKey,
 	}
-	now := time.Date(2026, 5, 24, 12, 0, 0, 0, time.UTC)
+	now := time.Now().Add(-time.Minute).UTC()
 	cache, err := hookstate.LoadEligibilityCache()
 	if err != nil {
 		t.Fatalf("LoadEligibilityCache: %v", err)

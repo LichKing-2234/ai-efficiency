@@ -8,6 +8,8 @@
 
 **Tech Stack:** Go 1.x, Cobra, Gin, Ent, local JSON state files, POSIX shell hook scripts, PowerShell installer, Git CLI.
 
+**Status:** Implementation has landed. The 2026-05-25 CI follow-up fixed `TestStatusForRepoReportsCurrentEligibilityAndObservedRepo` to seed its eligibility cache relative to current time instead of a fixed timestamp that expired after the 24-hour positive TTL.
+
 ---
 
 ## File Structure
