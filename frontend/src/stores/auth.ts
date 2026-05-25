@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { login as apiLogin, getMe } from '@/api/auth'
+import { login as apiLogin, getMe, logout as apiLogout } from '@/api/auth'
 import type { User, LoginRequest } from '@/types'
 
 export const useAuthStore = defineStore('auth', () => {
@@ -35,16 +35,25 @@ export const useAuthStore = defineStore('auth', () => {
     } catch (error: any) {
       user.value = null
       if (error?.response?.status === 401) {
-        logout()
+        await logout()
       }
     }
   }
 
-  function logout() {
-    token.value = null
-    user.value = null
-    localStorage.removeItem('token')
-    localStorage.removeItem('refresh_token')
+  async function logout() {
+    const refreshToken = localStorage.getItem('refresh_token')
+    try {
+      if (refreshToken) {
+        await apiLogout(refreshToken)
+      }
+    } catch {
+      // Local logout must still complete if server-side revocation fails.
+    } finally {
+      token.value = null
+      user.value = null
+      localStorage.removeItem('token')
+      localStorage.removeItem('refresh_token')
+    }
   }
 
   return { user, token, isAuthenticated, isAdmin, login, logout, fetchMe }

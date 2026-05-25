@@ -25,3 +25,9 @@ export function refresh(token: string) {
 export function getMe() {
   return client.get<ApiResponse<User>>('/auth/me')
 }
+
+export function logout(refreshToken?: string | null) {
+  return client.post<ApiResponse<{ status: string }>>('/auth/logout', {
+    refresh_token: refreshToken || '',
+  })
+}

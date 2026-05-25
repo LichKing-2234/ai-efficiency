@@ -7,6 +7,7 @@ vi.mock('@/api/auth', () => ({
   login: vi.fn(),
   getMe: vi.fn(),
   devLogin: vi.fn(),
+  logout: vi.fn(),
 }))
 
 describe('Auth Store', () => {
@@ -29,17 +30,47 @@ describe('Auth Store', () => {
     expect(store.isAuthenticated).toBe(true)
   })
 
-  it('logout clears token and user', () => {
+  it('logout clears token and user', async () => {
     localStorage.setItem('token', 'test-token')
     localStorage.setItem('refresh_token', 'test-refresh')
     const store = useAuthStore()
     store.user = { id: 1, username: 'admin', email: 'a@b.com', role: 'admin', auth_source: 'sso' }
 
-    store.logout()
+    await store.logout()
 
     expect(store.token).toBeNull()
     expect(store.user).toBeNull()
     expect(store.isAuthenticated).toBe(false)
+    expect(localStorage.getItem('token')).toBeNull()
+    expect(localStorage.getItem('refresh_token')).toBeNull()
+  })
+
+  it('logout revokes refresh token then clears local state', async () => {
+    const { logout } = await import('@/api/auth')
+    ;(logout as any).mockResolvedValue({ data: { data: { status: 'logged_out' } } })
+    localStorage.setItem('token', 'access-token')
+    localStorage.setItem('refresh_token', 'refresh-token')
+    const store = useAuthStore()
+    store.token = 'access-token'
+
+    await store.logout()
+
+    expect(logout).toHaveBeenCalledWith('refresh-token')
+    expect(store.token).toBeNull()
+    expect(localStorage.getItem('token')).toBeNull()
+    expect(localStorage.getItem('refresh_token')).toBeNull()
+  })
+
+  it('logout clears local state even when revocation fails', async () => {
+    const { logout } = await import('@/api/auth')
+    ;(logout as any).mockRejectedValue(new Error('network'))
+    localStorage.setItem('token', 'access-token')
+    localStorage.setItem('refresh_token', 'refresh-token')
+    const store = useAuthStore()
+    store.token = 'access-token'
+
+    await store.logout()
+
     expect(localStorage.getItem('token')).toBeNull()
     expect(localStorage.getItem('refresh_token')).toBeNull()
   })
