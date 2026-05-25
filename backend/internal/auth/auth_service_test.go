@@ -629,6 +629,54 @@ func TestEnsureLocalUserRepairsWrongStoredRelayUserIDForLDAP(t *testing.T) {
 	}
 }
 
+func TestEnsureLocalUserLDAPUsesRelayIdentityRole(t *testing.T) {
+	svc, client := newTestServiceWithDB(t)
+	ctx := context.Background()
+
+	api := &emailFirstRelayIdentityAPI{
+		emailResult: &relay.User{
+			ID:          42,
+			Username:    "luxuhui@example.com",
+			Email:       "luxuhui@example.com",
+			Role:        "admin",
+			Concurrency: defaultRelayUserConcurrency,
+		},
+	}
+	svc.SetRelayIdentityResolver(NewRelayIdentityResolver(api, "ldap.local"))
+
+	info := &UserInfo{
+		Username:   "luxuhui",
+		Email:      "luxuhui@example.com",
+		Role:       "user",
+		AuthSource: "ldap",
+	}
+
+	u, err := svc.ensureLocalUser(ctx, info)
+	if err != nil {
+		t.Fatalf("ensureLocalUser error: %v", err)
+	}
+	if u.RelayUserID == nil || *u.RelayUserID != 42 {
+		t.Fatalf("relay_user_id = %v, want 42", u.RelayUserID)
+	}
+	if u.Role != entuser.RoleAdmin {
+		t.Fatalf("role = %q, want admin from relay identity", u.Role)
+	}
+	if info.Role != "admin" {
+		t.Fatalf("info.Role = %q, want admin", info.Role)
+	}
+	if len(api.findByEmailCalls) != 1 || api.findByEmailCalls[0] != "luxuhui@example.com" {
+		t.Fatalf("expected email lookup for relay identity, got %+v", api.findByEmailCalls)
+	}
+
+	dbUser, err := client.User.Get(ctx, u.ID)
+	if err != nil {
+		t.Fatalf("get user: %v", err)
+	}
+	if dbUser.Role != entuser.RoleAdmin {
+		t.Fatalf("db role = %q, want admin", dbUser.Role)
+	}
+}
+
 func TestEnsureLocalUserWithSub2apiID(t *testing.T) {
 	svc, _ := newTestServiceWithDB(t)
 	ctx := context.Background()
