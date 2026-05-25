@@ -28,7 +28,7 @@
 - Modify: `frontend/src/types/index.ts`
 - Test: `frontend/src/__tests__/user-setup-review.test.ts`
 
-- [ ] **Step 1: Write failing command-builder tests**
+- [x] **Step 1: Write failing command-builder tests**
 
 Replace `frontend/src/__tests__/user-setup-review.test.ts` with tests that import only command builders:
 
@@ -81,7 +81,7 @@ describe('userSetupReview command builders', () => {
 })
 ```
 
-- [ ] **Step 2: Run command-builder test and confirm failure**
+- [x] **Step 2: Run command-builder test and confirm failure**
 
 Run:
 
@@ -91,7 +91,7 @@ cd frontend && pnpm test src/__tests__/user-setup-review.test.ts
 
 Expected result: the test fails because `buildDoctorCommand`, `buildHooksGlobalCommand`, `buildHooksStatusUploadsCommand`, `buildRepoInitCommand`, and `buildSyncCommand` are not exported yet.
 
-- [ ] **Step 3: Implement command builders and remove verify parser**
+- [x] **Step 3: Implement command builders and remove verify parser**
 
 Update `frontend/src/utils/userSetupReview.ts` to export these functions:
 
@@ -154,7 +154,7 @@ export interface VerifyReviewSummary {
 }
 ```
 
-- [ ] **Step 4: Run command-builder test and confirm pass**
+- [x] **Step 4: Run command-builder test and confirm pass**
 
 Run:
 
@@ -164,7 +164,7 @@ cd frontend && pnpm test src/__tests__/user-setup-review.test.ts
 
 Expected result: command-builder tests pass.
 
-- [ ] **Step 5: Commit command-builder contract**
+- [x] **Step 5: Commit command-builder contract**
 
 Run:
 
