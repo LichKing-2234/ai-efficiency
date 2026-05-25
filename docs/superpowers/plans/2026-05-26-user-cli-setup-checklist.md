@@ -351,7 +351,7 @@ git commit -m "feat(frontend): split CLI setup checklist by scope"
 **Files:**
 - Modify: `docs/architecture.md`
 
-- [ ] **Step 1: Update `/user` architecture description**
+- [x] **Step 1: Update `/user` architecture description**
 
 In `docs/architecture.md`, update the `/user` bullet to state:
 
@@ -361,7 +361,7 @@ The embedded SPA exposes a regular-user `/user` surface for profile summary, pro
 
 Preserve the existing credential and provider-test details after that sentence.
 
-- [ ] **Step 2: Update CLI runtime flow wording**
+- [x] **Step 2: Update CLI runtime flow wording**
 
 In `docs/architecture.md`, update the current runtime flow notes so they describe:
 
@@ -369,7 +369,7 @@ In `docs/architecture.md`, update the current runtime flow notes so they describ
 `ae-cli hooks enable --global` is the recommended one-time machine-level hook setup in the `/user` guide, while `ae-cli init` remains the per-repo registration/cache bootstrap command. `ae-cli sync` remains a manual backfill/recovery command; hooks normally trigger checkpoint and managed tool-usage upload after eligible commits.
 ```
 
-- [ ] **Step 3: Review architecture diff**
+- [x] **Step 3: Review architecture diff**
 
 Run:
 
@@ -379,7 +379,7 @@ git diff -- docs/architecture.md
 
 Expected result: the diff only changes current `/user` and CLI flow descriptions, not historical spec text.
 
-- [ ] **Step 4: Commit docs update**
+- [x] **Step 4: Commit docs update**
 
 Run:
 
