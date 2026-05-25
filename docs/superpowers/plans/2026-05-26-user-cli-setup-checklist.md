@@ -181,7 +181,7 @@ git commit -m "refactor(frontend): simplify user CLI setup commands"
 - Modify: `frontend/src/views/UserView.vue`
 - Test: `frontend/src/__tests__/user-view.test.ts`
 
-- [ ] **Step 1: Write failing UserView tests**
+- [x] **Step 1: Write failing UserView tests**
 
 Update `frontend/src/__tests__/user-view.test.ts` to add assertions to the first render test:
 
@@ -203,7 +203,7 @@ expect(wrapper.text()).not.toContain('Review')
 
 Keep the existing provider-switch test that checks `discover --provider staging`.
 
-- [ ] **Step 2: Run UserView test and confirm failure**
+- [x] **Step 2: Run UserView test and confirm failure**
 
 Run:
 
@@ -213,7 +213,7 @@ cd frontend && pnpm test src/__tests__/user-view.test.ts
 
 Expected result: the test fails because the current UI still renders `CLI Setup Checklist` with `Verify` textareas and does not render the new setup sections.
 
-- [ ] **Step 3: Update UserView script state**
+- [x] **Step 3: Update UserView script state**
 
 In `frontend/src/views/UserView.vue`:
 
@@ -254,7 +254,7 @@ const hooksStatusUploadsCommand = computed(() => buildHooksStatusUploadsCommand(
 
 Remove calls to `ensureVerifyDraft(provider.id)` in provider selection paths.
 
-- [ ] **Step 4: Replace checklist template**
+- [x] **Step 4: Replace checklist template**
 
 Replace the existing `CLI Setup Checklist` section body with these blocks:
 
@@ -325,7 +325,7 @@ Replace the existing `CLI Setup Checklist` section body with these blocks:
 </section>
 ```
 
-- [ ] **Step 5: Run UserView test and confirm pass**
+- [x] **Step 5: Run UserView test and confirm pass**
 
 Run:
 
@@ -335,7 +335,7 @@ cd frontend && pnpm test src/__tests__/user-view.test.ts
 
 Expected result: UserView tests pass.
 
-- [ ] **Step 6: Commit UserView UI**
+- [x] **Step 6: Commit UserView UI**
 
 Run:
 
