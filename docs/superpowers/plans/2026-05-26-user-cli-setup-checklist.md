@@ -396,7 +396,7 @@ git commit -m "docs(architecture): update user CLI setup flow"
 - Verify: `frontend/src/`
 - Verify: `docs/`
 
-- [ ] **Step 1: Run frontend unit tests**
+- [x] **Step 1: Run frontend unit tests**
 
 Run:
 
@@ -406,7 +406,7 @@ cd frontend && pnpm test
 
 Expected result: all frontend tests pass.
 
-- [ ] **Step 2: Run frontend build**
+- [x] **Step 2: Run frontend build**
 
 Run:
 
@@ -416,7 +416,7 @@ cd frontend && pnpm build
 
 Expected result: Vite build completes successfully.
 
-- [ ] **Step 3: Inspect final git diff**
+- [x] **Step 3: Inspect final git diff**
 
 Run:
 
