@@ -18,7 +18,7 @@ func newTestProvider(t *testing.T, handler http.Handler) relay.Provider {
 	t.Helper()
 	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
-	p := relay.NewSub2apiProvider(srv.Client(), srv.URL+"/v1", srv.URL, "test-llm-key", "test-model", zap.NewNop())
+	p := relay.NewSub2apiProvider(srv.Client(), srv.URL+"/v1", "test-llm-key", "test-model", zap.NewNop())
 	if setter, ok := p.(interface{ SetAdminAPIKey(string) }); ok {
 		setter.SetAdminAPIKey("test-admin-key")
 	}
@@ -48,7 +48,7 @@ func TestNewSub2apiProviderNormalizesInferenceBaseURL(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
-	p := relay.NewSub2apiProvider(srv.Client(), srv.URL, srv.URL, "test-llm-key", "gpt-5.4", zap.NewNop())
+	p := relay.NewSub2apiProvider(srv.Client(), srv.URL, "test-llm-key", "gpt-5.4", zap.NewNop())
 	resp, err := p.ChatCompletion(context.Background(), relay.ChatCompletionRequest{
 		Messages: []relay.ChatMessage{{Role: "user", Content: "ping"}},
 	})
@@ -81,7 +81,7 @@ func TestPingUnreachable(t *testing.T) {
 	client := srv.Client()
 	srv.Close()
 
-	p := relay.NewSub2apiProvider(client, url+"/v1", url, "key", "model", zap.NewNop())
+	p := relay.NewSub2apiProvider(client, url+"/v1", "key", "model", zap.NewNop())
 	if err := p.Ping(context.Background()); err == nil {
 		t.Fatal("Ping() expected error for unreachable server, got nil")
 	}
@@ -633,8 +633,8 @@ func TestChatCompletion(t *testing.T) {
 		if r.Method != http.MethodPost {
 			t.Errorf("expected POST, got %s", r.Method)
 		}
-		if r.Header.Get("Authorization") != "Bearer test-llm-key" {
-			t.Errorf("expected relay api key in Authorization header, got %q", r.Header.Get("Authorization"))
+		if r.Header.Get("Authorization") != "Bearer test-admin-key" {
+			t.Errorf("expected relay key in Authorization header, got %q", r.Header.Get("Authorization"))
 		}
 		var body map[string]any
 		json.NewDecoder(r.Body).Decode(&body)
@@ -704,8 +704,8 @@ func TestChatCompletionIncludesErrorMessageForNonOKResponse(t *testing.T) {
 func TestChatCompletionWithTools(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/chat/completions", func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != "Bearer test-llm-key" {
-			t.Fatalf("expected relay api key in Authorization header, got %q", r.Header.Get("Authorization"))
+		if r.Header.Get("Authorization") != "Bearer test-admin-key" {
+			t.Fatalf("expected relay key in Authorization header, got %q", r.Header.Get("Authorization"))
 		}
 		var body map[string]any
 		json.NewDecoder(r.Body).Decode(&body)

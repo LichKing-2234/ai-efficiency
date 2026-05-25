@@ -21,8 +21,7 @@ type sub2apiRelay struct {
 	client   *http.Client
 	baseURL  string // LLM API endpoint, e.g. http://localhost:3000/v1
 	adminURL string // Admin API endpoint, e.g. http://localhost:3000
-	apiKey   string // LLM API key
-	adminKey string // Admin API key
+	apiKey   string // Relay API key used for both admin and inference requests.
 	model    string
 	logger   *zap.Logger
 }
@@ -43,12 +42,12 @@ func (s envelopeStatus) ok() bool {
 }
 
 // NewSub2apiProvider creates a new relay provider backed by a sub2api instance.
-func NewSub2apiProvider(httpClient *http.Client, baseURL, adminURL, apiKey, model string, logger *zap.Logger) Provider {
+func NewSub2apiProvider(httpClient *http.Client, baseURL, apiKey, model string, logger *zap.Logger) Provider {
 	return &sub2apiRelay{
 		client:   httpClient,
 		baseURL:  normalizeInferenceBaseURL(baseURL),
-		adminURL: strings.TrimRight(adminURL, "/"),
-		apiKey:   apiKey,
+		adminURL: normalizeAdminBaseURL(baseURL),
+		apiKey:   strings.TrimSpace(apiKey),
 		model:    model,
 		logger:   logger,
 	}
@@ -65,21 +64,23 @@ func normalizeInferenceBaseURL(raw string) string {
 	return raw + "/v1"
 }
 
+func normalizeAdminBaseURL(raw string) string {
+	raw = strings.TrimRight(strings.TrimSpace(raw), "/")
+	return strings.TrimSuffix(raw, "/v1")
+}
+
 func (s *sub2apiRelay) Name() string { return "sub2api" }
 
 func (s *sub2apiRelay) adminAPIKey() string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	if strings.TrimSpace(s.adminKey) != "" {
-		return s.adminKey
-	}
-	return s.apiKey
+	return strings.TrimSpace(s.apiKey)
 }
 
 func (s *sub2apiRelay) SetAdminAPIKey(apiKey string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.adminKey = strings.TrimSpace(apiKey)
+	s.apiKey = strings.TrimSpace(apiKey)
 }
 
 func (s *sub2apiRelay) SetModel(model string) {

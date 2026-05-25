@@ -128,6 +128,9 @@ func main() {
 	if err := entClient.Schema.Create(context.Background()); err != nil {
 		logger.Fatal("ent auto-migrate", zap.Error(err))
 	}
+	if err := dropLegacyRelayProviderAdminURL(context.Background(), db); err != nil {
+		logger.Fatal("drop legacy relay provider admin_url", zap.Error(err))
+	}
 	logger.Info("database schema migrated")
 	if err := ensurePrimaryRelayProviderFromConfig(context.Background(), entClient, cfg.Relay, cfg.Encryption.Key); err != nil {
 		logger.Fatal("bootstrap primary relay provider from config", zap.Error(err))
@@ -151,21 +154,13 @@ func main() {
 	// Init relay provider
 	var relayProvider relay.Provider
 	if cfg.Relay.URL != "" {
-		adminURL := strings.TrimSpace(cfg.Relay.AdminURL)
-		if adminURL == "" {
-			adminURL = cfg.Relay.URL
-		}
 		relayProvider = relay.NewSub2apiProvider(
 			http.DefaultClient,
 			cfg.Relay.URL,
-			adminURL,
-			cfg.Relay.APIKey,
+			cfg.Relay.AdminAPIKey,
 			cfg.Relay.Model,
 			logger,
 		)
-		if updater, ok := relayProvider.(interface{ SetAdminAPIKey(string) }); ok {
-			updater.SetAdminAPIKey(cfg.Relay.AdminAPIKey)
-		}
 		logger.Info("relay provider initialized",
 			zap.String("provider", cfg.Relay.Provider),
 			zap.String("url", cfg.Relay.URL),

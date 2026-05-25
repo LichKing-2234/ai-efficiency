@@ -61,7 +61,6 @@ func (h *ProviderHandler) getOrCreateRelayProvider(p *ent.RelayProvider) relay.P
 	rp = relay.NewSub2apiProvider(
 		http.DefaultClient,
 		p.BaseURL,
-		p.AdminURL,
 		adminKey,
 		p.DefaultModel,
 		h.logger,
@@ -189,7 +188,6 @@ type adminProviderResponse struct {
 	Name         string `json:"name"`
 	DisplayName  string `json:"display_name"`
 	BaseURL      string `json:"base_url"`
-	AdminURL     string `json:"admin_url"`
 	RelayType    string `json:"relay_type"`
 	AdminAPIKey  string `json:"admin_api_key"`
 	DefaultModel string `json:"default_model"`
@@ -210,7 +208,6 @@ func toAdminProviderResponse(p *ent.RelayProvider) adminProviderResponse {
 		Name:         p.Name,
 		DisplayName:  p.DisplayName,
 		BaseURL:      p.BaseURL,
-		AdminURL:     p.AdminURL,
 		RelayType:    p.RelayType,
 		AdminAPIKey:  "***",
 		DefaultModel: p.DefaultModel,
@@ -240,7 +237,6 @@ func (h *ProviderHandler) Create(c *gin.Context) {
 		Name         string `json:"name" binding:"required"`
 		DisplayName  string `json:"display_name" binding:"required"`
 		BaseURL      string `json:"base_url" binding:"required"`
-		AdminURL     string `json:"admin_url" binding:"required"`
 		RelayType    string `json:"relay_type"`
 		AdminAPIKey  string `json:"admin_api_key" binding:"required"`
 		DefaultModel string `json:"default_model"`
@@ -265,7 +261,6 @@ func (h *ProviderHandler) Create(c *gin.Context) {
 		SetName(req.Name).
 		SetDisplayName(req.DisplayName).
 		SetBaseURL(req.BaseURL).
-		SetAdminURL(req.AdminURL).
 		SetAdminAPIKey(encryptedKey).
 		SetIsPrimary(req.IsPrimary).
 		SetEnabled(req.Enabled)
@@ -300,7 +295,6 @@ func (h *ProviderHandler) Update(c *gin.Context) {
 	var req struct {
 		DisplayName  string `json:"display_name"`
 		BaseURL      string `json:"base_url"`
-		AdminURL     string `json:"admin_url"`
 		RelayType    string `json:"relay_type"`
 		AdminAPIKey  string `json:"admin_api_key"`
 		DefaultModel string `json:"default_model"`
@@ -320,9 +314,6 @@ func (h *ProviderHandler) Update(c *gin.Context) {
 	}
 	if req.BaseURL != "" {
 		update.SetBaseURL(req.BaseURL)
-	}
-	if req.AdminURL != "" {
-		update.SetAdminURL(req.AdminURL)
 	}
 	if req.RelayType != "" {
 		update.SetRelayType(req.RelayType)
@@ -471,7 +462,6 @@ func (h *ProviderHandler) Test(c *gin.Context) {
 	testProvider := relay.NewSub2apiProvider(
 		http.DefaultClient,
 		provider.BaseURL,
-		provider.AdminURL,
 		selected.Key,
 		model,
 		h.logger,

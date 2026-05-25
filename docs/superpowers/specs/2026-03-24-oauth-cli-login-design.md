@@ -246,7 +246,7 @@ sub2api_db:
 relay:
   provider: "sub2api"              # relay server 类型，便于后续扩展
   url: "http://localhost:3000"     # relay server REST API 地址
-  api_key: ""                      # relay server API key（用于 LLM 和管理端点）
+  admin_api_key: ""                # relay server admin API key（用于 identity、用户 API key 和用量管理）
   model: "claude-sonnet-4-20250514" # 默认 LLM 模型
 ```
 
@@ -264,22 +264,24 @@ type Config struct {
 }
 
 type RelayConfig struct {
-    Provider string `mapstructure:"provider"` // "sub2api" 或后续其他实现
-    URL      string `mapstructure:"url"`
-    APIKey   string `mapstructure:"api_key"`
-    Model    string `mapstructure:"model"`
+    Provider    string `mapstructure:"provider"` // "sub2api" 或后续其他实现
+    URL         string `mapstructure:"url"`
+    AdminAPIKey string `mapstructure:"admin_api_key"`
+    Model       string `mapstructure:"model"`
 }
 ```
 
 ### Provider 实例化策略
 
-Section 1 的 `relay.*` 配置优先用于创建后端的"主 provider"实例（用于 SSO 认证、LDAP 登录时的 relay identity provision、LLM 分析、session bootstrap 等后端内部功能）。
+Section 1 的 `relay.*` 配置优先用于创建后端的"主 provider"实例（用于 SSO 认证、LDAP 登录时的 relay identity provision、LLM 分析、session bootstrap 等后端内部功能）。当前静态配置合同只包含 `relay.url` + `relay.admin_api_key`；旧 `relay.api_key` / `AE_RELAY_API_KEY` 和 `relay.admin_url` / `AE_RELAY_ADMIN_URL` 已从后端配置合同中移除。
 
-Section 7 的 `RelayProvider` Ent 记录用于为每个用户下发 API key。后端为每个 `enabled=true` 的 RelayProvider Ent 记录调用 `NewSub2apiProvider()`，使用该记录的 `admin_url` + `admin_api_key` 创建独立的 Provider 实例。
+Section 7 的 `RelayProvider` Ent 记录用于为每个用户下发 API key。后端为每个 `enabled=true` 的 RelayProvider Ent 记录调用 `NewSub2apiProvider()`，使用该记录的 `base_url` + `admin_api_key` 创建独立的 Provider 实例；管理 API endpoint 从 `base_url` 派生。
 
-若 `relay.*` 未配置 URL，当前实现会在启动时回退到 `enabled=true && is_primary=true` 的 `RelayProvider` Ent 记录来构建这个主 provider。该回退路径使用该记录的 `base_url` 作为 `relay.url`、`admin_url` 作为 `relay.admin_url`，并结合 `admin_api_key` / `default_model` 完成初始化。
+若 `relay.*` 未配置 URL，当前实现会在启动时回退到 `enabled=true && is_primary=true` 的 `RelayProvider` Ent 记录来构建这个主 provider。该回退路径使用该记录的 `base_url` 作为 `relay.url`，并结合 `admin_api_key` / `default_model` 完成初始化。
 
-`is_primary=true` 的 RelayProvider Ent 记录应与 Section 1 的 `relay.*` 配置指向同一个 relay server。当前实现保留“静态配置优先、primary provider 回退”的双轨模式；当回退路径生效时，要求 primary provider 的 `base_url` / `admin_url` 与目标 relay 的 inference/admin 端点一致。后续仍可进一步移除 `relay.*` 配置，完全从数据库加载。
+`is_primary=true` 的 RelayProvider Ent 记录应与 Section 1 的 `relay.*` 配置指向同一个 relay server。当前实现保留“静态配置优先、primary provider 回退”的双轨模式；当回退路径生效时，要求 primary provider 的 `base_url` 指向目标 relay server。后续仍可进一步移除 `relay.*` 配置，完全从数据库加载。
+
+启动迁移会删除旧 `relay_providers.admin_url` 列，避免旧库中残留的 NOT NULL 列继续影响新的 provider 创建流程。
 
 ### 消费方改造
 
@@ -722,8 +724,7 @@ ae-cli 直接调用 relay provider（不走后端代理），支持多个独立 
 |------|------|------|
 | name | string, unique | provider 名称，如 `sub2api-claude`、`sub2api-codex` |
 | display_name | string | 显示名称，如 "Claude (Sub2API)"、"Codex (Sub2API)" |
-| base_url | string | LLM API 地址，如 `http://localhost:3000/v1` |
-| admin_url | string | relay server 管理 API 地址（用于查询/创建 API key），可与 base_url 不同 |
+| base_url | string | relay server 地址；后端从该地址派生 `/v1` inference endpoint 与管理 API endpoint |
 | relay_type | string | 对应的 relay.Provider 实现类型，如 `sub2api` |
 | admin_api_key | string | relay server 管理 API key（加密存储，用于后端代为创建用户 key） |
 | default_model | string | 默认模型，如 `claude-sonnet-4-20250514` |

@@ -69,11 +69,6 @@ func BaseURL(v string) predicate.RelayProvider {
 	return predicate.RelayProvider(sql.FieldEQ(FieldBaseURL, v))
 }
 
-// AdminURL applies equality check predicate on the "admin_url" field. It's identical to AdminURLEQ.
-func AdminURL(v string) predicate.RelayProvider {
-	return predicate.RelayProvider(sql.FieldEQ(FieldAdminURL, v))
-}
-
 // RelayType applies equality check predicate on the "relay_type" field. It's identical to RelayTypeEQ.
 func RelayType(v string) predicate.RelayProvider {
 	return predicate.RelayProvider(sql.FieldEQ(FieldRelayType, v))
@@ -302,71 +297,6 @@ func BaseURLEqualFold(v string) predicate.RelayProvider {
 // BaseURLContainsFold applies the ContainsFold predicate on the "base_url" field.
 func BaseURLContainsFold(v string) predicate.RelayProvider {
 	return predicate.RelayProvider(sql.FieldContainsFold(FieldBaseURL, v))
-}
-
-// AdminURLEQ applies the EQ predicate on the "admin_url" field.
-func AdminURLEQ(v string) predicate.RelayProvider {
-	return predicate.RelayProvider(sql.FieldEQ(FieldAdminURL, v))
-}
-
-// AdminURLNEQ applies the NEQ predicate on the "admin_url" field.
-func AdminURLNEQ(v string) predicate.RelayProvider {
-	return predicate.RelayProvider(sql.FieldNEQ(FieldAdminURL, v))
-}
-
-// AdminURLIn applies the In predicate on the "admin_url" field.
-func AdminURLIn(vs ...string) predicate.RelayProvider {
-	return predicate.RelayProvider(sql.FieldIn(FieldAdminURL, vs...))
-}
-
-// AdminURLNotIn applies the NotIn predicate on the "admin_url" field.
-func AdminURLNotIn(vs ...string) predicate.RelayProvider {
-	return predicate.RelayProvider(sql.FieldNotIn(FieldAdminURL, vs...))
-}
-
-// AdminURLGT applies the GT predicate on the "admin_url" field.
-func AdminURLGT(v string) predicate.RelayProvider {
-	return predicate.RelayProvider(sql.FieldGT(FieldAdminURL, v))
-}
-
-// AdminURLGTE applies the GTE predicate on the "admin_url" field.
-func AdminURLGTE(v string) predicate.RelayProvider {
-	return predicate.RelayProvider(sql.FieldGTE(FieldAdminURL, v))
-}
-
-// AdminURLLT applies the LT predicate on the "admin_url" field.
-func AdminURLLT(v string) predicate.RelayProvider {
-	return predicate.RelayProvider(sql.FieldLT(FieldAdminURL, v))
-}
-
-// AdminURLLTE applies the LTE predicate on the "admin_url" field.
-func AdminURLLTE(v string) predicate.RelayProvider {
-	return predicate.RelayProvider(sql.FieldLTE(FieldAdminURL, v))
-}
-
-// AdminURLContains applies the Contains predicate on the "admin_url" field.
-func AdminURLContains(v string) predicate.RelayProvider {
-	return predicate.RelayProvider(sql.FieldContains(FieldAdminURL, v))
-}
-
-// AdminURLHasPrefix applies the HasPrefix predicate on the "admin_url" field.
-func AdminURLHasPrefix(v string) predicate.RelayProvider {
-	return predicate.RelayProvider(sql.FieldHasPrefix(FieldAdminURL, v))
-}
-
-// AdminURLHasSuffix applies the HasSuffix predicate on the "admin_url" field.
-func AdminURLHasSuffix(v string) predicate.RelayProvider {
-	return predicate.RelayProvider(sql.FieldHasSuffix(FieldAdminURL, v))
-}
-
-// AdminURLEqualFold applies the EqualFold predicate on the "admin_url" field.
-func AdminURLEqualFold(v string) predicate.RelayProvider {
-	return predicate.RelayProvider(sql.FieldEqualFold(FieldAdminURL, v))
-}
-
-// AdminURLContainsFold applies the ContainsFold predicate on the "admin_url" field.
-func AdminURLContainsFold(v string) predicate.RelayProvider {
-	return predicate.RelayProvider(sql.FieldContainsFold(FieldAdminURL, v))
 }
 
 // RelayTypeEQ applies the EQ predicate on the "relay_type" field.

@@ -40,7 +40,6 @@ func NewSettingsHandler(configPath string, relayCfg config.RelayConfig, logger *
 
 type llmConfigResponse struct {
 	RelayURL         string `json:"relay_url"`
-	RelayAPIKey      string `json:"relay_api_key"`       // masked
 	RelayAdminAPIKey string `json:"relay_admin_api_key"` // masked
 	Model            string `json:"model"`
 	Enabled          bool   `json:"enabled"`
@@ -73,10 +72,9 @@ func (h *SettingsHandler) GetLLMConfig(c *gin.Context) {
 		"code": 200,
 		"data": llmConfigResponse{
 			RelayURL:         h.relayCfg.URL,
-			RelayAPIKey:      maskAPIKey(h.relayCfg.APIKey),
 			RelayAdminAPIKey: maskAPIKey(h.currentRelayAdminAPIKey()),
 			Model:            h.relayCfg.Model,
-			Enabled:          h.relayCfg.URL != "" && h.relayCfg.APIKey != "",
+			Enabled:          h.relayConfigured(),
 		},
 	})
 }
@@ -120,17 +118,17 @@ func (h *SettingsHandler) UpdateLLMConfig(c *gin.Context) {
 		"message": "LLM configuration updated",
 		"data": llmConfigResponse{
 			RelayURL:         h.relayCfg.URL,
-			RelayAPIKey:      maskAPIKey(h.relayCfg.APIKey),
 			RelayAdminAPIKey: maskAPIKey(h.currentRelayAdminAPIKey()),
 			Model:            model,
-			Enabled:          h.relayCfg.URL != "" && h.relayCfg.APIKey != "",
+			Enabled:          h.relayConfigured(),
 		},
 	})
 }
 
 // TestLLMConnection tests the LLM connection with a simple request.
 func (h *SettingsHandler) TestLLMConnection(c *gin.Context) {
-	if h.relayCfg.URL == "" || h.relayCfg.APIKey == "" {
+	inferenceAPIKey := h.currentRelayAdminAPIKey()
+	if strings.TrimSpace(h.relayCfg.URL) == "" || inferenceAPIKey == "" {
 		c.JSON(http.StatusOK, gin.H{"code": 200, "data": gin.H{"success": false, "message": "Relay not configured"}})
 		return
 	}
@@ -185,7 +183,7 @@ func (h *SettingsHandler) TestLLMConnection(c *gin.Context) {
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+h.relayCfg.APIKey)
+	req.Header.Set("Authorization", "Bearer "+inferenceAPIKey)
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -222,7 +220,6 @@ func (h *SettingsHandler) TestLLMConnection(c *gin.Context) {
 
 func (h *SettingsHandler) persistRelayConfig(apiKey string, model string) error {
 	relaySection := map[string]interface{}{
-		"api_key":       h.relayCfg.APIKey,
 		"admin_api_key": apiKey,
 		"model":         model,
 		"url":           h.relayCfg.URL,
@@ -237,8 +234,9 @@ func (h *SettingsHandler) persistRelayConfig(apiKey string, model string) error 
 }
 
 func (h *SettingsHandler) currentRelayAdminAPIKey() string {
-	if v := strings.TrimSpace(h.relayCfg.AdminAPIKey); v != "" {
-		return v
-	}
-	return h.relayCfg.APIKey
+	return strings.TrimSpace(h.relayCfg.AdminAPIKey)
+}
+
+func (h *SettingsHandler) relayConfigured() bool {
+	return strings.TrimSpace(h.relayCfg.URL) != "" && h.currentRelayAdminAPIKey() != ""
 }

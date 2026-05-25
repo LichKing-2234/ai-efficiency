@@ -5,7 +5,6 @@ export interface RelayProviderPayload {
   name: string
   display_name: string
   base_url: string
-  admin_url: string
   admin_api_key: string
   is_primary: boolean
   enabled: boolean
@@ -14,7 +13,6 @@ export interface RelayProviderPayload {
 export interface RelayProviderUpdatePayload {
   display_name?: string
   base_url?: string
-  admin_url?: string
   admin_api_key?: string
   is_primary?: boolean
   enabled?: boolean
