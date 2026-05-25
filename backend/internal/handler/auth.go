@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/ai-efficiency/backend/ent"
 	entuser "github.com/ai-efficiency/backend/ent/user"
@@ -15,7 +16,7 @@ import (
 // AuthHandler handles authentication HTTP requests.
 type AuthHandler struct {
 	authService *auth.Service
-	entClient    *ent.Client
+	entClient   *ent.Client
 }
 
 // NewAuthHandler creates a new auth handler.
@@ -63,6 +64,35 @@ func (h *AuthHandler) Refresh(c *gin.Context) {
 		"tokens": tokens,
 		"user":   userInfo,
 	})
+}
+
+// Logout handles POST /api/v1/auth/logout.
+func (h *AuthHandler) Logout(c *gin.Context) {
+	var req struct {
+		RefreshToken string `json:"refresh_token"`
+	}
+	_ = c.ShouldBindJSON(&req)
+	if strings.TrimSpace(req.RefreshToken) != "" {
+		if err := h.authService.RevokeRefreshToken(c.Request.Context(), req.RefreshToken); err != nil {
+			pkg.Error(c, http.StatusUnauthorized, err.Error())
+			return
+		}
+	}
+	pkg.Success(c, gin.H{"status": "logged_out"})
+}
+
+// LogoutAll handles POST /api/v1/auth/logout-all.
+func (h *AuthHandler) LogoutAll(c *gin.Context) {
+	uc := auth.GetUserContext(c)
+	if uc == nil {
+		pkg.Error(c, http.StatusUnauthorized, "not authenticated")
+		return
+	}
+	if err := h.authService.RevokeUserRefreshSessions(c.Request.Context(), uc.UserID); err != nil {
+		pkg.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	pkg.Success(c, gin.H{"status": "logged_out_all"})
 }
 
 // Me handles GET /api/v1/auth/me

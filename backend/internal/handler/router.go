@@ -89,6 +89,8 @@ func SetupRouter(
 	{
 		authGroup.POST("/login", authHandler.Login)
 		authGroup.POST("/refresh", authHandler.Refresh)
+		authGroup.POST("/logout", authHandler.Logout)
+		authGroup.POST("/logout-all", auth.RequireAuth(authService), authHandler.LogoutAll)
 		authGroup.GET("/me", auth.RequireAuth(authService), authHandler.Me)
 
 		// Dev login — only available in debug mode

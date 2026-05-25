@@ -204,6 +204,27 @@ func (s *Service) ValidateAccessToken(tokenStr string) (jwt.MapClaims, error) {
 	return s.validateToken(tokenStr, "access")
 }
 
+func (s *Service) RevokeRefreshToken(ctx context.Context, refreshToken string) error {
+	refreshToken = strings.TrimSpace(refreshToken)
+	if refreshToken == "" {
+		return nil
+	}
+	if !strings.HasPrefix(refreshToken, refreshTokenPrefix) {
+		return fmt.Errorf("invalid refresh token")
+	}
+	if s.refreshSessionStore == nil {
+		return fmt.Errorf("refresh session store is not configured")
+	}
+	return s.refreshSessionStore.DeleteRefreshSession(ctx, hashRefreshToken(refreshToken))
+}
+
+func (s *Service) RevokeUserRefreshSessions(ctx context.Context, userID int) error {
+	if s.refreshSessionStore == nil {
+		return fmt.Errorf("refresh session store is not configured")
+	}
+	return s.refreshSessionStore.DeleteUserRefreshSessions(ctx, userID)
+}
+
 // GenerateTokenPairForUser generates a token pair for the given user info.
 // Exported for integration testing.
 func (s *Service) GenerateTokenPairForUser(info *UserInfo) (*TokenPair, error) {

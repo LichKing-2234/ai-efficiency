@@ -86,6 +86,7 @@ func setupMockTestEnv(t *testing.T, _ interface{}, _ interface{}, repoSCM repoSC
 	client := testdb.Open(t)
 	logger := zap.NewNop()
 	authSvc := auth.NewService(client, "test-jwt-secret-32-bytes-long!!!", 7200, 604800, logger)
+	authSvc.SetRefreshSessionStore(newHandlerTestRefreshSessionStore(t))
 
 	prHandler := NewPRHandler(client, repoSCM, nil, nil)
 
