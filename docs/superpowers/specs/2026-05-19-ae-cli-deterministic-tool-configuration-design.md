@@ -75,7 +75,7 @@ ae-cli discover
 
 - 写入 `~/.codex/config.toml`
 - 当前写入字段：
-  - `model_provider = "OpenAI"`
+  - `model_provider = <provider.name>`
   - `model = "gpt-5.4"`
   - `review_model = <model>`
   - `model_reasoning_effort = "xhigh"`
@@ -84,13 +84,15 @@ ae-cli discover
   - `windows_wsl_setup_acknowledged = true`
   - `model_context_window = 1000000`
   - `model_auto_compact_token_limit = 900000`
-  - `[model_providers.OpenAI]`
-    - `name = "OpenAI"`
+  - `[model_providers.<provider.name>]`
+    - `name = <provider.name>`
     - `base_url = <provider.base_url>`
     - `wire_api = "responses"`
     - `requires_openai_auth = true`
+  - `provider.name` 直接写入配置；若名称包含 TOML bare key 不支持的字符，由序列化器负责加引号
 - API key 写入 `~/.codex/auth.json`：
   - `OPENAI_API_KEY = <openai credential.key>`
+- 当 Codex 被成功配置时，CLI 会完整重写 `~/.codex/auth.json`，移除与 Codex 无关的其他字段。
 - Codex 不再通过 `~/.ae-cli/env.sh` 写入或提示 `OPENAI_API_KEY`。
 - Codex 不使用 provider 级 `default_model`。该字段不具备 openai group 专属语义，不能自动套用到 Codex 的 `model` / `review_model`。
 

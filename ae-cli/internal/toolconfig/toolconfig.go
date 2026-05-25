@@ -202,6 +202,10 @@ func configureCodex(opts Options, credential PlatformCredential) ([]string, erro
 	if opts.DryRun {
 		return []string{configPath, authPath}, nil
 	}
+	providerName := strings.TrimSpace(opts.Provider.Name)
+	if providerName == "" {
+		return nil, fmt.Errorf("provider name is required for codex config")
+	}
 	cfg := map[string]any{}
 	if data, err := os.ReadFile(configPath); err == nil && len(data) > 0 {
 		if err := toml.Unmarshal(data, &cfg); err != nil {
@@ -211,7 +215,7 @@ func configureCodex(opts Options, credential PlatformCredential) ([]string, erro
 		return nil, fmt.Errorf("read codex config: %w", err)
 	}
 	delete(cfg, "openai_base_url")
-	cfg["model_provider"] = "OpenAI"
+	cfg["model_provider"] = providerName
 	cfg["model"] = codexModel
 	cfg["review_model"] = codexModel
 	cfg["model_reasoning_effort"] = "xhigh"
@@ -221,11 +225,11 @@ func configureCodex(opts Options, credential PlatformCredential) ([]string, erro
 	cfg["model_context_window"] = 1000000
 	cfg["model_auto_compact_token_limit"] = 900000
 	modelProviders := ensureNestedMap(cfg, "model_providers")
-	openAI := ensureNestedMap(modelProviders, "OpenAI")
-	openAI["name"] = "OpenAI"
-	openAI["base_url"] = opts.Provider.BaseURL
-	openAI["wire_api"] = "responses"
-	openAI["requires_openai_auth"] = true
+	codexProvider := ensureNestedMap(modelProviders, providerName)
+	codexProvider["name"] = providerName
+	codexProvider["base_url"] = opts.Provider.BaseURL
+	codexProvider["wire_api"] = "responses"
+	codexProvider["requires_openai_auth"] = true
 	if err := os.MkdirAll(filepath.Dir(configPath), 0o700); err != nil {
 		return nil, fmt.Errorf("create codex config dir: %w", err)
 	}
@@ -236,11 +240,9 @@ func configureCodex(opts Options, credential PlatformCredential) ([]string, erro
 	if err := os.WriteFile(configPath, data, 0o600); err != nil {
 		return nil, fmt.Errorf("write codex config: %w", err)
 	}
-	auth, err := readJSONObject(authPath)
-	if err != nil {
-		return nil, fmt.Errorf("read codex auth: %w", err)
+	auth := map[string]any{
+		"OPENAI_API_KEY": credential.APIKey,
 	}
-	auth["OPENAI_API_KEY"] = credential.APIKey
 	if err := writeJSONObject(authPath, auth); err != nil {
 		return nil, fmt.Errorf("write codex auth: %w", err)
 	}
