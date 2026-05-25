@@ -12,7 +12,7 @@ vi.mock('@/api/client', () => {
 })
 
 import client from '@/api/client'
-import { login, devLogin, refresh, getMe } from '@/api/auth'
+import { login, getAuthOptions, devLogin, refresh, getMe } from '@/api/auth'
 
 const mockClient = client as unknown as {
   get: ReturnType<typeof vi.fn>
@@ -39,6 +39,14 @@ describe('auth API', () => {
     })
     await devLogin()
     expect(mockClient.post).toHaveBeenCalledWith('/auth/dev-login')
+  })
+
+  it('getAuthOptions calls GET /auth/options', async () => {
+    mockClient.get.mockResolvedValue({
+      data: { data: { ldap_enabled: true, dev_login_enabled: false } },
+    })
+    await getAuthOptions()
+    expect(mockClient.get).toHaveBeenCalledWith('/auth/options')
   })
 
   it('refresh calls POST /auth/refresh with refresh_token', async () => {

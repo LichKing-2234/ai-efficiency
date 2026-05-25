@@ -62,7 +62,7 @@ func SetupRouter(
 	}
 
 	// Handlers
-	authHandler := NewAuthHandler(authService, entClient)
+	authHandler := NewAuthHandler(authService, entClient, adminSettingsHandler)
 	credentialHandler := NewCredentialHandler(entClient, encryptionKey)
 	scmProviderHandler := NewSCMProviderHandler(entClient, encryptionKey)
 	repoHandler := NewRepoHandler(repoService)
@@ -87,6 +87,7 @@ func SetupRouter(
 	// Auth routes — no auth middleware
 	authGroup := api.Group("/auth")
 	{
+		authGroup.GET("/options", authHandler.Options)
 		authGroup.POST("/login", authHandler.Login)
 		authGroup.POST("/refresh", authHandler.Refresh)
 		authGroup.GET("/me", auth.RequireAuth(authService), authHandler.Me)

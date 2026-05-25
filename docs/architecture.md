@@ -258,7 +258,7 @@ flowchart LR
 
 | Area | Paths | Responsibility |
 | --- | --- | --- |
-| Auth and identity | `backend/internal/auth`, `backend/internal/oauth` | LDAP-first auth, relay SSO fallback, local token issuance, user identity mapping |
+| Auth and identity | `backend/internal/auth`, `backend/internal/oauth` | Config-aware login source exposure, LDAP-first auth when configured, relay SSO fallback, local token issuance, user identity mapping |
 | Credentials | `backend/internal/credential` | Reusable encrypted secret assets, payload validation, provider credential migration, and credential masking |
 | Relay integration | `backend/internal/relay` | Unified relay/sub2api adapter and usage/API key operations |
 | SCM integration | `backend/internal/scm`, `backend/internal/webhook`, `backend/internal/prsync` | SCM provider abstraction, webhook ingestion, PR synchronization, and active-PR usage snapshot refresh |

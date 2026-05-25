@@ -9,6 +9,7 @@ vi.mock('@/api/auth', () => ({
   login: vi.fn(),
   getMe: vi.fn(),
   devLogin: vi.fn(),
+  getAuthOptions: vi.fn(),
 }))
 
 function createTestRouter(initialPath = '/login') {
@@ -23,10 +24,14 @@ function createTestRouter(initialPath = '/login') {
 }
 
 describe('LoginView', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     setActivePinia(createPinia())
     localStorage.clear()
     vi.clearAllMocks()
+    const { getAuthOptions } = await import('@/api/auth')
+    ;(getAuthOptions as any).mockResolvedValue({
+      data: { data: { ldap_enabled: true, dev_login_enabled: true } },
+    })
   })
 
   it('renders login form', () => {
@@ -41,25 +46,59 @@ describe('LoginView', () => {
     expect(wrapper.find('select#source').exists()).toBe(true)
   })
 
-  it('renders dev login button', () => {
+  it('renders dev login button when enabled', async () => {
     const router = createTestRouter()
     const wrapper = mount(LoginView, {
       global: { plugins: [createPinia(), router] },
     })
+    await flushPromises()
 
     const buttons = wrapper.findAll('button')
     const devBtn = buttons.find((b) => b.text().includes('Dev Login'))
     expect(devBtn).toBeTruthy()
   })
 
-  it('defaults to LDAP auth source', () => {
+  it('defaults to LDAP auth source when LDAP is enabled', async () => {
     const router = createTestRouter()
     const wrapper = mount(LoginView, {
       global: { plugins: [createPinia(), router] },
     })
+    await flushPromises()
 
     const select = wrapper.find('select#source')
     expect((select.element as HTMLSelectElement).value).toBe('LDAP')
+  })
+
+  it('shows only SSO when LDAP is not enabled', async () => {
+    const { getAuthOptions } = await import('@/api/auth')
+    ;(getAuthOptions as any).mockResolvedValue({
+      data: { data: { ldap_enabled: false, dev_login_enabled: true } },
+    })
+    const router = createTestRouter()
+    const wrapper = mount(LoginView, {
+      global: { plugins: [createPinia(), router] },
+    })
+    await flushPromises()
+
+    const select = wrapper.find('select#source')
+    const options = wrapper.findAll('select#source option')
+    expect((select.element as HTMLSelectElement).value).toBe('SSO')
+    expect(options.map((option) => (option.element as HTMLOptionElement).value)).toEqual(['SSO'])
+  })
+
+  it('hides dev login when disabled', async () => {
+    const { getAuthOptions } = await import('@/api/auth')
+    ;(getAuthOptions as any).mockResolvedValue({
+      data: { data: { ldap_enabled: true, dev_login_enabled: false } },
+    })
+    const router = createTestRouter()
+    const wrapper = mount(LoginView, {
+      global: { plugins: [createPinia(), router] },
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('DEV MODE')
+    expect(wrapper.findAll('button').some((button) => button.text().includes('Dev Login'))).toBe(false)
   })
 
   it('shows error on failed login', async () => {
@@ -97,6 +136,7 @@ describe('LoginView', () => {
     const wrapper = mount(LoginView, {
       global: { plugins: [createPinia(), router] },
     })
+    await flushPromises()
 
     const buttons = wrapper.findAll('button')
     const devBtn = buttons.find((b) => b.text().includes('Dev Login'))
@@ -126,6 +166,7 @@ describe('LoginView', () => {
     const wrapper = mount(LoginView, {
       global: { plugins: [createPinia(), router] },
     })
+    await flushPromises()
 
     await wrapper.find('input#username').setValue('admin')
     await wrapper.find('input#password').setValue('pass')
@@ -152,6 +193,7 @@ describe('LoginView', () => {
     const wrapper = mount(LoginView, {
       global: { plugins: [createPinia(), router] },
     })
+    await flushPromises()
 
     await wrapper.find('input#username').setValue('admin')
     await wrapper.find('input#password').setValue('pass')
@@ -177,6 +219,7 @@ describe('LoginView', () => {
     const wrapper = mount(LoginView, {
       global: { plugins: [createPinia(), router] },
     })
+    await flushPromises()
 
     await wrapper.find('input#username').setValue('admin')
     await wrapper.find('input#password').setValue('pass')
@@ -195,6 +238,7 @@ describe('LoginView', () => {
     const wrapper = mount(LoginView, {
       global: { plugins: [createPinia(), router] },
     })
+    await flushPromises()
 
     await wrapper.find('input#username').setValue('admin')
     await wrapper.find('input#password').setValue('pass')
@@ -213,6 +257,7 @@ describe('LoginView', () => {
     const wrapper = mount(LoginView, {
       global: { plugins: [createPinia(), router] },
     })
+    await flushPromises()
 
     await wrapper.find('input#username').setValue('admin')
     await wrapper.find('input#password').setValue('pass')
@@ -236,6 +281,7 @@ describe('LoginView', () => {
     const wrapper = mount(LoginView, {
       global: { plugins: [createPinia(), router] },
     })
+    await flushPromises()
 
     const devBtn = wrapper.findAll('button').find((b) => b.text().includes('Dev Login'))
     await devBtn!.trigger('click')
@@ -252,6 +298,7 @@ describe('LoginView', () => {
     const wrapper = mount(LoginView, {
       global: { plugins: [createPinia(), router] },
     })
+    await flushPromises()
 
     const devBtn = wrapper.findAll('button').find((b) => b.text().includes('Dev Login'))
     await devBtn!.trigger('click')
@@ -273,6 +320,7 @@ describe('LoginView', () => {
     const wrapper = mount(LoginView, {
       global: { plugins: [createPinia(), router] },
     })
+    await flushPromises()
 
     const devBtn = wrapper.findAll('button').find((b) => b.text().includes('Dev Login'))
     await devBtn!.trigger('click')
@@ -299,6 +347,7 @@ describe('LoginView', () => {
     const wrapper = mount(LoginView, {
       global: { plugins: [createPinia(), router] },
     })
+    await flushPromises()
 
     const devBtn = wrapper.findAll('button').find((b) => b.text().includes('Dev Login'))
     await devBtn!.trigger('click')
@@ -313,6 +362,7 @@ describe('LoginView', () => {
     const wrapper = mount(LoginView, {
       global: { plugins: [createPinia(), router] },
     })
+    await flushPromises()
 
     const select = wrapper.find('select#source')
     await select.setValue('LDAP')

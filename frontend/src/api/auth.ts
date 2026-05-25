@@ -10,8 +10,17 @@ export interface AuthTokenPayload {
   }
 }
 
+export interface AuthOptions {
+  ldap_enabled: boolean
+  dev_login_enabled: boolean
+}
+
 export function login(req: LoginRequest) {
   return client.post<ApiResponse<AuthTokenPayload>>('/auth/login', req)
+}
+
+export function getAuthOptions() {
+  return client.get<ApiResponse<AuthOptions>>('/auth/options')
 }
 
 export function devLogin() {
