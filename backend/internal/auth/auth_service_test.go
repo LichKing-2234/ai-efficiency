@@ -579,6 +579,105 @@ func TestEnsureLocalUserFindsExisting(t *testing.T) {
 	}
 }
 
+func TestEnsureLocalUserSyncsAuthSourceWhenLDAPReusesRelaySSOUser(t *testing.T) {
+	svc, client := newTestServiceWithDB(t)
+	ctx := context.Background()
+
+	existing, err := client.User.Create().
+		SetUsername("alice").
+		SetEmail("alice@example.com").
+		SetAuthSource(entuser.AuthSourceRelaySSO).
+		SetRole(entuser.RoleUser).
+		SetRelayUserID(42).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	info := &UserInfo{
+		Username:   "alice",
+		Email:      "alice@example.com",
+		Role:       "user",
+		AuthSource: "ldap",
+	}
+
+	u, err := svc.ensureLocalUser(ctx, info)
+	if err != nil {
+		t.Fatalf("ensureLocalUser error: %v", err)
+	}
+	if u.ID != existing.ID {
+		t.Fatalf("user ID = %d, want existing %d", u.ID, existing.ID)
+	}
+	if u.AuthSource != entuser.AuthSourceLdap {
+		t.Fatalf("auth_source = %q, want %q", u.AuthSource, entuser.AuthSourceLdap)
+	}
+	if info.AuthSource != "ldap" {
+		t.Fatalf("info.AuthSource = %q, want ldap", info.AuthSource)
+	}
+
+	dbUser, err := client.User.Get(ctx, existing.ID)
+	if err != nil {
+		t.Fatalf("get user: %v", err)
+	}
+	if dbUser.AuthSource != entuser.AuthSourceLdap {
+		t.Fatalf("db auth_source = %q, want %q", dbUser.AuthSource, entuser.AuthSourceLdap)
+	}
+}
+
+func TestEnsureLocalUserPreservesStoredRelayPasswordWhenLDAPReusesRelaySSOUser(t *testing.T) {
+	client := setupAuthEntClient(t)
+	encryptionKey := "0000000000000000000000000000000000000000000000000000000000000000"
+	svc := NewService(client, "test-secret-key-for-unit-tests!!", 7200, 604800, zap.NewNop(), encryptionKey)
+	ctx := context.Background()
+	encryptedPassword, err := svc.encryptRelayAuthPassword("sso-password")
+	if err != nil {
+		t.Fatalf("encryptRelayAuthPassword error: %v", err)
+	}
+	svc.SetRelayIdentityResolver(NewRelayIdentityResolver(&fakeRelayIdentityAPI{
+		findResult: &relay.User{ID: 42, Username: "alice", Email: "alice@example.com", Role: "user"},
+	}, "ldap.local"))
+
+	existing, err := client.User.Create().
+		SetUsername("alice").
+		SetEmail("alice@example.com").
+		SetAuthSource(entuser.AuthSourceRelaySSO).
+		SetRole(entuser.RoleUser).
+		SetRelayUserID(42).
+		SetRelayAuthPassword(encryptedPassword).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	info := &UserInfo{
+		Username:   "alice",
+		Email:      "alice@example.com",
+		Role:       "user",
+		AuthSource: "ldap",
+	}
+
+	u, err := svc.ensureLocalUser(ctx, info)
+	if err != nil {
+		t.Fatalf("ensureLocalUser error: %v", err)
+	}
+	if u.ID != existing.ID {
+		t.Fatalf("user ID = %d, want existing %d", u.ID, existing.ID)
+	}
+	if u.AuthSource != entuser.AuthSourceLdap {
+		t.Fatalf("auth_source = %q, want %q", u.AuthSource, entuser.AuthSourceLdap)
+	}
+	if u.RelayAuthPassword == nil || strings.TrimSpace(*u.RelayAuthPassword) == "" {
+		t.Fatal("expected stored relay password to be preserved")
+	}
+	decrypted, err := svc.DecryptRelayAuthPassword(*u.RelayAuthPassword)
+	if err != nil {
+		t.Fatalf("DecryptRelayAuthPassword error: %v", err)
+	}
+	if decrypted != "sso-password" {
+		t.Fatalf("relay password = %q, want sso-password", decrypted)
+	}
+}
+
 func TestEnsureLocalUserRepairsWrongStoredRelayUserIDForLDAP(t *testing.T) {
 	svc, client := newTestServiceWithDB(t)
 	ctx := context.Background()

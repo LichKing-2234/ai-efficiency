@@ -874,45 +874,7 @@ func (s *sub2apiRelay) CreateUserAPIKey(ctx context.Context, userID int64, req A
 		}
 		return s.createUserAPIKeyWithJWT(ctx, token, userID, req)
 	}
-
-	payloadMap := map[string]any{
-		"user_id": userID,
-		"name":    req.Name,
-	}
-	if req.ExpiresAt != nil {
-		payloadMap["expires_at"] = req.ExpiresAt
-	}
-	if req.GroupID != "" {
-		payloadMap["group_id"] = req.GroupID
-	}
-
-	payload, err := json.Marshal(payloadMap)
-	if err != nil {
-		return nil, fmt.Errorf("relay: create api key: marshal: %w", err)
-	}
-
-	resp, err := s.doAdminRequest(ctx, http.MethodPost, "/api/v1/keys", bytes.NewReader(payload))
-	if err != nil {
-		return nil, fmt.Errorf("relay: create api key: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("relay: create api key: unexpected status %d", resp.StatusCode)
-	}
-
-	var result struct {
-		Success bool             `json:"success"`
-		Data    APIKeyWithSecret `json:"data"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("relay: create api key: decode: %w", err)
-	}
-	if result.Data.Secret == "" {
-		result.Data.Secret = result.Data.Key
-	}
-
-	return &result.Data, nil
+	return nil, fmt.Errorf("relay: create api key: user credentials are required")
 }
 
 func (s *sub2apiRelay) createUserAPIKeyWithJWT(ctx context.Context, token string, userID int64, req APIKeyCreateRequest) (*APIKeyWithSecret, error) {

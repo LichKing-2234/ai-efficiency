@@ -1204,78 +1204,14 @@ func TestFindUserByEmailRequiresExactMatchInPaginatedEnvelope(t *testing.T) {
 	}
 }
 
-func TestCreateUserAPIKey(t *testing.T) {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/api/v1/keys", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			t.Errorf("expected POST, got %s", r.Method)
-		}
-		if r.Header.Get("X-API-Key") != "test-admin-key" {
-			t.Errorf("expected admin API key in X-API-Key header")
-		}
-		if got := r.Header.Get("Authorization"); got != "" {
-			t.Errorf("expected Authorization header to be empty, got %q", got)
-		}
-		var body struct {
-			UserID int64  `json:"user_id"`
-			Name   string `json:"name"`
-		}
-		json.NewDecoder(r.Body).Decode(&body)
-		if body.UserID != 3 || body.Name != "my-key" {
-			t.Errorf("unexpected body: %+v", body)
-		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
-			"success": true,
-			"data": map[string]any{
-				"id":      99,
-				"user_id": 3,
-				"name":    "my-key",
-				"status":  "active",
-				"secret":  "sk-abc123",
-			},
-		})
-	})
-
-	p := newTestProvider(t, mux)
-	key, err := p.CreateUserAPIKey(context.Background(), 3, relay.APIKeyCreateRequest{Name: "my-key"})
-	if err != nil {
-		t.Fatalf("CreateUserAPIKey() unexpected error: %v", err)
+func TestCreateUserAPIKeyRequiresUserCredentials(t *testing.T) {
+	p := newTestProvider(t, http.NewServeMux())
+	_, err := p.CreateUserAPIKey(context.Background(), 3, relay.APIKeyCreateRequest{Name: "my-key"})
+	if err == nil {
+		t.Fatal("CreateUserAPIKey() expected error without user credentials")
 	}
-	if key.ID != 99 || key.Secret != "sk-abc123" || key.Name != "my-key" {
-		t.Fatalf("unexpected key: %+v", key)
-	}
-}
-
-func TestCreateUserAPIKeyMapsAdminCreateKeyField(t *testing.T) {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/api/v1/keys", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			t.Errorf("expected POST, got %s", r.Method)
-		}
-		if r.Header.Get("X-API-Key") != "test-admin-key" {
-			t.Errorf("expected admin API key in X-API-Key header")
-		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
-			"success": true,
-			"data": map[string]any{
-				"id":      100,
-				"user_id": 3,
-				"name":    "my-key",
-				"status":  "active",
-				"key":     "sk-admin-create-key-field",
-			},
-		})
-	})
-
-	p := newTestProvider(t, mux)
-	key, err := p.CreateUserAPIKey(context.Background(), 3, relay.APIKeyCreateRequest{Name: "my-key"})
-	if err != nil {
-		t.Fatalf("CreateUserAPIKey() unexpected error: %v", err)
-	}
-	if key.ID != 100 || key.Secret != "sk-admin-create-key-field" || key.Name != "my-key" {
-		t.Fatalf("unexpected key: %+v", key)
+	if got, want := err.Error(), "relay: create api key: user credentials are required"; got != want {
+		t.Fatalf("CreateUserAPIKey() error = %q, want %q", got, want)
 	}
 }
 
@@ -1372,24 +1308,44 @@ func TestChatCompletionUsesConfiguredModel(t *testing.T) {
 
 func TestCreateUserAPIKeyWithExpiryAndGroup(t *testing.T) {
 	exp := time.Date(2026, 3, 31, 1, 2, 3, 0, time.UTC)
-	groupID := "team-ai"
 
 	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/auth/login", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": map[string]any{"access_token": "user-jwt-token"},
+		})
+	})
+	mux.HandleFunc("/api/v1/auth/me", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": map[string]any{
+				"id":       3,
+				"email":    "alice@example.com",
+				"username": "alice@example.com",
+				"role":     "user",
+			},
+		})
+	})
 	mux.HandleFunc("/api/v1/keys", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			t.Errorf("expected POST, got %s", r.Method)
 		}
+		if r.Header.Get("Authorization") != "Bearer user-jwt-token" {
+			t.Fatalf("expected user jwt token, got %q", r.Header.Get("Authorization"))
+		}
 
 		var body struct {
-			UserID    int64  `json:"user_id"`
-			Name      string `json:"name"`
-			ExpiresAt string `json:"expires_at"`
-			GroupID   string `json:"group_id"`
+			Name          string `json:"name"`
+			ExpiresInDays int    `json:"expires_in_days"`
+			GroupID       int64  `json:"group_id"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Fatalf("failed to decode body: %v", err)
 		}
-		if body.UserID != 3 || body.Name != "my-key" || body.ExpiresAt != exp.Format(time.RFC3339) || body.GroupID != groupID {
+		if body.Name != "my-key" || body.ExpiresInDays != 1 || body.GroupID != 6 {
 			t.Errorf("unexpected body: %+v", body)
 		}
 
@@ -1401,16 +1357,17 @@ func TestCreateUserAPIKeyWithExpiryAndGroup(t *testing.T) {
 				"user_id": 3,
 				"name":    "my-key",
 				"status":  "active",
-				"secret":  "sk-abc123",
+				"key":     "sk-abc123",
 			},
 		})
 	})
 
 	p := newTestProvider(t, mux)
-	key, err := p.CreateUserAPIKey(context.Background(), 3, relay.APIKeyCreateRequest{
+	ctx := relay.WithUserCredentials(context.Background(), "alice@example.com", "test-password")
+	key, err := p.CreateUserAPIKey(ctx, 3, relay.APIKeyCreateRequest{
 		Name:      "my-key",
 		ExpiresAt: &exp,
-		GroupID:   groupID,
+		GroupID:   "6",
 	})
 	if err != nil {
 		t.Fatalf("CreateUserAPIKey() unexpected error: %v", err)

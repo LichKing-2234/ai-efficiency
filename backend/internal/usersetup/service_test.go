@@ -182,6 +182,11 @@ func TestListProvidersReturnsOnlyAllowedGroups(t *testing.T) {
 func TestCreateGroupCredentialUsesSelectedGroupID(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)
+	encryptionKey := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	encryptedPassword, err := pkg.Encrypt("sso-password", encryptionKey)
+	if err != nil {
+		t.Fatalf("Encrypt() unexpected error: %v", err)
+	}
 
 	provider := client.RelayProvider.Create().
 		SetName("sub2api").
@@ -199,6 +204,7 @@ func TestCreateGroupCredentialUsesSelectedGroupID(t *testing.T) {
 		SetAuthSource(user.AuthSourceRelaySSO).
 		SetRole(user.RoleAdmin).
 		SetRelayUserID(1).
+		SetRelayAuthPassword(encryptedPassword).
 		SaveX(ctx)
 
 	fakeRelay := &fakeRelayProvider{
@@ -227,7 +233,7 @@ func TestCreateGroupCredentialUsesSelectedGroupID(t *testing.T) {
 
 	svc := usersetup.NewService(client, usersetup.ProviderResolverFunc(func(_ context.Context, providerID int) (relay.Provider, error) {
 		return fakeRelay, nil
-	}), "d98460dc58409c713d1586802217c23932d58c95479641e4b0fec1c740386696")
+	}), encryptionKey)
 
 	got, err := svc.CreateGroupCredential(ctx, usersetup.CreateGroupCredentialRequest{
 		UserID:     localUser.ID,
@@ -243,9 +249,12 @@ func TestCreateGroupCredentialUsesSelectedGroupID(t *testing.T) {
 	if fakeRelay.lastCreateReq.GroupID != "42" {
 		t.Fatalf("group id = %q, want 42", fakeRelay.lastCreateReq.GroupID)
 	}
+	if fakeRelay.createCredentialLogin != "alice@example.com" || fakeRelay.createCredentialPassword != "sso-password" {
+		t.Fatalf("create credentials = (%q, %q), want stored SSO credentials", fakeRelay.createCredentialLogin, fakeRelay.createCredentialPassword)
+	}
 }
 
-func TestCreateGroupCredentialRepairsMissingRelayPasswordForLDAPUser(t *testing.T) {
+func TestCreateGroupCredentialRequiresUserCredentialsForExistingLDAPUserWithoutStoredRelayPassword(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)
 	encryptionKey := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
@@ -289,45 +298,31 @@ func TestCreateGroupCredentialRepairsMissingRelayPasswordForLDAPUser(t *testing.
 		return fakeRelay, nil
 	}), encryptionKey)
 
-	got, err := svc.CreateGroupCredential(ctx, usersetup.CreateGroupCredentialRequest{
+	_, err := svc.CreateGroupCredential(ctx, usersetup.CreateGroupCredentialRequest{
 		UserID:     localUser.ID,
 		ProviderID: provider.ID,
 		GroupID:    "42",
 	})
-	if err != nil {
-		t.Fatalf("CreateGroupCredential() unexpected error: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "relay user credentials are required") {
+		t.Fatalf("CreateGroupCredential() error = %v, want relay user credentials required", err)
 	}
-	if got.Secret != "sk-openai" {
-		t.Fatalf("secret = %q, want sk-openai", got.Secret)
+	if len(fakeRelay.updatedUsers) != 0 {
+		t.Fatalf("existing relay user password must not be repaired, got updates: %+v", fakeRelay.updatedUsers)
 	}
-	updateReq, ok := fakeRelay.updatedUsers[1]
-	if !ok {
-		t.Fatal("expected relay user to be updated with generated password")
-	}
-	if strings.TrimSpace(updateReq.Password) == "" {
-		t.Fatal("expected generated relay password")
-	}
-	if fakeRelay.createCredentialLogin != "alice@example.com" || fakeRelay.createCredentialPassword != updateReq.Password {
-		t.Fatalf("create credentials = (%q, %q), want login alice@example.com and generated password", fakeRelay.createCredentialLogin, fakeRelay.createCredentialPassword)
+	if fakeRelay.createCredentialLogin != "" || fakeRelay.createCredentialPassword != "" {
+		t.Fatalf("create credentials = (%q, %q), want no key creation", fakeRelay.createCredentialLogin, fakeRelay.createCredentialPassword)
 	}
 
 	reloaded, err := client.User.Get(ctx, localUser.ID)
 	if err != nil {
 		t.Fatalf("reload user: %v", err)
 	}
-	if reloaded.RelayAuthPassword == nil || *reloaded.RelayAuthPassword == "" {
-		t.Fatal("expected generated relay password to be stored locally")
-	}
-	decrypted, err := pkg.Decrypt(*reloaded.RelayAuthPassword, encryptionKey)
-	if err != nil {
-		t.Fatalf("Decrypt() unexpected error: %v", err)
-	}
-	if decrypted != updateReq.Password {
-		t.Fatal("stored relay password must match generated relay-side password")
+	if reloaded.RelayAuthPassword != nil && strings.TrimSpace(*reloaded.RelayAuthPassword) != "" {
+		t.Fatal("expected existing LDAP user without stored relay password to remain without relay password")
 	}
 }
 
-func TestCreateGroupCredentialRepairsMissingRelayPasswordForExistingRelaySSOUser(t *testing.T) {
+func TestCreateGroupCredentialRequiresUserCredentialsForExistingRelaySSOUserWithoutStoredRelayPassword(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)
 	encryptionKey := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
@@ -371,30 +366,23 @@ func TestCreateGroupCredentialRepairsMissingRelayPasswordForExistingRelaySSOUser
 		return fakeRelay, nil
 	}), encryptionKey)
 
-	got, err := svc.CreateGroupCredential(ctx, usersetup.CreateGroupCredentialRequest{
+	_, err := svc.CreateGroupCredential(ctx, usersetup.CreateGroupCredentialRequest{
 		UserID:     localUser.ID,
 		ProviderID: provider.ID,
 		GroupID:    "42",
 	})
-	if err != nil {
-		t.Fatalf("CreateGroupCredential() unexpected error: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "relay user credentials are required") {
+		t.Fatalf("CreateGroupCredential() error = %v, want relay user credentials required", err)
 	}
-	if got.Secret != "sk-openai" {
-		t.Fatalf("secret = %q, want sk-openai", got.Secret)
+	if len(fakeRelay.updatedUsers) != 0 {
+		t.Fatalf("existing relay SSO user password must not be repaired, got updates: %+v", fakeRelay.updatedUsers)
 	}
-	updateReq, ok := fakeRelay.updatedUsers[1]
-	if !ok {
-		t.Fatal("expected relay user to be updated with generated password")
-	}
-	if strings.TrimSpace(updateReq.Password) == "" {
-		t.Fatal("expected generated relay password")
-	}
-	if fakeRelay.createCredentialLogin != "alice@example.com" || fakeRelay.createCredentialPassword != updateReq.Password {
-		t.Fatalf("create credentials = (%q, %q), want login alice@example.com and generated password", fakeRelay.createCredentialLogin, fakeRelay.createCredentialPassword)
+	if fakeRelay.createCredentialLogin != "" || fakeRelay.createCredentialPassword != "" {
+		t.Fatalf("create credentials = (%q, %q), want no key creation", fakeRelay.createCredentialLogin, fakeRelay.createCredentialPassword)
 	}
 }
 
-func TestCreateGroupCredentialDoesNotRepairMissingRelayPasswordForRelayAdminUser(t *testing.T) {
+func TestCreateGroupCredentialRequiresUserCredentialsForRelayAdminUser(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)
 	encryptionKey := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
@@ -438,16 +426,13 @@ func TestCreateGroupCredentialDoesNotRepairMissingRelayPasswordForRelayAdminUser
 		return fakeRelay, nil
 	}), encryptionKey)
 
-	got, err := svc.CreateGroupCredential(ctx, usersetup.CreateGroupCredentialRequest{
+	_, err := svc.CreateGroupCredential(ctx, usersetup.CreateGroupCredentialRequest{
 		UserID:     localUser.ID,
 		ProviderID: provider.ID,
 		GroupID:    "42",
 	})
-	if err != nil {
-		t.Fatalf("CreateGroupCredential() unexpected error: %v", err)
-	}
-	if got.Secret != "sk-openai" {
-		t.Fatalf("secret = %q, want sk-openai", got.Secret)
+	if err == nil || !strings.Contains(err.Error(), "relay user credentials are required") {
+		t.Fatalf("CreateGroupCredential() error = %v, want relay user credentials required", err)
 	}
 	if len(fakeRelay.updatedUsers) != 0 {
 		t.Fatalf("relay admin user password must not be repaired, got updates: %+v", fakeRelay.updatedUsers)
@@ -464,11 +449,11 @@ func TestCreateGroupCredentialDoesNotRepairMissingRelayPasswordForRelayAdminUser
 	}
 }
 
-func TestCreateGroupCredentialClearsStoredRelayPasswordForRelayAdminUser(t *testing.T) {
+func TestCreateGroupCredentialUsesStoredRelayPasswordForRelayAdminUser(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)
 	encryptionKey := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-	encryptedPassword, err := pkg.Encrypt("stale-generated-password", encryptionKey)
+	encryptedPassword, err := pkg.Encrypt("sso-password", encryptionKey)
 	if err != nil {
 		t.Fatalf("Encrypt() unexpected error: %v", err)
 	}
@@ -527,15 +512,108 @@ func TestCreateGroupCredentialClearsStoredRelayPasswordForRelayAdminUser(t *test
 	if len(fakeRelay.updatedUsers) != 0 {
 		t.Fatalf("relay admin user password must not be repaired, got updates: %+v", fakeRelay.updatedUsers)
 	}
-	if fakeRelay.createCredentialLogin != "" || fakeRelay.createCredentialPassword != "" {
-		t.Fatalf("create credentials = (%q, %q), want admin API key path without user credentials", fakeRelay.createCredentialLogin, fakeRelay.createCredentialPassword)
+	if fakeRelay.createCredentialLogin != "alice@example.com" || fakeRelay.createCredentialPassword != "sso-password" {
+		t.Fatalf("create credentials = (%q, %q), want stored SSO credentials", fakeRelay.createCredentialLogin, fakeRelay.createCredentialPassword)
 	}
 	reloaded, err := client.User.Get(ctx, localUser.ID)
 	if err != nil {
 		t.Fatalf("reload user: %v", err)
 	}
-	if reloaded.RelayAuthPassword != nil {
-		t.Fatalf("relay admin user stored password must be cleared")
+	if reloaded.RelayAuthPassword == nil || strings.TrimSpace(*reloaded.RelayAuthPassword) == "" {
+		t.Fatalf("relay admin user stored password must be preserved")
+	}
+	decrypted, err := pkg.Decrypt(*reloaded.RelayAuthPassword, encryptionKey)
+	if err != nil {
+		t.Fatalf("Decrypt() unexpected error: %v", err)
+	}
+	if decrypted != "sso-password" {
+		t.Fatalf("stored relay password = %q, want sso-password", decrypted)
+	}
+}
+
+func TestRegenerateGroupCredentialUsesStoredRelayPasswordForRelayAdminUser(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	encryptionKey := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	encryptedPassword, err := pkg.Encrypt("sso-password", encryptionKey)
+	if err != nil {
+		t.Fatalf("Encrypt() unexpected error: %v", err)
+	}
+
+	provider := client.RelayProvider.Create().
+		SetName("sub2api").
+		SetDisplayName("sub2api").
+		SetBaseURL("https://relay.example.com/").
+		SetAdminAPIKey("test-admin-key").
+		SetDefaultModel("gpt-5.4").
+		SetIsPrimary(true).
+		SetEnabled(true).
+		SaveX(ctx)
+
+	localUser := client.User.Create().
+		SetUsername("alice@example.com").
+		SetEmail("alice@example.com").
+		SetAuthSource(user.AuthSourceLdap).
+		SetRole(user.RoleAdmin).
+		SetRelayUserID(1).
+		SetRelayAuthPassword(encryptedPassword).
+		SaveX(ctx)
+
+	fakeRelay := &fakeRelayProvider{
+		keysByUser: map[int64][]relay.APIKey{
+			1: {
+				{ID: 801, UserID: 1, Name: "alice", Status: "active", Group: &relay.Group{ID: 42, Name: "Group Alpha", Platform: "openai"}, CreatedAt: time.Now()},
+			},
+		},
+		usersByID: map[int64]relay.User{
+			1: {ID: 1, Email: "alice@example.com", Username: "alice@example.com", Role: "admin"},
+		},
+		createResult: &relay.APIKeyWithSecret{
+			APIKey: relay.APIKey{ID: 802, UserID: 1, Name: "alice", Status: "active", Group: &relay.Group{ID: 42, Name: "Group Alpha", Platform: "openai"}},
+			Secret: "sk-regenerated",
+		},
+	}
+
+	svc := usersetup.NewService(client, usersetup.ProviderResolverFunc(func(_ context.Context, providerID int) (relay.Provider, error) {
+		return fakeRelay, nil
+	}), encryptionKey)
+
+	got, err := svc.RegenerateGroupCredential(ctx, usersetup.RegenerateGroupCredentialRequest{
+		UserID:     localUser.ID,
+		ProviderID: provider.ID,
+		GroupID:    "42",
+	})
+	if err != nil {
+		t.Fatalf("RegenerateGroupCredential() unexpected error: %v", err)
+	}
+	if got.Secret != "sk-regenerated" {
+		t.Fatalf("secret = %q, want sk-regenerated", got.Secret)
+	}
+	if len(fakeRelay.updatedUsers) != 0 {
+		t.Fatalf("relay admin user password must not be repaired, got updates: %+v", fakeRelay.updatedUsers)
+	}
+	if fakeRelay.createCredentialLogin != "alice@example.com" || fakeRelay.createCredentialPassword != "sso-password" {
+		t.Fatalf("create credentials = (%q, %q), want stored SSO credentials", fakeRelay.createCredentialLogin, fakeRelay.createCredentialPassword)
+	}
+	if fakeRelay.updateCredentialLogin != "alice@example.com" || fakeRelay.updateCredentialPassword != "sso-password" {
+		t.Fatalf("update credentials = (%q, %q), want stored SSO credentials", fakeRelay.updateCredentialLogin, fakeRelay.updateCredentialPassword)
+	}
+	if diff := cmp.Diff(map[int64]string{801: "inactive"}, fakeRelay.updatedStatuses); diff != "" {
+		t.Fatalf("updated statuses mismatch (-want +got):\n%s", diff)
+	}
+	reloaded, err := client.User.Get(ctx, localUser.ID)
+	if err != nil {
+		t.Fatalf("reload user: %v", err)
+	}
+	if reloaded.RelayAuthPassword == nil || strings.TrimSpace(*reloaded.RelayAuthPassword) == "" {
+		t.Fatalf("relay admin user stored password must be preserved")
+	}
+	decrypted, err := pkg.Decrypt(*reloaded.RelayAuthPassword, encryptionKey)
+	if err != nil {
+		t.Fatalf("Decrypt() unexpected error: %v", err)
+	}
+	if decrypted != "sso-password" {
+		t.Fatalf("stored relay password = %q, want sso-password", decrypted)
 	}
 }
 
@@ -612,7 +690,7 @@ func TestRegenerateGroupCredentialOnlyTouchesSelectedGroup(t *testing.T) {
 	}
 }
 
-func TestRegenerateGroupCredentialRepairsMissingRelayPasswordForLDAPUser(t *testing.T) {
+func TestRegenerateGroupCredentialRequiresUserCredentialsForExistingLDAPUserWithoutStoredRelayPassword(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)
 	encryptionKey := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
@@ -654,32 +732,33 @@ func TestRegenerateGroupCredentialRepairsMissingRelayPasswordForLDAPUser(t *test
 		return fakeRelay, nil
 	}), encryptionKey)
 
-	got, err := svc.RegenerateGroupCredential(ctx, usersetup.RegenerateGroupCredentialRequest{
+	_, err := svc.RegenerateGroupCredential(ctx, usersetup.RegenerateGroupCredentialRequest{
 		UserID:     localUser.ID,
 		ProviderID: provider.ID,
 		GroupID:    "42",
 	})
+	if err == nil || !strings.Contains(err.Error(), "relay user credentials are required") {
+		t.Fatalf("RegenerateGroupCredential() error = %v, want relay user credentials required", err)
+	}
+	if len(fakeRelay.updatedUsers) != 0 {
+		t.Fatalf("existing relay user password must not be repaired, got updates: %+v", fakeRelay.updatedUsers)
+	}
+	if len(fakeRelay.updatedStatuses) != 0 {
+		t.Fatalf("no existing keys should be revoked without user credentials, got updates: %+v", fakeRelay.updatedStatuses)
+	}
+	if fakeRelay.createCredentialLogin != "" || fakeRelay.createCredentialPassword != "" {
+		t.Fatalf("create credentials = (%q, %q), want no key creation", fakeRelay.createCredentialLogin, fakeRelay.createCredentialPassword)
+	}
+	if fakeRelay.updateCredentialLogin != "" || fakeRelay.updateCredentialPassword != "" {
+		t.Fatalf("update credentials = (%q, %q), want no key status update", fakeRelay.updateCredentialLogin, fakeRelay.updateCredentialPassword)
+	}
+
+	reloaded, err := client.User.Get(ctx, localUser.ID)
 	if err != nil {
-		t.Fatalf("RegenerateGroupCredential() unexpected error: %v", err)
+		t.Fatalf("reload user: %v", err)
 	}
-	if got.Secret != "sk-regenerated" {
-		t.Fatalf("secret = %q, want sk-regenerated", got.Secret)
-	}
-	updateReq, ok := fakeRelay.updatedUsers[1]
-	if !ok {
-		t.Fatal("expected relay user to be updated with generated password")
-	}
-	if strings.TrimSpace(updateReq.Password) == "" {
-		t.Fatal("expected generated relay password")
-	}
-	if fakeRelay.updateCredentialLogin != "alice@example.com" || fakeRelay.updateCredentialPassword != updateReq.Password {
-		t.Fatalf("update credentials = (%q, %q), want login alice@example.com and generated password", fakeRelay.updateCredentialLogin, fakeRelay.updateCredentialPassword)
-	}
-	if fakeRelay.createCredentialLogin != "alice@example.com" || fakeRelay.createCredentialPassword != updateReq.Password {
-		t.Fatalf("create credentials = (%q, %q), want login alice@example.com and generated password", fakeRelay.createCredentialLogin, fakeRelay.createCredentialPassword)
-	}
-	if diff := cmp.Diff(map[int64]string{801: "inactive"}, fakeRelay.updatedStatuses); diff != "" {
-		t.Fatalf("updated statuses mismatch (-want +got):\n%s", diff)
+	if reloaded.RelayAuthPassword != nil && strings.TrimSpace(*reloaded.RelayAuthPassword) != "" {
+		t.Fatal("expected existing LDAP user without stored relay password to remain without relay password")
 	}
 }
 
