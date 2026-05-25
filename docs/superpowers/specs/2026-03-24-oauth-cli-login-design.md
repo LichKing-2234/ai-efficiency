@@ -327,7 +327,7 @@ server:
 
 对应 `ServerConfig` 新增 `FrontendURL string` 字段。
 
-当前 Docker/生产部署会把前端构建产物嵌入后端二进制；当 `frontend_url` 指向与请求同 host 的站点时，`/oauth/authorize` 必须直接返回嵌入式 SPA 入口，而不是 302 到同一路径。该判断基于目标 path 与请求/转发 host，避免 TLS 终止或代理链导致 `X-Forwarded-Proto` 与公网 scheme 不一致时形成自重定向循环。
+当前 Docker/生产部署会把前端构建产物嵌入后端二进制；当请求命中后端的 OAuth 浏览器入口 path 时，`/oauth/authorize` 必须直接返回嵌入式 SPA 入口，而不是 302 到 `frontend_url` 的同一路径。该判断不依赖代理保留公网 host 或 scheme，避免 TLS 终止、代理链、域名别名或 ingress host 改写导致自重定向循环。
 
 ### Client 管理
 

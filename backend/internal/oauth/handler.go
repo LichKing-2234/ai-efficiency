@@ -151,44 +151,18 @@ func (h *Handler) Authorize(c *gin.Context) {
 }
 
 func (h *Handler) shouldServeEmbeddedPath(c *gin.Context, path string) bool {
-	if !web.HasEmbeddedFrontend() || h.frontendURL == "" {
+	if !web.HasEmbeddedFrontend() || c.Request == nil || c.Request.URL == nil {
 		return false
 	}
 
-	target, err := url.Parse(strings.TrimRight(h.frontendURL, "/") + path)
-	if err != nil || target.Scheme == "" || target.Host == "" {
-		return false
-	}
-
-	if target.Path != c.Request.URL.Path {
-		return false
-	}
-	for _, host := range requestHosts(c) {
-		if strings.EqualFold(target.Host, host) {
-			return true
+	targetPath := path
+	if h.frontendURL != "" {
+		target, err := url.Parse(strings.TrimRight(h.frontendURL, "/") + path)
+		if err == nil && target.Path != "" {
+			targetPath = target.Path
 		}
 	}
-	return false
-}
-
-func requestHosts(c *gin.Context) []string {
-	hosts := make([]string, 0, 2)
-	if host := firstForwardedValue(c.GetHeader("X-Forwarded-Host")); host != "" {
-		hosts = append(hosts, host)
-	}
-	if c.Request != nil {
-		if host := strings.TrimSpace(c.Request.Host); host != "" {
-			hosts = append(hosts, host)
-		}
-	}
-	return hosts
-}
-
-func firstForwardedValue(value string) string {
-	if idx := strings.Index(value, ","); idx >= 0 {
-		value = value[:idx]
-	}
-	return strings.TrimSpace(value)
+	return targetPath == c.Request.URL.Path
 }
 
 // ApproveRequest is the request body for POST /oauth/authorize/approve.
