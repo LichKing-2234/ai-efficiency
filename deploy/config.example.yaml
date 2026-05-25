@@ -12,6 +12,9 @@ db:
   max_idle_conns: 5
   conn_max_lifetime: 300
 
+# Redis is auth-critical. It stores refresh-session metadata and OAuth
+# authorization/device-flow state in addition to health/readiness checks.
+# Production releases must keep this Redis data available across pod restarts.
 redis:
   addr: "localhost:6379"
   password: ""

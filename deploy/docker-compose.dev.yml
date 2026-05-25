@@ -19,6 +19,7 @@ services:
       retries: 10
 
   redis:
+    # Stores auth refresh-session metadata and short-lived OAuth state.
     image: redis:7-alpine
     command: >
       sh -c '
