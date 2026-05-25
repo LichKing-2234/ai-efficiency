@@ -438,7 +438,7 @@ git push -u origin feat/user-cli-setup-checklist
 
 Expected result: branch is pushed to origin.
 
-- [ ] **Step 5: Open PR**
+- [x] **Step 5: Open PR**
 
 Run:
 
