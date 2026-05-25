@@ -142,7 +142,7 @@ describe('Axios client interceptors', () => {
       expect(localStorage.getItem('token')).toBe('valid-token')
     })
 
-    it('does not redirect on 401 for auth endpoints', async () => {
+    it('does not redirect on 401 for credential auth endpoints', async () => {
       localStorage.setItem('token', 'old-token')
       localStorage.setItem('refresh_token', 'old-refresh-token')
 
@@ -165,6 +165,45 @@ describe('Axios client interceptors', () => {
         writable: true,
         value: originalLocation,
       })
+    })
+
+    it('refreshes token and retries auth me on 401 response', async () => {
+      localStorage.setItem('token', 'old-token')
+      localStorage.setItem('refresh_token', 'refresh-token')
+
+      interceptors.axiosPost.mockResolvedValue({
+        data: {
+          data: {
+            tokens: {
+              access_token: 'new-token',
+              refresh_token: 'new-refresh-token',
+            },
+          },
+        },
+      })
+      const retriedResponse = { status: 200, data: { data: { username: 'admin' } } }
+      interceptors.clientInstance.mockResolvedValue(retriedResponse)
+
+      const result = await interceptors.responseErrFn!({
+        response: { status: 401 },
+        config: { url: '/auth/me', headers: {} },
+      })
+
+      expect(interceptors.axiosPost).toHaveBeenCalledWith('/api/v1/auth/refresh', {
+        refresh_token: 'refresh-token',
+      })
+      expect(interceptors.clientInstance).toHaveBeenCalledWith(
+        expect.objectContaining({
+          url: '/auth/me',
+          headers: expect.objectContaining({
+            Authorization: 'Bearer new-token',
+          }),
+          _retry: true,
+        })
+      )
+      expect(localStorage.getItem('token')).toBe('new-token')
+      expect(localStorage.getItem('refresh_token')).toBe('new-refresh-token')
+      expect(result).toBe(retriedResponse)
     })
 
     it('handles error without response object', async () => {
