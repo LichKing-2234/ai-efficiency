@@ -12,7 +12,7 @@ vi.mock('@/api/client', () => {
 })
 
 import client from '@/api/client'
-import { getEventSummary, getEventDetail, listEvents } from '@/api/events'
+import { getEventSummary, getEventDetail, listEvents, searchEventUsers } from '@/api/events'
 
 const mockClient = client as unknown as {
   get: ReturnType<typeof vi.fn>
@@ -43,5 +43,13 @@ describe('events API', () => {
     mockClient.get.mockResolvedValue({ data: { data: { id: 12 } } })
     await getEventDetail(12)
     expect(mockClient.get).toHaveBeenCalledWith('/events/12')
+  })
+
+  it('searchEventUsers calls GET /events/users with query params', async () => {
+    mockClient.get.mockResolvedValue({ data: { data: [] } })
+    await searchEventUsers({ q: 'alice@example.com', limit: 20 })
+    expect(mockClient.get).toHaveBeenCalledWith('/events/users', {
+      params: { q: 'alice@example.com', limit: 20 },
+    })
   })
 })

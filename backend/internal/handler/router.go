@@ -157,6 +157,7 @@ func SetupRouter(
 	eventsGroup := protected.Group("/events")
 	{
 		eventsGroup.GET("/summary", eventsHandler.Summary)
+		eventsGroup.GET("/users", eventsHandler.Users)
 		eventsGroup.GET("", eventsHandler.List)
 		eventsGroup.GET("/:id", eventsHandler.Get)
 	}

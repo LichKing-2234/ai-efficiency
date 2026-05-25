@@ -9,6 +9,7 @@ vi.mock('@/api/events', () => ({
   getEventSummary: vi.fn(),
   listEvents: vi.fn(),
   getEventDetail: vi.fn(),
+  searchEventUsers: vi.fn(),
 }))
 
 function createTestRouter() {
@@ -83,10 +84,24 @@ const sampleDetail = {
 }
 
 async function mountEvents(isAdmin = false) {
-  const { getEventSummary, listEvents, getEventDetail } = await import('@/api/events')
+  const { getEventSummary, listEvents, getEventDetail, searchEventUsers } = await import('@/api/events')
   ;(getEventSummary as any).mockResolvedValue({ data: { data: sampleSummary } })
-  ;(listEvents as any).mockResolvedValue({ data: { data: { items: [sampleRow], total: 1, page: 0, page_size: 20 } } })
+  ;(listEvents as any).mockResolvedValue({ data: { data: { items: [sampleRow], total: 45, page: 0, page_size: 20 } } })
   ;(getEventDetail as any).mockResolvedValue({ data: { data: isAdmin ? sampleDetail : { ...sampleDetail, raw_source_path: undefined, raw_source_locator: undefined, raw_payload: undefined } } })
+  ;(searchEventUsers as any).mockResolvedValue({
+    data: {
+      data: [
+        {
+          id: 2,
+          username: 'alice',
+          email: 'alice@example.com',
+          role: 'admin',
+          event_count: 3,
+          latest_event_at: '2026-05-22T03:29:57Z',
+        },
+      ],
+    },
+  })
 
   const pinia = createPinia()
   setActivePinia(pinia)
@@ -104,7 +119,7 @@ async function mountEvents(isAdmin = false) {
     },
   })
   await flushPromises()
-  return { wrapper, getEventSummary, listEvents, getEventDetail }
+  return { wrapper, getEventSummary, listEvents, getEventDetail, searchEventUsers }
 }
 
 describe('EventsView', () => {
@@ -113,17 +128,18 @@ describe('EventsView', () => {
     vi.clearAllMocks()
   })
 
-  it('loads summary and event rows on mount with a 24h default range', async () => {
+  it('loads summary and event rows on mount with a 7-day default range', async () => {
     const { wrapper, getEventSummary, listEvents } = await mountEvents()
 
     expect(getEventSummary).toHaveBeenCalled()
     expect(listEvents).toHaveBeenCalled()
-    const summaryParams = (getEventSummary as any).mock.calls[0][0]
     const listParams = (listEvents as any).mock.calls[0][0]
-    expect(summaryParams.from).toBeTruthy()
-    expect(summaryParams.to).toBeTruthy()
-    expect(listParams.from).toBeTruthy()
-    expect(listParams.to).toBeTruthy()
+    const from = new Date(listParams.from).getTime()
+    const to = new Date(listParams.to).getTime()
+    const days = Math.round((to - from) / (24 * 60 * 60 * 1000))
+    expect(days).toBe(7)
+    expect(listParams.limit).toBe(20)
+    expect(listParams.offset).toBe(0)
     expect(wrapper.text()).toContain('Total Events')
     expect(wrapper.text()).toContain('detail.jsonl')
   })
@@ -148,5 +164,75 @@ describe('EventsView', () => {
     expect(wrapper.text()).toContain('Raw Payload')
     expect(wrapper.text()).toContain('admin-only')
     expect(wrapper.text()).toContain('Events page')
+  })
+
+  it('shows admin-only searchable user selector and applies selected user id', async () => {
+    const { wrapper, listEvents, searchEventUsers } = await mountEvents(true)
+
+    const input = wrapper.get('[data-testid="event-user-search"]')
+    await input.setValue('alice@example.com')
+    await wrapper.get('[data-testid="event-user-search-button"]').trigger('click')
+    await flushPromises()
+
+    expect(searchEventUsers).toHaveBeenCalledWith({ q: 'alice@example.com', limit: 20 })
+    expect(wrapper.text()).toContain('alice@example.com')
+
+    await wrapper.get('[data-testid="event-user-option-2"]').trigger('click')
+    await flushPromises()
+
+    const latestParams = (listEvents as any).mock.calls.at(-1)[0]
+    expect(latestParams.user_id).toBe(2)
+    expect(latestParams.offset).toBe(0)
+  })
+
+  it('does not repeat the email when username matches email in user options', async () => {
+    const { wrapper } = await mountEvents(true)
+    const { searchEventUsers } = await import('@/api/events')
+    ;(searchEventUsers as any).mockResolvedValue({
+      data: {
+        data: [
+          {
+            id: 3,
+            username: 'alice@example.com',
+            email: 'alice@example.com',
+            role: 'admin',
+            event_count: 7,
+            latest_event_at: '2026-05-22T03:29:57Z',
+          },
+        ],
+      },
+    })
+
+    await wrapper.get('[data-testid="event-user-search"]').setValue('alice')
+    await wrapper.get('[data-testid="event-user-search-button"]').trigger('click')
+    await flushPromises()
+
+    const optionText = wrapper.get('[data-testid="event-user-option-3"]').text()
+    expect(optionText.match(/alice@example.com/g)).toHaveLength(1)
+    expect(optionText).toContain('· admin · 7 events')
+  })
+
+  it('hides user selector from regular users', async () => {
+    const { wrapper } = await mountEvents(false)
+
+    expect(wrapper.find('[data-testid="event-user-search"]').exists()).toBe(false)
+  })
+
+  it('updates pagination params for next page and page size changes', async () => {
+    const { listEvents } = await import('@/api/events')
+    ;(listEvents as any).mockResolvedValue({
+      data: { data: { items: [sampleRow], total: 45, page: 0, page_size: 20 } },
+    })
+    const { wrapper } = await mountEvents()
+
+    await wrapper.get('[data-testid="events-next-page"]').trigger('click')
+    await flushPromises()
+    expect((listEvents as any).mock.calls.at(-1)[0].offset).toBe(20)
+
+    await wrapper.get('[data-testid="events-page-size"]').setValue('50')
+    await flushPromises()
+    const latestParams = (listEvents as any).mock.calls.at(-1)[0]
+    expect(latestParams.limit).toBe(50)
+    expect(latestParams.offset).toBe(0)
   })
 })

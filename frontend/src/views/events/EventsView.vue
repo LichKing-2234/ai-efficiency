@@ -1,9 +1,14 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import AppLayout from '@/components/AppLayout.vue'
-import { getEventDetail, getEventSummary, listEvents } from '@/api/events'
+import { getEventDetail, getEventSummary, listEvents, searchEventUsers } from '@/api/events'
 import { useAuthStore } from '@/stores/auth'
-import type { ToolUsageEventDetail, ToolUsageEventRow, ToolUsageEventSummary } from '@/types'
+import type {
+  ToolUsageEventDetail,
+  ToolUsageEventRow,
+  ToolUsageEventSummary,
+  ToolUsageEventUserOption,
+} from '@/types'
 
 const auth = useAuthStore()
 
@@ -14,10 +19,14 @@ const total = ref(0)
 const detailLoading = ref(false)
 const selectedEvent = ref<ToolUsageEventDetail | null>(null)
 const selectedEventId = ref<number | null>(null)
+const userSearch = ref('')
+const userOptions = ref<ToolUsageEventUserOption[]>([])
+const selectedUser = ref<ToolUsageEventUserOption | null>(null)
+const userSearchLoading = ref(false)
 
 const filters = reactive({
-  from: defaultFrom24h(),
-  to: defaultNow(),
+  from: toDateTimeLocal(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)),
+  to: toDateTimeLocal(new Date()),
   tool: '',
   binding_status: '',
   q: '',
@@ -26,35 +35,63 @@ const filters = reactive({
 })
 
 const isAdmin = computed(() => auth.isAdmin)
+const currentPage = computed(() => Math.floor(filters.offset / filters.limit) + 1)
+const totalPages = computed(() => Math.max(1, Math.ceil(total.value / filters.limit)))
+const canGoPrev = computed(() => filters.offset > 0)
+const canGoNext = computed(() => filters.offset + filters.limit < total.value)
 
-function defaultNow() {
-  return new Date().toISOString()
+function userLabel(user: ToolUsageEventUserOption) {
+  return user.email || user.username || `User #${user.id}`
 }
 
-function defaultFrom24h() {
-  return new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+function userMeta(user: ToolUsageEventUserOption) {
+  const parts = []
+  if (user.username && user.username !== user.email) parts.push(user.username)
+  parts.push(user.role, `${user.event_count} events`)
+  return parts.join(' · ')
 }
 
-function buildQuery() {
-  const params: Record<string, unknown> = {
-    from: filters.from,
-    to: filters.to,
-    limit: filters.limit,
-    offset: filters.offset,
+function toDateTimeLocal(date: Date) {
+  const pad = (value: number) => String(value).padStart(2, '0')
+  const yyyy = date.getFullYear()
+  const mm = pad(date.getMonth() + 1)
+  const dd = pad(date.getDate())
+  const hh = pad(date.getHours())
+  const min = pad(date.getMinutes())
+  return `${yyyy}-${mm}-${dd}T${hh}:${min}`
+}
+
+function fromDateTimeLocal(value: string) {
+  if (!value) return ''
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? '' : date.toISOString()
+}
+
+function buildQuery(includePagination = true) {
+  const params: Record<string, unknown> = {}
+  const from = fromDateTimeLocal(filters.from)
+  const to = fromDateTimeLocal(filters.to)
+  if (from) params.from = from
+  if (to) params.to = to
+  if (includePagination) {
+    params.limit = filters.limit
+    params.offset = filters.offset
   }
   if (filters.tool) params.tool = filters.tool
   if (filters.binding_status) params.binding_status = filters.binding_status
   if (filters.q) params.q = filters.q
+  if (isAdmin.value && selectedUser.value) params.user_id = selectedUser.value.id
   return params
 }
 
 async function loadPage() {
   loading.value = true
   try {
-    const params = buildQuery()
+    const summaryParams = buildQuery(false)
+    const listParams = buildQuery(true)
     const [summaryRes, listRes] = await Promise.all([
-      getEventSummary(params),
-      listEvents(params),
+      getEventSummary(summaryParams),
+      listEvents(listParams),
     ])
     summary.value = summaryRes.data.data ?? null
     const listData = listRes.data.data
@@ -63,6 +100,61 @@ async function loadPage() {
   } finally {
     loading.value = false
   }
+}
+
+async function searchUsers() {
+  if (!isAdmin.value) return
+  userSearchLoading.value = true
+  try {
+    const res = await searchEventUsers({ q: userSearch.value, limit: 20 })
+    userOptions.value = res.data.data ?? []
+  } finally {
+    userSearchLoading.value = false
+  }
+}
+
+async function selectUser(user: ToolUsageEventUserOption) {
+  selectedUser.value = user
+  userOptions.value = []
+  filters.offset = 0
+  await loadPage()
+}
+
+async function clearSelectedUser() {
+  selectedUser.value = null
+  userSearch.value = ''
+  userOptions.value = []
+  filters.offset = 0
+  await loadPage()
+}
+
+async function applyFilters() {
+  filters.offset = 0
+  await loadPage()
+}
+
+async function clearTimeRange() {
+  filters.from = ''
+  filters.to = ''
+  filters.offset = 0
+  await loadPage()
+}
+
+async function nextPage() {
+  if (!canGoNext.value) return
+  filters.offset += filters.limit
+  await loadPage()
+}
+
+async function previousPage() {
+  if (!canGoPrev.value) return
+  filters.offset = Math.max(0, filters.offset - filters.limit)
+  await loadPage()
+}
+
+async function changePageSize() {
+  filters.offset = 0
+  await loadPage()
 }
 
 async function openDetail(row: ToolUsageEventRow) {
@@ -141,7 +233,23 @@ onMounted(loadPage)
       </div>
 
       <div class="rounded-lg bg-white p-4 shadow">
-        <div class="grid gap-3 md:grid-cols-4">
+        <div class="grid gap-3 md:grid-cols-6">
+          <label class="text-xs font-medium uppercase tracking-wide text-gray-500">
+            From
+            <input
+              v-model="filters.from"
+              type="datetime-local"
+              class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700"
+            />
+          </label>
+          <label class="text-xs font-medium uppercase tracking-wide text-gray-500">
+            To
+            <input
+              v-model="filters.to"
+              type="datetime-local"
+              class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700"
+            />
+          </label>
           <label class="text-xs font-medium uppercase tracking-wide text-gray-500">
             Tool
             <select v-model="filters.tool" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700">
@@ -168,15 +276,84 @@ onMounted(loadPage)
             />
           </label>
         </div>
-        <div class="mt-3 flex justify-end">
-          <button class="rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white" @click="loadPage">Apply Filters</button>
+
+        <div v-if="isAdmin" class="mt-3 border-t border-gray-100 pt-3">
+          <label class="text-xs font-medium uppercase tracking-wide text-gray-500">
+            User
+            <div class="mt-1 flex gap-2">
+              <input
+                v-model="userSearch"
+                data-testid="event-user-search"
+                class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700"
+                placeholder="Search email or username"
+              />
+              <button
+                data-testid="event-user-search-button"
+                class="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                :disabled="userSearchLoading"
+                @click="searchUsers"
+              >
+                {{ userSearchLoading ? 'Searching...' : 'Search' }}
+              </button>
+            </div>
+          </label>
+          <div v-if="selectedUser" class="mt-2 flex items-center justify-between rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-700">
+            <span>{{ userLabel(selectedUser) }} · {{ userMeta(selectedUser) }}</span>
+            <button class="text-xs font-medium text-gray-500 hover:text-gray-900" @click="clearSelectedUser">Clear</button>
+          </div>
+          <div v-if="userOptions.length > 0" class="mt-2 divide-y divide-gray-100 rounded-md border border-gray-200 bg-white">
+            <button
+              v-for="option in userOptions"
+              :key="option.id"
+              :data-testid="`event-user-option-${option.id}`"
+              class="block w-full px-3 py-2 text-left text-sm hover:bg-gray-50"
+              @click="selectUser(option)"
+            >
+              <span class="font-medium text-gray-900">{{ userLabel(option) }}</span>
+              <span class="ml-2 text-xs text-gray-500"> · {{ userMeta(option) }}</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="mt-3 flex justify-end gap-2">
+          <button class="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50" @click="clearTimeRange">Clear Time</button>
+          <button class="rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white" @click="applyFilters">Apply Filters</button>
         </div>
       </div>
 
       <div class="rounded-lg bg-white p-5 shadow">
         <div class="flex items-center justify-between">
           <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-900">Event Records</h2>
-          <span class="text-xs text-gray-400">{{ total }} total</span>
+          <div class="flex items-center gap-2 text-xs text-gray-500">
+            <span>{{ total }} total</span>
+            <select
+              v-model.number="filters.limit"
+              data-testid="events-page-size"
+              class="rounded-md border border-gray-300 px-2 py-1 text-xs"
+              @change="changePageSize"
+            >
+              <option :value="20">20</option>
+              <option :value="50">50</option>
+              <option :value="100">100</option>
+            </select>
+            <button
+              data-testid="events-prev-page"
+              class="rounded border border-gray-200 px-2 py-1 disabled:opacity-40"
+              :disabled="!canGoPrev || loading"
+              @click="previousPage"
+            >
+              Prev
+            </button>
+            <span>Page {{ currentPage }} / {{ totalPages }}</span>
+            <button
+              data-testid="events-next-page"
+              class="rounded border border-gray-200 px-2 py-1 disabled:opacity-40"
+              :disabled="!canGoNext || loading"
+              @click="nextPage"
+            >
+              Next
+            </button>
+          </div>
         </div>
 
         <div v-if="rows.length > 0" class="mt-3 overflow-x-auto">

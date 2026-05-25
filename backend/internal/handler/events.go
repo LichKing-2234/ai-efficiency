@@ -106,6 +106,36 @@ func (h *EventsHandler) Get(c *gin.Context) {
 	pkg.Success(c, detail)
 }
 
+func (h *EventsHandler) Users(c *gin.Context) {
+	uc := auth.GetUserContext(c)
+	if uc == nil {
+		pkg.Error(c, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	if !isAdminRole(uc.Role) {
+		pkg.Error(c, http.StatusForbidden, "admin access required")
+		return
+	}
+
+	limit := parseOptionalInt(c.DefaultQuery("limit", "20"))
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 50 {
+		limit = 50
+	}
+
+	users, err := h.service.SearchEventUsers(c.Request.Context(), toolusage.EventUserSearchRequest{
+		Q:     strings.TrimSpace(c.Query("q")),
+		Limit: limit,
+	})
+	if err != nil {
+		pkg.Error(c, http.StatusUnprocessableEntity, err.Error())
+		return
+	}
+	pkg.Success(c, users)
+}
+
 func parseEventsSummaryRequest(c *gin.Context, uc *auth.UserContext) (toolusage.SummaryRequest, error) {
 	from, to, err := parseEventsTimeWindow(c)
 	if err != nil {
