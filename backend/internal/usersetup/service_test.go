@@ -100,7 +100,6 @@ func TestListProvidersReturnsOnlyAllowedGroups(t *testing.T) {
 		SetName("sub2api").
 		SetDisplayName("sub2api").
 		SetBaseURL("https://sub2api.agoraio.cn/").
-		SetAdminURL("https://sub2api.agoraio.cn/").
 		SetAdminAPIKey("test-admin-key").
 		SetDefaultModel("gpt-5.4").
 		SetIsPrimary(true).
@@ -170,7 +169,6 @@ func TestCreateGroupCredentialUsesSelectedGroupID(t *testing.T) {
 		SetName("sub2api").
 		SetDisplayName("sub2api").
 		SetBaseURL("https://sub2api.agoraio.cn/").
-		SetAdminURL("https://sub2api.agoraio.cn/").
 		SetAdminAPIKey("test-admin-key").
 		SetDefaultModel("gpt-5.4").
 		SetIsPrimary(true).
@@ -239,7 +237,6 @@ func TestRegenerateGroupCredentialOnlyTouchesSelectedGroup(t *testing.T) {
 		SetName("sub2api").
 		SetDisplayName("sub2api").
 		SetBaseURL("https://sub2api.agoraio.cn/").
-		SetAdminURL("https://sub2api.agoraio.cn/").
 		SetAdminAPIKey("test-admin-key").
 		SetDefaultModel("gpt-5.4").
 		SetIsPrimary(true).

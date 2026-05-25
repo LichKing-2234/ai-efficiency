@@ -25,8 +25,6 @@ type ServerConfig struct {
 type RelayConfig struct {
 	Provider       string `mapstructure:"provider"`
 	URL            string `mapstructure:"url"`
-	AdminURL       string `mapstructure:"admin_url"`
-	APIKey         string `mapstructure:"api_key"`
 	AdminAPIKey    string `mapstructure:"admin_api_key"`
 	Model          string `mapstructure:"model"`
 	DefaultGroupID string `mapstructure:"default_group_id"`
@@ -130,8 +128,6 @@ func Load(path string) (*Config, error) {
 		"db.conn_max_lifetime",
 		"relay.provider",
 		"relay.url",
-		"relay.admin_url",
-		"relay.api_key",
 		"relay.admin_api_key",
 		"relay.model",
 		"relay.default_group_id",

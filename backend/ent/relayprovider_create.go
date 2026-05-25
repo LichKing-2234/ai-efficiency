@@ -38,12 +38,6 @@ func (rpc *RelayProviderCreate) SetBaseURL(s string) *RelayProviderCreate {
 	return rpc
 }
 
-// SetAdminURL sets the "admin_url" field.
-func (rpc *RelayProviderCreate) SetAdminURL(s string) *RelayProviderCreate {
-	rpc.mutation.SetAdminURL(s)
-	return rpc
-}
-
 // SetRelayType sets the "relay_type" field.
 func (rpc *RelayProviderCreate) SetRelayType(s string) *RelayProviderCreate {
 	rpc.mutation.SetRelayType(s)
@@ -221,14 +215,6 @@ func (rpc *RelayProviderCreate) check() error {
 			return &ValidationError{Name: "base_url", err: fmt.Errorf(`ent: validator failed for field "RelayProvider.base_url": %w`, err)}
 		}
 	}
-	if _, ok := rpc.mutation.AdminURL(); !ok {
-		return &ValidationError{Name: "admin_url", err: errors.New(`ent: missing required field "RelayProvider.admin_url"`)}
-	}
-	if v, ok := rpc.mutation.AdminURL(); ok {
-		if err := relayprovider.AdminURLValidator(v); err != nil {
-			return &ValidationError{Name: "admin_url", err: fmt.Errorf(`ent: validator failed for field "RelayProvider.admin_url": %w`, err)}
-		}
-	}
 	if _, ok := rpc.mutation.RelayType(); !ok {
 		return &ValidationError{Name: "relay_type", err: errors.New(`ent: missing required field "RelayProvider.relay_type"`)}
 	}
@@ -287,10 +273,6 @@ func (rpc *RelayProviderCreate) createSpec() (*RelayProvider, *sqlgraph.CreateSp
 	if value, ok := rpc.mutation.BaseURL(); ok {
 		_spec.SetField(relayprovider.FieldBaseURL, field.TypeString, value)
 		_node.BaseURL = value
-	}
-	if value, ok := rpc.mutation.AdminURL(); ok {
-		_spec.SetField(relayprovider.FieldAdminURL, field.TypeString, value)
-		_node.AdminURL = value
 	}
 	if value, ok := rpc.mutation.RelayType(); ok {
 		_spec.SetField(relayprovider.FieldRelayType, field.TypeString, value)

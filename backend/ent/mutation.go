@@ -8683,7 +8683,6 @@ type RelayProviderMutation struct {
 	name          *string
 	display_name  *string
 	base_url      *string
-	admin_url     *string
 	relay_type    *string
 	admin_api_key *string
 	default_model *string
@@ -8901,42 +8900,6 @@ func (m *RelayProviderMutation) OldBaseURL(ctx context.Context) (v string, err e
 // ResetBaseURL resets all changes to the "base_url" field.
 func (m *RelayProviderMutation) ResetBaseURL() {
 	m.base_url = nil
-}
-
-// SetAdminURL sets the "admin_url" field.
-func (m *RelayProviderMutation) SetAdminURL(s string) {
-	m.admin_url = &s
-}
-
-// AdminURL returns the value of the "admin_url" field in the mutation.
-func (m *RelayProviderMutation) AdminURL() (r string, exists bool) {
-	v := m.admin_url
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// OldAdminURL returns the old "admin_url" field's value of the RelayProvider entity.
-// If the RelayProvider object wasn't provided to the builder, the object is fetched from the database.
-// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *RelayProviderMutation) OldAdminURL(ctx context.Context) (v string, err error) {
-	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldAdminURL is only allowed on UpdateOne operations")
-	}
-	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldAdminURL requires an ID field in the mutation")
-	}
-	oldValue, err := m.oldValue(ctx)
-	if err != nil {
-		return v, fmt.Errorf("querying old value for OldAdminURL: %w", err)
-	}
-	return oldValue.AdminURL, nil
-}
-
-// ResetAdminURL resets all changes to the "admin_url" field.
-func (m *RelayProviderMutation) ResetAdminURL() {
-	m.admin_url = nil
 }
 
 // SetRelayType sets the "relay_type" field.
@@ -9225,7 +9188,7 @@ func (m *RelayProviderMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *RelayProviderMutation) Fields() []string {
-	fields := make([]string, 0, 11)
+	fields := make([]string, 0, 10)
 	if m.name != nil {
 		fields = append(fields, relayprovider.FieldName)
 	}
@@ -9234,9 +9197,6 @@ func (m *RelayProviderMutation) Fields() []string {
 	}
 	if m.base_url != nil {
 		fields = append(fields, relayprovider.FieldBaseURL)
-	}
-	if m.admin_url != nil {
-		fields = append(fields, relayprovider.FieldAdminURL)
 	}
 	if m.relay_type != nil {
 		fields = append(fields, relayprovider.FieldRelayType)
@@ -9273,8 +9233,6 @@ func (m *RelayProviderMutation) Field(name string) (ent.Value, bool) {
 		return m.DisplayName()
 	case relayprovider.FieldBaseURL:
 		return m.BaseURL()
-	case relayprovider.FieldAdminURL:
-		return m.AdminURL()
 	case relayprovider.FieldRelayType:
 		return m.RelayType()
 	case relayprovider.FieldAdminAPIKey:
@@ -9304,8 +9262,6 @@ func (m *RelayProviderMutation) OldField(ctx context.Context, name string) (ent.
 		return m.OldDisplayName(ctx)
 	case relayprovider.FieldBaseURL:
 		return m.OldBaseURL(ctx)
-	case relayprovider.FieldAdminURL:
-		return m.OldAdminURL(ctx)
 	case relayprovider.FieldRelayType:
 		return m.OldRelayType(ctx)
 	case relayprovider.FieldAdminAPIKey:
@@ -9349,13 +9305,6 @@ func (m *RelayProviderMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetBaseURL(v)
-		return nil
-	case relayprovider.FieldAdminURL:
-		v, ok := value.(string)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.SetAdminURL(v)
 		return nil
 	case relayprovider.FieldRelayType:
 		v, ok := value.(string)
@@ -9463,9 +9412,6 @@ func (m *RelayProviderMutation) ResetField(name string) error {
 		return nil
 	case relayprovider.FieldBaseURL:
 		m.ResetBaseURL()
-		return nil
-	case relayprovider.FieldAdminURL:
-		m.ResetAdminURL()
 		return nil
 	case relayprovider.FieldRelayType:
 		m.ResetRelayType()

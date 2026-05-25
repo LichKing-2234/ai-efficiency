@@ -71,7 +71,7 @@ func TestLoadEnvOverride(t *testing.T) {
 	t.Setenv("AE_SERVER_PORT", "7777")
 	t.Setenv("AE_ENCRYPTION_KEY", "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789")
 	t.Setenv("AE_RELAY_URL", "http://relay.internal:4000")
-	t.Setenv("AE_RELAY_API_KEY", "relay-key-from-env")
+	t.Setenv("AE_RELAY_ADMIN_API_KEY", "relay-admin-key-from-env")
 	t.Setenv("AE_AUTH_LDAP_URL", "ldap://env-ldap.example.com:389")
 
 	cfg, err := Load("")
@@ -87,8 +87,8 @@ func TestLoadEnvOverride(t *testing.T) {
 	if cfg.Relay.URL != "http://relay.internal:4000" {
 		t.Errorf("relay url = %q, want %q", cfg.Relay.URL, "http://relay.internal:4000")
 	}
-	if cfg.Relay.APIKey != "relay-key-from-env" {
-		t.Errorf("relay api key = %q, want %q", cfg.Relay.APIKey, "relay-key-from-env")
+	if cfg.Relay.AdminAPIKey != "relay-admin-key-from-env" {
+		t.Errorf("relay admin api key = %q, want %q", cfg.Relay.AdminAPIKey, "relay-admin-key-from-env")
 	}
 	if cfg.Auth.LDAP.URL != "ldap://env-ldap.example.com:389" {
 		t.Errorf("auth.ldap.url = %q, want %q", cfg.Auth.LDAP.URL, "ldap://env-ldap.example.com:389")
@@ -217,7 +217,7 @@ db:
 relay:
   provider: sub2api
   url: "http://localhost:3000"
-  api_key: "sk-relay-test"
+  admin_api_key: "admin-relay-test"
   model: "gpt-3.5-turbo"
 auth:
   jwt_secret: "file-secret"
@@ -260,8 +260,8 @@ encryption:
 	if cfg.Relay.URL != "http://localhost:3000" {
 		t.Errorf("relay url = %q, want %q", cfg.Relay.URL, "http://localhost:3000")
 	}
-	if cfg.Relay.APIKey != "sk-relay-test" {
-		t.Errorf("relay api_key = %q", cfg.Relay.APIKey)
+	if cfg.Relay.AdminAPIKey != "admin-relay-test" {
+		t.Errorf("relay admin_api_key = %q", cfg.Relay.AdminAPIKey)
 	}
 	if cfg.Auth.AccessTokenTTL != 3600 {
 		t.Errorf("access_token_ttl = %d, want 3600", cfg.Auth.AccessTokenTTL)
@@ -473,8 +473,6 @@ func TestEnsureWritableConfigFileCreatesReloadableConfig(t *testing.T) {
 		Relay: RelayConfig{
 			Provider:       "sub2api",
 			URL:            "http://relay.example.com",
-			AdminURL:       "http://relay-admin.example.com",
-			APIKey:         "sk-live",
 			AdminAPIKey:    "admin-live",
 			Model:          "gpt-5.4",
 			DefaultGroupID: "42",
@@ -523,9 +521,6 @@ func TestEnsureWritableConfigFileCreatesReloadableConfig(t *testing.T) {
 	}
 	if loaded.Relay.AdminAPIKey != "admin-live" {
 		t.Fatalf("relay.admin_api_key = %q, want %q", loaded.Relay.AdminAPIKey, "admin-live")
-	}
-	if loaded.Relay.AdminURL != "http://relay-admin.example.com" {
-		t.Fatalf("relay.admin_url = %q, want %q", loaded.Relay.AdminURL, "http://relay-admin.example.com")
 	}
 	if loaded.Auth.LDAP.BindPassword != "secret" {
 		t.Fatalf("auth.ldap.bind_password = %q, want %q", loaded.Auth.LDAP.BindPassword, "secret")

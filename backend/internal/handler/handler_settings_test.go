@@ -34,8 +34,11 @@ func TestGetLLMConfig(t *testing.T) {
 	if model, _ := data["model"].(string); model != "gpt-4" {
 		t.Fatalf("model = %q", model)
 	}
-	if apiKey, _ := data["relay_api_key"].(string); !strings.Contains(apiKey, "****") {
-		t.Fatalf("relay_api_key should be masked, got %q", apiKey)
+	if _, ok := data["relay_api_key"]; ok {
+		t.Fatalf("relay_api_key should not be exposed in LLM config response")
+	}
+	if adminAPIKey, _ := data["relay_admin_api_key"].(string); !strings.Contains(adminAPIKey, "****") {
+		t.Fatalf("relay_admin_api_key should be masked, got %q", adminAPIKey)
 	}
 	if enabled, _ := data["enabled"].(bool); !enabled {
 		t.Fatal("enabled should be true")
@@ -103,12 +106,14 @@ func TestUpdateLLMConfigRequiresAdmin(t *testing.T) {
 
 func TestUpdateLLMConfigUpdatesModelUsedByConnectionTest(t *testing.T) {
 	var captured struct {
-		Model string `json:"model"`
+		Model         string `json:"model"`
+		Authorization string
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/chat/completions" {
 			t.Fatalf("unexpected path: %s", r.URL.Path)
 		}
+		captured.Authorization = r.Header.Get("Authorization")
 		if err := json.NewDecoder(r.Body).Decode(&captured); err != nil {
 			t.Fatalf("decode request: %v", err)
 		}
@@ -118,14 +123,14 @@ func TestUpdateLLMConfigUpdatesModelUsedByConnectionTest(t *testing.T) {
 	defer server.Close()
 
 	configPath := t.TempDir() + "/config.yaml"
-	if err := os.WriteFile(configPath, []byte("relay:\n  url: http://old.example\n  api_key: sk-old\n  model: old-model\n"), 0o644); err != nil {
+	if err := os.WriteFile(configPath, []byte("relay:\n  url: http://old.example\n  admin_api_key: admin-old\n  model: old-model\n"), 0o644); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 
 	sh := NewSettingsHandler(configPath, config.RelayConfig{
-		URL:    server.URL,
-		APIKey: "sk-test-key",
-		Model:  "old-model",
+		URL:         server.URL,
+		AdminAPIKey: "admin-test-key",
+		Model:       "old-model",
 	}, zap.NewNop())
 
 	r := gin.New()
@@ -149,6 +154,9 @@ func TestUpdateLLMConfigUpdatesModelUsedByConnectionTest(t *testing.T) {
 
 	if captured.Model != "new-model" {
 		t.Fatalf("connection test used model %q", captured.Model)
+	}
+	if captured.Authorization != "Bearer admin-test-key" {
+		t.Fatalf("connection test authorization = %q, want admin key", captured.Authorization)
 	}
 }
 
@@ -195,9 +203,9 @@ func TestTestLLMConnectionUsesCustomPromptFromRequest(t *testing.T) {
 	}
 
 	sh := NewSettingsHandler(configPath, config.RelayConfig{
-		URL:    server.URL,
-		APIKey: "sk-test-key",
-		Model:  "gpt-5.4",
+		URL:         server.URL,
+		AdminAPIKey: "admin-test-key",
+		Model:       "gpt-5.4",
 	}, zap.NewNop())
 
 	r := gin.New()

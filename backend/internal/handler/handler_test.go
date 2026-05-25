@@ -214,7 +214,6 @@ func TestAdminRelayProviderCreateAndUpdateMaskAdminAPIKey(t *testing.T) {
 		"name":          "sub2api-main",
 		"display_name":  "Sub2API Main",
 		"base_url":      "https://sub2api.agoraio.cn",
-		"admin_url":     "https://sub2api.agoraio.cn",
 		"relay_type":    "sub2api",
 		"admin_api_key": "admin-secret-key",
 		"default_model": "gpt-5.4",
@@ -256,7 +255,6 @@ func TestAdminRelayProviderTestRouteRemoved(t *testing.T) {
 		SetName("relay-main").
 		SetDisplayName("Relay Main").
 		SetBaseURL("https://relay.example.com").
-		SetAdminURL("https://relay.example.com").
 		SetAdminAPIKey("***").
 		SetEnabled(true).
 		SetIsPrimary(true).
@@ -353,7 +351,6 @@ func TestUserRelayProviderTestAllowsRegularUserOwnAPIKey(t *testing.T) {
 		SetName("sub2api").
 		SetDisplayName("Sub2API").
 		SetBaseURL(relayServer.URL).
-		SetAdminURL(relayServer.URL).
 		SetAdminAPIKey(adminKey).
 		SetDefaultModel("default-model").
 		SetEnabled(true).
@@ -470,7 +467,6 @@ func TestUserRelayProviderTestUsesAnthropicMessagesEndpoint(t *testing.T) {
 		SetName("sub2api").
 		SetDisplayName("Sub2API").
 		SetBaseURL(relayServer.URL).
-		SetAdminURL(relayServer.URL).
 		SetAdminAPIKey(adminKey).
 		SetDefaultModel("default-model").
 		SetEnabled(true).
@@ -564,7 +560,6 @@ func TestUserRelayProviderTestRequiresSelectedGroupAPIKey(t *testing.T) {
 		SetName("sub2api").
 		SetDisplayName("Sub2API").
 		SetBaseURL(relayServer.URL).
-		SetAdminURL(relayServer.URL).
 		SetAdminAPIKey(adminKey).
 		SetDefaultModel("default-model").
 		SetEnabled(true).

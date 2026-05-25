@@ -246,7 +246,6 @@ describe('SettingsView', () => {
           name: 'sub2api-main',
           display_name: 'Sub2API Main',
           base_url: 'https://sub2api.agoraio.cn',
-          admin_url: 'https://sub2api.agoraio.cn',
           admin_api_key: '***',
           is_primary: true,
           enabled: true,
@@ -269,7 +268,6 @@ describe('SettingsView', () => {
           name: 'sub2api-main',
           display_name: 'Sub2API Main',
           base_url: 'https://sub2api.example.com',
-          admin_url: 'https://sub2api.example.com',
           admin_api_key: '***',
           is_primary: true,
           enabled: true,
@@ -297,7 +295,6 @@ describe('SettingsView', () => {
     await wrapper.find('input[name="relay-provider-name"]').setValue('sub2api-main')
     await wrapper.find('input[name="relay-provider-display-name"]').setValue('Sub2API Main')
     await wrapper.find('input[name="relay-provider-base-url"]').setValue('https://sub2api.agoraio.cn')
-    await wrapper.find('input[name="relay-provider-admin-url"]').setValue('https://sub2api.agoraio.cn')
     await wrapper.find('input[name="relay-provider-admin-api-key"]').setValue('admin-test-key')
 
     const saveBtn = wrapper.findAll('button').find((b) => b.text() === 'Create Relay Provider')
@@ -308,7 +305,6 @@ describe('SettingsView', () => {
       name: 'sub2api-main',
       display_name: 'Sub2API Main',
       base_url: 'https://sub2api.agoraio.cn',
-      admin_url: 'https://sub2api.agoraio.cn',
       admin_api_key: 'admin-test-key',
       is_primary: true,
       enabled: true,
@@ -338,7 +334,6 @@ describe('SettingsView', () => {
           name: 'sub2api-main',
           display_name: 'Sub2API Main',
           base_url: 'https://sub2api.agoraio.cn',
-          admin_url: 'https://sub2api.agoraio.cn',
           admin_api_key: '***',
           is_primary: true,
           enabled: true,
@@ -358,7 +353,6 @@ describe('SettingsView', () => {
     expect(updateRelayProvider).toHaveBeenCalledWith(1, {
       display_name: 'Sub2API Secondary',
       base_url: 'https://sub2api.agoraio.cn',
-      admin_url: 'https://sub2api.agoraio.cn',
       admin_api_key: undefined,
       is_primary: true,
       enabled: true,
@@ -374,7 +368,6 @@ describe('SettingsView', () => {
           name: 'sub2api-main',
           display_name: 'Sub2API Main',
           base_url: 'https://sub2api.agoraio.cn',
-          admin_url: 'https://sub2api.agoraio.cn',
           admin_api_key: '***',
           is_primary: true,
           enabled: true,

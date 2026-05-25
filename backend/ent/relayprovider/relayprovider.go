@@ -19,8 +19,6 @@ const (
 	FieldDisplayName = "display_name"
 	// FieldBaseURL holds the string denoting the base_url field in the database.
 	FieldBaseURL = "base_url"
-	// FieldAdminURL holds the string denoting the admin_url field in the database.
-	FieldAdminURL = "admin_url"
 	// FieldRelayType holds the string denoting the relay_type field in the database.
 	FieldRelayType = "relay_type"
 	// FieldAdminAPIKey holds the string denoting the admin_api_key field in the database.
@@ -45,7 +43,6 @@ var Columns = []string{
 	FieldName,
 	FieldDisplayName,
 	FieldBaseURL,
-	FieldAdminURL,
 	FieldRelayType,
 	FieldAdminAPIKey,
 	FieldDefaultModel,
@@ -72,8 +69,6 @@ var (
 	DisplayNameValidator func(string) error
 	// BaseURLValidator is a validator for the "base_url" field. It is called by the builders before save.
 	BaseURLValidator func(string) error
-	// AdminURLValidator is a validator for the "admin_url" field. It is called by the builders before save.
-	AdminURLValidator func(string) error
 	// DefaultRelayType holds the default value on creation for the "relay_type" field.
 	DefaultRelayType string
 	// DefaultDefaultModel holds the default value on creation for the "default_model" field.
@@ -111,11 +106,6 @@ func ByDisplayName(opts ...sql.OrderTermOption) OrderOption {
 // ByBaseURL orders the results by the base_url field.
 func ByBaseURL(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldBaseURL, opts...).ToFunc()
-}
-
-// ByAdminURL orders the results by the admin_url field.
-func ByAdminURL(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldAdminURL, opts...).ToFunc()
 }
 
 // ByRelayType orders the results by the relay_type field.

@@ -39,7 +39,6 @@ const relayForm = ref({
   name: '',
   display_name: '',
   base_url: '',
-  admin_url: '',
   admin_api_key: '',
   is_primary: false,
   enabled: true,
@@ -210,7 +209,6 @@ function openAddRelayDialog() {
     name: '',
     display_name: '',
     base_url: '',
-    admin_url: '',
     admin_api_key: '',
     is_primary: relayProviders.value.length === 0,
     enabled: true,
@@ -225,7 +223,6 @@ function openEditRelayDialog(provider: RelayProvider) {
     name: provider.name,
     display_name: provider.display_name,
     base_url: provider.base_url,
-    admin_url: provider.admin_url,
     admin_api_key: '',
     is_primary: provider.is_primary,
     enabled: provider.enabled,
@@ -239,7 +236,6 @@ async function handleRelaySubmit() {
   if (!relayForm.value.name.trim()) { relayFormError.value = 'Name is required'; return }
   if (!relayForm.value.display_name.trim()) { relayFormError.value = 'Display name is required'; return }
   if (!relayForm.value.base_url.trim()) { relayFormError.value = 'Base URL is required'; return }
-  if (!relayForm.value.admin_url.trim()) { relayFormError.value = 'Admin URL is required'; return }
   if (!editingRelayId.value && !relayForm.value.admin_api_key.trim()) { relayFormError.value = 'Admin API key is required'; return }
 
   relayFormLoading.value = true
@@ -248,7 +244,6 @@ async function handleRelaySubmit() {
       await updateRelayProvider(editingRelayId.value, {
         display_name: relayForm.value.display_name,
         base_url: relayForm.value.base_url,
-        admin_url: relayForm.value.admin_url,
         admin_api_key: relayForm.value.admin_api_key.trim() || undefined,
         is_primary: relayForm.value.is_primary,
         enabled: relayForm.value.enabled,
@@ -258,7 +253,6 @@ async function handleRelaySubmit() {
         name: relayForm.value.name,
         display_name: relayForm.value.display_name,
         base_url: relayForm.value.base_url,
-        admin_url: relayForm.value.admin_url,
         admin_api_key: relayForm.value.admin_api_key,
         is_primary: relayForm.value.is_primary,
         enabled: relayForm.value.enabled,
@@ -683,7 +677,6 @@ async function handleTestLDAP() {
               </td>
               <td class="px-6 py-4 font-mono text-xs text-gray-500">
                 <div>{{ provider.base_url }}</div>
-                <div class="mt-1">{{ provider.admin_url }}</div>
               </td>
               <td class="px-6 py-4">
                 <span
@@ -910,11 +903,6 @@ async function handleTestLDAP() {
           <div>
             <label class="block text-sm font-medium text-gray-700">Base URL</label>
             <input name="relay-provider-base-url" v-model="relayForm.base_url" type="text" placeholder="https://sub2api.agoraio.cn" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
-          </div>
-
-          <div>
-            <label class="block text-sm font-medium text-gray-700">Admin URL</label>
-            <input name="relay-provider-admin-url" v-model="relayForm.admin_url" type="text" placeholder="https://sub2api.agoraio.cn" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
           </div>
 
           <div class="md:col-span-2">

@@ -16,8 +16,6 @@ func TestEnsurePrimaryRelayProviderFromConfigCreatesPrimaryWhenMissing(t *testin
 	cfg := config.RelayConfig{
 		Provider:    "sub2api",
 		URL:         "https://sub2api.agoraio.cn/",
-		AdminURL:    "https://sub2api.agoraio.cn/",
-		APIKey:      "sk-test",
 		AdminAPIKey: "admin-test",
 		Model:       "gpt-5.4",
 	}
@@ -51,7 +49,6 @@ func TestEnsurePrimaryRelayProviderFromConfigDoesNotOverwriteExistingPrimary(t *
 		SetName("existing").
 		SetDisplayName("Existing").
 		SetBaseURL("https://existing.example.com/").
-		SetAdminURL("https://existing.example.com/").
 		SetAdminAPIKey("encrypted-existing").
 		SetRelayType("sub2api").
 		SetDefaultModel("claude-sonnet-4-20250514").
@@ -62,8 +59,6 @@ func TestEnsurePrimaryRelayProviderFromConfigDoesNotOverwriteExistingPrimary(t *
 	cfg := config.RelayConfig{
 		Provider:    "sub2api",
 		URL:         "https://sub2api.agoraio.cn/",
-		AdminURL:    "https://sub2api.agoraio.cn/",
-		APIKey:      "sk-test",
 		AdminAPIKey: "admin-test",
 		Model:       "gpt-5.4",
 	}

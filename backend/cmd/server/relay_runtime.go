@@ -45,18 +45,6 @@ func resolveRuntimeRelayConfig(ctx context.Context, static config.RelayConfig, l
 	if strings.TrimSpace(resolved.Model) == "" {
 		resolved.Model = strings.TrimSpace(static.Model)
 	}
-	if strings.TrimSpace(resolved.AdminURL) == "" {
-		resolved.AdminURL = strings.TrimSpace(static.AdminURL)
-	}
-	if strings.TrimSpace(resolved.AdminURL) == "" {
-		resolved.AdminURL = strings.TrimSpace(resolved.URL)
-	}
-	if strings.TrimSpace(resolved.AdminAPIKey) == "" {
-		resolved.AdminAPIKey = strings.TrimSpace(resolved.APIKey)
-	}
-	if strings.TrimSpace(resolved.APIKey) == "" {
-		resolved.APIKey = strings.TrimSpace(resolved.AdminAPIKey)
-	}
 	if strings.TrimSpace(resolved.DefaultGroupID) == "" {
 		resolved.DefaultGroupID = strings.TrimSpace(static.DefaultGroupID)
 	}
@@ -102,8 +90,6 @@ func relayConfigFromPrimaryProvider(p *ent.RelayProvider, encryptionKey string) 
 	return config.RelayConfig{
 		Provider:    firstNonEmpty(strings.TrimSpace(p.RelayType), "sub2api"),
 		URL:         strings.TrimSpace(p.BaseURL),
-		AdminURL:    firstNonEmpty(strings.TrimSpace(p.AdminURL), strings.TrimSpace(p.BaseURL)),
-		APIKey:      adminKey,
 		AdminAPIKey: adminKey,
 		Model:       strings.TrimSpace(p.DefaultModel),
 	}, nil

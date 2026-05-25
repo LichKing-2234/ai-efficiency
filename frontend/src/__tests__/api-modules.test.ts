@@ -77,7 +77,6 @@ describe('relayProvider API', () => {
       name: 'sub2api-main',
       display_name: 'Sub2API Main',
       base_url: 'https://sub2api.agoraio.cn',
-      admin_url: 'https://sub2api.agoraio.cn',
       admin_api_key: 'admin-key',
       is_primary: true,
       enabled: true,

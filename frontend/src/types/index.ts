@@ -23,7 +23,6 @@ export interface RelayProvider {
   name: string
   display_name: string
   base_url: string
-  admin_url: string
   relay_type: string
   admin_api_key: string
   default_model: string

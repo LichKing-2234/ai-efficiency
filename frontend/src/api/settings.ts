@@ -3,7 +3,6 @@ import type { ApiResponse } from '@/types'
 
 export interface LLMConfig {
   relay_url?: string
-  relay_api_key?: string
   relay_admin_api_key?: string
   enabled?: boolean
   model: string

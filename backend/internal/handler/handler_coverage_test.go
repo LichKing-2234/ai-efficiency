@@ -42,8 +42,8 @@ func setupFullTestEnvWithDeployment(t *testing.T, deploymentHandler *DeploymentH
 	// Settings handler with temp config file
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config.yaml")
-	os.WriteFile(configPath, []byte("relay:\n  url: http://localhost:19876\n  api_key: sk-test-key-12345678\n  model: gpt-4\n"), 0o644)
-	relayCfg := config.RelayConfig{URL: "http://localhost:19876", APIKey: "sk-test-key-12345678", Model: "gpt-4"}
+	os.WriteFile(configPath, []byte("relay:\n  url: http://localhost:19876\n  admin_api_key: admin-test-key-12345678\n  model: gpt-4\n"), 0o644)
+	relayCfg := config.RelayConfig{URL: "http://localhost:19876", AdminAPIKey: "admin-test-key-12345678", Model: "gpt-4"}
 	settingsHandler := NewSettingsHandler(configPath, relayCfg, logger)
 
 	router := SetupRouter(

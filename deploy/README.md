@@ -53,7 +53,6 @@ Before starting services, edit `.env` for operator-facing settings.
 At minimum, set:
 
 - `AE_RELAY_URL`
-- `AE_RELAY_API_KEY`
 - `AE_RELAY_ADMIN_API_KEY`
 
 Then run the local preflight and start the stack:

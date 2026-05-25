@@ -253,7 +253,6 @@ var (
 		{Name: "name", Type: field.TypeString, Unique: true},
 		{Name: "display_name", Type: field.TypeString},
 		{Name: "base_url", Type: field.TypeString},
-		{Name: "admin_url", Type: field.TypeString},
 		{Name: "relay_type", Type: field.TypeString, Default: "sub2api"},
 		{Name: "admin_api_key", Type: field.TypeString},
 		{Name: "default_model", Type: field.TypeString, Default: "claude-sonnet-4-20250514"},
