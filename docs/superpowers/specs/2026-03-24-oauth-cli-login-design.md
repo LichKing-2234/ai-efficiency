@@ -224,7 +224,7 @@ func NewSub2apiProvider(httpClient *http.Client, baseURL, adminURL, apiKey, mode
 | `ChatCompletionWithTools` | `POST /v1/chat/completions`（带 tools 参数） | Bearer API key | — |
 | `GetUsageStats` | `GET /api/v1/admin/users/:id/usage?from=xxx&to=xxx` | admin API key | 通过 admin 端点按用户 ID 查询，需传 from/to 时间参数 |
 | `ListUserAPIKeys` | `GET /api/v1/admin/users/:id/api-keys` | admin API key | 通过 admin 端点查询，不依赖用户 session |
-| `CreateUserAPIKey` | `POST /api/v1/keys`（以用户身份）或 admin 端点 | admin API key | 为指定用户创建 API key |
+| `CreateUserAPIKey` | `POST /api/v1/keys`（以用户身份） | 用户 JWT | 为当前 relay 用户创建 API key；admin API key 只用于身份解析 / 用户管理，不伪装成用户态 key 创建 |
 
 > **Current implementation note:** `/api/v1/user/providers/:id/test` uses the current user's selected group API key, not the provider admin key. This test path uses a platform-native sub2api probe: OpenAI groups call `/v1/chat/completions`, Anthropic groups call `/v1/messages` with `anthropic-version`, and Gemini groups call `/v1beta/models/{model}:generateContent`.
 
@@ -448,7 +448,7 @@ func NewSSOProvider(relayProvider relay.Provider, logger *zap.Logger) *SSOProvid
 - relay server 返回凭据错误：`relay.Provider.Authenticate` 返回 `ErrInvalidCredentials`，SSO provider 返回空结果并允许默认登录链继续处理失败结果。
 - relay server 不可用（网络错误等）：`relay.Provider.Authenticate` 返回其他 error，SSO provider 记录 warn 日志并返回空结果。
 - relay server 要求额外验证（如 Turnstile、TOTP）：`relay.Provider.Authenticate` 返回 `ErrExtraVerificationRequired`，SSO provider 记录 warn 日志并返回空结果。后续可在 OAuth 授权页中增加额外验证输入框。
-- LDAP 登录只使用用户输入密码完成 LDAP bind。后续 relay identity resolve/provision 不得把 LDAP 密码转发给 relay；创建 relay 用户时使用后端生成的高熵 relay-side password，已有 relay 用户只做 username/concurrency 等元数据修复，不更新密码。LDAP relay identity resolution must prefer an exact relay email match before canonical username lookup/provisioning. When the resolved relay user exposes a valid `admin` or `user` role, the local user role is synced from that relay role so LDAP login does not downgrade an existing relay admin account.
+- LDAP 登录只使用用户输入密码完成 LDAP bind。后续 relay identity resolve/provision 不得把 LDAP 密码转发给 relay；创建 relay 用户时使用后端生成的高熵 relay-side password，已有 relay 用户只做 username/concurrency 等元数据修复，不使用 LDAP 密码更新密码。LDAP relay identity resolution must prefer an exact relay email match before canonical username lookup/provisioning. When the resolved relay user exposes a valid `admin` or `user` role, the local user role is synced from that relay role so LDAP login does not downgrade an existing relay admin account. If a later `/user` create/regenerate operation needs a relay user JWT but the reused LDAP-linked relay user has no stored relay write credential, the backend may generate a new relay-side password, update that relay user through the relay admin API, store only the encrypted generated password locally, and continue the key write as the relay user.
 
 ### Provider Chain
 
@@ -769,7 +769,7 @@ ae-cli 直接调用 relay provider（不走后端代理），支持多个独立 
 
 - Relay SSO 用户：登录时已关联，直接使用
 - LDAP 用户：后端先用 LDAP 派生邮箱精确查找 relay 用户，以复用现有 sub2api 账号和角色；未命中时再通过 stable username 解析 relay identity。username 路径使用 canonical username（邮箱登录时取 `@` 前缀）查找 relay 用户；必要时兼容历史 full-email username，并可修复 username/concurrency 等元数据。若解析出的 relay 用户角色为 `admin` 或 `user`，本地 `users.role` 跟随该 relay 角色。
-- LDAP 用户首次没有 relay 账号时，后端可通过 relay admin API provision relay 用户，并使用后端生成的高熵 relay-side password。LDAP 登录密码只用于 LDAP bind，不能写入本地 `relay_auth_password`，也不能作为 relay create/update password 发送给 relay。
+- LDAP 用户首次没有 relay 账号时，后端可通过 relay admin API provision relay 用户，并使用后端生成的高熵 relay-side password。LDAP 登录密码只用于 LDAP bind，不能写入本地 `relay_auth_password`，也不能作为 relay create/update password 发送给 relay。LDAP 用户复用既有 relay 账号且缺少本地 relay write credential 时，`/user` create/regenerate 可以按需生成新的 relay-side password、更新 relay user，并保存加密后的生成密码，用于后续用户态 API key 写入。
 - 当 relay provider 不可用或无法解析/provision relay 用户时，LDAP-only 用户无法获取 API key。`GET /api/v1/providers` 返回空列表 `{"providers": []}`。ae-cli 收到空列表后提示用户："当前账号未关联 relay server，无法自动配置 AI 工具。请联系管理员。"
 
 ### relay.Provider 接口扩展

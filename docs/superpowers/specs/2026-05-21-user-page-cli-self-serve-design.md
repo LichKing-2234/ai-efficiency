@@ -17,6 +17,7 @@
 - 它**不改变** `ae-cli login` 的 PKCE / device flow 合同；CLI 登录协议仍以 [`2026-04-15-oauth-device-login-design.md`](./2026-04-15-oauth-device-login-design.md) 为准。
 - 它本轮**不直接改写** `ae-cli discover` 的命令形状；工具配置写入规则仍以 [`2026-05-19-ae-cli-deterministic-tool-configuration-design.md`](./2026-05-19-ae-cli-deterministic-tool-configuration-design.md) 为准。
 - 它修正的是 `/user` 页面如何表达和调用用户态 credential provisioning：从错误的 `provider + platform` 折叠视图，改成 `provider + group` 视图，并以当前 relay user 的 `allowed_groups` 作为唯一 group 来源。
+- 本文当前还约束 `/user` 创建 / 重建 key 的写入身份：操作必须以当前 relay user 的用户态凭据写入；如果 LDAP 登录复用了既有 relay user 但本地缺少 relay write credential，后端可以在用户触发 create/regenerate 时按需生成 relay-side password、通过 relay admin API 更新该 relay user，并只在本地保存加密后的生成密码。LDAP bind password 仍然只能用于 LDAP bind，不能写入本地或转发到 relay。
 
 ## Overview
 
@@ -297,11 +298,25 @@ Checklist 固定为 4 步：
 
 刷新页面、重新进入页面或丢失本地内存后，状态仍以 `GET /api/v1/user/providers` 返回的 `existing_hidden` 为准；如果该响应带有 `credential.key`，页面仍可 mask 展示并复制完整 key。
 
+### Relay Write Credential Repair
+
+`Create Key` / `Regenerate` 必须用当前 relay user 的身份写入 sub2api 用户态 key 接口，而不是把 RelayProvider admin key 伪装成用户态写入。
+
+当用户是 LDAP 登录且已经绑定 `relay_user_id`，但本地没有可解密的 `relay_auth_password` 时，后端可以在用户实际触发 create/regenerate 时执行一次按需修复：
+
+1. 生成新的高熵 relay-side password
+2. 通过 `relay.Provider.UpdateUser` / relay admin API 更新该 relay user 的 password
+3. 将生成密码用 `encryption.key` 加密后保存到本地 `users.relay_auth_password`
+4. 本次 create/regenerate 继续使用该生成密码获取 relay 用户 JWT 并写入 API key
+
+这个修复只针对 relay-side write credential，不能使用、保存或转发 LDAP bind password。普通 LDAP 登录本身仍只负责 LDAP bind 与 relay identity 解析。
+
 ### Create, Reveal, Copy, Regenerate Rules
 
 - `Create Key`
   - 仅在当前 `provider + group` 处于 `missing` 状态时可用
   - 执行一次 ensure/create，并返回新 secret
+  - 如果当前 LDAP 账号缺少 relay write credential，先按上述规则修复生成凭据
   - 成功后前端进入 `session_visible`
 - `Reveal`
   - 当当前页面内存存在新 secret，或 `GET` 返回了 `credential.key` 时可用
@@ -312,6 +327,7 @@ Checklist 固定为 4 步：
 - `Regenerate`
   - 在 `existing_hidden` 或 `session_visible` 状态可用
   - 先将当前 `provider + group` 下按统一合同识别出的旧 credential 标记为不可用，再按同一合同新建
+  - 如果当前 LDAP 账号缺少 relay write credential，先按上述规则修复生成凭据
   - 成功后前端进入 `session_visible`
 
 页面必须明确解释：
