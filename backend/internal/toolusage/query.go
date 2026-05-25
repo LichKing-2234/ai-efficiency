@@ -11,6 +11,7 @@ import (
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/ent/prcommitusagesnapshot"
 	"github.com/ai-efficiency/backend/ent/toolusageevent"
+	"github.com/ai-efficiency/backend/ent/user"
 )
 
 type QueryService struct {
@@ -47,6 +48,20 @@ type GetEventDetailRequest struct {
 	ActorUserID int
 	ActorRole   string
 	EventID     int
+}
+
+type EventUserSearchRequest struct {
+	Q     string
+	Limit int
+}
+
+type EventUserOption struct {
+	ID            int       `json:"id"`
+	Username      string    `json:"username"`
+	Email         string    `json:"email"`
+	Role          string    `json:"role"`
+	EventCount    int       `json:"event_count"`
+	LatestEventAt time.Time `json:"latest_event_at"`
 }
 
 type ToolCountDTO struct {
@@ -92,38 +107,119 @@ type MatchedPR struct {
 }
 
 type EventDetail struct {
-	ID                  int              `json:"id"`
-	Tool                string           `json:"tool"`
-	RepoID              int              `json:"repo_id"`
-	RepoName            string           `json:"repo_name"`
-	UserID              int              `json:"user_id"`
-	Username            string           `json:"username,omitempty"`
-	WorkspaceID         string           `json:"workspace_id"`
-	ToolSessionID       string           `json:"tool_session_id"`
-	ToolEventID         string           `json:"tool_event_id,omitempty"`
-	DedupeKey           string           `json:"dedupe_key"`
-	ObservedStartAt     time.Time        `json:"observed_start_at"`
-	ObservedEndAt       time.Time        `json:"observed_end_at"`
-	RequestCount        int              `json:"request_count"`
-	InputTokens         int64            `json:"input_tokens"`
-	OutputTokens        int64            `json:"output_tokens"`
-	CachedInputTokens   int64            `json:"cached_input_tokens"`
-	ReasoningTokens     int64            `json:"reasoning_tokens"`
-	CreditUsage         float64          `json:"credit_usage"`
-	ContextUsagePct     float64          `json:"context_usage_pct"`
-	CommitCheckpointID  *int             `json:"commit_checkpoint_id,omitempty"`
-	CommitSHA           string           `json:"commit_sha,omitempty"`
-	CheckpointCapturedAt *time.Time      `json:"checkpoint_captured_at,omitempty"`
-	SourceBasename      string           `json:"source_basename"`
-	RawSourcePath       string           `json:"raw_source_path,omitempty"`
-	RawSourceLocator    string           `json:"raw_source_locator,omitempty"`
-	RawPayload          map[string]any   `json:"raw_payload,omitempty"`
-	BindingStatus       string           `json:"binding_status"`
-	MatchedPRs          []MatchedPR      `json:"matched_prs"`
+	ID                   int            `json:"id"`
+	Tool                 string         `json:"tool"`
+	RepoID               int            `json:"repo_id"`
+	RepoName             string         `json:"repo_name"`
+	UserID               int            `json:"user_id"`
+	Username             string         `json:"username,omitempty"`
+	WorkspaceID          string         `json:"workspace_id"`
+	ToolSessionID        string         `json:"tool_session_id"`
+	ToolEventID          string         `json:"tool_event_id,omitempty"`
+	DedupeKey            string         `json:"dedupe_key"`
+	ObservedStartAt      time.Time      `json:"observed_start_at"`
+	ObservedEndAt        time.Time      `json:"observed_end_at"`
+	RequestCount         int            `json:"request_count"`
+	InputTokens          int64          `json:"input_tokens"`
+	OutputTokens         int64          `json:"output_tokens"`
+	CachedInputTokens    int64          `json:"cached_input_tokens"`
+	ReasoningTokens      int64          `json:"reasoning_tokens"`
+	CreditUsage          float64        `json:"credit_usage"`
+	ContextUsagePct      float64        `json:"context_usage_pct"`
+	CommitCheckpointID   *int           `json:"commit_checkpoint_id,omitempty"`
+	CommitSHA            string         `json:"commit_sha,omitempty"`
+	CheckpointCapturedAt *time.Time     `json:"checkpoint_captured_at,omitempty"`
+	SourceBasename       string         `json:"source_basename"`
+	RawSourcePath        string         `json:"raw_source_path,omitempty"`
+	RawSourceLocator     string         `json:"raw_source_locator,omitempty"`
+	RawPayload           map[string]any `json:"raw_payload,omitempty"`
+	BindingStatus        string         `json:"binding_status"`
+	MatchedPRs           []MatchedPR    `json:"matched_prs"`
 }
 
 func NewQueryService(entClient *ent.Client) *QueryService {
 	return &QueryService{entClient: entClient}
+}
+
+func (s *QueryService) SearchEventUsers(ctx context.Context, req EventUserSearchRequest) ([]EventUserOption, error) {
+	if s == nil || s.entClient == nil {
+		return nil, fmt.Errorf("search event users: ent client is required")
+	}
+
+	limit := req.Limit
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 50 {
+		limit = 50
+	}
+
+	q := strings.TrimSpace(req.Q)
+	query := s.entClient.ToolUsageEvent.Query()
+	if q != "" {
+		query.Where(toolusageevent.HasUserWith(
+			user.Or(
+				user.EmailContainsFold(q),
+				user.UsernameContainsFold(q),
+			),
+		))
+	}
+
+	var aggregates []struct {
+		UserID        int       `json:"user_id"`
+		EventCount    int       `json:"event_count"`
+		LatestEventAt time.Time `json:"latest_event_at"`
+	}
+	if err := query.
+		GroupBy(toolusageevent.FieldUserID).
+		Aggregate(
+			ent.As(ent.Count(), "event_count"),
+			ent.As(ent.Max(toolusageevent.FieldObservedEndAt), "latest_event_at"),
+		).
+		Scan(ctx, &aggregates); err != nil {
+		return nil, fmt.Errorf("search event users: aggregate events: %w", err)
+	}
+	sort.SliceStable(aggregates, func(i, j int) bool {
+		return aggregates[i].LatestEventAt.After(aggregates[j].LatestEventAt)
+	})
+	if len(aggregates) > limit {
+		aggregates = aggregates[:limit]
+	}
+	if len(aggregates) == 0 {
+		return []EventUserOption{}, nil
+	}
+
+	userIDs := make([]int, 0, len(aggregates))
+	for _, aggregate := range aggregates {
+		userIDs = append(userIDs, aggregate.UserID)
+	}
+	users, err := s.entClient.User.Query().
+		Where(user.IDIn(userIDs...)).
+		All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("search event users: load users: %w", err)
+	}
+	usersByID := make(map[int]*ent.User, len(users))
+	for _, item := range users {
+		usersByID[item.ID] = item
+	}
+
+	out := make([]EventUserOption, 0, len(aggregates))
+	for _, aggregate := range aggregates {
+		item := usersByID[aggregate.UserID]
+		if item == nil {
+			continue
+		}
+		out = append(out, EventUserOption{
+			ID:            item.ID,
+			Username:      item.Username,
+			Email:         item.Email,
+			Role:          string(item.Role),
+			EventCount:    aggregate.EventCount,
+			LatestEventAt: aggregate.LatestEventAt,
+		})
+	}
+	return out, nil
 }
 
 func (s *QueryService) GetSummary(ctx context.Context, req SummaryRequest) (*SummaryResponse, error) {

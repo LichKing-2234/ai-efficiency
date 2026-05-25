@@ -184,6 +184,15 @@ export interface ToolUsageEventSummary {
   }>
 }
 
+export interface ToolUsageEventUserOption {
+  id: number
+  username: string
+  email: string
+  role: string
+  event_count: number
+  latest_event_at: string
+}
+
 export interface ToolUsageEventRow {
   id: number
   tool: string

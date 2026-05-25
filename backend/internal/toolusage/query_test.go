@@ -2,6 +2,7 @@ package toolusage
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -73,6 +74,136 @@ func TestListEventsScopesRegularUserToOwnRows(t *testing.T) {
 	}
 	if rows[0].SourceBasename != "viewer.jsonl" {
 		t.Fatalf("source basename=%q, want viewer.jsonl", rows[0].SourceBasename)
+	}
+}
+
+func TestSearchEventUsersReturnsOnlyUsersWithEvents(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	client := testdb.Open(t)
+
+	aliceScope := seedToolUsageScope(t, client)
+	bobScope := seedToolUsageScope(t, client)
+	noEventScope := seedToolUsageScope(t, client)
+
+	client.User.UpdateOneID(aliceScope.UserID).
+		SetUsername("alice").
+		SetEmail("alice@example.com").
+		SetRole(user.RoleAdmin).
+		ExecX(ctx)
+	client.User.UpdateOneID(bobScope.UserID).
+		SetUsername("bob").
+		SetEmail("bob@example.org").
+		SetRole(user.RoleUser).
+		ExecX(ctx)
+	client.User.UpdateOneID(noEventScope.UserID).
+		SetUsername("carol").
+		SetEmail("carol@example.net").
+		ExecX(ctx)
+
+	aliceLatest := time.Now().Add(-2 * time.Minute).UTC()
+	bobLatest := time.Now().Add(-10 * time.Minute).UTC()
+	client.ToolUsageEvent.Create().
+		SetTool("codex").
+		SetWorkspaceID(aliceScope.WorkspaceID).
+		SetRepoConfigID(aliceScope.RepoConfigID).
+		SetUserID(aliceScope.UserID).
+		SetToolSessionID("alice-session-1").
+		SetDedupeKey("alice-1").
+		SetUsageUnit(toolusageevent.UsageUnitToken).
+		SetObservedStartAt(aliceLatest.Add(-1 * time.Second)).
+		SetObservedEndAt(aliceLatest).
+		SaveX(ctx)
+	client.ToolUsageEvent.Create().
+		SetTool("claude").
+		SetWorkspaceID(aliceScope.WorkspaceID).
+		SetRepoConfigID(aliceScope.RepoConfigID).
+		SetUserID(aliceScope.UserID).
+		SetToolSessionID("alice-session-2").
+		SetDedupeKey("alice-2").
+		SetUsageUnit(toolusageevent.UsageUnitToken).
+		SetObservedStartAt(aliceLatest.Add(-2 * time.Second)).
+		SetObservedEndAt(aliceLatest.Add(-1 * time.Second)).
+		SaveX(ctx)
+	client.ToolUsageEvent.Create().
+		SetTool("kiro").
+		SetWorkspaceID(bobScope.WorkspaceID).
+		SetRepoConfigID(bobScope.RepoConfigID).
+		SetUserID(bobScope.UserID).
+		SetToolSessionID("bob-session-1").
+		SetDedupeKey("bob-1").
+		SetUsageUnit(toolusageevent.UsageUnitCredit).
+		SetObservedStartAt(bobLatest.Add(-1 * time.Second)).
+		SetObservedEndAt(bobLatest).
+		SaveX(ctx)
+
+	svc := NewQueryService(client)
+	users, err := svc.SearchEventUsers(ctx, EventUserSearchRequest{Limit: 20})
+	if err != nil {
+		t.Fatalf("SearchEventUsers: %v", err)
+	}
+	if len(users) != 2 {
+		t.Fatalf("users=%d, want 2: %+v", len(users), users)
+	}
+	if users[0].Email != "alice@example.com" || users[0].EventCount != 2 {
+		t.Fatalf("first user=%+v, want alice with 2 events", users[0])
+	}
+	if users[1].Email != "bob@example.org" || users[1].EventCount != 1 {
+		t.Fatalf("second user=%+v, want bob with 1 event", users[1])
+	}
+}
+
+func TestSearchEventUsersFiltersByEmailOrUsernameAndClampsLimit(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	client := testdb.Open(t)
+
+	aliceScope := seedToolUsageScope(t, client)
+	bobScope := seedToolUsageScope(t, client)
+	client.User.UpdateOneID(aliceScope.UserID).
+		SetUsername("alice").
+		SetEmail("alice@example.com").
+		ExecX(ctx)
+	client.User.UpdateOneID(bobScope.UserID).
+		SetUsername("bob").
+		SetEmail("bob@example.org").
+		ExecX(ctx)
+
+	for i, scope := range []TestToolUsageScope{aliceScope, bobScope} {
+		observedAt := time.Now().Add(time.Duration(-i) * time.Minute).UTC()
+		client.ToolUsageEvent.Create().
+			SetTool("codex").
+			SetWorkspaceID(scope.WorkspaceID).
+			SetRepoConfigID(scope.RepoConfigID).
+			SetUserID(scope.UserID).
+			SetToolSessionID(fmt.Sprintf("search-session-%d", i)).
+			SetDedupeKey(fmt.Sprintf("search-dedupe-%d", i)).
+			SetUsageUnit(toolusageevent.UsageUnitToken).
+			SetObservedStartAt(observedAt.Add(-1 * time.Second)).
+			SetObservedEndAt(observedAt).
+			SaveX(ctx)
+	}
+
+	svc := NewQueryService(client)
+	users, err := svc.SearchEventUsers(ctx, EventUserSearchRequest{Q: "EXAMPLE.ORG", Limit: 100})
+	if err != nil {
+		t.Fatalf("SearchEventUsers: %v", err)
+	}
+	if len(users) != 1 {
+		t.Fatalf("users=%d, want 1: %+v", len(users), users)
+	}
+	if users[0].Username != "bob" || users[0].Email != "bob@example.org" {
+		t.Fatalf("user=%+v, want bob", users[0])
+	}
+
+	users, err = svc.SearchEventUsers(ctx, EventUserSearchRequest{Q: "ali", Limit: 0})
+	if err != nil {
+		t.Fatalf("SearchEventUsers username: %v", err)
+	}
+	if len(users) != 1 || users[0].Email != "alice@example.com" {
+		t.Fatalf("users=%+v, want alice", users)
 	}
 }
 
