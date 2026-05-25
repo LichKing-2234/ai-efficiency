@@ -193,6 +193,7 @@ func main() {
 		logger,
 		cfg.Encryption.Key,
 	)
+	authService.SetRefreshSessionStore(auth.NewRedisRefreshSessionStore(redisClient))
 	// When relay is configured, allow LDAP logins to provision/resolve a relay-side identity
 	// (by stable username) for session/PR attribution.
 	var relayIdentityResolver *auth.RelayIdentityResolver
