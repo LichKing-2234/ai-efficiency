@@ -10,7 +10,9 @@ import (
 
 	"github.com/ai-efficiency/backend/internal/oauth"
 	"github.com/ai-efficiency/backend/internal/web"
+	"github.com/alicebob/miniredis/v2"
 	"github.com/gin-gonic/gin"
+	"github.com/redis/go-redis/v9"
 )
 
 type mockTokenGen struct{}
@@ -19,10 +21,19 @@ func (m *mockTokenGen) GenerateAccessToken(userID int, username, role string) (s
 	return "test-access-token", "test-refresh-token", 7200, nil
 }
 
-func setupTestRouter() (*gin.Engine, *oauth.Handler) {
+func newExternalTestOAuthStateStore(t *testing.T) oauth.OAuthStateStore {
+	t.Helper()
+	s := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: s.Addr()})
+	t.Cleanup(func() { _ = rdb.Close() })
+	return oauth.NewRedisStateStore(rdb)
+}
+
+func setupTestRouter(t *testing.T) (*gin.Engine, *oauth.Handler) {
+	t.Helper()
 	gin.SetMode(gin.TestMode)
 	oauthServer := oauth.NewServer()
-	handler := oauth.NewHandler(oauthServer, "http://localhost:5173", &mockTokenGen{})
+	handler := oauth.NewHandler(oauthServer, "http://localhost:5173", &mockTokenGen{}, newExternalTestOAuthStateStore(t))
 
 	r := gin.New()
 	r.GET("/oauth/authorize", handler.Authorize)
@@ -33,7 +44,7 @@ func setupTestRouter() (*gin.Engine, *oauth.Handler) {
 }
 
 func TestAuthorizeRedirectsToFrontend(t *testing.T) {
-	r, _ := setupTestRouter()
+	r, _ := setupTestRouter(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/oauth/authorize?response_type=code&client_id=ae-cli&redirect_uri=http://localhost:18234/callback&code_challenge=abc&code_challenge_method=S256&state=xyz", nil)
 	w := httptest.NewRecorder()
@@ -64,7 +75,7 @@ func TestAuthorizeServesEmbeddedFrontendWhenFrontendURLMatchesRequestOrigin(t *t
 
 	gin.SetMode(gin.TestMode)
 	oauthServer := oauth.NewServer()
-	handler := oauth.NewHandler(oauthServer, "http://localhost:18081", &mockTokenGen{})
+	handler := oauth.NewHandler(oauthServer, "http://localhost:18081", &mockTokenGen{}, newExternalTestOAuthStateStore(t))
 
 	r := gin.New()
 	r.GET("/oauth/authorize", handler.Authorize)
@@ -85,7 +96,7 @@ func TestAuthorizeServesEmbeddedFrontendWhenFrontendURLMatchesRequestOrigin(t *t
 }
 
 func TestAuthorizeRejectsInvalidRedirectURI(t *testing.T) {
-	r, _ := setupTestRouter()
+	r, _ := setupTestRouter(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/oauth/authorize?response_type=code&client_id=ae-cli&redirect_uri=http://evil.com/callback&code_challenge=abc&code_challenge_method=S256&state=xyz", nil)
 	w := httptest.NewRecorder()
@@ -97,7 +108,7 @@ func TestAuthorizeRejectsInvalidRedirectURI(t *testing.T) {
 }
 
 func TestAuthorizeRejectsUnknownClient(t *testing.T) {
-	r, _ := setupTestRouter()
+	r, _ := setupTestRouter(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/oauth/authorize?response_type=code&client_id=unknown&redirect_uri=http://localhost:18234/callback&code_challenge=abc&code_challenge_method=S256&state=xyz", nil)
 	w := httptest.NewRecorder()
@@ -109,7 +120,7 @@ func TestAuthorizeRejectsUnknownClient(t *testing.T) {
 }
 
 func TestAuthorizeRejectsUnsupportedResponseType(t *testing.T) {
-	r, _ := setupTestRouter()
+	r, _ := setupTestRouter(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/oauth/authorize?response_type=token&client_id=ae-cli&redirect_uri=http://localhost:18234/callback&code_challenge=abc&code_challenge_method=S256&state=xyz", nil)
 	w := httptest.NewRecorder()
@@ -121,7 +132,7 @@ func TestAuthorizeRejectsUnsupportedResponseType(t *testing.T) {
 }
 
 func TestAuthorizeRejectsMissingCodeChallenge(t *testing.T) {
-	r, _ := setupTestRouter()
+	r, _ := setupTestRouter(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/oauth/authorize?response_type=code&client_id=ae-cli&redirect_uri=http://localhost:18234/callback&state=xyz", nil)
 	w := httptest.NewRecorder()
@@ -133,7 +144,7 @@ func TestAuthorizeRejectsMissingCodeChallenge(t *testing.T) {
 }
 
 func TestDeviceCodeRejectsUnknownClient(t *testing.T) {
-	r, _ := setupTestRouter()
+	r, _ := setupTestRouter(t)
 
 	req := httptest.NewRequest(http.MethodPost, "/oauth/device/code", strings.NewReader("client_id=unknown"))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -149,7 +160,7 @@ func TestDeviceCodeRejectsUnknownClient(t *testing.T) {
 }
 
 func TestDevicePageRedirectsToFrontend(t *testing.T) {
-	r, _ := setupTestRouter()
+	r, _ := setupTestRouter(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/oauth/device", nil)
 	w := httptest.NewRecorder()

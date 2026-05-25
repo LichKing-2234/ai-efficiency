@@ -2,6 +2,7 @@ package oauth
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -25,7 +26,7 @@ func setupDeviceRouter(t *testing.T) (*gin.Engine, *Handler, *time.Time) {
 	gin.SetMode(gin.TestMode)
 
 	now := time.Date(2026, 4, 15, 12, 0, 0, 0, time.UTC)
-	handler := NewHandler(NewServer(), "http://localhost:5173", deviceTokenGen{})
+	handler := NewHandler(NewServer(), "http://localhost:5173", deviceTokenGen{}, newTestOAuthStateStore(t))
 	handler.now = func() time.Time { return now }
 	handler.deviceCodeExpiry = 15 * time.Minute
 	handler.devicePollInterval = 5 * time.Second
@@ -51,8 +52,13 @@ func setupDeviceRouter(t *testing.T) (*gin.Engine, *Handler, *time.Time) {
 
 func issueDeviceCode(t *testing.T, router *gin.Engine) (map[string]any, string) {
 	t.Helper()
+	return issueDeviceCodeAtPath(t, router, "/oauth/device/code")
+}
 
-	req := httptest.NewRequest(http.MethodPost, "/oauth/device/code", strings.NewReader("client_id=ae-cli"))
+func issueDeviceCodeAtPath(t *testing.T, router *gin.Engine, path string) (map[string]any, string) {
+	t.Helper()
+
+	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader("client_id=ae-cli"))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
@@ -66,6 +72,49 @@ func issueDeviceCode(t *testing.T, router *gin.Engine) (map[string]any, string) 
 	}
 
 	return payload, payload["device_code"].(string)
+}
+
+func TestDeviceFlowStateSurvivesAcrossHandlersSharingStore(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	now := time.Date(2026, 5, 25, 12, 0, 0, 0, time.UTC)
+	store := newTestOAuthStateStore(t)
+	issuer := NewHandler(NewServer(), "http://localhost:5173", deviceTokenGen{}, store)
+	issuer.now = func() time.Time { return now }
+	verifier := NewHandler(NewServer(), "http://localhost:5173", deviceTokenGen{}, store)
+	verifier.now = func() time.Time { return now.Add(6 * time.Second) }
+
+	r := gin.New()
+	r.POST("/issue/oauth/device/code", issuer.DeviceCode)
+	verifyGroup := r.Group("/verify/oauth")
+	verifyGroup.Use(func(c *gin.Context) {
+		c.Set(authpkg.ContextKeyUser, &authpkg.UserContext{UserID: 7, Username: "alice", Role: "user"})
+		c.Next()
+	})
+	verifyGroup.POST("/device/verify", verifier.VerifyDevice)
+	r.POST("/verify/oauth/token", verifier.Token)
+
+	payload, deviceCode := issueDeviceCodeAtPath(t, r, "/issue/oauth/device/code")
+	body := bytes.NewBufferString(`{"user_code":"` + payload["user_code"].(string) + `","approved":true}`)
+	verifyReq := httptest.NewRequest(http.MethodPost, "/verify/oauth/device/verify", body)
+	verifyReq.Header.Set("Content-Type", "application/json")
+	verifyW := httptest.NewRecorder()
+	r.ServeHTTP(verifyW, verifyReq)
+	if verifyW.Code != http.StatusOK {
+		t.Fatalf("verify status=%d body=%s", verifyW.Code, verifyW.Body.String())
+	}
+
+	tokenBody := url.Values{
+		"grant_type":  {deviceGrantType},
+		"device_code": {deviceCode},
+		"client_id":   {"ae-cli"},
+	}
+	tokenReq := httptest.NewRequest(http.MethodPost, "/verify/oauth/token", strings.NewReader(tokenBody.Encode()))
+	tokenReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	tokenW := httptest.NewRecorder()
+	r.ServeHTTP(tokenW, tokenReq)
+	if !strings.Contains(tokenW.Body.String(), "device-access-token") {
+		t.Fatalf("token body=%s", tokenW.Body.String())
+	}
 }
 
 func TestTokenDeviceGrantPendingApprovedConsumed(t *testing.T) {
@@ -155,7 +204,14 @@ func TestTokenDeviceGrantDeniedExpiredAndSlowDown(t *testing.T) {
 	}
 
 	_, expiringCode := issueDeviceCode(t, router)
-	handler.devices[expiringCode].ExpiresAt = now.Add(-time.Second)
+	expiringSession, err := handler.stateStore.GetDeviceSession(context.Background(), expiringCode)
+	if err != nil {
+		t.Fatalf("GetDeviceSession: %v", err)
+	}
+	expiringSession.ExpiresAt = now.Add(-time.Second)
+	if err := handler.stateStore.UpdateDeviceSession(context.Background(), expiringSession, time.Second); err != nil {
+		t.Fatalf("UpdateDeviceSession: %v", err)
+	}
 
 	expiredForm := url.Values{
 		"grant_type":  {"urn:ietf:params:oauth:grant-type:device_code"},
@@ -219,7 +275,7 @@ func TestDeviceCodeRegeneratesDuplicateUserCodes(t *testing.T) {
 	if firstPayload["user_code"] == secondPayload["user_code"] {
 		t.Fatalf("expected regenerated unique user_code, got duplicate %q", firstPayload["user_code"])
 	}
-	if got := handler.devicesByUserCode[normalizeUserCode(secondPayload["user_code"].(string))]; got == nil {
+	if got, err := handler.stateStore.GetDeviceSessionByUserCode(context.Background(), secondPayload["user_code"].(string)); err != nil || got == nil {
 		t.Fatal("expected secondary user_code index to contain second device entry")
 	}
 }

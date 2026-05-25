@@ -1,13 +1,13 @@
 package oauth
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
 	"net/http"
 	"net/url"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/ai-efficiency/backend/internal/auth"
@@ -18,101 +18,43 @@ import (
 const codeExpiry = 5 * time.Minute
 
 const (
-	deviceCodeExpiryDefault  = 15 * time.Minute
+	deviceCodeExpiryDefault   = 15 * time.Minute
 	devicePollIntervalDefault = 5 * time.Second
-	deviceStatusPending      = "pending"
-	deviceStatusApproved     = "approved"
-	deviceStatusDenied       = "denied"
-	deviceStatusExpired      = "expired"
-	deviceStatusConsumed     = "consumed"
-	deviceGrantType          = "urn:ietf:params:oauth:grant-type:device_code"
+	deviceStatusPending       = "pending"
+	deviceStatusApproved      = "approved"
+	deviceStatusDenied        = "denied"
+	deviceStatusExpired       = "expired"
+	deviceStatusConsumed      = "consumed"
+	deviceGrantType           = "urn:ietf:params:oauth:grant-type:device_code"
 )
 
 var (
-	errRandomRead      = errors.New("oauth: random read failed")
-	generateCodeFunc   = generateCode
+	errRandomRead        = errors.New("oauth: random read failed")
+	generateCodeFunc     = generateCode
 	generateUserCodeFunc = generateUserCode
 )
 
-// authCodeEntry stores a pending authorization code with its metadata.
-type authCodeEntry struct {
-	Code          string
-	ClientID      string
-	RedirectURI   string
-	CodeChallenge string
-	UserID        int
-	Username      string
-	Role          string
-	State         string
-	CreatedAt     time.Time
-}
-
-type deviceEntry struct {
-	DeviceCode      string
-	UserCode        string
-	ClientID        string
-	Status          string
-	UserID          int
-	Username        string
-	Role            string
-	CreatedAt       time.Time
-	ExpiresAt       time.Time
-	LastPolledAt    time.Time
-	PollIntervalSec int
-}
-
 // Handler handles OAuth2 endpoints.
 type Handler struct {
-	server      *Server
-	frontendURL string
-	tokenGen    TokenGenerator
-	now         func() time.Time
-	deviceCodeExpiry  time.Duration
+	server             *Server
+	frontendURL        string
+	tokenGen           TokenGenerator
+	stateStore         OAuthStateStore
+	now                func() time.Time
+	deviceCodeExpiry   time.Duration
 	devicePollInterval time.Duration
-
-	mu      sync.Mutex
-	codes   map[string]*authCodeEntry
-	devices map[string]*deviceEntry
-	devicesByUserCode map[string]*deviceEntry
 }
 
 // NewHandler creates a new OAuth handler.
-func NewHandler(server *Server, frontendURL string, tokenGen TokenGenerator) *Handler {
-	h := &Handler{
+func NewHandler(server *Server, frontendURL string, tokenGen TokenGenerator, stateStore OAuthStateStore) *Handler {
+	return &Handler{
 		server:             server,
 		frontendURL:        frontendURL,
 		tokenGen:           tokenGen,
+		stateStore:         stateStore,
 		now:                time.Now,
 		deviceCodeExpiry:   deviceCodeExpiryDefault,
 		devicePollInterval: devicePollIntervalDefault,
-		codes:              make(map[string]*authCodeEntry),
-		devices:            make(map[string]*deviceEntry),
-		devicesByUserCode:  make(map[string]*deviceEntry),
-	}
-	// Background goroutine to reap expired auth codes every minute.
-	go h.reapExpiredCodes()
-	return h
-}
-
-// reapExpiredCodes periodically removes expired authorization codes from memory.
-func (h *Handler) reapExpiredCodes() {
-	ticker := time.NewTicker(1 * time.Minute)
-	defer ticker.Stop()
-	for range ticker.C {
-		h.mu.Lock()
-		now := h.now()
-		for code, entry := range h.codes {
-			if now.Sub(entry.CreatedAt) > codeExpiry {
-				delete(h.codes, code)
-			}
-		}
-		for code, entry := range h.devices {
-			if h.isDeviceExpiredLocked(entry) || entry.Status == deviceStatusConsumed {
-				delete(h.devicesByUserCode, entry.UserCode)
-				delete(h.devices, code)
-			}
-		}
-		h.mu.Unlock()
 	}
 }
 
@@ -249,8 +191,7 @@ func (h *Handler) Approve(c *gin.Context) {
 		return
 	}
 
-	h.mu.Lock()
-	h.codes[code] = &authCodeEntry{
+	session := &AuthorizationCodeSession{
 		Code:          code,
 		ClientID:      req.ClientID,
 		RedirectURI:   req.RedirectURI,
@@ -261,7 +202,10 @@ func (h *Handler) Approve(c *gin.Context) {
 		State:         req.State,
 		CreatedAt:     h.now(),
 	}
-	h.mu.Unlock()
+	if err := h.stateStore.StoreAuthorizationCode(c.Request.Context(), session, codeExpiry); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"redirect_uri": buildRedirectURI(req.RedirectURI, map[string]string{
@@ -286,26 +230,26 @@ func (h *Handler) DeviceCode(c *gin.Context) {
 		return
 	}
 
-	h.mu.Lock()
-	userCode, normalizedUserCode, err := h.issueUniqueUserCodeLocked()
+	userCode, normalizedUserCode, err := h.issueUniqueUserCode(c.Request.Context())
 	if err != nil {
-		h.mu.Unlock()
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
 		return
 	}
 
-	entry := &deviceEntry{
+	session := &DeviceSession{
 		DeviceCode:      deviceCode,
-		UserCode:        normalizedUserCode,
+		UserCode:        userCode,
+		NormalizedCode:  normalizedUserCode,
 		ClientID:        clientID,
 		Status:          deviceStatusPending,
 		CreatedAt:       now,
 		ExpiresAt:       now.Add(h.deviceCodeExpiry),
 		PollIntervalSec: int(h.devicePollInterval / time.Second),
 	}
-	h.devices[deviceCode] = entry
-	h.devicesByUserCode[normalizedUserCode] = entry
-	h.mu.Unlock()
+	if err := h.stateStore.StoreDeviceSession(c.Request.Context(), session, h.deviceCodeExpiry); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"device_code":      deviceCode,
@@ -338,11 +282,8 @@ func (h *Handler) VerifyDevice(c *gin.Context) {
 		return
 	}
 
-	h.mu.Lock()
-	defer h.mu.Unlock()
-
-	entry := h.findDeviceByUserCodeLocked(req.UserCode)
-	if entry == nil || entry.Status == deviceStatusConsumed || h.isDeviceExpiredLocked(entry) {
+	entry, err := h.stateStore.GetDeviceSessionByUserCode(c.Request.Context(), req.UserCode)
+	if err != nil || entry.Status == deviceStatusConsumed || h.isDeviceExpired(entry) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_user_code", "message": "Code invalid or expired"})
 		return
 	}
@@ -355,6 +296,10 @@ func (h *Handler) VerifyDevice(c *gin.Context) {
 	if !req.Approved {
 		entry.Status = deviceStatusDenied
 		entry.LastPolledAt = time.Time{}
+		if err := h.stateStore.UpdateDeviceSession(c.Request.Context(), entry, h.deviceSessionTTL(entry)); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
+			return
+		}
 		c.JSON(http.StatusOK, gin.H{"status": deviceStatusDenied})
 		return
 	}
@@ -364,6 +309,10 @@ func (h *Handler) VerifyDevice(c *gin.Context) {
 	entry.UserID = uc.UserID
 	entry.Username = uc.Username
 	entry.Role = uc.Role
+	if err := h.stateStore.UpdateDeviceSession(c.Request.Context(), entry, h.deviceSessionTTL(entry)); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{"status": deviceStatusApproved})
 }
@@ -392,14 +341,8 @@ func (h *Handler) exchangeAuthorizationCode(c *gin.Context) {
 		return
 	}
 
-	h.mu.Lock()
-	entry, ok := h.codes[code]
-	if ok {
-		delete(h.codes, code)
-	}
-	h.mu.Unlock()
-
-	if !ok {
+	entry, err := h.stateStore.ConsumeAuthorizationCode(c.Request.Context(), code)
+	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_grant", "error_description": "code not found or already used"})
 		return
 	}
@@ -447,23 +390,22 @@ func (h *Handler) exchangeDeviceToken(c *gin.Context) {
 		return
 	}
 
-	h.mu.Lock()
-	defer h.mu.Unlock()
-
-	entry, ok := h.devices[deviceCode]
-	if !ok || entry.ClientID != clientID || entry.Status == deviceStatusConsumed {
+	entry, err := h.stateStore.GetDeviceSession(c.Request.Context(), deviceCode)
+	if err != nil || entry.ClientID != clientID || entry.Status == deviceStatusConsumed {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_grant"})
 		return
 	}
 
-	if h.isDeviceExpiredLocked(entry) {
+	if h.isDeviceExpired(entry) {
 		entry.Status = deviceStatusExpired
+		_ = h.stateStore.UpdateDeviceSession(c.Request.Context(), entry, time.Second)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "expired_token"})
 		return
 	}
 
 	if !entry.LastPolledAt.IsZero() && h.now().Sub(entry.LastPolledAt) < time.Duration(entry.PollIntervalSec)*time.Second {
 		entry.LastPolledAt = h.now()
+		_ = h.stateStore.UpdateDeviceSession(c.Request.Context(), entry, h.deviceSessionTTL(entry))
 		c.JSON(http.StatusBadRequest, gin.H{"error": "slow_down"})
 		return
 	}
@@ -471,13 +413,19 @@ func (h *Handler) exchangeDeviceToken(c *gin.Context) {
 
 	switch entry.Status {
 	case deviceStatusPending:
+		_ = h.stateStore.UpdateDeviceSession(c.Request.Context(), entry, h.deviceSessionTTL(entry))
 		c.JSON(http.StatusBadRequest, gin.H{"error": "authorization_pending"})
 		return
 	case deviceStatusDenied:
 		c.JSON(http.StatusBadRequest, gin.H{"error": "access_denied"})
 		return
 	case deviceStatusApproved:
-		entry.Status = deviceStatusConsumed
+		consumed, err := h.stateStore.ConsumeDeviceSession(c.Request.Context(), deviceCode)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_grant"})
+			return
+		}
+		entry = consumed
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_grant"})
 		return
@@ -502,23 +450,33 @@ func (h *Handler) exchangeDeviceToken(c *gin.Context) {
 	})
 }
 
-func (h *Handler) findDeviceByUserCodeLocked(userCode string) *deviceEntry {
-	normalized := normalizeUserCode(userCode)
-	return h.devicesByUserCode[normalized]
-}
-
-func (h *Handler) isDeviceExpiredLocked(entry *deviceEntry) bool {
+func (h *Handler) isDeviceExpired(entry *DeviceSession) bool {
 	return !h.now().Before(entry.ExpiresAt)
 }
 
-func (h *Handler) issueUniqueUserCodeLocked() (string, string, error) {
+func (h *Handler) deviceSessionTTL(entry *DeviceSession) time.Duration {
+	ttl := time.Until(entry.ExpiresAt)
+	if h.now != nil {
+		ttl = entry.ExpiresAt.Sub(h.now())
+	}
+	if ttl <= 0 {
+		return time.Second
+	}
+	return ttl
+}
+
+func (h *Handler) issueUniqueUserCode(ctx context.Context) (string, string, error) {
 	for range 8 {
 		userCode, err := generateUserCodeFunc()
 		if err != nil {
 			return "", "", err
 		}
 		normalized := normalizeUserCode(userCode)
-		if _, exists := h.devicesByUserCode[normalized]; exists {
+		exists, err := h.stateStore.UserCodeExists(ctx, normalized)
+		if err != nil {
+			return "", "", err
+		}
+		if exists {
 			continue
 		}
 		return userCode, normalized, nil

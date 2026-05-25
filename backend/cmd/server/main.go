@@ -234,7 +234,12 @@ func main() {
 
 	// Init OAuth handler
 	oauthServer := oauth.NewServer()
-	oauthHandler := oauth.NewHandler(oauthServer, cfg.Server.FrontendURL, &authTokenAdapter{authService: authService})
+	oauthHandler := oauth.NewHandler(
+		oauthServer,
+		cfg.Server.FrontendURL,
+		&authTokenAdapter{authService: authService},
+		oauth.NewRedisStateStore(redisClient),
+	)
 
 	// Init provider handler
 	providerHandler := handler.NewProviderHandler(entClient, cfg.Encryption.Key, logger)
