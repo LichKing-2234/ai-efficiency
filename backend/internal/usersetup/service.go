@@ -2,8 +2,6 @@ package usersetup
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"strconv"
@@ -166,9 +164,12 @@ func (s *Service) CreateGroupCredential(ctx context.Context, req CreateGroupCred
 	if selected := selectReusableKeyByGroup(keys, groupID, strings.TrimSpace(u.Username), strings.TrimSpace(u.Email)); selected != nil {
 		return nil, ErrManagedKeyAlreadyExists
 	}
-	createCtx, u, err := s.withRelayWriteCredentials(ctx, u, rp)
+	createCtx, u, err := s.withRelayWriteCredentials(ctx, u)
 	if err != nil {
 		return nil, err
+	}
+	if _, _, ok := relay.UserCredentialsFromContext(createCtx); !ok {
+		return nil, fmt.Errorf("create group credential: relay user credentials are required")
 	}
 	created, err := rp.CreateUserAPIKey(createCtx, int64(*u.RelayUserID), relay.APIKeyCreateRequest{
 		Name:    preferredCredentialName(strings.TrimSpace(u.Username), strings.TrimSpace(u.Email)),
@@ -193,9 +194,13 @@ func (s *Service) RegenerateGroupCredential(ctx context.Context, req RegenerateG
 	if err != nil {
 		return nil, fmt.Errorf("list user api keys: %w", err)
 	}
-	updateCtx, u, err := s.withRelayWriteCredentials(ctx, u, rp)
+	updateCtx, u, err := s.withRelayWriteCredentials(ctx, u)
 	if err != nil {
 		return nil, err
+	}
+	_, _, hasUserCredentials := relay.UserCredentialsFromContext(updateCtx)
+	if !hasUserCredentials {
+		return nil, fmt.Errorf("regenerate group credential: relay user credentials are required")
 	}
 	for _, key := range filterReusableKeysByGroup(keys, groupID, preferredCredentialName(strings.TrimSpace(u.Username), strings.TrimSpace(u.Email))) {
 		if err := rp.UpdateUserAPIKeyStatus(updateCtx, key.ID, "inactive"); err != nil {
@@ -351,87 +356,14 @@ func (s *Service) withStoredRelayCredentialsIfAvailable(ctx context.Context, u *
 	return relay.WithUserCredentials(ctx, login, password), true
 }
 
-func (s *Service) withRelayWriteCredentials(ctx context.Context, u *ent.User, rp relay.Provider) (context.Context, *ent.User, error) {
+func (s *Service) withRelayWriteCredentials(ctx context.Context, u *ent.User) (context.Context, *ent.User, error) {
 	if u == nil || u.RelayUserID == nil {
 		return ctx, u, nil
-	}
-	adminRelayUser, roleKnown, roleErr := isRelayAdminUser(ctx, u, rp)
-	if adminRelayUser {
-		updated, err := clearStoredRelayAuthPassword(ctx, u)
-		if err != nil {
-			return nil, nil, fmt.Errorf("clear relay admin credentials: %w", err)
-		}
-		return ctx, updated, nil
 	}
 	if credentialCtx, ok := s.withStoredRelayCredentialsIfAvailable(ctx, u); ok {
 		return credentialCtx, u, nil
 	}
-	if !roleKnown {
-		if roleErr != nil {
-			return nil, nil, fmt.Errorf("repair relay credentials: determine relay user role: %w", roleErr)
-		}
-		return nil, nil, fmt.Errorf("repair relay credentials: relay user role is required")
-	}
-	if strings.TrimSpace(s.encryptionKey) == "" {
-		return nil, nil, fmt.Errorf("repair relay credentials: encryption key is required")
-	}
-	login := firstNonEmptyString(u.Email, u.Username)
-	if login == "" {
-		return nil, nil, fmt.Errorf("repair relay credentials: user login is required")
-	}
-	password, err := highEntropyRelayPassword()
-	if err != nil {
-		return nil, nil, fmt.Errorf("repair relay credentials: generate password: %w", err)
-	}
-	if _, err := rp.UpdateUser(ctx, int64(*u.RelayUserID), relay.UpdateUserRequest{Password: password}); err != nil {
-		return nil, nil, fmt.Errorf("repair relay credentials: update relay user: %w", err)
-	}
-	encrypted, err := pkg.Encrypt(password, s.encryptionKey)
-	if err != nil {
-		return nil, nil, fmt.Errorf("repair relay credentials: encrypt password: %w", err)
-	}
-	updated, err := u.Update().SetRelayAuthPassword(encrypted).Save(ctx)
-	if err != nil {
-		return nil, nil, fmt.Errorf("repair relay credentials: persist password: %w", err)
-	}
-	return relay.WithUserCredentials(ctx, login, password), updated, nil
-}
-
-func isRelayAdminUser(ctx context.Context, u *ent.User, rp relay.Provider) (bool, bool, error) {
-	if u == nil || u.RelayUserID == nil {
-		return false, false, nil
-	}
-	relayUser, err := rp.GetUser(ctx, int64(*u.RelayUserID))
-	if err != nil {
-		return false, false, err
-	}
-	if relayUser == nil {
-		return false, false, nil
-	}
-	role := strings.ToLower(strings.TrimSpace(relayUser.Role))
-	switch role {
-	case "admin":
-		return true, true, nil
-	case "user":
-		return false, true, nil
-	default:
-		return false, false, nil
-	}
-}
-
-func clearStoredRelayAuthPassword(ctx context.Context, u *ent.User) (*ent.User, error) {
-	if u == nil || u.RelayAuthPassword == nil || strings.TrimSpace(*u.RelayAuthPassword) == "" {
-		return u, nil
-	}
-	return u.Update().ClearRelayAuthPassword().Save(ctx)
-}
-
-func highEntropyRelayPassword() (string, error) {
-	var buf [32]byte
-	if _, err := rand.Read(buf[:]); err != nil {
-		return "", err
-	}
-	return base64.RawURLEncoding.EncodeToString(buf[:]), nil
+	return ctx, u, nil
 }
 
 func firstNonEmptyString(values ...string) string {

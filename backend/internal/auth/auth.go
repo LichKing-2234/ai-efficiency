@@ -311,6 +311,16 @@ func (s *Service) syncExistingLocalUser(ctx context.Context, u *ent.User, info *
 		u = updated
 	}
 
+	if strings.TrimSpace(info.AuthSource) != "" && string(u.AuthSource) != info.AuthSource {
+		updated, err := u.Update().
+			SetAuthSource(entuser.AuthSource(info.AuthSource)).
+			Save(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("sync user auth source: %w", err)
+		}
+		u = updated
+	}
+
 	// Sync role from auth provider on each login
 	if string(u.Role) != info.Role && info.Role != "" {
 		updated, err := u.Update().
@@ -318,13 +328,6 @@ func (s *Service) syncExistingLocalUser(ctx context.Context, u *ent.User, info *
 			Save(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("sync user role: %w", err)
-		}
-		u = updated
-	}
-	if ldapLogin && strings.TrimSpace(info.RelayAuthPassword) == "" && u.RelayAuthPassword != nil {
-		updated, err := u.Update().ClearRelayAuthPassword().Save(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("clear relay auth password: %w", err)
 		}
 		u = updated
 	}

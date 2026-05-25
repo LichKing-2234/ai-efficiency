@@ -17,7 +17,7 @@
 - 它**不改变** `ae-cli login` 的 PKCE / device flow 合同；CLI 登录协议仍以 [`2026-04-15-oauth-device-login-design.md`](./2026-04-15-oauth-device-login-design.md) 为准。
 - 它本轮**不直接改写** `ae-cli discover` 的命令形状；工具配置写入规则仍以 [`2026-05-19-ae-cli-deterministic-tool-configuration-design.md`](./2026-05-19-ae-cli-deterministic-tool-configuration-design.md) 为准。
 - 它修正的是 `/user` 页面如何表达和调用用户态 credential provisioning：从错误的 `provider + platform` 折叠视图，改成 `provider + group` 视图，并以当前 relay user 的 `allowed_groups` 作为唯一 group 来源。
-- 本文当前还约束 `/user` 创建 / 重建 key 的写入身份：操作必须以当前 relay user 的用户态凭据写入；如果当前本地账号已经绑定 relay user 但缺少 relay write credential，后端可以在用户触发 create/regenerate 时按需生成 relay-side password、通过 relay admin API 更新该 relay user，并只在本地保存加密后的生成密码。这个场景包括 LDAP 登录复用已有本地 relay SSO 用户记录。LDAP bind password 仍然只能用于 LDAP bind，不能写入本地或转发到 relay。
+- 本文当前还约束 `/user` 创建 / 重建 key 的写入身份：sub2api `/api/v1/keys` 要求当前 relay user 的用户态 JWT，RelayProvider admin API key 不能代替用户凭据创建 key。已有 relay 用户（包括 relay admin）必须先通过 Relay SSO 登录一次，让后端保存加密后的 relay password；后续 LDAP 登录只更新本地 `auth_source` 并复用这份保存的 relay credential。已有 relay 用户如果没有本地可解密的 `relay_auth_password`，create/regenerate 返回明确错误，后端不得为了获取 JWT 而重置 relay password。LDAP 新用户在 relay 不存在时由登录期 provisioning 创建 relay user，并保存后端生成的高熵 relay-side password。LDAP bind password 仍然只能用于 LDAP bind，不能写入本地或转发到 relay。
 
 ## Overview
 
@@ -298,25 +298,23 @@ Checklist 固定为 4 步：
 
 刷新页面、重新进入页面或丢失本地内存后，状态仍以 `GET /api/v1/user/providers` 返回的 `existing_hidden` 为准；如果该响应带有 `credential.key`，页面仍可 mask 展示并复制完整 key。
 
-### Relay Write Credential Repair
+### Relay Write Credential Semantics
 
-`Create Key` / `Regenerate` 对普通 relay 用户必须用当前 relay user 的身份写入 sub2api 用户态 key 接口，而不是把 RelayProvider admin key 伪装成用户态写入。relay 侧角色为 `admin` 的用户是例外：后端不得为了获取用户态 JWT 而更新 admin 的 relay password，也不得继续使用本地残留的 admin `relay_auth_password`；此时 Create Key 通过 relay admin API path 针对绑定的 `relay_user_id` 创建 key。
+`Create Key` / `Regenerate` 必须用当前 relay user 的身份写入 sub2api 用户态 key 接口，而不是把 RelayProvider admin key 伪装成用户态写入。只要本地存在可解密的 `relay_auth_password`，后端就可以用它为当前 relay user 获取用户态 JWT；这个规则同样适用于 relay 侧角色为 `admin` 的用户。
 
-当当前用户已经绑定 `relay_user_id`，relay 侧角色为普通 `user`，但本地没有可解密的 `relay_auth_password` 时，后端可以在用户实际触发 create/regenerate 时执行一次按需修复。该判断不能只依赖本地 `users.auth_source=ldap`，因为 LDAP 登录可能按 username/email 复用既有本地 relay SSO 用户记录：
+已有 relay 用户如果缺少本地可解密的 `relay_auth_password`，后端不得在 `/user` create/regenerate 阶段修改该 relay 用户密码。正确来源只有两类：
 
-1. 生成新的高熵 relay-side password
-2. 通过 `relay.Provider.UpdateUser` / relay admin API 更新该 relay user 的 password
-3. 将生成密码用 `encryption.key` 加密后保存到本地 `users.relay_auth_password`
-4. 本次 create/regenerate 继续使用该生成密码获取 relay 用户 JWT 并写入 API key
+1. Relay SSO 登录成功时，SSO provider 把用户输入的 relay password 作为 `RelayAuthPassword` 传给 auth service，后端用 `encryption.key` 加密保存。
+2. LDAP 新用户在 relay 侧没有账号时，LDAP 登录期 relay identity provisioning 创建 relay user，并保存后端生成的高熵 relay-side password。
 
-这个修复只针对 relay-side write credential，不能使用、保存或转发 LDAP bind password。普通 LDAP 登录本身仍只负责 LDAP bind 与 relay identity 解析；`/user` 写入阶段只关心当前本地用户是否已有 relay identity、relay 侧角色是否允许 repair、以及是否缺少 relay 用户态写入凭据。
+LDAP 登录复用既有本地 relay SSO 用户记录时，后端会把本地 `auth_source` 更新为 `ldap`，但必须保留之前 SSO 保存的 `relay_auth_password`。LDAP bind password 只用于 LDAP bind，不能使用、保存或转发给 relay。已有 relay 用户没有保存的 relay credential 时，页面应提示用户先通过 Relay SSO 登录一次；后端返回 credential-required 错误，不尝试 admin API key 创建 LLM key。
 
 ### Create, Reveal, Copy, Regenerate Rules
 
 - `Create Key`
   - 仅在当前 `provider + group` 处于 `missing` 状态时可用
   - 执行一次 ensure/create，并返回新 secret
-  - 如果当前账号缺少 relay write credential，先按上述规则修复生成凭据
+  - 如果当前账号缺少 relay write credential，返回明确错误；已有 relay 用户需要先通过 Relay SSO 保存 credential
   - 成功后前端进入 `session_visible`
 - `Reveal`
   - 当当前页面内存存在新 secret，或 `GET` 返回了 `credential.key` 时可用
@@ -327,7 +325,7 @@ Checklist 固定为 4 步：
 - `Regenerate`
   - 在 `existing_hidden` 或 `session_visible` 状态可用
   - 先将当前 `provider + group` 下按统一合同识别出的旧 credential 标记为不可用，再按同一合同新建
-  - 如果当前账号缺少 relay write credential，先按上述规则修复生成凭据
+  - 如果当前账号缺少 relay write credential，返回明确错误，不撤销旧 credential
   - 成功后前端进入 `session_visible`
 
 页面必须明确解释：
