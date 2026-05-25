@@ -908,6 +908,9 @@ func (s *sub2apiRelay) CreateUserAPIKey(ctx context.Context, userID int64, req A
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("relay: create api key: decode: %w", err)
 	}
+	if result.Data.Secret == "" {
+		result.Data.Secret = result.Data.Key
+	}
 
 	return &result.Data, nil
 }

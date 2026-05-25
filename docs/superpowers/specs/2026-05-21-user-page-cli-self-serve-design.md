@@ -300,16 +300,16 @@ Checklist 固定为 4 步：
 
 ### Relay Write Credential Repair
 
-`Create Key` / `Regenerate` 必须用当前 relay user 的身份写入 sub2api 用户态 key 接口，而不是把 RelayProvider admin key 伪装成用户态写入。
+`Create Key` / `Regenerate` 对普通 relay 用户必须用当前 relay user 的身份写入 sub2api 用户态 key 接口，而不是把 RelayProvider admin key 伪装成用户态写入。relay 侧角色为 `admin` 的用户是例外：后端不得为了获取用户态 JWT 而更新 admin 的 relay password，也不得继续使用本地残留的 admin `relay_auth_password`；此时 Create Key 通过 relay admin API path 针对绑定的 `relay_user_id` 创建 key。
 
-当当前用户已经绑定 `relay_user_id`，但本地没有可解密的 `relay_auth_password` 时，后端可以在用户实际触发 create/regenerate 时执行一次按需修复。该判断不能只依赖本地 `users.auth_source=ldap`，因为 LDAP 登录可能按 username/email 复用既有本地 relay SSO 用户记录：
+当当前用户已经绑定 `relay_user_id`，relay 侧角色为普通 `user`，但本地没有可解密的 `relay_auth_password` 时，后端可以在用户实际触发 create/regenerate 时执行一次按需修复。该判断不能只依赖本地 `users.auth_source=ldap`，因为 LDAP 登录可能按 username/email 复用既有本地 relay SSO 用户记录：
 
 1. 生成新的高熵 relay-side password
 2. 通过 `relay.Provider.UpdateUser` / relay admin API 更新该 relay user 的 password
 3. 将生成密码用 `encryption.key` 加密后保存到本地 `users.relay_auth_password`
 4. 本次 create/regenerate 继续使用该生成密码获取 relay 用户 JWT 并写入 API key
 
-这个修复只针对 relay-side write credential，不能使用、保存或转发 LDAP bind password。普通 LDAP 登录本身仍只负责 LDAP bind 与 relay identity 解析；`/user` 写入阶段只关心当前本地用户是否已有 relay identity 和缺少 relay 用户态写入凭据。
+这个修复只针对 relay-side write credential，不能使用、保存或转发 LDAP bind password。普通 LDAP 登录本身仍只负责 LDAP bind 与 relay identity 解析；`/user` 写入阶段只关心当前本地用户是否已有 relay identity、relay 侧角色是否允许 repair、以及是否缺少 relay 用户态写入凭据。
 
 ### Create, Reveal, Copy, Regenerate Rules
 

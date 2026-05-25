@@ -17,6 +17,7 @@ import (
 
 type fakeRelayProvider struct {
 	keysByUser                 map[int64][]relay.APIKey
+	usersByID                  map[int64]relay.User
 	createResult               *relay.APIKeyWithSecret
 	createErr                  error
 	updatedStatuses            map[int64]string
@@ -35,6 +36,12 @@ func (f *fakeRelayProvider) Authenticate(ctx context.Context, username, password
 	return nil, errors.New("not implemented")
 }
 func (f *fakeRelayProvider) GetUser(ctx context.Context, userID int64) (*relay.User, error) {
+	if f.usersByID != nil {
+		if u, ok := f.usersByID[userID]; ok {
+			copy := u
+			return &copy, nil
+		}
+	}
 	return nil, errors.New("not implemented")
 }
 func (f *fakeRelayProvider) ListAllowedGroupsForUser(ctx context.Context, userID int64) ([]relay.Group, error) {
@@ -196,6 +203,9 @@ func TestCreateGroupCredentialUsesSelectedGroupID(t *testing.T) {
 
 	fakeRelay := &fakeRelayProvider{
 		keysByUser: map[int64][]relay.APIKey{1: {}},
+		usersByID: map[int64]relay.User{
+			1: {ID: 1, Email: "alice@example.com", Username: "alice@example.com", Role: "user"},
+		},
 		createResult: &relay.APIKeyWithSecret{
 			APIKey: relay.APIKey{
 				ID:        701,
@@ -260,6 +270,9 @@ func TestCreateGroupCredentialRepairsMissingRelayPasswordForLDAPUser(t *testing.
 
 	fakeRelay := &fakeRelayProvider{
 		keysByUser: map[int64][]relay.APIKey{1: {}},
+		usersByID: map[int64]relay.User{
+			1: {ID: 1, Email: "alice@example.com", Username: "alice@example.com", Role: "user"},
+		},
 		createResult: &relay.APIKeyWithSecret{
 			APIKey: relay.APIKey{
 				ID:     701,
@@ -339,6 +352,9 @@ func TestCreateGroupCredentialRepairsMissingRelayPasswordForExistingRelaySSOUser
 
 	fakeRelay := &fakeRelayProvider{
 		keysByUser: map[int64][]relay.APIKey{1: {}},
+		usersByID: map[int64]relay.User{
+			1: {ID: 1, Email: "alice@example.com", Username: "alice@example.com", Role: "user"},
+		},
 		createResult: &relay.APIKeyWithSecret{
 			APIKey: relay.APIKey{
 				ID:     711,
@@ -375,6 +391,151 @@ func TestCreateGroupCredentialRepairsMissingRelayPasswordForExistingRelaySSOUser
 	}
 	if fakeRelay.createCredentialLogin != "alice@example.com" || fakeRelay.createCredentialPassword != updateReq.Password {
 		t.Fatalf("create credentials = (%q, %q), want login alice@example.com and generated password", fakeRelay.createCredentialLogin, fakeRelay.createCredentialPassword)
+	}
+}
+
+func TestCreateGroupCredentialDoesNotRepairMissingRelayPasswordForRelayAdminUser(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	encryptionKey := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+	provider := client.RelayProvider.Create().
+		SetName("sub2api").
+		SetDisplayName("sub2api").
+		SetBaseURL("https://relay.example.com/").
+		SetAdminAPIKey("test-admin-key").
+		SetDefaultModel("gpt-5.4").
+		SetIsPrimary(true).
+		SetEnabled(true).
+		SaveX(ctx)
+
+	localUser := client.User.Create().
+		SetUsername("alice@example.com").
+		SetEmail("alice@example.com").
+		SetAuthSource(user.AuthSourceLdap).
+		SetRole(user.RoleUser).
+		SetRelayUserID(1).
+		SaveX(ctx)
+
+	fakeRelay := &fakeRelayProvider{
+		keysByUser: map[int64][]relay.APIKey{1: {}},
+		usersByID: map[int64]relay.User{
+			1: {ID: 1, Email: "alice@example.com", Username: "alice@example.com", Role: "admin"},
+		},
+		createResult: &relay.APIKeyWithSecret{
+			APIKey: relay.APIKey{
+				ID:     721,
+				UserID: 1,
+				Name:   "alice",
+				Status: "active",
+				Group:  &relay.Group{ID: 42, Name: "Group Alpha", Platform: "openai"},
+			},
+			Secret: "sk-openai",
+		},
+	}
+
+	svc := usersetup.NewService(client, usersetup.ProviderResolverFunc(func(_ context.Context, providerID int) (relay.Provider, error) {
+		return fakeRelay, nil
+	}), encryptionKey)
+
+	got, err := svc.CreateGroupCredential(ctx, usersetup.CreateGroupCredentialRequest{
+		UserID:     localUser.ID,
+		ProviderID: provider.ID,
+		GroupID:    "42",
+	})
+	if err != nil {
+		t.Fatalf("CreateGroupCredential() unexpected error: %v", err)
+	}
+	if got.Secret != "sk-openai" {
+		t.Fatalf("secret = %q, want sk-openai", got.Secret)
+	}
+	if len(fakeRelay.updatedUsers) != 0 {
+		t.Fatalf("relay admin user password must not be repaired, got updates: %+v", fakeRelay.updatedUsers)
+	}
+	if fakeRelay.createCredentialLogin != "" || fakeRelay.createCredentialPassword != "" {
+		t.Fatalf("create credentials = (%q, %q), want admin API key path without user credentials", fakeRelay.createCredentialLogin, fakeRelay.createCredentialPassword)
+	}
+	reloaded, err := client.User.Get(ctx, localUser.ID)
+	if err != nil {
+		t.Fatalf("reload user: %v", err)
+	}
+	if reloaded.RelayAuthPassword != nil && strings.TrimSpace(*reloaded.RelayAuthPassword) != "" {
+		t.Fatalf("relay admin user password must not be stored locally")
+	}
+}
+
+func TestCreateGroupCredentialClearsStoredRelayPasswordForRelayAdminUser(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	encryptionKey := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	encryptedPassword, err := pkg.Encrypt("stale-generated-password", encryptionKey)
+	if err != nil {
+		t.Fatalf("Encrypt() unexpected error: %v", err)
+	}
+
+	provider := client.RelayProvider.Create().
+		SetName("sub2api").
+		SetDisplayName("sub2api").
+		SetBaseURL("https://relay.example.com/").
+		SetAdminAPIKey("test-admin-key").
+		SetDefaultModel("gpt-5.4").
+		SetIsPrimary(true).
+		SetEnabled(true).
+		SaveX(ctx)
+
+	localUser := client.User.Create().
+		SetUsername("alice@example.com").
+		SetEmail("alice@example.com").
+		SetAuthSource(user.AuthSourceLdap).
+		SetRole(user.RoleAdmin).
+		SetRelayUserID(1).
+		SetRelayAuthPassword(encryptedPassword).
+		SaveX(ctx)
+
+	fakeRelay := &fakeRelayProvider{
+		keysByUser: map[int64][]relay.APIKey{1: {}},
+		usersByID: map[int64]relay.User{
+			1: {ID: 1, Email: "alice@example.com", Username: "alice@example.com", Role: "admin"},
+		},
+		createResult: &relay.APIKeyWithSecret{
+			APIKey: relay.APIKey{
+				ID:     722,
+				UserID: 1,
+				Name:   "alice",
+				Status: "active",
+				Group:  &relay.Group{ID: 42, Name: "Group Alpha", Platform: "openai"},
+			},
+			Secret: "sk-openai",
+		},
+	}
+
+	svc := usersetup.NewService(client, usersetup.ProviderResolverFunc(func(_ context.Context, providerID int) (relay.Provider, error) {
+		return fakeRelay, nil
+	}), encryptionKey)
+
+	got, err := svc.CreateGroupCredential(ctx, usersetup.CreateGroupCredentialRequest{
+		UserID:     localUser.ID,
+		ProviderID: provider.ID,
+		GroupID:    "42",
+	})
+	if err != nil {
+		t.Fatalf("CreateGroupCredential() unexpected error: %v", err)
+	}
+	if got.Secret != "sk-openai" {
+		t.Fatalf("secret = %q, want sk-openai", got.Secret)
+	}
+	if len(fakeRelay.updatedUsers) != 0 {
+		t.Fatalf("relay admin user password must not be repaired, got updates: %+v", fakeRelay.updatedUsers)
+	}
+	if fakeRelay.createCredentialLogin != "" || fakeRelay.createCredentialPassword != "" {
+		t.Fatalf("create credentials = (%q, %q), want admin API key path without user credentials", fakeRelay.createCredentialLogin, fakeRelay.createCredentialPassword)
+	}
+	reloaded, err := client.User.Get(ctx, localUser.ID)
+	if err != nil {
+		t.Fatalf("reload user: %v", err)
+	}
+	if reloaded.RelayAuthPassword != nil {
+		t.Fatalf("relay admin user stored password must be cleared")
 	}
 }
 
@@ -479,6 +640,9 @@ func TestRegenerateGroupCredentialRepairsMissingRelayPasswordForLDAPUser(t *test
 			1: {
 				{ID: 801, UserID: 1, Name: "alice", Status: "active", Group: &relay.Group{ID: 42, Name: "Group Alpha", Platform: "openai"}, CreatedAt: time.Now()},
 			},
+		},
+		usersByID: map[int64]relay.User{
+			1: {ID: 1, Email: "alice@example.com", Username: "alice@example.com", Role: "user"},
 		},
 		createResult: &relay.APIKeyWithSecret{
 			APIKey: relay.APIKey{ID: 802, UserID: 1, Name: "alice", Status: "active", Group: &relay.Group{ID: 42, Name: "Group Alpha", Platform: "openai"}},

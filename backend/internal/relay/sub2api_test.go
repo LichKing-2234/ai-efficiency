@@ -1247,6 +1247,38 @@ func TestCreateUserAPIKey(t *testing.T) {
 	}
 }
 
+func TestCreateUserAPIKeyMapsAdminCreateKeyField(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/keys", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("expected POST, got %s", r.Method)
+		}
+		if r.Header.Get("X-API-Key") != "test-admin-key" {
+			t.Errorf("expected admin API key in X-API-Key header")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"success": true,
+			"data": map[string]any{
+				"id":      100,
+				"user_id": 3,
+				"name":    "my-key",
+				"status":  "active",
+				"key":     "sk-admin-create-key-field",
+			},
+		})
+	})
+
+	p := newTestProvider(t, mux)
+	key, err := p.CreateUserAPIKey(context.Background(), 3, relay.APIKeyCreateRequest{Name: "my-key"})
+	if err != nil {
+		t.Fatalf("CreateUserAPIKey() unexpected error: %v", err)
+	}
+	if key.ID != 100 || key.Secret != "sk-admin-create-key-field" || key.Name != "my-key" {
+		t.Fatalf("unexpected key: %+v", key)
+	}
+}
+
 func TestUpdateUserAPIKeyStatusWithJWT(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/auth/login", func(w http.ResponseWriter, r *http.Request) {

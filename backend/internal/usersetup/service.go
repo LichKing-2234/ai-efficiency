@@ -352,11 +352,25 @@ func (s *Service) withStoredRelayCredentialsIfAvailable(ctx context.Context, u *
 }
 
 func (s *Service) withRelayWriteCredentials(ctx context.Context, u *ent.User, rp relay.Provider) (context.Context, *ent.User, error) {
+	if u == nil || u.RelayUserID == nil {
+		return ctx, u, nil
+	}
+	adminRelayUser, roleKnown, roleErr := isRelayAdminUser(ctx, u, rp)
+	if adminRelayUser {
+		updated, err := clearStoredRelayAuthPassword(ctx, u)
+		if err != nil {
+			return nil, nil, fmt.Errorf("clear relay admin credentials: %w", err)
+		}
+		return ctx, updated, nil
+	}
 	if credentialCtx, ok := s.withStoredRelayCredentialsIfAvailable(ctx, u); ok {
 		return credentialCtx, u, nil
 	}
-	if u == nil || u.RelayUserID == nil {
-		return ctx, u, nil
+	if !roleKnown {
+		if roleErr != nil {
+			return nil, nil, fmt.Errorf("repair relay credentials: determine relay user role: %w", roleErr)
+		}
+		return nil, nil, fmt.Errorf("repair relay credentials: relay user role is required")
 	}
 	if strings.TrimSpace(s.encryptionKey) == "" {
 		return nil, nil, fmt.Errorf("repair relay credentials: encryption key is required")
@@ -381,6 +395,35 @@ func (s *Service) withRelayWriteCredentials(ctx context.Context, u *ent.User, rp
 		return nil, nil, fmt.Errorf("repair relay credentials: persist password: %w", err)
 	}
 	return relay.WithUserCredentials(ctx, login, password), updated, nil
+}
+
+func isRelayAdminUser(ctx context.Context, u *ent.User, rp relay.Provider) (bool, bool, error) {
+	if u == nil || u.RelayUserID == nil {
+		return false, false, nil
+	}
+	relayUser, err := rp.GetUser(ctx, int64(*u.RelayUserID))
+	if err != nil {
+		return false, false, err
+	}
+	if relayUser == nil {
+		return false, false, nil
+	}
+	role := strings.ToLower(strings.TrimSpace(relayUser.Role))
+	switch role {
+	case "admin":
+		return true, true, nil
+	case "user":
+		return false, true, nil
+	default:
+		return false, false, nil
+	}
+}
+
+func clearStoredRelayAuthPassword(ctx context.Context, u *ent.User) (*ent.User, error) {
+	if u == nil || u.RelayAuthPassword == nil || strings.TrimSpace(*u.RelayAuthPassword) == "" {
+		return u, nil
+	}
+	return u.Update().ClearRelayAuthPassword().Save(ctx)
 }
 
 func highEntropyRelayPassword() (string, error) {
