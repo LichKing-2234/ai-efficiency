@@ -312,7 +312,7 @@ backend/internal/relay/
 
 | Method | Path | 说明 |
 |--------|------|------|
-| GET | `/oauth/authorize` | 授权端点，校验参数后 302 重定向到前端页面 `{frontend_url}/oauth/authorize?{原始query参数}` |
+| GET | `/oauth/authorize` | 授权端点，校验参数后进入前端授权页；独立前端部署时 302 重定向到 `{frontend_url}/oauth/authorize?{原始query参数}`，嵌入式同源部署时直接返回后端内嵌 SPA 入口 |
 | POST | `/oauth/authorize/approve` | 用户授权确认端点（前端调用，需要用户 JWT） |
 | POST | `/oauth/token` | Token 交换端点（authorization code → JWT） |
 
@@ -326,6 +326,8 @@ server:
 ```
 
 对应 `ServerConfig` 新增 `FrontendURL string` 字段。
+
+当前 Docker/生产部署会把前端构建产物嵌入后端二进制；当 `frontend_url` 指向与请求同 host 的站点时，`/oauth/authorize` 必须直接返回嵌入式 SPA 入口，而不是 302 到同一路径。该判断基于目标 path 与请求/转发 host，避免 TLS 终止或代理链导致 `X-Forwarded-Proto` 与公网 scheme 不一致时形成自重定向循环。
 
 ### Client 管理
 

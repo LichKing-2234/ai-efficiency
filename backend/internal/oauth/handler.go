@@ -18,19 +18,19 @@ import (
 const codeExpiry = 5 * time.Minute
 
 const (
-	deviceCodeExpiryDefault  = 15 * time.Minute
+	deviceCodeExpiryDefault   = 15 * time.Minute
 	devicePollIntervalDefault = 5 * time.Second
-	deviceStatusPending      = "pending"
-	deviceStatusApproved     = "approved"
-	deviceStatusDenied       = "denied"
-	deviceStatusExpired      = "expired"
-	deviceStatusConsumed     = "consumed"
-	deviceGrantType          = "urn:ietf:params:oauth:grant-type:device_code"
+	deviceStatusPending       = "pending"
+	deviceStatusApproved      = "approved"
+	deviceStatusDenied        = "denied"
+	deviceStatusExpired       = "expired"
+	deviceStatusConsumed      = "consumed"
+	deviceGrantType           = "urn:ietf:params:oauth:grant-type:device_code"
 )
 
 var (
-	errRandomRead      = errors.New("oauth: random read failed")
-	generateCodeFunc   = generateCode
+	errRandomRead        = errors.New("oauth: random read failed")
+	generateCodeFunc     = generateCode
 	generateUserCodeFunc = generateUserCode
 )
 
@@ -63,16 +63,16 @@ type deviceEntry struct {
 
 // Handler handles OAuth2 endpoints.
 type Handler struct {
-	server      *Server
-	frontendURL string
-	tokenGen    TokenGenerator
-	now         func() time.Time
-	deviceCodeExpiry  time.Duration
+	server             *Server
+	frontendURL        string
+	tokenGen           TokenGenerator
+	now                func() time.Time
+	deviceCodeExpiry   time.Duration
 	devicePollInterval time.Duration
 
-	mu      sync.Mutex
-	codes   map[string]*authCodeEntry
-	devices map[string]*deviceEntry
+	mu                sync.Mutex
+	codes             map[string]*authCodeEntry
+	devices           map[string]*deviceEntry
 	devicesByUserCode map[string]*deviceEntry
 }
 
@@ -160,26 +160,35 @@ func (h *Handler) shouldServeEmbeddedPath(c *gin.Context, path string) bool {
 		return false
 	}
 
-	return strings.EqualFold(target.Scheme, requestScheme(c)) &&
-		strings.EqualFold(target.Host, requestHost(c)) &&
-		target.Path == c.Request.URL.Path
+	if target.Path != c.Request.URL.Path {
+		return false
+	}
+	for _, host := range requestHosts(c) {
+		if strings.EqualFold(target.Host, host) {
+			return true
+		}
+	}
+	return false
 }
 
-func requestScheme(c *gin.Context) string {
-	if scheme := strings.TrimSpace(c.GetHeader("X-Forwarded-Proto")); scheme != "" {
-		return scheme
+func requestHosts(c *gin.Context) []string {
+	hosts := make([]string, 0, 2)
+	if host := firstForwardedValue(c.GetHeader("X-Forwarded-Host")); host != "" {
+		hosts = append(hosts, host)
 	}
-	if c.Request.TLS != nil {
-		return "https"
+	if c.Request != nil {
+		if host := strings.TrimSpace(c.Request.Host); host != "" {
+			hosts = append(hosts, host)
+		}
 	}
-	return "http"
+	return hosts
 }
 
-func requestHost(c *gin.Context) string {
-	if host := strings.TrimSpace(c.GetHeader("X-Forwarded-Host")); host != "" {
-		return host
+func firstForwardedValue(value string) string {
+	if idx := strings.Index(value, ","); idx >= 0 {
+		value = value[:idx]
 	}
-	return c.Request.Host
+	return strings.TrimSpace(value)
 }
 
 // ApproveRequest is the request body for POST /oauth/authorize/approve.
