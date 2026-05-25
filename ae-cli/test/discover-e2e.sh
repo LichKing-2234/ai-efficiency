@@ -55,6 +55,11 @@ cat > "${TMP_HOME}/.ae-cli/token.json" <<EOF
 }
 EOF
 
+mkdir -p "${TMP_HOME}/.codex"
+cat > "${TMP_HOME}/.codex/auth.json" <<'EOF'
+{"OPENAI_API_KEY":"old-openai","OTHER_TOKEN":"remove-me"}
+EOF
+
 python3 - <<'PY' "${PORT}" &
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
@@ -73,7 +78,7 @@ class Handler(BaseHTTPRequestHandler):
             "data": {
                 "providers": [
                     {
-                        "name": "primary",
+                        "name": "relay.main",
                         "display_name": "Primary Relay",
                         "base_url": "https://relay.example.com/v1",
                         "default_model": "claude-sonnet-4-20250514",
@@ -139,12 +144,12 @@ test -f "${TMP_HOME}/.ae-cli/env.sh"
 test -f "${TMP_HOME}/.zshrc"
 test ! -f "${TMP_HOME}/.gemini/settings.json"
 
-grep -F "Configured provider primary for 3 tool(s):" "${OUTPUT_FILE}" >/dev/null
+grep -F "Configured provider relay.main for 3 tool(s):" "${OUTPUT_FILE}" >/dev/null
 grep -F "  - codex" "${OUTPUT_FILE}" >/dev/null
 grep -F "  - claude" "${OUTPUT_FILE}" >/dev/null
 grep -F "  - gemini" "${OUTPUT_FILE}" >/dev/null
 
-grep -F "model_provider = 'OpenAI'" "${TMP_HOME}/.codex/config.toml" >/dev/null
+grep -F "model_provider = 'relay.main'" "${TMP_HOME}/.codex/config.toml" >/dev/null
 grep -F "model = 'gpt-5.4'" "${TMP_HOME}/.codex/config.toml" >/dev/null
 grep -F "review_model = 'gpt-5.4'" "${TMP_HOME}/.codex/config.toml" >/dev/null
 if grep -F 'claude-sonnet-4-20250514' "${TMP_HOME}/.codex/config.toml" >/dev/null; then
@@ -157,11 +162,18 @@ grep -F "network_access = 'enabled'" "${TMP_HOME}/.codex/config.toml" >/dev/null
 grep -F "windows_wsl_setup_acknowledged = true" "${TMP_HOME}/.codex/config.toml" >/dev/null
 grep -F "model_context_window = 1000000" "${TMP_HOME}/.codex/config.toml" >/dev/null
 grep -F "model_auto_compact_token_limit = 900000" "${TMP_HOME}/.codex/config.toml" >/dev/null
-grep -F "[model_providers.OpenAI]" "${TMP_HOME}/.codex/config.toml" >/dev/null
+grep -F "[model_providers.'relay.main']" "${TMP_HOME}/.codex/config.toml" >/dev/null
+grep -F "name = 'relay.main'" "${TMP_HOME}/.codex/config.toml" >/dev/null
 grep -F "base_url = 'https://relay.example.com/v1'" "${TMP_HOME}/.codex/config.toml" >/dev/null
 grep -F "wire_api = 'responses'" "${TMP_HOME}/.codex/config.toml" >/dev/null
 grep -F "requires_openai_auth = true" "${TMP_HOME}/.codex/config.toml" >/dev/null
-grep -F '"OPENAI_API_KEY": "sk-openai-123"' "${TMP_HOME}/.codex/auth.json" >/dev/null
+python3 - <<'PY' "${TMP_HOME}/.codex/auth.json"
+import json
+import sys
+with open(sys.argv[1]) as fh:
+    data = json.load(fh)
+assert data == {"OPENAI_API_KEY": "sk-openai-123"}, data
+PY
 grep -F '"ANTHROPIC_AUTH_TOKEN": "sk-anthropic-123"' "${TMP_HOME}/.claude/settings.json" >/dev/null
 grep -F '"ANTHROPIC_BASE_URL": "https://relay.example.com/v1"' "${TMP_HOME}/.claude/settings.json" >/dev/null
 grep -F '"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"' "${TMP_HOME}/.claude/settings.json" >/dev/null
