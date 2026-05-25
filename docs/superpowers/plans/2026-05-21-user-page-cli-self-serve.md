@@ -10,7 +10,7 @@
 
 **Spec:** `docs/superpowers/specs/2026-05-21-user-page-cli-self-serve-design.md`
 
-**Status:** Group-first implementation is largely landed in code and verified by backend/frontend tests. Live docker-dev `/api/v1/user/providers` now returns `groups[]`, but the list is currently empty because the upstream relay user payload available in this environment does not yet provide `allowed_groups`; that upstream fact source remains the current blocker for a populated UI. Separately, the admin Settings relay management UI is now aligned to DB-backed multi-`RelayProvider` CRUD via `/api/v1/admin/providers`; `/api/v1/settings/llm*` remains compatibility/runtime-edit surface only. The 2026-05-22 API key visibility follow-up now aligns `/user` with sub2api-style behavior: existing user-owned keys are partially masked on screen and copy the full key when the relay list response includes `key`. The 2026-05-23 provider-test follow-up adds `/api/v1/user/providers/:id/test` and a `/user` page test form so regular users can test their own active API key for the selected group and platform with a caller-supplied model; the old admin Relay Providers test button and `/api/v1/admin/providers/:id/test` route are intentionally removed.
+**Status:** Group-first implementation is largely landed in code and verified by backend/frontend tests. Live docker-dev `/api/v1/user/providers` now returns `groups[]`, but the list is currently empty because the upstream relay user payload available in this environment does not yet provide `allowed_groups`; that upstream fact source remains the current blocker for a populated UI. Separately, the admin Settings relay management UI is now aligned to DB-backed multi-`RelayProvider` CRUD via `/api/v1/admin/providers`; `/api/v1/settings/llm*` remains compatibility/runtime-edit surface only. The 2026-05-22 API key visibility follow-up now aligns `/user` with sub2api-style behavior: existing user-owned keys are partially masked on screen and copy the full key when the relay list response includes `key`. The 2026-05-23 provider-test follow-up adds `/api/v1/user/providers/:id/test` and a `/user` page test form so regular users can test their own active API key for the selected group and platform with a caller-supplied model; the old admin Relay Providers test button and `/api/v1/admin/providers/:id/test` route are intentionally removed. The 2026-05-25 LDAP Create Key follow-up repairs missing relay write credentials on demand for LDAP-linked users by generating a relay-side password, updating the relay user through the relay provider, and storing only the encrypted generated password locally.
 
 ## Follow-up: API Key Visibility Alignment
 
@@ -27,6 +27,13 @@
 - [x] Add a `/user` page test form that uses the selected group's platform and user-supplied model/prompt.
 - [x] Remove the admin Settings Relay Providers test button/dialog and `/api/v1/admin/providers/:id/test` route.
 - [x] Update the current `/user` contract docs and architecture notes for the user-scoped provider test flow.
+
+## Follow-up: LDAP Create Key Credential Repair
+
+- [x] Add usersetup coverage for LDAP users with a relay identity but no stored relay write credential.
+- [x] Generate and persist a relay-side password on demand before `/user` create/regenerate key writes.
+- [x] Keep LDAP bind passwords out of relay create/update flows and document the generated-credential repair contract.
+- [x] Run targeted backend verification for usersetup, auth, and relay packages.
 
 ---
 
