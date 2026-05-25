@@ -93,35 +93,18 @@ func (h *Handler) Authorize(c *gin.Context) {
 }
 
 func (h *Handler) shouldServeEmbeddedPath(c *gin.Context, path string) bool {
-	if !web.HasEmbeddedFrontend() || h.frontendURL == "" {
+	if !web.HasEmbeddedFrontend() || c.Request == nil || c.Request.URL == nil {
 		return false
 	}
 
-	target, err := url.Parse(strings.TrimRight(h.frontendURL, "/") + path)
-	if err != nil || target.Scheme == "" || target.Host == "" {
-		return false
+	targetPath := path
+	if h.frontendURL != "" {
+		target, err := url.Parse(strings.TrimRight(h.frontendURL, "/") + path)
+		if err == nil && target.Path != "" {
+			targetPath = target.Path
+		}
 	}
-
-	return strings.EqualFold(target.Scheme, requestScheme(c)) &&
-		strings.EqualFold(target.Host, requestHost(c)) &&
-		target.Path == c.Request.URL.Path
-}
-
-func requestScheme(c *gin.Context) string {
-	if scheme := strings.TrimSpace(c.GetHeader("X-Forwarded-Proto")); scheme != "" {
-		return scheme
-	}
-	if c.Request.TLS != nil {
-		return "https"
-	}
-	return "http"
-}
-
-func requestHost(c *gin.Context) string {
-	if host := strings.TrimSpace(c.GetHeader("X-Forwarded-Host")); host != "" {
-		return host
-	}
-	return c.Request.Host
+	return targetPath == c.Request.URL.Path
 }
 
 // ApproveRequest is the request body for POST /oauth/authorize/approve.
