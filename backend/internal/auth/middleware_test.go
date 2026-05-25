@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -51,7 +52,7 @@ func TestRequireAuthValidToken(t *testing.T) {
 	svc := newTestService()
 
 	info := &UserInfo{ID: 1, Username: "testuser", Role: "admin"}
-	pair, _ := svc.generateTokenPair(info)
+	pair, _ := svc.generateTokenPair(context.Background(), info)
 
 	r := gin.New()
 	r.GET("/test", RequireAuth(svc), func(c *gin.Context) {
@@ -81,7 +82,7 @@ func TestRequireAuthValidToken(t *testing.T) {
 func TestRequireAdminAllowed(t *testing.T) {
 	svc := newTestService()
 	info := &UserInfo{ID: 1, Username: "admin", Role: "admin"}
-	pair, _ := svc.generateTokenPair(info)
+	pair, _ := svc.generateTokenPair(context.Background(), info)
 
 	r := gin.New()
 	r.GET("/admin", RequireAuth(svc), RequireAdmin(), func(c *gin.Context) {
@@ -101,7 +102,7 @@ func TestRequireAdminAllowed(t *testing.T) {
 func TestRequireAdminDenied(t *testing.T) {
 	svc := newTestService()
 	info := &UserInfo{ID: 2, Username: "user", Role: "user"}
-	pair, _ := svc.generateTokenPair(info)
+	pair, _ := svc.generateTokenPair(context.Background(), info)
 
 	r := gin.New()
 	r.GET("/admin", RequireAuth(svc), RequireAdmin(), func(c *gin.Context) {

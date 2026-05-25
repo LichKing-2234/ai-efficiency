@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -33,6 +34,7 @@ func newTestServiceWithDB(t *testing.T) (*Service, *ent.Client) {
 	t.Helper()
 	client := setupAuthEntClient(t)
 	svc := NewService(client, "test-secret-key-for-unit-tests!!", 7200, 604800, zap.NewNop())
+	svc.SetRefreshSessionStore(newMemoryRefreshSessionStore())
 	return svc, client
 }
 
@@ -154,6 +156,7 @@ func TestLoginSSOPersistsEncryptedRelayAuthPassword(t *testing.T) {
 	client := setupAuthEntClient(t)
 	encryptionKey := "0000000000000000000000000000000000000000000000000000000000000000"
 	svc := NewService(client, "test-secret-key-for-unit-tests!!", 7200, 604800, zap.NewNop(), encryptionKey)
+	svc.SetRefreshSessionStore(newMemoryRefreshSessionStore())
 	relayID := 42
 	svc.RegisterProvider(&mockAuthProvider{
 		name: "sso",
@@ -578,7 +581,7 @@ func TestRefreshTokenSuccess(t *testing.T) {
 
 	// Generate initial tokens
 	info := &UserInfo{ID: u.ID, Username: "refreshuser", Role: "user"}
-	pair, err := svc.generateTokenPair(info)
+	pair, err := svc.generateTokenPair(context.Background(), info)
 	if err != nil {
 		t.Fatalf("generateTokenPair: %v", err)
 	}
@@ -602,6 +605,68 @@ func TestRefreshTokenSuccess(t *testing.T) {
 	}
 }
 
+func TestRefreshTokenRotatesAndRejectsOldToken(t *testing.T) {
+	svc, client := newTestServiceWithDB(t)
+	ctx := context.Background()
+	u, err := client.User.Create().
+		SetUsername("rotateuser").
+		SetEmail("rotate@example.com").
+		SetAuthSource(entuser.AuthSourceLdap).
+		SetRole(entuser.RoleUser).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	pair, err := svc.generateTokenPair(ctx, &UserInfo{ID: u.ID, Username: u.Username, Role: string(u.Role)})
+	if err != nil {
+		t.Fatalf("generateTokenPair: %v", err)
+	}
+	nextPair, _, err := svc.RefreshToken(ctx, pair.RefreshToken)
+	if err != nil {
+		t.Fatalf("RefreshToken: %v", err)
+	}
+	if nextPair.RefreshToken == pair.RefreshToken {
+		t.Fatal("refresh token was not rotated")
+	}
+	if _, _, err := svc.RefreshToken(ctx, pair.RefreshToken); err == nil {
+		t.Fatal("old refresh token should be rejected after rotation")
+	}
+	if _, _, err := svc.RefreshToken(ctx, nextPair.RefreshToken); err != nil {
+		t.Fatalf("latest refresh token should work: %v", err)
+	}
+}
+
+func TestGenerateTokenPairFailsClosedWithoutRefreshStore(t *testing.T) {
+	svc := &Service{
+		jwtSecret:       []byte("test-secret-key-for-unit-tests!!"),
+		accessTokenTTL:  time.Hour,
+		refreshTokenTTL: time.Hour,
+		now:             time.Now,
+	}
+	_, err := svc.generateTokenPair(context.Background(), &UserInfo{ID: 1, Username: "alice", Role: "user"})
+	if err == nil || !strings.Contains(err.Error(), "refresh session store") {
+		t.Fatalf("generateTokenPair error = %v, want refresh session store failure", err)
+	}
+}
+
+func TestRefreshTokenDeletesFamilyWhenUserMissing(t *testing.T) {
+	store := newMemoryRefreshSessionStore()
+	svc, _ := newTestServiceWithDB(t)
+	svc.SetRefreshSessionStore(store)
+
+	pair, err := svc.generateTokenPair(context.Background(), &UserInfo{ID: 999999, Username: "ghost", Role: "user"})
+	if err != nil {
+		t.Fatalf("generateTokenPair: %v", err)
+	}
+	if _, _, err := svc.RefreshToken(context.Background(), pair.RefreshToken); err == nil {
+		t.Fatal("expected refresh to fail for deleted user")
+	}
+	if _, err := store.GetRefreshSession(context.Background(), hashRefreshToken(pair.RefreshToken)); !errors.Is(err, ErrRefreshSessionNotFound) {
+		t.Fatalf("session should be deleted after missing user, got err=%v", err)
+	}
+}
+
 func TestRefreshTokenInvalid(t *testing.T) {
 	svc, _ := newTestServiceWithDB(t)
 	_, _, err := svc.RefreshToken(context.Background(), "invalid-token")
@@ -622,7 +687,7 @@ func TestRefreshTokenWithAccessToken(t *testing.T) {
 		Save(ctx)
 
 	info := &UserInfo{ID: u.ID, Username: "user1", Role: "user"}
-	pair, _ := svc.generateTokenPair(info)
+	pair, _ := svc.generateTokenPair(context.Background(), info)
 
 	// Using access token as refresh token should fail
 	_, _, err := svc.RefreshToken(ctx, pair.AccessToken)
@@ -636,7 +701,7 @@ func TestRefreshTokenUserNotFound(t *testing.T) {
 
 	// Generate token for non-existent user
 	info := &UserInfo{ID: 99999, Username: "ghost", Role: "user"}
-	pair, _ := svc.generateTokenPair(info)
+	pair, _ := svc.generateTokenPair(context.Background(), info)
 
 	_, _, err := svc.RefreshToken(context.Background(), pair.RefreshToken)
 	if err == nil {
@@ -697,7 +762,7 @@ func TestGenerateTokenPairForUser(t *testing.T) {
 func TestRequireAuthRefreshTokenRejected(t *testing.T) {
 	svc := newTestService()
 	info := &UserInfo{ID: 1, Username: "user", Role: "user"}
-	pair, _ := svc.generateTokenPair(info)
+	pair, _ := svc.generateTokenPair(context.Background(), info)
 
 	r := gin.New()
 	r.GET("/test", RequireAuth(svc), func(c *gin.Context) {
@@ -719,9 +784,11 @@ func TestRequireAuthExpiredToken(t *testing.T) {
 		jwtSecret:       []byte("test-secret-key-for-unit-tests!!"),
 		accessTokenTTL:  -1 * time.Hour,
 		refreshTokenTTL: 7 * 24 * time.Hour,
+		now:             time.Now,
 	}
+	svc.SetRefreshSessionStore(newMemoryRefreshSessionStore())
 	info := &UserInfo{ID: 1, Username: "user", Role: "user"}
-	pair, _ := svc.generateTokenPair(info)
+	pair, _ := svc.generateTokenPair(context.Background(), info)
 
 	r := gin.New()
 	r.GET("/test", RequireAuth(svc), func(c *gin.Context) {
@@ -765,7 +832,7 @@ func TestGetUserContextWrongType(t *testing.T) {
 func TestRequireAuthUserContextValues(t *testing.T) {
 	svc := newTestService()
 	info := &UserInfo{ID: 42, Username: "alice", Role: "admin"}
-	pair, _ := svc.generateTokenPair(info)
+	pair, _ := svc.generateTokenPair(context.Background(), info)
 
 	var capturedUC *UserContext
 	r := gin.New()
@@ -1297,6 +1364,7 @@ func TestLoginReusesExistingUser(t *testing.T) {
 func TestLoginSSOReusesExistingUserByEmailWhenUsernameDiffers(t *testing.T) {
 	client := setupAuthEntClient(t)
 	svc := NewService(client, "test-secret-key-for-unit-tests!!", 7200, 604800, zap.NewNop(), "0000000000000000000000000000000000000000000000000000000000000000")
+	svc.SetRefreshSessionStore(newMemoryRefreshSessionStore())
 	ctx := context.Background()
 
 	existing, err := client.User.Create().
@@ -1564,7 +1632,7 @@ func TestRefreshTokenDBError(t *testing.T) {
 		Save(context.Background())
 
 	info := &UserInfo{ID: u.ID, Username: "dbfailrefresh", Role: "user"}
-	pair, _ := svc.generateTokenPair(info)
+	pair, _ := svc.generateTokenPair(context.Background(), info)
 
 	// Close DB to force error on user lookup
 	client.Close()

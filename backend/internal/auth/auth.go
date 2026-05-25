@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -52,6 +53,8 @@ type Service struct {
 	encryptionKey         string
 	accessTokenTTL        time.Duration
 	refreshTokenTTL       time.Duration
+	refreshSessionStore   RefreshSessionStore
+	now                   func() time.Time
 	relayIdentityResolver *RelayIdentityResolver
 	logger                *zap.Logger
 }
@@ -73,8 +76,13 @@ func NewService(entClient *ent.Client, jwtSecret string, accessTTL, refreshTTL i
 		encryptionKey:   firstNonEmptyString(encryptionKeys...),
 		accessTokenTTL:  time.Duration(accessTTL) * time.Second,
 		refreshTokenTTL: time.Duration(refreshTTL) * time.Second,
+		now:             time.Now,
 		logger:          logger,
 	}
+}
+
+func (s *Service) SetRefreshSessionStore(store RefreshSessionStore) {
+	s.refreshSessionStore = store
 }
 
 func (s *Service) SetRelayIdentityResolver(r *RelayIdentityResolver) {
@@ -130,7 +138,7 @@ func (s *Service) Login(ctx context.Context, req LoginRequest) (*TokenPair, *Use
 	userInfo.Role = string(localUser.Role)
 
 	// Generate tokens
-	tokens, err := s.generateTokenPair(userInfo)
+	tokens, err := s.generateTokenPair(ctx, userInfo)
 	if err != nil {
 		return nil, nil, fmt.Errorf("generate tokens: %w", err)
 	}
@@ -140,19 +148,35 @@ func (s *Service) Login(ctx context.Context, req LoginRequest) (*TokenPair, *Use
 
 // RefreshToken validates a refresh token and issues a new token pair.
 func (s *Service) RefreshToken(ctx context.Context, refreshToken string) (*TokenPair, *UserInfo, error) {
-	claims, err := s.validateToken(refreshToken, "refresh")
-	if err != nil {
-		return nil, nil, fmt.Errorf("invalid refresh token: %w", err)
+	refreshToken = strings.TrimSpace(refreshToken)
+	if !strings.HasPrefix(refreshToken, refreshTokenPrefix) {
+		return nil, nil, fmt.Errorf("invalid refresh token")
+	}
+	if s.refreshSessionStore == nil {
+		return nil, nil, fmt.Errorf("refresh session store is not configured")
 	}
 
-	userID, ok := claims["user_id"].(float64)
-	if !ok {
-		return nil, nil, fmt.Errorf("invalid token claims")
+	tokenHash := hashRefreshToken(refreshToken)
+	session, err := s.refreshSessionStore.GetRefreshSession(ctx, tokenHash)
+	if err != nil {
+		if errors.Is(err, ErrRefreshSessionNotFound) {
+			return nil, nil, fmt.Errorf("invalid refresh token")
+		}
+		return nil, nil, fmt.Errorf("get refresh session: %w", err)
+	}
+	if !s.currentTime().Before(session.ExpiresAt) {
+		_ = s.refreshSessionStore.DeleteRefreshSession(ctx, tokenHash)
+		return nil, nil, fmt.Errorf("refresh token expired")
+	}
+	if s.entClient == nil {
+		return nil, nil, fmt.Errorf("ent client is not configured")
 	}
 
-	// Fetch user from DB
-	u, err := s.entClient.User.Get(ctx, int(userID))
+	u, err := s.entClient.User.Get(ctx, session.UserID)
 	if err != nil {
+		if ent.IsNotFound(err) {
+			_ = s.refreshSessionStore.DeleteRefreshTokenFamily(ctx, session.FamilyID)
+		}
 		return nil, nil, fmt.Errorf("get user: %w", err)
 	}
 
@@ -164,7 +188,10 @@ func (s *Service) RefreshToken(ctx context.Context, refreshToken string) (*Token
 		AuthSource: string(u.AuthSource),
 	}
 
-	tokens, err := s.generateTokenPair(userInfo)
+	if err := s.refreshSessionStore.DeleteRefreshSession(ctx, tokenHash); err != nil {
+		return nil, nil, fmt.Errorf("rotate refresh token: %w", err)
+	}
+	tokens, err := s.generateTokenPairForFamily(ctx, userInfo, session.FamilyID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("generate tokens: %w", err)
 	}
@@ -180,7 +207,7 @@ func (s *Service) ValidateAccessToken(tokenStr string) (jwt.MapClaims, error) {
 // GenerateTokenPairForUser generates a token pair for the given user info.
 // Exported for integration testing.
 func (s *Service) GenerateTokenPairForUser(info *UserInfo) (*TokenPair, error) {
-	return s.generateTokenPair(info)
+	return s.generateTokenPair(context.Background(), info)
 }
 
 func (s *Service) ensureLocalUser(ctx context.Context, info *UserInfo) (*ent.User, error) {
@@ -356,10 +383,57 @@ func firstNonEmptyString(values ...string) string {
 	return ""
 }
 
-func (s *Service) generateTokenPair(info *UserInfo) (*TokenPair, error) {
-	now := time.Now()
+func (s *Service) currentTime() time.Time {
+	if s.now != nil {
+		return s.now()
+	}
+	return time.Now()
+}
 
-	// Access token
+func (s *Service) generateTokenPair(ctx context.Context, info *UserInfo) (*TokenPair, error) {
+	return s.generateTokenPairForFamily(ctx, info, "")
+}
+
+func (s *Service) generateTokenPairForFamily(ctx context.Context, info *UserInfo, familyID string) (*TokenPair, error) {
+	if s.refreshSessionStore == nil {
+		return nil, fmt.Errorf("refresh session store is not configured")
+	}
+	now := s.currentTime()
+	accessStr, err := s.generateAccessToken(info, now)
+	if err != nil {
+		return nil, err
+	}
+	refreshStr, err := generateOpaqueRefreshToken()
+	if err != nil {
+		return nil, err
+	}
+	if familyID == "" {
+		familyID, err = generateTokenFamilyID()
+		if err != nil {
+			return nil, err
+		}
+	}
+	expiresAt := now.Add(s.refreshTokenTTL)
+	session := &RefreshSession{
+		UserID:    info.ID,
+		Username:  info.Username,
+		Role:      info.Role,
+		FamilyID:  familyID,
+		CreatedAt: now,
+		ExpiresAt: expiresAt,
+	}
+	if err := s.refreshSessionStore.StoreRefreshSession(ctx, hashRefreshToken(refreshStr), session, s.refreshTokenTTL); err != nil {
+		return nil, fmt.Errorf("store refresh session: %w", err)
+	}
+
+	return &TokenPair{
+		AccessToken:  accessStr,
+		RefreshToken: refreshStr,
+		ExpiresIn:    int(s.accessTokenTTL.Seconds()),
+	}, nil
+}
+
+func (s *Service) generateAccessToken(info *UserInfo, now time.Time) (string, error) {
 	accessClaims := jwt.MapClaims{
 		"user_id":  info.ID,
 		"username": info.Username,
@@ -371,27 +445,9 @@ func (s *Service) generateTokenPair(info *UserInfo) (*TokenPair, error) {
 	accessToken := jwt.NewWithClaims(jwt.SigningMethodHS256, accessClaims)
 	accessStr, err := accessToken.SignedString(s.jwtSecret)
 	if err != nil {
-		return nil, fmt.Errorf("sign access token: %w", err)
+		return "", fmt.Errorf("sign access token: %w", err)
 	}
-
-	// Refresh token
-	refreshClaims := jwt.MapClaims{
-		"user_id": info.ID,
-		"type":    "refresh",
-		"iat":     now.Unix(),
-		"exp":     now.Add(s.refreshTokenTTL).Unix(),
-	}
-	refreshToken := jwt.NewWithClaims(jwt.SigningMethodHS256, refreshClaims)
-	refreshStr, err := refreshToken.SignedString(s.jwtSecret)
-	if err != nil {
-		return nil, fmt.Errorf("sign refresh token: %w", err)
-	}
-
-	return &TokenPair{
-		AccessToken:  accessStr,
-		RefreshToken: refreshStr,
-		ExpiresIn:    int(s.accessTokenTTL.Seconds()),
-	}, nil
+	return accessStr, nil
 }
 
 func (s *Service) validateToken(tokenStr, expectedType string) (jwt.MapClaims, error) {

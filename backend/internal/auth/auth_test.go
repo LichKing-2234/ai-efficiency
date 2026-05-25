@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -11,11 +12,14 @@ import (
 // mockEntClient is not needed for JWT tests — we test token logic directly.
 
 func newTestService() *Service {
-	return &Service{
+	svc := &Service{
 		jwtSecret:       []byte("test-secret-key-for-unit-tests!!"),
 		accessTokenTTL:  2 * time.Hour,
 		refreshTokenTTL: 7 * 24 * time.Hour,
+		now:             time.Now,
 	}
+	svc.SetRefreshSessionStore(newMemoryRefreshSessionStore())
+	return svc
 }
 
 func TestGenerateAndValidateAccessToken(t *testing.T) {
@@ -27,7 +31,7 @@ func TestGenerateAndValidateAccessToken(t *testing.T) {
 		Role:     "admin",
 	}
 
-	pair, err := svc.generateTokenPair(info)
+	pair, err := svc.generateTokenPair(context.Background(), info)
 	if err != nil {
 		t.Fatalf("generateTokenPair() error = %v", err)
 	}
@@ -63,7 +67,7 @@ func TestValidateAccessTokenRejectsRefreshToken(t *testing.T) {
 	svc := newTestService()
 
 	info := &UserInfo{ID: 1, Username: "testuser", Role: "user"}
-	pair, _ := svc.generateTokenPair(info)
+	pair, _ := svc.generateTokenPair(context.Background(), info)
 
 	// Access token validation should reject a refresh token
 	_, err := svc.ValidateAccessToken(pair.RefreshToken)
@@ -77,10 +81,12 @@ func TestValidateTokenExpired(t *testing.T) {
 		jwtSecret:       []byte("test-secret"),
 		accessTokenTTL:  -1 * time.Hour, // already expired
 		refreshTokenTTL: 7 * 24 * time.Hour,
+		now:             time.Now,
 	}
+	svc.SetRefreshSessionStore(newMemoryRefreshSessionStore())
 
 	info := &UserInfo{ID: 1, Username: "testuser", Role: "user"}
-	pair, _ := svc.generateTokenPair(info)
+	pair, _ := svc.generateTokenPair(context.Background(), info)
 
 	_, err := svc.ValidateAccessToken(pair.AccessToken)
 	if err == nil {
@@ -91,7 +97,7 @@ func TestValidateTokenExpired(t *testing.T) {
 func TestValidateTokenWrongSecret(t *testing.T) {
 	svc := newTestService()
 	info := &UserInfo{ID: 1, Username: "testuser", Role: "user"}
-	pair, _ := svc.generateTokenPair(info)
+	pair, _ := svc.generateTokenPair(context.Background(), info)
 
 	// Create a service with different secret
 	svc2 := &Service{
@@ -118,18 +124,22 @@ func TestValidateTokenInvalid(t *testing.T) {
 	}
 }
 
-func TestValidateRefreshToken(t *testing.T) {
+func TestRefreshTokenIsOpaqueAndAccessTokenRemainsJWT(t *testing.T) {
 	svc := newTestService()
 	info := &UserInfo{ID: 42, Username: "bob", Role: "user"}
-	pair, _ := svc.generateTokenPair(info)
-
-	claims, err := svc.validateToken(pair.RefreshToken, "refresh")
+	pair, err := svc.generateTokenPair(context.Background(), info)
 	if err != nil {
-		t.Fatalf("validateToken(refresh) error = %v", err)
+		t.Fatalf("generateTokenPair: %v", err)
 	}
 
-	if int(claims["user_id"].(float64)) != 42 {
-		t.Errorf("user_id = %v, want 42", claims["user_id"])
+	if !strings.HasPrefix(pair.RefreshToken, refreshTokenPrefix) {
+		t.Fatalf("refresh token = %q, want opaque %s prefix", pair.RefreshToken, refreshTokenPrefix)
+	}
+	if strings.Count(pair.RefreshToken, ".") != 0 {
+		t.Fatalf("refresh token must not be a JWT: %q", pair.RefreshToken)
+	}
+	if _, err := svc.ValidateAccessToken(pair.AccessToken); err != nil {
+		t.Fatalf("access token should remain a valid JWT: %v", err)
 	}
 }
 
@@ -151,7 +161,7 @@ func (m *mockAuthProvider) Name() string {
 func TestTokenClaimsContainCorrectType(t *testing.T) {
 	svc := newTestService()
 	info := &UserInfo{ID: 1, Username: "test", Role: "user"}
-	pair, _ := svc.generateTokenPair(info)
+	pair, _ := svc.generateTokenPair(context.Background(), info)
 
 	// Parse access token without validation to check claims
 	parser := jwt.NewParser(jwt.WithoutClaimsValidation())
@@ -164,12 +174,10 @@ func TestTokenClaimsContainCorrectType(t *testing.T) {
 		t.Errorf("access token type = %v, want 'access'", claims["type"])
 	}
 
-	token, _, err = parser.ParseUnverified(pair.RefreshToken, jwt.MapClaims{})
-	if err != nil {
-		t.Fatal(err)
+	if !strings.HasPrefix(pair.RefreshToken, refreshTokenPrefix) {
+		t.Errorf("refresh token = %q, want opaque token prefix", pair.RefreshToken)
 	}
-	claims = token.Claims.(jwt.MapClaims)
-	if claims["type"] != "refresh" {
-		t.Errorf("refresh token type = %v, want 'refresh'", claims["type"])
+	if strings.Count(pair.RefreshToken, ".") != 0 {
+		t.Errorf("refresh token should not be a JWT: %q", pair.RefreshToken)
 	}
 }
