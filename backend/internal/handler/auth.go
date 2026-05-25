@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/ai-efficiency/backend/ent"
 	entuser "github.com/ai-efficiency/backend/ent/user"
@@ -14,13 +15,18 @@ import (
 
 // AuthHandler handles authentication HTTP requests.
 type AuthHandler struct {
-	authService *auth.Service
-	entClient    *ent.Client
+	authService          *auth.Service
+	entClient            *ent.Client
+	adminSettingsHandler *AdminSettingsHandler
 }
 
 // NewAuthHandler creates a new auth handler.
-func NewAuthHandler(authService *auth.Service, entClient *ent.Client) *AuthHandler {
-	return &AuthHandler{authService: authService, entClient: entClient}
+func NewAuthHandler(authService *auth.Service, entClient *ent.Client, adminSettingsHandlers ...*AdminSettingsHandler) *AuthHandler {
+	h := &AuthHandler{authService: authService, entClient: entClient}
+	if len(adminSettingsHandlers) > 0 {
+		h.adminSettingsHandler = adminSettingsHandlers[0]
+	}
+	return h
 }
 
 // Login handles POST /api/v1/auth/login
@@ -40,6 +46,14 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	pkg.Success(c, gin.H{
 		"tokens": tokens,
 		"user":   userInfo,
+	})
+}
+
+// Options handles GET /api/v1/auth/options.
+func (h *AuthHandler) Options(c *gin.Context) {
+	pkg.Success(c, gin.H{
+		"ldap_enabled":      h.ldapEnabled(),
+		"dev_login_enabled": devLoginEnabled(),
 	})
 }
 
@@ -101,7 +115,7 @@ func (h *AuthHandler) Me(c *gin.Context) {
 // WARNING: This endpoint is only available in debug mode. Do not run debug mode in production.
 func (h *AuthHandler) DevLogin(c *gin.Context, entClient *ent.Client) {
 	// Extra safeguard: require AE_DEV_LOGIN_ENABLED=true
-	if os.Getenv("AE_DEV_LOGIN_ENABLED") != "true" {
+	if !devLoginEnabled() {
 		pkg.Error(c, http.StatusForbidden, "dev login disabled (set AE_DEV_LOGIN_ENABLED=true)")
 		return
 	}
@@ -152,4 +166,16 @@ func (h *AuthHandler) DevLogin(c *gin.Context, entClient *ent.Client) {
 			"role":     string(u.Role),
 		},
 	})
+}
+
+func (h *AuthHandler) ldapEnabled() bool {
+	if h.adminSettingsHandler == nil || h.adminSettingsHandler.ldapConfig == nil {
+		return false
+	}
+	cfg := h.adminSettingsHandler.ldapConfig.Load()
+	return cfg != nil && strings.TrimSpace(cfg.URL) != ""
+}
+
+func devLoginEnabled() bool {
+	return gin.Mode() == gin.DebugMode && os.Getenv("AE_DEV_LOGIN_ENABLED") == "true"
 }
