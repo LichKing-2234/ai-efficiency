@@ -110,7 +110,7 @@ func TestListProvidersReturnsOnlyAllowedGroups(t *testing.T) {
 	provider := client.RelayProvider.Create().
 		SetName("sub2api").
 		SetDisplayName("sub2api").
-		SetBaseURL("https://sub2api.agoraio.cn/").
+		SetBaseURL("https://relay.example.com/").
 		SetAdminAPIKey("test-admin-key").
 		SetDefaultModel("gpt-5.4").
 		SetIsPrimary(true).
@@ -179,7 +179,7 @@ func TestCreateGroupCredentialUsesSelectedGroupID(t *testing.T) {
 	provider := client.RelayProvider.Create().
 		SetName("sub2api").
 		SetDisplayName("sub2api").
-		SetBaseURL("https://sub2api.agoraio.cn/").
+		SetBaseURL("https://relay.example.com/").
 		SetAdminAPIKey("test-admin-key").
 		SetDefaultModel("gpt-5.4").
 		SetIsPrimary(true).
@@ -243,7 +243,7 @@ func TestCreateGroupCredentialRepairsMissingRelayPasswordForLDAPUser(t *testing.
 	provider := client.RelayProvider.Create().
 		SetName("sub2api").
 		SetDisplayName("sub2api").
-		SetBaseURL("https://sub2api.agoraio.cn/").
+		SetBaseURL("https://relay.example.com/").
 		SetAdminAPIKey("test-admin-key").
 		SetDefaultModel("gpt-5.4").
 		SetIsPrimary(true).
@@ -314,6 +314,70 @@ func TestCreateGroupCredentialRepairsMissingRelayPasswordForLDAPUser(t *testing.
 	}
 }
 
+func TestCreateGroupCredentialRepairsMissingRelayPasswordForExistingRelaySSOUser(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	encryptionKey := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+	provider := client.RelayProvider.Create().
+		SetName("sub2api").
+		SetDisplayName("sub2api").
+		SetBaseURL("https://relay.example.com/").
+		SetAdminAPIKey("test-admin-key").
+		SetDefaultModel("gpt-5.4").
+		SetIsPrimary(true).
+		SetEnabled(true).
+		SaveX(ctx)
+
+	localUser := client.User.Create().
+		SetUsername("alice@example.com").
+		SetEmail("alice@example.com").
+		SetAuthSource(user.AuthSourceRelaySSO).
+		SetRole(user.RoleUser).
+		SetRelayUserID(1).
+		SaveX(ctx)
+
+	fakeRelay := &fakeRelayProvider{
+		keysByUser: map[int64][]relay.APIKey{1: {}},
+		createResult: &relay.APIKeyWithSecret{
+			APIKey: relay.APIKey{
+				ID:     711,
+				UserID: 1,
+				Name:   "alice",
+				Status: "active",
+				Group:  &relay.Group{ID: 42, Name: "Group Alpha", Platform: "openai"},
+			},
+			Secret: "sk-openai",
+		},
+	}
+
+	svc := usersetup.NewService(client, usersetup.ProviderResolverFunc(func(_ context.Context, providerID int) (relay.Provider, error) {
+		return fakeRelay, nil
+	}), encryptionKey)
+
+	got, err := svc.CreateGroupCredential(ctx, usersetup.CreateGroupCredentialRequest{
+		UserID:     localUser.ID,
+		ProviderID: provider.ID,
+		GroupID:    "42",
+	})
+	if err != nil {
+		t.Fatalf("CreateGroupCredential() unexpected error: %v", err)
+	}
+	if got.Secret != "sk-openai" {
+		t.Fatalf("secret = %q, want sk-openai", got.Secret)
+	}
+	updateReq, ok := fakeRelay.updatedUsers[1]
+	if !ok {
+		t.Fatal("expected relay user to be updated with generated password")
+	}
+	if strings.TrimSpace(updateReq.Password) == "" {
+		t.Fatal("expected generated relay password")
+	}
+	if fakeRelay.createCredentialLogin != "alice@example.com" || fakeRelay.createCredentialPassword != updateReq.Password {
+		t.Fatalf("create credentials = (%q, %q), want login alice@example.com and generated password", fakeRelay.createCredentialLogin, fakeRelay.createCredentialPassword)
+	}
+}
+
 func TestRegenerateGroupCredentialOnlyTouchesSelectedGroup(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)
@@ -326,7 +390,7 @@ func TestRegenerateGroupCredentialOnlyTouchesSelectedGroup(t *testing.T) {
 	provider := client.RelayProvider.Create().
 		SetName("sub2api").
 		SetDisplayName("sub2api").
-		SetBaseURL("https://sub2api.agoraio.cn/").
+		SetBaseURL("https://relay.example.com/").
 		SetAdminAPIKey("test-admin-key").
 		SetDefaultModel("gpt-5.4").
 		SetIsPrimary(true).
@@ -395,7 +459,7 @@ func TestRegenerateGroupCredentialRepairsMissingRelayPasswordForLDAPUser(t *test
 	provider := client.RelayProvider.Create().
 		SetName("sub2api").
 		SetDisplayName("sub2api").
-		SetBaseURL("https://sub2api.agoraio.cn/").
+		SetBaseURL("https://relay.example.com/").
 		SetAdminAPIKey("test-admin-key").
 		SetDefaultModel("gpt-5.4").
 		SetIsPrimary(true).

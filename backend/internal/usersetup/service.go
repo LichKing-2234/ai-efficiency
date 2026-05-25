@@ -12,7 +12,6 @@ import (
 
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/ent/relayprovider"
-	entuser "github.com/ai-efficiency/backend/ent/user"
 	"github.com/ai-efficiency/backend/internal/pkg"
 	"github.com/ai-efficiency/backend/internal/relay"
 )
@@ -356,7 +355,7 @@ func (s *Service) withRelayWriteCredentials(ctx context.Context, u *ent.User, rp
 	if credentialCtx, ok := s.withStoredRelayCredentialsIfAvailable(ctx, u); ok {
 		return credentialCtx, u, nil
 	}
-	if u == nil || u.RelayUserID == nil || u.AuthSource != entuser.AuthSourceLdap {
+	if u == nil || u.RelayUserID == nil {
 		return ctx, u, nil
 	}
 	if strings.TrimSpace(s.encryptionKey) == "" {
