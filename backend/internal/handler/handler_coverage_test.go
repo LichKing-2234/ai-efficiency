@@ -35,6 +35,7 @@ func setupFullTestEnvWithDeployment(t *testing.T, deploymentHandler *DeploymentH
 
 	logger := zap.NewNop()
 	authSvc := auth.NewService(client, "test-jwt-secret-32-bytes-long!!!", 7200, 604800, logger)
+	authSvc.SetRefreshSessionStore(newHandlerTestRefreshSessionStore(t))
 	repoSvc := repo.NewService(client, "0000000000000000000000000000000000000000000000000000000000000000", logger)
 	webhookHandler := webhook.NewHandler(client, nil, logger)
 

@@ -10,6 +10,8 @@ import (
 
 	"github.com/ai-efficiency/backend/internal/oauth"
 	"github.com/ai-efficiency/backend/internal/web"
+	"github.com/alicebob/miniredis/v2"
+	"github.com/redis/go-redis/v9"
 )
 
 func TestSetupRouterServesEmbeddedFrontendAtRoot(t *testing.T) {
@@ -50,7 +52,10 @@ func TestSetupRouterServesEmbeddedFrontendAtOAuthDevice(t *testing.T) {
 	defer restore()
 
 	oauthServer := oauth.NewServer()
-	oauthHandler := oauth.NewHandler(oauthServer, "http://localhost:18081", nil)
+	redisServer := miniredis.RunT(t)
+	redisClient := redis.NewClient(&redis.Options{Addr: redisServer.Addr()})
+	t.Cleanup(func() { _ = redisClient.Close() })
+	oauthHandler := oauth.NewHandler(oauthServer, "http://localhost:18081", nil, oauth.NewRedisStateStore(redisClient))
 	env := setupTestEnvWithOAuth(t, oauthHandler)
 
 	w := httptest.NewRecorder()
