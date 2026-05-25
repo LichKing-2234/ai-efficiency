@@ -428,7 +428,7 @@ git log --oneline origin/main..HEAD
 
 Expected result: branch contains the spec commit, implementation commits, architecture docs, and no untracked `.superpowers` files.
 
-- [ ] **Step 4: Push branch**
+- [x] **Step 4: Push branch**
 
 Run:
 
