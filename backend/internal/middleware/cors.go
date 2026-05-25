@@ -1,11 +1,10 @@
 package middleware
 
 import (
+	"net/http"
 	"net/url"
 	"strings"
-	"time"
 
-	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 )
 
@@ -16,14 +15,51 @@ func CORS(allowOrigins []string) gin.HandlerFunc {
 		allowOrigins = []string{"http://localhost:5173", "http://localhost:8081"}
 	}
 	allowOrigins = expandLoopbackOrigins(allowOrigins)
-	return cors.New(cors.Config{
-		AllowOrigins:     allowOrigins,
-		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"},
-		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization", "Accept"},
-		ExposeHeaders:    []string{"Content-Length"},
-		AllowCredentials: true,
-		MaxAge:           12 * time.Hour,
-	})
+
+	allowAll := false
+	allowedSet := make(map[string]struct{}, len(allowOrigins))
+	for _, origin := range allowOrigins {
+		if origin == "*" {
+			allowAll = true
+			continue
+		}
+		allowedSet[origin] = struct{}{}
+	}
+
+	return func(c *gin.Context) {
+		origin := strings.TrimSpace(c.GetHeader("Origin"))
+		originAllowed := allowAll
+		if origin != "" && !allowAll {
+			_, originAllowed = allowedSet[origin]
+		}
+
+		if originAllowed {
+			if allowAll {
+				c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+			} else if origin != "" {
+				c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
+				c.Writer.Header().Add("Vary", "Origin")
+			}
+			if !allowAll {
+				c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
+			}
+			c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS")
+			c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Authorization, Accept")
+			c.Writer.Header().Set("Access-Control-Expose-Headers", "Content-Length")
+			c.Writer.Header().Set("Access-Control-Max-Age", "43200")
+		}
+
+		if c.Request.Method == http.MethodOptions {
+			if originAllowed {
+				c.AbortWithStatus(http.StatusNoContent)
+			} else {
+				c.AbortWithStatus(http.StatusForbidden)
+			}
+			return
+		}
+
+		c.Next()
+	}
 }
 
 func compactOrigins(origins []string) []string {

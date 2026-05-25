@@ -90,6 +90,46 @@ func TestCORSMiddlewareAllowsRequests(t *testing.T) {
 	}
 }
 
+func TestCORSMiddlewareDoesNotRejectSimpleRequestFromDisallowedOrigin(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.Use(CORS([]string{"https://example.com"}))
+	r.GET("/test", func(c *gin.Context) {
+		c.String(http.StatusOK, "ok")
+	})
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/test", nil)
+	req.Header.Set("Origin", "https://app.example.com")
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+	if w.Header().Get("Access-Control-Allow-Origin") != "" {
+		t.Errorf("Access-Control-Allow-Origin = %q, want empty for disallowed origin", w.Header().Get("Access-Control-Allow-Origin"))
+	}
+}
+
+func TestCORSMiddlewareRejectsDisallowedPreflight(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.Use(CORS([]string{"https://example.com"}))
+	r.GET("/test", func(c *gin.Context) {
+		c.String(http.StatusOK, "ok")
+	})
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("OPTIONS", "/test", nil)
+	req.Header.Set("Origin", "https://app.example.com")
+	req.Header.Set("Access-Control-Request-Method", "GET")
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusForbidden)
+	}
+}
+
 func TestCORSMiddlewareAllowsLoopbackVariantForConfiguredFrontend(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
