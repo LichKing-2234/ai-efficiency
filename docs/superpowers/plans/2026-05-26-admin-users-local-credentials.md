@@ -1133,7 +1133,7 @@ cd frontend && pnpm test src/__tests__/app-sidebar.test.ts src/__tests__/router.
 
 Expected result: sidebar and router tests pass.
 
-- [ ] **Step 7: Commit route, sidebar, and docs**
+- [x] **Step 7: Commit route, sidebar, and docs**
 
 Run:
 
@@ -1150,7 +1150,7 @@ git commit -m "feat(frontend): add admin users navigation"
 - Read: `docs/superpowers/specs/2026-05-26-admin-users-local-credentials-design.md`
 - Read: `docs/superpowers/plans/2026-05-26-admin-users-local-credentials.md`
 
-- [ ] **Step 1: Run targeted backend verification**
+- [x] **Step 1: Run targeted backend verification**
 
 Run:
 
@@ -1160,7 +1160,7 @@ cd backend && go test ./internal/handler -run 'TestAdminUsers' -count=1
 
 Expected result: pass.
 
-- [ ] **Step 2: Run full backend handler verification**
+- [x] **Step 2: Run full backend handler verification**
 
 Run:
 
@@ -1170,7 +1170,7 @@ cd backend && go test ./internal/handler -count=1
 
 Expected result: pass. If a failure is unrelated to admin users, record the exact failing test and error before deciding whether to broaden investigation.
 
-- [ ] **Step 3: Run targeted frontend verification**
+- [x] **Step 3: Run targeted frontend verification**
 
 Run:
 
@@ -1180,7 +1180,7 @@ cd frontend && pnpm test src/__tests__/admin-users-view.test.ts src/__tests__/ap
 
 Expected result: pass.
 
-- [ ] **Step 4: Run full frontend unit tests**
+- [x] **Step 4: Run full frontend unit tests**
 
 Run:
 
@@ -1190,7 +1190,7 @@ cd frontend && pnpm test
 
 Expected result: pass.
 
-- [ ] **Step 5: Self-review changed files**
+- [x] **Step 5: Self-review changed files**
 
 Run:
 
@@ -1208,11 +1208,11 @@ Check these points:
 5. `/admin/users` has `meta: { requireAdmin: true }`.
 6. Backend route group uses `auth.RequireAdmin()`.
 
-- [ ] **Step 6: Update plan checkboxes**
+- [x] **Step 6: Update plan checkboxes**
 
 After completing each task above, update this file's checkboxes for the steps actually completed. Do not mark verification steps complete unless the command was run.
 
-- [ ] **Step 7: Final commit if verification changes files**
+- [x] **Step 7: Final commit if verification changes files**
 
 If final verification or plan checkbox updates changed files, commit them:
 

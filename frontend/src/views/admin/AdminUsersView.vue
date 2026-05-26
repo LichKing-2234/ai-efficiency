@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import AppLayout from '@/components/AppLayout.vue'
 import { listAdminUsers, revealAdminUserRelayPassword } from '@/api/adminUsers'
 import type { AdminUser } from '@/types'
@@ -44,7 +44,15 @@ async function loadUsers() {
   }
 }
 
+function clearSearchTimer() {
+  if (searchTimer) {
+    window.clearTimeout(searchTimer)
+    searchTimer = undefined
+  }
+}
+
 async function applySearch() {
+  clearSearchTimer()
   filters.page = 1
   await loadUsers()
 }
@@ -107,9 +115,7 @@ async function copyPlaintext(user: AdminUser) {
 watch(
   () => filters.q,
   () => {
-    if (searchTimer) {
-      window.clearTimeout(searchTimer)
-    }
+    clearSearchTimer()
     searchTimer = window.setTimeout(() => {
       void applySearch()
     }, 300)
@@ -117,6 +123,7 @@ watch(
 )
 
 onMounted(loadUsers)
+onBeforeUnmount(clearSearchTimer)
 </script>
 
 <template>
