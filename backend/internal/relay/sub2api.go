@@ -439,65 +439,122 @@ func isSubscriptionGroup(group Group) bool {
 }
 
 func (s *sub2apiRelay) FindUserByEmail(ctx context.Context, email string) (*User, error) {
-	resp, err := s.doAdminRequest(ctx, http.MethodGet, "/api/v1/admin/users?email="+url.QueryEscape(email), nil)
+	users, ok, err := s.findUsersBySearch(ctx, email)
 	if err != nil {
 		return nil, fmt.Errorf("relay: find user by email: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("relay: find user by email: unexpected status %d", resp.StatusCode)
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("relay: find user by email: read body: %w", err)
-	}
-
-	users, ok, err := decodeUserLookupResponse(body)
-	if err != nil {
-		return nil, fmt.Errorf("relay: find user by email: decode: %w", err)
 	}
 	if !ok {
 		return nil, fmt.Errorf("relay: find user by email: request failed")
 	}
 
 	user := exactUserByEmail(users, email)
-	if user == nil {
-		return nil, nil
+	if user != nil {
+		return user, nil
+	}
+	user, err = s.findUserInAdminList(ctx, func(user User) bool {
+		return strings.EqualFold(strings.TrimSpace(user.Email), strings.TrimSpace(email))
+	})
+	if err != nil {
+		return nil, fmt.Errorf("relay: find user by email: fallback list: %w", err)
 	}
 	return user, nil
 }
 
 func (s *sub2apiRelay) FindUserByUsername(ctx context.Context, username string) (*User, error) {
-	resp, err := s.doAdminRequest(ctx, http.MethodGet, "/api/v1/admin/users?username="+url.QueryEscape(username), nil)
+	users, ok, err := s.findUsersBySearch(ctx, username)
 	if err != nil {
 		return nil, fmt.Errorf("relay: find user by username: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("relay: find user by username: unexpected status %d", resp.StatusCode)
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("relay: find user by username: read body: %w", err)
-	}
-
-	users, ok, err := decodeUserLookupResponse(body)
-	if err != nil {
-		return nil, fmt.Errorf("relay: find user by username: decode: %w", err)
 	}
 	if !ok {
 		return nil, fmt.Errorf("relay: find user by username: request failed")
 	}
 
 	user := exactUserByUsername(users, username)
-	if user == nil {
-		return nil, nil
+	if user != nil {
+		return user, nil
+	}
+	username = strings.TrimSpace(username)
+	user, err = s.findUserInAdminList(ctx, func(user User) bool {
+		if strings.EqualFold(strings.TrimSpace(user.Username), username) {
+			return true
+		}
+		return strings.Contains(username, "@") && strings.EqualFold(strings.TrimSpace(user.Email), username)
+	})
+	if err != nil {
+		return nil, fmt.Errorf("relay: find user by username: fallback list: %w", err)
 	}
 	return user, nil
+}
+
+func (s *sub2apiRelay) findUsersBySearch(ctx context.Context, search string) ([]User, bool, error) {
+	resp, err := s.doAdminRequest(ctx, http.MethodGet, "/api/v1/admin/users?search="+url.QueryEscape(search), nil)
+	if err != nil {
+		return nil, false, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, false, fmt.Errorf("unexpected status %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, false, fmt.Errorf("read body: %w", err)
+	}
+
+	users, ok, err := decodeUserLookupResponse(body)
+	if err != nil {
+		return nil, false, fmt.Errorf("decode: %w", err)
+	}
+	return users, ok, nil
+}
+
+func (s *sub2apiRelay) findUserInAdminList(ctx context.Context, match func(User) bool) (*User, error) {
+	if match == nil {
+		return nil, nil
+	}
+	for page := 1; ; page++ {
+		resp, err := s.doAdminRequest(ctx, http.MethodGet, fmt.Sprintf("/api/v1/admin/users?page=%d&page_size=200", page), nil)
+		if err != nil {
+			return nil, err
+		}
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			return nil, err
+		}
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("unexpected status %d", resp.StatusCode)
+		}
+
+		var result struct {
+			envelopeStatus
+			Data json.RawMessage `json:"data"`
+		}
+		if err := json.Unmarshal(body, &result); err != nil {
+			return nil, err
+		}
+		if !result.ok() {
+			return nil, fmt.Errorf("request failed")
+		}
+
+		items, pages, err := decodeUserListItems(result.Data)
+		if err != nil {
+			return nil, err
+		}
+		for _, item := range items {
+			user, err := decodeUserWithFacts(item)
+			if err != nil {
+				return nil, err
+			}
+			if match(user) {
+				return &user, nil
+			}
+		}
+		if pages <= 1 || page >= pages {
+			return nil, nil
+		}
+	}
 }
 
 // decodeUserLookupResponse accepts both legacy list payloads and newer paginated user envelopes.

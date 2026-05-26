@@ -200,8 +200,8 @@ commit 时由 hook 上报的锚点事件。它记录 commit 所在的 session、
 
 实现要求补充：
 
-- relay adapter 不能把 `/api/v1/admin/users?username=...` 或 `?email=...` 返回列表的第一条直接当作命中；必须在返回结果中做精确匹配后才能绑定
-- 若 relay server 忽略查询过滤条件并返回分页列表，未命中精确 username/email 时必须视为“未找到”，转入建人路径，而不是错绑到无关 user
+- relay adapter 不能把 `/api/v1/admin/users?search=...` 返回列表的第一条直接当作命中；必须在返回结果中做精确 username/email 匹配后才能绑定
+- 若 relay server 的 `search` 返回未过滤结果或只给出分页列表，未命中精确 username/email 时必须继续做全量分页精确匹配；只有确认全量列表也不存在后才能转入建人路径，不能因为第一页 miss 就错绑或误建人
 - 对已经落库的 LDAP 用户，若其 `relay_user_id` 与重新解析出的稳定身份不一致，后续登录应修正该错绑
 
 ### Relay Provider 能力扩展

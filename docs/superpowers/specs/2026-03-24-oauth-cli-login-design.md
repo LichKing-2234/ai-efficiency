@@ -219,7 +219,7 @@ func NewSub2apiProvider(httpClient *http.Client, baseURL, adminURL, apiKey, mode
 | `Ping` | `GET /health` | 无 | 健康检查 |
 | `Authenticate` | `POST /api/v1/auth/login` + `GET /api/v1/auth/me` | 用户凭据 → session token | 401 → `ErrInvalidCredentials`；`requires_2fa` → `ErrExtraVerificationRequired` |
 | `GetUser` | `GET /api/v1/admin/users/:id` | admin API key | — |
-| `FindUserByEmail` | `GET /api/v1/admin/users?email=xxx` | admin API key | 用于 LDAP 用户关联 relay 账号 |
+| `FindUserByEmail` | `GET /api/v1/admin/users?search=xxx` | admin API key | 用于 LDAP 用户关联 relay 账号；客户端必须在返回结果里做 email 精确匹配，不能把第一条结果直接当命中 |
 | `ChatCompletion` | `POST /v1/chat/completions` | Bearer API key | — |
 | `ChatCompletionWithTools` | `POST /v1/chat/completions`（带 tools 参数） | Bearer API key | — |
 | `GetUsageStats` | `GET /api/v1/admin/users/:id/usage?from=xxx&to=xxx` | admin API key | 通过 admin 端点按用户 ID 查询，需传 from/to 时间参数 |
