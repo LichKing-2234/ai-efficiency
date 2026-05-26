@@ -14,8 +14,10 @@ type fakeRelayIdentityAPI struct {
 		userID int64
 		req    relay.UpdateUserRequest
 	}
+	assignDefaultSubscriptionCalls []int64
 
 	findResult *relay.User
+	getResult  *relay.User
 }
 
 type emailFirstRelayIdentityAPI struct {
@@ -50,6 +52,16 @@ func (f *fakeRelayIdentityAPI) FindUserByUsername(_ context.Context, username st
 	return f.findResult, nil
 }
 
+func (f *fakeRelayIdentityAPI) GetUser(_ context.Context, userID int64) (*relay.User, error) {
+	if f.getResult != nil {
+		return f.getResult, nil
+	}
+	if f.findResult != nil && f.findResult.ID == userID {
+		return f.findResult, nil
+	}
+	return nil, nil
+}
+
 func (f *fakeRelayIdentityAPI) CreateUser(_ context.Context, req relay.CreateUserRequest) (*relay.User, error) {
 	f.createUserCalls = append(f.createUserCalls, req)
 	return &relay.User{
@@ -71,6 +83,11 @@ func (f *fakeRelayIdentityAPI) UpdateUser(_ context.Context, userID int64, req r
 		Email:    "alice@example.com",
 		Role:     "user",
 	}, nil
+}
+
+func (f *fakeRelayIdentityAPI) AssignDefaultSubscriptionsForUser(_ context.Context, userID int64) error {
+	f.assignDefaultSubscriptionCalls = append(f.assignDefaultSubscriptionCalls, userID)
+	return nil
 }
 
 func (f *emailFirstRelayIdentityAPI) FindUserByEmail(_ context.Context, email string) (*relay.User, error) {
@@ -116,12 +133,12 @@ func TestResolveOrProvisionRelayUser_UsesUsernameAsStableKey(t *testing.T) {
 
 func TestResolveOrProvisionRelayUser_PrefersEmailMatchForLDAP(t *testing.T) {
 	api := &emailFirstRelayIdentityAPI{
-		emailResult:    &relay.User{ID: 42, Username: "luxuhui@example.com", Email: "luxuhui@example.com", Role: "admin", Concurrency: defaultRelayUserConcurrency},
-		usernameResult: &relay.User{ID: 9, Username: "luxuhui", Email: "luxuhui@ldap.local", Role: "user", Concurrency: defaultRelayUserConcurrency},
+		emailResult:    &relay.User{ID: 42, Username: "bob@example.com", Email: "bob@example.com", Role: "admin", Concurrency: defaultRelayUserConcurrency},
+		usernameResult: &relay.User{ID: 9, Username: "bob", Email: "bob@ldap.local", Role: "user", Concurrency: defaultRelayUserConcurrency},
 	}
 
 	r := NewRelayIdentityResolver(api, "ldap.local")
-	u, password, err := r.ResolveOrProvisionForLDAP(context.Background(), "luxuhui", "luxuhui@example.com")
+	u, password, err := r.ResolveOrProvisionForLDAP(context.Background(), "bob", "bob@example.com")
 	if err != nil {
 		t.Fatalf("ResolveOrProvisionForLDAP() unexpected error: %v", err)
 	}
@@ -131,7 +148,7 @@ func TestResolveOrProvisionRelayUser_PrefersEmailMatchForLDAP(t *testing.T) {
 	if password != "" {
 		t.Fatalf("password = %q, want empty for existing relay user", password)
 	}
-	if got := api.findByEmailCalls; len(got) != 1 || got[0] != "luxuhui@example.com" {
+	if got := api.findByEmailCalls; len(got) != 1 || got[0] != "bob@example.com" {
 		t.Fatalf("expected email lookup first, got %+v", got)
 	}
 	if len(api.findByUsernameCalls) != 0 {
@@ -208,6 +225,84 @@ func TestResolveOrProvisionRelayUser_UpdatesExistingUserConcurrencyWithoutPasswo
 	}
 	if api.updateUserCalls[0].req.Concurrency == nil || *api.updateUserCalls[0].req.Concurrency != 5 {
 		t.Fatalf("expected UpdateUser concurrency=5, got %+v", api.updateUserCalls[0].req.Concurrency)
+	}
+}
+
+func TestResolveOrProvisionRelayUser_AssignsDefaultsForExistingLDAPProvisionedUserWithoutGroups(t *testing.T) {
+	api := &fakeRelayIdentityAPI{
+		findResult: &relay.User{
+			ID:          7,
+			Username:    "alice",
+			Email:       "alice@example.com",
+			Notes:       relayLDAPProvisioningNote,
+			Concurrency: defaultRelayUserConcurrency,
+		},
+	}
+
+	r := NewRelayIdentityResolver(api, "ldap.local")
+	u, password, err := r.ResolveOrProvisionForLDAP(context.Background(), "alice", "alice@example.com")
+	if err != nil {
+		t.Fatalf("ResolveOrProvisionForLDAP() unexpected error: %v", err)
+	}
+	if u == nil || u.ID != 7 {
+		t.Fatalf("expected existing relay user ID=7, got %+v", u)
+	}
+	if password != "" {
+		t.Fatalf("returned password = %q, want empty", password)
+	}
+	if len(api.assignDefaultSubscriptionCalls) != 1 || api.assignDefaultSubscriptionCalls[0] != 7 {
+		t.Fatalf("expected default subscriptions assigned for user 7, got %+v", api.assignDefaultSubscriptionCalls)
+	}
+}
+
+func TestResolveOrProvisionRelayUser_HydratesExistingLDAPProvisionedUserBeforeAssigningDefaults(t *testing.T) {
+	api := &fakeRelayIdentityAPI{
+		findResult: &relay.User{
+			ID:          7,
+			Username:    "alice",
+			Email:       "alice@example.com",
+			Concurrency: defaultRelayUserConcurrency,
+		},
+		getResult: &relay.User{
+			ID:          7,
+			Username:    "alice",
+			Email:       "alice@example.com",
+			Notes:       relayLDAPProvisioningNote,
+			Concurrency: defaultRelayUserConcurrency,
+		},
+	}
+
+	r := NewRelayIdentityResolver(api, "ldap.local")
+	_, _, err := r.ResolveOrProvisionForLDAP(context.Background(), "alice", "alice@example.com")
+	if err != nil {
+		t.Fatalf("ResolveOrProvisionForLDAP() unexpected error: %v", err)
+	}
+	if len(api.assignDefaultSubscriptionCalls) != 1 || api.assignDefaultSubscriptionCalls[0] != 7 {
+		t.Fatalf("expected default subscriptions assigned for hydrated user 7, got %+v", api.assignDefaultSubscriptionCalls)
+	}
+}
+
+func TestResolveOrProvisionRelayUser_SkipsDefaultsForExistingLDAPProvisionedUserWithGroups(t *testing.T) {
+	api := &fakeRelayIdentityAPI{
+		findResult: &relay.User{
+			ID:          7,
+			Username:    "alice",
+			Email:       "alice@example.com",
+			Notes:       relayLDAPProvisioningNote,
+			Concurrency: defaultRelayUserConcurrency,
+			AllowedGroups: []relay.Group{
+				{ID: 6, Name: "Group Alpha", Platform: "openai"},
+			},
+		},
+	}
+
+	r := NewRelayIdentityResolver(api, "ldap.local")
+	_, _, err := r.ResolveOrProvisionForLDAP(context.Background(), "alice", "alice@example.com")
+	if err != nil {
+		t.Fatalf("ResolveOrProvisionForLDAP() unexpected error: %v", err)
+	}
+	if len(api.assignDefaultSubscriptionCalls) != 0 {
+		t.Fatalf("expected no default subscription assignment, got %+v", api.assignDefaultSubscriptionCalls)
 	}
 }
 

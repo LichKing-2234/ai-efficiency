@@ -11,6 +11,7 @@ import (
 )
 
 const defaultRelayUserConcurrency = 5
+const relayLDAPProvisioningNote = "provisioned_by_ai_efficiency_ldap"
 
 type relayIdentityAPI interface {
 	FindUserByUsername(ctx context.Context, username string) (*relay.User, error)
@@ -23,6 +24,14 @@ type relayIdentityEmailLookupAPI interface {
 
 type relayIdentityPasswordUpdater interface {
 	UpdateUser(ctx context.Context, userID int64, req relay.UpdateUserRequest) (*relay.User, error)
+}
+
+type relayIdentityUserGetter interface {
+	GetUser(ctx context.Context, userID int64) (*relay.User, error)
+}
+
+type relayIdentityDefaultSubscriptionAssigner interface {
+	AssignDefaultSubscriptionsForUser(ctx context.Context, userID int64) error
 }
 
 // RelayIdentityResolver resolves a relay user by a stable username key and provisions one if missing.
@@ -92,7 +101,7 @@ func (r *RelayIdentityResolver) ResolveOrProvisionForLDAP(ctx context.Context, u
 		Username:    canonicalUsername,
 		Email:       email,
 		Password:    pw,
-		Notes:       "provisioned_by_ai_efficiency_ldap",
+		Notes:       relayLDAPProvisioningNote,
 		Concurrency: defaultRelayUserConcurrency,
 	})
 	if err != nil {
@@ -114,18 +123,115 @@ func (r *RelayIdentityResolver) findUserByEmail(ctx context.Context, email strin
 }
 
 func (r *RelayIdentityResolver) updateExistingLDAPRelayUser(ctx context.Context, u *relay.User, canonicalUsername string, foundByLegacyUsername bool) (*relay.User, string, error) {
+	u = r.hydrateExistingLDAPRelayUser(ctx, u)
 	updateReq, shouldUpdate := relayUserUpdateForLDAP(u, canonicalUsername, foundByLegacyUsername)
+	resolved := u
 	if !shouldUpdate {
-		return u, "", nil
+		if err := r.assignDefaultsForExistingLDAPProvisionedUser(ctx, resolved); err != nil {
+			return nil, "", err
+		}
+		return resolved, "", nil
 	}
 	if updater, ok := r.api.(relayIdentityPasswordUpdater); ok {
 		updated, err := updater.UpdateUser(ctx, u.ID, updateReq)
 		if err != nil {
 			return nil, "", fmt.Errorf("relay identity: update user: %w", err)
 		}
-		return updated, "", nil
+		if updated != nil {
+			if strings.TrimSpace(updated.Notes) == "" {
+				updated.Notes = u.Notes
+			}
+			if len(updated.AllowedGroups) == 0 {
+				updated.AllowedGroups = u.AllowedGroups
+				updated.AllowedGroupIDs = u.AllowedGroupIDs
+			}
+		}
+		resolved = updated
 	}
-	return u, "", nil
+	if err := r.assignDefaultsForExistingLDAPProvisionedUser(ctx, resolved); err != nil {
+		return nil, "", err
+	}
+	return resolved, "", nil
+}
+
+func (r *RelayIdentityResolver) ResetGeneratedPasswordForLDAPProvisionedUser(ctx context.Context, u *relay.User) (string, error) {
+	u = r.hydrateExistingLDAPRelayUser(ctx, u)
+	if u == nil || u.ID <= 0 || strings.TrimSpace(u.Notes) != relayLDAPProvisioningNote {
+		return "", nil
+	}
+	updater, ok := r.api.(relayIdentityPasswordUpdater)
+	if !ok {
+		return "", fmt.Errorf("relay identity: update user password unsupported")
+	}
+	pw, err := highEntropyPassword()
+	if err != nil {
+		return "", fmt.Errorf("relay identity: generate password: %w", err)
+	}
+	if _, err := updater.UpdateUser(ctx, u.ID, relay.UpdateUserRequest{Password: pw}); err != nil {
+		return "", fmt.Errorf("relay identity: reset generated password: %w", err)
+	}
+	return pw, nil
+}
+
+func (r *RelayIdentityResolver) hydrateExistingLDAPRelayUser(ctx context.Context, u *relay.User) *relay.User {
+	if u == nil || u.ID <= 0 {
+		return u
+	}
+	getter, ok := r.api.(relayIdentityUserGetter)
+	if !ok {
+		return u
+	}
+	full, err := getter.GetUser(ctx, u.ID)
+	if err != nil || full == nil {
+		return u
+	}
+	return mergeRelayUserFacts(u, full)
+}
+
+func mergeRelayUserFacts(base, full *relay.User) *relay.User {
+	if full == nil {
+		return base
+	}
+	if base == nil {
+		return full
+	}
+	if strings.TrimSpace(full.Username) == "" {
+		full.Username = base.Username
+	}
+	if strings.TrimSpace(full.Email) == "" {
+		full.Email = base.Email
+	}
+	if strings.TrimSpace(full.Role) == "" {
+		full.Role = base.Role
+	}
+	if strings.TrimSpace(full.Notes) == "" {
+		full.Notes = base.Notes
+	}
+	if full.Concurrency == 0 {
+		full.Concurrency = base.Concurrency
+	}
+	if len(full.AllowedGroups) == 0 {
+		full.AllowedGroups = base.AllowedGroups
+		full.AllowedGroupIDs = base.AllowedGroupIDs
+	}
+	return full
+}
+
+func (r *RelayIdentityResolver) assignDefaultsForExistingLDAPProvisionedUser(ctx context.Context, u *relay.User) error {
+	if u == nil || u.ID <= 0 {
+		return nil
+	}
+	if strings.TrimSpace(u.Notes) != relayLDAPProvisioningNote || len(u.AllowedGroups) > 0 || len(u.AllowedGroupIDs) > 0 {
+		return nil
+	}
+	assigner, ok := r.api.(relayIdentityDefaultSubscriptionAssigner)
+	if !ok {
+		return nil
+	}
+	if err := assigner.AssignDefaultSubscriptionsForUser(ctx, u.ID); err != nil {
+		return fmt.Errorf("relay identity: assign default subscriptions: %w", err)
+	}
+	return nil
 }
 
 func relayProvisionUsername(username string) string {

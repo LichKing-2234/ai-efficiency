@@ -9,6 +9,7 @@ import (
 	"github.com/ai-efficiency/backend/ent"
 	entuser "github.com/ai-efficiency/backend/ent/user"
 	"github.com/ai-efficiency/backend/internal/pkg"
+	"github.com/ai-efficiency/backend/internal/relay"
 	"github.com/golang-jwt/jwt/v5"
 	"go.uber.org/zap"
 )
@@ -240,6 +241,14 @@ func (s *Service) ensureLocalUser(ctx context.Context, info *UserInfo) (*ent.Use
 		info.RelayUserID = &relayID
 		if strings.TrimSpace(relayPassword) != "" {
 			info.RelayAuthPassword = relayPassword
+		} else {
+			relayPassword, err := s.relayIdentityResolver.ResetGeneratedPasswordForLDAPProvisionedUser(ctx, relayUser)
+			if err != nil {
+				return nil, fmt.Errorf("reset relay auth password: %w", err)
+			}
+			if strings.TrimSpace(relayPassword) != "" {
+				info.RelayAuthPassword = relayPassword
+			}
 		}
 		info.Email = ensureNonEmptyEmail(info.Email, relayUser.Email, "")
 		info.Role = roleFromRelayIdentity(info.Role, relayUser.Role)
@@ -275,6 +284,7 @@ func (s *Service) syncExistingLocalUser(ctx context.Context, u *ent.User, info *
 	if ldapLogin {
 		info.RelayAuthPassword = ""
 	}
+	var resolvedRelayUser *relay.User
 
 	if info.RelayUserID == nil && u.RelayUserID != nil {
 		info.RelayUserID = u.RelayUserID
@@ -288,6 +298,7 @@ func (s *Service) syncExistingLocalUser(ctx context.Context, u *ent.User, info *
 			return nil, fmt.Errorf("resolve relay identity: %w", err)
 		}
 		relayID := int(relayUser.ID)
+		resolvedRelayUser = relayUser
 		info.RelayUserID = &relayID
 		if strings.TrimSpace(relayPassword) != "" {
 			info.RelayAuthPassword = relayPassword
@@ -296,8 +307,10 @@ func (s *Service) syncExistingLocalUser(ctx context.Context, u *ent.User, info *
 		info.Role = roleFromRelayIdentity(info.Role, relayUser.Role)
 	}
 
+	relayBindingMoved := false
 	if info.RelayUserID != nil && (u.RelayUserID == nil || *u.RelayUserID != *info.RelayUserID) {
 		if u.RelayUserID != nil {
+			relayBindingMoved = true
 			s.logger.Warn("repairing stored relay user binding",
 				zap.String("username", info.Username),
 				zap.Int("old_relay_user_id", *u.RelayUserID),
@@ -309,6 +322,15 @@ func (s *Service) syncExistingLocalUser(ctx context.Context, u *ent.User, info *
 			return nil, fmt.Errorf("persist relay user id: %w", err)
 		}
 		u = updated
+	}
+	if ldapLogin && relayBindingMoved && strings.TrimSpace(info.RelayAuthPassword) == "" && s.relayIdentityResolver != nil {
+		relayPassword, err := s.relayIdentityResolver.ResetGeneratedPasswordForLDAPProvisionedUser(ctx, resolvedRelayUser)
+		if err != nil {
+			return nil, fmt.Errorf("reset relay auth password: %w", err)
+		}
+		if strings.TrimSpace(relayPassword) != "" {
+			info.RelayAuthPassword = relayPassword
+		}
 	}
 
 	if strings.TrimSpace(info.AuthSource) != "" && string(u.AuthSource) != info.AuthSource {

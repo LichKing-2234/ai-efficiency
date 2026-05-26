@@ -8,6 +8,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -16,10 +17,10 @@ import (
 	"sync"
 
 	"github.com/ai-efficiency/backend/ent"
-	"github.com/ai-efficiency/backend/ent/relayprovider"
 	authpkg "github.com/ai-efficiency/backend/internal/auth"
 	"github.com/ai-efficiency/backend/internal/pkg"
 	"github.com/ai-efficiency/backend/internal/relay"
+	"github.com/ai-efficiency/backend/internal/usersetup"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 )
@@ -106,67 +107,63 @@ func (h *ProviderHandler) ListForUser(c *gin.Context) {
 		return
 	}
 
-	user, err := h.entClient.User.Get(ctx, uc.UserID)
+	userSetupSvc := usersetup.NewService(h.entClient, h, h.encryptionKey)
+	providerSummaries, err := userSetupSvc.ListProviders(ctx, usersetup.ListProvidersRequest{UserID: uc.UserID})
 	if err != nil {
-		pkg.Error(c, http.StatusInternalServerError, "failed to get user")
+		pkg.Error(c, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
 
-	if user.RelayUserID == nil {
-		primaryProvider, err := h.entClient.RelayProvider.Query().
-			Where(relayprovider.IsPrimaryEQ(true), relayprovider.EnabledEQ(true)).
-			First(ctx)
-		if err != nil || primaryProvider == nil {
-			pkg.Success(c, gin.H{"providers": []providerResponse{}})
-			return
-		}
-		rp := h.getOrCreateRelayProvider(primaryProvider)
-		relayUser, err := rp.FindUserByEmail(ctx, user.Email)
-		if err != nil || relayUser == nil {
-			pkg.Success(c, gin.H{
-				"providers": []providerResponse{},
-				"message":   "当前账号未关联 relay server，无法自动配置 AI 工具。请联系管理员。",
-			})
-			return
-		}
-		relayID := int(relayUser.ID)
-		h.entClient.User.UpdateOneID(user.ID).SetRelayUserID(relayID).Save(ctx)
-		user.RelayUserID = &relayID
-	}
-
-	providers, err := h.entClient.RelayProvider.Query().
-		Where(relayprovider.EnabledEQ(true)).
-		All(ctx)
-	if err != nil {
-		pkg.Error(c, http.StatusInternalServerError, "failed to list providers")
-		return
-	}
-
-	var result []providerResponse
-	for _, p := range providers {
-		rp := h.getOrCreateRelayProvider(p)
-
-		// Try to find existing ae-cli-auto key first; only create if none exists.
+	result := make([]providerResponse, 0, len(providerSummaries.Providers))
+	for _, p := range providerSummaries.Providers {
 		var apiKey string
 		var apiKeyID int64
-		keys, err := rp.ListUserAPIKeys(ctx, int64(*user.RelayUserID))
-		if err == nil {
-			for _, k := range keys {
-				if k.Name == "ae-cli-auto" && k.Status == "active" {
-					apiKeyID = k.ID
-					break
+		for _, group := range p.Groups {
+			if group.Credential.APIKeyID > 0 {
+				apiKeyID = group.Credential.APIKeyID
+				apiKey = group.Credential.Key
+				break
+			}
+		}
+		if apiKeyID == 0 && len(p.Groups) > 0 {
+			created, err := userSetupSvc.CreateGroupCredential(ctx, usersetup.CreateGroupCredentialRequest{
+				UserID:     uc.UserID,
+				ProviderID: p.ID,
+				GroupID:    p.Groups[0].GroupID,
+			})
+			if err != nil {
+				if errors.Is(err, usersetup.ErrManagedKeyAlreadyExists) {
+					refreshed, refreshErr := userSetupSvc.ListProviders(ctx, usersetup.ListProvidersRequest{UserID: uc.UserID})
+					if refreshErr == nil {
+						for _, refreshedProvider := range refreshed.Providers {
+							if refreshedProvider.ID != p.ID {
+								continue
+							}
+							for _, group := range refreshedProvider.Groups {
+								if group.Credential.APIKeyID > 0 {
+									apiKeyID = group.Credential.APIKeyID
+									apiKey = group.Credential.Key
+									break
+								}
+							}
+						}
+					}
+				} else {
+					h.logger.Warn("failed to create API key", zap.String("provider", p.Name), zap.Error(err))
 				}
+			} else {
+				apiKey = created.Secret
+				apiKeyID = created.APIKeyID
 			}
 		}
 		if apiKeyID == 0 {
-			// No existing key found — create a new one.
-			newKey, err := rp.CreateUserAPIKey(ctx, int64(*user.RelayUserID), relay.APIKeyCreateRequest{Name: "ae-cli-auto"})
-			if err != nil {
-				h.logger.Warn("failed to create API key", zap.String("provider", p.Name), zap.Error(err))
-				continue
+			for _, group := range p.Groups {
+				if group.Credential.APIKeyID > 0 {
+					apiKeyID = group.Credential.APIKeyID
+					apiKey = group.Credential.Key
+					break
+				}
 			}
-			apiKey = newKey.Secret
-			apiKeyID = newKey.ID
 		}
 
 		result = append(result, providerResponse{

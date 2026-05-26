@@ -276,10 +276,6 @@ onMounted(loadProviders)
                 <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-900">Provider &amp; Group Credential</h2>
                 <p v-if="selectedProvider" class="mt-1 text-sm text-gray-500">{{ selectedProvider.base_url }}</p>
               </div>
-              <div v-if="selectedProvider" class="text-right text-xs text-gray-500">
-                <div>Model</div>
-                <div class="mt-1 font-medium text-gray-900">{{ selectedProvider.default_model }}</div>
-              </div>
             </div>
 
             <div v-if="selectedProvider" class="mt-4 space-y-4">

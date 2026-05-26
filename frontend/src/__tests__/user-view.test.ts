@@ -61,13 +61,13 @@ async function mountUserView() {
             groups: [
               {
                 group_id: '43',
-                group_name: 'Claude-RD',
+                group_name: 'Group Beta',
                 platform: 'anthropic',
                 credential: { state: 'existing_hidden', api_key_id: 22, name: 'alice', status: 'active', key: 'sk-existing-claude-123456' },
               },
               {
                 group_id: '42',
-                group_name: 'OpenAI-RD',
+                group_name: 'Group Alpha',
                 platform: 'openai',
                 credential: { state: 'missing' },
               },
@@ -130,8 +130,9 @@ describe('UserView', () => {
     expect(wrapper.text()).not.toContain('Paste ae-cli discover --dry-run output')
     expect(wrapper.text()).not.toContain('Paste ae-cli doctor output')
     expect(wrapper.text()).not.toContain('Review')
-    expect(wrapper.text()).toContain('Claude-RD')
+    expect(wrapper.text()).toContain('Group Beta')
     expect(wrapper.text()).toContain('Platform: anthropic')
+    expect(wrapper.text()).not.toContain('claude-sonnet')
   })
 
   it('switches providers and updates the discover command and group list', async () => {

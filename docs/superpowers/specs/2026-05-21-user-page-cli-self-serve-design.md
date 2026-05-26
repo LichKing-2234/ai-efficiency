@@ -16,8 +16,8 @@
 - 它**不改变** `ae-cli install.sh` 的分发合同；CLI 安装入口仍以 [`2026-04-13-ae-cli-user-install-design.md`](./2026-04-13-ae-cli-user-install-design.md) 为准。
 - 它**不改变** `ae-cli login` 的 PKCE / device flow 合同；CLI 登录协议仍以 [`2026-04-15-oauth-device-login-design.md`](./2026-04-15-oauth-device-login-design.md) 为准。
 - 它本轮**不直接改写** `ae-cli discover` 的命令形状；工具配置写入规则仍以 [`2026-05-19-ae-cli-deterministic-tool-configuration-design.md`](./2026-05-19-ae-cli-deterministic-tool-configuration-design.md) 为准。
-- 它修正的是 `/user` 页面如何表达和调用用户态 credential provisioning：从错误的 `provider + platform` 折叠视图，改成 `provider + group` 视图，并以当前 relay user 的 `allowed_groups` 作为唯一 group 来源。
-- 本文当前还约束 `/user` 创建 / 重建 key 的写入身份：sub2api `/api/v1/keys` 要求当前 relay user 的用户态 JWT，RelayProvider admin API key 不能代替用户凭据创建 key。已有 relay 用户（包括 relay admin）必须先通过 Relay SSO 登录一次，让后端保存加密后的 relay password；后续 LDAP 登录只更新本地 `auth_source` 并复用这份保存的 relay credential。已有 relay 用户如果没有本地可解密的 `relay_auth_password`，create/regenerate 返回明确错误，后端不得为了获取 JWT 而重置 relay password。LDAP 新用户在 relay 不存在时由登录期 provisioning 创建 relay user，并保存后端生成的高熵 relay-side password。LDAP bind password 仍然只能用于 LDAP bind，不能写入本地或转发到 relay。
+- 它修正的是 `/user` 页面如何表达和调用用户态 credential provisioning：从错误的 `provider + platform` 折叠视图，改成 `provider + group` 视图，并以当前 relay user 的 user-scoped group facts 作为 group 来源；adapter 可以用 provider-wide group list 解析 `allowed_groups` ID，但不能把 provider 下全部 active groups 暴露给用户。
+- 本文当前还约束 `/user` 创建 / 重建 key 的写入身份：sub2api `/api/v1/keys` 要求当前 relay user 的用户态 JWT，RelayProvider admin API key 不能代替用户凭据创建 key。后端必须在创建 / 重建 key 前确保本地用户已绑定 relay user 且有可用的用户态写入凭据：Relay SSO 登录会保存用户输入的 relay password；如果 SSO 登录邮箱在 relay 侧不存在，后端会用该 SSO 密码创建 relay user 并保存；LDAP 登录和 `/user` 写入路径不能使用 LDAP bind password，而是使用后端生成的高熵 relay-side password。若 relay user 不存在，后端通过 relay admin API 创建用户、保存生成密码，并显式分配 relay 默认订阅；若 relay user 已存在但本地没有可解密密码，或本地密码已经失效，后端可轮换该 relay user 的生成密码、加密保存，然后用用户态 JWT 创建 / 重建 key。对旧版本已经创建出的 LDAP-provisioned relay user，如果其 `notes=provisioned_by_ai_efficiency_ldap` 且还没有 group facts，后续 LDAP 登录可补默认订阅。LDAP bind password 仍然只能用于 LDAP bind，不能写入本地或转发到 relay。
 
 ## Overview
 
@@ -188,8 +188,9 @@
 1. `display_name`
 2. `name`
 3. `base_url`
-4. `default_model`
-5. `is_primary`
+4. `is_primary`
+
+响应中可以继续包含 `default_model` 以兼容 CLI / discover 相关消费方，但 `/user` 的 `Provider & Group Credential` 区块不把它展示成 credential 元数据。provider test 的 `model` 必须由用户在测试表单里显式输入。
 
 页面始终只允许单选一个 provider。默认选中规则：
 
@@ -243,7 +244,14 @@ Checklist 固定为 4 步：
 
 ### Group Source of Truth
 
-`/user` 页面中的 groups 必须以当前 relay user 的 `allowed_groups` 作为唯一来源。
+`/user` 页面中的 groups 必须以当前 relay user 的 user-scoped group facts 作为来源。对 sub2api adapter 来说，这包括：
+
+1. relay user detail 或 admin user list 中的 `allowed_groups`
+   - 可能是 group object 数组
+   - 也可能是 group ID 数组；此时 adapter 必须通过 group list 解析 ID 对应的 `name` / `platform` / subscription metadata
+2. relay user detail 或 admin user list 中的 active `subscriptions`
+   - subscription group 只有在当前用户存在 active subscription fact 时才可展示
+   - sub2api detail endpoint 可能省略 subscriptions；adapter 可以 fallback 到 admin users list 中同一个 `user_id` 的 user-scoped facts
 
 明确禁止以下替代来源：
 
@@ -251,7 +259,7 @@ Checklist 固定为 4 步：
 2. 通过“已有 key”倒推出 group
 3. 通过 platform 折叠 group 后的近似视图
 
-如果后端当前 adapter 里没有 `allowed_groups` 能力，则应先扩展 relay adapter，再暴露 `/user` 页面，而不是继续沿用错误的 `platforms[]` 合同。
+如果后端当前 adapter 里没有 user-scoped group fact 能力，则应先扩展 relay adapter，再暴露 `/user` 页面，而不是继续沿用错误的 `platforms[]` 合同。
 
 ### Canonical Provisioning Contract
 
@@ -268,7 +276,7 @@ Checklist 固定为 4 步：
 
 当前页面不再把 group 解析包装成 platform-aware 默认解析问题。对于 `/user`：
 
-1. group 由 `allowed_groups` 直接给出
+1. group 由 relay user-scoped facts 给出；`allowed_groups` 为 ID 时由 adapter 解析成完整 group
 2. 用户点击 create / regenerate 时，目标 `group_id` 就是用户选中的 group
 3. 不允许再用 “当前 platform 对应默认 group” 替代显式 group 选择
 
@@ -302,19 +310,22 @@ Checklist 固定为 4 步：
 
 `Create Key` / `Regenerate` 必须用当前 relay user 的身份写入 sub2api 用户态 key 接口，而不是把 RelayProvider admin key 伪装成用户态写入。只要本地存在可解密的 `relay_auth_password`，后端就可以用它为当前 relay user 获取用户态 JWT；这个规则同样适用于 relay 侧角色为 `admin` 的用户。
 
-已有 relay 用户如果缺少本地可解密的 `relay_auth_password`，后端不得在 `/user` create/regenerate 阶段修改该 relay 用户密码。正确来源只有两类：
+`/user` create/regenerate 阶段必须主动补齐写入凭据，而不是把缺失凭据暴露成用户操作阻断。正确来源包括：
 
 1. Relay SSO 登录成功时，SSO provider 把用户输入的 relay password 作为 `RelayAuthPassword` 传给 auth service，后端用 `encryption.key` 加密保存。
-2. LDAP 新用户在 relay 侧没有账号时，LDAP 登录期 relay identity provisioning 创建 relay user，并保存后端生成的高熵 relay-side password。
+2. Relay SSO 登录遇到 `invalid credentials` 时，如果登录名是邮箱且 relay 侧按 email / canonical username 查不到既有用户，后端可用用户输入的 SSO password 创建 relay user；如果 relay 用户已存在，则仍按密码错误处理，不覆盖既有密码。
+3. LDAP 新用户在 relay 侧没有账号时，LDAP 登录期 relay identity provisioning 创建 relay user，并保存后端生成的高熵 relay-side password。创建后后端读取 relay `default_subscriptions` 设置并逐条调用 relay subscription assign API，使新用户具备可创建 API key 的 group entitlement。旧版本已创建但缺少 group facts 的 `provisioned_by_ai_efficiency_ldap` relay user，在后续 LDAP 登录解析身份时也可补同一组默认订阅。若本地 LDAP 用户的历史 `relay_user_id` 被后续登录修复到另一个带该 provisioning note 的 relay user，或本地用户记录缺失但登录解析到既有系统 provisioned relay user，后端会为目标 relay user 轮换新的生成密码并保存，以免本地继续持有旧 relay 身份的密码或没有可写密码。
+4. `/user` create/regenerate 发现本地用户没有 `relay_user_id`，或本地保存的 `relay_user_id` 在当前 relay/sub2api 已不存在时，通过当前 provider 按 email / canonical username 重新解析 relay user；解析不到则创建 relay user、保存生成密码，再继续 key 写入。
+5. `/user` create/regenerate 发现本地没有可解密 `relay_auth_password`，或用旧密码创建 key 失败时，后端通过 relay admin API 轮换生成密码、保存后重试一次用户态 key 写入。
 
-LDAP 登录复用既有本地 relay SSO 用户记录时，后端会把本地 `auth_source` 更新为 `ldap`，但必须保留之前 SSO 保存的 `relay_auth_password`。LDAP bind password 只用于 LDAP bind，不能使用、保存或转发给 relay。已有 relay 用户没有保存的 relay credential 时，页面应提示用户先通过 Relay SSO 登录一次；后端返回 credential-required 错误，不尝试 admin API key 创建 LLM key。
+LDAP 登录复用既有本地 relay SSO 用户记录时，后端会把本地 `auth_source` 更新为 `ldap`，但优先保留之前 SSO 保存的 `relay_auth_password`；如果后续写入发现该密码失效，再按上面的轮换规则修复。LDAP bind password 只用于 LDAP bind，不能使用、保存或转发给 relay。
 
 ### Create, Reveal, Copy, Regenerate Rules
 
 - `Create Key`
   - 仅在当前 `provider + group` 处于 `missing` 状态时可用
   - 执行一次 ensure/create，并返回新 secret
-  - 如果当前账号缺少 relay write credential，返回明确错误；已有 relay 用户需要先通过 Relay SSO 保存 credential
+  - 如果当前账号缺少 relay write credential，后端先解析/创建 relay user、轮换并保存生成密码，再用用户态 JWT 创建 key
   - 成功后前端进入 `session_visible`
 - `Reveal`
   - 当当前页面内存存在新 secret，或 `GET` 返回了 `credential.key` 时可用
@@ -324,8 +335,8 @@ LDAP 登录复用既有本地 relay SSO 用户记录时，后端会把本地 `au
   - 将完整 key 复制到剪贴板
 - `Regenerate`
   - 在 `existing_hidden` 或 `session_visible` 状态可用
-  - 先将当前 `provider + group` 下按统一合同识别出的旧 credential 标记为不可用，再按同一合同新建
-  - 如果当前账号缺少 relay write credential，返回明确错误，不撤销旧 credential
+  - 先确保 relay write credential 可用，再将当前 `provider + group` 下按统一合同识别出的旧 credential 标记为不可用，最后按同一合同新建
+  - 如果已有本地 relay password 失效，后端轮换并保存生成密码后重试用户态写入
   - 成功后前端进入 `session_visible`
 
 页面必须明确解释：
@@ -563,7 +574,7 @@ provider 的 source of truth 是 DB，而不是 runtime fallback config 视图�
 
 ### Group Source of Truth
 
-group 的 source of truth 是当前 relay user 的 `allowed_groups`，不是 provider 下 active groups 全量枚举，也不是已有 key 推断。
+group 的 source of truth 是当前 relay user 的 user-scoped group facts：`allowed_groups` 及 active subscription entries。adapter 可以读取 provider group list 来解析 `allowed_groups` ID 的详情，但不能把 provider 下 active groups 全量枚举成用户可见 group，也不能从已有 key 反推 group。
 
 ## Testing
 
