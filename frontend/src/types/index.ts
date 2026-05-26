@@ -312,14 +312,3 @@ export interface UserProviderTestResult {
   message: string
   response?: string
 }
-
-export interface VerifyReviewItem {
-  status: 'looks_good' | 'needs_attention' | 'cannot_determine'
-  message: string
-}
-
-export interface VerifyReviewSummary {
-  version: VerifyReviewItem
-  discover: VerifyReviewItem
-  doctor: VerifyReviewItem
-}

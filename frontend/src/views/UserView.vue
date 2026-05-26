@@ -6,15 +6,18 @@ import { useAuthStore } from '@/stores/auth'
 import type {
   UserProviderTestResult,
   UserProviderSummary,
-  VerifyReviewSummary,
 } from '@/types'
 import {
   buildDeviceLoginCommand,
   buildDiscoverCommand,
+  buildDoctorCommand,
+  buildHooksGlobalCommand,
+  buildHooksStatusUploadsCommand,
   buildInstallCommand,
   buildLoginCommand,
+  buildRepoInitCommand,
+  buildSyncCommand,
   buildWindowsInstallCommand,
-  reviewVerifyOutput,
 } from '@/utils/userSetupReview'
 
 const auth = useAuthStore()
@@ -27,8 +30,6 @@ const selectedGroupId = ref<string | null>(null)
 const selectedMessage = ref('')
 const sessionSecrets = reactive<Record<string, string>>({})
 const revealedSecretKeys = reactive<Record<string, boolean>>({})
-const verifyDrafts = reactive<Record<number, { version: string; discover: string; doctor: string }>>({})
-const reviewResults = reactive<Record<number, VerifyReviewSummary | null>>({})
 const providerTestModel = ref('')
 const providerTestPrompt = ref('Hi')
 const providerTestLoading = ref(false)
@@ -37,12 +38,16 @@ const providerTestResult = ref<UserProviderTestResult | null>(null)
 const currentOrigin = computed(() => window.location.origin)
 const selectedProvider = computed(() => providers.value.find((provider) => provider.id === selectedProviderId.value) ?? null)
 const selectedGroup = computed(() => selectedProvider.value?.groups.find((group) => group.group_id === selectedGroupId.value) ?? null)
-const currentReview = computed(() => (selectedProvider.value ? reviewResults[selectedProvider.value.id] ?? null : null))
 const installCommand = computed(() => buildInstallCommand(currentOrigin.value))
 const windowsInstallCommand = computed(() => buildWindowsInstallCommand(currentOrigin.value))
 const loginCommand = computed(() => buildLoginCommand(currentOrigin.value))
 const deviceLoginCommand = computed(() => buildDeviceLoginCommand(currentOrigin.value))
 const discoverCommand = computed(() => selectedProvider.value ? buildDiscoverCommand(currentOrigin.value, selectedProvider.value.name) : '')
+const hooksGlobalCommand = computed(() => buildHooksGlobalCommand())
+const repoInitCommand = computed(() => buildRepoInitCommand())
+const doctorCommand = computed(() => buildDoctorCommand())
+const syncCommand = computed(() => buildSyncCommand())
+const hooksStatusUploadsCommand = computed(() => buildHooksStatusUploadsCommand())
 
 function secretStateKey(providerId: number, groupId: string) {
   return `${providerId}:${groupId}`
@@ -62,13 +67,6 @@ const displayedSecret = computed(() => {
   return isSecretRevealed.value ? selectedKeyValue.value : maskApiKey(selectedKeyValue.value)
 })
 
-function ensureVerifyDraft(providerId: number) {
-  if (!verifyDrafts[providerId]) {
-    verifyDrafts[providerId] = { version: '', discover: '', doctor: '' }
-  }
-  return verifyDrafts[providerId]
-}
-
 function selectDefaultGroup(provider: UserProviderSummary | null) {
   selectedGroupId.value = provider?.groups[0]?.group_id ?? null
 }
@@ -77,18 +75,12 @@ function selectDefaultProvider(rows: UserProviderSummary[]) {
   const primary = rows.find((provider) => provider.is_primary)
   selectedProviderId.value = primary?.id ?? rows[0]?.id ?? null
   const provider = rows.find((item) => item.id === selectedProviderId.value) ?? null
-  if (provider) {
-    ensureVerifyDraft(provider.id)
-  }
   selectDefaultGroup(provider)
 }
 
 function selectProvider(providerId: number) {
   selectedProviderId.value = providerId
   const provider = providers.value.find((item) => item.id === providerId) ?? null
-  if (provider) {
-    ensureVerifyDraft(provider.id)
-  }
   selectDefaultGroup(provider)
 }
 
@@ -209,28 +201,6 @@ async function handleTestProvider() {
     }
   } finally {
     providerTestLoading.value = false
-  }
-}
-
-function handleReviewVerify() {
-  if (!selectedProvider.value) return
-  const draft = ensureVerifyDraft(selectedProvider.value.id)
-  reviewResults[selectedProvider.value.id] = reviewVerifyOutput({
-    selectedProviderName: selectedProvider.value.name,
-    versionOutput: draft.version,
-    discoverOutput: draft.discover,
-    doctorOutput: draft.doctor,
-  })
-}
-
-function reviewClass(status: string) {
-  switch (status) {
-    case 'looks_good':
-      return 'bg-green-50 text-green-700'
-    case 'needs_attention':
-      return 'bg-amber-50 text-amber-800'
-    default:
-      return 'bg-gray-100 text-gray-700'
   }
 }
 
@@ -442,67 +412,68 @@ onMounted(loadProviders)
           <section class="rounded-lg bg-white p-5 shadow">
             <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-900">CLI Setup Checklist</h2>
 
-            <div class="mt-4 space-y-4 text-sm">
+            <div class="mt-4 space-y-5 text-sm">
               <div class="rounded-md border border-gray-200 p-4">
-                <div class="font-medium text-gray-900">1. Install</div>
-                <div class="mt-3 text-xs font-medium uppercase tracking-wide text-gray-500">macOS / Linux</div>
-                <pre class="mt-2 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-xs text-green-300">{{ installCommand }}</pre>
-                <div class="mt-3 text-xs font-medium uppercase tracking-wide text-gray-500">Windows PowerShell</div>
-                <pre class="mt-2 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-xs text-green-300">{{ windowsInstallCommand }}</pre>
-              </div>
-
-              <div class="rounded-md border border-gray-200 p-4">
-                <div class="font-medium text-gray-900">2. Login</div>
-                <pre class="mt-2 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-xs text-green-300">{{ loginCommand }}</pre>
-                <pre class="mt-2 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-xs text-green-300">{{ deviceLoginCommand }}</pre>
-              </div>
-
-              <div class="rounded-md border border-gray-200 p-4">
-                <div class="font-medium text-gray-900">3. Discover</div>
-                <pre class="mt-2 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-xs text-green-300">{{ discoverCommand || 'Select a provider to build the discover command.' }}</pre>
-              </div>
-
-              <div v-if="selectedProvider" class="rounded-md border border-gray-200 p-4">
-                <div class="font-medium text-gray-900">4. Verify</div>
-                <div class="mt-3 space-y-3">
-                  <textarea
-                    v-model="ensureVerifyDraft(selectedProvider.id).version"
-                    rows="3"
-                    class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-                    placeholder="Paste ae-cli version output"
-                  />
-                  <textarea
-                    v-model="ensureVerifyDraft(selectedProvider.id).discover"
-                    rows="4"
-                    class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-                    placeholder="Paste ae-cli discover --dry-run output"
-                  />
-                  <textarea
-                    v-model="ensureVerifyDraft(selectedProvider.id).doctor"
-                    rows="4"
-                    class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-                    placeholder="Paste ae-cli doctor output"
-                  />
-                  <button
-                    class="rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-black"
-                    @click="handleReviewVerify"
-                  >
-                    Review
-                  </button>
-                </div>
-
-                <div v-if="currentReview" class="mt-4 space-y-2">
-                  <div :class="['rounded-md px-3 py-2 text-sm', reviewClass(currentReview.version.status)]">
-                    Version: {{ currentReview.version.message }}
+                <div class="font-medium text-gray-900">Machine Setup</div>
+                <div class="mt-4 space-y-4">
+                  <div>
+                    <div class="text-sm font-medium text-gray-900">1. Install CLI</div>
+                    <div class="mt-3 text-xs font-medium uppercase tracking-wide text-gray-500">macOS / Linux</div>
+                    <pre class="mt-2 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-xs text-green-300">{{ installCommand }}</pre>
+                    <div class="mt-3 text-xs font-medium uppercase tracking-wide text-gray-500">Windows PowerShell</div>
+                    <pre class="mt-2 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-xs text-green-300">{{ windowsInstallCommand }}</pre>
                   </div>
-                  <div :class="['rounded-md px-3 py-2 text-sm', reviewClass(currentReview.discover.status)]">
-                    Discover: {{ currentReview.discover.message }}
+
+                  <div>
+                    <div class="text-sm font-medium text-gray-900">2. Login</div>
+                    <pre class="mt-2 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-xs text-green-300">{{ loginCommand }}</pre>
+                    <pre class="mt-2 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-xs text-green-300">{{ deviceLoginCommand }}</pre>
                   </div>
-                  <div :class="['rounded-md px-3 py-2 text-sm', reviewClass(currentReview.doctor.status)]">
-                    Doctor: {{ currentReview.doctor.message }}
+
+                  <div>
+                    <div class="text-sm font-medium text-gray-900">3. Configure local AI tools</div>
+                    <pre class="mt-2 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-xs text-green-300">{{ discoverCommand || 'Select a provider to build the discover command.' }}</pre>
+                  </div>
+
+                  <div>
+                    <div class="text-sm font-medium text-gray-900">4. Enable automatic Git hooks</div>
+                    <pre class="mt-2 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-xs text-green-300">{{ hooksGlobalCommand }}</pre>
+                    <p class="mt-2 text-xs text-gray-500">Machine-level hook setup. It only reports backend-known eligible repositories.</p>
                   </div>
                 </div>
               </div>
+
+              <div class="rounded-md border border-gray-200 p-4">
+                <div class="font-medium text-gray-900">Per-Repo Setup</div>
+                <div class="mt-4 space-y-4">
+                  <div>
+                    <div class="text-sm font-medium text-gray-900">1. Go to the repo you want to report</div>
+                    <pre class="mt-2 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-xs text-green-300">cd &lt;repo&gt;</pre>
+                  </div>
+                  <div>
+                    <div class="text-sm font-medium text-gray-900">2. Initialize repo attribution</div>
+                    <pre class="mt-2 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-xs text-green-300">{{ repoInitCommand }}</pre>
+                  </div>
+                  <div>
+                    <div class="text-sm font-medium text-gray-900">3. Diagnose setup</div>
+                    <pre class="mt-2 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-xs text-green-300">{{ doctorCommand }}</pre>
+                  </div>
+                </div>
+              </div>
+
+              <details class="rounded-md border border-gray-200 p-4">
+                <summary class="cursor-pointer font-medium text-gray-900">Manual backfill / recovery</summary>
+                <div class="mt-4 space-y-4">
+                  <div>
+                    <div class="text-sm font-medium text-gray-900">Run a manual attribution sync</div>
+                    <pre class="mt-2 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-xs text-green-300">{{ syncCommand }}</pre>
+                  </div>
+                  <div>
+                    <div class="text-sm font-medium text-gray-900">Inspect hook upload status</div>
+                    <pre class="mt-2 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-xs text-green-300">{{ hooksStatusUploadsCommand }}</pre>
+                  </div>
+                </div>
+              </details>
             </div>
           </section>
         </div>
