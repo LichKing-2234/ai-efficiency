@@ -1,7 +1,9 @@
 package relay
 
 import (
+	"bytes"
 	"encoding/json"
+	"strings"
 	"time"
 )
 
@@ -10,17 +12,21 @@ type User struct {
 	Email         string  `json:"email"`
 	Username      string  `json:"username"`
 	Role          string  `json:"role"`
+	Notes         string  `json:"notes,omitempty"`
 	Concurrency   int     `json:"concurrency,omitempty"`
 	AllowedGroups []Group `json:"allowed_groups,omitempty"`
+	// AllowedGroupIDs holds IDs that need hydration when allowed_groups is not already a complete group object list.
+	AllowedGroupIDs []int64 `json:"-"`
 }
 
 type CreateUserRequest struct {
-	Username    string `json:"username"`
-	Email       string `json:"email"`
-	Password    string `json:"password"`
-	Role        string `json:"role,omitempty"`
-	Notes       string `json:"notes,omitempty"`
-	Concurrency int    `json:"concurrency,omitempty"`
+	Username      string  `json:"username"`
+	Email         string  `json:"email"`
+	Password      string  `json:"password"`
+	Role          string  `json:"role,omitempty"`
+	Notes         string  `json:"notes,omitempty"`
+	Concurrency   int     `json:"concurrency,omitempty"`
+	AllowedGroups []int64 `json:"allowed_groups,omitempty"`
 }
 
 type UpdateUserRequest struct {
@@ -43,9 +49,67 @@ type APIKey struct {
 }
 
 type Group struct {
-	ID       int64  `json:"id"`
-	Name     string `json:"name"`
-	Platform string `json:"platform"`
+	ID               int64  `json:"id"`
+	Name             string `json:"name"`
+	Platform         string `json:"platform"`
+	IsExclusive      bool   `json:"is_exclusive,omitempty"`
+	SubscriptionType string `json:"subscription_type,omitempty"`
+}
+
+func (u *User) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		ID            int64           `json:"id"`
+		Email         string          `json:"email"`
+		Username      string          `json:"username"`
+		Role          string          `json:"role"`
+		Notes         string          `json:"notes,omitempty"`
+		Concurrency   int             `json:"concurrency,omitempty"`
+		AllowedGroups json.RawMessage `json:"allowed_groups"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+
+	u.ID = raw.ID
+	u.Email = raw.Email
+	u.Username = raw.Username
+	u.Role = raw.Role
+	u.Notes = raw.Notes
+	u.Concurrency = raw.Concurrency
+	u.AllowedGroups = nil
+	u.AllowedGroupIDs = nil
+
+	groups, ids, err := decodeAllowedGroupFacts(raw.AllowedGroups)
+	if err != nil {
+		return err
+	}
+	u.AllowedGroups = groups
+	u.AllowedGroupIDs = ids
+	return nil
+}
+
+func decodeAllowedGroupFacts(raw json.RawMessage) ([]Group, []int64, error) {
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 || bytes.Equal(raw, []byte("null")) {
+		return nil, nil, nil
+	}
+
+	var groups []Group
+	if err := json.Unmarshal(raw, &groups); err == nil {
+		ids := make([]int64, 0, len(groups))
+		for _, group := range groups {
+			if group.ID > 0 && strings.TrimSpace(group.Platform) == "" {
+				ids = append(ids, group.ID)
+			}
+		}
+		return groups, ids, nil
+	}
+
+	var ids []int64
+	if err := json.Unmarshal(raw, &ids); err != nil {
+		return nil, nil, err
+	}
+	return nil, ids, nil
 }
 
 type APIKeyCreateRequest struct {

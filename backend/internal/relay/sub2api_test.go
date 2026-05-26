@@ -267,6 +267,26 @@ func TestGetUser(t *testing.T) {
 	}
 }
 
+func TestGetUserReturnsNilWhenNotFound(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/users/42", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"success": false,
+			"message": "not found",
+		})
+	})
+
+	p := newTestProvider(t, mux)
+	user, err := p.GetUser(context.Background(), 42)
+	if err != nil {
+		t.Fatalf("GetUser() unexpected error: %v", err)
+	}
+	if user != nil {
+		t.Fatalf("GetUser() user = %+v, want nil", user)
+	}
+}
+
 func TestGetUserIncludesSubscribedGroups(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/admin/users/1", func(w http.ResponseWriter, r *http.Request) {
@@ -313,44 +333,38 @@ func TestGetUserIncludesSubscribedGroups(t *testing.T) {
 
 func TestListAllowedGroupsForUserUsesActiveSubscriptions(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/api/v1/admin/users", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/v1/admin/users/1", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"code": 0,
 			"data": map[string]any{
-				"items": []any{
+				"id":       1,
+				"email":    "alice@example.com",
+				"username": "alice@example.com",
+				"role":     "admin",
+				"subscriptions": []any{
 					map[string]any{
-						"id":       1,
-						"email":    "alice@example.com",
-						"username": "alice@example.com",
-						"role":     "admin",
-						"subscriptions": []any{
-							map[string]any{
-								"id":       201,
-								"user_id":  1,
-								"group_id": 5,
-								"status":   "active",
-								"group":    map[string]any{"id": 5, "name": "Group Gamma", "platform": "anthropic"},
-							},
-							map[string]any{
-								"id":       202,
-								"user_id":  1,
-								"group_id": 6,
-								"status":   "active",
-								"group":    map[string]any{"id": 6, "name": "Group Alpha", "platform": "openai"},
-							},
-							map[string]any{
-								"id":       203,
-								"user_id":  1,
-								"group_id": 7,
-								"status":   "inactive",
-								"group":    map[string]any{"id": 7, "name": "Inactive", "platform": "openai"},
-							},
-						},
+						"id":       201,
+						"user_id":  1,
+						"group_id": 5,
+						"status":   "active",
+						"group":    map[string]any{"id": 5, "name": "Group Gamma", "platform": "anthropic"},
+					},
+					map[string]any{
+						"id":       202,
+						"user_id":  1,
+						"group_id": 6,
+						"status":   "active",
+						"group":    map[string]any{"id": 6, "name": "Group Alpha", "platform": "openai"},
+					},
+					map[string]any{
+						"id":       203,
+						"user_id":  1,
+						"group_id": 7,
+						"status":   "inactive",
+						"group":    map[string]any{"id": 7, "name": "Inactive", "platform": "openai"},
 					},
 				},
-				"page":  1,
-				"pages": 1,
 			},
 		})
 	})
@@ -371,6 +385,182 @@ func TestListAllowedGroupsForUserUsesActiveSubscriptions(t *testing.T) {
 		{ID: 6, Name: "Group Alpha", Platform: "openai"},
 	}, groups); diff != "" {
 		t.Fatalf("subscribed groups mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestListAllowedGroupsForUserFallsBackToAdminListWhenDetailOmitsSubscriptions(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/users/1", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": map[string]any{
+				"id":       1,
+				"email":    "alice@example.org",
+				"username": "",
+				"role":     "admin",
+			},
+		})
+	})
+	mux.HandleFunc("/api/v1/admin/users", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": map[string]any{
+				"items": []any{
+					map[string]any{
+						"id":       2,
+						"email":    "other@example.org",
+						"username": "other",
+						"role":     "user",
+					},
+					map[string]any{
+						"id":       1,
+						"email":    "alice@example.org",
+						"username": "",
+						"role":     "admin",
+						"subscriptions": []any{
+							map[string]any{
+								"id":       301,
+								"user_id":  1,
+								"group_id": 5,
+								"status":   "active",
+								"group": map[string]any{
+									"id":                5,
+									"name":              "Group Gamma",
+									"platform":          "anthropic",
+									"subscription_type": "subscription",
+								},
+							},
+						},
+					},
+				},
+				"page":  1,
+				"pages": 1,
+			},
+		})
+	})
+
+	p := newTestProvider(t, mux)
+	groups, err := p.ListAllowedGroupsForUser(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("ListAllowedGroupsForUser() unexpected error: %v", err)
+	}
+	if diff := cmp.Diff([]relay.Group{
+		{ID: 5, Name: "Group Gamma", Platform: "anthropic", SubscriptionType: "subscription"},
+	}, groups); diff != "" {
+		t.Fatalf("allowed groups mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestListAllowedGroupsForUserUsesAllowedGroupObjectsWithoutGroupList(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/users/1", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": map[string]any{
+				"id":       1,
+				"email":    "alice@example.com",
+				"username": "alice",
+				"role":     "user",
+				"allowed_groups": []any{
+					map[string]any{
+						"id":       6,
+						"name":     "Group Alpha",
+						"platform": "openai",
+					},
+				},
+			},
+		})
+	})
+
+	p := newTestProvider(t, mux)
+	groups, err := p.ListAllowedGroupsForUser(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("ListAllowedGroupsForUser() unexpected error: %v", err)
+	}
+	if diff := cmp.Diff([]relay.Group{
+		{ID: 6, Name: "Group Alpha", Platform: "openai"},
+	}, groups); diff != "" {
+		t.Fatalf("allowed groups mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestListAllowedGroupsForUserUsesUserFactsAndGroupDetails(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/users/1", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": map[string]any{
+				"id":             1,
+				"email":          "alice@example.com",
+				"username":       "alice",
+				"role":           "user",
+				"allowed_groups": []int64{6},
+				"subscriptions": []any{
+					map[string]any{
+						"id":       201,
+						"user_id":  1,
+						"group_id": 5,
+						"status":   "active",
+						"group": map[string]any{
+							"id":                5,
+							"name":              "Group Gamma",
+							"platform":          "anthropic",
+							"subscription_type": "subscription",
+						},
+					},
+					map[string]any{
+						"id":       202,
+						"user_id":  1,
+						"group_id": 8,
+						"status":   "inactive",
+						"group":    map[string]any{"id": 8, "name": "Inactive", "platform": "openai"},
+					},
+				},
+			},
+		})
+	})
+	mux.HandleFunc("/api/v1/admin/groups", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": map[string]any{
+				"items": []any{
+					map[string]any{
+						"id":                6,
+						"name":              "Group Alpha",
+						"platform":          "openai",
+						"status":            "active",
+						"is_exclusive":      true,
+						"subscription_type": "standard",
+					},
+					map[string]any{
+						"id":                9,
+						"name":              "Other",
+						"platform":          "gemini",
+						"status":            "active",
+						"subscription_type": "standard",
+					},
+				},
+				"page":  1,
+				"pages": 1,
+			},
+		})
+	})
+
+	p := newTestProvider(t, mux)
+	groups, err := p.ListAllowedGroupsForUser(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("ListAllowedGroupsForUser() unexpected error: %v", err)
+	}
+	if diff := cmp.Diff([]relay.Group{
+		{ID: 5, Name: "Group Gamma", Platform: "anthropic", SubscriptionType: "subscription"},
+		{ID: 6, Name: "Group Alpha", Platform: "openai", IsExclusive: true, SubscriptionType: "standard"},
+	}, groups); diff != "" {
+		t.Fatalf("allowed groups mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -557,6 +747,78 @@ func TestCreateUser(t *testing.T) {
 	}
 	if u == nil || u.ID != 123 || u.Username != "newuser" {
 		t.Fatalf("CreateUser() unexpected user: %+v", u)
+	}
+}
+
+func TestCreateUserAssignsDefaultSubscriptionsFromRelaySettings(t *testing.T) {
+	var assignBodies []map[string]any
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/users", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("expected POST, got %s", r.Method)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": map[string]any{
+				"id":       123,
+				"email":    "newuser@example.com",
+				"username": "newuser",
+				"role":     "user",
+			},
+		})
+	})
+	mux.HandleFunc("/api/v1/admin/settings", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Errorf("expected GET, got %s", r.Method)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": map[string]any{
+				"default_subscriptions": []any{
+					map[string]any{"group_id": 5, "validity_days": 30},
+					map[string]any{"group_id": 6, "validity_days": 60},
+				},
+			},
+		})
+	})
+	mux.HandleFunc("/api/v1/admin/subscriptions/assign", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("expected POST, got %s", r.Method)
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode assign body: %v", err)
+		}
+		assignBodies = append(assignBodies, body)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": map[string]any{"id": len(assignBodies), "status": "active"},
+		})
+	})
+
+	p := newTestProvider(t, mux)
+	_, err := p.CreateUser(context.Background(), relay.CreateUserRequest{
+		Username:    "newuser",
+		Email:       "newuser@example.com",
+		Password:    "pw",
+		Notes:       "test",
+		Concurrency: 5,
+	})
+	if err != nil {
+		t.Fatalf("CreateUser() unexpected error: %v", err)
+	}
+	if len(assignBodies) != 2 {
+		t.Fatalf("assigned subscriptions = %d, want 2", len(assignBodies))
+	}
+	if assignBodies[0]["user_id"] != float64(123) || assignBodies[0]["group_id"] != float64(5) || assignBodies[0]["validity_days"] != float64(30) {
+		t.Fatalf("unexpected first assign body: %+v", assignBodies[0])
+	}
+	if assignBodies[1]["user_id"] != float64(123) || assignBodies[1]["group_id"] != float64(6) || assignBodies[1]["validity_days"] != float64(60) {
+		t.Fatalf("unexpected second assign body: %+v", assignBodies[1])
 	}
 }
 

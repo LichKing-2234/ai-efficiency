@@ -290,6 +290,50 @@ func TestLoginSSOPersistsEncryptedRelayAuthPassword(t *testing.T) {
 	}
 }
 
+func TestLoginSSOCreatesMissingRelayAndLocalUser(t *testing.T) {
+	client := setupAuthEntClient(t)
+	encryptionKey := "0000000000000000000000000000000000000000000000000000000000000000"
+	svc := NewService(client, "test-secret-key-for-unit-tests!!", 7200, 604800, zap.NewNop(), encryptionKey)
+	relayMock := &mockRelayProvider{authErr: relay.ErrInvalidCredentials}
+	svc.RegisterProvider(NewSSOProvider(relayMock, zap.NewNop()))
+
+	_, info, err := svc.Login(context.Background(), LoginRequest{
+		Username: "alice@example.com",
+		Password: "test-password",
+		Source:   "sso",
+	})
+	if err != nil {
+		t.Fatalf("Login error: %v", err)
+	}
+	if info == nil || info.RelayUserID == nil || *info.RelayUserID != 77 {
+		t.Fatalf("unexpected user info: %+v", info)
+	}
+	if len(relayMock.createUserCalls) != 1 {
+		t.Fatalf("expected relay user creation, got %+v", relayMock.createUserCalls)
+	}
+	if relayMock.createUserCalls[0].Password != "test-password" {
+		t.Fatal("expected SSO password to provision missing relay user")
+	}
+
+	u, err := client.User.Query().Where(entuser.EmailEQ("alice@example.com")).Only(context.Background())
+	if err != nil {
+		t.Fatalf("query user: %v", err)
+	}
+	if u.RelayUserID == nil || *u.RelayUserID != 77 {
+		t.Fatalf("relay_user_id = %v, want 77", u.RelayUserID)
+	}
+	if u.RelayAuthPassword == nil || *u.RelayAuthPassword == "" {
+		t.Fatal("expected encrypted relay auth password to be stored")
+	}
+	decrypted, err := svc.DecryptRelayAuthPassword(*u.RelayAuthPassword)
+	if err != nil {
+		t.Fatalf("DecryptRelayAuthPassword error: %v", err)
+	}
+	if decrypted != "test-password" {
+		t.Fatalf("stored relay password = %q, want test-password", decrypted)
+	}
+}
+
 func TestLoginSpecificProviderNotFound(t *testing.T) {
 	svc, _ := newTestServiceWithDB(t)
 	svc.RegisterProvider(&mockAuthProvider{name: "ldap"})
@@ -728,6 +772,130 @@ func TestEnsureLocalUserRepairsWrongStoredRelayUserIDForLDAP(t *testing.T) {
 	}
 }
 
+func TestEnsureLocalUserResetsGeneratedRelayPasswordWhenLDAPRepairMovesToProvisionedUser(t *testing.T) {
+	client := setupAuthEntClient(t)
+	encryptionKey := "0000000000000000000000000000000000000000000000000000000000000000"
+	svc := NewService(client, "test-secret-key-for-unit-tests!!", 7200, 604800, zap.NewNop(), encryptionKey)
+	ctx := context.Background()
+
+	oldEncryptedPassword, err := svc.encryptRelayAuthPassword("old-relay-password")
+	if err != nil {
+		t.Fatalf("encryptRelayAuthPassword error: %v", err)
+	}
+	_, err = client.User.Create().
+		SetUsername("alice@example.com").
+		SetEmail("alice@example.com").
+		SetAuthSource(entuser.AuthSourceLdap).
+		SetRole(entuser.RoleUser).
+		SetRelayUserID(19).
+		SetRelayAuthPassword(oldEncryptedPassword).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	api := &fakeRelayIdentityAPI{
+		findResult: &relay.User{
+			ID:          27,
+			Username:    "alice",
+			Email:       "alice@example.com",
+			Role:        "user",
+			Notes:       relayLDAPProvisioningNote,
+			Concurrency: defaultRelayUserConcurrency,
+			AllowedGroups: []relay.Group{
+				{ID: 6, Name: "Group Alpha", Platform: "openai"},
+			},
+		},
+	}
+	svc.SetRelayIdentityResolver(NewRelayIdentityResolver(api, "ldap.local"))
+
+	info := &UserInfo{
+		Username:   "alice@example.com",
+		Email:      "alice@example.com",
+		Role:       "user",
+		AuthSource: "ldap",
+	}
+
+	u, err := svc.ensureLocalUser(ctx, info)
+	if err != nil {
+		t.Fatalf("ensureLocalUser error: %v", err)
+	}
+	if u.RelayUserID == nil || *u.RelayUserID != 27 {
+		t.Fatalf("relay_user_id = %v, want 27", u.RelayUserID)
+	}
+	if len(api.updateUserCalls) != 1 || api.updateUserCalls[0].userID != 27 {
+		t.Fatalf("expected relay password reset for user 27, got %+v", api.updateUserCalls)
+	}
+	updatedPassword := api.updateUserCalls[0].req.Password
+	if strings.TrimSpace(updatedPassword) == "" || updatedPassword == "old-relay-password" {
+		t.Fatalf("unexpected updated relay password marker: empty=%v old=%v", strings.TrimSpace(updatedPassword) == "", updatedPassword == "old-relay-password")
+	}
+	if u.RelayAuthPassword == nil || strings.TrimSpace(*u.RelayAuthPassword) == "" {
+		t.Fatal("expected stored relay auth password")
+	}
+	decrypted, err := svc.DecryptRelayAuthPassword(*u.RelayAuthPassword)
+	if err != nil {
+		t.Fatalf("DecryptRelayAuthPassword error: %v", err)
+	}
+	if decrypted != updatedPassword {
+		t.Fatalf("stored relay password does not match relay update password")
+	}
+}
+
+func TestEnsureLocalUserStoresGeneratedRelayPasswordWhenLDAPReusesProvisionedUser(t *testing.T) {
+	client := setupAuthEntClient(t)
+	encryptionKey := "0000000000000000000000000000000000000000000000000000000000000000"
+	svc := NewService(client, "test-secret-key-for-unit-tests!!", 7200, 604800, zap.NewNop(), encryptionKey)
+	ctx := context.Background()
+
+	api := &fakeRelayIdentityAPI{
+		findResult: &relay.User{
+			ID:          27,
+			Username:    "alice",
+			Email:       "alice@example.com",
+			Role:        "user",
+			Notes:       relayLDAPProvisioningNote,
+			Concurrency: defaultRelayUserConcurrency,
+			AllowedGroups: []relay.Group{
+				{ID: 6, Name: "Group Alpha", Platform: "openai"},
+			},
+		},
+	}
+	svc.SetRelayIdentityResolver(NewRelayIdentityResolver(api, "ldap.local"))
+
+	info := &UserInfo{
+		Username:   "alice@example.com",
+		Email:      "alice@example.com",
+		Role:       "user",
+		AuthSource: "ldap",
+	}
+
+	u, err := svc.ensureLocalUser(ctx, info)
+	if err != nil {
+		t.Fatalf("ensureLocalUser error: %v", err)
+	}
+	if u.RelayUserID == nil || *u.RelayUserID != 27 {
+		t.Fatalf("relay_user_id = %v, want 27", u.RelayUserID)
+	}
+	if len(api.updateUserCalls) != 1 || api.updateUserCalls[0].userID != 27 {
+		t.Fatalf("expected relay password reset for user 27, got %+v", api.updateUserCalls)
+	}
+	updatedPassword := api.updateUserCalls[0].req.Password
+	if strings.TrimSpace(updatedPassword) == "" {
+		t.Fatal("expected generated relay password")
+	}
+	if u.RelayAuthPassword == nil || strings.TrimSpace(*u.RelayAuthPassword) == "" {
+		t.Fatal("expected stored relay auth password")
+	}
+	decrypted, err := svc.DecryptRelayAuthPassword(*u.RelayAuthPassword)
+	if err != nil {
+		t.Fatalf("DecryptRelayAuthPassword error: %v", err)
+	}
+	if decrypted != updatedPassword {
+		t.Fatalf("stored relay password does not match relay update password")
+	}
+}
+
 func TestEnsureLocalUserLDAPUsesRelayIdentityRole(t *testing.T) {
 	svc, client := newTestServiceWithDB(t)
 	ctx := context.Background()
@@ -735,8 +903,8 @@ func TestEnsureLocalUserLDAPUsesRelayIdentityRole(t *testing.T) {
 	api := &emailFirstRelayIdentityAPI{
 		emailResult: &relay.User{
 			ID:          42,
-			Username:    "luxuhui@example.com",
-			Email:       "luxuhui@example.com",
+			Username:    "bob@example.com",
+			Email:       "bob@example.com",
 			Role:        "admin",
 			Concurrency: defaultRelayUserConcurrency,
 		},
@@ -744,8 +912,8 @@ func TestEnsureLocalUserLDAPUsesRelayIdentityRole(t *testing.T) {
 	svc.SetRelayIdentityResolver(NewRelayIdentityResolver(api, "ldap.local"))
 
 	info := &UserInfo{
-		Username:   "luxuhui",
-		Email:      "luxuhui@example.com",
+		Username:   "bob",
+		Email:      "bob@example.com",
 		Role:       "user",
 		AuthSource: "ldap",
 	}
@@ -763,7 +931,7 @@ func TestEnsureLocalUserLDAPUsesRelayIdentityRole(t *testing.T) {
 	if info.Role != "admin" {
 		t.Fatalf("info.Role = %q, want admin", info.Role)
 	}
-	if len(api.findByEmailCalls) != 1 || api.findByEmailCalls[0] != "luxuhui@example.com" {
+	if len(api.findByEmailCalls) != 1 || api.findByEmailCalls[0] != "bob@example.com" {
 		t.Fatalf("expected email lookup for relay identity, got %+v", api.findByEmailCalls)
 	}
 
