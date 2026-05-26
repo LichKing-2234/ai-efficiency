@@ -968,7 +968,7 @@ cd frontend && pnpm test src/__tests__/admin-users-view.test.ts
 
 Expected result: all AdminUsersView tests pass.
 
-- [ ] **Step 7: Commit frontend admin users page**
+- [x] **Step 7: Commit frontend admin users page**
 
 Run:
 
@@ -988,7 +988,7 @@ git commit -m "feat(frontend): add admin users credentials page"
 - Modify: `frontend/src/__tests__/router.test.ts`
 - Modify: `docs/architecture.md`
 
-- [ ] **Step 1: Add failing sidebar tests**
+- [x] **Step 1: Add failing sidebar tests**
 
 In `frontend/src/__tests__/app-sidebar.test.ts`, update `createTestRouter` routes to include `/admin/users`:
 
@@ -1067,7 +1067,7 @@ it('redirects non-admin users away from admin users route', async () => {
 })
 ```
 
-- [ ] **Step 2: Run sidebar tests and confirm they fail**
+- [x] **Step 2: Run sidebar tests and confirm they fail**
 
 Run:
 
@@ -1077,7 +1077,7 @@ cd frontend && pnpm test src/__tests__/app-sidebar.test.ts src/__tests__/router.
 
 Expected result: the admin Users link test fails because the sidebar has no `/admin/users` link, and the route registration test fails because the route has not been added.
 
-- [ ] **Step 3: Add router route**
+- [x] **Step 3: Add router route**
 
 In `frontend/src/router/index.ts`, add this route before `/settings`:
 
@@ -1090,7 +1090,7 @@ In `frontend/src/router/index.ts`, add this route before `/settings`:
 },
 ```
 
-- [ ] **Step 4: Add sidebar Users link**
+- [x] **Step 4: Add sidebar Users link**
 
 In `frontend/src/components/AppSidebar.vue`, add this admin-only `RouterLink` before the Settings link:
 
@@ -1109,7 +1109,7 @@ In `frontend/src/components/AppSidebar.vue`, add this admin-only `RouterLink` be
 </RouterLink>
 ```
 
-- [ ] **Step 5: Update architecture documentation**
+- [x] **Step 5: Update architecture documentation**
 
 In `docs/architecture.md`, update the Notes list near the existing `/user` and auth bullets by adding a bullet with this content:
 
@@ -1123,7 +1123,7 @@ Also update the frontend module table row that lists views so it mentions admin 
 | Views | `frontend/src/views` | Dashboard, repos, events, oauth, user self-serve, admin users, and admin/settings pages |
 ```
 
-- [ ] **Step 6: Run route and sidebar tests and confirm they pass**
+- [x] **Step 6: Run route and sidebar tests and confirm they pass**
 
 Run:
 
