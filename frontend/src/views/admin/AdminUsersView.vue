@@ -9,7 +9,7 @@ const error = ref('')
 const rows = ref<AdminUser[]>([])
 const total = ref(0)
 const copiedState = reactive<Record<number, string>>({})
-let searchTimer: ReturnType<typeof window.setTimeout> | undefined
+let searchTimer: number | undefined
 
 const filters = reactive({
   q: '',
