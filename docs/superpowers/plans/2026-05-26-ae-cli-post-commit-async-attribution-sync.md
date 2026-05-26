@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go CLI with Cobra commands, git hook helpers in `ae-cli/internal/hooks`, attribution scanner/uploader in `ae-cli/internal/attributionlocal`, git-based tests with `go test`, markdown architecture/spec docs.
 
-**Status:** In progress. Completed steps: Task 1, Task 2 Step 1-4. Remaining: Task 2 commit step and all later tasks.
+**Status:** In progress. Completed steps: Task 1, Task 2, Task 3 Step 1-4. Remaining: Task 3 commit step and all later tasks.
 
 ---
 
@@ -426,7 +426,7 @@ cd ae-cli && go test ./cmd ./internal/hooks -run 'TestPostCommitResolvedCreatesP
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit the detached runner change**
+- [x] **Step 5: Commit the detached runner change**
 
 Run:
 
@@ -446,7 +446,7 @@ git commit -m "feat(ae-cli): move hook sync to async runner"
 - Modify: `ae-cli/cmd/hook_test.go`
 - Modify: `ae-cli/internal/hooks/handler.go`
 
-- [ ] **Step 1: Write failing visibility tests**
+- [x] **Step 1: Write failing visibility tests**
 
 Add tests for:
 
@@ -503,7 +503,7 @@ func TestSyncStatusPrintsRunningTask(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the visibility tests and verify RED**
+- [x] **Step 2: Run the visibility tests and verify RED**
 
 Run:
 
@@ -513,7 +513,7 @@ cd ae-cli && go test ./cmd -run 'TestDoctorPrintsPendingSyncTask|TestSyncStatusP
 
 Expected: fail because `doctor` and `sync status` do not print any sync-task state yet.
 
-- [ ] **Step 3: Implement CLI status printing and warning conditions**
+- [x] **Step 3: Implement CLI status printing and warning conditions**
 
 Add a helper used by both commands:
 
@@ -548,7 +548,7 @@ Update `PostCommitResolved` warning logic:
 	}
 ```
 
-- [ ] **Step 4: Run the visibility tests and verify GREEN**
+- [x] **Step 4: Run the visibility tests and verify GREEN**
 
 Run:
 

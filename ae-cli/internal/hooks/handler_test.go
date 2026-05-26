@@ -5,11 +5,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ai-efficiency/ae-cli/internal/attributionlocal"
 	"github.com/ai-efficiency/ae-cli/internal/client"
@@ -446,6 +448,80 @@ func TestPostCommitTriggersBackgroundRunnerAfterUpload(t *testing.T) {
 	}
 	if !spawned {
 		t.Fatal("expected background runner trigger")
+	}
+}
+
+func TestPostCommitDoesNotTriggerRunnerWhenLeaseIsActive(t *testing.T) {
+	repo := initRepoWithCommit2(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	execCtx := resolvedContextForRepo(t, repo)
+
+	now := time.Now().UTC()
+	if err := SaveSyncTask(SyncTask{
+		WorkspaceID:     execCtx.WorkspaceID,
+		RepoRoot:        execCtx.RepoRoot,
+		ServerURL:       execCtx.ServerURL,
+		AuthSubject:     execCtx.AuthSubject,
+		RepoConfigID:    execCtx.RepoConfigID,
+		RepoKey:         execCtx.RepoKey,
+		Status:          SyncTaskStatusRunning,
+		LastRequestedAt: now.Add(-1 * time.Minute),
+		LastStartedAt:   ptrTime(now),
+		RunnerPID:       2222,
+		LeaseExpiresAt:  ptrTime(now.Add(5 * time.Minute)),
+	}); err != nil {
+		t.Fatalf("SaveSyncTask: %v", err)
+	}
+
+	spawned := false
+	origSpawn := spawnBackgroundSyncRunner
+	spawnBackgroundSyncRunner = func(repoRoot string) error {
+		spawned = true
+		return nil
+	}
+	t.Cleanup(func() { spawnBackgroundSyncRunner = origSpawn })
+
+	h := NewHandler(syncCapableFakeUploader{fakeUploader: &fakeUploader{}})
+	if err := h.PostCommitResolved(context.Background(), execCtx); err != nil {
+		t.Fatalf("PostCommitResolved: %v", err)
+	}
+	if spawned {
+		t.Fatal("expected active lease to suppress background runner trigger")
+	}
+}
+
+func TestPostCommitWarnsWhenBackgroundRunnerSpawnFails(t *testing.T) {
+	repo := initRepoWithCommit2(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	execCtx := resolvedContextForRepo(t, repo)
+
+	origSpawn := spawnBackgroundSyncRunner
+	spawnBackgroundSyncRunner = func(repoRoot string) error {
+		return errors.New("spawn failed")
+	}
+	t.Cleanup(func() { spawnBackgroundSyncRunner = origSpawn })
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe: %v", err)
+	}
+	oldStderr := os.Stderr
+	os.Stderr = w
+	t.Cleanup(func() { os.Stderr = oldStderr })
+
+	h := NewHandler(syncCapableFakeUploader{fakeUploader: &fakeUploader{}})
+	if err := h.PostCommitResolved(context.Background(), execCtx); err != nil {
+		t.Fatalf("PostCommitResolved: %v", err)
+	}
+	_ = w.Close()
+	output, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatalf("ReadAll(stderr): %v", err)
+	}
+	if !strings.Contains(string(output), "ae-cli: attribution sync pending for this repo; run 'ae-cli doctor' for details") {
+		t.Fatalf("stderr = %q, want backlog warning", string(output))
 	}
 }
 

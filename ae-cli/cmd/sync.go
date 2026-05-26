@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/ai-efficiency/ae-cli/internal/attributionlocal"
 	"github.com/ai-efficiency/ae-cli/internal/hooks"
@@ -37,22 +38,20 @@ var syncCmd = &cobra.Command{
 		if !ok {
 			return fmt.Errorf("repository is not registered or reporting-enabled; run 'ae-cli init' or ask an admin to configure it")
 		}
-		h := hooks.NewHandler(newHookUploader())
-		if err := h.FlushResolved(context.Background(), execCtx); err != nil {
-			return fmt.Errorf("flush pending hook queue: %w", err)
-		}
-		engine := newSyncEngine(apiClient)
-		if err := runSyncEngine(engine, context.Background(), attributionlocal.RunOptions{
-			WorkspaceRoot: gitCtx.RepoRoot,
-			WorkspaceID:   execCtx.WorkspaceID,
-			ServerURL:     execCtx.ServerURL,
-			AuthSubject:   execCtx.AuthSubject,
-			RepoConfigID:  execCtx.RepoConfigID,
-			RepoKey:       execCtx.RepoKey,
-			DurableReplay: execCtx.DurableReplay,
-			ManagedUpload: true,
+		if err := hooks.UpsertPendingSyncTask(hooks.SyncTask{
+			WorkspaceID:     execCtx.WorkspaceID,
+			RepoRoot:        gitCtx.RepoRoot,
+			ServerURL:       execCtx.ServerURL,
+			AuthSubject:     execCtx.AuthSubject,
+			RepoConfigID:    execCtx.RepoConfigID,
+			RepoKey:         execCtx.RepoKey,
+			Status:          hooks.SyncTaskStatusPending,
+			LastRequestedAt: time.Now().UTC(),
 		}); err != nil {
-			return fmt.Errorf("run attribution sync: %w", err)
+			return fmt.Errorf("upsert pending sync task: %w", err)
+		}
+		if err := runBackgroundSyncTask(context.Background(), execCtx, newHookUploader()); err != nil {
+			return fmt.Errorf("run pending sync task: %w", err)
 		}
 		fmt.Fprintf(cmd.OutOrStdout(), "Synced local attribution data for %s\n", attrCtx.repoRoot)
 		return nil
@@ -63,11 +62,20 @@ var syncStatusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Show local attribution sync status",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		attrCtx, err := detectAttributionContext()
+		if err != nil {
+			return err
+		}
 		status, err := hooks.StatusForRepo(hooks.StatusOptions{CWD: ".", Uploads: true, Binding: currentHookBinding()})
 		if err != nil {
 			return err
 		}
 		printHookStatus(cmd.OutOrStdout(), status)
+		task, err := hooks.LoadSyncTask(attrCtx.workspaceID)
+		if err != nil {
+			return fmt.Errorf("load sync task: %w", err)
+		}
+		printSyncTaskStatus(cmd.OutOrStdout(), task)
 		return nil
 	},
 }

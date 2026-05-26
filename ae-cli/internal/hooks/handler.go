@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -123,11 +124,21 @@ func (h *Handler) PostCommitResolved(ctx context.Context, execCtx ExecutionConte
 		Status:          SyncTaskStatusPending,
 		LastRequestedAt: time.Now().UTC(),
 	}
+	currentTask := &task
 	if err := UpsertPendingSyncTask(task); err == nil {
-		currentTask, loadErr := LoadSyncTask(workspaceID)
-		if loadErr == nil && shouldStartSyncRunner(currentTask, time.Now().UTC()) {
-			_ = spawnBackgroundSyncRunner(repoRoot)
+		if loadedTask, loadErr := LoadSyncTask(workspaceID); loadErr == nil && loadedTask != nil {
+			currentTask = loadedTask
 		}
+		if shouldStartSyncRunner(currentTask, time.Now().UTC()) {
+			if err := spawnBackgroundSyncRunner(repoRoot); err != nil {
+				_ = MarkSyncTaskFailure(currentTask, time.Now().UTC(), err)
+				fmt.Fprintln(os.Stderr, "ae-cli: attribution sync pending for this repo; run 'ae-cli doctor' for details")
+			}
+		} else if strings.TrimSpace(currentTask.LastError) != "" {
+			fmt.Fprintln(os.Stderr, "ae-cli: attribution sync pending for this repo; run 'ae-cli doctor' for details")
+		}
+	} else {
+		fmt.Fprintln(os.Stderr, "ae-cli: attribution sync pending for this repo; run 'ae-cli doctor' for details")
 	}
 	return nil
 }

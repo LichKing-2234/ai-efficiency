@@ -44,6 +44,11 @@ var doctorCmd = &cobra.Command{
 		if status, err := hooks.StatusForRepo(hooks.StatusOptions{CWD: ctx.repoRoot, Binding: currentHookBinding()}); err == nil {
 			printHookStatus(out, status)
 		}
+		task, err := hooks.LoadSyncTask(ctx.workspaceID)
+		if err != nil {
+			return fmt.Errorf("load sync task: %w", err)
+		}
+		printSyncTaskStatus(out, task)
 		printRepoEligibilityDiagnostic(out)
 		return nil
 	},
@@ -146,6 +151,28 @@ func printHookStatus(out io.Writer, status *hooks.Status) {
 				lastError,
 			)
 		}
+	}
+}
+
+func printSyncTaskStatus(out io.Writer, task *hooks.SyncTask) {
+	if task == nil {
+		fmt.Fprintln(out, "Sync Task: none")
+		return
+	}
+	fmt.Fprintf(out, "Sync Task: %s\n", task.Status)
+	fmt.Fprintf(out, "  last_requested_at: %s\n", task.LastRequestedAt.UTC().Format(time.RFC3339))
+	if task.LastStartedAt != nil {
+		fmt.Fprintf(out, "  last_started_at: %s\n", task.LastStartedAt.UTC().Format(time.RFC3339))
+	}
+	if task.LastCompletedAt != nil {
+		fmt.Fprintf(out, "  last_completed_at: %s\n", task.LastCompletedAt.UTC().Format(time.RFC3339))
+	}
+	fmt.Fprintf(out, "  attempt_count: %d\n", task.AttemptCount)
+	if task.RunnerPID != 0 {
+		fmt.Fprintf(out, "  runner_pid: %d\n", task.RunnerPID)
+	}
+	if strings.TrimSpace(task.LastError) != "" {
+		fmt.Fprintf(out, "  last_error: %s\n", task.LastError)
 	}
 }
 
