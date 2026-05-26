@@ -454,7 +454,7 @@ cd backend && go test ./internal/handler -run 'TestAdminUsers' -count=1
 
 Expected result: all `TestAdminUsers...` tests pass.
 
-- [ ] **Step 6: Commit backend API**
+- [x] **Step 6: Commit backend API**
 
 Run:
 
@@ -473,7 +473,7 @@ git commit -m "feat(backend): add admin local users credentials API"
 - Create: `frontend/src/views/admin/AdminUsersView.vue`
 - Create: `frontend/src/__tests__/admin-users-view.test.ts`
 
-- [ ] **Step 1: Write failing AdminUsersView tests**
+- [x] **Step 1: Write failing AdminUsersView tests**
 
 Create `frontend/src/__tests__/admin-users-view.test.ts`:
 
@@ -625,7 +625,7 @@ describe('AdminUsersView', () => {
 })
 ```
 
-- [ ] **Step 2: Run AdminUsersView tests and confirm they fail**
+- [x] **Step 2: Run AdminUsersView tests and confirm they fail**
 
 Run:
 
@@ -635,7 +635,7 @@ cd frontend && pnpm test src/__tests__/admin-users-view.test.ts
 
 Expected result: the test fails because `@/views/admin/AdminUsersView.vue` and `@/api/adminUsers` do not exist yet.
 
-- [ ] **Step 3: Add frontend types**
+- [x] **Step 3: Add frontend types**
 
 Append these interfaces to `frontend/src/types/index.ts` near the other admin/API response types:
 
@@ -664,7 +664,7 @@ export interface AdminRelayPasswordRevealResponse {
 }
 ```
 
-- [ ] **Step 4: Add admin users API wrapper**
+- [x] **Step 4: Add admin users API wrapper**
 
 Create `frontend/src/api/adminUsers.ts`:
 
@@ -691,7 +691,7 @@ export function revealAdminUserRelayPassword(id: number) {
 }
 ```
 
-- [ ] **Step 5: Implement AdminUsersView**
+- [x] **Step 5: Implement AdminUsersView**
 
 Create `frontend/src/views/admin/AdminUsersView.vue`:
 
@@ -958,7 +958,7 @@ onMounted(loadUsers)
 </template>
 ```
 
-- [ ] **Step 6: Run AdminUsersView tests and confirm they pass**
+- [x] **Step 6: Run AdminUsersView tests and confirm they pass**
 
 Run:
 
