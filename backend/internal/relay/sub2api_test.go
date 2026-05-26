@@ -570,7 +570,10 @@ func TestFindUserByEmail(t *testing.T) {
 		if r.Method != http.MethodGet {
 			t.Errorf("expected GET, got %s", r.Method)
 		}
-		email := r.URL.Query().Get("email")
+		email := r.URL.Query().Get("search")
+		if got := r.URL.Query().Get("email"); got != "" {
+			t.Errorf("expected email query to be empty, got %q", got)
+		}
 		if email == "notfound@example.com" {
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]any{
@@ -645,7 +648,10 @@ func TestFindUserByUsername(t *testing.T) {
 			t.Errorf("expected Authorization header to be empty, got %q", got)
 		}
 
-		username := r.URL.Query().Get("username")
+		username := r.URL.Query().Get("search")
+		if got := r.URL.Query().Get("username"); got != "" {
+			t.Errorf("expected username query to be empty, got %q", got)
+		}
 		w.Header().Set("Content-Type", "application/json")
 		if username == "missing" {
 			json.NewEncoder(w).Encode(map[string]any{"success": true, "data": []any{}})
@@ -1462,6 +1468,160 @@ func TestFindUserByEmailRequiresExactMatchInPaginatedEnvelope(t *testing.T) {
 		t.Fatalf("FindUserByEmail() unexpected error: %v", err)
 	}
 	if user == nil || user.ID != 21 {
+		t.Fatalf("unexpected user: %+v", user)
+	}
+}
+
+func TestFindUserByEmailFallsBackToFullAdminListWhenFilteredLookupMissesExactMatch(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/users", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		email := r.URL.Query().Get("search")
+		page := r.URL.Query().Get("page")
+
+		switch {
+		case email == "carol@example.com":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"success": true,
+				"data": map[string]any{
+					"items": []any{
+						map[string]any{
+							"id":       15,
+							"email":    "bob@example.com",
+							"username": "bob",
+							"role":     "user",
+						},
+					},
+					"page":      1,
+					"page_size": 1,
+					"pages":     2,
+					"total":     2,
+				},
+			})
+		case page == "1":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"success": true,
+				"data": map[string]any{
+					"items": []any{
+						map[string]any{
+							"id":       15,
+							"email":    "bob@example.com",
+							"username": "bob",
+							"role":     "user",
+						},
+					},
+					"page":      1,
+					"page_size": 200,
+					"pages":     2,
+					"total":     2,
+				},
+			})
+		case page == "2":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"success": true,
+				"data": map[string]any{
+					"items": []any{
+						map[string]any{
+							"id":       21,
+							"email":    "carol@example.com",
+							"username": "carol",
+							"role":     "admin",
+						},
+					},
+					"page":      2,
+					"page_size": 200,
+					"pages":     2,
+					"total":     2,
+				},
+			})
+		default:
+			t.Fatalf("unexpected query: %s", r.URL.RawQuery)
+		}
+	})
+
+	p := newTestProvider(t, mux)
+	user, err := p.FindUserByEmail(context.Background(), "carol@example.com")
+	if err != nil {
+		t.Fatalf("FindUserByEmail() unexpected error: %v", err)
+	}
+	if user == nil || user.ID != 21 || user.Role != "admin" {
+		t.Fatalf("unexpected user: %+v", user)
+	}
+}
+
+func TestFindUserByUsernameFallsBackToFullAdminListWhenFilteredLookupMissesExactMatch(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/users", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		username := r.URL.Query().Get("search")
+		page := r.URL.Query().Get("page")
+
+		switch {
+		case username == "carol":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"success": true,
+				"data": map[string]any{
+					"items": []any{
+						map[string]any{
+							"id":       15,
+							"email":    "bob@example.com",
+							"username": "bob",
+							"role":     "user",
+						},
+					},
+					"page":      1,
+					"page_size": 1,
+					"pages":     2,
+					"total":     2,
+				},
+			})
+		case page == "1":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"success": true,
+				"data": map[string]any{
+					"items": []any{
+						map[string]any{
+							"id":       15,
+							"email":    "bob@example.com",
+							"username": "bob",
+							"role":     "user",
+						},
+					},
+					"page":      1,
+					"page_size": 200,
+					"pages":     2,
+					"total":     2,
+				},
+			})
+		case page == "2":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"success": true,
+				"data": map[string]any{
+					"items": []any{
+						map[string]any{
+							"id":       21,
+							"email":    "carol@example.com",
+							"username": "carol",
+							"role":     "admin",
+						},
+					},
+					"page":      2,
+					"page_size": 200,
+					"pages":     2,
+					"total":     2,
+				},
+			})
+		default:
+			t.Fatalf("unexpected query: %s", r.URL.RawQuery)
+		}
+	})
+
+	p := newTestProvider(t, mux)
+	user, err := p.FindUserByUsername(context.Background(), "carol")
+	if err != nil {
+		t.Fatalf("FindUserByUsername() unexpected error: %v", err)
+	}
+	if user == nil || user.ID != 21 || user.Role != "admin" {
 		t.Fatalf("unexpected user: %+v", user)
 	}
 }
