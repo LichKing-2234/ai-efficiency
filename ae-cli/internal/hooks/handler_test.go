@@ -16,6 +16,7 @@ import (
 	"github.com/ai-efficiency/ae-cli/internal/attributionlocal"
 	"github.com/ai-efficiency/ae-cli/internal/client"
 	"github.com/ai-efficiency/ae-cli/internal/collector"
+	"github.com/ai-efficiency/ae-cli/internal/session"
 )
 
 type fakeUploader struct {
@@ -70,14 +71,16 @@ func (r *recordingBackendHookClient) SendToolUsageEvent(ctx context.Context, req
 
 func git2(t *testing.T, dir string, args ...string) string {
 	t.Helper()
-	cmd := exec.Command("git", args...)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		t.Fatalf("git %s failed: %v\nstderr=%s", strings.Join(args, " "), err, stderr.String())
+		t.Fatalf("git %s failed: %v\nstdout=%s\nstderr=%s", strings.Join(args, " "), err, stdout.String(), stderr.String())
 	}
 	return strings.TrimSpace(stdout.String())
 }
@@ -85,10 +88,14 @@ func git2(t *testing.T, dir string, args ...string) string {
 func initRepoWithCommit2(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
-	git2(t, dir, "init")
+	git2(t, dir, "init", "--template=/dev/null")
 	git2(t, dir, "config", "user.email", "alice@example.com")
 	git2(t, dir, "config", "user.name", "alice")
+	git2(t, dir, "config", "core.hooksPath", filepath.Join(dir, ".git", "test-hooks-empty"))
 	git2(t, dir, "remote", "add", "origin", "https://github.com/acme/repo.git")
+	if err := os.MkdirAll(filepath.Join(dir, ".git", "test-hooks-empty"), 0o755); err != nil {
+		t.Fatalf("mkdir test hooks dir: %v", err)
+	}
 	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a\n"), 0o644); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
@@ -127,19 +134,19 @@ func writeCollectorFixtures(t *testing.T, workspaceRoot string) (string, string,
 
 func resolvedContextForRepo(t *testing.T, repo string) ExecutionContext {
 	t.Helper()
-	gitCtx, err := DetectGitContext(repo)
+	workspaceID, err := session.DeriveWorkspaceID(repo, repo, filepath.Join(repo, ".git"), filepath.Join(repo, ".git"))
 	if err != nil {
-		t.Fatalf("DetectGitContext: %v", err)
+		t.Fatalf("DeriveWorkspaceID: %v", err)
 	}
 	return ExecutionContext{
 		ServerURL:     "https://ae.example.com",
 		AuthSubject:   "user:123",
 		RepoConfigID:  123,
-		RepoKey:       gitCtx.RepoKey,
+		RepoKey:       "github.com/acme/repo",
 		RepoFullName:  "acme/repo",
-		WorkspaceID:   gitCtx.WorkspaceID,
-		RepoRoot:      gitCtx.RepoRoot,
-		Branch:        gitCtx.Branch,
+		WorkspaceID:   workspaceID,
+		RepoRoot:      repo,
+		Branch:        "main",
 		DurableReplay: true,
 	}
 }
@@ -178,6 +185,9 @@ func TestPostCommitResolvedQueuesOnlyWithStableBinding(t *testing.T) {
 	repo := initRepoWithCommit2(t)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	origSpawn := spawnBackgroundSyncRunner
+	spawnBackgroundSyncRunner = func(repoRoot string) error { return nil }
+	t.Cleanup(func() { spawnBackgroundSyncRunner = origSpawn })
 
 	execCtx := resolvedContextForRepo(t, repo)
 	u := &fakeUploader{err: errors.New("upload failed")}
@@ -226,6 +236,9 @@ func TestPostCommitResolvedFlushesMatchingQueuedEvents(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	execCtx := resolvedContextForRepo(t, repo)
+	origSpawn := spawnBackgroundSyncRunner
+	spawnBackgroundSyncRunner = func(repoRoot string) error { return nil }
+	t.Cleanup(func() { spawnBackgroundSyncRunner = origSpawn })
 
 	q, err := NewWorkspaceQueue(execCtx.WorkspaceID)
 	if err != nil {
@@ -360,6 +373,9 @@ func TestPostCommitSetsRepoConfigScopedEventID(t *testing.T) {
 	repo := initRepoWithCommit2(t)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	origSpawn := spawnBackgroundSyncRunner
+	spawnBackgroundSyncRunner = func(repoRoot string) error { return nil }
+	t.Cleanup(func() { spawnBackgroundSyncRunner = origSpawn })
 	execCtx := resolvedContextForRepo(t, repo)
 
 	u := &fakeUploader{}
@@ -544,6 +560,9 @@ func TestPostCommitAttachesCollectorSnapshotAndWritesWorkspaceCache(t *testing.T
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	execCtx := resolvedContextForRepo(t, repo)
+	origSpawn := spawnBackgroundSyncRunner
+	spawnBackgroundSyncRunner = func(repoRoot string) error { return nil }
+	t.Cleanup(func() { spawnBackgroundSyncRunner = origSpawn })
 
 	workspaceRoot := git2(t, repo, "rev-parse", "--show-toplevel")
 	codex, claude, kiro := writeCollectorFixtures(t, workspaceRoot)
@@ -583,6 +602,9 @@ func TestPostCommitPreservesCollectorCacheWhenNoSnapshot(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	execCtx := resolvedContextForRepo(t, repo)
+	origSpawn := spawnBackgroundSyncRunner
+	spawnBackgroundSyncRunner = func(repoRoot string) error { return nil }
+	t.Cleanup(func() { spawnBackgroundSyncRunner = origSpawn })
 
 	original := &collector.Snapshot{
 		Codex: &collector.CodexSnapshot{SourceSessionID: "codex-prev", TotalTokens: 999},
