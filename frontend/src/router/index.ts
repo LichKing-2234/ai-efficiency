@@ -57,6 +57,12 @@ const router = createRouter({
       component: () => import('@/views/UserView.vue'),
     },
     {
+      path: '/admin/users',
+      name: 'AdminUsers',
+      component: () => import('@/views/admin/AdminUsersView.vue'),
+      meta: { requireAdmin: true },
+    },
+    {
       path: '/repos/:id',
       name: 'RepoDetail',
       component: () => import('@/views/repos/RepoDetailView.vue'),

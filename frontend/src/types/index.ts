@@ -312,3 +312,26 @@ export interface UserProviderTestResult {
   message: string
   response?: string
 }
+
+export interface AdminUser {
+  id: number
+  username: string
+  email: string
+  role: string
+  auth_source: string
+  relay_user_id?: number | null
+  relay_auth_password: string
+  created_at: string
+  updated_at: string
+}
+
+export interface AdminUsersListResponse {
+  items: AdminUser[]
+  total: number
+  page: number
+  page_size: number
+}
+
+export interface AdminRelayPasswordRevealResponse {
+  password: string
+}

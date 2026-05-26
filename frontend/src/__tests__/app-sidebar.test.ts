@@ -18,6 +18,7 @@ function createTestRouter(initialPath = '/') {
       { path: '/repos', component: { template: '<div>Repos</div>' } },
       { path: '/user', component: { template: '<div>User</div>' } },
       { path: '/sessions', component: { template: '<div>Sessions</div>' } },
+      { path: '/admin/users', component: { template: '<div>Admin Users</div>' } },
       { path: '/settings', component: { template: '<div>Settings</div>' } },
       { path: '/login', component: { template: '<div>Login</div>' } },
     ],
@@ -81,6 +82,46 @@ describe('AppSidebar', () => {
     const links = wrapper.findAll('a')
     const linkTexts = links.map((l) => l.text())
     expect(linkTexts).toContain('Settings')
+  })
+
+  it('renders Users link for admin users', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+
+    const router = createTestRouter()
+    await router.push('/')
+    await router.isReady()
+
+    const { useAuthStore } = await import('@/stores/auth')
+    const auth = useAuthStore(pinia)
+    auth.user = { id: 1, username: 'admin', email: 'admin@example.com', role: 'admin', auth_source: 'relay_sso' }
+
+    const wrapper = mount(AppSidebar, {
+      global: { plugins: [pinia, router] },
+    })
+
+    const linkTexts = wrapper.findAll('a').map((l) => l.text())
+    expect(linkTexts).toContain('Users')
+  })
+
+  it('hides Users link for regular users', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+
+    const router = createTestRouter()
+    await router.push('/')
+    await router.isReady()
+
+    const { useAuthStore } = await import('@/stores/auth')
+    const auth = useAuthStore(pinia)
+    auth.user = { id: 2, username: 'alice', email: 'alice@example.com', role: 'user', auth_source: 'ldap' }
+
+    const wrapper = mount(AppSidebar, {
+      global: { plugins: [pinia, router] },
+    })
+
+    const linkTexts = wrapper.findAll('a').map((l) => l.text())
+    expect(linkTexts).not.toContain('Users')
   })
 
   it('applies active class to current route link', async () => {

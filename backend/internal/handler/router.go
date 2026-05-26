@@ -72,6 +72,7 @@ func SetupRouter(
 	eventsHandler := NewEventsHandler(toolusage.NewQueryService(entClient))
 	userSetupService := usersetup.NewService(entClient, providerHandler, encryptionKey)
 	userSetupHandler := NewUserSetupHandler(userSetupService)
+	adminUsersHandler := NewAdminUsersHandler(entClient, encryptionKey)
 
 	api := r.Group("/api/v1")
 
@@ -192,6 +193,13 @@ func SetupRouter(
 			adminProviderGroup.PUT("/:id", providerHandler.Update)
 			adminProviderGroup.DELETE("/:id", providerHandler.Delete)
 		}
+	}
+
+	adminUsersGroup := protected.Group("/admin/users")
+	adminUsersGroup.Use(auth.RequireAdmin())
+	{
+		adminUsersGroup.GET("", adminUsersHandler.List)
+		adminUsersGroup.POST("/:id/relay-password/reveal", adminUsersHandler.RevealRelayPassword)
 	}
 
 	adminCredentialGroup := protected.Group("/admin/credentials")

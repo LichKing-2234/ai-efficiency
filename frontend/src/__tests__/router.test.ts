@@ -127,6 +127,12 @@ describe('Router Guards', () => {
     expect(userRoute?.path).toBe('/user')
   })
 
+  it('includes admin users route requiring admin access', () => {
+    const adminUsersRoute = router.getRoutes().find((r) => r.name === 'AdminUsers')
+    expect(adminUsersRoute?.path).toBe('/admin/users')
+    expect(adminUsersRoute?.meta.requireAdmin).toBe(true)
+  })
+
   it('redirects authenticated users away from login using a safe redirect target', async () => {
     const { getMe: mockGetMe } = await import('@/api/auth')
     ;(mockGetMe as any).mockResolvedValue({
@@ -154,6 +160,19 @@ describe('Router Guards', () => {
     expect(router.currentRoute.value.path).toBe('/login')
     expect(localStorage.getItem('token')).toBeNull()
     expect(localStorage.getItem('refresh_token')).toBeNull()
+  })
+
+  it('redirects non-admin users away from admin users route', async () => {
+    const { getMe: mockGetMe } = await import('@/api/auth')
+    ;(mockGetMe as any).mockResolvedValue({
+      data: { data: { id: 2, username: 'alice', email: 'alice@example.com', role: 'user', auth_source: 'ldap' } },
+    })
+
+    localStorage.setItem('token', 'valid-token')
+
+    await router.push('/admin/users?case=non-admin')
+
+    expect(router.currentRoute.value.path).toBe('/')
   })
 })
 
