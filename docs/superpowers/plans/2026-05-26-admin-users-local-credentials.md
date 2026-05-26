@@ -34,7 +34,7 @@
 - Create: `backend/internal/handler/admin_users.go`
 - Modify: `backend/internal/handler/router.go`
 
-- [ ] **Step 1: Write failing backend tests**
+- [x] **Step 1: Write failing backend tests**
 
 Create `backend/internal/handler/admin_users_test.go` with these tests. They use the existing full router helpers, sanitized fixture users, and the same all-zero 32-byte hex encryption key passed to `SetupRouter` by `setupFullTestEnv`.
 
@@ -253,7 +253,7 @@ func TestAdminUsersRevealMissingEncryptionKey(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run backend tests and confirm they fail**
+- [x] **Step 2: Run backend tests and confirm they fail**
 
 Run:
 
@@ -263,7 +263,7 @@ cd backend && go test ./internal/handler -run 'TestAdminUsers' -count=1
 
 Expected result: the tests fail with `404` responses because `/api/v1/admin/users` has not been wired yet.
 
-- [ ] **Step 3: Implement `AdminUsersHandler`**
+- [x] **Step 3: Implement `AdminUsersHandler`**
 
 Create `backend/internal/handler/admin_users.go`:
 
@@ -425,7 +425,7 @@ func parseAdminUsersListRequest(c *gin.Context) adminUsersListRequest {
 }
 ```
 
-- [ ] **Step 4: Wire admin users routes**
+- [x] **Step 4: Wire admin users routes**
 
 In `backend/internal/handler/router.go`, instantiate the handler near the other handler constructors:
 
@@ -444,7 +444,7 @@ adminUsersGroup.Use(auth.RequireAdmin())
 }
 ```
 
-- [ ] **Step 5: Run backend tests and confirm they pass**
+- [x] **Step 5: Run backend tests and confirm they pass**
 
 Run:
 
