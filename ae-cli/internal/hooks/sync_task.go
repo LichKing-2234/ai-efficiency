@@ -68,6 +68,25 @@ func SaveSyncTask(task SyncTask) error {
 	return attributionlocal.SaveJSON(path, task)
 }
 
+func DeleteSyncTask(workspaceID string) error {
+	path, err := SyncTaskPath(workspaceID)
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
+func (t *SyncTask) HasActiveLease(now time.Time) bool {
+	return t != nil &&
+		t.Status == SyncTaskStatusRunning &&
+		t.RunnerPID != 0 &&
+		t.LeaseExpiresAt != nil &&
+		t.LeaseExpiresAt.After(now)
+}
+
 func UpsertPendingSyncTask(next SyncTask) error {
 	current, err := LoadSyncTask(next.WorkspaceID)
 	if err != nil {
@@ -79,10 +98,15 @@ func UpsertPendingSyncTask(next SyncTask) error {
 		next.LastStartedAt = current.LastStartedAt
 		next.LastCompletedAt = current.LastCompletedAt
 		next.LastError = current.LastError
-		next.RunnerPID = current.RunnerPID
-		next.LeaseExpiresAt = current.LeaseExpiresAt
+		if current.HasActiveLease(time.Now().UTC()) {
+			next.RunnerPID = current.RunnerPID
+			next.LeaseExpiresAt = current.LeaseExpiresAt
+			next.Status = current.Status
+		}
 	}
-	next.Status = SyncTaskStatusPending
+	if next.Status == "" {
+		next.Status = SyncTaskStatusPending
+	}
 	return SaveSyncTask(next)
 }
 
@@ -90,7 +114,7 @@ func TryAcquireSyncTaskLease(task *SyncTask, pid int, now time.Time, ttl time.Du
 	if task == nil {
 		return false, fmt.Errorf("task is nil")
 	}
-	if task.LeaseExpiresAt != nil && task.LeaseExpiresAt.After(now) && task.Status == SyncTaskStatusRunning {
+	if task.HasActiveLease(now) {
 		return false, nil
 	}
 	expires := now.Add(ttl).UTC()

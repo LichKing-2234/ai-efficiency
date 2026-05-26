@@ -83,6 +83,42 @@ func TestHookPostCommitCommandUsesBoundedContext(t *testing.T) {
 	}
 }
 
+func TestHookBackgroundSyncRunsWithoutHookTimeout(t *testing.T) {
+	repo := initRepoWithCommitForCmdTests(t)
+
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	writeTestToken(t, home, "user:123")
+	writePositiveEligibility(t, home, "github.com/acme/repo", 123)
+
+	origRun := runBackgroundSyncTask
+	var ctxErr error
+	runBackgroundSyncTask = func(ctx context.Context, execCtx hooks.ExecutionContext, uploader hooks.Uploader) error {
+		ctxErr = ctx.Err()
+		if execCtx.RepoConfigID != 123 {
+			t.Fatalf("repo_config_id = %d, want 123", execCtx.RepoConfigID)
+		}
+		return nil
+	}
+	t.Cleanup(func() { runBackgroundSyncTask = origRun })
+
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+	defer func() { _ = os.Chdir(wd) }()
+	if err := os.Chdir(repo); err != nil {
+		t.Fatalf("Chdir(repo): %v", err)
+	}
+
+	if err := hookBackgroundSyncCmd.RunE(hookBackgroundSyncCmd, nil); err != nil {
+		t.Fatalf("hook background-sync RunE: %v", err)
+	}
+	if ctxErr != nil {
+		t.Fatalf("background sync context err = %v, want nil", ctxErr)
+	}
+}
+
 func TestHookCommandHasPostRewriteSubcommand(t *testing.T) {
 	var found bool
 	for _, c := range hookCmd.Commands() {

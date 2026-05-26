@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ai-efficiency/ae-cli/internal/attributionlocal"
 	"github.com/ai-efficiency/ae-cli/internal/auth"
 	"github.com/ai-efficiency/ae-cli/internal/client"
 	"github.com/ai-efficiency/ae-cli/internal/hooks"
@@ -22,6 +21,7 @@ var hookCmd = &cobra.Command{
 
 var hookCommandTimeout = 10 * time.Second
 var hookEligibilityResolveTimeout = 500 * time.Millisecond
+var runBackgroundSyncTask = hooks.RunPendingSyncTask
 
 var newHookUploader = func() hooks.Uploader {
 	if apiClient == nil {
@@ -94,21 +94,25 @@ var hookAttributionSyncCmd = &cobra.Command{
 		if !ok {
 			return nil
 		}
-		h := hooks.NewHandler(newHookUploader())
-		if err := h.FlushResolved(ctx, execCtx); err != nil {
-			return err
+		return runBackgroundSyncTask(ctx, execCtx, newHookUploader())
+	},
+}
+
+var hookBackgroundSyncCmd = &cobra.Command{
+	Use:    "background-sync",
+	Short:  "Run async attribution sync outside hook timeout (hidden)",
+	Hidden: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cwd, _ := os.Getwd()
+		gitCtx, err := hooks.DetectGitContext(cwd)
+		if err != nil {
+			return nil
 		}
-		engine := attributionlocal.NewSyncEngine(apiClient)
-		return engine.Run(ctx, attributionlocal.RunOptions{
-			WorkspaceRoot: gitCtx.RepoRoot,
-			WorkspaceID:   execCtx.WorkspaceID,
-			ServerURL:     execCtx.ServerURL,
-			AuthSubject:   execCtx.AuthSubject,
-			RepoConfigID:  execCtx.RepoConfigID,
-			RepoKey:       execCtx.RepoKey,
-			DurableReplay: execCtx.DurableReplay,
-			ManagedUpload: true,
-		})
+		execCtx, ok := resolveHookExecutionContext(context.Background(), gitCtx)
+		if !ok {
+			return nil
+		}
+		return runBackgroundSyncTask(context.Background(), execCtx, newHookUploader())
 	},
 }
 
@@ -242,5 +246,6 @@ func init() {
 	hookCmd.AddCommand(hookPostCommitCmd)
 	hookCmd.AddCommand(hookPostRewriteCmd)
 	hookCmd.AddCommand(hookAttributionSyncCmd)
+	hookCmd.AddCommand(hookBackgroundSyncCmd)
 	rootCmd.AddCommand(hookCmd)
 }

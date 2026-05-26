@@ -379,23 +379,15 @@ func TestPostCommitSetsRepoConfigScopedEventID(t *testing.T) {
 	}
 }
 
-func TestPostCommitWithBackendUploaderUploadsCheckpointBeforeManagedToolUsageSync(t *testing.T) {
+func TestPostCommitWithBackendUploaderCreatesPendingTaskAfterCheckpointUpload(t *testing.T) {
 	repo := initRepoWithCommit2(t)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	execCtx := resolvedContextForRepo(t, repo)
 
-	workspaceRoot := git2(t, repo, "rev-parse", "--show-toplevel")
-	codexDir := filepath.Join(home, ".codex", "sessions", "2026", "05", "19")
-	if err := os.MkdirAll(codexDir, 0o700); err != nil {
-		t.Fatalf("mkdir codex dir: %v", err)
-	}
-	codexPath := filepath.Join(codexDir, "sess-hook-sync.jsonl")
-	codexBody := `{"timestamp":"2026-05-19T07:05:07Z","type":"session_meta","payload":{"id":"codex-hook-sync-1","cwd":"` + workspaceRoot + `"}}
-{"timestamp":"2026-05-19T07:05:08Z","type":"event_msg","payload":{"type":"token_count","response_id":"resp-hook-sync-1","info":{"last_token_usage":{"input_tokens":12,"cached_input_tokens":4,"output_tokens":5,"reasoning_output_tokens":2,"total_tokens":21}}}}`
-	if err := os.WriteFile(codexPath, []byte(codexBody), 0o600); err != nil {
-		t.Fatalf("write codex jsonl: %v", err)
-	}
+	origSpawn := spawnBackgroundSyncRunner
+	spawnBackgroundSyncRunner = func(repoRoot string) error { return nil }
+	t.Cleanup(func() { spawnBackgroundSyncRunner = origSpawn })
 
 	clientStub := &recordingBackendHookClient{}
 	h := NewHandler(NewBackendUploader(clientStub))
@@ -409,41 +401,42 @@ func TestPostCommitWithBackendUploaderUploadsCheckpointBeforeManagedToolUsageSyn
 	if clientStub.checkpoints[0].RepoConfigID != 123 {
 		t.Fatalf("checkpoint repo_config_id = %d, want 123", clientStub.checkpoints[0].RepoConfigID)
 	}
-	if len(clientStub.toolUsage) == 0 {
-		t.Fatal("expected tool usage uploads during post-commit sync")
+	if len(clientStub.toolUsage) != 0 {
+		t.Fatalf("tool usage uploads = %d, want 0 during post-commit fast path", len(clientStub.toolUsage))
 	}
-	if clientStub.toolUsage[0].RepoConfigID != 123 {
-		t.Fatalf("tool usage repo_config_id = %d, want 123", clientStub.toolUsage[0].RepoConfigID)
+	if len(clientStub.order) != 1 || clientStub.order[0] != "checkpoint" {
+		t.Fatalf("upload order = %v, want only checkpoint on post-commit fast path", clientStub.order)
 	}
-	if clientStub.toolUsage[0].RawSourcePath != "" || clientStub.toolUsage[0].RawSourceLocator != "" || clientStub.toolUsage[0].RawPayload != nil {
-		t.Fatalf("managed tool usage leaked raw fields: %+v", clientStub.toolUsage[0])
+	task, err := LoadSyncTask(execCtx.WorkspaceID)
+	if err != nil {
+		t.Fatalf("LoadSyncTask: %v", err)
 	}
-	if len(clientStub.order) < 2 || clientStub.order[0] != "checkpoint" || clientStub.order[1] != "tool_usage" {
-		t.Fatalf("upload order = %v, want checkpoint before tool usage", clientStub.order)
+	if task == nil || task.Status != SyncTaskStatusPending {
+		t.Fatalf("task = %+v, want pending sync task", task)
 	}
 }
 
-func TestPostCommitTriggersAttributionSyncAfterUpload(t *testing.T) {
+func TestPostCommitTriggersBackgroundRunnerAfterUpload(t *testing.T) {
 	repo := initRepoWithCommit2(t)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	execCtx := resolvedContextForRepo(t, repo)
 
-	synced := false
-	old := runAttributionSync
-	runAttributionSync = func(ctx context.Context, opts attributionlocal.RunOptions, syncClient attributionlocal.BackendClient) error {
-		synced = true
-		if opts.RepoConfigID != 123 || !opts.ManagedUpload {
-			t.Fatalf("sync opts = %+v, want managed repo_config_id", opts)
+	spawned := false
+	origSpawn := spawnBackgroundSyncRunner
+	spawnBackgroundSyncRunner = func(repoRoot string) error {
+		spawned = true
+		if repoRoot != execCtx.RepoRoot {
+			t.Fatalf("repoRoot = %q, want %q", repoRoot, execCtx.RepoRoot)
 		}
 		return nil
 	}
-	t.Cleanup(func() { runAttributionSync = old })
+	t.Cleanup(func() { spawnBackgroundSyncRunner = origSpawn })
 
 	u := &fakeUploader{
 		onCall: func() {
-			if synced {
-				t.Fatal("expected checkpoint upload before attribution sync")
+			if spawned {
+				t.Fatal("expected checkpoint upload before background runner trigger")
 			}
 		},
 	}
@@ -451,8 +444,8 @@ func TestPostCommitTriggersAttributionSyncAfterUpload(t *testing.T) {
 	if err := h.PostCommitResolved(context.Background(), execCtx); err != nil {
 		t.Fatalf("PostCommitResolved: %v", err)
 	}
-	if !synced {
-		t.Fatal("expected attribution sync")
+	if !spawned {
+		t.Fatal("expected background runner trigger")
 	}
 }
 

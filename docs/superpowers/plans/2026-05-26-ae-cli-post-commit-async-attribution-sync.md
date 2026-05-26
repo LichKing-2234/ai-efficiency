@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go CLI with Cobra commands, git hook helpers in `ae-cli/internal/hooks`, attribution scanner/uploader in `ae-cli/internal/attributionlocal`, git-based tests with `go test`, markdown architecture/spec docs.
 
-**Status:** In progress. Completed steps: Task 1 Step 1-4. Remaining: Task 1 commit step and all later tasks.
+**Status:** In progress. Completed steps: Task 1, Task 2 Step 1-4. Remaining: Task 2 commit step and all later tasks.
 
 ---
 
@@ -240,7 +240,7 @@ cd ae-cli && go test ./internal/hooks -run 'TestUpsertPendingSyncTask|TestAcquir
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit the task-state foundation**
+- [x] **Step 5: Commit the task-state foundation**
 
 Run:
 
@@ -260,7 +260,7 @@ git commit -m "feat(ae-cli): add async sync task state"
 - Modify: `ae-cli/cmd/hook_test.go`
 - Modify: `ae-cli/internal/hooks/handler_test.go`
 
-- [ ] **Step 1: Write failing hook/runner tests**
+- [x] **Step 1: Write failing hook/runner tests**
 
 Add tests covering:
 
@@ -337,7 +337,7 @@ func TestHookBackgroundSyncRunsWithoutHookTimeout(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the hook tests and verify RED**
+- [x] **Step 2: Run the hook tests and verify RED**
 
 Run:
 
@@ -347,7 +347,7 @@ cd ae-cli && go test ./cmd ./internal/hooks -run 'TestPostCommitResolvedCreatesP
 
 Expected: fail because `spawnBackgroundSyncRunner` and `hook background-sync` do not exist, and `PostCommitResolved` still calls inline sync.
 
-- [ ] **Step 3: Implement detached runner path**
+- [x] **Step 3: Implement detached runner path**
 
 Create `ae-cli/internal/hooks/background_runner.go`:
 
@@ -416,7 +416,7 @@ var hookBackgroundSyncCmd = &cobra.Command{
 }
 ```
 
-- [ ] **Step 4: Run the hook tests and verify GREEN**
+- [x] **Step 4: Run the hook tests and verify GREEN**
 
 Run:
 

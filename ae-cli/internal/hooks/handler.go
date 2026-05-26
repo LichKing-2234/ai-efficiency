@@ -109,23 +109,25 @@ func (h *Handler) PostCommitResolved(ctx context.Context, execCtx ExecutionConte
 	}
 	if h == nil || h.uploader == nil {
 		_ = enqueueForReplay(execCtx, ev)
-		return nil
-	}
-	if err := h.uploader.UploadHookEvent(ctx, ev); err != nil {
+	} else if err := h.uploader.UploadHookEvent(ctx, ev); err != nil {
 		_ = enqueueForReplay(execCtx, ev)
-		return nil
 	}
-	if syncClient := h.attributionSyncClient(); syncClient != nil {
-		_ = runAttributionSync(ctx, attributionlocal.RunOptions{
-			WorkspaceRoot: repoRoot,
-			WorkspaceID:   workspaceID,
-			ServerURL:     execCtx.ServerURL,
-			AuthSubject:   execCtx.AuthSubject,
-			RepoConfigID:  execCtx.RepoConfigID,
-			RepoKey:       execCtx.RepoKey,
-			DurableReplay: execCtx.hasStableReplayBinding(),
-			ManagedUpload: true,
-		}, syncClient)
+
+	task := SyncTask{
+		WorkspaceID:     workspaceID,
+		RepoRoot:        repoRoot,
+		ServerURL:       execCtx.ServerURL,
+		AuthSubject:     execCtx.AuthSubject,
+		RepoConfigID:    execCtx.RepoConfigID,
+		RepoKey:         execCtx.RepoKey,
+		Status:          SyncTaskStatusPending,
+		LastRequestedAt: time.Now().UTC(),
+	}
+	if err := UpsertPendingSyncTask(task); err == nil {
+		currentTask, loadErr := LoadSyncTask(workspaceID)
+		if loadErr == nil && shouldStartSyncRunner(currentTask, time.Now().UTC()) {
+			_ = spawnBackgroundSyncRunner(repoRoot)
+		}
 	}
 	return nil
 }
