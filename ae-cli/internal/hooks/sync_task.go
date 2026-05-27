@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/ai-efficiency/ae-cli/internal/attributionlocal"
@@ -21,13 +20,7 @@ const (
 
 var ErrSyncTaskAlreadyRunning = errors.New("sync task already running")
 
-var syncTaskRunnerAlive = func(pid int) bool {
-	if pid <= 0 {
-		return false
-	}
-	err := syscall.Kill(pid, 0)
-	return err == nil || errors.Is(err, syscall.EPERM)
-}
+var syncTaskRunnerAlive = syncTaskProcessAlive
 
 type SyncTask struct {
 	Version            int            `json:"version"`
