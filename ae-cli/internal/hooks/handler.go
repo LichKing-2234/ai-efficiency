@@ -129,13 +129,21 @@ func (h *Handler) PostCommitResolved(ctx context.Context, execCtx ExecutionConte
 		if loadedTask, loadErr := LoadSyncTask(workspaceID); loadErr == nil && loadedTask != nil {
 			currentTask = loadedTask
 		}
-		if syncClient != nil && shouldStartSyncRunner(currentTask, time.Now().UTC()) {
-			if err := spawnBackgroundSyncRunner(repoRoot); err != nil {
-				_ = MarkSyncTaskFailure(currentTask, time.Now().UTC(), err)
+		if syncClient != nil {
+			claimSpawn, claimedTask, claimErr := TryClaimSyncTaskSpawn(workspaceID, time.Now().UTC(), syncTaskSpawnCooldown)
+			if claimedTask != nil {
+				currentTask = claimedTask
+			}
+			if claimErr != nil {
+				fmt.Fprintln(os.Stderr, "ae-cli: attribution sync pending for this repo; run 'ae-cli doctor' for details")
+			} else if claimSpawn {
+				if err := spawnBackgroundSyncRunner(repoRoot); err != nil {
+					_ = MarkSyncTaskFailure(currentTask, time.Now().UTC(), err)
+					fmt.Fprintln(os.Stderr, "ae-cli: attribution sync pending for this repo; run 'ae-cli doctor' for details")
+				}
+			} else if strings.TrimSpace(currentTask.LastError) != "" {
 				fmt.Fprintln(os.Stderr, "ae-cli: attribution sync pending for this repo; run 'ae-cli doctor' for details")
 			}
-		} else if syncClient != nil && strings.TrimSpace(currentTask.LastError) != "" {
-			fmt.Fprintln(os.Stderr, "ae-cli: attribution sync pending for this repo; run 'ae-cli doctor' for details")
 		}
 	} else {
 		fmt.Fprintln(os.Stderr, "ae-cli: attribution sync pending for this repo; run 'ae-cli doctor' for details")

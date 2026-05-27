@@ -21,21 +21,22 @@ const (
 var ErrSyncTaskAlreadyRunning = errors.New("sync task already running")
 
 type SyncTask struct {
-	Version         int            `json:"version"`
-	WorkspaceID     string         `json:"workspace_id"`
-	RepoRoot        string         `json:"repo_root"`
-	ServerURL       string         `json:"server_url"`
-	AuthSubject     string         `json:"auth_subject"`
-	RepoConfigID    int            `json:"repo_config_id"`
-	RepoKey         string         `json:"repo_key"`
-	Status          SyncTaskStatus `json:"status"`
-	LastRequestedAt time.Time      `json:"last_requested_at"`
-	LastStartedAt   *time.Time     `json:"last_started_at,omitempty"`
-	LastCompletedAt *time.Time     `json:"last_completed_at,omitempty"`
-	LastError       string         `json:"last_error,omitempty"`
-	AttemptCount    int            `json:"attempt_count"`
-	RunnerPID       int            `json:"runner_pid,omitempty"`
-	LeaseExpiresAt  *time.Time     `json:"lease_expires_at,omitempty"`
+	Version            int            `json:"version"`
+	WorkspaceID        string         `json:"workspace_id"`
+	RepoRoot           string         `json:"repo_root"`
+	ServerURL          string         `json:"server_url"`
+	AuthSubject        string         `json:"auth_subject"`
+	RepoConfigID       int            `json:"repo_config_id"`
+	RepoKey            string         `json:"repo_key"`
+	Status             SyncTaskStatus `json:"status"`
+	LastRequestedAt    time.Time      `json:"last_requested_at"`
+	LastStartedAt      *time.Time     `json:"last_started_at,omitempty"`
+	LastCompletedAt    *time.Time     `json:"last_completed_at,omitempty"`
+	LastError          string         `json:"last_error,omitempty"`
+	AttemptCount       int            `json:"attempt_count"`
+	RunnerPID          int            `json:"runner_pid,omitempty"`
+	LeaseExpiresAt     *time.Time     `json:"lease_expires_at,omitempty"`
+	LastSpawnAttemptAt *time.Time     `json:"last_spawn_attempt_at,omitempty"`
 }
 
 func SyncTaskPath(workspaceID string) (string, error) {
@@ -125,6 +126,7 @@ func UpsertPendingSyncTask(next SyncTask) error {
 			next.LastStartedAt = current.LastStartedAt
 			next.LastCompletedAt = current.LastCompletedAt
 			next.LastError = current.LastError
+			next.LastSpawnAttemptAt = current.LastSpawnAttemptAt
 			if current.HasActiveLease(now) {
 				next.RunnerPID = current.RunnerPID
 				next.LeaseExpiresAt = current.LeaseExpiresAt
@@ -136,6 +138,36 @@ func UpsertPendingSyncTask(next SyncTask) error {
 		}
 		return SaveSyncTask(next)
 	})
+}
+
+func TryClaimSyncTaskSpawn(workspaceID string, now time.Time, cooldown time.Duration) (bool, *SyncTask, error) {
+	var out *SyncTask
+	claimed := false
+	err := withSyncTaskLock(workspaceID, now, func() error {
+		current, _, err := LoadSyncTaskRecovering(workspaceID)
+		if err != nil {
+			return err
+		}
+		if current == nil {
+			return nil
+		}
+		out = current
+		if current.HasActiveLease(now) {
+			return nil
+		}
+		if current.LastSpawnAttemptAt != nil && cooldown > 0 && now.Sub(current.LastSpawnAttemptAt.UTC()) < cooldown {
+			return nil
+		}
+		spawnedAt := now.UTC()
+		current.LastSpawnAttemptAt = &spawnedAt
+		if err := SaveSyncTask(*current); err != nil {
+			return err
+		}
+		out = current
+		claimed = true
+		return nil
+	})
+	return claimed, out, err
 }
 
 func isCorruptSyncTaskError(err error) bool {
@@ -242,6 +274,7 @@ func MarkSyncTaskSuccess(task *SyncTask, now time.Time) error {
 		latest.LastError = ""
 		latest.RunnerPID = 0
 		latest.LeaseExpiresAt = nil
+		latest.LastSpawnAttemptAt = nil
 		if err := SaveSyncTask(*latest); err != nil {
 			return err
 		}

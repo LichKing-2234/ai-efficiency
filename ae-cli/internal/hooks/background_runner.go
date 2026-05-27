@@ -11,6 +11,7 @@ import (
 )
 
 var syncTaskLeaseTTL = time.Hour
+var syncTaskSpawnCooldown = 30 * time.Second
 
 var spawnBackgroundSyncRunner = func(repoRoot string) error {
 	aeCLI, err := os.Executable()
@@ -35,10 +36,6 @@ var spawnBackgroundSyncRunner = func(repoRoot string) error {
 		_ = cmd.Process.Release()
 	}
 	return nil
-}
-
-func shouldStartSyncRunner(task *SyncTask, now time.Time) bool {
-	return task != nil && !task.HasActiveLease(now)
 }
 
 func RunPendingSyncTask(ctx context.Context, execCtx ExecutionContext, uploader Uploader) error {

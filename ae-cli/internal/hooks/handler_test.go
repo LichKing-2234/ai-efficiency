@@ -470,6 +470,32 @@ func TestPostCommitTriggersBackgroundRunnerAfterUpload(t *testing.T) {
 	}
 }
 
+func TestPostCommitThrottlesBackgroundRunnerSpawnAttempts(t *testing.T) {
+	repo := initRepoWithCommit2(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	execCtx := resolvedContextForRepo(t, repo)
+
+	var spawnCount int
+	origSpawn := spawnBackgroundSyncRunner
+	spawnBackgroundSyncRunner = func(repoRoot string) error {
+		spawnCount++
+		return nil
+	}
+	t.Cleanup(func() { spawnBackgroundSyncRunner = origSpawn })
+
+	h := NewHandler(syncCapableFakeUploader{fakeUploader: &fakeUploader{}})
+	if err := h.PostCommitResolved(context.Background(), execCtx); err != nil {
+		t.Fatalf("first PostCommitResolved: %v", err)
+	}
+	if err := h.PostCommitResolved(context.Background(), execCtx); err != nil {
+		t.Fatalf("second PostCommitResolved: %v", err)
+	}
+	if spawnCount != 1 {
+		t.Fatalf("spawn count = %d, want 1", spawnCount)
+	}
+}
+
 func TestPostCommitDoesNotTriggerRunnerWhenLeaseIsActive(t *testing.T) {
 	repo := initRepoWithCommit2(t)
 	home := t.TempDir()
