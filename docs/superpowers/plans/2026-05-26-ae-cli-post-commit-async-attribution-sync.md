@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go CLI with Cobra commands, git hook helpers in `ae-cli/internal/hooks`, attribution scanner/uploader in `ae-cli/internal/attributionlocal`, git-based tests with `go test`, markdown architecture/spec docs.
 
-**Status:** In progress. Completed tasks: Task 1, Task 2, Task 3, and Task 4 Step 1-3. Remaining: full ae-cli verification, code review, review fixes if any, push, and PR creation.
+**Status:** In progress. Completed tasks: Task 1, Task 2, Task 3, and Task 4 Step 1-4. Remaining: code review, review fixes if any, push, and PR creation.
 
 ---
 
@@ -605,7 +605,7 @@ cd ae-cli && go test ./cmd ./internal/hooks ./internal/attributionlocal -count=1
 
 Expected: PASS.
 
-- [ ] **Step 4: Run repo-level default ae-cli tests**
+- [x] **Step 4: Run repo-level default ae-cli tests**
 
 Run:
 
