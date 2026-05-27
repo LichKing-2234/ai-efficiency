@@ -376,6 +376,7 @@ ae-cli: attribution sync pending for this repo; run 'ae-cli doctor' for details
 4. `ae-cli sync` 会主动消费 pending task
 5. `ae-cli doctor` 会暴露 backlog 和 last error
 6. lease 过期后允许回收，避免 crashed runner 永久卡死
+7. tool-usage 上传遇到瞬时网关/限流错误（429/502/503/504）时，client 先做短重试；仍失败时保留剩余 events 到 spool，后续 sync 继续推进
 
 如果 `sync-task.json` 本身损坏：
 
@@ -434,6 +435,7 @@ ae-cli: attribution sync pending for this repo; run 'ae-cli doctor' for details
 3. `Claude` / `Kiro` 也通过同一 task/runner 骨架被处理
 4. runner 失败后，后续 `ae-cli sync` 能继续补传 backlog
 5. Codex 从主 checkout 启动、commit 发生在同 repo linked worktree 时，runner 仍能把 Codex event 上传到该 linked worktree 的 `workspace_id`，而不是只上传 checkpoint
+6. backend 瞬时 502 不会永久卡住 backlog；retry 失败后仍保留 spool，下一次 sync 可继续推进
 
 ## Rollout Notes
 

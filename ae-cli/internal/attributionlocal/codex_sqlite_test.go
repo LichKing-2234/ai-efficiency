@@ -23,6 +23,28 @@ func TestParseCodexSQLite_ExtractsResponseCompletedUsage(t *testing.T) {
 	}
 }
 
+func TestParseCodexSQLite_ExtractsWebsocketResponseCompletedUsage(t *testing.T) {
+	dbPath := buildCodexSQLiteFixture(t, []string{
+		`session_loop{thread_id=019e6374-fdf3-7ff2-96bf-81a5fbccd716}:responses_websocket.stream_request{}: websocket event: {"type":"response.completed","response":{"id":"resp-json","completed_at":1779855390,"usage":{"input_tokens":205901,"input_tokens_details":{"cached_tokens":205184},"output_tokens":632,"output_tokens_details":{"reasoning_tokens":244},"total_tokens":206533}}} event.timestamp=2026-05-27T04:16:30Z`,
+	})
+
+	parser := NewCodexSQLiteParser()
+	events, _, err := parser.Parse(dbPath, CodexSQLiteWatermark{})
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("event count = %d, want 1", len(events))
+	}
+	got := events[0]
+	if got.ToolSessionID != "019e6374-fdf3-7ff2-96bf-81a5fbccd716" || got.ToolEventID != "resp-json" {
+		t.Fatalf("event identity = %s/%s, want codex thread id/resp-json", got.ToolSessionID, got.ToolEventID)
+	}
+	if got.InputTokens != 205901 || got.OutputTokens != 632 || got.CachedInputTokens != 205184 || got.ReasoningTokens != 244 {
+		t.Fatalf("event usage = %+v", got)
+	}
+}
+
 func TestParseCodexSQLite_FirstScanUsesRecentLookbackWindow(t *testing.T) {
 	oldLookback := codexSQLiteInitialLookbackRows
 	codexSQLiteInitialLookbackRows = 2

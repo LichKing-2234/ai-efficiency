@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -138,6 +139,70 @@ func TestSendToolUsageEvent(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("SendToolUsageEvent: %v", err)
+	}
+}
+
+func TestSendToolUsageEventRetriesTransientGatewayStatus(t *testing.T) {
+	origBackoffs := toolUsageRetryBackoffs
+	toolUsageRetryBackoffs = []time.Duration{0}
+	t.Cleanup(func() { toolUsageRetryBackoffs = origBackoffs })
+
+	var attempts int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := atomic.AddInt32(&attempts, 1); got == 1 {
+			w.WriteHeader(http.StatusBadGateway)
+			_, _ = w.Write([]byte(`{"message":"bad gateway"}`))
+			return
+		}
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "tok")
+	err := c.SendToolUsageEvent(context.Background(), ToolUsageEventRequest{
+		Tool:            "codex",
+		WorkspaceID:     "ws-1",
+		ToolSessionID:   "conv-1",
+		DedupeKey:       "codex:conv-1:resp-1",
+		UsageUnit:       "token",
+		ObservedStartAt: time.Now().UTC(),
+		ObservedEndAt:   time.Now().UTC(),
+	})
+	if err != nil {
+		t.Fatalf("SendToolUsageEvent: %v", err)
+	}
+	if attempts != 2 {
+		t.Fatalf("attempts = %d, want 2", attempts)
+	}
+}
+
+func TestSendToolUsageEventDoesNotRetryValidationError(t *testing.T) {
+	origBackoffs := toolUsageRetryBackoffs
+	toolUsageRetryBackoffs = []time.Duration{0}
+	t.Cleanup(func() { toolUsageRetryBackoffs = origBackoffs })
+
+	var attempts int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&attempts, 1)
+		w.WriteHeader(http.StatusUnprocessableEntity)
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "tok")
+	err := c.SendToolUsageEvent(context.Background(), ToolUsageEventRequest{
+		Tool:            "codex",
+		WorkspaceID:     "ws-1",
+		ToolSessionID:   "conv-1",
+		DedupeKey:       "codex:conv-1:resp-1",
+		UsageUnit:       "token",
+		ObservedStartAt: time.Now().UTC(),
+		ObservedEndAt:   time.Now().UTC(),
+	})
+	if err == nil {
+		t.Fatal("SendToolUsageEvent error = nil, want error")
+	}
+	if attempts != 1 {
+		t.Fatalf("attempts = %d, want 1", attempts)
 	}
 }
 

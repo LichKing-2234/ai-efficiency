@@ -21,6 +21,8 @@ type Client struct {
 	httpClient *http.Client
 }
 
+var toolUsageRetryBackoffs = []time.Duration{250 * time.Millisecond, time.Second}
+
 type ProviderInfo struct {
 	Name         string                   `json:"name"`
 	DisplayName  string                   `json:"display_name"`
@@ -206,21 +208,56 @@ func (c *Client) SendToolUsageEvent(ctx context.Context, req ToolUsageEventReque
 	if err != nil {
 		return fmt.Errorf("marshal tool usage event: %w", err)
 	}
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/api/v1/tool-usage-events", bytes.NewReader(body))
-	if err != nil {
-		return fmt.Errorf("create tool usage event request: %w", err)
+	var lastErr error
+	attempts := len(toolUsageRetryBackoffs) + 1
+	for attempt := 0; attempt < attempts; attempt++ {
+		httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/api/v1/tool-usage-events", bytes.NewReader(body))
+		if err != nil {
+			return fmt.Errorf("create tool usage event request: %w", err)
+		}
+		c.setHeaders(httpReq)
+		resp, err := c.httpClient.Do(httpReq)
+		if err != nil {
+			lastErr = fmt.Errorf("send tool usage event: %w", err)
+		} else {
+			respBody, _ := io.ReadAll(resp.Body)
+			_ = resp.Body.Close()
+			if resp.StatusCode == http.StatusCreated || resp.StatusCode == http.StatusOK {
+				return nil
+			}
+			lastErr = fmt.Errorf("unexpected tool usage status %d: %s", resp.StatusCode, string(respBody))
+			if !isRetryableToolUsageStatus(resp.StatusCode) {
+				return lastErr
+			}
+		}
+		if attempt < len(toolUsageRetryBackoffs) {
+			if err := sleepWithContext(ctx, toolUsageRetryBackoffs[attempt]); err != nil {
+				return err
+			}
+		}
 	}
-	c.setHeaders(httpReq)
-	resp, err := c.httpClient.Do(httpReq)
-	if err != nil {
-		return fmt.Errorf("send tool usage event: %w", err)
+	return lastErr
+}
+
+func isRetryableToolUsageStatus(status int) bool {
+	return status == http.StatusTooManyRequests ||
+		status == http.StatusBadGateway ||
+		status == http.StatusServiceUnavailable ||
+		status == http.StatusGatewayTimeout
+}
+
+func sleepWithContext(ctx context.Context, d time.Duration) error {
+	if d <= 0 {
+		return nil
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("unexpected tool usage status %d: %s", resp.StatusCode, string(respBody))
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
 	}
-	return nil
 }
 
 func (c *Client) EnsureRepoFromRemote(ctx context.Context, remoteURL, branch string) (*RepoEnsureResponse, error) {

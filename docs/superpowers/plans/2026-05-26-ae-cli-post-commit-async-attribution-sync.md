@@ -748,3 +748,55 @@ cd ae-cli && go test ./cmd -run 'TestSyncStatusPrintsRunningTask|TestSyncStatusR
 ```
 
 Expected: PASS.
+
+---
+
+### Task 7: Follow-up Codex Websocket SQLite Usage Parsing
+
+**Files:**
+- Modify: `ae-cli/internal/attributionlocal/codex_sqlite.go`
+- Modify: `ae-cli/internal/attributionlocal/codex_sqlite_test.go`
+- Modify: `docs/architecture.md`
+- Modify: `docs/superpowers/specs/2026-05-13-sessionless-local-tool-attribution-design.md`
+
+- [x] **Step 1: Diagnose zero events after successful foreground sync**
+
+After linked-worktree matching was fixed, `ae-cli sync` completed and advanced the Codex sqlite watermark, but `/api/v1/events` for 2026-05-27 still returned `total=0`. Inspecting `~/.codex/logs_2.sqlite` showed current Codex rows use websocket JSON payloads: `websocket event: {"type":"response.completed","response":{"id":"...","usage":{...}}}`. The existing parser only recognized old text fields like `response.id=` and `input_token_count=`.
+
+- [x] **Step 2: Add websocket response.completed parser support**
+
+`parseCodexCompletedLine` now accepts websocket JSON payloads, extracting response id, input/output/cached/reasoning tokens, and timestamp while using `conversation.id` or `thread_id` as the tool session id.
+
+- [x] **Step 3: Add regression coverage**
+
+Added `TestParseCodexSQLite_ExtractsWebsocketResponseCompletedUsage`.
+
+- [x] **Step 4: Update current contract docs**
+
+Updated the sessionless attribution spec and architecture overview to document both old text counters and new websocket JSON payloads.
+
+---
+
+### Task 8: Follow-up Transient Tool-Usage Upload Retries
+
+**Files:**
+- Modify: `ae-cli/internal/client/client.go`
+- Modify: `ae-cli/internal/client/client_test.go`
+- Modify: `docs/architecture.md`
+- Modify: `docs/superpowers/specs/2026-05-26-ae-cli-post-commit-async-attribution-sync-design.md`
+
+- [x] **Step 1: Diagnose retryable backend upload failures**
+
+After websocket parsing produced events, foreground `ae-cli sync` failed on `/api/v1/tool-usage-events` with a transient `502`. Posting the first failed spooled event manually returned `201`, and retrying sync advanced the spool before hitting another `502`.
+
+- [x] **Step 2: Add short retry for transient upload statuses**
+
+`SendToolUsageEvent` now retries transient 429/502/503/504 responses before returning an error and leaving the remaining events in spool.
+
+- [x] **Step 3: Add regression coverage**
+
+Added client tests for retrying a 502 followed by success and for not retrying validation errors.
+
+- [x] **Step 4: Update current contract docs**
+
+Updated the async sync spec and architecture overview to document transient upload retry behavior.

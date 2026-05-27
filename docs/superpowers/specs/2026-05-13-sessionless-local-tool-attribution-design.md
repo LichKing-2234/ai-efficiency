@@ -141,6 +141,7 @@
   - 新格式里还有 `last_token_usage.*`
 - `logs_2.sqlite`
   - `feedback_log_body` 中存在 `codex.sse_event`
+  - 新格式中也可能存在 `codex.websocket_event` / `websocket event: {"type":"response.completed", ...}` JSON payload
   - `response.completed`
   - `response.id`
   - `conversation.id`
@@ -385,6 +386,7 @@ flowchart LR
 2. 其中 jsonl 仍承担当前主合同里的 workspace/session 识别、无 `response_id` 时的稳定行级 identity，以及 collector snapshot 的主真值语义
 3. sqlite 分支是兼容路径：
    - 当前实现只有在 sqlite `conversation.id` 命中 jsonl 中发现的 workspace session id 时才会 ingest
+   - 当前实现同时兼容旧的文本字段格式（`response.id=` / `input_token_count=`）和新的 websocket JSON payload 格式（`response.id` / `usage.input_tokens`）
    - 它不应被描述成独立的 `codexapp` 后端 tool 维度
    - 也不应被描述成当前 PR / commit usage 路径唯一必需依赖
 4. Codex session 的 workspace 识别以 `session_meta.cwd` 为主，但 linked worktree 场景允许 `session_meta.cwd` 与当前 hook workspace 不同；只要两者解析到同一个 Git common dir，当前实现仍可把该 Codex session 视为同一 repo 上下文，并用当前 hook workspace 的 `workspace_id` 上传 usage，以便绑定到 linked worktree 的 checkpoint。
