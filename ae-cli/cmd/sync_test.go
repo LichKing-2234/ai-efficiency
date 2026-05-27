@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -76,6 +77,40 @@ func TestDoctorPrintsPendingSyncTask(t *testing.T) {
 	}
 }
 
+func TestDoctorRecoversCorruptSyncTask(t *testing.T) {
+	repo := initRepoWithCommitForCmdTests(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	writeTestToken(t, home, "user:123")
+	writePositiveEligibility(t, home, "github.com/acme/repo", 123)
+	withWorkingDir(t, repo)
+
+	gitCtx, err := hooks.DetectGitContext(repo)
+	if err != nil {
+		t.Fatalf("DetectGitContext: %v", err)
+	}
+	path, err := hooks.SyncTaskPath(gitCtx.WorkspaceID)
+	if err != nil {
+		t.Fatalf("SyncTaskPath: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(path, []byte("{not-json"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	buf := &bytes.Buffer{}
+	doctorCmd.SetOut(buf)
+	doctorCmd.SetErr(buf)
+	if err := doctorCmd.RunE(doctorCmd, nil); err != nil {
+		t.Fatalf("doctorCmd.RunE: %v", err)
+	}
+	if !bytes.Contains(buf.Bytes(), []byte("corrupt sync task moved aside")) {
+		t.Fatalf("doctor output missing corrupt recovery message:\n%s", buf.String())
+	}
+}
+
 func TestSyncStatusPrintsRunningTask(t *testing.T) {
 	repo := initRepoWithCommitForCmdTests(t)
 	home := t.TempDir()
@@ -125,5 +160,93 @@ func TestSyncStatusPrintsRunningTask(t *testing.T) {
 		if !bytes.Contains(buf.Bytes(), []byte(want)) {
 			t.Fatalf("sync status output missing %q:\n%s", want, output)
 		}
+	}
+}
+
+func TestSyncStatusRecoversCorruptSyncTask(t *testing.T) {
+	repo := initRepoWithCommitForCmdTests(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	writeTestToken(t, home, "user:123")
+	writePositiveEligibility(t, home, "github.com/acme/repo", 123)
+	withWorkingDir(t, repo)
+
+	gitCtx, err := hooks.DetectGitContext(repo)
+	if err != nil {
+		t.Fatalf("DetectGitContext: %v", err)
+	}
+	path, err := hooks.SyncTaskPath(gitCtx.WorkspaceID)
+	if err != nil {
+		t.Fatalf("SyncTaskPath: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(path, []byte("{not-json"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	buf := &bytes.Buffer{}
+	syncStatusCmd.SetOut(buf)
+	syncStatusCmd.SetErr(buf)
+	if err := syncStatusCmd.RunE(syncStatusCmd, nil); err != nil {
+		t.Fatalf("syncStatusCmd.RunE: %v", err)
+	}
+	if !bytes.Contains(buf.Bytes(), []byte("corrupt sync task moved aside")) {
+		t.Fatalf("sync status output missing corrupt recovery message:\n%s", buf.String())
+	}
+}
+
+func TestSyncCommandReportsAlreadyRunningTask(t *testing.T) {
+	repo := initRepoWithCommitForCmdTests(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	writeTestToken(t, home, "user:123")
+	writePositiveEligibility(t, home, "github.com/acme/repo", 123)
+	withWorkingDir(t, repo)
+
+	oldCfg := cfg
+	oldClient := apiClient
+	cfg = nil
+	apiClient = nil
+	t.Cleanup(func() {
+		cfg = oldCfg
+		apiClient = oldClient
+	})
+
+	gitCtx, err := hooks.DetectGitContext(repo)
+	if err != nil {
+		t.Fatalf("DetectGitContext: %v", err)
+	}
+	now := time.Now().UTC()
+	task := hooks.SyncTask{
+		WorkspaceID:     gitCtx.WorkspaceID,
+		RepoRoot:        repo,
+		ServerURL:       "https://ae.example.com",
+		AuthSubject:     "user:123",
+		RepoConfigID:    123,
+		RepoKey:         gitCtx.RepoKey,
+		Status:          hooks.SyncTaskStatusRunning,
+		LastRequestedAt: now,
+		LastStartedAt:   &now,
+		RunnerPID:       4321,
+		LeaseExpiresAt:  ptrTimeValue(now.Add(5 * time.Minute)),
+	}
+	if err := hooks.SaveSyncTask(task); err != nil {
+		t.Fatalf("SaveSyncTask: %v", err)
+	}
+
+	buf := &bytes.Buffer{}
+	syncCmd.SetOut(buf)
+	syncCmd.SetErr(buf)
+	if err := syncCmd.RunE(syncCmd, nil); err != nil {
+		t.Fatalf("syncCmd.RunE: %v", err)
+	}
+	output := buf.String()
+	if bytes.Contains([]byte(output), []byte("Synced local attribution data")) {
+		t.Fatalf("sync output claimed completion while runner is active:\n%s", output)
+	}
+	if !bytes.Contains([]byte(output), []byte("Attribution sync already running")) {
+		t.Fatalf("sync output missing active runner message:\n%s", output)
 	}
 }

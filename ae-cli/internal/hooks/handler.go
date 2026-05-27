@@ -71,7 +71,6 @@ func (h *Handler) attributionSyncClient() attributionlocal.BackendClient {
 }
 
 func (h *Handler) PostCommitResolved(ctx context.Context, execCtx ExecutionContext) error {
-	_ = h.FlushResolved(ctx, execCtx)
 	repoRoot := strings.TrimSpace(execCtx.RepoRoot)
 	if repoRoot == "" {
 		return nil

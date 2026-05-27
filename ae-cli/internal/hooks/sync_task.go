@@ -1,6 +1,7 @@
 package hooks
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -16,6 +17,8 @@ const (
 	SyncTaskStatusPending SyncTaskStatus = "pending"
 	SyncTaskStatusRunning SyncTaskStatus = "running"
 )
+
+var ErrSyncTaskAlreadyRunning = errors.New("sync task already running")
 
 type SyncTask struct {
 	Version         int            `json:"version"`
@@ -42,6 +45,14 @@ func SyncTaskPath(workspaceID string) (string, error) {
 	return filepath.Join(attributionlocal.AttributionRootDir(), "workspaces", workspaceID, "sync-task.json"), nil
 }
 
+func syncTaskLockPath(workspaceID string) (string, error) {
+	taskPath, err := SyncTaskPath(workspaceID)
+	if err != nil {
+		return "", err
+	}
+	return taskPath + ".lock", nil
+}
+
 func LoadSyncTask(workspaceID string) (*SyncTask, error) {
 	path, err := SyncTaskPath(workspaceID)
 	if err != nil {
@@ -55,6 +66,20 @@ func LoadSyncTask(workspaceID string) (*SyncTask, error) {
 		return nil, err
 	}
 	return &task, nil
+}
+
+func LoadSyncTaskRecovering(workspaceID string) (*SyncTask, bool, error) {
+	task, err := LoadSyncTask(workspaceID)
+	if err == nil {
+		return task, false, nil
+	}
+	if !isCorruptSyncTaskError(err) {
+		return nil, false, err
+	}
+	if quarantineErr := quarantineCorruptSyncTask(workspaceID, time.Now().UTC()); quarantineErr != nil {
+		return nil, false, quarantineErr
+	}
+	return nil, true, nil
 }
 
 func SaveSyncTask(task SyncTask) error {
@@ -88,65 +113,176 @@ func (t *SyncTask) HasActiveLease(now time.Time) bool {
 }
 
 func UpsertPendingSyncTask(next SyncTask) error {
-	current, err := LoadSyncTask(next.WorkspaceID)
+	now := time.Now().UTC()
+	return withSyncTaskLock(next.WorkspaceID, now, func() error {
+		current, _, err := LoadSyncTaskRecovering(next.WorkspaceID)
+		if err != nil {
+			return err
+		}
+		if current != nil {
+			next.Version = current.Version
+			next.AttemptCount = current.AttemptCount
+			next.LastStartedAt = current.LastStartedAt
+			next.LastCompletedAt = current.LastCompletedAt
+			next.LastError = current.LastError
+			if current.HasActiveLease(now) {
+				next.RunnerPID = current.RunnerPID
+				next.LeaseExpiresAt = current.LeaseExpiresAt
+				next.Status = current.Status
+			}
+		}
+		if next.Status == "" {
+			next.Status = SyncTaskStatusPending
+		}
+		return SaveSyncTask(next)
+	})
+}
+
+func isCorruptSyncTaskError(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "unmarshal json:")
+}
+
+func quarantineCorruptSyncTask(workspaceID string, now time.Time) error {
+	path, err := SyncTaskPath(workspaceID)
 	if err != nil {
 		return err
 	}
-	if current != nil {
-		next.Version = current.Version
-		next.AttemptCount = current.AttemptCount
-		next.LastStartedAt = current.LastStartedAt
-		next.LastCompletedAt = current.LastCompletedAt
-		next.LastError = current.LastError
-		if current.HasActiveLease(time.Now().UTC()) {
-			next.RunnerPID = current.RunnerPID
-			next.LeaseExpiresAt = current.LeaseExpiresAt
-			next.Status = current.Status
-		}
+	backup := fmt.Sprintf("%s.corrupt.%d", path, now.UTC().UnixNano())
+	if err := os.Rename(path, backup); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("quarantine corrupt sync task: %w", err)
 	}
-	if next.Status == "" {
-		next.Status = SyncTaskStatusPending
-	}
-	return SaveSyncTask(next)
+	return nil
 }
 
 func TryAcquireSyncTaskLease(task *SyncTask, pid int, now time.Time, ttl time.Duration) (bool, error) {
 	if task == nil {
 		return false, fmt.Errorf("task is nil")
 	}
-	if task.HasActiveLease(now) {
+	acquired := false
+	err := withSyncTaskLock(task.WorkspaceID, now, func() error {
+		latest := task
+		current, err := LoadSyncTask(task.WorkspaceID)
+		if err != nil {
+			return err
+		}
+		if current != nil {
+			latest = current
+		}
+		if latest.HasActiveLease(now) {
+			*task = *latest
+			return nil
+		}
+		expires := now.Add(ttl).UTC()
+		started := now.UTC()
+		latest.Status = SyncTaskStatusRunning
+		latest.RunnerPID = pid
+		latest.LastStartedAt = &started
+		latest.LeaseExpiresAt = &expires
+		if err := SaveSyncTask(*latest); err != nil {
+			return err
+		}
+		*task = *latest
+		acquired = true
+		return nil
+	})
+	if errors.Is(err, ErrSyncTaskAlreadyRunning) {
 		return false, nil
 	}
-	expires := now.Add(ttl).UTC()
-	started := now.UTC()
-	task.Status = SyncTaskStatusRunning
-	task.RunnerPID = pid
-	task.LastStartedAt = &started
-	task.LeaseExpiresAt = &expires
-	return true, SaveSyncTask(*task)
+	return acquired, err
 }
 
 func MarkSyncTaskFailure(task *SyncTask, now time.Time, err error) error {
 	if task == nil {
 		return fmt.Errorf("task is nil")
 	}
-	task.Status = SyncTaskStatusPending
-	task.AttemptCount++
-	task.LastError = err.Error()
-	task.RunnerPID = 0
-	task.LeaseExpiresAt = nil
-	return SaveSyncTask(*task)
+	return withSyncTaskLock(task.WorkspaceID, now, func() error {
+		latest := task
+		current, loadErr := LoadSyncTask(task.WorkspaceID)
+		if loadErr != nil {
+			return loadErr
+		}
+		if current != nil {
+			latest = current
+		}
+		if latest.RunnerPID != 0 && task.RunnerPID != 0 && latest.RunnerPID != task.RunnerPID && latest.HasActiveLease(now) {
+			return nil
+		}
+		latest.Status = SyncTaskStatusPending
+		latest.AttemptCount++
+		latest.LastError = err.Error()
+		latest.RunnerPID = 0
+		latest.LeaseExpiresAt = nil
+		if saveErr := SaveSyncTask(*latest); saveErr != nil {
+			return saveErr
+		}
+		*task = *latest
+		return nil
+	})
 }
 
 func MarkSyncTaskSuccess(task *SyncTask, now time.Time) error {
 	if task == nil {
 		return fmt.Errorf("task is nil")
 	}
-	completed := now.UTC()
-	task.Status = SyncTaskStatusPending
-	task.LastCompletedAt = &completed
-	task.LastError = ""
-	task.RunnerPID = 0
-	task.LeaseExpiresAt = nil
-	return SaveSyncTask(*task)
+	return withSyncTaskLock(task.WorkspaceID, now, func() error {
+		latest := task
+		current, err := LoadSyncTask(task.WorkspaceID)
+		if err != nil {
+			return err
+		}
+		if current != nil {
+			latest = current
+		}
+		if latest.RunnerPID != 0 && task.RunnerPID != 0 && latest.RunnerPID != task.RunnerPID && latest.HasActiveLease(now) {
+			return nil
+		}
+		completed := now.UTC()
+		latest.Status = SyncTaskStatusPending
+		latest.LastCompletedAt = &completed
+		latest.LastError = ""
+		latest.RunnerPID = 0
+		latest.LeaseExpiresAt = nil
+		if err := SaveSyncTask(*latest); err != nil {
+			return err
+		}
+		*task = *latest
+		return nil
+	})
+}
+
+func withSyncTaskLock(workspaceID string, now time.Time, fn func() error) error {
+	lockPath, err := syncTaskLockPath(workspaceID)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(lockPath), 0o700); err != nil {
+		return fmt.Errorf("create sync task lock dir: %w", err)
+	}
+	const attempts = 20
+	for attempt := 0; attempt < attempts; attempt++ {
+		f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+		if err == nil {
+			_, _ = fmt.Fprintf(f, "pid=%d\ncreated_at=%s\n", os.Getpid(), now.UTC().Format(time.RFC3339Nano))
+			_ = f.Close()
+			defer func() { _ = os.Remove(lockPath) }()
+			return fn()
+		}
+		if !os.IsExist(err) {
+			return fmt.Errorf("create sync task lock: %w", err)
+		}
+		if syncTaskLockIsStale(lockPath, now) {
+			_ = os.Remove(lockPath)
+			continue
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	return ErrSyncTaskAlreadyRunning
+}
+
+func syncTaskLockIsStale(lockPath string, now time.Time) bool {
+	info, err := os.Stat(lockPath)
+	if err != nil {
+		return false
+	}
+	return now.Sub(info.ModTime()) > 30*time.Second
 }

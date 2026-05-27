@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go CLI with Cobra commands, git hook helpers in `ae-cli/internal/hooks`, attribution scanner/uploader in `ae-cli/internal/attributionlocal`, git-based tests with `go test`, markdown architecture/spec docs.
 
-**Status:** In progress. Completed tasks: Task 1, Task 2, Task 3, and Task 4 Step 1-4. Remaining: code review, review fixes if any, push, and PR creation.
+**Status:** In progress. Completed tasks: Task 1, Task 2, Task 3, and Task 4 Step 1-6. Remaining: push and PR creation.
 
 ---
 
@@ -615,7 +615,7 @@ cd ae-cli && go test ./... -count=1
 
 Expected: PASS.
 
-- [ ] **Step 5: Request code review before PR**
+- [x] **Step 5: Request code review before PR**
 
 Use the `superpowers:requesting-code-review` workflow against the implementation range:
 
@@ -633,7 +633,7 @@ BASE_SHA: $BASE_SHA
 HEAD_SHA: $HEAD_SHA
 ```
 
-- [ ] **Step 6: Fix review findings and re-run verification**
+- [x] **Step 6: Fix review findings and re-run verification**
 
 After applying any valid review feedback, rerun:
 

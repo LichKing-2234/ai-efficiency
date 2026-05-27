@@ -10,7 +10,7 @@ import (
 	"github.com/ai-efficiency/ae-cli/internal/attributionlocal"
 )
 
-var syncTaskLeaseTTL = 5 * time.Minute
+var syncTaskLeaseTTL = time.Hour
 
 var spawnBackgroundSyncRunner = func(repoRoot string) error {
 	aeCLI, err := os.Executable()
@@ -52,8 +52,11 @@ func RunPendingSyncTask(ctx context.Context, execCtx ExecutionContext, uploader 
 
 	startedAt := time.Now().UTC()
 	acquired, err := TryAcquireSyncTaskLease(task, os.Getpid(), startedAt, syncTaskLeaseTTL)
-	if err != nil || !acquired {
+	if err != nil {
 		return err
+	}
+	if !acquired {
+		return ErrSyncTaskAlreadyRunning
 	}
 
 	h := NewHandler(uploader)

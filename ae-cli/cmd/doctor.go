@@ -44,9 +44,12 @@ var doctorCmd = &cobra.Command{
 		if status, err := hooks.StatusForRepo(hooks.StatusOptions{CWD: ctx.repoRoot, Binding: currentHookBinding()}); err == nil {
 			printHookStatus(out, status)
 		}
-		task, err := hooks.LoadSyncTask(ctx.workspaceID)
+		task, recovered, err := hooks.LoadSyncTaskRecovering(ctx.workspaceID)
 		if err != nil {
 			return fmt.Errorf("load sync task: %w", err)
+		}
+		if recovered {
+			fmt.Fprintln(out, "Sync Task: corrupt sync task moved aside")
 		}
 		printSyncTaskStatus(out, task)
 		printRepoEligibilityDiagnostic(out)

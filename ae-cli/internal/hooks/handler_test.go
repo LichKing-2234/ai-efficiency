@@ -237,7 +237,7 @@ func TestPostCommitResolvedQueuesOnlyWithStableBinding(t *testing.T) {
 	}
 }
 
-func TestPostCommitResolvedFlushesMatchingQueuedEvents(t *testing.T) {
+func TestPostCommitResolvedLeavesQueuedEventsForAsyncRunner(t *testing.T) {
 	repo := initRepoWithCommit2(t)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -274,23 +274,20 @@ func TestPostCommitResolvedFlushesMatchingQueuedEvents(t *testing.T) {
 		t.Fatalf("PostCommitResolved: %v", err)
 	}
 
-	if len(u.events) != 2 {
+	if len(u.events) != 1 {
 		b, _ := json.Marshal(u.events)
-		t.Fatalf("uploaded events = %d, want 2; events=%s", len(u.events), string(b))
-	}
-	if got := u.events[0].CommitSHA; got != "old-sha" {
-		t.Fatalf("first uploaded commit = %q, want old queued commit", got)
+		t.Fatalf("uploaded events = %d, want 1; events=%s", len(u.events), string(b))
 	}
 	head := git2(t, repo, "rev-parse", "HEAD")
-	if got := u.events[1].CommitSHA; got != head {
-		t.Fatalf("second uploaded commit = %q, want current head %q", got, head)
+	if got := u.events[0].CommitSHA; got != head {
+		t.Fatalf("uploaded commit = %q, want current head %q", got, head)
 	}
 	items, err := q.List()
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
-	if len(items) != 0 {
-		t.Fatalf("queued items after post-commit = %d, want 0", len(items))
+	if len(items) != 1 || items[0].Event.CommitSHA != "old-sha" {
+		t.Fatalf("queued items after post-commit = %+v, want old queued event preserved", items)
 	}
 }
 

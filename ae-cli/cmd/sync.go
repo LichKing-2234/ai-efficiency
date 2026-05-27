@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -50,7 +51,15 @@ var syncCmd = &cobra.Command{
 		}); err != nil {
 			return fmt.Errorf("upsert pending sync task: %w", err)
 		}
-		if err := runBackgroundSyncTask(context.Background(), execCtx, newHookUploader()); err != nil {
+		if err := runBackgroundSyncTask(context.Background(), execCtx, newHookUploader()); errors.Is(err, hooks.ErrSyncTaskAlreadyRunning) {
+			fmt.Fprintf(cmd.OutOrStdout(), "Attribution sync already running for %s\n", attrCtx.repoRoot)
+			task, _, loadErr := hooks.LoadSyncTaskRecovering(execCtx.WorkspaceID)
+			if loadErr != nil {
+				return fmt.Errorf("load sync task: %w", loadErr)
+			}
+			printSyncTaskStatus(cmd.OutOrStdout(), task)
+			return nil
+		} else if err != nil {
 			return fmt.Errorf("run pending sync task: %w", err)
 		}
 		fmt.Fprintf(cmd.OutOrStdout(), "Synced local attribution data for %s\n", attrCtx.repoRoot)
@@ -71,9 +80,12 @@ var syncStatusCmd = &cobra.Command{
 			return err
 		}
 		printHookStatus(cmd.OutOrStdout(), status)
-		task, err := hooks.LoadSyncTask(attrCtx.workspaceID)
+		task, recovered, err := hooks.LoadSyncTaskRecovering(attrCtx.workspaceID)
 		if err != nil {
 			return fmt.Errorf("load sync task: %w", err)
+		}
+		if recovered {
+			fmt.Fprintln(cmd.OutOrStdout(), "Sync Task: corrupt sync task moved aside")
 		}
 		printSyncTaskStatus(cmd.OutOrStdout(), task)
 		return nil
