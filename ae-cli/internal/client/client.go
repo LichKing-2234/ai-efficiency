@@ -22,6 +22,9 @@ type Client struct {
 }
 
 var toolUsageRetryBackoffs = []time.Duration{250 * time.Millisecond, time.Second}
+var toolUsageAttemptTimeout = 15 * time.Second
+
+const toolUsageErrorBodyLimit = 4096
 
 type ProviderInfo struct {
 	Name         string                   `json:"name"`
@@ -211,20 +214,30 @@ func (c *Client) SendToolUsageEvent(ctx context.Context, req ToolUsageEventReque
 	var lastErr error
 	attempts := len(toolUsageRetryBackoffs) + 1
 	for attempt := 0; attempt < attempts; attempt++ {
-		httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/api/v1/tool-usage-events", bytes.NewReader(body))
+		attemptCtx := ctx
+		cancel := func() {}
+		if toolUsageAttemptTimeout > 0 {
+			attemptCtx, cancel = context.WithTimeout(ctx, toolUsageAttemptTimeout)
+		}
+		httpReq, err := http.NewRequestWithContext(attemptCtx, http.MethodPost, c.baseURL+"/api/v1/tool-usage-events", bytes.NewReader(body))
 		if err != nil {
+			cancel()
 			return fmt.Errorf("create tool usage event request: %w", err)
 		}
 		c.setHeaders(httpReq)
 		resp, err := c.httpClient.Do(httpReq)
 		if err != nil {
+			cancel()
 			lastErr = fmt.Errorf("send tool usage event: %w", err)
 		} else {
-			respBody, _ := io.ReadAll(resp.Body)
-			_ = resp.Body.Close()
 			if resp.StatusCode == http.StatusCreated || resp.StatusCode == http.StatusOK {
+				_ = resp.Body.Close()
+				cancel()
 				return nil
 			}
+			respBody, _ := io.ReadAll(io.LimitReader(resp.Body, toolUsageErrorBodyLimit))
+			_ = resp.Body.Close()
+			cancel()
 			lastErr = fmt.Errorf("unexpected tool usage status %d: %s", resp.StatusCode, string(respBody))
 			if !isRetryableToolUsageStatus(resp.StatusCode) {
 				return lastErr

@@ -228,6 +228,7 @@ lease 规则：
 4. lease 需要过期时间，避免进程崩溃后永久卡死
 5. 活跃 lease 必须同时满足 `runner_pid` 仍存活；如果进程已经退出但 task 未写回，`doctor` / `sync status` / 后续 sync 应恢复为 pending 并记录 `last_error`
 6. `ae-cli sync` 手工运行时也遵循同一套 lease 规则
+7. runner 必须有总运行时上限，避免 backend 连接或本地扫描异常时长期占用进程；超时后按失败处理并保留 pending task
 
 推荐语义：
 
@@ -257,7 +258,7 @@ runner 生命周期如下：
    - 增加 `attempt_count`
    - 释放 lease，等待下次重试
 
-第一版 runner 不要求长时间驻留。它是一次性后台进程，做完本轮工作就退出。
+第一版 runner 不要求长时间驻留。它是一次性后台进程，做完本轮工作就退出；如果超过运行时上限仍未完成，则释放 lease 并等待后续 sync 重试。
 
 ### Interaction with Existing Hook Queue, Spool, and Scan State
 
@@ -377,6 +378,7 @@ ae-cli: attribution sync pending for this repo; run 'ae-cli doctor' for details
 5. `ae-cli doctor` 会暴露 backlog 和 last error
 6. lease 过期后允许回收，避免 crashed runner 永久卡死
 7. tool-usage 上传遇到瞬时网关/限流错误（429/502/503/504）时，client 先做短重试；仍失败时保留剩余 events 到 spool，后续 sync 继续推进
+8. 单次 tool-usage HTTP 上传必须有独立短超时，避免某个卡住的 backend/HTTP2 响应拖住整个 runner
 
 如果 `sync-task.json` 本身损坏：
 
@@ -436,6 +438,7 @@ ae-cli: attribution sync pending for this repo; run 'ae-cli doctor' for details
 4. runner 失败后，后续 `ae-cli sync` 能继续补传 backlog
 5. Codex 从主 checkout 启动、commit 发生在同 repo linked worktree 时，runner 仍能把 Codex event 上传到该 linked worktree 的 `workspace_id`，而不是只上传 checkpoint
 6. backend 瞬时 502 不会永久卡住 backlog；retry 失败后仍保留 spool，下一次 sync 可继续推进
+7. backend 上传连接卡住时，单次 request 超时和 runner 总超时能让本地进程退出并留下可恢复状态
 
 ## Rollout Notes
 

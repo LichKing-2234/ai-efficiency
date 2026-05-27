@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go CLI with Cobra commands, git hook helpers in `ae-cli/internal/hooks`, attribution scanner/uploader in `ae-cli/internal/attributionlocal`, git-based tests with `go test`, markdown architecture/spec docs.
 
-**Status:** Complete. PR created: https://github.com/LichKing-2234/ai-efficiency/pull/59. Follow-up on 2026-05-27 fixed linked-worktree Codex session matching after real local verification found checkpoint uploads without matching `/events` rows.
+**Status:** Complete. PR created: https://github.com/LichKing-2234/ai-efficiency/pull/59. Follow-ups on 2026-05-27 fixed linked-worktree Codex session matching after real local verification found checkpoint uploads without matching `/events` rows, and bounded tool-usage upload / runner execution after a live manual sync exposed a stuck HTTPS connection.
 
 ---
 
@@ -20,6 +20,8 @@
   - Cover coalescing, lease expiry, runner acquisition, and success/failure transitions.
 - Create: `ae-cli/internal/hooks/background_runner.go`
   - Spawn detached `ae-cli hook background-sync` processes and expose a small runner API used by hook commands.
+- Modify: `ae-cli/internal/client/client.go`
+  - Bound managed tool-usage upload attempts and keep transient retry behavior from turning a stuck backend connection into a long-lived runner.
 - Modify: `ae-cli/internal/hooks/handler.go`
   - Remove inline full sync from `PostCommitResolved`.
   - Upsert pending sync task after checkpoint handling.
@@ -800,3 +802,37 @@ Added client tests for retrying a 502 followed by success and for not retrying v
 - [x] **Step 4: Update current contract docs**
 
 Updated the async sync spec and architecture overview to document transient upload retry behavior.
+
+---
+
+### Task 9: Follow-up Runtime Boundaries for Stuck Uploads
+
+**Files:**
+- Modify: `ae-cli/internal/client/client.go`
+- Modify: `ae-cli/internal/client/client_test.go`
+- Modify: `ae-cli/internal/hooks/background_runner.go`
+- Modify: `docs/architecture.md`
+- Modify: `docs/superpowers/specs/2026-05-26-ae-cli-post-commit-async-attribution-sync-design.md`
+
+- [x] **Step 1: Diagnose long-running manual sync**
+
+A live `ae-cli sync` used one runner PID and no meaningful CPU, but stayed connected to the backend HTTPS endpoint for several minutes. This was not a process fan-out problem; it showed the upload path needed explicit per-request and runner-level runtime bounds.
+
+- [x] **Step 2: Bound upload attempts and runner execution**
+
+`SendToolUsageEvent` now applies a short timeout to each managed tool-usage upload attempt, and `RunPendingSyncTask` wraps the whole runner in a total timeout. Timeout failures keep the existing pending/spool recovery semantics.
+
+- [x] **Step 3: Add regression coverage**
+
+Added a client test that verifies a slow tool-usage upload attempt returns quickly instead of waiting indefinitely.
+
+- [x] **Step 4: Run verification**
+
+Run:
+
+```bash
+cd ae-cli && go test ./internal/client ./internal/hooks ./cmd -count=1
+cd ae-cli && go test ./... -count=1
+```
+
+Expected: PASS.

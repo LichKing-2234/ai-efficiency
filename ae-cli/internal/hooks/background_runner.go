@@ -12,6 +12,7 @@ import (
 
 var syncTaskLeaseTTL = time.Hour
 var syncTaskSpawnCooldown = 30 * time.Second
+var syncTaskRunTimeout = 5 * time.Minute
 
 var spawnBackgroundSyncRunner = func(repoRoot string) error {
 	aeCLI, err := os.Executable()
@@ -41,6 +42,11 @@ var spawnBackgroundSyncRunner = func(repoRoot string) error {
 func RunPendingSyncTask(ctx context.Context, execCtx ExecutionContext, uploader Uploader) error {
 	if !execCtx.hasStableReplayBinding() {
 		return nil
+	}
+	if syncTaskRunTimeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, syncTaskRunTimeout)
+		defer cancel()
 	}
 	task, err := LoadSyncTask(execCtx.WorkspaceID)
 	if err != nil || task == nil {

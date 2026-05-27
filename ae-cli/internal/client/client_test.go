@@ -176,6 +176,47 @@ func TestSendToolUsageEventRetriesTransientGatewayStatus(t *testing.T) {
 	}
 }
 
+func TestSendToolUsageEventBoundsSlowAttempt(t *testing.T) {
+	origBackoffs := toolUsageRetryBackoffs
+	origTimeout := toolUsageAttemptTimeout
+	toolUsageRetryBackoffs = nil
+	toolUsageAttemptTimeout = 20 * time.Millisecond
+	t.Cleanup(func() {
+		toolUsageRetryBackoffs = origBackoffs
+		toolUsageAttemptTimeout = origTimeout
+	})
+
+	var attempts int32
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&attempts, 1)
+		<-release
+	}))
+	defer srv.Close()
+	defer close(release)
+
+	c := New(srv.URL, "tok")
+	start := time.Now()
+	err := c.SendToolUsageEvent(context.Background(), ToolUsageEventRequest{
+		Tool:            "codex",
+		WorkspaceID:     "ws-1",
+		ToolSessionID:   "conv-1",
+		DedupeKey:       "codex:conv-1:resp-1",
+		UsageUnit:       "token",
+		ObservedStartAt: time.Now().UTC(),
+		ObservedEndAt:   time.Now().UTC(),
+	})
+	if err == nil {
+		t.Fatal("SendToolUsageEvent error = nil, want timeout error")
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("SendToolUsageEvent elapsed = %s, want bounded attempt", elapsed)
+	}
+	if attempts != 1 {
+		t.Fatalf("attempts = %d, want 1", attempts)
+	}
+}
+
 func TestSendToolUsageEventDoesNotRetryValidationError(t *testing.T) {
 	origBackoffs := toolUsageRetryBackoffs
 	toolUsageRetryBackoffs = []time.Duration{0}
