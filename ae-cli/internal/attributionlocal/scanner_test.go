@@ -1,11 +1,15 @@
 package attributionlocal
 
 import (
+	"database/sql"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/ai-efficiency/ae-cli/internal/session"
+	_ "github.com/glebarez/go-sqlite"
 )
 
 func TestScanner_ScanWorkspaceReadsMatchingCodexJSONL(t *testing.T) {
@@ -37,6 +41,58 @@ func TestScanner_UsesCodexSQLiteBeforeJSONLFallback(t *testing.T) {
 	}
 	if first[0].DedupeKey != "codex:conv-1:resp-1" {
 		t.Fatalf("dedupe key = %q, want %q", first[0].DedupeKey, "codex:conv-1:resp-1")
+	}
+}
+
+func TestScanner_MatchesCodexSessionFromLinkedWorktreeCommonDir(t *testing.T) {
+	mainRoot := fixtureRepoRoot(t)
+	linkedRoot := filepath.Join(t.TempDir(), "linked")
+	cmd := exec.Command("git", "worktree", "add", "-b", "linked-test", linkedRoot)
+	cmd.Dir = mainRoot
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git worktree add failed: %v (%s)", err, strings.TrimSpace(string(out)))
+	}
+
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	codexSessions := filepath.Join(home, ".codex", "sessions", "2026", "05", "27")
+	if err := os.MkdirAll(codexSessions, 0o700); err != nil {
+		t.Fatalf("mkdir codex sessions: %v", err)
+	}
+	codexJSONL := filepath.Join(codexSessions, "sess-1.jsonl")
+	codexBody := `{"type":"session_meta","payload":{"id":"conv-1","cwd":"` + mainRoot + `"}}`
+	if err := os.WriteFile(codexJSONL, []byte(codexBody), 0o600); err != nil {
+		t.Fatalf("write codex session metadata: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(home, ".codex"), 0o700); err != nil {
+		t.Fatalf("mkdir codex home: %v", err)
+	}
+	dbPath := filepath.Join(home, ".codex", "logs_2.sqlite")
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("sql.Open: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if _, err := db.Exec(`CREATE TABLE logs (id INTEGER PRIMARY KEY AUTOINCREMENT, feedback_log_body TEXT NOT NULL)`); err != nil {
+		t.Fatalf("create logs table: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO logs (feedback_log_body) VALUES (?)`, `event.name="codex.sse_event" event.kind=response.completed input_token_count=12 output_token_count=5 cached_token_count=4 reasoning_token_count=2 event.timestamp=2026-05-27T03:56:32Z conversation.id=conv-1 response.id=resp-1`); err != nil {
+		t.Fatalf("insert logs row: %v", err)
+	}
+
+	events, _, err := NewScanner().ScanWorkspace(linkedRoot, ScanState{})
+	if err != nil {
+		t.Fatalf("scan linked worktree: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("events = %d, want 1", len(events))
+	}
+	wantWorkspaceID, err := mustWorkspaceID(linkedRoot)
+	if err != nil {
+		t.Fatalf("mustWorkspaceID(linkedRoot): %v", err)
+	}
+	if events[0].WorkspaceID != wantWorkspaceID {
+		t.Fatalf("workspace_id = %q, want linked worktree %q", events[0].WorkspaceID, wantWorkspaceID)
 	}
 }
 

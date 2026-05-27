@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go CLI with Cobra commands, git hook helpers in `ae-cli/internal/hooks`, attribution scanner/uploader in `ae-cli/internal/attributionlocal`, git-based tests with `go test`, markdown architecture/spec docs.
 
-**Status:** Complete. PR created: https://github.com/LichKing-2234/ai-efficiency/pull/59.
+**Status:** Complete. PR created: https://github.com/LichKing-2234/ai-efficiency/pull/59. Follow-up on 2026-05-27 fixed linked-worktree Codex session matching after real local verification found checkpoint uploads without matching `/events` rows.
 
 ---
 
@@ -662,3 +662,49 @@ gh pr create --title "fix(ae-cli): move post-commit attribution sync to async ru
 EOF
 )"
 ```
+
+---
+
+### Task 5: Follow-up Linked Worktree Codex Session Matching
+
+**Files:**
+- Modify: `ae-cli/internal/attributionlocal/codex_jsonl.go`
+- Modify: `ae-cli/internal/attributionlocal/workspace_path.go`
+- Modify: `ae-cli/internal/attributionlocal/scanner.go`
+- Modify: `ae-cli/internal/attributionlocal/scanner_test.go`
+- Modify: `docs/architecture.md`
+- Modify: `docs/superpowers/specs/2026-05-13-sessionless-local-tool-attribution-design.md`
+- Modify: `docs/superpowers/specs/2026-05-26-ae-cli-post-commit-async-attribution-sync-design.md`
+
+- [x] **Step 1: Diagnose real missing `/events` rows after linked-worktree commits**
+
+Verified:
+
+```text
+~/.local/bin/ae-cli was built after the earlier commits, so those commits used the old installed binary.
+The current Codex JSONL session_meta.cwd was /Users/admin/ai-efficiency while commits happened under /Users/admin/ai-efficiency/.worktrees/async-post-commit-attribution-sync.
+The backend /api/v1/events window for 2026-05-27 returned total=0, while the local checkpoint upload ledger showed only a checkpoint upload.
+```
+
+- [x] **Step 2: Add linked-worktree Codex session matching**
+
+Codex session matching now accepts exact workspace paths and paths that resolve to the same Git common dir. The uploaded event still uses the current hook workspace ID, preserving checkpoint binding for the linked worktree.
+
+- [x] **Step 3: Add regression coverage**
+
+Added `TestScanner_MatchesCodexSessionFromLinkedWorktreeCommonDir`, covering a real linked worktree where `session_meta.cwd` points at the main checkout and sync runs from the linked worktree.
+
+- [x] **Step 4: Update current contract docs**
+
+Updated the sessionless attribution spec, async sync spec, and architecture overview to document Codex linked-worktree matching.
+
+- [x] **Step 5: Run verification**
+
+Run:
+
+```bash
+cd ae-cli && go test ./internal/attributionlocal -run 'TestScanner_MatchesCodexSessionFromLinkedWorktreeCommonDir|TestScanner_UsesCodexSQLiteBeforeJSONLFallback|TestParseCodexJSONL_MatchesCanonicalEquivalentWorkspacePath' -count=1
+cd ae-cli && go test ./... -count=1
+```
+
+Expected: PASS.

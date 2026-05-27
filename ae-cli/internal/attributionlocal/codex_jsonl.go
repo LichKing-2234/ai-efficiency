@@ -43,7 +43,7 @@ func ParseCodexJSONLFallbackContext(ctx context.Context, path, workspaceRoot str
 
 		switch strings.TrimSpace(row.Type) {
 		case "session_meta":
-			if !sameWorkspacePath(row.Payload.CWD, workspaceRoot) {
+			if !sameWorkspacePathOrGitCommon(row.Payload.CWD, workspaceRoot) {
 				return errStopCodexJSONLScan
 			}
 			sessionID = strings.TrimSpace(row.Payload.ID)
@@ -167,7 +167,7 @@ func findCodexWorkspaceSessionIDsContext(ctx context.Context, path, workspaceRoo
 		if strings.TrimSpace(row.Type) != "session_meta" {
 			return nil
 		}
-		if !sameWorkspacePath(row.Payload.CWD, workspaceRoot) {
+		if !sameWorkspacePathOrGitCommon(row.Payload.CWD, workspaceRoot) {
 			return errStopCodexJSONLScan
 		}
 		sessionID := strings.TrimSpace(row.Payload.ID)

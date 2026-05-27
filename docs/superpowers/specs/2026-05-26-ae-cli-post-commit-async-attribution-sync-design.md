@@ -431,6 +431,7 @@ ae-cli: attribution sync pending for this repo; run 'ae-cli doctor' for details
 2. detached runner 后续能把当天 `Codex` event 真正传到 `/api/v1/events`
 3. `Claude` / `Kiro` 也通过同一 task/runner 骨架被处理
 4. runner 失败后，后续 `ae-cli sync` 能继续补传 backlog
+5. Codex 从主 checkout 启动、commit 发生在同 repo linked worktree 时，runner 仍能把 Codex event 上传到该 linked worktree 的 `workspace_id`，而不是只上传 checkpoint
 
 ## Rollout Notes
 
