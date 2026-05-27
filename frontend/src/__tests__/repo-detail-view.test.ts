@@ -284,4 +284,34 @@ describe('RepoDetailView', () => {
     expect(wrapper.text()).toContain('SCM Provider Binding')
     expect(wrapper.text()).toContain('auto-discovered by ae-cli attribution sync')
   })
+
+  it('shows PR sync result after syncing', async () => {
+    const { syncPRs } = await import('@/api/pr')
+    ;(syncPRs as any).mockResolvedValue({ data: { data: { created: 2, updated: 1, total: 3 } } })
+
+    const { wrapper } = await mountRepoDetail()
+    const syncButton = wrapper.findAll('button').find((b) => b.text() === 'Sync PRs')
+    expect(syncButton).toBeTruthy()
+
+    await syncButton!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Synced 3 PRs')
+    expect(wrapper.text()).toContain('2 created')
+    expect(wrapper.text()).toContain('1 updated')
+  })
+
+  it('shows PR sync error message', async () => {
+    const { syncPRs } = await import('@/api/pr')
+    ;(syncPRs as any).mockRejectedValue({ response: { data: { message: 'sync failed: upstream timeout' } } })
+
+    const { wrapper } = await mountRepoDetail()
+    const syncButton = wrapper.findAll('button').find((b) => b.text() === 'Sync PRs')
+    expect(syncButton).toBeTruthy()
+
+    await syncButton!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('sync failed: upstream timeout')
+  })
 })

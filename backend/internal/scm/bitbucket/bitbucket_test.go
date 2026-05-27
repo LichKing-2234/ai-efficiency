@@ -344,6 +344,22 @@ func TestListPRsAllState(t *testing.T) {
 	}
 }
 
+func TestListPRsUsesStartOffsetForPage(t *testing.T) {
+	var gotStart string
+	p, _ := setup(t, func(w http.ResponseWriter, r *http.Request) {
+		gotStart = r.URL.Query().Get("start")
+		json.NewEncoder(w).Encode(map[string]interface{}{"values": []interface{}{}})
+	})
+
+	_, err := p.ListPRs(context.Background(), "P/r", scm.PRListOpts{State: "all", Page: 3, PageSize: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotStart != "200" {
+		t.Fatalf("start = %q, want 200", gotStart)
+	}
+}
+
 func TestListPRsNoSelfLink(t *testing.T) {
 	p, _ := setup(t, func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]interface{}{
@@ -1014,7 +1030,7 @@ func TestListPRCommitsPaginates(t *testing.T) {
 		switch r.URL.Query().Get("start") {
 		case "":
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"isLastPage":   false,
+				"isLastPage":    false,
 				"nextPageStart": 1,
 				"values": []map[string]any{
 					{"id": "abc123"},
