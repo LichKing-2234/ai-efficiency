@@ -218,7 +218,55 @@ func TestSync_ReplayPersistsBackfilledObservedTimesOnFailure(t *testing.T) {
 	}
 }
 
-func TestSync_RunSpoolsCurrentScanBeforeReplayingBacklog(t *testing.T) {
+func TestSync_SaveSpooledEventsCompactsManagedRawFields(t *testing.T) {
+	t.Parallel()
+
+	spoolPath := filepath.Join(t.TempDir(), "spool.json")
+	if err := appendSpooledEvents(spoolPath, []LocalToolUsageEvent{
+		{
+			Tool:             "codex",
+			DedupeKey:        "managed",
+			UsageUnit:        UsageUnitToken,
+			ManagedUpload:    true,
+			RawSourcePath:    "/Users/alice/.codex/sessions/session.jsonl",
+			RawSourceLocator: "line:1",
+			RawPayload:       map[string]any{"private": "payload"},
+		},
+		{
+			Tool:             "codex",
+			DedupeKey:        "manual",
+			UsageUnit:        UsageUnitToken,
+			ManagedUpload:    false,
+			RawSourcePath:    "/tmp/manual.jsonl",
+			RawSourceLocator: "line:2",
+			RawPayload:       map[string]any{"keep": "payload"},
+		},
+	}); err != nil {
+		t.Fatalf("appendSpooledEvents: %v", err)
+	}
+
+	remaining, err := loadSpooledEvents(spoolPath)
+	if err != nil {
+		t.Fatalf("loadSpooledEvents: %v", err)
+	}
+	if len(remaining) != 2 {
+		t.Fatalf("remaining count = %d, want 2", len(remaining))
+	}
+	byKey := map[string]LocalToolUsageEvent{}
+	for _, ev := range remaining {
+		byKey[ev.DedupeKey] = ev
+	}
+	managed := byKey["managed"]
+	if managed.RawSourcePath != "" || managed.RawSourceLocator != "" || managed.RawPayload != nil {
+		t.Fatalf("managed spool leaked raw fields: %+v", managed)
+	}
+	manual := byKey["manual"]
+	if manual.RawSourcePath == "" || manual.RawSourceLocator == "" || manual.RawPayload == nil {
+		t.Fatalf("manual spool raw fields were unexpectedly cleared: %+v", manual)
+	}
+}
+
+func TestSync_RunReplaysExistingSpoolBeforeScanningCurrentArtifacts(t *testing.T) {
 	fixture := buildAttributionFixture(t)
 	workspaceID, err := mustWorkspaceID(fixture.WorkspaceRoot)
 	if err != nil {
@@ -243,12 +291,61 @@ func TestSync_RunSpoolsCurrentScanBeforeReplayingBacklog(t *testing.T) {
 		t.Fatalf("SaveJSON(spool): %v", err)
 	}
 
-	client := &syncBackendClientStub{failOn: "old-backlog"}
+	client := &syncBackendClientStub{}
 	engine := &SyncEngine{
 		Scanner: NewScanner(),
 		Client:  client,
 	}
-	err = engine.Run(context.Background(), RunOptions{
+	if err := engine.Run(context.Background(), RunOptions{
+		WorkspaceRoot: fixture.WorkspaceRoot,
+		WorkspaceID:   workspaceID,
+		ServerURL:     "https://ae.example.com",
+		AuthSubject:   "user:123",
+		RepoConfigID:  123,
+		RepoKey:       "github.com/acme/repo",
+		DurableReplay: true,
+		ManagedUpload: true,
+	}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(client.uploads) == 0 || client.uploads[0] != "old-backlog" {
+		t.Fatalf("uploads = %+v, want existing spool replay before current scan", client.uploads)
+	}
+}
+
+func TestSync_RunReplaysExistingSpoolBeforeCanceledScan(t *testing.T) {
+	fixture := buildAttributionFixture(t)
+	workspaceID, err := mustWorkspaceID(fixture.WorkspaceRoot)
+	if err != nil {
+		t.Fatalf("mustWorkspaceID: %v", err)
+	}
+	spoolPath := filepath.Join(AttributionRootDir(), "workspaces", workspaceID, "spool.json")
+	if err := SaveJSON(spoolPath, []LocalToolUsageEvent{{
+		Tool:            "codex",
+		WorkspaceID:     workspaceID,
+		ServerURL:       "https://ae.example.com",
+		AuthSubject:     "user:123",
+		RepoConfigID:    123,
+		RepoKey:         "github.com/acme/repo",
+		ManagedUpload:   true,
+		ToolSessionID:   "old-session",
+		DedupeKey:       "old-backlog",
+		UsageUnit:       UsageUnitToken,
+		RequestCount:    1,
+		ObservedStartAt: jsonTime("2026-05-13T10:00:00Z"),
+		ObservedEndAt:   jsonTime("2026-05-13T10:00:00Z"),
+	}}); err != nil {
+		t.Fatalf("SaveJSON(spool): %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	client := &syncBackendClientStub{}
+	engine := &SyncEngine{
+		Scanner: NewScanner(),
+		Client:  client,
+	}
+	err = engine.Run(ctx, RunOptions{
 		WorkspaceRoot: fixture.WorkspaceRoot,
 		WorkspaceID:   workspaceID,
 		ServerURL:     "https://ae.example.com",
@@ -259,10 +356,17 @@ func TestSync_RunSpoolsCurrentScanBeforeReplayingBacklog(t *testing.T) {
 		ManagedUpload: true,
 	})
 	if err == nil {
-		t.Fatal("Run error = nil, want old backlog upload failure")
+		t.Fatal("Run error = nil, want canceled scan error")
 	}
-	if !client.SawUpload("codex-jsonl:sess-1:resp-1") {
-		t.Fatalf("uploads = %+v, want current scan uploaded before old backlog failure", client.uploads)
+	if !client.SawUpload("old-backlog") {
+		t.Fatalf("uploads = %+v, want existing spool replay before canceled scan", client.uploads)
+	}
+	remaining, err := loadSpooledEvents(spoolPath)
+	if err != nil {
+		t.Fatalf("loadSpooledEvents: %v", err)
+	}
+	if len(remaining) != 0 {
+		t.Fatalf("remaining spool = %+v, want existing spool cleared", remaining)
 	}
 }
 

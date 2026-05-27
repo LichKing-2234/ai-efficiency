@@ -3,6 +3,7 @@ package attributionlocal
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -36,7 +37,7 @@ type RunOptions struct {
 	ManagedUpload bool
 }
 
-const toolUsageReplayBatchSize = 50
+const toolUsageReplayBatchSize = 100
 
 func NewSyncEngine(c BackendClient) *SyncEngine {
 	return &SyncEngine{
@@ -85,10 +86,16 @@ func (e *SyncEngine) replay(ctx context.Context, workspaceRoot string, opts RunO
 		}
 		candidates = append(candidates, ev)
 	}
-	uploaded, err := e.sendSpooledEvents(ctx, candidates)
-	if err != nil {
+	persistRemaining := func(uploaded int) error {
 		remaining := candidates[uploaded:]
-		if err := SaveJSON(e.spoolPath, remaining); err != nil {
+		if len(remaining) == 0 {
+			return clearSpooledEvents(e.spoolPath)
+		}
+		return saveSpooledEvents(e.spoolPath, remaining)
+	}
+	uploaded, err := e.sendSpooledEvents(ctx, candidates, persistRemaining)
+	if err != nil {
+		if err := persistRemaining(uploaded); err != nil {
 			return err
 		}
 		return err
@@ -96,7 +103,7 @@ func (e *SyncEngine) replay(ctx context.Context, workspaceRoot string, opts RunO
 	return clearSpooledEvents(e.spoolPath)
 }
 
-func (e *SyncEngine) sendSpooledEvents(ctx context.Context, events []LocalToolUsageEvent) (int, error) {
+func (e *SyncEngine) sendSpooledEvents(ctx context.Context, events []LocalToolUsageEvent, onProgress func(uploaded int) error) (int, error) {
 	if len(events) == 0 {
 		return 0, nil
 	}
@@ -113,12 +120,22 @@ func (e *SyncEngine) sendSpooledEvents(ctx context.Context, events []LocalToolUs
 			if err := batchClient.SendToolUsageEvents(ctx, reqs); err != nil {
 				return start, err
 			}
+			if onProgress != nil {
+				if err := onProgress(end); err != nil {
+					return end, err
+				}
+			}
 		}
 		return len(events), nil
 	}
 	for idx, ev := range events {
 		if err := e.Client.SendToolUsageEvent(ctx, toClientUsageRequest(ev)); err != nil {
 			return idx, err
+		}
+		if onProgress != nil {
+			if err := onProgress(idx + 1); err != nil {
+				return idx + 1, err
+			}
 		}
 	}
 	return len(events), nil
@@ -143,6 +160,12 @@ func (e *SyncEngine) Run(ctx context.Context, opts RunOptions) error {
 		spoolPath = filepath.Join(base, "spool.json")
 	}
 	e.spoolPath = spoolPath
+
+	if opts.DurableReplay && e.Client != nil {
+		if err := e.replay(ctx, opts.WorkspaceRoot, opts); err != nil {
+			return err
+		}
+	}
 
 	var state ScanState
 	if err := LoadJSON(statePath, &state); err != nil && !os.IsNotExist(err) {
@@ -347,7 +370,7 @@ func appendSpooledEvents(path string, events []LocalToolUsageEvent) error {
 		return err
 	}
 	merged := append(existing, events...)
-	return SaveJSON(path, dedupeAndSort(merged))
+	return saveSpooledEvents(path, dedupeAndSort(merged))
 }
 
 func clearSpooledEvents(path string) error {
@@ -358,6 +381,49 @@ func clearSpooledEvents(path string) error {
 		return err
 	}
 	return nil
+}
+
+func saveSpooledEvents(path string, events []LocalToolUsageEvent) error {
+	if path == "" {
+		return nil
+	}
+	if len(events) == 0 {
+		return clearSpooledEvents(path)
+	}
+	events = compactManagedSpooledEvents(events)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return fmt.Errorf("create spool dir: %w", err)
+	}
+	data, err := json.Marshal(events)
+	if err != nil {
+		return fmt.Errorf("marshal spool json: %w", err)
+	}
+	tmp := fmt.Sprintf("%s.%d.%d.tmp", path, os.Getpid(), time.Now().UnixNano())
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+		return fmt.Errorf("write temp spool json: %w", err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("rename spool json: %w", err)
+	}
+	return nil
+}
+
+func compactManagedSpooledEvents(events []LocalToolUsageEvent) []LocalToolUsageEvent {
+	if len(events) == 0 {
+		return events
+	}
+	out := make([]LocalToolUsageEvent, len(events))
+	copy(out, events)
+	for idx := range out {
+		if !out[idx].ManagedUpload {
+			continue
+		}
+		out[idx].RawSourcePath = ""
+		out[idx].RawSourceLocator = ""
+		out[idx].RawPayload = nil
+	}
+	return out
 }
 
 type toolUsageLedgerRecord struct {

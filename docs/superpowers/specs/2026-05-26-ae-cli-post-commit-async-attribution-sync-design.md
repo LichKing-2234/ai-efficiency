@@ -1,7 +1,7 @@
 # ae-cli Post-Commit Async Attribution Sync Design
 
 **Date:** 2026-05-26  
-**Status:** Current design with 2026-05-27 upload-throughput follow-up
+**Status:** Current design with 2026-05-27 replay-order and upload-throughput follow-ups
 **Scope:** `ae-cli/cmd/`, `ae-cli/internal/hooks/`, `ae-cli/internal/attributionlocal/`, `docs/`  
 **Related:**  
 - [2026-05-13-sessionless-local-tool-attribution-design.md](./2026-05-13-sessionless-local-tool-attribution-design.md)  
@@ -12,7 +12,7 @@
 
 - 本文收紧当前 sessionless attribution 的 hook 合同：`post-commit` 不再负责在 hook 生命周期内完成完整 usage 扫描与上传。
 - `tool-local artifacts -> tool_usage_events -> checkpoint/rewrite -> PR settle` 的主链路不变，仍以 [2026-05-13-sessionless-local-tool-attribution-design.md](./2026-05-13-sessionless-local-tool-attribution-design.md) 为准。
-- 本文最初只调整 **何时** 触发 attribution sync、**如何** 持久化待同步状态、以及 **如何** 向用户暴露 pending/error；2026-05-27 的 backlog follow-up 在保留单条 `tool_usage_events` ingest 兼容性的前提下，新增批量 ingest 作为上传吞吐优化，不改变 checkpoint 表结构或 attribution 语义。
+- 本文最初只调整 **何时** 触发 attribution sync、**如何** 持久化待同步状态、以及 **如何** 向用户暴露 pending/error；2026-05-27 的 backlog follow-up 在保留单条 `tool_usage_events` ingest 兼容性的前提下，新增批量 ingest 作为上传吞吐优化，并把 durable sync 收紧为先 replay 既有 `spool.json`、再扫描当前 artifacts、再 replay 本轮新 spool，避免已扫描 backlog 被冷扫描继续阻塞。
 - 本文覆盖 `Codex`、`Claude`、`Kiro` 的统一 sync 触发框架，不引入只针对 `Codex` 的特例路径。
 
 ## Overview
@@ -380,7 +380,7 @@ ae-cli: attribution sync pending for this repo; run 'ae-cli doctor' for details
 7. tool-usage 上传遇到瞬时网关/限流错误（429/502/503/504）时，client 先做短重试；仍失败时保留剩余 events 到 spool，后续 sync 继续推进
 8. 单次 tool-usage HTTP 上传必须有独立短超时，避免某个卡住的 backend/HTTP2 响应拖住整个 runner
 9. 新扫描出的 events 如果上传中途失败，写入 spool 后仍必须返回 runner failure，不能把 task 删除成成功状态
-10. durable sync 必须先把本轮扫描结果写入 spool，再按 `observed_end_at` 从新到旧 replay spool，避免新 commit 的 usage 被历史 backlog 长时间阻塞
+10. durable sync 必须先 replay 已存在的 `spool.json`，再执行本轮 artifact scan；扫描成功后再把本轮新 events 写入 spool，并按 `observed_end_at` 从新到旧 replay，避免已扫描 backlog 被冷扫描阻塞，同时避免新扫描出的 usage 被旧 spool 长时间压住
 11. replay 应优先使用兼容的批量 ingest，在单个 bounded request 内上传多个 `tool_usage_events`；如果 backend 不支持批量接口或批量 payload 出现 validation failure，CLI 必须回退到单条接口以保持版本兼容和错误隔离
 
 如果 `sync-task.json` 本身损坏：
@@ -443,7 +443,7 @@ ae-cli: attribution sync pending for this repo; run 'ae-cli doctor' for details
 6. backend 瞬时 502 不会永久卡住 backlog；retry 失败后仍保留 spool，下一次 sync 可继续推进
 7. backend 上传连接卡住时，单次 request 超时和 runner 总超时能让本地进程退出并留下可恢复状态
 8. 上传失败导致新扫描 events 进入 spool 时，`sync status` 仍能看到 pending/error，而不是误报 `Sync Task: none`
-9. 当历史 backlog 很大时，刚扫描出的新 usage 会在下一次 replay 中优先尝试上传，`/events` 不再等待旧 backlog 全部追平
+9. 当历史 backlog 很大时，已进入 `spool.json` 的 usage 会在冷扫描前先补传；本轮刚扫描出的新 usage 会在后续 replay 中按 `observed_end_at` 优先尝试上传，`/events` 不再因为旧扫描或旧 backlog 长时间不可见
 10. 当历史 backlog 较大时，批量 ingest 可以用 bounded chunk 减少 HTTPS round trip 数；服务端仍按 `dedupe_key` 幂等处理重复 event
 
 ## Rollout Notes
