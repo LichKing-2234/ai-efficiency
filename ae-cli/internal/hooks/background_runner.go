@@ -30,6 +30,7 @@ var spawnBackgroundSyncRunner = func(repoRoot string) error {
 	cmd.Stdout = devNull
 	cmd.Stderr = devNull
 	cmd.Stdin = nil
+	detachBackgroundSyncCommand(cmd)
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("start background sync runner: %w", err)
 	}
