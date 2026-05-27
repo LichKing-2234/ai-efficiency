@@ -869,3 +869,36 @@ cd ae-cli && go test ./... -count=1
 ```
 
 Expected: PASS.
+
+---
+
+### Task 11: Follow-up Prioritize Fresh Usage Ahead of Backlog
+
+**Files:**
+- Modify: `ae-cli/internal/attributionlocal/sync.go`
+- Modify: `ae-cli/internal/attributionlocal/sync_test.go`
+- Modify: `docs/architecture.md`
+- Modify: `docs/superpowers/specs/2026-05-26-ae-cli-post-commit-async-attribution-sync-design.md`
+
+- [x] **Step 1: Diagnose fresh commit blocked behind historical spool**
+
+A new empty commit `44a57cd` refreshed `sync-task.json`, and the scanner wrote post-commit Codex usage into `spool.json`, but `/events` for the post-commit window still returned zero because replay processed old backlog first and the runner hit its timeout before reaching the fresh events.
+
+- [x] **Step 2: Make durable sync newest-first**
+
+Durable sync now writes current scan results into spool before replaying, then sorts spooled events by `observed_end_at` descending during replay. Fresh usage is attempted before historical backlog while preserving spool recovery semantics.
+
+- [x] **Step 3: Add regression coverage**
+
+Added tests that replay uploads newest spooled events before older failing backlog, and that `Run` uploads the current scan before an older backlog failure.
+
+- [x] **Step 4: Run verification**
+
+Run:
+
+```bash
+cd ae-cli && go test ./internal/attributionlocal -count=1
+cd ae-cli && go test ./... -count=1
+```
+
+Expected: PASS.

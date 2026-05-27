@@ -380,6 +380,7 @@ ae-cli: attribution sync pending for this repo; run 'ae-cli doctor' for details
 7. tool-usage 上传遇到瞬时网关/限流错误（429/502/503/504）时，client 先做短重试；仍失败时保留剩余 events 到 spool，后续 sync 继续推进
 8. 单次 tool-usage HTTP 上传必须有独立短超时，避免某个卡住的 backend/HTTP2 响应拖住整个 runner
 9. 新扫描出的 events 如果上传中途失败，写入 spool 后仍必须返回 runner failure，不能把 task 删除成成功状态
+10. durable sync 必须先把本轮扫描结果写入 spool，再按 `observed_end_at` 从新到旧 replay spool，避免新 commit 的 usage 被历史 backlog 长时间阻塞
 
 如果 `sync-task.json` 本身损坏：
 
@@ -441,6 +442,7 @@ ae-cli: attribution sync pending for this repo; run 'ae-cli doctor' for details
 6. backend 瞬时 502 不会永久卡住 backlog；retry 失败后仍保留 spool，下一次 sync 可继续推进
 7. backend 上传连接卡住时，单次 request 超时和 runner 总超时能让本地进程退出并留下可恢复状态
 8. 上传失败导致新扫描 events 进入 spool 时，`sync status` 仍能看到 pending/error，而不是误报 `Sync Task: none`
+9. 当历史 backlog 很大时，刚扫描出的新 usage 会在下一次 replay 中优先尝试上传，`/events` 不再等待旧 backlog 全部追平
 
 ## Rollout Notes
 

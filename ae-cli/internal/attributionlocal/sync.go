@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sort"
 	"time"
 
 	"github.com/ai-efficiency/ae-cli/internal/client"
@@ -54,6 +55,7 @@ func (e *SyncEngine) replay(ctx context.Context, workspaceRoot string, opts RunO
 		return nil
 	}
 
+	sortSpooledEventsForReplay(spooled)
 	remaining := make([]LocalToolUsageEvent, 0, len(spooled))
 	filterByBinding := hasStableRunBinding(opts)
 	for idx, ev := range spooled {
@@ -118,12 +120,6 @@ func (e *SyncEngine) Run(ctx context.Context, opts RunOptions) error {
 		return err
 	}
 
-	if opts.DurableReplay {
-		if err := e.replay(ctx, opts.WorkspaceRoot, opts); err != nil {
-			return err
-		}
-	}
-
 	events, nextState, err := e.Scanner.ScanWorkspaceContext(ctx, opts.WorkspaceRoot, state)
 	if err != nil {
 		return err
@@ -145,6 +141,21 @@ func (e *SyncEngine) Run(ctx context.Context, opts RunOptions) error {
 			}
 		}
 		return SaveJSON(statePath, nextState)
+	}
+
+	if opts.DurableReplay {
+		if len(events) > 0 {
+			if err := appendSpooledEvents(spoolPath, events); err != nil {
+				return err
+			}
+			if err := SaveJSON(statePath, nextState); err != nil {
+				return err
+			}
+		}
+		if err := e.replay(ctx, opts.WorkspaceRoot, opts); err != nil {
+			return err
+		}
+		return nil
 	}
 
 	for idx, ev := range events {
@@ -179,10 +190,6 @@ func (e *SyncEngine) runLegacy(ctx context.Context, workspaceRoot string) error 
 		return err
 	}
 
-	if err := e.Replay(ctx, workspaceRoot); err != nil {
-		return err
-	}
-
 	events, nextState, err := e.Scanner.ScanWorkspaceContext(ctx, workspaceRoot, state)
 	if err != nil {
 		return err
@@ -198,6 +205,38 @@ func (e *SyncEngine) runLegacy(ctx context.Context, workspaceRoot string) error 
 		return SaveJSON(statePath, nextState)
 	}
 
+	if len(events) > 0 {
+		if err := appendSpooledEvents(spoolPath, events); err != nil {
+			return err
+		}
+		if err := SaveJSON(statePath, nextState); err != nil {
+			return err
+		}
+	}
+	if err := e.Replay(ctx, workspaceRoot); err != nil {
+		return err
+	}
+	return nil
+}
+
+func sortSpooledEventsForReplay(events []LocalToolUsageEvent) {
+	for idx := range events {
+		events[idx] = normalizeObservedWindow(events[idx])
+	}
+	sort.SliceStable(events, func(i, j int) bool {
+		left := events[i].ObservedEndAt
+		right := events[j].ObservedEndAt
+		if left.IsZero() {
+			return false
+		}
+		if right.IsZero() {
+			return true
+		}
+		return left.After(right)
+	})
+}
+
+func (e *SyncEngine) runLegacyDirectUpload(ctx context.Context, statePath, spoolPath string, events []LocalToolUsageEvent, nextState ScanState) error {
 	for idx, ev := range events {
 		if err := e.Client.SendToolUsageEvent(ctx, toClientUsageRequest(ev)); err != nil {
 			if spoolErr := appendSpooledEvents(spoolPath, events[idx:]); spoolErr != nil {
