@@ -17,6 +17,13 @@ func ptrTime(t time.Time) *time.Time {
 	return &t
 }
 
+func stubSyncTaskRunnerAlive(t *testing.T, alive func(int) bool) {
+	t.Helper()
+	orig := syncTaskRunnerAlive
+	syncTaskRunnerAlive = alive
+	t.Cleanup(func() { syncTaskRunnerAlive = orig })
+}
+
 func TestUpsertPendingSyncTaskRecoversCorruptTaskFile(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -72,6 +79,7 @@ func TestUpsertPendingSyncTaskRecoversCorruptTaskFile(t *testing.T) {
 func TestAcquireSyncTaskLeaseAllowsOnlyOneConcurrentRunner(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	stubSyncTaskRunnerAlive(t, func(int) bool { return true })
 
 	now := time.Now().UTC()
 	task := SyncTask{
@@ -156,6 +164,7 @@ func TestMarkSyncTaskFailurePreservesNewerRequestForSameRunner(t *testing.T) {
 func TestMarkSyncTaskFailureDoesNotClearDifferentActiveRunner(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	stubSyncTaskRunnerAlive(t, func(pid int) bool { return pid == 2222 })
 
 	now := time.Now().UTC()
 	stale := SyncTask{
@@ -224,6 +233,7 @@ func TestUpsertPendingSyncTaskCoalescesRequests(t *testing.T) {
 func TestAcquireSyncTaskLeaseRejectsActiveRunnerAndAllowsExpiredLease(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	stubSyncTaskRunnerAlive(t, func(pid int) bool { return pid == 1234 })
 
 	now := time.Now().UTC()
 	task := &SyncTask{
@@ -250,5 +260,37 @@ func TestAcquireSyncTaskLeaseRejectsActiveRunnerAndAllowsExpiredLease(t *testing
 	}
 	if task.LeaseExpiresAt == nil || !task.LeaseExpiresAt.After(now) {
 		t.Fatalf("LeaseExpiresAt = %v, want future time", task.LeaseExpiresAt)
+	}
+}
+
+func TestRecoverInactiveSyncTaskRunnerClearsDeadLease(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	stubSyncTaskRunnerAlive(t, func(int) bool { return false })
+
+	now := time.Now().UTC()
+	task := SyncTask{
+		WorkspaceID:     "ws-dead-runner",
+		Status:          SyncTaskStatusRunning,
+		RunnerPID:       1234,
+		LeaseExpiresAt:  ptrTime(now.Add(5 * time.Minute)),
+		LastRequestedAt: now,
+	}
+	if err := SaveSyncTask(task); err != nil {
+		t.Fatalf("SaveSyncTask: %v", err)
+	}
+
+	got, recovered, err := RecoverInactiveSyncTaskRunner(task.WorkspaceID, now)
+	if err != nil {
+		t.Fatalf("RecoverInactiveSyncTaskRunner: %v", err)
+	}
+	if !recovered {
+		t.Fatal("recovered = false, want true")
+	}
+	if got == nil || got.Status != SyncTaskStatusPending || got.RunnerPID != 0 || got.LeaseExpiresAt != nil {
+		t.Fatalf("task = %+v, want pending without lease", got)
+	}
+	if got.LastError != "runner exited before updating sync task" {
+		t.Fatalf("LastError = %q, want runner recovery error", got.LastError)
 	}
 }

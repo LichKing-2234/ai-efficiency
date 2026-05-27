@@ -708,3 +708,43 @@ cd ae-cli && go test ./... -count=1
 ```
 
 Expected: PASS.
+
+---
+
+### Task 6: Follow-up Stale Runner Lease Recovery
+
+**Files:**
+- Modify: `ae-cli/internal/hooks/sync_task.go`
+- Modify: `ae-cli/internal/hooks/sync_task_test.go`
+- Modify: `ae-cli/cmd/doctor.go`
+- Modify: `ae-cli/cmd/sync.go`
+- Modify: `ae-cli/cmd/sync_test.go`
+- Modify: `docs/architecture.md`
+- Modify: `docs/superpowers/specs/2026-05-26-ae-cli-post-commit-async-attribution-sync-design.md`
+
+- [x] **Step 1: Diagnose stale running task after real hook-triggered commit**
+
+The real post-commit runner process exited, but `sync-task.json` still showed `status=running`, `runner_pid=26704`, and a one-hour `lease_expires_at`. `ps -p 26704` showed no live process, so manual sync would incorrectly report an active runner until lease expiry.
+
+- [x] **Step 2: Treat a lease as active only while the runner process is alive**
+
+`SyncTask.HasActiveLease` now checks `runner_pid` liveness in addition to status and lease expiry. Dead runner recovery clears `runner_pid` and `lease_expires_at`, returns the task to pending, and records `last_error`.
+
+- [x] **Step 3: Surface recovery through diagnostics**
+
+`ae-cli doctor` and `ae-cli sync status` now print `Sync Task: inactive runner recovered` when they repair a stale running task.
+
+- [x] **Step 4: Add regression coverage**
+
+Added tests for dead lease recovery, active runner preservation, sync status recovery, and active runner reporting with a live PID.
+
+- [x] **Step 5: Run verification**
+
+Run:
+
+```bash
+cd ae-cli && go test ./internal/hooks -run 'TestRecoverInactiveSyncTaskRunnerClearsDeadLease|TestAcquireSyncTaskLeaseRejectsActiveRunnerAndAllowsExpiredLease|TestAcquireSyncTaskLeaseAllowsOnlyOneConcurrentRunner|TestMarkSyncTaskFailureDoesNotClearDifferentActiveRunner' -count=1
+cd ae-cli && go test ./cmd -run 'TestSyncStatusPrintsRunningTask|TestSyncStatusRecoversInactiveRunner|TestSyncCommandReportsActiveRunnerWithoutRunningSync' -count=1
+```
+
+Expected: PASS.

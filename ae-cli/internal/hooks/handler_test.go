@@ -500,6 +500,7 @@ func TestPostCommitDoesNotTriggerRunnerWhenLeaseIsActive(t *testing.T) {
 	repo := initRepoWithCommit2(t)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	stubSyncTaskRunnerAlive(t, func(pid int) bool { return pid == 2222 })
 	execCtx := resolvedContextForRepo(t, repo)
 
 	now := time.Now().UTC()

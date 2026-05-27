@@ -51,6 +51,16 @@ var doctorCmd = &cobra.Command{
 		if recovered {
 			fmt.Fprintln(out, "Sync Task: corrupt sync task moved aside")
 		}
+		if task != nil {
+			var runnerRecovered bool
+			task, runnerRecovered, err = hooks.RecoverInactiveSyncTaskRunner(ctx.workspaceID, time.Now().UTC())
+			if err != nil {
+				return fmt.Errorf("recover inactive sync runner: %w", err)
+			}
+			if runnerRecovered {
+				fmt.Fprintln(out, "Sync Task: inactive runner recovered")
+			}
+		}
 		printSyncTaskStatus(out, task)
 		printRepoEligibilityDiagnostic(out)
 		return nil

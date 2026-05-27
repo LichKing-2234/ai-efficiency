@@ -133,7 +133,7 @@ func TestSyncStatusPrintsRunningTask(t *testing.T) {
 		Status:          hooks.SyncTaskStatusRunning,
 		LastRequestedAt: now.Add(-5 * time.Minute),
 		LastStartedAt:   &now,
-		RunnerPID:       4321,
+		RunnerPID:       os.Getpid(),
 		LeaseExpiresAt:  ptrTimeValue(now.Add(5 * time.Minute)),
 	}
 	if err := hooks.SaveSyncTask(task); err != nil {
@@ -156,7 +156,51 @@ func TestSyncStatusPrintsRunningTask(t *testing.T) {
 		t.Fatalf("syncStatusCmd.RunE: %v", err)
 	}
 	output := buf.String()
-	for _, want := range []string{"Sync Task: running", "runner_pid: 4321"} {
+	for _, want := range []string{"Sync Task: running", "runner_pid"} {
+		if !bytes.Contains(buf.Bytes(), []byte(want)) {
+			t.Fatalf("sync status output missing %q:\n%s", want, output)
+		}
+	}
+}
+
+func TestSyncStatusRecoversInactiveRunner(t *testing.T) {
+	repo := initRepoWithCommitForCmdTests(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	writeTestToken(t, home, "user:123")
+	writePositiveEligibility(t, home, "github.com/acme/repo", 123)
+
+	gitCtx, err := hooks.DetectGitContext(repo)
+	if err != nil {
+		t.Fatalf("DetectGitContext: %v", err)
+	}
+	now := time.Now().UTC()
+	task := hooks.SyncTask{
+		WorkspaceID:     gitCtx.WorkspaceID,
+		RepoRoot:        repo,
+		ServerURL:       "https://ae.example.com",
+		AuthSubject:     "user:123",
+		RepoConfigID:    123,
+		RepoKey:         gitCtx.RepoKey,
+		Status:          hooks.SyncTaskStatusRunning,
+		LastRequestedAt: now.Add(-5 * time.Minute),
+		LastStartedAt:   &now,
+		RunnerPID:       999999,
+		LeaseExpiresAt:  ptrTimeValue(now.Add(5 * time.Minute)),
+	}
+	if err := hooks.SaveSyncTask(task); err != nil {
+		t.Fatalf("SaveSyncTask: %v", err)
+	}
+
+	withWorkingDir(t, repo)
+	buf := &bytes.Buffer{}
+	syncStatusCmd.SetOut(buf)
+	syncStatusCmd.SetErr(buf)
+	if err := syncStatusCmd.RunE(syncStatusCmd, nil); err != nil {
+		t.Fatalf("syncStatusCmd.RunE: %v", err)
+	}
+	output := buf.String()
+	for _, want := range []string{"inactive runner recovered", "Sync Task: pending", "runner exited before updating sync task"} {
 		if !bytes.Contains(buf.Bytes(), []byte(want)) {
 			t.Fatalf("sync status output missing %q:\n%s", want, output)
 		}
@@ -229,7 +273,7 @@ func TestSyncCommandReportsAlreadyRunningTask(t *testing.T) {
 		Status:          hooks.SyncTaskStatusRunning,
 		LastRequestedAt: now,
 		LastStartedAt:   &now,
-		RunnerPID:       4321,
+		RunnerPID:       os.Getpid(),
 		LeaseExpiresAt:  ptrTimeValue(now.Add(5 * time.Minute)),
 	}
 	if err := hooks.SaveSyncTask(task); err != nil {

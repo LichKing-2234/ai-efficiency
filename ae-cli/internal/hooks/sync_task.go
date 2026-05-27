@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/ai-efficiency/ae-cli/internal/attributionlocal"
@@ -19,6 +20,14 @@ const (
 )
 
 var ErrSyncTaskAlreadyRunning = errors.New("sync task already running")
+
+var syncTaskRunnerAlive = func(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+	err := syscall.Kill(pid, 0)
+	return err == nil || errors.Is(err, syscall.EPERM)
+}
 
 type SyncTask struct {
 	Version            int            `json:"version"`
@@ -110,7 +119,38 @@ func (t *SyncTask) HasActiveLease(now time.Time) bool {
 		t.Status == SyncTaskStatusRunning &&
 		t.RunnerPID != 0 &&
 		t.LeaseExpiresAt != nil &&
-		t.LeaseExpiresAt.After(now)
+		t.LeaseExpiresAt.After(now) &&
+		syncTaskRunnerAlive(t.RunnerPID)
+}
+
+func RecoverInactiveSyncTaskRunner(workspaceID string, now time.Time) (*SyncTask, bool, error) {
+	var out *SyncTask
+	recovered := false
+	err := withSyncTaskLock(workspaceID, now, func() error {
+		current, _, err := LoadSyncTaskRecovering(workspaceID)
+		if err != nil || current == nil {
+			return err
+		}
+		out = current
+		if current.Status != SyncTaskStatusRunning ||
+			current.RunnerPID == 0 ||
+			current.LeaseExpiresAt == nil ||
+			!current.LeaseExpiresAt.After(now) ||
+			syncTaskRunnerAlive(current.RunnerPID) {
+			return nil
+		}
+		current.Status = SyncTaskStatusPending
+		current.RunnerPID = 0
+		current.LeaseExpiresAt = nil
+		current.LastError = "runner exited before updating sync task"
+		if err := SaveSyncTask(*current); err != nil {
+			return err
+		}
+		out = current
+		recovered = true
+		return nil
+	})
+	return out, recovered, err
 }
 
 func UpsertPendingSyncTask(next SyncTask) error {

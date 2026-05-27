@@ -87,6 +87,16 @@ var syncStatusCmd = &cobra.Command{
 		if recovered {
 			fmt.Fprintln(cmd.OutOrStdout(), "Sync Task: corrupt sync task moved aside")
 		}
+		if task != nil {
+			var runnerRecovered bool
+			task, runnerRecovered, err = hooks.RecoverInactiveSyncTaskRunner(attrCtx.workspaceID, time.Now().UTC())
+			if err != nil {
+				return fmt.Errorf("recover inactive sync runner: %w", err)
+			}
+			if runnerRecovered {
+				fmt.Fprintln(cmd.OutOrStdout(), "Sync Task: inactive runner recovered")
+			}
+		}
 		printSyncTaskStatus(cmd.OutOrStdout(), task)
 		return nil
 	},

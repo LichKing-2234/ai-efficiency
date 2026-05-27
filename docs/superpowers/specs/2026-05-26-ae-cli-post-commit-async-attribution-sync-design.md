@@ -226,7 +226,8 @@ lease 规则：
 2. 有未过期 lease 时，不重复拉起 runner
 3. runner 启动后需要显式抢占 lease；抢不到 lease 就立刻退出
 4. lease 需要过期时间，避免进程崩溃后永久卡死
-5. `ae-cli sync` 手工运行时也遵循同一套 lease 规则
+5. 活跃 lease 必须同时满足 `runner_pid` 仍存活；如果进程已经退出但 task 未写回，`doctor` / `sync status` / 后续 sync 应恢复为 pending 并记录 `last_error`
+6. `ae-cli sync` 手工运行时也遵循同一套 lease 规则
 
 推荐语义：
 
@@ -422,6 +423,7 @@ ae-cli: attribution sync pending for this repo; run 'ae-cli doctor' for details
 5. `ae-cli sync` 会消费已有 pending task
 6. `doctor` / `sync status` 输出 pending / running / error
 7. warning 只在约定条件下出现
+8. runner 进程已退出但 `sync-task.json` 仍为 `running` 时，诊断命令会恢复 stale lease 并允许后续 sync 重试
 
 ### Integration Verification
 
