@@ -165,18 +165,7 @@ func mustWorkspaceID(workspaceRoot string) (string, error) {
 	if err != nil {
 		gitDir = filepath.Join(workspaceRoot, ".git")
 	}
-	gitCommonDir := gitDir
-	commonPath := filepath.Join(gitDir, "commondir")
-	if data, err := os.ReadFile(commonPath); err == nil {
-		rel := strings.TrimSpace(string(data))
-		if rel != "" {
-			if filepath.IsAbs(rel) {
-				gitCommonDir = filepath.Clean(rel)
-			} else {
-				gitCommonDir = filepath.Clean(filepath.Join(gitDir, rel))
-			}
-		}
-	}
+	gitCommonDir := filepath.Clean(resolveGitCommonDir(gitDir))
 	return session.DeriveWorkspaceID(workspaceRoot, workspaceRoot, gitDir, gitCommonDir)
 }
 

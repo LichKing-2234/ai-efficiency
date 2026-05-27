@@ -93,6 +93,82 @@ func TestSync_ReplayDropsAlreadyUploadedPrefixOnFailure(t *testing.T) {
 	}
 }
 
+func TestSync_ReplayPrioritizesNewestSpooledEvents(t *testing.T) {
+	t.Parallel()
+
+	fixture := setupSyncEngineWithSpool(t)
+	fixture.Client.failOn = "old-dedupe-key"
+
+	payload := []LocalToolUsageEvent{
+		{
+			DedupeKey:       "old-dedupe-key",
+			Tool:            "codex",
+			UsageUnit:       UsageUnitToken,
+			ObservedStartAt: jsonTime("2026-05-13T10:00:00Z"),
+			ObservedEndAt:   jsonTime("2026-05-13T10:00:00Z"),
+		},
+		{
+			DedupeKey:       "new-dedupe-key",
+			Tool:            "codex",
+			UsageUnit:       UsageUnitToken,
+			ObservedStartAt: jsonTime("2026-05-27T07:10:00Z"),
+			ObservedEndAt:   jsonTime("2026-05-27T07:10:00Z"),
+		},
+	}
+	if err := SaveJSON(fixture.Engine.spoolPath, payload); err != nil {
+		t.Fatalf("SaveJSON: %v", err)
+	}
+
+	err := fixture.Engine.Replay(context.Background(), "/tmp/repo")
+	if err == nil {
+		t.Fatal("expected replay failure")
+	}
+	if len(fixture.Client.uploads) == 0 || fixture.Client.uploads[0] != "new-dedupe-key" {
+		t.Fatalf("uploads = %+v, want newest event first", fixture.Client.uploads)
+	}
+	if !fixture.Client.SawUpload("new-dedupe-key") {
+		t.Fatal("expected newest event upload before old failure")
+	}
+}
+
+func TestSync_ReplayUsesBatchUploadsWhenAvailable(t *testing.T) {
+	t.Parallel()
+
+	clientStub := &syncBatchBackendClientStub{}
+	engine := &SyncEngine{Client: clientStub}
+	spoolPath := filepath.Join(t.TempDir(), "spool.json")
+	payload := []LocalToolUsageEvent{
+		{
+			DedupeKey:       "first-dedupe-key",
+			Tool:            "codex",
+			UsageUnit:       UsageUnitToken,
+			ObservedStartAt: jsonTime("2026-05-27T07:10:00Z"),
+			ObservedEndAt:   jsonTime("2026-05-27T07:10:00Z"),
+		},
+		{
+			DedupeKey:       "second-dedupe-key",
+			Tool:            "codex",
+			UsageUnit:       UsageUnitToken,
+			ObservedStartAt: jsonTime("2026-05-27T07:09:00Z"),
+			ObservedEndAt:   jsonTime("2026-05-27T07:09:00Z"),
+		},
+	}
+	if err := SaveJSON(spoolPath, payload); err != nil {
+		t.Fatalf("SaveJSON: %v", err)
+	}
+	engine.spoolPath = spoolPath
+
+	if err := engine.Replay(context.Background(), "/tmp/repo"); err != nil {
+		t.Fatalf("Replay: %v", err)
+	}
+	if len(clientStub.batches) != 1 {
+		t.Fatalf("batch count = %d, want 1", len(clientStub.batches))
+	}
+	if got := clientStub.batches[0]; len(got) != 2 || got[0] != "first-dedupe-key" || got[1] != "second-dedupe-key" {
+		t.Fatalf("batch = %+v, want ordered two-event upload", got)
+	}
+}
+
 func TestSync_ReplayPersistsBackfilledObservedTimesOnFailure(t *testing.T) {
 	t.Parallel()
 
@@ -142,6 +218,54 @@ func TestSync_ReplayPersistsBackfilledObservedTimesOnFailure(t *testing.T) {
 	}
 }
 
+func TestSync_RunSpoolsCurrentScanBeforeReplayingBacklog(t *testing.T) {
+	fixture := buildAttributionFixture(t)
+	workspaceID, err := mustWorkspaceID(fixture.WorkspaceRoot)
+	if err != nil {
+		t.Fatalf("mustWorkspaceID: %v", err)
+	}
+	spoolPath := filepath.Join(AttributionRootDir(), "workspaces", workspaceID, "spool.json")
+	if err := SaveJSON(spoolPath, []LocalToolUsageEvent{{
+		Tool:            "codex",
+		WorkspaceID:     workspaceID,
+		ServerURL:       "https://ae.example.com",
+		AuthSubject:     "user:123",
+		RepoConfigID:    123,
+		RepoKey:         "github.com/acme/repo",
+		ManagedUpload:   true,
+		ToolSessionID:   "old-session",
+		DedupeKey:       "old-backlog",
+		UsageUnit:       UsageUnitToken,
+		RequestCount:    1,
+		ObservedStartAt: jsonTime("2026-05-13T10:00:00Z"),
+		ObservedEndAt:   jsonTime("2026-05-13T10:00:00Z"),
+	}}); err != nil {
+		t.Fatalf("SaveJSON(spool): %v", err)
+	}
+
+	client := &syncBackendClientStub{failOn: "old-backlog"}
+	engine := &SyncEngine{
+		Scanner: NewScanner(),
+		Client:  client,
+	}
+	err = engine.Run(context.Background(), RunOptions{
+		WorkspaceRoot: fixture.WorkspaceRoot,
+		WorkspaceID:   workspaceID,
+		ServerURL:     "https://ae.example.com",
+		AuthSubject:   "user:123",
+		RepoConfigID:  123,
+		RepoKey:       "github.com/acme/repo",
+		DurableReplay: true,
+		ManagedUpload: true,
+	})
+	if err == nil {
+		t.Fatal("Run error = nil, want old backlog upload failure")
+	}
+	if !client.SawUpload("codex-jsonl:sess-1:resp-1") {
+		t.Fatalf("uploads = %+v, want current scan uploaded before old backlog failure", client.uploads)
+	}
+}
+
 func TestSync_RunForWorkspaceWithoutClientSpoolsNewEvents(t *testing.T) {
 	fixture := buildAttributionFixture(t)
 	engine := &SyncEngine{
@@ -179,8 +303,8 @@ func TestSync_RunForWorkspaceSpoolsNewEventsWhenUploadFails(t *testing.T) {
 		},
 	}
 
-	if err := engine.RunForWorkspace(context.Background(), fixture.WorkspaceRoot); err != nil {
-		t.Fatalf("RunForWorkspace: %v", err)
+	if err := engine.RunForWorkspace(context.Background(), fixture.WorkspaceRoot); err == nil {
+		t.Fatal("RunForWorkspace error = nil, want upload failure")
 	}
 
 	workspaceID, err := mustWorkspaceID(fixture.WorkspaceRoot)

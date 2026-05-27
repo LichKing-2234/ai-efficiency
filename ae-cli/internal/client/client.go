@@ -21,6 +21,11 @@ type Client struct {
 	httpClient *http.Client
 }
 
+var toolUsageRetryBackoffs = []time.Duration{250 * time.Millisecond, time.Second}
+var toolUsageAttemptTimeout = 15 * time.Second
+
+const toolUsageErrorBodyLimit = 4096
+
 type ProviderInfo struct {
 	Name         string                   `json:"name"`
 	DisplayName  string                   `json:"display_name"`
@@ -101,6 +106,10 @@ type ToolUsageEventRequest struct {
 	RawSourcePath     string         `json:"raw_source_path,omitempty"`
 	RawSourceLocator  string         `json:"raw_source_locator,omitempty"`
 	RawPayload        map[string]any `json:"raw_payload,omitempty"`
+}
+
+type ToolUsageEventsBatchRequest struct {
+	Events []ToolUsageEventRequest `json:"events"`
 }
 
 type RepoEnsureResponse struct {
@@ -206,21 +215,127 @@ func (c *Client) SendToolUsageEvent(ctx context.Context, req ToolUsageEventReque
 	if err != nil {
 		return fmt.Errorf("marshal tool usage event: %w", err)
 	}
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/api/v1/tool-usage-events", bytes.NewReader(body))
-	if err != nil {
-		return fmt.Errorf("create tool usage event request: %w", err)
+	var lastErr error
+	attempts := len(toolUsageRetryBackoffs) + 1
+	for attempt := 0; attempt < attempts; attempt++ {
+		attemptCtx := ctx
+		cancel := func() {}
+		if toolUsageAttemptTimeout > 0 {
+			attemptCtx, cancel = context.WithTimeout(ctx, toolUsageAttemptTimeout)
+		}
+		httpReq, err := http.NewRequestWithContext(attemptCtx, http.MethodPost, c.baseURL+"/api/v1/tool-usage-events", bytes.NewReader(body))
+		if err != nil {
+			cancel()
+			return fmt.Errorf("create tool usage event request: %w", err)
+		}
+		c.setHeaders(httpReq)
+		resp, err := c.httpClient.Do(httpReq)
+		if err != nil {
+			cancel()
+			lastErr = fmt.Errorf("send tool usage event: %w", err)
+		} else {
+			if resp.StatusCode == http.StatusCreated || resp.StatusCode == http.StatusOK {
+				_ = resp.Body.Close()
+				cancel()
+				return nil
+			}
+			respBody, _ := io.ReadAll(io.LimitReader(resp.Body, toolUsageErrorBodyLimit))
+			_ = resp.Body.Close()
+			cancel()
+			lastErr = fmt.Errorf("unexpected tool usage status %d: %s", resp.StatusCode, string(respBody))
+			if !isRetryableToolUsageStatus(resp.StatusCode) {
+				return lastErr
+			}
+		}
+		if attempt < len(toolUsageRetryBackoffs) {
+			if err := sleepWithContext(ctx, toolUsageRetryBackoffs[attempt]); err != nil {
+				return err
+			}
+		}
 	}
-	c.setHeaders(httpReq)
-	resp, err := c.httpClient.Do(httpReq)
-	if err != nil {
-		return fmt.Errorf("send tool usage event: %w", err)
+	return lastErr
+}
+
+func (c *Client) SendToolUsageEvents(ctx context.Context, reqs []ToolUsageEventRequest) error {
+	if len(reqs) == 0 {
+		return nil
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("unexpected tool usage status %d: %s", resp.StatusCode, string(respBody))
+	body, err := json.Marshal(ToolUsageEventsBatchRequest{Events: reqs})
+	if err != nil {
+		return fmt.Errorf("marshal tool usage events batch: %w", err)
+	}
+	var lastErr error
+	attempts := len(toolUsageRetryBackoffs) + 1
+	for attempt := 0; attempt < attempts; attempt++ {
+		attemptCtx := ctx
+		cancel := func() {}
+		if toolUsageAttemptTimeout > 0 {
+			attemptCtx, cancel = context.WithTimeout(ctx, toolUsageAttemptTimeout)
+		}
+		httpReq, err := http.NewRequestWithContext(attemptCtx, http.MethodPost, c.baseURL+"/api/v1/tool-usage-events/batch", bytes.NewReader(body))
+		if err != nil {
+			cancel()
+			return fmt.Errorf("create tool usage events batch request: %w", err)
+		}
+		c.setHeaders(httpReq)
+		resp, err := c.httpClient.Do(httpReq)
+		if err != nil {
+			cancel()
+			lastErr = fmt.Errorf("send tool usage events batch: %w", err)
+		} else {
+			if resp.StatusCode == http.StatusCreated || resp.StatusCode == http.StatusOK {
+				_ = resp.Body.Close()
+				cancel()
+				return nil
+			}
+			respBody, _ := io.ReadAll(io.LimitReader(resp.Body, toolUsageErrorBodyLimit))
+			_ = resp.Body.Close()
+			cancel()
+			if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusMethodNotAllowed || resp.StatusCode == http.StatusBadRequest || resp.StatusCode == http.StatusUnprocessableEntity {
+				return c.sendToolUsageEventsIndividually(ctx, reqs, fmt.Errorf("unexpected tool usage batch status %d: %s", resp.StatusCode, string(respBody)))
+			}
+			lastErr = fmt.Errorf("unexpected tool usage batch status %d: %s", resp.StatusCode, string(respBody))
+			if !isRetryableToolUsageStatus(resp.StatusCode) {
+				return lastErr
+			}
+		}
+		if attempt < len(toolUsageRetryBackoffs) {
+			if err := sleepWithContext(ctx, toolUsageRetryBackoffs[attempt]); err != nil {
+				return err
+			}
+		}
+	}
+	return lastErr
+}
+
+func (c *Client) sendToolUsageEventsIndividually(ctx context.Context, reqs []ToolUsageEventRequest, batchErr error) error {
+	for _, req := range reqs {
+		if err := c.SendToolUsageEvent(ctx, req); err != nil {
+			return fmt.Errorf("%w; fallback single upload failed: %w", batchErr, err)
+		}
 	}
 	return nil
+}
+
+func isRetryableToolUsageStatus(status int) bool {
+	return status == http.StatusTooManyRequests ||
+		status == http.StatusBadGateway ||
+		status == http.StatusServiceUnavailable ||
+		status == http.StatusGatewayTimeout
+}
+
+func sleepWithContext(ctx context.Context, d time.Duration) error {
+	if d <= 0 {
+		return nil
+	}
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
 
 func (c *Client) EnsureRepoFromRemote(ctx context.Context, remoteURL, branch string) (*RepoEnsureResponse, error) {

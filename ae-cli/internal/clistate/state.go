@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 func RootDir() string {
@@ -32,7 +33,7 @@ func SaveJSON(path string, value any) error {
 	if err != nil {
 		return fmt.Errorf("marshal json: %w", err)
 	}
-	tmp := path + ".tmp"
+	tmp := fmt.Sprintf("%s.%d.%d.tmp", path, os.Getpid(), time.Now().UnixNano())
 	if err := os.WriteFile(tmp, data, 0o600); err != nil {
 		return fmt.Errorf("write temp json: %w", err)
 	}

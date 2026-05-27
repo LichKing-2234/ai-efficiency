@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -70,7 +71,6 @@ func (h *Handler) attributionSyncClient() attributionlocal.BackendClient {
 }
 
 func (h *Handler) PostCommitResolved(ctx context.Context, execCtx ExecutionContext) error {
-	_ = h.FlushResolved(ctx, execCtx)
 	repoRoot := strings.TrimSpace(execCtx.RepoRoot)
 	if repoRoot == "" {
 		return nil
@@ -109,23 +109,44 @@ func (h *Handler) PostCommitResolved(ctx context.Context, execCtx ExecutionConte
 	}
 	if h == nil || h.uploader == nil {
 		_ = enqueueForReplay(execCtx, ev)
-		return nil
-	}
-	if err := h.uploader.UploadHookEvent(ctx, ev); err != nil {
+	} else if err := h.uploader.UploadHookEvent(ctx, ev); err != nil {
 		_ = enqueueForReplay(execCtx, ev)
-		return nil
 	}
-	if syncClient := h.attributionSyncClient(); syncClient != nil {
-		_ = runAttributionSync(ctx, attributionlocal.RunOptions{
-			WorkspaceRoot: repoRoot,
-			WorkspaceID:   workspaceID,
-			ServerURL:     execCtx.ServerURL,
-			AuthSubject:   execCtx.AuthSubject,
-			RepoConfigID:  execCtx.RepoConfigID,
-			RepoKey:       execCtx.RepoKey,
-			DurableReplay: execCtx.hasStableReplayBinding(),
-			ManagedUpload: true,
-		}, syncClient)
+
+	task := SyncTask{
+		WorkspaceID:     workspaceID,
+		RepoRoot:        repoRoot,
+		ServerURL:       execCtx.ServerURL,
+		AuthSubject:     execCtx.AuthSubject,
+		RepoConfigID:    execCtx.RepoConfigID,
+		RepoKey:         execCtx.RepoKey,
+		Status:          SyncTaskStatusPending,
+		LastRequestedAt: time.Now().UTC(),
+	}
+	currentTask := &task
+	syncClient := h.attributionSyncClient()
+	if err := UpsertPendingSyncTask(task); err == nil {
+		if loadedTask, loadErr := LoadSyncTask(workspaceID); loadErr == nil && loadedTask != nil {
+			currentTask = loadedTask
+		}
+		if syncClient != nil {
+			claimSpawn, claimedTask, claimErr := TryClaimSyncTaskSpawn(workspaceID, time.Now().UTC(), syncTaskSpawnCooldown)
+			if claimedTask != nil {
+				currentTask = claimedTask
+			}
+			if claimErr != nil {
+				fmt.Fprintln(os.Stderr, "ae-cli: attribution sync pending for this repo; run 'ae-cli doctor' for details")
+			} else if claimSpawn {
+				if err := spawnBackgroundSyncRunner(repoRoot); err != nil {
+					_ = MarkSyncTaskFailure(currentTask, time.Now().UTC(), err)
+					fmt.Fprintln(os.Stderr, "ae-cli: attribution sync pending for this repo; run 'ae-cli doctor' for details")
+				}
+			} else if strings.TrimSpace(currentTask.LastError) != "" {
+				fmt.Fprintln(os.Stderr, "ae-cli: attribution sync pending for this repo; run 'ae-cli doctor' for details")
+			}
+		}
+	} else {
+		fmt.Fprintln(os.Stderr, "ae-cli: attribution sync pending for this repo; run 'ae-cli doctor' for details")
 	}
 	return nil
 }

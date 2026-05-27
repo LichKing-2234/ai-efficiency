@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -138,6 +139,180 @@ func TestSendToolUsageEvent(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("SendToolUsageEvent: %v", err)
+	}
+}
+
+func TestSendToolUsageEventsUsesBatchEndpoint(t *testing.T) {
+	var got ToolUsageEventsBatchRequest
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("method = %s, want POST", r.Method)
+		}
+		if r.URL.Path != "/api/v1/tool-usage-events/batch" {
+			t.Errorf("path = %s, want /api/v1/tool-usage-events/batch", r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "tok")
+	err := c.SendToolUsageEvents(context.Background(), []ToolUsageEventRequest{{
+		Tool:            "codex",
+		WorkspaceID:     "ws-1",
+		ToolSessionID:   "conv-1",
+		DedupeKey:       "codex:conv-1:resp-1",
+		UsageUnit:       "token",
+		ObservedStartAt: time.Now().UTC(),
+		ObservedEndAt:   time.Now().UTC(),
+	}})
+	if err != nil {
+		t.Fatalf("SendToolUsageEvents: %v", err)
+	}
+	if len(got.Events) != 1 || got.Events[0].DedupeKey != "codex:conv-1:resp-1" {
+		t.Fatalf("batch request = %+v", got)
+	}
+}
+
+func TestSendToolUsageEventsFallsBackWhenBatchUnsupported(t *testing.T) {
+	var batchAttempts int32
+	var singleAttempts int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/tool-usage-events/batch":
+			atomic.AddInt32(&batchAttempts, 1)
+			w.WriteHeader(http.StatusNotFound)
+		case "/api/v1/tool-usage-events":
+			atomic.AddInt32(&singleAttempts, 1)
+			w.WriteHeader(http.StatusCreated)
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "tok")
+	err := c.SendToolUsageEvents(context.Background(), []ToolUsageEventRequest{{
+		Tool:            "codex",
+		WorkspaceID:     "ws-1",
+		ToolSessionID:   "conv-1",
+		DedupeKey:       "codex:conv-1:resp-1",
+		UsageUnit:       "token",
+		ObservedStartAt: time.Now().UTC(),
+		ObservedEndAt:   time.Now().UTC(),
+	}})
+	if err != nil {
+		t.Fatalf("SendToolUsageEvents: %v", err)
+	}
+	if batchAttempts != 1 || singleAttempts != 1 {
+		t.Fatalf("batchAttempts=%d singleAttempts=%d, want 1/1", batchAttempts, singleAttempts)
+	}
+}
+
+func TestSendToolUsageEventRetriesTransientGatewayStatus(t *testing.T) {
+	origBackoffs := toolUsageRetryBackoffs
+	toolUsageRetryBackoffs = []time.Duration{0}
+	t.Cleanup(func() { toolUsageRetryBackoffs = origBackoffs })
+
+	var attempts int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := atomic.AddInt32(&attempts, 1); got == 1 {
+			w.WriteHeader(http.StatusBadGateway)
+			_, _ = w.Write([]byte(`{"message":"bad gateway"}`))
+			return
+		}
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "tok")
+	err := c.SendToolUsageEvent(context.Background(), ToolUsageEventRequest{
+		Tool:            "codex",
+		WorkspaceID:     "ws-1",
+		ToolSessionID:   "conv-1",
+		DedupeKey:       "codex:conv-1:resp-1",
+		UsageUnit:       "token",
+		ObservedStartAt: time.Now().UTC(),
+		ObservedEndAt:   time.Now().UTC(),
+	})
+	if err != nil {
+		t.Fatalf("SendToolUsageEvent: %v", err)
+	}
+	if attempts != 2 {
+		t.Fatalf("attempts = %d, want 2", attempts)
+	}
+}
+
+func TestSendToolUsageEventBoundsSlowAttempt(t *testing.T) {
+	origBackoffs := toolUsageRetryBackoffs
+	origTimeout := toolUsageAttemptTimeout
+	toolUsageRetryBackoffs = nil
+	toolUsageAttemptTimeout = 20 * time.Millisecond
+	t.Cleanup(func() {
+		toolUsageRetryBackoffs = origBackoffs
+		toolUsageAttemptTimeout = origTimeout
+	})
+
+	var attempts int32
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&attempts, 1)
+		<-release
+	}))
+	defer srv.Close()
+	defer close(release)
+
+	c := New(srv.URL, "tok")
+	start := time.Now()
+	err := c.SendToolUsageEvent(context.Background(), ToolUsageEventRequest{
+		Tool:            "codex",
+		WorkspaceID:     "ws-1",
+		ToolSessionID:   "conv-1",
+		DedupeKey:       "codex:conv-1:resp-1",
+		UsageUnit:       "token",
+		ObservedStartAt: time.Now().UTC(),
+		ObservedEndAt:   time.Now().UTC(),
+	})
+	if err == nil {
+		t.Fatal("SendToolUsageEvent error = nil, want timeout error")
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("SendToolUsageEvent elapsed = %s, want bounded attempt", elapsed)
+	}
+	if attempts != 1 {
+		t.Fatalf("attempts = %d, want 1", attempts)
+	}
+}
+
+func TestSendToolUsageEventDoesNotRetryValidationError(t *testing.T) {
+	origBackoffs := toolUsageRetryBackoffs
+	toolUsageRetryBackoffs = []time.Duration{0}
+	t.Cleanup(func() { toolUsageRetryBackoffs = origBackoffs })
+
+	var attempts int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&attempts, 1)
+		w.WriteHeader(http.StatusUnprocessableEntity)
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "tok")
+	err := c.SendToolUsageEvent(context.Background(), ToolUsageEventRequest{
+		Tool:            "codex",
+		WorkspaceID:     "ws-1",
+		ToolSessionID:   "conv-1",
+		DedupeKey:       "codex:conv-1:resp-1",
+		UsageUnit:       "token",
+		ObservedStartAt: time.Now().UTC(),
+		ObservedEndAt:   time.Now().UTC(),
+	})
+	if err == nil {
+		t.Fatal("SendToolUsageEvent error = nil, want error")
+	}
+	if attempts != 1 {
+		t.Fatalf("attempts = %d, want 1", attempts)
 	}
 }
 

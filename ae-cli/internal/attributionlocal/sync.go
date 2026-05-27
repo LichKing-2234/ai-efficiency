@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sort"
 	"time"
 
 	"github.com/ai-efficiency/ae-cli/internal/client"
@@ -12,6 +13,10 @@ import (
 
 type BackendClient interface {
 	SendToolUsageEvent(ctx context.Context, req client.ToolUsageEventRequest) error
+}
+
+type BatchBackendClient interface {
+	SendToolUsageEvents(ctx context.Context, reqs []client.ToolUsageEventRequest) error
 }
 
 type SyncEngine struct {
@@ -30,6 +35,8 @@ type RunOptions struct {
 	DurableReplay bool
 	ManagedUpload bool
 }
+
+const toolUsageReplayBatchSize = 50
 
 func NewSyncEngine(c BackendClient) *SyncEngine {
 	return &SyncEngine{
@@ -54,9 +61,10 @@ func (e *SyncEngine) replay(ctx context.Context, workspaceRoot string, opts RunO
 		return nil
 	}
 
-	remaining := make([]LocalToolUsageEvent, 0, len(spooled))
+	sortSpooledEventsForReplay(spooled)
+	candidates := make([]LocalToolUsageEvent, 0, len(spooled))
 	filterByBinding := hasStableRunBinding(opts)
-	for idx, ev := range spooled {
+	for _, ev := range spooled {
 		ev = normalizeObservedWindow(ev)
 		if filterByBinding && !eventMatchesRunOptions(ev, opts) {
 			_ = appendToolUsageLedger(opts.WorkspaceID, toolUsageLedgerRecord{
@@ -75,22 +83,45 @@ func (e *SyncEngine) replay(ctx context.Context, workspaceRoot string, opts RunO
 			})
 			continue
 		}
-		if err := e.Client.SendToolUsageEvent(ctx, toClientUsageRequest(ev)); err != nil {
-			remaining = append(remaining, ev)
-			for _, queued := range spooled[idx+1:] {
-				queued = normalizeObservedWindow(queued)
-				if filterByBinding && !eventMatchesRunOptions(queued, opts) {
-					continue
-				}
-				remaining = append(remaining, queued)
-			}
-			if err := SaveJSON(e.spoolPath, remaining); err != nil {
-				return err
-			}
+		candidates = append(candidates, ev)
+	}
+	uploaded, err := e.sendSpooledEvents(ctx, candidates)
+	if err != nil {
+		remaining := candidates[uploaded:]
+		if err := SaveJSON(e.spoolPath, remaining); err != nil {
 			return err
 		}
+		return err
 	}
 	return clearSpooledEvents(e.spoolPath)
+}
+
+func (e *SyncEngine) sendSpooledEvents(ctx context.Context, events []LocalToolUsageEvent) (int, error) {
+	if len(events) == 0 {
+		return 0, nil
+	}
+	if batchClient, ok := e.Client.(BatchBackendClient); ok {
+		for start := 0; start < len(events); start += toolUsageReplayBatchSize {
+			end := start + toolUsageReplayBatchSize
+			if end > len(events) {
+				end = len(events)
+			}
+			reqs := make([]client.ToolUsageEventRequest, 0, end-start)
+			for _, ev := range events[start:end] {
+				reqs = append(reqs, toClientUsageRequest(ev))
+			}
+			if err := batchClient.SendToolUsageEvents(ctx, reqs); err != nil {
+				return start, err
+			}
+		}
+		return len(events), nil
+	}
+	for idx, ev := range events {
+		if err := e.Client.SendToolUsageEvent(ctx, toClientUsageRequest(ev)); err != nil {
+			return idx, err
+		}
+	}
+	return len(events), nil
 }
 
 func (e *SyncEngine) RunForWorkspace(ctx context.Context, workspaceRoot string) error {
@@ -118,12 +149,6 @@ func (e *SyncEngine) Run(ctx context.Context, opts RunOptions) error {
 		return err
 	}
 
-	if opts.DurableReplay {
-		if err := e.replay(ctx, opts.WorkspaceRoot, opts); err != nil {
-			return err
-		}
-	}
-
 	events, nextState, err := e.Scanner.ScanWorkspaceContext(ctx, opts.WorkspaceRoot, state)
 	if err != nil {
 		return err
@@ -147,14 +172,32 @@ func (e *SyncEngine) Run(ctx context.Context, opts RunOptions) error {
 		return SaveJSON(statePath, nextState)
 	}
 
+	if opts.DurableReplay {
+		if len(events) > 0 {
+			if err := appendSpooledEvents(spoolPath, events); err != nil {
+				return err
+			}
+			if err := SaveJSON(statePath, nextState); err != nil {
+				return err
+			}
+		}
+		if err := e.replay(ctx, opts.WorkspaceRoot, opts); err != nil {
+			return err
+		}
+		return nil
+	}
+
 	for idx, ev := range events {
 		if err := e.Client.SendToolUsageEvent(ctx, toClientUsageRequest(ev)); err != nil {
 			if opts.DurableReplay {
-				if err := appendSpooledEvents(spoolPath, events[idx:]); err != nil {
-					return err
+				if spoolErr := appendSpooledEvents(spoolPath, events[idx:]); spoolErr != nil {
+					return spoolErr
 				}
 			}
-			return SaveJSON(statePath, nextState)
+			if saveErr := SaveJSON(statePath, nextState); saveErr != nil {
+				return saveErr
+			}
+			return err
 		}
 	}
 	return SaveJSON(statePath, nextState)
@@ -176,10 +219,6 @@ func (e *SyncEngine) runLegacy(ctx context.Context, workspaceRoot string) error 
 		return err
 	}
 
-	if err := e.Replay(ctx, workspaceRoot); err != nil {
-		return err
-	}
-
 	events, nextState, err := e.Scanner.ScanWorkspaceContext(ctx, workspaceRoot, state)
 	if err != nil {
 		return err
@@ -195,12 +234,47 @@ func (e *SyncEngine) runLegacy(ctx context.Context, workspaceRoot string) error 
 		return SaveJSON(statePath, nextState)
 	}
 
+	if len(events) > 0 {
+		if err := appendSpooledEvents(spoolPath, events); err != nil {
+			return err
+		}
+		if err := SaveJSON(statePath, nextState); err != nil {
+			return err
+		}
+	}
+	if err := e.Replay(ctx, workspaceRoot); err != nil {
+		return err
+	}
+	return nil
+}
+
+func sortSpooledEventsForReplay(events []LocalToolUsageEvent) {
+	for idx := range events {
+		events[idx] = normalizeObservedWindow(events[idx])
+	}
+	sort.SliceStable(events, func(i, j int) bool {
+		left := events[i].ObservedEndAt
+		right := events[j].ObservedEndAt
+		if left.IsZero() {
+			return false
+		}
+		if right.IsZero() {
+			return true
+		}
+		return left.After(right)
+	})
+}
+
+func (e *SyncEngine) runLegacyDirectUpload(ctx context.Context, statePath, spoolPath string, events []LocalToolUsageEvent, nextState ScanState) error {
 	for idx, ev := range events {
 		if err := e.Client.SendToolUsageEvent(ctx, toClientUsageRequest(ev)); err != nil {
-			if err := appendSpooledEvents(spoolPath, events[idx:]); err != nil {
-				return err
+			if spoolErr := appendSpooledEvents(spoolPath, events[idx:]); spoolErr != nil {
+				return spoolErr
 			}
-			return SaveJSON(statePath, nextState)
+			if saveErr := SaveJSON(statePath, nextState); saveErr != nil {
+				return saveErr
+			}
+			return err
 		}
 	}
 	return SaveJSON(statePath, nextState)

@@ -5,15 +5,18 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ai-efficiency/ae-cli/internal/attributionlocal"
 	"github.com/ai-efficiency/ae-cli/internal/client"
 	"github.com/ai-efficiency/ae-cli/internal/collector"
+	"github.com/ai-efficiency/ae-cli/internal/session"
 )
 
 type fakeUploader struct {
@@ -68,14 +71,16 @@ func (r *recordingBackendHookClient) SendToolUsageEvent(ctx context.Context, req
 
 func git2(t *testing.T, dir string, args ...string) string {
 	t.Helper()
-	cmd := exec.Command("git", args...)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		t.Fatalf("git %s failed: %v\nstderr=%s", strings.Join(args, " "), err, stderr.String())
+		t.Fatalf("git %s failed: %v\nstdout=%s\nstderr=%s", strings.Join(args, " "), err, stdout.String(), stderr.String())
 	}
 	return strings.TrimSpace(stdout.String())
 }
@@ -83,10 +88,14 @@ func git2(t *testing.T, dir string, args ...string) string {
 func initRepoWithCommit2(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
-	git2(t, dir, "init")
+	git2(t, dir, "init", "--template=/dev/null")
 	git2(t, dir, "config", "user.email", "alice@example.com")
 	git2(t, dir, "config", "user.name", "alice")
+	git2(t, dir, "config", "core.hooksPath", filepath.Join(dir, ".git", "test-hooks-empty"))
 	git2(t, dir, "remote", "add", "origin", "https://github.com/acme/repo.git")
+	if err := os.MkdirAll(filepath.Join(dir, ".git", "test-hooks-empty"), 0o755); err != nil {
+		t.Fatalf("mkdir test hooks dir: %v", err)
+	}
 	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a\n"), 0o644); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
@@ -125,19 +134,25 @@ func writeCollectorFixtures(t *testing.T, workspaceRoot string) (string, string,
 
 func resolvedContextForRepo(t *testing.T, repo string) ExecutionContext {
 	t.Helper()
-	gitCtx, err := DetectGitContext(repo)
+	repoRoot := git2(t, repo, "rev-parse", "--show-toplevel")
+	gitDir := git2(t, repo, "rev-parse", "--absolute-git-dir")
+	gitCommon := git2(t, repo, "rev-parse", "--git-common-dir")
+	if !filepath.IsAbs(gitCommon) {
+		gitCommon = filepath.Join(repoRoot, gitCommon)
+	}
+	workspaceID, err := session.DeriveWorkspaceID(repoRoot, repoRoot, gitDir, gitCommon)
 	if err != nil {
-		t.Fatalf("DetectGitContext: %v", err)
+		t.Fatalf("DeriveWorkspaceID: %v", err)
 	}
 	return ExecutionContext{
 		ServerURL:     "https://ae.example.com",
 		AuthSubject:   "user:123",
 		RepoConfigID:  123,
-		RepoKey:       gitCtx.RepoKey,
+		RepoKey:       "github.com/acme/repo",
 		RepoFullName:  "acme/repo",
-		WorkspaceID:   gitCtx.WorkspaceID,
-		RepoRoot:      gitCtx.RepoRoot,
-		Branch:        gitCtx.Branch,
+		WorkspaceID:   workspaceID,
+		RepoRoot:      repoRoot,
+		Branch:        "main",
 		DurableReplay: true,
 	}
 }
@@ -176,6 +191,9 @@ func TestPostCommitResolvedQueuesOnlyWithStableBinding(t *testing.T) {
 	repo := initRepoWithCommit2(t)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	origSpawn := spawnBackgroundSyncRunner
+	spawnBackgroundSyncRunner = func(repoRoot string) error { return nil }
+	t.Cleanup(func() { spawnBackgroundSyncRunner = origSpawn })
 
 	execCtx := resolvedContextForRepo(t, repo)
 	u := &fakeUploader{err: errors.New("upload failed")}
@@ -219,11 +237,14 @@ func TestPostCommitResolvedQueuesOnlyWithStableBinding(t *testing.T) {
 	}
 }
 
-func TestPostCommitResolvedFlushesMatchingQueuedEvents(t *testing.T) {
+func TestPostCommitResolvedLeavesQueuedEventsForAsyncRunner(t *testing.T) {
 	repo := initRepoWithCommit2(t)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	execCtx := resolvedContextForRepo(t, repo)
+	origSpawn := spawnBackgroundSyncRunner
+	spawnBackgroundSyncRunner = func(repoRoot string) error { return nil }
+	t.Cleanup(func() { spawnBackgroundSyncRunner = origSpawn })
 
 	q, err := NewWorkspaceQueue(execCtx.WorkspaceID)
 	if err != nil {
@@ -253,23 +274,20 @@ func TestPostCommitResolvedFlushesMatchingQueuedEvents(t *testing.T) {
 		t.Fatalf("PostCommitResolved: %v", err)
 	}
 
-	if len(u.events) != 2 {
+	if len(u.events) != 1 {
 		b, _ := json.Marshal(u.events)
-		t.Fatalf("uploaded events = %d, want 2; events=%s", len(u.events), string(b))
-	}
-	if got := u.events[0].CommitSHA; got != "old-sha" {
-		t.Fatalf("first uploaded commit = %q, want old queued commit", got)
+		t.Fatalf("uploaded events = %d, want 1; events=%s", len(u.events), string(b))
 	}
 	head := git2(t, repo, "rev-parse", "HEAD")
-	if got := u.events[1].CommitSHA; got != head {
-		t.Fatalf("second uploaded commit = %q, want current head %q", got, head)
+	if got := u.events[0].CommitSHA; got != head {
+		t.Fatalf("uploaded commit = %q, want current head %q", got, head)
 	}
 	items, err := q.List()
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
-	if len(items) != 0 {
-		t.Fatalf("queued items after post-commit = %d, want 0", len(items))
+	if len(items) != 1 || items[0].Event.CommitSHA != "old-sha" {
+		t.Fatalf("queued items after post-commit = %+v, want old queued event preserved", items)
 	}
 }
 
@@ -358,6 +376,9 @@ func TestPostCommitSetsRepoConfigScopedEventID(t *testing.T) {
 	repo := initRepoWithCommit2(t)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	origSpawn := spawnBackgroundSyncRunner
+	spawnBackgroundSyncRunner = func(repoRoot string) error { return nil }
+	t.Cleanup(func() { spawnBackgroundSyncRunner = origSpawn })
 	execCtx := resolvedContextForRepo(t, repo)
 
 	u := &fakeUploader{}
@@ -379,23 +400,15 @@ func TestPostCommitSetsRepoConfigScopedEventID(t *testing.T) {
 	}
 }
 
-func TestPostCommitWithBackendUploaderUploadsCheckpointBeforeManagedToolUsageSync(t *testing.T) {
+func TestPostCommitWithBackendUploaderCreatesPendingTaskAfterCheckpointUpload(t *testing.T) {
 	repo := initRepoWithCommit2(t)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	execCtx := resolvedContextForRepo(t, repo)
 
-	workspaceRoot := git2(t, repo, "rev-parse", "--show-toplevel")
-	codexDir := filepath.Join(home, ".codex", "sessions", "2026", "05", "19")
-	if err := os.MkdirAll(codexDir, 0o700); err != nil {
-		t.Fatalf("mkdir codex dir: %v", err)
-	}
-	codexPath := filepath.Join(codexDir, "sess-hook-sync.jsonl")
-	codexBody := `{"timestamp":"2026-05-19T07:05:07Z","type":"session_meta","payload":{"id":"codex-hook-sync-1","cwd":"` + workspaceRoot + `"}}
-{"timestamp":"2026-05-19T07:05:08Z","type":"event_msg","payload":{"type":"token_count","response_id":"resp-hook-sync-1","info":{"last_token_usage":{"input_tokens":12,"cached_input_tokens":4,"output_tokens":5,"reasoning_output_tokens":2,"total_tokens":21}}}}`
-	if err := os.WriteFile(codexPath, []byte(codexBody), 0o600); err != nil {
-		t.Fatalf("write codex jsonl: %v", err)
-	}
+	origSpawn := spawnBackgroundSyncRunner
+	spawnBackgroundSyncRunner = func(repoRoot string) error { return nil }
+	t.Cleanup(func() { spawnBackgroundSyncRunner = origSpawn })
 
 	clientStub := &recordingBackendHookClient{}
 	h := NewHandler(NewBackendUploader(clientStub))
@@ -409,41 +422,42 @@ func TestPostCommitWithBackendUploaderUploadsCheckpointBeforeManagedToolUsageSyn
 	if clientStub.checkpoints[0].RepoConfigID != 123 {
 		t.Fatalf("checkpoint repo_config_id = %d, want 123", clientStub.checkpoints[0].RepoConfigID)
 	}
-	if len(clientStub.toolUsage) == 0 {
-		t.Fatal("expected tool usage uploads during post-commit sync")
+	if len(clientStub.toolUsage) != 0 {
+		t.Fatalf("tool usage uploads = %d, want 0 during post-commit fast path", len(clientStub.toolUsage))
 	}
-	if clientStub.toolUsage[0].RepoConfigID != 123 {
-		t.Fatalf("tool usage repo_config_id = %d, want 123", clientStub.toolUsage[0].RepoConfigID)
+	if len(clientStub.order) != 1 || clientStub.order[0] != "checkpoint" {
+		t.Fatalf("upload order = %v, want only checkpoint on post-commit fast path", clientStub.order)
 	}
-	if clientStub.toolUsage[0].RawSourcePath != "" || clientStub.toolUsage[0].RawSourceLocator != "" || clientStub.toolUsage[0].RawPayload != nil {
-		t.Fatalf("managed tool usage leaked raw fields: %+v", clientStub.toolUsage[0])
+	task, err := LoadSyncTask(execCtx.WorkspaceID)
+	if err != nil {
+		t.Fatalf("LoadSyncTask: %v", err)
 	}
-	if len(clientStub.order) < 2 || clientStub.order[0] != "checkpoint" || clientStub.order[1] != "tool_usage" {
-		t.Fatalf("upload order = %v, want checkpoint before tool usage", clientStub.order)
+	if task == nil || task.Status != SyncTaskStatusPending {
+		t.Fatalf("task = %+v, want pending sync task", task)
 	}
 }
 
-func TestPostCommitTriggersAttributionSyncAfterUpload(t *testing.T) {
+func TestPostCommitTriggersBackgroundRunnerAfterUpload(t *testing.T) {
 	repo := initRepoWithCommit2(t)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	execCtx := resolvedContextForRepo(t, repo)
 
-	synced := false
-	old := runAttributionSync
-	runAttributionSync = func(ctx context.Context, opts attributionlocal.RunOptions, syncClient attributionlocal.BackendClient) error {
-		synced = true
-		if opts.RepoConfigID != 123 || !opts.ManagedUpload {
-			t.Fatalf("sync opts = %+v, want managed repo_config_id", opts)
+	spawned := false
+	origSpawn := spawnBackgroundSyncRunner
+	spawnBackgroundSyncRunner = func(repoRoot string) error {
+		spawned = true
+		if repoRoot != execCtx.RepoRoot {
+			t.Fatalf("repoRoot = %q, want %q", repoRoot, execCtx.RepoRoot)
 		}
 		return nil
 	}
-	t.Cleanup(func() { runAttributionSync = old })
+	t.Cleanup(func() { spawnBackgroundSyncRunner = origSpawn })
 
 	u := &fakeUploader{
 		onCall: func() {
-			if synced {
-				t.Fatal("expected checkpoint upload before attribution sync")
+			if spawned {
+				t.Fatal("expected checkpoint upload before background runner trigger")
 			}
 		},
 	}
@@ -451,8 +465,109 @@ func TestPostCommitTriggersAttributionSyncAfterUpload(t *testing.T) {
 	if err := h.PostCommitResolved(context.Background(), execCtx); err != nil {
 		t.Fatalf("PostCommitResolved: %v", err)
 	}
-	if !synced {
-		t.Fatal("expected attribution sync")
+	if !spawned {
+		t.Fatal("expected background runner trigger")
+	}
+}
+
+func TestPostCommitThrottlesBackgroundRunnerSpawnAttempts(t *testing.T) {
+	repo := initRepoWithCommit2(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	execCtx := resolvedContextForRepo(t, repo)
+
+	var spawnCount int
+	origSpawn := spawnBackgroundSyncRunner
+	spawnBackgroundSyncRunner = func(repoRoot string) error {
+		spawnCount++
+		return nil
+	}
+	t.Cleanup(func() { spawnBackgroundSyncRunner = origSpawn })
+
+	h := NewHandler(syncCapableFakeUploader{fakeUploader: &fakeUploader{}})
+	if err := h.PostCommitResolved(context.Background(), execCtx); err != nil {
+		t.Fatalf("first PostCommitResolved: %v", err)
+	}
+	if err := h.PostCommitResolved(context.Background(), execCtx); err != nil {
+		t.Fatalf("second PostCommitResolved: %v", err)
+	}
+	if spawnCount != 1 {
+		t.Fatalf("spawn count = %d, want 1", spawnCount)
+	}
+}
+
+func TestPostCommitDoesNotTriggerRunnerWhenLeaseIsActive(t *testing.T) {
+	repo := initRepoWithCommit2(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	stubSyncTaskRunnerAlive(t, func(pid int) bool { return pid == 2222 })
+	execCtx := resolvedContextForRepo(t, repo)
+
+	now := time.Now().UTC()
+	if err := SaveSyncTask(SyncTask{
+		WorkspaceID:     execCtx.WorkspaceID,
+		RepoRoot:        execCtx.RepoRoot,
+		ServerURL:       execCtx.ServerURL,
+		AuthSubject:     execCtx.AuthSubject,
+		RepoConfigID:    execCtx.RepoConfigID,
+		RepoKey:         execCtx.RepoKey,
+		Status:          SyncTaskStatusRunning,
+		LastRequestedAt: now.Add(-1 * time.Minute),
+		LastStartedAt:   ptrTime(now),
+		RunnerPID:       2222,
+		LeaseExpiresAt:  ptrTime(now.Add(5 * time.Minute)),
+	}); err != nil {
+		t.Fatalf("SaveSyncTask: %v", err)
+	}
+
+	spawned := false
+	origSpawn := spawnBackgroundSyncRunner
+	spawnBackgroundSyncRunner = func(repoRoot string) error {
+		spawned = true
+		return nil
+	}
+	t.Cleanup(func() { spawnBackgroundSyncRunner = origSpawn })
+
+	h := NewHandler(syncCapableFakeUploader{fakeUploader: &fakeUploader{}})
+	if err := h.PostCommitResolved(context.Background(), execCtx); err != nil {
+		t.Fatalf("PostCommitResolved: %v", err)
+	}
+	if spawned {
+		t.Fatal("expected active lease to suppress background runner trigger")
+	}
+}
+
+func TestPostCommitWarnsWhenBackgroundRunnerSpawnFails(t *testing.T) {
+	repo := initRepoWithCommit2(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	execCtx := resolvedContextForRepo(t, repo)
+
+	origSpawn := spawnBackgroundSyncRunner
+	spawnBackgroundSyncRunner = func(repoRoot string) error {
+		return errors.New("spawn failed")
+	}
+	t.Cleanup(func() { spawnBackgroundSyncRunner = origSpawn })
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe: %v", err)
+	}
+	oldStderr := os.Stderr
+	os.Stderr = w
+	t.Cleanup(func() { os.Stderr = oldStderr })
+
+	h := NewHandler(syncCapableFakeUploader{fakeUploader: &fakeUploader{}})
+	if err := h.PostCommitResolved(context.Background(), execCtx); err != nil {
+		t.Fatalf("PostCommitResolved: %v", err)
+	}
+	_ = w.Close()
+	output, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatalf("ReadAll(stderr): %v", err)
+	}
+	if !strings.Contains(string(output), "ae-cli: attribution sync pending for this repo; run 'ae-cli doctor' for details") {
+		t.Fatalf("stderr = %q, want backlog warning", string(output))
 	}
 }
 
@@ -475,6 +590,9 @@ func TestPostCommitAttachesCollectorSnapshotAndWritesWorkspaceCache(t *testing.T
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	execCtx := resolvedContextForRepo(t, repo)
+	origSpawn := spawnBackgroundSyncRunner
+	spawnBackgroundSyncRunner = func(repoRoot string) error { return nil }
+	t.Cleanup(func() { spawnBackgroundSyncRunner = origSpawn })
 
 	workspaceRoot := git2(t, repo, "rev-parse", "--show-toplevel")
 	codex, claude, kiro := writeCollectorFixtures(t, workspaceRoot)
@@ -514,6 +632,9 @@ func TestPostCommitPreservesCollectorCacheWhenNoSnapshot(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	execCtx := resolvedContextForRepo(t, repo)
+	origSpawn := spawnBackgroundSyncRunner
+	spawnBackgroundSyncRunner = func(repoRoot string) error { return nil }
+	t.Cleanup(func() { spawnBackgroundSyncRunner = origSpawn })
 
 	original := &collector.Snapshot{
 		Codex: &collector.CodexSnapshot{SourceSessionID: "codex-prev", TotalTokens: 999},

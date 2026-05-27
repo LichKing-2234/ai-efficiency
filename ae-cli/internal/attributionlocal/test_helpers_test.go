@@ -307,6 +307,25 @@ func (s *syncBackendClientStub) SawUpload(dedupeKey string) bool {
 	return false
 }
 
+type syncBatchBackendClientStub struct {
+	syncBackendClientStub
+	batches [][]string
+}
+
+func (s *syncBatchBackendClientStub) SendToolUsageEvents(_ context.Context, reqs []client.ToolUsageEventRequest) error {
+	batch := make([]string, 0, len(reqs))
+	for _, req := range reqs {
+		if s.failOn != "" && req.DedupeKey == s.failOn {
+			return fmt.Errorf("batch upload failed for %s", req.DedupeKey)
+		}
+		batch = append(batch, req.DedupeKey)
+		s.uploads = append(s.uploads, req.DedupeKey)
+		s.requests = append(s.requests, req)
+	}
+	s.batches = append(s.batches, batch)
+	return nil
+}
+
 func fixtureRepoRoot(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()

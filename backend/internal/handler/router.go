@@ -154,6 +154,7 @@ func SetupRouter(
 
 	toolUsageGroup := protected.Group("/tool-usage-events")
 	toolUsageGroup.POST("", toolUsageHandler.Create)
+	toolUsageGroup.POST("/batch", toolUsageHandler.CreateBatch)
 
 	eventsGroup := protected.Group("/events")
 	{

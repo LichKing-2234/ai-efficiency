@@ -11,9 +11,13 @@ import (
 func initRepoWithCommitForCmdTests(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
-	runGit(t, dir, "init")
+	runGit(t, dir, "init", "--template=/dev/null")
 	runGit(t, dir, "config", "user.email", "t@example.com")
 	runGit(t, dir, "config", "user.name", "t")
+	if err := os.MkdirAll(dir+"/.git/test-hooks-empty", 0o755); err != nil {
+		t.Fatalf("mkdir test hooks dir: %v", err)
+	}
+	runGit(t, dir, "config", "core.hooksPath", dir+"/.git/test-hooks-empty")
 	runGit(t, dir, "remote", "add", "origin", "https://github.com/acme/repo.git")
 	if err := os.WriteFile(dir+"/a.txt", []byte("a\n"), 0o644); err != nil {
 		t.Fatalf("write file: %v", err)

@@ -340,20 +340,26 @@ func TestSyncCommandFlushesPendingHookQueueBeforeAttributionSync(t *testing.T) {
 
 	oldCfg := cfg
 	oldClient := apiClient
-	oldRun := runSyncEngine
+	oldRun := runBackgroundSyncTask
 	cfg = &config.Config{Server: config.ServerConfig{URL: "https://ae.example.com", Token: "tok"}}
 	apiClient = client.New(srv.URL, "tok")
-	runSyncEngine = func(engine *attributionlocal.SyncEngine, ctx context.Context, opts attributionlocal.RunOptions) error {
+	runBackgroundSyncTask = func(ctx context.Context, execCtx hooks.ExecutionContext, uploader hooks.Uploader) error {
 		syncCalls++
-		if opts.RepoConfigID != 123 || opts.RepoKey != "github.com/acme/repo" {
-			t.Fatalf("sync opts = %+v, want repo_config_id 123", opts)
+		if execCtx.RepoConfigID != 123 || execCtx.RepoKey != "github.com/acme/repo" {
+			t.Fatalf("sync exec ctx = %+v, want repo_config_id 123", execCtx)
+		}
+		if task, err := hooks.LoadSyncTask(execCtx.WorkspaceID); err != nil || task == nil {
+			t.Fatalf("LoadSyncTask = %+v, %v, want pending task", task, err)
+		}
+		if err := hooks.NewHandler(uploader).FlushResolved(ctx, execCtx); err != nil {
+			t.Fatalf("FlushResolved: %v", err)
 		}
 		return nil
 	}
 	t.Cleanup(func() {
 		cfg = oldCfg
 		apiClient = oldClient
-		runSyncEngine = oldRun
+		runBackgroundSyncTask = oldRun
 	})
 
 	wd, err := os.Getwd()
@@ -417,20 +423,20 @@ func TestSyncCommandResolvesRepoWithoutEnsuring(t *testing.T) {
 
 	oldCfg := cfg
 	oldClient := apiClient
-	oldRun := runSyncEngine
+	oldRun := runBackgroundSyncTask
 	cfg = &config.Config{Server: config.ServerConfig{URL: srv.URL, Token: "tok"}}
 	apiClient = client.New(srv.URL, "tok")
-	runSyncEngine = func(engine *attributionlocal.SyncEngine, ctx context.Context, opts attributionlocal.RunOptions) error {
+	runBackgroundSyncTask = func(ctx context.Context, execCtx hooks.ExecutionContext, uploader hooks.Uploader) error {
 		syncCalls++
-		if opts.RepoConfigID != 321 || opts.RepoKey != "github.com/acme/repo" {
-			t.Fatalf("sync opts = %+v, want resolved repo_config_id 321", opts)
+		if execCtx.RepoConfigID != 321 || execCtx.RepoKey != "github.com/acme/repo" {
+			t.Fatalf("sync exec ctx = %+v, want resolved repo_config_id 321", execCtx)
 		}
 		return nil
 	}
 	t.Cleanup(func() {
 		cfg = oldCfg
 		apiClient = oldClient
-		runSyncEngine = oldRun
+		runBackgroundSyncTask = oldRun
 	})
 
 	if err := syncCmd.RunE(syncCmd, nil); err != nil {
