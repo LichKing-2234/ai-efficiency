@@ -179,8 +179,8 @@ func TestSync_RunForWorkspaceSpoolsNewEventsWhenUploadFails(t *testing.T) {
 		},
 	}
 
-	if err := engine.RunForWorkspace(context.Background(), fixture.WorkspaceRoot); err != nil {
-		t.Fatalf("RunForWorkspace: %v", err)
+	if err := engine.RunForWorkspace(context.Background(), fixture.WorkspaceRoot); err == nil {
+		t.Fatal("RunForWorkspace error = nil, want upload failure")
 	}
 
 	workspaceID, err := mustWorkspaceID(fixture.WorkspaceRoot)

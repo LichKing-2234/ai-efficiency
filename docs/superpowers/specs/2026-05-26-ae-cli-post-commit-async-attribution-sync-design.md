@@ -379,6 +379,7 @@ ae-cli: attribution sync pending for this repo; run 'ae-cli doctor' for details
 6. lease 过期后允许回收，避免 crashed runner 永久卡死
 7. tool-usage 上传遇到瞬时网关/限流错误（429/502/503/504）时，client 先做短重试；仍失败时保留剩余 events 到 spool，后续 sync 继续推进
 8. 单次 tool-usage HTTP 上传必须有独立短超时，避免某个卡住的 backend/HTTP2 响应拖住整个 runner
+9. 新扫描出的 events 如果上传中途失败，写入 spool 后仍必须返回 runner failure，不能把 task 删除成成功状态
 
 如果 `sync-task.json` 本身损坏：
 
@@ -439,6 +440,7 @@ ae-cli: attribution sync pending for this repo; run 'ae-cli doctor' for details
 5. Codex 从主 checkout 启动、commit 发生在同 repo linked worktree 时，runner 仍能把 Codex event 上传到该 linked worktree 的 `workspace_id`，而不是只上传 checkpoint
 6. backend 瞬时 502 不会永久卡住 backlog；retry 失败后仍保留 spool，下一次 sync 可继续推进
 7. backend 上传连接卡住时，单次 request 超时和 runner 总超时能让本地进程退出并留下可恢复状态
+8. 上传失败导致新扫描 events 进入 spool 时，`sync status` 仍能看到 pending/error，而不是误报 `Sync Task: none`
 
 ## Rollout Notes
 

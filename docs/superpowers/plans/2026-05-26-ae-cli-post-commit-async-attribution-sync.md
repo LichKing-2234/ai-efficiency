@@ -836,3 +836,36 @@ cd ae-cli && go test ./... -count=1
 ```
 
 Expected: PASS.
+
+---
+
+### Task 10: Follow-up Preserve Pending State When New Events Spool
+
+**Files:**
+- Modify: `ae-cli/internal/attributionlocal/sync.go`
+- Modify: `ae-cli/internal/attributionlocal/sync_test.go`
+- Modify: `docs/architecture.md`
+- Modify: `docs/superpowers/specs/2026-05-26-ae-cli-post-commit-async-attribution-sync-design.md`
+
+- [x] **Step 1: Diagnose false success with remaining spool**
+
+After a live sync uploaded additional events, `/events` advanced but `spool.json` still contained remaining tool-usage events while `sync-task.json` had been deleted. The cause was `SyncEngine.Run`: when a new scanned event upload failed, it spooled the remaining events and saved scan state, but returned nil to the runner.
+
+- [x] **Step 2: Return upload failure after spooling**
+
+`SyncEngine.Run` and the legacy path now persist spool and scan state, then return the upload error. The runner therefore marks the sync task failed/pending instead of deleting it as successful.
+
+- [x] **Step 3: Add regression coverage**
+
+Updated the existing new-event upload failure test to require an error while still verifying that remaining events are spooled and scan state is saved.
+
+- [x] **Step 4: Run verification**
+
+Run:
+
+```bash
+cd ae-cli && go test ./internal/attributionlocal ./internal/client ./internal/hooks ./cmd -count=1
+cd ae-cli && go test ./... -count=1
+```
+
+Expected: PASS.

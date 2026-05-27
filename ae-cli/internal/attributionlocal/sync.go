@@ -150,11 +150,14 @@ func (e *SyncEngine) Run(ctx context.Context, opts RunOptions) error {
 	for idx, ev := range events {
 		if err := e.Client.SendToolUsageEvent(ctx, toClientUsageRequest(ev)); err != nil {
 			if opts.DurableReplay {
-				if err := appendSpooledEvents(spoolPath, events[idx:]); err != nil {
-					return err
+				if spoolErr := appendSpooledEvents(spoolPath, events[idx:]); spoolErr != nil {
+					return spoolErr
 				}
 			}
-			return SaveJSON(statePath, nextState)
+			if saveErr := SaveJSON(statePath, nextState); saveErr != nil {
+				return saveErr
+			}
+			return err
 		}
 	}
 	return SaveJSON(statePath, nextState)
@@ -197,10 +200,13 @@ func (e *SyncEngine) runLegacy(ctx context.Context, workspaceRoot string) error 
 
 	for idx, ev := range events {
 		if err := e.Client.SendToolUsageEvent(ctx, toClientUsageRequest(ev)); err != nil {
-			if err := appendSpooledEvents(spoolPath, events[idx:]); err != nil {
-				return err
+			if spoolErr := appendSpooledEvents(spoolPath, events[idx:]); spoolErr != nil {
+				return spoolErr
 			}
-			return SaveJSON(statePath, nextState)
+			if saveErr := SaveJSON(statePath, nextState); saveErr != nil {
+				return saveErr
+			}
+			return err
 		}
 	}
 	return SaveJSON(statePath, nextState)
