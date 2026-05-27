@@ -1,7 +1,7 @@
 # ae-cli Post-Commit Async Attribution Sync Design
 
 **Date:** 2026-05-26  
-**Status:** Proposed current design  
+**Status:** Current design with 2026-05-27 upload-throughput follow-up
 **Scope:** `ae-cli/cmd/`, `ae-cli/internal/hooks/`, `ae-cli/internal/attributionlocal/`, `docs/`  
 **Related:**  
 - [2026-05-13-sessionless-local-tool-attribution-design.md](./2026-05-13-sessionless-local-tool-attribution-design.md)  
@@ -12,7 +12,7 @@
 
 - 本文收紧当前 sessionless attribution 的 hook 合同：`post-commit` 不再负责在 hook 生命周期内完成完整 usage 扫描与上传。
 - `tool-local artifacts -> tool_usage_events -> checkpoint/rewrite -> PR settle` 的主链路不变，仍以 [2026-05-13-sessionless-local-tool-attribution-design.md](./2026-05-13-sessionless-local-tool-attribution-design.md) 为准。
-- 本文只调整 **何时** 触发 attribution sync、**如何** 持久化待同步状态、以及 **如何** 向用户暴露 pending/error，不修改 backend `tool_usage_events` / checkpoint API 合同。
+- 本文最初只调整 **何时** 触发 attribution sync、**如何** 持久化待同步状态、以及 **如何** 向用户暴露 pending/error；2026-05-27 的 backlog follow-up 在保留单条 `tool_usage_events` ingest 兼容性的前提下，新增批量 ingest 作为上传吞吐优化，不改变 checkpoint 表结构或 attribution 语义。
 - 本文覆盖 `Codex`、`Claude`、`Kiro` 的统一 sync 触发框架，不引入只针对 `Codex` 的特例路径。
 
 ## Overview
@@ -60,7 +60,7 @@
 
 ## Non-Goals
 
-1. 第一版不修改 backend API、`tool_usage_events` 表结构或 checkpoint 表结构。
+1. 第一版不修改 backend API、`tool_usage_events` 表结构或 checkpoint 表结构；后续 backlog follow-up 只允许增加兼容性 backend API，不删除或改变单条 ingest 合同。
 2. 第一版不引入新的常驻 daemon / launch agent / system service。
 3. 第一版不改写现有 scanner/collector 的 provider 解析合同，只改调度边界。
 4. 第一版不提供新的 GUI 页面来监控 sync task。
@@ -381,6 +381,7 @@ ae-cli: attribution sync pending for this repo; run 'ae-cli doctor' for details
 8. 单次 tool-usage HTTP 上传必须有独立短超时，避免某个卡住的 backend/HTTP2 响应拖住整个 runner
 9. 新扫描出的 events 如果上传中途失败，写入 spool 后仍必须返回 runner failure，不能把 task 删除成成功状态
 10. durable sync 必须先把本轮扫描结果写入 spool，再按 `observed_end_at` 从新到旧 replay spool，避免新 commit 的 usage 被历史 backlog 长时间阻塞
+11. replay 应优先使用兼容的批量 ingest，在单个 bounded request 内上传多个 `tool_usage_events`；如果 backend 不支持批量接口或批量 payload 出现 validation failure，CLI 必须回退到单条接口以保持版本兼容和错误隔离
 
 如果 `sync-task.json` 本身损坏：
 
@@ -443,12 +444,13 @@ ae-cli: attribution sync pending for this repo; run 'ae-cli doctor' for details
 7. backend 上传连接卡住时，单次 request 超时和 runner 总超时能让本地进程退出并留下可恢复状态
 8. 上传失败导致新扫描 events 进入 spool 时，`sync status` 仍能看到 pending/error，而不是误报 `Sync Task: none`
 9. 当历史 backlog 很大时，刚扫描出的新 usage 会在下一次 replay 中优先尝试上传，`/events` 不再等待旧 backlog 全部追平
+10. 当历史 backlog 较大时，批量 ingest 可以用 bounded chunk 减少 HTTPS round trip 数；服务端仍按 `dedupe_key` 幂等处理重复 event
 
 ## Rollout Notes
 
 第一版实施时应保持范围收敛：
 
-1. 不改 backend contract
+1. 保留单条 backend ingest contract；批量 ingest 只能作为兼容扩展
 2. 不重写 scanner/collector 主逻辑
 3. 只重构 CLI 里的 sync 调度边界、任务状态与 warning/doctor/status 可见性
 

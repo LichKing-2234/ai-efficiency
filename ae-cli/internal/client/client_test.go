@@ -142,6 +142,75 @@ func TestSendToolUsageEvent(t *testing.T) {
 	}
 }
 
+func TestSendToolUsageEventsUsesBatchEndpoint(t *testing.T) {
+	var got ToolUsageEventsBatchRequest
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("method = %s, want POST", r.Method)
+		}
+		if r.URL.Path != "/api/v1/tool-usage-events/batch" {
+			t.Errorf("path = %s, want /api/v1/tool-usage-events/batch", r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "tok")
+	err := c.SendToolUsageEvents(context.Background(), []ToolUsageEventRequest{{
+		Tool:            "codex",
+		WorkspaceID:     "ws-1",
+		ToolSessionID:   "conv-1",
+		DedupeKey:       "codex:conv-1:resp-1",
+		UsageUnit:       "token",
+		ObservedStartAt: time.Now().UTC(),
+		ObservedEndAt:   time.Now().UTC(),
+	}})
+	if err != nil {
+		t.Fatalf("SendToolUsageEvents: %v", err)
+	}
+	if len(got.Events) != 1 || got.Events[0].DedupeKey != "codex:conv-1:resp-1" {
+		t.Fatalf("batch request = %+v", got)
+	}
+}
+
+func TestSendToolUsageEventsFallsBackWhenBatchUnsupported(t *testing.T) {
+	var batchAttempts int32
+	var singleAttempts int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/tool-usage-events/batch":
+			atomic.AddInt32(&batchAttempts, 1)
+			w.WriteHeader(http.StatusNotFound)
+		case "/api/v1/tool-usage-events":
+			atomic.AddInt32(&singleAttempts, 1)
+			w.WriteHeader(http.StatusCreated)
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "tok")
+	err := c.SendToolUsageEvents(context.Background(), []ToolUsageEventRequest{{
+		Tool:            "codex",
+		WorkspaceID:     "ws-1",
+		ToolSessionID:   "conv-1",
+		DedupeKey:       "codex:conv-1:resp-1",
+		UsageUnit:       "token",
+		ObservedStartAt: time.Now().UTC(),
+		ObservedEndAt:   time.Now().UTC(),
+	}})
+	if err != nil {
+		t.Fatalf("SendToolUsageEvents: %v", err)
+	}
+	if batchAttempts != 1 || singleAttempts != 1 {
+		t.Fatalf("batchAttempts=%d singleAttempts=%d, want 1/1", batchAttempts, singleAttempts)
+	}
+}
+
 func TestSendToolUsageEventRetriesTransientGatewayStatus(t *testing.T) {
 	origBackoffs := toolUsageRetryBackoffs
 	toolUsageRetryBackoffs = []time.Duration{0}

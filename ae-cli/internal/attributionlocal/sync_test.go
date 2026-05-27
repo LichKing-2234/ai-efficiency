@@ -131,6 +131,44 @@ func TestSync_ReplayPrioritizesNewestSpooledEvents(t *testing.T) {
 	}
 }
 
+func TestSync_ReplayUsesBatchUploadsWhenAvailable(t *testing.T) {
+	t.Parallel()
+
+	clientStub := &syncBatchBackendClientStub{}
+	engine := &SyncEngine{Client: clientStub}
+	spoolPath := filepath.Join(t.TempDir(), "spool.json")
+	payload := []LocalToolUsageEvent{
+		{
+			DedupeKey:       "first-dedupe-key",
+			Tool:            "codex",
+			UsageUnit:       UsageUnitToken,
+			ObservedStartAt: jsonTime("2026-05-27T07:10:00Z"),
+			ObservedEndAt:   jsonTime("2026-05-27T07:10:00Z"),
+		},
+		{
+			DedupeKey:       "second-dedupe-key",
+			Tool:            "codex",
+			UsageUnit:       UsageUnitToken,
+			ObservedStartAt: jsonTime("2026-05-27T07:09:00Z"),
+			ObservedEndAt:   jsonTime("2026-05-27T07:09:00Z"),
+		},
+	}
+	if err := SaveJSON(spoolPath, payload); err != nil {
+		t.Fatalf("SaveJSON: %v", err)
+	}
+	engine.spoolPath = spoolPath
+
+	if err := engine.Replay(context.Background(), "/tmp/repo"); err != nil {
+		t.Fatalf("Replay: %v", err)
+	}
+	if len(clientStub.batches) != 1 {
+		t.Fatalf("batch count = %d, want 1", len(clientStub.batches))
+	}
+	if got := clientStub.batches[0]; len(got) != 2 || got[0] != "first-dedupe-key" || got[1] != "second-dedupe-key" {
+		t.Fatalf("batch = %+v, want ordered two-event upload", got)
+	}
+}
+
 func TestSync_ReplayPersistsBackfilledObservedTimesOnFailure(t *testing.T) {
 	t.Parallel()
 

@@ -15,6 +15,10 @@ type BackendClient interface {
 	SendToolUsageEvent(ctx context.Context, req client.ToolUsageEventRequest) error
 }
 
+type BatchBackendClient interface {
+	SendToolUsageEvents(ctx context.Context, reqs []client.ToolUsageEventRequest) error
+}
+
 type SyncEngine struct {
 	Scanner   *Scanner
 	Client    BackendClient
@@ -31,6 +35,8 @@ type RunOptions struct {
 	DurableReplay bool
 	ManagedUpload bool
 }
+
+const toolUsageReplayBatchSize = 50
 
 func NewSyncEngine(c BackendClient) *SyncEngine {
 	return &SyncEngine{
@@ -56,9 +62,9 @@ func (e *SyncEngine) replay(ctx context.Context, workspaceRoot string, opts RunO
 	}
 
 	sortSpooledEventsForReplay(spooled)
-	remaining := make([]LocalToolUsageEvent, 0, len(spooled))
+	candidates := make([]LocalToolUsageEvent, 0, len(spooled))
 	filterByBinding := hasStableRunBinding(opts)
-	for idx, ev := range spooled {
+	for _, ev := range spooled {
 		ev = normalizeObservedWindow(ev)
 		if filterByBinding && !eventMatchesRunOptions(ev, opts) {
 			_ = appendToolUsageLedger(opts.WorkspaceID, toolUsageLedgerRecord{
@@ -77,22 +83,45 @@ func (e *SyncEngine) replay(ctx context.Context, workspaceRoot string, opts RunO
 			})
 			continue
 		}
-		if err := e.Client.SendToolUsageEvent(ctx, toClientUsageRequest(ev)); err != nil {
-			remaining = append(remaining, ev)
-			for _, queued := range spooled[idx+1:] {
-				queued = normalizeObservedWindow(queued)
-				if filterByBinding && !eventMatchesRunOptions(queued, opts) {
-					continue
-				}
-				remaining = append(remaining, queued)
-			}
-			if err := SaveJSON(e.spoolPath, remaining); err != nil {
-				return err
-			}
+		candidates = append(candidates, ev)
+	}
+	uploaded, err := e.sendSpooledEvents(ctx, candidates)
+	if err != nil {
+		remaining := candidates[uploaded:]
+		if err := SaveJSON(e.spoolPath, remaining); err != nil {
 			return err
 		}
+		return err
 	}
 	return clearSpooledEvents(e.spoolPath)
+}
+
+func (e *SyncEngine) sendSpooledEvents(ctx context.Context, events []LocalToolUsageEvent) (int, error) {
+	if len(events) == 0 {
+		return 0, nil
+	}
+	if batchClient, ok := e.Client.(BatchBackendClient); ok {
+		for start := 0; start < len(events); start += toolUsageReplayBatchSize {
+			end := start + toolUsageReplayBatchSize
+			if end > len(events) {
+				end = len(events)
+			}
+			reqs := make([]client.ToolUsageEventRequest, 0, end-start)
+			for _, ev := range events[start:end] {
+				reqs = append(reqs, toClientUsageRequest(ev))
+			}
+			if err := batchClient.SendToolUsageEvents(ctx, reqs); err != nil {
+				return start, err
+			}
+		}
+		return len(events), nil
+	}
+	for idx, ev := range events {
+		if err := e.Client.SendToolUsageEvent(ctx, toClientUsageRequest(ev)); err != nil {
+			return idx, err
+		}
+	}
+	return len(events), nil
 }
 
 func (e *SyncEngine) RunForWorkspace(ctx context.Context, workspaceRoot string) error {

@@ -108,6 +108,10 @@ type ToolUsageEventRequest struct {
 	RawPayload        map[string]any `json:"raw_payload,omitempty"`
 }
 
+type ToolUsageEventsBatchRequest struct {
+	Events []ToolUsageEventRequest `json:"events"`
+}
+
 type RepoEnsureResponse struct {
 	ID            int    `json:"id"`
 	RepoKey       string `json:"repo_key"`
@@ -250,6 +254,67 @@ func (c *Client) SendToolUsageEvent(ctx context.Context, req ToolUsageEventReque
 		}
 	}
 	return lastErr
+}
+
+func (c *Client) SendToolUsageEvents(ctx context.Context, reqs []ToolUsageEventRequest) error {
+	if len(reqs) == 0 {
+		return nil
+	}
+	body, err := json.Marshal(ToolUsageEventsBatchRequest{Events: reqs})
+	if err != nil {
+		return fmt.Errorf("marshal tool usage events batch: %w", err)
+	}
+	var lastErr error
+	attempts := len(toolUsageRetryBackoffs) + 1
+	for attempt := 0; attempt < attempts; attempt++ {
+		attemptCtx := ctx
+		cancel := func() {}
+		if toolUsageAttemptTimeout > 0 {
+			attemptCtx, cancel = context.WithTimeout(ctx, toolUsageAttemptTimeout)
+		}
+		httpReq, err := http.NewRequestWithContext(attemptCtx, http.MethodPost, c.baseURL+"/api/v1/tool-usage-events/batch", bytes.NewReader(body))
+		if err != nil {
+			cancel()
+			return fmt.Errorf("create tool usage events batch request: %w", err)
+		}
+		c.setHeaders(httpReq)
+		resp, err := c.httpClient.Do(httpReq)
+		if err != nil {
+			cancel()
+			lastErr = fmt.Errorf("send tool usage events batch: %w", err)
+		} else {
+			if resp.StatusCode == http.StatusCreated || resp.StatusCode == http.StatusOK {
+				_ = resp.Body.Close()
+				cancel()
+				return nil
+			}
+			respBody, _ := io.ReadAll(io.LimitReader(resp.Body, toolUsageErrorBodyLimit))
+			_ = resp.Body.Close()
+			cancel()
+			if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusMethodNotAllowed || resp.StatusCode == http.StatusBadRequest || resp.StatusCode == http.StatusUnprocessableEntity {
+				return c.sendToolUsageEventsIndividually(ctx, reqs, fmt.Errorf("unexpected tool usage batch status %d: %s", resp.StatusCode, string(respBody)))
+			}
+			lastErr = fmt.Errorf("unexpected tool usage batch status %d: %s", resp.StatusCode, string(respBody))
+			if !isRetryableToolUsageStatus(resp.StatusCode) {
+				return lastErr
+			}
+		}
+		if attempt < len(toolUsageRetryBackoffs) {
+			if err := sleepWithContext(ctx, toolUsageRetryBackoffs[attempt]); err != nil {
+				return err
+			}
+		}
+	}
+	return lastErr
+}
+
+func (c *Client) sendToolUsageEventsIndividually(ctx context.Context, reqs []ToolUsageEventRequest, batchErr error) error {
+	for _, req := range reqs {
+		if err := c.SendToolUsageEvent(ctx, req); err != nil {
+			return fmt.Errorf("%w; fallback single upload failed: %w", batchErr, err)
+		}
+	}
+	return nil
 }
 
 func isRetryableToolUsageStatus(status int) bool {

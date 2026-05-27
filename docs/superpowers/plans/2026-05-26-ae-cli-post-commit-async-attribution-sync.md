@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go CLI with Cobra commands, git hook helpers in `ae-cli/internal/hooks`, attribution scanner/uploader in `ae-cli/internal/attributionlocal`, git-based tests with `go test`, markdown architecture/spec docs.
 
-**Status:** Complete. PR created: https://github.com/LichKing-2234/ai-efficiency/pull/59. Follow-ups on 2026-05-27 fixed linked-worktree Codex session matching after real local verification found checkpoint uploads without matching `/events` rows, and bounded tool-usage upload / runner execution after a live manual sync exposed a stuck HTTPS connection.
+**Status:** Complete with active follow-up. PR created: https://github.com/LichKing-2234/ai-efficiency/pull/59. Follow-ups on 2026-05-27 fixed linked-worktree Codex session matching after real local verification found checkpoint uploads without matching `/events` rows, bounded tool-usage upload / runner execution after a live manual sync exposed a stuck HTTPS connection, prioritized fresh usage ahead of historical spool, and added compatible batch ingest to reduce backlog upload round trips.
 
 ---
 
@@ -899,6 +899,49 @@ Run:
 ```bash
 cd ae-cli && go test ./internal/attributionlocal -count=1
 cd ae-cli && go test ./... -count=1
+```
+
+Expected: PASS.
+
+---
+
+### Task 12: Follow-up Batch Upload Historical Tool-Usage Backlog
+
+**Files:**
+- Modify: `backend/internal/toolusage/service.go`
+- Modify: `backend/internal/handler/tool_usage.go`
+- Modify: `backend/internal/handler/router.go`
+- Modify: `backend/internal/handler/tool_usage_test.go`
+- Modify: `ae-cli/internal/client/client.go`
+- Modify: `ae-cli/internal/client/client_test.go`
+- Modify: `ae-cli/internal/attributionlocal/sync.go`
+- Modify: `ae-cli/internal/attributionlocal/sync_test.go`
+- Modify: `docs/architecture.md`
+- Modify: `docs/superpowers/specs/2026-05-26-ae-cli-post-commit-async-attribution-sync-design.md`
+
+- [x] **Step 1: Diagnose remaining backlog timeout**
+
+Live verification showed fresh post-commit events were now visible in `/events`, but `spool.json` still had a historical backlog and `sync-task.json` retained `last_error=context deadline exceeded`. The remaining bottleneck was upload throughput: replay still spent one HTTPS request per tool-usage event.
+
+- [x] **Step 2: Add compatible batch ingest**
+
+Added `POST /api/v1/tool-usage-events/batch` while keeping the existing single-event endpoint. The backend accepts bounded batches, resolves scope once per workspace/repo context, prechecks duplicate `dedupe_key` values, reuses checkpoint lookup per group, and keeps duplicate events idempotent.
+
+- [x] **Step 3: Use batch replay from ae-cli**
+
+`SyncEngine` now detects clients that support `SendToolUsageEvents` and uploads replay candidates in bounded chunks, preserving newest-first order. The CLI client falls back to the single-event endpoint when a backend does not support batch ingest or when a batch validation failure needs isolation.
+
+- [x] **Step 4: Add targeted regression coverage**
+
+Added client coverage for batch upload and fallback, sync replay coverage for batch-capable clients, and backend handler coverage for batch create plus duplicate idempotency.
+
+- [x] **Step 5: Run full verification**
+
+Run:
+
+```bash
+cd ae-cli && go test ./... -count=1
+cd backend && AE_TEST_POSTGRES_DSN='postgres://postgres:postgres@127.0.0.1:15432/postgres?sslmode=disable' go test ./... -count=1
 ```
 
 Expected: PASS.
