@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go CLI with Cobra commands, git hook helpers in `ae-cli/internal/hooks`, attribution scanner/uploader in `ae-cli/internal/attributionlocal`, git-based tests with `go test`, markdown architecture/spec docs.
 
-**Status:** In progress. Completed steps: Task 1, Task 2, Task 3 Step 1-4. Remaining: Task 3 commit step and all later tasks.
+**Status:** In progress. Completed tasks: Task 1, Task 2, Task 3, and Task 4 Step 1-3. Remaining: full ae-cli verification, code review, review fixes if any, push, and PR creation.
 
 ---
 
@@ -558,7 +558,7 @@ cd ae-cli && go test ./cmd -run 'TestDoctorPrintsPendingSyncTask|TestSyncStatusP
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit the CLI visibility work**
+- [x] **Step 5: Commit the CLI visibility work**
 
 Run:
 
@@ -575,7 +575,7 @@ git commit -m "fix(ae-cli): expose async sync backlog status"
 - Modify: `docs/architecture.md`
 - Modify: `docs/superpowers/plans/2026-05-26-ae-cli-post-commit-async-attribution-sync.md`
 
-- [ ] **Step 1: Update architecture doc to match the new current state**
+- [x] **Step 1: Update architecture doc to match the new current state**
 
 In `docs/architecture.md`, add or update the current-state runtime description to say:
 
@@ -585,7 +585,7 @@ In `docs/architecture.md`, add or update the current-state runtime description t
 - Full `Codex` / `Claude` / `Kiro` artifact scanning and `tool_usage_events` upload happen in the async runner or later manual `ae-cli sync`, not inside the hook timeout.
 ```
 
-- [ ] **Step 2: Mark completed plan steps as you finish them**
+- [x] **Step 2: Mark completed plan steps as you finish them**
 
 As each task above lands, update this plan file in the same commit wave:
 
@@ -595,7 +595,7 @@ As each task above lands, update this plan file in the same commit wave:
 
 And flip each finished checkbox from `- [ ]` to `- [x]`.
 
-- [ ] **Step 3: Run focused ae-cli tests**
+- [x] **Step 3: Run focused ae-cli tests**
 
 Run:
 

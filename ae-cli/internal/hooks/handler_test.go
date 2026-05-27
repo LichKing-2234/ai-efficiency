@@ -134,7 +134,13 @@ func writeCollectorFixtures(t *testing.T, workspaceRoot string) (string, string,
 
 func resolvedContextForRepo(t *testing.T, repo string) ExecutionContext {
 	t.Helper()
-	workspaceID, err := session.DeriveWorkspaceID(repo, repo, filepath.Join(repo, ".git"), filepath.Join(repo, ".git"))
+	repoRoot := git2(t, repo, "rev-parse", "--show-toplevel")
+	gitDir := git2(t, repo, "rev-parse", "--absolute-git-dir")
+	gitCommon := git2(t, repo, "rev-parse", "--git-common-dir")
+	if !filepath.IsAbs(gitCommon) {
+		gitCommon = filepath.Join(repoRoot, gitCommon)
+	}
+	workspaceID, err := session.DeriveWorkspaceID(repoRoot, repoRoot, gitDir, gitCommon)
 	if err != nil {
 		t.Fatalf("DeriveWorkspaceID: %v", err)
 	}
@@ -145,7 +151,7 @@ func resolvedContextForRepo(t *testing.T, repo string) ExecutionContext {
 		RepoKey:       "github.com/acme/repo",
 		RepoFullName:  "acme/repo",
 		WorkspaceID:   workspaceID,
-		RepoRoot:      repo,
+		RepoRoot:      repoRoot,
 		Branch:        "main",
 		DurableReplay: true,
 	}
