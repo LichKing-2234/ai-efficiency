@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go, Gin, Ent, PostgreSQL-backed Ent tests, Vue 3, TypeScript, Vitest, TailwindCSS.
 
-**Status:** Planned from approved spec; implementation not started.
+**Status:** Tasks 1-2 complete in `feat/pr-sync-job-progress`; Tasks 3-7 remain.
 
 ---
 
@@ -183,7 +183,7 @@ git commit -m "feat(prsync): add PR sync job schema"
 - Modify: `backend/internal/prsync/prsync_test.go`
 - Modify: `backend/internal/prsync/prsync_extra_test.go`
 
-- [ ] **Step 1: Write failing tests for job creation and reuse**
+- [x] **Step 1: Write failing tests for job creation and reuse**
 
 Create `backend/internal/prsync/job_test.go` with:
 
@@ -243,7 +243,7 @@ func TestStartSyncJobReusesRunningJobForRepo(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the job tests and verify they fail**
+- [x] **Step 2: Run the job tests and verify they fail**
 
 Run:
 
@@ -253,7 +253,7 @@ cd backend && go test ./internal/prsync -run 'TestStartSyncJob' -count=1
 
 Expected: FAIL because `StartSyncJob` is not defined.
 
-- [ ] **Step 3: Add job result and progress types**
+- [x] **Step 3: Add job result and progress types**
 
 In `backend/internal/prsync/service.go`, add these types near `SyncResult`:
 
@@ -292,7 +292,7 @@ type ProgressSink interface {
 }
 ```
 
-- [ ] **Step 4: Implement `StartSyncJob` without worker launch**
+- [x] **Step 4: Implement `StartSyncJob` without worker launch**
 
 In `backend/internal/prsync/service.go`, add:
 
@@ -335,7 +335,7 @@ func (s *Service) StartSyncJob(ctx context.Context, scmProvider scm.SCMProvider,
 
 Add imports for `github.com/ai-efficiency/backend/ent/prsyncjob`.
 
-- [ ] **Step 5: Run job creation tests**
+- [x] **Step 5: Run job creation tests**
 
 Run:
 
@@ -345,7 +345,7 @@ cd backend && go test ./internal/prsync -run 'TestStartSyncJob' -count=1
 
 Expected: PASS.
 
-- [ ] **Step 6: Write failing test for upsert changed vs unchanged**
+- [x] **Step 6: Write failing test for upsert changed vs unchanged**
 
 Append to `backend/internal/prsync/job_test.go`:
 
@@ -386,7 +386,7 @@ func TestUpsertPRDistinguishesChangedAndUnchanged(t *testing.T) {
 }
 ```
 
-- [ ] **Step 7: Run the upsert-state test and verify it fails**
+- [x] **Step 7: Run the upsert-state test and verify it fails**
 
 Run:
 
@@ -396,7 +396,7 @@ cd backend && go test ./internal/prsync -run TestUpsertPRDistinguishesChangedAnd
 
 Expected: FAIL because `upsertPR` still returns `(int, bool, error)`.
 
-- [ ] **Step 8: Change `upsertPR` to return `UpsertState`**
+- [x] **Step 8: Change `upsertPR` to return `UpsertState`**
 
 Update the signature:
 
@@ -437,7 +437,7 @@ Add import `slices`.
 
 In the existing-record branch, return `UpsertUnchanged` without calling update when `prChanged(existing, pr)` is false. Return `UpsertChanged` after a successful update. Return `UpsertCreated` after create.
 
-- [ ] **Step 9: Update existing tests for new return type**
+- [x] **Step 9: Update existing tests for new return type**
 
 In `backend/internal/prsync/prsync_test.go` and `backend/internal/prsync/prsync_extra_test.go`, replace checks of `created` bool with `UpsertState`.
 
@@ -453,7 +453,7 @@ if state != UpsertChanged {
 }
 ```
 
-- [ ] **Step 10: Run PR sync tests**
+- [x] **Step 10: Run PR sync tests**
 
 Run:
 
@@ -463,7 +463,7 @@ cd backend && go test ./internal/prsync -count=1
 
 Expected: PASS.
 
-- [ ] **Step 11: Implement job progress persistence**
+- [x] **Step 11: Implement job progress persistence**
 
 Add methods to `backend/internal/prsync/service.go`:
 
@@ -518,7 +518,7 @@ func (s *Service) CompleteJob(ctx context.Context, jobID int, result SyncResult)
 }
 ```
 
-- [ ] **Step 12: Add progress-aware sync runner**
+- [x] **Step 12: Add progress-aware sync runner**
 
 Add this method to `backend/internal/prsync/service.go`:
 
@@ -550,7 +550,7 @@ func (s *Service) Sync(ctx context.Context, scmProvider scm.SCMProvider, rc *ent
 
 `SyncWithProgress` must call `sink.UpdateProgress` after each fetch page, after upsert progress changes, after labeling, and after each usage refresh. It must still return `SyncResult`.
 
-- [ ] **Step 13: Add focused progress test**
+- [x] **Step 13: Add focused progress test**
 
 Append to `backend/internal/prsync/job_test.go`:
 
@@ -595,7 +595,7 @@ func TestRunSyncJobUpdatesProgressAndCompletes(t *testing.T) {
 }
 ```
 
-- [ ] **Step 14: Run PR sync package tests**
+- [x] **Step 14: Run PR sync package tests**
 
 Run:
 
@@ -605,7 +605,7 @@ cd backend && go test ./internal/prsync -count=1
 
 Expected: PASS.
 
-- [ ] **Step 15: Commit PR sync job execution**
+- [x] **Step 15: Commit PR sync job execution**
 
 ```bash
 git add backend/internal/prsync
