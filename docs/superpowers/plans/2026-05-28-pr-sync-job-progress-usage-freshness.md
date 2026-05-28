@@ -886,7 +886,7 @@ git commit -m "feat(backend): expose PR sync job API"
 - Modify: `backend/internal/handler/pr.go`
 - Modify: `backend/internal/handler/pr_usage_test.go`
 
-- [ ] **Step 1: Write failing freshness tests**
+- [x] **Step 1: Write failing freshness tests**
 
 Create `backend/internal/prusage/freshness_test.go`:
 
@@ -1025,7 +1025,7 @@ func TestEvaluateCommitFreshnessStaleSnapshotWhenNewUsageArrives(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run freshness tests and verify they fail**
+- [x] **Step 2: Run freshness tests and verify they fail**
 
 Run:
 
@@ -1035,7 +1035,7 @@ cd backend && go test ./internal/prusage -run TestEvaluateCommitFreshness -count
 
 Expected: FAIL because `EvaluatePRFreshness` and status constants are not defined.
 
-- [ ] **Step 3: Implement freshness types**
+- [x] **Step 3: Implement freshness types**
 
 Add `backend/internal/prusage/freshness.go`:
 
@@ -1080,7 +1080,7 @@ type PRFreshness struct {
 }
 ```
 
-- [ ] **Step 4: Implement evaluator**
+- [x] **Step 4: Implement evaluator**
 
 In `backend/internal/prusage/freshness.go`, add:
 
@@ -1165,7 +1165,7 @@ func (s *Service) EvaluatePRFreshness(ctx context.Context, prID int) (*PRFreshne
 }
 ```
 
-- [ ] **Step 5: Run freshness tests**
+- [x] **Step 5: Run freshness tests**
 
 Run:
 
@@ -1175,7 +1175,7 @@ cd backend && go test ./internal/prusage -run TestEvaluateCommitFreshness -count
 
 Expected: PASS.
 
-- [ ] **Step 6: Add response shaping in PR handler**
+- [x] **Step 6: Add response shaping in PR handler**
 
 In `backend/internal/handler/pr.go`, add response helper types:
 
@@ -1214,7 +1214,7 @@ func (h *PRHandler) buildPRResponse(ctx context.Context, pr *ent.PrRecord, inclu
 
 Use this helper in `ListByRepo`, `Get`, and `RefreshUsage`. For `ListByRepo`, map each PR row through `buildPRResponse(ctx, pr, false)`. For `Get` and `RefreshUsage`, use `includeCommits=true`.
 
-- [ ] **Step 7: Extend handler test for freshness fields**
+- [x] **Step 7: Extend handler test for freshness fields**
 
 Append to `backend/internal/handler/pr_usage_test.go`:
 
@@ -1247,7 +1247,7 @@ func TestPRHandlerGetIncludesUsageFreshness(t *testing.T) {
 }
 ```
 
-- [ ] **Step 8: Run handler and prusage tests**
+- [x] **Step 8: Run handler and prusage tests**
 
 Run:
 
@@ -1257,7 +1257,7 @@ cd backend && go test ./internal/prusage ./internal/handler -run 'TestEvaluateCo
 
 Expected: PASS.
 
-- [ ] **Step 9: Commit freshness backend**
+- [x] **Step 9: Commit freshness backend**
 
 ```bash
 git add backend/internal/prusage backend/internal/handler

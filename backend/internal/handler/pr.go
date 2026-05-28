@@ -15,6 +15,7 @@ import (
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/internal/auth"
 	"github.com/ai-efficiency/backend/internal/pkg"
+	"github.com/ai-efficiency/backend/internal/prusage"
 	"github.com/ai-efficiency/backend/internal/scm"
 	"github.com/gin-gonic/gin"
 )
@@ -26,6 +27,7 @@ type PRHandler struct {
 	syncService        prSyncer
 	attributionService prAttributionSettler
 	usageRefresher     prUsageRefresher
+	usageFreshness     prUsageFreshnessEvaluator
 }
 
 // NewPRHandler creates a new PR handler.
@@ -38,13 +40,47 @@ func NewPRHandler(entClient *ent.Client, repoService repoSCMProvider, syncServic
 	if len(usageRefresher) > 0 {
 		usageSvc = usageRefresher[0]
 	}
+	var freshnessSvc prUsageFreshnessEvaluator
+	if evaluator, ok := usageSvc.(prUsageFreshnessEvaluator); ok {
+		freshnessSvc = evaluator
+	}
 	return &PRHandler{
 		entClient:          entClient,
 		repoService:        repoService,
 		syncService:        syncService,
 		attributionService: attrSvc,
 		usageRefresher:     usageSvc,
+		usageFreshness:     freshnessSvc,
 	}
+}
+
+type prResponse struct {
+	*ent.PrRecord
+	UsageStatus          string                    `json:"usage_status"`
+	UsageStatusReason    string                    `json:"usage_status_reason"`
+	UsageStatusCheckedAt *time.Time                `json:"usage_status_checked_at,omitempty"`
+	CommitFreshness      []prusage.CommitFreshness `json:"commit_freshness,omitempty"`
+}
+
+func (h *PRHandler) buildPRResponse(ctx context.Context, pr *ent.PrRecord, includeCommits bool) any {
+	resp := &prResponse{
+		PrRecord:          pr,
+		UsageStatus:       string(prusage.UsageStatusUnknown),
+		UsageStatusReason: "Usage freshness has not been evaluated.",
+	}
+	if h.usageFreshness == nil || pr == nil {
+		return resp
+	}
+	freshness, err := h.usageFreshness.EvaluatePRFreshness(ctx, pr.ID)
+	if err == nil && freshness != nil {
+		resp.UsageStatus = string(freshness.Status)
+		resp.UsageStatusReason = freshness.Reason
+		resp.UsageStatusCheckedAt = &freshness.CheckedAt
+		if includeCommits {
+			resp.CommitFreshness = freshness.Commits
+		}
+	}
+	return resp
 }
 
 // ListByRepo handles GET /api/v1/repos/:id/prs
@@ -103,8 +139,13 @@ func (h *PRHandler) ListByRepo(c *gin.Context) {
 		return
 	}
 
+	items := make([]any, 0, len(prs))
+	for _, pr := range prs {
+		items = append(items, h.buildPRResponse(c.Request.Context(), pr, false))
+	}
+
 	pkg.Success(c, gin.H{
-		"items": prs,
+		"items": items,
 		"total": total,
 	})
 }
@@ -131,7 +172,7 @@ func (h *PRHandler) Get(c *gin.Context) {
 		return
 	}
 
-	pkg.Success(c, pr)
+	pkg.Success(c, h.buildPRResponse(c.Request.Context(), pr, true))
 }
 
 // RefreshUsage handles POST /api/v1/prs/:id/refresh-usage.
@@ -186,7 +227,7 @@ func (h *PRHandler) RefreshUsage(c *gin.Context) {
 		return
 	}
 
-	pkg.Success(c, loaded)
+	pkg.Success(c, h.buildPRResponse(c.Request.Context(), loaded, true))
 }
 
 // SyncPRs handles POST /api/v1/repos/:id/sync-prs

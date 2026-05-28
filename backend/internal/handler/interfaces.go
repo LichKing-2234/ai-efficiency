@@ -30,3 +30,7 @@ type prAttributionSettler interface {
 type prUsageRefresher interface {
 	RefreshPR(ctx context.Context, provider scm.SCMProvider, pr *ent.PrRecord) (*prusage.Result, error)
 }
+
+type prUsageFreshnessEvaluator interface {
+	EvaluatePRFreshness(ctx context.Context, prID int) (*prusage.PRFreshness, error)
+}

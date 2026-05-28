@@ -88,3 +88,30 @@ func TestPRHandlerRefreshUsage_ReturnsUpdatedPR(t *testing.T) {
 		t.Fatalf("commit snapshots = %d, want 1", len(commits))
 	}
 }
+
+func TestPRHandlerGetIncludesUsageFreshness(t *testing.T) {
+	repoSCM := &mockRepoSCMProvider{}
+	env := setupMockTestEnv(t, nil, nil, repoSCM, nil)
+	rc := createMockTestRepo(t, env.client)
+	pr := env.client.PrRecord.Create().
+		SetRepoConfigID(rc.ID).
+		SetScmPrID(202).
+		SetTitle("freshness").
+		SetStatus("open").
+		SaveX(context.Background())
+
+	prHandler := NewPRHandler(env.client, repoSCM, nil, nil, prusage.NewService(env.client))
+	api := env.router.Group("/api/v1/freshness-test")
+	api.Use(auth.RequireAuth(env.authSvc))
+	api.GET("/prs/:id", prHandler.Get)
+
+	w := doMockRequest(env, "GET", fmt.Sprintf("/api/v1/freshness-test/prs/%d", pr.ID), nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body: %s", w.Code, w.Body.String())
+	}
+	resp := parseMockResponse(t, w)
+	data := resp["data"].(map[string]interface{})
+	if data["usage_status"] != "no_checkpoint" {
+		t.Fatalf("usage_status = %v, want no_checkpoint", data["usage_status"])
+	}
+}
