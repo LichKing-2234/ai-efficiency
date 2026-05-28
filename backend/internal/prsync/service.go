@@ -177,6 +177,17 @@ func (s *Service) RunSyncJob(ctx context.Context, jobID int, scmProvider scm.SCM
 	return result, nil
 }
 
+func (s *Service) GetSyncJob(ctx context.Context, id int) (*ent.PRSyncJob, error) {
+	if s == nil || s.entClient == nil {
+		return nil, fmt.Errorf("get PR sync job: ent client is required")
+	}
+	job, err := s.entClient.PRSyncJob.Get(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("get PR sync job %d: %w", id, err)
+	}
+	return job, nil
+}
+
 func (s *Service) SyncWithProgress(ctx context.Context, scmProvider scm.SCMProvider, rc *ent.RepoConfig, jobID int, sink ProgressSink) (*SyncResult, error) {
 	progress := SyncProgress{Phase: string(prsyncjob.PhaseFetchingPrs), PageSize: 100}
 	allPRs, err := s.fetchAllPRsWithProgress(ctx, scmProvider, rc.FullName, jobID, sink, &progress)

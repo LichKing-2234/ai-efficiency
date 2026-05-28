@@ -622,7 +622,7 @@ git commit -m "feat(prsync): run PR sync as progress job"
 - Modify: `backend/internal/handler/router.go`
 - Create: `backend/internal/handler/pr_sync_job_test.go`
 
-- [ ] **Step 1: Write failing handler tests**
+- [x] **Step 1: Write failing handler tests**
 
 Create `backend/internal/handler/pr_sync_job_test.go`:
 
@@ -723,7 +723,7 @@ func TestGetPRSyncJobReturnsProgress(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run handler tests and verify they fail**
+- [x] **Step 2: Run handler tests and verify they fail**
 
 Run:
 
@@ -733,7 +733,7 @@ cd backend && go test ./internal/handler -run 'TestSyncPRsStartsJob|TestGetPRSyn
 
 Expected: FAIL because `GetSyncJob`, `StartSyncJob`, and `GetSyncJob` interface methods are not wired.
 
-- [ ] **Step 3: Extend handler interface**
+- [x] **Step 3: Extend handler interface**
 
 Update `backend/internal/handler/interfaces.go`:
 
@@ -746,7 +746,7 @@ type prSyncer interface {
 }
 ```
 
-- [ ] **Step 4: Add `GetSyncJob` service method**
+- [x] **Step 4: Add `GetSyncJob` service method**
 
 In `backend/internal/prsync/service.go`:
 
@@ -763,7 +763,7 @@ func (s *Service) GetSyncJob(ctx context.Context, id int) (*ent.PRSyncJob, error
 }
 ```
 
-- [ ] **Step 5: Change `SyncPRs` handler to return job**
+- [x] **Step 5: Change `SyncPRs` handler to return job**
 
 Replace the final synchronous call in `backend/internal/handler/pr.go`:
 
@@ -791,7 +791,7 @@ if !reused {
 }
 ```
 
-- [ ] **Step 6: Add job detail handler**
+- [x] **Step 6: Add job detail handler**
 
 In `backend/internal/handler/pr.go`:
 
@@ -837,7 +837,7 @@ func (h *PRHandler) GetSyncJob(c *gin.Context) {
 }
 ```
 
-- [ ] **Step 7: Register route**
+- [x] **Step 7: Register route**
 
 In `backend/internal/handler/router.go`, add after the PR group:
 
@@ -848,7 +848,7 @@ prSyncJobGroup := protected.Group("/pr-sync-jobs")
 }
 ```
 
-- [ ] **Step 8: Run handler tests**
+- [x] **Step 8: Run handler tests**
 
 Run:
 
@@ -858,7 +858,7 @@ cd backend && go test ./internal/handler -run 'TestSyncPRsStartsJob|TestGetPRSyn
 
 Expected: PASS.
 
-- [ ] **Step 9: Run broader handler/prsync tests**
+- [x] **Step 9: Run broader handler/prsync tests**
 
 Run:
 
@@ -868,7 +868,7 @@ cd backend && go test ./internal/prsync ./internal/handler -count=1
 
 Expected: PASS.
 
-- [ ] **Step 10: Commit API changes**
+- [x] **Step 10: Commit API changes**
 
 ```bash
 git add backend/internal/prsync backend/internal/handler

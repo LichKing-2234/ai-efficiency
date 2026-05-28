@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"errors"
 	"io"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/internal/auth"
 	"github.com/ai-efficiency/backend/internal/pkg"
+	"github.com/ai-efficiency/backend/internal/scm"
 	"github.com/gin-gonic/gin"
 )
 
@@ -194,6 +196,10 @@ func (h *PRHandler) SyncPRs(c *gin.Context) {
 		pkg.Error(c, http.StatusBadRequest, "invalid id")
 		return
 	}
+	if h.syncService == nil {
+		pkg.Error(c, http.StatusServiceUnavailable, "pr sync service is not configured")
+		return
+	}
 
 	scmProvider, rc, err := h.repoService.GetSCMProvider(c.Request.Context(), repoID)
 	if err != nil {
@@ -204,13 +210,65 @@ func (h *PRHandler) SyncPRs(c *gin.Context) {
 		return
 	}
 
-	result, err := h.syncService.Sync(c.Request.Context(), scmProvider, rc)
+	job, reused, err := h.syncService.StartSyncJob(c.Request.Context(), scmProvider, rc)
 	if err != nil {
 		pkg.Error(c, http.StatusInternalServerError, "sync failed: "+err.Error())
 		return
 	}
+	if !reused {
+		go func(jobID int, provider scm.SCMProvider, repoConfig *ent.RepoConfig) {
+			_, _ = h.syncService.RunSyncJob(context.Background(), jobID, provider, repoConfig)
+		}(job.ID, scmProvider, rc)
+	}
 
-	pkg.Success(c, result)
+	pkg.Success(c, gin.H{
+		"job_id": job.ID,
+		"status": string(job.Status),
+		"phase":  string(job.Phase),
+		"reused": reused,
+	})
+}
+
+// GetSyncJob handles GET /api/v1/pr-sync-jobs/:id.
+func (h *PRHandler) GetSyncJob(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		pkg.Error(c, http.StatusBadRequest, "invalid id")
+		return
+	}
+	if h.syncService == nil {
+		pkg.Error(c, http.StatusServiceUnavailable, "pr sync service is not configured")
+		return
+	}
+	job, err := h.syncService.GetSyncJob(c.Request.Context(), id)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			pkg.Error(c, http.StatusNotFound, "PR sync job not found")
+			return
+		}
+		pkg.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	pkg.Success(c, gin.H{
+		"id":                  job.ID,
+		"repo_config_id":      job.RepoConfigID,
+		"status":              string(job.Status),
+		"phase":               string(job.Phase),
+		"current_page":        job.CurrentPage,
+		"page_size":           job.PageSize,
+		"fetched_prs":         job.FetchedPrs,
+		"total_prs":           job.TotalPrs,
+		"processed_prs":       job.ProcessedPrs,
+		"created_prs":         job.CreatedPrs,
+		"changed_prs":         job.ChangedPrs,
+		"unchanged_prs":       job.UnchangedPrs,
+		"usage_total_prs":     job.UsageTotalPrs,
+		"usage_refreshed_prs": job.UsageRefreshedPrs,
+		"usage_skipped_prs":   job.UsageSkippedPrs,
+		"usage_failed_prs":    job.UsageFailedPrs,
+		"last_error":          job.LastError,
+	})
 }
 
 type settlePRRequest struct {

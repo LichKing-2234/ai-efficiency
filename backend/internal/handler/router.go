@@ -146,6 +146,11 @@ func SetupRouter(
 		prGroup.POST("/:id/settle", prHandler.Settle)
 	}
 
+	prSyncJobGroup := protected.Group("/pr-sync-jobs")
+	{
+		prSyncJobGroup.GET("/:id", prHandler.GetSyncJob)
+	}
+
 	// Efficiency
 	effGroup := protected.Group("/efficiency")
 	{
