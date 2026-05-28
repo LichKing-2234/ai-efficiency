@@ -27,7 +27,7 @@ var rootCmd = &cobra.Command{
 	Short: "AI Efficiency Platform CLI",
 	Long:  "ae-cli is a command-line tool for interacting with the AI Efficiency Platform.",
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		if cmd.Name() == "version" {
+		if commandSkipsConfig(cmd) {
 			return nil
 		}
 
@@ -60,6 +60,16 @@ var rootCmd = &cobra.Command{
 		apiClient = client.New(cfg.Server.URL, token)
 		return nil
 	},
+}
+
+func commandSkipsConfig(cmd *cobra.Command) bool {
+	for current := cmd; current != nil; current = current.Parent() {
+		switch current.Name() {
+		case "version", "update":
+			return true
+		}
+	}
+	return false
 }
 
 // resolveToken returns the best available token.
