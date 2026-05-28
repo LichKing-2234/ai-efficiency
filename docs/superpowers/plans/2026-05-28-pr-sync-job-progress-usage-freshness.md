@@ -1418,7 +1418,7 @@ git commit -m "feat(frontend): add PR sync job API client"
 - Modify: `frontend/src/views/repos/RepoDetailView.vue`
 - Modify: `frontend/src/__tests__/repo-detail-view.test.ts`
 
-- [ ] **Step 1: Update frontend mocks for job API**
+- [x] **Step 1: Update frontend mocks for job API**
 
 In `frontend/src/__tests__/repo-detail-view.test.ts`, update the `@/api/pr` mock:
 
@@ -1432,7 +1432,7 @@ vi.mock('@/api/pr', () => ({
 }))
 ```
 
-- [ ] **Step 2: Write failing polling test**
+- [x] **Step 2: Write failing polling test**
 
 Replace `shows PR sync result after syncing` with:
 
@@ -1464,7 +1464,7 @@ it('polls and shows PR sync job progress after syncing', async () => {
 })
 ```
 
-- [ ] **Step 3: Write failing freshness badge test**
+- [x] **Step 3: Write failing freshness badge test**
 
 Append:
 
@@ -1515,7 +1515,7 @@ it('renders PR usage freshness badge and commit reason', async () => {
 })
 ```
 
-- [ ] **Step 4: Run repo detail tests and verify they fail**
+- [x] **Step 4: Run repo detail tests and verify they fail**
 
 Run:
 
@@ -1525,7 +1525,7 @@ cd frontend && pnpm test -- repo-detail-view.test.ts
 
 Expected: FAIL because polling state and freshness rendering are not implemented.
 
-- [ ] **Step 5: Add polling state and helpers**
+- [x] **Step 5: Add polling state and helpers**
 
 In `frontend/src/views/repos/RepoDetailView.vue`, update imports:
 
@@ -1581,7 +1581,7 @@ function commitFreshnessFor(pr: PRRecord, commitSha: string): CommitFreshness | 
 }
 ```
 
-- [ ] **Step 6: Implement job polling**
+- [x] **Step 6: Implement job polling**
 
 In `RepoDetailView.vue`, add:
 
@@ -1672,7 +1672,7 @@ onUnmounted(() => {
 })
 ```
 
-- [ ] **Step 7: Render progress and badges**
+- [x] **Step 7: Render progress and badges**
 
 Add a status block below the sync button:
 
@@ -1719,7 +1719,7 @@ In commit rows, add a `Usage Status` column and cell:
 </td>
 ```
 
-- [ ] **Step 8: Run repo detail tests**
+- [x] **Step 8: Run repo detail tests**
 
 Run:
 
@@ -1729,7 +1729,7 @@ cd frontend && pnpm test -- repo-detail-view.test.ts
 
 Expected: PASS.
 
-- [ ] **Step 9: Run frontend test suite**
+- [x] **Step 9: Run frontend test suite**
 
 Run:
 
@@ -1739,7 +1739,7 @@ cd frontend && pnpm test
 
 Expected: PASS.
 
-- [ ] **Step 10: Commit frontend UI**
+- [x] **Step 10: Commit frontend UI**
 
 ```bash
 git add frontend/src/views/repos/RepoDetailView.vue frontend/src/__tests__/repo-detail-view.test.ts

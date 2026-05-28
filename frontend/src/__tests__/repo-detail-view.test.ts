@@ -15,6 +15,7 @@ vi.mock('@/api/pr', () => ({
   listPRs: vi.fn(),
   getPR: vi.fn(),
   syncPRs: vi.fn(),
+  getPRSyncJob: vi.fn(),
   refreshPRUsage: vi.fn(),
 }))
 
@@ -285,20 +286,77 @@ describe('RepoDetailView', () => {
     expect(wrapper.text()).toContain('auto-discovered by ae-cli attribution sync')
   })
 
-  it('shows PR sync result after syncing', async () => {
-    const { syncPRs } = await import('@/api/pr')
-    ;(syncPRs as any).mockResolvedValue({ data: { data: { created: 2, updated: 1, total: 3 } } })
+  it('polls and shows PR sync job progress after syncing', async () => {
+    vi.useFakeTimers()
+    const { syncPRs, getPRSyncJob } = await import('@/api/pr')
+    ;(syncPRs as any).mockResolvedValue({ data: { data: { job_id: 44, status: 'queued', phase: 'queued' } } })
+    ;(getPRSyncJob as any)
+      .mockResolvedValueOnce({ data: { data: { id: 44, status: 'running', phase: 'fetching_prs', current_page: 2, page_size: 100, fetched_prs: 200, total_prs: 0, processed_prs: 0, created_prs: 0, changed_prs: 0, unchanged_prs: 0, usage_total_prs: 0, usage_refreshed_prs: 0, usage_skipped_prs: 0, usage_failed_prs: 0 } } })
+      .mockResolvedValueOnce({ data: { data: { id: 44, status: 'completed', phase: 'completed', current_page: 2, page_size: 100, fetched_prs: 200, total_prs: 200, processed_prs: 200, created_prs: 2, changed_prs: 3, unchanged_prs: 195, usage_total_prs: 5, usage_refreshed_prs: 4, usage_skipped_prs: 1, usage_failed_prs: 0 } } })
 
     const { wrapper } = await mountRepoDetail()
     const syncButton = wrapper.findAll('button').find((b) => b.text() === 'Sync PRs')
     expect(syncButton).toBeTruthy()
 
-    await syncButton!.trigger('click')
-    await flushPromises()
+    try {
+      await syncButton!.trigger('click')
+      await flushPromises()
+      expect(wrapper.text()).toContain('Fetching PRs')
+      expect(wrapper.text()).toContain('200 fetched')
 
-    expect(wrapper.text()).toContain('Synced 3 PRs')
-    expect(wrapper.text()).toContain('2 created')
-    expect(wrapper.text()).toContain('1 updated')
+      await vi.runOnlyPendingTimersAsync()
+      await flushPromises()
+      expect(wrapper.text()).toContain('Sync completed')
+      expect(wrapper.text()).toContain('2 created')
+      expect(wrapper.text()).toContain('3 changed')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('renders PR usage freshness badge and commit reason', async () => {
+    const { wrapper } = await mountRepoDetail(undefined, undefined, {
+      prs: [{
+        id: 101,
+        scm_pr_id: 88,
+        scm_pr_url: 'https://github.com/org/repo-a/pull/88',
+        author: 'alice',
+        title: 'Missing checkpoint',
+        source_branch: 'feat/a',
+        target_branch: 'main',
+        status: 'merged',
+        labels: [],
+        lines_added: 10,
+        lines_deleted: 2,
+        cycle_time_hours: 5,
+        merged_at: '2026-03-30T00:00:00Z',
+        created_at: '2026-03-29T00:00:00Z',
+        usage_status: 'no_checkpoint',
+        usage_status_reason: 'No checkpoint matched this PR commit.',
+      }],
+      getPRImpl: vi.fn(async () => ({
+        data: {
+          data: {
+            ...detailFor(101).data.data,
+            usage_status: 'no_checkpoint',
+            usage_status_reason: 'No checkpoint matched this PR commit.',
+            commit_freshness: [{
+              commit_sha: 'abc123',
+              usage_status: 'no_checkpoint',
+              usage_status_reason: 'No checkpoint for this commit',
+              checkpoint_found: false,
+              usage_event_found: false,
+            }],
+          },
+        },
+      })),
+    })
+
+    expect(wrapper.text()).toContain('No checkpoint')
+    const detailsButton = wrapper.findAll('button').find((b) => b.text() === 'Details')
+    await detailsButton!.trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('No checkpoint for this commit')
   })
 
   it('shows PR sync error message', async () => {
