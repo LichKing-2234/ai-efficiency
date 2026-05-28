@@ -40,6 +40,41 @@ When `tools` are not configured explicitly, `ae-cli` auto-detects common local t
 ae-cli version
 ```
 
+## Update
+
+Check whether a newer GitHub Release is available:
+
+```bash
+ae-cli update check
+```
+
+Install the latest published release on the official user-level install path:
+
+```bash
+ae-cli update install
+```
+
+To reinstall the latest published release even when the current version already matches:
+
+```bash
+ae-cli update install --force
+```
+
+`ae-cli update upgrade` is accepted as an alias for `ae-cli update install`.
+
+Update behavior:
+
+- `update check` only reads GitHub Release metadata and does not require config, login, or backend access
+- `update install` only upgrades the official managed path `~/.local/bin/ae-cli`
+- the install step reuses the tagged official installer, so checksum verification, config preservation, and managed hook refresh stay aligned with `ae-cli/install.sh`
+- if `ae-cli` is running from another path, the command fails with guidance to rerun the official installer instead of guessing how to overwrite that install
+
+Windows currently supports `ae-cli update check`. To upgrade on Windows, rerun the PowerShell installer:
+
+```powershell
+iwr -UseB https://raw.githubusercontent.com/LichKing-2234/ai-efficiency/main/ae-cli/install.ps1 | iex
+```
+
 Then run:
 
 ```bash
