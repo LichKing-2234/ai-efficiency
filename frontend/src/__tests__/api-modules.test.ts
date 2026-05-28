@@ -125,7 +125,7 @@ describe('pr API', () => {
   it('syncPRs calls POST /repos/:id/sync-prs', async () => {
     mockClient.post.mockResolvedValue({ data: { data: { created: 2, updated: 1, total: 3 } } })
     await syncPRs(5)
-    expect(mockClient.post).toHaveBeenCalledWith('/repos/5/sync-prs')
+    expect(mockClient.post).toHaveBeenCalledWith('/repos/5/sync-prs', undefined, { timeout: 120000 })
   })
 
   it('settlePR calls POST /prs/:id/settle', async () => {

@@ -20,6 +20,8 @@ const prsPageSize = 10
 const prsMonths = ref(3)
 const loading = ref(true)
 const syncing = ref(false)
+const syncMessage = ref('')
+const syncMessageTone = ref<'success' | 'error'>('success')
 const detailsLoadingIds = ref<Record<number, boolean>>({})
 const expandedPRId = ref<number | null>(null)
 const prDetails = ref<Record<number, PRRecord>>({})
@@ -73,11 +75,20 @@ async function loadPRs() {
 
 async function handleSyncPRs() {
   syncing.value = true
+  syncMessage.value = ''
   try {
-    await syncPRs(repoId)
+    const res = await syncPRs(repoId)
     prsPage.value = 0
     await loadPRs()
-  } catch { /* sync failed */ } finally {
+    const result = res.data.data
+    syncMessageTone.value = 'success'
+    syncMessage.value = result
+      ? `Synced ${formatCount(result.total)} PRs (${formatCount(result.created)} created, ${formatCount(result.updated)} updated)`
+      : 'PR sync completed'
+  } catch (error: any) {
+    syncMessageTone.value = 'error'
+    syncMessage.value = error?.response?.data?.message || 'Failed to sync PRs'
+  } finally {
     syncing.value = false
   }
 }
@@ -264,6 +275,14 @@ async function togglePRDetails(prId: number) {
             >{{ syncing ? 'Syncing...' : 'Sync PRs' }}</button>
           </div>
         </div>
+      </div>
+
+      <div
+        v-if="syncMessage"
+        class="rounded-md p-3 text-sm"
+        :class="syncMessageTone === 'success' ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-700'"
+      >
+        {{ syncMessage }}
       </div>
 
       <div v-if="auth.isAdmin" class="rounded-lg bg-white p-5 shadow">

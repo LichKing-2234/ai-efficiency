@@ -302,8 +302,21 @@ func (p *Provider) ListPRs(ctx context.Context, repoFullName string, opts scm.PR
 	} else if opts.State == "all" {
 		state = "ALL"
 	}
+	page := opts.Page
+	if page <= 0 {
+		page = 1
+	}
+	pageSize := opts.PageSize
+	if pageSize <= 0 {
+		pageSize = 25
+	}
+	start := (page - 1) * pageSize
 
-	data, err := p.doRequest(ctx, "GET", fmt.Sprintf("/projects/%s/repos/%s/pull-requests?state=%s&limit=%d", project, repo, state, opts.PageSize), nil)
+	path := fmt.Sprintf("/projects/%s/repos/%s/pull-requests?state=%s&limit=%d", project, repo, state, pageSize)
+	if start > 0 {
+		path += fmt.Sprintf("&start=%d", start)
+	}
+	data, err := p.doRequest(ctx, "GET", path, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -403,9 +416,9 @@ func (p *Provider) ListPRCommits(ctx context.Context, repoFullName string, prID 
 		}
 
 		var result struct {
-			IsLastPage   bool `json:"isLastPage"`
-			NextPageStart int `json:"nextPageStart"`
-			Values       []struct {
+			IsLastPage    bool `json:"isLastPage"`
+			NextPageStart int  `json:"nextPageStart"`
+			Values        []struct {
 				ID string `json:"id"`
 			} `json:"values"`
 		}
