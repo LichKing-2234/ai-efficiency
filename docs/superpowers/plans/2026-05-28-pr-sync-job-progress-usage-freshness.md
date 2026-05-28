@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go, Gin, Ent, PostgreSQL-backed Ent tests, Vue 3, TypeScript, Vitest, TailwindCSS.
 
-**Status:** Tasks 1-2 complete in `feat/pr-sync-job-progress`; Tasks 3-7 remain.
+**Status:** Complete in `feat/pr-sync-job-progress`; backend and frontend verification passed.
 
 ---
 
@@ -1753,7 +1753,7 @@ git commit -m "feat(frontend): show PR sync progress and usage freshness"
 **Files:**
 - Modify: `docs/architecture.md`
 
-- [ ] **Step 1: Update architecture current-state docs**
+- [x] **Step 1: Update architecture current-state docs**
 
 In `docs/architecture.md`, update the PR sync / repo detail section to state:
 
@@ -1763,7 +1763,7 @@ In `docs/architecture.md`, update the PR sync / repo detail section to state:
 
 Place this near the existing repo/PR usage architecture description.
 
-- [ ] **Step 2: Run backend focused verification**
+- [x] **Step 2: Run backend focused verification**
 
 Run:
 
@@ -1773,7 +1773,7 @@ cd backend && go test ./internal/prsync ./internal/prusage ./internal/handler
 
 Expected: PASS.
 
-- [ ] **Step 3: Regenerate Ent and check no drift**
+- [x] **Step 3: Regenerate Ent and check no drift**
 
 Run:
 
@@ -1784,7 +1784,7 @@ git diff --exit-code backend/ent backend/ent/migrate/schema.go
 
 Expected: both commands exit 0. If `git diff --exit-code` fails, inspect generated changes, stage legitimate generated files, and rerun the check.
 
-- [ ] **Step 4: Run full backend tests**
+- [x] **Step 4: Run full backend tests**
 
 Run:
 
@@ -1798,7 +1798,7 @@ Expected: PASS. If local PostgreSQL-backed tests require the known local DSN, re
 cd backend && AE_TEST_POSTGRES_DSN='postgres://postgres:postgres@127.0.0.1:15432/postgres?sslmode=disable' go test ./...
 ```
 
-- [ ] **Step 5: Run frontend tests**
+- [x] **Step 5: Run frontend tests**
 
 Run:
 
@@ -1808,7 +1808,7 @@ cd frontend && pnpm test
 
 Expected: PASS.
 
-- [ ] **Step 6: Inspect final diff**
+- [x] **Step 6: Inspect final diff**
 
 Run:
 
@@ -1819,7 +1819,7 @@ git diff --stat
 
 Expected: only intended backend, frontend, generated Ent, and docs files are modified.
 
-- [ ] **Step 7: Commit docs and final integration changes**
+- [x] **Step 7: Commit docs and final integration changes**
 
 If Task 7 only changed docs:
 
@@ -1841,15 +1841,15 @@ Use the first command when only docs changed; use the second when final integrat
 
 ## Completion Checklist
 
-- [ ] `POST /api/v1/repos/:id/sync-prs` returns a job id immediately.
-- [ ] `GET /api/v1/pr-sync-jobs/:id` returns phase and counters.
-- [ ] Duplicate sync clicks reuse the existing queued or running job.
-- [ ] PR fetch progress is updated page by page.
-- [ ] Upsert distinguishes created, changed, and unchanged PRs.
-- [ ] Usage refresh skips unchanged inactive PRs and reports skip counts.
-- [ ] PR list includes PR-level usage freshness status.
-- [ ] PR details include commit-level freshness reasons.
-- [ ] Existing PR list pagination and month filters still work.
-- [ ] Existing single-PR `refresh-usage` still works.
-- [ ] `docs/architecture.md` reflects the implemented runtime relationship.
-- [ ] Backend and frontend verification commands pass or any environment-sensitive failures are recorded with exact output.
+- [x] `POST /api/v1/repos/:id/sync-prs` returns a job id immediately.
+- [x] `GET /api/v1/pr-sync-jobs/:id` returns phase and counters.
+- [x] Duplicate sync clicks reuse the existing queued or running job.
+- [x] PR fetch progress is updated page by page.
+- [x] Upsert distinguishes created, changed, and unchanged PRs.
+- [x] Usage refresh skips unchanged inactive PRs and reports skip counts.
+- [x] PR list includes PR-level usage freshness status.
+- [x] PR details include commit-level freshness reasons.
+- [x] Existing PR list pagination and month filters still work.
+- [x] Existing single-PR `refresh-usage` still works.
+- [x] `docs/architecture.md` reflects the implemented runtime relationship.
+- [x] Backend and frontend verification commands pass or any environment-sensitive failures are recorded with exact output.
