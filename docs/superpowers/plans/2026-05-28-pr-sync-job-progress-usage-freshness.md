@@ -1273,7 +1273,7 @@ git commit -m "feat(prsync): expose PR usage freshness"
 - Modify: `frontend/src/api/pr.ts`
 - Modify: `frontend/src/__tests__/api-modules.test.ts`
 
-- [ ] **Step 1: Write failing API tests**
+- [x] **Step 1: Write failing API tests**
 
 In `frontend/src/__tests__/api-modules.test.ts`, update the PR API import:
 
@@ -1297,7 +1297,7 @@ it('getPRSyncJob calls GET /pr-sync-jobs/:id', async () => {
 })
 ```
 
-- [ ] **Step 2: Run frontend API tests and verify they fail**
+- [x] **Step 2: Run frontend API tests and verify they fail**
 
 Run:
 
@@ -1307,7 +1307,7 @@ cd frontend && pnpm test -- api-modules.test.ts
 
 Expected: FAIL because `getPRSyncJob` is not exported and `syncPRs` still passes a timeout argument.
 
-- [ ] **Step 3: Add TypeScript types**
+- [x] **Step 3: Add TypeScript types**
 
 In `frontend/src/types/index.ts`, add:
 
@@ -1360,7 +1360,7 @@ usage_status_checked_at?: string | null
 commit_freshness?: CommitFreshness[]
 ```
 
-- [ ] **Step 4: Update PR API module**
+- [x] **Step 4: Update PR API module**
 
 In `frontend/src/api/pr.ts`:
 
@@ -1393,7 +1393,7 @@ export function refreshPRUsage(prId: number) {
 }
 ```
 
-- [ ] **Step 5: Run frontend API tests**
+- [x] **Step 5: Run frontend API tests**
 
 Run:
 
@@ -1403,7 +1403,7 @@ cd frontend && pnpm test -- api-modules.test.ts
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit frontend API types**
+- [x] **Step 6: Commit frontend API types**
 
 ```bash
 git add frontend/src/types/index.ts frontend/src/api/pr.ts frontend/src/__tests__/api-modules.test.ts
