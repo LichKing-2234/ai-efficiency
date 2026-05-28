@@ -436,11 +436,11 @@ func prChanged(existing *ent.PrRecord, pr *scm.PR) bool {
 		existing.LinesDeleted != pr.LinesDeleted {
 		return true
 	}
-	if !pr.CreatedAt.IsZero() && !existing.CreatedAt.Equal(pr.CreatedAt) {
+	if !pr.CreatedAt.IsZero() && !sameDatabaseTimestamp(existing.CreatedAt, pr.CreatedAt) {
 		return true
 	}
 	if !pr.MergedAt.IsZero() {
-		if existing.MergedAt == nil || !existing.MergedAt.Equal(pr.MergedAt) {
+		if existing.MergedAt == nil || !sameDatabaseTimestamp(*existing.MergedAt, pr.MergedAt) {
 			return true
 		}
 	}
@@ -448,6 +448,10 @@ func prChanged(existing *ent.PrRecord, pr *scm.PR) bool {
 		return true
 	}
 	return false
+}
+
+func sameDatabaseTimestamp(a, b time.Time) bool {
+	return a.Round(time.Microsecond).Equal(b.Round(time.Microsecond))
 }
 
 func mapPRStatus(state string) prrecord.Status {

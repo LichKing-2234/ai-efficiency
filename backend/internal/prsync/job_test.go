@@ -3,6 +3,7 @@ package prsync
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/ai-efficiency/backend/ent/prsyncjob"
 	"github.com/ai-efficiency/backend/internal/scm"
@@ -85,6 +86,46 @@ func TestUpsertPRDistinguishesChangedAndUnchanged(t *testing.T) {
 	}
 	if state != UpsertChanged {
 		t.Fatalf("third state = %s, want %s", state, UpsertChanged)
+	}
+}
+
+func TestUpsertPRIgnoresDatabaseTimestampPrecision(t *testing.T) {
+	client := testdb.Open(t)
+	defer client.Close()
+	ctx := context.Background()
+	rc := createTestRepo(t, ctx, client, "upsert-timestamp-precision-repo")
+	svc := NewService(client, nil, zap.NewNop())
+
+	incomingCreatedAt := time.Date(2026, 5, 28, 9, 0, 0, 123456789, time.UTC)
+	storedCreatedAt := incomingCreatedAt.Round(time.Microsecond)
+	client.PrRecord.Create().
+		SetRepoConfigID(rc.ID).
+		SetScmPrID(77).
+		SetScmPrURL("https://example.com/pr/77").
+		SetTitle("old closed").
+		SetAuthor("legacy").
+		SetSourceBranch("legacy").
+		SetTargetBranch("main").
+		SetStatus("closed").
+		SetCreatedAt(storedCreatedAt).
+		SaveX(ctx)
+
+	pr := &scm.PR{
+		ID:           77,
+		Title:        "old closed",
+		Author:       "legacy",
+		SourceBranch: "legacy",
+		TargetBranch: "main",
+		State:        "closed",
+		URL:          "https://example.com/pr/77",
+		CreatedAt:    incomingCreatedAt,
+	}
+	_, state, err := svc.upsertPR(ctx, rc.ID, pr)
+	if err != nil {
+		t.Fatalf("upsertPR error: %v", err)
+	}
+	if state != UpsertUnchanged {
+		t.Fatalf("state = %s, want %s", state, UpsertUnchanged)
 	}
 }
 
