@@ -18,6 +18,7 @@ import (
 	"github.com/ai-efficiency/backend/ent/prcommitusagesnapshot"
 	"github.com/ai-efficiency/backend/ent/predicate"
 	"github.com/ai-efficiency/backend/ent/prrecord"
+	"github.com/ai-efficiency/backend/ent/prsyncjob"
 	"github.com/ai-efficiency/backend/ent/relayprovider"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/scmprovider"
@@ -40,6 +41,7 @@ const (
 	TypeCommitRewrite         = "CommitRewrite"
 	TypeCredential            = "Credential"
 	TypePRCommitUsageSnapshot = "PRCommitUsageSnapshot"
+	TypePRSyncJob             = "PRSyncJob"
 	TypePrAttributionRun      = "PrAttributionRun"
 	TypePrRecord              = "PrRecord"
 	TypeRelayProvider         = "RelayProvider"
@@ -4285,6 +4287,2222 @@ func (m *PRCommitUsageSnapshotMutation) ResetEdge(name string) error {
 		return nil
 	}
 	return fmt.Errorf("unknown PRCommitUsageSnapshot edge %s", name)
+}
+
+// PRSyncJobMutation represents an operation that mutates the PRSyncJob nodes in the graph.
+type PRSyncJobMutation struct {
+	config
+	op                     Op
+	typ                    string
+	id                     *int
+	status                 *prsyncjob.Status
+	phase                  *prsyncjob.Phase
+	page_size              *int
+	addpage_size           *int
+	current_page           *int
+	addcurrent_page        *int
+	fetched_prs            *int
+	addfetched_prs         *int
+	total_prs              *int
+	addtotal_prs           *int
+	processed_prs          *int
+	addprocessed_prs       *int
+	created_prs            *int
+	addcreated_prs         *int
+	changed_prs            *int
+	addchanged_prs         *int
+	unchanged_prs          *int
+	addunchanged_prs       *int
+	upsert_failed_prs      *int
+	addupsert_failed_prs   *int
+	labeled_prs            *int
+	addlabeled_prs         *int
+	label_failed_prs       *int
+	addlabel_failed_prs    *int
+	usage_total_prs        *int
+	addusage_total_prs     *int
+	usage_refreshed_prs    *int
+	addusage_refreshed_prs *int
+	usage_skipped_prs      *int
+	addusage_skipped_prs   *int
+	usage_failed_prs       *int
+	addusage_failed_prs    *int
+	last_error             *string
+	error_summary          *[]map[string]interface{}
+	appenderror_summary    []map[string]interface{}
+	started_at             *time.Time
+	completed_at           *time.Time
+	created_at             *time.Time
+	updated_at             *time.Time
+	clearedFields          map[string]struct{}
+	repo_config            *int
+	clearedrepo_config     bool
+	done                   bool
+	oldValue               func(context.Context) (*PRSyncJob, error)
+	predicates             []predicate.PRSyncJob
+}
+
+var _ ent.Mutation = (*PRSyncJobMutation)(nil)
+
+// prsyncjobOption allows management of the mutation configuration using functional options.
+type prsyncjobOption func(*PRSyncJobMutation)
+
+// newPRSyncJobMutation creates new mutation for the PRSyncJob entity.
+func newPRSyncJobMutation(c config, op Op, opts ...prsyncjobOption) *PRSyncJobMutation {
+	m := &PRSyncJobMutation{
+		config:        c,
+		op:            op,
+		typ:           TypePRSyncJob,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withPRSyncJobID sets the ID field of the mutation.
+func withPRSyncJobID(id int) prsyncjobOption {
+	return func(m *PRSyncJobMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *PRSyncJob
+		)
+		m.oldValue = func(ctx context.Context) (*PRSyncJob, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().PRSyncJob.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withPRSyncJob sets the old PRSyncJob of the mutation.
+func withPRSyncJob(node *PRSyncJob) prsyncjobOption {
+	return func(m *PRSyncJobMutation) {
+		m.oldValue = func(context.Context) (*PRSyncJob, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m PRSyncJobMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m PRSyncJobMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *PRSyncJobMutation) ID() (id int, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *PRSyncJobMutation) IDs(ctx context.Context) ([]int, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().PRSyncJob.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetRepoConfigID sets the "repo_config_id" field.
+func (m *PRSyncJobMutation) SetRepoConfigID(i int) {
+	m.repo_config = &i
+}
+
+// RepoConfigID returns the value of the "repo_config_id" field in the mutation.
+func (m *PRSyncJobMutation) RepoConfigID() (r int, exists bool) {
+	v := m.repo_config
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRepoConfigID returns the old "repo_config_id" field's value of the PRSyncJob entity.
+// If the PRSyncJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PRSyncJobMutation) OldRepoConfigID(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRepoConfigID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRepoConfigID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRepoConfigID: %w", err)
+	}
+	return oldValue.RepoConfigID, nil
+}
+
+// ResetRepoConfigID resets all changes to the "repo_config_id" field.
+func (m *PRSyncJobMutation) ResetRepoConfigID() {
+	m.repo_config = nil
+}
+
+// SetStatus sets the "status" field.
+func (m *PRSyncJobMutation) SetStatus(pr prsyncjob.Status) {
+	m.status = &pr
+}
+
+// Status returns the value of the "status" field in the mutation.
+func (m *PRSyncJobMutation) Status() (r prsyncjob.Status, exists bool) {
+	v := m.status
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStatus returns the old "status" field's value of the PRSyncJob entity.
+// If the PRSyncJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PRSyncJobMutation) OldStatus(ctx context.Context) (v prsyncjob.Status, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStatus is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStatus requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStatus: %w", err)
+	}
+	return oldValue.Status, nil
+}
+
+// ResetStatus resets all changes to the "status" field.
+func (m *PRSyncJobMutation) ResetStatus() {
+	m.status = nil
+}
+
+// SetPhase sets the "phase" field.
+func (m *PRSyncJobMutation) SetPhase(pr prsyncjob.Phase) {
+	m.phase = &pr
+}
+
+// Phase returns the value of the "phase" field in the mutation.
+func (m *PRSyncJobMutation) Phase() (r prsyncjob.Phase, exists bool) {
+	v := m.phase
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPhase returns the old "phase" field's value of the PRSyncJob entity.
+// If the PRSyncJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PRSyncJobMutation) OldPhase(ctx context.Context) (v prsyncjob.Phase, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPhase is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPhase requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPhase: %w", err)
+	}
+	return oldValue.Phase, nil
+}
+
+// ResetPhase resets all changes to the "phase" field.
+func (m *PRSyncJobMutation) ResetPhase() {
+	m.phase = nil
+}
+
+// SetPageSize sets the "page_size" field.
+func (m *PRSyncJobMutation) SetPageSize(i int) {
+	m.page_size = &i
+	m.addpage_size = nil
+}
+
+// PageSize returns the value of the "page_size" field in the mutation.
+func (m *PRSyncJobMutation) PageSize() (r int, exists bool) {
+	v := m.page_size
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPageSize returns the old "page_size" field's value of the PRSyncJob entity.
+// If the PRSyncJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PRSyncJobMutation) OldPageSize(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPageSize is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPageSize requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPageSize: %w", err)
+	}
+	return oldValue.PageSize, nil
+}
+
+// AddPageSize adds i to the "page_size" field.
+func (m *PRSyncJobMutation) AddPageSize(i int) {
+	if m.addpage_size != nil {
+		*m.addpage_size += i
+	} else {
+		m.addpage_size = &i
+	}
+}
+
+// AddedPageSize returns the value that was added to the "page_size" field in this mutation.
+func (m *PRSyncJobMutation) AddedPageSize() (r int, exists bool) {
+	v := m.addpage_size
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetPageSize resets all changes to the "page_size" field.
+func (m *PRSyncJobMutation) ResetPageSize() {
+	m.page_size = nil
+	m.addpage_size = nil
+}
+
+// SetCurrentPage sets the "current_page" field.
+func (m *PRSyncJobMutation) SetCurrentPage(i int) {
+	m.current_page = &i
+	m.addcurrent_page = nil
+}
+
+// CurrentPage returns the value of the "current_page" field in the mutation.
+func (m *PRSyncJobMutation) CurrentPage() (r int, exists bool) {
+	v := m.current_page
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCurrentPage returns the old "current_page" field's value of the PRSyncJob entity.
+// If the PRSyncJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PRSyncJobMutation) OldCurrentPage(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCurrentPage is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCurrentPage requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCurrentPage: %w", err)
+	}
+	return oldValue.CurrentPage, nil
+}
+
+// AddCurrentPage adds i to the "current_page" field.
+func (m *PRSyncJobMutation) AddCurrentPage(i int) {
+	if m.addcurrent_page != nil {
+		*m.addcurrent_page += i
+	} else {
+		m.addcurrent_page = &i
+	}
+}
+
+// AddedCurrentPage returns the value that was added to the "current_page" field in this mutation.
+func (m *PRSyncJobMutation) AddedCurrentPage() (r int, exists bool) {
+	v := m.addcurrent_page
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetCurrentPage resets all changes to the "current_page" field.
+func (m *PRSyncJobMutation) ResetCurrentPage() {
+	m.current_page = nil
+	m.addcurrent_page = nil
+}
+
+// SetFetchedPrs sets the "fetched_prs" field.
+func (m *PRSyncJobMutation) SetFetchedPrs(i int) {
+	m.fetched_prs = &i
+	m.addfetched_prs = nil
+}
+
+// FetchedPrs returns the value of the "fetched_prs" field in the mutation.
+func (m *PRSyncJobMutation) FetchedPrs() (r int, exists bool) {
+	v := m.fetched_prs
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldFetchedPrs returns the old "fetched_prs" field's value of the PRSyncJob entity.
+// If the PRSyncJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PRSyncJobMutation) OldFetchedPrs(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldFetchedPrs is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldFetchedPrs requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldFetchedPrs: %w", err)
+	}
+	return oldValue.FetchedPrs, nil
+}
+
+// AddFetchedPrs adds i to the "fetched_prs" field.
+func (m *PRSyncJobMutation) AddFetchedPrs(i int) {
+	if m.addfetched_prs != nil {
+		*m.addfetched_prs += i
+	} else {
+		m.addfetched_prs = &i
+	}
+}
+
+// AddedFetchedPrs returns the value that was added to the "fetched_prs" field in this mutation.
+func (m *PRSyncJobMutation) AddedFetchedPrs() (r int, exists bool) {
+	v := m.addfetched_prs
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetFetchedPrs resets all changes to the "fetched_prs" field.
+func (m *PRSyncJobMutation) ResetFetchedPrs() {
+	m.fetched_prs = nil
+	m.addfetched_prs = nil
+}
+
+// SetTotalPrs sets the "total_prs" field.
+func (m *PRSyncJobMutation) SetTotalPrs(i int) {
+	m.total_prs = &i
+	m.addtotal_prs = nil
+}
+
+// TotalPrs returns the value of the "total_prs" field in the mutation.
+func (m *PRSyncJobMutation) TotalPrs() (r int, exists bool) {
+	v := m.total_prs
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTotalPrs returns the old "total_prs" field's value of the PRSyncJob entity.
+// If the PRSyncJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PRSyncJobMutation) OldTotalPrs(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTotalPrs is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTotalPrs requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTotalPrs: %w", err)
+	}
+	return oldValue.TotalPrs, nil
+}
+
+// AddTotalPrs adds i to the "total_prs" field.
+func (m *PRSyncJobMutation) AddTotalPrs(i int) {
+	if m.addtotal_prs != nil {
+		*m.addtotal_prs += i
+	} else {
+		m.addtotal_prs = &i
+	}
+}
+
+// AddedTotalPrs returns the value that was added to the "total_prs" field in this mutation.
+func (m *PRSyncJobMutation) AddedTotalPrs() (r int, exists bool) {
+	v := m.addtotal_prs
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetTotalPrs resets all changes to the "total_prs" field.
+func (m *PRSyncJobMutation) ResetTotalPrs() {
+	m.total_prs = nil
+	m.addtotal_prs = nil
+}
+
+// SetProcessedPrs sets the "processed_prs" field.
+func (m *PRSyncJobMutation) SetProcessedPrs(i int) {
+	m.processed_prs = &i
+	m.addprocessed_prs = nil
+}
+
+// ProcessedPrs returns the value of the "processed_prs" field in the mutation.
+func (m *PRSyncJobMutation) ProcessedPrs() (r int, exists bool) {
+	v := m.processed_prs
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldProcessedPrs returns the old "processed_prs" field's value of the PRSyncJob entity.
+// If the PRSyncJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PRSyncJobMutation) OldProcessedPrs(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldProcessedPrs is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldProcessedPrs requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldProcessedPrs: %w", err)
+	}
+	return oldValue.ProcessedPrs, nil
+}
+
+// AddProcessedPrs adds i to the "processed_prs" field.
+func (m *PRSyncJobMutation) AddProcessedPrs(i int) {
+	if m.addprocessed_prs != nil {
+		*m.addprocessed_prs += i
+	} else {
+		m.addprocessed_prs = &i
+	}
+}
+
+// AddedProcessedPrs returns the value that was added to the "processed_prs" field in this mutation.
+func (m *PRSyncJobMutation) AddedProcessedPrs() (r int, exists bool) {
+	v := m.addprocessed_prs
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetProcessedPrs resets all changes to the "processed_prs" field.
+func (m *PRSyncJobMutation) ResetProcessedPrs() {
+	m.processed_prs = nil
+	m.addprocessed_prs = nil
+}
+
+// SetCreatedPrs sets the "created_prs" field.
+func (m *PRSyncJobMutation) SetCreatedPrs(i int) {
+	m.created_prs = &i
+	m.addcreated_prs = nil
+}
+
+// CreatedPrs returns the value of the "created_prs" field in the mutation.
+func (m *PRSyncJobMutation) CreatedPrs() (r int, exists bool) {
+	v := m.created_prs
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedPrs returns the old "created_prs" field's value of the PRSyncJob entity.
+// If the PRSyncJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PRSyncJobMutation) OldCreatedPrs(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedPrs is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedPrs requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedPrs: %w", err)
+	}
+	return oldValue.CreatedPrs, nil
+}
+
+// AddCreatedPrs adds i to the "created_prs" field.
+func (m *PRSyncJobMutation) AddCreatedPrs(i int) {
+	if m.addcreated_prs != nil {
+		*m.addcreated_prs += i
+	} else {
+		m.addcreated_prs = &i
+	}
+}
+
+// AddedCreatedPrs returns the value that was added to the "created_prs" field in this mutation.
+func (m *PRSyncJobMutation) AddedCreatedPrs() (r int, exists bool) {
+	v := m.addcreated_prs
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetCreatedPrs resets all changes to the "created_prs" field.
+func (m *PRSyncJobMutation) ResetCreatedPrs() {
+	m.created_prs = nil
+	m.addcreated_prs = nil
+}
+
+// SetChangedPrs sets the "changed_prs" field.
+func (m *PRSyncJobMutation) SetChangedPrs(i int) {
+	m.changed_prs = &i
+	m.addchanged_prs = nil
+}
+
+// ChangedPrs returns the value of the "changed_prs" field in the mutation.
+func (m *PRSyncJobMutation) ChangedPrs() (r int, exists bool) {
+	v := m.changed_prs
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldChangedPrs returns the old "changed_prs" field's value of the PRSyncJob entity.
+// If the PRSyncJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PRSyncJobMutation) OldChangedPrs(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldChangedPrs is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldChangedPrs requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldChangedPrs: %w", err)
+	}
+	return oldValue.ChangedPrs, nil
+}
+
+// AddChangedPrs adds i to the "changed_prs" field.
+func (m *PRSyncJobMutation) AddChangedPrs(i int) {
+	if m.addchanged_prs != nil {
+		*m.addchanged_prs += i
+	} else {
+		m.addchanged_prs = &i
+	}
+}
+
+// AddedChangedPrs returns the value that was added to the "changed_prs" field in this mutation.
+func (m *PRSyncJobMutation) AddedChangedPrs() (r int, exists bool) {
+	v := m.addchanged_prs
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetChangedPrs resets all changes to the "changed_prs" field.
+func (m *PRSyncJobMutation) ResetChangedPrs() {
+	m.changed_prs = nil
+	m.addchanged_prs = nil
+}
+
+// SetUnchangedPrs sets the "unchanged_prs" field.
+func (m *PRSyncJobMutation) SetUnchangedPrs(i int) {
+	m.unchanged_prs = &i
+	m.addunchanged_prs = nil
+}
+
+// UnchangedPrs returns the value of the "unchanged_prs" field in the mutation.
+func (m *PRSyncJobMutation) UnchangedPrs() (r int, exists bool) {
+	v := m.unchanged_prs
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUnchangedPrs returns the old "unchanged_prs" field's value of the PRSyncJob entity.
+// If the PRSyncJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PRSyncJobMutation) OldUnchangedPrs(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUnchangedPrs is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUnchangedPrs requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUnchangedPrs: %w", err)
+	}
+	return oldValue.UnchangedPrs, nil
+}
+
+// AddUnchangedPrs adds i to the "unchanged_prs" field.
+func (m *PRSyncJobMutation) AddUnchangedPrs(i int) {
+	if m.addunchanged_prs != nil {
+		*m.addunchanged_prs += i
+	} else {
+		m.addunchanged_prs = &i
+	}
+}
+
+// AddedUnchangedPrs returns the value that was added to the "unchanged_prs" field in this mutation.
+func (m *PRSyncJobMutation) AddedUnchangedPrs() (r int, exists bool) {
+	v := m.addunchanged_prs
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetUnchangedPrs resets all changes to the "unchanged_prs" field.
+func (m *PRSyncJobMutation) ResetUnchangedPrs() {
+	m.unchanged_prs = nil
+	m.addunchanged_prs = nil
+}
+
+// SetUpsertFailedPrs sets the "upsert_failed_prs" field.
+func (m *PRSyncJobMutation) SetUpsertFailedPrs(i int) {
+	m.upsert_failed_prs = &i
+	m.addupsert_failed_prs = nil
+}
+
+// UpsertFailedPrs returns the value of the "upsert_failed_prs" field in the mutation.
+func (m *PRSyncJobMutation) UpsertFailedPrs() (r int, exists bool) {
+	v := m.upsert_failed_prs
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpsertFailedPrs returns the old "upsert_failed_prs" field's value of the PRSyncJob entity.
+// If the PRSyncJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PRSyncJobMutation) OldUpsertFailedPrs(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpsertFailedPrs is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpsertFailedPrs requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpsertFailedPrs: %w", err)
+	}
+	return oldValue.UpsertFailedPrs, nil
+}
+
+// AddUpsertFailedPrs adds i to the "upsert_failed_prs" field.
+func (m *PRSyncJobMutation) AddUpsertFailedPrs(i int) {
+	if m.addupsert_failed_prs != nil {
+		*m.addupsert_failed_prs += i
+	} else {
+		m.addupsert_failed_prs = &i
+	}
+}
+
+// AddedUpsertFailedPrs returns the value that was added to the "upsert_failed_prs" field in this mutation.
+func (m *PRSyncJobMutation) AddedUpsertFailedPrs() (r int, exists bool) {
+	v := m.addupsert_failed_prs
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetUpsertFailedPrs resets all changes to the "upsert_failed_prs" field.
+func (m *PRSyncJobMutation) ResetUpsertFailedPrs() {
+	m.upsert_failed_prs = nil
+	m.addupsert_failed_prs = nil
+}
+
+// SetLabeledPrs sets the "labeled_prs" field.
+func (m *PRSyncJobMutation) SetLabeledPrs(i int) {
+	m.labeled_prs = &i
+	m.addlabeled_prs = nil
+}
+
+// LabeledPrs returns the value of the "labeled_prs" field in the mutation.
+func (m *PRSyncJobMutation) LabeledPrs() (r int, exists bool) {
+	v := m.labeled_prs
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLabeledPrs returns the old "labeled_prs" field's value of the PRSyncJob entity.
+// If the PRSyncJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PRSyncJobMutation) OldLabeledPrs(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLabeledPrs is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLabeledPrs requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLabeledPrs: %w", err)
+	}
+	return oldValue.LabeledPrs, nil
+}
+
+// AddLabeledPrs adds i to the "labeled_prs" field.
+func (m *PRSyncJobMutation) AddLabeledPrs(i int) {
+	if m.addlabeled_prs != nil {
+		*m.addlabeled_prs += i
+	} else {
+		m.addlabeled_prs = &i
+	}
+}
+
+// AddedLabeledPrs returns the value that was added to the "labeled_prs" field in this mutation.
+func (m *PRSyncJobMutation) AddedLabeledPrs() (r int, exists bool) {
+	v := m.addlabeled_prs
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetLabeledPrs resets all changes to the "labeled_prs" field.
+func (m *PRSyncJobMutation) ResetLabeledPrs() {
+	m.labeled_prs = nil
+	m.addlabeled_prs = nil
+}
+
+// SetLabelFailedPrs sets the "label_failed_prs" field.
+func (m *PRSyncJobMutation) SetLabelFailedPrs(i int) {
+	m.label_failed_prs = &i
+	m.addlabel_failed_prs = nil
+}
+
+// LabelFailedPrs returns the value of the "label_failed_prs" field in the mutation.
+func (m *PRSyncJobMutation) LabelFailedPrs() (r int, exists bool) {
+	v := m.label_failed_prs
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLabelFailedPrs returns the old "label_failed_prs" field's value of the PRSyncJob entity.
+// If the PRSyncJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PRSyncJobMutation) OldLabelFailedPrs(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLabelFailedPrs is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLabelFailedPrs requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLabelFailedPrs: %w", err)
+	}
+	return oldValue.LabelFailedPrs, nil
+}
+
+// AddLabelFailedPrs adds i to the "label_failed_prs" field.
+func (m *PRSyncJobMutation) AddLabelFailedPrs(i int) {
+	if m.addlabel_failed_prs != nil {
+		*m.addlabel_failed_prs += i
+	} else {
+		m.addlabel_failed_prs = &i
+	}
+}
+
+// AddedLabelFailedPrs returns the value that was added to the "label_failed_prs" field in this mutation.
+func (m *PRSyncJobMutation) AddedLabelFailedPrs() (r int, exists bool) {
+	v := m.addlabel_failed_prs
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetLabelFailedPrs resets all changes to the "label_failed_prs" field.
+func (m *PRSyncJobMutation) ResetLabelFailedPrs() {
+	m.label_failed_prs = nil
+	m.addlabel_failed_prs = nil
+}
+
+// SetUsageTotalPrs sets the "usage_total_prs" field.
+func (m *PRSyncJobMutation) SetUsageTotalPrs(i int) {
+	m.usage_total_prs = &i
+	m.addusage_total_prs = nil
+}
+
+// UsageTotalPrs returns the value of the "usage_total_prs" field in the mutation.
+func (m *PRSyncJobMutation) UsageTotalPrs() (r int, exists bool) {
+	v := m.usage_total_prs
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUsageTotalPrs returns the old "usage_total_prs" field's value of the PRSyncJob entity.
+// If the PRSyncJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PRSyncJobMutation) OldUsageTotalPrs(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUsageTotalPrs is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUsageTotalPrs requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUsageTotalPrs: %w", err)
+	}
+	return oldValue.UsageTotalPrs, nil
+}
+
+// AddUsageTotalPrs adds i to the "usage_total_prs" field.
+func (m *PRSyncJobMutation) AddUsageTotalPrs(i int) {
+	if m.addusage_total_prs != nil {
+		*m.addusage_total_prs += i
+	} else {
+		m.addusage_total_prs = &i
+	}
+}
+
+// AddedUsageTotalPrs returns the value that was added to the "usage_total_prs" field in this mutation.
+func (m *PRSyncJobMutation) AddedUsageTotalPrs() (r int, exists bool) {
+	v := m.addusage_total_prs
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetUsageTotalPrs resets all changes to the "usage_total_prs" field.
+func (m *PRSyncJobMutation) ResetUsageTotalPrs() {
+	m.usage_total_prs = nil
+	m.addusage_total_prs = nil
+}
+
+// SetUsageRefreshedPrs sets the "usage_refreshed_prs" field.
+func (m *PRSyncJobMutation) SetUsageRefreshedPrs(i int) {
+	m.usage_refreshed_prs = &i
+	m.addusage_refreshed_prs = nil
+}
+
+// UsageRefreshedPrs returns the value of the "usage_refreshed_prs" field in the mutation.
+func (m *PRSyncJobMutation) UsageRefreshedPrs() (r int, exists bool) {
+	v := m.usage_refreshed_prs
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUsageRefreshedPrs returns the old "usage_refreshed_prs" field's value of the PRSyncJob entity.
+// If the PRSyncJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PRSyncJobMutation) OldUsageRefreshedPrs(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUsageRefreshedPrs is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUsageRefreshedPrs requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUsageRefreshedPrs: %w", err)
+	}
+	return oldValue.UsageRefreshedPrs, nil
+}
+
+// AddUsageRefreshedPrs adds i to the "usage_refreshed_prs" field.
+func (m *PRSyncJobMutation) AddUsageRefreshedPrs(i int) {
+	if m.addusage_refreshed_prs != nil {
+		*m.addusage_refreshed_prs += i
+	} else {
+		m.addusage_refreshed_prs = &i
+	}
+}
+
+// AddedUsageRefreshedPrs returns the value that was added to the "usage_refreshed_prs" field in this mutation.
+func (m *PRSyncJobMutation) AddedUsageRefreshedPrs() (r int, exists bool) {
+	v := m.addusage_refreshed_prs
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetUsageRefreshedPrs resets all changes to the "usage_refreshed_prs" field.
+func (m *PRSyncJobMutation) ResetUsageRefreshedPrs() {
+	m.usage_refreshed_prs = nil
+	m.addusage_refreshed_prs = nil
+}
+
+// SetUsageSkippedPrs sets the "usage_skipped_prs" field.
+func (m *PRSyncJobMutation) SetUsageSkippedPrs(i int) {
+	m.usage_skipped_prs = &i
+	m.addusage_skipped_prs = nil
+}
+
+// UsageSkippedPrs returns the value of the "usage_skipped_prs" field in the mutation.
+func (m *PRSyncJobMutation) UsageSkippedPrs() (r int, exists bool) {
+	v := m.usage_skipped_prs
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUsageSkippedPrs returns the old "usage_skipped_prs" field's value of the PRSyncJob entity.
+// If the PRSyncJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PRSyncJobMutation) OldUsageSkippedPrs(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUsageSkippedPrs is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUsageSkippedPrs requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUsageSkippedPrs: %w", err)
+	}
+	return oldValue.UsageSkippedPrs, nil
+}
+
+// AddUsageSkippedPrs adds i to the "usage_skipped_prs" field.
+func (m *PRSyncJobMutation) AddUsageSkippedPrs(i int) {
+	if m.addusage_skipped_prs != nil {
+		*m.addusage_skipped_prs += i
+	} else {
+		m.addusage_skipped_prs = &i
+	}
+}
+
+// AddedUsageSkippedPrs returns the value that was added to the "usage_skipped_prs" field in this mutation.
+func (m *PRSyncJobMutation) AddedUsageSkippedPrs() (r int, exists bool) {
+	v := m.addusage_skipped_prs
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetUsageSkippedPrs resets all changes to the "usage_skipped_prs" field.
+func (m *PRSyncJobMutation) ResetUsageSkippedPrs() {
+	m.usage_skipped_prs = nil
+	m.addusage_skipped_prs = nil
+}
+
+// SetUsageFailedPrs sets the "usage_failed_prs" field.
+func (m *PRSyncJobMutation) SetUsageFailedPrs(i int) {
+	m.usage_failed_prs = &i
+	m.addusage_failed_prs = nil
+}
+
+// UsageFailedPrs returns the value of the "usage_failed_prs" field in the mutation.
+func (m *PRSyncJobMutation) UsageFailedPrs() (r int, exists bool) {
+	v := m.usage_failed_prs
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUsageFailedPrs returns the old "usage_failed_prs" field's value of the PRSyncJob entity.
+// If the PRSyncJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PRSyncJobMutation) OldUsageFailedPrs(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUsageFailedPrs is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUsageFailedPrs requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUsageFailedPrs: %w", err)
+	}
+	return oldValue.UsageFailedPrs, nil
+}
+
+// AddUsageFailedPrs adds i to the "usage_failed_prs" field.
+func (m *PRSyncJobMutation) AddUsageFailedPrs(i int) {
+	if m.addusage_failed_prs != nil {
+		*m.addusage_failed_prs += i
+	} else {
+		m.addusage_failed_prs = &i
+	}
+}
+
+// AddedUsageFailedPrs returns the value that was added to the "usage_failed_prs" field in this mutation.
+func (m *PRSyncJobMutation) AddedUsageFailedPrs() (r int, exists bool) {
+	v := m.addusage_failed_prs
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetUsageFailedPrs resets all changes to the "usage_failed_prs" field.
+func (m *PRSyncJobMutation) ResetUsageFailedPrs() {
+	m.usage_failed_prs = nil
+	m.addusage_failed_prs = nil
+}
+
+// SetLastError sets the "last_error" field.
+func (m *PRSyncJobMutation) SetLastError(s string) {
+	m.last_error = &s
+}
+
+// LastError returns the value of the "last_error" field in the mutation.
+func (m *PRSyncJobMutation) LastError() (r string, exists bool) {
+	v := m.last_error
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLastError returns the old "last_error" field's value of the PRSyncJob entity.
+// If the PRSyncJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PRSyncJobMutation) OldLastError(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLastError is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLastError requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLastError: %w", err)
+	}
+	return oldValue.LastError, nil
+}
+
+// ClearLastError clears the value of the "last_error" field.
+func (m *PRSyncJobMutation) ClearLastError() {
+	m.last_error = nil
+	m.clearedFields[prsyncjob.FieldLastError] = struct{}{}
+}
+
+// LastErrorCleared returns if the "last_error" field was cleared in this mutation.
+func (m *PRSyncJobMutation) LastErrorCleared() bool {
+	_, ok := m.clearedFields[prsyncjob.FieldLastError]
+	return ok
+}
+
+// ResetLastError resets all changes to the "last_error" field.
+func (m *PRSyncJobMutation) ResetLastError() {
+	m.last_error = nil
+	delete(m.clearedFields, prsyncjob.FieldLastError)
+}
+
+// SetErrorSummary sets the "error_summary" field.
+func (m *PRSyncJobMutation) SetErrorSummary(value []map[string]interface{}) {
+	m.error_summary = &value
+	m.appenderror_summary = nil
+}
+
+// ErrorSummary returns the value of the "error_summary" field in the mutation.
+func (m *PRSyncJobMutation) ErrorSummary() (r []map[string]interface{}, exists bool) {
+	v := m.error_summary
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldErrorSummary returns the old "error_summary" field's value of the PRSyncJob entity.
+// If the PRSyncJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PRSyncJobMutation) OldErrorSummary(ctx context.Context) (v []map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldErrorSummary is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldErrorSummary requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldErrorSummary: %w", err)
+	}
+	return oldValue.ErrorSummary, nil
+}
+
+// AppendErrorSummary adds value to the "error_summary" field.
+func (m *PRSyncJobMutation) AppendErrorSummary(value []map[string]interface{}) {
+	m.appenderror_summary = append(m.appenderror_summary, value...)
+}
+
+// AppendedErrorSummary returns the list of values that were appended to the "error_summary" field in this mutation.
+func (m *PRSyncJobMutation) AppendedErrorSummary() ([]map[string]interface{}, bool) {
+	if len(m.appenderror_summary) == 0 {
+		return nil, false
+	}
+	return m.appenderror_summary, true
+}
+
+// ClearErrorSummary clears the value of the "error_summary" field.
+func (m *PRSyncJobMutation) ClearErrorSummary() {
+	m.error_summary = nil
+	m.appenderror_summary = nil
+	m.clearedFields[prsyncjob.FieldErrorSummary] = struct{}{}
+}
+
+// ErrorSummaryCleared returns if the "error_summary" field was cleared in this mutation.
+func (m *PRSyncJobMutation) ErrorSummaryCleared() bool {
+	_, ok := m.clearedFields[prsyncjob.FieldErrorSummary]
+	return ok
+}
+
+// ResetErrorSummary resets all changes to the "error_summary" field.
+func (m *PRSyncJobMutation) ResetErrorSummary() {
+	m.error_summary = nil
+	m.appenderror_summary = nil
+	delete(m.clearedFields, prsyncjob.FieldErrorSummary)
+}
+
+// SetStartedAt sets the "started_at" field.
+func (m *PRSyncJobMutation) SetStartedAt(t time.Time) {
+	m.started_at = &t
+}
+
+// StartedAt returns the value of the "started_at" field in the mutation.
+func (m *PRSyncJobMutation) StartedAt() (r time.Time, exists bool) {
+	v := m.started_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStartedAt returns the old "started_at" field's value of the PRSyncJob entity.
+// If the PRSyncJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PRSyncJobMutation) OldStartedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStartedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStartedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStartedAt: %w", err)
+	}
+	return oldValue.StartedAt, nil
+}
+
+// ClearStartedAt clears the value of the "started_at" field.
+func (m *PRSyncJobMutation) ClearStartedAt() {
+	m.started_at = nil
+	m.clearedFields[prsyncjob.FieldStartedAt] = struct{}{}
+}
+
+// StartedAtCleared returns if the "started_at" field was cleared in this mutation.
+func (m *PRSyncJobMutation) StartedAtCleared() bool {
+	_, ok := m.clearedFields[prsyncjob.FieldStartedAt]
+	return ok
+}
+
+// ResetStartedAt resets all changes to the "started_at" field.
+func (m *PRSyncJobMutation) ResetStartedAt() {
+	m.started_at = nil
+	delete(m.clearedFields, prsyncjob.FieldStartedAt)
+}
+
+// SetCompletedAt sets the "completed_at" field.
+func (m *PRSyncJobMutation) SetCompletedAt(t time.Time) {
+	m.completed_at = &t
+}
+
+// CompletedAt returns the value of the "completed_at" field in the mutation.
+func (m *PRSyncJobMutation) CompletedAt() (r time.Time, exists bool) {
+	v := m.completed_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCompletedAt returns the old "completed_at" field's value of the PRSyncJob entity.
+// If the PRSyncJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PRSyncJobMutation) OldCompletedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCompletedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCompletedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCompletedAt: %w", err)
+	}
+	return oldValue.CompletedAt, nil
+}
+
+// ClearCompletedAt clears the value of the "completed_at" field.
+func (m *PRSyncJobMutation) ClearCompletedAt() {
+	m.completed_at = nil
+	m.clearedFields[prsyncjob.FieldCompletedAt] = struct{}{}
+}
+
+// CompletedAtCleared returns if the "completed_at" field was cleared in this mutation.
+func (m *PRSyncJobMutation) CompletedAtCleared() bool {
+	_, ok := m.clearedFields[prsyncjob.FieldCompletedAt]
+	return ok
+}
+
+// ResetCompletedAt resets all changes to the "completed_at" field.
+func (m *PRSyncJobMutation) ResetCompletedAt() {
+	m.completed_at = nil
+	delete(m.clearedFields, prsyncjob.FieldCompletedAt)
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *PRSyncJobMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *PRSyncJobMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the PRSyncJob entity.
+// If the PRSyncJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PRSyncJobMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *PRSyncJobMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *PRSyncJobMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *PRSyncJobMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the PRSyncJob entity.
+// If the PRSyncJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PRSyncJobMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *PRSyncJobMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// ClearRepoConfig clears the "repo_config" edge to the RepoConfig entity.
+func (m *PRSyncJobMutation) ClearRepoConfig() {
+	m.clearedrepo_config = true
+	m.clearedFields[prsyncjob.FieldRepoConfigID] = struct{}{}
+}
+
+// RepoConfigCleared reports if the "repo_config" edge to the RepoConfig entity was cleared.
+func (m *PRSyncJobMutation) RepoConfigCleared() bool {
+	return m.clearedrepo_config
+}
+
+// RepoConfigIDs returns the "repo_config" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// RepoConfigID instead. It exists only for internal usage by the builders.
+func (m *PRSyncJobMutation) RepoConfigIDs() (ids []int) {
+	if id := m.repo_config; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetRepoConfig resets all changes to the "repo_config" edge.
+func (m *PRSyncJobMutation) ResetRepoConfig() {
+	m.repo_config = nil
+	m.clearedrepo_config = false
+}
+
+// Where appends a list predicates to the PRSyncJobMutation builder.
+func (m *PRSyncJobMutation) Where(ps ...predicate.PRSyncJob) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the PRSyncJobMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *PRSyncJobMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.PRSyncJob, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *PRSyncJobMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *PRSyncJobMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (PRSyncJob).
+func (m *PRSyncJobMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *PRSyncJobMutation) Fields() []string {
+	fields := make([]string, 0, 24)
+	if m.repo_config != nil {
+		fields = append(fields, prsyncjob.FieldRepoConfigID)
+	}
+	if m.status != nil {
+		fields = append(fields, prsyncjob.FieldStatus)
+	}
+	if m.phase != nil {
+		fields = append(fields, prsyncjob.FieldPhase)
+	}
+	if m.page_size != nil {
+		fields = append(fields, prsyncjob.FieldPageSize)
+	}
+	if m.current_page != nil {
+		fields = append(fields, prsyncjob.FieldCurrentPage)
+	}
+	if m.fetched_prs != nil {
+		fields = append(fields, prsyncjob.FieldFetchedPrs)
+	}
+	if m.total_prs != nil {
+		fields = append(fields, prsyncjob.FieldTotalPrs)
+	}
+	if m.processed_prs != nil {
+		fields = append(fields, prsyncjob.FieldProcessedPrs)
+	}
+	if m.created_prs != nil {
+		fields = append(fields, prsyncjob.FieldCreatedPrs)
+	}
+	if m.changed_prs != nil {
+		fields = append(fields, prsyncjob.FieldChangedPrs)
+	}
+	if m.unchanged_prs != nil {
+		fields = append(fields, prsyncjob.FieldUnchangedPrs)
+	}
+	if m.upsert_failed_prs != nil {
+		fields = append(fields, prsyncjob.FieldUpsertFailedPrs)
+	}
+	if m.labeled_prs != nil {
+		fields = append(fields, prsyncjob.FieldLabeledPrs)
+	}
+	if m.label_failed_prs != nil {
+		fields = append(fields, prsyncjob.FieldLabelFailedPrs)
+	}
+	if m.usage_total_prs != nil {
+		fields = append(fields, prsyncjob.FieldUsageTotalPrs)
+	}
+	if m.usage_refreshed_prs != nil {
+		fields = append(fields, prsyncjob.FieldUsageRefreshedPrs)
+	}
+	if m.usage_skipped_prs != nil {
+		fields = append(fields, prsyncjob.FieldUsageSkippedPrs)
+	}
+	if m.usage_failed_prs != nil {
+		fields = append(fields, prsyncjob.FieldUsageFailedPrs)
+	}
+	if m.last_error != nil {
+		fields = append(fields, prsyncjob.FieldLastError)
+	}
+	if m.error_summary != nil {
+		fields = append(fields, prsyncjob.FieldErrorSummary)
+	}
+	if m.started_at != nil {
+		fields = append(fields, prsyncjob.FieldStartedAt)
+	}
+	if m.completed_at != nil {
+		fields = append(fields, prsyncjob.FieldCompletedAt)
+	}
+	if m.created_at != nil {
+		fields = append(fields, prsyncjob.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, prsyncjob.FieldUpdatedAt)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *PRSyncJobMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case prsyncjob.FieldRepoConfigID:
+		return m.RepoConfigID()
+	case prsyncjob.FieldStatus:
+		return m.Status()
+	case prsyncjob.FieldPhase:
+		return m.Phase()
+	case prsyncjob.FieldPageSize:
+		return m.PageSize()
+	case prsyncjob.FieldCurrentPage:
+		return m.CurrentPage()
+	case prsyncjob.FieldFetchedPrs:
+		return m.FetchedPrs()
+	case prsyncjob.FieldTotalPrs:
+		return m.TotalPrs()
+	case prsyncjob.FieldProcessedPrs:
+		return m.ProcessedPrs()
+	case prsyncjob.FieldCreatedPrs:
+		return m.CreatedPrs()
+	case prsyncjob.FieldChangedPrs:
+		return m.ChangedPrs()
+	case prsyncjob.FieldUnchangedPrs:
+		return m.UnchangedPrs()
+	case prsyncjob.FieldUpsertFailedPrs:
+		return m.UpsertFailedPrs()
+	case prsyncjob.FieldLabeledPrs:
+		return m.LabeledPrs()
+	case prsyncjob.FieldLabelFailedPrs:
+		return m.LabelFailedPrs()
+	case prsyncjob.FieldUsageTotalPrs:
+		return m.UsageTotalPrs()
+	case prsyncjob.FieldUsageRefreshedPrs:
+		return m.UsageRefreshedPrs()
+	case prsyncjob.FieldUsageSkippedPrs:
+		return m.UsageSkippedPrs()
+	case prsyncjob.FieldUsageFailedPrs:
+		return m.UsageFailedPrs()
+	case prsyncjob.FieldLastError:
+		return m.LastError()
+	case prsyncjob.FieldErrorSummary:
+		return m.ErrorSummary()
+	case prsyncjob.FieldStartedAt:
+		return m.StartedAt()
+	case prsyncjob.FieldCompletedAt:
+		return m.CompletedAt()
+	case prsyncjob.FieldCreatedAt:
+		return m.CreatedAt()
+	case prsyncjob.FieldUpdatedAt:
+		return m.UpdatedAt()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *PRSyncJobMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case prsyncjob.FieldRepoConfigID:
+		return m.OldRepoConfigID(ctx)
+	case prsyncjob.FieldStatus:
+		return m.OldStatus(ctx)
+	case prsyncjob.FieldPhase:
+		return m.OldPhase(ctx)
+	case prsyncjob.FieldPageSize:
+		return m.OldPageSize(ctx)
+	case prsyncjob.FieldCurrentPage:
+		return m.OldCurrentPage(ctx)
+	case prsyncjob.FieldFetchedPrs:
+		return m.OldFetchedPrs(ctx)
+	case prsyncjob.FieldTotalPrs:
+		return m.OldTotalPrs(ctx)
+	case prsyncjob.FieldProcessedPrs:
+		return m.OldProcessedPrs(ctx)
+	case prsyncjob.FieldCreatedPrs:
+		return m.OldCreatedPrs(ctx)
+	case prsyncjob.FieldChangedPrs:
+		return m.OldChangedPrs(ctx)
+	case prsyncjob.FieldUnchangedPrs:
+		return m.OldUnchangedPrs(ctx)
+	case prsyncjob.FieldUpsertFailedPrs:
+		return m.OldUpsertFailedPrs(ctx)
+	case prsyncjob.FieldLabeledPrs:
+		return m.OldLabeledPrs(ctx)
+	case prsyncjob.FieldLabelFailedPrs:
+		return m.OldLabelFailedPrs(ctx)
+	case prsyncjob.FieldUsageTotalPrs:
+		return m.OldUsageTotalPrs(ctx)
+	case prsyncjob.FieldUsageRefreshedPrs:
+		return m.OldUsageRefreshedPrs(ctx)
+	case prsyncjob.FieldUsageSkippedPrs:
+		return m.OldUsageSkippedPrs(ctx)
+	case prsyncjob.FieldUsageFailedPrs:
+		return m.OldUsageFailedPrs(ctx)
+	case prsyncjob.FieldLastError:
+		return m.OldLastError(ctx)
+	case prsyncjob.FieldErrorSummary:
+		return m.OldErrorSummary(ctx)
+	case prsyncjob.FieldStartedAt:
+		return m.OldStartedAt(ctx)
+	case prsyncjob.FieldCompletedAt:
+		return m.OldCompletedAt(ctx)
+	case prsyncjob.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case prsyncjob.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	}
+	return nil, fmt.Errorf("unknown PRSyncJob field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *PRSyncJobMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case prsyncjob.FieldRepoConfigID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRepoConfigID(v)
+		return nil
+	case prsyncjob.FieldStatus:
+		v, ok := value.(prsyncjob.Status)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStatus(v)
+		return nil
+	case prsyncjob.FieldPhase:
+		v, ok := value.(prsyncjob.Phase)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPhase(v)
+		return nil
+	case prsyncjob.FieldPageSize:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPageSize(v)
+		return nil
+	case prsyncjob.FieldCurrentPage:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCurrentPage(v)
+		return nil
+	case prsyncjob.FieldFetchedPrs:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetFetchedPrs(v)
+		return nil
+	case prsyncjob.FieldTotalPrs:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTotalPrs(v)
+		return nil
+	case prsyncjob.FieldProcessedPrs:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetProcessedPrs(v)
+		return nil
+	case prsyncjob.FieldCreatedPrs:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedPrs(v)
+		return nil
+	case prsyncjob.FieldChangedPrs:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetChangedPrs(v)
+		return nil
+	case prsyncjob.FieldUnchangedPrs:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUnchangedPrs(v)
+		return nil
+	case prsyncjob.FieldUpsertFailedPrs:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpsertFailedPrs(v)
+		return nil
+	case prsyncjob.FieldLabeledPrs:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLabeledPrs(v)
+		return nil
+	case prsyncjob.FieldLabelFailedPrs:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLabelFailedPrs(v)
+		return nil
+	case prsyncjob.FieldUsageTotalPrs:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUsageTotalPrs(v)
+		return nil
+	case prsyncjob.FieldUsageRefreshedPrs:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUsageRefreshedPrs(v)
+		return nil
+	case prsyncjob.FieldUsageSkippedPrs:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUsageSkippedPrs(v)
+		return nil
+	case prsyncjob.FieldUsageFailedPrs:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUsageFailedPrs(v)
+		return nil
+	case prsyncjob.FieldLastError:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLastError(v)
+		return nil
+	case prsyncjob.FieldErrorSummary:
+		v, ok := value.([]map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetErrorSummary(v)
+		return nil
+	case prsyncjob.FieldStartedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStartedAt(v)
+		return nil
+	case prsyncjob.FieldCompletedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCompletedAt(v)
+		return nil
+	case prsyncjob.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case prsyncjob.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	}
+	return fmt.Errorf("unknown PRSyncJob field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *PRSyncJobMutation) AddedFields() []string {
+	var fields []string
+	if m.addpage_size != nil {
+		fields = append(fields, prsyncjob.FieldPageSize)
+	}
+	if m.addcurrent_page != nil {
+		fields = append(fields, prsyncjob.FieldCurrentPage)
+	}
+	if m.addfetched_prs != nil {
+		fields = append(fields, prsyncjob.FieldFetchedPrs)
+	}
+	if m.addtotal_prs != nil {
+		fields = append(fields, prsyncjob.FieldTotalPrs)
+	}
+	if m.addprocessed_prs != nil {
+		fields = append(fields, prsyncjob.FieldProcessedPrs)
+	}
+	if m.addcreated_prs != nil {
+		fields = append(fields, prsyncjob.FieldCreatedPrs)
+	}
+	if m.addchanged_prs != nil {
+		fields = append(fields, prsyncjob.FieldChangedPrs)
+	}
+	if m.addunchanged_prs != nil {
+		fields = append(fields, prsyncjob.FieldUnchangedPrs)
+	}
+	if m.addupsert_failed_prs != nil {
+		fields = append(fields, prsyncjob.FieldUpsertFailedPrs)
+	}
+	if m.addlabeled_prs != nil {
+		fields = append(fields, prsyncjob.FieldLabeledPrs)
+	}
+	if m.addlabel_failed_prs != nil {
+		fields = append(fields, prsyncjob.FieldLabelFailedPrs)
+	}
+	if m.addusage_total_prs != nil {
+		fields = append(fields, prsyncjob.FieldUsageTotalPrs)
+	}
+	if m.addusage_refreshed_prs != nil {
+		fields = append(fields, prsyncjob.FieldUsageRefreshedPrs)
+	}
+	if m.addusage_skipped_prs != nil {
+		fields = append(fields, prsyncjob.FieldUsageSkippedPrs)
+	}
+	if m.addusage_failed_prs != nil {
+		fields = append(fields, prsyncjob.FieldUsageFailedPrs)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *PRSyncJobMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case prsyncjob.FieldPageSize:
+		return m.AddedPageSize()
+	case prsyncjob.FieldCurrentPage:
+		return m.AddedCurrentPage()
+	case prsyncjob.FieldFetchedPrs:
+		return m.AddedFetchedPrs()
+	case prsyncjob.FieldTotalPrs:
+		return m.AddedTotalPrs()
+	case prsyncjob.FieldProcessedPrs:
+		return m.AddedProcessedPrs()
+	case prsyncjob.FieldCreatedPrs:
+		return m.AddedCreatedPrs()
+	case prsyncjob.FieldChangedPrs:
+		return m.AddedChangedPrs()
+	case prsyncjob.FieldUnchangedPrs:
+		return m.AddedUnchangedPrs()
+	case prsyncjob.FieldUpsertFailedPrs:
+		return m.AddedUpsertFailedPrs()
+	case prsyncjob.FieldLabeledPrs:
+		return m.AddedLabeledPrs()
+	case prsyncjob.FieldLabelFailedPrs:
+		return m.AddedLabelFailedPrs()
+	case prsyncjob.FieldUsageTotalPrs:
+		return m.AddedUsageTotalPrs()
+	case prsyncjob.FieldUsageRefreshedPrs:
+		return m.AddedUsageRefreshedPrs()
+	case prsyncjob.FieldUsageSkippedPrs:
+		return m.AddedUsageSkippedPrs()
+	case prsyncjob.FieldUsageFailedPrs:
+		return m.AddedUsageFailedPrs()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *PRSyncJobMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case prsyncjob.FieldPageSize:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddPageSize(v)
+		return nil
+	case prsyncjob.FieldCurrentPage:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddCurrentPage(v)
+		return nil
+	case prsyncjob.FieldFetchedPrs:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddFetchedPrs(v)
+		return nil
+	case prsyncjob.FieldTotalPrs:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddTotalPrs(v)
+		return nil
+	case prsyncjob.FieldProcessedPrs:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddProcessedPrs(v)
+		return nil
+	case prsyncjob.FieldCreatedPrs:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddCreatedPrs(v)
+		return nil
+	case prsyncjob.FieldChangedPrs:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddChangedPrs(v)
+		return nil
+	case prsyncjob.FieldUnchangedPrs:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddUnchangedPrs(v)
+		return nil
+	case prsyncjob.FieldUpsertFailedPrs:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddUpsertFailedPrs(v)
+		return nil
+	case prsyncjob.FieldLabeledPrs:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddLabeledPrs(v)
+		return nil
+	case prsyncjob.FieldLabelFailedPrs:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddLabelFailedPrs(v)
+		return nil
+	case prsyncjob.FieldUsageTotalPrs:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddUsageTotalPrs(v)
+		return nil
+	case prsyncjob.FieldUsageRefreshedPrs:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddUsageRefreshedPrs(v)
+		return nil
+	case prsyncjob.FieldUsageSkippedPrs:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddUsageSkippedPrs(v)
+		return nil
+	case prsyncjob.FieldUsageFailedPrs:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddUsageFailedPrs(v)
+		return nil
+	}
+	return fmt.Errorf("unknown PRSyncJob numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *PRSyncJobMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(prsyncjob.FieldLastError) {
+		fields = append(fields, prsyncjob.FieldLastError)
+	}
+	if m.FieldCleared(prsyncjob.FieldErrorSummary) {
+		fields = append(fields, prsyncjob.FieldErrorSummary)
+	}
+	if m.FieldCleared(prsyncjob.FieldStartedAt) {
+		fields = append(fields, prsyncjob.FieldStartedAt)
+	}
+	if m.FieldCleared(prsyncjob.FieldCompletedAt) {
+		fields = append(fields, prsyncjob.FieldCompletedAt)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *PRSyncJobMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *PRSyncJobMutation) ClearField(name string) error {
+	switch name {
+	case prsyncjob.FieldLastError:
+		m.ClearLastError()
+		return nil
+	case prsyncjob.FieldErrorSummary:
+		m.ClearErrorSummary()
+		return nil
+	case prsyncjob.FieldStartedAt:
+		m.ClearStartedAt()
+		return nil
+	case prsyncjob.FieldCompletedAt:
+		m.ClearCompletedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown PRSyncJob nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *PRSyncJobMutation) ResetField(name string) error {
+	switch name {
+	case prsyncjob.FieldRepoConfigID:
+		m.ResetRepoConfigID()
+		return nil
+	case prsyncjob.FieldStatus:
+		m.ResetStatus()
+		return nil
+	case prsyncjob.FieldPhase:
+		m.ResetPhase()
+		return nil
+	case prsyncjob.FieldPageSize:
+		m.ResetPageSize()
+		return nil
+	case prsyncjob.FieldCurrentPage:
+		m.ResetCurrentPage()
+		return nil
+	case prsyncjob.FieldFetchedPrs:
+		m.ResetFetchedPrs()
+		return nil
+	case prsyncjob.FieldTotalPrs:
+		m.ResetTotalPrs()
+		return nil
+	case prsyncjob.FieldProcessedPrs:
+		m.ResetProcessedPrs()
+		return nil
+	case prsyncjob.FieldCreatedPrs:
+		m.ResetCreatedPrs()
+		return nil
+	case prsyncjob.FieldChangedPrs:
+		m.ResetChangedPrs()
+		return nil
+	case prsyncjob.FieldUnchangedPrs:
+		m.ResetUnchangedPrs()
+		return nil
+	case prsyncjob.FieldUpsertFailedPrs:
+		m.ResetUpsertFailedPrs()
+		return nil
+	case prsyncjob.FieldLabeledPrs:
+		m.ResetLabeledPrs()
+		return nil
+	case prsyncjob.FieldLabelFailedPrs:
+		m.ResetLabelFailedPrs()
+		return nil
+	case prsyncjob.FieldUsageTotalPrs:
+		m.ResetUsageTotalPrs()
+		return nil
+	case prsyncjob.FieldUsageRefreshedPrs:
+		m.ResetUsageRefreshedPrs()
+		return nil
+	case prsyncjob.FieldUsageSkippedPrs:
+		m.ResetUsageSkippedPrs()
+		return nil
+	case prsyncjob.FieldUsageFailedPrs:
+		m.ResetUsageFailedPrs()
+		return nil
+	case prsyncjob.FieldLastError:
+		m.ResetLastError()
+		return nil
+	case prsyncjob.FieldErrorSummary:
+		m.ResetErrorSummary()
+		return nil
+	case prsyncjob.FieldStartedAt:
+		m.ResetStartedAt()
+		return nil
+	case prsyncjob.FieldCompletedAt:
+		m.ResetCompletedAt()
+		return nil
+	case prsyncjob.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case prsyncjob.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown PRSyncJob field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *PRSyncJobMutation) AddedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.repo_config != nil {
+		edges = append(edges, prsyncjob.EdgeRepoConfig)
+	}
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *PRSyncJobMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case prsyncjob.EdgeRepoConfig:
+		if id := m.repo_config; id != nil {
+			return []ent.Value{*id}
+		}
+	}
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *PRSyncJobMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 1)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *PRSyncJobMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *PRSyncJobMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.clearedrepo_config {
+		edges = append(edges, prsyncjob.EdgeRepoConfig)
+	}
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *PRSyncJobMutation) EdgeCleared(name string) bool {
+	switch name {
+	case prsyncjob.EdgeRepoConfig:
+		return m.clearedrepo_config
+	}
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *PRSyncJobMutation) ClearEdge(name string) error {
+	switch name {
+	case prsyncjob.EdgeRepoConfig:
+		m.ClearRepoConfig()
+		return nil
+	}
+	return fmt.Errorf("unknown PRSyncJob unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *PRSyncJobMutation) ResetEdge(name string) error {
+	switch name {
+	case prsyncjob.EdgeRepoConfig:
+		m.ResetRepoConfig()
+		return nil
+	}
+	return fmt.Errorf("unknown PRSyncJob edge %s", name)
 }
 
 // PrAttributionRunMutation represents an operation that mutates the PrAttributionRun nodes in the graph.
@@ -9523,6 +11741,9 @@ type RepoConfigMutation struct {
 	pr_records                  map[int]struct{}
 	removedpr_records           map[int]struct{}
 	clearedpr_records           bool
+	pr_sync_jobs                map[int]struct{}
+	removedpr_sync_jobs         map[int]struct{}
+	clearedpr_sync_jobs         bool
 	done                        bool
 	oldValue                    func(context.Context) (*RepoConfig, error)
 	predicates                  []predicate.RepoConfig
@@ -10481,6 +12702,60 @@ func (m *RepoConfigMutation) ResetPrRecords() {
 	m.removedpr_records = nil
 }
 
+// AddPrSyncJobIDs adds the "pr_sync_jobs" edge to the PRSyncJob entity by ids.
+func (m *RepoConfigMutation) AddPrSyncJobIDs(ids ...int) {
+	if m.pr_sync_jobs == nil {
+		m.pr_sync_jobs = make(map[int]struct{})
+	}
+	for i := range ids {
+		m.pr_sync_jobs[ids[i]] = struct{}{}
+	}
+}
+
+// ClearPrSyncJobs clears the "pr_sync_jobs" edge to the PRSyncJob entity.
+func (m *RepoConfigMutation) ClearPrSyncJobs() {
+	m.clearedpr_sync_jobs = true
+}
+
+// PrSyncJobsCleared reports if the "pr_sync_jobs" edge to the PRSyncJob entity was cleared.
+func (m *RepoConfigMutation) PrSyncJobsCleared() bool {
+	return m.clearedpr_sync_jobs
+}
+
+// RemovePrSyncJobIDs removes the "pr_sync_jobs" edge to the PRSyncJob entity by IDs.
+func (m *RepoConfigMutation) RemovePrSyncJobIDs(ids ...int) {
+	if m.removedpr_sync_jobs == nil {
+		m.removedpr_sync_jobs = make(map[int]struct{})
+	}
+	for i := range ids {
+		delete(m.pr_sync_jobs, ids[i])
+		m.removedpr_sync_jobs[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedPrSyncJobs returns the removed IDs of the "pr_sync_jobs" edge to the PRSyncJob entity.
+func (m *RepoConfigMutation) RemovedPrSyncJobsIDs() (ids []int) {
+	for id := range m.removedpr_sync_jobs {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// PrSyncJobsIDs returns the "pr_sync_jobs" edge IDs in the mutation.
+func (m *RepoConfigMutation) PrSyncJobsIDs() (ids []int) {
+	for id := range m.pr_sync_jobs {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetPrSyncJobs resets all changes to the "pr_sync_jobs" edge.
+func (m *RepoConfigMutation) ResetPrSyncJobs() {
+	m.pr_sync_jobs = nil
+	m.clearedpr_sync_jobs = false
+	m.removedpr_sync_jobs = nil
+}
+
 // Where appends a list predicates to the RepoConfigMutation builder.
 func (m *RepoConfigMutation) Where(ps ...predicate.RepoConfig) {
 	m.predicates = append(m.predicates, ps...)
@@ -10857,7 +13132,7 @@ func (m *RepoConfigMutation) ResetField(name string) error {
 
 // AddedEdges returns all edge names that were set/added in this mutation.
 func (m *RepoConfigMutation) AddedEdges() []string {
-	edges := make([]string, 0, 6)
+	edges := make([]string, 0, 7)
 	if m.scm_provider != nil {
 		edges = append(edges, repoconfig.EdgeScmProvider)
 	}
@@ -10875,6 +13150,9 @@ func (m *RepoConfigMutation) AddedEdges() []string {
 	}
 	if m.pr_records != nil {
 		edges = append(edges, repoconfig.EdgePrRecords)
+	}
+	if m.pr_sync_jobs != nil {
+		edges = append(edges, repoconfig.EdgePrSyncJobs)
 	}
 	return edges
 }
@@ -10917,13 +13195,19 @@ func (m *RepoConfigMutation) AddedIDs(name string) []ent.Value {
 			ids = append(ids, id)
 		}
 		return ids
+	case repoconfig.EdgePrSyncJobs:
+		ids := make([]ent.Value, 0, len(m.pr_sync_jobs))
+		for id := range m.pr_sync_jobs {
+			ids = append(ids, id)
+		}
+		return ids
 	}
 	return nil
 }
 
 // RemovedEdges returns all edge names that were removed in this mutation.
 func (m *RepoConfigMutation) RemovedEdges() []string {
-	edges := make([]string, 0, 6)
+	edges := make([]string, 0, 7)
 	if m.removedcommit_checkpoints != nil {
 		edges = append(edges, repoconfig.EdgeCommitCheckpoints)
 	}
@@ -10938,6 +13222,9 @@ func (m *RepoConfigMutation) RemovedEdges() []string {
 	}
 	if m.removedpr_records != nil {
 		edges = append(edges, repoconfig.EdgePrRecords)
+	}
+	if m.removedpr_sync_jobs != nil {
+		edges = append(edges, repoconfig.EdgePrSyncJobs)
 	}
 	return edges
 }
@@ -10976,13 +13263,19 @@ func (m *RepoConfigMutation) RemovedIDs(name string) []ent.Value {
 			ids = append(ids, id)
 		}
 		return ids
+	case repoconfig.EdgePrSyncJobs:
+		ids := make([]ent.Value, 0, len(m.removedpr_sync_jobs))
+		for id := range m.removedpr_sync_jobs {
+			ids = append(ids, id)
+		}
+		return ids
 	}
 	return nil
 }
 
 // ClearedEdges returns all edge names that were cleared in this mutation.
 func (m *RepoConfigMutation) ClearedEdges() []string {
-	edges := make([]string, 0, 6)
+	edges := make([]string, 0, 7)
 	if m.clearedscm_provider {
 		edges = append(edges, repoconfig.EdgeScmProvider)
 	}
@@ -11000,6 +13293,9 @@ func (m *RepoConfigMutation) ClearedEdges() []string {
 	}
 	if m.clearedpr_records {
 		edges = append(edges, repoconfig.EdgePrRecords)
+	}
+	if m.clearedpr_sync_jobs {
+		edges = append(edges, repoconfig.EdgePrSyncJobs)
 	}
 	return edges
 }
@@ -11020,6 +13316,8 @@ func (m *RepoConfigMutation) EdgeCleared(name string) bool {
 		return m.clearedwebhook_dead_letters
 	case repoconfig.EdgePrRecords:
 		return m.clearedpr_records
+	case repoconfig.EdgePrSyncJobs:
+		return m.clearedpr_sync_jobs
 	}
 	return false
 }
@@ -11056,6 +13354,9 @@ func (m *RepoConfigMutation) ResetEdge(name string) error {
 		return nil
 	case repoconfig.EdgePrRecords:
 		m.ResetPrRecords()
+		return nil
+	case repoconfig.EdgePrSyncJobs:
+		m.ResetPrSyncJobs()
 		return nil
 	}
 	return fmt.Errorf("unknown RepoConfig edge %s", name)

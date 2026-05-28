@@ -17,6 +17,7 @@
 ### Backend Job Model And Generated Ent Code
 
 - Create: `backend/ent/schema/pr_sync_job.go`
+- Modify: `backend/ent/schema/repoconfig.go`
 - Regenerate: `backend/ent/**`
 - Modify: `backend/ent/migrate/schema.go`
 
@@ -66,10 +67,11 @@
 
 **Files:**
 - Create: `backend/ent/schema/pr_sync_job.go`
+- Modify: `backend/ent/schema/repoconfig.go`
 - Regenerate: `backend/ent/**`
 - Modify: `backend/ent/migrate/schema.go`
 
-- [ ] **Step 1: Create the job schema**
+- [x] **Step 1: Create the job schema**
 
 Add `backend/ent/schema/pr_sync_job.go`:
 
@@ -138,7 +140,13 @@ func (PRSyncJob) Indexes() []ent.Index {
 }
 ```
 
-- [ ] **Step 2: Generate Ent code**
+Also add the inverse edge in `backend/ent/schema/repoconfig.go`:
+
+```go
+edge.To("pr_sync_jobs", PRSyncJob.Type),
+```
+
+- [x] **Step 2: Generate Ent code**
 
 Run:
 
@@ -148,7 +156,7 @@ cd backend && go generate ./ent
 
 Expected: command exits 0 and generated files include `backend/ent/prsyncjob.go`, `backend/ent/prsyncjob/`, and migration changes.
 
-- [ ] **Step 3: Run focused schema compile check**
+- [x] **Step 3: Run focused schema compile check**
 
 Run:
 
@@ -158,7 +166,7 @@ cd backend && go test ./ent ./internal/testdb
 
 Expected: PASS.
 
-- [ ] **Step 4: Commit the schema**
+- [x] **Step 4: Commit the schema**
 
 ```bash
 git add backend/ent

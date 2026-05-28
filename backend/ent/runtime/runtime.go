@@ -11,6 +11,7 @@ import (
 	"github.com/ai-efficiency/backend/ent/prattributionrun"
 	"github.com/ai-efficiency/backend/ent/prcommitusagesnapshot"
 	"github.com/ai-efficiency/backend/ent/prrecord"
+	"github.com/ai-efficiency/backend/ent/prsyncjob"
 	"github.com/ai-efficiency/backend/ent/relayprovider"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/schema"
@@ -121,6 +122,78 @@ func init() {
 	prcommitusagesnapshot.DefaultUpdatedAt = prcommitusagesnapshotDescUpdatedAt.Default.(func() time.Time)
 	// prcommitusagesnapshot.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	prcommitusagesnapshot.UpdateDefaultUpdatedAt = prcommitusagesnapshotDescUpdatedAt.UpdateDefault.(func() time.Time)
+	prsyncjobFields := schema.PRSyncJob{}.Fields()
+	_ = prsyncjobFields
+	// prsyncjobDescPageSize is the schema descriptor for page_size field.
+	prsyncjobDescPageSize := prsyncjobFields[3].Descriptor()
+	// prsyncjob.DefaultPageSize holds the default value on creation for the page_size field.
+	prsyncjob.DefaultPageSize = prsyncjobDescPageSize.Default.(int)
+	// prsyncjobDescCurrentPage is the schema descriptor for current_page field.
+	prsyncjobDescCurrentPage := prsyncjobFields[4].Descriptor()
+	// prsyncjob.DefaultCurrentPage holds the default value on creation for the current_page field.
+	prsyncjob.DefaultCurrentPage = prsyncjobDescCurrentPage.Default.(int)
+	// prsyncjobDescFetchedPrs is the schema descriptor for fetched_prs field.
+	prsyncjobDescFetchedPrs := prsyncjobFields[5].Descriptor()
+	// prsyncjob.DefaultFetchedPrs holds the default value on creation for the fetched_prs field.
+	prsyncjob.DefaultFetchedPrs = prsyncjobDescFetchedPrs.Default.(int)
+	// prsyncjobDescTotalPrs is the schema descriptor for total_prs field.
+	prsyncjobDescTotalPrs := prsyncjobFields[6].Descriptor()
+	// prsyncjob.DefaultTotalPrs holds the default value on creation for the total_prs field.
+	prsyncjob.DefaultTotalPrs = prsyncjobDescTotalPrs.Default.(int)
+	// prsyncjobDescProcessedPrs is the schema descriptor for processed_prs field.
+	prsyncjobDescProcessedPrs := prsyncjobFields[7].Descriptor()
+	// prsyncjob.DefaultProcessedPrs holds the default value on creation for the processed_prs field.
+	prsyncjob.DefaultProcessedPrs = prsyncjobDescProcessedPrs.Default.(int)
+	// prsyncjobDescCreatedPrs is the schema descriptor for created_prs field.
+	prsyncjobDescCreatedPrs := prsyncjobFields[8].Descriptor()
+	// prsyncjob.DefaultCreatedPrs holds the default value on creation for the created_prs field.
+	prsyncjob.DefaultCreatedPrs = prsyncjobDescCreatedPrs.Default.(int)
+	// prsyncjobDescChangedPrs is the schema descriptor for changed_prs field.
+	prsyncjobDescChangedPrs := prsyncjobFields[9].Descriptor()
+	// prsyncjob.DefaultChangedPrs holds the default value on creation for the changed_prs field.
+	prsyncjob.DefaultChangedPrs = prsyncjobDescChangedPrs.Default.(int)
+	// prsyncjobDescUnchangedPrs is the schema descriptor for unchanged_prs field.
+	prsyncjobDescUnchangedPrs := prsyncjobFields[10].Descriptor()
+	// prsyncjob.DefaultUnchangedPrs holds the default value on creation for the unchanged_prs field.
+	prsyncjob.DefaultUnchangedPrs = prsyncjobDescUnchangedPrs.Default.(int)
+	// prsyncjobDescUpsertFailedPrs is the schema descriptor for upsert_failed_prs field.
+	prsyncjobDescUpsertFailedPrs := prsyncjobFields[11].Descriptor()
+	// prsyncjob.DefaultUpsertFailedPrs holds the default value on creation for the upsert_failed_prs field.
+	prsyncjob.DefaultUpsertFailedPrs = prsyncjobDescUpsertFailedPrs.Default.(int)
+	// prsyncjobDescLabeledPrs is the schema descriptor for labeled_prs field.
+	prsyncjobDescLabeledPrs := prsyncjobFields[12].Descriptor()
+	// prsyncjob.DefaultLabeledPrs holds the default value on creation for the labeled_prs field.
+	prsyncjob.DefaultLabeledPrs = prsyncjobDescLabeledPrs.Default.(int)
+	// prsyncjobDescLabelFailedPrs is the schema descriptor for label_failed_prs field.
+	prsyncjobDescLabelFailedPrs := prsyncjobFields[13].Descriptor()
+	// prsyncjob.DefaultLabelFailedPrs holds the default value on creation for the label_failed_prs field.
+	prsyncjob.DefaultLabelFailedPrs = prsyncjobDescLabelFailedPrs.Default.(int)
+	// prsyncjobDescUsageTotalPrs is the schema descriptor for usage_total_prs field.
+	prsyncjobDescUsageTotalPrs := prsyncjobFields[14].Descriptor()
+	// prsyncjob.DefaultUsageTotalPrs holds the default value on creation for the usage_total_prs field.
+	prsyncjob.DefaultUsageTotalPrs = prsyncjobDescUsageTotalPrs.Default.(int)
+	// prsyncjobDescUsageRefreshedPrs is the schema descriptor for usage_refreshed_prs field.
+	prsyncjobDescUsageRefreshedPrs := prsyncjobFields[15].Descriptor()
+	// prsyncjob.DefaultUsageRefreshedPrs holds the default value on creation for the usage_refreshed_prs field.
+	prsyncjob.DefaultUsageRefreshedPrs = prsyncjobDescUsageRefreshedPrs.Default.(int)
+	// prsyncjobDescUsageSkippedPrs is the schema descriptor for usage_skipped_prs field.
+	prsyncjobDescUsageSkippedPrs := prsyncjobFields[16].Descriptor()
+	// prsyncjob.DefaultUsageSkippedPrs holds the default value on creation for the usage_skipped_prs field.
+	prsyncjob.DefaultUsageSkippedPrs = prsyncjobDescUsageSkippedPrs.Default.(int)
+	// prsyncjobDescUsageFailedPrs is the schema descriptor for usage_failed_prs field.
+	prsyncjobDescUsageFailedPrs := prsyncjobFields[17].Descriptor()
+	// prsyncjob.DefaultUsageFailedPrs holds the default value on creation for the usage_failed_prs field.
+	prsyncjob.DefaultUsageFailedPrs = prsyncjobDescUsageFailedPrs.Default.(int)
+	// prsyncjobDescCreatedAt is the schema descriptor for created_at field.
+	prsyncjobDescCreatedAt := prsyncjobFields[22].Descriptor()
+	// prsyncjob.DefaultCreatedAt holds the default value on creation for the created_at field.
+	prsyncjob.DefaultCreatedAt = prsyncjobDescCreatedAt.Default.(func() time.Time)
+	// prsyncjobDescUpdatedAt is the schema descriptor for updated_at field.
+	prsyncjobDescUpdatedAt := prsyncjobFields[23].Descriptor()
+	// prsyncjob.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	prsyncjob.DefaultUpdatedAt = prsyncjobDescUpdatedAt.Default.(func() time.Time)
+	// prsyncjob.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	prsyncjob.UpdateDefaultUpdatedAt = prsyncjobDescUpdatedAt.UpdateDefault.(func() time.Time)
 	prattributionrunHooks := schema.PrAttributionRun{}.Hooks()
 	prattributionrun.Hooks[0] = prattributionrunHooks[0]
 	prattributionrunFields := schema.PrAttributionRun{}.Fields()

@@ -20,6 +20,8 @@ type Tx struct {
 	Credential *CredentialClient
 	// PRCommitUsageSnapshot is the client for interacting with the PRCommitUsageSnapshot builders.
 	PRCommitUsageSnapshot *PRCommitUsageSnapshotClient
+	// PRSyncJob is the client for interacting with the PRSyncJob builders.
+	PRSyncJob *PRSyncJobClient
 	// PrAttributionRun is the client for interacting with the PrAttributionRun builders.
 	PrAttributionRun *PrAttributionRunClient
 	// PrRecord is the client for interacting with the PrRecord builders.
@@ -173,6 +175,7 @@ func (tx *Tx) init() {
 	tx.CommitRewrite = NewCommitRewriteClient(tx.config)
 	tx.Credential = NewCredentialClient(tx.config)
 	tx.PRCommitUsageSnapshot = NewPRCommitUsageSnapshotClient(tx.config)
+	tx.PRSyncJob = NewPRSyncJobClient(tx.config)
 	tx.PrAttributionRun = NewPrAttributionRunClient(tx.config)
 	tx.PrRecord = NewPrRecordClient(tx.config)
 	tx.RelayProvider = NewRelayProviderClient(tx.config)

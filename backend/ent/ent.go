@@ -18,6 +18,7 @@ import (
 	"github.com/ai-efficiency/backend/ent/prattributionrun"
 	"github.com/ai-efficiency/backend/ent/prcommitusagesnapshot"
 	"github.com/ai-efficiency/backend/ent/prrecord"
+	"github.com/ai-efficiency/backend/ent/prsyncjob"
 	"github.com/ai-efficiency/backend/ent/relayprovider"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/scmprovider"
@@ -89,6 +90,7 @@ func checkColumn(table, column string) error {
 			commitrewrite.Table:         commitrewrite.ValidColumn,
 			credential.Table:            credential.ValidColumn,
 			prcommitusagesnapshot.Table: prcommitusagesnapshot.ValidColumn,
+			prsyncjob.Table:             prsyncjob.ValidColumn,
 			prattributionrun.Table:      prattributionrun.ValidColumn,
 			prrecord.Table:              prrecord.ValidColumn,
 			relayprovider.Table:         relayprovider.ValidColumn,

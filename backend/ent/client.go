@@ -21,6 +21,7 @@ import (
 	"github.com/ai-efficiency/backend/ent/prattributionrun"
 	"github.com/ai-efficiency/backend/ent/prcommitusagesnapshot"
 	"github.com/ai-efficiency/backend/ent/prrecord"
+	"github.com/ai-efficiency/backend/ent/prsyncjob"
 	"github.com/ai-efficiency/backend/ent/relayprovider"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/scmprovider"
@@ -43,6 +44,8 @@ type Client struct {
 	Credential *CredentialClient
 	// PRCommitUsageSnapshot is the client for interacting with the PRCommitUsageSnapshot builders.
 	PRCommitUsageSnapshot *PRCommitUsageSnapshotClient
+	// PRSyncJob is the client for interacting with the PRSyncJob builders.
+	PRSyncJob *PRSyncJobClient
 	// PrAttributionRun is the client for interacting with the PrAttributionRun builders.
 	PrAttributionRun *PrAttributionRunClient
 	// PrRecord is the client for interacting with the PrRecord builders.
@@ -76,6 +79,7 @@ func (c *Client) init() {
 	c.CommitRewrite = NewCommitRewriteClient(c.config)
 	c.Credential = NewCredentialClient(c.config)
 	c.PRCommitUsageSnapshot = NewPRCommitUsageSnapshotClient(c.config)
+	c.PRSyncJob = NewPRSyncJobClient(c.config)
 	c.PrAttributionRun = NewPrAttributionRunClient(c.config)
 	c.PrRecord = NewPrRecordClient(c.config)
 	c.RelayProvider = NewRelayProviderClient(c.config)
@@ -181,6 +185,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		CommitRewrite:         NewCommitRewriteClient(cfg),
 		Credential:            NewCredentialClient(cfg),
 		PRCommitUsageSnapshot: NewPRCommitUsageSnapshotClient(cfg),
+		PRSyncJob:             NewPRSyncJobClient(cfg),
 		PrAttributionRun:      NewPrAttributionRunClient(cfg),
 		PrRecord:              NewPrRecordClient(cfg),
 		RelayProvider:         NewRelayProviderClient(cfg),
@@ -213,6 +218,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		CommitRewrite:         NewCommitRewriteClient(cfg),
 		Credential:            NewCredentialClient(cfg),
 		PRCommitUsageSnapshot: NewPRCommitUsageSnapshotClient(cfg),
+		PRSyncJob:             NewPRSyncJobClient(cfg),
 		PrAttributionRun:      NewPrAttributionRunClient(cfg),
 		PrRecord:              NewPrRecordClient(cfg),
 		RelayProvider:         NewRelayProviderClient(cfg),
@@ -252,8 +258,8 @@ func (c *Client) Close() error {
 func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
 		c.CommitCheckpoint, c.CommitRewrite, c.Credential, c.PRCommitUsageSnapshot,
-		c.PrAttributionRun, c.PrRecord, c.RelayProvider, c.RepoConfig, c.ScmProvider,
-		c.SystemSetting, c.ToolUsageEvent, c.User, c.WebhookDeadLetter,
+		c.PRSyncJob, c.PrAttributionRun, c.PrRecord, c.RelayProvider, c.RepoConfig,
+		c.ScmProvider, c.SystemSetting, c.ToolUsageEvent, c.User, c.WebhookDeadLetter,
 	} {
 		n.Use(hooks...)
 	}
@@ -264,8 +270,8 @@ func (c *Client) Use(hooks ...Hook) {
 func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
 		c.CommitCheckpoint, c.CommitRewrite, c.Credential, c.PRCommitUsageSnapshot,
-		c.PrAttributionRun, c.PrRecord, c.RelayProvider, c.RepoConfig, c.ScmProvider,
-		c.SystemSetting, c.ToolUsageEvent, c.User, c.WebhookDeadLetter,
+		c.PRSyncJob, c.PrAttributionRun, c.PrRecord, c.RelayProvider, c.RepoConfig,
+		c.ScmProvider, c.SystemSetting, c.ToolUsageEvent, c.User, c.WebhookDeadLetter,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -282,6 +288,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.Credential.mutate(ctx, m)
 	case *PRCommitUsageSnapshotMutation:
 		return c.PRCommitUsageSnapshot.mutate(ctx, m)
+	case *PRSyncJobMutation:
+		return c.PRSyncJob.mutate(ctx, m)
 	case *PrAttributionRunMutation:
 		return c.PrAttributionRun.mutate(ctx, m)
 	case *PrRecordMutation:
@@ -997,6 +1005,155 @@ func (c *PRCommitUsageSnapshotClient) mutate(ctx context.Context, m *PRCommitUsa
 	}
 }
 
+// PRSyncJobClient is a client for the PRSyncJob schema.
+type PRSyncJobClient struct {
+	config
+}
+
+// NewPRSyncJobClient returns a client for the PRSyncJob from the given config.
+func NewPRSyncJobClient(c config) *PRSyncJobClient {
+	return &PRSyncJobClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `prsyncjob.Hooks(f(g(h())))`.
+func (c *PRSyncJobClient) Use(hooks ...Hook) {
+	c.hooks.PRSyncJob = append(c.hooks.PRSyncJob, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `prsyncjob.Intercept(f(g(h())))`.
+func (c *PRSyncJobClient) Intercept(interceptors ...Interceptor) {
+	c.inters.PRSyncJob = append(c.inters.PRSyncJob, interceptors...)
+}
+
+// Create returns a builder for creating a PRSyncJob entity.
+func (c *PRSyncJobClient) Create() *PRSyncJobCreate {
+	mutation := newPRSyncJobMutation(c.config, OpCreate)
+	return &PRSyncJobCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of PRSyncJob entities.
+func (c *PRSyncJobClient) CreateBulk(builders ...*PRSyncJobCreate) *PRSyncJobCreateBulk {
+	return &PRSyncJobCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *PRSyncJobClient) MapCreateBulk(slice any, setFunc func(*PRSyncJobCreate, int)) *PRSyncJobCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &PRSyncJobCreateBulk{err: fmt.Errorf("calling to PRSyncJobClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*PRSyncJobCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &PRSyncJobCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for PRSyncJob.
+func (c *PRSyncJobClient) Update() *PRSyncJobUpdate {
+	mutation := newPRSyncJobMutation(c.config, OpUpdate)
+	return &PRSyncJobUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *PRSyncJobClient) UpdateOne(psj *PRSyncJob) *PRSyncJobUpdateOne {
+	mutation := newPRSyncJobMutation(c.config, OpUpdateOne, withPRSyncJob(psj))
+	return &PRSyncJobUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *PRSyncJobClient) UpdateOneID(id int) *PRSyncJobUpdateOne {
+	mutation := newPRSyncJobMutation(c.config, OpUpdateOne, withPRSyncJobID(id))
+	return &PRSyncJobUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for PRSyncJob.
+func (c *PRSyncJobClient) Delete() *PRSyncJobDelete {
+	mutation := newPRSyncJobMutation(c.config, OpDelete)
+	return &PRSyncJobDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *PRSyncJobClient) DeleteOne(psj *PRSyncJob) *PRSyncJobDeleteOne {
+	return c.DeleteOneID(psj.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *PRSyncJobClient) DeleteOneID(id int) *PRSyncJobDeleteOne {
+	builder := c.Delete().Where(prsyncjob.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &PRSyncJobDeleteOne{builder}
+}
+
+// Query returns a query builder for PRSyncJob.
+func (c *PRSyncJobClient) Query() *PRSyncJobQuery {
+	return &PRSyncJobQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypePRSyncJob},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a PRSyncJob entity by its id.
+func (c *PRSyncJobClient) Get(ctx context.Context, id int) (*PRSyncJob, error) {
+	return c.Query().Where(prsyncjob.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *PRSyncJobClient) GetX(ctx context.Context, id int) *PRSyncJob {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryRepoConfig queries the repo_config edge of a PRSyncJob.
+func (c *PRSyncJobClient) QueryRepoConfig(psj *PRSyncJob) *RepoConfigQuery {
+	query := (&RepoConfigClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := psj.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(prsyncjob.Table, prsyncjob.FieldID, id),
+			sqlgraph.To(repoconfig.Table, repoconfig.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, prsyncjob.RepoConfigTable, prsyncjob.RepoConfigColumn),
+		)
+		fromV = sqlgraph.Neighbors(psj.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *PRSyncJobClient) Hooks() []Hook {
+	return c.hooks.PRSyncJob
+}
+
+// Interceptors returns the client interceptors.
+func (c *PRSyncJobClient) Interceptors() []Interceptor {
+	return c.inters.PRSyncJob
+}
+
+func (c *PRSyncJobClient) mutate(ctx context.Context, m *PRSyncJobMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&PRSyncJobCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&PRSyncJobUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&PRSyncJobUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&PRSyncJobDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown PRSyncJob mutation op: %q", m.Op())
+	}
+}
+
 // PrAttributionRunClient is a client for the PrAttributionRun schema.
 type PrAttributionRunClient struct {
 	config
@@ -1675,6 +1832,22 @@ func (c *RepoConfigClient) QueryPrRecords(rc *RepoConfig) *PrRecordQuery {
 			sqlgraph.From(repoconfig.Table, repoconfig.FieldID, id),
 			sqlgraph.To(prrecord.Table, prrecord.FieldID),
 			sqlgraph.Edge(sqlgraph.O2M, false, repoconfig.PrRecordsTable, repoconfig.PrRecordsColumn),
+		)
+		fromV = sqlgraph.Neighbors(rc.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryPrSyncJobs queries the pr_sync_jobs edge of a RepoConfig.
+func (c *RepoConfigClient) QueryPrSyncJobs(rc *RepoConfig) *PRSyncJobQuery {
+	query := (&PRSyncJobClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := rc.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(repoconfig.Table, repoconfig.FieldID, id),
+			sqlgraph.To(prsyncjob.Table, prsyncjob.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, repoconfig.PrSyncJobsTable, repoconfig.PrSyncJobsColumn),
 		)
 		fromV = sqlgraph.Neighbors(rc.driver.Dialect(), step)
 		return fromV, nil
@@ -2536,12 +2709,12 @@ func (c *WebhookDeadLetterClient) mutate(ctx context.Context, m *WebhookDeadLett
 // hooks and interceptors per client, for fast access.
 type (
 	hooks struct {
-		CommitCheckpoint, CommitRewrite, Credential, PRCommitUsageSnapshot,
+		CommitCheckpoint, CommitRewrite, Credential, PRCommitUsageSnapshot, PRSyncJob,
 		PrAttributionRun, PrRecord, RelayProvider, RepoConfig, ScmProvider,
 		SystemSetting, ToolUsageEvent, User, WebhookDeadLetter []ent.Hook
 	}
 	inters struct {
-		CommitCheckpoint, CommitRewrite, Credential, PRCommitUsageSnapshot,
+		CommitCheckpoint, CommitRewrite, Credential, PRCommitUsageSnapshot, PRSyncJob,
 		PrAttributionRun, PrRecord, RelayProvider, RepoConfig, ScmProvider,
 		SystemSetting, ToolUsageEvent, User, WebhookDeadLetter []ent.Interceptor
 	}

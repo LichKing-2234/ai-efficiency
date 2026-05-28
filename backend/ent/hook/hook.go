@@ -57,6 +57,18 @@ func (f PRCommitUsageSnapshotFunc) Mutate(ctx context.Context, m ent.Mutation) (
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.PRCommitUsageSnapshotMutation", m)
 }
 
+// The PRSyncJobFunc type is an adapter to allow the use of ordinary
+// function as PRSyncJob mutator.
+type PRSyncJobFunc func(context.Context, *ent.PRSyncJobMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f PRSyncJobFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.PRSyncJobMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.PRSyncJobMutation", m)
+}
+
 // The PrAttributionRunFunc type is an adapter to allow the use of ordinary
 // function as PrAttributionRun mutator.
 type PrAttributionRunFunc func(context.Context, *ent.PrAttributionRunMutation) (ent.Value, error)

@@ -15,6 +15,7 @@ import (
 	"github.com/ai-efficiency/backend/ent/commitrewrite"
 	"github.com/ai-efficiency/backend/ent/predicate"
 	"github.com/ai-efficiency/backend/ent/prrecord"
+	"github.com/ai-efficiency/backend/ent/prsyncjob"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/scmprovider"
 	"github.com/ai-efficiency/backend/ent/toolusageevent"
@@ -324,6 +325,21 @@ func (rcu *RepoConfigUpdate) AddPrRecords(p ...*PrRecord) *RepoConfigUpdate {
 	return rcu.AddPrRecordIDs(ids...)
 }
 
+// AddPrSyncJobIDs adds the "pr_sync_jobs" edge to the PRSyncJob entity by IDs.
+func (rcu *RepoConfigUpdate) AddPrSyncJobIDs(ids ...int) *RepoConfigUpdate {
+	rcu.mutation.AddPrSyncJobIDs(ids...)
+	return rcu
+}
+
+// AddPrSyncJobs adds the "pr_sync_jobs" edges to the PRSyncJob entity.
+func (rcu *RepoConfigUpdate) AddPrSyncJobs(p ...*PRSyncJob) *RepoConfigUpdate {
+	ids := make([]int, len(p))
+	for i := range p {
+		ids[i] = p[i].ID
+	}
+	return rcu.AddPrSyncJobIDs(ids...)
+}
+
 // Mutation returns the RepoConfigMutation object of the builder.
 func (rcu *RepoConfigUpdate) Mutation() *RepoConfigMutation {
 	return rcu.mutation
@@ -438,6 +454,27 @@ func (rcu *RepoConfigUpdate) RemovePrRecords(p ...*PrRecord) *RepoConfigUpdate {
 		ids[i] = p[i].ID
 	}
 	return rcu.RemovePrRecordIDs(ids...)
+}
+
+// ClearPrSyncJobs clears all "pr_sync_jobs" edges to the PRSyncJob entity.
+func (rcu *RepoConfigUpdate) ClearPrSyncJobs() *RepoConfigUpdate {
+	rcu.mutation.ClearPrSyncJobs()
+	return rcu
+}
+
+// RemovePrSyncJobIDs removes the "pr_sync_jobs" edge to PRSyncJob entities by IDs.
+func (rcu *RepoConfigUpdate) RemovePrSyncJobIDs(ids ...int) *RepoConfigUpdate {
+	rcu.mutation.RemovePrSyncJobIDs(ids...)
+	return rcu
+}
+
+// RemovePrSyncJobs removes "pr_sync_jobs" edges to PRSyncJob entities.
+func (rcu *RepoConfigUpdate) RemovePrSyncJobs(p ...*PRSyncJob) *RepoConfigUpdate {
+	ids := make([]int, len(p))
+	for i := range p {
+		ids[i] = p[i].ID
+	}
+	return rcu.RemovePrSyncJobIDs(ids...)
 }
 
 // Save executes the query and returns the number of nodes affected by the update operation.
@@ -827,6 +864,51 @@ func (rcu *RepoConfigUpdate) sqlSave(ctx context.Context) (n int, err error) {
 		}
 		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
+	if rcu.mutation.PrSyncJobsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   repoconfig.PrSyncJobsTable,
+			Columns: []string{repoconfig.PrSyncJobsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(prsyncjob.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := rcu.mutation.RemovedPrSyncJobsIDs(); len(nodes) > 0 && !rcu.mutation.PrSyncJobsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   repoconfig.PrSyncJobsTable,
+			Columns: []string{repoconfig.PrSyncJobsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(prsyncjob.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := rcu.mutation.PrSyncJobsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   repoconfig.PrSyncJobsTable,
+			Columns: []string{repoconfig.PrSyncJobsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(prsyncjob.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
 	if n, err = sqlgraph.UpdateNodes(ctx, rcu.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
 			err = &NotFoundError{repoconfig.Label}
@@ -1137,6 +1219,21 @@ func (rcuo *RepoConfigUpdateOne) AddPrRecords(p ...*PrRecord) *RepoConfigUpdateO
 	return rcuo.AddPrRecordIDs(ids...)
 }
 
+// AddPrSyncJobIDs adds the "pr_sync_jobs" edge to the PRSyncJob entity by IDs.
+func (rcuo *RepoConfigUpdateOne) AddPrSyncJobIDs(ids ...int) *RepoConfigUpdateOne {
+	rcuo.mutation.AddPrSyncJobIDs(ids...)
+	return rcuo
+}
+
+// AddPrSyncJobs adds the "pr_sync_jobs" edges to the PRSyncJob entity.
+func (rcuo *RepoConfigUpdateOne) AddPrSyncJobs(p ...*PRSyncJob) *RepoConfigUpdateOne {
+	ids := make([]int, len(p))
+	for i := range p {
+		ids[i] = p[i].ID
+	}
+	return rcuo.AddPrSyncJobIDs(ids...)
+}
+
 // Mutation returns the RepoConfigMutation object of the builder.
 func (rcuo *RepoConfigUpdateOne) Mutation() *RepoConfigMutation {
 	return rcuo.mutation
@@ -1251,6 +1348,27 @@ func (rcuo *RepoConfigUpdateOne) RemovePrRecords(p ...*PrRecord) *RepoConfigUpda
 		ids[i] = p[i].ID
 	}
 	return rcuo.RemovePrRecordIDs(ids...)
+}
+
+// ClearPrSyncJobs clears all "pr_sync_jobs" edges to the PRSyncJob entity.
+func (rcuo *RepoConfigUpdateOne) ClearPrSyncJobs() *RepoConfigUpdateOne {
+	rcuo.mutation.ClearPrSyncJobs()
+	return rcuo
+}
+
+// RemovePrSyncJobIDs removes the "pr_sync_jobs" edge to PRSyncJob entities by IDs.
+func (rcuo *RepoConfigUpdateOne) RemovePrSyncJobIDs(ids ...int) *RepoConfigUpdateOne {
+	rcuo.mutation.RemovePrSyncJobIDs(ids...)
+	return rcuo
+}
+
+// RemovePrSyncJobs removes "pr_sync_jobs" edges to PRSyncJob entities.
+func (rcuo *RepoConfigUpdateOne) RemovePrSyncJobs(p ...*PRSyncJob) *RepoConfigUpdateOne {
+	ids := make([]int, len(p))
+	for i := range p {
+		ids[i] = p[i].ID
+	}
+	return rcuo.RemovePrSyncJobIDs(ids...)
 }
 
 // Where appends a list predicates to the RepoConfigUpdate builder.
@@ -1663,6 +1781,51 @@ func (rcuo *RepoConfigUpdateOne) sqlSave(ctx context.Context) (_node *RepoConfig
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(prrecord.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if rcuo.mutation.PrSyncJobsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   repoconfig.PrSyncJobsTable,
+			Columns: []string{repoconfig.PrSyncJobsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(prsyncjob.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := rcuo.mutation.RemovedPrSyncJobsIDs(); len(nodes) > 0 && !rcuo.mutation.PrSyncJobsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   repoconfig.PrSyncJobsTable,
+			Columns: []string{repoconfig.PrSyncJobsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(prsyncjob.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := rcuo.mutation.PrSyncJobsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   repoconfig.PrSyncJobsTable,
+			Columns: []string{repoconfig.PrSyncJobsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(prsyncjob.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {
