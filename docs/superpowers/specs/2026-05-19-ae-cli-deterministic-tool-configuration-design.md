@@ -113,6 +113,12 @@ ae-cli discover
 - API key / gateway URL 仅通过 `~/.ae-cli/env.sh` 提供：
   - `GEMINI_API_KEY = <gemini credential.key>`
   - `GOOGLE_GEMINI_BASE_URL`
+- 当前 Gemini 3.1 使用要求通过命令输出解释 `GEMINI_MODEL` 的用途，并提示用户在当前 shell 重新加载对应 shell rc 后手动执行：
+  - `source "$HOME/.zshrc"` / `source "$HOME/.bashrc"` / `source "$HOME/.profile"`，取决于本次写入的 rc 文件
+  - `Set GEMINI_MODEL so Gemini starts with the preview model directly.`
+  - `export GEMINI_MODEL="gemini-3.1-pro-preview"`
+- `GEMINI_MODEL` 不写入 `~/.ae-cli/env.sh`。该变量只作为当前 shell 的运行提示，避免把预览模型选择持久化进 ae-cli 管理的 env 文件。
+- 输出必须提醒用户不要在 Gemini 交互里手动切换模型，否则可能触发无 preview release channel 权限的模型访问错误。
 
 #### Shared env bootstrap
 

@@ -149,6 +149,10 @@ grep -F "Configured provider relay.main for 3 tool(s):" "${OUTPUT_FILE}" >/dev/n
 grep -F "  - codex" "${OUTPUT_FILE}" >/dev/null
 grep -F "  - claude" "${OUTPUT_FILE}" >/dev/null
 grep -F "  - gemini" "${OUTPUT_FILE}" >/dev/null
+grep -F 'source "$HOME/.zshrc"' "${OUTPUT_FILE}" >/dev/null
+grep -F 'Set GEMINI_MODEL so Gemini starts with the preview model directly.' "${OUTPUT_FILE}" >/dev/null
+grep -F 'export GEMINI_MODEL="gemini-3.1-pro-preview"' "${OUTPUT_FILE}" >/dev/null
+grep -F 'Do not switch models manually inside Gemini.' "${OUTPUT_FILE}" >/dev/null
 
 grep -F "model_provider = 'relay.main'" "${TMP_HOME}/.codex/config.toml" >/dev/null
 grep -F "model = 'gpt-5.4'" "${TMP_HOME}/.codex/config.toml" >/dev/null
@@ -183,6 +187,10 @@ grep -F 'export GEMINI_API_KEY="sk-gemini-123"' "${TMP_HOME}/.ae-cli/env.sh" >/d
 grep -F 'export GOOGLE_GEMINI_BASE_URL="https://relay.example.com/v1"' "${TMP_HOME}/.ae-cli/env.sh" >/dev/null
 if grep -F 'OPENAI_API_KEY' "${TMP_HOME}/.ae-cli/env.sh" >/dev/null; then
   echo "OPENAI_API_KEY should be stored in ~/.codex/auth.json, not env.sh" >&2
+  exit 1
+fi
+if grep -F 'GEMINI_MODEL' "${TMP_HOME}/.ae-cli/env.sh" >/dev/null; then
+  echo "GEMINI_MODEL should be shown as shell guidance, not stored in env.sh" >&2
   exit 1
 fi
 grep -F '[ -f "$HOME/.ae-cli/env.sh" ] && source "$HOME/.ae-cli/env.sh"' "${TMP_HOME}/.zshrc" >/dev/null
