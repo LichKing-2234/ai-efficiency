@@ -1,6 +1,6 @@
 # ae-cli Deterministic Tool Configuration Plan
 
-**Status:** Completed in this rollout
+**Status:** Completed in the original rollout. Follow-up on 2026-05-29 completed Codex app-only detection and verified the app-only discover E2E path.
 
 **Goal:** Add a real `ae-cli` command that can configure supported local AI tools (`codex`, `claude`, `gemini`) from provider-delivered credentials, and fix the backend `/api/v1/providers` handler bug that blocked live CLI usage.
 
@@ -19,3 +19,11 @@
 ## Known Remaining Gaps
 
 - The existing live process behind `http://localhost:18081` was still serving the pre-fix backend binary during this rollout, so a real-machine `ae-cli discover --dry-run` against that endpoint continued to return the old `/api/v1/providers` `500` until that backend is restarted with the new code.
+
+## 2026-05-29 Follow-up: Codex App-Only Detection
+
+- [x] Reproduce the app-only detection gap with a focused failing unit test.
+- [x] Implement Codex app-bundle fallback detection while keeping Claude and Gemini PATH-only.
+- [x] Update current-contract docs for the new detection behavior.
+- [x] Run `cd ae-cli && go test ./...`.
+- [x] Build a test binary and rerun `bash ae-cli/test/discover-e2e.sh <built-binary>` with app-only Codex coverage.

@@ -67,6 +67,30 @@ func TestDetectInstalledToolsFindsKnownCommands(t *testing.T) {
 	}
 }
 
+func TestDetectInstalledToolsFindsCodexAppWithoutCLI(t *testing.T) {
+	tmpBin := t.TempDir()
+	origPath := os.Getenv("PATH")
+	if err := os.Setenv("PATH", tmpBin); err != nil {
+		t.Fatalf("Setenv(PATH): %v", err)
+	}
+	t.Cleanup(func() { _ = os.Setenv("PATH", origPath) })
+
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+	appPath := filepath.Join(tmpHome, "Applications", "Codex.app")
+	if err := os.MkdirAll(appPath, 0o755); err != nil {
+		t.Fatalf("MkdirAll(Codex.app): %v", err)
+	}
+
+	got, err := DetectInstalledTools([]string{"codex", "claude"})
+	if err != nil {
+		t.Fatalf("DetectInstalledTools: %v", err)
+	}
+	if len(got) != 1 || got[0].Name != "codex" || got[0].Path != appPath {
+		t.Fatalf("tools = %+v, want codex app at %s", got, appPath)
+	}
+}
+
 func TestConfigureToolsWritesCodexClaudeAndGeminiWithPlatformCredentials(t *testing.T) {
 	tmpHome := t.TempDir()
 	provider := Provider{

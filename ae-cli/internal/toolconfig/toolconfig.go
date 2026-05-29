@@ -84,12 +84,43 @@ func DetectInstalledTools(toolNames []string) ([]InstalledTool, error) {
 	var tools []InstalledTool
 	for _, name := range toolNames {
 		path, err := exec.LookPath(name)
-		if err != nil {
+		if err == nil {
+			tools = append(tools, InstalledTool{Name: name, Path: path})
 			continue
 		}
-		tools = append(tools, InstalledTool{Name: name, Path: path})
+		if path, ok := detectAppBackedTool(name); ok {
+			tools = append(tools, InstalledTool{Name: name, Path: path})
+		}
 	}
 	return tools, nil
+}
+
+func detectAppBackedTool(name string) (string, bool) {
+	switch name {
+	case "codex":
+		return firstExistingDir(codexAppBundleCandidates())
+	default:
+		return "", false
+	}
+}
+
+func codexAppBundleCandidates() []string {
+	candidates := []string{}
+	if home, err := os.UserHomeDir(); err == nil && strings.TrimSpace(home) != "" {
+		candidates = append(candidates, filepath.Join(home, "Applications", "Codex.app"))
+	}
+	candidates = append(candidates, "/Applications/Codex.app")
+	return candidates
+}
+
+func firstExistingDir(paths []string) (string, bool) {
+	for _, path := range paths {
+		info, err := os.Stat(path)
+		if err == nil && info.IsDir() {
+			return path, true
+		}
+	}
+	return "", false
 }
 
 func ConfigureTools(opts Options) (Result, error) {

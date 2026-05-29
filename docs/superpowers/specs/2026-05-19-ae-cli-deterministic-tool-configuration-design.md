@@ -29,8 +29,8 @@ ae-cli discover
 2. 选择一个 provider
    - 默认取 `is_primary=true`
    - 可通过 `--provider <name>` 显式覆盖
-3. 在本机 `PATH` 中检测受支持工具
-   - `codex`
+3. 在本机检测受支持工具
+   - `codex`：优先检测 `PATH` 中的 CLI；若 CLI 不存在，也识别 macOS `Codex.app`
    - `claude`
    - `gemini`
 4. 按工具对应的 relay `group.platform` 选择 credential
@@ -65,7 +65,8 @@ ae-cli discover
 
 ### Tool detection
 
-- CLI 仅通过 `exec.LookPath` 检测本机是否安装 `codex`、`claude`、`gemini`。
+- CLI 优先通过 `exec.LookPath` 检测本机是否安装 `codex`、`claude`、`gemini`。
+- 对 Codex，若 `codex` CLI 不在 `PATH` 中，CLI 会继续检测 `~/Applications/Codex.app` 和 `/Applications/Codex.app`。只安装 Codex App 时也应写入 `~/.codex/config.toml` 和 `~/.codex/auth.json`，因为 App 与 CLI 共用 `~/.codex` 配置目录。
 - 未安装的工具不会报错，只会跳过。
 - 已安装但没有匹配 platform credential 的工具也会跳过。例如选中的 provider 只有 `openai` group 时，CLI 只配置 Codex，不会改 Claude 或 Gemini。
 
