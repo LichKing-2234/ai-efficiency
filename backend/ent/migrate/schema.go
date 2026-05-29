@@ -150,6 +150,60 @@ var (
 			},
 		},
 	}
+	// PrSyncJobsColumns holds the columns for the "pr_sync_jobs" table.
+	PrSyncJobsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "status", Type: field.TypeEnum, Enums: []string{"queued", "running", "completed", "failed", "cancelled", "abandoned"}, Default: "queued"},
+		{Name: "phase", Type: field.TypeEnum, Enums: []string{"queued", "fetching_prs", "upserting_prs", "labeling", "refreshing_usage", "completed", "failed"}, Default: "queued"},
+		{Name: "page_size", Type: field.TypeInt, Default: 100},
+		{Name: "current_page", Type: field.TypeInt, Default: 0},
+		{Name: "fetched_prs", Type: field.TypeInt, Default: 0},
+		{Name: "total_prs", Type: field.TypeInt, Default: 0},
+		{Name: "processed_prs", Type: field.TypeInt, Default: 0},
+		{Name: "created_prs", Type: field.TypeInt, Default: 0},
+		{Name: "changed_prs", Type: field.TypeInt, Default: 0},
+		{Name: "unchanged_prs", Type: field.TypeInt, Default: 0},
+		{Name: "upsert_failed_prs", Type: field.TypeInt, Default: 0},
+		{Name: "labeled_prs", Type: field.TypeInt, Default: 0},
+		{Name: "label_failed_prs", Type: field.TypeInt, Default: 0},
+		{Name: "usage_total_prs", Type: field.TypeInt, Default: 0},
+		{Name: "usage_refreshed_prs", Type: field.TypeInt, Default: 0},
+		{Name: "usage_skipped_prs", Type: field.TypeInt, Default: 0},
+		{Name: "usage_failed_prs", Type: field.TypeInt, Default: 0},
+		{Name: "last_error", Type: field.TypeString, Nullable: true},
+		{Name: "error_summary", Type: field.TypeJSON, Nullable: true},
+		{Name: "started_at", Type: field.TypeTime, Nullable: true},
+		{Name: "completed_at", Type: field.TypeTime, Nullable: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "repo_config_id", Type: field.TypeInt},
+	}
+	// PrSyncJobsTable holds the schema information for the "pr_sync_jobs" table.
+	PrSyncJobsTable = &schema.Table{
+		Name:       "pr_sync_jobs",
+		Columns:    PrSyncJobsColumns,
+		PrimaryKey: []*schema.Column{PrSyncJobsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "pr_sync_jobs_repo_configs_pr_sync_jobs",
+				Columns:    []*schema.Column{PrSyncJobsColumns[24]},
+				RefColumns: []*schema.Column{RepoConfigsColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "prsyncjob_repo_config_id_status",
+				Unique:  false,
+				Columns: []*schema.Column{PrSyncJobsColumns[24], PrSyncJobsColumns[1]},
+			},
+			{
+				Name:    "prsyncjob_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{PrSyncJobsColumns[22]},
+			},
+		},
+	}
 	// PrAttributionRunsColumns holds the columns for the "pr_attribution_runs" table.
 	PrAttributionRunsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
@@ -487,6 +541,7 @@ var (
 		CommitRewritesTable,
 		CredentialsTable,
 		PrCommitUsageSnapshotsTable,
+		PrSyncJobsTable,
 		PrAttributionRunsTable,
 		PrRecordsTable,
 		RelayProvidersTable,
@@ -506,6 +561,7 @@ func init() {
 	CommitRewritesTable.ForeignKeys[1].RefTable = UsersTable
 	PrCommitUsageSnapshotsTable.ForeignKeys[0].RefTable = CommitCheckpointsTable
 	PrCommitUsageSnapshotsTable.ForeignKeys[1].RefTable = PrRecordsTable
+	PrSyncJobsTable.ForeignKeys[0].RefTable = RepoConfigsTable
 	PrAttributionRunsTable.ForeignKeys[0].RefTable = PrRecordsTable
 	PrRecordsTable.ForeignKeys[0].RefTable = PrAttributionRunsTable
 	PrRecordsTable.ForeignKeys[1].RefTable = RepoConfigsTable

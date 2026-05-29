@@ -13,6 +13,7 @@ import (
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
 	"github.com/ai-efficiency/backend/ent/commitrewrite"
 	"github.com/ai-efficiency/backend/ent/prrecord"
+	"github.com/ai-efficiency/backend/ent/prsyncjob"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/scmprovider"
 	"github.com/ai-efficiency/backend/ent/toolusageevent"
@@ -276,6 +277,21 @@ func (rcc *RepoConfigCreate) AddPrRecords(p ...*PrRecord) *RepoConfigCreate {
 		ids[i] = p[i].ID
 	}
 	return rcc.AddPrRecordIDs(ids...)
+}
+
+// AddPrSyncJobIDs adds the "pr_sync_jobs" edge to the PRSyncJob entity by IDs.
+func (rcc *RepoConfigCreate) AddPrSyncJobIDs(ids ...int) *RepoConfigCreate {
+	rcc.mutation.AddPrSyncJobIDs(ids...)
+	return rcc
+}
+
+// AddPrSyncJobs adds the "pr_sync_jobs" edges to the PRSyncJob entity.
+func (rcc *RepoConfigCreate) AddPrSyncJobs(p ...*PRSyncJob) *RepoConfigCreate {
+	ids := make([]int, len(p))
+	for i := range p {
+		ids[i] = p[i].ID
+	}
+	return rcc.AddPrSyncJobIDs(ids...)
 }
 
 // Mutation returns the RepoConfigMutation object of the builder.
@@ -551,6 +567,22 @@ func (rcc *RepoConfigCreate) createSpec() (*RepoConfig, *sqlgraph.CreateSpec) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(prrecord.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := rcc.mutation.PrSyncJobsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   repoconfig.PrSyncJobsTable,
+			Columns: []string{repoconfig.PrSyncJobsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(prsyncjob.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {

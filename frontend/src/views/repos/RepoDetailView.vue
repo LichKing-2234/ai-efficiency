@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppLayout from '@/components/AppLayout.vue'
 import { getRepo, updateRepo } from '@/api/repo'
-import { getPR, listPRs, refreshPRUsage, syncPRs } from '@/api/pr'
+import { getPR, getPRSyncJob, listPRs, refreshPRUsage, syncPRs } from '@/api/pr'
 import { listProviders } from '@/api/scmProvider'
 import { useAuthStore } from '@/stores/auth'
-import type { PRCommitUsageSnapshot, PRRecord, RepoConfig, SCMProvider } from '@/types'
+import type { CommitFreshness, PRCommitUsageSnapshot, PRRecord, PRSyncJob, RepoConfig, SCMProvider, UsageStatus } from '@/types'
 
 const route = useRoute()
 const router = useRouter()
@@ -20,6 +20,8 @@ const prsPageSize = 10
 const prsMonths = ref(3)
 const loading = ref(true)
 const syncing = ref(false)
+const syncJob = ref<PRSyncJob | null>(null)
+const syncPollTimer = ref<number | null>(null)
 const syncMessage = ref('')
 const syncMessageTone = ref<'success' | 'error'>('success')
 const detailsLoadingIds = ref<Record<number, boolean>>({})
@@ -76,20 +78,71 @@ async function loadPRs() {
 async function handleSyncPRs() {
   syncing.value = true
   syncMessage.value = ''
+  syncJob.value = null
+  if (syncPollTimer.value != null) {
+    window.clearTimeout(syncPollTimer.value)
+    syncPollTimer.value = null
+  }
   try {
     const res = await syncPRs(repoId)
-    prsPage.value = 0
-    await loadPRs()
     const result = res.data.data
-    syncMessageTone.value = 'success'
-    syncMessage.value = result
-      ? `Synced ${formatCount(result.total)} PRs (${formatCount(result.created)} created, ${formatCount(result.updated)} updated)`
-      : 'PR sync completed'
+    if (!result?.job_id) {
+      throw new Error('PR sync job was not created')
+    }
+    syncJob.value = {
+      id: result.job_id,
+      repo_config_id: repoId,
+      status: result.status as PRSyncJob['status'],
+      phase: result.phase as PRSyncJob['phase'],
+      current_page: 0,
+      page_size: 100,
+      fetched_prs: 0,
+      total_prs: 0,
+      processed_prs: 0,
+      created_prs: 0,
+      changed_prs: 0,
+      unchanged_prs: 0,
+      usage_total_prs: 0,
+      usage_refreshed_prs: 0,
+      usage_skipped_prs: 0,
+      usage_failed_prs: 0,
+    }
+    await pollSyncJob(result.job_id)
   } catch (error: any) {
     syncMessageTone.value = 'error'
-    syncMessage.value = error?.response?.data?.message || 'Failed to sync PRs'
-  } finally {
+    syncMessage.value = error?.response?.data?.message || error?.message || 'Failed to sync PRs'
     syncing.value = false
+  }
+}
+
+async function pollSyncJob(jobId: number) {
+  try {
+    const res = await getPRSyncJob(jobId)
+    const job = res.data.data ?? null
+    syncJob.value = job
+    if (!job) return
+    if (isTerminalJob(job)) {
+      if (syncPollTimer.value != null) {
+        window.clearTimeout(syncPollTimer.value)
+        syncPollTimer.value = null
+      }
+      syncing.value = false
+      if (job.status === 'completed') {
+        prsPage.value = 0
+        await loadPRs()
+        syncMessageTone.value = 'success'
+        syncMessage.value = `Sync completed: ${formatCount(job.created_prs)} created, ${formatCount(job.changed_prs)} changed, ${formatCount(job.unchanged_prs)} unchanged`
+      } else {
+        syncMessageTone.value = 'error'
+        syncMessage.value = job.last_error || `Sync ${job.status}`
+      }
+      return
+    }
+    syncPollTimer.value = window.setTimeout(() => pollSyncJob(job.id), 1500)
+  } catch (error: any) {
+    syncing.value = false
+    syncMessageTone.value = 'error'
+    syncMessage.value = error?.response?.data?.message || 'Failed to load PR sync progress'
   }
 }
 
@@ -147,6 +200,37 @@ function formatDecimal(value?: number | null) {
   return value.toFixed(2)
 }
 
+function isTerminalJob(job: PRSyncJob) {
+  return ['completed', 'failed', 'cancelled', 'abandoned'].includes(job.status)
+}
+
+function phaseLabel(phase?: string) {
+  const labels: Record<string, string> = {
+    queued: 'Queued',
+    fetching_prs: 'Fetching PRs',
+    upserting_prs: 'Updating PRs',
+    labeling: 'Labeling PRs',
+    refreshing_usage: 'Refreshing usage',
+    completed: 'Completed',
+    failed: 'Failed',
+  }
+  return phase ? labels[phase] ?? phase : 'Queued'
+}
+
+function usageStatusLabel(status?: UsageStatus) {
+  const labels: Record<UsageStatus, string> = {
+    fresh: 'Fresh',
+    pending_upload: 'Pending',
+    no_checkpoint: 'No checkpoint',
+    no_usage_events: 'No usage',
+    unbound: 'Unbound',
+    stale_snapshot: 'Stale',
+    refresh_failed: 'Failed',
+    unknown: 'Unknown',
+  }
+  return labels[status ?? 'unknown']
+}
+
 function resolvedPR(pr: PRRecord) {
   return prDetails.value[pr.id] ?? pr
 }
@@ -155,6 +239,11 @@ function commitSnapshots(pr: PRRecord): PRCommitUsageSnapshot[] {
   const detail = resolvedPR(pr)
   const snapshots = detail.edges?.pr_commit_usage_snapshots
   return Array.isArray(snapshots) ? [...snapshots].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)) : []
+}
+
+function commitFreshnessFor(pr: PRRecord, commitSha: string): CommitFreshness | undefined {
+  const detail = resolvedPR(pr)
+  return detail.commit_freshness?.find((item) => item.commit_sha === commitSha)
 }
 
 function hasUsageSnapshot(pr: PRRecord) {
@@ -250,6 +339,12 @@ async function togglePRDetails(prId: number) {
     }
   }
 }
+
+onUnmounted(() => {
+  if (syncPollTimer.value != null) {
+    window.clearTimeout(syncPollTimer.value)
+  }
+})
 </script>
 
 <template>
@@ -283,6 +378,17 @@ async function togglePRDetails(prId: number) {
         :class="syncMessageTone === 'success' ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-700'"
       >
         {{ syncMessage }}
+      </div>
+
+      <div v-if="syncJob" class="rounded-md bg-blue-50 p-3 text-sm text-blue-900">
+        <div class="font-medium">{{ phaseLabel(syncJob.phase) }}</div>
+        <div class="mt-1 text-xs text-blue-800">
+          {{ formatCount(syncJob.fetched_prs) }} fetched ·
+          {{ formatCount(syncJob.processed_prs) }} processed ·
+          {{ formatCount(syncJob.usage_refreshed_prs) }} usage refreshed ·
+          {{ formatCount(syncJob.usage_skipped_prs) }} skipped ·
+          {{ formatCount(syncJob.usage_failed_prs) }} failed
+        </div>
       </div>
 
       <div v-if="auth.isAdmin" class="rounded-lg bg-white p-5 shadow">
@@ -373,6 +479,7 @@ async function togglePRDetails(prId: number) {
                 <th class="px-3 py-2 text-left font-medium">Title</th>
                 <th class="px-3 py-2 text-left font-medium">Author</th>
                 <th class="px-3 py-2 text-left font-medium">Status</th>
+                <th class="px-3 py-2 text-left font-medium">Usage</th>
                 <th class="px-3 py-2 text-left font-medium">Input</th>
                 <th class="px-3 py-2 text-left font-medium">Output</th>
                 <th class="px-3 py-2 text-left font-medium">Cache</th>
@@ -399,6 +506,11 @@ async function togglePRDetails(prId: number) {
                       :class="pr.status === 'merged' ? 'bg-purple-50 text-purple-700' : pr.status === 'open' ? 'bg-green-50 text-green-700' : 'bg-gray-50 text-gray-500'"
                     >{{ pr.status }}</span>
                   </td>
+                  <td class="px-3 py-2">
+                    <span class="inline-flex rounded-full bg-gray-50 px-2 text-xs font-medium leading-5 text-gray-600" :title="pr.usage_status_reason || ''">
+                      {{ usageStatusLabel(pr.usage_status) }}
+                    </span>
+                  </td>
                   <td class="px-3 py-2 text-xs text-gray-600">{{ formatCount(pr.usage_input_tokens) }}</td>
                   <td class="px-3 py-2 text-xs text-gray-600">{{ formatCount(pr.usage_output_tokens) }}</td>
                   <td class="px-3 py-2 text-xs text-gray-600">{{ formatCount(pr.usage_cached_input_tokens) }}</td>
@@ -415,7 +527,7 @@ async function togglePRDetails(prId: number) {
                   </td>
                 </tr>
                 <tr v-if="expandedPRId === pr.id" class="bg-gray-50/70">
-                  <td colspan="11" class="px-4 py-4">
+                  <td colspan="12" class="px-4 py-4">
                     <div v-if="isPRDetailLoading(pr.id) && !prDetails[pr.id]" class="py-6 text-center text-xs text-gray-500">
                       Loading PR details...
                     </div>
@@ -453,6 +565,7 @@ async function togglePRDetails(prId: number) {
                                 <th class="px-2 py-1 text-left font-medium">Reasoning</th>
                                 <th class="px-2 py-1 text-left font-medium">Credits</th>
                                 <th class="px-2 py-1 text-left font-medium">Requests</th>
+                                <th class="px-2 py-1 text-left font-medium">Usage Status</th>
                               </tr>
                             </thead>
                             <tbody class="divide-y divide-gray-100">
@@ -465,6 +578,9 @@ async function togglePRDetails(prId: number) {
                                 <td class="px-2 py-1 text-gray-700">{{ formatCount(snapshot.reasoning_tokens) }}</td>
                                 <td class="px-2 py-1 text-gray-700">{{ formatDecimal(snapshot.credit_usage) }}</td>
                                 <td class="px-2 py-1 text-gray-700">{{ formatCount(snapshot.request_count) }}</td>
+                                <td class="px-2 py-1 text-gray-700">
+                                  {{ commitFreshnessFor(pr, snapshot.commit_sha)?.usage_status_reason || usageStatusLabel(commitFreshnessFor(pr, snapshot.commit_sha)?.usage_status) }}
+                                </td>
                               </tr>
                             </tbody>
                           </table>

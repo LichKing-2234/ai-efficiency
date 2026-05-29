@@ -18,6 +18,9 @@ type repoSCMProvider interface {
 // prSyncer abstracts prsync.Service for testability.
 type prSyncer interface {
 	Sync(ctx context.Context, scmProvider scm.SCMProvider, rc *ent.RepoConfig) (*prsync.SyncResult, error)
+	StartSyncJob(ctx context.Context, scmProvider scm.SCMProvider, rc *ent.RepoConfig) (*ent.PRSyncJob, bool, error)
+	RunSyncJob(ctx context.Context, jobID int, scmProvider scm.SCMProvider, rc *ent.RepoConfig) (*prsync.SyncResult, error)
+	GetSyncJob(ctx context.Context, id int) (*ent.PRSyncJob, error)
 }
 
 type prAttributionSettler interface {
@@ -26,4 +29,8 @@ type prAttributionSettler interface {
 
 type prUsageRefresher interface {
 	RefreshPR(ctx context.Context, provider scm.SCMProvider, pr *ent.PrRecord) (*prusage.Result, error)
+}
+
+type prUsageFreshnessEvaluator interface {
+	EvaluatePRFreshness(ctx context.Context, prID int) (*prusage.PRFreshness, error)
 }

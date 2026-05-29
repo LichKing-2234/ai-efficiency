@@ -1063,6 +1063,29 @@ func HasPrRecordsWith(preds ...predicate.PrRecord) predicate.RepoConfig {
 	})
 }
 
+// HasPrSyncJobs applies the HasEdge predicate on the "pr_sync_jobs" edge.
+func HasPrSyncJobs() predicate.RepoConfig {
+	return predicate.RepoConfig(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, PrSyncJobsTable, PrSyncJobsColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasPrSyncJobsWith applies the HasEdge predicate on the "pr_sync_jobs" edge with a given conditions (other predicates).
+func HasPrSyncJobsWith(preds ...predicate.PRSyncJob) predicate.RepoConfig {
+	return predicate.RepoConfig(func(s *sql.Selector) {
+		step := newPrSyncJobsStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
 // And groups predicates with the AND operator between them.
 func And(predicates ...predicate.RepoConfig) predicate.RepoConfig {
 	return predicate.RepoConfig(sql.AndPredicates(predicates...))

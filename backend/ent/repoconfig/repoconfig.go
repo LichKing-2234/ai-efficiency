@@ -54,6 +54,8 @@ const (
 	EdgeWebhookDeadLetters = "webhook_dead_letters"
 	// EdgePrRecords holds the string denoting the pr_records edge name in mutations.
 	EdgePrRecords = "pr_records"
+	// EdgePrSyncJobs holds the string denoting the pr_sync_jobs edge name in mutations.
+	EdgePrSyncJobs = "pr_sync_jobs"
 	// Table holds the table name of the repoconfig in the database.
 	Table = "repo_configs"
 	// ScmProviderTable is the table that holds the scm_provider relation/edge.
@@ -98,6 +100,13 @@ const (
 	PrRecordsInverseTable = "pr_records"
 	// PrRecordsColumn is the table column denoting the pr_records relation/edge.
 	PrRecordsColumn = "repo_config_pr_records"
+	// PrSyncJobsTable is the table that holds the pr_sync_jobs relation/edge.
+	PrSyncJobsTable = "pr_sync_jobs"
+	// PrSyncJobsInverseTable is the table name for the PRSyncJob entity.
+	// It exists in this package in order to avoid circular dependency with the "prsyncjob" package.
+	PrSyncJobsInverseTable = "pr_sync_jobs"
+	// PrSyncJobsColumn is the table column denoting the pr_sync_jobs relation/edge.
+	PrSyncJobsColumn = "repo_config_id"
 )
 
 // Columns holds all SQL columns for repoconfig fields.
@@ -338,6 +347,20 @@ func ByPrRecords(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
 		sqlgraph.OrderByNeighborTerms(s, newPrRecordsStep(), append([]sql.OrderTerm{term}, terms...)...)
 	}
 }
+
+// ByPrSyncJobsCount orders the results by pr_sync_jobs count.
+func ByPrSyncJobsCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newPrSyncJobsStep(), opts...)
+	}
+}
+
+// ByPrSyncJobs orders the results by pr_sync_jobs terms.
+func ByPrSyncJobs(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newPrSyncJobsStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
 func newScmProviderStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
@@ -378,5 +401,12 @@ func newPrRecordsStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(PrRecordsInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.O2M, false, PrRecordsTable, PrRecordsColumn),
+	)
+}
+func newPrSyncJobsStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(PrSyncJobsInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, PrSyncJobsTable, PrSyncJobsColumn),
 	)
 }

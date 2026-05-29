@@ -18,6 +18,9 @@ type Credential func(*sql.Selector)
 // PRCommitUsageSnapshot is the predicate function for prcommitusagesnapshot builders.
 type PRCommitUsageSnapshot func(*sql.Selector)
 
+// PRSyncJob is the predicate function for prsyncjob builders.
+type PRSyncJob func(*sql.Selector)
+
 // PrAttributionRun is the predicate function for prattributionrun builders.
 type PrAttributionRun func(*sql.Selector)
 

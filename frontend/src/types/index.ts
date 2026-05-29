@@ -58,6 +58,44 @@ export interface RepoConfig {
   }
 }
 
+export type UsageStatus =
+  | 'fresh'
+  | 'pending_upload'
+  | 'no_checkpoint'
+  | 'no_usage_events'
+  | 'unbound'
+  | 'stale_snapshot'
+  | 'refresh_failed'
+  | 'unknown'
+
+export interface CommitFreshness {
+  commit_sha: string
+  usage_status: UsageStatus
+  usage_status_reason: string
+  checkpoint_found: boolean
+  usage_event_found: boolean
+}
+
+export interface PRSyncJob {
+  id: number
+  repo_config_id: number
+  status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled' | 'abandoned'
+  phase: 'queued' | 'fetching_prs' | 'upserting_prs' | 'labeling' | 'refreshing_usage' | 'completed' | 'failed'
+  current_page: number
+  page_size: number
+  fetched_prs: number
+  total_prs: number
+  processed_prs: number
+  created_prs: number
+  changed_prs: number
+  unchanged_prs: number
+  usage_total_prs: number
+  usage_refreshed_prs: number
+  usage_skipped_prs: number
+  usage_failed_prs: number
+  last_error?: string | null
+}
+
 export interface PRRecord {
   id: number
   scm_pr_id: number
@@ -85,6 +123,10 @@ export interface PRRecord {
   usage_request_count?: number
   usage_commit_count?: number
   usage_refreshed_at?: string | null
+  usage_status?: UsageStatus
+  usage_status_reason?: string
+  usage_status_checked_at?: string | null
+  commit_freshness?: CommitFreshness[]
   metadata_summary?: Record<string, any>
   last_attributed_at?: string | null
   edges?: {

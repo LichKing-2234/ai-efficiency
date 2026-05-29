@@ -16,6 +16,7 @@ import (
 	"github.com/ai-efficiency/backend/ent/commitrewrite"
 	"github.com/ai-efficiency/backend/ent/predicate"
 	"github.com/ai-efficiency/backend/ent/prrecord"
+	"github.com/ai-efficiency/backend/ent/prsyncjob"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/scmprovider"
 	"github.com/ai-efficiency/backend/ent/toolusageevent"
@@ -35,6 +36,7 @@ type RepoConfigQuery struct {
 	withToolUsageEvents    *ToolUsageEventQuery
 	withWebhookDeadLetters *WebhookDeadLetterQuery
 	withPrRecords          *PrRecordQuery
+	withPrSyncJobs         *PRSyncJobQuery
 	withFKs                bool
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
@@ -197,6 +199,28 @@ func (rcq *RepoConfigQuery) QueryPrRecords() *PrRecordQuery {
 			sqlgraph.From(repoconfig.Table, repoconfig.FieldID, selector),
 			sqlgraph.To(prrecord.Table, prrecord.FieldID),
 			sqlgraph.Edge(sqlgraph.O2M, false, repoconfig.PrRecordsTable, repoconfig.PrRecordsColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(rcq.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryPrSyncJobs chains the current query on the "pr_sync_jobs" edge.
+func (rcq *RepoConfigQuery) QueryPrSyncJobs() *PRSyncJobQuery {
+	query := (&PRSyncJobClient{config: rcq.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := rcq.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := rcq.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(repoconfig.Table, repoconfig.FieldID, selector),
+			sqlgraph.To(prsyncjob.Table, prsyncjob.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, repoconfig.PrSyncJobsTable, repoconfig.PrSyncJobsColumn),
 		)
 		fromU = sqlgraph.SetNeighbors(rcq.driver.Dialect(), step)
 		return fromU, nil
@@ -402,6 +426,7 @@ func (rcq *RepoConfigQuery) Clone() *RepoConfigQuery {
 		withToolUsageEvents:    rcq.withToolUsageEvents.Clone(),
 		withWebhookDeadLetters: rcq.withWebhookDeadLetters.Clone(),
 		withPrRecords:          rcq.withPrRecords.Clone(),
+		withPrSyncJobs:         rcq.withPrSyncJobs.Clone(),
 		// clone intermediate query.
 		sql:  rcq.sql.Clone(),
 		path: rcq.path,
@@ -471,6 +496,17 @@ func (rcq *RepoConfigQuery) WithPrRecords(opts ...func(*PrRecordQuery)) *RepoCon
 		opt(query)
 	}
 	rcq.withPrRecords = query
+	return rcq
+}
+
+// WithPrSyncJobs tells the query-builder to eager-load the nodes that are connected to
+// the "pr_sync_jobs" edge. The optional arguments are used to configure the query builder of the edge.
+func (rcq *RepoConfigQuery) WithPrSyncJobs(opts ...func(*PRSyncJobQuery)) *RepoConfigQuery {
+	query := (&PRSyncJobClient{config: rcq.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	rcq.withPrSyncJobs = query
 	return rcq
 }
 
@@ -553,13 +589,14 @@ func (rcq *RepoConfigQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*
 		nodes       = []*RepoConfig{}
 		withFKs     = rcq.withFKs
 		_spec       = rcq.querySpec()
-		loadedTypes = [6]bool{
+		loadedTypes = [7]bool{
 			rcq.withScmProvider != nil,
 			rcq.withCommitCheckpoints != nil,
 			rcq.withCommitRewrites != nil,
 			rcq.withToolUsageEvents != nil,
 			rcq.withWebhookDeadLetters != nil,
 			rcq.withPrRecords != nil,
+			rcq.withPrSyncJobs != nil,
 		}
 	)
 	if rcq.withScmProvider != nil {
@@ -628,6 +665,13 @@ func (rcq *RepoConfigQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*
 		if err := rcq.loadPrRecords(ctx, query, nodes,
 			func(n *RepoConfig) { n.Edges.PrRecords = []*PrRecord{} },
 			func(n *RepoConfig, e *PrRecord) { n.Edges.PrRecords = append(n.Edges.PrRecords, e) }); err != nil {
+			return nil, err
+		}
+	}
+	if query := rcq.withPrSyncJobs; query != nil {
+		if err := rcq.loadPrSyncJobs(ctx, query, nodes,
+			func(n *RepoConfig) { n.Edges.PrSyncJobs = []*PRSyncJob{} },
+			func(n *RepoConfig, e *PRSyncJob) { n.Edges.PrSyncJobs = append(n.Edges.PrSyncJobs, e) }); err != nil {
 			return nil, err
 		}
 	}
@@ -813,6 +857,36 @@ func (rcq *RepoConfigQuery) loadPrRecords(ctx context.Context, query *PrRecordQu
 		node, ok := nodeids[*fk]
 		if !ok {
 			return fmt.Errorf(`unexpected referenced foreign-key "repo_config_pr_records" returned %v for node %v`, *fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (rcq *RepoConfigQuery) loadPrSyncJobs(ctx context.Context, query *PRSyncJobQuery, nodes []*RepoConfig, init func(*RepoConfig), assign func(*RepoConfig, *PRSyncJob)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int]*RepoConfig)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(prsyncjob.FieldRepoConfigID)
+	}
+	query.Where(predicate.PRSyncJob(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(repoconfig.PrSyncJobsColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.RepoConfigID
+		node, ok := nodeids[fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "repo_config_id" returned %v for node %v`, fk, n.ID)
 		}
 		assign(node, n)
 	}

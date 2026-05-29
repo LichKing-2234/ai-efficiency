@@ -15,7 +15,7 @@ vi.mock('@/api/client', () => {
 import client from '@/api/client'
 import { listProviders, createProvider, updateProvider, deleteProvider } from '@/api/scmProvider'
 import { listRelayProviders, createRelayProvider, updateRelayProvider, deleteRelayProvider } from '@/api/relayProvider'
-import { listPRs, getPR, syncPRs, settlePR, refreshPRUsage } from '@/api/pr'
+import { listPRs, getPR, syncPRs, getPRSyncJob, settlePR, refreshPRUsage } from '@/api/pr'
 import { getDashboard } from '@/api/efficiency'
 import { getDeploymentStatus, checkForUpdate, applyUpdate, rollbackUpdate, restartDeployment } from '@/api/deployment'
 import { getUserProviders, createGroupCredential, regenerateGroupCredential, testUserProvider } from '@/api/user'
@@ -122,10 +122,16 @@ describe('pr API', () => {
     expect(mockClient.get).toHaveBeenCalledWith('/prs/42')
   })
 
-  it('syncPRs calls POST /repos/:id/sync-prs', async () => {
-    mockClient.post.mockResolvedValue({ data: { data: { created: 2, updated: 1, total: 3 } } })
+  it('syncPRs starts a PR sync job', async () => {
+    mockClient.post.mockResolvedValue({ data: { data: { job_id: 44, status: 'queued', phase: 'queued' } } })
     await syncPRs(5)
-    expect(mockClient.post).toHaveBeenCalledWith('/repos/5/sync-prs', undefined, { timeout: 120000 })
+    expect(mockClient.post).toHaveBeenCalledWith('/repos/5/sync-prs')
+  })
+
+  it('getPRSyncJob calls GET /pr-sync-jobs/:id', async () => {
+    mockClient.get.mockResolvedValue({ data: { data: { id: 44, status: 'running', phase: 'fetching_prs' } } })
+    await getPRSyncJob(44)
+    expect(mockClient.get).toHaveBeenCalledWith('/pr-sync-jobs/44')
   })
 
   it('settlePR calls POST /prs/:id/settle', async () => {
