@@ -1,0 +1,1024 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI 效能平台 - 全公司 UI 引导方案评审</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230891B2'/%3E%3Cpath d='M6 17h5l2-9 5 16 2-7h6' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <style>
+    :root {
+      --bg: #f6fbfc;
+      --surface: #ffffff;
+      --surface-2: #eef8fa;
+      --text: #12323d;
+      --muted: #5b6f78;
+      --line: #d9e7eb;
+      --primary: #0891b2;
+      --primary-dark: #0e7490;
+      --accent: #f97316;
+      --green: #15803d;
+      --blue: #2563eb;
+      --purple: #7c3aed;
+      --slate: #273842;
+      --shadow: 0 12px 32px rgba(18, 50, 61, 0.10);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 15px;
+      line-height: 1.5;
+    }
+
+    button,
+    input,
+    select {
+      font: inherit;
+    }
+
+    button {
+      cursor: pointer;
+    }
+
+    button:focus-visible,
+    a:focus-visible,
+    input:focus-visible,
+    select:focus-visible {
+      outline: 3px solid rgba(8, 145, 178, 0.35);
+      outline-offset: 2px;
+    }
+
+    .review-shell {
+      min-height: 100vh;
+      padding: 24px;
+    }
+
+    .review-header {
+      max-width: 1180px;
+      margin: 0 auto 18px;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 20px;
+    }
+
+    .review-kicker {
+      color: var(--primary-dark);
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    h1,
+    h2,
+    h3,
+    p {
+      margin: 0;
+    }
+
+    h1 {
+      margin-top: 6px;
+      font-size: clamp(26px, 4vw, 40px);
+      letter-spacing: 0;
+      line-height: 1.15;
+    }
+
+    .review-header p {
+      max-width: 720px;
+      margin-top: 10px;
+      color: var(--muted);
+    }
+
+    .review-note {
+      max-width: 300px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+      padding: 12px 14px;
+      box-shadow: 0 8px 22px rgba(18, 50, 61, 0.06);
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .tabs {
+      max-width: 1180px;
+      margin: 0 auto 18px;
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .tab {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+      padding: 12px 14px;
+      color: var(--text);
+      text-align: left;
+      transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
+    }
+
+    .tab:hover {
+      border-color: rgba(8, 145, 178, 0.55);
+      box-shadow: 0 8px 20px rgba(8, 145, 178, 0.10);
+    }
+
+    .tab.active {
+      border-color: var(--primary);
+      background: #e8f8fb;
+      box-shadow: inset 0 0 0 1px rgba(8, 145, 178, 0.24);
+    }
+
+    .tab strong {
+      display: block;
+      font-size: 15px;
+    }
+
+    .tab span {
+      display: block;
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .stage {
+      max-width: 1180px;
+      margin: 0 auto;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .variant {
+      display: none;
+    }
+
+    .variant.active {
+      display: block;
+    }
+
+    .mock-browser {
+      border-bottom: 1px solid var(--line);
+      background: #f8fbfc;
+      padding: 10px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .traffic {
+      display: flex;
+      gap: 7px;
+    }
+
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--line);
+    }
+
+    .dot:nth-child(1) { background: #fb7185; }
+    .dot:nth-child(2) { background: #fbbf24; }
+    .dot:nth-child(3) { background: #34d399; }
+
+    .app {
+      min-height: 720px;
+      display: grid;
+      grid-template-columns: 248px minmax(0, 1fr);
+      background: #f4f8fa;
+    }
+
+    .sidebar {
+      background: #102631;
+      color: white;
+      padding: 20px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 800;
+      font-size: 17px;
+    }
+
+    .brand-mark {
+      width: 34px;
+      height: 34px;
+      border-radius: 8px;
+      display: grid;
+      place-items: center;
+      background: #dff8fd;
+      color: #0e7490;
+    }
+
+    .nav {
+      display: grid;
+      gap: 4px;
+    }
+
+    .nav a {
+      color: rgba(255, 255, 255, 0.76);
+      text-decoration: none;
+      border-radius: 8px;
+      padding: 10px 12px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 650;
+    }
+
+    .nav a.active,
+    .nav a:hover {
+      background: rgba(255, 255, 255, 0.12);
+      color: white;
+    }
+
+    .nav svg,
+    .mini-icon {
+      width: 18px;
+      height: 18px;
+      flex: 0 0 auto;
+    }
+
+    .sidebar-footer {
+      margin-top: auto;
+      border-top: 1px solid rgba(255, 255, 255, 0.14);
+      padding-top: 14px;
+      color: rgba(255, 255, 255, 0.72);
+      font-size: 13px;
+    }
+
+    .content {
+      padding: 28px;
+      min-width: 0;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 22px;
+    }
+
+    .page-title h2 {
+      font-size: 28px;
+      line-height: 1.2;
+    }
+
+    .page-title p {
+      margin-top: 6px;
+      color: var(--muted);
+      max-width: 660px;
+    }
+
+    .actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .btn {
+      border: 1px solid transparent;
+      border-radius: 8px;
+      padding: 9px 13px;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 700;
+      background: var(--surface);
+      color: var(--text);
+      min-height: 40px;
+    }
+
+    .btn.primary {
+      background: var(--primary);
+      color: white;
+    }
+
+    .btn.cta {
+      background: var(--accent);
+      color: white;
+    }
+
+    .btn.secondary {
+      border-color: var(--line);
+    }
+
+    .grid {
+      display: grid;
+      gap: 14px;
+    }
+
+    .cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .wide { grid-column: span 2; }
+
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+      padding: 16px;
+      box-shadow: 0 8px 18px rgba(18, 50, 61, 0.05);
+      min-width: 0;
+    }
+
+    .card h3 {
+      font-size: 15px;
+      margin-bottom: 6px;
+    }
+
+    .card p {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .metric {
+      color: var(--text);
+      font-size: 30px;
+      line-height: 1;
+      font-weight: 800;
+      margin-top: 12px;
+    }
+
+    .metric small {
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 650;
+    }
+
+    .trend {
+      margin-top: 10px;
+      color: var(--green);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .role-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+      margin-bottom: 18px;
+    }
+
+    .role-card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: linear-gradient(180deg, #ffffff, #f4fbfd);
+      padding: 16px;
+      min-height: 156px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .role-card:hover {
+      border-color: rgba(8, 145, 178, 0.55);
+      box-shadow: 0 10px 22px rgba(8, 145, 178, 0.10);
+    }
+
+    .role-card .icon-box,
+    .status-icon {
+      width: 34px;
+      height: 34px;
+      border-radius: 8px;
+      display: grid;
+      place-items: center;
+      background: #e0f7fb;
+      color: var(--primary-dark);
+      margin-bottom: 12px;
+    }
+
+    .role-card strong {
+      display: block;
+      font-size: 16px;
+    }
+
+    .role-card span {
+      display: block;
+      color: var(--muted);
+      font-size: 13px;
+      margin-top: 6px;
+    }
+
+    .role-card .link {
+      margin-top: 14px;
+      color: var(--primary-dark);
+      font-weight: 800;
+      font-size: 13px;
+    }
+
+    .split {
+      display: grid;
+      grid-template-columns: minmax(0, 1.3fr) minmax(320px, 0.7fr);
+      gap: 14px;
+      align-items: start;
+    }
+
+    .steps {
+      display: grid;
+      gap: 12px;
+    }
+
+    .step {
+      display: grid;
+      grid-template-columns: 32px minmax(0, 1fr) auto;
+      gap: 12px;
+      align-items: start;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: white;
+      padding: 12px;
+    }
+
+    .step-num {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      display: grid;
+      place-items: center;
+      background: var(--surface-2);
+      color: var(--primary-dark);
+      font-weight: 800;
+    }
+
+    .step strong {
+      display: block;
+    }
+
+    .step p {
+      color: var(--muted);
+      font-size: 13px;
+      margin-top: 3px;
+    }
+
+    .code {
+      margin-top: 10px;
+      border-radius: 8px;
+      background: #09141a;
+      color: #9ff6bf;
+      padding: 10px 12px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 12px;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border-radius: 999px;
+      padding: 5px 9px;
+      background: #edf7f9;
+      color: var(--primary-dark);
+      font-size: 12px;
+      font-weight: 750;
+      white-space: nowrap;
+    }
+
+    .pill.warn {
+      background: #fff3e8;
+      color: #c2410c;
+    }
+
+    .pill.good {
+      background: #eaf8ef;
+      color: #166534;
+    }
+
+    .table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    .table th {
+      color: var(--muted);
+      text-align: left;
+      font-weight: 750;
+      border-bottom: 1px solid var(--line);
+      padding: 10px 8px;
+    }
+
+    .table td {
+      border-bottom: 1px solid #edf3f5;
+      padding: 12px 8px;
+      vertical-align: middle;
+    }
+
+    .bar {
+      height: 8px;
+      border-radius: 999px;
+      background: #e5eef1;
+      overflow: hidden;
+      margin-top: 8px;
+    }
+
+    .bar span {
+      display: block;
+      height: 100%;
+      border-radius: inherit;
+      background: var(--primary);
+    }
+
+    .chart {
+      height: 210px;
+      display: grid;
+      grid-template-columns: repeat(8, 1fr);
+      gap: 10px;
+      align-items: end;
+      padding-top: 18px;
+    }
+
+    .chart div {
+      min-height: 20px;
+      border-radius: 8px 8px 0 0;
+      background: linear-gradient(180deg, #22d3ee, #0891b2);
+      position: relative;
+    }
+
+    .chart div:nth-child(2n) {
+      background: linear-gradient(180deg, #fbbf24, #f97316);
+    }
+
+    .mode-toggle {
+      display: inline-flex;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: white;
+      padding: 3px;
+      gap: 3px;
+    }
+
+    .mode-toggle button {
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
+      padding: 7px 10px;
+      font-weight: 750;
+      color: var(--muted);
+    }
+
+    .mode-toggle button.active {
+      background: var(--primary);
+      color: white;
+    }
+
+    .expert-panel {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+
+    .admin-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .admin-item {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      background: white;
+    }
+
+    .review-footer {
+      max-width: 1180px;
+      margin: 18px auto 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    @media (max-width: 980px) {
+      .review-header,
+      .topbar {
+        flex-direction: column;
+      }
+
+      .tabs {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .app {
+        grid-template-columns: 1fr;
+      }
+
+      .sidebar {
+        flex-direction: row;
+        align-items: center;
+        overflow-x: auto;
+      }
+
+      .nav {
+        grid-auto-flow: column;
+        grid-auto-columns: max-content;
+      }
+
+      .sidebar-footer {
+        display: none;
+      }
+
+      .role-grid,
+      .cols-4,
+      .cols-3,
+      .cols-2,
+      .split,
+      .expert-panel {
+        grid-template-columns: 1fr;
+      }
+
+      .wide {
+        grid-column: auto;
+      }
+    }
+
+    @media (max-width: 640px) {
+      .review-shell {
+        padding: 12px;
+      }
+
+      .tabs {
+        grid-template-columns: 1fr;
+      }
+
+      .content {
+        padding: 18px;
+      }
+
+      .step {
+        grid-template-columns: 32px minmax(0, 1fr);
+      }
+
+      .step .pill {
+        grid-column: 2;
+        justify-self: start;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="review-shell">
+    <header class="review-header">
+      <div>
+        <div class="review-kicker">HTML Review Prototype</div>
+        <h1>AI 效能平台全公司入口设计</h1>
+        <p>这是静态评审页，目的是比较信息架构和首屏引导。每一版都保留现有研发自助和管理员能力，但用不同方式让非技术用户先看懂。</p>
+      </div>
+      <aside class="review-note">
+        建议 review 重点：第一眼是否知道这个系统能做什么、不同角色是否能找到入口、技术术语是否被藏在合适层级。
+      </aside>
+    </header>
+
+    <nav class="tabs" aria-label="方案切换">
+      <button class="tab" data-target="variant-a">
+        <strong>A. 角色分流工作台</strong>
+        <span>首次进入或跨角色入口参考</span>
+      </button>
+      <button class="tab active" data-target="variant-b">
+        <strong>B. 我的 AI 使用中心</strong>
+        <span>推荐作为普通用户默认首页</span>
+      </button>
+      <button class="tab" data-target="variant-c">
+        <strong>C. 团队经营看板</strong>
+        <span>偏负责人和推广运营</span>
+      </button>
+      <button class="tab" data-target="variant-d">
+        <strong>D. 普通模式 + 专家模式</strong>
+        <span>保留高密度控制台，默认更友好</span>
+      </button>
+    </nav>
+
+    <main class="stage">
+      <section id="variant-a" class="variant" aria-label="角色分流工作台">
+        <div class="mock-browser">
+          <div class="traffic" aria-hidden="true"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+          <span>方案 A / 角色分流工作台 / 首次进入参考</span>
+        </div>
+        <div class="app">
+          <aside class="sidebar">
+            <div class="brand">
+              <span class="brand-mark">
+                <svg class="mini-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12h4l2-7 4 14 2-7h4"/></svg>
+              </span>
+              AI 效能平台
+            </div>
+            <nav class="nav">
+              <a class="active" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/></svg>总览</a>
+              <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M8 14a6 6 0 1 1 8 0"/></svg>我的接入</a>
+              <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19V5"/><path d="M4 19h16"/><path d="M8 15l3-4 3 2 4-7"/></svg>使用趋势</a>
+              <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7h18"/><path d="M6 7v13h12V7"/><path d="M9 7V4h6v3"/></svg>代码仓库</a>
+              <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>团队视图</a>
+            </nav>
+            <div class="sidebar-footer">当前用户：alice<br>普通视图</div>
+          </aside>
+          <div class="content">
+            <div class="topbar">
+              <div class="page-title">
+                <h2>你想用 AI 效能平台做什么？</h2>
+                <p>选择你的角色，系统会展示最相关的下一步。研发可以配置工具，负责人可以看团队趋势，普通用户可以先理解数据含义。</p>
+              </div>
+              <div class="actions">
+                <button class="btn secondary"><svg class="mini-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14"/><path d="M5 12h14"/></svg>添加仓库</button>
+                <button class="btn primary"><svg class="mini-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/><path d="M12 5l7 7-7 7"/></svg>开始接入</button>
+              </div>
+            </div>
+
+            <div class="role-grid">
+              <button class="role-card">
+                <span class="icon-box"><svg class="mini-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 9l-4 3 4 3"/><path d="M16 9l4 3-4 3"/><path d="M14 4l-4 16"/></svg></span>
+                <span><strong>我是研发</strong><span>安装 CLI、配置 Codex/Claude/Gemini，诊断上报状态。</span></span>
+                <span class="link">进入我的接入</span>
+              </button>
+              <button class="role-card">
+                <span class="icon-box"><svg class="mini-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-7"/></svg></span>
+                <span><strong>我是团队负责人</strong><span>查看团队接入率、活跃趋势和待处理问题。</span></span>
+                <span class="link">查看团队视图</span>
+              </button>
+              <button class="role-card">
+                <span class="icon-box"><svg class="mini-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg></span>
+                <span><strong>我只想看懂数据</strong><span>了解 AI PR、使用记录、未归因数据分别代表什么。</span></span>
+                <span class="link">查看数据说明</span>
+              </button>
+              <button class="role-card">
+                <span class="icon-box"><svg class="mini-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 15.5A3.5 3.5 0 1 0 12 8a3.5 3.5 0 0 0 0 7.5Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 8.6 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.6 8.6a1.7 1.7 0 0 0-.34-1.88l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V3a2 2 0 1 1 4 0v.09A1.7 1.7 0 0 0 15.4 4.6a1.7 1.7 0 0 0 1.88-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9c.4.2.7.5.9.9.2.4.4.8.4 1.2V11a2 2 0 1 1 0 4h-.09A1.7 1.7 0 0 0 19.4 15Z"/></svg></span>
+                <span><strong>我是管理员</strong><span>管理接入配置、身份、仓库绑定和部署状态。</span></span>
+                <span class="link">进入管理后台</span>
+              </button>
+            </div>
+
+            <div class="grid cols-4">
+              <div class="card"><h3>已接入仓库</h3><p>当前有数据上报或已绑定的仓库。</p><div class="metric">128</div><div class="trend">本周新增 12 个</div></div>
+              <div class="card"><h3>活跃使用人数</h3><p>近 7 天有 AI 工具记录的用户。</p><div class="metric">246</div><div class="trend">较上周 +18%</div></div>
+              <div class="card"><h3>AI 辅助 PR</h3><p>已归因到 PR 的 AI 辅助开发活动。</p><div class="metric">1,284</div><div class="trend">覆盖 42 个团队</div></div>
+              <div class="card"><h3>需要处理</h3><p>未绑定仓库、未归因记录和接入异常。</p><div class="metric">23</div><div class="trend" style="color:#c2410c">建议优先处理</div></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="variant-b" class="variant active" aria-label="我的 AI 使用中心">
+        <div class="mock-browser">
+          <div class="traffic" aria-hidden="true"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+          <span>方案 B / 我的 AI 使用中心 / 普通用户推荐</span>
+        </div>
+        <div class="app">
+          <aside class="sidebar">
+            <div class="brand"><span class="brand-mark"><svg class="mini-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20"/><path d="M5 7h14"/><path d="M5 17h14"/></svg></span>AI 效能平台</div>
+            <nav class="nav">
+              <a class="active" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 22a8 8 0 0 1 16 0"/></svg>我的概览</a>
+              <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M8 14a6 6 0 1 1 8 0"/></svg>我的接入</a>
+              <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19V5"/><path d="M4 19h16"/><path d="M8 15l3-4 3 2 4-7"/></svg>我的记录</a>
+              <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9 10a3 3 0 1 1 5 2c-1 .6-2 1.5-2 3"/><path d="M12 18h.01"/></svg>帮助</a>
+            </nav>
+            <div class="sidebar-footer">个人视图<br>只展示与我有关的数据</div>
+          </aside>
+          <div class="content">
+            <div class="topbar">
+              <div class="page-title">
+                <h2>我的 AI 使用概览</h2>
+                <p>这里展示你自己的 AI 工具接入状态和使用记录。没有开发背景的用户也可以先从“数据说明”理解指标含义。</p>
+              </div>
+              <div class="actions">
+                <button class="btn secondary"><svg class="mini-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>查看近 30 天</button>
+                <button class="btn cta"><svg class="mini-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/><path d="M12 5l7 7-7 7"/></svg>配置我的工具</button>
+              </div>
+            </div>
+
+            <div class="grid cols-4">
+              <div class="card"><h3>本周使用次数</h3><p>来自 Codex、Claude、Kiro 等工具。</p><div class="metric">128</div><div class="trend">较上周 +24%</div></div>
+              <div class="card"><h3>本周 AI PR</h3><p>已归因到代码提交和 PR。</p><div class="metric">6</div><div class="trend">4 个已合并</div></div>
+              <div class="card"><h3>已接入工具</h3><p>本机或账号已成功配置。</p><div class="metric">3 <small>/ 4</small></div><div class="trend">Codex、Claude、Gemini</div></div>
+              <div class="card"><h3>数据状态</h3><p>最近一次上报和诊断结果。</p><div class="metric" style="color:var(--green)">正常</div><div class="trend">8 分钟前更新</div></div>
+            </div>
+
+            <div class="split" style="margin-top:14px">
+              <div class="card">
+                <h3>下一步</h3>
+                <p>按顺序完成即可。命令默认折叠，避免一开始就暴露复杂内容。</p>
+                <div class="steps" style="margin-top:14px">
+                  <div class="step">
+                    <div class="step-num">1</div>
+                    <div><strong>安装并登录 CLI</strong><p>只需要在每台开发机器上做一次。</p><div class="code">ae-cli login</div></div>
+                    <span class="pill good">已完成</span>
+                  </div>
+                  <div class="step">
+                    <div class="step-num">2</div>
+                    <div><strong>配置本地 AI 工具</strong><p>自动写入 Codex、Claude、Gemini 的可用 provider。</p><div class="code">ae-cli discover --provider sub2api</div></div>
+                    <span class="pill warn">建议处理</span>
+                  </div>
+                  <div class="step">
+                    <div class="step-num">3</div>
+                    <div><strong>进入要上报的仓库</strong><p>每个仓库执行一次，用于建立本地 attribution 状态。</p><div class="code">cd &lt;repo&gt; && ae-cli init && ae-cli doctor</div></div>
+                    <span class="pill">未开始</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="card">
+                <h3>我的使用趋势</h3>
+                <p>用趋势图替代原始事件表，普通用户先看结果。</p>
+                <div class="chart" aria-label="使用趋势图">
+                  <div style="height:36%" data-label="一"></div>
+                  <div style="height:54%" data-label="二"></div>
+                  <div style="height:42%" data-label="三"></div>
+                  <div style="height:78%" data-label="四"></div>
+                  <div style="height:65%" data-label="五"></div>
+                  <div style="height:48%" data-label="六"></div>
+                  <div style="height:70%" data-label="日"></div>
+                  <div style="height:88%" data-label="今"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="variant-c" class="variant" aria-label="团队经营看板">
+        <div class="mock-browser">
+          <div class="traffic" aria-hidden="true"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+          <span>方案 C / 团队经营看板</span>
+        </div>
+        <div class="app">
+          <aside class="sidebar">
+            <div class="brand"><span class="brand-mark"><svg class="mini-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 16l4-5 4 3 4-8"/></svg></span>AI 效能平台</div>
+            <nav class="nav">
+              <a class="active" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19V5"/><path d="M4 19h16"/><path d="M8 15l3-4 3 2 4-7"/></svg>总览</a>
+              <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>团队</a>
+              <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7h18"/><path d="M6 7v13h12V7"/></svg>仓库</a>
+              <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg>问题列表</a>
+            </nav>
+            <div class="sidebar-footer">团队视图<br>适合负责人和推广运营</div>
+          </aside>
+          <div class="content">
+            <div class="topbar">
+              <div class="page-title">
+                <h2>AI 效能组织总览</h2>
+                <p>面向负责人和平台运营，突出接入覆盖、活跃趋势、AI 辅助 PR 和需要推动的团队。</p>
+              </div>
+              <div class="actions">
+                <select class="btn secondary" aria-label="时间范围"><option>近 7 天</option><option>近 30 天</option><option>本季度</option></select>
+                <button class="btn primary"><svg class="mini-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>导出报告</button>
+              </div>
+            </div>
+
+            <div class="grid cols-4">
+              <div class="card"><h3>团队接入率</h3><p>至少一名成员有成功上报的团队。</p><div class="metric">68%</div><div class="bar"><span style="width:68%"></span></div></div>
+              <div class="card"><h3>活跃人数</h3><p>近 7 天产生 AI 使用记录。</p><div class="metric">142</div><div class="trend">覆盖 18 个团队</div></div>
+              <div class="card"><h3>AI 辅助 PR</h3><p>已归因到 PR 的活动。</p><div class="metric">389</div><div class="trend">较上周 +31%</div></div>
+              <div class="card"><h3>未完成接入</h3><p>有仓库或用户需要推动。</p><div class="metric" style="color:#c2410c">23</div><div class="trend" style="color:#c2410c">建议本周处理</div></div>
+            </div>
+
+            <div class="grid cols-2" style="margin-top:14px">
+              <div class="card">
+                <h3>团队排行</h3>
+                <p>把技术明细收进下一层，这里先展示管理者关心的排名。</p>
+                <table class="table" style="margin-top:12px">
+                  <thead><tr><th>团队</th><th>接入率</th><th>活跃人数</th><th>趋势</th></tr></thead>
+                  <tbody>
+                    <tr><td>平台工程</td><td>92%</td><td>38</td><td><span class="pill good">稳定</span></td></tr>
+                    <tr><td>移动端</td><td>74%</td><td>26</td><td><span class="pill good">增长</span></td></tr>
+                    <tr><td>业务系统</td><td>41%</td><td>14</td><td><span class="pill warn">需推动</span></td></tr>
+                    <tr><td>数据平台</td><td>28%</td><td>8</td><td><span class="pill warn">需推动</span></td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="card">
+                <h3>重点关注</h3>
+                <p>用“问题队列”替代裸露的 binding / raw events。</p>
+                <div class="admin-list" style="margin-top:12px">
+                  <div class="admin-item"><div><strong>18 个仓库未绑定 SCM</strong><p>影响 PR 维度统计。</p></div><span class="pill warn">管理员处理</span></div>
+                  <div class="admin-item"><div><strong>5 个团队接入率低于 30%</strong><p>建议发送接入指南。</p></div><span class="pill">负责人关注</span></div>
+                  <div class="admin-item"><div><strong>214 条记录尚未归因到提交</strong><p>可从使用记录查看明细。</p></div><span class="pill warn">排查</span></div>
+                  <div class="admin-item"><div><strong>Codex 使用增长 42%</strong><p>可沉淀最佳实践。</p></div><span class="pill good">机会点</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="variant-d" class="variant" aria-label="普通模式和专家模式">
+        <div class="mock-browser">
+          <div class="traffic" aria-hidden="true"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+          <span>方案 D / 普通模式 + 专家模式</span>
+        </div>
+        <div class="app">
+          <aside class="sidebar">
+            <div class="brand"><span class="brand-mark"><svg class="mini-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 15.5A3.5 3.5 0 1 0 12 8a3.5 3.5 0 0 0 0 7.5Z"/><path d="M19 12h3"/><path d="M2 12h3"/><path d="M12 2v3"/><path d="M12 19v3"/></svg></span>AI 效能平台</div>
+            <nav class="nav">
+              <a class="active" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/></svg>总览</a>
+              <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 22a8 8 0 0 1 16 0"/></svg>我的接入</a>
+              <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19V5"/><path d="M4 19h16"/><path d="M8 15l3-4 3 2 4-7"/></svg>使用趋势</a>
+              <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/></svg>专家管理</a>
+            </nav>
+            <div class="sidebar-footer">默认普通模式<br>可切到专家模式</div>
+          </aside>
+          <div class="content">
+            <div class="topbar">
+              <div class="page-title">
+                <h2>普通用户先看结果，专家再看配置</h2>
+                <p>保留现有控制台能力，但默认隐藏在专家模式里。这样全员入口更轻，管理员也不会失去效率。</p>
+              </div>
+              <div class="mode-toggle" role="group" aria-label="视图模式">
+                <button class="active">普通模式</button>
+                <button>专家模式</button>
+              </div>
+            </div>
+
+            <div class="grid cols-3">
+              <div class="card">
+                <span class="status-icon"><svg class="mini-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg></span>
+                <h3>我的接入状态</h3>
+                <p>CLI 已登录，Codex 已配置，当前仓库还未初始化。</p>
+                <div class="bar"><span style="width:66%"></span></div>
+              </div>
+              <div class="card">
+                <span class="status-icon"><svg class="mini-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-7"/></svg></span>
+                <h3>使用趋势</h3>
+                <p>近 7 天有 128 次 AI 工具记录，6 个 PR 被归因。</p>
+                <div class="bar"><span style="width:82%; background:var(--accent)"></span></div>
+              </div>
+              <div class="card">
+                <span class="status-icon"><svg class="mini-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg></span>
+                <h3>需要处理</h3>
+                <p>1 个仓库未完成 init，2 条本地记录等待上传。</p>
+                <div class="bar"><span style="width:30%; background:#dc2626"></span></div>
+              </div>
+            </div>
+
+            <div class="expert-panel" style="margin-top:14px">
+              <div class="card">
+                <h3>普通模式看到的导航</h3>
+                <p>面向全员，只保留能理解和能行动的入口。</p>
+                <div class="admin-list" style="margin-top:12px">
+                  <div class="admin-item"><strong>总览</strong><span class="pill good">默认</span></div>
+                  <div class="admin-item"><strong>我的接入</strong><span class="pill">研发使用</span></div>
+                  <div class="admin-item"><strong>使用趋势</strong><span class="pill">全员可读</span></div>
+                  <div class="admin-item"><strong>帮助与排障</strong><span class="pill">自助</span></div>
+                </div>
+              </div>
+              <div class="card">
+                <h3>专家模式展开的能力</h3>
+                <p>现有技术页面保留，但从默认路径中移出。</p>
+                <div class="admin-list" style="margin-top:12px">
+                  <div class="admin-item"><strong>Events</strong><span class="pill">原始记录</span></div>
+                  <div class="admin-item"><strong>Repos / SCM Providers</strong><span class="pill">仓库配置</span></div>
+                  <div class="admin-item"><strong>Relay Providers / Credentials</strong><span class="pill">接入配置</span></div>
+                  <div class="admin-item"><strong>Deployment / LDAP</strong><span class="pill">运维配置</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="review-footer">
+      当前收敛方向：普通用户默认进入 B“我的 AI 使用中心”；A 可作为首次进入或跨角色入口；C 给负责人；D 给管理员和专家用户。
+    </footer>
+  </div>
+
+  <script>
+    const tabs = Array.from(document.querySelectorAll('.tab'));
+    const variants = Array.from(document.querySelectorAll('.variant'));
+
+    function activate(targetId) {
+      tabs.forEach((tab) => {
+        tab.classList.toggle('active', tab.dataset.target === targetId);
+      });
+      variants.forEach((variant) => {
+        variant.classList.toggle('active', variant.id === targetId);
+      });
+    }
+
+    tabs.forEach((tab) => {
+      tab.addEventListener('click', () => activate(tab.dataset.target));
+    });
+  </script>
+</body>
+</html>
