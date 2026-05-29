@@ -37,13 +37,14 @@ PY
 )"
 fi
 
-for name in codex claude gemini; do
+for name in claude gemini; do
   cat > "${TMP_BIN}/${name}" <<'EOF'
 #!/usr/bin/env bash
 exit 0
 EOF
   chmod +x "${TMP_BIN}/${name}"
 done
+mkdir -p "${TMP_HOME}/Applications/Codex.app"
 
 mkdir -p "${TMP_HOME}/.ae-cli"
 cat > "${TMP_HOME}/.ae-cli/token.json" <<EOF
@@ -135,7 +136,7 @@ SERVER_PID=$!
 sleep 1
 
 OUTPUT_FILE="${TMP_HOME}/discover.out"
-HOME="${TMP_HOME}" PATH="${TMP_BIN}:${PATH}" SHELL=/bin/zsh "${BIN_PATH}" discover > "${OUTPUT_FILE}"
+HOME="${TMP_HOME}" PATH="${TMP_BIN}" SHELL=/bin/zsh "${BIN_PATH}" discover > "${OUTPUT_FILE}"
 
 test -f "${TMP_HOME}/.codex/config.toml"
 test -f "${TMP_HOME}/.codex/auth.json"
