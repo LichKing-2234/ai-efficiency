@@ -904,6 +904,10 @@ func relayErrorMessageSuffix(body io.Reader) string {
 	if err != nil {
 		return ""
 	}
+	return relayErrorMessageSuffixFromData(data)
+}
+
+func relayErrorMessageSuffixFromData(data []byte) string {
 	message := extractRelayErrorMessage(data)
 	if message == "" {
 		return ""
@@ -1339,7 +1343,14 @@ func (s *sub2apiRelay) assignSubscription(ctx context.Context, userID int64, ite
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("assign subscription: unexpected status %d%s", resp.StatusCode, relayErrorMessageSuffix(resp.Body))
+		body, readErr := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		if readErr != nil {
+			return fmt.Errorf("assign subscription: unexpected status %d", resp.StatusCode)
+		}
+		if isExistingSubscriptionAssignConflict(resp.StatusCode, body) {
+			return nil
+		}
+		return fmt.Errorf("assign subscription: unexpected status %d%s", resp.StatusCode, relayErrorMessageSuffixFromData(body))
 	}
 	var result envelopeStatus
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -1349,6 +1360,44 @@ func (s *sub2apiRelay) assignSubscription(ctx context.Context, userID int64, ite
 		return fmt.Errorf("assign subscription: request failed")
 	}
 	return nil
+}
+
+func isExistingSubscriptionAssignConflict(statusCode int, body []byte) bool {
+	if statusCode != http.StatusConflict {
+		return false
+	}
+	var payload struct {
+		Reason  string `json:"reason"`
+		Message string `json:"message"`
+		Error   struct {
+			Reason  string `json:"reason"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(body, &payload); err == nil {
+		reason := strings.ToUpper(strings.TrimSpace(firstNonEmpty(payload.Reason, payload.Error.Reason)))
+		switch reason {
+		case "SUBSCRIPTION_ASSIGN_CONFLICT", "SUBSCRIPTION_ALREADY_EXISTS":
+			return true
+		}
+		if reason != "" {
+			return false
+		}
+		message := strings.ToLower(strings.TrimSpace(firstNonEmpty(payload.Message, payload.Error.Message)))
+		if strings.Contains(message, "subscription exists") || strings.Contains(message, "subscription already exists") {
+			return true
+		}
+	}
+	return strings.Contains(strings.ToLower(strings.TrimSpace(string(body))), "subscription exists")
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func (s *sub2apiRelay) resolveDefaultGroupID(ctx context.Context, platform string) (string, error) {

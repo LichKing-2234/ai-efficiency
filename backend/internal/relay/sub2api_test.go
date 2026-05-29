@@ -828,6 +828,117 @@ func TestCreateUserAssignsDefaultSubscriptionsFromRelaySettings(t *testing.T) {
 	}
 }
 
+func TestCreateUserTreatsExistingDefaultSubscriptionConflictAsAssigned(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/users", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("expected POST, got %s", r.Method)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": map[string]any{
+				"id":       123,
+				"email":    "newuser@example.com",
+				"username": "newuser",
+				"role":     "user",
+			},
+		})
+	})
+	mux.HandleFunc("/api/v1/admin/settings", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Errorf("expected GET, got %s", r.Method)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": map[string]any{
+				"default_subscriptions": []any{
+					map[string]any{"group_id": 5, "validity_days": 30},
+				},
+			},
+		})
+	})
+	mux.HandleFunc("/api/v1/admin/subscriptions/assign", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("expected POST, got %s", r.Method)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code":    http.StatusConflict,
+			"message": "subscription exists but request conflicts with existing assignment semantics",
+			"reason":  "SUBSCRIPTION_ASSIGN_CONFLICT",
+			"metadata": map[string]string{
+				"conflict_reason": "notes_mismatch",
+			},
+		})
+	})
+
+	p := newTestProvider(t, mux)
+	u, err := p.CreateUser(context.Background(), relay.CreateUserRequest{
+		Username:    "newuser",
+		Email:       "newuser@example.com",
+		Password:    "pw",
+		Notes:       "test",
+		Concurrency: 5,
+	})
+	if err != nil {
+		t.Fatalf("CreateUser() unexpected error: %v", err)
+	}
+	if u == nil || u.ID != 123 || u.Username != "newuser" {
+		t.Fatalf("CreateUser() unexpected user: %+v", u)
+	}
+}
+
+func TestCreateUserKeepsUnrelatedDefaultSubscriptionConflictFatal(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/users", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": map[string]any{
+				"id":       123,
+				"email":    "newuser@example.com",
+				"username": "newuser",
+				"role":     "user",
+			},
+		})
+	})
+	mux.HandleFunc("/api/v1/admin/settings", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": map[string]any{
+				"default_subscriptions": []any{
+					map[string]any{"group_id": 5, "validity_days": 30},
+				},
+			},
+		})
+	})
+	mux.HandleFunc("/api/v1/admin/subscriptions/assign", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code":    http.StatusConflict,
+			"message": "subscription exists but group cannot accept assignment",
+			"reason":  "GROUP_ASSIGNMENT_CONFLICT",
+		})
+	})
+
+	p := newTestProvider(t, mux)
+	_, err := p.CreateUser(context.Background(), relay.CreateUserRequest{
+		Username:    "newuser",
+		Email:       "newuser@example.com",
+		Password:    "pw",
+		Notes:       "test",
+		Concurrency: 5,
+	})
+	if err == nil {
+		t.Fatal("CreateUser() expected error for unrelated subscription conflict, got nil")
+	}
+}
+
 func TestCreateUserSuccessFalse(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/admin/users", func(w http.ResponseWriter, r *http.Request) {
