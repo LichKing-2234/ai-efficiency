@@ -10,7 +10,7 @@
 
 **Spec:** `docs/superpowers/specs/2026-05-21-user-page-cli-self-serve-design.md`
 
-**Status:** Group-first implementation is largely landed in code and verified by backend/frontend tests. The admin Settings relay management UI is aligned to DB-backed multi-`RelayProvider` CRUD via `/api/v1/admin/providers`; `/api/v1/settings/llm*` remains compatibility/runtime-edit surface only. The 2026-05-22 API key visibility follow-up aligns `/user` with sub2api-style behavior: existing user-owned keys are partially masked on screen and copy the full key when the relay list response includes `key`. The 2026-05-23 provider-test follow-up adds `/api/v1/user/providers/:id/test` and a `/user` page test form so regular users can test their own active API key for the selected group and platform with a caller-supplied model; the old admin Relay Providers test button and `/api/v1/admin/providers/:id/test` route are intentionally removed. The 2026-05-26 credential reliability follow-up now treats `/user` create/regenerate as responsible for ensuring relay write readiness: it hydrates `allowed_groups` ID payloads, merges active subscription facts, assigns relay defaults for new or previously LDAP-provisioned group-less relay users, removes provider default-model display from the credential header, creates or resolves relay users when local state is missing or a stored relay binding points to a missing upstream user, rotates/stores generated relay-side passwords when local credentials are missing or stale, and lets SSO email login create a missing relay user with the submitted SSO password. The DB-backed auth/usersetup/handler package sweep has been rerun with local Postgres.
+**Status:** Group-first implementation is largely landed in code and verified by backend/frontend tests. The admin Settings relay management UI is aligned to DB-backed multi-`RelayProvider` CRUD via `/api/v1/admin/providers`; `/api/v1/settings/llm*` remains compatibility/runtime-edit surface only. The 2026-05-22 API key visibility follow-up aligns `/user` with sub2api-style behavior: existing user-owned keys are partially masked on screen and copy the full key when the relay list response includes `key`. The 2026-05-23 provider-test follow-up adds `/api/v1/user/providers/:id/test` and a `/user` page test form so regular users can test their own active API key for the selected group and platform with a caller-supplied model; the old admin Relay Providers test button and `/api/v1/admin/providers/:id/test` route are intentionally removed. The 2026-05-26 credential reliability follow-up now treats `/user` create/regenerate as responsible for ensuring relay write readiness: it hydrates `allowed_groups` ID payloads, merges active subscription facts, assigns relay defaults for new or previously LDAP-provisioned group-less relay users, removes provider default-model display from the credential header, creates or resolves relay users when local state is missing or a stored relay binding points to a missing upstream user, rotates/stores generated relay-side passwords when local credentials are missing or stale, and lets SSO email login create a missing relay user with the submitted SSO password. The 2026-05-29 LDAP default subscription conflict follow-up makes repeated sub2api default assignment conflicts idempotent for first-login relay provisioning. The DB-backed auth/usersetup/handler package sweep has been rerun with local Postgres.
 
 ## Follow-up: API Key Visibility Alignment
 
@@ -47,6 +47,13 @@
 - [x] Remove provider `default_model` from the `Provider & Group Credential` header; provider test still requires an explicit user-supplied model.
 - [x] Run relay adapter, LDAP relay identity, and frontend user page targeted tests for the follow-up.
 - [x] Rerun DB-backed auth/usersetup/handler package sweep once local Postgres is available.
+
+## Follow-up: LDAP Default Subscription Conflict Idempotency
+
+- [x] Add relay adapter regression coverage for sub2api returning 409 `SUBSCRIPTION_ASSIGN_CONFLICT` after admin user creation already assigned the default subscription.
+- [x] Treat that existing-subscription conflict as idempotent success during default subscription repair while keeping unrelated assignment failures fatal.
+- [x] Update architecture and current auth/user-page specs for the first-login idempotency contract.
+- [x] Run targeted backend verification for the relay/auth packages.
 
 ## Follow-up: LDAP Binding Repair Password Rotation
 
