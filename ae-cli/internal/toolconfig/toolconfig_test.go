@@ -142,6 +142,9 @@ func TestConfigureToolsWritesCodexClaudeAndGeminiWithPlatformCredentials(t *test
 	if contains(envBody, "OPENAI_API_KEY") {
 		t.Fatalf("codex key should not be written to env.sh:\n%s", envBody)
 	}
+	if contains(envBody, "GEMINI_MODEL") {
+		t.Fatalf("gemini model should not be written to env.sh:\n%s", envBody)
+	}
 
 	zshrc := mustReadFile(t, filepath.Join(tmpHome, ".zshrc"))
 	if !contains(zshrc, "source \"$HOME/.ae-cli/env.sh\"") {
