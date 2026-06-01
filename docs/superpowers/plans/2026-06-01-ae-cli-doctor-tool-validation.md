@@ -26,7 +26,7 @@
 - Create: `ae-cli/internal/doctorcheck/validation_test.go`
 - Create: `ae-cli/internal/doctorcheck/validation.go`
 
-- [ ] **Step 1: Create the empty package file**
+- [x] **Step 1: Create the empty package file**
 
 Create `ae-cli/internal/doctorcheck/validation.go` with the package and imports only:
 
@@ -34,7 +34,7 @@ Create `ae-cli/internal/doctorcheck/validation.go` with the package and imports 
 package doctorcheck
 ```
 
-- [ ] **Step 2: Write failing validation tests**
+- [x] **Step 2: Write failing validation tests**
 
 Create `ae-cli/internal/doctorcheck/validation_test.go`:
 
@@ -209,7 +209,7 @@ func TestValidateToolsReportsMissingExecutableAsSkippedWithoutCredential(t *test
 }
 ```
 
-- [ ] **Step 3: Run tests to verify they fail**
+- [x] **Step 3: Run tests to verify they fail**
 
 Run:
 
@@ -225,7 +225,7 @@ Expected: FAIL with undefined identifiers such as `ValidateTools`, `ValidateOpti
 - Modify: `ae-cli/internal/doctorcheck/validation.go`
 - Test: `ae-cli/internal/doctorcheck/validation_test.go`
 
-- [ ] **Step 1: Add validation types and format helpers**
+- [x] **Step 1: Add validation types and format helpers**
 
 Replace `ae-cli/internal/doctorcheck/validation.go` with:
 
@@ -663,7 +663,7 @@ func shellRCPath(homeDir, shellPath string) string {
 }
 ```
 
-- [ ] **Step 2: Run validation tests**
+- [x] **Step 2: Run validation tests**
 
 Run:
 
@@ -673,7 +673,7 @@ cd ae-cli && go test ./internal/doctorcheck -run 'ValidateTools' -count=1
 
 Expected: PASS.
 
-- [ ] **Step 3: Commit validation package slice**
+- [x] **Step 3: Commit validation package slice**
 
 ```bash
 git add ae-cli/internal/doctorcheck/validation.go ae-cli/internal/doctorcheck/validation_test.go
