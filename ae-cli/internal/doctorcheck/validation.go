@@ -126,6 +126,9 @@ func validateOneTool(opts ValidateOptions, tool ToolState) ConfigResult {
 		result.SkipReason = "executable not found"
 		return result
 	}
+	if !tool.Probeable {
+		result.SkipReason = "callable CLI not found"
+	}
 	switch result.Name {
 	case "codex":
 		validateCodex(opts, credential, hasCredential, &result)

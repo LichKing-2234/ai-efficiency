@@ -5,13 +5,30 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"strings"
 	"time"
 
 	"github.com/ai-efficiency/ae-cli/internal/client"
+	"github.com/ai-efficiency/ae-cli/internal/doctorcheck"
 	"github.com/ai-efficiency/ae-cli/internal/hooks"
+	"github.com/ai-efficiency/ae-cli/internal/toolconfig"
 	"github.com/spf13/cobra"
 )
+
+var doctorToolNames = []string{"codex", "claude", "gemini"}
+
+var listProvidersForDoctor = func(ctx context.Context) ([]client.ProviderInfo, string, error) {
+	if apiClient == nil {
+		return nil, "", fmt.Errorf("API client is not configured")
+	}
+	providers, err := apiClient.ListProviders(ctx)
+	return providers, "user/providers", err
+}
+
+var detectToolsForDoctor = detectDoctorTools
+
+var probeToolsForDoctor = doctorcheck.ProbeTools
 
 var doctorCmd = &cobra.Command{
 	Use:   "doctor",
@@ -62,9 +79,102 @@ var doctorCmd = &cobra.Command{
 			}
 		}
 		printSyncTaskStatus(out, task)
+		printToolDiagnostics(out)
 		printRepoEligibilityDiagnostic(out)
 		return nil
 	},
+}
+
+func printToolDiagnostics(out io.Writer) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		fmt.Fprintf(out, "Tool configuration\n  provider: unavailable (%v)\n", err)
+		return
+	}
+	providers, providerSource, providerErr := listProvidersForDoctor(context.Background())
+	providerAvailable := providerErr == nil && len(providers) > 0
+	var selected toolconfig.Provider
+	if providerAvailable {
+		selected, err = toolconfig.SelectProvider(mapProviders(providers), "")
+		if err != nil {
+			providerAvailable = false
+			providerErr = err
+		}
+	}
+	tools, err := detectToolsForDoctor(doctorToolNames)
+	if err != nil {
+		fmt.Fprintf(out, "Tool configuration\n  provider: unavailable (%v)\n", err)
+		return
+	}
+	report := doctorcheck.ValidateTools(doctorcheck.ValidateOptions{
+		HomeDir:           homeDir,
+		ShellPath:         os.Getenv("SHELL"),
+		Provider:          selected,
+		ProviderAvailable: providerAvailable,
+		ProviderSource:    providerSource,
+		Tools:             tools,
+	})
+	fmt.Fprintln(out, "Tool configuration")
+	if providerAvailable {
+		fmt.Fprintf(out, "  provider: %s source=%s\n", report.ProviderName, report.ProviderSource)
+	} else {
+		fmt.Fprintf(out, "  provider: unavailable (%v)\n", providerErr)
+	}
+	for i := range report.Results {
+		fmt.Fprintf(out, "  %s\n", doctorcheck.FormatConfigResult(&report.Results[i]))
+	}
+	fmt.Fprintln(out, "Tool probe")
+	probeResults := probeToolsForDoctor(context.Background(), doctorcheck.ProbeOptions{
+		Timeout: 30 * time.Second,
+		Configs: report.Results,
+	})
+	for _, result := range probeResults {
+		fmt.Fprintf(out, "  %s\n", doctorcheck.FormatProbeResult(result))
+	}
+}
+
+func detectDoctorTools(toolNames []string) ([]doctorcheck.ToolState, error) {
+	installed, err := toolconfig.DetectInstalledTools(toolNames)
+	if err != nil {
+		return nil, err
+	}
+	byName := map[string]toolconfig.InstalledTool{}
+	for _, item := range installed {
+		byName[item.Name] = item
+	}
+	out := make([]doctorcheck.ToolState, 0, len(toolNames))
+	for _, name := range toolNames {
+		item, ok := byName[name]
+		if !ok {
+			out = append(out, doctorcheck.ToolState{Name: name, Missing: true})
+			continue
+		}
+		probeable := true
+		if strings.HasSuffix(item.Path, ".app") {
+			probeable = false
+		}
+		out = append(out, doctorcheck.ToolState{
+			Name:           name,
+			ExecutablePath: item.Path,
+			Version:        doctorToolVersion(item.Path),
+			Probeable:      probeable,
+		})
+	}
+	return out, nil
+}
+
+func doctorToolVersion(path string) string {
+	if strings.TrimSpace(path) == "" || strings.HasSuffix(path, ".app") {
+		return ""
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, path, "--version")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(strings.SplitN(string(out), "\n", 2)[0])
 }
 
 func printRepoEligibilityDiagnostic(out io.Writer) {

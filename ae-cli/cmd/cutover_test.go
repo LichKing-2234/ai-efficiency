@@ -216,11 +216,16 @@ func TestDoctorCommandPrintsWorkspaceIdentity(t *testing.T) {
 
 	origCfg := cfg
 	origClient := apiClient
+	origListProviders := listProvidersForDoctor
 	cfg = &config.Config{Server: config.ServerConfig{URL: srv.URL, Token: "tok"}}
 	apiClient = client.New(srv.URL, "tok")
+	listProvidersForDoctor = func(context.Context) ([]client.ProviderInfo, string, error) {
+		return nil, "", context.Canceled
+	}
 	t.Cleanup(func() {
 		cfg = origCfg
 		apiClient = origClient
+		listProvidersForDoctor = origListProviders
 	})
 
 	buf := new(bytes.Buffer)

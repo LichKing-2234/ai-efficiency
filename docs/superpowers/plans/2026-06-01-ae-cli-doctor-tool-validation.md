@@ -1028,7 +1028,7 @@ git commit -m "feat(ae-cli): probe configured local tools in doctor"
 - Modify: `ae-cli/cmd/doctor.go`
 - Create: `ae-cli/cmd/doctor_tool_test.go`
 
-- [ ] **Step 1: Write failing command-level tests**
+- [x] **Step 1: Write failing command-level tests**
 
 Create `ae-cli/cmd/doctor_tool_test.go`:
 
@@ -1154,7 +1154,7 @@ func writeFileForDoctor(t *testing.T, path, body string) {
 }
 ```
 
-- [ ] **Step 2: Run command test to verify it fails**
+- [x] **Step 2: Run command test to verify it fails**
 
 Run:
 
@@ -1164,7 +1164,7 @@ cd ae-cli && go test ./cmd -run 'DoctorPrintsToolConfigurationAndProbe' -count=1
 
 Expected: FAIL with undefined identifiers such as `listProvidersForDoctor`, `detectToolsForDoctor`, and `probeToolsForDoctor`.
 
-- [ ] **Step 3: Modify `doctor.go` to call doctorcheck**
+- [x] **Step 3: Modify `doctor.go` to call doctorcheck**
 
 In `ae-cli/cmd/doctor.go`, add imports:
 
@@ -1300,7 +1300,7 @@ func doctorToolPathName(path string) string {
 }
 ```
 
-- [ ] **Step 4: Run command tool test**
+- [x] **Step 4: Run command tool test**
 
 Run:
 
@@ -1310,7 +1310,7 @@ cd ae-cli && go test ./cmd -run 'DoctorPrintsToolConfigurationAndProbe' -count=1
 
 Expected: PASS.
 
-- [ ] **Step 5: Run existing doctor smoke test**
+- [x] **Step 5: Run existing doctor smoke test**
 
 Run:
 
@@ -1320,7 +1320,7 @@ cd ae-cli && go test ./cmd -run 'DoctorCommandPrintsWorkspaceIdentity' -count=1
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit doctor wiring slice**
+- [x] **Step 6: Commit doctor wiring slice**
 
 ```bash
 git add ae-cli/cmd/doctor.go ae-cli/cmd/doctor_tool_test.go
