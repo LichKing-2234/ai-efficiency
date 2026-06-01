@@ -1503,7 +1503,7 @@ Expected:
 
 ## Follow-up 2026-06-01: Visible Progress and Colored Status
 
-**Status:** Full ae-cli tests pass; local install refresh still pending.
+**Status:** Complete. Full ae-cli tests pass, the local install was rebuilt, and the installed doctor output was manually verified with visible running lines and colored status badges.
 
 **Files:**
 - Modify: `ae-cli/internal/doctorcheck/probe.go`
@@ -1546,7 +1546,7 @@ cd ae-cli && go test ./...
 
 Expected: PASS.
 
-- [ ] **Step 5: Rebuild local install and verify actual doctor output**
+- [x] **Step 5: Rebuild local install and verify actual doctor output**
 
 Run:
 
