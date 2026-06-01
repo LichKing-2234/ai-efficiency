@@ -1561,7 +1561,7 @@ Expected: installed binary prints the local dev version, `doctor` prints visible
 
 ## Follow-up 2026-06-01: Optional Real Tool Probes
 
-**Status:** Full ae-cli tests pass; local install refresh still pending.
+**Status:** Complete. Full ae-cli tests pass, the local install was rebuilt, and default doctor output was manually verified to skip real local CLI probes.
 
 **Files:**
 - Modify: `ae-cli/cmd/doctor.go`
@@ -1602,7 +1602,7 @@ cd ae-cli && go test ./...
 
 Expected: PASS.
 
-- [ ] **Step 5: Rebuild local install and verify default doctor output**
+- [x] **Step 5: Rebuild local install and verify default doctor output**
 
 Run:
 
