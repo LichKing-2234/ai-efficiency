@@ -686,7 +686,7 @@ git commit -m "feat(ae-cli): validate doctor tool configuration"
 - Create: `ae-cli/internal/doctorcheck/probe.go`
 - Create: `ae-cli/internal/doctorcheck/probe_test.go`
 
-- [ ] **Step 1: Write failing probe tests**
+- [x] **Step 1: Write failing probe tests**
 
 Create `ae-cli/internal/doctorcheck/probe_test.go`:
 
@@ -802,7 +802,7 @@ func TestProbeToolsReportsNonZeroAndEmptyStdout(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run probe tests to verify they fail**
+- [x] **Step 2: Run probe tests to verify they fail**
 
 Run:
 
@@ -812,7 +812,7 @@ cd ae-cli && go test ./internal/doctorcheck -run 'ProbeTools' -count=1
 
 Expected: FAIL with undefined identifiers such as `ProbeTools`, `ProbeOptions`, `ProbeCommand`, and `CommandResult`.
 
-- [ ] **Step 3: Implement probe runner**
+- [x] **Step 3: Implement probe runner**
 
 Create `ae-cli/internal/doctorcheck/probe.go`:
 
@@ -1005,7 +1005,7 @@ func firstNonEmpty(values ...string) string {
 }
 ```
 
-- [ ] **Step 4: Run probe tests**
+- [x] **Step 4: Run probe tests**
 
 Run:
 
@@ -1015,7 +1015,7 @@ cd ae-cli && go test ./internal/doctorcheck -run 'ProbeTools' -count=1
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit probe slice**
+- [x] **Step 5: Commit probe slice**
 
 ```bash
 git add ae-cli/internal/doctorcheck/probe.go ae-cli/internal/doctorcheck/probe_test.go
