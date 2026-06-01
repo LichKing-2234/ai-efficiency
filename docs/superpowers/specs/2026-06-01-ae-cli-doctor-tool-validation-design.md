@@ -1,15 +1,15 @@
 # ae-cli Doctor Tool Validation Design
 
-**Date:** 2026-06-01  
-**Status:** Proposed design, not yet implemented  
-**Scope:** `ae-cli/`, `docs/`  
-**Related:**  
+**Date:** 2026-06-01
+**Status:** Updated implementation contract
+**Scope:** `ae-cli/`, `docs/`
+**Related:**
 - [2026-05-19-ae-cli-deterministic-tool-configuration-design.md](./2026-05-19-ae-cli-deterministic-tool-configuration-design.md)
 - [2026-05-23-global-git-hooks-design.md](./2026-05-23-global-git-hooks-design.md)
 - [2026-05-26-ae-cli-post-commit-async-attribution-sync-design.md](./2026-05-26-ae-cli-post-commit-async-attribution-sync-design.md)
 - [docs/architecture.md](../../architecture.md)
 
-The current project-level architecture remains documented in [`docs/architecture.md`](../../architecture.md). This document defines the next `ae-cli doctor` diagnostic contract and does not claim the behavior already exists.
+The current project-level architecture remains documented in [`docs/architecture.md`](../../architecture.md). This document defines the active `ae-cli doctor` diagnostic contract for this implementation branch.
 
 ## Spec Relationship
 
@@ -38,7 +38,7 @@ That creates two blind spots:
 
 ## Non-Goals
 
-1. Do not add a `--live-tools` flag. Tool probing is part of the default human-run `ae-cli doctor`.
+1. Do not add a `--live-tools` flag. Real local CLI probing is optional and is triggered by the explicit `--probe-tools` flag.
 2. Do not call `/api/v1/user/providers/:id/test` for doctor tool readiness.
 3. Do not rewrite local tool configuration from doctor. Configuration writes remain owned by `ae-cli discover`.
 4. Do not print credential values, API keys, tokens, or full config snippets containing secrets.
@@ -54,13 +54,23 @@ Tool configuration
 Tool probe
 ```
 
-The command remains a single default diagnostic:
+The default command validates local configuration and repository readiness without executing Codex, Claude, or Gemini:
 
 ```bash
 ae-cli doctor
 ```
 
-No new flag is required to run local tool probes.
+Default output must make the skipped live probe explicit:
+
+```text
+Tool probe: skipped [warn] (use --probe-tools to run local CLI probes)
+```
+
+Real local CLI probes run only when the user opts in:
+
+```bash
+ae-cli doctor --probe-tools
+```
 
 ## Tool Detection
 
@@ -144,11 +154,11 @@ Validate:
 - The selected shell rc file sources `~/.ae-cli/env.sh`.
 - If provider contract data is available, the configured Gemini base URL and `GEMINI_API_KEY` match the selected `gemini` credential.
 
-Doctor should parse the managed env file itself and pass those variables to the Gemini probe process, so a current shell that has not sourced the rc file can still be diagnosed accurately.
+When `--probe-tools` is used, doctor should parse the managed env file itself and pass those variables to the Gemini probe process, so a current shell that has not sourced the rc file can still be diagnosed accurately.
 
 ## Tool Probe
 
-Doctor runs a short, non-interactive probe for each installed and configured CLI-backed tool.
+When `--probe-tools` is set, doctor runs a short, non-interactive probe for each installed and configured CLI-backed tool.
 
 Prompt:
 
@@ -166,12 +176,14 @@ gemini --prompt "Reply exactly: AE_DOCTOR_OK" --output-format text --skip-trust
 
 Rules:
 
-1. Each probe gets an independent timeout. The initial doctor timeout should be `60s`.
-2. A zero exit code with non-empty stdout is success.
-3. A non-zero exit code, timeout, or empty stdout is a diagnostic failure for that tool.
-4. Doctor prints a bounded excerpt of stderr or stdout on failure, with secret redaction applied.
-5. Doctor does not require an exact `AE_DOCTOR_OK` match because model output can include formatting or quotes. Exact-match validation may be added later if it proves stable.
-6. Probe execution must not request permissions, open interactive sessions, or rely on a TTY.
+1. Default `ae-cli doctor` must not run these commands.
+2. Each opt-in probe gets an independent timeout. The initial doctor timeout should be `60s`.
+3. Doctor prints a visible `running timeout=<duration>` line before starting each probe so the user can see which long-running command is active.
+4. A zero exit code with non-empty stdout is success.
+5. A non-zero exit code, timeout, or empty stdout is a diagnostic failure for that tool.
+6. Doctor prints a bounded excerpt of stderr or stdout on failure, with secret redaction applied.
+7. Doctor does not require an exact `AE_DOCTOR_OK` match because model output can include formatting or quotes. Exact-match validation may be added later if it proves stable.
+8. Probe execution must not request permissions, open interactive sessions, or rely on a TTY.
 
 ## Repo Eligibility Timeout
 
@@ -206,31 +218,43 @@ Repo Eligibility: unavailable (timeout after 10s)
 Example successful shape:
 
 ```text
+Sessionless attribution doctor
+  Logged In:     true [ok]
+  State Exists:  true [ok]
+
 Tool configuration
   provider: sub2api source=user/providers
-  codex:  ok config=/Users/alice/.codex/config.toml auth=present base_url=match credential=match model=gpt-5.5 model_contract=mismatch(expected=gpt-5.4)
-  claude: ok settings=/Users/alice/.claude/settings.json base_url=match credential=match
-  gemini: ok env=/Users/alice/.ae-cli/env.sh shell_rc=/Users/alice/.zshrc base_url=match credential=match
+  [warn] codex: warn config=/Users/alice/.codex/config.toml auth=present base_url=match credential=match model=gpt-5.5 model_contract=mismatch(expected=gpt-5.4)
+  [ok] claude: ok settings=/Users/alice/.claude/settings.json base_url=match credential=match
+  [ok] gemini: ok env=/Users/alice/.ae-cli/env.sh shell_rc=/Users/alice/.zshrc base_url=match credential=match
 
-Tool probe
-  codex:  ok duration=4.2s output=AE_DOCTOR_OK
-  claude: ok duration=3.8s output=AE_DOCTOR_OK
-  gemini: ok duration=5.1s output=AE_DOCTOR_OK
+Tool probe: skipped [warn] (use --probe-tools to run local CLI probes)
 ```
+
+With opt-in probes:
+
+```text
+Tool probe [running]
+  [running] codex: running timeout=1m0s
+  [ok] codex: ok duration=4.2s output=AE_DOCTOR_OK
+  [running] claude: running timeout=1m0s
+  [ok] claude: ok duration=3.8s output=AE_DOCTOR_OK
+  [running] gemini: running timeout=1m0s
+  [ok] gemini: ok duration=5.1s output=AE_DOCTOR_OK
+```
+
+Status badges should be colored on interactive terminals and when `CLICOLOR_FORCE` is set. `NO_COLOR` disables ANSI color. Non-interactive logs keep plain `[ok]`, `[warn]`, `[failed]`, and `[running]` badges.
 
 Example partial failure:
 
 ```text
 Tool configuration
   provider: sub2api source=user/providers
-  codex:  ok config=/Users/alice/.codex/config.toml auth=present base_url=match credential=match
-  claude: failed settings missing env.ANTHROPIC_AUTH_TOKEN
-  gemini: failed executable not found credential=present
+  [ok] codex: ok config=/Users/alice/.codex/config.toml auth=present base_url=match credential=match
+  [failed] claude: failed settings missing env.ANTHROPIC_AUTH_TOKEN
+  [failed] gemini: failed executable not found credential=present
 
-Tool probe
-  codex:  ok duration=4.2s output=AE_DOCTOR_OK
-  claude: skipped configuration failed
-  gemini: skipped executable not found
+Tool probe: skipped [warn] (use --probe-tools to run local CLI probes)
 ```
 
 ## Error Handling
@@ -254,10 +278,13 @@ Add focused tests for:
 4. Gemini env parsing and child process environment injection.
 5. Provider contract matching for base URLs and credentials without secret output.
 6. Missing executable reported as failed when a matching credential exists, and skipped when no matching credential exists.
-7. Tool probe success using fake executables.
-8. Tool probe timeout using a fake executable that sleeps.
-9. Secret redaction in failure output.
-10. Doctor repo eligibility uses the doctor timeout, not the hook timeout.
+7. Default doctor skips real tool probes and does not call the probe runner.
+8. `doctor --probe-tools` prints `running` before each probe result.
+9. Tool probe success using fake executables.
+10. Tool probe timeout using a fake executable that sleeps.
+11. Secret redaction in failure output.
+12. Doctor status output uses visible status badges and colors when enabled.
+13. Doctor repo eligibility uses the doctor timeout, not the hook timeout.
 
 Default test command:
 

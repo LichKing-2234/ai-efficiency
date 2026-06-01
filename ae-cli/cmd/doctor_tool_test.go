@@ -14,7 +14,7 @@ import (
 	"github.com/ai-efficiency/ae-cli/internal/doctorcheck"
 )
 
-func TestDoctorPrintsToolConfigurationAndProbe(t *testing.T) {
+func TestDoctorSkipsToolProbeByDefault(t *testing.T) {
 	repo := initRepoWithCommitForCmdTests(t)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -26,6 +26,8 @@ func TestDoctorPrintsToolConfigurationAndProbe(t *testing.T) {
 	oldList := listProvidersForDoctor
 	oldDetect := detectToolsForDoctor
 	oldProbe := probeToolsForDoctor
+	oldProbeTools := doctorProbeTools
+	doctorProbeTools = false
 	cfg = &config.Config{Server: config.ServerConfig{URL: "https://ae.example.com", Token: "tok"}}
 	apiClient = nil
 	listProvidersForDoctor = func(context.Context) ([]client.ProviderInfo, string, error) {
@@ -39,14 +41,8 @@ func TestDoctorPrintsToolConfigurationAndProbe(t *testing.T) {
 		}, nil
 	}
 	probeToolsForDoctor = func(ctx context.Context, opts doctorcheck.ProbeOptions) []doctorcheck.ProbeResult {
-		if opts.Timeout != time.Minute {
-			t.Fatalf("probe timeout = %s, want 1m", opts.Timeout)
-		}
-		return []doctorcheck.ProbeResult{
-			{Name: "codex", Status: doctorcheck.StatusOK, Duration: time.Millisecond, Output: "AE_DOCTOR_OK"},
-			{Name: "claude", Status: doctorcheck.StatusOK, Duration: time.Millisecond, Output: "AE_DOCTOR_OK"},
-			{Name: "gemini", Status: doctorcheck.StatusOK, Duration: time.Millisecond, Output: "AE_DOCTOR_OK"},
-		}
+		t.Fatal("probeToolsForDoctor should not run unless --probe-tools is set")
+		return nil
 	}
 	t.Cleanup(func() {
 		cfg = oldCfg
@@ -54,6 +50,7 @@ func TestDoctorPrintsToolConfigurationAndProbe(t *testing.T) {
 		listProvidersForDoctor = oldList
 		detectToolsForDoctor = oldDetect
 		probeToolsForDoctor = oldProbe
+		doctorProbeTools = oldProbeTools
 	})
 
 	buf := &bytes.Buffer{}
@@ -70,24 +67,25 @@ func TestDoctorPrintsToolConfigurationAndProbe(t *testing.T) {
 		"codex:",
 		"[warn] codex: warn",
 		"credential=match",
-		"Tool probe",
-		"output=AE_DOCTOR_OK",
+		"Tool probe: skipped",
+		"use --probe-tools to run local CLI probes",
 	} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("doctor output missing %q:\n%s", want, output)
 		}
+	}
+	if strings.Contains(output, "AE_DOCTOR_OK") {
+		t.Fatalf("doctor output shows probe result even though probe was skipped:\n%s", output)
 	}
 	if strings.Contains(output, "sk-openai") || strings.Contains(output, "sk-anthropic") || strings.Contains(output, "sk-gemini") {
 		t.Fatalf("doctor output leaked credential:\n%s", output)
 	}
 }
 
-func TestDoctorPrintsProbeProgressAndColorWhenForced(t *testing.T) {
+func TestDoctorPrintsProbeProgressWhenEnabled(t *testing.T) {
 	repo := initRepoWithCommitForCmdTests(t)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	t.Setenv("NO_COLOR", "")
-	t.Setenv("CLICOLOR_FORCE", "1")
 	withWorkingDir(t, repo)
 	writeDoctorToolFiles(t, home)
 
@@ -96,6 +94,8 @@ func TestDoctorPrintsProbeProgressAndColorWhenForced(t *testing.T) {
 	oldList := listProvidersForDoctor
 	oldDetect := detectToolsForDoctor
 	oldProbe := probeToolsForDoctor
+	oldProbeTools := doctorProbeTools
+	doctorProbeTools = true
 	cfg = &config.Config{Server: config.ServerConfig{URL: "https://ae.example.com", Token: "tok"}}
 	apiClient = nil
 	listProvidersForDoctor = func(context.Context) ([]client.ProviderInfo, string, error) {
@@ -122,6 +122,7 @@ func TestDoctorPrintsProbeProgressAndColorWhenForced(t *testing.T) {
 		listProvidersForDoctor = oldList
 		detectToolsForDoctor = oldDetect
 		probeToolsForDoctor = oldProbe
+		doctorProbeTools = oldProbeTools
 	})
 
 	buf := &bytes.Buffer{}
@@ -143,8 +144,80 @@ func TestDoctorPrintsProbeProgressAndColorWhenForced(t *testing.T) {
 	if strings.Index(output, running) > strings.Index(output, done) {
 		t.Fatalf("running status printed after result:\n%s", output)
 	}
+	if strings.Contains(output, "Tool probe: skipped") {
+		t.Fatalf("doctor output skipped probe even though probe was enabled:\n%s", output)
+	}
+}
+
+func TestDoctorPrintsStatusColorsWhenForced(t *testing.T) {
+	repo := initRepoWithCommitForCmdTests(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("NO_COLOR", "")
+	t.Setenv("CLICOLOR_FORCE", "1")
+	withWorkingDir(t, repo)
+	writeDoctorToolFiles(t, home)
+
+	oldCfg := cfg
+	oldClient := apiClient
+	oldList := listProvidersForDoctor
+	oldDetect := detectToolsForDoctor
+	oldProbe := probeToolsForDoctor
+	oldProbeTools := doctorProbeTools
+	doctorProbeTools = false
+	cfg = &config.Config{Server: config.ServerConfig{URL: "https://ae.example.com", Token: "tok"}}
+	apiClient = nil
+	listProvidersForDoctor = func(context.Context) ([]client.ProviderInfo, string, error) {
+		return []client.ProviderInfo{doctorProviderInfo()}, "user/providers", nil
+	}
+	detectToolsForDoctor = func([]string) ([]doctorcheck.ToolState, error) {
+		return []doctorcheck.ToolState{
+			{Name: "codex", ExecutablePath: "/bin/codex", Version: "codex 1", Probeable: true},
+		}, nil
+	}
+	probeToolsForDoctor = func(ctx context.Context, opts doctorcheck.ProbeOptions) []doctorcheck.ProbeResult {
+		t.Fatal("probeToolsForDoctor should not run unless --probe-tools is set")
+		return nil
+	}
+	t.Cleanup(func() {
+		cfg = oldCfg
+		apiClient = oldClient
+		listProvidersForDoctor = oldList
+		detectToolsForDoctor = oldDetect
+		probeToolsForDoctor = oldProbe
+		doctorProbeTools = oldProbeTools
+	})
+
+	buf := &bytes.Buffer{}
+	doctorCmd.SetOut(buf)
+	doctorCmd.SetErr(buf)
+	if err := doctorCmd.RunE(doctorCmd, nil); err != nil {
+		t.Fatalf("doctor: %v", err)
+	}
+
+	output := buf.String()
 	if !strings.Contains(output, "\x1b[") {
 		t.Fatalf("doctor output missing ANSI color codes:\n%s", output)
+	}
+	for _, want := range []string{
+		"Logged In:     true \x1b[32m[ok]\x1b[0m",
+		"State Exists:  false \x1b[33m[warn]\x1b[0m",
+		"Tool probe: skipped \x1b[33m[warn]\x1b[0m",
+		"Repo Eligibility: skipped \x1b[33m[warn]\x1b[0m",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("doctor output missing colored status %q:\n%s", want, output)
+		}
+	}
+}
+
+func TestDoctorRegistersProbeToolsFlag(t *testing.T) {
+	flag := doctorCmd.Flags().Lookup("probe-tools")
+	if flag == nil {
+		t.Fatal("doctor --probe-tools flag is not registered")
+	}
+	if flag.DefValue != "false" {
+		t.Fatalf("--probe-tools default = %q, want false", flag.DefValue)
 	}
 }
 

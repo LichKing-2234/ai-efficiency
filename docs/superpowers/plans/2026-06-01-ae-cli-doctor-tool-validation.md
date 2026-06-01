@@ -1558,3 +1558,59 @@ CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X github.com/ai-efficiency/ae-
 ```
 
 Expected: installed binary prints the local dev version, `doctor` prints visible `running` lines during tool probes, tool probe results return, and no secrets appear in output.
+
+## Follow-up 2026-06-01: Optional Real Tool Probes
+
+**Status:** Full ae-cli tests pass; local install refresh still pending.
+
+**Files:**
+- Modify: `ae-cli/cmd/doctor.go`
+- Modify: `ae-cli/cmd/doctor_tool_test.go`
+- Modify: `docs/superpowers/specs/2026-06-01-ae-cli-doctor-tool-validation-design.md`
+
+- [x] **Step 1: Write failing tests for optional probes and broader status color**
+
+Run:
+
+```bash
+cd ae-cli && go test ./cmd -run 'DoctorSkipsToolProbeByDefault|DoctorPrintsProbeProgressWhenEnabled|DoctorPrintsStatusColorsWhenForced|DoctorRegistersProbeToolsFlag' -count=1
+```
+
+Expected: FAIL before implementation because `doctorProbeTools` and `--probe-tools` do not exist yet.
+
+- [x] **Step 2: Implement `--probe-tools` and status badges**
+
+Default `ae-cli doctor` skips real Codex, Claude, and Gemini CLI execution and prints explicit skipped guidance. `ae-cli doctor --probe-tools` runs the real local probes and keeps the visible `running` lines. Other doctor status lines get `[ok]`, `[warn]`, `[failed]`, or `[running]` badges with ANSI color when enabled.
+
+- [x] **Step 3: Run focused tests**
+
+Run:
+
+```bash
+cd ae-cli && go test ./cmd -run 'DoctorSkipsToolProbeByDefault|DoctorPrintsProbeProgressWhenEnabled|DoctorPrintsStatusColorsWhenForced|DoctorRegistersProbeToolsFlag' -count=1
+```
+
+Expected: PASS.
+
+- [x] **Step 4: Run full ae-cli tests**
+
+Run:
+
+```bash
+cd ae-cli && go test ./...
+```
+
+Expected: PASS.
+
+- [ ] **Step 5: Rebuild local install and verify default doctor output**
+
+Run:
+
+```bash
+cd ae-cli
+CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X github.com/ai-efficiency/ae-cli/internal/buildinfo.Version=v0.1.0-dev.<short-sha>" -o ~/.local/bin/ae-cli .
+~/.local/bin/ae-cli version
+~/.local/bin/ae-cli doctor
+```
+
+Expected: installed binary prints the local dev version, default `doctor` prints `Tool probe: skipped` and does not run real local CLI probes.

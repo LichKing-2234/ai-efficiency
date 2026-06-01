@@ -33,6 +33,8 @@ var probeToolsForDoctor = doctorcheck.ProbeTools
 
 var doctorRepoEligibilityTimeout = 10 * time.Second
 
+var doctorProbeTools bool
+
 var doctorCmd = &cobra.Command{
 	Use:   "doctor",
 	Short: "Inspect sessionless attribution readiness for the current repo",
@@ -47,17 +49,18 @@ var doctorCmd = &cobra.Command{
 		}
 		token := resolveToken(configToken, "")
 		out := cmd.OutOrStdout()
+		style := doctorOutputStyleFor(out)
 		fmt.Fprintf(out, "Sessionless attribution doctor\n")
 		fmt.Fprintf(out, "  Repo:          %s\n", ctx.repoRoot)
 		fmt.Fprintf(out, "  Workspace ID:  %s\n", ctx.workspaceID)
 		fmt.Fprintf(out, "  Git Dir:       %s\n", ctx.gitDir)
 		fmt.Fprintf(out, "  Git Common:    %s\n", ctx.gitCommonDir)
 		fmt.Fprintf(out, "  State Dir:     %s\n", ctx.attributionRoot)
-		fmt.Fprintf(out, "  Logged In:     %t\n", token != "")
+		fmt.Fprintf(out, "  Logged In:     %s\n", formatDoctorBool(style, token != "", doctorcheck.StatusOK, "warn"))
 		if _, err := os.Stat(ctx.attributionRoot); err == nil {
-			fmt.Fprintf(out, "  State Exists:  true\n")
+			fmt.Fprintf(out, "  State Exists:  %s\n", formatDoctorBool(style, true, doctorcheck.StatusOK, "warn"))
 		} else if os.IsNotExist(err) {
-			fmt.Fprintf(out, "  State Exists:  false\n")
+			fmt.Fprintf(out, "  State Exists:  %s\n", formatDoctorBool(style, false, doctorcheck.StatusOK, "warn"))
 		} else {
 			return fmt.Errorf("stat attribution state dir: %w", err)
 		}
@@ -69,7 +72,7 @@ var doctorCmd = &cobra.Command{
 			return fmt.Errorf("load sync task: %w", err)
 		}
 		if recovered {
-			fmt.Fprintln(out, "Sync Task: corrupt sync task moved aside")
+			fmt.Fprintf(out, "Sync Task: corrupt sync task moved aside %s\n", style.badge("warn"))
 		}
 		if task != nil {
 			var runnerRecovered bool
@@ -78,7 +81,7 @@ var doctorCmd = &cobra.Command{
 				return fmt.Errorf("recover inactive sync runner: %w", err)
 			}
 			if runnerRecovered {
-				fmt.Fprintln(out, "Sync Task: inactive runner recovered")
+				fmt.Fprintf(out, "Sync Task: inactive runner recovered %s\n", style.badge("warn"))
 			}
 		}
 		printSyncTaskStatus(out, task)
@@ -127,7 +130,11 @@ func printToolDiagnostics(out io.Writer) {
 	for i := range report.Results {
 		fmt.Fprintf(out, "  %s\n", formatDoctorConfigResult(style, &report.Results[i]))
 	}
-	fmt.Fprintln(out, "Tool probe")
+	if !doctorProbeTools {
+		fmt.Fprintf(out, "Tool probe: skipped %s (use --probe-tools to run local CLI probes)\n", style.badge("warn"))
+		return
+	}
+	fmt.Fprintf(out, "Tool probe %s\n", style.badge("running"))
 	printedResults := map[string]bool{}
 	probeResults := probeToolsForDoctor(context.Background(), doctorcheck.ProbeOptions{
 		Timeout: time.Minute,
@@ -174,6 +181,14 @@ func doctorColorEnabledForOutput(out io.Writer) bool {
 		return false
 	}
 	return info.Mode()&os.ModeCharDevice != 0
+}
+
+func formatDoctorBool(style doctorOutputStyle, value bool, trueStatus string, falseStatus string) string {
+	status := falseStatus
+	if value {
+		status = trueStatus
+	}
+	return fmt.Sprintf("%t %s", value, style.badge(status))
 }
 
 func formatDoctorConfigResult(style doctorOutputStyle, result *doctorcheck.ConfigResult) string {
@@ -283,13 +298,14 @@ func doctorToolVersion(path string) string {
 }
 
 func printRepoEligibilityDiagnostic(out io.Writer) {
+	style := doctorOutputStyleFor(out)
 	gitCtx, err := hooks.DetectGitContext(".")
 	if err != nil {
-		fmt.Fprintf(out, "Repo Eligibility: unavailable (%v)\n", err)
+		fmt.Fprintf(out, "Repo Eligibility: unavailable %s (%v)\n", style.badge(doctorcheck.StatusFailed), err)
 		return
 	}
 	if apiClient == nil || strings.TrimSpace(apiClient.AuthToken()) == "" {
-		fmt.Fprintf(out, "Repo Eligibility: skipped (not logged in)\n")
+		fmt.Fprintf(out, "Repo Eligibility: skipped %s (not logged in)\n", style.badge("warn"))
 		return
 	}
 	started := time.Now()
@@ -303,27 +319,28 @@ func printRepoEligibilityDiagnostic(out io.Writer) {
 	duration := time.Since(started).Round(time.Millisecond)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
-			fmt.Fprintf(out, "Repo Eligibility: unavailable (timeout after %s)\n", doctorRepoEligibilityTimeout)
+			fmt.Fprintf(out, "Repo Eligibility: unavailable %s (timeout after %s)\n", style.badge(doctorcheck.StatusFailed), doctorRepoEligibilityTimeout)
 			return
 		}
-		fmt.Fprintf(out, "Repo Eligibility: unavailable (%v, duration=%s)\n", err, duration)
+		fmt.Fprintf(out, "Repo Eligibility: unavailable %s (%v, duration=%s)\n", style.badge(doctorcheck.StatusFailed), err, duration)
 		return
 	}
 	if resp != nil && resp.Eligible && resp.RepoConfigID > 0 {
-		fmt.Fprintf(out, "Repo Eligibility: eligible (repo_config_id=%d, duration=%s)\n", resp.RepoConfigID, duration)
+		fmt.Fprintf(out, "Repo Eligibility: eligible %s (repo_config_id=%d, duration=%s)\n", style.badge(doctorcheck.StatusOK), resp.RepoConfigID, duration)
 		return
 	}
 	reason := "not_found"
 	if resp != nil && strings.TrimSpace(resp.Reason) != "" {
 		reason = strings.TrimSpace(resp.Reason)
 	}
-	fmt.Fprintf(out, "Repo Eligibility: ineligible (%s, duration=%s)\n", reason, duration)
+	fmt.Fprintf(out, "Repo Eligibility: ineligible %s (%s, duration=%s)\n", style.badge(doctorcheck.StatusFailed), reason, duration)
 }
 
 func printHookStatus(out io.Writer, status *hooks.Status) {
 	if status == nil {
 		return
 	}
+	style := doctorOutputStyleFor(out)
 	global := "disabled"
 	if status.GlobalEnabled {
 		global = "enabled"
@@ -349,17 +366,17 @@ func printHookStatus(out io.Writer, status *hooks.Status) {
 		defaultHooks = fmt.Sprintf("%s (%s)", status.DefaultHooksDisposition, strings.Join(status.DefaultExecutableHooks, ", "))
 	}
 	fmt.Fprintf(out, "Hook status\n")
-	fmt.Fprintf(out, "  Global:        %s\n", global)
-	fmt.Fprintf(out, "  Repo-local:    %s\n", repo)
-	fmt.Fprintf(out, "  Effective:     %s\n", status.EffectiveMode)
+	fmt.Fprintf(out, "  Global:        %s %s\n", global, style.badge(enabledStatus(global == "enabled")))
+	fmt.Fprintf(out, "  Repo-local:    %s %s\n", repo, style.badge(enabledStatus(repo == "enabled")))
+	fmt.Fprintf(out, "  Effective:     %s %s\n", status.EffectiveMode, style.badge(effectiveModeStatus(string(status.EffectiveMode))))
 	fmt.Fprintf(out, "  Scope:         %s\n", status.EffectiveScope)
 	fmt.Fprintf(out, "  Binary:        %s\n", status.BinaryPath)
-	fmt.Fprintf(out, "  AE_CLI_BIN:    %s\n", override)
-	fmt.Fprintf(out, "  Template:      %s\n", template)
-	fmt.Fprintf(out, "  Context:       %s\n", status.ContextFingerprint)
-	fmt.Fprintf(out, "  Observed Repo: %s\n", status.ObservedRepo)
-	fmt.Fprintf(out, "  Default Hooks: %s\n", defaultHooks)
-	fmt.Fprintf(out, "  Eligibility:   %s\n", status.EligibilityCache)
+	fmt.Fprintf(out, "  AE_CLI_BIN:    %s %s\n", override, style.badge(doctorcheck.StatusOK))
+	fmt.Fprintf(out, "  Template:      %s %s\n", template, style.badge(templateStatus(status.TemplateVersion, status.TemplateStale)))
+	fmt.Fprintf(out, "  Context:       %s %s\n", status.ContextFingerprint, style.badge(contextStatus(status.ContextFingerprint)))
+	fmt.Fprintf(out, "  Observed Repo: %s %s\n", status.ObservedRepo, style.badge(observedRepoStatus(status.ObservedRepo)))
+	fmt.Fprintf(out, "  Default Hooks: %s %s\n", defaultHooks, style.badge(defaultHooksStatus(status.DefaultHooksDisposition)))
+	fmt.Fprintf(out, "  Eligibility:   %s %s\n", status.EligibilityCache, style.badge(eligibilityCacheStatus(status.EligibilityCache)))
 	if len(status.UploadGroups) > 0 {
 		fmt.Fprintf(out, "Uploads:\n")
 		for _, group := range status.UploadGroups {
@@ -389,11 +406,12 @@ func printHookStatus(out io.Writer, status *hooks.Status) {
 }
 
 func printSyncTaskStatus(out io.Writer, task *hooks.SyncTask) {
+	style := doctorOutputStyleFor(out)
 	if task == nil {
-		fmt.Fprintln(out, "Sync Task: none")
+		fmt.Fprintf(out, "Sync Task: none %s\n", style.badge(doctorcheck.StatusOK))
 		return
 	}
-	fmt.Fprintf(out, "Sync Task: %s\n", task.Status)
+	fmt.Fprintf(out, "Sync Task: %s %s\n", task.Status, style.badge(syncTaskStatus(task)))
 	fmt.Fprintf(out, "  last_requested_at: %s\n", task.LastRequestedAt.UTC().Format(time.RFC3339))
 	if task.LastStartedAt != nil {
 		fmt.Fprintf(out, "  last_started_at: %s\n", task.LastStartedAt.UTC().Format(time.RFC3339))
@@ -410,6 +428,88 @@ func printSyncTaskStatus(out io.Writer, task *hooks.SyncTask) {
 	}
 }
 
+func enabledStatus(enabled bool) string {
+	if enabled {
+		return doctorcheck.StatusOK
+	}
+	return "warn"
+}
+
+func effectiveModeStatus(mode string) string {
+	switch strings.TrimSpace(mode) {
+	case "ae_global", "ae_repo":
+		return doctorcheck.StatusOK
+	case "":
+		return "warn"
+	default:
+		return "warn"
+	}
+}
+
+func templateStatus(version int, stale bool) string {
+	if version <= 0 || stale {
+		return "warn"
+	}
+	return doctorcheck.StatusOK
+}
+
+func contextStatus(value string) string {
+	switch strings.TrimSpace(value) {
+	case "", "unstable":
+		return "warn"
+	default:
+		return doctorcheck.StatusOK
+	}
+}
+
+func observedRepoStatus(value string) string {
+	switch strings.TrimSpace(value) {
+	case "bound":
+		return doctorcheck.StatusOK
+	case "":
+		return "warn"
+	default:
+		return "warn"
+	}
+}
+
+func defaultHooksStatus(disposition string) string {
+	switch strings.TrimSpace(disposition) {
+	case "", "none", "bypassed":
+		return doctorcheck.StatusOK
+	default:
+		return "warn"
+	}
+}
+
+func eligibilityCacheStatus(value string) string {
+	trimmed := strings.TrimSpace(value)
+	switch {
+	case strings.HasPrefix(trimmed, "eligible"):
+		return doctorcheck.StatusOK
+	case trimmed == "", trimmed == "missing":
+		return "warn"
+	default:
+		return "warn"
+	}
+}
+
+func syncTaskStatus(task *hooks.SyncTask) string {
+	if task == nil {
+		return doctorcheck.StatusOK
+	}
+	if strings.TrimSpace(task.LastError) != "" {
+		return doctorcheck.StatusFailed
+	}
+	switch task.Status {
+	case hooks.SyncTaskStatusRunning, hooks.SyncTaskStatusPending:
+		return "warn"
+	default:
+		return "warn"
+	}
+}
+
 func init() {
+	doctorCmd.Flags().BoolVar(&doctorProbeTools, "probe-tools", false, "run local Codex, Claude, and Gemini CLI probes")
 	rootCmd.AddCommand(doctorCmd)
 }
