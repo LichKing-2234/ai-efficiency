@@ -50,6 +50,42 @@ func TestProbeToolsRunsConfiguredCommands(t *testing.T) {
 	}
 }
 
+func TestProbeToolsReportsStartAndResultCallbacksInOrder(t *testing.T) {
+	events := []string{}
+	runner := &fakeRunner{run: func(ctx context.Context, cmd ProbeCommand) CommandResult {
+		events = append(events, "run:"+cmd.Name)
+		return CommandResult{Stdout: "AE_DOCTOR_OK\n"}
+	}}
+	results := ProbeTools(context.Background(), ProbeOptions{
+		Timeout: 30 * time.Second,
+		Runner:  runner,
+		Configs: []ConfigResult{
+			{Name: "codex", Status: StatusOK, Probeable: true, ExecutablePath: "/bin/codex"},
+			{Name: "claude", Status: StatusOK, Probeable: true, ExecutablePath: "/bin/claude"},
+		},
+		OnStart: func(cfg ConfigResult, timeout time.Duration) {
+			events = append(events, "start:"+cfg.Name+":"+timeout.String())
+		},
+		OnResult: func(result ProbeResult) {
+			events = append(events, "result:"+result.Name+":"+result.Status)
+		},
+	})
+	if len(results) != 2 {
+		t.Fatalf("result count = %d, want 2", len(results))
+	}
+	want := []string{
+		"start:codex:30s",
+		"run:codex",
+		"result:codex:ok",
+		"start:claude:30s",
+		"run:claude",
+		"result:claude:ok",
+	}
+	if strings.Join(events, "|") != strings.Join(want, "|") {
+		t.Fatalf("events = %v, want %v", events, want)
+	}
+}
+
 func TestRedactSecretsDoesNotCorruptCodexApprovalFlag(t *testing.T) {
 	line := RedactSecrets("unexpected argument '--ask-for-approval' found")
 	if strings.Contains(line, "--ask-<redacted>for-approval") {

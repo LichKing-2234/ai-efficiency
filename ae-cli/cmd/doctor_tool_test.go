@@ -68,6 +68,7 @@ func TestDoctorPrintsToolConfigurationAndProbe(t *testing.T) {
 		"Tool configuration",
 		"provider: sub2api source=user/providers",
 		"codex:",
+		"[warn] codex: warn",
 		"credential=match",
 		"Tool probe",
 		"output=AE_DOCTOR_OK",
@@ -78,6 +79,72 @@ func TestDoctorPrintsToolConfigurationAndProbe(t *testing.T) {
 	}
 	if strings.Contains(output, "sk-openai") || strings.Contains(output, "sk-anthropic") || strings.Contains(output, "sk-gemini") {
 		t.Fatalf("doctor output leaked credential:\n%s", output)
+	}
+}
+
+func TestDoctorPrintsProbeProgressAndColorWhenForced(t *testing.T) {
+	repo := initRepoWithCommitForCmdTests(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("NO_COLOR", "")
+	t.Setenv("CLICOLOR_FORCE", "1")
+	withWorkingDir(t, repo)
+	writeDoctorToolFiles(t, home)
+
+	oldCfg := cfg
+	oldClient := apiClient
+	oldList := listProvidersForDoctor
+	oldDetect := detectToolsForDoctor
+	oldProbe := probeToolsForDoctor
+	cfg = &config.Config{Server: config.ServerConfig{URL: "https://ae.example.com", Token: "tok"}}
+	apiClient = nil
+	listProvidersForDoctor = func(context.Context) ([]client.ProviderInfo, string, error) {
+		return []client.ProviderInfo{doctorProviderInfo()}, "user/providers", nil
+	}
+	detectToolsForDoctor = func([]string) ([]doctorcheck.ToolState, error) {
+		return []doctorcheck.ToolState{
+			{Name: "codex", ExecutablePath: "/bin/codex", Version: "codex 1", Probeable: true},
+		}, nil
+	}
+	probeToolsForDoctor = func(ctx context.Context, opts doctorcheck.ProbeOptions) []doctorcheck.ProbeResult {
+		result := doctorcheck.ProbeResult{Name: "codex", Status: doctorcheck.StatusOK, Duration: time.Millisecond, Output: "AE_DOCTOR_OK"}
+		if opts.OnStart != nil {
+			opts.OnStart(opts.Configs[0], opts.Timeout)
+		}
+		if opts.OnResult != nil {
+			opts.OnResult(result)
+		}
+		return []doctorcheck.ProbeResult{result}
+	}
+	t.Cleanup(func() {
+		cfg = oldCfg
+		apiClient = oldClient
+		listProvidersForDoctor = oldList
+		detectToolsForDoctor = oldDetect
+		probeToolsForDoctor = oldProbe
+	})
+
+	buf := &bytes.Buffer{}
+	doctorCmd.SetOut(buf)
+	doctorCmd.SetErr(buf)
+	if err := doctorCmd.RunE(doctorCmd, nil); err != nil {
+		t.Fatalf("doctor: %v", err)
+	}
+
+	output := buf.String()
+	running := "codex: running timeout=1m0s"
+	done := "codex: ok duration=1ms output=AE_DOCTOR_OK"
+	if !strings.Contains(output, running) {
+		t.Fatalf("doctor output missing running status %q:\n%s", running, output)
+	}
+	if !strings.Contains(output, done) {
+		t.Fatalf("doctor output missing result status %q:\n%s", done, output)
+	}
+	if strings.Index(output, running) > strings.Index(output, done) {
+		t.Fatalf("running status printed after result:\n%s", output)
+	}
+	if !strings.Contains(output, "\x1b[") {
+		t.Fatalf("doctor output missing ANSI color codes:\n%s", output)
 	}
 }
 

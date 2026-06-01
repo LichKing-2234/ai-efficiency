@@ -1500,3 +1500,61 @@ Expected:
 - Spec coverage: Tasks 1-4 cover tool detection, provider contract validation, config validation, local command probing, redaction, and no `--live-tools`; Task 5 covers doctor-specific repo eligibility timeout and duration output; Task 6 covers full verification.
 - The plan keeps `/api/v1/user/providers/:id/test` out of doctor and uses only local `codex`, `claude`, and `gemini` commands for probes.
 - The plan intentionally keeps doctor as a diagnostic command that prints failures but returns non-zero only for existing unrecoverable doctor setup errors.
+
+## Follow-up 2026-06-01: Visible Progress and Colored Status
+
+**Status:** Full ae-cli tests pass; local install refresh still pending.
+
+**Files:**
+- Modify: `ae-cli/internal/doctorcheck/probe.go`
+- Modify: `ae-cli/internal/doctorcheck/probe_test.go`
+- Modify: `ae-cli/cmd/doctor.go`
+- Modify: `ae-cli/cmd/doctor_tool_test.go`
+
+- [x] **Step 1: Write failing tests for probe progress callbacks and colored doctor output**
+
+Run:
+
+```bash
+cd ae-cli && go test ./internal/doctorcheck -run 'ProbeToolsReportsStartAndResultCallbacksInOrder' -count=1
+cd ae-cli && go test ./cmd -run 'DoctorPrintsProbeProgressAndColorWhenForced' -count=1
+```
+
+Expected: FAIL before implementation because `ProbeOptions` does not yet expose progress callbacks and doctor output does not print running/color status.
+
+- [x] **Step 2: Implement progress callbacks and doctor status styling**
+
+Update `ProbeOptions` with start/result callbacks, call them around each local CLI probe, and make `doctor` print `running timeout=<duration>` before each long-running command. Add ANSI color only when stdout is a terminal or `CLICOLOR_FORCE` is set; honor `NO_COLOR`.
+
+- [x] **Step 3: Run focused tests**
+
+Run:
+
+```bash
+cd ae-cli && go test ./internal/doctorcheck ./cmd -run 'ProbeToolsReportsStartAndResultCallbacksInOrder|DoctorPrintsProbeProgressAndColorWhenForced' -count=1
+```
+
+Expected: PASS.
+
+- [x] **Step 4: Run full ae-cli tests**
+
+Run:
+
+```bash
+cd ae-cli && go test ./...
+```
+
+Expected: PASS.
+
+- [ ] **Step 5: Rebuild local install and verify actual doctor output**
+
+Run:
+
+```bash
+cd ae-cli
+CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X github.com/ai-efficiency/ae-cli/internal/buildinfo.Version=v0.1.0-dev.<short-sha>" -o ~/.local/bin/ae-cli .
+~/.local/bin/ae-cli version
+~/.local/bin/ae-cli doctor
+```
+
+Expected: installed binary prints the local dev version, `doctor` prints visible `running` lines during tool probes, tool probe results return, and no secrets appear in output.

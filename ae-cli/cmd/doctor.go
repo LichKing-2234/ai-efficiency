@@ -89,6 +89,7 @@ var doctorCmd = &cobra.Command{
 }
 
 func printToolDiagnostics(out io.Writer) {
+	style := doctorOutputStyleFor(out)
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		fmt.Fprintf(out, "Tool configuration\n  provider: unavailable (%v)\n", err)
@@ -124,15 +125,116 @@ func printToolDiagnostics(out io.Writer) {
 		fmt.Fprintf(out, "  provider: unavailable (%v)\n", providerErr)
 	}
 	for i := range report.Results {
-		fmt.Fprintf(out, "  %s\n", doctorcheck.FormatConfigResult(&report.Results[i]))
+		fmt.Fprintf(out, "  %s\n", formatDoctorConfigResult(style, &report.Results[i]))
 	}
 	fmt.Fprintln(out, "Tool probe")
+	printedResults := map[string]bool{}
 	probeResults := probeToolsForDoctor(context.Background(), doctorcheck.ProbeOptions{
 		Timeout: time.Minute,
 		Configs: report.Results,
+		OnStart: func(cfg doctorcheck.ConfigResult, timeout time.Duration) {
+			fmt.Fprintf(out, "  %s\n", formatDoctorProbeStart(style, cfg.Name, timeout))
+		},
+		OnResult: func(result doctorcheck.ProbeResult) {
+			printedResults[result.Name] = true
+			fmt.Fprintf(out, "  %s\n", formatDoctorProbeResult(style, result))
+		},
 	})
 	for _, result := range probeResults {
-		fmt.Fprintf(out, "  %s\n", doctorcheck.FormatProbeResult(result))
+		if !printedResults[result.Name] {
+			fmt.Fprintf(out, "  %s\n", formatDoctorProbeResult(style, result))
+		}
+	}
+}
+
+type doctorOutputStyle struct {
+	color bool
+}
+
+func doctorOutputStyleFor(out io.Writer) doctorOutputStyle {
+	return doctorOutputStyle{color: doctorColorEnabledForOutput(out)}
+}
+
+func doctorColorEnabledForOutput(out io.Writer) bool {
+	if strings.TrimSpace(os.Getenv("NO_COLOR")) != "" {
+		return false
+	}
+	if colorForce := strings.TrimSpace(os.Getenv("CLICOLOR_FORCE")); colorForce != "" && colorForce != "0" {
+		return true
+	}
+	if strings.TrimSpace(os.Getenv("CLICOLOR")) == "0" {
+		return false
+	}
+	file, ok := out.(*os.File)
+	if !ok {
+		return false
+	}
+	info, err := file.Stat()
+	if err != nil {
+		return false
+	}
+	return info.Mode()&os.ModeCharDevice != 0
+}
+
+func formatDoctorConfigResult(style doctorOutputStyle, result *doctorcheck.ConfigResult) string {
+	status := doctorConfigDisplayStatus(result)
+	line := doctorcheck.FormatConfigResult(result)
+	if result != nil && result.Status != "" && status != result.Status {
+		oldPrefix := result.Name + ": " + result.Status
+		if strings.HasPrefix(line, oldPrefix) {
+			line = result.Name + ": " + status + strings.TrimPrefix(line, oldPrefix)
+		}
+	}
+	return fmt.Sprintf("%s %s", style.badge(status), line)
+}
+
+func formatDoctorProbeStart(style doctorOutputStyle, name string, timeout time.Duration) string {
+	return doctorcheck.RedactSecrets(fmt.Sprintf("%s %s: running timeout=%s", style.badge("running"), name, timeout))
+}
+
+func formatDoctorProbeResult(style doctorOutputStyle, result doctorcheck.ProbeResult) string {
+	return fmt.Sprintf("%s %s", style.badge(result.Status), doctorcheck.FormatProbeResult(result))
+}
+
+func doctorConfigDisplayStatus(result *doctorcheck.ConfigResult) string {
+	if result == nil {
+		return doctorcheck.StatusSkipped
+	}
+	switch result.Status {
+	case doctorcheck.StatusFailed, doctorcheck.StatusSkipped:
+		return result.Status
+	}
+	if result.BaseURLStatus != "" && result.BaseURLStatus != doctorcheck.Match {
+		return "warn"
+	}
+	if result.CredentialStatus != "" && result.CredentialStatus != doctorcheck.CredentialMatch {
+		return "warn"
+	}
+	if result.ModelContract == doctorcheck.Mismatch {
+		return "warn"
+	}
+	if result.SkipReason != "" || len(result.Details) > 0 {
+		return "warn"
+	}
+	return doctorcheck.StatusOK
+}
+
+func (s doctorOutputStyle) badge(status string) string {
+	label := "[" + status + "]"
+	if !s.color {
+		return label
+	}
+	switch status {
+	case doctorcheck.StatusOK:
+		return "\x1b[32m" + label + "\x1b[0m"
+	case "warn", doctorcheck.StatusSkipped:
+		return "\x1b[33m" + label + "\x1b[0m"
+	case doctorcheck.StatusFailed:
+		return "\x1b[31m" + label + "\x1b[0m"
+	case "running":
+		return "\x1b[36m" + label + "\x1b[0m"
+	default:
+		return label
 	}
 }
 

@@ -64,9 +64,11 @@ func (ExecRunner) Run(ctx context.Context, command ProbeCommand) CommandResult {
 }
 
 type ProbeOptions struct {
-	Timeout time.Duration
-	Runner  CommandRunner
-	Configs []ConfigResult
+	Timeout  time.Duration
+	Runner   CommandRunner
+	Configs  []ConfigResult
+	OnStart  func(ConfigResult, time.Duration)
+	OnResult func(ProbeResult)
 }
 
 type ProbeResult struct {
@@ -93,14 +95,25 @@ func ProbeTools(ctx context.Context, opts ProbeOptions) []ProbeResult {
 			if reason == "" {
 				reason = "configuration failed"
 			}
-			results = append(results, ProbeResult{Name: cfg.Name, Status: StatusSkipped, Message: reason})
+			result := ProbeResult{Name: cfg.Name, Status: StatusSkipped, Message: reason}
+			results = append(results, result)
+			if opts.OnResult != nil {
+				opts.OnResult(result)
+			}
 			continue
 		}
 		command := probeCommand(cfg)
 		probeCtx, cancel := context.WithTimeout(ctx, timeout)
+		if opts.OnStart != nil {
+			opts.OnStart(cfg, timeout)
+		}
 		result := runner.Run(probeCtx, command)
 		cancel()
-		results = append(results, classifyProbeResult(cfg.Name, result, timeout))
+		probeResult := classifyProbeResult(cfg.Name, result, timeout)
+		results = append(results, probeResult)
+		if opts.OnResult != nil {
+			opts.OnResult(probeResult)
+		}
 	}
 	return results
 }
