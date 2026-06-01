@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -29,6 +30,8 @@ var listProvidersForDoctor = func(ctx context.Context) ([]client.ProviderInfo, s
 var detectToolsForDoctor = detectDoctorTools
 
 var probeToolsForDoctor = doctorcheck.ProbeTools
+
+var doctorRepoEligibilityTimeout = 10 * time.Second
 
 var doctorCmd = &cobra.Command{
 	Use:   "doctor",
@@ -187,26 +190,32 @@ func printRepoEligibilityDiagnostic(out io.Writer) {
 		fmt.Fprintf(out, "Repo Eligibility: skipped (not logged in)\n")
 		return
 	}
-	resolveCtx, cancel := context.WithTimeout(context.Background(), hookEligibilityResolveTimeout)
+	started := time.Now()
+	resolveCtx, cancel := context.WithTimeout(context.Background(), doctorRepoEligibilityTimeout)
 	defer cancel()
 	resp, err := apiClient.ResolveRepoFromRemote(resolveCtx, client.ResolveRepoRequest{
 		RemoteURL:          gitCtx.RemoteURL,
 		Branch:             gitCtx.Branch,
 		ClientCacheVersion: client.RepoEligibilityVersion,
 	})
+	duration := time.Since(started).Round(time.Millisecond)
 	if err != nil {
-		fmt.Fprintf(out, "Repo Eligibility: unavailable (%v)\n", err)
+		if errors.Is(err, context.DeadlineExceeded) {
+			fmt.Fprintf(out, "Repo Eligibility: unavailable (timeout after %s)\n", doctorRepoEligibilityTimeout)
+			return
+		}
+		fmt.Fprintf(out, "Repo Eligibility: unavailable (%v, duration=%s)\n", err, duration)
 		return
 	}
 	if resp != nil && resp.Eligible && resp.RepoConfigID > 0 {
-		fmt.Fprintf(out, "Repo Eligibility: eligible (repo_config_id=%d)\n", resp.RepoConfigID)
+		fmt.Fprintf(out, "Repo Eligibility: eligible (repo_config_id=%d, duration=%s)\n", resp.RepoConfigID, duration)
 		return
 	}
 	reason := "not_found"
 	if resp != nil && strings.TrimSpace(resp.Reason) != "" {
 		reason = strings.TrimSpace(resp.Reason)
 	}
-	fmt.Fprintf(out, "Repo Eligibility: ineligible (%s)\n", reason)
+	fmt.Fprintf(out, "Repo Eligibility: ineligible (%s, duration=%s)\n", reason, duration)
 }
 
 func printHookStatus(out io.Writer, status *hooks.Status) {

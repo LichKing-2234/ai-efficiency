@@ -1333,7 +1333,7 @@ git commit -m "feat(ae-cli): include tool readiness in doctor"
 - Modify: `ae-cli/cmd/doctor.go`
 - Modify: `ae-cli/cmd/cutover_test.go`
 
-- [ ] **Step 1: Write failing timeout test**
+- [x] **Step 1: Write failing timeout test**
 
 Append this test to `ae-cli/cmd/cutover_test.go`:
 
@@ -1375,7 +1375,7 @@ func TestDoctorRepoEligibilityUsesDoctorTimeout(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run timeout test to verify it fails**
+- [x] **Step 2: Run timeout test to verify it fails**
 
 Run:
 
@@ -1385,7 +1385,7 @@ cd ae-cli && go test ./cmd -run 'DoctorRepoEligibilityUsesDoctorTimeout' -count=
 
 Expected: FAIL with undefined `doctorRepoEligibilityTimeout`, or with timeout because `printRepoEligibilityDiagnostic` still uses `hookEligibilityResolveTimeout`.
 
-- [ ] **Step 3: Implement doctor-specific timeout and duration output**
+- [x] **Step 3: Implement doctor-specific timeout and duration output**
 
 In `ae-cli/cmd/doctor.go`, add:
 
@@ -1421,7 +1421,7 @@ In `printRepoEligibilityDiagnostic`, replace the timeout and add timing:
 
 Also add `errors` to the imports.
 
-- [ ] **Step 4: Run timeout test**
+- [x] **Step 4: Run timeout test**
 
 Run:
 
@@ -1431,7 +1431,7 @@ cd ae-cli && go test ./cmd -run 'DoctorRepoEligibilityUsesDoctorTimeout|DoctorCo
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit timeout slice**
+- [x] **Step 5: Commit timeout slice**
 
 ```bash
 git add ae-cli/cmd/doctor.go ae-cli/cmd/cutover_test.go

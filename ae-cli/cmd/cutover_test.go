@@ -244,6 +244,42 @@ func TestDoctorCommandPrintsWorkspaceIdentity(t *testing.T) {
 	}
 }
 
+func TestDoctorRepoEligibilityUsesDoctorTimeout(t *testing.T) {
+	repo := initRepoWithCommitForCmdTests(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	withWorkingDir(t, repo)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(75 * time.Millisecond)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"code":0,"data":{"eligible":true,"repo_config_id":456,"repo_key":"github.com/acme/repo","status":"active"}}`))
+	}))
+	defer srv.Close()
+
+	oldCfg := cfg
+	oldClient := apiClient
+	oldHookTimeout := hookEligibilityResolveTimeout
+	oldDoctorTimeout := doctorRepoEligibilityTimeout
+	cfg = &config.Config{Server: config.ServerConfig{URL: srv.URL, Token: "tok"}}
+	apiClient = client.New(srv.URL, "tok")
+	hookEligibilityResolveTimeout = 10 * time.Millisecond
+	doctorRepoEligibilityTimeout = 500 * time.Millisecond
+	t.Cleanup(func() {
+		cfg = oldCfg
+		apiClient = oldClient
+		hookEligibilityResolveTimeout = oldHookTimeout
+		doctorRepoEligibilityTimeout = oldDoctorTimeout
+	})
+
+	var buf bytes.Buffer
+	printRepoEligibilityDiagnostic(&buf)
+	output := buf.String()
+	if !strings.Contains(output, "Repo Eligibility: eligible") || !strings.Contains(output, "duration=") {
+		t.Fatalf("output = %q, want eligible with duration", output)
+	}
+}
+
 func TestSyncCommandRequiresLogin(t *testing.T) {
 	repo := initRepoWithCommitForCmdTests(t)
 	home := t.TempDir()
