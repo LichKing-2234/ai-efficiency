@@ -47,6 +47,9 @@ func (ExecRunner) Run(ctx context.Context, command ProbeCommand) CommandResult {
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	err := cmd.Run()
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		err = ctxErr
+	}
 	result := CommandResult{
 		Stdout:   stdout.String(),
 		Stderr:   stderr.String(),
@@ -108,7 +111,7 @@ func probeCommand(cfg ConfigResult) ProbeCommand {
 		return ProbeCommand{
 			Name: "codex",
 			Path: cfg.ExecutablePath,
-			Args: []string{"exec", "--ephemeral", "--sandbox", "read-only", "--ask-for-approval", "never", probePrompt},
+			Args: []string{"--ask-for-approval", "never", "exec", "--ephemeral", "--sandbox", "read-only", probePrompt},
 		}
 	case "claude":
 		return ProbeCommand{

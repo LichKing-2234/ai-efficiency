@@ -39,7 +39,7 @@ func TestProbeToolsRunsConfiguredCommands(t *testing.T) {
 			t.Fatalf("%s status = %s message=%s", result.Name, result.Status, result.Message)
 		}
 	}
-	if runner.calls[0].Args[0] != "exec" {
+	if runner.calls[0].Args[0] != "--ask-for-approval" || runner.calls[0].Args[2] != "exec" {
 		t.Fatalf("codex args = %v", runner.calls[0].Args)
 	}
 	if runner.calls[1].Args[0] != "-p" {
@@ -47,6 +47,16 @@ func TestProbeToolsRunsConfiguredCommands(t *testing.T) {
 	}
 	if runner.calls[2].Env["GEMINI_API_KEY"] != "sk-gemini" {
 		t.Fatalf("gemini env = %+v", runner.calls[2].Env)
+	}
+}
+
+func TestRedactSecretsDoesNotCorruptCodexApprovalFlag(t *testing.T) {
+	line := RedactSecrets("unexpected argument '--ask-for-approval' found")
+	if strings.Contains(line, "--ask-<redacted>for-approval") {
+		t.Fatalf("redaction corrupted flag: %s", line)
+	}
+	if !strings.Contains(line, "--ask-for-approval") {
+		t.Fatalf("redaction removed flag: %s", line)
 	}
 }
 

@@ -732,7 +732,7 @@ func TestProbeToolsRunsConfiguredCommands(t *testing.T) {
 			t.Fatalf("%s status = %s message=%s", result.Name, result.Status, result.Message)
 		}
 	}
-	if runner.calls[0].Args[0] != "exec" {
+	if runner.calls[0].Args[0] != "--ask-for-approval" || runner.calls[0].Args[2] != "exec" {
 		t.Fatalf("codex args = %v", runner.calls[0].Args)
 	}
 	if runner.calls[1].Args[0] != "-p" {
@@ -926,7 +926,7 @@ func probeCommand(cfg ConfigResult) ProbeCommand {
 		return ProbeCommand{
 			Name: "codex",
 			Path: cfg.ExecutablePath,
-			Args: []string{"exec", "--ephemeral", "--sandbox", "read-only", "--ask-for-approval", "never", probePrompt},
+			Args: []string{"--ask-for-approval", "never", "exec", "--ephemeral", "--sandbox", "read-only", probePrompt},
 		}
 	case "claude":
 		return ProbeCommand{
@@ -1243,7 +1243,7 @@ func printToolDiagnostics(out io.Writer) {
 	}
 	fmt.Fprintln(out, "Tool probe")
 	probeResults := probeToolsForDoctor(context.Background(), doctorcheck.ProbeOptions{
-		Timeout: 30 * time.Second,
+		Timeout: time.Minute,
 		Configs: report.Results,
 	})
 	for _, result := range probeResults {
@@ -1443,7 +1443,7 @@ git commit -m "fix(ae-cli): use diagnostic timeout for doctor eligibility"
 **Files:**
 - Modify only if previous tasks expose test compile issues.
 
-- [ ] **Step 1: Run all ae-cli tests**
+- [x] **Step 1: Run all ae-cli tests**
 
 Run:
 
@@ -1453,7 +1453,7 @@ cd ae-cli && go test ./...
 
 Expected: PASS.
 
-- [ ] **Step 2: Run doctor manually against the current repo**
+- [x] **Step 2: Run doctor manually against the current repo**
 
 Run:
 
@@ -1470,7 +1470,7 @@ Expected:
 - `Repo Eligibility` does not fail with `context deadline exceeded` when the backend responds within 10 seconds.
 - No API key, token, or full secret value appears in output.
 
-- [ ] **Step 3: Commit any verification-only follow-up fixes**
+- [x] **Step 3: Commit any verification-only follow-up fixes**
 
 If Step 1 or Step 2 required a small correction, commit it:
 
@@ -1481,7 +1481,7 @@ git commit -m "fix(ae-cli): polish doctor tool diagnostics"
 
 If no fixes were needed, do not create an empty commit.
 
-- [ ] **Step 4: Capture final status**
+- [x] **Step 4: Capture final status**
 
 Run:
 

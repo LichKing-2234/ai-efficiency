@@ -299,13 +299,20 @@ func FormatConfigResult(result *ConfigResult) string {
 }
 
 func RedactSecrets(s string) string {
-	replacements := []string{"sk-", "OPENAI_API_KEY=", "ANTHROPIC_AUTH_TOKEN=", "GEMINI_API_KEY="}
-	for _, marker := range replacements {
-		if strings.Contains(s, marker) {
-			s = strings.ReplaceAll(s, marker, marker+"<redacted>")
+	fields := strings.Fields(s)
+	for i, field := range fields {
+		trimmed := strings.Trim(field, `"'`)
+		if strings.HasPrefix(trimmed, "sk-") {
+			fields[i] = strings.Replace(field, trimmed, "sk-<redacted>", 1)
+			continue
+		}
+		for _, key := range []string{"OPENAI_API_KEY=", "ANTHROPIC_AUTH_TOKEN=", "GEMINI_API_KEY="} {
+			if strings.HasPrefix(trimmed, key) {
+				fields[i] = strings.Replace(field, trimmed, key+"<redacted>", 1)
+			}
 		}
 	}
-	return s
+	return strings.Join(fields, " ")
 }
 
 func toolPlatform(tool string) (string, bool) {

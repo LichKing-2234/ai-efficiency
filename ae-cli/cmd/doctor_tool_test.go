@@ -39,6 +39,9 @@ func TestDoctorPrintsToolConfigurationAndProbe(t *testing.T) {
 		}, nil
 	}
 	probeToolsForDoctor = func(ctx context.Context, opts doctorcheck.ProbeOptions) []doctorcheck.ProbeResult {
+		if opts.Timeout != time.Minute {
+			t.Fatalf("probe timeout = %s, want 1m", opts.Timeout)
+		}
 		return []doctorcheck.ProbeResult{
 			{Name: "codex", Status: doctorcheck.StatusOK, Duration: time.Millisecond, Output: "AE_DOCTOR_OK"},
 			{Name: "claude", Status: doctorcheck.StatusOK, Duration: time.Millisecond, Output: "AE_DOCTOR_OK"},

@@ -159,14 +159,14 @@ Reply exactly: AE_DOCTOR_OK
 Probe commands:
 
 ```bash
-codex exec --ephemeral --sandbox read-only --ask-for-approval never "Reply exactly: AE_DOCTOR_OK"
+codex --ask-for-approval never exec --ephemeral --sandbox read-only "Reply exactly: AE_DOCTOR_OK"
 claude -p "Reply exactly: AE_DOCTOR_OK" --output-format text --no-session-persistence --tools ""
 gemini --prompt "Reply exactly: AE_DOCTOR_OK" --output-format text --skip-trust
 ```
 
 Rules:
 
-1. Each probe gets an independent timeout. The initial timeout should be `30s`.
+1. Each probe gets an independent timeout. The initial doctor timeout should be `60s`.
 2. A zero exit code with non-empty stdout is success.
 3. A non-zero exit code, timeout, or empty stdout is a diagnostic failure for that tool.
 4. Doctor prints a bounded excerpt of stderr or stdout on failure, with secret redaction applied.

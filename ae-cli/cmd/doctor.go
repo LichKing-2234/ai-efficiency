@@ -128,7 +128,7 @@ func printToolDiagnostics(out io.Writer) {
 	}
 	fmt.Fprintln(out, "Tool probe")
 	probeResults := probeToolsForDoctor(context.Background(), doctorcheck.ProbeOptions{
-		Timeout: 30 * time.Second,
+		Timeout: time.Minute,
 		Configs: report.Results,
 	})
 	for _, result := range probeResults {
