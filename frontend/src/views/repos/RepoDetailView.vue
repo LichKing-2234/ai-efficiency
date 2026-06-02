@@ -7,7 +7,7 @@ import { getPR, getPRSyncJob, listPRs, refreshPRUsage, syncPRs } from '@/api/pr'
 import { listProviders } from '@/api/scmProvider'
 import { useAuthStore } from '@/stores/auth'
 import { useI18n } from '@/i18n'
-import type { CommitFreshness, PRCommitUsageSnapshot, PRRecord, PRSyncJob, RepoConfig, SCMProvider, UsageStatus } from '@/types'
+import type { CommitFreshness, PRCommitUsageSnapshot, PRListSummary, PRRecord, PRSyncJob, RepoConfig, SCMProvider, UsageStatus } from '@/types'
 
 const route = useRoute()
 const router = useRouter()
@@ -17,6 +17,7 @@ const { locale, t } = useI18n()
 const repo = ref<RepoConfig | null>(null)
 const prs = ref<PRRecord[]>([])
 const prsTotal = ref(0)
+const prsSummary = ref<PRListSummary | null>(null)
 const prsPage = ref(0)
 const prsPageSize = 10
 const prsMonths = ref(3)
@@ -39,7 +40,16 @@ const repoId = Number(route.params.id)
 const isRepoUnbound = computed(() => repo.value?.binding_state === 'unbound')
 const syncDisabledReason = computed(() => (isRepoUnbound.value ? t('repoDetail.syncDisabledUnbound') : ''))
 const prUsageSummary = computed(() => {
-  const total = prs.value.length
+  if (prsSummary.value) {
+    return {
+      total: prsSummary.value.total,
+      withUsage: prsSummary.value.with_usage,
+      pendingUpload: prsSummary.value.pending_upload,
+      noCheckpoint: prsSummary.value.no_checkpoint,
+      refreshFailed: prsSummary.value.refresh_failed,
+    }
+  }
+  const total = prsTotal.value || prs.value.length
   const withUsage = prs.value.filter((pr) => totalPRTokens(pr) > 0 || (pr.usage_credit_usage ?? 0) > 0 || (pr.usage_request_count ?? 0) > 0).length
   const pendingUpload = prs.value.filter((pr) => pr.usage_status === 'pending_upload').length
   const noCheckpoint = prs.value.filter((pr) => pr.usage_status === 'no_checkpoint').length
@@ -57,6 +67,7 @@ onMounted(async () => {
     const prData = prsRes.data.data
     prs.value = prData && 'items' in prData ? prData.items : []
     prsTotal.value = prData && 'total' in prData ? prData.total : 0
+    prsSummary.value = prData && 'summary' in prData && prData.summary ? prData.summary : null
 
     selectedProviderId.value = repo.value?.edges?.scm_provider?.id ?? repo.value?.scm_provider_id ?? null
     if (auth.isAdmin) {
@@ -83,6 +94,7 @@ async function loadPRs() {
     const prData = prsRes.data.data
     prs.value = prData && 'items' in prData ? prData.items : []
     prsTotal.value = prData && 'total' in prData ? prData.total : 0
+    prsSummary.value = prData && 'summary' in prData && prData.summary ? prData.summary : null
   } catch { /* load failed */ }
 }
 

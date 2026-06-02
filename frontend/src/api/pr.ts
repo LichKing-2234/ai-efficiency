@@ -1,8 +1,8 @@
 import client from './client'
-import type { ApiResponse, PRRecord, PRSyncJob } from '@/types'
+import type { ApiResponse, PRListSummary, PRRecord, PRSyncJob } from '@/types'
 
 export function listPRs(repoId: number, params?: { status?: string; limit?: number; offset?: number; months?: number }) {
-  return client.get<ApiResponse<{ items: PRRecord[]; total: number }>>(`/repos/${repoId}/prs`, { params })
+  return client.get<ApiResponse<{ items: PRRecord[]; total: number; summary?: PRListSummary }>>(`/repos/${repoId}/prs`, { params })
 }
 
 export function getPR(prId: number) {

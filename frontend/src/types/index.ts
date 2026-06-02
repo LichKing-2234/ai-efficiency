@@ -138,6 +138,14 @@ export interface PRRecord {
   created_at: string
 }
 
+export interface PRListSummary {
+  total: number
+  with_usage: number
+  pending_upload: number
+  no_checkpoint: number
+  refresh_failed: number
+}
+
 export interface PRCommitUsageSnapshot {
   id?: number
   commit_sha: string

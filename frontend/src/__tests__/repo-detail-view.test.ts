@@ -85,6 +85,8 @@ async function mountRepoDetail(
   pinia?: Pinia,
   options?: {
     prs?: Record<string, unknown>[]
+    total?: number
+    summary?: Record<string, unknown>
     getPRImpl?: (prId: number) => Promise<any>
     refreshPRUsageImpl?: (prId: number) => Promise<any>
   },
@@ -138,7 +140,8 @@ async function mountRepoDetail(
     data: {
       data: {
         items: prItems,
-        total: prItems.length,
+        total: options?.total ?? prItems.length,
+        ...(options?.summary ? { summary: options.summary } : {}),
       },
     },
   })
@@ -189,6 +192,50 @@ describe('RepoDetailView', () => {
     expect(wrapper.text()).not.toContain('Confidence')
     expect(wrapper.text()).not.toContain('Settle')
     expect(wrapper.text()).toContain('2,000')
+  })
+
+  it('renders aggregate PR usage summary instead of current page counts', async () => {
+    const pageItems = Array.from({ length: 10 }, (_, index) => ({
+      id: 200 + index,
+      scm_pr_id: 300 + index,
+      scm_pr_url: `https://github.com/org/repo-a/pull/${300 + index}`,
+      author: 'alice',
+      title: `PR ${index}`,
+      source_branch: 'feat/a',
+      target_branch: 'main',
+      status: 'merged',
+      labels: [],
+      lines_added: 10,
+      lines_deleted: 2,
+      cycle_time_hours: 5,
+      merged_at: '2026-03-30T00:00:00Z',
+      created_at: '2026-03-29T00:00:00Z',
+      usage_status: 'no_checkpoint',
+    }))
+
+    const { wrapper } = await mountRepoDetail(undefined, undefined, {
+      prs: pageItems,
+      total: 25,
+      summary: {
+        total: 25,
+        with_usage: 4,
+        pending_upload: 2,
+        no_checkpoint: 18,
+        refresh_failed: 1,
+      },
+    })
+
+    const totalCard = wrapper.findAll('.rounded-md').find((card) => card.text().includes('Total PRs'))
+    const withUsageCard = wrapper.findAll('.rounded-md').find((card) => card.text().includes('With AI usage'))
+    const pendingCard = wrapper.findAll('.rounded-md').find((card) => card.text().includes('Pending upload'))
+    const noCheckpointCard = wrapper.findAll('.rounded-md').find((card) => card.text().includes('No checkpoint'))
+    const refreshFailedCard = wrapper.findAll('.rounded-md').find((card) => card.text().includes('Refresh failed'))
+
+    expect(totalCard?.text()).toContain('25')
+    expect(withUsageCard?.text()).toContain('4')
+    expect(pendingCard?.text()).toContain('2')
+    expect(noCheckpointCard?.text()).toContain('18')
+    expect(refreshFailedCard?.text()).toContain('1')
   })
 
   it('switches repository detail summary labels to Chinese', async () => {
