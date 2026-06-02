@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/ai-efficiency/backend/ent/repoconfig"
+	"github.com/ai-efficiency/backend/ent/scmprovider"
 	entuser "github.com/ai-efficiency/backend/ent/user"
 	"github.com/ai-efficiency/backend/internal/auth"
 )
@@ -41,6 +42,53 @@ func TestAutoBindUnboundRouteReturnsNoMatchSummary(t *testing.T) {
 	}
 	if int(summary["skipped_no_match"].(float64)) != 1 {
 		t.Fatalf("summary = %v, want skipped_no_match=1", summary)
+	}
+}
+
+func TestAutoBindUnboundRouteBindsMatchedRepo(t *testing.T) {
+	env := setupFullTestEnv(t)
+	ctx := context.Background()
+	provider := env.client.ScmProvider.Create().
+		SetName("GitHub").
+		SetType(scmprovider.TypeGithub).
+		SetBaseURL("https://api.github.com").
+		SetStatus(scmprovider.StatusActive).
+		SaveX(ctx)
+	repo := env.client.RepoConfig.Create().
+		SetName("platform").
+		SetFullName("acme/platform").
+		SetCloneURL("https://github.com/acme/platform.git").
+		SetDefaultBranch("main").
+		SetStatus(repoconfig.StatusActive).
+		SaveX(ctx)
+
+	w := doFullRequest(env, http.MethodPost, "/api/v1/repos/auto-bind-unbound", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+	data := parseResponse(t, w)["data"].(map[string]any)
+	summary := data["summary"].(map[string]any)
+	if int(summary["scanned"].(float64)) != 1 || int(summary["bound"].(float64)) != 1 {
+		t.Fatalf("summary = %v, want scanned=1 bound=1", summary)
+	}
+	items := data["items"].([]any)
+	if len(items) != 1 {
+		t.Fatalf("items len = %d, want 1", len(items))
+	}
+	item := items[0].(map[string]any)
+	if int(item["repo_config_id"].(float64)) != repo.ID {
+		t.Fatalf("repo_config_id = %v, want %d", item["repo_config_id"], repo.ID)
+	}
+	if int(item["scm_provider_id"].(float64)) != provider.ID {
+		t.Fatalf("scm_provider_id = %v, want %d", item["scm_provider_id"], provider.ID)
+	}
+	if item["result"] != "provider_error" {
+		t.Fatalf("result = %v, want provider_error from missing test api credential", item["result"])
+	}
+
+	loaded := env.client.RepoConfig.Query().Where(repoconfig.IDEQ(repo.ID)).WithScmProvider().OnlyX(ctx)
+	if loaded.Edges.ScmProvider == nil || loaded.Edges.ScmProvider.ID != provider.ID {
+		t.Fatalf("bound provider = %#v, want %d", loaded.Edges.ScmProvider, provider.ID)
 	}
 }
 

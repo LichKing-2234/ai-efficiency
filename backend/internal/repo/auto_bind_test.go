@@ -96,6 +96,42 @@ func TestFindAutoBindProviderMatchesSingleGitHubSaaSProvider(t *testing.T) {
 	}
 }
 
+func TestFindAutoBindProviderMatchesGitHubSSHRemote(t *testing.T) {
+	client, svc := newAutoBindTestService(t)
+	ctx := context.Background()
+	want := createAutoBindProvider(t, client, "GitHub", scmprovider.TypeGithub, "https://api.github.com", scmprovider.StatusActive)
+	repo := createAutoBindRepo(t, client, "github.com/acme/platform", "acme/platform", "git@github.com:acme/platform.git", repoconfig.StatusActive)
+
+	provider, reason, err := svc.findAutoBindProvider(ctx, repo)
+	if err != nil {
+		t.Fatalf("findAutoBindProvider: %v", err)
+	}
+	if reason != AutoBindMatched {
+		t.Fatalf("reason = %q, want %q", reason, AutoBindMatched)
+	}
+	if provider == nil || provider.ID != want.ID {
+		t.Fatalf("provider = %#v, want id %d", provider, want.ID)
+	}
+}
+
+func TestFindAutoBindProviderMatchesBitbucketSameHost(t *testing.T) {
+	client, svc := newAutoBindTestService(t)
+	ctx := context.Background()
+	want := createAutoBindProvider(t, client, "Bitbucket", scmprovider.TypeBitbucketServer, "https://bitbucket.example.com", scmprovider.StatusActive)
+	repo := createAutoBindRepo(t, client, "bitbucket.example.com/acme/platform", "ACME/platform", "ssh://git@bitbucket.example.com/acme/platform.git", repoconfig.StatusActive)
+
+	provider, reason, err := svc.findAutoBindProvider(ctx, repo)
+	if err != nil {
+		t.Fatalf("findAutoBindProvider: %v", err)
+	}
+	if reason != AutoBindMatched {
+		t.Fatalf("reason = %q, want %q", reason, AutoBindMatched)
+	}
+	if provider == nil || provider.ID != want.ID {
+		t.Fatalf("provider = %#v, want id %d", provider, want.ID)
+	}
+}
+
 func TestFindAutoBindProviderMatchesBitbucketSSHHost(t *testing.T) {
 	client, svc := newAutoBindTestService(t)
 	ctx := context.Background()
