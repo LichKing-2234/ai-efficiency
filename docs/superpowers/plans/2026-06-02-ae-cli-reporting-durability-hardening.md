@@ -1769,7 +1769,7 @@ git commit -m "fix(ae-cli): trigger replay after rewrite failures"
 - Modify: `ae-cli/internal/hooks/unresolved_queue.go`
 - Modify: `ae-cli/internal/attributionlocal/sync.go`
 
-- [ ] **Step 1: Add count helpers**
+- [x] **Step 1: Add count helpers**
 
 In `ae-cli/internal/hooks/unresolved_queue.go`:
 
@@ -1808,7 +1808,7 @@ func CountToolUsageDeadLetters(workspaceID string) (int, error) {
 }
 ```
 
-- [ ] **Step 2: Write sync status output test**
+- [x] **Step 2: Write sync status output test**
 
 Add to `ae-cli/cmd/sync_test.go`:
 
@@ -1862,7 +1862,7 @@ func TestSyncStatusShowsUnresolvedAndDeadLetterCounts(t *testing.T) {
 }
 ```
 
-- [ ] **Step 3: Run status test and verify it fails**
+- [x] **Step 3: Run status test and verify it fails**
 
 Run:
 
@@ -1873,7 +1873,7 @@ go test ./cmd -run TestSyncStatusShowsUnresolvedAndDeadLetterCounts -count=1
 
 Expected: FAIL because sync status does not print these counts.
 
-- [ ] **Step 4: Print counts in sync status**
+- [x] **Step 4: Print counts in sync status**
 
 Modify `ae-cli/cmd/sync.go` after `printSyncTaskStatus(cmd.OutOrStdout(), task)`:
 
@@ -1891,7 +1891,7 @@ if err != nil {
 fmt.Fprintf(cmd.OutOrStdout(), "Tool Usage Dead Letters: %d\n", deadLetterCount)
 ```
 
-- [ ] **Step 5: Run focused test**
+- [x] **Step 5: Run focused test**
 
 Run:
 
@@ -1902,7 +1902,7 @@ go test ./cmd -run TestSyncStatusShowsUnresolvedAndDeadLetterCounts -count=1
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add ae-cli/cmd/sync.go ae-cli/cmd/sync_test.go ae-cli/internal/hooks/unresolved_queue.go ae-cli/internal/attributionlocal/sync.go

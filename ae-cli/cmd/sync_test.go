@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ai-efficiency/ae-cli/internal/attributionlocal"
 	"github.com/ai-efficiency/ae-cli/internal/hooks"
 )
 
@@ -238,6 +239,48 @@ func TestSyncStatusRecoversCorruptSyncTask(t *testing.T) {
 	}
 	if !bytes.Contains(buf.Bytes(), []byte("corrupt sync task moved aside")) {
 		t.Fatalf("sync status output missing corrupt recovery message:\n%s", buf.String())
+	}
+}
+
+func TestSyncStatusShowsUnresolvedAndDeadLetterCounts(t *testing.T) {
+	repo := initRepoWithCommitForCmdTests(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	writeTestToken(t, home, "user:123")
+	writePositiveEligibility(t, home, "github.com/acme/repo", 123)
+	withWorkingDir(t, repo)
+
+	gitCtx, err := hooks.DetectGitContext(repo)
+	if err != nil {
+		t.Fatalf("DetectGitContext: %v", err)
+	}
+	if err := hooks.EnqueueUnresolvedHookEvent(hooks.UnresolvedHookEvent{
+		Kind:        "post-commit",
+		RemoteURL:   "https://github.com/acme/repo.git",
+		RepoKey:     "github.com/acme/repo",
+		WorkspaceID: gitCtx.WorkspaceID,
+		CommitSHA:   "abc123",
+	}); err != nil {
+		t.Fatalf("EnqueueUnresolvedHookEvent: %v", err)
+	}
+	workspaceDir := filepath.Join(attributionlocal.AttributionRootDir(), "workspaces", gitCtx.WorkspaceID)
+	if err := os.MkdirAll(workspaceDir, 0o700); err != nil {
+		t.Fatalf("mkdir workspace dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(workspaceDir, "dead-letter-tool-usage.jsonl"), []byte(`{"version":1}`+"\n"), 0o600); err != nil {
+		t.Fatalf("write dead-letter: %v", err)
+	}
+
+	buf := &bytes.Buffer{}
+	syncStatusCmd.SetOut(buf)
+	syncStatusCmd.SetErr(buf)
+	if err := syncStatusCmd.RunE(syncStatusCmd, nil); err != nil {
+		t.Fatalf("sync status RunE: %v", err)
+	}
+	for _, want := range []string{"Unresolved Hook Events: 1", "Tool Usage Dead Letters: 1"} {
+		if !bytes.Contains(buf.Bytes(), []byte(want)) {
+			t.Fatalf("sync status output missing %q:\n%s", want, buf.String())
+		}
 	}
 }
 

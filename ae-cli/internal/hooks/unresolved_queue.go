@@ -81,6 +81,14 @@ func ListUnresolvedHookEvents() ([]UnresolvedHookEvent, error) {
 	return out, nil
 }
 
+func CountUnresolvedHookEvents() (int, error) {
+	items, err := ListUnresolvedHookEvents()
+	if err != nil {
+		return 0, err
+	}
+	return len(items), nil
+}
+
 func EnqueueUnresolvedHookEvent(ev UnresolvedHookEvent) error {
 	if strings.TrimSpace(ev.Kind) == "" || strings.TrimSpace(ev.RemoteURL) == "" || strings.TrimSpace(ev.WorkspaceID) == "" || strings.TrimSpace(ev.CommitSHA) == "" {
 		return fmt.Errorf("unresolved hook event requires kind, remote_url, workspace_id, and commit_sha")

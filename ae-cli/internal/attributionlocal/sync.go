@@ -406,6 +406,27 @@ func toolUsageDeadLetterPath(workspaceDir string) string {
 	return filepath.Join(workspaceDir, "dead-letter-tool-usage.jsonl")
 }
 
+func CountToolUsageDeadLetters(workspaceID string) (int, error) {
+	if strings.TrimSpace(workspaceID) == "" {
+		return 0, nil
+	}
+	path := toolUsageDeadLetterPath(filepath.Join(AttributionRootDir(), "workspaces", workspaceID))
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0, nil
+		}
+		return 0, err
+	}
+	count := 0
+	for _, line := range bytes.Split(data, []byte("\n")) {
+		if len(bytes.TrimSpace(line)) > 0 {
+			count++
+		}
+	}
+	return count, nil
+}
+
 func appendToolUsageDeadLetter(spoolPath string, ev LocalToolUsageEvent, uploadErr error) error {
 	if spoolPath == "" {
 		return nil
