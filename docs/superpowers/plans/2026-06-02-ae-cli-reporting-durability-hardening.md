@@ -550,7 +550,7 @@ git commit -m "fix(ae-cli): report hook queue failures"
 - Modify: `ae-cli/cmd/hook_test.go`
 - Modify: `ae-cli/internal/hooks/handler.go`
 
-- [ ] **Step 1: Write unresolved queue tests**
+- [x] **Step 1: Write unresolved queue tests**
 
 Create `ae-cli/internal/hooks/unresolved_queue_test.go`:
 
@@ -595,7 +595,7 @@ func TestUnresolvedQueuePersistsAndDedupesPostCommit(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run unresolved queue test and verify it fails**
+- [x] **Step 2: Run unresolved queue test and verify it fails**
 
 Run:
 
@@ -606,7 +606,7 @@ go test ./internal/hooks -run TestUnresolvedQueuePersistsAndDedupesPostCommit -c
 
 Expected: FAIL because `UnresolvedHookEvent` and queue functions do not exist.
 
-- [ ] **Step 3: Implement unresolved queue**
+- [x] **Step 3: Implement unresolved queue**
 
 Create `ae-cli/internal/hooks/unresolved_queue.go`:
 
@@ -769,7 +769,7 @@ func SaveUnresolvedHookEvents(items []UnresolvedHookEvent) error {
 }
 ```
 
-- [ ] **Step 4: Add command-level unresolved enqueue test**
+- [x] **Step 4: Add command-level unresolved enqueue test**
 
 Add this test to `ae-cli/cmd/hook_test.go`:
 
@@ -813,7 +813,7 @@ func TestHookPostCommitQueuesUnresolvedWhenInitialResolveTimesOut(t *testing.T) 
 }
 ```
 
-- [ ] **Step 5: Run command test and verify it fails**
+- [x] **Step 5: Run command test and verify it fails**
 
 Run:
 
@@ -824,7 +824,7 @@ go test ./cmd -run TestHookPostCommitQueuesUnresolvedWhenInitialResolveTimesOut 
 
 Expected: FAIL because `hookPostCommitCmd` does not enqueue unresolved events.
 
-- [ ] **Step 6: Enqueue unresolved post-commit when execution context is unavailable**
+- [x] **Step 6: Enqueue unresolved post-commit when execution context is unavailable**
 
 Modify `ae-cli/cmd/hook.go` in `hookPostCommitCmd.RunE`:
 
@@ -897,7 +897,11 @@ func BranchSnapshotForHook(repoRoot string) string {
 }
 ```
 
-- [ ] **Step 7: Replay unresolved events after stable context exists**
+- [x] **Step 6a: Write failing unresolved replay test**
+
+Add a handler-level test proving unresolved events are uploaded and removed once a stable execution context exists.
+
+- [x] **Step 7: Replay unresolved events after stable context exists**
 
 Add to `ae-cli/internal/hooks/handler.go`:
 
@@ -967,7 +971,7 @@ if err := h.FlushUnresolvedResolved(ctx, execCtx); err != nil {
 }
 ```
 
-- [ ] **Step 8: Run focused tests**
+- [x] **Step 8: Run focused tests**
 
 Run:
 
@@ -979,7 +983,7 @@ go test ./internal/hooks -run 'TestUnresolvedQueuePersistsAndDedupesPostCommit|T
 
 Expected: PASS.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add ae-cli/cmd/hook.go ae-cli/cmd/hook_test.go ae-cli/internal/hooks/handler.go ae-cli/internal/hooks/background_runner.go ae-cli/internal/hooks/unresolved_queue.go ae-cli/internal/hooks/unresolved_queue_test.go

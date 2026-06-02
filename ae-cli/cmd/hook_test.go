@@ -262,6 +262,83 @@ func TestHookPostCommitUsesExpiredPositiveEligibilityWhenRefreshTimesOut(t *test
 	}
 }
 
+func TestHookPostCommitQueuesUnresolvedWhenInitialResolveTimesOut(t *testing.T) {
+	repo := initRepoWithCommitForCmdTests(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(200 * time.Millisecond)
+		w.WriteHeader(http.StatusGatewayTimeout)
+	}))
+	defer srv.Close()
+	writeTestTokenForServer(t, home, srv.URL, "user:123")
+	withHookAPIClient(t, srv.URL, "test-access-token")
+
+	origResolveTimeout := hookEligibilityResolveTimeout
+	hookEligibilityResolveTimeout = 25 * time.Millisecond
+	t.Cleanup(func() { hookEligibilityResolveTimeout = origResolveTimeout })
+
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+	defer func() { _ = os.Chdir(wd) }()
+	if err := os.Chdir(repo); err != nil {
+		t.Fatalf("Chdir(repo): %v", err)
+	}
+
+	if err := hookPostCommitCmd.RunE(hookPostCommitCmd, nil); err != nil {
+		t.Fatalf("hook post-commit RunE: %v", err)
+	}
+	items, err := hooks.ListUnresolvedHookEvents()
+	if err != nil {
+		t.Fatalf("ListUnresolvedHookEvents: %v", err)
+	}
+	if len(items) != 1 || items[0].RemoteURL != "https://github.com/acme/repo.git" || items[0].CommitSHA == "" {
+		t.Fatalf("unresolved items = %+v, want unresolved post-commit", items)
+	}
+}
+
+func TestHookPostCommitDoesNotQueueUnresolvedWhenRepoIsExplicitlyIneligible(t *testing.T) {
+	repo := initRepoWithCommitForCmdTests(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"data": client.RepoEligibilityResponse{
+				Eligible: false,
+				RepoKey:  "github.com/acme/repo",
+				Reason:   "not_found",
+			},
+		})
+	}))
+	defer srv.Close()
+	writeTestTokenForServer(t, home, srv.URL, "user:123")
+	withHookAPIClient(t, srv.URL, "test-access-token")
+
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+	defer func() { _ = os.Chdir(wd) }()
+	if err := os.Chdir(repo); err != nil {
+		t.Fatalf("Chdir(repo): %v", err)
+	}
+
+	if err := hookPostCommitCmd.RunE(hookPostCommitCmd, nil); err != nil {
+		t.Fatalf("hook post-commit RunE: %v", err)
+	}
+	items, err := hooks.ListUnresolvedHookEvents()
+	if err != nil {
+		t.Fatalf("ListUnresolvedHookEvents: %v", err)
+	}
+	if len(items) != 0 {
+		t.Fatalf("unresolved items = %+v, want none for explicitly ineligible repo", items)
+	}
+}
+
 func TestHookPostCommitResolvesCacheMissAndCachesPositive(t *testing.T) {
 	repo := initRepoWithCommitForCmdTests(t)
 	home := t.TempDir()

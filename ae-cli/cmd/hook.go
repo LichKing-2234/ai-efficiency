@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"strings"
 	"time"
@@ -51,6 +52,7 @@ var hookPostCommitCmd = &cobra.Command{
 		}
 		execCtx, ok := resolveHookExecutionContext(ctx, gitCtx)
 		if !ok {
+			queueUnresolvedPostCommit(gitCtx)
 			return nil
 		}
 		return hooks.NewHandler(newHookUploader()).PostCommitResolved(ctx, execCtx)
@@ -205,6 +207,63 @@ func resolveHookExecutionContext(ctx context.Context, gitCtx *hooks.GitContext) 
 		LastObservedAt: now,
 	}
 	return executionContextFromEligibility(gitCtx, binding, record, stable), true
+}
+
+func queueUnresolvedPostCommit(gitCtx *hooks.GitContext) {
+	if gitCtx == nil {
+		return
+	}
+	repoRoot := strings.TrimSpace(gitCtx.RepoRoot)
+	if repoRoot == "" {
+		return
+	}
+	head, err := hooks.GitOutputForHook(repoRoot, "rev-parse", "HEAD")
+	if err != nil {
+		return
+	}
+	tokenPath, _ := auth.DefaultTokenPath()
+	tf := readTokenFile(tokenPath)
+	serverURL := ""
+	authSubject := ""
+	if tf != nil {
+		serverURL = tf.ServerURL
+		if cfg != nil && cfg.Server.URL != "" {
+			serverURL = cfg.Server.URL
+		}
+		authSubject = tf.StableAuthSubject()
+	}
+	if shouldSkipUnresolvedPostCommitQueue(serverURL, authSubject, gitCtx.RepoKey) {
+		return
+	}
+	ev := hooks.UnresolvedHookEvent{
+		Kind:           "post-commit",
+		RemoteURL:      gitCtx.RemoteURL,
+		RepoKey:        gitCtx.RepoKey,
+		WorkspaceID:    gitCtx.WorkspaceID,
+		ServerURL:      serverURL,
+		AuthSubject:    authSubject,
+		CommitSHA:      head,
+		ParentSHAs:     hooks.ParentSHAsForHook(repoRoot),
+		BranchSnapshot: firstNonEmpty(gitCtx.Branch, hooks.BranchSnapshotForHook(repoRoot)),
+		HeadSnapshot:   head,
+		CapturedAt:     time.Now().UTC().Format(time.RFC3339),
+	}
+	if err := hooks.EnqueueUnresolvedHookEvent(ev); err != nil {
+		fmt.Fprintf(os.Stderr, "ae-cli: failed to queue unresolved checkpoint event: %v\n", err)
+	}
+}
+
+func shouldSkipUnresolvedPostCommitQueue(serverURL, authSubject, repoKey string) bool {
+	binding := hookstate.Context{ServerURL: serverURL, AuthSubject: authSubject, RepoKey: repoKey}
+	if !binding.Stable() {
+		return false
+	}
+	cache, err := hookstate.LoadEligibilityCache()
+	if err != nil {
+		return false
+	}
+	record, ok := cache.Lookup(binding, time.Now(), true)
+	return ok && !record.Eligible
 }
 
 type hookRepoResolver interface {

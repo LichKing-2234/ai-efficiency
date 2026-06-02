@@ -206,6 +206,74 @@ func (h *Handler) FlushResolved(ctx context.Context, execCtx ExecutionContext) e
 	return h.flushWorkspace(ctx, execCtx)
 }
 
+func (h *Handler) FlushUnresolvedResolved(ctx context.Context, execCtx ExecutionContext) error {
+	if !execCtx.hasStableReplayBinding() {
+		return nil
+	}
+	items, err := ListUnresolvedHookEvents()
+	if err != nil {
+		return err
+	}
+	if len(items) == 0 {
+		return nil
+	}
+
+	var keep []UnresolvedHookEvent
+	for _, item := range items {
+		if strings.TrimSpace(item.Kind) != "post-commit" {
+			keep = append(keep, item)
+			continue
+		}
+		if strings.TrimSpace(item.WorkspaceID) != strings.TrimSpace(execCtx.WorkspaceID) {
+			keep = append(keep, item)
+			continue
+		}
+		if strings.TrimSpace(item.ServerURL) != "" && strings.TrimSpace(item.ServerURL) != strings.TrimSpace(execCtx.ServerURL) {
+			keep = append(keep, item)
+			continue
+		}
+		if strings.TrimSpace(item.AuthSubject) != "" && strings.TrimSpace(item.AuthSubject) != strings.TrimSpace(execCtx.AuthSubject) {
+			keep = append(keep, item)
+			continue
+		}
+		if strings.TrimSpace(item.RepoKey) != "" && strings.TrimSpace(item.RepoKey) != strings.TrimSpace(execCtx.RepoKey) {
+			keep = append(keep, item)
+			continue
+		}
+		eventID, err := CheckpointEventID(eventIDRepoHint(execCtx), item.CommitSHA)
+		if err != nil {
+			keep = append(keep, item)
+			continue
+		}
+		ev := HookEvent{
+			Kind:           "post-commit",
+			EventID:        eventID,
+			WorkspaceID:    execCtx.WorkspaceID,
+			ServerURL:      execCtx.ServerURL,
+			AuthSubject:    execCtx.AuthSubject,
+			RepoConfigID:   execCtx.RepoConfigID,
+			RepoKey:        execCtx.RepoKey,
+			RepoFullName:   firstNonEmptyValue(execCtx.RepoFullName, execCtx.RepoKey),
+			BindingSource:  "unbound",
+			AgentSnapshot:  item.AgentSnapshot,
+			CommitSHA:      item.CommitSHA,
+			ParentSHAs:     item.ParentSHAs,
+			BranchSnapshot: item.BranchSnapshot,
+			HeadSnapshot:   item.HeadSnapshot,
+			CapturedAt:     item.CapturedAt,
+		}
+		if h == nil || h.uploader == nil {
+			keep = append(keep, item)
+			continue
+		}
+		if err := h.uploader.UploadHookEvent(ctx, ev); err != nil {
+			keep = append(keep, item)
+			continue
+		}
+	}
+	return SaveUnresolvedHookEvents(keep)
+}
+
 func gitOutput(dir string, args ...string) (string, error) {
 	cmd := exec.Command("git", args...)
 	cmd.Dir = dir
@@ -217,6 +285,10 @@ func gitOutput(dir string, args ...string) (string, error) {
 		return "", fmt.Errorf("git %s: %w (stderr=%s)", strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
 	}
 	return strings.TrimSpace(stdout.String()), nil
+}
+
+func GitOutputForHook(dir string, args ...string) (string, error) {
+	return gitOutput(dir, args...)
 }
 
 func absUnder(root, p string) (string, error) {
@@ -270,6 +342,10 @@ func branchSnapshot(cwd string) string {
 	return strings.TrimSpace(branch)
 }
 
+func BranchSnapshotForHook(cwd string) string {
+	return branchSnapshot(cwd)
+}
+
 func parentSHAs(cwd string) []string {
 	line, err := gitOutput(cwd, "rev-list", "--parents", "-n", "1", "HEAD")
 	if err != nil {
@@ -280,6 +356,10 @@ func parentSHAs(cwd string) []string {
 		return nil
 	}
 	return fields[1:]
+}
+
+func ParentSHAsForHook(cwd string) []string {
+	return parentSHAs(cwd)
 }
 
 func (h *Handler) PostCommit(ctx context.Context, cwd string) error {

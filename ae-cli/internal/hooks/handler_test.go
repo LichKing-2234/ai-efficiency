@@ -269,6 +269,43 @@ func TestPostCommitResolvedReportsQueueFailure(t *testing.T) {
 	}
 }
 
+func TestFlushUnresolvedResolvedUploadsMatchingEventAndRemovesIt(t *testing.T) {
+	repo := initRepoWithCommit2(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	execCtx := resolvedContextForRepo(t, repo)
+
+	if err := EnqueueUnresolvedHookEvent(UnresolvedHookEvent{
+		Kind:           "post-commit",
+		RemoteURL:      "https://github.com/acme/repo.git",
+		RepoKey:        execCtx.RepoKey,
+		WorkspaceID:    execCtx.WorkspaceID,
+		ServerURL:      execCtx.ServerURL,
+		AuthSubject:    execCtx.AuthSubject,
+		CommitSHA:      "abc123",
+		BranchSnapshot: "main",
+		HeadSnapshot:   "abc123",
+		CapturedAt:     "2026-06-02T09:00:00Z",
+	}); err != nil {
+		t.Fatalf("EnqueueUnresolvedHookEvent: %v", err)
+	}
+
+	u := &fakeUploader{}
+	if err := NewHandler(u).FlushUnresolvedResolved(context.Background(), execCtx); err != nil {
+		t.Fatalf("FlushUnresolvedResolved: %v", err)
+	}
+	if len(u.events) != 1 || u.events[0].CommitSHA != "abc123" || u.events[0].RepoConfigID != execCtx.RepoConfigID {
+		t.Fatalf("uploaded events = %+v, want resolved checkpoint upload", u.events)
+	}
+	items, err := ListUnresolvedHookEvents()
+	if err != nil {
+		t.Fatalf("ListUnresolvedHookEvents: %v", err)
+	}
+	if len(items) != 0 {
+		t.Fatalf("remaining unresolved items = %+v, want none", items)
+	}
+}
+
 func TestPostCommitResolvedLeavesQueuedEventsForAsyncRunner(t *testing.T) {
 	repo := initRepoWithCommit2(t)
 	home := t.TempDir()

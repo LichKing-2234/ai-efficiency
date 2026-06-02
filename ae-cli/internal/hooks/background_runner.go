@@ -64,6 +64,10 @@ func RunPendingSyncTask(ctx context.Context, execCtx ExecutionContext, uploader 
 	}
 
 	h := NewHandler(uploader)
+	if err := h.FlushUnresolvedResolved(ctx, execCtx); err != nil {
+		_ = MarkSyncTaskFailure(task, time.Now().UTC(), err)
+		return err
+	}
 	if err := h.FlushResolved(ctx, execCtx); err != nil {
 		_ = MarkSyncTaskFailure(task, time.Now().UTC(), err)
 		return err
