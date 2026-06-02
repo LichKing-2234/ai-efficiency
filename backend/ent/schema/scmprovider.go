@@ -20,6 +20,9 @@ func (ScmProvider) Fields() []ent.Field {
 			Values("github", "bitbucket_server"),
 		field.String("base_url").
 			NotEmpty(),
+		field.String("ssh_host").
+			Optional().
+			Nillable(),
 		field.String("credentials").
 			Sensitive().
 			Optional(),

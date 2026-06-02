@@ -365,11 +365,11 @@ func init() {
 	// scmprovider.BaseURLValidator is a validator for the "base_url" field. It is called by the builders before save.
 	scmprovider.BaseURLValidator = scmproviderDescBaseURL.Validators[0].(func(string) error)
 	// scmproviderDescCreatedAt is the schema descriptor for created_at field.
-	scmproviderDescCreatedAt := scmproviderFields[8].Descriptor()
+	scmproviderDescCreatedAt := scmproviderFields[9].Descriptor()
 	// scmprovider.DefaultCreatedAt holds the default value on creation for the created_at field.
 	scmprovider.DefaultCreatedAt = scmproviderDescCreatedAt.Default.(func() time.Time)
 	// scmproviderDescUpdatedAt is the schema descriptor for updated_at field.
-	scmproviderDescUpdatedAt := scmproviderFields[9].Descriptor()
+	scmproviderDescUpdatedAt := scmproviderFields[10].Descriptor()
 	// scmprovider.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	scmprovider.DefaultUpdatedAt = scmproviderDescUpdatedAt.Default.(func() time.Time)
 	// scmprovider.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.

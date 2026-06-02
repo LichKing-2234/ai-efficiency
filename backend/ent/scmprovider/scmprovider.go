@@ -21,6 +21,8 @@ const (
 	FieldType = "type"
 	// FieldBaseURL holds the string denoting the base_url field in the database.
 	FieldBaseURL = "base_url"
+	// FieldSSHHost holds the string denoting the ssh_host field in the database.
+	FieldSSHHost = "ssh_host"
 	// FieldCredentials holds the string denoting the credentials field in the database.
 	FieldCredentials = "credentials"
 	// FieldAPICredentialID holds the string denoting the api_credential_id field in the database.
@@ -72,6 +74,7 @@ var Columns = []string{
 	FieldName,
 	FieldType,
 	FieldBaseURL,
+	FieldSSHHost,
 	FieldCredentials,
 	FieldAPICredentialID,
 	FieldCloneCredentialID,
@@ -201,6 +204,11 @@ func ByType(opts ...sql.OrderTermOption) OrderOption {
 // ByBaseURL orders the results by the base_url field.
 func ByBaseURL(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldBaseURL, opts...).ToFunc()
+}
+
+// BySSHHost orders the results by the ssh_host field.
+func BySSHHost(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldSSHHost, opts...).ToFunc()
 }
 
 // ByCredentials orders the results by the credentials field.

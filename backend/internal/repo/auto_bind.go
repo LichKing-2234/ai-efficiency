@@ -65,17 +65,31 @@ func canonicalRepoHost(repo *ent.RepoConfig) (string, bool) {
 }
 
 func canonicalProviderHost(provider *ent.ScmProvider) (string, bool) {
+	hosts := canonicalProviderHosts(provider)
+	if len(hosts) == 0 {
+		return "", false
+	}
+	return hosts[0], true
+}
+
+func canonicalProviderHosts(provider *ent.ScmProvider) []string {
 	if provider == nil {
-		return "", false
+		return nil
 	}
+	hosts := make([]string, 0, 2)
 	host, ok := hostFromURL(provider.BaseURL)
-	if !ok {
-		return "", false
+	if ok {
+		if provider.Type == scmprovider.TypeGithub && host == "api.github.com" {
+			host = "github.com"
+		}
+		hosts = appendUniqueHost(hosts, host)
 	}
-	if provider.Type == scmprovider.TypeGithub && host == "api.github.com" {
-		host = "github.com"
+	if provider.SSHHost != nil {
+		if sshHost, ok := hostFromHostOrURL(*provider.SSHHost); ok {
+			hosts = appendUniqueHost(hosts, sshHost)
+		}
 	}
-	return host, true
+	return hosts
 }
 
 func hostFromRepoKey(repoKey string) (string, bool) {
@@ -111,6 +125,17 @@ func hostFromURL(raw string) (string, bool) {
 	return normalizeHost(parsed.Host), true
 }
 
+func hostFromHostOrURL(raw string) (string, bool) {
+	if host, ok := hostFromURL(raw); ok {
+		return host, true
+	}
+	raw = strings.TrimSpace(raw)
+	if raw == "" || strings.Contains(raw, "/") {
+		return "", false
+	}
+	return normalizeHost(raw), true
+}
+
 func normalizeHost(host string) string {
 	host = strings.ToLower(strings.TrimSpace(host))
 	if withoutPort, port, err := net.SplitHostPort(host); err == nil && (port == "80" || port == "443") {
@@ -118,6 +143,18 @@ func normalizeHost(host string) string {
 	}
 	host = strings.TrimSuffix(host, ".")
 	return host
+}
+
+func appendUniqueHost(hosts []string, host string) []string {
+	if host == "" {
+		return hosts
+	}
+	for _, existing := range hosts {
+		if existing == host {
+			return hosts
+		}
+	}
+	return append(hosts, host)
 }
 
 func (s *Service) findAutoBindProvider(ctx context.Context, repo *ent.RepoConfig) (*ent.ScmProvider, string, error) {
@@ -134,12 +171,11 @@ func (s *Service) findAutoBindProvider(ctx context.Context, repo *ent.RepoConfig
 
 	matches := make([]*ent.ScmProvider, 0, 1)
 	for _, provider := range providers {
-		providerHost, ok := canonicalProviderHost(provider)
-		if !ok {
-			continue
-		}
-		if providerHost == repoHost {
-			matches = append(matches, provider)
+		for _, providerHost := range canonicalProviderHosts(provider) {
+			if providerHost == repoHost {
+				matches = append(matches, provider)
+				break
+			}
 		}
 	}
 

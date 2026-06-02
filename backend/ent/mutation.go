@@ -13371,6 +13371,7 @@ type ScmProviderMutation struct {
 	name                    *string
 	_type                   *scmprovider.Type
 	base_url                *string
+	ssh_host                *string
 	credentials             *string
 	clone_protocol          *scmprovider.CloneProtocol
 	status                  *scmprovider.Status
@@ -13593,6 +13594,55 @@ func (m *ScmProviderMutation) OldBaseURL(ctx context.Context) (v string, err err
 // ResetBaseURL resets all changes to the "base_url" field.
 func (m *ScmProviderMutation) ResetBaseURL() {
 	m.base_url = nil
+}
+
+// SetSSHHost sets the "ssh_host" field.
+func (m *ScmProviderMutation) SetSSHHost(s string) {
+	m.ssh_host = &s
+}
+
+// SSHHost returns the value of the "ssh_host" field in the mutation.
+func (m *ScmProviderMutation) SSHHost() (r string, exists bool) {
+	v := m.ssh_host
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSSHHost returns the old "ssh_host" field's value of the ScmProvider entity.
+// If the ScmProvider object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ScmProviderMutation) OldSSHHost(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSSHHost is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSSHHost requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSSHHost: %w", err)
+	}
+	return oldValue.SSHHost, nil
+}
+
+// ClearSSHHost clears the value of the "ssh_host" field.
+func (m *ScmProviderMutation) ClearSSHHost() {
+	m.ssh_host = nil
+	m.clearedFields[scmprovider.FieldSSHHost] = struct{}{}
+}
+
+// SSHHostCleared returns if the "ssh_host" field was cleared in this mutation.
+func (m *ScmProviderMutation) SSHHostCleared() bool {
+	_, ok := m.clearedFields[scmprovider.FieldSSHHost]
+	return ok
+}
+
+// ResetSSHHost resets all changes to the "ssh_host" field.
+func (m *ScmProviderMutation) ResetSSHHost() {
+	m.ssh_host = nil
+	delete(m.clearedFields, scmprovider.FieldSSHHost)
 }
 
 // SetCredentials sets the "credentials" field.
@@ -14028,7 +14078,7 @@ func (m *ScmProviderMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *ScmProviderMutation) Fields() []string {
-	fields := make([]string, 0, 10)
+	fields := make([]string, 0, 11)
 	if m.name != nil {
 		fields = append(fields, scmprovider.FieldName)
 	}
@@ -14037,6 +14087,9 @@ func (m *ScmProviderMutation) Fields() []string {
 	}
 	if m.base_url != nil {
 		fields = append(fields, scmprovider.FieldBaseURL)
+	}
+	if m.ssh_host != nil {
+		fields = append(fields, scmprovider.FieldSSHHost)
 	}
 	if m.credentials != nil {
 		fields = append(fields, scmprovider.FieldCredentials)
@@ -14073,6 +14126,8 @@ func (m *ScmProviderMutation) Field(name string) (ent.Value, bool) {
 		return m.GetType()
 	case scmprovider.FieldBaseURL:
 		return m.BaseURL()
+	case scmprovider.FieldSSHHost:
+		return m.SSHHost()
 	case scmprovider.FieldCredentials:
 		return m.Credentials()
 	case scmprovider.FieldAPICredentialID:
@@ -14102,6 +14157,8 @@ func (m *ScmProviderMutation) OldField(ctx context.Context, name string) (ent.Va
 		return m.OldType(ctx)
 	case scmprovider.FieldBaseURL:
 		return m.OldBaseURL(ctx)
+	case scmprovider.FieldSSHHost:
+		return m.OldSSHHost(ctx)
 	case scmprovider.FieldCredentials:
 		return m.OldCredentials(ctx)
 	case scmprovider.FieldAPICredentialID:
@@ -14145,6 +14202,13 @@ func (m *ScmProviderMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetBaseURL(v)
+		return nil
+	case scmprovider.FieldSSHHost:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSSHHost(v)
 		return nil
 	case scmprovider.FieldCredentials:
 		v, ok := value.(string)
@@ -14228,6 +14292,9 @@ func (m *ScmProviderMutation) AddField(name string, value ent.Value) error {
 // mutation.
 func (m *ScmProviderMutation) ClearedFields() []string {
 	var fields []string
+	if m.FieldCleared(scmprovider.FieldSSHHost) {
+		fields = append(fields, scmprovider.FieldSSHHost)
+	}
 	if m.FieldCleared(scmprovider.FieldCredentials) {
 		fields = append(fields, scmprovider.FieldCredentials)
 	}
@@ -14251,6 +14318,9 @@ func (m *ScmProviderMutation) FieldCleared(name string) bool {
 // error if the field is not defined in the schema.
 func (m *ScmProviderMutation) ClearField(name string) error {
 	switch name {
+	case scmprovider.FieldSSHHost:
+		m.ClearSSHHost()
+		return nil
 	case scmprovider.FieldCredentials:
 		m.ClearCredentials()
 		return nil
@@ -14276,6 +14346,9 @@ func (m *ScmProviderMutation) ResetField(name string) error {
 		return nil
 	case scmprovider.FieldBaseURL:
 		m.ResetBaseURL()
+		return nil
+	case scmprovider.FieldSSHHost:
+		m.ResetSSHHost()
 		return nil
 	case scmprovider.FieldCredentials:
 		m.ResetCredentials()

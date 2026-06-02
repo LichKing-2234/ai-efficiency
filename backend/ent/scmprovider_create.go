@@ -40,6 +40,20 @@ func (spc *ScmProviderCreate) SetBaseURL(s string) *ScmProviderCreate {
 	return spc
 }
 
+// SetSSHHost sets the "ssh_host" field.
+func (spc *ScmProviderCreate) SetSSHHost(s string) *ScmProviderCreate {
+	spc.mutation.SetSSHHost(s)
+	return spc
+}
+
+// SetNillableSSHHost sets the "ssh_host" field if the given value is not nil.
+func (spc *ScmProviderCreate) SetNillableSSHHost(s *string) *ScmProviderCreate {
+	if s != nil {
+		spc.SetSSHHost(*s)
+	}
+	return spc
+}
+
 // SetCredentials sets the "credentials" field.
 func (spc *ScmProviderCreate) SetCredentials(s string) *ScmProviderCreate {
 	spc.mutation.SetCredentials(s)
@@ -301,6 +315,10 @@ func (spc *ScmProviderCreate) createSpec() (*ScmProvider, *sqlgraph.CreateSpec) 
 	if value, ok := spc.mutation.BaseURL(); ok {
 		_spec.SetField(scmprovider.FieldBaseURL, field.TypeString, value)
 		_node.BaseURL = value
+	}
+	if value, ok := spc.mutation.SSHHost(); ok {
+		_spec.SetField(scmprovider.FieldSSHHost, field.TypeString, value)
+		_node.SSHHost = &value
 	}
 	if value, ok := spc.mutation.Credentials(); ok {
 		_spec.SetField(scmprovider.FieldCredentials, field.TypeString, value)

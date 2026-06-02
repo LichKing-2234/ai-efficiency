@@ -55,9 +55,9 @@ This spec does not rewrite the older specs. Historical specs continue to documen
 | --- | --- | --- |
 | Trigger scope | Auto-bind on new repo creation and admin batch repair | Fixes new and old data without hidden periodic writes |
 | Read-only paths | `resolve-remote` and `hook-eligible` never bind | Preserves hook/cache contracts and avoids surprise writes |
-| Matching key | Canonical remote host to canonical provider host | Host is stable and independent of SSH/HTTPS URL spelling |
+| Matching key | Canonical remote host to canonical provider host or configured SSH host alias | Host is stable and independent of SSH/HTTPS URL spelling |
 | GitHub SaaS | `https://api.github.com` matches repo host `github.com` | Existing provider config uses API URL while remotes use clone host |
-| Enterprise and Bitbucket | Match by same canonical host | Avoids guessing enterprise URL topology |
+| Enterprise and Bitbucket | Match by same canonical host, or by explicit `ssh_host` when the clone host differs from the API host | Avoids guessing enterprise URL topology while supporting split API/SSH deployments |
 | Ambiguous matches | Keep repo unbound | Prevents accidental binding when multiple providers share a host |
 | Post-bind work | Best-effort metadata refresh and webhook registration | Binding should survive transient SCM or webhook failures |
 
@@ -69,14 +69,15 @@ The backend derives a canonical repo host from the repo identity:
 2. If the clone URL is unavailable or unparsable, use the host prefix from `repo.repo_key`.
 3. Lowercase the host and remove a leading default port when it is present.
 
-The backend derives a canonical provider host from each active `ScmProvider`:
+The backend derives canonical provider hosts from each active `ScmProvider`:
 
 1. Parse `scm_provider.base_url`.
 2. Lowercase the host and remove a leading default port when it is present.
 3. For `type=github`, map `api.github.com` to `github.com`.
 4. For GitHub Enterprise and Bitbucket Server, keep the parsed host as-is.
+5. If `scm_provider.ssh_host` is configured, lowercase it, remove a leading default port when present, and include it as an additional explicit host alias. `ssh_host` may be a bare host such as `git.example.com` or a URL whose host can be parsed.
 
-A repo is auto-bindable only when exactly one active provider has the same canonical provider host as the repo host.
+A repo is auto-bindable only when exactly one active provider has the same canonical provider host or `ssh_host` alias as the repo host.
 
 Result reasons:
 
@@ -247,15 +248,16 @@ When this design is implemented:
 1. GitHub SaaS provider `https://api.github.com` matches repo remote `https://github.com/acme/platform.git`.
 2. GitHub SSH remote `git@github.com:acme/platform.git` matches `https://api.github.com`.
 3. Bitbucket Server provider and repo remote match by same host.
-4. No matching provider keeps the repo unbound.
-5. Multiple active providers with the same canonical host keep the repo unbound with `ambiguous`.
-6. Inactive providers are ignored.
-7. New repo creation auto-binds only when there is one active match.
-8. Existing bound repos are not overwritten by auto-binding.
-9. `POST /api/v1/repos/auto-bind-unbound` processes only unbound active/webhook_failed repos.
-10. Webhook registration failure keeps the binding and marks `webhook_failed`.
-11. Provider API verification failure keeps the binding and returns/reports `provider_error`.
-12. `resolve-remote` and `hook-eligible` do not create repos and do not bind repos.
+4. Bitbucket Server provider with `base_url=https://bitbucket-api.example.com` and `ssh_host=git.example.com` matches repo remote `ssh://git@git.example.com/acme/platform.git`.
+5. No matching provider keeps the repo unbound.
+6. Multiple active providers with the same canonical host keep the repo unbound with `ambiguous`.
+7. Inactive providers are ignored.
+8. New repo creation auto-binds only when there is one active match.
+9. Existing bound repos are not overwritten by auto-binding.
+10. `POST /api/v1/repos/auto-bind-unbound` processes only unbound active/webhook_failed repos.
+11. Webhook registration failure keeps the binding and marks `webhook_failed`.
+12. Provider API verification failure keeps the binding and returns/reports `provider_error`.
+13. `resolve-remote` and `hook-eligible` do not create repos and do not bind repos.
 
 ### Frontend
 
@@ -274,4 +276,4 @@ This design is implemented when all are true:
 3. Ambiguous and no-match repos remain unbound and manually bindable.
 4. Hook eligibility and resolve paths remain read-only.
 5. Webhook registration failure no longer prevents a deterministic provider binding.
-6. Tests cover GitHub SaaS host normalization, Bitbucket host matching, ambiguity, no-match, and batch repair behavior.
+6. Tests cover GitHub SaaS host normalization, Bitbucket base-url and ssh-host matching, ambiguity, no-match, and batch repair behavior.

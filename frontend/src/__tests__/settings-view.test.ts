@@ -291,6 +291,30 @@ describe('SettingsView', () => {
     })
   })
 
+  it('sends ssh host when creating a code platform', async () => {
+    const { createProvider } = await import('@/api/scmProvider')
+    const wrapper = await mountSettings()
+    await openSettingsSection(wrapper, 'code-platforms')
+
+    const addBtn = wrapper.findAll('button').find((b) => b.text() === 'Add Platform')
+    await addBtn!.trigger('click')
+    await flushPromises()
+
+    await wrapper.find('input[name="provider-name"]').setValue('Bitbucket')
+    await wrapper.find('input[placeholder="https://api.github.com"]').setValue('https://bitbucket-api.example.com')
+    await wrapper.find('input[name="provider-ssh-host"]').setValue('git.example.com')
+
+    const saveBtn = wrapper.findAll('button').find((b) => b.text() === 'Create')
+    await saveBtn!.trigger('click')
+    await flushPromises()
+
+    expect(createProvider).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'Bitbucket',
+      base_url: 'https://bitbucket-api.example.com',
+      ssh_host: 'git.example.com',
+    }))
+  })
+
   it('renders relay providers returned from the backend', async () => {
     const wrapper = await mountSettings({
       relayProviders: [

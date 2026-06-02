@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/ai-efficiency/backend/ent"
 	entcredential "github.com/ai-efficiency/backend/ent/credential"
@@ -35,6 +36,7 @@ type createSCMProviderRequest struct {
 	Name              string          `json:"name" binding:"required"`
 	Type              string          `json:"type" binding:"required,oneof=github bitbucket_server"`
 	BaseURL           string          `json:"base_url" binding:"required"`
+	SSHHost           string          `json:"ssh_host"`
 	APICredentialID   int             `json:"api_credential_id"`
 	Credentials       json.RawMessage `json:"credentials"`
 	CloneProtocol     string          `json:"clone_protocol"`
@@ -44,6 +46,7 @@ type createSCMProviderRequest struct {
 type updateSCMProviderRequest struct {
 	Name              string          `json:"name"`
 	BaseURL           string          `json:"base_url"`
+	SSHHost           *string         `json:"ssh_host"`
 	Credentials       json.RawMessage `json:"credentials"`
 	APICredentialID   *int            `json:"api_credential_id"`
 	CloneProtocol     string          `json:"clone_protocol"`
@@ -99,14 +102,17 @@ func (h *SCMProviderHandler) Create(c *gin.Context) {
 		return
 	}
 
-	provider, err := h.entClient.ScmProvider.Create().
+	create := h.entClient.ScmProvider.Create().
 		SetName(req.Name).
 		SetType(scmprovider.Type(req.Type)).
 		SetBaseURL(req.BaseURL).
 		SetAPICredentialID(apiCredentialID).
 		SetCloneProtocol(scmprovider.CloneProtocol(cloneProtocol)).
-		SetNillableCloneCredentialID(req.CloneCredentialID).
-		Save(c.Request.Context())
+		SetNillableCloneCredentialID(req.CloneCredentialID)
+	if sshHost := strings.TrimSpace(req.SSHHost); sshHost != "" {
+		create.SetSSHHost(sshHost)
+	}
+	provider, err := create.Save(c.Request.Context())
 	if err != nil {
 		pkg.Error(c, http.StatusInternalServerError, "failed to create provider")
 		return
@@ -145,6 +151,13 @@ func (h *SCMProviderHandler) Update(c *gin.Context) {
 	}
 	if req.BaseURL != "" {
 		update.SetBaseURL(req.BaseURL)
+	}
+	if req.SSHHost != nil {
+		if sshHost := strings.TrimSpace(*req.SSHHost); sshHost != "" {
+			update.SetSSHHost(sshHost)
+		} else {
+			update.ClearSSHHost()
+		}
 	}
 	cloneCredentialID := current.CloneCredentialID
 	if req.CloneCredentialID != nil {

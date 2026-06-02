@@ -11,6 +11,7 @@ export interface SCMProvider {
   name: string
   type: string
   base_url: string
+  ssh_host?: string | null
   api_credential_id?: number
   clone_protocol?: 'https' | 'ssh'
   clone_credential_id?: number | null
