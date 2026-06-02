@@ -237,6 +237,38 @@ func TestPostCommitResolvedQueuesOnlyWithStableBinding(t *testing.T) {
 	}
 }
 
+func TestPostCommitResolvedReportsQueueFailure(t *testing.T) {
+	repo := initRepoWithCommit2(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	execCtx := resolvedContextForRepo(t, repo)
+
+	workspaceDir := filepath.Join(attributionlocal.AttributionRootDir(), "workspaces", execCtx.WorkspaceID)
+	if err := os.MkdirAll(workspaceDir, 0o700); err != nil {
+		t.Fatalf("mkdir workspace dir: %v", err)
+	}
+	queuePath, err := workspaceQueuePath(execCtx.WorkspaceID)
+	if err != nil {
+		t.Fatalf("workspaceQueuePath: %v", err)
+	}
+	if err := os.MkdirAll(queuePath, 0o700); err != nil {
+		t.Fatalf("mkdir queue path as directory: %v", err)
+	}
+
+	var stderr bytes.Buffer
+	oldStderr := hookStderr
+	hookStderr = &stderr
+	t.Cleanup(func() { hookStderr = oldStderr })
+
+	u := &fakeUploader{err: errors.New("upload failed")}
+	if err := NewHandler(u).PostCommitResolved(context.Background(), execCtx); err != nil {
+		t.Fatalf("PostCommitResolved: %v", err)
+	}
+	if !strings.Contains(stderr.String(), "failed to queue checkpoint event") {
+		t.Fatalf("stderr = %q, want queue failure warning", stderr.String())
+	}
+}
+
 func TestPostCommitResolvedLeavesQueuedEventsForAsyncRunner(t *testing.T) {
 	repo := initRepoWithCommit2(t)
 	home := t.TempDir()

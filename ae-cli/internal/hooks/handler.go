@@ -59,6 +59,8 @@ var runAttributionSync = func(ctx context.Context, opts attributionlocal.RunOpti
 	return engine.Run(ctx, opts)
 }
 
+var hookStderr io.Writer = os.Stderr
+
 func (h *Handler) attributionSyncClient() attributionlocal.BackendClient {
 	if h == nil || h.uploader == nil {
 		return nil
@@ -108,9 +110,9 @@ func (h *Handler) PostCommitResolved(ctx context.Context, execCtx ExecutionConte
 		CapturedAt:     time.Now().UTC().Format(time.RFC3339),
 	}
 	if h == nil || h.uploader == nil {
-		_ = enqueueForReplay(execCtx, ev)
+		queueForReplayOrWarn(execCtx, ev)
 	} else if err := h.uploader.UploadHookEvent(ctx, ev); err != nil {
-		_ = enqueueForReplay(execCtx, ev)
+		queueForReplayOrWarn(execCtx, ev)
 	}
 
 	task := SyncTask{
@@ -187,11 +189,11 @@ func (h *Handler) PostRewriteResolved(ctx context.Context, execCtx ExecutionCont
 			CapturedAt:    time.Now().UTC().Format(time.RFC3339),
 		}
 		if h == nil || h.uploader == nil {
-			_ = enqueueForReplay(execCtx, ev)
+			queueForReplayOrWarn(execCtx, ev)
 			continue
 		}
 		if err := h.uploader.UploadHookEvent(ctx, ev); err != nil {
-			_ = enqueueForReplay(execCtx, ev)
+			queueForReplayOrWarn(execCtx, ev)
 		}
 	}
 	return nil
@@ -408,6 +410,12 @@ func enqueueForReplay(execCtx ExecutionContext, ev HookEvent) error {
 		return err
 	}
 	return q.Enqueue(ev)
+}
+
+func queueForReplayOrWarn(execCtx ExecutionContext, ev HookEvent) {
+	if err := enqueueForReplay(execCtx, ev); err != nil {
+		fmt.Fprintf(hookStderr, "ae-cli: failed to queue %s event for replay: %v\n", ledgerKind(ev.Kind), err)
+	}
 }
 
 func (c ExecutionContext) hasStableReplayBinding() bool {

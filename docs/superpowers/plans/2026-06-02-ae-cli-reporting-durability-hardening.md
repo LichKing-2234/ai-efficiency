@@ -442,7 +442,7 @@ git commit -m "fix(ae-cli): lock hook replay queue"
 - Modify: `ae-cli/internal/hooks/handler.go`
 - Modify: `ae-cli/internal/hooks/handler_test.go`
 
-- [ ] **Step 1: Write the failing stderr test**
+- [x] **Step 1: Write the failing stderr test**
 
 Add this test to `ae-cli/internal/hooks/handler_test.go`:
 
@@ -480,7 +480,7 @@ func TestPostCommitResolvedReportsQueueFailure(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the test and verify it fails**
+- [x] **Step 2: Run the test and verify it fails**
 
 Run:
 
@@ -491,7 +491,7 @@ go test ./internal/hooks -run TestPostCommitResolvedReportsQueueFailure -count=1
 
 Expected: FAIL because `hookStderr` does not exist and enqueue errors are ignored.
 
-- [ ] **Step 3: Add stderr injection and queue warning helper**
+- [x] **Step 3: Add stderr injection and queue warning helper**
 
 Modify `ae-cli/internal/hooks/handler.go`. Add package-level writer:
 
@@ -521,7 +521,7 @@ if h == nil || h.uploader == nil {
 
 For post-rewrite, replace both ignored enqueue calls with `queueForReplayOrWarn(execCtx, ev)`.
 
-- [ ] **Step 4: Run focused tests**
+- [x] **Step 4: Run focused tests**
 
 Run:
 
@@ -532,7 +532,7 @@ go test ./internal/hooks -run 'TestPostCommitResolvedReportsQueueFailure|TestPos
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add ae-cli/internal/hooks/handler.go ae-cli/internal/hooks/handler_test.go
