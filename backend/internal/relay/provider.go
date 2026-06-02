@@ -66,3 +66,9 @@ type Provider interface {
 type PlatformChatCompleter interface {
 	ChatCompletionForPlatform(ctx context.Context, platform string, req ChatCompletionRequest) (*ChatCompletionResponse, error)
 }
+
+// PlatformModelLister is an optional extension for relay implementations that
+// expose platform-native model-list endpoints.
+type PlatformModelLister interface {
+	ListModelsForPlatform(ctx context.Context, platform string) ([]ModelOption, error)
+}

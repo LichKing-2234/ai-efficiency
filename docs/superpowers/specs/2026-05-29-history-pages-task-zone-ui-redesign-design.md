@@ -1,7 +1,7 @@
 # History Pages Task-Zone UI Redesign
 
 **Date:** 2026-05-29
-**Status:** Proposed design for review
+**Status:** Implemented frontend task-zone redesign
 **Scope:** `frontend/src/router/`, `frontend/src/components/`, `frontend/src/views/`, `frontend/src/api/`, `frontend/src/stores/`, `frontend/src/types/`, `frontend/src/__tests__/`, `docs/architecture.md`
 **Related:**
 - [2026-05-29-company-wide-user-home-ux-design.md](./2026-05-29-company-wide-user-home-ux-design.md)
@@ -13,6 +13,16 @@
 - [2026-03-24-oauth-cli-login-design.md](./2026-03-24-oauth-cli-login-design.md)
 - [docs/ui-review/history-pages-task-zone-redesign-review.html](../../ui-review/history-pages-task-zone-redesign-review.html)
 - [docs/ui-review/company-wide-onboarding-review.html](../../ui-review/company-wide-onboarding-review.html)
+
+## Implementation Notes
+
+- The implemented frontend keeps the existing route contract and adds a small `frontend/src/i18n.ts` layer for touched shell, page, auth, settings task, admin users, and repository-detail primary labels.
+- `/settings` now uses task-zone section components under `frontend/src/components/settings/`: `AIServiceSettings`, `CodePlatformSettings`, `OrganizationLoginSettings`, `DeploymentRuntimeSettings`, and `AdvancedCredentialSettings`.
+- `/settings` task sections and primary add/edit dialogs now switch consistently between `en-US` and `zh-CN` while preserving provider names, URLs, and technical enum values as product terms.
+- `/admin/users` keeps plaintext relay password copy behind an explicit confirmation, uses bilingual primary labels, and renders mobile user cards instead of a squeezed table.
+- `/repos/:id` keeps PR/commit details as advanced disclosure while localizing the repository health, SCM binding, PR summary, filters, and detail controls.
+- Deployment apply update, rollback, and restart controls require an explicit confirmation step before invoking the deployment API.
+- `/oauth/device` shares `AuthShell` and displays the signed-in account before approve or deny.
 
 ## Spec Relationship
 

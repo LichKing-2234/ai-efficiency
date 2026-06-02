@@ -3,6 +3,7 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import RepoListView from '@/views/repos/RepoListView.vue'
+import { setLocale } from '@/i18n'
 
 vi.mock('@/api/repo', () => ({
   listRepos: vi.fn().mockResolvedValue({ data: { data: { items: [], total: 0, page: 1, page_size: 20 } } }),
@@ -30,6 +31,8 @@ function createTestRouter() {
       { path: '/', component: { template: '<div>Home</div>' } },
       { path: '/repos', component: RepoListView },
       { path: '/repos/:id', component: { template: '<div>Detail</div>' } },
+      { path: '/events', component: { template: '<div>Events</div>' } },
+      { path: '/user', component: { template: '<div>User</div>' } },
       { path: '/login', component: { template: '<div>Login</div>' } },
       { path: '/settings', component: { template: '<div>Settings</div>' } },
     ],
@@ -42,7 +45,7 @@ const sampleRepos = [
   { id: 3, repo_key: 'bb.example.com/team/repo-c', name: 'repo-c', full_name: 'team/repo-c', clone_url: 'https://bb.example.com/scm/team/repo-c.git', default_branch: 'main', status: 'active', binding_state: 'bound', group_id: 0, created_at: '2026-01-01', edges: { scm_provider: { id: 2, name: 'Bitbucket', type: 'bitbucket_server', base_url: 'https://bb.example.com', status: 'active' } } },
 ]
 
-async function mountRepoList(repos?: any[]) {
+async function mountRepoList(repos?: any[], path = '/repos') {
   const { listRepos } = await import('@/api/repo')
   if (repos) {
     ;(listRepos as any).mockResolvedValue({
@@ -51,7 +54,7 @@ async function mountRepoList(repos?: any[]) {
   }
 
   const router = createTestRouter()
-  await router.push('/repos')
+  await router.push(path)
   await router.isReady()
 
   const wrapper = mount(RepoListView, {
@@ -67,14 +70,39 @@ async function mountRepoList(repos?: any[]) {
 describe('RepoListView', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    setLocale('en-US')
     vi.clearAllMocks()
   })
 
   it('renders page title and add button', async () => {
     const { wrapper } = await mountRepoList()
-    expect(wrapper.find('h1').text()).toBe('Repositories')
+    expect(wrapper.find('h1').text()).toBe('Code Repositories')
     const addBtn = wrapper.findAll('button').find((b) => b.text().includes('Add Repo'))
     expect(addBtn).toBeTruthy()
+  })
+
+  it('switches repository workbench labels to Chinese', async () => {
+    setLocale('zh-CN')
+    const { wrapper } = await mountRepoList(sampleRepos)
+
+    expect(wrapper.text()).toContain('代码仓库')
+    expect(wrapper.text()).toContain('仓库健康度')
+    expect(wrapper.text()).toContain('全部绑定状态')
+    expect(wrapper.text()).toContain('新增仓库')
+    expect(wrapper.text()).toContain('仓库总数')
+    expect(wrapper.text()).toContain('已绑定仓库')
+    expect(wrapper.text()).toContain('待绑定')
+
+    const addBtn = wrapper.findAll('button').find((b) => b.text().includes('新增仓库'))
+    await addBtn!.trigger('click')
+    await flushPromises()
+    const repoUrlInput = wrapper.find('input[placeholder*="github.com"]')
+    await repoUrlInput.setValue('https://github.com/myorg/myrepo')
+    await repoUrlInput.trigger('input')
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.text()).toContain('完整名称')
+    expect(wrapper.text()).toContain('名称')
   })
 
   it('shows empty state when no repos', async () => {
@@ -109,6 +137,18 @@ describe('RepoListView', () => {
     await flushPromises()
     expect(wrapper.text()).toContain('Add Repository')
     expect(wrapper.find('input[placeholder*="github.com"]').exists()).toBe(true)
+  })
+
+  it('closes add repository dialog with Escape', async () => {
+    const { wrapper } = await mountRepoList()
+    const addBtn = wrapper.findAll('button').find((b) => b.text().includes('Add Repo'))
+    await addBtn!.trigger('click')
+    await flushPromises()
+
+    await wrapper.get('[role="dialog"]').trigger('keydown', { key: 'Escape' })
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.text()).not.toContain('Add Repository')
   })
 
   it('auto-fills name and clone_url from GitHub URL', async () => {
@@ -175,12 +215,70 @@ describe('RepoListView', () => {
   it('displays repos in grouped table', async () => {
     const { wrapper } = await mountRepoList(sampleRepos)
 
+    expect(wrapper.text()).toContain('Repository health')
+    expect(wrapper.text()).toContain('Total repositories')
+    expect(wrapper.text()).toContain('Bound repositories')
+    expect(wrapper.text()).toContain('Needs binding')
     expect(wrapper.text()).toContain('repo-a')
     expect(wrapper.text()).toContain('repo-b')
     expect(wrapper.text()).toContain('repo-c')
     expect(wrapper.text()).toContain('org')
     expect(wrapper.text()).toContain('team')
     expect(wrapper.text()).toContain('active')
+  })
+
+  it('filters repositories by binding state from the health workbench', async () => {
+    const { wrapper } = await mountRepoList([
+      ...sampleRepos,
+      {
+        id: 4,
+        repo_key: 'github.com/org/repo-unbound',
+        name: 'repo-unbound',
+        full_name: 'org/repo-unbound',
+        clone_url: 'https://github.com/org/repo-unbound.git',
+        default_branch: 'main',
+        status: 'active',
+        binding_state: 'unbound',
+        group_id: 0,
+        created_at: '2026-01-01',
+        edges: {},
+      },
+    ])
+
+    expect(wrapper.text()).toContain('Auto-discovered repositories need a code platform binding before PR sync can run.')
+
+    await wrapper.find('[data-testid="repo-binding-filter"]').setValue('unbound')
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.text()).toContain('repo-unbound')
+    expect(wrapper.text()).not.toContain('repo-a')
+  })
+
+  it('restores and persists the binding filter in the URL query', async () => {
+    const { wrapper, router } = await mountRepoList([
+      ...sampleRepos,
+      {
+        id: 4,
+        repo_key: 'github.com/org/repo-unbound',
+        name: 'repo-unbound',
+        full_name: 'org/repo-unbound',
+        clone_url: 'https://github.com/org/repo-unbound.git',
+        default_branch: 'main',
+        status: 'active',
+        binding_state: 'unbound',
+        group_id: 0,
+        created_at: '2026-01-01',
+        edges: {},
+      },
+    ], '/repos?binding=unbound')
+
+    expect(wrapper.text()).toContain('repo-unbound')
+    expect(wrapper.text()).not.toContain('repo-a')
+
+    await wrapper.find('[data-testid="repo-binding-filter"]').setValue('all')
+    await flushPromises()
+
+    expect(router.currentRoute.value.query.binding).toBeUndefined()
   })
 
   it('navigates to repo detail on row click', async () => {
@@ -497,7 +595,7 @@ describe('RepoListView', () => {
 
     // Dialog should still open
     expect(wrapper.text()).toContain('Add Repository')
-    expect(wrapper.text()).toContain('No SCM providers found')
+    expect(wrapper.text()).toContain('No code platforms found')
   })
 
   it('renders repo rows without the retired last scan column', async () => {
@@ -537,6 +635,6 @@ describe('RepoListView', () => {
     await flushPromises()
 
     // Should have the provider in the select
-    expect(wrapper.text()).not.toContain('No SCM providers found')
+    expect(wrapper.text()).not.toContain('No code platforms found')
   })
 })

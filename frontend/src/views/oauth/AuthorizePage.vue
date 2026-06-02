@@ -2,9 +2,13 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import AuthShell from '@/components/AuthShell.vue'
+import { approveAuthorization } from '@/api/oauth'
+import { useI18n } from '@/i18n'
 
 const route = useRoute()
 const authStore = useAuthStore()
+const { t } = useI18n()
 
 const clientId = ref('')
 const redirectUri = ref('')
@@ -31,32 +35,21 @@ async function approve(approved: boolean) {
   loading.value = true
   error.value = ''
   try {
-    const token = localStorage.getItem('token')
-    const resp = await fetch('/oauth/authorize/approve', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-      },
-      body: JSON.stringify({
-        client_id: clientId.value,
-        redirect_uri: redirectUri.value,
-        code_challenge: codeChallenge.value,
-        code_challenge_method: codeChallengeMethod.value,
-        state: state.value,
-        approved,
-      }),
+    const data = await approveAuthorization({
+      client_id: clientId.value,
+      redirect_uri: redirectUri.value,
+      code_challenge: codeChallenge.value,
+      code_challenge_method: codeChallengeMethod.value,
+      state: state.value,
+      approved,
     })
-    const data = await resp.json()
-    if (data.data?.redirect_uri) {
-      window.location.href = data.data.redirect_uri
-    } else if (data.redirect_uri) {
+    if (data.redirect_uri) {
       window.location.href = data.redirect_uri
     } else {
-      error.value = 'Unexpected response from server'
+      error.value = t('auth.authorizationUnexpectedResponse')
     }
   } catch (e: any) {
-    error.value = e.message || 'Authorization failed'
+    error.value = e.message || t('auth.authorizationFailed')
   } finally {
     loading.value = false
   }
@@ -64,55 +57,61 @@ async function approve(approved: boolean) {
 </script>
 
 <template>
-  <div class="min-h-screen flex items-center justify-center bg-gray-50">
-    <div class="max-w-md w-full bg-white rounded-lg shadow-md p-8">
-      <h1 class="text-2xl font-bold text-center mb-6">授权请求</h1>
+  <AuthShell title-key="auth.authorizeTitle" subtitle-key="auth.authorizeSubtitle" eyebrow-key="auth.authorizeEyebrow">
+    <div v-if="!authStore.isAuthenticated" class="space-y-4">
+      <div class="rounded-md border border-amber-200 bg-amber-50 p-4">
+        <h2 class="text-sm font-semibold text-amber-950">{{ t('auth.signInToContinue') }}</h2>
+        <p class="mt-1 text-sm text-amber-800">{{ t('auth.signInBeforeAuthorize') }}</p>
+      </div>
+      <a :href="loginUrl" class="inline-flex w-full justify-center rounded-md bg-blue-700 px-4 py-2 text-sm font-medium text-white hover:bg-blue-800">
+        {{ t('auth.goToSignIn') }}
+      </a>
+    </div>
 
-      <div v-if="!authStore.isAuthenticated" class="text-center">
-        <p class="text-gray-600 mb-4">请先登录后再授权</p>
-        <a :href="loginUrl" class="text-blue-600 hover:underline">前往登录</a>
+    <div v-else class="space-y-5">
+      <div class="rounded-lg border border-blue-200 bg-blue-50 p-4">
+        <p class="text-sm text-blue-950">
+          <span class="font-semibold">{{ clientId }}</span> {{ t('auth.requestsAccount') }}
+        </p>
       </div>
 
-      <div v-else>
-        <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-          <p class="text-sm text-gray-700">
-            <span class="font-semibold">{{ clientId }}</span> 请求访问你的账号
-          </p>
-        </div>
+      <div class="rounded-md border border-slate-200 p-4">
+        <h3 class="text-sm font-semibold text-slate-900">{{ t('auth.signedInAccount') }}</h3>
+        <p class="mt-1 text-sm text-slate-600">{{ authStore.user?.email || authStore.user?.username }}</p>
+      </div>
 
-        <div class="mb-6">
-          <h3 class="text-sm font-medium text-gray-700 mb-2">将授予以下权限：</h3>
-          <ul class="text-sm text-gray-600 space-y-1">
-            <li class="flex items-center">
-              <span class="w-2 h-2 bg-green-400 rounded-full mr-2"></span>
-              读取你的用户信息
-            </li>
-            <li class="flex items-center">
-              <span class="w-2 h-2 bg-green-400 rounded-full mr-2"></span>
-              管理 AI 工具会话
-            </li>
-          </ul>
-        </div>
+      <div>
+        <h3 class="text-sm font-semibold text-slate-900">{{ t('auth.requestedAccess') }}</h3>
+        <ul class="mt-2 space-y-2 text-sm text-slate-600">
+          <li class="flex items-center gap-2">
+            <span class="h-2 w-2 rounded-full bg-emerald-500"></span>
+            {{ t('auth.readProfile') }}
+          </li>
+          <li class="flex items-center gap-2">
+            <span class="h-2 w-2 rounded-full bg-emerald-500"></span>
+            {{ t('auth.manageSessions') }}
+          </li>
+        </ul>
+      </div>
 
-        <p v-if="error" class="text-red-500 text-sm mb-4">{{ error }}</p>
+      <p v-if="error" class="rounded-md bg-red-50 p-3 text-sm text-red-700">{{ error }}</p>
 
-        <div class="flex space-x-4">
-          <button
-            @click="approve(false)"
-            :disabled="loading"
-            class="flex-1 px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-          >
-            拒绝
-          </button>
-          <button
-            @click="approve(true)"
-            :disabled="loading"
-            class="flex-1 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
-          >
-            {{ loading ? '处理中...' : '授权' }}
-          </button>
-        </div>
+      <div class="flex space-x-3">
+        <button
+          class="flex-1 rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+          :disabled="loading"
+          @click="approve(false)"
+        >
+          {{ t('auth.deny') }}
+        </button>
+        <button
+          class="flex-1 rounded-md bg-blue-700 px-4 py-2 text-sm font-medium text-white hover:bg-blue-800 disabled:opacity-50"
+          :disabled="loading"
+          @click="approve(true)"
+        >
+          {{ loading ? t('auth.processing') : t('auth.authorize') }}
+        </button>
       </div>
     </div>
-  </div>
+  </AuthShell>
 </template>

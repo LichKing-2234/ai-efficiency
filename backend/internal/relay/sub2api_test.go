@@ -1839,6 +1839,86 @@ func TestChatCompletionUsesConfiguredModel(t *testing.T) {
 	}
 }
 
+func TestListModelsForPlatformUsesGeminiNativeEndpoint(t *testing.T) {
+	var gotAuth string
+	var gotGoogleKey string
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1beta/models", func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		gotGoogleKey = r.Header.Get("x-goog-api-key")
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"models": []any{
+				map[string]any{
+					"name":        "models/gemini-2.5-flash",
+					"displayName": "Gemini 2.5 Flash",
+				},
+			},
+		})
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	p := relay.NewSub2apiProvider(srv.Client(), srv.URL+"/v1", "sk-user-gemini", "", zap.NewNop())
+	lister, ok := p.(relay.PlatformModelLister)
+	if !ok {
+		t.Fatal("provider does not implement PlatformModelLister")
+	}
+
+	models, err := lister.ListModelsForPlatform(context.Background(), "gemini")
+	if err != nil {
+		t.Fatalf("ListModelsForPlatform() unexpected error: %v", err)
+	}
+	if gotAuth != "Bearer sk-user-gemini" {
+		t.Fatalf("Authorization = %q, want user key", gotAuth)
+	}
+	if gotGoogleKey != "sk-user-gemini" {
+		t.Fatalf("x-goog-api-key = %q, want user key", gotGoogleKey)
+	}
+	if len(models) != 1 || models[0].ID != "gemini-2.5-flash" || models[0].DisplayName != "Gemini 2.5 Flash" {
+		t.Fatalf("unexpected models: %+v", models)
+	}
+}
+
+func TestListModelsForPlatformUsesV1ModelsForOpenAI(t *testing.T) {
+	var gotAuth string
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/models", func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"object": "list",
+			"data": []any{
+				map[string]any{
+					"id":           "gpt-5.4",
+					"display_name": "GPT-5.4",
+				},
+			},
+		})
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	p := relay.NewSub2apiProvider(srv.Client(), srv.URL, "sk-user-openai", "", zap.NewNop())
+	lister, ok := p.(relay.PlatformModelLister)
+	if !ok {
+		t.Fatal("provider does not implement PlatformModelLister")
+	}
+
+	models, err := lister.ListModelsForPlatform(context.Background(), "openai")
+	if err != nil {
+		t.Fatalf("ListModelsForPlatform() unexpected error: %v", err)
+	}
+	if gotAuth != "Bearer sk-user-openai" {
+		t.Fatalf("Authorization = %q, want user key", gotAuth)
+	}
+	if len(models) != 1 || models[0].ID != "gpt-5.4" || models[0].DisplayName != "GPT-5.4" {
+		t.Fatalf("unexpected models: %+v", models)
+	}
+}
+
 func TestCreateUserAPIKeyWithExpiryAndGroup(t *testing.T) {
 	exp := time.Date(2026, 3, 31, 1, 2, 3, 0, time.UTC)
 

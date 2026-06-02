@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import AppLayout from '@/components/AppLayout.vue'
 import { listProviders, createProvider, updateProvider, deleteProvider } from '@/api/scmProvider'
 import { listRelayProviders, createRelayProvider, updateRelayProvider, deleteRelayProvider } from '@/api/relayProvider'
@@ -7,8 +8,29 @@ import { listCredentials, createCredential, updateCredential, deleteCredential }
 import { getDeploymentStatus, checkForUpdate, applyUpdate, rollbackUpdate, restartDeployment } from '@/api/deployment'
 import { waitForServiceRecovery } from '@/utils/deploymentRecovery'
 import client from '@/api/client'
+import { useI18n } from '@/i18n'
+import { useModalFocus } from '@/composables/useModalFocus'
+import AIServiceSettings from '@/components/settings/AIServiceSettings.vue'
+import CodePlatformSettings from '@/components/settings/CodePlatformSettings.vue'
+import AdvancedCredentialSettings from '@/components/settings/AdvancedCredentialSettings.vue'
+import DeploymentRuntimeSettings from '@/components/settings/DeploymentRuntimeSettings.vue'
+import OrganizationLoginSettings from '@/components/settings/OrganizationLoginSettings.vue'
 import type { Credential, DeploymentStatus, RelayProvider, SCMProvider, UpdateStatus } from '@/types'
 
+const { t } = useI18n()
+const route = useRoute()
+const router = useRouter()
+type SettingsSection = 'ai-services' | 'code-platforms' | 'organization-login' | 'deployment-runtime' | 'advanced-credentials'
+type DeploymentAction = 'apply' | 'rollback' | 'restart'
+
+const activeSection = ref<SettingsSection>(initialSettingsSection())
+const settingsSections = computed<Array<{ id: SettingsSection; label: string; description: string }>>(() => [
+  { id: 'ai-services', label: t('settings.aiServices'), description: t('settings.aiServicesHelp') },
+  { id: 'code-platforms', label: t('settings.codePlatforms'), description: t('settings.codePlatformsHelp') },
+  { id: 'organization-login', label: t('settings.organizationLogin'), description: t('settings.organizationLoginHelp') },
+  { id: 'deployment-runtime', label: t('settings.deploymentRuntime'), description: t('settings.deploymentRuntimeHelp') },
+  { id: 'advanced-credentials', label: t('settings.advancedCredentials'), description: t('settings.advancedCredentialsHelp') },
+])
 const providers = ref<SCMProvider[]>([])
 const relayProviders = ref<RelayProvider[]>([])
 const credentials = ref<Credential[]>([])
@@ -16,6 +38,8 @@ const loading = ref(true)
 
 // Add/Edit dialog
 const showDialog = ref(false)
+const providerDialog = ref<HTMLElement | null>(null)
+const providerNameInput = ref<HTMLInputElement | null>(null)
 const editingId = ref<number | null>(null)
 const form = ref({
   name: '',
@@ -34,6 +58,8 @@ const showDeleteConfirm = ref<number | null>(null)
 // Relay provider dialog
 const relayLoading = ref(true)
 const showRelayDialog = ref(false)
+const relayDialog = ref<HTMLElement | null>(null)
+const relayNameInput = ref<HTMLInputElement | null>(null)
 const editingRelayId = ref<number | null>(null)
 const relayForm = ref({
   name: '',
@@ -49,6 +75,8 @@ const showRelayDeleteConfirm = ref<number | null>(null)
 
 // Credential dialog
 const showCredentialDialog = ref(false)
+const credentialDialog = ref<HTMLElement | null>(null)
+const credentialNameInput = ref<HTMLInputElement | null>(null)
 const editingCredentialId = ref<number | null>(null)
 const credentialForm = ref({
   name: '',
@@ -70,6 +98,7 @@ const deploymentLoading = ref(false)
 const deploymentActionLoading = ref(false)
 const deploymentMessage = ref('')
 const deploymentMessageKind = ref<'success' | 'error' | ''>('')
+const deploymentConfirmAction = ref<DeploymentAction | null>(null)
 
 // LDAP config
 const ldapForm = ref({ url: '', base_dn: '', bind_dn: '', bind_password: '', user_filter: '', tls: false })
@@ -81,6 +110,70 @@ const ldapSuccess = ref('')
 onMounted(async () => {
   await Promise.all([fetchProviders(), fetchRelayProviders(), fetchCredentials(), fetchDeploymentStatus(), fetchLDAPConfig()])
 })
+
+const { handleKeydown: handleProviderDialogKeydown } = useModalFocus(showDialog, providerDialog, {
+  initialFocus: providerNameInput,
+  onClose: closeProviderDialog,
+})
+const { handleKeydown: handleRelayDialogKeydown } = useModalFocus(showRelayDialog, relayDialog, {
+  initialFocus: relayNameInput,
+  onClose: closeRelayDialog,
+})
+const { handleKeydown: handleCredentialDialogKeydown } = useModalFocus(showCredentialDialog, credentialDialog, {
+  initialFocus: credentialNameInput,
+  onClose: closeCredentialDialog,
+})
+
+watch(activeSection, replaceSettingsQuery)
+
+function initialSettingsSection(): SettingsSection {
+  const section = route.query.section
+  if (
+    section === 'ai-services' ||
+    section === 'code-platforms' ||
+    section === 'organization-login' ||
+    section === 'deployment-runtime' ||
+    section === 'advanced-credentials'
+  ) {
+    return section
+  }
+  return 'ai-services'
+}
+
+function replaceSettingsQuery() {
+  const query = activeSection.value === 'ai-services' ? {} : { section: activeSection.value }
+  void router.replace({ query })
+}
+
+function selectSection(section: SettingsSection) {
+  activeSection.value = section
+}
+
+function onSettingsTabKeydown(event: KeyboardEvent, index: number) {
+  const keys = ['ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp', 'Home', 'End']
+  if (!keys.includes(event.key)) return
+  event.preventDefault()
+  const sections = settingsSections.value
+  let nextIndex = index
+  if (event.key === 'ArrowRight' || event.key === 'ArrowDown') nextIndex = (index + 1) % sections.length
+  if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') nextIndex = (index - 1 + sections.length) % sections.length
+  if (event.key === 'Home') nextIndex = 0
+  if (event.key === 'End') nextIndex = sections.length - 1
+  activeSection.value = sections[nextIndex].id
+  document.getElementById(`settings-tab-${sections[nextIndex].id}`)?.focus()
+}
+
+function closeProviderDialog() {
+  showDialog.value = false
+}
+
+function closeRelayDialog() {
+  showRelayDialog.value = false
+}
+
+function closeCredentialDialog() {
+  showCredentialDialog.value = false
+}
 
 async function fetchProviders() {
   loading.value = true
@@ -158,10 +251,10 @@ function onTypeChange() {
 
 async function handleSubmit() {
   formError.value = ''
-  if (!form.value.name) { formError.value = 'Name is required'; return }
-  if (!form.value.base_url) { formError.value = 'Base URL is required'; return }
-  if (!form.value.api_credential_id) { formError.value = 'API credential is required'; return }
-  if (form.value.clone_protocol === 'ssh' && !form.value.clone_credential_id) { formError.value = 'SSH clone credential is required'; return }
+  if (!form.value.name) { formError.value = t('settings.nameRequired'); return }
+  if (!form.value.base_url) { formError.value = t('settings.baseUrlRequired'); return }
+  if (!form.value.api_credential_id) { formError.value = t('settings.apiCredentialRequired'); return }
+  if (form.value.clone_protocol === 'ssh' && !form.value.clone_credential_id) { formError.value = t('settings.sshCloneCredentialRequired'); return }
 
   formLoading.value = true
   try {
@@ -187,7 +280,7 @@ async function handleSubmit() {
     showDialog.value = false
     await fetchProviders()
   } catch (e: any) {
-    formError.value = e.response?.data?.message || 'Operation failed'
+    formError.value = e.response?.data?.message || t('settings.operationFailed')
   } finally {
     formLoading.value = false
   }
@@ -233,10 +326,10 @@ function openEditRelayDialog(provider: RelayProvider) {
 
 async function handleRelaySubmit() {
   relayFormError.value = ''
-  if (!relayForm.value.name.trim()) { relayFormError.value = 'Name is required'; return }
-  if (!relayForm.value.display_name.trim()) { relayFormError.value = 'Display name is required'; return }
-  if (!relayForm.value.base_url.trim()) { relayFormError.value = 'Base URL is required'; return }
-  if (!editingRelayId.value && !relayForm.value.admin_api_key.trim()) { relayFormError.value = 'Admin API key is required'; return }
+  if (!relayForm.value.name.trim()) { relayFormError.value = t('settings.nameRequired'); return }
+  if (!relayForm.value.display_name.trim()) { relayFormError.value = t('settings.displayNameRequired'); return }
+  if (!relayForm.value.base_url.trim()) { relayFormError.value = t('settings.baseUrlRequired'); return }
+  if (!editingRelayId.value && !relayForm.value.admin_api_key.trim()) { relayFormError.value = t('settings.adminApiKeyRequired'); return }
 
   relayFormLoading.value = true
   try {
@@ -261,7 +354,7 @@ async function handleRelaySubmit() {
     showRelayDialog.value = false
     await fetchRelayProviders()
   } catch (e: any) {
-    relayFormError.value = e.response?.data?.message || 'Operation failed'
+    relayFormError.value = e.response?.data?.message || t('settings.operationFailed')
   } finally {
     relayFormLoading.value = false
   }
@@ -327,7 +420,7 @@ function buildCredentialPayload() {
 async function handleCredentialSubmit() {
   credentialFormError.value = ''
   if (!credentialForm.value.name) {
-    credentialFormError.value = 'Name is required'
+    credentialFormError.value = t('settings.nameRequired')
     return
   }
 
@@ -347,7 +440,7 @@ async function handleCredentialSubmit() {
     showCredentialDialog.value = false
     await fetchCredentials()
   } catch (e: any) {
-    credentialFormError.value = e.response?.data?.message || 'Operation failed'
+    credentialFormError.value = e.response?.data?.message || t('settings.operationFailed')
   } finally {
     credentialFormLoading.value = false
   }
@@ -361,10 +454,6 @@ async function confirmDeleteCredential(id: number) {
   } catch {
     // delete failed
   }
-}
-
-function formatDate(date: string) {
-  return new Date(date).toLocaleDateString()
 }
 
 async function fetchDeploymentStatus() {
@@ -392,20 +481,45 @@ function applyDeploymentUpdateStatus(status: UpdateStatus) {
   }
 }
 
-function shouldWaitForRecovery(action: 'apply' | 'rollback' | 'restart') {
+function shouldWaitForRecovery(action: DeploymentAction) {
   return action === 'restart'
+}
+
+function requestDeploymentAction(action: DeploymentAction) {
+  if (action === 'apply' && !deployment.value?.latest_release?.version?.trim()) {
+    setDeploymentMessage('error', 'No target version available')
+    deploymentConfirmAction.value = null
+    return
+  }
+  deploymentMessage.value = ''
+  deploymentMessageKind.value = ''
+  deploymentConfirmAction.value = action
+}
+
+async function confirmDeploymentAction() {
+  const action = deploymentConfirmAction.value
+  if (!action) return
+  deploymentConfirmAction.value = null
+  if (action === 'apply') {
+    await handleApplyUpdate()
+  } else if (action === 'rollback') {
+    await handleRollbackUpdate()
+  } else {
+    await handleRestartDeployment()
+  }
 }
 
 async function handleCheckUpdates() {
   deploymentActionLoading.value = true
+  deploymentConfirmAction.value = null
   deploymentMessage.value = ''
   deploymentMessageKind.value = ''
   try {
     const res = await checkForUpdate()
     deployment.value = res.data.data ?? null
-    setDeploymentMessage('success', 'Update check completed')
+    setDeploymentMessage('success', t('settings.checkUpdatesCompleted'))
   } catch (e: any) {
-    setDeploymentMessage('error', e.response?.data?.message || 'Failed to check updates')
+    setDeploymentMessage('error', e.response?.data?.message || t('settings.checkUpdatesFailed'))
   } finally {
     deploymentActionLoading.value = false
   }
@@ -414,7 +528,7 @@ async function handleCheckUpdates() {
 async function handleApplyUpdate() {
   const targetVersion = deployment.value?.latest_release?.version?.trim()
   if (!targetVersion) {
-    setDeploymentMessage('error', 'No target version available')
+    setDeploymentMessage('error', t('settings.noTargetVersion'))
     return
   }
 
@@ -424,9 +538,9 @@ async function handleApplyUpdate() {
   try {
     const res = await applyUpdate({ target_version: targetVersion })
     applyDeploymentUpdateStatus(res.data.data ?? { phase: 'unknown' })
-    setDeploymentMessage('success', 'Update staged. Restart the service to run the new binary.')
+    setDeploymentMessage('success', t('settings.applyUpdateStaged'))
   } catch (e: any) {
-    setDeploymentMessage('error', e.response?.data?.message || 'Failed to apply update')
+    setDeploymentMessage('error', e.response?.data?.message || t('settings.applyUpdateFailed'))
   } finally {
     deploymentActionLoading.value = false
   }
@@ -439,9 +553,9 @@ async function handleRollbackUpdate() {
   try {
     const res = await rollbackUpdate()
     applyDeploymentUpdateStatus(res.data.data ?? { phase: 'unknown' })
-    setDeploymentMessage('success', 'Rollback staged. Restart the service to run the restored binary.')
+    setDeploymentMessage('success', t('settings.rollbackStaged'))
   } catch (e: any) {
-    setDeploymentMessage('error', e.response?.data?.message || 'Failed to rollback update')
+    setDeploymentMessage('error', e.response?.data?.message || t('settings.rollbackFailed'))
   } finally {
     deploymentActionLoading.value = false
   }
@@ -454,13 +568,13 @@ async function handleRestartDeployment() {
   try {
     const res = await restartDeployment()
     applyDeploymentUpdateStatus(res.data.data ?? { phase: 'restart_requested' })
-    setDeploymentMessage('success', 'Restart request submitted')
+    setDeploymentMessage('success', t('settings.restartSubmitted'))
     if (shouldWaitForRecovery('restart')) {
-      setDeploymentMessage('success', 'Restart requested. Waiting for service recovery...')
+      setDeploymentMessage('success', t('settings.restartWaiting'))
       await waitForServiceRecovery()
     }
   } catch (e: any) {
-    setDeploymentMessage('error', e.response?.data?.message || 'Failed to restart service')
+    setDeploymentMessage('error', e.response?.data?.message || t('settings.restartFailed'))
   } finally {
     deploymentActionLoading.value = false
   }
@@ -488,16 +602,16 @@ async function handleSaveLDAP() {
   ldapError.value = ''
   ldapSuccess.value = ''
   if (!ldapForm.value.url) {
-    ldapError.value = 'LDAP URL is required'
+    ldapError.value = t('settings.ldapUrlRequired')
     return
   }
   ldapSaving.value = true
   try {
     await client.put('/admin/settings/ldap', ldapForm.value)
-    ldapSuccess.value = 'LDAP configuration saved'
+    ldapSuccess.value = t('settings.ldapSaved')
     setTimeout(() => { ldapSuccess.value = '' }, 3000)
   } catch (e: any) {
-    ldapError.value = e.response?.data?.message || 'Failed to save'
+    ldapError.value = e.response?.data?.message || t('settings.ldapSaveFailed')
   } finally {
     ldapSaving.value = false
   }
@@ -509,10 +623,10 @@ async function handleTestLDAP() {
   ldapTesting.value = true
   try {
     await client.post('/admin/settings/ldap/test', ldapForm.value)
-    ldapSuccess.value = 'LDAP connection successful'
+    ldapSuccess.value = t('settings.ldapTestSuccessful')
     setTimeout(() => { ldapSuccess.value = '' }, 3000)
   } catch (e: any) {
-    ldapError.value = e.response?.data?.message || 'Connection test failed'
+    ldapError.value = e.response?.data?.message || t('settings.ldapTestFailed')
   } finally {
     ldapTesting.value = false
   }
@@ -522,350 +636,189 @@ async function handleTestLDAP() {
 <template>
   <AppLayout>
     <div class="space-y-6">
-      <div class="flex items-center justify-between">
-        <h1 class="text-2xl font-bold text-gray-900">SCM Providers</h1>
-        <button
-          class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
-          @click="openAddDialog"
-        >
-          Add Provider
-        </button>
-      </div>
-
-      <div v-if="loading" class="text-center text-gray-500 py-12">Loading...</div>
-
-      <div class="space-y-4">
-        <div class="flex items-center justify-between">
-          <h2 class="text-xl font-bold text-gray-900">Credentials</h2>
-          <button
-            class="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-black"
-            @click="openAddCredentialDialog"
-          >
-            Add Credential
-          </button>
-        </div>
-
-        <div class="overflow-hidden rounded-lg bg-white shadow">
-          <table class="min-w-full divide-y divide-gray-200">
-            <thead class="bg-gray-50">
-              <tr>
-                <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Name</th>
-                <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Kind</th>
-                <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Usage</th>
-                <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Summary</th>
-                <th class="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Actions</th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-gray-200">
-              <tr v-for="cred in credentials" :key="cred.id">
-                <td class="whitespace-nowrap px-6 py-4 text-sm font-medium text-gray-900">{{ cred.name }}</td>
-                <td class="whitespace-nowrap px-6 py-4 text-sm text-gray-600">{{ cred.kind }}</td>
-                <td class="whitespace-nowrap px-6 py-4 text-sm text-gray-600">{{ cred.usage_count }}</td>
-                <td class="px-6 py-4 text-xs font-mono text-gray-500">{{ JSON.stringify(cred.summary || {}) }}</td>
-                <td class="whitespace-nowrap px-6 py-4 text-right text-sm space-x-3">
-                  <button class="text-indigo-600 hover:text-indigo-800" @click="openEditCredentialDialog(cred)">Edit</button>
-                  <button
-                    v-if="showCredentialDeleteConfirm !== cred.id"
-                    class="text-red-600 hover:text-red-800"
-                    @click="showCredentialDeleteConfirm = cred.id"
-                  >Delete</button>
-                  <span v-else class="space-x-2">
-                    <button class="text-red-700 font-medium" @click="confirmDeleteCredential(cred.id)">Confirm</button>
-                    <button class="text-gray-500" @click="showCredentialDeleteConfirm = null">Cancel</button>
-                  </span>
-                </td>
-              </tr>
-              <tr v-if="credentials.length === 0">
-                <td colspan="5" class="px-6 py-12 text-center text-sm text-gray-500">
-                  No credentials configured. Click "Add Credential" to create one.
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <div v-if="!loading" class="overflow-hidden rounded-lg bg-white shadow">
-        <table class="min-w-full divide-y divide-gray-200">
-          <thead class="bg-gray-50">
-            <tr>
-              <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Name</th>
-              <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Type</th>
-              <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Base URL</th>
-              <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Status</th>
-              <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Created</th>
-              <th class="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Actions</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-gray-200">
-            <tr v-for="p in providers" :key="p.id">
-              <td class="whitespace-nowrap px-6 py-4 text-sm font-medium text-gray-900">{{ p.name }}</td>
-              <td class="whitespace-nowrap px-6 py-4">
-                <span class="inline-flex rounded-full px-2 text-xs font-semibold leading-5"
-                  :class="p.type === 'github' ? 'bg-gray-100 text-gray-800' : 'bg-blue-100 text-blue-800'">
-                  {{ p.type }}
-                </span>
-              </td>
-              <td class="whitespace-nowrap px-6 py-4 text-sm text-gray-500 font-mono text-xs">{{ p.base_url }}</td>
-              <td class="whitespace-nowrap px-6 py-4">
-                <span class="inline-flex rounded-full px-2 text-xs font-semibold leading-5 bg-green-100 text-green-800">
-                  {{ p.status }}
-                </span>
-              </td>
-              <td class="whitespace-nowrap px-6 py-4 text-sm text-gray-500">{{ formatDate(p.created_at) }}</td>
-              <td class="whitespace-nowrap px-6 py-4 text-right text-sm space-x-3">
-                <button :data-testid="`provider-edit-${p.id}`" class="text-indigo-600 hover:text-indigo-800" @click="openEditDialog(p)">Edit</button>
-                <button
-                  v-if="showDeleteConfirm !== p.id"
-                  :data-testid="`provider-delete-${p.id}`"
-                  class="text-red-600 hover:text-red-800"
-                  @click="showDeleteConfirm = p.id"
-                >Delete</button>
-                <span v-else class="space-x-2">
-                  <button :data-testid="`provider-confirm-delete-${p.id}`" class="text-red-700 font-medium" @click="confirmDelete(p.id)">Confirm</button>
-                  <button :data-testid="`provider-cancel-delete-${p.id}`" class="text-gray-500" @click="showDeleteConfirm = null">Cancel</button>
-                </span>
-              </td>
-            </tr>
-            <tr v-if="providers.length === 0">
-              <td colspan="6" class="px-6 py-12 text-center text-sm text-gray-500">
-                No SCM providers configured. Click "Add Provider" to connect GitHub or Bitbucket.
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-    <!-- Relay Providers -->
-    <div class="mt-8 space-y-4">
-      <div class="flex items-center justify-between">
+      <div>
         <div>
-          <h2 class="text-xl font-bold text-gray-900">Relay Providers</h2>
-          <p class="mt-1 text-sm text-gray-500">Manage DB-backed relay endpoints used for SSO, API key delivery, and CLI tool configuration.</p>
+          <h1 class="text-2xl font-bold text-gray-900">{{ t('nav.adminConsole') }}</h1>
+          <p class="mt-1 text-sm text-gray-500">{{ t('settings.subtitle') }}</p>
         </div>
+      </div>
+
+      <div class="grid gap-2 lg:grid-cols-5" role="tablist" aria-label="Admin console sections">
         <button
-          class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
-          @click="openAddRelayDialog"
+          v-for="(section, index) in settingsSections"
+          :key="section.id"
+          :id="`settings-tab-${section.id}`"
+          :data-testid="`settings-tab-${section.id}`"
+          class="min-h-20 rounded-lg border px-3 py-3 text-left transition-colors"
+          :class="activeSection === section.id ? 'border-blue-300 bg-blue-50 text-blue-950' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'"
+          type="button"
+          role="tab"
+          :aria-selected="activeSection === section.id"
+          :aria-controls="`settings-panel-${section.id}`"
+          :tabindex="activeSection === section.id ? 0 : -1"
+          @click="selectSection(section.id)"
+          @keydown="onSettingsTabKeydown($event, index)"
         >
-          Add Relay Provider
+          <span class="block text-sm font-semibold">{{ section.label }}</span>
+          <span class="mt-1 block text-xs text-slate-500">{{ section.description }}</span>
         </button>
       </div>
 
-      <div v-if="relayLoading" class="text-center text-gray-500 py-12">Loading relay providers...</div>
+      <div v-if="loading" class="text-center text-gray-500 py-12">{{ t('settings.loading') }}</div>
 
-      <div v-else class="overflow-hidden rounded-lg bg-white shadow">
-        <table class="min-w-full divide-y divide-gray-200">
-          <thead class="bg-gray-50">
-            <tr>
-              <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Name</th>
-              <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Primary</th>
-              <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Base URL</th>
-              <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">State</th>
-              <th class="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Actions</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-gray-200">
-            <tr v-for="provider in relayProviders" :key="provider.id">
-              <td class="px-6 py-4">
-                <div class="text-sm font-medium text-gray-900">{{ provider.display_name }}</div>
-                <div class="mt-1 font-mono text-xs text-gray-500">{{ provider.name }}</div>
-              </td>
-              <td class="px-6 py-4">
-                <div v-if="provider.is_primary" class="inline-flex rounded-full bg-emerald-100 px-2 py-1 text-xs font-semibold text-emerald-700">Primary</div>
-                <div v-else class="inline-flex rounded-full bg-gray-100 px-2 py-1 text-xs font-semibold text-gray-500">Secondary</div>
-              </td>
-              <td class="px-6 py-4 font-mono text-xs text-gray-500">
-                <div>{{ provider.base_url }}</div>
-              </td>
-              <td class="px-6 py-4">
-                <span
-                  class="inline-flex rounded-full px-2 py-1 text-xs font-semibold"
-                  :class="provider.enabled ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-500'"
-                >{{ provider.enabled ? 'Enabled' : 'Disabled' }}</span>
-              </td>
-              <td class="whitespace-nowrap px-6 py-4 text-right text-sm space-x-3">
-                <button :data-testid="`relay-provider-edit-${provider.id}`" class="text-indigo-600 hover:text-indigo-800" @click="openEditRelayDialog(provider)">Edit</button>
-                <button
-                  v-if="showRelayDeleteConfirm !== provider.id"
-                  :data-testid="`relay-provider-delete-${provider.id}`"
-                  class="text-red-600 hover:text-red-800"
-                  @click="showRelayDeleteConfirm = provider.id"
-                >Delete</button>
-                <span v-else class="space-x-2">
-                  <button :data-testid="`relay-provider-confirm-delete-${provider.id}`" class="text-red-700 font-medium" @click="confirmDeleteRelay(provider.id)">Confirm</button>
-                  <button :data-testid="`relay-provider-cancel-delete-${provider.id}`" class="text-gray-500" @click="showRelayDeleteConfirm = null">Cancel</button>
-                </span>
-              </td>
-            </tr>
-            <tr v-if="relayProviders.length === 0">
-              <td colspan="5" class="px-6 py-12 text-center text-sm text-gray-500">
-                No relay providers configured. Add at least one primary provider so SSO login and CLI delivery have a DB-backed source of truth.
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
+      <section
+        v-if="activeSection === 'advanced-credentials'"
+        id="settings-panel-advanced-credentials"
+        role="tabpanel"
+        aria-labelledby="settings-tab-advanced-credentials"
+      >
+        <AdvancedCredentialSettings
+          :credentials="credentials"
+          :show-delete-confirm="showCredentialDeleteConfirm"
+          @add="openAddCredentialDialog"
+          @edit="openEditCredentialDialog"
+          @request-delete="showCredentialDeleteConfirm = $event"
+          @confirm-delete="confirmDeleteCredential"
+          @cancel-delete="showCredentialDeleteConfirm = null"
+        />
+      </section>
 
-    <!-- Deployment -->
-    <div class="mt-8 space-y-4">
-      <h2 class="text-xl font-bold text-gray-900">Deployment</h2>
-      <div class="overflow-hidden rounded-lg bg-white shadow p-6">
-        <div v-if="deploymentLoading" class="text-sm text-gray-500">Loading deployment status...</div>
+      <section
+        v-if="activeSection === 'code-platforms' && !loading"
+        id="settings-panel-code-platforms"
+        role="tabpanel"
+        aria-labelledby="settings-tab-code-platforms"
+      >
+        <CodePlatformSettings
+          :providers="providers"
+          :show-delete-confirm="showDeleteConfirm"
+          @add="openAddDialog"
+          @edit="openEditDialog"
+          @request-delete="showDeleteConfirm = $event"
+          @confirm-delete="confirmDelete"
+          @cancel-delete="showDeleteConfirm = null"
+        />
+      </section>
 
-        <div v-else class="space-y-4">
-          <div class="flex items-center justify-between">
-            <div>
-              <div class="text-sm text-gray-500">Current version</div>
-              <div class="text-lg font-semibold text-gray-900">{{ deployment?.version.version || 'unknown' }}</div>
-            </div>
-            <span class="inline-flex rounded-full bg-gray-100 px-2 py-1 text-xs font-semibold uppercase tracking-wide text-gray-700">
-              {{ deployment?.mode || 'unknown' }}
-            </span>
-          </div>
+      <section
+        v-if="activeSection === 'ai-services'"
+        id="settings-panel-ai-services"
+        role="tabpanel"
+        aria-labelledby="settings-tab-ai-services"
+      >
+        <AIServiceSettings
+          :relay-loading="relayLoading"
+          :relay-providers="relayProviders"
+          :show-delete-confirm="showRelayDeleteConfirm"
+          @add="openAddRelayDialog"
+          @edit="openEditRelayDialog"
+          @request-delete="showRelayDeleteConfirm = $event"
+          @confirm-delete="confirmDeleteRelay"
+          @cancel-delete="showRelayDeleteConfirm = null"
+        />
+      </section>
 
-          <div class="grid gap-3 md:grid-cols-2">
-            <div class="rounded-md bg-gray-50 p-3">
-              <div class="text-xs uppercase tracking-wide text-gray-500">Commit</div>
-              <div class="mt-1 font-mono text-sm text-gray-700">{{ deployment?.version.commit || 'unknown' }}</div>
-            </div>
-            <div class="rounded-md bg-gray-50 p-3">
-              <div class="text-xs uppercase tracking-wide text-gray-500">Update phase</div>
-              <div class="mt-1 text-sm text-gray-700">{{ deployment?.update_status.phase || 'unknown' }}</div>
-            </div>
-          </div>
+      <section
+        v-if="activeSection === 'deployment-runtime'"
+        id="settings-panel-deployment-runtime"
+        role="tabpanel"
+        aria-labelledby="settings-tab-deployment-runtime"
+      >
+        <DeploymentRuntimeSettings
+          :deployment="deployment"
+          :deployment-loading="deploymentLoading"
+          :deployment-action-loading="deploymentActionLoading"
+          :deployment-message="deploymentMessage"
+          :deployment-message-kind="deploymentMessageKind"
+          :deployment-confirm-action="deploymentConfirmAction"
+          @check-updates="handleCheckUpdates"
+          @request-action="requestDeploymentAction"
+          @confirm-action="confirmDeploymentAction"
+          @cancel-action="deploymentConfirmAction = null"
+        />
+      </section>
 
-          <div v-if="deployment?.latest_release" class="rounded-md bg-blue-50 p-3 text-sm text-blue-800">
-            Latest release: {{ deployment.latest_release.version }}
-          </div>
-
-          <div v-if="deploymentMessage" class="rounded-md p-3 text-sm" :class="deploymentMessageKind === 'error' ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'">
-            {{ deploymentMessage }}
-          </div>
-
-          <div class="flex flex-wrap justify-end gap-3">
-            <button @click="handleCheckUpdates" :disabled="deploymentActionLoading" class="rounded-md border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50">
-              {{ deploymentActionLoading ? 'Working...' : 'Check Updates' }}
-            </button>
-            <button @click="handleApplyUpdate" :disabled="deploymentActionLoading" class="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50">
-              Apply Update
-            </button>
-            <button @click="handleRollbackUpdate" :disabled="deploymentActionLoading" class="rounded-md bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-50">
-              Rollback
-            </button>
-            <button @click="handleRestartDeployment" :disabled="deploymentActionLoading" class="rounded-md bg-slate-700 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50">
-              Restart Service
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- LDAP Configuration -->
-    <div class="mt-8 space-y-4">
-      <h2 class="text-xl font-bold text-gray-900">LDAP Configuration</h2>
-      <div class="overflow-hidden rounded-lg bg-white shadow p-6">
-        <div class="space-y-4">
-          <div>
-            <label class="block text-sm font-medium text-gray-700">LDAP URL</label>
-            <input v-model="ldapForm.url" type="text" placeholder="ldap://ldap.example.com:389" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
-          </div>
-
-          <div>
-            <label class="block text-sm font-medium text-gray-700">Base DN</label>
-            <input v-model="ldapForm.base_dn" type="text" placeholder="dc=example,dc=com" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
-          </div>
-
-          <div>
-            <label class="block text-sm font-medium text-gray-700">Bind DN</label>
-            <input v-model="ldapForm.bind_dn" type="text" placeholder="cn=admin,dc=example,dc=com" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
-          </div>
-
-          <div>
-            <label class="block text-sm font-medium text-gray-700">Bind Password</label>
-            <input v-model="ldapForm.bind_password" type="password" placeholder="Leave empty to keep current" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
-          </div>
-
-          <div>
-            <label class="block text-sm font-medium text-gray-700">User Filter</label>
-            <input v-model="ldapForm.user_filter" type="text" placeholder="(uid=%s)" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
-          </div>
-
-          <div class="flex items-center">
-            <input v-model="ldapForm.tls" type="checkbox" id="ldap-tls" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
-            <label for="ldap-tls" class="ml-2 text-sm text-gray-700">Enable TLS</label>
-          </div>
-
-          <div v-if="ldapError" class="rounded-md bg-red-50 p-3 text-sm text-red-700">{{ ldapError }}</div>
-          <div v-if="ldapSuccess" class="rounded-md bg-green-50 p-3 text-sm text-green-700">{{ ldapSuccess }}</div>
-
-          <div class="flex justify-end space-x-3">
-            <button @click="handleTestLDAP" :disabled="ldapTesting" class="rounded-md border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50">
-              {{ ldapTesting ? 'Testing...' : 'Test Connection' }}
-            </button>
-            <button @click="handleSaveLDAP" :disabled="ldapSaving" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50">
-              {{ ldapSaving ? 'Saving...' : 'Save' }}
-            </button>
-          </div>
-        </div>
-      </div>
+      <section
+        v-if="activeSection === 'organization-login'"
+        id="settings-panel-organization-login"
+        role="tabpanel"
+        aria-labelledby="settings-tab-organization-login"
+      >
+        <OrganizationLoginSettings
+          :ldap-form="ldapForm"
+          :ldap-saving="ldapSaving"
+          :ldap-testing="ldapTesting"
+          :ldap-error="ldapError"
+          :ldap-success="ldapSuccess"
+          @test="handleTestLDAP"
+          @save="handleSaveLDAP"
+        />
+      </section>
     </div>
 
     <!-- Add/Edit Credential Dialog -->
-    <div v-if="showCredentialDialog" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div class="w-full max-w-2xl rounded-lg bg-white p-6 shadow-xl">
-        <h2 class="mb-4 text-lg font-semibold text-gray-900">
-          {{ editingCredentialId ? 'Edit Credential' : 'Add Credential' }}
+    <div v-if="showCredentialDialog" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <button class="absolute inset-0" type="button" :aria-label="t('settings.cancel')" @click="closeCredentialDialog" />
+      <div
+        ref="credentialDialog"
+        class="relative max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-lg bg-white p-6 shadow-xl"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="credential-dialog-title"
+        tabindex="-1"
+        @keydown="handleCredentialDialogKeydown"
+      >
+        <h2 id="credential-dialog-title" class="mb-4 text-lg font-semibold text-gray-900">
+          {{ editingCredentialId ? t('settings.editCredential') : t('settings.addCredential') }}
         </h2>
 
         <div class="space-y-3">
           <div>
-            <label class="block text-sm font-medium text-gray-700">Name</label>
-            <input name="credential-name" v-model="credentialForm.name" type="text" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
+            <label class="block text-sm font-medium text-gray-700">{{ t('settings.name') }}</label>
+            <input ref="credentialNameInput" name="credential-name" v-model="credentialForm.name" type="text" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
           </div>
 
           <div>
-            <label class="block text-sm font-medium text-gray-700">Description</label>
+            <label class="block text-sm font-medium text-gray-700">{{ t('settings.description') }}</label>
             <input v-model="credentialForm.description" type="text" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
           </div>
 
           <div>
-            <label class="block text-sm font-medium text-gray-700">Kind</label>
+            <label class="block text-sm font-medium text-gray-700">{{ t('settings.kind') }}</label>
             <select name="credential-kind" v-model="credentialForm.kind" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm">
-              <option value="secret_text">Secret text</option>
-              <option value="username_password">Username with password</option>
-              <option value="ssh_username_with_private_key">SSH Username with private key</option>
+              <option value="secret_text">{{ t('settings.secretTextKind') }}</option>
+              <option value="username_password">{{ t('settings.usernamePasswordKind') }}</option>
+              <option value="ssh_username_with_private_key">{{ t('settings.sshPrivateKeyKind') }}</option>
             </select>
           </div>
 
           <div v-if="credentialForm.kind === 'secret_text'">
-            <label class="block text-sm font-medium text-gray-700">Secret Text</label>
+            <label class="block text-sm font-medium text-gray-700">{{ t('settings.secretText') }}</label>
             <textarea name="credential-secret-text" v-model="credentialForm.text" rows="4" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono" />
           </div>
 
           <template v-else-if="credentialForm.kind === 'username_password'">
             <div>
-              <label class="block text-sm font-medium text-gray-700">Username</label>
+              <label class="block text-sm font-medium text-gray-700">{{ t('settings.username') }}</label>
               <input v-model="credentialForm.username" type="text" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
             </div>
             <div>
-              <label class="block text-sm font-medium text-gray-700">Password</label>
+              <label class="block text-sm font-medium text-gray-700">{{ t('settings.password') }}</label>
               <input v-model="credentialForm.password" type="password" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
             </div>
           </template>
 
           <template v-else>
             <div>
-              <label class="block text-sm font-medium text-gray-700">SSH Username</label>
+              <label class="block text-sm font-medium text-gray-700">{{ t('settings.sshUsername') }}</label>
               <input v-model="credentialForm.username" type="text" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
             </div>
             <div>
-              <label class="block text-sm font-medium text-gray-700">Private Key</label>
+              <label class="block text-sm font-medium text-gray-700">{{ t('settings.privateKey') }}</label>
               <textarea v-model="credentialForm.private_key" rows="6" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono" />
             </div>
             <div>
-              <label class="block text-sm font-medium text-gray-700">Passphrase</label>
+              <label class="block text-sm font-medium text-gray-700">{{ t('settings.passphrase') }}</label>
               <input v-model="credentialForm.passphrase" type="password" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
             </div>
           </template>
@@ -873,9 +826,9 @@ async function handleTestLDAP() {
           <div v-if="credentialFormError" class="rounded-md bg-red-50 p-3 text-sm text-red-700">{{ credentialFormError }}</div>
 
           <div class="flex justify-end space-x-3">
-            <button @click="showCredentialDialog = false" class="rounded-md border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">Cancel</button>
+            <button @click="closeCredentialDialog" class="rounded-md border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">{{ t('settings.cancel') }}</button>
             <button @click="handleCredentialSubmit" :disabled="credentialFormLoading" class="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-black disabled:opacity-50">
-              {{ credentialFormLoading ? 'Saving...' : 'Save Credential' }}
+              {{ credentialFormLoading ? t('settings.saving') : t('settings.saveCredential') }}
             </button>
           </div>
         </div>
@@ -883,71 +836,89 @@ async function handleTestLDAP() {
     </div>
 
     <!-- Add/Edit Relay Provider Dialog -->
-    <div v-if="showRelayDialog" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div class="w-full max-w-2xl rounded-lg bg-white p-6 shadow-xl">
-        <h2 class="mb-4 text-lg font-semibold text-gray-900">
-          {{ editingRelayId ? 'Edit Relay Provider' : 'Add Relay Provider' }}
+    <div v-if="showRelayDialog" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <button class="absolute inset-0" type="button" :aria-label="t('settings.cancel')" @click="closeRelayDialog" />
+      <div
+        ref="relayDialog"
+        class="relative max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-lg bg-white p-6 shadow-xl"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="relay-dialog-title"
+        tabindex="-1"
+        @keydown="handleRelayDialogKeydown"
+      >
+        <h2 id="relay-dialog-title" class="mb-4 text-lg font-semibold text-gray-900">
+          {{ editingRelayId ? t('settings.editRelayProvider') : t('settings.addRelayProvider') }}
         </h2>
 
         <div class="grid gap-4 md:grid-cols-2">
           <div>
-            <label class="block text-sm font-medium text-gray-700">Name</label>
-            <input name="relay-provider-name" v-model="relayForm.name" :disabled="!!editingRelayId" type="text" placeholder="sub2api-main" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm disabled:bg-gray-50 disabled:text-gray-500" />
+            <label class="block text-sm font-medium text-gray-700">{{ t('settings.name') }}</label>
+            <input ref="relayNameInput" name="relay-provider-name" v-model="relayForm.name" :disabled="!!editingRelayId" type="text" placeholder="relay-main" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm disabled:bg-gray-50 disabled:text-gray-500" />
           </div>
 
           <div>
-            <label class="block text-sm font-medium text-gray-700">Display Name</label>
-            <input name="relay-provider-display-name" v-model="relayForm.display_name" type="text" placeholder="Sub2API Main" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
+            <label class="block text-sm font-medium text-gray-700">{{ t('settings.displayName') }}</label>
+            <input name="relay-provider-display-name" v-model="relayForm.display_name" type="text" placeholder="Relay Main" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
           </div>
 
           <div>
-            <label class="block text-sm font-medium text-gray-700">Base URL</label>
-            <input name="relay-provider-base-url" v-model="relayForm.base_url" type="text" placeholder="https://sub2api.agoraio.cn" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
+            <label class="block text-sm font-medium text-gray-700">{{ t('settings.baseUrl') }}</label>
+            <input name="relay-provider-base-url" v-model="relayForm.base_url" type="text" placeholder="https://relay.example.com" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
           </div>
 
           <div class="md:col-span-2">
-            <label class="block text-sm font-medium text-gray-700">Admin API Key</label>
-            <input name="relay-provider-admin-api-key" v-model="relayForm.admin_api_key" type="password" :placeholder="editingRelayId ? 'Leave empty to keep current key' : 'admin-...'" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
-            <p class="mt-1 text-xs text-gray-400">Stored encrypted in the database. Leave blank during edit to keep the current key.</p>
+            <label class="block text-sm font-medium text-gray-700">{{ t('settings.adminApiKey') }}</label>
+            <input name="relay-provider-admin-api-key" v-model="relayForm.admin_api_key" type="password" :placeholder="editingRelayId ? t('settings.keepCurrentPlaceholder') : 'admin-...'" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
+            <p class="mt-1 text-xs text-gray-400">{{ t('settings.relayKeyHelp') }}</p>
           </div>
 
           <div class="flex items-center">
             <input id="relay-primary" v-model="relayForm.is_primary" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
-            <label for="relay-primary" class="ml-2 text-sm text-gray-700">Primary provider</label>
+            <label for="relay-primary" class="ml-2 text-sm text-gray-700">{{ t('settings.primaryProvider') }}</label>
           </div>
 
           <div class="flex items-center">
             <input id="relay-enabled" v-model="relayForm.enabled" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
-            <label for="relay-enabled" class="ml-2 text-sm text-gray-700">Enabled</label>
+            <label for="relay-enabled" class="ml-2 text-sm text-gray-700">{{ t('settings.enabled') }}</label>
           </div>
         </div>
 
         <div v-if="relayFormError" class="mt-4 rounded-md bg-red-50 p-3 text-sm text-red-700">{{ relayFormError }}</div>
 
         <div class="mt-5 flex justify-end space-x-3">
-          <button @click="showRelayDialog = false" class="rounded-md border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">Cancel</button>
+          <button @click="closeRelayDialog" class="rounded-md border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">{{ t('settings.cancel') }}</button>
           <button @click="handleRelaySubmit" :disabled="relayFormLoading" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50">
-            {{ relayFormLoading ? 'Saving...' : editingRelayId ? 'Update Relay Provider' : 'Create Relay Provider' }}
+            {{ relayFormLoading ? t('settings.saving') : editingRelayId ? t('settings.updateRelayProvider') : t('settings.createRelayProvider') }}
           </button>
         </div>
       </div>
     </div>
 
     <!-- Add/Edit Dialog -->
-    <div v-if="showDialog" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div class="w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
-        <h2 class="text-lg font-semibold text-gray-900 mb-4">
-          {{ editingId ? 'Edit Provider' : 'Add SCM Provider' }}
+    <div v-if="showDialog" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <button class="absolute inset-0" type="button" :aria-label="t('settings.cancel')" @click="closeProviderDialog" />
+      <div
+        ref="providerDialog"
+        class="relative max-h-[90vh] w-full max-w-md overflow-y-auto rounded-lg bg-white p-6 shadow-xl"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="provider-dialog-title"
+        tabindex="-1"
+        @keydown="handleProviderDialogKeydown"
+      >
+        <h2 id="provider-dialog-title" class="mb-4 text-lg font-semibold text-gray-900">
+          {{ editingId ? t('settings.editProvider') : t('settings.addScmProvider') }}
         </h2>
 
         <div class="space-y-3">
           <div>
-            <label class="block text-sm font-medium text-gray-700">Name</label>
-            <input name="provider-name" v-model="form.name" type="text" placeholder="e.g. GitHub" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
+            <label class="block text-sm font-medium text-gray-700">{{ t('settings.name') }}</label>
+            <input ref="providerNameInput" name="provider-name" v-model="form.name" type="text" placeholder="e.g. GitHub" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
           </div>
 
           <div v-if="!editingId">
-            <label class="block text-sm font-medium text-gray-700">Type</label>
+            <label class="block text-sm font-medium text-gray-700">{{ t('settings.type') }}</label>
             <select v-model="form.type" @change="onTypeChange" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm">
               <option value="github">GitHub</option>
               <option value="bitbucket_server">Bitbucket Server</option>
@@ -955,14 +926,14 @@ async function handleTestLDAP() {
           </div>
 
           <div>
-            <label class="block text-sm font-medium text-gray-700">Base URL</label>
+            <label class="block text-sm font-medium text-gray-700">{{ t('settings.baseUrl') }}</label>
             <input v-model="form.base_url" type="text" placeholder="https://api.github.com" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
           </div>
 
           <div>
-            <label class="block text-sm font-medium text-gray-700">API Credential</label>
+            <label class="block text-sm font-medium text-gray-700">{{ t('settings.apiCredential') }}</label>
             <select name="provider-api-credential" v-model.number="form.api_credential_id" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm">
-              <option :value="0" disabled>Select API credential</option>
+              <option :value="0" disabled>{{ t('settings.selectApiCredential') }}</option>
               <option v-for="cred in credentials.filter(c => c.kind !== 'ssh_username_with_private_key')" :key="cred.id" :value="cred.id">
                 {{ cred.name }} ({{ cred.kind }})
               </option>
@@ -970,7 +941,7 @@ async function handleTestLDAP() {
           </div>
 
           <div>
-            <label class="block text-sm font-medium text-gray-700">Clone Protocol</label>
+            <label class="block text-sm font-medium text-gray-700">{{ t('settings.cloneProtocol') }}</label>
             <select name="provider-clone-protocol" v-model="form.clone_protocol" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm">
               <option value="https">https</option>
               <option value="ssh">ssh</option>
@@ -978,23 +949,23 @@ async function handleTestLDAP() {
           </div>
 
           <div v-if="form.clone_protocol === 'ssh'">
-            <label class="block text-sm font-medium text-gray-700">Clone Credential</label>
+            <label class="block text-sm font-medium text-gray-700">{{ t('settings.cloneCredential') }}</label>
             <select name="provider-clone-credential" v-model.number="form.clone_credential_id" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm">
-              <option :value="null">Select SSH credential</option>
+              <option :value="null">{{ t('settings.selectSshCredential') }}</option>
               <option v-for="cred in credentials.filter(c => c.kind === 'ssh_username_with_private_key')" :key="cred.id" :value="cred.id">
                 {{ cred.name }}
               </option>
             </select>
-            <p class="mt-1 text-xs text-gray-400">SSH clone still requires an API credential for SCM platform APIs.</p>
+            <p class="mt-1 text-xs text-gray-400">{{ t('settings.sshCloneHelp') }}</p>
           </div>
 
           <div v-if="formError" class="rounded-md bg-red-50 p-3 text-sm text-red-700">{{ formError }}</div>
         </div>
 
         <div class="mt-5 flex justify-end space-x-3">
-          <button @click="showDialog = false" class="rounded-md border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">Cancel</button>
+          <button @click="closeProviderDialog" class="rounded-md border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">{{ t('settings.cancel') }}</button>
           <button @click="handleSubmit" :disabled="formLoading" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50">
-            {{ formLoading ? 'Saving...' : editingId ? 'Update' : 'Create' }}
+            {{ formLoading ? t('settings.saving') : editingId ? t('settings.update') : t('settings.create') }}
           </button>
         </div>
       </div>

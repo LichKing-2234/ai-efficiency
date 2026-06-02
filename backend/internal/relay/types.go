@@ -162,6 +162,11 @@ type ChatCompletionResponse struct {
 	TokensUsed int    `json:"tokens_used"`
 }
 
+type ModelOption struct {
+	ID          string `json:"id"`
+	DisplayName string `json:"display_name,omitempty"`
+}
+
 type ToolDef struct {
 	Type     string      `json:"type"`
 	Function ToolFuncDef `json:"function"`

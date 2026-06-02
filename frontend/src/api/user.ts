@@ -2,6 +2,7 @@ import client from './client'
 import type {
   ApiResponse,
   GroupCredentialMutationResult,
+  UserProviderModelsResponse,
   UserProviderTestRequest,
   UserProviderTestResult,
   UserProvidersResponse,
@@ -20,6 +21,13 @@ export function createGroupCredential(providerId: number, groupId: string) {
 export function regenerateGroupCredential(providerId: number, groupId: string) {
   return client.post<ApiResponse<GroupCredentialMutationResult>>(
     `/user/providers/${providerId}/groups/${groupId}/credential/regenerate`
+  )
+}
+
+export function getUserProviderModels(providerId: number, groupId: string, platform: string) {
+  return client.get<ApiResponse<UserProviderModelsResponse>>(
+    `/user/providers/${providerId}/groups/${groupId}/models`,
+    { params: { platform } }
   )
 }
 

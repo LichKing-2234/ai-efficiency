@@ -3,6 +3,7 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import LoginView from '@/views/LoginView.vue'
+import { setLocale } from '@/i18n'
 
 // Mock auth API
 vi.mock('@/api/auth', () => ({
@@ -27,6 +28,7 @@ describe('LoginView', () => {
   beforeEach(async () => {
     setActivePinia(createPinia())
     localStorage.clear()
+    setLocale('en-US')
     vi.clearAllMocks()
     const { getAuthOptions } = await import('@/api/auth')
     ;(getAuthOptions as any).mockResolvedValue({
@@ -41,6 +43,8 @@ describe('LoginView', () => {
     })
 
     expect(wrapper.find('h1').text()).toBe('AI Efficiency Platform')
+    expect(wrapper.text()).toContain('Recommended sign-in')
+    expect(wrapper.find('[data-testid="auth-language-toggle"]').exists()).toBe(true)
     expect(wrapper.find('input#username').exists()).toBe(true)
     expect(wrapper.find('input#password').exists()).toBe(true)
     expect(wrapper.find('select#source').exists()).toBe(true)
@@ -101,6 +105,21 @@ describe('LoginView', () => {
     expect(wrapper.findAll('button').some((button) => button.text().includes('Dev Login'))).toBe(false)
   })
 
+  it('switches login copy to Chinese', async () => {
+    const router = createTestRouter()
+    const wrapper = mount(LoginView, {
+      global: { plugins: [createPinia(), router] },
+    })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="auth-language-toggle"]').trigger('click')
+
+    expect(wrapper.text()).toContain('AI 效能平台')
+    expect(wrapper.text()).toContain('AI 使用、接入和代码可见性')
+    expect(wrapper.text()).toContain('推荐登录方式')
+    expect(wrapper.find('label[for="username"]').text()).toContain('邮箱')
+  })
+
   it('shows error on failed login', async () => {
     const { login: mockLogin } = await import('@/api/auth')
     ;(mockLogin as any).mockRejectedValue({
@@ -126,7 +145,7 @@ describe('LoginView', () => {
       data: { data: { token: 'dev-token', refresh_token: 'dev-refresh' } },
     })
     ;(mockGetMe as any).mockResolvedValue({
-      data: { data: { id: 1, username: 'admin', email: 'a@b.com', role: 'admin' } },
+      data: { data: { id: 1, username: 'admin', email: 'admin@example.com', role: 'admin' } },
     })
 
     const router = createTestRouter()
@@ -156,7 +175,7 @@ describe('LoginView', () => {
       data: { data: { token: 'jwt', refresh_token: 'rt' } },
     })
     ;(mockGetMe as any).mockResolvedValue({
-      data: { data: { id: 1, username: 'admin', email: 'a@b.com', role: 'admin' } },
+      data: { data: { id: 1, username: 'admin', email: 'admin@example.com', role: 'admin' } },
     })
 
     const router = createTestRouter()
@@ -183,7 +202,7 @@ describe('LoginView', () => {
       data: { data: { token: 'jwt', refresh_token: 'rt' } },
     })
     ;(mockGetMe as any).mockResolvedValue({
-      data: { data: { id: 1, username: 'admin', email: 'a@b.com', role: 'admin' } },
+      data: { data: { id: 1, username: 'admin', email: 'admin@example.com', role: 'admin' } },
     })
 
     const router = createTestRouter()
@@ -209,7 +228,7 @@ describe('LoginView', () => {
       data: { data: { token: 'jwt', refresh_token: 'rt' } },
     })
     ;(mockGetMe as any).mockResolvedValue({
-      data: { data: { id: 1, username: 'admin', email: 'a@b.com', role: 'admin' } },
+      data: { data: { id: 1, username: 'admin', email: 'admin@example.com', role: 'admin' } },
     })
 
     const router = createTestRouter()
@@ -337,7 +356,7 @@ describe('LoginView', () => {
       data: { data: { token: 'dev-token' } },
     })
     ;(mockGetMe as any).mockResolvedValue({
-      data: { data: { id: 1, username: 'admin', email: 'a@b.com', role: 'admin' } },
+      data: { data: { id: 1, username: 'admin', email: 'admin@example.com', role: 'admin' } },
     })
 
     const router = createTestRouter()

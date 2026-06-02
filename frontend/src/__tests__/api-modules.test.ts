@@ -18,7 +18,7 @@ import { listRelayProviders, createRelayProvider, updateRelayProvider, deleteRel
 import { listPRs, getPR, syncPRs, getPRSyncJob, settlePR, refreshPRUsage } from '@/api/pr'
 import { getDashboard } from '@/api/efficiency'
 import { getDeploymentStatus, checkForUpdate, applyUpdate, rollbackUpdate, restartDeployment } from '@/api/deployment'
-import { getUserProviders, createGroupCredential, regenerateGroupCredential, testUserProvider } from '@/api/user'
+import { getUserProviders, createGroupCredential, regenerateGroupCredential, getUserProviderModels, testUserProvider } from '@/api/user'
 
 const mockClient = client as unknown as {
   get: ReturnType<typeof vi.fn>
@@ -74,9 +74,9 @@ describe('relayProvider API', () => {
 
   it('createRelayProvider calls POST /admin/providers', async () => {
     const payload = {
-      name: 'sub2api-main',
-      display_name: 'Sub2API Main',
-      base_url: 'https://sub2api.agoraio.cn',
+      name: 'relay-main',
+      display_name: 'Relay Main',
+      base_url: 'https://relay.example.com',
       admin_api_key: 'admin-key',
       is_primary: true,
       enabled: true,
@@ -87,7 +87,7 @@ describe('relayProvider API', () => {
   })
 
   it('updateRelayProvider calls PUT /admin/providers/:id', async () => {
-    const payload = { display_name: 'Sub2API Secondary', enabled: false }
+    const payload = { display_name: 'Relay Secondary', enabled: false }
     mockClient.put.mockResolvedValue({ data: { data: { id: 3, ...payload } } })
     await updateRelayProvider(3, payload)
     expect(mockClient.put).toHaveBeenCalledWith('/admin/providers/3', payload)
@@ -193,6 +193,9 @@ describe('user API aggregate smoke', () => {
 
     await regenerateGroupCredential(7, '42')
     expect(mockClient.post).toHaveBeenCalledWith('/user/providers/7/groups/42/credential/regenerate')
+
+    await getUserProviderModels(7, '42', 'openai')
+    expect(mockClient.get).toHaveBeenCalledWith('/user/providers/7/groups/42/models', { params: { platform: 'openai' } })
 
     await testUserProvider(7, { platform: 'openai', group_id: '42', model: 'gpt-5.4', prompt: 'Hi' })
     expect(mockClient.post).toHaveBeenCalledWith('/user/providers/7/test', { platform: 'openai', group_id: '42', model: 'gpt-5.4', prompt: 'Hi' })
