@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go CLI with Cobra, local JSON/JSONL state under `~/.ae-cli/state`, existing `ae-cli/internal/hooks` queues/tasks, `ae-cli/internal/attributionlocal` spool/replay, backend HTTP client tests with `httptest`, and `go test`.
 
-**Status:** Complete. Second review follow-up verification on 2026-06-02 passed: focused cmd/hooks/attributionlocal tests, `go test ./cmd ./internal/hooks ./internal/attributionlocal ./internal/client -count=1`, `go test ./... -count=1` under `ae-cli`, and `git diff --check`.
+**Status:** Complete. Third review follow-up verification on 2026-06-02 passed: focused cmd/hooks/attributionlocal/client tests, `go test ./cmd ./internal/hooks ./internal/attributionlocal ./internal/client -count=1`, `go test ./... -count=1` under `ae-cli`, and `git diff --check`.
 
 ---
 
@@ -2058,6 +2058,9 @@ git commit -m "docs(ae-cli): mark reporting durability verification complete"
 - [x] **Second review auth retry handling:** Tool-usage 401/403 responses stay retryable instead of batch-isolating and dead-lettering otherwise valid events.
 - [x] **Second review diagnostics:** Unresolved queue corrupt lines are quarantined, and upload status output includes deferred ledger counts.
 - [x] **Second review verification:** Re-run focused tests, `go test ./cmd ./internal/hooks ./internal/attributionlocal ./internal/client -count=1`, `go test ./... -count=1` under `ae-cli`, and `git diff --check`, then update this status.
+- [x] **Third review binding-aware deletion:** Hook queue replay now removes uploaded rows only when the current queued row still matches the resolved binding, so mismatched rows with the same event id remain pending.
+- [x] **Third review server URL normalization:** Hook replay normalizes server URLs for matching so unresolved rows stored with case/trailing-slash differences can replay under the normalized context.
+- [x] **Third review verification:** Re-run focused tests, `go test ./cmd ./internal/hooks ./internal/attributionlocal ./internal/client -count=1`, `go test ./... -count=1` under `ae-cli`, and `git diff --check`, then update this status.
 
 ---
 

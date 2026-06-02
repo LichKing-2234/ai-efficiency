@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -318,7 +319,9 @@ func unresolvedHookEventMatchesContext(item UnresolvedHookEvent, execCtx Executi
 	if strings.TrimSpace(item.WorkspaceID) != strings.TrimSpace(execCtx.WorkspaceID) {
 		return false
 	}
-	if strings.TrimSpace(item.ServerURL) == "" || strings.TrimSpace(item.ServerURL) != strings.TrimSpace(execCtx.ServerURL) {
+	itemServerURL := normalizeHookServerURL(item.ServerURL)
+	execServerURL := normalizeHookServerURL(execCtx.ServerURL)
+	if itemServerURL == "" || itemServerURL != execServerURL {
 		return false
 	}
 	if strings.TrimSpace(item.AuthSubject) == "" || strings.TrimSpace(item.AuthSubject) != strings.TrimSpace(execCtx.AuthSubject) {
@@ -566,7 +569,7 @@ func (h *Handler) flushWorkspace(ctx context.Context, execCtx ExecutionContext) 
 		}
 		var keep []QueueItem
 		for _, it := range current {
-			if !uploaded[strings.TrimSpace(it.Event.EventID)] {
+			if !hookEventMatchesContext(it.Event, execCtx) || !uploaded[strings.TrimSpace(it.Event.EventID)] {
 				keep = append(keep, it)
 			}
 		}
@@ -601,11 +604,26 @@ func (c ExecutionContext) hasStableReplayBinding() bool {
 }
 
 func hookEventMatchesContext(ev HookEvent, execCtx ExecutionContext) bool {
-	return strings.TrimSpace(ev.ServerURL) == strings.TrimSpace(execCtx.ServerURL) &&
+	return normalizeHookServerURL(ev.ServerURL) == normalizeHookServerURL(execCtx.ServerURL) &&
 		strings.TrimSpace(ev.AuthSubject) == strings.TrimSpace(execCtx.AuthSubject) &&
 		ev.RepoConfigID == execCtx.RepoConfigID &&
 		strings.TrimSpace(ev.RepoKey) == strings.TrimSpace(execCtx.RepoKey) &&
 		strings.TrimSpace(ev.WorkspaceID) == strings.TrimSpace(execCtx.WorkspaceID)
+}
+
+func normalizeHookServerURL(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return strings.TrimRight(raw, "/")
+	}
+	u.Scheme = strings.ToLower(u.Scheme)
+	u.Host = strings.ToLower(u.Host)
+	u.Path = strings.TrimRight(u.Path, "/")
+	return u.String()
 }
 
 func eventIDRepoHint(execCtx ExecutionContext) string {
