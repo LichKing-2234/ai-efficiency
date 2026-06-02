@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go CLI with Cobra, local JSON/JSONL state under `~/.ae-cli/state`, existing `ae-cli/internal/hooks` queues/tasks, `ae-cli/internal/attributionlocal` spool/replay, backend HTTP client tests with `httptest`, and `go test`.
 
-**Status:** In progress. Documentation has been updated; Task 10 verification remains unchecked until the listed commands pass.
+**Status:** Complete. Verification on 2026-06-02 passed: `go test ./cmd ./internal/hooks ./internal/attributionlocal ./internal/client -count=1`, `go test ./... -count=1` under `ae-cli`, backend reporting tests with `AE_TEST_POSTGRES_DSN=postgres://postgres:postgres@127.0.0.1:15432/postgres?sslmode=disable`, Step 5 smoke with existing Go caches, and `git diff --check`.
 
 ---
 
@@ -1962,7 +1962,7 @@ git commit -m "docs(ae-cli): document reporting durability contract"
 **Files:**
 - No source changes expected.
 
-- [ ] **Step 1: Run focused ae-cli reporting tests**
+- [x] **Step 1: Run focused ae-cli reporting tests**
 
 Run:
 
@@ -1973,7 +1973,7 @@ go test ./cmd ./internal/hooks ./internal/attributionlocal ./internal/client -co
 
 Expected: PASS for all listed packages.
 
-- [ ] **Step 2: Run full ae-cli tests**
+- [x] **Step 2: Run full ae-cli tests**
 
 Run:
 
@@ -1984,7 +1984,7 @@ go test ./... -count=1
 
 Expected: PASS for all ae-cli packages.
 
-- [ ] **Step 3: Run backend checkpoint/tool usage tests**
+- [x] **Step 3: Run backend checkpoint/tool usage tests**
 
 Run:
 
@@ -1995,7 +1995,7 @@ go test ./internal/checkpoint ./internal/toolusage ./internal/handler -run 'Chec
 
 Expected: PASS for checkpoint, tool usage, and handler tests touched by reporting flows.
 
-- [ ] **Step 4: Check diff hygiene**
+- [x] **Step 4: Check diff hygiene**
 
 Run:
 
@@ -2006,7 +2006,7 @@ git status --short
 
 Expected: `git diff --check` exits 0. `git status --short` shows only the committed branch state or intentional uncommitted plan/status edits.
 
-- [ ] **Step 5: Final smoke with a temporary repo**
+- [x] **Step 5: Final smoke with a temporary repo**
 
 Run:
 
@@ -2029,7 +2029,7 @@ export HOME="$HOME_BACKUP"
 
 Expected: PASS. This smoke uses tests instead of a real backend so it does not write production events.
 
-- [ ] **Step 6: Commit verification status**
+- [x] **Step 6: Commit verification status**
 
 If Task 9 added the in-progress status line, update it to:
 
