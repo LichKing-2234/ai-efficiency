@@ -1000,7 +1000,7 @@ git commit -m "fix(ae-cli): queue unresolved hook checkpoints"
 - Modify: `ae-cli/internal/attributionlocal/sync_test.go`
 - Modify: `ae-cli/internal/attributionlocal/sync.go`
 
-- [ ] **Step 1: Change hook queue mismatch test to require preservation**
+- [x] **Step 1: Change hook queue mismatch test to require preservation**
 
 Modify `TestFlushResolvedSkipsContextMismatchAndWritesLedger` in `ae-cli/internal/hooks/handler_test.go`:
 
@@ -1017,7 +1017,7 @@ if len(records) != 1 || records[0].Status != "deferred" || records[0].DedupeKey 
 }
 ```
 
-- [ ] **Step 2: Run hook mismatch test and verify it fails**
+- [x] **Step 2: Run hook mismatch test and verify it fails**
 
 Run:
 
@@ -1028,7 +1028,7 @@ go test ./internal/hooks -run TestFlushResolvedSkipsContextMismatchAndWritesLedg
 
 Expected: FAIL because current code removes mismatched queue items and records `skipped`.
 
-- [ ] **Step 3: Preserve mismatched hook queue items**
+- [x] **Step 3: Preserve mismatched hook queue items**
 
 If Task 1 has not already applied this, modify the mismatch branch in `flushWorkspace`:
 
@@ -1052,7 +1052,7 @@ if !hookEventMatchesContext(it.Event, execCtx) {
 }
 ```
 
-- [ ] **Step 4: Change tool-usage spool mismatch test to require preservation**
+- [x] **Step 4: Change tool-usage spool mismatch test to require preservation**
 
 Modify `TestSync_RunSkipsSpooledEventsFromDifferentBinding` in `ae-cli/internal/attributionlocal/sync_test.go`:
 
@@ -1070,7 +1070,7 @@ if rec.Kind != "tool_usage" || rec.DedupeKey != "stale-binding" || rec.Status !=
 }
 ```
 
-- [ ] **Step 5: Run tool-usage mismatch tests and verify they fail**
+- [x] **Step 5: Run tool-usage mismatch tests and verify they fail**
 
 Run:
 
@@ -1081,7 +1081,7 @@ go test ./internal/attributionlocal -run 'TestSync_RunSkipsSpooledEventsFromDiff
 
 Expected: FAIL because current replay removes mismatched events and records `skipped`.
 
-- [ ] **Step 6: Preserve mismatched spooled events**
+- [x] **Step 6: Preserve mismatched spooled events**
 
 Modify `ae-cli/internal/attributionlocal/sync.go` inside `replay`:
 
@@ -1119,7 +1119,7 @@ Modify `ae-cli/internal/attributionlocal/sync.go` inside `replay`:
 	}
 ```
 
-- [ ] **Step 7: Run focused tests**
+- [x] **Step 7: Run focused tests**
 
 Run:
 
@@ -1131,7 +1131,7 @@ go test ./internal/attributionlocal -run 'TestSync_RunSkipsSpooledEventsFromDiff
 
 Expected: PASS.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add ae-cli/internal/hooks/handler.go ae-cli/internal/hooks/handler_test.go ae-cli/internal/attributionlocal/sync.go ae-cli/internal/attributionlocal/sync_test.go

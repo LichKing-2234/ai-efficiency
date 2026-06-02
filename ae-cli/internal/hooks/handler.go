@@ -427,6 +427,7 @@ func (h *Handler) flushWorkspace(ctx context.Context, execCtx ExecutionContext) 
 		for _, it := range items {
 			now := time.Now().UTC()
 			if !hookEventMatchesContext(it.Event, execCtx) {
+				keep = append(keep, it)
 				_ = AppendLedger(execCtx.WorkspaceID, LedgerRecord{
 					Kind:         ledgerKind(it.Event.Kind),
 					DedupeKey:    it.Event.EventID,
@@ -435,7 +436,7 @@ func (h *Handler) flushWorkspace(ctx context.Context, execCtx ExecutionContext) 
 					RepoConfigID: execCtx.RepoConfigID,
 					RepoKey:      execCtx.RepoKey,
 					WorkspaceID:  execCtx.WorkspaceID,
-					Status:       "skipped",
+					Status:       "deferred",
 					AttemptCount: 1,
 					AttemptedAt:  now,
 					LastError:    "context mismatch",

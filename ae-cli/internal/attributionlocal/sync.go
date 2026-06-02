@@ -64,10 +64,12 @@ func (e *SyncEngine) replay(ctx context.Context, workspaceRoot string, opts RunO
 
 	sortSpooledEventsForReplay(spooled)
 	candidates := make([]LocalToolUsageEvent, 0, len(spooled))
+	var deferred []LocalToolUsageEvent
 	filterByBinding := hasStableRunBinding(opts)
 	for _, ev := range spooled {
 		ev = normalizeObservedWindow(ev)
 		if filterByBinding && !eventMatchesRunOptions(ev, opts) {
+			deferred = append(deferred, ev)
 			_ = appendToolUsageLedger(opts.WorkspaceID, toolUsageLedgerRecord{
 				Version:      1,
 				Kind:         "tool_usage",
@@ -77,7 +79,7 @@ func (e *SyncEngine) replay(ctx context.Context, workspaceRoot string, opts RunO
 				RepoConfigID: opts.RepoConfigID,
 				RepoKey:      opts.RepoKey,
 				WorkspaceID:  opts.WorkspaceID,
-				Status:       "skipped",
+				Status:       "deferred",
 				AttemptCount: 1,
 				AttemptedAt:  time.Now().UTC(),
 				LastError:    "context mismatch",
@@ -87,7 +89,8 @@ func (e *SyncEngine) replay(ctx context.Context, workspaceRoot string, opts RunO
 		candidates = append(candidates, ev)
 	}
 	persistRemaining := func(uploaded int) error {
-		remaining := candidates[uploaded:]
+		remaining := append([]LocalToolUsageEvent{}, deferred...)
+		remaining = append(remaining, candidates[uploaded:]...)
 		if len(remaining) == 0 {
 			return clearSpooledEvents(e.spoolPath)
 		}
@@ -100,7 +103,7 @@ func (e *SyncEngine) replay(ctx context.Context, workspaceRoot string, opts RunO
 		}
 		return err
 	}
-	return clearSpooledEvents(e.spoolPath)
+	return persistRemaining(len(candidates))
 }
 
 func (e *SyncEngine) sendSpooledEvents(ctx context.Context, events []LocalToolUsageEvent, onProgress func(uploaded int) error) (int, error) {

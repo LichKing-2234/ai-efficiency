@@ -1,6 +1,7 @@
 package attributionlocal
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"os"
@@ -516,8 +517,8 @@ func TestSync_RunSkipsSpooledEventsFromDifferentBinding(t *testing.T) {
 	if err != nil {
 		t.Fatalf("loadSpooledEvents: %v", err)
 	}
-	if len(remaining) != 0 {
-		t.Fatalf("remaining spool = %+v, want stale mismatched event dropped", remaining)
+	if len(remaining) != 1 || remaining[0].DedupeKey != "stale-binding" {
+		t.Fatalf("remaining spool = %+v, want stale mismatched event preserved", remaining)
 	}
 }
 
@@ -572,16 +573,32 @@ func TestSync_RunWritesSkippedLedgerForMismatchedSpooledEvents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read upload ledger: %v", err)
 	}
-	var rec struct {
+	var records []struct {
 		Kind      string `json:"kind"`
 		DedupeKey string `json:"dedupe_key"`
 		Status    string `json:"status"`
 		LastError string `json:"last_error"`
 	}
-	if err := json.Unmarshal(data, &rec); err != nil {
-		t.Fatalf("parse ledger: %v", err)
+	for _, line := range bytes.Split(data, []byte("\n")) {
+		line = bytes.TrimSpace(line)
+		if len(line) == 0 {
+			continue
+		}
+		var rec struct {
+			Kind      string `json:"kind"`
+			DedupeKey string `json:"dedupe_key"`
+			Status    string `json:"status"`
+			LastError string `json:"last_error"`
+		}
+		if err := json.Unmarshal(line, &rec); err != nil {
+			t.Fatalf("parse ledger line %q: %v", string(line), err)
+		}
+		records = append(records, rec)
 	}
-	if rec.Kind != "tool_usage" || rec.DedupeKey != "stale-binding" || rec.Status != "skipped" || rec.LastError != "context mismatch" {
-		t.Fatalf("ledger = %+v, want skipped tool_usage context mismatch", rec)
+	for _, rec := range records {
+		if rec.Kind == "tool_usage" && rec.DedupeKey == "stale-binding" && rec.Status == "deferred" && rec.LastError == "context mismatch" {
+			return
+		}
 	}
+	t.Fatalf("ledger = %+v, want deferred tool_usage context mismatch", records)
 }

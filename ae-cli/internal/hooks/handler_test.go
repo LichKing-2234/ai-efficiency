@@ -391,15 +391,15 @@ func TestFlushResolvedSkipsContextMismatchAndWritesLedger(t *testing.T) {
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
-	if len(items) != 0 {
-		t.Fatalf("items after mismatch skip = %d, want 0", len(items))
+	if len(items) != 1 || items[0].Event.EventID != "evt-mismatch" {
+		t.Fatalf("items after mismatch defer = %+v, want mismatched event preserved", items)
 	}
 	records, err := ReadLedger(execCtx.WorkspaceID)
 	if err != nil {
 		t.Fatalf("ReadLedger: %v", err)
 	}
-	if len(records) != 1 || records[0].Status != "skipped" || records[0].DedupeKey != "evt-mismatch" {
-		t.Fatalf("ledger records = %+v, want skipped mismatch", records)
+	if len(records) != 1 || records[0].Status != "deferred" || records[0].DedupeKey != "evt-mismatch" {
+		t.Fatalf("ledger records = %+v, want deferred mismatch", records)
 	}
 }
 
