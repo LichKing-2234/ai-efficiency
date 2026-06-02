@@ -1,5 +1,5 @@
 import client from './client'
-import type { ApiResponse, PagedResponse, RepoConfig } from '@/types'
+import type { ApiResponse, PagedResponse, RepoAutoBindResult, RepoConfig } from '@/types'
 
 export function listRepos(page = 1, pageSize = 20) {
   return client.get<ApiResponse<PagedResponse<RepoConfig>>>('/repos', {
@@ -23,6 +23,10 @@ export function createRepoDirect(data: {
   default_branch: string
 }) {
   return client.post<ApiResponse<RepoConfig>>('/repos/direct', data)
+}
+
+export function autoBindUnboundRepos() {
+  return client.post<ApiResponse<RepoAutoBindResult>>('/repos/auto-bind-unbound')
 }
 
 export function updateRepo(id: number, data: Partial<RepoConfig>) {

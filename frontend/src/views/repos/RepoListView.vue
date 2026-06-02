@@ -4,7 +4,8 @@ import { useRoute, useRouter } from 'vue-router'
 import AppLayout from '@/components/AppLayout.vue'
 import { useRepoStore } from '@/stores/repo'
 import { listProviders } from '@/api/scmProvider'
-import { createRepoDirect } from '@/api/repo'
+import { autoBindUnboundRepos, createRepoDirect } from '@/api/repo'
+import { useAuthStore } from '@/stores/auth'
 import { useI18n } from '@/i18n'
 import { useModalFocus } from '@/composables/useModalFocus'
 import type { RepoConfig, SCMProvider } from '@/types'
@@ -13,11 +14,15 @@ const route = useRoute()
 const router = useRouter()
 const repoStore = useRepoStore()
 const { t } = useI18n()
+const auth = useAuthStore()
 const showDeleteConfirm = ref<number | null>(null)
 const collapsedGroups = ref<Set<string>>(new Set())
 const bindingFilter = ref<'all' | 'bound' | 'unbound'>(initialBindingFilter())
 const addDialog = ref<HTMLElement | null>(null)
 const repoUrlInput = ref<HTMLInputElement | null>(null)
+const autoBindLoading = ref(false)
+const autoBindMessage = ref('')
+const autoBindError = ref('')
 
 interface RepoGroup {
   key: string
@@ -247,6 +252,32 @@ async function confirmDelete(id: number) {
   showDeleteConfirm.value = null
 }
 
+async function handleAutoBindUnbound() {
+  autoBindLoading.value = true
+  autoBindMessage.value = ''
+  autoBindError.value = ''
+  try {
+    const res = await autoBindUnboundRepos()
+    const summary = res.data.data?.summary
+    if (summary) {
+      autoBindMessage.value = `${t('repos.autoBindComplete')}: ${t('repos.autoBindSummary', {
+        bound: summary.bound,
+        noMatch: summary.skipped_no_match,
+        ambiguous: summary.skipped_ambiguous,
+        webhookFailed: summary.webhook_failed,
+        errors: summary.errors,
+      })}`
+    } else {
+      autoBindMessage.value = t('repos.autoBindComplete')
+    }
+    await repoStore.fetchRepos()
+  } catch (error: any) {
+    autoBindError.value = error?.response?.data?.message || t('repos.autoBindFailed')
+  } finally {
+    autoBindLoading.value = false
+  }
+}
+
 function formatDate(date: string | null) {
   if (!date) return '—'
   return new Date(date).toLocaleDateString()
@@ -297,9 +328,20 @@ function applyBindingFilter(next: 'all' | 'bound' | 'unbound') {
               {{ t('repos.healthHelp') }}
             </p>
           </div>
-          <button class="text-sm font-medium text-blue-700 hover:text-blue-900" @click="applyBindingFilter('unbound')">
-            {{ t('repos.reviewNeedsBinding') }}
-          </button>
+          <div class="flex flex-wrap gap-3">
+            <button
+              v-if="auth.isAdmin"
+              data-testid="repo-auto-bind-button"
+              class="text-sm font-medium text-emerald-700 hover:text-emerald-900 disabled:opacity-50"
+              :disabled="autoBindLoading"
+              @click="handleAutoBindUnbound"
+            >
+              {{ autoBindLoading ? t('repos.autoBinding') : t('repos.autoBind') }}
+            </button>
+            <button class="text-sm font-medium text-blue-700 hover:text-blue-900" @click="applyBindingFilter('unbound')">
+              {{ t('repos.reviewNeedsBinding') }}
+            </button>
+          </div>
         </div>
         <div class="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <div class="rounded-md border border-slate-200 bg-slate-50 p-3">
@@ -318,6 +360,12 @@ function applyBindingFilter(next: 'all' | 'bound' | 'unbound') {
             <div class="text-xs font-medium uppercase tracking-wide text-blue-700">{{ t('repos.activeConfigs') }}</div>
             <div class="mt-2 text-2xl font-semibold text-blue-900">{{ healthSummary.active }}</div>
           </div>
+        </div>
+        <div v-if="autoBindMessage" class="mt-4 rounded-md bg-emerald-50 p-3 text-sm text-emerald-800">
+          {{ autoBindMessage }}
+        </div>
+        <div v-if="autoBindError" class="mt-4 rounded-md bg-red-50 p-3 text-sm text-red-700">
+          {{ autoBindError }}
         </div>
       </section>
 

@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go, Gin, Ent, zap, Vue 3, Pinia, TypeScript, Vitest, TailwindCSS.
 
-**Status:** In progress. Task 1 is being executed in this session.
+**Status:** In progress. Task 4 frontend batch action is being executed in this session.
 
 ---
 
@@ -56,9 +56,9 @@
 - Run backend full tests:
   - `cd backend && go test ./...`
 - Run frontend repo-list test:
-  - `cd frontend && pnpm test -- repo-list-view`
+  - `cd frontend && npm test -- repo-list-view`
 - Run frontend full tests:
-  - `cd frontend && pnpm test`
+  - `cd frontend && npm test`
 
 ---
 
@@ -1068,7 +1068,7 @@ git commit -m "feat(repo): expose admin auto-bind repair"
 - Modify: `frontend/src/i18n.ts`
 - Modify: `frontend/src/__tests__/repo-list-view.test.ts`
 
-- [ ] **Step 1: Write failing frontend tests**
+- [x] **Step 1: Write failing frontend tests**
 
 Modify the `vi.mock('@/api/repo'...)` block in `frontend/src/__tests__/repo-list-view.test.ts`:
 
@@ -1168,17 +1168,17 @@ it('runs auto-bind and shows a summary', async () => {
 })
 ```
 
-- [ ] **Step 2: Run repo list tests and verify they fail**
+- [x] **Step 2: Run repo list tests and verify they fail**
 
 Run:
 
 ```bash
-cd frontend && pnpm test -- repo-list-view
+cd frontend && npm test -- repo-list-view
 ```
 
 Expected: FAIL because `autoBindUnboundRepos`, auth-gated button, and summary text are not implemented.
 
-- [ ] **Step 3: Add frontend response types and API function**
+- [x] **Step 3: Add frontend response types and API function**
 
 Add to `frontend/src/types/index.ts` after `RepoConfig`:
 
@@ -1222,7 +1222,7 @@ export function autoBindUnboundRepos() {
 }
 ```
 
-- [ ] **Step 4: Add i18n strings**
+- [x] **Step 4: Add i18n strings**
 
 Add English keys near the existing `repos.*` entries in `frontend/src/i18n.ts`:
 
@@ -1244,7 +1244,7 @@ Add Chinese keys near the existing Chinese `repos.*` entries:
 'repos.autoBindSummary': '已绑定 {bound} · 未匹配 {noMatch} · 多重匹配 {ambiguous} · Webhook 失败 {webhookFailed} · 错误 {errors}',
 ```
 
-- [ ] **Step 5: Add the repo list action and summary state**
+- [x] **Step 5: Add the repo list action and summary state**
 
 Modify imports in `frontend/src/views/repos/RepoListView.vue`:
 
@@ -1330,12 +1330,12 @@ Add this message block after the health summary cards:
 </div>
 ```
 
-- [ ] **Step 6: Run repo list tests and verify they pass**
+- [x] **Step 6: Run repo list tests and verify they pass**
 
 Run:
 
 ```bash
-cd frontend && pnpm test -- repo-list-view
+cd frontend && npm test -- repo-list-view
 ```
 
 Expected: PASS.
@@ -1393,7 +1393,7 @@ Expected: PASS.
 Run:
 
 ```bash
-cd frontend && pnpm test -- repo-list-view
+cd frontend && npm test -- repo-list-view
 ```
 
 Expected: PASS.
@@ -1403,7 +1403,7 @@ Expected: PASS.
 Run:
 
 ```bash
-cd frontend && pnpm test
+cd frontend && npm test
 ```
 
 Expected: PASS.
