@@ -62,6 +62,14 @@ type prResponse struct {
 	CommitFreshness      []prusage.CommitFreshness `json:"commit_freshness,omitempty"`
 }
 
+type prListSummary struct {
+	Total         int `json:"total"`
+	WithUsage     int `json:"with_usage"`
+	PendingUpload int `json:"pending_upload"`
+	NoCheckpoint  int `json:"no_checkpoint"`
+	RefreshFailed int `json:"refresh_failed"`
+}
+
 func (h *PRHandler) buildPRResponse(ctx context.Context, pr *ent.PrRecord, includeCommits bool) any {
 	resp := &prResponse{
 		PrRecord:          pr,
@@ -81,6 +89,47 @@ func (h *PRHandler) buildPRResponse(ctx context.Context, pr *ent.PrRecord, inclu
 		}
 	}
 	return resp
+}
+
+func (h *PRHandler) buildPRListSummary(ctx context.Context, query *ent.PrRecordQuery, total int) (prListSummary, error) {
+	summary := prListSummary{Total: total}
+	prs, err := query.All(ctx)
+	if err != nil {
+		return summary, err
+	}
+	freshnessEvaluator := h.usageFreshness
+	if freshnessEvaluator == nil && h.entClient != nil {
+		freshnessEvaluator = prusage.NewService(h.entClient)
+	}
+	for _, pr := range prs {
+		if prHasUsage(pr) {
+			summary.WithUsage++
+		}
+		if freshnessEvaluator == nil {
+			continue
+		}
+		freshness, err := freshnessEvaluator.EvaluatePRFreshness(ctx, pr.ID)
+		if err != nil || freshness == nil {
+			continue
+		}
+		switch freshness.Status {
+		case prusage.UsageStatusPendingUpload:
+			summary.PendingUpload++
+		case prusage.UsageStatusNoCheckpoint:
+			summary.NoCheckpoint++
+		case prusage.UsageStatusRefreshFailed:
+			summary.RefreshFailed++
+		}
+	}
+	return summary, nil
+}
+
+func prHasUsage(pr *ent.PrRecord) bool {
+	if pr == nil {
+		return false
+	}
+	tokenTotal := pr.UsageInputTokens + pr.UsageOutputTokens + pr.UsageCachedInputTokens + pr.UsageReasoningTokens
+	return tokenTotal > 0 || pr.UsageCreditUsage > 0 || pr.UsageRequestCount > 0
 }
 
 // ListByRepo handles GET /api/v1/repos/:id/prs
@@ -126,6 +175,12 @@ func (h *PRHandler) ListByRepo(c *gin.Context) {
 		return
 	}
 
+	summary, err := h.buildPRListSummary(c.Request.Context(), query.Clone(), total)
+	if err != nil {
+		pkg.Error(c, http.StatusInternalServerError, "failed to summarize PRs")
+		return
+	}
+
 	prs, err := query.
 		Order(func(s *sql.Selector) {
 			s.OrderExpr(sql.ExprP("CASE status WHEN 'open' THEN 0 WHEN 'merged' THEN 1 ELSE 2 END"))
@@ -145,8 +200,9 @@ func (h *PRHandler) ListByRepo(c *gin.Context) {
 	}
 
 	pkg.Success(c, gin.H{
-		"items": items,
-		"total": total,
+		"items":   items,
+		"summary": summary,
+		"total":   total,
 	})
 }
 

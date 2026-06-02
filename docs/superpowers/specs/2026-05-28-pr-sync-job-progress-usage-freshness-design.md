@@ -272,6 +272,24 @@ Keep the existing pagination and month filters.
 
 Add usage freshness fields to each PR row. The list should expose one concise status per PR, not per-commit details.
 
+The response also includes a top-level `summary` object for the full filtered result set, independent of `limit` and `offset` pagination:
+
+```json
+{
+  "items": [],
+  "total": 25,
+  "summary": {
+    "total": 25,
+    "with_usage": 4,
+    "pending_upload": 2,
+    "no_checkpoint": 18,
+    "refresh_failed": 1
+  }
+}
+```
+
+The frontend PR usage summary cards must use this aggregate `summary` when present, so the cards match the result total instead of only the current page.
+
 ### `GET /api/v1/prs/:id`
 
 Keep existing PR details and commit snapshots.
@@ -528,6 +546,7 @@ Authorization:
 1. Existing `GET /api/v1/repos/:id/prs` pagination and month filters continue to work.
 2. Existing `POST /api/v1/prs/:id/refresh-usage` still refreshes a single PR.
 3. Existing PR usage summary fields remain compatible with frontend formatting.
+4. PR usage summary cards use the aggregate list `summary` and do not derive totals or freshness counts from the paginated current page when the backend summary is present.
 
 ## Rollout Notes
 

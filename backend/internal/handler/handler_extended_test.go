@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
 	"github.com/ai-efficiency/backend/ent/prrecord"
 )
 
@@ -150,6 +151,96 @@ func TestDashboardWithData(t *testing.T) {
 	totalAIPRs := int(data["total_ai_prs"].(float64))
 	if totalAIPRs < 1 {
 		t.Errorf("total_ai_prs = %d, want >= 1", totalAIPRs)
+	}
+}
+
+func TestPRListByRepoIncludesAggregateUsageSummary(t *testing.T) {
+	env := setupTestEnv(t)
+	ctx := context.Background()
+	repoID := createTestRepo(t, env.client)
+	now := time.Now().UTC()
+
+	checkpoint := env.client.CommitCheckpoint.Create().
+		SetEventID("summary-cp-1").
+		SetWorkspaceID("ws-summary").
+		SetRepoConfigID(repoID).
+		SetCommitSha("summary-sha-1").
+		SetParentShas([]string{}).
+		SetBindingSource(commitcheckpoint.BindingSourceMarker).
+		SaveX(ctx)
+
+	prWithUsage := env.client.PrRecord.Create().
+		SetRepoConfigID(repoID).
+		SetScmPrID(201).
+		SetTitle("with usage").
+		SetAuthor("alice").
+		SetStatus(prrecord.StatusMerged).
+		SetCreatedAt(now.Add(-24 * time.Hour)).
+		SetUsageInputTokens(100).
+		SaveX(ctx)
+	env.client.PRCommitUsageSnapshot.Create().
+		SetPrRecordID(prWithUsage.ID).
+		SetCommitSha("summary-sha-1").
+		SetCommitCheckpointID(checkpoint.ID).
+		SetInputTokens(100).
+		SetSortOrder(0).
+		SaveX(ctx)
+	env.client.ToolUsageEvent.Create().
+		SetTool("codex").
+		SetWorkspaceID("ws-summary").
+		SetRepoConfigID(repoID).
+		SetUserID(env.userID).
+		SetToolSessionID("summary-session").
+		SetDedupeKey("summary:usage:1").
+		SetUsageUnit("token").
+		SetInputTokens(100).
+		SetObservedStartAt(now.Add(-2 * time.Hour)).
+		SetObservedEndAt(now.Add(-time.Hour)).
+		SetCommitCheckpointID(checkpoint.ID).
+		SaveX(ctx)
+
+	for i := 0; i < 2; i++ {
+		env.client.PrRecord.Create().
+			SetRepoConfigID(repoID).
+			SetScmPrID(202 + i).
+			SetTitle(fmt.Sprintf("missing checkpoint %d", i)).
+			SetAuthor("bob").
+			SetStatus(prrecord.StatusMerged).
+			SetCreatedAt(now.Add(time.Duration(-i) * time.Hour)).
+			SaveX(ctx)
+	}
+
+	w := doRequest(env, "GET", fmt.Sprintf("/api/v1/repos/%d/prs?limit=1&months=3", repoID), nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body: %s", w.Code, w.Body.String())
+	}
+	resp := parseResponse(t, w)
+	data := resp["data"].(map[string]interface{})
+	if total := int(data["total"].(float64)); total != 3 {
+		t.Fatalf("total = %d, want 3", total)
+	}
+	items := data["items"].([]interface{})
+	if len(items) != 1 {
+		t.Fatalf("items = %d, want paginated 1", len(items))
+	}
+	summary, ok := data["summary"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("summary missing or wrong type: %T", data["summary"])
+	}
+	if got := int(summary["total"].(float64)); got != 3 {
+		t.Fatalf("summary.total = %d, want 3", got)
+	}
+	if got := int(summary["with_usage"].(float64)); got != 1 {
+		t.Fatalf("summary.with_usage = %d, want 1", got)
+	}
+	if got := int(summary["no_checkpoint"].(float64)); got != 2 {
+		t.Fatalf("summary.no_checkpoint = %d, want 2", got)
+	}
+	if got := int(summary["pending_upload"].(float64)); got != 0 {
+		t.Fatalf("summary.pending_upload = %d, want 0", got)
+	}
+	if got := int(summary["refresh_failed"].(float64)); got != 0 {
+		t.Fatalf("summary.refresh_failed = %d, want 0", got)
 	}
 }
 
