@@ -822,7 +822,7 @@ git commit -m "feat(repo): auto-bind unbound repositories"
 - Modify: `backend/internal/handler/router.go`
 - Create: `backend/internal/handler/repo_auto_bind_test.go`
 
-- [ ] **Step 1: Write failing integration tests for creation paths**
+- [x] **Step 1: Write failing integration tests for creation paths**
 
 Append to `backend/internal/repo/repo_test.go`:
 
@@ -879,7 +879,7 @@ func TestCreateDirect_AutoBindsWhenProviderOmitted(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run creation integration tests and verify they fail**
+- [x] **Step 2: Run creation integration tests and verify they fail**
 
 Run:
 
@@ -889,7 +889,7 @@ cd backend && go test ./internal/repo -run 'TestEnsureFromRemote_AutoBinds|TestC
 
 Expected: FAIL because `EnsureFromRemote` and `CreateDirect` do not yet invoke `AutoBindRepo`.
 
-- [ ] **Step 3: Call auto-bind from new repo creation paths**
+- [x] **Step 3: Call auto-bind from new repo creation paths**
 
 Modify the end of `FindOrCreateFromRemote` in `backend/internal/repo/service.go` after the create save succeeds:
 
@@ -924,7 +924,7 @@ Modify `CreateDirect` after `create.Save(ctx)`:
 
 Keep the existing constraint-conflict requery behavior in `FindOrCreateFromRemote`; only add auto-binding to the branch that actually creates a new repo.
 
-- [ ] **Step 4: Run creation integration tests and verify they pass**
+- [x] **Step 4: Run creation integration tests and verify they pass**
 
 Run:
 
@@ -934,7 +934,7 @@ cd backend && go test ./internal/repo -run 'TestEnsureFromRemote_AutoBinds|TestC
 
 Expected: PASS.
 
-- [ ] **Step 5: Write failing handler tests for the batch endpoint**
+- [x] **Step 5: Write failing handler tests for the batch endpoint**
 
 Create `backend/internal/handler/repo_auto_bind_test.go` with:
 
@@ -1008,7 +1008,7 @@ func issueFullTokenForRole(t *testing.T, env *fullTestEnv, username, role string
 }
 ```
 
-- [ ] **Step 6: Run handler tests and verify they fail**
+- [x] **Step 6: Run handler tests and verify they fail**
 
 Run:
 
@@ -1018,7 +1018,7 @@ cd backend && go test ./internal/handler -run 'TestAutoBindUnboundRoute' -v
 
 Expected: FAIL with 404 or missing route/handler.
 
-- [ ] **Step 7: Add the handler method and route**
+- [x] **Step 7: Add the handler method and route**
 
 Add to `backend/internal/handler/repo.go`:
 
@@ -1040,7 +1040,7 @@ Add this route in `backend/internal/handler/router.go` inside `repoGroup`, befor
 repoGroup.POST("/auto-bind-unbound", auth.RequireAdmin(), repoHandler.AutoBindUnbound)
 ```
 
-- [ ] **Step 8: Run backend focused tests**
+- [x] **Step 8: Run backend focused tests**
 
 Run:
 
@@ -1050,7 +1050,7 @@ cd backend && go test ./internal/repo ./internal/handler
 
 Expected: PASS.
 
-- [ ] **Step 9: Commit backend API integration**
+- [x] **Step 9: Commit backend API integration**
 
 ```bash
 git add backend/internal/repo/service.go backend/internal/repo/repo_test.go backend/internal/handler/repo.go backend/internal/handler/router.go backend/internal/handler/repo_auto_bind_test.go
