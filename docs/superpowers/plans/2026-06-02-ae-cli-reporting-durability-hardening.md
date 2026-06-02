@@ -2036,7 +2036,7 @@ Expected: PASS. This smoke uses tests instead of a real backend so it does not w
 If Task 9 added the in-progress status line, update it to:
 
 ```markdown
-**Status:** Complete. Verification on 2026-06-02 passed: `go test ./cmd ./internal/hooks ./internal/attributionlocal ./internal/client -count=1`, `go test ./... -count=1` under `ae-cli`, backend reporting tests, and `git diff --check`.
+**Status:** Complete for ae-cli verification on 2026-06-02: `go test ./cmd ./internal/hooks ./internal/attributionlocal ./internal/client -count=1`, `go test ./... -count=1` under `ae-cli`, and `git diff --check` passed. Backend reporting tests remain unchecked when local Postgres is unavailable.
 ```
 
 Then commit:
