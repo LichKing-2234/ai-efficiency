@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go, Gin, Ent, zap, Vue 3, Pinia, TypeScript, Vitest, TailwindCSS.
 
-**Status:** Not started.
+**Status:** In progress. Task 1 is being executed in this session.
 
 ---
 
@@ -68,7 +68,7 @@
 - Create: `backend/internal/repo/auto_bind.go`
 - Create: `backend/internal/repo/auto_bind_test.go`
 
-- [ ] **Step 1: Write failing tests for host canonicalization and matching**
+- [x] **Step 1: Write failing tests for host canonicalization and matching**
 
 Create `backend/internal/repo/auto_bind_test.go` with:
 
@@ -223,7 +223,7 @@ func TestFindAutoBindProviderIgnoresInactiveProviders(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the focused repo tests and verify they fail**
+- [x] **Step 2: Run the focused repo tests and verify they fail**
 
 Run:
 
@@ -233,7 +233,7 @@ cd backend && go test ./internal/repo -run 'TestCanonical|TestFindAutoBindProvid
 
 Expected: FAIL with errors for undefined names such as `canonicalProviderHost`, `canonicalRepoHost`, `AutoBindMatched`, and `findAutoBindProvider`.
 
-- [ ] **Step 3: Add the matching implementation**
+- [x] **Step 3: Add the matching implementation**
 
 Create `backend/internal/repo/auto_bind.go` with:
 
@@ -441,7 +441,7 @@ func (s *Service) logAutoBindResult(result AutoBindResult) {
 }
 ```
 
-- [ ] **Step 4: Run matching tests and verify they pass**
+- [x] **Step 4: Run matching tests and verify they pass**
 
 Run:
 
@@ -451,7 +451,7 @@ cd backend && go test ./internal/repo -run 'TestCanonical|TestFindAutoBindProvid
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit matching helpers**
+- [x] **Step 5: Commit matching helpers**
 
 ```bash
 git add backend/internal/repo/auto_bind.go backend/internal/repo/auto_bind_test.go
