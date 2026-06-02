@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go CLI with Cobra, local JSON/JSONL state under `~/.ae-cli/state`, existing `ae-cli/internal/hooks` queues/tasks, `ae-cli/internal/attributionlocal` spool/replay, backend HTTP client tests with `httptest`, and `go test`.
 
-**Status:** Complete. Verification on 2026-06-02 passed: `go test ./cmd ./internal/hooks ./internal/attributionlocal ./internal/client -count=1`, `go test ./... -count=1` under `ae-cli`, backend reporting tests with `AE_TEST_POSTGRES_DSN=postgres://postgres:postgres@127.0.0.1:15432/postgres?sslmode=disable`, Step 5 smoke with existing Go caches, and `git diff --check`.
+**Status:** Complete. Review follow-up verification on 2026-06-02 passed: focused cmd/hooks/attributionlocal/client tests, `go test ./cmd ./internal/hooks ./internal/attributionlocal ./internal/client -count=1`, `go test ./... -count=1` under `ae-cli`, and `git diff --check`.
 
 ---
 
@@ -2043,6 +2043,16 @@ Then commit:
 git add docs/superpowers/plans/2026-06-02-ae-cli-reporting-durability-hardening.md
 git commit -m "docs(ae-cli): mark reporting durability verification complete"
 ```
+
+---
+
+## Code Review Follow-Up
+
+- [x] **Workspace queue lock heartbeat:** Added a heartbeat for active queue locks so long uploads do not look stale and allow another process to steal the lock.
+- [x] **Unresolved queue locking:** Wrapped unresolved queue list/enqueue/save/replay in the same file-lock path so resolved replay cannot overwrite a concurrent unresolved enqueue.
+- [x] **Batch fallback ownership:** Removed single-event fallback from the HTTP client and kept isolation replay in `SyncEngine`, gated by structured batch status errors.
+- [x] **Unresolved post-rewrite queueing:** Added unresolved post-rewrite queue entries and resolved replay so initial eligibility timeouts do not silently drop rewrite events.
+- [x] **Review follow-up verification:** Re-run focused tests, `go test ./... -count=1` under `ae-cli`, and `git diff --check`, then update this status.
 
 ---
 

@@ -305,6 +305,54 @@ func TestFlushUnresolvedResolvedUploadsMatchingEventAndRemovesIt(t *testing.T) {
 	}
 }
 
+func TestFlushUnresolvedResolvedUploadsMatchingRewriteEventAndRemovesIt(t *testing.T) {
+	repo := initRepoWithCommit2(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	execCtx := resolvedContextForRepo(t, repo)
+
+	if err := EnqueueUnresolvedHookEvent(UnresolvedHookEvent{
+		Kind:         "post-rewrite",
+		RemoteURL:    "https://github.com/acme/repo.git",
+		RepoKey:      execCtx.RepoKey,
+		WorkspaceID:  execCtx.WorkspaceID,
+		ServerURL:    execCtx.ServerURL,
+		AuthSubject:  execCtx.AuthSubject,
+		RewriteType:  "amend",
+		OldCommitSHA: "oldsha1",
+		NewCommitSHA: "newsha1",
+		CapturedAt:   "2026-06-02T09:00:00Z",
+	}); err != nil {
+		t.Fatalf("EnqueueUnresolvedHookEvent: %v", err)
+	}
+
+	u := &fakeUploader{}
+	if err := NewHandler(u).FlushUnresolvedResolved(context.Background(), execCtx); err != nil {
+		t.Fatalf("FlushUnresolvedResolved: %v", err)
+	}
+	if len(u.events) != 1 {
+		t.Fatalf("uploaded events = %+v, want resolved rewrite upload", u.events)
+	}
+	ev := u.events[0]
+	if ev.Kind != "post-rewrite" || ev.RewriteType != "amend" || ev.OldCommitSHA != "oldsha1" || ev.NewCommitSHA != "newsha1" || ev.RepoConfigID != execCtx.RepoConfigID {
+		t.Fatalf("uploaded rewrite event = %+v, want resolved rewrite context", ev)
+	}
+	wantID, err := RewriteEventID("repo_config_id:123", "oldsha1", "newsha1", "amend")
+	if err != nil {
+		t.Fatalf("RewriteEventID: %v", err)
+	}
+	if ev.EventID != wantID {
+		t.Fatalf("event_id = %q, want %q", ev.EventID, wantID)
+	}
+	items, err := ListUnresolvedHookEvents()
+	if err != nil {
+		t.Fatalf("ListUnresolvedHookEvents: %v", err)
+	}
+	if len(items) != 0 {
+		t.Fatalf("remaining unresolved items = %+v, want none", items)
+	}
+}
+
 func TestPostCommitResolvedLeavesQueuedEventsForAsyncRunner(t *testing.T) {
 	repo := initRepoWithCommit2(t)
 	home := t.TempDir()

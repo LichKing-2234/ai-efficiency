@@ -153,6 +153,56 @@ func TestQueueLockedRewriteDoesNotDropConcurrentEnqueue(t *testing.T) {
 	}
 }
 
+func TestQueueActiveLockHeartbeatPreventsStaleSteal(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	oldHeartbeat := queueLockHeartbeatInterval
+	queueLockHeartbeatInterval = 10 * time.Millisecond
+	t.Cleanup(func() { queueLockHeartbeatInterval = oldHeartbeat })
+
+	q, err := NewWorkspaceQueue("ws-heartbeat")
+	if err != nil {
+		t.Fatalf("NewWorkspaceQueue: %v", err)
+	}
+	first := HookEvent{Kind: "post-commit", EventID: "evt-first", WorkspaceID: "ws-heartbeat", CommitSHA: "first"}
+	second := HookEvent{Kind: "post-commit", EventID: "evt-second", WorkspaceID: "ws-heartbeat", CommitSHA: "second"}
+	if err := q.Enqueue(first); err != nil {
+		t.Fatalf("Enqueue(first): %v", err)
+	}
+
+	enqueueDone := make(chan error, 1)
+	err = q.withLock(func() error {
+		lockPath, err := q.lockPath()
+		if err != nil {
+			return err
+		}
+		stale := time.Now().Add(-31 * time.Second)
+		if err := os.Chtimes(lockPath, stale, stale); err != nil {
+			return err
+		}
+		time.Sleep(3 * queueLockHeartbeatInterval)
+		go func() {
+			enqueueDone <- q.Enqueue(second)
+		}()
+		time.Sleep(50 * time.Millisecond)
+		return q.rewriteUnlocked(nil)
+	})
+	if err != nil {
+		t.Fatalf("withLock rewrite: %v", err)
+	}
+	if err := <-enqueueDone; err != nil {
+		t.Fatalf("concurrent Enqueue(second): %v", err)
+	}
+
+	items, err := q.List()
+	if err != nil {
+		t.Fatalf("List after locked rewrite: %v", err)
+	}
+	if len(items) != 1 || items[0].Event.EventID != "evt-second" {
+		t.Fatalf("items after locked rewrite = %+v, want concurrent second event preserved", items)
+	}
+}
+
 func TestQueueListQuarantinesCorruptLineAndKeepsValidEvents(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

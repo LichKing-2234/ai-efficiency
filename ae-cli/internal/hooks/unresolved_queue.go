@@ -22,6 +22,9 @@ type UnresolvedHookEvent struct {
 	ServerURL      string         `json:"server_url"`
 	AuthSubject    string         `json:"auth_subject"`
 	CommitSHA      string         `json:"commit_sha"`
+	RewriteType    string         `json:"rewrite_type,omitempty"`
+	OldCommitSHA   string         `json:"old_commit_sha,omitempty"`
+	NewCommitSHA   string         `json:"new_commit_sha,omitempty"`
 	ParentSHAs     []string       `json:"parent_shas"`
 	BranchSnapshot string         `json:"branch_snapshot"`
 	HeadSnapshot   string         `json:"head_snapshot"`
@@ -33,6 +36,14 @@ func unresolvedQueuePath() string {
 	return filepath.Join(clistate.HooksStateDir(), "unresolved-hooks.jsonl")
 }
 
+func unresolvedQueueLockPath() string {
+	return unresolvedQueuePath() + ".lock"
+}
+
+func withUnresolvedQueueLock(fn func() error) error {
+	return withFileLock(unresolvedQueueLockPath(), fn)
+}
+
 func unresolvedDedupeKey(ev UnresolvedHookEvent) string {
 	return strings.Join([]string{
 		strings.TrimSpace(ev.Kind),
@@ -41,10 +52,26 @@ func unresolvedDedupeKey(ev UnresolvedHookEvent) string {
 		strings.TrimSpace(ev.RemoteURL),
 		strings.TrimSpace(ev.WorkspaceID),
 		strings.TrimSpace(ev.CommitSHA),
+		strings.TrimSpace(ev.RewriteType),
+		strings.TrimSpace(ev.OldCommitSHA),
+		strings.TrimSpace(ev.NewCommitSHA),
 	}, "\x1f")
 }
 
 func ListUnresolvedHookEvents() ([]UnresolvedHookEvent, error) {
+	var out []UnresolvedHookEvent
+	err := withUnresolvedQueueLock(func() error {
+		items, err := listUnresolvedHookEventsUnlocked()
+		if err != nil {
+			return err
+		}
+		out = items
+		return nil
+	})
+	return out, err
+}
+
+func listUnresolvedHookEventsUnlocked() ([]UnresolvedHookEvent, error) {
 	path := unresolvedQueuePath()
 	f, err := os.Open(path)
 	if err != nil {
@@ -90,39 +117,67 @@ func CountUnresolvedHookEvents() (int, error) {
 }
 
 func EnqueueUnresolvedHookEvent(ev UnresolvedHookEvent) error {
-	if strings.TrimSpace(ev.Kind) == "" || strings.TrimSpace(ev.RemoteURL) == "" || strings.TrimSpace(ev.WorkspaceID) == "" || strings.TrimSpace(ev.CommitSHA) == "" {
-		return fmt.Errorf("unresolved hook event requires kind, remote_url, workspace_id, and commit_sha")
-	}
-	items, err := ListUnresolvedHookEvents()
-	if err != nil {
+	if err := validateUnresolvedHookEvent(ev); err != nil {
 		return err
 	}
-	key := unresolvedDedupeKey(ev)
-	for _, item := range items {
-		if unresolvedDedupeKey(item) == key {
-			return nil
+	return withUnresolvedQueueLock(func() error {
+		items, err := listUnresolvedHookEventsUnlocked()
+		if err != nil {
+			return err
 		}
+		key := unresolvedDedupeKey(ev)
+		for _, item := range items {
+			if unresolvedDedupeKey(item) == key {
+				return nil
+			}
+		}
+		path := unresolvedQueuePath()
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			return fmt.Errorf("create unresolved hook queue dir: %w", err)
+		}
+		f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+		if err != nil {
+			return fmt.Errorf("open unresolved hook queue: %w", err)
+		}
+		defer f.Close()
+		data, err := json.Marshal(ev)
+		if err != nil {
+			return fmt.Errorf("marshal unresolved hook event: %w", err)
+		}
+		if _, err := f.Write(append(data, '\n')); err != nil {
+			return fmt.Errorf("append unresolved hook event: %w", err)
+		}
+		return nil
+	})
+}
+
+func validateUnresolvedHookEvent(ev UnresolvedHookEvent) error {
+	kind := strings.TrimSpace(ev.Kind)
+	if kind == "" || strings.TrimSpace(ev.RemoteURL) == "" || strings.TrimSpace(ev.WorkspaceID) == "" {
+		return fmt.Errorf("unresolved hook event requires kind, remote_url, and workspace_id")
 	}
-	path := unresolvedQueuePath()
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return fmt.Errorf("create unresolved hook queue dir: %w", err)
-	}
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
-	if err != nil {
-		return fmt.Errorf("open unresolved hook queue: %w", err)
-	}
-	defer f.Close()
-	data, err := json.Marshal(ev)
-	if err != nil {
-		return fmt.Errorf("marshal unresolved hook event: %w", err)
-	}
-	if _, err := f.Write(append(data, '\n')); err != nil {
-		return fmt.Errorf("append unresolved hook event: %w", err)
+	switch kind {
+	case "post-commit":
+		if strings.TrimSpace(ev.CommitSHA) == "" {
+			return fmt.Errorf("unresolved post-commit event requires commit_sha")
+		}
+	case "post-rewrite":
+		if strings.TrimSpace(ev.RewriteType) == "" || strings.TrimSpace(ev.OldCommitSHA) == "" || strings.TrimSpace(ev.NewCommitSHA) == "" {
+			return fmt.Errorf("unresolved post-rewrite event requires rewrite_type, old_commit_sha, and new_commit_sha")
+		}
+	default:
+		return fmt.Errorf("unsupported unresolved hook event kind: %s", kind)
 	}
 	return nil
 }
 
 func SaveUnresolvedHookEvents(items []UnresolvedHookEvent) error {
+	return withUnresolvedQueueLock(func() error {
+		return saveUnresolvedHookEventsUnlocked(items)
+	})
+}
+
+func saveUnresolvedHookEventsUnlocked(items []UnresolvedHookEvent) error {
 	path := unresolvedQueuePath()
 	if len(items) == 0 {
 		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {

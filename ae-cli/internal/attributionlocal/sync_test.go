@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -260,6 +261,90 @@ func TestSync_ReplayDeadLettersPermanentBatchFailureIndividually(t *testing.T) {
 	}
 	if len(deadLetters) != 1 || deadLetters[0].Event.DedupeKey != "bad-dedupe-key" {
 		t.Fatalf("deadLetters = %+v, want bad batch event", deadLetters)
+	}
+}
+
+func TestSync_ReplayUsesClientBatchStatusForSingleIsolation(t *testing.T) {
+	batchAttempts := 0
+	singleCounts := map[string]int{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/tool-usage-events/batch":
+			batchAttempts++
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			_, _ = w.Write([]byte(`{"error":"batch validation failed"}`))
+		case "/api/v1/tool-usage-events":
+			var req client.ToolUsageEventRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatalf("decode single request: %v", err)
+			}
+			singleCounts[req.DedupeKey]++
+			if req.DedupeKey == "bad-real-client" {
+				w.WriteHeader(http.StatusUnprocessableEntity)
+				_, _ = w.Write([]byte(`{"error":"bad event"}`))
+				return
+			}
+			w.WriteHeader(http.StatusCreated)
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+
+	engine := &SyncEngine{Client: client.New(srv.URL, "tok")}
+	spoolPath := filepath.Join(t.TempDir(), "spool.json")
+	payload := []LocalToolUsageEvent{
+		{
+			DedupeKey:       "good-old-real-client",
+			Tool:            "codex",
+			UsageUnit:       UsageUnitToken,
+			ObservedStartAt: jsonTime("2026-05-27T07:09:00Z"),
+			ObservedEndAt:   jsonTime("2026-05-27T07:09:00Z"),
+		},
+		{
+			DedupeKey:       "bad-real-client",
+			Tool:            "codex",
+			UsageUnit:       UsageUnitToken,
+			ObservedStartAt: jsonTime("2026-05-27T07:10:00Z"),
+			ObservedEndAt:   jsonTime("2026-05-27T07:10:00Z"),
+		},
+		{
+			DedupeKey:       "good-new-real-client",
+			Tool:            "codex",
+			UsageUnit:       UsageUnitToken,
+			ObservedStartAt: jsonTime("2026-05-27T07:11:00Z"),
+			ObservedEndAt:   jsonTime("2026-05-27T07:11:00Z"),
+		},
+	}
+	if err := SaveJSON(spoolPath, payload); err != nil {
+		t.Fatalf("SaveJSON: %v", err)
+	}
+	engine.spoolPath = spoolPath
+
+	if err := engine.Replay(context.Background(), "/tmp/repo"); err != nil {
+		t.Fatalf("Replay: %v", err)
+	}
+	if batchAttempts != 1 {
+		t.Fatalf("batchAttempts = %d, want 1", batchAttempts)
+	}
+	for _, key := range []string{"good-new-real-client", "bad-real-client", "good-old-real-client"} {
+		if singleCounts[key] != 1 {
+			t.Fatalf("singleCounts[%s] = %d, want 1; all counts=%+v", key, singleCounts[key], singleCounts)
+		}
+	}
+	remaining, err := loadSpooledEvents(spoolPath)
+	if err != nil {
+		t.Fatalf("loadSpooledEvents: %v", err)
+	}
+	if len(remaining) != 0 {
+		t.Fatalf("remaining spool = %+v, want no retryable items", remaining)
+	}
+	deadLetters, err := loadToolUsageDeadLetters(filepath.Dir(spoolPath))
+	if err != nil {
+		t.Fatalf("loadToolUsageDeadLetters: %v", err)
+	}
+	if len(deadLetters) != 1 || deadLetters[0].Event.DedupeKey != "bad-real-client" {
+		t.Fatalf("deadLetters = %+v, want bad real-client event", deadLetters)
 	}
 }
 

@@ -300,6 +300,61 @@ func TestHookPostCommitQueuesUnresolvedWhenInitialResolveTimesOut(t *testing.T) 
 	}
 }
 
+func TestHookPostRewriteQueuesUnresolvedWhenInitialResolveTimesOut(t *testing.T) {
+	repo := initRepoWithCommitForCmdTests(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(200 * time.Millisecond)
+		w.WriteHeader(http.StatusGatewayTimeout)
+	}))
+	defer srv.Close()
+	writeTestTokenForServer(t, home, srv.URL, "user:123")
+	withHookAPIClient(t, srv.URL, "test-access-token")
+
+	origResolveTimeout := hookEligibilityResolveTimeout
+	hookEligibilityResolveTimeout = 25 * time.Millisecond
+	t.Cleanup(func() { hookEligibilityResolveTimeout = origResolveTimeout })
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe: %v", err)
+	}
+	if _, err := w.WriteString("oldsha1 newsha1\n"); err != nil {
+		t.Fatalf("write stdin: %v", err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("close stdin writer: %v", err)
+	}
+	origStdin := os.Stdin
+	os.Stdin = r
+	t.Cleanup(func() {
+		os.Stdin = origStdin
+		_ = r.Close()
+	})
+
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+	defer func() { _ = os.Chdir(wd) }()
+	if err := os.Chdir(repo); err != nil {
+		t.Fatalf("Chdir(repo): %v", err)
+	}
+
+	if err := hookPostRewriteCmd.RunE(hookPostRewriteCmd, []string{"amend"}); err != nil {
+		t.Fatalf("hook post-rewrite RunE: %v", err)
+	}
+	items, err := hooks.ListUnresolvedHookEvents()
+	if err != nil {
+		t.Fatalf("ListUnresolvedHookEvents: %v", err)
+	}
+	if len(items) != 1 || items[0].Kind != "post-rewrite" || items[0].RemoteURL != "https://github.com/acme/repo.git" || items[0].OldCommitSHA != "oldsha1" || items[0].NewCommitSHA != "newsha1" || items[0].RewriteType != "amend" {
+		t.Fatalf("unresolved items = %+v, want unresolved post-rewrite", items)
+	}
+}
+
 func TestHookPostCommitDoesNotQueueUnresolvedWhenRepoIsExplicitlyIneligible(t *testing.T) {
 	repo := initRepoWithCommitForCmdTests(t)
 	home := t.TempDir()

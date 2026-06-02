@@ -51,6 +51,9 @@ type Queue struct {
 	path string
 }
 
+var queueLockStaleAfter = 30 * time.Second
+var queueLockHeartbeatInterval = 5 * time.Second
+
 type Binding struct {
 	ServerURL    string `json:"server_url,omitempty"`
 	AuthSubject  string `json:"auth_subject,omitempty"`
@@ -204,6 +207,13 @@ func (q *Queue) withLock(fn func() error) error {
 	if err != nil {
 		return err
 	}
+	return withFileLock(lockPath, fn)
+}
+
+func withFileLock(lockPath string, fn func() error) error {
+	if strings.TrimSpace(lockPath) == "" {
+		return fmt.Errorf("lock path is required")
+	}
 	if err := os.MkdirAll(filepath.Dir(lockPath), 0o700); err != nil {
 		return fmt.Errorf("create queue lock dir: %w", err)
 	}
@@ -214,6 +224,8 @@ func (q *Queue) withLock(fn func() error) error {
 			_, _ = fmt.Fprintf(f, "pid=%d\ncreated_at=%s\n", os.Getpid(), time.Now().UTC().Format(time.RFC3339Nano))
 			_ = f.Close()
 			defer func() { _ = os.Remove(lockPath) }()
+			stopHeartbeat := startQueueLockHeartbeat(lockPath)
+			defer stopHeartbeat()
 			return fn()
 		}
 		if !os.IsExist(err) {
@@ -228,12 +240,38 @@ func (q *Queue) withLock(fn func() error) error {
 	return fmt.Errorf("queue lock is busy: %s", lockPath)
 }
 
+func startQueueLockHeartbeat(lockPath string) func() {
+	if queueLockHeartbeatInterval <= 0 {
+		return func() {}
+	}
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		ticker := time.NewTicker(queueLockHeartbeatInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				now := time.Now().UTC()
+				_ = os.Chtimes(lockPath, now, now)
+			case <-stop:
+				return
+			}
+		}
+	}()
+	return func() {
+		close(stop)
+		<-done
+	}
+}
+
 func queueLockIsStale(lockPath string, now time.Time) bool {
 	info, err := os.Stat(lockPath)
 	if err != nil {
 		return false
 	}
-	return now.Sub(info.ModTime()) > 30*time.Second
+	return now.Sub(info.ModTime()) > queueLockStaleAfter
 }
 
 func (q *Queue) List() ([]QueueItem, error) {

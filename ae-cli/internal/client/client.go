@@ -39,6 +39,22 @@ func IsPermanentToolUsageError(err error) bool {
 		statusErr.StatusCode == http.StatusUnprocessableEntity
 }
 
+func IsToolUsageBatchIsolationError(err error) bool {
+	var statusErr *HTTPStatusError
+	if !errors.As(err, &statusErr) {
+		return false
+	}
+	if strings.TrimSpace(statusErr.Endpoint) != "tool usage batch" {
+		return false
+	}
+	return statusErr.StatusCode == http.StatusBadRequest ||
+		statusErr.StatusCode == http.StatusUnauthorized ||
+		statusErr.StatusCode == http.StatusForbidden ||
+		statusErr.StatusCode == http.StatusNotFound ||
+		statusErr.StatusCode == http.StatusMethodNotAllowed ||
+		statusErr.StatusCode == http.StatusUnprocessableEntity
+}
+
 type Client struct {
 	baseURL    string
 	token      string
@@ -317,9 +333,6 @@ func (c *Client) SendToolUsageEvents(ctx context.Context, reqs []ToolUsageEventR
 			_ = resp.Body.Close()
 			cancel()
 			statusErr := &HTTPStatusError{Endpoint: "tool usage batch", StatusCode: resp.StatusCode, Body: string(respBody)}
-			if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusMethodNotAllowed || resp.StatusCode == http.StatusBadRequest || resp.StatusCode == http.StatusUnprocessableEntity {
-				return c.sendToolUsageEventsIndividually(ctx, reqs, statusErr)
-			}
 			lastErr = statusErr
 			if !isRetryableToolUsageStatus(resp.StatusCode) {
 				return statusErr
@@ -332,15 +345,6 @@ func (c *Client) SendToolUsageEvents(ctx context.Context, reqs []ToolUsageEventR
 		}
 	}
 	return lastErr
-}
-
-func (c *Client) sendToolUsageEventsIndividually(ctx context.Context, reqs []ToolUsageEventRequest, batchErr error) error {
-	for _, req := range reqs {
-		if err := c.SendToolUsageEvent(ctx, req); err != nil {
-			return fmt.Errorf("%w; fallback single upload failed: %w", batchErr, err)
-		}
-	}
-	return nil
 }
 
 func isRetryableToolUsageStatus(status int) bool {

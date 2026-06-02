@@ -204,7 +204,7 @@ func TestSendToolUsageEventsUsesBatchEndpoint(t *testing.T) {
 	}
 }
 
-func TestSendToolUsageEventsFallsBackWhenBatchUnsupported(t *testing.T) {
+func TestSendToolUsageEventsReturnsBatchStatusWhenUnsupported(t *testing.T) {
 	var batchAttempts int32
 	var singleAttempts int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -231,11 +231,15 @@ func TestSendToolUsageEventsFallsBackWhenBatchUnsupported(t *testing.T) {
 		ObservedStartAt: time.Now().UTC(),
 		ObservedEndAt:   time.Now().UTC(),
 	}})
-	if err != nil {
-		t.Fatalf("SendToolUsageEvents: %v", err)
+	var statusErr *HTTPStatusError
+	if !errors.As(err, &statusErr) {
+		t.Fatalf("error = %T %v, want HTTPStatusError", err, err)
 	}
-	if batchAttempts != 1 || singleAttempts != 1 {
-		t.Fatalf("batchAttempts=%d singleAttempts=%d, want 1/1", batchAttempts, singleAttempts)
+	if statusErr.StatusCode != http.StatusNotFound {
+		t.Fatalf("status code = %d, want 404", statusErr.StatusCode)
+	}
+	if batchAttempts != 1 || singleAttempts != 0 {
+		t.Fatalf("batchAttempts=%d singleAttempts=%d, want 1/0", batchAttempts, singleAttempts)
 	}
 }
 

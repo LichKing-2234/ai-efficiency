@@ -123,7 +123,7 @@ func (e *SyncEngine) sendSpooledEvents(ctx context.Context, events []LocalToolUs
 				reqs = append(reqs, toClientUsageRequest(ev))
 			}
 			if err := batchClient.SendToolUsageEvents(ctx, reqs); err != nil {
-				if client.IsPermanentToolUsageError(err) {
+				if client.IsToolUsageBatchIsolationError(err) {
 					uploaded, singleErr := e.sendSpooledEventsIndividually(ctx, events[start:end], start, onProgress)
 					if singleErr != nil {
 						return uploaded, singleErr

@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -74,6 +75,7 @@ var hookPostRewriteCmd = &cobra.Command{
 		}
 		execCtx, ok := resolveHookExecutionContext(ctx, gitCtx)
 		if !ok {
+			queueUnresolvedPostRewrite(gitCtx, args[0], os.Stdin)
 			return nil
 		}
 		return hooks.NewHandler(newHookUploader()).PostRewriteResolved(ctx, execCtx, args[0], os.Stdin)
@@ -221,18 +223,8 @@ func queueUnresolvedPostCommit(gitCtx *hooks.GitContext) {
 	if err != nil {
 		return
 	}
-	tokenPath, _ := auth.DefaultTokenPath()
-	tf := readTokenFile(tokenPath)
-	serverURL := ""
-	authSubject := ""
-	if tf != nil {
-		serverURL = tf.ServerURL
-		if cfg != nil && cfg.Server.URL != "" {
-			serverURL = cfg.Server.URL
-		}
-		authSubject = tf.StableAuthSubject()
-	}
-	if shouldSkipUnresolvedPostCommitQueue(serverURL, authSubject, gitCtx.RepoKey) {
+	serverURL, authSubject := unresolvedHookBinding()
+	if shouldSkipUnresolvedHookQueue(serverURL, authSubject, gitCtx.RepoKey) {
 		return
 	}
 	ev := hooks.UnresolvedHookEvent{
@@ -253,7 +245,56 @@ func queueUnresolvedPostCommit(gitCtx *hooks.GitContext) {
 	}
 }
 
-func shouldSkipUnresolvedPostCommitQueue(serverURL, authSubject, repoKey string) bool {
+func queueUnresolvedPostRewrite(gitCtx *hooks.GitContext, rewriteType string, stdin io.Reader) {
+	if gitCtx == nil {
+		return
+	}
+	rewriteType = strings.TrimSpace(rewriteType)
+	if rewriteType == "" {
+		return
+	}
+	pairs, err := hooks.ParsePostRewritePairs(stdin)
+	if err != nil || len(pairs) == 0 {
+		return
+	}
+	serverURL, authSubject := unresolvedHookBinding()
+	if shouldSkipUnresolvedHookQueue(serverURL, authSubject, gitCtx.RepoKey) {
+		return
+	}
+	capturedAt := time.Now().UTC().Format(time.RFC3339)
+	for _, p := range pairs {
+		ev := hooks.UnresolvedHookEvent{
+			Kind:         "post-rewrite",
+			RemoteURL:    gitCtx.RemoteURL,
+			RepoKey:      gitCtx.RepoKey,
+			WorkspaceID:  gitCtx.WorkspaceID,
+			ServerURL:    serverURL,
+			AuthSubject:  authSubject,
+			RewriteType:  rewriteType,
+			OldCommitSHA: strings.TrimSpace(p[0]),
+			NewCommitSHA: strings.TrimSpace(p[1]),
+			CapturedAt:   capturedAt,
+		}
+		if err := hooks.EnqueueUnresolvedHookEvent(ev); err != nil {
+			fmt.Fprintf(os.Stderr, "ae-cli: failed to queue unresolved rewrite event: %v\n", err)
+		}
+	}
+}
+
+func unresolvedHookBinding() (string, string) {
+	tokenPath, _ := auth.DefaultTokenPath()
+	tf := readTokenFile(tokenPath)
+	if tf == nil {
+		return "", ""
+	}
+	serverURL := tf.ServerURL
+	if cfg != nil && cfg.Server.URL != "" {
+		serverURL = cfg.Server.URL
+	}
+	return serverURL, tf.StableAuthSubject()
+}
+
+func shouldSkipUnresolvedHookQueue(serverURL, authSubject, repoKey string) bool {
 	binding := hookstate.Context{ServerURL: serverURL, AuthSubject: authSubject, RepoKey: repoKey}
 	if !binding.Stable() {
 		return false
