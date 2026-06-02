@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go CLI with Cobra, local JSON/JSONL state under `~/.ae-cli/state`, existing `ae-cli/internal/hooks` queues/tasks, `ae-cli/internal/attributionlocal` spool/replay, backend HTTP client tests with `httptest`, and `go test`.
 
-**Status:** In progress. Baseline stale eligibility durability fix is complete; reporting durability hardening tasks below remain unchecked until each implementation and verification step runs.
+**Status:** In progress. Documentation has been updated; Task 10 verification remains unchecked until the listed commands pass.
 
 ---
 
@@ -1918,7 +1918,7 @@ git commit -m "feat(ae-cli): show reporting backlog counts"
 - Modify: `docs/superpowers/specs/2026-05-26-ae-cli-post-commit-async-attribution-sync-design.md`
 - Modify: `docs/superpowers/plans/2026-06-02-ae-cli-reporting-durability-hardening.md`
 
-- [ ] **Step 1: Update architecture current state**
+- [x] **Step 1: Update architecture current state**
 
 In `docs/architecture.md`, update the CLI/runtime status section to include this paragraph:
 
@@ -1926,7 +1926,7 @@ In `docs/architecture.md`, update the CLI/runtime status section to include this
 Reporting durability is now at-least-once for locally captured events while local state is writable. Hook checkpoint/rewrite failures are stored in a locked workspace queue, first-run repo eligibility failures are stored in an unresolved hook queue, and tool-usage events are spooled before scan state advances. Replay never deletes events solely because the current auth/server/repo binding differs; those events remain pending for the binding that can upload them. Events that the backend permanently rejects are moved to visible dead-letter files instead of blocking later valid events.
 ```
 
-- [ ] **Step 2: Update active async sync spec**
+- [x] **Step 2: Update active async sync spec**
 
 In `docs/superpowers/specs/2026-05-26-ae-cli-post-commit-async-attribution-sync-design.md`, add this contract under the `Hook fast path` section:
 
@@ -1940,7 +1940,7 @@ Durability requirements:
 5. Permanent backend rejection moves the offending event to dead-letter and continues with later valid events.
 ```
 
-- [ ] **Step 3: Mark plan status active during execution**
+- [x] **Step 3: Mark plan status active during execution**
 
 At the top of this plan, below the header, add:
 
@@ -1948,7 +1948,7 @@ At the top of this plan, below the header, add:
 **Status:** In progress. Documentation has been updated; Task 10 verification remains unchecked until the listed commands pass.
 ```
 
-- [ ] **Step 4: Commit docs**
+- [x] **Step 4: Commit docs**
 
 ```bash
 git add docs/architecture.md docs/superpowers/specs/2026-05-26-ae-cli-post-commit-async-attribution-sync-design.md docs/superpowers/plans/2026-06-02-ae-cli-reporting-durability-hardening.md
