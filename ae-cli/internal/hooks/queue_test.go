@@ -105,6 +105,54 @@ func TestQueueReadsLargeAgentSnapshotPayload(t *testing.T) {
 	}
 }
 
+func TestQueueLockedRewriteDoesNotDropConcurrentEnqueue(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	q, err := NewWorkspaceQueue("ws-locked")
+	if err != nil {
+		t.Fatalf("NewWorkspaceQueue: %v", err)
+	}
+	first := HookEvent{Kind: "post-commit", EventID: "evt-first", WorkspaceID: "ws-locked", CommitSHA: "first"}
+	second := HookEvent{Kind: "post-commit", EventID: "evt-second", WorkspaceID: "ws-locked", CommitSHA: "second"}
+	if err := q.Enqueue(first); err != nil {
+		t.Fatalf("Enqueue(first): %v", err)
+	}
+
+	enqueueStarted := make(chan struct{})
+	enqueueDone := make(chan error, 1)
+	err = q.withLock(func() error {
+		items, err := q.listUnlocked()
+		if err != nil {
+			return err
+		}
+		if len(items) != 1 || items[0].Event.EventID != "evt-first" {
+			t.Fatalf("locked list = %+v, want first event", items)
+		}
+		go func() {
+			close(enqueueStarted)
+			enqueueDone <- q.Enqueue(second)
+		}()
+		<-enqueueStarted
+		time.Sleep(50 * time.Millisecond)
+		return q.rewriteUnlocked(nil)
+	})
+	if err != nil {
+		t.Fatalf("withLock rewrite: %v", err)
+	}
+	if err := <-enqueueDone; err != nil {
+		t.Fatalf("concurrent Enqueue(second): %v", err)
+	}
+
+	items, err := q.List()
+	if err != nil {
+		t.Fatalf("List after locked rewrite: %v", err)
+	}
+	if len(items) != 1 || items[0].Event.EventID != "evt-second" {
+		t.Fatalf("items after locked rewrite = %+v, want only concurrent second event", items)
+	}
+}
+
 func TestLedgerAppendAndReadUsesWorkspaceStateWithoutRawPayloads(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

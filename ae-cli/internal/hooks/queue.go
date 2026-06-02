@@ -192,7 +192,64 @@ func (q *Queue) Path() string {
 	return q.path
 }
 
+func (q *Queue) lockPath() (string, error) {
+	if q == nil || strings.TrimSpace(q.path) == "" {
+		return "", fmt.Errorf("queue is not initialized")
+	}
+	return q.path + ".lock", nil
+}
+
+func (q *Queue) withLock(fn func() error) error {
+	lockPath, err := q.lockPath()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(lockPath), 0o700); err != nil {
+		return fmt.Errorf("create queue lock dir: %w", err)
+	}
+	const attempts = 200
+	for attempt := 0; attempt < attempts; attempt++ {
+		f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+		if err == nil {
+			_, _ = fmt.Fprintf(f, "pid=%d\ncreated_at=%s\n", os.Getpid(), time.Now().UTC().Format(time.RFC3339Nano))
+			_ = f.Close()
+			defer func() { _ = os.Remove(lockPath) }()
+			return fn()
+		}
+		if !os.IsExist(err) {
+			return fmt.Errorf("create queue lock: %w", err)
+		}
+		if queueLockIsStale(lockPath, time.Now().UTC()) {
+			_ = os.Remove(lockPath)
+			continue
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	return fmt.Errorf("queue lock is busy: %s", lockPath)
+}
+
+func queueLockIsStale(lockPath string, now time.Time) bool {
+	info, err := os.Stat(lockPath)
+	if err != nil {
+		return false
+	}
+	return now.Sub(info.ModTime()) > 30*time.Second
+}
+
 func (q *Queue) List() ([]QueueItem, error) {
+	var out []QueueItem
+	err := q.withLock(func() error {
+		items, err := q.listUnlocked()
+		if err != nil {
+			return err
+		}
+		out = items
+		return nil
+	})
+	return out, err
+}
+
+func (q *Queue) listUnlocked() ([]QueueItem, error) {
 	if q == nil || strings.TrimSpace(q.path) == "" {
 		return nil, fmt.Errorf("queue is not initialized")
 	}
@@ -232,6 +289,12 @@ func (q *Queue) List() ([]QueueItem, error) {
 }
 
 func (q *Queue) Enqueue(ev HookEvent) error {
+	return q.withLock(func() error {
+		return q.enqueueUnlocked(ev)
+	})
+}
+
+func (q *Queue) enqueueUnlocked(ev HookEvent) error {
 	if q == nil || strings.TrimSpace(q.path) == "" {
 		return fmt.Errorf("queue is not initialized")
 	}
@@ -239,7 +302,7 @@ func (q *Queue) Enqueue(ev HookEvent) error {
 		return fmt.Errorf("event_id is required")
 	}
 
-	items, err := q.List()
+	items, err := q.listUnlocked()
 	if err != nil {
 		return err
 	}
@@ -270,6 +333,12 @@ func (q *Queue) Enqueue(ev HookEvent) error {
 }
 
 func (q *Queue) rewrite(items []QueueItem) error {
+	return q.withLock(func() error {
+		return q.rewriteUnlocked(items)
+	})
+}
+
+func (q *Queue) rewriteUnlocked(items []QueueItem) error {
 	if q == nil || strings.TrimSpace(q.path) == "" {
 		return fmt.Errorf("queue is not initialized")
 	}

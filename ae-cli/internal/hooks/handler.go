@@ -332,18 +332,55 @@ func (h *Handler) flushWorkspace(ctx context.Context, execCtx ExecutionContext) 
 	if err != nil {
 		return err
 	}
-	items, err := q.List()
-	if err != nil {
-		return err
-	}
-	if len(items) == 0 {
-		return nil
-	}
+	return q.withLock(func() error {
+		items, err := q.listUnlocked()
+		if err != nil {
+			return err
+		}
+		if len(items) == 0 {
+			return nil
+		}
 
-	var keep []QueueItem
-	for _, it := range items {
-		now := time.Now().UTC()
-		if !hookEventMatchesContext(it.Event, execCtx) {
+		var keep []QueueItem
+		for _, it := range items {
+			now := time.Now().UTC()
+			if !hookEventMatchesContext(it.Event, execCtx) {
+				_ = AppendLedger(execCtx.WorkspaceID, LedgerRecord{
+					Kind:         ledgerKind(it.Event.Kind),
+					DedupeKey:    it.Event.EventID,
+					ServerURL:    execCtx.ServerURL,
+					AuthSubject:  execCtx.AuthSubject,
+					RepoConfigID: execCtx.RepoConfigID,
+					RepoKey:      execCtx.RepoKey,
+					WorkspaceID:  execCtx.WorkspaceID,
+					Status:       "skipped",
+					AttemptCount: 1,
+					AttemptedAt:  now,
+					LastError:    "context mismatch",
+				})
+				continue
+			}
+			if h == nil || h.uploader == nil {
+				keep = append(keep, it)
+				continue
+			}
+			if err := h.uploader.UploadHookEvent(ctx, it.Event); err != nil {
+				_ = AppendLedger(execCtx.WorkspaceID, LedgerRecord{
+					Kind:         ledgerKind(it.Event.Kind),
+					DedupeKey:    it.Event.EventID,
+					ServerURL:    execCtx.ServerURL,
+					AuthSubject:  execCtx.AuthSubject,
+					RepoConfigID: execCtx.RepoConfigID,
+					RepoKey:      execCtx.RepoKey,
+					WorkspaceID:  execCtx.WorkspaceID,
+					Status:       "failed",
+					AttemptCount: 1,
+					AttemptedAt:  now,
+					LastError:    err.Error(),
+				})
+				keep = append(keep, it)
+				continue
+			}
 			_ = AppendLedger(execCtx.WorkspaceID, LedgerRecord{
 				Kind:         ledgerKind(it.Event.Kind),
 				DedupeKey:    it.Event.EventID,
@@ -352,49 +389,14 @@ func (h *Handler) flushWorkspace(ctx context.Context, execCtx ExecutionContext) 
 				RepoConfigID: execCtx.RepoConfigID,
 				RepoKey:      execCtx.RepoKey,
 				WorkspaceID:  execCtx.WorkspaceID,
-				Status:       "skipped",
+				Status:       "uploaded",
 				AttemptCount: 1,
 				AttemptedAt:  now,
-				LastError:    "context mismatch",
+				UploadedAt:   &now,
 			})
-			continue
 		}
-		if h == nil || h.uploader == nil {
-			keep = append(keep, it)
-			continue
-		}
-		if err := h.uploader.UploadHookEvent(ctx, it.Event); err != nil {
-			_ = AppendLedger(execCtx.WorkspaceID, LedgerRecord{
-				Kind:         ledgerKind(it.Event.Kind),
-				DedupeKey:    it.Event.EventID,
-				ServerURL:    execCtx.ServerURL,
-				AuthSubject:  execCtx.AuthSubject,
-				RepoConfigID: execCtx.RepoConfigID,
-				RepoKey:      execCtx.RepoKey,
-				WorkspaceID:  execCtx.WorkspaceID,
-				Status:       "failed",
-				AttemptCount: 1,
-				AttemptedAt:  now,
-				LastError:    err.Error(),
-			})
-			keep = append(keep, it)
-			continue
-		}
-		_ = AppendLedger(execCtx.WorkspaceID, LedgerRecord{
-			Kind:         ledgerKind(it.Event.Kind),
-			DedupeKey:    it.Event.EventID,
-			ServerURL:    execCtx.ServerURL,
-			AuthSubject:  execCtx.AuthSubject,
-			RepoConfigID: execCtx.RepoConfigID,
-			RepoKey:      execCtx.RepoKey,
-			WorkspaceID:  execCtx.WorkspaceID,
-			Status:       "uploaded",
-			AttemptCount: 1,
-			AttemptedAt:  now,
-			UploadedAt:   &now,
-		})
-	}
-	return q.rewrite(keep)
+		return q.rewriteUnlocked(keep)
+	})
 }
 
 func enqueueForReplay(execCtx ExecutionContext, ev HookEvent) error {

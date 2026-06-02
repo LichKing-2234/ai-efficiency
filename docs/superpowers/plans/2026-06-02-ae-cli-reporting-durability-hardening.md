@@ -64,7 +64,7 @@ This plan does not promise physical 100 percent delivery under power loss, disk 
 - Modify: `ae-cli/internal/hooks/queue.go`
 - Modify: `ae-cli/internal/hooks/queue_test.go`
 
-- [ ] **Step 1: Write the failing race-preservation test**
+- [x] **Step 1: Write the failing race-preservation test**
 
 Add this test to `ae-cli/internal/hooks/queue_test.go`:
 
@@ -118,7 +118,7 @@ func TestQueueLockedRewriteDoesNotDropConcurrentEnqueue(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the test and verify it fails**
+- [x] **Step 2: Run the test and verify it fails**
 
 Run:
 
@@ -129,7 +129,7 @@ go test ./internal/hooks -run TestQueueLockedRewriteDoesNotDropConcurrentEnqueue
 
 Expected: FAIL because `Queue` has no `withLock`, `listUnlocked`, or `rewriteUnlocked` methods.
 
-- [ ] **Step 3: Implement queue locking and unlocked helpers**
+- [x] **Step 3: Implement queue locking and unlocked helpers**
 
 Modify `ae-cli/internal/hooks/queue.go`. Add these imports if missing:
 
@@ -337,7 +337,7 @@ func (q *Queue) rewriteUnlocked(items []QueueItem) error {
 }
 ```
 
-- [ ] **Step 4: Make `flushWorkspace` hold the queue lock across list and rewrite**
+- [x] **Step 4: Make `flushWorkspace` hold the queue lock across list and rewrite**
 
 Modify `ae-cli/internal/hooks/handler.go`:
 
@@ -416,7 +416,7 @@ func (h *Handler) flushWorkspace(ctx context.Context, execCtx ExecutionContext) 
 }
 ```
 
-- [ ] **Step 5: Run focused tests**
+- [x] **Step 5: Run focused tests**
 
 Run:
 
@@ -427,7 +427,7 @@ go test ./internal/hooks -run 'TestQueueLockedRewriteDoesNotDropConcurrentEnqueu
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add ae-cli/internal/hooks/queue.go ae-cli/internal/hooks/queue_test.go ae-cli/internal/hooks/handler.go
