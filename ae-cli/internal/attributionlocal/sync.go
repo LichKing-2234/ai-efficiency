@@ -1,6 +1,7 @@
 package attributionlocal
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -122,6 +123,13 @@ func (e *SyncEngine) sendSpooledEvents(ctx context.Context, events []LocalToolUs
 				reqs = append(reqs, toClientUsageRequest(ev))
 			}
 			if err := batchClient.SendToolUsageEvents(ctx, reqs); err != nil {
+				if client.IsPermanentToolUsageError(err) {
+					uploaded, singleErr := e.sendSpooledEventsIndividually(ctx, events[start:end], start, onProgress)
+					if singleErr != nil {
+						return uploaded, singleErr
+					}
+					continue
+				}
 				return start, err
 			}
 			if onProgress != nil {
@@ -132,17 +140,33 @@ func (e *SyncEngine) sendSpooledEvents(ctx context.Context, events []LocalToolUs
 		}
 		return len(events), nil
 	}
+	return e.sendSpooledEventsIndividually(ctx, events, 0, onProgress)
+}
+
+func (e *SyncEngine) sendSpooledEventsIndividually(ctx context.Context, events []LocalToolUsageEvent, offset int, onProgress func(uploaded int) error) (int, error) {
 	for idx, ev := range events {
+		uploaded := offset + idx
 		if err := e.Client.SendToolUsageEvent(ctx, toClientUsageRequest(ev)); err != nil {
-			return idx, err
+			if client.IsPermanentToolUsageError(err) {
+				if dlErr := appendToolUsageDeadLetter(e.spoolPath, ev, err); dlErr != nil {
+					return uploaded, dlErr
+				}
+				if onProgress != nil {
+					if progressErr := onProgress(uploaded + 1); progressErr != nil {
+						return uploaded + 1, progressErr
+					}
+				}
+				continue
+			}
+			return uploaded, err
 		}
 		if onProgress != nil {
-			if err := onProgress(idx + 1); err != nil {
-				return idx + 1, err
+			if err := onProgress(uploaded + 1); err != nil {
+				return uploaded + 1, err
 			}
 		}
 	}
-	return len(events), nil
+	return offset + len(events), nil
 }
 
 func (e *SyncEngine) RunForWorkspace(ctx context.Context, workspaceRoot string) error {
@@ -367,6 +391,68 @@ func loadSpooledEvents(path string) ([]LocalToolUsageEvent, error) {
 			return nil, nil
 		}
 		return nil, err
+	}
+	return out, nil
+}
+
+type toolUsageDeadLetter struct {
+	Version    int                 `json:"version"`
+	Event      LocalToolUsageEvent `json:"event"`
+	Error      string              `json:"error"`
+	RecordedAt time.Time           `json:"recorded_at"`
+}
+
+func toolUsageDeadLetterPath(workspaceDir string) string {
+	return filepath.Join(workspaceDir, "dead-letter-tool-usage.jsonl")
+}
+
+func appendToolUsageDeadLetter(spoolPath string, ev LocalToolUsageEvent, uploadErr error) error {
+	if spoolPath == "" {
+		return nil
+	}
+	path := toolUsageDeadLetterPath(filepath.Dir(spoolPath))
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	rec := toolUsageDeadLetter{
+		Version:    1,
+		Event:      ev,
+		Error:      uploadErr.Error(),
+		RecordedAt: time.Now().UTC(),
+	}
+	data, err := json.Marshal(rec)
+	if err != nil {
+		return err
+	}
+	_, err = f.Write(append(data, '\n'))
+	return err
+}
+
+func loadToolUsageDeadLetters(workspaceDir string) ([]toolUsageDeadLetter, error) {
+	path := toolUsageDeadLetterPath(workspaceDir)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var out []toolUsageDeadLetter
+	for _, line := range bytes.Split(data, []byte("\n")) {
+		line = bytes.TrimSpace(line)
+		if len(line) == 0 {
+			continue
+		}
+		var rec toolUsageDeadLetter
+		if err := json.Unmarshal(line, &rec); err != nil {
+			return nil, err
+		}
+		out = append(out, rec)
 	}
 	return out, nil
 }

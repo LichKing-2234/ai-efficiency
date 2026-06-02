@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -139,6 +140,33 @@ func TestSendToolUsageEvent(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("SendToolUsageEvent: %v", err)
+	}
+}
+
+func TestSendToolUsageEventReturnsHTTPStatusErrorForValidationFailure(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		_, _ = w.Write([]byte(`{"error":"bad event"}`))
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "tok")
+	err := c.SendToolUsageEvent(context.Background(), ToolUsageEventRequest{
+		RepoConfigID:    123,
+		Tool:            "codex",
+		WorkspaceID:     "ws-1",
+		ToolSessionID:   "sess-1",
+		DedupeKey:       "bad-event",
+		UsageUnit:       "token",
+		ObservedStartAt: time.Now(),
+		ObservedEndAt:   time.Now(),
+	})
+	var statusErr *HTTPStatusError
+	if !errors.As(err, &statusErr) {
+		t.Fatalf("error = %T %v, want HTTPStatusError", err, err)
+	}
+	if statusErr.StatusCode != http.StatusUnprocessableEntity || statusErr.Body == "" {
+		t.Fatalf("statusErr = %+v, want 422 with body", statusErr)
 	}
 }
 

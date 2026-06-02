@@ -1345,7 +1345,7 @@ git commit -m "fix(ae-cli): quarantine corrupt reporting state"
 - Modify: `ae-cli/internal/attributionlocal/sync.go`
 - Modify: `ae-cli/internal/attributionlocal/sync_test.go`
 
-- [ ] **Step 1: Write structured HTTP error test**
+- [x] **Step 1: Write structured HTTP error test**
 
 Add to `ae-cli/internal/client/client_test.go`:
 
@@ -1378,7 +1378,7 @@ func TestSendToolUsageEventReturnsHTTPStatusErrorForValidationFailure(t *testing
 }
 ```
 
-- [ ] **Step 2: Run client test and verify it fails**
+- [x] **Step 2: Run client test and verify it fails**
 
 Run:
 
@@ -1389,7 +1389,7 @@ go test ./internal/client -run TestSendToolUsageEventReturnsHTTPStatusErrorForVa
 
 Expected: FAIL because `HTTPStatusError` does not exist.
 
-- [ ] **Step 3: Implement structured HTTP status errors**
+- [x] **Step 3: Implement structured HTTP status errors**
 
 Modify `ae-cli/internal/client/client.go`:
 
@@ -1442,7 +1442,7 @@ if !isRetryableToolUsageStatus(resp.StatusCode) {
 }
 ```
 
-- [ ] **Step 4: Write dead-letter replay test**
+- [x] **Step 4: Write dead-letter replay test**
 
 Add to `ae-cli/internal/attributionlocal/sync_test.go`:
 
@@ -1506,7 +1506,7 @@ if s.failOn != "" && req.DedupeKey == s.failOn {
 }
 ```
 
-- [ ] **Step 5: Run dead-letter test and verify it fails**
+- [x] **Step 5: Run dead-letter test and verify it fails**
 
 Run:
 
@@ -1517,7 +1517,7 @@ go test ./internal/attributionlocal -run TestSync_ReplayDeadLettersPermanentFail
 
 Expected: FAIL because dead-letter helpers and permanent-failure continuation do not exist.
 
-- [ ] **Step 6: Implement dead-letter records and continuation**
+- [x] **Step 6: Implement dead-letter records and continuation**
 
 Add to `ae-cli/internal/attributionlocal/sync.go`:
 
@@ -1611,19 +1611,19 @@ Modify single-event branch of `sendSpooledEvents`:
 	}
 ```
 
-- [ ] **Step 7: Run focused tests**
+- [x] **Step 7: Run focused tests**
 
 Run:
 
 ```bash
 cd ae-cli
 go test ./internal/client -run TestSendToolUsageEventReturnsHTTPStatusErrorForValidationFailure -count=1
-go test ./internal/attributionlocal -run TestSync_ReplayDeadLettersPermanentFailureAndContinues -count=1
+go test ./internal/attributionlocal -run 'TestSync_ReplayDeadLettersPermanent(FailureAndContinues|BatchFailureIndividually)' -count=1
 ```
 
 Expected: PASS.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add ae-cli/internal/client/client.go ae-cli/internal/client/client_test.go ae-cli/internal/attributionlocal/sync.go ae-cli/internal/attributionlocal/sync_test.go ae-cli/internal/attributionlocal/test_helpers_test.go

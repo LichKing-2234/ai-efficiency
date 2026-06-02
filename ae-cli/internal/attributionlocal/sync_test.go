@@ -4,10 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"net/http"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/ai-efficiency/ae-cli/internal/client"
 )
 
 func TestSync_ReplaysSpooledEventsBeforeNewScan(t *testing.T) {
@@ -94,6 +97,47 @@ func TestSync_ReplayDropsAlreadyUploadedPrefixOnFailure(t *testing.T) {
 	}
 }
 
+func TestSync_ReplayDeadLettersPermanentFailureAndContinues(t *testing.T) {
+	fixture := setupSyncEngineWithSpool(t)
+	fixture.Client.failOn = "spooled-dedupe-key"
+	fixture.Client.failWith = &client.HTTPStatusError{Endpoint: "tool usage", StatusCode: http.StatusUnprocessableEntity, Body: "bad event"}
+	second := LocalToolUsageEvent{
+		Tool:            "codex",
+		WorkspaceID:     "ws-1",
+		ToolSessionID:   "conv-2",
+		ToolEventID:     "resp-2",
+		DedupeKey:       "good-after-bad",
+		UsageUnit:       UsageUnitToken,
+		RequestCount:    1,
+		ObservedStartAt: jsonTime("2026-05-13T10:00:02Z"),
+		ObservedEndAt:   jsonTime("2026-05-13T10:00:03Z"),
+	}
+	if err := appendSpooledEvents(fixture.Engine.spoolPath, []LocalToolUsageEvent{second}); err != nil {
+		t.Fatalf("appendSpooledEvents(second): %v", err)
+	}
+
+	if err := fixture.Engine.Replay(context.Background(), "/tmp/repo"); err != nil {
+		t.Fatalf("Replay: %v", err)
+	}
+	if !fixture.Client.SawUpload("good-after-bad") {
+		t.Fatalf("uploads = %+v, want good event after bad event", fixture.Client.uploads)
+	}
+	remaining, err := loadSpooledEvents(fixture.Engine.spoolPath)
+	if err != nil {
+		t.Fatalf("loadSpooledEvents: %v", err)
+	}
+	if len(remaining) != 0 {
+		t.Fatalf("remaining spool = %+v, want no retryable items", remaining)
+	}
+	deadLetters, err := loadToolUsageDeadLetters(filepath.Dir(fixture.Engine.spoolPath))
+	if err != nil {
+		t.Fatalf("loadToolUsageDeadLetters: %v", err)
+	}
+	if len(deadLetters) != 1 || deadLetters[0].Event.DedupeKey != "spooled-dedupe-key" {
+		t.Fatalf("deadLetters = %+v, want failed spooled event", deadLetters)
+	}
+}
+
 func TestSync_ReplayPrioritizesNewestSpooledEvents(t *testing.T) {
 	t.Parallel()
 
@@ -167,6 +211,55 @@ func TestSync_ReplayUsesBatchUploadsWhenAvailable(t *testing.T) {
 	}
 	if got := clientStub.batches[0]; len(got) != 2 || got[0] != "first-dedupe-key" || got[1] != "second-dedupe-key" {
 		t.Fatalf("batch = %+v, want ordered two-event upload", got)
+	}
+}
+
+func TestSync_ReplayDeadLettersPermanentBatchFailureIndividually(t *testing.T) {
+	clientStub := &syncBatchBackendClientStub{}
+	clientStub.failOn = "bad-dedupe-key"
+	clientStub.failWith = &client.HTTPStatusError{Endpoint: "tool usage batch", StatusCode: http.StatusUnprocessableEntity, Body: "bad event"}
+	engine := &SyncEngine{Client: clientStub}
+	spoolPath := filepath.Join(t.TempDir(), "spool.json")
+	payload := []LocalToolUsageEvent{
+		{
+			DedupeKey:       "bad-dedupe-key",
+			Tool:            "codex",
+			UsageUnit:       UsageUnitToken,
+			ObservedStartAt: jsonTime("2026-05-27T07:10:00Z"),
+			ObservedEndAt:   jsonTime("2026-05-27T07:10:00Z"),
+		},
+		{
+			DedupeKey:       "good-after-batch-bad",
+			Tool:            "codex",
+			UsageUnit:       UsageUnitToken,
+			ObservedStartAt: jsonTime("2026-05-27T07:11:00Z"),
+			ObservedEndAt:   jsonTime("2026-05-27T07:11:00Z"),
+		},
+	}
+	if err := SaveJSON(spoolPath, payload); err != nil {
+		t.Fatalf("SaveJSON: %v", err)
+	}
+	engine.spoolPath = spoolPath
+
+	if err := engine.Replay(context.Background(), "/tmp/repo"); err != nil {
+		t.Fatalf("Replay: %v", err)
+	}
+	if !clientStub.SawUpload("good-after-batch-bad") {
+		t.Fatalf("uploads = %+v, want good event after bad batch event", clientStub.uploads)
+	}
+	remaining, err := loadSpooledEvents(spoolPath)
+	if err != nil {
+		t.Fatalf("loadSpooledEvents: %v", err)
+	}
+	if len(remaining) != 0 {
+		t.Fatalf("remaining spool = %+v, want no retryable items", remaining)
+	}
+	deadLetters, err := loadToolUsageDeadLetters(filepath.Dir(spoolPath))
+	if err != nil {
+		t.Fatalf("loadToolUsageDeadLetters: %v", err)
+	}
+	if len(deadLetters) != 1 || deadLetters[0].Event.DedupeKey != "bad-dedupe-key" {
+		t.Fatalf("deadLetters = %+v, want bad batch event", deadLetters)
 	}
 }
 
