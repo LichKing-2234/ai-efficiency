@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go, Gin, Ent, zap, Vue 3, Pinia, TypeScript, Vitest, TailwindCSS.
 
-**Status:** In progress. Task 4 frontend batch action is being executed in this session.
+**Status:** Complete. Implementation and verification finished in this session.
 
 ---
 
@@ -52,9 +52,9 @@
 - Modify: `docs/architecture.md`
   - Update current repo module responsibility/runtime wording once implementation lands.
 - Run backend focused tests:
-  - `cd backend && go test ./internal/repo ./internal/handler`
+  - `cd backend && AE_TEST_POSTGRES_DSN='postgres://postgres:postgres@127.0.0.1:15432/postgres?sslmode=disable' go test ./internal/repo ./internal/handler`
 - Run backend full tests:
-  - `cd backend && go test ./...`
+  - `cd backend && AE_TEST_POSTGRES_DSN='postgres://postgres:postgres@127.0.0.1:15432/postgres?sslmode=disable' go test ./...`
 - Run frontend repo-list test:
   - `cd frontend && npm test -- repo-list-view`
 - Run frontend full tests:
@@ -1045,7 +1045,7 @@ repoGroup.POST("/auto-bind-unbound", auth.RequireAdmin(), repoHandler.AutoBindUn
 Run:
 
 ```bash
-cd backend && go test ./internal/repo ./internal/handler
+cd backend && AE_TEST_POSTGRES_DSN='postgres://postgres:postgres@127.0.0.1:15432/postgres?sslmode=disable' go test ./internal/repo ./internal/handler
 ```
 
 Expected: PASS.
@@ -1340,7 +1340,7 @@ cd frontend && npm test -- repo-list-view
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit frontend auto-bind action**
+- [x] **Step 7: Commit frontend auto-bind action**
 
 ```bash
 git add frontend/src/types/index.ts frontend/src/api/repo.ts frontend/src/views/repos/RepoListView.vue frontend/src/i18n.ts frontend/src/__tests__/repo-list-view.test.ts
@@ -1354,7 +1354,7 @@ git commit -m "feat(frontend): add repository auto-bind action"
 **Files:**
 - Modify: `docs/architecture.md`
 
-- [ ] **Step 1: Update current architecture wording**
+- [x] **Step 1: Update current architecture wording**
 
 In `docs/architecture.md`, update the runtime boundary bullets around repo binding to include deterministic auto-binding. Use this wording:
 
@@ -1368,27 +1368,27 @@ In the module responsibility table row for `Repo and efficiency`, use this respo
 Explicit repo registration, read-only hook eligibility resolution, deterministic repo binding from configured SCM metadata, PR labeling, and dashboard-facing summary inputs
 ```
 
-- [ ] **Step 2: Run backend focused verification**
+- [x] **Step 2: Run backend focused verification**
 
 Run:
 
 ```bash
-cd backend && go test ./internal/repo ./internal/handler
+cd backend && AE_TEST_POSTGRES_DSN='postgres://postgres:postgres@127.0.0.1:15432/postgres?sslmode=disable' go test ./internal/repo ./internal/handler
 ```
 
 Expected: PASS.
 
-- [ ] **Step 3: Run backend full verification**
+- [x] **Step 3: Run backend full verification**
 
 Run:
 
 ```bash
-cd backend && go test ./...
+cd backend && AE_TEST_POSTGRES_DSN='postgres://postgres:postgres@127.0.0.1:15432/postgres?sslmode=disable' go test ./...
 ```
 
 Expected: PASS.
 
-- [ ] **Step 4: Run frontend focused verification**
+- [x] **Step 4: Run frontend focused verification**
 
 Run:
 
@@ -1398,7 +1398,7 @@ cd frontend && npm test -- repo-list-view
 
 Expected: PASS.
 
-- [ ] **Step 5: Run frontend full verification**
+- [x] **Step 5: Run frontend full verification**
 
 Run:
 
@@ -1408,7 +1408,7 @@ cd frontend && npm test
 
 Expected: PASS.
 
-- [ ] **Step 6: Check worktree and commit docs/verification updates**
+- [x] **Step 6: Check worktree and commit docs/verification updates**
 
 Run:
 
@@ -1421,11 +1421,11 @@ Expected: only intentional files from this implementation are modified.
 Commit:
 
 ```bash
-git add docs/architecture.md
+git add docs/architecture.md docs/superpowers/plans/2026-06-02-repo-auto-binding.md
 git commit -m "docs(architecture): document repo auto binding"
 ```
 
-- [ ] **Step 7: Final implementation review**
+- [x] **Step 7: Final implementation review**
 
 Run:
 
