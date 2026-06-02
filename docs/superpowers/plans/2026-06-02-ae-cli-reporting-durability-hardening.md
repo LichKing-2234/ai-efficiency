@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go CLI with Cobra, local JSON/JSONL state under `~/.ae-cli/state`, existing `ae-cli/internal/hooks` queues/tasks, `ae-cli/internal/attributionlocal` spool/replay, backend HTTP client tests with `httptest`, and `go test`.
 
-**Status:** Complete for ae-cli review follow-up on 2026-06-02. Fourth review follow-up verification passed: focused attributionlocal tests, `go test ./cmd ./internal/hooks ./internal/attributionlocal ./internal/client -count=1`, `go test ./... -count=1` under `ae-cli`, and `git diff --check`. Backend checkpoint/tool-usage verification is currently blocked because local Postgres on `127.0.0.1:15432` is unavailable.
+**Status:** Complete. Fourth review follow-up verification on 2026-06-02 passed: focused attributionlocal tests, `go test ./cmd ./internal/hooks ./internal/attributionlocal ./internal/client -count=1`, `go test ./... -count=1` under `ae-cli`, backend checkpoint/tool-usage target tests with `AE_TEST_POSTGRES_DSN=postgres://postgres:postgres@127.0.0.1:15432/postgres?sslmode=disable`, and `git diff --check`.
 
 ---
 
@@ -1984,9 +1984,9 @@ go test ./... -count=1
 
 Expected: PASS for all ae-cli packages.
 
-- [ ] **Step 3: Run backend checkpoint/tool usage tests**
+- [x] **Step 3: Run backend checkpoint/tool usage tests**
 
-Current follow-up status: blocked in this environment on 2026-06-02 because `127.0.0.1:15432` refused the Postgres connection.
+Current follow-up status: passed on 2026-06-02 with `AE_TEST_POSTGRES_DSN=postgres://postgres:postgres@127.0.0.1:15432/postgres?sslmode=disable`.
 
 Run:
 
@@ -2036,7 +2036,7 @@ Expected: PASS. This smoke uses tests instead of a real backend so it does not w
 If Task 9 added the in-progress status line, update it to:
 
 ```markdown
-**Status:** Complete for ae-cli verification on 2026-06-02: `go test ./cmd ./internal/hooks ./internal/attributionlocal ./internal/client -count=1`, `go test ./... -count=1` under `ae-cli`, and `git diff --check` passed. Backend reporting tests remain unchecked when local Postgres is unavailable.
+**Status:** Complete. Verification on 2026-06-02 passed: `go test ./cmd ./internal/hooks ./internal/attributionlocal ./internal/client -count=1`, `go test ./... -count=1` under `ae-cli`, backend checkpoint/tool-usage target tests with `AE_TEST_POSTGRES_DSN=postgres://postgres:postgres@127.0.0.1:15432/postgres?sslmode=disable`, and `git diff --check`.
 ```
 
 Then commit:
