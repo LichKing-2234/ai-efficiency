@@ -388,7 +388,7 @@ func printHookStatus(out io.Writer, status *hooks.Status) {
 			if strings.TrimSpace(lastError) == "" {
 				lastError = "none"
 			}
-			fmt.Fprintf(out, "  repo_config_id=%d repo=%s workspace=%s server=%s account=%s pending=%d uploaded=%d failed=%d skipped=%d last_success=%s last_error=%s\n",
+			fmt.Fprintf(out, "  repo_config_id=%d repo=%s workspace=%s server=%s account=%s pending=%d uploaded=%d failed=%d deferred=%d skipped=%d last_success=%s last_error=%s\n",
 				group.RepoConfigID,
 				group.RepoKey,
 				group.WorkspaceID,
@@ -397,6 +397,7 @@ func printHookStatus(out io.Writer, status *hooks.Status) {
 				group.PendingCount,
 				group.UploadedCount,
 				group.FailedCount,
+				group.DeferredCount,
 				group.SkippedCount,
 				lastSuccess,
 				lastError,

@@ -220,79 +220,94 @@ func (h *Handler) FlushUnresolvedResolved(ctx context.Context, execCtx Execution
 	if !execCtx.hasStableReplayBinding() {
 		return nil
 	}
+	var items []UnresolvedHookEvent
+	if err := withUnresolvedQueueLock(func() error {
+		var err error
+		items, err = listUnresolvedHookEventsUnlocked()
+		return err
+	}); err != nil {
+		return err
+	}
+	if len(items) == 0 {
+		return nil
+	}
+
+	uploaded := map[string]bool{}
+	for _, item := range items {
+		if !unresolvedHookEventMatchesContext(item, execCtx) {
+			continue
+		}
+
+		var ev HookEvent
+		var eventID string
+		switch strings.TrimSpace(item.Kind) {
+		case "post-commit":
+			id, err := CheckpointEventID(eventIDRepoHint(execCtx), item.CommitSHA)
+			if err != nil {
+				continue
+			}
+			eventID = id
+			ev = HookEvent{
+				Kind:           "post-commit",
+				EventID:        eventID,
+				WorkspaceID:    execCtx.WorkspaceID,
+				ServerURL:      execCtx.ServerURL,
+				AuthSubject:    execCtx.AuthSubject,
+				RepoConfigID:   execCtx.RepoConfigID,
+				RepoKey:        execCtx.RepoKey,
+				RepoFullName:   firstNonEmptyValue(execCtx.RepoFullName, execCtx.RepoKey),
+				BindingSource:  "unbound",
+				AgentSnapshot:  item.AgentSnapshot,
+				CommitSHA:      item.CommitSHA,
+				ParentSHAs:     item.ParentSHAs,
+				BranchSnapshot: item.BranchSnapshot,
+				HeadSnapshot:   item.HeadSnapshot,
+				CapturedAt:     item.CapturedAt,
+			}
+		case "post-rewrite":
+			id, err := RewriteEventID(eventIDRepoHint(execCtx), item.OldCommitSHA, item.NewCommitSHA, item.RewriteType)
+			if err != nil {
+				continue
+			}
+			eventID = id
+			ev = HookEvent{
+				Kind:          "post-rewrite",
+				EventID:       eventID,
+				WorkspaceID:   execCtx.WorkspaceID,
+				ServerURL:     execCtx.ServerURL,
+				AuthSubject:   execCtx.AuthSubject,
+				RepoConfigID:  execCtx.RepoConfigID,
+				RepoKey:       execCtx.RepoKey,
+				RepoFullName:  firstNonEmptyValue(execCtx.RepoFullName, execCtx.RepoKey),
+				BindingSource: "unbound",
+				RewriteType:   item.RewriteType,
+				OldCommitSHA:  item.OldCommitSHA,
+				NewCommitSHA:  item.NewCommitSHA,
+				CapturedAt:    item.CapturedAt,
+			}
+		default:
+			continue
+		}
+		if h == nil || h.uploader == nil {
+			continue
+		}
+		if err := h.uploader.UploadHookEvent(ctx, ev); err != nil {
+			continue
+		}
+		uploaded[eventID] = true
+	}
+	if len(uploaded) == 0 {
+		return nil
+	}
 	return withUnresolvedQueueLock(func() error {
-		items, err := listUnresolvedHookEventsUnlocked()
+		current, err := listUnresolvedHookEventsUnlocked()
 		if err != nil {
 			return err
 		}
-		if len(items) == 0 {
-			return nil
-		}
-
 		var keep []UnresolvedHookEvent
-		for _, item := range items {
-			if !unresolvedHookEventMatchesContext(item, execCtx) {
+		for _, item := range current {
+			if !unresolvedHookEventMatchesContext(item, execCtx) || !uploaded[unresolvedHookEventID(item, execCtx)] {
 				keep = append(keep, item)
-				continue
-			}
-
-			var ev HookEvent
-			switch strings.TrimSpace(item.Kind) {
-			case "post-commit":
-				eventID, err := CheckpointEventID(eventIDRepoHint(execCtx), item.CommitSHA)
-				if err != nil {
-					keep = append(keep, item)
-					continue
-				}
-				ev = HookEvent{
-					Kind:           "post-commit",
-					EventID:        eventID,
-					WorkspaceID:    execCtx.WorkspaceID,
-					ServerURL:      execCtx.ServerURL,
-					AuthSubject:    execCtx.AuthSubject,
-					RepoConfigID:   execCtx.RepoConfigID,
-					RepoKey:        execCtx.RepoKey,
-					RepoFullName:   firstNonEmptyValue(execCtx.RepoFullName, execCtx.RepoKey),
-					BindingSource:  "unbound",
-					AgentSnapshot:  item.AgentSnapshot,
-					CommitSHA:      item.CommitSHA,
-					ParentSHAs:     item.ParentSHAs,
-					BranchSnapshot: item.BranchSnapshot,
-					HeadSnapshot:   item.HeadSnapshot,
-					CapturedAt:     item.CapturedAt,
-				}
-			case "post-rewrite":
-				eventID, err := RewriteEventID(eventIDRepoHint(execCtx), item.OldCommitSHA, item.NewCommitSHA, item.RewriteType)
-				if err != nil {
-					keep = append(keep, item)
-					continue
-				}
-				ev = HookEvent{
-					Kind:          "post-rewrite",
-					EventID:       eventID,
-					WorkspaceID:   execCtx.WorkspaceID,
-					ServerURL:     execCtx.ServerURL,
-					AuthSubject:   execCtx.AuthSubject,
-					RepoConfigID:  execCtx.RepoConfigID,
-					RepoKey:       execCtx.RepoKey,
-					RepoFullName:  firstNonEmptyValue(execCtx.RepoFullName, execCtx.RepoKey),
-					BindingSource: "unbound",
-					RewriteType:   item.RewriteType,
-					OldCommitSHA:  item.OldCommitSHA,
-					NewCommitSHA:  item.NewCommitSHA,
-					CapturedAt:    item.CapturedAt,
-				}
-			default:
-				keep = append(keep, item)
-				continue
-			}
-			if h == nil || h.uploader == nil {
-				keep = append(keep, item)
-				continue
-			}
-			if err := h.uploader.UploadHookEvent(ctx, ev); err != nil {
-				keep = append(keep, item)
-				continue
 			}
 		}
 		return saveUnresolvedHookEventsUnlocked(keep)
@@ -303,16 +318,33 @@ func unresolvedHookEventMatchesContext(item UnresolvedHookEvent, execCtx Executi
 	if strings.TrimSpace(item.WorkspaceID) != strings.TrimSpace(execCtx.WorkspaceID) {
 		return false
 	}
-	if strings.TrimSpace(item.ServerURL) != "" && strings.TrimSpace(item.ServerURL) != strings.TrimSpace(execCtx.ServerURL) {
+	if strings.TrimSpace(item.ServerURL) == "" || strings.TrimSpace(item.ServerURL) != strings.TrimSpace(execCtx.ServerURL) {
 		return false
 	}
-	if strings.TrimSpace(item.AuthSubject) != "" && strings.TrimSpace(item.AuthSubject) != strings.TrimSpace(execCtx.AuthSubject) {
+	if strings.TrimSpace(item.AuthSubject) == "" || strings.TrimSpace(item.AuthSubject) != strings.TrimSpace(execCtx.AuthSubject) {
 		return false
 	}
-	if strings.TrimSpace(item.RepoKey) != "" && strings.TrimSpace(item.RepoKey) != strings.TrimSpace(execCtx.RepoKey) {
+	if strings.TrimSpace(item.RepoKey) == "" || strings.TrimSpace(item.RepoKey) != strings.TrimSpace(execCtx.RepoKey) {
 		return false
 	}
 	return true
+}
+
+func unresolvedHookEventID(item UnresolvedHookEvent, execCtx ExecutionContext) string {
+	var eventID string
+	var err error
+	switch strings.TrimSpace(item.Kind) {
+	case "post-commit":
+		eventID, err = CheckpointEventID(eventIDRepoHint(execCtx), item.CommitSHA)
+	case "post-rewrite":
+		eventID, err = RewriteEventID(eventIDRepoHint(execCtx), item.OldCommitSHA, item.NewCommitSHA, item.RewriteType)
+	default:
+		return ""
+	}
+	if err != nil {
+		return ""
+	}
+	return eventID
 }
 
 func gitOutput(dir string, args ...string) (string, error) {
@@ -459,56 +491,22 @@ func (h *Handler) flushWorkspace(ctx context.Context, execCtx ExecutionContext) 
 	if err != nil {
 		return err
 	}
-	return q.withLock(func() error {
-		items, err := q.listUnlocked()
-		if err != nil {
-			return err
-		}
-		if len(items) == 0 {
-			return nil
-		}
+	var items []QueueItem
+	if err := q.withLock(func() error {
+		var err error
+		items, err = q.listUnlocked()
+		return err
+	}); err != nil {
+		return err
+	}
+	if len(items) == 0 {
+		return nil
+	}
 
-		var keep []QueueItem
-		for _, it := range items {
-			now := time.Now().UTC()
-			if !hookEventMatchesContext(it.Event, execCtx) {
-				keep = append(keep, it)
-				_ = AppendLedger(execCtx.WorkspaceID, LedgerRecord{
-					Kind:         ledgerKind(it.Event.Kind),
-					DedupeKey:    it.Event.EventID,
-					ServerURL:    execCtx.ServerURL,
-					AuthSubject:  execCtx.AuthSubject,
-					RepoConfigID: execCtx.RepoConfigID,
-					RepoKey:      execCtx.RepoKey,
-					WorkspaceID:  execCtx.WorkspaceID,
-					Status:       "deferred",
-					AttemptCount: 1,
-					AttemptedAt:  now,
-					LastError:    "context mismatch",
-				})
-				continue
-			}
-			if h == nil || h.uploader == nil {
-				keep = append(keep, it)
-				continue
-			}
-			if err := h.uploader.UploadHookEvent(ctx, it.Event); err != nil {
-				_ = AppendLedger(execCtx.WorkspaceID, LedgerRecord{
-					Kind:         ledgerKind(it.Event.Kind),
-					DedupeKey:    it.Event.EventID,
-					ServerURL:    execCtx.ServerURL,
-					AuthSubject:  execCtx.AuthSubject,
-					RepoConfigID: execCtx.RepoConfigID,
-					RepoKey:      execCtx.RepoKey,
-					WorkspaceID:  execCtx.WorkspaceID,
-					Status:       "failed",
-					AttemptCount: 1,
-					AttemptedAt:  now,
-					LastError:    err.Error(),
-				})
-				keep = append(keep, it)
-				continue
-			}
+	uploaded := map[string]bool{}
+	for _, it := range items {
+		now := time.Now().UTC()
+		if !hookEventMatchesContext(it.Event, execCtx) {
 			_ = AppendLedger(execCtx.WorkspaceID, LedgerRecord{
 				Kind:         ledgerKind(it.Event.Kind),
 				DedupeKey:    it.Event.EventID,
@@ -517,11 +515,60 @@ func (h *Handler) flushWorkspace(ctx context.Context, execCtx ExecutionContext) 
 				RepoConfigID: execCtx.RepoConfigID,
 				RepoKey:      execCtx.RepoKey,
 				WorkspaceID:  execCtx.WorkspaceID,
-				Status:       "uploaded",
+				Status:       "deferred",
 				AttemptCount: 1,
 				AttemptedAt:  now,
-				UploadedAt:   &now,
+				LastError:    "context mismatch",
 			})
+			continue
+		}
+		if h == nil || h.uploader == nil {
+			continue
+		}
+		if err := h.uploader.UploadHookEvent(ctx, it.Event); err != nil {
+			_ = AppendLedger(execCtx.WorkspaceID, LedgerRecord{
+				Kind:         ledgerKind(it.Event.Kind),
+				DedupeKey:    it.Event.EventID,
+				ServerURL:    execCtx.ServerURL,
+				AuthSubject:  execCtx.AuthSubject,
+				RepoConfigID: execCtx.RepoConfigID,
+				RepoKey:      execCtx.RepoKey,
+				WorkspaceID:  execCtx.WorkspaceID,
+				Status:       "failed",
+				AttemptCount: 1,
+				AttemptedAt:  now,
+				LastError:    err.Error(),
+			})
+			continue
+		}
+		_ = AppendLedger(execCtx.WorkspaceID, LedgerRecord{
+			Kind:         ledgerKind(it.Event.Kind),
+			DedupeKey:    it.Event.EventID,
+			ServerURL:    execCtx.ServerURL,
+			AuthSubject:  execCtx.AuthSubject,
+			RepoConfigID: execCtx.RepoConfigID,
+			RepoKey:      execCtx.RepoKey,
+			WorkspaceID:  execCtx.WorkspaceID,
+			Status:       "uploaded",
+			AttemptCount: 1,
+			AttemptedAt:  now,
+			UploadedAt:   &now,
+		})
+		uploaded[it.Event.EventID] = true
+	}
+	if len(uploaded) == 0 {
+		return nil
+	}
+	return q.withLock(func() error {
+		current, err := q.listUnlocked()
+		if err != nil {
+			return err
+		}
+		var keep []QueueItem
+		for _, it := range current {
+			if !uploaded[strings.TrimSpace(it.Event.EventID)] {
+				keep = append(keep, it)
+			}
 		}
 		return q.rewriteUnlocked(keep)
 	})

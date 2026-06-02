@@ -34,8 +34,6 @@ func IsPermanentToolUsageError(err error) bool {
 		return false
 	}
 	return statusErr.StatusCode == http.StatusBadRequest ||
-		statusErr.StatusCode == http.StatusUnauthorized ||
-		statusErr.StatusCode == http.StatusForbidden ||
 		statusErr.StatusCode == http.StatusUnprocessableEntity
 }
 
@@ -48,8 +46,6 @@ func IsToolUsageBatchIsolationError(err error) bool {
 		return false
 	}
 	return statusErr.StatusCode == http.StatusBadRequest ||
-		statusErr.StatusCode == http.StatusUnauthorized ||
-		statusErr.StatusCode == http.StatusForbidden ||
 		statusErr.StatusCode == http.StatusNotFound ||
 		statusErr.StatusCode == http.StatusMethodNotAllowed ||
 		statusErr.StatusCode == http.StatusUnprocessableEntity

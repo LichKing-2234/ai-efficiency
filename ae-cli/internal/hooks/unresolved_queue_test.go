@@ -1,6 +1,8 @@
 package hooks
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -72,6 +74,35 @@ func TestUnresolvedQueuePersistsAndDedupesPostRewriteByPair(t *testing.T) {
 	}
 	if len(items) != 2 || items[0].OldCommitSHA != "oldsha1" || items[1].OldCommitSHA != "oldsha2" {
 		t.Fatalf("items = %+v, want distinct rewrite pairs only", items)
+	}
+}
+
+func TestUnresolvedQueueListQuarantinesCorruptLineAndKeepsValidEvents(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	path := unresolvedQueuePath()
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatalf("mkdir unresolved queue dir: %v", err)
+	}
+	body := []byte(`{"kind":"post-commit","remote_url":"https://github.com/acme/repo.git","repo_key":"github.com/acme/repo","workspace_id":"ws-unresolved","commit_sha":"abc123"}` + "\n" + `{not-json}` + "\n")
+	if err := os.WriteFile(path, body, 0o600); err != nil {
+		t.Fatalf("write unresolved queue: %v", err)
+	}
+
+	items, err := ListUnresolvedHookEvents()
+	if err != nil {
+		t.Fatalf("ListUnresolvedHookEvents: %v", err)
+	}
+	if len(items) != 1 || items[0].CommitSHA != "abc123" {
+		t.Fatalf("items = %+v, want valid unresolved event preserved", items)
+	}
+	matches, err := filepath.Glob(path + ".corrupt-line.*")
+	if err != nil {
+		t.Fatalf("glob corrupt lines: %v", err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("corrupt line backups = %+v, want one", matches)
 	}
 }
 

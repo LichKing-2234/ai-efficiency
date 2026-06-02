@@ -90,6 +90,7 @@ func TestPrintHookStatusIncludesUploadSummary(t *testing.T) {
 			PendingCount:         2,
 			UploadedCount:        3,
 			FailedCount:          1,
+			DeferredCount:        5,
 			SkippedCount:         4,
 			LastSuccessfulUpload: &uploadedAt,
 			LastError:            "backend unavailable",
@@ -98,7 +99,7 @@ func TestPrintHookStatusIncludesUploadSummary(t *testing.T) {
 	var buf bytes.Buffer
 	printHookStatus(&buf, status)
 	output := buf.String()
-	for _, want := range []string{"Uploads:", "repo_config_id=123", "pending=2", "uploaded=3", "failed=1", "skipped=4", "last_success=2026-05-24T12:00:00Z", "last_error=backend unavailable"} {
+	for _, want := range []string{"Uploads:", "repo_config_id=123", "pending=2", "uploaded=3", "failed=1", "deferred=5", "skipped=4", "last_success=2026-05-24T12:00:00Z", "last_error=backend unavailable"} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("output = %q, want %q", output, want)
 		}

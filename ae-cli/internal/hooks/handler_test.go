@@ -305,6 +305,41 @@ func TestFlushUnresolvedResolvedUploadsMatchingEventAndRemovesIt(t *testing.T) {
 	}
 }
 
+func TestFlushUnresolvedResolvedKeepsEventWithoutStableStoredBinding(t *testing.T) {
+	repo := initRepoWithCommit2(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	execCtx := resolvedContextForRepo(t, repo)
+
+	if err := EnqueueUnresolvedHookEvent(UnresolvedHookEvent{
+		Kind:           "post-commit",
+		RemoteURL:      "https://github.com/acme/repo.git",
+		RepoKey:        execCtx.RepoKey,
+		WorkspaceID:    execCtx.WorkspaceID,
+		CommitSHA:      "abc123",
+		BranchSnapshot: "main",
+		HeadSnapshot:   "abc123",
+		CapturedAt:     "2026-06-02T09:00:00Z",
+	}); err != nil {
+		t.Fatalf("EnqueueUnresolvedHookEvent: %v", err)
+	}
+
+	u := &fakeUploader{}
+	if err := NewHandler(u).FlushUnresolvedResolved(context.Background(), execCtx); err != nil {
+		t.Fatalf("FlushUnresolvedResolved: %v", err)
+	}
+	if len(u.events) != 0 {
+		t.Fatalf("uploaded events = %+v, want none for unresolved event without stored server/auth binding", u.events)
+	}
+	items, err := ListUnresolvedHookEvents()
+	if err != nil {
+		t.Fatalf("ListUnresolvedHookEvents: %v", err)
+	}
+	if len(items) != 1 || items[0].CommitSHA != "abc123" {
+		t.Fatalf("remaining unresolved items = %+v, want original event preserved", items)
+	}
+}
+
 func TestFlushUnresolvedResolvedUploadsMatchingRewriteEventAndRemovesIt(t *testing.T) {
 	repo := initRepoWithCommit2(t)
 	home := t.TempDir()
@@ -447,6 +482,57 @@ func TestFlushResolvedSkipsContextMismatchAndWritesLedger(t *testing.T) {
 	}
 	if len(records) != 1 || records[0].Status != "deferred" || records[0].DedupeKey != "evt-mismatch" {
 		t.Fatalf("ledger records = %+v, want deferred mismatch", records)
+	}
+}
+
+func TestFlushResolvedDoesNotDropConcurrentEnqueueDuringUpload(t *testing.T) {
+	repo := initRepoWithCommit2(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	execCtx := resolvedContextForRepo(t, repo)
+
+	q, err := NewWorkspaceQueue(execCtx.WorkspaceID)
+	if err != nil {
+		t.Fatalf("NewWorkspaceQueue: %v", err)
+	}
+	if err := q.Enqueue(HookEvent{
+		Kind:         "post-commit",
+		EventID:      "evt-first",
+		WorkspaceID:  execCtx.WorkspaceID,
+		ServerURL:    execCtx.ServerURL,
+		AuthSubject:  execCtx.AuthSubject,
+		RepoConfigID: execCtx.RepoConfigID,
+		RepoKey:      execCtx.RepoKey,
+		CommitSHA:    "first",
+	}); err != nil {
+		t.Fatalf("Enqueue(first): %v", err)
+	}
+
+	var enqueueErr error
+	u := &fakeUploader{onCall: func() {
+		enqueueErr = q.Enqueue(HookEvent{
+			Kind:         "post-commit",
+			EventID:      "evt-second",
+			WorkspaceID:  execCtx.WorkspaceID,
+			ServerURL:    execCtx.ServerURL,
+			AuthSubject:  execCtx.AuthSubject,
+			RepoConfigID: execCtx.RepoConfigID,
+			RepoKey:      execCtx.RepoKey,
+			CommitSHA:    "second",
+		})
+	}}
+	if err := NewHandler(u).FlushResolved(context.Background(), execCtx); err != nil {
+		t.Fatalf("FlushResolved: %v", err)
+	}
+	if enqueueErr != nil {
+		t.Fatalf("concurrent enqueue during upload: %v", enqueueErr)
+	}
+	items, err := q.List()
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(items) != 1 || items[0].Event.EventID != "evt-second" {
+		t.Fatalf("queue after flush = %+v, want concurrent second event preserved", items)
 	}
 }
 

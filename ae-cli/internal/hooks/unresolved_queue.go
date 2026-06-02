@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/ai-efficiency/ae-cli/internal/clistate"
 )
@@ -98,7 +99,11 @@ func listUnresolvedHookEventsUnlocked() ([]UnresolvedHookEvent, error) {
 		}
 		var ev UnresolvedHookEvent
 		if err := json.Unmarshal(line, &ev); err != nil {
-			return nil, fmt.Errorf("parse unresolved hook queue: %w", err)
+			_ = appendCorruptUnresolvedHookLine(line)
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			continue
 		}
 		out = append(out, ev)
 		if errors.Is(err, io.EOF) {
@@ -106,6 +111,15 @@ func listUnresolvedHookEventsUnlocked() ([]UnresolvedHookEvent, error) {
 		}
 	}
 	return out, nil
+}
+
+func appendCorruptUnresolvedHookLine(line []byte) error {
+	line = bytes.TrimSpace(line)
+	if len(line) == 0 {
+		return nil
+	}
+	path := fmt.Sprintf("%s.corrupt-line.%d", unresolvedQueuePath(), time.Now().UTC().UnixNano())
+	return os.WriteFile(path, append(line, '\n'), 0o600)
 }
 
 func CountUnresolvedHookEvents() (int, error) {

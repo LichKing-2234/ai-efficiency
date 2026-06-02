@@ -264,6 +264,73 @@ func TestSync_ReplayDeadLettersPermanentBatchFailureIndividually(t *testing.T) {
 	}
 }
 
+func TestSync_ReplayKeepsSpooledEventsOnBatchAuthFailure(t *testing.T) {
+	batchAttempts := 0
+	singleAttempts := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/tool-usage-events/batch":
+			batchAttempts++
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = w.Write([]byte(`{"error":"expired token"}`))
+		case "/api/v1/tool-usage-events":
+			singleAttempts++
+			w.WriteHeader(http.StatusCreated)
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+
+	engine := &SyncEngine{Client: client.New(srv.URL, "expired-token")}
+	spoolPath := filepath.Join(t.TempDir(), "spool.json")
+	payload := []LocalToolUsageEvent{
+		{
+			DedupeKey:       "auth-failed",
+			Tool:            "codex",
+			UsageUnit:       UsageUnitToken,
+			ObservedStartAt: jsonTime("2026-05-27T07:10:00Z"),
+			ObservedEndAt:   jsonTime("2026-05-27T07:10:00Z"),
+		},
+		{
+			DedupeKey:       "auth-failed-after",
+			Tool:            "codex",
+			UsageUnit:       UsageUnitToken,
+			ObservedStartAt: jsonTime("2026-05-27T07:11:00Z"),
+			ObservedEndAt:   jsonTime("2026-05-27T07:11:00Z"),
+		},
+	}
+	if err := SaveJSON(spoolPath, payload); err != nil {
+		t.Fatalf("SaveJSON: %v", err)
+	}
+	engine.spoolPath = spoolPath
+
+	err := engine.Replay(context.Background(), "/tmp/repo")
+	if err == nil {
+		t.Fatalf("Replay returned nil, want retryable auth failure")
+	}
+	if batchAttempts != 1 {
+		t.Fatalf("batchAttempts = %d, want 1", batchAttempts)
+	}
+	if singleAttempts != 0 {
+		t.Fatalf("singleAttempts = %d, want no single replay on batch auth failure", singleAttempts)
+	}
+	remaining, err := loadSpooledEvents(spoolPath)
+	if err != nil {
+		t.Fatalf("loadSpooledEvents: %v", err)
+	}
+	if len(remaining) != 2 {
+		t.Fatalf("remaining spool = %+v, want both auth-failed events retained", remaining)
+	}
+	deadLetters, err := loadToolUsageDeadLetters(filepath.Dir(spoolPath))
+	if err != nil {
+		t.Fatalf("loadToolUsageDeadLetters: %v", err)
+	}
+	if len(deadLetters) != 0 {
+		t.Fatalf("deadLetters = %+v, want no dead-letter for auth failure", deadLetters)
+	}
+}
+
 func TestSync_ReplayUsesClientBatchStatusForSingleIsolation(t *testing.T) {
 	batchAttempts := 0
 	singleCounts := map[string]int{}

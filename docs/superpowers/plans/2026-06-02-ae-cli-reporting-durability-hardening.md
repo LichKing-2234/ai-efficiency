@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go CLI with Cobra, local JSON/JSONL state under `~/.ae-cli/state`, existing `ae-cli/internal/hooks` queues/tasks, `ae-cli/internal/attributionlocal` spool/replay, backend HTTP client tests with `httptest`, and `go test`.
 
-**Status:** Complete. Review follow-up verification on 2026-06-02 passed: focused cmd/hooks/attributionlocal/client tests, `go test ./cmd ./internal/hooks ./internal/attributionlocal ./internal/client -count=1`, `go test ./... -count=1` under `ae-cli`, and `git diff --check`.
+**Status:** Complete. Second review follow-up verification on 2026-06-02 passed: focused cmd/hooks/attributionlocal tests, `go test ./cmd ./internal/hooks ./internal/attributionlocal ./internal/client -count=1`, `go test ./... -count=1` under `ae-cli`, and `git diff --check`.
 
 ---
 
@@ -2053,6 +2053,11 @@ git commit -m "docs(ae-cli): mark reporting durability verification complete"
 - [x] **Batch fallback ownership:** Removed single-event fallback from the HTTP client and kept isolation replay in `SyncEngine`, gated by structured batch status errors.
 - [x] **Unresolved post-rewrite queueing:** Added unresolved post-rewrite queue entries and resolved replay so initial eligibility timeouts do not silently drop rewrite events.
 - [x] **Review follow-up verification:** Re-run focused tests, `go test ./... -count=1` under `ae-cli`, and `git diff --check`, then update this status.
+- [x] **Second review unresolved replay safety:** Automatic unresolved replay now requires stored server/auth/repo binding to match the resolved context, so unbound captured events remain visible instead of being misattributed.
+- [x] **Second review queue replay lock scope:** Hook queue and unresolved queue replay upload outside queue locks and remove only uploaded event ids under lock, preserving concurrent enqueues.
+- [x] **Second review auth retry handling:** Tool-usage 401/403 responses stay retryable instead of batch-isolating and dead-lettering otherwise valid events.
+- [x] **Second review diagnostics:** Unresolved queue corrupt lines are quarantined, and upload status output includes deferred ledger counts.
+- [x] **Second review verification:** Re-run focused tests, `go test ./cmd ./internal/hooks ./internal/attributionlocal ./internal/client -count=1`, `go test ./... -count=1` under `ae-cli`, and `git diff --check`, then update this status.
 
 ---
 
