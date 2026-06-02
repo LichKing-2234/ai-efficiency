@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go CLI with Cobra, local JSON/JSONL state under `~/.ae-cli/state`, existing `ae-cli/internal/hooks` queues/tasks, `ae-cli/internal/attributionlocal` spool/replay, backend HTTP client tests with `httptest`, and `go test`.
 
-**Status:** Complete. Third review follow-up verification on 2026-06-02 passed: focused cmd/hooks/attributionlocal/client tests, `go test ./cmd ./internal/hooks ./internal/attributionlocal ./internal/client -count=1`, `go test ./... -count=1` under `ae-cli`, and `git diff --check`.
+**Status:** Complete for ae-cli review follow-up on 2026-06-02. Fourth review follow-up verification passed: focused attributionlocal tests, `go test ./cmd ./internal/hooks ./internal/attributionlocal ./internal/client -count=1`, `go test ./... -count=1` under `ae-cli`, and `git diff --check`. Backend checkpoint/tool-usage verification is currently blocked because local Postgres on `127.0.0.1:15432` is unavailable.
 
 ---
 
@@ -1984,7 +1984,9 @@ go test ./... -count=1
 
 Expected: PASS for all ae-cli packages.
 
-- [x] **Step 3: Run backend checkpoint/tool usage tests**
+- [ ] **Step 3: Run backend checkpoint/tool usage tests**
+
+Current follow-up status: blocked in this environment on 2026-06-02 because `127.0.0.1:15432` refused the Postgres connection.
 
 Run:
 
@@ -2061,6 +2063,9 @@ git commit -m "docs(ae-cli): mark reporting durability verification complete"
 - [x] **Third review binding-aware deletion:** Hook queue replay now removes uploaded rows only when the current queued row still matches the resolved binding, so mismatched rows with the same event id remain pending.
 - [x] **Third review server URL normalization:** Hook replay normalizes server URLs for matching so unresolved rows stored with case/trailing-slash differences can replay under the normalized context.
 - [x] **Third review verification:** Re-run focused tests, `go test ./cmd ./internal/hooks ./internal/attributionlocal ./internal/client -count=1`, `go test ./... -count=1` under `ae-cli`, and `git diff --check`, then update this status.
+- [x] **Fourth review attribution spool identity:** Tool-usage spool dedupe now includes the binding tuple, so same-dedupe rows from different server/auth/repo bindings remain pending independently.
+- [x] **Fourth review attribution URL normalization:** Tool-usage replay uses the same server URL normalization contract as hookstate, so case/trailing-slash equivalents match.
+- [x] **Fourth review verification:** Re-run focused tests, `go test ./cmd ./internal/hooks ./internal/attributionlocal ./internal/client -count=1`, `go test ./... -count=1` under `ae-cli`, and `git diff --check`, then update this status.
 
 ---
 

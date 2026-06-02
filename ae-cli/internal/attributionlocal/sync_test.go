@@ -804,6 +804,134 @@ func TestSync_RunSkipsSpooledEventsFromDifferentBinding(t *testing.T) {
 	}
 }
 
+func TestSync_RunPreservesSpooledEventWithSameDedupeKeyFromDifferentBinding(t *testing.T) {
+	fixture := buildAttributionFixture(t)
+	client := &syncBackendClientStub{}
+	workspaceID, err := mustWorkspaceID(fixture.WorkspaceRoot)
+	if err != nil {
+		t.Fatalf("mustWorkspaceID: %v", err)
+	}
+	spoolPath := filepath.Join(AttributionRootDir(), "workspaces", workspaceID, "spool.json")
+	existing := LocalToolUsageEvent{
+		Tool:            "codex",
+		WorkspaceID:     workspaceID,
+		ServerURL:       "https://ae.example.com",
+		AuthSubject:     "user:123",
+		RepoConfigID:    123,
+		RepoKey:         "github.com/acme/repo",
+		ManagedUpload:   true,
+		ToolSessionID:   "conv-1",
+		ToolEventID:     "same-key",
+		DedupeKey:       "same-dedupe-key",
+		UsageUnit:       UsageUnitToken,
+		RequestCount:    1,
+		ObservedStartAt: jsonTime("2026-05-13T10:00:00Z"),
+		ObservedEndAt:   jsonTime("2026-05-13T10:00:01Z"),
+	}
+	incoming := existing
+	incoming.ServerURL = "https://ae.example.com"
+	incoming.AuthSubject = "user:456"
+	incoming.RepoConfigID = 456
+	incoming.RepoKey = "github.com/acme/other"
+	incoming.ObservedStartAt = jsonTime("2026-05-13T10:01:00Z")
+	incoming.ObservedEndAt = jsonTime("2026-05-13T10:01:01Z")
+	if err := SaveJSON(spoolPath, []LocalToolUsageEvent{existing}); err != nil {
+		t.Fatalf("SaveJSON(spool): %v", err)
+	}
+	if err := appendSpooledEvents(spoolPath, []LocalToolUsageEvent{incoming}); err != nil {
+		t.Fatalf("appendSpooledEvents: %v", err)
+	}
+
+	remaining, err := loadSpooledEvents(spoolPath)
+	if err != nil {
+		t.Fatalf("loadSpooledEvents: %v", err)
+	}
+	if len(remaining) != 2 {
+		t.Fatalf("remaining spool = %+v, want both binding-distinct same-dedupe events", remaining)
+	}
+
+	engine := &SyncEngine{
+		Scanner: NewScanner(),
+		Client:  client,
+	}
+	if err := engine.Run(context.Background(), RunOptions{
+		WorkspaceRoot: fixture.WorkspaceRoot,
+		WorkspaceID:   workspaceID,
+		ServerURL:     "https://ae.example.com",
+		AuthSubject:   "user:456",
+		RepoConfigID:  456,
+		RepoKey:       "github.com/acme/other",
+		DurableReplay: true,
+		ManagedUpload: true,
+	}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !client.SawUpload("same-dedupe-key") {
+		t.Fatalf("uploads = %+v, want current binding same-dedupe upload", client.uploads)
+	}
+	remaining, err = loadSpooledEvents(spoolPath)
+	if err != nil {
+		t.Fatalf("loadSpooledEvents after replay: %v", err)
+	}
+	if len(remaining) != 1 || remaining[0].AuthSubject != "user:123" {
+		t.Fatalf("remaining spool = %+v, want original mismatched binding preserved", remaining)
+	}
+}
+
+func TestSync_ReplayMatchesNormalizedServerURL(t *testing.T) {
+	fixture := buildAttributionFixture(t)
+	client := &syncBackendClientStub{}
+	workspaceID, err := mustWorkspaceID(fixture.WorkspaceRoot)
+	if err != nil {
+		t.Fatalf("mustWorkspaceID: %v", err)
+	}
+	spoolPath := filepath.Join(AttributionRootDir(), "workspaces", workspaceID, "spool.json")
+	if err := SaveJSON(spoolPath, []LocalToolUsageEvent{
+		{
+			Tool:            "codex",
+			WorkspaceID:     workspaceID,
+			ServerURL:       "https://AE.example.com/",
+			AuthSubject:     "user:123",
+			RepoConfigID:    123,
+			RepoKey:         "github.com/acme/repo",
+			ManagedUpload:   true,
+			ToolSessionID:   "conv-1",
+			ToolEventID:     "normalized-server",
+			DedupeKey:       "normalized-server",
+			UsageUnit:       UsageUnitToken,
+			RequestCount:    1,
+			ObservedStartAt: jsonTime("2026-05-13T10:00:00Z"),
+			ObservedEndAt:   jsonTime("2026-05-13T10:00:01Z"),
+		},
+	}); err != nil {
+		t.Fatalf("SaveJSON(spool): %v", err)
+	}
+
+	engine := &SyncEngine{Scanner: NewScanner(), Client: client}
+	if err := engine.Run(context.Background(), RunOptions{
+		WorkspaceRoot: fixture.WorkspaceRoot,
+		WorkspaceID:   workspaceID,
+		ServerURL:     "https://ae.example.com",
+		AuthSubject:   "user:123",
+		RepoConfigID:  123,
+		RepoKey:       "github.com/acme/repo",
+		DurableReplay: true,
+		ManagedUpload: true,
+	}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !client.SawUpload("normalized-server") {
+		t.Fatalf("uploads = %+v, want normalized server URL event uploaded", client.uploads)
+	}
+	remaining, err := loadSpooledEvents(spoolPath)
+	if err != nil {
+		t.Fatalf("loadSpooledEvents: %v", err)
+	}
+	if len(remaining) != 0 {
+		t.Fatalf("remaining spool = %+v, want normalized server URL event cleared", remaining)
+	}
+}
+
 func TestSync_RunWritesSkippedLedgerForMismatchedSpooledEvents(t *testing.T) {
 	fixture := buildAttributionFixture(t)
 	client := &syncBackendClientStub{}

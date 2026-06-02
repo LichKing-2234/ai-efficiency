@@ -2,11 +2,13 @@ package attributionlocal
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 
+	"github.com/ai-efficiency/ae-cli/internal/hookstate"
 	"github.com/ai-efficiency/ae-cli/internal/session"
 )
 
@@ -205,7 +207,7 @@ func dedupeAndSort(items []LocalToolUsageEvent) []LocalToolUsageEvent {
 	}
 	seen := map[string]LocalToolUsageEvent{}
 	for _, item := range items {
-		seen[item.DedupeKey] = item
+		seen[spooledEventIdentity(item)] = item
 	}
 	keys := make([]string, 0, len(seen))
 	for key := range seen {
@@ -217,6 +219,17 @@ func dedupeAndSort(items []LocalToolUsageEvent) []LocalToolUsageEvent {
 		out = append(out, seen[key])
 	}
 	return out
+}
+
+func spooledEventIdentity(item LocalToolUsageEvent) string {
+	return strings.Join([]string{
+		strings.TrimSpace(item.DedupeKey),
+		strings.TrimSpace(item.WorkspaceID),
+		hookstate.NormalizeServerURL(item.ServerURL),
+		strings.TrimSpace(item.AuthSubject),
+		fmt.Sprintf("%d", item.RepoConfigID),
+		strings.TrimSpace(item.RepoKey),
+	}, "\x1f")
 }
 
 func findCodexJSONLFiles(workspaceRoot, homeDir string) []string {

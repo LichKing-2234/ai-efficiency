@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/ai-efficiency/ae-cli/internal/client"
+	"github.com/ai-efficiency/ae-cli/internal/hookstate"
 )
 
 type BackendClient interface {
@@ -360,7 +361,7 @@ func toClientUsageRequest(ev LocalToolUsageEvent) client.ToolUsageEventRequest {
 
 func eventMatchesRunOptions(ev LocalToolUsageEvent, opts RunOptions) bool {
 	return ev.WorkspaceID == opts.WorkspaceID &&
-		ev.ServerURL == opts.ServerURL &&
+		hookstate.NormalizeServerURL(ev.ServerURL) == hookstate.NormalizeServerURL(opts.ServerURL) &&
 		ev.AuthSubject == opts.AuthSubject &&
 		ev.RepoConfigID == opts.RepoConfigID &&
 		ev.RepoKey == opts.RepoKey
