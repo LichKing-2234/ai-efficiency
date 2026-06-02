@@ -35,6 +35,7 @@ const providers = ref<SCMProvider[]>([])
 const relayProviders = ref<RelayProvider[]>([])
 const credentials = ref<Credential[]>([])
 const loading = ref(true)
+const githubDefaultSSHHost = 'github.com'
 
 // Add/Edit dialog
 const showDialog = ref(false)
@@ -45,7 +46,7 @@ const form = ref({
   name: '',
   type: 'github',
   base_url: 'https://api.github.com',
-  ssh_host: '',
+  ssh_host: githubDefaultSSHHost,
   api_credential_id: 0,
   clone_protocol: 'https' as 'https' | 'ssh',
   clone_credential_id: null as number | null,
@@ -219,7 +220,7 @@ function openAddDialog() {
     name: '',
     type: 'github',
     base_url: 'https://api.github.com',
-    ssh_host: '',
+    ssh_host: githubDefaultSSHHost,
     api_credential_id: defaultAPICredential,
     clone_protocol: 'https',
     clone_credential_id: null,
@@ -247,9 +248,10 @@ function openEditDialog(p: SCMProvider) {
 function onTypeChange() {
   if (form.value.type === 'github') {
     form.value.base_url = 'https://api.github.com'
-    form.value.ssh_host = ''
+    form.value.ssh_host = githubDefaultSSHHost
   } else {
     form.value.base_url = ''
+    form.value.ssh_host = ''
   }
 }
 
