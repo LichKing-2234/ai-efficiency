@@ -71,9 +71,10 @@ type ListOpts struct {
 
 // Service handles repo configuration business logic.
 type Service struct {
-	entClient     *ent.Client
-	encryptionKey string
-	logger        *zap.Logger
+	entClient        *ent.Client
+	encryptionKey    string
+	logger           *zap.Logger
+	autoBindPostBind autoBindPostBindFunc
 }
 
 // NewService creates a new repo service.

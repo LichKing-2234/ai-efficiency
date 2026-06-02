@@ -467,7 +467,7 @@ git commit -m "feat(repo): match repos to code platforms by host"
 - Modify: `backend/internal/repo/auto_bind.go`
 - Modify: `backend/internal/repo/auto_bind_test.go`
 
-- [ ] **Step 1: Write failing service tests for binding, ambiguity, and batch repair**
+- [x] **Step 1: Write failing service tests for binding, ambiguity, and batch repair**
 
 First update the import block in `backend/internal/repo/auto_bind_test.go` so it includes `fmt`:
 
@@ -598,7 +598,7 @@ func TestAutoBindUnboundProcessesOnlyUnboundActiveRepos(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run service tests and verify they fail**
+- [x] **Step 2: Run service tests and verify they fail**
 
 Run:
 
@@ -608,7 +608,7 @@ cd backend && go test ./internal/repo -run 'TestAutoBindRepo|TestAutoBindUnbound
 
 Expected: FAIL with undefined `AutoBindRepo`, `AutoBindUnbound`, or `autoBindPostBind`.
 
-- [ ] **Step 3: Add the test hook to `Service`**
+- [x] **Step 3: Add the test hook to `Service`**
 
 Modify `backend/internal/repo/service.go`:
 
@@ -633,7 +633,7 @@ func NewService(entClient *ent.Client, encryptionKey string, logger *zap.Logger)
 }
 ```
 
-- [ ] **Step 4: Implement `AutoBindRepo`, `AutoBindUnbound`, and default post-bind work**
+- [x] **Step 4: Implement `AutoBindRepo`, `AutoBindUnbound`, and default post-bind work**
 
 Append to `backend/internal/repo/auto_bind.go`:
 
@@ -794,7 +794,7 @@ import (
 )
 ```
 
-- [ ] **Step 5: Run service tests and verify they pass**
+- [x] **Step 5: Run service tests and verify they pass**
 
 Run:
 
@@ -804,7 +804,7 @@ cd backend && go test ./internal/repo -run 'TestAutoBindRepo|TestAutoBindUnbound
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit service auto-binding**
+- [x] **Step 6: Commit service auto-binding**
 
 ```bash
 git add backend/internal/repo/service.go backend/internal/repo/auto_bind.go backend/internal/repo/auto_bind_test.go

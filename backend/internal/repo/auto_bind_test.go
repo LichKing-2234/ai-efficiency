@@ -2,6 +2,7 @@ package repo
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/ai-efficiency/backend/ent"
@@ -15,6 +16,9 @@ func newAutoBindTestService(t *testing.T) (*ent.Client, *Service) {
 	t.Helper()
 	client := testdb.Open(t)
 	svc := NewService(client, "0000000000000000000000000000000000000000000000000000000000000000", zap.NewNop())
+	svc.autoBindPostBind = func(ctx context.Context, repoID, providerID int) (string, error) {
+		return AutoBindWebhookRegistered, nil
+	}
 	return client, svc
 }
 
@@ -144,5 +148,100 @@ func TestFindAutoBindProviderIgnoresInactiveProviders(t *testing.T) {
 	}
 	if reason != AutoBindNoMatch {
 		t.Fatalf("reason = %q, want %q", reason, AutoBindNoMatch)
+	}
+}
+
+func TestAutoBindRepoBindsSingleMatchedProvider(t *testing.T) {
+	client, svc := newAutoBindTestService(t)
+	ctx := context.Background()
+	provider := createAutoBindProvider(t, client, "GitHub", scmprovider.TypeGithub, "https://api.github.com", scmprovider.StatusActive)
+	repo := createAutoBindRepo(t, client, "github.com/acme/platform", "acme/platform", "https://github.com/acme/platform.git", repoconfig.StatusActive)
+
+	result, err := svc.AutoBindRepo(ctx, repo.ID)
+	if err != nil {
+		t.Fatalf("AutoBindRepo: %v", err)
+	}
+	if result.Result != AutoBindMatched {
+		t.Fatalf("result = %q, want %q", result.Result, AutoBindMatched)
+	}
+	if result.SCMProviderID != provider.ID {
+		t.Fatalf("provider id = %d, want %d", result.SCMProviderID, provider.ID)
+	}
+
+	loaded := client.RepoConfig.Query().Where(repoconfig.IDEQ(repo.ID)).WithScmProvider().OnlyX(ctx)
+	if loaded.Edges.ScmProvider == nil || loaded.Edges.ScmProvider.ID != provider.ID {
+		t.Fatalf("loaded provider = %#v, want %d", loaded.Edges.ScmProvider, provider.ID)
+	}
+}
+
+func TestAutoBindRepoKeepsAmbiguousRepoUnbound(t *testing.T) {
+	client, svc := newAutoBindTestService(t)
+	ctx := context.Background()
+	createAutoBindProvider(t, client, "GitHub A", scmprovider.TypeGithub, "https://api.github.com", scmprovider.StatusActive)
+	createAutoBindProvider(t, client, "GitHub B", scmprovider.TypeGithub, "https://api.github.com", scmprovider.StatusActive)
+	repo := createAutoBindRepo(t, client, "github.com/acme/platform", "acme/platform", "https://github.com/acme/platform.git", repoconfig.StatusActive)
+
+	result, err := svc.AutoBindRepo(ctx, repo.ID)
+	if err != nil {
+		t.Fatalf("AutoBindRepo: %v", err)
+	}
+	if result.Result != AutoBindAmbiguous {
+		t.Fatalf("result = %q, want %q", result.Result, AutoBindAmbiguous)
+	}
+
+	loaded := client.RepoConfig.Query().Where(repoconfig.IDEQ(repo.ID)).WithScmProvider().OnlyX(ctx)
+	if loaded.Edges.ScmProvider != nil {
+		t.Fatalf("provider = %#v, want nil", loaded.Edges.ScmProvider)
+	}
+}
+
+func TestAutoBindRepoKeepsBindingOnPostBindError(t *testing.T) {
+	client, svc := newAutoBindTestService(t)
+	ctx := context.Background()
+	svc.autoBindPostBind = func(ctx context.Context, repoID, providerID int) (string, error) {
+		return AutoBindWebhookFailed, fmt.Errorf("provider verification failed")
+	}
+	provider := createAutoBindProvider(t, client, "GitHub", scmprovider.TypeGithub, "https://api.github.com", scmprovider.StatusActive)
+	repo := createAutoBindRepo(t, client, "github.com/acme/platform", "acme/platform", "https://github.com/acme/platform.git", repoconfig.StatusActive)
+
+	result, err := svc.AutoBindRepo(ctx, repo.ID)
+	if err != nil {
+		t.Fatalf("AutoBindRepo: %v", err)
+	}
+	if result.Result != AutoBindProviderError {
+		t.Fatalf("result = %q, want %q", result.Result, AutoBindProviderError)
+	}
+	if result.WebhookStatus != AutoBindWebhookFailed {
+		t.Fatalf("webhook status = %q, want %q", result.WebhookStatus, AutoBindWebhookFailed)
+	}
+
+	loaded := client.RepoConfig.Query().Where(repoconfig.IDEQ(repo.ID)).WithScmProvider().OnlyX(ctx)
+	if loaded.Edges.ScmProvider == nil || loaded.Edges.ScmProvider.ID != provider.ID {
+		t.Fatalf("provider = %#v, want %d", loaded.Edges.ScmProvider, provider.ID)
+	}
+}
+
+func TestAutoBindUnboundProcessesOnlyUnboundActiveRepos(t *testing.T) {
+	client, svc := newAutoBindTestService(t)
+	ctx := context.Background()
+	provider := createAutoBindProvider(t, client, "GitHub", scmprovider.TypeGithub, "https://api.github.com", scmprovider.StatusActive)
+	activeRepo := createAutoBindRepo(t, client, "github.com/acme/active", "acme/active", "https://github.com/acme/active.git", repoconfig.StatusActive)
+	inactiveRepo := createAutoBindRepo(t, client, "github.com/acme/inactive", "acme/inactive", "https://github.com/acme/inactive.git", repoconfig.StatusInactive)
+	boundRepo := createAutoBindRepo(t, client, "github.com/acme/bound", "acme/bound", "https://github.com/acme/bound.git", repoconfig.StatusActive)
+	client.RepoConfig.UpdateOneID(boundRepo.ID).SetScmProviderID(provider.ID).SaveX(ctx)
+
+	result, err := svc.AutoBindUnbound(ctx)
+	if err != nil {
+		t.Fatalf("AutoBindUnbound: %v", err)
+	}
+	if result.Summary.Scanned != 1 || result.Summary.Bound != 1 {
+		t.Fatalf("summary = %+v, want scanned=1 bound=1", result.Summary)
+	}
+	if len(result.Items) != 1 || result.Items[0].RepoConfigID != activeRepo.ID {
+		t.Fatalf("items = %+v, want only active repo %d", result.Items, activeRepo.ID)
+	}
+
+	if client.RepoConfig.Query().Where(repoconfig.IDEQ(inactiveRepo.ID), repoconfig.HasScmProvider()).CountX(ctx) != 0 {
+		t.Fatal("inactive repo should remain unbound")
 	}
 }

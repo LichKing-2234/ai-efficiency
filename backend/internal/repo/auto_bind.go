@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/ai-efficiency/backend/ent"
+	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/scmprovider"
 	"go.uber.org/zap"
 )
@@ -198,4 +199,140 @@ func (s *Service) logAutoBindResult(result AutoBindResult) {
 		fields = append(fields, zap.String("error", result.Error))
 	}
 	s.logger.Info("repo auto-bind result", fields...)
+}
+
+func (s *Service) AutoBindRepo(ctx context.Context, repoID int) (AutoBindResult, error) {
+	repo, err := s.entClient.RepoConfig.Query().
+		Where(repoconfig.IDEQ(repoID)).
+		WithScmProvider().
+		Only(ctx)
+	if err != nil {
+		return AutoBindResult{}, fmt.Errorf("auto-bind repo: load repo: %w", err)
+	}
+	if repo.Edges.ScmProvider != nil {
+		result := baseAutoBindResult(repo, AutoBindAlreadyBound)
+		result.SCMProviderID = repo.Edges.ScmProvider.ID
+		result.SCMProviderName = repo.Edges.ScmProvider.Name
+		return result, nil
+	}
+
+	provider, reason, err := s.findAutoBindProvider(ctx, repo)
+	if err != nil {
+		result := baseAutoBindResult(repo, reason)
+		result.Error = err.Error()
+		s.logAutoBindResult(result)
+		return result, nil
+	}
+	if provider == nil {
+		result := baseAutoBindResult(repo, reason)
+		s.logAutoBindResult(result)
+		return result, nil
+	}
+
+	if _, err := s.entClient.RepoConfig.UpdateOneID(repo.ID).SetScmProviderID(provider.ID).Save(ctx); err != nil {
+		return AutoBindResult{}, fmt.Errorf("auto-bind repo: set scm provider: %w", err)
+	}
+
+	result := baseAutoBindResult(repo, AutoBindMatched)
+	result.SCMProviderID = provider.ID
+	result.SCMProviderName = provider.Name
+	result.WebhookStatus = AutoBindWebhookSkipped
+
+	webhookStatus, postErr := s.runAutoBindPostBind(ctx, repo.ID, provider.ID)
+	if webhookStatus != "" {
+		result.WebhookStatus = webhookStatus
+	}
+	if postErr != nil {
+		result.Result = AutoBindProviderError
+		result.Error = postErr.Error()
+	}
+	s.logAutoBindResult(result)
+	return result, nil
+}
+
+func (s *Service) AutoBindUnbound(ctx context.Context) (*AutoBindBatchResult, error) {
+	repos, err := s.entClient.RepoConfig.Query().
+		Where(
+			repoconfig.Not(repoconfig.HasScmProvider()),
+			repoconfig.StatusIn(repoconfig.StatusActive, repoconfig.StatusWebhookFailed),
+		).
+		Order(ent.Asc(repoconfig.FieldCreatedAt)).
+		All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("auto-bind unbound repos: list repos: %w", err)
+	}
+
+	batch := &AutoBindBatchResult{Items: make([]AutoBindResult, 0, len(repos))}
+	for _, repo := range repos {
+		item, err := s.AutoBindRepo(ctx, repo.ID)
+		if err != nil {
+			item = baseAutoBindResult(repo, AutoBindProviderError)
+			item.Error = err.Error()
+		}
+		item.addToSummary(&batch.Summary)
+		batch.Items = append(batch.Items, item)
+	}
+	return batch, nil
+}
+
+func (s *Service) runAutoBindPostBind(ctx context.Context, repoID, providerID int) (string, error) {
+	if s.autoBindPostBind != nil {
+		return s.autoBindPostBind(ctx, repoID, providerID)
+	}
+	return s.defaultAutoBindPostBind(ctx, repoID, providerID)
+}
+
+func (s *Service) defaultAutoBindPostBind(ctx context.Context, repoID, providerID int) (string, error) {
+	repo, err := s.entClient.RepoConfig.Query().
+		Where(repoconfig.IDEQ(repoID)).
+		Only(ctx)
+	if err != nil {
+		return AutoBindWebhookSkipped, fmt.Errorf("load bound repo: %w", err)
+	}
+	provider, err := s.entClient.ScmProvider.Query().
+		Where(scmprovider.IDEQ(providerID)).
+		WithAPICredential().
+		Only(ctx)
+	if err != nil {
+		return AutoBindWebhookSkipped, fmt.Errorf("load scm provider: %w", err)
+	}
+	apiPayload, err := s.resolveAPICredentialPayload(ctx, provider)
+	if err != nil {
+		return AutoBindWebhookSkipped, fmt.Errorf("resolve api credential: %w", err)
+	}
+	scmProvider, err := s.newSCMProvider(string(provider.Type), provider.BaseURL, apiPayload)
+	if err != nil {
+		return AutoBindWebhookSkipped, fmt.Errorf("create scm provider: %w", err)
+	}
+
+	repoInfo, err := scmProvider.GetRepo(ctx, repo.FullName)
+	if err != nil {
+		return AutoBindWebhookSkipped, fmt.Errorf("verify repo with scm provider: %w", err)
+	}
+
+	update := s.entClient.RepoConfig.UpdateOneID(repo.ID).
+		SetName(repoInfo.Name).
+		SetFullName(repoInfo.FullName).
+		SetCloneURL(repoInfo.CloneURL).
+		SetDefaultBranch(repoInfo.DefaultBranch)
+
+	webhookSecret, err := generateSecret(32)
+	if err != nil {
+		return AutoBindWebhookSkipped, fmt.Errorf("generate webhook secret: %w", err)
+	}
+	webhookID, err := scmProvider.RegisterWebhook(ctx, repoInfo.FullName, []string{"pull_request", "push"}, webhookSecret)
+	if err != nil {
+		if _, saveErr := update.SetStatus(repoconfig.StatusWebhookFailed).Save(ctx); saveErr != nil {
+			return AutoBindWebhookFailed, fmt.Errorf("register webhook: %v; save webhook_failed status: %w", err, saveErr)
+		}
+		return AutoBindWebhookFailed, err
+	}
+
+	if webhookID != "" {
+		update.SetWebhookID(webhookID).SetWebhookSecret(webhookSecret)
+	}
+	if _, err := update.SetStatus(repoconfig.StatusActive).Save(ctx); err != nil {
+		return AutoBindWebhookRegistered, fmt.Errorf("save post-bind repo metadata: %w", err)
+	}
+	return AutoBindWebhookRegistered, nil
 }
