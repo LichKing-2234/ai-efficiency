@@ -1148,7 +1148,7 @@ git commit -m "fix(ae-cli): preserve mismatched reporting backlog"
 - Modify: `ae-cli/internal/attributionlocal/sync.go`
 - Modify: `ae-cli/internal/attributionlocal/sync_test.go`
 
-- [ ] **Step 1: Write corrupt queue test**
+- [x] **Step 1: Write corrupt queue test**
 
 Add to `ae-cli/internal/hooks/queue_test.go`:
 
@@ -1185,7 +1185,7 @@ func TestQueueListQuarantinesCorruptLineAndKeepsValidEvents(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run corrupt queue test and verify it fails**
+- [x] **Step 2: Run corrupt queue test and verify it fails**
 
 Run:
 
@@ -1196,7 +1196,7 @@ go test ./internal/hooks -run TestQueueListQuarantinesCorruptLineAndKeepsValidEv
 
 Expected: FAIL because queue parsing returns an error on the corrupt line.
 
-- [ ] **Step 3: Quarantine corrupt queue lines**
+- [x] **Step 3: Quarantine corrupt queue lines**
 
 In `ae-cli/internal/hooks/queue.go`, replace the JSON unmarshal failure branch in `listUnlocked`:
 
@@ -1222,7 +1222,7 @@ func (q *Queue) appendCorruptLine(line []byte) error {
 }
 ```
 
-- [ ] **Step 4: Write corrupt spool test**
+- [x] **Step 4: Write corrupt spool test**
 
 Add to `ae-cli/internal/attributionlocal/sync_test.go`:
 
@@ -1265,7 +1265,7 @@ func TestSync_RunQuarantinesCorruptSpoolAndContinuesScan(t *testing.T) {
 }
 ```
 
-- [ ] **Step 5: Run corrupt spool test and verify it fails**
+- [x] **Step 5: Run corrupt spool test and verify it fails**
 
 Run:
 
@@ -1276,7 +1276,7 @@ go test ./internal/attributionlocal -run TestSync_RunQuarantinesCorruptSpoolAndC
 
 Expected: FAIL because corrupt spool currently aborts `Run`.
 
-- [ ] **Step 6: Quarantine corrupt spool**
+- [x] **Step 6: Quarantine corrupt spool**
 
 Modify `loadSpooledEvents` in `ae-cli/internal/attributionlocal/sync.go`:
 
@@ -1316,7 +1316,7 @@ Ensure `sync.go` imports `strings`:
 import "strings"
 ```
 
-- [ ] **Step 7: Run focused tests**
+- [x] **Step 7: Run focused tests**
 
 Run:
 
@@ -1328,7 +1328,7 @@ go test ./internal/attributionlocal -run TestSync_RunQuarantinesCorruptSpoolAndC
 
 Expected: PASS.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add ae-cli/internal/hooks/queue.go ae-cli/internal/hooks/queue_test.go ae-cli/internal/attributionlocal/sync.go ae-cli/internal/attributionlocal/sync_test.go

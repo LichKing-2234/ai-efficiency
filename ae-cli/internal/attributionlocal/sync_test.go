@@ -314,6 +314,43 @@ func TestSync_RunReplaysExistingSpoolBeforeScanningCurrentArtifacts(t *testing.T
 	}
 }
 
+func TestSync_RunQuarantinesCorruptSpoolAndContinuesScan(t *testing.T) {
+	fixture := buildAttributionFixture(t)
+	workspaceID, err := mustWorkspaceID(fixture.WorkspaceRoot)
+	if err != nil {
+		t.Fatalf("mustWorkspaceID: %v", err)
+	}
+	spoolPath := filepath.Join(AttributionRootDir(), "workspaces", workspaceID, "spool.json")
+	if err := os.MkdirAll(filepath.Dir(spoolPath), 0o700); err != nil {
+		t.Fatalf("mkdir spool dir: %v", err)
+	}
+	if err := os.WriteFile(spoolPath, []byte("{not-json"), 0o600); err != nil {
+		t.Fatalf("write corrupt spool: %v", err)
+	}
+
+	client := &syncBackendClientStub{}
+	engine := NewSyncEngine(client)
+	if err := engine.Run(context.Background(), RunOptions{
+		WorkspaceRoot: fixture.WorkspaceRoot,
+		WorkspaceID:   workspaceID,
+		ServerURL:     "https://ae.example.com",
+		AuthSubject:   "user:123",
+		RepoConfigID:  123,
+		RepoKey:       "github.com/acme/repo",
+		DurableReplay: true,
+		ManagedUpload: true,
+	}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	matches, err := filepath.Glob(spoolPath + ".corrupt.*")
+	if err != nil {
+		t.Fatalf("glob corrupt spool: %v", err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("corrupt spool backups = %+v, want one", matches)
+	}
+}
+
 func TestSync_RunReplaysExistingSpoolBeforeCanceledScan(t *testing.T) {
 	fixture := buildAttributionFixture(t)
 	workspaceID, err := mustWorkspaceID(fixture.WorkspaceRoot)

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/ai-efficiency/ae-cli/internal/client"
@@ -359,9 +360,23 @@ func loadSpooledEvents(path string) ([]LocalToolUsageEvent, error) {
 		if os.IsNotExist(err) {
 			return nil, nil
 		}
+		if strings.Contains(err.Error(), "unmarshal json:") {
+			if qerr := quarantineCorruptSpool(path); qerr != nil {
+				return nil, qerr
+			}
+			return nil, nil
+		}
 		return nil, err
 	}
 	return out, nil
+}
+
+func quarantineCorruptSpool(path string) error {
+	backup := fmt.Sprintf("%s.corrupt.%d", path, time.Now().UTC().UnixNano())
+	if err := os.Rename(path, backup); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("quarantine corrupt spool: %w", err)
+	}
+	return nil
 }
 
 func appendSpooledEvents(path string, events []LocalToolUsageEvent) error {

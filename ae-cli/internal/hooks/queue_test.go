@@ -153,6 +153,37 @@ func TestQueueLockedRewriteDoesNotDropConcurrentEnqueue(t *testing.T) {
 	}
 }
 
+func TestQueueListQuarantinesCorruptLineAndKeepsValidEvents(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	q, err := NewWorkspaceQueue("ws-corrupt-queue")
+	if err != nil {
+		t.Fatalf("NewWorkspaceQueue: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(q.Path()), 0o700); err != nil {
+		t.Fatalf("mkdir queue dir: %v", err)
+	}
+	body := []byte(`{"event":{"kind":"post-commit","event_id":"evt-good","workspace_id":"ws-corrupt-queue","commit_sha":"abc"}}` + "\n" + `{not-json}` + "\n")
+	if err := os.WriteFile(q.Path(), body, 0o600); err != nil {
+		t.Fatalf("write queue: %v", err)
+	}
+
+	items, err := q.List()
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(items) != 1 || items[0].Event.EventID != "evt-good" {
+		t.Fatalf("items = %+v, want valid event preserved", items)
+	}
+	matches, err := filepath.Glob(q.Path() + ".corrupt-line.*")
+	if err != nil {
+		t.Fatalf("glob corrupt lines: %v", err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("corrupt line backups = %+v, want one", matches)
+	}
+}
+
 func TestLedgerAppendAndReadUsesWorkspaceStateWithoutRawPayloads(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

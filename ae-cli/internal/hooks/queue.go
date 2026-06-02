@@ -265,27 +265,39 @@ func (q *Queue) listUnlocked() ([]QueueItem, error) {
 	var out []QueueItem
 	r := bufio.NewReaderSize(f, 64*1024)
 	for {
-		line, err := r.ReadBytes('\n')
-		if err != nil && !errors.Is(err, io.EOF) {
-			return nil, fmt.Errorf("read queue line: %w", err)
+		line, readErr := r.ReadBytes('\n')
+		if readErr != nil && !errors.Is(readErr, io.EOF) {
+			return nil, fmt.Errorf("read queue line: %w", readErr)
 		}
 		line = bytes.TrimSpace(line)
 		if len(line) == 0 {
-			if errors.Is(err, io.EOF) {
+			if errors.Is(readErr, io.EOF) {
 				break
 			}
 			continue
 		}
 		var it QueueItem
 		if err := json.Unmarshal(line, &it); err != nil {
-			return nil, fmt.Errorf("parse queue line: %w", err)
+			_ = q.appendCorruptLine(line)
+			if errors.Is(readErr, io.EOF) {
+				break
+			}
+			continue
 		}
 		out = append(out, it)
-		if errors.Is(err, io.EOF) {
+		if errors.Is(readErr, io.EOF) {
 			break
 		}
 	}
 	return out, nil
+}
+
+func (q *Queue) appendCorruptLine(line []byte) error {
+	if q == nil || strings.TrimSpace(q.path) == "" || len(bytes.TrimSpace(line)) == 0 {
+		return nil
+	}
+	path := fmt.Sprintf("%s.corrupt-line.%d", q.path, time.Now().UTC().UnixNano())
+	return os.WriteFile(path, append(bytes.TrimSpace(line), '\n'), 0o600)
 }
 
 func (q *Queue) Enqueue(ev HookEvent) error {
