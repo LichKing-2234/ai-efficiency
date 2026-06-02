@@ -59,7 +59,7 @@ describe('auth API', () => {
 
   it('getMe calls GET /auth/me', async () => {
     mockClient.get.mockResolvedValue({
-      data: { data: { id: 1, username: 'admin', email: 'a@b.com', role: 'admin' } },
+      data: { data: { id: 1, username: 'admin', email: 'admin@example.com', role: 'admin' } },
     })
     await getMe()
     expect(mockClient.get).toHaveBeenCalledWith('/auth/me')
@@ -86,7 +86,7 @@ describe('auth API', () => {
   })
 
   it('getMe returns user data', async () => {
-    const user = { id: 1, username: 'admin', email: 'a@b.com', role: 'admin' }
+    const user = { id: 1, username: 'admin', email: 'admin@example.com', role: 'admin' }
     mockClient.get.mockResolvedValue({ data: { data: user } })
     const result = await getMe()
     expect(result.data.data!).toEqual(user)

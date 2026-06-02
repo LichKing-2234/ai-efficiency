@@ -136,7 +136,7 @@ describe('Router Guards', () => {
   it('redirects authenticated users away from login using a safe redirect target', async () => {
     const { getMe: mockGetMe } = await import('@/api/auth')
     ;(mockGetMe as any).mockResolvedValue({
-      data: { data: { id: 1, username: 'admin', email: 'a@b.com', role: 'admin', auth_source: 'sso' } },
+      data: { data: { id: 1, username: 'admin', email: 'admin@example.com', role: 'admin', auth_source: 'sso' } },
     })
 
     localStorage.setItem('token', 'valid-token')

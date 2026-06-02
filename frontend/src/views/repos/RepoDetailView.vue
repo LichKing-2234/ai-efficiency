@@ -6,11 +6,13 @@ import { getRepo, updateRepo } from '@/api/repo'
 import { getPR, getPRSyncJob, listPRs, refreshPRUsage, syncPRs } from '@/api/pr'
 import { listProviders } from '@/api/scmProvider'
 import { useAuthStore } from '@/stores/auth'
+import { useI18n } from '@/i18n'
 import type { CommitFreshness, PRCommitUsageSnapshot, PRRecord, PRSyncJob, RepoConfig, SCMProvider, UsageStatus } from '@/types'
 
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
+const { locale, t } = useI18n()
 
 const repo = ref<RepoConfig | null>(null)
 const prs = ref<PRRecord[]>([])
@@ -35,6 +37,15 @@ const bindingMessage = ref('')
 
 const repoId = Number(route.params.id)
 const isRepoUnbound = computed(() => repo.value?.binding_state === 'unbound')
+const syncDisabledReason = computed(() => (isRepoUnbound.value ? t('repoDetail.syncDisabledUnbound') : ''))
+const prUsageSummary = computed(() => {
+  const total = prs.value.length
+  const withUsage = prs.value.filter((pr) => totalPRTokens(pr) > 0 || (pr.usage_credit_usage ?? 0) > 0 || (pr.usage_request_count ?? 0) > 0).length
+  const pendingUpload = prs.value.filter((pr) => pr.usage_status === 'pending_upload').length
+  const noCheckpoint = prs.value.filter((pr) => pr.usage_status === 'no_checkpoint').length
+  const refreshFailed = prs.value.filter((pr) => pr.usage_status === 'refresh_failed').length
+  return { total, withUsage, pendingUpload, noCheckpoint, refreshFailed }
+})
 
 onMounted(async () => {
   try {
@@ -87,7 +98,7 @@ async function handleSyncPRs() {
     const res = await syncPRs(repoId)
     const result = res.data.data
     if (!result?.job_id) {
-      throw new Error('PR sync job was not created')
+      throw new Error(t('repoDetail.prSyncJobMissing'))
     }
     syncJob.value = {
       id: result.job_id,
@@ -110,7 +121,7 @@ async function handleSyncPRs() {
     await pollSyncJob(result.job_id)
   } catch (error: any) {
     syncMessageTone.value = 'error'
-    syncMessage.value = error?.response?.data?.message || error?.message || 'Failed to sync PRs'
+    syncMessage.value = error?.response?.data?.message || error?.message || t('repoDetail.syncFailed')
     syncing.value = false
   }
 }
@@ -131,10 +142,14 @@ async function pollSyncJob(jobId: number) {
         prsPage.value = 0
         await loadPRs()
         syncMessageTone.value = 'success'
-        syncMessage.value = `Sync completed: ${formatCount(job.created_prs)} created, ${formatCount(job.changed_prs)} changed, ${formatCount(job.unchanged_prs)} unchanged`
+        syncMessage.value = t('repoDetail.syncCompleted', {
+          created: formatCount(job.created_prs),
+          changed: formatCount(job.changed_prs),
+          unchanged: formatCount(job.unchanged_prs),
+        })
       } else {
         syncMessageTone.value = 'error'
-        syncMessage.value = job.last_error || `Sync ${job.status}`
+        syncMessage.value = job.last_error || t('repoDetail.syncStatusSummary', { status: job.status })
       }
       return
     }
@@ -142,7 +157,7 @@ async function pollSyncJob(jobId: number) {
   } catch (error: any) {
     syncing.value = false
     syncMessageTone.value = 'error'
-    syncMessage.value = error?.response?.data?.message || 'Failed to load PR sync progress'
+    syncMessage.value = error?.response?.data?.message || t('repoDetail.syncProgressFailed')
   }
 }
 
@@ -152,9 +167,9 @@ async function saveBinding() {
   try {
     await updateRepo(repoId, { scm_provider_id: selectedProviderId.value ?? undefined, clear_scm_provider: selectedProviderId.value == null } as any)
     await refreshRepo()
-    bindingMessage.value = 'SCM provider binding saved'
+    bindingMessage.value = t('repoDetail.bindingSaved')
   } catch (error: any) {
-    bindingMessage.value = error?.response?.data?.message || 'Failed to save SCM provider binding'
+    bindingMessage.value = error?.response?.data?.message || t('repoDetail.bindingSaveFailed')
   } finally {
     bindingSaving.value = false
   }
@@ -187,17 +202,26 @@ function prsNextPage() {
 
 function formatDate(date: string | null | undefined) {
   if (!date) return '—'
-  return new Date(date).toLocaleString()
+  return new Date(date).toLocaleString(locale.value)
 }
 
 function formatCount(value?: number | null) {
   if (value == null || Number.isNaN(value)) return '—'
-  return value.toLocaleString()
+  return value.toLocaleString(locale.value)
 }
 
 function formatDecimal(value?: number | null) {
   if (value == null || Number.isNaN(value)) return '—'
   return value.toFixed(2)
+}
+
+function totalPRTokens(pr: PRRecord) {
+  return (pr.usage_input_tokens ?? 0) + (pr.usage_output_tokens ?? 0) + (pr.usage_cached_input_tokens ?? 0)
+}
+
+function formatPRTokenUsage(pr: PRRecord) {
+  const total = totalPRTokens(pr)
+  return total > 0 ? formatCount(total) : '—'
 }
 
 function isTerminalJob(job: PRSyncJob) {
@@ -206,29 +230,33 @@ function isTerminalJob(job: PRSyncJob) {
 
 function phaseLabel(phase?: string) {
   const labels: Record<string, string> = {
-    queued: 'Queued',
-    fetching_prs: 'Fetching PRs',
-    upserting_prs: 'Updating PRs',
-    labeling: 'Labeling PRs',
-    refreshing_usage: 'Refreshing usage',
-    completed: 'Completed',
-    failed: 'Failed',
+    queued: t('repoDetail.phaseQueued'),
+    fetching_prs: t('repoDetail.phaseFetchingPrs'),
+    upserting_prs: t('repoDetail.phaseUpsertingPrs'),
+    labeling: t('repoDetail.phaseLabeling'),
+    refreshing_usage: t('repoDetail.phaseRefreshingUsage'),
+    completed: t('repoDetail.phaseCompleted'),
+    failed: t('repoDetail.phaseFailed'),
   }
-  return phase ? labels[phase] ?? phase : 'Queued'
+  return phase ? labels[phase] ?? phase : t('repoDetail.phaseQueued')
 }
 
 function usageStatusLabel(status?: UsageStatus) {
   const labels: Record<UsageStatus, string> = {
-    fresh: 'Fresh',
-    pending_upload: 'Pending',
-    no_checkpoint: 'No checkpoint',
-    no_usage_events: 'No usage',
-    unbound: 'Unbound',
-    stale_snapshot: 'Stale',
-    refresh_failed: 'Failed',
-    unknown: 'Unknown',
+    fresh: t('repoDetail.usageFresh'),
+    pending_upload: t('repoDetail.usagePending'),
+    no_checkpoint: t('repoDetail.noCheckpoint'),
+    no_usage_events: t('repoDetail.usageNoUsage'),
+    unbound: t('repoDetail.unbound'),
+    stale_snapshot: t('repoDetail.usageStale'),
+    refresh_failed: t('repoDetail.usageFailed'),
+    unknown: t('repoDetail.usageUnknown'),
   }
   return labels[status ?? 'unknown']
+}
+
+function bindingLabel() {
+  return isRepoUnbound.value ? t('repoDetail.needsBinding') : t('repoDetail.bound')
 }
 
 function resolvedPR(pr: PRRecord) {
@@ -349,25 +377,28 @@ onUnmounted(() => {
 
 <template>
   <AppLayout>
-    <div v-if="loading" class="py-12 text-center text-gray-500">Loading...</div>
+    <div v-if="loading" class="py-12 text-center text-gray-500">{{ t('repoDetail.loading') }}</div>
 
     <div v-else-if="repo" class="space-y-5">
       <div>
         <button class="text-sm text-indigo-600 hover:text-indigo-800" @click="router.push('/repos')">
-          &larr; Back to Repos
+          &larr; {{ t('repoDetail.backToRepos') }}
         </button>
-        <div class="mt-2 flex items-start justify-between">
+        <div class="mt-2 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div>
+            <p class="text-xs font-semibold uppercase tracking-wide text-blue-700">{{ t('nav.codeSection') }}</p>
             <h1 class="text-2xl font-bold text-gray-900">{{ repo.name }}</h1>
             <p class="text-sm text-gray-500">{{ repo.full_name }}</p>
-            <p v-if="repo.clone_url" class="mt-0.5 select-all font-mono text-xs text-gray-400">{{ repo.clone_url }}</p>
+            <p v-if="repo.clone_url" class="mt-0.5 break-all font-mono text-xs text-gray-400">{{ repo.clone_url }}</p>
           </div>
-          <div class="flex items-center space-x-2">
+          <div class="flex flex-col items-start gap-1 sm:items-end">
             <button
               class="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
               :disabled="syncing || isRepoUnbound"
+              :title="syncDisabledReason"
               @click="handleSyncPRs"
-            >{{ syncing ? 'Syncing...' : 'Sync PRs' }}</button>
+            >{{ syncing ? t('repoDetail.syncing') : t('repoDetail.syncPrs') }}</button>
+            <p v-if="syncDisabledReason" class="max-w-xs text-xs text-amber-700">{{ syncDisabledReason }}</p>
           </div>
         </div>
       </div>
@@ -393,23 +424,23 @@ onUnmounted(() => {
 
       <div v-if="auth.isAdmin" class="rounded-lg bg-white p-5 shadow">
         <div class="flex items-center justify-between">
-          <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-900">SCM Provider Binding</h2>
+          <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-900">{{ t('repoDetail.scmBinding') }}</h2>
           <span
             class="rounded px-2 py-0.5 text-xs font-medium"
             :class="isRepoUnbound ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'"
           >
-            {{ isRepoUnbound ? 'Unbound' : 'Bound' }}
+            {{ isRepoUnbound ? t('repoDetail.unbound') : t('repoDetail.bound') }}
           </span>
         </div>
         <p class="mt-3 text-sm text-gray-500">
-          {{ isRepoUnbound ? 'This repo was auto-discovered by ae-cli attribution sync and still needs an SCM provider binding.' : 'This repo is currently bound to an SCM provider.' }}
+          {{ isRepoUnbound ? t('repoDetail.bindingUnboundHelp') : t('repoDetail.bindingBoundHelp') }}
         </p>
         <div class="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
           <select
             v-model="selectedProviderId"
             class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 sm:max-w-sm"
           >
-            <option :value="null">Unbound</option>
+            <option :value="null">{{ t('repoDetail.unbound') }}</option>
             <option v-for="provider in providers" :key="provider.id" :value="provider.id">
               {{ provider.name }}
             </option>
@@ -420,74 +451,202 @@ onUnmounted(() => {
               :disabled="bindingSaving"
               @click="saveBinding"
             >
-              {{ bindingSaving ? 'Saving...' : 'Save Binding' }}
+              {{ bindingSaving ? t('repoDetail.saving') : t('repoDetail.saveBinding') }}
             </button>
             <button
               class="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 disabled:opacity-50"
               :disabled="bindingSaving || selectedProviderId == null"
               @click="clearBinding"
             >
-              Clear Binding
+              {{ t('repoDetail.clearBinding') }}
             </button>
           </div>
         </div>
         <div v-if="bindingMessage" class="mt-3 rounded-md bg-gray-50 p-3 text-sm text-gray-700">{{ bindingMessage }}</div>
       </div>
 
-      <div class="rounded-lg bg-white p-5 shadow">
-        <table class="w-full text-sm">
-          <tbody>
-            <tr>
-              <td class="whitespace-nowrap py-1 pr-4 align-middle text-gray-400">Branch</td>
-              <td class="py-1 align-middle text-gray-900">{{ repo.default_branch }}</td>
-            </tr>
-            <tr>
-              <td class="whitespace-nowrap py-1 pr-4 align-middle text-gray-400">Status</td>
-              <td class="py-1 align-middle text-gray-900">{{ repo.status }}</td>
-            </tr>
-            <tr>
-              <td class="whitespace-nowrap py-1 pr-4 align-middle text-gray-400">Binding</td>
-              <td class="py-1 align-middle text-gray-900">{{ repo.binding_state }}</td>
-            </tr>
-            <tr>
-              <td class="whitespace-nowrap py-1 pr-4 align-middle text-gray-400">Created</td>
-              <td class="py-1 align-middle text-gray-900">{{ formatDate(repo.created_at) }}</td>
-            </tr>
-          </tbody>
-        </table>
+      <div class="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+        <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-900">{{ t('repos.health') }}</h2>
+            <p class="mt-1 text-sm text-slate-600">
+              {{ t('repoDetail.healthHelp') }}
+            </p>
+          </div>
+          <span
+            class="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold"
+            :class="isRepoUnbound ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'"
+          >
+            {{ bindingLabel() }}
+          </span>
+        </div>
+        <div class="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div class="rounded-md bg-slate-50 p-3">
+            <div class="text-xs uppercase tracking-wide text-slate-500">{{ t('repos.defaultBranch') }}</div>
+            <div class="mt-1 font-medium text-slate-900">{{ repo.default_branch }}</div>
+          </div>
+          <div class="rounded-md bg-slate-50 p-3">
+            <div class="text-xs uppercase tracking-wide text-slate-500">{{ t('repoDetail.repositoryStatus') }}</div>
+            <div class="mt-1 font-medium text-slate-900">{{ repo.status }}</div>
+          </div>
+          <div class="rounded-md bg-slate-50 p-3">
+            <div class="text-xs uppercase tracking-wide text-slate-500">{{ t('repoDetail.created') }}</div>
+            <div class="mt-1 font-medium text-slate-900">{{ formatDate(repo.created_at) }}</div>
+          </div>
+          <div class="rounded-md bg-slate-50 p-3">
+            <div class="text-xs uppercase tracking-wide text-slate-500">{{ t('repoDetail.scmProvider') }}</div>
+            <div class="mt-1 font-medium text-slate-900">{{ repo.edges?.scm_provider?.name || t('repoDetail.unbound') }}</div>
+          </div>
+        </div>
       </div>
 
       <div class="rounded-lg bg-white p-5 shadow">
         <div class="flex items-center justify-between">
-          <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-900">Pull Requests</h2>
+          <div>
+            <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-900">{{ t('repoDetail.prUsageSummary') }}</h2>
+            <p class="mt-1 text-sm text-gray-500">{{ t('repoDetail.prUsageHelp') }}</p>
+          </div>
           <div class="flex items-center space-x-3">
             <select :value="prsMonths" @change="handleMonthsChange" class="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-600">
-              <option :value="1">Last 1 month</option>
-              <option :value="3">Last 3 months</option>
-              <option :value="6">Last 6 months</option>
-              <option :value="12">Last 12 months</option>
-              <option :value="0">All time</option>
+              <option :value="1">{{ t('repoDetail.month1') }}</option>
+              <option :value="3">{{ t('repoDetail.month3') }}</option>
+              <option :value="6">{{ t('repoDetail.month6') }}</option>
+              <option :value="12">{{ t('repoDetail.month12') }}</option>
+              <option :value="0">{{ t('repoDetail.allTime') }}</option>
             </select>
-            <span v-if="prsTotal > 0" class="text-xs text-gray-400">{{ prsTotal }} total</span>
+            <span v-if="prsTotal > 0" class="text-xs text-gray-400">{{ prsTotal }} {{ t('repoDetail.totalSuffix') }}</span>
           </div>
         </div>
 
-        <div v-if="prs.length > 0" class="mt-3 overflow-x-auto">
+        <div class="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <div class="rounded-md border border-slate-200 p-3">
+            <div class="text-xs uppercase tracking-wide text-slate-500">{{ t('repoDetail.totalPrs') }}</div>
+            <div class="mt-1 text-xl font-semibold text-slate-900">{{ prUsageSummary.total }}</div>
+          </div>
+          <div class="rounded-md border border-emerald-200 bg-emerald-50 p-3">
+            <div class="text-xs uppercase tracking-wide text-emerald-700">{{ t('repoDetail.withAiUsage') }}</div>
+            <div class="mt-1 text-xl font-semibold text-emerald-900">{{ prUsageSummary.withUsage }}</div>
+          </div>
+          <div class="rounded-md border border-blue-200 bg-blue-50 p-3">
+            <div class="text-xs uppercase tracking-wide text-blue-700">{{ t('repoDetail.pendingUpload') }}</div>
+            <div class="mt-1 text-xl font-semibold text-blue-900">{{ prUsageSummary.pendingUpload }}</div>
+          </div>
+          <div class="rounded-md border border-amber-200 bg-amber-50 p-3">
+            <div class="text-xs uppercase tracking-wide text-amber-700">{{ t('repoDetail.noCheckpoint') }}</div>
+            <div class="mt-1 text-xl font-semibold text-amber-900">{{ prUsageSummary.noCheckpoint }}</div>
+          </div>
+          <div class="rounded-md border border-red-200 bg-red-50 p-3">
+            <div class="text-xs uppercase tracking-wide text-red-700">{{ t('repoDetail.refreshFailed') }}</div>
+            <div class="mt-1 text-xl font-semibold text-red-900">{{ prUsageSummary.refreshFailed }}</div>
+          </div>
+        </div>
+
+        <div v-if="prs.length > 0" class="mt-3 space-y-3 md:hidden">
+          <article v-for="pr in prs" :key="pr.id" class="rounded-lg border border-gray-100 bg-white p-4 shadow-sm">
+            <div class="flex items-start justify-between gap-3">
+              <div class="min-w-0">
+                <a v-if="pr.scm_pr_url" :href="pr.scm_pr_url" target="_blank" rel="noopener noreferrer" class="block truncate text-sm font-semibold text-indigo-700 hover:text-indigo-900">
+                  {{ pr.title }}
+                </a>
+                <div v-else class="truncate text-sm font-semibold text-gray-900">{{ pr.title }}</div>
+                <div class="mt-1 truncate text-xs text-gray-500">{{ pr.author || '—' }}</div>
+              </div>
+              <span
+                class="shrink-0 rounded-full px-2 py-0.5 text-xs font-medium"
+                :class="pr.status === 'merged' ? 'bg-purple-50 text-purple-700' : pr.status === 'open' ? 'bg-green-50 text-green-700' : 'bg-gray-50 text-gray-500'"
+              >
+                {{ pr.status }}
+              </span>
+            </div>
+            <dl class="mt-3 grid grid-cols-2 gap-3 text-xs">
+              <div>
+                <dt class="text-gray-400">{{ t('repoDetail.usageStatus') }}</dt>
+                <dd class="mt-1 text-gray-800">{{ usageStatusLabel(pr.usage_status) }}</dd>
+              </div>
+              <div>
+                <dt class="text-gray-400">{{ t('repoDetail.tokenUsage') }}</dt>
+                <dd class="mt-1 text-gray-800">{{ formatPRTokenUsage(pr) }}</dd>
+              </div>
+              <div>
+                <dt class="text-gray-400">{{ t('repoDetail.refreshed') }}</dt>
+                <dd class="mt-1 text-gray-800">{{ formatDate(pr.usage_refreshed_at || null) }}</dd>
+              </div>
+              <div>
+                <dt class="text-gray-400">{{ t('repoDetail.credits') }}</dt>
+                <dd class="mt-1 text-gray-800">{{ formatDecimal(pr.usage_credit_usage) }}</dd>
+              </div>
+            </dl>
+            <button
+              class="mt-3 rounded border border-gray-200 px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-40"
+              :disabled="isPRDetailLoading(pr.id)"
+              type="button"
+              @click="togglePRDetails(pr.id)"
+            >
+              {{ isPRDetailLoading(pr.id) ? t('repoDetail.loading') : expandedPRId === pr.id ? t('repoDetail.hide') : t('repoDetail.details') }}
+            </button>
+            <div v-if="expandedPRId === pr.id" class="mt-4 space-y-4 border-t border-gray-100 pt-4 text-xs text-gray-700">
+              <div v-if="isPRDetailLoading(pr.id) && !prDetails[pr.id]" class="py-4 text-center text-gray-500">
+                {{ t('repoDetail.loadingDetails') }}
+              </div>
+              <template v-else>
+                <div class="grid grid-cols-2 gap-3">
+                  <div>
+                    <div class="text-gray-400">{{ t('repoDetail.input') }}</div>
+                    <div class="mt-1 font-medium text-gray-900">{{ formatCount(resolvedPR(pr).usage_input_tokens) }}</div>
+                  </div>
+                  <div>
+                    <div class="text-gray-400">{{ t('repoDetail.output') }}</div>
+                    <div class="mt-1 font-medium text-gray-900">{{ formatCount(resolvedPR(pr).usage_output_tokens) }}</div>
+                  </div>
+                  <div>
+                    <div class="text-gray-400">{{ t('repoDetail.requests') }}</div>
+                    <div class="mt-1 font-medium text-gray-900">{{ formatCount(resolvedPR(pr).usage_request_count) }}</div>
+                  </div>
+                  <div>
+                    <div class="text-gray-400">{{ t('repoDetail.lastRefreshed') }}</div>
+                    <div class="mt-1 font-medium text-gray-900">{{ formatDate(resolvedPR(pr).usage_refreshed_at || null) }}</div>
+                  </div>
+                </div>
+                <details>
+                  <summary class="cursor-pointer font-medium text-gray-700">{{ t('repoDetail.commits') }}</summary>
+                  <div v-if="commitSnapshots(pr).length > 0" class="mt-2 space-y-2">
+                    <div v-for="snapshot in commitSnapshots(pr)" :key="snapshot.commit_sha" class="rounded border border-gray-100 p-3">
+                      <div class="break-all font-mono text-gray-900">{{ snapshot.commit_sha }}</div>
+                      <dl class="mt-2 grid grid-cols-2 gap-2">
+                        <div><dt class="text-gray-400">{{ t('repoDetail.capturedAt') }}</dt><dd>{{ formatDate(snapshot.captured_at || null) }}</dd></div>
+                        <div><dt class="text-gray-400">{{ t('repoDetail.tokenUsage') }}</dt><dd>{{ formatCount((snapshot.input_tokens ?? 0) + (snapshot.output_tokens ?? 0) + (snapshot.cached_input_tokens ?? 0)) }}</dd></div>
+                        <div><dt class="text-gray-400">{{ t('repoDetail.credits') }}</dt><dd>{{ formatDecimal(snapshot.credit_usage) }}</dd></div>
+                        <div><dt class="text-gray-400">{{ t('repoDetail.usageStatus') }}</dt><dd>{{ commitFreshnessFor(pr, snapshot.commit_sha)?.usage_status_reason || usageStatusLabel(commitFreshnessFor(pr, snapshot.commit_sha)?.usage_status) }}</dd></div>
+                      </dl>
+                    </div>
+                  </div>
+                  <div v-else class="mt-2 text-gray-500">{{ t('repoDetail.noSnapshot') }}</div>
+                </details>
+              </template>
+            </div>
+          </article>
+          <div v-if="prsTotal > prsPageSize" class="flex items-center justify-between border-t border-gray-100 pt-3">
+            <span class="text-xs text-gray-400">
+              {{ prsPage * prsPageSize + 1 }}-{{ Math.min((prsPage + 1) * prsPageSize, prsTotal) }} {{ t('repoDetail.of') }} {{ prsTotal }}
+            </span>
+            <div class="flex space-x-2">
+              <button class="rounded border border-gray-200 px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-40" :disabled="prsPage === 0" @click="prsPrevPage">{{ t('events.prev') }}</button>
+              <button class="rounded border border-gray-200 px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-40" :disabled="(prsPage + 1) * prsPageSize >= prsTotal" @click="prsNextPage">{{ t('events.next') }}</button>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="prs.length > 0" class="mt-3 hidden overflow-x-auto md:block">
           <table class="min-w-full divide-y divide-gray-100 text-sm">
             <thead>
               <tr class="text-xs uppercase text-gray-400">
-                <th class="px-3 py-2 text-left font-medium">Title</th>
-                <th class="px-3 py-2 text-left font-medium">Author</th>
-                <th class="px-3 py-2 text-left font-medium">Status</th>
-                <th class="px-3 py-2 text-left font-medium">Usage</th>
-                <th class="px-3 py-2 text-left font-medium">Input</th>
-                <th class="px-3 py-2 text-left font-medium">Output</th>
-                <th class="px-3 py-2 text-left font-medium">Cache</th>
-                <th class="px-3 py-2 text-left font-medium">Reasoning</th>
-                <th class="px-3 py-2 text-left font-medium">Credits</th>
-                <th class="px-3 py-2 text-left font-medium">Requests</th>
-                <th class="px-3 py-2 text-left font-medium">Created</th>
-                <th class="px-3 py-2 text-left font-medium">Actions</th>
+                <th class="px-3 py-2 text-left font-medium">{{ t('repoDetail.title') }}</th>
+                <th class="px-3 py-2 text-left font-medium">{{ t('repoDetail.author') }}</th>
+                <th class="px-3 py-2 text-left font-medium">{{ t('repoDetail.prStatus') }}</th>
+                <th class="px-3 py-2 text-left font-medium">{{ t('repoDetail.usageStatus') }}</th>
+                <th class="px-3 py-2 text-left font-medium">{{ t('repoDetail.tokenUsage') }}</th>
+                <th class="px-3 py-2 text-left font-medium">{{ t('repoDetail.refreshed') }}</th>
+                <th class="px-3 py-2 text-left font-medium">{{ t('repos.actions') }}</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-gray-50">
@@ -511,61 +670,56 @@ onUnmounted(() => {
                       {{ usageStatusLabel(pr.usage_status) }}
                     </span>
                   </td>
-                  <td class="px-3 py-2 text-xs text-gray-600">{{ formatCount(pr.usage_input_tokens) }}</td>
-                  <td class="px-3 py-2 text-xs text-gray-600">{{ formatCount(pr.usage_output_tokens) }}</td>
-                  <td class="px-3 py-2 text-xs text-gray-600">{{ formatCount(pr.usage_cached_input_tokens) }}</td>
-                  <td class="px-3 py-2 text-xs text-gray-600">{{ formatCount(pr.usage_reasoning_tokens) }}</td>
-                  <td class="px-3 py-2 text-xs text-gray-600">{{ formatDecimal(pr.usage_credit_usage) }}</td>
-                  <td class="px-3 py-2 text-xs text-gray-600">{{ formatCount(pr.usage_request_count) }}</td>
-                  <td class="whitespace-nowrap px-3 py-2 text-xs text-gray-400">{{ formatDate(pr.created_at) }}</td>
+                  <td class="px-3 py-2 text-xs text-gray-600">{{ formatPRTokenUsage(pr) }}</td>
+                  <td class="whitespace-nowrap px-3 py-2 text-xs text-gray-400">{{ formatDate(pr.usage_refreshed_at || null) }}</td>
                   <td class="px-3 py-2">
                     <button
                       class="rounded border border-gray-200 px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-40"
                       :disabled="isPRDetailLoading(pr.id)"
                       @click="togglePRDetails(pr.id)"
-                    >{{ isPRDetailLoading(pr.id) ? 'Loading...' : expandedPRId === pr.id ? 'Hide' : 'Details' }}</button>
+                    >{{ isPRDetailLoading(pr.id) ? t('repoDetail.loading') : expandedPRId === pr.id ? t('repoDetail.hide') : t('repoDetail.details') }}</button>
                   </td>
                 </tr>
                 <tr v-if="expandedPRId === pr.id" class="bg-gray-50/70">
-                  <td colspan="12" class="px-4 py-4">
+                  <td colspan="7" class="px-4 py-4">
                     <div v-if="isPRDetailLoading(pr.id) && !prDetails[pr.id]" class="py-6 text-center text-xs text-gray-500">
-                      Loading PR details...
+                      {{ t('repoDetail.loadingDetails') }}
                     </div>
                     <div v-else class="space-y-4 text-xs text-gray-700">
                       <div class="grid gap-3 sm:grid-cols-4">
                         <div>
-                          <div class="text-gray-400">Input</div>
+                          <div class="text-gray-400">{{ t('repoDetail.input') }}</div>
                           <div class="mt-1 font-medium text-gray-900">{{ formatCount(resolvedPR(pr).usage_input_tokens) }}</div>
                         </div>
                         <div>
-                          <div class="text-gray-400">Output</div>
+                          <div class="text-gray-400">{{ t('repoDetail.output') }}</div>
                           <div class="mt-1 font-medium text-gray-900">{{ formatCount(resolvedPR(pr).usage_output_tokens) }}</div>
                         </div>
                         <div>
-                          <div class="text-gray-400">Credits</div>
+                          <div class="text-gray-400">{{ t('repoDetail.credits') }}</div>
                           <div class="mt-1 font-medium text-gray-900">{{ formatDecimal(resolvedPR(pr).usage_credit_usage) }}</div>
                         </div>
                         <div>
-                          <div class="text-gray-400">Last Refreshed</div>
+                          <div class="text-gray-400">{{ t('repoDetail.lastRefreshed') }}</div>
                           <div class="mt-1 font-medium text-gray-900">{{ formatDate(resolvedPR(pr).usage_refreshed_at || null) }}</div>
                         </div>
                       </div>
 
                       <div>
-                        <div class="text-gray-400">Commits</div>
+                        <div class="text-gray-400">{{ t('repoDetail.commits') }}</div>
                         <div v-if="commitSnapshots(pr).length > 0" class="mt-2 overflow-x-auto">
                           <table class="min-w-full divide-y divide-gray-200 text-[11px]">
                             <thead>
                               <tr class="uppercase text-gray-400">
-                                <th class="px-2 py-1 text-left font-medium">Commit SHA</th>
-                                <th class="px-2 py-1 text-left font-medium">Captured At</th>
-                                <th class="px-2 py-1 text-left font-medium">Input</th>
-                                <th class="px-2 py-1 text-left font-medium">Output</th>
-                                <th class="px-2 py-1 text-left font-medium">Cache</th>
-                                <th class="px-2 py-1 text-left font-medium">Reasoning</th>
-                                <th class="px-2 py-1 text-left font-medium">Credits</th>
-                                <th class="px-2 py-1 text-left font-medium">Requests</th>
-                                <th class="px-2 py-1 text-left font-medium">Usage Status</th>
+                                <th class="px-2 py-1 text-left font-medium">{{ t('repoDetail.commitSha') }}</th>
+                                <th class="px-2 py-1 text-left font-medium">{{ t('repoDetail.capturedAt') }}</th>
+                                <th class="px-2 py-1 text-left font-medium">{{ t('repoDetail.input') }}</th>
+                                <th class="px-2 py-1 text-left font-medium">{{ t('repoDetail.output') }}</th>
+                                <th class="px-2 py-1 text-left font-medium">{{ t('repoDetail.cache') }}</th>
+                                <th class="px-2 py-1 text-left font-medium">{{ t('repoDetail.reasoning') }}</th>
+                                <th class="px-2 py-1 text-left font-medium">{{ t('repoDetail.credits') }}</th>
+                                <th class="px-2 py-1 text-left font-medium">{{ t('repoDetail.requests') }}</th>
+                                <th class="px-2 py-1 text-left font-medium">{{ t('repoDetail.usageStatus') }}</th>
                               </tr>
                             </thead>
                             <tbody class="divide-y divide-gray-100">
@@ -585,7 +739,7 @@ onUnmounted(() => {
                             </tbody>
                           </table>
                         </div>
-                        <div v-else class="mt-1 text-gray-500">No commit usage snapshot yet.</div>
+                        <div v-else class="mt-1 text-gray-500">{{ t('repoDetail.noSnapshot') }}</div>
                       </div>
                     </div>
                   </td>
@@ -595,15 +749,15 @@ onUnmounted(() => {
           </table>
           <div v-if="prsTotal > prsPageSize" class="mt-3 flex items-center justify-between border-t border-gray-100 pt-3">
             <span class="text-xs text-gray-400">
-              {{ prsPage * prsPageSize + 1 }}–{{ Math.min((prsPage + 1) * prsPageSize, prsTotal) }} of {{ prsTotal }}
+              {{ prsPage * prsPageSize + 1 }}–{{ Math.min((prsPage + 1) * prsPageSize, prsTotal) }} {{ t('repoDetail.of') }} {{ prsTotal }}
             </span>
             <div class="flex space-x-2">
-              <button class="rounded border border-gray-200 px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-40" :disabled="prsPage === 0" @click="prsPrevPage">Prev</button>
-              <button class="rounded border border-gray-200 px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-40" :disabled="(prsPage + 1) * prsPageSize >= prsTotal" @click="prsNextPage">Next</button>
+              <button class="rounded border border-gray-200 px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-40" :disabled="prsPage === 0" @click="prsPrevPage">{{ t('events.prev') }}</button>
+              <button class="rounded border border-gray-200 px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-40" :disabled="(prsPage + 1) * prsPageSize >= prsTotal" @click="prsNextPage">{{ t('events.next') }}</button>
             </div>
           </div>
         </div>
-        <p v-else class="mt-3 text-sm text-gray-400">No pull requests recorded yet.</p>
+        <p v-else class="mt-3 text-sm text-gray-400">{{ t('repoDetail.noPullRequests') }}</p>
       </div>
     </div>
   </AppLayout>

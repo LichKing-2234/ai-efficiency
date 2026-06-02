@@ -335,6 +335,16 @@ export interface UserProvidersResponse {
   message?: string
 }
 
+export interface UserProviderModel {
+  id: string
+  display_name?: string
+}
+
+export interface UserProviderModelsResponse {
+  models: UserProviderModel[]
+  message?: string
+}
+
 export interface GroupCredentialMutationResult {
   api_key_id: number
   name: string

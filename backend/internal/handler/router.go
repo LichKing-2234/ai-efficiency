@@ -173,6 +173,7 @@ func SetupRouter(
 	{
 		userGroup.GET("/providers", userSetupHandler.ListProviders)
 		if providerHandler != nil {
+			userGroup.GET("/providers/:id/groups/:group_id/models", providerHandler.Models)
 			userGroup.POST("/providers/:id/test", providerHandler.Test)
 		}
 		userGroup.POST("/providers/:id/groups/:group_id/credential", userSetupHandler.CreateGroupCredential)

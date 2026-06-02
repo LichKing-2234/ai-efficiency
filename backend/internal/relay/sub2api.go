@@ -764,6 +764,94 @@ func (s *sub2apiRelay) ChatCompletionForPlatform(ctx context.Context, platform s
 	}
 }
 
+func (s *sub2apiRelay) ListModelsForPlatform(ctx context.Context, platform string) ([]ModelOption, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.modelListURL(platform), nil)
+	if err != nil {
+		return nil, fmt.Errorf("relay: list models: %w", err)
+	}
+	apiKey := s.inferenceAPIKey()
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	req.Header.Set("x-api-key", apiKey)
+	req.Header.Set("x-goog-api-key", apiKey)
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("relay: list models: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("relay: list models: unexpected status %d%s", resp.StatusCode, relayErrorMessageSuffix(resp.Body))
+	}
+	models, err := decodeModelListResponse(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("relay: list models: %w", err)
+	}
+	return models, nil
+}
+
+func (s *sub2apiRelay) modelListURL(platform string) string {
+	switch strings.ToLower(strings.TrimSpace(platform)) {
+	case "gemini":
+		return s.gatewayRootURL() + "/v1beta/models"
+	case "antigravity":
+		return s.gatewayRootURL() + "/antigravity/models"
+	default:
+		return strings.TrimRight(s.baseURL, "/") + "/models"
+	}
+}
+
+type modelListItem struct {
+	ID               string `json:"id"`
+	Name             string `json:"name"`
+	DisplayName      string `json:"display_name"`
+	DisplayNameCamel string `json:"displayName"`
+}
+
+func decodeModelListResponse(body io.Reader) ([]ModelOption, error) {
+	data, err := io.ReadAll(io.LimitReader(body, 2<<20))
+	if err != nil {
+		return nil, err
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil, err
+	}
+	if payload, ok := raw["data"]; ok {
+		var items []modelListItem
+		if err := json.Unmarshal(payload, &items); err != nil {
+			return nil, err
+		}
+		return normalizeModelListItems(items), nil
+	}
+	if payload, ok := raw["models"]; ok {
+		var items []modelListItem
+		if err := json.Unmarshal(payload, &items); err != nil {
+			return nil, err
+		}
+		return normalizeModelListItems(items), nil
+	}
+	return nil, fmt.Errorf("unsupported response shape")
+}
+
+func normalizeModelListItems(items []modelListItem) []ModelOption {
+	models := make([]ModelOption, 0, len(items))
+	seen := make(map[string]struct{}, len(items))
+	for _, item := range items {
+		id := strings.TrimPrefix(strings.TrimSpace(firstNonEmpty(item.ID, item.Name)), "models/")
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		displayName := strings.TrimSpace(firstNonEmpty(item.DisplayName, item.DisplayNameCamel, id))
+		models = append(models, ModelOption{ID: id, DisplayName: displayName})
+	}
+	return models
+}
+
 func (s *sub2apiRelay) anthropicMessages(ctx context.Context, req ChatCompletionRequest, routePrefix string) (*ChatCompletionResponse, error) {
 	req.Model = s.completionModel(req.Model)
 

@@ -4,6 +4,7 @@ import type { Pinia } from 'pinia'
 import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import RepoDetailView from '@/views/repos/RepoDetailView.vue'
+import { setLocale } from '@/i18n'
 import { useAuthStore } from '@/stores/auth'
 
 vi.mock('@/api/repo', () => ({
@@ -170,19 +171,55 @@ async function mountRepoDetail(
 describe('RepoDetailView', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    setLocale('en-US')
     vi.clearAllMocks()
   })
 
-  it('renders usage summary columns and does not render attribution UI', async () => {
+  it('renders conclusion-first PR usage summary and readable default columns', async () => {
     const { wrapper } = await mountRepoDetail()
-    expect(wrapper.text()).toContain('Input')
-    expect(wrapper.text()).toContain('Output')
-    expect(wrapper.text()).toContain('Credits')
+    expect(wrapper.text()).toContain('Repository health')
+    expect(wrapper.text()).toContain('PR Usage Summary')
+    expect(wrapper.text()).toContain('Total PRs')
+    expect(wrapper.text()).toContain('With AI usage')
+    expect(wrapper.text()).toContain('Token usage')
+    expect(wrapper.text()).toContain('Refreshed')
+    expect(wrapper.text()).not.toContain('Cache')
+    expect(wrapper.text()).not.toContain('Reasoning')
     expect(wrapper.text()).not.toContain('AI Label')
     expect(wrapper.text()).not.toContain('Confidence')
     expect(wrapper.text()).not.toContain('Settle')
-    expect(wrapper.text()).toContain('1,200')
-    expect(wrapper.text()).toContain('1.25')
+    expect(wrapper.text()).toContain('2,000')
+  })
+
+  it('switches repository detail summary labels to Chinese', async () => {
+    setLocale('zh-CN')
+    const { wrapper } = await mountRepoDetail()
+
+    expect(wrapper.text()).toContain('仓库健康度')
+    expect(wrapper.text()).toContain('PR 使用摘要')
+    expect(wrapper.text()).toContain('默认分支')
+    expect(wrapper.text()).toContain('Token 用量')
+    expect(wrapper.text()).toContain('刷新时间')
+    expect(wrapper.text()).toContain('最近 3 个月')
+    expect(wrapper.text()).toContain('详情')
+  })
+
+  it('switches admin repository binding controls to Chinese', async () => {
+    setLocale('zh-CN')
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const auth = useAuthStore(pinia)
+    auth.user = { id: 1, username: 'admin', email: 'admin@example.com', role: 'admin', auth_source: 'sso' }
+
+    const { wrapper } = await mountRepoDetail({
+      binding_state: 'unbound',
+      edges: {},
+    }, pinia)
+
+    expect(wrapper.text()).toContain('代码平台入口绑定')
+    expect(wrapper.text()).toContain('需要绑定')
+    expect(wrapper.text()).toContain('保存绑定')
+    expect(wrapper.text()).toContain('清除绑定')
   })
 
   it('loads and renders commit usage snapshots for a PR', async () => {
@@ -276,14 +313,14 @@ describe('RepoDetailView', () => {
     const pinia = createPinia()
     setActivePinia(pinia)
     const auth = useAuthStore(pinia)
-    auth.user = { id: 1, username: 'admin', email: 'a@b.com', role: 'admin', auth_source: 'sso' }
+    auth.user = { id: 1, username: 'admin', email: 'admin@example.com', role: 'admin', auth_source: 'sso' }
 
     const { wrapper } = await mountRepoDetail({
       binding_state: 'unbound',
       edges: {},
     }, pinia)
-    expect(wrapper.text()).toContain('SCM Provider Binding')
-    expect(wrapper.text()).toContain('auto-discovered by ae-cli attribution sync')
+    expect(wrapper.text()).toContain('Code Platform Binding')
+    expect(wrapper.text()).toContain('auto-discovered by ae-cli')
   })
 
   it('polls and shows PR sync job progress after syncing', async () => {

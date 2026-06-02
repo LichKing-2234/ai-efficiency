@@ -190,7 +190,7 @@
 3. `base_url`
 4. `is_primary`
 
-响应中可以继续包含 `default_model` 以兼容 CLI / discover 相关消费方，但 `/user` 的 `Provider & Group Credential` 区块不把它展示成 credential 元数据。provider test 的 `model` 必须由用户在测试表单里显式输入。
+响应中可以继续包含 `default_model` 以兼容 CLI / discover 相关消费方，但 `/user` 的 `Provider & Group Credential` 区块不把它展示成 credential 元数据。provider test 的 `model` 必须由用户在测试表单里显式选择或输入；页面应优先按当前 `provider + group + platform` 加载可用模型候选，加载失败或无候选时保留手动输入兜底。
 
 页面始终只允许单选一个 provider。默认选中规则：
 
@@ -466,12 +466,44 @@ GET /api/v1/providers
 2. 创建一把新的 credential
 3. 返回新 secret 的一次性明文
 
+#### `GET /api/v1/user/providers/:id/groups/:group_id/models?platform=<platform>`
+
+用途：
+
+1. 为 `/user` 连接测试表单加载当前 `provider + group + platform` 下可用的模型候选
+2. 使用当前用户在该 group 下自己的 active API key 调用 relay/sub2api，而不是使用 RelayProvider admin key
+3. 将不同平台模型列表响应归一成简单选择项
+
+建议响应字段：
+
+```json
+{
+  "data": {
+    "models": [
+      {
+        "id": "gpt-5.4",
+        "display_name": "GPT-5.4"
+      }
+    ],
+    "message": ""
+  }
+}
+```
+
+行为：
+
+1. 路由只要求登录态，不要求 admin role
+2. 后端按 `provider + group_id + platform` 选择当前用户自己的 active key
+3. OpenAI / Anthropic 兼容列表优先读取 sub2api `GET /v1/models` 的 `data[].id`
+4. Gemini 原生列表读取 `GET /v1beta/models` 的 `models[].name`，并去掉 `models/` 前缀后返回给前端选择
+5. 未找到当前用户在该 group + platform 下可用 key 时返回空 `models` 和可读 `message`，前端保留手动输入兜底
+
 #### `POST /api/v1/user/providers/:id/test`
 
 用途：
 
 1. 让普通用户从 `/user` 页面测试自己在当前 provider 下的 active API key
-2. 使用页面当前选中 group 的 `platform` 和用户输入的具体 `model`
+2. 使用页面当前选中 group 的 `platform` 和用户显式选择或输入的具体 `model`
 3. 发送一次真实 chat completion 请求，返回连接结果和可选响应内容
 4. admin Settings 的 Relay Providers 表只保留管理 CRUD，不再提供 Test 入口
 
@@ -491,7 +523,7 @@ GET /api/v1/providers
 1. 路由只要求登录态，不要求 admin role；不存在对应的 `/api/v1/admin/providers/:id/test` 管理端测试合同
 2. 后端仍通过 `relay.Provider` 列出当前 relay user 的 API keys
 3. 后端按 `provider + group_id + platform` 选择当前用户自己的 active key，而不是使用 RelayProvider admin key 或同 platform 其他 group 的 key
-4. `model` 必须由调用方提供；页面不把 provider `default_model` 当作测试合同
+4. `model` 必须由调用方提供；页面不把 provider `default_model` 当作测试合同。页面可以从 user-scoped models endpoint 预填候选，但提交测试时仍必须带明确模型值
 5. 未找到当前用户在该 group + platform 下可用 key 时返回 `success: false`
 
 ### Backend Boundary
@@ -501,6 +533,7 @@ GET /api/v1/providers
 1. `ListUserAPIKeys`
 2. `CreateUserAPIKey`
 3. `UpdateUserAPIKeyStatus`
+4. `ListModelsForPlatform` optional extension
 
 同时应扩展 relay adapter，增加“读取当前用户 `allowed_groups`”的能力。  
 不得绕过 provider 抽象重新引入 direct sub2api DB coupling。

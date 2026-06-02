@@ -501,6 +501,107 @@ func TestUserRelayProviderTestUsesAnthropicMessagesEndpoint(t *testing.T) {
 	}
 }
 
+func TestUserRelayProviderModelsUsesSelectedGroupAPIKeyAndPlatformEndpoint(t *testing.T) {
+	var modelsAuth string
+	var modelsGoogleKey string
+
+	relayServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/admin/users/42/api-keys":
+			if r.Header.Get("X-API-Key") != "test-admin-key" {
+				t.Fatalf("list keys api key = %q, want admin key", r.Header.Get("X-API-Key"))
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{
+				"success": true,
+				"data": map[string]any{
+					"items": []any{
+						map[string]any{
+							"id":         9,
+							"user_id":    42,
+							"key":        "sk-user-gemini",
+							"name":       "alice",
+							"status":     "active",
+							"created_at": time.Now().Add(-time.Minute).Format(time.RFC3339),
+							"group": map[string]any{
+								"id":       5,
+								"name":     "Group Alpha",
+								"platform": "gemini",
+							},
+						},
+					},
+					"page":  1,
+					"pages": 1,
+				},
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/v1beta/models":
+			modelsAuth = r.Header.Get("Authorization")
+			modelsGoogleKey = r.Header.Get("x-goog-api-key")
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{
+				"models": []any{
+					map[string]any{
+						"name":        "models/gemini-2.5-flash",
+						"displayName": "Gemini 2.5 Flash",
+						"supportedGenerationMethods": []string{
+							"generateContent",
+							"streamGenerateContent",
+						},
+					},
+				},
+			})
+		default:
+			t.Fatalf("unexpected relay request: %s %s", r.Method, r.URL.String())
+		}
+	}))
+	defer relayServer.Close()
+
+	env := setupTestEnvWithProvider(t)
+	ctx := context.Background()
+	env.client.User.UpdateOneID(env.userID).
+		SetUsername("alice@example.com").
+		SetEmail("alice@example.com").
+		SetRole("user").
+		SetRelayUserID(42).
+		SaveX(ctx)
+	env.token = issueTokenForUser(t, env, env.userID, "alice@example.com", "user")
+
+	adminKey, err := encryptAESGCM("test-admin-key", "0000000000000000000000000000000000000000000000000000000000000000")
+	if err != nil {
+		t.Fatalf("encrypt admin key: %v", err)
+	}
+	provider := env.client.RelayProvider.Create().
+		SetName("sub2api").
+		SetDisplayName("Sub2API").
+		SetBaseURL(relayServer.URL).
+		SetAdminAPIKey(adminKey).
+		SetDefaultModel("default-model").
+		SetEnabled(true).
+		SetIsPrimary(true).
+		SaveX(ctx)
+
+	w := doRequest(env, http.MethodGet, fmt.Sprintf("/api/v1/user/providers/%d/groups/5/models?platform=gemini", provider.ID), nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	resp := parseResponse(t, w)
+	data := resp["data"].(map[string]any)
+	models := data["models"].([]any)
+	if len(models) != 1 {
+		t.Fatalf("models len = %d, want 1; data=%#v", len(models), data)
+	}
+	model := models[0].(map[string]any)
+	if model["id"] != "gemini-2.5-flash" || model["display_name"] != "Gemini 2.5 Flash" {
+		t.Fatalf("unexpected model: %#v", model)
+	}
+	if modelsAuth != "Bearer sk-user-gemini" {
+		t.Fatalf("models auth = %q, want user api key", modelsAuth)
+	}
+	if modelsGoogleKey != "sk-user-gemini" {
+		t.Fatalf("models x-goog-api-key = %q, want user api key", modelsGoogleKey)
+	}
+}
+
 func TestUserRelayProviderTestRequiresSelectedGroupAPIKey(t *testing.T) {
 	chatCalled := false
 

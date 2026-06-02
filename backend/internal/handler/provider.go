@@ -494,6 +494,105 @@ func (h *ProviderHandler) Test(c *gin.Context) {
 	pkg.Success(c, data)
 }
 
+// Models handles GET /api/v1/user/providers/:id/groups/:group_id/models.
+func (h *ProviderHandler) Models(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		pkg.Error(c, http.StatusBadRequest, "invalid provider id")
+		return
+	}
+
+	ctx := c.Request.Context()
+	uc := authpkg.GetUserContext(c)
+	if uc == nil {
+		pkg.Error(c, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	platform := strings.TrimSpace(c.Query("platform"))
+	if platform == "" {
+		pkg.Error(c, http.StatusBadRequest, "platform is required")
+		return
+	}
+	groupID := strings.TrimSpace(c.Param("group_id"))
+	if groupID == "" {
+		pkg.Error(c, http.StatusBadRequest, "group_id is required")
+		return
+	}
+
+	user, err := h.entClient.User.Get(ctx, uc.UserID)
+	if err != nil {
+		pkg.Error(c, http.StatusInternalServerError, "failed to get user")
+		return
+	}
+	if user.RelayUserID == nil {
+		pkg.Success(c, gin.H{
+			"models":  []relay.ModelOption{},
+			"message": "current account is not linked to a relay user",
+		})
+		return
+	}
+
+	provider, err := h.entClient.RelayProvider.Get(ctx, id)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			pkg.Error(c, http.StatusNotFound, "provider not found")
+			return
+		}
+		pkg.Error(c, http.StatusInternalServerError, "failed to get provider")
+		return
+	}
+
+	rp := h.getOrCreateRelayProvider(provider)
+	keys, err := rp.ListUserAPIKeys(ctx, int64(*user.RelayUserID))
+	if err != nil {
+		pkg.Success(c, gin.H{
+			"models":  []relay.ModelOption{},
+			"message": fmt.Sprintf("list user api keys: %v", err),
+		})
+		return
+	}
+
+	name := preferredRelayTestKeyName(strings.TrimSpace(user.Username), strings.TrimSpace(user.Email))
+	selected := pickRelayTestKey(filterRelayTestKeys(keys, platform, groupID, name))
+	if selected == nil {
+		selected = pickRelayTestKey(filterRelayTestKeys(keys, platform, groupID, ""))
+	}
+	if selected == nil || strings.TrimSpace(selected.Key) == "" {
+		pkg.Success(c, gin.H{
+			"models":  []relay.ModelOption{},
+			"message": fmt.Sprintf("no active API key found for group %s and platform %s", groupID, platform),
+		})
+		return
+	}
+
+	userScopedProvider := relay.NewSub2apiProvider(
+		http.DefaultClient,
+		provider.BaseURL,
+		selected.Key,
+		"",
+		h.logger,
+	)
+	lister, ok := userScopedProvider.(relay.PlatformModelLister)
+	if !ok {
+		pkg.Success(c, gin.H{
+			"models":  []relay.ModelOption{},
+			"message": "relay provider does not support model listing",
+		})
+		return
+	}
+	models, err := lister.ListModelsForPlatform(ctx, platform)
+	if err != nil {
+		pkg.Success(c, gin.H{
+			"models":  []relay.ModelOption{},
+			"message": err.Error(),
+		})
+		return
+	}
+
+	pkg.Success(c, gin.H{"models": models})
+}
+
 func encryptAESGCM(plaintext, keyHex string) (string, error) {
 	key, err := hex.DecodeString(keyHex)
 	if err != nil {

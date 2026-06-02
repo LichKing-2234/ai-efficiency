@@ -7,9 +7,11 @@ import {
   buildHooksStatusUploadsCommand,
   buildInstallCommand,
   buildLoginCommand,
+  buildPreferredInstallCommand,
   buildRepoInitCommand,
   buildSyncCommand,
   buildWindowsInstallCommand,
+  detectInstallPlatform,
 } from '@/utils/userSetupReview'
 
 describe('userSetupReview command builders', () => {
@@ -29,6 +31,15 @@ describe('userSetupReview command builders', () => {
     expect(buildWindowsInstallCommand('https://ae.example.com')).toBe(
       '$env:AE_CLI_INSTALL_SERVER_URL = "https://ae.example.com"; iwr -UseB https://raw.githubusercontent.com/LichKing-2234/ai-efficiency/main/ae-cli/install.ps1 | iex'
     )
+  })
+
+  it('detects the preferred install command from the browser platform', () => {
+    expect(detectInstallPlatform({ platform: 'Win32', userAgent: '' })).toBe('windows')
+    expect(buildPreferredInstallCommand('https://ae.example.com', 'windows')).toContain('install.ps1')
+
+    expect(detectInstallPlatform({ platform: 'MacIntel', userAgent: '' })).toBe('shell')
+    expect(detectInstallPlatform({ platform: 'Linux x86_64', userAgent: '' })).toBe('shell')
+    expect(buildPreferredInstallCommand('https://ae.example.com', 'shell')).toContain('install.sh')
   })
 
   it('buildLoginCommand and buildDeviceLoginCommand use the installed server config', () => {

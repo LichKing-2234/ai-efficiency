@@ -3,6 +3,7 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import SettingsView from '@/views/SettingsView.vue'
+import { setLocale } from '@/i18n'
 
 const createDefaultProvidersResponse = () => ({
   data: {
@@ -133,7 +134,7 @@ function createTestRouter() {
   })
 }
 
-async function mountSettings(overrides?: { providers?: any[]; relayProviders?: any[]; credentials?: any[]; deploymentStatus?: any }) {
+async function mountSettings(overrides?: { providers?: any[]; relayProviders?: any[]; credentials?: any[]; deploymentStatus?: any }, path = '/settings') {
   const { listProviders } = await import('@/api/scmProvider')
   const { listRelayProviders } = await import('@/api/relayProvider')
   const { listCredentials } = await import('@/api/credential')
@@ -155,7 +156,7 @@ async function mountSettings(overrides?: { providers?: any[]; relayProviders?: a
   }
 
   const router = createTestRouter()
-  await router.push('/settings')
+  await router.push(path)
   await router.isReady()
 
   const wrapper = mount(SettingsView, {
@@ -168,23 +169,74 @@ async function mountSettings(overrides?: { providers?: any[]; relayProviders?: a
   return wrapper
 }
 
+async function openSettingsSection(wrapper: any, section: string) {
+  await wrapper.get(`[data-testid="settings-tab-${section}"]`).trigger('click')
+  await flushPromises()
+}
+
 describe('SettingsView', () => {
   beforeEach(async () => {
     setActivePinia(createPinia())
+    setLocale('en-US')
     await resetApiMocks()
   })
 
-  it('renders SCM providers, relay providers, and credentials sections', async () => {
+  it('renders code platform, relay provider, and credential sections', async () => {
     const wrapper = await mountSettings()
-    expect(wrapper.find('h1').text()).toBe('SCM Providers')
-    expect(wrapper.text()).toContain('Credentials')
-    expect(wrapper.text()).toContain('Relay Providers')
+    expect(wrapper.find('h1').text()).toBe('Admin Console')
+    expect(wrapper.text()).toContain('AI Services')
+    expect(wrapper.text()).toContain('Code Platforms')
+    expect(wrapper.text()).toContain('Organization & Login')
+    expect(wrapper.text()).toContain('Deployment & Runtime')
+    expect(wrapper.text()).toContain('Advanced Credentials')
     expect(wrapper.text()).toContain('Add Relay Provider')
+
+    await openSettingsSection(wrapper, 'advanced-credentials')
+    expect(wrapper.text()).toContain('Credential store')
+    expect(wrapper.text()).toContain('Add Credential')
+  })
+
+  it('restores and persists active settings section in the URL query', async () => {
+    const wrapper = await mountSettings(undefined, '/settings?section=code-platforms')
+
+    expect(wrapper.text()).toContain('Code Platforms')
+    expect(wrapper.find('[data-testid="settings-tab-code-platforms"]').attributes('aria-selected')).toBe('true')
+
+    await openSettingsSection(wrapper, 'deployment-runtime')
+
+    expect((wrapper.vm as any).$route.query.section).toBe('deployment-runtime')
+  })
+
+  it('switches admin console task zones to Chinese', async () => {
+    setLocale('zh-CN')
+    const wrapper = await mountSettings()
+
+    expect(wrapper.find('h1').text()).toBe('管理后台')
+    expect(wrapper.text()).toContain('AI 服务配置')
+    expect(wrapper.text()).toContain('代码平台配置')
+    expect(wrapper.text()).toContain('组织与登录')
+    expect(wrapper.text()).toContain('部署与运行')
+    expect(wrapper.text()).toContain('高级凭据')
+    expect(wrapper.text()).toContain('Relay 入口')
+    expect(wrapper.text()).toContain('新增 Relay Provider')
+
+    await openSettingsSection(wrapper, 'deployment-runtime')
+    expect(wrapper.text()).toContain('当前版本')
+    expect(wrapper.text()).toContain('检查更新')
+
+    await openSettingsSection(wrapper, 'ai-services')
+    const addRelayBtn = wrapper.findAll('button').find((b) => b.text() === '新增 Relay Provider')
+    await addRelayBtn!.trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('显示名称')
+    expect(wrapper.text()).toContain('管理员 API Key')
+    expect(wrapper.text()).toContain('加密存储在数据库')
   })
 
   it('creates a secret text credential', async () => {
     const { createCredential } = await import('@/api/credential')
     const wrapper = await mountSettings()
+    await openSettingsSection(wrapper, 'advanced-credentials')
 
     const addBtn = wrapper.findAll('button').find((b) => b.text().includes('Add Credential'))
     await addBtn!.trigger('click')
@@ -206,7 +258,7 @@ describe('SettingsView', () => {
     })
   })
 
-  it('sends credential ids when creating an SCM provider', async () => {
+  it('sends credential ids when creating a code platform', async () => {
     const { createProvider } = await import('@/api/scmProvider')
     const wrapper = await mountSettings({
       credentials: [
@@ -214,8 +266,9 @@ describe('SettingsView', () => {
         { id: 13, name: 'Bitbucket SSH', description: '', kind: 'ssh_username_with_private_key', usage_count: 0, summary: {}, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' },
       ],
     })
+    await openSettingsSection(wrapper, 'code-platforms')
 
-    const addBtn = wrapper.findAll('button').find((b) => b.text() === 'Add Provider')
+    const addBtn = wrapper.findAll('button').find((b) => b.text() === 'Add Platform')
     await addBtn!.trigger('click')
     await flushPromises()
 
@@ -243,9 +296,9 @@ describe('SettingsView', () => {
       relayProviders: [
         {
           id: 1,
-          name: 'sub2api-main',
-          display_name: 'Sub2API Main',
-          base_url: 'https://sub2api.agoraio.cn',
+          name: 'relay-main',
+          display_name: 'Relay Main',
+          base_url: 'https://relay.example.com',
           admin_api_key: '***',
           is_primary: true,
           enabled: true,
@@ -253,9 +306,9 @@ describe('SettingsView', () => {
       ],
     })
 
-    expect(wrapper.text()).toContain('Sub2API Main')
-    expect(wrapper.text()).toContain('sub2api-main')
-    expect(wrapper.text()).toContain('https://sub2api.agoraio.cn')
+    expect(wrapper.text()).toContain('Relay Main')
+    expect(wrapper.text()).toContain('relay-main')
+    expect(wrapper.text()).toContain('https://relay.example.com')
     expect(wrapper.text()).toContain('Primary')
     expect(wrapper.text()).toContain('Enabled')
   })
@@ -265,8 +318,8 @@ describe('SettingsView', () => {
       relayProviders: [
         {
           id: 1,
-          name: 'sub2api-main',
-          display_name: 'Sub2API Main',
+          name: 'relay-main',
+          display_name: 'Relay Main',
           base_url: 'https://sub2api.example.com',
           admin_api_key: '***',
           is_primary: true,
@@ -292,9 +345,9 @@ describe('SettingsView', () => {
     await addBtn!.trigger('click')
     await flushPromises()
 
-    await wrapper.find('input[name="relay-provider-name"]').setValue('sub2api-main')
-    await wrapper.find('input[name="relay-provider-display-name"]').setValue('Sub2API Main')
-    await wrapper.find('input[name="relay-provider-base-url"]').setValue('https://sub2api.agoraio.cn')
+    await wrapper.find('input[name="relay-provider-name"]').setValue('relay-main')
+    await wrapper.find('input[name="relay-provider-display-name"]').setValue('Relay Main')
+    await wrapper.find('input[name="relay-provider-base-url"]').setValue('https://relay.example.com')
     await wrapper.find('input[name="relay-provider-admin-api-key"]').setValue('admin-test-key')
 
     const saveBtn = wrapper.findAll('button').find((b) => b.text() === 'Create Relay Provider')
@@ -302,13 +355,25 @@ describe('SettingsView', () => {
     await flushPromises()
 
     expect(createRelayProvider).toHaveBeenCalledWith({
-      name: 'sub2api-main',
-      display_name: 'Sub2API Main',
-      base_url: 'https://sub2api.agoraio.cn',
+      name: 'relay-main',
+      display_name: 'Relay Main',
+      base_url: 'https://relay.example.com',
       admin_api_key: 'admin-test-key',
       is_primary: true,
       enabled: true,
     })
+  })
+
+  it('closes relay provider dialog with Escape', async () => {
+    const wrapper = await mountSettings()
+    const addBtn = wrapper.findAll('button').find((b) => b.text() === 'Add Relay Provider')
+    await addBtn!.trigger('click')
+    await flushPromises()
+
+    await wrapper.get('[role="dialog"]').trigger('keydown', { key: 'Escape' })
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.text()).not.toContain('Create Relay Provider')
   })
 
   it('validates missing relay provider fields', async () => {
@@ -331,9 +396,9 @@ describe('SettingsView', () => {
       relayProviders: [
         {
           id: 1,
-          name: 'sub2api-main',
-          display_name: 'Sub2API Main',
-          base_url: 'https://sub2api.agoraio.cn',
+          name: 'relay-main',
+          display_name: 'Relay Main',
+          base_url: 'https://relay.example.com',
           admin_api_key: '***',
           is_primary: true,
           enabled: true,
@@ -344,15 +409,15 @@ describe('SettingsView', () => {
     await wrapper.find('[data-testid="relay-provider-edit-1"]').trigger('click')
     await flushPromises()
 
-    await wrapper.find('input[name="relay-provider-display-name"]').setValue('Sub2API Secondary')
+    await wrapper.find('input[name="relay-provider-display-name"]').setValue('Relay Secondary')
 
     const saveBtn = wrapper.findAll('button').find((b) => b.text() === 'Update Relay Provider')
     await saveBtn!.trigger('click')
     await flushPromises()
 
     expect(updateRelayProvider).toHaveBeenCalledWith(1, {
-      display_name: 'Sub2API Secondary',
-      base_url: 'https://sub2api.agoraio.cn',
+      display_name: 'Relay Secondary',
+      base_url: 'https://relay.example.com',
       admin_api_key: undefined,
       is_primary: true,
       enabled: true,
@@ -365,9 +430,9 @@ describe('SettingsView', () => {
       relayProviders: [
         {
           id: 1,
-          name: 'sub2api-main',
-          display_name: 'Sub2API Main',
-          base_url: 'https://sub2api.agoraio.cn',
+          name: 'relay-main',
+          display_name: 'Relay Main',
+          base_url: 'https://relay.example.com',
           admin_api_key: '***',
           is_primary: true,
           enabled: true,
@@ -385,7 +450,8 @@ describe('SettingsView', () => {
 
   it('renders deployment status and update controls', async () => {
     const wrapper = await mountSettings()
-    expect(wrapper.text()).toContain('Deployment')
+    await openSettingsSection(wrapper, 'deployment-runtime')
+    expect(wrapper.text()).toContain('Deployment & Runtime')
     expect(wrapper.text()).toContain('v0.4.0')
     expect(wrapper.text()).toContain('v0.5.0')
     expect(wrapper.text()).toContain('Check Updates')
@@ -400,15 +466,23 @@ describe('SettingsView', () => {
     ;(restartDeployment as any).mockResolvedValue({ data: { data: { phase: 'restart_requested' } } })
 
     const wrapper = await mountSettings()
+    await openSettingsSection(wrapper, 'deployment-runtime')
     const button = wrapper.findAll('button').find((b) => b.text().includes('Restart Service'))
     await button!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Confirm restart service')
+    expect(restartDeployment).not.toHaveBeenCalled()
+
+    const confirm = wrapper.findAll('button').find((b) => b.text().includes('Confirm restart service'))
+    await confirm!.trigger('click')
     await flushPromises()
 
     expect(restartDeployment).toHaveBeenCalled()
     expect(waitForServiceRecovery).toHaveBeenCalled()
   })
 
-  it('shows loading state when SCM providers are still loading', async () => {
+  it('shows loading state when code platforms are still loading', async () => {
     const { listProviders } = await import('@/api/scmProvider')
     ;(listProviders as any).mockReturnValue(new Promise(() => {}))
 

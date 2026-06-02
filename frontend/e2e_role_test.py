@@ -2,9 +2,9 @@
 Playwright E2E test: verify that SSO (user role) and Dev Login (admin role)
 see different content on the Settings page.
 
-After fix:
-- Dev login (admin): Settings page accessible, SCM Providers + LLM Config visible
-- SSO user (user role): Settings link hidden in sidebar, /settings redirects to /
+After task-zone frontend refactor:
+- Dev login (admin): Settings page accessible, Admin Console task zones visible
+- SSO user (user role): Admin links hidden in sidebar, /settings and /admin/users redirect to /
 
 Usage:
   python frontend/e2e_role_test.py
@@ -39,11 +39,144 @@ def report(name, ok, detail=""):
         print(f"  ❌ {name}: {detail}")
 
 
-def do_dev_login(page):
-    """Login via Dev Login button (admin role)."""
+def clear_auth_routes(page):
+    for pattern in [
+        "**/api/v1/auth/options",
+        "**/api/v1/auth/dev-login",
+        "**/api/v1/auth/refresh",
+        "**/api/v1/auth/me",
+        "**/api/v1/efficiency/dashboard",
+        "**/api/v1/user/providers",
+        "**/api/v1/events**",
+        "**/api/v1/scm-providers**",
+        "**/api/v1/admin/providers**",
+        "**/api/v1/admin/credentials**",
+        "**/api/v1/settings/deployment**",
+        "**/api/v1/admin/settings/ldap**",
+    ]:
+        try:
+            page.unroute(pattern)
+        except Exception:
+            pass
+
+
+def mock_auth_endpoints(page, role="admin"):
+    clear_auth_routes(page)
+
+    page.route("**/api/v1/auth/options", lambda route: route.fulfill(
+        status=200,
+        content_type="application/json",
+        body=json.dumps({
+            "code": 0,
+            "data": {
+                "ldap_enabled": True,
+                "dev_login_enabled": True,
+            },
+        }),
+    ))
+
+    page.route("**/api/v1/auth/dev-login", lambda route: route.fulfill(
+        status=200,
+        content_type="application/json",
+        body=json.dumps({
+            "code": 0,
+            "data": {
+                "token": f"{role}-token",
+                "refresh_token": f"{role}-refresh",
+            },
+        }),
+    ))
+
+    page.route("**/api/v1/auth/refresh", lambda route: route.fulfill(
+        status=200,
+        content_type="application/json",
+        body=json.dumps({
+            "code": 0,
+            "data": {
+                "token": f"{role}-token-refreshed",
+                "refresh_token": f"{role}-refresh",
+            },
+        }),
+    ))
+
+    page.route("**/api/v1/auth/me", lambda route: route.fulfill(
+        status=200,
+        content_type="application/json",
+        body=json.dumps({
+            "code": 0,
+            "data": {
+                "id": 1 if role == "admin" else 999,
+                "username": "admin" if role == "admin" else "sso_test_user",
+                "email": "admin@example.com" if role == "admin" else "alice@example.com",
+                "role": role,
+                "auth_source": "dev" if role == "admin" else "sso",
+            },
+        }),
+    ))
+
+    page.route("**/api/v1/efficiency/dashboard", lambda route: route.fulfill(
+        status=200,
+        content_type="application/json",
+        body=json.dumps({"code": 0, "data": {"total_repos": 0, "tracked_workflows": 0, "total_ai_prs": 0}}),
+    ))
+    page.route("**/api/v1/user/providers", lambda route: route.fulfill(
+        status=200,
+        content_type="application/json",
+        body=json.dumps({"code": 0, "data": {"providers": []}}),
+    ))
+    page.route("**/api/v1/events**", lambda route: route.fulfill(
+        status=200,
+        content_type="application/json",
+        body=json.dumps({"code": 0, "data": {"items": [], "total": 0, "page": 0, "page_size": 3}}),
+    ))
+    page.route("**/api/v1/scm-providers**", lambda route: route.fulfill(
+        status=200,
+        content_type="application/json",
+        body=json.dumps({"code": 0, "data": {"items": [], "total": 0, "page": 1, "page_size": 20}}),
+    ))
+    page.route("**/api/v1/admin/providers**", lambda route: route.fulfill(
+        status=200,
+        content_type="application/json",
+        body=json.dumps({"code": 0, "data": []}),
+    ))
+    page.route("**/api/v1/admin/credentials**", lambda route: route.fulfill(
+        status=200,
+        content_type="application/json",
+        body=json.dumps({"code": 0, "data": []}),
+    ))
+    page.route("**/api/v1/settings/deployment**", lambda route: route.fulfill(
+        status=200,
+        content_type="application/json",
+        body=json.dumps({
+            "code": 0,
+            "data": {
+                "version": {"version": "v0.0.0-test", "commit": "test", "build_time": "2026-01-01T00:00:00Z"},
+                "mode": "test",
+                "update_available": False,
+                "update_status": {"phase": "idle"},
+            },
+        }),
+    ))
+    page.route("**/api/v1/admin/settings/ldap**", lambda route: route.fulfill(
+        status=200,
+        content_type="application/json",
+        body=json.dumps({"code": 0, "data": {"url": "", "base_dn": "", "bind_dn": "", "user_filter": "", "tls": False}}),
+    ))
+
+
+def do_dev_login(page, role="admin"):
+    """Seed an authenticated session with the requested role for role-gating checks."""
+    mock_auth_endpoints(page, role)
     page.goto(f"{BASE}/login")
     page.wait_for_load_state("networkidle")
-    page.locator("button:has-text('Dev Login')").click()
+    page.evaluate(
+        """([token, refresh]) => {
+            localStorage.setItem('token', token)
+            localStorage.setItem('refresh_token', refresh)
+        }""",
+        [f"{role}-token", f"{role}-refresh"],
+    )
+    page.goto(BASE)
     page.wait_for_load_state("networkidle")
     page.wait_for_timeout(1000)
 
@@ -57,6 +190,7 @@ def do_logout(page):
         logout_btn.click()
         page.wait_for_load_state("networkidle")
         page.wait_for_timeout(500)
+    clear_auth_routes(page)
 
 
 def test_dev_login_settings(page):
@@ -91,21 +225,26 @@ def test_dev_login_settings(page):
            "/settings" in page.url,
            f"URL: {page.url}")
 
-    # Check SCM Providers section
-    report("SCM Providers heading visible",
-           page.locator("h1:has-text('SCM Providers')").is_visible())
-    report("Add Provider button visible",
-           page.locator("button:has-text('Add Provider')").is_visible())
-    report("SCM table header: Name",
-           page.locator("th:has-text('Name')").is_visible())
+    report("Admin Console heading visible",
+           page.locator("h1:has-text('Admin Console')").is_visible())
+    report("AI Services tab visible",
+           page.locator("[data-testid='settings-tab-ai-services']").is_visible())
+    report("Code Platforms tab visible",
+           page.locator("[data-testid='settings-tab-code-platforms']").is_visible())
 
-    # Check LLM Configuration section
-    report("LLM Configuration heading visible",
-           page.locator("h2:has-text('LLM Configuration')").is_visible())
-    report("LLM Save button visible",
-           page.locator("button:has-text('Save')").is_visible())
-    report("LLM Test Connection button visible",
-           page.locator("button:has-text('Test Connection')").is_visible())
+    page.locator("[data-testid='settings-tab-code-platforms']").click()
+    page.wait_for_timeout(300)
+    report("Code Platforms section visible",
+           page.locator("h2:has-text('Code Platforms')").is_visible())
+    report("Add Platform button visible",
+           page.locator("button:has-text('Add Platform')").is_visible())
+
+    page.locator("[data-testid='settings-tab-deployment-runtime']").click()
+    page.wait_for_timeout(300)
+    report("Deployment & Runtime section visible",
+           page.locator("h2:has-text('Deployment & Runtime')").is_visible())
+    report("Restart Service button visible",
+           page.locator("button:has-text('Restart Service')").is_visible())
 
     do_logout(page)
 
@@ -118,25 +257,7 @@ def test_user_role_settings_blocked(page):
     """
     print("\n🧪 User Role — Settings Page Blocked")
 
-    # Dev login to get a valid token
-    do_dev_login(page)
-
-    # Intercept /auth/me to return role=user
-    def handle_me(route):
-        route.fulfill(
-            status=200,
-            content_type="application/json",
-            body=json.dumps({
-                "code": 0,
-                "data": {
-                    "user_id": 999,
-                    "username": "sso_test_user",
-                    "role": "user",
-                }
-            })
-        )
-
-    page.route("**/api/v1/auth/me", handle_me)
+    do_dev_login(page, role="user")
 
     # Refresh to pick up the mocked /me response
     page.goto(BASE)
@@ -167,45 +288,27 @@ def test_user_role_settings_blocked(page):
            f"URL: {page.url}")
 
     # Clean up
-    page.unroute("**/api/v1/auth/me")
     do_logout(page)
 
 
-def test_user_role_admin_ldap_blocked(page):
-    """Test: User role cannot access /admin/ldap either."""
-    print("\n🧪 User Role — /admin/ldap Blocked")
+def test_user_role_admin_users_blocked(page):
+    """Test: User role cannot access /admin/users either."""
+    print("\n🧪 User Role — /admin/users Blocked")
 
-    do_dev_login(page)
-
-    def handle_me(route):
-        route.fulfill(
-            status=200,
-            content_type="application/json",
-            body=json.dumps({
-                "code": 0,
-                "data": {
-                    "user_id": 999,
-                    "username": "sso_test_user",
-                    "role": "user",
-                }
-            })
-        )
-
-    page.route("**/api/v1/auth/me", handle_me)
+    do_dev_login(page, role="user")
     page.goto(BASE)
     page.wait_for_load_state("networkidle")
     page.wait_for_timeout(500)
 
-    # Navigate to /admin/ldap — should redirect
-    page.goto(f"{BASE}/admin/ldap")
+    # Navigate to /admin/users — should redirect
+    page.goto(f"{BASE}/admin/users")
     page.wait_for_load_state("networkidle")
     page.wait_for_timeout(1000)
 
-    report("User role redirected away from /admin/ldap",
-           "/admin/ldap" not in page.url,
+    report("User role redirected away from /admin/users",
+           "/admin/users" not in page.url,
            f"URL: {page.url}")
 
-    page.unroute("**/api/v1/auth/me")
     do_logout(page)
 
 
@@ -222,7 +325,7 @@ def run_all():
         tests = [
             ("Admin (Dev Login) Settings", lambda: test_dev_login_settings(page)),
             ("User Role Settings Blocked", lambda: test_user_role_settings_blocked(page)),
-            ("User Role /admin/ldap Blocked", lambda: test_user_role_admin_ldap_blocked(page)),
+            ("User Role /admin/users Blocked", lambda: test_user_role_admin_users_blocked(page)),
         ]
 
         for name, fn in tests:
