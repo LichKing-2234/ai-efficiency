@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -441,6 +440,36 @@ func TestPostRewriteResolvedQueuesEventsWhenUploadFails(t *testing.T) {
 	}
 }
 
+func TestPostRewriteResolvedCreatesPendingSyncTaskWhenUploadFails(t *testing.T) {
+	repo := initRepoWithCommit2(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	execCtx := resolvedContextForRepo(t, repo)
+
+	origSpawn := spawnBackgroundSyncRunner
+	spawned := false
+	spawnBackgroundSyncRunner = func(repoRoot string) error {
+		spawned = true
+		return nil
+	}
+	t.Cleanup(func() { spawnBackgroundSyncRunner = origSpawn })
+
+	u := syncCapableFakeUploader{fakeUploader: &fakeUploader{err: errors.New("rewrite upload failed")}}
+	if err := NewHandler(u).PostRewriteResolved(context.Background(), execCtx, "amend", strings.NewReader("oldsha1 newsha1\n")); err != nil {
+		t.Fatalf("PostRewriteResolved: %v", err)
+	}
+	task, err := LoadSyncTask(execCtx.WorkspaceID)
+	if err != nil {
+		t.Fatalf("LoadSyncTask: %v", err)
+	}
+	if task == nil || task.Status != SyncTaskStatusPending {
+		t.Fatalf("task = %+v, want pending task", task)
+	}
+	if !spawned {
+		t.Fatalf("background sync runner was not spawned")
+	}
+}
+
 func TestPostCommitSetsRepoConfigScopedEventID(t *testing.T) {
 	repo := initRepoWithCommit2(t)
 	home := t.TempDir()
@@ -618,25 +647,17 @@ func TestPostCommitWarnsWhenBackgroundRunnerSpawnFails(t *testing.T) {
 	}
 	t.Cleanup(func() { spawnBackgroundSyncRunner = origSpawn })
 
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("os.Pipe: %v", err)
-	}
-	oldStderr := os.Stderr
-	os.Stderr = w
-	t.Cleanup(func() { os.Stderr = oldStderr })
+	var stderr bytes.Buffer
+	oldStderr := hookStderr
+	hookStderr = &stderr
+	t.Cleanup(func() { hookStderr = oldStderr })
 
 	h := NewHandler(syncCapableFakeUploader{fakeUploader: &fakeUploader{}})
 	if err := h.PostCommitResolved(context.Background(), execCtx); err != nil {
 		t.Fatalf("PostCommitResolved: %v", err)
 	}
-	_ = w.Close()
-	output, err := io.ReadAll(r)
-	if err != nil {
-		t.Fatalf("ReadAll(stderr): %v", err)
-	}
-	if !strings.Contains(string(output), "ae-cli: attribution sync pending for this repo; run 'ae-cli doctor' for details") {
-		t.Fatalf("stderr = %q, want backlog warning", string(output))
+	if !strings.Contains(stderr.String(), "ae-cli: attribution sync pending for this repo; run 'ae-cli doctor' for details") {
+		t.Fatalf("stderr = %q, want backlog warning", stderr.String())
 	}
 }
 

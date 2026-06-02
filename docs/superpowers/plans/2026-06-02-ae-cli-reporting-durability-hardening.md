@@ -1638,7 +1638,7 @@ git commit -m "fix(ae-cli): dead-letter permanent tool usage failures"
 - Modify: `ae-cli/internal/hooks/handler.go`
 - Modify: `ae-cli/internal/hooks/handler_test.go`
 
-- [ ] **Step 1: Write post-rewrite sync task test**
+- [x] **Step 1: Write post-rewrite sync task test**
 
 Add to `ae-cli/internal/hooks/handler_test.go`:
 
@@ -1674,7 +1674,7 @@ func TestPostRewriteResolvedCreatesPendingSyncTaskWhenUploadFails(t *testing.T) 
 }
 ```
 
-- [ ] **Step 2: Run test and verify it fails**
+- [x] **Step 2: Run test and verify it fails**
 
 Run:
 
@@ -1685,7 +1685,7 @@ go test ./internal/hooks -run TestPostRewriteResolvedCreatesPendingSyncTaskWhenU
 
 Expected: FAIL because post-rewrite does not create a sync task or spawn a runner.
 
-- [ ] **Step 3: Extract sync scheduling helper**
+- [x] **Step 3: Extract sync scheduling helper**
 
 Add helper to `ae-cli/internal/hooks/handler.go`:
 
@@ -1741,7 +1741,7 @@ At the end of `PostRewriteResolved`, after processing pairs, call:
 h.schedulePendingSync(execCtx)
 ```
 
-- [ ] **Step 4: Run focused tests**
+- [x] **Step 4: Run focused tests**
 
 Run:
 
@@ -1752,7 +1752,7 @@ go test ./internal/hooks -run 'TestPostRewriteResolvedCreatesPendingSyncTaskWhen
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add ae-cli/internal/hooks/handler.go ae-cli/internal/hooks/handler_test.go

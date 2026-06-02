@@ -115,6 +115,16 @@ func (h *Handler) PostCommitResolved(ctx context.Context, execCtx ExecutionConte
 		queueForReplayOrWarn(execCtx, ev)
 	}
 
+	h.schedulePendingSync(execCtx)
+	return nil
+}
+
+func (h *Handler) schedulePendingSync(execCtx ExecutionContext) {
+	workspaceID := strings.TrimSpace(execCtx.WorkspaceID)
+	repoRoot := strings.TrimSpace(execCtx.RepoRoot)
+	if workspaceID == "" || repoRoot == "" {
+		return
+	}
 	task := SyncTask{
 		WorkspaceID:     workspaceID,
 		RepoRoot:        repoRoot,
@@ -137,20 +147,19 @@ func (h *Handler) PostCommitResolved(ctx context.Context, execCtx ExecutionConte
 				currentTask = claimedTask
 			}
 			if claimErr != nil {
-				fmt.Fprintln(os.Stderr, "ae-cli: attribution sync pending for this repo; run 'ae-cli doctor' for details")
+				fmt.Fprintln(hookStderr, "ae-cli: attribution sync pending for this repo; run 'ae-cli doctor' for details")
 			} else if claimSpawn {
 				if err := spawnBackgroundSyncRunner(repoRoot); err != nil {
 					_ = MarkSyncTaskFailure(currentTask, time.Now().UTC(), err)
-					fmt.Fprintln(os.Stderr, "ae-cli: attribution sync pending for this repo; run 'ae-cli doctor' for details")
+					fmt.Fprintln(hookStderr, "ae-cli: attribution sync pending for this repo; run 'ae-cli doctor' for details")
 				}
 			} else if strings.TrimSpace(currentTask.LastError) != "" {
-				fmt.Fprintln(os.Stderr, "ae-cli: attribution sync pending for this repo; run 'ae-cli doctor' for details")
+				fmt.Fprintln(hookStderr, "ae-cli: attribution sync pending for this repo; run 'ae-cli doctor' for details")
 			}
 		}
 	} else {
-		fmt.Fprintln(os.Stderr, "ae-cli: attribution sync pending for this repo; run 'ae-cli doctor' for details")
+		fmt.Fprintln(hookStderr, "ae-cli: attribution sync pending for this repo; run 'ae-cli doctor' for details")
 	}
-	return nil
 }
 
 func (h *Handler) PostRewriteResolved(ctx context.Context, execCtx ExecutionContext, rewriteType string, stdin io.Reader) error {
@@ -196,6 +205,7 @@ func (h *Handler) PostRewriteResolved(ctx context.Context, execCtx ExecutionCont
 			queueForReplayOrWarn(execCtx, ev)
 		}
 	}
+	h.schedulePendingSync(execCtx)
 	return nil
 }
 
