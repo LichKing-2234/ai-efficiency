@@ -135,6 +135,8 @@ func resolveHookExecutionContext(ctx context.Context, gitCtx *hooks.GitContext) 
 	observeHookRepo(gitCtx, binding)
 	now := time.Now()
 	stable := binding.Stable()
+	var stalePositive hookstate.EligibilityRecord
+	var hasStalePositive bool
 	if stable {
 		cache, err := hookstate.LoadEligibilityCache()
 		if err != nil {
@@ -147,10 +149,14 @@ func resolveHookExecutionContext(ctx context.Context, gitCtx *hooks.GitContext) 
 			}
 			return executionContextFromEligibility(gitCtx, binding, record, true), true
 		}
+		stalePositive, hasStalePositive = cache.LookupStalePositive(binding, true)
 	}
 
 	resolver := hookRepoResolverFor(serverURL, tf.AccessToken)
 	if resolver == nil {
+		if hasStalePositive {
+			return executionContextFromEligibility(gitCtx, binding, stalePositive, true), true
+		}
 		return hooks.ExecutionContext{}, false
 	}
 	resolveCtx, cancel := context.WithTimeout(ctx, hookEligibilityResolveTimeout)
@@ -161,6 +167,9 @@ func resolveHookExecutionContext(ctx context.Context, gitCtx *hooks.GitContext) 
 		ClientCacheVersion: client.RepoEligibilityVersion,
 	})
 	if err != nil || resp == nil {
+		if hasStalePositive {
+			return executionContextFromEligibility(gitCtx, binding, stalePositive, true), true
+		}
 		return hooks.ExecutionContext{}, false
 	}
 	if stable {

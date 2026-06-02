@@ -141,6 +141,8 @@
 
 它**不再**直接在 hook 上下文中执行 `attributionlocal.SyncEngine.Run(...)`。
 
+repo eligibility 解析仍是 resolve-first：未过期 positive cache 可直接命中，cache miss / 过期时优先做一次 read-only `resolve-remote` 刷新。若该 hook binding 稳定，且本地已有带 `repo_config_id` 的过期 positive cache，刷新请求在 hook eligibility timeout 内失败、超时或不可用时，fast path 可以使用该 stale positive cache 继续上传 checkpoint 并创建 pending sync task。后端明确返回 not eligible 或返回缺失 `repo_config_id` 时，必须以新响应为准，不允许 stale cache 覆盖。
+
 后台 runner 的职责是：
 
 1. 读取 pending task
@@ -304,7 +306,8 @@ hook 中允许的耗时操作仅限：
 1. git 元信息读取
 2. 轻量 checkpoint 上传或 fail-open queue 写入
 3. `sync-task.json` 的读取和写入
-4. 一次短小的后台 runner 触发动作
+4. 一次有界的 read-only repo eligibility 刷新；刷新失败时可按上述 stale positive cache 兜底
+5. 一次短小的后台 runner 触发动作
 
 ### Background Trigger Contract
 
