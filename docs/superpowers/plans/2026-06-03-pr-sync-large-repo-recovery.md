@@ -724,7 +724,7 @@ cd backend && go test ./internal/scm/bitbucket -run 'TestListPRs|TestListPRsUses
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit Bitbucket timestamp ingestion**
+- [x] **Step 5: Commit Bitbucket timestamp ingestion**
 
 Run:
 
