@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/ai-efficiency/backend/internal/scm"
 	"go.uber.org/zap"
@@ -323,10 +324,12 @@ func (p *Provider) ListPRs(ctx context.Context, repoFullName string, opts scm.PR
 
 	var result struct {
 		Values []struct {
-			ID     int    `json:"id"`
-			Title  string `json:"title"`
-			State  string `json:"state"`
-			Author struct {
+			ID          int    `json:"id"`
+			Title       string `json:"title"`
+			State       string `json:"state"`
+			CreatedDate int64  `json:"createdDate"`
+			ClosedDate  int64  `json:"closedDate"`
+			Author      struct {
 				User struct {
 					Name string `json:"name"`
 				} `json:"user"`
@@ -354,15 +357,23 @@ func (p *Provider) ListPRs(ctx context.Context, repoFullName string, opts scm.PR
 		if len(v.Links.Self) > 0 {
 			url = v.Links.Self[0].Href
 		}
-		prs = append(prs, &scm.PR{
+		state := strings.ToLower(v.State)
+		item := &scm.PR{
 			ID:           v.ID,
 			Title:        v.Title,
 			Author:       v.Author.User.Name,
 			SourceBranch: v.FromRef.DisplayID,
 			TargetBranch: v.ToRef.DisplayID,
-			State:        strings.ToLower(v.State),
+			State:        state,
 			URL:          url,
-		})
+		}
+		if v.CreatedDate > 0 {
+			item.CreatedAt = time.UnixMilli(v.CreatedDate).UTC()
+		}
+		if state == "merged" && v.ClosedDate > 0 {
+			item.MergedAt = time.UnixMilli(v.ClosedDate).UTC()
+		}
+		prs = append(prs, item)
 	}
 	return prs, nil
 }

@@ -17,6 +17,10 @@ export function getPRSyncJob(jobId: number) {
   return client.get<ApiResponse<PRSyncJob>>(`/pr-sync-jobs/${jobId}`)
 }
 
+export function getLatestPRSyncJob(repoId: number) {
+  return client.get<ApiResponse<PRSyncJob | null>>(`/repos/${repoId}/pr-sync-job/latest`)
+}
+
 export function settlePR(prId: number) {
   return client.post<ApiResponse<{ attribution_status: string }>>(`/prs/${prId}/settle`)
 }

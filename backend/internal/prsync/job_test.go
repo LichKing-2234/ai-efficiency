@@ -2,6 +2,7 @@ package prsync
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -51,6 +52,136 @@ func TestStartSyncJobReusesRunningJobForRepo(t *testing.T) {
 	}
 	if job.ID != existing.ID {
 		t.Fatalf("job id = %d, want existing %d", job.ID, existing.ID)
+	}
+}
+
+func TestStartSyncJobAbandonsStaleRunningJob(t *testing.T) {
+	client := testdb.Open(t)
+	defer client.Close()
+	ctx := context.Background()
+	rc := createTestRepo(t, ctx, client, "job-stale-repo")
+	staleUpdatedAt := time.Now().UTC().Add(-2 * time.Hour)
+	existing := client.PRSyncJob.Create().
+		SetRepoConfigID(rc.ID).
+		SetStatus(prsyncjob.StatusRunning).
+		SetPhase(prsyncjob.PhaseRefreshingUsage).
+		SetUpdatedAt(staleUpdatedAt).
+		SaveX(ctx)
+	svc := NewService(client, nil, zap.NewNop())
+
+	job, reused, err := svc.StartSyncJob(ctx, &mockSCMProvider{}, rc)
+	if err != nil {
+		t.Fatalf("StartSyncJob error: %v", err)
+	}
+	if reused {
+		t.Fatalf("reused = true, want false for stale running job")
+	}
+	if job.ID == existing.ID {
+		t.Fatalf("new job id = stale job id %d", existing.ID)
+	}
+	stale := client.PRSyncJob.GetX(ctx, existing.ID)
+	if stale.Status != prsyncjob.StatusAbandoned {
+		t.Fatalf("stale status = %s, want abandoned", stale.Status)
+	}
+	if stale.CompletedAt == nil {
+		t.Fatalf("stale completed_at is nil, want abandonment timestamp")
+	}
+	if stale.LastError == nil || !strings.Contains(*stale.LastError, "abandoned") {
+		t.Fatalf("stale last_error = %v, want abandonment reason", stale.LastError)
+	}
+}
+
+func TestTerminalAbandonedJobIgnoresLateWorkerUpdates(t *testing.T) {
+	client := testdb.Open(t)
+	defer client.Close()
+	ctx := context.Background()
+	rc := createTestRepo(t, ctx, client, "job-abandoned-late-update-repo")
+	job := client.PRSyncJob.Create().
+		SetRepoConfigID(rc.ID).
+		SetStatus(prsyncjob.StatusAbandoned).
+		SetPhase(prsyncjob.PhaseFailed).
+		SetLastError(staleSyncJobMessage).
+		SetCompletedAt(time.Now().UTC()).
+		SaveX(ctx)
+	svc := NewService(client, nil, zap.NewNop())
+
+	if err := svc.UpdateProgress(ctx, job.ID, SyncProgress{
+		Phase:        string(prsyncjob.PhaseRefreshingUsage),
+		PageSize:     100,
+		FetchedPRs:   100,
+		ProcessedPRs: 100,
+	}); err != nil {
+		t.Fatalf("UpdateProgress error: %v", err)
+	}
+	if err := svc.CompleteJob(ctx, job.ID, SyncResult{Total: 100}); err != nil {
+		t.Fatalf("CompleteJob error: %v", err)
+	}
+	if err := svc.FailJob(ctx, job.ID, "failed", nil); err != nil {
+		t.Fatalf("FailJob error: %v", err)
+	}
+
+	loaded := client.PRSyncJob.GetX(ctx, job.ID)
+	if loaded.Status != prsyncjob.StatusAbandoned {
+		t.Fatalf("status = %s, want abandoned after late worker updates", loaded.Status)
+	}
+	if loaded.Phase != prsyncjob.PhaseFailed {
+		t.Fatalf("phase = %s, want failed after late worker updates", loaded.Phase)
+	}
+	if loaded.LastError == nil || *loaded.LastError != staleSyncJobMessage {
+		t.Fatalf("last_error = %v, want stale message", loaded.LastError)
+	}
+	if loaded.TotalPrs != 0 || loaded.FetchedPrs != 0 || loaded.ProcessedPrs != 0 {
+		t.Fatalf("late counters total=%d fetched=%d processed=%d, want unchanged zeros", loaded.TotalPrs, loaded.FetchedPrs, loaded.ProcessedPrs)
+	}
+}
+
+func TestStartSyncJobReusesFreshRunningJobWithOldStart(t *testing.T) {
+	client := testdb.Open(t)
+	defer client.Close()
+	ctx := context.Background()
+	rc := createTestRepo(t, ctx, client, "job-fresh-old-start-repo")
+	existing := client.PRSyncJob.Create().
+		SetRepoConfigID(rc.ID).
+		SetStatus(prsyncjob.StatusRunning).
+		SetPhase(prsyncjob.PhaseRefreshingUsage).
+		SetStartedAt(time.Now().UTC().Add(-2 * time.Hour)).
+		SetUpdatedAt(time.Now().UTC().Add(-5 * time.Minute)).
+		SaveX(ctx)
+	svc := NewService(client, nil, zap.NewNop())
+
+	job, reused, err := svc.StartSyncJob(ctx, &mockSCMProvider{}, rc)
+	if err != nil {
+		t.Fatalf("StartSyncJob error: %v", err)
+	}
+	if !reused || job.ID != existing.ID {
+		t.Fatalf("job id=%d reused=%v, want reuse of fresh running job %d", job.ID, reused, existing.ID)
+	}
+}
+
+func TestGetLatestSyncJobForRepo(t *testing.T) {
+	client := testdb.Open(t)
+	defer client.Close()
+	ctx := context.Background()
+	rc := createTestRepo(t, ctx, client, "job-latest-repo")
+	client.PRSyncJob.Create().
+		SetRepoConfigID(rc.ID).
+		SetStatus(prsyncjob.StatusCompleted).
+		SetPhase(prsyncjob.PhaseCompleted).
+		SetCreatedAt(time.Now().UTC().Add(-time.Hour)).
+		SaveX(ctx)
+	latest := client.PRSyncJob.Create().
+		SetRepoConfigID(rc.ID).
+		SetStatus(prsyncjob.StatusRunning).
+		SetPhase(prsyncjob.PhaseFetchingPrs).
+		SaveX(ctx)
+	svc := NewService(client, nil, zap.NewNop())
+
+	job, err := svc.GetLatestSyncJobForRepo(ctx, rc.ID)
+	if err != nil {
+		t.Fatalf("GetLatestSyncJobForRepo error: %v", err)
+	}
+	if job.ID != latest.ID {
+		t.Fatalf("job id = %d, want latest %d", job.ID, latest.ID)
 	}
 }
 

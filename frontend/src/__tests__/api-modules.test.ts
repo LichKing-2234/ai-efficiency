@@ -15,7 +15,7 @@ vi.mock('@/api/client', () => {
 import client from '@/api/client'
 import { listProviders, createProvider, updateProvider, deleteProvider } from '@/api/scmProvider'
 import { listRelayProviders, createRelayProvider, updateRelayProvider, deleteRelayProvider } from '@/api/relayProvider'
-import { listPRs, getPR, syncPRs, getPRSyncJob, settlePR, refreshPRUsage } from '@/api/pr'
+import { listPRs, getPR, syncPRs, getPRSyncJob, getLatestPRSyncJob, settlePR, refreshPRUsage } from '@/api/pr'
 import { getDashboard } from '@/api/efficiency'
 import { getDeploymentStatus, checkForUpdate, applyUpdate, rollbackUpdate, restartDeployment } from '@/api/deployment'
 import { getUserProviders, createGroupCredential, regenerateGroupCredential, getUserProviderModels, testUserProvider } from '@/api/user'
@@ -132,6 +132,12 @@ describe('pr API', () => {
     mockClient.get.mockResolvedValue({ data: { data: { id: 44, status: 'running', phase: 'fetching_prs' } } })
     await getPRSyncJob(44)
     expect(mockClient.get).toHaveBeenCalledWith('/pr-sync-jobs/44')
+  })
+
+  it('getLatestPRSyncJob fetches the latest repo PR sync job', async () => {
+    mockClient.get.mockResolvedValue({ data: { data: { id: 44, status: 'running', phase: 'fetching_prs' } } })
+    await getLatestPRSyncJob(5)
+    expect(mockClient.get).toHaveBeenCalledWith('/repos/5/pr-sync-job/latest')
   })
 
   it('settlePR calls POST /prs/:id/settle', async () => {

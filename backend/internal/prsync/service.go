@@ -31,6 +31,10 @@ const (
 	UpsertUnchanged UpsertState = "unchanged"
 )
 
+const staleSyncJobThreshold = time.Hour
+
+const staleSyncJobMessage = "PR sync job was abandoned after no progress was recorded for more than 1h."
+
 type SyncProgress struct {
 	Phase             string
 	CurrentPage       int
@@ -97,9 +101,14 @@ func (s *Service) StartSyncJob(ctx context.Context, scmProvider scm.SCMProvider,
 		Order(ent.Desc(prsyncjob.FieldCreatedAt)).
 		First(ctx)
 	if err == nil {
-		return existing, true, nil
-	}
-	if !ent.IsNotFound(err) {
+		if s.isStaleSyncJob(existing, time.Now().UTC()) {
+			if err := s.abandonStaleSyncJob(ctx, existing.ID); err != nil {
+				return nil, false, err
+			}
+		} else {
+			return existing, true, nil
+		}
+	} else if !ent.IsNotFound(err) {
 		return nil, false, fmt.Errorf("query running PR sync job: %w", err)
 	}
 
@@ -115,8 +124,35 @@ func (s *Service) StartSyncJob(ctx context.Context, scmProvider scm.SCMProvider,
 	return job, false, nil
 }
 
+func (s *Service) isStaleSyncJob(job *ent.PRSyncJob, now time.Time) bool {
+	if job == nil || job.CompletedAt != nil {
+		return false
+	}
+	if job.Status != prsyncjob.StatusQueued && job.Status != prsyncjob.StatusRunning {
+		return false
+	}
+	return now.Sub(job.UpdatedAt.UTC()) > staleSyncJobThreshold
+}
+
+func (s *Service) abandonStaleSyncJob(ctx context.Context, jobID int) error {
+	msg := staleSyncJobMessage
+	if err := s.entClient.PRSyncJob.UpdateOneID(jobID).
+		SetStatus(prsyncjob.StatusAbandoned).
+		SetPhase(prsyncjob.PhaseFailed).
+		SetLastError(msg).
+		SetCompletedAt(time.Now().UTC()).
+		Exec(ctx); err != nil {
+		return fmt.Errorf("abandon stale PR sync job: %w", err)
+	}
+	return nil
+}
+
 func (s *Service) UpdateProgress(ctx context.Context, jobID int, p SyncProgress) error {
-	update := s.entClient.PRSyncJob.UpdateOneID(jobID).
+	update := s.entClient.PRSyncJob.Update().
+		Where(
+			prsyncjob.IDEQ(jobID),
+			prsyncjob.StatusIn(prsyncjob.StatusQueued, prsyncjob.StatusRunning),
+		).
 		SetStatus(prsyncjob.StatusRunning).
 		SetPhase(prsyncjob.Phase(p.Phase)).
 		SetCurrentPage(p.CurrentPage).
@@ -145,7 +181,11 @@ func (s *Service) FailJob(ctx context.Context, jobID int, phase string, err erro
 	if err != nil {
 		msg = err.Error()
 	}
-	return s.entClient.PRSyncJob.UpdateOneID(jobID).
+	return s.entClient.PRSyncJob.Update().
+		Where(
+			prsyncjob.IDEQ(jobID),
+			prsyncjob.StatusIn(prsyncjob.StatusQueued, prsyncjob.StatusRunning),
+		).
 		SetStatus(prsyncjob.StatusFailed).
 		SetPhase(prsyncjob.PhaseFailed).
 		SetNillableLastError(&msg).
@@ -154,7 +194,11 @@ func (s *Service) FailJob(ctx context.Context, jobID int, phase string, err erro
 }
 
 func (s *Service) CompleteJob(ctx context.Context, jobID int, result SyncResult) error {
-	return s.entClient.PRSyncJob.UpdateOneID(jobID).
+	return s.entClient.PRSyncJob.Update().
+		Where(
+			prsyncjob.IDEQ(jobID),
+			prsyncjob.StatusIn(prsyncjob.StatusQueued, prsyncjob.StatusRunning),
+		).
 		SetStatus(prsyncjob.StatusCompleted).
 		SetPhase(prsyncjob.PhaseCompleted).
 		SetTotalPrs(result.Total).
@@ -184,6 +228,23 @@ func (s *Service) GetSyncJob(ctx context.Context, id int) (*ent.PRSyncJob, error
 	job, err := s.entClient.PRSyncJob.Get(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("get PR sync job %d: %w", id, err)
+	}
+	return job, nil
+}
+
+func (s *Service) GetLatestSyncJobForRepo(ctx context.Context, repoID int) (*ent.PRSyncJob, error) {
+	if s == nil || s.entClient == nil {
+		return nil, fmt.Errorf("get latest PR sync job: ent client is required")
+	}
+	job, err := s.entClient.PRSyncJob.Query().
+		Where(prsyncjob.RepoConfigIDEQ(repoID)).
+		Order(ent.Desc(prsyncjob.FieldCreatedAt)).
+		First(ctx)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get latest PR sync job for repo %d: %w", repoID, err)
 	}
 	return job, nil
 }

@@ -21,6 +21,7 @@ type prSyncer interface {
 	StartSyncJob(ctx context.Context, scmProvider scm.SCMProvider, rc *ent.RepoConfig) (*ent.PRSyncJob, bool, error)
 	RunSyncJob(ctx context.Context, jobID int, scmProvider scm.SCMProvider, rc *ent.RepoConfig) (*prsync.SyncResult, error)
 	GetSyncJob(ctx context.Context, id int) (*ent.PRSyncJob, error)
+	GetLatestSyncJobForRepo(ctx context.Context, repoID int) (*ent.PRSyncJob, error)
 }
 
 type prAttributionSettler interface {

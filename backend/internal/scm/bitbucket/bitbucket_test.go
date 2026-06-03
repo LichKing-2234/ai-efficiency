@@ -295,7 +295,7 @@ func TestListPRs(t *testing.T) {
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"values": []map[string]interface{}{
 				{
-					"id": 1, "title": "PR1", "state": "OPEN",
+					"id": 1, "title": "PR1", "state": "MERGED", "createdDate": 1714540800123, "closedDate": 1714627200456,
 					"author":  map[string]interface{}{"user": map[string]string{"name": "alice"}},
 					"fromRef": map[string]string{"displayId": "feat-1"},
 					"toRef":   map[string]string{"displayId": "main"},
@@ -312,11 +312,17 @@ func TestListPRs(t *testing.T) {
 	if len(prs) != 1 {
 		t.Fatalf("len = %d", len(prs))
 	}
-	if prs[0].State != "open" {
+	if prs[0].State != "merged" {
 		t.Errorf("state = %q", prs[0].State)
 	}
 	if prs[0].URL != "https://bb/pr/1" {
 		t.Errorf("url = %q", prs[0].URL)
+	}
+	if prs[0].CreatedAt.IsZero() || prs[0].CreatedAt.UnixMilli() != int64(1714540800123) {
+		t.Fatalf("CreatedAt = %v, want epoch millis 1714540800123", prs[0].CreatedAt)
+	}
+	if prs[0].MergedAt.IsZero() || prs[0].MergedAt.UnixMilli() != int64(1714627200456) {
+		t.Fatalf("MergedAt = %v, want epoch millis 1714627200456", prs[0].MergedAt)
 	}
 }
 
@@ -357,6 +363,26 @@ func TestListPRsUsesStartOffsetForPage(t *testing.T) {
 	}
 	if gotStart != "200" {
 		t.Fatalf("start = %q, want 200", gotStart)
+	}
+}
+
+func TestListPRsDoesNotSetMergedAtForDeclinedPR(t *testing.T) {
+	p, _ := setup(t, func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"values":[{"id":2,"title":"Declined","state":"DECLINED","createdDate":1714540800000,"closedDate":1714627200000,"author":{"user":{"name":"alice"}},"fromRef":{"displayId":"f"},"toRef":{"displayId":"main"},"links":{"self":[{"href":"http://bb/pr/2"}]}}]}`)
+	})
+
+	prs, err := p.ListPRs(context.Background(), "P/r", scm.PRListOpts{State: "all", PageSize: 10})
+	if err != nil {
+		t.Fatalf("ListPRs error: %v", err)
+	}
+	if len(prs) != 1 {
+		t.Fatalf("len(prs) = %d, want 1", len(prs))
+	}
+	if prs[0].CreatedAt.IsZero() {
+		t.Fatalf("CreatedAt is zero, want parsed createdDate")
+	}
+	if !prs[0].MergedAt.IsZero() {
+		t.Fatalf("MergedAt = %v, want zero for declined PR", prs[0].MergedAt)
 	}
 }
 

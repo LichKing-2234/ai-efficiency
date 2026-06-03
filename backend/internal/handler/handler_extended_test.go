@@ -9,6 +9,7 @@ import (
 
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
 	"github.com/ai-efficiency/backend/ent/prrecord"
+	"github.com/ai-efficiency/backend/internal/prusage"
 )
 
 // =====================
@@ -241,6 +242,62 @@ func TestPRListByRepoIncludesAggregateUsageSummary(t *testing.T) {
 	}
 	if got := int(summary["refresh_failed"].(float64)); got != 0 {
 		t.Fatalf("summary.refresh_failed = %d, want 0", got)
+	}
+}
+
+type countingFreshnessEvaluator struct {
+	calls int
+}
+
+func (e *countingFreshnessEvaluator) EvaluatePRFreshness(ctx context.Context, prID int) (*prusage.PRFreshness, error) {
+	e.calls++
+	return &prusage.PRFreshness{
+		Status:    prusage.UsageStatusNoCheckpoint,
+		Reason:    "test evaluator",
+		CheckedAt: time.Now().UTC(),
+	}, nil
+}
+
+func TestPRListByRepoEvaluatesFreshnessOnlyForCurrentPage(t *testing.T) {
+	env := setupTestEnv(t)
+	ctx := context.Background()
+	repoID := createTestRepo(t, env.client)
+	now := time.Now().UTC()
+	for i := 0; i < 25; i++ {
+		create := env.client.PrRecord.Create().
+			SetRepoConfigID(repoID).
+			SetScmPrID(9000 + i).
+			SetTitle(fmt.Sprintf("large repo pr %d", i)).
+			SetAuthor("alice").
+			SetStatus(prrecord.StatusMerged).
+			SetCreatedAt(now.Add(-time.Duration(i) * time.Hour))
+		if i == 0 {
+			create.SetUsageInputTokens(10)
+		}
+		create.SaveX(ctx)
+	}
+
+	evaluator := &countingFreshnessEvaluator{}
+	prHandler := NewPRHandler(env.client, nil, nil, nil)
+	prHandler.usageFreshness = evaluator
+	group := env.router.Group("/api/v1/test-bounded-summary")
+	group.GET("/repos/:id/prs", prHandler.ListByRepo)
+
+	w := doRequest(env, "GET", fmt.Sprintf("/api/v1/test-bounded-summary/repos/%d/prs?limit=5&months=3", repoID), nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body: %s", w.Code, w.Body.String())
+	}
+	if evaluator.calls != 5 {
+		t.Fatalf("freshness calls = %d, want only current page size 5", evaluator.calls)
+	}
+	resp := parseResponse(t, w)
+	data := resp["data"].(map[string]interface{})
+	summary := data["summary"].(map[string]interface{})
+	if got := int(summary["total"].(float64)); got != 25 {
+		t.Fatalf("summary.total = %d, want 25", got)
+	}
+	if got := int(summary["with_usage"].(float64)); got != 1 {
+		t.Fatalf("summary.with_usage = %d, want 1", got)
 	}
 }
 
