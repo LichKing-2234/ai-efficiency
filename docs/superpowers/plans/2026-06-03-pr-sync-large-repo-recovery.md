@@ -612,7 +612,7 @@ git commit -m "fix(backend): bound PR list summary work"
 - Modify: `backend/internal/scm/bitbucket/bitbucket.go`
 - Modify: `backend/internal/scm/bitbucket/bitbucket_test.go`
 
-- [ ] **Step 1: Write Bitbucket timestamp parsing test**
+- [x] **Step 1: Write Bitbucket timestamp parsing test**
 
 Modify `TestListPRs` in `backend/internal/scm/bitbucket/bitbucket_test.go` so the test payload includes timestamps:
 
@@ -671,7 +671,7 @@ func TestListPRsDoesNotSetMergedAtForDeclinedPR(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run Bitbucket timestamp tests and verify failure**
+- [x] **Step 2: Run Bitbucket timestamp tests and verify failure**
 
 Run:
 
@@ -681,7 +681,7 @@ cd backend && go test ./internal/scm/bitbucket -run 'TestListPRs|TestListPRsDoes
 
 Expected: FAIL because `createdDate` and `closedDate` are not parsed.
 
-- [ ] **Step 3: Implement timestamp parsing**
+- [x] **Step 3: Implement timestamp parsing**
 
 In `backend/internal/scm/bitbucket/bitbucket.go`, add timestamp fields to the `Values` struct in `ListPRs`:
 
@@ -714,7 +714,7 @@ prs = append(prs, item)
 
 Add `time` to the import block if it is not already present.
 
-- [ ] **Step 4: Run Bitbucket tests**
+- [x] **Step 4: Run Bitbucket tests**
 
 Run:
 
