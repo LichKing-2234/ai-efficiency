@@ -62,7 +62,7 @@ func LoginDevice(ctx context.Context, cfg OAuthConfig) (*OAuthResult, error) {
 			interval += 5 * time.Second
 			cfg.Sleep(interval)
 		default:
-			return nil, fmt.Errorf("device token exchange failed: %s", oauthErrSummary)
+			return nil, fmt.Errorf("device token exchange failed: %v", oauthErrSummary)
 		}
 
 		select {
