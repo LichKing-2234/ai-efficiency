@@ -43,7 +43,7 @@ During execution, update checkboxes in this file immediately after each step is 
 - Create: `ae-cli/internal/httpx/httpx_test.go`
 - Create: `ae-cli/internal/httpx/httpx.go`
 
-- [ ] **Step 1: Write failing `httpx` tests**
+- [x] **Step 1: Write failing `httpx` tests**
 
 Create `ae-cli/internal/httpx/httpx_test.go`:
 
@@ -206,7 +206,7 @@ func assertStatusError(t *testing.T, err error) *StatusError {
 }
 ```
 
-- [ ] **Step 2: Run `httpx` tests to verify they fail**
+- [x] **Step 2: Run `httpx` tests to verify they fail**
 
 Run:
 
@@ -216,7 +216,7 @@ cd ae-cli && go test ./internal/httpx
 
 Expected: fail because `DoJSON`, `DoForm`, `Options`, and `StatusError` are undefined or the package does not yet exist.
 
-- [ ] **Step 3: Implement `httpx`**
+- [x] **Step 3: Implement `httpx`**
 
 Create `ae-cli/internal/httpx/httpx.go`:
 
@@ -380,7 +380,7 @@ func applyHeaders(req *http.Request, headers http.Header) {
 }
 ```
 
-- [ ] **Step 4: Run `httpx` tests to verify they pass**
+- [x] **Step 4: Run `httpx` tests to verify they pass**
 
 Run:
 
@@ -390,7 +390,7 @@ cd ae-cli && go test ./internal/httpx
 
 Expected: `ok github.com/ai-efficiency/ae-cli/internal/httpx`.
 
-- [ ] **Step 5: Commit Task 1**
+- [x] **Step 5: Commit Task 1**
 
 Run:
 
@@ -411,7 +411,7 @@ Expected: commit succeeds with only the new `httpx` package files.
 - Modify: `ae-cli/internal/auth/device_test.go`
 - Modify: `ae-cli/internal/auth/oauth_test.go`
 
-- [ ] **Step 1: Add or keep OAuth error regression tests**
+- [x] **Step 1: Add or keep OAuth error regression tests**
 
 Ensure `ae-cli/internal/auth/device_test.go` contains these tests:
 
@@ -508,7 +508,7 @@ func TestExchangeCodeShowsIngressMessageErrors(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run auth tests before migration**
+- [x] **Step 2: Run auth tests before migration**
 
 Run:
 
@@ -518,7 +518,7 @@ cd ae-cli && go test ./internal/auth
 
 Expected: tests may pass if a temporary auth-local parser exists, but this does not complete the task. The implementation must still replace direct request execution with `httpx`.
 
-- [ ] **Step 3: Replace device-code request execution**
+- [x] **Step 3: Replace device-code request execution**
 
 In `ae-cli/internal/auth/device.go`, add imports:
 
@@ -555,7 +555,7 @@ func requestDeviceCode(ctx context.Context, cfg OAuthConfig) (*deviceCodeRespons
 }
 ```
 
-- [ ] **Step 4: Replace device-token polling execution**
+- [x] **Step 4: Replace device-token polling execution**
 
 In `ae-cli/internal/auth/device.go`, replace `pollDeviceToken` with:
 
@@ -618,7 +618,7 @@ type oauthErrorResponse struct {
 
 Remove any auth-local helpers named `readOAuthErrorSummary`, `readOAuthErrorResponse`, or `oauthErrorResponse.summary`. Error summaries now come from `httpx.StatusError.Summary`.
 
-- [ ] **Step 5: Replace authorization-code token exchange execution**
+- [x] **Step 5: Replace authorization-code token exchange execution**
 
 In `ae-cli/internal/auth/oauth.go`, add the `httpx` import:
 
@@ -648,7 +648,7 @@ return &OAuthResult{
 
 Remove unused imports from `oauth.go`, especially `encoding/json` and any request-body imports that are no longer needed by that file.
 
-- [ ] **Step 6: Format and run auth tests**
+- [x] **Step 6: Format and run auth tests**
 
 Run:
 
@@ -659,7 +659,7 @@ cd ae-cli && go test ./internal/auth
 
 Expected: `ok github.com/ai-efficiency/ae-cli/internal/auth`.
 
-- [ ] **Step 7: Commit Task 2**
+- [x] **Step 7: Commit Task 2**
 
 Run:
 
@@ -678,7 +678,7 @@ Expected: commit succeeds with only auth package files.
 - Modify: `ae-cli/internal/client/client.go`
 - Modify: `ae-cli/internal/client/client_test.go`
 
-- [ ] **Step 1: Add client status-error tests**
+- [x] **Step 1: Add client status-error tests**
 
 Append these tests to `ae-cli/internal/client/client_test.go`:
 
@@ -744,7 +744,7 @@ import (
 
 Keep existing imports such as `context`, `encoding/json`, `net/http`, `net/http/httptest`, `sync/atomic`, `testing`, and `time`.
 
-- [ ] **Step 2: Run client tests to verify the new tests fail**
+- [x] **Step 2: Run client tests to verify the new tests fail**
 
 Run:
 
@@ -754,7 +754,7 @@ cd ae-cli && go test ./internal/client
 
 Expected: fail because `postJSON` still returns plain formatted errors rather than `*httpx.StatusError`.
 
-- [ ] **Step 3: Add `httpx` import and header helper**
+- [x] **Step 3: Add `httpx` import and header helper**
 
 In `ae-cli/internal/client/client.go`, add:
 
@@ -776,7 +776,7 @@ func (c *Client) headers() http.Header {
 
 Keep the existing `setHeaders` method because several manually implemented methods still use it.
 
-- [ ] **Step 4: Replace `postJSON` internals**
+- [x] **Step 4: Replace `postJSON` internals**
 
 Replace `postJSON` in `ae-cli/internal/client/client.go` with:
 
@@ -791,7 +791,7 @@ func (c *Client) postJSON(ctx context.Context, path string, in any, out any) err
 
 Do not change `ResolveRepoFromRemote` or `BatchHookEligible` payload shapes.
 
-- [ ] **Step 5: Format and run client tests**
+- [x] **Step 5: Format and run client tests**
 
 Run:
 
@@ -802,7 +802,7 @@ cd ae-cli && go test ./internal/client
 
 Expected: `ok github.com/ai-efficiency/ae-cli/internal/client`.
 
-- [ ] **Step 6: Commit Task 3**
+- [x] **Step 6: Commit Task 3**
 
 Run:
 
@@ -820,7 +820,7 @@ Expected: commit succeeds with only client package files.
 **Files:**
 - Modify: `docs/superpowers/plans/2026-06-03-ae-cli-shared-http-request-handler.md`
 
-- [ ] **Step 1: Run targeted tests**
+- [x] **Step 1: Run targeted tests**
 
 Run:
 
@@ -830,7 +830,7 @@ cd ae-cli && go test ./internal/httpx ./internal/auth ./internal/client
 
 Expected: all three packages pass.
 
-- [ ] **Step 2: Run full ae-cli test suite**
+- [x] **Step 2: Run full ae-cli test suite**
 
 Run:
 
@@ -840,7 +840,7 @@ cd ae-cli && go test ./...
 
 Expected: all packages pass.
 
-- [ ] **Step 3: Inspect request-handler adoption**
+- [x] **Step 3: Inspect request-handler adoption**
 
 Run:
 
@@ -858,11 +858,11 @@ rg -n "httpx\\.DoForm|httpx\\.DoJSON|type StatusError" ae-cli/internal
 
 Expected: matches in `ae-cli/internal/httpx`, `ae-cli/internal/auth`, and `ae-cli/internal/client`.
 
-- [ ] **Step 4: Confirm this plan's checkboxes are current**
+- [x] **Step 4: Confirm this plan's checkboxes are current**
 
 Review `docs/superpowers/plans/2026-06-03-ae-cli-shared-http-request-handler.md` and confirm every step completed in this run is already marked `- [x]`. Mark only steps that were actually completed. Leave any skipped or unrun step unchecked.
 
-- [ ] **Step 5: Commit plan closeout**
+- [x] **Step 5: Commit plan closeout**
 
 Run:
 
@@ -873,7 +873,7 @@ git commit -m "docs(ae-cli): track shared HTTP handler implementation"
 
 Expected: commit succeeds if the plan file changed during execution. If no checkbox changed because the implementation was executed by another mechanism that already updated the plan, `git commit` may report nothing to commit; in that case, record that in the final response.
 
-- [ ] **Step 6: Final status audit**
+- [x] **Step 6: Final status audit**
 
 Run:
 
