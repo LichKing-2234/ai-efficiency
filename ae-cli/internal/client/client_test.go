@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -142,6 +143,33 @@ func TestSendToolUsageEvent(t *testing.T) {
 	}
 }
 
+func TestSendToolUsageEventReturnsHTTPStatusErrorForValidationFailure(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		_, _ = w.Write([]byte(`{"error":"bad event"}`))
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "tok")
+	err := c.SendToolUsageEvent(context.Background(), ToolUsageEventRequest{
+		RepoConfigID:    123,
+		Tool:            "codex",
+		WorkspaceID:     "ws-1",
+		ToolSessionID:   "sess-1",
+		DedupeKey:       "bad-event",
+		UsageUnit:       "token",
+		ObservedStartAt: time.Now(),
+		ObservedEndAt:   time.Now(),
+	})
+	var statusErr *HTTPStatusError
+	if !errors.As(err, &statusErr) {
+		t.Fatalf("error = %T %v, want HTTPStatusError", err, err)
+	}
+	if statusErr.StatusCode != http.StatusUnprocessableEntity || statusErr.Body == "" {
+		t.Fatalf("statusErr = %+v, want 422 with body", statusErr)
+	}
+}
+
 func TestSendToolUsageEventsUsesBatchEndpoint(t *testing.T) {
 	var got ToolUsageEventsBatchRequest
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -176,7 +204,7 @@ func TestSendToolUsageEventsUsesBatchEndpoint(t *testing.T) {
 	}
 }
 
-func TestSendToolUsageEventsFallsBackWhenBatchUnsupported(t *testing.T) {
+func TestSendToolUsageEventsReturnsBatchStatusWhenUnsupported(t *testing.T) {
 	var batchAttempts int32
 	var singleAttempts int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -203,11 +231,15 @@ func TestSendToolUsageEventsFallsBackWhenBatchUnsupported(t *testing.T) {
 		ObservedStartAt: time.Now().UTC(),
 		ObservedEndAt:   time.Now().UTC(),
 	}})
-	if err != nil {
-		t.Fatalf("SendToolUsageEvents: %v", err)
+	var statusErr *HTTPStatusError
+	if !errors.As(err, &statusErr) {
+		t.Fatalf("error = %T %v, want HTTPStatusError", err, err)
 	}
-	if batchAttempts != 1 || singleAttempts != 1 {
-		t.Fatalf("batchAttempts=%d singleAttempts=%d, want 1/1", batchAttempts, singleAttempts)
+	if statusErr.StatusCode != http.StatusNotFound {
+		t.Fatalf("status code = %d, want 404", statusErr.StatusCode)
+	}
+	if batchAttempts != 1 || singleAttempts != 0 {
+		t.Fatalf("batchAttempts=%d singleAttempts=%d, want 1/0", batchAttempts, singleAttempts)
 	}
 }
 

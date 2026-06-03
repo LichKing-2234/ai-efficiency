@@ -55,6 +55,7 @@ type UploadGroup struct {
 	PendingCount         int
 	UploadedCount        int
 	FailedCount          int
+	DeferredCount        int
 	SkippedCount         int
 	LastSuccessfulUpload *time.Time
 	LastError            string
@@ -313,6 +314,8 @@ func summarizeUploads(workspaceID string) []UploadGroup {
 				}
 			case "failed":
 				g.FailedCount++
+			case "deferred":
+				g.DeferredCount++
 			case "skipped":
 				g.SkippedCount++
 			case "pending":

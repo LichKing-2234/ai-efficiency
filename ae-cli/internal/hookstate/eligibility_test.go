@@ -44,6 +44,12 @@ func TestEligibilityPositiveLookupRequiresContextCredentialAndRepoID(t *testing.
 	if _, ok := cache.Lookup(ctx, now.Add(25*time.Hour), true); ok {
 		t.Fatalf("lookup should miss after positive TTL")
 	}
+	if got, ok := cache.LookupStalePositive(ctx, true); !ok || got.RepoConfigID != 123 {
+		t.Fatalf("stale positive lookup = %+v, %v; want repo_config_id 123 hit", got, ok)
+	}
+	if _, ok := cache.LookupStalePositive(ctx, false); ok {
+		t.Fatalf("stale positive lookup should miss without usable credentials")
+	}
 
 	cache.PutPositive(ctx, client.RepoEligibilityResponse{Eligible: true, RepoKey: ctx.RepoKey}, now)
 	if _, ok := cache.Lookup(ctx, now.Add(time.Minute), true); ok {

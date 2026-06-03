@@ -98,6 +98,17 @@ var syncStatusCmd = &cobra.Command{
 			}
 		}
 		printSyncTaskStatus(cmd.OutOrStdout(), task)
+		unresolvedCount, err := hooks.CountUnresolvedHookEvents()
+		if err != nil {
+			return fmt.Errorf("count unresolved hook events: %w", err)
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "Unresolved Hook Events: %d\n", unresolvedCount)
+
+		deadLetterCount, err := attributionlocal.CountToolUsageDeadLetters(attrCtx.workspaceID)
+		if err != nil {
+			return fmt.Errorf("count tool usage dead letters: %w", err)
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "Tool Usage Dead Letters: %d\n", deadLetterCount)
 		return nil
 	},
 }

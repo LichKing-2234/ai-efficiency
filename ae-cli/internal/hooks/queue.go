@@ -51,6 +51,9 @@ type Queue struct {
 	path string
 }
 
+var queueLockStaleAfter = 30 * time.Second
+var queueLockHeartbeatInterval = 5 * time.Second
+
 type Binding struct {
 	ServerURL    string `json:"server_url,omitempty"`
 	AuthSubject  string `json:"auth_subject,omitempty"`
@@ -192,7 +195,99 @@ func (q *Queue) Path() string {
 	return q.path
 }
 
+func (q *Queue) lockPath() (string, error) {
+	if q == nil || strings.TrimSpace(q.path) == "" {
+		return "", fmt.Errorf("queue is not initialized")
+	}
+	return q.path + ".lock", nil
+}
+
+func (q *Queue) withLock(fn func() error) error {
+	lockPath, err := q.lockPath()
+	if err != nil {
+		return err
+	}
+	return withFileLock(lockPath, fn)
+}
+
+func withFileLock(lockPath string, fn func() error) error {
+	if strings.TrimSpace(lockPath) == "" {
+		return fmt.Errorf("lock path is required")
+	}
+	if err := os.MkdirAll(filepath.Dir(lockPath), 0o700); err != nil {
+		return fmt.Errorf("create queue lock dir: %w", err)
+	}
+	const attempts = 200
+	for attempt := 0; attempt < attempts; attempt++ {
+		f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+		if err == nil {
+			_, _ = fmt.Fprintf(f, "pid=%d\ncreated_at=%s\n", os.Getpid(), time.Now().UTC().Format(time.RFC3339Nano))
+			_ = f.Close()
+			defer func() { _ = os.Remove(lockPath) }()
+			stopHeartbeat := startQueueLockHeartbeat(lockPath)
+			defer stopHeartbeat()
+			return fn()
+		}
+		if !os.IsExist(err) {
+			return fmt.Errorf("create queue lock: %w", err)
+		}
+		if queueLockIsStale(lockPath, time.Now().UTC()) {
+			_ = os.Remove(lockPath)
+			continue
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	return fmt.Errorf("queue lock is busy: %s", lockPath)
+}
+
+func startQueueLockHeartbeat(lockPath string) func() {
+	if queueLockHeartbeatInterval <= 0 {
+		return func() {}
+	}
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		ticker := time.NewTicker(queueLockHeartbeatInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				now := time.Now().UTC()
+				_ = os.Chtimes(lockPath, now, now)
+			case <-stop:
+				return
+			}
+		}
+	}()
+	return func() {
+		close(stop)
+		<-done
+	}
+}
+
+func queueLockIsStale(lockPath string, now time.Time) bool {
+	info, err := os.Stat(lockPath)
+	if err != nil {
+		return false
+	}
+	return now.Sub(info.ModTime()) > queueLockStaleAfter
+}
+
 func (q *Queue) List() ([]QueueItem, error) {
+	var out []QueueItem
+	err := q.withLock(func() error {
+		items, err := q.listUnlocked()
+		if err != nil {
+			return err
+		}
+		out = items
+		return nil
+	})
+	return out, err
+}
+
+func (q *Queue) listUnlocked() ([]QueueItem, error) {
 	if q == nil || strings.TrimSpace(q.path) == "" {
 		return nil, fmt.Errorf("queue is not initialized")
 	}
@@ -208,30 +303,48 @@ func (q *Queue) List() ([]QueueItem, error) {
 	var out []QueueItem
 	r := bufio.NewReaderSize(f, 64*1024)
 	for {
-		line, err := r.ReadBytes('\n')
-		if err != nil && !errors.Is(err, io.EOF) {
-			return nil, fmt.Errorf("read queue line: %w", err)
+		line, readErr := r.ReadBytes('\n')
+		if readErr != nil && !errors.Is(readErr, io.EOF) {
+			return nil, fmt.Errorf("read queue line: %w", readErr)
 		}
 		line = bytes.TrimSpace(line)
 		if len(line) == 0 {
-			if errors.Is(err, io.EOF) {
+			if errors.Is(readErr, io.EOF) {
 				break
 			}
 			continue
 		}
 		var it QueueItem
 		if err := json.Unmarshal(line, &it); err != nil {
-			return nil, fmt.Errorf("parse queue line: %w", err)
+			_ = q.appendCorruptLine(line)
+			if errors.Is(readErr, io.EOF) {
+				break
+			}
+			continue
 		}
 		out = append(out, it)
-		if errors.Is(err, io.EOF) {
+		if errors.Is(readErr, io.EOF) {
 			break
 		}
 	}
 	return out, nil
 }
 
+func (q *Queue) appendCorruptLine(line []byte) error {
+	if q == nil || strings.TrimSpace(q.path) == "" || len(bytes.TrimSpace(line)) == 0 {
+		return nil
+	}
+	path := fmt.Sprintf("%s.corrupt-line.%d", q.path, time.Now().UTC().UnixNano())
+	return os.WriteFile(path, append(bytes.TrimSpace(line), '\n'), 0o600)
+}
+
 func (q *Queue) Enqueue(ev HookEvent) error {
+	return q.withLock(func() error {
+		return q.enqueueUnlocked(ev)
+	})
+}
+
+func (q *Queue) enqueueUnlocked(ev HookEvent) error {
 	if q == nil || strings.TrimSpace(q.path) == "" {
 		return fmt.Errorf("queue is not initialized")
 	}
@@ -239,7 +352,7 @@ func (q *Queue) Enqueue(ev HookEvent) error {
 		return fmt.Errorf("event_id is required")
 	}
 
-	items, err := q.List()
+	items, err := q.listUnlocked()
 	if err != nil {
 		return err
 	}
@@ -270,6 +383,12 @@ func (q *Queue) Enqueue(ev HookEvent) error {
 }
 
 func (q *Queue) rewrite(items []QueueItem) error {
+	return q.withLock(func() error {
+		return q.rewriteUnlocked(items)
+	})
+}
+
+func (q *Queue) rewriteUnlocked(items []QueueItem) error {
 	if q == nil || strings.TrimSpace(q.path) == "" {
 		return fmt.Errorf("queue is not initialized")
 	}

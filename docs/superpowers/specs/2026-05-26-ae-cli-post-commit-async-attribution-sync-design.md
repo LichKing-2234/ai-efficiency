@@ -141,6 +141,16 @@
 
 它**不再**直接在 hook 上下文中执行 `attributionlocal.SyncEngine.Run(...)`。
 
+repo eligibility 解析仍是 resolve-first：未过期 positive cache 可直接命中，cache miss / 过期时优先做一次 read-only `resolve-remote` 刷新。若该 hook binding 稳定，且本地已有带 `repo_config_id` 的过期 positive cache，刷新请求在 hook eligibility timeout 内失败、超时或不可用时，fast path 可以使用该 stale positive cache 继续上传 checkpoint 并创建 pending sync task。后端明确返回 not eligible 或返回缺失 `repo_config_id` 时，必须以新响应为准，不允许 stale cache 覆盖。
+
+Durability requirements:
+
+1. A captured checkpoint/rewrite event must be uploaded, queued, or explicitly reported as a local queue write failure.
+2. If repo eligibility cannot be resolved during hook execution, the hook stores an unresolved event with remote URL, workspace ID, commit SHA, and available auth/server subject so a later successful resolve can upload it with `repo_config_id`.
+3. Replay must preserve events whose stored binding does not match the current binding; mismatch is a deferred state, not a deletion reason.
+4. Corrupt queue/spool state is quarantined so valid events can continue to upload.
+5. Permanent backend rejection moves the offending event to dead-letter and continues with later valid events.
+
 后台 runner 的职责是：
 
 1. 读取 pending task
@@ -304,7 +314,8 @@ hook 中允许的耗时操作仅限：
 1. git 元信息读取
 2. 轻量 checkpoint 上传或 fail-open queue 写入
 3. `sync-task.json` 的读取和写入
-4. 一次短小的后台 runner 触发动作
+4. 一次有界的 read-only repo eligibility 刷新；刷新失败时可按上述 stale positive cache 兜底
+5. 一次短小的后台 runner 触发动作
 
 ### Background Trigger Contract
 

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -59,6 +60,8 @@ var runAttributionSync = func(ctx context.Context, opts attributionlocal.RunOpti
 	return engine.Run(ctx, opts)
 }
 
+var hookStderr io.Writer = os.Stderr
+
 func (h *Handler) attributionSyncClient() attributionlocal.BackendClient {
 	if h == nil || h.uploader == nil {
 		return nil
@@ -108,11 +111,21 @@ func (h *Handler) PostCommitResolved(ctx context.Context, execCtx ExecutionConte
 		CapturedAt:     time.Now().UTC().Format(time.RFC3339),
 	}
 	if h == nil || h.uploader == nil {
-		_ = enqueueForReplay(execCtx, ev)
+		queueForReplayOrWarn(execCtx, ev)
 	} else if err := h.uploader.UploadHookEvent(ctx, ev); err != nil {
-		_ = enqueueForReplay(execCtx, ev)
+		queueForReplayOrWarn(execCtx, ev)
 	}
 
+	h.schedulePendingSync(execCtx)
+	return nil
+}
+
+func (h *Handler) schedulePendingSync(execCtx ExecutionContext) {
+	workspaceID := strings.TrimSpace(execCtx.WorkspaceID)
+	repoRoot := strings.TrimSpace(execCtx.RepoRoot)
+	if workspaceID == "" || repoRoot == "" {
+		return
+	}
 	task := SyncTask{
 		WorkspaceID:     workspaceID,
 		RepoRoot:        repoRoot,
@@ -135,20 +148,19 @@ func (h *Handler) PostCommitResolved(ctx context.Context, execCtx ExecutionConte
 				currentTask = claimedTask
 			}
 			if claimErr != nil {
-				fmt.Fprintln(os.Stderr, "ae-cli: attribution sync pending for this repo; run 'ae-cli doctor' for details")
+				fmt.Fprintln(hookStderr, "ae-cli: attribution sync pending for this repo; run 'ae-cli doctor' for details")
 			} else if claimSpawn {
 				if err := spawnBackgroundSyncRunner(repoRoot); err != nil {
 					_ = MarkSyncTaskFailure(currentTask, time.Now().UTC(), err)
-					fmt.Fprintln(os.Stderr, "ae-cli: attribution sync pending for this repo; run 'ae-cli doctor' for details")
+					fmt.Fprintln(hookStderr, "ae-cli: attribution sync pending for this repo; run 'ae-cli doctor' for details")
 				}
 			} else if strings.TrimSpace(currentTask.LastError) != "" {
-				fmt.Fprintln(os.Stderr, "ae-cli: attribution sync pending for this repo; run 'ae-cli doctor' for details")
+				fmt.Fprintln(hookStderr, "ae-cli: attribution sync pending for this repo; run 'ae-cli doctor' for details")
 			}
 		}
 	} else {
-		fmt.Fprintln(os.Stderr, "ae-cli: attribution sync pending for this repo; run 'ae-cli doctor' for details")
+		fmt.Fprintln(hookStderr, "ae-cli: attribution sync pending for this repo; run 'ae-cli doctor' for details")
 	}
-	return nil
 }
 
 func (h *Handler) PostRewriteResolved(ctx context.Context, execCtx ExecutionContext, rewriteType string, stdin io.Reader) error {
@@ -187,13 +199,14 @@ func (h *Handler) PostRewriteResolved(ctx context.Context, execCtx ExecutionCont
 			CapturedAt:    time.Now().UTC().Format(time.RFC3339),
 		}
 		if h == nil || h.uploader == nil {
-			_ = enqueueForReplay(execCtx, ev)
+			queueForReplayOrWarn(execCtx, ev)
 			continue
 		}
 		if err := h.uploader.UploadHookEvent(ctx, ev); err != nil {
-			_ = enqueueForReplay(execCtx, ev)
+			queueForReplayOrWarn(execCtx, ev)
 		}
 	}
+	h.schedulePendingSync(execCtx)
 	return nil
 }
 
@@ -202,6 +215,139 @@ func (h *Handler) FlushResolved(ctx context.Context, execCtx ExecutionContext) e
 		return nil
 	}
 	return h.flushWorkspace(ctx, execCtx)
+}
+
+func (h *Handler) FlushUnresolvedResolved(ctx context.Context, execCtx ExecutionContext) error {
+	if !execCtx.hasStableReplayBinding() {
+		return nil
+	}
+	var items []UnresolvedHookEvent
+	if err := withUnresolvedQueueLock(func() error {
+		var err error
+		items, err = listUnresolvedHookEventsUnlocked()
+		return err
+	}); err != nil {
+		return err
+	}
+	if len(items) == 0 {
+		return nil
+	}
+
+	uploaded := map[string]bool{}
+	for _, item := range items {
+		if !unresolvedHookEventMatchesContext(item, execCtx) {
+			continue
+		}
+
+		var ev HookEvent
+		var eventID string
+		switch strings.TrimSpace(item.Kind) {
+		case "post-commit":
+			id, err := CheckpointEventID(eventIDRepoHint(execCtx), item.CommitSHA)
+			if err != nil {
+				continue
+			}
+			eventID = id
+			ev = HookEvent{
+				Kind:           "post-commit",
+				EventID:        eventID,
+				WorkspaceID:    execCtx.WorkspaceID,
+				ServerURL:      execCtx.ServerURL,
+				AuthSubject:    execCtx.AuthSubject,
+				RepoConfigID:   execCtx.RepoConfigID,
+				RepoKey:        execCtx.RepoKey,
+				RepoFullName:   firstNonEmptyValue(execCtx.RepoFullName, execCtx.RepoKey),
+				BindingSource:  "unbound",
+				AgentSnapshot:  item.AgentSnapshot,
+				CommitSHA:      item.CommitSHA,
+				ParentSHAs:     item.ParentSHAs,
+				BranchSnapshot: item.BranchSnapshot,
+				HeadSnapshot:   item.HeadSnapshot,
+				CapturedAt:     item.CapturedAt,
+			}
+		case "post-rewrite":
+			id, err := RewriteEventID(eventIDRepoHint(execCtx), item.OldCommitSHA, item.NewCommitSHA, item.RewriteType)
+			if err != nil {
+				continue
+			}
+			eventID = id
+			ev = HookEvent{
+				Kind:          "post-rewrite",
+				EventID:       eventID,
+				WorkspaceID:   execCtx.WorkspaceID,
+				ServerURL:     execCtx.ServerURL,
+				AuthSubject:   execCtx.AuthSubject,
+				RepoConfigID:  execCtx.RepoConfigID,
+				RepoKey:       execCtx.RepoKey,
+				RepoFullName:  firstNonEmptyValue(execCtx.RepoFullName, execCtx.RepoKey),
+				BindingSource: "unbound",
+				RewriteType:   item.RewriteType,
+				OldCommitSHA:  item.OldCommitSHA,
+				NewCommitSHA:  item.NewCommitSHA,
+				CapturedAt:    item.CapturedAt,
+			}
+		default:
+			continue
+		}
+		if h == nil || h.uploader == nil {
+			continue
+		}
+		if err := h.uploader.UploadHookEvent(ctx, ev); err != nil {
+			continue
+		}
+		uploaded[eventID] = true
+	}
+	if len(uploaded) == 0 {
+		return nil
+	}
+	return withUnresolvedQueueLock(func() error {
+		current, err := listUnresolvedHookEventsUnlocked()
+		if err != nil {
+			return err
+		}
+		var keep []UnresolvedHookEvent
+		for _, item := range current {
+			if !unresolvedHookEventMatchesContext(item, execCtx) || !uploaded[unresolvedHookEventID(item, execCtx)] {
+				keep = append(keep, item)
+			}
+		}
+		return saveUnresolvedHookEventsUnlocked(keep)
+	})
+}
+
+func unresolvedHookEventMatchesContext(item UnresolvedHookEvent, execCtx ExecutionContext) bool {
+	if strings.TrimSpace(item.WorkspaceID) != strings.TrimSpace(execCtx.WorkspaceID) {
+		return false
+	}
+	itemServerURL := normalizeHookServerURL(item.ServerURL)
+	execServerURL := normalizeHookServerURL(execCtx.ServerURL)
+	if itemServerURL == "" || itemServerURL != execServerURL {
+		return false
+	}
+	if strings.TrimSpace(item.AuthSubject) == "" || strings.TrimSpace(item.AuthSubject) != strings.TrimSpace(execCtx.AuthSubject) {
+		return false
+	}
+	if strings.TrimSpace(item.RepoKey) == "" || strings.TrimSpace(item.RepoKey) != strings.TrimSpace(execCtx.RepoKey) {
+		return false
+	}
+	return true
+}
+
+func unresolvedHookEventID(item UnresolvedHookEvent, execCtx ExecutionContext) string {
+	var eventID string
+	var err error
+	switch strings.TrimSpace(item.Kind) {
+	case "post-commit":
+		eventID, err = CheckpointEventID(eventIDRepoHint(execCtx), item.CommitSHA)
+	case "post-rewrite":
+		eventID, err = RewriteEventID(eventIDRepoHint(execCtx), item.OldCommitSHA, item.NewCommitSHA, item.RewriteType)
+	default:
+		return ""
+	}
+	if err != nil {
+		return ""
+	}
+	return eventID
 }
 
 func gitOutput(dir string, args ...string) (string, error) {
@@ -215,6 +361,10 @@ func gitOutput(dir string, args ...string) (string, error) {
 		return "", fmt.Errorf("git %s: %w (stderr=%s)", strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
 	}
 	return strings.TrimSpace(stdout.String()), nil
+}
+
+func GitOutputForHook(dir string, args ...string) (string, error) {
+	return gitOutput(dir, args...)
 }
 
 func absUnder(root, p string) (string, error) {
@@ -268,6 +418,10 @@ func branchSnapshot(cwd string) string {
 	return strings.TrimSpace(branch)
 }
 
+func BranchSnapshotForHook(cwd string) string {
+	return branchSnapshot(cwd)
+}
+
 func parentSHAs(cwd string) []string {
 	line, err := gitOutput(cwd, "rev-list", "--parents", "-n", "1", "HEAD")
 	if err != nil {
@@ -278,6 +432,10 @@ func parentSHAs(cwd string) []string {
 		return nil
 	}
 	return fields[1:]
+}
+
+func ParentSHAsForHook(cwd string) []string {
+	return parentSHAs(cwd)
 }
 
 func (h *Handler) PostCommit(ctx context.Context, cwd string) error {
@@ -311,6 +469,10 @@ func parsePostRewritePairs(r io.Reader) ([][2]string, error) {
 	return out, nil
 }
 
+func ParsePostRewritePairs(r io.Reader) ([][2]string, error) {
+	return parsePostRewritePairs(r)
+}
+
 func (h *Handler) PostRewrite(ctx context.Context, cwd string, rewriteType string, stdin io.Reader) error {
 	gitCtx, err := DetectGitContext(cwd)
 	if err != nil {
@@ -332,15 +494,19 @@ func (h *Handler) flushWorkspace(ctx context.Context, execCtx ExecutionContext) 
 	if err != nil {
 		return err
 	}
-	items, err := q.List()
-	if err != nil {
+	var items []QueueItem
+	if err := q.withLock(func() error {
+		var err error
+		items, err = q.listUnlocked()
+		return err
+	}); err != nil {
 		return err
 	}
 	if len(items) == 0 {
 		return nil
 	}
 
-	var keep []QueueItem
+	uploaded := map[string]bool{}
 	for _, it := range items {
 		now := time.Now().UTC()
 		if !hookEventMatchesContext(it.Event, execCtx) {
@@ -352,7 +518,7 @@ func (h *Handler) flushWorkspace(ctx context.Context, execCtx ExecutionContext) 
 				RepoConfigID: execCtx.RepoConfigID,
 				RepoKey:      execCtx.RepoKey,
 				WorkspaceID:  execCtx.WorkspaceID,
-				Status:       "skipped",
+				Status:       "deferred",
 				AttemptCount: 1,
 				AttemptedAt:  now,
 				LastError:    "context mismatch",
@@ -360,7 +526,6 @@ func (h *Handler) flushWorkspace(ctx context.Context, execCtx ExecutionContext) 
 			continue
 		}
 		if h == nil || h.uploader == nil {
-			keep = append(keep, it)
 			continue
 		}
 		if err := h.uploader.UploadHookEvent(ctx, it.Event); err != nil {
@@ -377,7 +542,6 @@ func (h *Handler) flushWorkspace(ctx context.Context, execCtx ExecutionContext) 
 				AttemptedAt:  now,
 				LastError:    err.Error(),
 			})
-			keep = append(keep, it)
 			continue
 		}
 		_ = AppendLedger(execCtx.WorkspaceID, LedgerRecord{
@@ -393,8 +557,24 @@ func (h *Handler) flushWorkspace(ctx context.Context, execCtx ExecutionContext) 
 			AttemptedAt:  now,
 			UploadedAt:   &now,
 		})
+		uploaded[it.Event.EventID] = true
 	}
-	return q.rewrite(keep)
+	if len(uploaded) == 0 {
+		return nil
+	}
+	return q.withLock(func() error {
+		current, err := q.listUnlocked()
+		if err != nil {
+			return err
+		}
+		var keep []QueueItem
+		for _, it := range current {
+			if !hookEventMatchesContext(it.Event, execCtx) || !uploaded[strings.TrimSpace(it.Event.EventID)] {
+				keep = append(keep, it)
+			}
+		}
+		return q.rewriteUnlocked(keep)
+	})
 }
 
 func enqueueForReplay(execCtx ExecutionContext, ev HookEvent) error {
@@ -408,6 +588,12 @@ func enqueueForReplay(execCtx ExecutionContext, ev HookEvent) error {
 	return q.Enqueue(ev)
 }
 
+func queueForReplayOrWarn(execCtx ExecutionContext, ev HookEvent) {
+	if err := enqueueForReplay(execCtx, ev); err != nil {
+		fmt.Fprintf(hookStderr, "ae-cli: failed to queue %s event for replay: %v\n", ledgerKind(ev.Kind), err)
+	}
+}
+
 func (c ExecutionContext) hasStableReplayBinding() bool {
 	return c.DurableReplay &&
 		strings.TrimSpace(c.ServerURL) != "" &&
@@ -418,11 +604,26 @@ func (c ExecutionContext) hasStableReplayBinding() bool {
 }
 
 func hookEventMatchesContext(ev HookEvent, execCtx ExecutionContext) bool {
-	return strings.TrimSpace(ev.ServerURL) == strings.TrimSpace(execCtx.ServerURL) &&
+	return normalizeHookServerURL(ev.ServerURL) == normalizeHookServerURL(execCtx.ServerURL) &&
 		strings.TrimSpace(ev.AuthSubject) == strings.TrimSpace(execCtx.AuthSubject) &&
 		ev.RepoConfigID == execCtx.RepoConfigID &&
 		strings.TrimSpace(ev.RepoKey) == strings.TrimSpace(execCtx.RepoKey) &&
 		strings.TrimSpace(ev.WorkspaceID) == strings.TrimSpace(execCtx.WorkspaceID)
+}
+
+func normalizeHookServerURL(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return strings.TrimRight(raw, "/")
+	}
+	u.Scheme = strings.ToLower(u.Scheme)
+	u.Host = strings.ToLower(u.Host)
+	u.Path = strings.TrimRight(u.Path, "/")
+	return u.String()
 }
 
 func eventIDRepoHint(execCtx ExecutionContext) string {

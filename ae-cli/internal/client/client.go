@@ -15,6 +15,42 @@ import (
 // ErrNotFound is returned when the backend responds with 404.
 var ErrNotFound = errors.New("not found")
 
+type HTTPStatusError struct {
+	Endpoint   string
+	StatusCode int
+	Body       string
+}
+
+func (e *HTTPStatusError) Error() string {
+	if e == nil {
+		return ""
+	}
+	return fmt.Sprintf("unexpected %s status %d: %s", e.Endpoint, e.StatusCode, e.Body)
+}
+
+func IsPermanentToolUsageError(err error) bool {
+	var statusErr *HTTPStatusError
+	if !errors.As(err, &statusErr) {
+		return false
+	}
+	return statusErr.StatusCode == http.StatusBadRequest ||
+		statusErr.StatusCode == http.StatusUnprocessableEntity
+}
+
+func IsToolUsageBatchIsolationError(err error) bool {
+	var statusErr *HTTPStatusError
+	if !errors.As(err, &statusErr) {
+		return false
+	}
+	if strings.TrimSpace(statusErr.Endpoint) != "tool usage batch" {
+		return false
+	}
+	return statusErr.StatusCode == http.StatusBadRequest ||
+		statusErr.StatusCode == http.StatusNotFound ||
+		statusErr.StatusCode == http.StatusMethodNotAllowed ||
+		statusErr.StatusCode == http.StatusUnprocessableEntity
+}
+
 type Client struct {
 	baseURL    string
 	token      string
@@ -242,9 +278,10 @@ func (c *Client) SendToolUsageEvent(ctx context.Context, req ToolUsageEventReque
 			respBody, _ := io.ReadAll(io.LimitReader(resp.Body, toolUsageErrorBodyLimit))
 			_ = resp.Body.Close()
 			cancel()
-			lastErr = fmt.Errorf("unexpected tool usage status %d: %s", resp.StatusCode, string(respBody))
+			statusErr := &HTTPStatusError{Endpoint: "tool usage", StatusCode: resp.StatusCode, Body: string(respBody)}
+			lastErr = statusErr
 			if !isRetryableToolUsageStatus(resp.StatusCode) {
-				return lastErr
+				return statusErr
 			}
 		}
 		if attempt < len(toolUsageRetryBackoffs) {
@@ -291,12 +328,10 @@ func (c *Client) SendToolUsageEvents(ctx context.Context, reqs []ToolUsageEventR
 			respBody, _ := io.ReadAll(io.LimitReader(resp.Body, toolUsageErrorBodyLimit))
 			_ = resp.Body.Close()
 			cancel()
-			if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusMethodNotAllowed || resp.StatusCode == http.StatusBadRequest || resp.StatusCode == http.StatusUnprocessableEntity {
-				return c.sendToolUsageEventsIndividually(ctx, reqs, fmt.Errorf("unexpected tool usage batch status %d: %s", resp.StatusCode, string(respBody)))
-			}
-			lastErr = fmt.Errorf("unexpected tool usage batch status %d: %s", resp.StatusCode, string(respBody))
+			statusErr := &HTTPStatusError{Endpoint: "tool usage batch", StatusCode: resp.StatusCode, Body: string(respBody)}
+			lastErr = statusErr
 			if !isRetryableToolUsageStatus(resp.StatusCode) {
-				return lastErr
+				return statusErr
 			}
 		}
 		if attempt < len(toolUsageRetryBackoffs) {
@@ -306,15 +341,6 @@ func (c *Client) SendToolUsageEvents(ctx context.Context, reqs []ToolUsageEventR
 		}
 	}
 	return lastErr
-}
-
-func (c *Client) sendToolUsageEventsIndividually(ctx context.Context, reqs []ToolUsageEventRequest, batchErr error) error {
-	for _, req := range reqs {
-		if err := c.SendToolUsageEvent(ctx, req); err != nil {
-			return fmt.Errorf("%w; fallback single upload failed: %w", batchErr, err)
-		}
-	}
-	return nil
 }
 
 func isRetryableToolUsageStatus(status int) bool {

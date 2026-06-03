@@ -127,6 +127,21 @@ func (c *EligibilityCache) Lookup(ctx Context, now time.Time, hasUsableCredentia
 	return EligibilityRecord{}, false
 }
 
+func (c *EligibilityCache) LookupStalePositive(ctx Context, hasUsableCredential bool) (EligibilityRecord, bool) {
+	if c == nil || !hasUsableCredential {
+		return EligibilityRecord{}, false
+	}
+	c.ensure()
+	n := ctx.Normalized()
+	key := n.CacheKey()
+	if rec, ok := c.Repos[key]; ok {
+		if eligibilityRecordMatches(rec, n) && rec.Eligible && rec.RepoConfigID > 0 {
+			return rec, true
+		}
+	}
+	return EligibilityRecord{}, false
+}
+
 func (c *EligibilityCache) Save() error {
 	if c == nil {
 		return nil

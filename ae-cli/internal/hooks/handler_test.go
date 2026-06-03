@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -237,6 +236,189 @@ func TestPostCommitResolvedQueuesOnlyWithStableBinding(t *testing.T) {
 	}
 }
 
+func TestPostCommitResolvedReportsQueueFailure(t *testing.T) {
+	repo := initRepoWithCommit2(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	execCtx := resolvedContextForRepo(t, repo)
+
+	workspaceDir := filepath.Join(attributionlocal.AttributionRootDir(), "workspaces", execCtx.WorkspaceID)
+	if err := os.MkdirAll(workspaceDir, 0o700); err != nil {
+		t.Fatalf("mkdir workspace dir: %v", err)
+	}
+	queuePath, err := workspaceQueuePath(execCtx.WorkspaceID)
+	if err != nil {
+		t.Fatalf("workspaceQueuePath: %v", err)
+	}
+	if err := os.MkdirAll(queuePath, 0o700); err != nil {
+		t.Fatalf("mkdir queue path as directory: %v", err)
+	}
+
+	var stderr bytes.Buffer
+	oldStderr := hookStderr
+	hookStderr = &stderr
+	t.Cleanup(func() { hookStderr = oldStderr })
+
+	u := &fakeUploader{err: errors.New("upload failed")}
+	if err := NewHandler(u).PostCommitResolved(context.Background(), execCtx); err != nil {
+		t.Fatalf("PostCommitResolved: %v", err)
+	}
+	if !strings.Contains(stderr.String(), "failed to queue checkpoint event") {
+		t.Fatalf("stderr = %q, want queue failure warning", stderr.String())
+	}
+}
+
+func TestFlushUnresolvedResolvedUploadsMatchingEventAndRemovesIt(t *testing.T) {
+	repo := initRepoWithCommit2(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	execCtx := resolvedContextForRepo(t, repo)
+
+	if err := EnqueueUnresolvedHookEvent(UnresolvedHookEvent{
+		Kind:           "post-commit",
+		RemoteURL:      "https://github.com/acme/repo.git",
+		RepoKey:        execCtx.RepoKey,
+		WorkspaceID:    execCtx.WorkspaceID,
+		ServerURL:      execCtx.ServerURL,
+		AuthSubject:    execCtx.AuthSubject,
+		CommitSHA:      "abc123",
+		BranchSnapshot: "main",
+		HeadSnapshot:   "abc123",
+		CapturedAt:     "2026-06-02T09:00:00Z",
+	}); err != nil {
+		t.Fatalf("EnqueueUnresolvedHookEvent: %v", err)
+	}
+
+	u := &fakeUploader{}
+	if err := NewHandler(u).FlushUnresolvedResolved(context.Background(), execCtx); err != nil {
+		t.Fatalf("FlushUnresolvedResolved: %v", err)
+	}
+	if len(u.events) != 1 || u.events[0].CommitSHA != "abc123" || u.events[0].RepoConfigID != execCtx.RepoConfigID {
+		t.Fatalf("uploaded events = %+v, want resolved checkpoint upload", u.events)
+	}
+	items, err := ListUnresolvedHookEvents()
+	if err != nil {
+		t.Fatalf("ListUnresolvedHookEvents: %v", err)
+	}
+	if len(items) != 0 {
+		t.Fatalf("remaining unresolved items = %+v, want none", items)
+	}
+}
+
+func TestFlushUnresolvedResolvedKeepsEventWithoutStableStoredBinding(t *testing.T) {
+	repo := initRepoWithCommit2(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	execCtx := resolvedContextForRepo(t, repo)
+
+	if err := EnqueueUnresolvedHookEvent(UnresolvedHookEvent{
+		Kind:           "post-commit",
+		RemoteURL:      "https://github.com/acme/repo.git",
+		RepoKey:        execCtx.RepoKey,
+		WorkspaceID:    execCtx.WorkspaceID,
+		CommitSHA:      "abc123",
+		BranchSnapshot: "main",
+		HeadSnapshot:   "abc123",
+		CapturedAt:     "2026-06-02T09:00:00Z",
+	}); err != nil {
+		t.Fatalf("EnqueueUnresolvedHookEvent: %v", err)
+	}
+
+	u := &fakeUploader{}
+	if err := NewHandler(u).FlushUnresolvedResolved(context.Background(), execCtx); err != nil {
+		t.Fatalf("FlushUnresolvedResolved: %v", err)
+	}
+	if len(u.events) != 0 {
+		t.Fatalf("uploaded events = %+v, want none for unresolved event without stored server/auth binding", u.events)
+	}
+	items, err := ListUnresolvedHookEvents()
+	if err != nil {
+		t.Fatalf("ListUnresolvedHookEvents: %v", err)
+	}
+	if len(items) != 1 || items[0].CommitSHA != "abc123" {
+		t.Fatalf("remaining unresolved items = %+v, want original event preserved", items)
+	}
+}
+
+func TestFlushUnresolvedResolvedUploadsMatchingRewriteEventAndRemovesIt(t *testing.T) {
+	repo := initRepoWithCommit2(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	execCtx := resolvedContextForRepo(t, repo)
+
+	if err := EnqueueUnresolvedHookEvent(UnresolvedHookEvent{
+		Kind:         "post-rewrite",
+		RemoteURL:    "https://github.com/acme/repo.git",
+		RepoKey:      execCtx.RepoKey,
+		WorkspaceID:  execCtx.WorkspaceID,
+		ServerURL:    execCtx.ServerURL,
+		AuthSubject:  execCtx.AuthSubject,
+		RewriteType:  "amend",
+		OldCommitSHA: "oldsha1",
+		NewCommitSHA: "newsha1",
+		CapturedAt:   "2026-06-02T09:00:00Z",
+	}); err != nil {
+		t.Fatalf("EnqueueUnresolvedHookEvent: %v", err)
+	}
+
+	u := &fakeUploader{}
+	if err := NewHandler(u).FlushUnresolvedResolved(context.Background(), execCtx); err != nil {
+		t.Fatalf("FlushUnresolvedResolved: %v", err)
+	}
+	if len(u.events) != 1 {
+		t.Fatalf("uploaded events = %+v, want resolved rewrite upload", u.events)
+	}
+	ev := u.events[0]
+	if ev.Kind != "post-rewrite" || ev.RewriteType != "amend" || ev.OldCommitSHA != "oldsha1" || ev.NewCommitSHA != "newsha1" || ev.RepoConfigID != execCtx.RepoConfigID {
+		t.Fatalf("uploaded rewrite event = %+v, want resolved rewrite context", ev)
+	}
+	wantID, err := RewriteEventID("repo_config_id:123", "oldsha1", "newsha1", "amend")
+	if err != nil {
+		t.Fatalf("RewriteEventID: %v", err)
+	}
+	if ev.EventID != wantID {
+		t.Fatalf("event_id = %q, want %q", ev.EventID, wantID)
+	}
+	items, err := ListUnresolvedHookEvents()
+	if err != nil {
+		t.Fatalf("ListUnresolvedHookEvents: %v", err)
+	}
+	if len(items) != 0 {
+		t.Fatalf("remaining unresolved items = %+v, want none", items)
+	}
+}
+
+func TestFlushUnresolvedResolvedMatchesNormalizedServerURL(t *testing.T) {
+	repo := initRepoWithCommit2(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	execCtx := resolvedContextForRepo(t, repo)
+	execCtx.ServerURL = "https://ae.example.com"
+
+	if err := EnqueueUnresolvedHookEvent(UnresolvedHookEvent{
+		Kind:           "post-commit",
+		RemoteURL:      "https://github.com/acme/repo.git",
+		RepoKey:        execCtx.RepoKey,
+		WorkspaceID:    execCtx.WorkspaceID,
+		ServerURL:      "https://AE.example.com/",
+		AuthSubject:    execCtx.AuthSubject,
+		CommitSHA:      "abc123",
+		BranchSnapshot: "main",
+		HeadSnapshot:   "abc123",
+		CapturedAt:     "2026-06-02T09:00:00Z",
+	}); err != nil {
+		t.Fatalf("EnqueueUnresolvedHookEvent: %v", err)
+	}
+
+	u := &fakeUploader{}
+	if err := NewHandler(u).FlushUnresolvedResolved(context.Background(), execCtx); err != nil {
+		t.Fatalf("FlushUnresolvedResolved: %v", err)
+	}
+	if len(u.events) != 1 || u.events[0].CommitSHA != "abc123" {
+		t.Fatalf("uploaded events = %+v, want normalized server match upload", u.events)
+	}
+}
+
 func TestPostCommitResolvedLeavesQueuedEventsForAsyncRunner(t *testing.T) {
 	repo := initRepoWithCommit2(t)
 	home := t.TempDir()
@@ -322,15 +504,117 @@ func TestFlushResolvedSkipsContextMismatchAndWritesLedger(t *testing.T) {
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
-	if len(items) != 0 {
-		t.Fatalf("items after mismatch skip = %d, want 0", len(items))
+	if len(items) != 1 || items[0].Event.EventID != "evt-mismatch" {
+		t.Fatalf("items after mismatch defer = %+v, want mismatched event preserved", items)
 	}
 	records, err := ReadLedger(execCtx.WorkspaceID)
 	if err != nil {
 		t.Fatalf("ReadLedger: %v", err)
 	}
-	if len(records) != 1 || records[0].Status != "skipped" || records[0].DedupeKey != "evt-mismatch" {
-		t.Fatalf("ledger records = %+v, want skipped mismatch", records)
+	if len(records) != 1 || records[0].Status != "deferred" || records[0].DedupeKey != "evt-mismatch" {
+		t.Fatalf("ledger records = %+v, want deferred mismatch", records)
+	}
+}
+
+func TestFlushResolvedDoesNotDropConcurrentEnqueueDuringUpload(t *testing.T) {
+	repo := initRepoWithCommit2(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	execCtx := resolvedContextForRepo(t, repo)
+
+	q, err := NewWorkspaceQueue(execCtx.WorkspaceID)
+	if err != nil {
+		t.Fatalf("NewWorkspaceQueue: %v", err)
+	}
+	if err := q.Enqueue(HookEvent{
+		Kind:         "post-commit",
+		EventID:      "evt-first",
+		WorkspaceID:  execCtx.WorkspaceID,
+		ServerURL:    execCtx.ServerURL,
+		AuthSubject:  execCtx.AuthSubject,
+		RepoConfigID: execCtx.RepoConfigID,
+		RepoKey:      execCtx.RepoKey,
+		CommitSHA:    "first",
+	}); err != nil {
+		t.Fatalf("Enqueue(first): %v", err)
+	}
+
+	var enqueueErr error
+	u := &fakeUploader{onCall: func() {
+		enqueueErr = q.Enqueue(HookEvent{
+			Kind:         "post-commit",
+			EventID:      "evt-second",
+			WorkspaceID:  execCtx.WorkspaceID,
+			ServerURL:    execCtx.ServerURL,
+			AuthSubject:  execCtx.AuthSubject,
+			RepoConfigID: execCtx.RepoConfigID,
+			RepoKey:      execCtx.RepoKey,
+			CommitSHA:    "second",
+		})
+	}}
+	if err := NewHandler(u).FlushResolved(context.Background(), execCtx); err != nil {
+		t.Fatalf("FlushResolved: %v", err)
+	}
+	if enqueueErr != nil {
+		t.Fatalf("concurrent enqueue during upload: %v", enqueueErr)
+	}
+	items, err := q.List()
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(items) != 1 || items[0].Event.EventID != "evt-second" {
+		t.Fatalf("queue after flush = %+v, want concurrent second event preserved", items)
+	}
+}
+
+func TestFlushResolvedDoesNotDropMismatchedEventWithUploadedEventID(t *testing.T) {
+	repo := initRepoWithCommit2(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	execCtx := resolvedContextForRepo(t, repo)
+
+	q, err := NewWorkspaceQueue(execCtx.WorkspaceID)
+	if err != nil {
+		t.Fatalf("NewWorkspaceQueue: %v", err)
+	}
+	if err := q.rewrite([]QueueItem{
+		{Event: HookEvent{
+			Kind:         "post-commit",
+			EventID:      "evt-shared",
+			WorkspaceID:  execCtx.WorkspaceID,
+			ServerURL:    execCtx.ServerURL,
+			AuthSubject:  execCtx.AuthSubject,
+			RepoConfigID: execCtx.RepoConfigID,
+			RepoKey:      execCtx.RepoKey,
+			CommitSHA:    "matching",
+		}},
+		{Event: HookEvent{
+			Kind:         "post-commit",
+			EventID:      "evt-shared",
+			WorkspaceID:  execCtx.WorkspaceID,
+			ServerURL:    "https://other.example.com",
+			AuthSubject:  execCtx.AuthSubject,
+			RepoConfigID: execCtx.RepoConfigID,
+			RepoKey:      execCtx.RepoKey,
+			CommitSHA:    "mismatched",
+		}},
+	}); err != nil {
+		t.Fatalf("seed duplicate-id queue: %v", err)
+	}
+
+	u := &fakeUploader{}
+	if err := NewHandler(u).FlushResolved(context.Background(), execCtx); err != nil {
+		t.Fatalf("FlushResolved: %v", err)
+	}
+	if len(u.events) != 1 || u.events[0].CommitSHA != "matching" {
+		t.Fatalf("uploaded events = %+v, want only matching event", u.events)
+	}
+	items, err := q.List()
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(items) != 1 || items[0].Event.CommitSHA != "mismatched" {
+		t.Fatalf("queue after flush = %+v, want mismatched shared-id event preserved", items)
 	}
 }
 
@@ -369,6 +653,36 @@ func TestPostRewriteResolvedQueuesEventsWhenUploadFails(t *testing.T) {
 	}
 	if ev.EventID != wantID {
 		t.Fatalf("queued event_id = %q, want %q", ev.EventID, wantID)
+	}
+}
+
+func TestPostRewriteResolvedCreatesPendingSyncTaskWhenUploadFails(t *testing.T) {
+	repo := initRepoWithCommit2(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	execCtx := resolvedContextForRepo(t, repo)
+
+	origSpawn := spawnBackgroundSyncRunner
+	spawned := false
+	spawnBackgroundSyncRunner = func(repoRoot string) error {
+		spawned = true
+		return nil
+	}
+	t.Cleanup(func() { spawnBackgroundSyncRunner = origSpawn })
+
+	u := syncCapableFakeUploader{fakeUploader: &fakeUploader{err: errors.New("rewrite upload failed")}}
+	if err := NewHandler(u).PostRewriteResolved(context.Background(), execCtx, "amend", strings.NewReader("oldsha1 newsha1\n")); err != nil {
+		t.Fatalf("PostRewriteResolved: %v", err)
+	}
+	task, err := LoadSyncTask(execCtx.WorkspaceID)
+	if err != nil {
+		t.Fatalf("LoadSyncTask: %v", err)
+	}
+	if task == nil || task.Status != SyncTaskStatusPending {
+		t.Fatalf("task = %+v, want pending task", task)
+	}
+	if !spawned {
+		t.Fatalf("background sync runner was not spawned")
 	}
 }
 
@@ -549,25 +863,17 @@ func TestPostCommitWarnsWhenBackgroundRunnerSpawnFails(t *testing.T) {
 	}
 	t.Cleanup(func() { spawnBackgroundSyncRunner = origSpawn })
 
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("os.Pipe: %v", err)
-	}
-	oldStderr := os.Stderr
-	os.Stderr = w
-	t.Cleanup(func() { os.Stderr = oldStderr })
+	var stderr bytes.Buffer
+	oldStderr := hookStderr
+	hookStderr = &stderr
+	t.Cleanup(func() { hookStderr = oldStderr })
 
 	h := NewHandler(syncCapableFakeUploader{fakeUploader: &fakeUploader{}})
 	if err := h.PostCommitResolved(context.Background(), execCtx); err != nil {
 		t.Fatalf("PostCommitResolved: %v", err)
 	}
-	_ = w.Close()
-	output, err := io.ReadAll(r)
-	if err != nil {
-		t.Fatalf("ReadAll(stderr): %v", err)
-	}
-	if !strings.Contains(string(output), "ae-cli: attribution sync pending for this repo; run 'ae-cli doctor' for details") {
-		t.Fatalf("stderr = %q, want backlog warning", string(output))
+	if !strings.Contains(stderr.String(), "ae-cli: attribution sync pending for this repo; run 'ae-cli doctor' for details") {
+		t.Fatalf("stderr = %q, want backlog warning", stderr.String())
 	}
 }
 

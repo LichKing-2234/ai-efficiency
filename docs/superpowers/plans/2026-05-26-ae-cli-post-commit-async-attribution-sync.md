@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go CLI with Cobra commands, git hook helpers in `ae-cli/internal/hooks`, attribution scanner/uploader in `ae-cli/internal/attributionlocal`, git-based tests with `go test`, markdown architecture/spec docs.
 
-**Status:** Complete with active follow-up. PR created: https://github.com/LichKing-2234/ai-efficiency/pull/59. Follow-ups on 2026-05-27 fixed linked-worktree Codex session matching after real local verification found checkpoint uploads without matching `/events` rows, bounded tool-usage upload / runner execution after a live manual sync exposed a stuck HTTPS connection, replayed already-spooled usage before cold scans after local `~/.codex/sessions` volume blocked backlog upload, preserved newest-first replay for newly scanned spool entries, compacted managed spool files, and added compatible batch ingest to reduce backlog upload round trips.
+**Status:** Complete with active follow-up. PR created: https://github.com/LichKing-2234/ai-efficiency/pull/59. Follow-ups on 2026-05-27 fixed linked-worktree Codex session matching after real local verification found checkpoint uploads without matching `/events` rows, bounded tool-usage upload / runner execution after a live manual sync exposed a stuck HTTPS connection, replayed already-spooled usage before cold scans after local `~/.codex/sessions` volume blocked backlog upload, preserved newest-first replay for newly scanned spool entries, compacted managed spool files, and added compatible batch ingest to reduce backlog upload round trips. A 2026-06-02 follow-up fixed expired eligibility cache durability by allowing stable stale-positive hook bindings to keep checkpoint upload and pending sync task creation when fresh `resolve-remote` refresh times out or is unavailable.
 
 ---
 

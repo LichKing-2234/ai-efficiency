@@ -632,6 +632,21 @@ func TestStatusForRepoWithUploadsSummarizesQueueAndLedger(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("AppendLedger failed: %v", err)
 	}
+	if err := AppendLedger(gitCtx.WorkspaceID, LedgerRecord{
+		Kind:         "checkpoint",
+		DedupeKey:    "deferred-1",
+		ServerURL:    "https://ae.example.com",
+		AuthSubject:  "user:1",
+		RepoConfigID: 123,
+		RepoKey:      gitCtx.RepoKey,
+		WorkspaceID:  gitCtx.WorkspaceID,
+		Status:       "deferred",
+		AttemptCount: 1,
+		AttemptedAt:  failedAt.Add(time.Minute),
+		LastError:    "context mismatch",
+	}); err != nil {
+		t.Fatalf("AppendLedger deferred: %v", err)
+	}
 
 	status, err := StatusForRepo(StatusOptions{CWD: repo, Uploads: true})
 	if err != nil {
@@ -644,8 +659,8 @@ func TestStatusForRepoWithUploadsSummarizesQueueAndLedger(t *testing.T) {
 	if group.ServerURL != "https://ae.example.com" || group.AuthSubject != "user:1" || group.RepoConfigID != 123 || group.RepoKey != gitCtx.RepoKey || group.WorkspaceID != gitCtx.WorkspaceID {
 		t.Fatalf("group binding = %+v, want current binding", group)
 	}
-	if group.PendingCount != 1 || group.UploadedCount != 1 || group.FailedCount != 1 || group.LastError != "backend unavailable" {
-		t.Fatalf("group counts/error = %+v, want pending/uploaded/failed summary", group)
+	if group.PendingCount != 1 || group.UploadedCount != 1 || group.FailedCount != 1 || group.DeferredCount != 1 || group.LastError != "context mismatch" {
+		t.Fatalf("group counts/error = %+v, want pending/uploaded/failed/deferred summary", group)
 	}
 	if group.LastSuccessfulUpload == nil || !group.LastSuccessfulUpload.Equal(uploadedAt) {
 		t.Fatalf("LastSuccessfulUpload = %v, want %v", group.LastSuccessfulUpload, uploadedAt)

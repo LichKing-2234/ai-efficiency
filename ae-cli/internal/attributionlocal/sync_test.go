@@ -1,12 +1,17 @@
 package attributionlocal
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/ai-efficiency/ae-cli/internal/client"
 )
 
 func TestSync_ReplaysSpooledEventsBeforeNewScan(t *testing.T) {
@@ -93,6 +98,47 @@ func TestSync_ReplayDropsAlreadyUploadedPrefixOnFailure(t *testing.T) {
 	}
 }
 
+func TestSync_ReplayDeadLettersPermanentFailureAndContinues(t *testing.T) {
+	fixture := setupSyncEngineWithSpool(t)
+	fixture.Client.failOn = "spooled-dedupe-key"
+	fixture.Client.failWith = &client.HTTPStatusError{Endpoint: "tool usage", StatusCode: http.StatusUnprocessableEntity, Body: "bad event"}
+	second := LocalToolUsageEvent{
+		Tool:            "codex",
+		WorkspaceID:     "ws-1",
+		ToolSessionID:   "conv-2",
+		ToolEventID:     "resp-2",
+		DedupeKey:       "good-after-bad",
+		UsageUnit:       UsageUnitToken,
+		RequestCount:    1,
+		ObservedStartAt: jsonTime("2026-05-13T10:00:02Z"),
+		ObservedEndAt:   jsonTime("2026-05-13T10:00:03Z"),
+	}
+	if err := appendSpooledEvents(fixture.Engine.spoolPath, []LocalToolUsageEvent{second}); err != nil {
+		t.Fatalf("appendSpooledEvents(second): %v", err)
+	}
+
+	if err := fixture.Engine.Replay(context.Background(), "/tmp/repo"); err != nil {
+		t.Fatalf("Replay: %v", err)
+	}
+	if !fixture.Client.SawUpload("good-after-bad") {
+		t.Fatalf("uploads = %+v, want good event after bad event", fixture.Client.uploads)
+	}
+	remaining, err := loadSpooledEvents(fixture.Engine.spoolPath)
+	if err != nil {
+		t.Fatalf("loadSpooledEvents: %v", err)
+	}
+	if len(remaining) != 0 {
+		t.Fatalf("remaining spool = %+v, want no retryable items", remaining)
+	}
+	deadLetters, err := loadToolUsageDeadLetters(filepath.Dir(fixture.Engine.spoolPath))
+	if err != nil {
+		t.Fatalf("loadToolUsageDeadLetters: %v", err)
+	}
+	if len(deadLetters) != 1 || deadLetters[0].Event.DedupeKey != "spooled-dedupe-key" {
+		t.Fatalf("deadLetters = %+v, want failed spooled event", deadLetters)
+	}
+}
+
 func TestSync_ReplayPrioritizesNewestSpooledEvents(t *testing.T) {
 	t.Parallel()
 
@@ -166,6 +212,206 @@ func TestSync_ReplayUsesBatchUploadsWhenAvailable(t *testing.T) {
 	}
 	if got := clientStub.batches[0]; len(got) != 2 || got[0] != "first-dedupe-key" || got[1] != "second-dedupe-key" {
 		t.Fatalf("batch = %+v, want ordered two-event upload", got)
+	}
+}
+
+func TestSync_ReplayDeadLettersPermanentBatchFailureIndividually(t *testing.T) {
+	clientStub := &syncBatchBackendClientStub{}
+	clientStub.failOn = "bad-dedupe-key"
+	clientStub.failWith = &client.HTTPStatusError{Endpoint: "tool usage batch", StatusCode: http.StatusUnprocessableEntity, Body: "bad event"}
+	engine := &SyncEngine{Client: clientStub}
+	spoolPath := filepath.Join(t.TempDir(), "spool.json")
+	payload := []LocalToolUsageEvent{
+		{
+			DedupeKey:       "bad-dedupe-key",
+			Tool:            "codex",
+			UsageUnit:       UsageUnitToken,
+			ObservedStartAt: jsonTime("2026-05-27T07:10:00Z"),
+			ObservedEndAt:   jsonTime("2026-05-27T07:10:00Z"),
+		},
+		{
+			DedupeKey:       "good-after-batch-bad",
+			Tool:            "codex",
+			UsageUnit:       UsageUnitToken,
+			ObservedStartAt: jsonTime("2026-05-27T07:11:00Z"),
+			ObservedEndAt:   jsonTime("2026-05-27T07:11:00Z"),
+		},
+	}
+	if err := SaveJSON(spoolPath, payload); err != nil {
+		t.Fatalf("SaveJSON: %v", err)
+	}
+	engine.spoolPath = spoolPath
+
+	if err := engine.Replay(context.Background(), "/tmp/repo"); err != nil {
+		t.Fatalf("Replay: %v", err)
+	}
+	if !clientStub.SawUpload("good-after-batch-bad") {
+		t.Fatalf("uploads = %+v, want good event after bad batch event", clientStub.uploads)
+	}
+	remaining, err := loadSpooledEvents(spoolPath)
+	if err != nil {
+		t.Fatalf("loadSpooledEvents: %v", err)
+	}
+	if len(remaining) != 0 {
+		t.Fatalf("remaining spool = %+v, want no retryable items", remaining)
+	}
+	deadLetters, err := loadToolUsageDeadLetters(filepath.Dir(spoolPath))
+	if err != nil {
+		t.Fatalf("loadToolUsageDeadLetters: %v", err)
+	}
+	if len(deadLetters) != 1 || deadLetters[0].Event.DedupeKey != "bad-dedupe-key" {
+		t.Fatalf("deadLetters = %+v, want bad batch event", deadLetters)
+	}
+}
+
+func TestSync_ReplayKeepsSpooledEventsOnBatchAuthFailure(t *testing.T) {
+	batchAttempts := 0
+	singleAttempts := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/tool-usage-events/batch":
+			batchAttempts++
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = w.Write([]byte(`{"error":"expired token"}`))
+		case "/api/v1/tool-usage-events":
+			singleAttempts++
+			w.WriteHeader(http.StatusCreated)
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+
+	engine := &SyncEngine{Client: client.New(srv.URL, "expired-token")}
+	spoolPath := filepath.Join(t.TempDir(), "spool.json")
+	payload := []LocalToolUsageEvent{
+		{
+			DedupeKey:       "auth-failed",
+			Tool:            "codex",
+			UsageUnit:       UsageUnitToken,
+			ObservedStartAt: jsonTime("2026-05-27T07:10:00Z"),
+			ObservedEndAt:   jsonTime("2026-05-27T07:10:00Z"),
+		},
+		{
+			DedupeKey:       "auth-failed-after",
+			Tool:            "codex",
+			UsageUnit:       UsageUnitToken,
+			ObservedStartAt: jsonTime("2026-05-27T07:11:00Z"),
+			ObservedEndAt:   jsonTime("2026-05-27T07:11:00Z"),
+		},
+	}
+	if err := SaveJSON(spoolPath, payload); err != nil {
+		t.Fatalf("SaveJSON: %v", err)
+	}
+	engine.spoolPath = spoolPath
+
+	err := engine.Replay(context.Background(), "/tmp/repo")
+	if err == nil {
+		t.Fatalf("Replay returned nil, want retryable auth failure")
+	}
+	if batchAttempts != 1 {
+		t.Fatalf("batchAttempts = %d, want 1", batchAttempts)
+	}
+	if singleAttempts != 0 {
+		t.Fatalf("singleAttempts = %d, want no single replay on batch auth failure", singleAttempts)
+	}
+	remaining, err := loadSpooledEvents(spoolPath)
+	if err != nil {
+		t.Fatalf("loadSpooledEvents: %v", err)
+	}
+	if len(remaining) != 2 {
+		t.Fatalf("remaining spool = %+v, want both auth-failed events retained", remaining)
+	}
+	deadLetters, err := loadToolUsageDeadLetters(filepath.Dir(spoolPath))
+	if err != nil {
+		t.Fatalf("loadToolUsageDeadLetters: %v", err)
+	}
+	if len(deadLetters) != 0 {
+		t.Fatalf("deadLetters = %+v, want no dead-letter for auth failure", deadLetters)
+	}
+}
+
+func TestSync_ReplayUsesClientBatchStatusForSingleIsolation(t *testing.T) {
+	batchAttempts := 0
+	singleCounts := map[string]int{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/tool-usage-events/batch":
+			batchAttempts++
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			_, _ = w.Write([]byte(`{"error":"batch validation failed"}`))
+		case "/api/v1/tool-usage-events":
+			var req client.ToolUsageEventRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatalf("decode single request: %v", err)
+			}
+			singleCounts[req.DedupeKey]++
+			if req.DedupeKey == "bad-real-client" {
+				w.WriteHeader(http.StatusUnprocessableEntity)
+				_, _ = w.Write([]byte(`{"error":"bad event"}`))
+				return
+			}
+			w.WriteHeader(http.StatusCreated)
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+
+	engine := &SyncEngine{Client: client.New(srv.URL, "tok")}
+	spoolPath := filepath.Join(t.TempDir(), "spool.json")
+	payload := []LocalToolUsageEvent{
+		{
+			DedupeKey:       "good-old-real-client",
+			Tool:            "codex",
+			UsageUnit:       UsageUnitToken,
+			ObservedStartAt: jsonTime("2026-05-27T07:09:00Z"),
+			ObservedEndAt:   jsonTime("2026-05-27T07:09:00Z"),
+		},
+		{
+			DedupeKey:       "bad-real-client",
+			Tool:            "codex",
+			UsageUnit:       UsageUnitToken,
+			ObservedStartAt: jsonTime("2026-05-27T07:10:00Z"),
+			ObservedEndAt:   jsonTime("2026-05-27T07:10:00Z"),
+		},
+		{
+			DedupeKey:       "good-new-real-client",
+			Tool:            "codex",
+			UsageUnit:       UsageUnitToken,
+			ObservedStartAt: jsonTime("2026-05-27T07:11:00Z"),
+			ObservedEndAt:   jsonTime("2026-05-27T07:11:00Z"),
+		},
+	}
+	if err := SaveJSON(spoolPath, payload); err != nil {
+		t.Fatalf("SaveJSON: %v", err)
+	}
+	engine.spoolPath = spoolPath
+
+	if err := engine.Replay(context.Background(), "/tmp/repo"); err != nil {
+		t.Fatalf("Replay: %v", err)
+	}
+	if batchAttempts != 1 {
+		t.Fatalf("batchAttempts = %d, want 1", batchAttempts)
+	}
+	for _, key := range []string{"good-new-real-client", "bad-real-client", "good-old-real-client"} {
+		if singleCounts[key] != 1 {
+			t.Fatalf("singleCounts[%s] = %d, want 1; all counts=%+v", key, singleCounts[key], singleCounts)
+		}
+	}
+	remaining, err := loadSpooledEvents(spoolPath)
+	if err != nil {
+		t.Fatalf("loadSpooledEvents: %v", err)
+	}
+	if len(remaining) != 0 {
+		t.Fatalf("remaining spool = %+v, want no retryable items", remaining)
+	}
+	deadLetters, err := loadToolUsageDeadLetters(filepath.Dir(spoolPath))
+	if err != nil {
+		t.Fatalf("loadToolUsageDeadLetters: %v", err)
+	}
+	if len(deadLetters) != 1 || deadLetters[0].Event.DedupeKey != "bad-real-client" {
+		t.Fatalf("deadLetters = %+v, want bad real-client event", deadLetters)
 	}
 }
 
@@ -310,6 +556,43 @@ func TestSync_RunReplaysExistingSpoolBeforeScanningCurrentArtifacts(t *testing.T
 	}
 	if len(client.uploads) == 0 || client.uploads[0] != "old-backlog" {
 		t.Fatalf("uploads = %+v, want existing spool replay before current scan", client.uploads)
+	}
+}
+
+func TestSync_RunQuarantinesCorruptSpoolAndContinuesScan(t *testing.T) {
+	fixture := buildAttributionFixture(t)
+	workspaceID, err := mustWorkspaceID(fixture.WorkspaceRoot)
+	if err != nil {
+		t.Fatalf("mustWorkspaceID: %v", err)
+	}
+	spoolPath := filepath.Join(AttributionRootDir(), "workspaces", workspaceID, "spool.json")
+	if err := os.MkdirAll(filepath.Dir(spoolPath), 0o700); err != nil {
+		t.Fatalf("mkdir spool dir: %v", err)
+	}
+	if err := os.WriteFile(spoolPath, []byte("{not-json"), 0o600); err != nil {
+		t.Fatalf("write corrupt spool: %v", err)
+	}
+
+	client := &syncBackendClientStub{}
+	engine := NewSyncEngine(client)
+	if err := engine.Run(context.Background(), RunOptions{
+		WorkspaceRoot: fixture.WorkspaceRoot,
+		WorkspaceID:   workspaceID,
+		ServerURL:     "https://ae.example.com",
+		AuthSubject:   "user:123",
+		RepoConfigID:  123,
+		RepoKey:       "github.com/acme/repo",
+		DurableReplay: true,
+		ManagedUpload: true,
+	}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	matches, err := filepath.Glob(spoolPath + ".corrupt.*")
+	if err != nil {
+		t.Fatalf("glob corrupt spool: %v", err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("corrupt spool backups = %+v, want one", matches)
 	}
 }
 
@@ -516,8 +799,136 @@ func TestSync_RunSkipsSpooledEventsFromDifferentBinding(t *testing.T) {
 	if err != nil {
 		t.Fatalf("loadSpooledEvents: %v", err)
 	}
+	if len(remaining) != 1 || remaining[0].DedupeKey != "stale-binding" {
+		t.Fatalf("remaining spool = %+v, want stale mismatched event preserved", remaining)
+	}
+}
+
+func TestSync_RunPreservesSpooledEventWithSameDedupeKeyFromDifferentBinding(t *testing.T) {
+	fixture := buildAttributionFixture(t)
+	client := &syncBackendClientStub{}
+	workspaceID, err := mustWorkspaceID(fixture.WorkspaceRoot)
+	if err != nil {
+		t.Fatalf("mustWorkspaceID: %v", err)
+	}
+	spoolPath := filepath.Join(AttributionRootDir(), "workspaces", workspaceID, "spool.json")
+	existing := LocalToolUsageEvent{
+		Tool:            "codex",
+		WorkspaceID:     workspaceID,
+		ServerURL:       "https://ae.example.com",
+		AuthSubject:     "user:123",
+		RepoConfigID:    123,
+		RepoKey:         "github.com/acme/repo",
+		ManagedUpload:   true,
+		ToolSessionID:   "conv-1",
+		ToolEventID:     "same-key",
+		DedupeKey:       "same-dedupe-key",
+		UsageUnit:       UsageUnitToken,
+		RequestCount:    1,
+		ObservedStartAt: jsonTime("2026-05-13T10:00:00Z"),
+		ObservedEndAt:   jsonTime("2026-05-13T10:00:01Z"),
+	}
+	incoming := existing
+	incoming.ServerURL = "https://ae.example.com"
+	incoming.AuthSubject = "user:456"
+	incoming.RepoConfigID = 456
+	incoming.RepoKey = "github.com/acme/other"
+	incoming.ObservedStartAt = jsonTime("2026-05-13T10:01:00Z")
+	incoming.ObservedEndAt = jsonTime("2026-05-13T10:01:01Z")
+	if err := SaveJSON(spoolPath, []LocalToolUsageEvent{existing}); err != nil {
+		t.Fatalf("SaveJSON(spool): %v", err)
+	}
+	if err := appendSpooledEvents(spoolPath, []LocalToolUsageEvent{incoming}); err != nil {
+		t.Fatalf("appendSpooledEvents: %v", err)
+	}
+
+	remaining, err := loadSpooledEvents(spoolPath)
+	if err != nil {
+		t.Fatalf("loadSpooledEvents: %v", err)
+	}
+	if len(remaining) != 2 {
+		t.Fatalf("remaining spool = %+v, want both binding-distinct same-dedupe events", remaining)
+	}
+
+	engine := &SyncEngine{
+		Scanner: NewScanner(),
+		Client:  client,
+	}
+	if err := engine.Run(context.Background(), RunOptions{
+		WorkspaceRoot: fixture.WorkspaceRoot,
+		WorkspaceID:   workspaceID,
+		ServerURL:     "https://ae.example.com",
+		AuthSubject:   "user:456",
+		RepoConfigID:  456,
+		RepoKey:       "github.com/acme/other",
+		DurableReplay: true,
+		ManagedUpload: true,
+	}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !client.SawUpload("same-dedupe-key") {
+		t.Fatalf("uploads = %+v, want current binding same-dedupe upload", client.uploads)
+	}
+	remaining, err = loadSpooledEvents(spoolPath)
+	if err != nil {
+		t.Fatalf("loadSpooledEvents after replay: %v", err)
+	}
+	if len(remaining) != 1 || remaining[0].AuthSubject != "user:123" {
+		t.Fatalf("remaining spool = %+v, want original mismatched binding preserved", remaining)
+	}
+}
+
+func TestSync_ReplayMatchesNormalizedServerURL(t *testing.T) {
+	fixture := buildAttributionFixture(t)
+	client := &syncBackendClientStub{}
+	workspaceID, err := mustWorkspaceID(fixture.WorkspaceRoot)
+	if err != nil {
+		t.Fatalf("mustWorkspaceID: %v", err)
+	}
+	spoolPath := filepath.Join(AttributionRootDir(), "workspaces", workspaceID, "spool.json")
+	if err := SaveJSON(spoolPath, []LocalToolUsageEvent{
+		{
+			Tool:            "codex",
+			WorkspaceID:     workspaceID,
+			ServerURL:       "https://AE.example.com/",
+			AuthSubject:     "user:123",
+			RepoConfigID:    123,
+			RepoKey:         "github.com/acme/repo",
+			ManagedUpload:   true,
+			ToolSessionID:   "conv-1",
+			ToolEventID:     "normalized-server",
+			DedupeKey:       "normalized-server",
+			UsageUnit:       UsageUnitToken,
+			RequestCount:    1,
+			ObservedStartAt: jsonTime("2026-05-13T10:00:00Z"),
+			ObservedEndAt:   jsonTime("2026-05-13T10:00:01Z"),
+		},
+	}); err != nil {
+		t.Fatalf("SaveJSON(spool): %v", err)
+	}
+
+	engine := &SyncEngine{Scanner: NewScanner(), Client: client}
+	if err := engine.Run(context.Background(), RunOptions{
+		WorkspaceRoot: fixture.WorkspaceRoot,
+		WorkspaceID:   workspaceID,
+		ServerURL:     "https://ae.example.com",
+		AuthSubject:   "user:123",
+		RepoConfigID:  123,
+		RepoKey:       "github.com/acme/repo",
+		DurableReplay: true,
+		ManagedUpload: true,
+	}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !client.SawUpload("normalized-server") {
+		t.Fatalf("uploads = %+v, want normalized server URL event uploaded", client.uploads)
+	}
+	remaining, err := loadSpooledEvents(spoolPath)
+	if err != nil {
+		t.Fatalf("loadSpooledEvents: %v", err)
+	}
 	if len(remaining) != 0 {
-		t.Fatalf("remaining spool = %+v, want stale mismatched event dropped", remaining)
+		t.Fatalf("remaining spool = %+v, want normalized server URL event cleared", remaining)
 	}
 }
 
@@ -572,16 +983,32 @@ func TestSync_RunWritesSkippedLedgerForMismatchedSpooledEvents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read upload ledger: %v", err)
 	}
-	var rec struct {
+	var records []struct {
 		Kind      string `json:"kind"`
 		DedupeKey string `json:"dedupe_key"`
 		Status    string `json:"status"`
 		LastError string `json:"last_error"`
 	}
-	if err := json.Unmarshal(data, &rec); err != nil {
-		t.Fatalf("parse ledger: %v", err)
+	for _, line := range bytes.Split(data, []byte("\n")) {
+		line = bytes.TrimSpace(line)
+		if len(line) == 0 {
+			continue
+		}
+		var rec struct {
+			Kind      string `json:"kind"`
+			DedupeKey string `json:"dedupe_key"`
+			Status    string `json:"status"`
+			LastError string `json:"last_error"`
+		}
+		if err := json.Unmarshal(line, &rec); err != nil {
+			t.Fatalf("parse ledger line %q: %v", string(line), err)
+		}
+		records = append(records, rec)
 	}
-	if rec.Kind != "tool_usage" || rec.DedupeKey != "stale-binding" || rec.Status != "skipped" || rec.LastError != "context mismatch" {
-		t.Fatalf("ledger = %+v, want skipped tool_usage context mismatch", rec)
+	for _, rec := range records {
+		if rec.Kind == "tool_usage" && rec.DedupeKey == "stale-binding" && rec.Status == "deferred" && rec.LastError == "context mismatch" {
+			return
+		}
 	}
+	t.Fatalf("ledger = %+v, want deferred tool_usage context mismatch", records)
 }
