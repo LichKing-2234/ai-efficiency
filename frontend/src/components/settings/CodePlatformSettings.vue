@@ -44,6 +44,7 @@ function formatDate(date: string) {
             <div class="min-w-0">
               <div class="truncate text-sm font-medium text-gray-900">{{ p.name }}</div>
               <div class="mt-1 break-all font-mono text-xs text-gray-500">{{ p.base_url }}</div>
+              <div v-if="p.ssh_host" class="mt-1 break-all font-mono text-xs text-gray-500">{{ p.ssh_host }}</div>
             </div>
             <span
               class="shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold"
@@ -87,6 +88,7 @@ function formatDate(date: string) {
             <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">{{ t('settings.name') }}</th>
             <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">{{ t('settings.type') }}</th>
             <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">{{ t('settings.baseUrl') }}</th>
+            <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">{{ t('settings.sshHost') }}</th>
             <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">{{ t('settings.status') }}</th>
             <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">{{ t('settings.created') }}</th>
             <th class="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">{{ t('settings.actions') }}</th>
@@ -104,6 +106,7 @@ function formatDate(date: string) {
               </span>
             </td>
             <td class="whitespace-nowrap px-6 py-4 text-sm text-gray-500 font-mono text-xs">{{ p.base_url }}</td>
+            <td class="whitespace-nowrap px-6 py-4 text-sm text-gray-500 font-mono text-xs">{{ p.ssh_host || '—' }}</td>
             <td class="whitespace-nowrap px-6 py-4">
               <span class="inline-flex rounded-full px-2 text-xs font-semibold leading-5 bg-green-100 text-green-800">
                 {{ p.status }}
@@ -125,7 +128,7 @@ function formatDate(date: string) {
             </td>
           </tr>
           <tr v-if="providers.length === 0">
-            <td colspan="6" class="px-6 py-12 text-center text-sm text-gray-500">
+            <td colspan="7" class="px-6 py-12 text-center text-sm text-gray-500">
               {{ t('settings.noScmProviders') }}
             </td>
           </tr>

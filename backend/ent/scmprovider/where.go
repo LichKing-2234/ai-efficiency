@@ -65,6 +65,11 @@ func BaseURL(v string) predicate.ScmProvider {
 	return predicate.ScmProvider(sql.FieldEQ(FieldBaseURL, v))
 }
 
+// SSHHost applies equality check predicate on the "ssh_host" field. It's identical to SSHHostEQ.
+func SSHHost(v string) predicate.ScmProvider {
+	return predicate.ScmProvider(sql.FieldEQ(FieldSSHHost, v))
+}
+
 // Credentials applies equality check predicate on the "credentials" field. It's identical to CredentialsEQ.
 func Credentials(v string) predicate.ScmProvider {
 	return predicate.ScmProvider(sql.FieldEQ(FieldCredentials, v))
@@ -238,6 +243,81 @@ func BaseURLEqualFold(v string) predicate.ScmProvider {
 // BaseURLContainsFold applies the ContainsFold predicate on the "base_url" field.
 func BaseURLContainsFold(v string) predicate.ScmProvider {
 	return predicate.ScmProvider(sql.FieldContainsFold(FieldBaseURL, v))
+}
+
+// SSHHostEQ applies the EQ predicate on the "ssh_host" field.
+func SSHHostEQ(v string) predicate.ScmProvider {
+	return predicate.ScmProvider(sql.FieldEQ(FieldSSHHost, v))
+}
+
+// SSHHostNEQ applies the NEQ predicate on the "ssh_host" field.
+func SSHHostNEQ(v string) predicate.ScmProvider {
+	return predicate.ScmProvider(sql.FieldNEQ(FieldSSHHost, v))
+}
+
+// SSHHostIn applies the In predicate on the "ssh_host" field.
+func SSHHostIn(vs ...string) predicate.ScmProvider {
+	return predicate.ScmProvider(sql.FieldIn(FieldSSHHost, vs...))
+}
+
+// SSHHostNotIn applies the NotIn predicate on the "ssh_host" field.
+func SSHHostNotIn(vs ...string) predicate.ScmProvider {
+	return predicate.ScmProvider(sql.FieldNotIn(FieldSSHHost, vs...))
+}
+
+// SSHHostGT applies the GT predicate on the "ssh_host" field.
+func SSHHostGT(v string) predicate.ScmProvider {
+	return predicate.ScmProvider(sql.FieldGT(FieldSSHHost, v))
+}
+
+// SSHHostGTE applies the GTE predicate on the "ssh_host" field.
+func SSHHostGTE(v string) predicate.ScmProvider {
+	return predicate.ScmProvider(sql.FieldGTE(FieldSSHHost, v))
+}
+
+// SSHHostLT applies the LT predicate on the "ssh_host" field.
+func SSHHostLT(v string) predicate.ScmProvider {
+	return predicate.ScmProvider(sql.FieldLT(FieldSSHHost, v))
+}
+
+// SSHHostLTE applies the LTE predicate on the "ssh_host" field.
+func SSHHostLTE(v string) predicate.ScmProvider {
+	return predicate.ScmProvider(sql.FieldLTE(FieldSSHHost, v))
+}
+
+// SSHHostContains applies the Contains predicate on the "ssh_host" field.
+func SSHHostContains(v string) predicate.ScmProvider {
+	return predicate.ScmProvider(sql.FieldContains(FieldSSHHost, v))
+}
+
+// SSHHostHasPrefix applies the HasPrefix predicate on the "ssh_host" field.
+func SSHHostHasPrefix(v string) predicate.ScmProvider {
+	return predicate.ScmProvider(sql.FieldHasPrefix(FieldSSHHost, v))
+}
+
+// SSHHostHasSuffix applies the HasSuffix predicate on the "ssh_host" field.
+func SSHHostHasSuffix(v string) predicate.ScmProvider {
+	return predicate.ScmProvider(sql.FieldHasSuffix(FieldSSHHost, v))
+}
+
+// SSHHostIsNil applies the IsNil predicate on the "ssh_host" field.
+func SSHHostIsNil() predicate.ScmProvider {
+	return predicate.ScmProvider(sql.FieldIsNull(FieldSSHHost))
+}
+
+// SSHHostNotNil applies the NotNil predicate on the "ssh_host" field.
+func SSHHostNotNil() predicate.ScmProvider {
+	return predicate.ScmProvider(sql.FieldNotNull(FieldSSHHost))
+}
+
+// SSHHostEqualFold applies the EqualFold predicate on the "ssh_host" field.
+func SSHHostEqualFold(v string) predicate.ScmProvider {
+	return predicate.ScmProvider(sql.FieldEqualFold(FieldSSHHost, v))
+}
+
+// SSHHostContainsFold applies the ContainsFold predicate on the "ssh_host" field.
+func SSHHostContainsFold(v string) predicate.ScmProvider {
+	return predicate.ScmProvider(sql.FieldContainsFold(FieldSSHHost, v))
 }
 
 // CredentialsEQ applies the EQ predicate on the "credentials" field.

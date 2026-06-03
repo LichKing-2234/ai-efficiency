@@ -11,6 +11,7 @@ export interface SCMProvider {
   name: string
   type: string
   base_url: string
+  ssh_host?: string | null
   api_credential_id?: number
   clone_protocol?: 'https' | 'ssh'
   clone_credential_id?: number | null
@@ -56,6 +57,32 @@ export interface RepoConfig {
   edges?: {
     scm_provider?: SCMProvider
   }
+}
+
+export interface RepoAutoBindSummary {
+  scanned: number
+  bound: number
+  already_bound: number
+  skipped_no_match: number
+  skipped_ambiguous: number
+  webhook_failed: number
+  errors: number
+}
+
+export interface RepoAutoBindItem {
+  repo_config_id: number
+  repo_key?: string
+  full_name?: string
+  result: 'matched' | 'already_bound' | 'no_match' | 'ambiguous' | 'invalid_repo_host' | 'provider_error'
+  scm_provider_id?: number
+  scm_provider_name?: string
+  webhook_status?: 'skipped' | 'registered' | 'failed'
+  error?: string
+}
+
+export interface RepoAutoBindResult {
+  summary: RepoAutoBindSummary
+  items: RepoAutoBindItem[]
 }
 
 export type UsageStatus =

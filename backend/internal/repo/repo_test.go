@@ -314,6 +314,57 @@ func TestEnsureFromRemote_CreatesUnboundRepo(t *testing.T) {
 	}
 }
 
+func TestEnsureFromRemote_AutoBindsSingleMatchedProvider(t *testing.T) {
+	client, svc := setupTest(t)
+	ctx := context.Background()
+	provider := client.ScmProvider.Create().
+		SetName("GitHub").
+		SetType("github").
+		SetBaseURL("https://api.github.com").
+		SetStatus("active").
+		SaveX(ctx)
+	svc.autoBindPostBind = func(ctx context.Context, repoID, providerID int) (string, error) {
+		return AutoBindWebhookRegistered, nil
+	}
+
+	rc, err := svc.EnsureFromRemote(ctx, "https://github.com/acme/platform.git", "main")
+	if err != nil {
+		t.Fatalf("EnsureFromRemote: %v", err)
+	}
+	loaded := client.RepoConfig.Query().Where(repoconfig.IDEQ(rc.ID)).WithScmProvider().OnlyX(ctx)
+	if loaded.Edges.ScmProvider == nil || loaded.Edges.ScmProvider.ID != provider.ID {
+		t.Fatalf("provider = %#v, want %d", loaded.Edges.ScmProvider, provider.ID)
+	}
+}
+
+func TestCreateDirect_AutoBindsWhenProviderOmitted(t *testing.T) {
+	client, svc := setupTest(t)
+	ctx := context.Background()
+	provider := client.ScmProvider.Create().
+		SetName("GitHub").
+		SetType("github").
+		SetBaseURL("https://api.github.com").
+		SetStatus("active").
+		SaveX(ctx)
+	svc.autoBindPostBind = func(ctx context.Context, repoID, providerID int) (string, error) {
+		return AutoBindWebhookRegistered, nil
+	}
+
+	rc, err := svc.CreateDirect(ctx, CreateDirectRequest{
+		Name:          "platform",
+		FullName:      "acme/platform",
+		CloneURL:      "https://github.com/acme/platform.git",
+		DefaultBranch: "main",
+	})
+	if err != nil {
+		t.Fatalf("CreateDirect: %v", err)
+	}
+	loaded := client.RepoConfig.Query().Where(repoconfig.IDEQ(rc.ID)).WithScmProvider().OnlyX(ctx)
+	if loaded.Edges.ScmProvider == nil || loaded.Edges.ScmProvider.ID != provider.ID {
+		t.Fatalf("provider = %#v, want %d", loaded.Edges.ScmProvider, provider.ID)
+	}
+}
+
 func TestFindOrCreateFromRemote_FallsBackWhenIdentityParsingFails(t *testing.T) {
 	_, svc := setupTest(t)
 	ctx := context.Background()

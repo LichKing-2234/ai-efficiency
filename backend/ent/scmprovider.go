@@ -24,6 +24,8 @@ type ScmProvider struct {
 	Type scmprovider.Type `json:"type,omitempty"`
 	// BaseURL holds the value of the "base_url" field.
 	BaseURL string `json:"base_url,omitempty"`
+	// SSHHost holds the value of the "ssh_host" field.
+	SSHHost *string `json:"ssh_host,omitempty"`
 	// Credentials holds the value of the "credentials" field.
 	Credentials string `json:"-"`
 	// APICredentialID holds the value of the "api_credential_id" field.
@@ -95,7 +97,7 @@ func (*ScmProvider) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case scmprovider.FieldID, scmprovider.FieldAPICredentialID, scmprovider.FieldCloneCredentialID:
 			values[i] = new(sql.NullInt64)
-		case scmprovider.FieldName, scmprovider.FieldType, scmprovider.FieldBaseURL, scmprovider.FieldCredentials, scmprovider.FieldCloneProtocol, scmprovider.FieldStatus:
+		case scmprovider.FieldName, scmprovider.FieldType, scmprovider.FieldBaseURL, scmprovider.FieldSSHHost, scmprovider.FieldCredentials, scmprovider.FieldCloneProtocol, scmprovider.FieldStatus:
 			values[i] = new(sql.NullString)
 		case scmprovider.FieldCreatedAt, scmprovider.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -137,6 +139,13 @@ func (sp *ScmProvider) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field base_url", values[i])
 			} else if value.Valid {
 				sp.BaseURL = value.String
+			}
+		case scmprovider.FieldSSHHost:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field ssh_host", values[i])
+			} else if value.Valid {
+				sp.SSHHost = new(string)
+				*sp.SSHHost = value.String
 			}
 		case scmprovider.FieldCredentials:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -240,6 +249,11 @@ func (sp *ScmProvider) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("base_url=")
 	builder.WriteString(sp.BaseURL)
+	builder.WriteString(", ")
+	if v := sp.SSHHost; v != nil {
+		builder.WriteString("ssh_host=")
+		builder.WriteString(*v)
+	}
 	builder.WriteString(", ")
 	builder.WriteString("credentials=<sensitive>")
 	builder.WriteString(", ")

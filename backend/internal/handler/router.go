@@ -131,6 +131,7 @@ func SetupRouter(
 		repoGroup.POST("/ensure-remote", repoHandler.EnsureRemote)
 		repoGroup.POST("/resolve-remote", repoHandler.ResolveRemote)
 		repoGroup.POST("/hook-eligible", repoHandler.HookEligible)
+		repoGroup.POST("/auto-bind-unbound", auth.RequireAdmin(), repoHandler.AutoBindUnbound)
 		repoGroup.GET("/:id", repoHandler.Get)
 		repoGroup.PUT("/:id", repoHandler.Update)
 		repoGroup.DELETE("/:id", repoHandler.Delete)

@@ -371,6 +371,7 @@ var (
 		{Name: "name", Type: field.TypeString},
 		{Name: "type", Type: field.TypeEnum, Enums: []string{"github", "bitbucket_server"}},
 		{Name: "base_url", Type: field.TypeString},
+		{Name: "ssh_host", Type: field.TypeString, Nullable: true},
 		{Name: "credentials", Type: field.TypeString, Nullable: true},
 		{Name: "clone_protocol", Type: field.TypeEnum, Enums: []string{"https", "ssh"}, Default: "https"},
 		{Name: "status", Type: field.TypeEnum, Enums: []string{"active", "inactive", "error"}, Default: "active"},
@@ -387,13 +388,13 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "scm_providers_credentials_api_scm_providers",
-				Columns:    []*schema.Column{ScmProvidersColumns[9]},
+				Columns:    []*schema.Column{ScmProvidersColumns[10]},
 				RefColumns: []*schema.Column{CredentialsColumns[0]},
 				OnDelete:   schema.SetNull,
 			},
 			{
 				Symbol:     "scm_providers_credentials_clone_scm_providers",
-				Columns:    []*schema.Column{ScmProvidersColumns[10]},
+				Columns:    []*schema.Column{ScmProvidersColumns[11]},
 				RefColumns: []*schema.Column{CredentialsColumns[0]},
 				OnDelete:   schema.SetNull,
 			},

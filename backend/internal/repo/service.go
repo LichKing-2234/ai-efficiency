@@ -71,9 +71,10 @@ type ListOpts struct {
 
 // Service handles repo configuration business logic.
 type Service struct {
-	entClient     *ent.Client
-	encryptionKey string
-	logger        *zap.Logger
+	entClient        *ent.Client
+	encryptionKey    string
+	logger           *zap.Logger
+	autoBindPostBind autoBindPostBindFunc
 }
 
 // NewService creates a new repo service.
@@ -214,6 +215,15 @@ func (s *Service) CreateDirect(ctx context.Context, req CreateDirectRequest) (*e
 	if err != nil {
 		return nil, fmt.Errorf("save repo config: %w", err)
 	}
+	if req.SCMProviderID <= 0 {
+		if _, bindErr := s.AutoBindRepo(ctx, rc.ID); bindErr != nil {
+			s.logger.Warn("auto-bind direct repo failed", zap.Int("repo_config_id", rc.ID), zap.Error(bindErr))
+		}
+		return s.entClient.RepoConfig.Query().
+			Where(repoconfig.IDEQ(rc.ID)).
+			WithScmProvider().
+			Only(ctx)
+	}
 	return rc, nil
 }
 
@@ -263,7 +273,13 @@ func (s *Service) FindOrCreateFromRemote(ctx context.Context, remoteURL, branch 
 		}
 		return nil, fmt.Errorf("find or create repo: create repo: %w", err)
 	}
-	return rc, nil
+	if _, bindErr := s.AutoBindRepo(ctx, rc.ID); bindErr != nil {
+		s.logger.Warn("auto-bind newly discovered repo failed", zap.Int("repo_config_id", rc.ID), zap.Error(bindErr))
+	}
+	return s.entClient.RepoConfig.Query().
+		Where(repoconfig.IDEQ(rc.ID)).
+		WithScmProvider().
+		Only(ctx)
 }
 
 func (s *Service) findExistingRepoByIdentity(ctx context.Context, identity RepoIdentity, remoteURL string) (*ent.RepoConfig, error) {

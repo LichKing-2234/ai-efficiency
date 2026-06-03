@@ -748,6 +748,7 @@ func TestSCMProviderCRUD(t *testing.T) {
 		"name":        "GitHub",
 		"type":        "github",
 		"base_url":    "https://api.github.com",
+		"ssh_host":    "git.example.com",
 		"credentials": map[string]string{"token": "ghp_test123"},
 	}
 	w := doRequest(env, "POST", "/api/v1/scm-providers", createReq)
@@ -757,6 +758,9 @@ func TestSCMProviderCRUD(t *testing.T) {
 	resp := parseResponse(t, w)
 	data := resp["data"].(map[string]interface{})
 	providerID := int(data["id"].(float64))
+	if data["ssh_host"] != "git.example.com" {
+		t.Fatalf("ssh_host = %v, want git.example.com", data["ssh_host"])
+	}
 
 	// List
 	w = doRequest(env, "GET", "/api/v1/scm-providers", nil)

@@ -285,10 +285,59 @@ describe('SettingsView', () => {
       name: 'GitHub Extensions',
       type: 'github',
       base_url: 'https://api.github.com',
+      ssh_host: 'github.com',
       api_credential_id: 12,
       clone_protocol: 'ssh',
       clone_credential_id: 13,
     })
+  })
+
+  it('defaults GitHub code platform ssh host to github.com', async () => {
+    const { createProvider } = await import('@/api/scmProvider')
+    const wrapper = await mountSettings()
+    await openSettingsSection(wrapper, 'code-platforms')
+
+    const addBtn = wrapper.findAll('button').find((b) => b.text() === 'Add Platform')
+    await addBtn!.trigger('click')
+    await flushPromises()
+
+    const sshHostInput = wrapper.find('input[name="provider-ssh-host"]')
+    expect((sshHostInput.element as HTMLInputElement).value).toBe('github.com')
+
+    await wrapper.find('input[name="provider-name"]').setValue('GitHub')
+    const saveBtn = wrapper.findAll('button').find((b) => b.text() === 'Create')
+    await saveBtn!.trigger('click')
+    await flushPromises()
+
+    expect(createProvider).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'github',
+      base_url: 'https://api.github.com',
+      ssh_host: 'github.com',
+    }))
+  })
+
+  it('sends ssh host when creating a code platform', async () => {
+    const { createProvider } = await import('@/api/scmProvider')
+    const wrapper = await mountSettings()
+    await openSettingsSection(wrapper, 'code-platforms')
+
+    const addBtn = wrapper.findAll('button').find((b) => b.text() === 'Add Platform')
+    await addBtn!.trigger('click')
+    await flushPromises()
+
+    await wrapper.find('input[name="provider-name"]').setValue('Bitbucket')
+    await wrapper.find('input[placeholder="https://api.github.com"]').setValue('https://bitbucket-api.example.com')
+    await wrapper.find('input[name="provider-ssh-host"]').setValue('git.example.com')
+
+    const saveBtn = wrapper.findAll('button').find((b) => b.text() === 'Create')
+    await saveBtn!.trigger('click')
+    await flushPromises()
+
+    expect(createProvider).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'Bitbucket',
+      base_url: 'https://bitbucket-api.example.com',
+      ssh_host: 'git.example.com',
+    }))
   })
 
   it('renders relay providers returned from the backend', async () => {

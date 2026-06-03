@@ -35,6 +35,7 @@ const providers = ref<SCMProvider[]>([])
 const relayProviders = ref<RelayProvider[]>([])
 const credentials = ref<Credential[]>([])
 const loading = ref(true)
+const githubDefaultSSHHost = 'github.com'
 
 // Add/Edit dialog
 const showDialog = ref(false)
@@ -45,6 +46,7 @@ const form = ref({
   name: '',
   type: 'github',
   base_url: 'https://api.github.com',
+  ssh_host: githubDefaultSSHHost,
   api_credential_id: 0,
   clone_protocol: 'https' as 'https' | 'ssh',
   clone_credential_id: null as number | null,
@@ -218,6 +220,7 @@ function openAddDialog() {
     name: '',
     type: 'github',
     base_url: 'https://api.github.com',
+    ssh_host: githubDefaultSSHHost,
     api_credential_id: defaultAPICredential,
     clone_protocol: 'https',
     clone_credential_id: null,
@@ -233,6 +236,7 @@ function openEditDialog(p: SCMProvider) {
     name: p.name,
     type: p.type,
     base_url: p.base_url,
+    ssh_host: p.ssh_host || '',
     api_credential_id: p.api_credential_id || defaultAPICredential,
     clone_protocol: p.clone_protocol || 'https',
     clone_credential_id: p.clone_credential_id ?? null,
@@ -244,8 +248,10 @@ function openEditDialog(p: SCMProvider) {
 function onTypeChange() {
   if (form.value.type === 'github') {
     form.value.base_url = 'https://api.github.com'
+    form.value.ssh_host = githubDefaultSSHHost
   } else {
     form.value.base_url = ''
+    form.value.ssh_host = ''
   }
 }
 
@@ -266,16 +272,21 @@ async function handleSubmit() {
         clone_protocol: form.value.clone_protocol,
         clone_credential_id: form.value.clone_protocol === 'ssh' ? form.value.clone_credential_id : null,
       }
+      data.ssh_host = form.value.ssh_host.trim()
       await updateProvider(editingId.value, data)
     } else {
-      await createProvider({
+      const data: any = {
         name: form.value.name,
         type: form.value.type,
         base_url: form.value.base_url,
         api_credential_id: form.value.api_credential_id,
         clone_protocol: form.value.clone_protocol,
         clone_credential_id: form.value.clone_protocol === 'ssh' ? form.value.clone_credential_id : null,
-      } as any)
+      }
+      if (form.value.ssh_host.trim()) {
+        data.ssh_host = form.value.ssh_host.trim()
+      }
+      await createProvider(data)
     }
     showDialog.value = false
     await fetchProviders()
@@ -928,6 +939,12 @@ async function handleTestLDAP() {
           <div>
             <label class="block text-sm font-medium text-gray-700">{{ t('settings.baseUrl') }}</label>
             <input v-model="form.base_url" type="text" placeholder="https://api.github.com" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium text-gray-700">{{ t('settings.sshHost') }}</label>
+            <input name="provider-ssh-host" v-model="form.ssh_host" type="text" placeholder="git.example.com" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
+            <p class="mt-1 text-xs text-gray-400">{{ t('settings.sshHostHelp') }}</p>
           </div>
 
           <div>

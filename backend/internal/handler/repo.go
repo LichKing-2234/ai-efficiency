@@ -173,6 +173,16 @@ func (h *RepoHandler) HookEligible(c *gin.Context) {
 	})
 }
 
+// AutoBindUnbound handles POST /api/v1/repos/auto-bind-unbound.
+func (h *RepoHandler) AutoBindUnbound(c *gin.Context) {
+	result, err := h.repoService.AutoBindUnbound(c.Request.Context())
+	if err != nil {
+		pkg.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	pkg.Success(c, result)
+}
+
 // Get handles GET /api/v1/repos/:id
 func (h *RepoHandler) Get(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))

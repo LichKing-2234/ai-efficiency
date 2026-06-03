@@ -4,12 +4,14 @@ import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import RepoListView from '@/views/repos/RepoListView.vue'
 import { setLocale } from '@/i18n'
+import { useAuthStore } from '@/stores/auth'
 
 vi.mock('@/api/repo', () => ({
   listRepos: vi.fn().mockResolvedValue({ data: { data: { items: [], total: 0, page: 1, page_size: 20 } } }),
   createRepo: vi.fn(),
   createRepoDirect: vi.fn(),
   deleteRepo: vi.fn(),
+  autoBindUnboundRepos: vi.fn(),
 }))
 
 vi.mock('@/api/scmProvider', () => ({
@@ -45,7 +47,7 @@ const sampleRepos = [
   { id: 3, repo_key: 'bb.example.com/team/repo-c', name: 'repo-c', full_name: 'team/repo-c', clone_url: 'https://bb.example.com/scm/team/repo-c.git', default_branch: 'main', status: 'active', binding_state: 'bound', group_id: 0, created_at: '2026-01-01', edges: { scm_provider: { id: 2, name: 'Bitbucket', type: 'bitbucket_server', base_url: 'https://bb.example.com', status: 'active' } } },
 ]
 
-async function mountRepoList(repos?: any[], path = '/repos') {
+async function mountRepoList(repos?: any[], path = '/repos', options?: { admin?: boolean }) {
   const { listRepos } = await import('@/api/repo')
   if (repos) {
     ;(listRepos as any).mockResolvedValue({
@@ -57,8 +59,19 @@ async function mountRepoList(repos?: any[], path = '/repos') {
   await router.push(path)
   await router.isReady()
 
+  const pinia = createPinia()
+  setActivePinia(pinia)
+  const auth = useAuthStore(pinia)
+  auth.user = {
+    id: 1,
+    username: options?.admin ? 'admin' : 'alice',
+    email: options?.admin ? 'admin@example.com' : 'alice@example.com',
+    role: options?.admin ? 'admin' : 'user',
+    auth_source: 'sso',
+  }
+
   const wrapper = mount(RepoListView, {
-    global: { plugins: [createPinia(), router] },
+    global: { plugins: [pinia, router] },
   })
 
   await flushPromises()
@@ -128,6 +141,45 @@ describe('RepoListView', () => {
     ])
 
     expect(wrapper.text()).toContain('Unbound')
+  })
+
+  it('shows auto-bind action only for admins', async () => {
+    const admin = await mountRepoList(sampleRepos, '/repos', { admin: true })
+    expect(admin.wrapper.find('[data-testid="repo-auto-bind-button"]').exists()).toBe(true)
+
+    const user = await mountRepoList(sampleRepos, '/repos', { admin: false })
+    expect(user.wrapper.find('[data-testid="repo-auto-bind-button"]').exists()).toBe(false)
+  })
+
+  it('runs auto-bind and shows a summary', async () => {
+    const { autoBindUnboundRepos, listRepos } = await import('@/api/repo')
+    ;(autoBindUnboundRepos as any).mockResolvedValue({
+      data: {
+        data: {
+          summary: {
+            scanned: 3,
+            bound: 1,
+            already_bound: 0,
+            skipped_no_match: 1,
+            skipped_ambiguous: 1,
+            webhook_failed: 0,
+            errors: 0,
+          },
+          items: [],
+        },
+      },
+    })
+
+    const { wrapper } = await mountRepoList(sampleRepos, '/repos', { admin: true })
+    await wrapper.get('[data-testid="repo-auto-bind-button"]').trigger('click')
+    await flushPromises()
+
+    expect(autoBindUnboundRepos).toHaveBeenCalledTimes(1)
+    expect(listRepos).toHaveBeenCalled()
+    expect(wrapper.text()).toContain('Auto-bind complete')
+    expect(wrapper.text()).toContain('1 bound')
+    expect(wrapper.text()).toContain('1 no match')
+    expect(wrapper.text()).toContain('1 ambiguous')
   })
 
   it('opens add dialog on button click', async () => {
