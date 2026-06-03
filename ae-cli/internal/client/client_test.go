@@ -9,6 +9,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/ai-efficiency/ae-cli/internal/httpx"
 )
 
 func TestNewClient(t *testing.T) {
@@ -460,6 +462,54 @@ func TestBatchHookEligible(t *testing.T) {
 	}
 	if resp.Version != "repo-eligibility-v1" || len(resp.Repos) != 1 || len(resp.Ineligible) != 1 {
 		t.Fatalf("response = %+v", resp)
+	}
+}
+
+func TestResolveRepoFromRemoteReturnsHTTPXStatusError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/repos/resolve-remote" {
+			t.Fatalf("path = %s, want /api/v1/repos/resolve-remote", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusForbidden)
+		_ = json.NewEncoder(w).Encode(map[string]string{"message": "Your IP address is not allowed"})
+	}))
+	defer srv.Close()
+
+	_, err := New(srv.URL, "tok").ResolveRepoFromRemote(context.Background(), ResolveRepoRequest{
+		RemoteURL:          "https://git.example.com/org/repo.git",
+		ClientCacheVersion: RepoEligibilityVersion,
+	})
+	var statusErr *httpx.StatusError
+	if !errors.As(err, &statusErr) {
+		t.Fatalf("err = %T %v, want *httpx.StatusError", err, err)
+	}
+	if statusErr.StatusCode != http.StatusForbidden ||
+		statusErr.Summary != "Your IP address is not allowed" {
+		t.Fatalf("statusErr = %+v", statusErr)
+	}
+}
+
+func TestBatchHookEligibleReturnsHTTPXStatusError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/repos/hook-eligible" {
+			t.Fatalf("path = %s, want /api/v1/repos/hook-eligible", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte("upstream unavailable"))
+	}))
+	defer srv.Close()
+
+	_, err := New(srv.URL, "tok").BatchHookEligible(context.Background(), []HookEligibleRepoRequest{{
+		RepoKey:   "org/repo",
+		RemoteURL: "https://git.example.com/org/repo.git",
+	}})
+	var statusErr *httpx.StatusError
+	if !errors.As(err, &statusErr) {
+		t.Fatalf("err = %T %v, want *httpx.StatusError", err, err)
+	}
+	if statusErr.StatusCode != http.StatusBadGateway ||
+		statusErr.Summary != "upstream unavailable" {
+		t.Fatalf("statusErr = %+v", statusErr)
 	}
 }
 
