@@ -595,7 +595,7 @@ cd backend && go test ./internal/handler -run 'TestPRListByRepoIncludesAggregate
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit bounded summary**
+- [x] **Step 5: Commit bounded summary**
 
 Run:
 
