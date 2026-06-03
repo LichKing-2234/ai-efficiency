@@ -137,6 +137,7 @@ func SetupRouter(
 		repoGroup.DELETE("/:id", repoHandler.Delete)
 		repoGroup.GET("/:id/prs", prHandler.ListByRepo)
 		repoGroup.POST("/:id/sync-prs", prHandler.SyncPRs)
+		repoGroup.GET("/:id/pr-sync-job/latest", prHandler.GetLatestSyncJobForRepo)
 	}
 
 	// PRs

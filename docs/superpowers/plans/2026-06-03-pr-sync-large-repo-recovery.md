@@ -66,7 +66,7 @@ Implementation not started. All task checkboxes are intentionally unchecked.
 - Modify: `backend/internal/handler/router.go`
 - Modify: `backend/internal/handler/pr_sync_job_test.go`
 
-- [ ] **Step 1: Write stale job service tests**
+- [x] **Step 1: Write stale job service tests**
 
 Append these tests to `backend/internal/prsync/job_test.go`:
 
@@ -160,7 +160,7 @@ func TestGetLatestSyncJobForRepo(t *testing.T) {
 
 Add `strings` to the import block in `backend/internal/prsync/job_test.go`.
 
-- [ ] **Step 2: Run stale job tests and verify failure**
+- [x] **Step 2: Run stale job tests and verify failure**
 
 Run:
 
@@ -170,7 +170,7 @@ cd backend && go test ./internal/prsync -run 'TestStartSyncJobAbandonsStaleRunni
 
 Expected: FAIL because `GetLatestSyncJobForRepo` and stale abandonment are not implemented yet.
 
-- [ ] **Step 3: Implement stale job handling and latest repo lookup**
+- [x] **Step 3: Implement stale job handling and latest repo lookup**
 
 In `backend/internal/prsync/service.go`, add near the top-level declarations:
 
@@ -247,7 +247,7 @@ func (s *Service) GetLatestSyncJobForRepo(ctx context.Context, repoID int) (*ent
 }
 ```
 
-- [ ] **Step 4: Run stale job tests and verify pass**
+- [x] **Step 4: Run stale job tests and verify pass**
 
 Run:
 
@@ -257,7 +257,7 @@ cd backend && go test ./internal/prsync -run 'TestStartSyncJobAbandonsStaleRunni
 
 Expected: PASS.
 
-- [ ] **Step 5: Write latest-job handler tests**
+- [x] **Step 5: Write latest-job handler tests**
 
 Update `backend/internal/handler/pr_sync_job_test.go`.
 
@@ -333,7 +333,7 @@ func TestGetLatestPRSyncJobForRepoReturnsNullWhenMissing(t *testing.T) {
 }
 ```
 
-- [ ] **Step 6: Run latest-job handler tests and verify failure**
+- [x] **Step 6: Run latest-job handler tests and verify failure**
 
 Run:
 
@@ -343,7 +343,7 @@ cd backend && go test ./internal/handler -run 'TestGetLatestPRSyncJobForRepo' -c
 
 Expected: FAIL because handler/interface/route are not implemented yet.
 
-- [ ] **Step 7: Implement latest-job handler and shared serializer**
+- [x] **Step 7: Implement latest-job handler and shared serializer**
 
 Modify `backend/internal/handler/interfaces.go`:
 
@@ -429,7 +429,7 @@ rg -n "type .*prSync|mockPRSync|GetSyncJob\\(|StartSyncJob" backend/internal/han
 
 Expected: every mock type used as `prSyncer` has a `GetLatestSyncJobForRepo` method. In the current codebase this is `mockPRSyncJobber` in `backend/internal/handler/pr_sync_job_test.go`.
 
-- [ ] **Step 8: Run backend job recovery tests**
+- [x] **Step 8: Run backend job recovery tests**
 
 Run:
 

@@ -70,6 +70,31 @@ type prListSummary struct {
 	RefreshFailed int `json:"refresh_failed"`
 }
 
+func serializePRSyncJob(job *ent.PRSyncJob) gin.H {
+	if job == nil {
+		return nil
+	}
+	return gin.H{
+		"id":                  job.ID,
+		"repo_config_id":      job.RepoConfigID,
+		"status":              string(job.Status),
+		"phase":               string(job.Phase),
+		"current_page":        job.CurrentPage,
+		"page_size":           job.PageSize,
+		"fetched_prs":         job.FetchedPrs,
+		"total_prs":           job.TotalPrs,
+		"processed_prs":       job.ProcessedPrs,
+		"created_prs":         job.CreatedPrs,
+		"changed_prs":         job.ChangedPrs,
+		"unchanged_prs":       job.UnchangedPrs,
+		"usage_total_prs":     job.UsageTotalPrs,
+		"usage_refreshed_prs": job.UsageRefreshedPrs,
+		"usage_skipped_prs":   job.UsageSkippedPrs,
+		"usage_failed_prs":    job.UsageFailedPrs,
+		"last_error":          job.LastError,
+	}
+}
+
 func (h *PRHandler) buildPRResponse(ctx context.Context, pr *ent.PrRecord, includeCommits bool) any {
 	resp := &prResponse{
 		PrRecord:          pr,
@@ -326,6 +351,26 @@ func (h *PRHandler) SyncPRs(c *gin.Context) {
 	})
 }
 
+// GetLatestSyncJobForRepo handles GET /api/v1/repos/:id/pr-sync-job/latest.
+func (h *PRHandler) GetLatestSyncJobForRepo(c *gin.Context) {
+	repoID, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		pkg.Error(c, http.StatusBadRequest, "invalid id")
+		return
+	}
+	if h.syncService == nil {
+		pkg.Error(c, http.StatusServiceUnavailable, "pr sync service is not configured")
+		return
+	}
+	job, err := h.syncService.GetLatestSyncJobForRepo(c.Request.Context(), repoID)
+	if err != nil {
+		pkg.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	pkg.Success(c, serializePRSyncJob(job))
+}
+
 // GetSyncJob handles GET /api/v1/pr-sync-jobs/:id.
 func (h *PRHandler) GetSyncJob(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
@@ -347,25 +392,7 @@ func (h *PRHandler) GetSyncJob(c *gin.Context) {
 		return
 	}
 
-	pkg.Success(c, gin.H{
-		"id":                  job.ID,
-		"repo_config_id":      job.RepoConfigID,
-		"status":              string(job.Status),
-		"phase":               string(job.Phase),
-		"current_page":        job.CurrentPage,
-		"page_size":           job.PageSize,
-		"fetched_prs":         job.FetchedPrs,
-		"total_prs":           job.TotalPrs,
-		"processed_prs":       job.ProcessedPrs,
-		"created_prs":         job.CreatedPrs,
-		"changed_prs":         job.ChangedPrs,
-		"unchanged_prs":       job.UnchangedPrs,
-		"usage_total_prs":     job.UsageTotalPrs,
-		"usage_refreshed_prs": job.UsageRefreshedPrs,
-		"usage_skipped_prs":   job.UsageSkippedPrs,
-		"usage_failed_prs":    job.UsageFailedPrs,
-		"last_error":          job.LastError,
-	})
+	pkg.Success(c, serializePRSyncJob(job))
 }
 
 type settlePRRequest struct {
