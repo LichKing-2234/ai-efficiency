@@ -91,6 +91,50 @@ func TestStartSyncJobAbandonsStaleRunningJob(t *testing.T) {
 	}
 }
 
+func TestTerminalAbandonedJobIgnoresLateWorkerUpdates(t *testing.T) {
+	client := testdb.Open(t)
+	defer client.Close()
+	ctx := context.Background()
+	rc := createTestRepo(t, ctx, client, "job-abandoned-late-update-repo")
+	job := client.PRSyncJob.Create().
+		SetRepoConfigID(rc.ID).
+		SetStatus(prsyncjob.StatusAbandoned).
+		SetPhase(prsyncjob.PhaseFailed).
+		SetLastError(staleSyncJobMessage).
+		SetCompletedAt(time.Now().UTC()).
+		SaveX(ctx)
+	svc := NewService(client, nil, zap.NewNop())
+
+	if err := svc.UpdateProgress(ctx, job.ID, SyncProgress{
+		Phase:        string(prsyncjob.PhaseRefreshingUsage),
+		PageSize:     100,
+		FetchedPRs:   100,
+		ProcessedPRs: 100,
+	}); err != nil {
+		t.Fatalf("UpdateProgress error: %v", err)
+	}
+	if err := svc.CompleteJob(ctx, job.ID, SyncResult{Total: 100}); err != nil {
+		t.Fatalf("CompleteJob error: %v", err)
+	}
+	if err := svc.FailJob(ctx, job.ID, "failed", nil); err != nil {
+		t.Fatalf("FailJob error: %v", err)
+	}
+
+	loaded := client.PRSyncJob.GetX(ctx, job.ID)
+	if loaded.Status != prsyncjob.StatusAbandoned {
+		t.Fatalf("status = %s, want abandoned after late worker updates", loaded.Status)
+	}
+	if loaded.Phase != prsyncjob.PhaseFailed {
+		t.Fatalf("phase = %s, want failed after late worker updates", loaded.Phase)
+	}
+	if loaded.LastError == nil || *loaded.LastError != staleSyncJobMessage {
+		t.Fatalf("last_error = %v, want stale message", loaded.LastError)
+	}
+	if loaded.TotalPrs != 0 || loaded.FetchedPrs != 0 || loaded.ProcessedPrs != 0 {
+		t.Fatalf("late counters total=%d fetched=%d processed=%d, want unchanged zeros", loaded.TotalPrs, loaded.FetchedPrs, loaded.ProcessedPrs)
+	}
+}
+
 func TestStartSyncJobReusesFreshRunningJobWithOldStart(t *testing.T) {
 	client := testdb.Open(t)
 	defer client.Close()

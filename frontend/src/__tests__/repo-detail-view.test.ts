@@ -444,6 +444,54 @@ describe('RepoDetailView', () => {
     expect(wrapper.text()).not.toContain('No pull requests recorded yet.')
   })
 
+  it('preserves loaded PR rows when a later PR list refresh fails', async () => {
+    const listPRsImpl = vi.fn()
+      .mockResolvedValueOnce({
+        data: {
+          data: {
+            items: [{
+              id: 101,
+              scm_pr_id: 88,
+              scm_pr_url: 'https://github.com/org/repo-a/pull/88',
+              author: 'alice',
+              title: 'Keep visible PR',
+              source_branch: 'feat/a',
+              target_branch: 'main',
+              status: 'merged',
+              labels: [],
+              lines_added: 10,
+              lines_deleted: 2,
+              cycle_time_hours: 5,
+              merged_at: '2026-03-30T00:00:00Z',
+              created_at: '2026-03-29T00:00:00Z',
+              usage_input_tokens: 1200,
+              usage_output_tokens: 500,
+              usage_cached_input_tokens: 300,
+              usage_reasoning_tokens: 80,
+              usage_credit_usage: 1.25,
+              usage_request_count: 4,
+              usage_commit_count: 1,
+              usage_refreshed_at: '2026-03-30T01:00:00Z',
+            }],
+            total: 1,
+          },
+        },
+      })
+      .mockRejectedValueOnce(new Error('backend timeout'))
+
+    const { wrapper } = await mountRepoDetail(undefined, undefined, { listPRsImpl })
+    expect(wrapper.text()).toContain('Keep visible PR')
+
+    const range = wrapper.find('select')
+    await range.setValue('6')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Failed to load pull requests')
+    expect(wrapper.text()).toContain('Retry')
+    expect(wrapper.text()).toContain('Keep visible PR')
+    expect(wrapper.text()).not.toContain('No pull requests recorded yet.')
+  })
+
   it('renders PR usage freshness badge and commit reason', async () => {
     const { wrapper } = await mountRepoDetail(undefined, undefined, {
       prs: [{

@@ -95,9 +95,6 @@ async function loadPRs() {
     prsSummary.value = prData && 'summary' in prData && prData.summary ? prData.summary : null
   } catch (error: any) {
     prsLoadError.value = error?.response?.data?.message || error?.message || t('repoDetail.prListLoadFailed')
-    prs.value = []
-    prsTotal.value = 0
-    prsSummary.value = null
   } finally {
     prsLoading.value = false
   }
@@ -585,7 +582,7 @@ onUnmounted(() => {
           </button>
         </div>
 
-        <div v-if="!prsLoadError && prs.length > 0" class="mt-3 space-y-3 md:hidden">
+        <div v-if="prs.length > 0" class="mt-3 space-y-3 md:hidden">
           <article v-for="pr in prs" :key="pr.id" class="rounded-lg border border-gray-100 bg-white p-4 shadow-sm">
             <div class="flex items-start justify-between gap-3">
               <div class="min-w-0">
@@ -680,7 +677,7 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <div v-if="!prsLoadError && prs.length > 0" class="mt-3 hidden overflow-x-auto md:block">
+        <div v-if="prs.length > 0" class="mt-3 hidden overflow-x-auto md:block">
           <table class="min-w-full divide-y divide-gray-100 text-sm">
             <thead>
               <tr class="text-xs uppercase text-gray-400">
