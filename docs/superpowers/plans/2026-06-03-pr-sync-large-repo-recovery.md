@@ -439,7 +439,7 @@ cd backend && go test ./internal/prsync ./internal/handler -run 'TestStartSyncJo
 
 Expected: PASS.
 
-- [ ] **Step 9: Commit backend job recovery**
+- [x] **Step 9: Commit backend job recovery**
 
 Run:
 
@@ -1042,7 +1042,7 @@ git add docs/architecture.md docs/superpowers/specs/2026-06-03-pr-sync-large-rep
 git commit -m "docs(architecture): update PR sync recovery contract"
 ```
 
-- [ ] **Step 7: Final integration check**
+- [x] **Step 7: Final integration check**
 
 Run:
 
