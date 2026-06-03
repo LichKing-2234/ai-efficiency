@@ -1,7 +1,7 @@
 # PR Sync Large Repo Recovery Design
 
 - **Date:** 2026-06-03
-- **Status:** Approved design, implementation not started
+- **Status:** Implemented
 - **Scope:** `backend/`, `frontend/`, `docs/`
 - **Related:**
   - [2026-05-28-pr-sync-job-progress-usage-freshness-design.md](./2026-05-28-pr-sync-job-progress-usage-freshness-design.md)
@@ -295,6 +295,8 @@ Implementation should update:
 2. This spec's status once implemented.
 
 The older 2026-05-28 spec should remain as historical design context. Do not rewrite it wholesale. If implementation changes the current contract beyond this spec, add a new spec or update this follow-up spec.
+
+Implementation updated `docs/architecture.md` to reflect the current runtime contract.
 
 ## Open Risks
 

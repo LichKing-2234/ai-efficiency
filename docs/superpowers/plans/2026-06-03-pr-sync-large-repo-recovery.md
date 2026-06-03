@@ -973,7 +973,7 @@ git commit -m "fix(frontend): recover PR sync job progress"
 - Modify: `docs/architecture.md`
 - Modify: `docs/superpowers/specs/2026-06-03-pr-sync-large-repo-recovery-design.md`
 
-- [ ] **Step 1: Update architecture documentation**
+- [x] **Step 1: Update architecture documentation**
 
 In `docs/architecture.md`, update the PR sync paragraph that currently describes `POST /api/v1/repos/:id/sync-prs` and frontend polling.
 
@@ -983,7 +983,7 @@ Use this replacement paragraph:
 `POST /api/v1/repos/:id/sync-prs` creates or reuses a backend `pr_sync_jobs` record and the backend process performs PR metadata sync plus active PR usage refresh asynchronously. Repo detail pages recover the latest repo-level sync job through `GET /api/v1/repos/:id/pr-sync-job/latest`, then poll `GET /api/v1/pr-sync-jobs/:id` while the job is active. `StartSyncJob` abandons stale queued/running jobs that have not recorded progress for more than one hour, which prevents a lost in-process worker from permanently blocking a new sync attempt. PR list summaries use bounded aggregate queries, while only the current page rows receive PR-level freshness evaluation. Bitbucket Server PR sync records SCM `createdDate` so recent-window filters are based on actual PR age rather than first ingestion time.
 ```
 
-- [ ] **Step 2: Update spec status**
+- [x] **Step 2: Update spec status**
 
 In `docs/superpowers/specs/2026-06-03-pr-sync-large-repo-recovery-design.md`, change:
 
@@ -1003,7 +1003,7 @@ Append under `## Documentation Updates`:
 Implementation updated `docs/architecture.md` to reflect the current runtime contract.
 ```
 
-- [ ] **Step 3: Run backend targeted tests**
+- [x] **Step 3: Run backend targeted tests**
 
 Run:
 
@@ -1013,7 +1013,7 @@ cd backend && go test ./internal/scm/bitbucket ./internal/prsync ./internal/hand
 
 Expected: PASS.
 
-- [ ] **Step 4: Run frontend tests**
+- [x] **Step 4: Run frontend tests**
 
 Run:
 
@@ -1023,7 +1023,7 @@ cd frontend && pnpm test
 
 Expected: PASS.
 
-- [ ] **Step 5: Check working tree and generated files**
+- [x] **Step 5: Check working tree and generated files**
 
 Run:
 
