@@ -124,6 +124,16 @@ func TestStatusErrorBodyLimit(t *testing.T) {
 	}
 }
 
+func TestStatusErrorUsesDefaultBodyLimit(t *testing.T) {
+	body := strings.Repeat("x", int(DefaultErrorBodyLimit)+10)
+	want := strings.Repeat("x", int(DefaultErrorBodyLimit))
+	err := runErrorServer(t, http.StatusBadRequest, body, Options{})
+	statusErr := assertStatusError(t, err)
+	if statusErr.Body != want || statusErr.Summary != want {
+		t.Fatalf("StatusError body length = %d summary length = %d, want %d", len(statusErr.Body), len(statusErr.Summary), len(want))
+	}
+}
+
 func TestStatusErrorDoesNotRenderAuthorizationHeader(t *testing.T) {
 	headers := http.Header{}
 	headers.Set("Authorization", "Bearer test-token-value")

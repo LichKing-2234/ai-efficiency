@@ -1,6 +1,6 @@
 # ae-cli Shared HTTP Request Handler Design
 
-**Status:** Proposed implementation contract
+**Status:** Implemented contract
 **Scope:** `ae-cli/internal/httpx`, `ae-cli/internal/auth`, `ae-cli/internal/client`
 **Related:** [2026-03-24-oauth-cli-login-design.md](./2026-03-24-oauth-cli-login-design.md), [2026-04-15-oauth-device-login-design.md](./2026-04-15-oauth-device-login-design.md), [2026-05-19-ae-cli-deterministic-tool-configuration-design.md](./2026-05-19-ae-cli-deterministic-tool-configuration-design.md)
 
