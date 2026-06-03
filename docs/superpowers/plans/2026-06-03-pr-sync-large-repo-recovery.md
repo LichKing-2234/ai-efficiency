@@ -956,7 +956,7 @@ cd frontend && pnpm test -- api-modules.test.ts repo-detail-view.test.ts
 
 Expected: PASS.
 
-- [ ] **Step 8: Commit frontend recovery**
+- [x] **Step 8: Commit frontend recovery**
 
 Run:
 
