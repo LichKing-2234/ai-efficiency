@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -14,8 +13,9 @@ import (
 	"net/url"
 	"os/exec"
 	"runtime"
-	"strings"
 	"time"
+
+	"github.com/ai-efficiency/ae-cli/internal/httpx"
 )
 
 // OAuthConfig holds the OAuth login configuration.
@@ -130,32 +130,14 @@ func exchangeCodeWithClient(ctx context.Context, client *http.Client, serverURL,
 		"client_id":     {"ae-cli"},
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, serverURL+"/oauth/token", strings.NewReader(data.Encode()))
-	if err != nil {
-		return nil, fmt.Errorf("create token request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("token request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		var errResp map[string]string
-		json.NewDecoder(resp.Body).Decode(&errResp)
-		return nil, fmt.Errorf("token exchange failed: %s — %s", errResp["error"], errResp["error_description"])
-	}
-
 	var tokenResp struct {
 		AccessToken  string `json:"access_token"`
 		RefreshToken string `json:"refresh_token"`
 		TokenType    string `json:"token_type"`
 		ExpiresIn    int    `json:"expires_in"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
-		return nil, fmt.Errorf("decode token response: %w", err)
+	if err := httpx.DoForm(ctx, client, http.MethodPost, serverURL+"/oauth/token", data, &tokenResp, httpx.Options{}); err != nil {
+		return nil, fmt.Errorf("token exchange failed: %w", err)
 	}
 
 	return &OAuthResult{

@@ -3,12 +3,15 @@ package auth
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
 	"os"
 	"strings"
 	"time"
+
+	"github.com/ai-efficiency/ae-cli/internal/httpx"
 )
 
 type deviceCodeResponse struct {
@@ -22,6 +25,7 @@ type deviceCodeResponse struct {
 type oauthErrorResponse struct {
 	Error            string `json:"error"`
 	ErrorDescription string `json:"error_description"`
+	Message          string `json:"message"`
 }
 
 func LoginDevice(ctx context.Context, cfg OAuthConfig) (*OAuthResult, error) {
@@ -44,7 +48,7 @@ func LoginDevice(ctx context.Context, cfg OAuthConfig) (*OAuthResult, error) {
 
 	interval := normalizePollInterval(deviceResp.Interval)
 	for {
-		token, oauthErr, err := pollDeviceToken(ctx, cfg, deviceResp.DeviceCode)
+		token, oauthErr, oauthErrSummary, err := pollDeviceToken(ctx, cfg, deviceResp.DeviceCode)
 		if err != nil {
 			return nil, err
 		}
@@ -58,7 +62,7 @@ func LoginDevice(ctx context.Context, cfg OAuthConfig) (*OAuthResult, error) {
 			interval += 5 * time.Second
 			cfg.Sleep(interval)
 		default:
-			return nil, fmt.Errorf("device token exchange failed: %s", oauthErr)
+			return nil, fmt.Errorf("device token exchange failed: %s", oauthErrSummary)
 		}
 
 		select {
@@ -108,57 +112,19 @@ func requestDeviceCode(ctx context.Context, cfg OAuthConfig) (*deviceCodeRespons
 		"client_id": {cfg.ClientID},
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, cfg.ServerURL+"/oauth/device/code", strings.NewReader(data.Encode()))
-	if err != nil {
-		return nil, fmt.Errorf("create device code request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-
-	resp, err := cfg.HTTPClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("device code request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		var errResp oauthErrorResponse
-		_ = json.NewDecoder(resp.Body).Decode(&errResp)
-		return nil, fmt.Errorf("device code request failed: %s", errResp.Error)
-	}
-
 	var payload deviceCodeResponse
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		return nil, fmt.Errorf("decode device code response: %w", err)
+	if err := httpx.DoForm(ctx, cfg.HTTPClient, http.MethodPost, cfg.ServerURL+"/oauth/device/code", data, &payload, httpx.Options{}); err != nil {
+		return nil, fmt.Errorf("device code request failed: %w", err)
 	}
 
 	return &payload, nil
 }
 
-func pollDeviceToken(ctx context.Context, cfg OAuthConfig, deviceCode string) (*OAuthResult, string, error) {
+func pollDeviceToken(ctx context.Context, cfg OAuthConfig, deviceCode string) (*OAuthResult, string, string, error) {
 	data := url.Values{
 		"grant_type":  {"urn:ietf:params:oauth:grant-type:device_code"},
 		"device_code": {deviceCode},
 		"client_id":   {cfg.ClientID},
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, cfg.ServerURL+"/oauth/token", strings.NewReader(data.Encode()))
-	if err != nil {
-		return nil, "", fmt.Errorf("create device token request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-
-	resp, err := cfg.HTTPClient.Do(req)
-	if err != nil {
-		return nil, "", fmt.Errorf("device token request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		var errResp oauthErrorResponse
-		if err := json.NewDecoder(resp.Body).Decode(&errResp); err != nil {
-			return nil, "", fmt.Errorf("decode device token error: %w", err)
-		}
-		return nil, errResp.Error, nil
 	}
 
 	var tokenResp struct {
@@ -167,13 +133,30 @@ func pollDeviceToken(ctx context.Context, cfg OAuthConfig, deviceCode string) (*
 		TokenType    string `json:"token_type"`
 		ExpiresIn    int    `json:"expires_in"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
-		return nil, "", fmt.Errorf("decode token response: %w", err)
+	err := httpx.DoForm(ctx, cfg.HTTPClient, http.MethodPost, cfg.ServerURL+"/oauth/token", data, &tokenResp, httpx.Options{})
+	if err != nil {
+		var statusErr *httpx.StatusError
+		if errors.As(err, &statusErr) {
+			oauthErr := decodeOAuthErrorBody(statusErr.Body)
+			if oauthErr.Error != "" {
+				return nil, oauthErr.Error, statusErr.Summary, nil
+			}
+		}
+		return nil, "", "", fmt.Errorf("device token request failed: %w", err)
 	}
 
 	return &OAuthResult{
 		AccessToken:  tokenResp.AccessToken,
 		RefreshToken: tokenResp.RefreshToken,
 		ExpiresIn:    tokenResp.ExpiresIn,
-	}, "", nil
+	}, "", "", nil
+}
+
+func decodeOAuthErrorBody(body string) oauthErrorResponse {
+	var errResp oauthErrorResponse
+	if strings.TrimSpace(body) == "" {
+		return errResp
+	}
+	_ = json.Unmarshal([]byte(body), &errResp)
+	return errResp
 }
