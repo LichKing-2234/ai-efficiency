@@ -118,43 +118,37 @@ func (h *PRHandler) buildPRResponse(ctx context.Context, pr *ent.PrRecord, inclu
 
 func (h *PRHandler) buildPRListSummary(ctx context.Context, query *ent.PrRecordQuery, total int) (prListSummary, error) {
 	summary := prListSummary{Total: total}
-	prs, err := query.All(ctx)
+	withUsage, err := query.Clone().
+		Where(prrecord.Or(
+			prrecord.UsageInputTokensGT(0),
+			prrecord.UsageOutputTokensGT(0),
+			prrecord.UsageCachedInputTokensGT(0),
+			prrecord.UsageReasoningTokensGT(0),
+			prrecord.UsageCreditUsageGT(0),
+			prrecord.UsageRequestCountGT(0),
+		)).
+		Count(ctx)
 	if err != nil {
 		return summary, err
 	}
-	freshnessEvaluator := h.usageFreshness
-	if freshnessEvaluator == nil && h.entClient != nil {
-		freshnessEvaluator = prusage.NewService(h.entClient)
-	}
-	for _, pr := range prs {
-		if prHasUsage(pr) {
-			summary.WithUsage++
-		}
-		if freshnessEvaluator == nil {
-			continue
-		}
-		freshness, err := freshnessEvaluator.EvaluatePRFreshness(ctx, pr.ID)
-		if err != nil || freshness == nil {
-			continue
-		}
-		switch freshness.Status {
-		case prusage.UsageStatusPendingUpload:
-			summary.PendingUpload++
-		case prusage.UsageStatusNoCheckpoint:
-			summary.NoCheckpoint++
-		case prusage.UsageStatusRefreshFailed:
-			summary.RefreshFailed++
-		}
-	}
-	return summary, nil
-}
+	summary.WithUsage = withUsage
 
-func prHasUsage(pr *ent.PrRecord) bool {
-	if pr == nil {
-		return false
+	noCheckpoint, err := query.Clone().
+		Where(
+			prrecord.UsageRefreshedAtIsNil(),
+			prrecord.UsageInputTokensEQ(0),
+			prrecord.UsageOutputTokensEQ(0),
+			prrecord.UsageCachedInputTokensEQ(0),
+			prrecord.UsageReasoningTokensEQ(0),
+			prrecord.UsageCreditUsageEQ(0),
+			prrecord.UsageRequestCountEQ(0),
+		).
+		Count(ctx)
+	if err != nil {
+		return summary, err
 	}
-	tokenTotal := pr.UsageInputTokens + pr.UsageOutputTokens + pr.UsageCachedInputTokens + pr.UsageReasoningTokens
-	return tokenTotal > 0 || pr.UsageCreditUsage > 0 || pr.UsageRequestCount > 0
+	summary.NoCheckpoint = noCheckpoint
+	return summary, nil
 }
 
 // ListByRepo handles GET /api/v1/repos/:id/prs

@@ -456,7 +456,7 @@ git commit -m "fix(prsync): recover latest repo sync jobs"
 - Modify: `backend/internal/handler/pr.go`
 - Modify: `backend/internal/handler/handler_extended_test.go`
 
-- [ ] **Step 1: Write a summary regression test with a counting freshness evaluator**
+- [x] **Step 1: Write a summary regression test with a counting freshness evaluator**
 
 Add this helper type to `backend/internal/handler/handler_extended_test.go` near the PR summary tests:
 
@@ -528,7 +528,7 @@ func TestPRListByRepoEvaluatesFreshnessOnlyForCurrentPage(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run bounded summary test and verify failure**
+- [x] **Step 2: Run bounded summary test and verify failure**
 
 Run:
 
@@ -538,7 +538,7 @@ cd backend && go test ./internal/handler -run 'TestPRListByRepoEvaluatesFreshnes
 
 Expected: FAIL because current `buildPRListSummary` evaluates all 25 PRs.
 
-- [ ] **Step 3: Implement bounded summary queries**
+- [x] **Step 3: Implement bounded summary queries**
 
 In `backend/internal/handler/pr.go`, replace `buildPRListSummary` with aggregate count logic.
 
@@ -585,7 +585,7 @@ func (h *PRHandler) buildPRListSummary(ctx context.Context, query *ent.PrRecordQ
 
 Keep `buildPRResponse` unchanged so current page items still include freshness.
 
-- [ ] **Step 4: Run summary tests**
+- [x] **Step 4: Run summary tests**
 
 Run:
 
