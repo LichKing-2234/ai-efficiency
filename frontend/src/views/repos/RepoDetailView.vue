@@ -3,7 +3,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppLayout from '@/components/AppLayout.vue'
 import { getRepo, updateRepo } from '@/api/repo'
-import { getPR, getPRSyncJob, listPRs, refreshPRUsage, syncPRs } from '@/api/pr'
+import { getLatestPRSyncJob, getPR, getPRSyncJob, listPRs, refreshPRUsage, syncPRs } from '@/api/pr'
 import { listProviders } from '@/api/scmProvider'
 import { useAuthStore } from '@/stores/auth'
 import { useI18n } from '@/i18n'
@@ -21,6 +21,8 @@ const prsSummary = ref<PRListSummary | null>(null)
 const prsPage = ref(0)
 const prsPageSize = 10
 const prsMonths = ref(3)
+const prsLoading = ref(false)
+const prsLoadError = ref('')
 const loading = ref(true)
 const syncing = ref(false)
 const syncJob = ref<PRSyncJob | null>(null)
@@ -59,17 +61,11 @@ const prUsageSummary = computed(() => {
 
 onMounted(async () => {
   try {
-    const [repoRes, prsRes] = await Promise.all([
-      getRepo(repoId),
-      listPRs(repoId, { limit: prsPageSize, months: prsMonths.value }).catch(() => ({ data: { data: { items: [] } } })),
+    await Promise.all([
+      refreshRepo(),
+      loadPRs(),
+      recoverLatestSyncJob(),
     ])
-    repo.value = repoRes.data.data ?? null
-    const prData = prsRes.data.data
-    prs.value = prData && 'items' in prData ? prData.items : []
-    prsTotal.value = prData && 'total' in prData ? prData.total : 0
-    prsSummary.value = prData && 'summary' in prData && prData.summary ? prData.summary : null
-
-    selectedProviderId.value = repo.value?.edges?.scm_provider?.id ?? repo.value?.scm_provider_id ?? null
     if (auth.isAdmin) {
       const providersRes = await listProviders().catch(() => ({ data: { data: [] } }))
       const providerData = providersRes.data.data
@@ -89,13 +85,38 @@ async function refreshRepo() {
 }
 
 async function loadPRs() {
+  prsLoading.value = true
+  prsLoadError.value = ''
   try {
     const prsRes = await listPRs(repoId, { limit: prsPageSize, offset: prsPage.value * prsPageSize, months: prsMonths.value })
     const prData = prsRes.data.data
     prs.value = prData && 'items' in prData ? prData.items : []
     prsTotal.value = prData && 'total' in prData ? prData.total : 0
     prsSummary.value = prData && 'summary' in prData && prData.summary ? prData.summary : null
-  } catch { /* load failed */ }
+  } catch (error: any) {
+    prsLoadError.value = error?.response?.data?.message || error?.message || t('repoDetail.prListLoadFailed')
+    prs.value = []
+    prsTotal.value = 0
+    prsSummary.value = null
+  } finally {
+    prsLoading.value = false
+  }
+}
+
+async function recoverLatestSyncJob() {
+  try {
+    const res = await getLatestPRSyncJob(repoId)
+    const job = res.data.data ?? null
+    if (!job) return
+    syncJob.value = job
+    if (!isTerminalJob(job)) {
+      syncing.value = true
+      syncPollTimer.value = window.setTimeout(() => pollSyncJob(job.id), 1500)
+    }
+  } catch (error: any) {
+    syncMessageTone.value = 'error'
+    syncMessage.value = error?.response?.data?.message || t('repoDetail.syncProgressFailed')
+  }
 }
 
 async function handleSyncPRs() {
@@ -553,7 +574,18 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <div v-if="prs.length > 0" class="mt-3 space-y-3 md:hidden">
+        <div v-if="prsLoadError" class="mt-4 rounded-md bg-red-50 p-3 text-sm text-red-700">
+          <div>{{ t('repoDetail.prListLoadFailed') }}</div>
+          <button
+            class="mt-2 rounded-md border border-red-200 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-100"
+            type="button"
+            @click="loadPRs"
+          >
+            {{ t('repoDetail.retry') }}
+          </button>
+        </div>
+
+        <div v-if="!prsLoadError && prs.length > 0" class="mt-3 space-y-3 md:hidden">
           <article v-for="pr in prs" :key="pr.id" class="rounded-lg border border-gray-100 bg-white p-4 shadow-sm">
             <div class="flex items-start justify-between gap-3">
               <div class="min-w-0">
@@ -648,7 +680,7 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <div v-if="prs.length > 0" class="mt-3 hidden overflow-x-auto md:block">
+        <div v-if="!prsLoadError && prs.length > 0" class="mt-3 hidden overflow-x-auto md:block">
           <table class="min-w-full divide-y divide-gray-100 text-sm">
             <thead>
               <tr class="text-xs uppercase text-gray-400">
@@ -769,7 +801,8 @@ onUnmounted(() => {
             </div>
           </div>
         </div>
-        <p v-else class="mt-3 text-sm text-gray-400">{{ t('repoDetail.noPullRequests') }}</p>
+        <p v-else-if="prsLoading" class="mt-3 text-sm text-gray-400">{{ t('repoDetail.loading') }}</p>
+        <p v-else-if="!prsLoadError" class="mt-3 text-sm text-gray-400">{{ t('repoDetail.noPullRequests') }}</p>
       </div>
     </div>
   </AppLayout>

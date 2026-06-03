@@ -744,7 +744,7 @@ git commit -m "fix(scm): ingest Bitbucket PR timestamps"
 - Modify: `frontend/src/__tests__/api-modules.test.ts`
 - Modify: `frontend/src/__tests__/repo-detail-view.test.ts`
 
-- [ ] **Step 1: Add API helper test**
+- [x] **Step 1: Add API helper test**
 
 In `frontend/src/__tests__/api-modules.test.ts`, update the import from `@/api/pr` to include `getLatestPRSyncJob`.
 
@@ -758,7 +758,7 @@ it('getLatestPRSyncJob fetches the latest repo PR sync job', async () => {
 })
 ```
 
-- [ ] **Step 2: Run API helper test and verify failure**
+- [x] **Step 2: Run API helper test and verify failure**
 
 Run:
 
@@ -768,7 +768,7 @@ cd frontend && pnpm test -- api-modules.test.ts -t 'getLatestPRSyncJob'
 
 Expected: FAIL because the helper does not exist.
 
-- [ ] **Step 3: Implement API helper**
+- [x] **Step 3: Implement API helper**
 
 In `frontend/src/api/pr.ts`, add:
 
@@ -778,7 +778,7 @@ export function getLatestPRSyncJob(repoId: number) {
 }
 ```
 
-- [ ] **Step 4: Add repo detail recovery and error tests**
+- [x] **Step 4: Add repo detail recovery and error tests**
 
 Update the `vi.mock('@/api/pr')` block in `frontend/src/__tests__/repo-detail-view.test.ts`:
 
@@ -829,7 +829,7 @@ it('shows PR list load errors instead of empty state', async () => {
 })
 ```
 
-- [ ] **Step 5: Run repo detail tests and verify failure**
+- [x] **Step 5: Run repo detail tests and verify failure**
 
 Run:
 
@@ -839,7 +839,7 @@ cd frontend && pnpm test -- repo-detail-view.test.ts -t 'recovers a running PR s
 
 Expected: FAIL because job recovery and explicit PR list error state are not implemented.
 
-- [ ] **Step 6: Implement frontend recovery and error state**
+- [x] **Step 6: Implement frontend recovery and error state**
 
 In `frontend/src/api/pr.ts`, keep the helper added in Step 3.
 
@@ -946,7 +946,7 @@ and Chinese:
 'repoDetail.retry': '重试',
 ```
 
-- [ ] **Step 7: Run frontend targeted tests**
+- [x] **Step 7: Run frontend targeted tests**
 
 Run:
 
