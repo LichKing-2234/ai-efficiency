@@ -251,6 +251,21 @@ describe('UserView', () => {
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith(expect.stringContaining('"ANTHROPIC_AUTH_TOKEN": "sk-existing-claude-123456"'))
   })
 
+  it('wraps manual configuration snippets without changing command block scrolling', async () => {
+    const { wrapper } = await mountUserView()
+
+    const installCommandBlock = wrapper.findAll('pre').find((block) => block.text().includes('install.sh'))
+    expect(installCommandBlock?.classes()).toContain('overflow-x-auto')
+    expect(installCommandBlock?.classes()).not.toContain('whitespace-pre-wrap')
+
+    await wrapper.get('[data-testid="setup-audience-non-developer"]').trigger('click')
+
+    const manualConfigBlock = wrapper.findAll('pre').find((block) => block.text().includes('ANTHROPIC_BASE_URL'))
+    expect(manualConfigBlock?.classes()).toContain('whitespace-pre-wrap')
+    expect(manualConfigBlock?.classes()).toContain('break-words')
+    expect(manualConfigBlock?.classes()).not.toContain('overflow-x-auto')
+  })
+
   it('renders Codex manual configuration for non-developer OpenAI groups', async () => {
     const { wrapper } = await mountUserView()
 
