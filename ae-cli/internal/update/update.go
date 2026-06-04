@@ -19,6 +19,7 @@ const (
 	defaultReleaseAPIURL          = "https://api.github.com/repos/LichKing-2234/ai-efficiency/releases/latest"
 	defaultInstallScriptURLFormat = "https://raw.githubusercontent.com/LichKing-2234/ai-efficiency/%s/ae-cli/%s"
 	updateRequestTimeout          = 10 * time.Second
+	githubReleaseProxyGuidance    = "ae-cli downloads releases from GitHub Releases. If your network cannot reach GitHub directly, configure HTTPS_PROXY or HTTP_PROXY and retry, for example: HTTPS_PROXY=http://127.0.0.1:7890"
 )
 
 var (
@@ -186,7 +187,7 @@ func fetchLatestRelease(ctx context.Context, overrideURL string) (*latestRelease
 	}
 	resp, err := httpDo(req)
 	if err != nil {
-		return nil, fmt.Errorf("fetch latest release: %w", err)
+		return nil, fmt.Errorf("fetch latest release: %w. %s", err, githubReleaseProxyGuidance)
 	}
 	defer resp.Body.Close()
 
@@ -212,7 +213,7 @@ func downloadInstallScript(ctx context.Context, scriptURL string) ([]byte, error
 	}
 	resp, err := httpDo(req)
 	if err != nil {
-		return nil, fmt.Errorf("download install script: %w", err)
+		return nil, fmt.Errorf("download install script: %w. %s", err, githubReleaseProxyGuidance)
 	}
 	defer resp.Body.Close()
 

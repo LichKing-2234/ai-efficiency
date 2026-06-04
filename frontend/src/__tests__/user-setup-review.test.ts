@@ -3,13 +3,16 @@ import {
   buildDeviceLoginCommand,
   buildDiscoverCommand,
   buildDoctorCommand,
+  buildGithubConnectivityCommand,
   buildHooksGlobalCommand,
   buildHooksStatusUploadsCommand,
   buildInstallCommand,
   buildLoginCommand,
+  buildPreferredGithubConnectivityCommand,
   buildPreferredInstallCommand,
   buildRepoInitCommand,
   buildSyncCommand,
+  buildWindowsGithubConnectivityCommand,
   buildWindowsInstallCommand,
   detectInstallPlatform,
 } from '@/utils/userSetupReview'
@@ -25,6 +28,17 @@ describe('userSetupReview command builders', () => {
     expect(buildInstallCommand('https://ae.example.com')).toBe(
       'curl -fsSL https://raw.githubusercontent.com/LichKing-2234/ai-efficiency/main/ae-cli/install.sh | AE_CLI_INSTALL_SERVER_URL=https://ae.example.com bash'
     )
+  })
+
+  it('builds GitHub release connectivity checks before installing from GitHub releases', () => {
+    expect(buildGithubConnectivityCommand()).toBe(
+      'curl -fsSI --connect-timeout 5 https://api.github.com/repos/LichKing-2234/ai-efficiency/releases/latest'
+    )
+    expect(buildWindowsGithubConnectivityCommand()).toBe(
+      'iwr -UseB -Method Head https://api.github.com/repos/LichKing-2234/ai-efficiency/releases/latest'
+    )
+    expect(buildPreferredGithubConnectivityCommand('windows')).toContain('iwr -UseB')
+    expect(buildPreferredGithubConnectivityCommand('shell')).toContain('curl -fsSI')
   })
 
   it('buildWindowsInstallCommand passes AE_CLI_INSTALL_SERVER_URL to PowerShell', () => {

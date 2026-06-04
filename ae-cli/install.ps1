@@ -20,8 +20,20 @@ $TargetPath = Join-Path $InstallDir "ae-cli.exe"
 $ConfigDir = Join-Path $env:USERPROFILE ".ae-cli"
 $ConfigPath = Join-Path $ConfigDir "config.yaml"
 
+function Write-GitHubReleaseProxyHelp {
+  Write-Host "ae-cli downloads releases from GitHub Releases. This request failed before the installer could resolve or download the release."
+  Write-Host "If your network cannot reach GitHub directly, configure a proxy and rerun, for example:"
+  Write-Host '$env:HTTPS_PROXY = "http://127.0.0.1:7890"'
+  Write-Host '$env:HTTP_PROXY = "http://127.0.0.1:7890"'
+}
+
 function Get-LatestTag {
-  $release = Invoke-RestMethod -Uri $ReleaseApiUrl -UseBasicParsing
+  try {
+    $release = Invoke-RestMethod -Uri $ReleaseApiUrl -UseBasicParsing
+  } catch {
+    Write-GitHubReleaseProxyHelp
+    throw
+  }
   if (-not $release.tag_name) {
     throw "failed to resolve release tag"
   }
@@ -115,8 +127,13 @@ try {
   $ChecksumsPath = Join-Path $TempDir "checksums.txt"
   $ReleaseBase = "$ReleaseDownloadBase/$Tag"
 
-  Invoke-WebRequest -Uri "$ReleaseBase/$Archive" -OutFile $ArchivePath -UseBasicParsing
-  Invoke-WebRequest -Uri "$ReleaseBase/checksums.txt" -OutFile $ChecksumsPath -UseBasicParsing
+  try {
+    Invoke-WebRequest -Uri "$ReleaseBase/$Archive" -OutFile $ArchivePath -UseBasicParsing
+    Invoke-WebRequest -Uri "$ReleaseBase/checksums.txt" -OutFile $ChecksumsPath -UseBasicParsing
+  } catch {
+    Write-GitHubReleaseProxyHelp
+    throw
+  }
 
   $Expected = (Get-Content -LiteralPath $ChecksumsPath | Where-Object { $_ -match "\s+$([regex]::Escape($Archive))$" } | Select-Object -First 1)
   if (-not $Expected) {

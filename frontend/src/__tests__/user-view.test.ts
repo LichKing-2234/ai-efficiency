@@ -185,9 +185,13 @@ describe('UserView', () => {
     const { wrapper } = await mountUserView()
 
     expect(wrapper.text()).toContain('Setup progress')
+    expect(wrapper.text()).toContain("I'm a developer")
+    expect(wrapper.text()).toContain("I'm not a developer")
     expect(wrapper.text()).toContain('Account verified')
     expect(wrapper.text()).toContain('Confirm AI access')
     expect(wrapper.text()).toContain('Install the CLI')
+    expect(wrapper.text()).toContain('Check GitHub connectivity')
+    expect(wrapper.text()).toContain('HTTPS_PROXY')
     expect(wrapper.text()).toContain('Configure local AI tools')
     expect(wrapper.text()).toContain('Enable automatic Git reporting')
     expect(wrapper.text()).toContain('Run setup diagnosis')
@@ -198,6 +202,23 @@ describe('UserView', () => {
 
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith(expect.stringContaining('curl -fsSL'))
     expect(wrapper.text()).toContain('Copied')
+  })
+
+  it('lets non-developers switch to manual local configuration without ae-cli commands in the progress flow', async () => {
+    const { wrapper } = await mountUserView()
+
+    await wrapper.get('[data-testid="setup-audience-non-developer"]').trigger('click')
+
+    const progressText = wrapper.get('[data-testid="setup-progress"]').text()
+    expect(progressText).toContain('Manual local configuration')
+    expect(progressText).toContain('ae-cli is not required')
+    expect(progressText).toContain('https://prod.example.com')
+    expect(progressText).toContain('anthropic')
+    expect(progressText).not.toContain('ae-cli login')
+    expect(progressText).not.toContain('ae-cli discover')
+    expect(progressText).not.toContain('ae-cli hooks enable --global')
+    expect(progressText).not.toContain('ae-cli init')
+    expect(progressText).not.toContain('ae-cli doctor')
   })
 
   it('marks local-only setup steps as requiring a local check instead of pretending they are numbered progress', async () => {

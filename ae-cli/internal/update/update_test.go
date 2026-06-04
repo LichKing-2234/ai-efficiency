@@ -38,6 +38,29 @@ func TestCheckForUpdateReportsAvailableRelease(t *testing.T) {
 	}
 }
 
+func TestCheckForUpdateAddsProxyGuidanceWhenGitHubReleaseFetchFails(t *testing.T) {
+	oldHTTPDo := httpDo
+	defer func() { httpDo = oldHTTPDo }()
+
+	httpDo = func(req *http.Request) (*http.Response, error) {
+		return nil, errors.New("dial tcp timeout")
+	}
+
+	_, err := CheckForUpdate(context.Background(), CheckOptions{
+		CurrentVersion: "v0.1.0",
+		ReleaseAPIURL:  "https://api.github.com/repos/LichKing-2234/ai-efficiency/releases/latest",
+	})
+	if err == nil {
+		t.Fatal("expected release fetch to fail")
+	}
+	if !strings.Contains(err.Error(), "GitHub Releases") {
+		t.Fatalf("error = %q, want GitHub Releases guidance", err)
+	}
+	if !strings.Contains(err.Error(), "HTTPS_PROXY") {
+		t.Fatalf("error = %q, want proxy guidance", err)
+	}
+}
+
 func TestInstallLatestDoesNotRequireExecutablePathWhenAlreadyUpToDate(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

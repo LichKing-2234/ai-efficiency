@@ -13,6 +13,7 @@ import {
   buildDeviceLoginCommand,
   buildDiscoverCommand,
   buildDoctorCommand,
+  buildPreferredGithubConnectivityCommand,
   buildHooksGlobalCommand,
   buildHooksStatusUploadsCommand,
   buildInstallCommand,
@@ -44,6 +45,22 @@ const providerTestPrompt = ref('Hi')
 const providerTestLoading = ref(false)
 const providerTestResult = ref<UserProviderTestResult | null>(null)
 const copiedCommandKey = ref('')
+const setupAudience = ref<'developer' | 'non_developer'>('developer')
+type SetupStepStatus = 'done' | 'todo' | 'local_check'
+type SetupStepCommand = {
+  key: string
+  label: string
+  help: string
+  command: string
+}
+type SetupStep = {
+  key: string
+  status: SetupStepStatus
+  title: string
+  help: string
+  command?: string
+  secondaryCommands?: SetupStepCommand[]
+}
 type SecretAction = 'reveal' | 'copy' | 'regenerate'
 const secretConfirmAction = ref<SecretAction | null>(null)
 
@@ -57,6 +74,7 @@ const installCommand = computed(() => buildPreferredInstallCommand(currentOrigin
 const alternateInstallLabel = computed(() => installPlatform.value === 'windows' ? 'macOS / Linux' : 'Windows PowerShell')
 const alternateInstallCommand = computed(() => installPlatform.value === 'windows' ? shellInstallCommand.value : windowsInstallCommand.value)
 const alternateInstallCopyKey = computed(() => installPlatform.value === 'windows' ? 'install-macos' : 'install-windows')
+const githubConnectivityCommand = computed(() => buildPreferredGithubConnectivityCommand(installPlatform.value))
 const loginCommand = computed(() => buildLoginCommand(currentOrigin.value))
 const deviceLoginCommand = computed(() => buildDeviceLoginCommand(currentOrigin.value))
 const discoverCommand = computed(() => selectedProvider.value ? buildDiscoverCommand(currentOrigin.value, selectedProvider.value.name) : '')
@@ -74,62 +92,88 @@ const readyAccessGroupCount = computed(() =>
 const totalAccessGroupCount = computed(() =>
   providers.value.reduce((count, provider) => count + provider.groups.length, 0)
 )
-const setupSteps = computed(() => [
-  {
-    key: 'account',
-    status: auth.user ? 'done' : 'todo',
-    title: t('user.setupStepAccountTitle'),
-    help: auth.user ? t('user.setupStepAccountDone') : t('user.setupStepAccountTodo'),
-  },
-  {
-    key: 'access',
-    status: selectedGroup.value?.credential.state === 'existing_hidden' ? 'done' : 'todo',
-    title: t('user.setupStepAccessTitle'),
-    help: selectedGroup.value?.credential.state === 'existing_hidden' ? t('user.setupStepAccessDone') : t('user.setupStepAccessTodo'),
-  },
-  {
-    key: 'machine',
-    status: 'local_check',
-    title: t('user.setupStepMachineTitle'),
-    help: t('user.setupStepMachineHelp'),
-    command: installCommand.value,
-  },
-  {
-    key: 'login',
-    status: 'local_check',
-    title: t('user.setupStepLoginTitle'),
-    help: t('user.setupStepLoginHelp'),
-    command: loginCommand.value,
-  },
-  {
-    key: 'configure',
-    status: 'local_check',
-    title: t('user.setupStepConfigureTitle'),
-    help: t('user.setupStepConfigureHelp'),
-    command: discoverCommand.value || t('user.selectProviderCommand'),
-  },
-  {
-    key: 'hooks',
-    status: 'local_check',
-    title: t('user.setupStepHooksTitle'),
-    help: t('user.setupStepHooksHelp'),
-    command: hooksGlobalCommand.value,
-  },
-  {
-    key: 'repo',
-    status: 'local_check',
-    title: t('user.setupStepRepoTitle'),
-    help: t('user.setupStepRepoHelp'),
-    command: repoInitCommand.value,
-  },
-  {
-    key: 'doctor',
-    status: 'local_check',
-    title: t('user.setupStepDoctorTitle'),
-    help: t('user.setupStepDoctorHelp'),
-    command: doctorCommand.value,
-  },
-])
+const setupSteps = computed<SetupStep[]>(() => {
+  const commonSteps: SetupStep[] = [
+    {
+      key: 'account',
+      status: auth.user ? 'done' : 'todo',
+      title: t('user.setupStepAccountTitle'),
+      help: auth.user ? t('user.setupStepAccountDone') : t('user.setupStepAccountTodo'),
+    },
+    {
+      key: 'access',
+      status: selectedGroup.value?.credential.state === 'existing_hidden' ? 'done' : 'todo',
+      title: t('user.setupStepAccessTitle'),
+      help: selectedGroup.value?.credential.state === 'existing_hidden' ? t('user.setupStepAccessDone') : t('user.setupStepAccessTodo'),
+    },
+  ]
+
+  if (setupAudience.value === 'non_developer') {
+    return [
+      ...commonSteps,
+      {
+        key: 'manual',
+        status: 'local_check',
+        title: t('user.setupStepManualTitle'),
+        help: t('user.setupStepManualHelp'),
+      },
+    ]
+  }
+
+  return [
+    ...commonSteps,
+    {
+      key: 'machine',
+      status: 'local_check',
+      title: t('user.setupStepMachineTitle'),
+      help: t('user.setupStepMachineHelp'),
+      command: installCommand.value,
+      secondaryCommands: [
+        {
+          key: 'github-connectivity',
+          label: t('user.githubConnectivityTitle'),
+          help: t('user.githubConnectivityHelp'),
+          command: githubConnectivityCommand.value,
+        },
+      ],
+    },
+    {
+      key: 'login',
+      status: 'local_check',
+      title: t('user.setupStepLoginTitle'),
+      help: t('user.setupStepLoginHelp'),
+      command: loginCommand.value,
+    },
+    {
+      key: 'configure',
+      status: 'local_check',
+      title: t('user.setupStepConfigureTitle'),
+      help: t('user.setupStepConfigureHelp'),
+      command: discoverCommand.value || t('user.selectProviderCommand'),
+    },
+    {
+      key: 'hooks',
+      status: 'local_check',
+      title: t('user.setupStepHooksTitle'),
+      help: t('user.setupStepHooksHelp'),
+      command: hooksGlobalCommand.value,
+    },
+    {
+      key: 'repo',
+      status: 'local_check',
+      title: t('user.setupStepRepoTitle'),
+      help: t('user.setupStepRepoHelp'),
+      command: repoInitCommand.value,
+    },
+    {
+      key: 'doctor',
+      status: 'local_check',
+      title: t('user.setupStepDoctorTitle'),
+      help: t('user.setupStepDoctorHelp'),
+      command: doctorCommand.value,
+    },
+  ]
+})
 
 function credentialStatusLabel(state: string) {
   return state === 'existing_hidden' ? t('user.readyToUse') : t('user.needsSetup')
@@ -476,9 +520,31 @@ onMounted(loadProviders)
         </div>
 
         <div class="min-w-0 space-y-6">
-          <section class="rounded-lg bg-white p-5 shadow">
+          <section data-testid="setup-progress" class="rounded-lg bg-white p-5 shadow">
             <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-900">{{ t('user.setupProgressTitle') }}</h2>
             <p class="mt-1 text-sm text-gray-500">{{ t('user.setupProgressHelp') }}</p>
+            <div class="mt-4 inline-flex rounded-md border border-gray-200 bg-gray-50 p-1" role="group" :aria-label="t('user.setupAudienceLabel')">
+              <button
+                data-testid="setup-audience-developer"
+                type="button"
+                class="cursor-pointer rounded px-3 py-1.5 text-sm font-medium transition-colors"
+                :class="setupAudience === 'developer' ? 'bg-gray-900 text-white' : 'text-gray-700 hover:bg-white'"
+                :aria-pressed="setupAudience === 'developer'"
+                @click="setupAudience = 'developer'"
+              >
+                {{ t('user.setupAudienceDeveloper') }}
+              </button>
+              <button
+                data-testid="setup-audience-non-developer"
+                type="button"
+                class="cursor-pointer rounded px-3 py-1.5 text-sm font-medium transition-colors"
+                :class="setupAudience === 'non_developer' ? 'bg-gray-900 text-white' : 'text-gray-700 hover:bg-white'"
+                :aria-pressed="setupAudience === 'non_developer'"
+                @click="setupAudience = 'non_developer'"
+              >
+                {{ t('user.setupAudienceNonDeveloper') }}
+              </button>
+            </div>
             <ol class="mt-4 space-y-3">
               <li v-for="(step, index) in setupSteps" :key="step.key" class="rounded-md border border-gray-200 p-4">
                 <div class="flex items-start gap-3">
@@ -508,6 +574,29 @@ onMounted(loadProviders)
                         </button>
                       </div>
                       <pre class="mt-2 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-xs text-green-300">{{ step.command }}</pre>
+                    </div>
+                    <div v-for="secondary in step.secondaryCommands ?? []" :key="secondary.key" class="mt-3 rounded-md border border-blue-100 bg-blue-50 p-3">
+                      <div class="flex items-center justify-between gap-3">
+                        <span class="text-xs font-medium uppercase tracking-wide text-blue-700">{{ secondary.label }}</span>
+                        <button class="shrink-0 text-xs font-medium text-blue-700 hover:text-blue-900" type="button" @click="copyCommand(`setup-${step.key}-${secondary.key}`, secondary.command)">
+                          {{ copyCommandLabel(`setup-${step.key}-${secondary.key}`) }}
+                        </button>
+                      </div>
+                      <p class="mt-1 text-xs text-blue-800">{{ secondary.help }}</p>
+                      <pre class="mt-2 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-xs text-green-300">{{ secondary.command }}</pre>
+                    </div>
+                    <div v-if="step.key === 'manual'" class="mt-3 rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                      <div class="font-medium text-slate-900">{{ t('user.manualConfigDetailsTitle') }}</div>
+                      <dl class="mt-3 grid gap-2 sm:grid-cols-[120px_minmax(0,1fr)]">
+                        <dt class="text-xs font-medium uppercase tracking-wide text-slate-500">{{ t('user.manualConfigProviderUrl') }}</dt>
+                        <dd class="break-all font-mono text-xs text-slate-900">{{ selectedProvider?.base_url || '—' }}</dd>
+                        <dt class="text-xs font-medium uppercase tracking-wide text-slate-500">{{ t('user.manualConfigPlatform') }}</dt>
+                        <dd class="break-all font-mono text-xs text-slate-900">{{ selectedGroup?.platform || '—' }}</dd>
+                        <dt class="text-xs font-medium uppercase tracking-wide text-slate-500">{{ t('user.manualConfigGroup') }}</dt>
+                        <dd class="break-all text-xs text-slate-900">{{ selectedGroup?.group_name || '—' }}</dd>
+                        <dt class="text-xs font-medium uppercase tracking-wide text-slate-500">{{ t('user.manualConfigApiKey') }}</dt>
+                        <dd class="text-xs text-slate-900">{{ t('user.manualConfigApiKeyHelp') }}</dd>
+                      </dl>
                     </div>
                   </div>
                 </div>
