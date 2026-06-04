@@ -8,7 +8,7 @@
 
 **Tech Stack:** Vue 3 `<script setup>`, TypeScript, Vitest, Go, shell installer tests.
 
-**Status:** In progress. Manual config snippets/UI、update 错误包装修正和文档同步已完成；frontend tests/build、ae-cli tests、installer smoke 和 diff whitespace check 已通过。commit 和 PR 更新尚未完成。
+**Status:** Complete. Manual config snippets/UI、update 错误包装修正和文档同步已完成；frontend tests/build、ae-cli tests、installer smoke、diff whitespace check、commit 和 PR branch update 均已完成。
 
 ---
 
@@ -177,7 +177,7 @@ Run:
 git diff --check
 ```
 
-- [ ] **Step 6: Commit and update PR branch**
+- [x] **Step 6: Commit and update PR branch**
 
 Commit with:
 
