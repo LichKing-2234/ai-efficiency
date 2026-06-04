@@ -71,6 +71,7 @@ export function buildCodexConfigSnippet(providerName: string, baseUrl: string) {
     `windows_wsl_setup_acknowledged = true`,
     `model_context_window = 1000000`,
     `model_auto_compact_token_limit = 900000`,
+    ``,
     `[model_providers.${tomlTableKey(provider)}]`,
     `name = ${tomlString(provider)}`,
     `base_url = ${tomlString(baseUrl)}`,

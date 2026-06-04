@@ -287,6 +287,9 @@ describe('UserView', () => {
     expect(progressText).toContain('~/.codex/auth.json')
     expect(progressText).toContain('OPENAI_API_KEY')
     expect(progressText).not.toContain('sk-existing-openai-123456')
+
+    const codexConfigBlock = wrapper.findAll('pre').find((block) => block.text().includes('model_provider = "prod"'))
+    expect(codexConfigBlock?.text()).toContain('model_auto_compact_token_limit = 900000\n\n[model_providers.prod]')
   })
 
   it('renders Gemini manual configuration and reload guidance for non-developer Gemini groups', async () => {
