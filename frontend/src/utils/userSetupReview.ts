@@ -103,9 +103,12 @@ export function buildGeminiEnvSnippet(baseUrl: string, apiKey: string) {
 
 export function buildGeminiReloadSnippet() {
   return [
-    'source "$HOME/.zshrc"',
-    'source "$HOME/.bashrc"',
-    'source "$HOME/.profile"',
+    'case "${SHELL##*/}" in',
+    '  zsh) rc_file="$HOME/.zshrc" ;;',
+    '  bash) rc_file="$HOME/.bashrc" ;;',
+    '  *) rc_file="$HOME/.profile" ;;',
+    'esac',
+    '[ -f "$rc_file" ] && source "$rc_file"',
   ].join('\n')
 }
 

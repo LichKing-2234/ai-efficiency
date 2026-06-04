@@ -8,7 +8,7 @@
 
 **Tech Stack:** Vue 3 `<script setup>`, TypeScript, Vitest, Go, shell installer tests.
 
-**Status:** Complete. Manual config snippets/UI、update 错误包装修正和文档同步已完成；frontend tests/build、ae-cli tests、installer smoke、diff whitespace check、commit 和 PR branch update 均已完成。
+**Status:** Review follow-up verification complete. Gemini reload snippet 已改为 guarded shell-specific rc reload，targeted/full frontend verification 与 diff whitespace check 已通过；commit 和 PR branch update 尚未完成。
 
 ---
 
@@ -186,3 +186,49 @@ git commit -m "fix(frontend): align manual setup with discover config"
 ```
 
 Then update PR #73 with the final branch head and refreshed verification notes.
+
+### Task 6: Code Review Follow-up For Gemini Reload Snippet
+
+**Files:**
+- Modify: `frontend/src/utils/userSetupReview.ts`
+- Modify: `frontend/src/__tests__/user-setup-review.test.ts`
+- Modify: `frontend/src/__tests__/user-view.test.ts`
+- Modify: `docs/superpowers/plans/2026-06-04-user-setup-manual-config-correction.md`
+
+- [x] **Step 1: Write failing tests for guarded shell-specific reload guidance**
+
+Update frontend tests so Gemini reload guidance requires a shell-selecting snippet with `[ -f "$rc_file" ] && source "$rc_file"` and rejects three unconditional source commands.
+
+- [x] **Step 2: Run targeted frontend tests and confirm RED**
+
+Run:
+
+```bash
+cd frontend && pnpm test -- user-setup-review user-view
+```
+
+- [x] **Step 3: Implement guarded reload snippet**
+
+Update `buildGeminiReloadSnippet()` to choose one rc file based on `${SHELL##*/}` and source it only when the file exists.
+
+- [x] **Step 4: Run targeted frontend tests and confirm GREEN**
+
+Run:
+
+```bash
+cd frontend && pnpm test -- user-setup-review user-view
+```
+
+- [x] **Step 5: Run required verification**
+
+Run:
+
+```bash
+cd frontend && pnpm test
+cd frontend && pnpm build
+git diff --check
+```
+
+- [ ] **Step 6: Commit and update PR branch**
+
+Commit and push the review follow-up to PR #73.

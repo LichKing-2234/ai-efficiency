@@ -59,9 +59,12 @@ describe('userSetupReview command builders', () => {
       'export GEMINI_API_KEY="sk-gemini"',
       'export GOOGLE_GEMINI_BASE_URL="https://prod.example.com"',
     ].join('\n'))
-    expect(buildGeminiReloadSnippet()).toContain('source "$HOME/.zshrc"')
-    expect(buildGeminiReloadSnippet()).toContain('source "$HOME/.bashrc"')
-    expect(buildGeminiReloadSnippet()).toContain('source "$HOME/.profile"')
+    expect(buildGeminiReloadSnippet()).toContain('case "${SHELL##*/}" in')
+    expect(buildGeminiReloadSnippet()).toContain('zsh) rc_file="$HOME/.zshrc" ;;')
+    expect(buildGeminiReloadSnippet()).toContain('bash) rc_file="$HOME/.bashrc" ;;')
+    expect(buildGeminiReloadSnippet()).toContain('*) rc_file="$HOME/.profile" ;;')
+    expect(buildGeminiReloadSnippet()).toContain('[ -f "$rc_file" ] && source "$rc_file"')
+    expect(buildGeminiReloadSnippet()).not.toContain('source "$HOME/.zshrc"\nsource "$HOME/.bashrc"')
     expect(buildGeminiModelSnippet()).toContain('export GEMINI_MODEL="gemini-3.1-pro-preview"')
     expect(buildGeminiModelSnippet()).toContain('Do not manually switch models inside Gemini')
   })
