@@ -1360,6 +1360,12 @@ type defaultSubscriptionSetting struct {
 	ValidityDays int   `json:"validity_days"`
 }
 
+type subscriptionAssignment struct {
+	GroupID      int64
+	ValidityDays int
+	Notes        string
+}
+
 func (s *sub2apiRelay) assignDefaultSubscriptionsForUser(ctx context.Context, userID int64) error {
 	if userID <= 0 {
 		return nil
@@ -1372,7 +1378,11 @@ func (s *sub2apiRelay) assignDefaultSubscriptionsForUser(ctx context.Context, us
 		if item.GroupID <= 0 {
 			continue
 		}
-		if err := s.assignSubscription(ctx, userID, item); err != nil {
+		if err := s.assignSubscription(ctx, userID, subscriptionAssignment{
+			GroupID:      item.GroupID,
+			ValidityDays: item.ValidityDays,
+			Notes:        "auto assigned by ai-efficiency relay provisioning",
+		}); err != nil {
 			return err
 		}
 	}
@@ -1382,6 +1392,24 @@ func (s *sub2apiRelay) assignDefaultSubscriptionsForUser(ctx context.Context, us
 // AssignDefaultSubscriptionsForUser applies relay-configured default subscriptions to an existing user.
 func (s *sub2apiRelay) AssignDefaultSubscriptionsForUser(ctx context.Context, userID int64) error {
 	return s.assignDefaultSubscriptionsForUser(ctx, userID)
+}
+
+// AssignSubscriptionForUser assigns one subscription group to a relay user.
+func (s *sub2apiRelay) AssignSubscriptionForUser(ctx context.Context, userID, groupID int64, validityDays int) error {
+	if userID <= 0 {
+		return fmt.Errorf("assign subscription: user id is required")
+	}
+	if groupID <= 0 {
+		return fmt.Errorf("assign subscription: group id is required")
+	}
+	if validityDays <= 0 {
+		return fmt.Errorf("assign subscription: validity days is required")
+	}
+	return s.assignSubscription(ctx, userID, subscriptionAssignment{
+		GroupID:      groupID,
+		ValidityDays: validityDays,
+		Notes:        "assigned by ai-efficiency admin",
+	})
 }
 
 func (s *sub2apiRelay) listDefaultSubscriptions(ctx context.Context) ([]defaultSubscriptionSetting, error) {
@@ -1413,12 +1441,12 @@ func (s *sub2apiRelay) listDefaultSubscriptions(ctx context.Context) ([]defaultS
 	return result.Data.DefaultSubscriptions, nil
 }
 
-func (s *sub2apiRelay) assignSubscription(ctx context.Context, userID int64, item defaultSubscriptionSetting) error {
+func (s *sub2apiRelay) assignSubscription(ctx context.Context, userID int64, item subscriptionAssignment) error {
 	payload, err := json.Marshal(map[string]any{
 		"user_id":       userID,
 		"group_id":      item.GroupID,
 		"validity_days": item.ValidityDays,
-		"notes":         "auto assigned by ai-efficiency relay provisioning",
+		"notes":         item.Notes,
 	})
 	if err != nil {
 		return fmt.Errorf("assign subscription: marshal: %w", err)

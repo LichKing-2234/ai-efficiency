@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ai-efficiency/backend/ent"
@@ -17,6 +18,8 @@ import (
 )
 
 var ErrManagedKeyAlreadyExists = errors.New("managed key already exists")
+
+var groupCredentialCreateLocks sync.Map
 
 type ProviderResolver interface {
 	Resolve(ctx context.Context, providerID int) (relay.Provider, error)
@@ -151,13 +154,16 @@ func (s *Service) ListProviders(ctx context.Context, req ListProvidersRequest) (
 }
 
 func (s *Service) CreateGroupCredential(ctx context.Context, req CreateGroupCredentialRequest) (*CreateGroupCredentialResult, error) {
-	u, rp, err := s.resolveUserAndProvider(ctx, req.UserID, req.ProviderID)
-	if err != nil {
-		return nil, err
-	}
 	groupID := strings.TrimSpace(req.GroupID)
 	if groupID == "" {
 		return nil, fmt.Errorf("group_id is required")
+	}
+	unlock := lockGroupCredentialCreate(req.UserID, req.ProviderID, groupID)
+	defer unlock()
+
+	u, rp, err := s.resolveUserAndProvider(ctx, req.UserID, req.ProviderID)
+	if err != nil {
+		return nil, err
 	}
 	u, err = s.ensureRelayUserForWrite(ctx, u, rp)
 	if err != nil {
@@ -168,7 +174,7 @@ func (s *Service) CreateGroupCredential(ctx context.Context, req CreateGroupCred
 		return nil, fmt.Errorf("list user api keys: %w", err)
 	}
 	if selected := selectReusableKeyByGroup(keys, groupID, strings.TrimSpace(u.Username), strings.TrimSpace(u.Email)); selected != nil {
-		return nil, ErrManagedKeyAlreadyExists
+		return toExistingCreateResult(selected), nil
 	}
 	createCtx, u, err := s.withRelayWriteCredentials(ctx, u, rp)
 	if err != nil {
@@ -355,6 +361,26 @@ func toCreateResult(created *relay.APIKeyWithSecret) *CreateGroupCredentialResul
 		Status:   created.Status,
 		Secret:   created.Secret,
 	}
+}
+
+func toExistingCreateResult(existing *relay.APIKey) *CreateGroupCredentialResult {
+	if existing == nil {
+		return nil
+	}
+	return &CreateGroupCredentialResult{
+		APIKeyID: existing.ID,
+		Name:     existing.Name,
+		Status:   existing.Status,
+		Secret:   existing.Key,
+	}
+}
+
+func lockGroupCredentialCreate(userID, providerID int, groupID string) func() {
+	key := fmt.Sprintf("%d:%d:%s", userID, providerID, strings.TrimSpace(groupID))
+	actual, _ := groupCredentialCreateLocks.LoadOrStore(key, &sync.Mutex{})
+	mu := actual.(*sync.Mutex)
+	mu.Lock()
+	return mu.Unlock
 }
 
 func timePtr(v time.Time) *time.Time {

@@ -2,9 +2,9 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppLayout from '@/components/AppLayout.vue'
-import { listAdminUsers, revealAdminUserRelayPassword } from '@/api/adminUsers'
+import { assignAdminUserSubscription, listAdminUsers, listAdminUserSubscriptionOptions, revealAdminUserRelayPassword } from '@/api/adminUsers'
 import { useI18n } from '@/i18n'
-import type { AdminUser } from '@/types'
+import type { AdminAssignableSubscriptionProvider, AdminUser } from '@/types'
 
 const { t, locale } = useI18n()
 const route = useRoute()
@@ -13,8 +13,18 @@ const loading = ref(false)
 const error = ref('')
 const rows = ref<AdminUser[]>([])
 const total = ref(0)
+const subscriptionProviders = ref<AdminAssignableSubscriptionProvider[]>([])
+const subscriptionOptionsLoading = ref(false)
+const subscriptionOptionsError = ref('')
 const copiedState = reactive<Record<number, string>>({})
 const plaintextConfirmUserId = ref<number | null>(null)
+const assignmentForms = reactive<Record<number, {
+  provider_id: number | null
+  group_id: string
+  validity_days: number
+  loading: boolean
+  message: string
+}>>({})
 let searchTimer: number | undefined
 
 const filters = reactive({
@@ -38,6 +48,7 @@ async function loadUsers() {
     })
     const data = res.data.data
     rows.value = data?.items ?? []
+    rows.value.forEach((row) => ensureAssignmentForm(row.id))
     total.value = data?.total ?? 0
     filters.page = data?.page ?? filters.page
     filters.page_size = data?.page_size ?? filters.page_size
@@ -48,6 +59,21 @@ async function loadUsers() {
     total.value = 0
   } finally {
     loading.value = false
+  }
+}
+
+async function loadSubscriptionOptions() {
+  subscriptionOptionsLoading.value = true
+  subscriptionOptionsError.value = ''
+  try {
+    const res = await listAdminUserSubscriptionOptions()
+    subscriptionProviders.value = res.data.data?.providers ?? []
+    rows.value.forEach((row) => ensureAssignmentForm(row.id, true))
+  } catch (err: any) {
+    subscriptionProviders.value = []
+    subscriptionOptionsError.value = err.response?.data?.message || err.message || t('adminUsers.loadSubscriptionsFailed')
+  } finally {
+    subscriptionOptionsLoading.value = false
   }
 }
 
@@ -112,6 +138,88 @@ function accessStatusLabel(user: AdminUser) {
   return user.relay_auth_password ? t('adminUsers.configured') : t('adminUsers.missingRelayCredential')
 }
 
+function defaultSubscriptionProvider() {
+  return subscriptionProviders.value.find((provider) => provider.groups.length > 0) ?? subscriptionProviders.value[0] ?? null
+}
+
+function groupsForAssignment(userId: number) {
+  const form = assignmentForm(userId)
+  return subscriptionProviders.value.find((provider) => provider.id === form.provider_id)?.groups ?? []
+}
+
+function ensureAssignmentForm(userId: number, resetEmpty = false) {
+  if (!assignmentForms[userId]) {
+    assignmentForms[userId] = {
+      provider_id: null,
+      group_id: '',
+      validity_days: 30,
+      loading: false,
+      message: '',
+    }
+  }
+  const form = assignmentForms[userId]
+  if ((resetEmpty || !form.provider_id) && subscriptionProviders.value.length > 0) {
+    const provider = defaultSubscriptionProvider()
+    form.provider_id = provider?.id ?? null
+    form.group_id = provider?.groups[0]?.group_id ?? ''
+  }
+  return form
+}
+
+function assignmentForm(userId: number) {
+  return ensureAssignmentForm(userId)
+}
+
+function handleAssignmentProviderChange(userId: number) {
+  const form = assignmentForm(userId)
+  form.message = ''
+  form.group_id = groupsForAssignment(userId)[0]?.group_id ?? ''
+}
+
+function setAssignmentProvider(userId: number, value: string) {
+  const form = assignmentForm(userId)
+  const parsed = Number(value)
+  form.provider_id = Number.isFinite(parsed) && parsed > 0 ? parsed : null
+  handleAssignmentProviderChange(userId)
+}
+
+function setAssignmentGroup(userId: number, value: string) {
+  const form = assignmentForm(userId)
+  form.group_id = value
+  form.message = ''
+}
+
+function setAssignmentValidity(userId: number, value: string) {
+  const form = assignmentForm(userId)
+  const parsed = Number(value)
+  form.validity_days = Number.isFinite(parsed) ? parsed : 0
+  form.message = ''
+}
+
+function canAssignSubscription(user: AdminUser) {
+  const form = assignmentForm(user.id)
+  return !!user.relay_user_id && !!form.provider_id && !!form.group_id && form.validity_days > 0 && !form.loading
+}
+
+async function assignSubscription(user: AdminUser) {
+  const form = assignmentForm(user.id)
+  if (!canAssignSubscription(user) || !form.provider_id) return
+  form.loading = true
+  form.message = ''
+  try {
+    await assignAdminUserSubscription(user.id, {
+      provider_id: form.provider_id,
+      group_id: form.group_id,
+      validity_days: form.validity_days,
+    })
+    form.message = t('adminUsers.subscriptionAssigned')
+  } catch (err: any) {
+    form.message = err.response?.data?.message || err.message || t('adminUsers.assignSubscriptionFailed')
+  } finally {
+    form.loading = false
+  }
+}
+
 async function copyEncrypted(user: AdminUser) {
   if (!user.relay_auth_password) {
     copiedState[user.id] = t('adminUsers.noEncryptedPassword')
@@ -157,7 +265,10 @@ watch(
   }
 )
 
-onMounted(loadUsers)
+onMounted(() => {
+  void loadUsers()
+  void loadSubscriptionOptions()
+})
 onBeforeUnmount(clearSearchTimer)
 </script>
 
@@ -301,6 +412,51 @@ onBeforeUnmount(clearSearchTimer)
                 {{ t('adminUsers.confirmRevealAndCopy') }}
               </button>
             </div>
+            <div class="mt-3 rounded-md border border-gray-200 p-3">
+              <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">{{ t('adminUsers.assignSubscription') }}</div>
+              <p v-if="subscriptionOptionsError" class="mt-2 text-xs text-red-600">{{ subscriptionOptionsError }}</p>
+              <div class="mt-2 grid gap-2">
+                <select
+                  class="w-full rounded border border-gray-300 px-2 py-1 text-xs"
+                  :value="assignmentForm(row.id).provider_id ?? ''"
+                  :disabled="subscriptionOptionsLoading || assignmentForm(row.id).loading"
+                  @change="setAssignmentProvider(row.id, ($event.target as HTMLSelectElement).value)"
+                >
+                  <option value="">{{ t('adminUsers.selectProvider') }}</option>
+                  <option v-for="provider in subscriptionProviders" :key="provider.id" :value="provider.id">
+                    {{ provider.display_name }}
+                  </option>
+                </select>
+                <select
+                  class="w-full rounded border border-gray-300 px-2 py-1 text-xs"
+                  :value="assignmentForm(row.id).group_id"
+                  :disabled="subscriptionOptionsLoading || assignmentForm(row.id).loading || groupsForAssignment(row.id).length === 0"
+                  @change="setAssignmentGroup(row.id, ($event.target as HTMLSelectElement).value)"
+                >
+                  <option value="">{{ t('adminUsers.selectGroup') }}</option>
+                  <option v-for="group in groupsForAssignment(row.id)" :key="group.group_id" :value="group.group_id">
+                    {{ group.group_name }} · {{ group.platform }}
+                  </option>
+                </select>
+                <input
+                  class="w-full rounded border border-gray-300 px-2 py-1 text-xs"
+                  type="number"
+                  min="1"
+                  :value="assignmentForm(row.id).validity_days"
+                  :disabled="assignmentForm(row.id).loading"
+                  @input="setAssignmentValidity(row.id, ($event.target as HTMLInputElement).value)"
+                />
+                <button
+                  class="rounded bg-gray-900 px-2 py-1 text-xs font-medium text-white hover:bg-black disabled:opacity-40"
+                  :disabled="!canAssignSubscription(row)"
+                  @click="assignSubscription(row)"
+                >
+                  {{ assignmentForm(row.id).loading ? t('adminUsers.assigningSubscription') : t('adminUsers.assign') }}
+                </button>
+              </div>
+              <p v-if="!row.relay_user_id" class="mt-2 text-xs text-amber-700">{{ t('adminUsers.userNotMappedForSubscription') }}</p>
+              <p v-if="assignmentForm(row.id).message" class="mt-2 text-xs text-gray-500" aria-live="polite">{{ assignmentForm(row.id).message }}</p>
+            </div>
             <span v-if="copiedState[row.id]" class="mt-2 block text-xs text-gray-500" aria-live="polite">{{ copiedState[row.id] }}</span>
           </div>
         </div>
@@ -366,6 +522,58 @@ onBeforeUnmount(clearSearchTimer)
                       >
                         {{ t('adminUsers.confirmRevealAndCopy') }}
                       </button>
+                    </div>
+                    <div class="mt-1 max-w-72 rounded-md border border-gray-200 p-2">
+                      <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">{{ t('adminUsers.assignSubscription') }}</div>
+                      <p v-if="subscriptionOptionsError" class="mt-1 text-xs text-red-600">{{ subscriptionOptionsError }}</p>
+                      <div class="mt-2 grid gap-1">
+                        <select
+                          :data-testid="`assign-provider-${row.id}`"
+                          class="w-full rounded border border-gray-300 px-2 py-1 text-xs"
+                          :value="assignmentForm(row.id).provider_id ?? ''"
+                          :disabled="subscriptionOptionsLoading || assignmentForm(row.id).loading"
+                          @change="setAssignmentProvider(row.id, ($event.target as HTMLSelectElement).value)"
+                        >
+                          <option value="">{{ t('adminUsers.selectProvider') }}</option>
+                          <option v-for="provider in subscriptionProviders" :key="provider.id" :value="provider.id">
+                            {{ provider.display_name }}
+                          </option>
+                        </select>
+                        <select
+                          :data-testid="`assign-group-${row.id}`"
+                          class="w-full rounded border border-gray-300 px-2 py-1 text-xs"
+                          :value="assignmentForm(row.id).group_id"
+                          :disabled="subscriptionOptionsLoading || assignmentForm(row.id).loading || groupsForAssignment(row.id).length === 0"
+                          @change="setAssignmentGroup(row.id, ($event.target as HTMLSelectElement).value)"
+                        >
+                          <option value="">{{ t('adminUsers.selectGroup') }}</option>
+                          <option v-for="group in groupsForAssignment(row.id)" :key="group.group_id" :value="group.group_id">
+                            {{ group.group_name }} · {{ group.platform }}
+                          </option>
+                        </select>
+                        <label class="text-[11px] text-gray-500">
+                          {{ t('adminUsers.validityDays') }}
+                          <input
+                            :data-testid="`assign-validity-${row.id}`"
+                            class="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-xs"
+                            type="number"
+                            min="1"
+                            :value="assignmentForm(row.id).validity_days"
+                            :disabled="assignmentForm(row.id).loading"
+                            @input="setAssignmentValidity(row.id, ($event.target as HTMLInputElement).value)"
+                          />
+                        </label>
+                        <button
+                          :data-testid="`assign-subscription-${row.id}`"
+                          class="rounded bg-gray-900 px-2 py-1 text-xs font-medium text-white hover:bg-black disabled:opacity-40"
+                          :disabled="!canAssignSubscription(row)"
+                          @click="assignSubscription(row)"
+                        >
+                          {{ assignmentForm(row.id).loading ? t('adminUsers.assigningSubscription') : t('adminUsers.assign') }}
+                        </button>
+                      </div>
+                      <p v-if="!row.relay_user_id" class="mt-1 text-xs text-amber-700">{{ t('adminUsers.userNotMappedForSubscription') }}</p>
+                      <p v-if="assignmentForm(row.id).message" class="mt-1 text-xs text-gray-500" aria-live="polite">{{ assignmentForm(row.id).message }}</p>
                     </div>
                     <span v-if="copiedState[row.id]" class="text-xs text-gray-500" aria-live="polite">{{ copiedState[row.id] }}</span>
                   </div>

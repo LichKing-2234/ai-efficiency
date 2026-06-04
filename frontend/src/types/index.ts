@@ -422,3 +422,34 @@ export interface AdminUsersListResponse {
 export interface AdminRelayPasswordRevealResponse {
   password: string
 }
+
+export interface AdminAssignableSubscriptionGroup {
+  group_id: string
+  group_name: string
+  platform: string
+  subscription_type: string
+}
+
+export interface AdminAssignableSubscriptionProvider {
+  id: number
+  name: string
+  display_name: string
+  groups: AdminAssignableSubscriptionGroup[]
+}
+
+export interface AdminSubscriptionOptionsResponse {
+  providers: AdminAssignableSubscriptionProvider[]
+}
+
+export interface AdminAssignSubscriptionRequest {
+  provider_id: number
+  group_id: string
+  validity_days: number
+}
+
+export interface AdminAssignSubscriptionResponse {
+  status: string
+  provider_id: number
+  group_id: string
+  relay_user_id: number
+}

@@ -358,6 +358,34 @@ describe('UserView', () => {
     expect(getUserProviderModels).toHaveBeenCalledWith(2, '42', 'openai')
   })
 
+  it('disables create key while the request is in flight', async () => {
+    const { createGroupCredential } = await import('@/api/user')
+    let resolveCreate: (value: any) => void = () => {}
+    ;(createGroupCredential as any).mockImplementation(() => new Promise((resolve) => {
+      resolveCreate = resolve
+    }))
+
+    const { wrapper } = await mountUserView()
+    await wrapper.get('[data-testid="group-42"]').trigger('click')
+
+    const button = wrapper.get('[data-testid="create-key"]')
+    await button.trigger('click')
+    await flushPromises()
+
+    expect(createGroupCredential).toHaveBeenCalledTimes(1)
+    expect(wrapper.get('[data-testid="create-key"]').attributes('disabled')).toBeDefined()
+
+    await wrapper.get('[data-testid="create-key"]').trigger('click')
+    expect(createGroupCredential).toHaveBeenCalledTimes(1)
+
+    resolveCreate({
+      data: { data: { api_key_id: 7, name: 'alice', status: 'active', secret: 'sk-new' } },
+    })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="create-key"]').exists()).toBe(false)
+  })
+
   it('retains separate in-memory secrets per provider and group', async () => {
     const { createGroupCredential, regenerateGroupCredential } = await import('@/api/user')
     ;(createGroupCredential as any).mockResolvedValue({

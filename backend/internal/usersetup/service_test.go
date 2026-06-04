@@ -3,7 +3,10 @@ package usersetup_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -34,6 +37,8 @@ type fakeRelayProvider struct {
 	updateCredentialPassword   string
 	lastCreateReq              relay.APIKeyCreateRequest
 	requireUpdatedPassword     bool
+	listUserAPIKeysFn          func(ctx context.Context, userID int64) ([]relay.APIKey, error)
+	createUserAPIKeyFn         func(ctx context.Context, userID int64, req relay.APIKeyCreateRequest) (*relay.APIKeyWithSecret, error)
 	listAllowedGroupsForUserFn func(ctx context.Context, userID int64) ([]relay.Group, error)
 }
 
@@ -123,6 +128,9 @@ func (f *fakeRelayProvider) GetUsageStats(ctx context.Context, userID int64, fro
 	return nil, errors.New("not implemented")
 }
 func (f *fakeRelayProvider) ListUserAPIKeys(ctx context.Context, userID int64) ([]relay.APIKey, error) {
+	if f.listUserAPIKeysFn != nil {
+		return f.listUserAPIKeysFn(ctx, userID)
+	}
 	if f.requireExistingUser {
 		if _, ok := f.usersByID[userID]; !ok {
 			return nil, errors.New("relay user missing")
@@ -136,6 +144,9 @@ func (f *fakeRelayProvider) ListUserAPIKeys(ctx context.Context, userID int64) (
 	return nil, nil
 }
 func (f *fakeRelayProvider) CreateUserAPIKey(ctx context.Context, userID int64, req relay.APIKeyCreateRequest) (*relay.APIKeyWithSecret, error) {
+	if f.createUserAPIKeyFn != nil {
+		return f.createUserAPIKeyFn(ctx, userID, req)
+	}
 	login, password, _ := relay.UserCredentialsFromContext(ctx)
 	f.createCredentialLogin = login
 	f.createCredentialPassword = password
@@ -310,6 +321,118 @@ func TestCreateGroupCredentialUsesSelectedGroupID(t *testing.T) {
 	}
 	if fakeRelay.createCredentialLogin != "alice@example.com" || fakeRelay.createCredentialPassword != "sso-password" {
 		t.Fatalf("create credentials = (%q, %q), want stored SSO credentials", fakeRelay.createCredentialLogin, fakeRelay.createCredentialPassword)
+	}
+}
+
+func TestCreateGroupCredentialConcurrentCallsAreIdempotent(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	encryptionKey := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	encryptedPassword, err := pkg.Encrypt("sso-password", encryptionKey)
+	if err != nil {
+		t.Fatalf("Encrypt() unexpected error: %v", err)
+	}
+
+	provider := client.RelayProvider.Create().
+		SetName("sub2api").
+		SetDisplayName("sub2api").
+		SetBaseURL("https://relay.example.com/").
+		SetAdminAPIKey("test-admin-key").
+		SetDefaultModel("gpt-5.4").
+		SetIsPrimary(true).
+		SetEnabled(true).
+		SaveX(ctx)
+
+	localUser := client.User.Create().
+		SetUsername("alice@example.com").
+		SetEmail("alice@example.com").
+		SetAuthSource(user.AuthSourceRelaySSO).
+		SetRole(user.RoleUser).
+		SetRelayUserID(1).
+		SetRelayAuthPassword(encryptedPassword).
+		SaveX(ctx)
+
+	var keysMu sync.Mutex
+	var keys []relay.APIKey
+	var listCalls int32
+	var createCalls int32
+	fakeRelay := &fakeRelayProvider{
+		usersByID: map[int64]relay.User{
+			1: {ID: 1, Email: "alice@example.com", Username: "alice@example.com", Role: "user"},
+		},
+	}
+	fakeRelay.listUserAPIKeysFn = func(_ context.Context, userID int64) ([]relay.APIKey, error) {
+		keysMu.Lock()
+		snapshot := append([]relay.APIKey(nil), keys...)
+		keysMu.Unlock()
+		call := atomic.AddInt32(&listCalls, 1)
+		if call == 1 {
+			deadline := time.After(100 * time.Millisecond)
+			for atomic.LoadInt32(&listCalls) < 2 {
+				select {
+				case <-deadline:
+					return snapshot, nil
+				default:
+					time.Sleep(time.Millisecond)
+				}
+			}
+		}
+		return snapshot, nil
+	}
+	fakeRelay.createUserAPIKeyFn = func(ctx context.Context, userID int64, req relay.APIKeyCreateRequest) (*relay.APIKeyWithSecret, error) {
+		login, password, _ := relay.UserCredentialsFromContext(ctx)
+		if login != "alice@example.com" || password != "sso-password" {
+			t.Fatalf("create credentials = (%q, %q), want stored SSO credentials", login, password)
+		}
+		id := int64(700 + atomic.AddInt32(&createCalls, 1))
+		created := relay.APIKey{
+			ID:        id,
+			UserID:    userID,
+			Key:       fmt.Sprintf("sk-created-%d", id),
+			Name:      req.Name,
+			Status:    "active",
+			CreatedAt: time.Now(),
+			Group:     &relay.Group{ID: 42, Name: "Group Alpha", Platform: "openai"},
+		}
+		keysMu.Lock()
+		keys = append(keys, created)
+		keysMu.Unlock()
+		return &relay.APIKeyWithSecret{APIKey: created, Secret: created.Key}, nil
+	}
+
+	svc := usersetup.NewService(client, usersetup.ProviderResolverFunc(func(_ context.Context, providerID int) (relay.Provider, error) {
+		return fakeRelay, nil
+	}), encryptionKey)
+
+	type result struct {
+		got *usersetup.CreateGroupCredentialResult
+		err error
+	}
+	results := make(chan result, 2)
+	for i := 0; i < 2; i++ {
+		go func() {
+			got, err := svc.CreateGroupCredential(ctx, usersetup.CreateGroupCredentialRequest{
+				UserID:     localUser.ID,
+				ProviderID: provider.ID,
+				GroupID:    "42",
+			})
+			results <- result{got: got, err: err}
+		}()
+	}
+
+	first := <-results
+	second := <-results
+	if first.err != nil || second.err != nil {
+		t.Fatalf("CreateGroupCredential() errors = (%v, %v), want nil", first.err, second.err)
+	}
+	if first.got == nil || second.got == nil {
+		t.Fatalf("CreateGroupCredential() returned nil result: %#v %#v", first.got, second.got)
+	}
+	if first.got.APIKeyID != second.got.APIKeyID {
+		t.Fatalf("api key ids = (%d, %d), want same id", first.got.APIKeyID, second.got.APIKeyID)
+	}
+	if got := atomic.LoadInt32(&createCalls); got != 1 {
+		t.Fatalf("create calls = %d, want 1", got)
 	}
 }
 

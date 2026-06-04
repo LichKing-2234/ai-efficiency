@@ -1,6 +1,9 @@
 package handler
 
 import (
+	"context"
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -8,14 +11,29 @@ import (
 
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/ent/predicate"
+	"github.com/ai-efficiency/backend/ent/relayprovider"
 	entuser "github.com/ai-efficiency/backend/ent/user"
 	"github.com/ai-efficiency/backend/internal/pkg"
+	"github.com/ai-efficiency/backend/internal/relay"
 	"github.com/gin-gonic/gin"
 )
 
 type AdminUsersHandler struct {
 	entClient     *ent.Client
 	encryptionKey string
+	resolver      adminUsersProviderResolver
+}
+
+type adminUsersProviderResolver interface {
+	Resolve(ctx context.Context, providerID int) (relay.Provider, error)
+}
+
+type adminRelayGroupLister interface {
+	ListPlatformGroups(ctx context.Context) ([]relay.Group, error)
+}
+
+type adminRelaySubscriptionAssigner interface {
+	AssignSubscriptionForUser(ctx context.Context, userID, groupID int64, validityDays int) error
 }
 
 type adminUserRow struct {
@@ -36,10 +54,35 @@ type adminUsersListRequest struct {
 	PageSize int
 }
 
-func NewAdminUsersHandler(entClient *ent.Client, encryptionKey string) *AdminUsersHandler {
+type adminSubscriptionProviderRow struct {
+	ID          int                         `json:"id"`
+	Name        string                      `json:"name"`
+	DisplayName string                      `json:"display_name"`
+	Groups      []adminSubscriptionGroupRow `json:"groups"`
+}
+
+type adminSubscriptionGroupRow struct {
+	GroupID          string `json:"group_id"`
+	GroupName        string `json:"group_name"`
+	Platform         string `json:"platform"`
+	SubscriptionType string `json:"subscription_type"`
+}
+
+type adminAssignSubscriptionRequest struct {
+	ProviderID   int    `json:"provider_id"`
+	GroupID      string `json:"group_id"`
+	ValidityDays int    `json:"validity_days"`
+}
+
+func NewAdminUsersHandler(entClient *ent.Client, encryptionKey string, resolvers ...adminUsersProviderResolver) *AdminUsersHandler {
+	var resolver adminUsersProviderResolver
+	if len(resolvers) > 0 {
+		resolver = resolvers[0]
+	}
 	return &AdminUsersHandler{
 		entClient:     entClient,
 		encryptionKey: strings.TrimSpace(encryptionKey),
+		resolver:      resolver,
 	}
 }
 
@@ -100,6 +143,122 @@ func (h *AdminUsersHandler) List(c *gin.Context) {
 	})
 }
 
+func (h *AdminUsersHandler) ListSubscriptionOptions(c *gin.Context) {
+	if h.resolver == nil {
+		pkg.Error(c, http.StatusUnprocessableEntity, "relay provider resolver is not configured")
+		return
+	}
+
+	providers, err := h.entClient.RelayProvider.Query().
+		Where(relayprovider.EnabledEQ(true)).
+		Order(ent.Desc(relayprovider.FieldIsPrimary), ent.Asc(relayprovider.FieldID)).
+		All(c.Request.Context())
+	if err != nil {
+		pkg.Error(c, http.StatusInternalServerError, "list relay providers: "+err.Error())
+		return
+	}
+
+	rows := make([]adminSubscriptionProviderRow, 0, len(providers))
+	for _, p := range providers {
+		rp, err := h.resolver.Resolve(c.Request.Context(), p.ID)
+		if err != nil {
+			pkg.Error(c, http.StatusUnprocessableEntity, fmt.Sprintf("resolve relay provider %d: %v", p.ID, err))
+			return
+		}
+		lister, ok := rp.(adminRelayGroupLister)
+		if !ok {
+			rows = append(rows, adminSubscriptionProviderRow{
+				ID:          p.ID,
+				Name:        p.Name,
+				DisplayName: p.DisplayName,
+				Groups:      []adminSubscriptionGroupRow{},
+			})
+			continue
+		}
+		groups, err := lister.ListPlatformGroups(c.Request.Context())
+		if err != nil {
+			pkg.Error(c, http.StatusUnprocessableEntity, fmt.Sprintf("list relay provider %d groups: %v", p.ID, err))
+			return
+		}
+		rows = append(rows, adminSubscriptionProviderRow{
+			ID:          p.ID,
+			Name:        p.Name,
+			DisplayName: p.DisplayName,
+			Groups:      adminSubscriptionGroupsFromRelay(groups),
+		})
+	}
+
+	pkg.Success(c, gin.H{"providers": rows})
+}
+
+func (h *AdminUsersHandler) AssignSubscription(c *gin.Context) {
+	if h.resolver == nil {
+		pkg.Error(c, http.StatusUnprocessableEntity, "relay provider resolver is not configured")
+		return
+	}
+
+	id, err := strconv.Atoi(strings.TrimSpace(c.Param("id")))
+	if err != nil || id <= 0 {
+		pkg.Error(c, http.StatusBadRequest, "invalid user id")
+		return
+	}
+
+	var req adminAssignSubscriptionRequest
+	if err := json.NewDecoder(c.Request.Body).Decode(&req); err != nil {
+		pkg.Error(c, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.ProviderID <= 0 {
+		pkg.Error(c, http.StatusBadRequest, "provider_id is required")
+		return
+	}
+	groupID, err := strconv.ParseInt(strings.TrimSpace(req.GroupID), 10, 64)
+	if err != nil || groupID <= 0 {
+		pkg.Error(c, http.StatusBadRequest, "group_id is required")
+		return
+	}
+	if req.ValidityDays <= 0 {
+		pkg.Error(c, http.StatusBadRequest, "validity_days is required")
+		return
+	}
+
+	u, err := h.entClient.User.Get(c.Request.Context(), id)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			pkg.Error(c, http.StatusNotFound, "user not found")
+			return
+		}
+		pkg.Error(c, http.StatusInternalServerError, "get user: "+err.Error())
+		return
+	}
+	if u.RelayUserID == nil || *u.RelayUserID <= 0 {
+		pkg.Error(c, http.StatusUnprocessableEntity, "user is not linked to a relay user")
+		return
+	}
+
+	rp, err := h.resolver.Resolve(c.Request.Context(), req.ProviderID)
+	if err != nil {
+		pkg.Error(c, http.StatusUnprocessableEntity, fmt.Sprintf("resolve relay provider %d: %v", req.ProviderID, err))
+		return
+	}
+	assigner, ok := rp.(adminRelaySubscriptionAssigner)
+	if !ok {
+		pkg.Error(c, http.StatusUnprocessableEntity, "relay provider does not support subscription assignment")
+		return
+	}
+	if err := assigner.AssignSubscriptionForUser(c.Request.Context(), int64(*u.RelayUserID), groupID, req.ValidityDays); err != nil {
+		pkg.Error(c, http.StatusUnprocessableEntity, err.Error())
+		return
+	}
+
+	pkg.Success(c, gin.H{
+		"status":        "assigned",
+		"provider_id":   req.ProviderID,
+		"group_id":      strconv.FormatInt(groupID, 10),
+		"relay_user_id": *u.RelayUserID,
+	})
+}
+
 func (h *AdminUsersHandler) RevealRelayPassword(c *gin.Context) {
 	id, err := strconv.Atoi(strings.TrimSpace(c.Param("id")))
 	if err != nil || id <= 0 {
@@ -133,6 +292,38 @@ func (h *AdminUsersHandler) RevealRelayPassword(c *gin.Context) {
 	}
 
 	pkg.Success(c, gin.H{"password": password})
+}
+
+func adminSubscriptionGroupsFromRelay(groups []relay.Group) []adminSubscriptionGroupRow {
+	rows := make([]adminSubscriptionGroupRow, 0, len(groups))
+	for _, group := range groups {
+		if group.ID <= 0 || strings.TrimSpace(group.Platform) == "" {
+			continue
+		}
+		subscriptionType := strings.TrimSpace(group.SubscriptionType)
+		if subscriptionType != "" && !strings.EqualFold(subscriptionType, "subscription") {
+			continue
+		}
+		groupID := strconv.FormatInt(group.ID, 10)
+		groupName := strings.TrimSpace(group.Name)
+		if groupName == "" {
+			groupName = groupID
+		}
+		rows = append(rows, adminSubscriptionGroupRow{
+			GroupID:          groupID,
+			GroupName:        groupName,
+			Platform:         strings.TrimSpace(group.Platform),
+			SubscriptionType: firstNonEmptyAdminSubscriptionType(subscriptionType),
+		})
+	}
+	return rows
+}
+
+func firstNonEmptyAdminSubscriptionType(value string) string {
+	if strings.TrimSpace(value) == "" {
+		return "subscription"
+	}
+	return strings.TrimSpace(value)
 }
 
 func parseAdminUsersListRequest(c *gin.Context) adminUsersListRequest {

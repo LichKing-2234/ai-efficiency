@@ -7,7 +7,9 @@ import AdminUsersView from '@/views/admin/AdminUsersView.vue'
 import { setLocale } from '@/i18n'
 
 vi.mock('@/api/adminUsers', () => ({
+  assignAdminUserSubscription: vi.fn(),
   listAdminUsers: vi.fn(),
+  listAdminUserSubscriptionOptions: vi.fn(),
   revealAdminUserRelayPassword: vi.fn(),
 }))
 
@@ -29,7 +31,7 @@ function createTestRouter() {
 }
 
 async function mountAdminUsersView(path = '/admin/users') {
-  const { listAdminUsers } = await import('@/api/adminUsers')
+  const { listAdminUsers, listAdminUserSubscriptionOptions } = await import('@/api/adminUsers')
   ;(listAdminUsers as any).mockImplementation((params: any) => Promise.resolve({
     data: {
       data: {
@@ -52,6 +54,27 @@ async function mountAdminUsersView(path = '/admin/users') {
       },
     },
   }))
+  ;(listAdminUserSubscriptionOptions as any).mockResolvedValue({
+    data: {
+      data: {
+        providers: [
+          {
+            id: 3,
+            name: 'sub2api',
+            display_name: 'Sub2API',
+            groups: [
+              {
+                group_id: '42',
+                group_name: 'Group Alpha',
+                platform: 'openai',
+                subscription_type: 'subscription',
+              },
+            ],
+          },
+        ],
+      },
+    },
+  })
 
   const pinia = createPinia()
   setActivePinia(pinia)
@@ -176,5 +199,28 @@ describe('AdminUsersView', () => {
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith('test-password')
     expect(wrapper.text()).toContain('Copied plaintext')
     expect(wrapper.text()).not.toContain('test-password')
+  })
+
+  it('assigns a selected sub2api subscription to a local user', async () => {
+    const { assignAdminUserSubscription } = await import('@/api/adminUsers')
+    ;(assignAdminUserSubscription as any).mockResolvedValue({
+      data: { data: { status: 'assigned' } },
+    })
+
+    const { wrapper } = await mountAdminUsersView()
+
+    expect(wrapper.text()).toContain('Assign subscription')
+    await wrapper.get('[data-testid="assign-provider-7"]').setValue('3')
+    await wrapper.get('[data-testid="assign-group-7"]').setValue('42')
+    await wrapper.get('[data-testid="assign-validity-7"]').setValue('60')
+    await wrapper.get('[data-testid="assign-subscription-7"]').trigger('click')
+    await flushPromises()
+
+    expect(assignAdminUserSubscription).toHaveBeenCalledWith(7, {
+      provider_id: 3,
+      group_id: '42',
+      validity_days: 60,
+    })
+    expect(wrapper.text()).toContain('Subscription assigned')
   })
 })

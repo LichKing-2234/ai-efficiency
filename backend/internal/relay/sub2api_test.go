@@ -960,6 +960,42 @@ func TestCreateUserSuccessFalse(t *testing.T) {
 	}
 }
 
+func TestAssignSubscriptionForUserPostsSelectedGroup(t *testing.T) {
+	var assignBody map[string]any
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/subscriptions/assign", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("expected POST, got %s", r.Method)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&assignBody); err != nil {
+			t.Fatalf("decode assign body: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": map[string]any{"id": 77, "status": "active"},
+		})
+	})
+
+	p := newTestProvider(t, mux)
+	assigner, ok := p.(interface {
+		AssignSubscriptionForUser(context.Context, int64, int64, int) error
+	})
+	if !ok {
+		t.Fatal("provider does not implement AssignSubscriptionForUser")
+	}
+	if err := assigner.AssignSubscriptionForUser(context.Background(), 42, 5, 60); err != nil {
+		t.Fatalf("AssignSubscriptionForUser() unexpected error: %v", err)
+	}
+	if assignBody["user_id"] != float64(42) || assignBody["group_id"] != float64(5) || assignBody["validity_days"] != float64(60) {
+		t.Fatalf("unexpected assign body: %+v", assignBody)
+	}
+	if assignBody["notes"] != "assigned by ai-efficiency admin" {
+		t.Fatalf("notes = %v, want admin assignment note", assignBody["notes"])
+	}
+}
+
 func TestUpdateUser(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/admin/users/7", func(w http.ResponseWriter, r *http.Request) {
