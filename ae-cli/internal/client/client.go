@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/ai-efficiency/ae-cli/internal/httpx"
 )
 
 // ErrNotFound is returned when the backend responds with 404.
@@ -583,33 +585,15 @@ func (c *Client) AuthToken() string {
 }
 
 func (c *Client) postJSON(ctx context.Context, path string, in any, out any) error {
-	body, err := json.Marshal(in)
-	if err != nil {
-		return fmt.Errorf("marshal request: %w", err)
+	return httpx.DoJSON(ctx, c.httpClient, http.MethodPost, c.baseURL+path, in, out, httpx.Options{Headers: c.headers()})
+}
+
+func (c *Client) headers() http.Header {
+	headers := http.Header{}
+	if c.token != "" {
+		headers.Set("Authorization", "Bearer "+c.token)
 	}
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+path, bytes.NewReader(body))
-	if err != nil {
-		return fmt.Errorf("create request: %w", err)
-	}
-	c.setHeaders(httpReq)
-	resp, err := c.httpClient.Do(httpReq)
-	if err != nil {
-		return fmt.Errorf("send request: %w", err)
-	}
-	defer resp.Body.Close()
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("read response: %w", err)
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("unexpected status %d: %s", resp.StatusCode, string(respBody))
-	}
-	if out != nil {
-		if err := json.Unmarshal(respBody, out); err != nil {
-			return fmt.Errorf("decode response: %w", err)
-		}
-	}
-	return nil
+	return headers
 }
 
 func (c *Client) setHeaders(req *http.Request) {
