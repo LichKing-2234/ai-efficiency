@@ -36,6 +36,16 @@ type adminRelaySubscriptionAssigner interface {
 	AssignSubscriptionForUser(ctx context.Context, userID, groupID int64, validityDays int) error
 }
 
+type adminRelaySubscriptionExtender interface {
+	ExtendSubscriptionForUser(ctx context.Context, userID, groupID int64, days int) error
+}
+
+type adminRelaySubscriptionRemover interface {
+	RemoveSubscriptionForUser(ctx context.Context, userID, groupID int64) error
+}
+
+const adminSubscriptionBatchMaxUsers = 500
+
 type adminUserRow struct {
 	ID                int       `json:"id"`
 	Username          string    `json:"username"`
@@ -74,6 +84,48 @@ type adminAssignSubscriptionRequest struct {
 	ValidityDays int    `json:"validity_days"`
 }
 
+type adminManageSubscriptionsRequest struct {
+	Scope        string                         `json:"scope"`
+	UserIDs      []int                          `json:"user_ids"`
+	Filters      adminManageSubscriptionsFilter `json:"filters"`
+	Operation    string                         `json:"operation"`
+	ProviderID   int                            `json:"provider_id"`
+	GroupID      string                         `json:"group_id"`
+	ValidityDays int                            `json:"validity_days"`
+	Days         int                            `json:"days"`
+}
+
+type adminManageSubscriptionsFilter struct {
+	Q string `json:"q"`
+}
+
+type adminManageSubscriptionsResponse struct {
+	Status       string                              `json:"status"`
+	Scope        string                              `json:"scope"`
+	Operation    string                              `json:"operation"`
+	ProviderID   int                                 `json:"provider_id"`
+	GroupID      string                              `json:"group_id"`
+	TotalCount   int                                 `json:"total_count"`
+	SuccessCount int                                 `json:"success_count"`
+	SkippedCount int                                 `json:"skipped_count"`
+	FailedCount  int                                 `json:"failed_count"`
+	Results      []adminManageSubscriptionsResultRow `json:"results"`
+}
+
+type adminManageSubscriptionsResultRow struct {
+	UserID      int    `json:"user_id"`
+	Username    string `json:"username"`
+	Email       string `json:"email"`
+	RelayUserID *int   `json:"relay_user_id,omitempty"`
+	Status      string `json:"status"`
+	Message     string `json:"message,omitempty"`
+}
+
+type adminManageSubscriptionTarget struct {
+	User      *ent.User
+	MissingID int
+}
+
 func NewAdminUsersHandler(entClient *ent.Client, encryptionKey string, resolvers ...adminUsersProviderResolver) *AdminUsersHandler {
 	var resolver adminUsersProviderResolver
 	if len(resolvers) > 0 {
@@ -90,14 +142,7 @@ func (h *AdminUsersHandler) List(c *gin.Context) {
 	req := parseAdminUsersListRequest(c)
 	query := h.entClient.User.Query()
 	if req.Q != "" {
-		predicates := []predicate.User{
-			entuser.UsernameContainsFold(req.Q),
-			entuser.EmailContainsFold(req.Q),
-		}
-		if n, err := strconv.Atoi(req.Q); err == nil {
-			predicates = append(predicates, entuser.IDEQ(n), entuser.RelayUserIDEQ(n))
-		}
-		query = query.Where(entuser.Or(predicates...))
+		query = query.Where(adminUsersSearchPredicate(req.Q))
 	}
 
 	total, err := query.Clone().Count(c.Request.Context())
@@ -191,6 +236,107 @@ func (h *AdminUsersHandler) ListSubscriptionOptions(c *gin.Context) {
 	pkg.Success(c, gin.H{"providers": rows})
 }
 
+func (h *AdminUsersHandler) ManageSubscriptions(c *gin.Context) {
+	if h.resolver == nil {
+		pkg.Error(c, http.StatusUnprocessableEntity, "relay provider resolver is not configured")
+		return
+	}
+
+	var req adminManageSubscriptionsRequest
+	if err := json.NewDecoder(c.Request.Body).Decode(&req); err != nil {
+		pkg.Error(c, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	req.Scope = strings.TrimSpace(req.Scope)
+	req.Operation = strings.TrimSpace(req.Operation)
+	if req.ProviderID <= 0 {
+		pkg.Error(c, http.StatusBadRequest, "provider_id is required")
+		return
+	}
+	groupID, err := strconv.ParseInt(strings.TrimSpace(req.GroupID), 10, 64)
+	if err != nil || groupID <= 0 {
+		pkg.Error(c, http.StatusBadRequest, "group_id is required")
+		return
+	}
+	switch req.Operation {
+	case "add":
+		if req.ValidityDays <= 0 {
+			pkg.Error(c, http.StatusBadRequest, "validity_days is required")
+			return
+		}
+	case "extend":
+		if req.Days <= 0 {
+			pkg.Error(c, http.StatusBadRequest, "days is required")
+			return
+		}
+	case "remove":
+	default:
+		pkg.Error(c, http.StatusBadRequest, "operation must be add, extend, or remove")
+		return
+	}
+
+	targets, ok := h.subscriptionTargetsForScope(c, req)
+	if !ok {
+		return
+	}
+	rp, ok := h.resolveAssignableSubscriptionRelay(c, req.ProviderID, groupID)
+	if !ok {
+		return
+	}
+	applyOperation, ok := adminSubscriptionOperation(c, rp, req, groupID)
+	if !ok {
+		return
+	}
+
+	resp := adminManageSubscriptionsResponse{
+		Status:     "completed",
+		Scope:      req.Scope,
+		Operation:  req.Operation,
+		ProviderID: req.ProviderID,
+		GroupID:    strconv.FormatInt(groupID, 10),
+		TotalCount: len(targets),
+		Results:    make([]adminManageSubscriptionsResultRow, 0, len(targets)),
+	}
+	for _, target := range targets {
+		if target.User == nil {
+			resp.FailedCount++
+			resp.Results = append(resp.Results, adminManageSubscriptionsResultRow{
+				UserID:  target.MissingID,
+				Status:  "failed",
+				Message: "user not found",
+			})
+			continue
+		}
+
+		u := target.User
+		row := adminManageSubscriptionsResultRow{
+			UserID:      u.ID,
+			Username:    u.Username,
+			Email:       u.Email,
+			RelayUserID: u.RelayUserID,
+		}
+		if u.RelayUserID == nil || *u.RelayUserID <= 0 {
+			row.Status = "skipped"
+			row.Message = "user is not linked to a relay user"
+			resp.SkippedCount++
+			resp.Results = append(resp.Results, row)
+			continue
+		}
+
+		if err := applyOperation(c.Request.Context(), int64(*u.RelayUserID)); err != nil {
+			row.Status = "failed"
+			row.Message = err.Error()
+			resp.FailedCount++
+		} else {
+			row.Status = "success"
+			resp.SuccessCount++
+		}
+		resp.Results = append(resp.Results, row)
+	}
+
+	pkg.Success(c, resp)
+}
+
 func (h *AdminUsersHandler) AssignSubscription(c *gin.Context) {
 	if h.resolver == nil {
 		pkg.Error(c, http.StatusUnprocessableEntity, "relay provider resolver is not configured")
@@ -236,34 +382,8 @@ func (h *AdminUsersHandler) AssignSubscription(c *gin.Context) {
 		return
 	}
 
-	if _, err := h.entClient.RelayProvider.Query().
-		Where(relayprovider.IDEQ(req.ProviderID), relayprovider.EnabledEQ(true)).
-		Only(c.Request.Context()); err != nil {
-		if ent.IsNotFound(err) {
-			pkg.Error(c, http.StatusUnprocessableEntity, "relay provider is not enabled or not found")
-			return
-		}
-		pkg.Error(c, http.StatusInternalServerError, "get relay provider: "+err.Error())
-		return
-	}
-
-	rp, err := h.resolver.Resolve(c.Request.Context(), req.ProviderID)
-	if err != nil {
-		pkg.Error(c, http.StatusUnprocessableEntity, fmt.Sprintf("resolve relay provider %d: %v", req.ProviderID, err))
-		return
-	}
-	lister, ok := rp.(adminRelayGroupLister)
+	rp, ok := h.resolveAssignableSubscriptionRelay(c, req.ProviderID, groupID)
 	if !ok {
-		pkg.Error(c, http.StatusUnprocessableEntity, "relay provider does not support subscription group listing")
-		return
-	}
-	groups, err := lister.ListPlatformGroups(c.Request.Context())
-	if err != nil {
-		pkg.Error(c, http.StatusUnprocessableEntity, fmt.Sprintf("list relay provider %d groups: %v", req.ProviderID, err))
-		return
-	}
-	if !hasAssignableAdminSubscriptionGroup(groups, groupID) {
-		pkg.Error(c, http.StatusUnprocessableEntity, "subscription group is not assignable")
 		return
 	}
 
@@ -320,6 +440,137 @@ func (h *AdminUsersHandler) RevealRelayPassword(c *gin.Context) {
 	pkg.Success(c, gin.H{"password": password})
 }
 
+func (h *AdminUsersHandler) resolveAssignableSubscriptionRelay(c *gin.Context, providerID int, groupID int64) (relay.Provider, bool) {
+	if _, err := h.entClient.RelayProvider.Query().
+		Where(relayprovider.IDEQ(providerID), relayprovider.EnabledEQ(true)).
+		Only(c.Request.Context()); err != nil {
+		if ent.IsNotFound(err) {
+			pkg.Error(c, http.StatusUnprocessableEntity, "relay provider is not enabled or not found")
+			return nil, false
+		}
+		pkg.Error(c, http.StatusInternalServerError, "get relay provider: "+err.Error())
+		return nil, false
+	}
+
+	rp, err := h.resolver.Resolve(c.Request.Context(), providerID)
+	if err != nil {
+		pkg.Error(c, http.StatusUnprocessableEntity, fmt.Sprintf("resolve relay provider %d: %v", providerID, err))
+		return nil, false
+	}
+	lister, ok := rp.(adminRelayGroupLister)
+	if !ok {
+		pkg.Error(c, http.StatusUnprocessableEntity, "relay provider does not support subscription group listing")
+		return nil, false
+	}
+	groups, err := lister.ListPlatformGroups(c.Request.Context())
+	if err != nil {
+		pkg.Error(c, http.StatusUnprocessableEntity, fmt.Sprintf("list relay provider %d groups: %v", providerID, err))
+		return nil, false
+	}
+	if !hasAssignableAdminSubscriptionGroup(groups, groupID) {
+		pkg.Error(c, http.StatusUnprocessableEntity, "subscription group is not assignable")
+		return nil, false
+	}
+	return rp, true
+}
+
+func adminSubscriptionOperation(c *gin.Context, rp relay.Provider, req adminManageSubscriptionsRequest, groupID int64) (func(context.Context, int64) error, bool) {
+	switch req.Operation {
+	case "add":
+		assigner, ok := rp.(adminRelaySubscriptionAssigner)
+		if !ok {
+			pkg.Error(c, http.StatusUnprocessableEntity, "relay provider does not support subscription assignment")
+			return nil, false
+		}
+		return func(ctx context.Context, relayUserID int64) error {
+			return assigner.AssignSubscriptionForUser(ctx, relayUserID, groupID, req.ValidityDays)
+		}, true
+	case "extend":
+		extender, ok := rp.(adminRelaySubscriptionExtender)
+		if !ok {
+			pkg.Error(c, http.StatusUnprocessableEntity, "relay provider does not support subscription extension")
+			return nil, false
+		}
+		return func(ctx context.Context, relayUserID int64) error {
+			return extender.ExtendSubscriptionForUser(ctx, relayUserID, groupID, req.Days)
+		}, true
+	case "remove":
+		remover, ok := rp.(adminRelaySubscriptionRemover)
+		if !ok {
+			pkg.Error(c, http.StatusUnprocessableEntity, "relay provider does not support subscription removal")
+			return nil, false
+		}
+		return func(ctx context.Context, relayUserID int64) error {
+			return remover.RemoveSubscriptionForUser(ctx, relayUserID, groupID)
+		}, true
+	default:
+		pkg.Error(c, http.StatusBadRequest, "operation must be add, extend, or remove")
+		return nil, false
+	}
+}
+
+func (h *AdminUsersHandler) subscriptionTargetsForScope(c *gin.Context, req adminManageSubscriptionsRequest) ([]adminManageSubscriptionTarget, bool) {
+	query := h.entClient.User.Query()
+	switch req.Scope {
+	case "selected":
+		ids := uniquePositiveInts(req.UserIDs)
+		if len(ids) == 0 {
+			pkg.Error(c, http.StatusBadRequest, "user_ids is required for selected scope")
+			return nil, false
+		}
+		if len(ids) > adminSubscriptionBatchMaxUsers {
+			pkg.Error(c, http.StatusUnprocessableEntity, fmt.Sprintf("subscription batch targets too many; maximum is %d users", adminSubscriptionBatchMaxUsers))
+			return nil, false
+		}
+		users, err := query.Where(entuser.IDIn(ids...)).All(c.Request.Context())
+		if err != nil {
+			pkg.Error(c, http.StatusInternalServerError, "list users: "+err.Error())
+			return nil, false
+		}
+		usersByID := make(map[int]*ent.User, len(users))
+		for _, u := range users {
+			usersByID[u.ID] = u
+		}
+		targets := make([]adminManageSubscriptionTarget, 0, len(ids))
+		for _, id := range ids {
+			if u := usersByID[id]; u != nil {
+				targets = append(targets, adminManageSubscriptionTarget{User: u})
+				continue
+			}
+			targets = append(targets, adminManageSubscriptionTarget{MissingID: id})
+		}
+		return targets, true
+	case "current_filter":
+		q := strings.TrimSpace(req.Filters.Q)
+		if q != "" {
+			query = query.Where(adminUsersSearchPredicate(q))
+		}
+	case "all_mapped":
+		query = query.Where(entuser.RelayUserIDNotNil(), entuser.RelayUserIDGT(0))
+	default:
+		pkg.Error(c, http.StatusBadRequest, "scope must be selected, current_filter, or all_mapped")
+		return nil, false
+	}
+
+	users, err := query.
+		Order(ent.Asc(entuser.FieldID)).
+		Limit(adminSubscriptionBatchMaxUsers + 1).
+		All(c.Request.Context())
+	if err != nil {
+		pkg.Error(c, http.StatusInternalServerError, "list users: "+err.Error())
+		return nil, false
+	}
+	if len(users) > adminSubscriptionBatchMaxUsers {
+		pkg.Error(c, http.StatusUnprocessableEntity, fmt.Sprintf("subscription batch targets too many; maximum is %d users", adminSubscriptionBatchMaxUsers))
+		return nil, false
+	}
+	targets := make([]adminManageSubscriptionTarget, 0, len(users))
+	for _, u := range users {
+		targets = append(targets, adminManageSubscriptionTarget{User: u})
+	}
+	return targets, true
+}
+
 func adminSubscriptionGroupsFromRelay(groups []relay.Group) []adminSubscriptionGroupRow {
 	rows := make([]adminSubscriptionGroupRow, 0, len(groups))
 	for _, group := range groups {
@@ -360,6 +611,33 @@ func firstNonEmptyAdminSubscriptionType(value string) string {
 		return "subscription"
 	}
 	return strings.TrimSpace(value)
+}
+
+func uniquePositiveInts(values []int) []int {
+	seen := make(map[int]struct{}, len(values))
+	ids := make([]int, 0, len(values))
+	for _, value := range values {
+		if value <= 0 {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		ids = append(ids, value)
+	}
+	return ids
+}
+
+func adminUsersSearchPredicate(q string) predicate.User {
+	predicates := []predicate.User{
+		entuser.UsernameContainsFold(q),
+		entuser.EmailContainsFold(q),
+	}
+	if n, err := strconv.Atoi(q); err == nil {
+		predicates = append(predicates, entuser.IDEQ(n), entuser.RelayUserIDEQ(n))
+	}
+	return entuser.Or(predicates...)
 }
 
 func parseAdminUsersListRequest(c *gin.Context) adminUsersListRequest {

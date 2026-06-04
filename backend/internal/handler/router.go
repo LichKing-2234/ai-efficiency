@@ -212,6 +212,7 @@ func SetupRouter(
 	{
 		adminUsersGroup.GET("", adminUsersHandler.List)
 		adminUsersGroup.GET("/subscription-options", adminUsersHandler.ListSubscriptionOptions)
+		adminUsersGroup.POST("/subscriptions/batch", adminUsersHandler.ManageSubscriptions)
 		adminUsersGroup.POST("/:id/relay-password/reveal", adminUsersHandler.RevealRelayPassword)
 		adminUsersGroup.POST("/:id/subscriptions", adminUsersHandler.AssignSubscription)
 	}

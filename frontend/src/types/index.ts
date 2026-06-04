@@ -453,3 +453,41 @@ export interface AdminAssignSubscriptionResponse {
   group_id: string
   relay_user_id: number
 }
+
+export type AdminSubscriptionManageScope = 'selected' | 'current_filter' | 'all_mapped'
+export type AdminSubscriptionManageOperation = 'add' | 'extend' | 'remove'
+
+export interface AdminManageSubscriptionsRequest {
+  scope: AdminSubscriptionManageScope
+  user_ids?: number[]
+  filters?: {
+    q?: string
+  }
+  operation: AdminSubscriptionManageOperation
+  provider_id: number
+  group_id: string
+  validity_days?: number
+  days?: number
+}
+
+export interface AdminManageSubscriptionsResultRow {
+  user_id: number
+  username: string
+  email: string
+  relay_user_id?: number | null
+  status: 'success' | 'skipped' | 'failed'
+  message?: string
+}
+
+export interface AdminManageSubscriptionsResponse {
+  status: string
+  scope: AdminSubscriptionManageScope
+  operation: AdminSubscriptionManageOperation
+  provider_id: number
+  group_id: string
+  total_count: number
+  success_count: number
+  skipped_count: number
+  failed_count: number
+  results: AdminManageSubscriptionsResultRow[]
+}

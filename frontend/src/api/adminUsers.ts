@@ -2,6 +2,8 @@ import client from './client'
 import type {
   AdminAssignSubscriptionRequest,
   AdminAssignSubscriptionResponse,
+  AdminManageSubscriptionsRequest,
+  AdminManageSubscriptionsResponse,
   AdminRelayPasswordRevealResponse,
   AdminSubscriptionOptionsResponse,
   AdminUsersListResponse,
@@ -24,6 +26,10 @@ export function listAdminUserSubscriptionOptions() {
 
 export function assignAdminUserSubscription(id: number, data: AdminAssignSubscriptionRequest) {
   return client.post<ApiResponse<AdminAssignSubscriptionResponse>>(`/admin/users/${id}/subscriptions`, data)
+}
+
+export function manageAdminUserSubscriptions(data: AdminManageSubscriptionsRequest) {
+  return client.post<ApiResponse<AdminManageSubscriptionsResponse>>('/admin/users/subscriptions/batch', data)
 }
 
 export function revealAdminUserRelayPassword(id: number) {
