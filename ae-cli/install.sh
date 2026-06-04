@@ -42,6 +42,15 @@ require_cmd() {
   }
 }
 
+github_release_proxy_help() {
+  cat >&2 <<'EOF'
+ae-cli downloads releases from GitHub Releases. This request failed before the installer could resolve or download the release.
+If your network cannot reach GitHub directly, configure a proxy and rerun, for example:
+  export HTTPS_PROXY=http://127.0.0.1:7890
+  export HTTP_PROXY=http://127.0.0.1:7890
+EOF
+}
+
 trim_whitespace() {
   local value="$1"
   value="${value#"${value%%[![:space:]]*}"}"
@@ -107,10 +116,14 @@ detect_platform() {
 
 latest_tag() {
   local tag=""
+  local release_json=""
 
-  tag="$(
-    curl -fsSL "$RELEASE_API_URL" | awk -F'"' '/"tag_name"/ { print $4; exit }'
-  )"
+  if ! release_json="$(curl -fsSL "$RELEASE_API_URL")"; then
+    github_release_proxy_help
+    exit 1
+  fi
+
+  tag="$(printf '%s\n' "$release_json" | awk -F'"' '/"tag_name"/ { print $4; exit }')"
   if [[ -z "$tag" ]]; then
     echo "failed to resolve release tag" >&2
     exit 1
@@ -127,8 +140,14 @@ download_release() {
   local expected=""
   local actual=""
 
-  curl -fsSL "${base}/${archive}" -o "${TMP_DIR}/${archive}"
-  curl -fsSL "${base}/checksums.txt" -o "${TMP_DIR}/checksums.txt"
+  if ! curl -fsSL "${base}/${archive}" -o "${TMP_DIR}/${archive}"; then
+    github_release_proxy_help
+    exit 1
+  fi
+  if ! curl -fsSL "${base}/checksums.txt" -o "${TMP_DIR}/checksums.txt"; then
+    github_release_proxy_help
+    exit 1
+  fi
 
   expected="$(grep -F "  ${archive}" "${TMP_DIR}/checksums.txt" | awk '{print $1}' | head -1)"
   actual="$(sha256_file "${TMP_DIR}/${archive}")"

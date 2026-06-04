@@ -18,6 +18,7 @@ cp "$ROOT_DIR/ae-cli/install.sh" "$INSTALLER"
 chmod +x "$INSTALLER"
 test -f "$ROOT_DIR/ae-cli/install.ps1"
 grep -q "AE_CLI_INSTALL_SERVER_URL" "$ROOT_DIR/ae-cli/install.ps1"
+grep -q "HTTPS_PROXY" "$ROOT_DIR/ae-cli/install.ps1"
 
 make_cli_archive() {
   local tag="$1"
@@ -120,7 +121,8 @@ MISSING_HOME="$TMP_ROOT/home-missing"
 PATH_WARNING_HOME="$TMP_ROOT/home-path-warning"
 CONFIG_HOME="$TMP_ROOT/home-config"
 EXISTING_CONFIG_HOME="$TMP_ROOT/home-existing-config"
-mkdir -p "$LATEST_HOME" "$PINNED_HOME" "$BAD_HOME" "$MISSING_HOME" "$PATH_WARNING_HOME"
+NETWORK_HOME="$TMP_ROOT/home-network"
+mkdir -p "$LATEST_HOME" "$PINNED_HOME" "$BAD_HOME" "$MISSING_HOME" "$PATH_WARNING_HOME" "$NETWORK_HOME"
 
 LATEST_LOG="$TMP_ROOT/latest.log"
 run_installer \
@@ -196,6 +198,21 @@ set -e
 test "$symlink_status" -ne 0
 grep -q "release archive ae-cli must be a regular file" "$SYMLINK_LOG"
 test ! -e "$SYMLINK_HOME/.local/bin/ae-cli"
+
+NETWORK_LOG="$TMP_ROOT/network.log"
+set +e
+run_installer \
+  "$NETWORK_HOME" \
+  "$NETWORK_HOME/.local/bin:/usr/bin:/bin" \
+  "file://$TMP_ROOT/missing-latest.json" \
+  >"$NETWORK_LOG" 2>&1
+network_status=$?
+set -e
+
+test "$network_status" -ne 0
+grep -q "ae-cli downloads releases from GitHub Releases" "$NETWORK_LOG"
+grep -q "HTTPS_PROXY" "$NETWORK_LOG"
+test ! -e "$NETWORK_HOME/.local/bin/ae-cli"
 
 printf '# existing zsh config\n' >"$PATH_WARNING_HOME/.zshrc"
 printf '# existing bash config\n' >"$PATH_WARNING_HOME/.bashrc"
