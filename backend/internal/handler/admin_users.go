@@ -236,11 +236,37 @@ func (h *AdminUsersHandler) AssignSubscription(c *gin.Context) {
 		return
 	}
 
+	if _, err := h.entClient.RelayProvider.Query().
+		Where(relayprovider.IDEQ(req.ProviderID), relayprovider.EnabledEQ(true)).
+		Only(c.Request.Context()); err != nil {
+		if ent.IsNotFound(err) {
+			pkg.Error(c, http.StatusUnprocessableEntity, "relay provider is not enabled or not found")
+			return
+		}
+		pkg.Error(c, http.StatusInternalServerError, "get relay provider: "+err.Error())
+		return
+	}
+
 	rp, err := h.resolver.Resolve(c.Request.Context(), req.ProviderID)
 	if err != nil {
 		pkg.Error(c, http.StatusUnprocessableEntity, fmt.Sprintf("resolve relay provider %d: %v", req.ProviderID, err))
 		return
 	}
+	lister, ok := rp.(adminRelayGroupLister)
+	if !ok {
+		pkg.Error(c, http.StatusUnprocessableEntity, "relay provider does not support subscription group listing")
+		return
+	}
+	groups, err := lister.ListPlatformGroups(c.Request.Context())
+	if err != nil {
+		pkg.Error(c, http.StatusUnprocessableEntity, fmt.Sprintf("list relay provider %d groups: %v", req.ProviderID, err))
+		return
+	}
+	if !hasAssignableAdminSubscriptionGroup(groups, groupID) {
+		pkg.Error(c, http.StatusUnprocessableEntity, "subscription group is not assignable")
+		return
+	}
+
 	assigner, ok := rp.(adminRelaySubscriptionAssigner)
 	if !ok {
 		pkg.Error(c, http.StatusUnprocessableEntity, "relay provider does not support subscription assignment")
@@ -317,6 +343,16 @@ func adminSubscriptionGroupsFromRelay(groups []relay.Group) []adminSubscriptionG
 		})
 	}
 	return rows
+}
+
+func hasAssignableAdminSubscriptionGroup(groups []relay.Group, groupID int64) bool {
+	target := strconv.FormatInt(groupID, 10)
+	for _, group := range adminSubscriptionGroupsFromRelay(groups) {
+		if group.GroupID == target {
+			return true
+		}
+	}
+	return false
 }
 
 func firstNonEmptyAdminSubscriptionType(value string) string {

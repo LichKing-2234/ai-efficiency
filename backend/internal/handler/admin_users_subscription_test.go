@@ -137,7 +137,9 @@ func TestAdminUsersAssignSubscription(t *testing.T) {
 		SetRelayUserID(42).
 		SaveX(ctx)
 
-	fakeRelay := &adminUsersRelayFake{}
+	fakeRelay := &adminUsersRelayFake{
+		groups: []relay.Group{{ID: 42, Name: "Group Alpha", Platform: "openai", SubscriptionType: "subscription"}},
+	}
 	handler := NewAdminUsersHandler(client, adminUsersTestEncryptionKey, adminUsersProviderResolverFunc(func(_ context.Context, providerID int) (relay.Provider, error) {
 		if providerID != provider.ID {
 			return nil, errors.New("unexpected provider")
@@ -158,5 +160,149 @@ func TestAdminUsersAssignSubscription(t *testing.T) {
 	}
 	if fakeRelay.assignedUserID != 42 || fakeRelay.assignedGroupID != 42 || fakeRelay.assignedValidity != 60 {
 		t.Fatalf("assignment = user %d group %d days %d, want user 42 group 42 days 60", fakeRelay.assignedUserID, fakeRelay.assignedGroupID, fakeRelay.assignedValidity)
+	}
+}
+
+func TestAdminUsersAssignSubscriptionRejectsDisabledProvider(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	client := testdb.Open(t)
+	provider := client.RelayProvider.Create().
+		SetName("sub2api").
+		SetDisplayName("Sub2API").
+		SetBaseURL("https://relay.example.com").
+		SetAdminAPIKey("test-admin-key").
+		SetDefaultModel("gpt-5.4").
+		SetIsPrimary(true).
+		SetEnabled(false).
+		SaveX(ctx)
+	localUser := client.User.Create().
+		SetUsername("alice").
+		SetEmail("alice@example.com").
+		SetAuthSource("ldap").
+		SetRole("user").
+		SetRelayUserID(42).
+		SaveX(ctx)
+
+	fakeRelay := &adminUsersRelayFake{
+		groups: []relay.Group{{ID: 42, Name: "Group Alpha", Platform: "openai", SubscriptionType: "subscription"}},
+	}
+	handler := NewAdminUsersHandler(client, adminUsersTestEncryptionKey, adminUsersProviderResolverFunc(func(_ context.Context, providerID int) (relay.Provider, error) {
+		if providerID != provider.ID {
+			return nil, errors.New("unexpected provider")
+		}
+		return fakeRelay, nil
+	}))
+
+	router := gin.New()
+	router.POST("/admin/users/:id/subscriptions", handler.AssignSubscription)
+	w := httptest.NewRecorder()
+	body := fmt.Sprintf(`{"provider_id":%d,"group_id":"42","validity_days":60}`, provider.ID)
+	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/admin/users/%d/subscriptions", localUser.ID), strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want 422, body=%s", w.Code, w.Body.String())
+	}
+	if fakeRelay.assignedUserID != 0 {
+		t.Fatalf("assigned user id = %d, want no assignment", fakeRelay.assignedUserID)
+	}
+}
+
+func TestAdminUsersAssignSubscriptionRejectsUnknownGroup(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	client := testdb.Open(t)
+	provider := client.RelayProvider.Create().
+		SetName("sub2api").
+		SetDisplayName("Sub2API").
+		SetBaseURL("https://relay.example.com").
+		SetAdminAPIKey("test-admin-key").
+		SetDefaultModel("gpt-5.4").
+		SetIsPrimary(true).
+		SetEnabled(true).
+		SaveX(ctx)
+	localUser := client.User.Create().
+		SetUsername("alice").
+		SetEmail("alice@example.com").
+		SetAuthSource("ldap").
+		SetRole("user").
+		SetRelayUserID(42).
+		SaveX(ctx)
+
+	fakeRelay := &adminUsersRelayFake{
+		groups: []relay.Group{{ID: 42, Name: "Group Alpha", Platform: "openai", SubscriptionType: "subscription"}},
+	}
+	handler := NewAdminUsersHandler(client, adminUsersTestEncryptionKey, adminUsersProviderResolverFunc(func(_ context.Context, providerID int) (relay.Provider, error) {
+		if providerID != provider.ID {
+			return nil, errors.New("unexpected provider")
+		}
+		return fakeRelay, nil
+	}))
+
+	router := gin.New()
+	router.POST("/admin/users/:id/subscriptions", handler.AssignSubscription)
+	w := httptest.NewRecorder()
+	body := fmt.Sprintf(`{"provider_id":%d,"group_id":"99","validity_days":60}`, provider.ID)
+	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/admin/users/%d/subscriptions", localUser.ID), strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want 422, body=%s", w.Code, w.Body.String())
+	}
+	if fakeRelay.assignedUserID != 0 {
+		t.Fatalf("assigned user id = %d, want no assignment", fakeRelay.assignedUserID)
+	}
+}
+
+func TestAdminUsersAssignSubscriptionRejectsNonSubscriptionGroup(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	client := testdb.Open(t)
+	provider := client.RelayProvider.Create().
+		SetName("sub2api").
+		SetDisplayName("Sub2API").
+		SetBaseURL("https://relay.example.com").
+		SetAdminAPIKey("test-admin-key").
+		SetDefaultModel("gpt-5.4").
+		SetIsPrimary(true).
+		SetEnabled(true).
+		SaveX(ctx)
+	localUser := client.User.Create().
+		SetUsername("alice").
+		SetEmail("alice@example.com").
+		SetAuthSource("ldap").
+		SetRole("user").
+		SetRelayUserID(42).
+		SaveX(ctx)
+
+	fakeRelay := &adminUsersRelayFake{
+		groups: []relay.Group{{ID: 43, Name: "Group Beta", Platform: "anthropic", SubscriptionType: "standard"}},
+	}
+	handler := NewAdminUsersHandler(client, adminUsersTestEncryptionKey, adminUsersProviderResolverFunc(func(_ context.Context, providerID int) (relay.Provider, error) {
+		if providerID != provider.ID {
+			return nil, errors.New("unexpected provider")
+		}
+		return fakeRelay, nil
+	}))
+
+	router := gin.New()
+	router.POST("/admin/users/:id/subscriptions", handler.AssignSubscription)
+	w := httptest.NewRecorder()
+	body := fmt.Sprintf(`{"provider_id":%d,"group_id":"43","validity_days":60}`, provider.ID)
+	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/admin/users/%d/subscriptions", localUser.ID), strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want 422, body=%s", w.Code, w.Body.String())
+	}
+	if fakeRelay.assignedUserID != 0 {
+		t.Fatalf("assigned user id = %d, want no assignment", fakeRelay.assignedUserID)
 	}
 }
