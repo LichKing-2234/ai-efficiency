@@ -8,7 +8,7 @@
 
 **Tech Stack:** Vue 3 `<script setup>`, TypeScript, Vitest, Go, shell installer tests.
 
-**Status:** Review follow-up verification complete. Gemini reload snippet 已改为 guarded shell-specific rc reload，targeted/full frontend verification 与 diff whitespace check 已通过；commit 和 PR branch update 尚未完成。
+**Status:** Complete. 主体实现和 code review follow-up 均已完成；Gemini reload snippet 已改为 guarded shell-specific rc reload，targeted/full frontend verification、diff whitespace check、commit 和 PR branch update 均已完成。
 
 ---
 
@@ -229,6 +229,6 @@ cd frontend && pnpm build
 git diff --check
 ```
 
-- [ ] **Step 6: Commit and update PR branch**
+- [x] **Step 6: Commit and update PR branch**
 
 Commit and push the review follow-up to PR #73.
