@@ -9,6 +9,18 @@ import (
 	"github.com/ai-efficiency/backend/ent"
 )
 
+// The AdminSubscriptionJobFunc type is an adapter to allow the use of ordinary
+// function as AdminSubscriptionJob mutator.
+type AdminSubscriptionJobFunc func(context.Context, *ent.AdminSubscriptionJobMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f AdminSubscriptionJobFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.AdminSubscriptionJobMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.AdminSubscriptionJobMutation", m)
+}
+
 // The CommitCheckpointFunc type is an adapter to allow the use of ordinary
 // function as CommitCheckpoint mutator.
 type CommitCheckpointFunc func(context.Context, *ent.CommitCheckpointMutation) (ent.Value, error)

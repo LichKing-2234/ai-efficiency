@@ -8,6 +8,51 @@ import (
 )
 
 var (
+	// AdminSubscriptionJobsColumns holds the columns for the "admin_subscription_jobs" table.
+	AdminSubscriptionJobsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "status", Type: field.TypeEnum, Enums: []string{"queued", "running", "completed", "failed", "abandoned"}, Default: "queued"},
+		{Name: "phase", Type: field.TypeEnum, Enums: []string{"queued", "resolving_targets", "processing", "completed", "failed"}, Default: "queued"},
+		{Name: "scope", Type: field.TypeEnum, Enums: []string{"selected", "current_filter", "all_mapped"}},
+		{Name: "operation", Type: field.TypeEnum, Enums: []string{"add", "extend", "remove"}},
+		{Name: "provider_id", Type: field.TypeInt},
+		{Name: "group_id", Type: field.TypeString},
+		{Name: "validity_days", Type: field.TypeInt, Nullable: true},
+		{Name: "days", Type: field.TypeInt, Nullable: true},
+		{Name: "filter_query", Type: field.TypeString, Nullable: true},
+		{Name: "target_user_ids", Type: field.TypeJSON, Nullable: true},
+		{Name: "target_snapshots", Type: field.TypeJSON, Nullable: true},
+		{Name: "requested_user_ids", Type: field.TypeJSON, Nullable: true},
+		{Name: "total_count", Type: field.TypeInt, Default: 0},
+		{Name: "processed_count", Type: field.TypeInt, Default: 0},
+		{Name: "success_count", Type: field.TypeInt, Default: 0},
+		{Name: "skipped_count", Type: field.TypeInt, Default: 0},
+		{Name: "failed_count", Type: field.TypeInt, Default: 0},
+		{Name: "results", Type: field.TypeJSON, Nullable: true},
+		{Name: "last_error", Type: field.TypeString, Nullable: true},
+		{Name: "started_at", Type: field.TypeTime, Nullable: true},
+		{Name: "completed_at", Type: field.TypeTime, Nullable: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+	}
+	// AdminSubscriptionJobsTable holds the schema information for the "admin_subscription_jobs" table.
+	AdminSubscriptionJobsTable = &schema.Table{
+		Name:       "admin_subscription_jobs",
+		Columns:    AdminSubscriptionJobsColumns,
+		PrimaryKey: []*schema.Column{AdminSubscriptionJobsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "adminsubscriptionjob_status_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{AdminSubscriptionJobsColumns[1], AdminSubscriptionJobsColumns[22]},
+			},
+			{
+				Name:    "adminsubscriptionjob_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{AdminSubscriptionJobsColumns[22]},
+			},
+		},
+	}
 	// CommitCheckpointsColumns holds the columns for the "commit_checkpoints" table.
 	CommitCheckpointsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
@@ -538,6 +583,7 @@ var (
 	}
 	// Tables holds all the tables in the schema.
 	Tables = []*schema.Table{
+		AdminSubscriptionJobsTable,
 		CommitCheckpointsTable,
 		CommitRewritesTable,
 		CredentialsTable,

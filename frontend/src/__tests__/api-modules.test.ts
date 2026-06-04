@@ -19,6 +19,11 @@ import { listPRs, getPR, syncPRs, getPRSyncJob, getLatestPRSyncJob, settlePR, re
 import { getDashboard } from '@/api/efficiency'
 import { getDeploymentStatus, checkForUpdate, applyUpdate, rollbackUpdate, restartDeployment } from '@/api/deployment'
 import { getUserProviders, createGroupCredential, regenerateGroupCredential, getUserProviderModels, testUserProvider } from '@/api/user'
+import {
+  startAdminUserSubscriptionJob,
+  getAdminUserSubscriptionJob,
+  getLatestAdminUserSubscriptionJob,
+} from '@/api/adminUsers'
 
 const mockClient = client as unknown as {
   get: ReturnType<typeof vi.fn>
@@ -205,5 +210,39 @@ describe('user API aggregate smoke', () => {
 
     await testUserProvider(7, { platform: 'openai', group_id: '42', model: 'gpt-5.4', prompt: 'Hi' })
     expect(mockClient.post).toHaveBeenCalledWith('/user/providers/7/test', { platform: 'openai', group_id: '42', model: 'gpt-5.4', prompt: 'Hi' })
+  })
+})
+
+describe('admin users API', () => {
+  it('starts admin user subscription jobs without a timeout override', async () => {
+    const payload = {
+      scope: 'selected' as const,
+      user_ids: [1, 2],
+      operation: 'add' as const,
+      provider_id: 7,
+      group_id: '42',
+      validity_days: 30,
+    }
+    mockClient.post.mockResolvedValue({ data: { data: { id: 12, status: 'queued', phase: 'queued' } } })
+
+    await startAdminUserSubscriptionJob(payload)
+
+    expect(mockClient.post).toHaveBeenCalledWith('/admin/users/subscription-jobs', payload)
+  })
+
+  it('gets admin user subscription job progress', async () => {
+    mockClient.get.mockResolvedValue({ data: { data: { id: 12, status: 'running', phase: 'processing' } } })
+
+    await getAdminUserSubscriptionJob(12)
+
+    expect(mockClient.get).toHaveBeenCalledWith('/admin/users/subscription-jobs/12')
+  })
+
+  it('gets the latest admin user subscription job', async () => {
+    mockClient.get.mockResolvedValue({ data: { data: null } })
+
+    await getLatestAdminUserSubscriptionJob()
+
+    expect(mockClient.get).toHaveBeenCalledWith('/admin/users/subscription-jobs/latest')
   })
 })

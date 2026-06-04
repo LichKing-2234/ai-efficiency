@@ -9,8 +9,11 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
+	"github.com/ai-efficiency/backend/internal/adminsubscription"
 	"github.com/ai-efficiency/backend/internal/relay"
 	"github.com/ai-efficiency/backend/internal/testdb"
 	"github.com/gin-gonic/gin"
@@ -29,6 +32,9 @@ type adminUsersRelayFake struct {
 	assignedGroupID  int64
 	assignedValidity int
 	calls            []adminUsersRelaySubscriptionCall
+	assignStarted    chan struct{}
+	unblockAssign    chan struct{}
+	assignStartOnce  sync.Once
 }
 
 type adminUsersRelaySubscriptionCall struct {
@@ -43,6 +49,14 @@ func (f *adminUsersRelayFake) ListPlatformGroups(ctx context.Context) ([]relay.G
 }
 
 func (f *adminUsersRelayFake) AssignSubscriptionForUser(ctx context.Context, userID, groupID int64, validityDays int) error {
+	if f.assignStarted != nil {
+		f.assignStartOnce.Do(func() {
+			close(f.assignStarted)
+		})
+	}
+	if f.unblockAssign != nil {
+		<-f.unblockAssign
+	}
 	f.assignedUserID = userID
 	f.assignedGroupID = groupID
 	f.assignedValidity = validityDays
@@ -72,6 +86,215 @@ func (f *adminUsersRelayFake) RemoveSubscriptionForUser(ctx context.Context, use
 		GroupID:   groupID,
 	})
 	return nil
+}
+
+func TestAdminUsersStartSubscriptionJobReturnsQueuedWithoutWaitingForRelayMutation(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	provider := client.RelayProvider.Create().
+		SetName("sub2api").
+		SetDisplayName("Sub2API").
+		SetBaseURL("https://relay.example.com").
+		SetAdminAPIKey("test-admin-key").
+		SetDefaultModel("gpt-5.4").
+		SetIsPrimary(true).
+		SetEnabled(true).
+		SaveX(ctx)
+	localUser := client.User.Create().
+		SetUsername("alice").
+		SetEmail("alice@example.com").
+		SetAuthSource("ldap").
+		SetRole("user").
+		SetRelayUserID(42).
+		SaveX(ctx)
+
+	fakeRelay := &adminUsersRelayFake{
+		groups:        []relay.Group{{ID: 42, Name: "Group Alpha", Platform: "openai", SubscriptionType: "subscription"}},
+		assignStarted: make(chan struct{}),
+		unblockAssign: make(chan struct{}),
+	}
+	defer close(fakeRelay.unblockAssign)
+	handler := NewAdminUsersHandler(client, adminUsersTestEncryptionKey, adminUsersProviderResolverFunc(func(_ context.Context, providerID int) (relay.Provider, error) {
+		if providerID != provider.ID {
+			return nil, errors.New("unexpected provider")
+		}
+		return fakeRelay, nil
+	}))
+
+	router := gin.New()
+	router.POST("/admin/users/subscription-jobs", handler.StartSubscriptionJob)
+	w := httptest.NewRecorder()
+	body := fmt.Sprintf(`{"scope":"selected","user_ids":[%d],"operation":"add","provider_id":%d,"group_id":"42","validity_days":60}`, localUser.ID, provider.ID)
+	req := httptest.NewRequest(http.MethodPost, "/admin/users/subscription-jobs", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body=%s", w.Code, w.Body.String())
+	}
+	select {
+	case <-fakeRelay.assignStarted:
+	case <-time.After(time.Second):
+		t.Fatal("background subscription mutation did not start")
+	}
+	if len(fakeRelay.calls) != 0 {
+		t.Fatalf("calls = %+v, want no completed relay mutation before unblock", fakeRelay.calls)
+	}
+
+	var resp struct {
+		Data struct {
+			ID             int    `json:"id"`
+			Status         string `json:"status"`
+			Phase          string `json:"phase"`
+			TotalCount     int    `json:"total_count"`
+			ProcessedCount int    `json:"processed_count"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v, body=%s", err, w.Body.String())
+	}
+	if resp.Data.ID <= 0 || resp.Data.Status != "queued" || resp.Data.Phase != "queued" || resp.Data.TotalCount != 1 || resp.Data.ProcessedCount != 0 {
+		t.Fatalf("unexpected job response: %+v", resp.Data)
+	}
+}
+
+func TestAdminSubscriptionJobErrorStatusClassifiesValidationAndInternalErrors(t *testing.T) {
+	if got := adminSubscriptionJobErrorStatus(adminsubscription.NewValidationError("scope is required")); got != http.StatusBadRequest {
+		t.Fatalf("validation status = %d, want 400", got)
+	}
+	if got := adminSubscriptionJobErrorStatus(adminsubscription.NewTooManyTargetsError(500)); got != http.StatusUnprocessableEntity {
+		t.Fatalf("too many targets status = %d, want 422", got)
+	}
+	if got := adminSubscriptionJobErrorStatus(errors.New("list users: database unavailable")); got != http.StatusInternalServerError {
+		t.Fatalf("internal status = %d, want 500", got)
+	}
+}
+
+func TestAdminUsersGetSubscriptionJobReturnsProgressAndResults(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	client := testdb.Open(t)
+	localUser := client.User.Create().
+		SetUsername("alice").
+		SetEmail("alice@example.com").
+		SetAuthSource("ldap").
+		SetRole("user").
+		SetRelayUserID(42).
+		SaveX(ctx)
+	svc := adminsubscription.NewService(client)
+	job, err := svc.StartJob(ctx, adminsubscription.StartJobRequest{
+		Scope:        "selected",
+		UserIDs:      []int{localUser.ID},
+		Operation:    "add",
+		ProviderID:   7,
+		GroupID:      "42",
+		ValidityDays: 60,
+	})
+	if err != nil {
+		t.Fatalf("StartJob error: %v", err)
+	}
+	if err := svc.RunJob(ctx, job.ID, &adminUsersRelayFake{}); err != nil {
+		t.Fatalf("RunJob error: %v", err)
+	}
+	handler := NewAdminUsersHandler(client, adminUsersTestEncryptionKey)
+
+	router := gin.New()
+	router.GET("/admin/users/subscription-jobs/:id", handler.GetSubscriptionJob)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/admin/users/subscription-jobs/%d", job.ID), nil)
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body=%s", w.Code, w.Body.String())
+	}
+	var resp struct {
+		Data struct {
+			ID             int `json:"id"`
+			ProcessedCount int `json:"processed_count"`
+			SuccessCount   int `json:"success_count"`
+			Results        []struct {
+				UserID int    `json:"user_id"`
+				Status string `json:"status"`
+			} `json:"results"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v, body=%s", err, w.Body.String())
+	}
+	if resp.Data.ID != job.ID || resp.Data.ProcessedCount != 1 || resp.Data.SuccessCount != 1 {
+		t.Fatalf("unexpected job counters: %+v", resp.Data)
+	}
+	if len(resp.Data.Results) != 1 || resp.Data.Results[0].UserID != localUser.ID || resp.Data.Results[0].Status != "success" {
+		t.Fatalf("unexpected results: %+v", resp.Data.Results)
+	}
+}
+
+func TestAdminUsersGetLatestSubscriptionJobReturnsNewestJob(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	client := testdb.Open(t)
+	alice := client.User.Create().
+		SetUsername("alice").
+		SetEmail("alice@example.com").
+		SetAuthSource("ldap").
+		SetRole("user").
+		SetRelayUserID(42).
+		SaveX(ctx)
+	bob := client.User.Create().
+		SetUsername("bob").
+		SetEmail("bob@example.org").
+		SetAuthSource("ldap").
+		SetRole("user").
+		SetRelayUserID(99).
+		SaveX(ctx)
+	svc := adminsubscription.NewService(client)
+	if _, err := svc.StartJob(ctx, adminsubscription.StartJobRequest{
+		Scope:        "selected",
+		UserIDs:      []int{alice.ID},
+		Operation:    "add",
+		ProviderID:   7,
+		GroupID:      "42",
+		ValidityDays: 60,
+	}); err != nil {
+		t.Fatalf("StartJob alice error: %v", err)
+	}
+	time.Sleep(time.Millisecond)
+	latest, err := svc.StartJob(ctx, adminsubscription.StartJobRequest{
+		Scope:        "selected",
+		UserIDs:      []int{bob.ID},
+		Operation:    "add",
+		ProviderID:   7,
+		GroupID:      "42",
+		ValidityDays: 60,
+	})
+	if err != nil {
+		t.Fatalf("StartJob bob error: %v", err)
+	}
+	handler := NewAdminUsersHandler(client, adminUsersTestEncryptionKey)
+
+	router := gin.New()
+	router.GET("/admin/users/subscription-jobs/latest", handler.GetLatestSubscriptionJob)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/admin/users/subscription-jobs/latest", nil)
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body=%s", w.Code, w.Body.String())
+	}
+	var resp struct {
+		Data struct {
+			ID        int   `json:"id"`
+			TargetIDs []int `json:"target_user_ids"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v, body=%s", err, w.Body.String())
+	}
+	if resp.Data.ID != latest.ID || len(resp.Data.TargetIDs) != 1 || resp.Data.TargetIDs[0] != bob.ID {
+		t.Fatalf("latest job = %+v, want id %d target %d", resp.Data, latest.ID, bob.ID)
+	}
 }
 
 func TestAdminUsersListSubscriptionOptions(t *testing.T) {

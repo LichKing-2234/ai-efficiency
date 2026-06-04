@@ -15,6 +15,7 @@ import (
 	"entgo.io/ent/dialect"
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
+	"github.com/ai-efficiency/backend/ent/adminsubscriptionjob"
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
 	"github.com/ai-efficiency/backend/ent/commitrewrite"
 	"github.com/ai-efficiency/backend/ent/credential"
@@ -36,6 +37,8 @@ type Client struct {
 	config
 	// Schema is the client for creating, migrating and dropping schema.
 	Schema *migrate.Schema
+	// AdminSubscriptionJob is the client for interacting with the AdminSubscriptionJob builders.
+	AdminSubscriptionJob *AdminSubscriptionJobClient
 	// CommitCheckpoint is the client for interacting with the CommitCheckpoint builders.
 	CommitCheckpoint *CommitCheckpointClient
 	// CommitRewrite is the client for interacting with the CommitRewrite builders.
@@ -75,6 +78,7 @@ func NewClient(opts ...Option) *Client {
 
 func (c *Client) init() {
 	c.Schema = migrate.NewSchema(c.driver)
+	c.AdminSubscriptionJob = NewAdminSubscriptionJobClient(c.config)
 	c.CommitCheckpoint = NewCommitCheckpointClient(c.config)
 	c.CommitRewrite = NewCommitRewriteClient(c.config)
 	c.Credential = NewCredentialClient(c.config)
@@ -181,6 +185,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 	return &Tx{
 		ctx:                   ctx,
 		config:                cfg,
+		AdminSubscriptionJob:  NewAdminSubscriptionJobClient(cfg),
 		CommitCheckpoint:      NewCommitCheckpointClient(cfg),
 		CommitRewrite:         NewCommitRewriteClient(cfg),
 		Credential:            NewCredentialClient(cfg),
@@ -214,6 +219,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 	return &Tx{
 		ctx:                   ctx,
 		config:                cfg,
+		AdminSubscriptionJob:  NewAdminSubscriptionJobClient(cfg),
 		CommitCheckpoint:      NewCommitCheckpointClient(cfg),
 		CommitRewrite:         NewCommitRewriteClient(cfg),
 		Credential:            NewCredentialClient(cfg),
@@ -234,7 +240,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 // Debug returns a new debug-client. It's used to get verbose logging on specific operations.
 //
 //	client.Debug().
-//		CommitCheckpoint.
+//		AdminSubscriptionJob.
 //		Query().
 //		Count(ctx)
 func (c *Client) Debug() *Client {
@@ -257,9 +263,10 @@ func (c *Client) Close() error {
 // In order to add hooks to a specific client, call: `client.Node.Use(...)`.
 func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
-		c.CommitCheckpoint, c.CommitRewrite, c.Credential, c.PRCommitUsageSnapshot,
-		c.PRSyncJob, c.PrAttributionRun, c.PrRecord, c.RelayProvider, c.RepoConfig,
-		c.ScmProvider, c.SystemSetting, c.ToolUsageEvent, c.User, c.WebhookDeadLetter,
+		c.AdminSubscriptionJob, c.CommitCheckpoint, c.CommitRewrite, c.Credential,
+		c.PRCommitUsageSnapshot, c.PRSyncJob, c.PrAttributionRun, c.PrRecord,
+		c.RelayProvider, c.RepoConfig, c.ScmProvider, c.SystemSetting,
+		c.ToolUsageEvent, c.User, c.WebhookDeadLetter,
 	} {
 		n.Use(hooks...)
 	}
@@ -269,9 +276,10 @@ func (c *Client) Use(hooks ...Hook) {
 // In order to add interceptors to a specific client, call: `client.Node.Intercept(...)`.
 func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
-		c.CommitCheckpoint, c.CommitRewrite, c.Credential, c.PRCommitUsageSnapshot,
-		c.PRSyncJob, c.PrAttributionRun, c.PrRecord, c.RelayProvider, c.RepoConfig,
-		c.ScmProvider, c.SystemSetting, c.ToolUsageEvent, c.User, c.WebhookDeadLetter,
+		c.AdminSubscriptionJob, c.CommitCheckpoint, c.CommitRewrite, c.Credential,
+		c.PRCommitUsageSnapshot, c.PRSyncJob, c.PrAttributionRun, c.PrRecord,
+		c.RelayProvider, c.RepoConfig, c.ScmProvider, c.SystemSetting,
+		c.ToolUsageEvent, c.User, c.WebhookDeadLetter,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -280,6 +288,8 @@ func (c *Client) Intercept(interceptors ...Interceptor) {
 // Mutate implements the ent.Mutator interface.
 func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 	switch m := m.(type) {
+	case *AdminSubscriptionJobMutation:
+		return c.AdminSubscriptionJob.mutate(ctx, m)
 	case *CommitCheckpointMutation:
 		return c.CommitCheckpoint.mutate(ctx, m)
 	case *CommitRewriteMutation:
@@ -310,6 +320,139 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.WebhookDeadLetter.mutate(ctx, m)
 	default:
 		return nil, fmt.Errorf("ent: unknown mutation type %T", m)
+	}
+}
+
+// AdminSubscriptionJobClient is a client for the AdminSubscriptionJob schema.
+type AdminSubscriptionJobClient struct {
+	config
+}
+
+// NewAdminSubscriptionJobClient returns a client for the AdminSubscriptionJob from the given config.
+func NewAdminSubscriptionJobClient(c config) *AdminSubscriptionJobClient {
+	return &AdminSubscriptionJobClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `adminsubscriptionjob.Hooks(f(g(h())))`.
+func (c *AdminSubscriptionJobClient) Use(hooks ...Hook) {
+	c.hooks.AdminSubscriptionJob = append(c.hooks.AdminSubscriptionJob, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `adminsubscriptionjob.Intercept(f(g(h())))`.
+func (c *AdminSubscriptionJobClient) Intercept(interceptors ...Interceptor) {
+	c.inters.AdminSubscriptionJob = append(c.inters.AdminSubscriptionJob, interceptors...)
+}
+
+// Create returns a builder for creating a AdminSubscriptionJob entity.
+func (c *AdminSubscriptionJobClient) Create() *AdminSubscriptionJobCreate {
+	mutation := newAdminSubscriptionJobMutation(c.config, OpCreate)
+	return &AdminSubscriptionJobCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of AdminSubscriptionJob entities.
+func (c *AdminSubscriptionJobClient) CreateBulk(builders ...*AdminSubscriptionJobCreate) *AdminSubscriptionJobCreateBulk {
+	return &AdminSubscriptionJobCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *AdminSubscriptionJobClient) MapCreateBulk(slice any, setFunc func(*AdminSubscriptionJobCreate, int)) *AdminSubscriptionJobCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &AdminSubscriptionJobCreateBulk{err: fmt.Errorf("calling to AdminSubscriptionJobClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*AdminSubscriptionJobCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &AdminSubscriptionJobCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for AdminSubscriptionJob.
+func (c *AdminSubscriptionJobClient) Update() *AdminSubscriptionJobUpdate {
+	mutation := newAdminSubscriptionJobMutation(c.config, OpUpdate)
+	return &AdminSubscriptionJobUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *AdminSubscriptionJobClient) UpdateOne(asj *AdminSubscriptionJob) *AdminSubscriptionJobUpdateOne {
+	mutation := newAdminSubscriptionJobMutation(c.config, OpUpdateOne, withAdminSubscriptionJob(asj))
+	return &AdminSubscriptionJobUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *AdminSubscriptionJobClient) UpdateOneID(id int) *AdminSubscriptionJobUpdateOne {
+	mutation := newAdminSubscriptionJobMutation(c.config, OpUpdateOne, withAdminSubscriptionJobID(id))
+	return &AdminSubscriptionJobUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for AdminSubscriptionJob.
+func (c *AdminSubscriptionJobClient) Delete() *AdminSubscriptionJobDelete {
+	mutation := newAdminSubscriptionJobMutation(c.config, OpDelete)
+	return &AdminSubscriptionJobDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *AdminSubscriptionJobClient) DeleteOne(asj *AdminSubscriptionJob) *AdminSubscriptionJobDeleteOne {
+	return c.DeleteOneID(asj.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *AdminSubscriptionJobClient) DeleteOneID(id int) *AdminSubscriptionJobDeleteOne {
+	builder := c.Delete().Where(adminsubscriptionjob.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &AdminSubscriptionJobDeleteOne{builder}
+}
+
+// Query returns a query builder for AdminSubscriptionJob.
+func (c *AdminSubscriptionJobClient) Query() *AdminSubscriptionJobQuery {
+	return &AdminSubscriptionJobQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeAdminSubscriptionJob},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a AdminSubscriptionJob entity by its id.
+func (c *AdminSubscriptionJobClient) Get(ctx context.Context, id int) (*AdminSubscriptionJob, error) {
+	return c.Query().Where(adminsubscriptionjob.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *AdminSubscriptionJobClient) GetX(ctx context.Context, id int) *AdminSubscriptionJob {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *AdminSubscriptionJobClient) Hooks() []Hook {
+	return c.hooks.AdminSubscriptionJob
+}
+
+// Interceptors returns the client interceptors.
+func (c *AdminSubscriptionJobClient) Interceptors() []Interceptor {
+	return c.inters.AdminSubscriptionJob
+}
+
+func (c *AdminSubscriptionJobClient) mutate(ctx context.Context, m *AdminSubscriptionJobMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&AdminSubscriptionJobCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&AdminSubscriptionJobUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&AdminSubscriptionJobUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&AdminSubscriptionJobDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown AdminSubscriptionJob mutation op: %q", m.Op())
 	}
 }
 
@@ -2709,13 +2852,15 @@ func (c *WebhookDeadLetterClient) mutate(ctx context.Context, m *WebhookDeadLett
 // hooks and interceptors per client, for fast access.
 type (
 	hooks struct {
-		CommitCheckpoint, CommitRewrite, Credential, PRCommitUsageSnapshot, PRSyncJob,
-		PrAttributionRun, PrRecord, RelayProvider, RepoConfig, ScmProvider,
-		SystemSetting, ToolUsageEvent, User, WebhookDeadLetter []ent.Hook
+		AdminSubscriptionJob, CommitCheckpoint, CommitRewrite, Credential,
+		PRCommitUsageSnapshot, PRSyncJob, PrAttributionRun, PrRecord, RelayProvider,
+		RepoConfig, ScmProvider, SystemSetting, ToolUsageEvent, User,
+		WebhookDeadLetter []ent.Hook
 	}
 	inters struct {
-		CommitCheckpoint, CommitRewrite, Credential, PRCommitUsageSnapshot, PRSyncJob,
-		PrAttributionRun, PrRecord, RelayProvider, RepoConfig, ScmProvider,
-		SystemSetting, ToolUsageEvent, User, WebhookDeadLetter []ent.Interceptor
+		AdminSubscriptionJob, CommitCheckpoint, CommitRewrite, Credential,
+		PRCommitUsageSnapshot, PRSyncJob, PrAttributionRun, PrRecord, RelayProvider,
+		RepoConfig, ScmProvider, SystemSetting, ToolUsageEvent, User,
+		WebhookDeadLetter []ent.Interceptor
 	}
 )

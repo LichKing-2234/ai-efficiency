@@ -2,12 +2,20 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppLayout from '@/components/AppLayout.vue'
-import { listAdminUsers, listAdminUserSubscriptionOptions, manageAdminUserSubscriptions, revealAdminUserRelayPassword } from '@/api/adminUsers'
+import {
+  getAdminUserSubscriptionJob,
+  getLatestAdminUserSubscriptionJob,
+  listAdminUsers,
+  listAdminUserSubscriptionOptions,
+  revealAdminUserRelayPassword,
+  startAdminUserSubscriptionJob,
+} from '@/api/adminUsers'
 import { useI18n } from '@/i18n'
 import type {
   AdminAssignableSubscriptionProvider,
   AdminManageSubscriptionsRequest,
   AdminManageSubscriptionsResultRow,
+  AdminSubscriptionJob,
   AdminSubscriptionManageOperation,
   AdminSubscriptionManageScope,
   AdminUser,
@@ -27,6 +35,7 @@ const copiedState = reactive<Record<number, string>>({})
 const plaintextConfirmUserId = ref<number | null>(null)
 const selectedUserIds = ref<Set<number>>(new Set())
 const selectAllUsersCheckbox = ref<HTMLInputElement | null>(null)
+const subscriptionJob = ref<AdminSubscriptionJob | null>(null)
 const subscriptionForm = reactive<{
   scope: AdminSubscriptionManageScope
   operation: AdminSubscriptionManageOperation
@@ -49,6 +58,7 @@ const subscriptionForm = reactive<{
   results: [],
 })
 let searchTimer: number | undefined
+let subscriptionJobPollTimer: number | undefined
 
 const filters = reactive({
   q: queryString('q'),
@@ -59,12 +69,13 @@ const filters = reactive({
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / filters.page_size)))
 const canGoPrev = computed(() => filters.page > 1)
 const canGoNext = computed(() => filters.page < totalPages.value)
-const selectedUserIdList = computed(() => Array.from(selectedUserIds.value).sort((a, b) => a - b))
+const selectedUserIdList = computed(() => Array.from(selectedUserIds.value))
 const selectedCount = computed(() => selectedUserIdList.value.length)
 const allVisibleSelected = computed(() => rows.value.length > 0 && rows.value.every((row) => selectedUserIds.value.has(row.id)))
 const visibleSelectionIndeterminate = computed(() => rows.value.some((row) => selectedUserIds.value.has(row.id)) && !allVisibleSelected.value)
 const bulkGroups = computed(() => subscriptionProviders.value.find((provider) => provider.id === subscriptionForm.provider_id)?.groups ?? [])
 const bulkUsesDays = computed(() => subscriptionForm.operation === 'add' || subscriptionForm.operation === 'extend')
+const subscriptionResults = computed(() => subscriptionJob.value?.results ?? subscriptionForm.results)
 const canSubmitSubscriptionManagement = computed(() => {
   if (subscriptionForm.loading || !subscriptionForm.provider_id || !subscriptionForm.group_id) return false
   if (subscriptionForm.scope === 'selected' && selectedCount.value === 0) return false
@@ -192,7 +203,82 @@ function ensureBulkSubscriptionDefaults() {
   }
 }
 
+function isActiveSubscriptionJob(job: AdminSubscriptionJob | null) {
+  return job?.status === 'queued' || job?.status === 'running'
+}
+
+function subscriptionJobMessage(job: AdminSubscriptionJob) {
+  if (job.status === 'queued') {
+    return t('adminUsers.subscriptionJobQueued', { processed: job.processed_count, total: job.total_count })
+  }
+  if (job.status === 'running') {
+    return t('adminUsers.subscriptionJobRunning', { processed: job.processed_count, total: job.total_count })
+  }
+  if (job.status === 'completed') {
+    return t('adminUsers.subscriptionJobCompleted', {
+      success: job.success_count,
+      skipped: job.skipped_count,
+      failed: job.failed_count,
+    })
+  }
+  return t('adminUsers.subscriptionJobFailed', { message: job.last_error || t('adminUsers.unknownError') })
+}
+
+function stopSubscriptionJobPolling() {
+  if (subscriptionJobPollTimer) {
+    window.clearInterval(subscriptionJobPollTimer)
+    subscriptionJobPollTimer = undefined
+  }
+}
+
+function applySubscriptionJob(job: AdminSubscriptionJob) {
+  subscriptionJob.value = job
+  subscriptionForm.results = job.results ?? []
+  subscriptionForm.message = subscriptionJobMessage(job)
+  subscriptionForm.loading = isActiveSubscriptionJob(job)
+  if (!isActiveSubscriptionJob(job)) {
+    stopSubscriptionJobPolling()
+  }
+}
+
+async function refreshSubscriptionJob(jobId: number) {
+  try {
+    const res = await getAdminUserSubscriptionJob(jobId)
+    const job = res.data.data
+    if (job) {
+      applySubscriptionJob(job)
+    }
+  } catch (err: any) {
+    stopSubscriptionJobPolling()
+    subscriptionForm.loading = false
+    subscriptionForm.message = err.response?.data?.message || err.message || t('adminUsers.manageSubscriptionsFailed')
+  }
+}
+
+function startSubscriptionJobPolling(job: AdminSubscriptionJob) {
+  stopSubscriptionJobPolling()
+  if (!isActiveSubscriptionJob(job)) return
+  subscriptionJobPollTimer = window.setInterval(() => {
+    void refreshSubscriptionJob(job.id)
+  }, 1500)
+}
+
+async function recoverLatestSubscriptionJob() {
+  try {
+    const res = await getLatestAdminUserSubscriptionJob()
+    const job = res.data.data
+    if (job && isActiveSubscriptionJob(job)) {
+      applySubscriptionJob(job)
+      startSubscriptionJobPolling(job)
+    }
+  } catch {
+    // Latest-job recovery is best-effort; normal user loading errors stay visible separately.
+  }
+}
+
 function clearSubscriptionFeedback() {
+  stopSubscriptionJobPolling()
+  subscriptionJob.value = null
   subscriptionForm.message = ''
   subscriptionForm.results = []
 }
@@ -297,20 +383,20 @@ async function submitSubscriptionManagement() {
     payload.days = subscriptionForm.days
   }
 
-  subscriptionForm.loading = true
   clearSubscriptionFeedback()
+  subscriptionForm.loading = true
   try {
-    const res = await manageAdminUserSubscriptions(payload)
-    const data = res.data.data
-    subscriptionForm.results = data?.results ?? []
-    subscriptionForm.message = t('adminUsers.subscriptionBatchCompleted', {
-      success: data?.success_count ?? 0,
-      skipped: data?.skipped_count ?? 0,
-      failed: data?.failed_count ?? 0,
-    })
+    const res = await startAdminUserSubscriptionJob(payload)
+    const job = res.data.data
+    if (job) {
+      applySubscriptionJob(job)
+      startSubscriptionJobPolling(job)
+    } else {
+      subscriptionForm.loading = false
+      subscriptionForm.message = t('adminUsers.manageSubscriptionsFailed')
+    }
   } catch (err: any) {
     subscriptionForm.message = err.response?.data?.message || err.message || t('adminUsers.manageSubscriptionsFailed')
-  } finally {
     subscriptionForm.loading = false
   }
 }
@@ -363,11 +449,15 @@ watch(
 watch([visibleSelectionIndeterminate, allVisibleSelected], syncVisibleSelectionIndeterminate, { flush: 'post' })
 
 onMounted(() => {
-	void loadUsers()
-	void loadSubscriptionOptions()
-	syncVisibleSelectionIndeterminate()
+  void loadUsers()
+  void loadSubscriptionOptions()
+  void recoverLatestSubscriptionJob()
+  syncVisibleSelectionIndeterminate()
 })
-onBeforeUnmount(clearSearchTimer)
+onBeforeUnmount(() => {
+  clearSearchTimer()
+  stopSubscriptionJobPolling()
+})
 </script>
 
 <template>
@@ -537,9 +627,15 @@ onBeforeUnmount(clearSearchTimer)
         <p v-if="subscriptionForm.message" class="mt-3 rounded-md bg-gray-50 p-3 text-sm text-gray-700" aria-live="polite">
           {{ subscriptionForm.message }}
         </p>
-        <div v-if="subscriptionForm.results.length > 0" class="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        <div v-if="subscriptionJob" class="mt-3 flex flex-wrap gap-3 text-xs text-gray-500">
+          <span>{{ subscriptionJob.processed_count }} / {{ subscriptionJob.total_count }}</span>
+          <span>{{ t('adminUsers.subscriptionSuccessCount', { count: subscriptionJob.success_count }) }}</span>
+          <span>{{ t('adminUsers.subscriptionSkippedCount', { count: subscriptionJob.skipped_count }) }}</span>
+          <span>{{ t('adminUsers.subscriptionFailedCount', { count: subscriptionJob.failed_count }) }}</span>
+        </div>
+        <div v-if="subscriptionResults.length > 0" class="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
           <div
-            v-for="result in subscriptionForm.results.slice(0, 6)"
+            v-for="result in subscriptionResults.slice(0, 6)"
             :key="`${result.user_id}-${result.status}`"
             class="rounded-md border border-gray-200 p-2 text-xs"
           >
@@ -583,6 +679,7 @@ onBeforeUnmount(clearSearchTimer)
                   class="mt-1 h-4 w-4 rounded border-gray-300"
                   type="checkbox"
                   :checked="selectedUserIds.has(row.id)"
+                  :disabled="subscriptionForm.loading"
                   @change="setUserSelected(row.id, ($event.target as HTMLInputElement).checked)"
                 />
                 <span class="min-w-0">
@@ -657,6 +754,7 @@ onBeforeUnmount(clearSearchTimer)
                     type="checkbox"
                     :checked="allVisibleSelected"
                     :aria-checked="visibleSelectionIndeterminate ? 'mixed' : allVisibleSelected"
+                    :disabled="subscriptionForm.loading"
                     @change="setAllVisibleSelected(($event.target as HTMLInputElement).checked)"
                   />
                 </th>
@@ -678,6 +776,7 @@ onBeforeUnmount(clearSearchTimer)
                     class="h-4 w-4 rounded border-gray-300"
                     type="checkbox"
                     :checked="selectedUserIds.has(row.id)"
+                    :disabled="subscriptionForm.loading"
                     @change="setUserSelected(row.id, ($event.target as HTMLInputElement).checked)"
                   />
                 </td>

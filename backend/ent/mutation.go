@@ -11,6 +11,7 @@ import (
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
+	"github.com/ai-efficiency/backend/ent/adminsubscriptionjob"
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
 	"github.com/ai-efficiency/backend/ent/commitrewrite"
 	"github.com/ai-efficiency/backend/ent/credential"
@@ -37,6 +38,7 @@ const (
 	OpUpdateOne = ent.OpUpdateOne
 
 	// Node types.
+	TypeAdminSubscriptionJob  = "AdminSubscriptionJob"
 	TypeCommitCheckpoint      = "CommitCheckpoint"
 	TypeCommitRewrite         = "CommitRewrite"
 	TypeCredential            = "Credential"
@@ -52,6 +54,2050 @@ const (
 	TypeUser                  = "User"
 	TypeWebhookDeadLetter     = "WebhookDeadLetter"
 )
+
+// AdminSubscriptionJobMutation represents an operation that mutates the AdminSubscriptionJob nodes in the graph.
+type AdminSubscriptionJobMutation struct {
+	config
+	op                       Op
+	typ                      string
+	id                       *int
+	status                   *adminsubscriptionjob.Status
+	phase                    *adminsubscriptionjob.Phase
+	scope                    *adminsubscriptionjob.Scope
+	operation                *adminsubscriptionjob.Operation
+	provider_id              *int
+	addprovider_id           *int
+	group_id                 *string
+	validity_days            *int
+	addvalidity_days         *int
+	days                     *int
+	adddays                  *int
+	filter_query             *string
+	target_user_ids          *[]int
+	appendtarget_user_ids    []int
+	target_snapshots         *[]map[string]interface{}
+	appendtarget_snapshots   []map[string]interface{}
+	requested_user_ids       *[]int
+	appendrequested_user_ids []int
+	total_count              *int
+	addtotal_count           *int
+	processed_count          *int
+	addprocessed_count       *int
+	success_count            *int
+	addsuccess_count         *int
+	skipped_count            *int
+	addskipped_count         *int
+	failed_count             *int
+	addfailed_count          *int
+	results                  *[]map[string]interface{}
+	appendresults            []map[string]interface{}
+	last_error               *string
+	started_at               *time.Time
+	completed_at             *time.Time
+	created_at               *time.Time
+	updated_at               *time.Time
+	clearedFields            map[string]struct{}
+	done                     bool
+	oldValue                 func(context.Context) (*AdminSubscriptionJob, error)
+	predicates               []predicate.AdminSubscriptionJob
+}
+
+var _ ent.Mutation = (*AdminSubscriptionJobMutation)(nil)
+
+// adminsubscriptionjobOption allows management of the mutation configuration using functional options.
+type adminsubscriptionjobOption func(*AdminSubscriptionJobMutation)
+
+// newAdminSubscriptionJobMutation creates new mutation for the AdminSubscriptionJob entity.
+func newAdminSubscriptionJobMutation(c config, op Op, opts ...adminsubscriptionjobOption) *AdminSubscriptionJobMutation {
+	m := &AdminSubscriptionJobMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeAdminSubscriptionJob,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withAdminSubscriptionJobID sets the ID field of the mutation.
+func withAdminSubscriptionJobID(id int) adminsubscriptionjobOption {
+	return func(m *AdminSubscriptionJobMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *AdminSubscriptionJob
+		)
+		m.oldValue = func(ctx context.Context) (*AdminSubscriptionJob, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().AdminSubscriptionJob.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withAdminSubscriptionJob sets the old AdminSubscriptionJob of the mutation.
+func withAdminSubscriptionJob(node *AdminSubscriptionJob) adminsubscriptionjobOption {
+	return func(m *AdminSubscriptionJobMutation) {
+		m.oldValue = func(context.Context) (*AdminSubscriptionJob, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m AdminSubscriptionJobMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m AdminSubscriptionJobMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *AdminSubscriptionJobMutation) ID() (id int, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *AdminSubscriptionJobMutation) IDs(ctx context.Context) ([]int, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().AdminSubscriptionJob.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetStatus sets the "status" field.
+func (m *AdminSubscriptionJobMutation) SetStatus(a adminsubscriptionjob.Status) {
+	m.status = &a
+}
+
+// Status returns the value of the "status" field in the mutation.
+func (m *AdminSubscriptionJobMutation) Status() (r adminsubscriptionjob.Status, exists bool) {
+	v := m.status
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStatus returns the old "status" field's value of the AdminSubscriptionJob entity.
+// If the AdminSubscriptionJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AdminSubscriptionJobMutation) OldStatus(ctx context.Context) (v adminsubscriptionjob.Status, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStatus is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStatus requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStatus: %w", err)
+	}
+	return oldValue.Status, nil
+}
+
+// ResetStatus resets all changes to the "status" field.
+func (m *AdminSubscriptionJobMutation) ResetStatus() {
+	m.status = nil
+}
+
+// SetPhase sets the "phase" field.
+func (m *AdminSubscriptionJobMutation) SetPhase(a adminsubscriptionjob.Phase) {
+	m.phase = &a
+}
+
+// Phase returns the value of the "phase" field in the mutation.
+func (m *AdminSubscriptionJobMutation) Phase() (r adminsubscriptionjob.Phase, exists bool) {
+	v := m.phase
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPhase returns the old "phase" field's value of the AdminSubscriptionJob entity.
+// If the AdminSubscriptionJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AdminSubscriptionJobMutation) OldPhase(ctx context.Context) (v adminsubscriptionjob.Phase, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPhase is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPhase requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPhase: %w", err)
+	}
+	return oldValue.Phase, nil
+}
+
+// ResetPhase resets all changes to the "phase" field.
+func (m *AdminSubscriptionJobMutation) ResetPhase() {
+	m.phase = nil
+}
+
+// SetScope sets the "scope" field.
+func (m *AdminSubscriptionJobMutation) SetScope(a adminsubscriptionjob.Scope) {
+	m.scope = &a
+}
+
+// Scope returns the value of the "scope" field in the mutation.
+func (m *AdminSubscriptionJobMutation) Scope() (r adminsubscriptionjob.Scope, exists bool) {
+	v := m.scope
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldScope returns the old "scope" field's value of the AdminSubscriptionJob entity.
+// If the AdminSubscriptionJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AdminSubscriptionJobMutation) OldScope(ctx context.Context) (v adminsubscriptionjob.Scope, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldScope is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldScope requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldScope: %w", err)
+	}
+	return oldValue.Scope, nil
+}
+
+// ResetScope resets all changes to the "scope" field.
+func (m *AdminSubscriptionJobMutation) ResetScope() {
+	m.scope = nil
+}
+
+// SetOperation sets the "operation" field.
+func (m *AdminSubscriptionJobMutation) SetOperation(a adminsubscriptionjob.Operation) {
+	m.operation = &a
+}
+
+// Operation returns the value of the "operation" field in the mutation.
+func (m *AdminSubscriptionJobMutation) Operation() (r adminsubscriptionjob.Operation, exists bool) {
+	v := m.operation
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldOperation returns the old "operation" field's value of the AdminSubscriptionJob entity.
+// If the AdminSubscriptionJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AdminSubscriptionJobMutation) OldOperation(ctx context.Context) (v adminsubscriptionjob.Operation, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldOperation is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldOperation requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldOperation: %w", err)
+	}
+	return oldValue.Operation, nil
+}
+
+// ResetOperation resets all changes to the "operation" field.
+func (m *AdminSubscriptionJobMutation) ResetOperation() {
+	m.operation = nil
+}
+
+// SetProviderID sets the "provider_id" field.
+func (m *AdminSubscriptionJobMutation) SetProviderID(i int) {
+	m.provider_id = &i
+	m.addprovider_id = nil
+}
+
+// ProviderID returns the value of the "provider_id" field in the mutation.
+func (m *AdminSubscriptionJobMutation) ProviderID() (r int, exists bool) {
+	v := m.provider_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldProviderID returns the old "provider_id" field's value of the AdminSubscriptionJob entity.
+// If the AdminSubscriptionJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AdminSubscriptionJobMutation) OldProviderID(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldProviderID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldProviderID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldProviderID: %w", err)
+	}
+	return oldValue.ProviderID, nil
+}
+
+// AddProviderID adds i to the "provider_id" field.
+func (m *AdminSubscriptionJobMutation) AddProviderID(i int) {
+	if m.addprovider_id != nil {
+		*m.addprovider_id += i
+	} else {
+		m.addprovider_id = &i
+	}
+}
+
+// AddedProviderID returns the value that was added to the "provider_id" field in this mutation.
+func (m *AdminSubscriptionJobMutation) AddedProviderID() (r int, exists bool) {
+	v := m.addprovider_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetProviderID resets all changes to the "provider_id" field.
+func (m *AdminSubscriptionJobMutation) ResetProviderID() {
+	m.provider_id = nil
+	m.addprovider_id = nil
+}
+
+// SetGroupID sets the "group_id" field.
+func (m *AdminSubscriptionJobMutation) SetGroupID(s string) {
+	m.group_id = &s
+}
+
+// GroupID returns the value of the "group_id" field in the mutation.
+func (m *AdminSubscriptionJobMutation) GroupID() (r string, exists bool) {
+	v := m.group_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldGroupID returns the old "group_id" field's value of the AdminSubscriptionJob entity.
+// If the AdminSubscriptionJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AdminSubscriptionJobMutation) OldGroupID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldGroupID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldGroupID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldGroupID: %w", err)
+	}
+	return oldValue.GroupID, nil
+}
+
+// ResetGroupID resets all changes to the "group_id" field.
+func (m *AdminSubscriptionJobMutation) ResetGroupID() {
+	m.group_id = nil
+}
+
+// SetValidityDays sets the "validity_days" field.
+func (m *AdminSubscriptionJobMutation) SetValidityDays(i int) {
+	m.validity_days = &i
+	m.addvalidity_days = nil
+}
+
+// ValidityDays returns the value of the "validity_days" field in the mutation.
+func (m *AdminSubscriptionJobMutation) ValidityDays() (r int, exists bool) {
+	v := m.validity_days
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldValidityDays returns the old "validity_days" field's value of the AdminSubscriptionJob entity.
+// If the AdminSubscriptionJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AdminSubscriptionJobMutation) OldValidityDays(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldValidityDays is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldValidityDays requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldValidityDays: %w", err)
+	}
+	return oldValue.ValidityDays, nil
+}
+
+// AddValidityDays adds i to the "validity_days" field.
+func (m *AdminSubscriptionJobMutation) AddValidityDays(i int) {
+	if m.addvalidity_days != nil {
+		*m.addvalidity_days += i
+	} else {
+		m.addvalidity_days = &i
+	}
+}
+
+// AddedValidityDays returns the value that was added to the "validity_days" field in this mutation.
+func (m *AdminSubscriptionJobMutation) AddedValidityDays() (r int, exists bool) {
+	v := m.addvalidity_days
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearValidityDays clears the value of the "validity_days" field.
+func (m *AdminSubscriptionJobMutation) ClearValidityDays() {
+	m.validity_days = nil
+	m.addvalidity_days = nil
+	m.clearedFields[adminsubscriptionjob.FieldValidityDays] = struct{}{}
+}
+
+// ValidityDaysCleared returns if the "validity_days" field was cleared in this mutation.
+func (m *AdminSubscriptionJobMutation) ValidityDaysCleared() bool {
+	_, ok := m.clearedFields[adminsubscriptionjob.FieldValidityDays]
+	return ok
+}
+
+// ResetValidityDays resets all changes to the "validity_days" field.
+func (m *AdminSubscriptionJobMutation) ResetValidityDays() {
+	m.validity_days = nil
+	m.addvalidity_days = nil
+	delete(m.clearedFields, adminsubscriptionjob.FieldValidityDays)
+}
+
+// SetDays sets the "days" field.
+func (m *AdminSubscriptionJobMutation) SetDays(i int) {
+	m.days = &i
+	m.adddays = nil
+}
+
+// Days returns the value of the "days" field in the mutation.
+func (m *AdminSubscriptionJobMutation) Days() (r int, exists bool) {
+	v := m.days
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDays returns the old "days" field's value of the AdminSubscriptionJob entity.
+// If the AdminSubscriptionJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AdminSubscriptionJobMutation) OldDays(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDays is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDays requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDays: %w", err)
+	}
+	return oldValue.Days, nil
+}
+
+// AddDays adds i to the "days" field.
+func (m *AdminSubscriptionJobMutation) AddDays(i int) {
+	if m.adddays != nil {
+		*m.adddays += i
+	} else {
+		m.adddays = &i
+	}
+}
+
+// AddedDays returns the value that was added to the "days" field in this mutation.
+func (m *AdminSubscriptionJobMutation) AddedDays() (r int, exists bool) {
+	v := m.adddays
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearDays clears the value of the "days" field.
+func (m *AdminSubscriptionJobMutation) ClearDays() {
+	m.days = nil
+	m.adddays = nil
+	m.clearedFields[adminsubscriptionjob.FieldDays] = struct{}{}
+}
+
+// DaysCleared returns if the "days" field was cleared in this mutation.
+func (m *AdminSubscriptionJobMutation) DaysCleared() bool {
+	_, ok := m.clearedFields[adminsubscriptionjob.FieldDays]
+	return ok
+}
+
+// ResetDays resets all changes to the "days" field.
+func (m *AdminSubscriptionJobMutation) ResetDays() {
+	m.days = nil
+	m.adddays = nil
+	delete(m.clearedFields, adminsubscriptionjob.FieldDays)
+}
+
+// SetFilterQuery sets the "filter_query" field.
+func (m *AdminSubscriptionJobMutation) SetFilterQuery(s string) {
+	m.filter_query = &s
+}
+
+// FilterQuery returns the value of the "filter_query" field in the mutation.
+func (m *AdminSubscriptionJobMutation) FilterQuery() (r string, exists bool) {
+	v := m.filter_query
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldFilterQuery returns the old "filter_query" field's value of the AdminSubscriptionJob entity.
+// If the AdminSubscriptionJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AdminSubscriptionJobMutation) OldFilterQuery(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldFilterQuery is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldFilterQuery requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldFilterQuery: %w", err)
+	}
+	return oldValue.FilterQuery, nil
+}
+
+// ClearFilterQuery clears the value of the "filter_query" field.
+func (m *AdminSubscriptionJobMutation) ClearFilterQuery() {
+	m.filter_query = nil
+	m.clearedFields[adminsubscriptionjob.FieldFilterQuery] = struct{}{}
+}
+
+// FilterQueryCleared returns if the "filter_query" field was cleared in this mutation.
+func (m *AdminSubscriptionJobMutation) FilterQueryCleared() bool {
+	_, ok := m.clearedFields[adminsubscriptionjob.FieldFilterQuery]
+	return ok
+}
+
+// ResetFilterQuery resets all changes to the "filter_query" field.
+func (m *AdminSubscriptionJobMutation) ResetFilterQuery() {
+	m.filter_query = nil
+	delete(m.clearedFields, adminsubscriptionjob.FieldFilterQuery)
+}
+
+// SetTargetUserIds sets the "target_user_ids" field.
+func (m *AdminSubscriptionJobMutation) SetTargetUserIds(i []int) {
+	m.target_user_ids = &i
+	m.appendtarget_user_ids = nil
+}
+
+// TargetUserIds returns the value of the "target_user_ids" field in the mutation.
+func (m *AdminSubscriptionJobMutation) TargetUserIds() (r []int, exists bool) {
+	v := m.target_user_ids
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTargetUserIds returns the old "target_user_ids" field's value of the AdminSubscriptionJob entity.
+// If the AdminSubscriptionJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AdminSubscriptionJobMutation) OldTargetUserIds(ctx context.Context) (v []int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTargetUserIds is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTargetUserIds requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTargetUserIds: %w", err)
+	}
+	return oldValue.TargetUserIds, nil
+}
+
+// AppendTargetUserIds adds i to the "target_user_ids" field.
+func (m *AdminSubscriptionJobMutation) AppendTargetUserIds(i []int) {
+	m.appendtarget_user_ids = append(m.appendtarget_user_ids, i...)
+}
+
+// AppendedTargetUserIds returns the list of values that were appended to the "target_user_ids" field in this mutation.
+func (m *AdminSubscriptionJobMutation) AppendedTargetUserIds() ([]int, bool) {
+	if len(m.appendtarget_user_ids) == 0 {
+		return nil, false
+	}
+	return m.appendtarget_user_ids, true
+}
+
+// ClearTargetUserIds clears the value of the "target_user_ids" field.
+func (m *AdminSubscriptionJobMutation) ClearTargetUserIds() {
+	m.target_user_ids = nil
+	m.appendtarget_user_ids = nil
+	m.clearedFields[adminsubscriptionjob.FieldTargetUserIds] = struct{}{}
+}
+
+// TargetUserIdsCleared returns if the "target_user_ids" field was cleared in this mutation.
+func (m *AdminSubscriptionJobMutation) TargetUserIdsCleared() bool {
+	_, ok := m.clearedFields[adminsubscriptionjob.FieldTargetUserIds]
+	return ok
+}
+
+// ResetTargetUserIds resets all changes to the "target_user_ids" field.
+func (m *AdminSubscriptionJobMutation) ResetTargetUserIds() {
+	m.target_user_ids = nil
+	m.appendtarget_user_ids = nil
+	delete(m.clearedFields, adminsubscriptionjob.FieldTargetUserIds)
+}
+
+// SetTargetSnapshots sets the "target_snapshots" field.
+func (m *AdminSubscriptionJobMutation) SetTargetSnapshots(value []map[string]interface{}) {
+	m.target_snapshots = &value
+	m.appendtarget_snapshots = nil
+}
+
+// TargetSnapshots returns the value of the "target_snapshots" field in the mutation.
+func (m *AdminSubscriptionJobMutation) TargetSnapshots() (r []map[string]interface{}, exists bool) {
+	v := m.target_snapshots
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTargetSnapshots returns the old "target_snapshots" field's value of the AdminSubscriptionJob entity.
+// If the AdminSubscriptionJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AdminSubscriptionJobMutation) OldTargetSnapshots(ctx context.Context) (v []map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTargetSnapshots is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTargetSnapshots requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTargetSnapshots: %w", err)
+	}
+	return oldValue.TargetSnapshots, nil
+}
+
+// AppendTargetSnapshots adds value to the "target_snapshots" field.
+func (m *AdminSubscriptionJobMutation) AppendTargetSnapshots(value []map[string]interface{}) {
+	m.appendtarget_snapshots = append(m.appendtarget_snapshots, value...)
+}
+
+// AppendedTargetSnapshots returns the list of values that were appended to the "target_snapshots" field in this mutation.
+func (m *AdminSubscriptionJobMutation) AppendedTargetSnapshots() ([]map[string]interface{}, bool) {
+	if len(m.appendtarget_snapshots) == 0 {
+		return nil, false
+	}
+	return m.appendtarget_snapshots, true
+}
+
+// ClearTargetSnapshots clears the value of the "target_snapshots" field.
+func (m *AdminSubscriptionJobMutation) ClearTargetSnapshots() {
+	m.target_snapshots = nil
+	m.appendtarget_snapshots = nil
+	m.clearedFields[adminsubscriptionjob.FieldTargetSnapshots] = struct{}{}
+}
+
+// TargetSnapshotsCleared returns if the "target_snapshots" field was cleared in this mutation.
+func (m *AdminSubscriptionJobMutation) TargetSnapshotsCleared() bool {
+	_, ok := m.clearedFields[adminsubscriptionjob.FieldTargetSnapshots]
+	return ok
+}
+
+// ResetTargetSnapshots resets all changes to the "target_snapshots" field.
+func (m *AdminSubscriptionJobMutation) ResetTargetSnapshots() {
+	m.target_snapshots = nil
+	m.appendtarget_snapshots = nil
+	delete(m.clearedFields, adminsubscriptionjob.FieldTargetSnapshots)
+}
+
+// SetRequestedUserIds sets the "requested_user_ids" field.
+func (m *AdminSubscriptionJobMutation) SetRequestedUserIds(i []int) {
+	m.requested_user_ids = &i
+	m.appendrequested_user_ids = nil
+}
+
+// RequestedUserIds returns the value of the "requested_user_ids" field in the mutation.
+func (m *AdminSubscriptionJobMutation) RequestedUserIds() (r []int, exists bool) {
+	v := m.requested_user_ids
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRequestedUserIds returns the old "requested_user_ids" field's value of the AdminSubscriptionJob entity.
+// If the AdminSubscriptionJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AdminSubscriptionJobMutation) OldRequestedUserIds(ctx context.Context) (v []int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRequestedUserIds is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRequestedUserIds requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRequestedUserIds: %w", err)
+	}
+	return oldValue.RequestedUserIds, nil
+}
+
+// AppendRequestedUserIds adds i to the "requested_user_ids" field.
+func (m *AdminSubscriptionJobMutation) AppendRequestedUserIds(i []int) {
+	m.appendrequested_user_ids = append(m.appendrequested_user_ids, i...)
+}
+
+// AppendedRequestedUserIds returns the list of values that were appended to the "requested_user_ids" field in this mutation.
+func (m *AdminSubscriptionJobMutation) AppendedRequestedUserIds() ([]int, bool) {
+	if len(m.appendrequested_user_ids) == 0 {
+		return nil, false
+	}
+	return m.appendrequested_user_ids, true
+}
+
+// ClearRequestedUserIds clears the value of the "requested_user_ids" field.
+func (m *AdminSubscriptionJobMutation) ClearRequestedUserIds() {
+	m.requested_user_ids = nil
+	m.appendrequested_user_ids = nil
+	m.clearedFields[adminsubscriptionjob.FieldRequestedUserIds] = struct{}{}
+}
+
+// RequestedUserIdsCleared returns if the "requested_user_ids" field was cleared in this mutation.
+func (m *AdminSubscriptionJobMutation) RequestedUserIdsCleared() bool {
+	_, ok := m.clearedFields[adminsubscriptionjob.FieldRequestedUserIds]
+	return ok
+}
+
+// ResetRequestedUserIds resets all changes to the "requested_user_ids" field.
+func (m *AdminSubscriptionJobMutation) ResetRequestedUserIds() {
+	m.requested_user_ids = nil
+	m.appendrequested_user_ids = nil
+	delete(m.clearedFields, adminsubscriptionjob.FieldRequestedUserIds)
+}
+
+// SetTotalCount sets the "total_count" field.
+func (m *AdminSubscriptionJobMutation) SetTotalCount(i int) {
+	m.total_count = &i
+	m.addtotal_count = nil
+}
+
+// TotalCount returns the value of the "total_count" field in the mutation.
+func (m *AdminSubscriptionJobMutation) TotalCount() (r int, exists bool) {
+	v := m.total_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTotalCount returns the old "total_count" field's value of the AdminSubscriptionJob entity.
+// If the AdminSubscriptionJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AdminSubscriptionJobMutation) OldTotalCount(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTotalCount is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTotalCount requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTotalCount: %w", err)
+	}
+	return oldValue.TotalCount, nil
+}
+
+// AddTotalCount adds i to the "total_count" field.
+func (m *AdminSubscriptionJobMutation) AddTotalCount(i int) {
+	if m.addtotal_count != nil {
+		*m.addtotal_count += i
+	} else {
+		m.addtotal_count = &i
+	}
+}
+
+// AddedTotalCount returns the value that was added to the "total_count" field in this mutation.
+func (m *AdminSubscriptionJobMutation) AddedTotalCount() (r int, exists bool) {
+	v := m.addtotal_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetTotalCount resets all changes to the "total_count" field.
+func (m *AdminSubscriptionJobMutation) ResetTotalCount() {
+	m.total_count = nil
+	m.addtotal_count = nil
+}
+
+// SetProcessedCount sets the "processed_count" field.
+func (m *AdminSubscriptionJobMutation) SetProcessedCount(i int) {
+	m.processed_count = &i
+	m.addprocessed_count = nil
+}
+
+// ProcessedCount returns the value of the "processed_count" field in the mutation.
+func (m *AdminSubscriptionJobMutation) ProcessedCount() (r int, exists bool) {
+	v := m.processed_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldProcessedCount returns the old "processed_count" field's value of the AdminSubscriptionJob entity.
+// If the AdminSubscriptionJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AdminSubscriptionJobMutation) OldProcessedCount(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldProcessedCount is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldProcessedCount requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldProcessedCount: %w", err)
+	}
+	return oldValue.ProcessedCount, nil
+}
+
+// AddProcessedCount adds i to the "processed_count" field.
+func (m *AdminSubscriptionJobMutation) AddProcessedCount(i int) {
+	if m.addprocessed_count != nil {
+		*m.addprocessed_count += i
+	} else {
+		m.addprocessed_count = &i
+	}
+}
+
+// AddedProcessedCount returns the value that was added to the "processed_count" field in this mutation.
+func (m *AdminSubscriptionJobMutation) AddedProcessedCount() (r int, exists bool) {
+	v := m.addprocessed_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetProcessedCount resets all changes to the "processed_count" field.
+func (m *AdminSubscriptionJobMutation) ResetProcessedCount() {
+	m.processed_count = nil
+	m.addprocessed_count = nil
+}
+
+// SetSuccessCount sets the "success_count" field.
+func (m *AdminSubscriptionJobMutation) SetSuccessCount(i int) {
+	m.success_count = &i
+	m.addsuccess_count = nil
+}
+
+// SuccessCount returns the value of the "success_count" field in the mutation.
+func (m *AdminSubscriptionJobMutation) SuccessCount() (r int, exists bool) {
+	v := m.success_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSuccessCount returns the old "success_count" field's value of the AdminSubscriptionJob entity.
+// If the AdminSubscriptionJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AdminSubscriptionJobMutation) OldSuccessCount(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSuccessCount is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSuccessCount requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSuccessCount: %w", err)
+	}
+	return oldValue.SuccessCount, nil
+}
+
+// AddSuccessCount adds i to the "success_count" field.
+func (m *AdminSubscriptionJobMutation) AddSuccessCount(i int) {
+	if m.addsuccess_count != nil {
+		*m.addsuccess_count += i
+	} else {
+		m.addsuccess_count = &i
+	}
+}
+
+// AddedSuccessCount returns the value that was added to the "success_count" field in this mutation.
+func (m *AdminSubscriptionJobMutation) AddedSuccessCount() (r int, exists bool) {
+	v := m.addsuccess_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetSuccessCount resets all changes to the "success_count" field.
+func (m *AdminSubscriptionJobMutation) ResetSuccessCount() {
+	m.success_count = nil
+	m.addsuccess_count = nil
+}
+
+// SetSkippedCount sets the "skipped_count" field.
+func (m *AdminSubscriptionJobMutation) SetSkippedCount(i int) {
+	m.skipped_count = &i
+	m.addskipped_count = nil
+}
+
+// SkippedCount returns the value of the "skipped_count" field in the mutation.
+func (m *AdminSubscriptionJobMutation) SkippedCount() (r int, exists bool) {
+	v := m.skipped_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSkippedCount returns the old "skipped_count" field's value of the AdminSubscriptionJob entity.
+// If the AdminSubscriptionJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AdminSubscriptionJobMutation) OldSkippedCount(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSkippedCount is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSkippedCount requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSkippedCount: %w", err)
+	}
+	return oldValue.SkippedCount, nil
+}
+
+// AddSkippedCount adds i to the "skipped_count" field.
+func (m *AdminSubscriptionJobMutation) AddSkippedCount(i int) {
+	if m.addskipped_count != nil {
+		*m.addskipped_count += i
+	} else {
+		m.addskipped_count = &i
+	}
+}
+
+// AddedSkippedCount returns the value that was added to the "skipped_count" field in this mutation.
+func (m *AdminSubscriptionJobMutation) AddedSkippedCount() (r int, exists bool) {
+	v := m.addskipped_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetSkippedCount resets all changes to the "skipped_count" field.
+func (m *AdminSubscriptionJobMutation) ResetSkippedCount() {
+	m.skipped_count = nil
+	m.addskipped_count = nil
+}
+
+// SetFailedCount sets the "failed_count" field.
+func (m *AdminSubscriptionJobMutation) SetFailedCount(i int) {
+	m.failed_count = &i
+	m.addfailed_count = nil
+}
+
+// FailedCount returns the value of the "failed_count" field in the mutation.
+func (m *AdminSubscriptionJobMutation) FailedCount() (r int, exists bool) {
+	v := m.failed_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldFailedCount returns the old "failed_count" field's value of the AdminSubscriptionJob entity.
+// If the AdminSubscriptionJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AdminSubscriptionJobMutation) OldFailedCount(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldFailedCount is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldFailedCount requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldFailedCount: %w", err)
+	}
+	return oldValue.FailedCount, nil
+}
+
+// AddFailedCount adds i to the "failed_count" field.
+func (m *AdminSubscriptionJobMutation) AddFailedCount(i int) {
+	if m.addfailed_count != nil {
+		*m.addfailed_count += i
+	} else {
+		m.addfailed_count = &i
+	}
+}
+
+// AddedFailedCount returns the value that was added to the "failed_count" field in this mutation.
+func (m *AdminSubscriptionJobMutation) AddedFailedCount() (r int, exists bool) {
+	v := m.addfailed_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetFailedCount resets all changes to the "failed_count" field.
+func (m *AdminSubscriptionJobMutation) ResetFailedCount() {
+	m.failed_count = nil
+	m.addfailed_count = nil
+}
+
+// SetResults sets the "results" field.
+func (m *AdminSubscriptionJobMutation) SetResults(value []map[string]interface{}) {
+	m.results = &value
+	m.appendresults = nil
+}
+
+// Results returns the value of the "results" field in the mutation.
+func (m *AdminSubscriptionJobMutation) Results() (r []map[string]interface{}, exists bool) {
+	v := m.results
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldResults returns the old "results" field's value of the AdminSubscriptionJob entity.
+// If the AdminSubscriptionJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AdminSubscriptionJobMutation) OldResults(ctx context.Context) (v []map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldResults is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldResults requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldResults: %w", err)
+	}
+	return oldValue.Results, nil
+}
+
+// AppendResults adds value to the "results" field.
+func (m *AdminSubscriptionJobMutation) AppendResults(value []map[string]interface{}) {
+	m.appendresults = append(m.appendresults, value...)
+}
+
+// AppendedResults returns the list of values that were appended to the "results" field in this mutation.
+func (m *AdminSubscriptionJobMutation) AppendedResults() ([]map[string]interface{}, bool) {
+	if len(m.appendresults) == 0 {
+		return nil, false
+	}
+	return m.appendresults, true
+}
+
+// ClearResults clears the value of the "results" field.
+func (m *AdminSubscriptionJobMutation) ClearResults() {
+	m.results = nil
+	m.appendresults = nil
+	m.clearedFields[adminsubscriptionjob.FieldResults] = struct{}{}
+}
+
+// ResultsCleared returns if the "results" field was cleared in this mutation.
+func (m *AdminSubscriptionJobMutation) ResultsCleared() bool {
+	_, ok := m.clearedFields[adminsubscriptionjob.FieldResults]
+	return ok
+}
+
+// ResetResults resets all changes to the "results" field.
+func (m *AdminSubscriptionJobMutation) ResetResults() {
+	m.results = nil
+	m.appendresults = nil
+	delete(m.clearedFields, adminsubscriptionjob.FieldResults)
+}
+
+// SetLastError sets the "last_error" field.
+func (m *AdminSubscriptionJobMutation) SetLastError(s string) {
+	m.last_error = &s
+}
+
+// LastError returns the value of the "last_error" field in the mutation.
+func (m *AdminSubscriptionJobMutation) LastError() (r string, exists bool) {
+	v := m.last_error
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLastError returns the old "last_error" field's value of the AdminSubscriptionJob entity.
+// If the AdminSubscriptionJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AdminSubscriptionJobMutation) OldLastError(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLastError is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLastError requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLastError: %w", err)
+	}
+	return oldValue.LastError, nil
+}
+
+// ClearLastError clears the value of the "last_error" field.
+func (m *AdminSubscriptionJobMutation) ClearLastError() {
+	m.last_error = nil
+	m.clearedFields[adminsubscriptionjob.FieldLastError] = struct{}{}
+}
+
+// LastErrorCleared returns if the "last_error" field was cleared in this mutation.
+func (m *AdminSubscriptionJobMutation) LastErrorCleared() bool {
+	_, ok := m.clearedFields[adminsubscriptionjob.FieldLastError]
+	return ok
+}
+
+// ResetLastError resets all changes to the "last_error" field.
+func (m *AdminSubscriptionJobMutation) ResetLastError() {
+	m.last_error = nil
+	delete(m.clearedFields, adminsubscriptionjob.FieldLastError)
+}
+
+// SetStartedAt sets the "started_at" field.
+func (m *AdminSubscriptionJobMutation) SetStartedAt(t time.Time) {
+	m.started_at = &t
+}
+
+// StartedAt returns the value of the "started_at" field in the mutation.
+func (m *AdminSubscriptionJobMutation) StartedAt() (r time.Time, exists bool) {
+	v := m.started_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStartedAt returns the old "started_at" field's value of the AdminSubscriptionJob entity.
+// If the AdminSubscriptionJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AdminSubscriptionJobMutation) OldStartedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStartedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStartedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStartedAt: %w", err)
+	}
+	return oldValue.StartedAt, nil
+}
+
+// ClearStartedAt clears the value of the "started_at" field.
+func (m *AdminSubscriptionJobMutation) ClearStartedAt() {
+	m.started_at = nil
+	m.clearedFields[adminsubscriptionjob.FieldStartedAt] = struct{}{}
+}
+
+// StartedAtCleared returns if the "started_at" field was cleared in this mutation.
+func (m *AdminSubscriptionJobMutation) StartedAtCleared() bool {
+	_, ok := m.clearedFields[adminsubscriptionjob.FieldStartedAt]
+	return ok
+}
+
+// ResetStartedAt resets all changes to the "started_at" field.
+func (m *AdminSubscriptionJobMutation) ResetStartedAt() {
+	m.started_at = nil
+	delete(m.clearedFields, adminsubscriptionjob.FieldStartedAt)
+}
+
+// SetCompletedAt sets the "completed_at" field.
+func (m *AdminSubscriptionJobMutation) SetCompletedAt(t time.Time) {
+	m.completed_at = &t
+}
+
+// CompletedAt returns the value of the "completed_at" field in the mutation.
+func (m *AdminSubscriptionJobMutation) CompletedAt() (r time.Time, exists bool) {
+	v := m.completed_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCompletedAt returns the old "completed_at" field's value of the AdminSubscriptionJob entity.
+// If the AdminSubscriptionJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AdminSubscriptionJobMutation) OldCompletedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCompletedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCompletedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCompletedAt: %w", err)
+	}
+	return oldValue.CompletedAt, nil
+}
+
+// ClearCompletedAt clears the value of the "completed_at" field.
+func (m *AdminSubscriptionJobMutation) ClearCompletedAt() {
+	m.completed_at = nil
+	m.clearedFields[adminsubscriptionjob.FieldCompletedAt] = struct{}{}
+}
+
+// CompletedAtCleared returns if the "completed_at" field was cleared in this mutation.
+func (m *AdminSubscriptionJobMutation) CompletedAtCleared() bool {
+	_, ok := m.clearedFields[adminsubscriptionjob.FieldCompletedAt]
+	return ok
+}
+
+// ResetCompletedAt resets all changes to the "completed_at" field.
+func (m *AdminSubscriptionJobMutation) ResetCompletedAt() {
+	m.completed_at = nil
+	delete(m.clearedFields, adminsubscriptionjob.FieldCompletedAt)
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *AdminSubscriptionJobMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *AdminSubscriptionJobMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the AdminSubscriptionJob entity.
+// If the AdminSubscriptionJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AdminSubscriptionJobMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *AdminSubscriptionJobMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *AdminSubscriptionJobMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *AdminSubscriptionJobMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the AdminSubscriptionJob entity.
+// If the AdminSubscriptionJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AdminSubscriptionJobMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *AdminSubscriptionJobMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// Where appends a list predicates to the AdminSubscriptionJobMutation builder.
+func (m *AdminSubscriptionJobMutation) Where(ps ...predicate.AdminSubscriptionJob) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the AdminSubscriptionJobMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *AdminSubscriptionJobMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.AdminSubscriptionJob, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *AdminSubscriptionJobMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *AdminSubscriptionJobMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (AdminSubscriptionJob).
+func (m *AdminSubscriptionJobMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *AdminSubscriptionJobMutation) Fields() []string {
+	fields := make([]string, 0, 23)
+	if m.status != nil {
+		fields = append(fields, adminsubscriptionjob.FieldStatus)
+	}
+	if m.phase != nil {
+		fields = append(fields, adminsubscriptionjob.FieldPhase)
+	}
+	if m.scope != nil {
+		fields = append(fields, adminsubscriptionjob.FieldScope)
+	}
+	if m.operation != nil {
+		fields = append(fields, adminsubscriptionjob.FieldOperation)
+	}
+	if m.provider_id != nil {
+		fields = append(fields, adminsubscriptionjob.FieldProviderID)
+	}
+	if m.group_id != nil {
+		fields = append(fields, adminsubscriptionjob.FieldGroupID)
+	}
+	if m.validity_days != nil {
+		fields = append(fields, adminsubscriptionjob.FieldValidityDays)
+	}
+	if m.days != nil {
+		fields = append(fields, adminsubscriptionjob.FieldDays)
+	}
+	if m.filter_query != nil {
+		fields = append(fields, adminsubscriptionjob.FieldFilterQuery)
+	}
+	if m.target_user_ids != nil {
+		fields = append(fields, adminsubscriptionjob.FieldTargetUserIds)
+	}
+	if m.target_snapshots != nil {
+		fields = append(fields, adminsubscriptionjob.FieldTargetSnapshots)
+	}
+	if m.requested_user_ids != nil {
+		fields = append(fields, adminsubscriptionjob.FieldRequestedUserIds)
+	}
+	if m.total_count != nil {
+		fields = append(fields, adminsubscriptionjob.FieldTotalCount)
+	}
+	if m.processed_count != nil {
+		fields = append(fields, adminsubscriptionjob.FieldProcessedCount)
+	}
+	if m.success_count != nil {
+		fields = append(fields, adminsubscriptionjob.FieldSuccessCount)
+	}
+	if m.skipped_count != nil {
+		fields = append(fields, adminsubscriptionjob.FieldSkippedCount)
+	}
+	if m.failed_count != nil {
+		fields = append(fields, adminsubscriptionjob.FieldFailedCount)
+	}
+	if m.results != nil {
+		fields = append(fields, adminsubscriptionjob.FieldResults)
+	}
+	if m.last_error != nil {
+		fields = append(fields, adminsubscriptionjob.FieldLastError)
+	}
+	if m.started_at != nil {
+		fields = append(fields, adminsubscriptionjob.FieldStartedAt)
+	}
+	if m.completed_at != nil {
+		fields = append(fields, adminsubscriptionjob.FieldCompletedAt)
+	}
+	if m.created_at != nil {
+		fields = append(fields, adminsubscriptionjob.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, adminsubscriptionjob.FieldUpdatedAt)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *AdminSubscriptionJobMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case adminsubscriptionjob.FieldStatus:
+		return m.Status()
+	case adminsubscriptionjob.FieldPhase:
+		return m.Phase()
+	case adminsubscriptionjob.FieldScope:
+		return m.Scope()
+	case adminsubscriptionjob.FieldOperation:
+		return m.Operation()
+	case adminsubscriptionjob.FieldProviderID:
+		return m.ProviderID()
+	case adminsubscriptionjob.FieldGroupID:
+		return m.GroupID()
+	case adminsubscriptionjob.FieldValidityDays:
+		return m.ValidityDays()
+	case adminsubscriptionjob.FieldDays:
+		return m.Days()
+	case adminsubscriptionjob.FieldFilterQuery:
+		return m.FilterQuery()
+	case adminsubscriptionjob.FieldTargetUserIds:
+		return m.TargetUserIds()
+	case adminsubscriptionjob.FieldTargetSnapshots:
+		return m.TargetSnapshots()
+	case adminsubscriptionjob.FieldRequestedUserIds:
+		return m.RequestedUserIds()
+	case adminsubscriptionjob.FieldTotalCount:
+		return m.TotalCount()
+	case adminsubscriptionjob.FieldProcessedCount:
+		return m.ProcessedCount()
+	case adminsubscriptionjob.FieldSuccessCount:
+		return m.SuccessCount()
+	case adminsubscriptionjob.FieldSkippedCount:
+		return m.SkippedCount()
+	case adminsubscriptionjob.FieldFailedCount:
+		return m.FailedCount()
+	case adminsubscriptionjob.FieldResults:
+		return m.Results()
+	case adminsubscriptionjob.FieldLastError:
+		return m.LastError()
+	case adminsubscriptionjob.FieldStartedAt:
+		return m.StartedAt()
+	case adminsubscriptionjob.FieldCompletedAt:
+		return m.CompletedAt()
+	case adminsubscriptionjob.FieldCreatedAt:
+		return m.CreatedAt()
+	case adminsubscriptionjob.FieldUpdatedAt:
+		return m.UpdatedAt()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *AdminSubscriptionJobMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case adminsubscriptionjob.FieldStatus:
+		return m.OldStatus(ctx)
+	case adminsubscriptionjob.FieldPhase:
+		return m.OldPhase(ctx)
+	case adminsubscriptionjob.FieldScope:
+		return m.OldScope(ctx)
+	case adminsubscriptionjob.FieldOperation:
+		return m.OldOperation(ctx)
+	case adminsubscriptionjob.FieldProviderID:
+		return m.OldProviderID(ctx)
+	case adminsubscriptionjob.FieldGroupID:
+		return m.OldGroupID(ctx)
+	case adminsubscriptionjob.FieldValidityDays:
+		return m.OldValidityDays(ctx)
+	case adminsubscriptionjob.FieldDays:
+		return m.OldDays(ctx)
+	case adminsubscriptionjob.FieldFilterQuery:
+		return m.OldFilterQuery(ctx)
+	case adminsubscriptionjob.FieldTargetUserIds:
+		return m.OldTargetUserIds(ctx)
+	case adminsubscriptionjob.FieldTargetSnapshots:
+		return m.OldTargetSnapshots(ctx)
+	case adminsubscriptionjob.FieldRequestedUserIds:
+		return m.OldRequestedUserIds(ctx)
+	case adminsubscriptionjob.FieldTotalCount:
+		return m.OldTotalCount(ctx)
+	case adminsubscriptionjob.FieldProcessedCount:
+		return m.OldProcessedCount(ctx)
+	case adminsubscriptionjob.FieldSuccessCount:
+		return m.OldSuccessCount(ctx)
+	case adminsubscriptionjob.FieldSkippedCount:
+		return m.OldSkippedCount(ctx)
+	case adminsubscriptionjob.FieldFailedCount:
+		return m.OldFailedCount(ctx)
+	case adminsubscriptionjob.FieldResults:
+		return m.OldResults(ctx)
+	case adminsubscriptionjob.FieldLastError:
+		return m.OldLastError(ctx)
+	case adminsubscriptionjob.FieldStartedAt:
+		return m.OldStartedAt(ctx)
+	case adminsubscriptionjob.FieldCompletedAt:
+		return m.OldCompletedAt(ctx)
+	case adminsubscriptionjob.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case adminsubscriptionjob.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	}
+	return nil, fmt.Errorf("unknown AdminSubscriptionJob field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *AdminSubscriptionJobMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case adminsubscriptionjob.FieldStatus:
+		v, ok := value.(adminsubscriptionjob.Status)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStatus(v)
+		return nil
+	case adminsubscriptionjob.FieldPhase:
+		v, ok := value.(adminsubscriptionjob.Phase)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPhase(v)
+		return nil
+	case adminsubscriptionjob.FieldScope:
+		v, ok := value.(adminsubscriptionjob.Scope)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetScope(v)
+		return nil
+	case adminsubscriptionjob.FieldOperation:
+		v, ok := value.(adminsubscriptionjob.Operation)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetOperation(v)
+		return nil
+	case adminsubscriptionjob.FieldProviderID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetProviderID(v)
+		return nil
+	case adminsubscriptionjob.FieldGroupID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetGroupID(v)
+		return nil
+	case adminsubscriptionjob.FieldValidityDays:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetValidityDays(v)
+		return nil
+	case adminsubscriptionjob.FieldDays:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDays(v)
+		return nil
+	case adminsubscriptionjob.FieldFilterQuery:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetFilterQuery(v)
+		return nil
+	case adminsubscriptionjob.FieldTargetUserIds:
+		v, ok := value.([]int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTargetUserIds(v)
+		return nil
+	case adminsubscriptionjob.FieldTargetSnapshots:
+		v, ok := value.([]map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTargetSnapshots(v)
+		return nil
+	case adminsubscriptionjob.FieldRequestedUserIds:
+		v, ok := value.([]int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRequestedUserIds(v)
+		return nil
+	case adminsubscriptionjob.FieldTotalCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTotalCount(v)
+		return nil
+	case adminsubscriptionjob.FieldProcessedCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetProcessedCount(v)
+		return nil
+	case adminsubscriptionjob.FieldSuccessCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSuccessCount(v)
+		return nil
+	case adminsubscriptionjob.FieldSkippedCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSkippedCount(v)
+		return nil
+	case adminsubscriptionjob.FieldFailedCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetFailedCount(v)
+		return nil
+	case adminsubscriptionjob.FieldResults:
+		v, ok := value.([]map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetResults(v)
+		return nil
+	case adminsubscriptionjob.FieldLastError:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLastError(v)
+		return nil
+	case adminsubscriptionjob.FieldStartedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStartedAt(v)
+		return nil
+	case adminsubscriptionjob.FieldCompletedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCompletedAt(v)
+		return nil
+	case adminsubscriptionjob.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case adminsubscriptionjob.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	}
+	return fmt.Errorf("unknown AdminSubscriptionJob field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *AdminSubscriptionJobMutation) AddedFields() []string {
+	var fields []string
+	if m.addprovider_id != nil {
+		fields = append(fields, adminsubscriptionjob.FieldProviderID)
+	}
+	if m.addvalidity_days != nil {
+		fields = append(fields, adminsubscriptionjob.FieldValidityDays)
+	}
+	if m.adddays != nil {
+		fields = append(fields, adminsubscriptionjob.FieldDays)
+	}
+	if m.addtotal_count != nil {
+		fields = append(fields, adminsubscriptionjob.FieldTotalCount)
+	}
+	if m.addprocessed_count != nil {
+		fields = append(fields, adminsubscriptionjob.FieldProcessedCount)
+	}
+	if m.addsuccess_count != nil {
+		fields = append(fields, adminsubscriptionjob.FieldSuccessCount)
+	}
+	if m.addskipped_count != nil {
+		fields = append(fields, adminsubscriptionjob.FieldSkippedCount)
+	}
+	if m.addfailed_count != nil {
+		fields = append(fields, adminsubscriptionjob.FieldFailedCount)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *AdminSubscriptionJobMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case adminsubscriptionjob.FieldProviderID:
+		return m.AddedProviderID()
+	case adminsubscriptionjob.FieldValidityDays:
+		return m.AddedValidityDays()
+	case adminsubscriptionjob.FieldDays:
+		return m.AddedDays()
+	case adminsubscriptionjob.FieldTotalCount:
+		return m.AddedTotalCount()
+	case adminsubscriptionjob.FieldProcessedCount:
+		return m.AddedProcessedCount()
+	case adminsubscriptionjob.FieldSuccessCount:
+		return m.AddedSuccessCount()
+	case adminsubscriptionjob.FieldSkippedCount:
+		return m.AddedSkippedCount()
+	case adminsubscriptionjob.FieldFailedCount:
+		return m.AddedFailedCount()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *AdminSubscriptionJobMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case adminsubscriptionjob.FieldProviderID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddProviderID(v)
+		return nil
+	case adminsubscriptionjob.FieldValidityDays:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddValidityDays(v)
+		return nil
+	case adminsubscriptionjob.FieldDays:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddDays(v)
+		return nil
+	case adminsubscriptionjob.FieldTotalCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddTotalCount(v)
+		return nil
+	case adminsubscriptionjob.FieldProcessedCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddProcessedCount(v)
+		return nil
+	case adminsubscriptionjob.FieldSuccessCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddSuccessCount(v)
+		return nil
+	case adminsubscriptionjob.FieldSkippedCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddSkippedCount(v)
+		return nil
+	case adminsubscriptionjob.FieldFailedCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddFailedCount(v)
+		return nil
+	}
+	return fmt.Errorf("unknown AdminSubscriptionJob numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *AdminSubscriptionJobMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(adminsubscriptionjob.FieldValidityDays) {
+		fields = append(fields, adminsubscriptionjob.FieldValidityDays)
+	}
+	if m.FieldCleared(adminsubscriptionjob.FieldDays) {
+		fields = append(fields, adminsubscriptionjob.FieldDays)
+	}
+	if m.FieldCleared(adminsubscriptionjob.FieldFilterQuery) {
+		fields = append(fields, adminsubscriptionjob.FieldFilterQuery)
+	}
+	if m.FieldCleared(adminsubscriptionjob.FieldTargetUserIds) {
+		fields = append(fields, adminsubscriptionjob.FieldTargetUserIds)
+	}
+	if m.FieldCleared(adminsubscriptionjob.FieldTargetSnapshots) {
+		fields = append(fields, adminsubscriptionjob.FieldTargetSnapshots)
+	}
+	if m.FieldCleared(adminsubscriptionjob.FieldRequestedUserIds) {
+		fields = append(fields, adminsubscriptionjob.FieldRequestedUserIds)
+	}
+	if m.FieldCleared(adminsubscriptionjob.FieldResults) {
+		fields = append(fields, adminsubscriptionjob.FieldResults)
+	}
+	if m.FieldCleared(adminsubscriptionjob.FieldLastError) {
+		fields = append(fields, adminsubscriptionjob.FieldLastError)
+	}
+	if m.FieldCleared(adminsubscriptionjob.FieldStartedAt) {
+		fields = append(fields, adminsubscriptionjob.FieldStartedAt)
+	}
+	if m.FieldCleared(adminsubscriptionjob.FieldCompletedAt) {
+		fields = append(fields, adminsubscriptionjob.FieldCompletedAt)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *AdminSubscriptionJobMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *AdminSubscriptionJobMutation) ClearField(name string) error {
+	switch name {
+	case adminsubscriptionjob.FieldValidityDays:
+		m.ClearValidityDays()
+		return nil
+	case adminsubscriptionjob.FieldDays:
+		m.ClearDays()
+		return nil
+	case adminsubscriptionjob.FieldFilterQuery:
+		m.ClearFilterQuery()
+		return nil
+	case adminsubscriptionjob.FieldTargetUserIds:
+		m.ClearTargetUserIds()
+		return nil
+	case adminsubscriptionjob.FieldTargetSnapshots:
+		m.ClearTargetSnapshots()
+		return nil
+	case adminsubscriptionjob.FieldRequestedUserIds:
+		m.ClearRequestedUserIds()
+		return nil
+	case adminsubscriptionjob.FieldResults:
+		m.ClearResults()
+		return nil
+	case adminsubscriptionjob.FieldLastError:
+		m.ClearLastError()
+		return nil
+	case adminsubscriptionjob.FieldStartedAt:
+		m.ClearStartedAt()
+		return nil
+	case adminsubscriptionjob.FieldCompletedAt:
+		m.ClearCompletedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown AdminSubscriptionJob nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *AdminSubscriptionJobMutation) ResetField(name string) error {
+	switch name {
+	case adminsubscriptionjob.FieldStatus:
+		m.ResetStatus()
+		return nil
+	case adminsubscriptionjob.FieldPhase:
+		m.ResetPhase()
+		return nil
+	case adminsubscriptionjob.FieldScope:
+		m.ResetScope()
+		return nil
+	case adminsubscriptionjob.FieldOperation:
+		m.ResetOperation()
+		return nil
+	case adminsubscriptionjob.FieldProviderID:
+		m.ResetProviderID()
+		return nil
+	case adminsubscriptionjob.FieldGroupID:
+		m.ResetGroupID()
+		return nil
+	case adminsubscriptionjob.FieldValidityDays:
+		m.ResetValidityDays()
+		return nil
+	case adminsubscriptionjob.FieldDays:
+		m.ResetDays()
+		return nil
+	case adminsubscriptionjob.FieldFilterQuery:
+		m.ResetFilterQuery()
+		return nil
+	case adminsubscriptionjob.FieldTargetUserIds:
+		m.ResetTargetUserIds()
+		return nil
+	case adminsubscriptionjob.FieldTargetSnapshots:
+		m.ResetTargetSnapshots()
+		return nil
+	case adminsubscriptionjob.FieldRequestedUserIds:
+		m.ResetRequestedUserIds()
+		return nil
+	case adminsubscriptionjob.FieldTotalCount:
+		m.ResetTotalCount()
+		return nil
+	case adminsubscriptionjob.FieldProcessedCount:
+		m.ResetProcessedCount()
+		return nil
+	case adminsubscriptionjob.FieldSuccessCount:
+		m.ResetSuccessCount()
+		return nil
+	case adminsubscriptionjob.FieldSkippedCount:
+		m.ResetSkippedCount()
+		return nil
+	case adminsubscriptionjob.FieldFailedCount:
+		m.ResetFailedCount()
+		return nil
+	case adminsubscriptionjob.FieldResults:
+		m.ResetResults()
+		return nil
+	case adminsubscriptionjob.FieldLastError:
+		m.ResetLastError()
+		return nil
+	case adminsubscriptionjob.FieldStartedAt:
+		m.ResetStartedAt()
+		return nil
+	case adminsubscriptionjob.FieldCompletedAt:
+		m.ResetCompletedAt()
+		return nil
+	case adminsubscriptionjob.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case adminsubscriptionjob.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown AdminSubscriptionJob field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *AdminSubscriptionJobMutation) AddedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *AdminSubscriptionJobMutation) AddedIDs(name string) []ent.Value {
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *AdminSubscriptionJobMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *AdminSubscriptionJobMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *AdminSubscriptionJobMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *AdminSubscriptionJobMutation) EdgeCleared(name string) bool {
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *AdminSubscriptionJobMutation) ClearEdge(name string) error {
+	return fmt.Errorf("unknown AdminSubscriptionJob unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *AdminSubscriptionJobMutation) ResetEdge(name string) error {
+	return fmt.Errorf("unknown AdminSubscriptionJob edge %s", name)
+}
 
 // CommitCheckpointMutation represents an operation that mutates the CommitCheckpoint nodes in the graph.
 type CommitCheckpointMutation struct {

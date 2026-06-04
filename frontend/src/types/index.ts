@@ -472,8 +472,8 @@ export interface AdminManageSubscriptionsRequest {
 
 export interface AdminManageSubscriptionsResultRow {
   user_id: number
-  username: string
-  email: string
+  username?: string
+  email?: string
   relay_user_id?: number | null
   status: 'success' | 'skipped' | 'failed'
   message?: string
@@ -490,4 +490,33 @@ export interface AdminManageSubscriptionsResponse {
   skipped_count: number
   failed_count: number
   results: AdminManageSubscriptionsResultRow[]
+}
+
+export type AdminSubscriptionJobStatus = 'queued' | 'running' | 'completed' | 'failed' | 'abandoned'
+export type AdminSubscriptionJobPhase = 'queued' | 'resolving_targets' | 'processing' | 'completed' | 'failed'
+
+export interface AdminSubscriptionJob {
+  id: number
+  status: AdminSubscriptionJobStatus
+  phase: AdminSubscriptionJobPhase
+  scope: AdminSubscriptionManageScope
+  operation: AdminSubscriptionManageOperation
+  provider_id: number
+  group_id: string
+  validity_days?: number
+  days?: number
+  filter_query?: string
+  target_user_ids?: number[]
+  requested_user_ids?: number[]
+  total_count: number
+  processed_count: number
+  success_count: number
+  skipped_count: number
+  failed_count: number
+  results: AdminManageSubscriptionsResultRow[]
+  last_error?: string | null
+  started_at?: string | null
+  completed_at?: string | null
+  created_at?: string
+  updated_at?: string
 }

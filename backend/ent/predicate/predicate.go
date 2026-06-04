@@ -6,6 +6,9 @@ import (
 	"entgo.io/ent/dialect/sql"
 )
 
+// AdminSubscriptionJob is the predicate function for adminsubscriptionjob builders.
+type AdminSubscriptionJob func(*sql.Selector)
+
 // CommitCheckpoint is the predicate function for commitcheckpoint builders.
 type CommitCheckpoint func(*sql.Selector)
 

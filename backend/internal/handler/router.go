@@ -75,6 +75,7 @@ func SetupRouter(
 	adminUsersHandler := NewAdminUsersHandler(entClient, encryptionKey)
 	if providerHandler != nil {
 		adminUsersHandler = NewAdminUsersHandler(entClient, encryptionKey, providerHandler)
+		adminUsersHandler.logger = providerHandler.logger
 	}
 
 	api := r.Group("/api/v1")
@@ -212,6 +213,9 @@ func SetupRouter(
 	{
 		adminUsersGroup.GET("", adminUsersHandler.List)
 		adminUsersGroup.GET("/subscription-options", adminUsersHandler.ListSubscriptionOptions)
+		adminUsersGroup.POST("/subscription-jobs", adminUsersHandler.StartSubscriptionJob)
+		adminUsersGroup.GET("/subscription-jobs/latest", adminUsersHandler.GetLatestSubscriptionJob)
+		adminUsersGroup.GET("/subscription-jobs/:id", adminUsersHandler.GetSubscriptionJob)
 		adminUsersGroup.POST("/subscriptions/batch", adminUsersHandler.ManageSubscriptions)
 		adminUsersGroup.POST("/:id/relay-password/reveal", adminUsersHandler.RevealRelayPassword)
 		adminUsersGroup.POST("/:id/subscriptions", adminUsersHandler.AssignSubscription)
