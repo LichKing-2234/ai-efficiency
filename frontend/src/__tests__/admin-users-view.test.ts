@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createMemoryHistory } from 'vue-router'
@@ -8,10 +8,13 @@ import { setLocale } from '@/i18n'
 
 vi.mock('@/api/adminUsers', () => ({
   assignAdminUserSubscription: vi.fn(),
+  getAdminUserSubscriptionJob: vi.fn(),
+  getLatestAdminUserSubscriptionJob: vi.fn(),
   listAdminUsers: vi.fn(),
   listAdminUserSubscriptionOptions: vi.fn(),
   manageAdminUserSubscriptions: vi.fn(),
   revealAdminUserRelayPassword: vi.fn(),
+  startAdminUserSubscriptionJob: vi.fn(),
 }))
 
 Object.assign(navigator, {
@@ -40,7 +43,7 @@ async function mountAdminUsersView(
     page_size?: number
   },
 ) {
-  const { listAdminUsers, listAdminUserSubscriptionOptions } = await import('@/api/adminUsers')
+  const { getLatestAdminUserSubscriptionJob, listAdminUsers, listAdminUserSubscriptionOptions } = await import('@/api/adminUsers')
   ;(listAdminUsers as any).mockImplementation((params: any) => Promise.resolve({
     data: {
       data: userListFactory?.(params) ?? {
@@ -95,6 +98,9 @@ async function mountAdminUsersView(
       },
     },
   })
+  if (!(getLatestAdminUserSubscriptionJob as any).getMockImplementation()) {
+    ;(getLatestAdminUserSubscriptionJob as any).mockResolvedValue({ data: { data: null } })
+  }
 
   const pinia = createPinia()
   setActivePinia(pinia)
@@ -120,10 +126,33 @@ async function mountAdminUsersView(
   return { wrapper, router, listAdminUsers }
 }
 
+function subscriptionJob(overrides: Record<string, any> = {}) {
+  return {
+    id: 12,
+    status: 'queued',
+    phase: 'queued',
+    scope: 'selected',
+    operation: 'add',
+    provider_id: 3,
+    group_id: '42',
+    total_count: 1,
+    processed_count: 0,
+    success_count: 0,
+    skipped_count: 0,
+    failed_count: 0,
+    results: [],
+    ...overrides,
+  }
+}
+
 describe('AdminUsersView', () => {
   beforeEach(() => {
     setLocale('en-US')
-    vi.clearAllMocks()
+    vi.resetAllMocks()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
   })
 
   it('loads and renders local users with pagination controls', async () => {
@@ -221,10 +250,23 @@ describe('AdminUsersView', () => {
     expect(wrapper.text()).not.toContain('test-password')
   })
 
-  it('adds a subscription for one selected local user through the batch workflow', async () => {
-    const { manageAdminUserSubscriptions } = await import('@/api/adminUsers')
-    ;(manageAdminUserSubscriptions as any).mockResolvedValue({
-      data: { data: { status: 'completed', success_count: 1, skipped_count: 0, failed_count: 0, results: [] } },
+  it('adds a subscription for one selected local user through a polled job workflow', async () => {
+    vi.useFakeTimers()
+    const { getAdminUserSubscriptionJob, manageAdminUserSubscriptions, startAdminUserSubscriptionJob } = await import('@/api/adminUsers')
+    ;(startAdminUserSubscriptionJob as any).mockResolvedValue({
+      data: { data: subscriptionJob({ status: 'running', phase: 'processing', total_count: 1, processed_count: 0 }) },
+    })
+    ;(getAdminUserSubscriptionJob as any).mockResolvedValue({
+      data: {
+        data: subscriptionJob({
+          status: 'completed',
+          phase: 'completed',
+          total_count: 1,
+          processed_count: 1,
+          success_count: 1,
+          results: [{ user_id: 7, username: 'alice', email: 'alice@example.com', status: 'success' }],
+        }),
+      },
     })
 
     const { wrapper } = await mountAdminUsersView()
@@ -237,7 +279,7 @@ describe('AdminUsersView', () => {
     await wrapper.get('[data-testid="manage-subscriptions-submit"]').trigger('click')
     await flushPromises()
 
-    expect(manageAdminUserSubscriptions).toHaveBeenCalledWith({
+    expect(startAdminUserSubscriptionJob).toHaveBeenCalledWith({
       scope: 'selected',
       user_ids: [7],
       operation: 'add',
@@ -245,7 +287,15 @@ describe('AdminUsersView', () => {
       group_id: '42',
       validity_days: 60,
     })
+    expect(manageAdminUserSubscriptions).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('Processing: 0 / 1')
+
+    await vi.advanceTimersByTimeAsync(1500)
+    await flushPromises()
+
+    expect(getAdminUserSubscriptionJob).toHaveBeenCalledWith(12)
     expect(wrapper.text()).toContain('Completed: 1 succeeded, 0 skipped, 0 failed')
+    expect(wrapper.text()).toContain('alice')
   })
 
   it('shows a real indeterminate select-all checkbox for partial visible selection', async () => {
@@ -269,9 +319,9 @@ describe('AdminUsersView', () => {
   })
 
   it('extends subscriptions for multiple selected local users', async () => {
-    const { manageAdminUserSubscriptions } = await import('@/api/adminUsers')
-    ;(manageAdminUserSubscriptions as any).mockResolvedValue({
-      data: { data: { status: 'completed', success_count: 2, skipped_count: 0, failed_count: 0, results: [] } },
+    const { startAdminUserSubscriptionJob } = await import('@/api/adminUsers')
+    ;(startAdminUserSubscriptionJob as any).mockResolvedValue({
+      data: { data: subscriptionJob({ status: 'completed', phase: 'completed', total_count: 2, processed_count: 2, success_count: 2 }) },
     })
 
     const { wrapper } = await mountAdminUsersView()
@@ -285,7 +335,7 @@ describe('AdminUsersView', () => {
     await wrapper.get('[data-testid="manage-subscriptions-submit"]').trigger('click')
     await flushPromises()
 
-    expect(manageAdminUserSubscriptions).toHaveBeenCalledWith({
+    expect(startAdminUserSubscriptionJob).toHaveBeenCalledWith({
       scope: 'selected',
       user_ids: [7, 8],
       operation: 'extend',
@@ -296,9 +346,9 @@ describe('AdminUsersView', () => {
   })
 
   it('preserves selected users across pagination before submitting selected scope', async () => {
-    const { manageAdminUserSubscriptions } = await import('@/api/adminUsers')
-    ;(manageAdminUserSubscriptions as any).mockResolvedValue({
-      data: { data: { status: 'completed', success_count: 2, skipped_count: 0, failed_count: 0, results: [] } },
+    const { startAdminUserSubscriptionJob } = await import('@/api/adminUsers')
+    ;(startAdminUserSubscriptionJob as any).mockResolvedValue({
+      data: { data: subscriptionJob({ status: 'completed', phase: 'completed', total_count: 2, processed_count: 2, success_count: 2 }) },
     })
 
     const { wrapper } = await mountAdminUsersView('/admin/users', (params: any) => ({
@@ -343,7 +393,7 @@ describe('AdminUsersView', () => {
     await wrapper.get('[data-testid="manage-subscriptions-submit"]').trigger('click')
     await flushPromises()
 
-    expect(manageAdminUserSubscriptions).toHaveBeenCalledWith({
+    expect(startAdminUserSubscriptionJob).toHaveBeenCalledWith({
       scope: 'selected',
       user_ids: [7, 9],
       operation: 'add',
@@ -354,9 +404,9 @@ describe('AdminUsersView', () => {
   })
 
   it('removes subscriptions for all mapped users only after explicit confirmation', async () => {
-    const { manageAdminUserSubscriptions } = await import('@/api/adminUsers')
-    ;(manageAdminUserSubscriptions as any).mockResolvedValue({
-      data: { data: { status: 'completed', success_count: 120, skipped_count: 0, failed_count: 0, results: [] } },
+    const { startAdminUserSubscriptionJob } = await import('@/api/adminUsers')
+    ;(startAdminUserSubscriptionJob as any).mockResolvedValue({
+      data: { data: subscriptionJob({ status: 'completed', phase: 'completed', scope: 'all_mapped', operation: 'remove', total_count: 120, processed_count: 120, success_count: 120 }) },
     })
 
     const { wrapper } = await mountAdminUsersView()
@@ -371,11 +421,32 @@ describe('AdminUsersView', () => {
     await wrapper.get('[data-testid="manage-subscriptions-submit"]').trigger('click')
     await flushPromises()
 
-    expect(manageAdminUserSubscriptions).toHaveBeenCalledWith({
+    expect(startAdminUserSubscriptionJob).toHaveBeenCalledWith({
       scope: 'all_mapped',
       operation: 'remove',
       provider_id: 3,
       group_id: '42',
     })
+  })
+
+  it('recovers the latest running subscription job on mount and keeps polling it', async () => {
+    vi.useFakeTimers()
+    const { getAdminUserSubscriptionJob, getLatestAdminUserSubscriptionJob } = await import('@/api/adminUsers')
+    ;(getLatestAdminUserSubscriptionJob as any).mockResolvedValue({
+      data: { data: subscriptionJob({ id: 44, status: 'running', phase: 'processing', total_count: 3, processed_count: 1 }) },
+    })
+    ;(getAdminUserSubscriptionJob as any).mockResolvedValue({
+      data: { data: subscriptionJob({ id: 44, status: 'completed', phase: 'completed', total_count: 3, processed_count: 3, success_count: 2, skipped_count: 1 }) },
+    })
+
+    const { wrapper } = await mountAdminUsersView()
+
+    expect(wrapper.text()).toContain('Processing: 1 / 3')
+
+    await vi.advanceTimersByTimeAsync(1500)
+    await flushPromises()
+
+    expect(getAdminUserSubscriptionJob).toHaveBeenCalledWith(44)
+    expect(wrapper.text()).toContain('Completed: 2 succeeded, 1 skipped, 0 failed')
   })
 })

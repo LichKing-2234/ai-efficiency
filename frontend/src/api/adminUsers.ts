@@ -5,6 +5,7 @@ import type {
   AdminManageSubscriptionsRequest,
   AdminManageSubscriptionsResponse,
   AdminRelayPasswordRevealResponse,
+  AdminSubscriptionJob,
   AdminSubscriptionOptionsResponse,
   AdminUsersListResponse,
   ApiResponse,
@@ -30,6 +31,18 @@ export function assignAdminUserSubscription(id: number, data: AdminAssignSubscri
 
 export function manageAdminUserSubscriptions(data: AdminManageSubscriptionsRequest) {
   return client.post<ApiResponse<AdminManageSubscriptionsResponse>>('/admin/users/subscriptions/batch', data)
+}
+
+export function startAdminUserSubscriptionJob(data: AdminManageSubscriptionsRequest) {
+  return client.post<ApiResponse<AdminSubscriptionJob>>('/admin/users/subscription-jobs', data)
+}
+
+export function getAdminUserSubscriptionJob(id: number) {
+  return client.get<ApiResponse<AdminSubscriptionJob>>(`/admin/users/subscription-jobs/${id}`)
+}
+
+export function getLatestAdminUserSubscriptionJob() {
+  return client.get<ApiResponse<AdminSubscriptionJob | null>>('/admin/users/subscription-jobs/latest')
 }
 
 export function revealAdminUserRelayPassword(id: number) {

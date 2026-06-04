@@ -5,6 +5,7 @@ package runtime
 import (
 	"time"
 
+	"github.com/ai-efficiency/backend/ent/adminsubscriptionjob"
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
 	"github.com/ai-efficiency/backend/ent/commitrewrite"
 	"github.com/ai-efficiency/backend/ent/credential"
@@ -26,6 +27,38 @@ import (
 // (default values, validators, hooks and policies) and stitches it
 // to their package variables.
 func init() {
+	adminsubscriptionjobFields := schema.AdminSubscriptionJob{}.Fields()
+	_ = adminsubscriptionjobFields
+	// adminsubscriptionjobDescTotalCount is the schema descriptor for total_count field.
+	adminsubscriptionjobDescTotalCount := adminsubscriptionjobFields[11].Descriptor()
+	// adminsubscriptionjob.DefaultTotalCount holds the default value on creation for the total_count field.
+	adminsubscriptionjob.DefaultTotalCount = adminsubscriptionjobDescTotalCount.Default.(int)
+	// adminsubscriptionjobDescProcessedCount is the schema descriptor for processed_count field.
+	adminsubscriptionjobDescProcessedCount := adminsubscriptionjobFields[12].Descriptor()
+	// adminsubscriptionjob.DefaultProcessedCount holds the default value on creation for the processed_count field.
+	adminsubscriptionjob.DefaultProcessedCount = adminsubscriptionjobDescProcessedCount.Default.(int)
+	// adminsubscriptionjobDescSuccessCount is the schema descriptor for success_count field.
+	adminsubscriptionjobDescSuccessCount := adminsubscriptionjobFields[13].Descriptor()
+	// adminsubscriptionjob.DefaultSuccessCount holds the default value on creation for the success_count field.
+	adminsubscriptionjob.DefaultSuccessCount = adminsubscriptionjobDescSuccessCount.Default.(int)
+	// adminsubscriptionjobDescSkippedCount is the schema descriptor for skipped_count field.
+	adminsubscriptionjobDescSkippedCount := adminsubscriptionjobFields[14].Descriptor()
+	// adminsubscriptionjob.DefaultSkippedCount holds the default value on creation for the skipped_count field.
+	adminsubscriptionjob.DefaultSkippedCount = adminsubscriptionjobDescSkippedCount.Default.(int)
+	// adminsubscriptionjobDescFailedCount is the schema descriptor for failed_count field.
+	adminsubscriptionjobDescFailedCount := adminsubscriptionjobFields[15].Descriptor()
+	// adminsubscriptionjob.DefaultFailedCount holds the default value on creation for the failed_count field.
+	adminsubscriptionjob.DefaultFailedCount = adminsubscriptionjobDescFailedCount.Default.(int)
+	// adminsubscriptionjobDescCreatedAt is the schema descriptor for created_at field.
+	adminsubscriptionjobDescCreatedAt := adminsubscriptionjobFields[20].Descriptor()
+	// adminsubscriptionjob.DefaultCreatedAt holds the default value on creation for the created_at field.
+	adminsubscriptionjob.DefaultCreatedAt = adminsubscriptionjobDescCreatedAt.Default.(func() time.Time)
+	// adminsubscriptionjobDescUpdatedAt is the schema descriptor for updated_at field.
+	adminsubscriptionjobDescUpdatedAt := adminsubscriptionjobFields[21].Descriptor()
+	// adminsubscriptionjob.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	adminsubscriptionjob.DefaultUpdatedAt = adminsubscriptionjobDescUpdatedAt.Default.(func() time.Time)
+	// adminsubscriptionjob.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	adminsubscriptionjob.UpdateDefaultUpdatedAt = adminsubscriptionjobDescUpdatedAt.UpdateDefault.(func() time.Time)
 	commitcheckpointFields := schema.CommitCheckpoint{}.Fields()
 	_ = commitcheckpointFields
 	// commitcheckpointDescWorkspaceID is the schema descriptor for workspace_id field.

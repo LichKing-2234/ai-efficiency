@@ -13,15 +13,17 @@ import (
 	"github.com/ai-efficiency/backend/ent/predicate"
 	"github.com/ai-efficiency/backend/ent/relayprovider"
 	entuser "github.com/ai-efficiency/backend/ent/user"
+	"github.com/ai-efficiency/backend/internal/adminsubscription"
 	"github.com/ai-efficiency/backend/internal/pkg"
 	"github.com/ai-efficiency/backend/internal/relay"
 	"github.com/gin-gonic/gin"
 )
 
 type AdminUsersHandler struct {
-	entClient     *ent.Client
-	encryptionKey string
-	resolver      adminUsersProviderResolver
+	entClient        *ent.Client
+	encryptionKey    string
+	resolver         adminUsersProviderResolver
+	subscriptionJobs *adminsubscription.Service
 }
 
 type adminUsersProviderResolver interface {
@@ -126,15 +128,42 @@ type adminManageSubscriptionTarget struct {
 	MissingID int
 }
 
+type adminSubscriptionJobResponse struct {
+	ID               int                           `json:"id"`
+	Status           string                        `json:"status"`
+	Phase            string                        `json:"phase"`
+	Scope            string                        `json:"scope"`
+	Operation        string                        `json:"operation"`
+	ProviderID       int                           `json:"provider_id"`
+	GroupID          string                        `json:"group_id"`
+	ValidityDays     int                           `json:"validity_days,omitempty"`
+	Days             int                           `json:"days,omitempty"`
+	FilterQuery      string                        `json:"filter_query,omitempty"`
+	TargetUserIDs    []int                         `json:"target_user_ids,omitempty"`
+	RequestedUserIDs []int                         `json:"requested_user_ids,omitempty"`
+	TotalCount       int                           `json:"total_count"`
+	ProcessedCount   int                           `json:"processed_count"`
+	SuccessCount     int                           `json:"success_count"`
+	SkippedCount     int                           `json:"skipped_count"`
+	FailedCount      int                           `json:"failed_count"`
+	Results          []adminsubscription.ResultRow `json:"results"`
+	LastError        *string                       `json:"last_error,omitempty"`
+	StartedAt        *time.Time                    `json:"started_at,omitempty"`
+	CompletedAt      *time.Time                    `json:"completed_at,omitempty"`
+	CreatedAt        time.Time                     `json:"created_at"`
+	UpdatedAt        time.Time                     `json:"updated_at"`
+}
+
 func NewAdminUsersHandler(entClient *ent.Client, encryptionKey string, resolvers ...adminUsersProviderResolver) *AdminUsersHandler {
 	var resolver adminUsersProviderResolver
 	if len(resolvers) > 0 {
 		resolver = resolvers[0]
 	}
 	return &AdminUsersHandler{
-		entClient:     entClient,
-		encryptionKey: strings.TrimSpace(encryptionKey),
-		resolver:      resolver,
+		entClient:        entClient,
+		encryptionKey:    strings.TrimSpace(encryptionKey),
+		resolver:         resolver,
+		subscriptionJobs: adminsubscription.NewService(entClient),
 	}
 }
 
@@ -234,6 +263,107 @@ func (h *AdminUsersHandler) ListSubscriptionOptions(c *gin.Context) {
 	}
 
 	pkg.Success(c, gin.H{"providers": rows})
+}
+
+func (h *AdminUsersHandler) StartSubscriptionJob(c *gin.Context) {
+	if h.resolver == nil {
+		pkg.Error(c, http.StatusUnprocessableEntity, "relay provider resolver is not configured")
+		return
+	}
+
+	var req adminManageSubscriptionsRequest
+	if err := json.NewDecoder(c.Request.Body).Decode(&req); err != nil {
+		pkg.Error(c, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	req.Scope = strings.TrimSpace(req.Scope)
+	req.Operation = strings.TrimSpace(req.Operation)
+	if req.ProviderID <= 0 {
+		pkg.Error(c, http.StatusBadRequest, "provider_id is required")
+		return
+	}
+	groupID, err := strconv.ParseInt(strings.TrimSpace(req.GroupID), 10, 64)
+	if err != nil || groupID <= 0 {
+		pkg.Error(c, http.StatusBadRequest, "group_id is required")
+		return
+	}
+	switch req.Operation {
+	case "add":
+		if req.ValidityDays <= 0 {
+			pkg.Error(c, http.StatusBadRequest, "validity_days is required")
+			return
+		}
+	case "extend":
+		if req.Days <= 0 {
+			pkg.Error(c, http.StatusBadRequest, "days is required")
+			return
+		}
+	case "remove":
+	default:
+		pkg.Error(c, http.StatusBadRequest, "operation must be add, extend, or remove")
+		return
+	}
+
+	rp, ok := h.resolveAssignableSubscriptionRelay(c, req.ProviderID, groupID)
+	if !ok {
+		return
+	}
+	if _, ok := adminSubscriptionOperation(c, rp, req, groupID); !ok {
+		return
+	}
+
+	job, err := h.subscriptionJobs.StartJob(c.Request.Context(), adminsubscription.StartJobRequest{
+		Scope:        req.Scope,
+		UserIDs:      req.UserIDs,
+		FilterQuery:  req.Filters.Q,
+		Operation:    req.Operation,
+		ProviderID:   req.ProviderID,
+		GroupID:      strconv.FormatInt(groupID, 10),
+		ValidityDays: req.ValidityDays,
+		Days:         req.Days,
+	})
+	if err != nil {
+		pkg.Error(c, adminSubscriptionJobErrorStatus(err), err.Error())
+		return
+	}
+
+	operator := adminRelaySubscriptionJobOperator{provider: rp}
+	go func(jobID int) {
+		_ = h.subscriptionJobs.RunJob(context.Background(), jobID, operator)
+	}(job.ID)
+
+	pkg.Success(c, adminSubscriptionJobResponseFromEnt(job))
+}
+
+func (h *AdminUsersHandler) GetSubscriptionJob(c *gin.Context) {
+	id, err := strconv.Atoi(strings.TrimSpace(c.Param("id")))
+	if err != nil || id <= 0 {
+		pkg.Error(c, http.StatusBadRequest, "invalid job id")
+		return
+	}
+	job, err := h.subscriptionJobs.GetJob(c.Request.Context(), id)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			pkg.Error(c, http.StatusNotFound, "subscription job not found")
+			return
+		}
+		pkg.Error(c, http.StatusInternalServerError, "get subscription job: "+err.Error())
+		return
+	}
+	pkg.Success(c, adminSubscriptionJobResponseFromEnt(job))
+}
+
+func (h *AdminUsersHandler) GetLatestSubscriptionJob(c *gin.Context) {
+	job, err := h.subscriptionJobs.GetLatestJob(c.Request.Context())
+	if err != nil {
+		if ent.IsNotFound(err) {
+			pkg.Success(c, nil)
+			return
+		}
+		pkg.Error(c, http.StatusInternalServerError, "get latest subscription job: "+err.Error())
+		return
+	}
+	pkg.Success(c, adminSubscriptionJobResponseFromEnt(job))
 }
 
 func (h *AdminUsersHandler) ManageSubscriptions(c *gin.Context) {
@@ -507,6 +637,73 @@ func adminSubscriptionOperation(c *gin.Context, rp relay.Provider, req adminMana
 		pkg.Error(c, http.StatusBadRequest, "operation must be add, extend, or remove")
 		return nil, false
 	}
+}
+
+type adminRelaySubscriptionJobOperator struct {
+	provider relay.Provider
+}
+
+func (o adminRelaySubscriptionJobOperator) AssignSubscriptionForUser(ctx context.Context, userID, groupID int64, validityDays int) error {
+	assigner, ok := o.provider.(adminRelaySubscriptionAssigner)
+	if !ok {
+		return fmt.Errorf("relay provider does not support subscription assignment")
+	}
+	return assigner.AssignSubscriptionForUser(ctx, userID, groupID, validityDays)
+}
+
+func (o adminRelaySubscriptionJobOperator) ExtendSubscriptionForUser(ctx context.Context, userID, groupID int64, days int) error {
+	extender, ok := o.provider.(adminRelaySubscriptionExtender)
+	if !ok {
+		return fmt.Errorf("relay provider does not support subscription extension")
+	}
+	return extender.ExtendSubscriptionForUser(ctx, userID, groupID, days)
+}
+
+func (o adminRelaySubscriptionJobOperator) RemoveSubscriptionForUser(ctx context.Context, userID, groupID int64) error {
+	remover, ok := o.provider.(adminRelaySubscriptionRemover)
+	if !ok {
+		return fmt.Errorf("relay provider does not support subscription removal")
+	}
+	return remover.RemoveSubscriptionForUser(ctx, userID, groupID)
+}
+
+func adminSubscriptionJobResponseFromEnt(job *ent.AdminSubscriptionJob) adminSubscriptionJobResponse {
+	if job == nil {
+		return adminSubscriptionJobResponse{}
+	}
+	return adminSubscriptionJobResponse{
+		ID:               job.ID,
+		Status:           string(job.Status),
+		Phase:            string(job.Phase),
+		Scope:            string(job.Scope),
+		Operation:        string(job.Operation),
+		ProviderID:       job.ProviderID,
+		GroupID:          job.GroupID,
+		ValidityDays:     job.ValidityDays,
+		Days:             job.Days,
+		FilterQuery:      job.FilterQuery,
+		TargetUserIDs:    job.TargetUserIds,
+		RequestedUserIDs: job.RequestedUserIds,
+		TotalCount:       job.TotalCount,
+		ProcessedCount:   job.ProcessedCount,
+		SuccessCount:     job.SuccessCount,
+		SkippedCount:     job.SkippedCount,
+		FailedCount:      job.FailedCount,
+		Results:          adminsubscription.ResultsFromJob(job),
+		LastError:        job.LastError,
+		StartedAt:        job.StartedAt,
+		CompletedAt:      job.CompletedAt,
+		CreatedAt:        job.CreatedAt,
+		UpdatedAt:        job.UpdatedAt,
+	}
+}
+
+func adminSubscriptionJobErrorStatus(err error) int {
+	message := err.Error()
+	if strings.Contains(message, "maximum is") {
+		return http.StatusUnprocessableEntity
+	}
+	return http.StatusBadRequest
 }
 
 func (h *AdminUsersHandler) subscriptionTargetsForScope(c *gin.Context, req adminManageSubscriptionsRequest) ([]adminManageSubscriptionTarget, bool) {
