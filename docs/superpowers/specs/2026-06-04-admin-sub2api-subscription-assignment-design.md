@@ -1,8 +1,8 @@
 # Admin Sub2API Subscription Management Design
 
-**Date:** 2026-06-04  
-**Status:** Implemented current contract  
-**Scope:** `backend/internal/handler/`, `backend/internal/relay/`, `backend/internal/usersetup/`, `frontend/src/views/admin/`, `frontend/src/views/UserView.vue`, `frontend/src/api/`, `frontend/src/types/`, `docs/architecture.md`  
+**Date:** 2026-06-04
+**Status:** Implemented current contract
+**Scope:** `backend/internal/handler/`, `backend/internal/relay/`, `backend/internal/usersetup/`, `frontend/src/views/admin/`, `frontend/src/views/UserView.vue`, `frontend/src/api/`, `frontend/src/types/`, `docs/architecture.md`
 **Related:**
 - [2026-05-26-admin-users-local-credentials-design.md](./2026-05-26-admin-users-local-credentials-design.md)
 - [2026-05-21-user-page-cli-self-serve-design.md](./2026-05-21-user-page-cli-self-serve-design.md)
