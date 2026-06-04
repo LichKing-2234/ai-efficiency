@@ -1006,17 +1006,49 @@ func relayErrorMessageSuffixFromData(data []byte) string {
 func extractRelayErrorMessage(data []byte) string {
 	var payload struct {
 		Error struct {
-			Message string `json:"message"`
+			Message  string         `json:"message"`
+			Metadata map[string]any `json:"metadata"`
 		} `json:"error"`
-		Message string `json:"message"`
+		Message  string         `json:"message"`
+		Metadata map[string]any `json:"metadata"`
 	}
 	if err := json.Unmarshal(data, &payload); err != nil {
 		return strings.TrimSpace(string(data))
 	}
-	if message := strings.TrimSpace(payload.Error.Message); message != "" {
+	message := strings.TrimSpace(firstNonEmpty(payload.Error.Message, payload.Message))
+	detail := relayErrorMetadataDetail(payload.Error.Metadata, payload.Metadata)
+	if message != "" && detail != "" {
+		return message + " (" + detail + ")"
+	}
+	if message != "" {
 		return message
 	}
-	return strings.TrimSpace(payload.Message)
+	return detail
+}
+
+func relayErrorMetadataDetail(maps ...map[string]any) string {
+	for _, metadata := range maps {
+		if len(metadata) == 0 {
+			continue
+		}
+		if reason := metadataString(metadata, "conflict_reason"); reason != "" {
+			return "conflict_reason: " + reason
+		}
+	}
+	return ""
+}
+
+func metadataString(metadata map[string]any, key string) string {
+	value, ok := metadata[key]
+	if !ok || value == nil {
+		return ""
+	}
+	switch typed := value.(type) {
+	case string:
+		return strings.TrimSpace(typed)
+	default:
+		return strings.TrimSpace(fmt.Sprint(typed))
+	}
 }
 
 func (s *sub2apiRelay) ChatCompletionWithTools(ctx context.Context, req ChatCompletionRequest, tools []ToolDef) (*ChatCompletionWithToolsResponse, error) {
@@ -1360,6 +1392,20 @@ type defaultSubscriptionSetting struct {
 	ValidityDays int   `json:"validity_days"`
 }
 
+type subscriptionAssignment struct {
+	GroupID      int64
+	ValidityDays int
+	Notes        string
+}
+
+type sub2apiUserSubscription struct {
+	ID      int64  `json:"id"`
+	UserID  int64  `json:"user_id"`
+	GroupID int64  `json:"group_id"`
+	Status  string `json:"status"`
+	Group   *Group `json:"group"`
+}
+
 func (s *sub2apiRelay) assignDefaultSubscriptionsForUser(ctx context.Context, userID int64) error {
 	if userID <= 0 {
 		return nil
@@ -1372,7 +1418,11 @@ func (s *sub2apiRelay) assignDefaultSubscriptionsForUser(ctx context.Context, us
 		if item.GroupID <= 0 {
 			continue
 		}
-		if err := s.assignSubscription(ctx, userID, item); err != nil {
+		if err := s.assignSubscription(ctx, userID, subscriptionAssignment{
+			GroupID:      item.GroupID,
+			ValidityDays: item.ValidityDays,
+			Notes:        "auto assigned by ai-efficiency relay provisioning",
+		}); err != nil {
 			return err
 		}
 	}
@@ -1382,6 +1432,95 @@ func (s *sub2apiRelay) assignDefaultSubscriptionsForUser(ctx context.Context, us
 // AssignDefaultSubscriptionsForUser applies relay-configured default subscriptions to an existing user.
 func (s *sub2apiRelay) AssignDefaultSubscriptionsForUser(ctx context.Context, userID int64) error {
 	return s.assignDefaultSubscriptionsForUser(ctx, userID)
+}
+
+// AssignSubscriptionForUser assigns one subscription group to a relay user.
+func (s *sub2apiRelay) AssignSubscriptionForUser(ctx context.Context, userID, groupID int64, validityDays int) error {
+	if userID <= 0 {
+		return fmt.Errorf("assign subscription: user id is required")
+	}
+	if groupID <= 0 {
+		return fmt.Errorf("assign subscription: group id is required")
+	}
+	if validityDays <= 0 {
+		return fmt.Errorf("assign subscription: validity days is required")
+	}
+	return s.assignSubscription(ctx, userID, subscriptionAssignment{
+		GroupID:      groupID,
+		ValidityDays: validityDays,
+		Notes:        "assigned by ai-efficiency admin",
+	})
+}
+
+// ExtendSubscriptionForUser extends an existing subscription group for a relay user.
+func (s *sub2apiRelay) ExtendSubscriptionForUser(ctx context.Context, userID, groupID int64, days int) error {
+	if userID <= 0 {
+		return fmt.Errorf("extend subscription: user id is required")
+	}
+	if groupID <= 0 {
+		return fmt.Errorf("extend subscription: group id is required")
+	}
+	if days <= 0 {
+		return fmt.Errorf("extend subscription: days is required")
+	}
+	subscription, err := s.findSubscriptionForUserGroup(ctx, userID, groupID)
+	if err != nil {
+		return fmt.Errorf("extend subscription: %w", err)
+	}
+
+	payload, err := json.Marshal(map[string]any{"days": days})
+	if err != nil {
+		return fmt.Errorf("extend subscription: marshal: %w", err)
+	}
+	resp, err := s.doAdminRequest(ctx, http.MethodPost, fmt.Sprintf("/api/v1/admin/subscriptions/%d/extend", subscription.ID), bytes.NewReader(payload))
+	if err != nil {
+		return fmt.Errorf("extend subscription: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("extend subscription: unexpected status %d%s", resp.StatusCode, relayErrorMessageSuffix(resp.Body))
+	}
+	var result envelopeStatus
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return fmt.Errorf("extend subscription: decode: %w", err)
+	}
+	if !result.ok() {
+		return fmt.Errorf("extend subscription: request failed")
+	}
+	return nil
+}
+
+// RemoveSubscriptionForUser revokes an existing subscription group for a relay user.
+func (s *sub2apiRelay) RemoveSubscriptionForUser(ctx context.Context, userID, groupID int64) error {
+	if userID <= 0 {
+		return fmt.Errorf("remove subscription: user id is required")
+	}
+	if groupID <= 0 {
+		return fmt.Errorf("remove subscription: group id is required")
+	}
+	subscription, err := s.findSubscriptionForUserGroup(ctx, userID, groupID)
+	if err != nil {
+		return fmt.Errorf("remove subscription: %w", err)
+	}
+
+	resp, err := s.doAdminRequest(ctx, http.MethodDelete, fmt.Sprintf("/api/v1/admin/subscriptions/%d", subscription.ID), nil)
+	if err != nil {
+		return fmt.Errorf("remove subscription: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("remove subscription: unexpected status %d%s", resp.StatusCode, relayErrorMessageSuffix(resp.Body))
+	}
+	var result envelopeStatus
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return fmt.Errorf("remove subscription: decode: %w", err)
+	}
+	if !result.ok() {
+		return fmt.Errorf("remove subscription: request failed")
+	}
+	return nil
 }
 
 func (s *sub2apiRelay) listDefaultSubscriptions(ctx context.Context) ([]defaultSubscriptionSetting, error) {
@@ -1413,12 +1552,51 @@ func (s *sub2apiRelay) listDefaultSubscriptions(ctx context.Context) ([]defaultS
 	return result.Data.DefaultSubscriptions, nil
 }
 
-func (s *sub2apiRelay) assignSubscription(ctx context.Context, userID int64, item defaultSubscriptionSetting) error {
+func (s *sub2apiRelay) findSubscriptionForUserGroup(ctx context.Context, userID, groupID int64) (*sub2apiUserSubscription, error) {
+	subscriptions, err := s.listUserSubscriptions(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	for i := range subscriptions {
+		if subscriptions[i].GroupID == 0 && subscriptions[i].Group != nil {
+			subscriptions[i].GroupID = subscriptions[i].Group.ID
+		}
+		if subscriptions[i].GroupID == groupID {
+			return &subscriptions[i], nil
+		}
+	}
+	return nil, fmt.Errorf("subscription not found for user %d group %d", userID, groupID)
+}
+
+func (s *sub2apiRelay) listUserSubscriptions(ctx context.Context, userID int64) ([]sub2apiUserSubscription, error) {
+	resp, err := s.doAdminRequest(ctx, http.MethodGet, fmt.Sprintf("/api/v1/admin/users/%d/subscriptions", userID), nil)
+	if err != nil {
+		return nil, fmt.Errorf("list user subscriptions: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("list user subscriptions: unexpected status %d%s", resp.StatusCode, relayErrorMessageSuffix(resp.Body))
+	}
+	var result struct {
+		envelopeStatus
+		Data []sub2apiUserSubscription `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("list user subscriptions: decode: %w", err)
+	}
+	if !result.ok() {
+		return nil, fmt.Errorf("list user subscriptions: request failed")
+	}
+	return result.Data, nil
+}
+
+func (s *sub2apiRelay) assignSubscription(ctx context.Context, userID int64, item subscriptionAssignment) error {
 	payload, err := json.Marshal(map[string]any{
 		"user_id":       userID,
 		"group_id":      item.GroupID,
 		"validity_days": item.ValidityDays,
-		"notes":         "auto assigned by ai-efficiency relay provisioning",
+		"notes":         item.Notes,
 	})
 	if err != nil {
 		return fmt.Errorf("assign subscription: marshal: %w", err)
@@ -1435,7 +1613,7 @@ func (s *sub2apiRelay) assignSubscription(ctx context.Context, userID int64, ite
 		if readErr != nil {
 			return fmt.Errorf("assign subscription: unexpected status %d", resp.StatusCode)
 		}
-		if isExistingSubscriptionAssignConflict(resp.StatusCode, body) {
+		if isExistingSubscriptionAlreadyAssigned(resp.StatusCode, body) {
 			return nil
 		}
 		return fmt.Errorf("assign subscription: unexpected status %d%s", resp.StatusCode, relayErrorMessageSuffixFromData(body))
@@ -1450,7 +1628,7 @@ func (s *sub2apiRelay) assignSubscription(ctx context.Context, userID int64, ite
 	return nil
 }
 
-func isExistingSubscriptionAssignConflict(statusCode int, body []byte) bool {
+func isExistingSubscriptionAlreadyAssigned(statusCode int, body []byte) bool {
 	if statusCode != http.StatusConflict {
 		return false
 	}
@@ -1465,18 +1643,21 @@ func isExistingSubscriptionAssignConflict(statusCode int, body []byte) bool {
 	if err := json.Unmarshal(body, &payload); err == nil {
 		reason := strings.ToUpper(strings.TrimSpace(firstNonEmpty(payload.Reason, payload.Error.Reason)))
 		switch reason {
-		case "SUBSCRIPTION_ASSIGN_CONFLICT", "SUBSCRIPTION_ALREADY_EXISTS":
+		case "SUBSCRIPTION_ALREADY_EXISTS":
 			return true
+		case "SUBSCRIPTION_ASSIGN_CONFLICT":
+			return false
 		}
 		if reason != "" {
 			return false
 		}
 		message := strings.ToLower(strings.TrimSpace(firstNonEmpty(payload.Message, payload.Error.Message)))
-		if strings.Contains(message, "subscription exists") || strings.Contains(message, "subscription already exists") {
+		if strings.Contains(message, "subscription already exists") || strings.Contains(message, "already has subscription") {
 			return true
 		}
 	}
-	return strings.Contains(strings.ToLower(strings.TrimSpace(string(body))), "subscription exists")
+	bodyText := strings.ToLower(strings.TrimSpace(string(body)))
+	return strings.Contains(bodyText, "subscription already exists") || strings.Contains(bodyText, "already has subscription")
 }
 
 func firstNonEmpty(values ...string) string {

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -867,11 +868,8 @@ func TestCreateUserTreatsExistingDefaultSubscriptionConflictAsAssigned(t *testin
 		w.WriteHeader(http.StatusConflict)
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"code":    http.StatusConflict,
-			"message": "subscription exists but request conflicts with existing assignment semantics",
-			"reason":  "SUBSCRIPTION_ASSIGN_CONFLICT",
-			"metadata": map[string]string{
-				"conflict_reason": "notes_mismatch",
-			},
+			"message": "subscription already exists",
+			"reason":  "SUBSCRIPTION_ALREADY_EXISTS",
 		})
 	})
 
@@ -957,6 +955,189 @@ func TestCreateUserSuccessFalse(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("CreateUser() expected error for success=false, got nil")
+	}
+}
+
+func TestAssignSubscriptionForUserPostsSelectedGroup(t *testing.T) {
+	var assignBody map[string]any
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/subscriptions/assign", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("expected POST, got %s", r.Method)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&assignBody); err != nil {
+			t.Fatalf("decode assign body: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": map[string]any{"id": 77, "status": "active"},
+		})
+	})
+
+	p := newTestProvider(t, mux)
+	assigner, ok := p.(interface {
+		AssignSubscriptionForUser(context.Context, int64, int64, int) error
+	})
+	if !ok {
+		t.Fatal("provider does not implement AssignSubscriptionForUser")
+	}
+	if err := assigner.AssignSubscriptionForUser(context.Background(), 42, 5, 60); err != nil {
+		t.Fatalf("AssignSubscriptionForUser() unexpected error: %v", err)
+	}
+	if assignBody["user_id"] != float64(42) || assignBody["group_id"] != float64(5) || assignBody["validity_days"] != float64(60) {
+		t.Fatalf("unexpected assign body: %+v", assignBody)
+	}
+	if assignBody["notes"] != "assigned by ai-efficiency admin" {
+		t.Fatalf("notes = %v, want admin assignment note", assignBody["notes"])
+	}
+}
+
+func TestAssignSubscriptionForUserKeepsSemanticConflictFatal(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/subscriptions/assign", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("expected POST, got %s", r.Method)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code":    http.StatusConflict,
+			"message": "subscription exists but request conflicts with existing assignment semantics",
+			"reason":  "SUBSCRIPTION_ASSIGN_CONFLICT",
+			"metadata": map[string]string{
+				"conflict_reason": "validity_days_mismatch",
+			},
+		})
+	})
+
+	p := newTestProvider(t, mux)
+	assigner, ok := p.(interface {
+		AssignSubscriptionForUser(context.Context, int64, int64, int) error
+	})
+	if !ok {
+		t.Fatal("provider does not implement AssignSubscriptionForUser")
+	}
+	err := assigner.AssignSubscriptionForUser(context.Background(), 42, 5, 60)
+	if err == nil {
+		t.Fatal("AssignSubscriptionForUser() expected semantic conflict error, got nil")
+	}
+	if !strings.Contains(err.Error(), "validity_days_mismatch") {
+		t.Fatalf("AssignSubscriptionForUser() error = %v, want conflict reason", err)
+	}
+}
+
+func TestExtendSubscriptionForUserFindsExistingSubscriptionAndPostsDays(t *testing.T) {
+	var extendBody map[string]any
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/users/42/subscriptions", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Errorf("expected GET, got %s", r.Method)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": []map[string]any{
+				{"id": 77, "user_id": 42, "group_id": 5, "status": "active"},
+			},
+		})
+	})
+	mux.HandleFunc("/api/v1/admin/subscriptions/77/extend", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("expected POST, got %s", r.Method)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&extendBody); err != nil {
+			t.Fatalf("decode extend body: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": map[string]any{"id": 77, "status": "active"},
+		})
+	})
+
+	p := newTestProvider(t, mux)
+	manager, ok := p.(interface {
+		ExtendSubscriptionForUser(context.Context, int64, int64, int) error
+	})
+	if !ok {
+		t.Fatal("provider does not implement ExtendSubscriptionForUser")
+	}
+	if err := manager.ExtendSubscriptionForUser(context.Background(), 42, 5, 7); err != nil {
+		t.Fatalf("ExtendSubscriptionForUser() unexpected error: %v", err)
+	}
+	if extendBody["days"] != float64(7) {
+		t.Fatalf("unexpected extend body: %+v", extendBody)
+	}
+}
+
+func TestRemoveSubscriptionForUserFindsExistingSubscriptionAndDeletes(t *testing.T) {
+	deleted := false
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/users/42/subscriptions", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Errorf("expected GET, got %s", r.Method)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": []map[string]any{
+				{"id": 77, "user_id": 42, "group_id": 5, "status": "active"},
+			},
+		})
+	})
+	mux.HandleFunc("/api/v1/admin/subscriptions/77", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete {
+			t.Errorf("expected DELETE, got %s", r.Method)
+		}
+		deleted = true
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": map[string]any{"message": "Subscription revoked successfully"},
+		})
+	})
+
+	p := newTestProvider(t, mux)
+	manager, ok := p.(interface {
+		RemoveSubscriptionForUser(context.Context, int64, int64) error
+	})
+	if !ok {
+		t.Fatal("provider does not implement RemoveSubscriptionForUser")
+	}
+	if err := manager.RemoveSubscriptionForUser(context.Background(), 42, 5); err != nil {
+		t.Fatalf("RemoveSubscriptionForUser() unexpected error: %v", err)
+	}
+	if !deleted {
+		t.Fatal("expected subscription delete request")
+	}
+}
+
+func TestExtendSubscriptionForUserReturnsNotFoundForMissingGroupSubscription(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/users/42/subscriptions", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": []map[string]any{
+				{"id": 77, "user_id": 42, "group_id": 6, "status": "active"},
+			},
+		})
+	})
+
+	p := newTestProvider(t, mux)
+	manager, ok := p.(interface {
+		ExtendSubscriptionForUser(context.Context, int64, int64, int) error
+	})
+	if !ok {
+		t.Fatal("provider does not implement ExtendSubscriptionForUser")
+	}
+	err := manager.ExtendSubscriptionForUser(context.Background(), 42, 5, 7)
+	if err == nil || !strings.Contains(err.Error(), "subscription not found") {
+		t.Fatalf("ExtendSubscriptionForUser() error = %v, want subscription not found", err)
 	}
 }
 

@@ -47,6 +47,7 @@ const providerTestPrompt = ref('Hi')
 const providerTestLoading = ref(false)
 const providerTestResult = ref<UserProviderTestResult | null>(null)
 const copiedCommandKey = ref('')
+const credentialMutationLoading = ref(false)
 const setupAudience = ref<'developer' | 'non_developer'>('developer')
 const manualConfigConfirmKey = ref('')
 type SetupStepStatus = 'done' | 'todo' | 'local_check'
@@ -381,12 +382,21 @@ function updateSelectedGroupCredential(apiKeyId: number, name: string, status: s
 
 async function handleCreateKey() {
   if (!selectedProvider.value || !selectedGroup.value) return
-  const res = await createGroupCredential(selectedProvider.value.id, selectedGroup.value.group_id)
-  const data = res.data.data
-  if (!data) return
-  sessionSecrets[selectedSecretKey.value] = data.secret
-  revealedSecretKeys[selectedSecretKey.value] = false
-  updateSelectedGroupCredential(data.api_key_id, data.name, data.status, data.secret)
+  if (credentialMutationLoading.value) return
+  credentialMutationLoading.value = true
+  error.value = ''
+  try {
+    const res = await createGroupCredential(selectedProvider.value.id, selectedGroup.value.group_id)
+    const data = res.data.data
+    if (!data) return
+    sessionSecrets[selectedSecretKey.value] = data.secret
+    revealedSecretKeys[selectedSecretKey.value] = false
+    updateSelectedGroupCredential(data.api_key_id, data.name, data.status, data.secret)
+  } catch (err: any) {
+    error.value = err.response?.data?.message || err.message || t('user.createKeyFailed')
+  } finally {
+    credentialMutationLoading.value = false
+  }
 }
 
 function requestSecretAction(action: SecretAction) {
@@ -415,12 +425,21 @@ async function confirmSecretAction() {
 
 async function handleRegenerateKey() {
   if (!selectedProvider.value || !selectedGroup.value) return
-  const res = await regenerateGroupCredential(selectedProvider.value.id, selectedGroup.value.group_id)
-  const data = res.data.data
-  if (!data) return
-  sessionSecrets[selectedSecretKey.value] = data.secret
-  revealedSecretKeys[selectedSecretKey.value] = true
-  updateSelectedGroupCredential(data.api_key_id, data.name, data.status, data.secret)
+  if (credentialMutationLoading.value) return
+  credentialMutationLoading.value = true
+  error.value = ''
+  try {
+    const res = await regenerateGroupCredential(selectedProvider.value.id, selectedGroup.value.group_id)
+    const data = res.data.data
+    if (!data) return
+    sessionSecrets[selectedSecretKey.value] = data.secret
+    revealedSecretKeys[selectedSecretKey.value] = true
+    updateSelectedGroupCredential(data.api_key_id, data.name, data.status, data.secret)
+  } catch (err: any) {
+    error.value = err.response?.data?.message || err.message || t('user.regenerateKeyFailed')
+  } finally {
+    credentialMutationLoading.value = false
+  }
 }
 
 function revealSelectedKey() {
@@ -756,18 +775,20 @@ onMounted(loadProviders)
                     <button
                       v-if="selectedGroup.credential.state === 'missing'"
                       data-testid="create-key"
-                      class="rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-black"
+                      class="rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-black disabled:opacity-50"
+                      :disabled="credentialMutationLoading"
                       @click="handleCreateKey"
                     >
-                      {{ t('user.createKey') }}
+                      {{ credentialMutationLoading ? t('user.creatingKey') : t('user.createKey') }}
                     </button>
                     <button
                       v-if="selectedGroup.credential.state === 'existing_hidden'"
                       data-testid="regenerate-key"
-                      class="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-900 hover:bg-amber-100"
+                      class="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-900 hover:bg-amber-100 disabled:opacity-50"
+                      :disabled="credentialMutationLoading"
                       @click="requestSecretAction('regenerate')"
                     >
-                      {{ t('user.regenerate') }}
+                      {{ credentialMutationLoading ? t('user.regenerating') : t('user.regenerate') }}
                     </button>
                     <button
                       v-if="canReveal"
@@ -792,7 +813,8 @@ onMounted(loadProviders)
                     <div class="mt-3 flex flex-wrap gap-2">
                       <button
                         data-testid="confirm-secret-action"
-                        class="rounded-md bg-amber-700 px-3 py-2 text-xs font-medium text-white hover:bg-amber-800"
+                        class="rounded-md bg-amber-700 px-3 py-2 text-xs font-medium text-white hover:bg-amber-800 disabled:opacity-50"
+                        :disabled="credentialMutationLoading"
                         @click="confirmSecretAction"
                       >
                         {{ t('user.confirmAction') }}

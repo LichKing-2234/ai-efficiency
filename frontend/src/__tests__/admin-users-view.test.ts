@@ -7,7 +7,10 @@ import AdminUsersView from '@/views/admin/AdminUsersView.vue'
 import { setLocale } from '@/i18n'
 
 vi.mock('@/api/adminUsers', () => ({
+  assignAdminUserSubscription: vi.fn(),
   listAdminUsers: vi.fn(),
+  listAdminUserSubscriptionOptions: vi.fn(),
+  manageAdminUserSubscriptions: vi.fn(),
   revealAdminUserRelayPassword: vi.fn(),
 }))
 
@@ -28,11 +31,19 @@ function createTestRouter() {
   })
 }
 
-async function mountAdminUsersView(path = '/admin/users') {
-  const { listAdminUsers } = await import('@/api/adminUsers')
+async function mountAdminUsersView(
+  path = '/admin/users',
+  userListFactory?: (params: any) => {
+    items: any[]
+    total?: number
+    page?: number
+    page_size?: number
+  },
+) {
+  const { listAdminUsers, listAdminUserSubscriptionOptions } = await import('@/api/adminUsers')
   ;(listAdminUsers as any).mockImplementation((params: any) => Promise.resolve({
     data: {
-      data: {
+      data: userListFactory?.(params) ?? {
         items: [
           {
             id: 7,
@@ -45,6 +56,17 @@ async function mountAdminUsersView(path = '/admin/users') {
             created_at: '2026-05-26T00:00:00Z',
             updated_at: '2026-05-26T01:00:00Z',
           },
+          {
+            id: 8,
+            username: 'bob',
+            email: 'bob@example.org',
+            role: 'user',
+            auth_source: 'ldap',
+            relay_user_id: 99,
+            relay_auth_password: '',
+            created_at: '2026-05-26T00:00:00Z',
+            updated_at: '2026-05-26T01:00:00Z',
+          },
         ],
         total: 120,
         page: params?.page ?? 1,
@@ -52,6 +74,27 @@ async function mountAdminUsersView(path = '/admin/users') {
       },
     },
   }))
+  ;(listAdminUserSubscriptionOptions as any).mockResolvedValue({
+    data: {
+      data: {
+        providers: [
+          {
+            id: 3,
+            name: 'sub2api',
+            display_name: 'Sub2API',
+            groups: [
+              {
+                group_id: '42',
+                group_name: 'Group Alpha',
+                platform: 'openai',
+                subscription_type: 'subscription',
+              },
+            ],
+          },
+        ],
+      },
+    },
+  })
 
   const pinia = createPinia()
   setActivePinia(pinia)
@@ -176,5 +219,163 @@ describe('AdminUsersView', () => {
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith('test-password')
     expect(wrapper.text()).toContain('Copied plaintext')
     expect(wrapper.text()).not.toContain('test-password')
+  })
+
+  it('adds a subscription for one selected local user through the batch workflow', async () => {
+    const { manageAdminUserSubscriptions } = await import('@/api/adminUsers')
+    ;(manageAdminUserSubscriptions as any).mockResolvedValue({
+      data: { data: { status: 'completed', success_count: 1, skipped_count: 0, failed_count: 0, results: [] } },
+    })
+
+    const { wrapper } = await mountAdminUsersView()
+
+    expect(wrapper.text()).toContain('Subscription management')
+    await wrapper.get('[data-testid="select-user-7"]').setValue(true)
+    await wrapper.get('[data-testid="subscription-provider"]').setValue('3')
+    await wrapper.get('[data-testid="subscription-group"]').setValue('42')
+    await wrapper.get('[data-testid="subscription-days"]').setValue('60')
+    await wrapper.get('[data-testid="manage-subscriptions-submit"]').trigger('click')
+    await flushPromises()
+
+    expect(manageAdminUserSubscriptions).toHaveBeenCalledWith({
+      scope: 'selected',
+      user_ids: [7],
+      operation: 'add',
+      provider_id: 3,
+      group_id: '42',
+      validity_days: 60,
+    })
+    expect(wrapper.text()).toContain('Completed: 1 succeeded, 0 skipped, 0 failed')
+  })
+
+  it('shows a real indeterminate select-all checkbox for partial visible selection', async () => {
+    const { wrapper } = await mountAdminUsersView()
+    const selectAll = wrapper.get('[data-testid="select-all-users"]').element as HTMLInputElement
+
+    expect(selectAll.indeterminate).toBe(false)
+
+    await wrapper.get('[data-testid="select-user-7"]').setValue(true)
+    await flushPromises()
+
+    expect(selectAll.checked).toBe(false)
+    expect(selectAll.indeterminate).toBe(true)
+    expect(selectAll.getAttribute('aria-checked')).toBe('mixed')
+
+    await wrapper.get('[data-testid="select-user-8"]').setValue(true)
+    await flushPromises()
+
+    expect(selectAll.checked).toBe(true)
+    expect(selectAll.indeterminate).toBe(false)
+  })
+
+  it('extends subscriptions for multiple selected local users', async () => {
+    const { manageAdminUserSubscriptions } = await import('@/api/adminUsers')
+    ;(manageAdminUserSubscriptions as any).mockResolvedValue({
+      data: { data: { status: 'completed', success_count: 2, skipped_count: 0, failed_count: 0, results: [] } },
+    })
+
+    const { wrapper } = await mountAdminUsersView()
+
+    await wrapper.get('[data-testid="select-user-7"]').setValue(true)
+    await wrapper.get('[data-testid="select-user-8"]').setValue(true)
+    await wrapper.get('[data-testid="subscription-operation"]').setValue('extend')
+    await wrapper.get('[data-testid="subscription-provider"]').setValue('3')
+    await wrapper.get('[data-testid="subscription-group"]').setValue('42')
+    await wrapper.get('[data-testid="subscription-days"]').setValue('14')
+    await wrapper.get('[data-testid="manage-subscriptions-submit"]').trigger('click')
+    await flushPromises()
+
+    expect(manageAdminUserSubscriptions).toHaveBeenCalledWith({
+      scope: 'selected',
+      user_ids: [7, 8],
+      operation: 'extend',
+      provider_id: 3,
+      group_id: '42',
+      days: 14,
+    })
+  })
+
+  it('preserves selected users across pagination before submitting selected scope', async () => {
+    const { manageAdminUserSubscriptions } = await import('@/api/adminUsers')
+    ;(manageAdminUserSubscriptions as any).mockResolvedValue({
+      data: { data: { status: 'completed', success_count: 2, skipped_count: 0, failed_count: 0, results: [] } },
+    })
+
+    const { wrapper } = await mountAdminUsersView('/admin/users', (params: any) => ({
+      items: params?.page === 2
+        ? [
+            {
+              id: 9,
+              username: 'carol',
+              email: 'carol@example.net',
+              role: 'user',
+              auth_source: 'ldap',
+              relay_user_id: 101,
+              relay_auth_password: '',
+              created_at: '2026-05-26T00:00:00Z',
+              updated_at: '2026-05-26T01:00:00Z',
+            },
+          ]
+        : [
+            {
+              id: 7,
+              username: 'alice',
+              email: 'alice@example.com',
+              role: 'user',
+              auth_source: 'ldap',
+              relay_user_id: 42,
+              relay_auth_password: 'encrypted-relay-password-ciphertext',
+              created_at: '2026-05-26T00:00:00Z',
+              updated_at: '2026-05-26T01:00:00Z',
+            },
+          ],
+      total: 40,
+      page: params?.page ?? 1,
+      page_size: params?.page_size ?? 20,
+    }))
+
+    await wrapper.get('[data-testid="select-user-7"]').setValue(true)
+    await wrapper.get('[data-testid="admin-users-next-page"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="select-user-9"]').setValue(true)
+    await wrapper.get('[data-testid="subscription-provider"]').setValue('3')
+    await wrapper.get('[data-testid="subscription-group"]').setValue('42')
+    await wrapper.get('[data-testid="manage-subscriptions-submit"]').trigger('click')
+    await flushPromises()
+
+    expect(manageAdminUserSubscriptions).toHaveBeenCalledWith({
+      scope: 'selected',
+      user_ids: [7, 9],
+      operation: 'add',
+      provider_id: 3,
+      group_id: '42',
+      validity_days: 30,
+    })
+  })
+
+  it('removes subscriptions for all mapped users only after explicit confirmation', async () => {
+    const { manageAdminUserSubscriptions } = await import('@/api/adminUsers')
+    ;(manageAdminUserSubscriptions as any).mockResolvedValue({
+      data: { data: { status: 'completed', success_count: 120, skipped_count: 0, failed_count: 0, results: [] } },
+    })
+
+    const { wrapper } = await mountAdminUsersView()
+
+    await wrapper.get('[data-testid="subscription-scope"]').setValue('all_mapped')
+    await wrapper.get('[data-testid="subscription-operation"]').setValue('remove')
+    await wrapper.get('[data-testid="subscription-provider"]').setValue('3')
+    await wrapper.get('[data-testid="subscription-group"]').setValue('42')
+    expect((wrapper.get('[data-testid="manage-subscriptions-submit"]').element as HTMLButtonElement).disabled).toBe(true)
+
+    await wrapper.get('[data-testid="confirm-remove-subscription"]').setValue(true)
+    await wrapper.get('[data-testid="manage-subscriptions-submit"]').trigger('click')
+    await flushPromises()
+
+    expect(manageAdminUserSubscriptions).toHaveBeenCalledWith({
+      scope: 'all_mapped',
+      operation: 'remove',
+      provider_id: 3,
+      group_id: '42',
+    })
   })
 })

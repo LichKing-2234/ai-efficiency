@@ -2,9 +2,16 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppLayout from '@/components/AppLayout.vue'
-import { listAdminUsers, revealAdminUserRelayPassword } from '@/api/adminUsers'
+import { listAdminUsers, listAdminUserSubscriptionOptions, manageAdminUserSubscriptions, revealAdminUserRelayPassword } from '@/api/adminUsers'
 import { useI18n } from '@/i18n'
-import type { AdminUser } from '@/types'
+import type {
+  AdminAssignableSubscriptionProvider,
+  AdminManageSubscriptionsRequest,
+  AdminManageSubscriptionsResultRow,
+  AdminSubscriptionManageOperation,
+  AdminSubscriptionManageScope,
+  AdminUser,
+} from '@/types'
 
 const { t, locale } = useI18n()
 const route = useRoute()
@@ -13,8 +20,34 @@ const loading = ref(false)
 const error = ref('')
 const rows = ref<AdminUser[]>([])
 const total = ref(0)
+const subscriptionProviders = ref<AdminAssignableSubscriptionProvider[]>([])
+const subscriptionOptionsLoading = ref(false)
+const subscriptionOptionsError = ref('')
 const copiedState = reactive<Record<number, string>>({})
 const plaintextConfirmUserId = ref<number | null>(null)
+const selectedUserIds = ref<Set<number>>(new Set())
+const selectAllUsersCheckbox = ref<HTMLInputElement | null>(null)
+const subscriptionForm = reactive<{
+  scope: AdminSubscriptionManageScope
+  operation: AdminSubscriptionManageOperation
+  provider_id: number | null
+  group_id: string
+  days: number
+  confirmRemove: boolean
+  loading: boolean
+  message: string
+  results: AdminManageSubscriptionsResultRow[]
+}>({
+  scope: 'selected',
+  operation: 'add',
+  provider_id: null,
+  group_id: '',
+  days: 30,
+  confirmRemove: false,
+  loading: false,
+  message: '',
+  results: [],
+})
 let searchTimer: number | undefined
 
 const filters = reactive({
@@ -26,6 +59,19 @@ const filters = reactive({
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / filters.page_size)))
 const canGoPrev = computed(() => filters.page > 1)
 const canGoNext = computed(() => filters.page < totalPages.value)
+const selectedUserIdList = computed(() => Array.from(selectedUserIds.value).sort((a, b) => a - b))
+const selectedCount = computed(() => selectedUserIdList.value.length)
+const allVisibleSelected = computed(() => rows.value.length > 0 && rows.value.every((row) => selectedUserIds.value.has(row.id)))
+const visibleSelectionIndeterminate = computed(() => rows.value.some((row) => selectedUserIds.value.has(row.id)) && !allVisibleSelected.value)
+const bulkGroups = computed(() => subscriptionProviders.value.find((provider) => provider.id === subscriptionForm.provider_id)?.groups ?? [])
+const bulkUsesDays = computed(() => subscriptionForm.operation === 'add' || subscriptionForm.operation === 'extend')
+const canSubmitSubscriptionManagement = computed(() => {
+  if (subscriptionForm.loading || !subscriptionForm.provider_id || !subscriptionForm.group_id) return false
+  if (subscriptionForm.scope === 'selected' && selectedCount.value === 0) return false
+  if (bulkUsesDays.value && subscriptionForm.days <= 0) return false
+  if (subscriptionForm.operation === 'remove' && !subscriptionForm.confirmRemove) return false
+  return true
+})
 
 async function loadUsers() {
   loading.value = true
@@ -48,6 +94,21 @@ async function loadUsers() {
     total.value = 0
   } finally {
     loading.value = false
+  }
+}
+
+async function loadSubscriptionOptions() {
+  subscriptionOptionsLoading.value = true
+  subscriptionOptionsError.value = ''
+  try {
+    const res = await listAdminUserSubscriptionOptions()
+    subscriptionProviders.value = res.data.data?.providers ?? []
+    ensureBulkSubscriptionDefaults()
+  } catch (err: any) {
+    subscriptionProviders.value = []
+    subscriptionOptionsError.value = err.response?.data?.message || err.message || t('adminUsers.loadSubscriptionsFailed')
+  } finally {
+    subscriptionOptionsLoading.value = false
   }
 }
 
@@ -112,6 +173,148 @@ function accessStatusLabel(user: AdminUser) {
   return user.relay_auth_password ? t('adminUsers.configured') : t('adminUsers.missingRelayCredential')
 }
 
+function defaultSubscriptionProvider() {
+  return subscriptionProviders.value.find((provider) => provider.groups.length > 0) ?? subscriptionProviders.value[0] ?? null
+}
+
+function ensureBulkSubscriptionDefaults() {
+  if (subscriptionProviders.value.length === 0) {
+    subscriptionForm.provider_id = null
+    subscriptionForm.group_id = ''
+    return
+  }
+  const currentProvider = subscriptionProviders.value.find((provider) => provider.id === subscriptionForm.provider_id)
+  const provider = currentProvider?.groups.length ? currentProvider : defaultSubscriptionProvider()
+  subscriptionForm.provider_id = provider?.id ?? null
+  const currentGroupStillAvailable = provider?.groups.some((group) => group.group_id === subscriptionForm.group_id)
+  if (!currentGroupStillAvailable) {
+    subscriptionForm.group_id = provider?.groups[0]?.group_id ?? ''
+  }
+}
+
+function clearSubscriptionFeedback() {
+  subscriptionForm.message = ''
+  subscriptionForm.results = []
+}
+
+function setBulkProvider(value: string) {
+  const parsed = Number(value)
+  subscriptionForm.provider_id = Number.isFinite(parsed) && parsed > 0 ? parsed : null
+  subscriptionForm.group_id = bulkGroups.value[0]?.group_id ?? ''
+  clearSubscriptionFeedback()
+}
+
+function setBulkGroup(value: string) {
+  subscriptionForm.group_id = value
+  clearSubscriptionFeedback()
+}
+
+function setBulkDays(value: string) {
+  const parsed = Number(value)
+  subscriptionForm.days = Number.isFinite(parsed) ? parsed : 0
+  clearSubscriptionFeedback()
+}
+
+function setSubscriptionScope(value: string) {
+  if (value === 'selected' || value === 'current_filter' || value === 'all_mapped') {
+    subscriptionForm.scope = value
+    clearSubscriptionFeedback()
+  }
+}
+
+function setSubscriptionOperation(value: string) {
+  if (value === 'add' || value === 'extend' || value === 'remove') {
+    subscriptionForm.operation = value
+    subscriptionForm.confirmRemove = false
+    if (value === 'add' && subscriptionForm.days <= 0) subscriptionForm.days = 30
+    if (value === 'extend' && subscriptionForm.days <= 0) subscriptionForm.days = 7
+    clearSubscriptionFeedback()
+  }
+}
+
+function setUserSelected(userId: number, checked: boolean) {
+  const next = new Set(selectedUserIds.value)
+  if (checked) {
+    next.add(userId)
+  } else {
+    next.delete(userId)
+  }
+  selectedUserIds.value = next
+  clearSubscriptionFeedback()
+}
+
+function setAllVisibleSelected(checked: boolean) {
+  const next = new Set(selectedUserIds.value)
+  for (const row of rows.value) {
+    if (checked) {
+      next.add(row.id)
+    } else {
+      next.delete(row.id)
+    }
+  }
+  selectedUserIds.value = next
+  clearSubscriptionFeedback()
+}
+
+function syncVisibleSelectionIndeterminate() {
+  if (selectAllUsersCheckbox.value) {
+    selectAllUsersCheckbox.value.indeterminate = visibleSelectionIndeterminate.value
+  }
+}
+
+function scopeSummaryLabel() {
+  if (subscriptionForm.scope === 'selected') {
+    return t('adminUsers.selectedUsersCount', { count: selectedCount.value })
+  }
+  if (subscriptionForm.scope === 'current_filter') {
+    return filters.q.trim()
+      ? t('adminUsers.currentFilterScopeWithQuery', { query: filters.q.trim() })
+      : t('adminUsers.currentFilterScope')
+  }
+  return t('adminUsers.allMappedScope')
+}
+
+function operationDaysLabel() {
+  return subscriptionForm.operation === 'extend' ? t('adminUsers.extensionDays') : t('adminUsers.validityDays')
+}
+
+async function submitSubscriptionManagement() {
+  if (!canSubmitSubscriptionManagement.value || !subscriptionForm.provider_id) return
+  const payload: AdminManageSubscriptionsRequest = {
+    scope: subscriptionForm.scope,
+    operation: subscriptionForm.operation,
+    provider_id: subscriptionForm.provider_id,
+    group_id: subscriptionForm.group_id,
+  }
+  if (subscriptionForm.scope === 'selected') {
+    payload.user_ids = selectedUserIdList.value
+  } else if (subscriptionForm.scope === 'current_filter') {
+    payload.filters = { q: filters.q.trim() }
+  }
+  if (subscriptionForm.operation === 'add') {
+    payload.validity_days = subscriptionForm.days
+  } else if (subscriptionForm.operation === 'extend') {
+    payload.days = subscriptionForm.days
+  }
+
+  subscriptionForm.loading = true
+  clearSubscriptionFeedback()
+  try {
+    const res = await manageAdminUserSubscriptions(payload)
+    const data = res.data.data
+    subscriptionForm.results = data?.results ?? []
+    subscriptionForm.message = t('adminUsers.subscriptionBatchCompleted', {
+      success: data?.success_count ?? 0,
+      skipped: data?.skipped_count ?? 0,
+      failed: data?.failed_count ?? 0,
+    })
+  } catch (err: any) {
+    subscriptionForm.message = err.response?.data?.message || err.message || t('adminUsers.manageSubscriptionsFailed')
+  } finally {
+    subscriptionForm.loading = false
+  }
+}
+
 async function copyEncrypted(user: AdminUser) {
   if (!user.relay_auth_password) {
     copiedState[user.id] = t('adminUsers.noEncryptedPassword')
@@ -148,16 +351,22 @@ async function confirmCopyPlaintext(user: AdminUser) {
 }
 
 watch(
-  () => filters.q,
+	() => filters.q,
   () => {
     clearSearchTimer()
     searchTimer = window.setTimeout(() => {
       void applySearch()
     }, 300)
-  }
+	}
 )
 
-onMounted(loadUsers)
+watch([visibleSelectionIndeterminate, allVisibleSelected], syncVisibleSelectionIndeterminate, { flush: 'post' })
+
+onMounted(() => {
+	void loadUsers()
+	void loadSubscriptionOptions()
+	syncVisibleSelectionIndeterminate()
+})
 onBeforeUnmount(clearSearchTimer)
 </script>
 
@@ -218,6 +427,128 @@ onBeforeUnmount(clearSearchTimer)
         <p v-if="error" class="mt-3 rounded-md bg-red-50 p-3 text-sm text-red-700">{{ error }}</p>
       </div>
 
+      <div class="rounded-lg bg-white p-4 shadow">
+        <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-900">{{ t('adminUsers.subscriptionManagement') }}</h2>
+            <p class="mt-1 text-sm text-gray-500">{{ scopeSummaryLabel() }}</p>
+          </div>
+          <button
+            data-testid="manage-subscriptions-submit"
+            class="shrink-0 rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-black disabled:cursor-not-allowed disabled:opacity-40"
+            :disabled="!canSubmitSubscriptionManagement"
+            @click="submitSubscriptionManagement"
+          >
+            {{ subscriptionForm.loading ? t('adminUsers.working') : t('adminUsers.applySubscriptionChange') }}
+          </button>
+        </div>
+
+        <p v-if="subscriptionOptionsError" class="mt-3 rounded-md bg-red-50 p-3 text-sm text-red-700">{{ subscriptionOptionsError }}</p>
+
+        <div class="mt-4 grid gap-3 lg:grid-cols-[150px_150px_minmax(0,1fr)_minmax(0,1fr)_130px]">
+          <label class="text-xs font-medium uppercase tracking-wide text-gray-500">
+            {{ t('adminUsers.subscriptionScope') }}
+            <select
+              data-testid="subscription-scope"
+              class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700"
+              :value="subscriptionForm.scope"
+              :disabled="subscriptionForm.loading"
+              @change="setSubscriptionScope(($event.target as HTMLSelectElement).value)"
+            >
+              <option value="selected">{{ t('adminUsers.scopeSelected') }}</option>
+              <option value="current_filter">{{ t('adminUsers.scopeCurrentFilter') }}</option>
+              <option value="all_mapped">{{ t('adminUsers.scopeAllMapped') }}</option>
+            </select>
+          </label>
+
+          <label class="text-xs font-medium uppercase tracking-wide text-gray-500">
+            {{ t('adminUsers.subscriptionOperation') }}
+            <select
+              data-testid="subscription-operation"
+              class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700"
+              :value="subscriptionForm.operation"
+              :disabled="subscriptionForm.loading"
+              @change="setSubscriptionOperation(($event.target as HTMLSelectElement).value)"
+            >
+              <option value="add">{{ t('adminUsers.operationAdd') }}</option>
+              <option value="extend">{{ t('adminUsers.operationExtend') }}</option>
+              <option value="remove">{{ t('adminUsers.operationRemove') }}</option>
+            </select>
+          </label>
+
+          <label class="text-xs font-medium uppercase tracking-wide text-gray-500">
+            {{ t('adminUsers.selectProvider') }}
+            <select
+              data-testid="subscription-provider"
+              class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700"
+              :value="subscriptionForm.provider_id ?? ''"
+              :disabled="subscriptionOptionsLoading || subscriptionForm.loading"
+              @change="setBulkProvider(($event.target as HTMLSelectElement).value)"
+            >
+              <option value="">{{ t('adminUsers.selectProvider') }}</option>
+              <option v-for="provider in subscriptionProviders" :key="provider.id" :value="provider.id">
+                {{ provider.display_name }}
+              </option>
+            </select>
+          </label>
+
+          <label class="text-xs font-medium uppercase tracking-wide text-gray-500">
+            {{ t('adminUsers.selectGroup') }}
+            <select
+              data-testid="subscription-group"
+              class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700"
+              :value="subscriptionForm.group_id"
+              :disabled="subscriptionOptionsLoading || subscriptionForm.loading || bulkGroups.length === 0"
+              @change="setBulkGroup(($event.target as HTMLSelectElement).value)"
+            >
+              <option value="">{{ t('adminUsers.selectGroup') }}</option>
+              <option v-for="group in bulkGroups" :key="group.group_id" :value="group.group_id">
+                {{ group.group_name }} · {{ group.platform }}
+              </option>
+            </select>
+          </label>
+
+          <label v-if="bulkUsesDays" class="text-xs font-medium uppercase tracking-wide text-gray-500">
+            {{ operationDaysLabel() }}
+            <input
+              data-testid="subscription-days"
+              class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700"
+              type="number"
+              min="1"
+              :value="subscriptionForm.days"
+              :disabled="subscriptionForm.loading"
+              @input="setBulkDays(($event.target as HTMLInputElement).value)"
+            />
+          </label>
+        </div>
+
+        <label v-if="subscriptionForm.operation === 'remove'" class="mt-3 flex items-start gap-2 text-sm text-amber-900">
+          <input
+            data-testid="confirm-remove-subscription"
+            class="mt-1 h-4 w-4 rounded border-gray-300"
+            type="checkbox"
+            :checked="subscriptionForm.confirmRemove"
+            :disabled="subscriptionForm.loading"
+            @change="subscriptionForm.confirmRemove = ($event.target as HTMLInputElement).checked"
+          />
+          <span>{{ t('adminUsers.confirmRemoveSubscription') }}</span>
+        </label>
+
+        <p v-if="subscriptionForm.message" class="mt-3 rounded-md bg-gray-50 p-3 text-sm text-gray-700" aria-live="polite">
+          {{ subscriptionForm.message }}
+        </p>
+        <div v-if="subscriptionForm.results.length > 0" class="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          <div
+            v-for="result in subscriptionForm.results.slice(0, 6)"
+            :key="`${result.user_id}-${result.status}`"
+            class="rounded-md border border-gray-200 p-2 text-xs"
+          >
+            <div class="font-medium text-gray-900">{{ result.username || result.email || `#${result.user_id}` }}</div>
+            <div class="mt-1 text-gray-500">{{ result.status }}<span v-if="result.message"> · {{ result.message }}</span></div>
+          </div>
+        </div>
+      </div>
+
       <div class="rounded-lg bg-white p-5 shadow">
         <div class="flex flex-wrap items-center justify-between gap-3">
           <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-900">{{ t('adminUsers.localUsers') }}</h2>
@@ -246,11 +577,20 @@ onBeforeUnmount(clearSearchTimer)
         <div v-if="rows.length > 0" class="mt-3 space-y-3 md:hidden">
           <div v-for="row in rows" :key="row.id" class="rounded-lg border border-gray-100 bg-white p-4 shadow-sm">
             <div class="flex items-start justify-between gap-3">
-              <div class="min-w-0">
-                <div class="truncate font-medium text-gray-900">{{ row.username }}</div>
-                <div class="truncate text-xs text-gray-500">{{ row.email }}</div>
-                <div class="mt-1 font-mono text-[11px] text-gray-400">{{ t('adminUsers.localId') }} #{{ row.id }}</div>
-              </div>
+              <label class="flex min-w-0 items-start gap-3">
+                <input
+                  :data-testid="`select-user-mobile-${row.id}`"
+                  class="mt-1 h-4 w-4 rounded border-gray-300"
+                  type="checkbox"
+                  :checked="selectedUserIds.has(row.id)"
+                  @change="setUserSelected(row.id, ($event.target as HTMLInputElement).checked)"
+                />
+                <span class="min-w-0">
+                  <span class="block truncate font-medium text-gray-900">{{ row.username }}</span>
+                  <span class="block truncate text-xs text-gray-500">{{ row.email }}</span>
+                  <span class="mt-1 block font-mono text-[11px] text-gray-400">{{ t('adminUsers.localId') }} #{{ row.id }}</span>
+                </span>
+              </label>
               <span
                 class="shrink-0 rounded-full px-2 py-0.5 text-xs font-medium"
                 :class="row.relay_auth_password ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'"
@@ -309,6 +649,17 @@ onBeforeUnmount(clearSearchTimer)
           <table class="min-w-[980px] divide-y divide-gray-100 text-sm">
             <thead>
               <tr class="text-xs uppercase text-gray-400">
+                <th class="w-10 px-3 py-2 text-left font-medium">
+                  <input
+                    ref="selectAllUsersCheckbox"
+                    data-testid="select-all-users"
+                    class="h-4 w-4 rounded border-gray-300"
+                    type="checkbox"
+                    :checked="allVisibleSelected"
+                    :aria-checked="visibleSelectionIndeterminate ? 'mixed' : allVisibleSelected"
+                    @change="setAllVisibleSelected(($event.target as HTMLInputElement).checked)"
+                  />
+                </th>
                 <th class="px-3 py-2 text-left font-medium">{{ t('adminUsers.user') }}</th>
                 <th class="px-3 py-2 text-left font-medium">{{ t('adminUsers.role') }}</th>
                 <th class="px-3 py-2 text-left font-medium">{{ t('adminUsers.authSource') }}</th>
@@ -321,6 +672,15 @@ onBeforeUnmount(clearSearchTimer)
             </thead>
             <tbody class="divide-y divide-gray-50">
               <tr v-for="row in rows" :key="row.id">
+                <td class="px-3 py-2 align-top">
+                  <input
+                    :data-testid="`select-user-${row.id}`"
+                    class="h-4 w-4 rounded border-gray-300"
+                    type="checkbox"
+                    :checked="selectedUserIds.has(row.id)"
+                    @change="setUserSelected(row.id, ($event.target as HTMLInputElement).checked)"
+                  />
+                </td>
                 <td class="px-3 py-2">
                   <div class="font-medium text-gray-900">{{ row.username }}</div>
                   <div class="text-xs text-gray-500">{{ row.email }}</div>
