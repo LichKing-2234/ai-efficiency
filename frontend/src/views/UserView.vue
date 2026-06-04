@@ -18,12 +18,14 @@ import {
   buildHooksStatusUploadsCommand,
   buildInstallCommand,
   buildLoginCommand,
+  buildManualConfigSnippets,
   buildPreferredInstallCommand,
   buildRepoInitCommand,
   buildSyncCommand,
   buildWindowsInstallCommand,
   detectInstallPlatform,
 } from '@/utils/userSetupReview'
+import type { ManualConfigSnippet } from '@/utils/userSetupReview'
 
 const auth = useAuthStore()
 const { t } = useI18n()
@@ -46,6 +48,7 @@ const providerTestLoading = ref(false)
 const providerTestResult = ref<UserProviderTestResult | null>(null)
 const copiedCommandKey = ref('')
 const setupAudience = ref<'developer' | 'non_developer'>('developer')
+const manualConfigConfirmKey = ref('')
 type SetupStepStatus = 'done' | 'todo' | 'local_check'
 type SetupStepCommand = {
   key: string
@@ -201,6 +204,17 @@ const displayedSecret = computed(() => {
   if (!selectedKeyValue.value) return ''
   return isSecretRevealed.value ? selectedKeyValue.value : maskApiKey(selectedKeyValue.value)
 })
+const manualConfigDisplayApiKey = computed(() => {
+  if (!selectedKeyValue.value) return t('user.manualConfigMissingKeyPlaceholder')
+  return isSecretRevealed.value ? selectedKeyValue.value : t('user.manualConfigHiddenKeyPlaceholder')
+})
+const manualConfigDisplaySnippets = computed(() => buildSelectedManualConfigSnippets(manualConfigDisplayApiKey.value))
+const manualConfigCopySnippets = computed(() =>
+  buildSelectedManualConfigSnippets(selectedKeyValue.value || t('user.manualConfigMissingKeyPlaceholder'))
+)
+const pendingManualConfigSnippet = computed(() =>
+  manualConfigCopySnippets.value.find((snippet) => snippet.key === manualConfigConfirmKey.value) ?? null
+)
 
 function providerModelLabel(model: UserProviderModel) {
   const displayName = model.display_name?.trim()
@@ -221,6 +235,7 @@ function selectDefaultProvider(rows: UserProviderSummary[]) {
 
 function selectProvider(providerId: number) {
   secretConfirmAction.value = null
+  manualConfigConfirmKey.value = ''
   selectedProviderId.value = providerId
   const provider = providers.value.find((item) => item.id === providerId) ?? null
   selectDefaultGroup(provider)
@@ -228,6 +243,7 @@ function selectProvider(providerId: number) {
 
 function selectGroup(groupId: string) {
   secretConfirmAction.value = null
+  manualConfigConfirmKey.value = ''
   selectedGroupId.value = groupId
   providerTestResult.value = null
 }
@@ -307,6 +323,35 @@ function maskApiKey(key: string) {
   return `${key.slice(0, 6)}...${key.slice(-4)}`
 }
 
+function buildSelectedManualConfigSnippets(apiKey: string) {
+  if (!selectedProvider.value || !selectedGroup.value) return []
+  return buildManualConfigSnippets({
+    providerName: selectedProvider.value.name,
+    baseUrl: selectedProvider.value.base_url,
+    platform: selectedGroup.value.platform,
+    apiKey,
+  })
+}
+
+function manualConfigSnippetTitle(snippet: ManualConfigSnippet) {
+  switch (snippet.key) {
+    case 'codex-config':
+      return t('user.manualConfigCodexConfig')
+    case 'codex-auth':
+      return t('user.manualConfigCodexAuth')
+    case 'claude-settings':
+      return t('user.manualConfigClaudeSettings')
+    case 'gemini-env':
+      return t('user.manualConfigGeminiEnv')
+    case 'gemini-reload':
+      return t('user.manualConfigGeminiReload')
+    case 'gemini-model':
+      return t('user.manualConfigGeminiModel')
+    default:
+      return snippet.path
+  }
+}
+
 function updateSelectedGroupCredential(apiKeyId: number, name: string, status: string, key: string) {
   if (!selectedProvider.value || !selectedGroup.value) return
   providers.value = providers.value.map((provider) => {
@@ -345,6 +390,7 @@ async function handleCreateKey() {
 }
 
 function requestSecretAction(action: SecretAction) {
+  manualConfigConfirmKey.value = ''
   secretConfirmAction.value = action
 }
 
@@ -403,6 +449,28 @@ async function copyCommand(key: string, command: string) {
 
 function copyCommandLabel(key: string) {
   return copiedCommandKey.value === key ? t('user.copied') : t('user.copyCommand')
+}
+
+function manualConfigCopyLabel(snippet: ManualConfigSnippet) {
+  return copiedCommandKey.value === `manual-config-${snippet.key}` ? t('user.copied') : t('user.copyConfigSnippet')
+}
+
+async function copyManualConfigSnippet(snippet: ManualConfigSnippet) {
+  const copySnippet = manualConfigCopySnippets.value.find((item) => item.key === snippet.key)
+  if (!copySnippet) return
+  if (copySnippet.containsSecret && !!selectedKeyValue.value) {
+    secretConfirmAction.value = null
+    manualConfigConfirmKey.value = copySnippet.key
+    return
+  }
+  await copyCommand(`manual-config-${copySnippet.key}`, copySnippet.body)
+}
+
+async function confirmManualConfigCopy() {
+  const snippet = pendingManualConfigSnippet.value
+  if (!snippet) return
+  manualConfigConfirmKey.value = ''
+  await copyCommand(`manual-config-${snippet.key}`, snippet.body)
 }
 
 async function handleTestProvider() {
@@ -597,6 +665,51 @@ onMounted(loadProviders)
                         <dt class="text-xs font-medium uppercase tracking-wide text-slate-500">{{ t('user.manualConfigApiKey') }}</dt>
                         <dd class="text-xs text-slate-900">{{ t('user.manualConfigApiKeyHelp') }}</dd>
                       </dl>
+                      <div v-if="manualConfigDisplaySnippets.length > 0" class="mt-4 space-y-3">
+                        <div
+                          v-for="snippet in manualConfigDisplaySnippets"
+                          :key="snippet.key"
+                          class="rounded-md border border-slate-200 bg-white p-3"
+                        >
+                          <div class="flex flex-wrap items-start justify-between gap-3">
+                            <div class="min-w-0">
+                              <div class="font-medium text-slate-900">{{ manualConfigSnippetTitle(snippet) }}</div>
+                              <div class="mt-1 break-all font-mono text-xs text-slate-500">{{ snippet.path }}</div>
+                            </div>
+                            <button
+                              class="shrink-0 text-xs font-medium text-indigo-700 hover:text-indigo-900"
+                              type="button"
+                              :data-testid="`manual-config-copy-${snippet.key}`"
+                              @click="copyManualConfigSnippet(snippet)"
+                            >
+                              {{ manualConfigCopyLabel(snippet) }}
+                            </button>
+                          </div>
+                          <pre class="mt-3 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-xs text-green-300">{{ snippet.body }}</pre>
+                        </div>
+                        <div v-if="pendingManualConfigSnippet" class="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                          <div class="font-medium">{{ t('user.confirmCopyConfigSnippet') }}</div>
+                          <p class="mt-1 text-xs">{{ t('user.secretRiskText') }}</p>
+                          <div class="mt-3 flex flex-wrap gap-2">
+                            <button
+                              data-testid="confirm-manual-config-copy"
+                              class="rounded-md bg-amber-700 px-3 py-2 text-xs font-medium text-white hover:bg-amber-800"
+                              @click="confirmManualConfigCopy"
+                            >
+                              {{ t('user.confirmAction') }}
+                            </button>
+                            <button
+                              class="rounded-md border border-amber-300 bg-white px-3 py-2 text-xs font-medium text-amber-900 hover:bg-amber-100"
+                              @click="manualConfigConfirmKey = ''"
+                            >
+                              {{ t('user.cancel') }}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                      <p v-else class="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+                        {{ t('user.manualConfigUnsupportedPlatform') }}
+                      </p>
                     </div>
                   </div>
                 </div>

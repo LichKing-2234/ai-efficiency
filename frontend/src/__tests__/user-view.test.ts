@@ -79,6 +79,12 @@ async function mountUserView() {
                 platform: 'openai',
                 credential: { state: 'existing_hidden', api_key_id: 23, name: 'alice', status: 'active', key: 'sk-existing-openai-123456' },
               },
+              {
+                group_id: '45',
+                group_name: 'Group Delta',
+                platform: 'gemini',
+                credential: { state: 'existing_hidden', api_key_id: 24, name: 'alice', status: 'active', key: 'sk-existing-gemini-123456' },
+              },
             ],
           },
         ],
@@ -87,7 +93,11 @@ async function mountUserView() {
     },
   })
   ;(getUserProviderModels as any).mockImplementation((_providerId: number, _groupId: string, platform: string) => {
-    const models = platform === 'openai'
+    const models = platform === 'gemini'
+      ? [
+          { id: 'gemini-3.1-pro-preview', display_name: 'Gemini 3.1 Pro Preview' },
+        ]
+      : platform === 'openai'
       ? [
           { id: 'gpt-5.4', display_name: 'GPT-5.4' },
           { id: 'gpt-5.5', display_name: 'GPT-5.5' },
@@ -214,11 +224,73 @@ describe('UserView', () => {
     expect(progressText).toContain('ae-cli is not required')
     expect(progressText).toContain('https://prod.example.com')
     expect(progressText).toContain('anthropic')
+    expect(progressText).toContain('~/.claude/settings.json')
+    expect(progressText).toContain('ANTHROPIC_BASE_URL')
+    expect(progressText).toContain('ANTHROPIC_AUTH_TOKEN')
+    expect(progressText).toContain('CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC')
+    expect(progressText).toContain('CLAUDE_CODE_ATTRIBUTION_HEADER')
+    expect(progressText).not.toContain('sk-existing-claude-123456')
     expect(progressText).not.toContain('ae-cli login')
     expect(progressText).not.toContain('ae-cli discover')
     expect(progressText).not.toContain('ae-cli hooks enable --global')
     expect(progressText).not.toContain('ae-cli init')
     expect(progressText).not.toContain('ae-cli doctor')
+  })
+
+  it('copies a complete non-developer manual snippet only after secret confirmation', async () => {
+    const { wrapper } = await mountUserView()
+
+    await wrapper.get('[data-testid="setup-audience-non-developer"]').trigger('click')
+    await wrapper.get('[data-testid="manual-config-copy-claude-settings"]').trigger('click')
+
+    expect(wrapper.text()).toContain('Confirm copy configuration with API key')
+    expect(navigator.clipboard.writeText).not.toHaveBeenCalled()
+
+    await wrapper.get('[data-testid="confirm-manual-config-copy"]').trigger('click')
+
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(expect.stringContaining('"ANTHROPIC_AUTH_TOKEN": "sk-existing-claude-123456"'))
+  })
+
+  it('renders Codex manual configuration for non-developer OpenAI groups', async () => {
+    const { wrapper } = await mountUserView()
+
+    await wrapper.get('[data-testid="setup-audience-non-developer"]').trigger('click')
+    await wrapper.get('[data-testid="group-44"]').trigger('click')
+    await flushPromises()
+
+    const progressText = wrapper.get('[data-testid="setup-progress"]').text()
+    expect(progressText).toContain('~/.codex/config.toml')
+    expect(progressText).toContain('model_provider = "prod"')
+    expect(progressText).toContain('model = "gpt-5.4"')
+    expect(progressText).toContain('model_reasoning_effort = "xhigh"')
+    expect(progressText).toContain('disable_response_storage = true')
+    expect(progressText).toContain('network_access = "enabled"')
+    expect(progressText).toContain('[model_providers.prod]')
+    expect(progressText).toContain('base_url = "https://prod.example.com"')
+    expect(progressText).toContain('wire_api = "responses"')
+    expect(progressText).toContain('requires_openai_auth = true')
+    expect(progressText).toContain('~/.codex/auth.json')
+    expect(progressText).toContain('OPENAI_API_KEY')
+    expect(progressText).not.toContain('sk-existing-openai-123456')
+  })
+
+  it('renders Gemini manual configuration and reload guidance for non-developer Gemini groups', async () => {
+    const { wrapper } = await mountUserView()
+
+    await wrapper.get('[data-testid="setup-audience-non-developer"]').trigger('click')
+    await wrapper.get('[data-testid="group-45"]').trigger('click')
+    await flushPromises()
+
+    const progressText = wrapper.get('[data-testid="setup-progress"]').text()
+    expect(progressText).toContain('~/.ae-cli/env.sh')
+    expect(progressText).toContain('export GEMINI_API_KEY=')
+    expect(progressText).toContain('export GOOGLE_GEMINI_BASE_URL="https://prod.example.com"')
+    expect(progressText).toContain('source "$HOME/.zshrc"')
+    expect(progressText).toContain('source "$HOME/.bashrc"')
+    expect(progressText).toContain('source "$HOME/.profile"')
+    expect(progressText).toContain('export GEMINI_MODEL="gemini-3.1-pro-preview"')
+    expect(progressText).toContain('Do not manually switch models inside Gemini')
+    expect(progressText).not.toContain('sk-existing-gemini-123456')
   })
 
   it('marks local-only setup steps as requiring a local check instead of pretending they are numbered progress', async () => {

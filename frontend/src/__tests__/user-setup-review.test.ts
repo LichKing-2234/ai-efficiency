@@ -3,10 +3,17 @@ import {
   buildDeviceLoginCommand,
   buildDiscoverCommand,
   buildDoctorCommand,
+  buildClaudeSettingsSnippet,
+  buildCodexAuthSnippet,
+  buildCodexConfigSnippet,
+  buildGeminiEnvSnippet,
+  buildGeminiModelSnippet,
+  buildGeminiReloadSnippet,
   buildGithubConnectivityCommand,
   buildHooksGlobalCommand,
   buildHooksStatusUploadsCommand,
   buildInstallCommand,
+  buildManualConfigSnippets,
   buildLoginCommand,
   buildPreferredGithubConnectivityCommand,
   buildPreferredInstallCommand,
@@ -18,6 +25,70 @@ import {
 } from '@/utils/userSetupReview'
 
 describe('userSetupReview command builders', () => {
+  it('builds Codex manual config snippets equivalent to ae-cli discover', () => {
+    expect(buildCodexConfigSnippet('prod', 'https://prod.example.com')).toContain([
+      'model_provider = "prod"',
+      'model = "gpt-5.4"',
+      'review_model = "gpt-5.4"',
+      'model_reasoning_effort = "xhigh"',
+      'disable_response_storage = true',
+      'network_access = "enabled"',
+      'windows_wsl_setup_acknowledged = true',
+      'model_context_window = 1000000',
+      'model_auto_compact_token_limit = 900000',
+      '[model_providers.prod]',
+      'name = "prod"',
+      'base_url = "https://prod.example.com"',
+      'wire_api = "responses"',
+      'requires_openai_auth = true',
+    ].join('\n'))
+    expect(buildCodexAuthSnippet('sk-openai')).toBe('{"OPENAI_API_KEY":"sk-openai"}')
+  })
+
+  it('builds Claude manual settings equivalent to ae-cli discover', () => {
+    const snippet = buildClaudeSettingsSnippet('https://prod.example.com', 'sk-claude')
+    expect(snippet).toContain('"ANTHROPIC_BASE_URL": "https://prod.example.com"')
+    expect(snippet).toContain('"ANTHROPIC_AUTH_TOKEN": "sk-claude"')
+    expect(snippet).toContain('"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"')
+    expect(snippet).toContain('"CLAUDE_CODE_ATTRIBUTION_HEADER": "0"')
+    expect(snippet).not.toContain('ANTHROPIC_API_KEY')
+  })
+
+  it('builds Gemini manual shell guidance equivalent to ae-cli discover output', () => {
+    expect(buildGeminiEnvSnippet('https://prod.example.com', 'sk-gemini')).toContain([
+      'export GEMINI_API_KEY="sk-gemini"',
+      'export GOOGLE_GEMINI_BASE_URL="https://prod.example.com"',
+    ].join('\n'))
+    expect(buildGeminiReloadSnippet()).toContain('source "$HOME/.zshrc"')
+    expect(buildGeminiReloadSnippet()).toContain('source "$HOME/.bashrc"')
+    expect(buildGeminiReloadSnippet()).toContain('source "$HOME/.profile"')
+    expect(buildGeminiModelSnippet()).toContain('export GEMINI_MODEL="gemini-3.1-pro-preview"')
+    expect(buildGeminiModelSnippet()).toContain('Do not manually switch models inside Gemini')
+  })
+
+  it('builds platform-specific manual config card metadata', () => {
+    expect(buildManualConfigSnippets({
+      providerName: 'prod',
+      baseUrl: 'https://prod.example.com',
+      platform: 'openai',
+      apiKey: 'sk-openai',
+    }).map((snippet) => snippet.path)).toEqual(['~/.codex/config.toml', '~/.codex/auth.json'])
+
+    expect(buildManualConfigSnippets({
+      providerName: 'prod',
+      baseUrl: 'https://prod.example.com',
+      platform: 'anthropic',
+      apiKey: 'sk-claude',
+    }).map((snippet) => snippet.path)).toEqual(['~/.claude/settings.json'])
+
+    expect(buildManualConfigSnippets({
+      providerName: 'prod',
+      baseUrl: 'https://prod.example.com',
+      platform: 'gemini',
+      apiKey: 'sk-gemini',
+    }).map((snippet) => snippet.path)).toEqual(['~/.ae-cli/env.sh', 'Shell reload', 'Current shell'])
+  })
+
   it('buildDiscoverCommand uses the selected provider', () => {
     expect(buildDiscoverCommand('https://ae.example.com', 'sub2api-prod')).toBe(
       'ae-cli discover --provider sub2api-prod'

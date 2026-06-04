@@ -38,7 +38,7 @@ func TestCheckForUpdateReportsAvailableRelease(t *testing.T) {
 	}
 }
 
-func TestCheckForUpdateAddsProxyGuidanceWhenGitHubReleaseFetchFails(t *testing.T) {
+func TestCheckForUpdateKeepsPlainReleaseFetchError(t *testing.T) {
 	oldHTTPDo := httpDo
 	defer func() { httpDo = oldHTTPDo }()
 
@@ -53,11 +53,11 @@ func TestCheckForUpdateAddsProxyGuidanceWhenGitHubReleaseFetchFails(t *testing.T
 	if err == nil {
 		t.Fatal("expected release fetch to fail")
 	}
-	if !strings.Contains(err.Error(), "GitHub Releases") {
-		t.Fatalf("error = %q, want GitHub Releases guidance", err)
+	if !strings.Contains(err.Error(), "fetch latest release: dial tcp timeout") {
+		t.Fatalf("error = %q, want plain fetch wrapper", err)
 	}
-	if !strings.Contains(err.Error(), "HTTPS_PROXY") {
-		t.Fatalf("error = %q, want proxy guidance", err)
+	if strings.Contains(err.Error(), "GitHub Releases") || strings.Contains(err.Error(), "HTTPS_PROXY") {
+		t.Fatalf("error = %q, want no onboarding proxy guidance in update package", err)
 	}
 }
 

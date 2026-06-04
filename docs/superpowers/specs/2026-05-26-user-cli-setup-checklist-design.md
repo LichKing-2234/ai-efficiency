@@ -2,7 +2,7 @@
 
 **Date:** 2026-05-26
 
-**Status:** Approved design for current implementation; 2026-06-04 manual-config/proxy correction approved, pending PR implementation
+**Status:** Approved design for current implementation; 2026-06-04 manual-config/proxy correction implemented in current PR branch
 
 **Scope:** `frontend/src/views/UserView.vue`, `frontend/src/utils/userSetupReview.ts`, `frontend/src/types/index.ts`, `frontend/src/__tests__/`, `docs/architecture.md`, `ae-cli/install.sh`, `ae-cli/install.ps1`
 
