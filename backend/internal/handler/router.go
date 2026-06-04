@@ -75,6 +75,7 @@ func SetupRouter(
 	adminUsersHandler := NewAdminUsersHandler(entClient, encryptionKey)
 	if providerHandler != nil {
 		adminUsersHandler = NewAdminUsersHandler(entClient, encryptionKey, providerHandler)
+		adminUsersHandler.logger = providerHandler.logger
 	}
 
 	api := r.Group("/api/v1")

@@ -384,10 +384,12 @@ describe('AdminUsersView', () => {
       page_size: params?.page_size ?? 20,
     }))
 
-    await wrapper.get('[data-testid="select-user-7"]').setValue(true)
     await wrapper.get('[data-testid="admin-users-next-page"]').trigger('click')
     await flushPromises()
     await wrapper.get('[data-testid="select-user-9"]').setValue(true)
+    await wrapper.get('[data-testid="admin-users-prev-page"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="select-user-7"]').setValue(true)
     await wrapper.get('[data-testid="subscription-provider"]').setValue('3')
     await wrapper.get('[data-testid="subscription-group"]').setValue('42')
     await wrapper.get('[data-testid="manage-subscriptions-submit"]').trigger('click')
@@ -395,7 +397,7 @@ describe('AdminUsersView', () => {
 
     expect(startAdminUserSubscriptionJob).toHaveBeenCalledWith({
       scope: 'selected',
-      user_ids: [7, 9],
+      user_ids: [9, 7],
       operation: 'add',
       provider_id: 3,
       group_id: '42',
@@ -448,5 +450,27 @@ describe('AdminUsersView', () => {
 
     expect(getAdminUserSubscriptionJob).toHaveBeenCalledWith(44)
     expect(wrapper.text()).toContain('Completed: 2 succeeded, 1 skipped, 0 failed')
+  })
+
+  it('disables selection controls while a subscription job is active and keeps polling', async () => {
+    vi.useFakeTimers()
+    const { getAdminUserSubscriptionJob, getLatestAdminUserSubscriptionJob } = await import('@/api/adminUsers')
+    ;(getLatestAdminUserSubscriptionJob as any).mockResolvedValue({
+      data: { data: subscriptionJob({ id: 45, status: 'running', phase: 'processing', total_count: 2, processed_count: 1 }) },
+    })
+    ;(getAdminUserSubscriptionJob as any).mockResolvedValue({
+      data: { data: subscriptionJob({ id: 45, status: 'running', phase: 'processing', total_count: 2, processed_count: 1 }) },
+    })
+
+    const { wrapper } = await mountAdminUsersView()
+
+    expect((wrapper.get('[data-testid="select-user-7"]').element as HTMLInputElement).disabled).toBe(true)
+    expect((wrapper.get('[data-testid="select-all-users"]').element as HTMLInputElement).disabled).toBe(true)
+
+    await vi.advanceTimersByTimeAsync(1500)
+    await flushPromises()
+
+    expect(getAdminUserSubscriptionJob).toHaveBeenCalledWith(45)
+    expect(wrapper.text()).toContain('Processing: 1 / 2')
   })
 })

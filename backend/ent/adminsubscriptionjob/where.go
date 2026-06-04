@@ -499,6 +499,16 @@ func TargetUserIdsNotNil() predicate.AdminSubscriptionJob {
 	return predicate.AdminSubscriptionJob(sql.FieldNotNull(FieldTargetUserIds))
 }
 
+// TargetSnapshotsIsNil applies the IsNil predicate on the "target_snapshots" field.
+func TargetSnapshotsIsNil() predicate.AdminSubscriptionJob {
+	return predicate.AdminSubscriptionJob(sql.FieldIsNull(FieldTargetSnapshots))
+}
+
+// TargetSnapshotsNotNil applies the NotNil predicate on the "target_snapshots" field.
+func TargetSnapshotsNotNil() predicate.AdminSubscriptionJob {
+	return predicate.AdminSubscriptionJob(sql.FieldNotNull(FieldTargetSnapshots))
+}
+
 // RequestedUserIdsIsNil applies the IsNil predicate on the "requested_user_ids" field.
 func RequestedUserIdsIsNil() predicate.AdminSubscriptionJob {
 	return predicate.AdminSubscriptionJob(sql.FieldIsNull(FieldRequestedUserIds))

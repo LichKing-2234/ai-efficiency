@@ -38,6 +38,8 @@ type AdminSubscriptionJob struct {
 	FilterQuery string `json:"filter_query,omitempty"`
 	// TargetUserIds holds the value of the "target_user_ids" field.
 	TargetUserIds []int `json:"target_user_ids,omitempty"`
+	// TargetSnapshots holds the value of the "target_snapshots" field.
+	TargetSnapshots []map[string]interface{} `json:"target_snapshots,omitempty"`
 	// RequestedUserIds holds the value of the "requested_user_ids" field.
 	RequestedUserIds []int `json:"requested_user_ids,omitempty"`
 	// TotalCount holds the value of the "total_count" field.
@@ -70,7 +72,7 @@ func (*AdminSubscriptionJob) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case adminsubscriptionjob.FieldTargetUserIds, adminsubscriptionjob.FieldRequestedUserIds, adminsubscriptionjob.FieldResults:
+		case adminsubscriptionjob.FieldTargetUserIds, adminsubscriptionjob.FieldTargetSnapshots, adminsubscriptionjob.FieldRequestedUserIds, adminsubscriptionjob.FieldResults:
 			values[i] = new([]byte)
 		case adminsubscriptionjob.FieldID, adminsubscriptionjob.FieldProviderID, adminsubscriptionjob.FieldValidityDays, adminsubscriptionjob.FieldDays, adminsubscriptionjob.FieldTotalCount, adminsubscriptionjob.FieldProcessedCount, adminsubscriptionjob.FieldSuccessCount, adminsubscriptionjob.FieldSkippedCount, adminsubscriptionjob.FieldFailedCount:
 			values[i] = new(sql.NullInt64)
@@ -159,6 +161,14 @@ func (asj *AdminSubscriptionJob) assignValues(columns []string, values []any) er
 			} else if value != nil && len(*value) > 0 {
 				if err := json.Unmarshal(*value, &asj.TargetUserIds); err != nil {
 					return fmt.Errorf("unmarshal field target_user_ids: %w", err)
+				}
+			}
+		case adminsubscriptionjob.FieldTargetSnapshots:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field target_snapshots", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &asj.TargetSnapshots); err != nil {
+					return fmt.Errorf("unmarshal field target_snapshots: %w", err)
 				}
 			}
 		case adminsubscriptionjob.FieldRequestedUserIds:
@@ -305,6 +315,9 @@ func (asj *AdminSubscriptionJob) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("target_user_ids=")
 	builder.WriteString(fmt.Sprintf("%v", asj.TargetUserIds))
+	builder.WriteString(", ")
+	builder.WriteString("target_snapshots=")
+	builder.WriteString(fmt.Sprintf("%v", asj.TargetSnapshots))
 	builder.WriteString(", ")
 	builder.WriteString("requested_user_ids=")
 	builder.WriteString(fmt.Sprintf("%v", asj.RequestedUserIds))

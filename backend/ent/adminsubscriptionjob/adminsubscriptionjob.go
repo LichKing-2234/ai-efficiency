@@ -34,6 +34,8 @@ const (
 	FieldFilterQuery = "filter_query"
 	// FieldTargetUserIds holds the string denoting the target_user_ids field in the database.
 	FieldTargetUserIds = "target_user_ids"
+	// FieldTargetSnapshots holds the string denoting the target_snapshots field in the database.
+	FieldTargetSnapshots = "target_snapshots"
 	// FieldRequestedUserIds holds the string denoting the requested_user_ids field in the database.
 	FieldRequestedUserIds = "requested_user_ids"
 	// FieldTotalCount holds the string denoting the total_count field in the database.
@@ -75,6 +77,7 @@ var Columns = []string{
 	FieldDays,
 	FieldFilterQuery,
 	FieldTargetUserIds,
+	FieldTargetSnapshots,
 	FieldRequestedUserIds,
 	FieldTotalCount,
 	FieldProcessedCount,

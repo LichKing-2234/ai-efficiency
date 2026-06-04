@@ -28,6 +28,7 @@ func (AdminSubscriptionJob) Fields() []ent.Field {
 		field.Int("days").Optional(),
 		field.String("filter_query").Optional(),
 		field.JSON("target_user_ids", []int{}).Optional(),
+		field.JSON("target_snapshots", []map[string]any{}).Optional(),
 		field.JSON("requested_user_ids", []int{}).Optional(),
 		field.Int("total_count").Default(0),
 		field.Int("processed_count").Default(0),

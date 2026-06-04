@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/ent/adminsubscriptionjob"
@@ -49,6 +50,56 @@ func (f *fakeSubscriptionOperator) errFor(userID int64) error {
 	return f.failUserIDs[userID]
 }
 
+type blockingSubscriptionOperator struct{}
+
+func (blockingSubscriptionOperator) AssignSubscriptionForUser(ctx context.Context, userID, groupID int64, validityDays int) error {
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+func (blockingSubscriptionOperator) ExtendSubscriptionForUser(ctx context.Context, userID, groupID int64, days int) error {
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+func (blockingSubscriptionOperator) RemoveSubscriptionForUser(ctx context.Context, userID, groupID int64) error {
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+type slowSubscriptionOperator struct {
+	delay       time.Duration
+	assignCalls []subscriptionCall
+}
+
+func (s *slowSubscriptionOperator) AssignSubscriptionForUser(ctx context.Context, userID, groupID int64, validityDays int) error {
+	select {
+	case <-time.After(s.delay):
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	s.assignCalls = append(s.assignCalls, subscriptionCall{Operation: "add", UserID: userID, GroupID: groupID, Days: validityDays})
+	return nil
+}
+
+func (s *slowSubscriptionOperator) ExtendSubscriptionForUser(ctx context.Context, userID, groupID int64, days int) error {
+	select {
+	case <-time.After(s.delay):
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	return nil
+}
+
+func (s *slowSubscriptionOperator) RemoveSubscriptionForUser(ctx context.Context, userID, groupID int64) error {
+	select {
+	case <-time.After(s.delay):
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	return nil
+}
+
 func TestStartJobSnapshotsSelectedUsersWithoutRelayMutation(t *testing.T) {
 	client := testdb.Open(t)
 	defer client.Close()
@@ -78,8 +129,50 @@ func TestStartJobSnapshotsSelectedUsersWithoutRelayMutation(t *testing.T) {
 	if got := job.TargetUserIds; len(got) != 2 || got[0] != bob.ID || got[1] != alice.ID {
 		t.Fatalf("target_user_ids = %v, want [%d %d]", got, bob.ID, alice.ID)
 	}
+	snapshots := TargetSnapshotsFromJob(job)
+	if len(snapshots) != 2 || snapshots[0].UserID != bob.ID || snapshots[0].RelayUserID == nil || *snapshots[0].RelayUserID != 102 || snapshots[1].UserID != alice.ID {
+		t.Fatalf("target snapshots = %+v, want bob then alice with relay IDs", snapshots)
+	}
 	if len(operator.assignCalls) != 0 {
 		t.Fatalf("assign calls = %d, want 0 before RunJob", len(operator.assignCalls))
+	}
+}
+
+func TestRunJobUsesSnapshottedRelayUserID(t *testing.T) {
+	client := testdb.Open(t)
+	defer client.Close()
+	ctx := context.Background()
+	mapped := createAdminSubscriptionUser(t, ctx, client, "mapped", 401)
+	operator := &fakeSubscriptionOperator{}
+	svc := NewService(client)
+	job, err := svc.StartJob(ctx, StartJobRequest{
+		Scope:        "selected",
+		UserIDs:      []int{mapped.ID},
+		Operation:    "add",
+		ProviderID:   7,
+		GroupID:      "42",
+		ValidityDays: 30,
+	})
+	if err != nil {
+		t.Fatalf("StartJob error: %v", err)
+	}
+	if _, err := client.User.UpdateOneID(mapped.ID).SetRelayUserID(999).Save(ctx); err != nil {
+		t.Fatalf("update relay user id: %v", err)
+	}
+
+	if err := svc.RunJob(ctx, job.ID, operator); err != nil {
+		t.Fatalf("RunJob error: %v", err)
+	}
+	if len(operator.assignCalls) != 1 || operator.assignCalls[0].UserID != 401 {
+		t.Fatalf("assign calls = %+v, want snapshotted relay user 401", operator.assignCalls)
+	}
+	loaded, err := svc.GetJob(ctx, job.ID)
+	if err != nil {
+		t.Fatalf("GetJob error: %v", err)
+	}
+	results := ResultsFromJob(loaded)
+	if len(results) != 1 || results[0].RelayUserID == nil || *results[0].RelayUserID != 401 {
+		t.Fatalf("results = %+v, want snapshotted relay user 401", results)
 	}
 }
 
@@ -122,6 +215,117 @@ func TestRunJobSkipsUnmappedUsersAndContinues(t *testing.T) {
 	results := ResultsFromJob(loaded)
 	if len(results) != 2 || results[1].Status != "skipped" || !strings.Contains(results[1].Message, "not linked") {
 		t.Fatalf("results = %+v, want skipped unmapped second row", results)
+	}
+}
+
+func TestRunJobRecordsPerUserTimeoutAndCompletes(t *testing.T) {
+	client := testdb.Open(t)
+	defer client.Close()
+	ctx := context.Background()
+	mapped := createAdminSubscriptionUser(t, ctx, client, "mapped", 501)
+	svc := NewService(client)
+	svc.perTargetTimeout = 10 * time.Millisecond
+	job, err := svc.StartJob(ctx, StartJobRequest{
+		Scope:        "selected",
+		UserIDs:      []int{mapped.ID},
+		Operation:    "add",
+		ProviderID:   7,
+		GroupID:      "42",
+		ValidityDays: 30,
+	})
+	if err != nil {
+		t.Fatalf("StartJob error: %v", err)
+	}
+
+	if err := svc.RunJob(ctx, job.ID, blockingSubscriptionOperator{}); err != nil {
+		t.Fatalf("RunJob error: %v", err)
+	}
+	loaded, err := svc.GetJob(ctx, job.ID)
+	if err != nil {
+		t.Fatalf("GetJob error: %v", err)
+	}
+	if loaded.Status != adminsubscriptionjob.StatusCompleted || loaded.ProcessedCount != 1 || loaded.FailedCount != 1 {
+		t.Fatalf("job status=%s processed=%d failed=%d, want completed 1/1", loaded.Status, loaded.ProcessedCount, loaded.FailedCount)
+	}
+	results := ResultsFromJob(loaded)
+	if len(results) != 1 || results[0].Status != "failed" || !strings.Contains(results[0].Message, "deadline exceeded") {
+		t.Fatalf("results = %+v, want per-user timeout failure", results)
+	}
+}
+
+func TestRunJobDoesNotUseBaseJobTimeoutAsHardCapForMultipleTargets(t *testing.T) {
+	client := testdb.Open(t)
+	defer client.Close()
+	ctx := context.Background()
+	alice := createAdminSubscriptionUser(t, ctx, client, "alice", 701)
+	bob := createAdminSubscriptionUser(t, ctx, client, "bob", 702)
+	svc := NewService(client)
+	svc.jobTimeout = 15 * time.Millisecond
+	svc.perTargetTimeout = 20 * time.Millisecond
+	operator := &slowSubscriptionOperator{delay: 10 * time.Millisecond}
+	job, err := svc.StartJob(ctx, StartJobRequest{
+		Scope:        "selected",
+		UserIDs:      []int{alice.ID, bob.ID},
+		Operation:    "add",
+		ProviderID:   7,
+		GroupID:      "42",
+		ValidityDays: 30,
+	})
+	if err != nil {
+		t.Fatalf("StartJob error: %v", err)
+	}
+
+	if err := svc.RunJob(ctx, job.ID, operator); err != nil {
+		t.Fatalf("RunJob error: %v", err)
+	}
+	if len(operator.assignCalls) != 2 {
+		t.Fatalf("assign calls = %+v, want both targets processed", operator.assignCalls)
+	}
+	loaded, err := svc.GetJob(ctx, job.ID)
+	if err != nil {
+		t.Fatalf("GetJob error: %v", err)
+	}
+	if loaded.Status != adminsubscriptionjob.StatusCompleted || loaded.SuccessCount != 2 || loaded.FailedCount != 0 {
+		t.Fatalf("job status=%s success=%d failed=%d, want completed 2/0", loaded.Status, loaded.SuccessCount, loaded.FailedCount)
+	}
+}
+
+func TestGetLatestJobAbandonsStaleActiveJob(t *testing.T) {
+	client := testdb.Open(t)
+	defer client.Close()
+	ctx := context.Background()
+	mapped := createAdminSubscriptionUser(t, ctx, client, "stale", 601)
+	svc := NewService(client)
+	svc.staleJobAfter = time.Millisecond
+	job, err := svc.StartJob(ctx, StartJobRequest{
+		Scope:        "selected",
+		UserIDs:      []int{mapped.ID},
+		Operation:    "add",
+		ProviderID:   7,
+		GroupID:      "42",
+		ValidityDays: 30,
+	})
+	if err != nil {
+		t.Fatalf("StartJob error: %v", err)
+	}
+	staleTime := time.Now().Add(-2 * time.Hour)
+	if _, err := client.AdminSubscriptionJob.UpdateOneID(job.ID).
+		SetStatus(adminsubscriptionjob.StatusRunning).
+		SetPhase(adminsubscriptionjob.PhaseProcessing).
+		SetUpdatedAt(staleTime).
+		Save(ctx); err != nil {
+		t.Fatalf("make job stale: %v", err)
+	}
+
+	latest, err := svc.GetLatestJob(ctx)
+	if err != nil {
+		t.Fatalf("GetLatestJob error: %v", err)
+	}
+	if latest.ID != job.ID || latest.Status != adminsubscriptionjob.StatusAbandoned || latest.Phase != adminsubscriptionjob.PhaseFailed {
+		t.Fatalf("latest job id/status/phase = %d/%s/%s, want abandoned stale job %d", latest.ID, latest.Status, latest.Phase, job.ID)
+	}
+	if latest.LastError == nil || !strings.Contains(*latest.LastError, "abandoned") {
+		t.Fatalf("last_error = %v, want abandoned message", latest.LastError)
 	}
 }
 

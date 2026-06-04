@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -17,6 +18,7 @@ import (
 	"github.com/ai-efficiency/backend/internal/pkg"
 	"github.com/ai-efficiency/backend/internal/relay"
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 )
 
 type AdminUsersHandler struct {
@@ -24,6 +26,7 @@ type AdminUsersHandler struct {
 	encryptionKey    string
 	resolver         adminUsersProviderResolver
 	subscriptionJobs *adminsubscription.Service
+	logger           *zap.Logger
 }
 
 type adminUsersProviderResolver interface {
@@ -164,6 +167,7 @@ func NewAdminUsersHandler(entClient *ent.Client, encryptionKey string, resolvers
 		encryptionKey:    strings.TrimSpace(encryptionKey),
 		resolver:         resolver,
 		subscriptionJobs: adminsubscription.NewService(entClient),
+		logger:           zap.NewNop(),
 	}
 }
 
@@ -329,7 +333,16 @@ func (h *AdminUsersHandler) StartSubscriptionJob(c *gin.Context) {
 
 	operator := adminRelaySubscriptionJobOperator{provider: rp}
 	go func(jobID int) {
-		_ = h.subscriptionJobs.RunJob(context.Background(), jobID, operator)
+		if err := h.subscriptionJobs.RunJob(context.Background(), jobID, operator); err != nil && h.logger != nil {
+			h.logger.Error(
+				"admin subscription job failed",
+				zap.Int("job_id", jobID),
+				zap.Int("provider_id", req.ProviderID),
+				zap.String("group_id", req.GroupID),
+				zap.String("operation", req.Operation),
+				zap.Error(err),
+			)
+		}
 	}(job.ID)
 
 	pkg.Success(c, adminSubscriptionJobResponseFromEnt(job))
@@ -699,11 +712,15 @@ func adminSubscriptionJobResponseFromEnt(job *ent.AdminSubscriptionJob) adminSub
 }
 
 func adminSubscriptionJobErrorStatus(err error) int {
-	message := err.Error()
-	if strings.Contains(message, "maximum is") {
+	var tooManyTargets *adminsubscription.TooManyTargetsError
+	if errors.As(err, &tooManyTargets) {
 		return http.StatusUnprocessableEntity
 	}
-	return http.StatusBadRequest
+	var validationErr *adminsubscription.ValidationError
+	if errors.As(err, &validationErr) {
+		return http.StatusBadRequest
+	}
+	return http.StatusInternalServerError
 }
 
 func (h *AdminUsersHandler) subscriptionTargetsForScope(c *gin.Context, req adminManageSubscriptionsRequest) ([]adminManageSubscriptionTarget, bool) {

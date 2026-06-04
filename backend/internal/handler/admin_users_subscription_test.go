@@ -158,6 +158,18 @@ func TestAdminUsersStartSubscriptionJobReturnsQueuedWithoutWaitingForRelayMutati
 	}
 }
 
+func TestAdminSubscriptionJobErrorStatusClassifiesValidationAndInternalErrors(t *testing.T) {
+	if got := adminSubscriptionJobErrorStatus(adminsubscription.NewValidationError("scope is required")); got != http.StatusBadRequest {
+		t.Fatalf("validation status = %d, want 400", got)
+	}
+	if got := adminSubscriptionJobErrorStatus(adminsubscription.NewTooManyTargetsError(500)); got != http.StatusUnprocessableEntity {
+		t.Fatalf("too many targets status = %d, want 422", got)
+	}
+	if got := adminSubscriptionJobErrorStatus(errors.New("list users: database unavailable")); got != http.StatusInternalServerError {
+		t.Fatalf("internal status = %d, want 500", got)
+	}
+}
+
 func TestAdminUsersGetSubscriptionJobReturnsProgressAndResults(t *testing.T) {
 	t.Parallel()
 

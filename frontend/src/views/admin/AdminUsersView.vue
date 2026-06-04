@@ -69,7 +69,7 @@ const filters = reactive({
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / filters.page_size)))
 const canGoPrev = computed(() => filters.page > 1)
 const canGoNext = computed(() => filters.page < totalPages.value)
-const selectedUserIdList = computed(() => Array.from(selectedUserIds.value).sort((a, b) => a - b))
+const selectedUserIdList = computed(() => Array.from(selectedUserIds.value))
 const selectedCount = computed(() => selectedUserIdList.value.length)
 const allVisibleSelected = computed(() => rows.value.length > 0 && rows.value.every((row) => selectedUserIds.value.has(row.id)))
 const visibleSelectionIndeterminate = computed(() => rows.value.some((row) => selectedUserIds.value.has(row.id)) && !allVisibleSelected.value)
@@ -679,6 +679,7 @@ onBeforeUnmount(() => {
                   class="mt-1 h-4 w-4 rounded border-gray-300"
                   type="checkbox"
                   :checked="selectedUserIds.has(row.id)"
+                  :disabled="subscriptionForm.loading"
                   @change="setUserSelected(row.id, ($event.target as HTMLInputElement).checked)"
                 />
                 <span class="min-w-0">
@@ -753,6 +754,7 @@ onBeforeUnmount(() => {
                     type="checkbox"
                     :checked="allVisibleSelected"
                     :aria-checked="visibleSelectionIndeterminate ? 'mixed' : allVisibleSelected"
+                    :disabled="subscriptionForm.loading"
                     @change="setAllVisibleSelected(($event.target as HTMLInputElement).checked)"
                   />
                 </th>
@@ -774,6 +776,7 @@ onBeforeUnmount(() => {
                     class="h-4 w-4 rounded border-gray-300"
                     type="checkbox"
                     :checked="selectedUserIds.has(row.id)"
+                    :disabled="subscriptionForm.loading"
                     @change="setUserSelected(row.id, ($event.target as HTMLInputElement).checked)"
                   />
                 </td>

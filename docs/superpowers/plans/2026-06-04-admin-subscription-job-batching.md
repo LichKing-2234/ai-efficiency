@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go, Gin, Ent, SQLite/PostgreSQL auto-migration, Vue 3, Vite/Vitest, TailwindCSS, existing `backend/internal/relay.Provider` adapter interfaces.
 
-**Status:** Completed and verified. The previous frontend-only timeout patch was reverted; the implementation now uses async job processing.
+**Status:** Completed and verified, including code-review follow-up for relay-user target snapshots, target-count-scaled backend timeouts, active-job selection locking, and typed job-start errors. The previous frontend-only timeout patch was reverted; the implementation now uses async job processing.
 
 ---
 
@@ -153,6 +153,7 @@ func (AdminSubscriptionJob) Fields() []ent.Field {
 		field.Int("days").Optional(),
 		field.String("filter_query").Optional(),
 		field.JSON("target_user_ids", []int{}).Optional(),
+		field.JSON("target_snapshots", []map[string]any{}).Optional(),
 		field.JSON("requested_user_ids", []int{}).Optional(),
 		field.Int("total_count").Default(0),
 		field.Int("processed_count").Default(0),

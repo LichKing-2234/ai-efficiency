@@ -152,7 +152,7 @@ Response:
 }
 ```
 
-The response is intentionally small and immediate. It snapshots the target user set and creates the durable job, but it does not wait for sub2api subscription mutation calls.
+The response is intentionally small and immediate. It snapshots the target user set and creates the durable job, but it does not wait for sub2api subscription mutation calls. The persisted target snapshot includes the local `user_id`, display fields, the current `relay_user_id`, and a missing-user marker when applicable; job execution uses that snapshot instead of re-reading mutable local user mappings.
 
 ### Read Subscription Job
 
@@ -200,12 +200,13 @@ Rules:
 
 1. The relay provider must exist, be enabled, support group listing, and expose the selected group as assignable.
 2. Invalid provider/group/operation/scope input fails the whole request.
-3. The backend resolves and stores the target local user snapshot when the job is created, so later filter or page changes do not affect the running job.
-4. Per-user relay mutation errors become `failed` result rows and do not stop later users in the same job.
-5. Unmapped local users become `skipped` result rows unless the scope is `all_mapped`, which excludes them before execution.
+3. The backend resolves and stores the target local user snapshot when the job is created, so later filter, page, or local `relay_user_id` changes do not affect the running job.
+4. Per-user relay mutation errors, including per-target timeout errors, become `failed` result rows and do not stop later users in the same job.
+5. Unmapped local users become `skipped` result rows based on the snapshotted `relay_user_id` unless the scope is `all_mapped`, which excludes them before execution.
 6. `selected` scope reports stale or unknown positive local user IDs as `failed` result rows instead of silently dropping them.
 7. Requests with more than 500 target users fail with 422 before a job is created; admins must narrow the filter or selected set.
 8. Subscription mutations edit relay/sub2api state only; local user identity fields are not edited.
+9. Jobs are bounded by backend deadlines: each relay mutation has a per-target deadline, and the whole-job deadline scales with the target count so a valid 500-user job is not cut off by a fixed short cap. Queued or running jobs that have not recorded progress for more than one hour are marked `abandoned` before latest-job recovery returns an active job.
 
 ### Compatibility: Synchronous Batch
 

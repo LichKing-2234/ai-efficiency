@@ -14,7 +14,38 @@ import (
 	entuser "github.com/ai-efficiency/backend/ent/user"
 )
 
-const MaxTargets = 500
+const (
+	MaxTargets                     = 500
+	defaultJobTimeout              = 30 * time.Minute
+	defaultPerTargetTimeout        = 30 * time.Second
+	defaultFailureUpdateTimeout    = 5 * time.Second
+	defaultStaleJobAfter           = time.Hour
+	staleAdminSubscriptionJobError = "admin subscription job was abandoned after no progress was recorded for more than 1h."
+)
+
+type ValidationError struct {
+	message string
+}
+
+func NewValidationError(message string) error {
+	return &ValidationError{message: message}
+}
+
+func (e *ValidationError) Error() string {
+	return e.message
+}
+
+type TooManyTargetsError struct {
+	Max int
+}
+
+func NewTooManyTargetsError(max int) error {
+	return &TooManyTargetsError{Max: max}
+}
+
+func (e *TooManyTargetsError) Error() string {
+	return fmt.Sprintf("subscription batch targets too many; maximum is %d users", e.Max)
+}
 
 type StartJobRequest struct {
 	Scope        string
@@ -36,6 +67,14 @@ type ResultRow struct {
 	Message     string `json:"message,omitempty"`
 }
 
+type TargetSnapshot struct {
+	UserID      int    `json:"user_id"`
+	Username    string `json:"username,omitempty"`
+	Email       string `json:"email,omitempty"`
+	RelayUserID *int   `json:"relay_user_id,omitempty"`
+	Missing     bool   `json:"missing,omitempty"`
+}
+
 type SubscriptionOperator interface {
 	AssignSubscriptionForUser(ctx context.Context, userID, groupID int64, validityDays int) error
 	ExtendSubscriptionForUser(ctx context.Context, userID, groupID int64, days int) error
@@ -43,11 +82,21 @@ type SubscriptionOperator interface {
 }
 
 type Service struct {
-	client *ent.Client
+	client               *ent.Client
+	jobTimeout           time.Duration
+	perTargetTimeout     time.Duration
+	failureUpdateTimeout time.Duration
+	staleJobAfter        time.Duration
 }
 
 func NewService(client *ent.Client) *Service {
-	return &Service{client: client}
+	return &Service{
+		client:               client,
+		jobTimeout:           defaultJobTimeout,
+		perTargetTimeout:     defaultPerTargetTimeout,
+		failureUpdateTimeout: defaultFailureUpdateTimeout,
+		staleJobAfter:        defaultStaleJobAfter,
+	}
 }
 
 func (s *Service) StartJob(ctx context.Context, req StartJobRequest) (*ent.AdminSubscriptionJob, error) {
@@ -60,7 +109,7 @@ func (s *Service) StartJob(ctx context.Context, req StartJobRequest) (*ent.Admin
 	req.GroupID = strings.TrimSpace(req.GroupID)
 	req.FilterQuery = strings.TrimSpace(req.FilterQuery)
 	if req.ProviderID <= 0 {
-		return nil, fmt.Errorf("provider_id is required")
+		return nil, NewValidationError("provider_id is required")
 	}
 	if _, err := parseGroupID(req.GroupID); err != nil {
 		return nil, err
@@ -73,7 +122,11 @@ func (s *Service) StartJob(ctx context.Context, req StartJobRequest) (*ent.Admin
 	if err != nil {
 		return nil, err
 	}
-	targetIDs, requestedIDs, err := s.resolveTargets(ctx, scope, req)
+	targetIDs, requestedIDs, targetSnapshots, err := s.resolveTargets(ctx, scope, req)
+	if err != nil {
+		return nil, err
+	}
+	targetSnapshotMaps, err := targetSnapshotsToMaps(targetSnapshots)
 	if err != nil {
 		return nil, err
 	}
@@ -89,6 +142,7 @@ func (s *Service) StartJob(ctx context.Context, req StartJobRequest) (*ent.Admin
 		SetDays(req.Days).
 		SetFilterQuery(req.FilterQuery).
 		SetTargetUserIds(targetIDs).
+		SetTargetSnapshots(targetSnapshotMaps).
 		SetRequestedUserIds(requestedIDs).
 		SetTotalCount(len(targetIDs)).
 		SetProcessedCount(0).
@@ -118,20 +172,30 @@ func (s *Service) RunJob(ctx context.Context, jobID int, operator SubscriptionOp
 	if _, err := operationFromJob(job.Operation); err != nil {
 		return s.failJob(ctx, jobID, err)
 	}
+	targetSnapshots := TargetSnapshotsFromJob(job)
+	if len(targetSnapshots) == 0 {
+		targetSnapshots = s.targetSnapshotsFromIDs(ctx, job.TargetUserIds)
+	}
+
+	runCtx, cancel := s.runContext(ctx, len(targetSnapshots))
+	defer cancel()
 
 	now := time.Now()
 	if _, err := s.client.AdminSubscriptionJob.UpdateOneID(job.ID).
 		SetStatus(adminsubscriptionjob.StatusRunning).
 		SetPhase(adminsubscriptionjob.PhaseProcessing).
 		SetStartedAt(now).
-		Save(ctx); err != nil {
+		Save(runCtx); err != nil {
 		return fmt.Errorf("mark subscription job running: %w", err)
 	}
 
 	results := ResultsFromJob(job)
 	processed, success, skipped, failed := job.ProcessedCount, job.SuccessCount, job.SkippedCount, job.FailedCount
-	for _, userID := range job.TargetUserIds {
-		row := s.runTarget(ctx, job, operator, groupID, userID)
+	for _, target := range targetSnapshots {
+		if err := runCtx.Err(); err != nil {
+			return s.failJobWithFreshContext(job.ID, fmt.Errorf("subscription job deadline exceeded: %w", err))
+		}
+		row := s.runTarget(runCtx, job, operator, groupID, target)
 		results = append(results, row)
 		processed++
 		switch row.Status {
@@ -142,8 +206,8 @@ func (s *Service) RunJob(ctx context.Context, jobID int, operator SubscriptionOp
 		default:
 			failed++
 		}
-		if err := s.saveProgress(ctx, job.ID, results, processed, success, skipped, failed); err != nil {
-			return err
+		if err := s.saveProgress(runCtx, job.ID, results, processed, success, skipped, failed); err != nil {
+			return s.failJobWithFreshContext(job.ID, err)
 		}
 	}
 
@@ -152,8 +216,8 @@ func (s *Service) RunJob(ctx context.Context, jobID int, operator SubscriptionOp
 		SetStatus(adminsubscriptionjob.StatusCompleted).
 		SetPhase(adminsubscriptionjob.PhaseCompleted).
 		SetCompletedAt(completedAt).
-		Save(ctx); err != nil {
-		return fmt.Errorf("mark subscription job completed: %w", err)
+		Save(runCtx); err != nil {
+		return s.failJobWithFreshContext(job.ID, fmt.Errorf("mark subscription job completed: %w", err))
 	}
 	return nil
 }
@@ -168,6 +232,9 @@ func (s *Service) GetJob(ctx context.Context, id int) (*ent.AdminSubscriptionJob
 func (s *Service) GetLatestJob(ctx context.Context) (*ent.AdminSubscriptionJob, error) {
 	if s == nil || s.client == nil {
 		return nil, fmt.Errorf("admin subscription service is not configured")
+	}
+	if err := s.abandonStaleJobs(ctx); err != nil {
+		return nil, err
 	}
 	active, err := s.client.AdminSubscriptionJob.Query().
 		Where(adminsubscriptionjob.StatusIn(adminsubscriptionjob.StatusQueued, adminsubscriptionjob.StatusRunning)).
@@ -199,18 +266,49 @@ func ResultsFromJob(job *ent.AdminSubscriptionJob) []ResultRow {
 	return rows
 }
 
-func (s *Service) resolveTargets(ctx context.Context, scope adminsubscriptionjob.Scope, req StartJobRequest) ([]int, []int, error) {
+func TargetSnapshotsFromJob(job *ent.AdminSubscriptionJob) []TargetSnapshot {
+	if job == nil || len(job.TargetSnapshots) == 0 {
+		return nil
+	}
+	data, err := json.Marshal(job.TargetSnapshots)
+	if err != nil {
+		return nil
+	}
+	var rows []TargetSnapshot
+	if err := json.Unmarshal(data, &rows); err != nil {
+		return nil
+	}
+	return rows
+}
+
+func (s *Service) resolveTargets(ctx context.Context, scope adminsubscriptionjob.Scope, req StartJobRequest) ([]int, []int, []TargetSnapshot, error) {
 	query := s.client.User.Query()
 	switch scope {
 	case adminsubscriptionjob.ScopeSelected:
 		ids := uniquePositiveInts(req.UserIDs)
 		if len(ids) == 0 {
-			return nil, nil, fmt.Errorf("user_ids is required for selected scope")
+			return nil, nil, nil, NewValidationError("user_ids is required for selected scope")
 		}
 		if len(ids) > MaxTargets {
-			return nil, nil, fmt.Errorf("subscription batch targets too many; maximum is %d users", MaxTargets)
+			return nil, nil, nil, NewTooManyTargetsError(MaxTargets)
 		}
-		return ids, ids, nil
+		users, err := query.Where(entuser.IDIn(ids...)).All(ctx)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("list users: %w", err)
+		}
+		usersByID := make(map[int]*ent.User, len(users))
+		for _, u := range users {
+			usersByID[u.ID] = u
+		}
+		snapshots := make([]TargetSnapshot, 0, len(ids))
+		for _, id := range ids {
+			if u := usersByID[id]; u != nil {
+				snapshots = append(snapshots, targetSnapshotFromUser(u))
+				continue
+			}
+			snapshots = append(snapshots, TargetSnapshot{UserID: id, Missing: true})
+		}
+		return ids, ids, snapshots, nil
 	case adminsubscriptionjob.ScopeCurrentFilter:
 		if req.FilterQuery != "" {
 			query = query.Where(searchPredicate(req.FilterQuery))
@@ -218,7 +316,7 @@ func (s *Service) resolveTargets(ctx context.Context, scope adminsubscriptionjob
 	case adminsubscriptionjob.ScopeAllMapped:
 		query = query.Where(entuser.RelayUserIDNotNil(), entuser.RelayUserIDGT(0))
 	default:
-		return nil, nil, fmt.Errorf("scope must be selected, current_filter, or all_mapped")
+		return nil, nil, nil, NewValidationError("scope must be selected, current_filter, or all_mapped")
 	}
 
 	users, err := query.
@@ -226,50 +324,49 @@ func (s *Service) resolveTargets(ctx context.Context, scope adminsubscriptionjob
 		Limit(MaxTargets + 1).
 		All(ctx)
 	if err != nil {
-		return nil, nil, fmt.Errorf("list users: %w", err)
+		return nil, nil, nil, fmt.Errorf("list users: %w", err)
 	}
 	if len(users) > MaxTargets {
-		return nil, nil, fmt.Errorf("subscription batch targets too many; maximum is %d users", MaxTargets)
+		return nil, nil, nil, NewTooManyTargetsError(MaxTargets)
 	}
 	ids := make([]int, 0, len(users))
+	snapshots := make([]TargetSnapshot, 0, len(users))
 	for _, u := range users {
 		ids = append(ids, u.ID)
+		snapshots = append(snapshots, targetSnapshotFromUser(u))
 	}
-	return ids, nil, nil
+	return ids, nil, snapshots, nil
 }
 
-func (s *Service) runTarget(ctx context.Context, job *ent.AdminSubscriptionJob, operator SubscriptionOperator, groupID int64, userID int) ResultRow {
-	u, err := s.client.User.Get(ctx, userID)
-	if err != nil {
-		row := ResultRow{UserID: userID, Status: "failed"}
-		if ent.IsNotFound(err) {
-			row.Message = "user not found"
-		} else {
-			row.Message = fmt.Sprintf("get user: %v", err)
-		}
-		return row
+func (s *Service) runTarget(ctx context.Context, job *ent.AdminSubscriptionJob, operator SubscriptionOperator, groupID int64, target TargetSnapshot) ResultRow {
+	if target.Missing {
+		return ResultRow{UserID: target.UserID, Status: "failed", Message: "user not found"}
 	}
 
 	row := ResultRow{
-		UserID:      u.ID,
-		Username:    u.Username,
-		Email:       u.Email,
-		RelayUserID: u.RelayUserID,
+		UserID:      target.UserID,
+		Username:    target.Username,
+		Email:       target.Email,
+		RelayUserID: target.RelayUserID,
 	}
-	if u.RelayUserID == nil || *u.RelayUserID <= 0 {
+	if target.RelayUserID == nil || *target.RelayUserID <= 0 {
 		row.Status = "skipped"
 		row.Message = "user is not linked to a relay user"
 		return row
 	}
 
+	targetCtx, cancel := s.targetContext(ctx)
+	defer cancel()
+
+	relayUserID := int64(*target.RelayUserID)
 	var opErr error
 	switch job.Operation {
 	case adminsubscriptionjob.OperationAdd:
-		opErr = operator.AssignSubscriptionForUser(ctx, int64(*u.RelayUserID), groupID, job.ValidityDays)
+		opErr = operator.AssignSubscriptionForUser(targetCtx, relayUserID, groupID, job.ValidityDays)
 	case adminsubscriptionjob.OperationExtend:
-		opErr = operator.ExtendSubscriptionForUser(ctx, int64(*u.RelayUserID), groupID, job.Days)
+		opErr = operator.ExtendSubscriptionForUser(targetCtx, relayUserID, groupID, job.Days)
 	case adminsubscriptionjob.OperationRemove:
-		opErr = operator.RemoveSubscriptionForUser(ctx, int64(*u.RelayUserID), groupID)
+		opErr = operator.RemoveSubscriptionForUser(targetCtx, relayUserID, groupID)
 	default:
 		opErr = fmt.Errorf("operation must be add, extend, or remove")
 	}
@@ -280,6 +377,28 @@ func (s *Service) runTarget(ctx context.Context, job *ent.AdminSubscriptionJob, 
 	}
 	row.Status = "success"
 	return row
+}
+
+func (s *Service) targetSnapshotsFromIDs(ctx context.Context, userIDs []int) []TargetSnapshot {
+	snapshots := make([]TargetSnapshot, 0, len(userIDs))
+	for _, id := range userIDs {
+		u, err := s.client.User.Get(ctx, id)
+		if err != nil {
+			snapshots = append(snapshots, TargetSnapshot{UserID: id, Missing: true})
+			continue
+		}
+		snapshots = append(snapshots, targetSnapshotFromUser(u))
+	}
+	return snapshots
+}
+
+func targetSnapshotFromUser(u *ent.User) TargetSnapshot {
+	return TargetSnapshot{
+		UserID:      u.ID,
+		Username:    u.Username,
+		Email:       u.Email,
+		RelayUserID: u.RelayUserID,
+	}
 }
 
 func (s *Service) saveProgress(ctx context.Context, jobID int, rows []ResultRow, processed, success, skipped, failed int) error {
@@ -313,6 +432,81 @@ func (s *Service) failJob(ctx context.Context, jobID int, cause error) error {
 	return cause
 }
 
+func (s *Service) failJobWithFreshContext(jobID int, cause error) error {
+	timeout := s.failureUpdateTimeout
+	if timeout <= 0 {
+		timeout = defaultFailureUpdateTimeout
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	if err := s.failJob(ctx, jobID, cause); err != nil {
+		return fmt.Errorf("%v; additionally failed to mark subscription job failed: %w", cause, err)
+	}
+	return cause
+}
+
+func (s *Service) runContext(ctx context.Context, targetCount int) (context.Context, context.CancelFunc) {
+	timeout := s.jobTimeout
+	if s.perTargetTimeout > 0 && targetCount > 0 {
+		targetBudget := time.Duration(targetCount) * s.perTargetTimeout
+		if timeout <= 0 {
+			timeout = targetBudget
+		} else {
+			timeout += targetBudget
+		}
+	}
+	if timeout <= 0 {
+		return ctx, func() {}
+	}
+	if _, ok := ctx.Deadline(); ok {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, timeout)
+}
+
+func (s *Service) targetContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	if s.perTargetTimeout <= 0 {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, s.perTargetTimeout)
+}
+
+func (s *Service) abandonStaleJobs(ctx context.Context) error {
+	if s.staleJobAfter <= 0 {
+		return nil
+	}
+	cutoff := time.Now().Add(-s.staleJobAfter)
+	now := time.Now()
+	if _, err := s.client.AdminSubscriptionJob.Update().
+		Where(
+			adminsubscriptionjob.StatusIn(adminsubscriptionjob.StatusQueued, adminsubscriptionjob.StatusRunning),
+			adminsubscriptionjob.UpdatedAtLT(cutoff),
+		).
+		SetStatus(adminsubscriptionjob.StatusAbandoned).
+		SetPhase(adminsubscriptionjob.PhaseFailed).
+		SetLastError(staleAdminSubscriptionJobError).
+		SetCompletedAt(now).
+		Save(ctx); err != nil {
+		return fmt.Errorf("abandon stale subscription jobs: %w", err)
+	}
+	return nil
+}
+
+func targetSnapshotsToMaps(rows []TargetSnapshot) ([]map[string]interface{}, error) {
+	data, err := json.Marshal(rows)
+	if err != nil {
+		return nil, fmt.Errorf("marshal subscription job targets: %w", err)
+	}
+	var values []map[string]interface{}
+	if err := json.Unmarshal(data, &values); err != nil {
+		return nil, fmt.Errorf("unmarshal subscription job targets: %w", err)
+	}
+	if values == nil {
+		values = []map[string]interface{}{}
+	}
+	return values, nil
+}
+
 func resultRowsToMaps(rows []ResultRow) ([]map[string]interface{}, error) {
 	data, err := json.Marshal(rows)
 	if err != nil {
@@ -337,7 +531,7 @@ func validateScope(scope string) (adminsubscriptionjob.Scope, error) {
 	case string(adminsubscriptionjob.ScopeAllMapped):
 		return adminsubscriptionjob.ScopeAllMapped, nil
 	default:
-		return "", fmt.Errorf("scope must be selected, current_filter, or all_mapped")
+		return "", NewValidationError("scope must be selected, current_filter, or all_mapped")
 	}
 }
 
@@ -345,18 +539,18 @@ func validateOperation(req StartJobRequest) (adminsubscriptionjob.Operation, err
 	switch req.Operation {
 	case string(adminsubscriptionjob.OperationAdd):
 		if req.ValidityDays <= 0 {
-			return "", fmt.Errorf("validity_days is required")
+			return "", NewValidationError("validity_days is required")
 		}
 		return adminsubscriptionjob.OperationAdd, nil
 	case string(adminsubscriptionjob.OperationExtend):
 		if req.Days <= 0 {
-			return "", fmt.Errorf("days is required")
+			return "", NewValidationError("days is required")
 		}
 		return adminsubscriptionjob.OperationExtend, nil
 	case string(adminsubscriptionjob.OperationRemove):
 		return adminsubscriptionjob.OperationRemove, nil
 	default:
-		return "", fmt.Errorf("operation must be add, extend, or remove")
+		return "", NewValidationError("operation must be add, extend, or remove")
 	}
 }
 
@@ -372,7 +566,7 @@ func operationFromJob(operation adminsubscriptionjob.Operation) (adminsubscripti
 func parseGroupID(groupID string) (int64, error) {
 	parsed, err := strconv.ParseInt(strings.TrimSpace(groupID), 10, 64)
 	if err != nil || parsed <= 0 {
-		return 0, fmt.Errorf("group_id is required")
+		return 0, NewValidationError("group_id is required")
 	}
 	return parsed, nil
 }

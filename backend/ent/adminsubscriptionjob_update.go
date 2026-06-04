@@ -212,6 +212,24 @@ func (asju *AdminSubscriptionJobUpdate) ClearTargetUserIds() *AdminSubscriptionJ
 	return asju
 }
 
+// SetTargetSnapshots sets the "target_snapshots" field.
+func (asju *AdminSubscriptionJobUpdate) SetTargetSnapshots(m []map[string]interface{}) *AdminSubscriptionJobUpdate {
+	asju.mutation.SetTargetSnapshots(m)
+	return asju
+}
+
+// AppendTargetSnapshots appends m to the "target_snapshots" field.
+func (asju *AdminSubscriptionJobUpdate) AppendTargetSnapshots(m []map[string]interface{}) *AdminSubscriptionJobUpdate {
+	asju.mutation.AppendTargetSnapshots(m)
+	return asju
+}
+
+// ClearTargetSnapshots clears the value of the "target_snapshots" field.
+func (asju *AdminSubscriptionJobUpdate) ClearTargetSnapshots() *AdminSubscriptionJobUpdate {
+	asju.mutation.ClearTargetSnapshots()
+	return asju
+}
+
 // SetRequestedUserIds sets the "requested_user_ids" field.
 func (asju *AdminSubscriptionJobUpdate) SetRequestedUserIds(i []int) *AdminSubscriptionJobUpdate {
 	asju.mutation.SetRequestedUserIds(i)
@@ -567,6 +585,17 @@ func (asju *AdminSubscriptionJobUpdate) sqlSave(ctx context.Context) (n int, err
 	if asju.mutation.TargetUserIdsCleared() {
 		_spec.ClearField(adminsubscriptionjob.FieldTargetUserIds, field.TypeJSON)
 	}
+	if value, ok := asju.mutation.TargetSnapshots(); ok {
+		_spec.SetField(adminsubscriptionjob.FieldTargetSnapshots, field.TypeJSON, value)
+	}
+	if value, ok := asju.mutation.AppendedTargetSnapshots(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, adminsubscriptionjob.FieldTargetSnapshots, value)
+		})
+	}
+	if asju.mutation.TargetSnapshotsCleared() {
+		_spec.ClearField(adminsubscriptionjob.FieldTargetSnapshots, field.TypeJSON)
+	}
 	if value, ok := asju.mutation.RequestedUserIds(); ok {
 		_spec.SetField(adminsubscriptionjob.FieldRequestedUserIds, field.TypeJSON, value)
 	}
@@ -843,6 +872,24 @@ func (asjuo *AdminSubscriptionJobUpdateOne) AppendTargetUserIds(i []int) *AdminS
 // ClearTargetUserIds clears the value of the "target_user_ids" field.
 func (asjuo *AdminSubscriptionJobUpdateOne) ClearTargetUserIds() *AdminSubscriptionJobUpdateOne {
 	asjuo.mutation.ClearTargetUserIds()
+	return asjuo
+}
+
+// SetTargetSnapshots sets the "target_snapshots" field.
+func (asjuo *AdminSubscriptionJobUpdateOne) SetTargetSnapshots(m []map[string]interface{}) *AdminSubscriptionJobUpdateOne {
+	asjuo.mutation.SetTargetSnapshots(m)
+	return asjuo
+}
+
+// AppendTargetSnapshots appends m to the "target_snapshots" field.
+func (asjuo *AdminSubscriptionJobUpdateOne) AppendTargetSnapshots(m []map[string]interface{}) *AdminSubscriptionJobUpdateOne {
+	asjuo.mutation.AppendTargetSnapshots(m)
+	return asjuo
+}
+
+// ClearTargetSnapshots clears the value of the "target_snapshots" field.
+func (asjuo *AdminSubscriptionJobUpdateOne) ClearTargetSnapshots() *AdminSubscriptionJobUpdateOne {
+	asjuo.mutation.ClearTargetSnapshots()
 	return asjuo
 }
 
@@ -1230,6 +1277,17 @@ func (asjuo *AdminSubscriptionJobUpdateOne) sqlSave(ctx context.Context) (_node 
 	}
 	if asjuo.mutation.TargetUserIdsCleared() {
 		_spec.ClearField(adminsubscriptionjob.FieldTargetUserIds, field.TypeJSON)
+	}
+	if value, ok := asjuo.mutation.TargetSnapshots(); ok {
+		_spec.SetField(adminsubscriptionjob.FieldTargetSnapshots, field.TypeJSON, value)
+	}
+	if value, ok := asjuo.mutation.AppendedTargetSnapshots(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, adminsubscriptionjob.FieldTargetSnapshots, value)
+		})
+	}
+	if asjuo.mutation.TargetSnapshotsCleared() {
+		_spec.ClearField(adminsubscriptionjob.FieldTargetSnapshots, field.TypeJSON)
 	}
 	if value, ok := asjuo.mutation.RequestedUserIds(); ok {
 		_spec.SetField(adminsubscriptionjob.FieldRequestedUserIds, field.TypeJSON, value)

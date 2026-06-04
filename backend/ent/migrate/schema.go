@@ -21,6 +21,7 @@ var (
 		{Name: "days", Type: field.TypeInt, Nullable: true},
 		{Name: "filter_query", Type: field.TypeString, Nullable: true},
 		{Name: "target_user_ids", Type: field.TypeJSON, Nullable: true},
+		{Name: "target_snapshots", Type: field.TypeJSON, Nullable: true},
 		{Name: "requested_user_ids", Type: field.TypeJSON, Nullable: true},
 		{Name: "total_count", Type: field.TypeInt, Default: 0},
 		{Name: "processed_count", Type: field.TypeInt, Default: 0},
@@ -43,12 +44,12 @@ var (
 			{
 				Name:    "adminsubscriptionjob_status_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{AdminSubscriptionJobsColumns[1], AdminSubscriptionJobsColumns[21]},
+				Columns: []*schema.Column{AdminSubscriptionJobsColumns[1], AdminSubscriptionJobsColumns[22]},
 			},
 			{
 				Name:    "adminsubscriptionjob_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{AdminSubscriptionJobsColumns[21]},
+				Columns: []*schema.Column{AdminSubscriptionJobsColumns[22]},
 			},
 		},
 	}

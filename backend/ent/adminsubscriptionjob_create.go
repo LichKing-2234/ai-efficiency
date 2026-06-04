@@ -120,6 +120,12 @@ func (asjc *AdminSubscriptionJobCreate) SetTargetUserIds(i []int) *AdminSubscrip
 	return asjc
 }
 
+// SetTargetSnapshots sets the "target_snapshots" field.
+func (asjc *AdminSubscriptionJobCreate) SetTargetSnapshots(m []map[string]interface{}) *AdminSubscriptionJobCreate {
+	asjc.mutation.SetTargetSnapshots(m)
+	return asjc
+}
+
 // SetRequestedUserIds sets the "requested_user_ids" field.
 func (asjc *AdminSubscriptionJobCreate) SetRequestedUserIds(i []int) *AdminSubscriptionJobCreate {
 	asjc.mutation.SetRequestedUserIds(i)
@@ -471,6 +477,10 @@ func (asjc *AdminSubscriptionJobCreate) createSpec() (*AdminSubscriptionJob, *sq
 	if value, ok := asjc.mutation.TargetUserIds(); ok {
 		_spec.SetField(adminsubscriptionjob.FieldTargetUserIds, field.TypeJSON, value)
 		_node.TargetUserIds = value
+	}
+	if value, ok := asjc.mutation.TargetSnapshots(); ok {
+		_spec.SetField(adminsubscriptionjob.FieldTargetSnapshots, field.TypeJSON, value)
+		_node.TargetSnapshots = value
 	}
 	if value, ok := asjc.mutation.RequestedUserIds(); ok {
 		_spec.SetField(adminsubscriptionjob.FieldRequestedUserIds, field.TypeJSON, value)

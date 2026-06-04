@@ -75,6 +75,8 @@ type AdminSubscriptionJobMutation struct {
 	filter_query             *string
 	target_user_ids          *[]int
 	appendtarget_user_ids    []int
+	target_snapshots         *[]map[string]interface{}
+	appendtarget_snapshots   []map[string]interface{}
 	requested_user_ids       *[]int
 	appendrequested_user_ids []int
 	total_count              *int
@@ -686,6 +688,71 @@ func (m *AdminSubscriptionJobMutation) ResetTargetUserIds() {
 	m.target_user_ids = nil
 	m.appendtarget_user_ids = nil
 	delete(m.clearedFields, adminsubscriptionjob.FieldTargetUserIds)
+}
+
+// SetTargetSnapshots sets the "target_snapshots" field.
+func (m *AdminSubscriptionJobMutation) SetTargetSnapshots(value []map[string]interface{}) {
+	m.target_snapshots = &value
+	m.appendtarget_snapshots = nil
+}
+
+// TargetSnapshots returns the value of the "target_snapshots" field in the mutation.
+func (m *AdminSubscriptionJobMutation) TargetSnapshots() (r []map[string]interface{}, exists bool) {
+	v := m.target_snapshots
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTargetSnapshots returns the old "target_snapshots" field's value of the AdminSubscriptionJob entity.
+// If the AdminSubscriptionJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AdminSubscriptionJobMutation) OldTargetSnapshots(ctx context.Context) (v []map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTargetSnapshots is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTargetSnapshots requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTargetSnapshots: %w", err)
+	}
+	return oldValue.TargetSnapshots, nil
+}
+
+// AppendTargetSnapshots adds value to the "target_snapshots" field.
+func (m *AdminSubscriptionJobMutation) AppendTargetSnapshots(value []map[string]interface{}) {
+	m.appendtarget_snapshots = append(m.appendtarget_snapshots, value...)
+}
+
+// AppendedTargetSnapshots returns the list of values that were appended to the "target_snapshots" field in this mutation.
+func (m *AdminSubscriptionJobMutation) AppendedTargetSnapshots() ([]map[string]interface{}, bool) {
+	if len(m.appendtarget_snapshots) == 0 {
+		return nil, false
+	}
+	return m.appendtarget_snapshots, true
+}
+
+// ClearTargetSnapshots clears the value of the "target_snapshots" field.
+func (m *AdminSubscriptionJobMutation) ClearTargetSnapshots() {
+	m.target_snapshots = nil
+	m.appendtarget_snapshots = nil
+	m.clearedFields[adminsubscriptionjob.FieldTargetSnapshots] = struct{}{}
+}
+
+// TargetSnapshotsCleared returns if the "target_snapshots" field was cleared in this mutation.
+func (m *AdminSubscriptionJobMutation) TargetSnapshotsCleared() bool {
+	_, ok := m.clearedFields[adminsubscriptionjob.FieldTargetSnapshots]
+	return ok
+}
+
+// ResetTargetSnapshots resets all changes to the "target_snapshots" field.
+func (m *AdminSubscriptionJobMutation) ResetTargetSnapshots() {
+	m.target_snapshots = nil
+	m.appendtarget_snapshots = nil
+	delete(m.clearedFields, adminsubscriptionjob.FieldTargetSnapshots)
 }
 
 // SetRequestedUserIds sets the "requested_user_ids" field.
@@ -1351,7 +1418,7 @@ func (m *AdminSubscriptionJobMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *AdminSubscriptionJobMutation) Fields() []string {
-	fields := make([]string, 0, 22)
+	fields := make([]string, 0, 23)
 	if m.status != nil {
 		fields = append(fields, adminsubscriptionjob.FieldStatus)
 	}
@@ -1381,6 +1448,9 @@ func (m *AdminSubscriptionJobMutation) Fields() []string {
 	}
 	if m.target_user_ids != nil {
 		fields = append(fields, adminsubscriptionjob.FieldTargetUserIds)
+	}
+	if m.target_snapshots != nil {
+		fields = append(fields, adminsubscriptionjob.FieldTargetSnapshots)
 	}
 	if m.requested_user_ids != nil {
 		fields = append(fields, adminsubscriptionjob.FieldRequestedUserIds)
@@ -1446,6 +1516,8 @@ func (m *AdminSubscriptionJobMutation) Field(name string) (ent.Value, bool) {
 		return m.FilterQuery()
 	case adminsubscriptionjob.FieldTargetUserIds:
 		return m.TargetUserIds()
+	case adminsubscriptionjob.FieldTargetSnapshots:
+		return m.TargetSnapshots()
 	case adminsubscriptionjob.FieldRequestedUserIds:
 		return m.RequestedUserIds()
 	case adminsubscriptionjob.FieldTotalCount:
@@ -1499,6 +1571,8 @@ func (m *AdminSubscriptionJobMutation) OldField(ctx context.Context, name string
 		return m.OldFilterQuery(ctx)
 	case adminsubscriptionjob.FieldTargetUserIds:
 		return m.OldTargetUserIds(ctx)
+	case adminsubscriptionjob.FieldTargetSnapshots:
+		return m.OldTargetSnapshots(ctx)
 	case adminsubscriptionjob.FieldRequestedUserIds:
 		return m.OldRequestedUserIds(ctx)
 	case adminsubscriptionjob.FieldTotalCount:
@@ -1601,6 +1675,13 @@ func (m *AdminSubscriptionJobMutation) SetField(name string, value ent.Value) er
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetTargetUserIds(v)
+		return nil
+	case adminsubscriptionjob.FieldTargetSnapshots:
+		v, ok := value.([]map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTargetSnapshots(v)
 		return nil
 	case adminsubscriptionjob.FieldRequestedUserIds:
 		v, ok := value.([]int)
@@ -1827,6 +1908,9 @@ func (m *AdminSubscriptionJobMutation) ClearedFields() []string {
 	if m.FieldCleared(adminsubscriptionjob.FieldTargetUserIds) {
 		fields = append(fields, adminsubscriptionjob.FieldTargetUserIds)
 	}
+	if m.FieldCleared(adminsubscriptionjob.FieldTargetSnapshots) {
+		fields = append(fields, adminsubscriptionjob.FieldTargetSnapshots)
+	}
 	if m.FieldCleared(adminsubscriptionjob.FieldRequestedUserIds) {
 		fields = append(fields, adminsubscriptionjob.FieldRequestedUserIds)
 	}
@@ -1867,6 +1951,9 @@ func (m *AdminSubscriptionJobMutation) ClearField(name string) error {
 		return nil
 	case adminsubscriptionjob.FieldTargetUserIds:
 		m.ClearTargetUserIds()
+		return nil
+	case adminsubscriptionjob.FieldTargetSnapshots:
+		m.ClearTargetSnapshots()
 		return nil
 	case adminsubscriptionjob.FieldRequestedUserIds:
 		m.ClearRequestedUserIds()
@@ -1920,6 +2007,9 @@ func (m *AdminSubscriptionJobMutation) ResetField(name string) error {
 		return nil
 	case adminsubscriptionjob.FieldTargetUserIds:
 		m.ResetTargetUserIds()
+		return nil
+	case adminsubscriptionjob.FieldTargetSnapshots:
+		m.ResetTargetSnapshots()
 		return nil
 	case adminsubscriptionjob.FieldRequestedUserIds:
 		m.ResetRequestedUserIds()
