@@ -401,6 +401,7 @@ As of PR #76 on 2026-06-05:
 - First-pass route migration exists for `/login`, `/oauth/authorize`, `/oauth/device`, `/`, `/repos`, `/repos/:id`, `/events`, `/user`, `/admin/users`, and `/settings`.
 - `/events` now preserves the Vue filter contract for time range, tool, binding status, text query, admin user filter, URL query state, and limit/offset pagination.
 - `/user` now preserves the core user setup contract for provider/group selection, session-scoped credential reveal/copy, create/regenerate key actions, backend model discovery, and provider test requests.
+- `/admin/users` now preserves pagination/page-size controls, visible-row selection, subscription-job payload semantics, active job recovery/polling, job result summaries, and the separate relay password reveal action.
 - Existing `frontend/`, backend embedded frontend serving, and current deploy mainline are untouched.
 
 ## Acceptance Criteria
