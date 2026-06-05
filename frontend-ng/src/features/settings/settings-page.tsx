@@ -1,6 +1,6 @@
 import { createFileRoute, redirect } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -18,9 +18,12 @@ import { dateTime, number } from '@/lib/format'
 import type { Credential, RelayProvider, SCMProvider } from '@/lib/api/types'
 import {
   buildCredentialPayload,
+  buildLDAPForm,
+  buildLDAPPayload,
   buildRelayPayload,
   buildScmProviderPayload,
   type CredentialFormState,
+  type LDAPFormState,
   type RelayFormState,
   type ScmFormState
 } from './settings-payloads'
@@ -28,6 +31,7 @@ import {
 const emptyRelayForm: RelayFormState = { name: '', display_name: '', base_url: '', admin_api_key: '', is_primary: false, enabled: true }
 const emptyScmForm: ScmFormState = { name: '', type: 'github', base_url: '', api_credential_id: '', clone_protocol: 'https', clone_credential_id: '', ssh_host: '' }
 const emptyCredentialForm: CredentialFormState = { name: '', description: '', kind: 'secret_text', text: '', username: '', password: '', private_key: '', passphrase: '' }
+const emptyLDAPForm: LDAPFormState = { url: '', base_dn: '', bind_dn: '', bind_password: '', user_filter: '(uid=%s)', tls: false }
 
 export function SettingsPage() {
   const qc = useQueryClient()
@@ -40,10 +44,13 @@ export function SettingsPage() {
   const [credentialDialog, setCredentialDialog] = useState(false)
   const [editingCredentialId, setEditingCredentialId] = useState<number | null>(null)
   const [credentialForm, setCredentialForm] = useState<CredentialFormState>(emptyCredentialForm)
+  const [ldapForm, setLDAPForm] = useState<LDAPFormState>(emptyLDAPForm)
+  const [ldapMessage, setLDAPMessage] = useState('')
   const relay = useQuery({ queryKey: ['settings', 'relay'], queryFn: api.settings.relayProviders })
   const scm = useQuery({ queryKey: ['settings', 'scm'], queryFn: () => api.settings.scmProviders(1, 100) })
   const credentials = useQuery({ queryKey: ['settings', 'credentials'], queryFn: api.settings.credentials })
   const deployment = useQuery({ queryKey: ['settings', 'deployment'], queryFn: api.settings.deployment })
+  const ldap = useQuery({ queryKey: ['settings', 'ldap'], queryFn: api.settings.ldap })
   const checkUpdate = useMutation({
     mutationFn: api.settings.checkUpdate,
     onSuccess: () => qc.invalidateQueries({ queryKey: ['settings', 'deployment'] })
@@ -135,6 +142,31 @@ export function SettingsPage() {
       toast.success('Credential deleted')
     }
   })
+  const saveLDAP = useMutation({
+    mutationFn: () => api.settings.updateLDAP(buildLDAPPayload(ldapForm)),
+    onSuccess: () => {
+      setLDAPMessage('LDAP configuration saved')
+      void qc.invalidateQueries({ queryKey: ['settings', 'ldap'] })
+      toast.success('LDAP configuration saved')
+    },
+    onError: (error) => {
+      setLDAPMessage(error instanceof Error ? error.message : 'Failed to save LDAP configuration')
+    }
+  })
+  const testLDAP = useMutation({
+    mutationFn: () => api.settings.testLDAP(buildLDAPPayload(ldapForm)),
+    onSuccess: () => {
+      setLDAPMessage('LDAP connection successful')
+      toast.success('LDAP connection successful')
+    },
+    onError: (error) => {
+      setLDAPMessage(error instanceof Error ? error.message : 'LDAP connection test failed')
+    }
+  })
+
+  useEffect(() => {
+    if (ldap.data) setLDAPForm(buildLDAPForm(ldap.data))
+  }, [ldap.data])
 
   if (relay.isLoading || scm.isLoading || deployment.isLoading) return <LoadingState />
 
@@ -328,6 +360,36 @@ export function SettingsPage() {
                 </div>
               </div>
             ))}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Organization Login</CardTitle>
+            <CardDescription>LDAP configuration and login source behavior.</CardDescription>
+          </CardHeader>
+          <CardContent className='flex flex-col gap-3'>
+            <Input placeholder='LDAP URL' value={ldapForm.url} onChange={(event) => setLDAPForm((value) => ({ ...value, url: event.target.value }))} />
+            <Input placeholder='Base DN' value={ldapForm.base_dn} onChange={(event) => setLDAPForm((value) => ({ ...value, base_dn: event.target.value }))} />
+            <Input placeholder='Bind DN' value={ldapForm.bind_dn} onChange={(event) => setLDAPForm((value) => ({ ...value, bind_dn: event.target.value }))} />
+            <Input type='password' placeholder='Bind password (leave blank to keep current)' value={ldapForm.bind_password} onChange={(event) => setLDAPForm((value) => ({ ...value, bind_password: event.target.value }))} />
+            <Input placeholder='User filter, for example (uid=%s)' value={ldapForm.user_filter} onChange={(event) => setLDAPForm((value) => ({ ...value, user_filter: event.target.value }))} />
+            <label className='flex items-center gap-2 text-sm'><input type='checkbox' checked={ldapForm.tls} onChange={(event) => setLDAPForm((value) => ({ ...value, tls: event.target.checked }))} /> Use StartTLS</label>
+            {ldapMessage ? <div className={ldapMessage.toLowerCase().includes('failed') || ldapMessage.toLowerCase().includes('required') ? 'text-[var(--ae-warn)] text-sm' : 'text-[var(--ae-pos)] text-sm'}>{ldapMessage}</div> : null}
+            <div className='flex flex-wrap gap-2'>
+              <Button
+                variant='outline'
+                onClick={() => testLDAP.mutate()}
+                disabled={!ldapForm.url || !ldapForm.base_dn || !ldapForm.bind_dn || !ldapForm.user_filter || testLDAP.isPending}
+              >
+                Test LDAP
+              </Button>
+              <Button
+                onClick={() => saveLDAP.mutate()}
+                disabled={!ldapForm.url || !ldapForm.base_dn || !ldapForm.bind_dn || !ldapForm.user_filter || saveLDAP.isPending}
+              >
+                Save LDAP
+              </Button>
+            </div>
           </CardContent>
         </Card>
         <Card>

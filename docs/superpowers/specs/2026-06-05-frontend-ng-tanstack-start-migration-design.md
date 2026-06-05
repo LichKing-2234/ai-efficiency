@@ -405,6 +405,7 @@ As of PR #76 on 2026-06-05:
 - `/repos/:id` now preserves the PR list months filter, limit/offset pagination, PR sync job recovery/polling, sync progress/status messages, and unbound-repository sync gating.
 - `/user` now preserves the core user setup contract for provider/group selection, session-scoped credential reveal/copy, create/regenerate key actions, backend model discovery, and provider test requests.
 - `/admin/users` now preserves pagination/page-size controls, visible-row selection, subscription-job payload semantics, active job recovery/polling, job result summaries, and the separate relay password reveal action.
+- `/settings` now preserves relay providers, SCM providers, advanced credentials, deployment/runtime actions, and organization login LDAP get/save/test contracts.
 - Existing `frontend/`, backend embedded frontend serving, and current deploy mainline are untouched.
 
 ## Acceptance Criteria

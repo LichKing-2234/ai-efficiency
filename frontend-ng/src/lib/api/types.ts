@@ -33,6 +33,15 @@ export interface AuthOptions {
   dev_login_enabled: boolean
 }
 
+export interface LDAPSettings {
+  url: string
+  base_dn: string
+  bind_dn: string
+  bind_password: string
+  user_filter: string
+  tls: boolean
+}
+
 export interface LoginRequest {
   username: string
   password: string

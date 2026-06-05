@@ -1,9 +1,12 @@
 import { describe, expect, test } from 'vitest'
 import {
   buildCredentialPayload,
+  buildLDAPForm,
+  buildLDAPPayload,
   buildRelayPayload,
   buildScmProviderPayload,
   type CredentialFormState,
+  type LDAPFormState,
   type RelayFormState,
   type ScmFormState
 } from './settings-payloads'
@@ -96,6 +99,46 @@ describe('buildCredentialPayload', () => {
     expect(buildCredentialPayload({ ...form, kind: 'username_password', username: 'alice' }, 'edit')).toEqual({
       name: 'api-token',
       description: 'API token'
+    })
+  })
+})
+
+describe('LDAP settings payloads', () => {
+  test('maps backend LDAP config into an editable form without exposing masked password', () => {
+    expect(buildLDAPForm({
+      url: 'ldap://ldap.example.com:389',
+      base_dn: 'dc=example,dc=com',
+      bind_dn: 'cn=reader,dc=example,dc=com',
+      bind_password: '***',
+      user_filter: '(uid=%s)',
+      tls: true
+    })).toEqual({
+      url: 'ldap://ldap.example.com:389',
+      base_dn: 'dc=example,dc=com',
+      bind_dn: 'cn=reader,dc=example,dc=com',
+      bind_password: '',
+      user_filter: '(uid=%s)',
+      tls: true
+    })
+  })
+
+  test('builds LDAP save and test payloads using backend field names', () => {
+    const form: LDAPFormState = {
+      url: 'ldap://ldap.example.com:389',
+      base_dn: 'dc=example,dc=com',
+      bind_dn: 'cn=reader,dc=example,dc=com',
+      bind_password: '',
+      user_filter: '(mail=%s)',
+      tls: false
+    }
+
+    expect(buildLDAPPayload(form)).toEqual({
+      url: 'ldap://ldap.example.com:389',
+      base_dn: 'dc=example,dc=com',
+      bind_dn: 'cn=reader,dc=example,dc=com',
+      bind_password: '',
+      user_filter: '(mail=%s)',
+      tls: false
     })
   })
 })

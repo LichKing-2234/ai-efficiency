@@ -1,4 +1,4 @@
-import type { CredentialPayload, RelayProviderPayload, SCMProviderPayload } from '@/lib/api/types'
+import type { CredentialPayload, LDAPSettings, RelayProviderPayload, SCMProviderPayload } from '@/lib/api/types'
 
 type CredentialKind = CredentialPayload['kind']
 type CredentialSecretFields = NonNullable<CredentialPayload['payload']>
@@ -33,6 +33,15 @@ export interface CredentialFormState {
   password?: string
   private_key?: string
   passphrase?: string
+}
+
+export interface LDAPFormState {
+  url: string
+  base_dn: string
+  bind_dn: string
+  bind_password: string
+  user_filter: string
+  tls: boolean
 }
 
 export function buildRelayPayload(form: RelayFormState, mode: 'create'): RelayProviderPayload
@@ -96,4 +105,26 @@ function credentialSecretPayload(form: CredentialFormState): CredentialSecretFie
   const privateKey = form.private_key?.trim()
   const passphrase = form.passphrase?.trim()
   return username && privateKey ? { username, private_key: privateKey, passphrase } : undefined
+}
+
+export function buildLDAPForm(settings: LDAPSettings | null | undefined): LDAPFormState {
+  return {
+    url: settings?.url ?? '',
+    base_dn: settings?.base_dn ?? '',
+    bind_dn: settings?.bind_dn ?? '',
+    bind_password: settings?.bind_password === '***' ? '' : settings?.bind_password ?? '',
+    user_filter: settings?.user_filter ?? '(uid=%s)',
+    tls: settings?.tls ?? false
+  }
+}
+
+export function buildLDAPPayload(form: LDAPFormState): LDAPSettings {
+  return {
+    url: form.url.trim(),
+    base_dn: form.base_dn.trim(),
+    bind_dn: form.bind_dn.trim(),
+    bind_password: form.bind_password.trim(),
+    user_filter: form.user_filter.trim(),
+    tls: form.tls
+  }
 }
