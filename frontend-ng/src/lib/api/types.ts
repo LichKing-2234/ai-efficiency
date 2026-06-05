@@ -58,6 +58,16 @@ export interface SCMProvider {
   created_at: string
 }
 
+export interface SCMProviderPayload {
+  name: string
+  type?: string
+  base_url: string
+  ssh_host?: string | null
+  api_credential_id?: number | null
+  clone_protocol?: 'https' | 'ssh'
+  clone_credential_id?: number | null
+}
+
 export interface RelayProvider {
   id: number
   name: string
@@ -66,6 +76,15 @@ export interface RelayProvider {
   relay_type?: string
   admin_api_key?: string
   default_model: string
+  is_primary: boolean
+  enabled: boolean
+}
+
+export interface RelayProviderPayload {
+  name: string
+  display_name: string
+  base_url: string
+  admin_api_key?: string
   is_primary: boolean
   enabled: boolean
 }
@@ -79,6 +98,28 @@ export interface Credential {
   summary: Record<string, unknown>
   created_at: string
   updated_at: string
+}
+
+export interface CredentialPayload {
+  name: string
+  description?: string
+  kind: 'secret_text' | 'username_password' | 'ssh_username_with_private_key'
+  text?: string
+  username?: string
+  password?: string
+  private_key?: string
+}
+
+export interface RepoDirectCreateRequest {
+  scm_provider_id: number
+  name: string
+  full_name: string
+  clone_url: string
+  default_branch: string
+}
+
+export type RepoUpdateRequest = Partial<RepoConfig> & {
+  clear_scm_provider?: boolean
 }
 
 export interface RepoConfig {

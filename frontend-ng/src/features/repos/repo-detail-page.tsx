@@ -1,5 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useParams } from '@tanstack/react-router'
+import { useEffect, useState } from 'react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -10,12 +12,15 @@ import { LoadingState } from '@/components/primitives/data-state'
 import { StatusBadge } from '@/components/primitives/status-badge'
 import { api } from '@/lib/api'
 import { compact, dateTime, number, percent } from '@/lib/format'
+import { buildRepoBindingPayload } from './repo-binding'
 
 export function RepoDetailPage() {
   const { id } = useParams({ from: '/repos/$id' })
   const repoId = Number(id)
   const qc = useQueryClient()
+  const [selectedProviderId, setSelectedProviderId] = useState('')
   const repo = useQuery({ queryKey: ['repo', repoId], queryFn: () => api.repos.get(repoId) })
+  const scm = useQuery({ queryKey: ['settings', 'scm'], queryFn: () => api.settings.scmProviders(1, 100) })
   const prs = useQuery({ queryKey: ['repo', repoId, 'prs'], queryFn: () => api.repos.prs(repoId, { limit: 50, offset: 0 }) })
   const latestJob = useQuery({ queryKey: ['repo', repoId, 'latest-job'], queryFn: () => api.repos.latestPRSyncJob(repoId) })
   const sync = useMutation({
@@ -29,6 +34,18 @@ export function RepoDetailPage() {
     mutationFn: api.prs.refreshUsage,
     onSuccess: () => qc.invalidateQueries({ queryKey: ['repo', repoId, 'prs'] })
   })
+  const saveBinding = useMutation({
+    mutationFn: (providerId: string) => api.repos.update(repoId, buildRepoBindingPayload(providerId)),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['repo', repoId] })
+      void qc.invalidateQueries({ queryKey: ['repos'] })
+      toast.success('Repository binding saved')
+    }
+  })
+
+  useEffect(() => {
+    if (repo.data) setSelectedProviderId(repo.data.scm_provider_id ? String(repo.data.scm_provider_id) : '')
+  }, [repo.data])
 
   if (repo.isLoading || prs.isLoading) return <LoadingState />
   const rows = prs.data?.items ?? []
@@ -58,6 +75,26 @@ export function RepoDetailPage() {
           </CardContent>
         </Card>
       ) : null}
+      <Card>
+        <CardHeader><CardTitle>SCM binding</CardTitle></CardHeader>
+        <CardContent className='flex flex-wrap items-center gap-2'>
+          <select
+            className='h-8 rounded-md border border-input bg-card px-3 text-sm'
+            value={selectedProviderId}
+            onChange={(event) => setSelectedProviderId(event.target.value)}
+          >
+            <option value=''>No provider binding</option>
+            {(scm.data?.items ?? []).map((provider) => (
+              <option key={provider.id} value={provider.id}>{provider.name}</option>
+            ))}
+          </select>
+          <Button variant='outline' onClick={() => saveBinding.mutate(selectedProviderId)} disabled={saveBinding.isPending}>Save binding</Button>
+          <Button variant='ghost' onClick={() => {
+            setSelectedProviderId('')
+            saveBinding.mutate('')
+          }} disabled={saveBinding.isPending}>Clear</Button>
+        </CardContent>
+      </Card>
       <Card className='overflow-hidden'>
         <div className='overflow-x-auto'>
           <Table>
