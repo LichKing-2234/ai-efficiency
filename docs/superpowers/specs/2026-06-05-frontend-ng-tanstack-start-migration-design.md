@@ -1,7 +1,7 @@
 # Frontend-NG TanStack Start Migration Design
 
 **Date:** 2026-06-05
-**Status:** Proposed design for review; no implementation has landed
+**Status:** Implementation in progress on PR #76; `frontend-ng/` scaffold, auth/proxy foundation, route parity shell, and first-pass route migration have landed, but production cutover is not complete
 **Scope:** `frontend-ng/`, future frontend deployment, future gateway-aware browser auth, future frontend API proxy
 **Related:**
 - [2026-03-24-oauth-cli-login-design.md](./2026-03-24-oauth-cli-login-design.md)
@@ -14,8 +14,8 @@
 ## Spec Relationship
 
 - 本文定义一个新的 `frontend-ng/` TanStack Start 迁移方向，作为未来前端替换合同。
-- 本文不改变当前代码事实。当前生产架构仍以 [`docs/architecture.md`](../../architecture.md) 为准：Vue frontend 构建产物仍在 Docker build 阶段嵌入 Go backend，并由 backend serve SPA。
-- 本文第一阶段不要求修改现有 `frontend/`、backend embedded frontend、当前 deploy/Dockerfile 主链路，也不要求删除旧 Vue frontend。
+- 当前实现已在 `frontend-ng/` 落地第一批迁移代码，但这不改变当前生产架构。当前生产架构仍以 [`docs/architecture.md`](../../architecture.md) 为准：Vue frontend 构建产物仍在 Docker build 阶段嵌入 Go backend，并由 backend serve SPA。
+- 当前实现阶段不修改现有 `frontend/`、backend embedded frontend、当前 deploy/Dockerfile 主链路，也不删除旧 Vue frontend。
 - 如果未来实现使 `frontend-ng/` 成为正式生产入口，必须同步更新 `docs/architecture.md`，并在对应实现计划中明确 current implementation change 与 design documentation update 的边界。
 - 本文不回写历史 frontend UX specs。历史 specs 保留当时的 Vue/task-zone 背景；`frontend-ng/` 实现应继承其中的业务合同，而不是逐像素继承旧组件实现。
 
@@ -388,6 +388,19 @@ Full route migration is required, but implementation should proceed in layers:
    - mobile/responsive behavior.
    - OAuth CLI browser flow.
    - localdev handoff.
+
+## Current Implementation Snapshot
+
+As of PR #76 on 2026-06-05:
+
+- `frontend-ng/` contains a Bun-managed TanStack Start project with MiSans assets, shadcn/ui-style source components, shared primitives, and route files for the full Vue URL set.
+- Browser data calls go through same-origin `/api/*`; browser code does not store tokens in `localStorage` and does not attach Bearer tokens.
+- TanStack server-side API routes implement app-token HttpOnly cookies, login/dev-login/logout/bootstrap, coarse `/api/v1/*` proxy allowlisting, and refresh retry.
+- Gateway bootstrap is wired through a server-side `gateway-exchange` call path, but the Go backend endpoint and deployment gateway header contract still need backend/deploy follow-through before production cutover.
+- Local handoff routes exist as guarded skeletons; actual one-time code issuance/redeem remains intentionally incomplete until backend support exists.
+- First-pass route migration exists for `/login`, `/oauth/authorize`, `/oauth/device`, `/`, `/repos`, `/repos/:id`, `/events`, `/user`, `/admin/users`, and `/settings`.
+- `/events` now preserves the Vue filter contract for time range, tool, binding status, text query, admin user filter, URL query state, and limit/offset pagination.
+- Existing `frontend/`, backend embedded frontend serving, and current deploy mainline are untouched.
 
 ## Acceptance Criteria
 
