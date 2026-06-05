@@ -1,22 +1,27 @@
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { api } from '@/lib/api'
+import { safeRedirect, selectInitialLoginSource } from './auth-flow-state'
 
 export function LoginPage() {
   const navigate = useNavigate()
   const search = useSearch({ strict: false }) as { redirect?: string }
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
-  const [source, setSource] = useState('ldap')
+  const [source, setSource] = useState('SSO')
   const options = useQuery({ queryKey: ['auth', 'options'], queryFn: api.auth.options })
   const login = useMutation({
     mutationFn: () => api.auth.login({ username, password, source }),
     onSuccess: () => navigate({ to: safeRedirect(search.redirect) })
   })
+
+  useEffect(() => {
+    if (options.data) setSource(selectInitialLoginSource(options.data))
+  }, [options.data])
   const devLogin = useMutation({
     mutationFn: api.auth.devLogin,
     onSuccess: () => navigate({ to: safeRedirect(search.redirect) })
@@ -44,8 +49,8 @@ export function LoginPage() {
               value={source}
               onChange={(event) => setSource(event.target.value)}
             >
-              {options.data?.ldap_enabled ? <option value='ldap'>LDAP</option> : null}
-              <option value='sso'>Relay SSO</option>
+              {options.data?.ldap_enabled ? <option value='LDAP'>LDAP</option> : null}
+              <option value='SSO'>Relay SSO</option>
             </select>
             {login.error ? <div className='text-[var(--ae-warn)] text-sm'>{login.error.message}</div> : null}
             <Button disabled={!username || !password || login.isPending}>
@@ -61,9 +66,4 @@ export function LoginPage() {
       </Card>
     </main>
   )
-}
-
-function safeRedirect(raw?: string) {
-  if (!raw || !raw.startsWith('/') || raw.startsWith('//') || raw.startsWith('/login')) return '/'
-  return raw
 }
