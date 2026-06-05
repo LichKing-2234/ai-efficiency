@@ -1,9 +1,11 @@
 import { describe, expect, test } from 'vitest'
 import {
   buildAdminUsersParams,
+  buildAdminUsersSearch,
   buildSubscriptionJobPayload,
   canSubmitSubscriptionJob,
   defaultSubscriptionTarget,
+  parseAdminUsersSearch,
   isActiveSubscriptionJob,
   nextVisibleSelection,
   subscriptionJobMessage
@@ -36,6 +38,16 @@ describe('admin users params', () => {
 
   test('trims query and preserves page size', () => {
     expect(buildAdminUsersParams({ q: ' alice ', page: 2, pageSize: 50 })).toEqual({ q: 'alice', page: 2, page_size: 50 })
+  })
+
+  test('parses admin users filters from URL search with sane fallbacks', () => {
+    expect(parseAdminUsersSearch({ q: ' alice ', page: '2', page_size: '50' })).toEqual({ q: 'alice', page: 2, pageSize: 50 })
+    expect(parseAdminUsersSearch({ page: '-1', page_size: 'NaN' })).toEqual({ q: '', page: 1, pageSize: 20 })
+  })
+
+  test('serializes admin users filters into compact URL search', () => {
+    expect(buildAdminUsersSearch({ q: '', page: 1, pageSize: 20 })).toEqual({})
+    expect(buildAdminUsersSearch({ q: ' alice ', page: 3, pageSize: 50 })).toEqual({ q: 'alice', page: 3, page_size: 50 })
   })
 })
 

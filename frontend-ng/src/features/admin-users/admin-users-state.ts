@@ -42,6 +42,23 @@ export function buildAdminUsersParams(filters: AdminUsersFilterState) {
   }
 }
 
+export function parseAdminUsersSearch(search: Record<string, unknown>): AdminUsersFilterState {
+  return {
+    q: stringSearch(search.q).trim(),
+    page: positiveNumberSearch(search.page, 1),
+    pageSize: positiveNumberSearch(search.page_size, 20)
+  }
+}
+
+export function buildAdminUsersSearch(filters: AdminUsersFilterState) {
+  const q = filters.q.trim()
+  return {
+    ...(q ? { q } : {}),
+    ...(filters.page > 1 ? { page: filters.page } : {}),
+    ...(filters.pageSize !== 20 ? { page_size: filters.pageSize } : {})
+  }
+}
+
 export function defaultSubscriptionTarget(providers: AdminAssignableSubscriptionProvider[]) {
   const provider = providers.find((item) => item.groups.length > 0) ?? providers[0] ?? null
   return {
@@ -100,4 +117,13 @@ export function subscriptionJobMessage(job: AdminSubscriptionJob) {
   if (job.status === 'completed') return `Completed: ${job.success_count} succeeded, ${job.skipped_count} skipped, ${job.failed_count} failed`
   if (job.status === 'abandoned') return 'Abandoned'
   return `Failed: ${job.last_error || 'Unknown error'}`
+}
+
+function stringSearch(value: unknown) {
+  return typeof value === 'string' ? value : ''
+}
+
+function positiveNumberSearch(value: unknown, fallback: number) {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
 }

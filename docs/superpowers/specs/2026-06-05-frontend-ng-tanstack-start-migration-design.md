@@ -404,7 +404,7 @@ As of PR #76 on 2026-06-05:
 - `/events` now preserves the Vue filter contract for time range, tool, binding status, text query, admin user filter, URL query state, and limit/offset pagination.
 - `/repos/:id` now preserves the PR list months filter, limit/offset pagination, PR sync job recovery/polling, sync progress/status messages, unbound-repository sync gating, PR detail expansion, commit usage snapshots/freshness, usage refresh, and the backend PR attribution settle action.
 - `/user` now preserves the core user setup contract for provider/group selection, session-scoped credential reveal/copy, create/regenerate key actions, backend model discovery, and provider test requests.
-- `/admin/users` now preserves pagination/page-size controls, visible-row selection, subscription-job payload semantics, active job recovery/polling, job result summaries, and the separate relay password reveal action.
+- `/admin/users` now preserves search/page/page-size URL query state, visible-row selection, subscription-job payload semantics, active job recovery/polling, job result summaries, encrypted relay password copy, and confirmed plaintext relay password reveal/copy.
 - `/settings` now preserves relay providers, SCM providers, advanced credentials, deployment/runtime actions, organization login LDAP get/save/test contracts, and `?section=` deep-link navigation.
 - Existing `frontend/`, backend embedded frontend serving, and current deploy mainline are untouched.
 

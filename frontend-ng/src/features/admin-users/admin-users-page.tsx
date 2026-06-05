@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useNavigate, useSearch } from '@tanstack/react-router'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -13,20 +14,26 @@ import { api } from '@/lib/api'
 import { dateTime, number } from '@/lib/format'
 import {
   buildAdminUsersParams,
+  buildAdminUsersSearch,
   buildSubscriptionJobPayload,
   canSubmitSubscriptionJob,
   defaultSubscriptionTarget,
   isActiveSubscriptionJob,
   nextVisibleSelection,
+  parseAdminUsersSearch,
   subscriptionJobMessage
 } from './admin-users-state'
 import type { AdminSubscriptionJob, AdminSubscriptionManageOperation, AdminSubscriptionManageScope } from '@/lib/api/types'
 
 export function AdminUsersPage() {
-  const [q, setQ] = useState('')
-  const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(20)
+  const navigate = useNavigate()
+  const search = useSearch({ strict: false }) as Record<string, unknown>
+  const initialFilters = useMemo(() => parseAdminUsersSearch(search), [search])
+  const [q, setQ] = useState(initialFilters.q)
+  const [page, setPage] = useState(initialFilters.page)
+  const [pageSize, setPageSize] = useState(initialFilters.pageSize)
   const [selected, setSelected] = useState<number[]>([])
+  const [plaintextConfirmUserId, setPlaintextConfirmUserId] = useState<number | null>(null)
   const [scope, setScope] = useState<AdminSubscriptionManageScope>('selected')
   const [operation, setOperation] = useState<AdminSubscriptionManageOperation>('add')
   const [providerId, setProviderId] = useState('')
@@ -97,6 +104,17 @@ export function AdminUsersPage() {
     confirmRemove,
     loading: job.isPending || activeJobRunning
   })
+
+  useEffect(() => {
+    const next = buildAdminUsersSearch({ q, page, pageSize })
+    void navigate({ to: '/admin/users', search: next, replace: true })
+  }, [navigate, page, pageSize, q])
+
+  useEffect(() => {
+    setQ(initialFilters.q)
+    setPage(initialFilters.page)
+    setPageSize(initialFilters.pageSize)
+  }, [initialFilters])
 
   useEffect(() => {
     if (!options.data?.providers.length) return
@@ -261,16 +279,42 @@ export function AdminUsersPage() {
                   <TableCell>{user.relay_user_id || '-'}</TableCell>
                   <TableCell>{dateTime(user.updated_at)}</TableCell>
                   <TableCell className='text-right'>
-                    <Button
-                      variant='outline'
-                      size='sm'
-                      disabled={!user.relay_auth_password || reveal.isPending}
-                      onClick={() => {
-                        if (window.confirm('Reveal and copy this user relay password?')) reveal.mutate(user.id)
-                      }}
-                    >
-                      Reveal password
-                    </Button>
+                    <div className='flex justify-end gap-2'>
+                      <Button
+                        variant='outline'
+                        size='sm'
+                        disabled={!user.relay_auth_password}
+                        onClick={() => {
+                          void navigator.clipboard?.writeText(user.relay_auth_password || '')
+                          toast.success('Encrypted relay password copied')
+                        }}
+                      >
+                        Copy encrypted
+                      </Button>
+                      <Button
+                        variant='outline'
+                        size='sm'
+                        disabled={!user.relay_auth_password || reveal.isPending}
+                        onClick={() => setPlaintextConfirmUserId((value) => value === user.id ? null : user.id)}
+                      >
+                        Copy plaintext
+                      </Button>
+                    </div>
+                    {plaintextConfirmUserId === user.id ? (
+                      <div className='mt-2 flex max-w-72 flex-col gap-2 rounded-md border border-border bg-muted p-2 text-left text-xs'>
+                        <span className='text-muted-foreground'>Plaintext relay passwords are sensitive. Confirm reveal and copy.</span>
+                        <Button
+                          variant='outline'
+                          size='sm'
+                          disabled={reveal.isPending}
+                          onClick={() => {
+                            reveal.mutate(user.id, { onSuccess: () => setPlaintextConfirmUserId(null) })
+                          }}
+                        >
+                          Confirm reveal
+                        </Button>
+                      </div>
+                    ) : null}
                   </TableCell>
                 </TableRow>
               ))}
