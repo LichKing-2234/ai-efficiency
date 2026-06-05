@@ -104,10 +104,13 @@ export interface CredentialPayload {
   name: string
   description?: string
   kind: 'secret_text' | 'username_password' | 'ssh_username_with_private_key'
-  text?: string
-  username?: string
-  password?: string
-  private_key?: string
+  payload: {
+    text?: string
+    username?: string
+    password?: string
+    private_key?: string
+    passphrase?: string
+  }
 }
 
 export interface RepoDirectCreateRequest {
