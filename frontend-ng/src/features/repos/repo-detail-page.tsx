@@ -1,6 +1,6 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useParams } from '@tanstack/react-router'
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
@@ -17,11 +17,14 @@ import {
   buildPRListParams,
   canGoNextPRPage,
   canGoPreviousPRPage,
+  commitFreshnessFor,
+  commitSnapshots,
   isActivePRSyncJob,
   isTerminalPRSyncJob,
   prSyncJobMessage,
   prSyncJobProgress,
-  prUsageSummary
+  prUsageSummary,
+  usageSummaryNeedsRefresh
 } from './repo-detail-state'
 
 export function RepoDetailPage() {
@@ -34,6 +37,8 @@ export function RepoDetailPage() {
   const [prsMonths, setPRsMonths] = useState(3)
   const [activeJobId, setActiveJobId] = useState<number | null>(null)
   const [syncMessage, setSyncMessage] = useState('')
+  const [expandedPRId, setExpandedPRId] = useState<number | null>(null)
+  const [autoRefreshedPRIds, setAutoRefreshedPRIds] = useState<Set<number>>(() => new Set())
   const repo = useQuery({ queryKey: ['repo', repoId], queryFn: () => api.repos.get(repoId) })
   const scm = useQuery({ queryKey: ['settings', 'scm'], queryFn: () => api.settings.scmProviders(1, 100) })
   const prListParams = buildPRListParams({ page: prsPage, pageSize: prsPageSize, months: prsMonths })
@@ -43,6 +48,11 @@ export function RepoDetailPage() {
     placeholderData: keepPreviousData
   })
   const latestJob = useQuery({ queryKey: ['repo', repoId, 'latest-job'], queryFn: () => api.repos.latestPRSyncJob(repoId) })
+  const prDetail = useQuery({
+    queryKey: ['pr', expandedPRId],
+    queryFn: () => api.prs.get(expandedPRId ?? 0),
+    enabled: expandedPRId !== null
+  })
   const activeJob = useQuery({
     queryKey: ['pr-sync-job', activeJobId],
     queryFn: () => api.prs.job(activeJobId ?? 0),
@@ -66,7 +76,22 @@ export function RepoDetailPage() {
   })
   const refreshUsage = useMutation({
     mutationFn: api.prs.refreshUsage,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['repo', repoId, 'prs'] })
+    onSuccess: (updated) => {
+      qc.setQueryData(['pr', updated.id], updated)
+      void qc.invalidateQueries({ queryKey: ['repo', repoId, 'prs'] })
+      void qc.invalidateQueries({ queryKey: ['pr', updated.id] })
+    }
+  })
+  const settlePR = useMutation({
+    mutationFn: api.prs.settle,
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['repo', repoId, 'prs'] })
+      if (expandedPRId !== null) void qc.invalidateQueries({ queryKey: ['pr', expandedPRId] })
+      toast.success('PR attribution settled')
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : 'Failed to settle PR attribution')
+    }
   })
   const saveBinding = useMutation({
     mutationFn: (providerId: string) => api.repos.update(repoId, buildRepoBindingPayload(providerId)),
@@ -99,6 +124,14 @@ export function RepoDetailPage() {
       void qc.invalidateQueries({ queryKey: ['repo', repoId, 'prs'] })
     }
   }, [activeJob.data, activeJobId, qc, repoId])
+
+  useEffect(() => {
+    const detail = prDetail.data
+    if (!detail || expandedPRId !== detail.id || refreshUsage.isPending || autoRefreshedPRIds.has(detail.id)) return
+    if (!usageSummaryNeedsRefresh(detail)) return
+    setAutoRefreshedPRIds((ids) => new Set(ids).add(detail.id))
+    refreshUsage.mutate(detail.id)
+  }, [autoRefreshedPRIds, expandedPRId, prDetail.data, refreshUsage])
 
   if (repo.isLoading || prs.isLoading) return <LoadingState />
   const rows = prs.data?.items ?? []
@@ -206,22 +239,134 @@ export function RepoDetailPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rows.map((pr) => (
-                <TableRow key={pr.id}>
-                  <TableCell>
-                    <a className='font-medium text-foreground hover:underline' href={pr.scm_pr_url} target='_blank' rel='noreferrer'>{pr.title}</a>
-                    <div className='text-muted-foreground text-xs'>#{pr.scm_pr_id} · {pr.author}</div>
-                  </TableCell>
-                  <TableCell><Badge variant='ai'>{pr.ai_label} · {percent(pr.ai_ratio)}</Badge></TableCell>
-                  <TableCell><StatusBadge value={pr.usage_status || pr.attribution_status} /></TableCell>
-                  <TableCell className='tnum'>{compact((pr.usage_input_tokens ?? 0) + (pr.usage_output_tokens ?? 0) + (pr.usage_cached_input_tokens ?? 0))}</TableCell>
-                  <TableCell>{number(pr.cycle_time_hours)}h</TableCell>
-                  <TableCell>{dateTime(pr.merged_at)}</TableCell>
-                  <TableCell className='text-right'>
-                    <Button variant='outline' size='sm' onClick={() => refreshUsage.mutate(pr.id)} disabled={refreshUsage.isPending}>Refresh usage</Button>
-                  </TableCell>
-                </TableRow>
-              ))}
+              {rows.map((pr) => {
+                const expanded = expandedPRId === pr.id
+                const detail = expanded && prDetail.data?.id === pr.id ? prDetail.data : pr
+                const snapshots = commitSnapshots(detail)
+                const tokenUsage = (detail.usage_input_tokens ?? 0) + (detail.usage_output_tokens ?? 0) + (detail.usage_cached_input_tokens ?? 0) + (detail.usage_reasoning_tokens ?? 0)
+                return (
+                  <Fragment key={pr.id}>
+                    <TableRow>
+                      <TableCell>
+                        <a className='font-medium text-foreground hover:underline' href={pr.scm_pr_url} target='_blank' rel='noreferrer'>{pr.title}</a>
+                        <div className='text-muted-foreground text-xs'>#{pr.scm_pr_id} · {pr.author}</div>
+                      </TableCell>
+                      <TableCell><Badge variant='ai'>{pr.ai_label} · {percent(pr.ai_ratio)}</Badge></TableCell>
+                      <TableCell>
+                        <div className='flex flex-col gap-1'>
+                          <StatusBadge value={pr.usage_status || pr.attribution_status} />
+                          {pr.usage_status_reason ? <span className='max-w-48 truncate text-muted-foreground text-xs'>{pr.usage_status_reason}</span> : null}
+                        </div>
+                      </TableCell>
+                      <TableCell className='tnum'>{compact((pr.usage_input_tokens ?? 0) + (pr.usage_output_tokens ?? 0) + (pr.usage_cached_input_tokens ?? 0) + (pr.usage_reasoning_tokens ?? 0))}</TableCell>
+                      <TableCell>{number(pr.cycle_time_hours)}h</TableCell>
+                      <TableCell>{dateTime(pr.merged_at)}</TableCell>
+                      <TableCell>
+                        <div className='flex justify-end gap-2'>
+                          <Button variant='ghost' size='sm' onClick={() => setExpandedPRId(expanded ? null : pr.id)} disabled={prDetail.isFetching && expanded}>
+                            {expanded ? 'Hide' : 'Details'}
+                          </Button>
+                          <Button variant='outline' size='sm' onClick={() => refreshUsage.mutate(pr.id)} disabled={refreshUsage.isPending}>Refresh usage</Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                    {expanded ? (
+                      <TableRow>
+                        <TableCell colSpan={7} className='bg-muted/30 p-4'>
+                          {prDetail.isLoading ? (
+                            <div className='py-4 text-center text-muted-foreground text-sm'>Loading PR details...</div>
+                          ) : (
+                            <div className='flex flex-col gap-4'>
+                              <div className='grid gap-3 sm:grid-cols-2 lg:grid-cols-6'>
+                                <div>
+                                  <div className='text-muted-foreground text-xs'>Input</div>
+                                  <div className='tnum font-medium'>{compact(detail.usage_input_tokens)}</div>
+                                </div>
+                                <div>
+                                  <div className='text-muted-foreground text-xs'>Output</div>
+                                  <div className='tnum font-medium'>{compact(detail.usage_output_tokens)}</div>
+                                </div>
+                                <div>
+                                  <div className='text-muted-foreground text-xs'>Cache</div>
+                                  <div className='tnum font-medium'>{compact(detail.usage_cached_input_tokens)}</div>
+                                </div>
+                                <div>
+                                  <div className='text-muted-foreground text-xs'>Reasoning</div>
+                                  <div className='tnum font-medium'>{compact(detail.usage_reasoning_tokens)}</div>
+                                </div>
+                                <div>
+                                  <div className='text-muted-foreground text-xs'>Requests</div>
+                                  <div className='tnum font-medium'>{number(detail.usage_request_count)}</div>
+                                </div>
+                                <div>
+                                  <div className='text-muted-foreground text-xs'>Credits</div>
+                                  <div className='tnum font-medium'>{number(detail.usage_credit_usage)}</div>
+                                </div>
+                              </div>
+                              <div className='flex flex-wrap items-center justify-between gap-3 text-sm'>
+                                <div className='flex flex-wrap items-center gap-2'>
+                                  <StatusBadge value={detail.usage_status || detail.attribution_status} />
+                                  <span className='text-muted-foreground'>total {compact(tokenUsage)} tokens · refreshed {dateTime(detail.usage_refreshed_at)}</span>
+                                </div>
+                                <div className='flex gap-2'>
+                                  <Button variant='outline' size='sm' onClick={() => refreshUsage.mutate(detail.id)} disabled={refreshUsage.isPending}>Refresh usage</Button>
+                                  <Button variant='outline' size='sm' onClick={() => settlePR.mutate(detail.id)} disabled={settlePR.isPending || detail.attribution_status === 'clear'}>
+                                    Resolve attribution
+                                  </Button>
+                                </div>
+                              </div>
+                              <div className='overflow-x-auto rounded-md border border-border bg-card'>
+                                <Table>
+                                  <TableHeader>
+                                    <TableRow>
+                                      <TableHead>Commit</TableHead>
+                                      <TableHead>Captured</TableHead>
+                                      <TableHead>Input</TableHead>
+                                      <TableHead>Output</TableHead>
+                                      <TableHead>Cache</TableHead>
+                                      <TableHead>Reasoning</TableHead>
+                                      <TableHead>Credits</TableHead>
+                                      <TableHead>Requests</TableHead>
+                                      <TableHead>Freshness</TableHead>
+                                    </TableRow>
+                                  </TableHeader>
+                                  <TableBody>
+                                    {snapshots.length > 0 ? snapshots.map((snapshot) => {
+                                      const freshness = commitFreshnessFor(detail, snapshot.commit_sha)
+                                      return (
+                                        <TableRow key={snapshot.commit_sha}>
+                                          <TableCell className='max-w-56 truncate font-mono text-xs'>{snapshot.commit_sha}</TableCell>
+                                          <TableCell>{dateTime(snapshot.captured_at)}</TableCell>
+                                          <TableCell className='tnum'>{compact(snapshot.input_tokens)}</TableCell>
+                                          <TableCell className='tnum'>{compact(snapshot.output_tokens)}</TableCell>
+                                          <TableCell className='tnum'>{compact(snapshot.cached_input_tokens)}</TableCell>
+                                          <TableCell className='tnum'>{compact(snapshot.reasoning_tokens)}</TableCell>
+                                          <TableCell className='tnum'>{number(snapshot.credit_usage)}</TableCell>
+                                          <TableCell className='tnum'>{number(snapshot.request_count)}</TableCell>
+                                          <TableCell>
+                                            <div className='flex flex-col gap-1'>
+                                              <StatusBadge value={freshness?.usage_status} />
+                                              {freshness?.usage_status_reason ? <span className='max-w-64 truncate text-muted-foreground text-xs'>{freshness.usage_status_reason}</span> : null}
+                                            </div>
+                                          </TableCell>
+                                        </TableRow>
+                                      )
+                                    }) : (
+                                      <TableRow>
+                                        <TableCell colSpan={9} className='py-6 text-center text-muted-foreground text-sm'>No commit usage snapshots.</TableCell>
+                                      </TableRow>
+                                    )}
+                                  </TableBody>
+                                </Table>
+                              </div>
+                            </div>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ) : null}
+                  </Fragment>
+                )
+              })}
             </TableBody>
           </Table>
         </div>

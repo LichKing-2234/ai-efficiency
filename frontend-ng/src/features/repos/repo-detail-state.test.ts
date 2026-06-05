@@ -4,11 +4,15 @@ import {
   buildPRListParams,
   canGoNextPRPage,
   canGoPreviousPRPage,
+  commitFreshnessFor,
+  commitSnapshots,
+  hasUsageSnapshot,
   isActivePRSyncJob,
   isTerminalPRSyncJob,
   prSyncJobMessage,
   prSyncJobProgress,
-  prUsageSummary
+  prUsageSummary,
+  usageSummaryNeedsRefresh
 } from './repo-detail-state'
 
 function job(overrides: Partial<PRSyncJob>): PRSyncJob {
@@ -120,5 +124,46 @@ describe('repo detail state helpers', () => {
       pr({ usage_status: 'no_checkpoint' }),
       pr({ usage_status: 'refresh_failed' })
     ])).toEqual({ total: 4, with_usage: 1, pending_upload: 1, no_checkpoint: 1, refresh_failed: 1 })
+  })
+
+  test('sorts commit usage snapshots from PR detail edges by backend sort order', () => {
+    const record = pr({
+      edges: {
+        pr_commit_usage_snapshots: [
+          { commit_sha: 'sha-b', input_tokens: 20, output_tokens: 2, cached_input_tokens: 0, reasoning_tokens: 0, credit_usage: 0.2, request_count: 1, sort_order: 2 },
+          { commit_sha: 'sha-a', input_tokens: 10, output_tokens: 1, cached_input_tokens: 0, reasoning_tokens: 0, credit_usage: 0.1, request_count: 1, sort_order: 1 }
+        ]
+      }
+    })
+
+    expect(commitSnapshots(record).map((snapshot) => snapshot.commit_sha)).toEqual(['sha-a', 'sha-b'])
+    expect(hasUsageSnapshot(record)).toBe(true)
+  })
+
+  test('finds freshness metadata for a commit snapshot', () => {
+    const freshness = {
+      commit_sha: 'sha-a',
+      usage_status: 'pending_upload' as const,
+      usage_status_reason: 'usage is waiting for collector upload',
+      checkpoint_found: true,
+      usage_event_found: false
+    }
+    const record = pr({ commit_freshness: [freshness] })
+
+    expect(commitFreshnessFor(record, 'sha-a')).toEqual(freshness)
+    expect(commitFreshnessFor(record, 'sha-missing')).toBeUndefined()
+  })
+
+  test('marks usage summary for refresh only before snapshots or refresh timestamp exist', () => {
+    expect(usageSummaryNeedsRefresh(pr({ edges: { pr_commit_usage_snapshots: null }, usage_refreshed_at: null }))).toBe(true)
+    expect(usageSummaryNeedsRefresh(pr({ usage_refreshed_at: '2026-06-01T00:00:00Z' }))).toBe(false)
+    expect(usageSummaryNeedsRefresh(pr({
+      edges: {
+        pr_commit_usage_snapshots: [
+          { commit_sha: 'sha-a', input_tokens: 10, output_tokens: 1, cached_input_tokens: 0, reasoning_tokens: 0, credit_usage: 0.1, request_count: 1 }
+        ]
+      },
+      usage_refreshed_at: null
+    }))).toBe(false)
   })
 })

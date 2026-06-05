@@ -242,7 +242,13 @@ export interface PRRecord {
   usage_refreshed_at?: string | null
   usage_status?: UsageStatus
   usage_status_reason?: string
+  usage_status_checked_at?: string | null
   commit_freshness?: CommitFreshness[]
+  metadata_summary?: Record<string, unknown>
+  last_attributed_at?: string | null
+  edges?: {
+    pr_commit_usage_snapshots?: PRCommitUsageSnapshot[] | null
+  }
   cycle_time_hours: number
   merged_at: string | null
   created_at: string
@@ -254,6 +260,20 @@ export interface PRListSummary {
   pending_upload: number
   no_checkpoint: number
   refresh_failed: number
+}
+
+export interface PRCommitUsageSnapshot {
+  id?: number
+  commit_sha: string
+  commit_checkpoint_id?: number | null
+  captured_at?: string | null
+  input_tokens: number
+  output_tokens: number
+  cached_input_tokens: number
+  reasoning_tokens: number
+  credit_usage: number
+  request_count: number
+  sort_order?: number
 }
 
 export interface ToolUsageEventSummary {

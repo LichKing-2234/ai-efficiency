@@ -1,4 +1,4 @@
-import type { PRListSummary, PRRecord, PRSyncJob } from '@/lib/api/types'
+import type { CommitFreshness, PRCommitUsageSnapshot, PRListSummary, PRRecord, PRSyncJob } from '@/lib/api/types'
 
 const terminalPRSyncStatuses = new Set<PRSyncJob['status']>(['completed', 'failed', 'cancelled', 'abandoned'])
 
@@ -78,4 +78,21 @@ export function prUsageSummary(summary: PRListSummary | undefined, rows: PRRecor
     },
     { total: 0, with_usage: 0, pending_upload: 0, no_checkpoint: 0, refresh_failed: 0 }
   )
+}
+
+export function commitSnapshots(pr: PRRecord): PRCommitUsageSnapshot[] {
+  const snapshots = pr.edges?.pr_commit_usage_snapshots
+  return Array.isArray(snapshots) ? [...snapshots].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)) : []
+}
+
+export function commitFreshnessFor(pr: PRRecord, commitSha: string): CommitFreshness | undefined {
+  return pr.commit_freshness?.find((item) => item.commit_sha === commitSha)
+}
+
+export function hasUsageSnapshot(pr: PRRecord) {
+  return commitSnapshots(pr).length > 0
+}
+
+export function usageSummaryNeedsRefresh(pr: PRRecord) {
+  return !hasUsageSnapshot(pr) && !pr.usage_refreshed_at
 }

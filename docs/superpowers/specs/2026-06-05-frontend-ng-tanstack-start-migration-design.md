@@ -402,7 +402,7 @@ As of PR #76 on 2026-06-05:
 - `/login` and `/oauth/*` now preserve safe same-origin redirects, current backend login source casing, unauthenticated OAuth redirect-to-login behavior, OAuth approve payload semantics, defensive missing-redirect handling, and normalized device codes.
 - `/repos` now preserves binding filter URL state, page/page-size list queries, health summary, SCM/org grouping, two-step delete confirmation, auto-bind summary messages, and direct repo creation from parsed GitHub/Bitbucket URLs.
 - `/events` now preserves the Vue filter contract for time range, tool, binding status, text query, admin user filter, URL query state, and limit/offset pagination.
-- `/repos/:id` now preserves the PR list months filter, limit/offset pagination, PR sync job recovery/polling, sync progress/status messages, and unbound-repository sync gating.
+- `/repos/:id` now preserves the PR list months filter, limit/offset pagination, PR sync job recovery/polling, sync progress/status messages, unbound-repository sync gating, PR detail expansion, commit usage snapshots/freshness, usage refresh, and the backend PR attribution settle action.
 - `/user` now preserves the core user setup contract for provider/group selection, session-scoped credential reveal/copy, create/regenerate key actions, backend model discovery, and provider test requests.
 - `/admin/users` now preserves pagination/page-size controls, visible-row selection, subscription-job payload semantics, active job recovery/polling, job result summaries, and the separate relay password reveal action.
 - `/settings` now preserves relay providers, SCM providers, advanced credentials, deployment/runtime actions, and organization login LDAP get/save/test contracts.
