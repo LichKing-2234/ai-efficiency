@@ -10,10 +10,11 @@ import { Badge } from '@/components/ui/badge'
 import { MetricCard } from '@/components/primitives/metric-card'
 import { Page, PageHeader } from '@/components/primitives/page'
 import { LoadingState } from '@/components/primitives/data-state'
+import { StatusBadge } from '@/components/primitives/status-badge'
 import { api } from '@/lib/api'
 import { compact, dateTime, number, tokenTotal } from '@/lib/format'
 import type { ToolUsageEventDetail, ToolUsageEventUserOption } from '@/lib/api/types'
-import { buildEventQuery, buildEventSearch, defaultEventFilters, eventFiltersForRole, getEventPagination, type EventFilterState } from './event-filters'
+import { buildEventQuery, buildEventSearch, defaultEventFilters, eventDetailPrLabel, eventFiltersForRole, getEventPagination, type EventFilterState } from './event-filters'
 
 export function EventsPage() {
   const navigate = useNavigate()
@@ -198,14 +199,77 @@ export function EventsPage() {
         </div>
       </Card>
       <Dialog open={!!selected} onOpenChange={(open) => !open && setSelected(null)}>
-        <DialogContent>
+        <DialogContent className='max-w-2xl'>
           <DialogHeader>
             <DialogTitle>Usage event detail</DialogTitle>
-            <DialogDescription>{selected?.tool_session_id}</DialogDescription>
+            <DialogDescription>{selected?.tool_session_id || 'No tool session id'}</DialogDescription>
           </DialogHeader>
-          <pre className='max-h-[60vh] overflow-auto rounded-md bg-muted p-3 text-xs'>{JSON.stringify(selected, null, 2)}</pre>
+          {selected ? (
+            <div className='max-h-[70vh] overflow-y-auto pr-1'>
+              <div className='grid gap-3 sm:grid-cols-2'>
+                <DetailItem label='Tool' value={selected.tool} />
+                <DetailItem label='Repository' value={selected.repo_name || '-'} />
+                <DetailItem label='Observed start' value={dateTime(selected.observed_start_at)} />
+                <DetailItem label='Observed end' value={dateTime(selected.observed_end_at)} />
+                {isAdmin ? <DetailItem label='User' value={selected.username || `User #${selected.user_id}`} /> : null}
+                <DetailItem label='Context' value={`${number(selected.context_usage_pct)}%`} />
+              </div>
+              <div className='mt-4 grid gap-3 sm:grid-cols-3'>
+                <MetricCard label='Input' value={compact(selected.input_tokens)} />
+                <MetricCard label='Output' value={compact(selected.output_tokens)} />
+                <MetricCard label='Cache' value={compact(selected.cached_input_tokens)} />
+                <MetricCard label='Reasoning' value={compact(selected.reasoning_tokens)} />
+                <MetricCard label='Credits' value={number(selected.credit_usage)} accent />
+                <MetricCard label='Requests' value={number(selected.request_count)} />
+              </div>
+              <div className='mt-4 rounded-md border border-border p-3'>
+                <div className='flex flex-wrap items-center gap-2'>
+                  <StatusBadge value={selected.binding_status} />
+                  <span className='text-muted-foreground text-sm'>checkpoint {dateTime(selected.checkpoint_captured_at)}</span>
+                </div>
+                <div className='mt-2 break-all font-mono text-xs'>{selected.commit_sha || '-'}</div>
+              </div>
+              <div className='mt-4'>
+                <div className='font-medium text-sm'>Matched PRs</div>
+                {selected.matched_prs.length > 0 ? (
+                  <div className='mt-2 flex flex-col gap-2'>
+                    {selected.matched_prs.map((pr) => (
+                      <a key={pr.pr_record_id} className='rounded-md border border-border p-3 text-sm hover:bg-muted' href={pr.scm_pr_url} target='_blank' rel='noreferrer'>
+                        {eventDetailPrLabel(pr)}
+                      </a>
+                    ))}
+                  </div>
+                ) : (
+                  <div className='mt-2 text-muted-foreground text-sm'>No matched PRs.</div>
+                )}
+              </div>
+              <details className='mt-4 rounded-md border border-border p-3'>
+                <summary className='cursor-pointer font-medium text-sm'>Advanced data</summary>
+                <div className='mt-3 grid gap-2 text-sm'>
+                  <DetailItem label='Workspace' value={selected.workspace_id} mono />
+                  <DetailItem label='Tool event' value={selected.tool_event_id || '-'} mono />
+                  {isAdmin ? <DetailItem label='Dedupe key' value={selected.dedupe_key} mono /> : null}
+                  {isAdmin ? <DetailItem label='Source' value={selected.source_basename} /> : null}
+                  {isAdmin ? <DetailItem label='Raw path' value={selected.raw_source_path || '-'} mono /> : null}
+                  {isAdmin ? <DetailItem label='Raw locator' value={selected.raw_source_locator || '-'} mono /> : null}
+                </div>
+                {isAdmin && selected.raw_payload ? (
+                  <pre className='mt-3 max-h-56 overflow-auto rounded-md bg-muted p-3 text-xs'>{JSON.stringify(selected.raw_payload, null, 2)}</pre>
+                ) : null}
+              </details>
+            </div>
+          ) : null}
         </DialogContent>
       </Dialog>
     </Page>
+  )
+}
+
+function DetailItem({ label, value, mono = false }: { label: string; value: React.ReactNode; mono?: boolean }) {
+  return (
+    <div className='min-w-0 rounded-md border border-border p-3'>
+      <div className='text-muted-foreground text-xs'>{label}</div>
+      <div className={mono ? 'mt-1 break-all font-mono text-xs' : 'mt-1 truncate font-medium text-sm'}>{value}</div>
+    </div>
   )
 }

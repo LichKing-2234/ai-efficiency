@@ -15,6 +15,14 @@ export interface EventPaginationInput {
   offset: number
 }
 
+export interface EventDetailMatchedPR {
+  pr_record_id: number
+  scm_pr_id: number
+  title: string
+  status: string
+  scm_pr_url: string
+}
+
 export function defaultEventFilters(search: Record<string, unknown> = {}): EventFilterState {
   return {
     from: stringSearch(search.from) || toDateTimeLocal(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)),
@@ -71,6 +79,10 @@ export function getEventPagination({ total, limit, offset }: EventPaginationInpu
     canGoPrev: offset > 0,
     canGoNext: offset + safeLimit < total
   }
+}
+
+export function eventDetailPrLabel(pr: EventDetailMatchedPR) {
+  return `#${pr.scm_pr_id} ${pr.title} · ${pr.status}`
 }
 
 export function toDateTimeLocal(date: Date) {

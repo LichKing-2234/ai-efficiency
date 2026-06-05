@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { buildEventQuery, eventFiltersForRole, getEventPagination } from './event-filters'
+import { buildEventQuery, eventDetailPrLabel, eventFiltersForRole, getEventPagination } from './event-filters'
 
 describe('buildEventQuery', () => {
   test('preserves backend event filter parameter names and converts local datetimes to ISO strings', () => {
@@ -72,5 +72,13 @@ describe('eventFiltersForRole', () => {
 
     expect(buildEventQuery(eventFiltersForRole(filters, 'user'))).not.toHaveProperty('user_id')
     expect(buildEventQuery(eventFiltersForRole(filters, 'admin'))).toHaveProperty('user_id', 42)
+  })
+})
+
+describe('event detail formatting', () => {
+  test('formats matched PR labels with scm id, title, and status', () => {
+    expect(eventDetailPrLabel({ pr_record_id: 10, scm_pr_id: 42, title: 'Improve attribution', status: 'merged', scm_pr_url: 'https://example.com/pr/42' })).toBe(
+      '#42 Improve attribution · merged'
+    )
   })
 })
