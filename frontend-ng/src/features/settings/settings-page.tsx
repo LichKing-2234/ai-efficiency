@@ -1,5 +1,6 @@
 import { createFileRoute, redirect } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useNavigate, useSearch } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -18,6 +19,7 @@ import { dateTime, number } from '@/lib/format'
 import type { Credential, RelayProvider, SCMProvider } from '@/lib/api/types'
 import {
   buildCredentialPayload,
+  buildSettingsSectionSearch,
   buildLDAPForm,
   buildLDAPPayload,
   buildRelayPayload,
@@ -25,6 +27,9 @@ import {
   type CredentialFormState,
   type LDAPFormState,
   type RelayFormState,
+  type SettingsSection,
+  settingsSectionFromSearch,
+  settingsSections,
   type ScmFormState
 } from './settings-payloads'
 
@@ -35,6 +40,9 @@ const emptyLDAPForm: LDAPFormState = { url: '', base_dn: '', bind_dn: '', bind_p
 
 export function SettingsPage() {
   const qc = useQueryClient()
+  const navigate = useNavigate()
+  const search = useSearch({ strict: false }) as Record<string, unknown>
+  const activeSection = settingsSectionFromSearch(search)
   const [relayDialog, setRelayDialog] = useState(false)
   const [editingRelayId, setEditingRelayId] = useState<number | null>(null)
   const [relayForm, setRelayForm] = useState<RelayFormState>(emptyRelayForm)
@@ -170,6 +178,10 @@ export function SettingsPage() {
 
   if (relay.isLoading || scm.isLoading || deployment.isLoading) return <LoadingState />
 
+  function selectSection(section: SettingsSection) {
+    void navigate({ to: '/settings', search: buildSettingsSectionSearch(section) })
+  }
+
   function openAddRelayDialog() {
     setEditingRelayId(null)
     setRelayForm({ ...emptyRelayForm, is_primary: (relay.data ?? []).length === 0 })
@@ -250,8 +262,20 @@ export function SettingsPage() {
   return (
     <Page>
       <PageHeader title='Admin Console' description='Task-zone settings backed by current Go APIs. Mutating deployment actions require explicit confirmation.' />
+      <div className='flex flex-wrap gap-2'>
+        {settingsSections.map((section) => (
+          <Button
+            key={section}
+            variant={activeSection === section ? 'default' : 'outline'}
+            size='sm'
+            onClick={() => selectSection(section)}
+          >
+            {settingsSectionLabel(section)}
+          </Button>
+        ))}
+      </div>
       <div className='grid gap-4 lg:grid-cols-2'>
-        <Card>
+        {activeSection === 'ai-services' ? <Card>
           <CardHeader>
             <div className='flex items-center justify-between gap-2'>
               <CardTitle>AI Services</CardTitle>
@@ -284,8 +308,8 @@ export function SettingsPage() {
               </div>
             ))}
           </CardContent>
-        </Card>
-        <Card>
+        </Card> : null}
+        {activeSection === 'code-platforms' ? <Card>
           <CardHeader>
             <div className='flex items-center justify-between gap-2'>
               <CardTitle>Code Platforms</CardTitle>
@@ -328,8 +352,8 @@ export function SettingsPage() {
               </TableBody>
             </Table>
           </CardContent>
-        </Card>
-        <Card>
+        </Card> : null}
+        {activeSection === 'advanced-credentials' ? <Card>
           <CardHeader>
             <div className='flex items-center justify-between gap-2'>
               <CardTitle>Advanced Credentials</CardTitle>
@@ -361,8 +385,8 @@ export function SettingsPage() {
               </div>
             ))}
           </CardContent>
-        </Card>
-        <Card>
+        </Card> : null}
+        {activeSection === 'organization-login' ? <Card>
           <CardHeader>
             <CardTitle>Organization Login</CardTitle>
             <CardDescription>LDAP configuration and login source behavior.</CardDescription>
@@ -391,8 +415,8 @@ export function SettingsPage() {
               </Button>
             </div>
           </CardContent>
-        </Card>
-        <Card>
+        </Card> : null}
+        {activeSection === 'deployment-runtime' ? <Card>
           <CardHeader>
             <CardTitle>Deployment & Runtime</CardTitle>
             <CardDescription>Current backend deployment status.</CardDescription>
@@ -434,7 +458,7 @@ export function SettingsPage() {
               </Button>
             </div>
           </CardContent>
-        </Card>
+        </Card> : null}
       </div>
       <Dialog open={relayDialog} onOpenChange={(open) => open ? setRelayDialog(true) : closeRelayDialog()}>
         <DialogContent>
@@ -549,6 +573,21 @@ export function SettingsPage() {
       </Dialog>
     </Page>
   )
+}
+
+function settingsSectionLabel(section: SettingsSection) {
+  switch (section) {
+    case 'ai-services':
+      return 'AI Services'
+    case 'code-platforms':
+      return 'Code Platforms'
+    case 'organization-login':
+      return 'Organization Login'
+    case 'deployment-runtime':
+      return 'Deployment & Runtime'
+    case 'advanced-credentials':
+      return 'Advanced Credentials'
+  }
 }
 
 export const settingsRouteGuard = async () => {

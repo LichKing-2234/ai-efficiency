@@ -44,6 +44,27 @@ export interface LDAPFormState {
   tls: boolean
 }
 
+export const settingsSections = [
+  'ai-services',
+  'code-platforms',
+  'organization-login',
+  'deployment-runtime',
+  'advanced-credentials'
+] as const
+
+export type SettingsSection = (typeof settingsSections)[number]
+
+const settingsSectionSet = new Set<string>(settingsSections)
+
+export function settingsSectionFromSearch(search: Record<string, unknown>): SettingsSection {
+  const section = typeof search.section === 'string' ? search.section : ''
+  return settingsSectionSet.has(section) ? section as SettingsSection : 'ai-services'
+}
+
+export function buildSettingsSectionSearch(section: SettingsSection) {
+  return section === 'ai-services' ? {} : { section }
+}
+
 export function buildRelayPayload(form: RelayFormState, mode: 'create'): RelayProviderPayload
 export function buildRelayPayload(form: RelayFormState, mode: 'edit'): Partial<RelayProviderPayload>
 export function buildRelayPayload(form: RelayFormState, mode: SettingsFormMode): RelayProviderPayload | Partial<RelayProviderPayload> {

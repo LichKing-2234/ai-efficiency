@@ -5,9 +5,12 @@ import {
   buildLDAPPayload,
   buildRelayPayload,
   buildScmProviderPayload,
+  buildSettingsSectionSearch,
+  settingsSectionFromSearch,
   type CredentialFormState,
   type LDAPFormState,
   type RelayFormState,
+  settingsSections,
   type ScmFormState
 } from './settings-payloads'
 
@@ -140,5 +143,23 @@ describe('LDAP settings payloads', () => {
       user_filter: '(mail=%s)',
       tls: false
     })
+  })
+})
+
+describe('settings section search state', () => {
+  test('uses AI services as the default section for missing or invalid search values', () => {
+    expect(settingsSectionFromSearch({})).toBe('ai-services')
+    expect(settingsSectionFromSearch({ section: 'unknown' })).toBe('ai-services')
+  })
+
+  test('accepts every visible settings section from URL search', () => {
+    for (const section of settingsSections) {
+      expect(settingsSectionFromSearch({ section })).toBe(section)
+    }
+  })
+
+  test('omits default section from URL search and keeps non-default sections', () => {
+    expect(buildSettingsSectionSearch('ai-services')).toEqual({})
+    expect(buildSettingsSectionSearch('organization-login')).toEqual({ section: 'organization-login' })
   })
 })
