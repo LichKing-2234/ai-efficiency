@@ -1,7 +1,7 @@
 # Repo Webhook Repair Design
 
 **Date:** 2026-06-06
-**Status:** Proposed design for review
+**Status:** Implemented
 **Scope:** `backend/`, `frontend/`, `deploy/`, `docs/`
 **Related:**
 - [2026-06-02-repo-auto-binding-design.md](./2026-06-02-repo-auto-binding-design.md)

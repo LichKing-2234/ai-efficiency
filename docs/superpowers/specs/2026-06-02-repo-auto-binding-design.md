@@ -169,6 +169,8 @@ The batch endpoint does not process inactive repos. Admins can manually re-activ
 
 Post-bind work is best-effort and isolated from the binding decision.
 
+Webhook registration remains best-effort during auto-bind. Auto-bind only processes unbound repos; already-bound repos in `webhook_failed` are repaired by the follow-up webhook repair contract in [`2026-06-06-repo-webhook-repair-design.md`](./2026-06-06-repo-webhook-repair-design.md).
+
 When provider API verification succeeds:
 
 - refresh `name`
