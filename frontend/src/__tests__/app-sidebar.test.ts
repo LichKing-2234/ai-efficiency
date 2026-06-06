@@ -212,6 +212,35 @@ describe('AppSidebar', () => {
     expect(wrapper.text()).toContain('admin')
   })
 
+  it('truncates long account identity text in the footer', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+
+    const router = createTestRouter()
+    await router.push('/')
+    await router.isReady()
+
+    const { useAuthStore } = await import('@/stores/auth')
+    const auth = useAuthStore(pinia)
+    auth.user = {
+      id: 1,
+      username: 'very-long-admin-account@example.com',
+      email: 'alice@example.com',
+      role: 'admin',
+      auth_source: 'sso',
+    }
+
+    const wrapper = mount(AppSidebar, {
+      global: { plugins: [pinia, router] },
+    })
+
+    const accountLines = wrapper.get('[data-testid="sidebar-account-summary"]').findAll('p')
+    expect(accountLines[0].classes()).toContain('truncate')
+    expect(accountLines[0].attributes('title')).toBe('very-long-admin-account@example.com')
+    expect(accountLines[1].classes()).toContain('truncate')
+    expect(accountLines[1].attributes('title')).toBe('admin')
+  })
+
   it('keeps the footer account identity separate from setup navigation', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)

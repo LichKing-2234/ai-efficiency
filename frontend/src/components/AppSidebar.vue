@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { useRouter } from 'vue-router'
 import { useI18n } from '@/i18n'
@@ -14,6 +15,8 @@ const emit = defineEmits<{
 const auth = useAuthStore()
 const router = useRouter()
 const { languageToggleLabel, t, toggleLocale } = useI18n()
+const displayUsername = computed(() => auth.user?.username ?? 'User')
+const displayRole = computed(() => auth.user?.role ?? '')
 
 function handleLogout() {
   auth.logout()
@@ -26,7 +29,7 @@ function handleNavigate() {
 </script>
 
 <template>
-  <aside class="flex w-60 flex-col bg-gray-900 text-gray-100">
+  <aside class="flex h-full min-h-0 w-60 shrink-0 flex-col bg-gray-900 text-gray-100">
     <div
       data-testid="sidebar-header"
       class="flex h-14 items-center justify-between gap-3 px-4"
@@ -44,7 +47,7 @@ function handleNavigate() {
       </button>
     </div>
 
-    <nav class="flex-1 space-y-1 px-2 py-4">
+    <nav class="min-h-0 flex-1 space-y-1 overflow-y-auto px-2 py-4">
       <div class="px-3 pb-2 text-[11px] font-semibold uppercase tracking-wide text-gray-500">
         {{ t('nav.myWorkSection') }}
       </div>
@@ -146,8 +149,8 @@ function handleNavigate() {
           data-testid="sidebar-account-summary"
           class="min-w-0 flex-1 px-1 py-1 text-sm"
         >
-          <p class="font-medium">{{ auth.user?.username ?? 'User' }}</p>
-          <p class="text-xs text-gray-400">{{ auth.user?.role ?? '' }}</p>
+          <p class="truncate font-medium" :title="displayUsername">{{ displayUsername }}</p>
+          <p class="truncate text-xs text-gray-400" :title="displayRole">{{ displayRole }}</p>
         </div>
         <div class="flex shrink-0 items-center gap-1">
           <button

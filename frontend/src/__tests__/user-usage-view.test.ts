@@ -93,6 +93,9 @@ describe('UsageView', () => {
     expect(wrapper.text()).toContain('example-model')
     expect(wrapper.find('[data-test="line-chart"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="doughnut-chart"]').exists()).toBe(true)
+    const modelTableScroll = wrapper.get('[data-testid="usage-model-table-scroll"]')
+    expect(modelTableScroll.classes()).toContain('overflow-x-auto')
+    expect(modelTableScroll.get('table').classes()).toContain('min-w-[36rem]')
   })
 
   it('uses hour granularity for Today and day granularity for 7 Days', async () => {
