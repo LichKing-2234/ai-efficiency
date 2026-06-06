@@ -2000,7 +2000,7 @@ cd /Users/admin/ai-efficiency && rg -n "Today Cost|Today Requests|Today Tokens|A
 
 Expected: tests/build pass; the stale-copy search has no matches in product source.
 
-- [ ] **Step 7: Commit and update PR #77**
+- [x] **Step 7: Commit and update PR #77**
 
 Run:
 
@@ -2012,3 +2012,5 @@ git push
 ```
 
 Expected: PR #77 updates to the new head commit.
+
+Observed: committed `74b79a5 fix(frontend): localize embedded usage dashboard` and pushed `feat/user-usage-dashboard` to PR #77.
