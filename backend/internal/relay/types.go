@@ -192,3 +192,67 @@ type ChatCompletionWithToolsResponse struct {
 	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
 	TokensUsed int        `json:"tokens_used"`
 }
+
+type UserUsageStats struct {
+	TotalRequests         int64   `json:"total_requests"`
+	TotalInputTokens      int64   `json:"total_input_tokens"`
+	TotalOutputTokens     int64   `json:"total_output_tokens"`
+	TotalCacheReadTokens  int64   `json:"total_cache_read_tokens"`
+	TotalCacheWriteTokens int64   `json:"total_cache_creation_tokens"`
+	TotalTokens           int64   `json:"total_tokens"`
+	TotalCost             float64 `json:"total_cost"`
+	TotalActualCost       float64 `json:"total_actual_cost"`
+	TodayRequests        int64   `json:"today_requests"`
+	TodayInputTokens      int64   `json:"today_input_tokens"`
+	TodayOutputTokens     int64   `json:"today_output_tokens"`
+	TodayTokens           int64   `json:"today_tokens"`
+	TodayCost             float64 `json:"today_cost"`
+	TodayActualCost       float64 `json:"today_actual_cost"`
+	AverageDurationMs     int64   `json:"average_duration_ms"`
+}
+
+type UsageTrendParams struct {
+	StartDate   string `json:"start_date"`
+	EndDate     string `json:"end_date"`
+	Granularity string `json:"granularity"`
+	Timezone    string `json:"timezone"`
+}
+
+type UsageTrendDataPoint struct {
+	Date         string  `json:"date"`
+	Requests     int64   `json:"requests"`
+	InputTokens  int64   `json:"input_tokens"`
+	OutputTokens int64   `json:"output_tokens"`
+	TotalTokens  int64   `json:"total_tokens"`
+	Cost         float64 `json:"cost"`
+	ActualCost   float64 `json:"actual_cost"`
+}
+
+type UsageTrendResponse struct {
+	Trend       []UsageTrendDataPoint `json:"trend"`
+	StartDate   string                `json:"start_date"`
+	EndDate     string                `json:"end_date"`
+	Granularity string                `json:"granularity"`
+}
+
+type UsageModelParams struct {
+	StartDate string `json:"start_date"`
+	EndDate   string `json:"end_date"`
+	Timezone  string `json:"timezone"`
+}
+
+type UsageModelStat struct {
+	Model        string  `json:"model"`
+	Requests     int64   `json:"requests"`
+	InputTokens  int64   `json:"input_tokens"`
+	OutputTokens int64   `json:"output_tokens"`
+	TotalTokens  int64   `json:"total_tokens"`
+	Cost         float64 `json:"cost"`
+	ActualCost   float64 `json:"actual_cost"`
+}
+
+type UsageModelResponse struct {
+	Models    []UsageModelStat `json:"models"`
+	StartDate string           `json:"start_date"`
+	EndDate   string           `json:"end_date"`
+}
