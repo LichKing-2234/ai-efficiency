@@ -403,6 +403,21 @@ describe('RepoDetailView', () => {
     expect(wrapper.find('[data-testid="repo-repair-webhook-button"]').exists()).toBe(true)
   })
 
+  it('shows repair webhook action for admin bound repo with missing webhook id', async () => {
+    const pinia = createAdminPinia()
+
+    const { wrapper } = await mountRepoDetail({
+      status: 'active',
+      binding_state: 'bound',
+      webhook_id: '',
+      edges: { scm_provider: { id: 2, name: 'Bitbucket', type: 'bitbucket_server', base_url: 'https://bitbucket.example.com', status: 'active' } },
+    }, pinia)
+
+    expect(wrapper.text()).toContain('Repair webhook')
+    expect(wrapper.text()).not.toContain('Force replace')
+    expect(wrapper.find('[data-testid="repo-repair-webhook-button"]').exists()).toBe(true)
+  })
+
   it('repairs webhook from repo detail', async () => {
     const { repairWebhook } = await import('@/api/repo')
     ;(repairWebhook as any).mockResolvedValue({
@@ -422,6 +437,27 @@ describe('RepoDetailView', () => {
 
     expect(repairWebhook).toHaveBeenCalledWith(9, { force: false })
     expect(wrapper.text()).toContain('Webhook repaired')
+  })
+
+  it('shows failed webhook repair result as an error', async () => {
+    const { repairWebhook } = await import('@/api/repo')
+    ;(repairWebhook as any).mockResolvedValue({
+      data: { data: { repo_config_id: 9, status: 'webhook_failed', webhook_status: 'failed', error: 'bitbucket API returned 502' } },
+    })
+    const pinia = createAdminPinia()
+
+    const { wrapper } = await mountRepoDetail({
+      status: 'webhook_failed',
+      binding_state: 'bound',
+      edges: { scm_provider: { id: 2, name: 'Bitbucket', type: 'bitbucket_server', base_url: 'https://bitbucket.example.com', status: 'active' } },
+    }, pinia)
+
+    await wrapper.get('[data-testid="repo-repair-webhook-button"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Webhook repair failed')
+    expect(wrapper.text()).toContain('bitbucket API returned 502')
+    expect(wrapper.text()).not.toContain('Webhook repair complete')
   })
 
   it('polls and shows PR sync job progress after syncing', async () => {

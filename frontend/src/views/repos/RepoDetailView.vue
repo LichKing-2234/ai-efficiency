@@ -44,7 +44,13 @@ const webhookRepairError = ref('')
 
 const repoId = Number(route.params.id)
 const isRepoUnbound = computed(() => repo.value?.binding_state === 'unbound')
-const canRepairWebhook = computed(() => auth.isAdmin && repo.value?.binding_state === 'bound' && repo.value?.status === 'webhook_failed')
+const isWebhookMissing = computed(() => !repo.value?.webhook_id)
+const canRepairWebhook = computed(() => (
+  auth.isAdmin
+  && repo.value?.binding_state === 'bound'
+  && repo.value?.status !== 'inactive'
+  && (repo.value?.status === 'webhook_failed' || isWebhookMissing.value)
+))
 const syncDisabledReason = computed(() => (isRepoUnbound.value ? t('repoDetail.syncDisabledUnbound') : ''))
 const prUsageSummary = computed(() => {
   if (prsSummary.value) {
@@ -223,6 +229,14 @@ async function handleRepairWebhook() {
   try {
     const res = await repairWebhook(repoId, { force: webhookRepairForce.value })
     const item = res.data.data
+    const failed = item?.webhook_status === 'failed' || item?.status === 'webhook_failed' || Boolean(item?.error)
+    if (failed) {
+      webhookRepairError.value = item?.error
+        ? `${t('repoDetail.webhookRepairFailed')}: ${item.error}`
+        : t('repoDetail.webhookRepairFailed')
+      await refreshRepo()
+      return
+    }
     webhookRepairMessage.value = item?.webhook_status === 'registered'
       ? t('repoDetail.webhookRepaired')
       : t('repoDetail.webhookRepairComplete')
