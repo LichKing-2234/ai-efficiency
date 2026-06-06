@@ -1,7 +1,7 @@
 # PR Sync Job Progress And Usage Freshness Design
 
 - **Date:** 2026-05-28
-- **Status:** Approved design, implementation not started
+- **Status:** Implemented current contract
 - **Scope:** `backend/`, `frontend/`, `docs/`
 - **Related:**
   - [2026-05-20-pr-usage-snapshots-design.md](./2026-05-20-pr-usage-snapshots-design.md)
@@ -23,6 +23,8 @@ This spec keeps that contract and changes the sync execution model:
 3. PR rows and PR details expose usage freshness reasons so delayed commit usage is visible and explainable.
 
 Historical attribution specs remain background context. They should not override this job-based PR sync contract.
+
+Implementation has landed in the current codebase. `POST /api/v1/repos/:id/sync-prs` creates or reuses a persisted `pr_sync_jobs` row, repo detail recovers the latest repo job through `GET /api/v1/repos/:id/pr-sync-job/latest`, and `GET /api/v1/pr-sync-jobs/:id` exposes phase/progress counters for polling. The 2026-06-03 large-repo recovery follow-up further implemented latest-job recovery, bounded PR list summary queries, Bitbucket PR timestamp ingestion, and stale queued/running job abandonment after more than one hour without progress.
 
 ## Problem Statement
 
