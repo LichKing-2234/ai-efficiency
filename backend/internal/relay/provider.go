@@ -60,9 +60,7 @@ type Provider interface {
 	RevokeUserAPIKey(ctx context.Context, keyID int64) error
 	ListUsageLogsByAPIKeyExact(ctx context.Context, apiKeyID int64, from, to time.Time) ([]UsageLog, error)
 
-	GetUserUsageStats(ctx context.Context, login, password string) (*UserUsageStats, error)
-	GetUserUsageTrend(ctx context.Context, login, password string, params UsageTrendParams) (*UsageTrendResponse, error)
-	GetUserUsageModels(ctx context.Context, login, password string, params UsageModelParams) (*UsageModelResponse, error)
+	GetUserUsageDashboard(ctx context.Context, login, password string, params UserUsageDashboardParams) (*UserUsageDashboardResponse, error)
 }
 
 // PlatformChatCompleter is an optional extension for relay implementations that

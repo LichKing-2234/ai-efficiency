@@ -52,7 +52,7 @@
 - Modify: `backend/internal/relay/provider.go`
 - Modify: `backend/internal/relay/sub2api.go`
 
-- [ ] **Step 1: Replace old relay usage tests with snapshot tests**
+- [x] **Step 1: Replace old relay usage tests with snapshot tests**
 
 In `backend/internal/relay/sub2api_test.go`, remove the current `TestGetUserUsageStats`, `TestGetUserUsageTrend`, and `TestGetUserUsageModels` tests. Add these tests in their place:
 
@@ -266,7 +266,7 @@ func TestGetUserUsageDashboardFailsFastOnSub2APIError(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the new relay tests and verify they fail**
+- [x] **Step 2: Run the new relay tests and verify they fail**
 
 Run:
 
@@ -276,7 +276,7 @@ cd /Users/admin/ai-efficiency/backend && go test ./internal/relay -run 'TestGetU
 
 Expected: compile failure because `relay.Provider` does not yet define `GetUserUsageDashboard` and the old usage types still exist.
 
-- [ ] **Step 3: Replace relay usage types**
+- [x] **Step 3: Replace relay usage types**
 
 In `backend/internal/relay/types.go`, replace `UserUsageStats`, `UsageTrendParams`, `UsageTrendDataPoint`, `UsageTrendResponse`, `UsageModelParams`, `UsageModelStat`, and `UsageModelResponse` with:
 
@@ -350,7 +350,7 @@ type UserUsageModelStat struct {
 }
 ```
 
-- [ ] **Step 4: Replace Provider interface methods**
+- [x] **Step 4: Replace Provider interface methods**
 
 In `backend/internal/relay/provider.go`, replace:
 
@@ -366,7 +366,7 @@ with:
 GetUserUsageDashboard(ctx context.Context, login, password string, params UserUsageDashboardParams) (*UserUsageDashboardResponse, error)
 ```
 
-- [ ] **Step 5: Implement the sub2api snapshot method**
+- [x] **Step 5: Implement the sub2api snapshot method**
 
 In `backend/internal/relay/sub2api.go`, replace the three public `GetUserUsageStats`, `GetUserUsageTrend`, and `GetUserUsageModels` methods with:
 
@@ -512,7 +512,7 @@ func addUserUsageDashboardQuery(query url.Values, params UserUsageDashboardParam
 
 Use the existing package-local `firstNonEmpty` helper already present in `backend/internal/relay/sub2api.go`; do not add a duplicate helper.
 
-- [ ] **Step 6: Run relay tests and verify they pass**
+- [x] **Step 6: Run relay tests and verify they pass**
 
 Run:
 
@@ -522,7 +522,7 @@ cd /Users/admin/ai-efficiency/backend && go test ./internal/relay -run 'TestGetU
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit relay snapshot contract**
+- [x] **Step 7: Commit relay snapshot contract**
 
 ```bash
 git add backend/internal/relay/types.go backend/internal/relay/provider.go backend/internal/relay/sub2api.go backend/internal/relay/sub2api_test.go
