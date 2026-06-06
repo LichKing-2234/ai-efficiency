@@ -1749,7 +1749,7 @@ git commit -m "feat(frontend): load user usage dashboard snapshot"
 - Verify: `docs/superpowers/specs/2026-06-06-user-usage-trend-design.md`
 - Verify: `docs/superpowers/plans/2026-06-06-user-usage-trend.md`
 
-- [ ] **Step 1: Search for stale old endpoint references**
+- [x] **Step 1: Search for stale old endpoint references**
 
 Run:
 
@@ -1759,7 +1759,7 @@ cd /Users/admin/ai-efficiency && rg -n "/user/usage/(stats|trend|models)|GetUser
 
 Expected: no matches, except historical context in committed diffs outside the current worktree is not searched by this command.
 
-- [ ] **Step 2: Run backend tests**
+- [x] **Step 2: Run backend tests**
 
 Run:
 
@@ -1769,7 +1769,7 @@ cd /Users/admin/ai-efficiency/backend && AE_TEST_POSTGRES_DSN='postgres://postgr
 
 Expected: PASS.
 
-- [ ] **Step 3: Run frontend tests**
+- [x] **Step 3: Run frontend tests**
 
 Run:
 
@@ -1779,7 +1779,7 @@ cd /Users/admin/ai-efficiency/frontend && pnpm test
 
 Expected: PASS.
 
-- [ ] **Step 4: Run frontend build**
+- [x] **Step 4: Run frontend build**
 
 Run:
 
@@ -1789,7 +1789,7 @@ cd /Users/admin/ai-efficiency/frontend && pnpm run build
 
 Expected: PASS.
 
-- [ ] **Step 5: Check architecture docs for required update**
+- [x] **Step 5: Check architecture docs for required update**
 
 Run:
 
@@ -1799,7 +1799,7 @@ cd /Users/admin/ai-efficiency && rg -n "user usage|/user/usage|usage dashboard|r
 
 Expected: if there are no matches, no architecture doc change is required. If the command finds text describing the old three-endpoint usage page, update that text to say the current user usage page uses `GET /api/v1/user/usage/dashboard` as a single AE snapshot endpoint backed by sub2api user dashboard APIs.
 
-- [ ] **Step 6: Commit final verification cleanup**
+- [x] **Step 6: Commit final verification cleanup**
 
 If Step 5 required a docs change:
 
@@ -1810,7 +1810,7 @@ git commit -m "docs(architecture): document user usage dashboard snapshot"
 
 If Step 5 did not require a docs change, skip this commit and record the no-op in the final implementation summary.
 
-- [ ] **Step 7: Final status audit**
+- [x] **Step 7: Final status audit**
 
 Run:
 
