@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/ai-efficiency/backend/ent"
+	"github.com/ai-efficiency/backend/ent/relayprovider"
 	"github.com/ai-efficiency/backend/internal/auth"
 	"github.com/ai-efficiency/backend/internal/pkg"
 	"github.com/ai-efficiency/backend/internal/relay"
@@ -12,17 +13,31 @@ import (
 )
 
 type UserUsageHandler struct {
-	entClient     *ent.Client
-	relayProvider relay.Provider
-	encryptionKey string
+	entClient       *ent.Client
+	providerHandler *ProviderHandler
+	encryptionKey   string
 }
 
-func NewUserUsageHandler(entClient *ent.Client, relayProvider relay.Provider, encryptionKey string) *UserUsageHandler {
+func NewUserUsageHandler(entClient *ent.Client, providerHandler *ProviderHandler, encryptionKey string) *UserUsageHandler {
 	return &UserUsageHandler{
-		entClient:     entClient,
-		relayProvider: relayProvider,
-		encryptionKey: encryptionKey,
+		entClient:       entClient,
+		providerHandler: providerHandler,
+		encryptionKey:   encryptionKey,
 	}
+}
+
+func (h *UserUsageHandler) resolvePrimaryProvider(c *gin.Context) (relay.Provider, error) {
+	providers, err := h.entClient.RelayProvider.Query().
+		Where(relayprovider.IsPrimary(true)).
+		All(c.Request.Context())
+	if err != nil {
+		return nil, err
+	}
+	if len(providers) == 0 {
+		// Fallback to ID 1 if no primary is set
+		return h.providerHandler.Resolve(c.Request.Context(), 1)
+	}
+	return h.providerHandler.Resolve(c.Request.Context(), providers[0].ID)
 }
 
 func (h *UserUsageHandler) Stats(c *gin.Context) {
@@ -49,13 +64,19 @@ func (h *UserUsageHandler) Stats(c *gin.Context) {
 		return
 	}
 
+	relayProvider, err := h.resolvePrimaryProvider(c)
+	if err != nil {
+		pkg.Error(c, http.StatusUnprocessableEntity, "resolve relay provider: "+err.Error())
+		return
+	}
+
 	login := firstNonEmptyString(u.Email, u.Username)
 	if login == "" {
 		pkg.Error(c, http.StatusUnprocessableEntity, "user has no email or username")
 		return
 	}
 
-	stats, err := h.relayProvider.GetUserUsageStats(c.Request.Context(), login, password)
+	stats, err := relayProvider.GetUserUsageStats(c.Request.Context(), login, password)
 	if err != nil {
 		pkg.Error(c, http.StatusBadGateway, "get usage stats: "+err.Error())
 		return
@@ -88,6 +109,12 @@ func (h *UserUsageHandler) Trend(c *gin.Context) {
 		return
 	}
 
+	relayProvider, err := h.resolvePrimaryProvider(c)
+	if err != nil {
+		pkg.Error(c, http.StatusUnprocessableEntity, "resolve relay provider: "+err.Error())
+		return
+	}
+
 	params := relay.UsageTrendParams{
 		StartDate:   c.Query("start_date"),
 		EndDate:     c.Query("end_date"),
@@ -101,7 +128,7 @@ func (h *UserUsageHandler) Trend(c *gin.Context) {
 		return
 	}
 
-	trend, err := h.relayProvider.GetUserUsageTrend(c.Request.Context(), login, password, params)
+	trend, err := relayProvider.GetUserUsageTrend(c.Request.Context(), login, password, params)
 	if err != nil {
 		pkg.Error(c, http.StatusBadGateway, "get usage trend: "+err.Error())
 		return
@@ -134,6 +161,12 @@ func (h *UserUsageHandler) Models(c *gin.Context) {
 		return
 	}
 
+	relayProvider, err := h.resolvePrimaryProvider(c)
+	if err != nil {
+		pkg.Error(c, http.StatusUnprocessableEntity, "resolve relay provider: "+err.Error())
+		return
+	}
+
 	params := relay.UsageModelParams{
 		StartDate: c.Query("start_date"),
 		EndDate:   c.Query("end_date"),
@@ -146,7 +179,7 @@ func (h *UserUsageHandler) Models(c *gin.Context) {
 		return
 	}
 
-	models, err := h.relayProvider.GetUserUsageModels(c.Request.Context(), login, password, params)
+	models, err := relayProvider.GetUserUsageModels(c.Request.Context(), login, password, params)
 	if err != nil {
 		pkg.Error(c, http.StatusBadGateway, "get usage models: "+err.Error())
 		return
