@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createMemoryHistory } from 'vue-router'
@@ -57,6 +57,10 @@ describe('UsageView', () => {
     vi.clearAllMocks()
   })
 
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   it('shows setup empty state when dashboard is not configured', async () => {
     const { getUserUsageDashboard } = await import('@/api/userUsage')
     ;(getUserUsageDashboard as any).mockResolvedValue({
@@ -103,6 +107,23 @@ describe('UsageView', () => {
     await wrapper.get('[data-test="range-7d"]').trigger('click')
     await flushPromises()
     expect((getUserUsageDashboard as any).mock.calls.at(-1)[0].granularity).toBe('day')
+  })
+
+  it('uses local calendar dates for the initial range', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 5, 6, 0, 30, 0))
+    const { getUserUsageDashboard } = await import('@/api/userUsage')
+    ;(getUserUsageDashboard as any).mockResolvedValue({ data: { data: snapshot } })
+    const router = createRouterForUsage()
+    await router.push('/user/usage')
+    await router.isReady()
+    mount(UsageView, { global: { plugins: [createPinia(), router] } })
+    await flushPromises()
+    expect((getUserUsageDashboard as any).mock.calls[0][0]).toMatchObject({
+      start_date: '2026-05-31',
+      end_date: '2026-06-06',
+      granularity: 'day',
+    })
   })
 
   it('shows credential repair message on 409', async () => {
