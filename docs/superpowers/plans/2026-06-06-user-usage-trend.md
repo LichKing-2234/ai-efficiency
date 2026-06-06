@@ -57,7 +57,7 @@
 | `frontend/src/__tests__/dashboard-view.test.ts` | Verify the home page renders the embedded user usage dashboard. |
 | `frontend/src/__tests__/app-sidebar.test.ts` | Verify sidebar no longer exposes a separate My Usage route. |
 | `frontend/src/__tests__/router.test.ts` | Verify `/user/usage` is not registered as a separate frontend page route. |
-| `frontend/src/components/user/usage/UsageStatsCards.vue` | Rewrite cards for Today Cost, Today Requests, Today Tokens, and Avg Response. |
+| `frontend/src/components/user/usage/UsageStatsCards.vue` | Rewrite cards for selected-range Cost, Requests, Tokens, and Avg Response. |
 | `frontend/src/components/user/usage/UsageTrendChart.vue` | Replace hand-rolled bars with chart.js line chart. |
 | `frontend/src/components/user/usage/UsageModelChart.vue` | Rewrite model distribution as usage table with optional doughnut chart. |
 
@@ -1242,6 +1242,8 @@ git commit -m "feat(frontend): add user usage dashboard snapshot API"
 ---
 
 ## Task 5: Frontend Usage Components
+
+**Superseded note (2026-06-06):** The original Step 1 implementation notes below describe fixed Today cards and include `dark:*` Tailwind variants. Those snippets are historical execution notes and are superseded by Task 0 above plus the current implementation. The live contract is selected-range cards sourced from `trend`, with no usage-dashboard `dark:*` classes.
 
 **Files:**
 - Modify: `frontend/src/components/user/usage/UsageStatsCards.vue`

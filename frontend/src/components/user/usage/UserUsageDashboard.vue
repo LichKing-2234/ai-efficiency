@@ -85,6 +85,7 @@ const loading = ref(false)
 const errorMessage = ref('')
 const credentialError = ref(false)
 const { t } = useI18n()
+let dashboardRequestSeq = 0
 
 const setupRequired = computed(() => snapshot.value?.configured === false)
 const snapshotRangeLabel = computed(() => rangeLabel(snapshotRange.value))
@@ -129,19 +130,24 @@ function buildParams(range: RangeOption): UserUsageDashboardParams {
 
 async function loadDashboard() {
   const requestedRange = selectedRange.value
+  const requestSeq = ++dashboardRequestSeq
   loading.value = true
   errorMessage.value = ''
   credentialError.value = false
   try {
     const res = await getUserUsageDashboard(buildParams(requestedRange))
+    if (requestSeq !== dashboardRequestSeq) return
     snapshot.value = res.data.data ?? null
     snapshotRange.value = requestedRange
   } catch (err: any) {
+    if (requestSeq !== dashboardRequestSeq) return
     snapshot.value = null
     credentialError.value = err?.response?.status === 409
     errorMessage.value = credentialError.value ? t('usageDashboard.credentialError') : t('usageDashboard.unavailable')
   } finally {
-    loading.value = false
+    if (requestSeq === dashboardRequestSeq) {
+      loading.value = false
+    }
   }
 }
 
