@@ -48,7 +48,10 @@ const snapshot = {
     rpm: 2,
     tpm: 3000,
   },
-  trend: [{ date: '2026-06-06', requests: 12, input_tokens: 1000, output_tokens: 500, cache_creation_tokens: 20, cache_read_tokens: 30, total_tokens: 1550, cost: 0.25, actual_cost: 0.2 }],
+  trend: [
+    { date: '2026-06-05', requests: 20, input_tokens: 2000, output_tokens: 1000, cache_creation_tokens: 40, cache_read_tokens: 60, total_tokens: 3100, cost: 0.5, actual_cost: 0.4 },
+    { date: '2026-06-06', requests: 12, input_tokens: 1000, output_tokens: 500, cache_creation_tokens: 20, cache_read_tokens: 30, total_tokens: 1550, cost: 0.25, actual_cost: 0.2 },
+  ],
   models: [{ model: 'example-model', requests: 12, input_tokens: 1000, output_tokens: 500, cache_creation_tokens: 20, cache_read_tokens: 30, total_tokens: 1550, cost: 0.25, actual_cost: 0.2 }],
 }
 
@@ -86,9 +89,12 @@ describe('UsageView', () => {
     const wrapper = mount(UsageView, { global: { plugins: [createPinia(), router] } })
     await flushPromises()
     expect(wrapper.text()).toContain('My AI Usage')
-    expect(wrapper.text()).toContain('Today Cost')
-    expect(wrapper.text()).toContain('Today Requests')
-    expect(wrapper.text()).toContain('Today Tokens')
+    expect(wrapper.text()).toContain('7 Days Cost')
+    expect(wrapper.text()).toContain('7 Days Requests')
+    expect(wrapper.text()).toContain('7 Days Tokens')
+    expect(wrapper.text()).toContain('$0.6000')
+    expect(wrapper.text()).toContain('32')
+    expect(wrapper.text()).not.toContain('Today Cost')
     expect(wrapper.text()).toContain('Avg Response')
     expect(wrapper.text()).toContain('example-model')
     expect(wrapper.find('[data-test="line-chart"]').exists()).toBe(true)
@@ -153,7 +159,8 @@ describe('UsageView', () => {
     const wrapper = mount(UsageView, { global: { plugins: [createPinia(), router] } })
     await flushPromises()
     expect(wrapper.text()).toContain('我的 AI 用量')
-    expect(wrapper.text()).toContain('今日费用')
+    expect(wrapper.text()).toContain('7 天费用')
+    expect(wrapper.text()).not.toContain('今日费用')
     expect(wrapper.text()).toContain('Token 趋势')
     expect(wrapper.text()).toContain('模型分布')
     expect(wrapper.text()).toContain('刷新')

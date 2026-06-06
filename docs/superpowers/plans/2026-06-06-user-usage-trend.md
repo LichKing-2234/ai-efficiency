@@ -6,9 +6,21 @@
 
 **Architecture:** The frontend calls one AE endpoint, `GET /api/v1/user/usage/dashboard`, with date range parameters. The backend resolves the current user, decrypts their stored relay password once, resolves the primary relay provider, logs in to sub2api once, calls the three sub2api user dashboard endpoints with that JWT, and returns one AE-shaped snapshot that excludes sub2api account-management fields. Follow-up on 2026-06-06: the dashboard is embedded in the home page (`/`) instead of being exposed as a separate `/user/usage` page route.
 
-**Status Update (2026-06-06):** Initial implementation was completed and pushed to PR #77. A follow-up UX correction is in progress to remove the separate `/user/usage` navigation/page and render the usage dashboard inside the existing home page.
+**Status Update (2026-06-06):** Initial implementation was completed and pushed to PR #77. The follow-up UX correction is complete: the dashboard is embedded in the home page, the usage cards no longer carry dark-mode Tailwind variants, and the card totals now aggregate the selected Today / 7 Days / 30 Days trend range instead of fixed `today_*` fields.
 
 **Tech Stack:** Go, Gin, Ent, AES-GCM credential decrypt, sub2api HTTP user API, Vue 3, Vite, Pinia, TailwindCSS, axios, chart.js, vue-chartjs, Vitest.
+
+---
+
+## Task 0: Follow-Up Usage Card UX Correction
+
+- [x] Remove `dark:*` Tailwind variants from the user usage dashboard, stats cards, trend chart, and model chart.
+- [x] Change stats card labels from fixed Today wording to selected-range wording.
+- [x] Aggregate cost, requests, tokens, and token breakdowns from the selected snapshot `trend` points.
+- [x] Update the current user usage design spec to document the selected-range card contract.
+- [x] Verify with `pnpm test -- src/__tests__/user-usage-view.test.ts src/__tests__/dashboard-view.test.ts`.
+- [x] Verify with `pnpm exec vue-tsc -b`.
+- [x] Verify in a real browser against a temporary local mock API: default 7-day cards showed `7 天费用 $0.6000` and `7 天请求 32`; after selecting 30 days, cards showed `30 天费用 $2.4500` and `30 天请求 90`; usage-related `dark:` class count was `0`.
 
 ---
 
