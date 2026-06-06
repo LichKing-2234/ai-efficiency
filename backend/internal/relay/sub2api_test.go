@@ -2417,3 +2417,268 @@ func TestListPlatformGroupsReturnsActivePlatformSummaries(t *testing.T) {
 		t.Fatalf("groups mismatch (-want +got):\n%s", diff)
 	}
 }
+
+func TestGetUserUsageStats(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/auth/login", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("expected POST, got %s", r.Method)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": map[string]any{
+				"access_token": "test-jwt-token",
+			},
+		})
+	})
+	mux.HandleFunc("/api/v1/auth/me", func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer test-jwt-token" {
+			t.Fatalf("expected Authorization header with JWT token")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": map[string]any{
+				"id":       1,
+				"username": "alice",
+				"email":    "alice@example.com",
+			},
+		})
+	})
+	mux.HandleFunc("/api/v1/usage/dashboard/stats", func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer test-jwt-token" {
+			t.Fatalf("expected Authorization header with JWT token")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": map[string]any{
+				"total_requests":          150,
+				"total_input_tokens":      50000,
+				"total_output_tokens":     30000,
+				"total_cache_read_tokens": 10000,
+				"total_tokens":            90000,
+				"total_cost":              2.50,
+				"total_actual_cost":       2.00,
+				"today_requests":          20,
+				"today_input_tokens":      8000,
+				"today_output_tokens":     5000,
+				"today_tokens":            13000,
+				"today_cost":              0.35,
+				"today_actual_cost":       0.28,
+				"average_duration_ms":     1250,
+			},
+		})
+	})
+
+	p := newTestProvider(t, mux)
+	stats, err := p.GetUserUsageStats(context.Background(), "alice@example.com", "test-password")
+	if err != nil {
+		t.Fatalf("GetUserUsageStats() unexpected error: %v", err)
+	}
+	if stats == nil {
+		t.Fatal("GetUserUsageStats() returned nil")
+	}
+	if stats.TotalRequests != 150 {
+		t.Errorf("TotalRequests = %d, want 150", stats.TotalRequests)
+	}
+	if stats.TotalTokens != 90000 {
+		t.Errorf("TotalTokens = %d, want 90000", stats.TotalTokens)
+	}
+	if stats.TodayRequests != 20 {
+		t.Errorf("TodayRequests = %d, want 20", stats.TodayRequests)
+	}
+	if stats.TotalActualCost != 2.00 {
+		t.Errorf("TotalActualCost = %f, want 2.00", stats.TotalActualCost)
+	}
+	if stats.AverageDurationMs != 1250 {
+		t.Errorf("AverageDurationMs = %d, want 1250", stats.AverageDurationMs)
+	}
+}
+
+func TestGetUserUsageTrend(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/auth/login", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": map[string]any{
+				"access_token": "test-jwt-token",
+			},
+		})
+	})
+	mux.HandleFunc("/api/v1/auth/me", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": map[string]any{
+				"id":       1,
+				"username": "alice",
+				"email":    "alice@example.com",
+			},
+		})
+	})
+	mux.HandleFunc("/api/v1/usage/dashboard/trend", func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer test-jwt-token" {
+			t.Fatalf("expected Authorization header with JWT token")
+		}
+		startDate := r.URL.Query().Get("start_date")
+		endDate := r.URL.Query().Get("end_date")
+		granularity := r.URL.Query().Get("granularity")
+		if startDate != "2024-01-01" {
+			t.Errorf("start_date = %s, want 2024-01-01", startDate)
+		}
+		if endDate != "2024-01-31" {
+			t.Errorf("end_date = %s, want 2024-01-31", endDate)
+		}
+		if granularity != "day" {
+			t.Errorf("granularity = %s, want day", granularity)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": map[string]any{
+				"start_date": "2024-01-01",
+				"end_date":   "2024-01-31",
+				"granularity": "day",
+				"trend": []map[string]any{
+					{
+						"date":          "2024-01-01",
+						"requests":      50,
+						"input_tokens":  10000,
+						"output_tokens": 6000,
+						"total_tokens":  16000,
+						"cost":          0.45,
+						"actual_cost":   0.36,
+					},
+					{
+						"date":          "2024-01-02",
+						"requests":      65,
+						"input_tokens":  12000,
+						"output_tokens": 7500,
+						"total_tokens":  19500,
+						"cost":          0.55,
+						"actual_cost":   0.44,
+					},
+				},
+			},
+		})
+	})
+
+	p := newTestProvider(t, mux)
+	params := relay.UsageTrendParams{
+		StartDate:   "2024-01-01",
+		EndDate:     "2024-01-31",
+		Granularity: "day",
+	}
+	trend, err := p.GetUserUsageTrend(context.Background(), "alice@example.com", "test-password", params)
+	if err != nil {
+		t.Fatalf("GetUserUsageTrend() unexpected error: %v", err)
+	}
+	if trend == nil {
+		t.Fatal("GetUserUsageTrend() returned nil")
+	}
+	if len(trend.Trend) != 2 {
+		t.Errorf("Trend length = %d, want 2", len(trend.Trend))
+	}
+	if trend.Trend[0].Date != "2024-01-01" {
+		t.Errorf("Trend[0].Date = %s, want 2024-01-01", trend.Trend[0].Date)
+	}
+	if trend.Trend[0].TotalTokens != 16000 {
+		t.Errorf("Trend[0].TotalTokens = %d, want 16000", trend.Trend[0].TotalTokens)
+	}
+	if trend.Trend[1].Requests != 65 {
+		t.Errorf("Trend[1].Requests = %d, want 65", trend.Trend[1].Requests)
+	}
+}
+
+func TestGetUserUsageModels(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/auth/login", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": map[string]any{
+				"access_token": "test-jwt-token",
+			},
+		})
+	})
+	mux.HandleFunc("/api/v1/auth/me", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": map[string]any{
+				"id":       1,
+				"username": "alice",
+				"email":    "alice@example.com",
+			},
+		})
+	})
+	mux.HandleFunc("/api/v1/usage/dashboard/models", func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer test-jwt-token" {
+			t.Fatalf("expected Authorization header with JWT token")
+		}
+		startDate := r.URL.Query().Get("start_date")
+		endDate := r.URL.Query().Get("end_date")
+		if startDate != "2024-01-01" {
+			t.Errorf("start_date = %s, want 2024-01-01", startDate)
+		}
+		if endDate != "2024-01-31" {
+			t.Errorf("end_date = %s, want 2024-01-31", endDate)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": map[string]any{
+				"start_date": "2024-01-01",
+				"end_date":   "2024-01-31",
+				"models": []map[string]any{
+					{
+						"model":         "gpt-4",
+						"requests":      120,
+						"input_tokens":  25000,
+						"output_tokens": 15000,
+						"total_tokens":  40000,
+						"cost":          1.20,
+						"actual_cost":   0.96,
+					},
+					{
+						"model":         "claude-3",
+						"requests":      80,
+						"input_tokens":  18000,
+						"output_tokens": 12000,
+						"total_tokens":  30000,
+						"cost":          0.90,
+						"actual_cost":   0.72,
+					},
+				},
+			},
+		})
+	})
+
+	p := newTestProvider(t, mux)
+	params := relay.UsageModelParams{
+		StartDate: "2024-01-01",
+		EndDate:   "2024-01-31",
+	}
+	models, err := p.GetUserUsageModels(context.Background(), "alice@example.com", "test-password", params)
+	if err != nil {
+		t.Fatalf("GetUserUsageModels() unexpected error: %v", err)
+	}
+	if models == nil {
+		t.Fatal("GetUserUsageModels() returned nil")
+	}
+	if len(models.Models) != 2 {
+		t.Errorf("Models length = %d, want 2", len(models.Models))
+	}
+	if models.Models[0].Model != "gpt-4" {
+		t.Errorf("Models[0].Model = %s, want gpt-4", models.Models[0].Model)
+	}
+	if models.Models[0].TotalTokens != 40000 {
+		t.Errorf("Models[0].TotalTokens = %d, want 40000", models.Models[0].TotalTokens)
+	}
+	if models.Models[1].Requests != 80 {
+		t.Errorf("Models[1].Requests = %d, want 80", models.Models[1].Requests)
+	}
+}
