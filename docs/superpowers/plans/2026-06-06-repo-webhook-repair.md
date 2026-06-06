@@ -512,7 +512,7 @@ git commit -m "feat(webhook): configure public callback urls"
 - Create: `backend/internal/repo/webhook_repair_test.go`
 - Modify: `backend/internal/repo/service.go`
 
-- [ ] **Step 1: Write failing repair service tests**
+- [x] **Step 1: Write failing repair service tests**
 
 Create `backend/internal/repo/webhook_repair_test.go` with these helpers and tests:
 
@@ -770,17 +770,17 @@ func TestRepairFailedWebhooksScansOnlyBoundWebhookFailedRepos(t *testing.T) {
 
 If the compiler reports unused imports from this pasted test, remove only the unused imports that are not needed by the final test file.
 
-- [ ] **Step 2: Run repair service tests and verify failure**
+- [x] **Step 2: Run repair service tests and verify failure**
 
 Run:
 
 ```bash
-cd backend && go test ./internal/repo -run 'TestRepairWebhook|TestRepairFailedWebhooks' -count=1
+cd backend && AE_TEST_POSTGRES_DSN='postgres://postgres:postgres@127.0.0.1:15432/postgres?sslmode=disable' go test ./internal/repo -run 'TestRepairWebhook|TestRepairFailedWebhooks' -count=1
 ```
 
 Expected: FAIL because repair types and methods do not exist.
 
-- [ ] **Step 3: Implement repair types and status constants**
+- [x] **Step 3: Implement repair types and status constants**
 
 Create `backend/internal/repo/webhook_repair.go`:
 
@@ -835,7 +835,7 @@ type RepairWebhookResult struct {
 }
 ```
 
-- [ ] **Step 4: Implement single repo repair**
+- [x] **Step 4: Implement single repo repair**
 
 Add `RepairWebhook` to `backend/internal/repo/webhook_repair.go`:
 
@@ -964,7 +964,7 @@ func (s *Service) newSCMProviderWithCallback(providerType, baseURL string, apiCr
 }
 ```
 
-- [ ] **Step 5: Implement batch repair**
+- [x] **Step 5: Implement batch repair**
 
 Add `RepairFailedWebhooks` and summary helper:
 
@@ -1013,17 +1013,17 @@ func (r RepairWebhookResult) addToSummary(summary *RepairWebhookSummary) {
 }
 ```
 
-- [ ] **Step 6: Run repair service tests**
+- [x] **Step 6: Run repair service tests**
 
 Run:
 
 ```bash
-cd backend && go test ./internal/repo -run 'TestRepairWebhook|TestRepairFailedWebhooks' -count=1
+cd backend && AE_TEST_POSTGRES_DSN='postgres://postgres:postgres@127.0.0.1:15432/postgres?sslmode=disable' go test ./internal/repo -run 'TestRepairWebhook|TestRepairFailedWebhooks' -count=1
 ```
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit repair service**
+- [x] **Step 7: Commit repair service**
 
 Run:
 
@@ -1118,7 +1118,7 @@ Ensure imports include `strconv` if using `strconv.Itoa`.
 Run:
 
 ```bash
-cd backend && go test ./internal/handler -run 'TestRepairWebhook|TestRepairFailedWebhooks' -count=1
+cd backend && AE_TEST_POSTGRES_DSN='postgres://postgres:postgres@127.0.0.1:15432/postgres?sslmode=disable' go test ./internal/handler -run 'TestRepairWebhook|TestRepairFailedWebhooks' -count=1
 ```
 
 Expected: FAIL because the routes and handlers do not exist.
@@ -1202,7 +1202,7 @@ repoGroup.POST("/:id/repair-webhook", auth.RequireAdmin(), repoHandler.RepairWeb
 Run:
 
 ```bash
-cd backend && go test ./internal/handler -run 'TestRepairWebhook|TestRepairFailedWebhooks' -count=1
+cd backend && AE_TEST_POSTGRES_DSN='postgres://postgres:postgres@127.0.0.1:15432/postgres?sslmode=disable' go test ./internal/handler -run 'TestRepairWebhook|TestRepairFailedWebhooks' -count=1
 ```
 
 Expected: PASS.
@@ -1447,7 +1447,7 @@ Use the existing webhook test helper names if they differ; keep the assertions i
 Run:
 
 ```bash
-cd backend && go test ./internal/scm/bitbucket ./internal/webhook -run 'TestParseWebhookPayload.*Signature|TestParseWebhookPayloadAcceptsUnsignedPayloadWhenNoSecretStored|TestHandleBitbucket.*Signature|TestHandleBitbucketWithWebhookSecret' -count=1
+cd backend && AE_TEST_POSTGRES_DSN='postgres://postgres:postgres@127.0.0.1:15432/postgres?sslmode=disable' go test ./internal/scm/bitbucket ./internal/webhook -run 'TestParseWebhookPayload.*Signature|TestParseWebhookPayloadAcceptsUnsignedPayloadWhenNoSecretStored|TestHandleBitbucket.*Signature|TestHandleBitbucketWithWebhookSecret' -count=1
 ```
 
 Expected: PASS.
