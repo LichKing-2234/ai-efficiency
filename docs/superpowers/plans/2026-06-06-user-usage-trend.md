@@ -1,577 +1,847 @@
-# 用户用量趋势页面实现计划
+# User Usage Dashboard Snapshot Implementation Plan
 
-> **面向 AI 代理的工作者：** 必需子技能：使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans 逐任务实现此计划。步骤使用复选框（`- [ ]`）语法来跟踪进度。
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**目标：** 新增 `/user/usage` 页面，展示当前用户的 AI 用量汇总、趋势折线、模型分布。
+**Goal:** Replace the current three-endpoint `/user/usage` trend page with an ai-efficiency usage-only dashboard backed by one snapshot endpoint.
 
-**架构：** 前端调用 `/api/v1/user/usage/{stats,trend,models}` → 后端解密用户 relay 密码 → relay 层用用户 JWT 调 sub2api dashboard 接口 → 透传聚合数据回前端。
+**Architecture:** The frontend calls one AE endpoint, `GET /api/v1/user/usage/dashboard`, with date range parameters. The backend resolves the current user, decrypts their stored relay password once, resolves the primary relay provider, logs in to sub2api once, calls the three sub2api user dashboard endpoints with that JWT, and returns one AE-shaped snapshot that excludes sub2api account-management fields.
 
-**技术栈：** Go (Gin + Ent), Vue 3 (Vite + TailwindCSS + Pinia), axios, sub2api user API
-
----
-
-## 文件结构
-
-### 后端
-
-| 文件 | 职责 |
-|---|---|
-| `backend/internal/relay/types.go` | 新增用量 dashboard 相关 struct |
-| `backend/internal/relay/provider.go` | Provider 接口新增 3 个方法 |
-| `backend/internal/relay/sub2api.go` | 实现 3 个方法（loginSessionToken + HTTP 调用） |
-| `backend/internal/relay/sub2api_test.go` | relay 层单元测试 |
-| `backend/internal/handler/user_usage.go` | 新增 handler（Stats/Trend/Models） |
-| `backend/internal/handler/user_usage_test.go` | handler 层单元测试 |
-| `backend/internal/handler/router.go` | 注册 3 个路由 |
-
-### 前端
-
-| 文件 | 职责 |
-|---|---|
-| `frontend/src/api/userUsage.ts` | API 封装（3 个函数） |
-| `frontend/src/types/usage.ts` | 用量相关类型定义 |
-| `frontend/src/views/user/UsageView.vue` | 用量页面主组件 |
-| `frontend/src/components/user/usage/UsageStatsCards.vue` | 统计卡片行 |
-| `frontend/src/components/user/usage/UsageTrendChart.vue` | 趋势折线图 |
-| `frontend/src/components/user/usage/UsageModelChart.vue` | 模型分布图 |
-| `frontend/src/router/index.ts` | 新增路由 |
+**Tech Stack:** Go, Gin, Ent, AES-GCM credential decrypt, sub2api HTTP user API, Vue 3, Vite, Pinia, TailwindCSS, axios, chart.js, vue-chartjs, Vitest.
 
 ---
 
-## 任务 1：Relay 层 — 类型定义
+## File Structure
 
-**文件：**
-- 修改：`backend/internal/relay/types.go`
+### Backend
 
-- [ ] **步骤 1：在 types.go 末尾新增用量 dashboard 类型**
+| File | Responsibility |
+| --- | --- |
+| `backend/internal/relay/types.go` | Replace the current separate stats/trend/models types with one snapshot contract and nested usage-only structs. |
+| `backend/internal/relay/provider.go` | Replace the three user usage Provider methods with `GetUserUsageDashboard`. |
+| `backend/internal/relay/sub2api.go` | Replace three public usage methods with one snapshot method that logs in once and fetches stats, trend, and models. |
+| `backend/internal/relay/sub2api_test.go` | Replace old three-endpoint tests with snapshot tests. |
+| `backend/internal/handler/user_usage.go` | Replace `Stats`, `Trend`, and `Models` handlers with `Dashboard`. |
+| `backend/internal/handler/user_usage_test.go` | Create focused handler tests for configured=false, success, and invalid relay credentials. |
+| `backend/internal/handler/router.go` | Register `GET /api/v1/user/usage/dashboard` and remove old `/stats`, `/trend`, `/models` routes. |
+| `backend/internal/auth/sso_test.go` | Update mock relay provider to satisfy the new Provider interface. |
+| `backend/internal/attribution/service_test.go` | Update fake relay provider to satisfy the new Provider interface. |
+| `backend/internal/usersetup/service_test.go` | Update fake relay provider to satisfy the new Provider interface. |
+
+### Frontend
+
+| File | Responsibility |
+| --- | --- |
+| `frontend/package.json` | Add `chart.js` and `vue-chartjs`. |
+| `frontend/pnpm-lock.yaml` | Refresh after dependency install. |
+| `frontend/src/types/index.ts` | Add snapshot, stats, trend, model, params, and range types. |
+| `frontend/src/api/userUsage.ts` | Replace three API functions with one `getUserUsageDashboard` function. |
+| `frontend/src/__tests__/user-usage-api.test.ts` | Verify API path and params. |
+| `frontend/src/views/user/UsageView.vue` | Rewrite page to load one snapshot and render range controls, cards, and charts. |
+| `frontend/src/__tests__/user-usage-view.test.ts` | Verify configured=false, success rendering, range changes, and 409 handling. |
+| `frontend/src/components/user/usage/UsageStatsCards.vue` | Rewrite cards for Today Cost, Today Requests, Today Tokens, and Avg Response. |
+| `frontend/src/components/user/usage/UsageTrendChart.vue` | Replace hand-rolled bars with chart.js line chart. |
+| `frontend/src/components/user/usage/UsageModelChart.vue` | Rewrite model distribution as usage table with optional doughnut chart. |
+
+---
+
+## Task 1: Backend Relay Snapshot Contract
+
+**Files:**
+- Modify: `backend/internal/relay/sub2api_test.go`
+- Modify: `backend/internal/relay/types.go`
+- Modify: `backend/internal/relay/provider.go`
+- Modify: `backend/internal/relay/sub2api.go`
+
+- [ ] **Step 1: Replace old relay usage tests with snapshot tests**
+
+In `backend/internal/relay/sub2api_test.go`, remove the current `TestGetUserUsageStats`, `TestGetUserUsageTrend`, and `TestGetUserUsageModels` tests. Add these tests in their place:
 
 ```go
-// UserUsageStats represents aggregated usage statistics for a user.
-type UserUsageStats struct {
-	TotalRequests         int64   `json:"total_requests"`
-	TotalInputTokens      int64   `json:"total_input_tokens"`
-	TotalOutputTokens     int64   `json:"total_output_tokens"`
-	TotalCacheReadTokens  int64   `json:"total_cache_read_tokens"`
-	TotalCacheWriteTokens int64   `json:"total_cache_creation_tokens"`
-	TotalTokens           int64   `json:"total_tokens"`
-	TotalCost             float64 `json:"total_cost"`
-	TotalActualCost       float64 `json:"total_actual_cost"`
-	TodayRequests        int64   `json:"today_requests"`
-	TodayInputTokens      int64   `json:"today_input_tokens"`
-	TodayOutputTokens     int64   `json:"today_output_tokens"`
-	TodayTokens           int64   `json:"today_tokens"`
-	TodayCost             float64 `json:"today_cost"`
-	TodayActualCost       float64 `json:"today_actual_cost"`
-	AverageDurationMs     int64   `json:"average_duration_ms"`
+func TestGetUserUsageDashboard(t *testing.T) {
+	var loginCount int
+	var meCount int
+	var seenPaths []string
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/auth/login", func(w http.ResponseWriter, r *http.Request) {
+		loginCount++
+		if r.Method != http.MethodPost {
+			t.Errorf("login method = %s, want POST", r.Method)
+		}
+		var body struct {
+			Email    string `json:"email"`
+			Password string `json:"password"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode login body: %v", err)
+		}
+		if body.Email != "alice@example.com" || body.Password != "test-password" {
+			t.Fatalf("login body = %+v, want alice credentials", body)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": map[string]any{"access_token": "test-jwt-token"},
+		})
+	})
+	mux.HandleFunc("/api/v1/auth/me", func(w http.ResponseWriter, r *http.Request) {
+		meCount++
+		if r.Header.Get("Authorization") != "Bearer test-jwt-token" {
+			t.Fatalf("/me Authorization = %q, want user JWT", r.Header.Get("Authorization"))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": map[string]any{"id": 1, "username": "alice", "email": "alice@example.com"},
+		})
+	})
+	mux.HandleFunc("/api/v1/usage/dashboard/stats", func(w http.ResponseWriter, r *http.Request) {
+		seenPaths = append(seenPaths, r.URL.RequestURI())
+		if r.Header.Get("Authorization") != "Bearer test-jwt-token" {
+			t.Fatalf("stats Authorization = %q, want user JWT", r.Header.Get("Authorization"))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": map[string]any{
+				"total_api_keys":              99,
+				"active_api_keys":             88,
+				"total_requests":              150,
+				"total_input_tokens":          50000,
+				"total_output_tokens":         30000,
+				"total_cache_creation_tokens": 4000,
+				"total_cache_read_tokens":     10000,
+				"total_tokens":                94000,
+				"total_cost":                  2.50,
+				"total_actual_cost":           2.00,
+				"today_requests":              20,
+				"today_input_tokens":          8000,
+				"today_output_tokens":         5000,
+				"today_cache_creation_tokens": 600,
+				"today_cache_read_tokens":     700,
+				"today_tokens":                14300,
+				"today_cost":                  0.35,
+				"today_actual_cost":           0.28,
+				"average_duration_ms":         1250.5,
+				"rpm":                         3,
+				"tpm":                         4200,
+				"by_platform":                 []map[string]any{{"platform": "openai", "total_actual_cost": 2.00}},
+			},
+		})
+	})
+	mux.HandleFunc("/api/v1/usage/dashboard/trend", func(w http.ResponseWriter, r *http.Request) {
+		seenPaths = append(seenPaths, r.URL.RequestURI())
+		if r.Header.Get("Authorization") != "Bearer test-jwt-token" {
+			t.Fatalf("trend Authorization = %q, want user JWT", r.Header.Get("Authorization"))
+		}
+		q := r.URL.Query()
+		if q.Get("start_date") != "2026-06-01" || q.Get("end_date") != "2026-06-06" || q.Get("granularity") != "day" || q.Get("timezone") != "Asia/Shanghai" {
+			t.Fatalf("trend query = %s", r.URL.RawQuery)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": map[string]any{
+				"start_date":  "2026-06-01",
+				"end_date":    "2026-06-06",
+				"granularity": "day",
+				"trend": []map[string]any{
+					{
+						"date":                  "2026-06-06",
+						"requests":              20,
+						"input_tokens":          8000,
+						"output_tokens":         5000,
+						"cache_creation_tokens": 600,
+						"cache_read_tokens":     700,
+						"total_tokens":          14300,
+						"cost":                  0.35,
+						"actual_cost":           0.28,
+					},
+				},
+			},
+		})
+	})
+	mux.HandleFunc("/api/v1/usage/dashboard/models", func(w http.ResponseWriter, r *http.Request) {
+		seenPaths = append(seenPaths, r.URL.RequestURI())
+		if r.Header.Get("Authorization") != "Bearer test-jwt-token" {
+			t.Fatalf("models Authorization = %q, want user JWT", r.Header.Get("Authorization"))
+		}
+		q := r.URL.Query()
+		if q.Get("start_date") != "2026-06-01" || q.Get("end_date") != "2026-06-06" || q.Get("timezone") != "Asia/Shanghai" {
+			t.Fatalf("models query = %s", r.URL.RawQuery)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": map[string]any{
+				"start_date": "2026-06-01",
+				"end_date":   "2026-06-06",
+				"models": []map[string]any{
+					{
+						"model":                 "example-model",
+						"requests":              12,
+						"input_tokens":          10000,
+						"output_tokens":         5000,
+						"cache_creation_tokens": 200,
+						"cache_read_tokens":     300,
+						"total_tokens":          15500,
+						"cost":                  0.75,
+						"actual_cost":           0.60,
+					},
+				},
+			},
+		})
+	})
+
+	p := newTestProvider(t, mux)
+	got, err := p.GetUserUsageDashboard(context.Background(), "alice@example.com", "test-password", relay.UserUsageDashboardParams{
+		StartDate:   "2026-06-01",
+		EndDate:     "2026-06-06",
+		Granularity: "day",
+		Timezone:    "Asia/Shanghai",
+	})
+	if err != nil {
+		t.Fatalf("GetUserUsageDashboard() unexpected error: %v", err)
+	}
+	if loginCount != 1 || meCount != 1 {
+		t.Fatalf("loginCount=%d meCount=%d, want one login and one /me", loginCount, meCount)
+	}
+	wantPaths := []string{
+		"/api/v1/usage/dashboard/stats",
+		"/api/v1/usage/dashboard/trend?end_date=2026-06-06&granularity=day&start_date=2026-06-01&timezone=Asia%2FShanghai",
+		"/api/v1/usage/dashboard/models?end_date=2026-06-06&start_date=2026-06-01&timezone=Asia%2FShanghai",
+	}
+	if diff := cmp.Diff(wantPaths, seenPaths); diff != "" {
+		t.Fatalf("paths mismatch (-want +got):\n%s", diff)
+	}
+	if !got.Configured {
+		t.Fatal("Configured = false, want true")
+	}
+	if got.Stats.TotalRequests != 150 || got.Stats.TotalCacheCreationTokens != 4000 || got.Stats.Rpm != 3 || got.Stats.Tpm != 4200 {
+		t.Fatalf("unexpected stats: %+v", got.Stats)
+	}
+	if got.Stats.AverageDurationMs != 1250.5 {
+		t.Fatalf("AverageDurationMs = %v, want 1250.5", got.Stats.AverageDurationMs)
+	}
+	if len(got.Trend) != 1 || got.Trend[0].CacheReadTokens != 700 {
+		t.Fatalf("unexpected trend: %+v", got.Trend)
+	}
+	if len(got.Models) != 1 || got.Models[0].ActualCost != 0.60 {
+		t.Fatalf("unexpected models: %+v", got.Models)
+	}
+	if got.Range.StartDate != "2026-06-01" || got.Range.EndDate != "2026-06-06" || got.Range.Granularity != "day" || got.Range.Timezone != "Asia/Shanghai" {
+		t.Fatalf("unexpected range: %+v", got.Range)
+	}
 }
 
-// UsageTrendParams defines parameters for usage trend queries.
-type UsageTrendParams struct {
+func TestGetUserUsageDashboardFailsFastOnSub2APIError(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/auth/login", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": map[string]any{"access_token": "test-jwt-token"},
+		})
+	})
+	mux.HandleFunc("/api/v1/auth/me", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": map[string]any{"id": 1, "username": "alice", "email": "alice@example.com"},
+		})
+	})
+	mux.HandleFunc("/api/v1/usage/dashboard/stats", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+		_ = json.NewEncoder(w).Encode(map[string]any{"code": 502, "message": "upstream failed"})
+	})
+
+	p := newTestProvider(t, mux)
+	_, err := p.GetUserUsageDashboard(context.Background(), "alice@example.com", "test-password", relay.UserUsageDashboardParams{})
+	if err == nil {
+		t.Fatal("GetUserUsageDashboard() expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "usage dashboard stats") {
+		t.Fatalf("error = %v, want stats context", err)
+	}
+}
+```
+
+- [ ] **Step 2: Run the new relay tests and verify they fail**
+
+Run:
+
+```bash
+cd /Users/admin/ai-efficiency/backend && go test ./internal/relay -run 'TestGetUserUsageDashboard' -count=1
+```
+
+Expected: compile failure because `relay.Provider` does not yet define `GetUserUsageDashboard` and the old usage types still exist.
+
+- [ ] **Step 3: Replace relay usage types**
+
+In `backend/internal/relay/types.go`, replace `UserUsageStats`, `UsageTrendParams`, `UsageTrendDataPoint`, `UsageTrendResponse`, `UsageModelParams`, `UsageModelStat`, and `UsageModelResponse` with:
+
+```go
+type UserUsageDashboardParams struct {
 	StartDate   string `json:"start_date"`
 	EndDate     string `json:"end_date"`
 	Granularity string `json:"granularity"`
 	Timezone    string `json:"timezone"`
 }
 
-// UsageTrendDataPoint represents a single data point in usage trend.
-type UsageTrendDataPoint struct {
-	Date         string  `json:"date"`
-	Requests     int64   `json:"requests"`
-	InputTokens  int64   `json:"input_tokens"`
-	OutputTokens int64   `json:"output_tokens"`
-	TotalTokens  int64   `json:"total_tokens"`
-	Cost         float64 `json:"cost"`
-	ActualCost   float64 `json:"actual_cost"`
+type UserUsageDashboardRange struct {
+	StartDate   string `json:"start_date"`
+	EndDate     string `json:"end_date"`
+	Granularity string `json:"granularity"`
+	Timezone    string `json:"timezone"`
 }
 
-// UsageTrendResponse wraps trend data with metadata.
-type UsageTrendResponse struct {
-	Trend       []UsageTrendDataPoint `json:"trend"`
+type UserUsageDashboardResponse struct {
+	Configured bool                      `json:"configured"`
+	Range      UserUsageDashboardRange   `json:"range"`
+	Stats      *UserUsageDashboardStats  `json:"stats"`
+	Trend      []UserUsageTrendPoint     `json:"trend"`
+	Models     []UserUsageModelStat      `json:"models"`
+}
+
+type UserUsageDashboardStats struct {
+	TotalRequests            int64   `json:"total_requests"`
+	TotalInputTokens         int64   `json:"total_input_tokens"`
+	TotalOutputTokens        int64   `json:"total_output_tokens"`
+	TotalCacheCreationTokens int64   `json:"total_cache_creation_tokens"`
+	TotalCacheReadTokens     int64   `json:"total_cache_read_tokens"`
+	TotalTokens              int64   `json:"total_tokens"`
+	TotalCost                float64 `json:"total_cost"`
+	TotalActualCost          float64 `json:"total_actual_cost"`
+	TodayRequests            int64   `json:"today_requests"`
+	TodayInputTokens         int64   `json:"today_input_tokens"`
+	TodayOutputTokens        int64   `json:"today_output_tokens"`
+	TodayCacheCreationTokens int64   `json:"today_cache_creation_tokens"`
+	TodayCacheReadTokens     int64   `json:"today_cache_read_tokens"`
+	TodayTokens              int64   `json:"today_tokens"`
+	TodayCost                float64 `json:"today_cost"`
+	TodayActualCost          float64 `json:"today_actual_cost"`
+	AverageDurationMs        float64 `json:"average_duration_ms"`
+	Rpm                      int64   `json:"rpm"`
+	Tpm                      int64   `json:"tpm"`
+}
+
+type UserUsageTrendPoint struct {
+	Date                string  `json:"date"`
+	Requests            int64   `json:"requests"`
+	InputTokens         int64   `json:"input_tokens"`
+	OutputTokens        int64   `json:"output_tokens"`
+	CacheCreationTokens int64   `json:"cache_creation_tokens"`
+	CacheReadTokens     int64   `json:"cache_read_tokens"`
+	TotalTokens         int64   `json:"total_tokens"`
+	Cost                float64 `json:"cost"`
+	ActualCost          float64 `json:"actual_cost"`
+}
+
+type UserUsageModelStat struct {
+	Model               string  `json:"model"`
+	Requests            int64   `json:"requests"`
+	InputTokens         int64   `json:"input_tokens"`
+	OutputTokens        int64   `json:"output_tokens"`
+	CacheCreationTokens int64   `json:"cache_creation_tokens"`
+	CacheReadTokens     int64   `json:"cache_read_tokens"`
+	TotalTokens         int64   `json:"total_tokens"`
+	Cost                float64 `json:"cost"`
+	ActualCost          float64 `json:"actual_cost"`
+}
+```
+
+- [ ] **Step 4: Replace Provider interface methods**
+
+In `backend/internal/relay/provider.go`, replace:
+
+```go
+GetUserUsageStats(ctx context.Context, login, password string) (*UserUsageStats, error)
+GetUserUsageTrend(ctx context.Context, login, password string, params UsageTrendParams) (*UsageTrendResponse, error)
+GetUserUsageModels(ctx context.Context, login, password string, params UsageModelParams) (*UsageModelResponse, error)
+```
+
+with:
+
+```go
+GetUserUsageDashboard(ctx context.Context, login, password string, params UserUsageDashboardParams) (*UserUsageDashboardResponse, error)
+```
+
+- [ ] **Step 5: Implement the sub2api snapshot method**
+
+In `backend/internal/relay/sub2api.go`, replace the three public `GetUserUsageStats`, `GetUserUsageTrend`, and `GetUserUsageModels` methods with:
+
+```go
+type userUsageTrendEnvelope struct {
+	Trend       []UserUsageTrendPoint `json:"trend"`
 	StartDate   string                `json:"start_date"`
 	EndDate     string                `json:"end_date"`
 	Granularity string                `json:"granularity"`
 }
 
-// UsageModelParams defines parameters for model breakdown queries.
-type UsageModelParams struct {
-	StartDate string `json:"start_date"`
-	EndDate   string `json:"end_date"`
-	Timezone  string `json:"timezone"`
+type userUsageModelsEnvelope struct {
+	Models    []UserUsageModelStat `json:"models"`
+	StartDate string               `json:"start_date"`
+	EndDate   string               `json:"end_date"`
 }
 
-// UsageModelStat represents usage statistics for a single model.
-type UsageModelStat struct {
-	Model        string  `json:"model"`
-	Requests     int64   `json:"requests"`
-	InputTokens  int64   `json:"input_tokens"`
-	OutputTokens int64   `json:"output_tokens"`
-	TotalTokens  int64   `json:"total_tokens"`
-	Cost         float64 `json:"cost"`
-	ActualCost   float64 `json:"actual_cost"`
-}
-
-// UsageModelResponse wraps model breakdown data with metadata.
-type UsageModelResponse struct {
-	Models    []UsageModelStat `json:"models"`
-	StartDate string           `json:"start_date"`
-	EndDate   string           `json:"end_date"`
-}
-```
-
-- [ ] **步骤 2：验证编译通过**
-
-运行：`cd /Users/admin/ai-efficiency/backend && go build ./...`
-预期：编译成功，无错误
-
-- [ ] **步骤 3：Commit**
-
-```bash
-git add backend/internal/relay/types.go
-git commit -m "feat(relay): add user usage dashboard types"
-```
-
----
-
-## 任务 2：Relay 层 — Provider 接口扩展
-
-**文件：**
-- 修改：`backend/internal/relay/provider.go:41-62`
-
-- [ ] **步骤 1：在 Provider 接口末尾新增 3 个方法签名**
-
-```go
-type Provider interface {
-	// ... existing methods ...
-
-	GetUserUsageStats(ctx context.Context, login, password string) (*UserUsageStats, error)
-	GetUserUsageTrend(ctx context.Context, login, password string, params UsageTrendParams) (*UsageTrendResponse, error)
-	GetUserUsageModels(ctx context.Context, login, password string, params UsageModelParams) (*UsageModelResponse, error)
-}
-```
-
-- [ ] **步骤 2：验证编译失败（预期行为，因为 sub2api 实现还未添加）**
-
-运行：`cd /Users/admin/ai-efficiency/backend && go build ./...`
-预期：编译错误，提示 `sub2apiRelay does not implement Provider`
-
-- [ ] **步骤 3：Commit**
-
-```bash
-git add backend/internal/relay/provider.go
-git commit -m "feat(relay): extend Provider interface with user usage methods"
-```
-
----
-
-## 任务 3：Relay 层 — sub2api 实现
-
-**文件：**
-- 修改：`backend/internal/relay/sub2api.go`（在文件末尾添加）
-
-- [ ] **步骤 1：实现 GetUserUsageStats**
-
-```go
-func (s *sub2apiRelay) GetUserUsageStats(ctx context.Context, login, password string) (*UserUsageStats, error) {
+func (s *sub2apiRelay) GetUserUsageDashboard(ctx context.Context, login, password string, params UserUsageDashboardParams) (*UserUsageDashboardResponse, error) {
 	token, _, err := s.loginSessionToken(ctx, login, password)
 	if err != nil {
-		return nil, fmt.Errorf("relay: login for usage stats: %w", err)
+		return nil, fmt.Errorf("relay: login for usage dashboard: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.adminURL+"/api/v1/usage/dashboard/stats", nil)
+	stats, err := s.getUserUsageDashboardStats(ctx, token)
 	if err != nil {
-		return nil, fmt.Errorf("relay: create usage stats request: %w", err)
+		return nil, err
 	}
-	req.Header.Set("Authorization", "Bearer "+token)
-
-	resp, err := s.client.Do(req)
+	trend, err := s.getUserUsageDashboardTrend(ctx, token, params)
 	if err != nil {
-		return nil, fmt.Errorf("relay: fetch usage stats: %w", err)
+		return nil, err
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusUnauthorized {
-		return nil, ErrInvalidCredentials
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("relay: usage stats: unexpected status %d", resp.StatusCode)
+	models, err := s.getUserUsageDashboardModels(ctx, token, params)
+	if err != nil {
+		return nil, err
 	}
 
-	var result struct {
-		Code int            `json:"code"`
-		Data UserUsageStats `json:"data"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("relay: decode usage stats: %w", err)
-	}
-	if result.Code != 0 {
-		return nil, fmt.Errorf("relay: usage stats: code %d", result.Code)
-	}
-
-	return &result.Data, nil
+	return &UserUsageDashboardResponse{
+		Configured: true,
+		Range: UserUsageDashboardRange{
+			StartDate:   firstNonEmpty(trend.StartDate, params.StartDate),
+			EndDate:     firstNonEmpty(trend.EndDate, params.EndDate),
+			Granularity: firstNonEmpty(trend.Granularity, params.Granularity, "day"),
+			Timezone:    strings.TrimSpace(params.Timezone),
+		},
+		Stats:  stats,
+		Trend:  trend.Trend,
+		Models: models.Models,
+	}, nil
 }
-```
 
-- [ ] **步骤 2：实现 GetUserUsageTrend**
+func (s *sub2apiRelay) getUserUsageDashboardStats(ctx context.Context, token string) (*UserUsageDashboardStats, error) {
+	var stats UserUsageDashboardStats
+	if err := s.getUserDashboardJSON(ctx, token, "/api/v1/usage/dashboard/stats", nil, &stats); err != nil {
+		return nil, fmt.Errorf("relay: usage dashboard stats: %w", err)
+	}
+	return &stats, nil
+}
 
-```go
-func (s *sub2apiRelay) GetUserUsageTrend(ctx context.Context, login, password string, params UsageTrendParams) (*UsageTrendResponse, error) {
-	token, _, err := s.loginSessionToken(ctx, login, password)
+func (s *sub2apiRelay) getUserUsageDashboardTrend(ctx context.Context, token string, params UserUsageDashboardParams) (*userUsageTrendEnvelope, error) {
+	query := url.Values{}
+	addUserUsageDashboardQuery(query, params, true)
+	var trend userUsageTrendEnvelope
+	if err := s.getUserDashboardJSON(ctx, token, "/api/v1/usage/dashboard/trend", query, &trend); err != nil {
+		return nil, fmt.Errorf("relay: usage dashboard trend: %w", err)
+	}
+	return &trend, nil
+}
+
+func (s *sub2apiRelay) getUserUsageDashboardModels(ctx context.Context, token string, params UserUsageDashboardParams) (*userUsageModelsEnvelope, error) {
+	query := url.Values{}
+	addUserUsageDashboardQuery(query, params, false)
+	var models userUsageModelsEnvelope
+	if err := s.getUserDashboardJSON(ctx, token, "/api/v1/usage/dashboard/models", query, &models); err != nil {
+		return nil, fmt.Errorf("relay: usage dashboard models: %w", err)
+	}
+	return &models, nil
+}
+
+func (s *sub2apiRelay) getUserDashboardJSON(ctx context.Context, token, path string, query url.Values, dst any) error {
+	u, err := url.Parse(s.adminURL + path)
 	if err != nil {
-		return nil, fmt.Errorf("relay: login for usage trend: %w", err)
+		return fmt.Errorf("parse url: %w", err)
 	}
-
-	u, err := url.Parse(s.adminURL + "/api/v1/usage/dashboard/trend")
-	if err != nil {
-		return nil, fmt.Errorf("relay: parse usage trend url: %w", err)
+	if len(query) > 0 {
+		u.RawQuery = query.Encode()
 	}
-	q := u.Query()
-	if params.StartDate != "" {
-		q.Set("start_date", params.StartDate)
-	}
-	if params.EndDate != "" {
-		q.Set("end_date", params.EndDate)
-	}
-	if params.Granularity != "" {
-		q.Set("granularity", params.Granularity)
-	}
-	if params.Timezone != "" {
-		q.Set("timezone", params.Timezone)
-	}
-	u.RawQuery = q.Encode()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
-		return nil, fmt.Errorf("relay: create usage trend request: %w", err)
+		return fmt.Errorf("create request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("relay: fetch usage trend: %w", err)
+		return fmt.Errorf("fetch: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusUnauthorized {
-		return nil, ErrInvalidCredentials
+		return ErrInvalidCredentials
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("relay: usage trend: unexpected status %d", resp.StatusCode)
+		return fmt.Errorf("unexpected status %d", resp.StatusCode)
 	}
 
 	var result struct {
-		Code int                `json:"code"`
-		Data UsageTrendResponse `json:"data"`
+		envelopeStatus
+		Data json.RawMessage `json:"data"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("relay: decode usage trend: %w", err)
+		return fmt.Errorf("decode envelope: %w", err)
 	}
-	if result.Code != 0 {
-		return nil, fmt.Errorf("relay: usage trend: code %d", result.Code)
+	if !result.ok() {
+		return fmt.Errorf("request failed")
 	}
+	if len(result.Data) == 0 {
+		return fmt.Errorf("missing data")
+	}
+	if err := json.Unmarshal(result.Data, dst); err != nil {
+		return fmt.Errorf("decode data: %w", err)
+	}
+	return nil
+}
 
-	return &result.Data, nil
+func addUserUsageDashboardQuery(query url.Values, params UserUsageDashboardParams, includeGranularity bool) {
+	if v := strings.TrimSpace(params.StartDate); v != "" {
+		query.Set("start_date", v)
+	}
+	if v := strings.TrimSpace(params.EndDate); v != "" {
+		query.Set("end_date", v)
+	}
+	if includeGranularity {
+		if v := strings.TrimSpace(params.Granularity); v != "" {
+			query.Set("granularity", v)
+		}
+	}
+	if v := strings.TrimSpace(params.Timezone); v != "" {
+		query.Set("timezone", v)
+	}
 }
 ```
 
-- [ ] **步骤 3：实现 GetUserUsageModels**
+Use the existing package-local `firstNonEmpty` helper already present in `backend/internal/relay/sub2api.go`; do not add a duplicate helper.
 
-```go
-func (s *sub2apiRelay) GetUserUsageModels(ctx context.Context, login, password string, params UsageModelParams) (*UsageModelResponse, error) {
-	token, _, err := s.loginSessionToken(ctx, login, password)
-	if err != nil {
-		return nil, fmt.Errorf("relay: login for usage models: %w", err)
-	}
+- [ ] **Step 6: Run relay tests and verify they pass**
 
-	u, err := url.Parse(s.adminURL + "/api/v1/usage/dashboard/models")
-	if err != nil {
-		return nil, fmt.Errorf("relay: parse usage models url: %w", err)
-	}
-	q := u.Query()
-	if params.StartDate != "" {
-		q.Set("start_date", params.StartDate)
-	}
-	if params.EndDate != "" {
-		q.Set("end_date", params.EndDate)
-	}
-	if params.Timezone != "" {
-		q.Set("timezone", params.Timezone)
-	}
-	u.RawQuery = q.Encode()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
-	if err != nil {
-		return nil, fmt.Errorf("relay: create usage models request: %w", err)
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-
-	resp, err := s.client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("relay: fetch usage models: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusUnauthorized {
-		return nil, ErrInvalidCredentials
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("relay: usage models: unexpected status %d", resp.StatusCode)
-	}
-
-	var result struct {
-		Code int                `json:"code"`
-		Data UsageModelResponse `json:"data"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("relay: decode usage models: %w", err)
-	}
-	if result.Code != 0 {
-		return nil, fmt.Errorf("relay: usage models: code %d", result.Code)
-	}
-
-	return &result.Data, nil
-}
-```
-
-- [ ] **步骤 4：验证编译通过**
-
-运行：`cd /Users/admin/ai-efficiency/backend && go build ./...`
-预期：编译成功
-
-- [ ] **步骤 5：Commit**
+Run:
 
 ```bash
-git add backend/internal/relay/sub2api.go
-git commit -m "feat(relay): implement user usage dashboard methods"
+cd /Users/admin/ai-efficiency/backend && go test ./internal/relay -run 'TestGetUserUsageDashboard' -count=1
+```
+
+Expected: PASS.
+
+- [ ] **Step 7: Commit relay snapshot contract**
+
+```bash
+git add backend/internal/relay/types.go backend/internal/relay/provider.go backend/internal/relay/sub2api.go backend/internal/relay/sub2api_test.go
+git commit -m "feat(relay): add user usage dashboard snapshot"
 ```
 
 ---
 
-## 任务 4：Relay 层 — 单元测试
+## Task 2: Backend Handler and Route
 
-**文件：**
-- 修改：`backend/internal/relay/sub2api_test.go`（在文件末尾添加）
+**Files:**
+- Create: `backend/internal/handler/user_usage_test.go`
+- Modify: `backend/internal/handler/user_usage.go`
+- Modify: `backend/internal/handler/router.go`
 
-- [ ] **步骤 1：编写 GetUserUsageStats 测试**
+- [ ] **Step 1: Write handler tests**
 
-```go
-func TestGetUserUsageStats(t *testing.T) {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/api/v1/auth/login", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `{"code":0,"data":{"access_token":"test-jwt"}}`)
-	})
-	mux.HandleFunc("/api/v1/auth/me", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `{"code":0,"data":{"id":1,"username":"alice","email":"alice@example.com"}}`)
-	})
-	mux.HandleFunc("/api/v1/usage/dashboard/stats", func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != "Bearer test-jwt" {
-			w.WriteHeader(http.StatusUnauthorized)
-			return
-		}
-		fmt.Fprint(w, `{"code":0,"data":{"total_requests":100,"total_tokens":50000,"total_actual_cost":1.5,"today_requests":10,"today_tokens":5000,"today_actual_cost":0.15,"average_duration_ms":250}}`)
-	})
-
-	server := httptest.NewServer(mux)
-	defer server.Close()
-
-	relay := &sub2apiRelay{
-		adminURL: server.URL,
-		client:   server.Client(),
-	}
-
-	stats, err := relay.GetUserUsageStats(context.Background(), "alice@example.com", "test-password")
-	if err != nil {
-		t.Fatalf("GetUserUsageStats() unexpected error: %v", err)
-	}
-	if stats.TotalRequests != 100 {
-		t.Errorf("TotalRequests = %d, want 100", stats.TotalRequests)
-	}
-	if stats.TotalTokens != 50000 {
-		t.Errorf("TotalTokens = %d, want 50000", stats.TotalTokens)
-	}
-	if stats.TodayRequests != 10 {
-		t.Errorf("TodayRequests = %d, want 10", stats.TodayRequests)
-	}
-}
-
-func TestGetUserUsageStatsLoginFailure(t *testing.T) {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/api/v1/auth/login", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusUnauthorized)
-	})
-
-	server := httptest.NewServer(mux)
-	defer server.Close()
-
-	relay := &sub2apiRelay{
-		adminURL: server.URL,
-		client:   server.Client(),
-	}
-
-	_, err := relay.GetUserUsageStats(context.Background(), "alice@example.com", "wrong-password")
-	if err == nil {
-		t.Fatal("GetUserUsageStats() expected error, got nil")
-	}
-	if !errors.Is(err, ErrInvalidCredentials) {
-		t.Errorf("error = %v, want ErrInvalidCredentials", err)
-	}
-}
-```
-
-- [ ] **步骤 2：编写 GetUserUsageTrend 测试**
-
-```go
-func TestGetUserUsageTrend(t *testing.T) {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/api/v1/auth/login", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `{"code":0,"data":{"access_token":"test-jwt"}}`)
-	})
-	mux.HandleFunc("/api/v1/auth/me", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `{"code":0,"data":{"id":1,"username":"alice","email":"alice@example.com"}}`)
-	})
-	mux.HandleFunc("/api/v1/usage/dashboard/trend", func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != "Bearer test-jwt" {
-			w.WriteHeader(http.StatusUnauthorized)
-			return
-		}
-		if r.URL.Query().Get("start_date") != "2026-06-01" {
-			t.Errorf("start_date = %s, want 2026-06-01", r.URL.Query().Get("start_date"))
-		}
-		if r.URL.Query().Get("end_date") != "2026-06-07" {
-			t.Errorf("end_date = %s, want 2026-06-07", r.URL.Query().Get("end_date"))
-		}
-		if r.URL.Query().Get("granularity") != "day" {
-			t.Errorf("granularity = %s, want day", r.URL.Query().Get("granularity"))
-		}
-		fmt.Fprint(w, `{"code":0,"data":{"trend":[{"date":"2026-06-01","requests":20,"total_tokens":8000,"actual_cost":0.24}],"start_date":"2026-06-01","end_date":"2026-06-07","granularity":"day"}}`)
-	})
-
-	server := httptest.NewServer(mux)
-	defer server.Close()
-
-	relay := &sub2apiRelay{
-		adminURL: server.URL,
-		client:   server.Client(),
-	}
-
-	trend, err := relay.GetUserUsageTrend(context.Background(), "alice@example.com", "test-password", UsageTrendParams{
-		StartDate:   "2026-06-01",
-		EndDate:     "2026-06-07",
-		Granularity: "day",
-	})
-	if err != nil {
-		t.Fatalf("GetUserUsageTrend() unexpected error: %v", err)
-	}
-	if len(trend.Trend) != 1 {
-		t.Fatalf("Trend length = %d, want 1", len(trend.Trend))
-	}
-	if trend.Trend[0].Date != "2026-06-01" {
-		t.Errorf("Trend[0].Date = %s, want 2026-06-01", trend.Trend[0].Date)
-	}
-	if trend.Trend[0].TotalTokens != 8000 {
-		t.Errorf("Trend[0].TotalTokens = %d, want 8000", trend.Trend[0].TotalTokens)
-	}
-}
-```
-
-- [ ] **步骤 3：编写 GetUserUsageModels 测试**
-
-```go
-func TestGetUserUsageModels(t *testing.T) {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/api/v1/auth/login", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `{"code":0,"data":{"access_token":"test-jwt"}}`)
-	})
-	mux.HandleFunc("/api/v1/auth/me", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `{"code":0,"data":{"id":1,"username":"alice","email":"alice@example.com"}}`)
-	})
-	mux.HandleFunc("/api/v1/usage/dashboard/models", func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != "Bearer test-jwt" {
-			w.WriteHeader(http.StatusUnauthorized)
-			return
-		}
-		fmt.Fprint(w, `{"code":0,"data":{"models":[{"model":"gpt-4","requests":50,"total_tokens":25000,"actual_cost":0.75},{"model":"claude-3","requests":30,"total_tokens":15000,"actual_cost":0.45}],"start_date":"2026-06-01","end_date":"2026-06-07"}}`)
-	})
-
-	server := httptest.NewServer(mux)
-	defer server.Close()
-
-	relay := &sub2apiRelay{
-		adminURL: server.URL,
-		client:   server.Client(),
-	}
-
-	models, err := relay.GetUserUsageModels(context.Background(), "alice@example.com", "test-password", UsageModelParams{
-		StartDate: "2026-06-01",
-		EndDate:   "2026-06-07",
-	})
-	if err != nil {
-		t.Fatalf("GetUserUsageModels() unexpected error: %v", err)
-	}
-	if len(models.Models) != 2 {
-		t.Fatalf("Models length = %d, want 2", len(models.Models))
-	}
-	if models.Models[0].Model != "gpt-4" {
-		t.Errorf("Models[0].Model = %s, want gpt-4", models.Models[0].Model)
-	}
-	if models.Models[0].TotalTokens != 25000 {
-		t.Errorf("Models[0].TotalTokens = %d, want 25000", models.Models[0].TotalTokens)
-	}
-}
-```
-
-- [ ] **步骤 4：运行测试验证通过**
-
-运行：`cd /Users/admin/ai-efficiency/backend && go test ./internal/relay -run TestGetUserUsage -v`
-预期：所有测试 PASS
-
-- [ ] **步骤 5：Commit**
-
-```bash
-git add backend/internal/relay/sub2api_test.go
-git commit -m "test(relay): add user usage dashboard unit tests"
-```
-
----
-
-## 任务 5：Handler 层 — UserUsageHandler 实现
-
-**文件：**
-- 创建：`backend/internal/handler/user_usage.go`
-
-- [ ] **步骤 1：创建 handler 文件**
+Create `backend/internal/handler/user_usage_test.go`:
 
 ```go
 package handler
 
 import (
+	"context"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	authpkg "github.com/ai-efficiency/backend/internal/auth"
+	"github.com/ai-efficiency/backend/internal/pkg"
+	"github.com/ai-efficiency/backend/internal/relay"
+	"github.com/gin-gonic/gin"
+)
+
+const userUsageTestEncryptionKey = "0000000000000000000000000000000000000000000000000000000000000000"
+
+type userUsageResolverFunc func(ctx context.Context, providerID int) (relay.Provider, error)
+
+func (f userUsageResolverFunc) Resolve(ctx context.Context, providerID int) (relay.Provider, error) {
+	return f(ctx, providerID)
+}
+
+type userUsageRelayStub struct {
+	relay.Provider
+	gotLogin    string
+	gotPassword string
+	gotParams   relay.UserUsageDashboardParams
+	response    *relay.UserUsageDashboardResponse
+	err         error
+}
+
+func (s *userUsageRelayStub) GetUserUsageDashboard(ctx context.Context, login, password string, params relay.UserUsageDashboardParams) (*relay.UserUsageDashboardResponse, error) {
+	s.gotLogin = login
+	s.gotPassword = password
+	s.gotParams = params
+	if s.err != nil {
+		return nil, s.err
+	}
+	return s.response, nil
+}
+
+func newUserUsageTestRouter(t *testing.T, env *testEnv, handler *UserUsageHandler) *gin.Engine {
+	t.Helper()
+	router := gin.New()
+	router.GET("/api/v1/user/usage/dashboard", authpkg.RequireAuth(env.authSvc), handler.Dashboard)
+	return router
+}
+
+func performUserUsageRequest(router *gin.Engine, token string, target string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodGet, target, nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	return w
+}
+
+func TestUserUsageDashboardReturnsConfiguredFalseWithoutRelayPassword(t *testing.T) {
+	env := setupTestEnv(t)
+	_, err := env.client.RelayProvider.Create().
+		SetName("primary").
+		SetDisplayName("Primary").
+		SetBaseURL("https://relay.example.com").
+		SetAdminAPIKey("unused").
+		SetDefaultModel("example-model").
+		SetIsPrimary(true).
+		Save(context.Background())
+	if err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+
+	h := NewUserUsageHandler(env.client, userUsageResolverFunc(func(context.Context, int) (relay.Provider, error) {
+		t.Fatal("resolver should not be called when relay password is missing")
+		return nil, nil
+	}), userUsageTestEncryptionKey)
+	router := newUserUsageTestRouter(t, env, h)
+
+	w := performUserUsageRequest(router, env.token, "/api/v1/user/usage/dashboard?start_date=2026-06-01&end_date=2026-06-06&granularity=day&timezone=Asia%2FShanghai")
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body=%s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), `"configured":false`) {
+		t.Fatalf("response should be configured=false: %s", w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), `"trend":[]`) || !strings.Contains(w.Body.String(), `"models":[]`) {
+		t.Fatalf("response should contain empty arrays: %s", w.Body.String())
+	}
+}
+
+func TestUserUsageDashboardReturnsSnapshot(t *testing.T) {
+	env := setupTestEnv(t)
+	ciphertext, err := pkg.Encrypt("test-password", userUsageTestEncryptionKey)
+	if err != nil {
+		t.Fatalf("encrypt password: %v", err)
+	}
+	if err := env.client.User.UpdateOneID(env.userID).SetRelayAuthPassword(ciphertext).Exec(context.Background()); err != nil {
+		t.Fatalf("update user password: %v", err)
+	}
+	provider, err := env.client.RelayProvider.Create().
+		SetName("primary").
+		SetDisplayName("Primary").
+		SetBaseURL("https://relay.example.com").
+		SetAdminAPIKey("unused").
+		SetDefaultModel("example-model").
+		SetIsPrimary(true).
+		Save(context.Background())
+	if err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+
+	stub := &userUsageRelayStub{
+		response: &relay.UserUsageDashboardResponse{
+			Configured: true,
+			Range: relay.UserUsageDashboardRange{
+				StartDate:   "2026-06-01",
+				EndDate:     "2026-06-06",
+				Granularity: "day",
+				Timezone:    "Asia/Shanghai",
+			},
+			Stats: &relay.UserUsageDashboardStats{
+				TodayRequests:     12,
+				TodayTokens:       3456,
+				TodayActualCost:   1.25,
+				AverageDurationMs: 850,
+				Rpm:               2,
+				Tpm:               3000,
+			},
+			Trend: []relay.UserUsageTrendPoint{{Date: "2026-06-06", TotalTokens: 3456}},
+			Models: []relay.UserUsageModelStat{{
+				Model:       "example-model",
+				Requests:    12,
+				TotalTokens: 3456,
+				ActualCost:  1.25,
+			}},
+		},
+	}
+	h := NewUserUsageHandler(env.client, userUsageResolverFunc(func(_ context.Context, providerID int) (relay.Provider, error) {
+		if providerID != provider.ID {
+			t.Fatalf("providerID = %d, want %d", providerID, provider.ID)
+		}
+		return stub, nil
+	}), userUsageTestEncryptionKey)
+	router := newUserUsageTestRouter(t, env, h)
+
+	w := performUserUsageRequest(router, env.token, "/api/v1/user/usage/dashboard?start_date=2026-06-01&end_date=2026-06-06&granularity=day&timezone=Asia%2FShanghai")
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body=%s", w.Code, w.Body.String())
+	}
+	if stub.gotLogin != "admin@test.com" || stub.gotPassword != "test-password" {
+		t.Fatalf("credentials = %q/%q", stub.gotLogin, stub.gotPassword)
+	}
+	if stub.gotParams.StartDate != "2026-06-01" || stub.gotParams.EndDate != "2026-06-06" || stub.gotParams.Granularity != "day" || stub.gotParams.Timezone != "Asia/Shanghai" {
+		t.Fatalf("params = %+v", stub.gotParams)
+	}
+	if !strings.Contains(w.Body.String(), `"today_requests":12`) || strings.Contains(w.Body.String(), "total_api_keys") {
+		t.Fatalf("unexpected response body: %s", w.Body.String())
+	}
+}
+
+func TestUserUsageDashboardInvalidRelayCredentialsReturnsConflict(t *testing.T) {
+	env := setupTestEnv(t)
+	ciphertext, err := pkg.Encrypt("test-password", userUsageTestEncryptionKey)
+	if err != nil {
+		t.Fatalf("encrypt password: %v", err)
+	}
+	if err := env.client.User.UpdateOneID(env.userID).SetRelayAuthPassword(ciphertext).Exec(context.Background()); err != nil {
+		t.Fatalf("update user password: %v", err)
+	}
+	if _, err := env.client.RelayProvider.Create().
+		SetName("primary").
+		SetDisplayName("Primary").
+		SetBaseURL("https://relay.example.com").
+		SetAdminAPIKey("unused").
+		SetDefaultModel("example-model").
+		SetIsPrimary(true).
+		Save(context.Background()); err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+
+	stub := &userUsageRelayStub{err: relay.ErrInvalidCredentials}
+	h := NewUserUsageHandler(env.client, userUsageResolverFunc(func(context.Context, int) (relay.Provider, error) {
+		return stub, nil
+	}), userUsageTestEncryptionKey)
+	router := newUserUsageTestRouter(t, env, h)
+
+	w := performUserUsageRequest(router, env.token, "/api/v1/user/usage/dashboard")
+	if w.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409, body=%s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "Relay credentials need attention") {
+		t.Fatalf("unexpected response: %s", w.Body.String())
+	}
+}
+
+func TestUserUsageDashboardResolverFailureReturnsUnprocessableEntity(t *testing.T) {
+	env := setupTestEnv(t)
+	ciphertext, err := pkg.Encrypt("test-password", userUsageTestEncryptionKey)
+	if err != nil {
+		t.Fatalf("encrypt password: %v", err)
+	}
+	if err := env.client.User.UpdateOneID(env.userID).SetRelayAuthPassword(ciphertext).Exec(context.Background()); err != nil {
+		t.Fatalf("update user password: %v", err)
+	}
+	if _, err := env.client.RelayProvider.Create().
+		SetName("primary").
+		SetDisplayName("Primary").
+		SetBaseURL("https://relay.example.com").
+		SetAdminAPIKey("unused").
+		SetDefaultModel("example-model").
+		SetIsPrimary(true).
+		Save(context.Background()); err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+
+	h := NewUserUsageHandler(env.client, userUsageResolverFunc(func(context.Context, int) (relay.Provider, error) {
+		return nil, errors.New("resolve failed")
+	}), userUsageTestEncryptionKey)
+	router := newUserUsageTestRouter(t, env, h)
+
+	w := performUserUsageRequest(router, env.token, "/api/v1/user/usage/dashboard")
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want 422, body=%s", w.Code, w.Body.String())
+	}
+}
+```
+
+- [ ] **Step 2: Run handler tests and verify they fail**
+
+Run:
+
+```bash
+cd /Users/admin/ai-efficiency/backend && go test ./internal/handler -run 'TestUserUsageDashboard' -count=1
+```
+
+Expected: compile failure because `NewUserUsageHandler` still takes `*ProviderHandler` and `Dashboard` does not exist.
+
+- [ ] **Step 3: Refactor handler dependency and implement Dashboard**
+
+Replace `backend/internal/handler/user_usage.go` with the snapshot handler shape:
+
+```go
+package handler
+
+import (
+	"context"
+	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/ai-efficiency/backend/ent"
+	"github.com/ai-efficiency/backend/ent/relayprovider"
 	"github.com/ai-efficiency/backend/internal/auth"
 	"github.com/ai-efficiency/backend/internal/pkg"
 	"github.com/ai-efficiency/backend/internal/relay"
 	"github.com/gin-gonic/gin"
 )
 
+type userUsageProviderResolver interface {
+	Resolve(ctx context.Context, providerID int) (relay.Provider, error)
+}
+
 type UserUsageHandler struct {
-	entClient     *ent.Client
-	relayProvider relay.Provider
-	encryptionKey string
+	entClient        *ent.Client
+	providerResolver userUsageProviderResolver
+	encryptionKey    string
 }
 
-func NewUserUsageHandler(entClient *ent.Client, relayProvider relay.Provider, encryptionKey string) *UserUsageHandler {
+func NewUserUsageHandler(entClient *ent.Client, providerResolver userUsageProviderResolver, encryptionKey string) *UserUsageHandler {
 	return &UserUsageHandler{
-		entClient:     entClient,
-		relayProvider: relayProvider,
-		encryptionKey: encryptionKey,
+		entClient:        entClient,
+		providerResolver: providerResolver,
+		encryptionKey:    encryptionKey,
 	}
 }
 
-func (h *UserUsageHandler) Stats(c *gin.Context) {
+func (h *UserUsageHandler) resolvePrimaryProvider(c *gin.Context) (relay.Provider, error) {
+	providers, err := h.entClient.RelayProvider.Query().
+		Where(relayprovider.IsPrimary(true)).
+		All(c.Request.Context())
+	if err != nil {
+		return nil, err
+	}
+	if len(providers) == 0 {
+		return h.providerResolver.Resolve(c.Request.Context(), 1)
+	}
+	return h.providerResolver.Resolve(c.Request.Context(), providers[0].ID)
+}
+
+func (h *UserUsageHandler) Dashboard(c *gin.Context) {
 	uc := auth.GetUserContext(c)
 	if uc == nil {
 		pkg.Error(c, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	params, ok := parseUserUsageDashboardParams(c)
+	if !ok {
 		return
 	}
 
@@ -582,7 +852,17 @@ func (h *UserUsageHandler) Stats(c *gin.Context) {
 	}
 
 	if u.RelayAuthPassword == nil || strings.TrimSpace(*u.RelayAuthPassword) == "" {
-		pkg.Success(c, nil)
+		pkg.Success(c, &relay.UserUsageDashboardResponse{
+			Configured: false,
+			Range: relay.UserUsageDashboardRange{
+				StartDate:   params.StartDate,
+				EndDate:     params.EndDate,
+				Granularity: params.Granularity,
+				Timezone:    params.Timezone,
+			},
+			Trend:  []relay.UserUsageTrendPoint{},
+			Models: []relay.UserUsageModelStat{},
+		})
 		return
 	}
 
@@ -592,110 +872,64 @@ func (h *UserUsageHandler) Stats(c *gin.Context) {
 		return
 	}
 
+	relayProvider, err := h.resolvePrimaryProvider(c)
+	if err != nil {
+		pkg.Error(c, http.StatusUnprocessableEntity, "resolve relay provider: "+err.Error())
+		return
+	}
+
 	login := firstNonEmptyString(u.Email, u.Username)
 	if login == "" {
 		pkg.Error(c, http.StatusUnprocessableEntity, "user has no email or username")
 		return
 	}
 
-	stats, err := h.relayProvider.GetUserUsageStats(c.Request.Context(), login, password)
+	snapshot, err := relayProvider.GetUserUsageDashboard(c.Request.Context(), login, password, params)
 	if err != nil {
-		pkg.Error(c, http.StatusBadGateway, "get usage stats: "+err.Error())
+		if errors.Is(err, relay.ErrInvalidCredentials) {
+			pkg.Error(c, http.StatusConflict, "Relay credentials need attention. Please update AI service configuration.")
+			return
+		}
+		pkg.Error(c, http.StatusBadGateway, "get usage dashboard: "+err.Error())
 		return
 	}
 
-	pkg.Success(c, stats)
+	if snapshot == nil {
+		pkg.Error(c, http.StatusBadGateway, "get usage dashboard: empty response")
+		return
+	}
+	pkg.Success(c, snapshot)
 }
 
-func (h *UserUsageHandler) Trend(c *gin.Context) {
-	uc := auth.GetUserContext(c)
-	if uc == nil {
-		pkg.Error(c, http.StatusUnauthorized, "unauthorized")
-		return
+func parseUserUsageDashboardParams(c *gin.Context) (relay.UserUsageDashboardParams, bool) {
+	granularity := strings.TrimSpace(c.DefaultQuery("granularity", "day"))
+	if granularity != "day" && granularity != "hour" {
+		pkg.Error(c, http.StatusBadRequest, "granularity must be day or hour")
+		return relay.UserUsageDashboardParams{}, false
 	}
 
-	u, err := h.entClient.User.Get(c.Request.Context(), uc.UserID)
-	if err != nil {
-		pkg.Error(c, http.StatusUnprocessableEntity, "fetch user: "+err.Error())
-		return
+	params := relay.UserUsageDashboardParams{
+		StartDate:   strings.TrimSpace(c.Query("start_date")),
+		EndDate:     strings.TrimSpace(c.Query("end_date")),
+		Granularity: granularity,
+		Timezone:    strings.TrimSpace(c.Query("timezone")),
 	}
-
-	if u.RelayAuthPassword == nil || strings.TrimSpace(*u.RelayAuthPassword) == "" {
-		pkg.Success(c, &relay.UsageTrendResponse{})
-		return
+	if params.StartDate == "" || params.EndDate == "" {
+		start, end := defaultUserUsageRange(time.Now())
+		if params.StartDate == "" {
+			params.StartDate = start
+		}
+		if params.EndDate == "" {
+			params.EndDate = end
+		}
 	}
-
-	password, err := pkg.Decrypt(strings.TrimSpace(*u.RelayAuthPassword), h.encryptionKey)
-	if err != nil {
-		pkg.Error(c, http.StatusUnprocessableEntity, "decrypt relay password: "+err.Error())
-		return
-	}
-
-	params := relay.UsageTrendParams{
-		StartDate:   c.Query("start_date"),
-		EndDate:     c.Query("end_date"),
-		Granularity: c.DefaultQuery("granularity", "day"),
-		Timezone:    c.Query("timezone"),
-	}
-
-	login := firstNonEmptyString(u.Email, u.Username)
-	if login == "" {
-		pkg.Error(c, http.StatusUnprocessableEntity, "user has no email or username")
-		return
-	}
-
-	trend, err := h.relayProvider.GetUserUsageTrend(c.Request.Context(), login, password, params)
-	if err != nil {
-		pkg.Error(c, http.StatusBadGateway, "get usage trend: "+err.Error())
-		return
-	}
-
-	pkg.Success(c, trend)
+	return params, true
 }
 
-func (h *UserUsageHandler) Models(c *gin.Context) {
-	uc := auth.GetUserContext(c)
-	if uc == nil {
-		pkg.Error(c, http.StatusUnauthorized, "unauthorized")
-		return
-	}
-
-	u, err := h.entClient.User.Get(c.Request.Context(), uc.UserID)
-	if err != nil {
-		pkg.Error(c, http.StatusUnprocessableEntity, "fetch user: "+err.Error())
-		return
-	}
-
-	if u.RelayAuthPassword == nil || strings.TrimSpace(*u.RelayAuthPassword) == "" {
-		pkg.Success(c, &relay.UsageModelResponse{})
-		return
-	}
-
-	password, err := pkg.Decrypt(strings.TrimSpace(*u.RelayAuthPassword), h.encryptionKey)
-	if err != nil {
-		pkg.Error(c, http.StatusUnprocessableEntity, "decrypt relay password: "+err.Error())
-		return
-	}
-
-	params := relay.UsageModelParams{
-		StartDate: c.Query("start_date"),
-		EndDate:   c.Query("end_date"),
-		Timezone:  c.Query("timezone"),
-	}
-
-	login := firstNonEmptyString(u.Email, u.Username)
-	if login == "" {
-		pkg.Error(c, http.StatusUnprocessableEntity, "user has no email or username")
-		return
-	}
-
-	models, err := h.relayProvider.GetUserUsageModels(c.Request.Context(), login, password, params)
-	if err != nil {
-		pkg.Error(c, http.StatusBadGateway, "get usage models: "+err.Error())
-		return
-	}
-
-	pkg.Success(c, models)
+func defaultUserUsageRange(now time.Time) (string, string) {
+	today := now.Format("2006-01-02")
+	start := now.AddDate(0, 0, -6).Format("2006-01-02")
+	return start, today
 }
 
 func firstNonEmptyString(values ...string) string {
@@ -708,875 +942,879 @@ func firstNonEmptyString(values ...string) string {
 }
 ```
 
-- [ ] **步骤 2：验证编译通过**
+- [ ] **Step 4: Update router registration**
 
-运行：`cd /Users/admin/ai-efficiency/backend && go build ./...`
-预期：编译成功（`firstNonEmptyString` 可能与其他文件冲突，如有则删除重复定义）
+In `backend/internal/handler/router.go`, replace:
 
-- [ ] **步骤 3：Commit**
+```go
+userUsageHandler := NewUserUsageHandler(entClient, providerHandler, encryptionKey)
+userGroup.GET("/usage/stats", userUsageHandler.Stats)
+userGroup.GET("/usage/trend", userUsageHandler.Trend)
+userGroup.GET("/usage/models", userUsageHandler.Models)
+```
+
+with:
+
+```go
+userUsageHandler := NewUserUsageHandler(entClient, providerHandler, encryptionKey)
+userGroup.GET("/usage/dashboard", userUsageHandler.Dashboard)
+```
+
+- [ ] **Step 5: Run handler tests and verify they pass**
+
+Run:
 
 ```bash
-git add backend/internal/handler/user_usage.go
-git commit -m "feat(handler): add UserUsageHandler for dashboard endpoints"
+cd /Users/admin/ai-efficiency/backend && go test ./internal/handler -run 'TestUserUsageDashboard' -count=1
+```
+
+Expected: PASS.
+
+- [ ] **Step 6: Commit handler snapshot endpoint**
+
+```bash
+git add backend/internal/handler/user_usage.go backend/internal/handler/user_usage_test.go backend/internal/handler/router.go
+git commit -m "feat(handler): expose user usage dashboard snapshot"
 ```
 
 ---
 
-## 任务 6：Handler 层 — 路由注册
+## Task 3: Backend Interface Cleanup Across Tests
 
-**文件：**
-- 修改：`backend/internal/handler/router.go:178-187`
+**Files:**
+- Modify: `backend/internal/auth/sso_test.go`
+- Modify: `backend/internal/attribution/service_test.go`
+- Modify: `backend/internal/usersetup/service_test.go`
 
-- [ ] **步骤 1：在 userGroup 路由块内注册用量路由**
+- [ ] **Step 1: Update fake relay providers**
 
-在 `userGroup := protected.Group("/user")` 块内，现有路由之后添加：
+In each fake or mock provider that currently implements the three old methods:
 
 ```go
-if providerHandler != nil {
-	// ... existing routes ...
+func (f *fakeRelayProvider) GetUserUsageStats(ctx context.Context, login, password string) (*relay.UserUsageStats, error) {
+	return nil, nil
 }
-
-// User usage dashboard
-if providerHandler != nil && providerHandler.relayProvider != nil {
-	userUsageHandler := NewUserUsageHandler(entClient, providerHandler.relayProvider, encryptionKey)
-	userGroup.GET("/usage/stats", userUsageHandler.Stats)
-	userGroup.GET("/usage/trend", userUsageHandler.Trend)
-	userGroup.GET("/usage/models", userUsageHandler.Models)
+func (f *fakeRelayProvider) GetUserUsageTrend(ctx context.Context, login, password string, params relay.UsageTrendParams) (*relay.UsageTrendResponse, error) {
+	return nil, nil
+}
+func (f *fakeRelayProvider) GetUserUsageModels(ctx context.Context, login, password string, params relay.UsageModelParams) (*relay.UsageModelResponse, error) {
+	return nil, nil
 }
 ```
 
-注意：需要确认 `providerHandler.relayProvider` 字段是否存在。如果不存在，需要在 `ProviderHandler` 中添加该字段或使用其他方式获取 relay provider。
+replace them with:
 
-- [ ] **步骤 2：验证编译通过**
+```go
+func (f *fakeRelayProvider) GetUserUsageDashboard(ctx context.Context, login, password string, params relay.UserUsageDashboardParams) (*relay.UserUsageDashboardResponse, error) {
+	return nil, nil
+}
+```
 
-运行：`cd /Users/admin/ai-efficiency/backend && go build ./...`
-预期：编译成功
+For `backend/internal/auth/sso_test.go`, the receiver is `m *mockRelayProvider`, so use:
 
-- [ ] **步骤 3：Commit**
+```go
+func (m *mockRelayProvider) GetUserUsageDashboard(_ context.Context, _, _ string, _ relay.UserUsageDashboardParams) (*relay.UserUsageDashboardResponse, error) {
+	return nil, nil
+}
+```
+
+- [ ] **Step 2: Run backend package tests that compile Provider fakes**
+
+Run:
 
 ```bash
-git add backend/internal/handler/router.go
-git commit -m "feat(handler): register user usage dashboard routes"
+cd /Users/admin/ai-efficiency/backend && go test ./internal/auth ./internal/attribution ./internal/usersetup -count=1
+```
+
+Expected: PASS.
+
+- [ ] **Step 3: Commit test fake cleanup**
+
+```bash
+git add backend/internal/auth/sso_test.go backend/internal/attribution/service_test.go backend/internal/usersetup/service_test.go
+git commit -m "test(relay): update usage dashboard provider mocks"
 ```
 
 ---
 
-## 任务 7：Handler 层 — 单元测试
+## Task 4: Frontend Types, API, and Chart Dependencies
 
-**文件：**
-- 创建：`backend/internal/handler/user_usage_test.go`
+**Files:**
+- Modify: `frontend/package.json`
+- Modify: `frontend/pnpm-lock.yaml`
+- Modify: `frontend/src/types/index.ts`
+- Modify: `frontend/src/api/userUsage.ts`
+- Create: `frontend/src/__tests__/user-usage-api.test.ts`
 
-- [ ] **步骤 1：编写 mock relay provider**
+- [ ] **Step 1: Add chart dependencies**
 
-```go
-package handler
-
-import (
-	"context"
-	"encoding/json"
-	"errors"
-	"net/http"
-	"testing"
-
-	"github.com/ai-efficiency/backend/internal/relay"
-)
-
-type stubRelayProvider struct {
-	statsResult  *relay.UserUsageStats
-	statsErr     error
-	trendResult  *relay.UsageTrendResponse
-	trendErr     error
-	modelsResult *relay.UsageModelResponse
-	modelsErr    error
-	lastLogin    string
-	lastPassword string
-}
-
-func (s *stubRelayProvider) GetUserUsageStats(ctx context.Context, login, password string) (*relay.UserUsageStats, error) {
-	s.lastLogin = login
-	s.lastPassword = password
-	return s.statsResult, s.statsErr
-}
-
-func (s *stubRelayProvider) GetUserUsageTrend(ctx context.Context, login, password string, params relay.UsageTrendParams) (*relay.UsageTrendResponse, error) {
-	s.lastLogin = login
-	s.lastPassword = password
-	return s.trendResult, s.trendErr
-}
-
-func (s *stubRelayProvider) GetUserUsageModels(ctx context.Context, login, password string, params relay.UsageModelParams) (*relay.UsageModelResponse, error) {
-	s.lastLogin = login
-	s.lastPassword = password
-	return s.modelsResult, s.modelsErr
-}
-
-// Stub other required Provider interface methods
-func (s *stubRelayProvider) Ping(ctx context.Context) error { return nil }
-func (s *stubRelayProvider) Name() string                   { return "stub" }
-func (s *stubRelayProvider) Authenticate(ctx context.Context, username, password string) (*relay.User, error) {
-	return nil, nil
-}
-func (s *stubRelayProvider) GetUser(ctx context.Context, userID int64) (*relay.User, error) {
-	return nil, nil
-}
-func (s *stubRelayProvider) ListAllowedGroupsForUser(ctx context.Context, userID int64) ([]relay.Group, error) {
-	return nil, nil
-}
-func (s *stubRelayProvider) FindUserByEmail(ctx context.Context, email string) (*relay.User, error) {
-	return nil, nil
-}
-func (s *stubRelayProvider) FindUserByUsername(ctx context.Context, username string) (*relay.User, error) {
-	return nil, nil
-}
-func (s *stubRelayProvider) CreateUser(ctx context.Context, req relay.CreateUserRequest) (*relay.User, error) {
-	return nil, nil
-}
-func (s *stubRelayProvider) UpdateUser(ctx context.Context, userID int64, req relay.UpdateUserRequest) (*relay.User, error) {
-	return nil, nil
-}
-func (s *stubRelayProvider) ChatCompletion(ctx context.Context, req relay.ChatCompletionRequest) (*relay.ChatCompletionResponse, error) {
-	return nil, nil
-}
-func (s *stubRelayProvider) ChatCompletionWithTools(ctx context.Context, req relay.ChatCompletionRequest, tools []relay.ToolDef) (*relay.ChatCompletionWithToolsResponse, error) {
-	return nil, nil
-}
-func (s *stubRelayProvider) GetUsageStats(ctx context.Context, userID int64, from, to time.Time) (*relay.UsageStats, error) {
-	return nil, nil
-}
-func (s *stubRelayProvider) ListUserAPIKeys(ctx context.Context, userID int64) ([]relay.APIKey, error) {
-	return nil, nil
-}
-func (s *stubRelayProvider) CreateUserAPIKey(ctx context.Context, userID int64, req relay.APIKeyCreateRequest) (*relay.APIKeyWithSecret, error) {
-	return nil, nil
-}
-func (s *stubRelayProvider) UpdateUserAPIKeyStatus(ctx context.Context, keyID int64, status string) error {
-	return nil
-}
-func (s *stubRelayProvider) RevokeUserAPIKey(ctx context.Context, keyID int64) error { return nil }
-func (s *stubRelayProvider) ListUsageLogsByAPIKeyExact(ctx context.Context, apiKeyID int64, from, to time.Time) ([]relay.UsageLog, error) {
-	return nil, nil
-}
-```
-
-- [ ] **步骤 2：编写 Stats 端点测试**
-
-```go
-func TestUserUsageStatsReturnsData(t *testing.T) {
-	env := setupTestEnv(t)
-	stub := &stubRelayProvider{
-		statsResult: &relay.UserUsageStats{
-			TotalRequests:     100,
-			TotalTokens:       50000,
-			TotalActualCost:   1.5,
-			TodayRequests:    10,
-			TodayTokens:       5000,
-			TodayActualCost:   0.15,
-			AverageDurationMs: 250,
-		},
-	}
-
-	// Create user with relay password
-	encryptedPassword, _ := pkg.Encrypt("test-password", env.encryptionKey)
-	user, _ := env.entClient.User.Create().
-		SetUsername("alice").
-		SetEmail("alice@example.com").
-		SetRelayUserID(5).
-		SetRelayAuthPassword(encryptedPassword).
-		Save(context.Background())
-
-	handler := NewUserUsageHandler(env.entClient, stub, env.encryptionKey)
-
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/user/usage/stats", nil)
-	c.Set(auth.UserContextKey, &auth.UserContext{UserID: user.ID})
-
-	handler.Stats(c)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
-	}
-
-	var result struct {
-		Data *relay.UserUsageStats `json:"data"`
-	}
-	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
-		t.Fatalf("decode error: %v", err)
-	}
-	if result.Data.TotalRequests != 100 {
-		t.Errorf("TotalRequests = %d, want 100", result.Data.TotalRequests)
-	}
-}
-
-func TestUserUsageStatsNoPassword(t *testing.T) {
-	env := setupTestEnv(t)
-	stub := &stubRelayProvider{}
-
-	user, _ := env.entClient.User.Create().
-		SetUsername("bob").
-		SetEmail("bob@example.com").
-		Save(context.Background())
-
-	handler := NewUserUsageHandler(env.entClient, stub, env.encryptionKey)
-
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/user/usage/stats", nil)
-	c.Set(auth.UserContextKey, &auth.UserContext{UserID: user.ID})
-
-	handler.Stats(c)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
-	}
-
-	var result struct {
-		Data interface{} `json:"data"`
-	}
-	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
-		t.Fatalf("decode error: %v", err)
-	}
-	if result.Data != nil {
-		t.Errorf("Data = %v, want nil", result.Data)
-	}
-}
-```
-
-- [ ] **步骤 3：运行测试验证通过**
-
-运行：`cd /Users/admin/ai-efficiency/backend && go test ./internal/handler -run TestUserUsage -v`
-预期：所有测试 PASS
-
-- [ ] **步骤 4：Commit**
+Run:
 
 ```bash
-git add backend/internal/handler/user_usage_test.go
-git commit -m "test(handler): add user usage dashboard handler tests"
+cd /Users/admin/ai-efficiency/frontend && pnpm add chart.js vue-chartjs
 ```
 
----
+Expected: `frontend/package.json` contains `chart.js` and `vue-chartjs`, and `frontend/pnpm-lock.yaml` is updated.
 
-## 任务 8：前端 — 类型定义
+- [ ] **Step 2: Write API test**
 
-**文件：**
-- 修改：`frontend/src/types/index.ts`（或创建新文件 `frontend/src/types/usage.ts`）
+Create `frontend/src/__tests__/user-usage-api.test.ts`:
 
-- [ ] **步骤 1：新增用量相关类型**
+```ts
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-```typescript
-export interface UserUsageStats {
+vi.mock('@/api/client', () => ({
+  default: {
+    get: vi.fn(),
+  },
+}))
+
+import client from '@/api/client'
+import { getUserUsageDashboard } from '@/api/userUsage'
+
+const mockClient = client as unknown as {
+  get: ReturnType<typeof vi.fn>
+}
+
+beforeEach(() => {
+  vi.clearAllMocks()
+})
+
+describe('user usage API', () => {
+  it('calls the dashboard snapshot endpoint with params', async () => {
+    mockClient.get.mockResolvedValue({ data: { data: { configured: false, trend: [], models: [] } } })
+    await getUserUsageDashboard({
+      start_date: '2026-06-01',
+      end_date: '2026-06-06',
+      granularity: 'day',
+      timezone: 'Asia/Shanghai',
+    })
+    expect(mockClient.get).toHaveBeenCalledWith('/user/usage/dashboard', {
+      params: {
+        start_date: '2026-06-01',
+        end_date: '2026-06-06',
+        granularity: 'day',
+        timezone: 'Asia/Shanghai',
+      },
+    })
+  })
+})
+```
+
+- [ ] **Step 3: Run API test and verify it fails**
+
+Run:
+
+```bash
+cd /Users/admin/ai-efficiency/frontend && pnpm test -- src/__tests__/user-usage-api.test.ts
+```
+
+Expected: FAIL because `getUserUsageDashboard` is not exported yet.
+
+- [ ] **Step 4: Add frontend types**
+
+In `frontend/src/types/index.ts`, replace the current user usage types with:
+
+```ts
+export interface UserUsageDashboardParams {
+  start_date?: string
+  end_date?: string
+  granularity?: 'day' | 'hour'
+  timezone?: string
+}
+
+export interface UserUsageDashboardRange {
+  start_date: string
+  end_date: string
+  granularity: 'day' | 'hour' | string
+  timezone?: string
+}
+
+export interface UserUsageDashboardStats {
   total_requests: number
   total_input_tokens: number
   total_output_tokens: number
-  total_cache_read_tokens: number
   total_cache_creation_tokens: number
+  total_cache_read_tokens: number
   total_tokens: number
   total_cost: number
   total_actual_cost: number
   today_requests: number
   today_input_tokens: number
   today_output_tokens: number
+  today_cache_creation_tokens: number
+  today_cache_read_tokens: number
   today_tokens: number
   today_cost: number
   today_actual_cost: number
   average_duration_ms: number
+  rpm: number
+  tpm: number
 }
 
-export interface UsageTrendDataPoint {
+export interface UserUsageTrendPoint {
   date: string
   requests: number
   input_tokens: number
   output_tokens: number
+  cache_creation_tokens: number
+  cache_read_tokens: number
   total_tokens: number
   cost: number
   actual_cost: number
 }
 
-export interface UsageTrendResponse {
-  trend: UsageTrendDataPoint[]
-  start_date: string
-  end_date: string
-  granularity: string
-}
-
-export interface UsageModelStat {
+export interface UserUsageModelStat {
   model: string
   requests: number
   input_tokens: number
   output_tokens: number
+  cache_creation_tokens: number
+  cache_read_tokens: number
   total_tokens: number
   cost: number
   actual_cost: number
 }
 
-export interface UsageModelResponse {
-  models: UsageModelStat[]
-  start_date: string
-  end_date: string
+export interface UserUsageDashboardSnapshot {
+  configured: boolean
+  range: UserUsageDashboardRange
+  stats: UserUsageDashboardStats | null
+  trend: UserUsageTrendPoint[]
+  models: UserUsageModelStat[]
 }
 ```
 
-- [ ] **步骤 2：Commit**
+- [ ] **Step 5: Replace API module**
 
-```bash
-git add frontend/src/types/usage.ts
-git commit -m "feat(frontend): add usage dashboard types"
-```
+Replace `frontend/src/api/userUsage.ts` with:
 
----
-
-## 任务 9：前端 — API 封装
-
-**文件：**
-- 创建：`frontend/src/api/userUsage.ts`
-
-- [ ] **步骤 1：创建 API 文件**
-
-```typescript
+```ts
 import client from './client'
 import type {
   ApiResponse,
-  UserUsageStats,
-  UsageTrendResponse,
-  UsageModelResponse,
+  UserUsageDashboardParams,
+  UserUsageDashboardSnapshot,
 } from '@/types'
 
-export function getUserUsageStats() {
-  return client.get<ApiResponse<UserUsageStats | null>>('/user/usage/stats')
-}
-
-export function getUserUsageTrend(params: {
-  start_date?: string
-  end_date?: string
-  granularity?: 'day' | 'hour'
-  timezone?: string
-}) {
-  return client.get<ApiResponse<UsageTrendResponse>>('/user/usage/trend', { params })
-}
-
-export function getUserUsageModels(params: {
-  start_date?: string
-  end_date?: string
-  timezone?: string
-}) {
-  return client.get<ApiResponse<UsageModelResponse>>('/user/usage/models', { params })
+export function getUserUsageDashboard(params: UserUsageDashboardParams) {
+  return client.get<ApiResponse<UserUsageDashboardSnapshot>>('/user/usage/dashboard', { params })
 }
 ```
 
-- [ ] **步骤 2：Commit**
+- [ ] **Step 6: Run API test and verify it passes**
+
+Run:
 
 ```bash
-git add frontend/src/api/userUsage.ts
-git commit -m "feat(frontend): add user usage API client"
+cd /Users/admin/ai-efficiency/frontend && pnpm test -- src/__tests__/user-usage-api.test.ts
+```
+
+Expected: PASS.
+
+- [ ] **Step 7: Commit frontend contract and dependencies**
+
+```bash
+git add frontend/package.json frontend/pnpm-lock.yaml frontend/src/types/index.ts frontend/src/api/userUsage.ts frontend/src/__tests__/user-usage-api.test.ts
+git commit -m "feat(frontend): add user usage dashboard snapshot API"
 ```
 
 ---
 
-## 任务 10：前端 — 统计卡片组件
+## Task 5: Frontend Usage Components
 
-**文件：**
-- 创建：`frontend/src/components/user/usage/UsageStatsCards.vue`
+**Files:**
+- Modify: `frontend/src/components/user/usage/UsageStatsCards.vue`
+- Modify: `frontend/src/components/user/usage/UsageTrendChart.vue`
+- Modify: `frontend/src/components/user/usage/UsageModelChart.vue`
 
-- [ ] **步骤 1：创建统计卡片组件**
+- [ ] **Step 1: Rewrite stats cards**
+
+Replace `frontend/src/components/user/usage/UsageStatsCards.vue` with a component that accepts `stats: UserUsageDashboardStats | null` and renders four cards:
 
 ```vue
-<template>
-  <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
-    <div class="card p-4">
-      <div class="flex items-center gap-3">
-        <div class="rounded-lg bg-blue-100 p-2 dark:bg-blue-900/30">
-          <svg class="h-5 w-5 text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-          </svg>
-        </div>
-        <div>
-          <p class="text-xs font-medium text-gray-500 dark:text-gray-400">总请求数</p>
-          <p class="text-xl font-bold text-gray-900 dark:text-white">
-            {{ stats?.total_requests?.toLocaleString() || '0' }}
-          </p>
-          <p class="text-xs text-gray-500 dark:text-gray-400">
-            今日: {{ stats?.today_requests?.toLocaleString() || '0' }}
-          </p>
-        </div>
-      </div>
-    </div>
-
-    <div class="card p-4">
-      <div class="flex items-center gap-3">
-        <div class="rounded-lg bg-amber-100 p-2 dark:bg-amber-900/30">
-          <svg class="h-5 w-5 text-amber-600 dark:text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
-          </svg>
-        </div>
-        <div>
-          <p class="text-xs font-medium text-gray-500 dark:text-gray-400">总 Token</p>
-          <p class="text-xl font-bold text-gray-900 dark:text-white">
-            {{ formatTokens(stats?.total_tokens || 0) }}
-          </p>
-          <p class="text-xs text-gray-500 dark:text-gray-400">
-            入: {{ formatTokens(stats?.total_input_tokens || 0) }} / 出: {{ formatTokens(stats?.total_output_tokens || 0) }}
-          </p>
-        </div>
-      </div>
-    </div>
-
-    <div class="card p-4">
-      <div class="flex items-center gap-3">
-        <div class="rounded-lg bg-green-100 p-2 dark:bg-green-900/30">
-          <svg class="h-5 w-5 text-green-600 dark:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-        </div>
-        <div class="min-w-0 flex-1">
-          <p class="text-xs font-medium text-gray-500 dark:text-gray-400">总费用</p>
-          <p class="text-xl font-bold text-green-600 dark:text-green-400">
-            ${{ (stats?.total_actual_cost || 0).toFixed(4) }}
-          </p>
-          <p class="text-xs text-gray-500 dark:text-gray-400">
-            实际 / <span class="line-through">${{ (stats?.total_cost || 0).toFixed(4) }}</span> 标准
-          </p>
-        </div>
-      </div>
-    </div>
-
-    <div class="card p-4">
-      <div class="flex items-center gap-3">
-        <div class="rounded-lg bg-purple-100 p-2 dark:bg-purple-900/30">
-          <svg class="h-5 w-5 text-purple-600 dark:text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-        </div>
-        <div>
-          <p class="text-xs font-medium text-gray-500 dark:text-gray-400">平均响应时间</p>
-          <p class="text-xl font-bold text-gray-900 dark:text-white">
-            {{ formatDuration(stats?.average_duration_ms || 0) }}
-          </p>
-          <p class="text-xs text-gray-500 dark:text-gray-400">每请求</p>
-        </div>
-      </div>
-    </div>
-  </div>
-</template>
-
 <script setup lang="ts">
-import type { UserUsageStats } from '@/types'
+import type { UserUsageDashboardStats } from '@/types'
 
 defineProps<{
-  stats: UserUsageStats | null
+  stats: UserUsageDashboardStats | null
 }>()
 
-function formatTokens(n: number): string {
-  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M'
-  if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K'
+function formatNumber(n: number): string {
   return n.toLocaleString()
+}
+
+function formatTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`
+  return n.toLocaleString()
+}
+
+function formatCost(n: number): string {
+  return n.toFixed(4)
 }
 
 function formatDuration(ms: number): string {
-  if (ms < 1000) return ms + 'ms'
-  return (ms / 1000).toFixed(2) + 's'
+  if (ms >= 1000) return `${(ms / 1000).toFixed(2)}s`
+  return `${Math.round(ms)}ms`
 }
 </script>
-```
 
-- [ ] **步骤 2：Commit**
-
-```bash
-git add frontend/src/components/user/usage/UsageStatsCards.vue
-git commit -m "feat(frontend): add UsageStatsCards component"
-```
-
----
-
-## 任务 11：前端 — 趋势图组件
-
-**文件：**
-- 创建：`frontend/src/components/user/usage/UsageTrendChart.vue`
-
-- [ ] **步骤 1：创建趋势图组件**
-
-```vue
 <template>
-  <div class="card">
-    <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
-      <h3 class="text-lg font-semibold text-gray-900 dark:text-white">用量趋势</h3>
-    </div>
-    <div class="p-6">
-      <div v-if="loading" class="flex items-center justify-center py-12">
-        <div class="h-8 w-8 animate-spin rounded-full border-4 border-primary-600 border-t-transparent"></div>
-      </div>
-      <div v-else-if="data.length === 0" class="py-8 text-center text-gray-500 dark:text-gray-400">
-        暂无趋势数据
-      </div>
-      <div v-else class="space-y-2">
-        <div
-          v-for="point in data"
-          :key="point.date"
-          class="flex items-center gap-4"
-        >
-          <span class="w-20 text-sm text-gray-600 dark:text-gray-400">{{ point.date }}</span>
-          <div class="flex-1">
-            <div class="h-6 rounded bg-gray-100 dark:bg-dark-800">
-              <div
-                class="h-6 rounded bg-gradient-to-r from-blue-500 to-blue-600"
-                :style="{ width: getBarWidth(point.total_tokens) }"
-              ></div>
-            </div>
-          </div>
-          <span class="w-24 text-right text-sm font-medium text-gray-900 dark:text-white">
-            {{ formatTokens(point.total_tokens) }}
-          </span>
-        </div>
-      </div>
-    </div>
-  </div>
-</template>
+  <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    <section class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+      <p class="text-xs font-medium uppercase text-gray-500 dark:text-gray-400">Today Cost</p>
+      <p class="mt-2 text-2xl font-semibold text-gray-900 dark:text-gray-100">${{ formatCost(stats?.today_actual_cost ?? 0) }}</p>
+      <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Standard: ${{ formatCost(stats?.today_cost ?? 0) }}</p>
+    </section>
 
-<script setup lang="ts">
-import type { UsageTrendDataPoint } from '@/types'
+    <section class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+      <p class="text-xs font-medium uppercase text-gray-500 dark:text-gray-400">Today Requests</p>
+      <p class="mt-2 text-2xl font-semibold text-gray-900 dark:text-gray-100">{{ formatNumber(stats?.today_requests ?? 0) }}</p>
+      <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Total: {{ formatNumber(stats?.total_requests ?? 0) }}</p>
+    </section>
 
-const props = defineProps<{
-  data: UsageTrendDataPoint[]
-  loading: boolean
-}>()
-
-function formatTokens(n: number): string {
-  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M'
-  if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K'
-  return n.toLocaleString()
-}
-
-function getBarWidth(tokens: number): string {
-  const max = Math.max(...props.data.map((d) => d.total_tokens), 1)
-  const pct = (tokens / max) * 100
-  return Math.max(pct, 2) + '%'
-}
-</script>
-```
-
-- [ ] **步骤 2：Commit**
-
-```bash
-git add frontend/src/components/user/usage/UsageTrendChart.vue
-git commit -m "feat(frontend): add UsageTrendChart component"
-```
-
----
-
-## 任务 12：前端 — 模型分布图组件
-
-**文件：**
-- 创建：`frontend/src/components/user/usage/UsageModelChart.vue`
-
-- [ ] **步骤 1：创建模型分布组件**
-
-```vue
-<template>
-  <div class="card">
-    <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
-      <h3 class="text-lg font-semibold text-gray-900 dark:text-white">模型分布</h3>
-    </div>
-    <div class="p-6">
-      <div v-if="loading" class="flex items-center justify-center py-12">
-        <div class="h-8 w-8 animate-spin rounded-full border-4 border-primary-600 border-t-transparent"></div>
-      </div>
-      <div v-else-if="data.length === 0" class="py-8 text-center text-gray-500 dark:text-gray-400">
-        暂无模型数据
-      </div>
-      <div v-else class="space-y-3">
-        <div
-          v-for="model in data"
-          :key="model.model"
-          class="flex items-center justify-between rounded-lg bg-gray-50 p-3 dark:bg-dark-800/50"
-        >
-          <div class="flex items-center gap-3">
-            <div class="h-3 w-3 rounded-full" :style="{ backgroundColor: getColor(model.model) }"></div>
-            <span class="text-sm font-medium text-gray-900 dark:text-white">{{ model.model }}</span>
-          </div>
-          <div class="text-right">
-            <p class="text-sm font-semibold text-gray-900 dark:text-white">
-              {{ formatTokens(model.total_tokens) }}
-            </p>
-            <p class="text-xs text-gray-500 dark:text-gray-400">
-              {{ getPercentage(model.total_tokens) }}% · ${{ model.actual_cost.toFixed(4) }}
-            </p>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-</template>
-
-<script setup lang="ts">
-import type { UsageModelStat } from '@/types'
-
-const props = defineProps<{
-  data: UsageModelStat[]
-  loading: boolean
-}>()
-
-const colors = [
-  '#3b82f6',
-  '#10b981',
-  '#f59e0b',
-  '#ef4444',
-  '#8b5cf6',
-  '#ec4899',
-  '#14b8a6',
-  '#f97316',
-]
-
-function getColor(model: string): string {
-  const idx = model.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0) % colors.length
-  return colors[idx]
-}
-
-function formatTokens(n: number): string {
-  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M'
-  if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K'
-  return n.toLocaleString()
-}
-
-function getPercentage(tokens: number): string {
-  const total = props.data.reduce((sum, m) => sum + m.total_tokens, 0)
-  if (total === 0) return '0'
-  return ((tokens / total) * 100).toFixed(1)
-}
-</script>
-```
-
-- [ ] **步骤 2：Commit**
-
-```bash
-git add frontend/src/components/user/usage/UsageModelChart.vue
-git commit -m "feat(frontend): add UsageModelChart component"
-```
-
----
-
-## 任务 13：前端 — 用量页面主组件
-
-**文件：**
-- 创建：`frontend/src/views/user/UsageView.vue`
-
-- [ ] **步骤 1：创建用量页面主组件**
-
-```vue
-<template>
-  <div class="space-y-6 p-6">
-    <div class="flex items-center justify-between">
-      <h1 class="text-2xl font-bold text-gray-900 dark:text-white">我的用量</h1>
-      <div class="flex gap-2">
-        <button
-          v-for="range in dateRanges"
-          :key="range.label"
-          :class="[
-            'rounded-lg px-3 py-1.5 text-sm font-medium transition-colors',
-            selectedRange === range.label
-              ? 'bg-primary-600 text-white'
-              : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-dark-800 dark:text-gray-300 dark:hover:bg-dark-700',
-          ]"
-          @click="selectRange(range)"
-        >
-          {{ range.label }}
-        </button>
-      </div>
-    </div>
-
-    <UsageStatsCards :stats="stats" />
-
-    <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
-      <UsageTrendChart :data="trendData" :loading="trendLoading" />
-      <UsageModelChart :data="modelData" :loading="modelLoading" />
-    </div>
-
-    <div v-if="!stats && !trendLoading && !modelLoading" class="card p-12 text-center">
-      <h3 class="text-lg font-semibold text-gray-900 dark:text-white">请先完成 AI 服务配置</h3>
-      <p class="mt-2 text-gray-500 dark:text-gray-400">
-        您需要先配置 relay 账户才能查看用量数据
+    <section class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+      <p class="text-xs font-medium uppercase text-gray-500 dark:text-gray-400">Today Tokens</p>
+      <p class="mt-2 text-2xl font-semibold text-gray-900 dark:text-gray-100">{{ formatTokens(stats?.today_tokens ?? 0) }}</p>
+      <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+        In {{ formatTokens(stats?.today_input_tokens ?? 0) }} · Out {{ formatTokens(stats?.today_output_tokens ?? 0) }} · Cache {{ formatTokens((stats?.today_cache_creation_tokens ?? 0) + (stats?.today_cache_read_tokens ?? 0)) }}
       </p>
-      <router-link
-        to="/user"
-        class="mt-4 inline-block rounded-lg bg-primary-600 px-4 py-2 text-white hover:bg-primary-700"
-      >
-        前往配置
-      </router-link>
+    </section>
+
+    <section class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+      <p class="text-xs font-medium uppercase text-gray-500 dark:text-gray-400">Avg Response</p>
+      <p class="mt-2 text-2xl font-semibold text-gray-900 dark:text-gray-100">{{ formatDuration(stats?.average_duration_ms ?? 0) }}</p>
+      <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">RPM {{ formatTokens(stats?.rpm ?? 0) }} · TPM {{ formatTokens(stats?.tpm ?? 0) }}</p>
+    </section>
+  </div>
+</template>
+```
+
+- [ ] **Step 2: Rewrite trend chart**
+
+Replace `frontend/src/components/user/usage/UsageTrendChart.vue` with:
+
+```vue
+<script setup lang="ts">
+import { computed } from 'vue'
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Tooltip,
+  Legend,
+  Filler,
+} from 'chart.js'
+import { Line } from 'vue-chartjs'
+import type { UserUsageTrendPoint } from '@/types'
+
+ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend, Filler)
+
+const props = defineProps<{
+  data: UserUsageTrendPoint[]
+  loading: boolean
+}>()
+
+function formatTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`
+  return n.toLocaleString()
+}
+
+const chartData = computed(() => ({
+  labels: props.data.map((point) => point.date),
+  datasets: [
+    { label: 'Input', data: props.data.map((point) => point.input_tokens), borderColor: '#2563eb', backgroundColor: '#2563eb22', fill: true, tension: 0.3 },
+    { label: 'Output', data: props.data.map((point) => point.output_tokens), borderColor: '#16a34a', backgroundColor: '#16a34a22', fill: true, tension: 0.3 },
+    { label: 'Cache Creation', data: props.data.map((point) => point.cache_creation_tokens), borderColor: '#d97706', backgroundColor: '#d9770622', fill: true, tension: 0.3 },
+    { label: 'Cache Read', data: props.data.map((point) => point.cache_read_tokens), borderColor: '#0891b2', backgroundColor: '#0891b222', fill: true, tension: 0.3 },
+  ],
+}))
+
+const chartOptions = computed(() => ({
+  responsive: true,
+  maintainAspectRatio: false,
+  interaction: { intersect: false, mode: 'index' as const },
+  plugins: {
+    legend: { position: 'top' as const },
+    tooltip: {
+      callbacks: {
+        label: (context: any) => `${context.dataset.label}: ${formatTokens(Number(context.raw ?? 0))}`,
+        footer: (items: any[]) => {
+          const index = items[0]?.dataIndex
+          const point = props.data[index]
+          return point ? `Actual: $${point.actual_cost.toFixed(4)} | Standard: $${point.cost.toFixed(4)}` : ''
+        },
+      },
+    },
+  },
+  scales: {
+    y: {
+      ticks: {
+        callback: (value: string | number) => formatTokens(Number(value)),
+      },
+    },
+  },
+}))
+</script>
+
+<template>
+  <section class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+    <div class="mb-4 flex items-center justify-between">
+      <h2 class="text-base font-semibold text-gray-900 dark:text-gray-100">Token Trend</h2>
+    </div>
+    <div v-if="loading" class="flex h-72 items-center justify-center text-sm text-gray-500 dark:text-gray-400">Loading trend...</div>
+    <div v-else-if="data.length === 0" class="flex h-72 items-center justify-center text-sm text-gray-500 dark:text-gray-400">No trend data available</div>
+    <div v-else class="h-72">
+      <Line :data="chartData" :options="chartOptions" />
+    </div>
+  </section>
+</template>
+```
+
+- [ ] **Step 3: Rewrite model chart**
+
+Replace `frontend/src/components/user/usage/UsageModelChart.vue` with:
+
+```vue
+<script setup lang="ts">
+import { computed } from 'vue'
+import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js'
+import { Doughnut } from 'vue-chartjs'
+import type { UserUsageModelStat } from '@/types'
+
+ChartJS.register(ArcElement, Tooltip, Legend)
+
+const props = defineProps<{
+  data: UserUsageModelStat[]
+  loading: boolean
+}>()
+
+const colors = ['#2563eb', '#16a34a', '#d97706', '#dc2626', '#7c3aed', '#db2777', '#0891b2', '#65a30d']
+
+const chartData = computed(() => ({
+  labels: props.data.map((model) => model.model),
+  datasets: [{ data: props.data.map((model) => model.total_tokens), backgroundColor: colors }],
+}))
+
+const chartOptions = { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+
+function formatTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`
+  return n.toLocaleString()
+}
+</script>
+
+<template>
+  <section class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+    <h2 class="mb-4 text-base font-semibold text-gray-900 dark:text-gray-100">Model Distribution</h2>
+    <div v-if="loading" class="flex h-72 items-center justify-center text-sm text-gray-500 dark:text-gray-400">Loading models...</div>
+    <div v-else-if="data.length === 0" class="flex h-72 items-center justify-center text-sm text-gray-500 dark:text-gray-400">No model data available</div>
+    <div v-else class="grid gap-4 lg:grid-cols-[180px_1fr]">
+      <div class="h-44">
+        <Doughnut :data="chartData" :options="chartOptions" />
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="border-b border-gray-200 text-left text-xs uppercase text-gray-500 dark:border-gray-700 dark:text-gray-400">
+              <th class="pb-2">Model</th>
+              <th class="pb-2 text-right">Requests</th>
+              <th class="pb-2 text-right">Tokens</th>
+              <th class="pb-2 text-right">Actual</th>
+              <th class="pb-2 text-right">Standard</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="model in data" :key="model.model" class="border-b border-gray-100 last:border-0 dark:border-gray-700">
+              <td class="max-w-[12rem] truncate py-2 font-medium text-gray-900 dark:text-gray-100" :title="model.model">{{ model.model }}</td>
+              <td class="py-2 text-right text-gray-600 dark:text-gray-300">{{ model.requests.toLocaleString() }}</td>
+              <td class="py-2 text-right text-gray-600 dark:text-gray-300">{{ formatTokens(model.total_tokens) }}</td>
+              <td class="py-2 text-right text-green-600 dark:text-green-400">${{ model.actual_cost.toFixed(4) }}</td>
+              <td class="py-2 text-right text-gray-500 dark:text-gray-400">${{ model.cost.toFixed(4) }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+</template>
+```
+
+- [ ] **Step 4: Run typecheck for components**
+
+Run:
+
+```bash
+cd /Users/admin/ai-efficiency/frontend && pnpm exec vue-tsc -b
+```
+
+Expected: PASS.
+
+- [ ] **Step 5: Commit usage components**
+
+```bash
+git add frontend/src/components/user/usage/UsageStatsCards.vue frontend/src/components/user/usage/UsageTrendChart.vue frontend/src/components/user/usage/UsageModelChart.vue
+git commit -m "feat(frontend): render user usage dashboard components"
+```
+
+---
+
+## Task 6: Frontend Usage View
+
+**Files:**
+- Create: `frontend/src/__tests__/user-usage-view.test.ts`
+- Modify: `frontend/src/views/user/UsageView.vue`
+
+- [ ] **Step 1: Write UsageView tests**
+
+Create `frontend/src/__tests__/user-usage-view.test.ts`:
+
+```ts
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { flushPromises, mount } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
+import { createRouter, createMemoryHistory } from 'vue-router'
+import UsageView from '@/views/user/UsageView.vue'
+
+vi.mock('@/api/userUsage', () => ({
+  getUserUsageDashboard: vi.fn(),
+}))
+
+vi.mock('vue-chartjs', () => ({
+  Line: { template: '<div data-test="line-chart" />' },
+  Doughnut: { template: '<div data-test="doughnut-chart" />' },
+}))
+
+function createRouterForUsage() {
+  return createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      { path: '/user/usage', component: UsageView },
+      { path: '/user', component: { template: '<div>Setup</div>' } },
+    ],
+  })
+}
+
+const snapshot = {
+  configured: true,
+  range: { start_date: '2026-06-01', end_date: '2026-06-06', granularity: 'day', timezone: 'Asia/Shanghai' },
+  stats: {
+    total_requests: 100,
+    total_input_tokens: 10000,
+    total_output_tokens: 5000,
+    total_cache_creation_tokens: 200,
+    total_cache_read_tokens: 300,
+    total_tokens: 15500,
+    total_cost: 2.5,
+    total_actual_cost: 2,
+    today_requests: 12,
+    today_input_tokens: 1000,
+    today_output_tokens: 500,
+    today_cache_creation_tokens: 20,
+    today_cache_read_tokens: 30,
+    today_tokens: 1550,
+    today_cost: 0.25,
+    today_actual_cost: 0.2,
+    average_duration_ms: 850,
+    rpm: 2,
+    tpm: 3000,
+  },
+  trend: [{ date: '2026-06-06', requests: 12, input_tokens: 1000, output_tokens: 500, cache_creation_tokens: 20, cache_read_tokens: 30, total_tokens: 1550, cost: 0.25, actual_cost: 0.2 }],
+  models: [{ model: 'example-model', requests: 12, input_tokens: 1000, output_tokens: 500, cache_creation_tokens: 20, cache_read_tokens: 30, total_tokens: 1550, cost: 0.25, actual_cost: 0.2 }],
+}
+
+describe('UsageView', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+  })
+
+  it('shows setup empty state when dashboard is not configured', async () => {
+    const { getUserUsageDashboard } = await import('@/api/userUsage')
+    ;(getUserUsageDashboard as any).mockResolvedValue({
+      data: { data: { configured: false, range: { start_date: '2026-06-01', end_date: '2026-06-06', granularity: 'day' }, stats: null, trend: [], models: [] } },
+    })
+    const router = createRouterForUsage()
+    await router.push('/user/usage')
+    await router.isReady()
+    const wrapper = mount(UsageView, { global: { plugins: [createPinia(), router] } })
+    await flushPromises()
+    expect(wrapper.text()).toContain('Complete AI service configuration')
+    expect(wrapper.text()).toContain('Open My Setup')
+  })
+
+  it('renders snapshot cards and charts', async () => {
+    const { getUserUsageDashboard } = await import('@/api/userUsage')
+    ;(getUserUsageDashboard as any).mockResolvedValue({ data: { data: snapshot } })
+    const router = createRouterForUsage()
+    await router.push('/user/usage')
+    await router.isReady()
+    const wrapper = mount(UsageView, { global: { plugins: [createPinia(), router] } })
+    await flushPromises()
+    expect(wrapper.text()).toContain('My AI Usage')
+    expect(wrapper.text()).toContain('Today Cost')
+    expect(wrapper.text()).toContain('Today Requests')
+    expect(wrapper.text()).toContain('Today Tokens')
+    expect(wrapper.text()).toContain('Avg Response')
+    expect(wrapper.text()).toContain('example-model')
+    expect(wrapper.find('[data-test="line-chart"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="doughnut-chart"]').exists()).toBe(true)
+  })
+
+  it('uses hour granularity for Today and day granularity for 7 Days', async () => {
+    const { getUserUsageDashboard } = await import('@/api/userUsage')
+    ;(getUserUsageDashboard as any).mockResolvedValue({ data: { data: snapshot } })
+    const router = createRouterForUsage()
+    await router.push('/user/usage')
+    await router.isReady()
+    const wrapper = mount(UsageView, { global: { plugins: [createPinia(), router] } })
+    await flushPromises()
+    await wrapper.get('[data-test="range-today"]').trigger('click')
+    await flushPromises()
+    expect((getUserUsageDashboard as any).mock.calls.at(-1)[0].granularity).toBe('hour')
+    await wrapper.get('[data-test="range-7d"]').trigger('click')
+    await flushPromises()
+    expect((getUserUsageDashboard as any).mock.calls.at(-1)[0].granularity).toBe('day')
+  })
+
+  it('shows credential repair message on 409', async () => {
+    const { getUserUsageDashboard } = await import('@/api/userUsage')
+    ;(getUserUsageDashboard as any).mockRejectedValue({ response: { status: 409 } })
+    const router = createRouterForUsage()
+    await router.push('/user/usage')
+    await router.isReady()
+    const wrapper = mount(UsageView, { global: { plugins: [createPinia(), router] } })
+    await flushPromises()
+    expect(wrapper.text()).toContain('Relay credentials need attention')
+    expect(wrapper.text()).toContain('Open My Setup')
+  })
+})
+```
+
+- [ ] **Step 2: Run UsageView tests and verify they fail**
+
+Run:
+
+```bash
+cd /Users/admin/ai-efficiency/frontend && pnpm test -- src/__tests__/user-usage-view.test.ts
+```
+
+Expected: FAIL because `UsageView.vue` still imports the three old API functions and lacks the new test ids and states.
+
+- [ ] **Step 3: Rewrite UsageView**
+
+Replace `frontend/src/views/user/UsageView.vue` with:
+
+```vue
+<template>
+  <div class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+    <div class="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+      <div>
+        <h1 class="text-2xl font-semibold text-gray-900 dark:text-gray-100">My AI Usage</h1>
+        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Usage and cost from your configured AI relay account.</p>
+      </div>
+      <div class="flex flex-wrap items-center gap-2">
+        <button data-test="range-today" type="button" :class="rangeButtonClass(selectedRange === 'today')" @click="selectRange('today')">Today</button>
+        <button data-test="range-7d" type="button" :class="rangeButtonClass(selectedRange === '7d')" @click="selectRange('7d')">7 Days</button>
+        <button data-test="range-30d" type="button" :class="rangeButtonClass(selectedRange === '30d')" @click="selectRange('30d')">30 Days</button>
+        <button type="button" class="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800" :disabled="loading" @click="loadDashboard">Refresh</button>
+      </div>
+    </div>
+
+    <div v-if="loading && !snapshot" class="flex min-h-80 items-center justify-center text-sm text-gray-500 dark:text-gray-400">Loading usage dashboard...</div>
+
+    <div v-else-if="setupRequired" class="rounded-lg border border-amber-200 bg-amber-50 p-6 dark:border-amber-800 dark:bg-amber-950/30">
+      <h2 class="text-base font-semibold text-amber-900 dark:text-amber-100">Complete AI service configuration</h2>
+      <p class="mt-2 text-sm text-amber-800 dark:text-amber-200">Usage data is available after your relay credentials are configured.</p>
+      <router-link to="/user" class="mt-4 inline-flex rounded-md bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700">Open My Setup</router-link>
+    </div>
+
+    <div v-else-if="errorMessage" class="rounded-lg border border-red-200 bg-red-50 p-6 dark:border-red-800 dark:bg-red-950/30">
+      <h2 class="text-base font-semibold text-red-900 dark:text-red-100">{{ errorMessage }}</h2>
+      <p class="mt-2 text-sm text-red-800 dark:text-red-200">Try refreshing after checking your setup.</p>
+      <router-link v-if="credentialError" to="/user" class="mt-4 inline-flex rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">Open My Setup</router-link>
+    </div>
+
+    <div v-else class="space-y-6">
+      <UsageStatsCards :stats="snapshot?.stats ?? null" />
+      <div class="grid grid-cols-1 gap-6 xl:grid-cols-[1.35fr_1fr]">
+        <UsageTrendChart :data="snapshot?.trend ?? []" :loading="loading" />
+        <UsageModelChart :data="snapshot?.models ?? []" :loading="loading" />
+      </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue'
-import { getUserUsageStats, getUserUsageTrend, getUserUsageModels } from '@/api/userUsage'
-import type { UserUsageStats, UsageTrendDataPoint, UsageModelStat } from '@/types'
+import { computed, onMounted, ref } from 'vue'
+import { getUserUsageDashboard } from '@/api/userUsage'
+import type { UserUsageDashboardParams, UserUsageDashboardSnapshot } from '@/types'
 import UsageStatsCards from '@/components/user/usage/UsageStatsCards.vue'
 import UsageTrendChart from '@/components/user/usage/UsageTrendChart.vue'
 import UsageModelChart from '@/components/user/usage/UsageModelChart.vue'
 
-const stats = ref<UserUsageStats | null>(null)
-const trendData = ref<UsageTrendDataPoint[]>([])
-const modelData = ref<UsageModelStat[]>([])
-const trendLoading = ref(false)
-const modelLoading = ref(false)
+type RangeOption = 'today' | '7d' | '30d'
 
-const dateRanges = [
-  { label: '今日', days: 1 },
-  { label: '7 天', days: 7 },
-  { label: '30 天', days: 30 },
-]
+const selectedRange = ref<RangeOption>('7d')
+const snapshot = ref<UserUsageDashboardSnapshot | null>(null)
+const loading = ref(false)
+const errorMessage = ref('')
+const credentialError = ref(false)
 
-const selectedRange = ref('30 天')
+const setupRequired = computed(() => snapshot.value?.configured === false)
 
-function getDateRange(days: number) {
+function rangeButtonClass(active: boolean) {
+  return [
+    'rounded-md px-3 py-2 text-sm font-medium transition-colors',
+    active
+      ? 'bg-blue-600 text-white'
+      : 'border border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800',
+  ]
+}
+
+function formatDate(date: Date): string {
+  return date.toISOString().slice(0, 10)
+}
+
+function buildParams(range: RangeOption): UserUsageDashboardParams {
   const end = new Date()
-  const start = new Date()
-  start.setDate(end.getDate() - days + 1)
-  return {
-    start_date: start.toISOString().split('T')[0],
-    end_date: end.toISOString().split('T')[0],
+  const start = new Date(end)
+  if (range === 'today') {
+    return { start_date: formatDate(start), end_date: formatDate(end), granularity: 'hour', timezone: Intl.DateTimeFormat().resolvedOptions().timeZone }
   }
+  if (range === '7d') {
+    start.setDate(end.getDate() - 6)
+  } else {
+    start.setDate(end.getDate() - 29)
+  }
+  return { start_date: formatDate(start), end_date: formatDate(end), granularity: 'day', timezone: Intl.DateTimeFormat().resolvedOptions().timeZone }
 }
 
-function selectRange(range: { label: string; days: number }) {
-  selectedRange.value = range.label
-  loadData(range.days)
-}
-
-async function loadData(days: number) {
-  const { start_date, end_date } = getDateRange(days)
-
+async function loadDashboard() {
+  loading.value = true
+  errorMessage.value = ''
+  credentialError.value = false
   try {
-    const statsRes = await getUserUsageStats()
-    stats.value = statsRes.data.data
-  } catch (err) {
-    console.error('Failed to load stats:', err)
-  }
-
-  trendLoading.value = true
-  try {
-    const trendRes = await getUserUsageTrend({ start_date, end_date, granularity: 'day' })
-    trendData.value = trendRes.data.data.trend || []
-  } catch (err) {
-    console.error('Failed to load trend:', err)
-    trendData.value = []
+    const res = await getUserUsageDashboard(buildParams(selectedRange.value))
+    snapshot.value = res.data.data ?? null
+  } catch (err: any) {
+    snapshot.value = null
+    credentialError.value = err?.response?.status === 409
+    errorMessage.value = credentialError.value ? 'Relay credentials need attention' : 'Usage dashboard is temporarily unavailable'
   } finally {
-    trendLoading.value = false
-  }
-
-  modelLoading.value = true
-  try {
-    const modelRes = await getUserUsageModels({ start_date, end_date })
-    modelData.value = modelRes.data.data.models || []
-  } catch (err) {
-    console.error('Failed to load models:', err)
-    modelData.value = []
-  } finally {
-    modelLoading.value = false
+    loading.value = false
   }
 }
 
-onMounted(() => loadData(30))
+function selectRange(range: RangeOption) {
+  selectedRange.value = range
+  loadDashboard()
+}
+
+onMounted(() => {
+  loadDashboard()
+})
 </script>
 ```
 
-- [ ] **步骤 2：Commit**
+- [ ] **Step 4: Run UsageView tests and verify they pass**
+
+Run:
 
 ```bash
-git add frontend/src/views/user/UsageView.vue
-git commit -m "feat(frontend): add user usage dashboard page"
+cd /Users/admin/ai-efficiency/frontend && pnpm test -- src/__tests__/user-usage-view.test.ts
 ```
 
----
+Expected: PASS.
 
-## 任务 14：前端 — 路由注册
-
-**文件：**
-- 修改：`frontend/src/router/index.ts:54-58`
-
-- [ ] **步骤 1：在 router 中添加用量页面路由**
-
-在 `/user` 路由之后添加：
-
-```typescript
-{
-  path: '/user/usage',
-  name: 'UserUsage',
-  component: () => import('@/views/user/UsageView.vue'),
-},
-```
-
-- [ ] **步骤 2：验证前端编译通过**
-
-运行：`cd /Users/admin/ai-efficiency/frontend && pnpm build`
-预期：编译成功，无错误
-
-- [ ] **步骤 3：Commit**
+- [ ] **Step 5: Commit UsageView rewrite**
 
 ```bash
-git add frontend/src/router/index.ts
-git commit -m "feat(frontend): add /user/usage route"
+git add frontend/src/views/user/UsageView.vue frontend/src/__tests__/user-usage-view.test.ts
+git commit -m "feat(frontend): load user usage dashboard snapshot"
 ```
 
 ---
 
-## 任务 15：集成测试与手动验证
+## Task 7: Full Verification and Documentation Check
 
-**文件：** 无新增文件
+**Files:**
+- Verify: `docs/architecture.md`
+- Verify: `docs/superpowers/specs/2026-06-06-user-usage-trend-design.md`
+- Verify: `docs/superpowers/plans/2026-06-06-user-usage-trend.md`
 
-- [ ] **步骤 1：运行后端完整测试**
+- [ ] **Step 1: Search for stale old endpoint references**
 
-运行：`cd /Users/admin/ai-efficiency/backend && go test ./...`
-预期：所有测试 PASS
-
-- [ ] **步骤 2：运行前端开发服务器**
-
-运行：`cd /Users/admin/ai-efficiency/frontend && pnpm dev`
-预期：开发服务器启动成功，无编译错误
-
-- [ ] **步骤 3：手动验证页面（需要已配置 relay 的用户登录）**
-
-1. 访问 `http://localhost:5173/user/usage`
-2. 验证统计卡片显示数据
-3. 验证趋势图显示近 30 天数据
-4. 验证模型分布图显示数据
-5. 切换日期范围（今日/7天/30天），验证数据刷新
-
-- [ ] **步骤 4：手动验证空状态（未配置 relay 的用户）**
-
-1. 使用未配置 relay 的账户登录
-2. 访问 `/user/usage`
-3. 验证显示"请先完成 AI 服务配置"引导卡片
-
-- [ ] **步骤 5：最终 Commit**
+Run:
 
 ```bash
-git add -A
-git commit -m "feat: complete user usage dashboard implementation"
+cd /Users/admin/ai-efficiency && rg -n "/user/usage/(stats|trend|models)|GetUserUsageStats|GetUserUsageTrend|GetUserUsageModels|UsageTrendParams|UsageModelParams|UserUsageStats" backend frontend docs
 ```
 
----
+Expected: no matches, except historical context in committed diffs outside the current worktree is not searched by this command.
 
-## 自检
+- [ ] **Step 2: Run backend tests**
 
-**1. 规格覆盖度：**
-- ✓ 汇总统计（任务 1-3 类型，任务 5 handler，任务 10 组件）
-- ✓ 趋势折线（任务 1-3 类型，任务 5 handler，任务 11 组件）
-- ✓ 模型分布（任务 1-3 类型，任务 5 handler，任务 12 组件）
-- ✓ 日期范围选择（任务 13 主组件）
-- ✓ 空状态处理（任务 5 handler 返回 null，任务 13 前端引导卡片）
-- ✓ 错误处理（任务 5 handler 502，任务 7 测试）
+Run:
 
-**2. 占位符扫描：** 无 TODO / 待定 / "添加适当的错误处理"
+```bash
+cd /Users/admin/ai-efficiency/backend && go test ./...
+```
 
-**3. 类型一致性：** 
-- `UserUsageStats` / `UsageTrendResponse` / `UsageModelResponse` 在 relay、handler、前端三层命名一致
-- `firstNonEmptyString` 函数在 handler 中定义一次（需确认无重复）
+Expected: PASS.
 
----
+- [ ] **Step 3: Run frontend tests**
 
-**计划已完成并保存到实现文档中。两种执行方式：**
+Run:
 
-**1. 子代理驱动（推荐）** - 每个任务调度一个新的子代理，任务间进行审查，快速迭代
+```bash
+cd /Users/admin/ai-efficiency/frontend && pnpm test
+```
 
-**2. 内联执行** - 在当前会话中使用 executing-plans 执行任务，批量执行并设有检查点
+Expected: PASS.
 
-**选哪种方式？**
+- [ ] **Step 4: Run frontend build**
+
+Run:
+
+```bash
+cd /Users/admin/ai-efficiency/frontend && pnpm run build
+```
+
+Expected: PASS.
+
+- [ ] **Step 5: Check architecture docs for required update**
+
+Run:
+
+```bash
+cd /Users/admin/ai-efficiency && rg -n "user usage|/user/usage|usage dashboard|relay dashboard|dashboard snapshot" docs/architecture.md
+```
+
+Expected: if there are no matches, no architecture doc change is required. If the command finds text describing the old three-endpoint usage page, update that text to say the current user usage page uses `GET /api/v1/user/usage/dashboard` as a single AE snapshot endpoint backed by sub2api user dashboard APIs.
+
+- [ ] **Step 6: Commit final verification cleanup**
+
+If Step 5 required a docs change:
+
+```bash
+git add docs/architecture.md
+git commit -m "docs(architecture): document user usage dashboard snapshot"
+```
+
+If Step 5 did not require a docs change, skip this commit and record the no-op in the final implementation summary.
+
+- [ ] **Step 7: Final status audit**
+
+Run:
+
+```bash
+cd /Users/admin/ai-efficiency && git status --short --branch
+```
+
+Expected: only unrelated pre-existing files such as `.qoder/` remain untracked. All implementation changes are committed.
