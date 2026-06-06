@@ -53,7 +53,7 @@
 
     <div v-else class="space-y-6">
       <UsageStatsCards :stats="snapshot?.stats ?? null" />
-      <div class="grid grid-cols-1 gap-6 xl:grid-cols-[1.35fr_1fr]">
+      <div class="grid min-w-0 grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
         <UsageTrendChart :data="snapshot?.trend ?? []" :loading="loading" />
         <UsageModelChart :data="snapshot?.models ?? []" :loading="loading" />
       </div>
