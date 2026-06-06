@@ -2417,3 +2417,211 @@ func TestListPlatformGroupsReturnsActivePlatformSummaries(t *testing.T) {
 		t.Fatalf("groups mismatch (-want +got):\n%s", diff)
 	}
 }
+
+func TestGetUserUsageDashboard(t *testing.T) {
+	var loginCount int
+	var meCount int
+	var seenPaths []string
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/auth/login", func(w http.ResponseWriter, r *http.Request) {
+		loginCount++
+		if r.Method != http.MethodPost {
+			t.Errorf("login method = %s, want POST", r.Method)
+		}
+		var body struct {
+			Email    string `json:"email"`
+			Password string `json:"password"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode login body: %v", err)
+		}
+		if body.Email != "alice@example.com" || body.Password != "test-password" {
+			t.Fatalf("login body = %+v, want alice credentials", body)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": map[string]any{"access_token": "test-jwt-token"},
+		})
+	})
+	mux.HandleFunc("/api/v1/auth/me", func(w http.ResponseWriter, r *http.Request) {
+		meCount++
+		if r.Header.Get("Authorization") != "Bearer test-jwt-token" {
+			t.Fatalf("/me Authorization = %q, want user JWT", r.Header.Get("Authorization"))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": map[string]any{"id": 1, "username": "alice", "email": "alice@example.com"},
+		})
+	})
+	mux.HandleFunc("/api/v1/usage/dashboard/stats", func(w http.ResponseWriter, r *http.Request) {
+		seenPaths = append(seenPaths, r.URL.RequestURI())
+		if r.Header.Get("Authorization") != "Bearer test-jwt-token" {
+			t.Fatalf("stats Authorization = %q, want user JWT", r.Header.Get("Authorization"))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": map[string]any{
+				"total_api_keys":              99,
+				"active_api_keys":             88,
+				"total_requests":              150,
+				"total_input_tokens":          50000,
+				"total_output_tokens":         30000,
+				"total_cache_creation_tokens": 4000,
+				"total_cache_read_tokens":     10000,
+				"total_tokens":                94000,
+				"total_cost":                  2.50,
+				"total_actual_cost":           2.00,
+				"today_requests":              20,
+				"today_input_tokens":          8000,
+				"today_output_tokens":         5000,
+				"today_cache_creation_tokens": 600,
+				"today_cache_read_tokens":     700,
+				"today_tokens":                14300,
+				"today_cost":                  0.35,
+				"today_actual_cost":           0.28,
+				"average_duration_ms":         1250.5,
+				"rpm":                         3,
+				"tpm":                         4200,
+				"by_platform":                 []map[string]any{{"platform": "openai", "total_actual_cost": 2.00}},
+			},
+		})
+	})
+	mux.HandleFunc("/api/v1/usage/dashboard/trend", func(w http.ResponseWriter, r *http.Request) {
+		seenPaths = append(seenPaths, r.URL.RequestURI())
+		if r.Header.Get("Authorization") != "Bearer test-jwt-token" {
+			t.Fatalf("trend Authorization = %q, want user JWT", r.Header.Get("Authorization"))
+		}
+		q := r.URL.Query()
+		if q.Get("start_date") != "2026-06-01" || q.Get("end_date") != "2026-06-06" || q.Get("granularity") != "day" || q.Get("timezone") != "Asia/Shanghai" {
+			t.Fatalf("trend query = %s", r.URL.RawQuery)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": map[string]any{
+				"start_date":  "2026-06-01",
+				"end_date":    "2026-06-06",
+				"granularity": "day",
+				"trend": []map[string]any{
+					{
+						"date":                  "2026-06-06",
+						"requests":              20,
+						"input_tokens":          8000,
+						"output_tokens":         5000,
+						"cache_creation_tokens": 600,
+						"cache_read_tokens":     700,
+						"total_tokens":          14300,
+						"cost":                  0.35,
+						"actual_cost":           0.28,
+					},
+				},
+			},
+		})
+	})
+	mux.HandleFunc("/api/v1/usage/dashboard/models", func(w http.ResponseWriter, r *http.Request) {
+		seenPaths = append(seenPaths, r.URL.RequestURI())
+		if r.Header.Get("Authorization") != "Bearer test-jwt-token" {
+			t.Fatalf("models Authorization = %q, want user JWT", r.Header.Get("Authorization"))
+		}
+		q := r.URL.Query()
+		if q.Get("start_date") != "2026-06-01" || q.Get("end_date") != "2026-06-06" || q.Get("timezone") != "Asia/Shanghai" {
+			t.Fatalf("models query = %s", r.URL.RawQuery)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": map[string]any{
+				"start_date": "2026-06-01",
+				"end_date":   "2026-06-06",
+				"models": []map[string]any{
+					{
+						"model":                 "example-model",
+						"requests":              12,
+						"input_tokens":          10000,
+						"output_tokens":         5000,
+						"cache_creation_tokens": 200,
+						"cache_read_tokens":     300,
+						"total_tokens":          15500,
+						"cost":                  0.75,
+						"actual_cost":           0.60,
+					},
+				},
+			},
+		})
+	})
+
+	p := newTestProvider(t, mux)
+	got, err := p.GetUserUsageDashboard(context.Background(), "alice@example.com", "test-password", relay.UserUsageDashboardParams{
+		StartDate:   "2026-06-01",
+		EndDate:     "2026-06-06",
+		Granularity: "day",
+		Timezone:    "Asia/Shanghai",
+	})
+	if err != nil {
+		t.Fatalf("GetUserUsageDashboard() unexpected error: %v", err)
+	}
+	if loginCount != 1 || meCount != 1 {
+		t.Fatalf("loginCount=%d meCount=%d, want one login and one /me", loginCount, meCount)
+	}
+	wantPaths := []string{
+		"/api/v1/usage/dashboard/stats",
+		"/api/v1/usage/dashboard/trend?end_date=2026-06-06&granularity=day&start_date=2026-06-01&timezone=Asia%2FShanghai",
+		"/api/v1/usage/dashboard/models?end_date=2026-06-06&start_date=2026-06-01&timezone=Asia%2FShanghai",
+	}
+	if diff := cmp.Diff(wantPaths, seenPaths); diff != "" {
+		t.Fatalf("paths mismatch (-want +got):\n%s", diff)
+	}
+	if !got.Configured {
+		t.Fatal("Configured = false, want true")
+	}
+	if got.Stats.TotalRequests != 150 || got.Stats.TotalCacheCreationTokens != 4000 || got.Stats.Rpm != 3 || got.Stats.Tpm != 4200 {
+		t.Fatalf("unexpected stats: %+v", got.Stats)
+	}
+	if got.Stats.AverageDurationMs != 1250.5 {
+		t.Fatalf("AverageDurationMs = %v, want 1250.5", got.Stats.AverageDurationMs)
+	}
+	if len(got.Trend) != 1 || got.Trend[0].CacheReadTokens != 700 {
+		t.Fatalf("unexpected trend: %+v", got.Trend)
+	}
+	if len(got.Models) != 1 || got.Models[0].ActualCost != 0.60 {
+		t.Fatalf("unexpected models: %+v", got.Models)
+	}
+	if got.Range.StartDate != "2026-06-01" || got.Range.EndDate != "2026-06-06" || got.Range.Granularity != "day" || got.Range.Timezone != "Asia/Shanghai" {
+		t.Fatalf("unexpected range: %+v", got.Range)
+	}
+}
+
+func TestGetUserUsageDashboardFailsFastOnSub2APIError(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/auth/login", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": map[string]any{"access_token": "test-jwt-token"},
+		})
+	})
+	mux.HandleFunc("/api/v1/auth/me", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": map[string]any{"id": 1, "username": "alice", "email": "alice@example.com"},
+		})
+	})
+	mux.HandleFunc("/api/v1/usage/dashboard/stats", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+		_ = json.NewEncoder(w).Encode(map[string]any{"code": 502, "message": "upstream failed"})
+	})
+
+	p := newTestProvider(t, mux)
+	_, err := p.GetUserUsageDashboard(context.Background(), "alice@example.com", "test-password", relay.UserUsageDashboardParams{})
+	if err == nil {
+		t.Fatal("GetUserUsageDashboard() expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "usage dashboard stats") {
+		t.Fatalf("error = %v, want stats context", err)
+	}
+}

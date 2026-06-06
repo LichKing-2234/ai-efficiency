@@ -17,11 +17,58 @@ vi.mock('@/api/events', () => ({
   listEvents: vi.fn(),
 }))
 
+vi.mock('@/api/userUsage', () => ({
+  getUserUsageDashboard: vi.fn(() => Promise.resolve({
+    data: {
+      data: {
+        configured: false,
+        range: { start_date: '2026-06-01', end_date: '2026-06-06', granularity: 'day', timezone: 'Asia/Shanghai' },
+        stats: null,
+        trend: [],
+        models: [],
+      },
+    },
+  })),
+}))
+
 vi.mock('@/api/auth', () => ({
   login: vi.fn(),
   getMe: vi.fn(),
   devLogin: vi.fn(),
 }))
+
+vi.mock('vue-chartjs', () => ({
+  Line: { template: '<div data-test="line-chart" />' },
+  Doughnut: { template: '<div data-test="doughnut-chart" />' },
+}))
+
+const usageSnapshot = {
+  configured: true,
+  range: { start_date: '2026-06-01', end_date: '2026-06-06', granularity: 'day', timezone: 'Asia/Shanghai' },
+  stats: {
+    total_requests: 100,
+    total_input_tokens: 10000,
+    total_output_tokens: 5000,
+    total_cache_creation_tokens: 200,
+    total_cache_read_tokens: 300,
+    total_tokens: 15500,
+    total_cost: 2.5,
+    total_actual_cost: 2,
+    today_requests: 12,
+    today_input_tokens: 1000,
+    today_output_tokens: 500,
+    today_cache_creation_tokens: 20,
+    today_cache_read_tokens: 30,
+    today_tokens: 1550,
+    today_cost: 0.25,
+    today_actual_cost: 0.2,
+    average_duration_ms: 850,
+    rpm: 2,
+    tpm: 3000,
+  },
+  trend: [{ date: '2026-06-06', requests: 12, input_tokens: 1000, output_tokens: 500, cache_creation_tokens: 20, cache_read_tokens: 30, total_tokens: 1550, cost: 0.25, actual_cost: 0.2 }],
+  models: [{ model: 'example-model', requests: 12, input_tokens: 1000, output_tokens: 500, cache_creation_tokens: 20, cache_read_tokens: 30, total_tokens: 1550, cost: 0.25, actual_cost: 0.2 }],
+}
 
 function createTestRouter() {
   return createRouter({
@@ -193,14 +240,16 @@ describe('DashboardView', () => {
     expect(wrapper.text()).toContain('Open My Setup')
   })
 
-  it('renders recent activity from usage records when available', async () => {
+  it('replaces recent activity with the relay usage dashboard', async () => {
     const { getDashboard } = await import('@/api/efficiency')
     const { getUserProviders } = await import('@/api/user')
     const { listEvents } = await import('@/api/events')
+    const { getUserUsageDashboard } = await import('@/api/userUsage')
     ;(getDashboard as any).mockResolvedValue({
       data: { data: { total_repos: 1, tracked_workflows: 1, total_ai_prs: 2 } },
     })
     ;(getUserProviders as any).mockResolvedValue({ data: { data: { providers: [] } } })
+    ;(getUserUsageDashboard as any).mockResolvedValue({ data: { data: usageSnapshot } })
     ;(listEvents as any).mockResolvedValue({
       data: {
         data: {
@@ -241,8 +290,40 @@ describe('DashboardView', () => {
     await flushPromises()
 
     expect(listEvents).toHaveBeenCalledWith({ limit: 3, offset: 0 })
-    expect(wrapper.text()).toContain('codex')
-    expect(wrapper.text()).toContain('org/repo')
-    expect(wrapper.text()).toContain('175')
+    expect(wrapper.text()).toContain('Token Trend')
+    expect(wrapper.text()).toContain('Model Distribution')
+    expect(wrapper.text()).not.toContain('Recent Activity')
+    expect(wrapper.text()).not.toContain('codex')
+    expect(wrapper.text()).not.toContain('org/repo')
+  })
+
+  it('renders the relay usage dashboard inside the home page', async () => {
+    const { getDashboard } = await import('@/api/efficiency')
+    const { getUserProviders } = await import('@/api/user')
+    const { listEvents } = await import('@/api/events')
+    const { getUserUsageDashboard } = await import('@/api/userUsage')
+    ;(getDashboard as any).mockResolvedValue({
+      data: { data: { total_repos: 1, tracked_workflows: 1, total_ai_prs: 2 } },
+    })
+    ;(getUserProviders as any).mockResolvedValue({ data: { data: { providers: [] } } })
+    ;(listEvents as any).mockResolvedValue({ data: { data: { items: [], total: 0, page: 0, page_size: 3 } } })
+    ;(getUserUsageDashboard as any).mockResolvedValue({ data: { data: usageSnapshot } })
+
+    const router = createTestRouter()
+    await router.push('/')
+    await router.isReady()
+
+    const wrapper = mount(DashboardView, {
+      global: { plugins: [createPinia(), router] },
+    })
+
+    await flushPromises()
+
+    expect(getUserUsageDashboard).toHaveBeenCalled()
+    expect(wrapper.text()).toContain('Token Trend')
+    expect(wrapper.text()).toContain('Model Distribution')
+    expect(wrapper.text()).toContain('example-model')
+    expect(wrapper.find('[data-test="line-chart"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="doughnut-chart"]').exists()).toBe(true)
   })
 })

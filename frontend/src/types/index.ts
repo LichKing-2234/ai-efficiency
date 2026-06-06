@@ -4,6 +4,7 @@ export interface User {
   email: string
   role: string
   auth_source: string
+  relay_auth_password?: string | null
 }
 
 export interface SCMProvider {
@@ -519,4 +520,72 @@ export interface AdminSubscriptionJob {
   completed_at?: string | null
   created_at?: string
   updated_at?: string
+}
+
+export interface UserUsageDashboardParams {
+  start_date?: string
+  end_date?: string
+  granularity?: 'day' | 'hour'
+  timezone?: string
+}
+
+export interface UserUsageDashboardRange {
+  start_date: string
+  end_date: string
+  granularity: 'day' | 'hour' | string
+  timezone?: string
+}
+
+export interface UserUsageDashboardStats {
+  total_requests: number
+  total_input_tokens: number
+  total_output_tokens: number
+  total_cache_creation_tokens: number
+  total_cache_read_tokens: number
+  total_tokens: number
+  total_cost: number
+  total_actual_cost: number
+  today_requests: number
+  today_input_tokens: number
+  today_output_tokens: number
+  today_cache_creation_tokens: number
+  today_cache_read_tokens: number
+  today_tokens: number
+  today_cost: number
+  today_actual_cost: number
+  average_duration_ms: number
+  rpm: number
+  tpm: number
+}
+
+export interface UserUsageTrendPoint {
+  date: string
+  requests: number
+  input_tokens: number
+  output_tokens: number
+  cache_creation_tokens: number
+  cache_read_tokens: number
+  total_tokens: number
+  cost: number
+  actual_cost: number
+}
+
+export interface UserUsageModelStat {
+  model: string
+  requests: number
+  input_tokens: number
+  output_tokens: number
+  cache_creation_tokens: number
+  cache_read_tokens: number
+  total_tokens: number
+  cost: number
+  actual_cost: number
+}
+
+export interface UserUsageDashboardSnapshot {
+  configured: boolean
+  range: UserUsageDashboardRange
+  stats: UserUsageDashboardStats | null
+  trend: UserUsageTrendPoint[]
+  models: UserUsageModelStat[]
 }

@@ -113,6 +113,9 @@ func (m *mockRelayProvider) RevokeUserAPIKey(_ context.Context, _ int64) error {
 func (m *mockRelayProvider) ListUsageLogsByAPIKeyExact(_ context.Context, _ int64, _, _ time.Time) ([]relay.UsageLog, error) {
 	return nil, nil
 }
+func (m *mockRelayProvider) GetUserUsageDashboard(_ context.Context, _, _ string, _ relay.UserUsageDashboardParams) (*relay.UserUsageDashboardResponse, error) {
+	return nil, nil
+}
 
 func (m *mockRelayProvider) Authenticate(_ context.Context, _, _ string) (*relay.User, error) {
 	if m.authErr != nil {

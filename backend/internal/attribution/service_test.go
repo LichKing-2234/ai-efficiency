@@ -128,6 +128,9 @@ func (f *fakeRelayProvider) RevokeUserAPIKey(ctx context.Context, keyID int64) e
 func (f *fakeRelayProvider) ListUsageLogsByAPIKeyExact(ctx context.Context, apiKeyID int64, from, to time.Time) ([]relay.UsageLog, error) {
 	return nil, nil
 }
+func (f *fakeRelayProvider) GetUserUsageDashboard(ctx context.Context, login, password string, params relay.UserUsageDashboardParams) (*relay.UserUsageDashboardResponse, error) {
+	return nil, nil
+}
 
 func testRepoPR(t *testing.T, client *ent.Client) (*ent.RepoConfig, *ent.PrRecord) {
 	t.Helper()

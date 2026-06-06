@@ -127,6 +127,11 @@ describe('Router Guards', () => {
     expect(userRoute?.path).toBe('/user')
   })
 
+  it('does not expose user usage as a separate page route', () => {
+    const userUsageRoute = router.getRoutes().find((r) => r.name === 'UserUsage' || r.path === '/user/usage')
+    expect(userUsageRoute).toBeUndefined()
+  })
+
   it('includes admin users route requiring admin access', () => {
     const adminUsersRoute = router.getRoutes().find((r) => r.name === 'AdminUsers')
     expect(adminUsersRoute?.path).toBe('/admin/users')
