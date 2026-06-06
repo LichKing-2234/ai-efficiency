@@ -1907,7 +1907,7 @@ cd /Users/admin/ai-efficiency && rg -n "to=\"/user/usage\"|name: 'UserUsage'|pat
 
 Expected: tests/build pass; stale old API references absent; no product frontend page route or sidebar link to `/user/usage`.
 
-- [ ] **Step 7: Commit and update PR #77**
+- [x] **Step 7: Commit and update PR #77**
 
 Run:
 
