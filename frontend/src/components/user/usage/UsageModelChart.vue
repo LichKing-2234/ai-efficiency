@@ -1,72 +1,69 @@
-<template>
-  <div class="rounded-lg bg-white p-6 shadow dark:bg-gray-800">
-    <h3 class="mb-4 text-lg font-semibold text-gray-900 dark:text-gray-100">Model Distribution</h3>
-    <div v-if="loading" class="flex h-64 items-center justify-center">
-      <div class="h-8 w-8 animate-spin rounded-full border-4 border-purple-600 border-t-transparent"></div>
-    </div>
-    <div v-else-if="!data || data.length === 0" class="flex h-64 items-center justify-center text-gray-500 dark:text-gray-400">
-      No model data available
-    </div>
-    <div v-else class="space-y-3">
-      <div v-for="model in data" :key="model.model" class="flex items-center justify-between">
-        <div class="flex items-center space-x-2">
-          <div class="h-3 w-3 rounded-full" :style="{ backgroundColor: getModelColor(model.model) }"></div>
-          <span class="text-sm font-medium text-gray-900 dark:text-gray-100">{{ model.model }}</span>
-        </div>
-        <div class="text-right">
-          <div class="text-sm font-semibold text-gray-900 dark:text-gray-100">
-            {{ formatTokens(model.total_tokens) }}
-          </div>
-          <div class="text-xs text-gray-500 dark:text-gray-400">
-            {{ getPercentage(model.total_tokens) }}% · ${{ model.actual_cost.toFixed(4) }}
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-</template>
-
 <script setup lang="ts">
-import type { UsageModelStat } from '@/types'
+import { computed } from 'vue'
+import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js'
+import { Doughnut } from 'vue-chartjs'
+import type { UserUsageModelStat } from '@/types'
+
+ChartJS.register(ArcElement, Tooltip, Legend)
 
 const props = defineProps<{
-  data: UsageModelStat[]
+  data: UserUsageModelStat[]
   loading: boolean
 }>()
 
-const colors = [
-  '#3b82f6', // blue
-  '#10b981', // green
-  '#8b5cf6', // purple
-  '#f59e0b', // amber
-  '#ef4444', // red
-  '#06b6d4', // cyan
-  '#ec4899', // pink
-  '#84cc16', // lime
-]
+const colors = ['#2563eb', '#16a34a', '#d97706', '#dc2626', '#7c3aed', '#db2777', '#0891b2', '#65a30d']
 
-function getModelColor(model: string): string {
-  let hash = 0
-  for (let i = 0; i < model.length; i++) {
-    hash = model.charCodeAt(i) + ((hash << 5) - hash)
-  }
-  return colors[Math.abs(hash) % colors.length]
-}
+const chartData = computed(() => ({
+  labels: props.data.map((model) => model.model),
+  datasets: [{ data: props.data.map((model) => model.total_tokens), backgroundColor: colors }],
+}))
+
+const chartOptions = { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
 
 function formatTokens(n: number): string {
-  if (n >= 1_000_000) {
-    return (n / 1_000_000).toFixed(2) + 'M'
-  }
-  if (n >= 1_000) {
-    return (n / 1_000).toFixed(1) + 'K'
-  }
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`
   return n.toLocaleString()
 }
-
-function getPercentage(tokens: number): string {
-  if (!props.data || props.data.length === 0) return '0'
-  const totalTokens = props.data.reduce((sum, m) => sum + m.total_tokens, 0)
-  if (totalTokens === 0) return '0'
-  return ((tokens / totalTokens) * 100).toFixed(1)
-}
 </script>
+
+<template>
+  <section class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+    <h2 class="mb-4 text-base font-semibold text-gray-900 dark:text-gray-100">Model Distribution</h2>
+    <div v-if="loading" class="flex h-72 items-center justify-center text-sm text-gray-500 dark:text-gray-400">
+      Loading models...
+    </div>
+    <div v-else-if="data.length === 0" class="flex h-72 items-center justify-center text-sm text-gray-500 dark:text-gray-400">
+      No model data available
+    </div>
+    <div v-else class="grid gap-4 lg:grid-cols-[180px_1fr]">
+      <div class="h-44">
+        <Doughnut :data="chartData" :options="chartOptions" />
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="border-b border-gray-200 text-left text-xs uppercase text-gray-500 dark:border-gray-700 dark:text-gray-400">
+              <th class="pb-2">Model</th>
+              <th class="pb-2 text-right">Requests</th>
+              <th class="pb-2 text-right">Tokens</th>
+              <th class="pb-2 text-right">Actual</th>
+              <th class="pb-2 text-right">Standard</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="model in data" :key="model.model" class="border-b border-gray-100 last:border-0 dark:border-gray-700">
+              <td class="max-w-[12rem] truncate py-2 font-medium text-gray-900 dark:text-gray-100" :title="model.model">
+                {{ model.model }}
+              </td>
+              <td class="py-2 text-right text-gray-600 dark:text-gray-300">{{ model.requests.toLocaleString() }}</td>
+              <td class="py-2 text-right text-gray-600 dark:text-gray-300">{{ formatTokens(model.total_tokens) }}</td>
+              <td class="py-2 text-right text-green-600 dark:text-green-400">${{ model.actual_cost.toFixed(4) }}</td>
+              <td class="py-2 text-right text-gray-500 dark:text-gray-400">${{ model.cost.toFixed(4) }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+</template>

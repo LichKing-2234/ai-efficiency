@@ -1229,7 +1229,7 @@ git commit -m "feat(frontend): add user usage dashboard snapshot API"
 - Modify: `frontend/src/components/user/usage/UsageTrendChart.vue`
 - Modify: `frontend/src/components/user/usage/UsageModelChart.vue`
 
-- [ ] **Step 1: Rewrite stats cards**
+- [x] **Step 1: Rewrite stats cards**
 
 Replace `frontend/src/components/user/usage/UsageStatsCards.vue` with a component that accepts `stats: UserUsageDashboardStats | null` and renders four cards:
 
@@ -1292,7 +1292,7 @@ function formatDuration(ms: number): string {
 </template>
 ```
 
-- [ ] **Step 2: Rewrite trend chart**
+- [x] **Step 2: Rewrite trend chart**
 
 Replace `frontend/src/components/user/usage/UsageTrendChart.vue` with:
 
@@ -1376,7 +1376,7 @@ const chartOptions = computed(() => ({
 </template>
 ```
 
-- [ ] **Step 3: Rewrite model chart**
+- [x] **Step 3: Rewrite model chart**
 
 Replace `frontend/src/components/user/usage/UsageModelChart.vue` with:
 
@@ -1446,7 +1446,7 @@ function formatTokens(n: number): string {
 </template>
 ```
 
-- [ ] **Step 4: Run typecheck for components**
+- [x] **Step 4: Run typecheck for components**
 
 Run:
 
@@ -1456,7 +1456,7 @@ cd /Users/admin/ai-efficiency/frontend && pnpm exec vue-tsc -b
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit usage components**
+- [x] **Step 5: Commit usage components**
 
 ```bash
 git add frontend/src/components/user/usage/UsageStatsCards.vue frontend/src/components/user/usage/UsageTrendChart.vue frontend/src/components/user/usage/UsageModelChart.vue
@@ -1471,7 +1471,7 @@ git commit -m "feat(frontend): render user usage dashboard components"
 - Create: `frontend/src/__tests__/user-usage-view.test.ts`
 - Modify: `frontend/src/views/user/UsageView.vue`
 
-- [ ] **Step 1: Write UsageView tests**
+- [x] **Step 1: Write UsageView tests**
 
 Create `frontend/src/__tests__/user-usage-view.test.ts`:
 
@@ -1597,7 +1597,7 @@ describe('UsageView', () => {
 })
 ```
 
-- [ ] **Step 2: Run UsageView tests and verify they fail**
+- [x] **Step 2: Run UsageView tests and verify they fail**
 
 Run:
 
@@ -1607,7 +1607,7 @@ cd /Users/admin/ai-efficiency/frontend && pnpm test -- src/__tests__/user-usage-
 
 Expected: FAIL because `UsageView.vue` still imports the three old API functions and lacks the new test ids and states.
 
-- [ ] **Step 3: Rewrite UsageView**
+- [x] **Step 3: Rewrite UsageView**
 
 Replace `frontend/src/views/user/UsageView.vue` with:
 
@@ -1723,7 +1723,7 @@ onMounted(() => {
 </script>
 ```
 
-- [ ] **Step 4: Run UsageView tests and verify they pass**
+- [x] **Step 4: Run UsageView tests and verify they pass**
 
 Run:
 
@@ -1733,7 +1733,7 @@ cd /Users/admin/ai-efficiency/frontend && pnpm test -- src/__tests__/user-usage-
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit UsageView rewrite**
+- [x] **Step 5: Commit UsageView rewrite**
 
 ```bash
 git add frontend/src/views/user/UsageView.vue frontend/src/__tests__/user-usage-view.test.ts
