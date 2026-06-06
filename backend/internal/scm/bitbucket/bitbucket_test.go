@@ -566,6 +566,7 @@ func TestRegisterWebhook(t *testing.T) {
 		json.NewDecoder(r.Body).Decode(&gotBody)
 		json.NewEncoder(w).Encode(map[string]interface{}{"id": 99})
 	})
+	p.webhookCallbackURL = "https://ai-efficiency.example.com/api/v1/webhooks/bitbucket"
 
 	id, err := p.RegisterWebhook(context.Background(), "P/r", []string{"pull_request", "push"}, "secret123")
 	if err != nil {
@@ -577,6 +578,21 @@ func TestRegisterWebhook(t *testing.T) {
 	events, _ := gotBody["events"].([]interface{})
 	if len(events) != 5 {
 		t.Errorf("events = %v, want 5 (4 PR + 1 push)", events)
+	}
+	if gotBody["url"] != "https://ai-efficiency.example.com/api/v1/webhooks/bitbucket" {
+		t.Fatalf("url = %v, want callback URL", gotBody["url"])
+	}
+}
+
+func TestRegisterWebhookRequiresCallbackURL(t *testing.T) {
+	p, _ := New("https://bb.example.com", "tok", zap.NewNop())
+
+	_, err := p.RegisterWebhook(context.Background(), "P/r", []string{"push"}, "secret")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "webhook callback URL is required") {
+		t.Fatalf("error = %v, want callback URL requirement", err)
 	}
 }
 

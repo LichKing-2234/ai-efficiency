@@ -14,13 +14,19 @@ import (
 
 // Provider implements scm.SCMProvider for GitHub.
 type Provider struct {
-	client  *gh.Client
-	baseURL string
-	logger  *zap.Logger
+	client             *gh.Client
+	baseURL            string
+	logger             *zap.Logger
+	token              string
+	webhookCallbackURL string
 }
 
 // New creates a new GitHub SCM provider.
-func New(baseURL, token string, logger *zap.Logger) (*Provider, error) {
+func New(baseURL, token string, logger *zap.Logger, webhookCallbackURL ...string) (*Provider, error) {
+	cbURL := ""
+	if len(webhookCallbackURL) > 0 {
+		cbURL = strings.TrimSpace(webhookCallbackURL[0])
+	}
 	var client *gh.Client
 	if token != "" {
 		client = gh.NewClient(nil).WithAuthToken(token)
@@ -38,9 +44,11 @@ func New(baseURL, token string, logger *zap.Logger) (*Provider, error) {
 	}
 
 	return &Provider{
-		client:  client,
-		baseURL: baseURL,
-		logger:  logger,
+		client:             client,
+		baseURL:            baseURL,
+		logger:             logger,
+		token:              token,
+		webhookCallbackURL: cbURL,
 	}, nil
 }
 
@@ -268,11 +276,15 @@ func (p *Provider) RegisterWebhook(ctx context.Context, repoFullName string, eve
 		events = []string{"pull_request", "push"}
 	}
 	active := true
+	hookConfig := &gh.HookConfig{
+		ContentType: strPtr("json"),
+		Secret:      &secret,
+	}
+	if strings.TrimSpace(p.webhookCallbackURL) != "" {
+		hookConfig.URL = strPtr(p.webhookCallbackURL)
+	}
 	hook, _, err := p.client.Repositories.CreateHook(ctx, owner, repo, &gh.Hook{
-		Config: &gh.HookConfig{
-			ContentType: strPtr("json"),
-			Secret:      &secret,
-		},
+		Config: hookConfig,
 		Events: events,
 		Active: &active,
 	})

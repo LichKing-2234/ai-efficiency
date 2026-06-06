@@ -119,7 +119,7 @@
 - Modify: `backend/internal/scm/bitbucket/bitbucket.go`
 - Modify: `backend/internal/scm/bitbucket/bitbucket_test.go`
 
-- [ ] **Step 1: Write failing config tests**
+- [x] **Step 1: Write failing config tests**
 
 Add this test to `backend/internal/config/config_test.go` near other `Load` tests:
 
@@ -164,7 +164,7 @@ if loaded.Server.PublicURL != "https://ai-efficiency.example.com" {
 }
 ```
 
-- [ ] **Step 2: Run config tests and verify failure**
+- [x] **Step 2: Run config tests and verify failure**
 
 Run:
 
@@ -174,7 +174,7 @@ cd backend && go test ./internal/config -run 'TestLoadReadsServerPublicURLFromEn
 
 Expected: FAIL because `ServerConfig.PublicURL` does not exist and `server.public_url` is not persisted.
 
-- [ ] **Step 3: Implement config loading and persistence**
+- [x] **Step 3: Implement config loading and persistence**
 
 In `backend/internal/config/config.go`, extend `ServerConfig`:
 
@@ -208,7 +208,7 @@ In `backend/internal/config/writable_config.go`, add `public_url` beside `fronte
 },
 ```
 
-- [ ] **Step 4: Write failing SCM provider callback tests**
+- [x] **Step 4: Write failing SCM provider callback tests**
 
 In `backend/internal/scm/bitbucket/bitbucket_test.go`, update `TestRegisterWebhook` to construct the provider with a callback URL and assert payload URL:
 
@@ -276,7 +276,7 @@ func TestRegisterWebhookSendsCallbackURL(t *testing.T) {
 }
 ```
 
-- [ ] **Step 5: Run SCM provider tests and verify failure**
+- [x] **Step 5: Run SCM provider tests and verify failure**
 
 Run:
 
@@ -286,7 +286,7 @@ cd backend && go test ./internal/scm/bitbucket ./internal/scm/github -run 'TestR
 
 Expected: FAIL because Bitbucket does not reject empty callback URLs and GitHub does not accept/pass a callback URL.
 
-- [ ] **Step 6: Implement callback-aware SCM providers and repo service options**
+- [x] **Step 6: Implement callback-aware SCM providers and repo service options**
 
 In `backend/internal/scm/bitbucket/bitbucket.go`, add this guard at the start of `RegisterWebhook` after `splitFullName`:
 
@@ -484,7 +484,7 @@ repoService := repo.NewService(entClient, cfg.Encryption.Key, logger, repo.Servi
 })
 ```
 
-- [ ] **Step 7: Run focused config and provider tests**
+- [x] **Step 7: Run focused config and provider tests**
 
 Run:
 
@@ -494,7 +494,7 @@ cd backend && go test ./internal/config ./internal/scm/bitbucket ./internal/scm/
 
 Expected: PASS.
 
-- [ ] **Step 8: Commit callback plumbing**
+- [x] **Step 8: Commit callback plumbing**
 
 Run:
 

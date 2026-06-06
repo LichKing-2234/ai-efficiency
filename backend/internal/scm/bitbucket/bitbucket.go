@@ -517,6 +517,9 @@ func (p *Provider) RegisterWebhook(ctx context.Context, repoFullName string, eve
 	if err != nil {
 		return "", err
 	}
+	if strings.TrimSpace(p.webhookCallbackURL) == "" {
+		return "", fmt.Errorf("webhook callback URL is required")
+	}
 
 	bbEvents := []string{}
 	for _, e := range events {

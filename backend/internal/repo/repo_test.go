@@ -93,7 +93,7 @@ func TestParseToken_EmptyString(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestNewGitHubProvider(t *testing.T) {
-	p, err := newGitHubProvider("https://api.github.com", "test-token", zap.NewNop())
+	p, err := newGitHubProvider("https://api.github.com", "test-token", zap.NewNop(), "")
 	if err != nil {
 		t.Fatalf("newGitHubProvider error: %v", err)
 	}
@@ -103,7 +103,7 @@ func TestNewGitHubProvider(t *testing.T) {
 }
 
 func TestNewBitbucketProvider(t *testing.T) {
-	p, err := newBitbucketProvider("https://bitbucket.example.com", "test-token", zap.NewNop())
+	p, err := newBitbucketProvider("https://bitbucket.example.com", "test-token", zap.NewNop(), "")
 	if err != nil {
 		t.Fatalf("newBitbucketProvider error: %v", err)
 	}

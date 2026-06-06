@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/ai-efficiency/backend/ent"
@@ -26,6 +27,7 @@ import (
 
 var ErrRepoUnbound = errors.New("repo is not bound to an scm provider")
 var ErrSCMProviderNotFound = errors.New("scm provider not found")
+var ErrWebhookPublicURLRequired = errors.New("server.public_url is required for webhook registration")
 
 // CreateRequest is the request to create a repo config.
 type CreateRequest struct {
@@ -69,20 +71,42 @@ type ListOpts struct {
 	GroupID       string
 }
 
+type scmProviderFactory func(providerType, baseURL string, apiCredential any, callbackURL string) (scm.SCMProvider, error)
+
+// ServiceOptions configures repo service behavior that depends on deployment context.
+type ServiceOptions struct {
+	WebhookPublicURL string
+	FrontendURL      string
+	ServerMode       string
+	SCMFactory       scmProviderFactory
+}
+
 // Service handles repo configuration business logic.
 type Service struct {
 	entClient        *ent.Client
 	encryptionKey    string
 	logger           *zap.Logger
 	autoBindPostBind autoBindPostBindFunc
+	webhookPublicURL string
+	frontendURL      string
+	serverMode       string
+	scmFactory       scmProviderFactory
 }
 
 // NewService creates a new repo service.
-func NewService(entClient *ent.Client, encryptionKey string, logger *zap.Logger) *Service {
+func NewService(entClient *ent.Client, encryptionKey string, logger *zap.Logger, options ...ServiceOptions) *Service {
+	opt := ServiceOptions{}
+	if len(options) > 0 {
+		opt = options[0]
+	}
 	return &Service{
-		entClient:     entClient,
-		encryptionKey: encryptionKey,
-		logger:        logger,
+		entClient:        entClient,
+		encryptionKey:    encryptionKey,
+		logger:           logger,
+		webhookPublicURL: strings.TrimSpace(opt.WebhookPublicURL),
+		frontendURL:      strings.TrimSpace(opt.FrontendURL),
+		serverMode:       strings.TrimSpace(opt.ServerMode),
+		scmFactory:       opt.SCMFactory,
 	}
 }
 
@@ -549,15 +573,55 @@ func (s *Service) GetSCMProvider(ctx context.Context, repoConfigID int) (scm.SCM
 }
 
 func (s *Service) newSCMProvider(providerType, baseURL string, apiCredential any) (scm.SCMProvider, error) {
-	// Import cycle prevention: use a factory approach
-	// For now, we only support GitHub
+	callbackURL, err := s.webhookCallbackURL(providerType, false)
+	if err != nil {
+		return nil, err
+	}
+	return s.newSCMProviderWithCallback(providerType, baseURL, apiCredential, callbackURL)
+}
+
+func (s *Service) newSCMProviderWithCallback(providerType, baseURL string, apiCredential any, callbackURL string) (scm.SCMProvider, error) {
+	if s.scmFactory != nil {
+		return s.scmFactory(providerType, baseURL, apiCredential, callbackURL)
+	}
 	switch providerType {
-	case "github":
-		return newGitHubProvider(baseURL, apiCredential, s.logger)
-	case "bitbucket_server":
-		return newBitbucketProvider(baseURL, apiCredential, s.logger)
+	case string(scmprovider.TypeGithub):
+		return newGitHubProvider(baseURL, apiCredential, s.logger, callbackURL)
+	case string(scmprovider.TypeBitbucketServer):
+		return newBitbucketProvider(baseURL, apiCredential, s.logger, callbackURL)
 	default:
 		return nil, fmt.Errorf("unsupported provider type: %s", providerType)
+	}
+}
+
+func (s *Service) webhookCallbackURL(providerType string, require bool) (string, error) {
+	base := strings.TrimSpace(s.webhookPublicURL)
+	if base == "" && s.serverMode != "release" {
+		base = strings.TrimSpace(s.frontendURL)
+	}
+	if base == "" {
+		if require {
+			return "", ErrWebhookPublicURLRequired
+		}
+		return "", nil
+	}
+
+	parsed, err := url.Parse(base)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return "", fmt.Errorf("invalid webhook public URL %q", base)
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return "", fmt.Errorf("invalid webhook public URL scheme %q", parsed.Scheme)
+	}
+
+	base = strings.TrimRight(parsed.String(), "/")
+	switch providerType {
+	case string(scmprovider.TypeGithub):
+		return base + "/api/v1/webhooks/github", nil
+	case string(scmprovider.TypeBitbucketServer):
+		return base + "/api/v1/webhooks/bitbucket", nil
+	default:
+		return "", fmt.Errorf("unsupported provider type: %s", providerType)
 	}
 }
 

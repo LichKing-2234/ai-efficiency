@@ -95,6 +95,18 @@ func TestLoadEnvOverride(t *testing.T) {
 	}
 }
 
+func TestLoadReadsServerPublicURLFromEnvironment(t *testing.T) {
+	t.Setenv("AE_SERVER_PUBLIC_URL", "https://ai-efficiency.example.com")
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Server.PublicURL != "https://ai-efficiency.example.com" {
+		t.Fatalf("PublicURL = %q, want https://ai-efficiency.example.com", cfg.Server.PublicURL)
+	}
+}
+
 func TestLoadUsesFileEncryptionKeyWhenEnvIsUnset(t *testing.T) {
 	dir := t.TempDir()
 	cfgFile := filepath.Join(dir, "config.yaml")
@@ -458,6 +470,7 @@ func TestEnsureWritableConfigFileCreatesReloadableConfig(t *testing.T) {
 			Port:        8081,
 			Mode:        "release",
 			FrontendURL: "http://localhost:8081",
+			PublicURL:   "https://ai-efficiency.example.com",
 		},
 		DB: DBConfig{
 			DSN:             "postgres://postgres:postgres@localhost:5432/ai_efficiency?sslmode=disable",
@@ -524,6 +537,9 @@ func TestEnsureWritableConfigFileCreatesReloadableConfig(t *testing.T) {
 	}
 	if loaded.Auth.LDAP.BindPassword != "secret" {
 		t.Fatalf("auth.ldap.bind_password = %q, want %q", loaded.Auth.LDAP.BindPassword, "secret")
+	}
+	if loaded.Server.PublicURL != "https://ai-efficiency.example.com" {
+		t.Fatalf("server.public_url = %q, want %q", loaded.Server.PublicURL, "https://ai-efficiency.example.com")
 	}
 }
 
