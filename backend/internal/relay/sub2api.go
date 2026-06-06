@@ -1932,3 +1932,155 @@ func (r geminiGenerateResponse) contentText() string {
 	}
 	return strings.Join(parts, "\n")
 }
+
+func (s *sub2apiRelay) GetUserUsageStats(ctx context.Context, login, password string) (*UserUsageStats, error) {
+	token, _, err := s.loginSessionToken(ctx, login, password)
+	if err != nil {
+		return nil, fmt.Errorf("relay: login for usage stats: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.adminURL+"/api/v1/usage/dashboard/stats", nil)
+	if err != nil {
+		return nil, fmt.Errorf("relay: create usage stats request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("relay: fetch usage stats: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusUnauthorized {
+		return nil, ErrInvalidCredentials
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("relay: usage stats: unexpected status %d", resp.StatusCode)
+	}
+
+	var result struct {
+		Code int            `json:"code"`
+		Data UserUsageStats `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("relay: decode usage stats: %w", err)
+	}
+	if result.Code != 0 {
+		return nil, fmt.Errorf("relay: usage stats: code %d", result.Code)
+	}
+
+	return &result.Data, nil
+}
+
+func (s *sub2apiRelay) GetUserUsageTrend(ctx context.Context, login, password string, params UsageTrendParams) (*UsageTrendResponse, error) {
+	token, _, err := s.loginSessionToken(ctx, login, password)
+	if err != nil {
+		return nil, fmt.Errorf("relay: login for usage trend: %w", err)
+	}
+
+	u, err := url.Parse(s.adminURL + "/api/v1/usage/dashboard/trend")
+	if err != nil {
+		return nil, fmt.Errorf("relay: parse usage trend url: %w", err)
+	}
+	q := u.Query()
+	if params.StartDate != "" {
+		q.Set("start_date", params.StartDate)
+	}
+	if params.EndDate != "" {
+		q.Set("end_date", params.EndDate)
+	}
+	if params.Granularity != "" {
+		q.Set("granularity", params.Granularity)
+	}
+	if params.Timezone != "" {
+		q.Set("timezone", params.Timezone)
+	}
+	u.RawQuery = q.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("relay: create usage trend request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("relay: fetch usage trend: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusUnauthorized {
+		return nil, ErrInvalidCredentials
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("relay: usage trend: unexpected status %d", resp.StatusCode)
+	}
+
+	var result struct {
+		Code int                `json:"code"`
+		Data UsageTrendResponse `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("relay: decode usage trend: %w", err)
+	}
+	if result.Code != 0 {
+		return nil, fmt.Errorf("relay: usage trend: code %d", result.Code)
+	}
+
+	return &result.Data, nil
+}
+
+func (s *sub2apiRelay) GetUserUsageModels(ctx context.Context, login, password string, params UsageModelParams) (*UsageModelResponse, error) {
+	token, _, err := s.loginSessionToken(ctx, login, password)
+	if err != nil {
+		return nil, fmt.Errorf("relay: login for usage models: %w", err)
+	}
+
+	u, err := url.Parse(s.adminURL + "/api/v1/usage/dashboard/models")
+	if err != nil {
+		return nil, fmt.Errorf("relay: parse usage models url: %w", err)
+	}
+	q := u.Query()
+	if params.StartDate != "" {
+		q.Set("start_date", params.StartDate)
+	}
+	if params.EndDate != "" {
+		q.Set("end_date", params.EndDate)
+	}
+	if params.Timezone != "" {
+		q.Set("timezone", params.Timezone)
+	}
+	u.RawQuery = q.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("relay: create usage models request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("relay: fetch usage models: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusUnauthorized {
+		return nil, ErrInvalidCredentials
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("relay: usage models: unexpected status %d", resp.StatusCode)
+	}
+
+	var result struct {
+		Code int                `json:"code"`
+		Data UsageModelResponse `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("relay: decode usage models: %w", err)
+	}
+	if result.Code != 0 {
+		return nil, fmt.Errorf("relay: usage models: code %d", result.Code)
+	}
+
+	return &result.Data, nil
+}
