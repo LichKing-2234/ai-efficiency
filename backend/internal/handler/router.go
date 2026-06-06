@@ -184,9 +184,7 @@ func SetupRouter(
 
 			// User usage dashboard
 			userUsageHandler := NewUserUsageHandler(entClient, providerHandler, encryptionKey)
-			userGroup.GET("/usage/stats", userUsageHandler.Stats)
-			userGroup.GET("/usage/trend", userUsageHandler.Trend)
-			userGroup.GET("/usage/models", userUsageHandler.Models)
+			userGroup.GET("/usage/dashboard", userUsageHandler.Dashboard)
 		}
 		userGroup.POST("/providers/:id/groups/:group_id/credential", userSetupHandler.CreateGroupCredential)
 		userGroup.POST("/providers/:id/groups/:group_id/credential/regenerate", userSetupHandler.RegenerateGroupCredential)

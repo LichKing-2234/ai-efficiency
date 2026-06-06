@@ -1,8 +1,11 @@
 package handler
 
 import (
+	"context"
+	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/ent/relayprovider"
@@ -12,17 +15,21 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-type UserUsageHandler struct {
-	entClient       *ent.Client
-	providerHandler *ProviderHandler
-	encryptionKey   string
+type userUsageProviderResolver interface {
+	Resolve(ctx context.Context, providerID int) (relay.Provider, error)
 }
 
-func NewUserUsageHandler(entClient *ent.Client, providerHandler *ProviderHandler, encryptionKey string) *UserUsageHandler {
+type UserUsageHandler struct {
+	entClient        *ent.Client
+	providerResolver userUsageProviderResolver
+	encryptionKey    string
+}
+
+func NewUserUsageHandler(entClient *ent.Client, providerResolver userUsageProviderResolver, encryptionKey string) *UserUsageHandler {
 	return &UserUsageHandler{
-		entClient:       entClient,
-		providerHandler: providerHandler,
-		encryptionKey:   encryptionKey,
+		entClient:        entClient,
+		providerResolver: providerResolver,
+		encryptionKey:    encryptionKey,
 	}
 }
 
@@ -34,16 +41,20 @@ func (h *UserUsageHandler) resolvePrimaryProvider(c *gin.Context) (relay.Provide
 		return nil, err
 	}
 	if len(providers) == 0 {
-		// Fallback to ID 1 if no primary is set
-		return h.providerHandler.Resolve(c.Request.Context(), 1)
+		return h.providerResolver.Resolve(c.Request.Context(), 1)
 	}
-	return h.providerHandler.Resolve(c.Request.Context(), providers[0].ID)
+	return h.providerResolver.Resolve(c.Request.Context(), providers[0].ID)
 }
 
-func (h *UserUsageHandler) Stats(c *gin.Context) {
+func (h *UserUsageHandler) Dashboard(c *gin.Context) {
 	uc := auth.GetUserContext(c)
 	if uc == nil {
 		pkg.Error(c, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	params, ok := parseUserUsageDashboardParams(c)
+	if !ok {
 		return
 	}
 
@@ -54,7 +65,17 @@ func (h *UserUsageHandler) Stats(c *gin.Context) {
 	}
 
 	if u.RelayAuthPassword == nil || strings.TrimSpace(*u.RelayAuthPassword) == "" {
-		pkg.Success(c, nil)
+		pkg.Success(c, &relay.UserUsageDashboardResponse{
+			Configured: false,
+			Range: relay.UserUsageDashboardRange{
+				StartDate:   params.StartDate,
+				EndDate:     params.EndDate,
+				Granularity: params.Granularity,
+				Timezone:    params.Timezone,
+			},
+			Trend:  []relay.UserUsageTrendPoint{},
+			Models: []relay.UserUsageModelStat{},
+		})
 		return
 	}
 
@@ -76,116 +97,52 @@ func (h *UserUsageHandler) Stats(c *gin.Context) {
 		return
 	}
 
-	stats, err := relayProvider.GetUserUsageStats(c.Request.Context(), login, password)
+	snapshot, err := relayProvider.GetUserUsageDashboard(c.Request.Context(), login, password, params)
 	if err != nil {
-		pkg.Error(c, http.StatusBadGateway, "get usage stats: "+err.Error())
+		if errors.Is(err, relay.ErrInvalidCredentials) {
+			pkg.Error(c, http.StatusConflict, "Relay credentials need attention. Please update AI service configuration.")
+			return
+		}
+		pkg.Error(c, http.StatusBadGateway, "get usage dashboard: "+err.Error())
 		return
 	}
 
-	pkg.Success(c, stats)
+	if snapshot == nil {
+		pkg.Error(c, http.StatusBadGateway, "get usage dashboard: empty response")
+		return
+	}
+	pkg.Success(c, snapshot)
 }
 
-func (h *UserUsageHandler) Trend(c *gin.Context) {
-	uc := auth.GetUserContext(c)
-	if uc == nil {
-		pkg.Error(c, http.StatusUnauthorized, "unauthorized")
-		return
+func parseUserUsageDashboardParams(c *gin.Context) (relay.UserUsageDashboardParams, bool) {
+	granularity := strings.TrimSpace(c.DefaultQuery("granularity", "day"))
+	if granularity != "day" && granularity != "hour" {
+		pkg.Error(c, http.StatusBadRequest, "granularity must be day or hour")
+		return relay.UserUsageDashboardParams{}, false
 	}
 
-	u, err := h.entClient.User.Get(c.Request.Context(), uc.UserID)
-	if err != nil {
-		pkg.Error(c, http.StatusUnprocessableEntity, "fetch user: "+err.Error())
-		return
+	params := relay.UserUsageDashboardParams{
+		StartDate:   strings.TrimSpace(c.Query("start_date")),
+		EndDate:     strings.TrimSpace(c.Query("end_date")),
+		Granularity: granularity,
+		Timezone:    strings.TrimSpace(c.Query("timezone")),
 	}
-
-	if u.RelayAuthPassword == nil || strings.TrimSpace(*u.RelayAuthPassword) == "" {
-		pkg.Success(c, &relay.UsageTrendResponse{})
-		return
+	if params.StartDate == "" || params.EndDate == "" {
+		start, end := defaultUserUsageRange(time.Now())
+		if params.StartDate == "" {
+			params.StartDate = start
+		}
+		if params.EndDate == "" {
+			params.EndDate = end
+		}
 	}
-
-	password, err := pkg.Decrypt(strings.TrimSpace(*u.RelayAuthPassword), h.encryptionKey)
-	if err != nil {
-		pkg.Error(c, http.StatusUnprocessableEntity, "decrypt relay password: "+err.Error())
-		return
-	}
-
-	relayProvider, err := h.resolvePrimaryProvider(c)
-	if err != nil {
-		pkg.Error(c, http.StatusUnprocessableEntity, "resolve relay provider: "+err.Error())
-		return
-	}
-
-	params := relay.UsageTrendParams{
-		StartDate:   c.Query("start_date"),
-		EndDate:     c.Query("end_date"),
-		Granularity: c.DefaultQuery("granularity", "day"),
-		Timezone:    c.Query("timezone"),
-	}
-
-	login := firstNonEmptyString(u.Email, u.Username)
-	if login == "" {
-		pkg.Error(c, http.StatusUnprocessableEntity, "user has no email or username")
-		return
-	}
-
-	trend, err := relayProvider.GetUserUsageTrend(c.Request.Context(), login, password, params)
-	if err != nil {
-		pkg.Error(c, http.StatusBadGateway, "get usage trend: "+err.Error())
-		return
-	}
-
-	pkg.Success(c, trend)
+	return params, true
 }
 
-func (h *UserUsageHandler) Models(c *gin.Context) {
-	uc := auth.GetUserContext(c)
-	if uc == nil {
-		pkg.Error(c, http.StatusUnauthorized, "unauthorized")
-		return
-	}
-
-	u, err := h.entClient.User.Get(c.Request.Context(), uc.UserID)
-	if err != nil {
-		pkg.Error(c, http.StatusUnprocessableEntity, "fetch user: "+err.Error())
-		return
-	}
-
-	if u.RelayAuthPassword == nil || strings.TrimSpace(*u.RelayAuthPassword) == "" {
-		pkg.Success(c, &relay.UsageModelResponse{})
-		return
-	}
-
-	password, err := pkg.Decrypt(strings.TrimSpace(*u.RelayAuthPassword), h.encryptionKey)
-	if err != nil {
-		pkg.Error(c, http.StatusUnprocessableEntity, "decrypt relay password: "+err.Error())
-		return
-	}
-
-	relayProvider, err := h.resolvePrimaryProvider(c)
-	if err != nil {
-		pkg.Error(c, http.StatusUnprocessableEntity, "resolve relay provider: "+err.Error())
-		return
-	}
-
-	params := relay.UsageModelParams{
-		StartDate: c.Query("start_date"),
-		EndDate:   c.Query("end_date"),
-		Timezone:  c.Query("timezone"),
-	}
-
-	login := firstNonEmptyString(u.Email, u.Username)
-	if login == "" {
-		pkg.Error(c, http.StatusUnprocessableEntity, "user has no email or username")
-		return
-	}
-
-	models, err := relayProvider.GetUserUsageModels(c.Request.Context(), login, password, params)
-	if err != nil {
-		pkg.Error(c, http.StatusBadGateway, "get usage models: "+err.Error())
-		return
-	}
-
-	pkg.Success(c, models)
+func defaultUserUsageRange(now time.Time) (string, string) {
+	today := now.Format("2006-01-02")
+	start := now.AddDate(0, 0, -6).Format("2006-01-02")
+	return start, today
 }
 
 func firstNonEmptyString(values ...string) string {

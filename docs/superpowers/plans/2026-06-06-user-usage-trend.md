@@ -538,7 +538,7 @@ git commit -m "feat(relay): add user usage dashboard snapshot"
 - Modify: `backend/internal/handler/user_usage.go`
 - Modify: `backend/internal/handler/router.go`
 
-- [ ] **Step 1: Write handler tests**
+- [x] **Step 1: Write handler tests**
 
 Create `backend/internal/handler/user_usage_test.go`:
 
@@ -770,7 +770,7 @@ func TestUserUsageDashboardResolverFailureReturnsUnprocessableEntity(t *testing.
 }
 ```
 
-- [ ] **Step 2: Run handler tests and verify they fail**
+- [x] **Step 2: Run handler tests and verify they fail**
 
 Run:
 
@@ -780,7 +780,7 @@ cd /Users/admin/ai-efficiency/backend && go test ./internal/handler -run 'TestUs
 
 Expected: compile failure because `NewUserUsageHandler` still takes `*ProviderHandler` and `Dashboard` does not exist.
 
-- [ ] **Step 3: Refactor handler dependency and implement Dashboard**
+- [x] **Step 3: Refactor handler dependency and implement Dashboard**
 
 Replace `backend/internal/handler/user_usage.go` with the snapshot handler shape:
 
@@ -942,7 +942,7 @@ func firstNonEmptyString(values ...string) string {
 }
 ```
 
-- [ ] **Step 4: Update router registration**
+- [x] **Step 4: Update router registration**
 
 In `backend/internal/handler/router.go`, replace:
 
@@ -960,17 +960,17 @@ userUsageHandler := NewUserUsageHandler(entClient, providerHandler, encryptionKe
 userGroup.GET("/usage/dashboard", userUsageHandler.Dashboard)
 ```
 
-- [ ] **Step 5: Run handler tests and verify they pass**
+- [x] **Step 5: Run handler tests and verify they pass**
 
 Run:
 
 ```bash
-cd /Users/admin/ai-efficiency/backend && go test ./internal/handler -run 'TestUserUsageDashboard' -count=1
+cd /Users/admin/ai-efficiency/backend && AE_TEST_POSTGRES_DSN='postgres://postgres:postgres@127.0.0.1:15432/postgres?sslmode=disable' go test ./internal/handler -run 'TestUserUsageDashboard' -count=1
 ```
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit handler snapshot endpoint**
+- [x] **Step 6: Commit handler snapshot endpoint**
 
 ```bash
 git add backend/internal/handler/user_usage.go backend/internal/handler/user_usage_test.go backend/internal/handler/router.go
@@ -1023,7 +1023,7 @@ func (m *mockRelayProvider) GetUserUsageDashboard(_ context.Context, _, _ string
 Run:
 
 ```bash
-cd /Users/admin/ai-efficiency/backend && go test ./internal/auth ./internal/attribution ./internal/usersetup -count=1
+cd /Users/admin/ai-efficiency/backend && AE_TEST_POSTGRES_DSN='postgres://postgres:postgres@127.0.0.1:15432/postgres?sslmode=disable' go test ./internal/auth ./internal/attribution ./internal/usersetup -count=1
 ```
 
 Expected: PASS.
@@ -1763,7 +1763,7 @@ Expected: no matches, except historical context in committed diffs outside the c
 Run:
 
 ```bash
-cd /Users/admin/ai-efficiency/backend && go test ./...
+cd /Users/admin/ai-efficiency/backend && AE_TEST_POSTGRES_DSN='postgres://postgres:postgres@127.0.0.1:15432/postgres?sslmode=disable' go test ./...
 ```
 
 Expected: PASS.
