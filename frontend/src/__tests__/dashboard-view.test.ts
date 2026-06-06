@@ -240,14 +240,16 @@ describe('DashboardView', () => {
     expect(wrapper.text()).toContain('Open My Setup')
   })
 
-  it('renders recent activity from usage records when available', async () => {
+  it('replaces recent activity with the relay usage dashboard', async () => {
     const { getDashboard } = await import('@/api/efficiency')
     const { getUserProviders } = await import('@/api/user')
     const { listEvents } = await import('@/api/events')
+    const { getUserUsageDashboard } = await import('@/api/userUsage')
     ;(getDashboard as any).mockResolvedValue({
       data: { data: { total_repos: 1, tracked_workflows: 1, total_ai_prs: 2 } },
     })
     ;(getUserProviders as any).mockResolvedValue({ data: { data: { providers: [] } } })
+    ;(getUserUsageDashboard as any).mockResolvedValue({ data: { data: usageSnapshot } })
     ;(listEvents as any).mockResolvedValue({
       data: {
         data: {
@@ -288,9 +290,11 @@ describe('DashboardView', () => {
     await flushPromises()
 
     expect(listEvents).toHaveBeenCalledWith({ limit: 3, offset: 0 })
-    expect(wrapper.text()).toContain('codex')
-    expect(wrapper.text()).toContain('org/repo')
-    expect(wrapper.text()).toContain('175')
+    expect(wrapper.text()).toContain('Token Trend')
+    expect(wrapper.text()).toContain('Model Distribution')
+    expect(wrapper.text()).not.toContain('Recent Activity')
+    expect(wrapper.text()).not.toContain('codex')
+    expect(wrapper.text()).not.toContain('org/repo')
   })
 
   it('renders the relay usage dashboard inside the home page', async () => {

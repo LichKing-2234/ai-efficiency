@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js'
 import { Doughnut } from 'vue-chartjs'
 import type { UserUsageModelStat } from '@/types'
+import { useI18n } from '@/i18n'
 
 ChartJS.register(ArcElement, Tooltip, Legend)
 
@@ -10,6 +11,8 @@ const props = defineProps<{
   data: UserUsageModelStat[]
   loading: boolean
 }>()
+
+const { t } = useI18n()
 
 const colors = ['#2563eb', '#16a34a', '#d97706', '#dc2626', '#7c3aed', '#db2777', '#0891b2', '#65a30d']
 
@@ -29,12 +32,12 @@ function formatTokens(n: number): string {
 
 <template>
   <section class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800">
-    <h2 class="mb-4 text-base font-semibold text-gray-900 dark:text-gray-100">Model Distribution</h2>
+    <h2 class="mb-4 text-base font-semibold text-gray-900 dark:text-gray-100">{{ t('usageDashboard.modelDistribution') }}</h2>
     <div v-if="loading" class="flex h-72 items-center justify-center text-sm text-gray-500 dark:text-gray-400">
-      Loading models...
+      {{ t('usageDashboard.loadingModels') }}
     </div>
     <div v-else-if="data.length === 0" class="flex h-72 items-center justify-center text-sm text-gray-500 dark:text-gray-400">
-      No model data available
+      {{ t('usageDashboard.noModelData') }}
     </div>
     <div v-else class="grid gap-4 lg:grid-cols-[180px_1fr]">
       <div class="h-44">
@@ -44,11 +47,11 @@ function formatTokens(n: number): string {
         <table class="w-full text-sm">
           <thead>
             <tr class="border-b border-gray-200 text-left text-xs uppercase text-gray-500 dark:border-gray-700 dark:text-gray-400">
-              <th class="pb-2">Model</th>
-              <th class="pb-2 text-right">Requests</th>
-              <th class="pb-2 text-right">Tokens</th>
-              <th class="pb-2 text-right">Actual</th>
-              <th class="pb-2 text-right">Standard</th>
+              <th class="pb-2">{{ t('usageDashboard.model') }}</th>
+              <th class="pb-2 text-right">{{ t('usageDashboard.requests') }}</th>
+              <th class="pb-2 text-right">{{ t('usageDashboard.tokens') }}</th>
+              <th class="pb-2 text-right">{{ t('usageDashboard.actual') }}</th>
+              <th class="pb-2 text-right">{{ t('usageDashboard.standard') }}</th>
             </tr>
           </thead>
           <tbody>

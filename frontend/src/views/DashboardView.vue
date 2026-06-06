@@ -134,15 +134,6 @@ function formatMetric(value?: number | null) {
   return value.toLocaleString()
 }
 
-function formatDate(value?: string | null) {
-  if (!value) return '—'
-  return new Date(value).toLocaleString()
-}
-
-function formatTokens(row: ToolUsageEventRow) {
-  const total = (row.input_tokens ?? 0) + (row.output_tokens ?? 0) + (row.cached_input_tokens ?? 0)
-  return total > 0 ? formatMetric(total) : '—'
-}
 </script>
 
 <template>
@@ -168,8 +159,6 @@ function formatTokens(row: ToolUsageEventRow) {
       </div>
 
       <template v-else>
-        <UserUsageDashboard embedded />
-
         <section class="space-y-4">
           <div class="flex items-center justify-between">
             <h2 class="text-base font-semibold text-slate-950">{{ t('home.thisWeek') }}</h2>
@@ -236,41 +225,7 @@ function formatTokens(row: ToolUsageEventRow) {
           </div>
         </section>
 
-        <section class="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-          <div class="flex items-center justify-between gap-4">
-            <h2 class="text-base font-semibold text-slate-950">{{ t('home.recentActivity') }}</h2>
-            <RouterLink to="/events" class="text-sm font-medium text-cyan-700 hover:text-cyan-900">{{ t('home.viewRecords') }}</RouterLink>
-          </div>
-          <p class="mt-4 text-sm text-slate-500">
-            {{ hasRecentUsage ? t('home.recentLoaded') : t('home.noDataHelp') }}
-          </p>
-          <div v-if="hasRecentUsage" class="mt-4 space-y-3">
-            <RouterLink
-              v-for="event in recentEvents"
-              :key="event.id"
-              to="/events"
-              class="block rounded-lg border border-slate-200 p-4 text-sm hover:border-cyan-300"
-            >
-              <div class="flex items-start justify-between gap-3">
-                <div class="min-w-0">
-                  <div class="truncate font-semibold text-slate-950">{{ event.tool }}</div>
-                  <div class="mt-1 truncate text-xs text-slate-500">{{ event.repo_name || t('home.unknownRepository') }}</div>
-                </div>
-                <span class="shrink-0 text-xs text-slate-500">{{ formatDate(event.observed_end_at) }}</span>
-              </div>
-              <div class="mt-3 grid grid-cols-2 gap-3 text-xs text-slate-600">
-                <div>
-                  <div class="text-slate-400">{{ t('home.eventTokens') }}</div>
-                  <div class="mt-1 font-medium text-slate-900">{{ formatTokens(event) }}</div>
-                </div>
-                <div>
-                  <div class="text-slate-400">{{ t('home.eventRequests') }}</div>
-                  <div class="mt-1 font-medium text-slate-900">{{ formatMetric(event.request_count) }}</div>
-                </div>
-              </div>
-            </RouterLink>
-          </div>
-        </section>
+        <UserUsageDashboard embedded />
       </template>
     </div>
   </AppLayout>

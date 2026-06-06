@@ -12,6 +12,7 @@ import {
 } from 'chart.js'
 import { Line } from 'vue-chartjs'
 import type { UserUsageTrendPoint } from '@/types'
+import { useI18n } from '@/i18n'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend, Filler)
 
@@ -19,6 +20,8 @@ const props = defineProps<{
   data: UserUsageTrendPoint[]
   loading: boolean
 }>()
+
+const { t } = useI18n()
 
 function formatTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`
@@ -29,10 +32,10 @@ function formatTokens(n: number): string {
 const chartData = computed(() => ({
   labels: props.data.map((point) => point.date),
   datasets: [
-    { label: 'Input', data: props.data.map((point) => point.input_tokens), borderColor: '#2563eb', backgroundColor: '#2563eb22', fill: true, tension: 0.3 },
-    { label: 'Output', data: props.data.map((point) => point.output_tokens), borderColor: '#16a34a', backgroundColor: '#16a34a22', fill: true, tension: 0.3 },
-    { label: 'Cache Creation', data: props.data.map((point) => point.cache_creation_tokens), borderColor: '#d97706', backgroundColor: '#d9770622', fill: true, tension: 0.3 },
-    { label: 'Cache Read', data: props.data.map((point) => point.cache_read_tokens), borderColor: '#0891b2', backgroundColor: '#0891b222', fill: true, tension: 0.3 },
+    { label: t('usageDashboard.input'), data: props.data.map((point) => point.input_tokens), borderColor: '#2563eb', backgroundColor: '#2563eb22', fill: true, tension: 0.3 },
+    { label: t('usageDashboard.output'), data: props.data.map((point) => point.output_tokens), borderColor: '#16a34a', backgroundColor: '#16a34a22', fill: true, tension: 0.3 },
+    { label: t('usageDashboard.cacheCreation'), data: props.data.map((point) => point.cache_creation_tokens), borderColor: '#d97706', backgroundColor: '#d9770622', fill: true, tension: 0.3 },
+    { label: t('usageDashboard.cacheRead'), data: props.data.map((point) => point.cache_read_tokens), borderColor: '#0891b2', backgroundColor: '#0891b222', fill: true, tension: 0.3 },
   ],
 }))
 
@@ -48,7 +51,7 @@ const chartOptions = computed(() => ({
         footer: (items: any[]) => {
           const index = items[0]?.dataIndex
           const point = props.data[index]
-          return point ? `Actual: $${point.actual_cost.toFixed(4)} | Standard: $${point.cost.toFixed(4)}` : ''
+          return point ? `${t('usageDashboard.actual')}: $${point.actual_cost.toFixed(4)} | ${t('usageDashboard.standard')}: $${point.cost.toFixed(4)}` : ''
         },
       },
     },
@@ -66,13 +69,13 @@ const chartOptions = computed(() => ({
 <template>
   <section class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800">
     <div class="mb-4 flex items-center justify-between">
-      <h2 class="text-base font-semibold text-gray-900 dark:text-gray-100">Token Trend</h2>
+      <h2 class="text-base font-semibold text-gray-900 dark:text-gray-100">{{ t('usageDashboard.tokenTrend') }}</h2>
     </div>
     <div v-if="loading" class="flex h-72 items-center justify-center text-sm text-gray-500 dark:text-gray-400">
-      Loading trend...
+      {{ t('usageDashboard.loadingTrend') }}
     </div>
     <div v-else-if="data.length === 0" class="flex h-72 items-center justify-center text-sm text-gray-500 dark:text-gray-400">
-      No trend data available
+      {{ t('usageDashboard.noTrendData') }}
     </div>
     <div v-else class="h-72">
       <Line :data="chartData" :options="chartOptions" />

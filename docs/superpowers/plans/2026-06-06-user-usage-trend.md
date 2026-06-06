@@ -1919,3 +1919,96 @@ git push
 ```
 
 Expected: PR #77 updates to the new head commit.
+
+---
+
+## Task 9: Localize Usage Dashboard and Replace Recent Activity Slot
+
+**Files:**
+- Modify: `frontend/src/__tests__/user-usage-view.test.ts`
+- Modify: `frontend/src/__tests__/dashboard-view.test.ts`
+- Modify: `frontend/src/i18n.ts`
+- Modify: `frontend/src/views/DashboardView.vue`
+- Modify: `frontend/src/components/user/usage/UserUsageDashboard.vue`
+- Modify: `frontend/src/components/user/usage/UsageStatsCards.vue`
+- Modify: `frontend/src/components/user/usage/UsageTrendChart.vue`
+- Modify: `frontend/src/components/user/usage/UsageModelChart.vue`
+- Modify: `docs/superpowers/specs/2026-06-06-user-usage-trend-design.md`
+- Modify: `docs/superpowers/plans/2026-06-06-user-usage-trend.md`
+
+- [x] **Step 1: Write failing bilingual and placement tests**
+
+Added tests that prove:
+
+- `UsageView` renders Chinese labels when `setLocale('zh-CN')` is active.
+- The home page no longer renders the `Recent Activity` section or recent event rows.
+- The relay usage dashboard renders in the slot that previously held recent activity.
+
+- [x] **Step 2: Run the new tests and verify RED**
+
+Ran:
+
+```bash
+cd /Users/admin/ai-efficiency/frontend && pnpm test -- src/__tests__/user-usage-view.test.ts -t 'Chinese usage labels'
+cd /Users/admin/ai-efficiency/frontend && pnpm test -- src/__tests__/dashboard-view.test.ts -t 'replaces recent activity'
+```
+
+Expected and observed failures:
+
+- Usage dashboard still rendered hardcoded English labels.
+- Dashboard still rendered `Recent Activity` and recent event rows.
+
+- [x] **Step 3: Localize all usage dashboard copy**
+
+Added `usageDashboard.*` keys for `en-US` and `zh-CN`, and updated:
+
+- `UserUsageDashboard.vue`
+- `UsageStatsCards.vue`
+- `UsageTrendChart.vue`
+- `UsageModelChart.vue`
+
+Visible labels, buttons, loading/empty/error text, table headings, and chart tooltip text now use i18n keys.
+
+- [x] **Step 4: Replace Recent Activity position**
+
+Updated `DashboardView.vue` so `UserUsageDashboard` renders where the recent activity section used to be. The recent activity list rendering was removed; `listEvents` is still used for setup-status signals.
+
+- [x] **Step 5: Run targeted tests and verify GREEN**
+
+Ran:
+
+```bash
+cd /Users/admin/ai-efficiency/frontend && pnpm test -- src/__tests__/user-usage-view.test.ts -t 'Chinese usage labels'
+cd /Users/admin/ai-efficiency/frontend && pnpm test -- src/__tests__/dashboard-view.test.ts -t 'replaces recent activity'
+cd /Users/admin/ai-efficiency/frontend && pnpm test -- src/__tests__/dashboard-view.test.ts
+cd /Users/admin/ai-efficiency/frontend && pnpm test -- src/__tests__/user-usage-view.test.ts
+cd /Users/admin/ai-efficiency/frontend && pnpm test -- src/__tests__/app-sidebar.test.ts src/__tests__/router.test.ts
+```
+
+Expected and observed: PASS.
+
+- [x] **Step 6: Run full verification**
+
+Run:
+
+```bash
+cd /Users/admin/ai-efficiency/backend && AE_TEST_POSTGRES_DSN='postgres://postgres:postgres@127.0.0.1:15432/postgres?sslmode=disable' go test ./...
+cd /Users/admin/ai-efficiency/frontend && pnpm test
+cd /Users/admin/ai-efficiency/frontend && pnpm run build
+cd /Users/admin/ai-efficiency && rg -n "Today Cost|Today Requests|Today Tokens|Avg Response|Token Trend|Model Distribution|Loading usage dashboard|Recent Activity|最近动态" frontend/src/components/user/usage frontend/src/views/DashboardView.vue
+```
+
+Expected: tests/build pass; the stale-copy search has no matches in product source.
+
+- [ ] **Step 7: Commit and update PR #77**
+
+Run:
+
+```bash
+cd /Users/admin/ai-efficiency
+git add frontend/src docs/superpowers/specs/2026-06-06-user-usage-trend-design.md docs/superpowers/plans/2026-06-06-user-usage-trend.md
+git commit -m "fix(frontend): localize embedded usage dashboard"
+git push
+```
+
+Expected: PR #77 updates to the new head commit.

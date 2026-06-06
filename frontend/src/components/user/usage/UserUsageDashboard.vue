@@ -6,19 +6,19 @@
           :is="props.embedded ? 'h2' : 'h1'"
           :class="props.embedded ? 'text-base font-semibold text-slate-950' : 'text-2xl font-semibold text-gray-900 dark:text-gray-100'"
         >
-          {{ props.embedded ? 'My Usage' : 'My AI Usage' }}
+          {{ props.embedded ? t('usageDashboard.embeddedTitle') : t('usageDashboard.title') }}
         </component>
-        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Usage and cost from your configured AI relay account.</p>
+        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ t('usageDashboard.subtitle') }}</p>
       </div>
       <div class="flex flex-wrap items-center gap-2">
         <button data-test="range-today" type="button" :class="rangeButtonClass(selectedRange === 'today')" @click="selectRange('today')">
-          Today
+          {{ t('usageDashboard.today') }}
         </button>
         <button data-test="range-7d" type="button" :class="rangeButtonClass(selectedRange === '7d')" @click="selectRange('7d')">
-          7 Days
+          {{ t('usageDashboard.sevenDays') }}
         </button>
         <button data-test="range-30d" type="button" :class="rangeButtonClass(selectedRange === '30d')" @click="selectRange('30d')">
-          30 Days
+          {{ t('usageDashboard.thirtyDays') }}
         </button>
         <button
           type="button"
@@ -26,28 +26,28 @@
           :disabled="loading"
           @click="loadDashboard"
         >
-          Refresh
+          {{ t('usageDashboard.refresh') }}
         </button>
       </div>
     </div>
 
     <div v-if="loading && !snapshot" class="flex min-h-80 items-center justify-center text-sm text-gray-500 dark:text-gray-400">
-      Loading usage dashboard...
+      {{ t('usageDashboard.loading') }}
     </div>
 
     <div v-else-if="setupRequired" class="rounded-lg border border-amber-200 bg-amber-50 p-6 dark:border-amber-800 dark:bg-amber-950/30">
-      <h2 class="text-base font-semibold text-amber-900 dark:text-amber-100">Complete AI service configuration</h2>
-      <p class="mt-2 text-sm text-amber-800 dark:text-amber-200">Usage data is available after your relay credentials are configured.</p>
+      <h2 class="text-base font-semibold text-amber-900 dark:text-amber-100">{{ t('usageDashboard.setupTitle') }}</h2>
+      <p class="mt-2 text-sm text-amber-800 dark:text-amber-200">{{ t('usageDashboard.setupHelp') }}</p>
       <router-link to="/user" class="mt-4 inline-flex rounded-md bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700">
-        Open My Setup
+        {{ t('usageDashboard.openSetup') }}
       </router-link>
     </div>
 
     <div v-else-if="errorMessage" class="rounded-lg border border-red-200 bg-red-50 p-6 dark:border-red-800 dark:bg-red-950/30">
       <h2 class="text-base font-semibold text-red-900 dark:text-red-100">{{ errorMessage }}</h2>
-      <p class="mt-2 text-sm text-red-800 dark:text-red-200">Try refreshing after checking your setup.</p>
+      <p class="mt-2 text-sm text-red-800 dark:text-red-200">{{ t('usageDashboard.retryHelp') }}</p>
       <router-link v-if="credentialError" to="/user" class="mt-4 inline-flex rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">
-        Open My Setup
+        {{ t('usageDashboard.openSetup') }}
       </router-link>
     </div>
 
@@ -64,6 +64,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { getUserUsageDashboard } from '@/api/userUsage'
+import { useI18n } from '@/i18n'
 import type { UserUsageDashboardParams, UserUsageDashboardSnapshot } from '@/types'
 import UsageStatsCards from '@/components/user/usage/UsageStatsCards.vue'
 import UsageTrendChart from '@/components/user/usage/UsageTrendChart.vue'
@@ -82,6 +83,7 @@ const snapshot = ref<UserUsageDashboardSnapshot | null>(null)
 const loading = ref(false)
 const errorMessage = ref('')
 const credentialError = ref(false)
+const { t } = useI18n()
 
 const setupRequired = computed(() => snapshot.value?.configured === false)
 
@@ -127,7 +129,7 @@ async function loadDashboard() {
   } catch (err: any) {
     snapshot.value = null
     credentialError.value = err?.response?.status === 409
-    errorMessage.value = credentialError.value ? 'Relay credentials need attention' : 'Usage dashboard is temporarily unavailable'
+    errorMessage.value = credentialError.value ? t('usageDashboard.credentialError') : t('usageDashboard.unavailable')
   } finally {
     loading.value = false
   }

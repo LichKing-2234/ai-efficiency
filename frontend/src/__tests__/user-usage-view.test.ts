@@ -3,6 +3,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import UsageView from '@/views/user/UsageView.vue'
+import { setLocale } from '@/i18n'
 
 vi.mock('@/api/userUsage', () => ({
   getUserUsageDashboard: vi.fn(),
@@ -54,6 +55,7 @@ const snapshot = {
 describe('UsageView', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    setLocale('en-US')
     vi.clearAllMocks()
   })
 
@@ -136,5 +138,24 @@ describe('UsageView', () => {
     await flushPromises()
     expect(wrapper.text()).toContain('Relay credentials need attention')
     expect(wrapper.text()).toContain('Open My Setup')
+  })
+
+  it('renders Chinese usage labels when locale is Chinese', async () => {
+    setLocale('zh-CN')
+    const { getUserUsageDashboard } = await import('@/api/userUsage')
+    ;(getUserUsageDashboard as any).mockResolvedValue({ data: { data: snapshot } })
+    const router = createRouterForUsage()
+    await router.push('/user/usage')
+    await router.isReady()
+    const wrapper = mount(UsageView, { global: { plugins: [createPinia(), router] } })
+    await flushPromises()
+    expect(wrapper.text()).toContain('我的 AI 用量')
+    expect(wrapper.text()).toContain('今日费用')
+    expect(wrapper.text()).toContain('Token 趋势')
+    expect(wrapper.text()).toContain('模型分布')
+    expect(wrapper.text()).toContain('刷新')
+    expect(wrapper.text()).toContain('7 天')
+    expect(wrapper.text()).not.toContain('Today Cost')
+    expect(wrapper.text()).not.toContain('Model Distribution')
   })
 })

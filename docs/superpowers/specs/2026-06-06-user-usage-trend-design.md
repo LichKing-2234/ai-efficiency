@@ -20,7 +20,7 @@ ai-efficiency 只通过 relay HTTP API 使用这些用户端接口，不直连 s
 
 ## 目标
 
-在 ai-efficiency 前端提供“我的 AI 用量概览”，但不作为侧边栏里的独立新页面。用量 dashboard 嵌入现有首页 `/` 的“我的 AI 使用中心”，点击侧边栏的“我的 AI 使用中心”停留在首页视图中。该区块回答三个问题：
+在 ai-efficiency 前端提供“我的 AI 用量概览”，但不作为侧边栏里的独立新页面。用量 dashboard 嵌入现有首页 `/` 的“我的 AI 使用中心”，点击侧边栏的“我的 AI 使用中心”停留在首页视图中。该区块替换首页原“最近动态 / Recent Activity”位置，不再额外展示最近动态列表。该区块回答三个问题：
 
 - 我今天和累计用了多少请求、token、费用、响应时间？
 - 最近一段时间的 token 使用趋势如何？
@@ -265,12 +265,16 @@ userUsage.GET("/dashboard", userUsageHandler.Dashboard)
 
 用量 dashboard 的可复用实现位于 `frontend/src/components/user/usage/UserUsageDashboard.vue`，由 `frontend/src/views/DashboardView.vue` 嵌入首页 `/`。`frontend/src/views/user/UsageView.vue` 只保留为薄 wrapper 以便组件级测试和短期兼容；router 不注册 `/user/usage`，侧边栏也不提供该入口。
 
+首页承载位置是原 `home.recentActivity` 区块。实现应删除最近动态列表渲染，把 `UserUsageDashboard` 放在该位置，避免页面同时出现“最近动态”和“我的用量”两个使用相关模块。
+
+所有可见文案必须通过 `frontend/src/i18n.ts` 管理，至少覆盖 `en-US` 和 `zh-CN`。用量 dashboard、统计卡、趋势图、模型表、loading/empty/error/setup 状态、按钮和图表 tooltip 不允许继续硬编码单一英文文案。
+
 区块结构：
 
 1. 顶部工具条
-   - 标题：`My AI Usage`
-   - 时间范围：Today / 7 Days / 30 Days
-   - Refresh
+   - 标题：通过 `usageDashboard.title` / `usageDashboard.embeddedTitle` 本地化
+   - 时间范围：Today / 7 Days / 30 Days 与对应中文
+   - Refresh / 刷新
    - granularity 默认 `day`；Today 使用 `hour`
 
 2. 统计卡
