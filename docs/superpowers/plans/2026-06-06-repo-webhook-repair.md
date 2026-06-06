@@ -1041,7 +1041,7 @@ git commit -m "feat(repo): add webhook repair service"
 - Modify: `backend/internal/handler/router.go`
 - Create: `backend/internal/handler/repo_webhook_repair_test.go`
 
-- [ ] **Step 1: Write failing handler tests**
+- [x] **Step 1: Write failing handler tests**
 
 Create `backend/internal/handler/repo_webhook_repair_test.go`:
 
@@ -1113,7 +1113,7 @@ func TestRepairFailedWebhooksEmptyBatchReturnsSummary(t *testing.T) {
 
 Ensure imports include `strconv` if using `strconv.Itoa`.
 
-- [ ] **Step 2: Run handler tests and verify failure**
+- [x] **Step 2: Run handler tests and verify failure**
 
 Run:
 
@@ -1123,7 +1123,7 @@ cd backend && AE_TEST_POSTGRES_DSN='postgres://postgres:postgres@127.0.0.1:15432
 
 Expected: FAIL because the routes and handlers do not exist.
 
-- [ ] **Step 3: Implement repo handler methods**
+- [x] **Step 3: Implement repo handler methods**
 
 In `backend/internal/handler/repo.go`, add an error mapper:
 
@@ -1188,7 +1188,7 @@ func (h *RepoHandler) RepairFailedWebhooks(c *gin.Context) {
 
 If `ShouldBindJSON` returns an EOF error type instead of string text in this codebase, replace the string check with `errors.Is(err, io.EOF)` and add `io` to imports.
 
-- [ ] **Step 4: Register admin-only routes**
+- [x] **Step 4: Register admin-only routes**
 
 In `backend/internal/handler/router.go`, register routes before `repoGroup.GET("/:id", ...)`:
 
@@ -1197,7 +1197,7 @@ repoGroup.POST("/repair-webhooks", auth.RequireAdmin(), repoHandler.RepairFailed
 repoGroup.POST("/:id/repair-webhook", auth.RequireAdmin(), repoHandler.RepairWebhook)
 ```
 
-- [ ] **Step 5: Run handler tests**
+- [x] **Step 5: Run handler tests**
 
 Run:
 
@@ -1207,7 +1207,7 @@ cd backend && AE_TEST_POSTGRES_DSN='postgres://postgres:postgres@127.0.0.1:15432
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit handler routes**
+- [x] **Step 6: Commit handler routes**
 
 Run:
 

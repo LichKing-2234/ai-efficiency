@@ -136,6 +136,8 @@ func SetupRouter(
 		repoGroup.POST("/resolve-remote", repoHandler.ResolveRemote)
 		repoGroup.POST("/hook-eligible", repoHandler.HookEligible)
 		repoGroup.POST("/auto-bind-unbound", auth.RequireAdmin(), repoHandler.AutoBindUnbound)
+		repoGroup.POST("/repair-webhooks", auth.RequireAdmin(), repoHandler.RepairFailedWebhooks)
+		repoGroup.POST("/:id/repair-webhook", auth.RequireAdmin(), repoHandler.RepairWebhook)
 		repoGroup.GET("/:id", repoHandler.Get)
 		repoGroup.PUT("/:id", repoHandler.Update)
 		repoGroup.DELETE("/:id", repoHandler.Delete)
