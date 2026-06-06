@@ -3,9 +3,13 @@ package webhook
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/ai-efficiency/backend/ent"
@@ -16,6 +20,12 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 )
+
+func signBitbucketWebhookTestBody(body []byte, secret string) string {
+	mac := hmac.New(sha256.New, []byte(secret))
+	_, _ = mac.Write(body)
+	return "sha256=" + hex.EncodeToString(mac.Sum(nil))
+}
 
 // --- labelPR with real labeler (error path) ---
 
@@ -412,13 +422,80 @@ func TestHandleBitbucketWithWebhookSecret(t *testing.T) {
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/bitbucket", bytes.NewReader(payloadBytes))
 	req.Header.Set("X-Event-Key", "pr:opened")
+	req.Header.Set("X-Hub-Signature", signBitbucketWebhookTestBody(payloadBytes, secret))
 	c := newGinContext(w, req)
 
 	h.HandleBitbucket(c)
 
-	// May fail or succeed depending on signature validation
-	if w.Code == http.StatusNotFound {
-		t.Error("should not get 404 for known repo")
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+
+	letters, err := client.WebhookDeadLetter.Query().All(ctx)
+	if err != nil {
+		t.Fatalf("query dead letters: %v", err)
+	}
+	if len(letters) != 0 {
+		t.Fatalf("expected no dead letters, got %d", len(letters))
+	}
+}
+
+func TestHandleBitbucketInvalidSignatureStoresDeadLetter(t *testing.T) {
+	client := newTestClient(t)
+	defer client.Close()
+	h := NewHandler(client, nil, newTestLogger())
+
+	ctx := context.Background()
+	provider, _ := client.ScmProvider.Create().
+		SetName("test-bb-invalid-provider").
+		SetType(scmprovider.TypeBitbucketServer).
+		SetBaseURL("https://bitbucket.example.com").
+		SetCredentials("test-token").
+		Save(ctx)
+
+	client.RepoConfig.Create().
+		SetName("bb-invalid-signature").
+		SetFullName("PROJ/bb-invalid-signature").
+		SetCloneURL("https://bitbucket.example.com/PROJ/bb-invalid-signature.git").
+		SetScmProviderID(provider.ID).
+		SetWebhookSecret("bbsecret123").
+		SaveX(ctx)
+
+	payload := map[string]interface{}{
+		"eventKey": "repo:refs_changed",
+		"repository": map[string]interface{}{
+			"slug": "bb-invalid-signature",
+			"project": map[string]interface{}{
+				"key": "PROJ",
+			},
+		},
+	}
+	payloadBytes, _ := json.Marshal(payload)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/bitbucket", bytes.NewReader(payloadBytes))
+	req.Header.Set("X-Event-Key", "repo:refs_changed")
+	req.Header.Set("X-Hub-Signature", "sha256=deadbeef")
+	c := newGinContext(w, req)
+
+	h.HandleBitbucket(c)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusUnauthorized)
+	}
+
+	letters, err := client.WebhookDeadLetter.Query().All(ctx)
+	if err != nil {
+		t.Fatalf("query dead letters: %v", err)
+	}
+	if len(letters) != 1 {
+		t.Fatalf("expected 1 dead letter, got %d", len(letters))
+	}
+	if !strings.HasPrefix(letters[0].DeliveryID, "bitbucket-") {
+		t.Fatalf("dead letter delivery id = %q, want bitbucket fallback", letters[0].DeliveryID)
+	}
+	if !strings.Contains(letters[0].ErrorMessage, "invalid bitbucket webhook signature") {
+		t.Fatalf("dead letter error = %q, want invalid signature", letters[0].ErrorMessage)
 	}
 }
 

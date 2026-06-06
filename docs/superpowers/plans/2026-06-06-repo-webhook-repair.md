@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go, Gin, Ent, zap, Viper, go-github, Vue 3, Pinia, TypeScript, Vitest, TailwindCSS.
 
-**Status:** Planned. No implementation steps in this plan have been executed yet.
+**Status:** In progress. Tasks 1-4 have been implemented and verified in this worktree; Tasks 5-6 remain open.
 
 ---
 
@@ -1226,7 +1226,7 @@ git commit -m "feat(handler): expose webhook repair endpoints"
 - Modify: `backend/internal/webhook/handler.go`
 - Modify: `backend/internal/webhook/webhook_coverage_test.go`
 
-- [ ] **Step 1: Write failing Bitbucket parser signature tests**
+- [x] **Step 1: Write failing Bitbucket parser signature tests**
 
 In `backend/internal/scm/bitbucket/bitbucket_test.go`, add helpers:
 
@@ -1311,7 +1311,7 @@ Add required imports if absent:
 "encoding/hex"
 ```
 
-- [ ] **Step 2: Run parser tests and verify failure**
+- [x] **Step 2: Run parser tests and verify failure**
 
 Run:
 
@@ -1321,7 +1321,7 @@ cd backend && go test ./internal/scm/bitbucket -run 'TestParseWebhookPayload.*Si
 
 Expected: FAIL because signature helpers and validation do not exist.
 
-- [ ] **Step 3: Implement Bitbucket signature validation**
+- [x] **Step 3: Implement Bitbucket signature validation**
 
 In `backend/internal/scm/bitbucket/bitbucket.go`, add imports:
 
@@ -1380,7 +1380,7 @@ if err := validateWebhookSignature(body, secret, r.Header.Get("X-Hub-Signature")
 }
 ```
 
-- [ ] **Step 4: Update webhook handler to return 401 for signature failures**
+- [x] **Step 4: Update webhook handler to return 401 for signature failures**
 
 In `backend/internal/webhook/handler.go`, adjust the Bitbucket parse error branch:
 
@@ -1399,7 +1399,7 @@ if event, err = bbProvider.ParseWebhookPayload(parseReq, secret); err != nil {
 
 Keep the existing dead-letter call before returning.
 
-- [ ] **Step 5: Add handler coverage for invalid signature**
+- [x] **Step 5: Add handler coverage for invalid signature**
 
 In `backend/internal/webhook/webhook_coverage_test.go`, update `TestHandleBitbucketWithWebhookSecret` to include a valid `X-Hub-Signature` header generated from the exact body.
 
@@ -1442,7 +1442,7 @@ func TestHandleBitbucketInvalidSignatureStoresDeadLetter(t *testing.T) {
 
 Use the existing webhook test helper names if they differ; keep the assertions identical.
 
-- [ ] **Step 6: Run Bitbucket and webhook tests**
+- [x] **Step 6: Run Bitbucket and webhook tests**
 
 Run:
 
@@ -1452,7 +1452,7 @@ cd backend && AE_TEST_POSTGRES_DSN='postgres://postgres:postgres@127.0.0.1:15432
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit signature validation**
+- [x] **Step 7: Commit signature validation**
 
 Run:
 

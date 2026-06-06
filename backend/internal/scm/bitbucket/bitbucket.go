@@ -3,7 +3,11 @@ package bitbucket
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,6 +17,12 @@ import (
 	"github.com/ai-efficiency/backend/internal/scm"
 	"go.uber.org/zap"
 )
+
+var ErrInvalidSignature = errors.New("invalid bitbucket webhook signature")
+
+func IsInvalidSignature(err error) bool {
+	return errors.Is(err, ErrInvalidSignature)
+}
 
 // Provider implements scm.SCMProvider for Bitbucket Server.
 type Provider struct {
@@ -571,6 +581,9 @@ func (p *Provider) ParseWebhookPayload(r *http.Request, secret string) (*scm.Web
 	if err != nil {
 		return nil, err
 	}
+	if err := validateWebhookSignature(body, secret, r.Header.Get("X-Hub-Signature")); err != nil {
+		return nil, err
+	}
 
 	eventKey := r.Header.Get("X-Event-Key")
 	if eventKey == "" {
@@ -647,6 +660,32 @@ func (p *Provider) ParseWebhookPayload(r *http.Request, secret string) (*scm.Web
 	}
 
 	return event, nil
+}
+
+func validateWebhookSignature(body []byte, secret, header string) error {
+	secret = strings.TrimSpace(secret)
+	if secret == "" {
+		return nil
+	}
+	header = strings.TrimSpace(header)
+	if header == "" {
+		return fmt.Errorf("%w: missing X-Hub-Signature", ErrInvalidSignature)
+	}
+	parts := strings.SplitN(header, "=", 2)
+	if len(parts) != 2 || parts[0] != "sha256" {
+		return fmt.Errorf("%w: expected sha256 signature", ErrInvalidSignature)
+	}
+	got, err := hex.DecodeString(parts[1])
+	if err != nil {
+		return fmt.Errorf("%w: malformed signature", ErrInvalidSignature)
+	}
+	mac := hmac.New(sha256.New, []byte(secret))
+	_, _ = mac.Write(body)
+	want := mac.Sum(nil)
+	if !hmac.Equal(got, want) {
+		return fmt.Errorf("%w: mismatch", ErrInvalidSignature)
+	}
+	return nil
 }
 
 func parseBBPRInfo(payload interface{}) *scm.PRInfo {

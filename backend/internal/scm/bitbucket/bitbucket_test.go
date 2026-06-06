@@ -3,6 +3,9 @@ package bitbucket
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -647,6 +650,19 @@ func TestDeleteWebhookInvalidName(t *testing.T) {
 
 // --- ParseWebhookPayload ---
 
+func signBitbucketBody(body []byte, secret string) string {
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write(body)
+	return "sha256=" + hex.EncodeToString(mac.Sum(nil))
+}
+
+func newSignedBitbucketRequest(body []byte, secret string) *http.Request {
+	req := httptest.NewRequest("POST", "/webhook", bytes.NewReader(body))
+	req.Header.Set("X-Event-Key", "pr:opened")
+	req.Header.Set("X-Hub-Signature", signBitbucketBody(body, secret))
+	return req
+}
+
 func TestParseWebhookPROpened(t *testing.T) {
 	payload := map[string]interface{}{
 		"actor": map[string]string{"name": "alice"},
@@ -674,8 +690,7 @@ func TestParseWebhookPROpened(t *testing.T) {
 	}
 	body, _ := json.Marshal(payload)
 
-	req := httptest.NewRequest("POST", "/webhook", bytes.NewReader(body))
-	req.Header.Set("X-Event-Key", "pr:opened")
+	req := newSignedBitbucketRequest(body, "secret")
 
 	p, _ := New("https://bb", "tok", zap.NewNop())
 	event, err := p.ParseWebhookPayload(req, "secret")
@@ -696,6 +711,59 @@ func TestParseWebhookPROpened(t *testing.T) {
 	}
 	if event.PR.ID != 10 {
 		t.Errorf("pr.id = %d", event.PR.ID)
+	}
+}
+
+func TestParseWebhookPayloadRejectsMissingSignatureWhenSecretStored(t *testing.T) {
+	body := []byte(`{"repository":{"slug":"repo","project":{"key":"PROJ"}}}`)
+	req := httptest.NewRequest("POST", "/webhook", bytes.NewReader(body))
+	req.Header.Set("X-Event-Key", "repo:refs_changed")
+
+	p, _ := New("https://bb", "tok", zap.NewNop())
+	_, err := p.ParseWebhookPayload(req, "secret")
+	if !IsInvalidSignature(err) {
+		t.Fatalf("err = %v, want invalid signature", err)
+	}
+}
+
+func TestParseWebhookPayloadRejectsInvalidSignature(t *testing.T) {
+	body := []byte(`{"repository":{"slug":"repo","project":{"key":"PROJ"}}}`)
+	req := httptest.NewRequest("POST", "/webhook", bytes.NewReader(body))
+	req.Header.Set("X-Event-Key", "repo:refs_changed")
+	req.Header.Set("X-Hub-Signature", "sha256=deadbeef")
+
+	p, _ := New("https://bb", "tok", zap.NewNop())
+	_, err := p.ParseWebhookPayload(req, "secret")
+	if !IsInvalidSignature(err) {
+		t.Fatalf("err = %v, want invalid signature", err)
+	}
+}
+
+func TestParseWebhookPayloadRejectsUnsupportedSignatureAlgorithm(t *testing.T) {
+	body := []byte(`{"repository":{"slug":"repo","project":{"key":"PROJ"}}}`)
+	req := httptest.NewRequest("POST", "/webhook", bytes.NewReader(body))
+	req.Header.Set("X-Event-Key", "repo:refs_changed")
+	req.Header.Set("X-Hub-Signature", "sha1=deadbeef")
+
+	p, _ := New("https://bb", "tok", zap.NewNop())
+	_, err := p.ParseWebhookPayload(req, "secret")
+	if !IsInvalidSignature(err) {
+		t.Fatalf("err = %v, want invalid signature", err)
+	}
+}
+
+func TestParseWebhookPayloadAcceptsUnsignedPayloadWhenNoSecretStored(t *testing.T) {
+	body := []byte(`{"repository":{"slug":"repo","project":{"key":"PROJ"}}}`)
+	req := httptest.NewRequest("POST", "/webhook", bytes.NewReader(body))
+	req.Header.Set("X-Event-Key", "repo:refs_changed")
+
+	p, _ := New("https://bb", "tok", zap.NewNop())
+	event, err := p.ParseWebhookPayload(req, "")
+	if err != nil {
+		t.Fatalf("ParseWebhookPayload: %v", err)
+	}
+	if event.Type != scm.EventPush {
+		t.Fatalf("type = %q, want push", event.Type)
 	}
 }
 
