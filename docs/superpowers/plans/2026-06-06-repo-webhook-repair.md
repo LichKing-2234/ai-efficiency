@@ -1475,7 +1475,7 @@ git commit -m "fix(webhook): validate bitbucket signatures"
 - Modify: `frontend/src/__tests__/repo-list-view.test.ts`
 - Modify: `frontend/src/__tests__/repo-detail-view.test.ts`
 
-- [ ] **Step 1: Write failing API wrapper tests**
+- [x] **Step 1: Write failing API wrapper tests**
 
 In `frontend/src/__tests__/api-modules.test.ts`, add expectations near other repo API tests:
 
@@ -1499,7 +1499,7 @@ it('repairWebhook calls POST /repos/:id/repair-webhook', async () => {
 })
 ```
 
-- [ ] **Step 2: Write failing repo list UI tests**
+- [x] **Step 2: Write failing repo list UI tests**
 
 In `frontend/src/__tests__/repo-list-view.test.ts`, update the `@/api/repo` mock:
 
@@ -1544,7 +1544,7 @@ it('runs batch webhook repair and refreshes repo list', async () => {
 })
 ```
 
-- [ ] **Step 3: Write failing repo detail UI tests**
+- [x] **Step 3: Write failing repo detail UI tests**
 
 In `frontend/src/__tests__/repo-detail-view.test.ts`, update the `@/api/repo` mock:
 
@@ -1598,7 +1598,7 @@ it('repairs webhook from repo detail', async () => {
 
 Use the local mount helper's existing option names. If they differ, extend the helper so it can set `repo.status`, `repo.binding_state`, and `auth.isAdmin`.
 
-- [ ] **Step 4: Run frontend focused tests and verify failure**
+- [x] **Step 4: Run frontend focused tests and verify failure**
 
 Run:
 
@@ -1608,7 +1608,7 @@ cd frontend && pnpm test -- api-modules repo-list-view repo-detail-view
 
 Expected: FAIL because the API functions, types, and UI controls do not exist.
 
-- [ ] **Step 5: Add frontend types and API wrappers**
+- [x] **Step 5: Add frontend types and API wrappers**
 
 In `frontend/src/types/index.ts`, add `webhook_id` to `RepoConfig`:
 
@@ -1663,7 +1663,7 @@ export function repairWebhook(id: number, data: RepoWebhookRepairRequest = { for
 }
 ```
 
-- [ ] **Step 6: Add repo list batch repair UI**
+- [x] **Step 6: Add repo list batch repair UI**
 
 In `frontend/src/views/repos/RepoListView.vue`, import `repairFailedWebhooks`:
 
@@ -1732,7 +1732,7 @@ Add messages below auto-bind messages:
 </div>
 ```
 
-- [ ] **Step 7: Add repo detail repair UI**
+- [x] **Step 7: Add repo detail repair UI**
 
 In `frontend/src/views/repos/RepoDetailView.vue`, import `repairWebhook`:
 
@@ -1796,7 +1796,7 @@ In the repo health section action area, add:
 <div v-if="webhookRepairError" class="mt-3 rounded-md bg-red-50 p-3 text-sm text-red-700">{{ webhookRepairError }}</div>
 ```
 
-- [ ] **Step 8: Add i18n strings**
+- [x] **Step 8: Add i18n strings**
 
 In `frontend/src/i18n.ts`, add English strings:
 
@@ -1832,7 +1832,7 @@ Add Chinese strings:
 'repoDetail.webhookRepairFailed': 'Webhook 修复失败',
 ```
 
-- [ ] **Step 9: Run frontend focused tests**
+- [x] **Step 9: Run frontend focused tests**
 
 Run:
 
@@ -1842,7 +1842,7 @@ cd frontend && pnpm test -- api-modules repo-list-view repo-detail-view
 
 Expected: PASS.
 
-- [ ] **Step 10: Commit frontend repair UI**
+- [x] **Step 10: Commit frontend repair UI**
 
 Run:
 

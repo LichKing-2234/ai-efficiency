@@ -1,5 +1,13 @@
 import client from './client'
-import type { ApiResponse, PagedResponse, RepoAutoBindResult, RepoConfig } from '@/types'
+import type {
+  ApiResponse,
+  PagedResponse,
+  RepoAutoBindResult,
+  RepoConfig,
+  RepoWebhookRepairBatchResult,
+  RepoWebhookRepairItem,
+  RepoWebhookRepairRequest,
+} from '@/types'
 
 export function listRepos(page = 1, pageSize = 20) {
   return client.get<ApiResponse<PagedResponse<RepoConfig>>>('/repos', {
@@ -27,6 +35,14 @@ export function createRepoDirect(data: {
 
 export function autoBindUnboundRepos() {
   return client.post<ApiResponse<RepoAutoBindResult>>('/repos/auto-bind-unbound')
+}
+
+export function repairFailedWebhooks(data: RepoWebhookRepairRequest = { force: false }) {
+  return client.post<ApiResponse<RepoWebhookRepairBatchResult>>('/repos/repair-webhooks', data)
+}
+
+export function repairWebhook(id: number, data: RepoWebhookRepairRequest = { force: false }) {
+  return client.post<ApiResponse<RepoWebhookRepairItem>>(`/repos/${id}/repair-webhook`, data)
 }
 
 export function updateRepo(id: number, data: Partial<RepoConfig>) {
