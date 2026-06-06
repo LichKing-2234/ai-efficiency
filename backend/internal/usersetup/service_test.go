@@ -179,13 +179,7 @@ func (f *fakeRelayProvider) RevokeUserAPIKey(ctx context.Context, keyID int64) e
 func (f *fakeRelayProvider) ListUsageLogsByAPIKeyExact(ctx context.Context, apiKeyID int64, from, to time.Time) ([]relay.UsageLog, error) {
 	return nil, errors.New("not implemented")
 }
-func (f *fakeRelayProvider) GetUserUsageStats(ctx context.Context, login, password string) (*relay.UserUsageStats, error) {
-	return nil, errors.New("not implemented")
-}
-func (f *fakeRelayProvider) GetUserUsageTrend(ctx context.Context, login, password string, params relay.UsageTrendParams) (*relay.UsageTrendResponse, error) {
-	return nil, errors.New("not implemented")
-}
-func (f *fakeRelayProvider) GetUserUsageModels(ctx context.Context, login, password string, params relay.UsageModelParams) (*relay.UsageModelResponse, error) {
+func (f *fakeRelayProvider) GetUserUsageDashboard(ctx context.Context, login, password string, params relay.UserUsageDashboardParams) (*relay.UserUsageDashboardResponse, error) {
 	return nil, errors.New("not implemented")
 }
 

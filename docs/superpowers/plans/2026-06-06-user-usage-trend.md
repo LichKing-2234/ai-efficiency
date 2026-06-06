@@ -986,7 +986,7 @@ git commit -m "feat(handler): expose user usage dashboard snapshot"
 - Modify: `backend/internal/attribution/service_test.go`
 - Modify: `backend/internal/usersetup/service_test.go`
 
-- [ ] **Step 1: Update fake relay providers**
+- [x] **Step 1: Update fake relay providers**
 
 In each fake or mock provider that currently implements the three old methods:
 
@@ -1018,7 +1018,7 @@ func (m *mockRelayProvider) GetUserUsageDashboard(_ context.Context, _, _ string
 }
 ```
 
-- [ ] **Step 2: Run backend package tests that compile Provider fakes**
+- [x] **Step 2: Run backend package tests that compile Provider fakes**
 
 Run:
 
@@ -1028,7 +1028,7 @@ cd /Users/admin/ai-efficiency/backend && AE_TEST_POSTGRES_DSN='postgres://postgr
 
 Expected: PASS.
 
-- [ ] **Step 3: Commit test fake cleanup**
+- [x] **Step 3: Commit test fake cleanup**
 
 ```bash
 git add backend/internal/auth/sso_test.go backend/internal/attribution/service_test.go backend/internal/usersetup/service_test.go
