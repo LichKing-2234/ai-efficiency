@@ -32,7 +32,7 @@
 | File | Responsibility |
 | --- | --- |
 | `frontend/package.json` | Add `chart.js` and `vue-chartjs`. |
-| `frontend/pnpm-lock.yaml` | Refresh after dependency install. |
+| `frontend/package-lock.json` | Refresh after dependency install because CI and Docker builds use npm lockfile. |
 | `frontend/src/types/index.ts` | Add snapshot, stats, trend, model, params, and range types. |
 | `frontend/src/api/userUsage.ts` | Replace three API functions with one `getUserUsageDashboard` function. |
 | `frontend/src/__tests__/user-usage-api.test.ts` | Verify API path and params. |
@@ -1041,22 +1041,23 @@ git commit -m "test(relay): update usage dashboard provider mocks"
 
 **Files:**
 - Modify: `frontend/package.json`
-- Modify: `frontend/pnpm-lock.yaml`
+- Modify: `frontend/package-lock.json`
 - Modify: `frontend/src/types/index.ts`
 - Modify: `frontend/src/api/userUsage.ts`
 - Create: `frontend/src/__tests__/user-usage-api.test.ts`
 
-- [ ] **Step 1: Add chart dependencies**
+- [x] **Step 1: Add chart dependencies**
 
 Run:
 
 ```bash
 cd /Users/admin/ai-efficiency/frontend && pnpm add chart.js vue-chartjs
+cd /Users/admin/ai-efficiency/frontend && npm install --package-lock-only --ignore-scripts
 ```
 
-Expected: `frontend/package.json` contains `chart.js` and `vue-chartjs`, and `frontend/pnpm-lock.yaml` is updated.
+Expected: `frontend/package.json` contains `chart.js` and `vue-chartjs`, and `frontend/package-lock.json` is updated.
 
-- [ ] **Step 2: Write API test**
+- [x] **Step 2: Write API test**
 
 Create `frontend/src/__tests__/user-usage-api.test.ts`:
 
@@ -1101,7 +1102,7 @@ describe('user usage API', () => {
 })
 ```
 
-- [ ] **Step 3: Run API test and verify it fails**
+- [x] **Step 3: Run API test and verify it fails**
 
 Run:
 
@@ -1111,7 +1112,7 @@ cd /Users/admin/ai-efficiency/frontend && pnpm test -- src/__tests__/user-usage-
 
 Expected: FAIL because `getUserUsageDashboard` is not exported yet.
 
-- [ ] **Step 4: Add frontend types**
+- [x] **Step 4: Add frontend types**
 
 In `frontend/src/types/index.ts`, replace the current user usage types with:
 
@@ -1185,7 +1186,7 @@ export interface UserUsageDashboardSnapshot {
 }
 ```
 
-- [ ] **Step 5: Replace API module**
+- [x] **Step 5: Replace API module**
 
 Replace `frontend/src/api/userUsage.ts` with:
 
@@ -1202,7 +1203,7 @@ export function getUserUsageDashboard(params: UserUsageDashboardParams) {
 }
 ```
 
-- [ ] **Step 6: Run API test and verify it passes**
+- [x] **Step 6: Run API test and verify it passes**
 
 Run:
 
@@ -1212,10 +1213,10 @@ cd /Users/admin/ai-efficiency/frontend && pnpm test -- src/__tests__/user-usage-
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit frontend contract and dependencies**
+- [x] **Step 7: Commit frontend contract and dependencies**
 
 ```bash
-git add frontend/package.json frontend/pnpm-lock.yaml frontend/src/types/index.ts frontend/src/api/userUsage.ts frontend/src/__tests__/user-usage-api.test.ts
+git add frontend/package.json frontend/package-lock.json frontend/src/types/index.ts frontend/src/api/userUsage.ts frontend/src/__tests__/user-usage-api.test.ts
 git commit -m "feat(frontend): add user usage dashboard snapshot API"
 ```
 
