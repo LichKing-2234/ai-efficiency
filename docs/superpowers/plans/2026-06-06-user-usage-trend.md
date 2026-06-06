@@ -4,7 +4,9 @@
 
 **Goal:** Replace the current three-endpoint `/user/usage` trend page with an ai-efficiency usage-only dashboard backed by one snapshot endpoint.
 
-**Architecture:** The frontend calls one AE endpoint, `GET /api/v1/user/usage/dashboard`, with date range parameters. The backend resolves the current user, decrypts their stored relay password once, resolves the primary relay provider, logs in to sub2api once, calls the three sub2api user dashboard endpoints with that JWT, and returns one AE-shaped snapshot that excludes sub2api account-management fields.
+**Architecture:** The frontend calls one AE endpoint, `GET /api/v1/user/usage/dashboard`, with date range parameters. The backend resolves the current user, decrypts their stored relay password once, resolves the primary relay provider, logs in to sub2api once, calls the three sub2api user dashboard endpoints with that JWT, and returns one AE-shaped snapshot that excludes sub2api account-management fields. Follow-up on 2026-06-06: the dashboard is embedded in the home page (`/`) instead of being exposed as a separate `/user/usage` page route.
+
+**Status Update (2026-06-06):** Initial implementation was completed and pushed to PR #77. A follow-up UX correction is in progress to remove the separate `/user/usage` navigation/page and render the usage dashboard inside the existing home page.
 
 **Tech Stack:** Go, Gin, Ent, AES-GCM credential decrypt, sub2api HTTP user API, Vue 3, Vite, Pinia, TailwindCSS, axios, chart.js, vue-chartjs, Vitest.
 
@@ -36,8 +38,13 @@
 | `frontend/src/types/index.ts` | Add snapshot, stats, trend, model, params, and range types. |
 | `frontend/src/api/userUsage.ts` | Replace three API functions with one `getUserUsageDashboard` function. |
 | `frontend/src/__tests__/user-usage-api.test.ts` | Verify API path and params. |
-| `frontend/src/views/user/UsageView.vue` | Rewrite page to load one snapshot and render range controls, cards, and charts. |
+| `frontend/src/components/user/usage/UserUsageDashboard.vue` | Load one snapshot and render range controls, cards, and charts as an embeddable home-page section. |
+| `frontend/src/views/DashboardView.vue` | Embed the user usage dashboard in the existing home page. |
+| `frontend/src/views/user/UsageView.vue` | Thin wrapper around `UserUsageDashboard.vue` retained for component-level test compatibility; no longer registered as an app route. |
 | `frontend/src/__tests__/user-usage-view.test.ts` | Verify configured=false, success rendering, range changes, and 409 handling. |
+| `frontend/src/__tests__/dashboard-view.test.ts` | Verify the home page renders the embedded user usage dashboard. |
+| `frontend/src/__tests__/app-sidebar.test.ts` | Verify sidebar no longer exposes a separate My Usage route. |
+| `frontend/src/__tests__/router.test.ts` | Verify `/user/usage` is not registered as a separate frontend page route. |
 | `frontend/src/components/user/usage/UsageStatsCards.vue` | Rewrite cards for Today Cost, Today Requests, Today Tokens, and Avg Response. |
 | `frontend/src/components/user/usage/UsageTrendChart.vue` | Replace hand-rolled bars with chart.js line chart. |
 | `frontend/src/components/user/usage/UsageModelChart.vue` | Rewrite model distribution as usage table with optional doughnut chart. |
@@ -1819,3 +1826,96 @@ cd /Users/admin/ai-efficiency && git status --short --branch
 ```
 
 Expected: only unrelated pre-existing files such as `.qoder/` remain untracked. All implementation changes are committed.
+
+---
+
+## Task 8: Embed Usage Dashboard in Home Page
+
+**Files:**
+- Modify: `frontend/src/__tests__/app-sidebar.test.ts`
+- Modify: `frontend/src/__tests__/dashboard-view.test.ts`
+- Modify: `frontend/src/__tests__/router.test.ts`
+- Move: `frontend/src/views/user/UsageView.vue` to `frontend/src/components/user/usage/UserUsageDashboard.vue`
+- Create: `frontend/src/views/user/UsageView.vue`
+- Modify: `frontend/src/views/DashboardView.vue`
+- Modify: `frontend/src/components/AppSidebar.vue`
+- Modify: `frontend/src/router/index.ts`
+- Modify: `docs/superpowers/specs/2026-06-06-user-usage-trend-design.md`
+- Modify: `docs/superpowers/plans/2026-06-06-user-usage-trend.md`
+
+- [x] **Step 1: Write failing navigation and home embedding tests**
+
+Added tests that prove:
+
+- `AppSidebar` no longer renders `My Usage` / `我的用量` as a separate link.
+- `AppSidebar` does not link to `/user/usage`.
+- `DashboardView` calls `getUserUsageDashboard` and renders the usage chart/table content.
+- The app router does not register a `UserUsage` route or `/user/usage` path.
+
+- [x] **Step 2: Run the new tests and verify RED**
+
+Ran:
+
+```bash
+cd /Users/admin/ai-efficiency/frontend && pnpm test -- src/__tests__/app-sidebar.test.ts
+cd /Users/admin/ai-efficiency/frontend && pnpm test -- src/__tests__/dashboard-view.test.ts -t 'relay usage dashboard'
+cd /Users/admin/ai-efficiency/frontend && pnpm test -- src/__tests__/router.test.ts -t 'user usage'
+```
+
+Expected and observed failures:
+
+- Sidebar still contained `My Usage` / `我的用量`.
+- Dashboard did not call `getUserUsageDashboard`.
+- Router still registered `UserUsage` at `/user/usage`.
+
+- [x] **Step 3: Move usage dashboard into an embeddable component**
+
+Moved the implementation from `frontend/src/views/user/UsageView.vue` into `frontend/src/components/user/usage/UserUsageDashboard.vue`, added an `embedded` prop for home-page rendering, and kept `frontend/src/views/user/UsageView.vue` as a thin wrapper for existing component-level tests.
+
+- [x] **Step 4: Embed the dashboard and remove separate page navigation**
+
+Updated:
+
+- `frontend/src/views/DashboardView.vue` to render `<UserUsageDashboard embedded />`.
+- `frontend/src/components/AppSidebar.vue` to remove the `to="/user/usage"` navigation item.
+- `frontend/src/router/index.ts` to remove the `UserUsage` route.
+
+- [x] **Step 5: Run targeted tests and verify GREEN**
+
+Ran:
+
+```bash
+cd /Users/admin/ai-efficiency/frontend && pnpm test -- src/__tests__/app-sidebar.test.ts
+cd /Users/admin/ai-efficiency/frontend && pnpm test -- src/__tests__/dashboard-view.test.ts -t 'relay usage dashboard'
+cd /Users/admin/ai-efficiency/frontend && pnpm test -- src/__tests__/router.test.ts -t 'user usage'
+cd /Users/admin/ai-efficiency/frontend && pnpm test -- src/__tests__/user-usage-view.test.ts
+```
+
+Expected and observed: PASS.
+
+- [x] **Step 6: Run full verification**
+
+Run:
+
+```bash
+cd /Users/admin/ai-efficiency/backend && AE_TEST_POSTGRES_DSN='postgres://postgres:postgres@127.0.0.1:15432/postgres?sslmode=disable' go test ./...
+cd /Users/admin/ai-efficiency/frontend && pnpm test
+cd /Users/admin/ai-efficiency/frontend && pnpm run build
+cd /Users/admin/ai-efficiency && rg -n "/user/usage/(stats|trend|models)|GetUserUsageStats|GetUserUsageTrend|GetUserUsageModels|UsageTrendParams|UsageModelParams|UserUsageStats" backend frontend/src frontend/package.json frontend/package-lock.json docs/architecture.md
+cd /Users/admin/ai-efficiency && rg -n "to=\"/user/usage\"|name: 'UserUsage'|path: '/user/usage'" frontend/src/components/AppSidebar.vue frontend/src/router/index.ts
+```
+
+Expected: tests/build pass; stale old API references absent; no product frontend page route or sidebar link to `/user/usage`.
+
+- [ ] **Step 7: Commit and update PR #77**
+
+Run:
+
+```bash
+cd /Users/admin/ai-efficiency
+git add frontend/src docs/superpowers/specs/2026-06-06-user-usage-trend-design.md docs/superpowers/plans/2026-06-06-user-usage-trend.md
+git commit -m "fix(frontend): embed user usage in home dashboard"
+git push
+```
+
+Expected: PR #77 updates to the new head commit.

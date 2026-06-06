@@ -1,7 +1,7 @@
 # 用户用量概览 Dashboard 设计
 
 **日期**: 2026-06-06
-**状态**: 已批准，待实现计划
+**状态**: 已实现；2026-06-06 follow-up 决定前端不再暴露独立 `/user/usage` 页面，dashboard 嵌入首页“我的 AI 使用中心”
 
 ## 背景
 
@@ -20,7 +20,7 @@ ai-efficiency 只通过 relay HTTP API 使用这些用户端接口，不直连 s
 
 ## 目标
 
-在 ai-efficiency 前端保留 `/user/usage` 页面，重写为“我的 AI 用量概览”。页面回答三个问题：
+在 ai-efficiency 前端提供“我的 AI 用量概览”，但不作为侧边栏里的独立新页面。用量 dashboard 嵌入现有首页 `/` 的“我的 AI 使用中心”，点击侧边栏的“我的 AI 使用中心”停留在首页视图中。该区块回答三个问题：
 
 - 我今天和累计用了多少请求、token、费用、响应时间？
 - 最近一段时间的 token 使用趋势如何？
@@ -261,11 +261,11 @@ userUsage.GET("/dashboard", userUsageHandler.Dashboard)
 
 ## 前端设计
 
-### 页面
+### 页面承载
 
-`frontend/src/views/user/UsageView.vue` 重写为 snapshot 页面。
+用量 dashboard 的可复用实现位于 `frontend/src/components/user/usage/UserUsageDashboard.vue`，由 `frontend/src/views/DashboardView.vue` 嵌入首页 `/`。`frontend/src/views/user/UsageView.vue` 只保留为薄 wrapper 以便组件级测试和短期兼容；router 不注册 `/user/usage`，侧边栏也不提供该入口。
 
-页面结构：
+区块结构：
 
 1. 顶部工具条
    - 标题：`My AI Usage`
@@ -404,8 +404,8 @@ cd frontend && pnpm test
 - 重写 `docs/superpowers/plans/2026-06-06-user-usage-trend.md`，不要继续执行旧 plan。
 - 删除或替换旧的三接口后端 handler。
 - 删除或替换旧的三接口前端 API。
-- 重写 `UsageView.vue` 和三个 usage 子组件。
-- 保留 `/user/usage` 路由和侧边栏入口，但文案应表达 AE 用量概览，不是 sub2api 控制台。
+- 抽出 `UserUsageDashboard.vue` 和三个 usage 子组件。
+- 不保留 `/user/usage` 前端页面路由和侧边栏入口；用量 dashboard 嵌入首页 `/`。
 
 ## 文档影响
 

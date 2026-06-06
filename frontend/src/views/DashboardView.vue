@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import AppLayout from '@/components/AppLayout.vue'
+import UserUsageDashboard from '@/components/user/usage/UserUsageDashboard.vue'
 import { useAuthStore } from '@/stores/auth'
 import { getDashboard } from '@/api/efficiency'
 import { getUserProviders } from '@/api/user'
@@ -167,6 +168,8 @@ function formatTokens(row: ToolUsageEventRow) {
       </div>
 
       <template v-else>
+        <UserUsageDashboard embedded />
+
         <section class="space-y-4">
           <div class="flex items-center justify-between">
             <h2 class="text-base font-semibold text-slate-950">{{ t('home.thisWeek') }}</h2>
