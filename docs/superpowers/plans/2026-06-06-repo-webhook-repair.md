@@ -8,7 +8,11 @@
 
 **Tech Stack:** Go, Gin, Ent, zap, Viper, go-github, Vue 3, Pinia, TypeScript, Vitest, TailwindCSS.
 
-**Status:** Implementation and automated verification complete in this worktree. Real Bitbucket Server manual verification remains not run because this session does not have a live ai-efficiency admin token, target repo_config_id, Bitbucket base URL, and PAT to exercise safely.
+**Status:** Implementation, automated verification, and live Bitbucket repair-path verification are complete in this worktree. Local verification used a temporary host-only proxy because this machine cannot reach the production `bitbucket-api` entrypoint directly; production is expected to call `bitbucket-api` without that proxy.
+
+**Live Verification Note 2026-06-06:** `POST /api/v1/repos/3/repair-webhook` with an admin token and `{"force":false}` returned HTTP 200 with `webhook_status` still failed and an upstream error from `GET /rest/api/1.0/projects/AI/repos/agora-skills`. The configured Bitbucket API base returned `502` for `/`, `/status`, `/rest/api/1.0/application-properties`, and `/rest/api/1.0/projects` both with and without the saved PAT. The normal Bitbucket web host was reachable but redirected REST requests to SSO even with the Bearer PAT, so it was not a drop-in replacement for the provider base URL in this verification.
+
+**Live Verification Note 2026-06-07:** A temporary local proxy was used only for verification to add the local gateway header required by this workstation and forward ai-efficiency's existing PAT-based requests to `https://bitbucket.agoralab.co`. With provider `base_url` temporarily set to `http://host.docker.internal:18082`, `POST /api/v1/repos/3/repair-webhook` returned HTTP 200 with `status=active`, `webhook_status=registered`, and a non-empty webhook id. The created test webhook id `861` used the local callback URL and was deleted immediately; Bitbucket returned `204`, a follow-up GET returned `404`, and the local repo/provider database state was restored to `webhook_failed`, empty `webhook_id`, and `https://bitbucket-api.agoralab.co`.
 
 ---
 
@@ -1975,7 +1979,9 @@ Expected:
 - `git diff --check` exits 0.
 - `git status --short` shows only the intended implementation files plus any pre-existing unrelated dirty files that were present before this work.
 
-- [ ] **Step 9: Manual Bitbucket verification on a real admin PAT**
+- [x] **Step 9: Manual Bitbucket verification on a real admin PAT**
+
+2026-06-07 live attempt result: completed for the repair path. The local ai-efficiency endpoint and admin auth worked, and the repair API returned `registered` / `active` when routed through a temporary local proxy that represented the healthy Bitbucket REST entrypoint expected in production. The temporary Bitbucket webhook was deleted and local database state was restored after verification because the local callback URL was not externally reachable.
 
 Use a Bitbucket Server repo where the PAT user has repository admin permission.
 
