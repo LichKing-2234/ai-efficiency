@@ -220,7 +220,7 @@ GetUserUsageDashboard(ctx context.Context, login, password string, params UserUs
    - `/api/v1/usage/dashboard/stats`
    - `/api/v1/usage/dashboard/trend`
    - `/api/v1/usage/dashboard/models`
-3. trend/models 透传 `start_date`、`end_date`、`granularity`、`timezone` 中适用参数。
+3. stats 子接口保持 sub2api dashboard 原合同，不依赖 AE 选择区间；trend/models 透传 `start_date`、`end_date`、`granularity`、`timezone` 中适用参数。
 4. 使用同一个 JWT 调用上游接口。
 5. 按 sub2api response envelope 解码并裁剪字段。
 6. 任一请求失败时返回错误，不返回部分成功数据。
@@ -278,10 +278,12 @@ userUsage.GET("/dashboard", userUsageHandler.Dashboard)
    - granularity 默认 `day`；Today 使用 `hour`
 
 2. 统计卡
-   - Today Cost：实际扣费为主，标准计费为次要值
-   - Today Requests：附累计请求
-   - Today Tokens：附 input / output / cache breakdown
-   - Avg Response：附 RPM / TPM
+   - Range Cost：按当前选择的 Today / 7 Days / 30 Days 从 trend 汇总，实际扣费为主，标准计费为次要值
+   - Range Requests：按当前选择区间从 trend 汇总
+   - Range Tokens：按当前选择区间从 trend 汇总，并附 input / output / cache breakdown
+   - Avg Response：保留 dashboard stats 中的 average duration / RPM / TPM
+
+stats 合同仍保留 sub2api 的 `today_*` 与 `total_*` 字段，但 AE 页面统计卡主值不得固定读取 `today_*`。当用户切换 7 天或 30 天时，卡片应使用当前 snapshot 的 `trend` 数据重新汇总，避免出现“今日费用”等固定日口径文案或数值。
 
 3. 图表区
    - 左侧：token trend line chart

@@ -67,14 +67,14 @@ const chartOptions = computed(() => ({
 </script>
 
 <template>
-  <section class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+  <section class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
     <div class="mb-4 flex items-center justify-between">
-      <h2 class="text-base font-semibold text-gray-900 dark:text-gray-100">{{ t('usageDashboard.tokenTrend') }}</h2>
+      <h2 class="text-base font-semibold text-gray-900">{{ t('usageDashboard.tokenTrend') }}</h2>
     </div>
-    <div v-if="loading" class="flex h-72 items-center justify-center text-sm text-gray-500 dark:text-gray-400">
+    <div v-if="loading" class="flex h-72 items-center justify-center text-sm text-gray-500">
       {{ t('usageDashboard.loadingTrend') }}
     </div>
-    <div v-else-if="data.length === 0" class="flex h-72 items-center justify-center text-sm text-gray-500 dark:text-gray-400">
+    <div v-else-if="data.length === 0" class="flex h-72 items-center justify-center text-sm text-gray-500">
       {{ t('usageDashboard.noTrendData') }}
     </div>
     <div v-else class="h-72">
