@@ -10,6 +10,7 @@ import { useAuthStore } from '@/stores/auth'
 vi.mock('@/api/repo', () => ({
   getRepo: vi.fn(),
   updateRepo: vi.fn(),
+  repairWebhook: vi.fn(),
 }))
 
 vi.mock('@/api/pr', () => ({
@@ -35,6 +36,14 @@ function createTestRouter() {
       { path: '/repos/:id', component: RepoDetailView },
     ],
   })
+}
+
+function createAdminPinia() {
+  const pinia = createPinia()
+  setActivePinia(pinia)
+  const auth = useAuthStore(pinia)
+  auth.user = { id: 1, username: 'admin', email: 'admin@example.com', role: 'admin', auth_source: 'sso' }
+  return pinia
 }
 
 function detailFor(prId: number) {
@@ -369,10 +378,7 @@ describe('RepoDetailView', () => {
   })
 
   it('shows binding controls for admin on an unbound repo', async () => {
-    const pinia = createPinia()
-    setActivePinia(pinia)
-    const auth = useAuthStore(pinia)
-    auth.user = { id: 1, username: 'admin', email: 'admin@example.com', role: 'admin', auth_source: 'sso' }
+    const pinia = createAdminPinia()
 
     const { wrapper } = await mountRepoDetail({
       binding_state: 'unbound',
@@ -380,6 +386,78 @@ describe('RepoDetailView', () => {
     }, pinia)
     expect(wrapper.text()).toContain('Code Platform Binding')
     expect(wrapper.text()).toContain('auto-discovered by ae-cli')
+  })
+
+  it('shows repair webhook action for admin bound webhook_failed repo', async () => {
+    const pinia = createAdminPinia()
+
+    const { wrapper } = await mountRepoDetail({
+      status: 'webhook_failed',
+      binding_state: 'bound',
+      webhook_id: 'old-hook',
+      edges: { scm_provider: { id: 2, name: 'Bitbucket', type: 'bitbucket_server', base_url: 'https://bitbucket.example.com', status: 'active' } },
+    }, pinia)
+
+    expect(wrapper.text()).toContain('Repair webhook')
+    expect(wrapper.text()).toContain('Force replace')
+    expect(wrapper.find('[data-testid="repo-repair-webhook-button"]').exists()).toBe(true)
+  })
+
+  it('shows repair webhook action for admin bound repo with missing webhook id', async () => {
+    const pinia = createAdminPinia()
+
+    const { wrapper } = await mountRepoDetail({
+      status: 'active',
+      binding_state: 'bound',
+      webhook_id: '',
+      edges: { scm_provider: { id: 2, name: 'Bitbucket', type: 'bitbucket_server', base_url: 'https://bitbucket.example.com', status: 'active' } },
+    }, pinia)
+
+    expect(wrapper.text()).toContain('Repair webhook')
+    expect(wrapper.text()).not.toContain('Force replace')
+    expect(wrapper.find('[data-testid="repo-repair-webhook-button"]').exists()).toBe(true)
+  })
+
+  it('repairs webhook from repo detail', async () => {
+    const { repairWebhook } = await import('@/api/repo')
+    ;(repairWebhook as any).mockResolvedValue({
+      data: { data: { repo_config_id: 9, status: 'active', webhook_status: 'registered', webhook_id: '99' } },
+    })
+    const pinia = createAdminPinia()
+
+    const { wrapper } = await mountRepoDetail({
+      status: 'webhook_failed',
+      binding_state: 'bound',
+      webhook_id: 'old-hook',
+      edges: { scm_provider: { id: 2, name: 'Bitbucket', type: 'bitbucket_server', base_url: 'https://bitbucket.example.com', status: 'active' } },
+    }, pinia)
+
+    await wrapper.get('[data-testid="repo-repair-webhook-button"]').trigger('click')
+    await flushPromises()
+
+    expect(repairWebhook).toHaveBeenCalledWith(9, { force: false })
+    expect(wrapper.text()).toContain('Webhook repaired')
+  })
+
+  it('shows failed webhook repair result as an error', async () => {
+    const { repairWebhook } = await import('@/api/repo')
+    ;(repairWebhook as any).mockResolvedValue({
+      data: { data: { repo_config_id: 9, status: 'webhook_failed', webhook_status: 'failed', error: 'bitbucket API returned 502' } },
+    })
+    const pinia = createAdminPinia()
+
+    const { wrapper } = await mountRepoDetail({
+      status: 'webhook_failed',
+      binding_state: 'bound',
+      edges: { scm_provider: { id: 2, name: 'Bitbucket', type: 'bitbucket_server', base_url: 'https://bitbucket.example.com', status: 'active' } },
+    }, pinia)
+
+    await wrapper.get('[data-testid="repo-repair-webhook-button"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Webhook repair failed')
+    expect(wrapper.text()).toContain('bitbucket API returned 502')
+    expect(wrapper.text()).not.toContain('Webhook repair complete')
   })
 
   it('polls and shows PR sync job progress after syncing', async () => {

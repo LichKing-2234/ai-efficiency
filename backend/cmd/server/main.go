@@ -203,7 +203,11 @@ func main() {
 	authService.RegisterProvider(auth.NewLDAPProvider(&ldapConfig, logger))
 
 	// Init repo service
-	repoService := repo.NewService(entClient, cfg.Encryption.Key, logger)
+	repoService := repo.NewService(entClient, cfg.Encryption.Key, logger, repo.ServiceOptions{
+		WebhookPublicURL: cfg.Server.PublicURL,
+		FrontendURL:      cfg.Server.FrontendURL,
+		ServerMode:       cfg.Server.Mode,
+	})
 
 	// Init PR labeler (with optional relay usage stats lookup)
 	labeler := efficiency.NewLabeler(entClient, relayProvider, logger)

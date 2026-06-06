@@ -2,9 +2,12 @@ package webhook
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/ai-efficiency/backend/ent"
@@ -188,7 +191,11 @@ func (h *Handler) HandleBitbucket(c *gin.Context) {
 	event, err := bbProvider.ParseWebhookPayload(parseReq, secret)
 	if err != nil {
 		h.logger.Warn("bitbucket webhook parse failed", zap.String("repo", repoFullName), zap.Error(err))
-		h.storeDeadLetter(c, rc.ID, "", eventKey, body, err.Error())
+		h.storeDeadLetter(c, rc.ID, bitbucketDeliveryID(c, eventKey, body), eventKey, body, err.Error())
+		if bitbucket.IsInvalidSignature(err) {
+			pkg.Error(c, http.StatusUnauthorized, "invalid webhook signature")
+			return
+		}
 		pkg.Error(c, http.StatusBadRequest, "invalid webhook payload")
 		return
 	}
@@ -347,6 +354,20 @@ func (h *Handler) labelPR(ctx context.Context, prRecordID int) {
 	if _, err := h.labeler.LabelPR(ctx, prRecordID); err != nil {
 		h.logger.Warn("auto-label failed", zap.Int("pr_record_id", prRecordID), zap.Error(err))
 	}
+}
+
+func bitbucketDeliveryID(c *gin.Context, eventKey string, body []byte) string {
+	for _, header := range []string{"X-Request-ID", "X-Request-Id", "X-Atlassian-Request-ID"} {
+		if value := strings.TrimSpace(c.GetHeader(header)); value != "" {
+			return value
+		}
+	}
+
+	hash := sha256.New()
+	_, _ = hash.Write([]byte(eventKey))
+	_, _ = hash.Write([]byte{0})
+	_, _ = hash.Write(body)
+	return "bitbucket-" + hex.EncodeToString(hash.Sum(nil))
 }
 
 func (h *Handler) storeDeadLetter(c *gin.Context, repoConfigID int, deliveryID, eventType string, payload []byte, errMsg string) {

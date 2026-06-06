@@ -54,6 +54,7 @@ export interface RepoConfig {
   binding_state: 'bound' | 'unbound'
   group_id: number | string | null
   scm_provider_id?: number | null
+  webhook_id?: string | null
   created_at: string
   edges?: {
     scm_provider?: SCMProvider
@@ -84,6 +85,33 @@ export interface RepoAutoBindItem {
 export interface RepoAutoBindResult {
   summary: RepoAutoBindSummary
   items: RepoAutoBindItem[]
+}
+
+export interface RepoWebhookRepairRequest {
+  force: boolean
+}
+
+export interface RepoWebhookRepairSummary {
+  scanned: number
+  repaired: number
+  already_registered: number
+  failed: number
+}
+
+export interface RepoWebhookRepairItem {
+  repo_config_id: number
+  full_name: string
+  previous_status: string
+  status: string
+  webhook_status: 'registered' | 'already_registered' | 'failed'
+  webhook_id?: string
+  callback_url?: string
+  error?: string
+}
+
+export interface RepoWebhookRepairBatchResult {
+  summary: RepoWebhookRepairSummary
+  items: RepoWebhookRepairItem[]
 }
 
 export type UsageStatus =

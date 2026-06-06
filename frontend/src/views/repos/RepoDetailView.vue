@@ -2,7 +2,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppLayout from '@/components/AppLayout.vue'
-import { getRepo, updateRepo } from '@/api/repo'
+import { getRepo, repairWebhook, updateRepo } from '@/api/repo'
 import { getLatestPRSyncJob, getPR, getPRSyncJob, listPRs, refreshPRUsage, syncPRs } from '@/api/pr'
 import { listProviders } from '@/api/scmProvider'
 import { useAuthStore } from '@/stores/auth'
@@ -37,9 +37,20 @@ const providers = ref<SCMProvider[]>([])
 const selectedProviderId = ref<number | null>(null)
 const bindingSaving = ref(false)
 const bindingMessage = ref('')
+const webhookRepairing = ref(false)
+const webhookRepairForce = ref(false)
+const webhookRepairMessage = ref('')
+const webhookRepairError = ref('')
 
 const repoId = Number(route.params.id)
 const isRepoUnbound = computed(() => repo.value?.binding_state === 'unbound')
+const isWebhookMissing = computed(() => !repo.value?.webhook_id)
+const canRepairWebhook = computed(() => (
+  auth.isAdmin
+  && repo.value?.binding_state === 'bound'
+  && repo.value?.status !== 'inactive'
+  && (repo.value?.status === 'webhook_failed' || isWebhookMissing.value)
+))
 const syncDisabledReason = computed(() => (isRepoUnbound.value ? t('repoDetail.syncDisabledUnbound') : ''))
 const prUsageSummary = computed(() => {
   if (prsSummary.value) {
@@ -208,6 +219,33 @@ async function saveBinding() {
 async function clearBinding() {
   selectedProviderId.value = null
   await saveBinding()
+}
+
+async function handleRepairWebhook() {
+  if (!repo.value) return
+  webhookRepairing.value = true
+  webhookRepairMessage.value = ''
+  webhookRepairError.value = ''
+  try {
+    const res = await repairWebhook(repoId, { force: webhookRepairForce.value })
+    const item = res.data.data
+    const failed = item?.webhook_status === 'failed' || item?.status === 'webhook_failed' || Boolean(item?.error)
+    if (failed) {
+      webhookRepairError.value = item?.error
+        ? `${t('repoDetail.webhookRepairFailed')}: ${item.error}`
+        : t('repoDetail.webhookRepairFailed')
+      await refreshRepo()
+      return
+    }
+    webhookRepairMessage.value = item?.webhook_status === 'registered'
+      ? t('repoDetail.webhookRepaired')
+      : t('repoDetail.webhookRepairComplete')
+    await refreshRepo()
+  } catch (error: any) {
+    webhookRepairError.value = error?.response?.data?.message || t('repoDetail.webhookRepairFailed')
+  } finally {
+    webhookRepairing.value = false
+  }
 }
 
 function handleMonthsChange(e: Event) {
@@ -527,6 +565,32 @@ onUnmounted(() => {
             <div class="text-xs uppercase tracking-wide text-slate-500">{{ t('repoDetail.scmProvider') }}</div>
             <div class="mt-1 font-medium text-slate-900">{{ repo.edges?.scm_provider?.name || t('repoDetail.unbound') }}</div>
           </div>
+        </div>
+        <div
+          v-if="canRepairWebhook"
+          class="mt-4 flex flex-col gap-3 rounded-md border border-amber-200 bg-amber-50 p-3 sm:flex-row sm:items-center sm:justify-between"
+        >
+          <div class="text-sm text-amber-900">
+            <div class="font-medium">{{ t('repoDetail.webhookRepairNeeded') }}</div>
+            <label v-if="repo.webhook_id" class="mt-2 inline-flex items-center gap-2 text-xs">
+              <input v-model="webhookRepairForce" type="checkbox" class="rounded border-amber-300" />
+              <span>{{ t('repoDetail.forceReplaceWebhook') }}</span>
+            </label>
+          </div>
+          <button
+            data-testid="repo-repair-webhook-button"
+            class="rounded-md bg-amber-700 px-3 py-2 text-sm font-medium text-white hover:bg-amber-800 disabled:opacity-50"
+            :disabled="webhookRepairing"
+            @click="handleRepairWebhook"
+          >
+            {{ webhookRepairing ? t('repoDetail.webhookRepairing') : t('repoDetail.repairWebhook') }}
+          </button>
+        </div>
+        <div v-if="webhookRepairMessage" class="mt-3 rounded-md bg-emerald-50 p-3 text-sm text-emerald-800">
+          {{ webhookRepairMessage }}
+        </div>
+        <div v-if="webhookRepairError" class="mt-3 rounded-md bg-red-50 p-3 text-sm text-red-700">
+          {{ webhookRepairError }}
         </div>
       </div>
 

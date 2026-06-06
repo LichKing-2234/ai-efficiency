@@ -12,6 +12,7 @@ vi.mock('@/api/repo', () => ({
   createRepoDirect: vi.fn(),
   deleteRepo: vi.fn(),
   autoBindUnboundRepos: vi.fn(),
+  repairFailedWebhooks: vi.fn(),
 }))
 
 vi.mock('@/api/scmProvider', () => ({
@@ -180,6 +181,53 @@ describe('RepoListView', () => {
     expect(wrapper.text()).toContain('1 bound')
     expect(wrapper.text()).toContain('1 no match')
     expect(wrapper.text()).toContain('1 ambiguous')
+  })
+
+  it('shows batch webhook repair only for admins', async () => {
+    const repos = [
+      {
+        id: 11,
+        repo_key: 'bitbucket.example.com/PROJ/repo',
+        name: 'repo',
+        full_name: 'PROJ/repo',
+        clone_url: 'https://bitbucket.example.com/scm/proj/repo.git',
+        default_branch: 'main',
+        status: 'webhook_failed',
+        binding_state: 'bound',
+        group_id: 0,
+        created_at: '2026-06-06T00:00:00Z',
+        edges: { scm_provider: { id: 2, name: 'Bitbucket', type: 'bitbucket_server', base_url: 'https://bitbucket.example.com', status: 'active' } },
+      },
+    ]
+
+    const admin = await mountRepoList(repos, '/repos', { admin: true })
+    expect(admin.wrapper.find('[data-testid="repo-repair-webhooks-button"]').exists()).toBe(true)
+    expect(admin.wrapper.text()).toContain('Repair failed webhooks')
+
+    const user = await mountRepoList(repos, '/repos', { admin: false })
+    expect(user.wrapper.find('[data-testid="repo-repair-webhooks-button"]').exists()).toBe(false)
+    expect(user.wrapper.text()).not.toContain('Repair failed webhooks')
+  })
+
+  it('runs batch webhook repair and refreshes repo list', async () => {
+    const { repairFailedWebhooks, listRepos } = await import('@/api/repo')
+    ;(repairFailedWebhooks as any).mockResolvedValue({
+      data: {
+        data: {
+          summary: { scanned: 2, repaired: 1, already_registered: 0, failed: 1 },
+          items: [],
+        },
+      },
+    })
+
+    const { wrapper } = await mountRepoList(sampleRepos, '/repos', { admin: true })
+    await wrapper.get('[data-testid="repo-repair-webhooks-button"]').trigger('click')
+    await flushPromises()
+
+    expect(repairFailedWebhooks).toHaveBeenCalledWith({ force: false })
+    expect(listRepos).toHaveBeenCalledTimes(2)
+    expect(wrapper.text()).toContain('Webhook repair complete')
+    expect(wrapper.text()).toContain('1 repaired')
   })
 
   it('opens add dialog on button click', async () => {

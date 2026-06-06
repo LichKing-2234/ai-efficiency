@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import AppLayout from '@/components/AppLayout.vue'
 import { useRepoStore } from '@/stores/repo'
 import { listProviders } from '@/api/scmProvider'
-import { autoBindUnboundRepos, createRepoDirect } from '@/api/repo'
+import { autoBindUnboundRepos, createRepoDirect, repairFailedWebhooks } from '@/api/repo'
 import { useAuthStore } from '@/stores/auth'
 import { useI18n } from '@/i18n'
 import { useModalFocus } from '@/composables/useModalFocus'
@@ -23,6 +23,9 @@ const repoUrlInput = ref<HTMLInputElement | null>(null)
 const autoBindLoading = ref(false)
 const autoBindMessage = ref('')
 const autoBindError = ref('')
+const webhookRepairLoading = ref(false)
+const webhookRepairMessage = ref('')
+const webhookRepairError = ref('')
 
 interface RepoGroup {
   key: string
@@ -278,6 +281,30 @@ async function handleAutoBindUnbound() {
   }
 }
 
+async function handleRepairFailedWebhooks() {
+  webhookRepairLoading.value = true
+  webhookRepairMessage.value = ''
+  webhookRepairError.value = ''
+  try {
+    const res = await repairFailedWebhooks({ force: false })
+    const summary = res.data.data?.summary
+    if (summary) {
+      webhookRepairMessage.value = `${t('repos.webhookRepairComplete')}: ${t('repos.webhookRepairSummary', {
+        repaired: summary.repaired,
+        alreadyRegistered: summary.already_registered,
+        failed: summary.failed,
+      })}`
+    } else {
+      webhookRepairMessage.value = t('repos.webhookRepairComplete')
+    }
+    await repoStore.fetchRepos()
+  } catch (error: any) {
+    webhookRepairError.value = error?.response?.data?.message || t('repos.webhookRepairFailed')
+  } finally {
+    webhookRepairLoading.value = false
+  }
+}
+
 function formatDate(date: string | null) {
   if (!date) return '—'
   return new Date(date).toLocaleDateString()
@@ -338,6 +365,15 @@ function applyBindingFilter(next: 'all' | 'bound' | 'unbound') {
             >
               {{ autoBindLoading ? t('repos.autoBinding') : t('repos.autoBind') }}
             </button>
+            <button
+              v-if="auth.isAdmin"
+              data-testid="repo-repair-webhooks-button"
+              class="text-sm font-medium text-blue-700 hover:text-blue-900 disabled:opacity-50"
+              :disabled="webhookRepairLoading"
+              @click="handleRepairFailedWebhooks"
+            >
+              {{ webhookRepairLoading ? t('repos.webhookRepairing') : t('repos.repairWebhooks') }}
+            </button>
             <button class="text-sm font-medium text-blue-700 hover:text-blue-900" @click="applyBindingFilter('unbound')">
               {{ t('repos.reviewNeedsBinding') }}
             </button>
@@ -366,6 +402,12 @@ function applyBindingFilter(next: 'all' | 'bound' | 'unbound') {
         </div>
         <div v-if="autoBindError" class="mt-4 rounded-md bg-red-50 p-3 text-sm text-red-700">
           {{ autoBindError }}
+        </div>
+        <div v-if="webhookRepairMessage" class="mt-4 rounded-md bg-emerald-50 p-3 text-sm text-emerald-800">
+          {{ webhookRepairMessage }}
+        </div>
+        <div v-if="webhookRepairError" class="mt-4 rounded-md bg-red-50 p-3 text-sm text-red-700">
+          {{ webhookRepairError }}
         </div>
       </section>
 

@@ -51,6 +51,7 @@ func configToYAMLMap(cfg *Config) map[string]any {
 			"port":         cfg.Server.Port,
 			"mode":         cfg.Server.Mode,
 			"frontend_url": cfg.Server.FrontendURL,
+			"public_url":   cfg.Server.PublicURL,
 		},
 		"db": map[string]any{
 			"dsn":               cfg.DB.DSN,

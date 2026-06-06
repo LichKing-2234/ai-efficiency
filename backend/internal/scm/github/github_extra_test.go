@@ -376,16 +376,16 @@ func TestListPRsSuccess(t *testing.T) {
 		json.NewEncoder(w).Encode([]*gh.PullRequest{
 			{
 				Number: intPtr(1), Title: strPtr("PR1"),
-				User: &gh.User{Login: strPtr("alice")},
-				Head: &gh.PullRequestBranch{Ref: strPtr("feat-1")},
-				Base: &gh.PullRequestBranch{Ref: strPtr("main")},
+				User:  &gh.User{Login: strPtr("alice")},
+				Head:  &gh.PullRequestBranch{Ref: strPtr("feat-1")},
+				Base:  &gh.PullRequestBranch{Ref: strPtr("main")},
 				State: strPtr("open"),
 			},
 			{
 				Number: intPtr(2), Title: strPtr("PR2"),
-				User: &gh.User{Login: strPtr("bob")},
-				Head: &gh.PullRequestBranch{Ref: strPtr("feat-2")},
-				Base: &gh.PullRequestBranch{Ref: strPtr("main")},
+				User:  &gh.User{Login: strPtr("bob")},
+				Head:  &gh.PullRequestBranch{Ref: strPtr("feat-2")},
+				Base:  &gh.PullRequestBranch{Ref: strPtr("main")},
 				State: strPtr("open"),
 			},
 		})
@@ -718,6 +718,33 @@ func TestRegisterWebhookSuccess(t *testing.T) {
 	}
 	if id != "99" {
 		t.Errorf("id = %q", id)
+	}
+}
+
+func TestRegisterWebhookSendsCallbackURL(t *testing.T) {
+	var got struct {
+		Config map[string]string `json:"config"`
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/repos/owner/repo/hooks", func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		id := int64(42)
+		json.NewEncoder(w).Encode(gh.Hook{ID: &id})
+	})
+	p := setupGitHub(t, mux)
+	p.webhookCallbackURL = "https://ai-efficiency.example.com/api/v1/webhooks/github"
+
+	id, err := p.RegisterWebhook(context.Background(), "owner/repo", []string{"push"}, "secret")
+	if err != nil {
+		t.Fatalf("RegisterWebhook: %v", err)
+	}
+	if id != "42" {
+		t.Fatalf("id = %q, want 42", id)
+	}
+	if got.Config["url"] != "https://ai-efficiency.example.com/api/v1/webhooks/github" {
+		t.Fatalf("url = %q, want callback URL", got.Config["url"])
 	}
 }
 

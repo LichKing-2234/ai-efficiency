@@ -52,6 +52,7 @@ services:
       AE_SERVER_PORT: "8081"
       AE_SERVER_MODE: "release"
       AE_SERVER_FRONTEND_URL: "http://localhost:${LOCAL_SERVER_PORT:-18081}"
+      AE_SERVER_PUBLIC_URL: "http://localhost:${LOCAL_SERVER_PORT:-18081}"
       AE_DB_DSN: "postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-ai_efficiency}?sslmode=disable"
       AE_REDIS_ADDR: "redis:6379"
       AE_REDIS_PASSWORD: "${REDIS_PASSWORD:-}"

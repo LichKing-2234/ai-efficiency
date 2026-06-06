@@ -2,6 +2,7 @@ package handler
 
 import (
 	"errors"
+	"io"
 	"net/http"
 	"strconv"
 
@@ -181,6 +182,61 @@ func (h *RepoHandler) AutoBindUnbound(c *gin.Context) {
 		return
 	}
 	pkg.Success(c, result)
+}
+
+// RepairFailedWebhooks handles POST /api/v1/repos/repair-webhooks.
+func (h *RepoHandler) RepairFailedWebhooks(c *gin.Context) {
+	var req repo.RepairWebhookRequest
+	if c.Request.Body != nil {
+		if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
+			pkg.Error(c, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+
+	result, err := h.repoService.RepairFailedWebhooks(c.Request.Context(), req)
+	if err != nil {
+		writeRepairWebhookError(c, err)
+		return
+	}
+	pkg.Success(c, result)
+}
+
+// RepairWebhook handles POST /api/v1/repos/:id/repair-webhook.
+func (h *RepoHandler) RepairWebhook(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		pkg.Error(c, http.StatusBadRequest, "invalid id")
+		return
+	}
+
+	var req repo.RepairWebhookRequest
+	if c.Request.Body != nil {
+		if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
+			pkg.Error(c, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+
+	result, err := h.repoService.RepairWebhook(c.Request.Context(), id, req)
+	if err != nil {
+		writeRepairWebhookError(c, err)
+		return
+	}
+	pkg.Success(c, result)
+}
+
+func writeRepairWebhookError(c *gin.Context, err error) {
+	switch {
+	case ent.IsNotFound(err):
+		pkg.Error(c, http.StatusNotFound, "repo not found")
+	case errors.Is(err, repo.ErrRepoUnbound):
+		pkg.Error(c, http.StatusConflict, "repo_unbound")
+	case errors.Is(err, repo.ErrRepoInactive), errors.Is(err, repo.ErrWebhookPublicURLRequired):
+		pkg.Error(c, http.StatusUnprocessableEntity, err.Error())
+	default:
+		pkg.Error(c, http.StatusInternalServerError, err.Error())
+	}
 }
 
 // Get handles GET /api/v1/repos/:id
