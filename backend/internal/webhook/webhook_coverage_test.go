@@ -78,16 +78,76 @@ func TestHandleGitHubPingEvent(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/github", bytes.NewReader(payloadBytes))
+	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-GitHub-Event", "ping")
 	req.Header.Set("X-GitHub-Delivery", "ping-001")
 	c := newGinContext(w, req)
 
 	h.HandleGitHub(c)
 
-	// ping events should be parsed successfully and return "ignored" or "processed"
-	// The key thing is it doesn't return 404 or 500
-	if w.Code == http.StatusNotFound || w.Code == http.StatusInternalServerError {
-		t.Errorf("ping event should not return %d", w.Code)
+	if w.Code != http.StatusOK {
+		t.Fatalf("ping event status = %d, want 200", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "ignored") {
+		t.Fatalf("ping response = %q, want ignored", w.Body.String())
+	}
+}
+
+func TestHandleGitHubInvalidSignatureStillRejected(t *testing.T) {
+	client := newTestClient(t)
+	defer client.Close()
+	h := NewHandler(client, nil, newTestLogger())
+
+	ctx := context.Background()
+	provider, err := client.ScmProvider.Create().
+		SetName("github").
+		SetType(scmprovider.TypeGithub).
+		SetBaseURL("https://api.github.com").
+		SetCredentials("test-token").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	_, err = client.RepoConfig.Create().
+		SetName("signed-repo").
+		SetFullName("org/signed-repo").
+		SetCloneURL("https://github.com/org/signed-repo.git").
+		SetWebhookSecret("expected-secret").
+		SetScmProviderID(provider.ID).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create repo: %v", err)
+	}
+
+	payload := map[string]interface{}{
+		"action": "opened",
+		"repository": map[string]interface{}{
+			"full_name": "org/signed-repo",
+		},
+		"pull_request": map[string]interface{}{
+			"number":   1,
+			"title":    "Signed PR",
+			"user":     map[string]interface{}{"login": "alice"},
+			"head":     map[string]interface{}{"ref": "feat"},
+			"base":     map[string]interface{}{"ref": "main"},
+			"html_url": "https://github.com/org/signed-repo/pull/1",
+		},
+		"sender": map[string]interface{}{"login": "alice"},
+	}
+	payloadBytes, _ := json.Marshal(payload)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/github", bytes.NewReader(payloadBytes))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-GitHub-Event", "pull_request")
+	req.Header.Set("X-GitHub-Delivery", "bad-sig-001")
+	req.Header.Set("X-Hub-Signature-256", signBitbucketWebhookTestBody(payloadBytes, "wrong-secret"))
+	c := newGinContext(w, req)
+
+	h.HandleGitHub(c)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("invalid signature status = %d, want 401", w.Code)
 	}
 }
 

@@ -332,7 +332,7 @@ func (p *Provider) ParseWebhookPayload(r *http.Request, secret string) (*scm.Web
 			Raw:          payload,
 		}, nil
 	default:
-		return nil, fmt.Errorf("unsupported event type: %s", gh.WebHookType(r))
+		return nil, nil
 	}
 }
 

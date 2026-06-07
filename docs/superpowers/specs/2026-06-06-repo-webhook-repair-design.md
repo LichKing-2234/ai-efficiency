@@ -296,6 +296,8 @@ Do not expose `webhook_secret`.
 | Bitbucket 400 invalid URL/payload | return repair item `failed` with upstream status/message summary |
 | Bitbucket repo missing | return repair item `failed`; do not clear local repo |
 | Registration success but local save fails | return endpoint error and preserve enough logs to diagnose; do not claim repaired |
+| GitHub webhook ping or unsupported signed event | `200 ignored`; do not store a dead letter after payload/signature validation succeeds |
+| GitHub webhook missing/invalid signature when a secret is stored | `401`, store a dead letter without logging secret material |
 | Bitbucket webhook missing/invalid signature | `401`, store a dead letter without logging secret material |
 
 ## Testing Strategy
@@ -315,6 +317,8 @@ Do not expose `webhook_secret`.
 11. Bitbucket inbound webhook with stored secret accepts valid `X-Hub-Signature`.
 12. Bitbucket inbound webhook with stored secret rejects missing or invalid `X-Hub-Signature`.
 13. Bitbucket inbound webhook with no stored secret preserves compatibility behavior.
+14. GitHub `ping` and other unsupported events return `200 ignored` after payload/signature validation succeeds.
+15. GitHub inbound webhook with a stored secret still rejects invalid `X-Hub-Signature-256`.
 
 ### Frontend Tests
 

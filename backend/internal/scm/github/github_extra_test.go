@@ -1104,12 +1104,12 @@ func TestParseWebhookUnsupportedEvent(t *testing.T) {
 	req.Header.Set("X-Hub-Signature-256", signPayload(body, "s"))
 
 	p := &Provider{logger: zap.NewNop()}
-	_, err := p.ParseWebhookPayload(req, "s")
-	if err == nil {
-		t.Fatal("expected error for unsupported event")
+	event, err := p.ParseWebhookPayload(req, "s")
+	if err != nil {
+		t.Fatalf("ParseWebhookPayload: %v", err)
 	}
-	if !strings.Contains(err.Error(), "unsupported event type") {
-		t.Errorf("error = %q", err.Error())
+	if event != nil {
+		t.Fatalf("event = %+v, want nil for ignored unsupported event", event)
 	}
 }
 
