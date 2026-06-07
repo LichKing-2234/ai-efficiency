@@ -128,6 +128,7 @@ async function mountRepoDetail(
     usage_request_count: 4,
     usage_commit_count: 1,
     usage_refreshed_at: '2026-03-30T01:00:00Z',
+    usage_status: 'fresh',
   }]
 
   ;(getRepo as any).mockResolvedValue({
@@ -205,6 +206,8 @@ describe('RepoDetailView', () => {
     expect(wrapper.text()).toContain('PR Usage Summary')
     expect(wrapper.text()).toContain('Total PRs')
     expect(wrapper.text()).toContain('With AI usage')
+    expect(wrapper.text()).toContain('AI usage status')
+    expect(wrapper.text()).toContain('Counted')
     expect(wrapper.text()).toContain('Token usage')
     expect(wrapper.text()).toContain('Refreshed')
     expect(wrapper.text()).not.toContain('Cache')
@@ -248,8 +251,8 @@ describe('RepoDetailView', () => {
 
     const totalCard = wrapper.findAll('.rounded-md').find((card) => card.text().includes('Total PRs'))
     const withUsageCard = wrapper.findAll('.rounded-md').find((card) => card.text().includes('With AI usage'))
-    const pendingCard = wrapper.findAll('.rounded-md').find((card) => card.text().includes('Pending upload'))
-    const noCheckpointCard = wrapper.findAll('.rounded-md').find((card) => card.text().includes('No checkpoint'))
+    const pendingCard = wrapper.findAll('.rounded-md').find((card) => card.text().includes('Waiting for usage upload'))
+    const noCheckpointCard = wrapper.findAll('.rounded-md').find((card) => card.text().includes('Missing commit record'))
     const refreshFailedCard = wrapper.findAll('.rounded-md').find((card) => card.text().includes('Refresh failed'))
 
     expect(totalCard?.text()).toContain('25')
@@ -266,6 +269,8 @@ describe('RepoDetailView', () => {
     expect(wrapper.text()).toContain('仓库健康度')
     expect(wrapper.text()).toContain('PR 使用摘要')
     expect(wrapper.text()).toContain('默认分支')
+    expect(wrapper.text()).toContain('AI 用量状态')
+    expect(wrapper.text()).toContain('已统计')
     expect(wrapper.text()).toContain('Token 用量')
     expect(wrapper.text()).toContain('刷新时间')
     expect(wrapper.text()).toContain('最近 3 个月')
@@ -608,7 +613,7 @@ describe('RepoDetailView', () => {
       })),
     })
 
-    expect(wrapper.text()).toContain('No checkpoint')
+    expect(wrapper.text()).toContain('Missing commit record')
     const detailsButton = wrapper.findAll('button').find((b) => b.text() === 'Details')
     await detailsButton!.trigger('click')
     await flushPromises()

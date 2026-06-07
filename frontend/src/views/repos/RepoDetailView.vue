@@ -315,10 +315,25 @@ function usageStatusLabel(status?: UsageStatus) {
     pending_upload: t('repoDetail.usagePending'),
     no_checkpoint: t('repoDetail.noCheckpoint'),
     no_usage_events: t('repoDetail.usageNoUsage'),
-    unbound: t('repoDetail.unbound'),
+    unbound: t('repoDetail.usageUnbound'),
     stale_snapshot: t('repoDetail.usageStale'),
     refresh_failed: t('repoDetail.usageFailed'),
     unknown: t('repoDetail.usageUnknown'),
+  }
+  return labels[status ?? 'unknown']
+}
+
+function usageStatusHelp(status?: UsageStatus, reason?: string | null) {
+  if (reason) return reason
+  const labels: Record<UsageStatus, string> = {
+    fresh: t('repoDetail.usageFreshHelp'),
+    pending_upload: t('repoDetail.usagePendingHelp'),
+    no_checkpoint: t('repoDetail.noCheckpointHelp'),
+    no_usage_events: t('repoDetail.usageNoUsageHelp'),
+    unbound: t('repoDetail.usageUnboundHelp'),
+    stale_snapshot: t('repoDetail.usageStaleHelp'),
+    refresh_failed: t('repoDetail.usageFailedHelp'),
+    unknown: t('repoDetail.usageUnknownHelp'),
   }
   return labels[status ?? 'unknown']
 }
@@ -666,7 +681,7 @@ onUnmounted(() => {
             <dl class="mt-3 grid grid-cols-2 gap-3 text-xs">
               <div>
                 <dt class="text-gray-400">{{ t('repoDetail.usageStatus') }}</dt>
-                <dd class="mt-1 text-gray-800">{{ usageStatusLabel(pr.usage_status) }}</dd>
+                <dd class="mt-1 text-gray-800" :title="usageStatusHelp(pr.usage_status, pr.usage_status_reason)">{{ usageStatusLabel(pr.usage_status) }}</dd>
               </div>
               <div>
                 <dt class="text-gray-400">{{ t('repoDetail.tokenUsage') }}</dt>
@@ -771,7 +786,7 @@ onUnmounted(() => {
                     >{{ pr.status }}</span>
                   </td>
                   <td class="px-3 py-2">
-                    <span class="inline-flex rounded-full bg-gray-50 px-2 text-xs font-medium leading-5 text-gray-600" :title="pr.usage_status_reason || ''">
+                    <span class="inline-flex rounded-full bg-gray-50 px-2 text-xs font-medium leading-5 text-gray-600" :title="usageStatusHelp(pr.usage_status, pr.usage_status_reason)">
                       {{ usageStatusLabel(pr.usage_status) }}
                     </span>
                   </td>
