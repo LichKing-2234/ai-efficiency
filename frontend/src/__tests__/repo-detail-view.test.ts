@@ -204,6 +204,8 @@ describe('RepoDetailView', () => {
     const { wrapper } = await mountRepoDetail()
     expect(wrapper.text()).toContain('Repository health')
     expect(wrapper.text()).toContain('PR Usage Summary')
+    expect(wrapper.text()).toContain('checkpoint window')
+    expect(wrapper.text()).toContain('live tool context counter')
     expect(wrapper.text()).toContain('Total PRs')
     expect(wrapper.text()).toContain('With AI usage')
     expect(wrapper.text()).toContain('AI usage status')
@@ -268,6 +270,8 @@ describe('RepoDetailView', () => {
 
     expect(wrapper.text()).toContain('仓库健康度')
     expect(wrapper.text()).toContain('PR 使用摘要')
+    expect(wrapper.text()).toContain('commit checkpoint 窗口')
+    expect(wrapper.text()).toContain('实时上下文计数')
     expect(wrapper.text()).toContain('默认分支')
     expect(wrapper.text()).toContain('AI 用量状态')
     expect(wrapper.text()).toContain('已统计')
