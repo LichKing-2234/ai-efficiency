@@ -8,6 +8,7 @@ import { useAuthStore } from '@/stores/auth'
 
 vi.mock('@/api/repo', () => ({
   listRepos: vi.fn().mockResolvedValue({ data: { data: { items: [], total: 0, page: 1, page_size: 20 } } }),
+  getRepoInventory: vi.fn().mockResolvedValue({ data: { data: [] } }),
   createRepo: vi.fn(),
   createRepoDirect: vi.fn(),
   deleteRepo: vi.fn(),
@@ -48,13 +49,82 @@ const sampleRepos = [
   { id: 3, repo_key: 'bb.example.com/team/repo-c', name: 'repo-c', full_name: 'team/repo-c', clone_url: 'https://bb.example.com/scm/team/repo-c.git', default_branch: 'main', status: 'active', binding_state: 'bound', group_id: 0, created_at: '2026-01-01', edges: { scm_provider: { id: 2, name: 'Bitbucket', type: 'bitbucket_server', base_url: 'https://bb.example.com', status: 'active' } } },
 ]
 
-async function mountRepoList(repos?: any[], path = '/repos', options?: { admin?: boolean }) {
-  const { listRepos } = await import('@/api/repo')
-  if (repos) {
-    ;(listRepos as any).mockResolvedValue({
-      data: { data: { items: repos, total: repos.length, page: 1, page_size: 20 } },
-    })
+function buildInventory(repos: any[]) {
+  const providers = new Map<string, any>()
+  for (const repo of repos) {
+    const scm = repo.edges?.scm_provider
+    const providerKey = scm?.name ?? 'unbound'
+    if (!providers.has(providerKey)) {
+      providers.set(providerKey, {
+        provider_key: providerKey,
+        provider_id: scm?.id,
+        name: scm?.name ?? 'Needs platform binding',
+        type: scm?.type ?? 'unbound',
+        base_url: scm?.base_url ?? '',
+        total_repos: 0,
+        bound_repos: 0,
+        unbound_repos: 0,
+        active_repos: 0,
+        webhook_failed_repos: 0,
+        scopes: [],
+      })
+    }
+    const provider = providers.get(providerKey)
+    const scopeName = repo.full_name.split('/')[0] || repo.name
+    let scope = provider.scopes.find((item: any) => item.scope === scopeName)
+    if (!scope) {
+      scope = { scope: scopeName, total_repos: 0, bound_repos: 0, unbound_repos: 0, active_repos: 0, webhook_failed_repos: 0 }
+      provider.scopes.push(scope)
+    }
+
+    provider.total_repos += 1
+    scope.total_repos += 1
+    if (repo.binding_state === 'bound') {
+      provider.bound_repos += 1
+      scope.bound_repos += 1
+    } else {
+      provider.unbound_repos += 1
+      scope.unbound_repos += 1
+    }
+    if (repo.status === 'active') {
+      provider.active_repos += 1
+      scope.active_repos += 1
+    }
+    if (repo.status === 'webhook_failed') {
+      provider.webhook_failed_repos += 1
+      scope.webhook_failed_repos += 1
+    }
   }
+  return Array.from(providers.values())
+}
+
+function filterReposForParams(repos: any[], params: any = {}) {
+  const page = params.page ?? 1
+  const pageSize = params.pageSize ?? 20
+  let items = [...repos]
+
+  if (params.scmProviderId) {
+    items = items.filter((repo) => repo.edges?.scm_provider?.id === params.scmProviderId || repo.scm_provider_id === params.scmProviderId)
+  }
+  if (params.scope) {
+    items = items.filter((repo) => repo.full_name === params.scope || repo.full_name.startsWith(`${params.scope}/`))
+  }
+  if (params.bindingState) {
+    items = items.filter((repo) => repo.binding_state === params.bindingState)
+  }
+
+  const total = items.length
+  const start = (page - 1) * pageSize
+  return { items: items.slice(start, start + pageSize), total, page, page_size: pageSize }
+}
+
+async function mountRepoList(repos?: any[], path = '/repos', options?: { admin?: boolean }) {
+  const { listRepos, getRepoInventory } = await import('@/api/repo')
+  const repoItems = repos ?? []
+  ;(getRepoInventory as any).mockResolvedValue({ data: { data: buildInventory(repoItems) } })
+  ;(listRepos as any).mockImplementation((params: any = {}) =>
+    Promise.resolve({ data: { data: filterReposForParams(repoItems, params) } })
+  )
 
   const router = createTestRouter()
   await router.push(path)
@@ -312,18 +382,21 @@ describe('RepoListView', () => {
     expect(wrapper.text()).toContain('Please enter a valid repo URL')
   })
 
-  it('displays repos in grouped table', async () => {
+  it('renders platform tabs, scope index, and the selected scope table', async () => {
     const { wrapper } = await mountRepoList(sampleRepos)
 
     expect(wrapper.text()).toContain('Repository health')
     expect(wrapper.text()).toContain('Total repositories')
     expect(wrapper.text()).toContain('Bound repositories')
     expect(wrapper.text()).toContain('Needs binding')
+    expect(wrapper.text()).toContain('Platform')
+    expect(wrapper.text()).toContain('Org / Project')
+    expect(wrapper.text()).toContain('GitHub')
+    expect(wrapper.text()).toContain('Bitbucket')
+    expect(wrapper.text()).toContain('org')
     expect(wrapper.text()).toContain('repo-a')
     expect(wrapper.text()).toContain('repo-b')
-    expect(wrapper.text()).toContain('repo-c')
-    expect(wrapper.text()).toContain('org')
-    expect(wrapper.text()).toContain('team')
+    expect(wrapper.text()).not.toContain('repo-c')
     expect(wrapper.text()).toContain('active')
   })
 
@@ -348,7 +421,7 @@ describe('RepoListView', () => {
     expect(wrapper.text()).toContain('Auto-discovered repositories need a code platform binding before PR sync can run.')
 
     await wrapper.find('[data-testid="repo-binding-filter"]').setValue('unbound')
-    await wrapper.vm.$nextTick()
+    await flushPromises()
 
     expect(wrapper.text()).toContain('repo-unbound')
     expect(wrapper.text()).not.toContain('repo-a')
@@ -389,27 +462,63 @@ describe('RepoListView', () => {
     await rows[0].trigger('click')
     await flushPromises()
 
-    // Groups are sorted alphabetically: Bitbucket::team (repo-c id=3) comes before GitHub::org
-    expect(router.currentRoute.value.path).toBe('/repos/3')
+    expect(router.currentRoute.value.path).toBe('/repos/1')
   })
 
-  it('toggles group collapse', async () => {
+  it('switches platform tabs without mixing scopes', async () => {
+    const { listRepos } = await import('@/api/repo')
     const { wrapper } = await mountRepoList(sampleRepos)
 
-    // Find group header buttons
-    const groupHeaders = wrapper.findAll('button.flex.w-full')
-    expect(groupHeaders.length).toBeGreaterThan(0)
+    const bitbucketTab = wrapper.findAll('[data-testid="repo-platform-tab"]').find((button) => button.text().includes('Bitbucket'))
+    await bitbucketTab!.trigger('click')
+    await flushPromises()
 
-    // Click to collapse
-    await groupHeaders[0].trigger('click')
-    await wrapper.vm.$nextTick()
+    expect(wrapper.text()).toContain('team')
+    expect(wrapper.text()).toContain('repo-c')
+    expect(wrapper.text()).not.toContain('repo-a')
+    expect(listRepos).toHaveBeenLastCalledWith({
+      page: 1,
+      pageSize: 20,
+      scmProviderId: 2,
+      scope: 'team',
+    })
+  })
 
-    // Click again to expand
-    await groupHeaders[0].trigger('click')
-    await wrapper.vm.$nextTick()
+  it('paginates only the selected platform scope', async () => {
+    const { listRepos } = await import('@/api/repo')
+    const manyOrgRepos = Array.from({ length: 25 }, (_, index) => ({
+      id: index + 1,
+      repo_key: `github.com/org/repo-${index + 1}`,
+      name: `repo-${index + 1}`,
+      full_name: `org/repo-${index + 1}`,
+      clone_url: `https://github.com/org/repo-${index + 1}.git`,
+      default_branch: 'main',
+      status: 'active',
+      binding_state: 'bound',
+      group_id: 0,
+      created_at: '2026-01-01',
+      edges: { scm_provider: { id: 1, name: 'GitHub', type: 'github', base_url: 'https://api.github.com', status: 'active' } },
+    }))
 
-    // Should still show repos
-    expect(wrapper.text()).toContain('repo-a')
+    const { wrapper } = await mountRepoList([
+      ...manyOrgRepos,
+      { ...sampleRepos[2], id: 99, name: 'repo-outside-scope', full_name: 'team/repo-outside-scope' },
+    ])
+
+    expect(wrapper.text()).toContain('repo-1')
+    expect(wrapper.text()).not.toContain('repo-25')
+
+    await wrapper.get('[data-testid="repo-next-page"]').trigger('click')
+    await flushPromises()
+
+    expect(listRepos).toHaveBeenLastCalledWith({
+      page: 2,
+      pageSize: 20,
+      scmProviderId: 1,
+      scope: 'org',
+    })
+    expect(wrapper.text()).toContain('repo-25')
+    expect(wrapper.text()).not.toContain('repo-outside-scope')
   })
 
   it('shows delete confirm and deletes repo', async () => {
@@ -418,7 +527,6 @@ describe('RepoListView', () => {
 
     const { wrapper } = await mountRepoList(sampleRepos)
 
-    // Click first Delete button (Bitbucket::team group comes first alphabetically, repo-c id=3)
     const deleteBtn = wrapper.findAll('button').find((b) => b.text() === 'Delete')
     await deleteBtn!.trigger('click')
     await wrapper.vm.$nextTick()
@@ -428,7 +536,7 @@ describe('RepoListView', () => {
     await confirmBtn!.trigger('click')
     await flushPromises()
 
-    expect(deleteRepo).toHaveBeenCalledWith(3)
+    expect(deleteRepo).toHaveBeenCalledWith(1)
   })
 
   it('cancels delete confirm', async () => {

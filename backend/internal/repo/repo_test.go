@@ -960,6 +960,167 @@ func TestList_FilterBySCMProviderID(t *testing.T) {
 	}
 }
 
+func TestList_FilterByProviderScopeAndBindingState(t *testing.T) {
+	client, svc := setupTest(t)
+	ctx := context.Background()
+
+	github := createSCMProvider(t, client)
+	bitbucket, _ := client.ScmProvider.Create().
+		SetName("bitbucket-main").
+		SetType("bitbucket_server").
+		SetBaseURL("https://bitbucket.example.com").
+		SetCredentials("encrypted-creds").
+		Save(ctx)
+
+	_, err := svc.CreateDirect(ctx, CreateDirectRequest{
+		SCMProviderID: github.ID,
+		Name:          "repo-a",
+		FullName:      "org/repo-a",
+		CloneURL:      "https://github.com/org/repo-a.git",
+		DefaultBranch: "main",
+	})
+	if err != nil {
+		t.Fatalf("create github org repo: %v", err)
+	}
+	_, err = svc.CreateDirect(ctx, CreateDirectRequest{
+		SCMProviderID: github.ID,
+		Name:          "repo-b",
+		FullName:      "sdk/repo-b",
+		CloneURL:      "https://github.com/sdk/repo-b.git",
+		DefaultBranch: "main",
+	})
+	if err != nil {
+		t.Fatalf("create github sdk repo: %v", err)
+	}
+	_, err = svc.CreateDirect(ctx, CreateDirectRequest{
+		SCMProviderID: bitbucket.ID,
+		Name:          "repo-c",
+		FullName:      "org/repo-c",
+		CloneURL:      "https://bitbucket.example.com/scm/org/repo-c.git",
+		DefaultBranch: "main",
+	})
+	if err != nil {
+		t.Fatalf("create bitbucket repo: %v", err)
+	}
+	_, err = svc.CreateDirect(ctx, CreateDirectRequest{
+		Name:          "repo-unbound",
+		FullName:      "org/repo-unbound",
+		CloneURL:      "https://unknown.example.com/org/repo-unbound.git",
+		DefaultBranch: "main",
+	})
+	if err != nil {
+		t.Fatalf("create unbound repo: %v", err)
+	}
+
+	repos, total, err := svc.List(ctx, ListOpts{
+		Page:          1,
+		PageSize:      20,
+		SCMProviderID: github.ID,
+		Scope:         "org",
+		BindingState:  "bound",
+	})
+	if err != nil {
+		t.Fatalf("List provider scope binding filter: %v", err)
+	}
+	if total != 1 || len(repos) != 1 || repos[0].FullName != "org/repo-a" {
+		t.Fatalf("filtered repos = len %d total %d first %q, want only org/repo-a", len(repos), total, repos[0].FullName)
+	}
+
+	repos, total, err = svc.List(ctx, ListOpts{
+		Page:         1,
+		PageSize:     20,
+		Scope:        "org",
+		BindingState: "unbound",
+	})
+	if err != nil {
+		t.Fatalf("List unbound scope filter: %v", err)
+	}
+	if total != 1 || len(repos) != 1 || repos[0].FullName != "org/repo-unbound" {
+		t.Fatalf("unbound filtered repos = len %d total %d first %q, want only org/repo-unbound", len(repos), total, repos[0].FullName)
+	}
+}
+
+func TestInventorySummarizesProvidersAndScopes(t *testing.T) {
+	client, svc := setupTest(t)
+	ctx := context.Background()
+
+	github := createSCMProvider(t, client)
+	bitbucket, _ := client.ScmProvider.Create().
+		SetName("bitbucket-main").
+		SetType("bitbucket_server").
+		SetBaseURL("https://bitbucket.example.com").
+		SetCredentials("encrypted-creds").
+		Save(ctx)
+
+	mustCreate := func(req CreateDirectRequest) *ent.RepoConfig {
+		rc, err := svc.CreateDirect(ctx, req)
+		if err != nil {
+			t.Fatalf("CreateDirect(%s): %v", req.FullName, err)
+		}
+		return rc
+	}
+	mustCreate(CreateDirectRequest{SCMProviderID: github.ID, Name: "repo-a", FullName: "org/repo-a", CloneURL: "https://github.com/org/repo-a.git", DefaultBranch: "main"})
+	mustCreate(CreateDirectRequest{SCMProviderID: github.ID, Name: "repo-b", FullName: "org/repo-b", CloneURL: "https://github.com/org/repo-b.git", DefaultBranch: "main"})
+	mustCreate(CreateDirectRequest{SCMProviderID: github.ID, Name: "mobile-sdk", FullName: "sdk/mobile-sdk", CloneURL: "https://github.com/sdk/mobile-sdk.git", DefaultBranch: "main"})
+	failed := mustCreate(CreateDirectRequest{SCMProviderID: bitbucket.ID, Name: "repo-c", FullName: "PROJ/repo-c", CloneURL: "https://bitbucket.example.com/scm/proj/repo-c.git", DefaultBranch: "main"})
+	if _, err := svc.Update(ctx, failed.ID, UpdateRequest{Status: "webhook_failed"}); err != nil {
+		t.Fatalf("mark webhook failed: %v", err)
+	}
+	mustCreate(CreateDirectRequest{Name: "repo-unbound", FullName: "org/repo-unbound", CloneURL: "https://unknown.example.com/org/repo-unbound.git", DefaultBranch: "main"})
+
+	inventory, err := svc.Inventory(ctx)
+	if err != nil {
+		t.Fatalf("Inventory: %v", err)
+	}
+
+	githubSummary := findInventoryProvider(inventory, "test-github")
+	if githubSummary == nil {
+		t.Fatalf("github provider summary missing: %#v", inventory)
+	}
+	if githubSummary.TotalRepos != 3 || githubSummary.BoundRepos != 3 || githubSummary.UnboundRepos != 0 {
+		t.Fatalf("github totals = total %d bound %d unbound %d, want 3/3/0", githubSummary.TotalRepos, githubSummary.BoundRepos, githubSummary.UnboundRepos)
+	}
+	orgScope := findInventoryScope(githubSummary.Scopes, "org")
+	if orgScope == nil || orgScope.TotalRepos != 2 || orgScope.BoundRepos != 2 {
+		t.Fatalf("github org scope = %#v, want total 2 bound 2", orgScope)
+	}
+
+	bitbucketSummary := findInventoryProvider(inventory, "bitbucket-main")
+	if bitbucketSummary == nil {
+		t.Fatalf("bitbucket provider summary missing: %#v", inventory)
+	}
+	projScope := findInventoryScope(bitbucketSummary.Scopes, "PROJ")
+	if projScope == nil || projScope.WebhookFailedRepos != 1 {
+		t.Fatalf("bitbucket PROJ scope = %#v, want one webhook failure", projScope)
+	}
+
+	unboundSummary := findInventoryProvider(inventory, "unbound")
+	if unboundSummary == nil {
+		t.Fatalf("unbound provider summary missing: %#v", inventory)
+	}
+	if unboundSummary.TotalRepos != 1 || unboundSummary.UnboundRepos != 1 {
+		t.Fatalf("unbound totals = total %d unbound %d, want 1/1", unboundSummary.TotalRepos, unboundSummary.UnboundRepos)
+	}
+}
+
+func findInventoryProvider(items []InventoryProviderSummary, key string) *InventoryProviderSummary {
+	for i := range items {
+		if items[i].ProviderKey == key {
+			return &items[i]
+		}
+	}
+	return nil
+}
+
+func findInventoryScope(items []InventoryScopeSummary, scope string) *InventoryScopeSummary {
+	for i := range items {
+		if items[i].Scope == scope {
+			return &items[i]
+		}
+	}
+	return nil
+}
+
 func TestList_DefaultPagination(t *testing.T) {
 	client, svc := setupTest(t)
 	p := createSCMProvider(t, client)

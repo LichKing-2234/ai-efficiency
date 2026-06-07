@@ -131,6 +131,7 @@ func SetupRouter(
 	{
 		repoGroup.GET("", repoHandler.List)
 		repoGroup.POST("", repoHandler.Create)
+		repoGroup.GET("/inventory", repoHandler.Inventory)
 		repoGroup.POST("/direct", repoHandler.CreateDirect)
 		repoGroup.POST("/ensure-remote", repoHandler.EnsureRemote)
 		repoGroup.POST("/resolve-remote", repoHandler.ResolveRemote)

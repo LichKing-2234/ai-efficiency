@@ -71,6 +71,38 @@ describe('scmProvider API', () => {
 })
 
 describe('repo API', () => {
+  it('listRepos calls GET /repos with scoped pagination params', async () => {
+    const { listRepos } = await import('@/api/repo')
+    mockClient.get.mockResolvedValue({ data: { data: { items: [], total: 0 } } })
+
+    await listRepos({
+      page: 3,
+      pageSize: 15,
+      scmProviderId: 7,
+      scope: 'org',
+      bindingState: 'bound',
+    })
+
+    expect(mockClient.get).toHaveBeenCalledWith('/repos', {
+      params: {
+        page: 3,
+        page_size: 15,
+        scm_provider_id: 7,
+        scope: 'org',
+        binding_state: 'bound',
+      },
+    })
+  })
+
+  it('getRepoInventory calls GET /repos/inventory', async () => {
+    const { getRepoInventory } = await import('@/api/repo')
+    mockClient.get.mockResolvedValue({ data: { data: [] } })
+
+    await getRepoInventory()
+
+    expect(mockClient.get).toHaveBeenCalledWith('/repos/inventory')
+  })
+
   it('repairFailedWebhooks calls POST /repos/repair-webhooks', async () => {
     const { repairFailedWebhooks } = await import('@/api/repo')
     mockClient.post.mockResolvedValue({

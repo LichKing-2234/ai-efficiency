@@ -44,6 +44,8 @@ func (h *RepoHandler) List(c *gin.Context) {
 	scmProviderID, _ := strconv.Atoi(c.Query("scm_provider_id"))
 	status := c.Query("status")
 	groupID := c.Query("group_id")
+	scope := c.Query("scope")
+	bindingState := c.Query("binding_state")
 
 	opts := repo.ListOpts{
 		Page:          page,
@@ -51,6 +53,8 @@ func (h *RepoHandler) List(c *gin.Context) {
 		SCMProviderID: scmProviderID,
 		Status:        status,
 		GroupID:       groupID,
+		Scope:         scope,
+		BindingState:  bindingState,
 	}
 
 	repos, total, err := h.repoService.List(c.Request.Context(), opts)
@@ -65,6 +69,17 @@ func (h *RepoHandler) List(c *gin.Context) {
 	}
 
 	pkg.Paged(c, total, page, pageSize, items)
+}
+
+// Inventory handles GET /api/v1/repos/inventory
+func (h *RepoHandler) Inventory(c *gin.Context) {
+	inventory, err := h.repoService.Inventory(c.Request.Context())
+	if err != nil {
+		pkg.Error(c, http.StatusInternalServerError, "failed to list repo inventory")
+		return
+	}
+
+	pkg.Success(c, inventory)
 }
 
 // Create handles POST /api/v1/repos
