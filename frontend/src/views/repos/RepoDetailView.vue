@@ -284,12 +284,16 @@ function formatDecimal(value?: number | null) {
 }
 
 function totalPRTokens(pr: PRRecord) {
-  return (pr.usage_input_tokens ?? 0) + (pr.usage_output_tokens ?? 0) + (pr.usage_cached_input_tokens ?? 0)
+  return (pr.usage_input_tokens ?? 0) + (pr.usage_output_tokens ?? 0)
 }
 
 function formatPRTokenUsage(pr: PRRecord) {
   const total = totalPRTokens(pr)
   return total > 0 ? formatCount(total) : '—'
+}
+
+function totalSnapshotTokens(snapshot: PRCommitUsageSnapshot) {
+  return (snapshot.input_tokens ?? 0) + (snapshot.output_tokens ?? 0)
 }
 
 function isTerminalJob(job: PRSyncJob) {
@@ -734,7 +738,7 @@ onUnmounted(() => {
                       <div class="break-all font-mono text-gray-900">{{ snapshot.commit_sha }}</div>
                       <dl class="mt-2 grid grid-cols-2 gap-2">
                         <div><dt class="text-gray-400">{{ t('repoDetail.capturedAt') }}</dt><dd>{{ formatDate(snapshot.captured_at || null) }}</dd></div>
-                        <div><dt class="text-gray-400">{{ t('repoDetail.tokenUsage') }}</dt><dd>{{ formatCount((snapshot.input_tokens ?? 0) + (snapshot.output_tokens ?? 0) + (snapshot.cached_input_tokens ?? 0)) }}</dd></div>
+                        <div><dt class="text-gray-400">{{ t('repoDetail.tokenUsage') }}</dt><dd>{{ formatCount(totalSnapshotTokens(snapshot)) }}</dd></div>
                         <div><dt class="text-gray-400">{{ t('repoDetail.credits') }}</dt><dd>{{ formatDecimal(snapshot.credit_usage) }}</dd></div>
                         <div><dt class="text-gray-400">{{ t('repoDetail.usageStatus') }}</dt><dd>{{ commitFreshnessFor(pr, snapshot.commit_sha)?.usage_status_reason || usageStatusLabel(commitFreshnessFor(pr, snapshot.commit_sha)?.usage_status) }}</dd></div>
                       </dl>

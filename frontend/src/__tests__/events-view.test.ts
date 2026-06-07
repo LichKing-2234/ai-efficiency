@@ -149,6 +149,8 @@ describe('EventsView', () => {
     expect(wrapper.text()).toContain('Recent usage')
     expect(wrapper.text()).toContain('Code link')
     expect(wrapper.text()).toContain('Token usage')
+    expect(wrapper.text()).toContain('1,700')
+    expect(wrapper.text()).not.toContain('2,000')
     expect(wrapper.text()).toContain('View details')
     expect(wrapper.text()).toContain('Linked')
     expect(wrapper.text()).not.toContain('detail.jsonl')

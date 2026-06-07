@@ -265,8 +265,7 @@ function formatDecimal(value?: number | null) {
 function formatTokenUsage(row: ToolUsageEventRow) {
   const input = row.input_tokens ?? 0
   const output = row.output_tokens ?? 0
-  const cached = row.cached_input_tokens ?? 0
-  const totalTokens = input + output + cached
+  const totalTokens = input + output
   return totalTokens > 0 ? formatCount(totalTokens) : '—'
 }
 

@@ -217,7 +217,8 @@ describe('RepoDetailView', () => {
     expect(wrapper.text()).not.toContain('AI Label')
     expect(wrapper.text()).not.toContain('Confidence')
     expect(wrapper.text()).not.toContain('Settle')
-    expect(wrapper.text()).toContain('2,000')
+    expect(wrapper.text()).toContain('1,700')
+    expect(wrapper.text()).not.toContain('2,000')
   })
 
   it('renders aggregate PR usage summary instead of current page counts', async () => {
@@ -310,6 +311,8 @@ describe('RepoDetailView', () => {
     expect(getPR).toHaveBeenCalledWith(101)
     expect(wrapper.text()).toContain('Commit SHA')
     expect(wrapper.text()).toContain('abc123')
+    expect(wrapper.text()).toContain('1,700')
+    expect(wrapper.text()).not.toContain('2,000')
     expect(wrapper.text()).toContain('300')
     expect(wrapper.text()).toContain('80')
   })
