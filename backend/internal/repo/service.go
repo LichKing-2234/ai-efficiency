@@ -542,6 +542,9 @@ func (s *Service) Inventory(ctx context.Context) ([]InventoryProviderSummary, er
 		if items[j].ProviderKey == "unbound" {
 			return true
 		}
+		if items[i].Name == items[j].Name {
+			return items[i].ProviderKey < items[j].ProviderKey
+		}
 		return items[i].Name < items[j].Name
 	})
 
@@ -558,13 +561,18 @@ func inventoryProviderForRepo(rc *ent.RepoConfig) (string, InventoryProviderSumm
 		}
 	}
 	providerID := provider.ID
-	return provider.Name, InventoryProviderSummary{
-		ProviderKey: provider.Name,
+	providerKey := inventoryProviderKey(providerID)
+	return providerKey, InventoryProviderSummary{
+		ProviderKey: providerKey,
 		ProviderID:  &providerID,
 		Name:        provider.Name,
 		Type:        string(provider.Type),
 		BaseURL:     provider.BaseURL,
 	}
+}
+
+func inventoryProviderKey(providerID int) string {
+	return fmt.Sprintf("scm_provider:%d", providerID)
 }
 
 func repoInventoryScope(fullName string) string {

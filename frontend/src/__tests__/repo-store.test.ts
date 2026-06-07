@@ -147,7 +147,7 @@ describe('Repo Store', () => {
       data: {
         data: [
           {
-            provider_key: 'GitHub',
+            provider_key: 'scm_provider:1',
             provider_id: 1,
             name: 'GitHub',
             type: 'github',

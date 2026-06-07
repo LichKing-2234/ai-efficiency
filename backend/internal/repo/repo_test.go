@@ -1073,7 +1073,7 @@ func TestInventorySummarizesProvidersAndScopes(t *testing.T) {
 		t.Fatalf("Inventory: %v", err)
 	}
 
-	githubSummary := findInventoryProvider(inventory, "test-github")
+	githubSummary := findInventoryProvider(inventory, inventoryProviderKey(github.ID))
 	if githubSummary == nil {
 		t.Fatalf("github provider summary missing: %#v", inventory)
 	}
@@ -1085,7 +1085,7 @@ func TestInventorySummarizesProvidersAndScopes(t *testing.T) {
 		t.Fatalf("github org scope = %#v, want total 2 bound 2", orgScope)
 	}
 
-	bitbucketSummary := findInventoryProvider(inventory, "bitbucket-main")
+	bitbucketSummary := findInventoryProvider(inventory, inventoryProviderKey(bitbucket.ID))
 	if bitbucketSummary == nil {
 		t.Fatalf("bitbucket provider summary missing: %#v", inventory)
 	}
@@ -1100,6 +1100,51 @@ func TestInventorySummarizesProvidersAndScopes(t *testing.T) {
 	}
 	if unboundSummary.TotalRepos != 1 || unboundSummary.UnboundRepos != 1 {
 		t.Fatalf("unbound totals = total %d unbound %d, want 1/1", unboundSummary.TotalRepos, unboundSummary.UnboundRepos)
+	}
+}
+
+func TestInventorySeparatesProvidersWithDuplicateNames(t *testing.T) {
+	client, svc := setupTest(t)
+	ctx := context.Background()
+
+	firstProvider, _ := client.ScmProvider.Create().
+		SetName("Shared Platform").
+		SetType("github").
+		SetBaseURL("https://github-one.example.com").
+		SetCredentials("encrypted-creds").
+		Save(ctx)
+	secondProvider, _ := client.ScmProvider.Create().
+		SetName("Shared Platform").
+		SetType("github").
+		SetBaseURL("https://github-two.example.com").
+		SetCredentials("encrypted-creds").
+		Save(ctx)
+
+	if _, err := svc.CreateDirect(ctx, CreateDirectRequest{SCMProviderID: firstProvider.ID, Name: "repo-a", FullName: "alpha/repo-a", CloneURL: "https://github-one.example.com/alpha/repo-a.git", DefaultBranch: "main"}); err != nil {
+		t.Fatalf("CreateDirect first provider repo: %v", err)
+	}
+	if _, err := svc.CreateDirect(ctx, CreateDirectRequest{SCMProviderID: secondProvider.ID, Name: "repo-b", FullName: "beta/repo-b", CloneURL: "https://github-two.example.com/beta/repo-b.git", DefaultBranch: "main"}); err != nil {
+		t.Fatalf("CreateDirect second provider repo: %v", err)
+	}
+
+	inventory, err := svc.Inventory(ctx)
+	if err != nil {
+		t.Fatalf("Inventory: %v", err)
+	}
+
+	firstSummary := findInventoryProvider(inventory, inventoryProviderKey(firstProvider.ID))
+	if firstSummary == nil {
+		t.Fatalf("first provider summary missing: %#v", inventory)
+	}
+	secondSummary := findInventoryProvider(inventory, inventoryProviderKey(secondProvider.ID))
+	if secondSummary == nil {
+		t.Fatalf("second provider summary missing: %#v", inventory)
+	}
+	if firstSummary.Name != "Shared Platform" || firstSummary.ProviderID == nil || *firstSummary.ProviderID != firstProvider.ID || firstSummary.TotalRepos != 1 {
+		t.Fatalf("first summary = %#v, want name Shared Platform, provider id %d, one repo", firstSummary, firstProvider.ID)
+	}
+	if secondSummary.Name != "Shared Platform" || secondSummary.ProviderID == nil || *secondSummary.ProviderID != secondProvider.ID || secondSummary.TotalRepos != 1 {
+		t.Fatalf("second summary = %#v, want name Shared Platform, provider id %d, one repo", secondSummary, secondProvider.ID)
 	}
 }
 

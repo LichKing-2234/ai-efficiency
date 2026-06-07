@@ -115,7 +115,7 @@ function compareProviders(a: RepoInventoryProviderSummary, b: RepoInventoryProvi
     if (provider.type === 'bitbucket_server') return 1
     return 2
   }
-  return priority(a) - priority(b) || a.name.localeCompare(b.name)
+  return priority(a) - priority(b) || a.name.localeCompare(b.name) || a.provider_key.localeCompare(b.provider_key)
 }
 
 function firstScope(provider: RepoInventoryProviderSummary | null) {

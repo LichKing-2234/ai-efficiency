@@ -327,8 +327,8 @@ Required sections:
 
 Current implementation note:
 
-- As of 2026-06-07, `/repos` uses a scoped inventory workbench instead of an inline grouped table: `GET /api/v1/repos/inventory` summarizes Platform -> org/project scopes, while `GET /api/v1/repos` accepts `scm_provider_id`, `scope`, and `binding_state` so table pagination applies only to the selected platform scope.
-   - continues parsing GitHub and Bitbucket browse URLs
+- As of 2026-06-07, `/repos` uses a scoped inventory workbench instead of an inline grouped table: `GET /api/v1/repos/inventory` summarizes Platform -> org/project scopes, with stable `provider_key` values (`scm_provider:<id>` for bound providers and `unbound` for unbound repos), while `GET /api/v1/repos` accepts `scm_provider_id`, `scope`, and `binding_state` so table pagination applies only to the selected platform scope.
+- The Add repository dialog continues parsing GitHub and Bitbucket browse URLs.
 
 Rules:
 

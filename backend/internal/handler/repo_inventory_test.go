@@ -24,7 +24,7 @@ func TestRepoInventoryEndpointSummarizesProviderScopes(t *testing.T) {
 
 	resp := parseResponse(t, w)
 	items := resp["data"].([]interface{})
-	github := findInventoryProviderResponse(t, items, "GitHub Enterprise")
+	github := findInventoryProviderResponse(t, items, fmt.Sprintf("scm_provider:%d", githubID))
 	if int(github["total_repos"].(float64)) != 2 {
 		t.Fatalf("github total_repos = %v, want 2", github["total_repos"])
 	}
@@ -33,7 +33,7 @@ func TestRepoInventoryEndpointSummarizesProviderScopes(t *testing.T) {
 		t.Fatalf("github org bound_repos = %v, want 2", orgScope["bound_repos"])
 	}
 
-	bitbucket := findInventoryProviderResponse(t, items, "Bitbucket Server")
+	bitbucket := findInventoryProviderResponse(t, items, fmt.Sprintf("scm_provider:%d", bitbucketID))
 	projScope := findInventoryScopeResponse(t, bitbucket["scopes"].([]interface{}), "PROJ")
 	if int(projScope["total_repos"].(float64)) != 1 {
 		t.Fatalf("bitbucket PROJ total_repos = %v, want 1", projScope["total_repos"])

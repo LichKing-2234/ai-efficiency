@@ -53,7 +53,7 @@ function buildInventory(repos: any[]) {
   const providers = new Map<string, any>()
   for (const repo of repos) {
     const scm = repo.edges?.scm_provider
-    const providerKey = scm?.name ?? 'unbound'
+    const providerKey = scm ? `scm_provider:${scm.id}` : 'unbound'
     if (!providers.has(providerKey)) {
       providers.set(providerKey, {
         provider_key: providerKey,
