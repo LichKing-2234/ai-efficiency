@@ -61,6 +61,39 @@ export interface RepoConfig {
   }
 }
 
+export interface RepoInventoryScopeSummary {
+  scope: string
+  total_repos: number
+  bound_repos: number
+  unbound_repos: number
+  active_repos: number
+  webhook_failed_repos: number
+}
+
+export interface RepoInventoryProviderSummary {
+  provider_key: string
+  provider_id?: number
+  name: string
+  type: string
+  base_url?: string
+  total_repos: number
+  bound_repos: number
+  unbound_repos: number
+  active_repos: number
+  webhook_failed_repos: number
+  scopes: RepoInventoryScopeSummary[]
+}
+
+export interface RepoListParams {
+  page?: number
+  pageSize?: number
+  scmProviderId?: number
+  status?: string
+  groupId?: string
+  scope?: string
+  bindingState?: 'bound' | 'unbound'
+}
+
 export interface RepoAutoBindSummary {
   scanned: number
   bound: number

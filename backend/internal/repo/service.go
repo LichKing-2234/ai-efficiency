@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"sort"
 	"strings"
 
 	"github.com/ai-efficiency/backend/ent"
@@ -69,6 +70,31 @@ type ListOpts struct {
 	SCMProviderID int
 	Status        string
 	GroupID       string
+	Scope         string
+	BindingState  string
+}
+
+type InventoryScopeSummary struct {
+	Scope              string `json:"scope"`
+	TotalRepos         int    `json:"total_repos"`
+	BoundRepos         int    `json:"bound_repos"`
+	UnboundRepos       int    `json:"unbound_repos"`
+	ActiveRepos        int    `json:"active_repos"`
+	WebhookFailedRepos int    `json:"webhook_failed_repos"`
+}
+
+type InventoryProviderSummary struct {
+	ProviderKey        string                  `json:"provider_key"`
+	ProviderID         *int                    `json:"provider_id,omitempty"`
+	Name               string                  `json:"name"`
+	Type               string                  `json:"type"`
+	BaseURL            string                  `json:"base_url,omitempty"`
+	TotalRepos         int                     `json:"total_repos"`
+	BoundRepos         int                     `json:"bound_repos"`
+	UnboundRepos       int                     `json:"unbound_repos"`
+	ActiveRepos        int                     `json:"active_repos"`
+	WebhookFailedRepos int                     `json:"webhook_failed_repos"`
+	Scopes             []InventoryScopeSummary `json:"scopes"`
 }
 
 type scmProviderFactory func(providerType, baseURL string, apiCredential any, callbackURL string) (scm.SCMProvider, error)
@@ -413,6 +439,18 @@ func (s *Service) List(ctx context.Context, opts ListOpts) ([]*ent.RepoConfig, i
 	if opts.GroupID != "" {
 		query.Where(repoconfig.GroupIDEQ(opts.GroupID))
 	}
+	if opts.Scope != "" {
+		query.Where(repoconfig.Or(
+			repoconfig.FullNameEQ(opts.Scope),
+			repoconfig.FullNameHasPrefix(opts.Scope+"/"),
+		))
+	}
+	switch opts.BindingState {
+	case "bound":
+		query.Where(repoconfig.HasScmProvider())
+	case "unbound":
+		query.Where(repoconfig.Not(repoconfig.HasScmProvider()))
+	}
 
 	total, err := query.Clone().Count(ctx)
 	if err != nil {
@@ -429,6 +467,123 @@ func (s *Service) List(ctx context.Context, opts ListOpts) ([]*ent.RepoConfig, i
 	}
 
 	return repos, int64(total), nil
+}
+
+func (s *Service) Inventory(ctx context.Context) ([]InventoryProviderSummary, error) {
+	repos, err := s.entClient.RepoConfig.Query().
+		WithScmProvider().
+		Order(ent.Asc(repoconfig.FieldFullName)).
+		All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list repo inventory: %w", err)
+	}
+
+	type providerAccumulator struct {
+		summary InventoryProviderSummary
+		scopes  map[string]*InventoryScopeSummary
+	}
+	providers := make(map[string]*providerAccumulator)
+
+	for _, rc := range repos {
+		key, providerSummary := inventoryProviderForRepo(rc)
+		acc, ok := providers[key]
+		if !ok {
+			acc = &providerAccumulator{
+				summary: providerSummary,
+				scopes:  make(map[string]*InventoryScopeSummary),
+			}
+			providers[key] = acc
+		}
+
+		scopeName := repoInventoryScope(rc.FullName)
+		scope, ok := acc.scopes[scopeName]
+		if !ok {
+			scope = &InventoryScopeSummary{Scope: scopeName}
+			acc.scopes[scopeName] = scope
+		}
+
+		bound := rc.Edges.ScmProvider != nil
+		status := string(rc.Status)
+		acc.summary.TotalRepos++
+		scope.TotalRepos++
+		if bound {
+			acc.summary.BoundRepos++
+			scope.BoundRepos++
+		} else {
+			acc.summary.UnboundRepos++
+			scope.UnboundRepos++
+		}
+		if status == string(repoconfig.StatusActive) {
+			acc.summary.ActiveRepos++
+			scope.ActiveRepos++
+		}
+		if status == string(repoconfig.StatusWebhookFailed) {
+			acc.summary.WebhookFailedRepos++
+			scope.WebhookFailedRepos++
+		}
+	}
+
+	items := make([]InventoryProviderSummary, 0, len(providers))
+	for _, acc := range providers {
+		scopes := make([]InventoryScopeSummary, 0, len(acc.scopes))
+		for _, scope := range acc.scopes {
+			scopes = append(scopes, *scope)
+		}
+		sort.Slice(scopes, func(i, j int) bool {
+			return scopes[i].Scope < scopes[j].Scope
+		})
+		acc.summary.Scopes = scopes
+		items = append(items, acc.summary)
+	}
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].ProviderKey == "unbound" {
+			return false
+		}
+		if items[j].ProviderKey == "unbound" {
+			return true
+		}
+		if items[i].Name == items[j].Name {
+			return items[i].ProviderKey < items[j].ProviderKey
+		}
+		return items[i].Name < items[j].Name
+	})
+
+	return items, nil
+}
+
+func inventoryProviderForRepo(rc *ent.RepoConfig) (string, InventoryProviderSummary) {
+	provider := rc.Edges.ScmProvider
+	if provider == nil {
+		return "unbound", InventoryProviderSummary{
+			ProviderKey: "unbound",
+			Name:        "Needs platform binding",
+			Type:        "unbound",
+		}
+	}
+	providerID := provider.ID
+	providerKey := inventoryProviderKey(providerID)
+	return providerKey, InventoryProviderSummary{
+		ProviderKey: providerKey,
+		ProviderID:  &providerID,
+		Name:        provider.Name,
+		Type:        string(provider.Type),
+		BaseURL:     provider.BaseURL,
+	}
+}
+
+func inventoryProviderKey(providerID int) string {
+	return fmt.Sprintf("scm_provider:%d", providerID)
+}
+
+func repoInventoryScope(fullName string) string {
+	fullName = strings.TrimSpace(fullName)
+	if fullName == "" {
+		return "unknown"
+	}
+	if idx := strings.Index(fullName, "/"); idx > 0 {
+		return fullName[:idx]
+	}
+	return fullName
 }
 
 // Update updates a repo config.
