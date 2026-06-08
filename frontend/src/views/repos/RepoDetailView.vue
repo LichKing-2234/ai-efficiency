@@ -284,12 +284,16 @@ function formatDecimal(value?: number | null) {
 }
 
 function totalPRTokens(pr: PRRecord) {
-  return (pr.usage_input_tokens ?? 0) + (pr.usage_output_tokens ?? 0) + (pr.usage_cached_input_tokens ?? 0)
+  return (pr.usage_input_tokens ?? 0) + (pr.usage_output_tokens ?? 0)
 }
 
 function formatPRTokenUsage(pr: PRRecord) {
   const total = totalPRTokens(pr)
   return total > 0 ? formatCount(total) : '—'
+}
+
+function totalSnapshotTokens(snapshot: PRCommitUsageSnapshot) {
+  return (snapshot.input_tokens ?? 0) + (snapshot.output_tokens ?? 0)
 }
 
 function isTerminalJob(job: PRSyncJob) {
@@ -315,10 +319,25 @@ function usageStatusLabel(status?: UsageStatus) {
     pending_upload: t('repoDetail.usagePending'),
     no_checkpoint: t('repoDetail.noCheckpoint'),
     no_usage_events: t('repoDetail.usageNoUsage'),
-    unbound: t('repoDetail.unbound'),
+    unbound: t('repoDetail.usageUnbound'),
     stale_snapshot: t('repoDetail.usageStale'),
     refresh_failed: t('repoDetail.usageFailed'),
     unknown: t('repoDetail.usageUnknown'),
+  }
+  return labels[status ?? 'unknown']
+}
+
+function usageStatusHelp(status?: UsageStatus, reason?: string | null) {
+  if (reason) return reason
+  const labels: Record<UsageStatus, string> = {
+    fresh: t('repoDetail.usageFreshHelp'),
+    pending_upload: t('repoDetail.usagePendingHelp'),
+    no_checkpoint: t('repoDetail.noCheckpointHelp'),
+    no_usage_events: t('repoDetail.usageNoUsageHelp'),
+    unbound: t('repoDetail.usageUnboundHelp'),
+    stale_snapshot: t('repoDetail.usageStaleHelp'),
+    refresh_failed: t('repoDetail.usageFailedHelp'),
+    unknown: t('repoDetail.usageUnknownHelp'),
   }
   return labels[status ?? 'unknown']
 }
@@ -666,7 +685,7 @@ onUnmounted(() => {
             <dl class="mt-3 grid grid-cols-2 gap-3 text-xs">
               <div>
                 <dt class="text-gray-400">{{ t('repoDetail.usageStatus') }}</dt>
-                <dd class="mt-1 text-gray-800">{{ usageStatusLabel(pr.usage_status) }}</dd>
+                <dd class="mt-1 text-gray-800" :title="usageStatusHelp(pr.usage_status, pr.usage_status_reason)">{{ usageStatusLabel(pr.usage_status) }}</dd>
               </div>
               <div>
                 <dt class="text-gray-400">{{ t('repoDetail.tokenUsage') }}</dt>
@@ -719,7 +738,7 @@ onUnmounted(() => {
                       <div class="break-all font-mono text-gray-900">{{ snapshot.commit_sha }}</div>
                       <dl class="mt-2 grid grid-cols-2 gap-2">
                         <div><dt class="text-gray-400">{{ t('repoDetail.capturedAt') }}</dt><dd>{{ formatDate(snapshot.captured_at || null) }}</dd></div>
-                        <div><dt class="text-gray-400">{{ t('repoDetail.tokenUsage') }}</dt><dd>{{ formatCount((snapshot.input_tokens ?? 0) + (snapshot.output_tokens ?? 0) + (snapshot.cached_input_tokens ?? 0)) }}</dd></div>
+                        <div><dt class="text-gray-400">{{ t('repoDetail.tokenUsage') }}</dt><dd>{{ formatCount(totalSnapshotTokens(snapshot)) }}</dd></div>
                         <div><dt class="text-gray-400">{{ t('repoDetail.credits') }}</dt><dd>{{ formatDecimal(snapshot.credit_usage) }}</dd></div>
                         <div><dt class="text-gray-400">{{ t('repoDetail.usageStatus') }}</dt><dd>{{ commitFreshnessFor(pr, snapshot.commit_sha)?.usage_status_reason || usageStatusLabel(commitFreshnessFor(pr, snapshot.commit_sha)?.usage_status) }}</dd></div>
                       </dl>
@@ -771,7 +790,7 @@ onUnmounted(() => {
                     >{{ pr.status }}</span>
                   </td>
                   <td class="px-3 py-2">
-                    <span class="inline-flex rounded-full bg-gray-50 px-2 text-xs font-medium leading-5 text-gray-600" :title="pr.usage_status_reason || ''">
+                    <span class="inline-flex rounded-full bg-gray-50 px-2 text-xs font-medium leading-5 text-gray-600" :title="usageStatusHelp(pr.usage_status, pr.usage_status_reason)">
                       {{ usageStatusLabel(pr.usage_status) }}
                     </span>
                   </td>
