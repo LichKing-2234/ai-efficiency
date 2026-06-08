@@ -18,6 +18,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as ReposIdRouteImport } from './routes/repos/$id'
 import { Route as OauthDeviceRouteImport } from './routes/oauth/device'
 import { Route as OauthAuthorizeRouteImport } from './routes/oauth/authorize'
+import { Route as ApiHealthRouteImport } from './routes/api/health'
 import { Route as AdminUsersRouteImport } from './routes/admin/users'
 import { Route as ApiLocalIndexRouteImport } from './routes/api/local/index'
 import { Route as OauthDeviceVerifyRouteImport } from './routes/oauth/device.verify'
@@ -72,6 +73,11 @@ const OauthDeviceRoute = OauthDeviceRouteImport.update({
 const OauthAuthorizeRoute = OauthAuthorizeRouteImport.update({
   id: '/oauth/authorize',
   path: '/oauth/authorize',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiHealthRoute = ApiHealthRouteImport.update({
+  id: '/api/health',
+  path: '/api/health',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminUsersRoute = AdminUsersRouteImport.update({
@@ -133,6 +139,7 @@ export interface FileRoutesByFullPath {
   '/settings': typeof SettingsRoute
   '/user': typeof UserRoute
   '/admin/users': typeof AdminUsersRoute
+  '/api/health': typeof ApiHealthRoute
   '/oauth/authorize': typeof OauthAuthorizeRouteWithChildren
   '/oauth/device': typeof OauthDeviceRouteWithChildren
   '/repos/$id': typeof ReposIdRoute
@@ -154,6 +161,7 @@ export interface FileRoutesByTo {
   '/settings': typeof SettingsRoute
   '/user': typeof UserRoute
   '/admin/users': typeof AdminUsersRoute
+  '/api/health': typeof ApiHealthRoute
   '/oauth/authorize': typeof OauthAuthorizeRouteWithChildren
   '/oauth/device': typeof OauthDeviceRouteWithChildren
   '/repos/$id': typeof ReposIdRoute
@@ -176,6 +184,7 @@ export interface FileRoutesById {
   '/settings': typeof SettingsRoute
   '/user': typeof UserRoute
   '/admin/users': typeof AdminUsersRoute
+  '/api/health': typeof ApiHealthRoute
   '/oauth/authorize': typeof OauthAuthorizeRouteWithChildren
   '/oauth/device': typeof OauthDeviceRouteWithChildren
   '/repos/$id': typeof ReposIdRoute
@@ -199,6 +208,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/user'
     | '/admin/users'
+    | '/api/health'
     | '/oauth/authorize'
     | '/oauth/device'
     | '/repos/$id'
@@ -220,6 +230,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/user'
     | '/admin/users'
+    | '/api/health'
     | '/oauth/authorize'
     | '/oauth/device'
     | '/repos/$id'
@@ -241,6 +252,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/user'
     | '/admin/users'
+    | '/api/health'
     | '/oauth/authorize'
     | '/oauth/device'
     | '/repos/$id'
@@ -263,6 +275,7 @@ export interface RootRouteChildren {
   SettingsRoute: typeof SettingsRoute
   UserRoute: typeof UserRoute
   AdminUsersRoute: typeof AdminUsersRoute
+  ApiHealthRoute: typeof ApiHealthRoute
   OauthAuthorizeRoute: typeof OauthAuthorizeRouteWithChildren
   OauthDeviceRoute: typeof OauthDeviceRouteWithChildren
   ApiAuthBootstrapRoute: typeof ApiAuthBootstrapRoute
@@ -337,6 +350,13 @@ declare module '@tanstack/react-router' {
       path: '/oauth/authorize'
       fullPath: '/oauth/authorize'
       preLoaderRoute: typeof OauthAuthorizeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/health': {
+      id: '/api/health'
+      path: '/api/health'
+      fullPath: '/api/health'
+      preLoaderRoute: typeof ApiHealthRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admin/users': {
@@ -454,6 +474,7 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsRoute: SettingsRoute,
   UserRoute: UserRoute,
   AdminUsersRoute: AdminUsersRoute,
+  ApiHealthRoute: ApiHealthRoute,
   OauthAuthorizeRoute: OauthAuthorizeRouteWithChildren,
   OauthDeviceRoute: OauthDeviceRouteWithChildren,
   ApiAuthBootstrapRoute: ApiAuthBootstrapRoute,

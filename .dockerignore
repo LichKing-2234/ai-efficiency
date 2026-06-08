@@ -16,12 +16,15 @@ backend/config.yaml
 # Dependencies (rebuilt in Docker)
 frontend/node_modules/
 frontend/dist/
+frontend-ng/node_modules/
+frontend-ng/.output/
 
 # Non-build directories
 ae-cli/
 docs/
 *.md
 !frontend/*.md
+!frontend-ng/*.md
 
 # IDE
 .idea/
