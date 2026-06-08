@@ -1,0 +1,214 @@
+@import "tailwindcss";
+
+@font-face {
+  font-family: "MiSans";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("./assets/fonts/MiSans-Regular.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "MiSans";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("./assets/fonts/MiSans-Medium.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "MiSans";
+  font-style: normal;
+  font-weight: 600 700;
+  font-display: swap;
+  src: url("./assets/fonts/MiSans-Semibold.woff2") format("woff2");
+}
+
+@theme inline {
+  --font-sans: "MiSans", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "SF Mono", "Geist Mono", ui-monospace, "JetBrains Mono", monospace;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-xl: 14px;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+}
+
+:root {
+  color-scheme: light;
+  --background: #faf9f5;
+  --foreground: #161615;
+  --card: #fffefb;
+  --card-foreground: #161615;
+  --popover: #fffefb;
+  --popover-foreground: #161615;
+  --primary: #161615;
+  --primary-foreground: #ffffff;
+  --secondary: #f3f2ed;
+  --secondary-foreground: #23221f;
+  --muted: #f3f2ed;
+  --muted-foreground: #74736c;
+  --accent: #ebeae4;
+  --accent-foreground: #23221f;
+  --destructive: #b3261e;
+  --border: rgba(20, 18, 12, 0.11);
+  --input: rgba(20, 18, 12, 0.14);
+  --ring: #3f5ec2;
+  --ae-bg-2: #f3f2ed;
+  --ae-surface-2: #f4f3ee;
+  --ae-surface-3: #ebeae4;
+  --ae-hairline: rgba(20, 18, 12, 0.055);
+  --ae-text-2: #53524c;
+  --ae-text-3: #84837c;
+  --ae-text-4: #adaca4;
+  --ae-ai: #3f5ec2;
+  --ae-ai-2: #34509f;
+  --ae-ai-soft: rgba(63, 94, 194, 0.10);
+  --ae-ai-line: rgba(63, 94, 194, 0.26);
+  --ae-pos: #15803d;
+  --ae-pos-soft: rgba(21, 128, 61, 0.10);
+  --ae-warn: #b45309;
+  --ae-warn-soft: rgba(180, 83, 9, 0.11);
+  --ae-track: #e9e8e1;
+  --ae-grid-line: rgba(20, 18, 12, 0.045);
+  --ae-rail: 212px;
+  --ae-toolbar: 48px;
+}
+
+.dark {
+  color-scheme: dark;
+  --background: #0a0a0a;
+  --foreground: #ededed;
+  --card: #141414;
+  --card-foreground: #ededed;
+  --popover: #181818;
+  --popover-foreground: #ededed;
+  --primary: #e8e8e8;
+  --primary-foreground: #0a0a0a;
+  --secondary: #191919;
+  --secondary-foreground: #ededed;
+  --muted: #191919;
+  --muted-foreground: #9c9c9a;
+  --accent: #212121;
+  --accent-foreground: #ededed;
+  --destructive: #f87171;
+  --border: rgba(255, 255, 255, 0.11);
+  --input: rgba(255, 255, 255, 0.14);
+  --ring: #84a6ef;
+  --ae-bg-2: #0f0f0f;
+  --ae-surface-2: #191919;
+  --ae-surface-3: #212121;
+  --ae-hairline: rgba(255, 255, 255, 0.05);
+  --ae-text-2: #9c9c9a;
+  --ae-text-3: #6c6c69;
+  --ae-text-4: #4a4a47;
+  --ae-ai: #84a6ef;
+  --ae-ai-2: #a3bdf5;
+  --ae-ai-soft: rgba(132, 166, 239, 0.13);
+  --ae-ai-line: rgba(132, 166, 239, 0.26);
+  --ae-pos: #4ade80;
+  --ae-pos-soft: rgba(74, 222, 128, 0.12);
+  --ae-warn: #fbbf24;
+  --ae-warn-soft: rgba(251, 191, 36, 0.12);
+  --ae-track: #242424;
+  --ae-grid-line: rgba(255, 255, 255, 0.04);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  min-height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+button,
+input,
+textarea,
+select {
+  font-family: inherit;
+}
+
+#root,
+#app-content {
+  min-height: 100vh;
+}
+
+::selection {
+  background: var(--ae-ai-soft);
+  color: var(--foreground);
+}
+
+*::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: color-mix(in oklab, var(--ae-text-3) 30%, transparent);
+  border: 2px solid transparent;
+  border-radius: 99px;
+  background-clip: padding-box;
+}
+
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+.grid-bg {
+  background-image:
+    linear-gradient(var(--ae-grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--ae-grid-line) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.page-fade {
+  animation: fade-in 0.28s cubic-bezier(.22, .61, .36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page-fade {
+    animation: none;
+  }
+}
