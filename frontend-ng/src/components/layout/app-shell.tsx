@@ -4,6 +4,25 @@ import { useEffect, useState } from 'react'
 import { CommandPalette } from '@/components/command/command-palette'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet'
+import {
+  Sidebar,
+  SidebarBrand,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarInset,
+  SidebarLayout,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarProvider,
+  SidebarRail,
+  SidebarSeparator
+} from '@/components/ui/sidebar'
 import { api } from '@/lib/api'
 import type { User } from '@/lib/api/types'
 import type { Locale } from '@/lib/i18n/messages'
@@ -74,98 +93,96 @@ export function AppShell({ user, children }: { user: User | null; children: Reac
     await navigate({ to: '/login' })
   }
 
-  const nav = (compact = false) => (
-    <div className='flex h-full flex-col overflow-hidden bg-sidebar text-sidebar-foreground'>
-      <div className={cn('flex h-[var(--topbar)] items-center border-b border-[var(--line-faint)]', compact ? 'justify-center px-0' : 'gap-2 px-4')}>
-        <div className='flex min-w-0 items-center gap-2 font-semibold'>
-          <span className='grid size-7 shrink-0 place-items-center rounded-[var(--r-sm)] bg-[linear-gradient(135deg,var(--ai-bright),var(--ai-deep))] text-primary-foreground text-xs shadow-[0_2px_8px_var(--ai-glow)]'>AE</span>
-          {!compact ? (
-            <span className='min-w-0'>
-              <span className='block truncate'>{t('app.title')}</span>
-              <span className='block font-mono text-[10px] text-[var(--ink-4)]'>console · ng</span>
-            </span>
-          ) : null}
-        </div>
-      </div>
-      <nav className={cn('flex-1 overflow-y-auto overflow-x-hidden', compact ? 'p-3' : 'p-3')}>
-        {sectionOrder.map((section) => {
-          const items = visibleItems.filter((item) => item.section === section)
-          if (!items.length) return null
-          const sectionKey = items[0].sectionKey
-          return (
-            <div key={section} className={cn('mb-4', compact && 'mb-2')}>
-              {compact ? (
-                section !== 'analyze' ? <div className='mx-1 my-2 h-px bg-[var(--line-faint)]' /> : null
-              ) : (
-                <div className='px-2 py-1 font-semibold text-[10px] text-[var(--ink-4)] uppercase tracking-[0.08em]'>{t(sectionKey)}</div>
-              )}
-              <div className={cn('flex flex-col', compact ? 'gap-1' : 'gap-1')}>
-                {items.map((item) => {
-                  const Icon = item.icon
-                  const active = item.to === '/' ? location.pathname === '/' : location.pathname.startsWith(item.to)
-                  return (
-                    <Link
-                      key={item.to}
-                      to={item.to}
-                      onClick={() => setOpen(false)}
-                      className={cn(
-                        'group relative flex items-center rounded-[var(--r-sm)] border border-transparent font-medium text-sm text-[var(--ink-2)] transition-colors duration-150 hover:bg-[var(--surface-2)] hover:text-foreground',
-                        compact ? 'h-[42px] justify-center px-0' : 'h-8 gap-2 px-2',
-                        active && 'border-border bg-sidebar-accent text-foreground shadow-[var(--sh-sm)]'
-                      )}
-                      title={compact ? t(item.labelKey) : undefined}
-                    >
-                      {active && !compact ? <span className='absolute top-2 bottom-2 -left-3 w-[3px] rounded-full bg-[var(--ai)]' /> : null}
-                      <Icon className={cn(compact ? 'size-[19px]' : 'size-4', active ? 'text-[var(--ai)]' : 'text-[var(--ink-3)]')} />
-                      {!compact ? <span className='truncate'>{t(item.labelKey)}</span> : null}
-                      {compact ? (
-                        <span className='pointer-events-none absolute left-[calc(100%+10px)] top-1/2 z-50 -translate-y-1/2 scale-95 whitespace-nowrap rounded-[var(--r-sm)] bg-primary px-2 py-1 font-semibold text-primary-foreground text-xs opacity-0 shadow-[var(--sh-lg)] transition group-hover:scale-100 group-hover:opacity-100'>
-                          {t(item.labelKey)}
-                        </span>
-                      ) : null}
-                    </Link>
-                  )
-                })}
-              </div>
+  function renderSidebarContent({ compact, closeOnNavigate }: { compact: boolean; closeOnNavigate: boolean }) {
+    return (
+      <>
+        <SidebarHeader>
+          <SidebarBrand mark='AE' title={t('app.title')} subtitle='console · ng' />
+        </SidebarHeader>
+        <SidebarContent>
+          {sectionOrder.map((section) => {
+            const items = visibleItems.filter((item) => item.section === section)
+            if (!items.length) return null
+            const sectionKey = items[0].sectionKey
+            return (
+              <SidebarGroup key={section}>
+                {section !== 'analyze' ? <SidebarSeparator /> : null}
+                <SidebarGroupLabel>{t(sectionKey)}</SidebarGroupLabel>
+                <SidebarGroupContent>
+                  <SidebarMenu>
+                    {items.map((item) => {
+                      const Icon = item.icon
+                      const active = item.to === '/' ? location.pathname === '/' : location.pathname.startsWith(item.to)
+                      return (
+                        <SidebarMenuItem key={item.to}>
+                          <SidebarMenuButton
+                            active={active}
+                            icon={Icon}
+                            render={(buttonProps) => (
+                              <Link
+                                to={item.to}
+                                onClick={closeOnNavigate ? () => setOpen(false) : undefined}
+                                {...buttonProps}
+                              />
+                            )}
+                            tooltip={t(item.labelKey)}
+                          >
+                            {t(item.labelKey)}
+                          </SidebarMenuButton>
+                        </SidebarMenuItem>
+                      )
+                    })}
+                  </SidebarMenu>
+                </SidebarGroupContent>
+              </SidebarGroup>
+            )
+          })}
+        </SidebarContent>
+        <SidebarFooter>
+          <div className={cn('flex items-center gap-2', compact && 'justify-center')}>
+            <div className='grid size-8 place-items-center rounded-full bg-[var(--ae-ai-soft)] font-semibold text-[var(--ae-ai-2)] text-xs'>
+              {(user?.username || user?.email || '?').slice(0, 2).toUpperCase()}
             </div>
-          )
-        })}
-      </nav>
-      <div className={cn('border-t border-[var(--line-faint)] p-3', compact && 'grid place-items-center')}>
-        <div className={cn('flex items-center gap-2', compact && 'justify-center')}>
-          <div className='grid size-8 place-items-center rounded-full bg-[var(--ae-ai-soft)] font-semibold text-[var(--ae-ai-2)] text-xs'>
-            {(user?.username || user?.email || '?').slice(0, 2).toUpperCase()}
+            {!compact ? (
+              <div className='min-w-0 flex-1'>
+                <div className='truncate font-medium text-sm'>{user?.username || t('auth.guest')}</div>
+                <div className='truncate text-[var(--ae-text-4)] text-xs'>{user?.role || t('auth.notSignedIn')}</div>
+              </div>
+            ) : null}
+            {!compact ? (
+              <Button variant='ghost' size='icon-sm' onClick={logout} title={t('nav.signOut')}>
+                <LogOutIcon />
+              </Button>
+            ) : null}
           </div>
-          {!compact ? <div className='min-w-0 flex-1'>
-            <div className='truncate font-medium text-sm'>{user?.username || t('auth.guest')}</div>
-            <div className='truncate text-[var(--ae-text-4)] text-xs'>{user?.role || t('auth.notSignedIn')}</div>
-          </div> : null}
-          {!compact ? <Button variant='ghost' size='icon-sm' onClick={logout} title={t('nav.signOut')}>
-            <LogOutIcon />
-          </Button> : null}
-        </div>
+        </SidebarFooter>
+      </>
+    )
+  }
+
+  const nav = (compact = false) => (
+    <SidebarProvider collapsed={compact}>
+      <div className='flex h-full w-full flex-col overflow-hidden bg-sidebar text-sidebar-foreground'>
+        {renderSidebarContent({ compact, closeOnNavigate: true })}
       </div>
-    </div>
+    </SidebarProvider>
   )
 
   return (
-    <div className='flex h-screen overflow-hidden'>
-      <aside
-        className={cn(
-          'hidden shrink-0 border-r border-[var(--sidebar-border)] transition-[width] duration-200 ease-[var(--ease-out)] md:block',
-          collapsed ? 'w-[68px]' : 'w-[var(--rail)]'
-        )}
-      >
-        {nav(collapsed)}
-      </aside>
-      {open ? (
-        <div className='fixed inset-0 z-50 md:hidden'>
-          <button className='absolute inset-0 bg-black/35' onClick={() => setOpen(false)} aria-label={t('nav.closeMenu')} />
-          <div className='relative h-full w-[min(280px,86vw)]'>{nav(false)}</div>
-        </div>
-      ) : null}
-      <div className='flex min-w-0 flex-1 flex-col'>
-        <header className='flex h-[var(--topbar)] shrink-0 items-center gap-3 border-b border-border bg-background/85 px-4 backdrop-blur'>
+    <SidebarProvider collapsed={collapsed}>
+      <SidebarLayout>
+        <Sidebar>
+          {renderSidebarContent({ compact: collapsed, closeOnNavigate: false })}
+          <SidebarRail />
+        </Sidebar>
+        <Sheet onOpenChange={setOpen} open={open}>
+          <SheetContent className='w-[min(280px,86vw)] gap-0 border-sidebar-border bg-sidebar p-0 text-sidebar-foreground md:hidden' showCloseButton={false} side='left'>
+            <SheetTitle className='sr-only'>{t('nav.closeMenu')}</SheetTitle>
+            {nav(false)}
+          </SheetContent>
+        </Sheet>
+        <SidebarInset>
+          <header className='flex h-[var(--topbar)] shrink-0 items-center gap-3 border-b border-border bg-background/85 px-4 backdrop-blur'>
           <Button className='md:hidden' variant='outline' size='icon-sm' onClick={() => setOpen(true)}>
             <MenuIcon />
           </Button>
@@ -212,12 +229,13 @@ export function AppShell({ user, children }: { user: User | null; children: Reac
               {dark ? <SunIcon /> : <MoonIcon />}
             </Button>
           </div>
-        </header>
-        <main className='min-h-0 flex-1 overflow-y-auto'>
-          <div className='mx-auto w-full max-w-7xl p-4 pb-12 md:p-6'>{children}</div>
-        </main>
-      </div>
-      <CommandPalette isAdmin={user?.role === 'admin'} onClose={() => setCommandOpen(false)} open={commandOpen} />
-    </div>
+          </header>
+          <main className='min-h-0 flex-1 overflow-y-auto'>
+            <div className='mx-auto w-full max-w-7xl p-4 pb-12 md:p-6'>{children}</div>
+          </main>
+        </SidebarInset>
+        <CommandPalette isAdmin={user?.role === 'admin'} onClose={() => setCommandOpen(false)} open={commandOpen} />
+      </SidebarLayout>
+    </SidebarProvider>
   )
 }

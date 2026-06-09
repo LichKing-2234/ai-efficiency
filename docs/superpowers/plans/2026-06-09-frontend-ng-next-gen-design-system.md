@@ -171,6 +171,10 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
 
   Keep off-canvas navigation below the 920px breakpoint and close on nav selection.
 
+  Follow-up audit implementation adds `frontend-ng/src/components/ui/sidebar.tsx` as the shell-level shadcn-style Sidebar primitive with provider, layout, header, content, group, menu, footer, rail, and inset slots. `AppShell` now composes the desktop rail from these slots instead of page-local sidebar markup, while preserving the existing cookie-backed collapsed state, role-gated nav visibility, active route styling, and tooltip labels.
+
+  The same audit pass replaces the mobile fixed overlay with the existing shadcn/Radix `Sheet` primitive and keeps an accessible hidden `SheetTitle`. Focused TDD evidence: `bun test src/components/ui/sidebar.test.tsx` first failed because `./sidebar` did not exist, then passed after implementation. Current verification for this checkpoint: `bun test src/components/ui/sidebar.test.tsx`, `bun test`, `bun run check`, `bun run build`, and `git diff --check` pass. Browser QA on `http://127.0.0.1:4317/` verified desktop `1280x720` with one sidebar provider, one sidebar, seven visible sidebar nav buttons, no Sheet, no error boundary, and zero horizontal overflow; mobile `390x844` verified the shadcn Sheet opens, Overview/Admin nav links are visible for the current admin user, no error boundary renders, and horizontal overflow remains zero.
+
 - [x] **Step 5: Add command palette**
 
   Register `Ctrl/Cmd+K`, provide navigation commands and safe UI actions, and route using TanStack Router.
