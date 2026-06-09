@@ -468,6 +468,10 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
 
   Follow-up Settings Credential audit evidence: `credential-form.test.tsx` was added and passed with the Settings form tests and `settings-payloads.test.ts`. `bun test --timeout 20000`, `bun run check`, `bun run build`, and `git diff --check` passed after extracting the Credential form. Fresh `agent-browser` coverage for `/settings?section=advanced-credentials` reached the local authenticated loading-account state with no error boundary and no horizontal overflow; authenticated Credential dialog visual verification remains covered by SSR/component tests until a reusable logged-in browser session or local handoff is available.
 
+  Follow-up Login audit implementation extracts `LoginForm` so `/login` uses shadcn `FieldGroup`, `Field`, `FieldLabel`, `Input`, and `Select` semantics instead of page-local placeholder-only fields. `LoginPage` still owns auth option loading, manual login, dev login, redirects, and mutation behavior, while the extracted form owns field labels, validation gating, source selection, and error presentation.
+
+  Follow-up Login audit evidence: `login-form.test.tsx` was added and passed with `auth-flow-state.test.ts`. `bun test src/features/auth/login-form.test.tsx src/features/auth/auth-flow-state.test.ts`, `bun test --timeout 20000`, `bun run check`, `bun run build`, and `git diff --check` passed after extracting the form. `agent-browser` reverified `/login` at `http://127.0.0.1:4317/login`: one shared field group rendered with username, password, login source, sign-in, and dev-login controls; no error boundary rendered, body horizontal overflow was zero, and button overflow was zero.
+
 ## Task 6: Verification, Visual QA, Commit, and Push
 
 **Files:**
