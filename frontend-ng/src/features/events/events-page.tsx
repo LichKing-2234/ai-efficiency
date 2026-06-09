@@ -10,6 +10,7 @@ import { CardFilterBar } from '@/components/primitives/card-filter-bar'
 import { CardPagerFooter } from '@/components/primitives/card-pager-footer'
 import { DataGrid, DataGridHeader, DataGridRow } from '@/components/primitives/data-grid'
 import { FieldItem, FieldList } from '@/components/primitives/field-list'
+import { FilterRow } from '@/components/primitives/filter-row'
 import { InfoTile, InfoTileGrid } from '@/components/primitives/info-tile'
 import { LabeledSegmentedControl } from '@/components/primitives/labeled-segmented-control'
 import { LinkedRecordItem, LinkedRecordList } from '@/components/primitives/linked-record-list'
@@ -128,7 +129,7 @@ export function EventsPage() {
 
       <Card>
         <CardFilterBar stacked>
-          <div className='flex flex-wrap items-center gap-2'>
+          <FilterRow>
             <SearchField
               ariaLabel={t('events.searchRepoSessionSource')}
               className='min-w-[260px] flex-1'
@@ -157,8 +158,8 @@ export function EventsPage() {
               value={filterToSegment(filters.bindingStatus)}
             />
             <Button onClick={applyCurrentFilters}>{t('common.applyFilters')}</Button>
-          </div>
-          <div className='flex flex-wrap items-center gap-2'>
+          </FilterRow>
+          <FilterRow>
             <TextField
               className='w-[220px]'
               id='events-filter-from'
@@ -190,7 +191,7 @@ export function EventsPage() {
               </>
             ) : null}
             {isAdmin && appliedFilters.userId ? <Button variant='ghost' onClick={clearSelectedUser}>{t('adminUsers.clearUser', { id: appliedFilters.userId })}</Button> : null}
-          </div>
+          </FilterRow>
           {userOptions.length > 0 ? (
             <OptionList
               ariaLabel={t('events.searchUsersByNameOrEmail')}
@@ -305,11 +306,11 @@ function EventDetail({ event, isAdmin, onClose }: { event: ToolUsageEventDetail 
     >
       {event ? (
         <div className='flex flex-col gap-[18px]'>
-          <div className='flex flex-wrap gap-2'>
+          <FilterRow align='start'>
             <Badge variant='ai'>{event.tool}</Badge>
             <Badge variant={event.binding_status === 'bound' ? 'pos' : 'warn'}>{event.binding_status}</Badge>
             <Badge variant='neutral'>{number(event.context_usage_pct)}% {t('events.context')}</Badge>
-          </div>
+          </FilterRow>
 
           <InfoTileGrid columns={3}>
             <InfoTile label={t('events.tokens')} value={compact(tokens)} compact numeric />

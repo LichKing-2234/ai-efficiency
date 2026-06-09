@@ -11,4 +11,12 @@ describe('Events page composition', () => {
     expect(source).toContain('<InfoTileGrid columns={3}>')
     expect(source).not.toContain("<div className='grid grid-cols-3 gap-2'>")
   })
+
+  test('uses shared filter rows for filter controls and detail badges', () => {
+    expect(source).toContain("from '@/components/primitives/filter-row'")
+    expect(source).toContain('<FilterRow>')
+    expect(source).toContain("<FilterRow align='start'>")
+    expect(source).not.toContain("<div className='flex flex-wrap items-center gap-2'>")
+    expect(source).not.toContain("<div className='flex flex-wrap gap-2'>")
+  })
 })
