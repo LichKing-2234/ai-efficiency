@@ -256,6 +256,8 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
 
   Follow-up filter audit implementation adds the shared `LabeledSegmentedControl` primitive and migrates the Events Tool and Binding segmented filters away from the page-local `FilterSegment` helper while preserving the existing `SegmentedControl` behavior and backend empty-filter mapping.
 
+  Follow-up row audit implementation adds the shared `TokenMeter` primitive and migrates the Events row token mini-bar away from page-local markup while preserving compact token formatting, minimum non-zero visibility, and the existing Events row grid contract.
+
   Current evidence: `event-filters.test.ts`, `search-field.test.tsx`, `info-tile.test.tsx`, `field-list.test.tsx`, `bun run check`, browser QA on `/events`, and full verification passed. `agent-browser` verified two radiogroups, seven radio items, Tool and Binding filters, one shared search input, no error boundary, no visible interactive overflow, and no horizontal overflow at `1280x720` and `390x844`. The current local account has no event rows, so SlideOver data rendering is covered by TypeScript/build and primitive tests while browser QA verifies the route empty/data-light state.
 
   Follow-up audit evidence: `option-list.test.tsx` and `code-block.test.tsx` were added with a red-green cycle. `bun run check` passed after migrating `/events`. `agent-browser` reverified `/events` at `1280x720` and `390x844`: no error boundary, no horizontal overflow, and no mobile button overflow. The local account still has no event rows or user search candidate rows, so visible `OptionList` and `CodeBlock` instances are covered by primitive tests and TypeScript/build.
@@ -263,6 +265,8 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
   Follow-up detail audit evidence: `section-eyebrow.test.tsx` was added with a red-green cycle, `event-filters.test.ts` and `bun run check` passed after removing the page-local section label helper, and browser QA reverified the `/events` data-light route state. The current local account still has no event rows, so SlideOver section label rendering is covered by primitive tests and TypeScript/build until event detail data is available.
 
   Follow-up filter audit evidence: `labeled-segmented-control.test.tsx` was added with a red-green cycle, `event-filters.test.ts` and `bun run check` passed after removing the page-local filter segment helper. `agent-browser` verified `/events` at `1280x720` and `390x844` with two shared labeled segmented controls, two radiogroups, seven radio items, no error boundary text, no horizontal overflow, and no visible button overflow. Full verification passed with `bun test`, `bun run check`, `bun run build`, and `git diff --check`.
+
+  Follow-up row audit evidence: `token-meter.test.tsx` was added with a red-green cycle, `event-filters.test.ts` and `bun run check` passed after migrating Events row token bars. `agent-browser` reverified `/events` at `1280x720` and `390x844`: no error boundary text, no horizontal overflow, no visible button/link overflow, and two filter radiogroups. The local account still has no event rows, so visible `TokenMeter` row rendering is covered by primitive tests and TypeScript/build until event data is available.
 
 - [x] **Step 2: Repositories**
 

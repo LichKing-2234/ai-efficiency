@@ -19,6 +19,7 @@ import { LoadingState } from '@/components/primitives/data-state'
 import { SearchField } from '@/components/primitives/search-field'
 import { SectionEyebrow } from '@/components/primitives/section-eyebrow'
 import { SlideOver } from '@/components/primitives/slide-over'
+import { TokenMeter } from '@/components/primitives/token-meter'
 import { ToolGlyph } from '@/components/primitives/tool-glyph'
 import { api } from '@/lib/api'
 import { compact, dateTime, number, tokenTotal } from '@/lib/format'
@@ -242,12 +243,7 @@ function EventRow({ row, maxTokens, onSelect }: { row: ToolUsageEventRow; maxTok
         <span className='block truncate font-medium text-foreground text-sm'>{row.repo_name || t('events.unlinked')}</span>
         <span className='mono block truncate text-[11px] text-[var(--ink-4)]'>{row.source_basename || row.tool_session_id}</span>
       </span>
-      <span className='flex min-w-0 items-center gap-2'>
-        <span className='h-1.5 max-w-20 flex-1 overflow-hidden rounded-full bg-[var(--surface-inset)]'>
-          <span className='block h-full rounded-full bg-[var(--ai)]' style={{ width: `${Math.max(4, (tokens / maxTokens) * 100)}%` }} />
-        </span>
-        <span className='mono tnum min-w-12 text-[var(--ink-2)] text-xs'>{compact(tokens)}</span>
-      </span>
+      <TokenMeter label={compact(tokens)} max={maxTokens} value={tokens} />
       <span className='tnum text-right text-[var(--ink-2)]'>{number(row.request_count)}</span>
       <span className='tnum text-right font-semibold text-foreground'>{number(row.credit_usage)}</span>
       <span><Badge variant={row.binding_status === 'bound' ? 'pos' : 'warn'}>{row.binding_status}</Badge></span>
