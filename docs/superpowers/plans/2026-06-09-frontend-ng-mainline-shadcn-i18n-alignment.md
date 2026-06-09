@@ -590,7 +590,7 @@ cd frontend-ng && bun test src/lib/i18n/no-hardcoded-copy.test.ts && bun run che
 
 Expected: PASS.
 
-- [ ] **Step 8: Commit i18n foundation**
+- [x] **Step 8: Commit i18n foundation**
 
 Run:
 
@@ -609,7 +609,7 @@ Expected: commit created.
 - Modify: `frontend-ng/src/features/repos/repos-state.test.ts`
 - Modify: `frontend-ng/src/features/repos/repos-state.ts`
 
-- [ ] **Step 1: Write failing API helper tests for inventory and webhook summaries**
+- [x] **Step 1: Write failing API helper tests for inventory and webhook summaries**
 
 Append to `frontend-ng/src/features/repos/repos-state.test.ts`:
 
@@ -672,7 +672,7 @@ test('classifies repo detail webhook repair eligibility and result', () => {
 })
 ```
 
-- [ ] **Step 2: Run tests and verify failure**
+- [x] **Step 2: Run tests and verify failure**
 
 Run:
 
@@ -682,7 +682,7 @@ cd frontend-ng && bun test src/features/repos/repos-state.test.ts
 
 Expected: FAIL because new types and helper functions do not exist.
 
-- [ ] **Step 3: Add API types**
+- [x] **Step 3: Add API types**
 
 Add to `frontend-ng/src/lib/api/types.ts` near `RepoConfig`:
 
@@ -826,7 +826,7 @@ export interface UserUsageDashboardSnapshot {
 }
 ```
 
-- [ ] **Step 4: Add API methods**
+- [x] **Step 4: Add API methods**
 
 Modify imports in `frontend-ng/src/lib/api/index.ts` to include the new types, then update `api`:
 
@@ -859,7 +859,7 @@ Modify imports in `frontend-ng/src/lib/api/index.ts` to include the new types, t
 
 Keep existing `get`, `createDirect`, `autoBindUnbound`, `update`, `delete`, `prs`, `syncPRs`, and `latestPRSyncJob` methods.
 
-- [ ] **Step 5: Add repo helper implementations**
+- [x] **Step 5: Add repo helper implementations**
 
 Append to `frontend-ng/src/features/repos/repos-state.ts`:
 
@@ -912,7 +912,7 @@ export function repoRepairMessage(item: RepoWebhookRepairItem): { kind: 'success
 }
 ```
 
-- [ ] **Step 6: Run tests and typecheck**
+- [x] **Step 6: Run tests and typecheck**
 
 Run:
 

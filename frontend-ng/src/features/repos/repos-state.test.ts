@@ -1,12 +1,17 @@
 import { describe, expect, test } from 'vitest'
-import type { RepoConfig, SCMProvider } from '@/lib/api/types'
+import type { RepoConfig, RepoInventoryProviderSummary, RepoWebhookRepairBatchResult, RepoWebhookRepairItem, SCMProvider } from '@/lib/api/types'
 import {
   applyBindingFilter,
   buildRepoCloneUrl,
   buildRepoCreatePayload,
+  canRepairWebhook,
+  compareInventoryProviders,
+  firstScope,
   groupRepos,
   healthSummary,
   parseRepoUrl,
+  repoRepairMessage,
+  webhookRepairBatchMessage,
   selectProviderForRepoOrigin
 } from './repos-state'
 
@@ -112,5 +117,53 @@ describe('repos state helpers', () => {
       { scmName: 'GitHub', org: 'beta', ids: [1] },
       { scmName: 'Unbound', org: 'alpha', ids: [2] }
     ])
+  })
+
+  test('sorts inventory providers with unbound last and stable platform priority', () => {
+    const rows: RepoInventoryProviderSummary[] = [
+      { provider_key: 'unbound', name: 'Unbound', type: 'unbound', total_repos: 1, bound_repos: 0, unbound_repos: 1, active_repos: 0, webhook_failed_repos: 0, scopes: [] },
+      { provider_key: 'bb', provider_id: 2, name: 'Bitbucket', type: 'bitbucket_server', total_repos: 2, bound_repos: 2, unbound_repos: 0, active_repos: 2, webhook_failed_repos: 1, scopes: [] },
+      { provider_key: 'gh', provider_id: 1, name: 'GitHub', type: 'github', total_repos: 3, bound_repos: 3, unbound_repos: 0, active_repos: 3, webhook_failed_repos: 0, scopes: [] }
+    ]
+    expect([...rows].sort(compareInventoryProviders).map((row) => row.provider_key)).toEqual(['gh', 'bb', 'unbound'])
+  })
+
+  test('reads first scope and summarizes webhook repair results', () => {
+    const provider: RepoInventoryProviderSummary = {
+      provider_key: 'gh',
+      provider_id: 1,
+      name: 'GitHub',
+      type: 'github',
+      total_repos: 2,
+      bound_repos: 2,
+      unbound_repos: 0,
+      active_repos: 1,
+      webhook_failed_repos: 1,
+      scopes: [{ scope: 'org', total_repos: 2, bound_repos: 2, unbound_repos: 0, active_repos: 1, webhook_failed_repos: 1 }]
+    }
+    expect(firstScope(provider)).toBe('org')
+
+    const batch: RepoWebhookRepairBatchResult = {
+      summary: { scanned: 3, repaired: 1, already_registered: 1, failed: 1 },
+      items: []
+    }
+    expect(webhookRepairBatchMessage(batch)).toEqual({ repaired: 1, alreadyRegistered: 1, failed: 1 })
+  })
+
+  test('classifies repo detail webhook repair eligibility and result', () => {
+    expect(canRepairWebhook({ role: 'admin', bindingState: 'bound', status: 'webhook_failed', webhookId: 'old' })).toBe(true)
+    expect(canRepairWebhook({ role: 'admin', bindingState: 'bound', status: 'active', webhookId: '' })).toBe(true)
+    expect(canRepairWebhook({ role: 'user', bindingState: 'bound', status: 'webhook_failed', webhookId: 'old' })).toBe(false)
+    expect(canRepairWebhook({ role: 'admin', bindingState: 'unbound', status: 'webhook_failed', webhookId: 'old' })).toBe(false)
+
+    const failed: RepoWebhookRepairItem = {
+      repo_config_id: 9,
+      full_name: 'org/repo',
+      previous_status: 'webhook_failed',
+      status: 'webhook_failed',
+      webhook_status: 'failed',
+      error: 'bitbucket API returned 502'
+    }
+    expect(repoRepairMessage(failed)).toEqual({ kind: 'error', error: 'bitbucket API returned 502' })
   })
 })

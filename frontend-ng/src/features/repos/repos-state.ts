@@ -1,4 +1,11 @@
-import type { RepoConfig, RepoDirectCreateRequest, SCMProvider } from '@/lib/api/types'
+import type {
+  RepoConfig,
+  RepoDirectCreateRequest,
+  RepoInventoryProviderSummary,
+  RepoWebhookRepairBatchResult,
+  RepoWebhookRepairItem,
+  SCMProvider
+} from '@/lib/api/types'
 
 export type RepoBindingFilter = 'all' | 'bound' | 'unbound'
 export type RepoCloneProtocol = 'http' | 'ssh'
@@ -127,4 +134,45 @@ export function groupRepos(rows: RepoConfig[]): RepoGroup[] {
   }
 
   return Array.from(groups.values()).sort((a, b) => a.scmName.localeCompare(b.scmName) || a.org.localeCompare(b.org))
+}
+
+export function compareInventoryProviders(a: RepoInventoryProviderSummary, b: RepoInventoryProviderSummary) {
+  if (a.provider_key === 'unbound') return 1
+  if (b.provider_key === 'unbound') return -1
+  const priority = (provider: RepoInventoryProviderSummary) => {
+    if (provider.type === 'github') return 0
+    if (provider.type === 'bitbucket_server' || provider.type === 'bitbucket') return 1
+    return 2
+  }
+  return priority(a) - priority(b) || a.name.localeCompare(b.name) || a.provider_key.localeCompare(b.provider_key)
+}
+
+export function firstScope(provider: RepoInventoryProviderSummary | null | undefined) {
+  return provider?.scopes[0]?.scope ?? ''
+}
+
+export function webhookRepairBatchMessage(result: RepoWebhookRepairBatchResult) {
+  return {
+    repaired: result.summary.repaired,
+    alreadyRegistered: result.summary.already_registered,
+    failed: result.summary.failed
+  }
+}
+
+export function canRepairWebhook(state: {
+  role?: string
+  bindingState?: 'bound' | 'unbound'
+  status?: string
+  webhookId?: string | null
+}) {
+  return state.role === 'admin'
+    && state.bindingState === 'bound'
+    && (state.status === 'webhook_failed' || !state.webhookId)
+}
+
+export function repoRepairMessage(item: RepoWebhookRepairItem): { kind: 'success' | 'error'; error?: string } {
+  if (item.webhook_status === 'failed' || item.status === 'webhook_failed' || item.error) {
+    return { kind: 'error', error: item.error || 'Webhook repair failed' }
+  }
+  return { kind: 'success' }
 }

@@ -25,7 +25,12 @@ import type {
   RepoAutoBindResult,
   RepoDirectCreateRequest,
   RepoConfig,
+  RepoInventoryProviderSummary,
+  RepoListParams,
   RepoUpdateRequest,
+  RepoWebhookRepairBatchResult,
+  RepoWebhookRepairItem,
+  RepoWebhookRepairRequest,
   SCMProvider,
   SCMProviderPayload,
   ToolUsageEventDetail,
@@ -37,7 +42,9 @@ import type {
   UserProviderModelsResponse,
   UserProvidersResponse,
   UserProviderTestRequest,
-  UserProviderTestResult
+  UserProviderTestResult,
+  UserUsageDashboardParams,
+  UserUsageDashboardSnapshot
 } from '@/lib/api/types'
 
 export const api = {
@@ -51,6 +58,9 @@ export const api = {
   },
   dashboard: () => apiFetch<DashboardData>('/efficiency/dashboard'),
   userProviders: () => apiFetch<UserProvidersResponse>('/user/providers'),
+  userUsage: {
+    dashboard: (params?: UserUsageDashboardParams) => apiFetch<UserUsageDashboardSnapshot>(`/user/usage/dashboard${encodeQuery(params ? { ...params } : undefined)}`)
+  },
   createGroupCredential: (providerId: number, groupId: string) =>
     apiFetch<GroupCredentialMutationResult>(`/user/providers/${providerId}/groups/${groupId}/credential`, { method: 'POST' }),
   regenerateGroupCredential: (providerId: number, groupId: string) =>
@@ -66,11 +76,29 @@ export const api = {
     users: (params?: Record<string, unknown>) => apiFetch<ToolUsageEventUserOption[]>(`/events/users${encodeQuery(params)}`)
   },
   repos: {
-    list: (page = 1, pageSize = 20) => apiFetch<PagedResponse<RepoConfig>>(`/repos${encodeQuery({ page, page_size: pageSize })}`),
+    list: (paramsOrPage: RepoListParams | number = 1, pageSize = 20) => {
+      const params = typeof paramsOrPage === 'number'
+        ? { page: paramsOrPage, page_size: pageSize }
+        : {
+            page: paramsOrPage.page ?? 1,
+            page_size: paramsOrPage.pageSize ?? 20,
+            scm_provider_id: paramsOrPage.scmProviderId,
+            status: paramsOrPage.status,
+            group_id: paramsOrPage.groupId,
+            scope: paramsOrPage.scope,
+            binding_state: paramsOrPage.bindingState
+          }
+      return apiFetch<PagedResponse<RepoConfig>>(`/repos${encodeQuery(params)}`)
+    },
+    inventory: () => apiFetch<RepoInventoryProviderSummary[]>('/repos/inventory'),
     get: (id: number) => apiFetch<RepoConfig>(`/repos/${id}`),
     create: (data: Partial<RepoConfig>) => apiFetch<RepoConfig>('/repos', { method: 'POST', body: JSON.stringify(data) }),
     createDirect: (data: RepoDirectCreateRequest) => apiFetch<RepoConfig>('/repos/direct', { method: 'POST', body: JSON.stringify(data) }),
     autoBindUnbound: () => apiFetch<RepoAutoBindResult>('/repos/auto-bind-unbound', { method: 'POST' }),
+    repairFailedWebhooks: (data: RepoWebhookRepairRequest = { force: false }) =>
+      apiFetch<RepoWebhookRepairBatchResult>('/repos/repair-webhooks', { method: 'POST', body: JSON.stringify(data) }),
+    repairWebhook: (id: number, data: RepoWebhookRepairRequest = { force: false }) =>
+      apiFetch<RepoWebhookRepairItem>(`/repos/${id}/repair-webhook`, { method: 'POST', body: JSON.stringify(data) }),
     update: (id: number, data: RepoUpdateRequest) => apiFetch<RepoConfig>(`/repos/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
     delete: (id: number) => apiFetch<null>(`/repos/${id}`, { method: 'DELETE' }),
     prs: (repoId: number, params?: Record<string, unknown>) =>
