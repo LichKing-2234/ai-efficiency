@@ -1,3 +1,6 @@
+import type { ToolUsageEventRow } from '@/lib/api/types'
+import { tokenTotal } from '@/lib/format'
+
 export type HomeSetupInput = {
   connectedTools: number
   totalRepos?: number | null
@@ -20,5 +23,18 @@ export function homeSetupProgress(input: HomeSetupInput) {
     ready,
     total: items.length,
     ratio: items.length ? ready / items.length : 0
+  }
+}
+
+export function buildHomeActivitySummary(event: ToolUsageEventRow) {
+  return {
+    id: event.id,
+    bound: event.binding_status === 'bound',
+    credit: event.credit_usage,
+    endedAt: event.observed_end_at,
+    requests: event.request_count,
+    title: event.repo_name || event.source_basename || event.tool_session_id,
+    tokens: tokenTotal(event),
+    tool: event.tool
   }
 }

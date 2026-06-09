@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { buildHomeSetupItems, homeSetupProgress } from './home-state'
+import { buildHomeActivitySummary, buildHomeSetupItems, homeSetupProgress } from './home-state'
 
 describe('home setup progress', () => {
   test('counts account, AI access, repositories, and recent usage readiness', () => {
@@ -24,5 +24,34 @@ describe('home setup progress', () => {
       ['repos', false],
       ['usage', false]
     ])
+  })
+
+  test('summarizes recent activity rows from backend events', () => {
+    expect(buildHomeActivitySummary({
+      id: 1,
+      tool: 'claude',
+      repo_id: 10,
+      repo_name: '',
+      tool_session_id: 'session-1',
+      dedupe_key: 'event-1',
+      observed_end_at: '2026-06-09T09:30:00Z',
+      request_count: 3,
+      input_tokens: 100,
+      output_tokens: 50,
+      cached_input_tokens: 20,
+      reasoning_tokens: 10,
+      credit_usage: 0.25,
+      source_basename: 'workspace-a',
+      binding_status: 'bound'
+    })).toEqual({
+      id: 1,
+      bound: true,
+      credit: 0.25,
+      endedAt: '2026-06-09T09:30:00Z',
+      requests: 3,
+      title: 'workspace-a',
+      tokens: 180,
+      tool: 'claude'
+    })
   })
 })

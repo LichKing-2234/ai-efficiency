@@ -8,11 +8,12 @@ import { Ring } from '@/components/primitives/charts'
 import { MetricCard } from '@/components/primitives/metric-card'
 import { Page, PageHeader } from '@/components/primitives/page'
 import { LoadingState } from '@/components/primitives/data-state'
+import { ToolGlyph } from '@/components/primitives/tool-glyph'
 import { UserUsagePanel } from '@/features/user-usage/user-usage-panel'
 import { api } from '@/lib/api'
-import { number, tokenTotal, dateTime } from '@/lib/format'
+import { compact, dateTime, number } from '@/lib/format'
 import { useI18n } from '@/lib/i18n/i18n'
-import { homeSetupProgress } from './home-state'
+import { buildHomeActivitySummary, homeSetupProgress } from './home-state'
 
 export function HomePage() {
   const { locale, t } = useI18n()
@@ -122,23 +123,53 @@ export function HomePage() {
           </CardContent>
         </Card>
         <Card>
-          <CardHeader>
-            <CardTitle>{t('home.recentUsage')}</CardTitle>
+          <CardHeader className='flex-row items-center justify-between gap-3'>
+            <div className='flex items-center gap-2'>
+              <span className='live-dot' />
+              <CardTitle>{t('home.recentUsage')}</CardTitle>
+            </div>
+            <Button asChild variant='link' size='sm'>
+              <Link to='/events'>{t('home.viewAllRecords')}<ArrowRightIcon data-icon='inline-end' /></Link>
+            </Button>
           </CardHeader>
-          <CardContent className='flex flex-col gap-3'>
-            {recentEvents.length ? recentEvents.map((event) => (
-              <div key={event.id} className='flex items-center gap-3 rounded-md bg-muted px-3 py-2'>
-                <Badge variant={event.binding_status === 'bound' ? 'success' : 'warning'}>{event.tool}</Badge>
-                <div className='min-w-0 flex-1'>
-                  <div className='truncate font-medium text-sm'>{event.repo_name || event.source_basename || event.tool_session_id}</div>
-                  <div className='text-muted-foreground text-xs'>{dateTime(event.observed_end_at, locale)} · {number(tokenTotal(event), locale)} tokens</div>
-                </div>
-              </div>
+          <CardContent className='flex flex-col'>
+            {recentEvents.length ? recentEvents.map((event, index) => (
+              <ActivityRow key={event.id} event={buildHomeActivitySummary(event)} first={index === 0} locale={locale} />
             )) : <div className='text-muted-foreground text-sm'>{t('common.empty')}</div>}
           </CardContent>
         </Card>
       </div>
     </Page>
+  )
+}
+
+function ActivityRow({
+  event,
+  first,
+  locale
+}: {
+  event: ReturnType<typeof buildHomeActivitySummary>
+  first: boolean
+  locale: ReturnType<typeof useI18n>['locale']
+}) {
+  const { t } = useI18n()
+  return (
+    <div className={first ? 'flex items-center gap-3 py-3' : 'flex items-center gap-3 border-t border-[var(--line-faint)] py-3'}>
+      <ToolGlyph tool={event.tool} size={28} />
+      <div className='min-w-0 flex-1'>
+        <div className='truncate font-semibold text-sm'>{event.title}</div>
+        <div className='mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11.5px] text-muted-foreground'>
+          <span>{dateTime(event.endedAt, locale)}</span>
+          <span className='text-[var(--ink-4)]'>·</span>
+          <span className='mono tnum'>{compact(event.tokens, locale)} {t('home.tokensShort')}</span>
+        </div>
+      </div>
+      <Badge variant={event.bound ? 'success' : 'warning'}>{event.bound ? t('events.bound') : t('events.unbound')}</Badge>
+      <div className='hidden w-20 text-right tnum sm:block'>
+        <div className='font-semibold text-sm'>{number(event.credit, locale)}</div>
+        <div className='text-[11px] text-muted-foreground'>{number(event.requests, locale)} {t('home.requestsShort')}</div>
+      </div>
+    </div>
   )
 }
 
