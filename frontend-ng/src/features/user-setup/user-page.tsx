@@ -1,14 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Clipboard, KeyRound, RefreshCw, Terminal, Zap } from 'lucide-react'
+import { Clipboard, KeyRound, RefreshCw, Terminal } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
-import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
-import { Input } from '@/components/ui/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Textarea } from '@/components/ui/textarea'
 import { AppAlert } from '@/components/primitives/app-alert'
 import { CommandAccordion } from '@/components/primitives/command-accordion'
 import { CommandStep } from '@/components/primitives/command-step'
@@ -31,10 +27,10 @@ import {
   buildWindowsInstallCommand,
   chooseDefaultSelection,
   maskApiKey,
-  modelLabel,
   secretStateKey,
   visibleCredentialSecret
 } from './user-setup-state'
+import { ProviderTestForm, type ProviderTestFormLabels } from './provider-test-form'
 import type { GroupCredentialMutationResult, UserProviderTestResult } from '@/lib/api/types'
 
 export function UserPage() {
@@ -61,6 +57,15 @@ export function UserPage() {
   const installCommand = buildInstallCommand(origin)
   const windowsInstallCommand = buildWindowsInstallCommand(origin)
   const discoverCommand = selectedProvider ? buildDiscoverCommand(selectedProvider.name) : t('userSetup.selectProviderFirst')
+  const providerTestLabels: ProviderTestFormLabels = {
+    createKeyBeforeTesting: t('userSetup.createKeyBeforeTesting'),
+    loadingModels: t('userSetup.loadingModels'),
+    model: t('userSetup.model'),
+    platform: t('userSetup.platform'),
+    prompt: t('userSetup.prompt'),
+    runTest: t('userSetup.runTest'),
+    testing: t('userSetup.testing')
+  }
   const modelQuery = useQuery({
     queryKey: ['user-provider-models', selectedProvider?.id, selectedGroup?.group_id, selectedGroup?.platform, !!secret],
     queryFn: () => {
@@ -259,42 +264,24 @@ export function UserPage() {
           <Card>
             <SectionCardHeader title={t('userSetup.providerTest')} description={t('userSetup.providerTestDescription')} />
             <CardContent>
-              <FieldGroup>
-                <div className='grid gap-3 md:grid-cols-2'>
-                  <Field>
-                    <FieldLabel>{t('userSetup.model')}</FieldLabel>
-                    {modelQuery.data?.models?.length ? (
-                      <Select value={model} onValueChange={setModel}>
-                        <SelectTrigger className='w-full'><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          {modelQuery.data.models.map((item) => <SelectItem key={item.id} value={item.id}>{modelLabel(item)}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                    ) : (
-                      <Input value={model} placeholder={modelQuery.isFetching ? t('userSetup.loadingModels') : selectedProvider?.default_model || 'gpt-5.4'} onChange={(event) => setModel(event.target.value)} />
-                    )}
-                  </Field>
-                  <Field>
-                    <FieldLabel>{t('userSetup.platform')}</FieldLabel>
-                    <Input value={selectedGroup?.platform || ''} disabled />
-                  </Field>
-                </div>
-                {modelQuery.data?.message ? <div className='text-muted-foreground text-sm'>{modelQuery.data.message}</div> : null}
-                {modelQuery.error ? <AppAlert tone='error' title={modelQuery.error.message} /> : null}
-                <Field>
-                  <FieldLabel>{t('userSetup.prompt')}</FieldLabel>
-                  <Textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} />
-                </Field>
-                <div className='flex flex-wrap items-center gap-3'>
-                  <Button disabled={!selectedGroup || !secret || !model.trim() || testProvider.isPending} onClick={() => testProvider.mutate()}>
-                    <Zap data-icon='inline-start' />
-                    {testProvider.isPending ? t('userSetup.testing') : t('userSetup.runTest')}
-                  </Button>
-                  {!secret ? <span className='text-muted-foreground text-sm'>{t('userSetup.createKeyBeforeTesting')}</span> : null}
-                  {testResult ? <Badge variant={testResult.success ? 'success' : 'warning'}>{testResult.message}</Badge> : null}
-                </div>
-                {testResult?.response ? <InsetPanel comfortable>{testResult.response}</InsetPanel> : null}
-              </FieldGroup>
+              <ProviderTestForm
+                canRun={!!selectedGroup && !!secret && !!model.trim()}
+                error={modelQuery.error?.message}
+                labels={providerTestLabels}
+                loadingModels={modelQuery.isFetching}
+                message={modelQuery.data?.message}
+                model={model}
+                modelFallbackPlaceholder={selectedProvider?.default_model || 'gpt-5.4'}
+                modelOptions={modelQuery.data?.models ?? []}
+                onModelChange={setModel}
+                onPromptChange={setPrompt}
+                onRun={() => testProvider.mutate()}
+                platform={selectedGroup?.platform || ''}
+                prompt={prompt}
+                result={testResult}
+                running={testProvider.isPending}
+                secretMissing={!secret}
+              />
             </CardContent>
           </Card>
         </div>
