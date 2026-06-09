@@ -2,7 +2,6 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 import { useParams } from '@tanstack/react-router'
 import { ExternalLink, GitPullRequest, RefreshCw, Save, Waypoints } from 'lucide-react'
 import { Fragment, useEffect, useState } from 'react'
-import type { ReactNode } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -12,6 +11,7 @@ import { Field, FieldLabel } from '@/components/ui/field'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
+import { InfoTile } from '@/components/primitives/info-tile'
 import { MetricCard } from '@/components/primitives/metric-card'
 import { Page, PageHeader } from '@/components/primitives/page'
 import { LoadingState } from '@/components/primitives/data-state'
@@ -222,10 +222,10 @@ export function RepoDetailPage() {
           <CardHeader><CardTitle>{t('repoDetail.latestSyncJob')}</CardTitle></CardHeader>
           <CardContent className='flex flex-col gap-3'>
             <div className='grid gap-3 md:grid-cols-4'>
-              <DetailStat label={t('common.status')} value={<StatusBadge value={currentJob.status} />} />
-              <DetailStat label={t('repoDetail.phaseLabel')} value={currentJob.phase || '-'} />
-              <DetailStat label={t('repoDetail.fetchedLabel')} value={number(jobProgress?.fetched)} mono />
-              <DetailStat label={t('repoDetail.processedLabel')} value={`${number(jobProgress?.processed)}/${number(currentJob.total_prs || currentJob.fetched_prs)}`} mono />
+              <InfoTile label={t('common.status')} value={<StatusBadge value={currentJob.status} />} />
+              <InfoTile label={t('repoDetail.phaseLabel')} value={currentJob.phase || '-'} />
+              <InfoTile label={t('repoDetail.fetchedLabel')} value={number(jobProgress?.fetched)} mono />
+              <InfoTile label={t('repoDetail.processedLabel')} value={`${number(jobProgress?.processed)}/${number(currentJob.total_prs || currentJob.fetched_prs)}`} mono />
             </div>
             <div className='rounded-[var(--r-md)] border border-border bg-[var(--surface-inset)] p-3 text-muted-foreground text-sm'>
               {t('repoDetail.usage', { done: number(jobProgress?.usageRefreshed), total: number(jobProgress?.usageTotal) })} · {syncMessage || prSyncJobMessage(currentJob)}
@@ -438,22 +438,5 @@ export function RepoDetailPage() {
         </CardFooter>
       </Card>
     </Page>
-  )
-}
-
-function DetailStat({
-  label,
-  value,
-  mono = false
-}: {
-  label: string
-  value: ReactNode
-  mono?: boolean
-}) {
-  return (
-    <div className='rounded-[var(--r-md)] border border-border bg-[var(--surface-inset)] p-3'>
-      <div className='font-semibold text-muted-foreground text-xs uppercase'>{label}</div>
-      <div className={mono ? 'mono mt-1 font-semibold text-sm' : 'mt-1 font-semibold text-sm'}>{value}</div>
-    </div>
   )
 }

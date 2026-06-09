@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { InfoTile } from '@/components/primitives/info-tile'
 import { MetricCard } from '@/components/primitives/metric-card'
 import { Page } from '@/components/primitives/page'
 import { LoadingState } from '@/components/primitives/data-state'
@@ -295,9 +296,9 @@ function EventDetail({ event, isAdmin, onClose }: { event: ToolUsageEventDetail 
           </div>
 
           <div className='grid grid-cols-3 gap-2'>
-            <StatTile label={t('events.tokens')} value={compact(tokens)} />
-            <StatTile label={t('events.requests')} value={number(event.request_count)} />
-            <StatTile label={t('events.credit')} value={number(event.credit_usage)} accent />
+            <InfoTile label={t('events.tokens')} value={compact(tokens)} compact numeric />
+            <InfoTile label={t('events.requests')} value={number(event.request_count)} compact numeric />
+            <InfoTile label={t('events.credit')} value={number(event.credit_usage)} accent='ai' compact numeric />
           </div>
 
           <section>
@@ -369,15 +370,6 @@ function EventDetail({ event, isAdmin, onClose }: { event: ToolUsageEventDetail 
         </div>
       ) : null}
     </SlideOver>
-  )
-}
-
-function StatTile({ label, value, accent = false }: { label: string; value: React.ReactNode; accent?: boolean }) {
-  return (
-    <div className={accent ? 'rounded-[var(--r-md)] border border-[var(--ai-line)] bg-[var(--ai-soft)] p-3' : 'rounded-[var(--r-md)] border border-border bg-[var(--surface-inset)] p-3'}>
-      <div className={accent ? 'text-[var(--ai-deep)] text-xs' : 'text-muted-foreground text-xs'}>{label}</div>
-      <div className={accent ? 'tnum mt-1 font-semibold text-[18px] text-[var(--ai-deep)]' : 'tnum mt-1 font-semibold text-[18px]'}>{value}</div>
-    </div>
   )
 }
 

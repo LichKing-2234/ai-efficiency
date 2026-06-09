@@ -232,7 +232,9 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
 
   Current implementation also uses the shared `SearchField` primitive for the event text filter, composing the shadcn `InputGroup` parts instead of page-local input wrapper markup.
 
-  Current evidence: `event-filters.test.ts`, `search-field.test.tsx`, `bun run check`, browser QA on `/events`, and full verification passed. `agent-browser` verified two radiogroups, seven radio items, Tool and Binding filters, one shared search input, no error boundary, no visible interactive overflow, and no horizontal overflow at `1280x720` and `390x844`.
+  Current implementation also uses the shared `InfoTile` primitive for SlideOver token/request/credit stat tiles, including compact numeric and AI accent variants.
+
+  Current evidence: `event-filters.test.ts`, `search-field.test.tsx`, `info-tile.test.tsx`, `bun run check`, browser QA on `/events`, and full verification passed. `agent-browser` verified two radiogroups, seven radio items, Tool and Binding filters, one shared search input, no error boundary, no visible interactive overflow, and no horizontal overflow at `1280x720` and `390x844`. The current local account has no event rows, so SlideOver data rendering is covered by TypeScript/build and primitive tests while browser QA verifies the route empty/data-light state.
 
 - [x] **Step 2: Repositories**
 
@@ -245,6 +247,10 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
 - [x] **Step 3: Repository detail**
 
   Re-skin SCM binding, usage snapshots, webhook status, and PR sync panels with shared cards/tables.
+
+  Current implementation uses the shared `InfoTile` primitive for latest sync job status, phase, fetched, and processed stat tiles instead of a page-local `DetailStat` helper.
+
+  Current evidence: `repo-detail-state.test.ts`, `info-tile.test.tsx`, and `bun run check` passed. The current local account exposes no repository detail links in `/repos`, so browser QA verifies the authenticated repository route empty/data-light state with no error boundary or horizontal overflow while repo detail stat rendering is covered by TypeScript/build.
 
 - [x] **Step 4: My Setup**
 

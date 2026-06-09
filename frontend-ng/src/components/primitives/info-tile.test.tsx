@@ -11,4 +11,14 @@ describe('InfoTile', () => {
     expect(html).toContain('text-[var(--pos)]')
     expect(html).toContain('mono')
   })
+
+  test('renders numeric compact tiles with ai accent styling', () => {
+    const html = renderToStaticMarkup(<InfoTile accent='ai' compact label='Credit' numeric value='12.5' />)
+
+    expect(html).toContain('border-[var(--ai-line)]')
+    expect(html).toContain('bg-[var(--ai-soft)]')
+    expect(html).toContain('text-[18px]')
+    expect(html).toContain('tnum')
+    expect(html).not.toContain('uppercase')
+  })
 })
