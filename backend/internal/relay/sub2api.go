@@ -1414,8 +1414,15 @@ func (s *sub2apiRelay) assignDefaultSubscriptionsForUser(ctx context.Context, us
 	if err != nil {
 		return err
 	}
+	existingGroups, _ := s.activeSubscriptionGroupIDs(ctx, userID)
+	if existingGroups == nil {
+		existingGroups = make(map[int64]bool)
+	}
 	for _, item := range defaults {
 		if item.GroupID <= 0 {
+			continue
+		}
+		if existingGroups[item.GroupID] {
 			continue
 		}
 		if err := s.assignSubscription(ctx, userID, subscriptionAssignment{
@@ -1423,8 +1430,13 @@ func (s *sub2apiRelay) assignDefaultSubscriptionsForUser(ctx context.Context, us
 			ValidityDays: item.ValidityDays,
 			Notes:        "auto assigned by ai-efficiency relay provisioning",
 		}); err != nil {
+			if assigned, checkErr := s.hasActiveSubscriptionGroup(ctx, userID, item.GroupID); checkErr == nil && assigned {
+				existingGroups[item.GroupID] = true
+				continue
+			}
 			return err
 		}
+		existingGroups[item.GroupID] = true
 	}
 	return nil
 }
@@ -1566,6 +1578,37 @@ func (s *sub2apiRelay) findSubscriptionForUserGroup(ctx context.Context, userID,
 		}
 	}
 	return nil, fmt.Errorf("subscription not found for user %d group %d", userID, groupID)
+}
+
+func (s *sub2apiRelay) activeSubscriptionGroupIDs(ctx context.Context, userID int64) (map[int64]bool, error) {
+	subscriptions, err := s.listUserSubscriptions(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	groups := make(map[int64]bool, len(subscriptions))
+	for _, subscription := range subscriptions {
+		groupID := subscription.GroupID
+		if groupID == 0 && subscription.Group != nil {
+			groupID = subscription.Group.ID
+		}
+		if groupID > 0 && isActiveSubscriptionStatus(subscription.Status) {
+			groups[groupID] = true
+		}
+	}
+	return groups, nil
+}
+
+func (s *sub2apiRelay) hasActiveSubscriptionGroup(ctx context.Context, userID, groupID int64) (bool, error) {
+	groups, err := s.activeSubscriptionGroupIDs(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+	return groups[groupID], nil
+}
+
+func isActiveSubscriptionStatus(status string) bool {
+	status = strings.TrimSpace(status)
+	return status == "" || strings.EqualFold(status, "active")
 }
 
 func (s *sub2apiRelay) listUserSubscriptions(ctx context.Context, userID int64) ([]sub2apiUserSubscription, error) {
