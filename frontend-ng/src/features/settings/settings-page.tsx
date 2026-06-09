@@ -5,7 +5,7 @@ import { Database, KeyRound, Layers, LockKeyhole, RefreshCw, Shield, Waypoints }
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Field, FieldLabel } from '@/components/ui/field'
@@ -409,10 +409,7 @@ export function SettingsPage() {
           </CardContent>
         </Card> : null}
         {activeSection === 'organization-login' ? <Card>
-          <CardHeader>
-            <CardTitle>{t('settings.organizationLogin')}</CardTitle>
-            <CardDescription>{t('settings.ldapLoginBehavior')}</CardDescription>
-          </CardHeader>
+          <SectionCardHeader title={t('settings.organizationLogin')} description={t('settings.ldapLoginBehavior')} />
           <CardContent className='flex flex-col gap-3'>
             <Input placeholder={t('settings.ldapUrl')} value={ldapForm.url} onChange={(event) => setLDAPForm((value) => ({ ...value, url: event.target.value }))} />
             <Input placeholder={t('settings.baseDn')} value={ldapForm.base_dn} onChange={(event) => setLDAPForm((value) => ({ ...value, base_dn: event.target.value }))} />
@@ -447,10 +444,7 @@ export function SettingsPage() {
           </CardContent>
         </Card> : null}
         {activeSection === 'deployment-runtime' ? <Card>
-          <CardHeader>
-            <CardTitle>{t('settings.deploymentRuntime')}</CardTitle>
-            <CardDescription>{t('settings.currentBackendDeployment')}</CardDescription>
-          </CardHeader>
+          <SectionCardHeader title={t('settings.deploymentRuntime')} description={t('settings.currentBackendDeployment')} />
           <CardContent className='flex flex-col gap-3'>
             <div className='grid gap-3 md:grid-cols-3'>
               <InfoTile label={t('settings.current')} value={`v${deployment.data?.version.version || '-'}`} mono />

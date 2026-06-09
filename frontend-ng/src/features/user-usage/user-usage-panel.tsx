@@ -4,12 +4,13 @@ import { useState } from 'react'
 import { ActivityIcon, CoinsIcon, GaugeIcon, LayersIcon, RefreshCwIcon } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Empty, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
 import { BarsH, StackedAreaChart, type StackedAreaKey } from '@/components/primitives/charts'
 import { DataGrid, DataGridHeader, DataGridRow } from '@/components/primitives/data-grid'
 import { HeatmapGrid } from '@/components/primitives/heatmap-grid'
 import { MetricCard } from '@/components/primitives/metric-card'
+import { SectionCardHeader } from '@/components/primitives/section-card-header'
 import { SegmentedControl } from '@/components/primitives/segmented-control'
 import { api } from '@/lib/api'
 import type { UserUsageTrendPoint } from '@/lib/api/types'
@@ -128,10 +129,7 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
             </div>
             <div className='split-2'>
               <Card>
-                <CardHeader>
-                  <CardTitle>{t('usageDashboard.tokenTrend')}</CardTitle>
-                  <CardDescription>{t('usageDashboard.tokenTrendDescription', { range: rangeLabel })}</CardDescription>
-                </CardHeader>
+                <SectionCardHeader title={t('usageDashboard.tokenTrend')} description={t('usageDashboard.tokenTrendDescription', { range: rangeLabel })} />
                 <CardContent>
                   {snapshot.trend.length ? (
                     <div className='flex flex-col gap-4'>
@@ -155,10 +153,7 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
                 </CardContent>
               </Card>
               <Card className='overflow-hidden'>
-                <CardHeader>
-                  <CardTitle>{t('usageDashboard.modelDistribution')}</CardTitle>
-                  <CardDescription>{t('usageDashboard.modelDistributionDescription')}</CardDescription>
-                </CardHeader>
+                <SectionCardHeader title={t('usageDashboard.modelDistribution')} description={t('usageDashboard.modelDistributionDescription')} />
                 <CardContent className='px-0 pb-0'>
                   {snapshot.models.length ? (
                     <>
@@ -200,10 +195,7 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
             </div>
             {!embedded ? (
               <Card>
-                <CardHeader>
-                  <CardTitle>{t('usageDashboard.activityHeatmap')}</CardTitle>
-                  <CardDescription>{t('usageDashboard.activityHeatmapDescription')}</CardDescription>
-                </CardHeader>
+                <SectionCardHeader title={t('usageDashboard.activityHeatmap')} description={t('usageDashboard.activityHeatmapDescription')} />
                 <CardContent>
                   {snapshot.trend.length ? (
                     <HeatmapGrid

@@ -221,6 +221,10 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
 
   Current evidence: `bun run check`, `bun test`, `bun run build`, and browser QA on `/usage` passed. The local dev account returns `configured=false`, so browser QA verifies the configured-empty state, no Recharts DOM, no runtime error, no visible button overflow, and no horizontal overflow at `1280px` and `390px`; data-state chart and heatmap rendering are covered by TypeScript/build, `charts.test.ts`, `heatmap-grid.test.ts`, and `user-usage-state.test.ts`.
 
+  Follow-up section-header audit implementation migrates Usage Analytics token trend, model distribution, and activity heatmap cards to the shared `SectionCardHeader` primitive while preserving the existing backend-driven chart/table/heatmap rendering and range-specific description copy.
+
+  Follow-up section-header audit evidence: `section-card-header.test.tsx` was extended for className passthrough, `user-usage-state.test.ts`, `bun test`, `bun run check`, `bun run build`, and `git diff --check` passed after migration. `agent-browser` reverified `/usage` in the authenticated session at `1280x720`: no error boundary text and no body horizontal overflow. The local account currently renders the configured-empty state, so visible chart card headers remain covered by primitive tests, TypeScript, and build until configured usage data is available.
+
 - [x] **Step 6: Align Overview setup progress with shared Ring**
 
   Extract Overview setup readiness into `home-state.ts`, render the setup status card with the shared `Ring` primitive, migrate recent usage into reference-style live activity rows with `ToolGlyph`, and keep checklist labels/statuses backed by real dashboard, provider, and event data.
@@ -405,6 +409,10 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
   Follow-up section-header audit implementation adds the shared `SectionCardHeader` primitive and migrates the Settings AI Services, Code Platforms, and Advanced Credentials cards away from repeated page-local `CardHeader` title/action/description markup while preserving the existing add-dialog actions, icons, and i18n copy.
 
   Follow-up section-header audit evidence: `section-card-header.test.tsx` was added with a red-green cycle, `bun test src/components/primitives/section-card-header.test.tsx`, `bun test`, `bun run check`, `bun run build`, and `git diff --check` passed after migration. `agent-browser` reverified `/settings` at `1280x720` and `390x844` in the authenticated session: one shared card header rendered for the active AI Services section, the Add action remained visible, no error boundary text rendered, and body horizontal overflow stayed zero.
+
+  Follow-up section-header audit implementation also migrates the Settings Organization Login and Deployment & Runtime cards to `SectionCardHeader`, completing the standard title/description header path for every Settings section card.
+
+  Follow-up section-header audit evidence: `section-card-header.test.tsx`, `settings-payloads.test.ts`, `bun test`, `bun run check`, `bun run build`, and `git diff --check` passed after the migration. `agent-browser` reverified `/settings?section=organization-login` and `/settings?section=deployment-runtime` in the authenticated session at `1280x720` and `390x844`: each route rendered one shared card header with the expected section title, no error boundary text, and zero body horizontal overflow.
 
   Follow-up action-group audit implementation adds the shared `ActionGroup` primitive and migrates Settings relay, SCM, and credential table row actions plus their create/edit dialog footer actions away from repeated page-local `flex justify-end gap-2` wrappers while preserving all button variants, confirm actions, disabled states, and backend mutations.
 

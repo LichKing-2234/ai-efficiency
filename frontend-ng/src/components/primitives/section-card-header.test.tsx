@@ -27,4 +27,11 @@ describe('SectionCardHeader', () => {
     expect(html).not.toContain('data-slot="card-description"')
     expect(html).not.toContain('justify-end')
   })
+
+  test('passes layout class names through to the card header slot', () => {
+    const html = renderToStaticMarkup(<SectionCardHeader title='Selected scope' className='gap-4' />)
+
+    expect(html).toContain('data-slot="card-header"')
+    expect(html).toContain('gap-4')
+  })
 })
