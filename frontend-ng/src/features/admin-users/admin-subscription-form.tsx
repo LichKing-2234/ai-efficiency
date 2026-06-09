@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button'
-import { Checkbox } from '@/components/ui/checkbox'
-import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
+import { FieldGroup } from '@/components/ui/field'
 import { ActionGroup } from '@/components/primitives/action-group'
+import { CheckboxField } from '@/components/primitives/checkbox-field'
 import { SelectField } from '@/components/primitives/select-field'
 import { TextField } from '@/components/primitives/text-field'
 import type {
@@ -128,10 +128,14 @@ export function AdminSubscriptionForm({
             onChange={(value) => onDaysChange(Number(value) || 0)}
           />
         ) : (
-          <Field orientation='horizontal' className='min-h-14 items-end pb-1'>
-            <Checkbox checked={confirmRemove} disabled={activeJobRunning} onCheckedChange={(value) => onConfirmRemoveChange(value === true)} />
-            <FieldLabel>{labels.confirm}</FieldLabel>
-          </Field>
+          <CheckboxField
+            checked={confirmRemove}
+            className='min-h-14 items-end pb-1'
+            disabled={activeJobRunning}
+            id='admin-subscription-confirm-remove'
+            label={labels.confirm}
+            onCheckedChange={onConfirmRemoveChange}
+          />
         )}
         <ActionGroup className='items-end'>
           <Button variant='outline' disabled={!canSubmit} onClick={onStart}>

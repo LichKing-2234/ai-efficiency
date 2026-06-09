@@ -1,9 +1,9 @@
 import { Button } from '@/components/ui/button'
-import { Checkbox } from '@/components/ui/checkbox'
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { ActionGroup } from '@/components/primitives/action-group'
 import { AppAlert } from '@/components/primitives/app-alert'
+import { CheckboxField } from '@/components/primitives/checkbox-field'
 import { useI18n } from '@/lib/i18n/i18n'
 import type { LDAPFormState } from './settings-payloads'
 
@@ -55,14 +55,7 @@ export function LdapSettingsForm({
           />
         </Field>
       ))}
-      <Field orientation='horizontal'>
-        <Checkbox
-          id='ldap-starttls'
-          checked={form.tls}
-          onCheckedChange={(checked) => onChange({ ...form, tls: checked === true })}
-        />
-        <FieldLabel htmlFor='ldap-starttls'>{t('settings.useStartTls')}</FieldLabel>
-      </Field>
+      <CheckboxField id='ldap-starttls' checked={form.tls} label={t('settings.useStartTls')} onCheckedChange={(tls) => onChange({ ...form, tls })} />
       {message ? (
         <AppAlert
           tone={message.toLowerCase().includes('failed') || message.toLowerCase().includes('required') ? 'error' : 'success'}

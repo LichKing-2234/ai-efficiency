@@ -1,9 +1,9 @@
 import { Button } from '@/components/ui/button'
-import { Checkbox } from '@/components/ui/checkbox'
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { ActionGroup } from '@/components/primitives/action-group'
 import { AppAlert } from '@/components/primitives/app-alert'
+import { CheckboxField } from '@/components/primitives/checkbox-field'
 import { useI18n } from '@/lib/i18n/i18n'
 import type { RelayFormState } from './settings-payloads'
 
@@ -57,22 +57,8 @@ export function RelayProviderForm({
           />
         </Field>
       ))}
-      <Field orientation='horizontal'>
-        <Checkbox
-          id='relay-primary'
-          checked={form.is_primary}
-          onCheckedChange={(checked) => onChange({ ...form, is_primary: checked === true })}
-        />
-        <FieldLabel htmlFor='relay-primary'>{t('settings.primary')}</FieldLabel>
-      </Field>
-      <Field orientation='horizontal'>
-        <Checkbox
-          id='relay-enabled'
-          checked={form.enabled}
-          onCheckedChange={(checked) => onChange({ ...form, enabled: checked === true })}
-        />
-        <FieldLabel htmlFor='relay-enabled'>{t('settings.enabled')}</FieldLabel>
-      </Field>
+      <CheckboxField id='relay-primary' checked={form.is_primary} label={t('settings.primary')} onCheckedChange={(is_primary) => onChange({ ...form, is_primary })} />
+      <CheckboxField id='relay-enabled' checked={form.enabled} label={t('settings.enabled')} onCheckedChange={(enabled) => onChange({ ...form, enabled })} />
       {errors.filter((message): message is string => !!message).map((message) => (
         <AppAlert key={message} tone='error' title={message} />
       ))}
