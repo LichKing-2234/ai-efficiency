@@ -91,7 +91,7 @@ Do not modify:
 - Create via CLI: `frontend-ng/src/components/ui/tooltip.tsx`
 - Create via CLI: `frontend-ng/src/components/ui/chart.tsx`
 
-- [ ] **Step 1: Reconfirm project context**
+- [x] **Step 1: Reconfirm project context**
 
 Run:
 
@@ -101,7 +101,7 @@ cd frontend-ng && bunx --bun shadcn@latest info --json
 
 Expected: JSON reports `frameworkName: "tanstack-start"`, `base: "radix"`, `style: "radix-nova"`, `tailwindVersion: "v4"`, `iconLibrary: "lucide"`.
 
-- [ ] **Step 2: Install runtime i18n/chart dependencies**
+- [x] **Step 2: Install runtime i18n/chart dependencies**
 
 Run:
 
@@ -111,7 +111,7 @@ cd frontend-ng && bun add i18next react-i18next recharts
 
 Expected: `package.json` includes `i18next`, `react-i18next`, and `recharts`; `bun.lock` changes.
 
-- [ ] **Step 3: Add missing official shadcn components**
+- [x] **Step 3: Add missing official shadcn components**
 
 Run:
 
@@ -121,7 +121,7 @@ cd frontend-ng && bunx --bun shadcn@latest add alert alert-dialog checkbox empty
 
 Expected: files are added under `frontend-ng/src/components/ui/`; no existing custom files are deleted.
 
-- [ ] **Step 4: Inspect generated UI files**
+- [x] **Step 4: Inspect generated UI files**
 
 Run:
 
@@ -137,7 +137,7 @@ Expected:
 - AlertDialog files export `AlertDialogTitle`.
 - Icons import from `lucide-react`.
 
-- [ ] **Step 5: Run typecheck after dependency install**
+- [x] **Step 5: Run typecheck after dependency install**
 
 Run:
 
@@ -147,7 +147,7 @@ cd frontend-ng && bun run check
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit dependency and generated component baseline**
+- [x] **Step 6: Commit dependency and generated component baseline**
 
 Run:
 
