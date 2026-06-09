@@ -378,6 +378,10 @@ Follow-up OAuth/auth redirect diagnosis fixed the `/oauth/device` unauthenticate
 
   Follow-up linked-record audit evidence: `repo-detail-page-composition.test.ts` was added with a red-green cycle; it first failed because `repo-detail-page.tsx` did not import or render `LinkedRecordItem`, then passed after migration. Focused verification passed with `bun test src/features/repos/repo-detail-page-composition.test.ts src/components/primitives/linked-record-list.test.tsx src/features/repos/repo-detail-state.test.ts`, `bun run check`, and `git diff --check`. Full verification passed with `ulimit -n 65536 && bun test --timeout 20000` and `bun run build`. `agent-browser` reverified `/repos/1` and `/repos` on the existing `4339` dev server with no error boundary, no body horizontal overflow, and no button/link overflow; both routes redirected to login in the local unauthenticated state, so visible PR linked-record rows remain covered by the composition guard, primitive SSR test, TypeScript, and build until repository detail data is available.
 
+  Follow-up KPI-grid audit implementation migrates the Repository Detail PR metric strip from a route-local `grid gap-4 sm:grid-cols-4` wrapper to the shared `kpi-grid` design utility, keeping the same backend PR summary values and `MetricCard` rendering while aligning the page with Overview, Usage, Events, and Repositories KPI layout tokens.
+
+  Follow-up KPI-grid audit evidence: `repo-detail-page-composition.test.ts` was extended with a red-green cycle; it first failed because `repo-detail-page.tsx` still rendered the page-local grid wrapper, then passed after the container moved to `kpi-grid`. Focused verification passed with `bun test src/features/repos/repo-detail-page-composition.test.ts src/features/repos/repo-detail-state.test.ts src/features/repos/repo-binding.test.ts src/features/repos/repo-webhook-state.test.ts`, `bun run check`, and `git diff --check`.
+
 - [x] **Step 4: My Setup**
 
   Re-skin provider credential setup, status/progress, and key actions with shared field/card primitives.

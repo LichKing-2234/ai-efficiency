@@ -218,7 +218,7 @@ export function RepoDetailPage() {
           <AlertTitle>{webhookRepairNotice.message}</AlertTitle>
         </Alert>
       ) : null}
-      <div className='grid gap-4 sm:grid-cols-4'>
+      <div className='kpi-grid'>
         <MetricCard label={t('repoDetail.prs')} value={number(totalPRs)} />
         <MetricCard label={t('repoDetail.withUsage')} value={number(summary?.with_usage)} accent />
         <MetricCard label={t('repoDetail.pendingUpload')} value={number(summary?.pending_upload)} />
