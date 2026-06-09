@@ -1,5 +1,6 @@
 import { Link, useNavigate } from '@tanstack/react-router'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { CheckIcon, CircleDotIcon, FolderGit2Icon, GitPullRequestIcon, PlusIcon, RefreshCwIcon, WrenchIcon } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -10,11 +11,10 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { MetricCard } from '@/components/primitives/metric-card'
 import { AppAlert } from '@/components/primitives/app-alert'
-import { Page, PageHeader } from '@/components/primitives/page'
+import { Page } from '@/components/primitives/page'
 import { LoadingState } from '@/components/primitives/data-state'
 import { StatusBadge } from '@/components/primitives/status-badge'
 import { api } from '@/lib/api'
@@ -197,22 +197,25 @@ export function ReposPage() {
   if (inventory.isLoading) return <LoadingState />
 
   return (
-    <Page>
-      <PageHeader
-        title={t('repos.title')}
-        description={t('repos.subtitle')}
-        actions={
-          <div className='flex flex-wrap gap-2'>
-            {me.data?.role === 'admin' ? (
-              <>
-                <Button variant='outline' onClick={() => autoBind.mutate()} disabled={autoBind.isPending}>{autoBind.isPending ? t('repos.autoBindComplete') : t('repos.autoBind')}</Button>
-                <Button variant='outline' onClick={() => webhookRepair.mutate({ force: false })} disabled={webhookRepair.isPending}>{webhookRepair.isPending ? t('repoDetail.webhookRepairing') : t('repos.repairWebhooks')}</Button>
-              </>
-            ) : null}
-            <Button onClick={openAddDialog}>{t('repos.addRepo')}</Button>
-          </div>
-        }
-      />
+    <Page className='stagger'>
+      <div className='flex flex-wrap justify-end gap-2'>
+        {me.data?.role === 'admin' ? (
+          <>
+            <Button variant='outline' onClick={() => autoBind.mutate()} disabled={autoBind.isPending}>
+              <GitPullRequestIcon data-icon='inline-start' />
+              {autoBind.isPending ? t('repos.autoBindComplete') : t('repos.autoBind')}
+            </Button>
+            <Button variant='outline' onClick={() => webhookRepair.mutate({ force: false })} disabled={webhookRepair.isPending}>
+              <WrenchIcon data-icon='inline-start' />
+              {webhookRepair.isPending ? t('repoDetail.webhookRepairing') : t('repos.repairWebhooks')}
+            </Button>
+          </>
+        ) : null}
+        <Button onClick={openAddDialog}>
+          <PlusIcon data-icon='inline-start' />
+          {t('repos.addRepo')}
+        </Button>
+      </div>
       <div className='flex flex-wrap items-center gap-2'>
         <Select value={search.binding} onValueChange={(value) => replaceSearch({ ...search, binding: value as RepoBindingFilter, page: 1 })}>
           <SelectTrigger><SelectValue /></SelectTrigger>
@@ -232,11 +235,11 @@ export function ReposPage() {
         </Select>
         <Button variant='ghost' onClick={() => replaceSearch({ ...search, binding: 'unbound', provider: 'unbound', page: 1 })}>{t('repos.reviewNeedsBinding')}</Button>
       </div>
-      <div className='grid gap-4 sm:grid-cols-4'>
-        <MetricCard label={t('repos.totalRepositories')} value={number(health.total, locale)} />
-        <MetricCard label={t('repos.boundRepositories')} value={number(health.bound, locale)} accent />
-        <MetricCard label={t('repos.unbound')} value={number(health.unbound, locale)} />
-        <MetricCard label={t('repos.activeConfigs')} value={number(health.active, locale)} />
+      <div className='kpi-grid'>
+        <MetricCard label={t('repos.totalRepositories')} value={number(health.total, locale)} icon={FolderGit2Icon} sparkline={reposForProviders.map((provider) => provider.total_repos)} />
+        <MetricCard label={t('repos.boundRepositories')} value={number(health.bound, locale)} accent icon={CheckIcon} sparkline={reposForProviders.map((provider) => provider.bound_repos)} />
+        <MetricCard label={t('repos.unbound')} value={number(health.unbound, locale)} icon={CircleDotIcon} sparkline={reposForProviders.map((provider) => provider.unbound_repos)} sparklineColor='var(--viz-cache)' />
+        <MetricCard label={t('repos.activeConfigs')} value={number(health.active, locale)} icon={RefreshCwIcon} sparkline={reposForProviders.map((provider) => provider.active_repos)} sparklineColor='var(--viz-output)' />
       </div>
       <Alerts
         autoBindMessage={autoBindMessage}
@@ -273,8 +276,8 @@ export function ReposPage() {
               </TabsList>
             </Tabs>
           </CardHeader>
-          <div className='grid min-h-[520px] lg:grid-cols-[280px_minmax(0,1fr)]'>
-            <aside className='border-t border-border bg-muted/35 p-4 lg:border-r'>
+          <div className='repo-workbench'>
+            <aside className='border-t border-border bg-[var(--surface-2)] p-3 lg:border-r'>
               <div className='mb-3 flex items-center justify-between gap-2'>
                 <div className='font-semibold text-sm'>{t('repos.scopeSearch')}</div>
                 <Badge variant='secondary'>{number(selectedProvider?.scopes.length ?? 0, locale)}</Badge>
@@ -283,8 +286,8 @@ export function ReposPage() {
                 {(selectedProvider?.scopes ?? []).map((scope) => (
                   <Button
                     key={scope.scope}
-                    variant={scope.scope === selectedScope ? 'default' : 'ghost'}
-                    className='h-auto justify-between gap-3 px-3 py-2 text-left'
+                    variant={scope.scope === selectedScope ? 'outline' : 'ghost'}
+                    className='h-8 justify-between gap-3 px-3 text-left'
                     onClick={() => replaceSearch({ ...search, scope: scope.scope, page: 1 })}
                   >
                     <span className='min-w-0 truncate'>{scope.scope}</span>
@@ -299,7 +302,7 @@ export function ReposPage() {
                   <div className='text-muted-foreground text-xs'>{selectedProvider?.name ?? t('common.empty')}</div>
                   <h2 className='truncate font-semibold text-lg'>{selectedScope || t('repos.selectedScope')}</h2>
                 </div>
-                <div className='text-muted-foreground text-sm'>{number(total, locale)} {t('repos.selectedScope')}</div>
+                <div className='text-muted-foreground text-sm'>{number(total, locale)} {t('repos.totalRepositories')}</div>
               </div>
               {repos.isLoading ? (
                 <LoadingState />
@@ -383,44 +386,40 @@ function RepoTable({
   const { t } = useI18n()
   return (
     <div className='overflow-x-auto'>
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>{t('repos.repository')}</TableHead>
-            <TableHead>{t('events.binding')}</TableHead>
-            <TableHead>{t('repos.scmProvider')}</TableHead>
-            <TableHead>{t('repos.defaultBranch')}</TableHead>
-            <TableHead>{t('common.status')}</TableHead>
-            <TableHead />
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {rows.map((repo) => (
-            <TableRow key={repo.id}>
-              <TableCell>
-                <Link className='font-medium text-foreground hover:underline' to='/repos/$id' params={{ id: String(repo.id) }}>
-                  {repo.full_name || repo.name}
-                </Link>
-                <div className='text-muted-foreground text-xs'>{repo.clone_url}</div>
-              </TableCell>
-              <TableCell><Badge variant={repo.binding_state === 'bound' ? 'success' : 'warning'}>{repo.binding_state}</Badge></TableCell>
-              <TableCell>{repo.edges?.scm_provider?.name || repo.scm_provider_id || '-'}</TableCell>
-              <TableCell>{repo.default_branch}</TableCell>
-              <TableCell><StatusBadge value={repo.status} /></TableCell>
-              <TableCell className='text-right'>
-                {deleteConfirmId === repo.id ? (
-                  <div className='flex justify-end gap-2'>
-                    <Button variant='destructive' size='sm' onClick={() => deleteRepo(repo.id)} disabled={deletePending}>{t('common.confirm')}</Button>
-                    <Button variant='ghost' size='sm' onClick={() => setDeleteConfirmId(null)}>{t('common.cancel')}</Button>
-                  </div>
-                ) : (
-                  <Button variant='ghost' size='sm' onClick={() => setDeleteConfirmId(repo.id)}>{t('common.delete')}</Button>
-                )}
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+      <div className='ae-table min-w-[820px]'>
+        <div className='ae-thead grid-cols-[1.8fr_0.8fr_1fr_0.8fr_0.8fr_1fr]'>
+          <span>{t('repos.repository')}</span>
+          <span>{t('events.binding')}</span>
+          <span>{t('repos.scmProvider')}</span>
+          <span>{t('repos.defaultBranch')}</span>
+          <span>{t('common.status')}</span>
+          <span className='text-right' />
+        </div>
+        {rows.map((repo) => (
+          <div className='ae-trow grid-cols-[1.8fr_0.8fr_1fr_0.8fr_0.8fr_1fr]' key={repo.id}>
+            <span className='min-w-0'>
+              <Link className='block truncate font-semibold text-foreground text-sm hover:text-[var(--ai-deep)]' to='/repos/$id' params={{ id: String(repo.id) }}>
+                {repo.full_name || repo.name}
+              </Link>
+              <span className='mono block truncate text-[11px] text-[var(--ink-4)]'>{repo.clone_url}</span>
+            </span>
+            <span><Badge variant={repo.binding_state === 'bound' ? 'pos' : 'warn'}>{repo.binding_state}</Badge></span>
+            <span className='truncate text-[var(--ink-2)]'>{repo.edges?.scm_provider?.name || repo.scm_provider_id || '-'}</span>
+            <span className='mono truncate text-xs'>{repo.default_branch}</span>
+            <span><StatusBadge value={repo.status} /></span>
+            <span className='flex justify-end gap-2'>
+              {deleteConfirmId === repo.id ? (
+                <>
+                  <Button variant='destructive' size='sm' onClick={() => deleteRepo(repo.id)} disabled={deletePending}>{t('common.confirm')}</Button>
+                  <Button variant='ghost' size='sm' onClick={() => setDeleteConfirmId(null)}>{t('common.cancel')}</Button>
+                </>
+              ) : (
+                <Button variant='ghost' size='sm' onClick={() => setDeleteConfirmId(repo.id)}>{t('common.delete')}</Button>
+              )}
+            </span>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

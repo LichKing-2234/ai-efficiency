@@ -12,7 +12,7 @@
 
 ## Current Status
 
-In progress. The first foundation pass is implemented and verified: global tokens/utilities, upgraded button/card/badge/KPI primitives, ToolGlyph, SegmentedControl, SlideOver, collapsible shell, language dropdown, command palette, and promoted `/usage` route are in place. Overview, Usage, and Events have a first visual pass using real backend data. Repos, Setup, and Admin screen parity remain pending.
+In progress. The first foundation pass is implemented and verified: global tokens/utilities, upgraded button/card/badge/KPI primitives, ToolGlyph, SegmentedControl, SlideOver, collapsible shell, language dropdown, command palette, and promoted `/usage` route are in place. Overview, Usage, Events, and Repos have a first visual pass using real backend data. Setup and Admin screen parity remain pending.
 
 ## File Structure
 
@@ -199,7 +199,7 @@ In progress. The first foundation pass is implemented and verified: global token
 
   Implement reference filters, KPI cards, CSS-grid table rows, tool glyphs, token mini-bars, and SlideOver detail.
 
-- [ ] **Step 2: Repositories**
+- [x] **Step 2: Repositories**
 
   Implement reference workbench styling while keeping add, delete, auto-bind, provider selection, webhook repair, and navigation behavior intact.
 
