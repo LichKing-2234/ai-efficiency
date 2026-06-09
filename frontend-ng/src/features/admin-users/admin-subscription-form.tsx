@@ -2,8 +2,8 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
-import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ActionGroup } from '@/components/primitives/action-group'
+import { SelectField } from '@/components/primitives/select-field'
 import type {
   AdminAssignableSubscriptionGroup,
   AdminAssignableSubscriptionProvider,
@@ -72,56 +72,52 @@ export function AdminSubscriptionForm({
   return (
     <FieldGroup className='gap-3'>
       <div className='grid gap-3 md:grid-cols-[150px_150px_minmax(0,1fr)_minmax(0,1fr)_120px_auto]'>
-        <Field>
-          <FieldLabel htmlFor='admin-subscription-scope'>{labels.scope}</FieldLabel>
-          <Select value={scope} disabled={activeJobRunning} onValueChange={(value) => onScopeChange(value as AdminSubscriptionManageScope)}>
-            <SelectTrigger id='admin-subscription-scope'><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectGroup>
-                <SelectItem value='selected'>{labels.selectedUsers(selectedCount)}</SelectItem>
-                <SelectItem value='current_filter'>{labels.currentFilter}</SelectItem>
-                <SelectItem value='all_mapped'>{labels.allMapped}</SelectItem>
-              </SelectGroup>
-            </SelectContent>
-          </Select>
-        </Field>
-        <Field>
-          <FieldLabel htmlFor='admin-subscription-operation'>{labels.operation}</FieldLabel>
-          <Select value={operation} disabled={activeJobRunning} onValueChange={(value) => onOperationChange(value as AdminSubscriptionManageOperation)}>
-            <SelectTrigger id='admin-subscription-operation'><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectGroup>
-                <SelectItem value='add'>{labels.add}</SelectItem>
-                <SelectItem value='extend'>{labels.extend}</SelectItem>
-                <SelectItem value='remove'>{labels.remove}</SelectItem>
-              </SelectGroup>
-            </SelectContent>
-          </Select>
-        </Field>
-        <Field>
-          <FieldLabel htmlFor='admin-subscription-provider'>{labels.provider}</FieldLabel>
-          <Select value={activeProvider ? String(activeProvider.id) : 'none'} disabled={activeJobRunning} onValueChange={onProviderChange}>
-            <SelectTrigger id='admin-subscription-provider'><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectGroup>
-                <SelectItem value='none'>{labels.provider}</SelectItem>
-                {subscriptionProviders.map((provider) => <SelectItem key={provider.id} value={String(provider.id)}>{provider.display_name || provider.name}</SelectItem>)}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
-        </Field>
-        <Field>
-          <FieldLabel htmlFor='admin-subscription-group'>{labels.group}</FieldLabel>
-          <Select value={activeGroupId || 'none'} disabled={activeJobRunning} onValueChange={onGroupChange}>
-            <SelectTrigger id='admin-subscription-group'><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectGroup>
-                <SelectItem value='none'>{labels.group}</SelectItem>
-                {activeGroups.map((group) => <SelectItem key={group.group_id} value={group.group_id}>{group.group_name} · {group.platform}</SelectItem>)}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
-        </Field>
+        <SelectField
+          disabled={activeJobRunning}
+          id='admin-subscription-scope'
+          label={labels.scope}
+          options={[
+            { label: labels.selectedUsers(selectedCount), value: 'selected' },
+            { label: labels.currentFilter, value: 'current_filter' },
+            { label: labels.allMapped, value: 'all_mapped' }
+          ]}
+          value={scope}
+          onValueChange={(value) => onScopeChange(value as AdminSubscriptionManageScope)}
+        />
+        <SelectField
+          disabled={activeJobRunning}
+          id='admin-subscription-operation'
+          label={labels.operation}
+          options={[
+            { label: labels.add, value: 'add' },
+            { label: labels.extend, value: 'extend' },
+            { label: labels.remove, value: 'remove' }
+          ]}
+          value={operation}
+          onValueChange={(value) => onOperationChange(value as AdminSubscriptionManageOperation)}
+        />
+        <SelectField
+          disabled={activeJobRunning}
+          id='admin-subscription-provider'
+          label={labels.provider}
+          options={[
+            { label: labels.provider, value: 'none' },
+            ...subscriptionProviders.map((provider) => ({ label: provider.display_name || provider.name, value: String(provider.id) }))
+          ]}
+          value={activeProvider ? String(activeProvider.id) : 'none'}
+          onValueChange={onProviderChange}
+        />
+        <SelectField
+          disabled={activeJobRunning}
+          id='admin-subscription-group'
+          label={labels.group}
+          options={[
+            { label: labels.group, value: 'none' },
+            ...activeGroups.map((group) => ({ label: `${group.group_name} · ${group.platform}`, value: group.group_id }))
+          ]}
+          value={activeGroupId || 'none'}
+          onValueChange={onGroupChange}
+        />
         {operation !== 'remove' ? (
           <Field>
             <FieldLabel htmlFor='admin-subscription-days'>{labels.days}</FieldLabel>

@@ -1,10 +1,10 @@
 import { Button } from '@/components/ui/button'
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
-import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ActionGroup } from '@/components/primitives/action-group'
 import { AppAlert } from '@/components/primitives/app-alert'
 import { LabeledSegmentedControl } from '@/components/primitives/labeled-segmented-control'
+import { SelectField } from '@/components/primitives/select-field'
 import type { Credential } from '@/lib/api/types'
 import { useI18n } from '@/lib/i18n/i18n'
 import type { ScmFormState } from './settings-payloads'
@@ -66,18 +66,17 @@ export function ScmProviderForm({
           onChange={(event) => onChange({ ...form, base_url: event.target.value })}
         />
       </Field>
-      <Field>
-        <FieldLabel>{t('settings.apiCredential')}</FieldLabel>
-        <Select value={form.api_credential_id || 'none'} onValueChange={(value) => onChange({ ...form, api_credential_id: value === 'none' ? '' : value })}>
-          <SelectTrigger className='w-full'><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectGroup>
-              <SelectItem value='none'>{t('settings.apiCredential')}</SelectItem>
-              {credentials.map((credential) => <SelectItem key={credential.id} value={String(credential.id)}>{credential.name}</SelectItem>)}
-            </SelectGroup>
-          </SelectContent>
-        </Select>
-      </Field>
+      <SelectField
+        id='scm-api-credential'
+        label={t('settings.apiCredential')}
+        options={[
+          { label: t('settings.apiCredential'), value: 'none' },
+          ...credentials.map((credential) => ({ label: credential.name, value: String(credential.id) }))
+        ]}
+        triggerClassName='w-full'
+        value={form.api_credential_id || 'none'}
+        onValueChange={(value) => onChange({ ...form, api_credential_id: value === 'none' ? '' : value })}
+      />
       <Field>
         <FieldLabel>{t('settings.cloneHttps')}</FieldLabel>
         <LabeledSegmentedControl
@@ -101,18 +100,17 @@ export function ScmProviderForm({
               onChange={(event) => onChange({ ...form, ssh_host: event.target.value })}
             />
           </Field>
-          <Field>
-            <FieldLabel>{t('settings.cloneCredential')}</FieldLabel>
-            <Select value={form.clone_credential_id || 'none'} onValueChange={(value) => onChange({ ...form, clone_credential_id: value === 'none' ? '' : value })}>
-              <SelectTrigger className='w-full'><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  <SelectItem value='none'>{t('settings.cloneCredential')}</SelectItem>
-                  {credentials.map((credential) => <SelectItem key={credential.id} value={String(credential.id)}>{credential.name}</SelectItem>)}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          </Field>
+          <SelectField
+            id='scm-clone-credential'
+            label={t('settings.cloneCredential')}
+            options={[
+              { label: t('settings.cloneCredential'), value: 'none' },
+              ...credentials.map((credential) => ({ label: credential.name, value: String(credential.id) }))
+            ]}
+            triggerClassName='w-full'
+            value={form.clone_credential_id || 'none'}
+            onValueChange={(value) => onChange({ ...form, clone_credential_id: value === 'none' ? '' : value })}
+          />
         </>
       ) : null}
       {errors.filter((message): message is string => !!message).map((message) => (

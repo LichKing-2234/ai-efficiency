@@ -1,12 +1,12 @@
 import { Button } from '@/components/ui/button'
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
-import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ActionGroup } from '@/components/primitives/action-group'
 import { AppAlert } from '@/components/primitives/app-alert'
 import { FieldItem, FieldList } from '@/components/primitives/field-list'
 import { InsetPanel } from '@/components/primitives/inset-panel'
 import { LabeledSegmentedControl } from '@/components/primitives/labeled-segmented-control'
+import { SelectField } from '@/components/primitives/select-field'
 import type { SCMProvider } from '@/lib/api/types'
 import type { ParsedRepoUrl, RepoCloneProtocol } from './repos-state'
 
@@ -68,19 +68,15 @@ export function RepoCreateForm({
 }) {
   return (
     <FieldGroup className='gap-3'>
-      <Field>
-        <FieldLabel htmlFor='repo-create-provider'>{labels.provider}</FieldLabel>
-        <Select value={selectedProviderId} onValueChange={onSelectedProviderIdChange}>
-          <SelectTrigger id='repo-create-provider' className='w-full'><SelectValue placeholder={labels.selectScmProvider} /></SelectTrigger>
-          <SelectContent>
-            <SelectGroup>
-              {providers.map((provider) => (
-                <SelectItem key={provider.id} value={String(provider.id)}>{provider.name}</SelectItem>
-              ))}
-            </SelectGroup>
-          </SelectContent>
-        </Select>
-      </Field>
+      <SelectField
+        id='repo-create-provider'
+        label={labels.provider}
+        options={providers.map((provider) => ({ label: provider.name, value: String(provider.id) }))}
+        placeholder={labels.selectScmProvider}
+        triggerClassName='w-full'
+        value={selectedProviderId}
+        onValueChange={onSelectedProviderIdChange}
+      />
       <Field>
         <FieldLabel htmlFor='repo-create-url'>{labels.repoUrl}</FieldLabel>
         <Input
