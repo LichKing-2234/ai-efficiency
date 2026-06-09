@@ -17,14 +17,18 @@ export function LinkedRecordList({
 
 export function LinkedRecordItem({
   className,
+  description,
   href,
   icon,
-  label
+  label,
+  trailing
 }: {
   className?: string
+  description?: React.ReactNode
   href: string
   icon?: React.ReactNode
   label: React.ReactNode
+  trailing?: React.ReactNode
 }) {
   return (
     <a
@@ -35,7 +39,11 @@ export function LinkedRecordItem({
       target='_blank'
     >
       {icon ? <span className='grid size-4 shrink-0 place-items-center text-[var(--ai)]'>{icon}</span> : null}
-      <span className='min-w-0 flex-1 truncate font-medium text-sm'>{label}</span>
+      <span className='min-w-0 flex-1'>
+        <span className='block truncate font-medium text-sm'>{label}</span>
+        {description ? <span className='mt-1 block truncate text-muted-foreground text-xs'>{description}</span> : null}
+      </span>
+      {trailing ? <span className='shrink-0 text-muted-foreground'>{trailing}</span> : null}
     </a>
   )
 }

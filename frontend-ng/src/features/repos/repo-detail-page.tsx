@@ -14,6 +14,7 @@ import { DataGrid, DataGridHeader, DataGridRow } from '@/components/primitives/d
 import { EntityCardHeader } from '@/components/primitives/entity-card-header'
 import { InfoTile, InfoTileGrid } from '@/components/primitives/info-tile'
 import { InsetPanel } from '@/components/primitives/inset-panel'
+import { LinkedRecordItem } from '@/components/primitives/linked-record-list'
 import { MetricCard } from '@/components/primitives/metric-card'
 import { Page, PageToolbar } from '@/components/primitives/page'
 import { SectionCardHeader } from '@/components/primitives/section-card-header'
@@ -316,12 +317,14 @@ export function RepoDetailPage() {
                   <Fragment key={pr.id}>
                     <DataGridRow columns={prColumns}>
                       <span className='min-w-0'>
-                        <a className='flex min-w-0 items-center gap-2 font-semibold text-foreground text-sm hover:underline' href={pr.scm_pr_url} target='_blank' rel='noreferrer'>
-                          <GitPullRequest className='shrink-0 text-[var(--ai)]' />
-                          <span className='truncate'>{pr.title}</span>
-                          <ExternalLink className='shrink-0 text-muted-foreground' />
-                        </a>
-                        <span className='mt-1 block truncate text-muted-foreground text-xs'>#{pr.scm_pr_id} · {pr.author}</span>
+                        <LinkedRecordItem
+                          className='border-0 bg-transparent p-0 hover:bg-transparent'
+                          description={`#${pr.scm_pr_id} · ${pr.author}`}
+                          href={pr.scm_pr_url}
+                          icon={<GitPullRequest />}
+                          label={pr.title}
+                          trailing={<ExternalLink />}
+                        />
                       </span>
                       <span><Badge variant='ai'>{pr.ai_label} · {percent(pr.ai_ratio)}</Badge></span>
                       <span>

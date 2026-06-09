@@ -362,6 +362,10 @@ Follow-up OAuth/auth redirect diagnosis fixed the `/oauth/device` unauthenticate
 
   Follow-up pagination audit evidence: `card-pager-footer.test.tsx`, `repo-detail-state.test.ts`, `bun test`, `bun run check`, `bun run build`, and `git diff --check` passed. The current local account still exposes no repository detail links, so visible PR pager rendering remains covered by primitive tests, TypeScript, and build until repository detail data is available.
 
+  Follow-up linked-record audit implementation extends the shared `LinkedRecordItem` primitive with optional description and trailing slots, then migrates Repository Detail PR title links away from page-local anchor styling while preserving the external PR target, `noreferrer`, title, `#scm_pr_id · author` metadata, and trailing external-link affordance.
+
+  Follow-up linked-record audit evidence: `repo-detail-page-composition.test.ts` was added with a red-green cycle; it first failed because `repo-detail-page.tsx` did not import or render `LinkedRecordItem`, then passed after migration. Focused verification passed with `bun test src/features/repos/repo-detail-page-composition.test.ts src/components/primitives/linked-record-list.test.tsx src/features/repos/repo-detail-state.test.ts`, `bun run check`, and `git diff --check`. Full verification passed with `ulimit -n 65536 && bun test --timeout 20000` and `bun run build`. `agent-browser` reverified `/repos/1` and `/repos` on the existing `4339` dev server with no error boundary, no body horizontal overflow, and no button/link overflow; both routes redirected to login in the local unauthenticated state, so visible PR linked-record rows remain covered by the composition guard, primitive SSR test, TypeScript, and build until repository detail data is available.
+
 - [x] **Step 4: My Setup**
 
   Re-skin provider credential setup, status/progress, and key actions with shared field/card primitives.
