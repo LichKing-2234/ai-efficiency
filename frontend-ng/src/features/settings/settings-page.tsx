@@ -27,6 +27,7 @@ import { StatusBadge } from '@/components/primitives/status-badge'
 import { api } from '@/lib/api'
 import { dateTime, number } from '@/lib/format'
 import { useI18n } from '@/lib/i18n/i18n'
+import { LdapSettingsForm } from './ldap-settings-form'
 import type { Credential, RelayProvider, SCMProvider } from '@/lib/api/types'
 import {
   buildCredentialPayload,
@@ -410,37 +411,16 @@ export function SettingsPage() {
         </Card> : null}
         {activeSection === 'organization-login' ? <Card>
           <SectionCardHeader title={t('settings.organizationLogin')} description={t('settings.ldapLoginBehavior')} />
-          <CardContent className='flex flex-col gap-3'>
-            <Input placeholder={t('settings.ldapUrl')} value={ldapForm.url} onChange={(event) => setLDAPForm((value) => ({ ...value, url: event.target.value }))} />
-            <Input placeholder={t('settings.baseDn')} value={ldapForm.base_dn} onChange={(event) => setLDAPForm((value) => ({ ...value, base_dn: event.target.value }))} />
-            <Input placeholder={t('settings.bindDn')} value={ldapForm.bind_dn} onChange={(event) => setLDAPForm((value) => ({ ...value, bind_dn: event.target.value }))} />
-            <Input type='password' placeholder={t('settings.bindPassword')} value={ldapForm.bind_password} onChange={(event) => setLDAPForm((value) => ({ ...value, bind_password: event.target.value }))} />
-            <Input placeholder={t('settings.userFilter')} value={ldapForm.user_filter} onChange={(event) => setLDAPForm((value) => ({ ...value, user_filter: event.target.value }))} />
-            <Field orientation='horizontal'>
-              <Checkbox id='ldap-starttls' checked={ldapForm.tls} onCheckedChange={(checked) => setLDAPForm((value) => ({ ...value, tls: checked === true }))} />
-              <FieldLabel htmlFor='ldap-starttls'>{t('settings.useStartTls')}</FieldLabel>
-            </Field>
-            {ldapMessage ? (
-              <AppAlert
-                tone={ldapMessage.toLowerCase().includes('failed') || ldapMessage.toLowerCase().includes('required') ? 'error' : 'success'}
-                title={ldapMessage}
-              />
-            ) : null}
-            <div className='flex flex-wrap gap-2'>
-              <Button
-                variant='outline'
-                onClick={() => testLDAP.mutate()}
-                disabled={!ldapForm.url || !ldapForm.base_dn || !ldapForm.bind_dn || !ldapForm.user_filter || testLDAP.isPending}
-              >
-                {t('settings.testLdap')}
-              </Button>
-              <Button
-                onClick={() => saveLDAP.mutate()}
-                disabled={!ldapForm.url || !ldapForm.base_dn || !ldapForm.bind_dn || !ldapForm.user_filter || saveLDAP.isPending}
-              >
-                {t('settings.saveLdap')}
-              </Button>
-            </div>
+          <CardContent>
+            <LdapSettingsForm
+              form={ldapForm}
+              message={ldapMessage}
+              onChange={setLDAPForm}
+              onSave={() => saveLDAP.mutate()}
+              onTest={() => testLDAP.mutate()}
+              savePending={saveLDAP.isPending}
+              testPending={testLDAP.isPending}
+            />
           </CardContent>
         </Card> : null}
         {activeSection === 'deployment-runtime' ? <Card>

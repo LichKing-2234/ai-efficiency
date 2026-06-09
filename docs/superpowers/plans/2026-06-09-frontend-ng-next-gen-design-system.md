@@ -452,6 +452,10 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
 
   Follow-up Repos controls audit evidence: focused coverage from `repos-state.test.ts`, `repo-binding.test.ts`, `repo-webhook-state.test.ts`, `labeled-segmented-control.test.tsx`, and `action-group.test.tsx` passed. `bun test --timeout 20000`, `bun run check`, `bun run build`, and `git diff --check` passed after migrating the Repos controls. Fresh `agent-browser` coverage for `/repos` reached the local authenticated loading-account state with no error boundary and no horizontal overflow; authenticated content-state verification for the repository actions and add-repository dialog remains pending a reusable logged-in browser session or local handoff.
 
+  Follow-up Settings LDAP audit implementation extracts `LdapSettingsForm` so the Organization Login section uses shadcn `FieldGroup`, `Field`, `FieldLabel`, `Input`, `Checkbox`, and shared `ActionGroup` instead of page-local placeholder-only inputs and hand-written action row markup. `SettingsPage` still owns backend data, mutations, and messages while the extracted form owns form semantics and layout.
+
+  Follow-up Settings LDAP audit evidence: `ldap-settings-form.test.tsx` was added and passed with `settings-payloads.test.ts`. `bun test --timeout 20000`, `bun run check`, `bun run build`, and `git diff --check` passed after extracting the LDAP form. Fresh `agent-browser` coverage for `/settings?section=organization-login` reached the local authenticated loading-account state with no error boundary and no horizontal overflow; authenticated content-state verification for the LDAP form remains covered by SSR/component tests until a reusable logged-in browser session or local handoff is available.
+
 ## Task 6: Verification, Visual QA, Commit, and Push
 
 **Files:**
