@@ -19,4 +19,19 @@ describe('CardPagerFooter', () => {
     expect(html).toContain('Next')
     expect(html).toContain('justify-between')
   })
+
+  test('passes layout class names through to the card footer slot', () => {
+    const html = renderToStaticMarkup(
+      <CardPagerFooter
+        className='border-t p-3'
+        summary='Page 2 of 5'
+        previous={<button type='button'>Previous</button>}
+        next={<button type='button'>Next</button>}
+      />
+    )
+
+    expect(html).toContain('data-slot="card-footer"')
+    expect(html).toContain('border-t')
+    expect(html).toContain('p-3')
+  })
 })

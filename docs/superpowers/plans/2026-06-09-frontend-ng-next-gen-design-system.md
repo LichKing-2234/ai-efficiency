@@ -424,6 +424,10 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
 
   Follow-up action-group audit evidence: `action-group.test.tsx` was added with a red-green cycle, `bun test src/components/primitives/action-group.test.tsx`, `bun test`, `bun run check`, `bun run build`, and `git diff --check` passed after migration. `agent-browser` reverified `/settings` in the authenticated session: desktop `1280x720` and mobile `390x844` render without error boundary or body horizontal overflow; the local AI Services table currently has no rows, so visible table row action groups are covered by primitive tests and TypeScript/build, while the Add Relay Provider dialog renders one shared `ActionGroup` footer at both desktop and mobile widths with zero dialog overflow.
 
+  Follow-up pagination audit implementation migrates the Admin Users table footer to the shared `CardPagerFooter` primitive while preserving the existing page summary, Previous/Next disabled states, and page mutation handlers.
+
+  Follow-up pagination audit evidence: `card-pager-footer.test.tsx` now covers className passthrough, `admin-users-state.test.ts`, `bun test`, `bun run check`, `bun run build`, and `git diff --check` passed after migration. `agent-browser` could not produce a fresh browser capture in this run because its daemon returned `Resource temporarily unavailable (os error 35)`, so the visible Admin Users footer remains covered by the existing primitive tests, TypeScript, and build until the browser daemon is healthy again.
+
 ## Task 6: Verification, Visual QA, Commit, and Push
 
 **Files:**
@@ -469,6 +473,7 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
   - Follow-up Repository Detail audit added `UsageSummaryPanel` for expanded PR usage summaries; the local account still exposes no repository detail rows, so route-level browser coverage remains on `/repos` data-light states while primitive tests and TypeScript/build cover the expanded data path.
   - Follow-up OAuth audit added `AuthInfoPanel` for signed-in context strips on `/oauth/authorize` and `/oauth/device`; `/oauth/device` was browser-verified while OAuth payload/redirect helpers remain covered by `auth-flow-state.test.ts`.
   - Follow-up auth/admin header audit reused `SectionCardHeader` on `/login`, `/oauth/authorize`, `/oauth/device`, and `/admin/users`; `agent-browser` confirmed the expected shared card headers, no error boundary, no horizontal overflow, and no visible over-wide controls across desktop/mobile coverage for those routes.
+  - Follow-up Admin Users pagination audit reused `CardPagerFooter` for the users table pagination row. Browser QA was attempted, but `agent-browser` returned `Resource temporarily unavailable (os error 35)` from the daemon; this specific visual check is pending a healthy browser session while test/build coverage is complete.
 
 - [x] **Step 4: Commit logical chunks**
 

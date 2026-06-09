@@ -11,6 +11,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Field, FieldLabel } from '@/components/ui/field'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { AppAlert } from '@/components/primitives/app-alert'
+import { CardPagerFooter } from '@/components/primitives/card-pager-footer'
 import { DataGrid, DataGridHeader, DataGridRow } from '@/components/primitives/data-grid'
 import { IdentityAvatar } from '@/components/primitives/identity-avatar'
 import { Page } from '@/components/primitives/page'
@@ -345,13 +346,12 @@ export function AdminUsersPage() {
             </DataGridRow>
           ))}
         </DataGrid>
-        <div className='flex items-center justify-between gap-3 border-border border-t p-3 text-sm'>
-          <span className='text-muted-foreground'>{t('adminUsers.pageOfUsers', { page, totalPages, total: number(total) })}</span>
-          <div className='flex gap-2'>
-            <Button variant='outline' size='sm' disabled={page <= 1 || users.isFetching} onClick={() => setPage((value) => Math.max(1, value - 1))}>{t('common.previous')}</Button>
-            <Button variant='outline' size='sm' disabled={page >= totalPages || users.isFetching} onClick={() => setPage((value) => value + 1)}>{t('common.next')}</Button>
-          </div>
-        </div>
+        <CardPagerFooter
+          className='border-border border-t p-3'
+          summary={t('adminUsers.pageOfUsers', { page, totalPages, total: number(total) })}
+          previous={<Button variant='outline' size='sm' disabled={page <= 1 || users.isFetching} onClick={() => setPage((value) => Math.max(1, value - 1))}>{t('common.previous')}</Button>}
+          next={<Button variant='outline' size='sm' disabled={page >= totalPages || users.isFetching} onClick={() => setPage((value) => value + 1)}>{t('common.next')}</Button>}
+        />
       </Card>
     </Page>
   )
