@@ -1,9 +1,12 @@
 import { describe, expect, test } from 'vitest'
 import {
   buildLoginRedirect,
+  buildCurrentRouteRedirectPath,
+  buildPublicOAuthAuthQueryOptions,
   buildOAuthAuthorizePayload,
   normalizeDeviceCode,
   safeRedirect,
+  shouldNavigateToLoginRedirect,
   selectInitialLoginSource
 } from './auth-flow-state'
 
@@ -16,6 +19,37 @@ describe('auth flow state helpers', () => {
     expect(buildLoginRedirect('/oauth/device')).toEqual({
       to: '/login',
       search: { redirect: '/oauth/device' }
+    })
+    expect(buildLoginRedirect('/login?redirect=%2Foauth%2Fdevice')).toEqual({
+      to: '/login',
+      search: { redirect: '/' }
+    })
+  })
+
+  test('builds a safe route-local redirect path from router location parts', () => {
+    expect(buildCurrentRouteRedirectPath('/oauth/device', '')).toBe('/oauth/device')
+    expect(buildCurrentRouteRedirectPath('/oauth/authorize', '?client_id=ae-cli')).toBe('/oauth/authorize?client_id=ae-cli')
+  })
+
+  test('does not repeat login redirects once already at the target redirect', () => {
+    const redirect = buildLoginRedirect('/oauth/device')
+
+    expect(shouldNavigateToLoginRedirect({
+      currentPath: '/oauth/device',
+      redirect
+    })).toBe(true)
+
+    expect(shouldNavigateToLoginRedirect({
+      currentPath: '/login',
+      redirect
+    })).toBe(false)
+  })
+
+  test('configures public OAuth auth queries without retry loops', () => {
+    expect(buildPublicOAuthAuthQueryOptions('oauth-device')).toEqual({
+      queryKey: ['auth', 'me', 'oauth-device'],
+      retry: false,
+      refetchOnWindowFocus: false
     })
   })
 

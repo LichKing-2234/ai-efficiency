@@ -5,6 +5,7 @@ import { Toaster } from 'sonner'
 import { AppShell } from '@/components/layout/app-shell'
 import { LoadingState } from '@/components/primitives/data-state'
 import { queryClient } from '@/query-client'
+import { buildCurrentRouteRedirectPath, buildLoginRedirect } from '@/features/auth/auth-flow-state'
 import { ensureAuthenticatedUser } from '@/lib/auth/session'
 import { I18nProvider, useI18n } from '@/lib/i18n/i18n'
 import stylesUrl from '../styles.css?url'
@@ -47,9 +48,10 @@ function AuthFrame({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!isPublic && error) {
-      void navigate({ to: '/login', search: { redirect: location.href } as never })
+      const redirect = buildLoginRedirect(buildCurrentRouteRedirectPath(location.pathname, location.searchStr))
+      void navigate({ to: redirect.to, search: redirect.search as never, replace: true })
     }
-  }, [error, isPublic, location.href, navigate])
+  }, [error, isPublic, location.pathname, location.searchStr, navigate])
 
   if (isPublic) return <>{children}</>
   if (isLoading && !user) return <AppShell user={null}><LoadingState label={t('auth.loadingAccount')} /></AppShell>

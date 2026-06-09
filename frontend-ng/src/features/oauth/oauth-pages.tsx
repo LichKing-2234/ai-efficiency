@@ -11,7 +11,14 @@ import { TextField } from '@/components/primitives/text-field'
 import { apiFetch } from '@/lib/api/client'
 import { ensureAuthenticatedUser } from '@/lib/auth/session'
 import { useI18n } from '@/lib/i18n/i18n'
-import { buildLoginRedirect, buildOAuthAuthorizePayload, normalizeDeviceCode } from '@/features/auth/auth-flow-state'
+import {
+  buildLoginRedirect,
+  buildCurrentRouteRedirectPath,
+  buildOAuthAuthorizePayload,
+  buildPublicOAuthAuthQueryOptions,
+  normalizeDeviceCode,
+  shouldNavigateToLoginRedirect
+} from '@/features/auth/auth-flow-state'
 
 export function OAuthAuthorizePage() {
   const { t } = useI18n()
@@ -19,7 +26,7 @@ export function OAuthAuthorizePage() {
   const location = useLocation()
   const navigate = useNavigate()
   const [error, setError] = useState('')
-  const me = useQuery({ queryKey: ['auth', 'me', 'oauth'], queryFn: ensureAuthenticatedUser })
+  const me = useQuery({ ...buildPublicOAuthAuthQueryOptions('oauth'), queryFn: ensureAuthenticatedUser })
   const approve = useMutation({
     mutationFn: (approved: boolean) =>
       apiFetch<{ redirect_uri: string }>('/oauth/authorize/approve', {
@@ -40,10 +47,12 @@ export function OAuthAuthorizePage() {
 
   useEffect(() => {
     if (me.error) {
-      const redirect = buildLoginRedirect(location.href)
-      void navigate({ to: redirect.to, search: redirect.search as never })
+      const redirect = buildLoginRedirect(buildCurrentRouteRedirectPath(location.pathname, location.searchStr))
+      if (shouldNavigateToLoginRedirect({ currentPath: location.pathname, redirect })) {
+        void navigate({ to: redirect.to, search: redirect.search as never, replace: true })
+      }
     }
-  }, [location.href, me.error, navigate])
+  }, [location.pathname, location.searchStr, me.error, navigate])
 
   return (
     <AuthSurface title={t('oauth.authorizeCli')} description={t('oauth.allowCli')}>
@@ -67,7 +76,7 @@ export function OAuthDevicePage() {
   const location = useLocation()
   const navigate = useNavigate()
   const [code, setCode] = useState('')
-  const me = useQuery({ queryKey: ['auth', 'me', 'oauth-device'], queryFn: ensureAuthenticatedUser })
+  const me = useQuery({ ...buildPublicOAuthAuthQueryOptions('oauth-device'), queryFn: ensureAuthenticatedUser })
   const verify = useMutation({
     mutationFn: (approved: boolean) =>
       apiFetch<{ status: 'approved' | 'denied' }>('/oauth/device/verify', {
@@ -78,10 +87,12 @@ export function OAuthDevicePage() {
 
   useEffect(() => {
     if (me.error) {
-      const redirect = buildLoginRedirect(location.href)
-      void navigate({ to: redirect.to, search: redirect.search as never })
+      const redirect = buildLoginRedirect(buildCurrentRouteRedirectPath(location.pathname, location.searchStr))
+      if (shouldNavigateToLoginRedirect({ currentPath: location.pathname, redirect })) {
+        void navigate({ to: redirect.to, search: redirect.search as never, replace: true })
+      }
     }
-  }, [location.href, me.error, navigate])
+  }, [location.pathname, location.searchStr, me.error, navigate])
 
   return (
     <AuthSurface title={t('oauth.deviceLogin')} description={t('oauth.enterCode')}>

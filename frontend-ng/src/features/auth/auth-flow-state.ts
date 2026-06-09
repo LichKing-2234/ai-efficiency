@@ -18,10 +18,34 @@ export function selectInitialLoginSource(options?: Pick<AuthOptions, 'ldap_enabl
 }
 
 export function buildLoginRedirect(currentPath: string) {
+  const redirect = safeRedirect(currentPath)
   return {
     to: '/login',
-    search: { redirect: currentPath || '/' }
+    search: { redirect }
   }
+}
+
+export function buildCurrentRouteRedirectPath(pathname: string, search: string) {
+  return `${pathname}${search}`
+}
+
+export function shouldNavigateToLoginRedirect({
+  currentPath,
+  redirect
+}: {
+  currentPath: string
+  redirect: ReturnType<typeof buildLoginRedirect>
+}) {
+  if (currentPath === redirect.to) return false
+  return true
+}
+
+export function buildPublicOAuthAuthQueryOptions(flow: 'oauth' | 'oauth-device') {
+  return {
+    queryKey: ['auth', 'me', flow],
+    retry: false,
+    refetchOnWindowFocus: false
+  } as const
 }
 
 export function buildOAuthAuthorizePayload(search: OAuthAuthorizeSearch, approved: boolean) {
