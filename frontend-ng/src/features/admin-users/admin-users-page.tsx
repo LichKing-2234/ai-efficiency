@@ -16,6 +16,7 @@ import { IdentityAvatar } from '@/components/primitives/identity-avatar'
 import { Page, PageHeader } from '@/components/primitives/page'
 import { LoadingState } from '@/components/primitives/data-state'
 import { InsetPanel } from '@/components/primitives/inset-panel'
+import { JobResultList } from '@/components/primitives/job-result-list'
 import { SearchField } from '@/components/primitives/search-field'
 import { StatusBadge } from '@/components/primitives/status-badge'
 import { MetricCard } from '@/components/primitives/metric-card'
@@ -231,17 +232,7 @@ export function AdminUsersPage() {
           {activeJob.error ? <AppAlert tone='error' title={activeJob.error.message} /> : null}
           {jobMessage ? <InsetPanel>{jobMessage}</InsetPanel> : null}
           {jobResults.length > 0 ? (
-            <div className='max-h-56 overflow-auto rounded-md border border-border'>
-              {jobResults.slice(0, 50).map((result) => (
-                <div key={`${result.user_id}-${result.status}`} className='flex items-center justify-between gap-3 border-border border-b px-3 py-2 text-sm last:border-b-0'>
-                  <div className='min-w-0'>
-                    <div className='font-medium'>{result.username || result.email || `#${result.user_id}`}</div>
-                    {result.message ? <div className='text-muted-foreground text-xs'>{result.message}</div> : null}
-                  </div>
-                  <StatusBadge value={result.status} />
-                </div>
-              ))}
-            </div>
+            <JobResultList items={jobResults} />
           ) : null}
         </CardContent>
       </Card>

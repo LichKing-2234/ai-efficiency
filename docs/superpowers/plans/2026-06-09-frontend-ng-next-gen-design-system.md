@@ -362,6 +362,10 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
 
   Follow-up identity audit evidence: `identity-avatar.test.tsx`, `admin-users-state.test.ts`, `bun test`, `bun run check`, `bun run build`, and `git diff --check` passed after the migration. `agent-browser` reverified `/admin/users` at `1280x720` and `390x844`: one shared identity avatar rendered in the current data state, no error boundary text, no body horizontal overflow, and no visible over-wide interactive controls.
 
+  Follow-up job-result audit implementation adds the shared `JobResultList` primitive and migrates Admin Users subscription job result rows away from page-local bordered list markup while preserving the existing active/latest job polling, result cap, identity fallback, row messages, and status badges.
+
+  Follow-up job-result audit evidence: `job-result-list.test.tsx` was added with a red-green cycle, `admin-users-state.test.ts`, `bun test`, `bun run check`, `bun run build`, and `git diff --check` passed after migrating the result list. `agent-browser` reverified `/admin/users` at `1280x720` and `390x844`: no error boundary text and no body horizontal overflow. The current local account has no active job results, so visible `JobResultList` rendering is covered by primitive tests and TypeScript/build until job result data is available.
+
 ## Task 6: Verification, Visual QA, Commit, and Push
 
 **Files:**
