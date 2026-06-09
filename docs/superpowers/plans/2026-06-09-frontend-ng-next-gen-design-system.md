@@ -278,7 +278,11 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
 
   Current implementation uses the shared `SectionNav` primitive for the repository scope rail, preserving provider tabs, URL-backed scope selection, and per-scope repository counts through `buildScopeNavItems`.
 
+  Follow-up table audit implementation adds the shared `DataGrid`, `DataGridHeader`, and `DataGridRow` primitives and migrates the Repositories workbench table away from page-local `ae-table`/`ae-thead`/`ae-trow` shell markup while preserving the same grid columns, overflow behavior, row content, delete confirmation controls, and route links.
+
   Current evidence: `repos-state.test.ts`, `section-nav.test.tsx`, `bun run check`, and browser QA on `/repos` passed. The local account currently returns the empty inventory state, so browser QA verifies authenticated desktop and mobile empty states with no error boundary or horizontal overflow while data-state scope rail mapping is covered by tests and build.
+
+  Follow-up table audit evidence: `data-grid.test.tsx` was added with a red-green cycle, `repos-state.test.ts` and `bun run check` passed after migrating the Repositories workbench table. `agent-browser` reverified `/repos` at `1280x720` and `390x844`: no error boundary text, no horizontal overflow, and no visible button/link overflow. The local account still returns no repository inventory rows, so visible `DataGrid` rendering is covered by primitive tests and TypeScript/build until repo data is available.
 
 - [x] **Step 3: Repository detail**
 

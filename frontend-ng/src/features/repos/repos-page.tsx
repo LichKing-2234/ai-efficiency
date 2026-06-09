@@ -16,6 +16,7 @@ import { MetricCard } from '@/components/primitives/metric-card'
 import { AppAlert } from '@/components/primitives/app-alert'
 import { Page } from '@/components/primitives/page'
 import { LoadingState } from '@/components/primitives/data-state'
+import { DataGrid, DataGridHeader, DataGridRow } from '@/components/primitives/data-grid'
 import { SectionNav, type SectionNavItem } from '@/components/primitives/section-nav'
 import { StatusBadge } from '@/components/primitives/status-badge'
 import { api } from '@/lib/api'
@@ -384,43 +385,42 @@ function RepoTable({
   deletePending: boolean
 }) {
   const { t } = useI18n()
+  const columns = '1.8fr_0.8fr_1fr_0.8fr_0.8fr_1fr'
   return (
-    <div className='overflow-x-auto'>
-      <div className='ae-table min-w-[820px]'>
-        <div className='ae-thead grid-cols-[1.8fr_0.8fr_1fr_0.8fr_0.8fr_1fr]'>
-          <span>{t('repos.repository')}</span>
-          <span>{t('events.binding')}</span>
-          <span>{t('repos.scmProvider')}</span>
-          <span>{t('repos.defaultBranch')}</span>
-          <span>{t('common.status')}</span>
-          <span className='text-right' />
-        </div>
-        {rows.map((repo) => (
-          <div className='ae-trow grid-cols-[1.8fr_0.8fr_1fr_0.8fr_0.8fr_1fr]' key={repo.id}>
-            <span className='min-w-0'>
-              <Link className='block truncate font-semibold text-foreground text-sm hover:text-[var(--ai-deep)]' to='/repos/$id' params={{ id: String(repo.id) }}>
-                {repo.full_name || repo.name}
-              </Link>
-              <span className='mono block truncate text-[11px] text-[var(--ink-4)]'>{repo.clone_url}</span>
-            </span>
-            <span><Badge variant={repo.binding_state === 'bound' ? 'pos' : 'warn'}>{repo.binding_state}</Badge></span>
-            <span className='truncate text-[var(--ink-2)]'>{repo.edges?.scm_provider?.name || repo.scm_provider_id || '-'}</span>
-            <span className='mono truncate text-xs'>{repo.default_branch}</span>
-            <span><StatusBadge value={repo.status} /></span>
-            <span className='flex justify-end gap-2'>
-              {deleteConfirmId === repo.id ? (
-                <>
-                  <Button variant='destructive' size='sm' onClick={() => deleteRepo(repo.id)} disabled={deletePending}>{t('common.confirm')}</Button>
-                  <Button variant='ghost' size='sm' onClick={() => setDeleteConfirmId(null)}>{t('common.cancel')}</Button>
-                </>
-              ) : (
-                <Button variant='ghost' size='sm' onClick={() => setDeleteConfirmId(repo.id)}>{t('common.delete')}</Button>
-              )}
-            </span>
-          </div>
-        ))}
-      </div>
-    </div>
+    <DataGrid minWidth={820}>
+      <DataGridHeader columns={columns}>
+        <span>{t('repos.repository')}</span>
+        <span>{t('events.binding')}</span>
+        <span>{t('repos.scmProvider')}</span>
+        <span>{t('repos.defaultBranch')}</span>
+        <span>{t('common.status')}</span>
+        <span className='text-right' />
+      </DataGridHeader>
+      {rows.map((repo) => (
+        <DataGridRow columns={columns} key={repo.id}>
+          <span className='min-w-0'>
+            <Link className='block truncate font-semibold text-foreground text-sm hover:text-[var(--ai-deep)]' to='/repos/$id' params={{ id: String(repo.id) }}>
+              {repo.full_name || repo.name}
+            </Link>
+            <span className='mono block truncate text-[11px] text-[var(--ink-4)]'>{repo.clone_url}</span>
+          </span>
+          <span><Badge variant={repo.binding_state === 'bound' ? 'pos' : 'warn'}>{repo.binding_state}</Badge></span>
+          <span className='truncate text-[var(--ink-2)]'>{repo.edges?.scm_provider?.name || repo.scm_provider_id || '-'}</span>
+          <span className='mono truncate text-xs'>{repo.default_branch}</span>
+          <span><StatusBadge value={repo.status} /></span>
+          <span className='flex justify-end gap-2'>
+            {deleteConfirmId === repo.id ? (
+              <>
+                <Button variant='destructive' size='sm' onClick={() => deleteRepo(repo.id)} disabled={deletePending}>{t('common.confirm')}</Button>
+                <Button variant='ghost' size='sm' onClick={() => setDeleteConfirmId(null)}>{t('common.cancel')}</Button>
+              </>
+            ) : (
+              <Button variant='ghost' size='sm' onClick={() => setDeleteConfirmId(repo.id)}>{t('common.delete')}</Button>
+            )}
+          </span>
+        </DataGridRow>
+      ))}
+    </DataGrid>
   )
 }
 
