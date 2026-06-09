@@ -312,6 +312,10 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
 
   Follow-up add-dialog audit evidence: `repos-state.test.ts`, `field-list.test.tsx`, `inset-panel.test.tsx`, `bun test`, `bun run check`, `bun run build`, and `git diff --check` passed after the migration. `agent-browser` reverified `/repos` at `1280x720` and `390x844`, then opened Add repo at desktop width and filled `https://github.com/example/repo`; the dialog rendered one shared inset panel, one shared field list, two field items, and the parsed `example/repo` preview with no error boundary or body horizontal overflow.
 
+  Follow-up action-group audit implementation migrates the Repositories table delete controls and Add Repo dialog footer actions to the shared `ActionGroup` primitive while preserving delete confirmation, create disabled state, and dialog behavior.
+
+  Follow-up action-group audit evidence: `action-group.test.tsx`, `repos-state.test.ts`, `repo-detail-state.test.ts`, `bun test`, `bun run check`, `bun run build`, and `git diff --check` passed. `agent-browser` reverified `/repos` at `1280x720` and `390x844`: no error boundary text and no body horizontal overflow. The local account still has no repository rows, so visible table row action groups are covered by primitive tests and TypeScript/build; the Add Repo dialog renders one shared `ActionGroup` footer at desktop and mobile widths with zero dialog overflow.
+
 - [x] **Step 3: Repository detail**
 
   Re-skin SCM binding, usage snapshots, webhook status, and PR sync panels with shared cards/tables.
@@ -333,6 +337,10 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
   Follow-up snapshot-table audit implementation extends the shared `DataGridRow` primitive with a `fullWidth` state for nested empty rows and migrates expanded PR commit usage snapshots away from the remaining shadcn `Table` wrapper while preserving backend snapshot ordering, freshness lookup, status badges, numeric formatting, and empty-state copy.
 
   Follow-up snapshot-table audit evidence: `data-grid.test.tsx`, `repo-detail-state.test.ts`, `bun test`, `bun run check`, `bun run build`, and `git diff --check` passed after migrating the expanded commit snapshot grid. `agent-browser` reverified `/repos` at `1280x720` and `390x844`: no error boundary text, no body horizontal overflow, and no rendered `table` elements in the current route state. The current local account still exposes no repository detail links, so route-level browser coverage remains on `/repos` data-light states while snapshot grid rendering is covered by primitive tests and TypeScript/build until repository detail data is available.
+
+  Follow-up action-group audit implementation migrates Repository Detail PR row details/refresh controls to the shared `ActionGroup` primitive while preserving PR expansion state and usage refresh mutation behavior.
+
+  Follow-up action-group audit evidence: `action-group.test.tsx`, `repo-detail-state.test.ts`, `bun test`, `bun run check`, `bun run build`, and `git diff --check` passed. The current local account still exposes no repository detail links in `/repos`, so visible PR row action rendering remains covered by primitive tests, TypeScript, and build until repository detail data is available.
 
 - [x] **Step 4: My Setup**
 

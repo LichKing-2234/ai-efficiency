@@ -12,6 +12,7 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/u
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { ActionGroup } from '@/components/primitives/action-group'
 import { MetricCard } from '@/components/primitives/metric-card'
 import { AppAlert } from '@/components/primitives/app-alert'
 import { Page } from '@/components/primitives/page'
@@ -410,7 +411,7 @@ function RepoTable({
           <span className='truncate text-[var(--ink-2)]'>{repo.edges?.scm_provider?.name || repo.scm_provider_id || '-'}</span>
           <span className='mono truncate text-xs'>{repo.default_branch}</span>
           <span><StatusBadge value={repo.status} /></span>
-          <span className='flex justify-end gap-2'>
+          <ActionGroup>
             {deleteConfirmId === repo.id ? (
               <>
                 <Button variant='destructive' size='sm' onClick={() => deleteRepo(repo.id)} disabled={deletePending}>{t('common.confirm')}</Button>
@@ -419,7 +420,7 @@ function RepoTable({
             ) : (
               <Button variant='ghost' size='sm' onClick={() => setDeleteConfirmId(repo.id)}>{t('common.delete')}</Button>
             )}
-          </span>
+          </ActionGroup>
         </DataGridRow>
       ))}
     </DataGrid>
@@ -516,10 +517,10 @@ function AddRepoDialog({
           ) : null}
           <Input placeholder={t('repos.defaultBranch')} value={defaultBranch} onChange={(event) => setDefaultBranch(event.target.value)} />
           {addError ? <AppAlert tone='error' title={addError} /> : null}
-          <div className='flex justify-end gap-2'>
+          <ActionGroup>
             <Button variant='outline' onClick={() => setOpen(false)}>{t('common.cancel')}</Button>
             <Button disabled={!selectedProviderId || !parsedRepo || createPending} onClick={createRepo}>{t('common.create')}</Button>
-          </div>
+          </ActionGroup>
         </div>
       </DialogContent>
     </Dialog>

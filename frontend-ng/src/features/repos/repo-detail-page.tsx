@@ -10,6 +10,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Field, FieldLabel } from '@/components/ui/field'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
+import { ActionGroup } from '@/components/primitives/action-group'
 import { DataGrid, DataGridHeader, DataGridRow } from '@/components/primitives/data-grid'
 import { InfoTile } from '@/components/primitives/info-tile'
 import { InsetPanel } from '@/components/primitives/inset-panel'
@@ -325,14 +326,12 @@ export function RepoDetailPage() {
                       <span className='tnum'>{compact((pr.usage_input_tokens ?? 0) + (pr.usage_output_tokens ?? 0) + (pr.usage_cached_input_tokens ?? 0) + (pr.usage_reasoning_tokens ?? 0))}</span>
                       <span className='tnum'>{number(pr.cycle_time_hours)}h</span>
                       <span className='tnum text-muted-foreground text-xs'>{dateTime(pr.merged_at)}</span>
-                      <span>
-                        <div className='flex justify-end gap-2'>
-                          <Button variant='ghost' size='sm' onClick={() => setExpandedPRId(expanded ? null : pr.id)} disabled={prDetail.isFetching && expanded}>
-                            {expanded ? t('common.hide') : t('common.details')}
-                          </Button>
-                          <Button variant='outline' size='sm' onClick={() => refreshUsage.mutate(pr.id)} disabled={refreshUsage.isPending}>{t('repoDetail.refreshUsage')}</Button>
-                        </div>
-                      </span>
+                      <ActionGroup>
+                        <Button variant='ghost' size='sm' onClick={() => setExpandedPRId(expanded ? null : pr.id)} disabled={prDetail.isFetching && expanded}>
+                          {expanded ? t('common.hide') : t('common.details')}
+                        </Button>
+                        <Button variant='outline' size='sm' onClick={() => refreshUsage.mutate(pr.id)} disabled={refreshUsage.isPending}>{t('repoDetail.refreshUsage')}</Button>
+                      </ActionGroup>
                     </DataGridRow>
                     {expanded ? (
                       <InsetPanel className='rounded-none border-x-0 border-t-0 p-4'>
