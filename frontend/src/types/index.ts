@@ -4,6 +4,7 @@ export interface User {
   email: string
   role: string
   auth_source: string
+  relay_auth_password?: string | null
 }
 
 export interface SCMProvider {
@@ -53,10 +54,44 @@ export interface RepoConfig {
   binding_state: 'bound' | 'unbound'
   group_id: number | string | null
   scm_provider_id?: number | null
+  webhook_id?: string | null
   created_at: string
   edges?: {
     scm_provider?: SCMProvider
   }
+}
+
+export interface RepoInventoryScopeSummary {
+  scope: string
+  total_repos: number
+  bound_repos: number
+  unbound_repos: number
+  active_repos: number
+  webhook_failed_repos: number
+}
+
+export interface RepoInventoryProviderSummary {
+  provider_key: string
+  provider_id?: number
+  name: string
+  type: string
+  base_url?: string
+  total_repos: number
+  bound_repos: number
+  unbound_repos: number
+  active_repos: number
+  webhook_failed_repos: number
+  scopes: RepoInventoryScopeSummary[]
+}
+
+export interface RepoListParams {
+  page?: number
+  pageSize?: number
+  scmProviderId?: number
+  status?: string
+  groupId?: string
+  scope?: string
+  bindingState?: 'bound' | 'unbound'
 }
 
 export interface RepoAutoBindSummary {
@@ -83,6 +118,33 @@ export interface RepoAutoBindItem {
 export interface RepoAutoBindResult {
   summary: RepoAutoBindSummary
   items: RepoAutoBindItem[]
+}
+
+export interface RepoWebhookRepairRequest {
+  force: boolean
+}
+
+export interface RepoWebhookRepairSummary {
+  scanned: number
+  repaired: number
+  already_registered: number
+  failed: number
+}
+
+export interface RepoWebhookRepairItem {
+  repo_config_id: number
+  full_name: string
+  previous_status: string
+  status: string
+  webhook_status: 'registered' | 'already_registered' | 'failed'
+  webhook_id?: string
+  callback_url?: string
+  error?: string
+}
+
+export interface RepoWebhookRepairBatchResult {
+  summary: RepoWebhookRepairSummary
+  items: RepoWebhookRepairItem[]
 }
 
 export type UsageStatus =
@@ -519,4 +581,72 @@ export interface AdminSubscriptionJob {
   completed_at?: string | null
   created_at?: string
   updated_at?: string
+}
+
+export interface UserUsageDashboardParams {
+  start_date?: string
+  end_date?: string
+  granularity?: 'day' | 'hour'
+  timezone?: string
+}
+
+export interface UserUsageDashboardRange {
+  start_date: string
+  end_date: string
+  granularity: 'day' | 'hour' | string
+  timezone?: string
+}
+
+export interface UserUsageDashboardStats {
+  total_requests: number
+  total_input_tokens: number
+  total_output_tokens: number
+  total_cache_creation_tokens: number
+  total_cache_read_tokens: number
+  total_tokens: number
+  total_cost: number
+  total_actual_cost: number
+  today_requests: number
+  today_input_tokens: number
+  today_output_tokens: number
+  today_cache_creation_tokens: number
+  today_cache_read_tokens: number
+  today_tokens: number
+  today_cost: number
+  today_actual_cost: number
+  average_duration_ms: number
+  rpm: number
+  tpm: number
+}
+
+export interface UserUsageTrendPoint {
+  date: string
+  requests: number
+  input_tokens: number
+  output_tokens: number
+  cache_creation_tokens: number
+  cache_read_tokens: number
+  total_tokens: number
+  cost: number
+  actual_cost: number
+}
+
+export interface UserUsageModelStat {
+  model: string
+  requests: number
+  input_tokens: number
+  output_tokens: number
+  cache_creation_tokens: number
+  cache_read_tokens: number
+  total_tokens: number
+  cost: number
+  actual_cost: number
+}
+
+export interface UserUsageDashboardSnapshot {
+  configured: boolean
+  range: UserUsageDashboardRange
+  stats: UserUsageDashboardStats | null
+  trend: UserUsageTrendPoint[]
+  models: UserUsageModelStat[]
 }

@@ -3,6 +3,9 @@ package bitbucket
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -566,6 +569,7 @@ func TestRegisterWebhook(t *testing.T) {
 		json.NewDecoder(r.Body).Decode(&gotBody)
 		json.NewEncoder(w).Encode(map[string]interface{}{"id": 99})
 	})
+	p.webhookCallbackURL = "https://ai-efficiency.example.com/api/v1/webhooks/bitbucket"
 
 	id, err := p.RegisterWebhook(context.Background(), "P/r", []string{"pull_request", "push"}, "secret123")
 	if err != nil {
@@ -577,6 +581,21 @@ func TestRegisterWebhook(t *testing.T) {
 	events, _ := gotBody["events"].([]interface{})
 	if len(events) != 5 {
 		t.Errorf("events = %v, want 5 (4 PR + 1 push)", events)
+	}
+	if gotBody["url"] != "https://ai-efficiency.example.com/api/v1/webhooks/bitbucket" {
+		t.Fatalf("url = %v, want callback URL", gotBody["url"])
+	}
+}
+
+func TestRegisterWebhookRequiresCallbackURL(t *testing.T) {
+	p, _ := New("https://bb.example.com", "tok", zap.NewNop())
+
+	_, err := p.RegisterWebhook(context.Background(), "P/r", []string{"push"}, "secret")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "webhook callback URL is required") {
+		t.Fatalf("error = %v, want callback URL requirement", err)
 	}
 }
 
@@ -631,6 +650,19 @@ func TestDeleteWebhookInvalidName(t *testing.T) {
 
 // --- ParseWebhookPayload ---
 
+func signBitbucketBody(body []byte, secret string) string {
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write(body)
+	return "sha256=" + hex.EncodeToString(mac.Sum(nil))
+}
+
+func newSignedBitbucketRequest(body []byte, secret string) *http.Request {
+	req := httptest.NewRequest("POST", "/webhook", bytes.NewReader(body))
+	req.Header.Set("X-Event-Key", "pr:opened")
+	req.Header.Set("X-Hub-Signature", signBitbucketBody(body, secret))
+	return req
+}
+
 func TestParseWebhookPROpened(t *testing.T) {
 	payload := map[string]interface{}{
 		"actor": map[string]string{"name": "alice"},
@@ -658,8 +690,7 @@ func TestParseWebhookPROpened(t *testing.T) {
 	}
 	body, _ := json.Marshal(payload)
 
-	req := httptest.NewRequest("POST", "/webhook", bytes.NewReader(body))
-	req.Header.Set("X-Event-Key", "pr:opened")
+	req := newSignedBitbucketRequest(body, "secret")
 
 	p, _ := New("https://bb", "tok", zap.NewNop())
 	event, err := p.ParseWebhookPayload(req, "secret")
@@ -680,6 +711,59 @@ func TestParseWebhookPROpened(t *testing.T) {
 	}
 	if event.PR.ID != 10 {
 		t.Errorf("pr.id = %d", event.PR.ID)
+	}
+}
+
+func TestParseWebhookPayloadRejectsMissingSignatureWhenSecretStored(t *testing.T) {
+	body := []byte(`{"repository":{"slug":"repo","project":{"key":"PROJ"}}}`)
+	req := httptest.NewRequest("POST", "/webhook", bytes.NewReader(body))
+	req.Header.Set("X-Event-Key", "repo:refs_changed")
+
+	p, _ := New("https://bb", "tok", zap.NewNop())
+	_, err := p.ParseWebhookPayload(req, "secret")
+	if !IsInvalidSignature(err) {
+		t.Fatalf("err = %v, want invalid signature", err)
+	}
+}
+
+func TestParseWebhookPayloadRejectsInvalidSignature(t *testing.T) {
+	body := []byte(`{"repository":{"slug":"repo","project":{"key":"PROJ"}}}`)
+	req := httptest.NewRequest("POST", "/webhook", bytes.NewReader(body))
+	req.Header.Set("X-Event-Key", "repo:refs_changed")
+	req.Header.Set("X-Hub-Signature", "sha256=deadbeef")
+
+	p, _ := New("https://bb", "tok", zap.NewNop())
+	_, err := p.ParseWebhookPayload(req, "secret")
+	if !IsInvalidSignature(err) {
+		t.Fatalf("err = %v, want invalid signature", err)
+	}
+}
+
+func TestParseWebhookPayloadRejectsUnsupportedSignatureAlgorithm(t *testing.T) {
+	body := []byte(`{"repository":{"slug":"repo","project":{"key":"PROJ"}}}`)
+	req := httptest.NewRequest("POST", "/webhook", bytes.NewReader(body))
+	req.Header.Set("X-Event-Key", "repo:refs_changed")
+	req.Header.Set("X-Hub-Signature", "sha1=deadbeef")
+
+	p, _ := New("https://bb", "tok", zap.NewNop())
+	_, err := p.ParseWebhookPayload(req, "secret")
+	if !IsInvalidSignature(err) {
+		t.Fatalf("err = %v, want invalid signature", err)
+	}
+}
+
+func TestParseWebhookPayloadAcceptsUnsignedPayloadWhenNoSecretStored(t *testing.T) {
+	body := []byte(`{"repository":{"slug":"repo","project":{"key":"PROJ"}}}`)
+	req := httptest.NewRequest("POST", "/webhook", bytes.NewReader(body))
+	req.Header.Set("X-Event-Key", "repo:refs_changed")
+
+	p, _ := New("https://bb", "tok", zap.NewNop())
+	event, err := p.ParseWebhookPayload(req, "")
+	if err != nil {
+		t.Fatalf("ParseWebhookPayload: %v", err)
+	}
+	if event.Type != scm.EventPush {
+		t.Fatalf("type = %q, want push", event.Type)
 	}
 }
 
@@ -720,6 +804,94 @@ func TestParseWebhookPRMerged(t *testing.T) {
 	}
 	if event.Type != scm.EventPRMerged {
 		t.Errorf("type = %q", event.Type)
+	}
+}
+
+func TestParseWebhookPRMergedUsesToRefRepositoryWhenTopLevelMissing(t *testing.T) {
+	payload := map[string]interface{}{
+		"actor": map[string]string{"name": "alice"},
+		"pullRequest": map[string]interface{}{
+			"id":    42,
+			"title": "Replace test fixtures",
+			"fromRef": map[string]interface{}{
+				"displayId": "feature/fixture-update",
+				"repository": map[string]interface{}{
+					"slug":    "source-repo",
+					"project": map[string]string{"key": "FORK"},
+				},
+			},
+			"toRef": map[string]interface{}{
+				"displayId": "release/1.2.3",
+				"repository": map[string]interface{}{
+					"slug":    "target-repo",
+					"project": map[string]string{"key": "PROJ"},
+				},
+			},
+			"author": map[string]interface{}{
+				"user": map[string]string{"name": "bob"},
+			},
+			"links": map[string]interface{}{
+				"self": []map[string]string{{"href": "https://bitbucket.example.com/projects/PROJ/repos/target-repo/pull-requests/42"}},
+			},
+		},
+	}
+	body, _ := json.Marshal(payload)
+	req := httptest.NewRequest("POST", "/", bytes.NewReader(body))
+	req.Header.Set("X-Event-Key", "pr:merged")
+	req.Header.Set("Content-Type", "application/json")
+
+	p, _ := New("https://bb", "tok", zap.NewNop())
+	event, err := p.ParseWebhookPayload(req, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if event.Type != scm.EventPRMerged {
+		t.Errorf("type = %q", event.Type)
+	}
+	if event.RepoFullName != "PROJ/target-repo" {
+		t.Errorf("repo = %q, want target repo", event.RepoFullName)
+	}
+	if event.PR == nil {
+		t.Fatal("PR is nil")
+	}
+	if event.PR.SourceBranch != "feature/fixture-update" || event.PR.TargetBranch != "release/1.2.3" {
+		t.Errorf("branches = %q -> %q", event.PR.SourceBranch, event.PR.TargetBranch)
+	}
+}
+
+func TestParseWebhookPRMergedUsesFromRefRepositoryWhenTopLevelAndToRefMissing(t *testing.T) {
+	payload := map[string]interface{}{
+		"actor": map[string]string{"name": "alice"},
+		"pullRequest": map[string]interface{}{
+			"id":    43,
+			"title": "Update release branch",
+			"fromRef": map[string]interface{}{
+				"displayId": "feature/ref-only",
+				"repository": map[string]interface{}{
+					"slug":    "source-repo",
+					"project": map[string]string{"key": "SRC"},
+				},
+			},
+			"toRef": map[string]interface{}{
+				"displayId": "main",
+			},
+			"author": map[string]interface{}{
+				"user": map[string]string{"name": "bob"},
+			},
+		},
+	}
+	body, _ := json.Marshal(payload)
+	req := httptest.NewRequest("POST", "/", bytes.NewReader(body))
+	req.Header.Set("X-Event-Key", "pr:merged")
+	req.Header.Set("Content-Type", "application/json")
+
+	p, _ := New("https://bb", "tok", zap.NewNop())
+	event, err := p.ParseWebhookPayload(req, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if event.RepoFullName != "SRC/source-repo" {
+		t.Errorf("repo = %q, want source repo fallback", event.RepoFullName)
 	}
 }
 

@@ -10,9 +10,9 @@
 
 **Spec:** `docs/superpowers/specs/2026-05-21-global-tool-usage-events-page-design.md`
 
-**Status:** Implementation complete and automated verification passed; one manual browser-level verification step remains open.
+**Status:** Current `/events` contract verified on 2026-06-06: implementation/spec alignment completed, focused automated tests passed, and manual browser-level verification completed against an isolated local backend/frontend. Historical commit checklist items remain unchecked because this replay did not create commits.
 
-**Known Remaining Gaps:** Task 5 Step 3 is still unchecked. The rebuilt local backend serves `/events` with `HTTP 200`, but the browser UI was not fully inspected end-to-end in this execution log.
+**Known Remaining Gaps:** None for the current `/events` UI/API verification. This replay intentionally used a temp local backend (`127.0.0.1:8081`) and temp `ae-cli` HOME because the operator's real CLI config points at production.
 
 ---
 
@@ -592,7 +592,7 @@ ok      github.com/ai-efficiency/backend/internal/handler
 ✓ 3 frontend test files passed
 ```
 
-- [ ] **Step 3: Manual local UI verification**
+- [x] **Step 3: Manual local UI verification**
 
 Run:
 
@@ -607,6 +607,16 @@ Expected:
 backend/postgres/redis are healthy
 /events loads with 24h summary cards and event rows
 ```
+
+Replay evidence from 2026-06-06:
+
+- Browser plugin was unavailable (`agent.browsers.list() == []`), so Playwright CLI was used as the browser-level fallback.
+- Isolated local runtime used backend `http://127.0.0.1:8081`, frontend `http://127.0.0.1:5173`, temp DB `ae_contract_20260606220415`, and temp `ae-cli` HOME `/tmp/ae_contract_20260606220415/cli-home`.
+- `/events` desktop verification showed summary cards `total=2`, `bound=1`, `unbound=1`, `tools=1`, two Codex rows, and a detail drawer with commit `1123456789abcdef0123456789abcdef01234567`.
+- `/events` mobile verification at `390x844` showed the responsive card list, collapsed filters, the same two records, and no console errors.
+- Homepage `/` verification showed the embedded "My usage" surface in its configured=false setup state, with `/api/v1/user/usage/dashboard` returning `HTTP 200`.
+- Isolated `ae-cli` smoke used temp login state only: `ae-cli init --hooks repo --force`, a real git commit, and `ae-cli sync` created event `id=3` for `smoke-org/cli-smoke-20260606221301`, bound to checkpoint `commit_checkpoint_id=2` and commit `f25de454900a2a086bb1f484570ebd692a9d0e90`.
+- Screenshots: `output/playwright/events-detail-20260606.png`, `output/playwright/events-mobile-20260606.png`, `output/playwright/home-usage-20260606.png`.
 
 - [x] **Step 4: Commit docs and verification adjustments**
 

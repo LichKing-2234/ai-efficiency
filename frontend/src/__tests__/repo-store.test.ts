@@ -4,6 +4,7 @@ import { useRepoStore } from '@/stores/repo'
 
 vi.mock('@/api/repo', () => ({
   listRepos: vi.fn(),
+  getRepoInventory: vi.fn(),
   createRepo: vi.fn(),
   deleteRepo: vi.fn(),
 }))
@@ -20,6 +21,10 @@ describe('Repo Store', () => {
     expect(store.loading).toBe(false)
     expect(store.error).toBeNull()
     expect(store.currentRepo).toBeNull()
+    expect(store.total).toBe(0)
+    expect(store.page).toBe(1)
+    expect(store.pageSize).toBe(20)
+    expect(store.inventory).toEqual([])
   })
 
   it('fetchRepos populates repos list', async () => {
@@ -43,6 +48,9 @@ describe('Repo Store', () => {
 
     expect(store.repos).toHaveLength(2)
     expect(store.repos[0].full_name).toBe('org/repo-a')
+    expect(store.total).toBe(2)
+    expect(store.page).toBe(1)
+    expect(store.pageSize).toBe(20)
     expect(store.loading).toBe(false)
   })
 
@@ -113,16 +121,53 @@ describe('Repo Store', () => {
     expect(store.loading).toBe(false)
   })
 
-  it('fetchRepos with custom page and pageSize', async () => {
+  it('fetchRepos passes scoped list params and stores pagination', async () => {
     const { listRepos } = await import('@/api/repo')
     ;(listRepos as any).mockResolvedValue({
       data: { data: { items: [], total: 0, page: 2, page_size: 10 } },
     })
 
     const store = useRepoStore()
-    await store.fetchRepos(2, 10)
+    await store.fetchRepos({ page: 2, pageSize: 10, scmProviderId: 7, scope: 'org', bindingState: 'bound' })
 
-    expect(listRepos).toHaveBeenCalledWith(2, 10)
+    expect(listRepos).toHaveBeenCalledWith({
+      page: 2,
+      pageSize: 10,
+      scmProviderId: 7,
+      scope: 'org',
+      bindingState: 'bound',
+    })
+    expect(store.page).toBe(2)
+    expect(store.pageSize).toBe(10)
+  })
+
+  it('fetchInventory populates platform and scope summaries', async () => {
+    const { getRepoInventory } = await import('@/api/repo')
+    ;(getRepoInventory as any).mockResolvedValue({
+      data: {
+        data: [
+          {
+            provider_key: 'scm_provider:1',
+            provider_id: 1,
+            name: 'GitHub',
+            type: 'github',
+            total_repos: 2,
+            bound_repos: 2,
+            unbound_repos: 0,
+            active_repos: 2,
+            webhook_failed_repos: 0,
+            scopes: [{ scope: 'org', total_repos: 2, bound_repos: 2, unbound_repos: 0, active_repos: 2, webhook_failed_repos: 0 }],
+          },
+        ],
+      },
+    })
+
+    const store = useRepoStore()
+    await store.fetchInventory()
+
+    expect(store.inventory).toHaveLength(1)
+    expect(store.inventory[0].scopes[0].scope).toBe('org')
+    expect(store.inventoryLoading).toBe(false)
   })
 
   it('fetchRepos clears previous error on success', async () => {

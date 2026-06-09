@@ -23,7 +23,7 @@ const { handleKeydown: handleMobileNavKeydown } = useModalFocus(mobileNavOpen, m
 </script>
 
 <template>
-  <div class="min-h-screen bg-slate-50 md:flex">
+  <div class="min-h-screen bg-slate-50 md:flex md:h-screen md:overflow-hidden">
     <header class="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-slate-200 bg-white px-4 md:hidden">
       <button
         ref="mobileMenuButton"
@@ -43,9 +43,9 @@ const { handleKeydown: handleMobileNavKeydown } = useModalFocus(mobileNavOpen, m
       </button>
     </header>
 
-    <AppSidebar class="hidden md:flex" />
+    <AppSidebar class="hidden h-screen md:flex" />
 
-    <main class="min-h-screen flex-1 overflow-auto p-4 sm:p-6 lg:p-8">
+    <main class="min-h-screen min-w-0 flex-1 overflow-auto p-4 sm:p-6 lg:p-8 md:h-screen md:min-h-0">
       <slot />
     </main>
 

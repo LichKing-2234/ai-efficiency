@@ -70,6 +70,67 @@ describe('scmProvider API', () => {
   })
 })
 
+describe('repo API', () => {
+  it('listRepos calls GET /repos with scoped pagination params', async () => {
+    const { listRepos } = await import('@/api/repo')
+    mockClient.get.mockResolvedValue({ data: { data: { items: [], total: 0 } } })
+
+    await listRepos({
+      page: 3,
+      pageSize: 15,
+      scmProviderId: 7,
+      scope: 'org',
+      bindingState: 'bound',
+    })
+
+    expect(mockClient.get).toHaveBeenCalledWith('/repos', {
+      params: {
+        page: 3,
+        page_size: 15,
+        scm_provider_id: 7,
+        scope: 'org',
+        binding_state: 'bound',
+      },
+    })
+  })
+
+  it('getRepoInventory calls GET /repos/inventory', async () => {
+    const { getRepoInventory } = await import('@/api/repo')
+    mockClient.get.mockResolvedValue({ data: { data: [] } })
+
+    await getRepoInventory()
+
+    expect(mockClient.get).toHaveBeenCalledWith('/repos/inventory')
+  })
+
+  it('repairFailedWebhooks calls POST /repos/repair-webhooks', async () => {
+    const { repairFailedWebhooks } = await import('@/api/repo')
+    mockClient.post.mockResolvedValue({
+      data: {
+        data: {
+          summary: { scanned: 0, repaired: 0, already_registered: 0, failed: 0 },
+          items: [],
+        },
+      },
+    })
+
+    await repairFailedWebhooks({ force: true })
+
+    expect(mockClient.post).toHaveBeenCalledWith('/repos/repair-webhooks', { force: true })
+  })
+
+  it('repairWebhook calls POST /repos/:id/repair-webhook', async () => {
+    const { repairWebhook } = await import('@/api/repo')
+    mockClient.post.mockResolvedValue({
+      data: { data: { repo_config_id: 5, webhook_status: 'registered' } },
+    })
+
+    await repairWebhook(5, { force: false })
+
+    expect(mockClient.post).toHaveBeenCalledWith('/repos/5/repair-webhook', { force: false })
+  })
+})
+
 describe('relayProvider API', () => {
   it('listRelayProviders calls GET /admin/providers', async () => {
     mockClient.get.mockResolvedValue({ data: { data: [] } })

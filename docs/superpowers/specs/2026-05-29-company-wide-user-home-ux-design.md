@@ -1,7 +1,7 @@
 # Company-Wide User Home UX Design
 
 **Date:** 2026-05-29
-**Status:** Proposed design for review
+**Status:** Implemented frontend task-zone redesign
 **Scope:** `frontend/src/router/`, `frontend/src/components/`, `frontend/src/views/`, `frontend/src/api/`, `frontend/src/stores/`, `frontend/src/types/`, `frontend/src/__tests__/`, `docs/architecture.md`
 **Related:**
 - [2026-05-21-user-page-cli-self-serve-design.md](./2026-05-21-user-page-cli-self-serve-design.md)
@@ -19,6 +19,7 @@
 - 本文不改变 relay provider、user provider credential、group credential、PR usage snapshot、tool usage event 的后端数据合同。
 - 本文重新组织前端信息架构、页面命名、默认入口、空状态、渐进披露和响应式 shell。若实现过程中需要新增后端字段，必须补充单独 contract 或扩展本文的 Data Requirements。
 - 本文不回写历史 specs。实现完成后，`docs/architecture.md` 必须同步反映新的前端入口、普通用户视角、管理视角和响应式布局边界。
+- Implementation has landed in the current frontend shell and task-zone pages. The later [`2026-06-06-user-usage-trend-design.md`](./2026-06-06-user-usage-trend-design.md) supersedes this spec's first-pass recent-activity placement by embedding the personal usage dashboard into `/`.
 
 ## Problem
 

@@ -1,7 +1,7 @@
 # Git Hook Installation Design
 
 **Date:** 2026-05-23
-**Status:** Proposed design, not yet implemented
+**Status:** Implemented current contract
 **Scope:** `ae-cli/`, `ae-cli/install.sh`, `ae-cli/install.ps1`, `backend/internal/handler/router.go`, `backend/internal/handler/repo.go`, `backend/internal/handler/checkpoint.go`, `backend/internal/handler/tool_usage.go`, `backend/internal/repo/`, `backend/internal/repoidentity/`, `backend/internal/checkpoint/`, `backend/internal/toolusage/`, `docs/`
 **Related:**
 - [2026-05-13-sessionless-local-tool-attribution-design.md](./2026-05-13-sessionless-local-tool-attribution-design.md)
@@ -9,7 +9,7 @@
 - [2026-03-26-session-pr-attribution-design.md](./2026-03-26-session-pr-attribution-design.md)
 - [docs/architecture.md](../../architecture.md)
 
-The current project-level architecture remains documented in [`docs/architecture.md`](../../architecture.md). This document describes the next hook installation contract and does not claim that the behavior already exists.
+The current project-level architecture remains documented in [`docs/architecture.md`](../../architecture.md). This document is now the implemented hook installation contract. Later durability and async-sync follow-ups are reflected in [`2026-05-26-ae-cli-post-commit-async-attribution-sync-design.md`](./2026-05-26-ae-cli-post-commit-async-attribution-sync-design.md) and [`2026-06-01-ae-cli-doctor-tool-validation-design.md`](./2026-06-01-ae-cli-doctor-tool-validation-design.md).
 
 ## Spec Relationship
 

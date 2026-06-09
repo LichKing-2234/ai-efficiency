@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net/url"
+	"sort"
 	"strings"
 
 	"github.com/ai-efficiency/backend/ent"
@@ -26,6 +28,7 @@ import (
 
 var ErrRepoUnbound = errors.New("repo is not bound to an scm provider")
 var ErrSCMProviderNotFound = errors.New("scm provider not found")
+var ErrWebhookPublicURLRequired = errors.New("server.public_url is required for webhook registration")
 
 // CreateRequest is the request to create a repo config.
 type CreateRequest struct {
@@ -67,6 +70,41 @@ type ListOpts struct {
 	SCMProviderID int
 	Status        string
 	GroupID       string
+	Scope         string
+	BindingState  string
+}
+
+type InventoryScopeSummary struct {
+	Scope              string `json:"scope"`
+	TotalRepos         int    `json:"total_repos"`
+	BoundRepos         int    `json:"bound_repos"`
+	UnboundRepos       int    `json:"unbound_repos"`
+	ActiveRepos        int    `json:"active_repos"`
+	WebhookFailedRepos int    `json:"webhook_failed_repos"`
+}
+
+type InventoryProviderSummary struct {
+	ProviderKey        string                  `json:"provider_key"`
+	ProviderID         *int                    `json:"provider_id,omitempty"`
+	Name               string                  `json:"name"`
+	Type               string                  `json:"type"`
+	BaseURL            string                  `json:"base_url,omitempty"`
+	TotalRepos         int                     `json:"total_repos"`
+	BoundRepos         int                     `json:"bound_repos"`
+	UnboundRepos       int                     `json:"unbound_repos"`
+	ActiveRepos        int                     `json:"active_repos"`
+	WebhookFailedRepos int                     `json:"webhook_failed_repos"`
+	Scopes             []InventoryScopeSummary `json:"scopes"`
+}
+
+type scmProviderFactory func(providerType, baseURL string, apiCredential any, callbackURL string) (scm.SCMProvider, error)
+
+// ServiceOptions configures repo service behavior that depends on deployment context.
+type ServiceOptions struct {
+	WebhookPublicURL string
+	FrontendURL      string
+	ServerMode       string
+	SCMFactory       scmProviderFactory
 }
 
 // Service handles repo configuration business logic.
@@ -75,14 +113,26 @@ type Service struct {
 	encryptionKey    string
 	logger           *zap.Logger
 	autoBindPostBind autoBindPostBindFunc
+	webhookPublicURL string
+	frontendURL      string
+	serverMode       string
+	scmFactory       scmProviderFactory
 }
 
 // NewService creates a new repo service.
-func NewService(entClient *ent.Client, encryptionKey string, logger *zap.Logger) *Service {
+func NewService(entClient *ent.Client, encryptionKey string, logger *zap.Logger, options ...ServiceOptions) *Service {
+	opt := ServiceOptions{}
+	if len(options) > 0 {
+		opt = options[0]
+	}
 	return &Service{
-		entClient:     entClient,
-		encryptionKey: encryptionKey,
-		logger:        logger,
+		entClient:        entClient,
+		encryptionKey:    encryptionKey,
+		logger:           logger,
+		webhookPublicURL: strings.TrimSpace(opt.WebhookPublicURL),
+		frontendURL:      strings.TrimSpace(opt.FrontendURL),
+		serverMode:       strings.TrimSpace(opt.ServerMode),
+		scmFactory:       opt.SCMFactory,
 	}
 }
 
@@ -389,6 +439,18 @@ func (s *Service) List(ctx context.Context, opts ListOpts) ([]*ent.RepoConfig, i
 	if opts.GroupID != "" {
 		query.Where(repoconfig.GroupIDEQ(opts.GroupID))
 	}
+	if opts.Scope != "" {
+		query.Where(repoconfig.Or(
+			repoconfig.FullNameEQ(opts.Scope),
+			repoconfig.FullNameHasPrefix(opts.Scope+"/"),
+		))
+	}
+	switch opts.BindingState {
+	case "bound":
+		query.Where(repoconfig.HasScmProvider())
+	case "unbound":
+		query.Where(repoconfig.Not(repoconfig.HasScmProvider()))
+	}
 
 	total, err := query.Clone().Count(ctx)
 	if err != nil {
@@ -405,6 +467,123 @@ func (s *Service) List(ctx context.Context, opts ListOpts) ([]*ent.RepoConfig, i
 	}
 
 	return repos, int64(total), nil
+}
+
+func (s *Service) Inventory(ctx context.Context) ([]InventoryProviderSummary, error) {
+	repos, err := s.entClient.RepoConfig.Query().
+		WithScmProvider().
+		Order(ent.Asc(repoconfig.FieldFullName)).
+		All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list repo inventory: %w", err)
+	}
+
+	type providerAccumulator struct {
+		summary InventoryProviderSummary
+		scopes  map[string]*InventoryScopeSummary
+	}
+	providers := make(map[string]*providerAccumulator)
+
+	for _, rc := range repos {
+		key, providerSummary := inventoryProviderForRepo(rc)
+		acc, ok := providers[key]
+		if !ok {
+			acc = &providerAccumulator{
+				summary: providerSummary,
+				scopes:  make(map[string]*InventoryScopeSummary),
+			}
+			providers[key] = acc
+		}
+
+		scopeName := repoInventoryScope(rc.FullName)
+		scope, ok := acc.scopes[scopeName]
+		if !ok {
+			scope = &InventoryScopeSummary{Scope: scopeName}
+			acc.scopes[scopeName] = scope
+		}
+
+		bound := rc.Edges.ScmProvider != nil
+		status := string(rc.Status)
+		acc.summary.TotalRepos++
+		scope.TotalRepos++
+		if bound {
+			acc.summary.BoundRepos++
+			scope.BoundRepos++
+		} else {
+			acc.summary.UnboundRepos++
+			scope.UnboundRepos++
+		}
+		if status == string(repoconfig.StatusActive) {
+			acc.summary.ActiveRepos++
+			scope.ActiveRepos++
+		}
+		if status == string(repoconfig.StatusWebhookFailed) {
+			acc.summary.WebhookFailedRepos++
+			scope.WebhookFailedRepos++
+		}
+	}
+
+	items := make([]InventoryProviderSummary, 0, len(providers))
+	for _, acc := range providers {
+		scopes := make([]InventoryScopeSummary, 0, len(acc.scopes))
+		for _, scope := range acc.scopes {
+			scopes = append(scopes, *scope)
+		}
+		sort.Slice(scopes, func(i, j int) bool {
+			return scopes[i].Scope < scopes[j].Scope
+		})
+		acc.summary.Scopes = scopes
+		items = append(items, acc.summary)
+	}
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].ProviderKey == "unbound" {
+			return false
+		}
+		if items[j].ProviderKey == "unbound" {
+			return true
+		}
+		if items[i].Name == items[j].Name {
+			return items[i].ProviderKey < items[j].ProviderKey
+		}
+		return items[i].Name < items[j].Name
+	})
+
+	return items, nil
+}
+
+func inventoryProviderForRepo(rc *ent.RepoConfig) (string, InventoryProviderSummary) {
+	provider := rc.Edges.ScmProvider
+	if provider == nil {
+		return "unbound", InventoryProviderSummary{
+			ProviderKey: "unbound",
+			Name:        "Needs platform binding",
+			Type:        "unbound",
+		}
+	}
+	providerID := provider.ID
+	providerKey := inventoryProviderKey(providerID)
+	return providerKey, InventoryProviderSummary{
+		ProviderKey: providerKey,
+		ProviderID:  &providerID,
+		Name:        provider.Name,
+		Type:        string(provider.Type),
+		BaseURL:     provider.BaseURL,
+	}
+}
+
+func inventoryProviderKey(providerID int) string {
+	return fmt.Sprintf("scm_provider:%d", providerID)
+}
+
+func repoInventoryScope(fullName string) string {
+	fullName = strings.TrimSpace(fullName)
+	if fullName == "" {
+		return "unknown"
+	}
+	if idx := strings.Index(fullName, "/"); idx > 0 {
+		return fullName[:idx]
+	}
+	return fullName
 }
 
 // Update updates a repo config.
@@ -549,15 +728,55 @@ func (s *Service) GetSCMProvider(ctx context.Context, repoConfigID int) (scm.SCM
 }
 
 func (s *Service) newSCMProvider(providerType, baseURL string, apiCredential any) (scm.SCMProvider, error) {
-	// Import cycle prevention: use a factory approach
-	// For now, we only support GitHub
+	callbackURL, err := s.webhookCallbackURL(providerType, false)
+	if err != nil {
+		return nil, err
+	}
+	return s.newSCMProviderWithCallback(providerType, baseURL, apiCredential, callbackURL)
+}
+
+func (s *Service) newSCMProviderWithCallback(providerType, baseURL string, apiCredential any, callbackURL string) (scm.SCMProvider, error) {
+	if s.scmFactory != nil {
+		return s.scmFactory(providerType, baseURL, apiCredential, callbackURL)
+	}
 	switch providerType {
-	case "github":
-		return newGitHubProvider(baseURL, apiCredential, s.logger)
-	case "bitbucket_server":
-		return newBitbucketProvider(baseURL, apiCredential, s.logger)
+	case string(scmprovider.TypeGithub):
+		return newGitHubProvider(baseURL, apiCredential, s.logger, callbackURL)
+	case string(scmprovider.TypeBitbucketServer):
+		return newBitbucketProvider(baseURL, apiCredential, s.logger, callbackURL)
 	default:
 		return nil, fmt.Errorf("unsupported provider type: %s", providerType)
+	}
+}
+
+func (s *Service) webhookCallbackURL(providerType string, require bool) (string, error) {
+	base := strings.TrimSpace(s.webhookPublicURL)
+	if base == "" && s.serverMode != "release" {
+		base = strings.TrimSpace(s.frontendURL)
+	}
+	if base == "" {
+		if require {
+			return "", ErrWebhookPublicURLRequired
+		}
+		return "", nil
+	}
+
+	parsed, err := url.Parse(base)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return "", fmt.Errorf("invalid webhook public URL %q", base)
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return "", fmt.Errorf("invalid webhook public URL scheme %q", parsed.Scheme)
+	}
+
+	base = strings.TrimRight(parsed.String(), "/")
+	switch providerType {
+	case string(scmprovider.TypeGithub):
+		return base + "/api/v1/webhooks/github", nil
+	case string(scmprovider.TypeBitbucketServer):
+		return base + "/api/v1/webhooks/bitbucket", nil
+	default:
+		return "", fmt.Errorf("unsupported provider type: %s", providerType)
 	}
 }
 

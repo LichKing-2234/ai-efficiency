@@ -128,6 +128,9 @@ func (f *fakeRelayProvider) RevokeUserAPIKey(ctx context.Context, keyID int64) e
 func (f *fakeRelayProvider) ListUsageLogsByAPIKeyExact(ctx context.Context, apiKeyID int64, from, to time.Time) ([]relay.UsageLog, error) {
 	return nil, nil
 }
+func (f *fakeRelayProvider) GetUserUsageDashboard(ctx context.Context, login, password string, params relay.UserUsageDashboardParams) (*relay.UserUsageDashboardResponse, error) {
+	return nil, nil
+}
 
 func testRepoPR(t *testing.T, client *ent.Client) (*ent.RepoConfig, *ent.PrRecord) {
 	t.Helper()
@@ -333,8 +336,8 @@ func TestSettlePRAggregatesToolUsageEventsByCheckpoint(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Settle: %v", err)
 	}
-	if result.PrimaryTokenCount != 150 {
-		t.Fatalf("PrimaryTokenCount = %d, want 150", result.PrimaryTokenCount)
+	if result.PrimaryTokenCount != 140 {
+		t.Fatalf("PrimaryTokenCount = %d, want 140", result.PrimaryTokenCount)
 	}
 	if result.MetadataSummary["kiro_credit_usage"] != 0.6 {
 		t.Fatalf("MetadataSummary = %+v", result.MetadataSummary)
@@ -397,8 +400,8 @@ func TestSettlePRAllowsUnboundCheckpointWhenToolUsageIsAlreadyBound(t *testing.T
 	if result.ResultClassification != "clear" {
 		t.Fatalf("ResultClassification = %q, want clear", result.ResultClassification)
 	}
-	if result.PrimaryTokenCount != 90 {
-		t.Fatalf("PrimaryTokenCount = %d, want 90", result.PrimaryTokenCount)
+	if result.PrimaryTokenCount != 81 {
+		t.Fatalf("PrimaryTokenCount = %d, want 81", result.PrimaryTokenCount)
 	}
 	if got := result.MetadataSummary["matched_session_count"]; got != 1 {
 		t.Fatalf("matched_session_count = %v, want 1 tool-native session", got)

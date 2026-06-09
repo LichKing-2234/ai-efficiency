@@ -2,9 +2,12 @@ package webhook
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/ai-efficiency/backend/ent"
@@ -24,6 +27,13 @@ type Handler struct {
 	entClient *ent.Client
 	labeler   *efficiency.Labeler
 	logger    *zap.Logger
+}
+
+type bitbucketWebhookRepoRef struct {
+	Slug    string `json:"slug"`
+	Project struct {
+		Key string `json:"key"`
+	} `json:"project"`
 }
 
 // NewHandler creates a new webhook handler.
@@ -141,20 +151,27 @@ func (h *Handler) HandleBitbucket(c *gin.Context) {
 
 	// Extract repo full name from payload
 	var payload struct {
-		Repository struct {
-			Slug    string `json:"slug"`
-			Project struct {
-				Key string `json:"key"`
-			} `json:"project"`
-		} `json:"repository"`
+		Repository  bitbucketWebhookRepoRef `json:"repository"`
+		PullRequest struct {
+			FromRef struct {
+				Repository bitbucketWebhookRepoRef `json:"repository"`
+			} `json:"fromRef"`
+			ToRef struct {
+				Repository bitbucketWebhookRepoRef `json:"repository"`
+			} `json:"toRef"`
+		} `json:"pullRequest"`
 	}
 	if err := json.Unmarshal(body, &payload); err != nil {
 		pkg.Error(c, http.StatusBadRequest, "invalid payload")
 		return
 	}
 
-	repoFullName := payload.Repository.Project.Key + "/" + payload.Repository.Slug
-	if repoFullName == "/" {
+	repoFullName := bitbucketWebhookRepoFullName(
+		payload.Repository,
+		payload.PullRequest.ToRef.Repository,
+		payload.PullRequest.FromRef.Repository,
+	)
+	if repoFullName == "" {
 		pkg.Error(c, http.StatusBadRequest, "missing repository info")
 		return
 	}
@@ -188,7 +205,11 @@ func (h *Handler) HandleBitbucket(c *gin.Context) {
 	event, err := bbProvider.ParseWebhookPayload(parseReq, secret)
 	if err != nil {
 		h.logger.Warn("bitbucket webhook parse failed", zap.String("repo", repoFullName), zap.Error(err))
-		h.storeDeadLetter(c, rc.ID, "", eventKey, body, err.Error())
+		h.storeDeadLetter(c, rc.ID, bitbucketDeliveryID(c, eventKey, body), eventKey, body, err.Error())
+		if bitbucket.IsInvalidSignature(err) {
+			pkg.Error(c, http.StatusUnauthorized, "invalid webhook signature")
+			return
+		}
 		pkg.Error(c, http.StatusBadRequest, "invalid webhook payload")
 		return
 	}
@@ -200,6 +221,17 @@ func (h *Handler) HandleBitbucket(c *gin.Context) {
 
 	h.dispatch(c, rc, event)
 	pkg.Success(c, gin.H{"status": "processed"})
+}
+
+func bitbucketWebhookRepoFullName(repos ...bitbucketWebhookRepoRef) string {
+	for _, repo := range repos {
+		projectKey := strings.TrimSpace(repo.Project.Key)
+		slug := strings.TrimSpace(repo.Slug)
+		if projectKey != "" && slug != "" {
+			return projectKey + "/" + slug
+		}
+	}
+	return ""
 }
 
 func (h *Handler) dispatch(c *gin.Context, rc *ent.RepoConfig, event *scm.WebhookEvent) {
@@ -347,6 +379,20 @@ func (h *Handler) labelPR(ctx context.Context, prRecordID int) {
 	if _, err := h.labeler.LabelPR(ctx, prRecordID); err != nil {
 		h.logger.Warn("auto-label failed", zap.Int("pr_record_id", prRecordID), zap.Error(err))
 	}
+}
+
+func bitbucketDeliveryID(c *gin.Context, eventKey string, body []byte) string {
+	for _, header := range []string{"X-Request-ID", "X-Request-Id", "X-Atlassian-Request-ID"} {
+		if value := strings.TrimSpace(c.GetHeader(header)); value != "" {
+			return value
+		}
+	}
+
+	hash := sha256.New()
+	_, _ = hash.Write([]byte(eventKey))
+	_, _ = hash.Write([]byte{0})
+	_, _ = hash.Write(body)
+	return "bitbucket-" + hex.EncodeToString(hash.Sum(nil))
 }
 
 func (h *Handler) storeDeadLetter(c *gin.Context, repoConfigID int, deliveryID, eventType string, payload []byte, errMsg string) {

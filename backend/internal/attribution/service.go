@@ -419,7 +419,7 @@ func (s *Service) loadCheckpointToolUsage(ctx context.Context, checkpointID int)
 	var tokenEventCount int
 	toolSessionSet := map[string]struct{}{}
 	for _, item := range toolItems {
-		totalTokens += item.InputTokens + item.OutputTokens + item.CachedInputTokens
+		totalTokens += item.InputTokens + item.OutputTokens
 		totalCredits += item.CreditUsage
 		totalRequests += int64(item.RequestCount)
 		if item.UsageUnit == toolusageevent.UsageUnitToken {

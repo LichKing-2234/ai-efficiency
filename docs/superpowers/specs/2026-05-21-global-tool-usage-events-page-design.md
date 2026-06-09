@@ -1,7 +1,7 @@
 # Global Tool Usage Events Page Design
 
 **Date:** 2026-05-21  
-**Status:** Proposed current design  
+**Status:** Implemented current contract
 **Scope:** `backend/internal/handler/`, `backend/internal/toolusage/`, `frontend/src/router/`, `frontend/src/views/`, `frontend/src/api/`, `docs/`  
 **Related:**  
 - [2026-05-13-sessionless-local-tool-attribution-design.md](./2026-05-13-sessionless-local-tool-attribution-design.md)  
@@ -14,6 +14,7 @@
 - 它补足当前产品只到 `Repo -> PR -> Commit` 聚合层的可见性缺口，但**不改变** sessionless attribution 的绑定合同。
 - `tool_usage_event -> checkpoint/commit -> PR(best-effort)` 的链路仍以 [`2026-05-13-sessionless-local-tool-attribution-design.md`](./2026-05-13-sessionless-local-tool-attribution-design.md) 为准。
 - `PR` 在本页中是派生信息，不是 event 的原生字段；commit/PR 聚合的正式产品合同仍以 [`2026-05-20-pr-usage-snapshots-design.md`](./2026-05-20-pr-usage-snapshots-design.md) 为准。
+- Implementation has landed in the current codebase: `backend/internal/handler/events.go`, `backend/internal/toolusage/query.go`, `frontend/src/views/events/EventsView.vue`, and `frontend/src/api/events.ts` provide the protected event summary/list/detail/user-search surface described here. Manual browser verification is tracked in the corresponding plan rather than in this spec.
 
 ## Overview
 

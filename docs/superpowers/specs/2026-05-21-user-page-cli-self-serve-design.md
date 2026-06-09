@@ -1,7 +1,7 @@
 # User Page CLI Self-Serve Design
 
 **Date:** 2026-05-21  
-**Status:** Proposed current design  
+**Status:** Implemented current contract
 **Scope:** `backend/internal/handler/`, `backend/internal/relay/`, `frontend/src/router/`, `frontend/src/views/`, `frontend/src/components/`, `frontend/src/api/`, `frontend/src/types/`, `docs/`  
 **Related:**  
 - [2026-04-13-ae-cli-user-install-design.md](./2026-04-13-ae-cli-user-install-design.md)  
@@ -18,6 +18,7 @@
 - 它本轮**不直接改写** `ae-cli discover` 的命令形状；工具配置写入规则仍以 [`2026-05-19-ae-cli-deterministic-tool-configuration-design.md`](./2026-05-19-ae-cli-deterministic-tool-configuration-design.md) 为准。
 - 它修正的是 `/user` 页面如何表达和调用用户态 credential provisioning：从错误的 `provider + platform` 折叠视图，改成 `provider + group` 视图，并以当前 relay user 的 user-scoped group facts 作为 group 来源；adapter 可以用 provider-wide group list 解析 `allowed_groups` ID，但不能把 provider 下全部 active groups 暴露给用户。
 - 本文当前还约束 `/user` 创建 / 重建 key 的写入身份：sub2api `/api/v1/keys` 要求当前 relay user 的用户态 JWT，RelayProvider admin API key 不能代替用户凭据创建 key。后端必须在创建 / 重建 key 前确保本地用户已绑定 relay user 且有可用的用户态写入凭据：Relay SSO 登录会保存用户输入的 relay password；如果 SSO 登录邮箱在 relay 侧不存在，后端会用该 SSO 密码创建 relay user 并保存；LDAP 登录和 `/user` 写入路径不能使用 LDAP bind password，而是使用后端生成的高熵 relay-side password。若 relay user 不存在，后端通过 relay admin API 创建用户、保存生成密码，并显式分配 relay 默认订阅；若 sub2api 已在 admin user create 期间完成默认订阅分配，后端重复 assign 遇到 409 `SUBSCRIPTION_ASSIGN_CONFLICT` 时视为幂等成功。若 relay user 已存在但本地没有可解密密码，或本地密码已经失效，后端可轮换该 relay user 的生成密码、加密保存，然后用用户态 JWT 创建 / 重建 key。对旧版本已经创建出的 LDAP-provisioned relay user，如果其 `notes=provisioned_by_ai_efficiency_ldap` 且还没有 group facts，后续 LDAP 登录可补默认订阅。LDAP bind password 仍然只能用于 LDAP bind，不能写入本地或转发到 relay。
+- Implementation has landed in the current codebase. `/user` uses the DB-backed user provider surface, group-scoped credential actions, provider/group model loading, user-key test flow, and CLI setup guidance described here; `ae-cli discover` consumes `/api/v1/user/providers` with `/api/v1/providers` kept only as an older backend compatibility fallback.
 
 ## Overview
 

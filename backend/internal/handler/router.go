@@ -131,11 +131,14 @@ func SetupRouter(
 	{
 		repoGroup.GET("", repoHandler.List)
 		repoGroup.POST("", repoHandler.Create)
+		repoGroup.GET("/inventory", repoHandler.Inventory)
 		repoGroup.POST("/direct", repoHandler.CreateDirect)
 		repoGroup.POST("/ensure-remote", repoHandler.EnsureRemote)
 		repoGroup.POST("/resolve-remote", repoHandler.ResolveRemote)
 		repoGroup.POST("/hook-eligible", repoHandler.HookEligible)
 		repoGroup.POST("/auto-bind-unbound", auth.RequireAdmin(), repoHandler.AutoBindUnbound)
+		repoGroup.POST("/repair-webhooks", auth.RequireAdmin(), repoHandler.RepairFailedWebhooks)
+		repoGroup.POST("/:id/repair-webhook", auth.RequireAdmin(), repoHandler.RepairWebhook)
 		repoGroup.GET("/:id", repoHandler.Get)
 		repoGroup.PUT("/:id", repoHandler.Update)
 		repoGroup.DELETE("/:id", repoHandler.Delete)
@@ -181,6 +184,10 @@ func SetupRouter(
 		if providerHandler != nil {
 			userGroup.GET("/providers/:id/groups/:group_id/models", providerHandler.Models)
 			userGroup.POST("/providers/:id/test", providerHandler.Test)
+
+			// User usage dashboard
+			userUsageHandler := NewUserUsageHandler(entClient, providerHandler, encryptionKey)
+			userGroup.GET("/usage/dashboard", userUsageHandler.Dashboard)
 		}
 		userGroup.POST("/providers/:id/groups/:group_id/credential", userSetupHandler.CreateGroupCredential)
 		userGroup.POST("/providers/:id/groups/:group_id/credential/regenerate", userSetupHandler.RegenerateGroupCredential)

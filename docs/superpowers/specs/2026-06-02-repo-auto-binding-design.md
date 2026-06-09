@@ -1,7 +1,7 @@
 # Repo Auto Binding Design
 
 **Date:** 2026-06-02
-**Status:** Review Requested
+**Status:** Implemented current contract
 **Scope:** `backend/`, `frontend/`, `docs/`
 **Related:**
 - [`2026-04-15-cli-start-auto-repo-sync-design.md`](./2026-04-15-cli-start-auto-repo-sync-design.md)
@@ -9,6 +9,8 @@
 - [`2026-05-23-global-git-hooks-design.md`](./2026-05-23-global-git-hooks-design.md)
 
 Project-level architecture and current runtime boundaries remain anchored in [`docs/architecture.md`](../../architecture.md).
+
+Implementation has landed in the current codebase. New repo creation can deterministically bind to one matching active Code Platform, `POST /api/v1/repos/auto-bind-unbound` provides the admin repair action, and read-only hook eligibility paths remain non-mutating.
 
 ## Overview
 
@@ -166,6 +168,8 @@ The batch endpoint does not process inactive repos. Admins can manually re-activ
 ## Post-Bind Behavior
 
 Post-bind work is best-effort and isolated from the binding decision.
+
+Webhook registration remains best-effort during auto-bind. Auto-bind only processes unbound repos; already-bound repos in `webhook_failed` are repaired by the follow-up webhook repair contract in [`2026-06-06-repo-webhook-repair-design.md`](./2026-06-06-repo-webhook-repair-design.md).
 
 When provider API verification succeeds:
 
