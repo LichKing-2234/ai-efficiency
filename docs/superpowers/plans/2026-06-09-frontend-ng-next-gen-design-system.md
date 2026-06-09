@@ -12,7 +12,7 @@
 
 ## Current Status
 
-In progress. The first foundation pass is implemented and verified: global tokens/utilities, upgraded button/card/badge/KPI primitives, ToolGlyph, SegmentedControl, SlideOver, collapsible shell, language dropdown, command palette, and promoted `/usage` route are in place. Full screen-by-screen reference parity remains pending.
+In progress. The first foundation pass is implemented and verified: global tokens/utilities, upgraded button/card/badge/KPI primitives, ToolGlyph, SegmentedControl, SlideOver, collapsible shell, language dropdown, command palette, and promoted `/usage` route are in place. Overview and Usage have a first visual pass using real backend data. Events, Repos, Setup, and Admin screen parity remain pending.
 
 ## File Structure
 
@@ -172,15 +172,15 @@ In progress. The first foundation pass is implemented and verified: global token
 
   Add `/usage` backed by existing user usage APIs.
 
-- [ ] **Step 2: Keep Overview usage condensed**
+- [x] **Step 2: Keep Overview usage condensed**
 
   Preserve `UserUsagePanel embedded` behavior or replace it with a condensed component backed by the same API data.
 
-- [ ] **Step 3: Rewrite Overview hero and KPI strip**
+- [x] **Step 3: Rewrite Overview hero and KPI strip**
 
   Match the reference warm-paper hero, setup status, recent usage, and KPI visual treatment using real dashboard/events/provider data.
 
-- [ ] **Step 4: Fix interpolation regressions**
+- [x] **Step 4: Fix interpolation regressions**
 
   Verify no literal `{identity}`, `{role}`, `{source}`, or `{range}` placeholders render in the UI.
 

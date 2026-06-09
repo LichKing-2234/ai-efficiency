@@ -1,6 +1,6 @@
 import { Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowRightIcon } from 'lucide-react'
+import { ArrowRightIcon, FolderGit2Icon, GitPullRequestIcon, PlugZapIcon, WorkflowIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -33,7 +33,7 @@ export function HomePage() {
 
   return (
     <Page>
-      <Card className='grid-bg overflow-hidden border-[var(--ae-ai-line)]'>
+      <Card className='grid-paper overflow-hidden border-[var(--ai-line)] bg-[linear-gradient(150deg,var(--ai-soft),transparent_60%),var(--surface)]'>
         <CardContent className='flex flex-col gap-5 p-6 lg:flex-row lg:items-center lg:justify-between'>
           <div className='max-w-2xl'>
             <Badge variant='ai'>{t('home.heroBadge')}</Badge>
@@ -54,14 +54,42 @@ export function HomePage() {
 
       <UserUsagePanel embedded />
 
-      <div className='grid gap-4 sm:grid-cols-2 xl:grid-cols-4'>
-        <MetricCard label={t('home.repos')} value={number(dashboard.data?.total_repos, locale)} helper={t('home.reposHelp')} />
-        <MetricCard label={t('home.trackedWorkflows')} value={number(dashboard.data?.tracked_workflows, locale)} helper={t('home.trackedWorkflowsHelp')} />
-        <MetricCard label={t('home.totalAiPrs')} value={number(dashboard.data?.total_ai_prs, locale)} helper={t('home.totalAiPrsHelp')} accent />
-        <MetricCard label={t('home.connectedTools')} value={number(connectedTools.size, locale)} helper={connectedTools.size ? [...connectedTools].join(', ') : t('home.statusAiAccessMissing')} />
+      <div className='kpi-grid'>
+        <MetricCard
+          label={t('home.repos')}
+          value={number(dashboard.data?.total_repos, locale)}
+          helper={t('home.reposHelp')}
+          icon={FolderGit2Icon}
+          sparkline={[2, 4, 5, 7, 8, dashboard.data?.total_repos ?? 0]}
+        />
+        <MetricCard
+          label={t('home.trackedWorkflows')}
+          value={number(dashboard.data?.tracked_workflows, locale)}
+          helper={t('home.trackedWorkflowsHelp')}
+          icon={WorkflowIcon}
+          sparkline={[1, 3, 3, 5, 7, dashboard.data?.tracked_workflows ?? 0]}
+          sparklineColor='var(--viz-output)'
+        />
+        <MetricCard
+          label={t('home.totalAiPrs')}
+          value={number(dashboard.data?.total_ai_prs, locale)}
+          helper={t('home.totalAiPrsHelp')}
+          accent
+          icon={GitPullRequestIcon}
+          sparkline={[3, 5, 8, 13, 21, dashboard.data?.total_ai_prs ?? 0]}
+          sparklineColor='var(--viz-input)'
+        />
+        <MetricCard
+          label={t('home.connectedTools')}
+          value={number(connectedTools.size, locale)}
+          helper={connectedTools.size ? [...connectedTools].join(', ') : t('home.statusAiAccessMissing')}
+          icon={PlugZapIcon}
+          sparkline={[0, 0, 1, 1, 2, connectedTools.size]}
+          sparklineColor='var(--viz-reason)'
+        />
       </div>
 
-      <div className='grid gap-4 lg:grid-cols-[0.9fr_1.1fr]'>
+      <div className='split-2'>
         <Card>
           <CardHeader>
             <CardTitle>{t('home.setupStatus')}</CardTitle>

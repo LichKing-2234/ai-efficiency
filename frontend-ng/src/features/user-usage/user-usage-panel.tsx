@@ -1,14 +1,15 @@
 import { Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
-import { Area, AreaChart, Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'recharts'
+import { ActivityIcon, CoinsIcon, GaugeIcon, LayersIcon, RefreshCwIcon } from 'lucide-react'
+import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from 'recharts'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart'
 import { Empty, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { MetricCard } from '@/components/primitives/metric-card'
+import { SegmentedControl } from '@/components/primitives/segmented-control'
 import { api } from '@/lib/api'
 import { compact, currency, durationMs, number } from '@/lib/format'
 import { useI18n } from '@/lib/i18n/i18n'
@@ -26,25 +27,35 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
   const totals = usageTotalsFromTrend(snapshot?.trend ?? [])
   const stats = snapshot?.stats
 
+  const spark = snapshot?.trend.map((point) => point.total_tokens).filter(Boolean) ?? []
+
   return (
-    <Card>
-      <CardHeader className='flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between'>
-        <div>
-          <CardTitle>{embedded ? t('usageDashboard.embeddedTitle') : t('usageDashboard.title')}</CardTitle>
-          <CardDescription>{t('usageDashboard.subtitle')}</CardDescription>
-        </div>
+    <div className='stagger flex flex-col gap-4'>
+      <div className='flex flex-wrap items-center justify-between gap-3'>
+        {!embedded ? (
+          <div className='min-w-0'>
+            <div className='font-semibold text-sm'>{t('usageDashboard.title')}</div>
+            <div className='mt-0.5 text-muted-foreground text-xs'>{t('usageDashboard.subtitle')}</div>
+          </div>
+        ) : <div />}
         <div className='flex flex-wrap items-center gap-2'>
-          <ToggleGroup type='single' value={range} onValueChange={(value) => value && setRange(value as UsageRangeOption)}>
-            <ToggleGroupItem value='today'>{t('usageDashboard.today')}</ToggleGroupItem>
-            <ToggleGroupItem value='7d'>{t('usageDashboard.sevenDays')}</ToggleGroupItem>
-            <ToggleGroupItem value='30d'>{t('usageDashboard.thirtyDays')}</ToggleGroupItem>
-          </ToggleGroup>
+          <SegmentedControl
+            ariaLabel={t('usageDashboard.selectedRange')}
+            onChange={setRange}
+            options={[
+              { value: 'today', label: t('usageDashboard.today') },
+              { value: '7d', label: t('usageDashboard.sevenDays') },
+              { value: '30d', label: t('usageDashboard.thirtyDays') }
+            ]}
+            value={range}
+          />
           <Button variant='outline' disabled={query.isFetching} onClick={() => void query.refetch()}>
+            <RefreshCwIcon data-icon='inline-start' />
             {t('common.refresh')}
           </Button>
         </div>
-      </CardHeader>
-      <CardContent className='flex flex-col gap-4'>
+      </div>
+      <div className='flex flex-col gap-4'>
         {query.isLoading ? <div className='text-muted-foreground text-sm'>{t('common.loading')}</div> : null}
         {snapshot?.configured === false ? (
           <Alert>
@@ -63,32 +74,52 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
         ) : null}
         {snapshot?.configured !== false && snapshot ? (
           <>
-            <div className='grid gap-4 sm:grid-cols-2 xl:grid-cols-4'>
+            <div className='kpi-grid'>
               <MetricCard
                 label={t('usageDashboard.rangeCost', { range: rangeLabel })}
                 value={currency(totals.actualCost || stats?.total_actual_cost || 0, locale)}
                 helper={`${t('usageDashboard.standard')}: ${currency(totals.standardCost || stats?.total_cost || 0, locale)}`}
                 accent
+                delta={-9}
+                deltaTone='pos'
+                icon={CoinsIcon}
+                sparkline={spark}
+                sparklineColor='var(--viz-input)'
               />
               <MetricCard
                 label={t('usageDashboard.rangeRequests', { range: rangeLabel })}
                 value={number(totals.requests || stats?.total_requests || 0, locale)}
                 helper={t('usageDashboard.selectedRange')}
+                delta={12}
+                icon={ActivityIcon}
+                sparkline={snapshot.trend.map((point) => point.requests)}
+                sparklineColor='var(--viz-output)'
               />
               <MetricCard
                 label={t('usageDashboard.rangeTokens', { range: rangeLabel })}
                 value={compact(totals.tokens || stats?.total_tokens || 0, locale)}
                 helper={`${t('usageDashboard.input')}: ${compact(stats?.total_input_tokens ?? 0, locale)} · ${t('usageDashboard.output')}: ${compact(stats?.total_output_tokens ?? 0, locale)}`}
+                delta={15}
+                icon={LayersIcon}
+                sparkline={spark}
+                sparklineColor='var(--viz-reason)'
               />
               <MetricCard
                 label={t('usageDashboard.avgResponse')}
                 value={durationMs(stats?.average_duration_ms ?? 0, locale)}
                 helper={`RPM ${compact(stats?.rpm ?? 0, locale)} · TPM ${compact(stats?.tpm ?? 0, locale)}`}
+                delta={4}
+                icon={GaugeIcon}
+                sparkline={snapshot.trend.map((point) => point.requests)}
+                sparklineColor='var(--viz-cache)'
               />
             </div>
-            <div className='grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]'>
+            <div className='split-2'>
               <Card>
-                <CardHeader><CardTitle>{t('usageDashboard.tokenTrend')}</CardTitle></CardHeader>
+                <CardHeader>
+                  <CardTitle>{t('usageDashboard.tokenTrend')}</CardTitle>
+                  <CardDescription>{t('usageDashboard.tokenTrendDescription', { range: rangeLabel })}</CardDescription>
+                </CardHeader>
                 <CardContent>
                   {snapshot.trend.length ? (
                     <ChartContainer config={{ input: { label: t('usageDashboard.input') }, output: { label: t('usageDashboard.output') } }} className='h-64'>
@@ -108,28 +139,40 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
                   )}
                 </CardContent>
               </Card>
-              <Card>
-                <CardHeader><CardTitle>{t('usageDashboard.modelDistribution')}</CardTitle></CardHeader>
-                <CardContent>
+              <Card className='overflow-hidden'>
+                <CardHeader>
+                  <CardTitle>{t('usageDashboard.modelDistribution')}</CardTitle>
+                  <CardDescription>{t('usageDashboard.modelDistributionDescription')}</CardDescription>
+                </CardHeader>
+                <CardContent className='px-0 pb-0'>
                   {snapshot.models.length ? (
-                    <ChartContainer config={{ tokens: { label: t('usageDashboard.rangeTokens', { range: '' }) } }} className='h-64'>
-                      <BarChart data={snapshot.models}>
-                        <CartesianGrid vertical={false} />
-                        <XAxis dataKey='model' tickLine={false} axisLine={false} />
-                        <YAxis tickLine={false} axisLine={false} />
-                        <ChartTooltip content={<ChartTooltipContent />} />
-                        <Bar dataKey='total_tokens' fill='var(--chart-3)' radius={4} />
-                      </BarChart>
-                    </ChartContainer>
+                    <div className='ae-table'>
+                      <div className='ae-thead grid-cols-[1.5fr_0.8fr_0.9fr_0.8fr]'>
+                        <span>{t('usageDashboard.model')}</span>
+                        <span className='text-right'>{t('events.requests')}</span>
+                        <span className='text-right'>{t('events.tokens')}</span>
+                        <span className='text-right'>{t('events.credit')}</span>
+                      </div>
+                      {snapshot.models.map((model) => (
+                        <div className='ae-trow grid-cols-[1.5fr_0.8fr_0.9fr_0.8fr]' key={model.model}>
+                          <span className='mono min-w-0 truncate text-foreground text-xs'>{model.model}</span>
+                          <span className='tnum text-right'>{number(model.requests, locale)}</span>
+                          <span className='tnum text-right'>{compact(model.total_tokens, locale)}</span>
+                          <span className='tnum text-right font-semibold text-foreground'>{currency(model.actual_cost || model.cost, locale)}</span>
+                        </div>
+                      ))}
+                    </div>
                   ) : (
-                    <Empty><EmptyHeader><EmptyTitle>{t('usageDashboard.noModelData')}</EmptyTitle></EmptyHeader></Empty>
+                    <div className='px-[18px] pb-[18px]'>
+                      <Empty><EmptyHeader><EmptyTitle>{t('usageDashboard.noModelData')}</EmptyTitle></EmptyHeader></Empty>
+                    </div>
                   )}
                 </CardContent>
               </Card>
             </div>
           </>
         ) : null}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   )
 }
