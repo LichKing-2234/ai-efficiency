@@ -460,6 +460,10 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
 
   Follow-up Settings Relay audit evidence: `relay-provider-form.test.tsx` was added and passed with `ldap-settings-form.test.tsx` and `settings-payloads.test.ts`. `bun test --timeout 20000`, `bun run check`, `bun run build`, and `git diff --check` passed after extracting the Relay form. Fresh `agent-browser` coverage for `/settings?section=ai-services` redirected to `/login?redirect=%2Fsettings%3Fsection%3Dai-services` with no error boundary and no horizontal overflow; authenticated Relay dialog visual verification remains covered by SSR/component tests until a reusable logged-in browser session or local handoff is available.
 
+  Follow-up Settings SCM audit implementation extracts `ScmProviderForm` so the SCM provider dialog uses shadcn `FieldGroup`, `Field`, `FieldLabel`, `Input`, dynamic credential `Select`, shared `ActionGroup`, and `LabeledSegmentedControl` for fixed provider/clone protocol option sets instead of placeholder-only inputs and inline action markup. The extracted form preserves edit-mode provider-type immutability and shows SSH host / clone credential fields only for SSH clone mode.
+
+  Follow-up Settings SCM audit evidence: `scm-provider-form.test.tsx` was added and passed with the Settings form tests and `settings-payloads.test.ts`. `bun test --timeout 20000`, `bun run check`, `bun run build`, and `git diff --check` passed after extracting the SCM form. Fresh `agent-browser` coverage for `/settings?section=code-platforms` reached the local authenticated loading-account state with no error boundary and no horizontal overflow; authenticated SCM dialog visual verification remains covered by SSR/component tests until a reusable logged-in browser session or local handoff is available.
+
 ## Task 6: Verification, Visual QA, Commit, and Push
 
 **Files:**

@@ -29,6 +29,7 @@ import { dateTime, number } from '@/lib/format'
 import { useI18n } from '@/lib/i18n/i18n'
 import { LdapSettingsForm } from './ldap-settings-form'
 import { RelayProviderForm } from './relay-provider-form'
+import { ScmProviderForm } from './scm-provider-form'
 import type { Credential, RelayProvider, SCMProvider } from '@/lib/api/types'
 import {
   buildCredentialPayload,
@@ -496,54 +497,17 @@ export function SettingsPage() {
             <DialogTitle>{editingScmId ? t('settings.editScmProvider') : t('settings.addScmProvider')}</DialogTitle>
             <DialogDescription>{t('settings.scmProvidersDescription')}</DialogDescription>
           </DialogHeader>
-          <div className='flex flex-col gap-3'>
-            <Input placeholder={t('settings.name')} value={scmForm.name} onChange={(event) => setScmForm((value) => ({ ...value, name: event.target.value }))} />
-            <Select value={scmForm.type} disabled={!!editingScmId} onValueChange={(value) => setScmForm((current) => ({ ...current, type: value }))}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value='github'>GitHub</SelectItem>
-                <SelectItem value='bitbucket'>Bitbucket</SelectItem>
-              </SelectContent>
-            </Select>
-            <Input placeholder={t('settings.baseUrl')} value={scmForm.base_url} onChange={(event) => setScmForm((value) => ({ ...value, base_url: event.target.value }))} />
-            <Select value={scmForm.api_credential_id || 'none'} onValueChange={(value) => setScmForm((current) => ({ ...current, api_credential_id: value === 'none' ? '' : value }))}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value='none'>{t('settings.apiCredential')}</SelectItem>
-                {(credentials.data ?? []).map((credential) => <SelectItem key={credential.id} value={String(credential.id)}>{credential.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            <Select value={scmForm.clone_protocol} onValueChange={(value) => setScmForm((current) => ({ ...current, clone_protocol: value as 'https' | 'ssh' }))}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value='https'>{t('settings.cloneHttps')}</SelectItem>
-                <SelectItem value='ssh'>{t('settings.cloneSsh')}</SelectItem>
-              </SelectContent>
-            </Select>
-            {scmForm.clone_protocol === 'ssh' ? (
-              <>
-                <Input placeholder={t('settings.sshHost')} value={scmForm.ssh_host} onChange={(event) => setScmForm((value) => ({ ...value, ssh_host: event.target.value }))} />
-                <Select value={scmForm.clone_credential_id || 'none'} onValueChange={(value) => setScmForm((current) => ({ ...current, clone_credential_id: value === 'none' ? '' : value }))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value='none'>{t('settings.cloneCredential')}</SelectItem>
-                    {(credentials.data ?? []).map((credential) => <SelectItem key={credential.id} value={String(credential.id)}>{credential.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </>
-            ) : null}
-            {createScm.error ? <AppAlert tone='error' title={createScm.error.message} /> : null}
-            {updateScm.error ? <AppAlert tone='error' title={updateScm.error.message} /> : null}
-            <ActionGroup>
-              <Button variant='outline' onClick={closeScmDialog}>{t('common.cancel')}</Button>
-              <Button
-                disabled={!scmForm.name || !scmForm.base_url || !scmForm.api_credential_id || createScm.isPending || updateScm.isPending}
-                onClick={() => editingScmId ? updateScm.mutate() : createScm.mutate()}
-              >
-                {editingScmId ? t('common.update') : t('common.create')}
-              </Button>
-            </ActionGroup>
-          </div>
+          <ScmProviderForm
+            createPending={createScm.isPending}
+            credentials={credentials.data ?? []}
+            editMode={!!editingScmId}
+            errors={[createScm.error?.message, updateScm.error?.message]}
+            form={scmForm}
+            onCancel={closeScmDialog}
+            onChange={setScmForm}
+            onSubmit={() => editingScmId ? updateScm.mutate() : createScm.mutate()}
+            updatePending={updateScm.isPending}
+          />
         </DialogContent>
       </Dialog>
       <Dialog open={credentialDialog} onOpenChange={(open) => open ? setCredentialDialog(true) : closeCredentialDialog()}>
