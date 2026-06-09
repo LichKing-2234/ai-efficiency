@@ -17,6 +17,8 @@ import { AppAlert } from '@/components/primitives/app-alert'
 import { Page } from '@/components/primitives/page'
 import { LoadingState } from '@/components/primitives/data-state'
 import { DataGrid, DataGridHeader, DataGridRow } from '@/components/primitives/data-grid'
+import { FieldItem, FieldList } from '@/components/primitives/field-list'
+import { InsetPanel } from '@/components/primitives/inset-panel'
 import { SectionNav, type SectionNavItem } from '@/components/primitives/section-nav'
 import { StatusBadge } from '@/components/primitives/status-badge'
 import { api } from '@/lib/api'
@@ -494,10 +496,12 @@ function AddRepoDialog({
             }}
           />
           {parsedRepo ? (
-            <div className='rounded-md border border-border bg-muted/40 p-3 text-sm'>
-              <div className='flex justify-between gap-3'><span className='text-muted-foreground'>{t('repos.fullName')}</span><span className='font-medium'>{parsedRepo.project}/{parsedRepo.repo}</span></div>
-              <div className='mt-1 flex justify-between gap-3'><span className='text-muted-foreground'>{t('repos.provider')}</span><span>{selectedProvider?.name || t('repos.noMatchingProvider')}</span></div>
-              <div className='mt-3 flex flex-wrap items-center gap-2'>
+            <InsetPanel className='flex flex-col gap-3 text-sm'>
+              <FieldList>
+                <FieldItem label={t('repos.fullName')} value={`${parsedRepo.project}/${parsedRepo.repo}`} truncate />
+                <FieldItem label={t('repos.provider')} value={selectedProvider?.name || t('repos.noMatchingProvider')} truncate />
+              </FieldList>
+              <div className='flex flex-wrap items-center gap-2'>
                 <span className='text-muted-foreground'>{t('repos.clone')}</span>
                 <Button variant={cloneProtocol === 'http' ? 'default' : 'outline'} size='sm' onClick={() => setCloneProtocol('http')}>HTTP</Button>
                 <Button variant={cloneProtocol === 'ssh' ? 'default' : 'outline'} size='sm' onClick={() => setCloneProtocol('ssh')}>SSH</Button>
@@ -506,7 +510,7 @@ function AddRepoDialog({
                 <Input className='mt-2' placeholder={t('settings.sshHostExample')} value={sshHost} onChange={(event) => setSshHost(event.target.value)} />
               ) : null}
               <Input className='mt-2 font-mono text-xs' value={previewCloneUrl} readOnly />
-            </div>
+            </InsetPanel>
           ) : repoUrl ? (
             <AppAlert tone='warning' title={t('repos.enterRepoUrl')} />
           ) : null}

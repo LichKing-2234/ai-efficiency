@@ -296,6 +296,10 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
 
   Follow-up table audit evidence: `data-grid.test.tsx` was added with a red-green cycle, `repos-state.test.ts` and `bun run check` passed after migrating the Repositories workbench table. `agent-browser` reverified `/repos` at `1280x720` and `390x844`: no error boundary text, no horizontal overflow, and no visible button/link overflow. The local account still returns no repository inventory rows, so visible `DataGrid` rendering is covered by primitive tests and TypeScript/build until repo data is available.
 
+  Follow-up add-dialog audit implementation migrates the parsed repository preview panel in the Add Repo dialog to the shared `InsetPanel` and `FieldList` primitives while preserving URL parsing, provider matching, clone protocol toggles, SSH host behavior, and clone URL preview.
+
+  Follow-up add-dialog audit evidence: `repos-state.test.ts`, `field-list.test.tsx`, `inset-panel.test.tsx`, `bun test`, `bun run check`, `bun run build`, and `git diff --check` passed after the migration. `agent-browser` reverified `/repos` at `1280x720` and `390x844`, then opened Add repo at desktop width and filled `https://github.com/example/repo`; the dialog rendered one shared inset panel, one shared field list, two field items, and the parsed `example/repo` preview with no error boundary or body horizontal overflow.
+
 - [x] **Step 3: Repository detail**
 
   Re-skin SCM binding, usage snapshots, webhook status, and PR sync panels with shared cards/tables.
