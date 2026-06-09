@@ -9,7 +9,6 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
-import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ActionGroup } from '@/components/primitives/action-group'
 import { CardPagerFooter } from '@/components/primitives/card-pager-footer'
@@ -20,6 +19,7 @@ import { LoadingState } from '@/components/primitives/data-state'
 import { DataGrid, DataGridHeader, DataGridRow } from '@/components/primitives/data-grid'
 import { SectionNav, type SectionNavItem } from '@/components/primitives/section-nav'
 import { StatusBadge } from '@/components/primitives/status-badge'
+import { ToolbarSelect } from '@/components/primitives/toolbar-select'
 import { api } from '@/lib/api'
 import { number } from '@/lib/format'
 import { useI18n } from '@/lib/i18n/i18n'
@@ -226,26 +226,26 @@ export function ReposPage() {
         </Button>
       </ActionGroup>
       <div className='flex flex-wrap items-center gap-2'>
-        <Select value={search.binding} onValueChange={(value) => replaceSearch({ ...search, binding: value as RepoBindingFilter, page: 1 })}>
-          <SelectTrigger><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectGroup>
-              <SelectItem value='all'>{t('repos.allBindings')}</SelectItem>
-              <SelectItem value='bound'>{t('repos.bound')}</SelectItem>
-              <SelectItem value='unbound'>{t('repos.unbound')}</SelectItem>
-            </SelectGroup>
-          </SelectContent>
-        </Select>
-        <Select value={String(search.pageSize)} onValueChange={(value) => replaceSearch({ ...search, pageSize: Number(value), page: 1 })}>
-          <SelectTrigger><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectGroup>
-              <SelectItem value='20'>20 / page</SelectItem>
-              <SelectItem value='50'>50 / page</SelectItem>
-              <SelectItem value='100'>100 / page</SelectItem>
-            </SelectGroup>
-          </SelectContent>
-        </Select>
+        <ToolbarSelect
+          ariaLabel={t('repos.bindingFilter')}
+          options={[
+            { value: 'all', label: t('repos.allBindings') },
+            { value: 'bound', label: t('repos.bound') },
+            { value: 'unbound', label: t('repos.unbound') }
+          ]}
+          value={search.binding}
+          onValueChange={(value) => replaceSearch({ ...search, binding: value as RepoBindingFilter, page: 1 })}
+        />
+        <ToolbarSelect
+          ariaLabel={t('common.pageSizeControl')}
+          options={[
+            { value: '20', label: t('common.pageSize', { size: 20 }) },
+            { value: '50', label: t('common.pageSize', { size: 50 }) },
+            { value: '100', label: t('common.pageSize', { size: 100 }) }
+          ]}
+          value={String(search.pageSize)}
+          onValueChange={(value) => replaceSearch({ ...search, pageSize: Number(value), page: 1 })}
+        />
         <Button variant='ghost' onClick={() => replaceSearch({ ...search, binding: 'unbound', provider: 'unbound', page: 1 })}>{t('repos.reviewNeedsBinding')}</Button>
       </div>
       <div className='kpi-grid'>

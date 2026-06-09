@@ -8,7 +8,6 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { AppAlert } from '@/components/primitives/app-alert'
 import { CardFilterBar } from '@/components/primitives/card-filter-bar'
 import { CardPagerFooter } from '@/components/primitives/card-pager-footer'
@@ -22,6 +21,7 @@ import { SearchField } from '@/components/primitives/search-field'
 import { SectionCardHeader } from '@/components/primitives/section-card-header'
 import { StatusBadge } from '@/components/primitives/status-badge'
 import { MetricCard } from '@/components/primitives/metric-card'
+import { ToolbarSelect } from '@/components/primitives/toolbar-select'
 import { api } from '@/lib/api'
 import { dateTime, number } from '@/lib/format'
 import { useI18n } from '@/lib/i18n/i18n'
@@ -247,17 +247,16 @@ export function AdminUsersPage() {
             placeholder={t('adminUsers.searchUsers')}
             value={q}
           />
-          <Select value={String(pageSize)} onValueChange={(value) => {
-            setPageSize(Number(value))
-            setPage(1)
-          }}>
-            <SelectTrigger className='w-36'><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectGroup>
-                {[10, 20, 50, 100].map((size) => <SelectItem key={size} value={String(size)}>{t('common.pageSize', { size })}</SelectItem>)}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
+          <ToolbarSelect
+            ariaLabel={t('common.pageSizeControl')}
+            className='w-36'
+            options={[10, 20, 50, 100].map((size) => ({ value: String(size), label: t('common.pageSize', { size }) }))}
+            value={String(pageSize)}
+            onValueChange={(value) => {
+              setPageSize(Number(value))
+              setPage(1)
+            }}
+          />
           <Button variant='outline' disabled={users.isFetching} onClick={() => void users.refetch()}>
             <RefreshCw data-icon='inline-start' />
             {t('common.refresh')}

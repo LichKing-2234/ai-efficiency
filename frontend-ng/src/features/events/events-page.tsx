@@ -6,7 +6,6 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { AdvancedDataPanel } from '@/components/primitives/advanced-data-panel'
 import { CardFilterBar } from '@/components/primitives/card-filter-bar'
 import { CardPagerFooter } from '@/components/primitives/card-pager-footer'
@@ -25,6 +24,7 @@ import { SlideOver } from '@/components/primitives/slide-over'
 import { TokenMeter } from '@/components/primitives/token-meter'
 import { TokenBreakdown } from '@/components/primitives/token-breakdown'
 import { ToolGlyph } from '@/components/primitives/tool-glyph'
+import { ToolbarSelect } from '@/components/primitives/toolbar-select'
 import { api } from '@/lib/api'
 import { compact, dateTime, number, tokenTotal } from '@/lib/format'
 import { useI18n } from '@/lib/i18n/i18n'
@@ -213,16 +213,17 @@ export function EventsPage() {
           summary={t('events.total', { total: number(total) })}
           previous={(
             <>
-              <Select value={String(appliedFilters.limit)} onValueChange={(value) => changePageSize(Number(value))}>
-                <SelectTrigger size='sm'><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    <SelectItem value='20'>20</SelectItem>
-                    <SelectItem value='50'>50</SelectItem>
-                    <SelectItem value='100'>100</SelectItem>
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
+              <ToolbarSelect
+                ariaLabel={t('common.pageSizeControl')}
+                size='sm'
+                options={[
+                  { value: '20', label: '20' },
+                  { value: '50', label: '50' },
+                  { value: '100', label: '100' }
+                ]}
+                value={String(appliedFilters.limit)}
+                onValueChange={(value) => changePageSize(Number(value))}
+              />
               <Button size='sm' variant='outline' onClick={previousPage} disabled={!pagination.canGoPrev}>{t('common.previous')}</Button>
             </>
           )}
