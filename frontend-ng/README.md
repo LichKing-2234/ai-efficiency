@@ -30,7 +30,15 @@ AE_FRONTEND_BACKEND_URL=http://localhost:8081
 
 ## Local Handoff
 
-`GET /api/local?target=http://127.0.0.1:4317` redirects an active online app session to the local frontend callback. The callback writes localhost-scoped HttpOnly app cookies and redirects to `/`.
+Gateway deployments should use the OAuth-plugin-compatible path:
+
+```text
+https://ai-efficiency-web.la3.agoralab.co/oauth2/local?target=http%3A%2F%2F127.0.0.1%3A4317
+```
+
+`GET /oauth2/local?target=http://127.0.0.1:4317` redirects an active online app session to the local frontend's `/oauth2/local` callback. The callback writes localhost-scoped HttpOnly app cookies and redirects to `/`.
+
+`GET /api/local?target=http://127.0.0.1:4317` remains available as a same-origin API compatibility path, but gateway-protected deployments should prefer `/oauth2/local` so the gateway OAuth client can use its registered `/oauth2/callback` redirect URI.
 
 The handoff only accepts localhost targets. It copies Go-issued app tokens, not gateway cookies or gateway tokens.
 

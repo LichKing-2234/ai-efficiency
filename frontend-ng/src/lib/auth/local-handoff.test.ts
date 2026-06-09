@@ -25,4 +25,13 @@ describe('local auth handoff', () => {
     expect(callback.searchParams.has('access_token')).toBe(false)
     expect(callback.searchParams.get('refresh_token')).toBe('refresh-token')
   })
+
+  test('can target the oauth2 local route expected by gateway deployments', () => {
+    const callback = buildLocalCallbackUrl('http://127.0.0.1:4317', 'access-token', 'refresh-token', '/oauth2/local')
+
+    expect(callback.origin).toBe('http://127.0.0.1:4317')
+    expect(callback.pathname).toBe('/oauth2/local')
+    expect(callback.searchParams.get('access_token')).toBe('access-token')
+    expect(callback.searchParams.get('refresh_token')).toBe('refresh-token')
+  })
 })

@@ -16,6 +16,8 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as EventsRouteImport } from './routes/events'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ReposIdRouteImport } from './routes/repos/$id'
+import { Route as Oauth2LocalRouteImport } from './routes/oauth2/local'
+import { Route as Oauth2CallbackRouteImport } from './routes/oauth2/callback'
 import { Route as OauthDeviceRouteImport } from './routes/oauth/device'
 import { Route as OauthAuthorizeRouteImport } from './routes/oauth/authorize'
 import { Route as ApiHealthRouteImport } from './routes/api/health'
@@ -64,6 +66,16 @@ const ReposIdRoute = ReposIdRouteImport.update({
   id: '/$id',
   path: '/$id',
   getParentRoute: () => ReposRoute,
+} as any)
+const Oauth2LocalRoute = Oauth2LocalRouteImport.update({
+  id: '/oauth2/local',
+  path: '/oauth2/local',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const Oauth2CallbackRoute = Oauth2CallbackRouteImport.update({
+  id: '/oauth2/callback',
+  path: '/oauth2/callback',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const OauthDeviceRoute = OauthDeviceRouteImport.update({
   id: '/oauth/device',
@@ -142,6 +154,8 @@ export interface FileRoutesByFullPath {
   '/api/health': typeof ApiHealthRoute
   '/oauth/authorize': typeof OauthAuthorizeRouteWithChildren
   '/oauth/device': typeof OauthDeviceRouteWithChildren
+  '/oauth2/callback': typeof Oauth2CallbackRoute
+  '/oauth2/local': typeof Oauth2LocalRoute
   '/repos/$id': typeof ReposIdRoute
   '/api/auth/bootstrap': typeof ApiAuthBootstrapRoute
   '/api/auth/dev-login': typeof ApiAuthDevLoginRoute
@@ -164,6 +178,8 @@ export interface FileRoutesByTo {
   '/api/health': typeof ApiHealthRoute
   '/oauth/authorize': typeof OauthAuthorizeRouteWithChildren
   '/oauth/device': typeof OauthDeviceRouteWithChildren
+  '/oauth2/callback': typeof Oauth2CallbackRoute
+  '/oauth2/local': typeof Oauth2LocalRoute
   '/repos/$id': typeof ReposIdRoute
   '/api/auth/bootstrap': typeof ApiAuthBootstrapRoute
   '/api/auth/dev-login': typeof ApiAuthDevLoginRoute
@@ -187,6 +203,8 @@ export interface FileRoutesById {
   '/api/health': typeof ApiHealthRoute
   '/oauth/authorize': typeof OauthAuthorizeRouteWithChildren
   '/oauth/device': typeof OauthDeviceRouteWithChildren
+  '/oauth2/callback': typeof Oauth2CallbackRoute
+  '/oauth2/local': typeof Oauth2LocalRoute
   '/repos/$id': typeof ReposIdRoute
   '/api/auth/bootstrap': typeof ApiAuthBootstrapRoute
   '/api/auth/dev-login': typeof ApiAuthDevLoginRoute
@@ -211,6 +229,8 @@ export interface FileRouteTypes {
     | '/api/health'
     | '/oauth/authorize'
     | '/oauth/device'
+    | '/oauth2/callback'
+    | '/oauth2/local'
     | '/repos/$id'
     | '/api/auth/bootstrap'
     | '/api/auth/dev-login'
@@ -233,6 +253,8 @@ export interface FileRouteTypes {
     | '/api/health'
     | '/oauth/authorize'
     | '/oauth/device'
+    | '/oauth2/callback'
+    | '/oauth2/local'
     | '/repos/$id'
     | '/api/auth/bootstrap'
     | '/api/auth/dev-login'
@@ -255,6 +277,8 @@ export interface FileRouteTypes {
     | '/api/health'
     | '/oauth/authorize'
     | '/oauth/device'
+    | '/oauth2/callback'
+    | '/oauth2/local'
     | '/repos/$id'
     | '/api/auth/bootstrap'
     | '/api/auth/dev-login'
@@ -278,6 +302,8 @@ export interface RootRouteChildren {
   ApiHealthRoute: typeof ApiHealthRoute
   OauthAuthorizeRoute: typeof OauthAuthorizeRouteWithChildren
   OauthDeviceRoute: typeof OauthDeviceRouteWithChildren
+  Oauth2CallbackRoute: typeof Oauth2CallbackRoute
+  Oauth2LocalRoute: typeof Oauth2LocalRoute
   ApiAuthBootstrapRoute: typeof ApiAuthBootstrapRoute
   ApiAuthDevLoginRoute: typeof ApiAuthDevLoginRoute
   ApiAuthLoginRoute: typeof ApiAuthLoginRoute
@@ -337,6 +363,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/repos/$id'
       preLoaderRoute: typeof ReposIdRouteImport
       parentRoute: typeof ReposRoute
+    }
+    '/oauth2/local': {
+      id: '/oauth2/local'
+      path: '/oauth2/local'
+      fullPath: '/oauth2/local'
+      preLoaderRoute: typeof Oauth2LocalRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/oauth2/callback': {
+      id: '/oauth2/callback'
+      path: '/oauth2/callback'
+      fullPath: '/oauth2/callback'
+      preLoaderRoute: typeof Oauth2CallbackRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/oauth/device': {
       id: '/oauth/device'
@@ -477,6 +517,8 @@ const rootRouteChildren: RootRouteChildren = {
   ApiHealthRoute: ApiHealthRoute,
   OauthAuthorizeRoute: OauthAuthorizeRouteWithChildren,
   OauthDeviceRoute: OauthDeviceRouteWithChildren,
+  Oauth2CallbackRoute: Oauth2CallbackRoute,
+  Oauth2LocalRoute: Oauth2LocalRoute,
   ApiAuthBootstrapRoute: ApiAuthBootstrapRoute,
   ApiAuthDevLoginRoute: ApiAuthDevLoginRoute,
   ApiAuthLoginRoute: ApiAuthLoginRoute,

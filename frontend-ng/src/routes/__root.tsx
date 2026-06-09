@@ -38,7 +38,7 @@ function AuthFrame({ children }: { children: React.ReactNode }) {
   const location = useLocation()
   const navigate = useNavigate()
   const { t } = useI18n()
-  const isPublic = location.pathname === '/login' || location.pathname.startsWith('/oauth/')
+  const isPublic = location.pathname === '/login' || location.pathname.startsWith('/oauth/') || location.pathname.startsWith('/oauth2/')
   const { data: user, isLoading, error, refetch } = useQuery({
     queryKey: ['auth', 'me'],
     queryFn: ensureAuthenticatedUser,

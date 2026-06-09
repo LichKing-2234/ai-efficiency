@@ -8,8 +8,8 @@ export function isAllowedLocalTarget(value: string | null) {
   }
 }
 
-export function buildLocalCallbackUrl(target: string, accessToken?: string, refreshToken?: string) {
-  const callback = new URL('/api/local/callback', target)
+export function buildLocalCallbackUrl(target: string, accessToken?: string, refreshToken?: string, callbackPath = '/api/local/callback') {
+  const callback = new URL(callbackPath, target)
   if (accessToken) callback.searchParams.set('access_token', accessToken)
   if (refreshToken) callback.searchParams.set('refresh_token', refreshToken)
   return callback
