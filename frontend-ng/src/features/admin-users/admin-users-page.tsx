@@ -12,6 +12,7 @@ import { Field, FieldLabel } from '@/components/ui/field'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { AppAlert } from '@/components/primitives/app-alert'
 import { DataGrid, DataGridHeader, DataGridRow } from '@/components/primitives/data-grid'
+import { IdentityAvatar } from '@/components/primitives/identity-avatar'
 import { Page, PageHeader } from '@/components/primitives/page'
 import { LoadingState } from '@/components/primitives/data-state'
 import { InsetPanel } from '@/components/primitives/inset-panel'
@@ -305,9 +306,7 @@ export function AdminUsersPage() {
                 />
               </span>
               <span className='flex min-w-0 items-center gap-3'>
-                <span className='grid size-8 shrink-0 place-items-center rounded-full bg-[var(--surface-3)] font-bold text-[11px] text-[var(--ink-2)]'>
-                  {userInitials(user.username || user.email)}
-                </span>
+                <IdentityAvatar value={user.username || user.email} />
                 <span className='min-w-0'>
                   <span className='block truncate font-semibold text-sm'>{user.username}</span>
                   <span className='block truncate text-muted-foreground text-xs'>{user.email}</span>
@@ -367,10 +366,4 @@ export function AdminUsersPage() {
       </Card>
     </Page>
   )
-}
-
-function userInitials(value: string) {
-  const parts = value.trim().split(/[\s._@-]+/).filter(Boolean)
-  const initials = parts.slice(0, 2).map((part) => part[0]?.toUpperCase()).join('')
-  return initials || '?'
 }

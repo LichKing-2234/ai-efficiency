@@ -354,6 +354,10 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
 
   Follow-up table audit evidence: `data-grid.test.tsx`, `admin-users-state.test.ts`, `settings-payloads.test.ts`, `bun test`, `bun run check`, `bun run build`, and `git diff --check` passed after the migration. `agent-browser` reverified `/admin/users` and `/settings` at `1280x720` and `390x844`: shared data grids rendered where backend data exists, no error boundary text, no body horizontal overflow, and no visible over-wide interactive controls.
 
+  Follow-up identity audit implementation adds the shared `IdentityAvatar` primitive and migrates Admin Users table initials away from page-local avatar markup while preserving the same username/email fallback behavior.
+
+  Follow-up identity audit evidence: `identity-avatar.test.tsx`, `admin-users-state.test.ts`, `bun test`, `bun run check`, `bun run build`, and `git diff --check` passed after the migration. `agent-browser` reverified `/admin/users` at `1280x720` and `390x844`: one shared identity avatar rendered in the current data state, no error boundary text, no body horizontal overflow, and no visible over-wide interactive controls.
+
 ## Task 6: Verification, Visual QA, Commit, and Push
 
 **Files:**
