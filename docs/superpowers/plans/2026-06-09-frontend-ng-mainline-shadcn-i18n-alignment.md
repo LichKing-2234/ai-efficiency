@@ -1865,7 +1865,7 @@ Expected: commit created.
 **Files:**
 - Modify: `docs/superpowers/specs/2026-06-05-frontend-ng-tanstack-start-migration-design.md`
 
-- [ ] **Step 1: Update implementation snapshot**
+- [x] **Step 1: Update implementation snapshot**
 
 Add bullets under `Current Implementation Snapshot`:
 
@@ -1875,7 +1875,7 @@ Add bullets under `Current Implementation Snapshot`:
 - `frontend-ng/` page controls use shadcn/ui source components for selects, toggles, field layout, alerts, empty states, pagination, confirmations, and charts.
 ```
 
-- [ ] **Step 2: Run full frontend-ng checks**
+- [x] **Step 2: Run full frontend-ng checks**
 
 Run:
 
@@ -1892,7 +1892,9 @@ Expected:
 - Build exits 0.
 - Known warnings are acceptable only if they are the existing Node `module.register()` deprecation or Vite ineffective dynamic import warning; document any other warning.
 
-- [ ] **Step 3: Run proxy/auth boundary scans**
+Actual: `bun test`, `bun run check`, and `bun run build` passed on 2026-06-09. Build still reports the existing Vite ineffective dynamic import warning for `src/query-client.ts`.
+
+- [x] **Step 3: Run proxy/auth boundary scans**
 
 Run:
 
@@ -1905,7 +1907,9 @@ Expected:
 - Token/backend origin matches only in `frontend-ng/src/lib/api/server.ts`, `frontend-ng/src/lib/auth/cookies.ts`, and README/config docs.
 - Browser feature/client code does not attach Bearer and does not read/write app tokens.
 
-- [ ] **Step 4: Run route/API parity scans**
+Actual: no `localStorage` or `sessionStorage` source matches. `Authorization: Bearer` appears only in `src/lib/api/server.ts`. `document.cookie` appears only in locale cookie handling. Backend URL env/defaults appear only in server config and README.
+
+- [x] **Step 4: Run route/API parity scans**
 
 Run:
 
@@ -1921,7 +1925,9 @@ Expected:
 - Second scan returns no matches.
 - Third scan returns no matches outside allowed i18n files.
 
-- [ ] **Step 5: Run diff check**
+Actual: mainline API contracts are present in `src/lib/api/index.ts` and routed through `/api/v1/$`. Raw native control and Han scans pass when run with case-sensitive word-boundary patterns and correct i18n glob exclusions. Route files cover `/login`, `/oauth/authorize`, `/oauth/device`, `/`, `/repos`, `/repos/$id`, `/events`, `/user`, `/admin/users`, and `/settings`.
+
+- [x] **Step 5: Run diff check**
 
 Run:
 
@@ -1931,7 +1937,7 @@ git diff --check -- frontend-ng docs/superpowers/specs/2026-06-05-frontend-ng-ta
 
 Expected: no output.
 
-- [ ] **Step 6: Commit docs and verification-ready state**
+- [x] **Step 6: Commit docs and verification-ready state**
 
 Run:
 
@@ -1942,7 +1948,7 @@ git commit -m "docs(frontend): update frontend-ng alignment status"
 
 Expected: commit created.
 
-- [ ] **Step 7: Push branch**
+- [x] **Step 7: Push branch**
 
 Run:
 

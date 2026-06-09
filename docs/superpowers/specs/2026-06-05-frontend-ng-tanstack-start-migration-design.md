@@ -1,7 +1,7 @@
 # Frontend-NG TanStack Start Migration Design
 
 **Date:** 2026-06-05
-**Status:** Implementation in progress on PR #76; `frontend-ng/` scaffold, auth/proxy foundation, route parity shell, and first-pass route migration have landed, but production cutover is not complete
+**Status:** Implementation aligned with current `main` frontend capabilities in `frontend-ng/`; production cutover, backend gateway-exchange follow-through, and local one-time handoff remain incomplete
 **Scope:** `frontend-ng/`, future frontend deployment, future gateway-aware browser auth, future frontend API proxy
 **Related:**
 - [2026-03-24-oauth-cli-login-design.md](./2026-03-24-oauth-cli-login-design.md)
@@ -391,7 +391,7 @@ Full route migration is required, but implementation should proceed in layers:
 
 ## Current Implementation Snapshot
 
-As of PR #76 on 2026-06-05:
+As of the `frontend-ng` mainline alignment work on 2026-06-09:
 
 - `frontend-ng/` contains a Bun-managed TanStack Start project with MiSans assets, shadcn/ui-style source components, shared primitives, and route files for the full Vue URL set.
 - Browser data calls go through same-origin `/api/*`; browser code does not store tokens in `localStorage` and does not attach Bearer tokens.
@@ -399,10 +399,13 @@ As of PR #76 on 2026-06-05:
 - Gateway bootstrap is wired through a server-side `gateway-exchange` call path, but the Go backend endpoint and deployment gateway header contract still need backend/deploy follow-through before production cutover.
 - Local handoff routes exist as guarded skeletons; actual one-time code issuance/redeem remains intentionally incomplete until backend support exists.
 - First-pass route migration exists for `/login`, `/oauth/authorize`, `/oauth/device`, `/`, `/repos`, `/repos/:id`, `/events`, `/user`, `/admin/users`, and `/settings`.
+- React i18n is now installed through `i18next` / `react-i18next`, locale preference is stored in the `ae.locale` cookie, and a regression guard enforces locale key parity, prevents Chinese copy outside the zh-CN resource table, and blocks page-level visible English copy outside message resources except for explicit product/protocol literals.
+- Existing pages now use shadcn primitives for alerts, confirmation dialogs, empty states, selects, checkboxes, accordion sections, tables, and cards instead of browser-native selects/details/confirm flows.
+- `/` includes the current personal usage dashboard capability backed by `GET /api/v1/user/usage/dashboard`, with shadcn chart composition and locale-aware formatting.
 - `/login` and `/oauth/*` now preserve safe same-origin redirects, current backend login source casing, unauthenticated OAuth redirect-to-login behavior, OAuth approve payload semantics, defensive missing-redirect handling, and normalized device codes.
-- `/repos` now preserves binding filter URL state, page/page-size list queries, health summary, SCM/org grouping, two-step delete confirmation, auto-bind summary messages, and direct repo creation from parsed GitHub/Bitbucket URLs.
+- `/repos` now preserves binding filter URL state, page/page-size list queries, health summary, SCM/org grouping, two-step delete confirmation, auto-bind summary messages, direct repo creation from parsed GitHub/Bitbucket URLs, current repo inventory workbench data from `GET /api/v1/repos/inventory`, and batch failed-webhook repair through `POST /api/v1/repos/repair-webhooks`.
 - `/events` now preserves the Vue filter contract for time range, tool, binding status, text query, admin user filter, URL query state, limit/offset pagination, and structured usage event detail sections including matched PRs and admin-only raw metadata.
-- `/repos/:id` now preserves the PR list months filter, limit/offset pagination, PR sync job recovery/polling, sync progress/status messages, unbound-repository sync gating, PR detail expansion, commit usage snapshots/freshness, usage refresh, and the backend PR attribution settle action.
+- `/repos/:id` now preserves the PR list months filter, limit/offset pagination, PR sync job recovery/polling, sync progress/status messages, unbound-repository sync gating, PR detail expansion, commit usage snapshots/freshness, usage refresh, backend PR attribution settle action, and admin-only webhook repair through `POST /api/v1/repos/:id/repair-webhook`.
 - `/user` now preserves the core user setup contract for provider/group selection, session-scoped credential reveal/copy, create/regenerate key actions, backend model discovery, and provider test requests.
 - `/admin/users` now preserves search/page/page-size URL query state, visible-row selection, subscription-job payload semantics, active job recovery/polling, job result summaries, encrypted relay password copy, and confirmed plaintext relay password reveal/copy.
 - `/settings` now preserves relay providers, SCM providers, advanced credentials, deployment/runtime actions, organization login LDAP get/save/test contracts, and `?section=` deep-link navigation.
@@ -415,7 +418,7 @@ As of PR #76 on 2026-06-05:
 3. Browser JS cannot read access or refresh tokens.
 4. TanStack server can bootstrap app auth from gateway identity and set app cookies.
 5. `gateway-exchange` maps users by email, preserves backend-owned role, sets `gateway_oauth` auth source, and ensures relay identity before issuing app tokens.
-6. Localdev can obtain app cookies through one-time handoff and proxy API requests to configured backend.
+6. Localdev can obtain app cookies through one-time handoff and proxy API requests to configured backend. Current status: frontend route skeletons remain explicit placeholders until backend one-time handoff support is implemented.
 7. `ae-cli` direct Go backend auth/OAuth/token flows continue to work.
 8. `/user` remains the user setup and provider/group credential self-serve surface; it is not reduced to a profile page.
 9. `/admin/users` preserves job-based subscription management and separate relay password reveal behavior.
@@ -426,6 +429,6 @@ As of PR #76 on 2026-06-05:
 ## Open Implementation Notes
 
 - The exact gateway claim extraction mechanism should be copied from the real gateway environment once available. The Metis TanStack Start frontend is a useful reference for gateway cookie/header handling and local handoff shape, but this project should not copy raw cookie handoff behavior.
-- The exact shadcn preset/theme should be selected after Claude design is reviewed.
-- The exact `/api/v1` allowlist should be finalized by auditing current Vue API modules before implementation.
+- The exact shadcn preset/theme remains reviewable after the external design pass; current implementation uses shadcn source components and project primitives so the design tokens can be updated centrally.
+- The `/api/v1` allowlist has been audited for the current migrated surfaces and includes the current auth, user, repos, events, admin, and settings prefixes used by route parity.
 - If future production deployment makes Go backend inaccessible from the public browser but reachable from TanStack server, CORS can become a compatibility/debug concern rather than the main browser path.
