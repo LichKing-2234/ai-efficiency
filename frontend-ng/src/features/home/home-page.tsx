@@ -9,7 +9,7 @@ import { ChecklistRow } from '@/components/primitives/checklist-row'
 import { MetricCard } from '@/components/primitives/metric-card'
 import { Page, PageHeader } from '@/components/primitives/page'
 import { LoadingState } from '@/components/primitives/data-state'
-import { ToolGlyph } from '@/components/primitives/tool-glyph'
+import { UsageActivityRow } from '@/components/primitives/usage-activity-row'
 import { UserUsagePanel } from '@/features/user-usage/user-usage-panel'
 import { api } from '@/lib/api'
 import { compact, dateTime, number } from '@/lib/format'
@@ -135,7 +135,7 @@ export function HomePage() {
           </CardHeader>
           <CardContent className='flex flex-col'>
             {recentEvents.length ? recentEvents.map((event, index) => (
-              <ActivityRow key={event.id} event={buildHomeActivitySummary(event)} first={index === 0} locale={locale} />
+              <HomeActivityRow key={event.id} event={buildHomeActivitySummary(event)} first={index === 0} locale={locale} />
             )) : <div className='text-muted-foreground text-sm'>{t('common.empty')}</div>}
           </CardContent>
         </Card>
@@ -144,7 +144,7 @@ export function HomePage() {
   )
 }
 
-function ActivityRow({
+function HomeActivityRow({
   event,
   first,
   locale
@@ -155,22 +155,17 @@ function ActivityRow({
 }) {
   const { t } = useI18n()
   return (
-    <div className={first ? 'flex items-center gap-3 py-3' : 'flex items-center gap-3 border-t border-[var(--line-faint)] py-3'}>
-      <ToolGlyph tool={event.tool} size={28} />
-      <div className='min-w-0 flex-1'>
-        <div className='truncate font-semibold text-sm'>{event.title}</div>
-        <div className='mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11.5px] text-muted-foreground'>
-          <span>{dateTime(event.endedAt, locale)}</span>
-          <span className='text-[var(--ink-4)]'>·</span>
-          <span className='mono tnum'>{compact(event.tokens, locale)} {t('home.tokensShort')}</span>
-        </div>
-      </div>
-      <Badge variant={event.bound ? 'success' : 'warning'}>{event.bound ? t('events.bound') : t('events.unbound')}</Badge>
-      <div className='hidden w-20 text-right tnum sm:block'>
-        <div className='font-semibold text-sm'>{number(event.credit, locale)}</div>
-        <div className='text-[11px] text-muted-foreground'>{number(event.requests, locale)} {t('home.requestsShort')}</div>
-      </div>
-    </div>
+    <UsageActivityRow
+      bound={event.bound}
+      credit={number(event.credit, locale)}
+      endedAt={dateTime(event.endedAt, locale)}
+      first={first}
+      requests={`${number(event.requests, locale)} ${t('home.requestsShort')}`}
+      statusLabel={event.bound ? t('events.bound') : t('events.unbound')}
+      title={event.title}
+      tokens={`${compact(event.tokens, locale)} ${t('home.tokensShort')}`}
+      tool={event.tool}
+    />
   )
 }
 

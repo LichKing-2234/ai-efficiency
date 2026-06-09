@@ -223,6 +223,10 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
 
   Follow-up audit evidence: `checklist-row.test.tsx` was added with a red-green cycle, `home-state.test.ts` and `bun run check` passed after migrating Overview setup status rows, and browser QA reverified `/` at desktop and mobile widths.
 
+  Follow-up recent-usage audit implementation adds the shared `UsageActivityRow` primitive and migrates Overview recent usage rows away from page-local row markup while preserving the same backend event summary helper, status badges, tool glyph, token/request/credit metadata, and i18n labels.
+
+  Follow-up recent-usage audit evidence: `usage-activity-row.test.tsx` was added with a red-green cycle, `home-state.test.ts` and `bun run check` passed after migrating Overview recent usage rows. `agent-browser` reverified `/` at `1280x720` and `390x844`: four setup checklist rows, recent usage header, no error boundary text, no horizontal overflow, and no visible button/link overflow. The local account still has no recent event rows, so rendered `UsageActivityRow` data-state markup is covered by primitive tests and TypeScript/build until event data is available.
+
 ## Task 5: Events, Repos, Setup, and Admin Screen Pass
 
 **Files:**
