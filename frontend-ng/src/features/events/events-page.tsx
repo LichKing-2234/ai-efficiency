@@ -12,6 +12,7 @@ import { DataGrid, DataGridHeader, DataGridRow } from '@/components/primitives/d
 import { FieldItem, FieldList } from '@/components/primitives/field-list'
 import { InfoTile } from '@/components/primitives/info-tile'
 import { LabeledSegmentedControl } from '@/components/primitives/labeled-segmented-control'
+import { LinkedRecordItem, LinkedRecordList } from '@/components/primitives/linked-record-list'
 import { MetricCard } from '@/components/primitives/metric-card'
 import { OptionList } from '@/components/primitives/option-list'
 import { Page } from '@/components/primitives/page'
@@ -305,14 +306,11 @@ function EventDetail({ event, isAdmin, onClose }: { event: ToolUsageEventDetail 
           <section>
             <SectionEyebrow>{t('events.matchedPrs')}</SectionEyebrow>
             {event.matched_prs.length > 0 ? (
-              <div className='flex flex-col gap-2'>
+              <LinkedRecordList>
                 {event.matched_prs.map((pr) => (
-                  <a key={pr.pr_record_id} className='pr-link' href={pr.scm_pr_url} target='_blank' rel='noreferrer'>
-                    <GitPullRequestIcon className='size-4 text-[var(--ai)]' />
-                    <span className='min-w-0 flex-1 truncate font-medium text-sm'>{eventDetailPrLabel(pr)}</span>
-                  </a>
+                  <LinkedRecordItem href={pr.scm_pr_url} icon={<GitPullRequestIcon />} key={pr.pr_record_id} label={eventDetailPrLabel(pr)} />
                 ))}
-              </div>
+              </LinkedRecordList>
             ) : (
               <div className='text-muted-foreground text-sm'>{t('events.noMatchedPrs')}</div>
             )}
