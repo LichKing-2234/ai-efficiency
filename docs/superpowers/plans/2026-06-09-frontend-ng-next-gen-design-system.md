@@ -203,7 +203,7 @@ In progress. The first foundation pass is implemented and verified: global token
 
   Implement reference workbench styling while keeping add, delete, auto-bind, provider selection, webhook repair, and navigation behavior intact.
 
-- [ ] **Step 3: Repository detail**
+- [x] **Step 3: Repository detail**
 
   Re-skin SCM binding, usage snapshots, webhook status, and PR sync panels with shared cards/tables.
 
