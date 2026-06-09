@@ -17,6 +17,7 @@ import { InfoTile } from '@/components/primitives/info-tile'
 import { InsetPanel } from '@/components/primitives/inset-panel'
 import { MetricCard } from '@/components/primitives/metric-card'
 import { Page, PageToolbar } from '@/components/primitives/page'
+import { SectionCardHeader } from '@/components/primitives/section-card-header'
 import { LoadingState } from '@/components/primitives/data-state'
 import { StatusBadge } from '@/components/primitives/status-badge'
 import { UsageSummaryPanel } from '@/components/primitives/usage-summary-panel'
@@ -222,7 +223,7 @@ export function RepoDetailPage() {
       </div>
       {currentJob ? (
         <Card>
-          <CardHeader><CardTitle>{t('repoDetail.latestSyncJob')}</CardTitle></CardHeader>
+          <SectionCardHeader title={t('repoDetail.latestSyncJob')} />
           <CardContent className='flex flex-col gap-3'>
             <div className='grid gap-3 md:grid-cols-4'>
               <InfoTile label={t('common.status')} value={<StatusBadge value={currentJob.status} />} />
@@ -237,12 +238,7 @@ export function RepoDetailPage() {
         </Card>
       ) : null}
       <Card>
-        <CardHeader>
-          <div className='flex items-center gap-2'>
-            <Waypoints className='text-[var(--ai)]' />
-            <CardTitle>{t('repoDetail.scmBinding')}</CardTitle>
-          </div>
-        </CardHeader>
+        <SectionCardHeader title={<span className='flex items-center gap-2'><Waypoints className='text-[var(--ai)]' />{t('repoDetail.scmBinding')}</span>} />
         <CardContent className='grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto_auto]'>
           <Select value={selectedProviderId || 'none'} onValueChange={(value) => setSelectedProviderId(value === 'none' ? '' : value)}>
             <SelectTrigger className='w-full'><SelectValue /></SelectTrigger>

@@ -130,13 +130,11 @@ export function UserPage() {
       <div className='split-rail'>
         <div className='flex flex-col gap-4'>
           <Card>
-            <CardHeader className='flex-row items-center justify-between gap-3'>
-              <div className='min-w-0'>
-                <CardTitle>{t('userSetup.accountAccess')}</CardTitle>
-                <CardDescription>{t('userSetup.descriptionShort')}</CardDescription>
-              </div>
-              <Badge variant='ai' className='shrink-0 tnum'>{t('userSetup.groupsReadyShort', { ready: readyGroups, total: totalGroups })}</Badge>
-            </CardHeader>
+            <SectionCardHeader
+              title={t('userSetup.accountAccess')}
+              description={t('userSetup.descriptionShort')}
+              actions={<Badge variant='ai' className='shrink-0 tnum'>{t('userSetup.groupsReadyShort', { ready: readyGroups, total: totalGroups })}</Badge>}
+            />
             <CardContent className='flex flex-col gap-2'>
               {providers.data?.message ? <InsetPanel muted>{providers.data.message}</InsetPanel> : null}
               {rows.map((provider) => (

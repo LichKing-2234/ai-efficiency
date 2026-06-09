@@ -8,6 +8,7 @@ import { Ring } from '@/components/primitives/charts'
 import { ChecklistRow } from '@/components/primitives/checklist-row'
 import { MetricCard } from '@/components/primitives/metric-card'
 import { Page } from '@/components/primitives/page'
+import { SectionCardHeader } from '@/components/primitives/section-card-header'
 import { LoadingState } from '@/components/primitives/data-state'
 import { UsageActivityRow } from '@/components/primitives/usage-activity-row'
 import { UserUsagePanel } from '@/features/user-usage/user-usage-panel'
@@ -124,15 +125,14 @@ export function HomePage() {
           </CardContent>
         </Card>
         <Card>
-          <CardHeader className='flex-row items-center justify-between gap-3'>
-            <div className='flex items-center gap-2'>
-              <span className='live-dot' />
-              <CardTitle>{t('home.recentUsage')}</CardTitle>
-            </div>
-            <Button asChild variant='link' size='sm'>
-              <Link to='/events'>{t('home.viewAllRecords')}<ArrowRightIcon data-icon='inline-end' /></Link>
-            </Button>
-          </CardHeader>
+          <SectionCardHeader
+            title={<span className='flex items-center gap-2'><span className='live-dot' />{t('home.recentUsage')}</span>}
+            actions={(
+              <Button asChild variant='link' size='sm'>
+                <Link to='/events'>{t('home.viewAllRecords')}<ArrowRightIcon data-icon='inline-end' /></Link>
+              </Button>
+            )}
+          />
           <CardContent className='flex flex-col'>
             {recentEvents.length ? recentEvents.map((event, index) => (
               <HomeActivityRow key={event.id} event={buildHomeActivitySummary(event)} first={index === 0} locale={locale} />
