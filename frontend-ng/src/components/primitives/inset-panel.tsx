@@ -5,16 +5,18 @@ export function InsetPanel({
   children,
   className,
   comfortable = false,
+  dataSlot = 'inset-panel',
   muted = false
 }: {
   children: React.ReactNode
   className?: string
   comfortable?: boolean
+  dataSlot?: string
   muted?: boolean
 }) {
   return (
     <div
-      data-slot='inset-panel'
+      data-slot={dataSlot}
       className={cn(
         'rounded-[var(--r-md)] border border-border bg-[var(--surface-inset)] text-sm',
         comfortable ? 'p-4 leading-7' : 'p-3',

@@ -17,6 +17,7 @@ import { MetricCard } from '@/components/primitives/metric-card'
 import { Page, PageHeader } from '@/components/primitives/page'
 import { LoadingState } from '@/components/primitives/data-state'
 import { StatusBadge } from '@/components/primitives/status-badge'
+import { UsageSummaryPanel } from '@/components/primitives/usage-summary-panel'
 import { api } from '@/lib/api'
 import { compact, dateTime, number, percent } from '@/lib/format'
 import { useI18n } from '@/lib/i18n/i18n'
@@ -335,49 +336,31 @@ export function RepoDetailPage() {
                       </span>
                     </div>
                     {expanded ? (
-                      <div className='border-border border-b bg-[var(--surface-inset)] p-4'>
+                      <InsetPanel className='rounded-none border-x-0 border-t-0 p-4'>
                           {prDetail.isLoading ? (
                             <div className='py-4 text-center text-muted-foreground text-sm'>{t('repoDetail.loadingDetails')}</div>
                           ) : (
                             <div className='flex flex-col gap-4'>
-                              <div className='grid gap-3 sm:grid-cols-2 lg:grid-cols-6'>
-                                <div>
-                                  <div className='text-muted-foreground text-xs'>{t('repoDetail.input')}</div>
-                                  <div className='tnum font-medium'>{compact(detail.usage_input_tokens)}</div>
-                                </div>
-                                <div>
-                                  <div className='text-muted-foreground text-xs'>{t('repoDetail.output')}</div>
-                                  <div className='tnum font-medium'>{compact(detail.usage_output_tokens)}</div>
-                                </div>
-                                <div>
-                                  <div className='text-muted-foreground text-xs'>{t('repoDetail.cache')}</div>
-                                  <div className='tnum font-medium'>{compact(detail.usage_cached_input_tokens)}</div>
-                                </div>
-                                <div>
-                                  <div className='text-muted-foreground text-xs'>{t('repoDetail.reasoning')}</div>
-                                  <div className='tnum font-medium'>{compact(detail.usage_reasoning_tokens)}</div>
-                                </div>
-                                <div>
-                                  <div className='text-muted-foreground text-xs'>{t('repoDetail.requests')}</div>
-                                  <div className='tnum font-medium'>{number(detail.usage_request_count)}</div>
-                                </div>
-                                <div>
-                                  <div className='text-muted-foreground text-xs'>{t('repoDetail.credits')}</div>
-                                  <div className='tnum font-medium'>{number(detail.usage_credit_usage)}</div>
-                                </div>
-                              </div>
-                              <div className='flex flex-wrap items-center justify-between gap-3 text-sm'>
-                                <div className='flex flex-wrap items-center gap-2'>
-                                  <StatusBadge value={detail.usage_status || detail.attribution_status} />
-                                  <span className='text-muted-foreground'>{t('repoDetail.totalTokensRefreshed', { tokens: compact(tokenUsage), time: dateTime(detail.usage_refreshed_at) })}</span>
-                                </div>
-                                <div className='flex gap-2'>
-                                  <Button variant='outline' size='sm' onClick={() => refreshUsage.mutate(detail.id)} disabled={refreshUsage.isPending}>{t('repoDetail.refreshUsage')}</Button>
-                                  <Button variant='outline' size='sm' onClick={() => settlePR.mutate(detail.id)} disabled={settlePR.isPending || detail.attribution_status === 'clear'}>
-                                    {t('repoDetail.resolveAttribution')}
-                                  </Button>
-                                </div>
-                              </div>
+                              <UsageSummaryPanel
+                                actions={
+                                  <>
+                                    <Button variant='outline' size='sm' onClick={() => refreshUsage.mutate(detail.id)} disabled={refreshUsage.isPending}>{t('repoDetail.refreshUsage')}</Button>
+                                    <Button variant='outline' size='sm' onClick={() => settlePR.mutate(detail.id)} disabled={settlePR.isPending || detail.attribution_status === 'clear'}>
+                                      {t('repoDetail.resolveAttribution')}
+                                    </Button>
+                                  </>
+                                }
+                                metrics={[
+                                  { label: t('repoDetail.input'), value: compact(detail.usage_input_tokens), numeric: true },
+                                  { label: t('repoDetail.output'), value: compact(detail.usage_output_tokens), numeric: true },
+                                  { label: t('repoDetail.cache'), value: compact(detail.usage_cached_input_tokens), numeric: true },
+                                  { label: t('repoDetail.reasoning'), value: compact(detail.usage_reasoning_tokens), numeric: true },
+                                  { label: t('repoDetail.requests'), value: number(detail.usage_request_count), numeric: true },
+                                  { label: t('repoDetail.credits'), value: number(detail.usage_credit_usage), accent: 'ai', numeric: true }
+                                ]}
+                                status={<StatusBadge value={detail.usage_status || detail.attribution_status} />}
+                                summary={t('repoDetail.totalTokensRefreshed', { tokens: compact(tokenUsage), time: dateTime(detail.usage_refreshed_at) })}
+                              />
                               <div className='overflow-x-auto rounded-md border border-border bg-card'>
                                 <Table>
                                   <TableHeader>
@@ -424,7 +407,7 @@ export function RepoDetailPage() {
                               </div>
                             </div>
                           )}
-                      </div>
+                      </InsetPanel>
                     ) : null}
                   </Fragment>
                 )

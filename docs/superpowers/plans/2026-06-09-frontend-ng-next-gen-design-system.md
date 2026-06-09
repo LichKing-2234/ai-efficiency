@@ -264,7 +264,11 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
 
   Current implementation also uses the shared `InsetPanel` primitive for sync-disabled and latest-job usage progress notices.
 
+  Follow-up audit implementation adds the shared `UsageSummaryPanel` primitive for expanded PR usage summaries. The expanded PR detail path now composes `InfoTile` and `InsetPanel` for input/output/cache/reasoning/request/credit metrics, status, refreshed-at copy, and refresh/resolve actions instead of page-local metric divs.
+
   Current evidence: `repo-detail-state.test.ts`, `info-tile.test.tsx`, `inset-panel.test.tsx`, and `bun run check` passed. The current local account exposes no repository detail links in `/repos`, so browser QA verifies the authenticated repository route empty/data-light state with no error boundary or horizontal overflow while repo detail stat and notice rendering is covered by TypeScript/build.
+
+  Follow-up audit evidence: `usage-summary-panel.test.tsx` was added with a red-green cycle, `inset-panel.test.tsx` still passes after the slot extension, and `bun run check` passed after migrating the expanded PR detail summary. The local account still exposes no repository detail rows, so expanded PR detail rendering is covered by primitive tests and TypeScript/build until data is available for browser expansion.
 
 - [x] **Step 4: My Setup**
 
@@ -337,6 +341,7 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
   - Overview recent usage now uses reference-style live activity rows with `ToolGlyph`, binding badges, token/request/credit metadata, and a route link to all records; local browser QA verified the empty state header/action at desktop and mobile widths.
   - My Setup CLI workflow now uses the shared `CommandStep` primitive; `agent-browser` confirmed six numbered command rows, copy affordances, no error boundary, no horizontal overflow, and no visible button overflow at `1280x720` and `390x844`.
   - Follow-up Events audit added `OptionList` and `CodeBlock` primitives and reverified `/events` at `1280x720` and `390x844`; the local account remained data-light, so route stability is browser-covered while candidate-list and raw-payload rendering are covered by primitive tests and TypeScript/build.
+  - Follow-up Repository Detail audit added `UsageSummaryPanel` for expanded PR usage summaries; the local account still exposes no repository detail rows, so route-level browser coverage remains on `/repos` data-light states while primitive tests and TypeScript/build cover the expanded data path.
 
 - [x] **Step 4: Commit logical chunks**
 
