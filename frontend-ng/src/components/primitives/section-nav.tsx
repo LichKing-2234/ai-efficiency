@@ -6,6 +6,7 @@ export type SectionNavItem<T extends string> = {
   value: T
   label: React.ReactNode
   icon: LucideIcon
+  trailing?: React.ReactNode
 }
 
 export function SectionNav<T extends string>({
@@ -43,6 +44,7 @@ export function SectionNav<T extends string>({
           >
             <Icon className={active ? 'text-[var(--ai)]' : 'text-[var(--ink-3)]'} />
             <span className='min-w-0 truncate'>{item.label}</span>
+            {item.trailing ? <span className='ml-auto shrink-0 text-[11px] text-muted-foreground'>{item.trailing}</span> : null}
           </Button>
         )
       })}

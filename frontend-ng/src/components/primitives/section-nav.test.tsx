@@ -9,7 +9,7 @@ describe('SectionNav', () => {
       <SectionNav
         ariaLabel='Settings sections'
         items={[
-          { value: 'relay', label: 'Relay providers', icon: CircleIcon },
+          { value: 'relay', label: 'Relay providers', icon: CircleIcon, trailing: '3 repos' },
           { value: 'deployment', label: 'Deployment', icon: CircleIcon }
         ]}
         onChange={() => undefined}
@@ -19,6 +19,7 @@ describe('SectionNav', () => {
 
     expect(html).toContain('aria-label="Settings sections"')
     expect(html).toContain('Relay providers')
+    expect(html).toContain('3 repos')
     expect(html).toContain('Deployment')
     expect(html).toContain('aria-current="page"')
     expect(html).toContain('data-active="true"')

@@ -238,6 +238,10 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
 
   Implement reference workbench styling while keeping add, delete, auto-bind, provider selection, webhook repair, and navigation behavior intact.
 
+  Current implementation uses the shared `SectionNav` primitive for the repository scope rail, preserving provider tabs, URL-backed scope selection, and per-scope repository counts through `buildScopeNavItems`.
+
+  Current evidence: `repos-state.test.ts`, `section-nav.test.tsx`, `bun run check`, and browser QA on `/repos` passed. The local account currently returns the empty inventory state, so browser QA verifies authenticated desktop and mobile empty states with no error boundary or horizontal overflow while data-state scope rail mapping is covered by tests and build.
+
 - [x] **Step 3: Repository detail**
 
   Re-skin SCM binding, usage snapshots, webhook status, and PR sync panels with shared cards/tables.

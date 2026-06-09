@@ -16,6 +16,7 @@ import { MetricCard } from '@/components/primitives/metric-card'
 import { AppAlert } from '@/components/primitives/app-alert'
 import { Page } from '@/components/primitives/page'
 import { LoadingState } from '@/components/primitives/data-state'
+import { SectionNav, type SectionNavItem } from '@/components/primitives/section-nav'
 import { StatusBadge } from '@/components/primitives/status-badge'
 import { api } from '@/lib/api'
 import { number } from '@/lib/format'
@@ -25,6 +26,7 @@ import {
   buildRepoCreatePayload,
   buildRepoListParams,
   buildRepoSearch,
+  buildScopeNavItems,
   compareInventoryProviders,
   firstScope,
   parseRepoSearch,
@@ -67,6 +69,10 @@ export function ReposPage() {
     ?? reposForProviders[0]
     ?? null
   const selectedScope = selectedProvider?.scopes.some((scope) => scope.scope === search.scope) ? search.scope : firstScope(selectedProvider)
+  const scopeItems = buildScopeNavItems(selectedProvider, (value) => number(value, locale)).map((scope) => ({
+    ...scope,
+    icon: FolderGit2Icon
+  })) satisfies Array<SectionNavItem<string>>
   const repos = useQuery({
     queryKey: ['repos', 'workbench', selectedProvider?.provider_key, selectedScope, search.binding, search.page, search.pageSize],
     queryFn: () => api.repos.list(buildRepoListParams({
@@ -282,19 +288,13 @@ export function ReposPage() {
                 <div className='font-semibold text-sm'>{t('repos.scopeSearch')}</div>
                 <Badge variant='secondary'>{number(selectedProvider?.scopes.length ?? 0, locale)}</Badge>
               </div>
-              <div className='flex max-h-[430px] flex-col gap-1 overflow-y-auto'>
-                {(selectedProvider?.scopes ?? []).map((scope) => (
-                  <Button
-                    key={scope.scope}
-                    variant={scope.scope === selectedScope ? 'outline' : 'ghost'}
-                    className='h-8 justify-between gap-3 px-3 text-left'
-                    onClick={() => replaceSearch({ ...search, scope: scope.scope, page: 1 })}
-                  >
-                    <span className='min-w-0 truncate'>{scope.scope}</span>
-                    <span className='text-xs opacity-80'>{number(scope.total_repos, locale)}</span>
-                  </Button>
-                ))}
-              </div>
+              <SectionNav
+                ariaLabel={t('repos.scopeSearch')}
+                className='max-h-[430px] overflow-y-auto'
+                items={scopeItems}
+                onChange={(scope) => replaceSearch({ ...search, scope, page: 1 })}
+                value={selectedScope}
+              />
             </aside>
             <section className='min-w-0 border-t border-border'>
               <div className='flex flex-col gap-2 border-b border-border px-5 py-4 md:flex-row md:items-center md:justify-between'>

@@ -41,6 +41,12 @@ export interface RepoHealthSummary {
   active: number
 }
 
+export interface RepoScopeNavItem {
+  value: string
+  label: string
+  trailing: string
+}
+
 export interface RepoCreateState {
   providerId: number
   parsed: ParsedRepoUrl
@@ -158,6 +164,14 @@ export function compareInventoryProviders(a: RepoInventoryProviderSummary, b: Re
 
 export function firstScope(provider: RepoInventoryProviderSummary | null | undefined) {
   return provider?.scopes[0]?.scope ?? ''
+}
+
+export function buildScopeNavItems(provider: RepoInventoryProviderSummary | null | undefined, formatCount: (value: number) => string): RepoScopeNavItem[] {
+  return (provider?.scopes ?? []).map((scope) => ({
+    value: scope.scope,
+    label: scope.scope,
+    trailing: formatCount(scope.total_repos)
+  }))
 }
 
 export function webhookRepairBatchMessage(result: RepoWebhookRepairBatchResult) {

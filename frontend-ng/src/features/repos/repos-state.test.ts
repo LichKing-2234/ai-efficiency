@@ -2,10 +2,11 @@ import { describe, expect, test } from 'vitest'
 import type { RepoConfig, RepoInventoryProviderSummary, RepoWebhookRepairBatchResult, RepoWebhookRepairItem, SCMProvider } from '@/lib/api/types'
 import {
   applyBindingFilter,
-  buildRepoListParams,
   buildRepoCloneUrl,
   buildRepoCreatePayload,
+  buildRepoListParams,
   buildRepoSearch,
+  buildScopeNavItems,
   canRepairWebhook,
   compareInventoryProviders,
   firstScope,
@@ -145,6 +146,10 @@ describe('repos state helpers', () => {
       scopes: [{ scope: 'org', total_repos: 2, bound_repos: 2, unbound_repos: 0, active_repos: 1, webhook_failed_repos: 1 }]
     }
     expect(firstScope(provider)).toBe('org')
+    expect(buildScopeNavItems(provider, (value) => `${value} repos`)).toEqual([
+      { value: 'org', label: 'org', trailing: '2 repos' }
+    ])
+    expect(buildScopeNavItems(null, String)).toEqual([])
 
     const batch: RepoWebhookRepairBatchResult = {
       summary: { scanned: 3, repaired: 1, already_registered: 1, failed: 1 },
