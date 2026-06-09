@@ -25,6 +25,7 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
 - Create: `frontend-ng/src/components/primitives/segmented-control.tsx` - shared range/filter segmented control.
 - Create: `frontend-ng/src/components/primitives/slide-over.tsx` - shared right-side inspect panel for events/repos detail flows.
 - Create: `frontend-ng/src/components/command/command-palette.tsx` - global command palette using real routes/actions.
+- Create: `frontend-ng/src/components/ui/command.tsx` - shadcn/cmdk command primitive used by the global command palette.
 - Create: `frontend-ng/src/components/ui/dropdown-menu.tsx` - shadcn/Radix dropdown primitive used by the shell language selector.
 - Modify: `frontend-ng/src/components/layout/navigation.ts` - add `/usage`, group nav per the reference, preserve admin gating.
 - Modify: `frontend-ng/src/components/layout/app-shell.tsx` - collapsible/sidebar shell, top bar command trigger, language dropdown, live status, theme toggle.
@@ -37,6 +38,7 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
 - Modify: `frontend-ng/src/features/admin-users/admin-users-page.tsx`, `frontend-ng/src/features/settings/settings-page.tsx` - admin styling pass using shared cards, fields, and grid tables.
 - Modify: `frontend-ng/src/lib/i18n/messages.ts` - add route, command palette, usage analytics, and shell copy for `en-US` and `zh-CN`.
 - Modify: `frontend-ng/src/routeTree.gen.ts` - regenerated route tree after adding `/usage`.
+- Test: `frontend-ng/src/components/command/command-palette.test.ts` - locks admin command visibility.
 
 ## Guardrails
 
@@ -156,6 +158,8 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
 - [x] **Step 5: Add command palette**
 
   Register `Ctrl/Cmd+K`, provide navigation commands and safe UI actions, and route using TanStack Router.
+
+  Current implementation composes the shadcn/cmdk `Command` primitive inside the shared `Dialog`, with route commands grouped by i18n labels and admin commands hidden for non-admin users.
 
 - [x] **Step 6: Remove duplicate page titles incrementally**
 
