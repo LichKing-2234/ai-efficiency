@@ -27,6 +27,7 @@ import { StatusBadge } from '@/components/primitives/status-badge'
 import { api } from '@/lib/api'
 import { dateTime, number } from '@/lib/format'
 import { useI18n } from '@/lib/i18n/i18n'
+import { CredentialForm } from './credential-form'
 import { LdapSettingsForm } from './ldap-settings-form'
 import { RelayProviderForm } from './relay-provider-form'
 import { ScmProviderForm } from './scm-provider-form'
@@ -516,41 +517,16 @@ export function SettingsPage() {
             <DialogTitle>{editingCredentialId ? t('settings.editCredential') : t('settings.addCredential')}</DialogTitle>
             <DialogDescription>{editingCredentialId ? t('settings.editCredentialDescription') : t('settings.createCredentialDescription')}</DialogDescription>
           </DialogHeader>
-          <div className='flex flex-col gap-3'>
-            <Input placeholder={t('settings.name')} value={credentialForm.name} onChange={(event) => setCredentialForm((value) => ({ ...value, name: event.target.value }))} />
-            <Input placeholder={t('settings.credentialDescription')} value={credentialForm.description} onChange={(event) => setCredentialForm((value) => ({ ...value, description: event.target.value }))} />
-            <Select value={credentialForm.kind} onValueChange={(value) => setCredentialForm((current) => ({ ...current, kind: value as typeof credentialForm.kind }))}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value='secret_text'>{t('settings.secretTextKind')}</SelectItem>
-                <SelectItem value='username_password'>{t('settings.usernamePasswordKind')}</SelectItem>
-                <SelectItem value='ssh_username_with_private_key'>{t('settings.sshPrivateKeyKind')}</SelectItem>
-              </SelectContent>
-            </Select>
-            {credentialForm.kind === 'secret_text' ? <Textarea placeholder={t('settings.secretText')} value={credentialForm.text} onChange={(event) => setCredentialForm((value) => ({ ...value, text: event.target.value }))} /> : null}
-            {credentialForm.kind !== 'secret_text' ? <Input placeholder={t('settings.username')} value={credentialForm.username} onChange={(event) => setCredentialForm((value) => ({ ...value, username: event.target.value }))} /> : null}
-            {credentialForm.kind === 'username_password' ? <Input type='password' placeholder={t('settings.password')} value={credentialForm.password} onChange={(event) => setCredentialForm((value) => ({ ...value, password: event.target.value }))} /> : null}
-            {credentialForm.kind === 'ssh_username_with_private_key' ? <Textarea placeholder={t('settings.privateKey')} value={credentialForm.private_key} onChange={(event) => setCredentialForm((value) => ({ ...value, private_key: event.target.value }))} /> : null}
-            {credentialForm.kind === 'ssh_username_with_private_key' ? <Input type='password' placeholder={t('settings.passphrase')} value={credentialForm.passphrase} onChange={(event) => setCredentialForm((value) => ({ ...value, passphrase: event.target.value }))} /> : null}
-            {createCredential.error ? <AppAlert tone='error' title={createCredential.error.message} /> : null}
-            {updateCredential.error ? <AppAlert tone='error' title={updateCredential.error.message} /> : null}
-            <ActionGroup>
-              <Button variant='outline' onClick={closeCredentialDialog}>{t('common.cancel')}</Button>
-              <Button
-                disabled={
-                  !credentialForm.name ||
-                  (!editingCredentialId && credentialForm.kind === 'secret_text' && !credentialForm.text) ||
-                  (!editingCredentialId && credentialForm.kind === 'username_password' && (!credentialForm.username || !credentialForm.password)) ||
-                  (!editingCredentialId && credentialForm.kind === 'ssh_username_with_private_key' && (!credentialForm.username || !credentialForm.private_key)) ||
-                  createCredential.isPending ||
-                  updateCredential.isPending
-                }
-                onClick={() => editingCredentialId ? updateCredential.mutate() : createCredential.mutate()}
-              >
-                {editingCredentialId ? t('common.update') : t('common.create')}
-              </Button>
-            </ActionGroup>
-          </div>
+          <CredentialForm
+            createPending={createCredential.isPending}
+            editMode={!!editingCredentialId}
+            errors={[createCredential.error?.message, updateCredential.error?.message]}
+            form={credentialForm}
+            onCancel={closeCredentialDialog}
+            onChange={setCredentialForm}
+            onSubmit={() => editingCredentialId ? updateCredential.mutate() : createCredential.mutate()}
+            updatePending={updateCredential.isPending}
+          />
         </DialogContent>
       </Dialog>
     </Page>

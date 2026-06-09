@@ -464,6 +464,10 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
 
   Follow-up Settings SCM audit evidence: `scm-provider-form.test.tsx` was added and passed with the Settings form tests and `settings-payloads.test.ts`. `bun test --timeout 20000`, `bun run check`, `bun run build`, and `git diff --check` passed after extracting the SCM form. Fresh `agent-browser` coverage for `/settings?section=code-platforms` reached the local authenticated loading-account state with no error boundary and no horizontal overflow; authenticated SCM dialog visual verification remains covered by SSR/component tests until a reusable logged-in browser session or local handoff is available.
 
+  Follow-up Settings Credential audit implementation extracts `CredentialForm` so the advanced credential dialog uses shadcn `FieldGroup`, `Field`, `FieldLabel`, `Input`, `Textarea`, shared `ActionGroup`, and `LabeledSegmentedControl` for credential kind selection instead of placeholder-only inputs and inline secret-kind branches. The extracted form preserves create-mode secret requirements and edit-mode blank-secret submission behavior.
+
+  Follow-up Settings Credential audit evidence: `credential-form.test.tsx` was added and passed with the Settings form tests and `settings-payloads.test.ts`. `bun test --timeout 20000`, `bun run check`, `bun run build`, and `git diff --check` passed after extracting the Credential form. Fresh `agent-browser` coverage for `/settings?section=advanced-credentials` reached the local authenticated loading-account state with no error boundary and no horizontal overflow; authenticated Credential dialog visual verification remains covered by SSR/component tests until a reusable logged-in browser session or local handoff is available.
+
 ## Task 6: Verification, Visual QA, Commit, and Push
 
 **Files:**
