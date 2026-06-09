@@ -8,6 +8,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { AdvancedDataPanel } from '@/components/primitives/advanced-data-panel'
+import { CardFilterBar } from '@/components/primitives/card-filter-bar'
 import { CardPagerFooter } from '@/components/primitives/card-pager-footer'
 import { DataGrid, DataGridHeader, DataGridRow } from '@/components/primitives/data-grid'
 import { FieldItem, FieldList } from '@/components/primitives/field-list'
@@ -126,7 +127,7 @@ export function EventsPage() {
       </div>
 
       <Card>
-        <CardContent className='flex flex-col gap-3 p-3'>
+        <CardFilterBar stacked>
           <div className='flex flex-wrap items-center gap-2'>
             <SearchField
               ariaLabel={t('events.searchRepoSessionSource')}
@@ -183,7 +184,7 @@ export function EventsPage() {
               }}
             />
           ) : null}
-        </CardContent>
+        </CardFilterBar>
       </Card>
 
       <Card className='overflow-hidden'>

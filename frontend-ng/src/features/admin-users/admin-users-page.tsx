@@ -11,6 +11,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Field, FieldLabel } from '@/components/ui/field'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { AppAlert } from '@/components/primitives/app-alert'
+import { CardFilterBar } from '@/components/primitives/card-filter-bar'
 import { CardPagerFooter } from '@/components/primitives/card-pager-footer'
 import { DataGrid, DataGridHeader, DataGridRow } from '@/components/primitives/data-grid'
 import { IdentityAvatar } from '@/components/primitives/identity-avatar'
@@ -236,7 +237,7 @@ export function AdminUsersPage() {
         </CardContent>
       </Card>
       <Card className='overflow-hidden'>
-        <CardContent className='flex flex-wrap items-center gap-2 border-border border-b p-3'>
+        <CardFilterBar>
           <SearchField
             ariaLabel={t('adminUsers.searchUsers')}
             className='min-w-64 flex-1 sm:max-w-md'
@@ -271,7 +272,7 @@ export function AdminUsersPage() {
               <span className='tnum'>{number(currentJob.processed_count)}/{number(currentJob.total_count)}</span>
             </div>
           ) : null}
-        </CardContent>
+        </CardFilterBar>
         <DataGrid minWidth={1100}>
           <DataGridHeader columns={tableColumns}>
             <span>
