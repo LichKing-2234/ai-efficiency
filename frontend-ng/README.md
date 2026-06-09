@@ -17,12 +17,10 @@ Useful environment variables:
 
 ```bash
 AE_FRONTEND_BACKEND_URL=http://localhost:8081
-AE_FRONTEND_LOCAL_BACKEND_URL=https://ai-efficiency.la3.agoralab.co
 ```
 
 `VITE_BACKEND_URL` is accepted as a local fallback for compatibility, but browser code must not call that backend URL directly.
 `AE_FRONTEND_GATEWAY_EXCHANGE_SECRET` should only be configured after the Go backend exposes `/api/v1/auth/gateway-exchange` and the shared header contract is agreed.
-`AE_FRONTEND_LOCAL_BACKEND_URL` is optional for deployed frontend servers. When set, local handoff writes that public backend origin into the localhost `ae_backend_url` cookie so the local TanStack proxy can reach the same backend without manual env configuration. If it is not set, handoff falls back to `AE_FRONTEND_BACKEND_URL`.
 
 ## Auth Boundary
 

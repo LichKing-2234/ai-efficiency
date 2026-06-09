@@ -12,9 +12,7 @@ export function localHandoffIssueResponse(request: Request, callbackPath = '/api
   if (!tokens?.accessToken && !tokens?.refreshToken) {
     return json({ code: 401, message: 'local handoff requires an active app session' }, 401)
   }
-  const backendUrl = process.env.AE_FRONTEND_LOCAL_BACKEND_URL ||
-    process.env.AE_FRONTEND_PUBLIC_BACKEND_URL ||
-    process.env.AE_FRONTEND_BACKEND_URL ||
+  const backendUrl = process.env.AE_FRONTEND_BACKEND_URL ||
     process.env.VITE_BACKEND_URL ||
     import.meta.env.VITE_BACKEND_URL
   return Response.redirect(buildLocalCallbackUrl(target, tokens.accessToken, tokens.refreshToken, callbackPath, backendUrl), 302)

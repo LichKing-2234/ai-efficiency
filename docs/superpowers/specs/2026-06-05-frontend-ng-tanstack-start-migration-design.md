@@ -310,7 +310,7 @@ Handoff constraints:
 - Do not store gateway raw tokens on localhost.
 - Only Go-issued app tokens are transferred.
 - The transferred backend URL is server-side proxy configuration only; browser code still calls same-origin `/api/*`.
-- Deployed frontend servers should set `AE_FRONTEND_LOCAL_BACKEND_URL` to a public backend origin reachable from a developer machine. If omitted, local handoff falls back to `AE_FRONTEND_BACKEND_URL`, which may be a cluster-internal service URL and therefore unsuitable for localhost.
+- Local handoff uses `AE_FRONTEND_BACKEND_URL` as the backend origin written into localhost proxy configuration. Deployments that need local handoff should set that value to an origin reachable from a developer machine.
 - `target` must be validated against allowed localhost origins.
 
 ### Backend Target
