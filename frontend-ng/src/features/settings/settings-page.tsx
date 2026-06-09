@@ -28,6 +28,7 @@ import { api } from '@/lib/api'
 import { dateTime, number } from '@/lib/format'
 import { useI18n } from '@/lib/i18n/i18n'
 import { LdapSettingsForm } from './ldap-settings-form'
+import { RelayProviderForm } from './relay-provider-form'
 import type { Credential, RelayProvider, SCMProvider } from '@/lib/api/types'
 import {
   buildCredentialPayload,
@@ -477,31 +478,16 @@ export function SettingsPage() {
             <DialogTitle>{editingRelayId ? t('settings.editRelayProvider') : t('settings.addRelayProvider')}</DialogTitle>
             <DialogDescription>{editingRelayId ? t('settings.editRelayProviderDescription') : t('settings.adminApiKeyDescription')}</DialogDescription>
           </DialogHeader>
-          <div className='flex flex-col gap-3'>
-            <Input placeholder={t('settings.name')} value={relayForm.name} disabled={!!editingRelayId} onChange={(event) => setRelayForm((value) => ({ ...value, name: event.target.value }))} />
-            <Input placeholder={t('settings.displayName')} value={relayForm.display_name} onChange={(event) => setRelayForm((value) => ({ ...value, display_name: event.target.value }))} />
-            <Input placeholder={t('settings.baseUrl')} value={relayForm.base_url} onChange={(event) => setRelayForm((value) => ({ ...value, base_url: event.target.value }))} />
-            <Input type='password' placeholder={t('settings.adminApiKey')} value={relayForm.admin_api_key} onChange={(event) => setRelayForm((value) => ({ ...value, admin_api_key: event.target.value }))} />
-            <Field orientation='horizontal'>
-              <Checkbox id='relay-primary' checked={relayForm.is_primary} onCheckedChange={(checked) => setRelayForm((value) => ({ ...value, is_primary: checked === true }))} />
-              <FieldLabel htmlFor='relay-primary'>{t('settings.primary')}</FieldLabel>
-            </Field>
-            <Field orientation='horizontal'>
-              <Checkbox id='relay-enabled' checked={relayForm.enabled} onCheckedChange={(checked) => setRelayForm((value) => ({ ...value, enabled: checked === true }))} />
-              <FieldLabel htmlFor='relay-enabled'>{t('settings.enabled')}</FieldLabel>
-            </Field>
-            {createRelay.error ? <AppAlert tone='error' title={createRelay.error.message} /> : null}
-            {updateRelay.error ? <AppAlert tone='error' title={updateRelay.error.message} /> : null}
-            <ActionGroup>
-              <Button variant='outline' onClick={closeRelayDialog}>{t('common.cancel')}</Button>
-              <Button
-                disabled={!relayForm.name || !relayForm.display_name || !relayForm.base_url || (!editingRelayId && !relayForm.admin_api_key) || createRelay.isPending || updateRelay.isPending}
-                onClick={() => editingRelayId ? updateRelay.mutate() : createRelay.mutate()}
-              >
-                {editingRelayId ? t('common.update') : t('common.create')}
-              </Button>
-            </ActionGroup>
-          </div>
+          <RelayProviderForm
+            createPending={createRelay.isPending}
+            editMode={!!editingRelayId}
+            errors={[createRelay.error?.message, updateRelay.error?.message]}
+            form={relayForm}
+            onCancel={closeRelayDialog}
+            onChange={setRelayForm}
+            onSubmit={() => editingRelayId ? updateRelay.mutate() : createRelay.mutate()}
+            updatePending={updateRelay.isPending}
+          />
         </DialogContent>
       </Dialog>
       <Dialog open={scmDialog} onOpenChange={(open) => open ? setScmDialog(true) : closeScmDialog()}>
