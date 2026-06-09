@@ -270,7 +270,7 @@ export function SettingsPage() {
 
   return (
     <Page className='stagger'>
-      <PageHeader title={t('settings.title')} description={t('settings.description')} />
+      <PageHeader title={t('settings.title')} description={t('settings.description')} variant='toolbar' />
       <div className='split-settings'>
         <Card className='p-2'>
           <nav className='flex flex-col gap-1'>

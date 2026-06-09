@@ -7,12 +7,23 @@ export function Page({ children, className }: { children: React.ReactNode; class
 export function PageHeader({
   title,
   description,
-  actions
+  actions,
+  variant = 'title'
 }: {
   title: string
   description?: React.ReactNode
   actions?: React.ReactNode
+  variant?: 'title' | 'toolbar'
 }) {
+  if (variant === 'toolbar') {
+    return (
+      <div className='flex flex-col gap-3 md:flex-row md:items-center md:justify-between'>
+        {description ? <p className='max-w-3xl text-muted-foreground text-sm'>{description}</p> : <span className='hidden' aria-hidden='true'>{title}</span>}
+        {actions ? <div className='flex shrink-0 items-center gap-2'>{actions}</div> : null}
+      </div>
+    )
+  }
+
   return (
     <div className='flex flex-col gap-3 md:flex-row md:items-end md:justify-between'>
       <div className='min-w-0'>

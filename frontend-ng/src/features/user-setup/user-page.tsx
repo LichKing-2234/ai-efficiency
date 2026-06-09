@@ -121,7 +121,7 @@ export function UserPage() {
 
   return (
     <Page className='stagger'>
-      <PageHeader title={t('userSetup.title')} description={t('userSetup.description')} />
+      <PageHeader title={t('userSetup.title')} description={t('userSetup.description')} variant='toolbar' />
       <div className='split-rail'>
         <div className='flex flex-col gap-4'>
           <Card>

@@ -12,7 +12,7 @@
 
 ## Current Status
 
-In progress. The foundation pass, shell, command palette, promoted `/usage` route, Overview, Usage, Events, Repos, Repo Detail, My Setup, Admin Users, and Settings have a first visual pass using real backend data and shared shadcn-style primitives. Static verification, tests, build, local server reachability, commits, and push are complete. Browser QA now verifies authenticated desktop content for `/`, `/usage`, `/events`, `/repos`, `/user`, `/admin/users`, and `/settings`, plus command palette open, language switching, and dark mode. Remaining visual QA gap: the current `agent-browser` CLI in this environment did not expose a working viewport command, so mobile-width verification still needs a real browser/manual pass.
+In progress. The foundation pass, shell, command palette, promoted `/usage` route, Overview, Usage, Events, Repos, Repo Detail, My Setup, Admin Users, and Settings have a first visual pass using real backend data and shared shadcn-style primitives. Static verification, tests, build, local server reachability, browser QA, commits, and push are complete for the current pass. Browser QA verifies authenticated desktop and 390px mobile content for `/`, `/usage`, `/events`, `/repos`, `/user`, `/admin/users`, and `/settings`, plus command palette open, language switching, and dark mode.
 
 ## File Structure
 
@@ -154,7 +154,7 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
 
   Register `Ctrl/Cmd+K`, provide navigation commands and safe UI actions, and route using TanStack Router.
 
-- [ ] **Step 6: Remove duplicate page titles incrementally**
+- [x] **Step 6: Remove duplicate page titles incrementally**
 
   Keep generic page titles in the top bar. Feature pages should start with content or page-specific toolbars; Overview may keep its hero.
 
@@ -239,15 +239,15 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
   cd frontend-ng && bun run dev -- --host 127.0.0.1 --port 4317
   ```
 
-- [ ] **Step 3: Browser visual verification**
+- [x] **Step 3: Browser visual verification**
 
   Use `agent-browser` against `http://127.0.0.1:4317/` at desktop and mobile widths. Verify shell, Overview, Usage, Events, Repos, User, Admin, dark mode, language dropdown, command palette, and slide-over.
 
   Current evidence from this run:
-  - Authenticated desktop route loop passed for `/usage`, `/events`, `/repos`, `/user`, `/admin/users`, and `/settings`: no error boundary, no leaked `{current}` / `{total}` / `{ready}` placeholders, and no button overflow.
-  - Overview desktop interaction checks passed for command palette open, language dropdown switch to `zh-CN`, and dark-mode toggle.
+  - Authenticated desktop route loop passed for `/`, `/usage`, `/events`, `/repos`, `/user`, `/admin/users`, and `/settings` at `1280x720`: no error boundary, no leaked `{current}` / `{total}` / `{ready}` placeholders, no duplicate in-content page title, no horizontal overflow, and no button overflow.
+  - Authenticated mobile route loop passed for the same routes at `390x844` using `agent-browser set viewport 390 844`: no error boundary, no leaked placeholders, no duplicate in-content page title, no horizontal overflow, and no button overflow.
+  - Overview interaction checks passed for command palette open, language dropdown switch to `zh-CN`, and dark-mode toggle.
   - The admin/settings SSR guard crash was fixed by moving admin role redirects into authenticated client pages.
-  - Mobile-width verification remains open because `agent-browser viewport` is unavailable in the installed CLI despite appearing in help output.
 
 - [x] **Step 4: Commit logical chunks**
 

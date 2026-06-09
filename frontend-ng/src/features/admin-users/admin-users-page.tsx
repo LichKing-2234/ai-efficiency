@@ -154,7 +154,7 @@ export function AdminUsersPage() {
 
   return (
     <Page className='stagger'>
-      <PageHeader title={t('adminUsers.title')} description={t('adminUsers.description')} />
+      <PageHeader title={t('adminUsers.title')} description={t('adminUsers.description')} variant='toolbar' />
       <div className='kpi-grid'>
         <MetricCard label={t('adminUsers.totalUsers')} value={number(total)} icon={Users} />
         <MetricCard label={t('adminUsers.visibleUsers')} value={number(rows.length)} icon={Search} accent />

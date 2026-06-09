@@ -184,6 +184,7 @@ export function RepoDetailPage() {
         title={repo.data?.full_name || repo.data?.name || `#${repoId}`}
         description={repo.data?.clone_url}
         actions={<Button onClick={() => sync.mutate()} disabled={!canSync}><RefreshCw data-icon='inline-start' />{activeJobRunning ? t('repoDetail.syncingPrs') : t('repoDetail.syncPrs')}</Button>}
+        variant='toolbar'
       />
       {syncDisabledReason ? <div className='rounded-[var(--r-md)] border border-border bg-[var(--surface-inset)] px-3 py-2 text-muted-foreground text-sm'>{syncDisabledReason}</div> : null}
       {showWebhookRepair ? (
