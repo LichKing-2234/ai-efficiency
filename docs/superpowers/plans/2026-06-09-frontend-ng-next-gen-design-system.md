@@ -12,7 +12,7 @@
 
 ## Current Status
 
-In progress. The first foundation pass is implemented and verified: global tokens/utilities, upgraded button/card/badge/KPI primitives, ToolGlyph, SegmentedControl, SlideOver, collapsible shell, language dropdown, command palette, and promoted `/usage` route are in place. Overview, Usage, Events, and Repos have a first visual pass using real backend data. Setup and Admin screen parity remain pending.
+In progress. The foundation pass, shell, command palette, promoted `/usage` route, Overview, Usage, Events, Repos, Repo Detail, My Setup, Admin Users, and Settings have a first visual pass using real backend data and shared shadcn-style primitives. Static verification, tests, build, local server reachability, commits, and push are complete. Browser content QA remains blocked by the current local auth/bootstrap state: `http://127.0.0.1:4317/` returns HTTP 200 and renders the shell, but the local session shows Guest / `Loading account...`, so authenticated page content could not be honestly verified in-browser.
 
 ## File Structure
 
@@ -231,7 +231,7 @@ In progress. The first foundation pass is implemented and verified: global token
   git diff --check
   ```
 
-- [ ] **Step 2: Local server**
+- [x] **Step 2: Local server**
 
   Run:
 
@@ -243,7 +243,7 @@ In progress. The first foundation pass is implemented and verified: global token
 
   Use `agent-browser` against `http://127.0.0.1:4317/` at desktop and mobile widths. Verify shell, Overview, Usage, Events, Repos, User, Admin, dark mode, language dropdown, command palette, and slide-over.
 
-- [ ] **Step 4: Commit logical chunks**
+- [x] **Step 4: Commit logical chunks**
 
   Use Conventional Commits, for example:
 
@@ -252,7 +252,7 @@ In progress. The first foundation pass is implemented and verified: global token
   git commit -m "refactor(frontend): align next-gen design foundation"
   ```
 
-- [ ] **Step 5: Push branch**
+- [x] **Step 5: Push branch**
 
   Run:
 
