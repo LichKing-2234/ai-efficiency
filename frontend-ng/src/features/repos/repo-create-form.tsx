@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button'
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ActionGroup } from '@/components/primitives/action-group'
 import { AppAlert } from '@/components/primitives/app-alert'
 import { FieldItem, FieldList } from '@/components/primitives/field-list'
@@ -73,9 +73,11 @@ export function RepoCreateForm({
         <Select value={selectedProviderId} onValueChange={onSelectedProviderIdChange}>
           <SelectTrigger id='repo-create-provider' className='w-full'><SelectValue placeholder={labels.selectScmProvider} /></SelectTrigger>
           <SelectContent>
-            {providers.map((provider) => (
-              <SelectItem key={provider.id} value={String(provider.id)}>{provider.name}</SelectItem>
-            ))}
+            <SelectGroup>
+              {providers.map((provider) => (
+                <SelectItem key={provider.id} value={String(provider.id)}>{provider.name}</SelectItem>
+              ))}
+            </SelectGroup>
           </SelectContent>
         </Select>
       </Field>

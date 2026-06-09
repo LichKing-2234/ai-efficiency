@@ -8,7 +8,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { AppAlert } from '@/components/primitives/app-alert'
 import { CardFilterBar } from '@/components/primitives/card-filter-bar'
 import { CardPagerFooter } from '@/components/primitives/card-pager-footer'
@@ -253,7 +253,9 @@ export function AdminUsersPage() {
           }}>
             <SelectTrigger className='w-36'><SelectValue /></SelectTrigger>
             <SelectContent>
-              {[10, 20, 50, 100].map((size) => <SelectItem key={size} value={String(size)}>{t('common.pageSize', { size })}</SelectItem>)}
+              <SelectGroup>
+                {[10, 20, 50, 100].map((size) => <SelectItem key={size} value={String(size)}>{t('common.pageSize', { size })}</SelectItem>)}
+              </SelectGroup>
             </SelectContent>
           </Select>
           <Button variant='outline' disabled={users.isFetching} onClick={() => void users.refetch()}>

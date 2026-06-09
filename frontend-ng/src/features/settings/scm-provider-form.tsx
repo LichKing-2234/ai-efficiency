@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button'
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ActionGroup } from '@/components/primitives/action-group'
 import { AppAlert } from '@/components/primitives/app-alert'
 import { LabeledSegmentedControl } from '@/components/primitives/labeled-segmented-control'
@@ -71,8 +71,10 @@ export function ScmProviderForm({
         <Select value={form.api_credential_id || 'none'} onValueChange={(value) => onChange({ ...form, api_credential_id: value === 'none' ? '' : value })}>
           <SelectTrigger className='w-full'><SelectValue /></SelectTrigger>
           <SelectContent>
-            <SelectItem value='none'>{t('settings.apiCredential')}</SelectItem>
-            {credentials.map((credential) => <SelectItem key={credential.id} value={String(credential.id)}>{credential.name}</SelectItem>)}
+            <SelectGroup>
+              <SelectItem value='none'>{t('settings.apiCredential')}</SelectItem>
+              {credentials.map((credential) => <SelectItem key={credential.id} value={String(credential.id)}>{credential.name}</SelectItem>)}
+            </SelectGroup>
           </SelectContent>
         </Select>
       </Field>
@@ -104,8 +106,10 @@ export function ScmProviderForm({
             <Select value={form.clone_credential_id || 'none'} onValueChange={(value) => onChange({ ...form, clone_credential_id: value === 'none' ? '' : value })}>
               <SelectTrigger className='w-full'><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value='none'>{t('settings.cloneCredential')}</SelectItem>
-                {credentials.map((credential) => <SelectItem key={credential.id} value={String(credential.id)}>{credential.name}</SelectItem>)}
+                <SelectGroup>
+                  <SelectItem value='none'>{t('settings.cloneCredential')}</SelectItem>
+                  {credentials.map((credential) => <SelectItem key={credential.id} value={String(credential.id)}>{credential.name}</SelectItem>)}
+                </SelectGroup>
               </SelectContent>
             </Select>
           </Field>

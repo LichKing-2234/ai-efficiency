@@ -2,7 +2,7 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ActionGroup } from '@/components/primitives/action-group'
 import type {
   AdminAssignableSubscriptionGroup,
@@ -77,9 +77,11 @@ export function AdminSubscriptionForm({
           <Select value={scope} disabled={activeJobRunning} onValueChange={(value) => onScopeChange(value as AdminSubscriptionManageScope)}>
             <SelectTrigger id='admin-subscription-scope'><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value='selected'>{labels.selectedUsers(selectedCount)}</SelectItem>
-              <SelectItem value='current_filter'>{labels.currentFilter}</SelectItem>
-              <SelectItem value='all_mapped'>{labels.allMapped}</SelectItem>
+              <SelectGroup>
+                <SelectItem value='selected'>{labels.selectedUsers(selectedCount)}</SelectItem>
+                <SelectItem value='current_filter'>{labels.currentFilter}</SelectItem>
+                <SelectItem value='all_mapped'>{labels.allMapped}</SelectItem>
+              </SelectGroup>
             </SelectContent>
           </Select>
         </Field>
@@ -88,9 +90,11 @@ export function AdminSubscriptionForm({
           <Select value={operation} disabled={activeJobRunning} onValueChange={(value) => onOperationChange(value as AdminSubscriptionManageOperation)}>
             <SelectTrigger id='admin-subscription-operation'><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value='add'>{labels.add}</SelectItem>
-              <SelectItem value='extend'>{labels.extend}</SelectItem>
-              <SelectItem value='remove'>{labels.remove}</SelectItem>
+              <SelectGroup>
+                <SelectItem value='add'>{labels.add}</SelectItem>
+                <SelectItem value='extend'>{labels.extend}</SelectItem>
+                <SelectItem value='remove'>{labels.remove}</SelectItem>
+              </SelectGroup>
             </SelectContent>
           </Select>
         </Field>
@@ -99,8 +103,10 @@ export function AdminSubscriptionForm({
           <Select value={activeProvider ? String(activeProvider.id) : 'none'} disabled={activeJobRunning} onValueChange={onProviderChange}>
             <SelectTrigger id='admin-subscription-provider'><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value='none'>{labels.provider}</SelectItem>
-              {subscriptionProviders.map((provider) => <SelectItem key={provider.id} value={String(provider.id)}>{provider.display_name || provider.name}</SelectItem>)}
+              <SelectGroup>
+                <SelectItem value='none'>{labels.provider}</SelectItem>
+                {subscriptionProviders.map((provider) => <SelectItem key={provider.id} value={String(provider.id)}>{provider.display_name || provider.name}</SelectItem>)}
+              </SelectGroup>
             </SelectContent>
           </Select>
         </Field>
@@ -109,8 +115,10 @@ export function AdminSubscriptionForm({
           <Select value={activeGroupId || 'none'} disabled={activeJobRunning} onValueChange={onGroupChange}>
             <SelectTrigger id='admin-subscription-group'><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value='none'>{labels.group}</SelectItem>
-              {activeGroups.map((group) => <SelectItem key={group.group_id} value={group.group_id}>{group.group_name} · {group.platform}</SelectItem>)}
+              <SelectGroup>
+                <SelectItem value='none'>{labels.group}</SelectItem>
+                {activeGroups.map((group) => <SelectItem key={group.group_id} value={group.group_id}>{group.group_name} · {group.platform}</SelectItem>)}
+              </SelectGroup>
             </SelectContent>
           </Select>
         </Field>

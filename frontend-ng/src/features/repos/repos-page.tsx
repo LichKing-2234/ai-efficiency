@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ActionGroup } from '@/components/primitives/action-group'
 import { CardPagerFooter } from '@/components/primitives/card-pager-footer'
@@ -229,17 +229,21 @@ export function ReposPage() {
         <Select value={search.binding} onValueChange={(value) => replaceSearch({ ...search, binding: value as RepoBindingFilter, page: 1 })}>
           <SelectTrigger><SelectValue /></SelectTrigger>
           <SelectContent>
-            <SelectItem value='all'>{t('repos.allBindings')}</SelectItem>
-            <SelectItem value='bound'>{t('repos.bound')}</SelectItem>
-            <SelectItem value='unbound'>{t('repos.unbound')}</SelectItem>
+            <SelectGroup>
+              <SelectItem value='all'>{t('repos.allBindings')}</SelectItem>
+              <SelectItem value='bound'>{t('repos.bound')}</SelectItem>
+              <SelectItem value='unbound'>{t('repos.unbound')}</SelectItem>
+            </SelectGroup>
           </SelectContent>
         </Select>
         <Select value={String(search.pageSize)} onValueChange={(value) => replaceSearch({ ...search, pageSize: Number(value), page: 1 })}>
           <SelectTrigger><SelectValue /></SelectTrigger>
           <SelectContent>
-            <SelectItem value='20'>20 / page</SelectItem>
-            <SelectItem value='50'>50 / page</SelectItem>
-            <SelectItem value='100'>100 / page</SelectItem>
+            <SelectGroup>
+              <SelectItem value='20'>20 / page</SelectItem>
+              <SelectItem value='50'>50 / page</SelectItem>
+              <SelectItem value='100'>100 / page</SelectItem>
+            </SelectGroup>
           </SelectContent>
         </Select>
         <Button variant='ghost' onClick={() => replaceSearch({ ...search, binding: 'unbound', provider: 'unbound', page: 1 })}>{t('repos.reviewNeedsBinding')}</Button>

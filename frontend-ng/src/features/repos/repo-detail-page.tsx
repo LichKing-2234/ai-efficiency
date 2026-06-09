@@ -8,7 +8,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Card, CardContent } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Field, FieldLabel } from '@/components/ui/field'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
 import { ActionGroup } from '@/components/primitives/action-group'
 import { CardPagerFooter } from '@/components/primitives/card-pager-footer'
@@ -244,10 +244,12 @@ export function RepoDetailPage() {
           <Select value={selectedProviderId || 'none'} onValueChange={(value) => setSelectedProviderId(value === 'none' ? '' : value)}>
             <SelectTrigger className='w-full'><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value='none'>{t('repoDetail.noProviderBinding')}</SelectItem>
-              {(scm.data?.items ?? []).map((provider) => (
-                <SelectItem key={provider.id} value={String(provider.id)}>{provider.name}</SelectItem>
-              ))}
+              <SelectGroup>
+                <SelectItem value='none'>{t('repoDetail.noProviderBinding')}</SelectItem>
+                {(scm.data?.items ?? []).map((provider) => (
+                  <SelectItem key={provider.id} value={String(provider.id)}>{provider.name}</SelectItem>
+                ))}
+              </SelectGroup>
             </SelectContent>
           </Select>
           <Button variant='outline' onClick={() => saveBinding.mutate(selectedProviderId)} disabled={saveBinding.isPending}><Save data-icon='inline-start' />{t('repoDetail.saveBinding')}</Button>
@@ -269,11 +271,13 @@ export function RepoDetailPage() {
               }}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value='1'>1</SelectItem>
-                  <SelectItem value='3'>3</SelectItem>
-                  <SelectItem value='6'>6</SelectItem>
-                  <SelectItem value='12'>12</SelectItem>
-                  <SelectItem value='0'>{t('common.allTime')}</SelectItem>
+                  <SelectGroup>
+                    <SelectItem value='1'>1</SelectItem>
+                    <SelectItem value='3'>3</SelectItem>
+                    <SelectItem value='6'>6</SelectItem>
+                    <SelectItem value='12'>12</SelectItem>
+                    <SelectItem value='0'>{t('common.allTime')}</SelectItem>
+                  </SelectGroup>
                 </SelectContent>
               </Select>
               <Select value={String(prsPageSize)} onValueChange={(value) => {
@@ -282,9 +286,11 @@ export function RepoDetailPage() {
               }}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value='10'>{t('common.pageSize', { size: 10 })}</SelectItem>
-                  <SelectItem value='25'>{t('common.pageSize', { size: 25 })}</SelectItem>
-                  <SelectItem value='50'>{t('common.pageSize', { size: 50 })}</SelectItem>
+                  <SelectGroup>
+                    <SelectItem value='10'>{t('common.pageSize', { size: 10 })}</SelectItem>
+                    <SelectItem value='25'>{t('common.pageSize', { size: 25 })}</SelectItem>
+                    <SelectItem value='50'>{t('common.pageSize', { size: 50 })}</SelectItem>
+                  </SelectGroup>
                 </SelectContent>
               </Select>
             </div>

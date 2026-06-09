@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { AdvancedDataPanel } from '@/components/primitives/advanced-data-panel'
 import { CardFilterBar } from '@/components/primitives/card-filter-bar'
 import { CardPagerFooter } from '@/components/primitives/card-pager-footer'
@@ -216,9 +216,11 @@ export function EventsPage() {
               <Select value={String(appliedFilters.limit)} onValueChange={(value) => changePageSize(Number(value))}>
                 <SelectTrigger size='sm'><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value='20'>20</SelectItem>
-                  <SelectItem value='50'>50</SelectItem>
-                  <SelectItem value='100'>100</SelectItem>
+                  <SelectGroup>
+                    <SelectItem value='20'>20</SelectItem>
+                    <SelectItem value='50'>50</SelectItem>
+                    <SelectItem value='100'>100</SelectItem>
+                  </SelectGroup>
                 </SelectContent>
               </Select>
               <Button size='sm' variant='outline' onClick={previousPage} disabled={!pagination.canGoPrev}>{t('common.previous')}</Button>
