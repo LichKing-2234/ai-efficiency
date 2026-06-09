@@ -374,6 +374,8 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
 
   Follow-up command-accordion audit evidence: `command-accordion.test.tsx` was added with a red-green cycle, `command-step.test.ts`, `user-setup-state.test.ts`, `provider-button.test.tsx`, `bun test`, `bun run check`, `bun run build`, and `git diff --check` passed after migrating the Windows installer section. `agent-browser` reverified `/user` at `1280x720` and `390x844`: one shared command accordion rendered and expanded, no error boundary text, and no body horizontal overflow. The current local account still has no provider rows, so provider data rendering remains covered by existing state and primitive tests.
 
+  Follow-up section-header audit implementation migrates the My Setup CLI workflow and provider test cards to the shared `SectionCardHeader` primitive while preserving the Terminal icon treatment, provider test copy, and all existing command/provider-test behavior. Focused evidence: `section-card-header.test.tsx`, `user-setup-state.test.ts`, and `provider-button.test.tsx` passed alongside `bun test`, `bun run check`, `bun run build`, and `git diff --check`. `agent-browser` reverified `/user` in the authenticated session at `1280x720` and `390x844`: four cards and four shared card headers rendered, no error boundary text, no body horizontal overflow, and no visible over-wide interactive controls. The local account still has no provider rows, so provider data rendering remains covered by existing state and primitive tests.
+
 - [x] **Step 5: Admin Users and Settings**
 
   Re-skin admin pages with shared grid tables and forms while preserving role guards and backend mutation contracts.

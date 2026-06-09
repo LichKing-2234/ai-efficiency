@@ -18,6 +18,7 @@ import { PageEmpty } from '@/components/primitives/page-empty'
 import { Page } from '@/components/primitives/page'
 import { InfoTile } from '@/components/primitives/info-tile'
 import { InsetPanel } from '@/components/primitives/inset-panel'
+import { SectionCardHeader } from '@/components/primitives/section-card-header'
 import { SelectableCard } from '@/components/primitives/selectable-card'
 import { LoadingState } from '@/components/primitives/data-state'
 import { api } from '@/lib/api'
@@ -165,13 +166,10 @@ export function UserPage() {
             </CardContent>
           </Card>
           <Card>
-            <CardHeader>
-              <div className='flex items-center gap-2'>
-                <Terminal className='text-[var(--ai)]' />
-                <CardTitle>{t('userSetup.cliWorkflow')}</CardTitle>
-              </div>
-              <CardDescription>{t('userSetup.cliDescription')}</CardDescription>
-            </CardHeader>
+            <SectionCardHeader
+              title={<span className='flex items-center gap-2'><Terminal className='text-[var(--ai)]' />{t('userSetup.cliWorkflow')}</span>}
+              description={t('userSetup.cliDescription')}
+            />
             <CardContent className='flex flex-col gap-2'>
               <CommandStep step={1} command={installCommand} copyLabel={t('userSetup.copy')} copiedMessage={t('userSetup.commandCopied')} />
               <CommandStep step={2} command='ae-cli login' copyLabel={t('userSetup.copy')} copiedMessage={t('userSetup.commandCopied')} />
@@ -264,10 +262,7 @@ export function UserPage() {
             </CardContent>
           </Card>
           <Card>
-            <CardHeader>
-              <CardTitle>{t('userSetup.providerTest')}</CardTitle>
-              <CardDescription>{t('userSetup.providerTestDescription')}</CardDescription>
-            </CardHeader>
+            <SectionCardHeader title={t('userSetup.providerTest')} description={t('userSetup.providerTestDescription')} />
             <CardContent>
               <FieldGroup>
                 <div className='grid gap-3 md:grid-cols-2'>
