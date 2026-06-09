@@ -9,7 +9,6 @@ import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/componen
 import { Checkbox } from '@/components/ui/checkbox'
 import { Field, FieldLabel } from '@/components/ui/field'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { DataGrid, DataGridHeader, DataGridRow } from '@/components/primitives/data-grid'
 import { InfoTile } from '@/components/primitives/info-tile'
@@ -175,6 +174,7 @@ export function RepoDetailPage() {
   const hasPreviousPage = canGoPreviousPRPage(prsPage)
   const hasNextPage = canGoNextPRPage(prsPage, totalPRs, prsPageSize)
   const prColumns = 'minmax(260px,2fr)_0.7fr_1fr_0.7fr_0.6fr_1fr_minmax(210px,1.1fr)'
+  const snapshotColumns = 'minmax(160px,1.4fr)_150px_90px_90px_90px_90px_90px_90px_minmax(180px,1fr)'
   const showWebhookRepair = canShowWebhookRepair({
     role: me.data?.role,
     bindingState: repo.data?.binding_state,
@@ -363,50 +363,42 @@ export function RepoDetailPage() {
                                 status={<StatusBadge value={detail.usage_status || detail.attribution_status} />}
                                 summary={t('repoDetail.totalTokensRefreshed', { tokens: compact(tokenUsage), time: dateTime(detail.usage_refreshed_at) })}
                               />
-                              <div className='overflow-x-auto rounded-md border border-border bg-card'>
-                                <Table>
-                                  <TableHeader>
-                                    <TableRow>
-                                      <TableHead>{t('repoDetail.commit')}</TableHead>
-                                      <TableHead>{t('repoDetail.captured')}</TableHead>
-                                      <TableHead>{t('repoDetail.input')}</TableHead>
-                                      <TableHead>{t('repoDetail.output')}</TableHead>
-                                      <TableHead>{t('repoDetail.cache')}</TableHead>
-                                      <TableHead>{t('repoDetail.reasoning')}</TableHead>
-                                      <TableHead>{t('repoDetail.credits')}</TableHead>
-                                      <TableHead>{t('repoDetail.requests')}</TableHead>
-                                      <TableHead>{t('repoDetail.freshness')}</TableHead>
-                                    </TableRow>
-                                  </TableHeader>
-                                  <TableBody>
-                                    {snapshots.length > 0 ? snapshots.map((snapshot) => {
-                                      const freshness = commitFreshnessFor(detail, snapshot.commit_sha)
-                                      return (
-                                        <TableRow key={snapshot.commit_sha}>
-                                          <TableCell className='max-w-56 truncate font-mono text-xs'>{snapshot.commit_sha}</TableCell>
-                                          <TableCell>{dateTime(snapshot.captured_at)}</TableCell>
-                                          <TableCell className='tnum'>{compact(snapshot.input_tokens)}</TableCell>
-                                          <TableCell className='tnum'>{compact(snapshot.output_tokens)}</TableCell>
-                                          <TableCell className='tnum'>{compact(snapshot.cached_input_tokens)}</TableCell>
-                                          <TableCell className='tnum'>{compact(snapshot.reasoning_tokens)}</TableCell>
-                                          <TableCell className='tnum'>{number(snapshot.credit_usage)}</TableCell>
-                                          <TableCell className='tnum'>{number(snapshot.request_count)}</TableCell>
-                                          <TableCell>
-                                            <div className='flex flex-col gap-1'>
-                                              <StatusBadge value={freshness?.usage_status} />
-                                              {freshness?.usage_status_reason ? <span className='max-w-64 truncate text-muted-foreground text-xs'>{freshness.usage_status_reason}</span> : null}
-                                            </div>
-                                          </TableCell>
-                                        </TableRow>
-                                      )
-                                    }) : (
-                                      <TableRow>
-                                        <TableCell colSpan={9} className='py-6 text-center text-muted-foreground text-sm'>{t('repoDetail.noCommitSnapshots')}</TableCell>
-                                      </TableRow>
-                                    )}
-                                  </TableBody>
-                                </Table>
-                              </div>
+                              <DataGrid minWidth={980}>
+                                <DataGridHeader columns={snapshotColumns}>
+                                  <span>{t('repoDetail.commit')}</span>
+                                  <span>{t('repoDetail.captured')}</span>
+                                  <span className='text-right'>{t('repoDetail.input')}</span>
+                                  <span className='text-right'>{t('repoDetail.output')}</span>
+                                  <span className='text-right'>{t('repoDetail.cache')}</span>
+                                  <span className='text-right'>{t('repoDetail.reasoning')}</span>
+                                  <span className='text-right'>{t('repoDetail.credits')}</span>
+                                  <span className='text-right'>{t('repoDetail.requests')}</span>
+                                  <span>{t('repoDetail.freshness')}</span>
+                                </DataGridHeader>
+                                {snapshots.length > 0 ? snapshots.map((snapshot) => {
+                                  const freshness = commitFreshnessFor(detail, snapshot.commit_sha)
+                                  return (
+                                    <DataGridRow columns={snapshotColumns} key={snapshot.commit_sha}>
+                                      <span className='mono min-w-0 truncate text-xs'>{snapshot.commit_sha}</span>
+                                      <span className='tnum text-muted-foreground text-xs'>{dateTime(snapshot.captured_at)}</span>
+                                      <span className='tnum text-right'>{compact(snapshot.input_tokens)}</span>
+                                      <span className='tnum text-right'>{compact(snapshot.output_tokens)}</span>
+                                      <span className='tnum text-right'>{compact(snapshot.cached_input_tokens)}</span>
+                                      <span className='tnum text-right'>{compact(snapshot.reasoning_tokens)}</span>
+                                      <span className='tnum text-right'>{number(snapshot.credit_usage)}</span>
+                                      <span className='tnum text-right'>{number(snapshot.request_count)}</span>
+                                      <span className='flex min-w-0 flex-col gap-1'>
+                                        <StatusBadge value={freshness?.usage_status} />
+                                        {freshness?.usage_status_reason ? <span className='max-w-64 truncate text-muted-foreground text-xs'>{freshness.usage_status_reason}</span> : null}
+                                      </span>
+                                    </DataGridRow>
+                                  )
+                                }) : (
+                                  <DataGridRow className='justify-center py-6 text-center text-muted-foreground text-sm' columns={snapshotColumns} fullWidth>
+                                    <span>{t('repoDetail.noCommitSnapshots')}</span>
+                                  </DataGridRow>
+                                )}
+                              </DataGrid>
                             </div>
                           )}
                       </InsetPanel>

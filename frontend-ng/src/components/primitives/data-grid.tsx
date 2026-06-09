@@ -48,6 +48,7 @@ type DataGridRowBaseProps = {
   children: React.ReactNode
   className?: string
   columns: string
+  fullWidth?: boolean
 }
 
 type DataGridRowDivProps = DataGridRowBaseProps & {
@@ -59,11 +60,11 @@ type DataGridRowButtonProps = DataGridRowBaseProps & {
 } & React.ButtonHTMLAttributes<HTMLButtonElement>
 
 export function DataGridRow(props: DataGridRowDivProps | DataGridRowButtonProps) {
-  const { as = 'div', children, className, columns, ...rest } = props
+  const { as = 'div', children, className, columns, fullWidth = false, ...rest } = props
   const sharedProps = {
     className: cn('ae-trow', as === 'button' && 'ae-trow-btn', className),
     'data-slot': 'data-grid-row',
-    style: { gridTemplateColumns: normalizeColumns(columns) }
+    style: { gridTemplateColumns: normalizeColumns(columns), ...(fullWidth ? { gridColumn: '1 / -1' } : {}) }
   }
 
   if (as === 'button') {

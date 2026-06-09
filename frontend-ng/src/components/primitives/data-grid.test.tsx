@@ -40,4 +40,18 @@ describe('DataGrid', () => {
     expect(html).toContain('ae-trow-btn')
     expect(html).toContain('Open row')
   })
+
+  test('supports full width rows for nested empty states', () => {
+    const html = renderToStaticMarkup(
+      <DataGrid>
+        <DataGridRow columns='1fr_120px' fullWidth>
+          <span>No rows</span>
+        </DataGridRow>
+      </DataGrid>
+    )
+
+    expect(html).toContain('data-slot="data-grid-row"')
+    expect(html).toContain('grid-column:1 / -1')
+    expect(html).toContain('No rows')
+  })
 })

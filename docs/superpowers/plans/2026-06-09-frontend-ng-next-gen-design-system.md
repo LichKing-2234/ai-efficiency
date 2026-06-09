@@ -322,6 +322,10 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
 
   Follow-up table audit evidence: `data-grid.test.tsx`, `repo-detail-state.test.ts`, `bun test`, `bun run check`, `bun run build`, and `git diff --check` passed after the migration. `agent-browser` reverified the repository area through `/repos` at `1280x720` and `390x844`: no error boundary text, no body horizontal overflow, and no visible over-wide interactive controls. The local account still exposes no repository detail links, so visible PR-list rendering is covered by primitive tests and TypeScript/build until repository detail data is available.
 
+  Follow-up snapshot-table audit implementation extends the shared `DataGridRow` primitive with a `fullWidth` state for nested empty rows and migrates expanded PR commit usage snapshots away from the remaining shadcn `Table` wrapper while preserving backend snapshot ordering, freshness lookup, status badges, numeric formatting, and empty-state copy.
+
+  Follow-up snapshot-table audit evidence: `data-grid.test.tsx`, `repo-detail-state.test.ts`, `bun test`, `bun run check`, `bun run build`, and `git diff --check` passed after migrating the expanded commit snapshot grid. `agent-browser` reverified `/repos` at `1280x720` and `390x844`: no error boundary text, no body horizontal overflow, and no rendered `table` elements in the current route state. The current local account still exposes no repository detail links, so route-level browser coverage remains on `/repos` data-light states while snapshot grid rendering is covered by primitive tests and TypeScript/build until repository detail data is available.
+
 - [x] **Step 4: My Setup**
 
   Re-skin provider credential setup, status/progress, and key actions with shared field/card primitives.
