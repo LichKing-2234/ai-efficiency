@@ -16,6 +16,7 @@ import { ConfirmAction } from '@/components/primitives/confirm-action'
 import { PageEmpty } from '@/components/primitives/page-empty'
 import { Page, PageHeader } from '@/components/primitives/page'
 import { InfoTile } from '@/components/primitives/info-tile'
+import { InsetPanel } from '@/components/primitives/inset-panel'
 import { SelectableCard } from '@/components/primitives/selectable-card'
 import { LoadingState } from '@/components/primitives/data-state'
 import { api } from '@/lib/api'
@@ -136,7 +137,7 @@ export function UserPage() {
               <Badge variant='ai' className='shrink-0 tnum'>{t('userSetup.groupsReadyShort', { ready: readyGroups, total: totalGroups })}</Badge>
             </CardHeader>
             <CardContent className='flex flex-col gap-2'>
-              {providers.data?.message ? <div className='rounded-md bg-muted p-3 text-muted-foreground text-sm'>{providers.data.message}</div> : null}
+              {providers.data?.message ? <InsetPanel muted>{providers.data.message}</InsetPanel> : null}
               {rows.map((provider) => (
                 <ProviderButton
                   key={provider.id}
@@ -310,7 +311,7 @@ export function UserPage() {
                   {!secret ? <span className='text-muted-foreground text-sm'>{t('userSetup.createKeyBeforeTesting')}</span> : null}
                   {testResult ? <Badge variant={testResult.success ? 'success' : 'warning'}>{testResult.message}</Badge> : null}
                 </div>
-                {testResult?.response ? <div className='rounded-[var(--r-md)] border border-border bg-[var(--surface-inset)] p-4 text-sm leading-7'>{testResult.response}</div> : null}
+                {testResult?.response ? <InsetPanel comfortable>{testResult.response}</InsetPanel> : null}
               </FieldGroup>
             </CardContent>
           </Card>

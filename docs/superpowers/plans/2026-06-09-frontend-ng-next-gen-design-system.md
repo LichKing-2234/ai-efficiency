@@ -29,6 +29,8 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
 - Test: `frontend-ng/src/components/primitives/command-step.test.ts` - locks visible shell prompt formatting and clipboard text behavior.
 - Create: `frontend-ng/src/components/primitives/field-list.tsx` - shared reference-style compact label/value field list for details and runtime summaries.
 - Test: `frontend-ng/src/components/primitives/field-list.test.tsx` - locks mono/truncation field row variants.
+- Create: `frontend-ng/src/components/primitives/inset-panel.tsx` - shared reference-style inset message/result panel for route-local notices and responses.
+- Test: `frontend-ng/src/components/primitives/inset-panel.test.tsx` - locks muted and comfortable content variants.
 - Create: `frontend-ng/src/features/home/home-state.ts` - shared Overview setup readiness derivation used by the setup status card.
 - Test: `frontend-ng/src/features/home/home-state.test.ts` - locks account, AI access, repository, recent usage readiness progress calculations, and Overview live activity summaries.
 - Create: `frontend-ng/src/components/primitives/tool-glyph.tsx` - reusable tool identity glyph for tables and detail headers.
@@ -254,7 +256,9 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
 
   Current implementation uses the shared `InfoTile` primitive for latest sync job status, phase, fetched, and processed stat tiles instead of a page-local `DetailStat` helper.
 
-  Current evidence: `repo-detail-state.test.ts`, `info-tile.test.tsx`, and `bun run check` passed. The current local account exposes no repository detail links in `/repos`, so browser QA verifies the authenticated repository route empty/data-light state with no error boundary or horizontal overflow while repo detail stat rendering is covered by TypeScript/build.
+  Current implementation also uses the shared `InsetPanel` primitive for sync-disabled and latest-job usage progress notices.
+
+  Current evidence: `repo-detail-state.test.ts`, `info-tile.test.tsx`, `inset-panel.test.tsx`, and `bun run check` passed. The current local account exposes no repository detail links in `/repos`, so browser QA verifies the authenticated repository route empty/data-light state with no error boundary or horizontal overflow while repo detail stat and notice rendering is covered by TypeScript/build.
 
 - [x] **Step 4: My Setup**
 
@@ -266,7 +270,9 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
 
   Current implementation uses the shared `CommandStep` primitive for CLI onboarding rows so installer, login, discover, hooks, init, doctor, and Windows commands share reference-style copy affordances instead of page-local command markup.
 
-  Current evidence: `command-step.test.ts`, `selectable-card.test.tsx`, `provider-button.test.tsx`, `info-tile.test.tsx`, `bun run check`, and browser QA on `/user` passed. `agent-browser` verified the CLI workflow, six numbered command steps, copy affordances, no error boundary, and no horizontal overflow at `1280x720` and `390x844`. The local account currently returns no provider rows, so browser QA verifies the stable empty/data-light path while provider selection rendering is covered by `provider-button.test.tsx`. The mobile run also caught and fixed a hidden command-row width issue by applying `min-width: 0` to split-layout children and the command-step row; the largest visible mobile button width is now `285px` in a `390px` viewport.
+  Current implementation uses the shared `InsetPanel` primitive for provider messages and provider-test response blocks.
+
+  Current evidence: `command-step.test.ts`, `selectable-card.test.tsx`, `provider-button.test.tsx`, `info-tile.test.tsx`, `inset-panel.test.tsx`, `bun run check`, and browser QA on `/user` passed. `agent-browser` verified the CLI workflow, six numbered command steps, copy affordances, no error boundary, and no horizontal overflow at `1280x720` and `390x844`. The latest `/user` checks rendered one shared inset panel at desktop and mobile widths; the mobile panel width stayed inside the 390px viewport. The local account currently returns no provider rows, so browser QA verifies the stable empty/data-light path while provider selection rendering is covered by `provider-button.test.tsx`. The mobile run also caught and fixed a hidden command-row width issue by applying `min-width: 0` to split-layout children and the command-step row; the largest visible mobile button width is now `285px` in a `390px` viewport.
 
 - [x] **Step 5: Admin Users and Settings**
 
@@ -280,7 +286,9 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
 
   Current implementation also uses the shared `FieldList` primitive for deployment-runtime current/mode/commit summary fields.
 
-  Current evidence: `search-field.test.tsx`, `section-nav.test.tsx`, `field-list.test.tsx`, `bun run check`, `bun test`, `bun run build`, and browser QA on `/admin/users` and `/settings` passed. `agent-browser` verified the authenticated Admin Users shared search input at `1280x720` and `390x844`, the Settings shared section rail with five items and one current item at `1280x720` and `390x844`, no error boundary, and no horizontal overflow. The latest Settings deployment-runtime check rendered one shared field list, three field rows, and three info tiles at `1280x720` and `390x844`; the mobile field row width stayed within the 390px viewport.
+  Current implementation also uses the shared `InsetPanel` primitive for Admin Users subscription job messages and plaintext reveal confirmation panels.
+
+  Current evidence: `search-field.test.tsx`, `section-nav.test.tsx`, `field-list.test.tsx`, `inset-panel.test.tsx`, `bun run check`, `bun test`, `bun run build`, and browser QA on `/admin/users` and `/settings` passed. `agent-browser` verified the authenticated Admin Users shared search input at `1280x720` and `390x844`, the Settings shared section rail with five items and one current item at `1280x720` and `390x844`, no error boundary, and no horizontal overflow. The latest Settings deployment-runtime check rendered one shared field list, three field rows, and three info tiles at `1280x720` and `390x844`; the mobile field row width stayed within the 390px viewport. The latest Admin Users route check had no active job/reveal panel data, so the route empty/data-light state is browser-covered while inset notice rendering is covered by primitive tests and TypeScript/build.
 
 ## Task 6: Verification, Visual QA, Commit, and Push
 

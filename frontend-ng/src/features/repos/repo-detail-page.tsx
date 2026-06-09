@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { InfoTile } from '@/components/primitives/info-tile'
+import { InsetPanel } from '@/components/primitives/inset-panel'
 import { MetricCard } from '@/components/primitives/metric-card'
 import { Page, PageHeader } from '@/components/primitives/page'
 import { LoadingState } from '@/components/primitives/data-state'
@@ -186,7 +187,7 @@ export function RepoDetailPage() {
         actions={<Button onClick={() => sync.mutate()} disabled={!canSync}><RefreshCw data-icon='inline-start' />{activeJobRunning ? t('repoDetail.syncingPrs') : t('repoDetail.syncPrs')}</Button>}
         variant='toolbar'
       />
-      {syncDisabledReason ? <div className='rounded-[var(--r-md)] border border-border bg-[var(--surface-inset)] px-3 py-2 text-muted-foreground text-sm'>{syncDisabledReason}</div> : null}
+      {syncDisabledReason ? <InsetPanel className='px-3 py-2' muted>{syncDisabledReason}</InsetPanel> : null}
       {showWebhookRepair ? (
         <Alert>
           <AlertTitle>{t('repoDetail.repairWebhook')}</AlertTitle>
@@ -227,9 +228,9 @@ export function RepoDetailPage() {
               <InfoTile label={t('repoDetail.fetchedLabel')} value={number(jobProgress?.fetched)} mono />
               <InfoTile label={t('repoDetail.processedLabel')} value={`${number(jobProgress?.processed)}/${number(currentJob.total_prs || currentJob.fetched_prs)}`} mono />
             </div>
-            <div className='rounded-[var(--r-md)] border border-border bg-[var(--surface-inset)] p-3 text-muted-foreground text-sm'>
+            <InsetPanel muted>
               {t('repoDetail.usage', { done: number(jobProgress?.usageRefreshed), total: number(jobProgress?.usageTotal) })} · {syncMessage || prSyncJobMessage(currentJob)}
-            </div>
+            </InsetPanel>
           </CardContent>
         </Card>
       ) : null}

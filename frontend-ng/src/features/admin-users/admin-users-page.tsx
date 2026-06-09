@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { AppAlert } from '@/components/primitives/app-alert'
 import { Page, PageHeader } from '@/components/primitives/page'
 import { LoadingState } from '@/components/primitives/data-state'
+import { InsetPanel } from '@/components/primitives/inset-panel'
 import { SearchField } from '@/components/primitives/search-field'
 import { StatusBadge } from '@/components/primitives/status-badge'
 import { MetricCard } from '@/components/primitives/metric-card'
@@ -225,7 +226,7 @@ export function AdminUsersPage() {
           </div>
           {job.error ? <AppAlert tone='error' title={job.error.message} /> : null}
           {activeJob.error ? <AppAlert tone='error' title={activeJob.error.message} /> : null}
-          {jobMessage ? <div className='rounded-[var(--r-md)] border border-border bg-[var(--surface-inset)] p-3 text-sm'>{jobMessage}</div> : null}
+          {jobMessage ? <InsetPanel>{jobMessage}</InsetPanel> : null}
           {jobResults.length > 0 ? (
             <div className='max-h-56 overflow-auto rounded-md border border-border'>
               {jobResults.slice(0, 50).map((result) => (
@@ -337,7 +338,7 @@ export function AdminUsersPage() {
                 </Button>
               </span>
               {plaintextConfirmUserId === user.id ? (
-                <div className='col-span-7 ml-11 flex max-w-xl flex-col gap-2 rounded-[var(--r-md)] border border-border bg-[var(--surface-inset)] p-3 text-left text-xs'>
+                <InsetPanel className='col-span-7 ml-11 flex max-w-xl flex-col gap-2 text-left text-xs'>
                   <span className='text-muted-foreground'>{t('adminUsers.plaintextWarning')}</span>
                   <Button
                     variant='outline'
@@ -349,7 +350,7 @@ export function AdminUsersPage() {
                   >
                     {t('adminUsers.confirmReveal')}
                   </Button>
-                </div>
+                </InsetPanel>
               ) : null}
             </div>
           ))}
