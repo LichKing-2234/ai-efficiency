@@ -3,7 +3,10 @@ import { useParams } from '@tanstack/react-router'
 import { Fragment, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Field, FieldLabel } from '@/components/ui/field'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { MetricCard } from '@/components/primitives/metric-card'
@@ -12,7 +15,9 @@ import { LoadingState } from '@/components/primitives/data-state'
 import { StatusBadge } from '@/components/primitives/status-badge'
 import { api } from '@/lib/api'
 import { compact, dateTime, number, percent } from '@/lib/format'
+import { useI18n } from '@/lib/i18n/i18n'
 import { buildRepoBindingPayload } from './repo-binding'
+import { canShowWebhookRepair, repoWebhookRepairNotice } from './repo-webhook-state'
 import {
   buildPRListParams,
   canGoNextPRPage,
@@ -31,6 +36,7 @@ export function RepoDetailPage() {
   const { id } = useParams({ from: '/repos/$id' })
   const repoId = Number(id)
   const qc = useQueryClient()
+  const { t } = useI18n()
   const [selectedProviderId, setSelectedProviderId] = useState('')
   const [prsPage, setPRsPage] = useState(0)
   const [prsPageSize, setPRsPageSize] = useState(10)
@@ -39,7 +45,10 @@ export function RepoDetailPage() {
   const [syncMessage, setSyncMessage] = useState('')
   const [expandedPRId, setExpandedPRId] = useState<number | null>(null)
   const [autoRefreshedPRIds, setAutoRefreshedPRIds] = useState<Set<number>>(() => new Set())
+  const [webhookRepairForce, setWebhookRepairForce] = useState(false)
+  const [webhookRepairNotice, setWebhookRepairNotice] = useState<{ kind: 'success' | 'error'; message: string } | null>(null)
   const repo = useQuery({ queryKey: ['repo', repoId], queryFn: () => api.repos.get(repoId) })
+  const me = useQuery({ queryKey: ['auth', 'me'], queryFn: api.auth.me })
   const scm = useQuery({ queryKey: ['settings', 'scm'], queryFn: () => api.settings.scmProviders(1, 100) })
   const prListParams = buildPRListParams({ page: prsPage, pageSize: prsPageSize, months: prsMonths })
   const prs = useQuery({
@@ -101,6 +110,21 @@ export function RepoDetailPage() {
       toast.success('Repository binding saved')
     }
   })
+  const repairWebhook = useMutation({
+    mutationFn: () => api.repos.repairWebhook(repoId, { force: webhookRepairForce }),
+    onSuccess: (item) => {
+      const notice = repoWebhookRepairNotice(item)
+      setWebhookRepairNotice({
+        kind: notice.kind,
+        message: notice.detail ? `${t(notice.key)}: ${notice.detail}` : t(notice.key)
+      })
+      void qc.invalidateQueries({ queryKey: ['repo', repoId] })
+      void qc.invalidateQueries({ queryKey: ['repos'] })
+    },
+    onError: (error) => {
+      setWebhookRepairNotice({ kind: 'error', message: error instanceof Error ? error.message : t('repoDetail.webhookRepairFailed') })
+    }
+  })
 
   useEffect(() => {
     if (repo.data) setSelectedProviderId(repo.data.scm_provider_id ? String(repo.data.scm_provider_id) : '')
@@ -144,6 +168,12 @@ export function RepoDetailPage() {
   const totalPRs = prs.data?.total ?? summary.total
   const hasPreviousPage = canGoPreviousPRPage(prsPage)
   const hasNextPage = canGoNextPRPage(prsPage, totalPRs, prsPageSize)
+  const showWebhookRepair = canShowWebhookRepair({
+    role: me.data?.role,
+    bindingState: repo.data?.binding_state,
+    status: repo.data?.status,
+    webhookId: repo.data?.webhook_id
+  })
 
   return (
     <Page>
@@ -153,6 +183,30 @@ export function RepoDetailPage() {
         actions={<Button onClick={() => sync.mutate()} disabled={!canSync}>{activeJobRunning ? 'Syncing PRs' : 'Sync PRs'}</Button>}
       />
       {syncDisabledReason ? <div className='rounded-md border border-border bg-muted/50 px-3 py-2 text-muted-foreground text-sm'>{syncDisabledReason}</div> : null}
+      {showWebhookRepair ? (
+        <Alert>
+          <AlertTitle>{t('repoDetail.repairWebhook')}</AlertTitle>
+          <AlertDescription>
+            <div className='flex flex-col gap-3'>
+              <span>{t('repoDetail.webhookRepairNeeded')}</span>
+              {repo.data?.webhook_id ? (
+                <Field orientation='horizontal'>
+                  <Checkbox checked={webhookRepairForce} onCheckedChange={(value) => setWebhookRepairForce(value === true)} />
+                  <FieldLabel>{t('repoDetail.forceReplaceWebhook')}</FieldLabel>
+                </Field>
+              ) : null}
+              <Button className='w-fit' disabled={repairWebhook.isPending} onClick={() => repairWebhook.mutate()}>
+                {repairWebhook.isPending ? t('repoDetail.webhookRepairing') : t('repoDetail.repairWebhook')}
+              </Button>
+            </div>
+          </AlertDescription>
+        </Alert>
+      ) : null}
+      {webhookRepairNotice ? (
+        <Alert variant={webhookRepairNotice.kind === 'error' ? 'destructive' : 'default'}>
+          <AlertTitle>{webhookRepairNotice.message}</AlertTitle>
+        </Alert>
+      ) : null}
       <div className='grid gap-4 sm:grid-cols-4'>
         <MetricCard label='PRs' value={number(totalPRs)} />
         <MetricCard label='With usage' value={number(summary?.with_usage)} accent />

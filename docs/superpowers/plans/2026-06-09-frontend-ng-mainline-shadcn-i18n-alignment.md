@@ -1386,7 +1386,7 @@ cd frontend-ng && bun test src/features/repos/repos-state.test.ts && bun run che
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit repo workbench**
+- [x] **Step 5: Commit repo workbench**
 
 Run:
 
@@ -1404,7 +1404,7 @@ Expected: commit created.
 - Create: `frontend-ng/src/features/repos/repo-webhook-state.test.ts`
 - Modify: `frontend-ng/src/features/repos/repo-detail-page.tsx`
 
-- [ ] **Step 1: Write failing webhook detail tests**
+- [x] **Step 1: Write failing webhook detail tests**
 
 Create `frontend-ng/src/features/repos/repo-webhook-state.test.ts`:
 
@@ -1427,7 +1427,7 @@ describe('repo webhook repair state', () => {
 })
 ```
 
-- [ ] **Step 2: Implement webhook helpers**
+- [x] **Step 2: Implement webhook helpers**
 
 Create `frontend-ng/src/features/repos/repo-webhook-state.ts`:
 
@@ -1454,7 +1454,7 @@ export function repoWebhookRepairNotice(item: RepoWebhookRepairItem): { kind: 's
 }
 ```
 
-- [ ] **Step 3: Add repair UI to repo detail**
+- [x] **Step 3: Add repair UI to repo detail**
 
 Modify `frontend-ng/src/features/repos/repo-detail-page.tsx`:
 
@@ -1516,7 +1516,7 @@ const repairWebhook = useMutation({
 ) : null}
 ```
 
-- [ ] **Step 4: Run focused tests**
+- [x] **Step 4: Run focused tests**
 
 Run:
 
