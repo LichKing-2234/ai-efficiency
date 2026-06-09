@@ -251,6 +251,10 @@ Follow-up OAuth/auth redirect diagnosis fixed the `/oauth/device` unauthenticate
 
   Follow-up usage table audit evidence: `data-grid.test.tsx`, `user-usage-state.test.ts`, `bun test`, `bun run check`, `bun run build`, and `git diff --check` passed after the migration. `agent-browser` reverified `/usage` at `1280x720` and `390x844`: no error boundary text, no body horizontal overflow, and no visible over-wide interactive controls. The local usage payload currently has no model distribution rows, so visible model-table rendering is covered by primitive tests and TypeScript/build until model data is available.
 
+  Follow-up usage controls audit implementation migrates the Usage Analytics title/range/refresh control row to shared `FilterRow` and `ActionGroup` primitives. The same range state, `SegmentedControl`, refresh mutation, embedded title behavior, and backend dashboard query contract remain unchanged while the page no longer hand-rolls wrapped action-row layout.
+
+  Follow-up usage controls audit evidence: `user-usage-panel-composition.test.ts` was added with a red-green cycle; it first failed because `user-usage-panel.tsx` did not import or render `ActionGroup`/`FilterRow`, then passed after migration. Focused verification passed with `bun test src/features/user-usage/user-usage-panel-composition.test.ts src/features/user-usage/user-usage-state.test.ts src/components/primitives/action-group.test.tsx src/components/primitives/filter-row.test.tsx`, `bun run check`, and `git diff --check`. `agent-browser` opened `/usage` on the local dev server and verified no error boundary, no body horizontal overflow, and no visible over-wide buttons/links; that unauthenticated local route stayed at `Guest / Loading account`, so `ActionGroup` and `FilterRow` rendering remains covered by the composition test until authenticated usage content is available.
+
 ## Task 5: Events, Repos, Setup, and Admin Screen Pass
 
 **Files:**

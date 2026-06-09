@@ -6,9 +6,11 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Empty, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
+import { ActionGroup } from '@/components/primitives/action-group'
 import { ChartLegend } from '@/components/primitives/chart-legend'
 import { BarsH, StackedAreaChart, type StackedAreaKey } from '@/components/primitives/charts'
 import { DataGrid, DataGridHeader, DataGridRow } from '@/components/primitives/data-grid'
+import { FilterRow } from '@/components/primitives/filter-row'
 import { HeatmapGrid } from '@/components/primitives/heatmap-grid'
 import { MetricCard } from '@/components/primitives/metric-card'
 import { SectionCardHeader } from '@/components/primitives/section-card-header'
@@ -45,14 +47,14 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
 
   return (
     <div className='stagger flex flex-col gap-4'>
-      <div className='flex flex-wrap items-center justify-between gap-3'>
+      <FilterRow className='justify-between gap-3'>
         {!embedded ? (
           <div className='min-w-0'>
             <div className='font-semibold text-sm'>{t('usageDashboard.title')}</div>
             <div className='mt-0.5 text-muted-foreground text-xs'>{t('usageDashboard.subtitle')}</div>
           </div>
         ) : <div />}
-        <div className='flex flex-wrap items-center gap-2'>
+        <ActionGroup wrap>
           <SegmentedControl
             ariaLabel={t('usageDashboard.selectedRange')}
             onChange={setRange}
@@ -67,8 +69,8 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
             <RefreshCwIcon data-icon='inline-start' />
             {t('common.refresh')}
           </Button>
-        </div>
-      </div>
+        </ActionGroup>
+      </FilterRow>
       <div className='flex flex-col gap-4'>
         {query.isLoading ? <div className='text-muted-foreground text-sm'>{t('common.loading')}</div> : null}
         {snapshot?.configured === false ? (
