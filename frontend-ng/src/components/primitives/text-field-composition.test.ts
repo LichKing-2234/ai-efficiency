@@ -5,12 +5,13 @@ import { describe, expect, test } from 'vitest'
 const ROOT = new URL('../../', import.meta.url).pathname
 
 const SETTINGS_TEXT_FORMS = [
+  'features/events/events-page.tsx',
   'features/settings/ldap-settings-form.tsx',
   'features/settings/relay-provider-form.tsx'
 ]
 
 describe('Text field composition', () => {
-  test('uses TextField in simple settings forms instead of raw text controls', () => {
+  test('uses TextField in standardized text-control surfaces instead of raw text controls', () => {
     const offenders = SETTINGS_TEXT_FORMS.filter((file) => {
       const source = readFileSync(join(ROOT, file), 'utf8')
 

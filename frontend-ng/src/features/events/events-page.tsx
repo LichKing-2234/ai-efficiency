@@ -5,7 +5,6 @@ import { useState } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
 import { AdvancedDataPanel } from '@/components/primitives/advanced-data-panel'
 import { CardFilterBar } from '@/components/primitives/card-filter-bar'
 import { CardPagerFooter } from '@/components/primitives/card-pager-footer'
@@ -23,6 +22,7 @@ import { SectionEyebrow } from '@/components/primitives/section-eyebrow'
 import { SlideOver } from '@/components/primitives/slide-over'
 import { TokenMeter } from '@/components/primitives/token-meter'
 import { TokenBreakdown } from '@/components/primitives/token-breakdown'
+import { TextField } from '@/components/primitives/text-field'
 import { ToolGlyph } from '@/components/primitives/tool-glyph'
 import { ToolbarSelect } from '@/components/primitives/toolbar-select'
 import { api } from '@/lib/api'
@@ -159,12 +159,33 @@ export function EventsPage() {
             <Button onClick={applyCurrentFilters}>{t('common.applyFilters')}</Button>
           </div>
           <div className='flex flex-wrap items-center gap-2'>
-            <Input className='w-[220px]' type='datetime-local' value={filters.from} onChange={(event) => setFilters((value) => ({ ...value, from: event.target.value }))} />
-            <Input className='w-[220px]' type='datetime-local' value={filters.to} onChange={(event) => setFilters((value) => ({ ...value, to: event.target.value }))} />
+            <TextField
+              className='w-[220px]'
+              id='events-filter-from'
+              label={t('events.fromTime')}
+              type='datetime-local'
+              value={filters.from}
+              onChange={(from) => setFilters((value) => ({ ...value, from }))}
+            />
+            <TextField
+              className='w-[220px]'
+              id='events-filter-to'
+              label={t('events.toTime')}
+              type='datetime-local'
+              value={filters.to}
+              onChange={(to) => setFilters((value) => ({ ...value, to }))}
+            />
             <Button variant='outline' onClick={clearTimeRange}>{t('events.clearTime')}</Button>
             {isAdmin ? (
               <>
-                <Input className='w-72' placeholder={t('events.searchUsersByNameOrEmail')} value={userSearch} onChange={(event) => setUserSearch(event.target.value)} />
+                <TextField
+                  className='w-72'
+                  id='events-user-search'
+                  label={t('events.searchUsersByNameOrEmail')}
+                  placeholder={t('events.searchUsersByNameOrEmail')}
+                  value={userSearch}
+                  onChange={setUserSearch}
+                />
                 <Button variant='outline' onClick={searchUsers} disabled={users.isFetching}>{t('adminUsers.searchUsers')}</Button>
               </>
             ) : null}
