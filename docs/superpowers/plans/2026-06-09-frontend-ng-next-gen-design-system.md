@@ -250,9 +250,11 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
 
   Re-skin provider credential setup, status/progress, and key actions with shared field/card primitives.
 
+  Current implementation uses the shared `SelectableCard` primitive for provider selection cards, so active/inactive card states are no longer page-local button styling.
+
   Current implementation uses the shared `CommandStep` primitive for CLI onboarding rows so installer, login, discover, hooks, init, doctor, and Windows commands share reference-style copy affordances instead of page-local command markup.
 
-  Current evidence: `command-step.test.ts`, `bun run check`, and browser QA on `/user` passed. `agent-browser` verified the CLI workflow, six numbered command steps, copy affordances, no error boundary, and no horizontal overflow at `1280x720` and `390x844`. The mobile run also caught and fixed a hidden command-row width issue by applying `min-width: 0` to split-layout children and the command-step row; the largest visible mobile button width is now `285px` in a `390px` viewport.
+  Current evidence: `command-step.test.ts`, `selectable-card.test.tsx`, `provider-button.test.tsx`, `bun run check`, and browser QA on `/user` passed. `agent-browser` verified the CLI workflow, six numbered command steps, copy affordances, no error boundary, and no horizontal overflow at `1280x720` and `390x844`. The local account currently returns no provider rows, so browser QA verifies the stable empty/data-light path while provider selection rendering is covered by `provider-button.test.tsx`. The mobile run also caught and fixed a hidden command-row width issue by applying `min-width: 0` to split-layout children and the command-step row; the largest visible mobile button width is now `285px` in a `390px` viewport.
 
 - [x] **Step 5: Admin Users and Settings**
 

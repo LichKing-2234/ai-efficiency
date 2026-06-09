@@ -15,6 +15,7 @@ import { CommandStep } from '@/components/primitives/command-step'
 import { ConfirmAction } from '@/components/primitives/confirm-action'
 import { PageEmpty } from '@/components/primitives/page-empty'
 import { Page, PageHeader } from '@/components/primitives/page'
+import { SelectableCard } from '@/components/primitives/selectable-card'
 import { LoadingState } from '@/components/primitives/data-state'
 import { api } from '@/lib/api'
 import { useI18n } from '@/lib/i18n/i18n'
@@ -327,7 +328,7 @@ function InfoTile({ label, value, accent = false }: { label: string; value: stri
   )
 }
 
-function ProviderButton({
+export function ProviderButton({
   active,
   name,
   baseUrl,
@@ -347,9 +348,8 @@ function ProviderButton({
   onClick: () => void
 }) {
   return (
-    <button
-      className='rounded-[var(--r-md)] border border-border bg-card p-3 text-left transition hover:border-[var(--line-strong)] hover:bg-[var(--surface-2)] data-[active=true]:border-[var(--ai-line)] data-[active=true]:bg-[var(--ai-softer)]'
-      data-active={active}
+    <SelectableCard
+      active={active}
       onClick={onClick}
     >
       <div className='flex items-center justify-between gap-2'>
@@ -358,6 +358,6 @@ function ProviderButton({
       </div>
       <div className='mono mt-1 truncate text-muted-foreground text-[11px]'>{baseUrl}</div>
       <div className={ready === total ? 'mt-2 font-medium text-[var(--pos)] text-xs' : 'mt-2 font-medium text-[var(--warn)] text-xs'}>{labels.groupsReady}</div>
-    </button>
+    </SelectableCard>
   )
 }
