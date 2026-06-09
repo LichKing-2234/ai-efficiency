@@ -12,7 +12,7 @@
 
 ## Current Status
 
-In progress. The foundation pass, shell, command palette, promoted `/usage` route, Overview, Usage, Events, Repos, Repo Detail, My Setup, Admin Users, and Settings have a first visual pass using real backend data and shared shadcn-style primitives. Static verification, tests, build, local server reachability, commits, and push are complete. Browser content QA remains blocked by the current local auth/bootstrap state: `http://127.0.0.1:4317/` returns HTTP 200 and renders the shell, but the local session shows Guest / `Loading account...`, so authenticated page content could not be honestly verified in-browser.
+In progress. The foundation pass, shell, command palette, promoted `/usage` route, Overview, Usage, Events, Repos, Repo Detail, My Setup, Admin Users, and Settings have a first visual pass using real backend data and shared shadcn-style primitives. Static verification, tests, build, local server reachability, commits, and push are complete. Browser QA now verifies authenticated desktop content for `/`, `/usage`, `/events`, `/repos`, `/user`, `/admin/users`, and `/settings`, plus command palette open, language switching, and dark mode. Remaining visual QA gap: the current `agent-browser` CLI in this environment did not expose a working viewport command, so mobile-width verification still needs a real browser/manual pass.
 
 ## File Structure
 
@@ -242,6 +242,12 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
 - [ ] **Step 3: Browser visual verification**
 
   Use `agent-browser` against `http://127.0.0.1:4317/` at desktop and mobile widths. Verify shell, Overview, Usage, Events, Repos, User, Admin, dark mode, language dropdown, command palette, and slide-over.
+
+  Current evidence from this run:
+  - Authenticated desktop route loop passed for `/usage`, `/events`, `/repos`, `/user`, `/admin/users`, and `/settings`: no error boundary, no leaked `{current}` / `{total}` / `{ready}` placeholders, and no button overflow.
+  - Overview desktop interaction checks passed for command palette open, language dropdown switch to `zh-CN`, and dark-mode toggle.
+  - The admin/settings SSR guard crash was fixed by moving admin role redirects into authenticated client pages.
+  - Mobile-width verification remains open because `agent-browser viewport` is unavailable in the installed CLI despite appearing in help output.
 
 - [x] **Step 4: Commit logical chunks**
 

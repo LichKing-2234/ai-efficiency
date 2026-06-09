@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useNavigate, useSearch } from '@tanstack/react-router'
+import { Navigate, useNavigate, useSearch } from '@tanstack/react-router'
 import { Clipboard, KeyRound, RefreshCw, Search, Shield, Users } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
@@ -53,6 +53,7 @@ export function AdminUsersPage() {
   const users = useQuery({ queryKey: ['admin-users', q, page, pageSize], queryFn: () => api.adminUsers.list(buildAdminUsersParams({ q, page, pageSize })) })
   const options = useQuery({ queryKey: ['admin-users', 'subscription-options'], queryFn: api.adminUsers.subscriptionOptions })
   const latestJob = useQuery({ queryKey: ['admin-users', 'latest-job'], queryFn: api.adminUsers.latestSubscriptionJob })
+  const me = useQuery({ queryKey: ['auth', 'me'], queryFn: api.auth.me })
   const activeJob = useQuery({
     queryKey: ['admin-users', 'subscription-job', activeJobId],
     queryFn: () => api.adminUsers.subscriptionJob(activeJobId ?? 0),
@@ -148,6 +149,7 @@ export function AdminUsersPage() {
     }
   }, [activeJob.data, qc])
 
+  if (me.data && me.data.role !== 'admin') return <Navigate to='/' />
   if (users.isLoading) return <LoadingState />
 
   return (

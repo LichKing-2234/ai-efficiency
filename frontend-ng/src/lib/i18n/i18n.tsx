@@ -1,7 +1,7 @@
 import i18next from 'i18next'
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import { I18nextProvider, initReactI18next, useTranslation } from 'react-i18next'
-import { defaultLocale, isLocale, messages, type Locale, type MessageKey } from './messages'
+import { defaultLocale, formatMessage, isLocale, messages, type Locale, type MessageKey } from './messages'
 
 const COOKIE_NAME = 'ae.locale'
 const COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 365
@@ -53,8 +53,8 @@ export function I18nProvider({ children }: { children: React.ReactNode }) {
 
 export function useI18n() {
   const { locale, setLocale } = useContext(LocaleContext)
-  const { t: rawT } = useTranslation()
-  const t = (key: MessageKey, values?: Record<string, string | number>) => rawT(key, values)
+  useTranslation()
+  const t = (key: MessageKey, values?: Record<string, string | number>) => formatMessage(locale, key, values)
   const toggleLocale = () => setLocale(locale === 'en-US' ? 'zh-CN' : 'en-US')
   return { locale, setLocale, toggleLocale, t }
 }

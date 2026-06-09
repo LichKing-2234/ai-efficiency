@@ -1,6 +1,6 @@
 import { createFileRoute, redirect } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useNavigate, useSearch } from '@tanstack/react-router'
+import { Navigate, useNavigate, useSearch } from '@tanstack/react-router'
 import { Database, KeyRound, Layers, LockKeyhole, RefreshCw, Shield, Waypoints } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
@@ -20,7 +20,6 @@ import { Page, PageHeader } from '@/components/primitives/page'
 import { LoadingState } from '@/components/primitives/data-state'
 import { StatusBadge } from '@/components/primitives/status-badge'
 import { api } from '@/lib/api'
-import { ensureAuthenticatedUser } from '@/lib/auth/session'
 import { dateTime, number } from '@/lib/format'
 import { useI18n } from '@/lib/i18n/i18n'
 import type { Credential, RelayProvider, SCMProvider } from '@/lib/api/types'
@@ -67,6 +66,7 @@ export function SettingsPage() {
   const credentials = useQuery({ queryKey: ['settings', 'credentials'], queryFn: api.settings.credentials })
   const deployment = useQuery({ queryKey: ['settings', 'deployment'], queryFn: api.settings.deployment })
   const ldap = useQuery({ queryKey: ['settings', 'ldap'], queryFn: api.settings.ldap })
+  const me = useQuery({ queryKey: ['auth', 'me'], queryFn: api.auth.me })
   const checkUpdate = useMutation({
     mutationFn: api.settings.checkUpdate,
     onSuccess: () => qc.invalidateQueries({ queryKey: ['settings', 'deployment'] })
@@ -184,6 +184,7 @@ export function SettingsPage() {
     if (ldap.data) setLDAPForm(buildLDAPForm(ldap.data))
   }, [ldap.data])
 
+  if (me.data && me.data.role !== 'admin') return <Navigate to='/' />
   if (relay.isLoading || scm.isLoading || deployment.isLoading) return <LoadingState />
 
   function selectSection(section: SettingsSection) {
@@ -671,11 +672,4 @@ function SettingsStat({ label, value }: { label: string; value: string }) {
       <div className='mono mt-1 truncate font-semibold text-sm'>{value}</div>
     </div>
   )
-}
-
-export const settingsRouteGuard = async () => {
-  const user = await import('@/query-client').then(({ queryClient }) =>
-    queryClient.fetchQuery({ queryKey: ['auth', 'me'], queryFn: ensureAuthenticatedUser })
-  )
-  if (user.role !== 'admin') throw redirect({ to: '/' })
 }

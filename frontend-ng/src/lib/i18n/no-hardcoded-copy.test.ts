@@ -57,6 +57,7 @@ describe('frontend-ng i18n resources', () => {
   test('formats simple interpolation without leaking braces', () => {
     expect(formatMessage('en-US', 'common.pageCount', { current: 2, total: 5 })).toBe('Page 2 / 5')
     expect(formatMessage('zh-CN', 'common.pageCount', { current: 2, total: 5 })).toBe('第 2 / 5 页')
+    expect(formatMessage('en-US', 'userSetup.groupsReadyShort', { ready: 3, total: 5 })).toBe('3/5 ready')
   })
 
   test('keeps Chinese copy only in the zh-CN resource table', () => {
