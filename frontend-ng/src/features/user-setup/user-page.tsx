@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -14,6 +14,7 @@ import { CommandAccordion } from '@/components/primitives/command-accordion'
 import { CommandStep } from '@/components/primitives/command-step'
 import { ConfirmAction } from '@/components/primitives/confirm-action'
 import { CredentialKeyPanel } from '@/components/primitives/credential-key-panel'
+import { EntityCardHeader } from '@/components/primitives/entity-card-header'
 import { PageEmpty } from '@/components/primitives/page-empty'
 import { Page } from '@/components/primitives/page'
 import { InfoTile } from '@/components/primitives/info-tile'
@@ -183,13 +184,10 @@ export function UserPage() {
         </div>
         <div className='flex flex-col gap-4'>
           <Card>
-            <CardHeader className='gap-4 lg:flex-row lg:items-start lg:justify-between'>
-              <div className='min-w-0'>
-                <CardTitle className='text-base'>{selectedProvider ? selectedProvider.display_name || selectedProvider.name : t('userSetup.aiAccess')}</CardTitle>
-                <CardDescription className='mono mt-1 break-all'>{selectedProvider?.base_url || t('userSetup.noProvider')}</CardDescription>
-              </div>
-              <div className='flex flex-wrap gap-2'>
-                {(selectedProvider?.groups ?? []).map((group) => (
+            <EntityCardHeader
+              title={selectedProvider ? selectedProvider.display_name || selectedProvider.name : t('userSetup.aiAccess')}
+              description={<span className='mono break-all'>{selectedProvider?.base_url || t('userSetup.noProvider')}</span>}
+              actions={(selectedProvider?.groups ?? []).map((group) => (
                   <Button
                     key={group.group_id}
                     size='sm'
@@ -202,8 +200,7 @@ export function UserPage() {
                     {group.group_name}
                   </Button>
                 ))}
-              </div>
-            </CardHeader>
+            />
             <CardContent className='flex flex-col gap-4'>
               {selectedGroup ? (
                 <>

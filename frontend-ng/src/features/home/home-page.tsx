@@ -2,10 +2,11 @@ import { Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowRightIcon, FolderGit2Icon, GitPullRequestIcon, PlugZapIcon, WorkflowIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Ring } from '@/components/primitives/charts'
 import { ChecklistRow } from '@/components/primitives/checklist-row'
+import { EntityCardHeader } from '@/components/primitives/entity-card-header'
 import { MetricCard } from '@/components/primitives/metric-card'
 import { Page } from '@/components/primitives/page'
 import { SectionCardHeader } from '@/components/primitives/section-card-header'
@@ -101,22 +102,18 @@ export function HomePage() {
 
       <div className='split-2'>
         <Card>
-          <CardHeader className='flex-row items-center gap-4'>
-            <Ring color='var(--ai)' size={66} stroke={7} value={setupProgress.ratio}>
+          <EntityCardHeader
+            leading={<Ring color='var(--ai)' size={66} stroke={7} value={setupProgress.ratio}>
               <div className='text-center'>
                 <div className='font-bold text-base leading-none tnum'>
                   {setupProgress.ready}
                   <span className='text-[11px] text-[var(--ink-3)]'>/{setupProgress.total}</span>
                 </div>
               </div>
-            </Ring>
-            <div className='min-w-0'>
-              <CardTitle>{t('home.setupStatus')}</CardTitle>
-              <div className='mt-1 text-muted-foreground text-xs'>
-                {setupProgress.ready === setupProgress.total ? t('home.statusReady') : t('home.statusWaitingEvents')}
-              </div>
-            </div>
-          </CardHeader>
+            </Ring>}
+            title={t('home.setupStatus')}
+            description={setupProgress.ready === setupProgress.total ? t('home.statusReady') : t('home.statusWaitingEvents')}
+          />
           <CardContent className='flex flex-col gap-3'>
             <StatusLine label={t('home.statusAccount')} value={t('home.statusReady')} ok />
             <StatusLine label={t('home.statusAiAccess')} value={connectedTools.size ? t('home.statusAiAccessReady') : t('home.statusAiAccessMissing')} ok={connectedTools.size > 0} to='/user' />

@@ -5,7 +5,7 @@ import { Fragment, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Field, FieldLabel } from '@/components/ui/field'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -13,6 +13,7 @@ import { Badge } from '@/components/ui/badge'
 import { ActionGroup } from '@/components/primitives/action-group'
 import { CardPagerFooter } from '@/components/primitives/card-pager-footer'
 import { DataGrid, DataGridHeader, DataGridRow } from '@/components/primitives/data-grid'
+import { EntityCardHeader } from '@/components/primitives/entity-card-header'
 import { InfoTile } from '@/components/primitives/info-tile'
 import { InsetPanel } from '@/components/primitives/inset-panel'
 import { MetricCard } from '@/components/primitives/metric-card'
@@ -257,36 +258,38 @@ export function RepoDetailPage() {
         </CardContent>
       </Card>
       <Card className='overflow-hidden'>
-        <CardHeader className='flex-row flex-wrap items-center justify-between gap-3'>
-          <CardTitle>{t('repoDetail.pullRequests')}</CardTitle>
-          <div className='flex flex-wrap items-center gap-2 text-sm'>
-            <span className='text-muted-foreground'>{t('repoDetail.mergedIn')}</span>
-            <Select value={String(prsMonths)} onValueChange={(value) => {
-              setPRsMonths(Number(value))
-              setPRsPage(0)
-            }}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value='1'>1</SelectItem>
-                <SelectItem value='3'>3</SelectItem>
-                <SelectItem value='6'>6</SelectItem>
-                <SelectItem value='12'>12</SelectItem>
-                <SelectItem value='0'>{t('common.allTime')}</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={String(prsPageSize)} onValueChange={(value) => {
-              setPRsPageSize(Number(value))
-              setPRsPage(0)
-            }}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value='10'>{t('common.pageSize', { size: 10 })}</SelectItem>
-                <SelectItem value='25'>{t('common.pageSize', { size: 25 })}</SelectItem>
-                <SelectItem value='50'>{t('common.pageSize', { size: 50 })}</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </CardHeader>
+        <EntityCardHeader
+          title={t('repoDetail.pullRequests')}
+          actions={(
+            <div className='flex flex-wrap items-center gap-2 text-sm'>
+              <span className='text-muted-foreground'>{t('repoDetail.mergedIn')}</span>
+              <Select value={String(prsMonths)} onValueChange={(value) => {
+                setPRsMonths(Number(value))
+                setPRsPage(0)
+              }}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value='1'>1</SelectItem>
+                  <SelectItem value='3'>3</SelectItem>
+                  <SelectItem value='6'>6</SelectItem>
+                  <SelectItem value='12'>12</SelectItem>
+                  <SelectItem value='0'>{t('common.allTime')}</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={String(prsPageSize)} onValueChange={(value) => {
+                setPRsPageSize(Number(value))
+                setPRsPage(0)
+              }}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value='10'>{t('common.pageSize', { size: 10 })}</SelectItem>
+                  <SelectItem value='25'>{t('common.pageSize', { size: 25 })}</SelectItem>
+                  <SelectItem value='50'>{t('common.pageSize', { size: 50 })}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+        />
         <DataGrid minWidth={1180}>
           <DataGridHeader columns={prColumns}>
             <span>{t('repoDetail.prColumn')}</span>
