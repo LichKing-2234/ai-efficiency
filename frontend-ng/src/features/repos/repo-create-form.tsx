@@ -1,5 +1,5 @@
 import { Button } from '@/components/ui/button'
-import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
+import { FieldGroup } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { ActionGroup } from '@/components/primitives/action-group'
 import { AppAlert } from '@/components/primitives/app-alert'
@@ -7,6 +7,7 @@ import { FieldItem, FieldList } from '@/components/primitives/field-list'
 import { InsetPanel } from '@/components/primitives/inset-panel'
 import { LabeledSegmentedControl } from '@/components/primitives/labeled-segmented-control'
 import { SelectField } from '@/components/primitives/select-field'
+import { TextField } from '@/components/primitives/text-field'
 import type { SCMProvider } from '@/lib/api/types'
 import type { ParsedRepoUrl, RepoCloneProtocol } from './repos-state'
 
@@ -77,15 +78,13 @@ export function RepoCreateForm({
         value={selectedProviderId}
         onValueChange={onSelectedProviderIdChange}
       />
-      <Field>
-        <FieldLabel htmlFor='repo-create-url'>{labels.repoUrl}</FieldLabel>
-        <Input
-          id='repo-create-url'
-          placeholder={labels.repoUrlPlaceholder}
-          value={repoUrl}
-          onChange={(event) => onRepoUrlChange(event.target.value)}
-        />
-      </Field>
+      <TextField
+        id='repo-create-url'
+        label={labels.repoUrl}
+        placeholder={labels.repoUrlPlaceholder}
+        value={repoUrl}
+        onChange={onRepoUrlChange}
+      />
       {parsedRepo ? (
         <InsetPanel className='flex flex-col gap-3 text-sm'>
           <FieldList>
@@ -103,29 +102,20 @@ export function RepoCreateForm({
             value={cloneProtocol}
           />
           {cloneProtocol === 'ssh' && parsedRepo.type === 'bitbucket' ? (
-            <Field>
-              <FieldLabel htmlFor='repo-create-ssh-host'>{labels.sshHostExample}</FieldLabel>
-              <Input
-                id='repo-create-ssh-host'
-                placeholder={labels.sshHostExample}
-                value={sshHost}
-                onChange={(event) => onSshHostChange(event.target.value)}
-              />
-            </Field>
+            <TextField
+              id='repo-create-ssh-host'
+              label={labels.sshHostExample}
+              placeholder={labels.sshHostExample}
+              value={sshHost}
+              onChange={onSshHostChange}
+            />
           ) : null}
           <Input className='font-mono text-xs' value={previewCloneUrl} readOnly />
         </InsetPanel>
       ) : repoUrl ? (
         <AppAlert tone='warning' title={labels.enterRepoUrl} />
       ) : null}
-      <Field>
-        <FieldLabel htmlFor='repo-create-default-branch'>{labels.defaultBranch}</FieldLabel>
-        <Input
-          id='repo-create-default-branch'
-          value={defaultBranch}
-          onChange={(event) => onDefaultBranchChange(event.target.value)}
-        />
-      </Field>
+      <TextField id='repo-create-default-branch' label={labels.defaultBranch} value={defaultBranch} onChange={onDefaultBranchChange} />
       {addError ? <AppAlert tone='error' title={addError} /> : null}
       <ActionGroup>
         <Button variant='outline' onClick={onCancel}>{labels.cancel}</Button>

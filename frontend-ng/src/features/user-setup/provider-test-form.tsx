@@ -1,13 +1,12 @@
 import { Zap } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
-import { Input } from '@/components/ui/input'
-import { Textarea } from '@/components/ui/textarea'
+import { FieldGroup } from '@/components/ui/field'
 import { ActionGroup } from '@/components/primitives/action-group'
 import { AppAlert } from '@/components/primitives/app-alert'
 import { InsetPanel } from '@/components/primitives/inset-panel'
 import { SelectField } from '@/components/primitives/select-field'
+import { TextField } from '@/components/primitives/text-field'
 import { modelLabel } from './user-setup-state'
 import type { UserProviderModel, UserProviderTestResult } from '@/lib/api/types'
 
@@ -69,27 +68,19 @@ export function ProviderTestForm({
             onValueChange={onModelChange}
           />
         ) : (
-          <Field>
-            <FieldLabel htmlFor='provider-test-model'>{labels.model}</FieldLabel>
-            <Input
-              id='provider-test-model'
-              value={model}
-              placeholder={loadingModels ? labels.loadingModels : modelFallbackPlaceholder}
-              onChange={(event) => onModelChange(event.target.value)}
-            />
-          </Field>
+          <TextField
+            id='provider-test-model'
+            label={labels.model}
+            placeholder={loadingModels ? labels.loadingModels : modelFallbackPlaceholder}
+            value={model}
+            onChange={onModelChange}
+          />
         )}
-        <Field>
-          <FieldLabel htmlFor='provider-test-platform'>{labels.platform}</FieldLabel>
-          <Input id='provider-test-platform' value={platform} disabled />
-        </Field>
+        <TextField id='provider-test-platform' label={labels.platform} value={platform} disabled />
       </div>
       {message ? <div className='text-muted-foreground text-sm'>{message}</div> : null}
       {error ? <AppAlert tone='error' title={error} /> : null}
-      <Field>
-        <FieldLabel htmlFor='provider-test-prompt'>{labels.prompt}</FieldLabel>
-        <Textarea id='provider-test-prompt' value={prompt} onChange={(event) => onPromptChange(event.target.value)} />
-      </Field>
+      <TextField id='provider-test-prompt' label={labels.prompt} multiline value={prompt} onChange={onPromptChange} />
       <ActionGroup wrap className='justify-start'>
         <Button disabled={!canRun || running} onClick={onRun}>
           <Zap data-icon='inline-start' />

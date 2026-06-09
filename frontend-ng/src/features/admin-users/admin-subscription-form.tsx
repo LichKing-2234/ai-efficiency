@@ -1,9 +1,9 @@
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
-import { Input } from '@/components/ui/input'
 import { ActionGroup } from '@/components/primitives/action-group'
 import { SelectField } from '@/components/primitives/select-field'
+import { TextField } from '@/components/primitives/text-field'
 import type {
   AdminAssignableSubscriptionGroup,
   AdminAssignableSubscriptionProvider,
@@ -119,17 +119,14 @@ export function AdminSubscriptionForm({
           onValueChange={onGroupChange}
         />
         {operation !== 'remove' ? (
-          <Field>
-            <FieldLabel htmlFor='admin-subscription-days'>{labels.days}</FieldLabel>
-            <Input
-              id='admin-subscription-days'
-              type='number'
-              min={1}
-              value={String(days)}
-              disabled={activeJobRunning}
-              onChange={(event) => onDaysChange(Number(event.target.value) || 0)}
-            />
-          </Field>
+          <TextField
+            disabled={activeJobRunning}
+            id='admin-subscription-days'
+            label={labels.days}
+            type='number'
+            value={String(days)}
+            onChange={(value) => onDaysChange(Number(value) || 0)}
+          />
         ) : (
           <Field orientation='horizontal' className='min-h-14 items-end pb-1'>
             <Checkbox checked={confirmRemove} disabled={activeJobRunning} onCheckedChange={(value) => onConfirmRemoveChange(value === true)} />

@@ -1,8 +1,8 @@
 import { Button } from '@/components/ui/button'
-import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
-import { Input } from '@/components/ui/input'
+import { FieldGroup } from '@/components/ui/field'
 import { AppAlert } from '@/components/primitives/app-alert'
 import { SelectField } from '@/components/primitives/select-field'
+import { TextField } from '@/components/primitives/text-field'
 import { useI18n } from '@/lib/i18n/i18n'
 import type { AuthOptions } from '@/lib/api/types'
 
@@ -39,23 +39,8 @@ export function LoginForm({
       }}
     >
       <FieldGroup>
-        <Field>
-          <FieldLabel htmlFor='login-username'>{t('auth.usernameOrEmail')}</FieldLabel>
-          <Input
-            id='login-username'
-            value={username}
-            onChange={(event) => onUsernameChange(event.target.value)}
-          />
-        </Field>
-        <Field>
-          <FieldLabel htmlFor='login-password'>{t('auth.password')}</FieldLabel>
-          <Input
-            id='login-password'
-            type='password'
-            value={password}
-            onChange={(event) => onPasswordChange(event.target.value)}
-          />
-        </Field>
+        <TextField id='login-username' label={t('auth.usernameOrEmail')} value={username} onChange={onUsernameChange} />
+        <TextField id='login-password' label={t('auth.password')} type='password' value={password} onChange={onPasswordChange} />
         <SelectField
           id='login-source'
           label={t('auth.loginSource')}

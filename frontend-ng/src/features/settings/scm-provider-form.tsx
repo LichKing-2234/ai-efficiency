@@ -1,10 +1,10 @@
 import { Button } from '@/components/ui/button'
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
-import { Input } from '@/components/ui/input'
 import { ActionGroup } from '@/components/primitives/action-group'
 import { AppAlert } from '@/components/primitives/app-alert'
 import { LabeledSegmentedControl } from '@/components/primitives/labeled-segmented-control'
 import { SelectField } from '@/components/primitives/select-field'
+import { TextField } from '@/components/primitives/text-field'
 import type { Credential } from '@/lib/api/types'
 import { useI18n } from '@/lib/i18n/i18n'
 import type { ScmFormState } from './settings-payloads'
@@ -35,14 +35,7 @@ export function ScmProviderForm({
 
   return (
     <FieldGroup>
-      <Field>
-        <FieldLabel htmlFor='scm-name'>{t('settings.name')}</FieldLabel>
-        <Input
-          id='scm-name'
-          value={form.name}
-          onChange={(event) => onChange({ ...form, name: event.target.value })}
-        />
-      </Field>
+      <TextField id='scm-name' label={t('settings.name')} value={form.name} onChange={(name) => onChange({ ...form, name })} />
       <Field data-disabled={editMode ? true : undefined}>
         <FieldLabel>{t('settings.codePlatforms')}</FieldLabel>
         <LabeledSegmentedControl
@@ -58,14 +51,7 @@ export function ScmProviderForm({
           value={form.type}
         />
       </Field>
-      <Field>
-        <FieldLabel htmlFor='scm-base-url'>{t('settings.baseUrl')}</FieldLabel>
-        <Input
-          id='scm-base-url'
-          value={form.base_url}
-          onChange={(event) => onChange({ ...form, base_url: event.target.value })}
-        />
-      </Field>
+      <TextField id='scm-base-url' label={t('settings.baseUrl')} value={form.base_url} onChange={(base_url) => onChange({ ...form, base_url })} />
       <SelectField
         id='scm-api-credential'
         label={t('settings.apiCredential')}
@@ -92,14 +78,7 @@ export function ScmProviderForm({
       </Field>
       {form.clone_protocol === 'ssh' ? (
         <>
-          <Field>
-            <FieldLabel htmlFor='scm-ssh-host'>{t('settings.sshHost')}</FieldLabel>
-            <Input
-              id='scm-ssh-host'
-              value={form.ssh_host}
-              onChange={(event) => onChange({ ...form, ssh_host: event.target.value })}
-            />
-          </Field>
+          <TextField id='scm-ssh-host' label={t('settings.sshHost')} value={form.ssh_host} onChange={(ssh_host) => onChange({ ...form, ssh_host })} />
           <SelectField
             id='scm-clone-credential'
             label={t('settings.cloneCredential')}
