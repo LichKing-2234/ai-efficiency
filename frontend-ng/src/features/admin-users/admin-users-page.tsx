@@ -5,11 +5,10 @@ import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
-import { Checkbox } from '@/components/ui/checkbox'
 import { AppAlert } from '@/components/primitives/app-alert'
 import { CardFilterBar } from '@/components/primitives/card-filter-bar'
+import { DataGridCheckbox } from '@/components/primitives/data-grid-checkbox'
 import { CardPagerFooter } from '@/components/primitives/card-pager-footer'
 import { DataGrid, DataGridHeader, DataGridRow } from '@/components/primitives/data-grid'
 import { IdentityAvatar } from '@/components/primitives/identity-avatar'
@@ -271,9 +270,10 @@ export function AdminUsersPage() {
         <DataGrid minWidth={1100}>
           <DataGridHeader columns={tableColumns}>
             <span>
-              <Checkbox
+              <DataGridCheckbox
+                ariaLabel={t('adminUsers.selectVisibleUsers')}
                 checked={visibleSelectionIndeterminate ? 'indeterminate' : allVisibleSelected}
-                onCheckedChange={(checked) => setSelected((value) => nextVisibleSelection(value, rows, checked === true))}
+                onCheckedChange={(checked) => setSelected((value) => nextVisibleSelection(value, rows, checked))}
               />
             </span>
             <span>{t('adminUsers.user')}</span>
@@ -286,9 +286,10 @@ export function AdminUsersPage() {
           {rows.map((user) => (
             <DataGridRow key={user.id} columns={tableColumns}>
               <span>
-                <Checkbox
+                <DataGridCheckbox
+                  ariaLabel={t('adminUsers.selectUser', { user: user.username || user.email })}
                   checked={selected.includes(user.id)}
-                  onCheckedChange={(checked) => setSelected((value) => checked === true ? [...value, user.id] : value.filter((id) => id !== user.id))}
+                  onCheckedChange={(checked) => setSelected((value) => checked ? [...value, user.id] : value.filter((id) => id !== user.id))}
                 />
               </span>
               <span className='flex min-w-0 items-center gap-3'>
