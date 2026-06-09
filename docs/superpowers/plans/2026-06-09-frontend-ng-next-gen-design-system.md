@@ -207,7 +207,7 @@ In progress. The first foundation pass is implemented and verified: global token
 
   Re-skin SCM binding, usage snapshots, webhook status, and PR sync panels with shared cards/tables.
 
-- [ ] **Step 4: My Setup**
+- [x] **Step 4: My Setup**
 
   Re-skin provider credential setup, status/progress, and key actions with shared field/card primitives.
 
