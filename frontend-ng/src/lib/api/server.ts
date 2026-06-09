@@ -52,7 +52,18 @@ export async function proxyOAuthRequest(request: Request, path: string) {
 
 async function proxyWithRefresh(request: Request, path: string) {
   const tokens = readAppTokens(request)
-  const first = await forwardToBackend(request, path, tokens?.accessToken)
+  let accessToken = tokens?.accessToken
+  let pendingTokens = null as Awaited<ReturnType<typeof refreshTokens>>
+  if (!accessToken && tokens?.refreshToken) {
+    pendingTokens = await refreshTokens(request, tokens.refreshToken)
+    accessToken = pendingTokens?.accessToken
+  }
+  const first = await forwardToBackend(request, path, accessToken)
+  if (pendingTokens && first.status !== 401) {
+    const headers = new Headers(first.headers)
+    appendTokenCookies(headers, pendingTokens, request)
+    return new Response(first.body, { status: first.status, statusText: first.statusText, headers })
+  }
   if (first.status !== 401 || path.includes('/auth/refresh')) {
     return first
   }

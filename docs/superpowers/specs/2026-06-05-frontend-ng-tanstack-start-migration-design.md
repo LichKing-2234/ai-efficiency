@@ -1,7 +1,7 @@
 # Frontend-NG TanStack Start Migration Design
 
 **Date:** 2026-06-05
-**Status:** Implementation aligned with current `main` frontend capabilities in `frontend-ng/`; production cutover, backend gateway-exchange follow-through, and local one-time handoff remain incomplete
+**Status:** Implementation aligned with current `main` frontend capabilities in `frontend-ng/`; production cutover and backend gateway-exchange follow-through remain incomplete
 **Scope:** `frontend-ng/`, future frontend deployment, future gateway-aware browser auth, future frontend API proxy
 **Related:**
 - [2026-03-24-oauth-cli-login-design.md](./2026-03-24-oauth-cli-login-design.md)
@@ -293,22 +293,19 @@ Localdev must work without weakening the production auth model.
 
 ### Handoff
 
-Use a one-time code handoff rather than copying gateway cookies or token payloads through URL query parameters:
+Use a frontend-owned app-token handoff rather than copying gateway cookies:
 
 1. Developer opens an online frontend route such as `/api/local?target=http://localhost:3000`.
-2. Gateway-authenticated online TanStack server creates a short-lived, one-time handoff code.
-3. Online server redirects to `http://localhost:3000/api/local/callback?code=...&state=...`.
-4. Local TanStack server redeems the code server-to-server.
-5. Redeem returns Go app tokens or triggers a gateway-exchange-backed token issuance.
-6. Local TanStack server writes localhost HttpOnly app cookies.
-7. Local browser uses `localhost:3000/api/v1/*` and local TanStack proxy forwards to the configured backend.
+2. Gateway-authenticated online TanStack server reads the current Go-issued app token cookies.
+3. Online server redirects to `http://localhost:3000/api/local/callback?access_token=...&refresh_token=...`.
+4. Local TanStack server writes localhost HttpOnly app cookies.
+5. Local browser uses `localhost:3000/api/v1/*` and local TanStack proxy forwards to the configured backend.
 
 Handoff constraints:
 
 - Do not serialize gateway cookie values into query parameters.
 - Do not store gateway raw tokens on localhost.
-- Code TTL should be short, around 60 seconds.
-- Code must be single use.
+- Only Go-issued app tokens are transferred.
 - `target` must be validated against allowed localhost origins.
 
 ### Backend Target
@@ -397,7 +394,7 @@ As of the `frontend-ng` mainline alignment work on 2026-06-09:
 - Browser data calls go through same-origin `/api/*`; browser code does not store tokens in `localStorage` and does not attach Bearer tokens.
 - TanStack server-side API routes implement app-token HttpOnly cookies, login/dev-login/logout/bootstrap, coarse `/api/v1/*` proxy allowlisting, and refresh retry.
 - Gateway bootstrap is wired through a server-side `gateway-exchange` call path, but the Go backend endpoint and deployment gateway header contract still need backend/deploy follow-through before production cutover.
-- Local handoff routes exist as guarded skeletons; actual one-time code issuance/redeem remains intentionally incomplete until backend support exists.
+- Local handoff routes now support a pragmatic development transfer: an authenticated online `GET /api/local?target=http://127.0.0.1:4317` redirects to the local callback with app tokens, and the local TanStack server writes localhost-scoped HttpOnly app cookies. This copies Go-issued app tokens only; it does not copy gateway cookies or gateway tokens.
 - First-pass route migration exists for `/login`, `/oauth/authorize`, `/oauth/device`, `/`, `/repos`, `/repos/:id`, `/events`, `/user`, `/admin/users`, and `/settings`.
 - React i18n is now installed through `i18next` / `react-i18next`, locale preference is stored in the `ae.locale` cookie, and a regression guard enforces locale key parity, prevents Chinese copy outside the zh-CN resource table, and blocks page-level visible English copy outside message resources except for explicit product/protocol literals.
 - Existing pages now use shadcn primitives for alerts, confirmation dialogs, empty states, selects, checkboxes, accordion sections, tables, and cards instead of browser-native selects/details/confirm flows.
@@ -418,7 +415,7 @@ As of the `frontend-ng` mainline alignment work on 2026-06-09:
 3. Browser JS cannot read access or refresh tokens.
 4. TanStack server can bootstrap app auth from gateway identity and set app cookies.
 5. `gateway-exchange` maps users by email, preserves backend-owned role, sets `gateway_oauth` auth source, and ensures relay identity before issuing app tokens.
-6. Localdev can obtain app cookies through one-time handoff and proxy API requests to configured backend. Current status: frontend route skeletons remain explicit placeholders until backend one-time handoff support is implemented.
+6. Localdev can obtain app cookies through frontend-owned local handoff and proxy API requests to the configured backend.
 7. `ae-cli` direct Go backend auth/OAuth/token flows continue to work.
 8. `/user` remains the user setup and provider/group credential self-serve surface; it is not reduced to a profile page.
 9. `/admin/users` preserves job-based subscription management and separate relay password reveal behavior.

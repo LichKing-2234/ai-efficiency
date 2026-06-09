@@ -30,7 +30,9 @@ AE_FRONTEND_BACKEND_URL=http://localhost:8081
 
 ## Local Handoff
 
-`GET /api/local` and `GET /api/local/callback` are wired as frontend-owned localdev handoff entry points. They currently return `501` until the Go backend exposes one-time handoff code issuance/redeem APIs. The implementation intentionally rejects non-localhost targets and does not copy gateway cookies or gateway tokens to localhost.
+`GET /api/local?target=http://127.0.0.1:4317` redirects an active online app session to the local frontend callback. The callback writes localhost-scoped HttpOnly app cookies and redirects to `/`.
+
+The handoff only accepts localhost targets. It copies Go-issued app tokens, not gateway cookies or gateway tokens.
 
 ## Verification
 

@@ -4,37 +4,44 @@ export const ACCESS_COOKIE = 'ae_app_access'
 export const REFRESH_COOKIE = 'ae_app_refresh'
 
 export interface AppTokens {
-  accessToken: string
+  accessToken?: string
   refreshToken?: string
 }
 
 function isProductionRequest(request: Request) {
   const url = new URL(request.url)
+  const forwardedProto = request.headers.get('x-forwarded-proto')?.split(',')[0]?.trim().toLowerCase()
+  if (forwardedProto === 'https') return true
+  const forwarded = request.headers.get('forwarded')?.toLowerCase()
+  if (forwarded?.split(';').some((part) => part.trim() === 'proto=https')) return true
   return url.protocol === 'https:' && !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)
 }
 
 export function readAppTokens(request: Request): AppTokens | null {
   const cookies = parse(request.headers.get('cookie') ?? '')
   const accessToken = cookies[ACCESS_COOKIE]
-  if (!accessToken) return null
+  const refreshToken = cookies[REFRESH_COOKIE]
+  if (!accessToken && !refreshToken) return null
   return {
     accessToken,
-    refreshToken: cookies[REFRESH_COOKIE]
+    refreshToken
   }
 }
 
 export function appendTokenCookies(headers: Headers, tokens: AppTokens, request: Request) {
   const secure = isProductionRequest(request)
-  headers.append(
-    'Set-Cookie',
-    serialize(ACCESS_COOKIE, tokens.accessToken, {
-      httpOnly: true,
-      secure,
-      sameSite: 'lax',
-      path: '/',
-      maxAge: 60 * 60 * 2
-    })
-  )
+  if (tokens.accessToken) {
+    headers.append(
+      'Set-Cookie',
+      serialize(ACCESS_COOKIE, tokens.accessToken, {
+        httpOnly: true,
+        secure,
+        sameSite: 'lax',
+        path: '/',
+        maxAge: 60 * 60 * 2
+      })
+    )
+  }
   if (tokens.refreshToken) {
     headers.append(
       'Set-Cookie',
