@@ -476,6 +476,7 @@ function AddRepoDialog({
     enterRepoUrl: t('repos.enterRepoUrl'),
     fullName: t('repos.fullName'),
     noMatchingProvider: t('repos.noMatchingProvider'),
+    previewCloneUrl: t('repos.previewCloneUrl'),
     provider: t('repos.provider'),
     repoUrl: t('repos.repoUrl'),
     repoUrlPlaceholder: t('repos.repoUrlPlaceholder'),

@@ -1,6 +1,5 @@
 import { Button } from '@/components/ui/button'
 import { FieldGroup } from '@/components/ui/field'
-import { Input } from '@/components/ui/input'
 import { ActionGroup } from '@/components/primitives/action-group'
 import { AppAlert } from '@/components/primitives/app-alert'
 import { FieldItem, FieldList } from '@/components/primitives/field-list'
@@ -20,6 +19,7 @@ export interface RepoCreateFormLabels {
   fullName: string
   noMatchingProvider: string
   provider: string
+  previewCloneUrl: string
   repoUrl: string
   repoUrlPlaceholder: string
   selectScmProvider: string
@@ -110,7 +110,13 @@ export function RepoCreateForm({
               onChange={onSshHostChange}
             />
           ) : null}
-          <Input className='font-mono text-xs' value={previewCloneUrl} readOnly />
+          <TextField
+            controlClassName='font-mono text-xs'
+            id='repo-create-preview-clone-url'
+            label={labels.previewCloneUrl}
+            readOnly
+            value={previewCloneUrl}
+          />
         </InsetPanel>
       ) : repoUrl ? (
         <AppAlert tone='warning' title={labels.enterRepoUrl} />

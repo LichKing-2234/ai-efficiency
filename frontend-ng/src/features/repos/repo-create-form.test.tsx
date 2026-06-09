@@ -45,6 +45,7 @@ describe('RepoCreateForm', () => {
     expect(html).toContain('data-slot="field-group"')
     expect(html).toContain('for="repo-create-provider"')
     expect(html).toContain('for="repo-create-url"')
+    expect(html).toContain('for="repo-create-preview-clone-url"')
     expect(html).toContain('for="repo-create-default-branch"')
     expect(html).toContain('data-slot="action-group"')
     expect(html).toContain('PROJ/service')
@@ -89,6 +90,7 @@ function labels() {
     enterRepoUrl: 'Enter a repository URL.',
     fullName: 'Full name',
     noMatchingProvider: 'No matching provider',
+    previewCloneUrl: 'Preview clone URL',
     provider: 'Provider',
     repoUrl: 'Repository URL',
     repoUrlPlaceholder: 'https://github.com/org/repo',
