@@ -183,6 +183,83 @@ func TestHandleBitbucketPushEvent(t *testing.T) {
 	}
 }
 
+func TestHandleBitbucketRefsChangedDeleteMatchesRepoByPayloadIdentity(t *testing.T) {
+	client := newTestClient(t)
+	defer client.Close()
+	h := NewHandler(client, nil, newTestLogger())
+
+	ctx := context.Background()
+	provider, err := client.ScmProvider.Create().
+		SetName("bitbucket").
+		SetType(scmprovider.TypeBitbucketServer).
+		SetBaseURL("https://bitbucket.example.com").
+		SetCredentials("test-token").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	_, err = client.RepoConfig.Create().
+		SetName("build_script_repo").
+		SetFullName("sdk/build_script_repo").
+		SetCloneURL("https://bitbucket.example.com/scm/sdk/build_script_repo.git").
+		SetWebhookSecret("test-secret").
+		SetScmProviderID(provider.ID).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create repo: %v", err)
+	}
+
+	payload := map[string]interface{}{
+		"eventKey": "repo:refs_changed",
+		"actor":    map[string]interface{}{"name": "automation-user"},
+		"repository": map[string]interface{}{
+			"slug": "build_script_repo",
+			"project": map[string]interface{}{
+				"key": "SDK",
+			},
+			"links": map[string]interface{}{
+				"clone": []map[string]string{
+					{"href": "https://bitbucket.example.com/scm/sdk/build_script_repo.git", "name": "http"},
+					{"href": "ssh://git@git.example.com/sdk/build_script_repo.git", "name": "ssh"},
+				},
+				"self": []map[string]string{
+					{"href": "https://bitbucket.example.com/projects/SDK/repos/build_script_repo/browse"},
+				},
+			},
+		},
+		"changes": []map[string]interface{}{
+			{
+				"ref": map[string]interface{}{
+					"id":        "refs/heads/feature/release-cleanup",
+					"displayId": "feature/release-cleanup",
+					"type":      "BRANCH",
+				},
+				"refId":    "refs/heads/feature/release-cleanup",
+				"fromHash": "1111111111111111111111111111111111111111",
+				"toHash":   "0000000000000000000000000000000000000000",
+				"type":     "DELETE",
+			},
+		},
+	}
+	payloadBytes, _ := json.Marshal(payload)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/bitbucket", bytes.NewReader(payloadBytes))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Event-Key", "repo:refs_changed")
+	req.Header.Set("X-Hub-Signature", signBitbucketWebhookTestBody(payloadBytes, "test-secret"))
+	c := newGinContext(w, req)
+
+	h.HandleBitbucket(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("refs_changed delete status = %d, want 200: %s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "processed") {
+		t.Fatalf("response = %q, want processed", w.Body.String())
+	}
+}
+
 // --- HandleGitHub: full PR opened flow with known repo ---
 
 func TestHandleGitHubPROpenedFullFlow(t *testing.T) {
