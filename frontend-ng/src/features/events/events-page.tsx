@@ -17,6 +17,7 @@ import { Page } from '@/components/primitives/page'
 import { LoadingState } from '@/components/primitives/data-state'
 import { SegmentedControl } from '@/components/primitives/segmented-control'
 import { SearchField } from '@/components/primitives/search-field'
+import { SectionEyebrow } from '@/components/primitives/section-eyebrow'
 import { SlideOver } from '@/components/primitives/slide-over'
 import { ToolGlyph } from '@/components/primitives/tool-glyph'
 import { api } from '@/lib/api'
@@ -309,7 +310,7 @@ function EventDetail({ event, isAdmin, onClose }: { event: ToolUsageEventDetail 
           </div>
 
           <section>
-            <SectionLabel>{t('events.tokenBreakdown')}</SectionLabel>
+            <SectionEyebrow>{t('events.tokenBreakdown')}</SectionEyebrow>
             <div className='mb-3 flex h-2.5 overflow-hidden rounded-full bg-[var(--surface-inset)]'>
               {tokenBreakdown.map((item) => (
                 <span
@@ -331,7 +332,7 @@ function EventDetail({ event, isAdmin, onClose }: { event: ToolUsageEventDetail 
           </section>
 
           <section>
-            <SectionLabel>{t('events.session')}</SectionLabel>
+            <SectionEyebrow>{t('events.session')}</SectionEyebrow>
             <FieldList>
               <FieldItem label={t('events.observedStart')} value={dateTime(event.observed_start_at)} />
               <FieldItem label={t('events.observedEnd')} value={dateTime(event.observed_end_at)} />
@@ -342,7 +343,7 @@ function EventDetail({ event, isAdmin, onClose }: { event: ToolUsageEventDetail 
           </section>
 
           <section>
-            <SectionLabel>{t('events.matchedPrs')}</SectionLabel>
+            <SectionEyebrow>{t('events.matchedPrs')}</SectionEyebrow>
             {event.matched_prs.length > 0 ? (
               <div className='flex flex-col gap-2'>
                 {event.matched_prs.map((pr) => (
@@ -380,8 +381,4 @@ function EventDetail({ event, isAdmin, onClose }: { event: ToolUsageEventDetail 
       ) : null}
     </SlideOver>
   )
-}
-
-function SectionLabel({ children }: { children: React.ReactNode }) {
-  return <div className='mb-2.5 font-bold text-[11px] text-[var(--ink-4)] uppercase tracking-[0.06em]'>{children}</div>
 }
