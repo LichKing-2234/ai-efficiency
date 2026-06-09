@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { AppAlert } from '@/components/primitives/app-alert'
 import { api } from '@/lib/api'
 import { safeRedirect, selectInitialLoginSource } from './auth-flow-state'
 
@@ -44,15 +46,14 @@ export function LoginPage() {
           >
             <Input placeholder='Username or email' value={username} onChange={(event) => setUsername(event.target.value)} />
             <Input placeholder='Password' type='password' value={password} onChange={(event) => setPassword(event.target.value)} />
-            <select
-              className='h-8 rounded-md border border-input bg-card px-3 text-sm'
-              value={source}
-              onChange={(event) => setSource(event.target.value)}
-            >
-              {options.data?.ldap_enabled ? <option value='LDAP'>LDAP</option> : null}
-              <option value='SSO'>Relay SSO</option>
-            </select>
-            {login.error ? <div className='text-[var(--ae-warn)] text-sm'>{login.error.message}</div> : null}
+            <Select value={source} onValueChange={setSource}>
+              <SelectTrigger className='w-full'><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {options.data?.ldap_enabled ? <SelectItem value='LDAP'>LDAP</SelectItem> : null}
+                <SelectItem value='SSO'>Relay SSO</SelectItem>
+              </SelectContent>
+            </Select>
+            {login.error ? <AppAlert tone='error' title={login.error.message} /> : null}
             <Button disabled={!username || !password || login.isPending}>
               {login.isPending ? 'Signing in...' : 'Sign in'}
             </Button>

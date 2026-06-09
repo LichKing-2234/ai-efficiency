@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { MetricCard } from '@/components/primitives/metric-card'
+import { AppAlert } from '@/components/primitives/app-alert'
 import { Page, PageHeader } from '@/components/primitives/page'
 import { LoadingState } from '@/components/primitives/data-state'
 import { StatusBadge } from '@/components/primitives/status-badge'
@@ -508,10 +509,10 @@ function AddRepoDialog({
               <Input className='mt-2 font-mono text-xs' value={previewCloneUrl} readOnly />
             </div>
           ) : repoUrl ? (
-            <div className='text-[var(--ae-warn)] text-sm'>Enter a GitHub repo URL or Bitbucket Server browse URL.</div>
+            <AppAlert tone='warning' title='Enter a GitHub repo URL or Bitbucket Server browse URL.' />
           ) : null}
           <Input placeholder='Default branch' value={defaultBranch} onChange={(event) => setDefaultBranch(event.target.value)} />
-          {addError ? <div className='text-[var(--ae-warn)] text-sm'>{addError}</div> : null}
+          {addError ? <AppAlert tone='error' title={addError} /> : null}
           <div className='flex justify-end gap-2'>
             <Button variant='outline' onClick={() => setOpen(false)}>{t('common.cancel')}</Button>
             <Button disabled={!selectedProviderId || !parsedRepo || createPending} onClick={createRepo}>{t('common.create')}</Button>

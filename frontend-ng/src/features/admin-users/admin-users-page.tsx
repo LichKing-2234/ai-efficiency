@@ -7,6 +7,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Field, FieldLabel } from '@/components/ui/field'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { AppAlert } from '@/components/primitives/app-alert'
 import { Page, PageHeader } from '@/components/primitives/page'
 import { LoadingState } from '@/components/primitives/data-state'
 import { StatusBadge } from '@/components/primitives/status-badge'
@@ -157,12 +161,15 @@ export function AdminUsersPage() {
             setQ(event.target.value)
             setPage(1)
           }} />
-          <select className='h-8 rounded-md border border-input bg-card px-3 text-sm' value={String(pageSize)} onChange={(event) => {
-            setPageSize(Number(event.target.value))
+          <Select value={String(pageSize)} onValueChange={(value) => {
+            setPageSize(Number(value))
             setPage(1)
           }}>
-            {[10, 20, 50, 100].map((size) => <option key={size} value={size}>{size} / page</option>)}
-          </select>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {[10, 20, 50, 100].map((size) => <SelectItem key={size} value={String(size)}>{size} / page</SelectItem>)}
+            </SelectContent>
+          </Select>
           <Button variant='outline' disabled={users.isFetching} onClick={() => void users.refetch()}>Refresh</Button>
           {currentJob ? (
             <div className='ml-auto flex items-center gap-2 text-sm'>
@@ -181,48 +188,60 @@ export function AdminUsersPage() {
             {scope === 'selected' ? `${selected.length} selected users` : scope === 'current_filter' ? (q.trim() ? `Current filter: ${q.trim()}` : 'Current filter') : 'All mapped users'}
           </div>
           <div className='grid gap-2 md:grid-cols-[150px_150px_minmax(0,1fr)_minmax(0,1fr)_120px_auto]'>
-            <select className='h-8 rounded-md border border-input bg-card px-3 text-sm' value={scope} disabled={activeJobRunning} onChange={(event) => setScope(event.target.value as AdminSubscriptionManageScope)}>
-              <option value='selected'>Selected</option>
-              <option value='current_filter'>Current filter</option>
-              <option value='all_mapped'>All mapped</option>
-            </select>
-            <select className='h-8 rounded-md border border-input bg-card px-3 text-sm' value={operation} disabled={activeJobRunning} onChange={(event) => {
-              const next = event.target.value as AdminSubscriptionManageOperation
+            <Select value={scope} disabled={activeJobRunning} onValueChange={(value) => setScope(value as AdminSubscriptionManageScope)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value='selected'>Selected</SelectItem>
+                <SelectItem value='current_filter'>Current filter</SelectItem>
+                <SelectItem value='all_mapped'>All mapped</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={operation} disabled={activeJobRunning} onValueChange={(value) => {
+              const next = value as AdminSubscriptionManageOperation
               setOperation(next)
               setConfirmRemove(false)
               if (next === 'add' && days <= 0) setDays(30)
               if (next === 'extend' && days <= 0) setDays(7)
             }}>
-              <option value='add'>Add</option>
-              <option value='extend'>Extend</option>
-              <option value='remove'>Remove</option>
-            </select>
-            <select className='h-8 rounded-md border border-input bg-card px-3 text-sm' value={activeProvider ? String(activeProvider.id) : ''} disabled={activeJobRunning} onChange={(event) => {
-              setProviderId(event.target.value)
-              const provider = subscriptionProviders.find((item) => String(item.id) === event.target.value)
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value='add'>Add</SelectItem>
+                <SelectItem value='extend'>Extend</SelectItem>
+                <SelectItem value='remove'>Remove</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={activeProvider ? String(activeProvider.id) : 'none'} disabled={activeJobRunning} onValueChange={(value) => {
+              setProviderId(value === 'none' ? '' : value)
+              const provider = subscriptionProviders.find((item) => String(item.id) === value)
               setGroupId(provider?.groups[0]?.group_id ?? '')
             }}>
-              <option value=''>Provider</option>
-              {subscriptionProviders.map((provider) => <option key={provider.id} value={provider.id}>{provider.display_name || provider.name}</option>)}
-            </select>
-            <select className='h-8 rounded-md border border-input bg-card px-3 text-sm' value={activeGroupId} disabled={activeJobRunning} onChange={(event) => setGroupId(event.target.value)}>
-              <option value=''>Group</option>
-              {activeGroups.map((group) => <option key={group.group_id} value={group.group_id}>{group.group_name} · {group.platform}</option>)}
-            </select>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value='none'>Provider</SelectItem>
+                {subscriptionProviders.map((provider) => <SelectItem key={provider.id} value={String(provider.id)}>{provider.display_name || provider.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Select value={activeGroupId || 'none'} disabled={activeJobRunning} onValueChange={(value) => setGroupId(value === 'none' ? '' : value)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value='none'>Group</SelectItem>
+                {activeGroups.map((group) => <SelectItem key={group.group_id} value={group.group_id}>{group.group_name} · {group.platform}</SelectItem>)}
+              </SelectContent>
+            </Select>
             {operation !== 'remove' ? (
               <Input type='number' min={1} value={String(days)} disabled={activeJobRunning} onChange={(event) => setDays(Number(event.target.value) || 0)} />
             ) : (
-              <label className='flex h-8 items-center gap-2 text-sm'>
-                <input type='checkbox' checked={confirmRemove} disabled={activeJobRunning} onChange={(event) => setConfirmRemove(event.target.checked)} />
-                Confirm
-              </label>
+              <Field orientation='horizontal' className='h-8'>
+                <Checkbox checked={confirmRemove} disabled={activeJobRunning} onCheckedChange={(value) => setConfirmRemove(value === true)} />
+                <FieldLabel>Confirm</FieldLabel>
+              </Field>
             )}
             <Button variant='outline' disabled={!canSubmitJob} onClick={() => job.mutate()}>
               {activeJobRunning ? 'Job running' : 'Start job'}
             </Button>
           </div>
-          {job.error ? <div className='text-[var(--ae-warn)] text-sm'>{job.error.message}</div> : null}
-          {activeJob.error ? <div className='text-[var(--ae-warn)] text-sm'>{activeJob.error.message}</div> : null}
+          {job.error ? <AppAlert tone='error' title={job.error.message} /> : null}
+          {activeJob.error ? <AppAlert tone='error' title={activeJob.error.message} /> : null}
           {jobMessage ? <div className='rounded-md bg-muted p-3 text-sm'>{jobMessage}</div> : null}
           {jobResults.length > 0 ? (
             <div className='max-h-56 overflow-auto rounded-md border border-border'>

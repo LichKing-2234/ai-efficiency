@@ -7,6 +7,8 @@ import { Input } from '@/components/ui/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { MetricCard } from '@/components/primitives/metric-card'
 import { Page, PageHeader } from '@/components/primitives/page'
 import { LoadingState } from '@/components/primitives/data-state'
@@ -111,17 +113,23 @@ export function EventsPage() {
           <div className='grid gap-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_140px_150px_minmax(0,1.5fr)]'>
             <Input type='datetime-local' value={filters.from} onChange={(event) => setFilters((value) => ({ ...value, from: event.target.value }))} />
             <Input type='datetime-local' value={filters.to} onChange={(event) => setFilters((value) => ({ ...value, to: event.target.value }))} />
-            <select className='h-8 rounded-md border border-input bg-card px-3 text-sm' value={filters.tool} onChange={(event) => setFilters((value) => ({ ...value, tool: event.target.value }))}>
-              <option value=''>All tools</option>
-              <option value='claude'>Claude</option>
-              <option value='codex'>Codex</option>
-              <option value='kiro'>Kiro</option>
-            </select>
-            <select className='h-8 rounded-md border border-input bg-card px-3 text-sm' value={filters.bindingStatus} onChange={(event) => setFilters((value) => ({ ...value, bindingStatus: event.target.value }))}>
-              <option value=''>All code links</option>
-              <option value='bound'>Bound</option>
-              <option value='unbound'>Unbound</option>
-            </select>
+            <Select value={filters.tool || 'all'} onValueChange={(value) => setFilters((current) => ({ ...current, tool: value === 'all' ? '' : value }))}>
+              <SelectTrigger className='w-full'><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value='all'>All tools</SelectItem>
+                <SelectItem value='claude'>Claude</SelectItem>
+                <SelectItem value='codex'>Codex</SelectItem>
+                <SelectItem value='kiro'>Kiro</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={filters.bindingStatus || 'all'} onValueChange={(value) => setFilters((current) => ({ ...current, bindingStatus: value === 'all' ? '' : value }))}>
+              <SelectTrigger className='w-full'><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value='all'>All code links</SelectItem>
+                <SelectItem value='bound'>Bound</SelectItem>
+                <SelectItem value='unbound'>Unbound</SelectItem>
+              </SelectContent>
+            </Select>
             <Input placeholder='Search repo, session, source' value={filters.q} onChange={(event) => setFilters((value) => ({ ...value, q: event.target.value }))} />
           </div>
           <div className='flex flex-wrap items-center gap-2'>
@@ -155,11 +163,14 @@ export function EventsPage() {
             <CardTitle>Recent usage</CardTitle>
             <div className='flex items-center gap-2 text-muted-foreground text-xs'>
               <span>{number(total)} total</span>
-              <select className='h-7 rounded-md border border-input bg-card px-2' value={appliedFilters.limit} onChange={(event) => changePageSize(Number(event.target.value))}>
-                <option value={20}>20</option>
-                <option value={50}>50</option>
-                <option value={100}>100</option>
-              </select>
+              <Select value={String(appliedFilters.limit)} onValueChange={(value) => changePageSize(Number(value))}>
+                <SelectTrigger size='sm'><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value='20'>20</SelectItem>
+                  <SelectItem value='50'>50</SelectItem>
+                  <SelectItem value='100'>100</SelectItem>
+                </SelectContent>
+              </Select>
               <Button size='sm' variant='outline' onClick={previousPage} disabled={!pagination.canGoPrev}>Prev</Button>
               <span>Page {pagination.currentPage} / {pagination.totalPages}</span>
               <Button size='sm' variant='outline' onClick={nextPage} disabled={!pagination.canGoNext}>Next</Button>
@@ -243,20 +254,24 @@ export function EventsPage() {
                   <div className='mt-2 text-muted-foreground text-sm'>No matched PRs.</div>
                 )}
               </div>
-              <details className='mt-4 rounded-md border border-border p-3'>
-                <summary className='cursor-pointer font-medium text-sm'>Advanced data</summary>
-                <div className='mt-3 grid gap-2 text-sm'>
-                  <DetailItem label='Workspace' value={selected.workspace_id} mono />
-                  <DetailItem label='Tool event' value={selected.tool_event_id || '-'} mono />
-                  {isAdmin ? <DetailItem label='Dedupe key' value={selected.dedupe_key} mono /> : null}
-                  {isAdmin ? <DetailItem label='Source' value={selected.source_basename} /> : null}
-                  {isAdmin ? <DetailItem label='Raw path' value={selected.raw_source_path || '-'} mono /> : null}
-                  {isAdmin ? <DetailItem label='Raw locator' value={selected.raw_source_locator || '-'} mono /> : null}
-                </div>
-                {isAdmin && selected.raw_payload ? (
-                  <pre className='mt-3 max-h-56 overflow-auto rounded-md bg-muted p-3 text-xs'>{JSON.stringify(selected.raw_payload, null, 2)}</pre>
-                ) : null}
-              </details>
+              <Accordion type='single' collapsible className='mt-4 rounded-md border border-border px-3'>
+                <AccordionItem value='advanced'>
+                  <AccordionTrigger>Advanced data</AccordionTrigger>
+                  <AccordionContent>
+                    <div className='grid gap-2 text-sm'>
+                      <DetailItem label='Workspace' value={selected.workspace_id} mono />
+                      <DetailItem label='Tool event' value={selected.tool_event_id || '-'} mono />
+                      {isAdmin ? <DetailItem label='Dedupe key' value={selected.dedupe_key} mono /> : null}
+                      {isAdmin ? <DetailItem label='Source' value={selected.source_basename} /> : null}
+                      {isAdmin ? <DetailItem label='Raw path' value={selected.raw_source_path || '-'} mono /> : null}
+                      {isAdmin ? <DetailItem label='Raw locator' value={selected.raw_source_locator || '-'} mono /> : null}
+                    </div>
+                    {isAdmin && selected.raw_payload ? (
+                      <pre className='mt-3 max-h-56 overflow-auto rounded-md bg-muted p-3 text-xs'>{JSON.stringify(selected.raw_payload, null, 2)}</pre>
+                    ) : null}
+                  </AccordionContent>
+                </AccordionItem>
+              </Accordion>
             </div>
           ) : null}
         </DialogContent>

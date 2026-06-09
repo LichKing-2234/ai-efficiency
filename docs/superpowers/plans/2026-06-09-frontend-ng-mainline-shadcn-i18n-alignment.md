@@ -1526,7 +1526,7 @@ cd frontend-ng && bun test src/features/repos/repo-webhook-state.test.ts && bun 
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit repo detail repair**
+- [x] **Step 5: Commit repo detail repair**
 
 Run:
 
@@ -1547,7 +1547,7 @@ Expected: commit created.
 - Modify: `frontend-ng/src/components/layout/app-shell.tsx`
 - Modify: `frontend-ng/src/components/primitives/data-state.tsx`
 
-- [ ] **Step 1: Create primitive wrappers**
+- [x] **Step 1: Create primitive wrappers**
 
 Create `frontend-ng/src/components/primitives/app-alert.tsx`:
 
@@ -1625,7 +1625,7 @@ export function PageEmpty({ title, description, action }: { title: string; descr
 }
 ```
 
-- [ ] **Step 2: Replace native selects**
+- [x] **Step 2: Replace native selects**
 
 For every `rg "<select" frontend-ng/src -n` hit, replace native selects with shadcn `Select`:
 
@@ -1652,7 +1652,7 @@ rg "<select" frontend-ng/src -n
 
 returns no matches.
 
-- [ ] **Step 3: Replace raw checkbox labels**
+- [x] **Step 3: Replace raw checkbox labels**
 
 For every `rg "<input type='checkbox'|<input type=\"checkbox\"" frontend-ng/src -n` hit, use:
 
@@ -1671,7 +1671,7 @@ rg "<input type=['\\\"]checkbox" frontend-ng/src -n
 
 returns no matches.
 
-- [ ] **Step 4: Replace `window.confirm`**
+- [x] **Step 4: Replace `window.confirm`**
 
 For every `rg "window\\.confirm" frontend-ng/src -n` hit, use `ConfirmAction` with explicit title/description from i18n keys.
 
@@ -1683,7 +1683,7 @@ rg "window\\.confirm" frontend-ng/src -n
 
 returns no matches.
 
-- [ ] **Step 5: Replace raw callouts and empty states**
+- [x] **Step 5: Replace raw callouts and empty states**
 
 Replace custom warning/success/error `<div className='text-[var(--ae-warn)]...'>` surfaces with `AppAlert` or shadcn `Alert`.
 
@@ -1707,7 +1707,7 @@ rg "text-\\[var\\(--ae-warn\\)|text-\\[var\\(--ae-pos\\)|No repositories match|N
 
 returns no page-level matches outside UI primitives and translation resources.
 
-- [ ] **Step 6: Replace manual details/summary**
+- [x] **Step 6: Replace manual details/summary**
 
 For every `rg "<details|<summary" frontend-ng/src -n` hit, replace with shadcn `Accordion` if added, or with `Collapsible` after running:
 
@@ -1723,7 +1723,7 @@ rg "<details|<summary" frontend-ng/src -n
 
 returns no matches.
 
-- [ ] **Step 7: Run shadcn hardening scans**
+- [x] **Step 7: Run shadcn hardening scans**
 
 Run:
 
@@ -1735,7 +1735,9 @@ cd frontend-ng && bun run check
 
 Expected: first two scans have no matches except false positives in tests or shadcn generated UI; typecheck passes.
 
-- [ ] **Step 8: Commit shadcn hardening**
+Actual: raw HTML control scans were verified with word-boundary patterns (`<select\b`, `<details\b`, `<summary\b`, and checkbox input patterns) because the original `<select` pattern also matches React `<Select>` component names. Remaining `Select` matches are shadcn component usage, not native controls.
+
+- [x] **Step 8: Commit shadcn hardening**
 
 Run:
 

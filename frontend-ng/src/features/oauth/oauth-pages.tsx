@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { AppAlert } from '@/components/primitives/app-alert'
 import { apiFetch } from '@/lib/api/client'
 import { ensureAuthenticatedUser } from '@/lib/auth/session'
 import { buildLoginRedirect, buildOAuthAuthorizePayload, normalizeDeviceCode } from '@/features/auth/auth-flow-state'
@@ -44,7 +45,7 @@ export function OAuthAuthorizePage() {
       <div className='rounded-md bg-muted p-3 text-sm'>
         Signed in as <span className='font-medium'>{me.data?.email || me.data?.username || 'current user'}</span>
       </div>
-      {error ? <div className='text-[var(--ae-warn)] text-sm'>{error}</div> : null}
+      {error ? <AppAlert tone='error' title={error} /> : null}
       <div className='flex gap-2'>
         <Button className='flex-1' disabled={approve.isPending || me.isLoading || !!me.error} onClick={() => approve.mutate(true)}>Approve</Button>
         <Button className='flex-1' disabled={approve.isPending || me.isLoading || !!me.error} variant='outline' onClick={() => approve.mutate(false)}>Deny</Button>
@@ -79,8 +80,8 @@ export function OAuthDevicePage() {
         Signed in as <span className='font-medium'>{me.data?.email || me.data?.username || 'current user'}</span>
       </div>
       <Input value={code} onChange={(event) => setCode(normalizeDeviceCode(event.target.value))} placeholder='ABCD-EFGH' />
-      {verify.data ? <div className='text-[var(--ae-pos)] text-sm'>Device {verify.data.status}.</div> : null}
-      {verify.error ? <div className='text-[var(--ae-warn)] text-sm'>{verify.error.message}</div> : null}
+      {verify.data ? <AppAlert tone='success' title={`Device ${verify.data.status}.`} /> : null}
+      {verify.error ? <AppAlert tone='error' title={verify.error.message} /> : null}
       <div className='flex gap-2'>
         <Button className='flex-1' disabled={!code || verify.isPending || me.isLoading || !!me.error} onClick={() => verify.mutate(true)}>Approve</Button>
         <Button className='flex-1' disabled={!code || verify.isPending || me.isLoading || !!me.error} variant='outline' onClick={() => verify.mutate(false)}>Deny</Button>

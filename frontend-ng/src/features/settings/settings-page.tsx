@@ -5,11 +5,16 @@ import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Field, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
+import { AppAlert } from '@/components/primitives/app-alert'
+import { ConfirmAction } from '@/components/primitives/confirm-action'
 import { Page, PageHeader } from '@/components/primitives/page'
 import { LoadingState } from '@/components/primitives/data-state'
 import { StatusBadge } from '@/components/primitives/status-badge'
@@ -294,16 +299,15 @@ export function SettingsPage() {
                   {provider.is_primary ? <Badge variant='ai'>primary</Badge> : null}
                   <StatusBadge value={provider.enabled ? 'active' : 'disabled'} />
                   <Button size='sm' variant='outline' onClick={() => openEditRelayDialog(provider)}>Edit</Button>
-                  <Button
-                    size='sm'
-                    variant='ghost'
-                    onClick={() => {
-                      if (window.confirm(`Delete relay provider ${provider.display_name || provider.name}?`)) deleteRelay.mutate(provider.id)
-                    }}
+                  <ConfirmAction
+                    trigger={<Button size='sm' variant='ghost' disabled={deleteRelay.isPending}>Delete</Button>}
+                    title='Delete relay provider'
+                    description={`Delete relay provider ${provider.display_name || provider.name}?`}
+                    confirmLabel='Delete'
+                    cancelLabel='Cancel'
+                    onConfirm={() => deleteRelay.mutate(provider.id)}
                     disabled={deleteRelay.isPending}
-                  >
-                    Delete
-                  </Button>
+                  />
                 </div>
               </div>
             ))}
@@ -335,16 +339,15 @@ export function SettingsPage() {
                       <div className='flex items-center gap-2'>
                         <StatusBadge value={provider.status} />
                         <Button size='sm' variant='outline' onClick={() => openEditScmDialog(provider)}>Edit</Button>
-                        <Button
-                          size='sm'
-                          variant='ghost'
-                          onClick={() => {
-                            if (window.confirm(`Delete SCM provider ${provider.name}?`)) deleteScm.mutate(provider.id)
-                          }}
+                        <ConfirmAction
+                          trigger={<Button size='sm' variant='ghost' disabled={deleteScm.isPending}>Delete</Button>}
+                          title='Delete SCM provider'
+                          description={`Delete SCM provider ${provider.name}?`}
+                          confirmLabel='Delete'
+                          cancelLabel='Cancel'
+                          onConfirm={() => deleteScm.mutate(provider.id)}
                           disabled={deleteScm.isPending}
-                        >
-                          Delete
-                        </Button>
+                        />
                       </div>
                     </TableCell>
                   </TableRow>
@@ -371,16 +374,15 @@ export function SettingsPage() {
                 <div className='flex items-center gap-2'>
                   <span className='text-muted-foreground text-xs'>{dateTime(credential.updated_at)}</span>
                   <Button size='sm' variant='outline' onClick={() => openEditCredentialDialog(credential)}>Edit</Button>
-                  <Button
-                    size='sm'
-                    variant='ghost'
-                    onClick={() => {
-                      if (window.confirm(`Delete credential ${credential.name}?`)) deleteCredential.mutate(credential.id)
-                    }}
+                  <ConfirmAction
+                    trigger={<Button size='sm' variant='ghost' disabled={deleteCredential.isPending}>Delete</Button>}
+                    title='Delete credential'
+                    description={`Delete credential ${credential.name}?`}
+                    confirmLabel='Delete'
+                    cancelLabel='Cancel'
+                    onConfirm={() => deleteCredential.mutate(credential.id)}
                     disabled={deleteCredential.isPending}
-                  >
-                    Delete
-                  </Button>
+                  />
                 </div>
               </div>
             ))}
@@ -397,8 +399,16 @@ export function SettingsPage() {
             <Input placeholder='Bind DN' value={ldapForm.bind_dn} onChange={(event) => setLDAPForm((value) => ({ ...value, bind_dn: event.target.value }))} />
             <Input type='password' placeholder='Bind password (leave blank to keep current)' value={ldapForm.bind_password} onChange={(event) => setLDAPForm((value) => ({ ...value, bind_password: event.target.value }))} />
             <Input placeholder='User filter, for example (uid=%s)' value={ldapForm.user_filter} onChange={(event) => setLDAPForm((value) => ({ ...value, user_filter: event.target.value }))} />
-            <label className='flex items-center gap-2 text-sm'><input type='checkbox' checked={ldapForm.tls} onChange={(event) => setLDAPForm((value) => ({ ...value, tls: event.target.checked }))} /> Use StartTLS</label>
-            {ldapMessage ? <div className={ldapMessage.toLowerCase().includes('failed') || ldapMessage.toLowerCase().includes('required') ? 'text-[var(--ae-warn)] text-sm' : 'text-[var(--ae-pos)] text-sm'}>{ldapMessage}</div> : null}
+            <Field orientation='horizontal'>
+              <Checkbox id='ldap-starttls' checked={ldapForm.tls} onCheckedChange={(checked) => setLDAPForm((value) => ({ ...value, tls: checked === true }))} />
+              <FieldLabel htmlFor='ldap-starttls'>Use StartTLS</FieldLabel>
+            </Field>
+            {ldapMessage ? (
+              <AppAlert
+                tone={ldapMessage.toLowerCase().includes('failed') || ldapMessage.toLowerCase().includes('required') ? 'error' : 'success'}
+                title={ldapMessage}
+              />
+            ) : null}
             <div className='flex flex-wrap gap-2'>
               <Button
                 variant='outline'
@@ -429,33 +439,33 @@ export function SettingsPage() {
             {deployment.data?.update_available ? <Badge variant='ai'>Update available: v{deployment.data.latest_release?.version}</Badge> : <Badge variant='success'>Up to date</Badge>}
             <div className='flex gap-2'>
               <Button variant='outline' onClick={() => checkUpdate.mutate()} disabled={checkUpdate.isPending}>Check update</Button>
-              <Button
-                variant='outline'
-                onClick={() => {
-                  if (window.confirm(`Stage update ${deployment.data?.latest_release?.version || ''}?`)) applyUpdate.mutate()
-                }}
+              <ConfirmAction
+                trigger={<Button variant='outline' disabled={!deployment.data?.latest_release?.version || applyUpdate.isPending}>Apply update</Button>}
+                title='Stage update'
+                description={`Stage update ${deployment.data?.latest_release?.version || ''}?`}
+                confirmLabel='Apply update'
+                cancelLabel='Cancel'
+                onConfirm={() => applyUpdate.mutate()}
                 disabled={!deployment.data?.latest_release?.version || applyUpdate.isPending}
-              >
-                Apply update
-              </Button>
-              <Button
-                variant='outline'
-                onClick={() => {
-                  if (window.confirm('Rollback staged update?')) rollback.mutate()
-                }}
+              />
+              <ConfirmAction
+                trigger={<Button variant='outline' disabled={rollback.isPending}>Rollback</Button>}
+                title='Rollback staged update'
+                description='Rollback staged update?'
+                confirmLabel='Rollback'
+                cancelLabel='Cancel'
+                onConfirm={() => rollback.mutate()}
                 disabled={rollback.isPending}
-              >
-                Rollback
-              </Button>
-              <Button
-                variant='outline'
-                onClick={() => {
-                  if (window.confirm('Request backend restart?')) restart.mutate()
-                }}
+              />
+              <ConfirmAction
+                trigger={<Button variant='outline' disabled={restart.isPending}>Restart</Button>}
+                title='Request backend restart'
+                description='Request backend restart?'
+                confirmLabel='Restart'
+                cancelLabel='Cancel'
+                onConfirm={() => restart.mutate()}
                 disabled={restart.isPending}
-              >
-                Restart
-              </Button>
+              />
             </div>
           </CardContent>
         </Card> : null}
@@ -471,10 +481,16 @@ export function SettingsPage() {
             <Input placeholder='Display name' value={relayForm.display_name} onChange={(event) => setRelayForm((value) => ({ ...value, display_name: event.target.value }))} />
             <Input placeholder='Base URL' value={relayForm.base_url} onChange={(event) => setRelayForm((value) => ({ ...value, base_url: event.target.value }))} />
             <Input type='password' placeholder='Admin API key' value={relayForm.admin_api_key} onChange={(event) => setRelayForm((value) => ({ ...value, admin_api_key: event.target.value }))} />
-            <label className='flex items-center gap-2 text-sm'><input type='checkbox' checked={relayForm.is_primary} onChange={(event) => setRelayForm((value) => ({ ...value, is_primary: event.target.checked }))} /> Primary</label>
-            <label className='flex items-center gap-2 text-sm'><input type='checkbox' checked={relayForm.enabled} onChange={(event) => setRelayForm((value) => ({ ...value, enabled: event.target.checked }))} /> Enabled</label>
-            {createRelay.error ? <div className='text-[var(--ae-warn)] text-sm'>{createRelay.error.message}</div> : null}
-            {updateRelay.error ? <div className='text-[var(--ae-warn)] text-sm'>{updateRelay.error.message}</div> : null}
+            <Field orientation='horizontal'>
+              <Checkbox id='relay-primary' checked={relayForm.is_primary} onCheckedChange={(checked) => setRelayForm((value) => ({ ...value, is_primary: checked === true }))} />
+              <FieldLabel htmlFor='relay-primary'>Primary</FieldLabel>
+            </Field>
+            <Field orientation='horizontal'>
+              <Checkbox id='relay-enabled' checked={relayForm.enabled} onCheckedChange={(checked) => setRelayForm((value) => ({ ...value, enabled: checked === true }))} />
+              <FieldLabel htmlFor='relay-enabled'>Enabled</FieldLabel>
+            </Field>
+            {createRelay.error ? <AppAlert tone='error' title={createRelay.error.message} /> : null}
+            {updateRelay.error ? <AppAlert tone='error' title={updateRelay.error.message} /> : null}
             <div className='flex justify-end gap-2'>
               <Button variant='outline' onClick={closeRelayDialog}>Cancel</Button>
               <Button
@@ -495,30 +511,42 @@ export function SettingsPage() {
           </DialogHeader>
           <div className='flex flex-col gap-3'>
             <Input placeholder='Name' value={scmForm.name} onChange={(event) => setScmForm((value) => ({ ...value, name: event.target.value }))} />
-            <select className='h-8 rounded-md border border-input bg-card px-3 text-sm' value={scmForm.type} disabled={!!editingScmId} onChange={(event) => setScmForm((value) => ({ ...value, type: event.target.value }))}>
-              <option value='github'>GitHub</option>
-              <option value='bitbucket'>Bitbucket</option>
-            </select>
+            <Select value={scmForm.type} disabled={!!editingScmId} onValueChange={(value) => setScmForm((current) => ({ ...current, type: value }))}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value='github'>GitHub</SelectItem>
+                <SelectItem value='bitbucket'>Bitbucket</SelectItem>
+              </SelectContent>
+            </Select>
             <Input placeholder='Base URL' value={scmForm.base_url} onChange={(event) => setScmForm((value) => ({ ...value, base_url: event.target.value }))} />
-            <select className='h-8 rounded-md border border-input bg-card px-3 text-sm' value={scmForm.api_credential_id} onChange={(event) => setScmForm((value) => ({ ...value, api_credential_id: event.target.value }))}>
-              <option value=''>API credential</option>
-              {(credentials.data ?? []).map((credential) => <option key={credential.id} value={credential.id}>{credential.name}</option>)}
-            </select>
-            <select className='h-8 rounded-md border border-input bg-card px-3 text-sm' value={scmForm.clone_protocol} onChange={(event) => setScmForm((value) => ({ ...value, clone_protocol: event.target.value as 'https' | 'ssh' }))}>
-              <option value='https'>HTTPS clone</option>
-              <option value='ssh'>SSH clone</option>
-            </select>
+            <Select value={scmForm.api_credential_id || 'none'} onValueChange={(value) => setScmForm((current) => ({ ...current, api_credential_id: value === 'none' ? '' : value }))}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value='none'>API credential</SelectItem>
+                {(credentials.data ?? []).map((credential) => <SelectItem key={credential.id} value={String(credential.id)}>{credential.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Select value={scmForm.clone_protocol} onValueChange={(value) => setScmForm((current) => ({ ...current, clone_protocol: value as 'https' | 'ssh' }))}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value='https'>HTTPS clone</SelectItem>
+                <SelectItem value='ssh'>SSH clone</SelectItem>
+              </SelectContent>
+            </Select>
             {scmForm.clone_protocol === 'ssh' ? (
               <>
                 <Input placeholder='SSH host' value={scmForm.ssh_host} onChange={(event) => setScmForm((value) => ({ ...value, ssh_host: event.target.value }))} />
-                <select className='h-8 rounded-md border border-input bg-card px-3 text-sm' value={scmForm.clone_credential_id} onChange={(event) => setScmForm((value) => ({ ...value, clone_credential_id: event.target.value }))}>
-                  <option value=''>Clone credential</option>
-                  {(credentials.data ?? []).map((credential) => <option key={credential.id} value={credential.id}>{credential.name}</option>)}
-                </select>
+                <Select value={scmForm.clone_credential_id || 'none'} onValueChange={(value) => setScmForm((current) => ({ ...current, clone_credential_id: value === 'none' ? '' : value }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value='none'>Clone credential</SelectItem>
+                    {(credentials.data ?? []).map((credential) => <SelectItem key={credential.id} value={String(credential.id)}>{credential.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
               </>
             ) : null}
-            {createScm.error ? <div className='text-[var(--ae-warn)] text-sm'>{createScm.error.message}</div> : null}
-            {updateScm.error ? <div className='text-[var(--ae-warn)] text-sm'>{updateScm.error.message}</div> : null}
+            {createScm.error ? <AppAlert tone='error' title={createScm.error.message} /> : null}
+            {updateScm.error ? <AppAlert tone='error' title={updateScm.error.message} /> : null}
             <div className='flex justify-end gap-2'>
               <Button variant='outline' onClick={closeScmDialog}>Cancel</Button>
               <Button
@@ -540,18 +568,21 @@ export function SettingsPage() {
           <div className='flex flex-col gap-3'>
             <Input placeholder='Name' value={credentialForm.name} onChange={(event) => setCredentialForm((value) => ({ ...value, name: event.target.value }))} />
             <Input placeholder='Description' value={credentialForm.description} onChange={(event) => setCredentialForm((value) => ({ ...value, description: event.target.value }))} />
-            <select className='h-8 rounded-md border border-input bg-card px-3 text-sm' value={credentialForm.kind} onChange={(event) => setCredentialForm((value) => ({ ...value, kind: event.target.value as typeof credentialForm.kind }))}>
-              <option value='secret_text'>Secret text</option>
-              <option value='username_password'>Username/password</option>
-              <option value='ssh_username_with_private_key'>SSH private key</option>
-            </select>
+            <Select value={credentialForm.kind} onValueChange={(value) => setCredentialForm((current) => ({ ...current, kind: value as typeof credentialForm.kind }))}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value='secret_text'>Secret text</SelectItem>
+                <SelectItem value='username_password'>Username/password</SelectItem>
+                <SelectItem value='ssh_username_with_private_key'>SSH private key</SelectItem>
+              </SelectContent>
+            </Select>
             {credentialForm.kind === 'secret_text' ? <Textarea placeholder='Secret text' value={credentialForm.text} onChange={(event) => setCredentialForm((value) => ({ ...value, text: event.target.value }))} /> : null}
             {credentialForm.kind !== 'secret_text' ? <Input placeholder='Username' value={credentialForm.username} onChange={(event) => setCredentialForm((value) => ({ ...value, username: event.target.value }))} /> : null}
             {credentialForm.kind === 'username_password' ? <Input type='password' placeholder='Password' value={credentialForm.password} onChange={(event) => setCredentialForm((value) => ({ ...value, password: event.target.value }))} /> : null}
             {credentialForm.kind === 'ssh_username_with_private_key' ? <Textarea placeholder='Private key' value={credentialForm.private_key} onChange={(event) => setCredentialForm((value) => ({ ...value, private_key: event.target.value }))} /> : null}
             {credentialForm.kind === 'ssh_username_with_private_key' ? <Input type='password' placeholder='Passphrase' value={credentialForm.passphrase} onChange={(event) => setCredentialForm((value) => ({ ...value, passphrase: event.target.value }))} /> : null}
-            {createCredential.error ? <div className='text-[var(--ae-warn)] text-sm'>{createCredential.error.message}</div> : null}
-            {updateCredential.error ? <div className='text-[var(--ae-warn)] text-sm'>{updateCredential.error.message}</div> : null}
+            {createCredential.error ? <AppAlert tone='error' title={createCredential.error.message} /> : null}
+            {updateCredential.error ? <AppAlert tone='error' title={updateCredential.error.message} /> : null}
             <div className='flex justify-end gap-2'>
               <Button variant='outline' onClick={closeCredentialDialog}>Cancel</Button>
               <Button

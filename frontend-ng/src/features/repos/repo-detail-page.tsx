@@ -7,6 +7,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Field, FieldLabel } from '@/components/ui/field'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { MetricCard } from '@/components/primitives/metric-card'
@@ -222,23 +223,22 @@ export function RepoDetailPage() {
             <span>fetched: {number(jobProgress?.fetched)}</span>
             <span>processed: {number(jobProgress?.processed)}/{number(currentJob.total_prs || currentJob.fetched_prs)}</span>
             <span>usage: {number(jobProgress?.usageRefreshed)}/{number(jobProgress?.usageTotal)}</span>
-            <span className={currentJob.status === 'failed' ? 'text-[var(--ae-warn)]' : 'text-muted-foreground'}>{syncMessage || prSyncJobMessage(currentJob)}</span>
+            <span className='text-muted-foreground'>{syncMessage || prSyncJobMessage(currentJob)}</span>
           </CardContent>
         </Card>
       ) : null}
       <Card>
         <CardHeader><CardTitle>SCM binding</CardTitle></CardHeader>
         <CardContent className='flex flex-wrap items-center gap-2'>
-          <select
-            className='h-8 rounded-md border border-input bg-card px-3 text-sm'
-            value={selectedProviderId}
-            onChange={(event) => setSelectedProviderId(event.target.value)}
-          >
-            <option value=''>No provider binding</option>
-            {(scm.data?.items ?? []).map((provider) => (
-              <option key={provider.id} value={provider.id}>{provider.name}</option>
-            ))}
-          </select>
+          <Select value={selectedProviderId || 'none'} onValueChange={(value) => setSelectedProviderId(value === 'none' ? '' : value)}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value='none'>No provider binding</SelectItem>
+              {(scm.data?.items ?? []).map((provider) => (
+                <SelectItem key={provider.id} value={String(provider.id)}>{provider.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <Button variant='outline' onClick={() => saveBinding.mutate(selectedProviderId)} disabled={saveBinding.isPending}>Save binding</Button>
           <Button variant='ghost' onClick={() => {
             setSelectedProviderId('')
@@ -251,32 +251,30 @@ export function RepoDetailPage() {
           <CardTitle>Pull requests</CardTitle>
           <div className='flex flex-wrap items-center gap-2 text-sm'>
             <span className='text-muted-foreground'>Merged in</span>
-            <select
-              className='h-8 rounded-md border border-input bg-card px-3 text-sm'
-              value={prsMonths}
-              onChange={(event) => {
-                setPRsMonths(Number(event.target.value))
-                setPRsPage(0)
-              }}
-            >
-              <option value={1}>Last month</option>
-              <option value={3}>Last 3 months</option>
-              <option value={6}>Last 6 months</option>
-              <option value={12}>Last 12 months</option>
-              <option value={0}>All time</option>
-            </select>
-            <select
-              className='h-8 rounded-md border border-input bg-card px-3 text-sm'
-              value={prsPageSize}
-              onChange={(event) => {
-                setPRsPageSize(Number(event.target.value))
-                setPRsPage(0)
-              }}
-            >
-              <option value={10}>10 / page</option>
-              <option value={25}>25 / page</option>
-              <option value={50}>50 / page</option>
-            </select>
+            <Select value={String(prsMonths)} onValueChange={(value) => {
+              setPRsMonths(Number(value))
+              setPRsPage(0)
+            }}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value='1'>Last month</SelectItem>
+                <SelectItem value='3'>Last 3 months</SelectItem>
+                <SelectItem value='6'>Last 6 months</SelectItem>
+                <SelectItem value='12'>Last 12 months</SelectItem>
+                <SelectItem value='0'>All time</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={String(prsPageSize)} onValueChange={(value) => {
+              setPRsPageSize(Number(value))
+              setPRsPage(0)
+            }}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value='10'>10 / page</SelectItem>
+                <SelectItem value='25'>25 / page</SelectItem>
+                <SelectItem value='50'>50 / page</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </CardHeader>
         <div className='overflow-x-auto'>

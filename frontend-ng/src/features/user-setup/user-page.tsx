@@ -3,9 +3,14 @@ import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
+import { AppAlert } from '@/components/primitives/app-alert'
+import { ConfirmAction } from '@/components/primitives/confirm-action'
+import { PageEmpty } from '@/components/primitives/page-empty'
 import { Page, PageHeader } from '@/components/primitives/page'
 import { LoadingState } from '@/components/primitives/data-state'
 import { api } from '@/lib/api'
@@ -155,10 +160,12 @@ export function UserPage() {
               <CommandBlock command='ae-cli hooks enable --global' />
               <CommandBlock command='ae-cli init' />
               <CommandBlock command='ae-cli doctor' />
-              <details className='rounded-md border border-border p-3 text-sm'>
-                <summary className='cursor-pointer font-medium'>Windows installer</summary>
-                <div className='mt-3'><CommandBlock command={windowsInstallCommand} /></div>
-              </details>
+              <Accordion type='single' collapsible className='rounded-md border border-border px-3'>
+                <AccordionItem value='windows'>
+                  <AccordionTrigger>Windows installer</AccordionTrigger>
+                  <AccordionContent><CommandBlock command={windowsInstallCommand} /></AccordionContent>
+                </AccordionItem>
+              </Accordion>
             </CardContent>
           </Card>
         </div>
@@ -202,18 +209,15 @@ export function UserPage() {
                           Create key
                         </Button>
                       ) : (
-                        <Button
-                          size='sm'
-                          variant='outline'
+                        <ConfirmAction
+                          trigger={<Button size='sm' variant='outline' disabled={regenerateCredential.isPending}>Regenerate</Button>}
+                          title='Regenerate credential'
+                          description='Existing local tool configs may need updating.'
+                          confirmLabel='Regenerate'
+                          cancelLabel='Cancel'
+                          onConfirm={() => regenerateCredential.mutate()}
                           disabled={regenerateCredential.isPending}
-                          onClick={() => {
-                            if (window.confirm('Regenerate this credential? Existing local tool configs may need updating.')) {
-                              regenerateCredential.mutate()
-                            }
-                          }}
-                        >
-                          Regenerate
-                        </Button>
+                        />
                       )}
                       {secret ? (
                         <>
@@ -229,12 +233,12 @@ export function UserPage() {
                         </>
                       ) : null}
                     </div>
-                    {createCredential.error ? <div className='mt-2 text-[var(--ae-warn)] text-sm'>{createCredential.error.message}</div> : null}
-                    {regenerateCredential.error ? <div className='mt-2 text-[var(--ae-warn)] text-sm'>{regenerateCredential.error.message}</div> : null}
+                    {createCredential.error ? <AppAlert tone='error' title={createCredential.error.message} /> : null}
+                    {regenerateCredential.error ? <AppAlert tone='error' title={regenerateCredential.error.message} /> : null}
                   </div>
                 </>
               ) : (
-                <div className='rounded-md border border-dashed border-border p-6 text-muted-foreground text-sm'>No access group is available for this account.</div>
+                <PageEmpty title='No access group is available for this account.' />
               )}
             </CardContent>
           </Card>
@@ -248,9 +252,12 @@ export function UserPage() {
                 <label className='flex flex-col gap-1 text-sm'>
                   <span className='text-muted-foreground text-xs uppercase'>Model</span>
                   {modelQuery.data?.models?.length ? (
-                    <select className='h-8 rounded-md border border-input bg-card px-3 text-sm' value={model} onChange={(event) => setModel(event.target.value)}>
-                      {modelQuery.data.models.map((item) => <option key={item.id} value={item.id}>{modelLabel(item)}</option>)}
-                    </select>
+                    <Select value={model} onValueChange={setModel}>
+                      <SelectTrigger className='w-full'><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {modelQuery.data.models.map((item) => <SelectItem key={item.id} value={item.id}>{modelLabel(item)}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
                   ) : (
                     <Input value={model} placeholder={modelQuery.isFetching ? 'Loading models' : selectedProvider?.default_model || 'gpt-5.4'} onChange={(event) => setModel(event.target.value)} />
                   )}
@@ -261,7 +268,7 @@ export function UserPage() {
                 </label>
               </div>
               {modelQuery.data?.message ? <div className='text-muted-foreground text-sm'>{modelQuery.data.message}</div> : null}
-              {modelQuery.error ? <div className='text-[var(--ae-warn)] text-sm'>{modelQuery.error.message}</div> : null}
+              {modelQuery.error ? <AppAlert tone='error' title={modelQuery.error.message} /> : null}
               <label className='flex flex-col gap-1 text-sm'>
                 <span className='text-muted-foreground text-xs uppercase'>Prompt</span>
                 <Textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} />
