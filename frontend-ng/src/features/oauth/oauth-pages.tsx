@@ -3,12 +3,11 @@ import { useLocation, useNavigate, useSearch } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
-import { Field, FieldLabel } from '@/components/ui/field'
-import { Input } from '@/components/ui/input'
 import { ActionGroup } from '@/components/primitives/action-group'
 import { AppAlert } from '@/components/primitives/app-alert'
 import { AuthInfoPanel } from '@/components/primitives/auth-info-panel'
 import { SectionCardHeader } from '@/components/primitives/section-card-header'
+import { TextField } from '@/components/primitives/text-field'
 import { apiFetch } from '@/lib/api/client'
 import { ensureAuthenticatedUser } from '@/lib/auth/session'
 import { useI18n } from '@/lib/i18n/i18n'
@@ -120,15 +119,13 @@ export function DeviceCodeField({
   placeholder: string
 }) {
   return (
-    <Field>
-      <FieldLabel htmlFor='oauth-device-code'>{label}</FieldLabel>
-      <Input
-        id='oauth-device-code'
-        value={code}
-        onChange={(event) => onCodeChange(event.target.value)}
-        placeholder={placeholder}
-      />
-    </Field>
+    <TextField
+      id='oauth-device-code'
+      label={label}
+      placeholder={placeholder}
+      value={code}
+      onChange={onCodeChange}
+    />
   )
 }
 

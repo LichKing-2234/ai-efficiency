@@ -6,6 +6,7 @@ const ROOT = new URL('../../', import.meta.url).pathname
 
 const SETTINGS_TEXT_FORMS = [
   'features/events/events-page.tsx',
+  'features/oauth/oauth-pages.tsx',
   'features/repos/repo-create-form.tsx',
   'features/settings/ldap-settings-form.tsx',
   'features/settings/relay-provider-form.tsx'
