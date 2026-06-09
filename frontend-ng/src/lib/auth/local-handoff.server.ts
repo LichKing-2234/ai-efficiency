@@ -2,6 +2,14 @@ import { json } from '@/lib/api/server'
 import { appendBackendUrlCookie, appendTokenCookies, readAppTokens } from '@/lib/auth/cookies'
 import { buildLocalCallbackUrl, isAllowedBackendUrl, isAllowedLocalTarget } from '@/lib/auth/local-handoff'
 
+export function getLocalHandoffBackendUrl() {
+  const backendUrl = process.env.AE_FRONTEND_BACKEND_URL ||
+    process.env.VITE_BACKEND_URL ||
+    import.meta.env.VITE_BACKEND_URL
+  if (!isAllowedBackendUrl(backendUrl ?? null)) return null
+  return backendUrl.replace(/\/$/, '')
+}
+
 export function localHandoffIssueResponse(request: Request, callbackPath = '/api/local/callback') {
   const url = new URL(request.url)
   const target = url.searchParams.get('target') || url.searchParams.get('local') || 'http://localhost:3000'
@@ -12,9 +20,10 @@ export function localHandoffIssueResponse(request: Request, callbackPath = '/api
   if (!tokens?.accessToken && !tokens?.refreshToken) {
     return json({ code: 401, message: 'local handoff requires an active app session' }, 401)
   }
-  const backendUrl = process.env.AE_FRONTEND_BACKEND_URL ||
-    process.env.VITE_BACKEND_URL ||
-    import.meta.env.VITE_BACKEND_URL
+  const backendUrl = getLocalHandoffBackendUrl()
+  if (!backendUrl) {
+    return json({ code: 503, message: 'local handoff backend target is not configured' }, 503)
+  }
   return Response.redirect(buildLocalCallbackUrl(target, tokens.accessToken, tokens.refreshToken, callbackPath, backendUrl), 302)
 }
 

@@ -19,6 +19,8 @@ Useful environment variables:
 AE_FRONTEND_BACKEND_URL=http://localhost:8081
 ```
 
+`AE_FRONTEND_BACKEND_URL` is the single backend target for the TanStack server-side proxy. Browser code still calls same-origin `/api/*`; only the TanStack server uses this origin. For deployed `frontend-ng`, configure this to a backend API origin that is reachable by the frontend server and by developer machines if `/oauth2/local` handoff should work.
+
 `VITE_BACKEND_URL` is accepted as a local fallback for compatibility, but browser code must not call that backend URL directly.
 `AE_FRONTEND_GATEWAY_EXCHANGE_SECRET` should only be configured after the Go backend exposes `/api/v1/auth/gateway-exchange` and the shared header contract is agreed.
 
@@ -38,7 +40,7 @@ Gateway deployments should use the OAuth-plugin-compatible path:
 https://ai-efficiency-web.la3.agoralab.co/oauth2/local?target=http%3A%2F%2F127.0.0.1%3A4317
 ```
 
-`GET /oauth2/local?target=http://127.0.0.1:4317` redirects an active online app session to the local frontend's `/oauth2/local` callback. The callback writes localhost-scoped HttpOnly app cookies, writes the online backend target to an HttpOnly `ae_backend_url` cookie, and redirects to `/`.
+`GET /oauth2/local?target=http://127.0.0.1:4317` redirects an active online app session to the local frontend's `/oauth2/local` callback. The callback writes localhost-scoped HttpOnly app cookies, writes the online backend target to an HttpOnly `ae_backend_url` cookie, and redirects to `/`. If the deployed frontend has no valid `AE_FRONTEND_BACKEND_URL`, the handoff fails with `503` instead of silently falling back to a wrong local backend.
 
 `GET /api/local?target=http://127.0.0.1:4317` remains available as a same-origin API compatibility path, but gateway-protected deployments should prefer `/oauth2/local` so the gateway OAuth client can use its registered `/oauth2/callback` redirect URI.
 

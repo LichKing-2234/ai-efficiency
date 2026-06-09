@@ -310,7 +310,7 @@ Handoff constraints:
 - Do not store gateway raw tokens on localhost.
 - Only Go-issued app tokens are transferred.
 - The transferred backend URL is server-side proxy configuration only; browser code still calls same-origin `/api/*`.
-- Local handoff uses `AE_FRONTEND_BACKEND_URL` as the backend origin written into localhost proxy configuration. Deployments that need local handoff should set that value to an origin reachable from a developer machine.
+- Local handoff uses the single `AE_FRONTEND_BACKEND_URL` value as the backend origin written into localhost proxy configuration. Deployments that need local handoff must set that value to a backend API origin reachable by both the deployed frontend server and developer machines. If no valid backend target is configured, `/oauth2/local` fails with `503` instead of redirecting without a backend target and later falling back to a wrong localhost backend.
 - `target` must be validated against allowed localhost origins.
 
 ### Backend Target
@@ -399,7 +399,7 @@ As of the `frontend-ng` mainline alignment work on 2026-06-09:
 - Browser data calls go through same-origin `/api/*`; browser code does not store tokens in `localStorage` and does not attach Bearer tokens.
 - TanStack server-side API routes implement app-token HttpOnly cookies, login/dev-login/logout/bootstrap, coarse `/api/v1/*` proxy allowlisting, and refresh retry.
 - Gateway bootstrap is wired through a server-side `gateway-exchange` call path, but the Go backend endpoint and deployment gateway header contract still need backend/deploy follow-through before production cutover.
-- Local handoff routes now support a pragmatic development transfer: an authenticated online `GET /oauth2/local?target=http://127.0.0.1:4317` redirects to the local `/oauth2/local` callback with app tokens and backend proxy target, and the local TanStack server writes localhost-scoped HttpOnly app cookies plus `ae_backend_url`. `/api/local` remains as a same-origin compatibility path. This copies Go-issued app tokens only; it does not copy gateway cookies or gateway tokens.
+- Local handoff routes now support a pragmatic development transfer: an authenticated online `GET /oauth2/local?target=http://127.0.0.1:4317` redirects to the local `/oauth2/local` callback with app tokens and backend proxy target, and the local TanStack server writes localhost-scoped HttpOnly app cookies plus `ae_backend_url`. `/api/local` remains as a same-origin compatibility path. This copies Go-issued app tokens only; it does not copy gateway cookies or gateway tokens. Handoff issue routes now require a valid configured backend target so localdev does not silently proxy to the wrong backend.
 - First-pass route migration exists for `/login`, `/oauth/authorize`, `/oauth/device`, `/`, `/repos`, `/repos/:id`, `/events`, `/user`, `/admin/users`, and `/settings`.
 - React i18n is now installed through `i18next` / `react-i18next`, locale preference is stored in the `ae.locale` cookie, and a regression guard enforces locale key parity, prevents Chinese copy outside the zh-CN resource table, and blocks page-level visible English copy outside message resources except for explicit product/protocol literals.
 - Existing pages now use shadcn primitives for alerts, confirmation dialogs, empty states, selects, checkboxes, accordion sections, tables, and cards instead of browser-native selects/details/confirm flows.
