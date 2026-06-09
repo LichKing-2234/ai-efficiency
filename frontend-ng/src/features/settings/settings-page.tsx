@@ -435,7 +435,7 @@ export function SettingsPage() {
               <FieldItem label={t('settings.commit')} value={deployment.data?.version.commit || '-'} mono />
             </FieldList>
             {deployment.data?.update_available ? <Badge variant='ai'>{t('settings.updateAvailable', { version: deployment.data.latest_release?.version || '-' })}</Badge> : <Badge variant='success'>{t('settings.upToDate')}</Badge>}
-            <div className='flex gap-2'>
+            <ActionGroup wrap className='justify-start'>
               <Button variant='outline' onClick={() => checkUpdate.mutate()} disabled={checkUpdate.isPending}><RefreshCw data-icon='inline-start' />{t('settings.checkUpdate')}</Button>
               <ConfirmAction
                 trigger={<Button variant='outline' disabled={!deployment.data?.latest_release?.version || applyUpdate.isPending}>{t('common.apply')}</Button>}
@@ -464,7 +464,7 @@ export function SettingsPage() {
                 onConfirm={() => restart.mutate()}
                 disabled={restart.isPending}
               />
-            </div>
+            </ActionGroup>
           </CardContent>
         </Card> : null}
         </div>
