@@ -20,6 +20,7 @@ import { SearchField } from '@/components/primitives/search-field'
 import { SectionEyebrow } from '@/components/primitives/section-eyebrow'
 import { SlideOver } from '@/components/primitives/slide-over'
 import { TokenMeter } from '@/components/primitives/token-meter'
+import { TokenBreakdown } from '@/components/primitives/token-breakdown'
 import { ToolGlyph } from '@/components/primitives/tool-glyph'
 import { api } from '@/lib/api'
 import { compact, dateTime, number, tokenTotal } from '@/lib/format'
@@ -287,24 +288,7 @@ function EventDetail({ event, isAdmin, onClose }: { event: ToolUsageEventDetail 
 
           <section>
             <SectionEyebrow>{t('events.tokenBreakdown')}</SectionEyebrow>
-            <div className='mb-3 flex h-2.5 overflow-hidden rounded-full bg-[var(--surface-inset)]'>
-              {tokenBreakdown.map((item) => (
-                <span
-                  key={item.label}
-                  style={{ width: `${tokens ? (item.value / tokens) * 100 : 0}%`, background: item.color }}
-                  title={item.label}
-                />
-              ))}
-            </div>
-            <div className='flex flex-col gap-2'>
-              {tokenBreakdown.map((item) => (
-                <div className='flex items-center gap-2 text-[12.5px]' key={item.label}>
-                  <span className='size-2.5 rounded-sm' style={{ background: item.color }} />
-                  <span className='flex-1 text-[var(--ink-2)]'>{item.label}</span>
-                  <span className='mono tnum font-semibold'>{number(item.value)}</span>
-                </div>
-              ))}
-            </div>
+            <TokenBreakdown items={tokenBreakdown} valueFormatter={number} />
           </section>
 
           <section>

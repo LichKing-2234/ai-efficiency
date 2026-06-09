@@ -280,6 +280,10 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
 
   Follow-up table audit evidence: `data-grid.test.tsx`, `event-filters.test.ts`, `bun test`, `bun run check`, `bun run build`, and `git diff --check` passed after the migration. `agent-browser` reverified `/events` at `1280x720` and `390x844`: one shared data grid, no error boundary text, no body horizontal overflow, and no visible over-wide interactive controls. The local account still has no event rows, so visible clickable-row rendering is covered by primitive tests and TypeScript/build until event data is available.
 
+  Follow-up token-breakdown audit implementation adds the shared `TokenBreakdown` primitive and migrates the Events SlideOver stacked token bar plus legend rows away from page-local markup while preserving the same backend token fields, color mapping, and locale-aware number formatting.
+
+  Follow-up token-breakdown audit evidence: `token-breakdown.test.tsx`, `event-filters.test.ts`, `bun test`, `bun run check`, `bun run build`, and `git diff --check` passed after the migration. `agent-browser` reverified `/events` at `1280x720` and `390x844`: no error boundary text, no body horizontal overflow, and no visible over-wide interactive controls. The local account still has no event rows, so visible SlideOver `TokenBreakdown` rendering is covered by primitive tests and TypeScript/build until event detail data is available.
+
 - [x] **Step 2: Repositories**
 
   Implement reference workbench styling while keeping add, delete, auto-bind, provider selection, webhook repair, and navigation behavior intact.
