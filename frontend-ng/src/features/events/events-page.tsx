@@ -1,6 +1,6 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useNavigate, useSearch } from '@tanstack/react-router'
-import { ActivityIcon, CoinsIcon, GitPullRequestIcon, LayersIcon, SearchIcon, XIcon } from 'lucide-react'
+import { ActivityIcon, CoinsIcon, GitPullRequestIcon, LayersIcon } from 'lucide-react'
 import { useState } from 'react'
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
 import { Badge } from '@/components/ui/badge'
@@ -12,6 +12,7 @@ import { MetricCard } from '@/components/primitives/metric-card'
 import { Page } from '@/components/primitives/page'
 import { LoadingState } from '@/components/primitives/data-state'
 import { SegmentedControl } from '@/components/primitives/segmented-control'
+import { SearchField } from '@/components/primitives/search-field'
 import { SlideOver } from '@/components/primitives/slide-over'
 import { ToolGlyph } from '@/components/primitives/tool-glyph'
 import { api } from '@/lib/api'
@@ -117,20 +118,15 @@ export function EventsPage() {
       <Card>
         <CardContent className='flex flex-col gap-3 p-3'>
           <div className='flex flex-wrap items-center gap-2'>
-            <div className='flex h-9 min-w-[260px] flex-1 items-center gap-2 rounded-[var(--r-md)] border border-border bg-[var(--surface-inset)] px-3'>
-              <SearchIcon className='size-4 text-[var(--ink-3)]' />
-              <input
-                className='min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-[var(--ink-3)]'
-                onChange={(event) => setFilters((value) => ({ ...value, q: event.target.value }))}
-                placeholder={t('events.searchRepoSessionSource')}
-                value={filters.q}
-              />
-              {filters.q ? (
-                <button className='grid size-6 place-items-center rounded-[var(--r-sm)] text-[var(--ink-3)] hover:bg-[var(--surface-3)] hover:text-foreground' onClick={() => setFilters((value) => ({ ...value, q: '' }))} type='button'>
-                  <XIcon className='size-3.5' />
-                </button>
-              ) : null}
-            </div>
+            <SearchField
+              ariaLabel={t('events.searchRepoSessionSource')}
+              className='min-w-[260px] flex-1'
+              clearLabel={t('common.clear')}
+              onChange={(q) => setFilters((value) => ({ ...value, q }))}
+              onClear={() => setFilters((value) => ({ ...value, q: '' }))}
+              placeholder={t('events.searchRepoSessionSource')}
+              value={filters.q}
+            />
             <FilterSegment
               ariaLabel={t('events.tool')}
               label={t('events.tool')}

@@ -230,7 +230,9 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
 
   Current implementation uses the shared `SegmentedControl` primitive for Tool and Binding filters instead of page-local chip buttons, with `event-filters.ts` helpers preserving the visible `all` value and backend empty filter contract.
 
-  Current evidence: `event-filters.test.ts`, `bun run check`, browser QA on `/events`, and full verification passed. `agent-browser` verified two radiogroups, seven radio items, Tool and Binding filters, no error boundary, no visible interactive overflow, and no horizontal overflow at `1280x720` and `390x844`.
+  Current implementation also uses the shared `SearchField` primitive for the event text filter, composing the shadcn `InputGroup` parts instead of page-local input wrapper markup.
+
+  Current evidence: `event-filters.test.ts`, `search-field.test.tsx`, `bun run check`, browser QA on `/events`, and full verification passed. `agent-browser` verified two radiogroups, seven radio items, Tool and Binding filters, one shared search input, no error boundary, no visible interactive overflow, and no horizontal overflow at `1280x720` and `390x844`.
 
 - [x] **Step 2: Repositories**
 
@@ -251,6 +253,10 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
 - [x] **Step 5: Admin Users and Settings**
 
   Re-skin admin pages with shared grid tables and forms while preserving role guards and backend mutation contracts.
+
+  Current implementation uses the shared `SearchField` primitive for the Admin Users table filter, matching Events search behavior and shadcn `InputGroup` composition.
+
+  Current evidence: `search-field.test.tsx`, `bun run check`, `bun test`, `bun run build`, and browser QA on `/admin/users` passed. `agent-browser` verified the authenticated Admin Users shared search input at `1280x720` and `390x844`, no error boundary, and no horizontal overflow.
 
 ## Task 6: Verification, Visual QA, Commit, and Push
 

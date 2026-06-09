@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Navigate, useNavigate, useSearch } from '@tanstack/react-router'
-import { Clipboard, KeyRound, RefreshCw, Search, Shield, Users } from 'lucide-react'
+import { Clipboard, KeyRound, RefreshCw, SearchIcon, Shield, Users } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { AppAlert } from '@/components/primitives/app-alert'
 import { Page, PageHeader } from '@/components/primitives/page'
 import { LoadingState } from '@/components/primitives/data-state'
+import { SearchField } from '@/components/primitives/search-field'
 import { StatusBadge } from '@/components/primitives/status-badge'
 import { MetricCard } from '@/components/primitives/metric-card'
 import { api } from '@/lib/api'
@@ -157,7 +158,7 @@ export function AdminUsersPage() {
       <PageHeader title={t('adminUsers.title')} description={t('adminUsers.description')} variant='toolbar' />
       <div className='kpi-grid'>
         <MetricCard label={t('adminUsers.totalUsers')} value={number(total)} icon={Users} />
-        <MetricCard label={t('adminUsers.visibleUsers')} value={number(rows.length)} icon={Search} accent />
+        <MetricCard label={t('adminUsers.visibleUsers')} value={number(rows.length)} icon={SearchIcon} accent />
         <MetricCard label={t('adminUsers.admins')} value={number(adminCount)} icon={Shield} />
         <MetricCard label={t('adminUsers.relayMapped')} value={number(mappedCount)} icon={KeyRound} />
       </div>
@@ -242,13 +243,21 @@ export function AdminUsersPage() {
       </Card>
       <Card className='overflow-hidden'>
         <CardContent className='flex flex-wrap items-center gap-2 border-border border-b p-3'>
-          <div className='flex h-9 min-w-64 items-center gap-2 rounded-[var(--r-md)] border border-border bg-[var(--surface-inset)] px-3'>
-            <Search className='text-muted-foreground' />
-            <Input className='h-auto border-0 bg-transparent p-0 shadow-none focus-visible:ring-0' placeholder={t('adminUsers.searchUsers')} value={q} onChange={(event) => {
-              setQ(event.target.value)
+          <SearchField
+            ariaLabel={t('adminUsers.searchUsers')}
+            className='min-w-64 flex-1 sm:max-w-md'
+            clearLabel={t('common.clear')}
+            onChange={(value) => {
+              setQ(value)
               setPage(1)
-            }} />
-          </div>
+            }}
+            onClear={() => {
+              setQ('')
+              setPage(1)
+            }}
+            placeholder={t('adminUsers.searchUsers')}
+            value={q}
+          />
           <Select value={String(pageSize)} onValueChange={(value) => {
             setPageSize(Number(value))
             setPage(1)
