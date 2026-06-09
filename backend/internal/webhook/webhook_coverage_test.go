@@ -1291,6 +1291,178 @@ func TestHandleBitbucketPRMergedUsesToRefRepositoryWhenTopLevelMissing(t *testin
 	}
 }
 
+func TestHandleBitbucketPRMergedUsesToRefRepositoryWithWebhookSecret(t *testing.T) {
+	client := newTestClient(t)
+	defer client.Close()
+	h := NewHandler(client, nil, newTestLogger())
+
+	ctx := context.Background()
+	provider, _ := client.ScmProvider.Create().
+		SetName("test-bb-ref-provider").
+		SetType(scmprovider.TypeBitbucketServer).
+		SetBaseURL("https://bitbucket.example.com").
+		SetCredentials("test-token").
+		Save(ctx)
+
+	secret := "bbsecret-ref-repo"
+	rc := client.RepoConfig.Create().
+		SetName("target-secret-repo").
+		SetFullName("PROJ/target-secret-repo").
+		SetCloneURL("https://bitbucket.example.com/PROJ/target-secret-repo.git").
+		SetScmProviderID(provider.ID).
+		SetWebhookSecret(secret).
+		SaveX(ctx)
+
+	client.PrRecord.Create().
+		SetRepoConfigID(rc.ID).
+		SetScmPrID(44).
+		SetScmPrURL("https://bitbucket.example.com/projects/PROJ/repos/target-secret-repo/pull-requests/44").
+		SetAuthor("bob").
+		SetTitle("Signed ref merge").
+		SetSourceBranch("feature/signed-ref").
+		SetTargetBranch("release/1.2.3").
+		SetStatus(prrecord.StatusOpen).
+		SaveX(ctx)
+
+	payload := map[string]interface{}{
+		"eventKey": "pr:merged",
+		"actor":    map[string]interface{}{"name": "alice"},
+		"pullRequest": map[string]interface{}{
+			"id":    44,
+			"title": "Signed ref merge",
+			"author": map[string]interface{}{
+				"user": map[string]interface{}{"name": "bob"},
+			},
+			"fromRef": map[string]interface{}{
+				"displayId": "feature/signed-ref",
+				"repository": map[string]interface{}{
+					"slug":    "source-secret-repo",
+					"project": map[string]interface{}{"key": "FORK"},
+				},
+			},
+			"toRef": map[string]interface{}{
+				"displayId": "release/1.2.3",
+				"repository": map[string]interface{}{
+					"slug":    "target-secret-repo",
+					"project": map[string]interface{}{"key": "PROJ"},
+				},
+			},
+		},
+	}
+	payloadBytes, _ := json.Marshal(payload)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/bitbucket", bytes.NewReader(payloadBytes))
+	req.Header.Set("X-Event-Key", "pr:merged")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Hub-Signature", signBitbucketWebhookTestBody(payloadBytes, secret))
+	c := newGinContext(w, req)
+
+	h.HandleBitbucket(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	pr, _ := client.PrRecord.Query().Only(ctx)
+	if pr.Status != prrecord.StatusMerged {
+		t.Errorf("status = %q, want merged", pr.Status)
+	}
+	letters, err := client.WebhookDeadLetter.Query().All(ctx)
+	if err != nil {
+		t.Fatalf("query dead letters: %v", err)
+	}
+	if len(letters) != 0 {
+		t.Fatalf("expected no dead letters, got %d", len(letters))
+	}
+}
+
+func TestHandleBitbucketPRMergedToRefRepositoryRejectsStoredSecretSignatureFailures(t *testing.T) {
+	tests := []struct {
+		name      string
+		signature string
+	}{
+		{name: "missing signature"},
+		{name: "invalid signature", signature: "sha256=deadbeef"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := newTestClient(t)
+			defer client.Close()
+			h := NewHandler(client, nil, newTestLogger())
+
+			ctx := context.Background()
+			provider, _ := client.ScmProvider.Create().
+				SetName("test-bb-ref-provider").
+				SetType(scmprovider.TypeBitbucketServer).
+				SetBaseURL("https://bitbucket.example.com").
+				SetCredentials("test-token").
+				Save(ctx)
+
+			client.RepoConfig.Create().
+				SetName("target-secret-repo").
+				SetFullName("PROJ/target-secret-repo").
+				SetCloneURL("https://bitbucket.example.com/PROJ/target-secret-repo.git").
+				SetScmProviderID(provider.ID).
+				SetWebhookSecret("bbsecret-ref-repo").
+				SaveX(ctx)
+
+			payload := map[string]interface{}{
+				"eventKey": "pr:merged",
+				"actor":    map[string]interface{}{"name": "alice"},
+				"pullRequest": map[string]interface{}{
+					"id":    45,
+					"title": "Rejected signed ref merge",
+					"author": map[string]interface{}{
+						"user": map[string]interface{}{"name": "bob"},
+					},
+					"fromRef": map[string]interface{}{
+						"displayId": "feature/signed-ref",
+						"repository": map[string]interface{}{
+							"slug":    "source-secret-repo",
+							"project": map[string]interface{}{"key": "FORK"},
+						},
+					},
+					"toRef": map[string]interface{}{
+						"displayId": "release/1.2.3",
+						"repository": map[string]interface{}{
+							"slug":    "target-secret-repo",
+							"project": map[string]interface{}{"key": "PROJ"},
+						},
+					},
+				},
+			}
+			payloadBytes, _ := json.Marshal(payload)
+
+			w := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/bitbucket", bytes.NewReader(payloadBytes))
+			req.Header.Set("X-Event-Key", "pr:merged")
+			req.Header.Set("Content-Type", "application/json")
+			if tt.signature != "" {
+				req.Header.Set("X-Hub-Signature", tt.signature)
+			}
+			c := newGinContext(w, req)
+
+			h.HandleBitbucket(c)
+
+			if w.Code != http.StatusUnauthorized {
+				t.Fatalf("expected 401, got %d: %s", w.Code, w.Body.String())
+			}
+			letters, err := client.WebhookDeadLetter.Query().All(ctx)
+			if err != nil {
+				t.Fatalf("query dead letters: %v", err)
+			}
+			if len(letters) != 1 {
+				t.Fatalf("expected 1 dead letter, got %d", len(letters))
+			}
+			if !strings.Contains(letters[0].ErrorMessage, "invalid bitbucket webhook signature") {
+				t.Fatalf("dead letter error = %q, want invalid signature", letters[0].ErrorMessage)
+			}
+		})
+	}
+}
+
 // --- storeDeadLetter: with empty payload bytes ---
 
 func TestStoreDeadLetterEmptyPayload(t *testing.T) {

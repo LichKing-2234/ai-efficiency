@@ -859,6 +859,42 @@ func TestParseWebhookPRMergedUsesToRefRepositoryWhenTopLevelMissing(t *testing.T
 	}
 }
 
+func TestParseWebhookPRMergedUsesFromRefRepositoryWhenTopLevelAndToRefMissing(t *testing.T) {
+	payload := map[string]interface{}{
+		"actor": map[string]string{"name": "alice"},
+		"pullRequest": map[string]interface{}{
+			"id":    43,
+			"title": "Update release branch",
+			"fromRef": map[string]interface{}{
+				"displayId": "feature/ref-only",
+				"repository": map[string]interface{}{
+					"slug":    "source-repo",
+					"project": map[string]string{"key": "SRC"},
+				},
+			},
+			"toRef": map[string]interface{}{
+				"displayId": "main",
+			},
+			"author": map[string]interface{}{
+				"user": map[string]string{"name": "bob"},
+			},
+		},
+	}
+	body, _ := json.Marshal(payload)
+	req := httptest.NewRequest("POST", "/", bytes.NewReader(body))
+	req.Header.Set("X-Event-Key", "pr:merged")
+	req.Header.Set("Content-Type", "application/json")
+
+	p, _ := New("https://bb", "tok", zap.NewNop())
+	event, err := p.ParseWebhookPayload(req, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if event.RepoFullName != "SRC/source-repo" {
+		t.Errorf("repo = %q, want source repo fallback", event.RepoFullName)
+	}
+}
+
 func TestParseWebhookPush(t *testing.T) {
 	payload := map[string]interface{}{
 		"actor":      map[string]string{"name": "u"},
