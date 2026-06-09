@@ -185,6 +185,8 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
 
   Keep generic page titles in the top bar. Feature pages should start with content or page-specific toolbars; Overview may keep its hero.
 
+  Follow-up audit implementation tightens `PageHeader variant='toolbar'` so it renders only a right-aligned action row and no page title or description copy. Empty toolbar headers now render `null`, which removes duplicate in-content description blocks from My Setup, User Management, and Admin Console while preserving the Repo Detail sync action. Focused TDD evidence: `bun test src/components/primitives/page.test.tsx` first failed because the toolbar variant still rendered description copy, then passed after implementation. Current verification for this checkpoint: `bun test src/components/primitives/page.test.tsx`, `bun test`, `bun run check`, `bun run build`, and `git diff --check` pass. Browser QA on `http://127.0.0.1:4317/` verified `/user`, `/admin/users`, and `/settings` at desktop `1280x720` with zero duplicate page-level description matches, zero `main h1` nodes, no error boundary, and zero horizontal overflow. Local `/repos` currently has no repo detail link, so Repo Detail toolbar rendering remains covered by TypeScript/build rather than authenticated browser data.
+
 ## Task 4: Usage Route and Overview Rewrite
 
 **Files:**

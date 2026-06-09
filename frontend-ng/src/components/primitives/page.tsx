@@ -16,12 +16,8 @@ export function PageHeader({
   variant?: 'title' | 'toolbar'
 }) {
   if (variant === 'toolbar') {
-    return (
-      <div className='flex flex-col gap-3 md:flex-row md:items-center md:justify-between'>
-        {description ? <p className='max-w-3xl text-muted-foreground text-sm'>{description}</p> : <span className='hidden' aria-hidden='true'>{title}</span>}
-        {actions ? <div className='flex shrink-0 items-center gap-2'>{actions}</div> : null}
-      </div>
-    )
+    if (!actions) return null
+    return <div className='flex items-center justify-end gap-2'>{actions}</div>
   }
 
   return (
