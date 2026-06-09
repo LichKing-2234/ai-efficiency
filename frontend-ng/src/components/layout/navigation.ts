@@ -7,28 +7,30 @@ import {
   ShieldIcon,
   UserIcon
 } from 'lucide-react'
+import type { MessageKey } from '@/lib/i18n/messages'
 
 type NavItem = {
   to: '/' | '/events' | '/repos' | '/user' | '/admin/users' | '/settings'
-  label: string
-  title: string
-  section: 'Analyze' | 'Code & PR' | 'Account' | 'Administration' | 'Auth'
+  labelKey: MessageKey
+  titleKey: MessageKey
+  sectionKey: MessageKey
+  section: 'analyze' | 'code' | 'account' | 'admin' | 'auth'
   icon: LucideIcon
   admin?: boolean
 }
 
 export const navItems = [
-  { to: '/', label: 'Overview', section: 'Analyze', icon: HomeIcon },
-  { to: '/events', label: 'Usage Records', section: 'Analyze', icon: ActivityIcon },
-  { to: '/repos', label: 'Repositories', section: 'Code & PR', icon: FolderGit2Icon },
-  { to: '/user', label: 'My Setup', section: 'Account', icon: UserIcon },
-  { to: '/admin/users', label: 'User Management', section: 'Administration', icon: ShieldIcon, admin: true },
-  { to: '/settings', label: 'Admin Console', section: 'Administration', icon: SettingsIcon, admin: true }
-] satisfies Array<Omit<NavItem, 'title'>>
+  { to: '/', labelKey: 'nav.overview', titleKey: 'nav.overview', sectionKey: 'nav.analyzeSection', section: 'analyze', icon: HomeIcon },
+  { to: '/events', labelKey: 'nav.usageRecords', titleKey: 'nav.usageRecords', sectionKey: 'nav.analyzeSection', section: 'analyze', icon: ActivityIcon },
+  { to: '/repos', labelKey: 'nav.codeRepositories', titleKey: 'nav.codeRepositories', sectionKey: 'nav.codeSection', section: 'code', icon: FolderGit2Icon },
+  { to: '/user', labelKey: 'nav.mySetup', titleKey: 'nav.mySetup', sectionKey: 'nav.accountSection', section: 'account', icon: UserIcon },
+  { to: '/admin/users', labelKey: 'nav.userManagement', titleKey: 'nav.userManagement', sectionKey: 'nav.adminSection', section: 'admin', icon: ShieldIcon, admin: true },
+  { to: '/settings', labelKey: 'nav.adminConsole', titleKey: 'nav.adminConsole', sectionKey: 'nav.adminSection', section: 'admin', icon: SettingsIcon, admin: true }
+] satisfies NavItem[]
 
-export function pageMeta(pathname: string): Pick<NavItem, 'title' | 'section'> {
-  if (pathname.startsWith('/repos/') && pathname !== '/repos') return { title: 'Repository Detail', section: 'Code & PR' }
-  if (pathname.startsWith('/oauth/')) return { title: 'OAuth', section: 'Auth' }
+export function pageMeta(pathname: string): Pick<NavItem, 'titleKey' | 'sectionKey'> {
+  if (pathname.startsWith('/repos/') && pathname !== '/repos') return { titleKey: 'nav.repositoryDetail', sectionKey: 'nav.codeSection' }
+  if (pathname.startsWith('/oauth/')) return { titleKey: 'nav.authSection', sectionKey: 'nav.authSection' }
   const match = navItems.find((item) => item.to === pathname) ?? navItems[0]
-  return { title: match.label, section: match.section }
+  return { titleKey: match.titleKey, sectionKey: match.sectionKey }
 }

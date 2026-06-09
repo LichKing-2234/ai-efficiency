@@ -6,6 +6,7 @@ import { AppShell } from '@/components/layout/app-shell'
 import { LoadingState } from '@/components/primitives/data-state'
 import { queryClient } from '@/query-client'
 import { ensureAuthenticatedUser } from '@/lib/auth/session'
+import { I18nProvider, useI18n } from '@/lib/i18n/i18n'
 import stylesUrl from '../styles.css?url'
 
 export const Route = createRootRoute({
@@ -23,10 +24,12 @@ export const Route = createRootRoute({
 function RootComponent() {
   return (
     <QueryClientProvider client={queryClient}>
-      <AuthFrame>
-        <Outlet />
-      </AuthFrame>
-      <Toaster />
+      <I18nProvider>
+        <AuthFrame>
+          <Outlet />
+        </AuthFrame>
+        <Toaster />
+      </I18nProvider>
     </QueryClientProvider>
   )
 }
@@ -34,6 +37,7 @@ function RootComponent() {
 function AuthFrame({ children }: { children: React.ReactNode }) {
   const location = useLocation()
   const navigate = useNavigate()
+  const { t } = useI18n()
   const isPublic = location.pathname === '/login' || location.pathname.startsWith('/oauth/')
   const { data: user, isLoading, error, refetch } = useQuery({
     queryKey: ['auth', 'me'],
@@ -48,7 +52,7 @@ function AuthFrame({ children }: { children: React.ReactNode }) {
   }, [error, isPublic, location.href, navigate])
 
   if (isPublic) return <>{children}</>
-  if (isLoading && !user) return <AppShell user={null}><LoadingState label='Loading account...' /></AppShell>
+  if (isLoading && !user) return <AppShell user={null}><LoadingState label={t('auth.loadingAccount')} /></AppShell>
   return <AppShell user={user ?? null}>{children}</AppShell>
 }
 

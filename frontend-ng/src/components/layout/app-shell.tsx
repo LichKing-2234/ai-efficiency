@@ -4,16 +4,19 @@ import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { api } from '@/lib/api'
 import type { User } from '@/lib/api/types'
+import { useI18n } from '@/lib/i18n/i18n'
 import { cn } from '@/lib/utils'
 import { navItems, pageMeta } from './navigation'
 
 export function AppShell({ user, children }: { user: User | null; children: React.ReactNode }) {
   const location = useLocation()
   const navigate = useNavigate()
+  const { t, toggleLocale } = useI18n()
   const [open, setOpen] = useState(false)
   const [dark, setDark] = useState(false)
   const meta = pageMeta(location.pathname)
   const visibleItems = navItems.filter((item) => !item.admin || user?.role === 'admin')
+  const sectionOrder = ['analyze', 'code', 'account', 'admin'] as const
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', dark)
@@ -29,16 +32,17 @@ export function AppShell({ user, children }: { user: User | null; children: Reac
       <div className='flex h-[var(--ae-toolbar)] items-center border-b border-[var(--ae-hairline)] px-4'>
         <div className='flex items-center gap-2 font-semibold'>
           <span className='grid size-6 place-items-center rounded-md bg-primary text-primary-foreground text-xs'>AE</span>
-          <span>AI Efficiency</span>
+          <span>{t('app.title')}</span>
         </div>
       </div>
       <nav className='flex-1 overflow-y-auto p-3'>
-        {['Analyze', 'Code & PR', 'Account', 'Administration'].map((section) => {
+        {sectionOrder.map((section) => {
           const items = visibleItems.filter((item) => item.section === section)
           if (!items.length) return null
+          const sectionKey = items[0].sectionKey
           return (
             <div key={section} className='mb-4'>
-              <div className='px-2 py-1 font-semibold text-[10px] text-[var(--ae-text-4)] uppercase tracking-[0.08em]'>{section}</div>
+              <div className='px-2 py-1 font-semibold text-[10px] text-[var(--ae-text-4)] uppercase tracking-[0.08em]'>{t(sectionKey)}</div>
               <div className='flex flex-col gap-1'>
                 {items.map((item) => {
                   const Icon = item.icon
@@ -54,7 +58,7 @@ export function AppShell({ user, children }: { user: User | null; children: Reac
                       )}
                     >
                       <Icon />
-                      <span>{item.label}</span>
+                      <span>{t(item.labelKey)}</span>
                     </Link>
                   )
                 })}
@@ -69,10 +73,10 @@ export function AppShell({ user, children }: { user: User | null; children: Reac
             {(user?.username || user?.email || '?').slice(0, 2).toUpperCase()}
           </div>
           <div className='min-w-0 flex-1'>
-            <div className='truncate font-medium text-sm'>{user?.username || 'Guest'}</div>
-            <div className='truncate text-[var(--ae-text-4)] text-xs'>{user?.role || 'not signed in'}</div>
+            <div className='truncate font-medium text-sm'>{user?.username || t('auth.guest')}</div>
+            <div className='truncate text-[var(--ae-text-4)] text-xs'>{user?.role || t('auth.notSignedIn')}</div>
           </div>
-          <Button variant='ghost' size='icon-sm' onClick={logout} title='Sign out'>
+          <Button variant='ghost' size='icon-sm' onClick={logout} title={t('nav.signOut')}>
             <LogOutIcon />
           </Button>
         </div>
@@ -85,7 +89,7 @@ export function AppShell({ user, children }: { user: User | null; children: Reac
       <aside className='hidden w-[var(--ae-rail)] shrink-0 border-r border-[var(--ae-hairline)] md:block'>{nav}</aside>
       {open ? (
         <div className='fixed inset-0 z-50 md:hidden'>
-          <button className='absolute inset-0 bg-black/35' onClick={() => setOpen(false)} aria-label='Close navigation' />
+          <button className='absolute inset-0 bg-black/35' onClick={() => setOpen(false)} aria-label={t('nav.closeMenu')} />
           <div className='relative h-full w-[min(280px,86vw)]'>{nav}</div>
         </div>
       ) : null}
@@ -95,11 +99,14 @@ export function AppShell({ user, children }: { user: User | null; children: Reac
             <MenuIcon />
           </Button>
           <div className='min-w-0'>
-            <div className='text-[var(--ae-text-4)] text-xs'>{meta.section}</div>
-            <div className='truncate font-semibold text-sm'>{meta.title}</div>
+            <div className='text-[var(--ae-text-4)] text-xs'>{t(meta.sectionKey)}</div>
+            <div className='truncate font-semibold text-sm'>{t(meta.titleKey)}</div>
           </div>
           <div className='ml-auto flex items-center gap-2'>
-            <Button variant='ghost' size='icon-sm' onClick={() => setDark((value) => !value)} title='Toggle theme'>
+            <Button variant='ghost' size='sm' onClick={toggleLocale}>
+              {t('nav.languageToggle')}
+            </Button>
+            <Button variant='ghost' size='icon-sm' onClick={() => setDark((value) => !value)} title={t('nav.toggleTheme')}>
               {dark ? <SunIcon /> : <MoonIcon />}
             </Button>
           </div>

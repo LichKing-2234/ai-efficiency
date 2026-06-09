@@ -167,7 +167,7 @@ Expected: commit created.
 - Modify: `frontend-ng/src/routes/__root.tsx`
 - Modify: `frontend-ng/src/lib/format.ts`
 
-- [ ] **Step 1: Write failing i18n behavior tests**
+- [x] **Step 1: Write failing i18n behavior tests**
 
 Create `frontend-ng/src/lib/i18n/no-hardcoded-copy.test.ts` with:
 
@@ -220,7 +220,7 @@ describe('frontend-ng i18n resources', () => {
 })
 ```
 
-- [ ] **Step 2: Run the new guard and verify it fails**
+- [x] **Step 2: Run the new guard and verify it fails**
 
 Run:
 
@@ -230,7 +230,7 @@ cd frontend-ng && bun test src/lib/i18n/no-hardcoded-copy.test.ts
 
 Expected: FAIL because `messages.ts` does not exist.
 
-- [ ] **Step 3: Create message resources**
+- [x] **Step 3: Create message resources**
 
 Create `frontend-ng/src/lib/i18n/messages.ts` with the complete resource table required by the currently mounted `frontend-ng` routes. Seed route names and mainline capability copy from `frontend/src/i18n.ts` for `nav`, `home`, `usageDashboard`, `repos`, `repoDetail`, `events`, `user`, `adminUsers`, `settings`, `auth`, `oauth`, and `common`, then keep all future page copy in this file:
 
@@ -444,7 +444,7 @@ export function formatMessage(locale: Locale, key: MessageKey, values: Record<st
 }
 ```
 
-- [ ] **Step 4: Create React provider**
+- [x] **Step 4: Create React provider**
 
 Create `frontend-ng/src/lib/i18n/i18n.tsx`:
 
@@ -502,7 +502,7 @@ export function useI18n() {
 export { i18next }
 ```
 
-- [ ] **Step 5: Wrap root and set translated loading copy**
+- [x] **Step 5: Wrap root and set translated loading copy**
 
 Modify `frontend-ng/src/routes/__root.tsx`:
 
@@ -541,7 +541,7 @@ with:
 <LoadingState label={t('auth.loadingAccount')} />
 ```
 
-- [ ] **Step 6: Make format helpers locale-aware**
+- [x] **Step 6: Make format helpers locale-aware**
 
 Modify `frontend-ng/src/lib/format.ts`:
 
@@ -580,7 +580,7 @@ export function percent(value: number | undefined | null, locale = 'en-US') {
 }
 ```
 
-- [ ] **Step 7: Run tests**
+- [x] **Step 7: Run tests**
 
 Run:
 
