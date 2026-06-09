@@ -1,6 +1,7 @@
 import {
   ActivityIcon,
   FolderGit2Icon,
+  GaugeIcon,
   HomeIcon,
   type LucideIcon,
   SettingsIcon,
@@ -10,7 +11,7 @@ import {
 import type { MessageKey } from '@/lib/i18n/messages'
 
 type NavItem = {
-  to: '/' | '/events' | '/repos' | '/user' | '/admin/users' | '/settings'
+  to: '/' | '/usage' | '/events' | '/repos' | '/user' | '/admin/users' | '/settings'
   labelKey: MessageKey
   titleKey: MessageKey
   sectionKey: MessageKey
@@ -21,6 +22,7 @@ type NavItem = {
 
 export const navItems = [
   { to: '/', labelKey: 'nav.overview', titleKey: 'nav.overview', sectionKey: 'nav.analyzeSection', section: 'analyze', icon: HomeIcon },
+  { to: '/usage', labelKey: 'nav.usageAnalytics', titleKey: 'nav.usageAnalytics', sectionKey: 'nav.analyzeSection', section: 'analyze', icon: GaugeIcon },
   { to: '/events', labelKey: 'nav.usageRecords', titleKey: 'nav.usageRecords', sectionKey: 'nav.analyzeSection', section: 'analyze', icon: ActivityIcon },
   { to: '/repos', labelKey: 'nav.codeRepositories', titleKey: 'nav.codeRepositories', sectionKey: 'nav.codeSection', section: 'code', icon: FolderGit2Icon },
   { to: '/user', labelKey: 'nav.mySetup', titleKey: 'nav.mySetup', sectionKey: 'nav.accountSection', section: 'account', icon: UserIcon },

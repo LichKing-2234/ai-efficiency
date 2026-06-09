@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as UserRouteImport } from './routes/user'
+import { Route as UsageRouteImport } from './routes/usage'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ReposRouteImport } from './routes/repos'
 import { Route as LoginRouteImport } from './routes/login'
@@ -35,6 +36,11 @@ import { Route as ApiAuthBootstrapRouteImport } from './routes/api/auth/bootstra
 const UserRoute = UserRouteImport.update({
   id: '/user',
   path: '/user',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const UsageRoute = UsageRouteImport.update({
+  id: '/usage',
+  path: '/usage',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SettingsRoute = SettingsRouteImport.update({
@@ -149,6 +155,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/repos': typeof ReposRouteWithChildren
   '/settings': typeof SettingsRoute
+  '/usage': typeof UsageRoute
   '/user': typeof UserRoute
   '/admin/users': typeof AdminUsersRoute
   '/api/health': typeof ApiHealthRoute
@@ -173,6 +180,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/repos': typeof ReposRouteWithChildren
   '/settings': typeof SettingsRoute
+  '/usage': typeof UsageRoute
   '/user': typeof UserRoute
   '/admin/users': typeof AdminUsersRoute
   '/api/health': typeof ApiHealthRoute
@@ -198,6 +206,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/repos': typeof ReposRouteWithChildren
   '/settings': typeof SettingsRoute
+  '/usage': typeof UsageRoute
   '/user': typeof UserRoute
   '/admin/users': typeof AdminUsersRoute
   '/api/health': typeof ApiHealthRoute
@@ -224,6 +233,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/repos'
     | '/settings'
+    | '/usage'
     | '/user'
     | '/admin/users'
     | '/api/health'
@@ -248,6 +258,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/repos'
     | '/settings'
+    | '/usage'
     | '/user'
     | '/admin/users'
     | '/api/health'
@@ -272,6 +283,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/repos'
     | '/settings'
+    | '/usage'
     | '/user'
     | '/admin/users'
     | '/api/health'
@@ -297,6 +309,7 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   ReposRoute: typeof ReposRouteWithChildren
   SettingsRoute: typeof SettingsRoute
+  UsageRoute: typeof UsageRoute
   UserRoute: typeof UserRoute
   AdminUsersRoute: typeof AdminUsersRoute
   ApiHealthRoute: typeof ApiHealthRoute
@@ -320,6 +333,13 @@ declare module '@tanstack/react-router' {
       path: '/user'
       fullPath: '/user'
       preLoaderRoute: typeof UserRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/usage': {
+      id: '/usage'
+      path: '/usage'
+      fullPath: '/usage'
+      preLoaderRoute: typeof UsageRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/settings': {
@@ -512,6 +532,7 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   ReposRoute: ReposRouteWithChildren,
   SettingsRoute: SettingsRoute,
+  UsageRoute: UsageRoute,
   UserRoute: UserRoute,
   AdminUsersRoute: AdminUsersRoute,
   ApiHealthRoute: ApiHealthRoute,
