@@ -12,7 +12,7 @@
 
 ## Current Status
 
-In progress. The foundation pass, shell, command palette, promoted `/usage` route, Overview, Usage, Events, Repos, Repo Detail, My Setup, Admin Users, and Settings have a first visual pass using real backend data and shared shadcn-style primitives. Static verification, tests, build, local server reachability, browser QA, commits, and push are complete for the current pass. Browser QA verifies authenticated desktop and 390px mobile content for `/`, `/usage`, `/events`, `/repos`, `/user`, `/admin/users`, and `/settings`, plus command palette open, language switching, and dark mode. The current iteration is deepening the reference match by extracting reusable SVG chart primitives and moving Usage Analytics off Recharts for the primary token trend/model distribution visuals.
+In progress. The foundation pass, shell, command palette, promoted `/usage` route, Overview, Usage, Events, Repos, Repo Detail, My Setup, Admin Users, and Settings have a first visual pass using real backend data and shared shadcn-style primitives. Static verification, tests, build, local server reachability, browser QA, commits, and push are complete for the current pass. Browser QA verifies authenticated desktop and 390px mobile content for `/`, `/usage`, `/events`, `/repos`, `/user`, `/admin/users`, and `/settings`, plus command palette open, language switching, and dark mode. The current iteration is deepening the reference match by extracting reusable SVG chart primitives, moving Usage Analytics off Recharts for the primary token trend/model distribution visuals, and aligning the Overview setup status card with a shared `Ring` progress primitive.
 
 ## File Structure
 
@@ -23,6 +23,8 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
 - Modify: `frontend-ng/src/components/primitives/metric-card.tsx` - evolve into a KPI-capable primitive while preserving the existing `MetricCard` export for current screens.
 - Create: `frontend-ng/src/components/primitives/charts.tsx` - shared reference-style SVG chart primitives (`Sparkline`, `SparkBars`, `Ring`, `StackedAreaChart`, `BarsH`).
 - Test: `frontend-ng/src/components/primitives/charts.test.ts` - locks sparkline and stacked-area path calculations.
+- Create: `frontend-ng/src/features/home/home-state.ts` - shared Overview setup readiness derivation used by the setup status card.
+- Test: `frontend-ng/src/features/home/home-state.test.ts` - locks account, AI access, repository, and recent usage readiness progress calculations.
 - Create: `frontend-ng/src/components/primitives/tool-glyph.tsx` - reusable tool identity glyph for tables and detail headers.
 - Create: `frontend-ng/src/components/primitives/segmented-control.tsx` - shared range/filter segmented control.
 - Create: `frontend-ng/src/components/primitives/slide-over.tsx` - shared right-side inspect panel for events/repos detail flows.
@@ -201,6 +203,12 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
 
   Current evidence: `bun run check`, `bun test`, `bun run build`, and browser QA on `/usage` passed. The local dev account returns `configured=false`, so browser QA verifies the configured-empty state, no Recharts DOM, no runtime error, and no horizontal overflow at `1280px` and `390px`; data-state chart rendering is covered by TypeScript/build and `charts.test.ts`.
 
+- [x] **Step 6: Align Overview setup progress with shared Ring**
+
+  Extract Overview setup readiness into `home-state.ts`, render the setup status card with the shared `Ring` primitive, and keep checklist labels/statuses backed by real dashboard, provider, and event data.
+
+  Current evidence: `home-state.test.ts`, `bun run check`, `bun test`, `bun run build`, `git diff --check`, and browser QA on `/` passed. `agent-browser` verified authenticated desktop `1280x720` and mobile `390x844` states with a likely ring SVG, visible `1/4` setup progress, no error boundary, and no horizontal overflow.
+
 ## Task 5: Events, Repos, Setup, and Admin Screen Pass
 
 **Files:**
@@ -266,6 +274,7 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
   - Overview interaction checks passed for command palette open, shadcn/Radix language dropdown radio menu open, language switch to `zh-CN`, and dark-mode toggle.
   - The admin/settings SSR guard crash was fixed by moving admin role redirects into authenticated client pages.
   - Usage Analytics no longer renders Recharts for the primary token trend; `agent-browser` confirmed `.recharts-wrapper` count is `0`, `/usage` has no horizontal overflow at `1280px` or `390px`, and the local configured-empty state remains usable.
+  - Overview setup status now uses the shared `Ring` primitive and derived readiness helper; `agent-browser` confirmed ring presence, visible `1/4` progress, no error boundary, and no horizontal overflow at `1280x720` and `390x844`.
 
 - [x] **Step 4: Commit logical chunks**
 

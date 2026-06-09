@@ -4,6 +4,7 @@ import { ArrowRightIcon, FolderGit2Icon, GitPullRequestIcon, PlugZapIcon, Workfl
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Ring } from '@/components/primitives/charts'
 import { MetricCard } from '@/components/primitives/metric-card'
 import { Page, PageHeader } from '@/components/primitives/page'
 import { LoadingState } from '@/components/primitives/data-state'
@@ -11,6 +12,7 @@ import { UserUsagePanel } from '@/features/user-usage/user-usage-panel'
 import { api } from '@/lib/api'
 import { number, tokenTotal, dateTime } from '@/lib/format'
 import { useI18n } from '@/lib/i18n/i18n'
+import { homeSetupProgress } from './home-state'
 
 export function HomePage() {
   const { locale, t } = useI18n()
@@ -30,6 +32,11 @@ export function HomePage() {
     }
   }
   const recentEvents = events.data?.items ?? []
+  const setupProgress = homeSetupProgress({
+    connectedTools: connectedTools.size,
+    totalRepos: dashboard.data?.total_repos,
+    recentEvents: recentEvents.length
+  })
 
   return (
     <Page>
@@ -91,8 +98,21 @@ export function HomePage() {
 
       <div className='split-2'>
         <Card>
-          <CardHeader>
-            <CardTitle>{t('home.setupStatus')}</CardTitle>
+          <CardHeader className='flex-row items-center gap-4'>
+            <Ring color='var(--ai)' size={66} stroke={7} value={setupProgress.ratio}>
+              <div className='text-center'>
+                <div className='font-bold text-base leading-none tnum'>
+                  {setupProgress.ready}
+                  <span className='text-[11px] text-[var(--ink-3)]'>/{setupProgress.total}</span>
+                </div>
+              </div>
+            </Ring>
+            <div className='min-w-0'>
+              <CardTitle>{t('home.setupStatus')}</CardTitle>
+              <div className='mt-1 text-muted-foreground text-xs'>
+                {setupProgress.ready === setupProgress.total ? t('home.statusReady') : t('home.statusWaitingEvents')}
+              </div>
+            </div>
           </CardHeader>
           <CardContent className='flex flex-col gap-3'>
             <StatusLine label={t('home.statusAccount')} value={t('home.statusReady')} ok />
