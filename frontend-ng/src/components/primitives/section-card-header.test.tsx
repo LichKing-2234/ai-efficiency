@@ -1,0 +1,30 @@
+import { renderToStaticMarkup } from 'react-dom/server'
+import { describe, expect, test } from 'vitest'
+import { SectionCardHeader } from './section-card-header'
+
+describe('SectionCardHeader', () => {
+  test('renders a card section title with description and actions', () => {
+    const html = renderToStaticMarkup(
+      <SectionCardHeader
+        title='AI Services'
+        description='Configure model providers.'
+        actions={<button type='button'>Add</button>}
+      />
+    )
+
+    expect(html).toContain('data-slot="card-header"')
+    expect(html).toContain('data-slot="card-title"')
+    expect(html).toContain('AI Services')
+    expect(html).toContain('Configure model providers.')
+    expect(html).toContain('Add')
+    expect(html).toContain('justify-between')
+  })
+
+  test('omits optional description and actions without empty controls', () => {
+    const html = renderToStaticMarkup(<SectionCardHeader title='Organization Login' />)
+
+    expect(html).toContain('Organization Login')
+    expect(html).not.toContain('data-slot="card-description"')
+    expect(html).not.toContain('justify-end')
+  })
+})

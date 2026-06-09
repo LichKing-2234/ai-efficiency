@@ -386,6 +386,10 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
 
   Follow-up job-result audit evidence: `job-result-list.test.tsx` was added with a red-green cycle, `admin-users-state.test.ts`, `bun test`, `bun run check`, `bun run build`, and `git diff --check` passed after migrating the result list. `agent-browser` reverified `/admin/users` at `1280x720` and `390x844`: no error boundary text and no body horizontal overflow. The current local account has no active job results, so visible `JobResultList` rendering is covered by primitive tests and TypeScript/build until job result data is available.
 
+  Follow-up section-header audit implementation adds the shared `SectionCardHeader` primitive and migrates the Settings AI Services, Code Platforms, and Advanced Credentials cards away from repeated page-local `CardHeader` title/action/description markup while preserving the existing add-dialog actions, icons, and i18n copy.
+
+  Follow-up section-header audit evidence: `section-card-header.test.tsx` was added with a red-green cycle, `bun test src/components/primitives/section-card-header.test.tsx`, `bun test`, `bun run check`, `bun run build`, and `git diff --check` passed after migration. `agent-browser` reverified `/settings` at `1280x720` and `390x844` in the authenticated session: one shared card header rendered for the active AI Services section, the Add action remained visible, no error boundary text rendered, and body horizontal overflow stayed zero.
+
 ## Task 6: Verification, Visual QA, Commit, and Push
 
 **Files:**

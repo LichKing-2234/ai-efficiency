@@ -20,6 +20,7 @@ import { Page } from '@/components/primitives/page'
 import { LoadingState } from '@/components/primitives/data-state'
 import { FieldItem, FieldList } from '@/components/primitives/field-list'
 import { InfoTile } from '@/components/primitives/info-tile'
+import { SectionCardHeader } from '@/components/primitives/section-card-header'
 import { SectionNav, type SectionNavItem } from '@/components/primitives/section-nav'
 import { StatusBadge } from '@/components/primitives/status-badge'
 import { api } from '@/lib/api'
@@ -287,13 +288,11 @@ export function SettingsPage() {
         </Card>
         <div className='flex min-w-0 flex-col gap-4'>
         {activeSection === 'ai-services' ? <Card>
-          <CardHeader>
-            <div className='flex items-center justify-between gap-2'>
-              <CardTitle>{t('settings.aiServices')}</CardTitle>
-              <Button size='sm' onClick={openAddRelayDialog}><Layers data-icon='inline-start' />{t('common.add')}</Button>
-            </div>
-            <CardDescription>{t('settings.relayProvidersDescription')}</CardDescription>
-          </CardHeader>
+          <SectionCardHeader
+            title={t('settings.aiServices')}
+            description={t('settings.relayProvidersDescription')}
+            actions={<Button size='sm' onClick={openAddRelayDialog}><Layers data-icon='inline-start' />{t('common.add')}</Button>}
+          />
           <CardContent className='p-0'>
             <DataGrid minWidth={860}>
               <DataGridHeader columns={relayColumns}>
@@ -330,13 +329,11 @@ export function SettingsPage() {
           </CardContent>
         </Card> : null}
         {activeSection === 'code-platforms' ? <Card>
-          <CardHeader>
-            <div className='flex items-center justify-between gap-2'>
-              <CardTitle>{t('settings.codePlatforms')}</CardTitle>
-              <Button size='sm' onClick={openAddScmDialog}><Waypoints data-icon='inline-start' />{t('common.add')}</Button>
-            </div>
-            <CardDescription>{t('settings.scmProvidersDescription')}</CardDescription>
-          </CardHeader>
+          <SectionCardHeader
+            title={t('settings.codePlatforms')}
+            description={t('settings.scmProvidersDescription')}
+            actions={<Button size='sm' onClick={openAddScmDialog}><Waypoints data-icon='inline-start' />{t('common.add')}</Button>}
+          />
           <CardContent className='p-0'>
             <DataGrid minWidth={840}>
               <DataGridHeader columns={scmColumns}>
@@ -370,13 +367,11 @@ export function SettingsPage() {
           </CardContent>
         </Card> : null}
         {activeSection === 'advanced-credentials' ? <Card>
-          <CardHeader>
-            <div className='flex items-center justify-between gap-2'>
-              <CardTitle>{t('settings.advancedCredentials')}</CardTitle>
-              <Button size='sm' onClick={openAddCredentialDialog}><KeyRound data-icon='inline-start' />{t('common.add')}</Button>
-            </div>
-            <CardDescription>{t('settings.advancedCredentialsDescription')}</CardDescription>
-          </CardHeader>
+          <SectionCardHeader
+            title={t('settings.advancedCredentials')}
+            description={t('settings.advancedCredentialsDescription')}
+            actions={<Button size='sm' onClick={openAddCredentialDialog}><KeyRound data-icon='inline-start' />{t('common.add')}</Button>}
+          />
           <CardContent className='p-0'>
             <DataGrid minWidth={760}>
               <DataGridHeader columns={credentialColumns}>
