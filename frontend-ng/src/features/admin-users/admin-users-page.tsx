@@ -4,7 +4,7 @@ import { Clipboard, KeyRound, RefreshCw, SearchIcon, Shield, Users } from 'lucid
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -18,6 +18,7 @@ import { LoadingState } from '@/components/primitives/data-state'
 import { InsetPanel } from '@/components/primitives/inset-panel'
 import { JobResultList } from '@/components/primitives/job-result-list'
 import { SearchField } from '@/components/primitives/search-field'
+import { SectionCardHeader } from '@/components/primitives/section-card-header'
 import { StatusBadge } from '@/components/primitives/status-badge'
 import { MetricCard } from '@/components/primitives/metric-card'
 import { api } from '@/lib/api'
@@ -167,9 +168,7 @@ export function AdminUsersPage() {
         <MetricCard label={t('adminUsers.relayMapped')} value={number(mappedCount)} icon={KeyRound} />
       </div>
       <Card>
-        <CardHeader>
-          <CardTitle>{t('adminUsers.subscriptionManagement')}</CardTitle>
-        </CardHeader>
+        <SectionCardHeader title={t('adminUsers.subscriptionManagement')} />
         <CardContent className='flex flex-col gap-3'>
           <div className='text-muted-foreground text-sm'>
             {scope === 'selected' ? t('adminUsers.selectedUsers', { count: selected.length }) : scope === 'current_filter' ? (q.trim() ? t('adminUsers.currentFilterValue', { query: q.trim() }) : t('adminUsers.currentFilter')) : t('adminUsers.allMapped')}

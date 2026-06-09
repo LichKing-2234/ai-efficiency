@@ -2,10 +2,11 @@ import { useNavigate, useSearch } from '@tanstack/react-router'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { AppAlert } from '@/components/primitives/app-alert'
+import { SectionCardHeader } from '@/components/primitives/section-card-header'
 import { api } from '@/lib/api'
 import { useI18n } from '@/lib/i18n/i18n'
 import { safeRedirect, selectInitialLoginSource } from './auth-flow-state'
@@ -34,10 +35,7 @@ export function LoginPage() {
   return (
     <main className='grid min-h-screen place-items-center bg-background p-4'>
       <Card className='w-full max-w-md'>
-        <CardHeader>
-          <CardTitle>{t('auth.loginTitle')}</CardTitle>
-          <CardDescription>{t('auth.loginDescription')}</CardDescription>
-        </CardHeader>
+        <SectionCardHeader title={t('auth.loginTitle')} description={t('auth.loginDescription')} />
         <CardContent>
           <form
             className='flex flex-col gap-3'
