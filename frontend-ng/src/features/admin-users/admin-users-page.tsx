@@ -8,7 +8,6 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Field, FieldLabel } from '@/components/ui/field'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { AppAlert } from '@/components/primitives/app-alert'
 import { CardFilterBar } from '@/components/primitives/card-filter-bar'
@@ -26,6 +25,7 @@ import { MetricCard } from '@/components/primitives/metric-card'
 import { api } from '@/lib/api'
 import { dateTime, number } from '@/lib/format'
 import { useI18n } from '@/lib/i18n/i18n'
+import { AdminSubscriptionForm } from './admin-subscription-form'
 import {
   buildAdminUsersParams,
   buildAdminUsersSearch,
@@ -37,6 +37,7 @@ import {
   parseAdminUsersSearch,
   subscriptionJobMessage
 } from './admin-users-state'
+import type { AdminSubscriptionFormLabels } from './admin-subscription-form'
 import type { AdminSubscriptionJob, AdminSubscriptionManageOperation, AdminSubscriptionManageScope } from '@/lib/api/types'
 
 export function AdminUsersPage() {
@@ -122,6 +123,22 @@ export function AdminUsersPage() {
     confirmRemove,
     loading: job.isPending || activeJobRunning
   })
+  const subscriptionFormLabels: AdminSubscriptionFormLabels = {
+    add: t('common.add'),
+    allMapped: t('adminUsers.allMapped'),
+    confirm: t('adminUsers.confirm'),
+    currentFilter: t('adminUsers.currentFilter'),
+    days: t('adminUsers.days'),
+    extend: t('common.extend'),
+    group: t('adminUsers.group'),
+    jobRunning: t('adminUsers.jobRunning'),
+    operation: t('adminUsers.operation'),
+    provider: t('adminUsers.provider'),
+    remove: t('common.remove'),
+    scope: t('adminUsers.scope'),
+    selectedUsers: (count) => t('adminUsers.selectedUsers', { count }),
+    startJob: t('adminUsers.startJob')
+  }
 
   useEffect(() => {
     const next = buildAdminUsersSearch({ q, page, pageSize })
@@ -175,59 +192,36 @@ export function AdminUsersPage() {
           <div className='text-muted-foreground text-sm'>
             {scope === 'selected' ? t('adminUsers.selectedUsers', { count: selected.length }) : scope === 'current_filter' ? (q.trim() ? t('adminUsers.currentFilterValue', { query: q.trim() }) : t('adminUsers.currentFilter')) : t('adminUsers.allMapped')}
           </div>
-          <div className='grid gap-2 md:grid-cols-[150px_150px_minmax(0,1fr)_minmax(0,1fr)_120px_auto]'>
-            <Select value={scope} disabled={activeJobRunning} onValueChange={(value) => setScope(value as AdminSubscriptionManageScope)}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value='selected'>{t('adminUsers.selectedUsers', { count: selected.length })}</SelectItem>
-                <SelectItem value='current_filter'>{t('adminUsers.currentFilter')}</SelectItem>
-                <SelectItem value='all_mapped'>{t('adminUsers.allMapped')}</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={operation} disabled={activeJobRunning} onValueChange={(value) => {
-              const next = value as AdminSubscriptionManageOperation
+          <AdminSubscriptionForm
+            activeGroupId={activeGroupId}
+            activeGroups={activeGroups}
+            activeJobRunning={activeJobRunning}
+            activeProvider={activeProvider}
+            canSubmit={canSubmitJob}
+            confirmRemove={confirmRemove}
+            days={days}
+            labels={subscriptionFormLabels}
+            operation={operation}
+            scope={scope}
+            selectedCount={selected.length}
+            subscriptionProviders={subscriptionProviders}
+            onConfirmRemoveChange={setConfirmRemove}
+            onDaysChange={setDays}
+            onGroupChange={(value) => setGroupId(value === 'none' ? '' : value)}
+            onOperationChange={(next) => {
               setOperation(next)
               setConfirmRemove(false)
               if (next === 'add' && days <= 0) setDays(30)
               if (next === 'extend' && days <= 0) setDays(7)
-            }}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value='add'>{t('common.add')}</SelectItem>
-                <SelectItem value='extend'>{t('common.extend')}</SelectItem>
-                <SelectItem value='remove'>{t('common.remove')}</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={activeProvider ? String(activeProvider.id) : 'none'} disabled={activeJobRunning} onValueChange={(value) => {
+            }}
+            onProviderChange={(value) => {
               setProviderId(value === 'none' ? '' : value)
               const provider = subscriptionProviders.find((item) => String(item.id) === value)
               setGroupId(provider?.groups[0]?.group_id ?? '')
-            }}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value='none'>{t('adminUsers.provider')}</SelectItem>
-                {subscriptionProviders.map((provider) => <SelectItem key={provider.id} value={String(provider.id)}>{provider.display_name || provider.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            <Select value={activeGroupId || 'none'} disabled={activeJobRunning} onValueChange={(value) => setGroupId(value === 'none' ? '' : value)}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value='none'>{t('adminUsers.group')}</SelectItem>
-                {activeGroups.map((group) => <SelectItem key={group.group_id} value={group.group_id}>{group.group_name} · {group.platform}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            {operation !== 'remove' ? (
-              <Input type='number' min={1} value={String(days)} disabled={activeJobRunning} onChange={(event) => setDays(Number(event.target.value) || 0)} />
-            ) : (
-              <Field orientation='horizontal' className='h-8'>
-                <Checkbox checked={confirmRemove} disabled={activeJobRunning} onCheckedChange={(value) => setConfirmRemove(value === true)} />
-                <FieldLabel>{t('adminUsers.confirm')}</FieldLabel>
-              </Field>
-            )}
-            <Button variant='outline' disabled={!canSubmitJob} onClick={() => job.mutate()}>
-              {activeJobRunning ? t('adminUsers.jobRunning') : t('adminUsers.startJob')}
-            </Button>
-          </div>
+            }}
+            onScopeChange={setScope}
+            onStart={() => job.mutate()}
+          />
           {job.error ? <AppAlert tone='error' title={job.error.message} /> : null}
           {activeJob.error ? <AppAlert tone='error' title={activeJob.error.message} /> : null}
           {jobMessage ? <InsetPanel>{jobMessage}</InsetPanel> : null}

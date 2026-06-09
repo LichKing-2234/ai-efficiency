@@ -476,6 +476,10 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
 
   Follow-up OAuth form/action audit evidence: `oauth-pages.test.tsx` was added and passed with `auth-flow-state.test.ts`. `bun test src/features/oauth/oauth-pages.test.tsx src/features/auth/auth-flow-state.test.ts`, `bun test --timeout 20000`, `bun run check`, `bun run build`, and `git diff --check` passed after extracting the device-code field and action group.
 
+  Follow-up Admin subscription audit implementation extracts `AdminSubscriptionForm` so the subscription-management controls use shadcn `FieldGroup`, `Field`, `FieldLabel`, `Select`, `Input`, `Checkbox`, and shared `ActionGroup` instead of page-local grid controls without field labels. `AdminUsersPage` still owns selected users, provider/group defaults, subscription job mutation, polling, messages, and backend payload construction.
+
+  Follow-up Admin subscription audit evidence: `admin-subscription-form.test.tsx` was added and passed with `admin-users-state.test.ts`. `bun test src/features/admin-users/admin-subscription-form.test.tsx src/features/admin-users/admin-users-state.test.ts`, `bun test --timeout 20000`, `bun run check`, `bun run build`, and `git diff --check` passed after extracting the form. Fresh `agent-browser` coverage for `/admin/users` reached the local unauthenticated loading-account state with no error boundary, no body horizontal overflow, and no button overflow; authenticated subscription form content-state rendering remains covered by SSR/component tests until a reusable logged-in browser session or local handoff is available.
+
 ## Task 6: Verification, Visual QA, Commit, and Push
 
 **Files:**
