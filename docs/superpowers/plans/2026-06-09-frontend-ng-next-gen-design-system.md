@@ -12,7 +12,7 @@
 
 ## Current Status
 
-In progress. The first foundation pass is implemented and verified: global tokens/utilities, upgraded button/card/badge/KPI primitives, ToolGlyph, SegmentedControl, SlideOver, collapsible shell, language dropdown, command palette, and promoted `/usage` route are in place. Overview and Usage have a first visual pass using real backend data. Events, Repos, Setup, and Admin screen parity remain pending.
+In progress. The first foundation pass is implemented and verified: global tokens/utilities, upgraded button/card/badge/KPI primitives, ToolGlyph, SegmentedControl, SlideOver, collapsible shell, language dropdown, command palette, and promoted `/usage` route are in place. Overview, Usage, and Events have a first visual pass using real backend data. Repos, Setup, and Admin screen parity remain pending.
 
 ## File Structure
 
@@ -195,7 +195,7 @@ In progress. The first foundation pass is implemented and verified: global token
 - Modify: `frontend-ng/src/features/settings/settings-page.tsx`
 - Modify: `frontend-ng/src/lib/i18n/messages.ts`
 
-- [ ] **Step 1: Events**
+- [x] **Step 1: Events**
 
   Implement reference filters, KPI cards, CSS-grid table rows, tool glyphs, token mini-bars, and SlideOver detail.
 
