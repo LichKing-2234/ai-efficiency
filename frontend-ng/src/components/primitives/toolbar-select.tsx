@@ -5,6 +5,7 @@ import type { SelectFieldOption } from './select-field'
 export function ToolbarSelect({
   ariaLabel,
   className,
+  disabled,
   onValueChange,
   options,
   size,
@@ -12,6 +13,7 @@ export function ToolbarSelect({
 }: {
   ariaLabel: string
   className?: string
+  disabled?: boolean
   onValueChange: (value: string) => void
   options: SelectFieldOption[]
   size?: 'default' | 'sm'
@@ -20,7 +22,7 @@ export function ToolbarSelect({
   const selected = options.find((option) => option.value === value)
 
   return (
-    <Select value={value} onValueChange={onValueChange}>
+    <Select value={value} disabled={disabled} onValueChange={onValueChange}>
       <SelectTrigger
         aria-label={typeof selected?.label === 'string' ? `${ariaLabel}: ${selected.label}` : ariaLabel}
         className={cn('min-w-24', className)}

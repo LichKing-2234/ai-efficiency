@@ -6,12 +6,10 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Card, CardContent } from '@/components/ui/card'
-import { Checkbox } from '@/components/ui/checkbox'
-import { Field, FieldLabel } from '@/components/ui/field'
-import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
 import { ActionGroup } from '@/components/primitives/action-group'
 import { CardPagerFooter } from '@/components/primitives/card-pager-footer'
+import { CheckboxField } from '@/components/primitives/checkbox-field'
 import { DataGrid, DataGridHeader, DataGridRow } from '@/components/primitives/data-grid'
 import { EntityCardHeader } from '@/components/primitives/entity-card-header'
 import { InfoTile } from '@/components/primitives/info-tile'
@@ -21,6 +19,7 @@ import { Page, PageToolbar } from '@/components/primitives/page'
 import { SectionCardHeader } from '@/components/primitives/section-card-header'
 import { LoadingState } from '@/components/primitives/data-state'
 import { StatusBadge } from '@/components/primitives/status-badge'
+import { ToolbarSelect } from '@/components/primitives/toolbar-select'
 import { UsageSummaryPanel } from '@/components/primitives/usage-summary-panel'
 import { api } from '@/lib/api'
 import { compact, dateTime, number, percent } from '@/lib/format'
@@ -199,10 +198,12 @@ export function RepoDetailPage() {
             <div className='flex flex-col gap-3'>
               <span>{t('repoDetail.webhookRepairNeeded')}</span>
               {repo.data?.webhook_id ? (
-                <Field orientation='horizontal'>
-                  <Checkbox checked={webhookRepairForce} onCheckedChange={(value) => setWebhookRepairForce(value === true)} />
-                  <FieldLabel>{t('repoDetail.forceReplaceWebhook')}</FieldLabel>
-                </Field>
+                <CheckboxField
+                  checked={webhookRepairForce}
+                  id='repo-detail-force-replace-webhook'
+                  label={t('repoDetail.forceReplaceWebhook')}
+                  onCheckedChange={setWebhookRepairForce}
+                />
               ) : null}
               <Button className='w-fit' disabled={repairWebhook.isPending} onClick={() => repairWebhook.mutate()}>
                 {repairWebhook.isPending ? t('repoDetail.webhookRepairing') : t('repoDetail.repairWebhook')}
@@ -241,17 +242,17 @@ export function RepoDetailPage() {
       <Card>
         <SectionCardHeader title={<span className='flex items-center gap-2'><Waypoints className='text-[var(--ai)]' />{t('repoDetail.scmBinding')}</span>} />
         <CardContent className='grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto_auto]'>
-          <Select value={selectedProviderId || 'none'} onValueChange={(value) => setSelectedProviderId(value === 'none' ? '' : value)}>
-            <SelectTrigger className='w-full'><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectGroup>
-                <SelectItem value='none'>{t('repoDetail.noProviderBinding')}</SelectItem>
-                {(scm.data?.items ?? []).map((provider) => (
-                  <SelectItem key={provider.id} value={String(provider.id)}>{provider.name}</SelectItem>
-                ))}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
+          <ToolbarSelect
+            ariaLabel={t('repoDetail.scmBinding')}
+            className='w-full'
+            disabled={scm.isLoading}
+            options={[
+              { value: 'none', label: t('repoDetail.noProviderBinding') },
+              ...(scm.data?.items ?? []).map((provider) => ({ value: String(provider.id), label: provider.name }))
+            ]}
+            value={selectedProviderId || 'none'}
+            onValueChange={(value) => setSelectedProviderId(value === 'none' ? '' : value)}
+          />
           <Button variant='outline' onClick={() => saveBinding.mutate(selectedProviderId)} disabled={saveBinding.isPending}><Save data-icon='inline-start' />{t('repoDetail.saveBinding')}</Button>
           <Button variant='ghost' onClick={() => {
             setSelectedProviderId('')
@@ -265,34 +266,34 @@ export function RepoDetailPage() {
           actions={(
             <div className='flex flex-wrap items-center gap-2 text-sm'>
               <span className='text-muted-foreground'>{t('repoDetail.mergedIn')}</span>
-              <Select value={String(prsMonths)} onValueChange={(value) => {
-                setPRsMonths(Number(value))
-                setPRsPage(0)
-              }}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    <SelectItem value='1'>1</SelectItem>
-                    <SelectItem value='3'>3</SelectItem>
-                    <SelectItem value='6'>6</SelectItem>
-                    <SelectItem value='12'>12</SelectItem>
-                    <SelectItem value='0'>{t('common.allTime')}</SelectItem>
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-              <Select value={String(prsPageSize)} onValueChange={(value) => {
-                setPRsPageSize(Number(value))
-                setPRsPage(0)
-              }}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    <SelectItem value='10'>{t('common.pageSize', { size: 10 })}</SelectItem>
-                    <SelectItem value='25'>{t('common.pageSize', { size: 25 })}</SelectItem>
-                    <SelectItem value='50'>{t('common.pageSize', { size: 50 })}</SelectItem>
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
+              <ToolbarSelect
+                ariaLabel={t('repoDetail.mergedIn')}
+                options={[
+                  { value: '1', label: '1' },
+                  { value: '3', label: '3' },
+                  { value: '6', label: '6' },
+                  { value: '12', label: '12' },
+                  { value: '0', label: t('common.allTime') }
+                ]}
+                value={String(prsMonths)}
+                onValueChange={(value) => {
+                  setPRsMonths(Number(value))
+                  setPRsPage(0)
+                }}
+              />
+              <ToolbarSelect
+                ariaLabel={t('common.pageSizeControl')}
+                options={[
+                  { value: '10', label: t('common.pageSize', { size: 10 }) },
+                  { value: '25', label: t('common.pageSize', { size: 25 }) },
+                  { value: '50', label: t('common.pageSize', { size: 50 }) }
+                ]}
+                value={String(prsPageSize)}
+                onValueChange={(value) => {
+                  setPRsPageSize(Number(value))
+                  setPRsPage(0)
+                }}
+              />
             </div>
           )}
         />

@@ -34,4 +34,18 @@ describe('ToolbarSelect', () => {
 
     expect(html).toContain('data-size="sm"')
   })
+
+  test('supports disabled selects', () => {
+    const html = renderToStaticMarkup(
+      <ToolbarSelect
+        ariaLabel='Provider'
+        disabled
+        options={[{ label: 'None', value: 'none' }]}
+        value='none'
+        onValueChange={() => undefined}
+      />
+    )
+
+    expect(html).toContain('disabled=""')
+  })
 })

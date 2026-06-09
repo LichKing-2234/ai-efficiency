@@ -7,6 +7,7 @@ const ROOT = new URL('../../', import.meta.url).pathname
 const STANDARDIZED_TOOLBAR_SELECT_PAGES = [
   'features/admin-users/admin-users-page.tsx',
   'features/events/events-page.tsx',
+  'features/repos/repo-detail-page.tsx',
   'features/repos/repos-page.tsx'
 ]
 
