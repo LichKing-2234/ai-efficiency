@@ -11,6 +11,8 @@ bun run dev --host 127.0.0.1 --port 4317
 
 The browser should use the TanStack origin only. Business API calls go to same-origin `/api/*` routes, then the TanStack server proxies to the Go backend.
 
+Create `frontend-ng/.env.local` from `frontend-ng/.env.example` for local backend proxy settings. `.env.local` is intentionally ignored and should not be committed.
+
 Useful environment variables:
 
 ```bash
