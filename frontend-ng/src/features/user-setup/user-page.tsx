@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import { ActionGroup } from '@/components/primitives/action-group'
 import { AppAlert } from '@/components/primitives/app-alert'
 import { CommandAccordion } from '@/components/primitives/command-accordion'
 import { CommandStep } from '@/components/primitives/command-step'
@@ -192,7 +193,9 @@ export function UserPage() {
             <EntityCardHeader
               title={selectedProvider ? selectedProvider.display_name || selectedProvider.name : t('userSetup.aiAccess')}
               description={<span className='mono break-all'>{selectedProvider?.base_url || t('userSetup.noProvider')}</span>}
-              actions={(selectedProvider?.groups ?? []).map((group) => (
+              actions={(
+                <ActionGroup wrap className='justify-start sm:justify-end'>
+                  {(selectedProvider?.groups ?? []).map((group) => (
                   <Button
                     key={group.group_id}
                     size='sm'
@@ -205,6 +208,8 @@ export function UserPage() {
                     {group.group_name}
                   </Button>
                 ))}
+                </ActionGroup>
+              )}
             />
             <CardContent className='flex flex-col gap-4'>
               {selectedGroup ? (
