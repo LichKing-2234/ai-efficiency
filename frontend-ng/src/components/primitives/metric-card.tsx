@@ -2,44 +2,8 @@ import type { LucideIcon } from 'lucide-react'
 import { ArrowDownIcon, ArrowUpIcon } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
+import { Sparkline } from '@/components/primitives/charts'
 import { cn } from '@/lib/utils'
-
-function Sparkline({
-  data,
-  color = 'var(--ai)'
-}: {
-  data: number[]
-  color?: string
-}) {
-  const width = 92
-  const height = 30
-  const min = Math.min(...data)
-  const max = Math.max(...data)
-  const range = max - min || 1
-  const points = data.map((value, index) => {
-    const x = data.length === 1 ? width : (index / (data.length - 1)) * width
-    const y = height - 3 - ((value - min) / range) * (height - 6)
-    return [x, y] as const
-  })
-  const line = points.map(([x, y], index) => `${index === 0 ? 'M' : 'L'}${x.toFixed(1)} ${y.toFixed(1)}`).join(' ')
-  const area = `${line} L${width} ${height} L0 ${height} Z`
-  const last = points[points.length - 1] ?? [0, height / 2]
-  const gradientId = `spark-${data.join('-').replace(/[^a-zA-Z0-9-]/g, '')}`
-
-  return (
-    <svg aria-hidden='true' className='block overflow-visible' height={height} viewBox={`0 0 ${width} ${height}`} width={width}>
-      <defs>
-        <linearGradient id={gradientId} x1='0' x2='0' y1='0' y2='1'>
-          <stop offset='0%' stopColor={color} stopOpacity='.22' />
-          <stop offset='100%' stopColor={color} stopOpacity='0' />
-        </linearGradient>
-      </defs>
-      <path d={area} fill={`url(#${gradientId})`} />
-      <path d={line} fill='none' stroke={color} strokeLinecap='round' strokeLinejoin='round' strokeWidth='1.6' />
-      <circle cx={last[0]} cy={last[1]} fill={color} r='2.2' />
-    </svg>
-  )
-}
 
 export function MetricCard({
   label,
@@ -96,7 +60,7 @@ export function MetricCard({
           <div className={cn('tnum font-semibold text-3xl leading-none tracking-tight', accent && 'text-[var(--ai-deep)]')}>
             {value}
           </div>
-          {sparkline?.length ? <Sparkline color={sparklineColor ?? (accent ? 'var(--ai)' : 'var(--viz-output)')} data={sparkline} /> : null}
+          {sparkline?.length ? <Sparkline color={sparklineColor ?? (accent ? 'var(--ai)' : 'var(--viz-output)')} data={sparkline} height={30} width={92} /> : null}
         </div>
         {helper ? <div className='text-muted-foreground text-xs'>{helper}</div> : null}
       </CardContent>

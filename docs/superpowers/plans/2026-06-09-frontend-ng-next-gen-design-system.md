@@ -12,7 +12,7 @@
 
 ## Current Status
 
-In progress. The foundation pass, shell, command palette, promoted `/usage` route, Overview, Usage, Events, Repos, Repo Detail, My Setup, Admin Users, and Settings have a first visual pass using real backend data and shared shadcn-style primitives. Static verification, tests, build, local server reachability, browser QA, commits, and push are complete for the current pass. Browser QA verifies authenticated desktop and 390px mobile content for `/`, `/usage`, `/events`, `/repos`, `/user`, `/admin/users`, and `/settings`, plus command palette open, language switching, and dark mode.
+In progress. The foundation pass, shell, command palette, promoted `/usage` route, Overview, Usage, Events, Repos, Repo Detail, My Setup, Admin Users, and Settings have a first visual pass using real backend data and shared shadcn-style primitives. Static verification, tests, build, local server reachability, browser QA, commits, and push are complete for the current pass. Browser QA verifies authenticated desktop and 390px mobile content for `/`, `/usage`, `/events`, `/repos`, `/user`, `/admin/users`, and `/settings`, plus command palette open, language switching, and dark mode. The current iteration is deepening the reference match by extracting reusable SVG chart primitives and moving Usage Analytics off Recharts for the primary token trend/model distribution visuals.
 
 ## File Structure
 
@@ -21,6 +21,8 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
 - Modify: `frontend-ng/src/components/ui/card.tsx` - normalize card radius, shadow, composition spacing, and hover/accent helper classes.
 - Modify: `frontend-ng/src/components/ui/badge.tsx` - add reference tone aliases while preserving current `success`, `warning`, and `ai` usages.
 - Modify: `frontend-ng/src/components/primitives/metric-card.tsx` - evolve into a KPI-capable primitive while preserving the existing `MetricCard` export for current screens.
+- Create: `frontend-ng/src/components/primitives/charts.tsx` - shared reference-style SVG chart primitives (`Sparkline`, `SparkBars`, `Ring`, `StackedAreaChart`, `BarsH`).
+- Test: `frontend-ng/src/components/primitives/charts.test.ts` - locks sparkline and stacked-area path calculations.
 - Create: `frontend-ng/src/components/primitives/tool-glyph.tsx` - reusable tool identity glyph for tables and detail headers.
 - Create: `frontend-ng/src/components/primitives/segmented-control.tsx` - shared range/filter segmented control.
 - Create: `frontend-ng/src/components/primitives/slide-over.tsx` - shared right-side inspect panel for events/repos detail flows.
@@ -109,6 +111,8 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
 
   Add icon tile, delta pill, accent mode, optional sparkline slot/data, and tabular number styling without breaking existing `MetricCard` callers.
 
+  Current implementation uses the shared `Sparkline` from `frontend-ng/src/components/primitives/charts.tsx` so KPI spark rendering is not duplicated.
+
 - [x] **Step 5: Add ToolGlyph**
 
   Implement reusable glyph colors for Claude, Codex, Kiro, and unknown tools using design tokens.
@@ -191,6 +195,12 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
 
   Verify no literal `{identity}`, `{role}`, `{source}`, or `{range}` placeholders render in the UI.
 
+- [x] **Step 5: Replace Usage primary charts with shared SVG primitives**
+
+  Replace the Recharts token trend on Usage Analytics with the shared `StackedAreaChart`, add `BarsH` above the model table, and keep all data sourced from the existing `/api/user/usage/dashboard` response.
+
+  Current evidence: `bun run check`, `bun test`, `bun run build`, and browser QA on `/usage` passed. The local dev account returns `configured=false`, so browser QA verifies the configured-empty state, no Recharts DOM, no runtime error, and no horizontal overflow at `1280px` and `390px`; data-state chart rendering is covered by TypeScript/build and `charts.test.ts`.
+
 ## Task 5: Events, Repos, Setup, and Admin Screen Pass
 
 **Files:**
@@ -255,6 +265,7 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
   - Authenticated mobile route loop passed for the same routes at `390x844` using `agent-browser set viewport 390 844`: no error boundary, no leaked placeholders, no duplicate in-content page title, no horizontal overflow, and no button overflow.
   - Overview interaction checks passed for command palette open, shadcn/Radix language dropdown radio menu open, language switch to `zh-CN`, and dark-mode toggle.
   - The admin/settings SSR guard crash was fixed by moving admin role redirects into authenticated client pages.
+  - Usage Analytics no longer renders Recharts for the primary token trend; `agent-browser` confirmed `.recharts-wrapper` count is `0`, `/usage` has no horizontal overflow at `1280px` or `390px`, and the local configured-empty state remains usable.
 
 - [x] **Step 4: Commit logical chunks**
 

@@ -2,15 +2,15 @@ import { Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { ActivityIcon, CoinsIcon, GaugeIcon, LayersIcon, RefreshCwIcon } from 'lucide-react'
-import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from 'recharts'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart'
 import { Empty, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
+import { BarsH, StackedAreaChart, type StackedAreaKey } from '@/components/primitives/charts'
 import { MetricCard } from '@/components/primitives/metric-card'
 import { SegmentedControl } from '@/components/primitives/segmented-control'
 import { api } from '@/lib/api'
+import type { UserUsageTrendPoint } from '@/lib/api/types'
 import { compact, currency, durationMs, number } from '@/lib/format'
 import { useI18n } from '@/lib/i18n/i18n'
 import { buildUsageDashboardParams, rangeLabelKey, usageTotalsFromTrend, type UsageRangeOption } from './user-usage-state'
@@ -28,6 +28,13 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
   const stats = snapshot?.stats
 
   const spark = snapshot?.trend.map((point) => point.total_tokens).filter(Boolean) ?? []
+  const tokenKeys: Array<StackedAreaKey<UserUsageTrendPoint>> = [
+    { key: 'cache_creation_tokens', label: t('usageDashboard.cacheCreation'), color: 'var(--viz-cache)' },
+    { key: 'cache_read_tokens', label: t('usageDashboard.cacheRead'), color: 'var(--viz-reason)' },
+    { key: 'input_tokens', label: t('usageDashboard.input'), color: 'var(--viz-input)' },
+    { key: 'output_tokens', label: t('usageDashboard.output'), color: 'var(--viz-output)' }
+  ]
+  const modelMax = Math.max(1, ...(snapshot?.models ?? []).map((model) => model.total_tokens))
 
   return (
     <div className='stagger flex flex-col gap-4'>
@@ -122,18 +129,21 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
                 </CardHeader>
                 <CardContent>
                   {snapshot.trend.length ? (
-                    <ChartContainer config={{ input: { label: t('usageDashboard.input') }, output: { label: t('usageDashboard.output') } }} className='h-64'>
-                      <AreaChart data={snapshot.trend}>
-                        <CartesianGrid vertical={false} />
-                        <XAxis dataKey='date' tickLine={false} axisLine={false} />
-                        <YAxis tickLine={false} axisLine={false} />
-                        <ChartTooltip content={<ChartTooltipContent />} />
-                        <Area type='monotone' dataKey='input_tokens' stackId='tokens' fill='var(--chart-1)' stroke='var(--chart-1)' />
-                        <Area type='monotone' dataKey='output_tokens' stackId='tokens' fill='var(--chart-2)' stroke='var(--chart-2)' />
-                        <Area type='monotone' dataKey='cache_creation_tokens' stackId='tokens' fill='var(--chart-3)' stroke='var(--chart-3)' />
-                        <Area type='monotone' dataKey='cache_read_tokens' stackId='tokens' fill='var(--chart-4)' stroke='var(--chart-4)' />
-                      </AreaChart>
-                    </ChartContainer>
+                    <div className='flex flex-col gap-4'>
+                      <div className='flex flex-wrap gap-4'>
+                        {tokenKeys.map((key) => (
+                          <span className='flex items-center gap-1.5 text-[12px] text-[var(--ink-2)]' key={key.key}>
+                            <span className='size-2.5 rounded-[3px]' style={{ background: key.color }} />
+                            {key.label}
+                          </span>
+                        ))}
+                      </div>
+                      <StackedAreaChart
+                        keys={tokenKeys}
+                        series={snapshot.trend}
+                        valueFormatter={(value) => compact(value, locale)}
+                      />
+                    </div>
                   ) : (
                     <Empty><EmptyHeader><EmptyTitle>{t('usageDashboard.noTrendData')}</EmptyTitle></EmptyHeader></Empty>
                   )}
@@ -146,22 +156,35 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
                 </CardHeader>
                 <CardContent className='px-0 pb-0'>
                   {snapshot.models.length ? (
-                    <div className='ae-table'>
-                      <div className='ae-thead grid-cols-[1.5fr_0.8fr_0.9fr_0.8fr]'>
-                        <span>{t('usageDashboard.model')}</span>
-                        <span className='text-right'>{t('events.requests')}</span>
-                        <span className='text-right'>{t('events.tokens')}</span>
-                        <span className='text-right'>{t('events.credit')}</span>
+                    <>
+                      <div className='px-[18px] pb-4'>
+                        <BarsH
+                          rows={snapshot.models.slice(0, 6).map((model, index) => ({
+                            label: model.model,
+                            value: model.total_tokens,
+                            share: model.total_tokens / modelMax,
+                            color: ['var(--viz-input)', 'var(--viz-output)', 'var(--viz-cache)', 'var(--viz-reason)', 'var(--ai-bright)', 'var(--ink-3)'][index % 6]
+                          }))}
+                          valueFormatter={(value) => compact(value, locale)}
+                        />
                       </div>
-                      {snapshot.models.map((model) => (
-                        <div className='ae-trow grid-cols-[1.5fr_0.8fr_0.9fr_0.8fr]' key={model.model}>
-                          <span className='mono min-w-0 truncate text-foreground text-xs'>{model.model}</span>
-                          <span className='tnum text-right'>{number(model.requests, locale)}</span>
-                          <span className='tnum text-right'>{compact(model.total_tokens, locale)}</span>
-                          <span className='tnum text-right font-semibold text-foreground'>{currency(model.actual_cost || model.cost, locale)}</span>
+                      <div className='ae-table border-t border-[var(--line)]'>
+                        <div className='ae-thead grid-cols-[1.5fr_0.8fr_0.9fr_0.8fr]'>
+                          <span>{t('usageDashboard.model')}</span>
+                          <span className='text-right'>{t('events.requests')}</span>
+                          <span className='text-right'>{t('events.tokens')}</span>
+                          <span className='text-right'>{t('events.credit')}</span>
                         </div>
-                      ))}
-                    </div>
+                        {snapshot.models.map((model) => (
+                          <div className='ae-trow grid-cols-[1.5fr_0.8fr_0.9fr_0.8fr]' key={model.model}>
+                            <span className='mono min-w-0 truncate text-foreground text-xs'>{model.model}</span>
+                            <span className='tnum text-right'>{number(model.requests, locale)}</span>
+                            <span className='tnum text-right'>{compact(model.total_tokens, locale)}</span>
+                            <span className='tnum text-right font-semibold text-foreground'>{currency(model.actual_cost || model.cost, locale)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </>
                   ) : (
                     <div className='px-[18px] pb-[18px]'>
                       <Empty><EmptyHeader><EmptyTitle>{t('usageDashboard.noModelData')}</EmptyTitle></EmptyHeader></Empty>
