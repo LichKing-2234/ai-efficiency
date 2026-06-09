@@ -1,6 +1,6 @@
 import { json } from '@/lib/api/server'
-import { appendTokenCookies, readAppTokens } from '@/lib/auth/cookies'
-import { buildLocalCallbackUrl, isAllowedLocalTarget } from '@/lib/auth/local-handoff'
+import { appendBackendUrlCookie, appendTokenCookies, readAppTokens } from '@/lib/auth/cookies'
+import { buildLocalCallbackUrl, isAllowedBackendUrl, isAllowedLocalTarget } from '@/lib/auth/local-handoff'
 
 export function localHandoffIssueResponse(request: Request, callbackPath = '/api/local/callback') {
   const url = new URL(request.url)
@@ -12,13 +12,19 @@ export function localHandoffIssueResponse(request: Request, callbackPath = '/api
   if (!tokens?.accessToken && !tokens?.refreshToken) {
     return json({ code: 401, message: 'local handoff requires an active app session' }, 401)
   }
-  return Response.redirect(buildLocalCallbackUrl(target, tokens.accessToken, tokens.refreshToken, callbackPath), 302)
+  const backendUrl = process.env.AE_FRONTEND_LOCAL_BACKEND_URL ||
+    process.env.AE_FRONTEND_PUBLIC_BACKEND_URL ||
+    process.env.AE_FRONTEND_BACKEND_URL ||
+    process.env.VITE_BACKEND_URL ||
+    import.meta.env.VITE_BACKEND_URL
+  return Response.redirect(buildLocalCallbackUrl(target, tokens.accessToken, tokens.refreshToken, callbackPath, backendUrl), 302)
 }
 
 export function localHandoffCallbackResponse(request: Request) {
   const url = new URL(request.url)
   const accessToken = url.searchParams.get('access_token')
   const refreshToken = url.searchParams.get('refresh_token') || undefined
+  const backendUrl = url.searchParams.get('backend_url') || undefined
   if (!accessToken && !refreshToken) {
     return json({ code: 400, message: 'app token is required' }, 400)
   }
@@ -27,6 +33,12 @@ export function localHandoffCallbackResponse(request: Request) {
     accessToken: accessToken || undefined,
     refreshToken
   }, request)
+  if (backendUrl) {
+    if (!isAllowedBackendUrl(backendUrl)) {
+      return json({ code: 400, message: 'backend URL must be http or https' }, 400)
+    }
+    appendBackendUrlCookie(headers, backendUrl.replace(/\/$/, ''), request)
+  }
   return new Response(null, { status: 302, headers })
 }
 

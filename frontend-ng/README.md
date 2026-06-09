@@ -15,10 +15,12 @@ Useful environment variables:
 
 ```bash
 AE_FRONTEND_BACKEND_URL=http://localhost:8081
+AE_FRONTEND_LOCAL_BACKEND_URL=https://ai-efficiency.la3.agoralab.co
 ```
 
 `VITE_BACKEND_URL` is accepted as a local fallback for compatibility, but browser code must not call that backend URL directly.
 `AE_FRONTEND_GATEWAY_EXCHANGE_SECRET` should only be configured after the Go backend exposes `/api/v1/auth/gateway-exchange` and the shared header contract is agreed.
+`AE_FRONTEND_LOCAL_BACKEND_URL` is optional for deployed frontend servers. When set, local handoff writes that public backend origin into the localhost `ae_backend_url` cookie so the local TanStack proxy can reach the same backend without manual env configuration. If it is not set, handoff falls back to `AE_FRONTEND_BACKEND_URL`.
 
 ## Auth Boundary
 
@@ -36,11 +38,11 @@ Gateway deployments should use the OAuth-plugin-compatible path:
 https://ai-efficiency-web.la3.agoralab.co/oauth2/local?target=http%3A%2F%2F127.0.0.1%3A4317
 ```
 
-`GET /oauth2/local?target=http://127.0.0.1:4317` redirects an active online app session to the local frontend's `/oauth2/local` callback. The callback writes localhost-scoped HttpOnly app cookies and redirects to `/`.
+`GET /oauth2/local?target=http://127.0.0.1:4317` redirects an active online app session to the local frontend's `/oauth2/local` callback. The callback writes localhost-scoped HttpOnly app cookies, writes the online backend target to an HttpOnly `ae_backend_url` cookie, and redirects to `/`.
 
 `GET /api/local?target=http://127.0.0.1:4317` remains available as a same-origin API compatibility path, but gateway-protected deployments should prefer `/oauth2/local` so the gateway OAuth client can use its registered `/oauth2/callback` redirect URI.
 
-The handoff only accepts localhost targets. It copies Go-issued app tokens, not gateway cookies or gateway tokens.
+The handoff only accepts localhost targets. It copies Go-issued app tokens and the server-side backend proxy target, not gateway cookies or gateway tokens. Local browser code still calls same-origin `/api/*`; the TanStack server uses `ae_backend_url` only for server-side proxying.
 
 ## Verification
 

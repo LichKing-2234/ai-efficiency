@@ -1,4 +1,5 @@
-import { appendClearTokenCookies, appendTokenCookies, readAppTokens } from '@/lib/auth/cookies'
+import { appendClearTokenCookies, appendTokenCookies, readAppTokens, readBackendUrlCookie } from '@/lib/auth/cookies'
+import { isAllowedBackendUrl } from '@/lib/auth/local-handoff'
 import { readGatewayClaims } from '@/lib/auth/gateway'
 import { extractTokens } from '@/lib/auth/tokens'
 import type { ApiResponse, AuthTokenPayload } from '@/lib/api/types'
@@ -18,8 +19,11 @@ const API_ALLOWLIST = [
   '/api/v1/efficiency/',
 ]
 
-export function getBackendUrl() {
+export function getBackendUrl(request?: Request) {
+  const handoffBackendUrl = request ? readBackendUrlCookie(request) : undefined
+  const configuredBackendUrl = isAllowedBackendUrl(handoffBackendUrl ?? null) ? handoffBackendUrl : undefined
   return (
+    configuredBackendUrl ||
     process.env.AE_FRONTEND_BACKEND_URL ||
     process.env.VITE_BACKEND_URL ||
     import.meta.env.VITE_BACKEND_URL ||
@@ -84,7 +88,7 @@ async function proxyWithRefresh(request: Request, path: string) {
 
 async function forwardToBackend(request: Request, path: string, accessToken?: string) {
   const sourceUrl = new URL(request.url)
-  const target = `${getBackendUrl()}${path}${sourceUrl.search}`
+  const target = `${getBackendUrl(request)}${path}${sourceUrl.search}`
   const headers = new Headers(request.headers)
   headers.delete('host')
   headers.delete('cookie')
@@ -108,7 +112,7 @@ async function forwardToBackend(request: Request, path: string, accessToken?: st
 }
 
 async function refreshTokens(request: Request, refreshToken: string) {
-  const res = await fetch(`${getBackendUrl()}/api/v1/auth/refresh`, {
+  const res = await fetch(`${getBackendUrl(request)}/api/v1/auth/refresh`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ refresh_token: refreshToken })
@@ -120,7 +124,7 @@ async function refreshTokens(request: Request, refreshToken: string) {
 
 export async function loginThroughBackend(request: Request) {
   const body = await request.arrayBuffer()
-  const res = await fetch(`${getBackendUrl()}/api/v1/auth/login`, {
+  const res = await fetch(`${getBackendUrl(request)}/api/v1/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': request.headers.get('content-type') || 'application/json' },
     body
@@ -133,7 +137,7 @@ export async function loginThroughBackend(request: Request) {
 }
 
 export async function devLoginThroughBackend(request: Request) {
-  const res = await fetch(`${getBackendUrl()}/api/v1/auth/dev-login`, { method: 'POST' })
+  const res = await fetch(`${getBackendUrl(request)}/api/v1/auth/dev-login`, { method: 'POST' })
   const payload = (await res.json()) as ApiResponse<AuthTokenPayload>
   if (!res.ok) return json(payload, res.status)
   const headers = new Headers({ 'Content-Type': 'application/json' })
@@ -153,7 +157,7 @@ export async function bootstrapFromGateway(request: Request) {
   if (!secret) {
     return json({ code: 503, message: 'gateway exchange is not configured' }, 503)
   }
-  const res = await fetch(`${getBackendUrl()}/api/v1/auth/gateway-exchange`, {
+  const res = await fetch(`${getBackendUrl(request)}/api/v1/auth/gateway-exchange`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

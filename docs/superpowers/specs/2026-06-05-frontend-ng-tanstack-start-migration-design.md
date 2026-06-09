@@ -298,8 +298,8 @@ Use a frontend-owned app-token handoff rather than copying gateway cookies:
 1. Developer opens the gateway-compatible online frontend route `/oauth2/local?target=http://localhost:3000`.
 2. The gateway OAuth plugin may first complete its registered `/oauth2/callback` redirect and then return to `/oauth2/local`.
 3. Gateway-authenticated online TanStack server reads the current Go-issued app token cookies.
-4. Online server redirects to `http://localhost:3000/oauth2/local?access_token=...&refresh_token=...`.
-5. Local TanStack server writes localhost HttpOnly app cookies.
+4. Online server redirects to `http://localhost:3000/oauth2/local?access_token=...&refresh_token=...&backend_url=...`.
+5. Local TanStack server writes localhost HttpOnly app cookies and an HttpOnly `ae_backend_url` cookie for the server-side proxy target.
 6. Local browser uses `localhost:3000/api/v1/*` and local TanStack proxy forwards to the configured backend.
 
 `/api/local?target=...` and `/api/local/callback` remain same-origin API compatibility paths, but gateway deployments should prefer `/oauth2/local` because the gateway OAuth client is registered around the `/oauth2/callback` convention.
@@ -309,6 +309,8 @@ Handoff constraints:
 - Do not serialize gateway cookie values into query parameters.
 - Do not store gateway raw tokens on localhost.
 - Only Go-issued app tokens are transferred.
+- The transferred backend URL is server-side proxy configuration only; browser code still calls same-origin `/api/*`.
+- Deployed frontend servers should set `AE_FRONTEND_LOCAL_BACKEND_URL` to a public backend origin reachable from a developer machine. If omitted, local handoff falls back to `AE_FRONTEND_BACKEND_URL`, which may be a cluster-internal service URL and therefore unsuitable for localhost.
 - `target` must be validated against allowed localhost origins.
 
 ### Backend Target
@@ -397,7 +399,7 @@ As of the `frontend-ng` mainline alignment work on 2026-06-09:
 - Browser data calls go through same-origin `/api/*`; browser code does not store tokens in `localStorage` and does not attach Bearer tokens.
 - TanStack server-side API routes implement app-token HttpOnly cookies, login/dev-login/logout/bootstrap, coarse `/api/v1/*` proxy allowlisting, and refresh retry.
 - Gateway bootstrap is wired through a server-side `gateway-exchange` call path, but the Go backend endpoint and deployment gateway header contract still need backend/deploy follow-through before production cutover.
-- Local handoff routes now support a pragmatic development transfer: an authenticated online `GET /oauth2/local?target=http://127.0.0.1:4317` redirects to the local `/oauth2/local` callback with app tokens, and the local TanStack server writes localhost-scoped HttpOnly app cookies. `/api/local` remains as a same-origin compatibility path. This copies Go-issued app tokens only; it does not copy gateway cookies or gateway tokens.
+- Local handoff routes now support a pragmatic development transfer: an authenticated online `GET /oauth2/local?target=http://127.0.0.1:4317` redirects to the local `/oauth2/local` callback with app tokens and backend proxy target, and the local TanStack server writes localhost-scoped HttpOnly app cookies plus `ae_backend_url`. `/api/local` remains as a same-origin compatibility path. This copies Go-issued app tokens only; it does not copy gateway cookies or gateway tokens.
 - First-pass route migration exists for `/login`, `/oauth/authorize`, `/oauth/device`, `/`, `/repos`, `/repos/:id`, `/events`, `/user`, `/admin/users`, and `/settings`.
 - React i18n is now installed through `i18next` / `react-i18next`, locale preference is stored in the `ae.locale` cookie, and a regression guard enforces locale key parity, prevents Chinese copy outside the zh-CN resource table, and blocks page-level visible English copy outside message resources except for explicit product/protocol literals.
 - Existing pages now use shadcn primitives for alerts, confirmation dialogs, empty states, selects, checkboxes, accordion sections, tables, and cards instead of browser-native selects/details/confirm flows.
