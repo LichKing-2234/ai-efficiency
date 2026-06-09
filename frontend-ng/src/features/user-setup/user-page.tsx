@@ -4,13 +4,13 @@ import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { AppAlert } from '@/components/primitives/app-alert'
+import { CommandAccordion } from '@/components/primitives/command-accordion'
 import { CommandStep } from '@/components/primitives/command-step'
 import { ConfirmAction } from '@/components/primitives/confirm-action'
 import { CredentialKeyPanel } from '@/components/primitives/credential-key-panel'
@@ -180,12 +180,9 @@ export function UserPage() {
               <CommandStep step={4} command='ae-cli hooks enable --global' copyLabel={t('userSetup.copy')} copiedMessage={t('userSetup.commandCopied')} />
               <CommandStep step={5} command='ae-cli init' copyLabel={t('userSetup.copy')} copiedMessage={t('userSetup.commandCopied')} />
               <CommandStep step={6} command='ae-cli doctor' copyLabel={t('userSetup.copy')} copiedMessage={t('userSetup.commandCopied')} />
-              <Accordion type='single' collapsible className='mt-2 rounded-md border border-border px-3'>
-                <AccordionItem value='windows'>
-                  <AccordionTrigger>{t('userSetup.windowsInstaller')}</AccordionTrigger>
-                  <AccordionContent><CommandStep command={windowsInstallCommand} copyLabel={t('userSetup.copy')} copiedMessage={t('userSetup.commandCopied')} /></AccordionContent>
-                </AccordionItem>
-              </Accordion>
+              <CommandAccordion title={t('userSetup.windowsInstaller')}>
+                <CommandStep command={windowsInstallCommand} copyLabel={t('userSetup.copy')} copiedMessage={t('userSetup.commandCopied')} />
+              </CommandAccordion>
             </CardContent>
           </Card>
         </div>

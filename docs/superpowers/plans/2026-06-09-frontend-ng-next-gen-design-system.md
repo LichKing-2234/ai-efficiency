@@ -332,11 +332,15 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
 
   Current implementation uses the shared `CommandStep` primitive for CLI onboarding rows so installer, login, discover, hooks, init, doctor, and Windows commands share reference-style copy affordances instead of page-local command markup.
 
+  Follow-up command-accordion audit implementation adds the shared `CommandAccordion` primitive and migrates the My Setup Windows installer section away from page-local Accordion border/spacing markup while preserving the existing PowerShell install command, copy affordance, and default-collapsed behavior.
+
   Current implementation uses the shared `InsetPanel` primitive for provider messages and provider-test response blocks.
 
   Current implementation uses the shared `CredentialKeyPanel` primitive for the API key row, keeping the existing create, regenerate, reveal, copy, toast, and mutation behavior in the page.
 
   Current evidence: `command-step.test.ts`, `selectable-card.test.tsx`, `provider-button.test.tsx`, `info-tile.test.tsx`, `inset-panel.test.tsx`, `credential-key-panel.test.tsx`, `bun run check`, and browser QA on `/user` passed. `agent-browser` verified the CLI workflow, six numbered command steps, copy affordances, no error boundary, and no horizontal overflow at `1280x720` and `390x844`. The latest `/user` checks rendered one shared inset panel at desktop and mobile widths; the mobile panel width stayed inside the 390px viewport. The local account currently returns no provider rows/selected group, so browser QA verifies the stable empty/data-light path while provider selection and API key panel rendering are covered by `provider-button.test.tsx`, `credential-key-panel.test.tsx`, TypeScript, and build. The mobile run also caught and fixed a hidden command-row width issue by applying `min-width: 0` to split-layout children and the command-step row; the largest visible mobile button width is now `285px` in a `390px` viewport.
+
+  Follow-up command-accordion audit evidence: `command-accordion.test.tsx` was added with a red-green cycle, `command-step.test.ts`, `user-setup-state.test.ts`, `provider-button.test.tsx`, `bun test`, `bun run check`, `bun run build`, and `git diff --check` passed after migrating the Windows installer section. `agent-browser` reverified `/user` at `1280x720` and `390x844`: one shared command accordion rendered and expanded, no error boundary text, and no body horizontal overflow. The current local account still has no provider rows, so provider data rendering remains covered by existing state and primitive tests.
 
 - [x] **Step 5: Admin Users and Settings**
 
