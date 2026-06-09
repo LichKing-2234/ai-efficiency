@@ -23,6 +23,8 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
 - Modify: `frontend-ng/src/components/primitives/metric-card.tsx` - evolve into a KPI-capable primitive while preserving the existing `MetricCard` export for current screens.
 - Create: `frontend-ng/src/components/primitives/charts.tsx` - shared reference-style SVG chart primitives (`Sparkline`, `SparkBars`, `Ring`, `StackedAreaChart`, `BarsH`).
 - Test: `frontend-ng/src/components/primitives/charts.test.ts` - locks sparkline and stacked-area path calculations.
+- Create: `frontend-ng/src/components/primitives/command-step.tsx` - shared reference-style CLI command row with numbered steps, copy action, and copied feedback.
+- Test: `frontend-ng/src/components/primitives/command-step.test.ts` - locks visible shell prompt formatting and clipboard text behavior.
 - Create: `frontend-ng/src/features/home/home-state.ts` - shared Overview setup readiness derivation used by the setup status card.
 - Test: `frontend-ng/src/features/home/home-state.test.ts` - locks account, AI access, repository, and recent usage readiness progress calculations.
 - Create: `frontend-ng/src/components/primitives/tool-glyph.tsx` - reusable tool identity glyph for tables and detail headers.
@@ -236,6 +238,10 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
 
   Re-skin provider credential setup, status/progress, and key actions with shared field/card primitives.
 
+  Current implementation uses the shared `CommandStep` primitive for CLI onboarding rows so installer, login, discover, hooks, init, doctor, and Windows commands share reference-style copy affordances instead of page-local command markup.
+
+  Current evidence: `command-step.test.ts`, `bun run check`, and browser QA on `/user` passed. `agent-browser` verified the CLI workflow, six numbered command steps, copy affordances, no error boundary, and no horizontal overflow at `1280x720` and `390x844`. The mobile run also caught and fixed a hidden command-row width issue by applying `min-width: 0` to split-layout children and the command-step row; the largest visible mobile button width is now `285px` in a `390px` viewport.
+
 - [x] **Step 5: Admin Users and Settings**
 
   Re-skin admin pages with shared grid tables and forms while preserving role guards and backend mutation contracts.
@@ -275,6 +281,7 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
   - The admin/settings SSR guard crash was fixed by moving admin role redirects into authenticated client pages.
   - Usage Analytics no longer renders Recharts for the primary token trend; `agent-browser` confirmed `.recharts-wrapper` count is `0`, `/usage` has no horizontal overflow at `1280px` or `390px`, and the local configured-empty state remains usable.
   - Overview setup status now uses the shared `Ring` primitive and derived readiness helper; `agent-browser` confirmed ring presence, visible `1/4` progress, no error boundary, and no horizontal overflow at `1280x720` and `390x844`.
+  - My Setup CLI workflow now uses the shared `CommandStep` primitive; `agent-browser` confirmed six numbered command rows, copy affordances, no error boundary, no horizontal overflow, and no visible button overflow at `1280x720` and `390x844`.
 
 - [x] **Step 4: Commit logical chunks**
 

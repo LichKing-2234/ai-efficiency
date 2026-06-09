@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { AppAlert } from '@/components/primitives/app-alert'
+import { CommandStep } from '@/components/primitives/command-step'
 import { ConfirmAction } from '@/components/primitives/confirm-action'
 import { PageEmpty } from '@/components/primitives/page-empty'
 import { Page, PageHeader } from '@/components/primitives/page'
@@ -169,16 +170,16 @@ export function UserPage() {
               <CardDescription>{t('userSetup.cliDescription')}</CardDescription>
             </CardHeader>
             <CardContent className='flex flex-col gap-2'>
-              <CommandBlock step={1} command={installCommand} copyLabel={t('userSetup.copy')} copiedMessage={t('userSetup.commandCopied')} />
-              <CommandBlock step={2} command='ae-cli login' copyLabel={t('userSetup.copy')} copiedMessage={t('userSetup.commandCopied')} />
-              <CommandBlock step={3} command={discoverCommand} disabled={!selectedProvider} copyLabel={t('userSetup.copy')} copiedMessage={t('userSetup.commandCopied')} />
-              <CommandBlock step={4} command='ae-cli hooks enable --global' copyLabel={t('userSetup.copy')} copiedMessage={t('userSetup.commandCopied')} />
-              <CommandBlock step={5} command='ae-cli init' copyLabel={t('userSetup.copy')} copiedMessage={t('userSetup.commandCopied')} />
-              <CommandBlock step={6} command='ae-cli doctor' copyLabel={t('userSetup.copy')} copiedMessage={t('userSetup.commandCopied')} />
+              <CommandStep step={1} command={installCommand} copyLabel={t('userSetup.copy')} copiedMessage={t('userSetup.commandCopied')} />
+              <CommandStep step={2} command='ae-cli login' copyLabel={t('userSetup.copy')} copiedMessage={t('userSetup.commandCopied')} />
+              <CommandStep step={3} command={discoverCommand} disabled={!selectedProvider} copyLabel={t('userSetup.copy')} copiedMessage={t('userSetup.commandCopied')} />
+              <CommandStep step={4} command='ae-cli hooks enable --global' copyLabel={t('userSetup.copy')} copiedMessage={t('userSetup.commandCopied')} />
+              <CommandStep step={5} command='ae-cli init' copyLabel={t('userSetup.copy')} copiedMessage={t('userSetup.commandCopied')} />
+              <CommandStep step={6} command='ae-cli doctor' copyLabel={t('userSetup.copy')} copiedMessage={t('userSetup.commandCopied')} />
               <Accordion type='single' collapsible className='mt-2 rounded-md border border-border px-3'>
                 <AccordionItem value='windows'>
                   <AccordionTrigger>{t('userSetup.windowsInstaller')}</AccordionTrigger>
-                  <AccordionContent><CommandBlock command={windowsInstallCommand} copyLabel={t('userSetup.copy')} copiedMessage={t('userSetup.commandCopied')} /></AccordionContent>
+                  <AccordionContent><CommandStep command={windowsInstallCommand} copyLabel={t('userSetup.copy')} copiedMessage={t('userSetup.commandCopied')} /></AccordionContent>
                 </AccordionItem>
               </Accordion>
             </CardContent>
@@ -358,27 +359,5 @@ function ProviderButton({
       <div className='mono mt-1 truncate text-muted-foreground text-[11px]'>{baseUrl}</div>
       <div className={ready === total ? 'mt-2 font-medium text-[var(--pos)] text-xs' : 'mt-2 font-medium text-[var(--warn)] text-xs'}>{labels.groupsReady}</div>
     </button>
-  )
-}
-
-function CommandBlock({ command, disabled, copyLabel, copiedMessage, step }: { command: string; disabled?: boolean; copyLabel: string; copiedMessage: string; step?: number }) {
-  return (
-    <div className='flex items-center gap-3'>
-      {step ? <div className='grid size-5 shrink-0 place-items-center rounded-full bg-[var(--ai-soft)] font-bold text-[11px] text-[var(--ai-deep)] tnum'>{step}</div> : null}
-      <button
-        className='flex min-w-0 flex-1 items-center justify-between gap-3 rounded-[var(--r-sm)] border border-border bg-[var(--surface-inset)] px-3 py-2 text-left text-xs disabled:cursor-not-allowed disabled:opacity-60'
-        disabled={disabled}
-        onClick={() => {
-          void navigator.clipboard?.writeText(command)
-          toast.success(copiedMessage)
-        }}
-      >
-        <span className='mono min-w-0 truncate text-[var(--ai-deep)]'>$ {command}</span>
-        <span className='inline-flex shrink-0 items-center gap-1 text-muted-foreground'>
-          <Clipboard className='size-3.5' />
-          {copyLabel}
-        </span>
-      </button>
-    </div>
   )
 }

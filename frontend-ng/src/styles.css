@@ -424,6 +424,14 @@ select {
   align-items: start;
 }
 
+.split-2 > *,
+.split-equal > *,
+.split-rail > *,
+.split-settings > *,
+.repo-workbench > * {
+  min-width: 0;
+}
+
 .repo-workbench {
   display: grid;
   grid-template-columns: 230px minmax(0, 1fr);
