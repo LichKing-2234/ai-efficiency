@@ -18,6 +18,7 @@ import { AppAlert } from '@/components/primitives/app-alert'
 import { ConfirmAction } from '@/components/primitives/confirm-action'
 import { Page, PageHeader } from '@/components/primitives/page'
 import { LoadingState } from '@/components/primitives/data-state'
+import { InfoTile } from '@/components/primitives/info-tile'
 import { SectionNav, type SectionNavItem } from '@/components/primitives/section-nav'
 import { StatusBadge } from '@/components/primitives/status-badge'
 import { api } from '@/lib/api'
@@ -447,9 +448,9 @@ export function SettingsPage() {
           </CardHeader>
           <CardContent className='flex flex-col gap-3'>
             <div className='grid gap-3 md:grid-cols-3'>
-              <SettingsStat label={t('settings.current')} value={`v${deployment.data?.version.version || '-'}`} />
-              <SettingsStat label={t('settings.mode')} value={deployment.data?.mode || t('common.unknown')} />
-              <SettingsStat label={t('settings.commit')} value={deployment.data?.version.commit || '-'} />
+              <InfoTile label={t('settings.current')} value={`v${deployment.data?.version.version || '-'}`} mono />
+              <InfoTile label={t('settings.mode')} value={deployment.data?.mode || t('common.unknown')} mono />
+              <InfoTile label={t('settings.commit')} value={deployment.data?.version.commit || '-'} mono />
             </div>
             <div className='rounded-[var(--r-md)] border border-border bg-[var(--surface-inset)] p-3'>
               <div className='font-medium'>v{deployment.data?.version.version || '-'}</div>
@@ -654,13 +655,4 @@ function settingsSectionIcon(section: SettingsSection) {
     case 'advanced-credentials':
       return LockKeyhole
   }
-}
-
-function SettingsStat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className='rounded-[var(--r-md)] border border-border bg-[var(--surface-inset)] p-3'>
-      <div className='font-semibold text-muted-foreground text-xs uppercase'>{label}</div>
-      <div className='mono mt-1 truncate font-semibold text-sm'>{value}</div>
-    </div>
-  )
 }

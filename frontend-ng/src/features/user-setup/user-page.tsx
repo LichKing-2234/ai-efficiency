@@ -15,6 +15,7 @@ import { CommandStep } from '@/components/primitives/command-step'
 import { ConfirmAction } from '@/components/primitives/confirm-action'
 import { PageEmpty } from '@/components/primitives/page-empty'
 import { Page, PageHeader } from '@/components/primitives/page'
+import { InfoTile } from '@/components/primitives/info-tile'
 import { SelectableCard } from '@/components/primitives/selectable-card'
 import { LoadingState } from '@/components/primitives/data-state'
 import { api } from '@/lib/api'
@@ -316,15 +317,6 @@ export function UserPage() {
         </div>
       </div>
     </Page>
-  )
-}
-
-function InfoTile({ label, value, accent = false }: { label: string; value: string; accent?: boolean }) {
-  return (
-    <div className='rounded-[var(--r-md)] border border-border bg-[var(--surface-inset)] p-3'>
-      <div className='font-semibold text-muted-foreground text-xs uppercase'>{label}</div>
-      <div className={accent ? 'mt-1 break-all font-semibold text-[var(--pos)] text-sm' : 'mt-1 break-all font-semibold text-sm'}>{value}</div>
-    </div>
   )
 }
 
