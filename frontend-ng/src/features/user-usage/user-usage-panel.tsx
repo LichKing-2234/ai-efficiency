@@ -7,13 +7,14 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Empty, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
 import { BarsH, StackedAreaChart, type StackedAreaKey } from '@/components/primitives/charts'
+import { HeatmapGrid } from '@/components/primitives/heatmap-grid'
 import { MetricCard } from '@/components/primitives/metric-card'
 import { SegmentedControl } from '@/components/primitives/segmented-control'
 import { api } from '@/lib/api'
 import type { UserUsageTrendPoint } from '@/lib/api/types'
 import { compact, currency, durationMs, number } from '@/lib/format'
 import { useI18n } from '@/lib/i18n/i18n'
-import { buildUsageDashboardParams, rangeLabelKey, usageTotalsFromTrend, type UsageRangeOption } from './user-usage-state'
+import { buildUsageDashboardParams, buildUsageHeatmapPoints, rangeLabelKey, usageTotalsFromTrend, type UsageRangeOption } from './user-usage-state'
 
 export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
   const { locale, t } = useI18n()
@@ -26,6 +27,7 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
   const rangeLabel = t(rangeLabelKey(range))
   const totals = usageTotalsFromTrend(snapshot?.trend ?? [])
   const stats = snapshot?.stats
+  const heatmapPoints = buildUsageHeatmapPoints(snapshot?.trend ?? [], snapshot?.range.granularity)
 
   const spark = snapshot?.trend.map((point) => point.total_tokens).filter(Boolean) ?? []
   const tokenKeys: Array<StackedAreaKey<UserUsageTrendPoint>> = [
@@ -193,6 +195,35 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
                 </CardContent>
               </Card>
             </div>
+            {!embedded ? (
+              <Card>
+                <CardHeader>
+                  <CardTitle>{t('usageDashboard.activityHeatmap')}</CardTitle>
+                  <CardDescription>{t('usageDashboard.activityHeatmapDescription')}</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {snapshot.trend.length ? (
+                    <HeatmapGrid
+                      dayLabels={[
+                        t('usageDashboard.dayMon'),
+                        t('usageDashboard.dayTue'),
+                        t('usageDashboard.dayWed'),
+                        t('usageDashboard.dayThu'),
+                        t('usageDashboard.dayFri'),
+                        t('usageDashboard.daySat'),
+                        t('usageDashboard.daySun')
+                      ]}
+                      lessLabel={t('usageDashboard.less')}
+                      moreLabel={t('usageDashboard.more')}
+                      points={heatmapPoints}
+                      valueFormatter={(value) => t('usageDashboard.heatmapRequests', { count: number(value, locale) })}
+                    />
+                  ) : (
+                    <Empty><EmptyHeader><EmptyTitle>{t('usageDashboard.noTrendData')}</EmptyTitle></EmptyHeader></Empty>
+                  )}
+                </CardContent>
+              </Card>
+            ) : null}
           </>
         ) : null}
       </div>

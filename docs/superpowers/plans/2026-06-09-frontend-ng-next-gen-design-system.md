@@ -23,6 +23,8 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
 - Modify: `frontend-ng/src/components/primitives/metric-card.tsx` - evolve into a KPI-capable primitive while preserving the existing `MetricCard` export for current screens.
 - Create: `frontend-ng/src/components/primitives/charts.tsx` - shared reference-style SVG chart primitives (`Sparkline`, `SparkBars`, `Ring`, `StackedAreaChart`, `BarsH`).
 - Test: `frontend-ng/src/components/primitives/charts.test.ts` - locks sparkline and stacked-area path calculations.
+- Create: `frontend-ng/src/components/primitives/heatmap-grid.tsx` - shared reference-style 7x24 activity heatmap grid.
+- Test: `frontend-ng/src/components/primitives/heatmap-grid.test.ts` - locks fixed grid sizing, intensity normalization, and out-of-range point handling.
 - Create: `frontend-ng/src/components/primitives/command-step.tsx` - shared reference-style CLI command row with numbered steps, copy action, and copied feedback.
 - Test: `frontend-ng/src/components/primitives/command-step.test.ts` - locks visible shell prompt formatting and clipboard text behavior.
 - Create: `frontend-ng/src/features/home/home-state.ts` - shared Overview setup readiness derivation used by the setup status card.
@@ -201,9 +203,9 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
 
 - [x] **Step 5: Replace Usage primary charts with shared SVG primitives**
 
-  Replace the Recharts token trend on Usage Analytics with the shared `StackedAreaChart`, add `BarsH` above the model table, and keep all data sourced from the existing `/api/user/usage/dashboard` response.
+  Replace the Recharts token trend on Usage Analytics with the shared `StackedAreaChart`, add `BarsH` above the model table, add the shared `HeatmapGrid` for the reference activity heatmap section, and keep all data sourced from the existing `/api/user/usage/dashboard` response.
 
-  Current evidence: `bun run check`, `bun test`, `bun run build`, and browser QA on `/usage` passed. The local dev account returns `configured=false`, so browser QA verifies the configured-empty state, no Recharts DOM, no runtime error, and no horizontal overflow at `1280px` and `390px`; data-state chart rendering is covered by TypeScript/build and `charts.test.ts`.
+  Current evidence: `bun run check`, `bun test`, `bun run build`, and browser QA on `/usage` passed. The local dev account returns `configured=false`, so browser QA verifies the configured-empty state, no Recharts DOM, no runtime error, no visible button overflow, and no horizontal overflow at `1280px` and `390px`; data-state chart and heatmap rendering are covered by TypeScript/build, `charts.test.ts`, `heatmap-grid.test.ts`, and `user-usage-state.test.ts`.
 
 - [x] **Step 6: Align Overview setup progress with shared Ring**
 
@@ -280,6 +282,7 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
   - Overview interaction checks passed for command palette open, shadcn/Radix language dropdown radio menu open, language switch to `zh-CN`, and dark-mode toggle.
   - The admin/settings SSR guard crash was fixed by moving admin role redirects into authenticated client pages.
   - Usage Analytics no longer renders Recharts for the primary token trend; `agent-browser` confirmed `.recharts-wrapper` count is `0`, `/usage` has no horizontal overflow at `1280px` or `390px`, and the local configured-empty state remains usable.
+  - Usage Analytics now has the shared `HeatmapGrid` activity section in the configured data path; `heatmap-grid.test.ts` and `user-usage-state.test.ts` cover the 7x24 grid and trend-to-heatmap mapping while local browser QA confirms the configured-empty path remains stable at desktop and mobile widths.
   - Overview setup status now uses the shared `Ring` primitive and derived readiness helper; `agent-browser` confirmed ring presence, visible `1/4` progress, no error boundary, and no horizontal overflow at `1280x720` and `390x844`.
   - My Setup CLI workflow now uses the shared `CommandStep` primitive; `agent-browser` confirmed six numbered command rows, copy affordances, no error boundary, no horizontal overflow, and no visible button overflow at `1280x720` and `390x844`.
 
