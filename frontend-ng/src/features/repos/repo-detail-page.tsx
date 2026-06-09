@@ -12,6 +12,7 @@ import { CardPagerFooter } from '@/components/primitives/card-pager-footer'
 import { CheckboxField } from '@/components/primitives/checkbox-field'
 import { DataGrid, DataGridHeader, DataGridRow } from '@/components/primitives/data-grid'
 import { EntityCardHeader } from '@/components/primitives/entity-card-header'
+import { FilterRow } from '@/components/primitives/filter-row'
 import { InfoTile, InfoTileGrid } from '@/components/primitives/info-tile'
 import { InsetPanel } from '@/components/primitives/inset-panel'
 import { LinkedRecordItem } from '@/components/primitives/linked-record-list'
@@ -265,7 +266,7 @@ export function RepoDetailPage() {
         <EntityCardHeader
           title={t('repoDetail.pullRequests')}
           actions={(
-            <div className='flex flex-wrap items-center gap-2 text-sm'>
+            <FilterRow className='text-sm'>
               <span className='text-muted-foreground'>{t('repoDetail.mergedIn')}</span>
               <ToolbarSelect
                 ariaLabel={t('repoDetail.mergedIn')}
@@ -295,7 +296,7 @@ export function RepoDetailPage() {
                   setPRsPage(0)
                 }}
               />
-            </div>
+            </FilterRow>
           )}
         />
         <DataGrid minWidth={1180}>

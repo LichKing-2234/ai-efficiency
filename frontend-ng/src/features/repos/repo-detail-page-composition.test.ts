@@ -16,4 +16,10 @@ describe('Repo detail page composition', () => {
     expect(source).toContain("<div className='kpi-grid'>")
     expect(source).not.toContain("<div className='grid gap-4 sm:grid-cols-4'>")
   })
+
+  test('uses shared filter rows for pull request range controls', () => {
+    expect(source).toContain("from '@/components/primitives/filter-row'")
+    expect(source).toContain("<FilterRow className='text-sm'>")
+    expect(source).not.toContain("<div className='flex flex-wrap items-center gap-2 text-sm'>")
+  })
 })
