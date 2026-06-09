@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { AppAlert } from '@/components/primitives/app-alert'
+import { AuthInfoPanel } from '@/components/primitives/auth-info-panel'
 import { apiFetch } from '@/lib/api/client'
 import { ensureAuthenticatedUser } from '@/lib/auth/session'
 import { useI18n } from '@/lib/i18n/i18n'
@@ -44,9 +45,9 @@ export function OAuthAuthorizePage() {
 
   return (
     <AuthSurface title={t('oauth.authorizeCli')} description={t('oauth.allowCli')}>
-      <div className='rounded-md bg-muted p-3 text-sm'>
+      <AuthInfoPanel>
         {t('oauth.signedInAs', { identity: me.data?.email || me.data?.username || t('auth.guest') })}
-      </div>
+      </AuthInfoPanel>
       {error ? <AppAlert tone='error' title={error} /> : null}
       <div className='flex gap-2'>
         <Button className='flex-1' disabled={approve.isPending || me.isLoading || !!me.error} onClick={() => approve.mutate(true)}>{t('oauth.approve')}</Button>
@@ -79,9 +80,9 @@ export function OAuthDevicePage() {
 
   return (
     <AuthSurface title={t('oauth.deviceLogin')} description={t('oauth.enterCode')}>
-      <div className='rounded-md bg-muted p-3 text-sm'>
+      <AuthInfoPanel>
         {t('oauth.signedInAs', { identity: me.data?.email || me.data?.username || t('auth.guest') })}
-      </div>
+      </AuthInfoPanel>
       <Input value={code} onChange={(event) => setCode(normalizeDeviceCode(event.target.value))} placeholder='ABCD-EFGH' />
       {verify.data ? <AppAlert tone='success' title={t('oauth.deviceStatus', { status: verify.data.status })} /> : null}
       {verify.error ? <AppAlert tone='error' title={verify.error.message} /> : null}

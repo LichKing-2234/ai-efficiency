@@ -306,6 +306,10 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
 
   Current evidence: `search-field.test.tsx`, `section-nav.test.tsx`, `field-list.test.tsx`, `inset-panel.test.tsx`, `bun run check`, `bun test`, `bun run build`, and browser QA on `/admin/users` and `/settings` passed. `agent-browser` verified the authenticated Admin Users shared search input at `1280x720` and `390x844`, the Settings shared section rail with five items and one current item at `1280x720` and `390x844`, no error boundary, and no horizontal overflow. The latest Settings deployment-runtime check rendered one shared field list, three field rows, and three info tiles at `1280x720` and `390x844`; the mobile field row width stayed within the 390px viewport. The latest Admin Users route check had no active job/reveal panel data, so the route empty/data-light state is browser-covered while inset notice rendering is covered by primitive tests and TypeScript/build.
 
+  Follow-up OAuth audit implementation adds the shared `AuthInfoPanel` primitive and migrates `/oauth/authorize` plus `/oauth/device` signed-in context strips away from page-local muted boxes while preserving existing OAuth payload, redirect, and login-guard behavior.
+
+  Follow-up OAuth audit evidence: `auth-info-panel.test.tsx` was added with a red-green cycle, `auth-flow-state.test.ts` and `bun run check` passed after migration, and browser QA reverified `/oauth/device`.
+
 ## Task 6: Verification, Visual QA, Commit, and Push
 
 **Files:**
@@ -347,6 +351,7 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
   - My Setup CLI workflow now uses the shared `CommandStep` primitive; `agent-browser` confirmed six numbered command rows, copy affordances, no error boundary, no horizontal overflow, and no visible button overflow at `1280x720` and `390x844`.
   - Follow-up Events audit added `OptionList` and `CodeBlock` primitives and reverified `/events` at `1280x720` and `390x844`; the local account remained data-light, so route stability is browser-covered while candidate-list and raw-payload rendering are covered by primitive tests and TypeScript/build.
   - Follow-up Repository Detail audit added `UsageSummaryPanel` for expanded PR usage summaries; the local account still exposes no repository detail rows, so route-level browser coverage remains on `/repos` data-light states while primitive tests and TypeScript/build cover the expanded data path.
+  - Follow-up OAuth audit added `AuthInfoPanel` for signed-in context strips on `/oauth/authorize` and `/oauth/device`; `/oauth/device` was browser-verified while OAuth payload/redirect helpers remain covered by `auth-flow-state.test.ts`.
 
 - [x] **Step 4: Commit logical chunks**
 
