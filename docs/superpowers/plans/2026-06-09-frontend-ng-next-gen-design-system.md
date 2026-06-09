@@ -390,6 +390,10 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
 
   Follow-up section-header audit evidence: `section-card-header.test.tsx` was added with a red-green cycle, `bun test src/components/primitives/section-card-header.test.tsx`, `bun test`, `bun run check`, `bun run build`, and `git diff --check` passed after migration. `agent-browser` reverified `/settings` at `1280x720` and `390x844` in the authenticated session: one shared card header rendered for the active AI Services section, the Add action remained visible, no error boundary text rendered, and body horizontal overflow stayed zero.
 
+  Follow-up action-group audit implementation adds the shared `ActionGroup` primitive and migrates Settings relay, SCM, and credential table row actions plus their create/edit dialog footer actions away from repeated page-local `flex justify-end gap-2` wrappers while preserving all button variants, confirm actions, disabled states, and backend mutations.
+
+  Follow-up action-group audit evidence: `action-group.test.tsx` was added with a red-green cycle, `bun test src/components/primitives/action-group.test.tsx`, `bun test`, `bun run check`, `bun run build`, and `git diff --check` passed after migration. `agent-browser` reverified `/settings` in the authenticated session: desktop `1280x720` and mobile `390x844` render without error boundary or body horizontal overflow; the local AI Services table currently has no rows, so visible table row action groups are covered by primitive tests and TypeScript/build, while the Add Relay Provider dialog renders one shared `ActionGroup` footer at both desktop and mobile widths with zero dialog overflow.
+
 ## Task 6: Verification, Visual QA, Commit, and Push
 
 **Files:**

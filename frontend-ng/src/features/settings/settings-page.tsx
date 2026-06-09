@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
+import { ActionGroup } from '@/components/primitives/action-group'
 import { AppAlert } from '@/components/primitives/app-alert'
 import { ConfirmAction } from '@/components/primitives/confirm-action'
 import { DataGrid, DataGridHeader, DataGridRow } from '@/components/primitives/data-grid'
@@ -311,7 +312,7 @@ export function SettingsPage() {
                 <span className='mono truncate text-muted-foreground text-xs'>{provider.base_url}</span>
                 <span>{provider.is_primary ? <Badge variant='ai'>{t('common.primary')}</Badge> : <span className='text-muted-foreground'>-</span>}</span>
                 <span><StatusBadge value={provider.enabled ? 'active' : 'disabled'} /></span>
-                <span className='flex justify-end gap-2'>
+                <ActionGroup>
                   <Button size='sm' variant='outline' onClick={() => openEditRelayDialog(provider)}>{t('common.update')}</Button>
                   <ConfirmAction
                     trigger={<Button size='sm' variant='ghost' disabled={deleteRelay.isPending}>{t('common.delete')}</Button>}
@@ -322,7 +323,7 @@ export function SettingsPage() {
                     onConfirm={() => deleteRelay.mutate(provider.id)}
                     disabled={deleteRelay.isPending}
                   />
-                </span>
+                </ActionGroup>
               </DataGridRow>
             ))}
             </DataGrid>
@@ -349,18 +350,18 @@ export function SettingsPage() {
                 <span><Badge variant='secondary'>{provider.type}</Badge></span>
                 <span className='mono truncate text-muted-foreground text-xs'>{provider.base_url}</span>
                 <span><StatusBadge value={provider.status} /></span>
-                <span className='flex justify-end gap-2'>
-                        <Button size='sm' variant='outline' onClick={() => openEditScmDialog(provider)}>{t('common.update')}</Button>
-                        <ConfirmAction
-                          trigger={<Button size='sm' variant='ghost' disabled={deleteScm.isPending}>{t('common.delete')}</Button>}
-                          title={t('settings.deleteScmProvider')}
-                          description={t('settings.deleteScmProviderDescription', { name: provider.name })}
-                          confirmLabel={t('common.delete')}
-                          cancelLabel={t('common.cancel')}
-                          onConfirm={() => deleteScm.mutate(provider.id)}
-                          disabled={deleteScm.isPending}
-                        />
-                </span>
+                <ActionGroup>
+                  <Button size='sm' variant='outline' onClick={() => openEditScmDialog(provider)}>{t('common.update')}</Button>
+                  <ConfirmAction
+                    trigger={<Button size='sm' variant='ghost' disabled={deleteScm.isPending}>{t('common.delete')}</Button>}
+                    title={t('settings.deleteScmProvider')}
+                    description={t('settings.deleteScmProviderDescription', { name: provider.name })}
+                    confirmLabel={t('common.delete')}
+                    cancelLabel={t('common.cancel')}
+                    onConfirm={() => deleteScm.mutate(provider.id)}
+                    disabled={deleteScm.isPending}
+                  />
+                </ActionGroup>
               </DataGridRow>
             ))}
             </DataGrid>
@@ -390,7 +391,7 @@ export function SettingsPage() {
                 <span><Badge variant='secondary'>{credential.kind}</Badge></span>
                 <span className='tnum text-muted-foreground text-xs'>{number(credential.usage_count)}</span>
                 <span className='tnum text-muted-foreground text-xs'>{dateTime(credential.updated_at)}</span>
-                <span className='flex justify-end gap-2'>
+                <ActionGroup>
                   <Button size='sm' variant='outline' onClick={() => openEditCredentialDialog(credential)}>{t('common.update')}</Button>
                   <ConfirmAction
                     trigger={<Button size='sm' variant='ghost' disabled={deleteCredential.isPending}>{t('common.delete')}</Button>}
@@ -401,7 +402,7 @@ export function SettingsPage() {
                     onConfirm={() => deleteCredential.mutate(credential.id)}
                     disabled={deleteCredential.isPending}
                   />
-                </span>
+                </ActionGroup>
               </DataGridRow>
             ))}
             </DataGrid>
@@ -517,7 +518,7 @@ export function SettingsPage() {
             </Field>
             {createRelay.error ? <AppAlert tone='error' title={createRelay.error.message} /> : null}
             {updateRelay.error ? <AppAlert tone='error' title={updateRelay.error.message} /> : null}
-            <div className='flex justify-end gap-2'>
+            <ActionGroup>
               <Button variant='outline' onClick={closeRelayDialog}>{t('common.cancel')}</Button>
               <Button
                 disabled={!relayForm.name || !relayForm.display_name || !relayForm.base_url || (!editingRelayId && !relayForm.admin_api_key) || createRelay.isPending || updateRelay.isPending}
@@ -525,7 +526,7 @@ export function SettingsPage() {
               >
                 {editingRelayId ? t('common.update') : t('common.create')}
               </Button>
-            </div>
+            </ActionGroup>
           </div>
         </DialogContent>
       </Dialog>
@@ -573,7 +574,7 @@ export function SettingsPage() {
             ) : null}
             {createScm.error ? <AppAlert tone='error' title={createScm.error.message} /> : null}
             {updateScm.error ? <AppAlert tone='error' title={updateScm.error.message} /> : null}
-            <div className='flex justify-end gap-2'>
+            <ActionGroup>
               <Button variant='outline' onClick={closeScmDialog}>{t('common.cancel')}</Button>
               <Button
                 disabled={!scmForm.name || !scmForm.base_url || !scmForm.api_credential_id || createScm.isPending || updateScm.isPending}
@@ -581,7 +582,7 @@ export function SettingsPage() {
               >
                 {editingScmId ? t('common.update') : t('common.create')}
               </Button>
-            </div>
+            </ActionGroup>
           </div>
         </DialogContent>
       </Dialog>
@@ -609,7 +610,7 @@ export function SettingsPage() {
             {credentialForm.kind === 'ssh_username_with_private_key' ? <Input type='password' placeholder={t('settings.passphrase')} value={credentialForm.passphrase} onChange={(event) => setCredentialForm((value) => ({ ...value, passphrase: event.target.value }))} /> : null}
             {createCredential.error ? <AppAlert tone='error' title={createCredential.error.message} /> : null}
             {updateCredential.error ? <AppAlert tone='error' title={updateCredential.error.message} /> : null}
-            <div className='flex justify-end gap-2'>
+            <ActionGroup>
               <Button variant='outline' onClick={closeCredentialDialog}>{t('common.cancel')}</Button>
               <Button
                 disabled={
@@ -624,7 +625,7 @@ export function SettingsPage() {
               >
                 {editingCredentialId ? t('common.update') : t('common.create')}
               </Button>
-            </div>
+            </ActionGroup>
           </div>
         </DialogContent>
       </Dialog>
