@@ -18,6 +18,7 @@ import { AppAlert } from '@/components/primitives/app-alert'
 import { ConfirmAction } from '@/components/primitives/confirm-action'
 import { Page, PageHeader } from '@/components/primitives/page'
 import { LoadingState } from '@/components/primitives/data-state'
+import { FieldItem, FieldList } from '@/components/primitives/field-list'
 import { InfoTile } from '@/components/primitives/info-tile'
 import { SectionNav, type SectionNavItem } from '@/components/primitives/section-nav'
 import { StatusBadge } from '@/components/primitives/status-badge'
@@ -452,10 +453,11 @@ export function SettingsPage() {
               <InfoTile label={t('settings.mode')} value={deployment.data?.mode || t('common.unknown')} mono />
               <InfoTile label={t('settings.commit')} value={deployment.data?.version.commit || '-'} mono />
             </div>
-            <div className='rounded-[var(--r-md)] border border-border bg-[var(--surface-inset)] p-3'>
-              <div className='font-medium'>v{deployment.data?.version.version || '-'}</div>
-              <div className='text-muted-foreground text-xs'>{deployment.data?.mode || t('common.unknown')} · {deployment.data?.version.commit || '-'}</div>
-            </div>
+            <FieldList>
+              <FieldItem label={t('settings.current')} value={`v${deployment.data?.version.version || '-'}`} mono />
+              <FieldItem label={t('settings.mode')} value={deployment.data?.mode || t('common.unknown')} mono />
+              <FieldItem label={t('settings.commit')} value={deployment.data?.version.commit || '-'} mono />
+            </FieldList>
             {deployment.data?.update_available ? <Badge variant='ai'>{t('settings.updateAvailable', { version: deployment.data.latest_release?.version || '-' })}</Badge> : <Badge variant='success'>{t('settings.upToDate')}</Badge>}
             <div className='flex gap-2'>
               <Button variant='outline' onClick={() => checkUpdate.mutate()} disabled={checkUpdate.isPending}><RefreshCw data-icon='inline-start' />{t('settings.checkUpdate')}</Button>

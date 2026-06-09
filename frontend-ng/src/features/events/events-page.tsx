@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { FieldItem, FieldList } from '@/components/primitives/field-list'
 import { InfoTile } from '@/components/primitives/info-tile'
 import { MetricCard } from '@/components/primitives/metric-card'
 import { Page } from '@/components/primitives/page'
@@ -325,13 +326,13 @@ function EventDetail({ event, isAdmin, onClose }: { event: ToolUsageEventDetail 
 
           <section>
             <SectionLabel>{t('events.session')}</SectionLabel>
-            <div className='overflow-hidden rounded-[var(--r-md)] border border-border bg-[var(--surface-inset)]'>
-              <Field label={t('events.observedStart')} value={dateTime(event.observed_start_at)} />
-              <Field label={t('events.observedEnd')} value={dateTime(event.observed_end_at)} />
-              <Field label={t('repoDetail.commit')} value={event.commit_sha || '-'} mono />
-              <Field label={t('events.source')} value={event.source_basename} mono />
-              <Field label={t('events.workspace')} value={event.workspace_id} mono />
-            </div>
+            <FieldList>
+              <FieldItem label={t('events.observedStart')} value={dateTime(event.observed_start_at)} />
+              <FieldItem label={t('events.observedEnd')} value={dateTime(event.observed_end_at)} />
+              <FieldItem label={t('repoDetail.commit')} value={event.commit_sha || '-'} mono />
+              <FieldItem label={t('events.source')} value={event.source_basename} mono />
+              <FieldItem label={t('events.workspace')} value={event.workspace_id} mono />
+            </FieldList>
           </section>
 
           <section>
@@ -355,11 +356,13 @@ function EventDetail({ event, isAdmin, onClose }: { event: ToolUsageEventDetail 
               <AccordionTrigger>{t('events.advancedData')}</AccordionTrigger>
               <AccordionContent>
                 <div className='grid gap-2 text-sm'>
-                  <Field label={t('events.toolEvent')} value={event.tool_event_id || '-'} mono />
-                  {isAdmin ? <Field label={t('events.user')} value={event.username || `#${event.user_id}`} /> : null}
-                  {isAdmin ? <Field label={t('events.dedupeKey')} value={event.dedupe_key} mono /> : null}
-                  {isAdmin ? <Field label={t('events.rawPath')} value={event.raw_source_path || '-'} mono /> : null}
-                  {isAdmin ? <Field label={t('events.rawLocator')} value={event.raw_source_locator || '-'} mono /> : null}
+                  <FieldList>
+                    <FieldItem label={t('events.toolEvent')} value={event.tool_event_id || '-'} mono />
+                    {isAdmin ? <FieldItem label={t('events.user')} value={event.username || `#${event.user_id}`} /> : null}
+                    {isAdmin ? <FieldItem label={t('events.dedupeKey')} value={event.dedupe_key} mono /> : null}
+                    {isAdmin ? <FieldItem label={t('events.rawPath')} value={event.raw_source_path || '-'} mono /> : null}
+                    {isAdmin ? <FieldItem label={t('events.rawLocator')} value={event.raw_source_locator || '-'} mono /> : null}
+                  </FieldList>
                 </div>
                 {isAdmin && event.raw_payload ? (
                   <pre className='mt-3 max-h-56 overflow-auto rounded-[var(--r-md)] bg-muted p-3 text-xs'>{JSON.stringify(event.raw_payload, null, 2)}</pre>
@@ -375,13 +378,4 @@ function EventDetail({ event, isAdmin, onClose }: { event: ToolUsageEventDetail 
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return <div className='mb-2.5 font-bold text-[11px] text-[var(--ink-4)] uppercase tracking-[0.06em]'>{children}</div>
-}
-
-function Field({ label, value, mono = false }: { label: string; value: React.ReactNode; mono?: boolean }) {
-  return (
-    <div className='flex items-center gap-3 border-b border-[var(--line-faint)] px-3 py-2 last:border-b-0'>
-      <span className='w-24 shrink-0 text-muted-foreground text-xs'>{label}</span>
-      <span className={mono ? 'mono min-w-0 flex-1 break-all text-right text-xs' : 'min-w-0 flex-1 truncate text-right text-sm'}>{value}</span>
-    </div>
-  )
 }

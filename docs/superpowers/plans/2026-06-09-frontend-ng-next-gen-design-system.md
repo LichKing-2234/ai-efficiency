@@ -27,6 +27,8 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
 - Test: `frontend-ng/src/components/primitives/heatmap-grid.test.ts` - locks fixed grid sizing, intensity normalization, and out-of-range point handling.
 - Create: `frontend-ng/src/components/primitives/command-step.tsx` - shared reference-style CLI command row with numbered steps, copy action, and copied feedback.
 - Test: `frontend-ng/src/components/primitives/command-step.test.ts` - locks visible shell prompt formatting and clipboard text behavior.
+- Create: `frontend-ng/src/components/primitives/field-list.tsx` - shared reference-style compact label/value field list for details and runtime summaries.
+- Test: `frontend-ng/src/components/primitives/field-list.test.tsx` - locks mono/truncation field row variants.
 - Create: `frontend-ng/src/features/home/home-state.ts` - shared Overview setup readiness derivation used by the setup status card.
 - Test: `frontend-ng/src/features/home/home-state.test.ts` - locks account, AI access, repository, recent usage readiness progress calculations, and Overview live activity summaries.
 - Create: `frontend-ng/src/components/primitives/tool-glyph.tsx` - reusable tool identity glyph for tables and detail headers.
@@ -234,7 +236,9 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
 
   Current implementation also uses the shared `InfoTile` primitive for SlideOver token/request/credit stat tiles, including compact numeric and AI accent variants.
 
-  Current evidence: `event-filters.test.ts`, `search-field.test.tsx`, `info-tile.test.tsx`, `bun run check`, browser QA on `/events`, and full verification passed. `agent-browser` verified two radiogroups, seven radio items, Tool and Binding filters, one shared search input, no error boundary, no visible interactive overflow, and no horizontal overflow at `1280x720` and `390x844`. The current local account has no event rows, so SlideOver data rendering is covered by TypeScript/build and primitive tests while browser QA verifies the route empty/data-light state.
+  Current implementation also uses the shared `FieldList` primitive for SlideOver session and advanced metadata fields instead of a page-local field-row helper.
+
+  Current evidence: `event-filters.test.ts`, `search-field.test.tsx`, `info-tile.test.tsx`, `field-list.test.tsx`, `bun run check`, browser QA on `/events`, and full verification passed. `agent-browser` verified two radiogroups, seven radio items, Tool and Binding filters, one shared search input, no error boundary, no visible interactive overflow, and no horizontal overflow at `1280x720` and `390x844`. The current local account has no event rows, so SlideOver data rendering is covered by TypeScript/build and primitive tests while browser QA verifies the route empty/data-light state.
 
 - [x] **Step 2: Repositories**
 
@@ -274,7 +278,9 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
 
   Current implementation also uses the shared `InfoTile` primitive for deployment-runtime stat tiles.
 
-  Current evidence: `search-field.test.tsx`, `section-nav.test.tsx`, `bun run check`, `bun test`, `bun run build`, and browser QA on `/admin/users` and `/settings` passed. `agent-browser` verified the authenticated Admin Users shared search input at `1280x720` and `390x844`, the Settings shared section rail with five items and one current item at `1280x720` and `390x844`, no error boundary, and no horizontal overflow.
+  Current implementation also uses the shared `FieldList` primitive for deployment-runtime current/mode/commit summary fields.
+
+  Current evidence: `search-field.test.tsx`, `section-nav.test.tsx`, `field-list.test.tsx`, `bun run check`, `bun test`, `bun run build`, and browser QA on `/admin/users` and `/settings` passed. `agent-browser` verified the authenticated Admin Users shared search input at `1280x720` and `390x844`, the Settings shared section rail with five items and one current item at `1280x720` and `390x844`, no error boundary, and no horizontal overflow. The latest Settings deployment-runtime check rendered one shared field list, three field rows, and three info tiles at `1280x720` and `390x844`; the mobile field row width stayed within the 390px viewport.
 
 ## Task 6: Verification, Visual QA, Commit, and Push
 
