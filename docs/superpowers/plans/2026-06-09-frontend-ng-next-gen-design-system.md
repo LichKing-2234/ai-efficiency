@@ -217,7 +217,11 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
 
   Extract Overview setup readiness into `home-state.ts`, render the setup status card with the shared `Ring` primitive, migrate recent usage into reference-style live activity rows with `ToolGlyph`, and keep checklist labels/statuses backed by real dashboard, provider, and event data.
 
+  Follow-up audit implementation adds the shared `ChecklistRow` primitive for setup readiness rows. Overview now uses it for account, AI access, repository reporting, and recent usage status rows instead of a page-local `StatusLine` surface.
+
   Current evidence: `home-state.test.ts`, `bun run check`, `bun test`, `bun run build`, `git diff --check`, and browser QA on `/` passed. `agent-browser` verified authenticated desktop `1280x720` and mobile `390x844` states with a likely ring SVG, visible `1/4` setup progress, recent usage header, live dot, "View all records" action, no visible button overflow, no error boundary, and no horizontal overflow. The local account currently has no recent events, so rendered activity-row data is covered by `home-state.test.ts`.
+
+  Follow-up audit evidence: `checklist-row.test.tsx` was added with a red-green cycle, `home-state.test.ts` and `bun run check` passed after migrating Overview setup status rows, and browser QA reverified `/` at desktop and mobile widths.
 
 ## Task 5: Events, Repos, Setup, and Admin Screen Pass
 
@@ -338,6 +342,7 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
   - Usage Analytics no longer renders Recharts for the primary token trend; `agent-browser` confirmed `.recharts-wrapper` count is `0`, `/usage` has no horizontal overflow at `1280px` or `390px`, and the local configured-empty state remains usable.
   - Usage Analytics now has the shared `HeatmapGrid` activity section in the configured data path; `heatmap-grid.test.ts` and `user-usage-state.test.ts` cover the 7x24 grid and trend-to-heatmap mapping while local browser QA confirms the configured-empty path remains stable at desktop and mobile widths.
   - Overview setup status now uses the shared `Ring` primitive and derived readiness helper; `agent-browser` confirmed ring presence, visible `1/4` progress, no error boundary, and no horizontal overflow at `1280x720` and `390x844`.
+  - Follow-up Overview setup audit added `ChecklistRow` for account, AI access, repository reporting, and recent usage status rows, preserving the same readiness conditions and fix links.
   - Overview recent usage now uses reference-style live activity rows with `ToolGlyph`, binding badges, token/request/credit metadata, and a route link to all records; local browser QA verified the empty state header/action at desktop and mobile widths.
   - My Setup CLI workflow now uses the shared `CommandStep` primitive; `agent-browser` confirmed six numbered command rows, copy affordances, no error boundary, no horizontal overflow, and no visible button overflow at `1280x720` and `390x844`.
   - Follow-up Events audit added `OptionList` and `CodeBlock` primitives and reverified `/events` at `1280x720` and `390x844`; the local account remained data-light, so route stability is browser-covered while candidate-list and raw-payload rendering are covered by primitive tests and TypeScript/build.

@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Ring } from '@/components/primitives/charts'
+import { ChecklistRow } from '@/components/primitives/checklist-row'
 import { MetricCard } from '@/components/primitives/metric-card'
 import { Page, PageHeader } from '@/components/primitives/page'
 import { LoadingState } from '@/components/primitives/data-state'
@@ -176,12 +177,11 @@ function ActivityRow({
 function StatusLine({ label, value, ok, to }: { label: string; value: string; ok: boolean; to?: '/user' | '/repos' | '/events' }) {
   const { t } = useI18n()
   return (
-    <div className='flex items-center justify-between gap-3 rounded-md bg-muted px-3 py-2 text-sm'>
-      <span className='text-muted-foreground'>{label}</span>
-      <div className='flex items-center gap-2'>
-        <Badge variant={ok ? 'success' : 'warning'}>{value}</Badge>
-        {!ok && to ? <Button asChild variant='link' size='sm'><Link to={to}>{t('home.statusFix')}</Link></Button> : null}
-      </div>
-    </div>
+    <ChecklistRow
+      action={!ok && to ? <Button asChild variant='link' size='sm'><Link to={to}>{t('home.statusFix')}</Link></Button> : null}
+      label={label}
+      ok={ok}
+      value={value}
+    />
   )
 }
