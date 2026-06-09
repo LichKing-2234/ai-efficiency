@@ -2,14 +2,17 @@ import { describe, expect, test } from 'vitest'
 import type { RepoConfig, RepoInventoryProviderSummary, RepoWebhookRepairBatchResult, RepoWebhookRepairItem, SCMProvider } from '@/lib/api/types'
 import {
   applyBindingFilter,
+  buildRepoListParams,
   buildRepoCloneUrl,
   buildRepoCreatePayload,
+  buildRepoSearch,
   canRepairWebhook,
   compareInventoryProviders,
   firstScope,
   groupRepos,
   healthSummary,
   parseRepoUrl,
+  parseRepoSearch,
   repoRepairMessage,
   webhookRepairBatchMessage,
   selectProviderForRepoOrigin
@@ -165,5 +168,55 @@ describe('repos state helpers', () => {
       error: 'bitbucket API returned 502'
     }
     expect(repoRepairMessage(failed)).toEqual({ kind: 'error', error: 'bitbucket API returned 502' })
+  })
+
+  test('parses and serializes repo workbench URL state', () => {
+    expect(parseRepoSearch({ binding: 'unbound', provider: 'gh', scope: 'org', page: '2', page_size: '50' })).toEqual({
+      binding: 'unbound',
+      provider: 'gh',
+      scope: 'org',
+      page: 2,
+      pageSize: 50
+    })
+    expect(parseRepoSearch({ binding: 'bad', page: '-1', page_size: 'NaN' })).toEqual({
+      binding: 'all',
+      provider: '',
+      scope: '',
+      page: 1,
+      pageSize: 20
+    })
+    expect(buildRepoSearch({ binding: 'all', provider: '', scope: '', page: 1, pageSize: 20 })).toEqual({})
+    expect(buildRepoSearch({ binding: 'bound', provider: 'gh', scope: 'org', page: 3, pageSize: 100 })).toEqual({
+      binding: 'bound',
+      provider: 'gh',
+      scope: 'org',
+      page: '3',
+      page_size: '100'
+    })
+  })
+
+  test('builds repo list params from selected inventory provider and scope', () => {
+    const inventoryProvider: RepoInventoryProviderSummary = {
+      provider_key: 'gh',
+      provider_id: 1,
+      name: 'GitHub',
+      type: 'github',
+      total_repos: 3,
+      bound_repos: 3,
+      unbound_repos: 0,
+      active_repos: 2,
+      webhook_failed_repos: 1,
+      scopes: []
+    }
+    expect(buildRepoListParams({ provider: inventoryProvider, scope: 'org', binding: 'bound', page: 2, pageSize: 50 })).toEqual({
+      page: 2,
+      pageSize: 50,
+      scmProviderId: 1,
+      bindingState: 'bound',
+      scope: 'org'
+    })
+    expect(buildRepoListParams({ provider: { ...inventoryProvider, provider_key: 'unbound', provider_id: undefined }, scope: 'unknown', binding: 'all', page: 1, pageSize: 20 })).toMatchObject({
+      bindingState: 'unbound'
+    })
   })
 })

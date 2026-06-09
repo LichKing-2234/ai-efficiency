@@ -1195,7 +1195,7 @@ cd frontend-ng && bun test src/features/user-usage/user-usage-state.test.ts && b
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit personal usage dashboard**
+- [x] **Step 7: Commit personal usage dashboard**
 
 Run:
 
@@ -1213,7 +1213,7 @@ Expected: commit created.
 - Modify: `frontend-ng/src/features/repos/repos-state.test.ts`
 - Modify: `frontend-ng/src/features/repos/repos-page.tsx`
 
-- [ ] **Step 1: Write failing search serialization tests**
+- [x] **Step 1: Write failing search serialization tests**
 
 Append to `frontend-ng/src/features/repos/repos-state.test.ts`:
 
@@ -1271,7 +1271,7 @@ test('builds repo list params from selected inventory provider and scope', () =>
 })
 ```
 
-- [ ] **Step 2: Implement URL/list helper functions**
+- [x] **Step 2: Implement URL/list helper functions**
 
 Append to `frontend-ng/src/features/repos/repos-state.ts`:
 
@@ -1333,7 +1333,7 @@ export function buildRepoListParams(state: {
 }
 ```
 
-- [ ] **Step 3: Refactor `ReposPage` query model**
+- [x] **Step 3: Refactor `ReposPage` query model**
 
 In `frontend-ng/src/features/repos/repos-page.tsx`:
 
@@ -1376,7 +1376,7 @@ const repos = useQuery({
 - Use `Empty` for inventory empty and scoped repo empty states.
 - Keep `Add repository` dialog behavior and two-step delete confirmation, but replace inline confirm buttons with `ConfirmAction`.
 
-- [ ] **Step 4: Run focused tests**
+- [x] **Step 4: Run focused tests**
 
 Run:
 

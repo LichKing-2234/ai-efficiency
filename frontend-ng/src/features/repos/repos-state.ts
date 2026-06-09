@@ -2,6 +2,7 @@ import type {
   RepoConfig,
   RepoDirectCreateRequest,
   RepoInventoryProviderSummary,
+  RepoListParams,
   RepoWebhookRepairBatchResult,
   RepoWebhookRepairItem,
   SCMProvider
@@ -9,6 +10,14 @@ import type {
 
 export type RepoBindingFilter = 'all' | 'bound' | 'unbound'
 export type RepoCloneProtocol = 'http' | 'ssh'
+
+export interface RepoWorkbenchSearch {
+  binding: RepoBindingFilter
+  provider: string
+  scope: string
+  page: number
+  pageSize: number
+}
 
 export interface ParsedRepoUrl {
   origin: string
@@ -175,4 +184,52 @@ export function repoRepairMessage(item: RepoWebhookRepairItem): { kind: 'success
     return { kind: 'error', error: item.error || 'Webhook repair failed' }
   }
   return { kind: 'success' }
+}
+
+function positiveInt(value: unknown, fallback: number) {
+  const parsed = Number.parseInt(String(value ?? ''), 10)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
+}
+
+export function parseRepoSearch(search: Record<string, unknown>): RepoWorkbenchSearch {
+  const binding = search.binding === 'bound' || search.binding === 'unbound' ? search.binding : 'all'
+  return {
+    binding,
+    provider: typeof search.provider === 'string' ? search.provider : '',
+    scope: typeof search.scope === 'string' ? search.scope : '',
+    page: positiveInt(search.page, 1),
+    pageSize: positiveInt(search.page_size, 20)
+  }
+}
+
+export function buildRepoSearch(state: RepoWorkbenchSearch) {
+  const next: Record<string, string> = {}
+  if (state.binding !== 'all') next.binding = state.binding
+  if (state.provider) next.provider = state.provider
+  if (state.scope) next.scope = state.scope
+  if (state.page > 1) next.page = String(state.page)
+  if (state.pageSize !== 20) next.page_size = String(state.pageSize)
+  return next
+}
+
+export function buildRepoListParams(state: {
+  provider: RepoInventoryProviderSummary | null
+  scope: string
+  binding: RepoBindingFilter
+  page: number
+  pageSize: number
+}) {
+  const params: RepoListParams = {
+    page: state.page,
+    pageSize: state.pageSize
+  }
+  if (!state.provider) return params
+  if (state.provider.provider_key === 'unbound') {
+    params.bindingState = 'unbound'
+  } else {
+    if (state.provider.provider_id) params.scmProviderId = state.provider.provider_id
+    if (state.binding !== 'all') params.bindingState = state.binding
+  }
+  if (state.scope) params.scope = state.scope
+  return params
 }
