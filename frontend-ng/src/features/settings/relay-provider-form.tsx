@@ -1,9 +1,9 @@
 import { Button } from '@/components/ui/button'
-import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
-import { Input } from '@/components/ui/input'
+import { FieldGroup } from '@/components/ui/field'
 import { ActionGroup } from '@/components/primitives/action-group'
 import { AppAlert } from '@/components/primitives/app-alert'
 import { CheckboxField } from '@/components/primitives/checkbox-field'
+import { TextField } from '@/components/primitives/text-field'
 import { useI18n } from '@/lib/i18n/i18n'
 import type { RelayFormState } from './settings-payloads'
 
@@ -46,16 +46,15 @@ export function RelayProviderForm({
   return (
     <FieldGroup>
       {relayFields.map((field) => (
-        <Field data-disabled={field.key === 'name' && editMode ? true : undefined} key={field.key}>
-          <FieldLabel htmlFor={field.id}>{t(field.labelKey)}</FieldLabel>
-          <Input
-            disabled={field.key === 'name' && editMode}
-            id={field.id}
-            type={field.type}
-            value={form[field.key]}
-            onChange={(event) => onChange({ ...form, [field.key]: event.target.value })}
-          />
-        </Field>
+        <TextField
+          disabled={field.key === 'name' && editMode}
+          id={field.id}
+          key={field.key}
+          label={t(field.labelKey)}
+          type={field.type}
+          value={form[field.key]}
+          onChange={(value) => onChange({ ...form, [field.key]: value })}
+        />
       ))}
       <CheckboxField id='relay-primary' checked={form.is_primary} label={t('settings.primary')} onCheckedChange={(is_primary) => onChange({ ...form, is_primary })} />
       <CheckboxField id='relay-enabled' checked={form.enabled} label={t('settings.enabled')} onCheckedChange={(enabled) => onChange({ ...form, enabled })} />

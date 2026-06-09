@@ -1,9 +1,9 @@
 import { Button } from '@/components/ui/button'
-import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
-import { Input } from '@/components/ui/input'
+import { FieldGroup } from '@/components/ui/field'
 import { ActionGroup } from '@/components/primitives/action-group'
 import { AppAlert } from '@/components/primitives/app-alert'
 import { CheckboxField } from '@/components/primitives/checkbox-field'
+import { TextField } from '@/components/primitives/text-field'
 import { useI18n } from '@/lib/i18n/i18n'
 import type { LDAPFormState } from './settings-payloads'
 
@@ -45,15 +45,14 @@ export function LdapSettingsForm({
   return (
     <FieldGroup>
       {ldapFields.map((field) => (
-        <Field key={field.key}>
-          <FieldLabel htmlFor={field.id}>{t(field.labelKey)}</FieldLabel>
-          <Input
-            id={field.id}
-            type={field.type}
-            value={form[field.key]}
-            onChange={(event) => onChange({ ...form, [field.key]: event.target.value })}
-          />
-        </Field>
+        <TextField
+          id={field.id}
+          key={field.key}
+          label={t(field.labelKey)}
+          type={field.type}
+          value={form[field.key]}
+          onChange={(value) => onChange({ ...form, [field.key]: value })}
+        />
       ))}
       <CheckboxField id='ldap-starttls' checked={form.tls} label={t('settings.useStartTls')} onCheckedChange={(tls) => onChange({ ...form, tls })} />
       {message ? (
