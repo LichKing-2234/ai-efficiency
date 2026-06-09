@@ -12,7 +12,7 @@ import { CardPagerFooter } from '@/components/primitives/card-pager-footer'
 import { CheckboxField } from '@/components/primitives/checkbox-field'
 import { DataGrid, DataGridHeader, DataGridRow } from '@/components/primitives/data-grid'
 import { EntityCardHeader } from '@/components/primitives/entity-card-header'
-import { InfoTile } from '@/components/primitives/info-tile'
+import { InfoTile, InfoTileGrid } from '@/components/primitives/info-tile'
 import { InsetPanel } from '@/components/primitives/inset-panel'
 import { MetricCard } from '@/components/primitives/metric-card'
 import { Page, PageToolbar } from '@/components/primitives/page'
@@ -227,12 +227,12 @@ export function RepoDetailPage() {
         <Card>
           <SectionCardHeader title={t('repoDetail.latestSyncJob')} />
           <CardContent className='flex flex-col gap-3'>
-            <div className='grid gap-3 md:grid-cols-4'>
+            <InfoTileGrid columns={4}>
               <InfoTile label={t('common.status')} value={<StatusBadge value={currentJob.status} />} />
               <InfoTile label={t('repoDetail.phaseLabel')} value={currentJob.phase || '-'} />
               <InfoTile label={t('repoDetail.fetchedLabel')} value={number(jobProgress?.fetched)} mono />
               <InfoTile label={t('repoDetail.processedLabel')} value={`${number(jobProgress?.processed)}/${number(currentJob.total_prs || currentJob.fetched_prs)}`} mono />
-            </div>
+            </InfoTileGrid>
             <InsetPanel muted>
               {t('repoDetail.usage', { done: number(jobProgress?.usageRefreshed), total: number(jobProgress?.usageTotal) })} · {syncMessage || prSyncJobMessage(currentJob)}
             </InsetPanel>

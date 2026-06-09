@@ -1,6 +1,28 @@
 import type * as React from 'react'
 import { cn } from '@/lib/utils'
 
+const infoTileGridColumns = {
+  2: 'md:grid-cols-2',
+  3: 'md:grid-cols-3',
+  4: 'md:grid-cols-4'
+} as const
+
+export function InfoTileGrid({
+  children,
+  className,
+  columns = 3
+}: {
+  children: React.ReactNode
+  className?: string
+  columns?: keyof typeof infoTileGridColumns
+}) {
+  return (
+    <div data-slot='info-tile-grid' className={cn('grid gap-3', infoTileGridColumns[columns], className)}>
+      {children}
+    </div>
+  )
+}
+
 export function InfoTile({
   label,
   value,

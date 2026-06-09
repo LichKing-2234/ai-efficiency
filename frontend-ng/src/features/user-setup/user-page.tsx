@@ -13,7 +13,7 @@ import { CredentialKeyPanel } from '@/components/primitives/credential-key-panel
 import { EntityCardHeader } from '@/components/primitives/entity-card-header'
 import { PageEmpty } from '@/components/primitives/page-empty'
 import { Page } from '@/components/primitives/page'
-import { InfoTile } from '@/components/primitives/info-tile'
+import { InfoTile, InfoTileGrid } from '@/components/primitives/info-tile'
 import { InsetPanel } from '@/components/primitives/inset-panel'
 import { SectionCardHeader } from '@/components/primitives/section-card-header'
 import { SelectableCard } from '@/components/primitives/selectable-card'
@@ -209,7 +209,7 @@ export function UserPage() {
             <CardContent className='flex flex-col gap-4'>
               {selectedGroup ? (
                 <>
-                  <div className='grid gap-3 md:grid-cols-3'>
+                  <InfoTileGrid columns={3}>
                     <InfoTile label={t('userSetup.group')} value={selectedGroup.group_name} />
                     <InfoTile label={t('userSetup.platform')} value={selectedGroup.platform} />
                     <InfoTile
@@ -217,7 +217,7 @@ export function UserPage() {
                       value={selectedGroup.credential.state === 'existing_hidden' ? t('userSetup.ready') : t('userSetup.needsSetup')}
                       accent={selectedGroup.credential.state === 'existing_hidden'}
                     />
-                  </div>
+                  </InfoTileGrid>
                   <CredentialKeyPanel
                     label={t('userSetup.apiKey')}
                     value={displayedSecret || t('userSetup.noKeyProvisioned')}

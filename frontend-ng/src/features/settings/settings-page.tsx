@@ -15,7 +15,7 @@ import { DataGrid, DataGridHeader, DataGridRow } from '@/components/primitives/d
 import { Page } from '@/components/primitives/page'
 import { LoadingState } from '@/components/primitives/data-state'
 import { FieldItem, FieldList } from '@/components/primitives/field-list'
-import { InfoTile } from '@/components/primitives/info-tile'
+import { InfoTile, InfoTileGrid } from '@/components/primitives/info-tile'
 import { SectionCardHeader } from '@/components/primitives/section-card-header'
 import { SectionNav, type SectionNavItem } from '@/components/primitives/section-nav'
 import { StatusBadge } from '@/components/primitives/status-badge'
@@ -424,11 +424,11 @@ export function SettingsPage() {
         {activeSection === 'deployment-runtime' ? <Card>
           <SectionCardHeader title={t('settings.deploymentRuntime')} description={t('settings.currentBackendDeployment')} />
           <CardContent className='flex flex-col gap-3'>
-            <div className='grid gap-3 md:grid-cols-3'>
+            <InfoTileGrid columns={3}>
               <InfoTile label={t('settings.current')} value={`v${deployment.data?.version.version || '-'}`} mono />
               <InfoTile label={t('settings.mode')} value={deployment.data?.mode || t('common.unknown')} mono />
               <InfoTile label={t('settings.commit')} value={deployment.data?.version.commit || '-'} mono />
-            </div>
+            </InfoTileGrid>
             <FieldList>
               <FieldItem label={t('settings.current')} value={`v${deployment.data?.version.version || '-'}`} mono />
               <FieldItem label={t('settings.mode')} value={deployment.data?.mode || t('common.unknown')} mono />
