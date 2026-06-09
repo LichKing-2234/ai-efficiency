@@ -11,6 +11,7 @@ import { Field, FieldLabel } from '@/components/ui/field'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
+import { DataGrid, DataGridHeader, DataGridRow } from '@/components/primitives/data-grid'
 import { InfoTile } from '@/components/primitives/info-tile'
 import { InsetPanel } from '@/components/primitives/inset-panel'
 import { MetricCard } from '@/components/primitives/metric-card'
@@ -173,6 +174,7 @@ export function RepoDetailPage() {
   const totalPRs = prs.data?.total ?? summary.total
   const hasPreviousPage = canGoPreviousPRPage(prsPage)
   const hasNextPage = canGoNextPRPage(prsPage, totalPRs, prsPageSize)
+  const prColumns = 'minmax(260px,2fr)_0.7fr_1fr_0.7fr_0.6fr_1fr_minmax(210px,1.1fr)'
   const showWebhookRepair = canShowWebhookRepair({
     role: me.data?.role,
     bindingState: repo.data?.binding_state,
@@ -290,8 +292,8 @@ export function RepoDetailPage() {
             </Select>
           </div>
         </CardHeader>
-        <div className='ae-table'>
-          <div className='ae-thead grid-cols-[minmax(260px,2fr)_0.7fr_1fr_0.7fr_0.6fr_1fr_minmax(210px,1.1fr)]'>
+        <DataGrid minWidth={1180}>
+          <DataGridHeader columns={prColumns}>
             <span>{t('repoDetail.prColumn')}</span>
             <span>{t('repoDetail.ai')}</span>
             <span>{t('repoDetail.usageHeader')}</span>
@@ -299,7 +301,7 @@ export function RepoDetailPage() {
             <span>{t('repoDetail.cycle')}</span>
             <span>{t('repoDetail.merged')}</span>
             <span />
-          </div>
+          </DataGridHeader>
               {rows.map((pr) => {
                 const expanded = expandedPRId === pr.id
                 const detail = expanded && prDetail.data?.id === pr.id ? prDetail.data : pr
@@ -307,7 +309,7 @@ export function RepoDetailPage() {
                 const tokenUsage = (detail.usage_input_tokens ?? 0) + (detail.usage_output_tokens ?? 0) + (detail.usage_cached_input_tokens ?? 0) + (detail.usage_reasoning_tokens ?? 0)
                 return (
                   <Fragment key={pr.id}>
-                    <div className='ae-trow grid-cols-[minmax(260px,2fr)_0.7fr_1fr_0.7fr_0.6fr_1fr_minmax(210px,1.1fr)]'>
+                    <DataGridRow columns={prColumns}>
                       <span className='min-w-0'>
                         <a className='flex min-w-0 items-center gap-2 font-semibold text-foreground text-sm hover:underline' href={pr.scm_pr_url} target='_blank' rel='noreferrer'>
                           <GitPullRequest className='shrink-0 text-[var(--ai)]' />
@@ -334,7 +336,7 @@ export function RepoDetailPage() {
                           <Button variant='outline' size='sm' onClick={() => refreshUsage.mutate(pr.id)} disabled={refreshUsage.isPending}>{t('repoDetail.refreshUsage')}</Button>
                         </div>
                       </span>
-                    </div>
+                    </DataGridRow>
                     {expanded ? (
                       <InsetPanel className='rounded-none border-x-0 border-t-0 p-4'>
                           {prDetail.isLoading ? (
@@ -412,7 +414,7 @@ export function RepoDetailPage() {
                   </Fragment>
                 )
               })}
-        </div>
+        </DataGrid>
         <CardFooter className='flex-wrap justify-between gap-3 text-sm'>
           <span className='text-muted-foreground'>{t('repoDetail.pagePrs', { page: number(prsPage + 1), total: number(totalPRs) })}</span>
           <div className='flex items-center gap-2'>

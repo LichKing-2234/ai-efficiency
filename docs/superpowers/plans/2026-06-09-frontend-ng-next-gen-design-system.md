@@ -227,6 +227,10 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
 
   Follow-up recent-usage audit evidence: `usage-activity-row.test.tsx` was added with a red-green cycle, `home-state.test.ts` and `bun run check` passed after migrating Overview recent usage rows. `agent-browser` reverified `/` at `1280x720` and `390x844`: four setup checklist rows, recent usage header, no error boundary text, no horizontal overflow, and no visible button/link overflow. The local account still has no recent event rows, so rendered `UsageActivityRow` data-state markup is covered by primitive tests and TypeScript/build until event data is available.
 
+  Follow-up usage table audit implementation migrates the Usage Analytics model distribution table to the shared `DataGrid` primitive while keeping the existing `/api/user/usage/dashboard` response mapping, `BarsH` chart, model ordering, and numeric formatting unchanged.
+
+  Follow-up usage table audit evidence: `data-grid.test.tsx`, `user-usage-state.test.ts`, `bun test`, `bun run check`, `bun run build`, and `git diff --check` passed after the migration. `agent-browser` reverified `/usage` at `1280x720` and `390x844`: no error boundary text, no body horizontal overflow, and no visible over-wide interactive controls. The local usage payload currently has no model distribution rows, so visible model-table rendering is covered by primitive tests and TypeScript/build until model data is available.
+
 ## Task 5: Events, Repos, Setup, and Admin Screen Pass
 
 **Files:**
@@ -272,6 +276,10 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
 
   Follow-up advanced-data audit evidence: `advanced-data-panel.test.tsx` was added with a red-green cycle, `event-filters.test.ts` and `bun run check` passed after migrating the Events advanced data accordion. `agent-browser` reverified `/events` at `1280x720` and `390x844`: no error boundary text, no horizontal overflow, no visible button/link overflow, and two filter radiogroups. The local account still has no event rows, so visible SlideOver `AdvancedDataPanel` rendering is covered by primitive tests and TypeScript/build until event detail data is available.
 
+  Follow-up table audit implementation migrates the Events list table and clickable event rows to the shared `DataGrid` primitive, keeping the existing filter/query behavior, `TokenMeter`, row click detail mutation, empty state, and backend event payload contract unchanged.
+
+  Follow-up table audit evidence: `data-grid.test.tsx`, `event-filters.test.ts`, `bun test`, `bun run check`, `bun run build`, and `git diff --check` passed after the migration. `agent-browser` reverified `/events` at `1280x720` and `390x844`: one shared data grid, no error boundary text, no body horizontal overflow, and no visible over-wide interactive controls. The local account still has no event rows, so visible clickable-row rendering is covered by primitive tests and TypeScript/build until event data is available.
+
 - [x] **Step 2: Repositories**
 
   Implement reference workbench styling while keeping add, delete, auto-bind, provider selection, webhook repair, and navigation behavior intact.
@@ -297,6 +305,10 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
   Current evidence: `repo-detail-state.test.ts`, `info-tile.test.tsx`, `inset-panel.test.tsx`, and `bun run check` passed. The current local account exposes no repository detail links in `/repos`, so browser QA verifies the authenticated repository route empty/data-light state with no error boundary or horizontal overflow while repo detail stat and notice rendering is covered by TypeScript/build.
 
   Follow-up audit evidence: `usage-summary-panel.test.tsx` was added with a red-green cycle, `inset-panel.test.tsx` still passes after the slot extension, and `bun run check` passed after migrating the expanded PR detail summary. The local account still exposes no repository detail rows, so expanded PR detail rendering is covered by primitive tests and TypeScript/build until data is available for browser expansion.
+
+  Follow-up table audit implementation migrates the PR list table shell to the shared `DataGrid` primitive while leaving the expanded commit snapshot shadcn `Table` intact as a nested detail table.
+
+  Follow-up table audit evidence: `data-grid.test.tsx`, `repo-detail-state.test.ts`, `bun test`, `bun run check`, `bun run build`, and `git diff --check` passed after the migration. `agent-browser` reverified the repository area through `/repos` at `1280x720` and `390x844`: no error boundary text, no body horizontal overflow, and no visible over-wide interactive controls. The local account still exposes no repository detail links, so visible PR-list rendering is covered by primitive tests and TypeScript/build until repository detail data is available.
 
 - [x] **Step 4: My Setup**
 
@@ -333,6 +345,10 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
   Follow-up OAuth audit implementation adds the shared `AuthInfoPanel` primitive and migrates `/oauth/authorize` plus `/oauth/device` signed-in context strips away from page-local muted boxes while preserving existing OAuth payload, redirect, and login-guard behavior.
 
   Follow-up OAuth audit evidence: `auth-info-panel.test.tsx` was added with a red-green cycle, `auth-flow-state.test.ts` and `bun run check` passed after migration, and browser QA reverified `/oauth/device`.
+
+  Follow-up table audit implementation migrates the Admin Users table plus Settings relay, SCM, and advanced credential tables to the shared `DataGrid` primitive while preserving selection, search, pagination, reveal confirmation, CRUD dialogs, confirm actions, and backend mutation payloads.
+
+  Follow-up table audit evidence: `data-grid.test.tsx`, `admin-users-state.test.ts`, `settings-payloads.test.ts`, `bun test`, `bun run check`, `bun run build`, and `git diff --check` passed after the migration. `agent-browser` reverified `/admin/users` and `/settings` at `1280x720` and `390x844`: shared data grids rendered where backend data exists, no error boundary text, no body horizontal overflow, and no visible over-wide interactive controls.
 
 ## Task 6: Verification, Visual QA, Commit, and Push
 

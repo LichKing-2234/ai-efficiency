@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Empty, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
 import { BarsH, StackedAreaChart, type StackedAreaKey } from '@/components/primitives/charts'
+import { DataGrid, DataGridHeader, DataGridRow } from '@/components/primitives/data-grid'
 import { HeatmapGrid } from '@/components/primitives/heatmap-grid'
 import { MetricCard } from '@/components/primitives/metric-card'
 import { SegmentedControl } from '@/components/primitives/segmented-control'
@@ -15,6 +16,8 @@ import type { UserUsageTrendPoint } from '@/lib/api/types'
 import { compact, currency, durationMs, number } from '@/lib/format'
 import { useI18n } from '@/lib/i18n/i18n'
 import { buildUsageDashboardParams, buildUsageHeatmapPoints, rangeLabelKey, usageTotalsFromTrend, type UsageRangeOption } from './user-usage-state'
+
+const modelColumns = '1.5fr_0.8fr_0.9fr_0.8fr'
 
 export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
   const { locale, t } = useI18n()
@@ -170,22 +173,22 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
                           valueFormatter={(value) => compact(value, locale)}
                         />
                       </div>
-                      <div className='ae-table border-t border-[var(--line)]'>
-                        <div className='ae-thead grid-cols-[1.5fr_0.8fr_0.9fr_0.8fr]'>
+                      <DataGrid className='border-t border-[var(--line)]' minWidth={560}>
+                        <DataGridHeader columns={modelColumns}>
                           <span>{t('usageDashboard.model')}</span>
                           <span className='text-right'>{t('events.requests')}</span>
                           <span className='text-right'>{t('events.tokens')}</span>
                           <span className='text-right'>{t('events.credit')}</span>
-                        </div>
+                        </DataGridHeader>
                         {snapshot.models.map((model) => (
-                          <div className='ae-trow grid-cols-[1.5fr_0.8fr_0.9fr_0.8fr]' key={model.model}>
+                          <DataGridRow columns={modelColumns} key={model.model}>
                             <span className='mono min-w-0 truncate text-foreground text-xs'>{model.model}</span>
                             <span className='tnum text-right'>{number(model.requests, locale)}</span>
                             <span className='tnum text-right'>{compact(model.total_tokens, locale)}</span>
                             <span className='tnum text-right font-semibold text-foreground'>{currency(model.actual_cost || model.cost, locale)}</span>
-                          </div>
+                          </DataGridRow>
                         ))}
-                      </div>
+                      </DataGrid>
                     </>
                   ) : (
                     <div className='px-[18px] pb-[18px]'>

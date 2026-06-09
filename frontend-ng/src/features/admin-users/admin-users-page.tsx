@@ -11,6 +11,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Field, FieldLabel } from '@/components/ui/field'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { AppAlert } from '@/components/primitives/app-alert'
+import { DataGrid, DataGridHeader, DataGridRow } from '@/components/primitives/data-grid'
 import { Page, PageHeader } from '@/components/primitives/page'
 import { LoadingState } from '@/components/primitives/data-state'
 import { InsetPanel } from '@/components/primitives/inset-panel'
@@ -69,6 +70,7 @@ export function AdminUsersPage() {
   const rows = users.data?.items ?? []
   const total = users.data?.total ?? rows.length
   const totalPages = Math.max(1, Math.ceil(total / pageSize))
+  const tableColumns = '44px_minmax(220px,1.8fr)_0.6fr_0.8fr_0.9fr_1fr_minmax(220px,1.3fr)'
   const adminCount = rows.filter((user) => user.role === 'admin').length
   const mappedCount = rows.filter((user) => user.relay_user_id).length
   const allVisibleSelected = rows.length > 0 && rows.every((user) => selected.includes(user.id))
@@ -279,8 +281,8 @@ export function AdminUsersPage() {
             </div>
           ) : null}
         </CardContent>
-        <div className='ae-table'>
-          <div className='ae-thead grid-cols-[44px_minmax(220px,1.8fr)_0.6fr_0.8fr_0.9fr_1fr_minmax(220px,1.3fr)]'>
+        <DataGrid minWidth={1100}>
+          <DataGridHeader columns={tableColumns}>
             <span>
               <Checkbox
                 checked={visibleSelectionIndeterminate ? 'indeterminate' : allVisibleSelected}
@@ -293,9 +295,9 @@ export function AdminUsersPage() {
             <span>{t('adminUsers.relay')}</span>
             <span>{t('adminUsers.updated')}</span>
             <span />
-          </div>
+          </DataGridHeader>
           {rows.map((user) => (
-            <div key={user.id} className='ae-trow grid-cols-[44px_minmax(220px,1.8fr)_0.6fr_0.8fr_0.9fr_1fr_minmax(220px,1.3fr)]'>
+            <DataGridRow key={user.id} columns={tableColumns}>
               <span>
                 <Checkbox
                   checked={selected.includes(user.id)}
@@ -315,7 +317,7 @@ export function AdminUsersPage() {
               <span className='truncate text-sm'>{user.auth_source}</span>
               <span className='mono truncate text-muted-foreground text-xs'>{user.relay_user_id || '-'}</span>
               <span className='tnum text-muted-foreground text-xs'>{dateTime(user.updated_at)}</span>
-              <span className='flex justify-end gap-2'>
+              <span className='flex min-w-0 flex-wrap justify-end gap-2'>
                 <Button
                   variant='outline'
                   size='sm'
@@ -352,9 +354,9 @@ export function AdminUsersPage() {
                   </Button>
                 </InsetPanel>
               ) : null}
-            </div>
+            </DataGridRow>
           ))}
-        </div>
+        </DataGrid>
         <div className='flex items-center justify-between gap-3 border-border border-t p-3 text-sm'>
           <span className='text-muted-foreground'>{t('adminUsers.pageOfUsers', { page, totalPages, total: number(total) })}</span>
           <div className='flex gap-2'>

@@ -8,6 +8,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { AdvancedDataPanel } from '@/components/primitives/advanced-data-panel'
+import { DataGrid, DataGridHeader, DataGridRow } from '@/components/primitives/data-grid'
 import { FieldItem, FieldList } from '@/components/primitives/field-list'
 import { InfoTile } from '@/components/primitives/info-tile'
 import { LabeledSegmentedControl } from '@/components/primitives/labeled-segmented-control'
@@ -27,6 +28,7 @@ import type { ToolUsageEventDetail, ToolUsageEventRow, ToolUsageEventUserOption 
 import { buildEventQuery, buildEventSearch, defaultEventFilters, eventDetailPrLabel, eventFiltersForRole, filterToSegment, getEventPagination, segmentToFilter, type EventFilterState } from './event-filters'
 
 const TOOL_OPTIONS = ['claude', 'codex', 'kiro'] as const
+const eventColumns = '26px_1.7fr_1.3fr_0.8fr_0.9fr_0.7fr_0.9fr'
 
 export function EventsPage() {
   const { t } = useI18n()
@@ -201,8 +203,8 @@ export function EventsPage() {
             <Button size='sm' variant='outline' onClick={nextPage} disabled={!pagination.canGoNext}>{t('common.next')}</Button>
           </div>
         </div>
-        <div className='ae-table min-w-[860px]'>
-          <div className='ae-thead grid-cols-[26px_1.7fr_1.3fr_0.8fr_0.9fr_0.7fr_0.9fr]'>
+        <DataGrid minWidth={860} scrollClassName='min-w-0'>
+          <DataGridHeader columns={eventColumns}>
             <span />
             <span>{t('events.repository')}</span>
             <span>{t('events.tokens')}</span>
@@ -210,7 +212,7 @@ export function EventsPage() {
             <span className='text-right'>{t('events.credit')}</span>
             <span>{t('events.binding')}</span>
             <span className='text-right'>{t('events.ended')}</span>
-          </div>
+          </DataGridHeader>
           {rows.map((row) => (
             <EventRow
               key={row.id}
@@ -220,7 +222,7 @@ export function EventsPage() {
             />
           ))}
           {rows.length === 0 ? <div className='px-6 py-10 text-center text-muted-foreground text-sm'>{t('common.empty')}</div> : null}
-        </div>
+        </DataGrid>
       </Card>
 
       <EventDetail event={selected} isAdmin={isAdmin} onClose={() => setSelected(null)} />
@@ -232,10 +234,10 @@ function EventRow({ row, maxTokens, onSelect }: { row: ToolUsageEventRow; maxTok
   const { t } = useI18n()
   const tokens = tokenTotal(row)
   return (
-    <button
-      className='ae-trow ae-trow-btn grid-cols-[26px_1.7fr_1.3fr_0.8fr_0.9fr_0.7fr_0.9fr]'
+    <DataGridRow
+      as='button'
+      columns={eventColumns}
       onClick={onSelect}
-      type='button'
     >
       <ToolGlyph tool={row.tool} />
       <span className='min-w-0'>
@@ -247,7 +249,7 @@ function EventRow({ row, maxTokens, onSelect }: { row: ToolUsageEventRow; maxTok
       <span className='tnum text-right font-semibold text-foreground'>{number(row.credit_usage)}</span>
       <span><Badge variant={row.binding_status === 'bound' ? 'pos' : 'warn'}>{row.binding_status}</Badge></span>
       <span className='text-right text-[var(--ink-3)] text-xs'>{dateTime(row.observed_end_at)}</span>
-    </button>
+    </DataGridRow>
   )
 }
 

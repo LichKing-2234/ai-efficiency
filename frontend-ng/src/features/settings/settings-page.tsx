@@ -12,10 +12,10 @@ import { Field, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { AppAlert } from '@/components/primitives/app-alert'
 import { ConfirmAction } from '@/components/primitives/confirm-action'
+import { DataGrid, DataGridHeader, DataGridRow } from '@/components/primitives/data-grid'
 import { Page, PageHeader } from '@/components/primitives/page'
 import { LoadingState } from '@/components/primitives/data-state'
 import { FieldItem, FieldList } from '@/components/primitives/field-list'
@@ -46,6 +46,9 @@ const emptyRelayForm: RelayFormState = { name: '', display_name: '', base_url: '
 const emptyScmForm: ScmFormState = { name: '', type: 'github', base_url: '', api_credential_id: '', clone_protocol: 'https', clone_credential_id: '', ssh_host: '' }
 const emptyCredentialForm: CredentialFormState = { name: '', description: '', kind: 'secret_text', text: '', username: '', password: '', private_key: '', passphrase: '' }
 const emptyLDAPForm: LDAPFormState = { url: '', base_dn: '', bind_dn: '', bind_password: '', user_filter: '(uid=%s)', tls: false }
+const relayColumns = '1.2fr_1.8fr_0.7fr_0.8fr_190px'
+const scmColumns = '1.4fr_0.8fr_1.8fr_0.8fr_180px'
+const credentialColumns = '1.4fr_1fr_1fr_0.9fr_180px'
 
 export function SettingsPage() {
   const { t } = useI18n()
@@ -292,16 +295,17 @@ export function SettingsPage() {
             </div>
             <CardDescription>{t('settings.relayProvidersDescription')}</CardDescription>
           </CardHeader>
-          <CardContent className='ae-table p-0'>
-            <div className='ae-thead grid-cols-[1.2fr_1.8fr_0.7fr_0.8fr_190px]'>
-              <span>{t('settings.name')}</span>
-              <span>{t('settings.baseUrl')}</span>
-              <span>{t('settings.primary')}</span>
-              <span>{t('common.status')}</span>
-              <span />
-            </div>
+          <CardContent className='p-0'>
+            <DataGrid minWidth={860}>
+              <DataGridHeader columns={relayColumns}>
+                <span>{t('settings.name')}</span>
+                <span>{t('settings.baseUrl')}</span>
+                <span>{t('settings.primary')}</span>
+                <span>{t('common.status')}</span>
+                <span />
+              </DataGridHeader>
             {(relay.data ?? []).map((provider) => (
-              <div key={provider.id} className='ae-trow grid-cols-[1.2fr_1.8fr_0.7fr_0.8fr_190px]'>
+              <DataGridRow key={provider.id} columns={relayColumns}>
                 <span className='min-w-0'>
                   <span className='block truncate font-semibold text-sm'>{provider.display_name || provider.name}</span>
                   <span className='mono block truncate text-muted-foreground text-xs'>{provider.name}</span>
@@ -321,8 +325,9 @@ export function SettingsPage() {
                     disabled={deleteRelay.isPending}
                   />
                 </span>
-              </div>
+              </DataGridRow>
             ))}
+            </DataGrid>
           </CardContent>
         </Card> : null}
         {activeSection === 'code-platforms' ? <Card>
@@ -333,16 +338,17 @@ export function SettingsPage() {
             </div>
             <CardDescription>{t('settings.scmProvidersDescription')}</CardDescription>
           </CardHeader>
-          <CardContent className='ae-table p-0'>
-            <div className='ae-thead grid-cols-[1.4fr_0.8fr_1.8fr_0.8fr_180px]'>
-              <span>{t('settings.name')}</span>
-              <span>{t('common.type')}</span>
-              <span>{t('settings.baseUrl')}</span>
-              <span>{t('common.status')}</span>
-              <span />
-            </div>
+          <CardContent className='p-0'>
+            <DataGrid minWidth={840}>
+              <DataGridHeader columns={scmColumns}>
+                <span>{t('settings.name')}</span>
+                <span>{t('common.type')}</span>
+                <span>{t('settings.baseUrl')}</span>
+                <span>{t('common.status')}</span>
+                <span />
+              </DataGridHeader>
             {(scm.data?.items ?? []).map((provider) => (
-              <div key={provider.id} className='ae-trow grid-cols-[1.4fr_0.8fr_1.8fr_0.8fr_180px]'>
+              <DataGridRow key={provider.id} columns={scmColumns}>
                 <span className='font-semibold text-sm'>{provider.name}</span>
                 <span><Badge variant='secondary'>{provider.type}</Badge></span>
                 <span className='mono truncate text-muted-foreground text-xs'>{provider.base_url}</span>
@@ -359,8 +365,9 @@ export function SettingsPage() {
                           disabled={deleteScm.isPending}
                         />
                 </span>
-              </div>
+              </DataGridRow>
             ))}
+            </DataGrid>
           </CardContent>
         </Card> : null}
         {activeSection === 'advanced-credentials' ? <Card>
@@ -371,16 +378,17 @@ export function SettingsPage() {
             </div>
             <CardDescription>{t('settings.advancedCredentialsDescription')}</CardDescription>
           </CardHeader>
-          <CardContent className='ae-table p-0'>
-            <div className='ae-thead grid-cols-[1.4fr_1fr_1fr_0.9fr_180px]'>
-              <span>{t('settings.name')}</span>
-              <span>{t('common.type')}</span>
-              <span>{t('settings.usedBy')}</span>
-              <span>{t('adminUsers.updated')}</span>
-              <span />
-            </div>
+          <CardContent className='p-0'>
+            <DataGrid minWidth={760}>
+              <DataGridHeader columns={credentialColumns}>
+                <span>{t('settings.name')}</span>
+                <span>{t('common.type')}</span>
+                <span>{t('settings.usedBy')}</span>
+                <span>{t('adminUsers.updated')}</span>
+                <span />
+              </DataGridHeader>
             {(credentials.data ?? []).map((credential) => (
-              <div key={credential.id} className='ae-trow grid-cols-[1.4fr_1fr_1fr_0.9fr_180px]'>
+              <DataGridRow key={credential.id} columns={credentialColumns}>
                 <span className='min-w-0'>
                   <span className='block truncate font-semibold text-sm'>{credential.name}</span>
                   <span className='block truncate text-muted-foreground text-xs'>{credential.description}</span>
@@ -400,8 +408,9 @@ export function SettingsPage() {
                     disabled={deleteCredential.isPending}
                   />
                 </span>
-              </div>
+              </DataGridRow>
             ))}
+            </DataGrid>
           </CardContent>
         </Card> : null}
         {activeSection === 'organization-login' ? <Card>
