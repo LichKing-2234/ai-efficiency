@@ -14,6 +14,7 @@ import { PageEmpty } from '@/components/primitives/page-empty'
 import { Page, PageHeader } from '@/components/primitives/page'
 import { LoadingState } from '@/components/primitives/data-state'
 import { api } from '@/lib/api'
+import { useI18n } from '@/lib/i18n/i18n'
 import {
   buildDiscoverCommand,
   buildInstallCommand,
@@ -28,6 +29,7 @@ import {
 import type { GroupCredentialMutationResult, UserProviderTestResult } from '@/lib/api/types'
 
 export function UserPage() {
+  const { t } = useI18n()
   const qc = useQueryClient()
   const providers = useQuery({ queryKey: ['user-providers'], queryFn: api.userProviders })
   const [selectedProviderId, setSelectedProviderId] = useState<number | null>(null)
@@ -49,11 +51,11 @@ export function UserPage() {
   const origin = typeof window === 'undefined' ? '' : window.location.origin
   const installCommand = buildInstallCommand(origin)
   const windowsInstallCommand = buildWindowsInstallCommand(origin)
-  const discoverCommand = selectedProvider ? buildDiscoverCommand(selectedProvider.name) : 'Select provider first'
+  const discoverCommand = selectedProvider ? buildDiscoverCommand(selectedProvider.name) : t('userSetup.selectProviderFirst')
   const modelQuery = useQuery({
     queryKey: ['user-provider-models', selectedProvider?.id, selectedGroup?.group_id, selectedGroup?.platform, !!secret],
     queryFn: () => {
-      if (!selectedProvider || !selectedGroup || !secret) throw new Error('Create a key before loading models')
+      if (!selectedProvider || !selectedGroup || !secret) throw new Error(t('userSetup.createKeyBeforeModels'))
       return api.userProviderModels(selectedProvider.id, selectedGroup.group_id, selectedGroup.platform)
     },
     enabled: !!selectedProvider && !!selectedGroup && !!secret
@@ -81,32 +83,32 @@ export function UserPage() {
 
   const createCredential = useMutation({
     mutationFn: () => {
-      if (!selectedProvider || !selectedGroup) throw new Error('Select an access group first')
+      if (!selectedProvider || !selectedGroup) throw new Error(t('userSetup.selectAccessGroup'))
       return api.createGroupCredential(selectedProvider.id, selectedGroup.group_id)
     },
     onSuccess: (result) => {
       rememberSecret(result)
       void qc.invalidateQueries({ queryKey: ['user-providers'] })
       void navigator.clipboard?.writeText(result.secret)
-      toast.success('Credential created and copied')
+      toast.success(t('userSetup.credentialCreatedCopied'))
     }
   })
   const regenerateCredential = useMutation({
     mutationFn: () => {
-      if (!selectedProvider || !selectedGroup) throw new Error('Select an access group first')
+      if (!selectedProvider || !selectedGroup) throw new Error(t('userSetup.selectAccessGroup'))
       return api.regenerateGroupCredential(selectedProvider.id, selectedGroup.group_id)
     },
     onSuccess: (result) => {
       rememberSecret(result)
       void qc.invalidateQueries({ queryKey: ['user-providers'] })
       void navigator.clipboard?.writeText(result.secret)
-      toast.success('Credential regenerated and copied')
+      toast.success(t('userSetup.credentialRegeneratedCopied'))
     }
   })
   const testProvider = useMutation({
     mutationFn: () => {
-      if (!selectedProvider || !selectedGroup) throw new Error('Select an access group first')
-      if (!secret) throw new Error('Create a key before testing')
+      if (!selectedProvider || !selectedGroup) throw new Error(t('userSetup.selectAccessGroup'))
+      if (!secret) throw new Error(t('userSetup.createKeyBeforeTesting'))
       return api.testUserProvider(selectedProvider.id, buildProviderTestRequest(selectedGroup, model, prompt))
     },
     onSuccess: setTestResult,
@@ -117,13 +119,13 @@ export function UserPage() {
 
   return (
     <Page>
-      <PageHeader title='My Setup' description='CLI setup, AI access keys, model discovery, and provider testing through current Go APIs.' />
+      <PageHeader title={t('userSetup.title')} description={t('userSetup.description')} />
       <div className='grid gap-4 lg:grid-cols-[340px_minmax(0,1fr)]'>
         <div className='flex flex-col gap-4'>
           <Card>
             <CardHeader>
-              <CardTitle>Account access</CardTitle>
-              <CardDescription>{readyGroups}/{totalGroups} groups ready to use.</CardDescription>
+              <CardTitle>{t('userSetup.accountAccess')}</CardTitle>
+              <CardDescription>{t('userSetup.groupsReady', { ready: readyGroups, total: totalGroups })}</CardDescription>
             </CardHeader>
             <CardContent className='flex flex-col gap-2'>
               {providers.data?.message ? <div className='rounded-md bg-muted p-3 text-muted-foreground text-sm'>{providers.data.message}</div> : null}
@@ -141,7 +143,7 @@ export function UserPage() {
                 >
                   <div className='flex items-center justify-between gap-2'>
                     <div className='font-medium'>{provider.display_name || provider.name}</div>
-                    {provider.is_primary ? <Badge variant='ai'>primary</Badge> : null}
+                    {provider.is_primary ? <Badge variant='ai'>{t('userSetup.primary')}</Badge> : null}
                   </div>
                   <div className='mt-1 break-all text-muted-foreground text-xs'>{provider.base_url}</div>
                 </button>
@@ -150,20 +152,20 @@ export function UserPage() {
           </Card>
           <Card>
             <CardHeader>
-              <CardTitle>CLI workflow</CardTitle>
-              <CardDescription>Commands use this frontend origin and the selected provider.</CardDescription>
+              <CardTitle>{t('userSetup.cliWorkflow')}</CardTitle>
+              <CardDescription>{t('userSetup.cliDescription')}</CardDescription>
             </CardHeader>
             <CardContent className='flex flex-col gap-3'>
-              <CommandBlock command={installCommand} />
-              <CommandBlock command='ae-cli login' />
-              <CommandBlock command={discoverCommand} disabled={!selectedProvider} />
-              <CommandBlock command='ae-cli hooks enable --global' />
-              <CommandBlock command='ae-cli init' />
-              <CommandBlock command='ae-cli doctor' />
+              <CommandBlock command={installCommand} copyLabel={t('userSetup.copy')} copiedMessage={t('userSetup.commandCopied')} />
+              <CommandBlock command='ae-cli login' copyLabel={t('userSetup.copy')} copiedMessage={t('userSetup.commandCopied')} />
+              <CommandBlock command={discoverCommand} disabled={!selectedProvider} copyLabel={t('userSetup.copy')} copiedMessage={t('userSetup.commandCopied')} />
+              <CommandBlock command='ae-cli hooks enable --global' copyLabel={t('userSetup.copy')} copiedMessage={t('userSetup.commandCopied')} />
+              <CommandBlock command='ae-cli init' copyLabel={t('userSetup.copy')} copiedMessage={t('userSetup.commandCopied')} />
+              <CommandBlock command='ae-cli doctor' copyLabel={t('userSetup.copy')} copiedMessage={t('userSetup.commandCopied')} />
               <Accordion type='single' collapsible className='rounded-md border border-border px-3'>
                 <AccordionItem value='windows'>
-                  <AccordionTrigger>Windows installer</AccordionTrigger>
-                  <AccordionContent><CommandBlock command={windowsInstallCommand} /></AccordionContent>
+                  <AccordionTrigger>{t('userSetup.windowsInstaller')}</AccordionTrigger>
+                  <AccordionContent><CommandBlock command={windowsInstallCommand} copyLabel={t('userSetup.copy')} copiedMessage={t('userSetup.commandCopied')} /></AccordionContent>
                 </AccordionItem>
               </Accordion>
             </CardContent>
@@ -172,8 +174,8 @@ export function UserPage() {
         <div className='flex flex-col gap-4'>
           <Card>
             <CardHeader>
-              <CardTitle>{selectedProvider ? selectedProvider.display_name || selectedProvider.name : 'AI access'}</CardTitle>
-              <CardDescription>{selectedProvider?.base_url || 'No provider available'}</CardDescription>
+              <CardTitle>{selectedProvider ? selectedProvider.display_name || selectedProvider.name : t('userSetup.aiAccess')}</CardTitle>
+              <CardDescription>{selectedProvider?.base_url || t('userSetup.noProvider')}</CardDescription>
             </CardHeader>
             <CardContent className='flex flex-col gap-4'>
               <div className='flex flex-wrap gap-2'>
@@ -194,27 +196,27 @@ export function UserPage() {
               {selectedGroup ? (
                 <>
                   <div className='grid gap-3 md:grid-cols-3'>
-                    <InfoTile label='Group' value={selectedGroup.group_name} />
-                    <InfoTile label='Platform' value={selectedGroup.platform} />
-                    <InfoTile label='Credential' value={selectedGroup.credential.state === 'existing_hidden' ? 'Ready' : 'Needs setup'} />
+                    <InfoTile label={t('userSetup.group')} value={selectedGroup.group_name} />
+                    <InfoTile label={t('userSetup.platform')} value={selectedGroup.platform} />
+                    <InfoTile label={t('userSetup.credential')} value={selectedGroup.credential.state === 'existing_hidden' ? t('userSetup.ready') : t('userSetup.needsSetup')} />
                   </div>
                   <div className='rounded-md border border-border p-4'>
-                    <div className='text-muted-foreground text-xs uppercase'>API key</div>
+                    <div className='text-muted-foreground text-xs uppercase'>{t('userSetup.apiKey')}</div>
                     <div className='mt-2 break-all rounded-md bg-background px-3 py-2 font-mono text-[var(--ae-ai-2)] text-sm'>
                       {displayedSecret || '••••••••••••••••'}
                     </div>
                     <div className='mt-3 flex flex-wrap gap-2'>
                       {selectedGroup.credential.state === 'missing' ? (
                         <Button size='sm' disabled={createCredential.isPending} onClick={() => createCredential.mutate()}>
-                          Create key
+                          {t('userSetup.createKey')}
                         </Button>
                       ) : (
                         <ConfirmAction
-                          trigger={<Button size='sm' variant='outline' disabled={regenerateCredential.isPending}>Regenerate</Button>}
-                          title='Regenerate credential'
-                          description='Existing local tool configs may need updating.'
-                          confirmLabel='Regenerate'
-                          cancelLabel='Cancel'
+                          trigger={<Button size='sm' variant='outline' disabled={regenerateCredential.isPending}>{t('userSetup.regenerate')}</Button>}
+                          title={t('userSetup.regenerateTitle')}
+                          description={t('userSetup.regenerateDescription')}
+                          confirmLabel={t('userSetup.regenerate')}
+                          cancelLabel={t('common.cancel')}
                           onConfirm={() => regenerateCredential.mutate()}
                           disabled={regenerateCredential.isPending}
                         />
@@ -222,13 +224,13 @@ export function UserPage() {
                       {secret ? (
                         <>
                           <Button size='sm' variant='outline' onClick={() => selectedSecretKey && setRevealed((value) => ({ ...value, [selectedSecretKey]: !secretIsRevealed }))}>
-                            {secretIsRevealed ? 'Hide' : 'Reveal'}
+                            {secretIsRevealed ? t('common.hide') : t('userSetup.reveal')}
                           </Button>
                           <Button size='sm' variant='ghost' onClick={() => {
                             void navigator.clipboard?.writeText(secret)
-                            toast.success('Credential copied')
+                            toast.success(t('userSetup.credentialCopied'))
                           }}>
-                            Copy
+                            {t('userSetup.copy')}
                           </Button>
                         </>
                       ) : null}
@@ -238,19 +240,19 @@ export function UserPage() {
                   </div>
                 </>
               ) : (
-                <PageEmpty title='No access group is available for this account.' />
+                <PageEmpty title={t('userSetup.noAccessGroup')} />
               )}
             </CardContent>
           </Card>
           <Card>
             <CardHeader>
-              <CardTitle>Provider test</CardTitle>
-              <CardDescription>Loads backend model choices for the selected group and runs the existing user provider test endpoint.</CardDescription>
+              <CardTitle>{t('userSetup.providerTest')}</CardTitle>
+              <CardDescription>{t('userSetup.providerTestDescription')}</CardDescription>
             </CardHeader>
             <CardContent className='flex flex-col gap-3'>
               <div className='grid gap-3 md:grid-cols-2'>
                 <label className='flex flex-col gap-1 text-sm'>
-                  <span className='text-muted-foreground text-xs uppercase'>Model</span>
+                  <span className='text-muted-foreground text-xs uppercase'>{t('userSetup.model')}</span>
                   {modelQuery.data?.models?.length ? (
                     <Select value={model} onValueChange={setModel}>
                       <SelectTrigger className='w-full'><SelectValue /></SelectTrigger>
@@ -259,25 +261,25 @@ export function UserPage() {
                       </SelectContent>
                     </Select>
                   ) : (
-                    <Input value={model} placeholder={modelQuery.isFetching ? 'Loading models' : selectedProvider?.default_model || 'gpt-5.4'} onChange={(event) => setModel(event.target.value)} />
+                    <Input value={model} placeholder={modelQuery.isFetching ? t('userSetup.loadingModels') : selectedProvider?.default_model || 'gpt-5.4'} onChange={(event) => setModel(event.target.value)} />
                   )}
                 </label>
                 <label className='flex flex-col gap-1 text-sm'>
-                  <span className='text-muted-foreground text-xs uppercase'>Platform</span>
+                  <span className='text-muted-foreground text-xs uppercase'>{t('userSetup.platform')}</span>
                   <Input value={selectedGroup?.platform || ''} disabled />
                 </label>
               </div>
               {modelQuery.data?.message ? <div className='text-muted-foreground text-sm'>{modelQuery.data.message}</div> : null}
               {modelQuery.error ? <AppAlert tone='error' title={modelQuery.error.message} /> : null}
               <label className='flex flex-col gap-1 text-sm'>
-                <span className='text-muted-foreground text-xs uppercase'>Prompt</span>
+                <span className='text-muted-foreground text-xs uppercase'>{t('userSetup.prompt')}</span>
                 <Textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} />
               </label>
               <div className='flex flex-wrap items-center gap-3'>
                 <Button disabled={!selectedGroup || !secret || !model.trim() || testProvider.isPending} onClick={() => testProvider.mutate()}>
-                  {testProvider.isPending ? 'Testing' : 'Run test'}
+                  {testProvider.isPending ? t('userSetup.testing') : t('userSetup.runTest')}
                 </Button>
-                {!secret ? <span className='text-muted-foreground text-sm'>Create a key before testing.</span> : null}
+                {!secret ? <span className='text-muted-foreground text-sm'>{t('userSetup.createKeyBeforeTesting')}</span> : null}
                 {testResult ? <Badge variant={testResult.success ? 'success' : 'warning'}>{testResult.message}</Badge> : null}
               </div>
               {testResult?.response ? <div className='rounded-md bg-muted p-3 text-sm'>{testResult.response}</div> : null}
@@ -298,18 +300,18 @@ function InfoTile({ label, value }: { label: string; value: string }) {
   )
 }
 
-function CommandBlock({ command, disabled }: { command: string; disabled?: boolean }) {
+function CommandBlock({ command, disabled, copyLabel, copiedMessage }: { command: string; disabled?: boolean; copyLabel: string; copiedMessage: string }) {
   return (
     <button
       className='flex items-center justify-between gap-3 rounded-md border border-border bg-background px-3 py-2 text-left font-mono text-[var(--ae-ai-2)] text-xs disabled:cursor-not-allowed disabled:opacity-60'
       disabled={disabled}
       onClick={() => {
         void navigator.clipboard?.writeText(command)
-        toast.success('Command copied')
+        toast.success(copiedMessage)
       }}
     >
       <span className='min-w-0 break-all'>$ {command}</span>
-      <span className='shrink-0 text-muted-foreground'>copy</span>
+      <span className='shrink-0 text-muted-foreground'>{copyLabel}</span>
     </button>
   )
 }

@@ -1755,7 +1755,7 @@ Expected: commit created.
 - Modify: all user-facing `frontend-ng/src/**/*.tsx`
 - Modify: `frontend-ng/src/lib/i18n/no-hardcoded-copy.test.ts`
 
-- [ ] **Step 1: Run hardcoded copy scan**
+- [x] **Step 1: Run hardcoded copy scan**
 
 Run:
 
@@ -1765,7 +1765,7 @@ cd frontend-ng && rg "\"[A-Z][^\"]{2,}\"|'[A-Z][^']{2,}'" src --glob '*.tsx' --g
 
 Expected: many matches before migration.
 
-- [ ] **Step 2: Move shell and nav copy to i18n**
+- [x] **Step 2: Move shell and nav copy to i18n**
 
 Update `frontend-ng/src/components/layout/navigation.ts` to use translation keys:
 
@@ -1789,7 +1789,7 @@ const { t, toggleLocale } = useI18n()
 <Button variant='ghost' size='sm' onClick={toggleLocale}>{t('nav.languageToggle')}</Button>
 ```
 
-- [ ] **Step 3: Move route page copy to i18n**
+- [x] **Step 3: Move route page copy to i18n**
 
 For each file below, replace visible strings with keys in `messages.ts`:
 
@@ -1816,7 +1816,7 @@ For interpolated strings use:
 t('common.pageCount', { current: page, total: totalPages })
 ```
 
-- [ ] **Step 4: Strengthen no-hardcoded-copy test**
+- [x] **Step 4: Strengthen no-hardcoded-copy test**
 
 Add this assertion to `frontend-ng/src/lib/i18n/no-hardcoded-copy.test.ts`:
 
@@ -1839,7 +1839,7 @@ test('does not leave obvious user-visible literals in TSX route surfaces', () =>
 })
 ```
 
-- [ ] **Step 5: Run i18n guard**
+- [x] **Step 5: Run i18n guard**
 
 Run:
 
@@ -1849,7 +1849,7 @@ cd frontend-ng && bun test src/lib/i18n/no-hardcoded-copy.test.ts
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit i18n migration**
+- [x] **Step 6: Commit i18n migration**
 
 Run:
 

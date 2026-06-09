@@ -7,9 +7,11 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { AppAlert } from '@/components/primitives/app-alert'
 import { api } from '@/lib/api'
+import { useI18n } from '@/lib/i18n/i18n'
 import { safeRedirect, selectInitialLoginSource } from './auth-flow-state'
 
 export function LoginPage() {
+  const { t } = useI18n()
   const navigate = useNavigate()
   const search = useSearch({ strict: false }) as { redirect?: string }
   const [username, setUsername] = useState('')
@@ -33,8 +35,8 @@ export function LoginPage() {
     <main className='grid min-h-screen place-items-center bg-background p-4'>
       <Card className='w-full max-w-md'>
         <CardHeader>
-          <CardTitle>Sign in to AI Efficiency</CardTitle>
-          <CardDescription>Manual login is a fallback. Gateway-authenticated deployments bootstrap automatically.</CardDescription>
+          <CardTitle>{t('auth.loginTitle')}</CardTitle>
+          <CardDescription>{t('auth.loginDescription')}</CardDescription>
         </CardHeader>
         <CardContent>
           <form
@@ -44,23 +46,23 @@ export function LoginPage() {
               login.mutate()
             }}
           >
-            <Input placeholder='Username or email' value={username} onChange={(event) => setUsername(event.target.value)} />
-            <Input placeholder='Password' type='password' value={password} onChange={(event) => setPassword(event.target.value)} />
+            <Input placeholder={t('auth.usernameOrEmail')} value={username} onChange={(event) => setUsername(event.target.value)} />
+            <Input placeholder={t('auth.password')} type='password' value={password} onChange={(event) => setPassword(event.target.value)} />
             <Select value={source} onValueChange={setSource}>
               <SelectTrigger className='w-full'><SelectValue /></SelectTrigger>
               <SelectContent>
                 {options.data?.ldap_enabled ? <SelectItem value='LDAP'>LDAP</SelectItem> : null}
-                <SelectItem value='SSO'>Relay SSO</SelectItem>
+                <SelectItem value='SSO'>{t('auth.relaySso')}</SelectItem>
               </SelectContent>
             </Select>
             {login.error ? <AppAlert tone='error' title={login.error.message} /> : null}
             <Button disabled={!username || !password || login.isPending}>
-              {login.isPending ? 'Signing in...' : 'Sign in'}
+              {login.isPending ? t('auth.signingIn') : t('auth.signIn')}
             </Button>
           </form>
           {options.data?.dev_login_enabled ? (
             <Button className='mt-3 w-full' variant='outline' onClick={() => devLogin.mutate()} disabled={devLogin.isPending}>
-              Dev Login
+              {t('auth.devLogin')}
             </Button>
           ) : null}
         </CardContent>

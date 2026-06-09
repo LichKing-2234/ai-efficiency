@@ -21,6 +21,7 @@ import { StatusBadge } from '@/components/primitives/status-badge'
 import { api } from '@/lib/api'
 import { ensureAuthenticatedUser } from '@/lib/auth/session'
 import { dateTime, number } from '@/lib/format'
+import { useI18n } from '@/lib/i18n/i18n'
 import type { Credential, RelayProvider, SCMProvider } from '@/lib/api/types'
 import {
   buildCredentialPayload,
@@ -44,6 +45,7 @@ const emptyCredentialForm: CredentialFormState = { name: '', description: '', ki
 const emptyLDAPForm: LDAPFormState = { url: '', base_dn: '', bind_dn: '', bind_password: '', user_filter: '(uid=%s)', tls: false }
 
 export function SettingsPage() {
+  const { t } = useI18n()
   const qc = useQueryClient()
   const navigate = useNavigate()
   const search = useSearch({ strict: false }) as Record<string, unknown>
@@ -70,20 +72,20 @@ export function SettingsPage() {
   })
   const restart = useMutation({
     mutationFn: api.settings.restart,
-    onSuccess: () => toast.success('Restart requested')
+    onSuccess: () => toast.success(t('settings.restartRequested'))
   })
   const applyUpdate = useMutation({
     mutationFn: () => api.settings.applyUpdate({ target_version: deployment.data?.latest_release?.version || '' }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['settings', 'deployment'] })
-      toast.success('Update staged')
+      toast.success(t('settings.updateStaged'))
     }
   })
   const rollback = useMutation({
     mutationFn: api.settings.rollback,
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['settings', 'deployment'] })
-      toast.success('Rollback staged')
+      toast.success(t('settings.rollbackStaged'))
     }
   })
   const createRelay = useMutation({
@@ -91,7 +93,7 @@ export function SettingsPage() {
     onSuccess: () => {
       closeRelayDialog()
       void qc.invalidateQueries({ queryKey: ['settings', 'relay'] })
-      toast.success('Relay provider created')
+      toast.success(t('settings.relayProviderCreated'))
     }
   })
   const updateRelay = useMutation({
@@ -99,14 +101,14 @@ export function SettingsPage() {
     onSuccess: () => {
       closeRelayDialog()
       void qc.invalidateQueries({ queryKey: ['settings', 'relay'] })
-      toast.success('Relay provider updated')
+      toast.success(t('settings.relayProviderUpdated'))
     }
   })
   const deleteRelay = useMutation({
     mutationFn: api.settings.deleteRelayProvider,
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['settings', 'relay'] })
-      toast.success('Relay provider deleted')
+      toast.success(t('settings.relayProviderDeleted'))
     }
   })
   const createScm = useMutation({
@@ -114,7 +116,7 @@ export function SettingsPage() {
     onSuccess: () => {
       closeScmDialog()
       void qc.invalidateQueries({ queryKey: ['settings', 'scm'] })
-      toast.success('SCM provider created')
+      toast.success(t('settings.scmProviderCreated'))
     }
   })
   const updateScm = useMutation({
@@ -122,14 +124,14 @@ export function SettingsPage() {
     onSuccess: () => {
       closeScmDialog()
       void qc.invalidateQueries({ queryKey: ['settings', 'scm'] })
-      toast.success('SCM provider updated')
+      toast.success(t('settings.scmProviderUpdated'))
     }
   })
   const deleteScm = useMutation({
     mutationFn: api.settings.deleteSCMProvider,
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['settings', 'scm'] })
-      toast.success('SCM provider deleted')
+      toast.success(t('settings.scmProviderDeleted'))
     }
   })
   const createCredential = useMutation({
@@ -137,7 +139,7 @@ export function SettingsPage() {
     onSuccess: () => {
       closeCredentialDialog()
       void qc.invalidateQueries({ queryKey: ['settings', 'credentials'] })
-      toast.success('Credential created')
+      toast.success(t('settings.credentialCreated'))
     }
   })
   const updateCredential = useMutation({
@@ -145,35 +147,35 @@ export function SettingsPage() {
     onSuccess: () => {
       closeCredentialDialog()
       void qc.invalidateQueries({ queryKey: ['settings', 'credentials'] })
-      toast.success('Credential updated')
+      toast.success(t('settings.credentialUpdated'))
     }
   })
   const deleteCredential = useMutation({
     mutationFn: api.settings.deleteCredential,
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['settings', 'credentials'] })
-      toast.success('Credential deleted')
+      toast.success(t('settings.credentialDeleted'))
     }
   })
   const saveLDAP = useMutation({
     mutationFn: () => api.settings.updateLDAP(buildLDAPPayload(ldapForm)),
     onSuccess: () => {
-      setLDAPMessage('LDAP configuration saved')
+      setLDAPMessage(t('settings.ldapConfigurationSaved'))
       void qc.invalidateQueries({ queryKey: ['settings', 'ldap'] })
-      toast.success('LDAP configuration saved')
+      toast.success(t('settings.ldapConfigurationSaved'))
     },
     onError: (error) => {
-      setLDAPMessage(error instanceof Error ? error.message : 'Failed to save LDAP configuration')
+      setLDAPMessage(error instanceof Error ? error.message : t('settings.ldapSaveFailed'))
     }
   })
   const testLDAP = useMutation({
     mutationFn: () => api.settings.testLDAP(buildLDAPPayload(ldapForm)),
     onSuccess: () => {
-      setLDAPMessage('LDAP connection successful')
-      toast.success('LDAP connection successful')
+      setLDAPMessage(t('settings.ldapConnectionSuccessful'))
+      toast.success(t('settings.ldapConnectionSuccessful'))
     },
     onError: (error) => {
-      setLDAPMessage(error instanceof Error ? error.message : 'LDAP connection test failed')
+      setLDAPMessage(error instanceof Error ? error.message : t('settings.ldapConnectionTestFailed'))
     }
   })
 
@@ -266,7 +268,7 @@ export function SettingsPage() {
 
   return (
     <Page>
-      <PageHeader title='Admin Console' description='Task-zone settings backed by current Go APIs. Mutating deployment actions require explicit confirmation.' />
+      <PageHeader title={t('settings.title')} description={t('settings.description')} />
       <div className='flex flex-wrap gap-2'>
         {settingsSections.map((section) => (
           <Button
@@ -275,7 +277,7 @@ export function SettingsPage() {
             size='sm'
             onClick={() => selectSection(section)}
           >
-            {settingsSectionLabel(section)}
+            {settingsSectionLabel(section, t)}
           </Button>
         ))}
       </div>
@@ -283,10 +285,10 @@ export function SettingsPage() {
         {activeSection === 'ai-services' ? <Card>
           <CardHeader>
             <div className='flex items-center justify-between gap-2'>
-              <CardTitle>AI Services</CardTitle>
-              <Button size='sm' onClick={openAddRelayDialog}>Add</Button>
+              <CardTitle>{t('settings.aiServices')}</CardTitle>
+              <Button size='sm' onClick={openAddRelayDialog}>{t('common.add')}</Button>
             </div>
-            <CardDescription>Relay providers configured in backend.</CardDescription>
+            <CardDescription>{t('settings.relayProvidersDescription')}</CardDescription>
           </CardHeader>
           <CardContent className='flex flex-col gap-3'>
             {(relay.data ?? []).map((provider) => (
@@ -296,15 +298,15 @@ export function SettingsPage() {
                   <div className='text-muted-foreground text-xs'>{provider.base_url}</div>
                 </div>
                 <div className='flex items-center gap-2'>
-                  {provider.is_primary ? <Badge variant='ai'>primary</Badge> : null}
+                  {provider.is_primary ? <Badge variant='ai'>{t('common.primary')}</Badge> : null}
                   <StatusBadge value={provider.enabled ? 'active' : 'disabled'} />
-                  <Button size='sm' variant='outline' onClick={() => openEditRelayDialog(provider)}>Edit</Button>
+                  <Button size='sm' variant='outline' onClick={() => openEditRelayDialog(provider)}>{t('common.update')}</Button>
                   <ConfirmAction
-                    trigger={<Button size='sm' variant='ghost' disabled={deleteRelay.isPending}>Delete</Button>}
-                    title='Delete relay provider'
-                    description={`Delete relay provider ${provider.display_name || provider.name}?`}
-                    confirmLabel='Delete'
-                    cancelLabel='Cancel'
+                    trigger={<Button size='sm' variant='ghost' disabled={deleteRelay.isPending}>{t('common.delete')}</Button>}
+                    title={t('settings.deleteRelayProvider')}
+                    description={t('settings.deleteRelayProviderDescription', { name: provider.display_name || provider.name })}
+                    confirmLabel={t('common.delete')}
+                    cancelLabel={t('common.cancel')}
                     onConfirm={() => deleteRelay.mutate(provider.id)}
                     disabled={deleteRelay.isPending}
                   />
@@ -316,18 +318,18 @@ export function SettingsPage() {
         {activeSection === 'code-platforms' ? <Card>
           <CardHeader>
             <div className='flex items-center justify-between gap-2'>
-              <CardTitle>Code Platforms</CardTitle>
-              <Button size='sm' onClick={openAddScmDialog}>Add</Button>
+              <CardTitle>{t('settings.codePlatforms')}</CardTitle>
+              <Button size='sm' onClick={openAddScmDialog}>{t('common.add')}</Button>
             </div>
-            <CardDescription>SCM providers and clone bindings.</CardDescription>
+            <CardDescription>{t('settings.scmProvidersDescription')}</CardDescription>
           </CardHeader>
           <CardContent>
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead>{t('settings.name')}</TableHead>
+                  <TableHead>{t('common.type')}</TableHead>
+                  <TableHead>{t('common.status')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -338,13 +340,13 @@ export function SettingsPage() {
                     <TableCell>
                       <div className='flex items-center gap-2'>
                         <StatusBadge value={provider.status} />
-                        <Button size='sm' variant='outline' onClick={() => openEditScmDialog(provider)}>Edit</Button>
+                        <Button size='sm' variant='outline' onClick={() => openEditScmDialog(provider)}>{t('common.update')}</Button>
                         <ConfirmAction
-                          trigger={<Button size='sm' variant='ghost' disabled={deleteScm.isPending}>Delete</Button>}
-                          title='Delete SCM provider'
-                          description={`Delete SCM provider ${provider.name}?`}
-                          confirmLabel='Delete'
-                          cancelLabel='Cancel'
+                          trigger={<Button size='sm' variant='ghost' disabled={deleteScm.isPending}>{t('common.delete')}</Button>}
+                          title={t('settings.deleteScmProvider')}
+                          description={t('settings.deleteScmProviderDescription', { name: provider.name })}
+                          confirmLabel={t('common.delete')}
+                          cancelLabel={t('common.cancel')}
                           onConfirm={() => deleteScm.mutate(provider.id)}
                           disabled={deleteScm.isPending}
                         />
@@ -359,27 +361,27 @@ export function SettingsPage() {
         {activeSection === 'advanced-credentials' ? <Card>
           <CardHeader>
             <div className='flex items-center justify-between gap-2'>
-              <CardTitle>Advanced Credentials</CardTitle>
-              <Button size='sm' onClick={openAddCredentialDialog}>Add</Button>
+              <CardTitle>{t('settings.advancedCredentials')}</CardTitle>
+              <Button size='sm' onClick={openAddCredentialDialog}>{t('common.add')}</Button>
             </div>
-            <CardDescription>Reusable secrets referenced by providers.</CardDescription>
+            <CardDescription>{t('settings.advancedCredentialsDescription')}</CardDescription>
           </CardHeader>
           <CardContent className='flex flex-col gap-2'>
             {(credentials.data ?? []).map((credential) => (
               <div key={credential.id} className='flex items-center justify-between rounded-md bg-muted p-3'>
                 <div>
                   <div className='font-medium'>{credential.name}</div>
-                  <div className='text-muted-foreground text-xs'>{credential.kind} · used {number(credential.usage_count)} times</div>
+                  <div className='text-muted-foreground text-xs'>{t('settings.usedTimes', { kind: credential.kind, count: number(credential.usage_count) })}</div>
                 </div>
                 <div className='flex items-center gap-2'>
                   <span className='text-muted-foreground text-xs'>{dateTime(credential.updated_at)}</span>
-                  <Button size='sm' variant='outline' onClick={() => openEditCredentialDialog(credential)}>Edit</Button>
+                  <Button size='sm' variant='outline' onClick={() => openEditCredentialDialog(credential)}>{t('common.update')}</Button>
                   <ConfirmAction
-                    trigger={<Button size='sm' variant='ghost' disabled={deleteCredential.isPending}>Delete</Button>}
-                    title='Delete credential'
-                    description={`Delete credential ${credential.name}?`}
-                    confirmLabel='Delete'
-                    cancelLabel='Cancel'
+                    trigger={<Button size='sm' variant='ghost' disabled={deleteCredential.isPending}>{t('common.delete')}</Button>}
+                    title={t('settings.deleteCredential')}
+                    description={t('settings.deleteCredentialDescription', { name: credential.name })}
+                    confirmLabel={t('common.delete')}
+                    cancelLabel={t('common.cancel')}
                     onConfirm={() => deleteCredential.mutate(credential.id)}
                     disabled={deleteCredential.isPending}
                   />
@@ -390,18 +392,18 @@ export function SettingsPage() {
         </Card> : null}
         {activeSection === 'organization-login' ? <Card>
           <CardHeader>
-            <CardTitle>Organization Login</CardTitle>
-            <CardDescription>LDAP configuration and login source behavior.</CardDescription>
+            <CardTitle>{t('settings.organizationLogin')}</CardTitle>
+            <CardDescription>{t('settings.ldapLoginBehavior')}</CardDescription>
           </CardHeader>
           <CardContent className='flex flex-col gap-3'>
-            <Input placeholder='LDAP URL' value={ldapForm.url} onChange={(event) => setLDAPForm((value) => ({ ...value, url: event.target.value }))} />
-            <Input placeholder='Base DN' value={ldapForm.base_dn} onChange={(event) => setLDAPForm((value) => ({ ...value, base_dn: event.target.value }))} />
-            <Input placeholder='Bind DN' value={ldapForm.bind_dn} onChange={(event) => setLDAPForm((value) => ({ ...value, bind_dn: event.target.value }))} />
-            <Input type='password' placeholder='Bind password (leave blank to keep current)' value={ldapForm.bind_password} onChange={(event) => setLDAPForm((value) => ({ ...value, bind_password: event.target.value }))} />
-            <Input placeholder='User filter, for example (uid=%s)' value={ldapForm.user_filter} onChange={(event) => setLDAPForm((value) => ({ ...value, user_filter: event.target.value }))} />
+            <Input placeholder={t('settings.ldapUrl')} value={ldapForm.url} onChange={(event) => setLDAPForm((value) => ({ ...value, url: event.target.value }))} />
+            <Input placeholder={t('settings.baseDn')} value={ldapForm.base_dn} onChange={(event) => setLDAPForm((value) => ({ ...value, base_dn: event.target.value }))} />
+            <Input placeholder={t('settings.bindDn')} value={ldapForm.bind_dn} onChange={(event) => setLDAPForm((value) => ({ ...value, bind_dn: event.target.value }))} />
+            <Input type='password' placeholder={t('settings.bindPassword')} value={ldapForm.bind_password} onChange={(event) => setLDAPForm((value) => ({ ...value, bind_password: event.target.value }))} />
+            <Input placeholder={t('settings.userFilter')} value={ldapForm.user_filter} onChange={(event) => setLDAPForm((value) => ({ ...value, user_filter: event.target.value }))} />
             <Field orientation='horizontal'>
               <Checkbox id='ldap-starttls' checked={ldapForm.tls} onCheckedChange={(checked) => setLDAPForm((value) => ({ ...value, tls: checked === true }))} />
-              <FieldLabel htmlFor='ldap-starttls'>Use StartTLS</FieldLabel>
+              <FieldLabel htmlFor='ldap-starttls'>{t('settings.useStartTls')}</FieldLabel>
             </Field>
             {ldapMessage ? (
               <AppAlert
@@ -415,54 +417,54 @@ export function SettingsPage() {
                 onClick={() => testLDAP.mutate()}
                 disabled={!ldapForm.url || !ldapForm.base_dn || !ldapForm.bind_dn || !ldapForm.user_filter || testLDAP.isPending}
               >
-                Test LDAP
+                {t('settings.testLdap')}
               </Button>
               <Button
                 onClick={() => saveLDAP.mutate()}
                 disabled={!ldapForm.url || !ldapForm.base_dn || !ldapForm.bind_dn || !ldapForm.user_filter || saveLDAP.isPending}
               >
-                Save LDAP
+                {t('settings.saveLdap')}
               </Button>
             </div>
           </CardContent>
         </Card> : null}
         {activeSection === 'deployment-runtime' ? <Card>
           <CardHeader>
-            <CardTitle>Deployment & Runtime</CardTitle>
-            <CardDescription>Current backend deployment status.</CardDescription>
+            <CardTitle>{t('settings.deploymentRuntime')}</CardTitle>
+            <CardDescription>{t('settings.currentBackendDeployment')}</CardDescription>
           </CardHeader>
           <CardContent className='flex flex-col gap-3'>
             <div className='rounded-md bg-muted p-3'>
               <div className='font-medium'>v{deployment.data?.version.version || '-'}</div>
-              <div className='text-muted-foreground text-xs'>{deployment.data?.mode || 'unknown'} · {deployment.data?.version.commit || '-'}</div>
+              <div className='text-muted-foreground text-xs'>{deployment.data?.mode || t('common.unknown')} · {deployment.data?.version.commit || '-'}</div>
             </div>
-            {deployment.data?.update_available ? <Badge variant='ai'>Update available: v{deployment.data.latest_release?.version}</Badge> : <Badge variant='success'>Up to date</Badge>}
+            {deployment.data?.update_available ? <Badge variant='ai'>{t('settings.updateAvailable', { version: deployment.data.latest_release?.version || '-' })}</Badge> : <Badge variant='success'>{t('settings.upToDate')}</Badge>}
             <div className='flex gap-2'>
-              <Button variant='outline' onClick={() => checkUpdate.mutate()} disabled={checkUpdate.isPending}>Check update</Button>
+              <Button variant='outline' onClick={() => checkUpdate.mutate()} disabled={checkUpdate.isPending}>{t('settings.checkUpdate')}</Button>
               <ConfirmAction
-                trigger={<Button variant='outline' disabled={!deployment.data?.latest_release?.version || applyUpdate.isPending}>Apply update</Button>}
-                title='Stage update'
-                description={`Stage update ${deployment.data?.latest_release?.version || ''}?`}
-                confirmLabel='Apply update'
-                cancelLabel='Cancel'
+                trigger={<Button variant='outline' disabled={!deployment.data?.latest_release?.version || applyUpdate.isPending}>{t('common.apply')}</Button>}
+                title={t('settings.stageUpdate')}
+                description={t('settings.stageUpdateDescription', { version: deployment.data?.latest_release?.version || '' })}
+                confirmLabel={t('common.apply')}
+                cancelLabel={t('common.cancel')}
                 onConfirm={() => applyUpdate.mutate()}
                 disabled={!deployment.data?.latest_release?.version || applyUpdate.isPending}
               />
               <ConfirmAction
-                trigger={<Button variant='outline' disabled={rollback.isPending}>Rollback</Button>}
-                title='Rollback staged update'
-                description='Rollback staged update?'
-                confirmLabel='Rollback'
-                cancelLabel='Cancel'
+                trigger={<Button variant='outline' disabled={rollback.isPending}>{t('settings.rollback')}</Button>}
+                title={t('settings.rollback')}
+                description={t('settings.rollbackDescription')}
+                confirmLabel={t('settings.rollback')}
+                cancelLabel={t('common.cancel')}
                 onConfirm={() => rollback.mutate()}
                 disabled={rollback.isPending}
               />
               <ConfirmAction
-                trigger={<Button variant='outline' disabled={restart.isPending}>Restart</Button>}
-                title='Request backend restart'
-                description='Request backend restart?'
-                confirmLabel='Restart'
-                cancelLabel='Cancel'
+                trigger={<Button variant='outline' disabled={restart.isPending}>{t('settings.restart')}</Button>}
+                title={t('settings.requestRestart')}
+                description={t('settings.requestRestartDescription')}
+                confirmLabel={t('settings.restart')}
+                cancelLabel={t('common.cancel')}
                 onConfirm={() => restart.mutate()}
                 disabled={restart.isPending}
               />
@@ -473,31 +475,31 @@ export function SettingsPage() {
       <Dialog open={relayDialog} onOpenChange={(open) => open ? setRelayDialog(true) : closeRelayDialog()}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{editingRelayId ? 'Edit relay provider' : 'Add relay provider'}</DialogTitle>
-            <DialogDescription>{editingRelayId ? 'Leave admin API key empty to keep the current backend secret.' : 'Creates a backend relay provider; admin API key is sent only to the Go API.'}</DialogDescription>
+            <DialogTitle>{editingRelayId ? t('settings.editRelayProvider') : t('settings.addRelayProvider')}</DialogTitle>
+            <DialogDescription>{editingRelayId ? t('settings.editRelayProviderDescription') : t('settings.adminApiKeyDescription')}</DialogDescription>
           </DialogHeader>
           <div className='flex flex-col gap-3'>
-            <Input placeholder='Name' value={relayForm.name} disabled={!!editingRelayId} onChange={(event) => setRelayForm((value) => ({ ...value, name: event.target.value }))} />
-            <Input placeholder='Display name' value={relayForm.display_name} onChange={(event) => setRelayForm((value) => ({ ...value, display_name: event.target.value }))} />
-            <Input placeholder='Base URL' value={relayForm.base_url} onChange={(event) => setRelayForm((value) => ({ ...value, base_url: event.target.value }))} />
-            <Input type='password' placeholder='Admin API key' value={relayForm.admin_api_key} onChange={(event) => setRelayForm((value) => ({ ...value, admin_api_key: event.target.value }))} />
+            <Input placeholder={t('settings.name')} value={relayForm.name} disabled={!!editingRelayId} onChange={(event) => setRelayForm((value) => ({ ...value, name: event.target.value }))} />
+            <Input placeholder={t('settings.displayName')} value={relayForm.display_name} onChange={(event) => setRelayForm((value) => ({ ...value, display_name: event.target.value }))} />
+            <Input placeholder={t('settings.baseUrl')} value={relayForm.base_url} onChange={(event) => setRelayForm((value) => ({ ...value, base_url: event.target.value }))} />
+            <Input type='password' placeholder={t('settings.adminApiKey')} value={relayForm.admin_api_key} onChange={(event) => setRelayForm((value) => ({ ...value, admin_api_key: event.target.value }))} />
             <Field orientation='horizontal'>
               <Checkbox id='relay-primary' checked={relayForm.is_primary} onCheckedChange={(checked) => setRelayForm((value) => ({ ...value, is_primary: checked === true }))} />
-              <FieldLabel htmlFor='relay-primary'>Primary</FieldLabel>
+              <FieldLabel htmlFor='relay-primary'>{t('settings.primary')}</FieldLabel>
             </Field>
             <Field orientation='horizontal'>
               <Checkbox id='relay-enabled' checked={relayForm.enabled} onCheckedChange={(checked) => setRelayForm((value) => ({ ...value, enabled: checked === true }))} />
-              <FieldLabel htmlFor='relay-enabled'>Enabled</FieldLabel>
+              <FieldLabel htmlFor='relay-enabled'>{t('settings.enabled')}</FieldLabel>
             </Field>
             {createRelay.error ? <AppAlert tone='error' title={createRelay.error.message} /> : null}
             {updateRelay.error ? <AppAlert tone='error' title={updateRelay.error.message} /> : null}
             <div className='flex justify-end gap-2'>
-              <Button variant='outline' onClick={closeRelayDialog}>Cancel</Button>
+              <Button variant='outline' onClick={closeRelayDialog}>{t('common.cancel')}</Button>
               <Button
                 disabled={!relayForm.name || !relayForm.display_name || !relayForm.base_url || (!editingRelayId && !relayForm.admin_api_key) || createRelay.isPending || updateRelay.isPending}
                 onClick={() => editingRelayId ? updateRelay.mutate() : createRelay.mutate()}
               >
-                {editingRelayId ? 'Update' : 'Create'}
+                {editingRelayId ? t('common.update') : t('common.create')}
               </Button>
             </div>
           </div>
@@ -506,11 +508,11 @@ export function SettingsPage() {
       <Dialog open={scmDialog} onOpenChange={(open) => open ? setScmDialog(true) : closeScmDialog()}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{editingScmId ? 'Edit SCM provider' : 'Add SCM provider'}</DialogTitle>
-            <DialogDescription>Configures a code platform provider using existing admin credentials.</DialogDescription>
+            <DialogTitle>{editingScmId ? t('settings.editScmProvider') : t('settings.addScmProvider')}</DialogTitle>
+            <DialogDescription>{t('settings.scmProvidersDescription')}</DialogDescription>
           </DialogHeader>
           <div className='flex flex-col gap-3'>
-            <Input placeholder='Name' value={scmForm.name} onChange={(event) => setScmForm((value) => ({ ...value, name: event.target.value }))} />
+            <Input placeholder={t('settings.name')} value={scmForm.name} onChange={(event) => setScmForm((value) => ({ ...value, name: event.target.value }))} />
             <Select value={scmForm.type} disabled={!!editingScmId} onValueChange={(value) => setScmForm((current) => ({ ...current, type: value }))}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -518,28 +520,28 @@ export function SettingsPage() {
                 <SelectItem value='bitbucket'>Bitbucket</SelectItem>
               </SelectContent>
             </Select>
-            <Input placeholder='Base URL' value={scmForm.base_url} onChange={(event) => setScmForm((value) => ({ ...value, base_url: event.target.value }))} />
+            <Input placeholder={t('settings.baseUrl')} value={scmForm.base_url} onChange={(event) => setScmForm((value) => ({ ...value, base_url: event.target.value }))} />
             <Select value={scmForm.api_credential_id || 'none'} onValueChange={(value) => setScmForm((current) => ({ ...current, api_credential_id: value === 'none' ? '' : value }))}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value='none'>API credential</SelectItem>
+                <SelectItem value='none'>{t('settings.apiCredential')}</SelectItem>
                 {(credentials.data ?? []).map((credential) => <SelectItem key={credential.id} value={String(credential.id)}>{credential.name}</SelectItem>)}
               </SelectContent>
             </Select>
             <Select value={scmForm.clone_protocol} onValueChange={(value) => setScmForm((current) => ({ ...current, clone_protocol: value as 'https' | 'ssh' }))}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value='https'>HTTPS clone</SelectItem>
-                <SelectItem value='ssh'>SSH clone</SelectItem>
+                <SelectItem value='https'>{t('settings.cloneHttps')}</SelectItem>
+                <SelectItem value='ssh'>{t('settings.cloneSsh')}</SelectItem>
               </SelectContent>
             </Select>
             {scmForm.clone_protocol === 'ssh' ? (
               <>
-                <Input placeholder='SSH host' value={scmForm.ssh_host} onChange={(event) => setScmForm((value) => ({ ...value, ssh_host: event.target.value }))} />
+                <Input placeholder={t('settings.sshHost')} value={scmForm.ssh_host} onChange={(event) => setScmForm((value) => ({ ...value, ssh_host: event.target.value }))} />
                 <Select value={scmForm.clone_credential_id || 'none'} onValueChange={(value) => setScmForm((current) => ({ ...current, clone_credential_id: value === 'none' ? '' : value }))}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value='none'>Clone credential</SelectItem>
+                    <SelectItem value='none'>{t('settings.cloneCredential')}</SelectItem>
                     {(credentials.data ?? []).map((credential) => <SelectItem key={credential.id} value={String(credential.id)}>{credential.name}</SelectItem>)}
                   </SelectContent>
                 </Select>
@@ -548,12 +550,12 @@ export function SettingsPage() {
             {createScm.error ? <AppAlert tone='error' title={createScm.error.message} /> : null}
             {updateScm.error ? <AppAlert tone='error' title={updateScm.error.message} /> : null}
             <div className='flex justify-end gap-2'>
-              <Button variant='outline' onClick={closeScmDialog}>Cancel</Button>
+              <Button variant='outline' onClick={closeScmDialog}>{t('common.cancel')}</Button>
               <Button
                 disabled={!scmForm.name || !scmForm.base_url || !scmForm.api_credential_id || createScm.isPending || updateScm.isPending}
                 onClick={() => editingScmId ? updateScm.mutate() : createScm.mutate()}
               >
-                {editingScmId ? 'Update' : 'Create'}
+                {editingScmId ? t('common.update') : t('common.create')}
               </Button>
             </div>
           </div>
@@ -562,29 +564,29 @@ export function SettingsPage() {
       <Dialog open={credentialDialog} onOpenChange={(open) => open ? setCredentialDialog(true) : closeCredentialDialog()}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{editingCredentialId ? 'Edit credential' : 'Add credential'}</DialogTitle>
-            <DialogDescription>{editingCredentialId ? 'Leave secret fields empty to keep existing secret values.' : 'Creates a reusable admin credential for relay or SCM configuration.'}</DialogDescription>
+            <DialogTitle>{editingCredentialId ? t('settings.editCredential') : t('settings.addCredential')}</DialogTitle>
+            <DialogDescription>{editingCredentialId ? t('settings.editCredentialDescription') : t('settings.createCredentialDescription')}</DialogDescription>
           </DialogHeader>
           <div className='flex flex-col gap-3'>
-            <Input placeholder='Name' value={credentialForm.name} onChange={(event) => setCredentialForm((value) => ({ ...value, name: event.target.value }))} />
-            <Input placeholder='Description' value={credentialForm.description} onChange={(event) => setCredentialForm((value) => ({ ...value, description: event.target.value }))} />
+            <Input placeholder={t('settings.name')} value={credentialForm.name} onChange={(event) => setCredentialForm((value) => ({ ...value, name: event.target.value }))} />
+            <Input placeholder={t('settings.credentialDescription')} value={credentialForm.description} onChange={(event) => setCredentialForm((value) => ({ ...value, description: event.target.value }))} />
             <Select value={credentialForm.kind} onValueChange={(value) => setCredentialForm((current) => ({ ...current, kind: value as typeof credentialForm.kind }))}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value='secret_text'>Secret text</SelectItem>
-                <SelectItem value='username_password'>Username/password</SelectItem>
-                <SelectItem value='ssh_username_with_private_key'>SSH private key</SelectItem>
+                <SelectItem value='secret_text'>{t('settings.secretTextKind')}</SelectItem>
+                <SelectItem value='username_password'>{t('settings.usernamePasswordKind')}</SelectItem>
+                <SelectItem value='ssh_username_with_private_key'>{t('settings.sshPrivateKeyKind')}</SelectItem>
               </SelectContent>
             </Select>
-            {credentialForm.kind === 'secret_text' ? <Textarea placeholder='Secret text' value={credentialForm.text} onChange={(event) => setCredentialForm((value) => ({ ...value, text: event.target.value }))} /> : null}
-            {credentialForm.kind !== 'secret_text' ? <Input placeholder='Username' value={credentialForm.username} onChange={(event) => setCredentialForm((value) => ({ ...value, username: event.target.value }))} /> : null}
-            {credentialForm.kind === 'username_password' ? <Input type='password' placeholder='Password' value={credentialForm.password} onChange={(event) => setCredentialForm((value) => ({ ...value, password: event.target.value }))} /> : null}
-            {credentialForm.kind === 'ssh_username_with_private_key' ? <Textarea placeholder='Private key' value={credentialForm.private_key} onChange={(event) => setCredentialForm((value) => ({ ...value, private_key: event.target.value }))} /> : null}
-            {credentialForm.kind === 'ssh_username_with_private_key' ? <Input type='password' placeholder='Passphrase' value={credentialForm.passphrase} onChange={(event) => setCredentialForm((value) => ({ ...value, passphrase: event.target.value }))} /> : null}
+            {credentialForm.kind === 'secret_text' ? <Textarea placeholder={t('settings.secretText')} value={credentialForm.text} onChange={(event) => setCredentialForm((value) => ({ ...value, text: event.target.value }))} /> : null}
+            {credentialForm.kind !== 'secret_text' ? <Input placeholder={t('settings.username')} value={credentialForm.username} onChange={(event) => setCredentialForm((value) => ({ ...value, username: event.target.value }))} /> : null}
+            {credentialForm.kind === 'username_password' ? <Input type='password' placeholder={t('settings.password')} value={credentialForm.password} onChange={(event) => setCredentialForm((value) => ({ ...value, password: event.target.value }))} /> : null}
+            {credentialForm.kind === 'ssh_username_with_private_key' ? <Textarea placeholder={t('settings.privateKey')} value={credentialForm.private_key} onChange={(event) => setCredentialForm((value) => ({ ...value, private_key: event.target.value }))} /> : null}
+            {credentialForm.kind === 'ssh_username_with_private_key' ? <Input type='password' placeholder={t('settings.passphrase')} value={credentialForm.passphrase} onChange={(event) => setCredentialForm((value) => ({ ...value, passphrase: event.target.value }))} /> : null}
             {createCredential.error ? <AppAlert tone='error' title={createCredential.error.message} /> : null}
             {updateCredential.error ? <AppAlert tone='error' title={updateCredential.error.message} /> : null}
             <div className='flex justify-end gap-2'>
-              <Button variant='outline' onClick={closeCredentialDialog}>Cancel</Button>
+              <Button variant='outline' onClick={closeCredentialDialog}>{t('common.cancel')}</Button>
               <Button
                 disabled={
                   !credentialForm.name ||
@@ -596,7 +598,7 @@ export function SettingsPage() {
                 }
                 onClick={() => editingCredentialId ? updateCredential.mutate() : createCredential.mutate()}
               >
-                {editingCredentialId ? 'Update' : 'Create'}
+                {editingCredentialId ? t('common.update') : t('common.create')}
               </Button>
             </div>
           </div>
@@ -606,18 +608,18 @@ export function SettingsPage() {
   )
 }
 
-function settingsSectionLabel(section: SettingsSection) {
+function settingsSectionLabel(section: SettingsSection, t: ReturnType<typeof useI18n>['t']) {
   switch (section) {
     case 'ai-services':
-      return 'AI Services'
+      return t('settings.aiServices')
     case 'code-platforms':
-      return 'Code Platforms'
+      return t('settings.codePlatforms')
     case 'organization-login':
-      return 'Organization Login'
+      return t('settings.organizationLogin')
     case 'deployment-runtime':
-      return 'Deployment & Runtime'
+      return t('settings.deploymentRuntime')
     case 'advanced-credentials':
-      return 'Advanced Credentials'
+      return t('settings.advancedCredentials')
   }
 }
 

@@ -72,16 +72,16 @@ export function RepoDetailPage() {
   const sync = useMutation({
     mutationFn: async () => {
       const result = await api.repos.syncPRs(repoId)
-      if (!result.job_id) throw new Error('PR sync job was not created')
+      if (!result.job_id) throw new Error(t('repoDetail.prCreatedMissing'))
       return result
     },
     onSuccess: (result) => {
       setActiveJobId(result.job_id)
-      setSyncMessage(result.reused ? 'Existing PR sync job recovered.' : 'PR sync job started.')
+      setSyncMessage(result.reused ? t('repoDetail.existingSyncRecovered') : t('repoDetail.syncStarted'))
       void qc.invalidateQueries({ queryKey: ['repo', repoId, 'latest-job'] })
     },
     onError: (error) => {
-      setSyncMessage(error instanceof Error ? error.message : 'Failed to start PR sync.')
+      setSyncMessage(error instanceof Error ? error.message : t('repoDetail.failedStartSync'))
     }
   })
   const refreshUsage = useMutation({
@@ -97,10 +97,10 @@ export function RepoDetailPage() {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['repo', repoId, 'prs'] })
       if (expandedPRId !== null) void qc.invalidateQueries({ queryKey: ['pr', expandedPRId] })
-      toast.success('PR attribution settled')
+      toast.success(t('repoDetail.attributionSettled'))
     },
     onError: (error) => {
-      toast.error(error instanceof Error ? error.message : 'Failed to settle PR attribution')
+      toast.error(error instanceof Error ? error.message : t('repoDetail.failedSettle'))
     }
   })
   const saveBinding = useMutation({
@@ -108,7 +108,7 @@ export function RepoDetailPage() {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['repo', repoId] })
       void qc.invalidateQueries({ queryKey: ['repos'] })
-      toast.success('Repository binding saved')
+      toast.success(t('repoDetail.bindingSaved'))
     }
   })
   const repairWebhook = useMutation({
@@ -164,7 +164,7 @@ export function RepoDetailPage() {
   const currentJob = activeJob.data ?? latestJob.data
   const jobProgress = currentJob ? prSyncJobProgress(currentJob) : null
   const activeJobRunning = isActivePRSyncJob(currentJob) || sync.isPending
-  const syncDisabledReason = repo.data?.binding_state === 'unbound' ? 'Bind an SCM provider before syncing PRs.' : ''
+  const syncDisabledReason = repo.data?.binding_state === 'unbound' ? t('repoDetail.bindBeforeSync') : ''
   const canSync = !activeJobRunning && !syncDisabledReason
   const totalPRs = prs.data?.total ?? summary.total
   const hasPreviousPage = canGoPreviousPRPage(prsPage)
@@ -179,9 +179,9 @@ export function RepoDetailPage() {
   return (
     <Page>
       <PageHeader
-        title={repo.data?.full_name || repo.data?.name || `Repo #${repoId}`}
+        title={repo.data?.full_name || repo.data?.name || `#${repoId}`}
         description={repo.data?.clone_url}
-        actions={<Button onClick={() => sync.mutate()} disabled={!canSync}>{activeJobRunning ? 'Syncing PRs' : 'Sync PRs'}</Button>}
+        actions={<Button onClick={() => sync.mutate()} disabled={!canSync}>{activeJobRunning ? t('repoDetail.syncingPrs') : t('repoDetail.syncPrs')}</Button>}
       />
       {syncDisabledReason ? <div className='rounded-md border border-border bg-muted/50 px-3 py-2 text-muted-foreground text-sm'>{syncDisabledReason}</div> : null}
       {showWebhookRepair ? (
@@ -209,59 +209,59 @@ export function RepoDetailPage() {
         </Alert>
       ) : null}
       <div className='grid gap-4 sm:grid-cols-4'>
-        <MetricCard label='PRs' value={number(totalPRs)} />
-        <MetricCard label='With usage' value={number(summary?.with_usage)} accent />
-        <MetricCard label='Pending upload' value={number(summary?.pending_upload)} />
-        <MetricCard label='Refresh failed' value={number(summary?.refresh_failed)} />
+        <MetricCard label={t('repoDetail.prs')} value={number(totalPRs)} />
+        <MetricCard label={t('repoDetail.withUsage')} value={number(summary?.with_usage)} accent />
+        <MetricCard label={t('repoDetail.pendingUpload')} value={number(summary?.pending_upload)} />
+        <MetricCard label={t('repoDetail.refreshFailed')} value={number(summary?.refresh_failed)} />
       </div>
       {currentJob ? (
         <Card>
-          <CardHeader><CardTitle>Latest PR sync job</CardTitle></CardHeader>
+          <CardHeader><CardTitle>{t('repoDetail.latestSyncJob')}</CardTitle></CardHeader>
           <CardContent className='flex flex-wrap gap-3 text-sm'>
             <StatusBadge value={currentJob.status} />
-            <span>phase: {currentJob.phase}</span>
-            <span>fetched: {number(jobProgress?.fetched)}</span>
+            <span>{t('repoDetail.phase', { phase: currentJob.phase })}</span>
+            <span>{t('repoDetail.fetched', { count: number(jobProgress?.fetched) })}</span>
             <span>processed: {number(jobProgress?.processed)}/{number(currentJob.total_prs || currentJob.fetched_prs)}</span>
-            <span>usage: {number(jobProgress?.usageRefreshed)}/{number(jobProgress?.usageTotal)}</span>
+            <span>{t('repoDetail.usage', { done: number(jobProgress?.usageRefreshed), total: number(jobProgress?.usageTotal) })}</span>
             <span className='text-muted-foreground'>{syncMessage || prSyncJobMessage(currentJob)}</span>
           </CardContent>
         </Card>
       ) : null}
       <Card>
-        <CardHeader><CardTitle>SCM binding</CardTitle></CardHeader>
+        <CardHeader><CardTitle>{t('repoDetail.scmBinding')}</CardTitle></CardHeader>
         <CardContent className='flex flex-wrap items-center gap-2'>
           <Select value={selectedProviderId || 'none'} onValueChange={(value) => setSelectedProviderId(value === 'none' ? '' : value)}>
             <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value='none'>No provider binding</SelectItem>
+              <SelectItem value='none'>{t('repoDetail.noProviderBinding')}</SelectItem>
               {(scm.data?.items ?? []).map((provider) => (
                 <SelectItem key={provider.id} value={String(provider.id)}>{provider.name}</SelectItem>
               ))}
             </SelectContent>
           </Select>
-          <Button variant='outline' onClick={() => saveBinding.mutate(selectedProviderId)} disabled={saveBinding.isPending}>Save binding</Button>
+          <Button variant='outline' onClick={() => saveBinding.mutate(selectedProviderId)} disabled={saveBinding.isPending}>{t('repoDetail.saveBinding')}</Button>
           <Button variant='ghost' onClick={() => {
             setSelectedProviderId('')
             saveBinding.mutate('')
-          }} disabled={saveBinding.isPending}>Clear</Button>
+          }} disabled={saveBinding.isPending}>{t('repoDetail.clearBinding')}</Button>
         </CardContent>
       </Card>
       <Card className='overflow-hidden'>
         <CardHeader className='flex-row flex-wrap items-center justify-between gap-3'>
-          <CardTitle>Pull requests</CardTitle>
+          <CardTitle>{t('repoDetail.pullRequests')}</CardTitle>
           <div className='flex flex-wrap items-center gap-2 text-sm'>
-            <span className='text-muted-foreground'>Merged in</span>
+            <span className='text-muted-foreground'>{t('repoDetail.mergedIn')}</span>
             <Select value={String(prsMonths)} onValueChange={(value) => {
               setPRsMonths(Number(value))
               setPRsPage(0)
             }}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value='1'>Last month</SelectItem>
-                <SelectItem value='3'>Last 3 months</SelectItem>
-                <SelectItem value='6'>Last 6 months</SelectItem>
-                <SelectItem value='12'>Last 12 months</SelectItem>
-                <SelectItem value='0'>All time</SelectItem>
+                <SelectItem value='1'>1</SelectItem>
+                <SelectItem value='3'>3</SelectItem>
+                <SelectItem value='6'>6</SelectItem>
+                <SelectItem value='12'>12</SelectItem>
+                <SelectItem value='0'>{t('common.allTime')}</SelectItem>
               </SelectContent>
             </Select>
             <Select value={String(prsPageSize)} onValueChange={(value) => {
@@ -270,9 +270,9 @@ export function RepoDetailPage() {
             }}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value='10'>10 / page</SelectItem>
-                <SelectItem value='25'>25 / page</SelectItem>
-                <SelectItem value='50'>50 / page</SelectItem>
+                <SelectItem value='10'>{t('common.pageSize', { size: 10 })}</SelectItem>
+                <SelectItem value='25'>{t('common.pageSize', { size: 25 })}</SelectItem>
+                <SelectItem value='50'>{t('common.pageSize', { size: 50 })}</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -283,10 +283,10 @@ export function RepoDetailPage() {
               <TableRow>
                 <TableHead>PR</TableHead>
                 <TableHead>AI</TableHead>
-                <TableHead>Usage</TableHead>
-                <TableHead>Tokens</TableHead>
-                <TableHead>Cycle</TableHead>
-                <TableHead>Merged</TableHead>
+                <TableHead>{t('repoDetail.usageHeader')}</TableHead>
+                <TableHead>{t('events.tokens')}</TableHead>
+                <TableHead>{t('repoDetail.cycle')}</TableHead>
+                <TableHead>{t('repoDetail.merged')}</TableHead>
                 <TableHead />
               </TableRow>
             </TableHeader>
@@ -316,9 +316,9 @@ export function RepoDetailPage() {
                       <TableCell>
                         <div className='flex justify-end gap-2'>
                           <Button variant='ghost' size='sm' onClick={() => setExpandedPRId(expanded ? null : pr.id)} disabled={prDetail.isFetching && expanded}>
-                            {expanded ? 'Hide' : 'Details'}
+                            {expanded ? t('common.hide') : t('common.details')}
                           </Button>
-                          <Button variant='outline' size='sm' onClick={() => refreshUsage.mutate(pr.id)} disabled={refreshUsage.isPending}>Refresh usage</Button>
+                          <Button variant='outline' size='sm' onClick={() => refreshUsage.mutate(pr.id)} disabled={refreshUsage.isPending}>{t('repoDetail.refreshUsage')}</Button>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -326,44 +326,44 @@ export function RepoDetailPage() {
                       <TableRow>
                         <TableCell colSpan={7} className='bg-muted/30 p-4'>
                           {prDetail.isLoading ? (
-                            <div className='py-4 text-center text-muted-foreground text-sm'>Loading PR details...</div>
+                            <div className='py-4 text-center text-muted-foreground text-sm'>{t('repoDetail.loadingDetails')}</div>
                           ) : (
                             <div className='flex flex-col gap-4'>
                               <div className='grid gap-3 sm:grid-cols-2 lg:grid-cols-6'>
                                 <div>
-                                  <div className='text-muted-foreground text-xs'>Input</div>
+                                  <div className='text-muted-foreground text-xs'>{t('repoDetail.input')}</div>
                                   <div className='tnum font-medium'>{compact(detail.usage_input_tokens)}</div>
                                 </div>
                                 <div>
-                                  <div className='text-muted-foreground text-xs'>Output</div>
+                                  <div className='text-muted-foreground text-xs'>{t('repoDetail.output')}</div>
                                   <div className='tnum font-medium'>{compact(detail.usage_output_tokens)}</div>
                                 </div>
                                 <div>
-                                  <div className='text-muted-foreground text-xs'>Cache</div>
+                                  <div className='text-muted-foreground text-xs'>{t('repoDetail.cache')}</div>
                                   <div className='tnum font-medium'>{compact(detail.usage_cached_input_tokens)}</div>
                                 </div>
                                 <div>
-                                  <div className='text-muted-foreground text-xs'>Reasoning</div>
+                                  <div className='text-muted-foreground text-xs'>{t('repoDetail.reasoning')}</div>
                                   <div className='tnum font-medium'>{compact(detail.usage_reasoning_tokens)}</div>
                                 </div>
                                 <div>
-                                  <div className='text-muted-foreground text-xs'>Requests</div>
+                                  <div className='text-muted-foreground text-xs'>{t('repoDetail.requests')}</div>
                                   <div className='tnum font-medium'>{number(detail.usage_request_count)}</div>
                                 </div>
                                 <div>
-                                  <div className='text-muted-foreground text-xs'>Credits</div>
+                                  <div className='text-muted-foreground text-xs'>{t('repoDetail.credits')}</div>
                                   <div className='tnum font-medium'>{number(detail.usage_credit_usage)}</div>
                                 </div>
                               </div>
                               <div className='flex flex-wrap items-center justify-between gap-3 text-sm'>
                                 <div className='flex flex-wrap items-center gap-2'>
                                   <StatusBadge value={detail.usage_status || detail.attribution_status} />
-                                  <span className='text-muted-foreground'>total {compact(tokenUsage)} tokens · refreshed {dateTime(detail.usage_refreshed_at)}</span>
+                                  <span className='text-muted-foreground'>{t('repoDetail.totalTokensRefreshed', { tokens: compact(tokenUsage), time: dateTime(detail.usage_refreshed_at) })}</span>
                                 </div>
                                 <div className='flex gap-2'>
-                                  <Button variant='outline' size='sm' onClick={() => refreshUsage.mutate(detail.id)} disabled={refreshUsage.isPending}>Refresh usage</Button>
+                                  <Button variant='outline' size='sm' onClick={() => refreshUsage.mutate(detail.id)} disabled={refreshUsage.isPending}>{t('repoDetail.refreshUsage')}</Button>
                                   <Button variant='outline' size='sm' onClick={() => settlePR.mutate(detail.id)} disabled={settlePR.isPending || detail.attribution_status === 'clear'}>
-                                    Resolve attribution
+                                    {t('repoDetail.resolveAttribution')}
                                   </Button>
                                 </div>
                               </div>
@@ -371,15 +371,15 @@ export function RepoDetailPage() {
                                 <Table>
                                   <TableHeader>
                                     <TableRow>
-                                      <TableHead>Commit</TableHead>
-                                      <TableHead>Captured</TableHead>
-                                      <TableHead>Input</TableHead>
-                                      <TableHead>Output</TableHead>
-                                      <TableHead>Cache</TableHead>
-                                      <TableHead>Reasoning</TableHead>
-                                      <TableHead>Credits</TableHead>
-                                      <TableHead>Requests</TableHead>
-                                      <TableHead>Freshness</TableHead>
+                                      <TableHead>{t('repoDetail.commit')}</TableHead>
+                                      <TableHead>{t('repoDetail.captured')}</TableHead>
+                                      <TableHead>{t('repoDetail.input')}</TableHead>
+                                      <TableHead>{t('repoDetail.output')}</TableHead>
+                                      <TableHead>{t('repoDetail.cache')}</TableHead>
+                                      <TableHead>{t('repoDetail.reasoning')}</TableHead>
+                                      <TableHead>{t('repoDetail.credits')}</TableHead>
+                                      <TableHead>{t('repoDetail.requests')}</TableHead>
+                                      <TableHead>{t('repoDetail.freshness')}</TableHead>
                                     </TableRow>
                                   </TableHeader>
                                   <TableBody>
@@ -405,7 +405,7 @@ export function RepoDetailPage() {
                                       )
                                     }) : (
                                       <TableRow>
-                                        <TableCell colSpan={9} className='py-6 text-center text-muted-foreground text-sm'>No commit usage snapshots.</TableCell>
+                                        <TableCell colSpan={9} className='py-6 text-center text-muted-foreground text-sm'>{t('repoDetail.noCommitSnapshots')}</TableCell>
                                       </TableRow>
                                     )}
                                   </TableBody>
@@ -423,10 +423,10 @@ export function RepoDetailPage() {
           </Table>
         </div>
         <CardFooter className='flex-wrap justify-between gap-3 text-sm'>
-          <span className='text-muted-foreground'>Page {number(prsPage + 1)} · {number(totalPRs)} PRs</span>
+          <span className='text-muted-foreground'>{t('repoDetail.pagePrs', { page: number(prsPage + 1), total: number(totalPRs) })}</span>
           <div className='flex items-center gap-2'>
-            <Button variant='outline' size='sm' onClick={() => setPRsPage((value) => Math.max(0, value - 1))} disabled={!hasPreviousPage || prs.isFetching}>Previous</Button>
-            <Button variant='outline' size='sm' onClick={() => setPRsPage((value) => value + 1)} disabled={!hasNextPage || prs.isFetching}>Next</Button>
+            <Button variant='outline' size='sm' onClick={() => setPRsPage((value) => Math.max(0, value - 1))} disabled={!hasPreviousPage || prs.isFetching}>{t('common.previous')}</Button>
+            <Button variant='outline' size='sm' onClick={() => setPRsPage((value) => value + 1)} disabled={!hasNextPage || prs.isFetching}>{t('common.next')}</Button>
           </div>
         </CardFooter>
       </Card>

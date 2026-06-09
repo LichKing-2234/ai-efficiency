@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearch } from '@tanstack/react-router'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -16,6 +16,7 @@ import { LoadingState } from '@/components/primitives/data-state'
 import { StatusBadge } from '@/components/primitives/status-badge'
 import { api } from '@/lib/api'
 import { dateTime, number } from '@/lib/format'
+import { useI18n } from '@/lib/i18n/i18n'
 import {
   buildAdminUsersParams,
   buildAdminUsersSearch,
@@ -30,6 +31,7 @@ import {
 import type { AdminSubscriptionJob, AdminSubscriptionManageOperation, AdminSubscriptionManageScope } from '@/lib/api/types'
 
 export function AdminUsersPage() {
+  const { t } = useI18n()
   const navigate = useNavigate()
   const search = useSearch({ strict: false }) as Record<string, unknown>
   const initialFilters = useMemo(() => parseAdminUsersSearch(search), [search])
@@ -46,7 +48,6 @@ export function AdminUsersPage() {
   const [confirmRemove, setConfirmRemove] = useState(false)
   const [activeJobId, setActiveJobId] = useState<number | null>(null)
   const [jobMessage, setJobMessage] = useState('')
-  const selectAllRef = useRef<HTMLInputElement | null>(null)
   const qc = useQueryClient()
   const users = useQuery({ queryKey: ['admin-users', q, page, pageSize], queryFn: () => api.adminUsers.list(buildAdminUsersParams({ q, page, pageSize })) })
   const options = useQuery({ queryKey: ['admin-users', 'subscription-options'], queryFn: api.adminUsers.subscriptionOptions })
@@ -73,14 +74,14 @@ export function AdminUsersPage() {
     mutationFn: api.adminUsers.revealRelayPassword,
     onSuccess: (result) => {
       void navigator.clipboard?.writeText(result.password)
-      toast.success('Relay password copied')
+      toast.success(t('adminUsers.relayPasswordCopied'))
     }
   })
   const job = useMutation({
     mutationFn: () => {
       const provider = subscriptionProviders.find((item) => String(item.id) === providerId) ?? subscriptionProviders[0]
       const group = provider?.groups.find((item) => item.group_id === groupId) ?? provider?.groups[0]
-      if (!provider || !group) throw new Error('No assignable subscription group')
+      if (!provider || !group) throw new Error(t('adminUsers.noAssignableGroup'))
       return api.adminUsers.startSubscriptionJob(buildSubscriptionJobPayload({
         scope,
         operation,
@@ -95,7 +96,7 @@ export function AdminUsersPage() {
       setActiveJobId(result.id)
       setJobMessage(subscriptionJobMessage(result))
       void qc.invalidateQueries({ queryKey: ['admin-users', 'latest-job'] })
-      toast.success('Subscription job started')
+      toast.success(t('adminUsers.subscriptionJobStarted'))
     }
   })
   const canSubmitJob = canSubmitSubscriptionJob({
@@ -144,20 +145,14 @@ export function AdminUsersPage() {
     }
   }, [activeJob.data, qc])
 
-  useEffect(() => {
-    if (selectAllRef.current) {
-      selectAllRef.current.indeterminate = visibleSelectionIndeterminate
-    }
-  }, [visibleSelectionIndeterminate])
-
   if (users.isLoading) return <LoadingState />
 
   return (
     <Page>
-      <PageHeader title='User Management' description='Local users, relay mapping, relay password reveal, and subscription jobs remain separate workflows.' />
+      <PageHeader title={t('adminUsers.title')} description={t('adminUsers.description')} />
       <Card>
         <CardContent className='flex flex-wrap items-center gap-2 p-4'>
-          <Input className='w-72' placeholder='Search users' value={q} onChange={(event) => {
+          <Input className='w-72' placeholder={t('adminUsers.searchUsers')} value={q} onChange={(event) => {
             setQ(event.target.value)
             setPage(1)
           }} />
@@ -167,10 +162,10 @@ export function AdminUsersPage() {
           }}>
             <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
-              {[10, 20, 50, 100].map((size) => <SelectItem key={size} value={String(size)}>{size} / page</SelectItem>)}
+              {[10, 20, 50, 100].map((size) => <SelectItem key={size} value={String(size)}>{t('common.pageSize', { size })}</SelectItem>)}
             </SelectContent>
           </Select>
-          <Button variant='outline' disabled={users.isFetching} onClick={() => void users.refetch()}>Refresh</Button>
+          <Button variant='outline' disabled={users.isFetching} onClick={() => void users.refetch()}>{t('common.refresh')}</Button>
           {currentJob ? (
             <div className='ml-auto flex items-center gap-2 text-sm'>
               <StatusBadge value={currentJob.status} />
@@ -181,19 +176,19 @@ export function AdminUsersPage() {
       </Card>
       <Card>
         <CardHeader>
-          <CardTitle>Subscription management</CardTitle>
+          <CardTitle>{t('adminUsers.subscriptionManagement')}</CardTitle>
         </CardHeader>
         <CardContent className='flex flex-col gap-3'>
           <div className='text-muted-foreground text-sm'>
-            {scope === 'selected' ? `${selected.length} selected users` : scope === 'current_filter' ? (q.trim() ? `Current filter: ${q.trim()}` : 'Current filter') : 'All mapped users'}
+            {scope === 'selected' ? t('adminUsers.selectedUsers', { count: selected.length }) : scope === 'current_filter' ? (q.trim() ? t('adminUsers.currentFilterValue', { query: q.trim() }) : t('adminUsers.currentFilter')) : t('adminUsers.allMapped')}
           </div>
           <div className='grid gap-2 md:grid-cols-[150px_150px_minmax(0,1fr)_minmax(0,1fr)_120px_auto]'>
             <Select value={scope} disabled={activeJobRunning} onValueChange={(value) => setScope(value as AdminSubscriptionManageScope)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value='selected'>Selected</SelectItem>
-                <SelectItem value='current_filter'>Current filter</SelectItem>
-                <SelectItem value='all_mapped'>All mapped</SelectItem>
+                <SelectItem value='selected'>{t('adminUsers.selectedUsers', { count: selected.length })}</SelectItem>
+                <SelectItem value='current_filter'>{t('adminUsers.currentFilter')}</SelectItem>
+                <SelectItem value='all_mapped'>{t('adminUsers.allMapped')}</SelectItem>
               </SelectContent>
             </Select>
             <Select value={operation} disabled={activeJobRunning} onValueChange={(value) => {
@@ -205,9 +200,9 @@ export function AdminUsersPage() {
             }}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value='add'>Add</SelectItem>
-                <SelectItem value='extend'>Extend</SelectItem>
-                <SelectItem value='remove'>Remove</SelectItem>
+                <SelectItem value='add'>{t('common.add')}</SelectItem>
+                <SelectItem value='extend'>{t('common.extend')}</SelectItem>
+                <SelectItem value='remove'>{t('common.remove')}</SelectItem>
               </SelectContent>
             </Select>
             <Select value={activeProvider ? String(activeProvider.id) : 'none'} disabled={activeJobRunning} onValueChange={(value) => {
@@ -217,14 +212,14 @@ export function AdminUsersPage() {
             }}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value='none'>Provider</SelectItem>
+                <SelectItem value='none'>{t('adminUsers.provider')}</SelectItem>
                 {subscriptionProviders.map((provider) => <SelectItem key={provider.id} value={String(provider.id)}>{provider.display_name || provider.name}</SelectItem>)}
               </SelectContent>
             </Select>
             <Select value={activeGroupId || 'none'} disabled={activeJobRunning} onValueChange={(value) => setGroupId(value === 'none' ? '' : value)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value='none'>Group</SelectItem>
+                <SelectItem value='none'>{t('adminUsers.group')}</SelectItem>
                 {activeGroups.map((group) => <SelectItem key={group.group_id} value={group.group_id}>{group.group_name} · {group.platform}</SelectItem>)}
               </SelectContent>
             </Select>
@@ -233,11 +228,11 @@ export function AdminUsersPage() {
             ) : (
               <Field orientation='horizontal' className='h-8'>
                 <Checkbox checked={confirmRemove} disabled={activeJobRunning} onCheckedChange={(value) => setConfirmRemove(value === true)} />
-                <FieldLabel>Confirm</FieldLabel>
+                <FieldLabel>{t('adminUsers.confirm')}</FieldLabel>
               </Field>
             )}
             <Button variant='outline' disabled={!canSubmitJob} onClick={() => job.mutate()}>
-              {activeJobRunning ? 'Job running' : 'Start job'}
+              {activeJobRunning ? t('adminUsers.jobRunning') : t('adminUsers.startJob')}
             </Button>
           </div>
           {job.error ? <AppAlert tone='error' title={job.error.message} /> : null}
@@ -248,7 +243,7 @@ export function AdminUsersPage() {
               {jobResults.slice(0, 50).map((result) => (
                 <div key={`${result.user_id}-${result.status}`} className='flex items-center justify-between gap-3 border-border border-b px-3 py-2 text-sm last:border-b-0'>
                   <div className='min-w-0'>
-                    <div className='font-medium'>{result.username || result.email || `User #${result.user_id}`}</div>
+                    <div className='font-medium'>{result.username || result.email || `#${result.user_id}`}</div>
                     {result.message ? <div className='text-muted-foreground text-xs'>{result.message}</div> : null}
                   </div>
                   <StatusBadge value={result.status} />
@@ -264,18 +259,16 @@ export function AdminUsersPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>
-                  <input
-                    ref={selectAllRef}
-                    type='checkbox'
-                    checked={allVisibleSelected}
-                    onChange={(event) => setSelected((value) => nextVisibleSelection(value, rows, event.target.checked))}
+                  <Checkbox
+                    checked={visibleSelectionIndeterminate ? 'indeterminate' : allVisibleSelected}
+                    onCheckedChange={(checked) => setSelected((value) => nextVisibleSelection(value, rows, checked === true))}
                   />
                 </TableHead>
-                <TableHead>User</TableHead>
-                <TableHead>Role</TableHead>
-                <TableHead>Auth</TableHead>
-                <TableHead>Relay</TableHead>
-                <TableHead>Updated</TableHead>
+                <TableHead>{t('adminUsers.user')}</TableHead>
+                <TableHead>{t('adminUsers.role')}</TableHead>
+                <TableHead>{t('adminUsers.auth')}</TableHead>
+                <TableHead>{t('adminUsers.relay')}</TableHead>
+                <TableHead>{t('adminUsers.updated')}</TableHead>
                 <TableHead />
               </TableRow>
             </TableHeader>
@@ -283,10 +276,9 @@ export function AdminUsersPage() {
               {rows.map((user) => (
                 <TableRow key={user.id}>
                   <TableCell>
-                    <input
-                      type='checkbox'
+                    <Checkbox
                       checked={selected.includes(user.id)}
-                      onChange={(event) => setSelected((value) => event.target.checked ? [...value, user.id] : value.filter((id) => id !== user.id))}
+                      onCheckedChange={(checked) => setSelected((value) => checked === true ? [...value, user.id] : value.filter((id) => id !== user.id))}
                     />
                   </TableCell>
                   <TableCell>
@@ -305,10 +297,10 @@ export function AdminUsersPage() {
                         disabled={!user.relay_auth_password}
                         onClick={() => {
                           void navigator.clipboard?.writeText(user.relay_auth_password || '')
-                          toast.success('Encrypted relay password copied')
+                          toast.success(t('adminUsers.encryptedCopied'))
                         }}
                       >
-                        Copy encrypted
+                        {t('adminUsers.copyEncrypted')}
                       </Button>
                       <Button
                         variant='outline'
@@ -316,12 +308,12 @@ export function AdminUsersPage() {
                         disabled={!user.relay_auth_password || reveal.isPending}
                         onClick={() => setPlaintextConfirmUserId((value) => value === user.id ? null : user.id)}
                       >
-                        Copy plaintext
+                        {t('adminUsers.copyPlaintext')}
                       </Button>
                     </div>
                     {plaintextConfirmUserId === user.id ? (
                       <div className='mt-2 flex max-w-72 flex-col gap-2 rounded-md border border-border bg-muted p-2 text-left text-xs'>
-                        <span className='text-muted-foreground'>Plaintext relay passwords are sensitive. Confirm reveal and copy.</span>
+                        <span className='text-muted-foreground'>{t('adminUsers.plaintextWarning')}</span>
                         <Button
                           variant='outline'
                           size='sm'
@@ -330,7 +322,7 @@ export function AdminUsersPage() {
                             reveal.mutate(user.id, { onSuccess: () => setPlaintextConfirmUserId(null) })
                           }}
                         >
-                          Confirm reveal
+                          {t('adminUsers.confirmReveal')}
                         </Button>
                       </div>
                     ) : null}
@@ -341,10 +333,10 @@ export function AdminUsersPage() {
           </Table>
         </div>
         <div className='flex items-center justify-between gap-3 border-border border-t p-3 text-sm'>
-          <span className='text-muted-foreground'>Page {page} of {totalPages} · {number(total)} users</span>
+          <span className='text-muted-foreground'>{t('adminUsers.pageOfUsers', { page, totalPages, total: number(total) })}</span>
           <div className='flex gap-2'>
-            <Button variant='outline' size='sm' disabled={page <= 1 || users.isFetching} onClick={() => setPage((value) => Math.max(1, value - 1))}>Previous</Button>
-            <Button variant='outline' size='sm' disabled={page >= totalPages || users.isFetching} onClick={() => setPage((value) => value + 1)}>Next</Button>
+            <Button variant='outline' size='sm' disabled={page <= 1 || users.isFetching} onClick={() => setPage((value) => Math.max(1, value - 1))}>{t('common.previous')}</Button>
+            <Button variant='outline' size='sm' disabled={page >= totalPages || users.isFetching} onClick={() => setPage((value) => value + 1)}>{t('common.next')}</Button>
           </div>
         </div>
       </Card>

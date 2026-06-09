@@ -114,8 +114,8 @@ export function ReposPage() {
   })
   const createRepo = useMutation({
     mutationFn: () => {
-      if (!parsedRepo) throw new Error('Enter a GitHub or Bitbucket repository URL.')
-      if (!selectedProviderId) throw new Error('Select an SCM provider.')
+      if (!parsedRepo) throw new Error(t('repos.enterRepoUrl'))
+      if (!selectedProviderId) throw new Error(t('repos.selectScmProvider'))
       return api.repos.createDirect(buildRepoCreatePayload({
         providerId: Number(selectedProviderId),
         parsed: parsedRepo,
@@ -128,10 +128,10 @@ export function ReposPage() {
       setShowAdd(false)
       resetAddForm()
       void invalidateRepos(qc)
-      toast.success('Repository added')
+      toast.success(t('repos.repoAdded'))
     },
     onError: (error) => {
-      setAddError(error instanceof Error ? error.message : 'Repository add failed.')
+      setAddError(error instanceof Error ? error.message : t('repos.addFailed'))
     }
   })
   const deleteRepo = useMutation({
@@ -139,7 +139,7 @@ export function ReposPage() {
     onSuccess: () => {
       setDeleteConfirmId(null)
       void invalidateRepos(qc)
-      toast.success('Repository deleted')
+      toast.success(t('repos.repoDeleted'))
     }
   })
 
@@ -386,11 +386,11 @@ function RepoTable({
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Repository</TableHead>
-            <TableHead>Binding</TableHead>
-            <TableHead>SCM Provider</TableHead>
-            <TableHead>Default Branch</TableHead>
-            <TableHead>Status</TableHead>
+            <TableHead>{t('repos.repository')}</TableHead>
+            <TableHead>{t('events.binding')}</TableHead>
+            <TableHead>{t('repos.scmProvider')}</TableHead>
+            <TableHead>{t('repos.defaultBranch')}</TableHead>
+            <TableHead>{t('common.status')}</TableHead>
             <TableHead />
           </TableRow>
         </TableHeader>
@@ -474,11 +474,11 @@ function AddRepoDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{t('repos.addRepo')}</DialogTitle>
-          <DialogDescription>Paste a GitHub or Bitbucket repository URL. The direct repo payload is generated from the parsed repository.</DialogDescription>
+          <DialogDescription>{t('repos.pasteRepoUrl')}</DialogDescription>
         </DialogHeader>
         <div className='flex flex-col gap-3'>
           <Select value={selectedProviderId} onValueChange={setSelectedProviderId}>
-            <SelectTrigger className='w-full'><SelectValue placeholder='Select SCM provider' /></SelectTrigger>
+            <SelectTrigger className='w-full'><SelectValue placeholder={t('repos.selectScmProvider')} /></SelectTrigger>
             <SelectContent>
               {providers.map((provider) => (
                 <SelectItem key={provider.id} value={String(provider.id)}>{provider.name}</SelectItem>
@@ -496,22 +496,22 @@ function AddRepoDialog({
           />
           {parsedRepo ? (
             <div className='rounded-md border border-border bg-muted/40 p-3 text-sm'>
-              <div className='flex justify-between gap-3'><span className='text-muted-foreground'>Full name</span><span className='font-medium'>{parsedRepo.project}/{parsedRepo.repo}</span></div>
-              <div className='mt-1 flex justify-between gap-3'><span className='text-muted-foreground'>Provider</span><span>{selectedProvider?.name || 'No matching provider selected'}</span></div>
+              <div className='flex justify-between gap-3'><span className='text-muted-foreground'>{t('repos.fullName')}</span><span className='font-medium'>{parsedRepo.project}/{parsedRepo.repo}</span></div>
+              <div className='mt-1 flex justify-between gap-3'><span className='text-muted-foreground'>{t('repos.provider')}</span><span>{selectedProvider?.name || t('repos.noMatchingProvider')}</span></div>
               <div className='mt-3 flex flex-wrap items-center gap-2'>
-                <span className='text-muted-foreground'>Clone</span>
+                <span className='text-muted-foreground'>{t('repos.clone')}</span>
                 <Button variant={cloneProtocol === 'http' ? 'default' : 'outline'} size='sm' onClick={() => setCloneProtocol('http')}>HTTP</Button>
                 <Button variant={cloneProtocol === 'ssh' ? 'default' : 'outline'} size='sm' onClick={() => setCloneProtocol('ssh')}>SSH</Button>
               </div>
               {cloneProtocol === 'ssh' && parsedRepo.type === 'bitbucket' ? (
-                <Input className='mt-2' placeholder='SSH host, for example git.example.com' value={sshHost} onChange={(event) => setSshHost(event.target.value)} />
+                <Input className='mt-2' placeholder={t('settings.sshHostExample')} value={sshHost} onChange={(event) => setSshHost(event.target.value)} />
               ) : null}
               <Input className='mt-2 font-mono text-xs' value={previewCloneUrl} readOnly />
             </div>
           ) : repoUrl ? (
-            <AppAlert tone='warning' title='Enter a GitHub repo URL or Bitbucket Server browse URL.' />
+            <AppAlert tone='warning' title={t('repos.enterRepoUrl')} />
           ) : null}
-          <Input placeholder='Default branch' value={defaultBranch} onChange={(event) => setDefaultBranch(event.target.value)} />
+          <Input placeholder={t('repos.defaultBranch')} value={defaultBranch} onChange={(event) => setDefaultBranch(event.target.value)} />
           {addError ? <AppAlert tone='error' title={addError} /> : null}
           <div className='flex justify-end gap-2'>
             <Button variant='outline' onClick={() => setOpen(false)}>{t('common.cancel')}</Button>

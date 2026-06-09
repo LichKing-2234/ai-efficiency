@@ -13,6 +13,29 @@ const allowedLiteralFiles = new Set([
   'routeTree.gen.ts'
 ])
 
+const visibleCopyRoots = ['features/', 'components/layout/']
+const allowedVisibleLiterals = new Set([
+  'ABCD-EFGH',
+  'AE',
+  'AI',
+  'Claude',
+  'Codex',
+  'Bitbucket',
+  'GitHub',
+  'HTTP',
+  'Kiro',
+  'LDAP',
+  'PR',
+  'SSH'
+])
+
+const visibleCopyPatterns = [
+  />\s*([A-Z][A-Za-z0-9 #./:+?%-]*(?:\s+[A-Za-z0-9 #./:+?%-]+)*)\s*</g,
+  /\b(?:placeholder|title|description|confirmLabel|cancelLabel)=['"]([A-Z][^'"]*[A-Za-z][^'"]*)['"]/g,
+  /\btoast\.(?:success|error|warning|info)\(['"]([A-Z][^'"]*[A-Za-z][^'"]*)['"]\)/g,
+  /\bnew Error\(['"]([A-Z][^'"]*[A-Za-z][^'"]*)['"]\)/g
+]
+
 function walk(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {
     const full = join(dir, name)
@@ -41,6 +64,24 @@ describe('frontend-ng i18n resources', () => {
       .map((file) => relative(ROOT, file))
       .filter((file) => !allowedLiteralFiles.has(file))
       .filter((file) => /[\u3400-\u9fff]/.test(readFileSync(join(ROOT, file), 'utf8')))
+    expect(offenders).toEqual([])
+  })
+
+  test('keeps page-level visible English copy in message resources', () => {
+    const offenders: string[] = []
+    for (const file of walk(ROOT)) {
+      const relativeFile = relative(ROOT, file)
+      if (!visibleCopyRoots.some((root) => relativeFile.startsWith(root))) continue
+      const source = readFileSync(file, 'utf8')
+      for (const pattern of visibleCopyPatterns) {
+        for (const match of source.matchAll(pattern)) {
+          const literal = match[1].trim()
+          if (!literal || allowedVisibleLiterals.has(literal)) continue
+          if (/^\$|^https?:|^\/|^\d+$/.test(literal)) continue
+          offenders.push(`${relativeFile}: ${literal}`)
+        }
+      }
+    }
     expect(offenders).toEqual([])
   })
 })

@@ -7,9 +7,11 @@ import { Input } from '@/components/ui/input'
 import { AppAlert } from '@/components/primitives/app-alert'
 import { apiFetch } from '@/lib/api/client'
 import { ensureAuthenticatedUser } from '@/lib/auth/session'
+import { useI18n } from '@/lib/i18n/i18n'
 import { buildLoginRedirect, buildOAuthAuthorizePayload, normalizeDeviceCode } from '@/features/auth/auth-flow-state'
 
 export function OAuthAuthorizePage() {
+  const { t } = useI18n()
   const search = useSearch({ strict: false }) as Record<string, string>
   const location = useLocation()
   const navigate = useNavigate()
@@ -25,11 +27,11 @@ export function OAuthAuthorizePage() {
       if (data.redirect_uri) {
         window.location.href = data.redirect_uri
       } else {
-        setError('Authorization response did not include a redirect URI.')
+        setError(t('oauth.redirectMissing'))
       }
     },
     onError: (mutationError) => {
-      setError(mutationError instanceof Error ? mutationError.message : 'Authorization failed.')
+      setError(mutationError instanceof Error ? mutationError.message : t('oauth.authorizationFailed'))
     }
   })
 
@@ -41,20 +43,21 @@ export function OAuthAuthorizePage() {
   }, [location.href, me.error, navigate])
 
   return (
-    <AuthSurface title='Authorize ae-cli' description='Allow the CLI to receive an AI Efficiency app token for this account.'>
+    <AuthSurface title={t('oauth.authorizeCli')} description={t('oauth.allowCli')}>
       <div className='rounded-md bg-muted p-3 text-sm'>
-        Signed in as <span className='font-medium'>{me.data?.email || me.data?.username || 'current user'}</span>
+        {t('oauth.signedInAs', { identity: me.data?.email || me.data?.username || t('auth.guest') })}
       </div>
       {error ? <AppAlert tone='error' title={error} /> : null}
       <div className='flex gap-2'>
-        <Button className='flex-1' disabled={approve.isPending || me.isLoading || !!me.error} onClick={() => approve.mutate(true)}>Approve</Button>
-        <Button className='flex-1' disabled={approve.isPending || me.isLoading || !!me.error} variant='outline' onClick={() => approve.mutate(false)}>Deny</Button>
+        <Button className='flex-1' disabled={approve.isPending || me.isLoading || !!me.error} onClick={() => approve.mutate(true)}>{t('oauth.approve')}</Button>
+        <Button className='flex-1' disabled={approve.isPending || me.isLoading || !!me.error} variant='outline' onClick={() => approve.mutate(false)}>{t('oauth.denied')}</Button>
       </div>
     </AuthSurface>
   )
 }
 
 export function OAuthDevicePage() {
+  const { t } = useI18n()
   const location = useLocation()
   const navigate = useNavigate()
   const [code, setCode] = useState('')
@@ -75,16 +78,16 @@ export function OAuthDevicePage() {
   }, [location.href, me.error, navigate])
 
   return (
-    <AuthSurface title='Device login' description='Enter the code shown by ae-cli on the other device.'>
+    <AuthSurface title={t('oauth.deviceLogin')} description={t('oauth.enterCode')}>
       <div className='rounded-md bg-muted p-3 text-sm'>
-        Signed in as <span className='font-medium'>{me.data?.email || me.data?.username || 'current user'}</span>
+        {t('oauth.signedInAs', { identity: me.data?.email || me.data?.username || t('auth.guest') })}
       </div>
       <Input value={code} onChange={(event) => setCode(normalizeDeviceCode(event.target.value))} placeholder='ABCD-EFGH' />
-      {verify.data ? <AppAlert tone='success' title={`Device ${verify.data.status}.`} /> : null}
+      {verify.data ? <AppAlert tone='success' title={t('oauth.deviceStatus', { status: verify.data.status })} /> : null}
       {verify.error ? <AppAlert tone='error' title={verify.error.message} /> : null}
       <div className='flex gap-2'>
-        <Button className='flex-1' disabled={!code || verify.isPending || me.isLoading || !!me.error} onClick={() => verify.mutate(true)}>Approve</Button>
-        <Button className='flex-1' disabled={!code || verify.isPending || me.isLoading || !!me.error} variant='outline' onClick={() => verify.mutate(false)}>Deny</Button>
+        <Button className='flex-1' disabled={!code || verify.isPending || me.isLoading || !!me.error} onClick={() => verify.mutate(true)}>{t('oauth.approve')}</Button>
+        <Button className='flex-1' disabled={!code || verify.isPending || me.isLoading || !!me.error} variant='outline' onClick={() => verify.mutate(false)}>{t('oauth.denied')}</Button>
       </div>
     </AuthSurface>
   )
