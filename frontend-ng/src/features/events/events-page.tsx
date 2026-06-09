@@ -11,13 +11,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { MetricCard } from '@/components/primitives/metric-card'
 import { Page } from '@/components/primitives/page'
 import { LoadingState } from '@/components/primitives/data-state'
+import { SegmentedControl } from '@/components/primitives/segmented-control'
 import { SlideOver } from '@/components/primitives/slide-over'
 import { ToolGlyph } from '@/components/primitives/tool-glyph'
 import { api } from '@/lib/api'
 import { compact, dateTime, number, tokenTotal } from '@/lib/format'
 import { useI18n } from '@/lib/i18n/i18n'
 import type { ToolUsageEventDetail, ToolUsageEventRow, ToolUsageEventUserOption } from '@/lib/api/types'
-import { buildEventQuery, buildEventSearch, defaultEventFilters, eventDetailPrLabel, eventFiltersForRole, getEventPagination, type EventFilterState } from './event-filters'
+import { buildEventQuery, buildEventSearch, defaultEventFilters, eventDetailPrLabel, eventFiltersForRole, filterToSegment, getEventPagination, segmentToFilter, type EventFilterState } from './event-filters'
 
 const TOOL_OPTIONS = ['claude', 'codex', 'kiro'] as const
 
@@ -130,21 +131,23 @@ export function EventsPage() {
                 </button>
               ) : null}
             </div>
-            <ChipGroup
+            <FilterSegment
+              ariaLabel={t('events.tool')}
               label={t('events.tool')}
-              onChange={(tool) => setFilters((current) => ({ ...current, tool: tool === 'all' ? '' : tool }))}
+              onChange={(tool) => setFilters((current) => ({ ...current, tool: segmentToFilter(tool) }))}
               options={[{ value: 'all', label: t('events.allTools') }, ...TOOL_OPTIONS.map((tool) => ({ value: tool, label: tool }))]}
-              value={filters.tool || 'all'}
+              value={filterToSegment(filters.tool)}
             />
-            <ChipGroup
+            <FilterSegment
+              ariaLabel={t('events.binding')}
               label={t('events.binding')}
-              onChange={(bindingStatus) => setFilters((current) => ({ ...current, bindingStatus: bindingStatus === 'all' ? '' : bindingStatus }))}
+              onChange={(bindingStatus) => setFilters((current) => ({ ...current, bindingStatus: segmentToFilter(bindingStatus) }))}
               options={[
                 { value: 'all', label: t('events.allCodeLinks') },
                 { value: 'bound', label: t('repos.bound') },
                 { value: 'unbound', label: t('repos.unbound') }
               ]}
-              value={filters.bindingStatus || 'all'}
+              value={filterToSegment(filters.bindingStatus)}
             />
             <Button onClick={applyCurrentFilters}>{t('common.applyFilters')}</Button>
           </div>
@@ -220,12 +223,14 @@ export function EventsPage() {
   )
 }
 
-function ChipGroup({
+function FilterSegment({
+  ariaLabel,
   label,
   value,
   onChange,
   options
 }: {
+  ariaLabel: string
   label: string
   value: string
   onChange: (value: string) => void
@@ -234,23 +239,7 @@ function ChipGroup({
   return (
     <div className='flex items-center gap-2'>
       <span className='font-semibold text-[11.5px] text-[var(--ink-4)]'>{label}</span>
-      <div className='flex flex-wrap gap-1'>
-        {options.map((option) => {
-          const active = option.value === value
-          return (
-            <button
-              className={active
-                ? 'h-7 rounded-full border border-[var(--ai-line)] bg-[var(--ai-soft)] px-3 font-semibold text-[var(--ai-deep)] text-xs'
-                : 'h-7 rounded-full border border-border bg-[var(--surface-inset)] px-3 font-medium text-[var(--ink-2)] text-xs hover:text-foreground'}
-              key={option.value}
-              onClick={() => onChange(option.value)}
-              type='button'
-            >
-              {option.label}
-            </button>
-          )
-        })}
-      </div>
+      <SegmentedControl ariaLabel={ariaLabel} onChange={onChange} options={options} size='sm' value={value} />
     </div>
   )
 }

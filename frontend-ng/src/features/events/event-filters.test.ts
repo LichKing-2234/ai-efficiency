@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { buildEventQuery, eventDetailPrLabel, eventFiltersForRole, getEventPagination } from './event-filters'
+import { buildEventQuery, eventDetailPrLabel, eventFiltersForRole, filterToSegment, getEventPagination, segmentToFilter } from './event-filters'
 
 describe('buildEventQuery', () => {
   test('preserves backend event filter parameter names and converts local datetimes to ISO strings', () => {
@@ -80,5 +80,17 @@ describe('event detail formatting', () => {
     expect(eventDetailPrLabel({ pr_record_id: 10, scm_pr_id: 42, title: 'Improve attribution', status: 'merged', scm_pr_url: 'https://example.com/pr/42' })).toBe(
       '#42 Improve attribution · merged'
     )
+  })
+})
+
+describe('segmented filter mapping', () => {
+  test('uses all as the visible value for empty backend filters', () => {
+    expect(filterToSegment('')).toBe('all')
+    expect(filterToSegment('codex')).toBe('codex')
+  })
+
+  test('maps all back to an empty backend filter value', () => {
+    expect(segmentToFilter('all')).toBe('')
+    expect(segmentToFilter('bound')).toBe('bound')
   })
 })

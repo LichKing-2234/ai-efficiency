@@ -228,6 +228,10 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
 
   Implement reference filters, KPI cards, CSS-grid table rows, tool glyphs, token mini-bars, and SlideOver detail.
 
+  Current implementation uses the shared `SegmentedControl` primitive for Tool and Binding filters instead of page-local chip buttons, with `event-filters.ts` helpers preserving the visible `all` value and backend empty filter contract.
+
+  Current evidence: `event-filters.test.ts`, `bun run check`, browser QA on `/events`, and full verification passed. `agent-browser` verified two radiogroups, seven radio items, Tool and Binding filters, no error boundary, no visible interactive overflow, and no horizontal overflow at `1280x720` and `390x844`.
+
 - [x] **Step 2: Repositories**
 
   Implement reference workbench styling while keeping add, delete, auto-bind, provider selection, webhook repair, and navigation behavior intact.
