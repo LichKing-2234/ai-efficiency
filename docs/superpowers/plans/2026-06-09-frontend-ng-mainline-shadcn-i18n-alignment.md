@@ -922,7 +922,7 @@ cd frontend-ng && bun test src/features/repos/repos-state.test.ts && bun run che
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit API parity contracts**
+- [x] **Step 7: Commit API parity contracts**
 
 Run:
 
@@ -942,7 +942,7 @@ Expected: commit created.
 - Modify: `frontend-ng/src/features/home/home-page.tsx`
 - Modify: `frontend-ng/src/components/layout/navigation.ts`
 
-- [ ] **Step 1: Write failing range helper tests**
+- [x] **Step 1: Write failing range helper tests**
 
 Create `frontend-ng/src/features/user-usage/user-usage-state.test.ts`:
 
@@ -984,7 +984,7 @@ describe('user usage state', () => {
 })
 ```
 
-- [ ] **Step 2: Run test and verify failure**
+- [x] **Step 2: Run test and verify failure**
 
 Run:
 
@@ -994,7 +994,7 @@ cd frontend-ng && bun test src/features/user-usage/user-usage-state.test.ts
 
 Expected: FAIL because helper file does not exist.
 
-- [ ] **Step 3: Implement usage helpers**
+- [x] **Step 3: Implement usage helpers**
 
 Create `frontend-ng/src/features/user-usage/user-usage-state.ts`:
 
@@ -1040,7 +1040,7 @@ export function usageTotalsFromTrend(points: UserUsageTrendPoint[]) {
 }
 ```
 
-- [ ] **Step 4: Implement usage panel with shadcn components**
+- [x] **Step 4: Implement usage panel with shadcn components**
 
 Create `frontend-ng/src/features/user-usage/user-usage-panel.tsx` with:
 
@@ -1162,7 +1162,7 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
 }
 ```
 
-- [ ] **Step 5: Embed dashboard on home**
+- [x] **Step 5: Embed dashboard on home**
 
 Modify `frontend-ng/src/features/home/home-page.tsx`:
 
@@ -1185,7 +1185,7 @@ Replace the top hero title/copy with translated keys and insert the usage panel 
 
 Update existing `number(...)`, `compact(...)`, and `dateTime(...)` calls to pass `locale`.
 
-- [ ] **Step 6: Run focused tests**
+- [x] **Step 6: Run focused tests**
 
 Run:
 
