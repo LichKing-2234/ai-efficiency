@@ -25,6 +25,8 @@ Follow-up OAuth/auth redirect diagnosis fixed the `/oauth/device` unauthenticate
 - Modify: `frontend-ng/src/components/primitives/metric-card.tsx` - evolve into a KPI-capable primitive while preserving the existing `MetricCard` export for current screens.
 - Create: `frontend-ng/src/components/primitives/charts.tsx` - shared reference-style SVG chart primitives (`Sparkline`, `SparkBars`, `Ring`, `StackedAreaChart`, `BarsH`).
 - Test: `frontend-ng/src/components/primitives/charts.test.ts` - locks sparkline and stacked-area path calculations.
+- Create: `frontend-ng/src/components/primitives/chart-legend.tsx` - shared inline swatch legend primitive for chart cards.
+- Test: `frontend-ng/src/components/primitives/chart-legend.test.tsx` - locks legend slots, wrapping, and swatch rendering.
 - Create: `frontend-ng/src/components/primitives/heatmap-grid.tsx` - shared reference-style 7x24 activity heatmap grid.
 - Test: `frontend-ng/src/components/primitives/heatmap-grid.test.ts` - locks fixed grid sizing, intensity normalization, and out-of-range point handling.
 - Create: `frontend-ng/src/components/primitives/command-step.tsx` - shared reference-style CLI command row with numbered steps, copy action, and copied feedback.
@@ -226,6 +228,10 @@ Follow-up OAuth/auth redirect diagnosis fixed the `/oauth/device` unauthenticate
   Follow-up section-header audit implementation migrates Usage Analytics token trend, model distribution, and activity heatmap cards to the shared `SectionCardHeader` primitive while preserving the existing backend-driven chart/table/heatmap rendering and range-specific description copy.
 
   Follow-up section-header audit evidence: `section-card-header.test.tsx` was extended for className passthrough, `user-usage-state.test.ts`, `bun test`, `bun run check`, `bun run build`, and `git diff --check` passed after migration. `agent-browser` reverified `/usage` in the authenticated session at `1280x720`: no error boundary text and no body horizontal overflow. The local account currently renders the configured-empty state, so visible chart card headers remain covered by primitive tests, TypeScript, and build until configured usage data is available.
+
+  Follow-up chart legend audit implementation adds the shared `ChartLegend` primitive and migrates the Usage Analytics token trend legend away from page-local swatch markup while preserving the same `StackedAreaChart` keys, token colors, and i18n labels.
+
+  Follow-up chart legend audit evidence: `chart-legend.test.tsx` was added with a red-green cycle; it first failed because `./chart-legend` did not exist, then passed after implementation. Focused verification passed with `bun test src/components/primitives/chart-legend.test.tsx src/components/primitives/charts.test.ts src/features/user-usage/user-usage-state.test.ts`, `bun run check`, and `git diff --check`. Full verification passed with `ulimit -n 65536 && bun test --timeout 20000` and `bun run build`. `agent-browser` reverified `/usage` on the existing `4339` dev server with no error boundary, no body horizontal overflow, and no button/link overflow; the local guest/loading state did not expose configured chart content, so visible `ChartLegend` data-state rendering remains covered by the primitive SSR test, TypeScript, and build until usage data is available.
 
 - [x] **Step 6: Align Overview setup progress with shared Ring**
 

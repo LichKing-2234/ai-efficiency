@@ -6,6 +6,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Empty, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
+import { ChartLegend } from '@/components/primitives/chart-legend'
 import { BarsH, StackedAreaChart, type StackedAreaKey } from '@/components/primitives/charts'
 import { DataGrid, DataGridHeader, DataGridRow } from '@/components/primitives/data-grid'
 import { HeatmapGrid } from '@/components/primitives/heatmap-grid'
@@ -133,14 +134,7 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
                 <CardContent>
                   {snapshot.trend.length ? (
                     <div className='flex flex-col gap-4'>
-                      <div className='flex flex-wrap gap-4'>
-                        {tokenKeys.map((key) => (
-                          <span className='flex items-center gap-1.5 text-[12px] text-[var(--ink-2)]' key={key.key}>
-                            <span className='size-2.5 rounded-[3px]' style={{ background: key.color }} />
-                            {key.label}
-                          </span>
-                        ))}
-                      </div>
+                      <ChartLegend items={tokenKeys} />
                       <StackedAreaChart
                         keys={tokenKeys}
                         series={snapshot.trend}
