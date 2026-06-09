@@ -25,6 +25,7 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
 - Create: `frontend-ng/src/components/primitives/segmented-control.tsx` - shared range/filter segmented control.
 - Create: `frontend-ng/src/components/primitives/slide-over.tsx` - shared right-side inspect panel for events/repos detail flows.
 - Create: `frontend-ng/src/components/command/command-palette.tsx` - global command palette using real routes/actions.
+- Create: `frontend-ng/src/components/ui/dropdown-menu.tsx` - shadcn/Radix dropdown primitive used by the shell language selector.
 - Modify: `frontend-ng/src/components/layout/navigation.ts` - add `/usage`, group nav per the reference, preserve admin gating.
 - Modify: `frontend-ng/src/components/layout/app-shell.tsx` - collapsible/sidebar shell, top bar command trigger, language dropdown, live status, theme toggle.
 - Create: `frontend-ng/src/routes/usage.tsx` - promoted Usage Analytics route.
@@ -142,6 +143,8 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
 
   Use the existing i18n provider to set `en-US` or `zh-CN` through a menu-style control.
 
+  Current implementation uses the shadcn/Radix `DropdownMenu`, `DropdownMenuRadioGroup`, and `DropdownMenuRadioItem` primitives instead of a custom positioned popover.
+
 - [x] **Step 3: Implement collapsible desktop sidebar**
 
   Match expanded `--rail` width and collapsed icon rail width. Persist collapsed state locally without storing auth data.
@@ -246,7 +249,7 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
   Current evidence from this run:
   - Authenticated desktop route loop passed for `/`, `/usage`, `/events`, `/repos`, `/user`, `/admin/users`, and `/settings` at `1280x720`: no error boundary, no leaked `{current}` / `{total}` / `{ready}` placeholders, no duplicate in-content page title, no horizontal overflow, and no button overflow.
   - Authenticated mobile route loop passed for the same routes at `390x844` using `agent-browser set viewport 390 844`: no error boundary, no leaked placeholders, no duplicate in-content page title, no horizontal overflow, and no button overflow.
-  - Overview interaction checks passed for command palette open, language dropdown switch to `zh-CN`, and dark-mode toggle.
+  - Overview interaction checks passed for command palette open, shadcn/Radix language dropdown radio menu open, language switch to `zh-CN`, and dark-mode toggle.
   - The admin/settings SSR guard crash was fixed by moving admin role redirects into authenticated client pages.
 
 - [x] **Step 4: Commit logical chunks**

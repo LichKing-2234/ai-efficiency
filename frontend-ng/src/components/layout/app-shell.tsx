@@ -1,8 +1,9 @@
 import { Link, useLocation, useNavigate } from '@tanstack/react-router'
-import { CheckIcon, ChevronDownIcon, GlobeIcon, LogOutIcon, MenuIcon, MoonIcon, PanelLeftIcon, SearchIcon, SunIcon } from 'lucide-react'
+import { ChevronDownIcon, GlobeIcon, LogOutIcon, MenuIcon, MoonIcon, PanelLeftIcon, SearchIcon, SunIcon } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { CommandPalette } from '@/components/command/command-palette'
 import { Button } from '@/components/ui/button'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { api } from '@/lib/api'
 import type { User } from '@/lib/api/types'
 import type { Locale } from '@/lib/i18n/messages'
@@ -36,7 +37,6 @@ export function AppShell({ user, children }: { user: User | null; children: Reac
   const [open, setOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
   const [commandOpen, setCommandOpen] = useState(false)
-  const [languageOpen, setLanguageOpen] = useState(false)
   const [dark, setDark] = useState(false)
   const meta = pageMeta(location.pathname)
   const visibleItems = navItems.filter((item) => !item.admin || user?.role === 'admin')
@@ -190,38 +190,24 @@ export function AppShell({ user, children }: { user: User | null; children: Reac
               <span className='live-dot' />
               <span className='font-semibold text-[11.5px] text-[var(--pos)]'>{t('nav.ingesting')}</span>
             </div>
-            <div className='relative'>
-              <Button
-                aria-expanded={languageOpen}
-                aria-haspopup='menu'
-                onClick={() => setLanguageOpen((value) => !value)}
-                size='sm'
-                type='button'
-                variant='ghost'
-              >
-                <GlobeIcon />
-                <span className='hidden sm:inline'>{t(LOCALES.find((item) => item.value === locale)?.shortKey ?? 'locale.englishShort')}</span>
-                <ChevronDownIcon className='size-3 text-[var(--ink-4)]' />
-              </Button>
-              {languageOpen ? (
-                <div className='absolute right-0 top-[calc(100%+6px)] z-50 min-w-40 rounded-[var(--r-md)] border border-[var(--line-strong)] bg-popover p-1 shadow-[var(--sh-lg)]'>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size='sm' type='button' variant='ghost'>
+                  <GlobeIcon />
+                  <span className='hidden sm:inline'>{t(LOCALES.find((item) => item.value === locale)?.shortKey ?? 'locale.englishShort')}</span>
+                  <ChevronDownIcon className='size-3 text-[var(--ink-4)]' />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align='end' className='min-w-40 border-[var(--line-strong)] shadow-[var(--sh-lg)]'>
+                <DropdownMenuRadioGroup value={locale} onValueChange={(value) => setLocale(value as Locale)}>
                   {LOCALES.map((item) => (
-                    <button
-                      className='flex h-8 w-full items-center gap-2 rounded-[var(--r-sm)] px-2 text-left font-medium text-[13px] text-[var(--ink-2)] hover:bg-[var(--surface-inset)] hover:text-foreground'
-                      key={item.value}
-                      onClick={() => {
-                        setLocale(item.value)
-                        setLanguageOpen(false)
-                      }}
-                      type='button'
-                    >
-                      <span className='flex-1'>{t(item.labelKey)}</span>
-                      {item.value === locale ? <CheckIcon className='size-3.5 text-[var(--ai)]' /> : null}
-                    </button>
+                    <DropdownMenuRadioItem className='h-8 text-[13px]' key={item.value} value={item.value}>
+                      {t(item.labelKey)}
+                    </DropdownMenuRadioItem>
                   ))}
-                </div>
-              ) : null}
-            </div>
+                </DropdownMenuRadioGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <Button variant='ghost' size='icon-sm' onClick={() => setDark((value) => !value)} title={t('nav.toggleTheme')}>
               {dark ? <SunIcon /> : <MoonIcon />}
             </Button>
