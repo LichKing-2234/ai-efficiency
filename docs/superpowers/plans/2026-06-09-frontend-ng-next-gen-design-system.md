@@ -31,6 +31,8 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
 - Test: `frontend-ng/src/components/primitives/field-list.test.tsx` - locks mono/truncation field row variants.
 - Create: `frontend-ng/src/components/primitives/inset-panel.tsx` - shared reference-style inset message/result panel for route-local notices and responses.
 - Test: `frontend-ng/src/components/primitives/inset-panel.test.tsx` - locks muted and comfortable content variants.
+- Create: `frontend-ng/src/components/primitives/credential-key-panel.tsx` - shared reference-style API key row with ready/missing visual states and action slots.
+- Test: `frontend-ng/src/components/primitives/credential-key-panel.test.tsx` - locks masked ready and missing credential rendering.
 - Create: `frontend-ng/src/features/home/home-state.ts` - shared Overview setup readiness derivation used by the setup status card.
 - Test: `frontend-ng/src/features/home/home-state.test.ts` - locks account, AI access, repository, recent usage readiness progress calculations, and Overview live activity summaries.
 - Create: `frontend-ng/src/components/primitives/tool-glyph.tsx` - reusable tool identity glyph for tables and detail headers.
@@ -272,7 +274,9 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
 
   Current implementation uses the shared `InsetPanel` primitive for provider messages and provider-test response blocks.
 
-  Current evidence: `command-step.test.ts`, `selectable-card.test.tsx`, `provider-button.test.tsx`, `info-tile.test.tsx`, `inset-panel.test.tsx`, `bun run check`, and browser QA on `/user` passed. `agent-browser` verified the CLI workflow, six numbered command steps, copy affordances, no error boundary, and no horizontal overflow at `1280x720` and `390x844`. The latest `/user` checks rendered one shared inset panel at desktop and mobile widths; the mobile panel width stayed inside the 390px viewport. The local account currently returns no provider rows, so browser QA verifies the stable empty/data-light path while provider selection rendering is covered by `provider-button.test.tsx`. The mobile run also caught and fixed a hidden command-row width issue by applying `min-width: 0` to split-layout children and the command-step row; the largest visible mobile button width is now `285px` in a `390px` viewport.
+  Current implementation uses the shared `CredentialKeyPanel` primitive for the API key row, keeping the existing create, regenerate, reveal, copy, toast, and mutation behavior in the page.
+
+  Current evidence: `command-step.test.ts`, `selectable-card.test.tsx`, `provider-button.test.tsx`, `info-tile.test.tsx`, `inset-panel.test.tsx`, `credential-key-panel.test.tsx`, `bun run check`, and browser QA on `/user` passed. `agent-browser` verified the CLI workflow, six numbered command steps, copy affordances, no error boundary, and no horizontal overflow at `1280x720` and `390x844`. The latest `/user` checks rendered one shared inset panel at desktop and mobile widths; the mobile panel width stayed inside the 390px viewport. The local account currently returns no provider rows/selected group, so browser QA verifies the stable empty/data-light path while provider selection and API key panel rendering are covered by `provider-button.test.tsx`, `credential-key-panel.test.tsx`, TypeScript, and build. The mobile run also caught and fixed a hidden command-row width issue by applying `min-width: 0` to split-layout children and the command-step row; the largest visible mobile button width is now `285px` in a `390px` viewport.
 
 - [x] **Step 5: Admin Users and Settings**
 

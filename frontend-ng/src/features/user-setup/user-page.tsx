@@ -13,6 +13,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { AppAlert } from '@/components/primitives/app-alert'
 import { CommandStep } from '@/components/primitives/command-step'
 import { ConfirmAction } from '@/components/primitives/confirm-action'
+import { CredentialKeyPanel } from '@/components/primitives/credential-key-panel'
 import { PageEmpty } from '@/components/primitives/page-empty'
 import { Page, PageHeader } from '@/components/primitives/page'
 import { InfoTile } from '@/components/primitives/info-tile'
@@ -223,48 +224,43 @@ export function UserPage() {
                       accent={selectedGroup.credential.state === 'existing_hidden'}
                     />
                   </div>
-                  <div className='rounded-[var(--r-md)] border border-border bg-[var(--surface-inset)] p-4'>
-                    <div className='mb-2 font-semibold text-muted-foreground text-xs uppercase'>{t('userSetup.apiKey')}</div>
-                    <div className='flex min-w-0 items-center gap-3 rounded-[var(--r-md)] border border-border bg-card px-3 py-3'>
-                      <KeyRound className={secret ? 'text-[var(--ai)]' : 'text-muted-foreground'} />
-                      <span className='mono min-w-0 flex-1 truncate text-[var(--ai-deep)] text-sm'>
-                        {displayedSecret || t('userSetup.noKeyProvisioned')}
-                      </span>
-                      {secret ? (
-                        <>
-                          <Button size='sm' variant='ghost' onClick={() => selectedSecretKey && setRevealed((value) => ({ ...value, [selectedSecretKey]: !secretIsRevealed }))}>
-                            {secretIsRevealed ? t('common.hide') : t('userSetup.reveal')}
-                          </Button>
-                          <Button size='icon-sm' variant='ghost' aria-label={t('userSetup.copy')} onClick={() => {
-                            void navigator.clipboard?.writeText(secret)
-                            toast.success(t('userSetup.credentialCopied'))
-                          }}>
-                            <Clipboard />
-                          </Button>
-                        </>
-                      ) : null}
-                    </div>
-                    <div className='mt-3 flex flex-wrap gap-2'>
-                      {selectedGroup.credential.state === 'missing' ? (
-                        <Button size='sm' disabled={createCredential.isPending} onClick={() => createCredential.mutate()}>
-                          <KeyRound data-icon='inline-start' />
-                          {t('userSetup.createKey')}
+                  <CredentialKeyPanel
+                    label={t('userSetup.apiKey')}
+                    value={displayedSecret || t('userSetup.noKeyProvisioned')}
+                    ready={!!secret}
+                    icon={KeyRound}
+                    actions={secret ? (
+                      <>
+                        <Button size='sm' variant='ghost' onClick={() => selectedSecretKey && setRevealed((value) => ({ ...value, [selectedSecretKey]: !secretIsRevealed }))}>
+                          {secretIsRevealed ? t('common.hide') : t('userSetup.reveal')}
                         </Button>
-                      ) : (
-                        <ConfirmAction
-                          trigger={<Button size='sm' variant='outline' disabled={regenerateCredential.isPending}><RefreshCw data-icon='inline-start' />{t('userSetup.regenerate')}</Button>}
-                          title={t('userSetup.regenerateTitle')}
-                          description={t('userSetup.regenerateDescription')}
-                          confirmLabel={t('userSetup.regenerate')}
-                          cancelLabel={t('common.cancel')}
-                          onConfirm={() => regenerateCredential.mutate()}
-                          disabled={regenerateCredential.isPending}
-                        />
-                      )}
-                    </div>
-                    {createCredential.error ? <AppAlert tone='error' title={createCredential.error.message} /> : null}
-                    {regenerateCredential.error ? <AppAlert tone='error' title={regenerateCredential.error.message} /> : null}
-                  </div>
+                        <Button size='icon-sm' variant='ghost' aria-label={t('userSetup.copy')} onClick={() => {
+                          void navigator.clipboard?.writeText(secret)
+                          toast.success(t('userSetup.credentialCopied'))
+                        }}>
+                          <Clipboard />
+                        </Button>
+                      </>
+                    ) : null}
+                    footer={selectedGroup.credential.state === 'missing' ? (
+                      <Button size='sm' disabled={createCredential.isPending} onClick={() => createCredential.mutate()}>
+                        <KeyRound data-icon='inline-start' />
+                        {t('userSetup.createKey')}
+                      </Button>
+                    ) : (
+                      <ConfirmAction
+                        trigger={<Button size='sm' variant='outline' disabled={regenerateCredential.isPending}><RefreshCw data-icon='inline-start' />{t('userSetup.regenerate')}</Button>}
+                        title={t('userSetup.regenerateTitle')}
+                        description={t('userSetup.regenerateDescription')}
+                        confirmLabel={t('userSetup.regenerate')}
+                        cancelLabel={t('common.cancel')}
+                        onConfirm={() => regenerateCredential.mutate()}
+                        disabled={regenerateCredential.isPending}
+                      />
+                    )}
+                  />
+                  {createCredential.error ? <AppAlert tone='error' title={createCredential.error.message} /> : null}
+                  {regenerateCredential.error ? <AppAlert tone='error' title={regenerateCredential.error.message} /> : null}
                 </>
               ) : (
                 <PageEmpty title={t('userSetup.noAccessGroup')} />
