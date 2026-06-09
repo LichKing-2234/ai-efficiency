@@ -3,7 +3,9 @@ import { useLocation, useNavigate, useSearch } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import { Field, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
+import { ActionGroup } from '@/components/primitives/action-group'
 import { AppAlert } from '@/components/primitives/app-alert'
 import { AuthInfoPanel } from '@/components/primitives/auth-info-panel'
 import { SectionCardHeader } from '@/components/primitives/section-card-header'
@@ -50,10 +52,13 @@ export function OAuthAuthorizePage() {
         {t('oauth.signedInAs', { identity: me.data?.email || me.data?.username || t('auth.guest') })}
       </AuthInfoPanel>
       {error ? <AppAlert tone='error' title={error} /> : null}
-      <div className='flex gap-2'>
-        <Button className='flex-1' disabled={approve.isPending || me.isLoading || !!me.error} onClick={() => approve.mutate(true)}>{t('oauth.approve')}</Button>
-        <Button className='flex-1' disabled={approve.isPending || me.isLoading || !!me.error} variant='outline' onClick={() => approve.mutate(false)}>{t('oauth.denied')}</Button>
-      </div>
+      <OAuthActionGroup
+        approveLabel={t('oauth.approve')}
+        denyLabel={t('oauth.denied')}
+        disabled={approve.isPending || me.isLoading || !!me.error}
+        onApprove={() => approve.mutate(true)}
+        onDeny={() => approve.mutate(false)}
+      />
     </AuthSurface>
   )
 }
@@ -84,14 +89,67 @@ export function OAuthDevicePage() {
       <AuthInfoPanel>
         {t('oauth.signedInAs', { identity: me.data?.email || me.data?.username || t('auth.guest') })}
       </AuthInfoPanel>
-      <Input value={code} onChange={(event) => setCode(normalizeDeviceCode(event.target.value))} placeholder='ABCD-EFGH' />
+      <DeviceCodeField
+        code={code}
+        label={t('oauth.deviceCode')}
+        placeholder='ABCD-EFGH'
+        onCodeChange={(value) => setCode(normalizeDeviceCode(value))}
+      />
       {verify.data ? <AppAlert tone='success' title={t('oauth.deviceStatus', { status: verify.data.status })} /> : null}
       {verify.error ? <AppAlert tone='error' title={verify.error.message} /> : null}
-      <div className='flex gap-2'>
-        <Button className='flex-1' disabled={!code || verify.isPending || me.isLoading || !!me.error} onClick={() => verify.mutate(true)}>{t('oauth.approve')}</Button>
-        <Button className='flex-1' disabled={!code || verify.isPending || me.isLoading || !!me.error} variant='outline' onClick={() => verify.mutate(false)}>{t('oauth.denied')}</Button>
-      </div>
+      <OAuthActionGroup
+        approveLabel={t('oauth.approve')}
+        denyLabel={t('oauth.denied')}
+        disabled={!code || verify.isPending || me.isLoading || !!me.error}
+        onApprove={() => verify.mutate(true)}
+        onDeny={() => verify.mutate(false)}
+      />
     </AuthSurface>
+  )
+}
+
+export function DeviceCodeField({
+  code,
+  label,
+  onCodeChange,
+  placeholder
+}: {
+  code: string
+  label: string
+  onCodeChange: (value: string) => void
+  placeholder: string
+}) {
+  return (
+    <Field>
+      <FieldLabel htmlFor='oauth-device-code'>{label}</FieldLabel>
+      <Input
+        id='oauth-device-code'
+        value={code}
+        onChange={(event) => onCodeChange(event.target.value)}
+        placeholder={placeholder}
+      />
+    </Field>
+  )
+}
+
+export function OAuthActionGroup({
+  approveLabel,
+  denyLabel,
+  disabled,
+  onApprove,
+  onDeny
+}: {
+  approveLabel: string
+  denyLabel: string
+  disabled: boolean
+  onApprove: () => void
+  onDeny: () => void
+}) {
+  return (
+    <ActionGroup className='w-full'>
+      <Button className='flex-1' disabled={disabled} onClick={onApprove}>{approveLabel}</Button>
+      <Button className='flex-1' disabled={disabled} variant='outline' onClick={onDeny}>{denyLabel}</Button>
+    </ActionGroup>
   )
 }
 

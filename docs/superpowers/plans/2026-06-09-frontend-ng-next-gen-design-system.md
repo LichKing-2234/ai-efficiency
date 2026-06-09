@@ -472,6 +472,10 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
 
   Follow-up Login audit evidence: `login-form.test.tsx` was added and passed with `auth-flow-state.test.ts`. `bun test src/features/auth/login-form.test.tsx src/features/auth/auth-flow-state.test.ts`, `bun test --timeout 20000`, `bun run check`, `bun run build`, and `git diff --check` passed after extracting the form. `agent-browser` reverified `/login` at `http://127.0.0.1:4317/login`: one shared field group rendered with username, password, login source, sign-in, and dev-login controls; no error boundary rendered, body horizontal overflow was zero, and button overflow was zero.
 
+  Follow-up OAuth form/action audit implementation adds shared `DeviceCodeField` and `OAuthActionGroup` exports so `/oauth/device` uses shadcn `Field`/`FieldLabel`/`Input` semantics and both OAuth approval routes reuse `ActionGroup` instead of page-local `flex gap-2` action rows. Existing OAuth authorize payloads, device-code normalization, approve/deny mutations, redirect behavior, and signed-in context rendering remain owned by the page.
+
+  Follow-up OAuth form/action audit evidence: `oauth-pages.test.tsx` was added and passed with `auth-flow-state.test.ts`. `bun test src/features/oauth/oauth-pages.test.tsx src/features/auth/auth-flow-state.test.ts`, `bun test --timeout 20000`, `bun run check`, `bun run build`, and `git diff --check` passed after extracting the device-code field and action group.
+
 ## Task 6: Verification, Visual QA, Commit, and Push
 
 **Files:**
