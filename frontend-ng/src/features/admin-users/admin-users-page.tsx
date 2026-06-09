@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { ActionGroup } from '@/components/primitives/action-group'
 import { AppAlert } from '@/components/primitives/app-alert'
 import { CardFilterBar } from '@/components/primitives/card-filter-bar'
 import { DataGridCheckbox } from '@/components/primitives/data-grid-checkbox'
@@ -303,7 +304,7 @@ export function AdminUsersPage() {
               <span className='truncate text-sm'>{user.auth_source}</span>
               <span className='mono truncate text-muted-foreground text-xs'>{user.relay_user_id || '-'}</span>
               <span className='tnum text-muted-foreground text-xs'>{dateTime(user.updated_at)}</span>
-              <span className='flex min-w-0 flex-wrap justify-end gap-2'>
+              <ActionGroup wrap className='min-w-0'>
                 <Button
                   variant='outline'
                   size='sm'
@@ -324,7 +325,7 @@ export function AdminUsersPage() {
                 >
                   {t('adminUsers.copyPlaintext')}
                 </Button>
-              </span>
+              </ActionGroup>
               {plaintextConfirmUserId === user.id ? (
                 <InsetPanel className='col-span-7 ml-11 flex max-w-xl flex-col gap-2 text-left text-xs'>
                   <span className='text-muted-foreground'>{t('adminUsers.plaintextWarning')}</span>
