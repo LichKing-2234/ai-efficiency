@@ -448,6 +448,10 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
 
   Follow-up filter-bar audit evidence: `card-filter-bar.test.tsx` was added and passed, with focused coverage from `event-filters.test.ts` and `admin-users-state.test.ts`. `bun test --timeout 20000`, `bun run check`, `bun run build`, and `git diff --check` passed after migrating the Events and Admin Users filter bars. Fresh `agent-browser` coverage for `/events` redirected to `/login?redirect=%2Fevents` with no error boundary and no horizontal overflow; `/admin/users` on mobile stayed in the authenticated loading-account state with no error boundary, no body overflow, and no oversized buttons. Authenticated content-state filter-bar DOM verification remains pending a reusable logged-in browser session or local handoff.
 
+  Follow-up Repos controls audit implementation reuses existing primitives instead of page-local controls: the top repository actions now use `ActionGroup wrap`, and the add-repository clone protocol selector now uses `LabeledSegmentedControl` instead of two manually styled active-state buttons.
+
+  Follow-up Repos controls audit evidence: focused coverage from `repos-state.test.ts`, `repo-binding.test.ts`, `repo-webhook-state.test.ts`, `labeled-segmented-control.test.tsx`, and `action-group.test.tsx` passed. `bun test --timeout 20000`, `bun run check`, `bun run build`, and `git diff --check` passed after migrating the Repos controls. Fresh `agent-browser` coverage for `/repos` reached the local authenticated loading-account state with no error boundary and no horizontal overflow; authenticated content-state verification for the repository actions and add-repository dialog remains pending a reusable logged-in browser session or local handoff.
+
 ## Task 6: Verification, Visual QA, Commit, and Push
 
 **Files:**

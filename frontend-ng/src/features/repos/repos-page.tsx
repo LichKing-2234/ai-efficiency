@@ -21,6 +21,7 @@ import { LoadingState } from '@/components/primitives/data-state'
 import { DataGrid, DataGridHeader, DataGridRow } from '@/components/primitives/data-grid'
 import { FieldItem, FieldList } from '@/components/primitives/field-list'
 import { InsetPanel } from '@/components/primitives/inset-panel'
+import { LabeledSegmentedControl } from '@/components/primitives/labeled-segmented-control'
 import { SectionNav, type SectionNavItem } from '@/components/primitives/section-nav'
 import { StatusBadge } from '@/components/primitives/status-badge'
 import { api } from '@/lib/api'
@@ -209,7 +210,7 @@ export function ReposPage() {
 
   return (
     <Page className='stagger'>
-      <div className='flex flex-wrap justify-end gap-2'>
+      <ActionGroup wrap className='ml-auto'>
         {me.data?.role === 'admin' ? (
           <>
             <Button variant='outline' onClick={() => autoBind.mutate()} disabled={autoBind.isPending}>
@@ -226,7 +227,7 @@ export function ReposPage() {
           <PlusIcon data-icon='inline-start' />
           {t('repos.addRepo')}
         </Button>
-      </div>
+      </ActionGroup>
       <div className='flex flex-wrap items-center gap-2'>
         <Select value={search.binding} onValueChange={(value) => replaceSearch({ ...search, binding: value as RepoBindingFilter, page: 1 })}>
           <SelectTrigger><SelectValue /></SelectTrigger>
@@ -497,11 +498,16 @@ function AddRepoDialog({
                 <FieldItem label={t('repos.fullName')} value={`${parsedRepo.project}/${parsedRepo.repo}`} truncate />
                 <FieldItem label={t('repos.provider')} value={selectedProvider?.name || t('repos.noMatchingProvider')} truncate />
               </FieldList>
-              <div className='flex flex-wrap items-center gap-2'>
-                <span className='text-muted-foreground'>{t('repos.clone')}</span>
-                <Button variant={cloneProtocol === 'http' ? 'default' : 'outline'} size='sm' onClick={() => setCloneProtocol('http')}>HTTP</Button>
-                <Button variant={cloneProtocol === 'ssh' ? 'default' : 'outline'} size='sm' onClick={() => setCloneProtocol('ssh')}>SSH</Button>
-              </div>
+              <LabeledSegmentedControl
+                ariaLabel={t('repos.clone')}
+                label={t('repos.clone')}
+                onChange={setCloneProtocol}
+                options={[
+                  { value: 'http', label: 'HTTP' },
+                  { value: 'ssh', label: 'SSH' }
+                ]}
+                value={cloneProtocol}
+              />
               {cloneProtocol === 'ssh' && parsedRepo.type === 'bitbucket' ? (
                 <Input className='mt-2' placeholder={t('settings.sshHostExample')} value={sshHost} onChange={(event) => setSshHost(event.target.value)} />
               ) : null}
