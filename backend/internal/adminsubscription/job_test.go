@@ -260,9 +260,9 @@ func TestRunJobDoesNotUseBaseJobTimeoutAsHardCapForMultipleTargets(t *testing.T)
 	alice := createAdminSubscriptionUser(t, ctx, client, "alice", 701)
 	bob := createAdminSubscriptionUser(t, ctx, client, "bob", 702)
 	svc := NewService(client)
-	svc.jobTimeout = 15 * time.Millisecond
-	svc.perTargetTimeout = 20 * time.Millisecond
-	operator := &slowSubscriptionOperator{delay: 10 * time.Millisecond}
+	svc.jobTimeout = 20 * time.Millisecond
+	svc.perTargetTimeout = 500 * time.Millisecond
+	operator := &slowSubscriptionOperator{delay: 30 * time.Millisecond}
 	job, err := svc.StartJob(ctx, StartJobRequest{
 		Scope:        "selected",
 		UserIDs:      []int{alice.ID, bob.ID},
