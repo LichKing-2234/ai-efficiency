@@ -10,7 +10,7 @@ import { CardFilterBar } from '@/components/primitives/card-filter-bar'
 import { CardPagerFooter } from '@/components/primitives/card-pager-footer'
 import { DataGrid, DataGridHeader, DataGridRow } from '@/components/primitives/data-grid'
 import { FieldItem, FieldList } from '@/components/primitives/field-list'
-import { InfoTile } from '@/components/primitives/info-tile'
+import { InfoTile, InfoTileGrid } from '@/components/primitives/info-tile'
 import { LabeledSegmentedControl } from '@/components/primitives/labeled-segmented-control'
 import { LinkedRecordItem, LinkedRecordList } from '@/components/primitives/linked-record-list'
 import { MetricCard } from '@/components/primitives/metric-card'
@@ -311,11 +311,11 @@ function EventDetail({ event, isAdmin, onClose }: { event: ToolUsageEventDetail 
             <Badge variant='neutral'>{number(event.context_usage_pct)}% {t('events.context')}</Badge>
           </div>
 
-          <div className='grid grid-cols-3 gap-2'>
+          <InfoTileGrid columns={3}>
             <InfoTile label={t('events.tokens')} value={compact(tokens)} compact numeric />
             <InfoTile label={t('events.requests')} value={number(event.request_count)} compact numeric />
             <InfoTile label={t('events.credit')} value={number(event.credit_usage)} accent='ai' compact numeric />
-          </div>
+          </InfoTileGrid>
 
           <section>
             <SectionEyebrow>{t('events.tokenBreakdown')}</SectionEyebrow>

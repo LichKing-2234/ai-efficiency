@@ -308,6 +308,10 @@ Follow-up OAuth/auth redirect diagnosis fixed the `/oauth/device` unauthenticate
 
   Follow-up linked-record audit evidence: `linked-record-list.test.tsx` was added with a red-green cycle, `event-filters.test.ts`, `bun test`, `bun run check`, `bun run build`, and `git diff --check` passed after migrating matched PR links. `agent-browser` reverified `/events` at `1280x720` and `390x844`: one shared data grid, no error boundary text, and no body horizontal overflow. The local account still has no event detail rows, so visible `LinkedRecordList` rendering is covered by primitive tests and TypeScript/build until matched PR data is available.
 
+  Follow-up info-tile-grid audit implementation migrates the Events SlideOver token/request/credit metric row to the shared `InfoTileGrid` primitive, removing the remaining page-local three-column metric grid while preserving the same compact numeric tiles, AI credit accent, and backend event detail values.
+
+  Follow-up info-tile-grid audit evidence: `events-page-composition.test.ts` was added with a red-green cycle; it first failed because `events-page.tsx` imported only `InfoTile` and still rendered `grid grid-cols-3 gap-2`, then passed after migrating to `InfoTileGrid columns={3}`. Focused verification passed with `bun test src/features/events/events-page-composition.test.ts src/components/primitives/info-tile.test.tsx src/features/events/event-filters.test.ts`, `bun run check`, and `git diff --check`. Full verification passed with `ulimit -n 65536 && bun test --timeout 20000` and `bun run build`. `agent-browser` reverified `/events` on the existing `4339` dev server with no error boundary, no body horizontal overflow, and no button/link overflow; the local guest/loading state did not expose the SlideOver detail content, so visible detail stat-grid rendering remains covered by the composition guard, `InfoTileGrid` SSR test, TypeScript, and build until event data is available.
+
 - [x] **Step 2: Repositories**
 
   Implement reference workbench styling while keeping add, delete, auto-bind, provider selection, webhook repair, and navigation behavior intact.
