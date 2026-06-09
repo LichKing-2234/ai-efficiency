@@ -11,11 +11,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { CodeBlock } from '@/components/primitives/code-block'
 import { FieldItem, FieldList } from '@/components/primitives/field-list'
 import { InfoTile } from '@/components/primitives/info-tile'
+import { LabeledSegmentedControl } from '@/components/primitives/labeled-segmented-control'
 import { MetricCard } from '@/components/primitives/metric-card'
 import { OptionList } from '@/components/primitives/option-list'
 import { Page } from '@/components/primitives/page'
 import { LoadingState } from '@/components/primitives/data-state'
-import { SegmentedControl } from '@/components/primitives/segmented-control'
 import { SearchField } from '@/components/primitives/search-field'
 import { SectionEyebrow } from '@/components/primitives/section-eyebrow'
 import { SlideOver } from '@/components/primitives/slide-over'
@@ -132,14 +132,14 @@ export function EventsPage() {
               placeholder={t('events.searchRepoSessionSource')}
               value={filters.q}
             />
-            <FilterSegment
+            <LabeledSegmentedControl
               ariaLabel={t('events.tool')}
               label={t('events.tool')}
               onChange={(tool) => setFilters((current) => ({ ...current, tool: segmentToFilter(tool) }))}
               options={[{ value: 'all', label: t('events.allTools') }, ...TOOL_OPTIONS.map((tool) => ({ value: tool, label: tool }))]}
               value={filterToSegment(filters.tool)}
             />
-            <FilterSegment
+            <LabeledSegmentedControl
               ariaLabel={t('events.binding')}
               label={t('events.binding')}
               onChange={(bindingStatus) => setFilters((current) => ({ ...current, bindingStatus: segmentToFilter(bindingStatus) }))}
@@ -225,27 +225,6 @@ export function EventsPage() {
 
       <EventDetail event={selected} isAdmin={isAdmin} onClose={() => setSelected(null)} />
     </Page>
-  )
-}
-
-function FilterSegment({
-  ariaLabel,
-  label,
-  value,
-  onChange,
-  options
-}: {
-  ariaLabel: string
-  label: string
-  value: string
-  onChange: (value: string) => void
-  options: Array<{ value: string; label: string }>
-}) {
-  return (
-    <div className='flex items-center gap-2'>
-      <span className='font-semibold text-[11.5px] text-[var(--ink-4)]'>{label}</span>
-      <SegmentedControl ariaLabel={ariaLabel} onChange={onChange} options={options} size='sm' value={value} />
-    </div>
   )
 }
 
