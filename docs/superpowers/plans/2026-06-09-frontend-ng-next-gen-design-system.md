@@ -242,7 +242,11 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
 
   Current implementation also uses the shared `FieldList` primitive for SlideOver session and advanced metadata fields instead of a page-local field-row helper.
 
+  Follow-up audit implementation adds the shared `OptionList` primitive for admin user search candidates and the shared `CodeBlock` primitive for advanced raw payload display, removing two remaining page-local styled surfaces without changing filter, detail, or backend API contracts.
+
   Current evidence: `event-filters.test.ts`, `search-field.test.tsx`, `info-tile.test.tsx`, `field-list.test.tsx`, `bun run check`, browser QA on `/events`, and full verification passed. `agent-browser` verified two radiogroups, seven radio items, Tool and Binding filters, one shared search input, no error boundary, no visible interactive overflow, and no horizontal overflow at `1280x720` and `390x844`. The current local account has no event rows, so SlideOver data rendering is covered by TypeScript/build and primitive tests while browser QA verifies the route empty/data-light state.
+
+  Follow-up audit evidence: `option-list.test.tsx` and `code-block.test.tsx` were added with a red-green cycle. `bun run check` passed after migrating `/events`. `agent-browser` reverified `/events` at `1280x720` and `390x844`: no error boundary, no horizontal overflow, and no mobile button overflow. The local account still has no event rows or user search candidate rows, so visible `OptionList` and `CodeBlock` instances are covered by primitive tests and TypeScript/build.
 
 - [x] **Step 2: Repositories**
 
@@ -332,6 +336,7 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
   - Overview setup status now uses the shared `Ring` primitive and derived readiness helper; `agent-browser` confirmed ring presence, visible `1/4` progress, no error boundary, and no horizontal overflow at `1280x720` and `390x844`.
   - Overview recent usage now uses reference-style live activity rows with `ToolGlyph`, binding badges, token/request/credit metadata, and a route link to all records; local browser QA verified the empty state header/action at desktop and mobile widths.
   - My Setup CLI workflow now uses the shared `CommandStep` primitive; `agent-browser` confirmed six numbered command rows, copy affordances, no error boundary, no horizontal overflow, and no visible button overflow at `1280x720` and `390x844`.
+  - Follow-up Events audit added `OptionList` and `CodeBlock` primitives and reverified `/events` at `1280x720` and `390x844`; the local account remained data-light, so route stability is browser-covered while candidate-list and raw-payload rendering are covered by primitive tests and TypeScript/build.
 
 - [x] **Step 4: Commit logical chunks**
 

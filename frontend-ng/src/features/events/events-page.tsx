@@ -8,9 +8,11 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { CodeBlock } from '@/components/primitives/code-block'
 import { FieldItem, FieldList } from '@/components/primitives/field-list'
 import { InfoTile } from '@/components/primitives/info-tile'
 import { MetricCard } from '@/components/primitives/metric-card'
+import { OptionList } from '@/components/primitives/option-list'
 import { Page } from '@/components/primitives/page'
 import { LoadingState } from '@/components/primitives/data-state'
 import { SegmentedControl } from '@/components/primitives/segmented-control'
@@ -162,14 +164,18 @@ export function EventsPage() {
             {isAdmin && appliedFilters.userId ? <Button variant='ghost' onClick={clearSelectedUser}>{t('adminUsers.clearUser', { id: appliedFilters.userId })}</Button> : null}
           </div>
           {userOptions.length > 0 ? (
-            <div className='flex flex-col gap-1 rounded-[var(--r-md)] border border-border bg-card p-2 shadow-[var(--sh-sm)]'>
-              {userOptions.map((user) => (
-                <button key={user.id} className='rounded-[var(--r-sm)] px-2 py-1.5 text-left text-sm hover:bg-muted' type='button' onClick={() => selectUser(user)}>
-                  <span className='font-medium'>{user.email || user.username}</span>
-                  <span className='ml-2 text-muted-foreground text-xs'>{user.role} · {number(user.event_count)}</span>
-                </button>
-              ))}
-            </div>
+            <OptionList
+              ariaLabel={t('events.searchUsersByNameOrEmail')}
+              items={userOptions.map((user) => ({
+                id: user.id,
+                label: user.email || user.username,
+                description: `${user.role} · ${number(user.event_count)}`
+              }))}
+              onSelect={(item) => {
+                const user = userOptions.find((option) => option.id === item.id)
+                if (user) selectUser(user)
+              }}
+            />
           ) : null}
         </CardContent>
       </Card>
@@ -365,7 +371,7 @@ function EventDetail({ event, isAdmin, onClose }: { event: ToolUsageEventDetail 
                   </FieldList>
                 </div>
                 {isAdmin && event.raw_payload ? (
-                  <pre className='mt-3 max-h-56 overflow-auto rounded-[var(--r-md)] bg-muted p-3 text-xs'>{JSON.stringify(event.raw_payload, null, 2)}</pre>
+                  <CodeBlock ariaLabel={t('events.rawPayload')} className='mt-3'>{JSON.stringify(event.raw_payload, null, 2)}</CodeBlock>
                 ) : null}
               </AccordionContent>
             </AccordionItem>
