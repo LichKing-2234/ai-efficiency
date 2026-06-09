@@ -6,7 +6,7 @@ import { toast } from 'sonner'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
 import { Input } from '@/components/ui/input'
@@ -271,11 +271,7 @@ export function ReposPage() {
         </Card>
       ) : (
         <Card className='overflow-hidden'>
-          <CardHeader className='gap-4'>
-            <div>
-              <CardTitle>{t('repos.selectedScope')}</CardTitle>
-              <p className='mt-1 text-muted-foreground text-sm'>{t('repos.healthHelp')}</p>
-            </div>
+          <div className='border-border border-b px-3.5 py-3'>
             <Tabs value={selectedProvider?.provider_key ?? ''} onValueChange={(value) => replaceSearch({ ...search, provider: value, scope: '', page: 1 })}>
               <TabsList className='h-auto flex-wrap justify-start'>
                 {reposForProviders.map((provider) => (
@@ -286,9 +282,9 @@ export function ReposPage() {
                 ))}
               </TabsList>
             </Tabs>
-          </CardHeader>
+          </div>
           <div className='repo-workbench'>
-            <aside className='border-t border-border bg-[var(--surface-2)] p-3 lg:border-r'>
+            <aside className='border-border bg-[var(--surface-2)] p-3 lg:border-r'>
               <div className='mb-3 flex items-center justify-between gap-2'>
                 <div className='font-semibold text-sm'>{t('repos.scopeSearch')}</div>
                 <Badge variant='secondary'>{number(selectedProvider?.scopes.length ?? 0, locale)}</Badge>
@@ -301,7 +297,7 @@ export function ReposPage() {
                 value={selectedScope}
               />
             </aside>
-            <section className='min-w-0 border-t border-border'>
+            <section className='min-w-0'>
               <div className='flex flex-col gap-2 border-b border-border px-5 py-4 md:flex-row md:items-center md:justify-between'>
                 <div className='min-w-0'>
                   <div className='text-muted-foreground text-xs'>{selectedProvider?.name ?? t('common.empty')}</div>

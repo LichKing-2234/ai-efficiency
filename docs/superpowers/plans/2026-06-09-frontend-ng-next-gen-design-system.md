@@ -432,6 +432,10 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
 
   Follow-up Events pagination audit evidence: `card-pager-footer.test.tsx`, `event-filters.test.ts`, `bun test --timeout 20000`, `bun run check`, `bun run build`, and `git diff --check` passed after migration. A first focused test attempt hit environment timeouts while stale browser/TypeScript processes were still running; after clearing the stuck `tsc` process and increasing the test timeout, the same focused tests and full suite passed. Fresh `agent-browser` visual QA remains pending because many stale agent-browser/Chrome processes left the daemon busy, and those global browser processes were not killed to avoid disrupting user state.
 
+  Follow-up Repos workbench audit implementation removes the extra `CardHeader` title/description chrome from the Repositories workbench and makes the provider selector a direct top tabs strip, matching the reference workbench card structure more closely while preserving URL-backed provider/scope selection, filters, pagination, and backend data usage.
+
+  Follow-up Repos workbench audit evidence: `repos-state.test.ts`, `repo-binding.test.ts`, `repo-webhook-state.test.ts`, `bun test --timeout 20000`, `bun run check`, `bun run build`, and `git diff --check` passed after migration. `agent-browser` could open `/repos` in a fresh session and confirmed no error boundary or horizontal overflow, but that session redirected to `/login?redirect=%2Frepos`; authenticated Repos content-state visual QA remains pending an available logged-in browser session.
+
 ## Task 6: Verification, Visual QA, Commit, and Push
 
 **Files:**
@@ -479,6 +483,7 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
   - Follow-up auth/admin header audit reused `SectionCardHeader` on `/login`, `/oauth/authorize`, `/oauth/device`, and `/admin/users`; `agent-browser` confirmed the expected shared card headers, no error boundary, no horizontal overflow, and no visible over-wide controls across desktop/mobile coverage for those routes.
   - Follow-up Admin Users pagination audit reused `CardPagerFooter` for the users table pagination row. Browser QA was attempted, but `agent-browser` returned `Resource temporarily unavailable (os error 35)` from the daemon; this specific visual check is pending a healthy browser session while test/build coverage is complete.
   - Follow-up Events pagination audit reused `CardPagerFooter` for Usage Records table pagination and removed the extra table title row to better match the reference table card. Browser QA is pending the same agent-browser daemon recovery; test, typecheck, and build coverage passed.
+  - Follow-up Repos workbench audit removed the extra workbench `CardHeader` and moved provider selection to a direct tabs strip, matching the reference card more closely. Fresh browser QA reached `/login?redirect=%2Frepos` with no error boundary or horizontal overflow; authenticated Repos content-state verification remains pending.
 
 - [x] **Step 4: Commit logical chunks**
 
