@@ -2,13 +2,12 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import { ActivityIcon, CoinsIcon, GitPullRequestIcon, LayersIcon } from 'lucide-react'
 import { useState } from 'react'
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { CodeBlock } from '@/components/primitives/code-block'
+import { AdvancedDataPanel } from '@/components/primitives/advanced-data-panel'
 import { FieldItem, FieldList } from '@/components/primitives/field-list'
 import { InfoTile } from '@/components/primitives/info-tile'
 import { LabeledSegmentedControl } from '@/components/primitives/labeled-segmented-control'
@@ -333,25 +332,20 @@ function EventDetail({ event, isAdmin, onClose }: { event: ToolUsageEventDetail 
             )}
           </section>
 
-          <Accordion type='single' collapsible className='rounded-[var(--r-md)] border border-border px-3'>
-            <AccordionItem value='advanced'>
-              <AccordionTrigger>{t('events.advancedData')}</AccordionTrigger>
-              <AccordionContent>
-                <div className='grid gap-2 text-sm'>
-                  <FieldList>
-                    <FieldItem label={t('events.toolEvent')} value={event.tool_event_id || '-'} mono />
-                    {isAdmin ? <FieldItem label={t('events.user')} value={event.username || `#${event.user_id}`} /> : null}
-                    {isAdmin ? <FieldItem label={t('events.dedupeKey')} value={event.dedupe_key} mono /> : null}
-                    {isAdmin ? <FieldItem label={t('events.rawPath')} value={event.raw_source_path || '-'} mono /> : null}
-                    {isAdmin ? <FieldItem label={t('events.rawLocator')} value={event.raw_source_locator || '-'} mono /> : null}
-                  </FieldList>
-                </div>
-                {isAdmin && event.raw_payload ? (
-                  <CodeBlock ariaLabel={t('events.rawPayload')} className='mt-3'>{JSON.stringify(event.raw_payload, null, 2)}</CodeBlock>
-                ) : null}
-              </AccordionContent>
-            </AccordionItem>
-          </Accordion>
+          <AdvancedDataPanel
+            code={isAdmin && event.raw_payload ? JSON.stringify(event.raw_payload, null, 2) : null}
+            codeAriaLabel={t('events.rawPayload')}
+            fields={[
+              { label: t('events.toolEvent'), value: event.tool_event_id || '-', mono: true },
+              ...(isAdmin ? [
+                { label: t('events.user'), value: event.username || `#${event.user_id}` },
+                { label: t('events.dedupeKey'), value: event.dedupe_key, mono: true },
+                { label: t('events.rawPath'), value: event.raw_source_path || '-', mono: true },
+                { label: t('events.rawLocator'), value: event.raw_source_locator || '-', mono: true }
+              ] : [])
+            ]}
+            title={t('events.advancedData')}
+          />
         </div>
       ) : null}
     </SlideOver>
