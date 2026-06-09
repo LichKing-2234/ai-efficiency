@@ -8,6 +8,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { AdvancedDataPanel } from '@/components/primitives/advanced-data-panel'
+import { CardPagerFooter } from '@/components/primitives/card-pager-footer'
 import { DataGrid, DataGridHeader, DataGridRow } from '@/components/primitives/data-grid'
 import { FieldItem, FieldList } from '@/components/primitives/field-list'
 import { InfoTile } from '@/components/primitives/info-tile'
@@ -186,25 +187,6 @@ export function EventsPage() {
       </Card>
 
       <Card className='overflow-hidden'>
-        <div className='flex flex-wrap items-center justify-between gap-2 border-b border-border px-[18px] py-3'>
-          <div>
-            <div className='font-semibold text-sm'>{t('events.recentUsage')}</div>
-            <div className='mt-0.5 text-muted-foreground text-xs'>{t('events.total', { total: number(total) })}</div>
-          </div>
-          <div className='flex flex-wrap items-center gap-2 text-muted-foreground text-xs'>
-            <Select value={String(appliedFilters.limit)} onValueChange={(value) => changePageSize(Number(value))}>
-              <SelectTrigger size='sm'><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value='20'>20</SelectItem>
-                <SelectItem value='50'>50</SelectItem>
-                <SelectItem value='100'>100</SelectItem>
-              </SelectContent>
-            </Select>
-            <Button size='sm' variant='outline' onClick={previousPage} disabled={!pagination.canGoPrev}>{t('common.previous')}</Button>
-            <span>{t('common.pageCount', { current: pagination.currentPage, total: pagination.totalPages })}</span>
-            <Button size='sm' variant='outline' onClick={nextPage} disabled={!pagination.canGoNext}>{t('common.next')}</Button>
-          </div>
-        </div>
         <DataGrid minWidth={860} scrollClassName='min-w-0'>
           <DataGridHeader columns={eventColumns}>
             <span />
@@ -225,6 +207,29 @@ export function EventsPage() {
           ))}
           {rows.length === 0 ? <div className='px-6 py-10 text-center text-muted-foreground text-sm'>{t('common.empty')}</div> : null}
         </DataGrid>
+        <CardPagerFooter
+          className='border-border border-t p-3'
+          summary={t('events.total', { total: number(total) })}
+          previous={(
+            <>
+              <Select value={String(appliedFilters.limit)} onValueChange={(value) => changePageSize(Number(value))}>
+                <SelectTrigger size='sm'><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value='20'>20</SelectItem>
+                  <SelectItem value='50'>50</SelectItem>
+                  <SelectItem value='100'>100</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button size='sm' variant='outline' onClick={previousPage} disabled={!pagination.canGoPrev}>{t('common.previous')}</Button>
+            </>
+          )}
+          next={(
+            <>
+              <span className='text-muted-foreground text-xs'>{t('common.pageCount', { current: pagination.currentPage, total: pagination.totalPages })}</span>
+              <Button size='sm' variant='outline' onClick={nextPage} disabled={!pagination.canGoNext}>{t('common.next')}</Button>
+            </>
+          )}
+        />
       </Card>
 
       <EventDetail event={selected} isAdmin={isAdmin} onClose={() => setSelected(null)} />

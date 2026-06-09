@@ -428,6 +428,10 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
 
   Follow-up pagination audit evidence: `card-pager-footer.test.tsx` now covers className passthrough, `admin-users-state.test.ts`, `bun test`, `bun run check`, `bun run build`, and `git diff --check` passed after migration. `agent-browser` could not produce a fresh browser capture in this run because its daemon returned `Resource temporarily unavailable (os error 35)`, so the visible Admin Users footer remains covered by the existing primitive tests, TypeScript, and build until the browser daemon is healthy again.
 
+  Follow-up Events pagination audit implementation migrates the Usage Records table controls to `CardPagerFooter`, moving page size, Previous/Next, page count, and total summary into the shared footer and removing the extra table title row so the Events table is closer to the reference design's direct table card.
+
+  Follow-up Events pagination audit evidence: `card-pager-footer.test.tsx`, `event-filters.test.ts`, `bun test --timeout 20000`, `bun run check`, `bun run build`, and `git diff --check` passed after migration. A first focused test attempt hit environment timeouts while stale browser/TypeScript processes were still running; after clearing the stuck `tsc` process and increasing the test timeout, the same focused tests and full suite passed. Fresh `agent-browser` visual QA remains pending because many stale agent-browser/Chrome processes left the daemon busy, and those global browser processes were not killed to avoid disrupting user state.
+
 ## Task 6: Verification, Visual QA, Commit, and Push
 
 **Files:**
@@ -474,6 +478,7 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
   - Follow-up OAuth audit added `AuthInfoPanel` for signed-in context strips on `/oauth/authorize` and `/oauth/device`; `/oauth/device` was browser-verified while OAuth payload/redirect helpers remain covered by `auth-flow-state.test.ts`.
   - Follow-up auth/admin header audit reused `SectionCardHeader` on `/login`, `/oauth/authorize`, `/oauth/device`, and `/admin/users`; `agent-browser` confirmed the expected shared card headers, no error boundary, no horizontal overflow, and no visible over-wide controls across desktop/mobile coverage for those routes.
   - Follow-up Admin Users pagination audit reused `CardPagerFooter` for the users table pagination row. Browser QA was attempted, but `agent-browser` returned `Resource temporarily unavailable (os error 35)` from the daemon; this specific visual check is pending a healthy browser session while test/build coverage is complete.
+  - Follow-up Events pagination audit reused `CardPagerFooter` for Usage Records table pagination and removed the extra table title row to better match the reference table card. Browser QA is pending the same agent-browser daemon recovery; test, typecheck, and build coverage passed.
 
 - [x] **Step 4: Commit logical chunks**
 
