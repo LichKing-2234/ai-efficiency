@@ -316,6 +316,10 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
 
   Follow-up action-group audit evidence: `action-group.test.tsx`, `repos-state.test.ts`, `repo-detail-state.test.ts`, `bun test`, `bun run check`, `bun run build`, and `git diff --check` passed. `agent-browser` reverified `/repos` at `1280x720` and `390x844`: no error boundary text and no body horizontal overflow. The local account still has no repository rows, so visible table row action groups are covered by primitive tests and TypeScript/build; the Add Repo dialog renders one shared `ActionGroup` footer at desktop and mobile widths with zero dialog overflow.
 
+  Follow-up pagination audit implementation adds the shared `CardPagerFooter` primitive and migrates the Repositories page footer away from page-local `CardFooter` pagination markup while preserving the same page count copy, total count, previous/next handlers, and disabled states.
+
+  Follow-up pagination audit evidence: `card-pager-footer.test.tsx` was added with a red-green cycle, `repos-state.test.ts`, `repo-detail-state.test.ts`, `bun test`, `bun run check`, `bun run build`, and `git diff --check` passed after migration. `agent-browser` reverified `/repos` in the authenticated session at `1280x720` and `390x844`: one shared card pager footer rendered, Previous/Next remained disabled for the local empty page, no error boundary text rendered, and body horizontal overflow stayed zero.
+
 - [x] **Step 3: Repository detail**
 
   Re-skin SCM binding, usage snapshots, webhook status, and PR sync panels with shared cards/tables.
@@ -341,6 +345,10 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
   Follow-up action-group audit implementation migrates Repository Detail PR row details/refresh controls to the shared `ActionGroup` primitive while preserving PR expansion state and usage refresh mutation behavior.
 
   Follow-up action-group audit evidence: `action-group.test.tsx`, `repo-detail-state.test.ts`, `bun test`, `bun run check`, `bun run build`, and `git diff --check` passed. The current local account still exposes no repository detail links in `/repos`, so visible PR row action rendering remains covered by primitive tests, TypeScript, and build until repository detail data is available.
+
+  Follow-up pagination audit implementation migrates Repository Detail PR pagination to the shared `CardPagerFooter` primitive while preserving the same PR page summary, Previous/Next handlers, and fetch-aware disabled states.
+
+  Follow-up pagination audit evidence: `card-pager-footer.test.tsx`, `repo-detail-state.test.ts`, `bun test`, `bun run check`, `bun run build`, and `git diff --check` passed. The current local account still exposes no repository detail links, so visible PR pager rendering remains covered by primitive tests, TypeScript, and build until repository detail data is available.
 
 - [x] **Step 4: My Setup**
 

@@ -6,13 +6,14 @@ import { toast } from 'sonner'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ActionGroup } from '@/components/primitives/action-group'
+import { CardPagerFooter } from '@/components/primitives/card-pager-footer'
 import { MetricCard } from '@/components/primitives/metric-card'
 import { AppAlert } from '@/components/primitives/app-alert'
 import { Page } from '@/components/primitives/page'
@@ -328,13 +329,11 @@ export function ReposPage() {
         </Card>
       )}
       <Card>
-        <CardFooter className='flex-wrap justify-between gap-3 text-sm'>
-          <span className='text-muted-foreground'>{t('common.pageCount', { current: search.page, total: Math.max(1, Math.ceil(total / search.pageSize)) })} · {number(total, locale)} {t('repos.totalRepositories')}</span>
-          <div className='flex items-center gap-2'>
-            <Button variant='outline' size='sm' onClick={() => replaceSearch({ ...search, page: Math.max(1, search.page - 1) })} disabled={!canPreviousPage || repos.isFetching}>{t('common.previous')}</Button>
-            <Button variant='outline' size='sm' onClick={() => replaceSearch({ ...search, page: search.page + 1 })} disabled={!canNextPage || repos.isFetching}>{t('common.next')}</Button>
-          </div>
-        </CardFooter>
+        <CardPagerFooter
+          summary={`${t('common.pageCount', { current: search.page, total: Math.max(1, Math.ceil(total / search.pageSize)) })} · ${number(total, locale)} ${t('repos.totalRepositories')}`}
+          previous={<Button variant='outline' size='sm' onClick={() => replaceSearch({ ...search, page: Math.max(1, search.page - 1) })} disabled={!canPreviousPage || repos.isFetching}>{t('common.previous')}</Button>}
+          next={<Button variant='outline' size='sm' onClick={() => replaceSearch({ ...search, page: search.page + 1 })} disabled={!canNextPage || repos.isFetching}>{t('common.next')}</Button>}
+        />
       </Card>
       <AddRepoDialog
         open={showAdd}

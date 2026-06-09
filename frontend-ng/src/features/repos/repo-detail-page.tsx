@@ -5,12 +5,13 @@ import { Fragment, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Field, FieldLabel } from '@/components/ui/field'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
 import { ActionGroup } from '@/components/primitives/action-group'
+import { CardPagerFooter } from '@/components/primitives/card-pager-footer'
 import { DataGrid, DataGridHeader, DataGridRow } from '@/components/primitives/data-grid'
 import { InfoTile } from '@/components/primitives/info-tile'
 import { InsetPanel } from '@/components/primitives/inset-panel'
@@ -403,13 +404,11 @@ export function RepoDetailPage() {
                 )
               })}
         </DataGrid>
-        <CardFooter className='flex-wrap justify-between gap-3 text-sm'>
-          <span className='text-muted-foreground'>{t('repoDetail.pagePrs', { page: number(prsPage + 1), total: number(totalPRs) })}</span>
-          <div className='flex items-center gap-2'>
-            <Button variant='outline' size='sm' onClick={() => setPRsPage((value) => Math.max(0, value - 1))} disabled={!hasPreviousPage || prs.isFetching}>{t('common.previous')}</Button>
-            <Button variant='outline' size='sm' onClick={() => setPRsPage((value) => value + 1)} disabled={!hasNextPage || prs.isFetching}>{t('common.next')}</Button>
-          </div>
-        </CardFooter>
+        <CardPagerFooter
+          summary={t('repoDetail.pagePrs', { page: number(prsPage + 1), total: number(totalPRs) })}
+          previous={<Button variant='outline' size='sm' onClick={() => setPRsPage((value) => Math.max(0, value - 1))} disabled={!hasPreviousPage || prs.isFetching}>{t('common.previous')}</Button>}
+          next={<Button variant='outline' size='sm' onClick={() => setPRsPage((value) => value + 1)} disabled={!hasNextPage || prs.isFetching}>{t('common.next')}</Button>}
+        />
       </Card>
     </Page>
   )
