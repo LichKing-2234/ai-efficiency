@@ -1,11 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearch } from '@tanstack/react-router'
+import { Clipboard, KeyRound, RefreshCw, Search, Shield, Users } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Field, FieldLabel } from '@/components/ui/field'
@@ -14,6 +14,7 @@ import { AppAlert } from '@/components/primitives/app-alert'
 import { Page, PageHeader } from '@/components/primitives/page'
 import { LoadingState } from '@/components/primitives/data-state'
 import { StatusBadge } from '@/components/primitives/status-badge'
+import { MetricCard } from '@/components/primitives/metric-card'
 import { api } from '@/lib/api'
 import { dateTime, number } from '@/lib/format'
 import { useI18n } from '@/lib/i18n/i18n'
@@ -65,6 +66,8 @@ export function AdminUsersPage() {
   const rows = users.data?.items ?? []
   const total = users.data?.total ?? rows.length
   const totalPages = Math.max(1, Math.ceil(total / pageSize))
+  const adminCount = rows.filter((user) => user.role === 'admin').length
+  const mappedCount = rows.filter((user) => user.relay_user_id).length
   const allVisibleSelected = rows.length > 0 && rows.every((user) => selected.includes(user.id))
   const visibleSelectionIndeterminate = rows.some((user) => selected.includes(user.id)) && !allVisibleSelected
   const currentJob = activeJob.data ?? latestJob.data ?? null
@@ -148,32 +151,14 @@ export function AdminUsersPage() {
   if (users.isLoading) return <LoadingState />
 
   return (
-    <Page>
+    <Page className='stagger'>
       <PageHeader title={t('adminUsers.title')} description={t('adminUsers.description')} />
-      <Card>
-        <CardContent className='flex flex-wrap items-center gap-2 p-4'>
-          <Input className='w-72' placeholder={t('adminUsers.searchUsers')} value={q} onChange={(event) => {
-            setQ(event.target.value)
-            setPage(1)
-          }} />
-          <Select value={String(pageSize)} onValueChange={(value) => {
-            setPageSize(Number(value))
-            setPage(1)
-          }}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
-            <SelectContent>
-              {[10, 20, 50, 100].map((size) => <SelectItem key={size} value={String(size)}>{t('common.pageSize', { size })}</SelectItem>)}
-            </SelectContent>
-          </Select>
-          <Button variant='outline' disabled={users.isFetching} onClick={() => void users.refetch()}>{t('common.refresh')}</Button>
-          {currentJob ? (
-            <div className='ml-auto flex items-center gap-2 text-sm'>
-              <StatusBadge value={currentJob.status} />
-              <span>{number(currentJob.processed_count)}/{number(currentJob.total_count)}</span>
-            </div>
-          ) : null}
-        </CardContent>
-      </Card>
+      <div className='kpi-grid'>
+        <MetricCard label={t('adminUsers.totalUsers')} value={number(total)} icon={Users} />
+        <MetricCard label={t('adminUsers.visibleUsers')} value={number(rows.length)} icon={Search} accent />
+        <MetricCard label={t('adminUsers.admins')} value={number(adminCount)} icon={Shield} />
+        <MetricCard label={t('adminUsers.relayMapped')} value={number(mappedCount)} icon={KeyRound} />
+      </div>
       <Card>
         <CardHeader>
           <CardTitle>{t('adminUsers.subscriptionManagement')}</CardTitle>
@@ -237,7 +222,7 @@ export function AdminUsersPage() {
           </div>
           {job.error ? <AppAlert tone='error' title={job.error.message} /> : null}
           {activeJob.error ? <AppAlert tone='error' title={activeJob.error.message} /> : null}
-          {jobMessage ? <div className='rounded-md bg-muted p-3 text-sm'>{jobMessage}</div> : null}
+          {jobMessage ? <div className='rounded-[var(--r-md)] border border-border bg-[var(--surface-inset)] p-3 text-sm'>{jobMessage}</div> : null}
           {jobResults.length > 0 ? (
             <div className='max-h-56 overflow-auto rounded-md border border-border'>
               {jobResults.slice(0, 50).map((result) => (
@@ -254,83 +239,109 @@ export function AdminUsersPage() {
         </CardContent>
       </Card>
       <Card className='overflow-hidden'>
-        <div className='overflow-x-auto'>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>
-                  <Checkbox
-                    checked={visibleSelectionIndeterminate ? 'indeterminate' : allVisibleSelected}
-                    onCheckedChange={(checked) => setSelected((value) => nextVisibleSelection(value, rows, checked === true))}
-                  />
-                </TableHead>
-                <TableHead>{t('adminUsers.user')}</TableHead>
-                <TableHead>{t('adminUsers.role')}</TableHead>
-                <TableHead>{t('adminUsers.auth')}</TableHead>
-                <TableHead>{t('adminUsers.relay')}</TableHead>
-                <TableHead>{t('adminUsers.updated')}</TableHead>
-                <TableHead />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {rows.map((user) => (
-                <TableRow key={user.id}>
-                  <TableCell>
-                    <Checkbox
-                      checked={selected.includes(user.id)}
-                      onCheckedChange={(checked) => setSelected((value) => checked === true ? [...value, user.id] : value.filter((id) => id !== user.id))}
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <div className='font-medium text-foreground'>{user.username}</div>
-                    <div className='text-muted-foreground text-xs'>{user.email}</div>
-                  </TableCell>
-                  <TableCell><Badge variant={user.role === 'admin' ? 'ai' : 'secondary'}>{user.role}</Badge></TableCell>
-                  <TableCell>{user.auth_source}</TableCell>
-                  <TableCell>{user.relay_user_id || '-'}</TableCell>
-                  <TableCell>{dateTime(user.updated_at)}</TableCell>
-                  <TableCell className='text-right'>
-                    <div className='flex justify-end gap-2'>
-                      <Button
-                        variant='outline'
-                        size='sm'
-                        disabled={!user.relay_auth_password}
-                        onClick={() => {
-                          void navigator.clipboard?.writeText(user.relay_auth_password || '')
-                          toast.success(t('adminUsers.encryptedCopied'))
-                        }}
-                      >
-                        {t('adminUsers.copyEncrypted')}
-                      </Button>
-                      <Button
-                        variant='outline'
-                        size='sm'
-                        disabled={!user.relay_auth_password || reveal.isPending}
-                        onClick={() => setPlaintextConfirmUserId((value) => value === user.id ? null : user.id)}
-                      >
-                        {t('adminUsers.copyPlaintext')}
-                      </Button>
-                    </div>
-                    {plaintextConfirmUserId === user.id ? (
-                      <div className='mt-2 flex max-w-72 flex-col gap-2 rounded-md border border-border bg-muted p-2 text-left text-xs'>
-                        <span className='text-muted-foreground'>{t('adminUsers.plaintextWarning')}</span>
-                        <Button
-                          variant='outline'
-                          size='sm'
-                          disabled={reveal.isPending}
-                          onClick={() => {
-                            reveal.mutate(user.id, { onSuccess: () => setPlaintextConfirmUserId(null) })
-                          }}
-                        >
-                          {t('adminUsers.confirmReveal')}
-                        </Button>
-                      </div>
-                    ) : null}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+        <CardContent className='flex flex-wrap items-center gap-2 border-border border-b p-3'>
+          <div className='flex h-9 min-w-64 items-center gap-2 rounded-[var(--r-md)] border border-border bg-[var(--surface-inset)] px-3'>
+            <Search className='text-muted-foreground' />
+            <Input className='h-auto border-0 bg-transparent p-0 shadow-none focus-visible:ring-0' placeholder={t('adminUsers.searchUsers')} value={q} onChange={(event) => {
+              setQ(event.target.value)
+              setPage(1)
+            }} />
+          </div>
+          <Select value={String(pageSize)} onValueChange={(value) => {
+            setPageSize(Number(value))
+            setPage(1)
+          }}>
+            <SelectTrigger className='w-36'><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {[10, 20, 50, 100].map((size) => <SelectItem key={size} value={String(size)}>{t('common.pageSize', { size })}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Button variant='outline' disabled={users.isFetching} onClick={() => void users.refetch()}>
+            <RefreshCw data-icon='inline-start' />
+            {t('common.refresh')}
+          </Button>
+          {currentJob ? (
+            <div className='ml-auto flex items-center gap-2 text-sm'>
+              <StatusBadge value={currentJob.status} />
+              <span className='tnum'>{number(currentJob.processed_count)}/{number(currentJob.total_count)}</span>
+            </div>
+          ) : null}
+        </CardContent>
+        <div className='ae-table'>
+          <div className='ae-thead grid-cols-[44px_minmax(220px,1.8fr)_0.6fr_0.8fr_0.9fr_1fr_minmax(220px,1.3fr)]'>
+            <span>
+              <Checkbox
+                checked={visibleSelectionIndeterminate ? 'indeterminate' : allVisibleSelected}
+                onCheckedChange={(checked) => setSelected((value) => nextVisibleSelection(value, rows, checked === true))}
+              />
+            </span>
+            <span>{t('adminUsers.user')}</span>
+            <span>{t('adminUsers.role')}</span>
+            <span>{t('adminUsers.auth')}</span>
+            <span>{t('adminUsers.relay')}</span>
+            <span>{t('adminUsers.updated')}</span>
+            <span />
+          </div>
+          {rows.map((user) => (
+            <div key={user.id} className='ae-trow grid-cols-[44px_minmax(220px,1.8fr)_0.6fr_0.8fr_0.9fr_1fr_minmax(220px,1.3fr)]'>
+              <span>
+                <Checkbox
+                  checked={selected.includes(user.id)}
+                  onCheckedChange={(checked) => setSelected((value) => checked === true ? [...value, user.id] : value.filter((id) => id !== user.id))}
+                />
+              </span>
+              <span className='flex min-w-0 items-center gap-3'>
+                <span className='grid size-8 shrink-0 place-items-center rounded-full bg-[var(--surface-3)] font-bold text-[11px] text-[var(--ink-2)]'>
+                  {userInitials(user.username || user.email)}
+                </span>
+                <span className='min-w-0'>
+                  <span className='block truncate font-semibold text-sm'>{user.username}</span>
+                  <span className='block truncate text-muted-foreground text-xs'>{user.email}</span>
+                </span>
+              </span>
+              <span><Badge variant={user.role === 'admin' ? 'ai' : 'secondary'}>{user.role}</Badge></span>
+              <span className='truncate text-sm'>{user.auth_source}</span>
+              <span className='mono truncate text-muted-foreground text-xs'>{user.relay_user_id || '-'}</span>
+              <span className='tnum text-muted-foreground text-xs'>{dateTime(user.updated_at)}</span>
+              <span className='flex justify-end gap-2'>
+                <Button
+                  variant='outline'
+                  size='sm'
+                  disabled={!user.relay_auth_password}
+                  onClick={() => {
+                    void navigator.clipboard?.writeText(user.relay_auth_password || '')
+                    toast.success(t('adminUsers.encryptedCopied'))
+                  }}
+                >
+                  <Clipboard data-icon='inline-start' />
+                  {t('adminUsers.copyEncrypted')}
+                </Button>
+                <Button
+                  variant='outline'
+                  size='sm'
+                  disabled={!user.relay_auth_password || reveal.isPending}
+                  onClick={() => setPlaintextConfirmUserId((value) => value === user.id ? null : user.id)}
+                >
+                  {t('adminUsers.copyPlaintext')}
+                </Button>
+              </span>
+              {plaintextConfirmUserId === user.id ? (
+                <div className='col-span-7 ml-11 flex max-w-xl flex-col gap-2 rounded-[var(--r-md)] border border-border bg-[var(--surface-inset)] p-3 text-left text-xs'>
+                  <span className='text-muted-foreground'>{t('adminUsers.plaintextWarning')}</span>
+                  <Button
+                    variant='outline'
+                    size='sm'
+                    disabled={reveal.isPending}
+                    onClick={() => {
+                      reveal.mutate(user.id, { onSuccess: () => setPlaintextConfirmUserId(null) })
+                    }}
+                  >
+                    {t('adminUsers.confirmReveal')}
+                  </Button>
+                </div>
+              ) : null}
+            </div>
+          ))}
         </div>
         <div className='flex items-center justify-between gap-3 border-border border-t p-3 text-sm'>
           <span className='text-muted-foreground'>{t('adminUsers.pageOfUsers', { page, totalPages, total: number(total) })}</span>
@@ -342,4 +353,10 @@ export function AdminUsersPage() {
       </Card>
     </Page>
   )
+}
+
+function userInitials(value: string) {
+  const parts = value.trim().split(/[\s._@-]+/).filter(Boolean)
+  const initials = parts.slice(0, 2).map((part) => part[0]?.toUpperCase()).join('')
+  return initials || '?'
 }

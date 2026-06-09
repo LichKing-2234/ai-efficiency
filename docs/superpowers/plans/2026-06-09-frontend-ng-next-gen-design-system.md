@@ -211,7 +211,7 @@ In progress. The first foundation pass is implemented and verified: global token
 
   Re-skin provider credential setup, status/progress, and key actions with shared field/card primitives.
 
-- [ ] **Step 5: Admin Users and Settings**
+- [x] **Step 5: Admin Users and Settings**
 
   Re-skin admin pages with shared grid tables and forms while preserving role guards and backend mutation contracts.
 

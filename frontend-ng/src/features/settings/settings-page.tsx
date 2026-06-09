@@ -1,6 +1,7 @@
 import { createFileRoute, redirect } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearch } from '@tanstack/react-router'
+import { Database, KeyRound, Layers, LockKeyhole, RefreshCw, Shield, Waypoints } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -267,39 +268,54 @@ export function SettingsPage() {
   }
 
   return (
-    <Page>
+    <Page className='stagger'>
       <PageHeader title={t('settings.title')} description={t('settings.description')} />
-      <div className='flex flex-wrap gap-2'>
-        {settingsSections.map((section) => (
-          <Button
-            key={section}
-            variant={activeSection === section ? 'default' : 'outline'}
-            size='sm'
-            onClick={() => selectSection(section)}
-          >
-            {settingsSectionLabel(section, t)}
-          </Button>
-        ))}
-      </div>
-      <div className='grid gap-4 lg:grid-cols-2'>
+      <div className='split-settings'>
+        <Card className='p-2'>
+          <nav className='flex flex-col gap-1'>
+            {settingsSections.map((section) => {
+              const Icon = settingsSectionIcon(section)
+              return (
+                <button
+                  key={section}
+                  className='flex h-10 items-center gap-3 rounded-[var(--r-sm)] px-3 text-left font-medium text-sm transition hover:bg-[var(--surface-inset)] data-[active=true]:bg-[var(--surface-inset)] data-[active=true]:font-semibold'
+                  data-active={activeSection === section}
+                  onClick={() => selectSection(section)}
+                >
+                  <Icon className={activeSection === section ? 'text-[var(--ai)]' : 'text-muted-foreground'} />
+                  <span className='min-w-0 truncate'>{settingsSectionLabel(section, t)}</span>
+                </button>
+              )
+            })}
+          </nav>
+        </Card>
+        <div className='flex min-w-0 flex-col gap-4'>
         {activeSection === 'ai-services' ? <Card>
           <CardHeader>
             <div className='flex items-center justify-between gap-2'>
               <CardTitle>{t('settings.aiServices')}</CardTitle>
-              <Button size='sm' onClick={openAddRelayDialog}>{t('common.add')}</Button>
+              <Button size='sm' onClick={openAddRelayDialog}><Layers data-icon='inline-start' />{t('common.add')}</Button>
             </div>
             <CardDescription>{t('settings.relayProvidersDescription')}</CardDescription>
           </CardHeader>
-          <CardContent className='flex flex-col gap-3'>
+          <CardContent className='ae-table p-0'>
+            <div className='ae-thead grid-cols-[1.2fr_1.8fr_0.7fr_0.8fr_190px]'>
+              <span>{t('settings.name')}</span>
+              <span>{t('settings.baseUrl')}</span>
+              <span>{t('settings.primary')}</span>
+              <span>{t('common.status')}</span>
+              <span />
+            </div>
             {(relay.data ?? []).map((provider) => (
-              <div key={provider.id} className='flex items-center justify-between gap-3 rounded-md bg-muted p-3'>
-                <div>
-                  <div className='font-medium'>{provider.display_name || provider.name}</div>
-                  <div className='text-muted-foreground text-xs'>{provider.base_url}</div>
-                </div>
-                <div className='flex items-center gap-2'>
-                  {provider.is_primary ? <Badge variant='ai'>{t('common.primary')}</Badge> : null}
-                  <StatusBadge value={provider.enabled ? 'active' : 'disabled'} />
+              <div key={provider.id} className='ae-trow grid-cols-[1.2fr_1.8fr_0.7fr_0.8fr_190px]'>
+                <span className='min-w-0'>
+                  <span className='block truncate font-semibold text-sm'>{provider.display_name || provider.name}</span>
+                  <span className='mono block truncate text-muted-foreground text-xs'>{provider.name}</span>
+                </span>
+                <span className='mono truncate text-muted-foreground text-xs'>{provider.base_url}</span>
+                <span>{provider.is_primary ? <Badge variant='ai'>{t('common.primary')}</Badge> : <span className='text-muted-foreground'>-</span>}</span>
+                <span><StatusBadge value={provider.enabled ? 'active' : 'disabled'} /></span>
+                <span className='flex justify-end gap-2'>
                   <Button size='sm' variant='outline' onClick={() => openEditRelayDialog(provider)}>{t('common.update')}</Button>
                   <ConfirmAction
                     trigger={<Button size='sm' variant='ghost' disabled={deleteRelay.isPending}>{t('common.delete')}</Button>}
@@ -310,7 +326,7 @@ export function SettingsPage() {
                     onConfirm={() => deleteRelay.mutate(provider.id)}
                     disabled={deleteRelay.isPending}
                   />
-                </div>
+                </span>
               </div>
             ))}
           </CardContent>
@@ -319,27 +335,25 @@ export function SettingsPage() {
           <CardHeader>
             <div className='flex items-center justify-between gap-2'>
               <CardTitle>{t('settings.codePlatforms')}</CardTitle>
-              <Button size='sm' onClick={openAddScmDialog}>{t('common.add')}</Button>
+              <Button size='sm' onClick={openAddScmDialog}><Waypoints data-icon='inline-start' />{t('common.add')}</Button>
             </div>
             <CardDescription>{t('settings.scmProvidersDescription')}</CardDescription>
           </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{t('settings.name')}</TableHead>
-                  <TableHead>{t('common.type')}</TableHead>
-                  <TableHead>{t('common.status')}</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {(scm.data?.items ?? []).map((provider) => (
-                  <TableRow key={provider.id}>
-                    <TableCell>{provider.name}</TableCell>
-                    <TableCell>{provider.type}</TableCell>
-                    <TableCell>
-                      <div className='flex items-center gap-2'>
-                        <StatusBadge value={provider.status} />
+          <CardContent className='ae-table p-0'>
+            <div className='ae-thead grid-cols-[1.4fr_0.8fr_1.8fr_0.8fr_180px]'>
+              <span>{t('settings.name')}</span>
+              <span>{t('common.type')}</span>
+              <span>{t('settings.baseUrl')}</span>
+              <span>{t('common.status')}</span>
+              <span />
+            </div>
+            {(scm.data?.items ?? []).map((provider) => (
+              <div key={provider.id} className='ae-trow grid-cols-[1.4fr_0.8fr_1.8fr_0.8fr_180px]'>
+                <span className='font-semibold text-sm'>{provider.name}</span>
+                <span><Badge variant='secondary'>{provider.type}</Badge></span>
+                <span className='mono truncate text-muted-foreground text-xs'>{provider.base_url}</span>
+                <span><StatusBadge value={provider.status} /></span>
+                <span className='flex justify-end gap-2'>
                         <Button size='sm' variant='outline' onClick={() => openEditScmDialog(provider)}>{t('common.update')}</Button>
                         <ConfirmAction
                           trigger={<Button size='sm' variant='ghost' disabled={deleteScm.isPending}>{t('common.delete')}</Button>}
@@ -350,31 +364,37 @@ export function SettingsPage() {
                           onConfirm={() => deleteScm.mutate(provider.id)}
                           disabled={deleteScm.isPending}
                         />
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </span>
+              </div>
+            ))}
           </CardContent>
         </Card> : null}
         {activeSection === 'advanced-credentials' ? <Card>
           <CardHeader>
             <div className='flex items-center justify-between gap-2'>
               <CardTitle>{t('settings.advancedCredentials')}</CardTitle>
-              <Button size='sm' onClick={openAddCredentialDialog}>{t('common.add')}</Button>
+              <Button size='sm' onClick={openAddCredentialDialog}><KeyRound data-icon='inline-start' />{t('common.add')}</Button>
             </div>
             <CardDescription>{t('settings.advancedCredentialsDescription')}</CardDescription>
           </CardHeader>
-          <CardContent className='flex flex-col gap-2'>
+          <CardContent className='ae-table p-0'>
+            <div className='ae-thead grid-cols-[1.4fr_1fr_1fr_0.9fr_180px]'>
+              <span>{t('settings.name')}</span>
+              <span>{t('common.type')}</span>
+              <span>{t('settings.usedBy')}</span>
+              <span>{t('adminUsers.updated')}</span>
+              <span />
+            </div>
             {(credentials.data ?? []).map((credential) => (
-              <div key={credential.id} className='flex items-center justify-between rounded-md bg-muted p-3'>
-                <div>
-                  <div className='font-medium'>{credential.name}</div>
-                  <div className='text-muted-foreground text-xs'>{t('settings.usedTimes', { kind: credential.kind, count: number(credential.usage_count) })}</div>
-                </div>
-                <div className='flex items-center gap-2'>
-                  <span className='text-muted-foreground text-xs'>{dateTime(credential.updated_at)}</span>
+              <div key={credential.id} className='ae-trow grid-cols-[1.4fr_1fr_1fr_0.9fr_180px]'>
+                <span className='min-w-0'>
+                  <span className='block truncate font-semibold text-sm'>{credential.name}</span>
+                  <span className='block truncate text-muted-foreground text-xs'>{credential.description}</span>
+                </span>
+                <span><Badge variant='secondary'>{credential.kind}</Badge></span>
+                <span className='tnum text-muted-foreground text-xs'>{number(credential.usage_count)}</span>
+                <span className='tnum text-muted-foreground text-xs'>{dateTime(credential.updated_at)}</span>
+                <span className='flex justify-end gap-2'>
                   <Button size='sm' variant='outline' onClick={() => openEditCredentialDialog(credential)}>{t('common.update')}</Button>
                   <ConfirmAction
                     trigger={<Button size='sm' variant='ghost' disabled={deleteCredential.isPending}>{t('common.delete')}</Button>}
@@ -385,7 +405,7 @@ export function SettingsPage() {
                     onConfirm={() => deleteCredential.mutate(credential.id)}
                     disabled={deleteCredential.isPending}
                   />
-                </div>
+                </span>
               </div>
             ))}
           </CardContent>
@@ -434,13 +454,18 @@ export function SettingsPage() {
             <CardDescription>{t('settings.currentBackendDeployment')}</CardDescription>
           </CardHeader>
           <CardContent className='flex flex-col gap-3'>
-            <div className='rounded-md bg-muted p-3'>
+            <div className='grid gap-3 md:grid-cols-3'>
+              <SettingsStat label={t('settings.current')} value={`v${deployment.data?.version.version || '-'}`} />
+              <SettingsStat label={t('settings.mode')} value={deployment.data?.mode || t('common.unknown')} />
+              <SettingsStat label={t('settings.commit')} value={deployment.data?.version.commit || '-'} />
+            </div>
+            <div className='rounded-[var(--r-md)] border border-border bg-[var(--surface-inset)] p-3'>
               <div className='font-medium'>v{deployment.data?.version.version || '-'}</div>
               <div className='text-muted-foreground text-xs'>{deployment.data?.mode || t('common.unknown')} · {deployment.data?.version.commit || '-'}</div>
             </div>
             {deployment.data?.update_available ? <Badge variant='ai'>{t('settings.updateAvailable', { version: deployment.data.latest_release?.version || '-' })}</Badge> : <Badge variant='success'>{t('settings.upToDate')}</Badge>}
             <div className='flex gap-2'>
-              <Button variant='outline' onClick={() => checkUpdate.mutate()} disabled={checkUpdate.isPending}>{t('settings.checkUpdate')}</Button>
+              <Button variant='outline' onClick={() => checkUpdate.mutate()} disabled={checkUpdate.isPending}><RefreshCw data-icon='inline-start' />{t('settings.checkUpdate')}</Button>
               <ConfirmAction
                 trigger={<Button variant='outline' disabled={!deployment.data?.latest_release?.version || applyUpdate.isPending}>{t('common.apply')}</Button>}
                 title={t('settings.stageUpdate')}
@@ -471,6 +496,7 @@ export function SettingsPage() {
             </div>
           </CardContent>
         </Card> : null}
+        </div>
       </div>
       <Dialog open={relayDialog} onOpenChange={(open) => open ? setRelayDialog(true) : closeRelayDialog()}>
         <DialogContent>
@@ -621,6 +647,30 @@ function settingsSectionLabel(section: SettingsSection, t: ReturnType<typeof use
     case 'advanced-credentials':
       return t('settings.advancedCredentials')
   }
+}
+
+function settingsSectionIcon(section: SettingsSection) {
+  switch (section) {
+    case 'ai-services':
+      return Layers
+    case 'code-platforms':
+      return Waypoints
+    case 'organization-login':
+      return Shield
+    case 'deployment-runtime':
+      return Database
+    case 'advanced-credentials':
+      return LockKeyhole
+  }
+}
+
+function SettingsStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className='rounded-[var(--r-md)] border border-border bg-[var(--surface-inset)] p-3'>
+      <div className='font-semibold text-muted-foreground text-xs uppercase'>{label}</div>
+      <div className='mono mt-1 truncate font-semibold text-sm'>{value}</div>
+    </div>
+  )
 }
 
 export const settingsRouteGuard = async () => {
