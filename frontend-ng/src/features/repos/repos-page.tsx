@@ -11,12 +11,14 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ActionGroup } from '@/components/primitives/action-group'
+import { CardFilterBar } from '@/components/primitives/card-filter-bar'
 import { CardPagerFooter } from '@/components/primitives/card-pager-footer'
 import { MetricCard } from '@/components/primitives/metric-card'
 import { AppAlert } from '@/components/primitives/app-alert'
 import { Page } from '@/components/primitives/page'
 import { LoadingState } from '@/components/primitives/data-state'
 import { DataGrid, DataGridHeader, DataGridRow } from '@/components/primitives/data-grid'
+import { SectionCardHeader } from '@/components/primitives/section-card-header'
 import { SectionNav, type SectionNavItem } from '@/components/primitives/section-nav'
 import { StatusBadge } from '@/components/primitives/status-badge'
 import { ToolbarSelect } from '@/components/primitives/toolbar-select'
@@ -225,29 +227,31 @@ export function ReposPage() {
           {t('repos.addRepo')}
         </Button>
       </ActionGroup>
-      <div className='flex flex-wrap items-center gap-2'>
-        <ToolbarSelect
-          ariaLabel={t('repos.bindingFilter')}
-          options={[
-            { value: 'all', label: t('repos.allBindings') },
-            { value: 'bound', label: t('repos.bound') },
-            { value: 'unbound', label: t('repos.unbound') }
-          ]}
-          value={search.binding}
-          onValueChange={(value) => replaceSearch({ ...search, binding: value as RepoBindingFilter, page: 1 })}
-        />
-        <ToolbarSelect
-          ariaLabel={t('common.pageSizeControl')}
-          options={[
-            { value: '20', label: t('common.pageSize', { size: 20 }) },
-            { value: '50', label: t('common.pageSize', { size: 50 }) },
-            { value: '100', label: t('common.pageSize', { size: 100 }) }
-          ]}
-          value={String(search.pageSize)}
-          onValueChange={(value) => replaceSearch({ ...search, pageSize: Number(value), page: 1 })}
-        />
-        <Button variant='ghost' onClick={() => replaceSearch({ ...search, binding: 'unbound', provider: 'unbound', page: 1 })}>{t('repos.reviewNeedsBinding')}</Button>
-      </div>
+      <Card>
+        <CardFilterBar>
+          <ToolbarSelect
+            ariaLabel={t('repos.bindingFilter')}
+            options={[
+              { value: 'all', label: t('repos.allBindings') },
+              { value: 'bound', label: t('repos.bound') },
+              { value: 'unbound', label: t('repos.unbound') }
+            ]}
+            value={search.binding}
+            onValueChange={(value) => replaceSearch({ ...search, binding: value as RepoBindingFilter, page: 1 })}
+          />
+          <ToolbarSelect
+            ariaLabel={t('common.pageSizeControl')}
+            options={[
+              { value: '20', label: t('common.pageSize', { size: 20 }) },
+              { value: '50', label: t('common.pageSize', { size: 50 }) },
+              { value: '100', label: t('common.pageSize', { size: 100 }) }
+            ]}
+            value={String(search.pageSize)}
+            onValueChange={(value) => replaceSearch({ ...search, pageSize: Number(value), page: 1 })}
+          />
+          <Button variant='ghost' onClick={() => replaceSearch({ ...search, binding: 'unbound', provider: 'unbound', page: 1 })}>{t('repos.reviewNeedsBinding')}</Button>
+        </CardFilterBar>
+      </Card>
       <div className='kpi-grid'>
         <MetricCard label={t('repos.totalRepositories')} value={number(health.total, locale)} icon={FolderGit2Icon} sparkline={reposForProviders.map((provider) => provider.total_repos)} />
         <MetricCard label={t('repos.boundRepositories')} value={number(health.bound, locale)} accent icon={CheckIcon} sparkline={reposForProviders.map((provider) => provider.bound_repos)} />
@@ -273,7 +277,7 @@ export function ReposPage() {
         </Card>
       ) : (
         <Card className='overflow-hidden'>
-          <div className='border-border border-b px-3.5 py-3'>
+          <CardFilterBar>
             <Tabs value={selectedProvider?.provider_key ?? ''} onValueChange={(value) => replaceSearch({ ...search, provider: value, scope: '', page: 1 })}>
               <TabsList className='h-auto flex-wrap justify-start'>
                 {reposForProviders.map((provider) => (
@@ -284,13 +288,14 @@ export function ReposPage() {
                 ))}
               </TabsList>
             </Tabs>
-          </div>
+          </CardFilterBar>
           <div className='repo-workbench'>
             <aside className='border-border bg-[var(--surface-2)] p-3 lg:border-r'>
-              <div className='mb-3 flex items-center justify-between gap-2'>
-                <div className='font-semibold text-sm'>{t('repos.scopeSearch')}</div>
-                <Badge variant='secondary'>{number(selectedProvider?.scopes.length ?? 0, locale)}</Badge>
-              </div>
+              <SectionCardHeader
+                className='px-0 pt-0 pb-3'
+                title={t('repos.scopeSearch')}
+                actions={<Badge variant='secondary'>{number(selectedProvider?.scopes.length ?? 0, locale)}</Badge>}
+              />
               <SectionNav
                 ariaLabel={t('repos.scopeSearch')}
                 className='max-h-[430px] overflow-y-auto'
@@ -300,19 +305,18 @@ export function ReposPage() {
               />
             </aside>
             <section className='min-w-0'>
-              <div className='flex flex-col gap-2 border-b border-border px-5 py-4 md:flex-row md:items-center md:justify-between'>
-                <div className='min-w-0'>
-                  <div className='text-muted-foreground text-xs'>{selectedProvider?.name ?? t('common.empty')}</div>
-                  <h2 className='truncate font-semibold text-lg'>{selectedScope || t('repos.selectedScope')}</h2>
-                </div>
-                <div className='text-muted-foreground text-sm'>{number(total, locale)} {t('repos.totalRepositories')}</div>
-              </div>
+              <SectionCardHeader
+                className='border-b border-border px-5 py-4'
+                title={selectedScope || t('repos.selectedScope')}
+                description={selectedProvider?.name ?? t('common.empty')}
+                actions={<span className='text-muted-foreground text-sm'>{number(total, locale)} {t('repos.totalRepositories')}</span>}
+              />
               {repos.isLoading ? (
                 <LoadingState />
               ) : rows.length === 0 ? (
-                <div className='p-8'>
+                <CardContent className='p-8'>
                   <Empty><EmptyHeader><EmptyTitle>{t('common.empty')}</EmptyTitle><EmptyDescription>{t('repos.healthHelp')}</EmptyDescription></EmptyHeader></Empty>
-                </div>
+                </CardContent>
               ) : (
                 <RepoTable
                   rows={rows}

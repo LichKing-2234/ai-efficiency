@@ -336,6 +336,10 @@ Follow-up OAuth/auth redirect diagnosis fixed the `/oauth/device` unauthenticate
 
   Follow-up pagination audit evidence: `card-pager-footer.test.tsx` was added with a red-green cycle, `repos-state.test.ts`, `repo-detail-state.test.ts`, `bun test`, `bun run check`, `bun run build`, and `git diff --check` passed after migration. `agent-browser` reverified `/repos` in the authenticated session at `1280x720` and `390x844`: one shared card pager footer rendered, Previous/Next remained disabled for the local empty page, no error boundary text rendered, and body horizontal overflow stayed zero.
 
+  Follow-up workbench shell audit implementation migrates the Repositories top filter band, provider tab band, scope rail heading, selected-scope heading, and workbench empty-state padding to shared `CardFilterBar`, `SectionCardHeader`, and shadcn `CardContent` composition. Existing URL-backed binding/provider/scope/page state, provider tabs, scope navigation, pagination, add/delete, auto-bind, and webhook repair behavior remain unchanged.
+
+  Follow-up workbench shell audit evidence: `repos-page-composition.test.ts` was added with a red-green cycle; it first failed because `repos-page.tsx` did not import or render `CardFilterBar`/`SectionCardHeader`, then passed after migration. Focused verification passed with `bun test src/features/repos/repos-page-composition.test.ts src/features/repos/repos-state.test.ts src/features/repos/repo-binding.test.ts src/features/repos/repo-webhook-state.test.ts src/components/primitives/card-filter-bar.test.tsx src/components/primitives/section-card-header.test.tsx`, `bun run check`, and `git diff --check`.
+
 - [x] **Step 3: Repository detail**
 
   Re-skin SCM binding, usage snapshots, webhook status, and PR sync panels with shared cards/tables.
