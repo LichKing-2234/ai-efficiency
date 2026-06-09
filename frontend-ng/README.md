@@ -15,10 +15,10 @@ Useful environment variables:
 
 ```bash
 AE_FRONTEND_BACKEND_URL=http://localhost:8081
-AE_FRONTEND_GATEWAY_EXCHANGE_SECRET=dev-shared-secret
 ```
 
 `VITE_BACKEND_URL` is accepted as a local fallback for compatibility, but browser code must not call that backend URL directly.
+`AE_FRONTEND_GATEWAY_EXCHANGE_SECRET` should only be configured after the Go backend exposes `/api/v1/auth/gateway-exchange` and the shared header contract is agreed.
 
 ## Auth Boundary
 
