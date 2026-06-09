@@ -256,7 +256,9 @@ In progress. The foundation pass, shell, command palette, promoted `/usage` rout
 
   Current implementation uses the shared `SearchField` primitive for the Admin Users table filter, matching Events search behavior and shadcn `InputGroup` composition.
 
-  Current evidence: `search-field.test.tsx`, `bun run check`, `bun test`, `bun run build`, and browser QA on `/admin/users` passed. `agent-browser` verified the authenticated Admin Users shared search input at `1280x720` and `390x844`, no error boundary, and no horizontal overflow.
+  Current implementation also uses the shared `SectionNav` primitive for the Settings section rail, replacing page-local button markup while preserving URL-backed section selection.
+
+  Current evidence: `search-field.test.tsx`, `section-nav.test.tsx`, `bun run check`, `bun test`, `bun run build`, and browser QA on `/admin/users` and `/settings` passed. `agent-browser` verified the authenticated Admin Users shared search input at `1280x720` and `390x844`, the Settings shared section rail with five items and one current item at `1280x720` and `390x844`, no error boundary, and no horizontal overflow.
 
 ## Task 6: Verification, Visual QA, Commit, and Push
 

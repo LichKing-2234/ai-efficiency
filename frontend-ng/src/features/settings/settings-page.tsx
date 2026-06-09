@@ -18,6 +18,7 @@ import { AppAlert } from '@/components/primitives/app-alert'
 import { ConfirmAction } from '@/components/primitives/confirm-action'
 import { Page, PageHeader } from '@/components/primitives/page'
 import { LoadingState } from '@/components/primitives/data-state'
+import { SectionNav, type SectionNavItem } from '@/components/primitives/section-nav'
 import { StatusBadge } from '@/components/primitives/status-badge'
 import { api } from '@/lib/api'
 import { dateTime, number } from '@/lib/format'
@@ -50,6 +51,11 @@ export function SettingsPage() {
   const navigate = useNavigate()
   const search = useSearch({ strict: false }) as Record<string, unknown>
   const activeSection = settingsSectionFromSearch(search)
+  const sectionItems = settingsSections.map((section) => ({
+    value: section,
+    label: settingsSectionLabel(section, t),
+    icon: settingsSectionIcon(section)
+  })) satisfies Array<SectionNavItem<SettingsSection>>
   const [relayDialog, setRelayDialog] = useState(false)
   const [editingRelayId, setEditingRelayId] = useState<number | null>(null)
   const [relayForm, setRelayForm] = useState<RelayFormState>(emptyRelayForm)
@@ -273,22 +279,7 @@ export function SettingsPage() {
       <PageHeader title={t('settings.title')} description={t('settings.description')} variant='toolbar' />
       <div className='split-settings'>
         <Card className='p-2'>
-          <nav className='flex flex-col gap-1'>
-            {settingsSections.map((section) => {
-              const Icon = settingsSectionIcon(section)
-              return (
-                <button
-                  key={section}
-                  className='flex h-10 items-center gap-3 rounded-[var(--r-sm)] px-3 text-left font-medium text-sm transition hover:bg-[var(--surface-inset)] data-[active=true]:bg-[var(--surface-inset)] data-[active=true]:font-semibold'
-                  data-active={activeSection === section}
-                  onClick={() => selectSection(section)}
-                >
-                  <Icon className={activeSection === section ? 'text-[var(--ai)]' : 'text-muted-foreground'} />
-                  <span className='min-w-0 truncate'>{settingsSectionLabel(section, t)}</span>
-                </button>
-              )
-            })}
-          </nav>
+          <SectionNav ariaLabel={t('settings.sections')} items={sectionItems} onChange={selectSection} value={activeSection} />
         </Card>
         <div className='flex min-w-0 flex-col gap-4'>
         {activeSection === 'ai-services' ? <Card>
