@@ -24,6 +24,13 @@ func IsInvalidSignature(err error) bool {
 	return errors.Is(err, ErrInvalidSignature)
 }
 
+type webhookRepoRef struct {
+	Slug    string `json:"slug"`
+	Project struct {
+		Key string `json:"key"`
+	} `json:"project"`
+}
+
 // Provider implements scm.SCMProvider for Bitbucket Server.
 type Provider struct {
 	baseURL            string
@@ -598,16 +605,12 @@ func (p *Provider) ParseWebhookPayload(r *http.Request, secret string) (*scm.Web
 			ID      int    `json:"id"`
 			Title   string `json:"title"`
 			FromRef struct {
-				DisplayID  string `json:"displayId"`
-				Repository struct {
-					Slug    string `json:"slug"`
-					Project struct {
-						Key string `json:"key"`
-					} `json:"project"`
-				} `json:"repository"`
+				DisplayID  string         `json:"displayId"`
+				Repository webhookRepoRef `json:"repository"`
 			} `json:"fromRef"`
 			ToRef struct {
-				DisplayID string `json:"displayId"`
+				DisplayID  string         `json:"displayId"`
+				Repository webhookRepoRef `json:"repository"`
 			} `json:"toRef"`
 			Author struct {
 				User struct {
@@ -620,25 +623,15 @@ func (p *Provider) ParseWebhookPayload(r *http.Request, secret string) (*scm.Web
 				} `json:"self"`
 			} `json:"links"`
 		} `json:"pullRequest"`
-		Repository struct {
-			Slug    string `json:"slug"`
-			Project struct {
-				Key string `json:"key"`
-			} `json:"project"`
-		} `json:"repository"`
+		Repository webhookRepoRef `json:"repository"`
 	}
 
 	if err := json.Unmarshal(body, &payload); err != nil {
 		return nil, fmt.Errorf("parse payload: %w", err)
 	}
 
-	repoFullName := ""
-	if payload.Repository.Project.Key != "" {
-		repoFullName = payload.Repository.Project.Key + "/" + payload.Repository.Slug
-	}
-
 	event := &scm.WebhookEvent{
-		RepoFullName: repoFullName,
+		RepoFullName: webhookRepoFullName(payload.Repository, payload.PullRequest.ToRef.Repository, payload.PullRequest.FromRef.Repository),
 		Sender:       payload.Actor.Name,
 		Raw:          body,
 	}
@@ -660,6 +653,17 @@ func (p *Provider) ParseWebhookPayload(r *http.Request, secret string) (*scm.Web
 	}
 
 	return event, nil
+}
+
+func webhookRepoFullName(repos ...webhookRepoRef) string {
+	for _, repo := range repos {
+		projectKey := strings.TrimSpace(repo.Project.Key)
+		slug := strings.TrimSpace(repo.Slug)
+		if projectKey != "" && slug != "" {
+			return projectKey + "/" + slug
+		}
+	}
+	return ""
 }
 
 func validateWebhookSignature(body []byte, secret, header string) error {

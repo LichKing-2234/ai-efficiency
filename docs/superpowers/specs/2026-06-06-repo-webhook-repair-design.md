@@ -255,6 +255,7 @@ Update Bitbucket inbound webhook parsing or handler validation:
 5. Compare with constant-time equality.
 6. On mismatch, store a dead letter and return an unauthorized response.
 7. Do not log the secret, computed HMAC, or raw request body in normal logs.
+8. Resolve the Bitbucket repository identity from the inbound payload before loading the stored secret. Prefer top-level `repository`, then `pullRequest.toRef.repository`, then `pullRequest.fromRef.repository`. Bitbucket Server PR events can omit the top-level `repository`; those events must not fail with `missing repository info` when a PR ref contains the target repository.
 
 This aligns Bitbucket security with GitHub-style signed webhook handling and uses the secret that the registration path already stores.
 
@@ -299,6 +300,7 @@ Do not expose `webhook_secret`.
 | GitHub webhook ping or unsupported signed event | `200 ignored`; do not store a dead letter after payload/signature validation succeeds |
 | GitHub webhook missing/invalid signature when a secret is stored | `401`, store a dead letter without logging secret material |
 | Bitbucket webhook missing/invalid signature | `401`, store a dead letter without logging secret material |
+| Bitbucket PR event without top-level `repository` but with PR ref repository info | resolve the repo from `pullRequest.toRef.repository` or `pullRequest.fromRef.repository`; do not return `400 missing repository info` |
 
 ## Testing Strategy
 
@@ -319,6 +321,7 @@ Do not expose `webhook_secret`.
 13. Bitbucket inbound webhook with no stored secret preserves compatibility behavior.
 14. GitHub `ping` and other unsupported events return `200 ignored` after payload/signature validation succeeds.
 15. GitHub inbound webhook with a stored secret still rejects invalid `X-Hub-Signature-256`.
+16. Bitbucket PR events without a top-level `repository` resolve the repo from `pullRequest.toRef.repository` before falling back to `pullRequest.fromRef.repository`.
 
 ### Frontend Tests
 

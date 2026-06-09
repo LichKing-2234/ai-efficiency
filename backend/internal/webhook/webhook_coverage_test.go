@@ -1227,6 +1227,70 @@ func TestHandleBitbucketPRMergedWithExistingPR(t *testing.T) {
 	}
 }
 
+func TestHandleBitbucketPRMergedUsesToRefRepositoryWhenTopLevelMissing(t *testing.T) {
+	client := newTestClient(t)
+	defer client.Close()
+	h := NewHandler(client, nil, newTestLogger())
+
+	rc := createTestRepoConfig(t, client, "PROJ/target-repo")
+	ctx := context.Background()
+
+	client.PrRecord.Create().
+		SetRepoConfigID(rc.ID).
+		SetScmPrID(42).
+		SetScmPrURL("https://bitbucket.example.com/projects/PROJ/repos/target-repo/pull-requests/42").
+		SetAuthor("bob").
+		SetTitle("Replace test fixtures").
+		SetSourceBranch("feature/fixture-update").
+		SetTargetBranch("release/1.2.3").
+		SetStatus(prrecord.StatusOpen).
+		SaveX(ctx)
+
+	payload := map[string]interface{}{
+		"eventKey": "pr:merged",
+		"actor":    map[string]interface{}{"name": "alice"},
+		"pullRequest": map[string]interface{}{
+			"id":    42,
+			"title": "Replace test fixtures",
+			"author": map[string]interface{}{
+				"user": map[string]interface{}{"name": "bob"},
+			},
+			"fromRef": map[string]interface{}{
+				"displayId": "feature/fixture-update",
+				"repository": map[string]interface{}{
+					"slug":    "source-repo",
+					"project": map[string]interface{}{"key": "FORK"},
+				},
+			},
+			"toRef": map[string]interface{}{
+				"displayId": "release/1.2.3",
+				"repository": map[string]interface{}{
+					"slug":    "target-repo",
+					"project": map[string]interface{}{"key": "PROJ"},
+				},
+			},
+		},
+	}
+	payloadBytes, _ := json.Marshal(payload)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/bitbucket", bytes.NewReader(payloadBytes))
+	req.Header.Set("X-Event-Key", "pr:merged")
+	req.Header.Set("Content-Type", "application/json")
+	c := newGinContext(w, req)
+
+	h.HandleBitbucket(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	pr, _ := client.PrRecord.Query().Only(ctx)
+	if pr.Status != prrecord.StatusMerged {
+		t.Errorf("status = %q, want merged", pr.Status)
+	}
+}
+
 // --- storeDeadLetter: with empty payload bytes ---
 
 func TestStoreDeadLetterEmptyPayload(t *testing.T) {
