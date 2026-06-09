@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { AppAlert } from '@/components/primitives/app-alert'
 import { DataGrid, DataGridHeader, DataGridRow } from '@/components/primitives/data-grid'
 import { IdentityAvatar } from '@/components/primitives/identity-avatar'
-import { Page, PageHeader } from '@/components/primitives/page'
+import { Page } from '@/components/primitives/page'
 import { LoadingState } from '@/components/primitives/data-state'
 import { InsetPanel } from '@/components/primitives/inset-panel'
 import { JobResultList } from '@/components/primitives/job-result-list'
@@ -160,7 +160,6 @@ export function AdminUsersPage() {
 
   return (
     <Page className='stagger'>
-      <PageHeader title={t('adminUsers.title')} description={t('adminUsers.description')} variant='toolbar' />
       <div className='kpi-grid'>
         <MetricCard label={t('adminUsers.totalUsers')} value={number(total)} icon={Users} />
         <MetricCard label={t('adminUsers.visibleUsers')} value={number(rows.length)} icon={SearchIcon} accent />

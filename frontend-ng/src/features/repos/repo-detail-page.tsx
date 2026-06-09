@@ -14,7 +14,7 @@ import { DataGrid, DataGridHeader, DataGridRow } from '@/components/primitives/d
 import { InfoTile } from '@/components/primitives/info-tile'
 import { InsetPanel } from '@/components/primitives/inset-panel'
 import { MetricCard } from '@/components/primitives/metric-card'
-import { Page, PageHeader } from '@/components/primitives/page'
+import { Page, PageToolbar } from '@/components/primitives/page'
 import { LoadingState } from '@/components/primitives/data-state'
 import { StatusBadge } from '@/components/primitives/status-badge'
 import { UsageSummaryPanel } from '@/components/primitives/usage-summary-panel'
@@ -184,12 +184,9 @@ export function RepoDetailPage() {
 
   return (
     <Page className='stagger'>
-      <PageHeader
-        title={repo.data?.full_name || repo.data?.name || `#${repoId}`}
-        description={repo.data?.clone_url}
-        actions={<Button onClick={() => sync.mutate()} disabled={!canSync}><RefreshCw data-icon='inline-start' />{activeJobRunning ? t('repoDetail.syncingPrs') : t('repoDetail.syncPrs')}</Button>}
-        variant='toolbar'
-      />
+      <PageToolbar>
+        <Button onClick={() => sync.mutate()} disabled={!canSync}><RefreshCw data-icon='inline-start' />{activeJobRunning ? t('repoDetail.syncingPrs') : t('repoDetail.syncPrs')}</Button>
+      </PageToolbar>
       {syncDisabledReason ? <InsetPanel className='px-3 py-2' muted>{syncDisabledReason}</InsetPanel> : null}
       {showWebhookRepair ? (
         <Alert>

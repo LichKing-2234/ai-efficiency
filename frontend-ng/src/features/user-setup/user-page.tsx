@@ -15,7 +15,7 @@ import { CommandStep } from '@/components/primitives/command-step'
 import { ConfirmAction } from '@/components/primitives/confirm-action'
 import { CredentialKeyPanel } from '@/components/primitives/credential-key-panel'
 import { PageEmpty } from '@/components/primitives/page-empty'
-import { Page, PageHeader } from '@/components/primitives/page'
+import { Page } from '@/components/primitives/page'
 import { InfoTile } from '@/components/primitives/info-tile'
 import { InsetPanel } from '@/components/primitives/inset-panel'
 import { SelectableCard } from '@/components/primitives/selectable-card'
@@ -126,7 +126,6 @@ export function UserPage() {
 
   return (
     <Page className='stagger'>
-      <PageHeader title={t('userSetup.title')} description={t('userSetup.description')} variant='toolbar' />
       <div className='split-rail'>
         <div className='flex flex-col gap-4'>
           <Card>

@@ -16,7 +16,7 @@ import { Badge } from '@/components/ui/badge'
 import { AppAlert } from '@/components/primitives/app-alert'
 import { ConfirmAction } from '@/components/primitives/confirm-action'
 import { DataGrid, DataGridHeader, DataGridRow } from '@/components/primitives/data-grid'
-import { Page, PageHeader } from '@/components/primitives/page'
+import { Page } from '@/components/primitives/page'
 import { LoadingState } from '@/components/primitives/data-state'
 import { FieldItem, FieldList } from '@/components/primitives/field-list'
 import { InfoTile } from '@/components/primitives/info-tile'
@@ -281,7 +281,6 @@ export function SettingsPage() {
 
   return (
     <Page className='stagger'>
-      <PageHeader title={t('settings.title')} description={t('settings.description')} variant='toolbar' />
       <div className='split-settings'>
         <Card className='p-2'>
           <SectionNav ariaLabel={t('settings.sections')} items={sectionItems} onChange={selectSection} value={activeSection} />

@@ -4,6 +4,10 @@ export function Page({ children, className }: { children: React.ReactNode; class
   return <div className={cn('page-fade flex flex-col gap-5', className)}>{children}</div>
 }
 
+export function PageToolbar({ children, className }: { children: React.ReactNode; className?: string }) {
+  return <div className={cn('flex items-center justify-end gap-2', className)}>{children}</div>
+}
+
 export function PageHeader({
   title,
   description,
@@ -17,7 +21,7 @@ export function PageHeader({
 }) {
   if (variant === 'toolbar') {
     if (!actions) return null
-    return <div className='flex items-center justify-end gap-2'>{actions}</div>
+    return <PageToolbar>{actions}</PageToolbar>
   }
 
   return (

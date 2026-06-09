@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, test } from 'vitest'
-import { PageHeader } from './page'
+import { PageHeader, PageToolbar } from './page'
 
 describe('PageHeader', () => {
   test('renders title variant as the page heading surface', () => {
@@ -32,5 +32,17 @@ describe('PageHeader', () => {
     )
 
     expect(html).toBe('')
+  })
+
+  test('renders PageToolbar as a right-aligned action-only primitive', () => {
+    const html = renderToStaticMarkup(
+      <PageToolbar>
+        <button type='button'>Sync PRs</button>
+      </PageToolbar>
+    )
+
+    expect(html).toContain('Sync PRs')
+    expect(html).toContain('justify-end')
+    expect(html).not.toContain('<h1')
   })
 })
