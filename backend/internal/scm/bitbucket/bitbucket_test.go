@@ -807,6 +807,94 @@ func TestParseWebhookPRMerged(t *testing.T) {
 	}
 }
 
+func TestParseWebhookPRMergedUsesToRefRepositoryWhenTopLevelMissing(t *testing.T) {
+	payload := map[string]interface{}{
+		"actor": map[string]string{"name": "alice"},
+		"pullRequest": map[string]interface{}{
+			"id":    42,
+			"title": "Replace test fixtures",
+			"fromRef": map[string]interface{}{
+				"displayId": "feature/fixture-update",
+				"repository": map[string]interface{}{
+					"slug":    "source-repo",
+					"project": map[string]string{"key": "FORK"},
+				},
+			},
+			"toRef": map[string]interface{}{
+				"displayId": "release/1.2.3",
+				"repository": map[string]interface{}{
+					"slug":    "target-repo",
+					"project": map[string]string{"key": "PROJ"},
+				},
+			},
+			"author": map[string]interface{}{
+				"user": map[string]string{"name": "bob"},
+			},
+			"links": map[string]interface{}{
+				"self": []map[string]string{{"href": "https://bitbucket.example.com/projects/PROJ/repos/target-repo/pull-requests/42"}},
+			},
+		},
+	}
+	body, _ := json.Marshal(payload)
+	req := httptest.NewRequest("POST", "/", bytes.NewReader(body))
+	req.Header.Set("X-Event-Key", "pr:merged")
+	req.Header.Set("Content-Type", "application/json")
+
+	p, _ := New("https://bb", "tok", zap.NewNop())
+	event, err := p.ParseWebhookPayload(req, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if event.Type != scm.EventPRMerged {
+		t.Errorf("type = %q", event.Type)
+	}
+	if event.RepoFullName != "PROJ/target-repo" {
+		t.Errorf("repo = %q, want target repo", event.RepoFullName)
+	}
+	if event.PR == nil {
+		t.Fatal("PR is nil")
+	}
+	if event.PR.SourceBranch != "feature/fixture-update" || event.PR.TargetBranch != "release/1.2.3" {
+		t.Errorf("branches = %q -> %q", event.PR.SourceBranch, event.PR.TargetBranch)
+	}
+}
+
+func TestParseWebhookPRMergedUsesFromRefRepositoryWhenTopLevelAndToRefMissing(t *testing.T) {
+	payload := map[string]interface{}{
+		"actor": map[string]string{"name": "alice"},
+		"pullRequest": map[string]interface{}{
+			"id":    43,
+			"title": "Update release branch",
+			"fromRef": map[string]interface{}{
+				"displayId": "feature/ref-only",
+				"repository": map[string]interface{}{
+					"slug":    "source-repo",
+					"project": map[string]string{"key": "SRC"},
+				},
+			},
+			"toRef": map[string]interface{}{
+				"displayId": "main",
+			},
+			"author": map[string]interface{}{
+				"user": map[string]string{"name": "bob"},
+			},
+		},
+	}
+	body, _ := json.Marshal(payload)
+	req := httptest.NewRequest("POST", "/", bytes.NewReader(body))
+	req.Header.Set("X-Event-Key", "pr:merged")
+	req.Header.Set("Content-Type", "application/json")
+
+	p, _ := New("https://bb", "tok", zap.NewNop())
+	event, err := p.ParseWebhookPayload(req, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if event.RepoFullName != "SRC/source-repo" {
+		t.Errorf("repo = %q, want source repo fallback", event.RepoFullName)
+	}
+}
+
 func TestParseWebhookPush(t *testing.T) {
 	payload := map[string]interface{}{
 		"actor":      map[string]string{"name": "u"},

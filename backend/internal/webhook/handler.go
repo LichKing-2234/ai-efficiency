@@ -29,6 +29,13 @@ type Handler struct {
 	logger    *zap.Logger
 }
 
+type bitbucketWebhookRepoRef struct {
+	Slug    string `json:"slug"`
+	Project struct {
+		Key string `json:"key"`
+	} `json:"project"`
+}
+
 // NewHandler creates a new webhook handler.
 func NewHandler(entClient *ent.Client, labeler *efficiency.Labeler, logger *zap.Logger) *Handler {
 	return &Handler{
@@ -144,20 +151,27 @@ func (h *Handler) HandleBitbucket(c *gin.Context) {
 
 	// Extract repo full name from payload
 	var payload struct {
-		Repository struct {
-			Slug    string `json:"slug"`
-			Project struct {
-				Key string `json:"key"`
-			} `json:"project"`
-		} `json:"repository"`
+		Repository  bitbucketWebhookRepoRef `json:"repository"`
+		PullRequest struct {
+			FromRef struct {
+				Repository bitbucketWebhookRepoRef `json:"repository"`
+			} `json:"fromRef"`
+			ToRef struct {
+				Repository bitbucketWebhookRepoRef `json:"repository"`
+			} `json:"toRef"`
+		} `json:"pullRequest"`
 	}
 	if err := json.Unmarshal(body, &payload); err != nil {
 		pkg.Error(c, http.StatusBadRequest, "invalid payload")
 		return
 	}
 
-	repoFullName := payload.Repository.Project.Key + "/" + payload.Repository.Slug
-	if repoFullName == "/" {
+	repoFullName := bitbucketWebhookRepoFullName(
+		payload.Repository,
+		payload.PullRequest.ToRef.Repository,
+		payload.PullRequest.FromRef.Repository,
+	)
+	if repoFullName == "" {
 		pkg.Error(c, http.StatusBadRequest, "missing repository info")
 		return
 	}
@@ -207,6 +221,17 @@ func (h *Handler) HandleBitbucket(c *gin.Context) {
 
 	h.dispatch(c, rc, event)
 	pkg.Success(c, gin.H{"status": "processed"})
+}
+
+func bitbucketWebhookRepoFullName(repos ...bitbucketWebhookRepoRef) string {
+	for _, repo := range repos {
+		projectKey := strings.TrimSpace(repo.Project.Key)
+		slug := strings.TrimSpace(repo.Slug)
+		if projectKey != "" && slug != "" {
+			return projectKey + "/" + slug
+		}
+	}
+	return ""
 }
 
 func (h *Handler) dispatch(c *gin.Context, rc *ent.RepoConfig, event *scm.WebhookEvent) {
