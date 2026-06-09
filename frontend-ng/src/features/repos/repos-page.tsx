@@ -9,7 +9,6 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
-import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ActionGroup } from '@/components/primitives/action-group'
@@ -19,14 +18,12 @@ import { AppAlert } from '@/components/primitives/app-alert'
 import { Page } from '@/components/primitives/page'
 import { LoadingState } from '@/components/primitives/data-state'
 import { DataGrid, DataGridHeader, DataGridRow } from '@/components/primitives/data-grid'
-import { FieldItem, FieldList } from '@/components/primitives/field-list'
-import { InsetPanel } from '@/components/primitives/inset-panel'
-import { LabeledSegmentedControl } from '@/components/primitives/labeled-segmented-control'
 import { SectionNav, type SectionNavItem } from '@/components/primitives/section-nav'
 import { StatusBadge } from '@/components/primitives/status-badge'
 import { api } from '@/lib/api'
 import { number } from '@/lib/format'
 import { useI18n } from '@/lib/i18n/i18n'
+import { RepoCreateForm, type RepoCreateFormLabels } from './repo-create-form'
 import {
   buildRepoCloneUrl,
   buildRepoCreatePayload,
@@ -467,6 +464,20 @@ function AddRepoDialog({
   createRepo: () => void
 }) {
   const { t } = useI18n()
+  const labels: RepoCreateFormLabels = {
+    cancel: t('common.cancel'),
+    clone: t('repos.clone'),
+    create: t('common.create'),
+    defaultBranch: t('repos.defaultBranch'),
+    enterRepoUrl: t('repos.enterRepoUrl'),
+    fullName: t('repos.fullName'),
+    noMatchingProvider: t('repos.noMatchingProvider'),
+    provider: t('repos.provider'),
+    repoUrl: t('repos.repoUrl'),
+    repoUrlPlaceholder: t('repos.repoUrlPlaceholder'),
+    selectScmProvider: t('repos.selectScmProvider'),
+    sshHostExample: t('settings.sshHostExample')
+  }
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent>
@@ -474,55 +485,31 @@ function AddRepoDialog({
           <DialogTitle>{t('repos.addRepo')}</DialogTitle>
           <DialogDescription>{t('repos.pasteRepoUrl')}</DialogDescription>
         </DialogHeader>
-        <div className='flex flex-col gap-3'>
-          <Select value={selectedProviderId} onValueChange={setSelectedProviderId}>
-            <SelectTrigger className='w-full'><SelectValue placeholder={t('repos.selectScmProvider')} /></SelectTrigger>
-            <SelectContent>
-              {providers.map((provider) => (
-                <SelectItem key={provider.id} value={String(provider.id)}>{provider.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Input
-            placeholder='https://github.com/org/repo or https://bitbucket.example.com/projects/PROJ/repos/name/browse'
-            value={repoUrl}
-            onChange={(event) => {
-              setRepoUrl(event.target.value)
-              setAddError('')
-              setCloneProtocol('http')
-            }}
-          />
-          {parsedRepo ? (
-            <InsetPanel className='flex flex-col gap-3 text-sm'>
-              <FieldList>
-                <FieldItem label={t('repos.fullName')} value={`${parsedRepo.project}/${parsedRepo.repo}`} truncate />
-                <FieldItem label={t('repos.provider')} value={selectedProvider?.name || t('repos.noMatchingProvider')} truncate />
-              </FieldList>
-              <LabeledSegmentedControl
-                ariaLabel={t('repos.clone')}
-                label={t('repos.clone')}
-                onChange={setCloneProtocol}
-                options={[
-                  { value: 'http', label: 'HTTP' },
-                  { value: 'ssh', label: 'SSH' }
-                ]}
-                value={cloneProtocol}
-              />
-              {cloneProtocol === 'ssh' && parsedRepo.type === 'bitbucket' ? (
-                <Input className='mt-2' placeholder={t('settings.sshHostExample')} value={sshHost} onChange={(event) => setSshHost(event.target.value)} />
-              ) : null}
-              <Input className='mt-2 font-mono text-xs' value={previewCloneUrl} readOnly />
-            </InsetPanel>
-          ) : repoUrl ? (
-            <AppAlert tone='warning' title={t('repos.enterRepoUrl')} />
-          ) : null}
-          <Input placeholder={t('repos.defaultBranch')} value={defaultBranch} onChange={(event) => setDefaultBranch(event.target.value)} />
-          {addError ? <AppAlert tone='error' title={addError} /> : null}
-          <ActionGroup>
-            <Button variant='outline' onClick={() => setOpen(false)}>{t('common.cancel')}</Button>
-            <Button disabled={!selectedProviderId || !parsedRepo || createPending} onClick={createRepo}>{t('common.create')}</Button>
-          </ActionGroup>
-        </div>
+        <RepoCreateForm
+          addError={addError}
+          cloneProtocol={cloneProtocol}
+          createPending={createPending}
+          defaultBranch={defaultBranch}
+          labels={labels}
+          parsedRepo={parsedRepo}
+          previewCloneUrl={previewCloneUrl}
+          providers={providers}
+          repoUrl={repoUrl}
+          selectedProvider={selectedProvider}
+          selectedProviderId={selectedProviderId}
+          sshHost={sshHost}
+          onCancel={() => setOpen(false)}
+          onCloneProtocolChange={setCloneProtocol}
+          onCreate={createRepo}
+          onDefaultBranchChange={setDefaultBranch}
+          onRepoUrlChange={(value) => {
+            setRepoUrl(value)
+            setAddError('')
+            setCloneProtocol('http')
+          }}
+          onSelectedProviderIdChange={setSelectedProviderId}
+          onSshHostChange={setSshHost}
+        />
       </DialogContent>
     </Dialog>
   )
