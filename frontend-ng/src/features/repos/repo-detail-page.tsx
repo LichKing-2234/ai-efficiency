@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge'
 import { ActionGroup } from '@/components/primitives/action-group'
 import { CardPagerFooter } from '@/components/primitives/card-pager-footer'
 import { CheckboxField } from '@/components/primitives/checkbox-field'
+import { ControlGrid } from '@/components/primitives/control-grid'
 import { DataGrid, DataGridHeader, DataGridRow } from '@/components/primitives/data-grid'
 import { EntityCardHeader } from '@/components/primitives/entity-card-header'
 import { FilterRow } from '@/components/primitives/filter-row'
@@ -243,23 +244,25 @@ export function RepoDetailPage() {
       ) : null}
       <Card>
         <SectionCardHeader title={<span className='flex items-center gap-2'><Waypoints className='text-[var(--ai)]' />{t('repoDetail.scmBinding')}</span>} />
-        <CardContent className='grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto_auto]'>
-          <ToolbarSelect
-            ariaLabel={t('repoDetail.scmBinding')}
-            className='w-full'
-            disabled={scm.isLoading}
-            options={[
-              { value: 'none', label: t('repoDetail.noProviderBinding') },
-              ...(scm.data?.items ?? []).map((provider) => ({ value: String(provider.id), label: provider.name }))
-            ]}
-            value={selectedProviderId || 'none'}
-            onValueChange={(value) => setSelectedProviderId(value === 'none' ? '' : value)}
-          />
-          <Button variant='outline' onClick={() => saveBinding.mutate(selectedProviderId)} disabled={saveBinding.isPending}><Save data-icon='inline-start' />{t('repoDetail.saveBinding')}</Button>
-          <Button variant='ghost' onClick={() => {
-            setSelectedProviderId('')
-            saveBinding.mutate('')
-          }} disabled={saveBinding.isPending}>{t('repoDetail.clearBinding')}</Button>
+        <CardContent>
+          <ControlGrid variant='inline-actions'>
+            <ToolbarSelect
+              ariaLabel={t('repoDetail.scmBinding')}
+              className='w-full'
+              disabled={scm.isLoading}
+              options={[
+                { value: 'none', label: t('repoDetail.noProviderBinding') },
+                ...(scm.data?.items ?? []).map((provider) => ({ value: String(provider.id), label: provider.name }))
+              ]}
+              value={selectedProviderId || 'none'}
+              onValueChange={(value) => setSelectedProviderId(value === 'none' ? '' : value)}
+            />
+            <Button variant='outline' onClick={() => saveBinding.mutate(selectedProviderId)} disabled={saveBinding.isPending}><Save data-icon='inline-start' />{t('repoDetail.saveBinding')}</Button>
+            <Button variant='ghost' onClick={() => {
+              setSelectedProviderId('')
+              saveBinding.mutate('')
+            }} disabled={saveBinding.isPending}>{t('repoDetail.clearBinding')}</Button>
+          </ControlGrid>
         </CardContent>
       </Card>
       <Card className='overflow-hidden'>

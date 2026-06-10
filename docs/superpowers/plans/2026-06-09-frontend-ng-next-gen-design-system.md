@@ -332,6 +332,10 @@ Follow-up OAuth/auth redirect diagnosis fixed the `/oauth/device` unauthenticate
 
   Follow-up pager-footer audit evidence: `card-pager-footer-composition.test.ts` was added with a red-green cycle; it first failed on `events-page.tsx` and `admin-users-page.tsx` because both still passed `className='border-border border-t p-3'`, then passed after the duplicate classes were removed. Focused verification passed with `bun test src/components/primitives/card-pager-footer-composition.test.ts src/components/primitives/card-pager-footer.test.tsx`.
 
+  Follow-up control-grid audit implementation adds the shared `ControlGrid` primitive for responsive control rows. Admin subscription controls and Repo Detail SCM binding now use `ControlGrid` instead of feature-local `grid gap-3 ...` column recipes while preserving provider/group selection, days/remove confirmation, start-job action, SCM binding save, clear binding, and backend payload behavior.
+
+  Follow-up control-grid audit evidence: `control-grid.test.tsx` and `control-grid-composition.test.ts` were added with a red-green cycle; the primitive test first failed because `control-grid.tsx` did not exist, and the composition guard first failed on `admin-subscription-form.tsx` and `repo-detail-page.tsx` because both still owned responsive control grid classes. Focused verification passed with `bun test src/components/primitives/control-grid.test.tsx src/components/primitives/control-grid-composition.test.ts src/features/admin-users/admin-subscription-form.test.tsx src/features/repos/repo-detail-page-composition.test.ts src/features/repos/repo-binding.test.ts`.
+
 - [x] **Step 2: Repositories**
 
   Implement reference workbench styling while keeping add, delete, auto-bind, provider selection, webhook repair, and navigation behavior intact.

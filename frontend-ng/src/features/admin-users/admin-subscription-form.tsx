@@ -2,6 +2,7 @@ import { Button } from '@/components/ui/button'
 import { FieldGroup } from '@/components/ui/field'
 import { ActionGroup } from '@/components/primitives/action-group'
 import { CheckboxField } from '@/components/primitives/checkbox-field'
+import { ControlGrid } from '@/components/primitives/control-grid'
 import { SelectField } from '@/components/primitives/select-field'
 import { TextField } from '@/components/primitives/text-field'
 import type {
@@ -71,7 +72,7 @@ export function AdminSubscriptionForm({
 }) {
   return (
     <FieldGroup className='gap-3'>
-      <div className='grid gap-3 md:grid-cols-[150px_150px_minmax(0,1fr)_minmax(0,1fr)_120px_auto]'>
+      <ControlGrid variant='subscription'>
         <SelectField
           disabled={activeJobRunning}
           id='admin-subscription-scope'
@@ -142,7 +143,7 @@ export function AdminSubscriptionForm({
             {activeJobRunning ? labels.jobRunning : labels.startJob}
           </Button>
         </ActionGroup>
-      </div>
+      </ControlGrid>
     </FieldGroup>
   )
 }
