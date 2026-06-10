@@ -4,6 +4,7 @@ import { ArrowRightIcon, FolderGit2Icon, GitPullRequestIcon, PlugZapIcon, Workfl
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { CardContentStack } from '@/components/primitives/card-content-stack'
 import { Ring } from '@/components/primitives/charts'
 import { ChecklistRow } from '@/components/primitives/checklist-row'
 import { EntityCardHeader } from '@/components/primitives/entity-card-header'
@@ -114,12 +115,12 @@ export function HomePage() {
             title={t('home.setupStatus')}
             description={setupProgress.ready === setupProgress.total ? t('home.statusReady') : t('home.statusWaitingEvents')}
           />
-          <CardContent className='flex flex-col gap-3'>
+          <CardContentStack>
             <StatusLine label={t('home.statusAccount')} value={t('home.statusReady')} ok />
             <StatusLine label={t('home.statusAiAccess')} value={connectedTools.size ? t('home.statusAiAccessReady') : t('home.statusAiAccessMissing')} ok={connectedTools.size > 0} to='/user' />
             <StatusLine label={t('home.statusRepositoryReporting')} value={(dashboard.data?.total_repos ?? 0) > 0 ? t('home.statusConfigured') : t('home.statusNoRepo')} ok={(dashboard.data?.total_repos ?? 0) > 0} to='/repos' />
             <StatusLine label={t('home.statusRecentUsage')} value={recentEvents.length ? t('home.statusEvents') : t('home.statusWaitingEvents')} ok={recentEvents.length > 0} to='/events' />
-          </CardContent>
+          </CardContentStack>
         </Card>
         <Card>
           <SectionCardHeader

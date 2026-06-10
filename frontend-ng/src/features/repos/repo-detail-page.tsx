@@ -8,6 +8,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { ActionGroup } from '@/components/primitives/action-group'
+import { CardContentStack } from '@/components/primitives/card-content-stack'
 import { CardPagerFooter } from '@/components/primitives/card-pager-footer'
 import { CheckboxField } from '@/components/primitives/checkbox-field'
 import { ControlGrid } from '@/components/primitives/control-grid'
@@ -229,7 +230,7 @@ export function RepoDetailPage() {
       {currentJob ? (
         <Card>
           <SectionCardHeader title={t('repoDetail.latestSyncJob')} />
-          <CardContent className='flex flex-col gap-3'>
+          <CardContentStack>
             <InfoTileGrid columns={4}>
               <InfoTile label={t('common.status')} value={<StatusBadge value={currentJob.status} />} />
               <InfoTile label={t('repoDetail.phaseLabel')} value={currentJob.phase || '-'} />
@@ -239,7 +240,7 @@ export function RepoDetailPage() {
             <InsetPanel muted>
               {t('repoDetail.usage', { done: number(jobProgress?.usageRefreshed), total: number(jobProgress?.usageTotal) })} · {syncMessage || prSyncJobMessage(currentJob)}
             </InsetPanel>
-          </CardContent>
+          </CardContentStack>
         </Card>
       ) : null}
       <Card>

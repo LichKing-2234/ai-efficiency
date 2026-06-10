@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Badge } from '@/components/ui/badge'
 import { ActionGroup } from '@/components/primitives/action-group'
 import { AppAlert } from '@/components/primitives/app-alert'
+import { CardContentStack } from '@/components/primitives/card-content-stack'
 import { ConfirmAction } from '@/components/primitives/confirm-action'
 import { DataGrid, DataGridHeader, DataGridRow } from '@/components/primitives/data-grid'
 import { Page } from '@/components/primitives/page'
@@ -423,7 +424,7 @@ export function SettingsPage() {
         </Card> : null}
         {activeSection === 'deployment-runtime' ? <Card>
           <SectionCardHeader title={t('settings.deploymentRuntime')} description={t('settings.currentBackendDeployment')} />
-          <CardContent className='flex flex-col gap-3'>
+          <CardContentStack>
             <InfoTileGrid columns={3}>
               <InfoTile label={t('settings.current')} value={`v${deployment.data?.version.version || '-'}`} mono />
               <InfoTile label={t('settings.mode')} value={deployment.data?.mode || t('common.unknown')} mono />
@@ -465,7 +466,7 @@ export function SettingsPage() {
                 disabled={restart.isPending}
               />
             </ActionGroup>
-          </CardContent>
+          </CardContentStack>
         </Card> : null}
         </div>
       </div>

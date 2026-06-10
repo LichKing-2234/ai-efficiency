@@ -8,6 +8,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { ActionGroup } from '@/components/primitives/action-group'
 import { AppAlert } from '@/components/primitives/app-alert'
+import { CardContentStack } from '@/components/primitives/card-content-stack'
 import { CardFilterBar } from '@/components/primitives/card-filter-bar'
 import { DataGridCheckbox } from '@/components/primitives/data-grid-checkbox'
 import { CardPagerFooter } from '@/components/primitives/card-pager-footer'
@@ -188,7 +189,7 @@ export function AdminUsersPage() {
       </div>
       <Card>
         <SectionCardHeader title={t('adminUsers.subscriptionManagement')} />
-        <CardContent className='flex flex-col gap-3'>
+        <CardContentStack>
           <div className='text-muted-foreground text-sm'>
             {scope === 'selected' ? t('adminUsers.selectedUsers', { count: selected.length }) : scope === 'current_filter' ? (q.trim() ? t('adminUsers.currentFilterValue', { query: q.trim() }) : t('adminUsers.currentFilter')) : t('adminUsers.allMapped')}
           </div>
@@ -228,7 +229,7 @@ export function AdminUsersPage() {
           {jobResults.length > 0 ? (
             <JobResultList items={jobResults} />
           ) : null}
-        </CardContent>
+        </CardContentStack>
       </Card>
       <Card className='overflow-hidden'>
         <CardFilterBar>
