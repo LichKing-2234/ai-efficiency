@@ -40,4 +40,18 @@ describe('ActionGroup', () => {
     expect(html).not.toContain('justify-end')
     expect(html).toContain('Repair webhook')
   })
+
+  test('supports split action rows for paired equal-width decisions', () => {
+    const html = renderToStaticMarkup(
+      <ActionGroup layout='split'>
+        <button type='button'>Approve</button>
+        <button type='button'>Deny</button>
+      </ActionGroup>
+    )
+
+    expect(html).toContain('w-full')
+    expect(html).toContain('[&amp;&gt;*]:flex-1')
+    expect(html).toContain('Approve')
+    expect(html).toContain('Deny')
+  })
 })

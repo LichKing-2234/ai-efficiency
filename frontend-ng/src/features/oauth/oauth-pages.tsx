@@ -155,9 +155,9 @@ export function OAuthActionGroup({
   onDeny: () => void
 }) {
   return (
-    <ActionGroup className='w-full'>
-      <Button className='flex-1' disabled={disabled} onClick={onApprove}>{approveLabel}</Button>
-      <Button className='flex-1' disabled={disabled} variant='outline' onClick={onDeny}>{denyLabel}</Button>
+    <ActionGroup layout='split'>
+      <Button disabled={disabled} onClick={onApprove}>{approveLabel}</Button>
+      <Button disabled={disabled} variant='outline' onClick={onDeny}>{denyLabel}</Button>
     </ActionGroup>
   )
 }

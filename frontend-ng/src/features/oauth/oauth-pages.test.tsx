@@ -40,6 +40,12 @@ describe('OAuth page primitives', () => {
     expect(html).toContain('Deny')
   })
 
+  test('uses the shared split action row for approve and deny actions', () => {
+    expect(source).toContain("<ActionGroup layout='split'>")
+    expect(source).not.toContain("className='flex-1'")
+    expect(source).not.toContain("className='w-full'")
+  })
+
   test('uses the shared card content stack for auth surface bodies', () => {
     expect(source).toContain("from '@/components/primitives/card-content-stack'")
     expect(source).not.toContain("<CardContent className='flex flex-col gap-3'>")
