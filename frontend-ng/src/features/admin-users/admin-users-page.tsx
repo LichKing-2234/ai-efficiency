@@ -328,7 +328,7 @@ export function AdminUsersPage() {
               </ActionGroup>
               {plaintextConfirmUserId === user.id ? (
                 <RowInsetPanel indent='selection' maxWidth='xl'>
-                  <span className='text-muted-foreground'>{t('adminUsers.plaintextWarning')}</span>
+                  <FieldDescription>{t('adminUsers.plaintextWarning')}</FieldDescription>
                   <Button
                     variant='outline'
                     size='sm'

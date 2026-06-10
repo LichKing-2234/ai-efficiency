@@ -31,6 +31,11 @@ describe('Admin users page composition', () => {
     expect(source).not.toContain("<div className='text-muted-foreground text-sm'>")
   })
 
+  test('uses shadcn field description for plaintext reveal warning copy', () => {
+    expect(source).toContain('<FieldDescription>{t(\'adminUsers.plaintextWarning\')}</FieldDescription>')
+    expect(source).not.toContain("<span className='text-muted-foreground'>{t('adminUsers.plaintextWarning')}</span>")
+  })
+
   test('uses shared status metadata for the current subscription job summary', () => {
     expect(source).toContain('StatusWithReason')
     expect(source).not.toContain("<StatusBadge value={currentJob.status} />")
