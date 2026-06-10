@@ -24,6 +24,7 @@ import { SectionCardHeader } from '@/components/primitives/section-card-header'
 import { LoadingState } from '@/components/primitives/data-state'
 import { Stack } from '@/components/primitives/stack'
 import { StatusBadge } from '@/components/primitives/status-badge'
+import { StatusWithReason } from '@/components/primitives/status-with-reason'
 import { ToolbarSelect } from '@/components/primitives/toolbar-select'
 import { UsageSummaryPanel } from '@/components/primitives/usage-summary-panel'
 import { api } from '@/lib/api'
@@ -334,10 +335,7 @@ export function RepoDetailPage() {
                       </span>
                       <span><Badge variant='ai'>{pr.ai_label} · {percent(pr.ai_ratio)}</Badge></span>
                       <span>
-                        <div className='flex flex-col gap-1'>
-                          <StatusBadge value={pr.usage_status || pr.attribution_status} />
-                          {pr.usage_status_reason ? <span className='max-w-48 truncate text-muted-foreground text-xs'>{pr.usage_status_reason}</span> : null}
-                        </div>
+                        <StatusWithReason reason={pr.usage_status_reason} reasonClassName='max-w-48' value={pr.usage_status || pr.attribution_status} />
                       </span>
                       <span className='tnum'>{compact((pr.usage_input_tokens ?? 0) + (pr.usage_output_tokens ?? 0) + (pr.usage_cached_input_tokens ?? 0) + (pr.usage_reasoning_tokens ?? 0))}</span>
                       <span className='tnum'>{number(pr.cycle_time_hours)}h</span>
@@ -399,10 +397,7 @@ export function RepoDetailPage() {
                                       <span className='tnum text-right'>{compact(snapshot.reasoning_tokens)}</span>
                                       <span className='tnum text-right'>{number(snapshot.credit_usage)}</span>
                                       <span className='tnum text-right'>{number(snapshot.request_count)}</span>
-                                      <span className='flex min-w-0 flex-col gap-1'>
-                                        <StatusBadge value={freshness?.usage_status} />
-                                        {freshness?.usage_status_reason ? <span className='max-w-64 truncate text-muted-foreground text-xs'>{freshness.usage_status_reason}</span> : null}
-                                      </span>
+                                      <StatusWithReason reason={freshness?.usage_status_reason} reasonClassName='max-w-64' value={freshness?.usage_status} />
                                     </DataGridRow>
                                   )
                                 }) : (

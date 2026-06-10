@@ -33,4 +33,11 @@ describe('Repo detail page composition', () => {
     expect(source).toContain('<InsetPanel flush>')
     expect(source).not.toContain("className='rounded-none border-x-0 border-t-0 p-4'")
   })
+
+  test('uses shared status-with-reason rows for PR and snapshot usage states', () => {
+    expect(source).toContain("from '@/components/primitives/status-with-reason'")
+    expect(source.match(/<StatusWithReason/g)?.length).toBe(2)
+    expect(source).not.toContain("<div className='flex flex-col gap-1'>")
+    expect(source).not.toContain("<span className='flex min-w-0 flex-col gap-1'>")
+  })
 })

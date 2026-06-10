@@ -474,6 +474,10 @@ Follow-up OAuth/auth redirect diagnosis fixed the `/oauth/device` unauthenticate
 
   Follow-up expanded-detail panel audit evidence: `repo-detail-page-composition.test.ts` was extended with a red-green cycle; it first failed because `repo-detail-page.tsx` still owned the local flush panel classes. Focused verification passed with `bun test src/components/primitives/inset-panel.test.tsx src/features/repos/repo-detail-page-composition.test.ts src/features/repos/repo-detail-state.test.ts`.
 
+  Follow-up status-with-reason audit implementation adds the shared `StatusWithReason` primitive and migrates Repository Detail PR row usage state plus expanded commit snapshot freshness state away from duplicate page-local status/reason stacks while preserving `StatusBadge`, reason truncation, and backend status fields.
+
+  Follow-up status-with-reason audit evidence: `status-with-reason.test.tsx` and `repo-detail-page-composition.test.ts` were added/extended with a red-green cycle; they first failed because `status-with-reason.tsx` did not exist and `repo-detail-page.tsx` still owned the repeated status/reason stack classes. Focused verification passed with `bun test src/components/primitives/status-with-reason.test.tsx src/features/repos/repo-detail-page-composition.test.ts src/features/repos/repo-detail-state.test.ts`.
+
 - [x] **Step 4: My Setup**
 
   Re-skin provider credential setup, status/progress, and key actions with shared field/card primitives.
