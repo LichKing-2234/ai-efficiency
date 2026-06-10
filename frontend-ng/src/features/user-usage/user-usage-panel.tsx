@@ -11,6 +11,7 @@ import { ChartLegend } from '@/components/primitives/chart-legend'
 import { BarsH, StackedAreaChart, type StackedAreaKey } from '@/components/primitives/charts'
 import { DataGrid, DataGridCell, DataGridHeader, DataGridHeaderCell, DataGridRow } from '@/components/primitives/data-grid'
 import { FilterRow } from '@/components/primitives/filter-row'
+import { FilterRowTitle } from '@/components/primitives/filter-row-title'
 import { HeatmapGrid } from '@/components/primitives/heatmap-grid'
 import { MetricCard } from '@/components/primitives/metric-card'
 import { SectionCardHeader } from '@/components/primitives/section-card-header'
@@ -50,10 +51,7 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
     <Stack className='stagger'>
       <FilterRow className='justify-between gap-3'>
         {!embedded ? (
-          <div className='min-w-0'>
-            <div className='font-semibold text-sm'>{t('usageDashboard.title')}</div>
-            <div className='mt-0.5 text-muted-foreground text-xs'>{t('usageDashboard.subtitle')}</div>
-          </div>
+          <FilterRowTitle title={t('usageDashboard.title')} description={t('usageDashboard.subtitle')} />
         ) : <div />}
         <ActionGroup wrap>
           <SegmentedControl

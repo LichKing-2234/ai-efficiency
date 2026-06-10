@@ -9,10 +9,14 @@ describe('User usage panel composition', () => {
   test('uses shared row primitives for usage range and refresh controls', () => {
     expect(source).toContain("from '@/components/primitives/action-group'")
     expect(source).toContain("from '@/components/primitives/filter-row'")
+    expect(source).toContain("from '@/components/primitives/filter-row-title'")
     expect(source).toContain('<FilterRow')
+    expect(source).toContain('<FilterRowTitle')
     expect(source).toContain('<ActionGroup')
     expect(source).not.toContain("<div className='flex flex-wrap items-center justify-between gap-3'>")
     expect(source).not.toContain("<div className='flex flex-wrap items-center gap-2'>")
+    expect(source).not.toContain("<div className='font-semibold text-sm'>{t('usageDashboard.title')}</div>")
+    expect(source).not.toContain("<div className='mt-0.5 text-muted-foreground text-xs'>{t('usageDashboard.subtitle')}</div>")
   })
 
   test('matches the reference usage analytics card structure', () => {
