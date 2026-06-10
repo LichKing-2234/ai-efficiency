@@ -337,8 +337,8 @@ export function RepoDetailPage() {
                       <span>
                         <StatusWithReason reason={pr.usage_status_reason} reasonClassName='max-w-48' value={pr.usage_status || pr.attribution_status} />
                       </span>
-                      <span className='tnum'>{compact((pr.usage_input_tokens ?? 0) + (pr.usage_output_tokens ?? 0) + (pr.usage_cached_input_tokens ?? 0) + (pr.usage_reasoning_tokens ?? 0))}</span>
-                      <span className='tnum'>{number(pr.cycle_time_hours)}h</span>
+                      <DataGridCell numeric>{compact((pr.usage_input_tokens ?? 0) + (pr.usage_output_tokens ?? 0) + (pr.usage_cached_input_tokens ?? 0) + (pr.usage_reasoning_tokens ?? 0))}</DataGridCell>
+                      <DataGridCell numeric>{number(pr.cycle_time_hours)}h</DataGridCell>
                       <DataGridCell numeric tone='metadata'>{dateTime(pr.merged_at)}</DataGridCell>
                       <ActionGroup>
                         <Button variant='ghost' size='sm' onClick={() => setExpandedPRId(expanded ? null : pr.id)} disabled={prDetail.isFetching && expanded}>

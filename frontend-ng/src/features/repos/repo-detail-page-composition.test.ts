@@ -43,6 +43,8 @@ describe('Repo detail page composition', () => {
 
   test('uses shared data grid cells for PR and snapshot numeric metadata', () => {
     expect(source).toContain('DataGridCell')
+    expect(source).not.toContain("className='tnum'>{compact((pr.usage_input_tokens")
+    expect(source).not.toContain("className='tnum'>{number(pr.cycle_time_hours)}h")
     expect(source).not.toContain("className='tnum text-muted-foreground text-xs'")
     expect(source).not.toContain("className='mono min-w-0 truncate text-xs'")
     expect(source).not.toContain("className='tnum text-right'")
