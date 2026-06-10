@@ -280,7 +280,7 @@ function EventRow({ row, maxTokens, onSelect }: { row: ToolUsageEventRow; maxTok
       </span>
       <TokenMeter label={compact(tokens)} max={maxTokens} value={tokens} />
       <DataGridCell align='right' numeric tone='muted'>{number(row.request_count)}</DataGridCell>
-      <span className='tnum text-right font-semibold text-foreground'>{number(row.credit_usage)}</span>
+      <DataGridCell align='right' emphasis numeric>{number(row.credit_usage)}</DataGridCell>
       <span><Badge variant={row.binding_status === 'bound' ? 'pos' : 'warn'}>{row.binding_status}</Badge></span>
       <DataGridCell align='right' tone='subtle'>{dateTime(row.observed_end_at)}</DataGridCell>
     </DataGridRow>

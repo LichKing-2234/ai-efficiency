@@ -36,5 +36,7 @@ describe('Events page composition', () => {
     expect(source).toContain('DataGridCell')
     expect(source).not.toContain("className='tnum text-right text-[var(--ink-2)]'")
     expect(source).not.toContain("className='text-right text-[var(--ink-3)] text-xs'")
+    expect(source).not.toContain("className='tnum text-right font-semibold text-foreground'")
+    expect(source).toContain("<DataGridCell align='right' emphasis numeric>")
   })
 })
