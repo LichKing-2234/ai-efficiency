@@ -16,7 +16,7 @@ import { DataGrid, DataGridCell, DataGridHeader, DataGridHeaderCell, DataGridRow
 import { FilterRow } from '@/components/primitives/filter-row'
 import { FilterRowTitle } from '@/components/primitives/filter-row-title'
 import { HeatmapGrid } from '@/components/primitives/heatmap-grid'
-import { MetricCard } from '@/components/primitives/metric-card'
+import { KpiCard } from '@/components/primitives/metric-card'
 import { SectionCardHeader } from '@/components/primitives/section-card-header'
 import { SegmentedControl } from '@/components/primitives/segmented-control'
 import { Stack } from '@/components/primitives/stack'
@@ -95,7 +95,7 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
         {snapshot?.configured !== false && snapshot ? (
           <>
             <div className='kpi-grid'>
-              <MetricCard
+              <KpiCard
                 label={t('usageDashboard.rangeCost', { range: rangeLabel })}
                 value={currency(totals.actualCost || stats?.total_actual_cost || 0, locale)}
                 helper={`${t('usageDashboard.standard')}: ${currency(totals.standardCost || stats?.total_cost || 0, locale)}`}
@@ -106,7 +106,7 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
                 sparkline={spark}
                 sparklineColor='var(--viz-input)'
               />
-              <MetricCard
+              <KpiCard
                 label={t('usageDashboard.rangeRequests', { range: rangeLabel })}
                 value={number(totals.requests || stats?.total_requests || 0, locale)}
                 helper={t('usageDashboard.selectedRange')}
@@ -115,7 +115,7 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
                 sparkline={snapshot.trend.map((point) => point.requests)}
                 sparklineColor='var(--viz-output)'
               />
-              <MetricCard
+              <KpiCard
                 label={t('usageDashboard.rangeTokens', { range: rangeLabel })}
                 value={compact(totals.tokens || stats?.total_tokens || 0, locale)}
                 helper={`${t('usageDashboard.input')}: ${compact(stats?.total_input_tokens ?? 0, locale)} · ${t('usageDashboard.output')}: ${compact(stats?.total_output_tokens ?? 0, locale)}`}
@@ -124,7 +124,7 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
                 sparkline={spark}
                 sparklineColor='var(--viz-reason)'
               />
-              <MetricCard
+              <KpiCard
                 label={t('usageDashboard.avgResponse')}
                 value={durationMs(stats?.average_duration_ms ?? 0, locale)}
                 helper={`RPM ${compact(stats?.rpm ?? 0, locale)} · TPM ${compact(stats?.tpm ?? 0, locale)}`}

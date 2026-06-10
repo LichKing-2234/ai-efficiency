@@ -22,7 +22,7 @@ import { RowInsetPanel } from '@/components/primitives/row-inset-panel'
 import { SearchField } from '@/components/primitives/search-field'
 import { SectionCardHeader } from '@/components/primitives/section-card-header'
 import { StatusWithReason } from '@/components/primitives/status-with-reason'
-import { MetricCard } from '@/components/primitives/metric-card'
+import { KpiCard } from '@/components/primitives/metric-card'
 import { ToolbarSelect } from '@/components/primitives/toolbar-select'
 import { api } from '@/lib/api'
 import { dateTime, number } from '@/lib/format'
@@ -183,10 +183,10 @@ export function AdminUsersPage() {
   return (
     <Page className='stagger'>
       <div className='kpi-grid'>
-        <MetricCard label={t('adminUsers.totalUsers')} value={number(total)} icon={Users} />
-        <MetricCard label={t('adminUsers.visibleUsers')} value={number(rows.length)} icon={SearchIcon} accent />
-        <MetricCard label={t('adminUsers.admins')} value={number(adminCount)} icon={Shield} />
-        <MetricCard label={t('adminUsers.relayMapped')} value={number(mappedCount)} icon={KeyRound} />
+        <KpiCard label={t('adminUsers.totalUsers')} value={number(total)} icon={Users} />
+        <KpiCard label={t('adminUsers.visibleUsers')} value={number(rows.length)} icon={SearchIcon} accent />
+        <KpiCard label={t('adminUsers.admins')} value={number(adminCount)} icon={Shield} />
+        <KpiCard label={t('adminUsers.relayMapped')} value={number(mappedCount)} icon={KeyRound} />
       </div>
       <Card>
         <SectionCardHeader title={t('adminUsers.subscriptionManagement')} />

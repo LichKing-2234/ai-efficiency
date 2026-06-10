@@ -5,7 +5,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Sparkline } from '@/components/primitives/charts'
 import { cn } from '@/lib/utils'
 
-export function MetricCard({
+export function KpiCard({
   label,
   value,
   helper,
@@ -67,3 +67,5 @@ export function MetricCard({
     </Card>
   )
 }
+
+export const MetricCard = KpiCard

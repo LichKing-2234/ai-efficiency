@@ -10,7 +10,7 @@ import { Ring } from '@/components/primitives/charts'
 import { ChecklistRow } from '@/components/primitives/checklist-row'
 import { EntityCardHeader } from '@/components/primitives/entity-card-header'
 import { HeroContent } from '@/components/primitives/hero-content'
-import { MetricCard } from '@/components/primitives/metric-card'
+import { KpiCard } from '@/components/primitives/metric-card'
 import { Page } from '@/components/primitives/page'
 import { ProgressFraction } from '@/components/primitives/progress-fraction'
 import { SectionCardHeader } from '@/components/primitives/section-card-header'
@@ -68,14 +68,14 @@ export function HomePage() {
       <UserUsagePanel embedded />
 
       <div className='kpi-grid'>
-        <MetricCard
+        <KpiCard
           label={t('home.repos')}
           value={number(dashboard.data?.total_repos, locale)}
           helper={t('home.reposHelp')}
           icon={FolderGit2Icon}
           sparkline={[2, 4, 5, 7, 8, dashboard.data?.total_repos ?? 0]}
         />
-        <MetricCard
+        <KpiCard
           label={t('home.trackedWorkflows')}
           value={number(dashboard.data?.tracked_workflows, locale)}
           helper={t('home.trackedWorkflowsHelp')}
@@ -83,7 +83,7 @@ export function HomePage() {
           sparkline={[1, 3, 3, 5, 7, dashboard.data?.tracked_workflows ?? 0]}
           sparklineColor='var(--viz-output)'
         />
-        <MetricCard
+        <KpiCard
           label={t('home.totalAiPrs')}
           value={number(dashboard.data?.total_ai_prs, locale)}
           helper={t('home.totalAiPrsHelp')}
@@ -92,7 +92,7 @@ export function HomePage() {
           sparkline={[3, 5, 8, 13, 21, dashboard.data?.total_ai_prs ?? 0]}
           sparklineColor='var(--viz-input)'
         />
-        <MetricCard
+        <KpiCard
           label={t('home.connectedTools')}
           value={number(connectedTools.size, locale)}
           helper={connectedTools.size ? [...connectedTools].join(', ') : t('home.statusAiAccessMissing')}

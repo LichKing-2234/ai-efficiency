@@ -19,7 +19,7 @@ import { FilterRowTitle } from '@/components/primitives/filter-row-title'
 import { InfoTile, InfoTileGrid } from '@/components/primitives/info-tile'
 import { InsetPanel } from '@/components/primitives/inset-panel'
 import { LinkedRecordItem } from '@/components/primitives/linked-record-list'
-import { MetricCard } from '@/components/primitives/metric-card'
+import { KpiCard } from '@/components/primitives/metric-card'
 import { Page, PageToolbar } from '@/components/primitives/page'
 import { SectionCardHeader } from '@/components/primitives/section-card-header'
 import { LoadingState } from '@/components/primitives/data-state'
@@ -227,10 +227,10 @@ export function RepoDetailPage() {
         </Alert>
       ) : null}
       <div className='kpi-grid'>
-        <MetricCard label={t('repoDetail.prs')} value={number(totalPRs)} />
-        <MetricCard label={t('repoDetail.withUsage')} value={number(summary?.with_usage)} accent />
-        <MetricCard label={t('repoDetail.pendingUpload')} value={number(summary?.pending_upload)} />
-        <MetricCard label={t('repoDetail.refreshFailed')} value={number(summary?.refresh_failed)} />
+        <KpiCard label={t('repoDetail.prs')} value={number(totalPRs)} />
+        <KpiCard label={t('repoDetail.withUsage')} value={number(summary?.with_usage)} accent />
+        <KpiCard label={t('repoDetail.pendingUpload')} value={number(summary?.pending_upload)} />
+        <KpiCard label={t('repoDetail.refreshFailed')} value={number(summary?.refresh_failed)} />
       </div>
       {currentJob ? (
         <Card>

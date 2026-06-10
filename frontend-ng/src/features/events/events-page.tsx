@@ -15,7 +15,7 @@ import { FilterRow } from '@/components/primitives/filter-row'
 import { InfoTile, InfoTileGrid } from '@/components/primitives/info-tile'
 import { LabeledSegmentedControl } from '@/components/primitives/labeled-segmented-control'
 import { LinkedRecordItem, LinkedRecordList } from '@/components/primitives/linked-record-list'
-import { MetricCard } from '@/components/primitives/metric-card'
+import { KpiCard } from '@/components/primitives/metric-card'
 import { OptionList } from '@/components/primitives/option-list'
 import { Page } from '@/components/primitives/page'
 import { LoadingState } from '@/components/primitives/data-state'
@@ -123,10 +123,10 @@ export function EventsPage() {
   return (
     <Page className='stagger'>
       <div className='kpi-grid'>
-        <MetricCard label={t('events.totalEvents')} value={number(summary.data?.total_events)} icon={ActivityIcon} sparkline={rows.map((row) => row.request_count)} />
-        <MetricCard label={t('events.boundEvents')} value={number(summary.data?.bound_events)} icon={GitPullRequestIcon} accent sparkline={rows.map((row) => row.binding_status === 'bound' ? 1 : 0)} />
-        <MetricCard label={t('events.tokens')} value={compact(totalTokens)} icon={LayersIcon} sparkline={rows.map((row) => tokenTotal(row))} sparklineColor='var(--viz-reason)' />
-        <MetricCard label={t('events.credits')} value={number(totalCredit)} icon={CoinsIcon} sparkline={rows.map((row) => row.credit_usage)} sparklineColor='var(--viz-cache)' />
+        <KpiCard label={t('events.totalEvents')} value={number(summary.data?.total_events)} icon={ActivityIcon} sparkline={rows.map((row) => row.request_count)} />
+        <KpiCard label={t('events.boundEvents')} value={number(summary.data?.bound_events)} icon={GitPullRequestIcon} accent sparkline={rows.map((row) => row.binding_status === 'bound' ? 1 : 0)} />
+        <KpiCard label={t('events.tokens')} value={compact(totalTokens)} icon={LayersIcon} sparkline={rows.map((row) => tokenTotal(row))} sparklineColor='var(--viz-reason)' />
+        <KpiCard label={t('events.credits')} value={number(totalCredit)} icon={CoinsIcon} sparkline={rows.map((row) => row.credit_usage)} sparklineColor='var(--viz-cache)' />
       </div>
 
       <Card>
