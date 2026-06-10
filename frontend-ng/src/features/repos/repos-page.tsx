@@ -270,7 +270,7 @@ export function ReposPage() {
         <Card className='overflow-hidden'>
           <CardFilterBar>
             <Tabs value={selectedProvider?.provider_key ?? ''} onValueChange={(value) => replaceSearch({ ...search, provider: value, scope: '', page: 1 })}>
-              <TabsList className='h-auto flex-wrap justify-start'>
+              <TabsList wrap>
                 {reposForProviders.map((provider) => (
                   <TabsTrigger key={provider.provider_key} value={provider.provider_key} className='h-9'>
                     {provider.name}

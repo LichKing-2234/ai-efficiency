@@ -58,4 +58,9 @@ describe('Repos page composition', () => {
     expect(source).toContain('<EmptyState')
     expect(source).not.toContain("<CardContent className='p-8'>")
   })
+
+  test('uses wrapped shadcn tabs without page-local tab list layout classes', () => {
+    expect(source).toContain('<TabsList wrap>')
+    expect(source).not.toContain("<TabsList className='h-auto flex-wrap justify-start'>")
+  })
 })

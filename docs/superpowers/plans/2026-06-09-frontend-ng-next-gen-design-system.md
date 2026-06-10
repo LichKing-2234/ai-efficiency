@@ -470,6 +470,10 @@ Follow-up OAuth/auth redirect diagnosis fixed the `/oauth/device` unauthenticate
 
   Follow-up workbench shell audit evidence: `repos-page-composition.test.ts` was added with a red-green cycle; it first failed because `repos-page.tsx` did not import or render `CardFilterBar`/`SectionCardHeader`, then passed after migration. Focused verification passed with `bun test src/features/repos/repos-page-composition.test.ts src/features/repos/repos-state.test.ts src/features/repos/repo-binding.test.ts src/features/repos/repo-webhook-state.test.ts src/components/primitives/card-filter-bar.test.tsx src/components/primitives/section-card-header.test.tsx`, `bun run check`, and `git diff --check`.
 
+  Follow-up tabs-list wrap audit implementation extends the shadcn `TabsList` primitive with a semantic `wrap` prop and migrates the Repositories provider tabs away from page-local `h-auto flex-wrap justify-start` layout classes while preserving the current provider filter behavior and badge content.
+
+  Follow-up tabs-list wrap audit evidence: `tabs.test.tsx` and `repos-page-composition.test.ts` were extended with a red-green cycle; they first failed because `TabsList` did not consume `wrap` semantically and the Repositories page still owned the tab-list layout classes, then passed after migration.
+
   Follow-up data-grid-cell audit implementation migrates Repositories provider and default-branch cells to the shared `DataGridCell` primitive, keeping the existing provider fallback, branch value, truncation behavior, and table action controls unchanged.
 
   Follow-up data-grid-cell audit evidence: `data-grid.test.tsx` and `repos-page-composition.test.ts` were extended with a red-green cycle; they first failed because `DataGridCell` was not exported and `repos-page.tsx` still owned the provider/branch metadata class strings, then passed after migration. Focused verification passed with `bun test src/components/primitives/data-grid.test.tsx src/features/events/events-page-composition.test.ts src/features/repos/repos-page-composition.test.ts src/features/events/event-filters.test.ts src/features/repos/repos-state.test.ts`.
