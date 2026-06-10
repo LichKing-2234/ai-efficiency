@@ -47,7 +47,13 @@ describe('OAuth page primitives', () => {
   })
 
   test('uses the shared card content stack for auth surface bodies', () => {
-    expect(source).toContain("from '@/components/primitives/card-content-stack'")
+    expect(source).toContain("from '@/components/primitives/auth-surface'")
     expect(source).not.toContain("<CardContent className='flex flex-col gap-3'>")
+  })
+
+  test('uses the shared auth surface instead of an OAuth-local shell', () => {
+    expect(source).toContain("from '@/components/primitives/auth-surface'")
+    expect(source).not.toContain("function AuthSurface")
+    expect(source).not.toContain("<main className='grid min-h-screen place-items-center bg-background p-4'>")
   })
 })

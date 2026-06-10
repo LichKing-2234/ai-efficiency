@@ -2,8 +2,7 @@ import { useNavigate, useSearch } from '@tanstack/react-router'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
-import { SectionCardHeader } from '@/components/primitives/section-card-header'
+import { AuthSurface } from '@/components/primitives/auth-surface'
 import { api } from '@/lib/api'
 import { useI18n } from '@/lib/i18n/i18n'
 import { safeRedirect, selectInitialLoginSource } from './auth-flow-state'
@@ -31,29 +30,24 @@ export function LoginPage() {
   })
 
   return (
-    <main className='grid min-h-screen place-items-center bg-background p-4'>
-      <Card className='w-full max-w-md'>
-        <SectionCardHeader title={t('auth.loginTitle')} description={t('auth.loginDescription')} />
-        <CardContent>
-          <LoginForm
-            error={login.error?.message}
-            options={options.data}
-            password={password}
-            pending={login.isPending}
-            source={source}
-            username={username}
-            onPasswordChange={setPassword}
-            onSourceChange={setSource}
-            onSubmit={() => login.mutate()}
-            onUsernameChange={setUsername}
-          />
-          {options.data?.dev_login_enabled ? (
-            <Button className='mt-3 w-full' variant='outline' onClick={() => devLogin.mutate()} disabled={devLogin.isPending}>
-              {t('auth.devLogin')}
-            </Button>
-          ) : null}
-        </CardContent>
-      </Card>
-    </main>
+    <AuthSurface title={t('auth.loginTitle')} description={t('auth.loginDescription')}>
+      <LoginForm
+        error={login.error?.message}
+        options={options.data}
+        password={password}
+        pending={login.isPending}
+        source={source}
+        username={username}
+        onPasswordChange={setPassword}
+        onSourceChange={setSource}
+        onSubmit={() => login.mutate()}
+        onUsernameChange={setUsername}
+      />
+      {options.data?.dev_login_enabled ? (
+        <Button className='mt-3 w-full' variant='outline' onClick={() => devLogin.mutate()} disabled={devLogin.isPending}>
+          {t('auth.devLogin')}
+        </Button>
+      ) : null}
+    </AuthSurface>
   )
 }
