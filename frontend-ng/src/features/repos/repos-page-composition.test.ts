@@ -20,9 +20,11 @@ describe('Repos page composition', () => {
     expect(source).not.toContain("actions={<span className='text-muted-foreground text-sm'>{number(total, locale)} {t('repos.totalRepositories')}</span>}")
   })
 
-  test('uses shared record metadata for clone URLs', () => {
-    expect(source).toContain("from '@/components/primitives/record-meta'")
-    expect(source).toContain('<RecordMeta>')
+  test('uses shared data grid record cells for clone URLs', () => {
+    expect(source).toContain('DataGridRecordCell')
+    expect(source).not.toContain("from '@/components/primitives/record-meta'")
+    expect(source).not.toContain('<RecordMeta>')
+    expect(source).not.toContain("<span className='min-w-0'>")
     expect(source).not.toContain("<span className='mono block truncate text-[11px] text-[var(--ink-4)]'>")
   })
 

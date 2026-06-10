@@ -16,8 +16,7 @@ import { MetricCard } from '@/components/primitives/metric-card'
 import { AppAlert } from '@/components/primitives/app-alert'
 import { Page } from '@/components/primitives/page'
 import { EmptyState, LoadingState } from '@/components/primitives/data-state'
-import { DataGrid, DataGridCell, DataGridHeader, DataGridHeaderCell, DataGridPrimaryLink, DataGridRow } from '@/components/primitives/data-grid'
-import { RecordMeta } from '@/components/primitives/record-meta'
+import { DataGrid, DataGridCell, DataGridHeader, DataGridHeaderCell, DataGridPrimaryLink, DataGridRecordCell, DataGridRow } from '@/components/primitives/data-grid'
 import { SectionCardHeader } from '@/components/primitives/section-card-header'
 import { SectionNav, type SectionNavItem } from '@/components/primitives/section-nav'
 import { StatusBadge } from '@/components/primitives/status-badge'
@@ -389,14 +388,13 @@ function RepoTable({
       </DataGridHeader>
       {rows.map((repo) => (
         <DataGridRow columns={columns} key={repo.id}>
-          <span className='min-w-0'>
+          <DataGridRecordCell description={repo.clone_url}>
             <DataGridPrimaryLink asChild>
               <Link to='/repos/$id' params={{ id: String(repo.id) }}>
                 {repo.full_name || repo.name}
               </Link>
             </DataGridPrimaryLink>
-            <RecordMeta>{repo.clone_url}</RecordMeta>
-          </span>
+          </DataGridRecordCell>
           <span><Badge variant={repo.binding_state === 'bound' ? 'pos' : 'warn'}>{repo.binding_state}</Badge></span>
           <DataGridCell truncate tone='muted'>{repo.edges?.scm_provider?.name || repo.scm_provider_id || '-'}</DataGridCell>
           <DataGridCell mono truncate tone='subtle'>{repo.default_branch}</DataGridCell>

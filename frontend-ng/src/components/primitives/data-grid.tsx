@@ -1,6 +1,7 @@
 import { Slot } from 'radix-ui'
 import type * as React from 'react'
 import { IdentityAvatar } from './identity-avatar'
+import { RecordMeta } from './record-meta'
 import { cn } from '@/lib/utils'
 
 function normalizeColumns(columns: string) {
@@ -204,6 +205,23 @@ export function DataGridIdentityCell({
     <span className={cn('flex min-w-0 items-center gap-3', className)} data-slot='data-grid-identity-cell'>
       <IdentityAvatar value={value} />
       <DataGridCell description={description} truncate>{children}</DataGridCell>
+    </span>
+  )
+}
+
+export function DataGridRecordCell({
+  children,
+  className,
+  description
+}: {
+  children: React.ReactNode
+  className?: string
+  description: React.ReactNode
+}) {
+  return (
+    <span className={cn('min-w-0', className)} data-slot='data-grid-record-cell'>
+      {children}
+      <RecordMeta>{description}</RecordMeta>
     </span>
   )
 }

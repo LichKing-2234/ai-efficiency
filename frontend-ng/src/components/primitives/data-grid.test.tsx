@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, test } from 'vitest'
-import { DataGrid, DataGridCell, DataGridHeader, DataGridHeaderCell, DataGridIdentityCell, DataGridPrimaryLink, DataGridRow, DataGridStatusRow } from './data-grid'
+import { DataGrid, DataGridCell, DataGridHeader, DataGridHeaderCell, DataGridIdentityCell, DataGridPrimaryLink, DataGridRecordCell, DataGridRow, DataGridStatusRow } from './data-grid'
 
 describe('DataGrid', () => {
   test('renders reference table shells with shared grid template classes', () => {
@@ -167,5 +167,26 @@ describe('DataGrid', () => {
     expect(html).toContain('truncate')
     expect(html).toContain('font-semibold')
     expect(html).toContain('hover:text-[var(--ai-deep)]')
+  })
+
+  test('renders standardized record cells with mono metadata', () => {
+    const html = renderToStaticMarkup(
+      <DataGrid>
+        <DataGridRow columns='1fr'>
+          <DataGridRecordCell description='https://example.com/platform/repo.git'>
+            <DataGridPrimaryLink href='/repos/42'>Platform Repository</DataGridPrimaryLink>
+          </DataGridRecordCell>
+        </DataGridRow>
+      </DataGrid>
+    )
+
+    expect(html).toContain('data-slot="data-grid-record-cell"')
+    expect(html).toContain('data-slot="data-grid-primary-link"')
+    expect(html).toContain('data-slot="record-meta"')
+    expect(html).toContain('Platform Repository')
+    expect(html).toContain('https://example.com/platform/repo.git')
+    expect(html).toContain('min-w-0')
+    expect(html).toContain('mono')
+    expect(html).toContain('truncate')
   })
 })
