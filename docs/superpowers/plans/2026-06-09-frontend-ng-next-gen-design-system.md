@@ -614,6 +614,10 @@ Follow-up OAuth/auth redirect diagnosis fixed the `/oauth/device` unauthenticate
 
   Follow-up auth-surface audit evidence: `auth-surface.test.tsx`, `login-page-composition.test.ts`, and `oauth-pages.test.tsx` were extended with a red-green cycle; they first failed because the shared primitive did not exist, Login still owned the full-screen shell, and OAuth still owned a local `AuthSurface`, then passed after extraction and migration.
 
+  Follow-up auth-surface action audit implementation extends `AuthSurface` with a standardized secondary `actions` slot and migrates the Login dev-login button away from page-local `mt-3 w-full` layout classes while preserving the same dev-login mutation, disabled state, and i18n copy.
+
+  Follow-up auth-surface action audit evidence: `auth-surface.test.tsx` and `login-page-composition.test.ts` were extended with a red-green cycle; they first failed because `AuthSurface` did not render an action slot and Login still owned the dev-login button layout, then passed after migration.
+
   Follow-up table audit implementation migrates the Admin Users table plus Settings relay, SCM, and advanced credential tables to the shared `DataGrid` primitive while preserving selection, search, pagination, reveal confirmation, CRUD dialogs, confirm actions, and backend mutation payloads.
 
   Follow-up table audit evidence: `data-grid.test.tsx`, `admin-users-state.test.ts`, `settings-payloads.test.ts`, `bun test`, `bun run check`, `bun run build`, and `git diff --check` passed after the migration. `agent-browser` reverified `/admin/users` and `/settings` at `1280x720` and `390x844`: shared data grids rendered where backend data exists, no error boundary text, no body horizontal overflow, and no visible over-wide interactive controls.

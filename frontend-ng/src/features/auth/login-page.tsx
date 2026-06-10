@@ -30,7 +30,15 @@ export function LoginPage() {
   })
 
   return (
-    <AuthSurface title={t('auth.loginTitle')} description={t('auth.loginDescription')}>
+    <AuthSurface
+      title={t('auth.loginTitle')}
+      description={t('auth.loginDescription')}
+      actions={options.data?.dev_login_enabled ? (
+        <Button variant='outline' onClick={() => devLogin.mutate()} disabled={devLogin.isPending}>
+          {t('auth.devLogin')}
+        </Button>
+      ) : null}
+    >
       <LoginForm
         error={login.error?.message}
         options={options.data}
@@ -43,11 +51,6 @@ export function LoginPage() {
         onSubmit={() => login.mutate()}
         onUsernameChange={setUsername}
       />
-      {options.data?.dev_login_enabled ? (
-        <Button className='mt-3 w-full' variant='outline' onClick={() => devLogin.mutate()} disabled={devLogin.isPending}>
-          {t('auth.devLogin')}
-        </Button>
-      ) : null}
     </AuthSurface>
   )
 }

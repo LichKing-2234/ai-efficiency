@@ -12,4 +12,9 @@ describe('Login page composition', () => {
     expect(source).not.toContain("<main className='grid min-h-screen place-items-center bg-background p-4'>")
     expect(source).not.toContain("<Card className='w-full max-w-md'>")
   })
+
+  test('delegates dev login button layout to the shared auth surface', () => {
+    expect(source).toContain('actions={')
+    expect(source).not.toContain("className='mt-3 w-full'")
+  })
 })

@@ -17,4 +17,20 @@ describe('AuthSurface', () => {
     expect(html).toContain('data-slot="card-content"')
     expect(html).toContain('flex flex-col gap-3')
   })
+
+  test('renders secondary auth actions in a standardized full-width action slot', () => {
+    const html = renderToStaticMarkup(
+      <AuthSurface
+        title='Sign in'
+        description='Use your account'
+        actions={<button type='button'>Use dev login</button>}
+      >
+        <button type='button'>Continue</button>
+      </AuthSurface>
+    )
+
+    expect(html).toContain('data-slot="auth-surface-actions"')
+    expect(html).toContain('w-full')
+    expect(html).toContain('Use dev login')
+  })
 })

@@ -5,11 +5,13 @@ import { SectionCardHeader } from '@/components/primitives/section-card-header'
 import { cn } from '@/lib/utils'
 
 export function AuthSurface({
+  actions,
   children,
   className,
   description,
   title
 }: {
+  actions?: React.ReactNode
   children: React.ReactNode
   className?: string
   description: string
@@ -20,6 +22,7 @@ export function AuthSurface({
       <Card className={cn('w-full max-w-md', className)}>
         <SectionCardHeader title={title} description={description} />
         <CardContentStack>{children}</CardContentStack>
+        {actions ? <div data-slot='auth-surface-actions' className='px-[18px] pb-[18px] [&>*]:w-full'>{actions}</div> : null}
       </Card>
     </main>
   )
