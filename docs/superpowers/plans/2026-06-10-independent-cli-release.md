@@ -8,7 +8,7 @@
 
 **Tech Stack:** GitHub Actions, GoReleaser v2, Go 1.24+, Bash, PowerShell, GitHub Releases API.
 
-**Status:** Implementation in progress. First live CLI validation hit an OSS GoReleaser release-mode semver parsing failure on `ae-cli/v0.2.0-preview.1`; the workflow is being adjusted to build artifacts with GoReleaser snapshot mode and publish them with `gh release create`. PowerShell syntax verification is not runnable in the current local environment because `pwsh` is not installed; this remains an unchecked verification gap approved by the user on 2026-06-10.
+**Status:** Implementation in progress. First live CLI validation hit an OSS GoReleaser release-mode semver parsing failure on `ae-cli/v0.2.0-preview.1`; the first retry built artifacts successfully but the publish glob also matched GoReleaser binary directories. The workflow is being adjusted to publish only archive files plus `checksums.txt`. PowerShell syntax verification is not runnable in the current local environment because `pwsh` is not installed; this remains an unchecked verification gap approved by the user on 2026-06-10.
 
 **Local Tooling Note:** `goreleaser` is not installed as a standalone binary in this environment. GoReleaser validation is run with `GOPROXY=https://goproxy.cn,direct go run github.com/goreleaser/goreleaser/v2@latest ...`.
 
@@ -971,7 +971,8 @@ jobs:
           fi
 
           gh release create "$TAG" \
-            dist/ae-cli_* \
+            dist/ae-cli_*.tar.gz \
+            dist/ae-cli_*.zip \
             dist/checksums.txt \
             --verify-tag \
             --latest=false \

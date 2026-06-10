@@ -146,7 +146,8 @@ jobs:
           fi
 
           gh release create "$TAG" \
-            dist/ae-cli_* \
+            dist/ae-cli_*.tar.gz \
+            dist/ae-cli_*.zip \
             dist/checksums.txt \
             --verify-tag \
             --latest=false \

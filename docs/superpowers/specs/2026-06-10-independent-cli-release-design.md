@@ -1,6 +1,6 @@
 # Independent CLI Release Design
 
-**Status:** Implemented release boundary; first live CLI release validation retry pending after direct GoReleaser publish rejected `ae-cli/v*` slash tag semver parsing
+**Status:** Implemented release boundary; first live CLI release validation retry pending after direct GoReleaser publish rejected `ae-cli/v*` slash tag semver parsing and the first retry exposed an archive-only asset glob fix
 
 ## Overview
 
@@ -213,7 +213,7 @@ CLI `.goreleaser.ae-cli.yaml`：
 - `binary: ae-cli`。
 - `ldflags` 写入 `github.com/ai-efficiency/ae-cli/internal/buildinfo.Version`。
 - workflow 以 `release --snapshot --clean --config .goreleaser.ae-cli.yaml` 运行，使用 GoReleaser 生成跨平台 archives 和 checksum，但不让 GoReleaser 创建 GitHub Release。
-- workflow 随后用 `gh release create <ae-cli/v*> dist/ae-cli_* dist/checksums.txt --verify-tag --latest=false` 创建 CLI GitHub Release。
+- workflow 随后用 `gh release create <ae-cli/v*> dist/ae-cli_*.tar.gz dist/ae-cli_*.zip dist/checksums.txt --verify-tag --latest=false` 创建 CLI GitHub Release。
 - 因 tag 带有 `ae-cli/` 前缀，workflow 应把剥离后的版本传给 GoReleaser 或在配置中显式处理版本显示，确保 `ae-cli version` 输出 `vX.Y.Z`，而不是 `ae-cli/vX.Y.Z`。
 
 不使用 GoReleaser Pro 的 `monorepo.tag_prefix`，避免新增商业功能依赖。OSS GoReleaser 在正式 release mode 会把 `ae-cli/v*` 解析为非法 semver，因此 CLI workflow 不直接让 GoReleaser 发布 release；版本展示通过 workflow 环境变量和 build flag 显式传入剥离后的 CLI version。
