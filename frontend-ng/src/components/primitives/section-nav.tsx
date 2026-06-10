@@ -15,16 +15,21 @@ export function SectionNav<T extends string>({
   items,
   onChange,
   ariaLabel,
-  className
+  className,
+  scroll = 'none'
 }: {
   value: T
   items: Array<SectionNavItem<T>>
   onChange: (value: T) => void
   ariaLabel: string
   className?: string
+  scroll?: 'none' | 'workbench'
 }) {
   return (
-    <nav aria-label={ariaLabel} className={cn('flex flex-col gap-1', className)}>
+    <nav
+      aria-label={ariaLabel}
+      className={cn('flex flex-col gap-1', scroll === 'workbench' && 'max-h-[430px] overflow-y-auto', className)}
+    >
       {items.map((item) => {
         const active = item.value === value
         const Icon = item.icon

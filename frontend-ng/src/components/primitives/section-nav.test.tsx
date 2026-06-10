@@ -41,4 +41,23 @@ describe('SectionNav', () => {
     expect(html).toContain('p-2')
     expect(html).toContain('Relay providers')
   })
+
+  test('owns workbench scroll constraints for long section rails', () => {
+    const html = renderToStaticMarkup(
+      <SectionNav
+        ariaLabel='Repository scopes'
+        items={[
+          { value: 'all', label: 'All repositories', icon: CircleIcon },
+          { value: 'platform', label: 'Platform', icon: CircleIcon }
+        ]}
+        onChange={() => undefined}
+        scroll='workbench'
+        value='all'
+      />
+    )
+
+    expect(html).toContain('max-h-[430px]')
+    expect(html).toContain('overflow-y-auto')
+    expect(html).toContain('Repository scopes')
+  })
 })

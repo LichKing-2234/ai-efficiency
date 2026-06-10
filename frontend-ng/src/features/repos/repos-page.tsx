@@ -295,9 +295,9 @@ export function ReposPage() {
             >
               <SectionNav
                 ariaLabel={t('repos.scopeSearch')}
-                className='max-h-[430px] overflow-y-auto'
                 items={scopeItems}
                 onChange={(scope) => replaceSearch({ ...search, scope, page: 1 })}
+                scroll='workbench'
                 value={selectedScope}
               />
             </WorkbenchRail>
