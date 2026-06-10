@@ -1,12 +1,22 @@
 import type * as React from 'react'
 import { cn } from '@/lib/utils'
 
-function Card({ className, ...props }: React.ComponentProps<'div'>) {
+type CardProps = React.ComponentProps<'div'> & {
+  variant?: 'default' | 'accent'
+}
+
+const cardVariants = {
+  default: '',
+  accent: 'grid-paper overflow-hidden border-[var(--ai-line)] bg-[linear-gradient(150deg,var(--ai-soft),transparent_60%),var(--surface)]'
+} satisfies Record<NonNullable<CardProps['variant']>, string>
+
+function Card({ className, variant = 'default', ...props }: CardProps) {
   return (
     <div
       data-slot='card'
       className={cn(
         'rounded-[var(--r-lg)] border border-border bg-card text-card-foreground shadow-[var(--sh-sm)]',
+        cardVariants[variant],
         className
       )}
       {...props}

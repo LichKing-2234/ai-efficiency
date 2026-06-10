@@ -45,7 +45,7 @@ export function HomePage() {
 
   return (
     <Page>
-      <Card className='grid-paper overflow-hidden border-[var(--ai-line)] bg-[linear-gradient(150deg,var(--ai-soft),transparent_60%),var(--surface)]'>
+      <Card variant='accent'>
         <CardContent className='flex flex-col gap-5 p-6 lg:flex-row lg:items-center lg:justify-between'>
           <div className='max-w-2xl'>
             <Badge variant='ai'>{t('home.heroBadge')}</Badge>
