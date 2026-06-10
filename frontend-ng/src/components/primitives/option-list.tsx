@@ -1,9 +1,19 @@
 import { cn } from '@/lib/utils'
 
+const optionDescriptionClass = 'mt-0.5 block truncate text-muted-foreground text-xs'
+
 export type OptionListItem = {
   id: string | number
   label: React.ReactNode
   description?: React.ReactNode
+}
+
+function OptionDescription({ children }: { children: React.ReactNode }) {
+  return (
+    <span className={optionDescriptionClass} data-slot='option-description'>
+      {children}
+    </span>
+  )
 }
 
 export function OptionList({
@@ -33,7 +43,7 @@ export function OptionList({
           type='button'
         >
           <span className='block truncate font-medium'>{item.label}</span>
-          {item.description ? <span className='mt-0.5 block truncate text-muted-foreground text-xs'>{item.description}</span> : null}
+          {item.description ? <OptionDescription>{item.description}</OptionDescription> : null}
         </button>
       ))}
     </div>

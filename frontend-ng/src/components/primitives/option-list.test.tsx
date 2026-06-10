@@ -21,4 +21,12 @@ describe('OptionList', () => {
     expect(html).toContain('admin · 12')
     expect(html).toContain('bob@example.org')
   })
+
+  test('keeps description rhythm inside the primitive description slot', async () => {
+    const source = await import('node:fs/promises').then((fs) =>
+      fs.readFile(new URL('./option-list.tsx', import.meta.url), 'utf8')
+    )
+
+    expect(source).not.toContain("className='mt-0.5 block truncate text-muted-foreground text-xs'")
+  })
 })

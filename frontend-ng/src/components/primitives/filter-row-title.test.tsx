@@ -30,4 +30,12 @@ describe('FilterRowTitle', () => {
     expect(html).toContain('text-muted-foreground')
     expect(html).not.toContain('data-slot="filter-row-title-text"')
   })
+
+  test('keeps description rhythm inside the primitive description slot', async () => {
+    const source = await import('node:fs/promises').then((fs) =>
+      fs.readFile(new URL('./filter-row-title.tsx', import.meta.url), 'utf8')
+    )
+
+    expect(source).not.toContain("className='mt-0.5 text-muted-foreground text-xs'")
+  })
 })

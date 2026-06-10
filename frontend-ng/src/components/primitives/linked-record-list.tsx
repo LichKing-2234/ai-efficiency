@@ -1,6 +1,16 @@
 import type * as React from 'react'
 import { cn } from '@/lib/utils'
 
+const linkedRecordDescriptionClass = 'mt-1 block truncate text-muted-foreground text-xs'
+
+function LinkedRecordDescription({ children }: { children: React.ReactNode }) {
+  return (
+    <span className={linkedRecordDescriptionClass} data-slot='linked-record-description'>
+      {children}
+    </span>
+  )
+}
+
 export function LinkedRecordList({
   children,
   className
@@ -48,7 +58,7 @@ export function LinkedRecordItem({
       {icon ? <span className='grid size-4 shrink-0 place-items-center text-[var(--ai)]'>{icon}</span> : null}
       <span className='min-w-0 flex-1'>
         <span className='block truncate font-medium text-sm'>{label}</span>
-        {description ? <span className='mt-1 block truncate text-muted-foreground text-xs'>{description}</span> : null}
+        {description ? <LinkedRecordDescription>{description}</LinkedRecordDescription> : null}
       </span>
       {trailing ? <span className='shrink-0 text-muted-foreground'>{trailing}</span> : null}
     </a>

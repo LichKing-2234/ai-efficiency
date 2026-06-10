@@ -42,4 +42,12 @@ describe('LinkedRecordList', () => {
     expect(html).not.toContain('bg-card')
     expect(html).not.toContain('border-border')
   })
+
+  test('keeps description rhythm inside the primitive description slot', async () => {
+    const source = await import('node:fs/promises').then((fs) =>
+      fs.readFile(new URL('./linked-record-list.tsx', import.meta.url), 'utf8')
+    )
+
+    expect(source).not.toContain("className='mt-1 block truncate text-muted-foreground text-xs'")
+  })
 })
