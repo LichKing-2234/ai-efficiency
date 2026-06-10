@@ -19,4 +19,10 @@ describe('AppShell composition', () => {
     expect(source).not.toContain("<kbd className='rounded border border-border bg-[var(--surface)] px-1.5 py-0.5 font-mono font-semibold text-[10.5px] text-[var(--ink-3)]'>")
     expect(source).not.toContain("className='hidden min-w-48 justify-start gap-2 text-[var(--ink-3)] lg:inline-flex'")
   })
+
+  test('uses shared live status composition in the topbar', () => {
+    expect(source).toContain("from './topbar-live-status'")
+    expect(source).toContain('<TopbarLiveStatus')
+    expect(source).not.toContain("<div className='hidden items-center gap-2 rounded-full border border-[var(--pos-line)] bg-[var(--pos-soft)] px-3 py-1 md:flex'>")
+  })
 })

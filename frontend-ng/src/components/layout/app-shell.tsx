@@ -30,6 +30,7 @@ import { useI18n } from '@/lib/i18n/i18n'
 import { cn } from '@/lib/utils'
 import { navItems, pageMeta } from './navigation'
 import { TopbarCommandTrigger } from './topbar-command-trigger'
+import { TopbarLiveStatus } from './topbar-live-status'
 import { TopbarTitle } from './topbar-title'
 
 const LOCALES: Array<{ value: Locale; labelKey: 'locale.english' | 'locale.chinese'; shortKey: 'locale.englishShort' | 'locale.chineseShort' }> = [
@@ -195,10 +196,7 @@ export function AppShell({ user, children }: { user: User | null; children: Reac
           <TopbarTitle section={t(meta.sectionKey)} title={t(meta.titleKey)} />
           <div className='ml-auto flex items-center gap-2'>
             <TopbarCommandTrigger label={t('command.trigger')} onOpen={() => setCommandOpen(true)} />
-            <div className='hidden items-center gap-2 rounded-full border border-[var(--pos-line)] bg-[var(--pos-soft)] px-3 py-1 md:flex'>
-              <span className='live-dot' />
-              <span className='font-semibold text-[11.5px] text-[var(--pos)]'>{t('nav.ingesting')}</span>
-            </div>
+            <TopbarLiveStatus label={t('nav.ingesting')} />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button size='sm' type='button' variant='ghost'>

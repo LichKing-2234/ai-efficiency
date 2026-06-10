@@ -197,6 +197,10 @@ Follow-up OAuth/auth redirect diagnosis fixed the `/oauth/device` unauthenticate
 
   Follow-up topbar command-trigger audit evidence: `topbar-command-trigger.test.tsx` and `app-shell-composition.test.ts` were extended with a red-green cycle; they first failed because `topbar-command-trigger.tsx` did not exist and `app-shell.tsx` still owned the command trigger class strings, then passed after migration. Focused verification passed with `bun test src/components/layout/topbar-command-trigger.test.tsx src/components/layout/app-shell-composition.test.ts` and `bun run check`.
 
+  Follow-up topbar live-status audit implementation adds the shared `TopbarLiveStatus` shell primitive and migrates the reference `Ingesting` status pill away from AppShell-local markup while preserving the same responsive visibility, live-dot treatment, and i18n label.
+
+  Follow-up topbar live-status audit evidence: `topbar-live-status.test.tsx` and `app-shell-composition.test.ts` were extended with a red-green cycle; they first failed because `topbar-live-status.tsx` did not exist and `app-shell.tsx` still owned the status pill classes, then passed after migration. Focused verification passed with `bun test src/components/layout/topbar-live-status.test.tsx src/components/layout/app-shell-composition.test.ts` and `bun run check`.
+
   Follow-up command action/repository audit implementation expands the palette toward the reference `Navigate / Actions / Repositories` model. It adds a safe Toggle Theme action wired through AppShell state, loads up to four repository suggestions from the existing same-origin `api.repos.list({ page: 1, pageSize: 4 })` client, and routes repository hits through TanStack Router's `/repos/$id` params contract instead of mock `AE.repoRows` data.
 
   Follow-up command action/repository audit evidence: `command-palette.test.ts` was extended with a red-green cycle; it first failed because the palette only exposed navigation/admin commands and did not import the API client, then passed after implementation. Focused verification passed with `bun test src/components/command/command-palette.test.ts` and `bun run check`.
