@@ -1187,7 +1187,7 @@ Expected: commit succeeds.
 - Test: `ae-cli/install.ps1`
 - Test: `ae-cli/internal/update`
 
-- [ ] **Step 1: Run ae-cli Go tests**
+- [x] **Step 1: Run ae-cli Go tests**
 
 Run:
 
@@ -1197,7 +1197,7 @@ cd ae-cli && go test ./...
 
 Expected: PASS.
 
-- [ ] **Step 2: Run installer tests**
+- [x] **Step 2: Run installer tests**
 
 Run:
 
@@ -1207,7 +1207,7 @@ bash ae-cli/test/install-test.sh
 
 Expected: PASS.
 
-- [ ] **Step 3: Run shell syntax validation**
+- [x] **Step 3: Run shell syntax validation**
 
 Run:
 
@@ -1227,7 +1227,7 @@ pwsh -NoProfile -Command '$ErrorActionPreference = "Stop"; [scriptblock]::Create
 
 Expected: PASS with no output.
 
-- [ ] **Step 5: Run GoReleaser config validation**
+- [x] **Step 5: Run GoReleaser config validation**
 
 Run:
 
@@ -1238,7 +1238,16 @@ AE_CLI_VERSION=v0.2.0-preview.1 AE_CLI_VERSION_NO_V=0.2.0-preview.1 goreleaser c
 
 Expected: both commands PASS.
 
-- [ ] **Step 6: Run CLI snapshot release**
+Actual local command used:
+
+```bash
+GOPROXY=https://goproxy.cn,direct go run github.com/goreleaser/goreleaser/v2@latest check --config .goreleaser.yaml
+AE_CLI_VERSION=v0.2.0-preview.1 AE_CLI_VERSION_NO_V=0.2.0-preview.1 GOPROXY=https://goproxy.cn,direct go run github.com/goreleaser/goreleaser/v2@latest check --config .goreleaser.ae-cli.yaml
+```
+
+Actual result: PASS.
+
+- [x] **Step 6: Run CLI snapshot release**
 
 Run:
 
@@ -1248,7 +1257,15 @@ AE_CLI_VERSION=v0.2.0-preview.1 AE_CLI_VERSION_NO_V=0.2.0-preview.1 goreleaser r
 
 Expected: PASS and no GitHub Release is created because this is a snapshot.
 
-- [ ] **Step 7: Commit final plan checkbox updates**
+Actual local command used:
+
+```bash
+AE_CLI_VERSION=v0.2.0-preview.1 AE_CLI_VERSION_NO_V=0.2.0-preview.1 GOPROXY=https://goproxy.cn,direct go run github.com/goreleaser/goreleaser/v2@latest release --snapshot --clean --config .goreleaser.ae-cli.yaml
+```
+
+Actual result: PASS.
+
+- [x] **Step 7: Commit final plan checkbox updates**
 
 After every earlier checked step in this plan reflects actual completed work, run:
 
