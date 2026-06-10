@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { FieldDescription } from '@/components/ui/field'
 import { ActionGroup } from '@/components/primitives/action-group'
 import { AppAlert } from '@/components/primitives/app-alert'
 import { CardContentStack } from '@/components/primitives/card-content-stack'
@@ -191,9 +192,9 @@ export function AdminUsersPage() {
       <Card>
         <SectionCardHeader title={t('adminUsers.subscriptionManagement')} />
         <CardContentStack>
-          <div className='text-muted-foreground text-sm'>
+          <FieldDescription>
             {scope === 'selected' ? t('adminUsers.selectedUsers', { count: selected.length }) : scope === 'current_filter' ? (q.trim() ? t('adminUsers.currentFilterValue', { query: q.trim() }) : t('adminUsers.currentFilter')) : t('adminUsers.allMapped')}
-          </div>
+          </FieldDescription>
           <AdminSubscriptionForm
             activeGroupId={activeGroupId}
             activeGroups={activeGroups}

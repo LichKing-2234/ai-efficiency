@@ -22,4 +22,9 @@ describe('Admin users page composition', () => {
     expect(source).not.toContain("className='block truncate text-muted-foreground text-xs'")
     expect(source).toContain('description={user.email}')
   })
+
+  test('uses shadcn field description for subscription summary copy', () => {
+    expect(source).toContain("FieldDescription")
+    expect(source).not.toContain("<div className='text-muted-foreground text-sm'>")
+  })
 })
