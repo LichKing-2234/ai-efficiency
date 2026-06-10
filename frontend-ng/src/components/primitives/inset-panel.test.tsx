@@ -18,4 +18,15 @@ describe('InsetPanel', () => {
     expect(html).toContain('p-4')
     expect(html).toContain('leading-7')
   })
+
+  test('supports a flush variant for details nested inside framed surfaces', () => {
+    const html = renderToStaticMarkup(<InsetPanel flush>Expanded details</InsetPanel>)
+
+    expect(html).toContain('data-slot="inset-panel"')
+    expect(html).toContain('Expanded details')
+    expect(html).toContain('rounded-none')
+    expect(html).toContain('border-x-0')
+    expect(html).toContain('border-t-0')
+    expect(html).toContain('p-4')
+  })
 })

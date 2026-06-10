@@ -470,6 +470,10 @@ Follow-up OAuth/auth redirect diagnosis fixed the `/oauth/device` unauthenticate
 
   Follow-up repo-detail stack audit evidence: `repo-detail-page-composition.test.ts` was extended with a red-green cycle; it first failed because `repo-detail-page.tsx` did not import `Stack` and still owned the repair/detail stack classes. Focused verification passed with `bun test src/features/repos/repo-detail-page-composition.test.ts src/features/repos/repo-detail-state.test.ts src/features/repos/repo-webhook-state.test.ts src/components/primitives/stack.test.tsx`.
 
+  Follow-up expanded-detail panel audit implementation adds a `flush` variant to the shared `InsetPanel` primitive and migrates Repository Detail's expanded PR detail panel away from route-local `rounded-none border-x-0 border-t-0 p-4` styling while preserving the nested usage summary, refresh/settle actions, loading state, and commit snapshot grid.
+
+  Follow-up expanded-detail panel audit evidence: `repo-detail-page-composition.test.ts` was extended with a red-green cycle; it first failed because `repo-detail-page.tsx` still owned the local flush panel classes. Focused verification passed with `bun test src/components/primitives/inset-panel.test.tsx src/features/repos/repo-detail-page-composition.test.ts src/features/repos/repo-detail-state.test.ts`.
+
 - [x] **Step 4: My Setup**
 
   Re-skin provider credential setup, status/progress, and key actions with shared field/card primitives.

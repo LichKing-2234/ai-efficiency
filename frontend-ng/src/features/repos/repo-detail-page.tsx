@@ -350,7 +350,7 @@ export function RepoDetailPage() {
                       </ActionGroup>
                     </DataGridRow>
                     {expanded ? (
-                      <InsetPanel className='rounded-none border-x-0 border-t-0 p-4'>
+                      <InsetPanel flush>
                           {prDetail.isLoading ? (
                             <div className='py-4 text-center text-muted-foreground text-sm'>{t('repoDetail.loadingDetails')}</div>
                           ) : (
