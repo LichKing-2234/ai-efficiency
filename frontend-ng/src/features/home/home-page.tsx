@@ -10,6 +10,7 @@ import { Ring } from '@/components/primitives/charts'
 import { ChecklistRow } from '@/components/primitives/checklist-row'
 import { EntityCardHeader } from '@/components/primitives/entity-card-header'
 import { HeroContent } from '@/components/primitives/hero-content'
+import { KpiGrid } from '@/components/primitives/kpi-grid'
 import { KpiCard } from '@/components/primitives/metric-card'
 import { Page } from '@/components/primitives/page'
 import { ProgressFraction } from '@/components/primitives/progress-fraction'
@@ -67,7 +68,7 @@ export function HomePage() {
 
       <UserUsagePanel embedded />
 
-      <div className='kpi-grid'>
+      <KpiGrid>
         <KpiCard
           label={t('home.repos')}
           value={number(dashboard.data?.total_repos, locale)}
@@ -100,7 +101,7 @@ export function HomePage() {
           sparkline={[0, 0, 1, 1, 2, connectedTools.size]}
           sparklineColor='var(--viz-reason)'
         />
-      </div>
+      </KpiGrid>
 
       <div className='split-2'>
         <Card>

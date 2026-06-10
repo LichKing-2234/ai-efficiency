@@ -18,6 +18,7 @@ import { FilterRow } from '@/components/primitives/filter-row'
 import { FilterRowTitle } from '@/components/primitives/filter-row-title'
 import { InfoTile, InfoTileGrid } from '@/components/primitives/info-tile'
 import { InsetPanel } from '@/components/primitives/inset-panel'
+import { KpiGrid } from '@/components/primitives/kpi-grid'
 import { LinkedRecordItem } from '@/components/primitives/linked-record-list'
 import { KpiCard } from '@/components/primitives/metric-card'
 import { Page, PageToolbar } from '@/components/primitives/page'
@@ -226,12 +227,12 @@ export function RepoDetailPage() {
           <AlertTitle>{webhookRepairNotice.message}</AlertTitle>
         </Alert>
       ) : null}
-      <div className='kpi-grid'>
+      <KpiGrid>
         <KpiCard label={t('repoDetail.prs')} value={number(totalPRs)} />
         <KpiCard label={t('repoDetail.withUsage')} value={number(summary?.with_usage)} accent />
         <KpiCard label={t('repoDetail.pendingUpload')} value={number(summary?.pending_upload)} />
         <KpiCard label={t('repoDetail.refreshFailed')} value={number(summary?.refresh_failed)} />
-      </div>
+      </KpiGrid>
       {currentJob ? (
         <Card>
           <SectionCardHeader title={t('repoDetail.latestSyncJob')} />

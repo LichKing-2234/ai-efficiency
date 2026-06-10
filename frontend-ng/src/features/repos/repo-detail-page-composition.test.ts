@@ -16,7 +16,9 @@ describe('Repo detail page composition', () => {
   })
 
   test('uses the shared KPI grid utility for repository detail metrics', () => {
-    expect(source).toContain("<div className='kpi-grid'>")
+    expect(source).toContain("from '@/components/primitives/kpi-grid'")
+    expect(source).toContain('<KpiGrid>')
+    expect(source).not.toContain("<div className='kpi-grid'>")
     expect(source).not.toContain("<div className='grid gap-4 sm:grid-cols-4'>")
   })
 

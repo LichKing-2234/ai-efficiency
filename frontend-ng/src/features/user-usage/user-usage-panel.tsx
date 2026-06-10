@@ -16,6 +16,7 @@ import { DataGrid, DataGridCell, DataGridHeader, DataGridHeaderCell, DataGridRow
 import { FilterRow } from '@/components/primitives/filter-row'
 import { FilterRowTitle } from '@/components/primitives/filter-row-title'
 import { HeatmapGrid } from '@/components/primitives/heatmap-grid'
+import { KpiGrid } from '@/components/primitives/kpi-grid'
 import { KpiCard } from '@/components/primitives/metric-card'
 import { SectionCardHeader } from '@/components/primitives/section-card-header'
 import { SegmentedControl } from '@/components/primitives/segmented-control'
@@ -94,7 +95,7 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
         ) : null}
         {snapshot?.configured !== false && snapshot ? (
           <>
-            <div className='kpi-grid'>
+            <KpiGrid>
               <KpiCard
                 label={t('usageDashboard.rangeCost', { range: rangeLabel })}
                 value={currency(totals.actualCost || stats?.total_actual_cost || 0, locale)}
@@ -133,7 +134,7 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
                 sparkline={snapshot.trend.map((point) => point.requests)}
                 sparklineColor='var(--viz-cache)'
               />
-            </div>
+            </KpiGrid>
             <Card>
               <SectionCardHeader title={t('usageDashboard.tokenTrend')} description={t('usageDashboard.tokenTrendDescription', { range: rangeLabel })} />
               <CardContent>

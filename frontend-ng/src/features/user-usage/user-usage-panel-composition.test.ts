@@ -67,4 +67,10 @@ describe('User usage panel composition', () => {
     expect(source).toContain('actions={')
     expect(source).not.toContain("className='mt-3'")
   })
+
+  test('uses the shared KPI grid primitive for usage analytics metrics', () => {
+    expect(source).toContain("from '@/components/primitives/kpi-grid'")
+    expect(source).toContain('<KpiGrid>')
+    expect(source).not.toContain("<div className='kpi-grid'>")
+  })
 })

@@ -33,4 +33,10 @@ describe('Home page composition', () => {
     expect(source).toContain('<ProgressFraction ready={setupProgress.ready} total={setupProgress.total} />')
     expect(source).not.toContain("<span className='text-[11px] text-[var(--ink-3)]'>/{setupProgress.total}</span>")
   })
+
+  test('uses the shared KPI grid primitive for overview metrics', () => {
+    expect(source).toContain("from '@/components/primitives/kpi-grid'")
+    expect(source).toContain('<KpiGrid>')
+    expect(source).not.toContain("<div className='kpi-grid'>")
+  })
 })

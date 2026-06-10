@@ -80,4 +80,10 @@ describe('Repos page composition', () => {
     expect(source).toContain('<TabsList wrap>')
     expect(source).not.toContain("<TabsList className='h-auto flex-wrap justify-start'>")
   })
+
+  test('uses the shared KPI grid primitive for repository health metrics', () => {
+    expect(source).toContain("from '@/components/primitives/kpi-grid'")
+    expect(source).toContain('<KpiGrid>')
+    expect(source).not.toContain("<div className='kpi-grid'>")
+  })
 })

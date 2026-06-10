@@ -76,4 +76,10 @@ describe('Events page composition', () => {
     expect(source).not.toContain("<span className='text-muted-foreground text-xs'>{t('common.pageCount'")
     expect(source).not.toContain("<div className='text-muted-foreground text-sm'>{t('events.noMatchedPrs')}</div>")
   })
+
+  test('uses the shared KPI grid primitive for event summary metrics', () => {
+    expect(source).toContain("from '@/components/primitives/kpi-grid'")
+    expect(source).toContain('<KpiGrid>')
+    expect(source).not.toContain("<div className='kpi-grid'>")
+  })
 })

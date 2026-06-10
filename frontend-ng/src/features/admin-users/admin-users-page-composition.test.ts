@@ -83,4 +83,10 @@ describe('Admin users page composition', () => {
     expect(source).not.toContain("t('adminUsers.visibleUsers')")
     expect(source).not.toContain("t('adminUsers.relayMapped')")
   })
+
+  test('uses the shared KPI grid primitive for user management metrics', () => {
+    expect(source).toContain("from '@/components/primitives/kpi-grid'")
+    expect(source).toContain('<KpiGrid>')
+    expect(source).not.toContain("<div className='kpi-grid'>")
+  })
 })

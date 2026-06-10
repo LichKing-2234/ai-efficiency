@@ -19,6 +19,7 @@ import { EmptyState, LoadingState } from '@/components/primitives/data-state'
 import { DataGrid, DataGridCell, DataGridHeader, DataGridHeaderCell, DataGridPrimaryLink, DataGridRecordCell, DataGridRow, DataGridRowAffordance } from '@/components/primitives/data-grid'
 import { FieldItem, FieldList } from '@/components/primitives/field-list'
 import { InfoTile, InfoTileGrid } from '@/components/primitives/info-tile'
+import { KpiGrid } from '@/components/primitives/kpi-grid'
 import { SectionCardHeader } from '@/components/primitives/section-card-header'
 import { SectionNav, type SectionNavItem } from '@/components/primitives/section-nav'
 import { SlideOver } from '@/components/primitives/slide-over'
@@ -259,12 +260,12 @@ export function ReposPage() {
           <Button variant='ghost' onClick={() => replaceSearch({ ...search, binding: 'unbound', provider: 'unbound', page: 1 })}>{t('repos.reviewNeedsBinding')}</Button>
         </CardFilterBar>
       </Card>
-      <div className='kpi-grid'>
+      <KpiGrid>
         <KpiCard label={t('repos.totalRepositories')} value={number(health.total, locale)} icon={FolderGit2Icon} sparkline={reposForProviders.map((provider) => provider.total_repos)} />
         <KpiCard label={t('repos.boundRepositories')} value={number(health.bound, locale)} accent icon={CheckIcon} sparkline={reposForProviders.map((provider) => provider.bound_repos)} />
         <KpiCard label={t('repos.unbound')} value={number(health.unbound, locale)} icon={CircleDotIcon} sparkline={reposForProviders.map((provider) => provider.unbound_repos)} sparklineColor='var(--viz-cache)' />
         <KpiCard label={t('repos.activeConfigs')} value={number(health.active, locale)} icon={RefreshCwIcon} sparkline={reposForProviders.map((provider) => provider.active_repos)} sparklineColor='var(--viz-output)' />
-      </div>
+      </KpiGrid>
       <Alerts
         autoBindMessage={autoBindMessage}
         autoBindError={autoBindError}

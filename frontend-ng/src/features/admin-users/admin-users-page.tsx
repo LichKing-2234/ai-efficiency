@@ -18,6 +18,7 @@ import { Page } from '@/components/primitives/page'
 import { LoadingState } from '@/components/primitives/data-state'
 import { InsetPanel } from '@/components/primitives/inset-panel'
 import { JobResultList } from '@/components/primitives/job-result-list'
+import { KpiGrid } from '@/components/primitives/kpi-grid'
 import { RowInsetPanel } from '@/components/primitives/row-inset-panel'
 import { SearchField } from '@/components/primitives/search-field'
 import { SectionCardHeader } from '@/components/primitives/section-card-header'
@@ -186,12 +187,12 @@ export function AdminUsersPage() {
 
   return (
     <Page className='stagger'>
-      <div className='kpi-grid'>
+      <KpiGrid>
         <KpiCard label={t('adminUsers.totalUsers')} value={number(kpis.total)} icon={Users} />
         <KpiCard label={t('adminUsers.activeUsers')} value={number(kpis.active)} icon={UserCheck} accent />
         <KpiCard label={t('adminUsers.admins')} value={number(kpis.admins)} icon={Shield} />
         <KpiCard label={t('adminUsers.pendingUsers')} value={number(kpis.pending)} icon={Clock3} />
-      </div>
+      </KpiGrid>
       <Card>
         <SectionCardHeader title={t('adminUsers.subscriptionManagement')} />
         <CardContentStack>
