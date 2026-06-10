@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Navigate, useNavigate, useSearch } from '@tanstack/react-router'
-import { ChevronRight, Clipboard, KeyRound, RefreshCw, SearchIcon, Shield, Users } from 'lucide-react'
+import { ChevronRight, Clipboard, Clock3, RefreshCw, Shield, UserCheck, Users } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -32,6 +32,7 @@ import { useI18n } from '@/lib/i18n/i18n'
 import { AdminSubscriptionForm } from './admin-subscription-form'
 import {
   buildAdminUserTableMetrics,
+  buildAdminUsersKpis,
   buildAdminUsersParams,
   buildAdminUsersSearch,
   buildSubscriptionJobPayload,
@@ -83,8 +84,7 @@ export function AdminUsersPage() {
   const totalPages = Math.max(1, Math.ceil(total / pageSize))
   const tableColumns = '44px_minmax(240px,1.8fr)_0.7fr_1fr_0.7fr_0.8fr_minmax(172px,0.9fr)_32px'
   const maxTokensMonth = Math.max(1, ...rows.map((user) => buildAdminUserTableMetrics(user).tokensMonth))
-  const adminCount = rows.filter((user) => user.role === 'admin').length
-  const mappedCount = rows.filter((user) => user.relay_user_id).length
+  const kpis = buildAdminUsersKpis(rows, total)
   const allVisibleSelected = rows.length > 0 && rows.every((user) => selected.includes(user.id))
   const visibleSelectionIndeterminate = rows.some((user) => selected.includes(user.id)) && !allVisibleSelected
   const currentJob = activeJob.data ?? latestJob.data ?? null
@@ -187,10 +187,10 @@ export function AdminUsersPage() {
   return (
     <Page className='stagger'>
       <div className='kpi-grid'>
-        <KpiCard label={t('adminUsers.totalUsers')} value={number(total)} icon={Users} />
-        <KpiCard label={t('adminUsers.visibleUsers')} value={number(rows.length)} icon={SearchIcon} accent />
-        <KpiCard label={t('adminUsers.admins')} value={number(adminCount)} icon={Shield} />
-        <KpiCard label={t('adminUsers.relayMapped')} value={number(mappedCount)} icon={KeyRound} />
+        <KpiCard label={t('adminUsers.totalUsers')} value={number(kpis.total)} icon={Users} />
+        <KpiCard label={t('adminUsers.activeUsers')} value={number(kpis.active)} icon={UserCheck} accent />
+        <KpiCard label={t('adminUsers.admins')} value={number(kpis.admins)} icon={Shield} />
+        <KpiCard label={t('adminUsers.pendingUsers')} value={number(kpis.pending)} icon={Clock3} />
       </div>
       <Card>
         <SectionCardHeader title={t('adminUsers.subscriptionManagement')} />

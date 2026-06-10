@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import {
+  buildAdminUsersKpis,
   buildAdminUsersParams,
   buildAdminUsersSearch,
   buildAdminUserTableMetrics,
@@ -158,6 +159,21 @@ describe('admin user table metrics', () => {
       eventsMonth: 0,
       status: 'invited',
       tokensMonth: 0
+    })
+  })
+})
+
+describe('admin users kpis', () => {
+  test('summarizes reference KPI counts from backend rows and derived lifecycle status', () => {
+    expect(buildAdminUsersKpis([
+      { ...user(1, 'alice'), role: 'admin', relay_user_id: 101, status: 'active' },
+      { ...user(2, 'bob'), role: 'user', relay_user_id: null },
+      { ...user(3, 'carol'), role: 'user', relay_user_id: 103, status: 'suspended' }
+    ], 12)).toEqual({
+      active: 1,
+      admins: 1,
+      pending: 1,
+      total: 12
     })
   })
 })

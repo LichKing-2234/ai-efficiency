@@ -115,6 +115,21 @@ export function buildAdminUserTableMetrics(user: AdminUser) {
   }
 }
 
+export function buildAdminUsersKpis(rows: AdminUser[], total: number) {
+  return rows.reduce((summary, user) => {
+    const metrics = buildAdminUserTableMetrics(user)
+    if (metrics.status === 'active') summary.active += 1
+    if (metrics.status === 'invited') summary.pending += 1
+    if (user.role === 'admin') summary.admins += 1
+    return summary
+  }, {
+    active: 0,
+    admins: 0,
+    pending: 0,
+    total
+  })
+}
+
 export function isActiveSubscriptionJob(job: AdminSubscriptionJob | null | undefined) {
   return job?.status === 'queued' || job?.status === 'running'
 }

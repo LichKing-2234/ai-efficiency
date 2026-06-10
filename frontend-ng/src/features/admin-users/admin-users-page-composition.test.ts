@@ -74,4 +74,12 @@ describe('Admin users page composition', () => {
     expect(source).not.toContain("<span>{t('adminUsers.relay')}</span>")
     expect(source).not.toContain("<span>{t('adminUsers.updated')}</span>")
   })
+
+  test('matches the reference user management KPI semantics', () => {
+    expect(source).toContain('buildAdminUsersKpis')
+    expect(source).toContain("t('adminUsers.activeUsers')")
+    expect(source).toContain("t('adminUsers.pendingUsers')")
+    expect(source).not.toContain("t('adminUsers.visibleUsers')")
+    expect(source).not.toContain("t('adminUsers.relayMapped')")
+  })
 })
