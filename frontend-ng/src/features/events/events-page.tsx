@@ -339,7 +339,7 @@ function EventDetail({ event, isAdmin, onClose }: { event: ToolUsageEventDetail 
                 ))}
               </LinkedRecordList>
             ) : (
-              <Empty className='p-4'>
+              <Empty size='compact'>
                 <EmptyHeader>
                   <EmptyTitle>{t('events.noMatchedPrs')}</EmptyTitle>
                 </EmptyHeader>
