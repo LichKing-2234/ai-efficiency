@@ -53,6 +53,15 @@ describe('Repos page composition', () => {
     expect(source).not.toContain("className='block truncate font-semibold text-foreground text-sm hover:text-[var(--ai-deep)]'")
   })
 
+  test('opens repository rows in a reference slide-over inspect panel', () => {
+    expect(source).toContain("from '@/components/primitives/slide-over'")
+    expect(source).toContain('<RepoInspectSlideOver')
+    expect(source).toContain("onSelectRepo={(repo) => setSelectedRepo(repo)}")
+    expect(source).toContain("<DataGridRow as='button'")
+    expect(source).toContain("data-slot='repo-row-actions'")
+    expect(source).not.toContain('<DataGridPrimaryLink asChild>\\n              <Link')
+  })
+
   test('uses shared empty-state primitives for repository empty content', () => {
     expect(source).toContain("from '@/components/primitives/data-state'")
     expect(source).toContain('<EmptyState')
