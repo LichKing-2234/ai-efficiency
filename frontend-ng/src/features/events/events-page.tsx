@@ -134,12 +134,12 @@ export function EventsPage() {
           <FilterRow>
             <SearchField
               ariaLabel={t('events.searchRepoSessionSource')}
-              className='min-w-[260px] flex-1'
               clearLabel={t('common.clear')}
               onChange={(q) => setFilters((value) => ({ ...value, q }))}
               onClear={() => setFilters((value) => ({ ...value, q: '' }))}
               placeholder={t('events.searchRepoSessionSource')}
               value={filters.q}
+              width='toolbar'
             />
             <LabeledSegmentedControl
               ariaLabel={t('events.tool')}

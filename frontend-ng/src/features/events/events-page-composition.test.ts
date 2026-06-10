@@ -16,8 +16,10 @@ describe('Events page composition', () => {
     expect(source).toContain("from '@/components/primitives/filter-row'")
     expect(source).toContain('<FilterRow>')
     expect(source).toContain("<FilterRow align='start'>")
+    expect(source).toContain("width='toolbar'")
     expect(source).not.toContain("<div className='flex flex-wrap items-center gap-2'>")
     expect(source).not.toContain("<div className='flex flex-wrap gap-2'>")
+    expect(source).not.toContain("className='min-w-[260px] flex-1'")
   })
 
   test('uses the shared slide-over stack for event detail sections', () => {
