@@ -33,8 +33,10 @@ describe('Repos page composition', () => {
   test('uses the shared workbench rail for provider scopes', () => {
     expect(source).toContain("from '@/components/primitives/workbench-rail'")
     expect(source).toContain('<WorkbenchRail')
+    expect(source).toContain('<WorkbenchContent>')
     expect(source).toContain("scroll='workbench'")
     expect(source).not.toContain("<aside className='border-border bg-[var(--surface-2)] p-3 lg:border-r'>")
+    expect(source).not.toContain("<section className='min-w-0'>")
     expect(source).not.toContain("className='max-h-[430px] overflow-y-auto'")
   })
 

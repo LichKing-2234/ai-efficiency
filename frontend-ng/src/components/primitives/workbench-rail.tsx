@@ -30,3 +30,17 @@ export function WorkbenchRail({
     </aside>
   )
 }
+
+export function WorkbenchContent({
+  children,
+  className
+}: {
+  children: React.ReactNode
+  className?: string
+}) {
+  return (
+    <section className={cn('min-w-0', className)} data-slot='workbench-content'>
+      {children}
+    </section>
+  )
+}

@@ -27,7 +27,7 @@ import { SlideOverStack } from '@/components/primitives/slide-over-stack'
 import { StatusBadge } from '@/components/primitives/status-badge'
 import { StatusCluster } from '@/components/primitives/status-cluster'
 import { ToolbarSelect } from '@/components/primitives/toolbar-select'
-import { WorkbenchRail } from '@/components/primitives/workbench-rail'
+import { WorkbenchContent, WorkbenchRail } from '@/components/primitives/workbench-rail'
 import { api } from '@/lib/api'
 import type { RepoConfig } from '@/lib/api/types'
 import { number } from '@/lib/format'
@@ -301,7 +301,7 @@ export function ReposPage() {
                 value={selectedScope}
               />
             </WorkbenchRail>
-            <section className='min-w-0'>
+            <WorkbenchContent>
               <SectionCardHeader
                 title={selectedScope || t('repos.selectedScope')}
                 description={selectedProvider?.name ?? t('common.empty')}
@@ -317,7 +317,7 @@ export function ReposPage() {
                   onSelectRepo={(repo) => setSelectedRepo(repo)}
                 />
               )}
-            </section>
+            </WorkbenchContent>
           </div>
         </Card>
       )}
