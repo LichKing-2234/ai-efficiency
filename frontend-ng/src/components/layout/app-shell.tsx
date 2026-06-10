@@ -1,9 +1,8 @@
 import { Link, useLocation, useNavigate } from '@tanstack/react-router'
-import { ChevronDownIcon, GlobeIcon, MenuIcon, MoonIcon, PanelLeftIcon, SunIcon } from 'lucide-react'
+import { MenuIcon, PanelLeftIcon } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { CommandPalette } from '@/components/command/command-palette'
 import { Button } from '@/components/ui/button'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet'
 import {
   Sidebar,
@@ -29,8 +28,7 @@ import type { Locale } from '@/lib/i18n/messages'
 import { useI18n } from '@/lib/i18n/i18n'
 import { navItems, pageMeta } from './navigation'
 import { SidebarUserSummary } from './sidebar-user-summary'
-import { TopbarCommandTrigger } from './topbar-command-trigger'
-import { TopbarLiveStatus } from './topbar-live-status'
+import { TopbarActions } from './topbar-actions'
 import { TopbarTitle } from './topbar-title'
 
 const LOCALES: Array<{ value: Locale; labelKey: 'locale.english' | 'locale.chinese'; shortKey: 'locale.englishShort' | 'locale.chineseShort' }> = [
@@ -186,31 +184,21 @@ export function AppShell({ user, children }: { user: User | null; children: Reac
           </Button>
           <div className='hidden h-6 w-px bg-border md:block' />
           <TopbarTitle section={t(meta.sectionKey)} title={t(meta.titleKey)} />
-          <div className='ml-auto flex items-center gap-2'>
-            <TopbarCommandTrigger label={t('command.trigger')} onOpen={() => setCommandOpen(true)} />
-            <TopbarLiveStatus label={t('nav.ingesting')} />
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button size='sm' type='button' variant='ghost'>
-                  <GlobeIcon />
-                  <span className='hidden sm:inline'>{t(LOCALES.find((item) => item.value === locale)?.shortKey ?? 'locale.englishShort')}</span>
-                  <ChevronDownIcon className='size-3 text-[var(--ink-4)]' />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align='end' className='min-w-40 border-[var(--line-strong)] shadow-[var(--sh-lg)]'>
-                <DropdownMenuRadioGroup value={locale} onValueChange={(value) => setLocale(value as Locale)}>
-                  {LOCALES.map((item) => (
-                    <DropdownMenuRadioItem className='h-8 text-[13px]' key={item.value} value={item.value}>
-                      {t(item.labelKey)}
-                    </DropdownMenuRadioItem>
-                  ))}
-                </DropdownMenuRadioGroup>
-              </DropdownMenuContent>
-            </DropdownMenu>
-            <Button variant='ghost' size='icon-sm' onClick={() => setDark((value) => !value)} title={t('nav.toggleTheme')}>
-              {dark ? <SunIcon /> : <MoonIcon />}
-            </Button>
-          </div>
+          <TopbarActions
+            commandLabel={t('command.trigger')}
+            dark={dark}
+            ingestingLabel={t('nav.ingesting')}
+            locale={locale}
+            locales={LOCALES.map((item) => ({
+              value: item.value,
+              label: t(item.labelKey),
+              shortLabel: t(item.shortKey)
+            }))}
+            onLocaleChange={setLocale}
+            onOpenCommand={() => setCommandOpen(true)}
+            onToggleTheme={() => setDark((value) => !value)}
+            themeLabel={t('nav.toggleTheme')}
+          />
           </header>
           <main className='min-h-0 flex-1 overflow-y-auto'>
             <div className='mx-auto w-full max-w-7xl p-4 pb-12 md:p-6'>{children}</div>
