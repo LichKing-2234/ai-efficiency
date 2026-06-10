@@ -47,4 +47,10 @@ describe('User usage panel composition', () => {
     expect(source).not.toContain("<span className='text-right'>{t('events.tokens')}</span>")
     expect(source).not.toContain("<span className='text-right'>{t('events.credit')}</span>")
   })
+
+  test('uses shadcn skeleton for the loading placeholder', () => {
+    expect(source).toContain("from '@/components/ui/skeleton'")
+    expect(source).toContain('<Skeleton')
+    expect(source).not.toContain("<div className='text-muted-foreground text-sm'>{t('common.loading')}</div>")
+  })
 })

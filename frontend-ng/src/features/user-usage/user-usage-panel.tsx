@@ -6,6 +6,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Empty, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
+import { Skeleton } from '@/components/ui/skeleton'
 import { ActionGroup } from '@/components/primitives/action-group'
 import { ChartLegend } from '@/components/primitives/chart-legend'
 import { BarsH, StackedAreaChart, type StackedAreaKey } from '@/components/primitives/charts'
@@ -71,7 +72,7 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
         </ActionGroup>
       </FilterRow>
       <Stack>
-        {query.isLoading ? <div className='text-muted-foreground text-sm'>{t('common.loading')}</div> : null}
+        {query.isLoading ? <Skeleton aria-label={t('common.loading')} className='h-5 w-40' role='status' /> : null}
         {snapshot?.configured === false ? (
           <Alert>
             <AlertTitle>{t('usageDashboard.setupTitle')}</AlertTitle>
