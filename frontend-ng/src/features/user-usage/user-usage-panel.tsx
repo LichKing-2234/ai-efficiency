@@ -15,6 +15,7 @@ import { HeatmapGrid } from '@/components/primitives/heatmap-grid'
 import { MetricCard } from '@/components/primitives/metric-card'
 import { SectionCardHeader } from '@/components/primitives/section-card-header'
 import { SegmentedControl } from '@/components/primitives/segmented-control'
+import { Stack } from '@/components/primitives/stack'
 import { api } from '@/lib/api'
 import type { UserUsageTrendPoint } from '@/lib/api/types'
 import { compact, currency, durationMs, number } from '@/lib/format'
@@ -46,7 +47,7 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
   const modelMax = Math.max(1, ...(snapshot?.models ?? []).map((model) => model.total_tokens))
 
   return (
-    <div className='stagger flex flex-col gap-4'>
+    <Stack className='stagger'>
       <FilterRow className='justify-between gap-3'>
         {!embedded ? (
           <div className='min-w-0'>
@@ -71,7 +72,7 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
           </Button>
         </ActionGroup>
       </FilterRow>
-      <div className='flex flex-col gap-4'>
+      <Stack>
         {query.isLoading ? <div className='text-muted-foreground text-sm'>{t('common.loading')}</div> : null}
         {snapshot?.configured === false ? (
           <Alert>
@@ -134,14 +135,14 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
               <SectionCardHeader title={t('usageDashboard.tokenTrend')} description={t('usageDashboard.tokenTrendDescription', { range: rangeLabel })} />
               <CardContent>
                 {snapshot.trend.length ? (
-                  <div className='flex flex-col gap-4'>
+                  <Stack>
                     <ChartLegend items={tokenKeys} />
                     <StackedAreaChart
                       keys={tokenKeys}
                       series={snapshot.trend}
                       valueFormatter={(value) => compact(value, locale)}
                     />
-                  </div>
+                  </Stack>
                 ) : (
                   <Empty><EmptyHeader><EmptyTitle>{t('usageDashboard.noTrendData')}</EmptyTitle></EmptyHeader></Empty>
                 )}
@@ -220,7 +221,7 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
             ) : null}
           </>
         ) : null}
-      </div>
-    </div>
+      </Stack>
+    </Stack>
   )
 }

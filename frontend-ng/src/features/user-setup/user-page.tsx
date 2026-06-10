@@ -18,6 +18,7 @@ import { InfoTile, InfoTileGrid } from '@/components/primitives/info-tile'
 import { InsetPanel } from '@/components/primitives/inset-panel'
 import { SectionCardHeader } from '@/components/primitives/section-card-header'
 import { SelectableCard } from '@/components/primitives/selectable-card'
+import { Stack } from '@/components/primitives/stack'
 import { LoadingState } from '@/components/primitives/data-state'
 import { api } from '@/lib/api'
 import { useI18n } from '@/lib/i18n/i18n'
@@ -135,7 +136,7 @@ export function UserPage() {
   return (
     <Page className='stagger'>
       <div className='split-rail'>
-        <div className='flex flex-col gap-4'>
+        <Stack>
           <Card>
             <SectionCardHeader
               title={t('userSetup.accountAccess')}
@@ -187,8 +188,8 @@ export function UserPage() {
               </CommandAccordion>
             </CardContent>
           </Card>
-        </div>
-        <div className='flex flex-col gap-4'>
+        </Stack>
+        <Stack>
           <Card>
             <EntityCardHeader
               title={selectedProvider ? selectedProvider.display_name || selectedProvider.name : t('userSetup.aiAccess')}
@@ -289,7 +290,7 @@ export function UserPage() {
               />
             </CardContent>
           </Card>
-        </div>
+        </Stack>
       </div>
     </Page>
   )
