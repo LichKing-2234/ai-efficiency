@@ -18,6 +18,7 @@ import { Page } from '@/components/primitives/page'
 import { LoadingState } from '@/components/primitives/data-state'
 import { InsetPanel } from '@/components/primitives/inset-panel'
 import { JobResultList } from '@/components/primitives/job-result-list'
+import { RowInsetPanel } from '@/components/primitives/row-inset-panel'
 import { SearchField } from '@/components/primitives/search-field'
 import { SectionCardHeader } from '@/components/primitives/section-card-header'
 import { StatusBadge } from '@/components/primitives/status-badge'
@@ -328,7 +329,7 @@ export function AdminUsersPage() {
                 </Button>
               </ActionGroup>
               {plaintextConfirmUserId === user.id ? (
-                <InsetPanel className='col-span-7 ml-11 flex max-w-xl flex-col gap-2 text-left text-xs'>
+                <RowInsetPanel indent='selection' maxWidth='xl'>
                   <span className='text-muted-foreground'>{t('adminUsers.plaintextWarning')}</span>
                   <Button
                     variant='outline'
@@ -340,7 +341,7 @@ export function AdminUsersPage() {
                   >
                     {t('adminUsers.confirmReveal')}
                   </Button>
-                </InsetPanel>
+                </RowInsetPanel>
               ) : null}
             </DataGridRow>
           ))}
