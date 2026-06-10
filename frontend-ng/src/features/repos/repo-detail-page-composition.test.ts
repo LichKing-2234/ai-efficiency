@@ -9,7 +9,9 @@ describe('Repo detail page composition', () => {
   test('uses shared linked record items for pull request links', () => {
     expect(source).toContain("from '@/components/primitives/linked-record-list'")
     expect(source).toContain('<LinkedRecordItem')
+    expect(source).toContain("variant='plain'")
     expect(source).not.toContain("<a className='flex min-w-0 items-center gap-2 font-semibold")
+    expect(source).not.toContain("className='border-0 bg-transparent p-0 hover:bg-transparent'")
   })
 
   test('uses the shared KPI grid utility for repository detail metrics', () => {

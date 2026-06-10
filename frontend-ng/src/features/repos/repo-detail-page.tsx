@@ -325,12 +325,12 @@ export function RepoDetailPage() {
                     <DataGridRow columns={prColumns}>
                       <span className='min-w-0'>
                         <LinkedRecordItem
-                          className='border-0 bg-transparent p-0 hover:bg-transparent'
                           description={`#${pr.scm_pr_id} · ${pr.author}`}
                           href={pr.scm_pr_url}
                           icon={<GitPullRequest />}
                           label={pr.title}
                           trailing={<ExternalLink />}
+                          variant='plain'
                         />
                       </span>
                       <span><Badge variant='ai'>{pr.ai_label} · {percent(pr.ai_ratio)}</Badge></span>

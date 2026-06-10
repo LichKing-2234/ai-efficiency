@@ -22,4 +22,24 @@ describe('LinkedRecordList', () => {
     expect(html).toContain('Open')
     expect(html).toContain('repo#43 · Add attribution checks')
   })
+
+  test('supports a plain variant for links embedded in data grids', () => {
+    const html = renderToStaticMarkup(
+      <LinkedRecordItem
+        description='alice'
+        href='https://example.com/pr/42'
+        icon={<GitPullRequestIcon />}
+        label='Fix usage rollup'
+        trailing='Open'
+        variant='plain'
+      />
+    )
+
+    expect(html).toContain('data-slot="linked-record-item"')
+    expect(html).toContain('bg-transparent')
+    expect(html).toContain('border-0')
+    expect(html).toContain('p-0')
+    expect(html).not.toContain('bg-card')
+    expect(html).not.toContain('border-border')
+  })
 })

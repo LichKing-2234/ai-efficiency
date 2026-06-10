@@ -21,7 +21,8 @@ export function LinkedRecordItem({
   href,
   icon,
   label,
-  trailing
+  trailing,
+  variant = 'card'
 }: {
   className?: string
   description?: React.ReactNode
@@ -29,10 +30,16 @@ export function LinkedRecordItem({
   icon?: React.ReactNode
   label: React.ReactNode
   trailing?: React.ReactNode
+  variant?: 'card' | 'plain'
 }) {
   return (
     <a
-      className={cn('flex min-w-0 items-center gap-2 rounded-[var(--r-md)] border border-border bg-card px-3 py-2 text-foreground transition hover:border-[var(--ai-line)] hover:bg-[var(--ai-soft)] hover:text-[var(--ai-deep)]', className)}
+      className={cn(
+        'flex min-w-0 items-center gap-2 rounded-[var(--r-md)] text-foreground transition hover:text-[var(--ai-deep)]',
+        variant === 'card' && 'border border-border bg-card px-3 py-2 hover:border-[var(--ai-line)] hover:bg-[var(--ai-soft)]',
+        variant === 'plain' && 'border-0 bg-transparent p-0 hover:bg-transparent',
+        className
+      )}
       data-slot='linked-record-item'
       href={href}
       rel='noreferrer'
