@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, test } from 'vitest'
-import { DataGrid, DataGridCell, DataGridHeader, DataGridRow } from './data-grid'
+import { DataGrid, DataGridCell, DataGridHeader, DataGridHeaderCell, DataGridRow } from './data-grid'
 
 describe('DataGrid', () => {
   test('renders reference table shells with shared grid template classes', () => {
@@ -25,6 +25,22 @@ describe('DataGrid', () => {
     expect(html).toContain('grid-template-columns:1fr 120px')
     expect(html).toContain('Name')
     expect(html).toContain('Repository')
+  })
+
+  test('renders standardized header cells with alignment slots', () => {
+    const html = renderToStaticMarkup(
+      <DataGrid>
+        <DataGridHeader columns='1fr_120px'>
+          <DataGridHeaderCell>Name</DataGridHeaderCell>
+          <DataGridHeaderCell align='right'>Credits</DataGridHeaderCell>
+        </DataGridHeader>
+      </DataGrid>
+    )
+
+    expect(html).toContain('data-slot="data-grid-header-cell"')
+    expect(html).toContain('Name')
+    expect(html).toContain('Credits')
+    expect(html).toContain('text-right')
   })
 
   test('supports button rows using the existing ae row interaction class', () => {

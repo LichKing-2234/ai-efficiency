@@ -47,4 +47,14 @@ describe('Repo detail page composition', () => {
     expect(source).not.toContain("className='mono min-w-0 truncate text-xs'")
     expect(source).not.toContain("className='tnum text-right'")
   })
+
+  test('uses shared data grid header cells for snapshot numeric headers', () => {
+    expect(source).toContain('DataGridHeaderCell')
+    expect(source).not.toContain("<span className='text-right'>{t('repoDetail.input')}</span>")
+    expect(source).not.toContain("<span className='text-right'>{t('repoDetail.output')}</span>")
+    expect(source).not.toContain("<span className='text-right'>{t('repoDetail.cache')}</span>")
+    expect(source).not.toContain("<span className='text-right'>{t('repoDetail.reasoning')}</span>")
+    expect(source).not.toContain("<span className='text-right'>{t('repoDetail.credits')}</span>")
+    expect(source).not.toContain("<span className='text-right'>{t('repoDetail.requests')}</span>")
+  })
 })

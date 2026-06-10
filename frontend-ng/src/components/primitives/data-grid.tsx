@@ -44,6 +44,22 @@ export function DataGridHeader({
   )
 }
 
+export function DataGridHeaderCell({
+  align = 'left',
+  children,
+  className
+}: {
+  align?: 'left' | 'right'
+  children?: React.ReactNode
+  className?: string
+}) {
+  return (
+    <span className={cn(align === 'right' && 'text-right', className)} data-slot='data-grid-header-cell'>
+      {children}
+    </span>
+  )
+}
+
 type DataGridRowBaseProps = {
   children: React.ReactNode
   className?: string

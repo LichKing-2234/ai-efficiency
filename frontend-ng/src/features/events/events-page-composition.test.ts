@@ -39,4 +39,11 @@ describe('Events page composition', () => {
     expect(source).not.toContain("className='tnum text-right font-semibold text-foreground'")
     expect(source).toContain("<DataGridCell align='right' emphasis numeric>")
   })
+
+  test('uses shared data grid header cells for aligned table headers', () => {
+    expect(source).toContain('DataGridHeaderCell')
+    expect(source).not.toContain("<span className='text-right'>{t('events.requests')}</span>")
+    expect(source).not.toContain("<span className='text-right'>{t('events.credit')}</span>")
+    expect(source).not.toContain("<span className='text-right'>{t('events.ended')}</span>")
+  })
 })

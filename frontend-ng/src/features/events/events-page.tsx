@@ -8,7 +8,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { AdvancedDataPanel } from '@/components/primitives/advanced-data-panel'
 import { CardFilterBar } from '@/components/primitives/card-filter-bar'
 import { CardPagerFooter } from '@/components/primitives/card-pager-footer'
-import { DataGrid, DataGridCell, DataGridHeader, DataGridRow } from '@/components/primitives/data-grid'
+import { DataGrid, DataGridCell, DataGridHeader, DataGridHeaderCell, DataGridRow } from '@/components/primitives/data-grid'
 import { FieldItem, FieldList } from '@/components/primitives/field-list'
 import { FilterRow } from '@/components/primitives/filter-row'
 import { InfoTile, InfoTileGrid } from '@/components/primitives/info-tile'
@@ -217,10 +217,10 @@ export function EventsPage() {
             <span />
             <span>{t('events.repository')}</span>
             <span>{t('events.tokens')}</span>
-            <span className='text-right'>{t('events.requests')}</span>
-            <span className='text-right'>{t('events.credit')}</span>
+            <DataGridHeaderCell align='right'>{t('events.requests')}</DataGridHeaderCell>
+            <DataGridHeaderCell align='right'>{t('events.credit')}</DataGridHeaderCell>
             <span>{t('events.binding')}</span>
-            <span className='text-right'>{t('events.ended')}</span>
+            <DataGridHeaderCell align='right'>{t('events.ended')}</DataGridHeaderCell>
           </DataGridHeader>
           {rows.map((row) => (
             <EventRow

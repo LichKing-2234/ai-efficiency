@@ -36,4 +36,11 @@ describe('User usage panel composition', () => {
     expect(source).not.toContain("className='tnum text-right'")
     expect(source).not.toContain("className='tnum text-right font-semibold text-foreground'")
   })
+
+  test('uses shared data grid header cells for model cost numeric headers', () => {
+    expect(source).toContain('DataGridHeaderCell')
+    expect(source).not.toContain("<span className='text-right'>{t('events.requests')}</span>")
+    expect(source).not.toContain("<span className='text-right'>{t('events.tokens')}</span>")
+    expect(source).not.toContain("<span className='text-right'>{t('events.credit')}</span>")
+  })
 })

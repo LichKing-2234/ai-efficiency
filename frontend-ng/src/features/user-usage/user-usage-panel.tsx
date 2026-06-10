@@ -9,7 +9,7 @@ import { Empty, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
 import { ActionGroup } from '@/components/primitives/action-group'
 import { ChartLegend } from '@/components/primitives/chart-legend'
 import { BarsH, StackedAreaChart, type StackedAreaKey } from '@/components/primitives/charts'
-import { DataGrid, DataGridCell, DataGridHeader, DataGridRow } from '@/components/primitives/data-grid'
+import { DataGrid, DataGridCell, DataGridHeader, DataGridHeaderCell, DataGridRow } from '@/components/primitives/data-grid'
 import { FilterRow } from '@/components/primitives/filter-row'
 import { HeatmapGrid } from '@/components/primitives/heatmap-grid'
 import { MetricCard } from '@/components/primitives/metric-card'
@@ -174,9 +174,9 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
                     <DataGrid minWidth={560}>
                       <DataGridHeader columns={modelColumns}>
                         <span>{t('usageDashboard.model')}</span>
-                        <span className='text-right'>{t('events.requests')}</span>
-                        <span className='text-right'>{t('events.tokens')}</span>
-                        <span className='text-right'>{t('events.credit')}</span>
+                        <DataGridHeaderCell align='right'>{t('events.requests')}</DataGridHeaderCell>
+                        <DataGridHeaderCell align='right'>{t('events.tokens')}</DataGridHeaderCell>
+                        <DataGridHeaderCell align='right'>{t('events.credit')}</DataGridHeaderCell>
                       </DataGridHeader>
                       {snapshot.models.map((model) => (
                         <DataGridRow columns={modelColumns} key={model.model}>

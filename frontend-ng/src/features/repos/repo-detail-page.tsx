@@ -12,7 +12,7 @@ import { CardContentStack } from '@/components/primitives/card-content-stack'
 import { CardPagerFooter } from '@/components/primitives/card-pager-footer'
 import { CheckboxField } from '@/components/primitives/checkbox-field'
 import { ControlGrid } from '@/components/primitives/control-grid'
-import { DataGrid, DataGridCell, DataGridHeader, DataGridRow } from '@/components/primitives/data-grid'
+import { DataGrid, DataGridCell, DataGridHeader, DataGridHeaderCell, DataGridRow } from '@/components/primitives/data-grid'
 import { EntityCardHeader } from '@/components/primitives/entity-card-header'
 import { FilterRow } from '@/components/primitives/filter-row'
 import { InfoTile, InfoTileGrid } from '@/components/primitives/info-tile'
@@ -377,12 +377,12 @@ export function RepoDetailPage() {
                                 <DataGridHeader columns={snapshotColumns}>
                                   <span>{t('repoDetail.commit')}</span>
                                   <span>{t('repoDetail.captured')}</span>
-                                  <span className='text-right'>{t('repoDetail.input')}</span>
-                                  <span className='text-right'>{t('repoDetail.output')}</span>
-                                  <span className='text-right'>{t('repoDetail.cache')}</span>
-                                  <span className='text-right'>{t('repoDetail.reasoning')}</span>
-                                  <span className='text-right'>{t('repoDetail.credits')}</span>
-                                  <span className='text-right'>{t('repoDetail.requests')}</span>
+                                  <DataGridHeaderCell align='right'>{t('repoDetail.input')}</DataGridHeaderCell>
+                                  <DataGridHeaderCell align='right'>{t('repoDetail.output')}</DataGridHeaderCell>
+                                  <DataGridHeaderCell align='right'>{t('repoDetail.cache')}</DataGridHeaderCell>
+                                  <DataGridHeaderCell align='right'>{t('repoDetail.reasoning')}</DataGridHeaderCell>
+                                  <DataGridHeaderCell align='right'>{t('repoDetail.credits')}</DataGridHeaderCell>
+                                  <DataGridHeaderCell align='right'>{t('repoDetail.requests')}</DataGridHeaderCell>
                                   <span>{t('repoDetail.freshness')}</span>
                                 </DataGridHeader>
                                 {snapshots.length > 0 ? snapshots.map((snapshot) => {
