@@ -25,4 +25,11 @@ describe('AppShell composition', () => {
     expect(source).toContain('<TopbarLiveStatus')
     expect(source).not.toContain("<div className='hidden items-center gap-2 rounded-full border border-[var(--pos-line)] bg-[var(--pos-soft)] px-3 py-1 md:flex'>")
   })
+
+  test('uses shared sidebar user summary composition in the footer', () => {
+    expect(source).toContain("from './sidebar-user-summary'")
+    expect(source).toContain('<SidebarUserSummary')
+    expect(source).not.toContain("className='grid size-8 place-items-center rounded-full bg-[var(--ae-ai-soft)] font-semibold text-[var(--ae-ai-2)] text-xs'")
+    expect(source).not.toContain("className='truncate text-[var(--ae-text-4)] text-xs'")
+  })
 })

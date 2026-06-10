@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate } from '@tanstack/react-router'
-import { ChevronDownIcon, GlobeIcon, LogOutIcon, MenuIcon, MoonIcon, PanelLeftIcon, SunIcon } from 'lucide-react'
+import { ChevronDownIcon, GlobeIcon, MenuIcon, MoonIcon, PanelLeftIcon, SunIcon } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { CommandPalette } from '@/components/command/command-palette'
 import { Button } from '@/components/ui/button'
@@ -27,8 +27,8 @@ import { api } from '@/lib/api'
 import type { User } from '@/lib/api/types'
 import type { Locale } from '@/lib/i18n/messages'
 import { useI18n } from '@/lib/i18n/i18n'
-import { cn } from '@/lib/utils'
 import { navItems, pageMeta } from './navigation'
+import { SidebarUserSummary } from './sidebar-user-summary'
 import { TopbarCommandTrigger } from './topbar-command-trigger'
 import { TopbarLiveStatus } from './topbar-live-status'
 import { TopbarTitle } from './topbar-title'
@@ -142,22 +142,14 @@ export function AppShell({ user, children }: { user: User | null; children: Reac
           })}
         </SidebarContent>
         <SidebarFooter>
-          <div className={cn('flex items-center gap-2', compact && 'justify-center')}>
-            <div className='grid size-8 place-items-center rounded-full bg-[var(--ae-ai-soft)] font-semibold text-[var(--ae-ai-2)] text-xs'>
-              {(user?.username || user?.email || '?').slice(0, 2).toUpperCase()}
-            </div>
-            {!compact ? (
-              <div className='min-w-0 flex-1'>
-                <div className='truncate font-medium text-sm'>{user?.username || t('auth.guest')}</div>
-                <div className='truncate text-[var(--ae-text-4)] text-xs'>{user?.role || t('auth.notSignedIn')}</div>
-              </div>
-            ) : null}
-            {!compact ? (
-              <Button variant='ghost' size='icon-sm' onClick={logout} title={t('nav.signOut')}>
-                <LogOutIcon />
-              </Button>
-            ) : null}
-          </div>
+          <SidebarUserSummary
+            compact={compact}
+            fallbackName={t('auth.guest')}
+            fallbackRole={t('auth.notSignedIn')}
+            onSignOut={logout}
+            signOutLabel={t('nav.signOut')}
+            user={user}
+          />
         </SidebarFooter>
       </>
     )
