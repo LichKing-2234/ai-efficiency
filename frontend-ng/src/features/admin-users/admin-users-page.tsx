@@ -251,9 +251,9 @@ export function AdminUsersPage() {
           />
           <ToolbarSelect
             ariaLabel={t('common.pageSizeControl')}
-            className='w-36'
             options={[10, 20, 50, 100].map((size) => ({ value: String(size), label: t('common.pageSize', { size }) }))}
             value={String(pageSize)}
+            width='compact'
             onValueChange={(value) => {
               setPageSize(Number(value))
               setPage(1)

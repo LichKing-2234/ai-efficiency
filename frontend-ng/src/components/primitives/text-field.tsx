@@ -2,6 +2,14 @@ import type * as React from 'react'
 import { Field, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
+import { cn } from '@/lib/utils'
+
+const textFieldWidthClass = {
+  default: undefined,
+  datetime: 'w-[220px]',
+  toolbar: 'w-[220px]',
+  wide: 'w-72'
+} as const
 
 export function TextField({
   className,
@@ -14,7 +22,8 @@ export function TextField({
   placeholder,
   readOnly,
   type,
-  value
+  value,
+  width = 'default'
 }: {
   className?: string
   controlClassName?: string
@@ -27,9 +36,10 @@ export function TextField({
   readOnly?: boolean
   type?: React.HTMLInputTypeAttribute
   value: string
+  width?: keyof typeof textFieldWidthClass
 }) {
   return (
-    <Field className={className}>
+    <Field className={cn(textFieldWidthClass[width], className)}>
       <FieldLabel htmlFor={id}>{label}</FieldLabel>
       {multiline ? (
         <Textarea

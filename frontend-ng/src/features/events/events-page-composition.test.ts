@@ -22,6 +22,13 @@ describe('Events page composition', () => {
     expect(source).not.toContain("className='min-w-[260px] flex-1'")
   })
 
+  test('uses semantic field widths for secondary filters', () => {
+    expect(source).toContain("width='datetime'")
+    expect(source).toContain("width='wide'")
+    expect(source).not.toContain("className='w-[220px]'")
+    expect(source).not.toContain("className='w-72'")
+  })
+
   test('uses the shared slide-over stack for event detail sections', () => {
     expect(source).toContain("from '@/components/primitives/slide-over-stack'")
     expect(source).toContain('<SlideOverStack>')

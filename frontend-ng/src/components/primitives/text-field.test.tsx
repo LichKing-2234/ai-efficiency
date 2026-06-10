@@ -36,4 +36,19 @@ describe('TextField', () => {
     expect(html).toContain('placeholder="Write prompt"')
     expect(html).toContain('hello')
   })
+
+  test('supports semantic field widths', () => {
+    const html = renderToStaticMarkup(
+      <TextField
+        id='sample-datetime'
+        label='From'
+        type='datetime-local'
+        value='2026-06-10T09:00'
+        width='datetime'
+        onChange={() => undefined}
+      />
+    )
+
+    expect(html).toContain('w-[220px]')
+  })
 })

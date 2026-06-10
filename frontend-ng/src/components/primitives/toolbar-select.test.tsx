@@ -35,6 +35,20 @@ describe('ToolbarSelect', () => {
     expect(html).toContain('data-size="sm"')
   })
 
+  test('supports semantic toolbar widths', () => {
+    const html = renderToStaticMarkup(
+      <ToolbarSelect
+        ariaLabel='Page size'
+        width='compact'
+        options={[{ label: '20 / page', value: '20' }]}
+        value='20'
+        onValueChange={() => undefined}
+      />
+    )
+
+    expect(html).toContain('w-36')
+  })
+
   test('supports disabled selects', () => {
     const html = renderToStaticMarkup(
       <ToolbarSelect

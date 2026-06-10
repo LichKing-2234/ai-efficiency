@@ -163,30 +163,30 @@ export function EventsPage() {
           </FilterRow>
           <FilterRow>
             <TextField
-              className='w-[220px]'
               id='events-filter-from'
               label={t('events.fromTime')}
               type='datetime-local'
               value={filters.from}
+              width='datetime'
               onChange={(from) => setFilters((value) => ({ ...value, from }))}
             />
             <TextField
-              className='w-[220px]'
               id='events-filter-to'
               label={t('events.toTime')}
               type='datetime-local'
               value={filters.to}
+              width='datetime'
               onChange={(to) => setFilters((value) => ({ ...value, to }))}
             />
             <Button variant='outline' onClick={clearTimeRange}>{t('events.clearTime')}</Button>
             {isAdmin ? (
               <>
                 <TextField
-                  className='w-72'
                   id='events-user-search'
                   label={t('events.searchUsersByNameOrEmail')}
                   placeholder={t('events.searchUsersByNameOrEmail')}
                   value={userSearch}
+                  width='wide'
                   onChange={setUserSearch}
                 />
                 <Button variant='outline' onClick={searchUsers} disabled={users.isFetching}>{t('adminUsers.searchUsers')}</Button>

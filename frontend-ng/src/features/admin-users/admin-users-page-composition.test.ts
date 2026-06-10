@@ -48,6 +48,11 @@ describe('Admin users page composition', () => {
     expect(source).not.toContain("className='min-w-64 flex-1 sm:max-w-md'")
   })
 
+  test('uses semantic select sizing for page size control', () => {
+    expect(source).toContain("width='compact'")
+    expect(source).not.toContain("className='w-36'")
+  })
+
   test('uses shared fitted action groups for dense table row actions', () => {
     expect(source).toContain('<ActionGroup fit wrap>')
     expect(source).not.toContain("<ActionGroup wrap className='min-w-0'>")

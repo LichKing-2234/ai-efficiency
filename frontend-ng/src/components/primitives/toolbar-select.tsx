@@ -2,6 +2,12 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectVa
 import { cn } from '@/lib/utils'
 import type { SelectFieldOption } from './select-field'
 
+const toolbarSelectWidthClass = {
+  auto: 'min-w-24',
+  compact: 'w-36',
+  toolbar: 'w-[220px]'
+} as const
+
 export function ToolbarSelect({
   ariaLabel,
   className,
@@ -9,7 +15,8 @@ export function ToolbarSelect({
   onValueChange,
   options,
   size,
-  value
+  value,
+  width = 'auto'
 }: {
   ariaLabel: string
   className?: string
@@ -18,6 +25,7 @@ export function ToolbarSelect({
   options: SelectFieldOption[]
   size?: 'default' | 'sm'
   value: string
+  width?: keyof typeof toolbarSelectWidthClass
 }) {
   const selected = options.find((option) => option.value === value)
 
@@ -25,7 +33,7 @@ export function ToolbarSelect({
     <Select value={value} disabled={disabled} onValueChange={onValueChange}>
       <SelectTrigger
         aria-label={typeof selected?.label === 'string' ? `${ariaLabel}: ${selected.label}` : ariaLabel}
-        className={cn('min-w-24', className)}
+        className={cn(toolbarSelectWidthClass[width], className)}
         size={size}
       >
         <SelectValue />
