@@ -92,6 +92,19 @@ describe('Repos page composition', () => {
     expect(source).toContain('percent(repo.pr_summary?.ai_share, locale)')
   })
 
+  test('renders reference inspect actions for binding and PR sync', () => {
+    expect(source).toContain('const syncRepo = useMutation')
+    expect(source).toContain('mutationFn: api.repos.syncPRs')
+    expect(source).toContain('syncRepo={(id) => syncRepo.mutate(id)}')
+    expect(source).toContain("repo.binding_state === 'unbound' ? (")
+    expect(source).toContain("title={t('repos.bindToPrSource')}")
+    expect(source).toContain("description={t('repos.bindToPrSourceDescription')}")
+    expect(source).toContain("{t('repos.bindRepository')}")
+    expect(source).toContain("label={t('repos.defaultBranch')}")
+    expect(source).toContain("disabled={repo.binding_state === 'unbound' || syncPending}")
+    expect(source).toContain("{syncPending ? t('repoDetail.syncingPrs') : t('repoDetail.syncPrs')}")
+  })
+
   test('uses shared empty-state primitives for repository empty content', () => {
     expect(source).toContain("from '@/components/primitives/data-state'")
     expect(source).toContain('<EmptyState')

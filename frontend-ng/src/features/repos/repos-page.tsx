@@ -162,6 +162,18 @@ export function ReposPage() {
       toast.success(t('repos.repoDeleted'))
     }
   })
+  const syncRepo = useMutation({
+    mutationFn: api.repos.syncPRs,
+    onSuccess: (_result, repoId) => {
+      toast.success(t('repoDetail.syncStarted'))
+      void invalidateRepos(qc)
+      void qc.invalidateQueries({ queryKey: ['repo', repoId] })
+      void qc.invalidateQueries({ queryKey: ['repo', repoId, 'latest-job'] })
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : t('repoDetail.failedStartSync'))
+    }
+  })
 
   const providers = scm.data?.items ?? []
   const selectedScmProvider = providers.find((provider) => String(provider.id) === selectedProviderId)
@@ -370,6 +382,8 @@ export function ReposPage() {
         deleteRepo={(id) => deleteRepo.mutate(id)}
         repo={selectedRepo}
         setDeleteConfirmId={setDeleteConfirmId}
+        syncPending={syncRepo.isPending}
+        syncRepo={(id) => syncRepo.mutate(id)}
         onClose={() => setSelectedRepo(null)}
       />
     </Page>
@@ -431,6 +445,8 @@ function RepoInspectSlideOver({
   deleteRepo,
   repo,
   setDeleteConfirmId,
+  syncPending,
+  syncRepo,
   onClose
 }: {
   deleteConfirmId: number | null
@@ -438,6 +454,8 @@ function RepoInspectSlideOver({
   deleteRepo: (id: number) => void
   repo: RepoConfig | null
   setDeleteConfirmId: (id: number | null) => void
+  syncPending: boolean
+  syncRepo: (id: number) => void
   onClose: () => void
 }) {
   const { locale, t } = useI18n()
@@ -463,10 +481,30 @@ function RepoInspectSlideOver({
           <FieldList>
             <FieldItem label={t('repos.fullName')} value={repo.full_name || repo.name} truncate />
             <FieldItem label={t('repos.clone')} value={repo.clone_url || '-'} mono />
+            <FieldItem label={t('repos.defaultBranch')} value={repo.default_branch || '-'} mono />
             <FieldItem label={t('repos.provider')} value={repo.edges?.scm_provider?.base_url || repo.edges?.scm_provider?.name || repo.scm_provider_id || '-'} mono truncate />
             <FieldItem label={t('common.status')} value={repo.status || '-'} />
           </FieldList>
+          {repo.binding_state === 'unbound' ? (
+            <AppAlert
+              tone='info'
+              title={t('repos.bindToPrSource')}
+              description={t('repos.bindToPrSourceDescription')}
+              actions={(
+                <Button asChild>
+                  <Link to='/repos/$id' params={{ id: String(repo.id) }}>
+                    <GitPullRequestIcon data-icon='inline-start' />
+                    {t('repos.bindRepository')}
+                  </Link>
+                </Button>
+              )}
+            />
+          ) : null}
           <ActionGroup push wrap>
+            <Button variant='outline' onClick={() => syncRepo(repo.id)} disabled={repo.binding_state === 'unbound' || syncPending}>
+              <RefreshCwIcon data-icon='inline-start' />
+              {syncPending ? t('repoDetail.syncingPrs') : t('repoDetail.syncPrs')}
+            </Button>
             <Button asChild variant='outline'>
               <Link to='/repos/$id' params={{ id: String(repo.id) }}>
                 <ExternalLinkIcon data-icon='inline-start' />
