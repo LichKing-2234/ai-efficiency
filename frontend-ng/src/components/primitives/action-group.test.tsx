@@ -54,4 +54,15 @@ describe('ActionGroup', () => {
     expect(html).toContain('Approve')
     expect(html).toContain('Deny')
   })
+
+  test('supports fitted action rows inside dense data grids', () => {
+    const html = renderToStaticMarkup(
+      <ActionGroup fit wrap>
+        <button type='button'>Copy encrypted</button>
+      </ActionGroup>
+    )
+
+    expect(html).toContain('min-w-0')
+    expect(html).toContain('Copy encrypted')
+  })
 })

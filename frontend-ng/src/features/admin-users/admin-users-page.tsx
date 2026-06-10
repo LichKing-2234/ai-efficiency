@@ -236,7 +236,6 @@ export function AdminUsersPage() {
         <CardFilterBar>
           <SearchField
             ariaLabel={t('adminUsers.searchUsers')}
-            className='min-w-64 flex-1 sm:max-w-md'
             clearLabel={t('common.clear')}
             onChange={(value) => {
               setQ(value)
@@ -248,6 +247,7 @@ export function AdminUsersPage() {
             }}
             placeholder={t('adminUsers.searchUsers')}
             value={q}
+            width='toolbar'
           />
           <ToolbarSelect
             ariaLabel={t('common.pageSizeControl')}
@@ -304,7 +304,7 @@ export function AdminUsersPage() {
               <DataGridCell truncate>{user.auth_source}</DataGridCell>
               <DataGridCell mono truncate tone='metadata'>{user.relay_user_id || '-'}</DataGridCell>
               <DataGridCell numeric tone='metadata'>{dateTime(user.updated_at)}</DataGridCell>
-              <ActionGroup wrap className='min-w-0'>
+              <ActionGroup fit wrap>
                 <Button
                   variant='outline'
                   size='sm'

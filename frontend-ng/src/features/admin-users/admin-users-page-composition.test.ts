@@ -41,4 +41,15 @@ describe('Admin users page composition', () => {
     expect(source).not.toContain("<StatusBadge value={currentJob.status} />")
     expect(source).not.toContain("<span className='tnum'>{number(currentJob.processed_count)}/{number(currentJob.total_count)}</span>")
   })
+
+  test('uses shared filter sizing for the user search field', () => {
+    expect(source).toContain('<SearchField')
+    expect(source).toContain("width='toolbar'")
+    expect(source).not.toContain("className='min-w-64 flex-1 sm:max-w-md'")
+  })
+
+  test('uses shared fitted action groups for dense table row actions', () => {
+    expect(source).toContain('<ActionGroup fit wrap>')
+    expect(source).not.toContain("<ActionGroup wrap className='min-w-0'>")
+  })
 })

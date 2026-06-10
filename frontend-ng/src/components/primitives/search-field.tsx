@@ -9,7 +9,8 @@ export function SearchField({
   placeholder,
   ariaLabel,
   clearLabel,
-  className
+  className,
+  width = 'auto'
 }: {
   value: string
   onChange: (value: string) => void
@@ -18,9 +19,10 @@ export function SearchField({
   ariaLabel: string
   clearLabel: string
   className?: string
+  width?: 'auto' | 'toolbar'
 }) {
   return (
-    <InputGroup className={cn('h-9 min-w-0 bg-[var(--surface-inset)]', className)}>
+    <InputGroup className={cn('h-9 min-w-0 bg-[var(--surface-inset)]', width === 'toolbar' && 'min-w-64 flex-1 sm:max-w-md', className)}>
       <InputGroupAddon>
         <SearchIcon />
       </InputGroupAddon>

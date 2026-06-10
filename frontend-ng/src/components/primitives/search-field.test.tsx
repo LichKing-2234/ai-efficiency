@@ -36,4 +36,21 @@ describe('SearchField', () => {
 
     expect(html).not.toContain('aria-label="Clear search"')
   })
+
+  test('supports toolbar sizing for filter bars', () => {
+    const html = renderToStaticMarkup(
+      <SearchField
+        ariaLabel='Search users'
+        clearLabel='Clear search'
+        onChange={() => undefined}
+        onClear={() => undefined}
+        placeholder='Search users'
+        value=''
+        width='toolbar'
+      />
+    )
+
+    expect(html).toContain('min-w-64')
+    expect(html).toContain('sm:max-w-md')
+  })
 })
