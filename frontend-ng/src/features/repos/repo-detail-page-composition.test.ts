@@ -22,4 +22,10 @@ describe('Repo detail page composition', () => {
     expect(source).toContain("<FilterRow className='text-sm'>")
     expect(source).not.toContain("<div className='flex flex-wrap items-center gap-2 text-sm'>")
   })
+
+  test('uses shared stacks for repair and expanded detail vertical rhythm', () => {
+    expect(source).toContain("from '@/components/primitives/stack'")
+    expect(source).not.toContain("<div className='flex flex-col gap-3'>")
+    expect(source).not.toContain("<div className='flex flex-col gap-4'>")
+  })
 })

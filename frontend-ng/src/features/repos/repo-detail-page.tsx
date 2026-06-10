@@ -22,6 +22,7 @@ import { MetricCard } from '@/components/primitives/metric-card'
 import { Page, PageToolbar } from '@/components/primitives/page'
 import { SectionCardHeader } from '@/components/primitives/section-card-header'
 import { LoadingState } from '@/components/primitives/data-state'
+import { Stack } from '@/components/primitives/stack'
 import { StatusBadge } from '@/components/primitives/status-badge'
 import { ToolbarSelect } from '@/components/primitives/toolbar-select'
 import { UsageSummaryPanel } from '@/components/primitives/usage-summary-panel'
@@ -199,7 +200,7 @@ export function RepoDetailPage() {
         <Alert>
           <AlertTitle>{t('repoDetail.repairWebhook')}</AlertTitle>
           <AlertDescription>
-            <div className='flex flex-col gap-3'>
+            <Stack gap='compact'>
               <span>{t('repoDetail.webhookRepairNeeded')}</span>
               {repo.data?.webhook_id ? (
                 <CheckboxField
@@ -212,7 +213,7 @@ export function RepoDetailPage() {
               <Button className='w-fit' disabled={repairWebhook.isPending} onClick={() => repairWebhook.mutate()}>
                 {repairWebhook.isPending ? t('repoDetail.webhookRepairing') : t('repoDetail.repairWebhook')}
               </Button>
-            </div>
+            </Stack>
           </AlertDescription>
         </Alert>
       ) : null}
@@ -353,7 +354,7 @@ export function RepoDetailPage() {
                           {prDetail.isLoading ? (
                             <div className='py-4 text-center text-muted-foreground text-sm'>{t('repoDetail.loadingDetails')}</div>
                           ) : (
-                            <div className='flex flex-col gap-4'>
+                            <Stack>
                               <UsageSummaryPanel
                                 actions={
                                   <>
@@ -410,7 +411,7 @@ export function RepoDetailPage() {
                                   </DataGridRow>
                                 )}
                               </DataGrid>
-                            </div>
+                            </Stack>
                           )}
                       </InsetPanel>
                     ) : null}
