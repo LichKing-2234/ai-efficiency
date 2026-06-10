@@ -35,6 +35,12 @@ describe('User usage panel composition', () => {
     expect(source).not.toContain("<div className='px-[18px] pb-[18px]'>")
   })
 
+  test('uses shared table card content for edge-to-edge model cost table', () => {
+    expect(source).toContain("from '@/components/primitives/card-table-content'")
+    expect(source).toContain('<CardTableContent>')
+    expect(source).not.toContain("<CardContent className='px-0 pb-0'>")
+  })
+
   test('uses shared data grid cells for model cost numeric columns', () => {
     expect(source).toContain('DataGridCell')
     expect(source).not.toContain("className='tnum text-right'")

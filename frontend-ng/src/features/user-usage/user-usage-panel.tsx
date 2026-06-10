@@ -8,6 +8,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Empty, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ActionGroup } from '@/components/primitives/action-group'
+import { CardTableContent } from '@/components/primitives/card-table-content'
 import { ChartLegend } from '@/components/primitives/chart-legend'
 import { BarsH, StackedAreaChart, type StackedAreaKey } from '@/components/primitives/charts'
 import { DataGrid, DataGridCell, DataGridHeader, DataGridHeaderCell, DataGridRow } from '@/components/primitives/data-grid'
@@ -168,7 +169,7 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
               </Card>
               <Card className='overflow-hidden'>
                 <SectionCardHeader title={t('usageDashboard.costByModel')} description={t('usageDashboard.modelDistributionDescription')} />
-                <CardContent className='px-0 pb-0'>
+                <CardTableContent>
                   {snapshot.models.length ? (
                     <DataGrid minWidth={560}>
                       <DataGridHeader columns={modelColumns}>
@@ -189,7 +190,7 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
                   ) : (
                     <Empty><EmptyHeader><EmptyTitle>{t('usageDashboard.noModelData')}</EmptyTitle></EmptyHeader></Empty>
                   )}
-                </CardContent>
+                </CardTableContent>
               </Card>
             </div>
             {!embedded ? (
