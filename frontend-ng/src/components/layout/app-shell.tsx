@@ -232,7 +232,12 @@ export function AppShell({ user, children }: { user: User | null; children: Reac
             <div className='mx-auto w-full max-w-7xl p-4 pb-12 md:p-6'>{children}</div>
           </main>
         </SidebarInset>
-        <CommandPalette isAdmin={user?.role === 'admin'} onClose={() => setCommandOpen(false)} open={commandOpen} />
+        <CommandPalette
+          isAdmin={user?.role === 'admin'}
+          onClose={() => setCommandOpen(false)}
+          onToggleTheme={() => setDark((value) => !value)}
+          open={commandOpen}
+        />
       </SidebarLayout>
     </SidebarProvider>
   )

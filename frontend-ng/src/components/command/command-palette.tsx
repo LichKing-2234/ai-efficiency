@@ -1,10 +1,12 @@
 import { useNavigate } from '@tanstack/react-router'
+import { useQuery } from '@tanstack/react-query'
 import {
   ActivityIcon,
   ArrowRightIcon,
   FolderGit2Icon,
   GaugeIcon,
   HomeIcon,
+  MoonIcon,
   SearchIcon,
   SettingsIcon,
   ShieldIcon,
@@ -22,44 +24,77 @@ import {
   CommandShortcut
 } from '@/components/ui/command'
 import { CommandFooter } from '@/components/primitives/command-footer'
+import { api } from '@/lib/api'
+import type { RepoConfig } from '@/lib/api/types'
 import type { MessageKey } from '@/lib/i18n/messages'
 import { useI18n } from '@/lib/i18n/i18n'
 
-type CommandItem = {
+type BaseCommandItem = {
   id: string
-  to: '/' | '/usage' | '/events' | '/repos' | '/user' | '/admin/users' | '/settings'
-  labelKey: MessageKey
+  kind: 'nav' | 'action' | 'repo'
+  to?: '/' | '/usage' | '/events' | '/repos' | '/repos/$id' | '/user' | '/admin/users' | '/settings'
+  labelKey?: MessageKey
+  label?: string
   groupKey: MessageKey
   icon: typeof HomeIcon
   admin?: boolean
 }
 
-const COMMANDS: CommandItem[] = [
-  { id: 'overview', to: '/', labelKey: 'nav.overview', groupKey: 'command.navigate', icon: HomeIcon },
-  { id: 'usage', to: '/usage', labelKey: 'nav.usageAnalytics', groupKey: 'command.navigate', icon: GaugeIcon },
-  { id: 'events', to: '/events', labelKey: 'nav.usageRecords', groupKey: 'command.navigate', icon: ActivityIcon },
-  { id: 'repos', to: '/repos', labelKey: 'nav.codeRepositories', groupKey: 'command.navigate', icon: FolderGit2Icon },
-  { id: 'user', to: '/user', labelKey: 'nav.mySetup', groupKey: 'command.navigate', icon: UserIcon },
-  { id: 'admin-users', to: '/admin/users', labelKey: 'nav.userManagement', groupKey: 'command.admin', icon: ShieldIcon, admin: true },
-  { id: 'settings', to: '/settings', labelKey: 'nav.adminConsole', groupKey: 'command.admin', icon: SettingsIcon, admin: true }
+type NavCommandItem = BaseCommandItem & { kind: 'nav'; to: Exclude<BaseCommandItem['to'], '/repos/$id' | undefined>; labelKey: MessageKey }
+type ActionCommandItem = BaseCommandItem & { kind: 'action'; labelKey: MessageKey; to?: undefined }
+type RepoCommandItem = BaseCommandItem & { kind: 'repo'; to: '/repos/$id'; params: { id: string }; label: string }
+type CommandItem = NavCommandItem | ActionCommandItem | RepoCommandItem
+
+const COMMANDS: Array<NavCommandItem | ActionCommandItem> = [
+  { id: 'overview', kind: 'nav', to: '/', labelKey: 'nav.overview', groupKey: 'command.navigate', icon: HomeIcon },
+  { id: 'usage', kind: 'nav', to: '/usage', labelKey: 'nav.usageAnalytics', groupKey: 'command.navigate', icon: GaugeIcon },
+  { id: 'events', kind: 'nav', to: '/events', labelKey: 'nav.usageRecords', groupKey: 'command.navigate', icon: ActivityIcon },
+  { id: 'repos', kind: 'nav', to: '/repos', labelKey: 'nav.codeRepositories', groupKey: 'command.navigate', icon: FolderGit2Icon },
+  { id: 'user', kind: 'nav', to: '/user', labelKey: 'nav.mySetup', groupKey: 'command.navigate', icon: UserIcon },
+  { id: 'toggle-theme', kind: 'action', labelKey: 'nav.toggleTheme', groupKey: 'command.actions', icon: MoonIcon },
+  { id: 'admin-users', kind: 'nav', to: '/admin/users', labelKey: 'nav.userManagement', groupKey: 'command.admin', icon: ShieldIcon, admin: true },
+  { id: 'settings', kind: 'nav', to: '/settings', labelKey: 'nav.adminConsole', groupKey: 'command.admin', icon: SettingsIcon, admin: true }
 ]
 
-export function getCommandPaletteItems(isAdmin: boolean) {
-  return COMMANDS.filter((command) => !command.admin || isAdmin)
+function repoCommand(repo: RepoConfig): CommandItem {
+  return {
+    id: `repo-${repo.id}`,
+    kind: 'repo',
+    to: '/repos/$id',
+    params: { id: String(repo.id) },
+    label: repo.full_name || repo.name,
+    groupKey: 'command.repositories',
+    icon: FolderGit2Icon
+  }
+}
+
+export function getCommandPaletteItems(isAdmin: boolean, repos: RepoConfig[] = []) {
+  return [
+    ...COMMANDS.filter((command) => !command.admin || isAdmin),
+    ...repos.slice(0, 4).map(repoCommand)
+  ]
 }
 
 export function CommandPalette({
   open,
   isAdmin,
-  onClose
+  onClose,
+  onToggleTheme
 }: {
   open: boolean
   isAdmin: boolean
   onClose: () => void
+  onToggleTheme: () => void
 }) {
   const navigate = useNavigate()
   const { t } = useI18n()
-  const commands = useMemo(() => getCommandPaletteItems(isAdmin), [isAdmin])
+  const repos = useQuery({
+    queryKey: ['command-palette', 'repos'],
+    queryFn: () => api.repos.list({ page: 1, pageSize: 4 }),
+    enabled: open,
+    staleTime: 60_000
+  })
+  const commands = useMemo(() => getCommandPaletteItems(isAdmin, repos.data?.items ?? []), [isAdmin, repos.data?.items])
   const grouped = useMemo(() => commands.reduce<Record<string, typeof commands>>((acc, command) => {
     const group = t(command.groupKey)
     acc[group] = acc[group] ?? []
@@ -69,7 +104,19 @@ export function CommandPalette({
 
   async function run(command: CommandItem) {
     onClose()
-    await navigate({ to: command.to })
+    if (command.kind === 'action') {
+      if (command.id === 'toggle-theme') onToggleTheme()
+      return
+    }
+    if (command.to === '/repos/$id') {
+      await navigate({ to: command.to, params: command.params })
+      return
+    }
+    if (command.to) await navigate({ to: command.to })
+  }
+
+  function label(command: CommandItem) {
+    return command.labelKey ? t(command.labelKey) : command.label ?? command.id
   }
 
   return (
@@ -92,12 +139,12 @@ export function CommandPalette({
                 return (
                   <CommandItem
                     key={command.id}
-                    keywords={[t(command.groupKey), command.to, command.id]}
+                    keywords={[t(command.groupKey), command.to ?? '', command.id]}
                     onSelect={() => void run(command)}
-                    value={`${t(command.labelKey)} ${command.id} ${command.to}`}
+                    value={`${label(command)} ${command.id} ${command.to ?? ''}`}
                   >
                     <Icon />
-                    <span className='min-w-0 flex-1 truncate font-medium text-[13.5px]'>{t(command.labelKey)}</span>
+                    <span className='min-w-0 flex-1 truncate font-medium text-[13.5px]'>{label(command)}</span>
                     <CommandShortcut>
                       <ArrowRightIcon />
                     </CommandShortcut>

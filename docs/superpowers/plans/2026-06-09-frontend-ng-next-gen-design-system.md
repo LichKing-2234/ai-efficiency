@@ -193,6 +193,10 @@ Follow-up OAuth/auth redirect diagnosis fixed the `/oauth/device` unauthenticate
 
   Follow-up topbar-title audit evidence: `topbar-title.test.tsx` and `app-shell-composition.test.ts` were added with a red-green cycle; they first failed because `topbar-title.tsx` did not exist and `app-shell.tsx` still owned the local section/title typography classes, then passed after migration. Focused verification passed with `bun test src/components/layout/topbar-title.test.tsx src/components/layout/app-shell-composition.test.ts`.
 
+  Follow-up command action/repository audit implementation expands the palette toward the reference `Navigate / Actions / Repositories` model. It adds a safe Toggle Theme action wired through AppShell state, loads up to four repository suggestions from the existing same-origin `api.repos.list({ page: 1, pageSize: 4 })` client, and routes repository hits through TanStack Router's `/repos/$id` params contract instead of mock `AE.repoRows` data.
+
+  Follow-up command action/repository audit evidence: `command-palette.test.ts` was extended with a red-green cycle; it first failed because the palette only exposed navigation/admin commands and did not import the API client, then passed after implementation. Focused verification passed with `bun test src/components/command/command-palette.test.ts` and `bun run check`.
+
 - [x] **Step 6: Remove duplicate page titles incrementally**
 
   Keep generic page titles in the top bar. Feature pages should start with content or page-specific toolbars; Overview may keep its hero.
