@@ -25,7 +25,7 @@ The current project-level architecture remains documented in [`docs/architecture
 That creates two blind spots:
 
 1. A user can pass repo attribution checks while Codex, Claude, or Gemini is not installed, misconfigured, or unable to return a model response through the configured local CLI.
-2. The online repo eligibility check reuses the hook-time `500ms` timeout. That timeout is appropriate for fail-open Git hooks, but it is too short for a human-run diagnostic command and can report `context deadline exceeded` even when the backend would return a valid eligible result in a few seconds.
+2. The online repo eligibility check reuses the hook-time bounded timeout. That timeout is appropriate for fail-open Git hooks, but it is too short for a human-run diagnostic command and can report `context deadline exceeded` even when the backend would return a valid eligible result in a few seconds.
 
 ## Goals
 
@@ -192,7 +192,7 @@ Doctor must not reuse the hook-time eligibility timeout.
 Current hook behavior keeps:
 
 ```text
-hook eligibility timeout = 500ms
+hook eligibility timeout = 2s
 ```
 
 Doctor adds a separate timeout:

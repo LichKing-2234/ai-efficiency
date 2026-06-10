@@ -466,6 +466,54 @@ func TestHookPostCommitResolvesCacheMissAndCachesPositive(t *testing.T) {
 	}
 }
 
+func TestHookPostCommitDefaultResolveTimeoutCoversHealthySlowResolve(t *testing.T) {
+	repo := initRepoWithCommitForCmdTests(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/repos/resolve-remote" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		time.Sleep(1200 * time.Millisecond)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"data": client.RepoEligibilityResponse{
+				Eligible:     true,
+				RepoConfigID: 654,
+				RepoKey:      "github.com/acme/repo",
+				FullName:     "acme/repo",
+				CloneURL:     "https://github.com/acme/repo.git",
+				Status:       "active",
+			},
+		})
+	}))
+	defer srv.Close()
+
+	writeTestTokenForServer(t, home, srv.URL, "user:123")
+	withHookAPIClient(t, srv.URL, "test-access-token")
+
+	u := &recordingHookUploader{}
+	origUploader := newHookUploader
+	newHookUploader = func() hooks.Uploader { return u }
+	t.Cleanup(func() { newHookUploader = origUploader })
+
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+	defer func() { _ = os.Chdir(wd) }()
+	if err := os.Chdir(repo); err != nil {
+		t.Fatalf("Chdir(repo): %v", err)
+	}
+
+	if err := hookPostCommitCmd.RunE(hookPostCommitCmd, nil); err != nil {
+		t.Fatalf("hook post-commit RunE: %v", err)
+	}
+	if len(u.events) != 1 || u.events[0].RepoConfigID != 654 {
+		t.Fatalf("events = %+v, want one event with repo_config_id 654", u.events)
+	}
+}
+
 func TestHookPostCommitAllowsImmediateResolveWithoutStableSubject(t *testing.T) {
 	repo := initRepoWithCommitForCmdTests(t)
 	home := t.TempDir()

@@ -22,7 +22,7 @@ var hookCmd = &cobra.Command{
 }
 
 var hookCommandTimeout = 10 * time.Second
-var hookEligibilityResolveTimeout = 500 * time.Millisecond
+var hookEligibilityResolveTimeout = 2 * time.Second
 var runBackgroundSyncTask = hooks.RunPendingSyncTask
 
 var newHookUploader = func() hooks.Uploader {
