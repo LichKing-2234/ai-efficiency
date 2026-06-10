@@ -77,6 +77,11 @@ describe('ProviderTestForm', () => {
     expect(source).not.toContain("<div className='text-muted-foreground text-sm'>{message}</div>")
     expect(source).not.toContain("<span className='text-muted-foreground text-sm'>{labels.createKeyBeforeTesting}</span>")
   })
+
+  test('uses shared start-aligned action groups for provider test actions', () => {
+    expect(source).toContain("<ActionGroup wrap align='start'>")
+    expect(source).not.toContain("<ActionGroup wrap className='justify-start'>")
+  })
 })
 
 function labels() {

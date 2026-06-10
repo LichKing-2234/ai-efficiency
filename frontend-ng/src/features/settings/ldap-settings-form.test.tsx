@@ -1,7 +1,12 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, test } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { LdapSettingsForm } from './ldap-settings-form'
 import type { LDAPFormState } from './settings-payloads'
+
+const source = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), 'ldap-settings-form.tsx'), 'utf8')
 
 const form: LDAPFormState = {
   url: 'ldap://ldap.example.com:389',
@@ -45,5 +50,10 @@ describe('LdapSettingsForm', () => {
     )
 
     expect(html).toContain('disabled=""')
+  })
+
+  test('uses shared start-aligned action groups for LDAP actions', () => {
+    expect(source).toContain("<ActionGroup wrap align='start'>")
+    expect(source).not.toContain("<ActionGroup wrap className='justify-start'>")
   })
 })

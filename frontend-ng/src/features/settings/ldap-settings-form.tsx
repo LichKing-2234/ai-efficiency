@@ -61,7 +61,7 @@ export function LdapSettingsForm({
           title={message}
         />
       ) : null}
-      <ActionGroup wrap className='justify-start'>
+      <ActionGroup wrap align='start'>
         <Button
           variant='outline'
           onClick={onTest}

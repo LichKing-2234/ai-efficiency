@@ -18,7 +18,8 @@ describe('Settings page composition', () => {
   test('uses shared action groups for deployment runtime action rows', () => {
     const source = readFileSync(join(ROOT, 'features/settings/settings-page.tsx'), 'utf8')
 
-    expect(source).toContain('<ActionGroup wrap className=\'justify-start\'>')
+    expect(source).toContain("<ActionGroup wrap align='start'>")
+    expect(source).not.toContain("<ActionGroup wrap className='justify-start'>")
     expect(source).not.toContain("<div className='flex gap-2'>")
   })
 

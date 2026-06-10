@@ -82,7 +82,7 @@ export function ProviderTestForm({
       {message ? <FieldDescription>{message}</FieldDescription> : null}
       {error ? <AppAlert tone='error' title={error} /> : null}
       <TextField id='provider-test-prompt' label={labels.prompt} multiline value={prompt} onChange={onPromptChange} />
-      <ActionGroup wrap className='justify-start'>
+      <ActionGroup wrap align='start'>
         <Button disabled={!canRun || running} onClick={onRun}>
           <Zap data-icon='inline-start' />
           {running ? labels.testing : labels.runTest}
