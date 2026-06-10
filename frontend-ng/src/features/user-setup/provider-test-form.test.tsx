@@ -71,6 +71,12 @@ describe('ProviderTestForm', () => {
     expect(source).toContain("<ControlGrid variant='two-column'>")
     expect(source).not.toContain("<div className='grid gap-3 md:grid-cols-2'>")
   })
+
+  test('uses shadcn field descriptions for form feedback copy', () => {
+    expect(source).toContain("FieldDescription")
+    expect(source).not.toContain("<div className='text-muted-foreground text-sm'>{message}</div>")
+    expect(source).not.toContain("<span className='text-muted-foreground text-sm'>{labels.createKeyBeforeTesting}</span>")
+  })
 })
 
 function labels() {

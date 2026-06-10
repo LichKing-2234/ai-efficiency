@@ -1,7 +1,7 @@
 import { Zap } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { FieldGroup } from '@/components/ui/field'
+import { FieldDescription, FieldGroup } from '@/components/ui/field'
 import { ActionGroup } from '@/components/primitives/action-group'
 import { AppAlert } from '@/components/primitives/app-alert'
 import { ControlGrid } from '@/components/primitives/control-grid'
@@ -79,7 +79,7 @@ export function ProviderTestForm({
         )}
         <TextField id='provider-test-platform' label={labels.platform} value={platform} disabled />
       </ControlGrid>
-      {message ? <div className='text-muted-foreground text-sm'>{message}</div> : null}
+      {message ? <FieldDescription>{message}</FieldDescription> : null}
       {error ? <AppAlert tone='error' title={error} /> : null}
       <TextField id='provider-test-prompt' label={labels.prompt} multiline value={prompt} onChange={onPromptChange} />
       <ActionGroup wrap className='justify-start'>
@@ -87,7 +87,7 @@ export function ProviderTestForm({
           <Zap data-icon='inline-start' />
           {running ? labels.testing : labels.runTest}
         </Button>
-        {secretMissing ? <span className='text-muted-foreground text-sm'>{labels.createKeyBeforeTesting}</span> : null}
+        {secretMissing ? <FieldDescription>{labels.createKeyBeforeTesting}</FieldDescription> : null}
         {result ? <Badge variant={result.success ? 'success' : 'warning'}>{result.message}</Badge> : null}
       </ActionGroup>
       {result?.response ? <InsetPanel comfortable>{result.response}</InsetPanel> : null}
