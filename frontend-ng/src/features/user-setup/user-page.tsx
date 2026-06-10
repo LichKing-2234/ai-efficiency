@@ -11,6 +11,7 @@ import { CardContentStack } from '@/components/primitives/card-content-stack'
 import { CommandAccordion } from '@/components/primitives/command-accordion'
 import { CommandStep } from '@/components/primitives/command-step'
 import { ConfirmAction } from '@/components/primitives/confirm-action'
+import { CountBadge } from '@/components/primitives/count-badge'
 import { CredentialKeyPanel } from '@/components/primitives/credential-key-panel'
 import { EntityCardHeader } from '@/components/primitives/entity-card-header'
 import { PageEmpty } from '@/components/primitives/page-empty'
@@ -143,7 +144,7 @@ export function UserPage() {
             <SectionCardHeader
               title={t('userSetup.accountAccess')}
               description={t('userSetup.descriptionShort')}
-              actions={<Badge variant='ai' className='shrink-0 tnum'>{t('userSetup.groupsReadyShort', { ready: readyGroups, total: totalGroups })}</Badge>}
+              actions={<CountBadge variant='ai'>{t('userSetup.groupsReadyShort', { ready: readyGroups, total: totalGroups })}</CountBadge>}
             />
             <CardContentStack gap='compact'>
               {providers.data?.message ? <InsetPanel muted>{providers.data.message}</InsetPanel> : null}

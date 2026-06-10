@@ -24,4 +24,10 @@ describe('User setup page composition', () => {
     expect(source).toContain('<RecordMeta wrap>')
     expect(source).not.toContain("description={<span className='mono break-all'>")
   })
+
+  test('uses shared count badges for access group readiness totals', () => {
+    expect(source).toContain("from '@/components/primitives/count-badge'")
+    expect(source).toContain("<CountBadge variant='ai'>")
+    expect(source).not.toContain("className='shrink-0 tnum'")
+  })
 })
