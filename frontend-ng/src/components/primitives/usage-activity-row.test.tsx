@@ -19,6 +19,10 @@ describe('UsageActivityRow', () => {
     )
 
     expect(html).toContain('data-slot="usage-activity-row"')
+    expect(html).toContain('data-slot="usage-activity-content"')
+    expect(html).toContain('data-slot="usage-activity-title"')
+    expect(html).toContain('data-slot="usage-activity-meta"')
+    expect(html).toContain('data-slot="usage-activity-amount"')
     expect(html).toContain('data-state="bound"')
     expect(html).toContain('org/repo')
     expect(html).toContain('2026-06-09 10:30')
@@ -46,5 +50,16 @@ describe('UsageActivityRow', () => {
     expect(html).toContain('data-state="unbound"')
     expect(html).toContain('Needs binding')
     expect(html).toContain('border-t')
+  })
+
+  test('keeps title, metadata, and amount rhythm inside semantic slots', async () => {
+    const source = await import('node:fs/promises').then((fs) =>
+      fs.readFile(new URL('./usage-activity-row.tsx', import.meta.url), 'utf8')
+    )
+
+    expect(source).not.toContain("className='min-w-0 flex-1'")
+    expect(source).not.toContain("className='truncate font-semibold text-sm'")
+    expect(source).not.toContain("className='mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11.5px] text-muted-foreground'")
+    expect(source).not.toContain("className='hidden w-20 text-right tnum sm:block'")
   })
 })
