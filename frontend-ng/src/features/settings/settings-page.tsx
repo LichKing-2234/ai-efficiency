@@ -16,7 +16,7 @@ import { ConfirmAction } from '@/components/primitives/confirm-action'
 import { DataGrid, DataGridCell, DataGridHeader, DataGridRow } from '@/components/primitives/data-grid'
 import { Page } from '@/components/primitives/page'
 import { LoadingState } from '@/components/primitives/data-state'
-import { FieldItem, FieldList } from '@/components/primitives/field-list'
+import { HealthFieldItem, HealthFieldList } from '@/components/primitives/health-field-list'
 import { InfoTile, InfoTileGrid } from '@/components/primitives/info-tile'
 import { SectionCardHeader } from '@/components/primitives/section-card-header'
 import { SectionNav, SectionNavFrame, type SectionNavItem } from '@/components/primitives/section-nav'
@@ -420,11 +420,11 @@ export function SettingsPage() {
               <InfoTile label={t('settings.mode')} value={deployment.data?.mode || t('common.unknown')} mono />
               <InfoTile label={t('settings.commit')} value={deployment.data?.version.commit || '-'} mono />
             </InfoTileGrid>
-            <FieldList>
-              <FieldItem label={t('settings.current')} value={`v${deployment.data?.version.version || '-'}`} mono />
-              <FieldItem label={t('settings.mode')} value={deployment.data?.mode || t('common.unknown')} mono />
-              <FieldItem label={t('settings.commit')} value={deployment.data?.version.commit || '-'} mono />
-            </FieldList>
+            <HealthFieldList>
+              <HealthFieldItem label={t('settings.current')} status={deployment.data?.version.version ? 'healthy' : 'unknown'} value={`v${deployment.data?.version.version || '-'}`} mono />
+              <HealthFieldItem label={t('settings.mode')} status={deployment.data?.mode ? 'healthy' : 'unknown'} value={deployment.data?.mode || t('common.unknown')} mono />
+              <HealthFieldItem label={t('settings.commit')} status={deployment.data?.version.commit ? 'healthy' : 'warning'} value={deployment.data?.version.commit || '-'} mono />
+            </HealthFieldList>
             {deployment.data?.update_available ? <Badge variant='ai'>{t('settings.updateAvailable', { version: deployment.data.latest_release?.version || '-' })}</Badge> : <Badge variant='success'>{t('settings.upToDate')}</Badge>}
             <ActionGroup wrap align='start'>
               <Button variant='outline' onClick={() => checkUpdate.mutate()} disabled={checkUpdate.isPending}><RefreshCw data-icon='inline-start' />{t('settings.checkUpdate')}</Button>

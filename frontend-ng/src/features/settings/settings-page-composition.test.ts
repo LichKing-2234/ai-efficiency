@@ -86,4 +86,15 @@ describe('Settings page composition', () => {
     expect(source).not.toContain("trigger={<Button size='sm' variant='ghost' disabled={deleteRelay.isPending}>{t('common.delete')}</Button>}")
     expect(source).not.toContain("trigger={<Button size='sm' variant='ghost' disabled={deleteScm.isPending}>{t('common.delete')}</Button>}")
   })
+
+  test('uses shared health field rows for deployment runtime status', () => {
+    const source = readFileSync(join(ROOT, 'features/settings/settings-page.tsx'), 'utf8')
+
+    expect(source).toContain("from '@/components/primitives/health-field-list'")
+    expect(source).toContain('<HealthFieldList>')
+    expect(source).toContain('<HealthFieldItem')
+    expect(source).not.toContain("<FieldItem label={t('settings.current')}")
+    expect(source).not.toContain("<FieldItem label={t('settings.mode')}")
+    expect(source).not.toContain("<FieldItem label={t('settings.commit')}")
+  })
 })
