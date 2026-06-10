@@ -7,6 +7,7 @@ export function ActionGroup({
   className,
   fit = false,
   layout = 'inline',
+  push = false,
   wrap = false
 }: {
   align?: 'end' | 'responsive-end' | 'start'
@@ -14,6 +15,7 @@ export function ActionGroup({
   className?: string
   fit?: boolean
   layout?: 'inline' | 'split'
+  push?: boolean
   wrap?: boolean
 }) {
   return (
@@ -26,6 +28,7 @@ export function ActionGroup({
         align === 'responsive-end' && 'justify-start sm:justify-end',
         fit && 'min-w-0',
         layout === 'split' && 'w-full [&>*]:flex-1',
+        push && 'ml-auto',
         wrap && 'flex-wrap',
         className
       )}

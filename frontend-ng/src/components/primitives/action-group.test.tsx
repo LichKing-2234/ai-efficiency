@@ -77,4 +77,15 @@ describe('ActionGroup', () => {
     expect(html).toContain('sm:justify-end')
     expect(html).not.toContain('gap-2 justify-end flex-wrap')
   })
+
+  test('supports pushed toolbar actions', () => {
+    const html = renderToStaticMarkup(
+      <ActionGroup push wrap>
+        <button type='button'>Add repository</button>
+      </ActionGroup>
+    )
+
+    expect(html).toContain('ml-auto')
+    expect(html).toContain('Add repository')
+  })
 })

@@ -209,7 +209,7 @@ export function ReposPage() {
 
   return (
     <Page className='stagger'>
-      <ActionGroup wrap className='ml-auto'>
+      <ActionGroup push wrap>
         {me.data?.role === 'admin' ? (
           <>
             <Button variant='outline' onClick={() => autoBind.mutate()} disabled={autoBind.isPending}>
