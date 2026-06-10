@@ -46,4 +46,9 @@ describe('Events page composition', () => {
     expect(source).not.toContain("<span className='text-right'>{t('events.credit')}</span>")
     expect(source).not.toContain("<span className='text-right'>{t('events.ended')}</span>")
   })
+
+  test('uses the shared data grid status row for empty results', () => {
+    expect(source).toContain('DataGridStatusRow')
+    expect(source).not.toContain("className='px-6 py-10 text-center text-muted-foreground text-sm'")
+  })
 })

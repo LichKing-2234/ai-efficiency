@@ -98,6 +98,34 @@ export function DataGridRow(props: DataGridRowDivProps | DataGridRowButtonProps)
   )
 }
 
+export function DataGridStatusRow({
+  children,
+  className,
+  columns,
+  tone = 'empty'
+}: {
+  children: React.ReactNode
+  className?: string
+  columns: string
+  tone?: 'empty' | 'loading'
+}) {
+  return (
+    <div
+      className={cn(
+        'ae-trow',
+        'justify-center text-center text-muted-foreground text-sm',
+        tone === 'empty' && 'py-10',
+        tone === 'loading' && 'py-4',
+        className
+      )}
+      data-slot='data-grid-status-row'
+      style={{ gridTemplateColumns: normalizeColumns(columns), gridColumn: '1 / -1' }}
+    >
+      <span>{children}</span>
+    </div>
+  )
+}
+
 export function DataGridCell({
   align = 'left',
   children,

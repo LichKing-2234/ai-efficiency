@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, test } from 'vitest'
-import { DataGrid, DataGridCell, DataGridHeader, DataGridHeaderCell, DataGridRow } from './data-grid'
+import { DataGrid, DataGridCell, DataGridHeader, DataGridHeaderCell, DataGridRow, DataGridStatusRow } from './data-grid'
 
 describe('DataGrid', () => {
   test('renders reference table shells with shared grid template classes', () => {
@@ -69,6 +69,24 @@ describe('DataGrid', () => {
     expect(html).toContain('data-slot="data-grid-row"')
     expect(html).toContain('grid-column:1 / -1')
     expect(html).toContain('No rows')
+  })
+
+  test('renders standardized status rows for empty and loading table states', () => {
+    const html = renderToStaticMarkup(
+      <DataGrid>
+        <DataGridStatusRow columns='1fr_120px'>No matching rows</DataGridStatusRow>
+        <DataGridStatusRow columns='1fr_120px' tone='loading'>Loading details</DataGridStatusRow>
+      </DataGrid>
+    )
+
+    expect(html).toContain('data-slot="data-grid-status-row"')
+    expect(html).toContain('grid-template-columns:1fr 120px')
+    expect(html).toContain('grid-column:1 / -1')
+    expect(html).toContain('No matching rows')
+    expect(html).toContain('Loading details')
+    expect(html).toContain('py-10')
+    expect(html).toContain('py-4')
+    expect(html).not.toContain('px-6 py-10 text-center text-muted-foreground text-sm')
   })
 
   test('renders standardized dense data cells for numeric and metadata values', () => {

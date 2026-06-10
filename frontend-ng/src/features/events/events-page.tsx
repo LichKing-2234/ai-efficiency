@@ -8,7 +8,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { AdvancedDataPanel } from '@/components/primitives/advanced-data-panel'
 import { CardFilterBar } from '@/components/primitives/card-filter-bar'
 import { CardPagerFooter } from '@/components/primitives/card-pager-footer'
-import { DataGrid, DataGridCell, DataGridHeader, DataGridHeaderCell, DataGridRow } from '@/components/primitives/data-grid'
+import { DataGrid, DataGridCell, DataGridHeader, DataGridHeaderCell, DataGridRow, DataGridStatusRow } from '@/components/primitives/data-grid'
 import { FieldItem, FieldList } from '@/components/primitives/field-list'
 import { FilterRow } from '@/components/primitives/filter-row'
 import { InfoTile, InfoTileGrid } from '@/components/primitives/info-tile'
@@ -230,7 +230,7 @@ export function EventsPage() {
               row={row}
             />
           ))}
-          {rows.length === 0 ? <div className='px-6 py-10 text-center text-muted-foreground text-sm'>{t('common.empty')}</div> : null}
+          {rows.length === 0 ? <DataGridStatusRow columns={eventColumns}>{t('common.empty')}</DataGridStatusRow> : null}
         </DataGrid>
         <CardPagerFooter
           summary={t('events.total', { total: number(total) })}

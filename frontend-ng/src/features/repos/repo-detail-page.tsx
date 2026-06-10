@@ -12,7 +12,7 @@ import { CardContentStack } from '@/components/primitives/card-content-stack'
 import { CardPagerFooter } from '@/components/primitives/card-pager-footer'
 import { CheckboxField } from '@/components/primitives/checkbox-field'
 import { ControlGrid } from '@/components/primitives/control-grid'
-import { DataGrid, DataGridCell, DataGridHeader, DataGridHeaderCell, DataGridRow } from '@/components/primitives/data-grid'
+import { DataGrid, DataGridCell, DataGridHeader, DataGridHeaderCell, DataGridRow, DataGridStatusRow } from '@/components/primitives/data-grid'
 import { EntityCardHeader } from '@/components/primitives/entity-card-header'
 import { FilterRow } from '@/components/primitives/filter-row'
 import { InfoTile, InfoTileGrid } from '@/components/primitives/info-tile'
@@ -350,7 +350,7 @@ export function RepoDetailPage() {
                     {expanded ? (
                       <InsetPanel flush>
                           {prDetail.isLoading ? (
-                            <div className='py-4 text-center text-muted-foreground text-sm'>{t('repoDetail.loadingDetails')}</div>
+                            <DataGridStatusRow columns='1fr' tone='loading'>{t('repoDetail.loadingDetails')}</DataGridStatusRow>
                           ) : (
                             <Stack>
                               <UsageSummaryPanel
@@ -401,9 +401,7 @@ export function RepoDetailPage() {
                                     </DataGridRow>
                                   )
                                 }) : (
-                                  <DataGridRow className='justify-center py-6 text-center text-muted-foreground text-sm' columns={snapshotColumns} fullWidth>
-                                    <span>{t('repoDetail.noCommitSnapshots')}</span>
-                                  </DataGridRow>
+                                  <DataGridStatusRow columns={snapshotColumns}>{t('repoDetail.noCommitSnapshots')}</DataGridStatusRow>
                                 )}
                               </DataGrid>
                             </Stack>

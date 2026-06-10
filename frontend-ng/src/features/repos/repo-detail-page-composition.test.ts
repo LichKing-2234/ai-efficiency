@@ -57,4 +57,10 @@ describe('Repo detail page composition', () => {
     expect(source).not.toContain("<span className='text-right'>{t('repoDetail.credits')}</span>")
     expect(source).not.toContain("<span className='text-right'>{t('repoDetail.requests')}</span>")
   })
+
+  test('uses shared data grid status rows for expanded PR loading and empty snapshot states', () => {
+    expect(source).toContain('DataGridStatusRow')
+    expect(source).not.toContain("className='py-4 text-center text-muted-foreground text-sm'")
+    expect(source).not.toContain("className='justify-center py-6 text-center text-muted-foreground text-sm'")
+  })
 })
