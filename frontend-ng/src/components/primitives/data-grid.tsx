@@ -226,6 +226,20 @@ export function DataGridRecordCell({
   )
 }
 
+export function DataGridRowAffordance({
+  children,
+  className
+}: {
+  children: React.ReactNode
+  className?: string
+}) {
+  return (
+    <span className={cn('flex justify-end text-[var(--ink-4)] [&_svg]:size-4', className)} data-slot='data-grid-row-affordance'>
+      {children}
+    </span>
+  )
+}
+
 export function DataGridPrimaryLink({
   asChild = false,
   children,

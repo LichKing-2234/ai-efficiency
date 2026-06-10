@@ -16,7 +16,7 @@ import { KpiCard } from '@/components/primitives/metric-card'
 import { AppAlert } from '@/components/primitives/app-alert'
 import { Page } from '@/components/primitives/page'
 import { EmptyState, LoadingState } from '@/components/primitives/data-state'
-import { DataGrid, DataGridCell, DataGridHeader, DataGridHeaderCell, DataGridPrimaryLink, DataGridRecordCell, DataGridRow } from '@/components/primitives/data-grid'
+import { DataGrid, DataGridCell, DataGridHeader, DataGridHeaderCell, DataGridPrimaryLink, DataGridRecordCell, DataGridRow, DataGridRowAffordance } from '@/components/primitives/data-grid'
 import { FieldItem, FieldList } from '@/components/primitives/field-list'
 import { InfoTile, InfoTileGrid } from '@/components/primitives/info-tile'
 import { SectionCardHeader } from '@/components/primitives/section-card-header'
@@ -403,9 +403,9 @@ function RepoTable({
           <DataGridCell truncate tone='muted'>{repo.edges?.scm_provider?.name || repo.scm_provider_id || '-'}</DataGridCell>
           <DataGridCell mono truncate tone='subtle'>{repo.default_branch}</DataGridCell>
           <span><StatusBadge value={repo.status} /></span>
-          <span className='flex justify-end text-[var(--ink-4)]' data-slot='repo-row-actions'>
-            <ChevronRightIcon className='size-4' />
-          </span>
+          <DataGridRowAffordance>
+            <ChevronRightIcon />
+          </DataGridRowAffordance>
         </DataGridRow>
       ))}
     </DataGrid>

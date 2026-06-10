@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
+import { ChevronRightIcon } from 'lucide-react'
 import { describe, expect, test } from 'vitest'
-import { DataGrid, DataGridCell, DataGridHeader, DataGridHeaderCell, DataGridIdentityCell, DataGridPrimaryLink, DataGridRecordCell, DataGridRow, DataGridStatusRow } from './data-grid'
+import { DataGrid, DataGridCell, DataGridHeader, DataGridHeaderCell, DataGridIdentityCell, DataGridPrimaryLink, DataGridRecordCell, DataGridRow, DataGridRowAffordance, DataGridStatusRow } from './data-grid'
 
 describe('DataGrid', () => {
   test('renders reference table shells with shared grid template classes', () => {
@@ -188,5 +189,18 @@ describe('DataGrid', () => {
     expect(html).toContain('min-w-0')
     expect(html).toContain('mono')
     expect(html).toContain('truncate')
+  })
+
+  test('renders standardized row affordances for inspectable rows', () => {
+    const html = renderToStaticMarkup(
+      <DataGridRowAffordance>
+        <ChevronRightIcon />
+      </DataGridRowAffordance>
+    )
+
+    expect(html).toContain('data-slot="data-grid-row-affordance"')
+    expect(html).toContain('justify-end')
+    expect(html).toContain('text-[var(--ink-4)]')
+    expect(html).toContain('size-4')
   })
 })

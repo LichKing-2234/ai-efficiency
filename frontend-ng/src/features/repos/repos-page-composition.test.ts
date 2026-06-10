@@ -55,11 +55,13 @@ describe('Repos page composition', () => {
 
   test('opens repository rows in a reference slide-over inspect panel', () => {
     expect(source).toContain("from '@/components/primitives/slide-over'")
+    expect(source).toContain('DataGridRowAffordance')
     expect(source).toContain('<RepoInspectSlideOver')
     expect(source).toContain("onSelectRepo={(repo) => setSelectedRepo(repo)}")
     expect(source).toContain("<DataGridRow as='button'")
-    expect(source).toContain("data-slot='repo-row-actions'")
     expect(source).not.toContain('<DataGridPrimaryLink asChild>\\n              <Link')
+    expect(source).not.toContain("data-slot='repo-row-actions'")
+    expect(source).not.toContain("<ChevronRightIcon className='size-4' />")
   })
 
   test('uses shared status clusters inside the repository inspect panel', () => {
