@@ -18,7 +18,7 @@ describe('FilterRow', () => {
 
   test('supports looser alignment for badge and metadata rows', () => {
     const html = renderToStaticMarkup(
-      <FilterRow align='start' className='gap-3'>
+      <FilterRow align='start' gap='lg'>
         <span>Claude</span>
       </FilterRow>
     )
