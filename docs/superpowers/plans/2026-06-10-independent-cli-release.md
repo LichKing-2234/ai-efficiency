@@ -8,7 +8,7 @@
 
 **Tech Stack:** GitHub Actions, GoReleaser v2, Go 1.24+, Bash, PowerShell, GitHub Releases API.
 
-**Status:** Implementation in progress. PowerShell syntax verification is not runnable in the current local environment because `pwsh` is not installed; this remains an unchecked verification gap approved by the user on 2026-06-10.
+**Status:** Implementation in progress. First live CLI validation hit an OSS GoReleaser release-mode semver parsing failure on `ae-cli/v0.2.0-preview.1`; the workflow is being adjusted to build artifacts with GoReleaser snapshot mode and publish them with `gh release create`. PowerShell syntax verification is not runnable in the current local environment because `pwsh` is not installed; this remains an unchecked verification gap approved by the user on 2026-06-10.
 
 **Local Tooling Note:** `goreleaser` is not installed as a standalone binary in this environment. GoReleaser validation is run with `GOPROXY=https://goproxy.cn,direct go run github.com/goreleaser/goreleaser/v2@latest ...`.
 
@@ -21,10 +21,10 @@
 ### Create
 
 - `.goreleaser.ae-cli.yaml`
-  CLI-only GoReleaser config. Builds only `ae-cli`, writes the stripped CLI version into `buildinfo.Version`, publishes artifacts to the `ae-cli/v*` GitHub Release, and sets `release.make_latest: false`.
+  CLI-only GoReleaser config. Builds only `ae-cli`, writes the stripped CLI version into `buildinfo.Version`, and produces CLI archives plus `checksums.txt` for the `ae-cli/v*` GitHub Release.
 
 - `.github/workflows/ae-cli-release.yml`
-  CLI-only release workflow. Triggered by `ae-cli/v*` tags or manual dispatch with a matching tag. Runs CLI tests, publishes CLI artifacts, and verifies repository latest still points to a platform release.
+  CLI-only release workflow. Triggered by `ae-cli/v*` tags or manual dispatch with a matching tag. Runs CLI tests, builds CLI artifacts with GoReleaser snapshot mode, publishes them with `gh release create --latest=false`, and verifies repository latest still points to a platform release.
 
 ### Modify
 
@@ -948,17 +948,36 @@ jobs:
           go-version-file: ae-cli/go.mod
           check-latest: false
           cache-dependency-path: ae-cli/go.sum
-      - name: Run GoReleaser
+      - name: Build CLI release artifacts
         uses: goreleaser/goreleaser-action@v7
         with:
           version: '~> v2'
-          args: release --clean --config .goreleaser.ae-cli.yaml
+          args: release --snapshot --clean --config .goreleaser.ae-cli.yaml
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPO_OWNER: ${{ github.repository_owner }}
           GITHUB_REPO_NAME: ${{ github.event.repository.name }}
           AE_CLI_VERSION: ${{ needs.prepare.outputs.version }}
           AE_CLI_VERSION_NO_V: ${{ needs.prepare.outputs.version_no_v }}
+      - name: Publish CLI release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+          prerelease_args=()
+          if [[ "$VERSION" == *"-"* ]]; then
+            prerelease_args+=(--prerelease)
+          fi
+
+          gh release create "$TAG" \
+            dist/ae-cli_* \
+            dist/checksums.txt \
+            --verify-tag \
+            --latest=false \
+            --title "ae-cli $VERSION" \
+            --notes "CLI-only release for $TAG." \
+            "${prerelease_args[@]}"
       - name: Verify CLI release is not repository latest
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

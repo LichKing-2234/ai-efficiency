@@ -1,6 +1,6 @@
 # Independent CLI Release Design
 
-**Status:** Implemented release boundary; first live CLI release validation pending
+**Status:** Implemented release boundary; first live CLI release validation retry pending after direct GoReleaser publish rejected `ae-cli/v*` slash tag semver parsing
 
 ## Overview
 
@@ -154,10 +154,11 @@ CLI workflow 的职责：
 2. checkout 对应 tag。
 3. 运行 `cd ae-cli && go test ./...`。
 4. 运行 CLI release sanity check，例如 `ae-cli version` 构建元数据测试。
-5. 调用 CLI 专用 GoReleaser 配置，只构建和上传 CLI artifact。
-6. GitHub Release 名称使用 `ae-cli <version>`。
-7. GitHub Release prerelease 判断仍沿用 semver 后缀规则。
-8. CLI GitHub Release 必须保持在仓库级 latest 之外。
+5. 调用 CLI 专用 GoReleaser 配置，以 snapshot mode 只构建 CLI artifact。
+6. 用 `gh release create` 在原始 `ae-cli/v*` tag 上发布 CLI artifact。
+7. GitHub Release 名称使用 `ae-cli <version>`。
+8. GitHub Release prerelease 判断仍沿用 semver 后缀规则。
+9. CLI GitHub Release 必须保持在仓库级 latest 之外。
 
 ### GitHub Latest Release Ownership
 
@@ -211,9 +212,11 @@ CLI `.goreleaser.ae-cli.yaml`：
 - `dir: ae-cli`。
 - `binary: ae-cli`。
 - `ldflags` 写入 `github.com/ai-efficiency/ae-cli/internal/buildinfo.Version`。
+- workflow 以 `release --snapshot --clean --config .goreleaser.ae-cli.yaml` 运行，使用 GoReleaser 生成跨平台 archives 和 checksum，但不让 GoReleaser 创建 GitHub Release。
+- workflow 随后用 `gh release create <ae-cli/v*> dist/ae-cli_* dist/checksums.txt --verify-tag --latest=false` 创建 CLI GitHub Release。
 - 因 tag 带有 `ae-cli/` 前缀，workflow 应把剥离后的版本传给 GoReleaser 或在配置中显式处理版本显示，确保 `ae-cli version` 输出 `vX.Y.Z`，而不是 `ae-cli/vX.Y.Z`。
 
-不使用 GoReleaser Pro 的 `monorepo.tag_prefix`，避免新增商业功能依赖。实现阶段需要验证 OSS GoReleaser 对 slash tag 的 release version 行为；如果默认版本包含前缀，则通过 workflow 环境变量或 build flag 显式传入剥离后的 CLI version。
+不使用 GoReleaser Pro 的 `monorepo.tag_prefix`，避免新增商业功能依赖。OSS GoReleaser 在正式 release mode 会把 `ae-cli/v*` 解析为非法 semver，因此 CLI workflow 不直接让 GoReleaser 发布 release；版本展示通过 workflow 环境变量和 build flag 显式传入剥离后的 CLI version。
 
 ## Version And Compatibility Contract
 
@@ -303,7 +306,7 @@ CLI:      ae-cli v0.2.1
 
 实现前可用 `goreleaser release --snapshot --clean -f .goreleaser.ae-cli.yaml` 验证 CLI artifact 配置。
 
-如果 slash tag 导致 OSS GoReleaser 版本推导不符合预期，必须在本地和 GitHub Actions 中用同一套剥离逻辑修正，不能只在 release note 中掩盖。
+如果 slash tag 导致 OSS GoReleaser 版本推导不符合预期，必须在本地和 GitHub Actions 中用同一套剥离逻辑修正，不能只在 release note 中掩盖。当前实现使用 GoReleaser snapshot 构建和 `gh release create` 发布，以避开 OSS GoReleaser 正式 release mode 对 slash tag 的 semver 校验。
 
 ## Rollout Plan
 

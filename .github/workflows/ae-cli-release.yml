@@ -123,17 +123,36 @@ jobs:
           go-version-file: ae-cli/go.mod
           check-latest: false
           cache-dependency-path: ae-cli/go.sum
-      - name: Run GoReleaser
+      - name: Build CLI release artifacts
         uses: goreleaser/goreleaser-action@v7
         with:
           version: '~> v2'
-          args: release --clean --config .goreleaser.ae-cli.yaml
+          args: release --snapshot --clean --config .goreleaser.ae-cli.yaml
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPO_OWNER: ${{ github.repository_owner }}
           GITHUB_REPO_NAME: ${{ github.event.repository.name }}
           AE_CLI_VERSION: ${{ needs.prepare.outputs.version }}
           AE_CLI_VERSION_NO_V: ${{ needs.prepare.outputs.version_no_v }}
+      - name: Publish CLI release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+          prerelease_args=()
+          if [[ "$VERSION" == *"-"* ]]; then
+            prerelease_args+=(--prerelease)
+          fi
+
+          gh release create "$TAG" \
+            dist/ae-cli_* \
+            dist/checksums.txt \
+            --verify-tag \
+            --latest=false \
+            --title "ae-cli $VERSION" \
+            --notes "CLI-only release for $TAG." \
+            "${prerelease_args[@]}"
       - name: Verify CLI release is not repository latest
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
