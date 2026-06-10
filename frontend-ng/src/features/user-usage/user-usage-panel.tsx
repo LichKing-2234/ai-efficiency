@@ -9,7 +9,7 @@ import { Empty, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
 import { ActionGroup } from '@/components/primitives/action-group'
 import { ChartLegend } from '@/components/primitives/chart-legend'
 import { BarsH, StackedAreaChart, type StackedAreaKey } from '@/components/primitives/charts'
-import { DataGrid, DataGridHeader, DataGridRow } from '@/components/primitives/data-grid'
+import { DataGrid, DataGridCell, DataGridHeader, DataGridRow } from '@/components/primitives/data-grid'
 import { FilterRow } from '@/components/primitives/filter-row'
 import { HeatmapGrid } from '@/components/primitives/heatmap-grid'
 import { MetricCard } from '@/components/primitives/metric-card'
@@ -180,10 +180,10 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
                       </DataGridHeader>
                       {snapshot.models.map((model) => (
                         <DataGridRow columns={modelColumns} key={model.model}>
-                          <span className='mono min-w-0 truncate text-foreground text-xs'>{model.model}</span>
-                          <span className='tnum text-right'>{number(model.requests, locale)}</span>
-                          <span className='tnum text-right'>{compact(model.total_tokens, locale)}</span>
-                          <span className='tnum text-right font-semibold text-foreground'>{currency(model.actual_cost || model.cost, locale)}</span>
+                          <DataGridCell mono truncate>{model.model}</DataGridCell>
+                          <DataGridCell align='right' numeric>{number(model.requests, locale)}</DataGridCell>
+                          <DataGridCell align='right' numeric>{compact(model.total_tokens, locale)}</DataGridCell>
+                          <DataGridCell align='right' emphasis numeric>{currency(model.actual_cost || model.cost, locale)}</DataGridCell>
                         </DataGridRow>
                       ))}
                     </DataGrid>

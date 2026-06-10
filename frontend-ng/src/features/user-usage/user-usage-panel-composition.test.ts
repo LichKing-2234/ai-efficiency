@@ -30,4 +30,10 @@ describe('User usage panel composition', () => {
     expect(source).not.toContain("<div className='px-[18px] pb-4'>")
     expect(source).not.toContain("<div className='px-[18px] pb-[18px]'>")
   })
+
+  test('uses shared data grid cells for model cost numeric columns', () => {
+    expect(source).toContain('DataGridCell')
+    expect(source).not.toContain("className='tnum text-right'")
+    expect(source).not.toContain("className='tnum text-right font-semibold text-foreground'")
+  })
 })

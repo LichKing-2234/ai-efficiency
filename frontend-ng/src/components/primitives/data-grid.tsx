@@ -86,6 +86,7 @@ export function DataGridCell({
   align = 'left',
   children,
   className,
+  emphasis = false,
   mono = false,
   muted = false,
   numeric = false,
@@ -95,6 +96,7 @@ export function DataGridCell({
   align?: 'left' | 'right'
   children: React.ReactNode
   className?: string
+  emphasis?: boolean
   mono?: boolean
   muted?: boolean
   numeric?: boolean
@@ -105,6 +107,7 @@ export function DataGridCell({
     <span
       className={cn(
         align === 'right' && 'text-right',
+        emphasis && 'font-semibold text-foreground',
         numeric && 'tnum',
         mono && 'mono',
         truncate && 'truncate',

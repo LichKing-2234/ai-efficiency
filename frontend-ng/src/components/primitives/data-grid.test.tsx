@@ -63,6 +63,7 @@ describe('DataGrid', () => {
           <DataGridCell align='right' numeric tone='muted'>42</DataGridCell>
           <DataGridCell mono truncate tone='subtle'>main</DataGridCell>
           <DataGridCell mono numeric truncate tone='metadata'>abc123</DataGridCell>
+          <DataGridCell align='right' emphasis numeric>$12.40</DataGridCell>
         </DataGridRow>
       </DataGrid>
     )
@@ -73,6 +74,7 @@ describe('DataGrid', () => {
     expect(html).toContain('tnum')
     expect(html).toContain('mono')
     expect(html).toContain('truncate')
+    expect(html).toContain('font-semibold')
     expect(html).toContain('text-muted-foreground')
     expect(html).toContain('text-[var(--ink-2)]')
   })
