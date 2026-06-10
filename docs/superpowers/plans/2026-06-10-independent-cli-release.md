@@ -1296,7 +1296,7 @@ git push origin main
 
 Expected: `main` pushes successfully and local branch is aligned with `origin/main`.
 
-- [ ] **Step 2: Create the first CLI preview tag**
+- [x] **Step 2: Create the first CLI preview tag**
 
 Run:
 
