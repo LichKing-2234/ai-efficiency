@@ -197,6 +197,10 @@ Follow-up OAuth/auth redirect diagnosis fixed the `/oauth/device` unauthenticate
 
   Follow-up command action/repository audit evidence: `command-palette.test.ts` was extended with a red-green cycle; it first failed because the palette only exposed navigation/admin commands and did not import the API client, then passed after implementation. Focused verification passed with `bun test src/components/command/command-palette.test.ts` and `bun run check`.
 
+  Follow-up command safe-actions audit implementation adds the reference command actions that can be represented as deterministic navigation in the real app: Add repository routes to `/repos`, Create API key routes to `/user`, and Export usage report routes to `/usage`. The reference Auto-bind action remains intentionally excluded from the global palette because the real mutation needs repository/SCM context and result feedback; it should stay inside the Repositories workflow.
+
+  Follow-up command safe-actions audit evidence: `command-palette.test.ts` was extended with a red-green cycle; it first failed because the new command action ids were absent, then passed after adding the navigation-backed actions and i18n labels. Focused verification passed with `bun test src/components/command/command-palette.test.ts`.
+
 - [x] **Step 6: Remove duplicate page titles incrementally**
 
   Keep generic page titles in the top bar. Feature pages should start with content or page-specific toolbars; Overview may keep its hero.

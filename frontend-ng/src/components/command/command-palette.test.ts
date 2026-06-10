@@ -14,6 +14,9 @@ describe('getCommandPaletteItems', () => {
       'events',
       'repos',
       'user',
+      'add-repository',
+      'create-api-key',
+      'export-usage-report',
       'toggle-theme'
     ])
   })
@@ -25,6 +28,9 @@ describe('getCommandPaletteItems', () => {
       'events',
       'repos',
       'user',
+      'add-repository',
+      'create-api-key',
+      'export-usage-report',
       'toggle-theme',
       'admin-users',
       'settings'
@@ -51,6 +57,24 @@ describe('getCommandPaletteItems', () => {
       kind: 'action',
       groupKey: 'command.actions',
       labelKey: 'nav.toggleTheme'
+    })
+    expect(items.find((command) => command.id === 'add-repository')).toMatchObject({
+      kind: 'action',
+      to: '/repos',
+      groupKey: 'command.actions',
+      labelKey: 'command.addRepository'
+    })
+    expect(items.find((command) => command.id === 'create-api-key')).toMatchObject({
+      kind: 'action',
+      to: '/user',
+      groupKey: 'command.actions',
+      labelKey: 'command.createApiKey'
+    })
+    expect(items.find((command) => command.id === 'export-usage-report')).toMatchObject({
+      kind: 'action',
+      to: '/usage',
+      groupKey: 'command.actions',
+      labelKey: 'command.exportUsageReport'
     })
     expect(items.find((command) => command.id === 'repo-42')).toMatchObject({
       kind: 'repo',

@@ -3,10 +3,13 @@ import { useQuery } from '@tanstack/react-query'
 import {
   ActivityIcon,
   ArrowRightIcon,
+  DownloadIcon,
   FolderGit2Icon,
   GaugeIcon,
+  KeyIcon,
   HomeIcon,
   MoonIcon,
+  PlusIcon,
   SearchIcon,
   SettingsIcon,
   ShieldIcon,
@@ -41,7 +44,7 @@ type BaseCommandItem = {
 }
 
 type NavCommandItem = BaseCommandItem & { kind: 'nav'; to: Exclude<BaseCommandItem['to'], '/repos/$id' | undefined>; labelKey: MessageKey }
-type ActionCommandItem = BaseCommandItem & { kind: 'action'; labelKey: MessageKey; to?: undefined }
+type ActionCommandItem = BaseCommandItem & { kind: 'action'; labelKey: MessageKey; to?: Exclude<BaseCommandItem['to'], '/repos/$id' | undefined> }
 type RepoCommandItem = BaseCommandItem & { kind: 'repo'; to: '/repos/$id'; params: { id: string }; label: string }
 type CommandItem = NavCommandItem | ActionCommandItem | RepoCommandItem
 
@@ -51,6 +54,9 @@ const COMMANDS: Array<NavCommandItem | ActionCommandItem> = [
   { id: 'events', kind: 'nav', to: '/events', labelKey: 'nav.usageRecords', groupKey: 'command.navigate', icon: ActivityIcon },
   { id: 'repos', kind: 'nav', to: '/repos', labelKey: 'nav.codeRepositories', groupKey: 'command.navigate', icon: FolderGit2Icon },
   { id: 'user', kind: 'nav', to: '/user', labelKey: 'nav.mySetup', groupKey: 'command.navigate', icon: UserIcon },
+  { id: 'add-repository', kind: 'action', to: '/repos', labelKey: 'command.addRepository', groupKey: 'command.actions', icon: PlusIcon },
+  { id: 'create-api-key', kind: 'action', to: '/user', labelKey: 'command.createApiKey', groupKey: 'command.actions', icon: KeyIcon },
+  { id: 'export-usage-report', kind: 'action', to: '/usage', labelKey: 'command.exportUsageReport', groupKey: 'command.actions', icon: DownloadIcon },
   { id: 'toggle-theme', kind: 'action', labelKey: 'nav.toggleTheme', groupKey: 'command.actions', icon: MoonIcon },
   { id: 'admin-users', kind: 'nav', to: '/admin/users', labelKey: 'nav.userManagement', groupKey: 'command.admin', icon: ShieldIcon, admin: true },
   { id: 'settings', kind: 'nav', to: '/settings', labelKey: 'nav.adminConsole', groupKey: 'command.admin', icon: SettingsIcon, admin: true }
@@ -106,6 +112,7 @@ export function CommandPalette({
     onClose()
     if (command.kind === 'action') {
       if (command.id === 'toggle-theme') onToggleTheme()
+      if (command.to) await navigate({ to: command.to })
       return
     }
     if (command.to === '/repos/$id') {
