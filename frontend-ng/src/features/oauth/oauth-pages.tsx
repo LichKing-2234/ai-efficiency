@@ -2,10 +2,11 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { useLocation, useNavigate, useSearch } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
+import { Card } from '@/components/ui/card'
 import { ActionGroup } from '@/components/primitives/action-group'
 import { AppAlert } from '@/components/primitives/app-alert'
 import { AuthInfoPanel } from '@/components/primitives/auth-info-panel'
+import { CardContentStack } from '@/components/primitives/card-content-stack'
 import { SectionCardHeader } from '@/components/primitives/section-card-header'
 import { TextField } from '@/components/primitives/text-field'
 import { apiFetch } from '@/lib/api/client'
@@ -166,7 +167,7 @@ function AuthSurface({ title, description, children }: { title: string; descript
     <main className='grid min-h-screen place-items-center bg-background p-4'>
       <Card className='w-full max-w-md'>
         <SectionCardHeader title={title} description={description} />
-        <CardContent className='flex flex-col gap-3'>{children}</CardContent>
+        <CardContentStack>{children}</CardContentStack>
       </Card>
     </main>
   )

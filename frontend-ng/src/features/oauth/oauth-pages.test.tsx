@@ -1,6 +1,11 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, test } from 'vitest'
 import { DeviceCodeField, OAuthActionGroup } from './oauth-pages'
+import { readFileSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const source = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), 'oauth-pages.tsx'), 'utf8')
 
 describe('OAuth page primitives', () => {
   test('renders device code entry through shadcn field primitives', () => {
@@ -33,5 +38,10 @@ describe('OAuth page primitives', () => {
     expect(html).toContain('data-slot="action-group"')
     expect(html).toContain('Approve')
     expect(html).toContain('Deny')
+  })
+
+  test('uses the shared card content stack for auth surface bodies', () => {
+    expect(source).toContain("from '@/components/primitives/card-content-stack'")
+    expect(source).not.toContain("<CardContent className='flex flex-col gap-3'>")
   })
 })
