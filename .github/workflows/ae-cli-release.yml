@@ -1,0 +1,148 @@
+name: ae-cli Release
+
+on:
+  push:
+    tags:
+      - 'ae-cli/v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: CLI release tag, for example ae-cli/v0.2.0-preview.1
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+      version: ${{ steps.meta.outputs.version }}
+      version_no_v: ${{ steps.meta.outputs.version_no_v }}
+      checkout_ref: ${{ steps.meta.outputs.checkout_ref }}
+      commit_sha: ${{ steps.meta.outputs.commit_sha }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - id: meta
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            TAG="$INPUT_TAG"
+          else
+            TAG="${GITHUB_REF#refs/tags/}"
+          fi
+
+          echo "$TAG" | grep -Eq '^ae-cli/v[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$'
+          VERSION="${TAG#ae-cli/}"
+          VERSION_NO_V="${VERSION#v}"
+
+          if [ "$EVENT_NAME" = "push" ]; then
+            CHECKOUT_REF="refs/tags/$TAG"
+            COMMIT_SHA="$(git rev-list -n 1 "refs/tags/$TAG")"
+          else
+            if git rev-parse "refs/tags/$TAG" >/dev/null 2>&1; then
+              CHECKOUT_REF="refs/tags/$TAG"
+              COMMIT_SHA="$(git rev-list -n 1 "refs/tags/$TAG")"
+            else
+              CHECKOUT_REF="${GITHUB_SHA}"
+              COMMIT_SHA="${GITHUB_SHA}"
+            fi
+          fi
+
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "version_no_v=$VERSION_NO_V" >> "$GITHUB_OUTPUT"
+          echo "checkout_ref=$CHECKOUT_REF" >> "$GITHUB_OUTPUT"
+          echo "commit_sha=$COMMIT_SHA" >> "$GITHUB_OUTPUT"
+
+  test:
+    name: verify / ae-cli
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.prepare.outputs.checkout_ref }}
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: ae-cli/go.mod
+          check-latest: false
+          cache-dependency-path: ae-cli/go.sum
+      - name: Test ae-cli
+        working-directory: ae-cli
+        run: go test ./...
+      - name: Test ae-cli installer
+        run: bash ae-cli/test/install-test.sh
+
+  ensure-release-tag:
+    needs: [prepare, test]
+    runs-on: ubuntu-latest
+    outputs:
+      release_ref: ${{ steps.tag.outputs.release_ref }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.prepare.outputs.checkout_ref }}
+      - id: tag
+        name: Ensure CLI release tag exists
+        env:
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && ! git rev-parse "refs/tags/$TAG" >/dev/null 2>&1; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git tag -a "$TAG" -m "Release $TAG"
+            git push origin "refs/tags/$TAG:refs/tags/$TAG"
+          fi
+
+          git fetch --tags --force origin
+          git rev-parse "refs/tags/$TAG" >/dev/null
+          echo "release_ref=refs/tags/$TAG" >> "$GITHUB_OUTPUT"
+
+  release:
+    name: release / ae-cli binaries
+    needs: [prepare, ensure-release-tag]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.ensure-release-tag.outputs.release_ref }}
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: ae-cli/go.mod
+          check-latest: false
+          cache-dependency-path: ae-cli/go.sum
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v7
+        with:
+          version: '~> v2'
+          args: release --clean --config .goreleaser.ae-cli.yaml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPO_OWNER: ${{ github.repository_owner }}
+          GITHUB_REPO_NAME: ${{ github.event.repository.name }}
+          AE_CLI_VERSION: ${{ needs.prepare.outputs.version }}
+          AE_CLI_VERSION_NO_V: ${{ needs.prepare.outputs.version_no_v }}
+      - name: Verify CLI release is not repository latest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          latest_tag="$(gh api "repos/$REPO/releases/latest" --jq .tag_name)"
+          if [ "$latest_tag" = "$TAG" ]; then
+            echo "CLI release $TAG must not become repository latest" >&2
+            exit 1
+          fi

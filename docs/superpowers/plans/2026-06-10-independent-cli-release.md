@@ -818,7 +818,7 @@ Expected: commit succeeds.
 - Create: `.github/workflows/ae-cli-release.yml`
 - Test: `.github/workflows/ae-cli-release.yml`
 
-- [ ] **Step 1: Create the CLI release workflow**
+- [x] **Step 1: Create the CLI release workflow**
 
 Create `.github/workflows/ae-cli-release.yml`:
 
@@ -973,7 +973,7 @@ jobs:
           fi
 ```
 
-- [ ] **Step 2: Validate workflow YAML structure**
+- [x] **Step 2: Validate workflow YAML structure**
 
 Run:
 
@@ -987,7 +987,7 @@ Expected:
 ok
 ```
 
-- [ ] **Step 3: Commit the CLI workflow**
+- [x] **Step 3: Commit the CLI workflow**
 
 Run:
 
