@@ -2,6 +2,10 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, test } from 'vitest'
 import { SectionCardHeader } from './section-card-header'
 
+function TerminalIcon(props: React.SVGProps<SVGSVGElement>) {
+  return <svg data-testid='terminal-icon' {...props} />
+}
+
 describe('SectionCardHeader', () => {
   test('renders a card section title with description and actions', () => {
     const html = renderToStaticMarkup(
@@ -33,5 +37,22 @@ describe('SectionCardHeader', () => {
 
     expect(html).toContain('data-slot="card-header"')
     expect(html).toContain('gap-4')
+  })
+
+  test('renders standardized leading icon titles', () => {
+    const html = renderToStaticMarkup(<SectionCardHeader leading={TerminalIcon} title='CLI workflow' />)
+
+    expect(html).toContain('data-slot="section-card-title-row"')
+    expect(html).toContain('data-slot="section-card-leading-icon"')
+    expect(html).toContain('CLI workflow')
+    expect(html).not.toContain("class=\"flex items-center gap-2\"")
+  })
+
+  test('renders standardized live title indicator', () => {
+    const html = renderToStaticMarkup(<SectionCardHeader live title='Recent usage' />)
+
+    expect(html).toContain('data-slot="section-card-live-indicator"')
+    expect(html).toContain('live-dot')
+    expect(html).toContain('Recent usage')
   })
 })

@@ -124,7 +124,8 @@ export function HomePage() {
         </Card>
         <Card>
           <SectionCardHeader
-            title={<span className='flex items-center gap-2'><span className='live-dot' />{t('home.recentUsage')}</span>}
+            title={t('home.recentUsage')}
+            live
             actions={(
               <Button asChild variant='link' size='sm'>
                 <Link to='/events'>{t('home.viewAllRecords')}<ArrowRightIcon data-icon='inline-end' /></Link>

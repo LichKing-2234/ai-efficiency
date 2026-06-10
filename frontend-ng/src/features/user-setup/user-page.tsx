@@ -174,7 +174,8 @@ export function UserPage() {
           </Card>
           <Card>
             <SectionCardHeader
-              title={<span className='flex items-center gap-2'><Terminal className='text-[var(--ai)]' />{t('userSetup.cliWorkflow')}</span>}
+              title={t('userSetup.cliWorkflow')}
+              leading={Terminal}
               description={t('userSetup.cliDescription')}
             />
             <CardContentStack gap='compact'>

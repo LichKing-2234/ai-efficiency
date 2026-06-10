@@ -246,7 +246,7 @@ export function RepoDetailPage() {
         </Card>
       ) : null}
       <Card>
-        <SectionCardHeader title={<span className='flex items-center gap-2'><Waypoints className='text-[var(--ai)]' />{t('repoDetail.scmBinding')}</span>} />
+        <SectionCardHeader title={t('repoDetail.scmBinding')} leading={Waypoints} />
         <CardContent>
           <ControlGrid variant='inline-actions'>
             <ToolbarSelect
