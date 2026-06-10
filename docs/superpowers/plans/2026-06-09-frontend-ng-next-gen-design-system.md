@@ -420,6 +420,10 @@ Follow-up OAuth/auth redirect diagnosis fixed the `/oauth/device` unauthenticate
 
   Follow-up record-meta audit evidence: `record-meta.test.tsx` was added and `repos-page-composition.test.ts` was extended with a red-green cycle; they first failed because `record-meta.tsx` did not exist and `repos-page.tsx` still owned the local clone URL metadata class, then passed after migration. Focused verification passed with `bun test src/components/primitives/record-meta.test.tsx src/features/events/events-page-composition.test.ts src/features/repos/repos-page-composition.test.ts`.
 
+  Follow-up workbench-rail audit implementation adds the shared `WorkbenchRail` primitive for reference workbench side rails and migrates the Repositories scope rail away from page-local `aside` surface/border/padding classes while preserving `SectionNav`, scope counts, provider-backed scope selection, and URL-backed pagination resets.
+
+  Follow-up workbench-rail audit evidence: `workbench-rail.test.tsx` was added and `repos-page-composition.test.ts` was extended with a red-green cycle; they first failed because `workbench-rail.tsx` did not exist and `repos-page.tsx` still owned the rail `aside` class, then passed after migration. Focused verification passed with `bun test src/components/primitives/workbench-rail.test.tsx src/features/repos/repos-page-composition.test.ts` and `bun run check`.
+
 - [x] **Step 3: Repository detail**
 
   Re-skin SCM binding, usage snapshots, webhook status, and PR sync panels with shared cards/tables.

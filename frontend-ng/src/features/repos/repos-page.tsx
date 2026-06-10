@@ -23,6 +23,7 @@ import { SectionCardHeader } from '@/components/primitives/section-card-header'
 import { SectionNav, type SectionNavItem } from '@/components/primitives/section-nav'
 import { StatusBadge } from '@/components/primitives/status-badge'
 import { ToolbarSelect } from '@/components/primitives/toolbar-select'
+import { WorkbenchRail } from '@/components/primitives/workbench-rail'
 import { api } from '@/lib/api'
 import { number } from '@/lib/format'
 import { useI18n } from '@/lib/i18n/i18n'
@@ -291,12 +292,10 @@ export function ReposPage() {
             </Tabs>
           </CardFilterBar>
           <div className='repo-workbench'>
-            <aside className='border-border bg-[var(--surface-2)] p-3 lg:border-r'>
-              <SectionCardHeader
-                className='px-0 pt-0 pb-3'
-                title={t('repos.scopeSearch')}
-                actions={<Badge variant='secondary'>{number(selectedProvider?.scopes.length ?? 0, locale)}</Badge>}
-              />
+            <WorkbenchRail
+              title={t('repos.scopeSearch')}
+              actions={<Badge variant='secondary'>{number(selectedProvider?.scopes.length ?? 0, locale)}</Badge>}
+            >
               <SectionNav
                 ariaLabel={t('repos.scopeSearch')}
                 className='max-h-[430px] overflow-y-auto'
@@ -304,7 +303,7 @@ export function ReposPage() {
                 onChange={(scope) => replaceSearch({ ...search, scope, page: 1 })}
                 value={selectedScope}
               />
-            </aside>
+            </WorkbenchRail>
             <section className='min-w-0'>
               <SectionCardHeader
                 className='border-b border-border px-5 py-4'

@@ -22,4 +22,10 @@ describe('Repos page composition', () => {
     expect(source).toContain('<RecordMeta>')
     expect(source).not.toContain("<span className='mono block truncate text-[11px] text-[var(--ink-4)]'>")
   })
+
+  test('uses the shared workbench rail for provider scopes', () => {
+    expect(source).toContain("from '@/components/primitives/workbench-rail'")
+    expect(source).toContain('<WorkbenchRail')
+    expect(source).not.toContain("<aside className='border-border bg-[var(--surface-2)] p-3 lg:border-r'>")
+  })
 })
