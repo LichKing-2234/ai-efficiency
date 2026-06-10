@@ -10,6 +10,8 @@
 
 **Status:** Implementation in progress. PowerShell syntax verification is not runnable in the current local environment because `pwsh` is not installed; this remains an unchecked verification gap approved by the user on 2026-06-10.
 
+**Local Tooling Note:** `goreleaser` is not installed as a standalone binary in this environment. GoReleaser validation is run with `GOPROXY=https://goproxy.cn,direct go run github.com/goreleaser/goreleaser/v2@latest ...`.
+
 **Source Spec:** [`docs/superpowers/specs/2026-06-10-independent-cli-release-design.md`](/Users/admin/ai-efficiency/docs/superpowers/specs/2026-06-10-independent-cli-release-design.md)
 
 ---
@@ -656,7 +658,7 @@ Expected: commit succeeds.
 - Test: `.goreleaser.yaml`
 - Test: `.goreleaser.ae-cli.yaml`
 
-- [ ] **Step 1: Remove `ae-cli` from platform GoReleaser config**
+- [x] **Step 1: Remove `ae-cli` from platform GoReleaser config**
 
 In `.goreleaser.yaml`, delete the build block with:
 
@@ -675,7 +677,7 @@ Delete the archive block with:
 
 Keep `backend-server`, `backend-updater`, and `backend-bundle` unchanged.
 
-- [ ] **Step 2: Create the CLI-only GoReleaser config**
+- [x] **Step 2: Create the CLI-only GoReleaser config**
 
 Create `.goreleaser.ae-cli.yaml`:
 
@@ -731,7 +733,7 @@ release:
   name_template: "ae-cli {{ .Env.AE_CLI_VERSION }}"
 ```
 
-- [ ] **Step 3: Validate GoReleaser configs**
+- [x] **Step 3: Validate GoReleaser configs**
 
 Run:
 
@@ -742,7 +744,16 @@ AE_CLI_VERSION=v0.2.0-preview.1 AE_CLI_VERSION_NO_V=0.2.0-preview.1 goreleaser c
 
 Expected: both commands PASS.
 
-- [ ] **Step 4: Snapshot build the CLI artifacts**
+Actual local command used:
+
+```bash
+GOPROXY=https://goproxy.cn,direct go run github.com/goreleaser/goreleaser/v2@latest check --config .goreleaser.yaml
+AE_CLI_VERSION=v0.2.0-preview.1 AE_CLI_VERSION_NO_V=0.2.0-preview.1 GOPROXY=https://goproxy.cn,direct go run github.com/goreleaser/goreleaser/v2@latest check --config .goreleaser.ae-cli.yaml
+```
+
+Actual result: PASS.
+
+- [x] **Step 4: Snapshot build the CLI artifacts**
 
 Run:
 
@@ -752,7 +763,15 @@ AE_CLI_VERSION=v0.2.0-preview.1 AE_CLI_VERSION_NO_V=0.2.0-preview.1 goreleaser r
 
 Expected: PASS and `dist/` contains `ae-cli_0.2.0-preview.1_<os>_<arch>` archives plus `checksums.txt`.
 
-- [ ] **Step 5: Verify snapshot version metadata**
+Actual local command used:
+
+```bash
+AE_CLI_VERSION=v0.2.0-preview.1 AE_CLI_VERSION_NO_V=0.2.0-preview.1 GOPROXY=https://goproxy.cn,direct go run github.com/goreleaser/goreleaser/v2@latest release --snapshot --clean --config .goreleaser.ae-cli.yaml
+```
+
+Actual result: PASS.
+
+- [x] **Step 5: Verify snapshot version metadata**
 
 Run this on the host platform binary path printed by GoReleaser:
 
@@ -766,9 +785,21 @@ Expected: output contains:
 ae-cli v0.2.0-preview.1
 ```
 
+Actual command:
+
+```bash
+./dist/ae-cli_darwin_arm64_v8.0/ae-cli version
+```
+
+Actual output:
+
+```text
+ae-cli v0.2.0-preview.1
+```
+
 If the local dist path differs, use `find dist -type f -name ae-cli -perm -111 -print` to locate the binary and run `version` on that binary.
 
-- [ ] **Step 6: Commit the GoReleaser split**
+- [x] **Step 6: Commit the GoReleaser split**
 
 Run:
 
