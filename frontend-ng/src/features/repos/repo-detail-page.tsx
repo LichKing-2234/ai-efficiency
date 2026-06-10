@@ -15,6 +15,7 @@ import { ControlGrid } from '@/components/primitives/control-grid'
 import { DataGrid, DataGridCell, DataGridHeader, DataGridHeaderCell, DataGridRow, DataGridStatusRow } from '@/components/primitives/data-grid'
 import { EntityCardHeader } from '@/components/primitives/entity-card-header'
 import { FilterRow } from '@/components/primitives/filter-row'
+import { FilterRowTitle } from '@/components/primitives/filter-row-title'
 import { InfoTile, InfoTileGrid } from '@/components/primitives/info-tile'
 import { InsetPanel } from '@/components/primitives/inset-panel'
 import { LinkedRecordItem } from '@/components/primitives/linked-record-list'
@@ -273,7 +274,7 @@ export function RepoDetailPage() {
           title={t('repoDetail.pullRequests')}
           actions={(
             <FilterRow className='text-sm'>
-              <span className='text-muted-foreground'>{t('repoDetail.mergedIn')}</span>
+              <FilterRowTitle title={t('repoDetail.mergedIn')} variant='label' />
               <ToolbarSelect
                 ariaLabel={t('repoDetail.mergedIn')}
                 options={[

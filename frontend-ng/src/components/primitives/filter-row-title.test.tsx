@@ -20,4 +20,14 @@ describe('FilterRowTitle', () => {
     expect(html).toContain('Usage Analytics')
     expect(html).not.toContain('data-slot="filter-row-title-description"')
   })
+
+  test('renders compact muted labels for filter rows', () => {
+    const html = renderToStaticMarkup(<FilterRowTitle variant='label' title='Merged in' />)
+
+    expect(html).toContain('data-slot="filter-row-title"')
+    expect(html).toContain('data-slot="filter-row-title-label"')
+    expect(html).toContain('Merged in')
+    expect(html).toContain('text-muted-foreground')
+    expect(html).not.toContain('data-slot="filter-row-title-text"')
+  })
 })
