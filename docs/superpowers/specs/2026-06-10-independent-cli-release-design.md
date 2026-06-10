@@ -1,6 +1,6 @@
 # Independent CLI Release Design
 
-**Status:** Approved design; implementation plan pending
+**Status:** Implemented release boundary; first live CLI release validation pending
 
 ## Overview
 

@@ -11,7 +11,7 @@ curl -fsSL https://raw.githubusercontent.com/LichKing-2234/ai-efficiency/main/ae
 Install a specific version:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/LichKing-2234/ai-efficiency/main/ae-cli/install.sh | bash -s -- v0.2.0
+curl -fsSL https://raw.githubusercontent.com/LichKing-2234/ai-efficiency/main/ae-cli/install.sh | bash -s -- ae-cli/v0.2.0
 ```
 
 The installer:
@@ -42,7 +42,7 @@ ae-cli version
 
 ## Update
 
-Check whether a newer GitHub Release is available:
+Check whether a newer `ae-cli/v*` GitHub Release is available:
 
 ```bash
 ae-cli update check
@@ -66,6 +66,7 @@ Update behavior:
 
 - `update check` only reads GitHub Release metadata and does not require config, login, or backend access
 - `update install` only upgrades the official managed path `~/.local/bin/ae-cli`
+- CLI updates ignore platform `v*` releases; the platform repository latest release is reserved for backend/frontend/deploy updates
 - the install step reuses the tagged official installer, so checksum verification, config preservation, and managed hook refresh stay aligned with `ae-cli/install.sh`
 - if `ae-cli` is running from another path, the command fails with guidance to rerun the official installer instead of guessing how to overwrite that install
 

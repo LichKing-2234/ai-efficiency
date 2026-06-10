@@ -1072,7 +1072,7 @@ Expected: commit succeeds.
 - Modify: `docs/architecture.md`
 - Modify: `docs/superpowers/specs/2026-06-10-independent-cli-release-design.md`
 
-- [ ] **Step 1: Update CLI README examples**
+- [x] **Step 1: Update CLI README examples**
 
 In `ae-cli/README.md`, change the specific install example from:
 
@@ -1104,7 +1104,7 @@ In the "Update behavior" list, add:
 - CLI updates ignore platform `v*` releases; the platform repository latest release is reserved for backend/frontend/deploy updates
 ```
 
-- [ ] **Step 2: Update deploy README platform artifact list**
+- [x] **Step 2: Update deploy README platform artifact list**
 
 In `deploy/README.md`, find the section that lists release artifacts near "After the first tagged GitHub release". Remove the line:
 
@@ -1118,7 +1118,7 @@ Add this sentence after the platform artifact list:
 `ae-cli` artifacts are published by independent `ae-cli/v*` releases; see [`../ae-cli/README.md`](../ae-cli/README.md) for CLI installation and updates.
 ```
 
-- [ ] **Step 3: Add release rules to AGENTS.md**
+- [x] **Step 3: Add release rules to AGENTS.md**
 
 In `AGENTS.md`, under "Testing" or near "Commit Message Convention", add:
 
@@ -1132,7 +1132,7 @@ In `AGENTS.md`, under "Testing" or near "Commit Message Convention", add:
 - Repository-level `/releases/latest` belongs to the platform release line; CLI installer and updater must discover the latest CLI release by filtering `ae-cli/v*` releases.
 ```
 
-- [ ] **Step 4: Add release rules to CLAUDE.md**
+- [x] **Step 4: Add release rules to CLAUDE.md**
 
 In `CLAUDE.md`, under "Quick Reference", add:
 
@@ -1143,7 +1143,7 @@ In `CLAUDE.md`, under "Quick Reference", add:
   - Repository `/releases/latest` stays platform-owned.
 ```
 
-- [ ] **Step 5: Add the implemented release boundary to architecture docs**
+- [x] **Step 5: Add the implemented release boundary to architecture docs**
 
 In `docs/architecture.md`, add this short paragraph near the current project-level module overview:
 
@@ -1151,7 +1151,7 @@ In `docs/architecture.md`, add this short paragraph near the current project-lev
 Release units remain in one repository but are published separately. Platform releases use `v*` tags for the backend/frontend/deploy unit, GHCR image, and Helm-consumed image tags. `ae-cli` releases use `ae-cli/v*` tags and publish only CLI artifacts; CLI installer and updater discovery filters that tag namespace instead of using the platform-owned repository latest release.
 ```
 
-- [ ] **Step 6: Mark the design spec as implemented**
+- [x] **Step 6: Mark the design spec as implemented**
 
 In `docs/superpowers/specs/2026-06-10-independent-cli-release-design.md`, replace:
 
@@ -1165,7 +1165,7 @@ with:
 **Status:** Implemented release boundary; first live CLI release validation pending
 ```
 
-- [ ] **Step 7: Commit documentation updates**
+- [x] **Step 7: Commit documentation updates**
 
 Run:
 

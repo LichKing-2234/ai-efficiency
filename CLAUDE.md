@@ -15,6 +15,10 @@
   - `cd frontend && pnpm test`
   - `cd frontend && pnpm run test:e2e:role`
 - Primary remote: `https://github.com/LichKing-2234/ai-efficiency.git`
+- Release units:
+  - Platform: `v*` tags publish backend/frontend/deploy, GHCR image, and Helm inputs.
+  - CLI: `ae-cli/v*` tags publish only `ae-cli`; no GHCR image and no Helm rollout.
+  - Repository `/releases/latest` stays platform-owned.
 
 ## Commit Convention
 
