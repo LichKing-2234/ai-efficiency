@@ -15,6 +15,7 @@ var newSyncEngine = attributionlocal.NewSyncEngine
 var runSyncEngine = func(engine *attributionlocal.SyncEngine, ctx context.Context, opts attributionlocal.RunOptions) error {
 	return engine.Run(ctx, opts)
 }
+var syncRepoEligibilityTimeout = 10 * time.Second
 
 var syncCmd = &cobra.Command{
 	Use:   "sync",
@@ -35,7 +36,10 @@ var syncCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		execCtx, ok := resolveHookExecutionContext(context.Background(), gitCtx)
+		execCtx, ok, err := resolveSyncExecutionContext(context.Background(), gitCtx)
+		if err != nil {
+			return err
+		}
 		if !ok {
 			return fmt.Errorf("repository is not registered or reporting-enabled; run 'ae-cli init' or ask an admin to configure it")
 		}
@@ -65,6 +69,33 @@ var syncCmd = &cobra.Command{
 		fmt.Fprintf(cmd.OutOrStdout(), "Synced local attribution data for %s\n", attrCtx.repoRoot)
 		return nil
 	},
+}
+
+func resolveSyncExecutionContext(ctx context.Context, gitCtx *hooks.GitContext) (hooks.ExecutionContext, bool, error) {
+	if execCtx, ok := resolveHookExecutionContext(ctx, gitCtx); ok {
+		return execCtx, true, nil
+	}
+	if gitCtx == nil {
+		return hooks.ExecutionContext{}, false, nil
+	}
+
+	binding := currentHookBinding()
+	binding.RepoKey = firstNonEmpty(binding.RepoKey, gitCtx.RepoKey)
+	resolver := hookRepoResolverFor(binding.ServerURL, usableToken())
+	if resolver == nil {
+		return hooks.ExecutionContext{}, false, nil
+	}
+
+	refreshCtx, cancel := context.WithTimeout(ctx, syncRepoEligibilityTimeout)
+	defer cancel()
+	if err := hooks.RefreshCurrent(refreshCtx, resolver, gitCtx.RepoRoot, binding); err != nil {
+		return hooks.ExecutionContext{}, false, fmt.Errorf("refresh repo eligibility: %w", err)
+	}
+
+	if execCtx, ok := resolveHookExecutionContext(ctx, gitCtx); ok {
+		return execCtx, true, nil
+	}
+	return hooks.ExecutionContext{}, false, nil
 }
 
 var syncStatusCmd = &cobra.Command{
