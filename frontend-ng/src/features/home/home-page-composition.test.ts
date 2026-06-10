@@ -11,4 +11,10 @@ describe('Home page composition', () => {
     expect(source).not.toContain("grid-paper overflow-hidden border-[var(--ai-line)]")
     expect(source).not.toContain("bg-[linear-gradient(150deg,var(--ai-soft),transparent_60%),var(--surface)]")
   })
+
+  test('uses shadcn empty primitives for the recent usage empty state', () => {
+    expect(source).toContain("import { Empty, EmptyHeader, EmptyTitle } from '@/components/ui/empty'")
+    expect(source).toContain('<Empty>')
+    expect(source).not.toContain("<div className='text-muted-foreground text-sm'>{t('common.empty')}</div>")
+  })
 })

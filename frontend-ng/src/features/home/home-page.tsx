@@ -4,6 +4,7 @@ import { ArrowRightIcon, FolderGit2Icon, GitPullRequestIcon, PlugZapIcon, Workfl
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Empty, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
 import { CardContentStack } from '@/components/primitives/card-content-stack'
 import { Ring } from '@/components/primitives/charts'
 import { ChecklistRow } from '@/components/primitives/checklist-row'
@@ -135,7 +136,13 @@ export function HomePage() {
           <CardContent className='flex flex-col'>
             {recentEvents.length ? recentEvents.map((event, index) => (
               <HomeActivityRow key={event.id} event={buildHomeActivitySummary(event)} first={index === 0} locale={locale} />
-            )) : <div className='text-muted-foreground text-sm'>{t('common.empty')}</div>}
+            )) : (
+              <Empty>
+                <EmptyHeader>
+                  <EmptyTitle>{t('common.empty')}</EmptyTitle>
+                </EmptyHeader>
+              </Empty>
+            )}
           </CardContent>
         </Card>
       </div>
