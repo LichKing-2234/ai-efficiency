@@ -237,6 +237,10 @@ Follow-up OAuth/auth redirect diagnosis fixed the `/oauth/device` unauthenticate
 
   Follow-up chart legend audit evidence: `chart-legend.test.tsx` was added with a red-green cycle; it first failed because `./chart-legend` did not exist, then passed after implementation. Focused verification passed with `bun test src/components/primitives/chart-legend.test.tsx src/components/primitives/charts.test.ts src/features/user-usage/user-usage-state.test.ts`, `bun run check`, and `git diff --check`. Full verification passed with `ulimit -n 65536 && bun test --timeout 20000` and `bun run build`. `agent-browser` reverified `/usage` on the existing `4339` dev server with no error boundary, no body horizontal overflow, and no button/link overflow; the local guest/loading state did not expose configured chart content, so visible `ChartLegend` data-state rendering remains covered by the primitive SSR test, TypeScript, and build until usage data is available.
 
+  Follow-up token-breakdown composition audit migrates the token legend vertical rhythm from a local `<div className='flex flex-col gap-2'>` to the shared `Stack gap='compact'` primitive while preserving the existing token rows and render-safe zero-total behavior.
+
+  Follow-up token-breakdown composition evidence: `token-breakdown-composition.test.ts` was added with a red-green cycle; it first failed because `TokenBreakdown` did not import `Stack` and still owned the local legend gap class, then passed after implementation. Focused verification passed with `bun test src/components/primitives/token-breakdown-composition.test.ts src/components/primitives/token-breakdown.test.tsx`.
+
 - [x] **Step 6: Align Overview setup progress with shared Ring**
 
   Extract Overview setup readiness into `home-state.ts`, render the setup status card with the shared `Ring` primitive, migrate recent usage into reference-style live activity rows with `ToolGlyph`, and keep checklist labels/statuses backed by real dashboard, provider, and event data.

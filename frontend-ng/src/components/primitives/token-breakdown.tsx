@@ -1,3 +1,4 @@
+import { Stack } from '@/components/primitives/stack'
 import { cn } from '@/lib/utils'
 
 export type TokenBreakdownItem = {
@@ -33,7 +34,7 @@ export function TokenBreakdown({
           )
         })}
       </div>
-      <div className='flex flex-col gap-2'>
+      <Stack gap='compact'>
         {items.map((item) => (
           <div className='flex items-center gap-2 text-[12.5px]' data-slot='token-breakdown-row' key={String(item.label)}>
             <span className='size-2.5 rounded-sm' style={{ background: item.color }} />
@@ -41,7 +42,7 @@ export function TokenBreakdown({
             <span className='mono tnum shrink-0 font-semibold'>{valueFormatter(item.value)}</span>
           </div>
         ))}
-      </div>
+      </Stack>
     </div>
   )
 }
