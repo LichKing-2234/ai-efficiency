@@ -618,6 +618,10 @@ Follow-up OAuth/auth redirect diagnosis fixed the `/oauth/device` unauthenticate
 
   Follow-up job-result audit evidence: `job-result-list.test.tsx` was added with a red-green cycle, `admin-users-state.test.ts`, `bun test`, `bun run check`, `bun run build`, and `git diff --check` passed after migrating the result list. `agent-browser` reverified `/admin/users` at `1280x720` and `390x844`: no error boundary text and no body horizontal overflow. The current local account has no active job results, so visible `JobResultList` rendering is covered by primitive tests and TypeScript/build until job result data is available.
 
+  Follow-up checkbox-field alignment audit implementation extends the shared `CheckboxField` primitive with `align='block-end'` for grid-aligned checkbox controls and migrates the Admin Users remove-confirmation checkbox away from feature-local `min-h-14 items-end pb-1` layout classes.
+
+  Follow-up checkbox-field alignment evidence: `checkbox-field.test.tsx` and `admin-subscription-form.test.tsx` were extended with a red-green cycle; they first failed because `CheckboxField` did not expose semantic block-end alignment and the Admin subscription form still owned the layout classes, then passed after migration.
+
   Follow-up row-inset audit implementation adds the shared `RowInsetPanel` primitive for compact detail panels nested inside data-grid rows. Admin Users plaintext reveal confirmation now uses this primitive instead of page-local `col-span-7 ml-11 flex max-w-xl flex-col gap-2 text-left text-xs` styling, preserving the reveal warning, confirmation action, and mutation behavior.
 
   Follow-up row-inset audit evidence: `row-inset-panel.test.tsx` and `admin-users-page-composition.test.ts` were added with a red-green cycle; they first failed because `row-inset-panel.tsx` did not exist and `admin-users-page.tsx` still owned the local row inset classes. Focused verification passed with `bun test src/components/primitives/row-inset-panel.test.tsx src/features/admin-users/admin-users-page-composition.test.ts src/features/admin-users/admin-users-state.test.ts`.

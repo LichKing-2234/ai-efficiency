@@ -115,6 +115,36 @@ describe('AdminSubscriptionForm', () => {
     expect(html).toContain('Confirm')
     expect(html).not.toContain('id="admin-subscription-days"')
   })
+
+  test('uses shared checkbox alignment for the remove confirmation control', () => {
+    const html = renderToStaticMarkup(
+      <AdminSubscriptionForm
+        activeGroupId='group-a'
+        activeJobRunning={false}
+        activeProvider={providers[0]}
+        activeGroups={providers[0].groups}
+        canSubmit={false}
+        confirmRemove
+        days={0}
+        labels={labels()}
+        operation='remove'
+        scope='all_mapped'
+        selectedCount={0}
+        subscriptionProviders={providers}
+        onConfirmRemoveChange={() => undefined}
+        onDaysChange={() => undefined}
+        onGroupChange={() => undefined}
+        onOperationChange={() => undefined}
+        onProviderChange={() => undefined}
+        onStart={() => undefined}
+        onScopeChange={() => undefined}
+      />
+    )
+
+    expect(html).toContain('data-align="block-end"')
+    expect(source).toContain("align='block-end'")
+    expect(source).not.toContain("className='min-h-14 items-end pb-1'")
+  })
 })
 
 function labels() {

@@ -130,8 +130,8 @@ export function AdminSubscriptionForm({
           />
         ) : (
           <CheckboxField
+            align='block-end'
             checked={confirmRemove}
-            className='min-h-14 items-end pb-1'
             disabled={activeJobRunning}
             id='admin-subscription-confirm-remove'
             label={labels.confirm}
