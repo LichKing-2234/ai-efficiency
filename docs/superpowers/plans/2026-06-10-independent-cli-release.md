@@ -24,7 +24,7 @@
   CLI-only GoReleaser config. Builds only `ae-cli`, writes the stripped CLI version into `buildinfo.Version`, and produces CLI archives plus `checksums.txt` for the `ae-cli/v*` GitHub Release.
 
 - `.github/workflows/ae-cli-release.yml`
-  CLI-only release workflow. Triggered by `ae-cli/v*` tags or manual dispatch with a matching tag. Runs CLI tests, builds CLI artifacts with GoReleaser snapshot mode, publishes them with `gh release create --latest=false`, and verifies repository latest still points to a platform release.
+  CLI-only release workflow. Triggered by `ae-cli/v*` tags or manual dispatch with an existing matching tag. Runs CLI tests, builds CLI artifacts with GoReleaser snapshot mode, verifies artifact version metadata before publishing, publishes them with `gh release create --latest=false`, and verifies repository latest still points to a platform release.
 
 ### Modify
 
@@ -35,16 +35,16 @@
   Platform release workflow. Remove the release-time `ae-cli-test` job from the platform release gate so platform publishing is not blocked by CLI-only test surface.
 
 - `ae-cli/internal/update/update.go`
-  Change CLI update discovery from repository `/releases/latest` to release-list filtering for `ae-cli/v*`. Keep semver comparison against stripped `vX.Y.Z` versions while retaining the full release tag for installer invocation.
+  Change CLI update discovery from repository `/releases/latest` to release-list filtering for the latest published `ae-cli/v*` release. Follow GitHub release pagination when needed, keep semver comparison against stripped `vX.Y.Z` versions, and retain the full release tag for installer invocation.
 
 - `ae-cli/internal/update/update_test.go`
   Add release-list tests proving platform releases are ignored, the newest CLI release is selected, and the installer receives the full `ae-cli/v*` release tag.
 
 - `ae-cli/install.sh`
-  Change default release discovery from repository latest to release-list filtering for `ae-cli/v*`. Accept both `ae-cli/vX.Y.Z` and legacy `vX.Y.Z` pinned arguments, but resolve latest from CLI releases only.
+  Change default release discovery from repository latest to release-list filtering for the latest published `ae-cli/v*` release, following GitHub release pagination when needed. Accept both `ae-cli/vX.Y.Z` and legacy `vX.Y.Z` pinned arguments, but resolve latest from CLI releases only.
 
 - `ae-cli/install.ps1`
-  Match the Bash installer: filter release list for `ae-cli/v*`, accept pinned `ae-cli/vX.Y.Z` or `vX.Y.Z`, and derive archive names from the stripped version.
+  Match the Bash installer: filter release list for `ae-cli/v*`, follow GitHub release pagination, accept pinned `ae-cli/vX.Y.Z` or `vX.Y.Z`, and derive archive names from the stripped version.
 
 - `ae-cli/test/install-test.sh`
   Update installer fixtures to include both platform and CLI releases, then assert the installer chooses the CLI release and still supports a pinned full CLI tag.

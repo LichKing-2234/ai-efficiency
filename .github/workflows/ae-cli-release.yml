@@ -43,18 +43,13 @@ jobs:
           VERSION="${TAG#ae-cli/}"
           VERSION_NO_V="${VERSION#v}"
 
-          if [ "$EVENT_NAME" = "push" ]; then
-            CHECKOUT_REF="refs/tags/$TAG"
-            COMMIT_SHA="$(git rev-list -n 1 "refs/tags/$TAG")"
-          else
-            if git rev-parse "refs/tags/$TAG" >/dev/null 2>&1; then
-              CHECKOUT_REF="refs/tags/$TAG"
-              COMMIT_SHA="$(git rev-list -n 1 "refs/tags/$TAG")"
-            else
-              CHECKOUT_REF="${GITHUB_SHA}"
-              COMMIT_SHA="${GITHUB_SHA}"
-            fi
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && ! git rev-parse "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "CLI release tag $TAG must already exist before manual dispatch" >&2
+            exit 1
           fi
+
+          CHECKOUT_REF="refs/tags/$TAG"
+          COMMIT_SHA="$(git rev-list -n 1 "refs/tags/$TAG")"
 
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
@@ -98,13 +93,6 @@ jobs:
           TAG: ${{ needs.prepare.outputs.tag }}
         run: |
           set -euo pipefail
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && ! git rev-parse "refs/tags/$TAG" >/dev/null 2>&1; then
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git tag -a "$TAG" -m "Release $TAG"
-            git push origin "refs/tags/$TAG:refs/tags/$TAG"
-          fi
-
           git fetch --tags --force origin
           git rev-parse "refs/tags/$TAG" >/dev/null
           echo "release_ref=refs/tags/$TAG" >> "$GITHUB_OUTPUT"
@@ -133,6 +121,22 @@ jobs:
           GITHUB_REPO_NAME: ${{ github.event.repository.name }}
           AE_CLI_VERSION: ${{ needs.prepare.outputs.version }}
           AE_CLI_VERSION_NO_V: ${{ needs.prepare.outputs.version_no_v }}
+      - name: Verify CLI artifact version
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          VERSION_NO_V: ${{ needs.prepare.outputs.version_no_v }}
+        run: |
+          set -euo pipefail
+          smoke_dir="$(mktemp -d)"
+          trap 'rm -rf "$smoke_dir"' EXIT
+
+          tar -xzf "dist/ae-cli_${VERSION_NO_V}_linux_amd64.tar.gz" -C "$smoke_dir" ae-cli
+          actual="$("$smoke_dir/ae-cli" version)"
+          expected="ae-cli $VERSION"
+          if [ "$actual" != "$expected" ]; then
+            echo "artifact version mismatch: got '$actual', want '$expected'" >&2
+            exit 1
+          fi
       - name: Publish CLI release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

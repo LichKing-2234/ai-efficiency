@@ -18,7 +18,7 @@ import (
 const (
 	cliReleaseTagPrefix     = "ae-cli/"
 	defaultReleaseAPIURL    = "https://api.github.com/repos/LichKing-2234/ai-efficiency/releases?per_page=100"
-	defaultInstallScriptURL = "https://raw.githubusercontent.com/LichKing-2234/ai-efficiency/main/ae-cli/%s"
+	defaultInstallScriptURL = "https://raw.githubusercontent.com/LichKing-2234/ai-efficiency/%s/ae-cli/%s"
 	updateRequestTimeout    = 10 * time.Second
 )
 
@@ -185,43 +185,84 @@ func fetchLatestRelease(ctx context.Context, overrideURL string) (*releaseRespon
 	if url == "" {
 		url = defaultReleaseAPIURL
 	}
+	seenURLs := map[string]bool{}
+	for {
+		if seenURLs[url] {
+			return nil, fmt.Errorf("fetch latest release: pagination loop at %s", url)
+		}
+		seenURLs[url] = true
+
+		release, nextURL, err := fetchReleasePage(ctx, url)
+		if err != nil {
+			return nil, err
+		}
+		if release != nil {
+			return release, nil
+		}
+		if nextURL == "" {
+			return nil, fmt.Errorf("no ae-cli release found")
+		}
+		url = nextURL
+	}
+}
+
+func fetchReleasePage(ctx context.Context, url string) (*releaseResponse, string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return nil, fmt.Errorf("build latest release request: %w", err)
+		return nil, "", fmt.Errorf("build latest release request: %w", err)
 	}
 	resp, err := httpDo(req)
 	if err != nil {
-		return nil, fmt.Errorf("fetch latest release: %w", err)
+		return nil, "", fmt.Errorf("fetch latest release: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("fetch latest release: unexpected status %s", resp.Status)
+		return nil, "", fmt.Errorf("fetch latest release: unexpected status %s", resp.Status)
 	}
 
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("read latest release response: %w", err)
+		return nil, "", fmt.Errorf("read latest release response: %w", err)
 	}
 
 	var releases []releaseResponse
 	if err := json.Unmarshal(data, &releases); err == nil {
 		for _, release := range releases {
 			if _, _, tagErr := normalizeCLIReleaseTag(release.TagName); tagErr == nil {
-				return &release, nil
+				return &release, "", nil
 			}
 		}
-		return nil, fmt.Errorf("no ae-cli release found")
+		return nil, nextPageURL(resp.Header.Get("Link")), nil
 	}
 
 	var payload releaseResponse
 	if err := json.Unmarshal(data, &payload); err != nil {
-		return nil, fmt.Errorf("decode latest release: %w", err)
+		return nil, "", fmt.Errorf("decode latest release: %w", err)
 	}
 	if _, _, err := normalizeCLIReleaseTag(payload.TagName); err != nil {
-		return nil, fmt.Errorf("no ae-cli release found")
+		return nil, "", fmt.Errorf("no ae-cli release found")
 	}
-	return &payload, nil
+	return &payload, "", nil
+}
+
+func nextPageURL(linkHeader string) string {
+	for _, part := range strings.Split(linkHeader, ",") {
+		segments := strings.Split(part, ";")
+		if len(segments) < 2 {
+			continue
+		}
+		rawURL := strings.TrimSpace(segments[0])
+		if !strings.HasPrefix(rawURL, "<") || !strings.HasSuffix(rawURL, ">") {
+			continue
+		}
+		for _, segment := range segments[1:] {
+			if strings.TrimSpace(segment) == `rel="next"` {
+				return strings.TrimSuffix(strings.TrimPrefix(rawURL, "<"), ">")
+			}
+		}
+	}
+	return ""
 }
 
 func normalizeCLIReleaseTag(value string) (releaseTag string, versionTag string, err error) {
@@ -229,12 +270,10 @@ func normalizeCLIReleaseTag(value string) (releaseTag string, versionTag string,
 	if trimmed == "" {
 		return "", "", fmt.Errorf("version must not be empty")
 	}
-	versionPart := trimmed
-	if strings.HasPrefix(versionPart, cliReleaseTagPrefix) {
-		versionPart = strings.TrimPrefix(versionPart, cliReleaseTagPrefix)
-	} else if strings.HasPrefix(versionPart, "v") {
+	if !strings.HasPrefix(trimmed, cliReleaseTagPrefix+"v") {
 		return "", "", fmt.Errorf("release tag %q is not an ae-cli release", trimmed)
 	}
+	versionPart := strings.TrimPrefix(trimmed, cliReleaseTagPrefix)
 	versionTag, err = normalizeTag(versionPart)
 	if err != nil {
 		return "", "", err
@@ -268,7 +307,7 @@ func installScriptURLForTag(tag string) string {
 	if runtime.GOOS == "windows" {
 		scriptName = "install.ps1"
 	}
-	return fmt.Sprintf(defaultInstallScriptURL, scriptName)
+	return fmt.Sprintf(defaultInstallScriptURL, tag, scriptName)
 }
 
 func ensureOfficialInstallPath(currentPath, home string) error {

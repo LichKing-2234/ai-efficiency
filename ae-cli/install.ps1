@@ -39,19 +39,45 @@ function Get-ReleaseVersion([string]$Tag) {
   return $value
 }
 
-function Get-LatestTag {
-  try {
-    $releases = Invoke-RestMethod -Uri $ReleaseApiUrl -UseBasicParsing
-  } catch {
-    Write-GitHubReleaseProxyHelp
-    throw
+function Get-NextReleasePage([string]$LinkHeader) {
+  if (-not $LinkHeader) {
+    return ""
   }
-
-  foreach ($release in @($releases)) {
-    $tagName = [string]$release.tag_name
-    if ($tagName -match $CliReleaseTagPattern) {
-      return $tagName
+  foreach ($part in ($LinkHeader -split ",")) {
+    if ($part -match '<([^>]+)>;\s*rel="next"') {
+      return $Matches[1]
     }
+  }
+  return ""
+}
+
+function Get-LatestTag {
+  $nextUrl = $ReleaseApiUrl
+  $seenUrls = @{}
+
+  while ($nextUrl) {
+    if ($seenUrls.ContainsKey($nextUrl)) {
+      throw "release pagination loop at $nextUrl"
+    }
+    $seenUrls[$nextUrl] = $true
+
+    try {
+      $response = Invoke-WebRequest -Uri $nextUrl -UseBasicParsing
+      $releases = $response.Content | ConvertFrom-Json
+    } catch {
+      Write-GitHubReleaseProxyHelp
+      throw
+    }
+
+    foreach ($release in @($releases)) {
+      $tagName = [string]$release.tag_name
+      if ($tagName -match $CliReleaseTagPattern) {
+        return $tagName
+      }
+    }
+
+    $linkHeader = [string]($response.Headers["Link"] -join ",")
+    $nextUrl = Get-NextReleasePage $linkHeader
   }
 
   throw "failed to resolve ae-cli release tag"

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -94,6 +95,79 @@ func TestCheckForUpdateRejectsReleaseListWithoutCLIRelease(t *testing.T) {
 	}
 }
 
+func TestCheckForUpdateRejectsBareReleaseTags(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[
+			{"tag_name":"0.2.0","html_url":"https://example.com/releases/0.2.0"},
+			{"tag_name":"v0.2.0","html_url":"https://example.com/releases/v0.2.0"},
+			{"tag_name":"ae-cli/0.2.0","html_url":"https://example.com/releases/ae-cli/0.2.0"}
+		]`))
+	}))
+	defer srv.Close()
+
+	_, err := CheckForUpdate(context.Background(), CheckOptions{
+		CurrentVersion: "v0.1.0",
+		ReleaseAPIURL:  srv.URL,
+	})
+	if err == nil {
+		t.Fatal("expected bare release tags to be ignored")
+	}
+	if !strings.Contains(err.Error(), "no ae-cli release found") {
+		t.Fatalf("error = %q, want no ae-cli release found", err)
+	}
+}
+
+func TestCheckForUpdateFollowsReleasePaginationUntilCLIRelease(t *testing.T) {
+	var srv *httptest.Server
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/page1":
+			w.Header().Set("Link", "<"+srv.URL+"/page2>; rel=\"next\"")
+			_, _ = w.Write([]byte(`[{"tag_name":"v0.1.0-preview.42"}]`))
+		case "/page2":
+			_, _ = w.Write([]byte(`[{"tag_name":"ae-cli/v0.2.0","html_url":"https://example.com/releases/ae-cli/v0.2.0"}]`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	result, err := CheckForUpdate(context.Background(), CheckOptions{
+		CurrentVersion: "v0.1.0",
+		ReleaseAPIURL:  srv.URL + "/page1",
+	})
+	if err != nil {
+		t.Fatalf("CheckForUpdate: %v", err)
+	}
+	if result.LatestTag != "ae-cli/v0.2.0" {
+		t.Fatalf("latest tag = %q, want ae-cli/v0.2.0", result.LatestTag)
+	}
+}
+
+func TestCheckForUpdateUsesFirstPublishedCLIRelease(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[
+			{"tag_name":"ae-cli/v0.1.9","html_url":"https://example.com/releases/ae-cli/v0.1.9"},
+			{"tag_name":"ae-cli/v0.2.0","html_url":"https://example.com/releases/ae-cli/v0.2.0"}
+		]`))
+	}))
+	defer srv.Close()
+
+	result, err := CheckForUpdate(context.Background(), CheckOptions{
+		CurrentVersion: "v0.1.0",
+		ReleaseAPIURL:  srv.URL,
+	})
+	if err != nil {
+		t.Fatalf("CheckForUpdate: %v", err)
+	}
+	if result.LatestTag != "ae-cli/v0.1.9" {
+		t.Fatalf("latest tag = %q, want first published CLI release ae-cli/v0.1.9", result.LatestTag)
+	}
+}
+
 func TestCheckForUpdateKeepsPlainReleaseFetchError(t *testing.T) {
 	oldHTTPDo := httpDo
 	defer func() { httpDo = oldHTTPDo }()
@@ -114,6 +188,64 @@ func TestCheckForUpdateKeepsPlainReleaseFetchError(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), "GitHub Releases") || strings.Contains(err.Error(), "HTTPS_PROXY") {
 		t.Fatalf("error = %q, want no onboarding proxy guidance in update package", err)
+	}
+}
+
+func TestInstallLatestDownloadsInstallerFromReleaseTagByDefault(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix installer test")
+	}
+
+	home := t.TempDir()
+	officialPath := filepath.Join(home, ".local", "bin", "ae-cli")
+	if err := os.MkdirAll(filepath.Dir(officialPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(officialPath, []byte("#!/usr/bin/env bash\n"), 0o755); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	oldExecutable := currentExecutable
+	oldHome := userHomeDir
+	oldHTTPDo := httpDo
+	defer func() {
+		currentExecutable = oldExecutable
+		userHomeDir = oldHome
+		httpDo = oldHTTPDo
+	}()
+
+	currentExecutable = func() (string, error) { return officialPath, nil }
+	userHomeDir = func() (string, error) { return home, nil }
+
+	var scriptURL string
+	httpDo = func(req *http.Request) (*http.Response, error) {
+		body := `#!/usr/bin/env bash
+set -euo pipefail
+exit 0
+`
+		if req.URL.String() == "https://example.com/releases" {
+			body = `[{"tag_name":"ae-cli/v0.2.0"}]`
+		} else {
+			scriptURL = req.URL.String()
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Status:     "200 OK",
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(body)),
+		}, nil
+	}
+
+	_, err := InstallLatest(context.Background(), InstallOptions{
+		CurrentVersion: "v0.1.0",
+		ReleaseAPIURL:  "https://example.com/releases",
+	})
+	if err != nil {
+		t.Fatalf("InstallLatest: %v", err)
+	}
+	wantURL := "https://raw.githubusercontent.com/LichKing-2234/ai-efficiency/ae-cli/v0.2.0/ae-cli/install.sh"
+	if scriptURL != wantURL {
+		t.Fatalf("installer URL = %q, want %q", scriptURL, wantURL)
 	}
 }
 

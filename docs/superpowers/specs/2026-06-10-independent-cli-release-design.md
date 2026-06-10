@@ -155,10 +155,11 @@ CLI workflow 的职责：
 3. 运行 `cd ae-cli && go test ./...`。
 4. 运行 CLI release sanity check，例如 `ae-cli version` 构建元数据测试。
 5. 调用 CLI 专用 GoReleaser 配置，以 snapshot mode 只构建 CLI artifact。
-6. 用 `gh release create` 在原始 `ae-cli/v*` tag 上发布 CLI artifact。
-7. GitHub Release 名称使用 `ae-cli <version>`。
-8. GitHub Release prerelease 判断仍沿用 semver 后缀规则。
-9. CLI GitHub Release 必须保持在仓库级 latest 之外。
+6. 发布前解包至少一个 CLI artifact 并验证 `ae-cli version` 等于解析出的 CLI version。
+7. 用 `gh release create` 在原始 `ae-cli/v*` tag 上发布 CLI artifact。
+8. GitHub Release 名称使用 `ae-cli <version>`。
+9. GitHub Release prerelease 判断仍沿用 semver 后缀规则。
+10. CLI GitHub Release 必须保持在仓库级 latest 之外。
 
 ### GitHub Latest Release Ownership
 
@@ -176,6 +177,7 @@ CLI workflow 的职责：
 - CLI release 不得设置为 repository latest。
 - CLI installer / updater 不得继续把仓库级 `/releases/latest` 当作 CLI latest。
 - CLI installer / updater 应通过列出 releases 并筛选 `ae-cli/v*`，或通过新的 CLI 专用 release API 入口，找到最新 CLI release。
+- CLI installer / updater 的 “latest” 含义是 GitHub releases list 中最新发布的 `ae-cli/v*` release；实现必须在当前页没有 CLI release 时跟随 GitHub `Link: rel="next"` 分页继续查找。
 - 如果 GitHub Release 或 GoReleaser 默认会把新 release 标记为 latest，CLI workflow 必须显式关闭或在发布后校正。
 
 ### Why Not Path Filters For Release Split
@@ -213,7 +215,7 @@ CLI `.goreleaser.ae-cli.yaml`：
 - `binary: ae-cli`。
 - `ldflags` 写入 `github.com/ai-efficiency/ae-cli/internal/buildinfo.Version`。
 - workflow 以 `release --snapshot --clean --config .goreleaser.ae-cli.yaml` 运行，使用 GoReleaser 生成跨平台 archives 和 checksum，但不让 GoReleaser 创建 GitHub Release。
-- workflow 随后用 `gh release create <ae-cli/v*> dist/ae-cli_*.tar.gz dist/ae-cli_*.zip dist/checksums.txt --verify-tag --latest=false` 创建 CLI GitHub Release。
+- workflow 随后解包 `linux_amd64` archive 并验证 `ae-cli version` 输出 `ae-cli <version>`，再用 `gh release create <ae-cli/v*> dist/ae-cli_*.tar.gz dist/ae-cli_*.zip dist/checksums.txt --verify-tag --latest=false` 创建 CLI GitHub Release。
 - 因 tag 带有 `ae-cli/` 前缀，workflow 应把剥离后的版本传给 GoReleaser 或在配置中显式处理版本显示，确保 `ae-cli version` 输出 `vX.Y.Z`，而不是 `ae-cli/vX.Y.Z`。
 
 不使用 GoReleaser Pro 的 `monorepo.tag_prefix`，避免新增商业功能依赖。OSS GoReleaser 在正式 release mode 会把 `ae-cli/v*` 解析为非法 semver，因此 CLI workflow 不直接让 GoReleaser 发布 release；版本展示通过 workflow 环境变量和 build flag 显式传入剥离后的 CLI version。
@@ -248,6 +250,8 @@ CLI:      ae-cli v0.2.1
 4. 创建并推送 `ae-cli/vX.Y.Z` tag。
 5. 等待 CLI release workflow 完成。
 6. 不执行 Helm rollout。
+
+Manual dispatch 只用于重跑已存在的 `ae-cli/v*` tag，不负责创建新 tag；tag namespace 仍是 release source of truth。
 
 ### Platform Change
 

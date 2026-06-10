@@ -3,7 +3,17 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TMP_ROOT="$(mktemp -d)"
-trap 'rm -rf "$TMP_ROOT"' EXIT
+SERVER_PIDS=()
+
+cleanup() {
+  for pid in "${SERVER_PIDS[@]}"; do
+    kill "$pid" >/dev/null 2>&1 || true
+    wait "$pid" >/dev/null 2>&1 || true
+  done
+  rm -rf "$TMP_ROOT"
+}
+
+trap cleanup EXIT
 
 INSTALLER="$TMP_ROOT/install.sh"
 RELEASE_ROOT="$TMP_ROOT/releases"
@@ -128,6 +138,64 @@ make_cli_archive "$PATH_WARNING_TAG"
 make_symlink_archive "$SYMLINK_TAG"
 printf '[{"tag_name":"%s"},{"tag_name":"%s"}]\n' "$PLATFORM_LATEST_TAG" "$LATEST_TAG" >"$TMP_ROOT/latest.json"
 
+PAGINATED_API_URL_FILE="$TMP_ROOT/paginated-api-url.txt"
+ruby - "$PAGINATED_API_URL_FILE" "$PLATFORM_LATEST_TAG" "$LATEST_TAG" <<'RUBY' &
+require "socket"
+
+url_file, platform_tag, latest_tag = ARGV
+server = TCPServer.new("127.0.0.1", 0)
+port = server.addr[1]
+File.write(url_file, "http://127.0.0.1:#{port}/page1")
+
+def write_response(client, status, headers, body)
+  client.write "HTTP/1.1 #{status}\r\n"
+  headers.each { |key, value| client.write "#{key}: #{value}\r\n" }
+  client.write "Content-Length: #{body.bytesize}\r\n"
+  client.write "Connection: close\r\n"
+  client.write "\r\n"
+  client.write body
+end
+
+loop do
+  client = server.accept
+  request_line = client.gets
+  path = request_line.to_s.split[1]
+  loop do
+    line = client.gets
+    break if line.nil? || line == "\r\n"
+  end
+
+  case path
+  when "/page1"
+    body = %([{"tag_name":"#{platform_tag}"}])
+    write_response(
+      client,
+      "200 OK",
+      {
+        "Content-Type" => "application/json",
+        "Link" => "<http://127.0.0.1:#{port}/page2>; rel=\"next\""
+      },
+      body
+    )
+  when "/page2"
+    body = %([{"tag_name":"#{latest_tag}"}])
+    write_response(client, "200 OK", {"Content-Type" => "application/json"}, body)
+  else
+    write_response(client, "404 Not Found", {"Content-Type" => "text/plain"}, "not found")
+  end
+  client.close
+end
+RUBY
+SERVER_PIDS+=("$!")
+
+for _ in {1..50}; do
+  if [[ -s "$PAGINATED_API_URL_FILE" ]]; then
+    break
+  fi
+  sleep 0.1
+done
+test -s "$PAGINATED_API_URL_FILE"
+
 LATEST_HOME="$TMP_ROOT/home-latest"
 PINNED_HOME="$TMP_ROOT/home-pinned"
 BAD_HOME="$TMP_ROOT/home-bad"
@@ -153,6 +221,19 @@ grep -q 'url: "https://ai-efficiency.la3.agoralab.co"' "$LATEST_HOME/.ae-cli/con
 grep -q "Installing ae-cli ${LATEST_TAG}" "$LATEST_LOG"
 grep -q "Installed ae-cli ${LATEST_TAG} to $LATEST_HOME/.local/bin/ae-cli" "$LATEST_LOG"
 ! grep -q "is not in PATH" "$LATEST_LOG"
+
+PAGINATED_HOME="$TMP_ROOT/home-paginated"
+mkdir -p "$PAGINATED_HOME"
+PAGINATED_LOG="$TMP_ROOT/paginated.log"
+run_installer \
+  "$PAGINATED_HOME" \
+  "$PAGINATED_HOME/.local/bin:/usr/bin:/bin" \
+  "$(cat "$PAGINATED_API_URL_FILE")" \
+  >"$PAGINATED_LOG" 2>&1
+
+test -x "$PAGINATED_HOME/.local/bin/ae-cli"
+"$PAGINATED_HOME/.local/bin/ae-cli" | grep -q "ae-cli ${LATEST_TAG}"
+grep -q "Installed ae-cli ${LATEST_TAG} to $PAGINATED_HOME/.local/bin/ae-cli" "$PAGINATED_LOG"
 
 PINNED_LOG="$TMP_ROOT/pinned.log"
 run_installer \
