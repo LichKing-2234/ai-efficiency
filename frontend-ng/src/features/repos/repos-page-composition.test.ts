@@ -37,4 +37,10 @@ describe('Repos page composition', () => {
     expect(source).not.toContain("className='truncate text-[var(--ink-2)]'")
     expect(source).not.toContain("className='mono truncate text-xs'")
   })
+
+  test('uses shared data grid header cells for aligned action columns', () => {
+    expect(source).toContain('DataGridHeaderCell')
+    expect(source).toContain("<DataGridHeaderCell align='right' />")
+    expect(source).not.toContain("<span className='text-right' />")
+  })
 })

@@ -17,7 +17,7 @@ import { MetricCard } from '@/components/primitives/metric-card'
 import { AppAlert } from '@/components/primitives/app-alert'
 import { Page } from '@/components/primitives/page'
 import { LoadingState } from '@/components/primitives/data-state'
-import { DataGrid, DataGridCell, DataGridHeader, DataGridRow } from '@/components/primitives/data-grid'
+import { DataGrid, DataGridCell, DataGridHeader, DataGridHeaderCell, DataGridRow } from '@/components/primitives/data-grid'
 import { RecordMeta } from '@/components/primitives/record-meta'
 import { SectionCardHeader } from '@/components/primitives/section-card-header'
 import { SectionNav, type SectionNavItem } from '@/components/primitives/section-nav'
@@ -397,7 +397,7 @@ function RepoTable({
         <span>{t('repos.scmProvider')}</span>
         <span>{t('repos.defaultBranch')}</span>
         <span>{t('common.status')}</span>
-        <span className='text-right' />
+        <DataGridHeaderCell align='right' />
       </DataGridHeader>
       {rows.map((repo) => (
         <DataGridRow columns={columns} key={repo.id}>
