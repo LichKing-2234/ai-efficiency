@@ -25,4 +25,10 @@ describe('Events page composition', () => {
     expect(source).toContain('<SlideOverStack>')
     expect(source).not.toContain("<div className='flex flex-col gap-[18px]'>")
   })
+
+  test('uses shared record metadata for dense secondary row labels', () => {
+    expect(source).toContain("from '@/components/primitives/record-meta'")
+    expect(source).toContain('<RecordMeta>')
+    expect(source).not.toContain("<span className='mono block truncate text-[11px] text-[var(--ink-4)]'>")
+  })
 })

@@ -18,6 +18,7 @@ import { MetricCard } from '@/components/primitives/metric-card'
 import { OptionList } from '@/components/primitives/option-list'
 import { Page } from '@/components/primitives/page'
 import { LoadingState } from '@/components/primitives/data-state'
+import { RecordMeta } from '@/components/primitives/record-meta'
 import { SearchField } from '@/components/primitives/search-field'
 import { SectionEyebrow } from '@/components/primitives/section-eyebrow'
 import { SlideOver } from '@/components/primitives/slide-over'
@@ -275,7 +276,7 @@ function EventRow({ row, maxTokens, onSelect }: { row: ToolUsageEventRow; maxTok
       <ToolGlyph tool={row.tool} />
       <span className='min-w-0'>
         <span className='block truncate font-medium text-foreground text-sm'>{row.repo_name || t('events.unlinked')}</span>
-        <span className='mono block truncate text-[11px] text-[var(--ink-4)]'>{row.source_basename || row.tool_session_id}</span>
+        <RecordMeta>{row.source_basename || row.tool_session_id}</RecordMeta>
       </span>
       <TokenMeter label={compact(tokens)} max={maxTokens} value={tokens} />
       <span className='tnum text-right text-[var(--ink-2)]'>{number(row.request_count)}</span>

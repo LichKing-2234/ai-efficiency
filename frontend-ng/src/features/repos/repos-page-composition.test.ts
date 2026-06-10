@@ -16,4 +16,10 @@ describe('Repos page composition', () => {
     expect(source).not.toContain("<div className='mb-3 flex items-center justify-between gap-2'>")
     expect(source).not.toContain("<div className='flex flex-col gap-2 border-b border-border px-5 py-4 md:flex-row md:items-center md:justify-between'>")
   })
+
+  test('uses shared record metadata for clone URLs', () => {
+    expect(source).toContain("from '@/components/primitives/record-meta'")
+    expect(source).toContain('<RecordMeta>')
+    expect(source).not.toContain("<span className='mono block truncate text-[11px] text-[var(--ink-4)]'>")
+  })
 })

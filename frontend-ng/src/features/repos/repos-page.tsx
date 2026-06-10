@@ -18,6 +18,7 @@ import { AppAlert } from '@/components/primitives/app-alert'
 import { Page } from '@/components/primitives/page'
 import { LoadingState } from '@/components/primitives/data-state'
 import { DataGrid, DataGridHeader, DataGridRow } from '@/components/primitives/data-grid'
+import { RecordMeta } from '@/components/primitives/record-meta'
 import { SectionCardHeader } from '@/components/primitives/section-card-header'
 import { SectionNav, type SectionNavItem } from '@/components/primitives/section-nav'
 import { StatusBadge } from '@/components/primitives/status-badge'
@@ -406,7 +407,7 @@ function RepoTable({
             <Link className='block truncate font-semibold text-foreground text-sm hover:text-[var(--ai-deep)]' to='/repos/$id' params={{ id: String(repo.id) }}>
               {repo.full_name || repo.name}
             </Link>
-            <span className='mono block truncate text-[11px] text-[var(--ink-4)]'>{repo.clone_url}</span>
+            <RecordMeta>{repo.clone_url}</RecordMeta>
           </span>
           <span><Badge variant={repo.binding_state === 'bound' ? 'pos' : 'warn'}>{repo.binding_state}</Badge></span>
           <span className='truncate text-[var(--ink-2)]'>{repo.edges?.scm_provider?.name || repo.scm_provider_id || '-'}</span>
