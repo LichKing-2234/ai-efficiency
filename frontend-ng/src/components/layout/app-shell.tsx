@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate } from '@tanstack/react-router'
-import { ChevronDownIcon, GlobeIcon, LogOutIcon, MenuIcon, MoonIcon, PanelLeftIcon, SearchIcon, SunIcon } from 'lucide-react'
+import { ChevronDownIcon, GlobeIcon, LogOutIcon, MenuIcon, MoonIcon, PanelLeftIcon, SunIcon } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { CommandPalette } from '@/components/command/command-palette'
 import { Button } from '@/components/ui/button'
@@ -29,6 +29,7 @@ import type { Locale } from '@/lib/i18n/messages'
 import { useI18n } from '@/lib/i18n/i18n'
 import { cn } from '@/lib/utils'
 import { navItems, pageMeta } from './navigation'
+import { TopbarCommandTrigger } from './topbar-command-trigger'
 import { TopbarTitle } from './topbar-title'
 
 const LOCALES: Array<{ value: Locale; labelKey: 'locale.english' | 'locale.chinese'; shortKey: 'locale.englishShort' | 'locale.chineseShort' }> = [
@@ -193,14 +194,7 @@ export function AppShell({ user, children }: { user: User | null; children: Reac
           <div className='hidden h-6 w-px bg-border md:block' />
           <TopbarTitle section={t(meta.sectionKey)} title={t(meta.titleKey)} />
           <div className='ml-auto flex items-center gap-2'>
-            <Button className='hidden min-w-48 justify-start gap-2 text-[var(--ink-3)] lg:inline-flex' onClick={() => setCommandOpen(true)} size='sm' type='button' variant='outline'>
-              <SearchIcon />
-              <span className='flex-1 text-left'>{t('command.trigger')}</span>
-              <kbd className='rounded border border-border bg-[var(--surface)] px-1.5 py-0.5 font-mono font-semibold text-[10.5px] text-[var(--ink-3)]'>⌘K</kbd>
-            </Button>
-            <Button className='lg:hidden' onClick={() => setCommandOpen(true)} size='icon-sm' type='button' variant='outline' title={t('command.trigger')}>
-              <SearchIcon />
-            </Button>
+            <TopbarCommandTrigger label={t('command.trigger')} onOpen={() => setCommandOpen(true)} />
             <div className='hidden items-center gap-2 rounded-full border border-[var(--pos-line)] bg-[var(--pos-soft)] px-3 py-1 md:flex'>
               <span className='live-dot' />
               <span className='font-semibold text-[11.5px] text-[var(--pos)]'>{t('nav.ingesting')}</span>
