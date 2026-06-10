@@ -111,24 +111,6 @@ jobs:
         working-directory: backend
         run: go test ./...
 
-  ae-cli-test:
-    name: verify / ae-cli
-    needs: prepare
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-          ref: ${{ needs.prepare.outputs.checkout_ref }}
-      - uses: actions/setup-go@v6
-        with:
-          go-version-file: ae-cli/go.mod
-          check-latest: false
-          cache-dependency-path: ae-cli/go.sum
-      - name: Test ae-cli
-        working-directory: ae-cli
-        run: go test ./...
-
   frontend-test:
     name: verify / frontend
     needs: prepare
@@ -208,7 +190,6 @@ jobs:
   verify:
     needs:
       - backend-test
-      - ae-cli-test
       - frontend-test
       - release-frontend-embedding-test
       - deploy-validation

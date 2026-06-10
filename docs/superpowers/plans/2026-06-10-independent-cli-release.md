@@ -1006,7 +1006,7 @@ Expected: commit succeeds.
 - Modify: `.github/workflows/release.yml`
 - Test: `.github/workflows/release.yml`
 
-- [ ] **Step 1: Remove the platform release `ae-cli-test` job**
+- [x] **Step 1: Remove the platform release `ae-cli-test` job**
 
 In `.github/workflows/release.yml`, delete the whole job:
 
@@ -1017,7 +1017,7 @@ In `.github/workflows/release.yml`, delete the whole job:
 
 Delete through its final `run: go test ./...` line.
 
-- [ ] **Step 2: Remove `ae-cli-test` from the platform verify gate**
+- [x] **Step 2: Remove `ae-cli-test` from the platform verify gate**
 
 In the `verify.needs` list, remove:
 
@@ -1035,7 +1035,7 @@ The final list must be:
       - deploy-validation
 ```
 
-- [ ] **Step 3: Validate workflow YAML structure**
+- [x] **Step 3: Validate workflow YAML structure**
 
 Run:
 
@@ -1049,7 +1049,7 @@ Expected:
 ok
 ```
 
-- [ ] **Step 4: Commit the platform workflow narrowing**
+- [x] **Step 4: Commit the platform workflow narrowing**
 
 Run:
 
