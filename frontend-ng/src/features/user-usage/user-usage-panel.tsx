@@ -8,6 +8,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Empty, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ActionGroup } from '@/components/primitives/action-group'
+import { AppAlert } from '@/components/primitives/app-alert'
 import { CardTableContent } from '@/components/primitives/card-table-content'
 import { ChartLegend } from '@/components/primitives/chart-legend'
 import { BarsH, StackedAreaChart, type StackedAreaKey } from '@/components/primitives/charts'
@@ -75,13 +76,15 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
       <Stack>
         {query.isLoading ? <Skeleton aria-label={t('common.loading')} className='h-5 w-40' role='status' /> : null}
         {snapshot?.configured === false ? (
-          <Alert>
-            <AlertTitle>{t('usageDashboard.setupTitle')}</AlertTitle>
-            <AlertDescription>{t('usageDashboard.setupHelp')}</AlertDescription>
-            <Button asChild className='mt-3' size='sm'>
-              <Link to='/user'>{t('home.openSetup')}</Link>
-            </Button>
-          </Alert>
+          <AppAlert
+            title={t('usageDashboard.setupTitle')}
+            description={t('usageDashboard.setupHelp')}
+            actions={(
+              <Button asChild size='sm'>
+                <Link to='/user'>{t('home.openSetup')}</Link>
+              </Button>
+            )}
+          />
         ) : null}
         {query.error ? (
           <Alert variant='destructive'>

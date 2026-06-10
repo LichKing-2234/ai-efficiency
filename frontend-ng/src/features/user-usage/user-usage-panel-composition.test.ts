@@ -61,4 +61,10 @@ describe('User usage panel composition', () => {
     expect(source).toContain('<Skeleton')
     expect(source).not.toContain("<div className='text-muted-foreground text-sm'>{t('common.loading')}</div>")
   })
+
+  test('uses shared alert actions for setup CTA spacing', () => {
+    expect(source).toContain("from '@/components/primitives/app-alert'")
+    expect(source).toContain('actions={')
+    expect(source).not.toContain("className='mt-3'")
+  })
 })
