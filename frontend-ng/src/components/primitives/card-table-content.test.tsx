@@ -16,4 +16,17 @@ describe('CardTableContent', () => {
     expect(html).toContain('pb-0')
     expect(html).toContain('Cost table')
   })
+
+  test('supports fully flush table cards for settings-style data grids', () => {
+    const html = renderToStaticMarkup(
+      <CardTableContent variant='flush'>
+        <span>Settings table</span>
+      </CardTableContent>
+    )
+
+    expect(html).toContain('data-layout="table"')
+    expect(html).toContain('data-variant="flush"')
+    expect(html).toContain('p-0')
+    expect(html).toContain('Settings table')
+  })
 })

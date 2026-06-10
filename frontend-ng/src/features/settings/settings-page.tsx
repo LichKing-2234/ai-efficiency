@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge'
 import { ActionGroup } from '@/components/primitives/action-group'
 import { AppAlert } from '@/components/primitives/app-alert'
 import { CardContentStack } from '@/components/primitives/card-content-stack'
+import { CardTableContent } from '@/components/primitives/card-table-content'
 import { ConfirmAction } from '@/components/primitives/confirm-action'
 import { DataGrid, DataGridCell, DataGridHeader, DataGridRow } from '@/components/primitives/data-grid'
 import { Page } from '@/components/primitives/page'
@@ -294,7 +295,7 @@ export function SettingsPage() {
             description={t('settings.relayProvidersDescription')}
             actions={<Button size='sm' onClick={openAddRelayDialog}><Layers data-icon='inline-start' />{t('common.add')}</Button>}
           />
-          <CardContent className='p-0'>
+          <CardTableContent variant='flush'>
             <DataGrid minWidth={860}>
               <DataGridHeader columns={relayColumns}>
                 <span>{t('settings.name')}</span>
@@ -324,7 +325,7 @@ export function SettingsPage() {
               </DataGridRow>
             ))}
             </DataGrid>
-          </CardContent>
+          </CardTableContent>
         </Card> : null}
         {activeSection === 'code-platforms' ? <Card>
           <SectionCardHeader
@@ -332,7 +333,7 @@ export function SettingsPage() {
             description={t('settings.scmProvidersDescription')}
             actions={<Button size='sm' onClick={openAddScmDialog}><Waypoints data-icon='inline-start' />{t('common.add')}</Button>}
           />
-          <CardContent className='p-0'>
+          <CardTableContent variant='flush'>
             <DataGrid minWidth={840}>
               <DataGridHeader columns={scmColumns}>
                 <span>{t('settings.name')}</span>
@@ -362,7 +363,7 @@ export function SettingsPage() {
               </DataGridRow>
             ))}
             </DataGrid>
-          </CardContent>
+          </CardTableContent>
         </Card> : null}
         {activeSection === 'advanced-credentials' ? <Card>
           <SectionCardHeader
@@ -370,7 +371,7 @@ export function SettingsPage() {
             description={t('settings.advancedCredentialsDescription')}
             actions={<Button size='sm' onClick={openAddCredentialDialog}><KeyRound data-icon='inline-start' />{t('common.add')}</Button>}
           />
-          <CardContent className='p-0'>
+          <CardTableContent variant='flush'>
             <DataGrid minWidth={760}>
               <DataGridHeader columns={credentialColumns}>
                 <span>{t('settings.name')}</span>
@@ -400,7 +401,7 @@ export function SettingsPage() {
               </DataGridRow>
             ))}
             </DataGrid>
-          </CardContent>
+          </CardTableContent>
         </Card> : null}
         {activeSection === 'organization-login' ? <Card>
           <SectionCardHeader title={t('settings.organizationLogin')} description={t('settings.ldapLoginBehavior')} />

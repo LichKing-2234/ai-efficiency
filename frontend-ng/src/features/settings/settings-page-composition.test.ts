@@ -45,4 +45,12 @@ describe('Settings page composition', () => {
     expect(source).not.toContain("className='block truncate font-semibold text-sm'")
     expect(source).not.toContain("className='font-semibold text-sm'")
   })
+
+  test('uses shared table card content for settings data grids', () => {
+    const source = readFileSync(join(ROOT, 'features/settings/settings-page.tsx'), 'utf8')
+
+    expect(source).toContain("from '@/components/primitives/card-table-content'")
+    expect(source).toContain("<CardTableContent variant='flush'>")
+    expect(source).not.toContain("<CardContent className='p-0'>")
+  })
 })
