@@ -68,7 +68,7 @@ export function RepoCreateForm({
   sshHost: string
 }) {
   return (
-    <FieldGroup className='gap-3'>
+    <FieldGroup gap='compact'>
       <SelectField
         id='repo-create-provider'
         label={labels.provider}

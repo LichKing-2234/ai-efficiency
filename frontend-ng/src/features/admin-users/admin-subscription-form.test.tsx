@@ -55,6 +55,11 @@ describe('AdminSubscriptionForm', () => {
     expect(html).toContain('data-slot="action-group"')
   })
 
+  test('uses compact field group rhythm without local gap classes', () => {
+    expect(source).toContain("<FieldGroup gap='compact'>")
+    expect(source).not.toContain("<FieldGroup className='gap-3'>")
+  })
+
   test('uses shared block-end action alignment for the start job control', () => {
     const html = renderToStaticMarkup(
       <AdminSubscriptionForm

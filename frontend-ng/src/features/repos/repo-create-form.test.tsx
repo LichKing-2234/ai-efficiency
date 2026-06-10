@@ -90,6 +90,13 @@ describe('RepoCreateForm', () => {
 
     expect(source).toContain('<InsetPanel stack>')
   })
+
+  test('uses compact field group rhythm without local gap classes', () => {
+    const source = readFileSync(new URL('./repo-create-form.tsx', import.meta.url), 'utf8')
+
+    expect(source).toContain("<FieldGroup gap='compact'>")
+    expect(source).not.toContain("<FieldGroup className='gap-3'>")
+  })
 })
 
 function labels() {

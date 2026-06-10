@@ -71,7 +71,7 @@ export function AdminSubscriptionForm({
   subscriptionProviders: AdminAssignableSubscriptionProvider[]
 }) {
   return (
-    <FieldGroup className='gap-3'>
+    <FieldGroup gap='compact'>
       <ControlGrid variant='subscription'>
         <SelectField
           disabled={activeJobRunning}
