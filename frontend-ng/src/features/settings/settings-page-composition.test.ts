@@ -70,4 +70,20 @@ describe('Settings page composition', () => {
     expect(source).toContain('<SectionNavFrame>')
     expect(source).not.toContain("<Card className='p-2'>")
   })
+
+  test('uses compact icon row actions for settings provider tables', () => {
+    const source = readFileSync(join(ROOT, 'features/settings/settings-page.tsx'), 'utf8')
+
+    expect(source).toContain('SettingsRowActions')
+    expect(source).toContain('<SettingsIcon')
+    expect(source).toContain('<Trash2')
+    expect(source).toContain('aria-label={updateLabel}')
+    expect(source).toContain('aria-label={deleteLabel}')
+    expect(source).toContain("updateLabel={t('common.update')}")
+    expect(source).toContain("deleteLabel={t('common.delete')}")
+    expect(source).not.toContain("size='sm' variant='outline' onClick={() => openEditRelayDialog(provider)}>{t('common.update')}</Button>")
+    expect(source).not.toContain("size='sm' variant='outline' onClick={() => openEditScmDialog(provider)}>{t('common.update')}</Button>")
+    expect(source).not.toContain("trigger={<Button size='sm' variant='ghost' disabled={deleteRelay.isPending}>{t('common.delete')}</Button>}")
+    expect(source).not.toContain("trigger={<Button size='sm' variant='ghost' disabled={deleteScm.isPending}>{t('common.delete')}</Button>}")
+  })
 })

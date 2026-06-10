@@ -1,7 +1,7 @@
 import { createFileRoute, redirect } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Navigate, useNavigate, useSearch } from '@tanstack/react-router'
-import { Database, KeyRound, Layers, LockKeyhole, RefreshCw, Shield, Waypoints } from 'lucide-react'
+import { Database, KeyRound, Layers, LockKeyhole, RefreshCw, Settings as SettingsIcon, Shield, Trash2, Waypoints } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -50,9 +50,9 @@ const emptyRelayForm: RelayFormState = { name: '', display_name: '', base_url: '
 const emptyScmForm: ScmFormState = { name: '', type: 'github', base_url: '', api_credential_id: '', clone_protocol: 'https', clone_credential_id: '', ssh_host: '' }
 const emptyCredentialForm: CredentialFormState = { name: '', description: '', kind: 'secret_text', text: '', username: '', password: '', private_key: '', passphrase: '' }
 const emptyLDAPForm: LDAPFormState = { url: '', base_dn: '', bind_dn: '', bind_password: '', user_filter: '(uid=%s)', tls: false }
-const relayColumns = '1.2fr_1.8fr_0.7fr_0.8fr_190px'
-const scmColumns = '1.4fr_0.8fr_1.8fr_0.8fr_180px'
-const credentialColumns = '1.4fr_1fr_1fr_0.9fr_180px'
+const relayColumns = '1.2fr_1.8fr_0.7fr_0.8fr_86px'
+const scmColumns = '1.4fr_0.8fr_1.8fr_0.8fr_86px'
+const credentialColumns = '1.4fr_1fr_1fr_0.9fr_86px'
 
 export function SettingsPage() {
   const { t } = useI18n()
@@ -311,18 +311,16 @@ export function SettingsPage() {
                 <DataGridCell mono truncate tone='metadata'>{provider.base_url}</DataGridCell>
                 {provider.is_primary ? <span><Badge variant='ai'>{t('common.primary')}</Badge></span> : <DataGridCell tone='metadata'>-</DataGridCell>}
                 <span><StatusBadge value={provider.enabled ? 'active' : 'disabled'} /></span>
-                <ActionGroup>
-                  <Button size='sm' variant='outline' onClick={() => openEditRelayDialog(provider)}>{t('common.update')}</Button>
-                  <ConfirmAction
-                    trigger={<Button size='sm' variant='ghost' disabled={deleteRelay.isPending}>{t('common.delete')}</Button>}
-                    title={t('settings.deleteRelayProvider')}
-                    description={t('settings.deleteRelayProviderDescription', { name: provider.display_name || provider.name })}
-                    confirmLabel={t('common.delete')}
-                    cancelLabel={t('common.cancel')}
-                    onConfirm={() => deleteRelay.mutate(provider.id)}
-                    disabled={deleteRelay.isPending}
-                  />
-                </ActionGroup>
+                <SettingsRowActions
+                  updateLabel={t('common.update')}
+                  deleteLabel={t('common.delete')}
+                  cancelLabel={t('common.cancel')}
+                  deleteTitle={t('settings.deleteRelayProvider')}
+                  deleteDescription={t('settings.deleteRelayProviderDescription', { name: provider.display_name || provider.name })}
+                  deletePending={deleteRelay.isPending}
+                  onEdit={() => openEditRelayDialog(provider)}
+                  onDelete={() => deleteRelay.mutate(provider.id)}
+                />
               </DataGridRow>
             ))}
             </DataGrid>
@@ -349,18 +347,16 @@ export function SettingsPage() {
                 <span><Badge variant='secondary'>{provider.type}</Badge></span>
                 <DataGridCell mono truncate tone='metadata'>{provider.base_url}</DataGridCell>
                 <span><StatusBadge value={provider.status} /></span>
-                <ActionGroup>
-                  <Button size='sm' variant='outline' onClick={() => openEditScmDialog(provider)}>{t('common.update')}</Button>
-                  <ConfirmAction
-                    trigger={<Button size='sm' variant='ghost' disabled={deleteScm.isPending}>{t('common.delete')}</Button>}
-                    title={t('settings.deleteScmProvider')}
-                    description={t('settings.deleteScmProviderDescription', { name: provider.name })}
-                    confirmLabel={t('common.delete')}
-                    cancelLabel={t('common.cancel')}
-                    onConfirm={() => deleteScm.mutate(provider.id)}
-                    disabled={deleteScm.isPending}
-                  />
-                </ActionGroup>
+                <SettingsRowActions
+                  updateLabel={t('common.update')}
+                  deleteLabel={t('common.delete')}
+                  cancelLabel={t('common.cancel')}
+                  deleteTitle={t('settings.deleteScmProvider')}
+                  deleteDescription={t('settings.deleteScmProviderDescription', { name: provider.name })}
+                  deletePending={deleteScm.isPending}
+                  onEdit={() => openEditScmDialog(provider)}
+                  onDelete={() => deleteScm.mutate(provider.id)}
+                />
               </DataGridRow>
             ))}
             </DataGrid>
@@ -387,18 +383,16 @@ export function SettingsPage() {
                 <span><Badge variant='secondary'>{credential.kind}</Badge></span>
                 <DataGridCell numeric tone='metadata'>{number(credential.usage_count)}</DataGridCell>
                 <DataGridCell numeric tone='metadata'>{dateTime(credential.updated_at)}</DataGridCell>
-                <ActionGroup>
-                  <Button size='sm' variant='outline' onClick={() => openEditCredentialDialog(credential)}>{t('common.update')}</Button>
-                  <ConfirmAction
-                    trigger={<Button size='sm' variant='ghost' disabled={deleteCredential.isPending}>{t('common.delete')}</Button>}
-                    title={t('settings.deleteCredential')}
-                    description={t('settings.deleteCredentialDescription', { name: credential.name })}
-                    confirmLabel={t('common.delete')}
-                    cancelLabel={t('common.cancel')}
-                    onConfirm={() => deleteCredential.mutate(credential.id)}
-                    disabled={deleteCredential.isPending}
-                  />
-                </ActionGroup>
+                <SettingsRowActions
+                  updateLabel={t('common.update')}
+                  deleteLabel={t('common.delete')}
+                  cancelLabel={t('common.cancel')}
+                  deleteTitle={t('settings.deleteCredential')}
+                  deleteDescription={t('settings.deleteCredentialDescription', { name: credential.name })}
+                  deletePending={deleteCredential.isPending}
+                  onEdit={() => openEditCredentialDialog(credential)}
+                  onDelete={() => deleteCredential.mutate(credential.id)}
+                />
               </DataGridRow>
             ))}
             </DataGrid>
@@ -553,4 +547,45 @@ function settingsSectionIcon(section: SettingsSection) {
     case 'advanced-credentials':
       return LockKeyhole
   }
+}
+
+function SettingsRowActions({
+  updateLabel,
+  deleteLabel,
+  cancelLabel,
+  deleteTitle,
+  deleteDescription,
+  deletePending,
+  onEdit,
+  onDelete
+}: {
+  updateLabel: string
+  deleteLabel: string
+  cancelLabel: string
+  deleteTitle: string
+  deleteDescription: string
+  deletePending: boolean
+  onEdit: () => void
+  onDelete: () => void
+}) {
+  return (
+    <ActionGroup>
+      <Button aria-label={updateLabel} title={updateLabel} size='icon-sm' type='button' variant='ghost' onClick={onEdit}>
+        <SettingsIcon data-icon='icon' aria-hidden='true' />
+      </Button>
+      <ConfirmAction
+        trigger={
+          <Button aria-label={deleteLabel} title={deleteLabel} size='icon-sm' type='button' variant='ghost' disabled={deletePending}>
+            <Trash2 data-icon='icon' aria-hidden='true' />
+          </Button>
+        }
+        title={deleteTitle}
+        description={deleteDescription}
+        confirmLabel={deleteLabel}
+        cancelLabel={cancelLabel}
+        onConfirm={onDelete}
+        disabled={deletePending}
+      />
+    </ActionGroup>
+  )
 }
