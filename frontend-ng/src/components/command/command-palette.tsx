@@ -21,6 +21,7 @@ import {
   CommandList,
   CommandShortcut
 } from '@/components/ui/command'
+import { CommandFooter } from '@/components/primitives/command-footer'
 import type { MessageKey } from '@/lib/i18n/messages'
 import { useI18n } from '@/lib/i18n/i18n'
 
@@ -106,7 +107,7 @@ export function CommandPalette({
             </CommandGroup>
           ))}
         </CommandList>
-        <div className='border-t border-border px-4 py-2.5 text-[11px] text-[var(--ink-4)]'>{t('command.footer')}</div>
+        <CommandFooter>{t('command.footer')}</CommandFooter>
       </Command>
     </CommandDialog>
   )

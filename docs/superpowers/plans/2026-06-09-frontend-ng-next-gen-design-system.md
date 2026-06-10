@@ -185,6 +185,10 @@ Follow-up OAuth/auth redirect diagnosis fixed the `/oauth/device` unauthenticate
 
   Current implementation composes the shadcn/cmdk `Command` primitive inside the shared `Dialog`, with route commands grouped by i18n labels and admin commands hidden for non-admin users.
 
+  Follow-up command-footer audit implementation adds the shared `CommandFooter` primitive and migrates the command palette helper text away from page-local border, padding, and muted text classes while preserving the existing command grouping, admin visibility, keyboard trigger copy, and navigation behavior.
+
+  Follow-up command-footer audit evidence: `command-footer.test.tsx` and `command-palette.test.ts` were added/extended with a red-green cycle; they first failed because `command-footer.tsx` did not exist and `command-palette.tsx` still owned the footer class string. Focused verification passed with `bun test src/components/primitives/command-footer.test.tsx src/components/command/command-palette.test.ts`.
+
 - [x] **Step 6: Remove duplicate page titles incrementally**
 
   Keep generic page titles in the top bar. Feature pages should start with content or page-specific toolbars; Overview may keep its hero.
