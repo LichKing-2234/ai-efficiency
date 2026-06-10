@@ -36,4 +36,13 @@ describe('Settings page composition', () => {
     expect(source).not.toContain("className='block truncate text-muted-foreground text-xs'")
     expect(source).toContain('description={credential.description}')
   })
+
+  test('uses shared data grid cell identity slots for provider names', () => {
+    const source = readFileSync(join(ROOT, 'features/settings/settings-page.tsx'), 'utf8')
+
+    expect(source).toContain('description={provider.name}')
+    expect(source).toContain('<DataGridCell truncate>{provider.name}</DataGridCell>')
+    expect(source).not.toContain("className='block truncate font-semibold text-sm'")
+    expect(source).not.toContain("className='font-semibold text-sm'")
+  })
 })

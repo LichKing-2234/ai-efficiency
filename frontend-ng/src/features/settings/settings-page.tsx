@@ -305,10 +305,7 @@ export function SettingsPage() {
               </DataGridHeader>
             {(relay.data ?? []).map((provider) => (
               <DataGridRow key={provider.id} columns={relayColumns}>
-                <span className='min-w-0'>
-                  <span className='block truncate font-semibold text-sm'>{provider.display_name || provider.name}</span>
-                  <DataGridCell className='block' mono truncate tone='metadata'>{provider.name}</DataGridCell>
-                </span>
+                <DataGridCell description={provider.name} truncate>{provider.display_name || provider.name}</DataGridCell>
                 <DataGridCell mono truncate tone='metadata'>{provider.base_url}</DataGridCell>
                 <span>{provider.is_primary ? <Badge variant='ai'>{t('common.primary')}</Badge> : <span className='text-muted-foreground'>-</span>}</span>
                 <span><StatusBadge value={provider.enabled ? 'active' : 'disabled'} /></span>
@@ -346,7 +343,7 @@ export function SettingsPage() {
               </DataGridHeader>
             {(scm.data?.items ?? []).map((provider) => (
               <DataGridRow key={provider.id} columns={scmColumns}>
-                <span className='font-semibold text-sm'>{provider.name}</span>
+                <DataGridCell truncate>{provider.name}</DataGridCell>
                 <span><Badge variant='secondary'>{provider.type}</Badge></span>
                 <DataGridCell mono truncate tone='metadata'>{provider.base_url}</DataGridCell>
                 <span><StatusBadge value={provider.status} /></span>
