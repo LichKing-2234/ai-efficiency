@@ -2,6 +2,11 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, test } from 'vitest'
 import { ProviderTestForm } from './provider-test-form'
 import type { UserProviderModel, UserProviderTestResult } from '@/lib/api/types'
+import { readFileSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const source = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), 'provider-test-form.tsx'), 'utf8')
 
 const models: UserProviderModel[] = [
   { id: 'claude-sonnet', display_name: 'Claude Sonnet' },
@@ -25,6 +30,7 @@ describe('ProviderTestForm', () => {
     )
 
     expect(html).toContain('data-slot="field-group"')
+    expect(html).toContain('data-slot="control-grid"')
     expect(html).toContain('for="provider-test-model"')
     expect(html).toContain('for="provider-test-platform"')
     expect(html).toContain('for="provider-test-prompt"')
@@ -58,6 +64,12 @@ describe('ProviderTestForm', () => {
     expect(html).toContain('Create a key before testing.')
     expect(html).toContain('OK')
     expect(html).toContain('pong')
+  })
+
+  test('uses shared control grid for paired model and platform fields', () => {
+    expect(source).toContain("from '@/components/primitives/control-grid'")
+    expect(source).toContain("<ControlGrid variant='two-column'>")
+    expect(source).not.toContain("<div className='grid gap-3 md:grid-cols-2'>")
   })
 })
 

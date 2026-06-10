@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { FieldGroup } from '@/components/ui/field'
 import { ActionGroup } from '@/components/primitives/action-group'
 import { AppAlert } from '@/components/primitives/app-alert'
+import { ControlGrid } from '@/components/primitives/control-grid'
 import { InsetPanel } from '@/components/primitives/inset-panel'
 import { SelectField } from '@/components/primitives/select-field'
 import { TextField } from '@/components/primitives/text-field'
@@ -57,7 +58,7 @@ export function ProviderTestForm({
 }) {
   return (
     <FieldGroup>
-      <div className='grid gap-3 md:grid-cols-2'>
+      <ControlGrid variant='two-column'>
         {modelOptions.length ? (
           <SelectField
             id='provider-test-model'
@@ -77,7 +78,7 @@ export function ProviderTestForm({
           />
         )}
         <TextField id='provider-test-platform' label={labels.platform} value={platform} disabled />
-      </div>
+      </ControlGrid>
       {message ? <div className='text-muted-foreground text-sm'>{message}</div> : null}
       {error ? <AppAlert tone='error' title={error} /> : null}
       <TextField id='provider-test-prompt' label={labels.prompt} multiline value={prompt} onChange={onPromptChange} />

@@ -29,4 +29,16 @@ describe('ControlGrid', () => {
     expect(html).toContain('lg:grid-cols-[minmax(0,1fr)_auto_auto]')
     expect(html).toContain('Provider')
   })
+
+  test('renders two-column field controls for paired form inputs', () => {
+    const html = renderToStaticMarkup(
+      <ControlGrid variant='two-column'>
+        <span>Model</span>
+        <span>Platform</span>
+      </ControlGrid>
+    )
+
+    expect(html).toContain('md:grid-cols-2')
+    expect(html).toContain('Model')
+  })
 })
