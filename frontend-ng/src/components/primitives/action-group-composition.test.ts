@@ -14,6 +14,7 @@ describe('Action group composition', () => {
       const source = readFileSync(join(ROOT, file), 'utf8')
 
       return source.includes("className='flex min-w-0 flex-wrap justify-end gap-2'")
+        || source.includes("className='ml-auto flex items-center gap-2 text-sm'")
     }).map((file) => relative(ROOT, join(ROOT, file)))
 
     expect(offenders).toEqual([])

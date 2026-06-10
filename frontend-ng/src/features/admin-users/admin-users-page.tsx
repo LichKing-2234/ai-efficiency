@@ -264,10 +264,10 @@ export function AdminUsersPage() {
             {t('common.refresh')}
           </Button>
           {currentJob ? (
-            <div className='ml-auto flex items-center gap-2 text-sm'>
+            <ActionGroup className='ml-auto text-sm'>
               <StatusBadge value={currentJob.status} />
               <span className='tnum'>{number(currentJob.processed_count)}/{number(currentJob.total_count)}</span>
-            </div>
+            </ActionGroup>
           ) : null}
         </CardFilterBar>
         <DataGrid minWidth={1100}>
