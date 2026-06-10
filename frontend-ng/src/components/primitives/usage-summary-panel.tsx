@@ -10,6 +10,44 @@ export type UsageSummaryMetric = {
   numeric?: boolean
 }
 
+const usageSummaryPanelFooterClass = 'mt-4 flex flex-wrap items-center justify-between gap-3 text-sm'
+const usageSummaryPanelMetaClass = 'flex min-w-0 flex-wrap items-center gap-2'
+const usageSummaryPanelActionsClass = 'flex flex-wrap gap-2'
+
+function UsageSummaryPanelFooter({ children }: { children: React.ReactNode }) {
+  return (
+    <div
+      className={usageSummaryPanelFooterClass}
+      data-slot='usage-summary-panel-footer'
+    >
+      {children}
+    </div>
+  )
+}
+
+function UsageSummaryPanelMeta({
+  children,
+  summary
+}: {
+  children?: React.ReactNode
+  summary?: React.ReactNode
+}) {
+  return (
+    <div className={usageSummaryPanelMetaClass} data-slot='usage-summary-panel-meta'>
+      {children}
+      {summary ? <span className='text-muted-foreground'>{summary}</span> : null}
+    </div>
+  )
+}
+
+function UsageSummaryPanelActions({ children }: { children: React.ReactNode }) {
+  return (
+    <div className={usageSummaryPanelActionsClass} data-slot='usage-summary-panel-actions'>
+      {children}
+    </div>
+  )
+}
+
 export function UsageSummaryPanel({
   actions,
   className,
@@ -39,13 +77,10 @@ export function UsageSummaryPanel({
         ))}
       </div>
       {(status || summary || actions) ? (
-        <div className='mt-4 flex flex-wrap items-center justify-between gap-3 text-sm'>
-          <div className='flex min-w-0 flex-wrap items-center gap-2'>
-            {status}
-            {summary ? <span className='text-muted-foreground'>{summary}</span> : null}
-          </div>
-          {actions ? <div className='flex flex-wrap gap-2'>{actions}</div> : null}
-        </div>
+        <UsageSummaryPanelFooter>
+          <UsageSummaryPanelMeta summary={summary}>{status}</UsageSummaryPanelMeta>
+          {actions ? <UsageSummaryPanelActions>{actions}</UsageSummaryPanelActions> : null}
+        </UsageSummaryPanelFooter>
       ) : null}
     </InsetPanel>
   )
