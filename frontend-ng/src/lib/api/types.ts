@@ -666,6 +666,18 @@ export interface DeploymentStatus {
   update_status: UpdateStatus
 }
 
+export interface DeploymentHealthCheck {
+  name: string
+  status: string
+  message?: string
+}
+
+export interface DeploymentReadyReport {
+  status: string
+  version: VersionInfo
+  checks: DeploymentHealthCheck[]
+}
+
 export interface ApplyUpdateRequest {
   target_version: string
 }

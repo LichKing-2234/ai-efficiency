@@ -1,4 +1,4 @@
-import { apiFetch, encodeQuery } from '@/lib/api/client'
+import { apiFetch, apiRawFetch, encodeQuery } from '@/lib/api/client'
 import type {
   AdminManageSubscriptionsRequest,
   AdminManageSubscriptionsResponse,
@@ -13,6 +13,7 @@ import type {
   CredentialPayload,
   DashboardData,
   DeploymentStatus,
+  DeploymentReadyReport,
   GroupCredentialMutationResult,
   LDAPSettings,
   LoginRequest,
@@ -55,6 +56,9 @@ export const api = {
     bootstrap: () => apiFetch<AuthTokenPayload | { message: string }>('/api/auth/bootstrap', { method: 'POST' }),
     options: () => apiFetch<AuthOptions>('/auth/options'),
     me: () => apiFetch<User>('/auth/me')
+  },
+  health: {
+    ready: () => apiRawFetch<DeploymentReadyReport>('/health/ready')
   },
   dashboard: () => apiFetch<DashboardData>('/efficiency/dashboard'),
   userProviders: () => apiFetch<UserProvidersResponse>('/user/providers'),

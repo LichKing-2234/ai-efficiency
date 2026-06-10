@@ -1,7 +1,7 @@
 import type * as React from 'react'
 import { cn } from '@/lib/utils'
 
-type HealthStatus = 'danger' | 'healthy' | 'unknown' | 'warning'
+export type HealthStatus = 'danger' | 'healthy' | 'unknown' | 'warning'
 
 const healthDotClass = {
   danger: 'bg-destructive shadow-[0_0_0_3px_color-mix(in_oklab,var(--destructive)_14%,transparent)]',

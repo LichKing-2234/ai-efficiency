@@ -16,7 +16,7 @@ import { ConfirmAction } from '@/components/primitives/confirm-action'
 import { DataGrid, DataGridCell, DataGridHeader, DataGridRow } from '@/components/primitives/data-grid'
 import { Page } from '@/components/primitives/page'
 import { LoadingState } from '@/components/primitives/data-state'
-import { HealthFieldItem, HealthFieldList } from '@/components/primitives/health-field-list'
+import { HealthFieldItem, HealthFieldList, type HealthStatus } from '@/components/primitives/health-field-list'
 import { InfoTile, InfoTileGrid } from '@/components/primitives/info-tile'
 import { SectionCardHeader } from '@/components/primitives/section-card-header'
 import { SectionNav, SectionNavFrame, type SectionNavItem } from '@/components/primitives/section-nav'
@@ -29,7 +29,7 @@ import { CredentialForm } from './credential-form'
 import { LdapSettingsForm } from './ldap-settings-form'
 import { RelayProviderForm } from './relay-provider-form'
 import { ScmProviderForm } from './scm-provider-form'
-import type { Credential, RelayProvider, SCMProvider } from '@/lib/api/types'
+import type { Credential, DeploymentHealthCheck, RelayProvider, SCMProvider } from '@/lib/api/types'
 import {
   buildCredentialPayload,
   buildSettingsSectionSearch,
@@ -80,6 +80,7 @@ export function SettingsPage() {
   const scm = useQuery({ queryKey: ['settings', 'scm'], queryFn: () => api.settings.scmProviders(1, 100) })
   const credentials = useQuery({ queryKey: ['settings', 'credentials'], queryFn: api.settings.credentials })
   const deployment = useQuery({ queryKey: ['settings', 'deployment'], queryFn: api.settings.deployment })
+  const deploymentHealth = useQuery({ queryKey: ['health', 'ready'], queryFn: api.health.ready })
   const ldap = useQuery({ queryKey: ['settings', 'ldap'], queryFn: api.settings.ldap })
   const me = useQuery({ queryKey: ['auth', 'me'], queryFn: api.auth.me })
   const checkUpdate = useMutation({
@@ -421,9 +422,16 @@ export function SettingsPage() {
               <InfoTile label={t('settings.commit')} value={deployment.data?.version.commit || '-'} mono />
             </InfoTileGrid>
             <HealthFieldList>
-              <HealthFieldItem label={t('settings.current')} status={deployment.data?.version.version ? 'healthy' : 'unknown'} value={`v${deployment.data?.version.version || '-'}`} mono />
-              <HealthFieldItem label={t('settings.mode')} status={deployment.data?.mode ? 'healthy' : 'unknown'} value={deployment.data?.mode || t('common.unknown')} mono />
-              <HealthFieldItem label={t('settings.commit')} status={deployment.data?.version.commit ? 'healthy' : 'warning'} value={deployment.data?.version.commit || '-'} mono />
+              {deploymentHealthRows(deploymentHealth.data?.checks ?? []).map((check) => (
+                <HealthFieldItem
+                  key={check.name}
+                  label={deploymentHealthCheckLabel(check.name, t)}
+                  status={deploymentHealthCheckStatus(check)}
+                  value={deploymentHealthCheckValue(check, t)}
+                  mono
+                  truncate
+                />
+              ))}
             </HealthFieldList>
             {deployment.data?.update_available ? <Badge variant='ai'>{t('settings.updateAvailable', { version: deployment.data.latest_release?.version || '-' })}</Badge> : <Badge variant='success'>{t('settings.upToDate')}</Badge>}
             <ActionGroup wrap align='start'>
@@ -547,6 +555,44 @@ function settingsSectionIcon(section: SettingsSection) {
     case 'advanced-credentials':
       return LockKeyhole
   }
+}
+
+function deploymentHealthRows(checks: DeploymentHealthCheck[]) {
+  return checks.length ? checks : [{ name: 'runtime', status: 'unknown', message: '' }]
+}
+
+function deploymentHealthCheckLabel(name: string, t: ReturnType<typeof useI18n>['t']) {
+  switch (name) {
+    case 'database':
+      return t('settings.healthDatabase')
+    case 'redis':
+      return t('settings.healthRedis')
+    case 'relay':
+      return t('settings.healthRelay')
+    case 'runtime':
+      return t('settings.healthRuntime')
+    default:
+      return name.replaceAll('_', ' ')
+  }
+}
+
+function deploymentHealthCheckStatus(check: DeploymentHealthCheck): HealthStatus {
+  switch (check.status) {
+    case 'up':
+    case 'ready':
+      return 'healthy'
+    case 'down':
+      return 'danger'
+    case 'degraded':
+    case 'not_configured':
+      return 'warning'
+    default:
+      return 'unknown'
+  }
+}
+
+function deploymentHealthCheckValue(check: DeploymentHealthCheck, t: ReturnType<typeof useI18n>['t']) {
+  return check.message || check.status.replaceAll('_', ' ') || t('common.unknown')
 }
 
 function SettingsRowActions({

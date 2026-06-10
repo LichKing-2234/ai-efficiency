@@ -27,6 +27,22 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
   return payload?.data as T
 }
 
+export async function apiRawFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(path.startsWith('/api/') ? path : `/api/v1${path}`, {
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(init?.headers || {})
+    },
+    ...init
+  })
+  const payload = (await res.json().catch(() => null)) as T | { message?: string } | null
+  if (!res.ok) {
+    throw new ApiError(res.status, (payload as { message?: string } | null)?.message || `Request failed with ${res.status}`, payload)
+  }
+  return payload as T
+}
+
 export function encodeQuery(params?: Record<string, unknown>) {
   if (!params) return ''
   const query = new URLSearchParams()
