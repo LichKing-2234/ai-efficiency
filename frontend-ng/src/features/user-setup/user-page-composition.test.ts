@@ -17,4 +17,10 @@ describe('User setup page composition', () => {
     expect(source).not.toContain("<CardContent className='flex flex-col gap-2'>")
     expect(source).not.toContain("<CardContent className='flex flex-col gap-4'>")
   })
+
+  test('uses shared record metadata for provider base URLs', () => {
+    expect(source).toContain("from '@/components/primitives/record-meta'")
+    expect(source).toContain('<RecordMeta wrap>')
+    expect(source).not.toContain("description={<span className='mono break-all'>")
+  })
 })

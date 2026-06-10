@@ -17,6 +17,7 @@ import { PageEmpty } from '@/components/primitives/page-empty'
 import { Page } from '@/components/primitives/page'
 import { InfoTile, InfoTileGrid } from '@/components/primitives/info-tile'
 import { InsetPanel } from '@/components/primitives/inset-panel'
+import { RecordMeta } from '@/components/primitives/record-meta'
 import { SectionCardHeader } from '@/components/primitives/section-card-header'
 import { SelectableCard, SelectableCardHeader, SelectableCardMeta, SelectableCardStatus, SelectableCardTitle } from '@/components/primitives/selectable-card'
 import { Stack } from '@/components/primitives/stack'
@@ -195,7 +196,7 @@ export function UserPage() {
           <Card>
             <EntityCardHeader
               title={selectedProvider ? selectedProvider.display_name || selectedProvider.name : t('userSetup.aiAccess')}
-              description={<span className='mono break-all'>{selectedProvider?.base_url || t('userSetup.noProvider')}</span>}
+              description={<RecordMeta wrap>{selectedProvider?.base_url || t('userSetup.noProvider')}</RecordMeta>}
               actions={(
                 <ActionGroup wrap className='justify-start sm:justify-end'>
                   {(selectedProvider?.groups ?? []).map((group) => (

@@ -11,4 +11,11 @@ describe('RecordMeta', () => {
     expect(html).toContain('truncate')
     expect(html).toContain('git@example/repo')
   })
+
+  test('supports wrapping long metadata values', () => {
+    const html = renderToStaticMarkup(<RecordMeta wrap>https://example.com/api</RecordMeta>)
+
+    expect(html).toContain('break-all')
+    expect(html).not.toContain('truncate')
+  })
 })
