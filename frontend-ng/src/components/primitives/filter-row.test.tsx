@@ -27,4 +27,27 @@ describe('FilterRow', () => {
     expect(html).toContain('gap-3')
     expect(html).toContain('Claude')
   })
+
+  test('supports semantic spacing and distribution for toolbar headers', () => {
+    const html = renderToStaticMarkup(
+      <FilterRow justify='between' gap='lg'>
+        <span>Usage</span>
+        <button type='button'>Refresh</button>
+      </FilterRow>
+    )
+
+    expect(html).toContain('justify-between')
+    expect(html).toContain('gap-3')
+  })
+
+  test('supports compact label typography for dense controls', () => {
+    const html = renderToStaticMarkup(
+      <FilterRow tone='label'>
+        <span>Merged in</span>
+      </FilterRow>
+    )
+
+    expect(html).toContain('text-sm')
+    expect(html).toContain('Merged in')
+  })
 })

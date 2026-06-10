@@ -275,7 +275,7 @@ export function RepoDetailPage() {
         <EntityCardHeader
           title={t('repoDetail.pullRequests')}
           actions={(
-            <FilterRow className='text-sm'>
+            <FilterRow tone='label'>
               <FilterRowTitle title={t('repoDetail.mergedIn')} variant='label' />
               <ToolbarSelect
                 ariaLabel={t('repoDetail.mergedIn')}

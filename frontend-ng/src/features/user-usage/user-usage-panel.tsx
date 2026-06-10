@@ -51,7 +51,7 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
 
   return (
     <Stack className='stagger'>
-      <FilterRow className='justify-between gap-3'>
+      <FilterRow justify='between' gap='lg'>
         {!embedded ? (
           <FilterRowTitle title={t('usageDashboard.title')} description={t('usageDashboard.subtitle')} />
         ) : <div />}

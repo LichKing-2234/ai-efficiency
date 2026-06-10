@@ -23,8 +23,9 @@ describe('Repo detail page composition', () => {
   test('uses shared filter rows for pull request range controls', () => {
     expect(source).toContain("from '@/components/primitives/filter-row'")
     expect(source).toContain("from '@/components/primitives/filter-row-title'")
-    expect(source).toContain("<FilterRow className='text-sm'>")
+    expect(source).toContain("<FilterRow tone='label'>")
     expect(source).toContain("<FilterRowTitle title={t('repoDetail.mergedIn')} variant='label' />")
+    expect(source).not.toContain("<FilterRow className='text-sm'>")
     expect(source).not.toContain("<div className='flex flex-wrap items-center gap-2 text-sm'>")
     expect(source).not.toContain("<span className='text-muted-foreground'>{t('repoDetail.mergedIn')}</span>")
   })
