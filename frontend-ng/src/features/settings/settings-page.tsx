@@ -19,7 +19,7 @@ import { LoadingState } from '@/components/primitives/data-state'
 import { FieldItem, FieldList } from '@/components/primitives/field-list'
 import { InfoTile, InfoTileGrid } from '@/components/primitives/info-tile'
 import { SectionCardHeader } from '@/components/primitives/section-card-header'
-import { SectionNav, type SectionNavItem } from '@/components/primitives/section-nav'
+import { SectionNav, SectionNavFrame, type SectionNavItem } from '@/components/primitives/section-nav'
 import { Stack } from '@/components/primitives/stack'
 import { StatusBadge } from '@/components/primitives/status-badge'
 import { api } from '@/lib/api'
@@ -286,9 +286,9 @@ export function SettingsPage() {
   return (
     <Page className='stagger'>
       <div className='split-settings'>
-        <Card className='p-2'>
+        <SectionNavFrame>
           <SectionNav ariaLabel={t('settings.sections')} items={sectionItems} onChange={selectSection} value={activeSection} />
-        </Card>
+        </SectionNavFrame>
         <Stack className='min-w-0'>
         {activeSection === 'ai-services' ? <Card>
           <SectionCardHeader

@@ -62,4 +62,11 @@ describe('Settings page composition', () => {
     expect(source).toContain("<Stack className='min-w-0'>")
     expect(source).not.toContain("<div className='flex min-w-0 flex-col gap-4'>")
   })
+
+  test('uses the shared section navigation frame for the settings rail', () => {
+    const source = readFileSync(join(ROOT, 'features/settings/settings-page.tsx'), 'utf8')
+
+    expect(source).toContain('<SectionNavFrame>')
+    expect(source).not.toContain("<Card className='p-2'>")
+  })
 })

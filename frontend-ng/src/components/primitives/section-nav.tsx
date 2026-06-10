@@ -1,5 +1,6 @@
 import type { LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
 
 export type SectionNavItem<T extends string> = {
@@ -49,5 +50,19 @@ export function SectionNav<T extends string>({
         )
       })}
     </nav>
+  )
+}
+
+export function SectionNavFrame({
+  children,
+  className
+}: {
+  children: React.ReactNode
+  className?: string
+}) {
+  return (
+    <Card className={cn('p-2', className)} data-slot='section-nav-frame'>
+      {children}
+    </Card>
   )
 }
