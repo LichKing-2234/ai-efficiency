@@ -11,4 +11,10 @@ describe('User setup page composition', () => {
     expect(source).toContain("<ActionGroup wrap className='justify-start sm:justify-end'>")
     expect(source).not.toContain('actions={(selectedProvider?.groups ?? []).map((group) => (')
   })
+
+  test('uses shared card content stacks for setup card bodies', () => {
+    expect(source).toContain("from '@/components/primitives/card-content-stack'")
+    expect(source).not.toContain("<CardContent className='flex flex-col gap-2'>")
+    expect(source).not.toContain("<CardContent className='flex flex-col gap-4'>")
+  })
 })

@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { ActionGroup } from '@/components/primitives/action-group'
 import { AppAlert } from '@/components/primitives/app-alert'
+import { CardContentStack } from '@/components/primitives/card-content-stack'
 import { CommandAccordion } from '@/components/primitives/command-accordion'
 import { CommandStep } from '@/components/primitives/command-step'
 import { ConfirmAction } from '@/components/primitives/confirm-action'
@@ -143,7 +144,7 @@ export function UserPage() {
               description={t('userSetup.descriptionShort')}
               actions={<Badge variant='ai' className='shrink-0 tnum'>{t('userSetup.groupsReadyShort', { ready: readyGroups, total: totalGroups })}</Badge>}
             />
-            <CardContent className='flex flex-col gap-2'>
+            <CardContentStack gap='compact'>
               {providers.data?.message ? <InsetPanel muted>{providers.data.message}</InsetPanel> : null}
               {rows.map((provider) => (
                 <ProviderButton
@@ -169,14 +170,14 @@ export function UserPage() {
                   }}
                 />
               ))}
-            </CardContent>
+            </CardContentStack>
           </Card>
           <Card>
             <SectionCardHeader
               title={<span className='flex items-center gap-2'><Terminal className='text-[var(--ai)]' />{t('userSetup.cliWorkflow')}</span>}
               description={t('userSetup.cliDescription')}
             />
-            <CardContent className='flex flex-col gap-2'>
+            <CardContentStack gap='compact'>
               <CommandStep step={1} command={installCommand} copyLabel={t('userSetup.copy')} copiedMessage={t('userSetup.commandCopied')} />
               <CommandStep step={2} command='ae-cli login' copyLabel={t('userSetup.copy')} copiedMessage={t('userSetup.commandCopied')} />
               <CommandStep step={3} command={discoverCommand} disabled={!selectedProvider} copyLabel={t('userSetup.copy')} copiedMessage={t('userSetup.commandCopied')} />
@@ -186,7 +187,7 @@ export function UserPage() {
               <CommandAccordion title={t('userSetup.windowsInstaller')}>
                 <CommandStep command={windowsInstallCommand} copyLabel={t('userSetup.copy')} copiedMessage={t('userSetup.commandCopied')} />
               </CommandAccordion>
-            </CardContent>
+            </CardContentStack>
           </Card>
         </Stack>
         <Stack>
@@ -212,7 +213,7 @@ export function UserPage() {
                 </ActionGroup>
               )}
             />
-            <CardContent className='flex flex-col gap-4'>
+            <CardContentStack gap='normal'>
               {selectedGroup ? (
                 <>
                   <InfoTileGrid columns={3}>
@@ -265,7 +266,7 @@ export function UserPage() {
               ) : (
                 <PageEmpty title={t('userSetup.noAccessGroup')} />
               )}
-            </CardContent>
+            </CardContentStack>
           </Card>
           <Card>
             <SectionCardHeader title={t('userSetup.providerTest')} description={t('userSetup.providerTestDescription')} />

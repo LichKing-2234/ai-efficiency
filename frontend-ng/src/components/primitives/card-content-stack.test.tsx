@@ -27,4 +27,12 @@ describe('CardContentStack', () => {
     expect(html).toContain('max-w-xl')
     expect(html).toContain('gap-3')
   })
+
+  test('supports compact and normal rhythm variants', () => {
+    const compact = renderToStaticMarkup(<CardContentStack gap='compact'>Compact</CardContentStack>)
+    const normal = renderToStaticMarkup(<CardContentStack gap='normal'>Normal</CardContentStack>)
+
+    expect(compact).toContain('gap-2')
+    expect(normal).toContain('gap-4')
+  })
 })

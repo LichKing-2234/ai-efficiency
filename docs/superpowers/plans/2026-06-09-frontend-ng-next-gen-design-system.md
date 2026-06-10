@@ -344,6 +344,10 @@ Follow-up OAuth/auth redirect diagnosis fixed the `/oauth/device` unauthenticate
 
   Follow-up Stack audit evidence: `stack.test.tsx` and `stack-composition.test.ts` were added with a red-green cycle; the primitive test first failed because `stack.tsx` did not exist, and the composition guard first failed on `user-usage-panel.tsx` and `user-page.tsx` because both still owned standardized `gap-4` stack wrappers. Focused verification passed with `bun test src/components/primitives/stack.test.tsx src/components/primitives/stack-composition.test.ts src/features/user-usage/user-usage-panel-composition.test.ts src/features/user-usage/user-usage-state.test.ts src/features/user-setup/user-page-composition.test.ts src/features/user-setup/user-setup-state.test.ts`.
 
+  Follow-up card-content-stack gap audit implementation extends `CardContentStack` with compact, standard, and normal rhythm variants. My Setup account access, CLI workflow, and AI access card bodies now use the shared primitive instead of page-local `CardContent className='flex flex-col gap-*'` wrappers, preserving provider selection, CLI command copy rows, credential actions, empty access-group rendering, and provider-test behavior.
+
+  Follow-up card-content-stack gap audit evidence: `card-content-stack.test.tsx` was extended with a red-green cycle; it first failed because `CardContentStack` ignored `gap='compact'` and `gap='normal'`. `user-page-composition.test.ts` first failed because `user-page.tsx` did not import `CardContentStack` and still owned the standardized stacked card body classes. Focused verification passed with `bun test src/components/primitives/card-content-stack.test.tsx src/components/primitives/card-content-stack-composition.test.ts src/features/user-setup/user-page-composition.test.ts src/features/user-setup/user-setup-state.test.ts src/features/user-setup/provider-button.test.tsx src/features/user-setup/provider-test-form.test.tsx`.
+
 - [x] **Step 2: Repositories**
 
   Implement reference workbench styling while keeping add, delete, auto-bind, provider selection, webhook repair, and navigation behavior intact.
