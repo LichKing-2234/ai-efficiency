@@ -12,6 +12,7 @@ describe('Repo detail page composition', () => {
     expect(source).toContain("variant='plain'")
     expect(source).not.toContain("<a className='flex min-w-0 items-center gap-2 font-semibold")
     expect(source).not.toContain("className='border-0 bg-transparent p-0 hover:bg-transparent'")
+    expect(source).not.toContain("<span className='min-w-0'>")
   })
 
   test('uses the shared KPI grid utility for repository detail metrics', () => {
