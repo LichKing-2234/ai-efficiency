@@ -53,4 +53,12 @@ describe('Settings page composition', () => {
     expect(source).toContain("<CardTableContent variant='flush'>")
     expect(source).not.toContain("<CardContent className='p-0'>")
   })
+
+  test('uses shared stack rhythm for the active settings section body', () => {
+    const source = readFileSync(join(ROOT, 'features/settings/settings-page.tsx'), 'utf8')
+
+    expect(source).toContain("from '@/components/primitives/stack'")
+    expect(source).toContain("<Stack className='min-w-0'>")
+    expect(source).not.toContain("<div className='flex min-w-0 flex-col gap-4'>")
+  })
 })
