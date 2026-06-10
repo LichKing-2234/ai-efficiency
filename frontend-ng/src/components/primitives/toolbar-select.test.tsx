@@ -49,6 +49,20 @@ describe('ToolbarSelect', () => {
     expect(html).toContain('w-36')
   })
 
+  test('supports full-width controls for fluid grid cells', () => {
+    const html = renderToStaticMarkup(
+      <ToolbarSelect
+        ariaLabel='SCM provider'
+        width='full'
+        options={[{ label: 'GitHub', value: 'github' }]}
+        value='github'
+        onValueChange={() => undefined}
+      />
+    )
+
+    expect(html).toContain('w-full')
+  })
+
   test('supports disabled selects', () => {
     const html = renderToStaticMarkup(
       <ToolbarSelect

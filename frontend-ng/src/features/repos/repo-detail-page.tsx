@@ -254,13 +254,13 @@ export function RepoDetailPage() {
           <ControlGrid variant='inline-actions'>
             <ToolbarSelect
               ariaLabel={t('repoDetail.scmBinding')}
-              className='w-full'
               disabled={scm.isLoading}
               options={[
                 { value: 'none', label: t('repoDetail.noProviderBinding') },
                 ...(scm.data?.items ?? []).map((provider) => ({ value: String(provider.id), label: provider.name }))
               ]}
               value={selectedProviderId || 'none'}
+              width='full'
               onValueChange={(value) => setSelectedProviderId(value === 'none' ? '' : value)}
             />
             <Button variant='outline' onClick={() => saveBinding.mutate(selectedProviderId)} disabled={saveBinding.isPending}><Save data-icon='inline-start' />{t('repoDetail.saveBinding')}</Button>

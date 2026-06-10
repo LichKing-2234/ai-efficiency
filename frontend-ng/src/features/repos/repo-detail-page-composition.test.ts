@@ -30,6 +30,11 @@ describe('Repo detail page composition', () => {
     expect(source).not.toContain("<span className='text-muted-foreground'>{t('repoDetail.mergedIn')}</span>")
   })
 
+  test('uses semantic select sizing for SCM binding controls', () => {
+    expect(source).toContain("width='full'")
+    expect(source).not.toContain("className='w-full'")
+  })
+
   test('uses shared stacks for repair and expanded detail vertical rhythm', () => {
     expect(source).toContain("from '@/components/primitives/stack'")
     expect(source).not.toContain("<div className='flex flex-col gap-3'>")

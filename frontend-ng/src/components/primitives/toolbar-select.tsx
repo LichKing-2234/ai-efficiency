@@ -5,6 +5,7 @@ import type { SelectFieldOption } from './select-field'
 const toolbarSelectWidthClass = {
   auto: 'min-w-24',
   compact: 'w-36',
+  full: 'w-full',
   toolbar: 'w-[220px]'
 } as const
 
