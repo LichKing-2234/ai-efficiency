@@ -48,4 +48,10 @@ describe('Repos page composition', () => {
     expect(source).toContain('DataGridPrimaryLink')
     expect(source).not.toContain("className='block truncate font-semibold text-foreground text-sm hover:text-[var(--ai-deep)]'")
   })
+
+  test('uses shared empty-state primitives for repository empty content', () => {
+    expect(source).toContain("from '@/components/primitives/data-state'")
+    expect(source).toContain('<EmptyState')
+    expect(source).not.toContain("<CardContent className='p-8'>")
+  })
 })

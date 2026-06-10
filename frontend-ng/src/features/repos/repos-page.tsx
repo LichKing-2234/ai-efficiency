@@ -6,9 +6,8 @@ import { toast } from 'sonner'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
+import { Card } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ActionGroup } from '@/components/primitives/action-group'
 import { CardFilterBar } from '@/components/primitives/card-filter-bar'
@@ -16,7 +15,7 @@ import { CardPagerFooter } from '@/components/primitives/card-pager-footer'
 import { MetricCard } from '@/components/primitives/metric-card'
 import { AppAlert } from '@/components/primitives/app-alert'
 import { Page } from '@/components/primitives/page'
-import { LoadingState } from '@/components/primitives/data-state'
+import { EmptyState, LoadingState } from '@/components/primitives/data-state'
 import { DataGrid, DataGridCell, DataGridHeader, DataGridHeaderCell, DataGridPrimaryLink, DataGridRow } from '@/components/primitives/data-grid'
 import { RecordMeta } from '@/components/primitives/record-meta'
 import { SectionCardHeader } from '@/components/primitives/section-card-header'
@@ -267,16 +266,7 @@ export function ReposPage() {
         webhookRepairError={webhookRepairError}
       />
       {reposForProviders.length === 0 ? (
-        <Card>
-          <CardContent className='p-8'>
-            <Empty>
-              <EmptyHeader>
-                <EmptyTitle>{t('common.empty')}</EmptyTitle>
-                <EmptyDescription>{t('repos.healthHelp')}</EmptyDescription>
-              </EmptyHeader>
-            </Empty>
-          </CardContent>
-        </Card>
+        <EmptyState title={t('common.empty')} description={t('repos.healthHelp')} />
       ) : (
         <Card className='overflow-hidden'>
           <CardFilterBar>
@@ -313,9 +303,7 @@ export function ReposPage() {
               {repos.isLoading ? (
                 <LoadingState />
               ) : rows.length === 0 ? (
-                <CardContent className='p-8'>
-                  <Empty><EmptyHeader><EmptyTitle>{t('common.empty')}</EmptyTitle><EmptyDescription>{t('repos.healthHelp')}</EmptyDescription></EmptyHeader></Empty>
-                </CardContent>
+                <EmptyState title={t('common.empty')} description={t('repos.healthHelp')} />
               ) : (
                 <RepoTable
                   rows={rows}
