@@ -62,6 +62,12 @@ describe('Repos page composition', () => {
     expect(source).not.toContain('<DataGridPrimaryLink asChild>\\n              <Link')
   })
 
+  test('uses shared status clusters inside the repository inspect panel', () => {
+    expect(source).toContain("from '@/components/primitives/status-cluster'")
+    expect(source).toContain('<StatusCluster>')
+    expect(source).not.toContain("<div className='flex flex-wrap gap-2'>")
+  })
+
   test('uses shared empty-state primitives for repository empty content', () => {
     expect(source).toContain("from '@/components/primitives/data-state'")
     expect(source).toContain('<EmptyState')

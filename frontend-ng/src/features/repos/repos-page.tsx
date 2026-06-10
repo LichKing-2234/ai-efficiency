@@ -24,6 +24,7 @@ import { SectionNav, type SectionNavItem } from '@/components/primitives/section
 import { SlideOver } from '@/components/primitives/slide-over'
 import { SlideOverStack } from '@/components/primitives/slide-over-stack'
 import { StatusBadge } from '@/components/primitives/status-badge'
+import { StatusCluster } from '@/components/primitives/status-cluster'
 import { ToolbarSelect } from '@/components/primitives/toolbar-select'
 import { WorkbenchRail } from '@/components/primitives/workbench-rail'
 import { api } from '@/lib/api'
@@ -437,10 +438,10 @@ function RepoInspectSlideOver({
     >
       {repo ? (
         <SlideOverStack>
-          <div className='flex flex-wrap gap-2'>
+          <StatusCluster>
             <Badge variant={repo.binding_state === 'bound' ? 'pos' : 'warn'}>{repo.binding_state}</Badge>
             <StatusBadge value={repo.status} />
-          </div>
+          </StatusCluster>
           <InfoTileGrid>
             <InfoTile label={t('repos.bindingFilter')} value={repo.binding_state} accent='ai' />
             <InfoTile label={t('repos.scmProvider')} value={repo.edges?.scm_provider?.name || repo.scm_provider_id || '-'} />
