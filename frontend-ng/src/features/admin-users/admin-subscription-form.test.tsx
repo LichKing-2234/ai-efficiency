@@ -1,7 +1,12 @@
+import { readFileSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, test } from 'vitest'
 import { AdminSubscriptionForm } from './admin-subscription-form'
 import type { AdminAssignableSubscriptionProvider } from '@/lib/api/types'
+
+const source = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), 'admin-subscription-form.tsx'), 'utf8')
 
 const providers: AdminAssignableSubscriptionProvider[] = [
   {
@@ -48,6 +53,38 @@ describe('AdminSubscriptionForm', () => {
     expect(html).toContain('for="admin-subscription-group"')
     expect(html).toContain('for="admin-subscription-days"')
     expect(html).toContain('data-slot="action-group"')
+  })
+
+  test('uses shared block-end action alignment for the start job control', () => {
+    const html = renderToStaticMarkup(
+      <AdminSubscriptionForm
+        activeGroupId='group-a'
+        activeJobRunning={false}
+        activeProvider={providers[0]}
+        activeGroups={providers[0].groups}
+        canSubmit
+        confirmRemove={false}
+        days={30}
+        labels={labels()}
+        operation='add'
+        scope='selected'
+        selectedCount={2}
+        subscriptionProviders={providers}
+        onConfirmRemoveChange={() => undefined}
+        onDaysChange={() => undefined}
+        onGroupChange={() => undefined}
+        onOperationChange={() => undefined}
+        onProviderChange={() => undefined}
+        onStart={() => undefined}
+        onScopeChange={() => undefined}
+      />
+    )
+
+    expect(html).toContain('data-slot="action-group"')
+    expect(source).toContain("<ActionGroup align='block-end'>")
+    expect(source).not.toContain("<ActionGroup className='items-end'>")
+    expect(html).toContain('items-end')
+    expect(html).not.toContain('class="flex items-center gap-2 justify-end items-end"')
   })
 
   test('renders remove confirmation as a field instead of the days input', () => {

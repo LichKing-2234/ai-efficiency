@@ -138,7 +138,7 @@ export function AdminSubscriptionForm({
             onCheckedChange={onConfirmRemoveChange}
           />
         )}
-        <ActionGroup className='items-end'>
+        <ActionGroup align='block-end'>
           <Button variant='outline' disabled={!canSubmit} onClick={onStart}>
             {activeJobRunning ? labels.jobRunning : labels.startJob}
           </Button>

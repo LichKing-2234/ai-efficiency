@@ -10,7 +10,7 @@ export function ActionGroup({
   push = false,
   wrap = false
 }: {
-  align?: 'end' | 'responsive-end' | 'start'
+  align?: 'block-end' | 'end' | 'responsive-end' | 'start'
   children: React.ReactNode
   className?: string
   fit?: boolean
@@ -23,6 +23,7 @@ export function ActionGroup({
       data-slot='action-group'
       className={cn(
         'flex items-center gap-2',
+        align === 'block-end' && 'items-end justify-end',
         align === 'start' && 'justify-start',
         align === 'end' && 'justify-end',
         align === 'responsive-end' && 'justify-start sm:justify-end',

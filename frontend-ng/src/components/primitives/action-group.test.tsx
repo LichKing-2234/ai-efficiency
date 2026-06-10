@@ -88,4 +88,16 @@ describe('ActionGroup', () => {
     expect(html).toContain('ml-auto')
     expect(html).toContain('Add repository')
   })
+
+  test('supports block-end aligned form actions', () => {
+    const html = renderToStaticMarkup(
+      <ActionGroup align='block-end'>
+        <button type='button'>Start job</button>
+      </ActionGroup>
+    )
+
+    expect(html).toContain('items-end')
+    expect(html).toContain('justify-end')
+    expect(html).toContain('Start job')
+  })
 })
