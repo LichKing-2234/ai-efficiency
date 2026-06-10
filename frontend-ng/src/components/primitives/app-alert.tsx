@@ -1,5 +1,15 @@
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 
+const appAlertActionsClass = 'mt-3'
+
+function AppAlertActions({ children }: { children: React.ReactNode }) {
+  return (
+    <div className={appAlertActionsClass} data-slot='app-alert-actions'>
+      {children}
+    </div>
+  )
+}
+
 export function AppAlert({
   actions,
   title,
@@ -15,7 +25,7 @@ export function AppAlert({
     <Alert variant={tone === 'error' ? 'destructive' : 'default'} data-tone={tone}>
       <AlertTitle>{title}</AlertTitle>
       {description ? <AlertDescription>{description}</AlertDescription> : null}
-      {actions ? <div data-slot='app-alert-actions' className='mt-3'>{actions}</div> : null}
+      {actions ? <AppAlertActions>{actions}</AppAlertActions> : null}
     </Alert>
   )
 }

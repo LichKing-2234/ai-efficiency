@@ -27,4 +27,12 @@ describe('AppAlert', () => {
     expect(html).toContain('mt-3')
     expect(html).toContain('Open setup')
   })
+
+  test('keeps action spacing inside the primitive action slot', async () => {
+    const source = await import('node:fs/promises').then((fs) =>
+      fs.readFile(new URL('./app-alert.tsx', import.meta.url), 'utf8')
+    )
+
+    expect(source).not.toContain("data-slot='app-alert-actions' className='mt-3'")
+  })
 })
