@@ -309,7 +309,7 @@ export function SettingsPage() {
               <DataGridRow key={provider.id} columns={relayColumns}>
                 <DataGridCell description={provider.name} truncate>{provider.display_name || provider.name}</DataGridCell>
                 <DataGridCell mono truncate tone='metadata'>{provider.base_url}</DataGridCell>
-                <span>{provider.is_primary ? <Badge variant='ai'>{t('common.primary')}</Badge> : <span className='text-muted-foreground'>-</span>}</span>
+                {provider.is_primary ? <span><Badge variant='ai'>{t('common.primary')}</Badge></span> : <DataGridCell tone='metadata'>-</DataGridCell>}
                 <span><StatusBadge value={provider.enabled ? 'active' : 'disabled'} /></span>
                 <ActionGroup>
                   <Button size='sm' variant='outline' onClick={() => openEditRelayDialog(provider)}>{t('common.update')}</Button>

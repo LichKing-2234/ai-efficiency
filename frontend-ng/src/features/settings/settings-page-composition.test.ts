@@ -28,6 +28,7 @@ describe('Settings page composition', () => {
     expect(source).toContain('DataGridCell')
     expect(source).not.toContain("className='mono truncate text-muted-foreground text-xs'")
     expect(source).not.toContain("className='tnum text-muted-foreground text-xs'")
+    expect(source).not.toContain("<span className='text-muted-foreground'>-</span>")
   })
 
   test('uses shared data grid cell description slots for credential descriptions', () => {
