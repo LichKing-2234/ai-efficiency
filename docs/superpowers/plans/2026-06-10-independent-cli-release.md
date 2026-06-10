@@ -8,7 +8,7 @@
 
 **Tech Stack:** GitHub Actions, GoReleaser v2, Go 1.24+, Bash, PowerShell, GitHub Releases API.
 
-**Status:** Implementation in progress. First live CLI validation hit an OSS GoReleaser release-mode semver parsing failure on `ae-cli/v0.2.0-preview.1`; the first retry built artifacts successfully but the publish glob also matched GoReleaser binary directories. The workflow is being adjusted to publish only archive files plus `checksums.txt`. PowerShell syntax verification is not runnable in the current local environment because `pwsh` is not installed; this remains an unchecked verification gap approved by the user on 2026-06-10.
+**Status:** Implemented and live CLI release validation passed for `ae-cli/v0.2.0-preview.1`. PowerShell syntax verification is not runnable in the current local environment because `pwsh` is not installed; this remains an unchecked verification gap approved by the user on 2026-06-10.
 
 **Local Tooling Note:** `goreleaser` is not installed as a standalone binary in this environment. GoReleaser validation is run with `GOPROXY=https://goproxy.cn,direct go run github.com/goreleaser/goreleaser/v2@latest ...`.
 
@@ -1327,7 +1327,9 @@ git push origin refs/tags/ae-cli/v0.2.0-preview.1
 
 Expected: tag push succeeds and triggers only the `ae-cli Release` workflow.
 
-- [ ] **Step 3: Verify the CLI release workflow**
+Live validation note: the first tag push exposed OSS GoReleaser formal release-mode semver parsing for `ae-cli/v*`, and the first retry exposed an overly broad asset glob. No CLI release existed after those failed attempts. The validation tag was force-updated to the final workflow-fix commit and the successful run was `27258393688`.
+
+- [x] **Step 3: Verify the CLI release workflow**
 
 Run:
 
@@ -1346,7 +1348,9 @@ gh run watch "$run_id"
 
 Expected: workflow completes successfully.
 
-- [ ] **Step 4: Verify the platform release workflow was not triggered by the CLI tag**
+Observed: run `27258393688` completed successfully for `ae-cli/v0.2.0-preview.1` at `686d5b4c1f7ad4cea5f4313e338d7190efc4b68e`; all jobs passed.
+
+- [x] **Step 4: Verify the platform release workflow was not triggered by the CLI tag**
 
 Run:
 
@@ -1356,7 +1360,9 @@ gh run list --workflow "Release" --limit 5
 
 Expected: no run was created for `ae-cli/v0.2.0-preview.1`.
 
-- [ ] **Step 5: Verify CLI release assets**
+Observed: the latest platform `Release` workflow runs were all `v*` tags; no `Release` workflow run was created for `ae-cli/v0.2.0-preview.1`.
+
+- [x] **Step 5: Verify CLI release assets**
 
 Run:
 
@@ -1366,7 +1372,9 @@ gh release view ae-cli/v0.2.0-preview.1 --json tagName,name,isPrerelease,isDraft
 
 Expected: output includes `ae-cli_0.2.0-preview.1_<os>_<arch>` archives and `checksums.txt`, with no backend bundle assets.
 
-- [ ] **Step 6: Verify repository latest still points to a platform release**
+Observed: release `ae-cli/v0.2.0-preview.1` is a non-draft prerelease with only these assets: `ae-cli_0.2.0-preview.1_darwin_amd64.tar.gz`, `ae-cli_0.2.0-preview.1_darwin_arm64.tar.gz`, `ae-cli_0.2.0-preview.1_linux_amd64.tar.gz`, `ae-cli_0.2.0-preview.1_linux_arm64.tar.gz`, `ae-cli_0.2.0-preview.1_windows_amd64.zip`, and `checksums.txt`.
+
+- [x] **Step 6: Verify repository latest still points to a platform release**
 
 Run:
 
@@ -1376,7 +1384,9 @@ gh api repos/LichKing-2234/ai-efficiency/releases/latest --jq .tag_name
 
 Expected: output starts with `v`, not `ae-cli/`.
 
-- [ ] **Step 7: Verify installer can install the CLI release**
+Observed: repository latest returned `v0.1.0-preview.42`.
+
+- [x] **Step 7: Verify installer can install the CLI release**
 
 Run in a temporary HOME:
 
@@ -1393,7 +1403,9 @@ Expected:
 ae-cli v0.2.0-preview.1
 ```
 
-- [ ] **Step 8: Commit live validation evidence**
+Observed: installing into a temporary `HOME` from `ae-cli/v0.2.0-preview.1` succeeded and the installed binary printed `ae-cli v0.2.0-preview.1`.
+
+- [x] **Step 8: Commit live validation evidence**
 
 Update the top `Status` line in this plan to:
 

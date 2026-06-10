@@ -1,6 +1,6 @@
 # Independent CLI Release Design
 
-**Status:** Implemented release boundary; first live CLI release validation retry pending after direct GoReleaser publish rejected `ae-cli/v*` slash tag semver parsing and the first retry exposed an archive-only asset glob fix
+**Status:** Implemented and live CLI release validation passed for `ae-cli/v0.2.0-preview.1`
 
 ## Overview
 
