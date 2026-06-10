@@ -29,4 +29,21 @@ describe('InsetPanel', () => {
     expect(html).toContain('border-t-0')
     expect(html).toContain('p-4')
   })
+
+  test('supports a stacked content variant for form previews', () => {
+    const html = renderToStaticMarkup(
+      <InsetPanel stack>
+        <span>Repository preview</span>
+        <span>Clone URL</span>
+      </InsetPanel>
+    )
+
+    expect(html).toContain('data-slot="inset-panel"')
+    expect(html).toContain('Repository preview')
+    expect(html).toContain('Clone URL')
+    expect(html).toContain('flex')
+    expect(html).toContain('flex-col')
+    expect(html).toContain('gap-3')
+    expect(html).not.toContain('class="flex flex-col gap-3 text-sm"')
+  })
 })

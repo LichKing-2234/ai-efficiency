@@ -7,7 +7,8 @@ export function InsetPanel({
   comfortable = false,
   dataSlot = 'inset-panel',
   flush = false,
-  muted = false
+  muted = false,
+  stack = false
 }: {
   children: React.ReactNode
   className?: string
@@ -15,6 +16,7 @@ export function InsetPanel({
   dataSlot?: string
   flush?: boolean
   muted?: boolean
+  stack?: boolean
 }) {
   return (
     <div
@@ -25,6 +27,7 @@ export function InsetPanel({
         comfortable ? 'p-4 leading-7' : 'p-3',
         flush && 'p-4',
         muted && 'text-muted-foreground',
+        stack && 'flex flex-col gap-3',
         className
       )}
     >

@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, test } from 'vitest'
 import { RepoCreateForm } from './repo-create-form'
@@ -47,6 +48,10 @@ describe('RepoCreateForm', () => {
     expect(html).toContain('for="repo-create-url"')
     expect(html).toContain('for="repo-create-preview-clone-url"')
     expect(html).toContain('for="repo-create-default-branch"')
+    expect(html).toContain('data-slot="inset-panel"')
+    expect(html).toContain('flex')
+    expect(html).toContain('flex-col')
+    expect(html).toContain('gap-3')
     expect(html).toContain('data-slot="action-group"')
     expect(html).toContain('PROJ/service')
   })
@@ -78,6 +83,12 @@ describe('RepoCreateForm', () => {
 
     expect(html).toContain('for="repo-create-ssh-host"')
     expect(html).toContain('ssh://git@bitbucket.example.com/proj/service.git')
+  })
+
+  test('uses the shared inset panel stack variant for parsed repository previews', () => {
+    const source = readFileSync(new URL('./repo-create-form.tsx', import.meta.url), 'utf8')
+
+    expect(source).toContain('<InsetPanel stack>')
   })
 })
 

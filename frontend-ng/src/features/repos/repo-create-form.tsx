@@ -86,7 +86,7 @@ export function RepoCreateForm({
         onChange={onRepoUrlChange}
       />
       {parsedRepo ? (
-        <InsetPanel className='flex flex-col gap-3 text-sm'>
+        <InsetPanel stack>
           <FieldList>
             <FieldItem label={labels.fullName} value={`${parsedRepo.project}/${parsedRepo.repo}`} truncate />
             <FieldItem label={labels.provider} value={selectedProvider?.name || labels.noMatchingProvider} truncate />
