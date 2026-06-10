@@ -9,6 +9,7 @@ import { CardContentStack } from '@/components/primitives/card-content-stack'
 import { Ring } from '@/components/primitives/charts'
 import { ChecklistRow } from '@/components/primitives/checklist-row'
 import { EntityCardHeader } from '@/components/primitives/entity-card-header'
+import { HeroContent } from '@/components/primitives/hero-content'
 import { MetricCard } from '@/components/primitives/metric-card'
 import { Page } from '@/components/primitives/page'
 import { SectionCardHeader } from '@/components/primitives/section-card-header'
@@ -47,22 +48,20 @@ export function HomePage() {
   return (
     <Page>
       <Card variant='accent'>
-        <CardContent className='flex flex-col gap-5 p-6 lg:flex-row lg:items-center lg:justify-between'>
-          <div className='max-w-2xl'>
-            <Badge variant='ai'>{t('home.heroBadge')}</Badge>
-            <h1 className='mt-4 font-semibold text-2xl tracking-tight md:text-3xl'>{t('home.heroTitle')}</h1>
-            <p className='mt-2 text-muted-foreground text-sm'>
-              {t('home.roleLine', {
-                identity: me.data?.email || me.data?.username || t('auth.guest'),
-                role: me.data?.role || 'user',
-                source: me.data?.auth_source || t('common.unknown')
-              })}
-            </p>
-          </div>
-          <Button asChild>
-            <Link to='/user'>{t('home.openSetup')}<ArrowRightIcon data-icon='inline-end' /></Link>
-          </Button>
-        </CardContent>
+        <HeroContent
+          action={(
+            <Button asChild>
+              <Link to='/user'>{t('home.openSetup')}<ArrowRightIcon data-icon='inline-end' /></Link>
+            </Button>
+          )}
+          badge={<Badge variant='ai'>{t('home.heroBadge')}</Badge>}
+          description={t('home.roleLine', {
+            identity: me.data?.email || me.data?.username || t('auth.guest'),
+            role: me.data?.role || 'user',
+            source: me.data?.auth_source || t('common.unknown')
+          })}
+          title={t('home.heroTitle')}
+        />
       </Card>
 
       <UserUsagePanel embedded />
