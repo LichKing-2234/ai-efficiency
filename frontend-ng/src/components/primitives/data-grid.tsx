@@ -228,13 +228,22 @@ export function DataGridRecordCell({
 
 export function DataGridRowAffordance({
   children,
-  className
+  className,
+  tone = 'subtle'
 }: {
   children: React.ReactNode
   className?: string
+  tone?: 'muted' | 'subtle'
 }) {
   return (
-    <span className={cn('flex justify-end text-[var(--ink-4)] [&_svg]:size-4', className)} data-slot='data-grid-row-affordance'>
+    <span
+      className={cn(
+        'flex justify-end [&_svg]:size-4',
+        tone === 'muted' ? 'text-[var(--ink-3)]' : 'text-[var(--ink-4)]',
+        className
+      )}
+      data-slot='data-grid-row-affordance'
+    >
       {children}
     </span>
   )

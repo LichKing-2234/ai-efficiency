@@ -192,15 +192,21 @@ describe('DataGrid', () => {
   })
 
   test('renders standardized row affordances for inspectable rows', () => {
-    const html = renderToStaticMarkup(
+    const defaultHtml = renderToStaticMarkup(
       <DataGridRowAffordance>
         <ChevronRightIcon />
       </DataGridRowAffordance>
     )
+    const mutedHtml = renderToStaticMarkup(
+      <DataGridRowAffordance tone='muted'>
+        <ChevronRightIcon />
+      </DataGridRowAffordance>
+    )
 
-    expect(html).toContain('data-slot="data-grid-row-affordance"')
-    expect(html).toContain('justify-end')
-    expect(html).toContain('text-[var(--ink-4)]')
-    expect(html).toContain('size-4')
+    expect(defaultHtml).toContain('data-slot="data-grid-row-affordance"')
+    expect(defaultHtml).toContain('justify-end')
+    expect(defaultHtml).toContain('text-[var(--ink-4)]')
+    expect(defaultHtml).toContain('size-4')
+    expect(mutedHtml).toContain('text-[var(--ink-3)]')
   })
 })

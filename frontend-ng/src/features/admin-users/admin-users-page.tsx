@@ -13,7 +13,7 @@ import { CardContentStack } from '@/components/primitives/card-content-stack'
 import { CardFilterBar } from '@/components/primitives/card-filter-bar'
 import { DataGridCheckbox } from '@/components/primitives/data-grid-checkbox'
 import { CardPagerFooter } from '@/components/primitives/card-pager-footer'
-import { DataGrid, DataGridCell, DataGridHeader, DataGridIdentityCell, DataGridRow } from '@/components/primitives/data-grid'
+import { DataGrid, DataGridCell, DataGridHeader, DataGridIdentityCell, DataGridRow, DataGridRowAffordance } from '@/components/primitives/data-grid'
 import { Page } from '@/components/primitives/page'
 import { LoadingState } from '@/components/primitives/data-state'
 import { InsetPanel } from '@/components/primitives/inset-panel'
@@ -334,9 +334,9 @@ export function AdminUsersPage() {
                     {t('adminUsers.copyPlaintext')}
                   </Button>
                 </ActionGroup>
-                <span className='flex justify-end text-[var(--ink-3)]'>
+                <DataGridRowAffordance tone='muted'>
                   <ChevronRight aria-hidden='true' />
-                </span>
+                </DataGridRowAffordance>
                 {plaintextConfirmUserId === user.id ? (
                   <RowInsetPanel indent='selection' maxWidth='xl'>
                     <FieldDescription>{t('adminUsers.plaintextWarning')}</FieldDescription>
