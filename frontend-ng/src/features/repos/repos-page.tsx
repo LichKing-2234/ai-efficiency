@@ -17,7 +17,7 @@ import { MetricCard } from '@/components/primitives/metric-card'
 import { AppAlert } from '@/components/primitives/app-alert'
 import { Page } from '@/components/primitives/page'
 import { LoadingState } from '@/components/primitives/data-state'
-import { DataGrid, DataGridCell, DataGridHeader, DataGridHeaderCell, DataGridRow } from '@/components/primitives/data-grid'
+import { DataGrid, DataGridCell, DataGridHeader, DataGridHeaderCell, DataGridPrimaryLink, DataGridRow } from '@/components/primitives/data-grid'
 import { RecordMeta } from '@/components/primitives/record-meta'
 import { SectionCardHeader } from '@/components/primitives/section-card-header'
 import { SectionNav, type SectionNavItem } from '@/components/primitives/section-nav'
@@ -402,9 +402,11 @@ function RepoTable({
       {rows.map((repo) => (
         <DataGridRow columns={columns} key={repo.id}>
           <span className='min-w-0'>
-            <Link className='block truncate font-semibold text-foreground text-sm hover:text-[var(--ai-deep)]' to='/repos/$id' params={{ id: String(repo.id) }}>
-              {repo.full_name || repo.name}
-            </Link>
+            <DataGridPrimaryLink asChild>
+              <Link to='/repos/$id' params={{ id: String(repo.id) }}>
+                {repo.full_name || repo.name}
+              </Link>
+            </DataGridPrimaryLink>
             <RecordMeta>{repo.clone_url}</RecordMeta>
           </span>
           <span><Badge variant={repo.binding_state === 'bound' ? 'pos' : 'warn'}>{repo.binding_state}</Badge></span>

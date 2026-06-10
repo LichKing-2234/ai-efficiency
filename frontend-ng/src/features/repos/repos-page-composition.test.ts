@@ -43,4 +43,9 @@ describe('Repos page composition', () => {
     expect(source).toContain("<DataGridHeaderCell align='right' />")
     expect(source).not.toContain("<span className='text-right' />")
   })
+
+  test('uses shared data grid primary links for repository navigation', () => {
+    expect(source).toContain('DataGridPrimaryLink')
+    expect(source).not.toContain("className='block truncate font-semibold text-foreground text-sm hover:text-[var(--ai-deep)]'")
+  })
 })

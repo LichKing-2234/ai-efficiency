@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, test } from 'vitest'
-import { DataGrid, DataGridCell, DataGridHeader, DataGridHeaderCell, DataGridRow, DataGridStatusRow } from './data-grid'
+import { DataGrid, DataGridCell, DataGridHeader, DataGridHeaderCell, DataGridPrimaryLink, DataGridRow, DataGridStatusRow } from './data-grid'
 
 describe('DataGrid', () => {
   test('renders reference table shells with shared grid template classes', () => {
@@ -130,5 +130,25 @@ describe('DataGrid', () => {
     expect(html).toContain('font-semibold')
     expect(html).toContain('text-muted-foreground')
     expect(html).not.toContain('block truncate text-muted-foreground text-xs')
+  })
+
+  test('renders standardized primary record links', () => {
+    const html = renderToStaticMarkup(
+      <DataGrid>
+        <DataGridRow columns='1fr'>
+          <DataGridPrimaryLink asChild>
+            <a href='/repos/42'>Platform Repository</a>
+          </DataGridPrimaryLink>
+        </DataGridRow>
+      </DataGrid>
+    )
+
+    expect(html).toContain('data-slot="data-grid-primary-link"')
+    expect(html).toContain('href="/repos/42"')
+    expect(html).toContain('Platform Repository')
+    expect(html).toContain('block')
+    expect(html).toContain('truncate')
+    expect(html).toContain('font-semibold')
+    expect(html).toContain('hover:text-[var(--ai-deep)]')
   })
 })

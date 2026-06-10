@@ -1,3 +1,5 @@
+import { Slot } from 'radix-ui'
+import type * as React from 'react'
 import { cn } from '@/lib/utils'
 
 function normalizeColumns(columns: string) {
@@ -183,5 +185,25 @@ export function DataGridCell({
     >
       {children}
     </span>
+  )
+}
+
+export function DataGridPrimaryLink({
+  asChild = false,
+  children,
+  className,
+  ...props
+}: React.ComponentProps<'a'> & {
+  asChild?: boolean
+}) {
+  const Comp = asChild ? Slot.Root : 'a'
+  return (
+    <Comp
+      className={cn('block truncate font-semibold text-foreground text-sm transition hover:text-[var(--ai-deep)]', className)}
+      data-slot='data-grid-primary-link'
+      {...props}
+    >
+      {children}
+    </Comp>
   )
 }
