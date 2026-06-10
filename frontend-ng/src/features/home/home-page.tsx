@@ -12,6 +12,7 @@ import { EntityCardHeader } from '@/components/primitives/entity-card-header'
 import { HeroContent } from '@/components/primitives/hero-content'
 import { MetricCard } from '@/components/primitives/metric-card'
 import { Page } from '@/components/primitives/page'
+import { ProgressFraction } from '@/components/primitives/progress-fraction'
 import { SectionCardHeader } from '@/components/primitives/section-card-header'
 import { LoadingState } from '@/components/primitives/data-state'
 import { UsageActivityRow } from '@/components/primitives/usage-activity-row'
@@ -106,10 +107,7 @@ export function HomePage() {
           <EntityCardHeader
             leading={<Ring color='var(--ai)' size={66} stroke={7} value={setupProgress.ratio}>
               <div className='text-center'>
-                <div className='font-bold text-base leading-none tnum'>
-                  {setupProgress.ready}
-                  <span className='text-[11px] text-[var(--ink-3)]'>/{setupProgress.total}</span>
-                </div>
+                <ProgressFraction ready={setupProgress.ready} total={setupProgress.total} />
               </div>
             </Ring>}
             title={t('home.setupStatus')}

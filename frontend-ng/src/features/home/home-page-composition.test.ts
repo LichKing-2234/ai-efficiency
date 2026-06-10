@@ -27,4 +27,10 @@ describe('Home page composition', () => {
     expect(source).toContain("<CardContentStack gap='none'>")
     expect(source).not.toContain("<CardContent className='flex flex-col'>")
   })
+
+  test('uses shared progress fraction typography for setup status counts', () => {
+    expect(source).toContain("from '@/components/primitives/progress-fraction'")
+    expect(source).toContain('<ProgressFraction ready={setupProgress.ready} total={setupProgress.total} />')
+    expect(source).not.toContain("<span className='text-[11px] text-[var(--ink-3)]'>/{setupProgress.total}</span>")
+  })
 })
