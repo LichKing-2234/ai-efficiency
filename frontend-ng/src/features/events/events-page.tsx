@@ -19,7 +19,6 @@ import { MetricCard } from '@/components/primitives/metric-card'
 import { OptionList } from '@/components/primitives/option-list'
 import { Page } from '@/components/primitives/page'
 import { LoadingState } from '@/components/primitives/data-state'
-import { RecordMeta } from '@/components/primitives/record-meta'
 import { SearchField } from '@/components/primitives/search-field'
 import { SectionEyebrow } from '@/components/primitives/section-eyebrow'
 import { SlideOver } from '@/components/primitives/slide-over'
@@ -273,10 +272,7 @@ function EventRow({ row, maxTokens, onSelect }: { row: ToolUsageEventRow; maxTok
       onClick={onSelect}
     >
       <ToolGlyph tool={row.tool} />
-      <span className='min-w-0'>
-        <span className='block truncate font-medium text-foreground text-sm'>{row.repo_name || t('events.unlinked')}</span>
-        <RecordMeta>{row.source_basename || row.tool_session_id}</RecordMeta>
-      </span>
+      <DataGridCell description={row.source_basename || row.tool_session_id} truncate>{row.repo_name || t('events.unlinked')}</DataGridCell>
       <TokenMeter label={compact(tokens)} max={maxTokens} value={tokens} />
       <DataGridCell align='right' numeric tone='muted'>{number(row.request_count)}</DataGridCell>
       <DataGridCell align='right' emphasis numeric>{number(row.credit_usage)}</DataGridCell>

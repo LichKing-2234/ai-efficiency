@@ -26,10 +26,17 @@ describe('Events page composition', () => {
     expect(source).not.toContain("<div className='flex flex-col gap-[18px]'>")
   })
 
-  test('uses shared record metadata for dense secondary row labels', () => {
-    expect(source).toContain("from '@/components/primitives/record-meta'")
-    expect(source).toContain('<RecordMeta>')
+  test('keeps event row secondary metadata inside shared data grid cells', () => {
+    expect(source).toContain('description={row.source_basename || row.tool_session_id}')
+    expect(source).not.toContain("from '@/components/primitives/record-meta'")
+    expect(source).not.toContain('<RecordMeta>')
     expect(source).not.toContain("<span className='mono block truncate text-[11px] text-[var(--ink-4)]'>")
+  })
+
+  test('uses shared data grid description cells for event repository metadata', () => {
+    expect(source).toContain('DataGridCell')
+    expect(source).not.toContain("<span className='min-w-0'>")
+    expect(source).not.toContain("<span className='block truncate font-medium text-foreground text-sm'>{row.repo_name || t('events.unlinked')}</span>")
   })
 
   test('uses shared data grid cells for dense numeric and datetime columns', () => {
