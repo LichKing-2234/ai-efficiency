@@ -328,6 +328,10 @@ Follow-up OAuth/auth redirect diagnosis fixed the `/oauth/device` unauthenticate
 
   Follow-up SlideOver stack audit evidence: `slide-over-stack.test.tsx` and the extended `events-page-composition.test.ts` were added with a red-green cycle; the primitive test first failed because `slide-over-stack.tsx` did not exist, and the Events composition guard first failed because `events-page.tsx` did not import or render `SlideOverStack`. Focused verification passed with `bun test src/components/primitives/slide-over-stack.test.tsx src/features/events/events-page-composition.test.ts src/features/events/event-filters.test.ts`. `agent-browser doctor --offline --quick` reported no hard failures but many stale version-mismatched sessions, so browser interaction was skipped for this narrow detail-stack slice; HTTP smoke returned `200 text/html` for `/events`, while visible detail content-state rendering remains covered by the primitive/composition tests, TypeScript, and build.
 
+  Follow-up pager-footer audit implementation adds a `CardPagerFooter` composition guard so feature pages no longer repeat card footer border and padding classes at call sites. Events and Admin Users now rely on the shared pager primitive and underlying shadcn `CardFooter` defaults while preserving page summary copy, page-size selection, previous/next handlers, and disabled states.
+
+  Follow-up pager-footer audit evidence: `card-pager-footer-composition.test.ts` was added with a red-green cycle; it first failed on `events-page.tsx` and `admin-users-page.tsx` because both still passed `className='border-border border-t p-3'`, then passed after the duplicate classes were removed. Focused verification passed with `bun test src/components/primitives/card-pager-footer-composition.test.ts src/components/primitives/card-pager-footer.test.tsx`.
+
 - [x] **Step 2: Repositories**
 
   Implement reference workbench styling while keeping add, delete, auto-bind, provider selection, webhook repair, and navigation behavior intact.

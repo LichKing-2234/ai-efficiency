@@ -345,7 +345,6 @@ export function AdminUsersPage() {
           ))}
         </DataGrid>
         <CardPagerFooter
-          className='border-border border-t p-3'
           summary={t('adminUsers.pageOfUsers', { page, totalPages, total: number(total) })}
           previous={<Button variant='outline' size='sm' disabled={page <= 1 || users.isFetching} onClick={() => setPage((value) => Math.max(1, value - 1))}>{t('common.previous')}</Button>}
           next={<Button variant='outline' size='sm' disabled={page >= totalPages || users.isFetching} onClick={() => setPage((value) => value + 1)}>{t('common.next')}</Button>}

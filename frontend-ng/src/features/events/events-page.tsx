@@ -232,7 +232,6 @@ export function EventsPage() {
           {rows.length === 0 ? <div className='px-6 py-10 text-center text-muted-foreground text-sm'>{t('common.empty')}</div> : null}
         </DataGrid>
         <CardPagerFooter
-          className='border-border border-t p-3'
           summary={t('events.total', { total: number(total) })}
           previous={(
             <>

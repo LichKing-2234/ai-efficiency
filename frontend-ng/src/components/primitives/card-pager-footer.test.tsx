@@ -18,6 +18,9 @@ describe('CardPagerFooter', () => {
     expect(html).toContain('Previous')
     expect(html).toContain('Next')
     expect(html).toContain('justify-between')
+    expect(html).toContain('border-border')
+    expect(html).toContain('border-t')
+    expect(html).toContain('p-3')
   })
 
   test('passes layout class names through to the card footer slot', () => {
