@@ -28,4 +28,16 @@ describe('ActionGroup', () => {
     expect(html).toContain('flex-wrap')
     expect(html).toContain('Check update')
   })
+
+  test('supports start-aligned inline action rows', () => {
+    const html = renderToStaticMarkup(
+      <ActionGroup align='start'>
+        <button type='button'>Repair webhook</button>
+      </ActionGroup>
+    )
+
+    expect(html).toContain('justify-start')
+    expect(html).not.toContain('justify-end')
+    expect(html).toContain('Repair webhook')
+  })
 })

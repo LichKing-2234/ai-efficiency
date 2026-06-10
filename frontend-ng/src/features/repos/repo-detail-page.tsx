@@ -212,9 +212,11 @@ export function RepoDetailPage() {
                   onCheckedChange={setWebhookRepairForce}
                 />
               ) : null}
-              <Button className='w-fit' disabled={repairWebhook.isPending} onClick={() => repairWebhook.mutate()}>
-                {repairWebhook.isPending ? t('repoDetail.webhookRepairing') : t('repoDetail.repairWebhook')}
-              </Button>
+              <ActionGroup align='start'>
+                <Button disabled={repairWebhook.isPending} onClick={() => repairWebhook.mutate()}>
+                  {repairWebhook.isPending ? t('repoDetail.webhookRepairing') : t('repoDetail.repairWebhook')}
+                </Button>
+              </ActionGroup>
             </Stack>
           </AlertDescription>
         </Alert>

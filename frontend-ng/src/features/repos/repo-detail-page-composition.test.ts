@@ -35,6 +35,11 @@ describe('Repo detail page composition', () => {
     expect(source).not.toContain("<div className='flex flex-col gap-4'>")
   })
 
+  test('uses shared action groups for webhook repair actions', () => {
+    expect(source).toContain("<ActionGroup align='start'>")
+    expect(source).not.toContain("className='w-fit'")
+  })
+
   test('uses the shared inset panel flush variant for expanded pull request details', () => {
     expect(source).toContain('<InsetPanel flush>')
     expect(source).not.toContain("className='rounded-none border-x-0 border-t-0 p-4'")
