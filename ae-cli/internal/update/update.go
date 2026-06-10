@@ -16,9 +16,10 @@ import (
 )
 
 const (
-	defaultReleaseAPIURL          = "https://api.github.com/repos/LichKing-2234/ai-efficiency/releases/latest"
-	defaultInstallScriptURLFormat = "https://raw.githubusercontent.com/LichKing-2234/ai-efficiency/%s/ae-cli/%s"
-	updateRequestTimeout          = 10 * time.Second
+	cliReleaseTagPrefix     = "ae-cli/"
+	defaultReleaseAPIURL    = "https://api.github.com/repos/LichKing-2234/ai-efficiency/releases?per_page=100"
+	defaultInstallScriptURL = "https://raw.githubusercontent.com/LichKing-2234/ai-efficiency/main/ae-cli/%s"
+	updateRequestTimeout    = 10 * time.Second
 )
 
 var (
@@ -59,7 +60,7 @@ type InstallResult struct {
 	Status           string
 }
 
-type latestReleaseResponse struct {
+type releaseResponse struct {
 	TagName string `json:"tag_name"`
 	HTMLURL string `json:"html_url"`
 }
@@ -74,8 +75,12 @@ func CheckForUpdate(ctx context.Context, opts CheckOptions) (CheckResult, error)
 	if err != nil {
 		return CheckResult{}, err
 	}
+	latestReleaseTag, latestVersionTag, err := normalizeCLIReleaseTag(latest.TagName)
+	if err != nil {
+		return CheckResult{}, fmt.Errorf("normalize latest tag: %w", err)
+	}
 
-	comparison, err := compareVersions(latest.TagName, currentTag)
+	comparison, err := compareVersions(latestVersionTag, currentTag)
 	if err != nil {
 		return CheckResult{}, err
 	}
@@ -92,8 +97,8 @@ func CheckForUpdate(ctx context.Context, opts CheckOptions) (CheckResult, error)
 
 	return CheckResult{
 		CurrentVersion:  currentTag,
-		LatestVersion:   latest.TagName,
-		LatestTag:       latest.TagName,
+		LatestVersion:   latestVersionTag,
+		LatestTag:       latestReleaseTag,
 		ReleaseURL:      latest.HTMLURL,
 		UpdateAvailable: updateAvailable,
 		Status:          status,
@@ -112,7 +117,7 @@ func InstallLatest(ctx context.Context, opts InstallOptions) (InstallResult, err
 	if !info.UpdateAvailable && !opts.Force {
 		return InstallResult{
 			PreviousVersion:  info.CurrentVersion,
-			InstalledVersion: info.LatestTag,
+			InstalledVersion: info.LatestVersion,
 			Updated:          false,
 			Status:           info.Status,
 		}, nil
@@ -169,13 +174,13 @@ func InstallLatest(ctx context.Context, opts InstallOptions) (InstallResult, err
 
 	return InstallResult{
 		PreviousVersion:  info.CurrentVersion,
-		InstalledVersion: info.LatestTag,
+		InstalledVersion: info.LatestVersion,
 		Updated:          true,
 		Status:           "updated",
 	}, nil
 }
 
-func fetchLatestRelease(ctx context.Context, overrideURL string) (*latestReleaseResponse, error) {
+func fetchLatestRelease(ctx context.Context, overrideURL string) (*releaseResponse, error) {
 	url := strings.TrimSpace(overrideURL)
 	if url == "" {
 		url = defaultReleaseAPIURL
@@ -194,15 +199,47 @@ func fetchLatestRelease(ctx context.Context, overrideURL string) (*latestRelease
 		return nil, fmt.Errorf("fetch latest release: unexpected status %s", resp.Status)
 	}
 
-	var payload latestReleaseResponse
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read latest release response: %w", err)
+	}
+
+	var releases []releaseResponse
+	if err := json.Unmarshal(data, &releases); err == nil {
+		for _, release := range releases {
+			if _, _, tagErr := normalizeCLIReleaseTag(release.TagName); tagErr == nil {
+				return &release, nil
+			}
+		}
+		return nil, fmt.Errorf("no ae-cli release found")
+	}
+
+	var payload releaseResponse
+	if err := json.Unmarshal(data, &payload); err != nil {
 		return nil, fmt.Errorf("decode latest release: %w", err)
 	}
-	payload.TagName, err = normalizeTag(payload.TagName)
-	if err != nil {
-		return nil, fmt.Errorf("normalize latest tag: %w", err)
+	if _, _, err := normalizeCLIReleaseTag(payload.TagName); err != nil {
+		return nil, fmt.Errorf("no ae-cli release found")
 	}
 	return &payload, nil
+}
+
+func normalizeCLIReleaseTag(value string) (releaseTag string, versionTag string, err error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return "", "", fmt.Errorf("version must not be empty")
+	}
+	versionPart := trimmed
+	if strings.HasPrefix(versionPart, cliReleaseTagPrefix) {
+		versionPart = strings.TrimPrefix(versionPart, cliReleaseTagPrefix)
+	} else if strings.HasPrefix(versionPart, "v") {
+		return "", "", fmt.Errorf("release tag %q is not an ae-cli release", trimmed)
+	}
+	versionTag, err = normalizeTag(versionPart)
+	if err != nil {
+		return "", "", err
+	}
+	return cliReleaseTagPrefix + versionTag, versionTag, nil
 }
 
 func downloadInstallScript(ctx context.Context, scriptURL string) ([]byte, error) {
@@ -231,7 +268,7 @@ func installScriptURLForTag(tag string) string {
 	if runtime.GOOS == "windows" {
 		scriptName = "install.ps1"
 	}
-	return fmt.Sprintf(defaultInstallScriptURLFormat, tag, scriptName)
+	return fmt.Sprintf(defaultInstallScriptURL, scriptName)
 }
 
 func ensureOfficialInstallPath(currentPath, home string) error {

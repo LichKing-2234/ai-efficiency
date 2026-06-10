@@ -16,7 +16,7 @@ import (
 func TestCheckForUpdateReportsAvailableRelease(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"tag_name":"v0.2.0","html_url":"https://example.com/releases/v0.2.0"}`))
+		_, _ = w.Write([]byte(`[{"tag_name":"ae-cli/v0.2.0","html_url":"https://example.com/releases/ae-cli/v0.2.0"}]`))
 	}))
 	defer srv.Close()
 
@@ -33,8 +33,64 @@ func TestCheckForUpdateReportsAvailableRelease(t *testing.T) {
 	if result.Status != "update_available" {
 		t.Fatalf("status = %q, want update_available", result.Status)
 	}
-	if result.LatestTag != "v0.2.0" {
-		t.Fatalf("latest tag = %q, want v0.2.0", result.LatestTag)
+	if result.LatestTag != "ae-cli/v0.2.0" {
+		t.Fatalf("latest tag = %q, want ae-cli/v0.2.0", result.LatestTag)
+	}
+	if result.LatestVersion != "v0.2.0" {
+		t.Fatalf("latest version = %q, want v0.2.0", result.LatestVersion)
+	}
+}
+
+func TestCheckForUpdateSelectsLatestIndependentCLIRelease(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[
+			{"tag_name":"v0.1.0-preview.42","html_url":"https://example.com/releases/v0.1.0-preview.42"},
+			{"tag_name":"ae-cli/v0.2.0","html_url":"https://example.com/releases/ae-cli/v0.2.0"},
+			{"tag_name":"ae-cli/v0.1.9","html_url":"https://example.com/releases/ae-cli/v0.1.9"}
+		]`))
+	}))
+	defer srv.Close()
+
+	result, err := CheckForUpdate(context.Background(), CheckOptions{
+		CurrentVersion: "v0.1.0",
+		ReleaseAPIURL:  srv.URL,
+	})
+	if err != nil {
+		t.Fatalf("CheckForUpdate: %v", err)
+	}
+	if !result.UpdateAvailable {
+		t.Fatal("expected update to be available")
+	}
+	if result.LatestVersion != "v0.2.0" {
+		t.Fatalf("latest version = %q, want v0.2.0", result.LatestVersion)
+	}
+	if result.LatestTag != "ae-cli/v0.2.0" {
+		t.Fatalf("latest tag = %q, want ae-cli/v0.2.0", result.LatestTag)
+	}
+	if result.ReleaseURL != "https://example.com/releases/ae-cli/v0.2.0" {
+		t.Fatalf("release URL = %q", result.ReleaseURL)
+	}
+}
+
+func TestCheckForUpdateRejectsReleaseListWithoutCLIRelease(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[
+			{"tag_name":"v0.1.0-preview.42","html_url":"https://example.com/releases/v0.1.0-preview.42"}
+		]`))
+	}))
+	defer srv.Close()
+
+	_, err := CheckForUpdate(context.Background(), CheckOptions{
+		CurrentVersion: "v0.1.0",
+		ReleaseAPIURL:  srv.URL,
+	})
+	if err == nil {
+		t.Fatal("expected missing CLI release to fail")
+	}
+	if !strings.Contains(err.Error(), "no ae-cli release found") {
+		t.Fatalf("error = %q, want no ae-cli release found", err)
 	}
 }
 
@@ -64,7 +120,7 @@ func TestCheckForUpdateKeepsPlainReleaseFetchError(t *testing.T) {
 func TestInstallLatestDoesNotRequireExecutablePathWhenAlreadyUpToDate(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"tag_name":"v0.2.0"}`))
+		_, _ = w.Write([]byte(`[{"tag_name":"ae-cli/v0.2.0"}]`))
 	}))
 	defer srv.Close()
 
@@ -116,7 +172,7 @@ func TestInstallLatestRunsInstallerScriptForManagedUnixInstall(t *testing.T) {
 		switch r.URL.Path {
 		case "/latest":
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"tag_name":"v0.2.0"}`))
+			_, _ = w.Write([]byte(`[{"tag_name":"ae-cli/v0.2.0"}]`))
 		case "/install.sh":
 			w.Header().Set("Content-Type", "text/plain")
 			_, _ = w.Write([]byte(`#!/usr/bin/env bash
@@ -161,10 +217,10 @@ echo "installed $1"
 	if err != nil {
 		t.Fatalf("ReadFile(installer arg): %v", err)
 	}
-	if string(data) != "v0.2.0" {
-		t.Fatalf("installer arg = %q, want v0.2.0", string(data))
+	if string(data) != "ae-cli/v0.2.0" {
+		t.Fatalf("installer arg = %q, want ae-cli/v0.2.0", string(data))
 	}
-	if !strings.Contains(out.String(), "installed v0.2.0") {
+	if !strings.Contains(out.String(), "installed ae-cli/v0.2.0") {
 		t.Fatalf("output = %q, want installer output", out.String())
 	}
 }
@@ -173,7 +229,7 @@ func TestInstallLatestRejectsUnofficialInstallPath(t *testing.T) {
 	home := t.TempDir()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"tag_name":"v0.2.0"}`))
+		_, _ = w.Write([]byte(`[{"tag_name":"ae-cli/v0.2.0"}]`))
 	}))
 	defer srv.Close()
 

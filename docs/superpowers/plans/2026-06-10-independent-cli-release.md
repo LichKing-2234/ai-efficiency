@@ -83,7 +83,7 @@
 - Modify: `ae-cli/internal/update/update_test.go`
 - Test: `ae-cli/internal/update/update_test.go`
 
-- [ ] **Step 1: Add failing tests for independent CLI discovery**
+- [x] **Step 1: Add failing tests for independent CLI discovery**
 
 Append these tests to `ae-cli/internal/update/update_test.go`:
 
@@ -142,7 +142,7 @@ func TestCheckForUpdateRejectsReleaseListWithoutCLIRelease(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Update the existing update tests to use release-list responses**
+- [x] **Step 2: Update the existing update tests to use release-list responses**
 
 In `TestCheckForUpdateReportsAvailableRelease`, replace the response body with:
 
@@ -193,7 +193,7 @@ if !strings.Contains(out.String(), "installed ae-cli/v0.2.0") {
 }
 ```
 
-- [ ] **Step 3: Run the focused failing tests**
+- [x] **Step 3: Run the focused failing tests**
 
 Run:
 
@@ -203,7 +203,7 @@ cd ae-cli && go test ./internal/update
 
 Expected: FAIL. The failures should show that `fetchLatestRelease` cannot decode an array response or still normalizes `ae-cli/v0.2.0` as an unsupported version.
 
-- [ ] **Step 4: Implement CLI release-list discovery**
+- [x] **Step 4: Implement CLI release-list discovery**
 
 In `ae-cli/internal/update/update.go`, replace the default release API URL and release response type with:
 
@@ -331,7 +331,7 @@ func installScriptURLForTag(tag string) string {
 }
 ```
 
-- [ ] **Step 5: Run update package tests**
+- [x] **Step 5: Run update package tests**
 
 Run:
 
@@ -341,7 +341,7 @@ cd ae-cli && go test ./internal/update
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit the Go update discovery change**
+- [x] **Step 6: Commit the Go update discovery change**
 
 Run:
 
