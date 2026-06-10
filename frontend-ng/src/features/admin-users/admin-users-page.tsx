@@ -13,8 +13,7 @@ import { CardContentStack } from '@/components/primitives/card-content-stack'
 import { CardFilterBar } from '@/components/primitives/card-filter-bar'
 import { DataGridCheckbox } from '@/components/primitives/data-grid-checkbox'
 import { CardPagerFooter } from '@/components/primitives/card-pager-footer'
-import { DataGrid, DataGridCell, DataGridHeader, DataGridRow } from '@/components/primitives/data-grid'
-import { IdentityAvatar } from '@/components/primitives/identity-avatar'
+import { DataGrid, DataGridCell, DataGridHeader, DataGridIdentityCell, DataGridRow } from '@/components/primitives/data-grid'
 import { Page } from '@/components/primitives/page'
 import { LoadingState } from '@/components/primitives/data-state'
 import { InsetPanel } from '@/components/primitives/inset-panel'
@@ -300,10 +299,7 @@ export function AdminUsersPage() {
                   onCheckedChange={(checked) => setSelected((value) => checked ? [...value, user.id] : value.filter((id) => id !== user.id))}
                 />
               </span>
-              <span className='flex min-w-0 items-center gap-3'>
-                <IdentityAvatar value={user.username || user.email} />
-                <DataGridCell description={user.email} truncate>{user.username}</DataGridCell>
-              </span>
+              <DataGridIdentityCell description={user.email} value={user.username || user.email}>{user.username}</DataGridIdentityCell>
               <span><Badge variant={user.role === 'admin' ? 'ai' : 'secondary'}>{user.role}</Badge></span>
               <span className='truncate text-sm'>{user.auth_source}</span>
               <DataGridCell mono truncate tone='metadata'>{user.relay_user_id || '-'}</DataGridCell>

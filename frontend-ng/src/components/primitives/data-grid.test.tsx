@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, test } from 'vitest'
-import { DataGrid, DataGridCell, DataGridHeader, DataGridHeaderCell, DataGridPrimaryLink, DataGridRow, DataGridStatusRow } from './data-grid'
+import { DataGrid, DataGridCell, DataGridHeader, DataGridHeaderCell, DataGridIdentityCell, DataGridPrimaryLink, DataGridRow, DataGridStatusRow } from './data-grid'
 
 describe('DataGrid', () => {
   test('renders reference table shells with shared grid template classes', () => {
@@ -130,6 +130,23 @@ describe('DataGrid', () => {
     expect(html).toContain('font-semibold')
     expect(html).toContain('text-muted-foreground')
     expect(html).not.toContain('block truncate text-muted-foreground text-xs')
+  })
+
+  test('renders standardized identity cells with avatar and description slots', () => {
+    const html = renderToStaticMarkup(
+      <DataGrid>
+        <DataGridRow columns='1fr'>
+          <DataGridIdentityCell description='alice@example.com' value='Alice'>Alice</DataGridIdentityCell>
+        </DataGridRow>
+      </DataGrid>
+    )
+
+    expect(html).toContain('data-slot="data-grid-identity-cell"')
+    expect(html).toContain('data-slot="identity-avatar"')
+    expect(html).toContain('data-slot="data-grid-cell-primary"')
+    expect(html).toContain('Alice')
+    expect(html).toContain('alice@example.com')
+    expect(html).toContain('flex min-w-0 items-center gap-3')
   })
 
   test('renders standardized primary record links', () => {

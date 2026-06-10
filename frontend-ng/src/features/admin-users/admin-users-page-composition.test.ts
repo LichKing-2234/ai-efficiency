@@ -19,8 +19,10 @@ describe('Admin users page composition', () => {
   })
 
   test('uses shared data grid cell description slots for user identity metadata', () => {
+    expect(source).toContain('DataGridIdentityCell')
     expect(source).not.toContain("className='block truncate text-muted-foreground text-xs'")
     expect(source).toContain('description={user.email}')
+    expect(source).not.toContain("className='flex min-w-0 items-center gap-3'")
   })
 
   test('uses shadcn field description for subscription summary copy', () => {
