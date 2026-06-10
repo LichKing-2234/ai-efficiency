@@ -3,6 +3,16 @@ import { useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
+const slideOverBodyClass = 'min-h-0 flex-1 overflow-y-auto p-[18px]'
+
+function SlideOverBody({ children }: { children: React.ReactNode }) {
+  return (
+    <div className={slideOverBodyClass} data-slot='slide-over-body'>
+      {children}
+    </div>
+  )
+}
+
 export function SlideOver({
   open,
   title,
@@ -56,7 +66,7 @@ export function SlideOver({
             <XIcon />
           </Button>
         </header>
-        <div className='min-h-0 flex-1 overflow-y-auto p-[18px]'>{children}</div>
+        <SlideOverBody>{children}</SlideOverBody>
       </section>
     </div>
   )
