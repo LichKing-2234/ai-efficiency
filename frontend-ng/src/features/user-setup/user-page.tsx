@@ -18,7 +18,7 @@ import { Page } from '@/components/primitives/page'
 import { InfoTile, InfoTileGrid } from '@/components/primitives/info-tile'
 import { InsetPanel } from '@/components/primitives/inset-panel'
 import { SectionCardHeader } from '@/components/primitives/section-card-header'
-import { SelectableCard } from '@/components/primitives/selectable-card'
+import { SelectableCard, SelectableCardHeader, SelectableCardMeta, SelectableCardStatus, SelectableCardTitle } from '@/components/primitives/selectable-card'
 import { Stack } from '@/components/primitives/stack'
 import { LoadingState } from '@/components/primitives/data-state'
 import { api } from '@/lib/api'
@@ -321,12 +321,12 @@ export function ProviderButton({
       active={active}
       onClick={onClick}
     >
-      <div className='flex items-center justify-between gap-2'>
-        <div className='min-w-0 truncate font-semibold text-sm'>{name}</div>
+      <SelectableCardHeader>
+        <SelectableCardTitle>{name}</SelectableCardTitle>
         {primary ? <Badge variant='ai'>{labels.primary}</Badge> : null}
-      </div>
-      <div className='mono mt-1 truncate text-muted-foreground text-[11px]'>{baseUrl}</div>
-      <div className={ready === total ? 'mt-2 font-medium text-[var(--pos)] text-xs' : 'mt-2 font-medium text-[var(--warn)] text-xs'}>{labels.groupsReady}</div>
+      </SelectableCardHeader>
+      <SelectableCardMeta>{baseUrl}</SelectableCardMeta>
+      <SelectableCardStatus tone={ready === total ? 'success' : 'warning'}>{labels.groupsReady}</SelectableCardStatus>
     </SelectableCard>
   )
 }

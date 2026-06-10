@@ -25,3 +25,58 @@ export function SelectableCard({
     </button>
   )
 }
+
+export function SelectableCardHeader({
+  className,
+  ...props
+}: React.ComponentProps<'div'>) {
+  return (
+    <div
+      data-slot='selectable-card-header'
+      className={cn('flex items-center justify-between gap-2', className)}
+      {...props}
+    />
+  )
+}
+
+export function SelectableCardTitle({
+  className,
+  ...props
+}: React.ComponentProps<'div'>) {
+  return (
+    <div
+      data-slot='selectable-card-title'
+      className={cn('min-w-0 truncate font-semibold text-sm', className)}
+      {...props}
+    />
+  )
+}
+
+export function SelectableCardMeta({
+  className,
+  ...props
+}: React.ComponentProps<'div'>) {
+  return (
+    <div
+      data-slot='selectable-card-meta'
+      className={cn('mono mt-1 truncate text-muted-foreground text-[11px]', className)}
+      {...props}
+    />
+  )
+}
+
+export function SelectableCardStatus({
+  className,
+  tone = 'success',
+  ...props
+}: React.ComponentProps<'div'> & {
+  tone?: 'success' | 'warning'
+}) {
+  return (
+    <div
+      data-slot='selectable-card-status'
+      className={cn('mt-2 font-medium text-xs', tone === 'success' ? 'text-[var(--pos)]' : 'text-[var(--warn)]', className)}
+      {...props}
+    />
+  )
+}
