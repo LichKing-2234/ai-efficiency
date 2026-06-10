@@ -35,4 +35,14 @@ describe('CardContentStack', () => {
     expect(compact).toContain('gap-2')
     expect(normal).toContain('gap-4')
   })
+
+  test('supports a no-gap list rhythm for adjacent activity rows', () => {
+    const html = renderToStaticMarkup(<CardContentStack gap='none'>Activity</CardContentStack>)
+
+    expect(html).toContain('flex')
+    expect(html).toContain('flex-col')
+    expect(html).not.toContain('gap-2')
+    expect(html).not.toContain('gap-3')
+    expect(html).not.toContain('gap-4')
+  })
 })

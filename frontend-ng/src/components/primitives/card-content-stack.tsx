@@ -3,6 +3,7 @@ import { CardContent } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
 
 const cardContentStackGapClasses = {
+  none: '',
   compact: 'gap-2',
   standard: 'gap-3',
   normal: 'gap-4'

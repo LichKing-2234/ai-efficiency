@@ -21,4 +21,10 @@ describe('Home page composition', () => {
     expect(source).toContain('<Empty>')
     expect(source).not.toContain("<div className='text-muted-foreground text-sm'>{t('common.empty')}</div>")
   })
+
+  test('uses shared card content stack for the recent usage activity list', () => {
+    expect(source).toContain("from '@/components/primitives/card-content-stack'")
+    expect(source).toContain("<CardContentStack gap='none'>")
+    expect(source).not.toContain("<CardContent className='flex flex-col'>")
+  })
 })

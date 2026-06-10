@@ -2,7 +2,7 @@ import { Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowRightIcon, FolderGit2Icon, GitPullRequestIcon, PlugZapIcon, WorkflowIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
+import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Empty, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
 import { CardContentStack } from '@/components/primitives/card-content-stack'
@@ -132,7 +132,7 @@ export function HomePage() {
               </Button>
             )}
           />
-          <CardContent className='flex flex-col'>
+          <CardContentStack gap='none'>
             {recentEvents.length ? recentEvents.map((event, index) => (
               <HomeActivityRow key={event.id} event={buildHomeActivitySummary(event)} first={index === 0} locale={locale} />
             )) : (
@@ -142,7 +142,7 @@ export function HomePage() {
                 </EmptyHeader>
               </Empty>
             )}
-          </CardContent>
+          </CardContentStack>
         </Card>
       </div>
     </Page>
