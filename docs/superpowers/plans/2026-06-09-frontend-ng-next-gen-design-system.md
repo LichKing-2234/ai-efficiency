@@ -189,6 +189,10 @@ Follow-up OAuth/auth redirect diagnosis fixed the `/oauth/device` unauthenticate
 
   Follow-up command-footer audit evidence: `command-footer.test.tsx` and `command-palette.test.ts` were added/extended with a red-green cycle; they first failed because `command-footer.tsx` did not exist and `command-palette.tsx` still owned the footer class string. Focused verification passed with `bun test src/components/primitives/command-footer.test.tsx src/components/command/command-palette.test.ts`.
 
+  Follow-up topbar-title audit implementation adds the shared `TopbarTitle` shell primitive and migrates AppShell section/title typography away from local topbar markup while preserving `pageMeta` routing, i18n labels, sidebar controls, and command trigger behavior.
+
+  Follow-up topbar-title audit evidence: `topbar-title.test.tsx` and `app-shell-composition.test.ts` were added with a red-green cycle; they first failed because `topbar-title.tsx` did not exist and `app-shell.tsx` still owned the local section/title typography classes, then passed after migration. Focused verification passed with `bun test src/components/layout/topbar-title.test.tsx src/components/layout/app-shell-composition.test.ts`.
+
 - [x] **Step 6: Remove duplicate page titles incrementally**
 
   Keep generic page titles in the top bar. Feature pages should start with content or page-specific toolbars; Overview may keep its hero.

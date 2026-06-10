@@ -29,6 +29,7 @@ import type { Locale } from '@/lib/i18n/messages'
 import { useI18n } from '@/lib/i18n/i18n'
 import { cn } from '@/lib/utils'
 import { navItems, pageMeta } from './navigation'
+import { TopbarTitle } from './topbar-title'
 
 const LOCALES: Array<{ value: Locale; labelKey: 'locale.english' | 'locale.chinese'; shortKey: 'locale.englishShort' | 'locale.chineseShort' }> = [
   { value: 'en-US', labelKey: 'locale.english', shortKey: 'locale.englishShort' },
@@ -190,10 +191,7 @@ export function AppShell({ user, children }: { user: User | null; children: Reac
             <PanelLeftIcon />
           </Button>
           <div className='hidden h-6 w-px bg-border md:block' />
-          <div className='min-w-0'>
-            <div className='font-semibold text-[10.5px] text-[var(--ink-4)] uppercase tracking-[0.04em]'>{t(meta.sectionKey)}</div>
-            <div className='truncate font-semibold text-[15px] leading-tight'>{t(meta.titleKey)}</div>
-          </div>
+          <TopbarTitle section={t(meta.sectionKey)} title={t(meta.titleKey)} />
           <div className='ml-auto flex items-center gap-2'>
             <Button className='hidden min-w-48 justify-start gap-2 text-[var(--ink-3)] lg:inline-flex' onClick={() => setCommandOpen(true)} size='sm' type='button' variant='outline'>
               <SearchIcon />
