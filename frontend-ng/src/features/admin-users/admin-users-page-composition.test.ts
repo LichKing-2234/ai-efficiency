@@ -16,6 +16,7 @@ describe('Admin users page composition', () => {
     expect(source).toContain('DataGridCell')
     expect(source).not.toContain("className='mono truncate text-muted-foreground text-xs'")
     expect(source).not.toContain("className='tnum text-muted-foreground text-xs'")
+    expect(source).not.toContain("<span className='truncate text-sm'>{user.auth_source}</span>")
   })
 
   test('uses shared data grid cell description slots for user identity metadata', () => {

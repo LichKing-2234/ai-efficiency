@@ -301,7 +301,7 @@ export function AdminUsersPage() {
               </span>
               <DataGridIdentityCell description={user.email} value={user.username || user.email}>{user.username}</DataGridIdentityCell>
               <span><Badge variant={user.role === 'admin' ? 'ai' : 'secondary'}>{user.role}</Badge></span>
-              <span className='truncate text-sm'>{user.auth_source}</span>
+              <DataGridCell truncate>{user.auth_source}</DataGridCell>
               <DataGridCell mono truncate tone='metadata'>{user.relay_user_id || '-'}</DataGridCell>
               <DataGridCell numeric tone='metadata'>{dateTime(user.updated_at)}</DataGridCell>
               <ActionGroup wrap className='min-w-0'>
