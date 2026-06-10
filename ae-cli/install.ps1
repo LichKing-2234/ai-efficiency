@@ -8,7 +8,8 @@ $Repo = "LichKing-2234/ai-efficiency"
 $DefaultServerUrl = "https://ai-efficiency.la3.agoralab.co"
 $ServerUrlExplicit = Test-Path Env:AE_CLI_INSTALL_SERVER_URL
 $ServerUrl = if ($env:AE_CLI_INSTALL_SERVER_URL) { $env:AE_CLI_INSTALL_SERVER_URL.Trim() } else { $DefaultServerUrl }
-$ReleaseApiUrl = if ($env:AE_CLI_INSTALL_RELEASE_API_URL) { $env:AE_CLI_INSTALL_RELEASE_API_URL } else { "https://api.github.com/repos/$Repo/releases/latest" }
+$CliReleaseTagPattern = "^ae-cli/v\d+\.\d+\.\d+([-.][0-9A-Za-z.-]+)?$"
+$ReleaseApiUrl = if ($env:AE_CLI_INSTALL_RELEASE_API_URL) { $env:AE_CLI_INSTALL_RELEASE_API_URL } else { "https://api.github.com/repos/$Repo/releases?per_page=100" }
 $ReleaseDownloadBase = if ($env:AE_CLI_INSTALL_RELEASE_DOWNLOAD_BASE) { $env:AE_CLI_INSTALL_RELEASE_DOWNLOAD_BASE.TrimEnd("/") } else { "https://github.com/$Repo/releases/download" }
 
 if (-not $env:USERPROFILE) {
@@ -27,17 +28,33 @@ function Write-GitHubReleaseProxyHelp {
   Write-Host '$env:HTTP_PROXY = "http://127.0.0.1:7890"'
 }
 
+function Get-ReleaseVersion([string]$Tag) {
+  $value = $Tag.Trim()
+  if ($value.StartsWith("ae-cli/")) {
+    $value = $value.Substring("ae-cli/".Length)
+  }
+  if ($value.StartsWith("v")) {
+    $value = $value.Substring(1)
+  }
+  return $value
+}
+
 function Get-LatestTag {
   try {
-    $release = Invoke-RestMethod -Uri $ReleaseApiUrl -UseBasicParsing
+    $releases = Invoke-RestMethod -Uri $ReleaseApiUrl -UseBasicParsing
   } catch {
     Write-GitHubReleaseProxyHelp
     throw
   }
-  if (-not $release.tag_name) {
-    throw "failed to resolve release tag"
+
+  foreach ($release in @($releases)) {
+    $tagName = [string]$release.tag_name
+    if ($tagName -match $CliReleaseTagPattern) {
+      return $tagName
+    }
   }
-  return [string]$release.tag_name
+
+  throw "failed to resolve ae-cli release tag"
 }
 
 function Test-ServerUrl([string]$Value) {
@@ -115,7 +132,7 @@ if ($ServerUrl -and -not (Test-ServerUrl $ServerUrl)) {
 }
 
 $Tag = if ($Version) { $Version } else { Get-LatestTag }
-$ReleaseVersion = $Tag.TrimStart("v")
+$ReleaseVersion = Get-ReleaseVersion $Tag
 $Archive = "ae-cli_${ReleaseVersion}_windows_amd64.zip"
 $TempDir = Join-Path ([System.IO.Path]::GetTempPath()) ("ae-cli-install-" + [System.Guid]::NewGuid().ToString("N"))
 

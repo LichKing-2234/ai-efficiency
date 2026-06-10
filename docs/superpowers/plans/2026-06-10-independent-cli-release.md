@@ -8,7 +8,7 @@
 
 **Tech Stack:** GitHub Actions, GoReleaser v2, Go 1.24+, Bash, PowerShell, GitHub Releases API.
 
-**Status:** Plan written; implementation not started.
+**Status:** Implementation in progress. PowerShell syntax verification is not runnable in the current local environment because `pwsh` is not installed; this remains an unchecked verification gap approved by the user on 2026-06-10.
 
 **Source Spec:** [`docs/superpowers/specs/2026-06-10-independent-cli-release-design.md`](/Users/admin/ai-efficiency/docs/superpowers/specs/2026-06-10-independent-cli-release-design.md)
 
@@ -553,7 +553,7 @@ Expected: commit succeeds.
 - Modify: `ae-cli/install.ps1`
 - Test: `ae-cli/install.ps1`
 
-- [ ] **Step 1: Change the PowerShell release API default**
+- [x] **Step 1: Change the PowerShell release API default**
 
 In `ae-cli/install.ps1`, replace:
 
@@ -568,7 +568,7 @@ $CliReleaseTagPattern = "^ae-cli/v\d+\.\d+\.\d+([-.][0-9A-Za-z.-]+)?$"
 $ReleaseApiUrl = if ($env:AE_CLI_INSTALL_RELEASE_API_URL) { $env:AE_CLI_INSTALL_RELEASE_API_URL } else { "https://api.github.com/repos/$Repo/releases?per_page=100" }
 ```
 
-- [ ] **Step 2: Add a PowerShell release-version helper**
+- [x] **Step 2: Add a PowerShell release-version helper**
 
 Add this function before `Get-LatestTag`:
 
@@ -585,7 +585,7 @@ function Get-ReleaseVersion([string]$Tag) {
 }
 ```
 
-- [ ] **Step 3: Replace `Get-LatestTag` with CLI release filtering**
+- [x] **Step 3: Replace `Get-LatestTag` with CLI release filtering**
 
 Replace the body of `Get-LatestTag` with:
 
@@ -609,7 +609,7 @@ function Get-LatestTag {
 }
 ```
 
-- [ ] **Step 4: Derive archive names from stripped versions**
+- [x] **Step 4: Derive archive names from stripped versions**
 
 Replace:
 
@@ -633,7 +633,9 @@ pwsh -NoProfile -Command '$ErrorActionPreference = "Stop"; [scriptblock]::Create
 
 Expected: PASS with no output.
 
-- [ ] **Step 6: Commit the PowerShell installer change**
+Status: Not run locally. `pwsh` is not installed in this environment (`zsh:1: command not found: pwsh`), and the user approved continuing with this verification gap on 2026-06-10.
+
+- [x] **Step 6: Commit the PowerShell installer change**
 
 Run:
 
