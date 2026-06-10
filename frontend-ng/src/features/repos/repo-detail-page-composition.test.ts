@@ -40,4 +40,11 @@ describe('Repo detail page composition', () => {
     expect(source).not.toContain("<div className='flex flex-col gap-1'>")
     expect(source).not.toContain("<span className='flex min-w-0 flex-col gap-1'>")
   })
+
+  test('uses shared data grid cells for PR and snapshot numeric metadata', () => {
+    expect(source).toContain('DataGridCell')
+    expect(source).not.toContain("className='tnum text-muted-foreground text-xs'")
+    expect(source).not.toContain("className='mono min-w-0 truncate text-xs'")
+    expect(source).not.toContain("className='tnum text-right'")
+  })
 })

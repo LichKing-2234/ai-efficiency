@@ -12,7 +12,7 @@ import { CardContentStack } from '@/components/primitives/card-content-stack'
 import { CardPagerFooter } from '@/components/primitives/card-pager-footer'
 import { CheckboxField } from '@/components/primitives/checkbox-field'
 import { ControlGrid } from '@/components/primitives/control-grid'
-import { DataGrid, DataGridHeader, DataGridRow } from '@/components/primitives/data-grid'
+import { DataGrid, DataGridCell, DataGridHeader, DataGridRow } from '@/components/primitives/data-grid'
 import { EntityCardHeader } from '@/components/primitives/entity-card-header'
 import { FilterRow } from '@/components/primitives/filter-row'
 import { InfoTile, InfoTileGrid } from '@/components/primitives/info-tile'
@@ -339,7 +339,7 @@ export function RepoDetailPage() {
                       </span>
                       <span className='tnum'>{compact((pr.usage_input_tokens ?? 0) + (pr.usage_output_tokens ?? 0) + (pr.usage_cached_input_tokens ?? 0) + (pr.usage_reasoning_tokens ?? 0))}</span>
                       <span className='tnum'>{number(pr.cycle_time_hours)}h</span>
-                      <span className='tnum text-muted-foreground text-xs'>{dateTime(pr.merged_at)}</span>
+                      <DataGridCell numeric tone='metadata'>{dateTime(pr.merged_at)}</DataGridCell>
                       <ActionGroup>
                         <Button variant='ghost' size='sm' onClick={() => setExpandedPRId(expanded ? null : pr.id)} disabled={prDetail.isFetching && expanded}>
                           {expanded ? t('common.hide') : t('common.details')}
@@ -389,14 +389,14 @@ export function RepoDetailPage() {
                                   const freshness = commitFreshnessFor(detail, snapshot.commit_sha)
                                   return (
                                     <DataGridRow columns={snapshotColumns} key={snapshot.commit_sha}>
-                                      <span className='mono min-w-0 truncate text-xs'>{snapshot.commit_sha}</span>
-                                      <span className='tnum text-muted-foreground text-xs'>{dateTime(snapshot.captured_at)}</span>
-                                      <span className='tnum text-right'>{compact(snapshot.input_tokens)}</span>
-                                      <span className='tnum text-right'>{compact(snapshot.output_tokens)}</span>
-                                      <span className='tnum text-right'>{compact(snapshot.cached_input_tokens)}</span>
-                                      <span className='tnum text-right'>{compact(snapshot.reasoning_tokens)}</span>
-                                      <span className='tnum text-right'>{number(snapshot.credit_usage)}</span>
-                                      <span className='tnum text-right'>{number(snapshot.request_count)}</span>
+                                      <DataGridCell mono truncate tone='subtle'>{snapshot.commit_sha}</DataGridCell>
+                                      <DataGridCell numeric tone='metadata'>{dateTime(snapshot.captured_at)}</DataGridCell>
+                                      <DataGridCell align='right' numeric>{compact(snapshot.input_tokens)}</DataGridCell>
+                                      <DataGridCell align='right' numeric>{compact(snapshot.output_tokens)}</DataGridCell>
+                                      <DataGridCell align='right' numeric>{compact(snapshot.cached_input_tokens)}</DataGridCell>
+                                      <DataGridCell align='right' numeric>{compact(snapshot.reasoning_tokens)}</DataGridCell>
+                                      <DataGridCell align='right' numeric>{number(snapshot.credit_usage)}</DataGridCell>
+                                      <DataGridCell align='right' numeric>{number(snapshot.request_count)}</DataGridCell>
                                       <StatusWithReason reason={freshness?.usage_status_reason} reasonClassName='max-w-64' value={freshness?.usage_status} />
                                     </DataGridRow>
                                   )

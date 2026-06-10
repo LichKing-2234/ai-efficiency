@@ -12,7 +12,7 @@ import { ActionGroup } from '@/components/primitives/action-group'
 import { AppAlert } from '@/components/primitives/app-alert'
 import { CardContentStack } from '@/components/primitives/card-content-stack'
 import { ConfirmAction } from '@/components/primitives/confirm-action'
-import { DataGrid, DataGridHeader, DataGridRow } from '@/components/primitives/data-grid'
+import { DataGrid, DataGridCell, DataGridHeader, DataGridRow } from '@/components/primitives/data-grid'
 import { Page } from '@/components/primitives/page'
 import { LoadingState } from '@/components/primitives/data-state'
 import { FieldItem, FieldList } from '@/components/primitives/field-list'
@@ -307,9 +307,9 @@ export function SettingsPage() {
               <DataGridRow key={provider.id} columns={relayColumns}>
                 <span className='min-w-0'>
                   <span className='block truncate font-semibold text-sm'>{provider.display_name || provider.name}</span>
-                  <span className='mono block truncate text-muted-foreground text-xs'>{provider.name}</span>
+                  <DataGridCell className='block' mono truncate tone='metadata'>{provider.name}</DataGridCell>
                 </span>
-                <span className='mono truncate text-muted-foreground text-xs'>{provider.base_url}</span>
+                <DataGridCell mono truncate tone='metadata'>{provider.base_url}</DataGridCell>
                 <span>{provider.is_primary ? <Badge variant='ai'>{t('common.primary')}</Badge> : <span className='text-muted-foreground'>-</span>}</span>
                 <span><StatusBadge value={provider.enabled ? 'active' : 'disabled'} /></span>
                 <ActionGroup>
@@ -348,7 +348,7 @@ export function SettingsPage() {
               <DataGridRow key={provider.id} columns={scmColumns}>
                 <span className='font-semibold text-sm'>{provider.name}</span>
                 <span><Badge variant='secondary'>{provider.type}</Badge></span>
-                <span className='mono truncate text-muted-foreground text-xs'>{provider.base_url}</span>
+                <DataGridCell mono truncate tone='metadata'>{provider.base_url}</DataGridCell>
                 <span><StatusBadge value={provider.status} /></span>
                 <ActionGroup>
                   <Button size='sm' variant='outline' onClick={() => openEditScmDialog(provider)}>{t('common.update')}</Button>
@@ -389,8 +389,8 @@ export function SettingsPage() {
                   <span className='block truncate text-muted-foreground text-xs'>{credential.description}</span>
                 </span>
                 <span><Badge variant='secondary'>{credential.kind}</Badge></span>
-                <span className='tnum text-muted-foreground text-xs'>{number(credential.usage_count)}</span>
-                <span className='tnum text-muted-foreground text-xs'>{dateTime(credential.updated_at)}</span>
+                <DataGridCell numeric tone='metadata'>{number(credential.usage_count)}</DataGridCell>
+                <DataGridCell numeric tone='metadata'>{dateTime(credential.updated_at)}</DataGridCell>
                 <ActionGroup>
                   <Button size='sm' variant='outline' onClick={() => openEditCredentialDialog(credential)}>{t('common.update')}</Button>
                   <ConfirmAction

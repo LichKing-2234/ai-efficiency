@@ -12,7 +12,7 @@ import { CardContentStack } from '@/components/primitives/card-content-stack'
 import { CardFilterBar } from '@/components/primitives/card-filter-bar'
 import { DataGridCheckbox } from '@/components/primitives/data-grid-checkbox'
 import { CardPagerFooter } from '@/components/primitives/card-pager-footer'
-import { DataGrid, DataGridHeader, DataGridRow } from '@/components/primitives/data-grid'
+import { DataGrid, DataGridCell, DataGridHeader, DataGridRow } from '@/components/primitives/data-grid'
 import { IdentityAvatar } from '@/components/primitives/identity-avatar'
 import { Page } from '@/components/primitives/page'
 import { LoadingState } from '@/components/primitives/data-state'
@@ -304,8 +304,8 @@ export function AdminUsersPage() {
               </span>
               <span><Badge variant={user.role === 'admin' ? 'ai' : 'secondary'}>{user.role}</Badge></span>
               <span className='truncate text-sm'>{user.auth_source}</span>
-              <span className='mono truncate text-muted-foreground text-xs'>{user.relay_user_id || '-'}</span>
-              <span className='tnum text-muted-foreground text-xs'>{dateTime(user.updated_at)}</span>
+              <DataGridCell mono truncate tone='metadata'>{user.relay_user_id || '-'}</DataGridCell>
+              <DataGridCell numeric tone='metadata'>{dateTime(user.updated_at)}</DataGridCell>
               <ActionGroup wrap className='min-w-0'>
                 <Button
                   variant='outline'

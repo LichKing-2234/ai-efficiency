@@ -11,4 +11,10 @@ describe('Admin users page composition', () => {
     expect(source).toContain('<RowInsetPanel')
     expect(source).not.toContain("className='col-span-7 ml-11 flex max-w-xl flex-col gap-2 text-left text-xs'")
   })
+
+  test('uses shared data grid cells for relay id and updated metadata', () => {
+    expect(source).toContain('DataGridCell')
+    expect(source).not.toContain("className='mono truncate text-muted-foreground text-xs'")
+    expect(source).not.toContain("className='tnum text-muted-foreground text-xs'")
+  })
 })

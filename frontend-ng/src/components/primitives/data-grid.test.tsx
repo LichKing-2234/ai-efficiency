@@ -62,6 +62,7 @@ describe('DataGrid', () => {
           <DataGridCell truncate muted>Platform Team</DataGridCell>
           <DataGridCell align='right' numeric tone='muted'>42</DataGridCell>
           <DataGridCell mono truncate tone='subtle'>main</DataGridCell>
+          <DataGridCell mono numeric truncate tone='metadata'>abc123</DataGridCell>
         </DataGridRow>
       </DataGrid>
     )

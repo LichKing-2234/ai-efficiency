@@ -21,4 +21,12 @@ describe('Settings page composition', () => {
     expect(source).toContain('<ActionGroup wrap className=\'justify-start\'>')
     expect(source).not.toContain("<div className='flex gap-2'>")
   })
+
+  test('uses shared data grid cells for settings table metadata', () => {
+    const source = readFileSync(join(ROOT, 'features/settings/settings-page.tsx'), 'utf8')
+
+    expect(source).toContain('DataGridCell')
+    expect(source).not.toContain("className='mono truncate text-muted-foreground text-xs'")
+    expect(source).not.toContain("className='tnum text-muted-foreground text-xs'")
+  })
 })

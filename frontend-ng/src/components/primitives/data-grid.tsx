@@ -98,7 +98,7 @@ export function DataGridCell({
   mono?: boolean
   muted?: boolean
   numeric?: boolean
-  tone?: 'default' | 'muted' | 'subtle'
+  tone?: 'default' | 'metadata' | 'muted' | 'subtle'
   truncate?: boolean
 }) {
   return (
@@ -109,6 +109,7 @@ export function DataGridCell({
         mono && 'mono',
         truncate && 'truncate',
         muted && 'text-muted-foreground text-xs',
+        tone === 'metadata' && 'text-muted-foreground text-xs',
         tone === 'muted' && 'text-[var(--ink-2)]',
         tone === 'subtle' && 'text-[var(--ink-3)] text-xs',
         className
