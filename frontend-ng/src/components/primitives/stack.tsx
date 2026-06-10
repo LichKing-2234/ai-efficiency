@@ -10,14 +10,16 @@ const stackGapClasses = {
 export function Stack({
   children,
   className,
+  constrain,
   gap = 'normal'
 }: {
   children: React.ReactNode
   className?: string
+  constrain?: 'content'
   gap?: keyof typeof stackGapClasses
 }) {
   return (
-    <div data-slot='stack' className={cn('flex flex-col', stackGapClasses[gap], className)}>
+    <div data-slot='stack' className={cn('flex flex-col', stackGapClasses[gap], constrain === 'content' && 'min-w-0', className)}>
       {children}
     </div>
   )

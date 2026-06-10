@@ -290,7 +290,7 @@ export function SettingsPage() {
         <SectionNavFrame>
           <SectionNav ariaLabel={t('settings.sections')} items={sectionItems} onChange={selectSection} value={activeSection} />
         </SectionNavFrame>
-        <Stack className='min-w-0'>
+        <Stack constrain='content'>
         {activeSection === 'ai-services' ? <Card>
           <SectionCardHeader
             title={t('settings.aiServices')}

@@ -32,4 +32,10 @@ describe('Stack', () => {
     expect(html).toContain('stagger')
     expect(html).toContain('max-w-xl')
   })
+
+  test('supports a content constraint for split layout panes', () => {
+    const html = renderToStaticMarkup(<Stack constrain='content'>Content</Stack>)
+
+    expect(html).toContain('min-w-0')
+  })
 })
