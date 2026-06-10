@@ -324,6 +324,10 @@ Follow-up OAuth/auth redirect diagnosis fixed the `/oauth/device` unauthenticate
 
   Follow-up filter-row audit evidence: `filter-row.test.tsx` and the extended `events-page-composition.test.ts` were added with a red-green cycle; `filter-row.test.tsx` first failed because `./filter-row` did not exist, and the Events composition guard first failed because `events-page.tsx` did not import or render `FilterRow`. Focused verification passed with `bun test src/components/primitives/filter-row.test.tsx src/features/events/events-page-composition.test.ts src/features/events/event-filters.test.ts src/components/primitives/card-filter-bar.test.tsx` and `bun run check`.
 
+  Follow-up SlideOver stack audit implementation adds the shared `SlideOverStack` primitive for reference detail-panel vertical rhythm. Events detail now uses it instead of a page-local `flex flex-col gap-[18px]` wrapper while preserving badges, info tiles, token breakdown, session fields, matched PRs, advanced data, and backend detail payload handling.
+
+  Follow-up SlideOver stack audit evidence: `slide-over-stack.test.tsx` and the extended `events-page-composition.test.ts` were added with a red-green cycle; the primitive test first failed because `slide-over-stack.tsx` did not exist, and the Events composition guard first failed because `events-page.tsx` did not import or render `SlideOverStack`. Focused verification passed with `bun test src/components/primitives/slide-over-stack.test.tsx src/features/events/events-page-composition.test.ts src/features/events/event-filters.test.ts`. `agent-browser doctor --offline --quick` reported no hard failures but many stale version-mismatched sessions, so browser interaction was skipped for this narrow detail-stack slice; HTTP smoke returned `200 text/html` for `/events`, while visible detail content-state rendering remains covered by the primitive/composition tests, TypeScript, and build.
+
 - [x] **Step 2: Repositories**
 
   Implement reference workbench styling while keeping add, delete, auto-bind, provider selection, webhook repair, and navigation behavior intact.

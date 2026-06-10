@@ -21,6 +21,7 @@ import { LoadingState } from '@/components/primitives/data-state'
 import { SearchField } from '@/components/primitives/search-field'
 import { SectionEyebrow } from '@/components/primitives/section-eyebrow'
 import { SlideOver } from '@/components/primitives/slide-over'
+import { SlideOverStack } from '@/components/primitives/slide-over-stack'
 import { TokenMeter } from '@/components/primitives/token-meter'
 import { TokenBreakdown } from '@/components/primitives/token-breakdown'
 import { TextField } from '@/components/primitives/text-field'
@@ -305,7 +306,7 @@ function EventDetail({ event, isAdmin, onClose }: { event: ToolUsageEventDetail 
       title={event?.repo_name || t('events.unlinked')}
     >
       {event ? (
-        <div className='flex flex-col gap-[18px]'>
+        <SlideOverStack>
           <FilterRow align='start'>
             <Badge variant='ai'>{event.tool}</Badge>
             <Badge variant={event.binding_status === 'bound' ? 'pos' : 'warn'}>{event.binding_status}</Badge>
@@ -361,7 +362,7 @@ function EventDetail({ event, isAdmin, onClose }: { event: ToolUsageEventDetail 
             ]}
             title={t('events.advancedData')}
           />
-        </div>
+        </SlideOverStack>
       ) : null}
     </SlideOver>
   )

@@ -19,4 +19,10 @@ describe('Events page composition', () => {
     expect(source).not.toContain("<div className='flex flex-wrap items-center gap-2'>")
     expect(source).not.toContain("<div className='flex flex-wrap gap-2'>")
   })
+
+  test('uses the shared slide-over stack for event detail sections', () => {
+    expect(source).toContain("from '@/components/primitives/slide-over-stack'")
+    expect(source).toContain('<SlideOverStack>')
+    expect(source).not.toContain("<div className='flex flex-col gap-[18px]'>")
+  })
 })
