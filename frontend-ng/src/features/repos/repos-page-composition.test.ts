@@ -85,6 +85,12 @@ describe('Repos page composition', () => {
     expect(source).not.toContain("<div className='flex flex-wrap gap-2'>")
   })
 
+  test('uses the shared entity glyph for repository inspect identity', () => {
+    expect(source).toContain("from '@/components/primitives/entity-glyph'")
+    expect(source).toContain("leading={<EntityGlyph icon={FolderGit2Icon} label={t('repos.repository')} />}")
+    expect(source).not.toContain("<FolderGit2Icon className='text-[var(--ai-deep)]' />")
+  })
+
   test('renders PR summary stats in the repository inspect panel', () => {
     expect(source).toContain("label={t('repos.totalPrs')}")
     expect(source).toContain("label={t('repos.aiPrs')}")

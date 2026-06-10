@@ -17,6 +17,7 @@ import { AppAlert } from '@/components/primitives/app-alert'
 import { Page } from '@/components/primitives/page'
 import { EmptyState, LoadingState } from '@/components/primitives/data-state'
 import { DataGrid, DataGridHeader, DataGridHeaderCell, DataGridPrimaryLink, DataGridRecordCell, DataGridRow, DataGridRowAffordance } from '@/components/primitives/data-grid'
+import { EntityGlyph } from '@/components/primitives/entity-glyph'
 import { FieldItem, FieldList } from '@/components/primitives/field-list'
 import { InfoTile, InfoTileGrid } from '@/components/primitives/info-tile'
 import { KpiGrid } from '@/components/primitives/kpi-grid'
@@ -461,7 +462,7 @@ function RepoInspectSlideOver({
   const { locale, t } = useI18n()
   return (
     <SlideOver
-      leading={<FolderGit2Icon className='text-[var(--ai-deep)]' />}
+      leading={<EntityGlyph icon={FolderGit2Icon} label={t('repos.repository')} />}
       open={!!repo}
       subtitle={repo?.clone_url}
       title={repo?.full_name || repo?.name || t('repos.repository')}
