@@ -40,6 +40,11 @@ describe('Repo detail page composition', () => {
     expect(source).not.toContain("className='rounded-none border-x-0 border-t-0 p-4'")
   })
 
+  test('uses the shared inset panel compact variant for sync status notes', () => {
+    expect(source).toContain('<InsetPanel compact muted>')
+    expect(source).not.toContain("className='px-3 py-2'")
+  })
+
   test('uses shared status-with-reason rows for PR and snapshot usage states', () => {
     expect(source).toContain("from '@/components/primitives/status-with-reason'")
     expect(source.match(/<StatusWithReason/g)?.length).toBe(2)

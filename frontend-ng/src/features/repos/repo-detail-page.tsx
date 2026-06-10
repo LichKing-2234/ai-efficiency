@@ -197,7 +197,7 @@ export function RepoDetailPage() {
       <PageToolbar>
         <Button onClick={() => sync.mutate()} disabled={!canSync}><RefreshCw data-icon='inline-start' />{activeJobRunning ? t('repoDetail.syncingPrs') : t('repoDetail.syncPrs')}</Button>
       </PageToolbar>
-      {syncDisabledReason ? <InsetPanel className='px-3 py-2' muted>{syncDisabledReason}</InsetPanel> : null}
+      {syncDisabledReason ? <InsetPanel compact muted>{syncDisabledReason}</InsetPanel> : null}
       {showWebhookRepair ? (
         <Alert>
           <AlertTitle>{t('repoDetail.repairWebhook')}</AlertTitle>

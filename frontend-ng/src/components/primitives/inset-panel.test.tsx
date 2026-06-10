@@ -46,4 +46,14 @@ describe('InsetPanel', () => {
     expect(html).toContain('gap-3')
     expect(html).not.toContain('class="flex flex-col gap-3 text-sm"')
   })
+
+  test('supports a compact variant for toolbar-adjacent status notes', () => {
+    const html = renderToStaticMarkup(<InsetPanel compact muted>Bind before sync</InsetPanel>)
+
+    expect(html).toContain('data-slot="inset-panel"')
+    expect(html).toContain('Bind before sync')
+    expect(html).toContain('px-3')
+    expect(html).toContain('py-2')
+    expect(html).toContain('text-muted-foreground')
+  })
 })
