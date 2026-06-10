@@ -45,4 +45,12 @@ describe('PageHeader', () => {
     expect(html).toContain('justify-end')
     expect(html).not.toContain('<h1')
   })
+
+  test('keeps title description rhythm inside the page header description slot', async () => {
+    const source = await import('node:fs/promises').then((fs) =>
+      fs.readFile(new URL('./page.tsx', import.meta.url), 'utf8')
+    )
+
+    expect(source).not.toContain("className='mt-1 max-w-3xl text-muted-foreground text-sm'")
+  })
 })

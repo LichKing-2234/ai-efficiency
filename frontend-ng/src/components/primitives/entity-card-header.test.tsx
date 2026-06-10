@@ -26,4 +26,12 @@ describe('EntityCardHeader', () => {
     expect(html).toContain('Pull requests')
     expect(html).not.toContain('<button')
   })
+
+  test('keeps description rhythm inside the entity card description slot', async () => {
+    const source = await import('node:fs/promises').then((fs) =>
+      fs.readFile(new URL('./entity-card-header.tsx', import.meta.url), 'utf8')
+    )
+
+    expect(source).not.toContain("className='mt-1 break-words'")
+  })
 })

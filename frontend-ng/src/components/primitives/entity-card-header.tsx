@@ -2,6 +2,16 @@ import type * as React from 'react'
 import { CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
 
+const entityCardDescriptionClass = 'mt-1 break-words'
+
+function EntityCardDescription({ children }: { children: React.ReactNode }) {
+  return (
+    <CardDescription className={entityCardDescriptionClass} data-slot='entity-card-description'>
+      {children}
+    </CardDescription>
+  )
+}
+
 export function EntityCardHeader({
   title,
   description,
@@ -24,7 +34,7 @@ export function EntityCardHeader({
           {leading ? <div className='shrink-0'>{leading}</div> : null}
           <div className='min-w-0'>
             <CardTitle>{title}</CardTitle>
-            {description ? <CardDescription className='mt-1 break-words'>{description}</CardDescription> : null}
+            {description ? <EntityCardDescription>{description}</EntityCardDescription> : null}
           </div>
         </div>
         {actions ? <div className='flex shrink-0 flex-wrap items-center justify-start gap-2 lg:justify-end'>{actions}</div> : null}
