@@ -52,4 +52,9 @@ describe('Admin users page composition', () => {
     expect(source).toContain('<ActionGroup fit wrap>')
     expect(source).not.toContain("<ActionGroup wrap className='min-w-0'>")
   })
+
+  test('uses shared pushed action groups for current job status', () => {
+    expect(source).toContain('<ActionGroup push>')
+    expect(source).not.toContain("<ActionGroup className='ml-auto text-sm'>")
+  })
 })

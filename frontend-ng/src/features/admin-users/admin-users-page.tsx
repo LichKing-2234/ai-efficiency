@@ -264,7 +264,7 @@ export function AdminUsersPage() {
             {t('common.refresh')}
           </Button>
           {currentJob ? (
-            <ActionGroup className='ml-auto text-sm'>
+            <ActionGroup push>
               <StatusWithReason
                 inline
                 meta={`${number(currentJob.processed_count)}/${number(currentJob.total_count)}`}
