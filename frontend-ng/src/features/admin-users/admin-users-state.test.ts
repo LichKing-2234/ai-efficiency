@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest'
 import {
   buildAdminUsersParams,
   buildAdminUsersSearch,
+  buildAdminUserTableMetrics,
   buildSubscriptionJobPayload,
   canSubmitSubscriptionJob,
   defaultSubscriptionTarget,
@@ -133,6 +134,31 @@ describe('subscription job status', () => {
 
   test('summarizes completed jobs', () => {
     expect(subscriptionJobMessage(job({ status: 'completed', success_count: 2, skipped_count: 1, failed_count: 0 }))).toBe('Completed: 2 succeeded, 1 skipped, 0 failed')
+  })
+})
+
+describe('admin user table metrics', () => {
+  test('uses backend-provided usage fields when present and derives status from mapping otherwise', () => {
+    expect(buildAdminUserTableMetrics({
+      ...user(1, 'alice'),
+      relay_user_id: 42,
+      tokens_month: 4200,
+      events_month: 12,
+      status: 'active'
+    })).toEqual({
+      eventsMonth: 12,
+      status: 'active',
+      tokensMonth: 4200
+    })
+
+    expect(buildAdminUserTableMetrics({
+      ...user(2, 'bob'),
+      relay_user_id: null
+    })).toEqual({
+      eventsMonth: 0,
+      status: 'invited',
+      tokensMonth: 0
+    })
   })
 })
 

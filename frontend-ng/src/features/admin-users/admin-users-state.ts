@@ -107,6 +107,14 @@ export function nextVisibleSelection(current: number[], rows: AdminUser[], check
   return Array.from(next)
 }
 
+export function buildAdminUserTableMetrics(user: AdminUser) {
+  return {
+    eventsMonth: Math.max(0, Number(user.events_month ?? 0)),
+    status: user.status ?? (user.relay_user_id ? 'active' : 'invited'),
+    tokensMonth: Math.max(0, Number(user.tokens_month ?? 0))
+  }
+}
+
 export function isActiveSubscriptionJob(job: AdminSubscriptionJob | null | undefined) {
   return job?.status === 'queued' || job?.status === 'running'
 }

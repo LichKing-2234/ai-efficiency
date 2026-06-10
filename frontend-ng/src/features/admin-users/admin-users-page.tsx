@@ -1,10 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Navigate, useNavigate, useSearch } from '@tanstack/react-router'
-import { Clipboard, KeyRound, RefreshCw, SearchIcon, Shield, Users } from 'lucide-react'
+import { ChevronRight, Clipboard, KeyRound, RefreshCw, SearchIcon, Shield, Users } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
+import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { FieldDescription } from '@/components/ui/field'
 import { ActionGroup } from '@/components/primitives/action-group'
@@ -23,12 +23,15 @@ import { SearchField } from '@/components/primitives/search-field'
 import { SectionCardHeader } from '@/components/primitives/section-card-header'
 import { StatusWithReason } from '@/components/primitives/status-with-reason'
 import { KpiCard } from '@/components/primitives/metric-card'
+import { StatusBadge } from '@/components/primitives/status-badge'
+import { TokenMeter } from '@/components/primitives/token-meter'
 import { ToolbarSelect } from '@/components/primitives/toolbar-select'
 import { api } from '@/lib/api'
-import { dateTime, number } from '@/lib/format'
+import { compact, number } from '@/lib/format'
 import { useI18n } from '@/lib/i18n/i18n'
 import { AdminSubscriptionForm } from './admin-subscription-form'
 import {
+  buildAdminUserTableMetrics,
   buildAdminUsersParams,
   buildAdminUsersSearch,
   buildSubscriptionJobPayload,
@@ -78,7 +81,8 @@ export function AdminUsersPage() {
   const rows = users.data?.items ?? []
   const total = users.data?.total ?? rows.length
   const totalPages = Math.max(1, Math.ceil(total / pageSize))
-  const tableColumns = '44px_minmax(220px,1.8fr)_0.6fr_0.8fr_0.9fr_1fr_minmax(220px,1.3fr)'
+  const tableColumns = '44px_minmax(240px,1.8fr)_0.7fr_1fr_0.7fr_0.8fr_minmax(172px,0.9fr)_32px'
+  const maxTokensMonth = Math.max(1, ...rows.map((user) => buildAdminUserTableMetrics(user).tokensMonth))
   const adminCount = rows.filter((user) => user.role === 'admin').length
   const mappedCount = rows.filter((user) => user.relay_user_id).length
   const allVisibleSelected = rows.length > 0 && rows.every((user) => selected.includes(user.id))
@@ -285,64 +289,72 @@ export function AdminUsersPage() {
             </span>
             <span>{t('adminUsers.user')}</span>
             <span>{t('adminUsers.role')}</span>
-            <span>{t('adminUsers.auth')}</span>
-            <span>{t('adminUsers.relay')}</span>
-            <span>{t('adminUsers.updated')}</span>
+            <span>{t('adminUsers.tokensMonth')}</span>
+            <span>{t('adminUsers.eventsMonth')}</span>
+            <span>{t('common.status')}</span>
+            <span />
             <span />
           </DataGridHeader>
-          {rows.map((user) => (
-            <DataGridRow key={user.id} columns={tableColumns}>
-              <span>
-                <DataGridCheckbox
-                  ariaLabel={t('adminUsers.selectUser', { user: user.username || user.email })}
-                  checked={selected.includes(user.id)}
-                  onCheckedChange={(checked) => setSelected((value) => checked ? [...value, user.id] : value.filter((id) => id !== user.id))}
-                />
-              </span>
-              <DataGridIdentityCell description={user.email} value={user.username || user.email}>{user.username}</DataGridIdentityCell>
-              <span><Badge variant={user.role === 'admin' ? 'ai' : 'secondary'}>{user.role}</Badge></span>
-              <DataGridCell truncate>{user.auth_source}</DataGridCell>
-              <DataGridCell mono truncate tone='metadata'>{user.relay_user_id || '-'}</DataGridCell>
-              <DataGridCell numeric tone='metadata'>{dateTime(user.updated_at)}</DataGridCell>
-              <ActionGroup fit wrap>
-                <Button
-                  variant='outline'
-                  size='sm'
-                  disabled={!user.relay_auth_password}
-                  onClick={() => {
-                    void navigator.clipboard?.writeText(user.relay_auth_password || '')
-                    toast.success(t('adminUsers.encryptedCopied'))
-                  }}
-                >
-                  <Clipboard data-icon='inline-start' />
-                  {t('adminUsers.copyEncrypted')}
-                </Button>
-                <Button
-                  variant='outline'
-                  size='sm'
-                  disabled={!user.relay_auth_password || reveal.isPending}
-                  onClick={() => setPlaintextConfirmUserId((value) => value === user.id ? null : user.id)}
-                >
-                  {t('adminUsers.copyPlaintext')}
-                </Button>
-              </ActionGroup>
-              {plaintextConfirmUserId === user.id ? (
-                <RowInsetPanel indent='selection' maxWidth='xl'>
-                  <FieldDescription>{t('adminUsers.plaintextWarning')}</FieldDescription>
+          {rows.map((user) => {
+            const metrics = buildAdminUserTableMetrics(user)
+
+            return (
+              <DataGridRow key={user.id} columns={tableColumns}>
+                <span>
+                  <DataGridCheckbox
+                    ariaLabel={t('adminUsers.selectUser', { user: user.username || user.email })}
+                    checked={selected.includes(user.id)}
+                    onCheckedChange={(checked) => setSelected((value) => checked ? [...value, user.id] : value.filter((id) => id !== user.id))}
+                  />
+                </span>
+                <DataGridIdentityCell description={user.email} value={user.username || user.email}>{user.username}</DataGridIdentityCell>
+                <span><Badge variant={user.role === 'admin' ? 'ai' : 'secondary'}>{user.role}</Badge></span>
+                <TokenMeter label={compact(metrics.tokensMonth)} max={maxTokensMonth} value={metrics.tokensMonth} />
+                <DataGridCell numeric>{number(metrics.eventsMonth)}</DataGridCell>
+                <span><StatusBadge value={metrics.status} /></span>
+                <ActionGroup fit wrap>
+                  <Button
+                    variant='ghost'
+                    size='icon'
+                    disabled={!user.relay_auth_password}
+                    aria-label={t('adminUsers.copyEncrypted')}
+                    onClick={() => {
+                      void navigator.clipboard?.writeText(user.relay_auth_password || '')
+                      toast.success(t('adminUsers.encryptedCopied'))
+                    }}
+                  >
+                    <Clipboard />
+                  </Button>
                   <Button
                     variant='outline'
                     size='sm'
-                    disabled={reveal.isPending}
-                    onClick={() => {
-                      reveal.mutate(user.id, { onSuccess: () => setPlaintextConfirmUserId(null) })
-                    }}
+                    disabled={!user.relay_auth_password || reveal.isPending}
+                    onClick={() => setPlaintextConfirmUserId((value) => value === user.id ? null : user.id)}
                   >
-                    {t('adminUsers.confirmReveal')}
+                    {t('adminUsers.copyPlaintext')}
                   </Button>
-                </RowInsetPanel>
-              ) : null}
-            </DataGridRow>
-          ))}
+                </ActionGroup>
+                <span className='flex justify-end text-[var(--ink-3)]'>
+                  <ChevronRight aria-hidden='true' />
+                </span>
+                {plaintextConfirmUserId === user.id ? (
+                  <RowInsetPanel indent='selection' maxWidth='xl'>
+                    <FieldDescription>{t('adminUsers.plaintextWarning')}</FieldDescription>
+                    <Button
+                      variant='outline'
+                      size='sm'
+                      disabled={reveal.isPending}
+                      onClick={() => {
+                        reveal.mutate(user.id, { onSuccess: () => setPlaintextConfirmUserId(null) })
+                      }}
+                    >
+                      {t('adminUsers.confirmReveal')}
+                    </Button>
+                  </RowInsetPanel>
+                ) : null}
+              </DataGridRow>
+            )
+          })}
         </DataGrid>
         <CardPagerFooter
           summary={t('adminUsers.pageOfUsers', { page, totalPages, total: number(total) })}

@@ -540,6 +540,9 @@ export interface AdminUser {
   auth_source: string
   relay_user_id?: number | null
   relay_auth_password: string
+  events_month?: number
+  status?: 'active' | 'invited' | 'suspended' | string
+  tokens_month?: number
   created_at: string
   updated_at: string
 }

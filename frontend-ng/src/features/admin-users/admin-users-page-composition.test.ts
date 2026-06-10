@@ -62,4 +62,16 @@ describe('Admin users page composition', () => {
     expect(source).toContain('<ActionGroup push>')
     expect(source).not.toContain("<ActionGroup className='ml-auto text-sm'>")
   })
+
+  test('matches the reference user table scan columns', () => {
+    expect(source).toContain("from '@/components/primitives/token-meter'")
+    expect(source).toContain('buildAdminUserTableMetrics')
+    expect(source).toContain('<TokenMeter')
+    expect(source).toContain("t('adminUsers.tokensMonth')")
+    expect(source).toContain("t('adminUsers.eventsMonth')")
+    expect(source).toContain('<ChevronRight')
+    expect(source).not.toContain("<span>{t('adminUsers.auth')}</span>")
+    expect(source).not.toContain("<span>{t('adminUsers.relay')}</span>")
+    expect(source).not.toContain("<span>{t('adminUsers.updated')}</span>")
+  })
 })
