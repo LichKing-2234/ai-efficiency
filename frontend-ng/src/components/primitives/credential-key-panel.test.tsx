@@ -24,6 +24,7 @@ describe('CredentialKeyPanel', () => {
 
     expect(html).toContain('data-slot="credential-key-panel"')
     expect(html).toContain('data-slot="credential-key-value"')
+    expect(html).toContain('data-slot="credential-key-footer"')
     expect(html).toContain('API key')
     expect(html).toContain('sk-liv...alue')
     expect(html).toContain('Reveal')
@@ -44,5 +45,13 @@ describe('CredentialKeyPanel', () => {
     expect(html).toContain('No key')
     expect(html).toContain('text-muted-foreground')
     expect(html).toContain('Create API key')
+  })
+
+  test('keeps footer action rhythm inside the primitive slot', async () => {
+    const source = await import('node:fs/promises').then((fs) =>
+      fs.readFile(new URL('./credential-key-panel.tsx', import.meta.url), 'utf8')
+    )
+
+    expect(source).not.toContain("className='mt-3 flex flex-wrap gap-2'")
   })
 })

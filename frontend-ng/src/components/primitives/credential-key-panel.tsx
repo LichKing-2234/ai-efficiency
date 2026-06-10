@@ -2,6 +2,16 @@ import type * as React from 'react'
 import type { LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
+const credentialKeyFooterClass = 'mt-3 flex flex-wrap gap-2'
+
+function CredentialKeyFooter({ children }: { children: React.ReactNode }) {
+  return (
+    <div className={credentialKeyFooterClass} data-slot='credential-key-footer'>
+      {children}
+    </div>
+  )
+}
+
 export function CredentialKeyPanel({
   label,
   value,
@@ -29,7 +39,7 @@ export function CredentialKeyPanel({
         </span>
         {actions}
       </div>
-      {footer ? <div className='mt-3 flex flex-wrap gap-2'>{footer}</div> : null}
+      {footer ? <CredentialKeyFooter>{footer}</CredentialKeyFooter> : null}
     </div>
   )
 }
