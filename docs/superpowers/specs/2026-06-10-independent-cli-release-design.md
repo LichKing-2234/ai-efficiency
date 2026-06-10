@@ -1,6 +1,6 @@
 # Independent CLI Release Design
 
-**Status:** Implemented and live CLI release validation passed for `ae-cli/v0.2.0-preview.1`
+**Status:** Implemented. The live CLI release workflow was validated with `ae-cli/v0.2.0-preview.1`; current PR head also includes local installer/update hardening after that live validation.
 
 ## Overview
 
@@ -150,7 +150,7 @@ on:
 
 CLI workflow 的职责：
 
-1. 解析并验证 tag 必须匹配 `^ae-cli/v[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$`。
+1. 解析并验证 tag 必须匹配 `^ae-cli/v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$`。
 2. checkout 对应 tag。
 3. 运行 `cd ae-cli && go test ./...`。
 4. 运行 CLI release sanity check，例如 `ae-cli version` 构建元数据测试。
@@ -178,6 +178,7 @@ CLI workflow 的职责：
 - CLI installer / updater 不得继续把仓库级 `/releases/latest` 当作 CLI latest。
 - CLI installer / updater 应通过列出 releases 并筛选 `ae-cli/v*`，或通过新的 CLI 专用 release API 入口，找到最新 CLI release。
 - CLI installer / updater 的 “latest” 含义是 GitHub releases list 中最新发布的 `ae-cli/v*` release；实现必须在当前页没有 CLI release 时跟随 GitHub `Link: rel="next"` 分页继续查找。
+- CLI installer 显式 pinned tag 必须同样使用 `ae-cli/v*` 命名空间；平台 `v*`、裸版本号、`ae-cli/0.2.0` 以及 patch 后直接接点号的非 semver tag 都必须拒绝。
 - 如果 GitHub Release 或 GoReleaser 默认会把新 release 标记为 latest，CLI workflow 必须显式关闭或在发布后校正。
 
 ### Why Not Path Filters For Release Split

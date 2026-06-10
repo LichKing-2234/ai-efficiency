@@ -8,11 +8,20 @@
 
 **Tech Stack:** GitHub Actions, GoReleaser v2, Go 1.24+, Bash, PowerShell, GitHub Releases API.
 
-**Status:** Implemented and live CLI release validation passed for `ae-cli/v0.2.0-preview.1`. PowerShell syntax verification is not runnable in the current local environment because `pwsh` is not installed; this remains an unchecked verification gap approved by the user on 2026-06-10.
+**Status:** Implemented. The live CLI release workflow was validated with `ae-cli/v0.2.0-preview.1` at commit `686d5b4`; the current PR head includes later installer/update hardening that is validated locally but has not minted another live CLI release. PowerShell syntax verification is not runnable in the current local environment because `pwsh` is not installed; this remains an unchecked verification gap approved by the user on 2026-06-10.
 
 **Local Tooling Note:** `goreleaser` is not installed as a standalone binary in this environment. GoReleaser validation is run with `GOPROXY=https://goproxy.cn,direct go run github.com/goreleaser/goreleaser/v2@latest ...`.
 
 **Source Spec:** [`docs/superpowers/specs/2026-06-10-independent-cli-release-design.md`](/Users/admin/ai-efficiency/docs/superpowers/specs/2026-06-10-independent-cli-release-design.md)
+
+**Post-Review Hardening (2026-06-10):**
+
+- [x] Verified reviewer feedback that explicit installer arguments still accepted non-CLI tags.
+- [x] Added failing installer coverage for `v0.2.1-preview.1`, `0.2.1-preview.1`, `ae-cli/0.2.1-preview.1`, and `ae-cli/v0.2.1.preview.1`.
+- [x] Rejected explicit non-`ae-cli/v*` installer tags in Bash and PowerShell before any release download.
+- [x] Aligned Bash, PowerShell, and workflow tag regexes to the semver-compatible `ae-cli/vX.Y.Z` or `ae-cli/vX.Y.Z-prerelease` shape.
+- [x] Re-ran `bash ae-cli/test/install-test.sh`, `bash -n ae-cli/install.sh`, workflow YAML parsing, `cd ae-cli && go test ./...`, and `git diff --check`.
+- [ ] PowerShell syntax validation remains not run because `pwsh` is not installed in this environment.
 
 ---
 
@@ -41,13 +50,13 @@
   Add release-list tests proving platform releases are ignored, the newest CLI release is selected, and the installer receives the full `ae-cli/v*` release tag.
 
 - `ae-cli/install.sh`
-  Change default release discovery from repository latest to release-list filtering for the latest published `ae-cli/v*` release, following GitHub release pagination when needed. Accept both `ae-cli/vX.Y.Z` and legacy `vX.Y.Z` pinned arguments, but resolve latest from CLI releases only.
+  Change default release discovery from repository latest to release-list filtering for the latest published `ae-cli/v*` release, following GitHub release pagination when needed. Explicit pinned arguments must match `ae-cli/vX.Y.Z` or `ae-cli/vX.Y.Z-prerelease`; platform, bare, and missing-`v` tags are rejected.
 
 - `ae-cli/install.ps1`
-  Match the Bash installer: filter release list for `ae-cli/v*`, follow GitHub release pagination, accept pinned `ae-cli/vX.Y.Z` or `vX.Y.Z`, and derive archive names from the stripped version.
+  Match the Bash installer: filter release list for `ae-cli/v*`, follow GitHub release pagination, reject non-`ae-cli/v*` explicit pinned tags, and derive archive names from the stripped version.
 
 - `ae-cli/test/install-test.sh`
-  Update installer fixtures to include both platform and CLI releases, then assert the installer chooses the CLI release and still supports a pinned full CLI tag.
+  Update installer fixtures to include both platform and CLI releases, then assert the installer chooses the CLI release, supports a pinned full CLI tag, and rejects explicit non-CLI tags.
 
 - `ae-cli/README.md`
   Document the independent CLI tag namespace and clarify that CLI update/install reads CLI releases, not platform latest.
@@ -372,6 +381,9 @@ LATEST_TAG="ae-cli/v0.2.0-preview.1"
 PLATFORM_LATEST_TAG="v0.1.0-preview.42"
 PINNED_TAG="ae-cli/v0.2.1-preview.1"
 LEGACY_PINNED_TAG="v0.2.1-preview.1"
+BARE_PINNED_TAG="0.2.1-preview.1"
+MISSING_V_CLI_PINNED_TAG="ae-cli/0.2.1-preview.1"
+DOT_SUFFIX_CLI_PINNED_TAG="ae-cli/v0.2.1.preview.1"
 BAD_CHECKSUM_TAG="ae-cli/v0.2.2-bad"
 MISSING_BINARY_TAG="ae-cli/v0.2.3-missing-binary"
 PATH_WARNING_TAG="ae-cli/v0.2.4-path-warning"
@@ -408,30 +420,46 @@ Replace the latest JSON fixture:
 printf '[{"tag_name":"%s"},{"tag_name":"%s"}]\n' "$PLATFORM_LATEST_TAG" "$LATEST_TAG" >"$TMP_ROOT/latest.json"
 ```
 
-Add a legacy pinned archive after `make_cli_archive "$PINNED_TAG"`:
+Add invalid pinned archives after `make_cli_archive "$PINNED_TAG"` so explicit tag validation is proven before any download fallback:
 
 ```bash
 make_cli_archive "$LEGACY_PINNED_TAG"
+make_cli_archive "$BARE_PINNED_TAG"
+make_cli_archive "$MISSING_V_CLI_PINNED_TAG"
+make_cli_archive "$DOT_SUFFIX_CLI_PINNED_TAG"
 ```
 
-- [x] **Step 2: Add installer assertions for CLI release selection and legacy pinned compatibility**
+- [x] **Step 2: Add installer assertions for CLI release selection and invalid explicit tag rejection**
 
 After the existing pinned install block, add:
 
 ```bash
-LEGACY_PINNED_HOME="$TMP_ROOT/home-legacy-pinned"
-mkdir -p "$LEGACY_PINNED_HOME"
-LEGACY_PINNED_LOG="$TMP_ROOT/legacy-pinned.log"
-run_installer \
-  "$LEGACY_PINNED_HOME" \
-  "$LEGACY_PINNED_HOME/.local/bin:/usr/bin:/bin" \
-  "file://$TMP_ROOT/latest.json" \
-  "$LEGACY_PINNED_TAG" \
-  >"$LEGACY_PINNED_LOG" 2>&1
+assert_invalid_pinned_tag() {
+  local tag="$1"
+  local home_dir="$2"
+  local log_file="$3"
+  local status
 
-test -x "$LEGACY_PINNED_HOME/.local/bin/ae-cli"
-"$LEGACY_PINNED_HOME/.local/bin/ae-cli" | grep -q "ae-cli ${LEGACY_PINNED_TAG}"
-grep -q "Installed ae-cli ${LEGACY_PINNED_TAG} to $LEGACY_PINNED_HOME/.local/bin/ae-cli" "$LEGACY_PINNED_LOG"
+  mkdir -p "$home_dir"
+  set +e
+  run_installer \
+    "$home_dir" \
+    "$home_dir/.local/bin:/usr/bin:/bin" \
+    "file://$TMP_ROOT/latest.json" \
+    "$tag" \
+    >"$log_file" 2>&1
+  status=$?
+  set -e
+
+  test "$status" -ne 0
+  grep -q "release tag must match ae-cli/vX.Y.Z" "$log_file"
+  test ! -e "$home_dir/.local/bin/ae-cli"
+}
+
+assert_invalid_pinned_tag "$LEGACY_PINNED_TAG" "$TMP_ROOT/home-legacy-pinned" "$TMP_ROOT/legacy-pinned.log"
+assert_invalid_pinned_tag "$BARE_PINNED_TAG" "$TMP_ROOT/home-bare-pinned" "$TMP_ROOT/bare-pinned.log"
+assert_invalid_pinned_tag "$MISSING_V_CLI_PINNED_TAG" "$TMP_ROOT/home-missing-v-cli-pinned" "$TMP_ROOT/missing-v-cli-pinned.log"
+assert_invalid_pinned_tag "$DOT_SUFFIX_CLI_PINNED_TAG" "$TMP_ROOT/home-dot-suffix-cli-pinned" "$TMP_ROOT/dot-suffix-cli-pinned.log"
 ```
 
 In the latest install assertions, keep:
@@ -451,7 +479,7 @@ Run:
 bash ae-cli/test/install-test.sh
 ```
 
-Expected: FAIL. The installer should fail to locate archives for `ae-cli/v*` because `download_release` still derives versions with `${tag#v}`.
+Expected: FAIL before the validation fix. The installer should still accept at least `v0.2.1-preview.1` as an explicit release tag, proving non-`ae-cli/v*` pinned tags need to be rejected before download.
 
 - [x] **Step 4: Implement CLI release filtering in `install.sh`**
 
@@ -495,7 +523,7 @@ latest_tag() {
       for (i = 1; i <= NF; i++) {
         if ($i == "tag_name") {
           candidate = $(i + 2)
-          if (candidate ~ /^ae-cli\/v[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$/) {
+          if (candidate ~ /^ae-cli\/v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$/) {
             print candidate
             exit
           }
@@ -566,7 +594,7 @@ $ReleaseApiUrl = if ($env:AE_CLI_INSTALL_RELEASE_API_URL) { $env:AE_CLI_INSTALL_
 with:
 
 ```powershell
-$CliReleaseTagPattern = "^ae-cli/v\d+\.\d+\.\d+([-.][0-9A-Za-z.-]+)?$"
+$CliReleaseTagPattern = "^ae-cli/v\d+\.\d+\.\d+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$"
 $ReleaseApiUrl = if ($env:AE_CLI_INSTALL_RELEASE_API_URL) { $env:AE_CLI_INSTALL_RELEASE_API_URL } else { "https://api.github.com/repos/$Repo/releases?per_page=100" }
 ```
 
@@ -864,7 +892,7 @@ jobs:
             TAG="${GITHUB_REF#refs/tags/}"
           fi
 
-          echo "$TAG" | grep -Eq '^ae-cli/v[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$'
+          echo "$TAG" | grep -Eq '^ae-cli/v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$'
           VERSION="${TAG#ae-cli/}"
           VERSION_NO_V="${VERSION#v}"
 
@@ -1410,7 +1438,7 @@ Observed: installing into a temporary `HOME` from `ae-cli/v0.2.0-preview.1` succ
 Update the top `Status` line in this plan to:
 
 ```markdown
-**Status:** Implemented and live CLI release validation passed for `ae-cli/v0.2.0-preview.1`.
+**Status:** Implemented. The live CLI release workflow was validated with `ae-cli/v0.2.0-preview.1`; the current PR head has additional local hardening after that live validation.
 ```
 
 Then run:

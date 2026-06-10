@@ -3,6 +3,7 @@ set -euo pipefail
 
 GITHUB_REPO="LichKing-2234/ai-efficiency"
 CLI_RELEASE_TAG_PREFIX="ae-cli/"
+CLI_RELEASE_TAG_REGEX='^ae-cli/v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$'
 
 if [[ -z "${HOME:-}" ]]; then
   echo "HOME must be set to determine the installation directory" >&2
@@ -122,6 +123,14 @@ release_version_from_tag() {
   printf '%s' "$tag"
 }
 
+validate_cli_release_tag() {
+  local tag="$1"
+  if [[ ! "$tag" =~ $CLI_RELEASE_TAG_REGEX ]]; then
+    echo "release tag must match ae-cli/vX.Y.Z or ae-cli/vX.Y.Z-prerelease: ${tag}" >&2
+    exit 1
+  fi
+}
+
 next_page_url() {
   local headers_file="$1"
 
@@ -154,7 +163,7 @@ latest_tag() {
         for (i = 1; i <= NF; i++) {
           if ($i == "tag_name") {
             candidate = $(i + 2)
-            if (candidate ~ /^ae-cli\/v[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$/) {
+            if (candidate ~ /^ae-cli\/v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$/) {
               print candidate
               exit
             }
@@ -380,6 +389,7 @@ main() {
   TMP_DIR="$(mktemp -d)"
 
   local tag="${1:-$(latest_tag)}"
+  validate_cli_release_tag "$tag"
   echo "Installing ae-cli ${tag}..."
   download_release "$tag"
   install_binary

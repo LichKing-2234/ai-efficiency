@@ -21,6 +21,9 @@ LATEST_TAG="ae-cli/v0.2.0-preview.1"
 PLATFORM_LATEST_TAG="v0.1.0-preview.42"
 PINNED_TAG="ae-cli/v0.2.1-preview.1"
 LEGACY_PINNED_TAG="v0.2.1-preview.1"
+BARE_PINNED_TAG="0.2.1-preview.1"
+MISSING_V_CLI_PINNED_TAG="ae-cli/0.2.1-preview.1"
+DOT_SUFFIX_CLI_PINNED_TAG="ae-cli/v0.2.1.preview.1"
 BAD_CHECKSUM_TAG="ae-cli/v0.2.2-bad"
 MISSING_BINARY_TAG="ae-cli/v0.2.3-missing-binary"
 PATH_WARNING_TAG="ae-cli/v0.2.4-path-warning"
@@ -132,6 +135,9 @@ run_installer() {
 make_cli_archive "$LATEST_TAG"
 make_cli_archive "$PINNED_TAG"
 make_cli_archive "$LEGACY_PINNED_TAG"
+make_cli_archive "$BARE_PINNED_TAG"
+make_cli_archive "$MISSING_V_CLI_PINNED_TAG"
+make_cli_archive "$DOT_SUFFIX_CLI_PINNED_TAG"
 make_bad_checksum_archive "$BAD_CHECKSUM_TAG"
 make_missing_binary_archive "$MISSING_BINARY_TAG"
 make_cli_archive "$PATH_WARNING_TAG"
@@ -247,19 +253,32 @@ test -x "$PINNED_HOME/.local/bin/ae-cli"
 "$PINNED_HOME/.local/bin/ae-cli" | grep -q "ae-cli ${PINNED_TAG}"
 grep -q "Installed ae-cli ${PINNED_TAG} to $PINNED_HOME/.local/bin/ae-cli" "$PINNED_LOG"
 
-LEGACY_PINNED_HOME="$TMP_ROOT/home-legacy-pinned"
-mkdir -p "$LEGACY_PINNED_HOME"
-LEGACY_PINNED_LOG="$TMP_ROOT/legacy-pinned.log"
-run_installer \
-  "$LEGACY_PINNED_HOME" \
-  "$LEGACY_PINNED_HOME/.local/bin:/usr/bin:/bin" \
-  "file://$TMP_ROOT/latest.json" \
-  "$LEGACY_PINNED_TAG" \
-  >"$LEGACY_PINNED_LOG" 2>&1
+assert_invalid_pinned_tag() {
+  local tag="$1"
+  local home_dir="$2"
+  local log_file="$3"
+  local status
 
-test -x "$LEGACY_PINNED_HOME/.local/bin/ae-cli"
-"$LEGACY_PINNED_HOME/.local/bin/ae-cli" | grep -q "ae-cli ${LEGACY_PINNED_TAG}"
-grep -q "Installed ae-cli ${LEGACY_PINNED_TAG} to $LEGACY_PINNED_HOME/.local/bin/ae-cli" "$LEGACY_PINNED_LOG"
+  mkdir -p "$home_dir"
+  set +e
+  run_installer \
+    "$home_dir" \
+    "$home_dir/.local/bin:/usr/bin:/bin" \
+    "file://$TMP_ROOT/latest.json" \
+    "$tag" \
+    >"$log_file" 2>&1
+  status=$?
+  set -e
+
+  test "$status" -ne 0
+  grep -q "release tag must match ae-cli/vX.Y.Z" "$log_file"
+  test ! -e "$home_dir/.local/bin/ae-cli"
+}
+
+assert_invalid_pinned_tag "$LEGACY_PINNED_TAG" "$TMP_ROOT/home-legacy-pinned" "$TMP_ROOT/legacy-pinned.log"
+assert_invalid_pinned_tag "$BARE_PINNED_TAG" "$TMP_ROOT/home-bare-pinned" "$TMP_ROOT/bare-pinned.log"
+assert_invalid_pinned_tag "$MISSING_V_CLI_PINNED_TAG" "$TMP_ROOT/home-missing-v-cli-pinned" "$TMP_ROOT/missing-v-cli-pinned.log"
+assert_invalid_pinned_tag "$DOT_SUFFIX_CLI_PINNED_TAG" "$TMP_ROOT/home-dot-suffix-cli-pinned" "$TMP_ROOT/dot-suffix-cli-pinned.log"
 
 BAD_LOG="$TMP_ROOT/bad.log"
 set +e

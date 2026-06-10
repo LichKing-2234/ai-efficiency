@@ -17,6 +17,7 @@ curl -fsSL https://raw.githubusercontent.com/LichKing-2234/ai-efficiency/main/ae
 The installer:
 
 - downloads the matching GitHub Release archive
+- requires full CLI release tags such as `ae-cli/v0.2.0` for pinned installs; platform `v*` tags are rejected
 - verifies `checksums.txt`
 - installs `ae-cli` to `~/.local/bin/ae-cli`
 - on first install, writes `~/.ae-cli/config.yaml` with the default backend URL
