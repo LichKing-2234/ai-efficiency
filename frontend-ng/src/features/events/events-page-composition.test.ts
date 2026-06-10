@@ -51,4 +51,11 @@ describe('Events page composition', () => {
     expect(source).toContain('DataGridStatusRow')
     expect(source).not.toContain("className='px-6 py-10 text-center text-muted-foreground text-sm'")
   })
+
+  test('uses shared primitives for pagination metadata and empty detail sections', () => {
+    expect(source).toContain("import { Empty, EmptyHeader, EmptyTitle } from '@/components/ui/empty'")
+    expect(source).toContain("meta={t('common.pageCount'")
+    expect(source).not.toContain("<span className='text-muted-foreground text-xs'>{t('common.pageCount'")
+    expect(source).not.toContain("<div className='text-muted-foreground text-sm'>{t('events.noMatchedPrs')}</div>")
+  })
 })

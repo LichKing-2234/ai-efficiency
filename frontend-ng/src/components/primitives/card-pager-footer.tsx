@@ -3,11 +3,13 @@ import { CardFooter } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
 
 export function CardPagerFooter({
+  meta,
   summary,
   previous,
   next,
   className
 }: {
+  meta?: React.ReactNode
   summary: React.ReactNode
   previous: React.ReactNode
   next: React.ReactNode
@@ -19,6 +21,7 @@ export function CardPagerFooter({
         <span className='text-muted-foreground'>{summary}</span>
         <div className='flex items-center gap-2'>
           {previous}
+          {meta ? <span className='text-muted-foreground text-xs' data-slot='card-pager-footer-meta'>{meta}</span> : null}
           {next}
         </div>
       </div>

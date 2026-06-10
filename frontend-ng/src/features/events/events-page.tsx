@@ -5,6 +5,7 @@ import { useState } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import { Empty, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
 import { AdvancedDataPanel } from '@/components/primitives/advanced-data-panel'
 import { CardFilterBar } from '@/components/primitives/card-filter-bar'
 import { CardPagerFooter } from '@/components/primitives/card-pager-footer'
@@ -233,6 +234,7 @@ export function EventsPage() {
           {rows.length === 0 ? <DataGridStatusRow columns={eventColumns}>{t('common.empty')}</DataGridStatusRow> : null}
         </DataGrid>
         <CardPagerFooter
+          meta={t('common.pageCount', { current: pagination.currentPage, total: pagination.totalPages })}
           summary={t('events.total', { total: number(total) })}
           previous={(
             <>
@@ -251,10 +253,7 @@ export function EventsPage() {
             </>
           )}
           next={(
-            <>
-              <span className='text-muted-foreground text-xs'>{t('common.pageCount', { current: pagination.currentPage, total: pagination.totalPages })}</span>
-              <Button size='sm' variant='outline' onClick={nextPage} disabled={!pagination.canGoNext}>{t('common.next')}</Button>
-            </>
+            <Button size='sm' variant='outline' onClick={nextPage} disabled={!pagination.canGoNext}>{t('common.next')}</Button>
           )}
         />
       </Card>
@@ -344,7 +343,11 @@ function EventDetail({ event, isAdmin, onClose }: { event: ToolUsageEventDetail 
                 ))}
               </LinkedRecordList>
             ) : (
-              <div className='text-muted-foreground text-sm'>{t('events.noMatchedPrs')}</div>
+              <Empty className='p-4'>
+                <EmptyHeader>
+                  <EmptyTitle>{t('events.noMatchedPrs')}</EmptyTitle>
+                </EmptyHeader>
+              </Empty>
             )}
           </section>
 

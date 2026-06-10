@@ -37,4 +37,20 @@ describe('CardPagerFooter', () => {
     expect(html).toContain('border-t')
     expect(html).toContain('p-3')
   })
+
+  test('renders page metadata through a shared muted slot', () => {
+    const html = renderToStaticMarkup(
+      <CardPagerFooter
+        meta='Page 1 of 4'
+        summary='20 records'
+        previous={<button type='button'>Previous</button>}
+        next={<button type='button'>Next</button>}
+      />
+    )
+
+    expect(html).toContain('data-slot="card-pager-footer-meta"')
+    expect(html).toContain('Page 1 of 4')
+    expect(html).toContain('text-muted-foreground')
+    expect(html).toContain('text-xs')
+  })
 })
