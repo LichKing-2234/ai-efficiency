@@ -39,4 +39,12 @@ describe('AdvancedDataPanel', () => {
     expect(html).toContain('data-slot="advanced-data-panel"')
     expect(html).not.toContain('data-slot="code-block"')
   })
+
+  test('keeps code block spacing inside the advanced data code slot', async () => {
+    const source = await import('node:fs/promises').then((fs) =>
+      fs.readFile(new URL('./advanced-data-panel.tsx', import.meta.url), 'utf8')
+    )
+
+    expect(source).not.toContain("<CodeBlock ariaLabel={codeAriaLabel} className='mt-3'>")
+  })
 })

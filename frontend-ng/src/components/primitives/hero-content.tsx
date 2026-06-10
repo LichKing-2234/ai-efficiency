@@ -2,6 +2,25 @@ import type * as React from 'react'
 import { CardContent } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
 
+const heroTitleClass = 'mt-4 font-semibold text-2xl tracking-tight md:text-3xl'
+const heroDescriptionClass = 'mt-2 text-muted-foreground text-sm'
+
+function HeroTitle({ children }: { children: React.ReactNode }) {
+  return (
+    <h1 className={heroTitleClass} data-slot='hero-title'>
+      {children}
+    </h1>
+  )
+}
+
+function HeroDescription({ children }: { children: React.ReactNode }) {
+  return (
+    <p className={heroDescriptionClass} data-slot='hero-description'>
+      {children}
+    </p>
+  )
+}
+
 export function HeroContent({
   action,
   badge,
@@ -22,8 +41,8 @@ export function HeroContent({
     >
       <div className='max-w-2xl' data-slot='hero-copy'>
         {badge}
-        <h1 className='mt-4 font-semibold text-2xl tracking-tight md:text-3xl' data-slot='hero-title'>{title}</h1>
-        {description ? <p className='mt-2 text-muted-foreground text-sm' data-slot='hero-description'>{description}</p> : null}
+        <HeroTitle>{title}</HeroTitle>
+        {description ? <HeroDescription>{description}</HeroDescription> : null}
       </div>
       {action ? <div data-slot='hero-action'>{action}</div> : null}
     </CardContent>

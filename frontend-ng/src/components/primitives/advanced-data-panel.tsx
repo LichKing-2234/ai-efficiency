@@ -3,10 +3,20 @@ import { cn } from '@/lib/utils'
 import { CodeBlock } from './code-block'
 import { FieldItem, FieldList } from './field-list'
 
+const advancedCodeClass = 'mt-3'
+
 export type AdvancedDataField = {
   label: React.ReactNode
   mono?: boolean
   value: React.ReactNode
+}
+
+function AdvancedDataCode({ ariaLabel, children }: { ariaLabel?: string; children: string }) {
+  return (
+    <CodeBlock ariaLabel={ariaLabel} className={advancedCodeClass}>
+      {children}
+    </CodeBlock>
+  )
 }
 
 export function AdvancedDataPanel({
@@ -42,7 +52,7 @@ export function AdvancedDataPanel({
               ))}
             </FieldList>
           </div>
-          {code ? <CodeBlock ariaLabel={codeAriaLabel} className='mt-3'>{code}</CodeBlock> : null}
+          {code ? <AdvancedDataCode ariaLabel={codeAriaLabel}>{code}</AdvancedDataCode> : null}
         </AccordionContent>
       </AccordionItem>
     </Accordion>

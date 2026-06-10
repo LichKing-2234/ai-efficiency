@@ -23,4 +23,13 @@ describe('HeroContent', () => {
     expect(html).toContain('AI assisted delivery')
     expect(html).toContain('Open setup')
   })
+
+  test('keeps hero title and description rhythm inside semantic slots', async () => {
+    const source = await import('node:fs/promises').then((fs) =>
+      fs.readFile(new URL('./hero-content.tsx', import.meta.url), 'utf8')
+    )
+
+    expect(source).not.toContain("className='mt-4 font-semibold text-2xl tracking-tight md:text-3xl'")
+    expect(source).not.toContain("className='mt-2 text-muted-foreground text-sm'")
+  })
 })
