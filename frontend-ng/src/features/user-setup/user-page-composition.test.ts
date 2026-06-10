@@ -8,7 +8,8 @@ const source = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), 'us
 describe('User setup page composition', () => {
   test('uses shared action grouping for access group selectors', () => {
     expect(source).toContain("from '@/components/primitives/action-group'")
-    expect(source).toContain("<ActionGroup wrap className='justify-start sm:justify-end'>")
+    expect(source).toContain("<ActionGroup align='responsive-end' wrap>")
+    expect(source).not.toContain("<ActionGroup wrap className='justify-start sm:justify-end'>")
     expect(source).not.toContain('actions={(selectedProvider?.groups ?? []).map((group) => (')
   })
 

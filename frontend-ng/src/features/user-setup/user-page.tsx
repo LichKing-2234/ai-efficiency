@@ -198,7 +198,7 @@ export function UserPage() {
               title={selectedProvider ? selectedProvider.display_name || selectedProvider.name : t('userSetup.aiAccess')}
               description={<RecordMeta wrap>{selectedProvider?.base_url || t('userSetup.noProvider')}</RecordMeta>}
               actions={(
-                <ActionGroup wrap className='justify-start sm:justify-end'>
+                <ActionGroup align='responsive-end' wrap>
                   {(selectedProvider?.groups ?? []).map((group) => (
                   <Button
                     key={group.group_id}

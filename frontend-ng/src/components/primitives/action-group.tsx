@@ -9,7 +9,7 @@ export function ActionGroup({
   layout = 'inline',
   wrap = false
 }: {
-  align?: 'end' | 'start'
+  align?: 'end' | 'responsive-end' | 'start'
   children: React.ReactNode
   className?: string
   fit?: boolean
@@ -21,7 +21,9 @@ export function ActionGroup({
       data-slot='action-group'
       className={cn(
         'flex items-center gap-2',
-        align === 'start' ? 'justify-start' : 'justify-end',
+        align === 'start' && 'justify-start',
+        align === 'end' && 'justify-end',
+        align === 'responsive-end' && 'justify-start sm:justify-end',
         fit && 'min-w-0',
         layout === 'split' && 'w-full [&>*]:flex-1',
         wrap && 'flex-wrap',

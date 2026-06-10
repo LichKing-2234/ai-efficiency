@@ -65,4 +65,16 @@ describe('ActionGroup', () => {
     expect(html).toContain('min-w-0')
     expect(html).toContain('Copy encrypted')
   })
+
+  test('supports responsive end alignment for header actions', () => {
+    const html = renderToStaticMarkup(
+      <ActionGroup align='responsive-end' wrap>
+        <button type='button'>Group Alpha</button>
+      </ActionGroup>
+    )
+
+    expect(html).toContain('justify-start')
+    expect(html).toContain('sm:justify-end')
+    expect(html).not.toContain('gap-2 justify-end flex-wrap')
+  })
 })
