@@ -17,4 +17,9 @@ describe('Admin users page composition', () => {
     expect(source).not.toContain("className='mono truncate text-muted-foreground text-xs'")
     expect(source).not.toContain("className='tnum text-muted-foreground text-xs'")
   })
+
+  test('uses shared data grid cell description slots for user identity metadata', () => {
+    expect(source).not.toContain("className='block truncate text-muted-foreground text-xs'")
+    expect(source).toContain('description={user.email}')
+  })
 })

@@ -78,4 +78,23 @@ describe('DataGrid', () => {
     expect(html).toContain('text-muted-foreground')
     expect(html).toContain('text-[var(--ink-2)]')
   })
+
+  test('renders standardized primary and description cell content', () => {
+    const html = renderToStaticMarkup(
+      <DataGrid>
+        <DataGridRow columns='1fr'>
+          <DataGridCell description='alice@example.com' truncate>Alice</DataGridCell>
+        </DataGridRow>
+      </DataGrid>
+    )
+
+    expect(html).toContain('data-slot="data-grid-cell"')
+    expect(html).toContain('data-slot="data-grid-cell-primary"')
+    expect(html).toContain('data-slot="data-grid-cell-description"')
+    expect(html).toContain('Alice')
+    expect(html).toContain('alice@example.com')
+    expect(html).toContain('font-semibold')
+    expect(html).toContain('text-muted-foreground')
+    expect(html).not.toContain('block truncate text-muted-foreground text-xs')
+  })
 })

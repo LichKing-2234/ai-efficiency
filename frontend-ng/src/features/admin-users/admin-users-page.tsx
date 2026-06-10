@@ -297,10 +297,7 @@ export function AdminUsersPage() {
               </span>
               <span className='flex min-w-0 items-center gap-3'>
                 <IdentityAvatar value={user.username || user.email} />
-                <span className='min-w-0'>
-                  <span className='block truncate font-semibold text-sm'>{user.username}</span>
-                  <span className='block truncate text-muted-foreground text-xs'>{user.email}</span>
-                </span>
+                <DataGridCell description={user.email} truncate>{user.username}</DataGridCell>
               </span>
               <span><Badge variant={user.role === 'admin' ? 'ai' : 'secondary'}>{user.role}</Badge></span>
               <span className='truncate text-sm'>{user.auth_source}</span>

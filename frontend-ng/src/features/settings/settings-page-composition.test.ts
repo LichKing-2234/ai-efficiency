@@ -29,4 +29,11 @@ describe('Settings page composition', () => {
     expect(source).not.toContain("className='mono truncate text-muted-foreground text-xs'")
     expect(source).not.toContain("className='tnum text-muted-foreground text-xs'")
   })
+
+  test('uses shared data grid cell description slots for credential descriptions', () => {
+    const source = readFileSync(join(ROOT, 'features/settings/settings-page.tsx'), 'utf8')
+
+    expect(source).not.toContain("className='block truncate text-muted-foreground text-xs'")
+    expect(source).toContain('description={credential.description}')
+  })
 })

@@ -86,6 +86,7 @@ export function DataGridCell({
   align = 'left',
   children,
   className,
+  description,
   emphasis = false,
   mono = false,
   muted = false,
@@ -96,6 +97,7 @@ export function DataGridCell({
   align?: 'left' | 'right'
   children: React.ReactNode
   className?: string
+  description?: React.ReactNode
   emphasis?: boolean
   mono?: boolean
   muted?: boolean
@@ -103,6 +105,22 @@ export function DataGridCell({
   tone?: 'default' | 'metadata' | 'muted' | 'subtle'
   truncate?: boolean
 }) {
+  if (description) {
+    return (
+      <span
+        className={cn('min-w-0', align === 'right' && 'text-right', className)}
+        data-slot='data-grid-cell'
+      >
+        <span className={cn('block font-semibold text-sm', truncate && 'truncate')} data-slot='data-grid-cell-primary'>
+          {children}
+        </span>
+        <span className={cn('block text-muted-foreground text-xs', truncate && 'truncate')} data-slot='data-grid-cell-description'>
+          {description}
+        </span>
+      </span>
+    )
+  }
+
   return (
     <span
       className={cn(

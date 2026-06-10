@@ -384,10 +384,7 @@ export function SettingsPage() {
               </DataGridHeader>
             {(credentials.data ?? []).map((credential) => (
               <DataGridRow key={credential.id} columns={credentialColumns}>
-                <span className='min-w-0'>
-                  <span className='block truncate font-semibold text-sm'>{credential.name}</span>
-                  <span className='block truncate text-muted-foreground text-xs'>{credential.description}</span>
-                </span>
+                <DataGridCell description={credential.description} truncate>{credential.name}</DataGridCell>
                 <span><Badge variant='secondary'>{credential.kind}</Badge></span>
                 <DataGridCell numeric tone='metadata'>{number(credential.usage_count)}</DataGridCell>
                 <DataGridCell numeric tone='metadata'>{dateTime(credential.updated_at)}</DataGridCell>
