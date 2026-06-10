@@ -11,10 +11,13 @@ describe('Repos page composition', () => {
     expect(source).toContain("from '@/components/primitives/section-card-header'")
     expect(source).toContain('<CardFilterBar>')
     expect(source).toContain('<SectionCardHeader')
+    expect(source).toContain('meta={`${number(total, locale)} ${t(')
     expect(source).not.toContain("<div className='flex flex-wrap items-center gap-2'>")
     expect(source).not.toContain("<div className='border-border border-b px-3.5 py-3'>")
     expect(source).not.toContain("<div className='mb-3 flex items-center justify-between gap-2'>")
     expect(source).not.toContain("<div className='flex flex-col gap-2 border-b border-border px-5 py-4 md:flex-row md:items-center md:justify-between'>")
+    expect(source).not.toContain("className='border-b border-border px-5 py-4'")
+    expect(source).not.toContain("actions={<span className='text-muted-foreground text-sm'>{number(total, locale)} {t('repos.totalRepositories')}</span>}")
   })
 
   test('uses shared record metadata for clone URLs', () => {

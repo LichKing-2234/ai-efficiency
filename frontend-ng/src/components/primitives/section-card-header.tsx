@@ -8,6 +8,7 @@ export function SectionCardHeader({
   actions,
   leading: Leading,
   live,
+  meta,
   className
 }: {
   title: React.ReactNode
@@ -15,6 +16,7 @@ export function SectionCardHeader({
   actions?: React.ReactNode
   leading?: React.ComponentType<{ className?: string }>
   live?: boolean
+  meta?: React.ReactNode
   className?: string
 }) {
   const titleNode = Leading || live ? (
@@ -29,7 +31,12 @@ export function SectionCardHeader({
     <CardHeader className={className}>
       <div className={cn('flex items-start justify-between gap-3', actions ? 'flex-col sm:flex-row sm:items-center' : 'items-center')}>
         <CardTitle>{titleNode}</CardTitle>
-        {actions ? <div className='flex shrink-0 items-center justify-end gap-2'>{actions}</div> : null}
+        {meta || actions ? (
+          <div className='flex shrink-0 items-center justify-end gap-2'>
+            {meta ? <span className='text-muted-foreground text-sm' data-slot='section-card-meta'>{meta}</span> : null}
+            {actions}
+          </div>
+        ) : null}
       </div>
       {description ? <CardDescription>{description}</CardDescription> : null}
     </CardHeader>

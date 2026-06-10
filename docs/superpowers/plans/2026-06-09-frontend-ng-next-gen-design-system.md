@@ -458,6 +458,10 @@ Follow-up OAuth/auth redirect diagnosis fixed the `/oauth/device` unauthenticate
 
   Follow-up workbench-rail audit evidence: `workbench-rail.test.tsx` was added and `repos-page-composition.test.ts` was extended with a red-green cycle; they first failed because `workbench-rail.tsx` did not exist and `repos-page.tsx` still owned the rail `aside` class, then passed after migration. Focused verification passed with `bun test src/components/primitives/workbench-rail.test.tsx src/features/repos/repos-page-composition.test.ts` and `bun run check`.
 
+  Follow-up section-header meta audit implementation adds a shared muted `meta` slot to `SectionCardHeader` and migrates the Repositories selected-scope total summary into it. The Repositories workbench no longer passes page-local border/padding or muted text classes into the selected-scope header, while preserving selected provider/scope labels, total count formatting, and the surrounding workbench layout.
+
+  Follow-up section-header meta audit evidence: `section-card-header.test.tsx` and `repos-page-composition.test.ts` were extended with a red-green cycle; they first failed because `SectionCardHeader` lacked the meta slot and `repos-page.tsx` still owned the selected-scope header classes, then passed after migration. Focused verification passed with `bun test src/components/primitives/section-card-header.test.tsx src/features/repos/repos-page-composition.test.ts src/features/repos/repos-state.test.ts`. Full verification passed with `bun run check`, `ulimit -n 65536 && bun test --timeout 20000`, `bun run build`, and `git diff --check`. Fresh `agent-browser` coverage on a new `4342` dev server opened `/repos` and reached `/login?redirect=%2Frepos` in the local unauthenticated state with no error boundary, no body horizontal overflow, and no button/link overflow; visible Repositories workbench meta rendering remains covered by the SectionCardHeader SSR test, Repos composition guard, TypeScript, and build until an authenticated local session is available.
+
 - [x] **Step 3: Repository detail**
 
   Re-skin SCM binding, usage snapshots, webhook status, and PR sync panels with shared cards/tables.

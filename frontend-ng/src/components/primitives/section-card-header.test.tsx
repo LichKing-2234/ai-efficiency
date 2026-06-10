@@ -55,4 +55,13 @@ describe('SectionCardHeader', () => {
     expect(html).toContain('live-dot')
     expect(html).toContain('Recent usage')
   })
+
+  test('renders standardized muted metadata without page-local text classes', () => {
+    const html = renderToStaticMarkup(<SectionCardHeader title='Selected scope' meta='42 repositories' />)
+
+    expect(html).toContain('data-slot="section-card-meta"')
+    expect(html).toContain('42 repositories')
+    expect(html).toContain('text-muted-foreground')
+    expect(html).toContain('text-sm')
+  })
 })

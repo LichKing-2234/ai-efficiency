@@ -306,10 +306,9 @@ export function ReposPage() {
             </WorkbenchRail>
             <section className='min-w-0'>
               <SectionCardHeader
-                className='border-b border-border px-5 py-4'
                 title={selectedScope || t('repos.selectedScope')}
                 description={selectedProvider?.name ?? t('common.empty')}
-                actions={<span className='text-muted-foreground text-sm'>{number(total, locale)} {t('repos.totalRepositories')}</span>}
+                meta={`${number(total, locale)} ${t('repos.totalRepositories')}`}
               />
               {repos.isLoading ? (
                 <LoadingState />
