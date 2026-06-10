@@ -130,61 +130,64 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
                 sparklineColor='var(--viz-cache)'
               />
             </div>
+            <Card>
+              <SectionCardHeader title={t('usageDashboard.tokenTrend')} description={t('usageDashboard.tokenTrendDescription', { range: rangeLabel })} />
+              <CardContent>
+                {snapshot.trend.length ? (
+                  <div className='flex flex-col gap-4'>
+                    <ChartLegend items={tokenKeys} />
+                    <StackedAreaChart
+                      keys={tokenKeys}
+                      series={snapshot.trend}
+                      valueFormatter={(value) => compact(value, locale)}
+                    />
+                  </div>
+                ) : (
+                  <Empty><EmptyHeader><EmptyTitle>{t('usageDashboard.noTrendData')}</EmptyTitle></EmptyHeader></Empty>
+                )}
+              </CardContent>
+            </Card>
             <div className='split-2'>
               <Card>
-                <SectionCardHeader title={t('usageDashboard.tokenTrend')} description={t('usageDashboard.tokenTrendDescription', { range: rangeLabel })} />
+                <SectionCardHeader title={t('usageDashboard.modelDistribution')} description={t('usageDashboard.modelDistributionDescription')} />
                 <CardContent>
-                  {snapshot.trend.length ? (
-                    <div className='flex flex-col gap-4'>
-                      <ChartLegend items={tokenKeys} />
-                      <StackedAreaChart
-                        keys={tokenKeys}
-                        series={snapshot.trend}
-                        valueFormatter={(value) => compact(value, locale)}
-                      />
-                    </div>
+                  {snapshot.models.length ? (
+                    <BarsH
+                      rows={snapshot.models.slice(0, 6).map((model, index) => ({
+                        label: model.model,
+                        value: model.total_tokens,
+                        share: model.total_tokens / modelMax,
+                        color: ['var(--viz-input)', 'var(--viz-output)', 'var(--viz-cache)', 'var(--viz-reason)', 'var(--ai-bright)', 'var(--ink-3)'][index % 6]
+                      }))}
+                      valueFormatter={(value) => compact(value, locale)}
+                    />
                   ) : (
-                    <Empty><EmptyHeader><EmptyTitle>{t('usageDashboard.noTrendData')}</EmptyTitle></EmptyHeader></Empty>
+                    <Empty><EmptyHeader><EmptyTitle>{t('usageDashboard.noModelData')}</EmptyTitle></EmptyHeader></Empty>
                   )}
                 </CardContent>
               </Card>
               <Card className='overflow-hidden'>
-                <SectionCardHeader title={t('usageDashboard.modelDistribution')} description={t('usageDashboard.modelDistributionDescription')} />
+                <SectionCardHeader title={t('usageDashboard.costByModel')} description={t('usageDashboard.modelDistributionDescription')} />
                 <CardContent className='px-0 pb-0'>
                   {snapshot.models.length ? (
-                    <>
-                      <div className='px-[18px] pb-4'>
-                        <BarsH
-                          rows={snapshot.models.slice(0, 6).map((model, index) => ({
-                            label: model.model,
-                            value: model.total_tokens,
-                            share: model.total_tokens / modelMax,
-                            color: ['var(--viz-input)', 'var(--viz-output)', 'var(--viz-cache)', 'var(--viz-reason)', 'var(--ai-bright)', 'var(--ink-3)'][index % 6]
-                          }))}
-                          valueFormatter={(value) => compact(value, locale)}
-                        />
-                      </div>
-                      <DataGrid className='border-t border-[var(--line)]' minWidth={560}>
-                        <DataGridHeader columns={modelColumns}>
-                          <span>{t('usageDashboard.model')}</span>
-                          <span className='text-right'>{t('events.requests')}</span>
-                          <span className='text-right'>{t('events.tokens')}</span>
-                          <span className='text-right'>{t('events.credit')}</span>
-                        </DataGridHeader>
-                        {snapshot.models.map((model) => (
-                          <DataGridRow columns={modelColumns} key={model.model}>
-                            <span className='mono min-w-0 truncate text-foreground text-xs'>{model.model}</span>
-                            <span className='tnum text-right'>{number(model.requests, locale)}</span>
-                            <span className='tnum text-right'>{compact(model.total_tokens, locale)}</span>
-                            <span className='tnum text-right font-semibold text-foreground'>{currency(model.actual_cost || model.cost, locale)}</span>
-                          </DataGridRow>
-                        ))}
-                      </DataGrid>
-                    </>
+                    <DataGrid minWidth={560}>
+                      <DataGridHeader columns={modelColumns}>
+                        <span>{t('usageDashboard.model')}</span>
+                        <span className='text-right'>{t('events.requests')}</span>
+                        <span className='text-right'>{t('events.tokens')}</span>
+                        <span className='text-right'>{t('events.credit')}</span>
+                      </DataGridHeader>
+                      {snapshot.models.map((model) => (
+                        <DataGridRow columns={modelColumns} key={model.model}>
+                          <span className='mono min-w-0 truncate text-foreground text-xs'>{model.model}</span>
+                          <span className='tnum text-right'>{number(model.requests, locale)}</span>
+                          <span className='tnum text-right'>{compact(model.total_tokens, locale)}</span>
+                          <span className='tnum text-right font-semibold text-foreground'>{currency(model.actual_cost || model.cost, locale)}</span>
+                        </DataGridRow>
+                      ))}
+                    </DataGrid>
                   ) : (
-                    <div className='px-[18px] pb-[18px]'>
-                      <Empty><EmptyHeader><EmptyTitle>{t('usageDashboard.noModelData')}</EmptyTitle></EmptyHeader></Empty>
-                    </div>
+                    <Empty><EmptyHeader><EmptyTitle>{t('usageDashboard.noModelData')}</EmptyTitle></EmptyHeader></Empty>
                   )}
                 </CardContent>
               </Card>
