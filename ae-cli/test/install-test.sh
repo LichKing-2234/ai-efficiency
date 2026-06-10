@@ -7,12 +7,21 @@ trap 'rm -rf "$TMP_ROOT"' EXIT
 
 INSTALLER="$TMP_ROOT/install.sh"
 RELEASE_ROOT="$TMP_ROOT/releases"
-LATEST_TAG="v0.2.0-test"
-PINNED_TAG="v0.2.1-test"
-BAD_CHECKSUM_TAG="v0.2.2-bad"
-MISSING_BINARY_TAG="v0.2.3-missing-binary"
-PATH_WARNING_TAG="v0.2.4-path-warning"
-SYMLINK_TAG="v0.2.5-symlink"
+LATEST_TAG="ae-cli/v0.2.0-preview.1"
+PLATFORM_LATEST_TAG="v0.1.0-preview.42"
+PINNED_TAG="ae-cli/v0.2.1-preview.1"
+LEGACY_PINNED_TAG="v0.2.1-preview.1"
+BAD_CHECKSUM_TAG="ae-cli/v0.2.2-bad"
+MISSING_BINARY_TAG="ae-cli/v0.2.3-missing-binary"
+PATH_WARNING_TAG="ae-cli/v0.2.4-path-warning"
+SYMLINK_TAG="ae-cli/v0.2.5-symlink"
+
+release_version_from_tag() {
+  local tag="$1"
+  tag="${tag#ae-cli/}"
+  tag="${tag#v}"
+  printf '%s' "$tag"
+}
 
 cp "$ROOT_DIR/ae-cli/install.sh" "$INSTALLER"
 chmod +x "$INSTALLER"
@@ -22,7 +31,8 @@ grep -q "HTTPS_PROXY" "$ROOT_DIR/ae-cli/install.ps1"
 
 make_cli_archive() {
   local tag="$1"
-  local version="${tag#v}"
+  local version
+  version="$(release_version_from_tag "$tag")"
   local stage_dir="$TMP_ROOT/stage-$version"
   local release_dir="$RELEASE_ROOT/$tag"
   local archive="ae-cli_${version}_linux_amd64.tar.gz"
@@ -48,7 +58,8 @@ EOF
 
 make_bad_checksum_archive() {
   local tag="$1"
-  local version="${tag#v}"
+  local version
+  version="$(release_version_from_tag "$tag")"
   local release_dir="$RELEASE_ROOT/$tag"
   local archive="ae-cli_${version}_linux_amd64.tar.gz"
 
@@ -58,7 +69,8 @@ make_bad_checksum_archive() {
 
 make_missing_binary_archive() {
   local tag="$1"
-  local version="${tag#v}"
+  local version
+  version="$(release_version_from_tag "$tag")"
   local stage_dir="$TMP_ROOT/stage-$version-missing"
   local release_dir="$RELEASE_ROOT/$tag"
   local archive="ae-cli_${version}_linux_amd64.tar.gz"
@@ -74,7 +86,8 @@ make_missing_binary_archive() {
 
 make_symlink_archive() {
   local tag="$1"
-  local version="${tag#v}"
+  local version
+  version="$(release_version_from_tag "$tag")"
   local stage_dir="$TMP_ROOT/stage-$version-symlink"
   local release_dir="$RELEASE_ROOT/$tag"
   local archive="ae-cli_${version}_linux_amd64.tar.gz"
@@ -108,11 +121,12 @@ run_installer() {
 
 make_cli_archive "$LATEST_TAG"
 make_cli_archive "$PINNED_TAG"
+make_cli_archive "$LEGACY_PINNED_TAG"
 make_bad_checksum_archive "$BAD_CHECKSUM_TAG"
 make_missing_binary_archive "$MISSING_BINARY_TAG"
 make_cli_archive "$PATH_WARNING_TAG"
 make_symlink_archive "$SYMLINK_TAG"
-printf '{"tag_name":"%s"}\n' "$LATEST_TAG" >"$TMP_ROOT/latest.json"
+printf '[{"tag_name":"%s"},{"tag_name":"%s"}]\n' "$PLATFORM_LATEST_TAG" "$LATEST_TAG" >"$TMP_ROOT/latest.json"
 
 LATEST_HOME="$TMP_ROOT/home-latest"
 PINNED_HOME="$TMP_ROOT/home-pinned"
@@ -151,6 +165,20 @@ run_installer \
 test -x "$PINNED_HOME/.local/bin/ae-cli"
 "$PINNED_HOME/.local/bin/ae-cli" | grep -q "ae-cli ${PINNED_TAG}"
 grep -q "Installed ae-cli ${PINNED_TAG} to $PINNED_HOME/.local/bin/ae-cli" "$PINNED_LOG"
+
+LEGACY_PINNED_HOME="$TMP_ROOT/home-legacy-pinned"
+mkdir -p "$LEGACY_PINNED_HOME"
+LEGACY_PINNED_LOG="$TMP_ROOT/legacy-pinned.log"
+run_installer \
+  "$LEGACY_PINNED_HOME" \
+  "$LEGACY_PINNED_HOME/.local/bin:/usr/bin:/bin" \
+  "file://$TMP_ROOT/latest.json" \
+  "$LEGACY_PINNED_TAG" \
+  >"$LEGACY_PINNED_LOG" 2>&1
+
+test -x "$LEGACY_PINNED_HOME/.local/bin/ae-cli"
+"$LEGACY_PINNED_HOME/.local/bin/ae-cli" | grep -q "ae-cli ${LEGACY_PINNED_TAG}"
+grep -q "Installed ae-cli ${LEGACY_PINNED_TAG} to $LEGACY_PINNED_HOME/.local/bin/ae-cli" "$LEGACY_PINNED_LOG"
 
 BAD_LOG="$TMP_ROOT/bad.log"
 set +e

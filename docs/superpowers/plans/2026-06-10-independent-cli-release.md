@@ -361,7 +361,7 @@ Expected: commit succeeds.
 - Modify: `ae-cli/test/install-test.sh`
 - Test: `ae-cli/test/install-test.sh`
 
-- [ ] **Step 1: Update installer fixtures to model platform and CLI releases**
+- [x] **Step 1: Update installer fixtures to model platform and CLI releases**
 
 In `ae-cli/test/install-test.sh`, replace the tag constants:
 
@@ -412,7 +412,7 @@ Add a legacy pinned archive after `make_cli_archive "$PINNED_TAG"`:
 make_cli_archive "$LEGACY_PINNED_TAG"
 ```
 
-- [ ] **Step 2: Add installer assertions for CLI release selection and legacy pinned compatibility**
+- [x] **Step 2: Add installer assertions for CLI release selection and legacy pinned compatibility**
 
 After the existing pinned install block, add:
 
@@ -441,7 +441,7 @@ grep -q "Installing ae-cli ${LATEST_TAG}" "$LATEST_LOG"
 
 This proves the installer ignored `v0.1.0-preview.42` and selected `ae-cli/v0.2.0-preview.1`.
 
-- [ ] **Step 3: Run the failing installer test**
+- [x] **Step 3: Run the failing installer test**
 
 Run:
 
@@ -451,7 +451,7 @@ bash ae-cli/test/install-test.sh
 
 Expected: FAIL. The installer should fail to locate archives for `ae-cli/v*` because `download_release` still derives versions with `${tag#v}`.
 
-- [ ] **Step 4: Implement CLI release filtering in `install.sh`**
+- [x] **Step 4: Implement CLI release filtering in `install.sh`**
 
 In `ae-cli/install.sh`, add:
 
@@ -523,7 +523,7 @@ local version
 version="$(release_version_from_tag "$tag")"
 ```
 
-- [ ] **Step 5: Run Bash syntax and installer tests**
+- [x] **Step 5: Run Bash syntax and installer tests**
 
 Run:
 
@@ -534,7 +534,7 @@ bash ae-cli/test/install-test.sh
 
 Expected: both commands PASS.
 
-- [ ] **Step 6: Commit the Bash installer change**
+- [x] **Step 6: Commit the Bash installer change**
 
 Run:
 
