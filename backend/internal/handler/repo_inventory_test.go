@@ -1,9 +1,12 @@
 package handler
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"testing"
+
+	"github.com/ai-efficiency/backend/ent/prrecord"
 )
 
 func TestRepoInventoryEndpointSummarizesProviderScopes(t *testing.T) {
@@ -73,6 +76,55 @@ func TestRepoListEndpointFiltersByProviderScopeAndBindingState(t *testing.T) {
 	}
 }
 
+func TestRepoListEndpointIncludesPRSummary(t *testing.T) {
+	env := setupTestEnv(t)
+	providerID := createHandlerSCMProvider(t, env, "GitHub Enterprise", "github", "https://github.example.com")
+	repoID := createHandlerRepo(t, env, providerID, "repo-a", "org/repo-a", "https://github.example.com/org/repo-a.git")
+
+	ctx := context.Background()
+	_, err := env.client.PrRecord.Create().
+		SetRepoConfigID(repoID).
+		SetScmPrID(101).
+		SetTitle("AI generated change").
+		SetAiLabel(prrecord.AiLabelAiViaSub2api).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create ai pr: %v", err)
+	}
+	_, err = env.client.PrRecord.Create().
+		SetRepoConfigID(repoID).
+		SetScmPrID(102).
+		SetTitle("Manual change").
+		SetAiLabel(prrecord.AiLabelNoAiDetected).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create manual pr: %v", err)
+	}
+
+	w := doRequest(env, http.MethodGet, "/api/v1/repos?page_size=20", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("list repos status = %d, want %d, body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	resp := parseResponse(t, w)
+	data := resp["data"].(map[string]interface{})
+	items := data["items"].([]interface{})
+	if len(items) != 1 {
+		t.Fatalf("repos count = %d, want 1; body: %s", len(items), w.Body.String())
+	}
+	first := items[0].(map[string]interface{})
+	summary := first["pr_summary"].(map[string]interface{})
+	if int(summary["total_prs"].(float64)) != 2 {
+		t.Fatalf("total_prs = %v, want 2", summary["total_prs"])
+	}
+	if int(summary["ai_prs"].(float64)) != 1 {
+		t.Fatalf("ai_prs = %v, want 1", summary["ai_prs"])
+	}
+	if summary["ai_share"].(float64) != 0.5 {
+		t.Fatalf("ai_share = %v, want 0.5", summary["ai_share"])
+	}
+}
+
 func createHandlerSCMProvider(t *testing.T, env *testEnv, name, providerType, baseURL string) int {
 	t.Helper()
 	w := doRequest(env, http.MethodPost, "/api/v1/scm-providers", map[string]interface{}{
@@ -89,7 +141,7 @@ func createHandlerSCMProvider(t *testing.T, env *testEnv, name, providerType, ba
 	return int(data["id"].(float64))
 }
 
-func createHandlerRepo(t *testing.T, env *testEnv, providerID int, name, fullName, cloneURL string) {
+func createHandlerRepo(t *testing.T, env *testEnv, providerID int, name, fullName, cloneURL string) int {
 	t.Helper()
 	req := map[string]interface{}{
 		"name":           name,
@@ -104,6 +156,9 @@ func createHandlerRepo(t *testing.T, env *testEnv, providerID int, name, fullNam
 	if w.Code != http.StatusCreated {
 		t.Fatalf("create repo %s status = %d, body: %s", fullName, w.Code, w.Body.String())
 	}
+	resp := parseResponse(t, w)
+	data := resp["data"].(map[string]interface{})
+	return int(data["id"].(float64))
 }
 
 func findInventoryProviderResponse(t *testing.T, items []interface{}, key string) map[string]interface{} {

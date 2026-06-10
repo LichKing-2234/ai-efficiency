@@ -44,6 +44,11 @@ function repo(overrides: Partial<RepoConfig>): RepoConfig {
     group_id: null,
     scm_provider_id: 1,
     created_at: '2026-06-01T00:00:00Z',
+    pr_summary: {
+      total_prs: 0,
+      ai_prs: 0,
+      ai_share: 0
+    },
     edges: {
       scm_provider: provider({ id: 1, name: 'GitHub', type: 'github', base_url: 'https://github.com' })
     },

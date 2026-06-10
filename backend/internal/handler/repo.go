@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"errors"
 	"io"
 	"net/http"
@@ -19,8 +20,9 @@ type RepoHandler struct {
 
 type repoResponse struct {
 	*ent.RepoConfig
-	BindingState  string `json:"binding_state"`
-	SCMProviderID *int   `json:"scm_provider_id,omitempty"`
+	BindingState  string         `json:"binding_state"`
+	SCMProviderID *int           `json:"scm_provider_id,omitempty"`
+	PRSummary     repo.PRSummary `json:"pr_summary"`
 }
 
 type ensureRemoteRequest struct {
@@ -65,7 +67,12 @@ func (h *RepoHandler) List(c *gin.Context) {
 
 	items := make([]repoResponse, 0, len(repos))
 	for _, r := range repos {
-		items = append(items, buildRepoResponse(r))
+		resp, err := h.buildRepoResponse(c.Request.Context(), r)
+		if err != nil {
+			pkg.Error(c, http.StatusInternalServerError, "failed to summarize repo prs")
+			return
+		}
+		items = append(items, resp)
 	}
 
 	pkg.Paged(c, total, page, pageSize, items)
@@ -102,7 +109,12 @@ func (h *RepoHandler) Create(c *gin.Context) {
 		return
 	}
 
-	pkg.Created(c, buildRepoResponse(loaded))
+	resp, err := h.buildRepoResponse(c.Request.Context(), loaded)
+	if err != nil {
+		pkg.Error(c, http.StatusInternalServerError, "failed to summarize repo prs")
+		return
+	}
+	pkg.Created(c, resp)
 }
 
 // CreateDirect handles POST /api/v1/repos/direct (skips SCM validation)
@@ -125,7 +137,12 @@ func (h *RepoHandler) CreateDirect(c *gin.Context) {
 		return
 	}
 
-	pkg.Created(c, buildRepoResponse(loaded))
+	resp, err := h.buildRepoResponse(c.Request.Context(), loaded)
+	if err != nil {
+		pkg.Error(c, http.StatusInternalServerError, "failed to summarize repo prs")
+		return
+	}
+	pkg.Created(c, resp)
 }
 
 // EnsureRemote handles POST /api/v1/repos/ensure-remote.
@@ -148,7 +165,12 @@ func (h *RepoHandler) EnsureRemote(c *gin.Context) {
 		return
 	}
 
-	pkg.Success(c, buildRepoResponse(loaded))
+	resp, err := h.buildRepoResponse(c.Request.Context(), loaded)
+	if err != nil {
+		pkg.Error(c, http.StatusInternalServerError, "failed to summarize repo prs")
+		return
+	}
+	pkg.Success(c, resp)
 }
 
 // ResolveRemote handles POST /api/v1/repos/resolve-remote.
@@ -268,7 +290,12 @@ func (h *RepoHandler) Get(c *gin.Context) {
 		return
 	}
 
-	pkg.Success(c, buildRepoResponse(r))
+	resp, err := h.buildRepoResponse(c.Request.Context(), r)
+	if err != nil {
+		pkg.Error(c, http.StatusInternalServerError, "failed to summarize repo prs")
+		return
+	}
+	pkg.Success(c, resp)
 }
 
 // Update handles PUT /api/v1/repos/:id
@@ -306,7 +333,12 @@ func (h *RepoHandler) Update(c *gin.Context) {
 		return
 	}
 
-	pkg.Success(c, buildRepoResponse(loaded))
+	resp, err := h.buildRepoResponse(c.Request.Context(), loaded)
+	if err != nil {
+		pkg.Error(c, http.StatusInternalServerError, "failed to summarize repo prs")
+		return
+	}
+	pkg.Success(c, resp)
 }
 
 // Delete handles DELETE /api/v1/repos/:id
@@ -325,7 +357,7 @@ func (h *RepoHandler) Delete(c *gin.Context) {
 	pkg.Success(c, gin.H{"deleted": true})
 }
 
-func buildRepoResponse(r *ent.RepoConfig) repoResponse {
+func (h *RepoHandler) buildRepoResponse(ctx context.Context, r *ent.RepoConfig) (repoResponse, error) {
 	resp := repoResponse{
 		RepoConfig:   r,
 		BindingState: "unbound",
@@ -335,5 +367,12 @@ func buildRepoResponse(r *ent.RepoConfig) repoResponse {
 		id := r.Edges.ScmProvider.ID
 		resp.SCMProviderID = &id
 	}
-	return resp
+	if r != nil {
+		summary, err := h.repoService.PRSummary(ctx, r.ID)
+		if err != nil {
+			return repoResponse{}, err
+		}
+		resp.PRSummary = summary
+	}
+	return resp, nil
 }

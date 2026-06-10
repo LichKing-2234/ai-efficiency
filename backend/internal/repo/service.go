@@ -74,6 +74,12 @@ type ListOpts struct {
 	BindingState  string
 }
 
+type PRSummary struct {
+	TotalPRs int     `json:"total_prs"`
+	AIPrs    int     `json:"ai_prs"`
+	AIShare  float64 `json:"ai_share"`
+}
+
 type InventoryScopeSummary struct {
 	Scope              string `json:"scope"`
 	TotalRepos         int    `json:"total_repos"`
@@ -467,6 +473,31 @@ func (s *Service) List(ctx context.Context, opts ListOpts) ([]*ent.RepoConfig, i
 	}
 
 	return repos, int64(total), nil
+}
+
+func (s *Service) PRSummary(ctx context.Context, repoID int) (PRSummary, error) {
+	total, err := s.entClient.PrRecord.Query().
+		Where(prrecord.HasRepoConfigWith(repoconfig.IDEQ(repoID))).
+		Count(ctx)
+	if err != nil {
+		return PRSummary{}, fmt.Errorf("count repo prs: %w", err)
+	}
+
+	ai, err := s.entClient.PrRecord.Query().
+		Where(
+			prrecord.HasRepoConfigWith(repoconfig.IDEQ(repoID)),
+			prrecord.AiLabelEQ(prrecord.AiLabelAiViaSub2api),
+		).
+		Count(ctx)
+	if err != nil {
+		return PRSummary{}, fmt.Errorf("count repo ai prs: %w", err)
+	}
+
+	share := 0.0
+	if total > 0 {
+		share = float64(ai) / float64(total)
+	}
+	return PRSummary{TotalPRs: total, AIPrs: ai, AIShare: share}, nil
 }
 
 func (s *Service) Inventory(ctx context.Context) ([]InventoryProviderSummary, error) {

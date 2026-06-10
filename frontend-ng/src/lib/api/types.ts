@@ -147,6 +147,11 @@ export interface RepoConfig {
   scm_provider_id?: number | null
   webhook_id?: string | null
   created_at: string
+  pr_summary: {
+    total_prs: number
+    ai_prs: number
+    ai_share: number
+  }
   edges?: {
     scm_provider?: SCMProvider
   }

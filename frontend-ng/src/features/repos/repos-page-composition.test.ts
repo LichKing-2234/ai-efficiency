@@ -40,10 +40,21 @@ describe('Repos page composition', () => {
     expect(source).not.toContain("className='max-h-[430px] overflow-y-auto'")
   })
 
-  test('uses shared data grid cells for provider and branch metadata', () => {
-    expect(source).toContain('DataGridCell')
+  test('replaces provider and branch metadata columns with the reference AI PR ratio column', () => {
+    expect(source).toContain('RatioMeter')
     expect(source).not.toContain("className='truncate text-[var(--ink-2)]'")
     expect(source).not.toContain("className='mono truncate text-xs'")
+    expect(source).not.toContain("{t('repos.scmProvider')}</span>")
+    expect(source).not.toContain("{t('repos.defaultBranch')}</span>")
+  })
+
+  test('uses real PR summary data for the reference AI PR ratio column', () => {
+    expect(source).toContain("from '@/components/primitives/ratio-meter'")
+    expect(source).toContain("{t('repos.aiPrs')}")
+    expect(source).toContain('<RatioMeter')
+    expect(source).toContain('repo.pr_summary?.ai_prs')
+    expect(source).toContain('repo.pr_summary?.total_prs')
+    expect(source).not.toContain("{t('repos.scmProvider')}</span>\\n        <span>{t('repos.defaultBranch')}</span>")
   })
 
   test('uses shared data grid header cells for aligned action columns', () => {
@@ -72,6 +83,13 @@ describe('Repos page composition', () => {
     expect(source).toContain("from '@/components/primitives/status-cluster'")
     expect(source).toContain('<StatusCluster>')
     expect(source).not.toContain("<div className='flex flex-wrap gap-2'>")
+  })
+
+  test('renders PR summary stats in the repository inspect panel', () => {
+    expect(source).toContain("label={t('repos.totalPrs')}")
+    expect(source).toContain("label={t('repos.aiPrs')}")
+    expect(source).toContain("label={t('repos.aiPrShare')}")
+    expect(source).toContain('percent(repo.pr_summary?.ai_share, locale)')
   })
 
   test('uses shared empty-state primitives for repository empty content', () => {

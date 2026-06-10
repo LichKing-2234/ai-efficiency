@@ -16,10 +16,11 @@ import { KpiCard } from '@/components/primitives/metric-card'
 import { AppAlert } from '@/components/primitives/app-alert'
 import { Page } from '@/components/primitives/page'
 import { EmptyState, LoadingState } from '@/components/primitives/data-state'
-import { DataGrid, DataGridCell, DataGridHeader, DataGridHeaderCell, DataGridPrimaryLink, DataGridRecordCell, DataGridRow, DataGridRowAffordance } from '@/components/primitives/data-grid'
+import { DataGrid, DataGridHeader, DataGridHeaderCell, DataGridPrimaryLink, DataGridRecordCell, DataGridRow, DataGridRowAffordance } from '@/components/primitives/data-grid'
 import { FieldItem, FieldList } from '@/components/primitives/field-list'
 import { InfoTile, InfoTileGrid } from '@/components/primitives/info-tile'
 import { KpiGrid } from '@/components/primitives/kpi-grid'
+import { RatioMeter } from '@/components/primitives/ratio-meter'
 import { SectionCardHeader } from '@/components/primitives/section-card-header'
 import { SectionNav, type SectionNavItem } from '@/components/primitives/section-nav'
 import { SlideOver } from '@/components/primitives/slide-over'
@@ -30,7 +31,7 @@ import { ToolbarSelect } from '@/components/primitives/toolbar-select'
 import { WorkbenchContent, WorkbenchRail } from '@/components/primitives/workbench-rail'
 import { api } from '@/lib/api'
 import type { RepoConfig } from '@/lib/api/types'
-import { number } from '@/lib/format'
+import { number, percent } from '@/lib/format'
 import { useI18n } from '@/lib/i18n/i18n'
 import { RepoCreateForm, type RepoCreateFormLabels } from './repo-create-form'
 import {
@@ -382,14 +383,13 @@ function RepoTable({
   onSelectRepo: (repo: RepoConfig) => void
 }) {
   const { t } = useI18n()
-  const columns = '1.8fr_0.8fr_1fr_0.8fr_0.8fr_1fr'
+  const columns = '1.8fr_0.8fr_1fr_0.8fr_1fr'
   return (
     <DataGrid minWidth={820}>
       <DataGridHeader columns={columns}>
         <span>{t('repos.repository')}</span>
         <span>{t('events.binding')}</span>
-        <span>{t('repos.scmProvider')}</span>
-        <span>{t('repos.defaultBranch')}</span>
+        <span>{t('repos.aiPrs')}</span>
         <span>{t('common.status')}</span>
         <DataGridHeaderCell align='right' />
       </DataGridHeader>
@@ -401,8 +401,7 @@ function RepoTable({
             </DataGridPrimaryLink>
           </DataGridRecordCell>
           <span><Badge variant={repo.binding_state === 'bound' ? 'pos' : 'warn'}>{repo.binding_state}</Badge></span>
-          <DataGridCell truncate tone='muted'>{repo.edges?.scm_provider?.name || repo.scm_provider_id || '-'}</DataGridCell>
-          <DataGridCell mono truncate tone='subtle'>{repo.default_branch}</DataGridCell>
+          <RatioMeter part={repo.pr_summary?.ai_prs ?? 0} total={repo.pr_summary?.total_prs ?? 0} />
           <span><StatusBadge value={repo.status} /></span>
           <DataGridRowAffordance>
             <ChevronRightIcon />
@@ -428,7 +427,7 @@ function RepoInspectSlideOver({
   setDeleteConfirmId: (id: number | null) => void
   onClose: () => void
 }) {
-  const { t } = useI18n()
+  const { locale, t } = useI18n()
   return (
     <SlideOver
       leading={<FolderGit2Icon className='text-[var(--ai-deep)]' />}
@@ -444,9 +443,9 @@ function RepoInspectSlideOver({
             <StatusBadge value={repo.status} />
           </StatusCluster>
           <InfoTileGrid>
-            <InfoTile label={t('repos.bindingFilter')} value={repo.binding_state} accent='ai' />
-            <InfoTile label={t('repos.scmProvider')} value={repo.edges?.scm_provider?.name || repo.scm_provider_id || '-'} />
-            <InfoTile label={t('repos.defaultBranch')} value={repo.default_branch || '-'} mono />
+            <InfoTile label={t('repos.totalPrs')} value={number(repo.pr_summary?.total_prs, locale)} />
+            <InfoTile label={t('repos.aiPrs')} value={number(repo.pr_summary?.ai_prs, locale)} accent='ai' />
+            <InfoTile label={t('repos.aiPrShare')} value={percent(repo.pr_summary?.ai_share, locale)} />
           </InfoTileGrid>
           <FieldList>
             <FieldItem label={t('repos.fullName')} value={repo.full_name || repo.name} truncate />

@@ -49,7 +49,12 @@ describe('getCommandPaletteItems', () => {
         status: 'active',
         binding_state: 'bound',
         group_id: null,
-        created_at: '2026-01-01T00:00:00Z'
+        created_at: '2026-01-01T00:00:00Z',
+        pr_summary: {
+          total_prs: 0,
+          ai_prs: 0,
+          ai_share: 0
+        }
       }
     ])
 
