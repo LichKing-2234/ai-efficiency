@@ -22,7 +22,7 @@ import { JobResultList } from '@/components/primitives/job-result-list'
 import { RowInsetPanel } from '@/components/primitives/row-inset-panel'
 import { SearchField } from '@/components/primitives/search-field'
 import { SectionCardHeader } from '@/components/primitives/section-card-header'
-import { StatusBadge } from '@/components/primitives/status-badge'
+import { StatusWithReason } from '@/components/primitives/status-with-reason'
 import { MetricCard } from '@/components/primitives/metric-card'
 import { ToolbarSelect } from '@/components/primitives/toolbar-select'
 import { api } from '@/lib/api'
@@ -266,8 +266,12 @@ export function AdminUsersPage() {
           </Button>
           {currentJob ? (
             <ActionGroup className='ml-auto text-sm'>
-              <StatusBadge value={currentJob.status} />
-              <span className='tnum'>{number(currentJob.processed_count)}/{number(currentJob.total_count)}</span>
+              <StatusWithReason
+                inline
+                meta={`${number(currentJob.processed_count)}/${number(currentJob.total_count)}`}
+                metaNumeric
+                value={currentJob.status}
+              />
             </ActionGroup>
           ) : null}
         </CardFilterBar>

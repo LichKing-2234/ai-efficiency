@@ -27,4 +27,10 @@ describe('Admin users page composition', () => {
     expect(source).toContain("FieldDescription")
     expect(source).not.toContain("<div className='text-muted-foreground text-sm'>")
   })
+
+  test('uses shared status metadata for the current subscription job summary', () => {
+    expect(source).toContain('StatusWithReason')
+    expect(source).not.toContain("<StatusBadge value={currentJob.status} />")
+    expect(source).not.toContain("<span className='tnum'>{number(currentJob.processed_count)}/{number(currentJob.total_count)}</span>")
+  })
 })

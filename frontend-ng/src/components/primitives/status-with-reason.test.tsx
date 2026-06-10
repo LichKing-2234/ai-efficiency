@@ -28,4 +28,13 @@ describe('StatusWithReason', () => {
     expect(html).toContain('completed')
     expect(html).not.toContain('data-slot="status-with-reason-copy"')
   })
+
+  test('renders compact metadata next to the status badge', () => {
+    const html = renderToStaticMarkup(<StatusWithReason inline meta='3/10' metaNumeric value='running' />)
+
+    expect(html).toContain('data-slot="status-with-reason-meta"')
+    expect(html).toContain('3/10')
+    expect(html).toContain('tnum')
+    expect(html).toContain('flex-row')
+  })
 })
