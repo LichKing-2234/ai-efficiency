@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, test } from 'vitest'
-import { DataGrid, DataGridHeader, DataGridRow } from './data-grid'
+import { DataGrid, DataGridCell, DataGridHeader, DataGridRow } from './data-grid'
 
 describe('DataGrid', () => {
   test('renders reference table shells with shared grid template classes', () => {
@@ -53,5 +53,26 @@ describe('DataGrid', () => {
     expect(html).toContain('data-slot="data-grid-row"')
     expect(html).toContain('grid-column:1 / -1')
     expect(html).toContain('No rows')
+  })
+
+  test('renders standardized dense data cells for numeric and metadata values', () => {
+    const html = renderToStaticMarkup(
+      <DataGrid>
+        <DataGridRow columns='1fr_120px'>
+          <DataGridCell truncate muted>Platform Team</DataGridCell>
+          <DataGridCell align='right' numeric tone='muted'>42</DataGridCell>
+          <DataGridCell mono truncate tone='subtle'>main</DataGridCell>
+        </DataGridRow>
+      </DataGrid>
+    )
+
+    expect(html).toContain('data-slot="data-grid-cell"')
+    expect(html).toContain('Platform Team')
+    expect(html).toContain('text-right')
+    expect(html).toContain('tnum')
+    expect(html).toContain('mono')
+    expect(html).toContain('truncate')
+    expect(html).toContain('text-muted-foreground')
+    expect(html).toContain('text-[var(--ink-2)]')
   })
 })

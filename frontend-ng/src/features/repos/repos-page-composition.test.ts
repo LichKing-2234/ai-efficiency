@@ -28,4 +28,10 @@ describe('Repos page composition', () => {
     expect(source).toContain('<WorkbenchRail')
     expect(source).not.toContain("<aside className='border-border bg-[var(--surface-2)] p-3 lg:border-r'>")
   })
+
+  test('uses shared data grid cells for provider and branch metadata', () => {
+    expect(source).toContain('DataGridCell')
+    expect(source).not.toContain("className='truncate text-[var(--ink-2)]'")
+    expect(source).not.toContain("className='mono truncate text-xs'")
+  })
 })

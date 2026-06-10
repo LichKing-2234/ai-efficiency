@@ -17,7 +17,7 @@ import { MetricCard } from '@/components/primitives/metric-card'
 import { AppAlert } from '@/components/primitives/app-alert'
 import { Page } from '@/components/primitives/page'
 import { LoadingState } from '@/components/primitives/data-state'
-import { DataGrid, DataGridHeader, DataGridRow } from '@/components/primitives/data-grid'
+import { DataGrid, DataGridCell, DataGridHeader, DataGridRow } from '@/components/primitives/data-grid'
 import { RecordMeta } from '@/components/primitives/record-meta'
 import { SectionCardHeader } from '@/components/primitives/section-card-header'
 import { SectionNav, type SectionNavItem } from '@/components/primitives/section-nav'
@@ -409,8 +409,8 @@ function RepoTable({
             <RecordMeta>{repo.clone_url}</RecordMeta>
           </span>
           <span><Badge variant={repo.binding_state === 'bound' ? 'pos' : 'warn'}>{repo.binding_state}</Badge></span>
-          <span className='truncate text-[var(--ink-2)]'>{repo.edges?.scm_provider?.name || repo.scm_provider_id || '-'}</span>
-          <span className='mono truncate text-xs'>{repo.default_branch}</span>
+          <DataGridCell truncate tone='muted'>{repo.edges?.scm_provider?.name || repo.scm_provider_id || '-'}</DataGridCell>
+          <DataGridCell mono truncate tone='subtle'>{repo.default_branch}</DataGridCell>
           <span><StatusBadge value={repo.status} /></span>
           <ActionGroup>
             {deleteConfirmId === repo.id ? (

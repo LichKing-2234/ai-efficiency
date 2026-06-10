@@ -81,3 +81,41 @@ export function DataGridRow(props: DataGridRowDivProps | DataGridRowButtonProps)
     </div>
   )
 }
+
+export function DataGridCell({
+  align = 'left',
+  children,
+  className,
+  mono = false,
+  muted = false,
+  numeric = false,
+  tone = 'default',
+  truncate = false
+}: {
+  align?: 'left' | 'right'
+  children: React.ReactNode
+  className?: string
+  mono?: boolean
+  muted?: boolean
+  numeric?: boolean
+  tone?: 'default' | 'muted' | 'subtle'
+  truncate?: boolean
+}) {
+  return (
+    <span
+      className={cn(
+        align === 'right' && 'text-right',
+        numeric && 'tnum',
+        mono && 'mono',
+        truncate && 'truncate',
+        muted && 'text-muted-foreground text-xs',
+        tone === 'muted' && 'text-[var(--ink-2)]',
+        tone === 'subtle' && 'text-[var(--ink-3)] text-xs',
+        className
+      )}
+      data-slot='data-grid-cell'
+    >
+      {children}
+    </span>
+  )
+}

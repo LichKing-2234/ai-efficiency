@@ -8,7 +8,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { AdvancedDataPanel } from '@/components/primitives/advanced-data-panel'
 import { CardFilterBar } from '@/components/primitives/card-filter-bar'
 import { CardPagerFooter } from '@/components/primitives/card-pager-footer'
-import { DataGrid, DataGridHeader, DataGridRow } from '@/components/primitives/data-grid'
+import { DataGrid, DataGridCell, DataGridHeader, DataGridRow } from '@/components/primitives/data-grid'
 import { FieldItem, FieldList } from '@/components/primitives/field-list'
 import { FilterRow } from '@/components/primitives/filter-row'
 import { InfoTile, InfoTileGrid } from '@/components/primitives/info-tile'
@@ -279,10 +279,10 @@ function EventRow({ row, maxTokens, onSelect }: { row: ToolUsageEventRow; maxTok
         <RecordMeta>{row.source_basename || row.tool_session_id}</RecordMeta>
       </span>
       <TokenMeter label={compact(tokens)} max={maxTokens} value={tokens} />
-      <span className='tnum text-right text-[var(--ink-2)]'>{number(row.request_count)}</span>
+      <DataGridCell align='right' numeric tone='muted'>{number(row.request_count)}</DataGridCell>
       <span className='tnum text-right font-semibold text-foreground'>{number(row.credit_usage)}</span>
       <span><Badge variant={row.binding_status === 'bound' ? 'pos' : 'warn'}>{row.binding_status}</Badge></span>
-      <span className='text-right text-[var(--ink-3)] text-xs'>{dateTime(row.observed_end_at)}</span>
+      <DataGridCell align='right' tone='subtle'>{dateTime(row.observed_end_at)}</DataGridCell>
     </DataGridRow>
   )
 }

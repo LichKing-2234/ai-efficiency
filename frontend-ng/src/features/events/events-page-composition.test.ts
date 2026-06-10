@@ -31,4 +31,10 @@ describe('Events page composition', () => {
     expect(source).toContain('<RecordMeta>')
     expect(source).not.toContain("<span className='mono block truncate text-[11px] text-[var(--ink-4)]'>")
   })
+
+  test('uses shared data grid cells for dense numeric and datetime columns', () => {
+    expect(source).toContain('DataGridCell')
+    expect(source).not.toContain("className='tnum text-right text-[var(--ink-2)]'")
+    expect(source).not.toContain("className='text-right text-[var(--ink-3)] text-xs'")
+  })
 })
