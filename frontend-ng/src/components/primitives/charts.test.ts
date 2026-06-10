@@ -36,3 +36,13 @@ describe('buildStackedAreaLayers', () => {
     expect(result.layers[1].path).toContain('L110.0')
   })
 })
+
+describe('StackedAreaChart composition', () => {
+  test('keeps tooltip row rhythm inside the chart tooltip row slot', async () => {
+    const source = await import('node:fs/promises').then((fs) =>
+      fs.readFile(new URL('./charts.tsx', import.meta.url), 'utf8')
+    )
+
+    expect(source).not.toContain("className='mt-1 flex items-center gap-2 text-xs'")
+  })
+})

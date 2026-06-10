@@ -10,6 +10,8 @@ export type StackedAreaKey<T extends object> = {
 
 export type StackedAreaPoint = object
 
+const stackedAreaTooltipRowClass = 'mt-1 flex items-center gap-2 text-xs'
+
 function pointValue<T extends object>(point: T, key: keyof T & string) {
   const value = point[key]
   return typeof value === 'number' ? value : Number(value ?? 0)
@@ -18,6 +20,24 @@ function pointValue<T extends object>(point: T, key: keyof T & string) {
 function pointLabel<T extends object>(point: T, key: string) {
   const value = (point as Record<string, unknown>)[key]
   return typeof value === 'string' || typeof value === 'number' ? String(value) : ''
+}
+
+function StackedAreaTooltipRow({
+  color,
+  label,
+  value
+}: {
+  color: string
+  label: string
+  value: React.ReactNode
+}) {
+  return (
+    <div className={stackedAreaTooltipRowClass} data-slot='stacked-area-tooltip-row'>
+      <span className='size-2 rounded-[3px]' style={{ background: color }} />
+      <span className='flex-1 text-[var(--ink-2)]'>{label}</span>
+      <span className='mono tnum font-semibold'>{value}</span>
+    </div>
+  )
 }
 
 export function buildSparklinePath(data: number[], width: number, height: number) {
@@ -259,11 +279,12 @@ export function StackedAreaChart<T extends object>({
         >
           <div className='mono mb-2 text-[11px] text-[var(--ink-3)]'>{pointLabel(series[hover], labelKey)}</div>
           {keys.map((key) => (
-            <div className='mt-1 flex items-center gap-2 text-xs' key={key.key}>
-              <span className='size-2 rounded-[3px]' style={{ background: key.color }} />
-              <span className='flex-1 text-[var(--ink-2)]'>{key.label}</span>
-              <span className='mono tnum font-semibold'>{formatValue(pointValue(series[hover], key.key))}</span>
-            </div>
+            <StackedAreaTooltipRow
+              color={key.color}
+              key={key.key}
+              label={key.label}
+              value={formatValue(pointValue(series[hover], key.key))}
+            />
           ))}
         </div>
       ) : null}
