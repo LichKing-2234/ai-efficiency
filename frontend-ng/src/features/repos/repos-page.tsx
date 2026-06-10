@@ -267,6 +267,19 @@ export function ReposPage() {
         <KpiCard label={t('repos.unbound')} value={number(health.unbound, locale)} icon={CircleDotIcon} sparkline={reposForProviders.map((provider) => provider.unbound_repos)} sparklineColor='var(--viz-cache)' />
         <KpiCard label={t('repos.activeConfigs')} value={number(health.active, locale)} icon={RefreshCwIcon} sparkline={reposForProviders.map((provider) => provider.active_repos)} sparklineColor='var(--viz-output)' />
       </KpiGrid>
+      {health.unbound > 0 ? (
+        <AppAlert
+          tone='warning'
+          title={t('repos.unboundWarningTitle', { count: number(health.unbound, locale) })}
+          description={t('repos.unboundWarningDescription')}
+          actions={(
+            <Button variant='ghost' onClick={() => replaceSearch({ ...search, binding: 'unbound', provider: 'unbound', page: 1 })}>
+              {t('repos.reviewNeedsBinding')}
+              <ChevronRightIcon data-icon='inline-end' />
+            </Button>
+          )}
+        />
+      ) : null}
       <Alerts
         autoBindMessage={autoBindMessage}
         autoBindError={autoBindError}

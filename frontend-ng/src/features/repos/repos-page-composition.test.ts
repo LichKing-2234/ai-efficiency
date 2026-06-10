@@ -108,4 +108,15 @@ describe('Repos page composition', () => {
     expect(source).toContain('<KpiGrid>')
     expect(source).not.toContain("<div className='kpi-grid'>")
   })
+
+  test('shows the reference unbound warning banner from real inventory health', () => {
+    expect(source).toContain("from '@/components/primitives/app-alert'")
+    expect(source).toContain('health.unbound > 0 ? (')
+    expect(source).toContain("<AppAlert")
+    expect(source).toContain("tone='warning'")
+    expect(source).toContain("title={t('repos.unboundWarningTitle', { count: number(health.unbound, locale) })}")
+    expect(source).toContain("description={t('repos.unboundWarningDescription')}")
+    expect(source).toContain("replaceSearch({ ...search, binding: 'unbound', provider: 'unbound', page: 1 })")
+    expect(source).not.toContain("<div className='warn-soft")
+  })
 })
