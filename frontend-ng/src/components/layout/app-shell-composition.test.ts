@@ -39,4 +39,32 @@ describe('AppShell composition', () => {
     expect(source).not.toContain("<div className='ml-auto flex items-center gap-2'>")
     expect(source).not.toContain("<ChevronDownIcon className='size-3 text-[var(--ink-4)]' />")
   })
+
+  test('uses the reference main content width instead of generic max-w-7xl shell spacing', () => {
+    expect(source).toContain("<div className='mx-auto w-full max-w-[1180px]")
+    expect(source).not.toContain("max-w-7xl")
+  })
+
+  test('uses the reference topbar backdrop and divider shell', () => {
+    expect(source).toContain("gap-[14px]")
+    expect(source).toContain("border-[var(--line)]")
+    expect(source).toContain("bg-[color-mix(in_oklab,var(--bg)_82%,transparent)]")
+    expect(source).toContain("backdrop-blur-[12px]")
+    expect(source).toContain("h-[22px] w-px bg-[var(--line)]")
+    expect(source).not.toContain("bg-background/85 px-4 backdrop-blur")
+    expect(source).not.toContain("h-6 w-px bg-border")
+  })
+
+  test('keeps topbar collapsed toggles on shared square icon buttons', () => {
+    expect(source).toContain("variant='outline' size='icon-sm'")
+    expect(source).toContain("variant='ghost' size='icon-sm'")
+    expect(source).not.toContain("className='md:hidden h-8 px-2'")
+  })
+
+  test('uses the reference screen padding rhythm for logged-in content', () => {
+    expect(source).toContain("px-[22px] pb-16 pt-[22px]")
+    expect(source).toContain("md:px-6")
+    expect(source).not.toContain("p-4 pb-12")
+    expect(source).not.toContain("md:p-6")
+  })
 })

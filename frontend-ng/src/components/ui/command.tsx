@@ -32,7 +32,7 @@ function CommandDialog({
     <Dialog {...props}>
       <DialogContent
         className={cn(
-          'top-[13vh] max-h-[min(640px,74vh)] w-[min(580px,calc(100vw-32px))] translate-y-0 overflow-hidden rounded-[var(--r-lg)] border-[var(--line-strong)] bg-popover p-0 shadow-[var(--sh-xl)]',
+          'top-[13vh] max-h-[min(640px,74vh)] w-[min(580px,calc(100vw-32px))] translate-y-0 overflow-hidden rounded-[var(--r-lg)] border-[var(--line-strong)] bg-popover p-0',
           className
         )}
         showCloseButton={showCloseButton}
@@ -78,7 +78,7 @@ function CommandEmpty({ className, ...props }: React.ComponentProps<typeof Comma
   return (
     <CommandPrimitive.Empty
       data-slot='command-empty'
-      className={cn('px-4 py-8 text-center text-muted-foreground text-sm', className)}
+      className={cn('px-4 py-8 text-center text-[12px] text-[var(--ink-3)]', className)}
       {...props}
     />
   )
@@ -106,7 +106,7 @@ function CommandItem({ className, children, ...props }: React.ComponentProps<typ
     <CommandPrimitive.Item
       data-slot='command-item'
       className={cn(
-        "group/command-item relative flex h-9 cursor-default select-none items-center gap-3 rounded-[var(--r-sm)] px-2.5 text-[var(--ink-2)] text-sm outline-none transition-colors data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50 data-[selected=true]:bg-[var(--ai-soft)] data-[selected=true]:text-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 data-[selected=true]:[&_svg]:text-[var(--ai-deep)]",
+        "group/command-item relative flex h-9 cursor-default select-none items-center gap-3 rounded-[var(--r-sm)] px-2.5 text-[13px] text-[var(--ink-2)] outline-none transition-colors data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50 data-[selected=true]:bg-[var(--ai-soft)] data-[selected=true]:text-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 data-[selected=true]:[&_svg]:text-[var(--ai-deep)]",
         className
       )}
       {...props}

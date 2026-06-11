@@ -5,22 +5,25 @@ export function ActionGroup({
   align = 'end',
   children,
   className,
+  dataSlot = 'action-group',
   fit = false,
   layout = 'inline',
   push = false,
-  wrap = false
+  wrap = false,
+  ...props
 }: {
   align?: 'block-end' | 'end' | 'responsive-end' | 'start'
   children: React.ReactNode
   className?: string
+  dataSlot?: string
   fit?: boolean
   layout?: 'inline' | 'split'
   push?: boolean
   wrap?: boolean
-}) {
+} & React.HTMLAttributes<HTMLSpanElement>) {
   return (
     <span
-      data-slot='action-group'
+      data-slot={dataSlot}
       className={cn(
         'flex items-center gap-2',
         align === 'block-end' && 'items-end justify-end',
@@ -33,6 +36,7 @@ export function ActionGroup({
         wrap && 'flex-wrap',
         className
       )}
+      {...props}
     >
       {children}
     </span>

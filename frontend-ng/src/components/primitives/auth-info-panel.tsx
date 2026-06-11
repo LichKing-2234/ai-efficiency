@@ -3,13 +3,22 @@ import { cn } from '@/lib/utils'
 
 export function AuthInfoPanel({
   children,
-  className
+  className,
+  emphasis = false
 }: {
   children: React.ReactNode
   className?: string
+  emphasis?: boolean
 }) {
   return (
-    <InsetPanel className={cn('text-muted-foreground', className)} dataSlot='auth-info-panel'>
+    <InsetPanel
+      className={cn(
+        'text-[12px] text-[var(--ink-3)]',
+        emphasis && 'border-[var(--ai-line)] bg-[var(--ai-soft)] text-[var(--ai-deep)]',
+        className
+      )}
+      dataSlot='auth-info-panel'
+    >
       {children}
     </InsetPanel>
   )

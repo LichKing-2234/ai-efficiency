@@ -51,6 +51,13 @@ describe('PageHeader', () => {
       fs.readFile(new URL('./page.tsx', import.meta.url), 'utf8')
     )
 
+    expect(source).toContain("from '@/components/primitives/action-group'")
+    expect(source).toContain("from '@/components/primitives/stack'")
+    expect(source).toContain("dataSlot='page-header'")
+    expect(source).toContain("<ActionGroup align='responsive-end'")
+    expect(source).toContain("const pageHeaderDescriptionClass = 'mt-1 max-w-3xl text-[12px] text-[var(--ink-3)]'")
     expect(source).not.toContain("className='mt-1 max-w-3xl text-muted-foreground text-sm'")
+    expect(source).not.toContain("className='flex items-center justify-end gap-2'")
+    expect(source).not.toContain("className='md:flex-row md:items-end md:justify-between'")
   })
 })

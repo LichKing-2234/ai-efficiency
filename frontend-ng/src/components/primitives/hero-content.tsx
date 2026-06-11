@@ -1,13 +1,12 @@
 import type * as React from 'react'
-import { CardContent } from '@/components/ui/card'
+import { ActionGroup } from '@/components/primitives/action-group'
+import { CardContentStack } from '@/components/primitives/card-content-stack'
+import { Stack } from '@/components/primitives/stack'
 import { cn } from '@/lib/utils'
-
-const heroTitleClass = 'mt-4 font-semibold text-2xl tracking-tight md:text-3xl'
-const heroDescriptionClass = 'mt-2 text-muted-foreground text-sm'
 
 function HeroTitle({ children }: { children: React.ReactNode }) {
   return (
-    <h1 className={heroTitleClass} data-slot='hero-title'>
+    <h1 className='text-[25px] font-semibold leading-[1.18] tracking-tight' data-slot='hero-title'>
       {children}
     </h1>
   )
@@ -15,7 +14,7 @@ function HeroTitle({ children }: { children: React.ReactNode }) {
 
 function HeroDescription({ children }: { children: React.ReactNode }) {
   return (
-    <p className={heroDescriptionClass} data-slot='hero-description'>
+    <p className='text-[13.5px] leading-[1.5] text-[var(--ink-2)]' data-slot='hero-description'>
       {children}
     </p>
   )
@@ -35,16 +34,15 @@ export function HeroContent({
   title: React.ReactNode
 }) {
   return (
-    <CardContent
-      className={cn('flex flex-col gap-5 p-6 lg:flex-row lg:items-center lg:justify-between', className)}
-      data-slot='hero-content'
-    >
-      <div className='max-w-2xl' data-slot='hero-copy'>
-        {badge}
-        <HeroTitle>{title}</HeroTitle>
-        {description ? <HeroDescription>{description}</HeroDescription> : null}
-      </div>
-      {action ? <div data-slot='hero-action'>{action}</div> : null}
-    </CardContent>
+    <CardContentStack className={cn('p-[22px]', className)} dataSlot='hero-content'>
+      <ActionGroup align='responsive-end' className='items-center gap-6 lg:items-center' dataSlot='hero-shell' fit layout='split' wrap>
+        <Stack className='max-w-[540px]' dataSlot='hero-copy' gap='compact'>
+          {badge}
+          <HeroTitle>{title}</HeroTitle>
+          {description ? <HeroDescription>{description}</HeroDescription> : null}
+        </Stack>
+        {action ? <ActionGroup dataSlot='hero-action'>{action}</ActionGroup> : null}
+      </ActionGroup>
+    </CardContentStack>
   )
 }

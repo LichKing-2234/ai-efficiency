@@ -2,6 +2,8 @@ import { CheckIcon, ClipboardIcon } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import { ActionGroup } from './action-group'
+import { Stack } from './stack'
 
 export function commandStepDisplayText(command: string) {
   return command ? `$ ${command}` : '$'
@@ -14,14 +16,12 @@ export function commandStepClipboardText(command: string) {
 export function CommandStep({
   command,
   copiedMessage,
-  copyLabel,
   disabled,
   label,
   step
 }: {
   command: string
   copiedMessage: string
-  copyLabel?: string
   disabled?: boolean
   label?: string
   step?: number
@@ -29,15 +29,15 @@ export function CommandStep({
   const [copied, setCopied] = useState(false)
 
   return (
-    <div className='flex min-w-0 items-center gap-3'>
+    <ActionGroup align='start' className='min-w-0 gap-[10px]' dataSlot='command-step' fit>
       {step ? (
-        <div className='grid size-5 shrink-0 place-items-center rounded-full bg-[var(--ai-soft)] font-bold text-[11px] text-[var(--ai-deep)] tnum'>
+        <Stack className='grid size-5 shrink-0 place-items-center rounded-full bg-[var(--ai-soft)] font-bold text-[11px] text-[var(--ai-deep)] tnum' dataSlot='command-step-index' gap='none'>
           {step}
-        </div>
+        </Stack>
       ) : null}
       <button
         className={cn(
-          'flex min-w-0 flex-1 items-center gap-3 rounded-[var(--r-sm)] border border-border bg-[var(--surface-inset)] px-3 py-2 text-left text-xs transition hover:border-[var(--line-strong)] hover:bg-card disabled:cursor-not-allowed disabled:opacity-60'
+          'flex min-w-0 flex-1 items-center gap-2 rounded-[var(--r-sm)] border border-border bg-[var(--surface-inset)] px-[10px] py-[8px] text-left text-[12px] transition hover:border-[var(--line-strong)] hover:bg-card disabled:cursor-not-allowed disabled:opacity-60'
         )}
         disabled={disabled}
         onClick={() => {
@@ -49,13 +49,12 @@ export function CommandStep({
           toast.success(copiedMessage)
         }}
       >
-        {label ? <span className='shrink-0 font-semibold text-muted-foreground'>{label}</span> : null}
-        <span className='mono min-w-0 flex-1 truncate text-[var(--ai-deep)]'>{commandStepDisplayText(command)}</span>
-        <span className='inline-flex shrink-0 items-center gap-1 text-muted-foreground'>
+        {label ? <span className='shrink-0 font-semibold text-[11px] text-[var(--ink-4)]'>{label}</span> : null}
+        <span className='mono min-w-0 flex-1 truncate text-[11.5px] text-[var(--ai-deep)]'>{commandStepDisplayText(command)}</span>
+        <ActionGroup className='gap-1 text-[var(--ink-4)]' dataSlot='command-step-copy' fit>
           {copied ? <CheckIcon data-icon='inline-start' /> : <ClipboardIcon data-icon='inline-start' />}
-          {copyLabel}
-        </span>
+        </ActionGroup>
       </button>
-    </div>
+    </ActionGroup>
   )
 }

@@ -17,7 +17,7 @@ export function InfoTileGrid({
   columns?: keyof typeof infoTileGridColumns
 }) {
   return (
-    <div data-slot='info-tile-grid' className={cn('grid gap-3', infoTileGridColumns[columns], className)}>
+    <div data-slot='info-tile-grid' className={cn('grid gap-[10px]', infoTileGridColumns[columns], className)}>
       {children}
     </div>
   )
@@ -47,17 +47,17 @@ export function InfoTile({
     <div
       data-slot='info-tile'
       className={cn(
-        'rounded-[var(--r-md)] border bg-[var(--surface-inset)] p-3',
+        'rounded-[var(--r-md)] border bg-[var(--surface-inset)] p-[14px]',
         aiAccent ? 'border-[var(--ai-line)] bg-[var(--ai-soft)]' : 'border-border',
         className
       )}
     >
-      <div className={cn('font-semibold text-xs', compact ? 'text-muted-foreground' : 'text-muted-foreground uppercase', aiAccent && 'text-[var(--ai-deep)]')}>{label}</div>
+      <div className={cn('font-semibold text-[11px]', compact ? 'text-[var(--ink-3)]' : 'text-[var(--ink-3)] uppercase', aiAccent && 'text-[var(--ai-deep)]')}>{label}</div>
       <div
         className={cn(
-          'mt-1 break-all font-semibold text-sm',
+          'mt-1 break-all font-semibold text-[14.5px]',
           numeric && 'tnum',
-          compact && 'text-[18px]',
+          compact && 'text-[20px]',
           positiveAccent && 'text-[var(--pos)]',
           aiAccent && 'text-[var(--ai-deep)]',
           mono && 'mono truncate'

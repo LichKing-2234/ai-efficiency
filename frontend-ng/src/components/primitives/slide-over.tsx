@@ -1,15 +1,14 @@
 import { XIcon } from 'lucide-react'
 import { useEffect } from 'react'
+import { ActionGroup } from '@/components/primitives/action-group'
+import { SlideOverStack } from '@/components/primitives/slide-over-stack'
+import { Stack } from '@/components/primitives/stack'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
-const slideOverBodyClass = 'min-h-0 flex-1 overflow-y-auto p-[18px]'
-
 function SlideOverBody({ children }: { children: React.ReactNode }) {
   return (
-    <div className={slideOverBodyClass} data-slot='slide-over-body'>
-      {children}
-    </div>
+    <SlideOverStack className='min-h-0 flex-1 overflow-y-auto p-[18px]'>{children}</SlideOverStack>
   )
 }
 
@@ -49,23 +48,28 @@ export function SlideOver({
       <section
         aria-modal='true'
         className={cn(
-          'flex h-full w-[min(500px,94vw)] flex-col overflow-hidden border-l border-[var(--line-strong)] bg-[var(--surface)] shadow-[var(--sh-xl)]',
+          'flex h-full w-[min(500px,94vw)] flex-col overflow-hidden border-l border-[var(--line-strong)] bg-[var(--surface)]',
           'motion-safe:animate-[slideover-in_.26s_var(--ease-out)_both]',
           className
         )}
         onClick={(event) => event.stopPropagation()}
         role='dialog'
       >
-        <header className='sticky top-0 z-10 flex items-center gap-3 border-b border-border bg-[color-mix(in_oklab,var(--surface)_88%,transparent)] px-[18px] py-4 backdrop-blur'>
+        <ActionGroup
+          align='start'
+          className='sticky top-0 z-10 border-b border-border bg-[color-mix(in_oklab,var(--surface)_88%,transparent)] px-[18px] py-4 backdrop-blur'
+          dataSlot='slide-over-header'
+          fit
+        >
           {leading}
-          <div className='min-w-0 flex-1'>
+          <Stack className='min-w-0 flex-1' dataSlot='slide-over-header-copy' gap='none'>
             <h2 className='truncate font-semibold text-[14.5px]'>{title}</h2>
-            {subtitle ? <div className='truncate text-[var(--ink-3)] text-xs'>{subtitle}</div> : null}
-          </div>
+            {subtitle ? <div className='truncate text-[11.5px] text-[var(--ink-3)]'>{subtitle}</div> : null}
+          </Stack>
           <Button aria-label='Close' onClick={onClose} size='icon' type='button' variant='ghost'>
             <XIcon />
           </Button>
-        </header>
+        </ActionGroup>
         <SlideOverBody>{children}</SlideOverBody>
       </section>
     </div>

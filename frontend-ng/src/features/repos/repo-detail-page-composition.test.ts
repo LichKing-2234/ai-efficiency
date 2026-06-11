@@ -37,6 +37,11 @@ describe('Repo detail page composition', () => {
     expect(source).not.toContain("className='w-full'")
   })
 
+  test('uses shared card content stacks for scm binding card bodies', () => {
+    expect(source).toContain("from '@/components/primitives/card-content-stack'")
+    expect(source).not.toContain('<CardContent>')
+  })
+
   test('uses shared stacks for repair and expanded detail vertical rhythm', () => {
     expect(source).toContain("from '@/components/primitives/stack'")
     expect(source).not.toContain("<div className='flex flex-col gap-3'>")
@@ -56,6 +61,12 @@ describe('Repo detail page composition', () => {
   test('uses the shared inset panel compact variant for sync status notes', () => {
     expect(source).toContain('<InsetPanel compact muted>')
     expect(source).not.toContain("className='px-3 py-2'")
+  })
+
+  test('uses tightened shared usage summary treatment for expanded pull request metrics', () => {
+    expect(source).toContain('<UsageSummaryPanel')
+    expect(source).toContain("summary={t('repoDetail.totalTokensRefreshed'")
+    expect(source).not.toContain("className='mt-4 flex flex-wrap items-center justify-between gap-3 text-sm'")
   })
 
   test('uses shared status-with-reason rows for PR and snapshot usage states', () => {

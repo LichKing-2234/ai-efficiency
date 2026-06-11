@@ -47,7 +47,29 @@ describe('FilterRow', () => {
       </FilterRow>
     )
 
-    expect(html).toContain('text-sm')
+    expect(html).toContain('text-[12px]')
+    expect(html).toContain('text-[var(--ink-3)]')
     expect(html).toContain('Merged in')
+  })
+
+  test('forwards semantic slot and state attributes to the rendered row', () => {
+    const html = renderToStaticMarkup(
+      <FilterRow data-slot='checklist-row' data-state='ready'>
+        <span>Ready</span>
+      </FilterRow>
+    )
+
+    expect(html).toContain('data-slot="checklist-row"')
+    expect(html).toContain('data-state="ready"')
+    expect(html).not.toContain('data-slot="filter-row"')
+  })
+
+  test('keeps label tone on explicit ink token typography instead of generic text-sm', async () => {
+    const source = await import('node:fs/promises').then((fs) =>
+      fs.readFile(new URL('./filter-row.tsx', import.meta.url), 'utf8')
+    )
+
+    expect(source).toContain("tone === 'label' ? 'text-[12px] text-[var(--ink-3)]' : undefined")
+    expect(source).not.toContain("tone === 'label' ? 'text-sm' : undefined")
   })
 })

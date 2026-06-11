@@ -175,33 +175,33 @@ export function AppShell({ user, children }: { user: User | null; children: Reac
           </SheetContent>
         </Sheet>
         <SidebarInset>
-          <header className='flex h-[var(--topbar)] shrink-0 items-center gap-3 border-b border-border bg-background/85 px-4 backdrop-blur'>
-          <Button className='md:hidden' variant='outline' size='icon-sm' onClick={() => setOpen(true)}>
-            <MenuIcon />
-          </Button>
-          <Button className='hidden md:inline-flex' variant='ghost' size='icon-sm' onClick={toggleCollapsed} title={t('nav.toggleSidebar')}>
-            <PanelLeftIcon />
-          </Button>
-          <div className='hidden h-6 w-px bg-border md:block' />
-          <TopbarTitle section={t(meta.sectionKey)} title={t(meta.titleKey)} />
-          <TopbarActions
-            commandLabel={t('command.trigger')}
-            dark={dark}
-            ingestingLabel={t('nav.ingesting')}
-            locale={locale}
-            locales={LOCALES.map((item) => ({
-              value: item.value,
-              label: t(item.labelKey),
-              shortLabel: t(item.shortKey)
-            }))}
-            onLocaleChange={setLocale}
-            onOpenCommand={() => setCommandOpen(true)}
-            onToggleTheme={() => setDark((value) => !value)}
-            themeLabel={t('nav.toggleTheme')}
-          />
+          <header className='flex h-[var(--topbar)] shrink-0 items-center gap-[14px] border-b border-[var(--line)] bg-[color-mix(in_oklab,var(--bg)_82%,transparent)] px-[18px] backdrop-blur-[12px]'>
+            <Button className='md:hidden' variant='outline' size='icon-sm' onClick={() => setOpen(true)}>
+              <MenuIcon />
+            </Button>
+            <Button className='hidden md:inline-flex' variant='ghost' size='icon-sm' onClick={toggleCollapsed} title={t('nav.toggleSidebar')}>
+              <PanelLeftIcon />
+            </Button>
+            <div className='hidden h-[22px] w-px bg-[var(--line)] md:block' />
+            <TopbarTitle section={t(meta.sectionKey)} title={t(meta.titleKey)} />
+            <TopbarActions
+              commandLabel={t('command.trigger')}
+              dark={dark}
+              ingestingLabel={t('nav.ingesting')}
+              locale={locale}
+              locales={LOCALES.map((item) => ({
+                value: item.value,
+                label: t(item.labelKey),
+                shortLabel: t(item.shortKey)
+              }))}
+              onLocaleChange={setLocale}
+              onOpenCommand={() => setCommandOpen(true)}
+              onToggleTheme={() => setDark((value) => !value)}
+              themeLabel={t('nav.toggleTheme')}
+            />
           </header>
           <main className='min-h-0 flex-1 overflow-y-auto'>
-            <div className='mx-auto w-full max-w-7xl p-4 pb-12 md:p-6'>{children}</div>
+            <div className='mx-auto w-full max-w-[1180px] px-[22px] pb-16 pt-[22px] md:px-6'>{children}</div>
           </main>
         </SidebarInset>
         <CommandPalette

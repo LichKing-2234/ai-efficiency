@@ -5,10 +5,10 @@ export function StatusBadge({ value }: { value?: string | null }) {
   const variant =
     ['active', 'healthy', 'fresh', 'completed', 'success', 'bound', 'admin'].includes(text)
       ? 'success'
-      : ['running', 'queued', 'pending_upload', 'review', 'user', 'invited'].includes(text)
+      : ['running', 'queued', 'pending_upload', 'review', 'user', 'invited', 'syncing'].includes(text)
         ? 'ai'
-        : ['failed', 'abandoned', 'unbound', 'missing', 'refresh_failed', 'suspended'].includes(text)
-          ? 'warning'
+        : ['failed', 'abandoned', 'unbound', 'missing', 'refresh_failed', 'suspended', 'error'].includes(text)
+          ? 'neg'
           : 'secondary'
   return <Badge variant={variant}>{text.replaceAll('_', ' ')}</Badge>
 }

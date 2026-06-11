@@ -38,7 +38,7 @@ export function SegmentedControl<T extends string>({
               'rounded-[calc(var(--r-md)-3px)] border px-3 font-semibold text-[12.5px] transition-all duration-150 ease-[var(--ease-out)]',
               size === 'sm' ? 'h-7' : 'h-8',
               active
-                ? 'border-border bg-[var(--surface)] text-foreground shadow-[var(--sh-sm)]'
+                ? 'border-border bg-[var(--surface)] text-foreground'
                 : 'border-transparent text-[var(--ink-3)] hover:text-foreground'
             )}
             key={option.value}

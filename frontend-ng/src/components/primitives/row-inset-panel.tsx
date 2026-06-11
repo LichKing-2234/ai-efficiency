@@ -13,12 +13,14 @@ const maxWidthClasses = {
 }
 
 export function RowInsetPanel({
+  actions,
   children,
   className,
   columns = 7,
   indent = 'none',
   maxWidth = 'none'
 }: {
+  actions?: React.ReactNode
   children: React.ReactNode
   className?: string
   columns?: number
@@ -28,7 +30,7 @@ export function RowInsetPanel({
   return (
     <InsetPanel
       className={cn(
-        'flex flex-col gap-2 text-left text-xs',
+        'flex flex-col gap-2 text-left text-[11.5px]',
         columns === 7 && 'col-span-7',
         indentClasses[indent],
         maxWidthClasses[maxWidth],
@@ -37,6 +39,7 @@ export function RowInsetPanel({
       dataSlot='row-inset-panel'
     >
       {children}
+      {actions}
     </InsetPanel>
   )
 }

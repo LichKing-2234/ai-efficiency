@@ -18,6 +18,7 @@ describe('LoginForm', () => {
     )
 
     expect(html).toContain('data-slot="field-group"')
+    expect(html).toContain('gap-3')
     expect(html).toContain('for="login-username"')
     expect(html).toContain('id="login-username"')
     expect(html).toContain('for="login-password"')
@@ -39,5 +40,18 @@ describe('LoginForm', () => {
     )
 
     expect(html).toContain('disabled=""')
+  })
+
+  test('uses compact field rhythm and a full-width primary submit action', async () => {
+    const source = await import('node:fs/promises').then((fs) =>
+      fs.readFile(new URL('./login-form.tsx', import.meta.url), 'utf8')
+    )
+
+    expect(source).toContain("<FieldGroup gap='compact'>")
+    expect(source).toContain("const fieldControlClassName = 'h-10 rounded-[var(--r-md)] bg-[var(--surface-inset)] px-3.5 text-[13px] shadow-none'")
+    expect(source).toContain("controlClassName={fieldControlClassName}")
+    expect(source).toContain("triggerClassName={`${fieldControlClassName} w-full`}")
+    expect(source).toContain("description={t('auth.loginErrorDescription')}")
+    expect(source).toContain("<Button className='w-full'")
   })
 })

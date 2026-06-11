@@ -43,7 +43,7 @@ describe('CredentialKeyPanel', () => {
     )
 
     expect(html).toContain('No key')
-    expect(html).toContain('text-muted-foreground')
+    expect(html).toContain('text-[var(--ink-3)]')
     expect(html).toContain('Create API key')
   })
 
@@ -52,6 +52,15 @@ describe('CredentialKeyPanel', () => {
       fs.readFile(new URL('./credential-key-panel.tsx', import.meta.url), 'utf8')
     )
 
+    expect(source).toContain("from '@/components/primitives/action-group'")
+    expect(source).toContain("from '@/components/primitives/stack'")
+    expect(source).toContain("className={cn('rounded-[var(--r-md)] border border-border bg-[var(--surface-inset)] p-[14px]'")
+    expect(source).toContain("className='font-medium text-[11px] text-[var(--ink-3)] uppercase tracking-[0.04em]'")
+    expect(source).toContain("className='min-w-0 rounded-[var(--r-md)] border border-border bg-card px-[14px] py-[11px]'")
+    expect(source).toContain("className={ready ? 'text-[var(--ai)]' : 'text-[var(--ink-3)]'}")
+    expect(source).toContain("className={cn('mono min-w-0 flex-1 truncate text-[13px]', ready ? 'text-[var(--ai-deep)]' : 'text-[var(--ink-3)]')}")
+    expect(source).toContain("className='mt-1'")
     expect(source).not.toContain("className='mt-3 flex flex-wrap gap-2'")
+    expect(source).not.toContain("className='mb-2 font-semibold text-muted-foreground text-xs uppercase'")
   })
 })

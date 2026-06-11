@@ -1,12 +1,11 @@
+import { Stack } from '@/components/primitives/stack'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-
-const appAlertActionsClass = 'mt-3'
 
 function AppAlertActions({ children }: { children: React.ReactNode }) {
   return (
-    <div className={appAlertActionsClass} data-slot='app-alert-actions'>
+    <Stack className='mt-3' dataSlot='app-alert-actions' gap='none'>
       {children}
-    </div>
+    </Stack>
   )
 }
 

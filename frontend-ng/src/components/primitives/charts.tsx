@@ -1,6 +1,8 @@
 import { useId, useMemo, useRef, useState } from 'react'
 import { compact } from '@/lib/format'
 import { cn } from '@/lib/utils'
+import { ActionGroup } from './action-group'
+import { Stack } from './stack'
 
 export type StackedAreaKey<T extends object> = {
   key: keyof T & string
@@ -9,8 +11,6 @@ export type StackedAreaKey<T extends object> = {
 }
 
 export type StackedAreaPoint = object
-
-const stackedAreaTooltipRowClass = 'mt-1 flex items-center gap-2 text-xs'
 
 function pointValue<T extends object>(point: T, key: keyof T & string) {
   const value = point[key]
@@ -32,11 +32,11 @@ function StackedAreaTooltipRow({
   value: React.ReactNode
 }) {
   return (
-    <div className={stackedAreaTooltipRowClass} data-slot='stacked-area-tooltip-row'>
+    <ActionGroup align='start' className='mt-1 text-[11.5px]' dataSlot='stacked-area-tooltip-row' fit>
       <span className='size-2 rounded-[3px]' style={{ background: color }} />
       <span className='flex-1 text-[var(--ink-2)]'>{label}</span>
       <span className='mono tnum font-semibold'>{value}</span>
-    </div>
+    </ActionGroup>
   )
 }
 
@@ -185,7 +185,7 @@ export function Ring({
   const radius = (size - stroke) / 2
   const circumference = 2 * Math.PI * radius
   return (
-    <div className={cn('relative grid place-items-center', className)} style={{ width: size, height: size }}>
+    <Stack className={cn('relative items-center justify-center', className)} dataSlot='ring' gap='none' style={{ width: size, height: size }}>
       <svg aria-hidden='true' height={size} style={{ transform: 'rotate(-90deg)' }} width={size}>
         <circle cx={size / 2} cy={size / 2} fill='none' r={radius} stroke={track} strokeWidth={stroke} />
         <circle
@@ -200,8 +200,8 @@ export function Ring({
           strokeWidth={stroke}
         />
       </svg>
-      <div className='absolute inset-0 grid place-items-center'>{children}</div>
-    </div>
+      <Stack className='absolute inset-0 items-center justify-center' dataSlot='ring-content' gap='none'>{children}</Stack>
+    </Stack>
   )
 }
 
@@ -274,7 +274,7 @@ export function StackedAreaChart<T extends object>({
       </svg>
       {hover != null && series[hover] ? (
         <div
-          className='pointer-events-none absolute top-2 min-w-40 rounded-[var(--r-sm)] border border-[var(--line-strong)] bg-[var(--surface)] p-3 shadow-[var(--sh-lg)]'
+          className='pointer-events-none absolute top-2 min-w-40 rounded-[var(--r-sm)] border border-[var(--line-strong)] bg-[var(--surface)] p-[14px]'
           style={{ left: `min(calc(100% - 180px), max(44px, ${(x(hover) / width) * 100}% + 10px))` }}
         >
           <div className='mono mb-2 text-[11px] text-[var(--ink-3)]'>{pointLabel(series[hover], labelKey)}</div>
@@ -304,24 +304,24 @@ export function BarsH({
   const max = Math.max(1, ...rows.map((row) => row.value))
   const formatValue = valueFormatter ?? ((value) => compact(value))
   return (
-    <div className={cn('flex flex-col gap-3.5', className)}>
+    <Stack className={className} dataSlot='bars-h' gap='normal'>
       {rows.map((row) => (
-        <div key={row.label}>
-          <div className='mb-1.5 flex items-baseline justify-between gap-3'>
-            <span className='flex min-w-0 items-center gap-2 font-medium text-[12.5px]'>
+        <Stack dataSlot='bars-h-row' gap='compact' key={row.label}>
+          <ActionGroup align='block-end' className='mb-1 gap-3' dataSlot='bars-h-row-header' fit layout='split'>
+            <ActionGroup align='start' className='min-w-0 font-medium text-[12px]' dataSlot='bars-h-row-label' fit>
               <span className='size-2 shrink-0 rounded-[3px]' style={{ background: row.color }} />
               <span className='mono truncate'>{row.label}</span>
-            </span>
+            </ActionGroup>
             <span className='shrink-0 text-[12px] text-[var(--ink-3)]'>
               <span className='tnum font-semibold text-[var(--ink)]'>{formatValue(row.value)}</span>
               {typeof row.share === 'number' ? <span className='tnum ml-2'>{Math.round(row.share * 100)}%</span> : null}
             </span>
-          </div>
-          <div className='h-2 overflow-hidden rounded-[var(--r-full)] bg-[var(--surface-inset)]'>
+          </ActionGroup>
+          <div className='h-[9px] overflow-hidden rounded-[var(--r-full)] bg-[var(--surface-inset)]'>
             <div className='h-full rounded-[var(--r-full)] motion-safe:transition-[width] motion-safe:duration-700 motion-safe:ease-[var(--ease-out)]' style={{ width: `${(row.value / max) * 100}%`, background: row.color }} />
           </div>
-        </div>
+        </Stack>
       ))}
-    </div>
+    </Stack>
   )
 }

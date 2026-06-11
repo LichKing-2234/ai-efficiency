@@ -33,6 +33,23 @@ describe('AppAlert', () => {
       fs.readFile(new URL('./app-alert.tsx', import.meta.url), 'utf8')
     )
 
+    expect(source).toContain("from '@/components/primitives/stack'")
     expect(source).not.toContain("data-slot='app-alert-actions' className='mt-3'")
+    expect(source).not.toContain("const appAlertActionsClass = 'mt-3'")
+  })
+
+  test('inherits the denser shared alert shell instead of generic card/muted typography', async () => {
+    const source = await import('node:fs/promises').then((fs) =>
+      fs.readFile(new URL('../ui/alert.tsx', import.meta.url), 'utf8')
+    )
+
+    expect(source).toContain('rounded-[var(--r-md)]')
+    expect(source).toContain('bg-[var(--surface-inset)]')
+    expect(source).toContain('text-[12.5px]')
+    expect(source).toContain('text-[12px]')
+    expect(source).toContain('bg-[var(--neg-soft)]')
+    expect(source).not.toContain('rounded-lg')
+    expect(source).not.toContain('bg-card')
+    expect(source).not.toContain('text-sm text-muted-foreground')
   })
 })

@@ -48,6 +48,13 @@ describe('LinkedRecordList', () => {
       fs.readFile(new URL('./linked-record-list.tsx', import.meta.url), 'utf8')
     )
 
+    expect(source).toContain("from '@/components/primitives/stack'")
+    expect(source).toContain("className='block truncate text-[11px] text-[var(--ink-4)]'")
+    expect(source).toContain("variant === 'card' && 'border border-border bg-card px-[12px] py-[9px] hover:border-[var(--ai-line)] hover:bg-[var(--ai-soft)]'")
+    expect(source).toContain("className='block truncate font-medium text-[12.5px]'")
+    expect(source).toContain("className='shrink-0 text-[11px] text-[var(--ink-3)]'")
     expect(source).not.toContain("className='mt-1 block truncate text-muted-foreground text-xs'")
+    expect(source).not.toContain("<div className={cn('flex flex-col gap-2', className)} data-slot='linked-record-list'>")
+    expect(source).not.toContain("<span className='min-w-0 flex-1'>")
   })
 })

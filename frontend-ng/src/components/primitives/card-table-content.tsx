@@ -1,5 +1,5 @@
 import type * as React from 'react'
-import { CardContent } from '@/components/ui/card'
+import { CardContentStack } from '@/components/primitives/card-content-stack'
 import { cn } from '@/lib/utils'
 
 const cardTableContentVariants = {
@@ -17,8 +17,8 @@ export function CardTableContent({
   variant?: keyof typeof cardTableContentVariants
 }) {
   return (
-    <CardContent className={cn(cardTableContentVariants[variant], className)} data-layout='table' data-variant={variant}>
+    <CardContentStack className={cn(cardTableContentVariants[variant], className)} data-layout='table' data-variant={variant} gap='none'>
       {children}
-    </CardContent>
+    </CardContentStack>
   )
 }

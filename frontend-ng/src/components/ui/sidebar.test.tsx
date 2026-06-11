@@ -96,4 +96,36 @@ describe('Sidebar', () => {
     expect(html).toContain('group-data-[collapsed=true]/sidebar-wrapper:sr-only')
     expect(html).toContain('data-tooltip="Overview"')
   })
+
+  test('keeps collapsed navigation buttons square and shadow-free', async () => {
+    const source = await import('node:fs/promises').then((fs) =>
+      fs.readFile(new URL('./sidebar.tsx', import.meta.url), 'utf8')
+    )
+
+    expect(source).toContain('group-data-[collapsed=true]/sidebar-wrapper:size-[42px]')
+    expect(source).toContain("active && 'border-border bg-sidebar-accent text-foreground'")
+    expect(source).not.toContain('shadow-[var(--sh-sm)]')
+    expect(source).not.toContain('shadow-[var(--sh-lg)]')
+    expect(source).not.toContain('shadow-[0_2px_8px_var(--ai-glow)]')
+  })
+
+  test('keeps collapsed brand and footer footprints square', async () => {
+    const source = await import('node:fs/promises').then((fs) =>
+      fs.readFile(new URL('./sidebar.tsx', import.meta.url), 'utf8')
+    )
+
+    expect(source).toContain('group-data-[collapsed=true]/sidebar-wrapper:size-[42px]')
+    expect(source).toContain('group-data-[collapsed=true]/sidebar-wrapper:justify-center')
+    expect(source).toContain("className={cn('flex h-[var(--topbar)] shrink-0 items-center border-b border-[var(--line-faint)] px-4 group-data-[collapsed=true]/sidebar-wrapper:justify-center group-data-[collapsed=true]/sidebar-wrapper:px-0', className)}")
+    expect(source).toContain("className={cn('shrink-0 border-t border-[var(--line-faint)] p-3 group-data-[collapsed=true]/sidebar-wrapper:grid group-data-[collapsed=true]/sidebar-wrapper:place-items-center', className)}")
+  })
+
+  test('keeps collapsed tooltip copy out of the expanded accessible label', async () => {
+    const source = await import('node:fs/promises').then((fs) =>
+      fs.readFile(new URL('./sidebar.tsx', import.meta.url), 'utf8')
+    )
+
+    expect(source).toContain("aria-hidden='true'")
+    expect(source).toContain("group-data-[collapsed=true]/sidebar-wrapper:block")
+  })
 })

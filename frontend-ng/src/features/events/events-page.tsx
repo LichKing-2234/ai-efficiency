@@ -1,11 +1,10 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useNavigate, useSearch } from '@tanstack/react-router'
-import { ActivityIcon, CoinsIcon, GitPullRequestIcon, LayersIcon } from 'lucide-react'
+import { ActivityIcon, CoinsIcon, DownloadIcon, ExternalLinkIcon, GitPullRequestIcon, LayersIcon } from 'lucide-react'
 import { useState } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
-import { Empty, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
+import { Card } from '@/components/ui/card'
 import { AdvancedDataPanel } from '@/components/primitives/advanced-data-panel'
 import { CardFilterBar } from '@/components/primitives/card-filter-bar'
 import { CardPagerFooter } from '@/components/primitives/card-pager-footer'
@@ -19,6 +18,7 @@ import { LinkedRecordItem, LinkedRecordList } from '@/components/primitives/link
 import { KpiCard } from '@/components/primitives/metric-card'
 import { OptionList } from '@/components/primitives/option-list'
 import { Page } from '@/components/primitives/page'
+import { PageEmpty } from '@/components/primitives/page-empty'
 import { LoadingState } from '@/components/primitives/data-state'
 import { SearchField } from '@/components/primitives/search-field'
 import { SectionEyebrow } from '@/components/primitives/section-eyebrow'
@@ -66,6 +66,32 @@ export function EventsPage() {
   const totalCredit = rows.reduce((sum, row) => sum + row.credit_usage, 0)
   const maxTokens = Math.max(...rows.map((row) => tokenTotal(row)), 1)
   const pagination = getEventPagination({ total, limit: appliedFilters.limit, offset: appliedFilters.offset })
+
+  function exportRows() {
+    if (typeof window === 'undefined' || rows.length === 0) return
+    const header = ['tool', 'repository', 'source', 'session', 'requests', 'credit', 'tokens', 'binding', 'ended']
+    const data = rows.map((row) => [
+      row.tool,
+      row.repo_name || '',
+      row.source_basename || '',
+      row.tool_session_id || '',
+      String(row.request_count),
+      String(row.credit_usage),
+      String(tokenTotal(row)),
+      row.binding_status,
+      row.observed_end_at
+    ])
+    const csv = [header, ...data]
+      .map((columns) => columns.map((value) => `"${String(value).replaceAll('"', '""')}"`).join(','))
+      .join('\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+    const objectUrl = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = objectUrl
+    link.download = 'usage-records.csv'
+    link.click()
+    window.URL.revokeObjectURL(objectUrl)
+  }
 
   function replaceSearch(nextFilters: EventFilterState) {
     void navigate({ to: '/events', search: buildEventSearch(nextFilters) })
@@ -132,35 +158,41 @@ export function EventsPage() {
 
       <Card>
         <CardFilterBar stacked>
-          <FilterRow>
-            <SearchField
-              ariaLabel={t('events.searchRepoSessionSource')}
-              clearLabel={t('common.clear')}
-              onChange={(q) => setFilters((value) => ({ ...value, q }))}
-              onClear={() => setFilters((value) => ({ ...value, q: '' }))}
-              placeholder={t('events.searchRepoSessionSource')}
-              value={filters.q}
-              width='toolbar'
-            />
-            <LabeledSegmentedControl
-              ariaLabel={t('events.tool')}
-              label={t('events.tool')}
-              onChange={(tool) => setFilters((current) => ({ ...current, tool: segmentToFilter(tool) }))}
-              options={[{ value: 'all', label: t('events.allTools') }, ...TOOL_OPTIONS.map((tool) => ({ value: tool, label: tool }))]}
-              value={filterToSegment(filters.tool)}
-            />
-            <LabeledSegmentedControl
-              ariaLabel={t('events.binding')}
-              label={t('events.binding')}
-              onChange={(bindingStatus) => setFilters((current) => ({ ...current, bindingStatus: segmentToFilter(bindingStatus) }))}
-              options={[
-                { value: 'all', label: t('events.allCodeLinks') },
-                { value: 'bound', label: t('repos.bound') },
-                { value: 'unbound', label: t('repos.unbound') }
-              ]}
-              value={filterToSegment(filters.bindingStatus)}
-            />
-            <Button onClick={applyCurrentFilters}>{t('common.applyFilters')}</Button>
+          <FilterRow gap='lg' justify='between'>
+            <FilterRow className='min-w-0 flex-1'>
+              <SearchField
+                ariaLabel={t('events.searchRepoSessionSource')}
+                clearLabel={t('common.clear')}
+                onChange={(q) => setFilters((value) => ({ ...value, q }))}
+                onClear={() => setFilters((value) => ({ ...value, q: '' }))}
+                placeholder={t('events.searchRepoSessionSource')}
+                value={filters.q}
+                width='toolbar'
+              />
+              <LabeledSegmentedControl
+                ariaLabel={t('events.tool')}
+                label={t('events.tool')}
+                onChange={(tool) => setFilters((current) => ({ ...current, tool: segmentToFilter(tool) }))}
+                options={[{ value: 'all', label: t('events.allTools') }, ...TOOL_OPTIONS.map((tool) => ({ value: tool, label: tool }))]}
+                value={filterToSegment(filters.tool)}
+              />
+              <LabeledSegmentedControl
+                ariaLabel={t('events.binding')}
+                label={t('events.binding')}
+                onChange={(bindingStatus) => setFilters((current) => ({ ...current, bindingStatus: segmentToFilter(bindingStatus) }))}
+                options={[
+                  { value: 'all', label: t('events.allCodeLinks') },
+                  { value: 'bound', label: t('repos.bound') },
+                  { value: 'unbound', label: t('repos.unbound') }
+                ]}
+                value={filterToSegment(filters.bindingStatus)}
+              />
+              <Button onClick={applyCurrentFilters}>{t('common.applyFilters')}</Button>
+            </FilterRow>
+            <Button disabled={rows.length === 0} variant='outline' onClick={exportRows}>
+              <DownloadIcon data-icon='inline-start' />
+              {t('command.exportUsageReport')}
+            </Button>
           </FilterRow>
           <FilterRow>
             <TextField
@@ -323,11 +355,12 @@ function EventDetail({ event, isAdmin, onClose }: { event: ToolUsageEventDetail 
           <section>
             <SectionEyebrow>{t('events.session')}</SectionEyebrow>
             <FieldList>
-              <FieldItem label={t('events.observedStart')} value={dateTime(event.observed_start_at)} />
               <FieldItem label={t('events.observedEnd')} value={dateTime(event.observed_end_at)} />
               <FieldItem label={t('repoDetail.commit')} value={event.commit_sha || '-'} mono />
               <FieldItem label={t('events.source')} value={event.source_basename} mono />
+              <FieldItem label={t('events.session')} value={event.tool_session_id || t('events.noToolSessionId')} mono />
               <FieldItem label={t('events.workspace')} value={event.workspace_id} mono />
+              <FieldItem label={t('events.observedStart')} value={dateTime(event.observed_start_at)} />
             </FieldList>
           </section>
 
@@ -336,15 +369,19 @@ function EventDetail({ event, isAdmin, onClose }: { event: ToolUsageEventDetail 
             {event.matched_prs.length > 0 ? (
               <LinkedRecordList>
                 {event.matched_prs.map((pr) => (
-                  <LinkedRecordItem href={pr.scm_pr_url} icon={<GitPullRequestIcon />} key={pr.pr_record_id} label={eventDetailPrLabel(pr)} />
+                  <LinkedRecordItem
+                    description={pr.status}
+                    href={pr.scm_pr_url}
+                    icon={<GitPullRequestIcon />}
+                    key={pr.pr_record_id}
+                    label={`#${pr.scm_pr_id} ${pr.title}`}
+                    trailing={<ExternalLinkIcon className='size-3.5' />}
+                    variant='plain'
+                  />
                 ))}
               </LinkedRecordList>
             ) : (
-              <Empty size='compact'>
-                <EmptyHeader>
-                  <EmptyTitle>{t('events.noMatchedPrs')}</EmptyTitle>
-                </EmptyHeader>
-              </Empty>
+              <PageEmpty title={t('events.noMatchedPrs')} />
             )}
           </section>
 

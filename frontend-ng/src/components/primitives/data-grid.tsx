@@ -1,5 +1,6 @@
 import { Slot } from 'radix-ui'
 import type * as React from 'react'
+import { ActionGroup } from '@/components/primitives/action-group'
 import { IdentityAvatar } from './identity-avatar'
 import { RecordMeta } from './record-meta'
 import { cn } from '@/lib/utils'
@@ -117,7 +118,7 @@ export function DataGridStatusRow({
     <div
       className={cn(
         'ae-trow',
-        'justify-center text-center text-muted-foreground text-sm',
+        'justify-center text-center text-[12.5px] text-[var(--ink-3)]',
         tone === 'empty' && 'py-10',
         tone === 'loading' && 'py-4',
         className
@@ -159,10 +160,10 @@ export function DataGridCell({
         className={cn('min-w-0', align === 'right' && 'text-right', className)}
         data-slot='data-grid-cell'
       >
-        <span className={cn('block font-semibold text-sm', truncate && 'truncate')} data-slot='data-grid-cell-primary'>
+        <span className={cn('block text-[13px] font-semibold', truncate && 'truncate')} data-slot='data-grid-cell-primary'>
           {children}
         </span>
-        <span className={cn('block text-muted-foreground text-xs', truncate && 'truncate')} data-slot='data-grid-cell-description'>
+        <span className={cn('block text-[11px] text-[var(--ink-3)]', truncate && 'truncate')} data-slot='data-grid-cell-description'>
           {description}
         </span>
       </span>
@@ -177,10 +178,10 @@ export function DataGridCell({
         numeric && 'tnum',
         mono && 'mono',
         truncate && 'truncate',
-        muted && 'text-muted-foreground text-xs',
-        tone === 'metadata' && 'text-muted-foreground text-xs',
+        muted && 'text-[11px] text-[var(--ink-3)]',
+        tone === 'metadata' && 'text-[11px] text-[var(--ink-3)]',
         tone === 'muted' && 'text-[var(--ink-2)]',
-        tone === 'subtle' && 'text-[var(--ink-3)] text-xs',
+        tone === 'subtle' && 'text-[11.5px] text-[var(--ink-3)]',
         className
       )}
       data-slot='data-grid-cell'
@@ -202,10 +203,10 @@ export function DataGridIdentityCell({
   value: string
 }) {
   return (
-    <span className={cn('flex min-w-0 items-center gap-3', className)} data-slot='data-grid-identity-cell'>
+    <ActionGroup align='start' className={className} dataSlot='data-grid-identity-cell' fit>
       <IdentityAvatar value={value} />
       <DataGridCell description={description} truncate>{children}</DataGridCell>
-    </span>
+    </ActionGroup>
   )
 }
 
@@ -260,7 +261,7 @@ export function DataGridPrimaryLink({
   const Comp = asChild ? Slot.Root : 'a'
   return (
     <Comp
-      className={cn('block truncate font-semibold text-foreground text-sm transition hover:text-[var(--ai-deep)]', className)}
+      className={cn('block truncate text-[13px] font-semibold text-foreground transition hover:text-[var(--ai-deep)]', className)}
       data-slot='data-grid-primary-link'
       {...props}
     >

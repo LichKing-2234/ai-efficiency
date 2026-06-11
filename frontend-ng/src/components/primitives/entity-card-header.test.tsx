@@ -17,7 +17,9 @@ describe('EntityCardHeader', () => {
     expect(html).toContain('Provider detail')
     expect(html).toContain('https://example.com')
     expect(html).toContain('Filter')
-    expect(html).toContain('lg:flex-row')
+    expect(html).toContain('data-slot="entity-card-header-content"')
+    expect(html).toContain('[&amp;&gt;*]:flex-1')
+    expect(html).toContain('sm:justify-end')
   })
 
   test('omits optional regions without empty controls', () => {
@@ -32,6 +34,14 @@ describe('EntityCardHeader', () => {
       fs.readFile(new URL('./entity-card-header.tsx', import.meta.url), 'utf8')
     )
 
+    expect(source).toContain("from '@/components/primitives/action-group'")
+    expect(source).toContain("from '@/components/primitives/stack'")
+    expect(source).toContain("dataSlot='entity-card-header-content'")
+    expect(source).toContain("<ActionGroup align='responsive-end'")
+    expect(source).toContain("className='text-[14px] font-[650] leading-none'")
+    expect(source).toContain("className='mt-0.5 break-words text-[12px] text-[var(--ink-3)]'")
     expect(source).not.toContain("className='mt-1 break-words'")
+    expect(source).not.toContain("className={cn('lg:flex-row lg:items-start lg:justify-between', contentClassName)}")
+    expect(source).not.toContain("className='flex shrink-0 flex-wrap items-center justify-start gap-2 lg:justify-end'")
   })
 })

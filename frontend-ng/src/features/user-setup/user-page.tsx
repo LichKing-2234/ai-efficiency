@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
+import { Card } from '@/components/ui/card'
 import { ActionGroup } from '@/components/primitives/action-group'
 import { AppAlert } from '@/components/primitives/app-alert'
 import { CardContentStack } from '@/components/primitives/card-content-stack'
@@ -143,35 +143,35 @@ export function UserPage() {
           <Card>
             <SectionCardHeader
               title={t('userSetup.accountAccess')}
-              description={t('userSetup.descriptionShort')}
               actions={<CountBadge variant='ai'>{t('userSetup.groupsReadyShort', { ready: readyGroups, total: totalGroups })}</CountBadge>}
             />
             <CardContentStack gap='compact'>
               {providers.data?.message ? <InsetPanel muted>{providers.data.message}</InsetPanel> : null}
-              {rows.map((provider) => (
-                <ProviderButton
-                  key={provider.id}
-                  active={provider.id === selectedProviderId}
-                  name={provider.display_name || provider.name}
-                  baseUrl={provider.base_url}
-                  primary={provider.is_primary}
-                  ready={provider.groups.filter((group) => group.credential.state === 'existing_hidden').length}
-                  total={provider.groups.length}
-                  labels={{
-                    primary: t('userSetup.primary'),
-                    groupsReady: t('userSetup.groupsReadyShort', {
-                      ready: provider.groups.filter((group) => group.credential.state === 'existing_hidden').length,
-                      total: provider.groups.length
-                    })
-                  }}
-                  onClick={() => {
-                    const selection = chooseDefaultSelection(rows, { providerId: provider.id, groupId: null })
-                    setSelectedProviderId(selection.providerId)
-                    setSelectedGroupId(selection.groupId)
-                    setTestResult(null)
-                  }}
-                />
-              ))}
+              {rows.map((provider) => {
+                const ready = provider.groups.filter((group) => group.credential.state === 'existing_hidden').length
+                const total = provider.groups.length
+                return (
+                  <SelectableCard
+                    key={provider.id}
+                    active={provider.id === selectedProviderId}
+                    onClick={() => {
+                      const selection = chooseDefaultSelection(rows, { providerId: provider.id, groupId: null })
+                      setSelectedProviderId(selection.providerId)
+                      setSelectedGroupId(selection.groupId)
+                      setTestResult(null)
+                    }}
+                  >
+                    <SelectableCardHeader>
+                      <SelectableCardTitle>{provider.display_name || provider.name}</SelectableCardTitle>
+                      {provider.is_primary ? <Badge variant='ai'>{t('userSetup.primary')}</Badge> : null}
+                    </SelectableCardHeader>
+                    <SelectableCardMeta>{provider.base_url}</SelectableCardMeta>
+                    <SelectableCardStatus tone={ready === total ? 'success' : 'warning'}>
+                      {t('userSetup.groupsReadyShort', { ready, total })}
+                    </SelectableCardStatus>
+                  </SelectableCard>
+                )
+              })}
             </CardContentStack>
           </Card>
           <Card>
@@ -181,14 +181,13 @@ export function UserPage() {
               description={t('userSetup.cliDescription')}
             />
             <CardContentStack gap='compact'>
-              <CommandStep step={1} command={installCommand} copyLabel={t('userSetup.copy')} copiedMessage={t('userSetup.commandCopied')} />
-              <CommandStep step={2} command='ae-cli login' copyLabel={t('userSetup.copy')} copiedMessage={t('userSetup.commandCopied')} />
-              <CommandStep step={3} command={discoverCommand} disabled={!selectedProvider} copyLabel={t('userSetup.copy')} copiedMessage={t('userSetup.commandCopied')} />
-              <CommandStep step={4} command='ae-cli hooks enable --global' copyLabel={t('userSetup.copy')} copiedMessage={t('userSetup.commandCopied')} />
-              <CommandStep step={5} command='ae-cli init' copyLabel={t('userSetup.copy')} copiedMessage={t('userSetup.commandCopied')} />
-              <CommandStep step={6} command='ae-cli doctor' copyLabel={t('userSetup.copy')} copiedMessage={t('userSetup.commandCopied')} />
+              <CommandStep step={1} label={t('userSetup.installCli')} command={installCommand} copiedMessage={t('userSetup.commandCopied')} />
+              <CommandStep step={2} label={t('userSetup.authenticate')} command='ae-cli login' copiedMessage={t('userSetup.commandCopied')} />
+              <CommandStep step={3} label={t('userSetup.discoverProvider')} command={discoverCommand} disabled={!selectedProvider} copiedMessage={t('userSetup.commandCopied')} />
+              <CommandStep step={4} label={t('userSetup.enableHooks')} command='ae-cli hooks enable --global' copiedMessage={t('userSetup.commandCopied')} />
+              <CommandStep step={5} label={t('userSetup.verifySetup')} command='ae-cli doctor' copiedMessage={t('userSetup.commandCopied')} />
               <CommandAccordion title={t('userSetup.windowsInstaller')}>
-                <CommandStep command={windowsInstallCommand} copyLabel={t('userSetup.copy')} copiedMessage={t('userSetup.commandCopied')} />
+                <CommandStep command={windowsInstallCommand} copiedMessage={t('userSetup.commandCopied')} />
               </CommandAccordion>
             </CardContentStack>
           </Card>
@@ -220,12 +219,13 @@ export function UserPage() {
               {selectedGroup ? (
                 <>
                   <InfoTileGrid columns={3}>
-                    <InfoTile label={t('userSetup.group')} value={selectedGroup.group_name} />
-                    <InfoTile label={t('userSetup.platform')} value={selectedGroup.platform} />
+                    <InfoTile compact label={t('userSetup.group')} value={selectedGroup.group_name} />
+                    <InfoTile compact label={t('userSetup.platform')} value={selectedGroup.platform} />
                     <InfoTile
+                      compact
                       label={t('userSetup.credential')}
                       value={selectedGroup.credential.state === 'existing_hidden' ? t('userSetup.ready') : t('userSetup.needsSetup')}
-                      accent={selectedGroup.credential.state === 'existing_hidden'}
+                      accent={selectedGroup.credential.state === 'existing_hidden' ? 'ai' : false}
                     />
                   </InfoTileGrid>
                   <CredentialKeyPanel
@@ -273,7 +273,12 @@ export function UserPage() {
           </Card>
           <Card>
             <SectionCardHeader title={t('userSetup.providerTest')} description={t('userSetup.providerTestDescription')} />
-            <CardContent>
+            <CardContentStack gap='compact'>
+              {selectedGroup ? (
+                <InsetPanel muted>
+                  {t('userSetup.group')}: <span className='mono'>{selectedGroup.group_name}</span> · {t('userSetup.platform')}: <span className='mono'>{selectedGroup.platform}</span>
+                </InsetPanel>
+              ) : null}
               <ProviderTestForm
                 canRun={!!selectedGroup && !!secret && !!model.trim()}
                 error={modelQuery.error?.message}
@@ -292,44 +297,10 @@ export function UserPage() {
                 running={testProvider.isPending}
                 secretMissing={!secret}
               />
-            </CardContent>
+            </CardContentStack>
           </Card>
         </Stack>
       </div>
     </Page>
-  )
-}
-
-export function ProviderButton({
-  active,
-  name,
-  baseUrl,
-  primary,
-  ready,
-  total,
-  labels,
-  onClick
-}: {
-  active: boolean
-  name: string
-  baseUrl: string
-  primary: boolean
-  ready: number
-  total: number
-  labels: { primary: string; groupsReady: string }
-  onClick: () => void
-}) {
-  return (
-    <SelectableCard
-      active={active}
-      onClick={onClick}
-    >
-      <SelectableCardHeader>
-        <SelectableCardTitle>{name}</SelectableCardTitle>
-        {primary ? <Badge variant='ai'>{labels.primary}</Badge> : null}
-      </SelectableCardHeader>
-      <SelectableCardMeta>{baseUrl}</SelectableCardMeta>
-      <SelectableCardStatus tone={ready === total ? 'success' : 'warning'}>{labels.groupsReady}</SelectableCardStatus>
-    </SelectableCard>
   )
 }

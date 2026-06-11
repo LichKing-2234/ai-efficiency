@@ -17,7 +17,7 @@ describe('WorkbenchRail', () => {
     expect(html).toContain('data-slot="workbench-rail"')
     expect(html).toContain('data-slot="workbench-rail-header"')
     expect(html).toContain('data-slot="workbench-rail-content"')
-    expect(html).toContain('border-border bg-[var(--surface-2)] p-3 lg:border-r')
+    expect(html).toContain('border-border bg-[var(--surface-2)] p-[12px] lg:border-r')
     expect(html).toContain('Scopes')
     expect(html).toContain('platform-team')
   })

@@ -16,11 +16,11 @@ export function WorkbenchRail({
   title: React.ReactNode
 }) {
   return (
-    <aside className={cn('border-border bg-[var(--surface-2)] p-3 lg:border-r', className)} data-slot='workbench-rail'>
+    <aside className={cn('border-border bg-[var(--surface-2)] p-[12px] lg:border-r', className)} data-slot='workbench-rail'>
       <div data-slot='workbench-rail-header'>
         <SectionCardHeader
           actions={actions}
-          className='px-0 pt-0 pb-3'
+          className='gap-0 px-0 pt-0 pb-3'
           title={title}
         />
       </div>

@@ -1,5 +1,7 @@
 import type * as React from 'react'
 import { cn } from '@/lib/utils'
+import { ActionGroup } from './action-group'
+import { Stack } from './stack'
 import { StatusBadge } from './status-badge'
 
 export function StatusWithReason({
@@ -20,18 +22,24 @@ export function StatusWithReason({
   value?: string | null
 }) {
   return (
-    <span className={cn('flex min-w-0 gap-1', inline ? 'flex-row items-center' : 'flex-col', className)} data-slot='status-with-reason'>
-      <StatusBadge value={value} />
-      {meta ? (
-        <span className={cn('text-muted-foreground text-xs', metaNumeric && 'tnum')} data-slot='status-with-reason-meta'>
-          {meta}
-        </span>
-      ) : null}
+    <Stack
+      className={cn('min-w-0', inline ? 'gap-0' : 'gap-[2px]', className)}
+      dataSlot='status-with-reason'
+      gap='none'
+    >
+      <ActionGroup align='start' className={cn('min-w-0 gap-2', !inline && 'gap-1')} dataSlot='status-with-reason-primary' fit>
+        <StatusBadge value={value} />
+        {meta ? (
+          <span className={cn('text-[11.5px] text-[var(--ink-3)]', metaNumeric && 'tnum')} data-slot='status-with-reason-meta'>
+            {meta}
+          </span>
+        ) : null}
+      </ActionGroup>
       {reason ? (
-        <span className={cn('truncate text-muted-foreground text-xs', reasonClassName)} data-slot='status-with-reason-copy'>
+        <span className={cn('truncate text-[11.5px] text-[var(--ink-3)]', reasonClassName)} data-slot='status-with-reason-copy'>
           {reason}
         </span>
       ) : null}
-    </span>
+    </Stack>
   )
 }

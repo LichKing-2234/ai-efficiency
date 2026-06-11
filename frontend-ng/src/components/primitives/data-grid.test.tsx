@@ -87,6 +87,8 @@ describe('DataGrid', () => {
     expect(html).toContain('Loading details')
     expect(html).toContain('py-10')
     expect(html).toContain('py-4')
+    expect(html).toContain('text-[12.5px]')
+    expect(html).toContain('text-[var(--ink-3)]')
     expect(html).not.toContain('px-6 py-10 text-center text-muted-foreground text-sm')
   })
 
@@ -110,7 +112,7 @@ describe('DataGrid', () => {
     expect(html).toContain('mono')
     expect(html).toContain('truncate')
     expect(html).toContain('font-semibold')
-    expect(html).toContain('text-muted-foreground')
+    expect(html).toContain('text-[var(--ink-3)]')
     expect(html).toContain('text-[var(--ink-2)]')
   })
 
@@ -129,7 +131,9 @@ describe('DataGrid', () => {
     expect(html).toContain('Alice')
     expect(html).toContain('alice@example.com')
     expect(html).toContain('font-semibold')
-    expect(html).toContain('text-muted-foreground')
+    expect(html).toContain('text-[var(--ink-3)]')
+    expect(html).toContain('text-[13px]')
+    expect(html).toContain('text-[11px]')
     expect(html).not.toContain('block truncate text-muted-foreground text-xs')
   })
 
@@ -147,7 +151,33 @@ describe('DataGrid', () => {
     expect(html).toContain('data-slot="data-grid-cell-primary"')
     expect(html).toContain('Alice')
     expect(html).toContain('alice@example.com')
-    expect(html).toContain('flex min-w-0 items-center gap-3')
+    expect(html).toContain('justify-start')
+    expect(html).toContain('min-w-0')
+    expect(html).toContain('gap-2')
+  })
+
+  test('sources identity row layout from shared action-group composition', async () => {
+    const source = await import('node:fs/promises').then((fs) =>
+      fs.readFile(new URL('./data-grid.tsx', import.meta.url), 'utf8')
+    )
+
+    expect(source).toContain("from '@/components/primitives/action-group'")
+    expect(source).toContain('<ActionGroup')
+    expect(source).toContain("dataSlot='data-grid-identity-cell'")
+    expect(source).not.toContain("className={cn('flex min-w-0 items-center gap-3', className)}")
+  })
+
+  test('keeps data-grid source on explicit ink tokens for status and metadata copy', async () => {
+    const source = await import('node:fs/promises').then((fs) =>
+      fs.readFile(new URL('./data-grid.tsx', import.meta.url), 'utf8')
+    )
+
+    expect(source).toContain("'justify-center text-center text-[12.5px] text-[var(--ink-3)]'")
+    expect(source).toContain("'block text-[11px] text-[var(--ink-3)]'")
+    expect(source).toContain("muted && 'text-[11px] text-[var(--ink-3)]'")
+    expect(source).toContain("tone === 'metadata' && 'text-[11px] text-[var(--ink-3)]'")
+    expect(source).toContain("tone === 'subtle' && 'text-[11.5px] text-[var(--ink-3)]'")
+    expect(source).not.toContain("tone === 'metadata' && 'text-muted-foreground text-xs'")
   })
 
   test('renders standardized primary record links', () => {
@@ -167,6 +197,7 @@ describe('DataGrid', () => {
     expect(html).toContain('block')
     expect(html).toContain('truncate')
     expect(html).toContain('font-semibold')
+    expect(html).toContain('text-[13px]')
     expect(html).toContain('hover:text-[var(--ai-deep)]')
   })
 

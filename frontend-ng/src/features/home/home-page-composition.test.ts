@@ -9,6 +9,7 @@ describe('Home page composition', () => {
   test('uses the shared card accent variant for the overview hero surface', () => {
     expect(source).toContain("<Card variant='accent'")
     expect(source).toContain("from '@/components/primitives/hero-content'")
+    expect(source).toContain("from '@/components/primitives/action-group'")
     expect(source).toContain('<HeroContent')
     expect(source).not.toContain("grid-paper overflow-hidden border-[var(--ai-line)]")
     expect(source).not.toContain("bg-[linear-gradient(150deg,var(--ai-soft),transparent_60%),var(--surface)]")
@@ -16,9 +17,15 @@ describe('Home page composition', () => {
     expect(source).not.toContain("<p className='mt-2 text-muted-foreground text-sm'>")
   })
 
-  test('uses shadcn empty primitives for the recent usage empty state', () => {
-    expect(source).toContain("import { Empty, EmptyHeader, EmptyTitle } from '@/components/ui/empty'")
-    expect(source).toContain('<Empty>')
+  test('uses the reference framed pulse strip shell under the hero', () => {
+    expect(source).toContain("overflow-hidden rounded-[var(--r-md)] border border-border bg-[var(--surface)] md:grid-cols-3")
+    expect(source).not.toContain("rounded-[var(--r-md)] border border-border bg-card md:grid-cols-3")
+  })
+
+  test('uses shared page empty states for overview empty sections', () => {
+    expect(source).toContain("from '@/components/primitives/page-empty'")
+    expect(source).toContain("<PageEmpty title={t('common.empty')} />")
+    expect(source).not.toContain("from '@/components/ui/empty'")
     expect(source).not.toContain("<div className='text-muted-foreground text-sm'>{t('common.empty')}</div>")
   })
 
@@ -38,5 +45,40 @@ describe('Home page composition', () => {
     expect(source).toContain("from '@/components/primitives/kpi-grid'")
     expect(source).toContain('<KpiGrid>')
     expect(source).not.toContain("<div className='kpi-grid'>")
+  })
+
+  test('uses reference overview sections instead of embedding the full usage analytics panel', () => {
+    expect(source).toContain("from '@/components/primitives/charts'")
+    expect(source).toContain('<BarsH')
+    expect(source).toContain("className='split-2'")
+    expect(source).not.toContain('<UserUsagePanel embedded />')
+  })
+
+  test('keeps the reference live-activity and top-models ending row without an extra usage snapshot card', () => {
+    expect(source).toContain("title={t('home.liveActivity')}")
+    expect(source).toContain("title={t('home.topModels')}")
+    expect(source).not.toContain("title={t('home.usageSnapshot')}")
+  })
+
+  test('keeps the setup status card copy compact like the reference overview card', () => {
+    expect(source).toContain("title={t('home.setupStatus')}")
+    expect(source).not.toContain("description={setupProgress.ready === setupProgress.total ? t('home.statusReady') : t('home.statusWaitingEvents')}")
+  })
+
+  test('uses shared overview pulse and comparison primitives instead of page-local helpers', () => {
+    expect(source).toContain("from '@/components/primitives/compare-bar'")
+    expect(source).toContain("from '@/components/primitives/pulse-stat'")
+    expect(source).toContain('<PulseStat')
+    expect(source).toContain('<CompareBar')
+    expect(source).not.toContain('function PulseStat(')
+    expect(source).not.toContain('function CompareBar(')
+    expect(source).not.toContain("<div className='text-muted-foreground text-sm line-through'>{currency(totalStandardCost, locale)}</div>")
+  })
+
+  test('keeps the reference hero dual-action row for setup and export', () => {
+    expect(source).toContain("<ActionGroup wrap>")
+    expect(source).toContain("t('command.exportUsageReport')")
+    expect(source).toContain("<Button variant='outline' onClick={exportOverviewReport}>")
+    expect(source).not.toContain("action={(\n            <Button asChild>")
   })
 })

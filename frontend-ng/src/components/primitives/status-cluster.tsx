@@ -1,7 +1,5 @@
 import type * as React from 'react'
-import { cn } from '@/lib/utils'
-
-const statusClusterClass = 'flex flex-wrap items-center gap-2'
+import { FilterRow } from '@/components/primitives/filter-row'
 
 export function StatusCluster({
   children,
@@ -11,8 +9,8 @@ export function StatusCluster({
   className?: string
 }) {
   return (
-    <span className={cn(statusClusterClass, className)} data-slot='status-cluster'>
+    <FilterRow className={className} dataSlot='status-cluster'>
       {children}
-    </span>
+    </FilterRow>
   )
 }

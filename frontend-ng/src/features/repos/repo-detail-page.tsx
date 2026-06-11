@@ -5,7 +5,7 @@ import { Fragment, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { Card, CardContent } from '@/components/ui/card'
+import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { ActionGroup } from '@/components/primitives/action-group'
 import { CardContentStack } from '@/components/primitives/card-content-stack'
@@ -251,7 +251,7 @@ export function RepoDetailPage() {
       ) : null}
       <Card>
         <SectionCardHeader title={t('repoDetail.scmBinding')} leading={Waypoints} />
-        <CardContent>
+        <CardContentStack>
           <ControlGrid variant='inline-actions'>
             <ToolbarSelect
               ariaLabel={t('repoDetail.scmBinding')}
@@ -270,7 +270,7 @@ export function RepoDetailPage() {
               saveBinding.mutate('')
             }} disabled={saveBinding.isPending}>{t('repoDetail.clearBinding')}</Button>
           </ControlGrid>
-        </CardContent>
+        </CardContentStack>
       </Card>
       <Card className='overflow-hidden'>
         <EntityCardHeader

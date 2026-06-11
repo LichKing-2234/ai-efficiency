@@ -33,8 +33,23 @@ describe('UsageSummaryPanel', () => {
       fs.readFile(new URL('./usage-summary-panel.tsx', import.meta.url), 'utf8')
     )
 
+    expect(source).toContain("from '@/components/primitives/action-group'")
+    expect(source).toContain("from '@/components/primitives/filter-row'")
+    expect(source).toContain("<FilterRow className='mt-[12px] border-t border-[var(--line)] pt-[12px] text-[12px]' dataSlot='usage-summary-panel-footer' justify='between' gap='lg'>")
+    expect(source).toContain("{summary ? <span className='text-[11.5px] text-[var(--ink-3)]'>{summary}</span> : null}")
+    expect(source).toContain("<InsetPanel className={cn('bg-[var(--surface)] p-[14px]', className)} dataSlot='usage-summary-panel'>")
     expect(source).not.toContain("className='mt-4 flex flex-wrap items-center justify-between gap-3 text-sm'")
     expect(source).not.toContain("className='flex min-w-0 flex-wrap items-center gap-2'")
     expect(source).not.toContain("className='flex flex-wrap gap-2'")
+  })
+
+  test('uses shared info tile grid for summary metrics instead of a local grid wrapper', async () => {
+    const source = await import('node:fs/promises').then((fs) =>
+      fs.readFile(new URL('./usage-summary-panel.tsx', import.meta.url), 'utf8')
+    )
+
+    expect(source).toContain("from '@/components/primitives/info-tile'")
+    expect(source).toContain('InfoTileGrid')
+    expect(source).not.toContain("<div className='grid gap-3 sm:grid-cols-2 lg:grid-cols-6'>")
   })
 })

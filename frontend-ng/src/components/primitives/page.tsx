@@ -1,6 +1,8 @@
+import { ActionGroup } from '@/components/primitives/action-group'
+import { Stack } from '@/components/primitives/stack'
 import { cn } from '@/lib/utils'
 
-const pageHeaderDescriptionClass = 'mt-1 max-w-3xl text-muted-foreground text-sm'
+const pageHeaderDescriptionClass = 'mt-1 max-w-3xl text-[12px] text-[var(--ink-3)]'
 
 function PageHeaderDescription({ children }: { children: React.ReactNode }) {
   return (
@@ -11,11 +13,11 @@ function PageHeaderDescription({ children }: { children: React.ReactNode }) {
 }
 
 export function Page({ children, className }: { children: React.ReactNode; className?: string }) {
-  return <div className={cn('page-fade flex flex-col gap-5', className)}>{children}</div>
+  return <Stack className={cn('page-fade', className)} gap='loose'>{children}</Stack>
 }
 
 export function PageToolbar({ children, className }: { children: React.ReactNode; className?: string }) {
-  return <div className={cn('flex items-center justify-end gap-2', className)}>{children}</div>
+  return <ActionGroup className={className}>{children}</ActionGroup>
 }
 
 export function PageHeader({
@@ -35,12 +37,12 @@ export function PageHeader({
   }
 
   return (
-    <div className='flex flex-col gap-3 md:flex-row md:items-end md:justify-between'>
-      <div className='min-w-0'>
+    <ActionGroup align='responsive-end' className='md:items-end' dataSlot='page-header' fit layout='split'>
+      <Stack className='min-w-0' dataSlot='page-header-copy' gap='none'>
         <h1 className='font-semibold text-2xl tracking-tight'>{title}</h1>
         {description ? <PageHeaderDescription>{description}</PageHeaderDescription> : null}
-      </div>
-      {actions ? <div className='flex shrink-0 items-center gap-2'>{actions}</div> : null}
-    </div>
+      </Stack>
+      {actions ? <ActionGroup className='shrink-0' dataSlot='page-header-actions'>{actions}</ActionGroup> : null}
+    </ActionGroup>
   )
 }

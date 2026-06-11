@@ -33,7 +33,7 @@ describe('CardContentStack', () => {
     const normal = renderToStaticMarkup(<CardContentStack gap='normal'>Normal</CardContentStack>)
 
     expect(compact).toContain('gap-2')
-    expect(normal).toContain('gap-4')
+    expect(normal).toContain('gap-3.5')
   })
 
   test('supports a no-gap list rhythm for adjacent activity rows', () => {
@@ -43,6 +43,16 @@ describe('CardContentStack', () => {
     expect(html).toContain('flex-col')
     expect(html).not.toContain('gap-2')
     expect(html).not.toContain('gap-3')
-    expect(html).not.toContain('gap-4')
+    expect(html).not.toContain('gap-3.5')
+  })
+
+  test('keeps standardized stack gap mapping inside the shared primitive', async () => {
+    const source = await import('node:fs/promises').then((fs) =>
+      fs.readFile(new URL('./card-content-stack.tsx', import.meta.url), 'utf8')
+    )
+
+    expect(source).toContain("standard: 'gap-3'")
+    expect(source).toContain("normal: 'gap-3.5'")
+    expect(source).not.toContain("normal: 'gap-4'")
   })
 })

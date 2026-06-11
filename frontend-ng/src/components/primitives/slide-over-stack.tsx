@@ -1,5 +1,5 @@
 import type * as React from 'react'
-import { cn } from '@/lib/utils'
+import { Stack } from '@/components/primitives/stack'
 
 export function SlideOverStack({
   children,
@@ -9,8 +9,6 @@ export function SlideOverStack({
   className?: string
 }) {
   return (
-    <div data-slot='slide-over-stack' className={cn('flex flex-col gap-[18px]', className)}>
-      {children}
-    </div>
+    <Stack className={className} dataSlot='slide-over-stack' gap='loose'>{children}</Stack>
   )
 }

@@ -1,5 +1,5 @@
 import type * as React from 'react'
-import { CardContent } from '@/components/ui/card'
+import { CardContentStack } from '@/components/primitives/card-content-stack'
 import { cn } from '@/lib/utils'
 
 export function CardFilterBar({
@@ -12,15 +12,15 @@ export function CardFilterBar({
   stacked?: boolean
 }) {
   return (
-    <CardContent
-      data-slot='card-filter-bar'
+    <CardContentStack
+      dataSlot='card-filter-bar'
       className={cn(
-        'border-border border-b p-3',
-        stacked ? 'flex flex-col gap-3' : 'flex flex-wrap items-center gap-2',
+        'border-border border-b px-[12px] py-[10px]',
+        stacked ? 'flex flex-col gap-3' : 'flex flex-wrap items-center gap-1.5',
         className
       )}
     >
       {children}
-    </CardContent>
+    </CardContentStack>
   )
 }

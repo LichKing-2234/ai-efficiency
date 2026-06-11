@@ -1,16 +1,8 @@
 import type * as React from 'react'
 import type { LucideIcon } from 'lucide-react'
+import { ActionGroup } from '@/components/primitives/action-group'
+import { Stack } from '@/components/primitives/stack'
 import { cn } from '@/lib/utils'
-
-const credentialKeyFooterClass = 'mt-3 flex flex-wrap gap-2'
-
-function CredentialKeyFooter({ children }: { children: React.ReactNode }) {
-  return (
-    <div className={credentialKeyFooterClass} data-slot='credential-key-footer'>
-      {children}
-    </div>
-  )
-}
 
 export function CredentialKeyPanel({
   label,
@@ -30,16 +22,29 @@ export function CredentialKeyPanel({
   className?: string
 }) {
   return (
-    <div data-slot='credential-key-panel' className={cn('rounded-[var(--r-md)] border border-border bg-[var(--surface-inset)] p-4', className)}>
-      <div className='mb-2 font-semibold text-muted-foreground text-xs uppercase'>{label}</div>
-      <div className='flex min-w-0 items-center gap-3 rounded-[var(--r-md)] border border-border bg-card px-3 py-3'>
-        <Icon data-slot='credential-key-icon' className={ready ? 'text-[var(--ai)]' : 'text-muted-foreground'} />
-        <span data-slot='credential-key-value' className={cn('mono min-w-0 flex-1 truncate text-sm', ready ? 'text-[var(--ai-deep)]' : 'text-muted-foreground')}>
+    <Stack
+      className={cn('rounded-[var(--r-md)] border border-border bg-[var(--surface-inset)] p-[14px]', className)}
+      dataSlot='credential-key-panel'
+      gap='compact'
+    >
+      <div className='font-medium text-[11px] text-[var(--ink-3)] uppercase tracking-[0.04em]'>{label}</div>
+      <ActionGroup
+        align='start'
+        className='min-w-0 rounded-[var(--r-md)] border border-border bg-card px-[14px] py-[11px]'
+        dataSlot='credential-key-row'
+        fit
+      >
+        <Icon data-slot='credential-key-icon' className={ready ? 'text-[var(--ai)]' : 'text-[var(--ink-3)]'} />
+        <span data-slot='credential-key-value' className={cn('mono min-w-0 flex-1 truncate text-[13px]', ready ? 'text-[var(--ai-deep)]' : 'text-[var(--ink-3)]')}>
           {value}
         </span>
         {actions}
-      </div>
-      {footer ? <CredentialKeyFooter>{footer}</CredentialKeyFooter> : null}
-    </div>
+      </ActionGroup>
+      {footer ? (
+        <ActionGroup align='start' className='mt-1' dataSlot='credential-key-footer' wrap>
+          {footer}
+        </ActionGroup>
+      ) : null}
+    </Stack>
   )
 }

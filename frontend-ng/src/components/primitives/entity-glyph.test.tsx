@@ -12,4 +12,13 @@ describe('EntityGlyph', () => {
     expect(html).toContain("bg-[var(--ai-soft)]")
     expect(html).toContain("text-[var(--ai-deep)]")
   })
+
+  test('sources the entity shell directly from the shared primitive markup without a local class constant', async () => {
+    const source = await import('node:fs/promises').then((fs) =>
+      fs.readFile(new URL('./entity-glyph.tsx', import.meta.url), 'utf8')
+    )
+
+    expect(source).not.toContain("const entityGlyphClass = 'grid size-9 shrink-0 place-items-center rounded-[var(--r-md)] border border-[var(--ai-line)] bg-[var(--ai-soft)] text-[var(--ai-deep)]'")
+    expect(source).toContain("data-slot='entity-glyph'")
+  })
 })

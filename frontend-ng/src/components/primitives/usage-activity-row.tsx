@@ -1,25 +1,23 @@
 import { Badge } from '@/components/ui/badge'
+import { ActionGroup } from '@/components/primitives/action-group'
+import { FilterRow } from '@/components/primitives/filter-row'
+import { Stack } from '@/components/primitives/stack'
 import { cn } from '@/lib/utils'
 import { ToolGlyph } from './tool-glyph'
 
-const usageActivityContentClass = 'min-w-0 flex-1'
-const usageActivityTitleClass = 'truncate font-semibold text-sm'
-const usageActivityMetaClass = 'mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11.5px] text-muted-foreground'
-const usageActivityAmountClass = 'hidden w-20 text-right tnum sm:block'
-
 function UsageActivityContent({ children }: { children: React.ReactNode }) {
   return (
-    <div className={usageActivityContentClass} data-slot='usage-activity-content'>
+    <Stack className='min-w-0 flex-1' dataSlot='usage-activity-content' gap='none'>
       {children}
-    </div>
+    </Stack>
   )
 }
 
 function UsageActivityTitle({ children }: { children: React.ReactNode }) {
   return (
-    <div className={usageActivityTitleClass} data-slot='usage-activity-title'>
+    <span className='block truncate text-[13px] font-[550]' data-slot='usage-activity-title'>
       {children}
-    </div>
+    </span>
   )
 }
 
@@ -31,11 +29,11 @@ function UsageActivityMeta({
   tokens: React.ReactNode
 }) {
   return (
-    <div className={usageActivityMetaClass} data-slot='usage-activity-meta'>
+    <FilterRow className='mt-0.5 gap-x-2 gap-y-1 text-[11.5px] text-[var(--ink-3)]' dataSlot='usage-activity-meta'>
       <span>{endedAt}</span>
       <span className='text-[var(--ink-4)]'>·</span>
       <span className='mono tnum'>{tokens}</span>
-    </div>
+    </FilterRow>
   )
 }
 
@@ -47,10 +45,10 @@ function UsageActivityAmount({
   requests: React.ReactNode
 }) {
   return (
-    <div className={usageActivityAmountClass} data-slot='usage-activity-amount'>
-      <div className='font-semibold text-sm'>{credit}</div>
-      <div className='text-[11px] text-muted-foreground'>{requests}</div>
-    </div>
+    <Stack className='hidden w-[88px] text-right tnum sm:block' dataSlot='usage-activity-amount' gap='none'>
+      <div className='font-semibold text-[13px]'>{credit}</div>
+      <div className='text-[11px] text-[var(--ink-3)]'>{requests}</div>
+    </Stack>
   )
 }
 
@@ -78,10 +76,12 @@ export function UsageActivityRow({
   tool?: string | null
 }) {
   return (
-    <div
-      className={cn('flex items-center gap-3 py-3', !first && 'border-t border-[var(--line-faint)]', className)}
-      data-slot='usage-activity-row'
+    <ActionGroup
+      align='start'
+      className={cn('flex items-center gap-3 px-1 py-[11px]', !first && 'border-t border-[var(--line-faint)]', className)}
+      dataSlot='usage-activity-row'
       data-state={bound ? 'bound' : 'unbound'}
+      fit
     >
       <ToolGlyph tool={tool} size={28} />
       <UsageActivityContent>
@@ -90,6 +90,6 @@ export function UsageActivityRow({
       </UsageActivityContent>
       <Badge variant={bound ? 'success' : 'warning'}>{statusLabel}</Badge>
       <UsageActivityAmount credit={credit} requests={requests} />
-    </div>
+    </ActionGroup>
   )
 }

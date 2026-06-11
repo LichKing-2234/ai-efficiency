@@ -29,4 +29,13 @@ describe('CardTableContent', () => {
     expect(html).toContain('p-0')
     expect(html).toContain('Settings table')
   })
+
+  test('uses the shared card content stack primitive for table card shells', async () => {
+    const source = await import('node:fs/promises').then((fs) =>
+      fs.readFile(new URL('./card-table-content.tsx', import.meta.url), 'utf8')
+    )
+
+    expect(source).toContain("from '@/components/primitives/card-content-stack'")
+    expect(source).not.toContain("import { CardContent } from '@/components/ui/card'")
+  })
 })

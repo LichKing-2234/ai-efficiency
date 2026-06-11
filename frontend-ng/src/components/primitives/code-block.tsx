@@ -12,7 +12,7 @@ export function CodeBlock({
   return (
     <pre
       aria-label={ariaLabel}
-      className={cn('max-h-56 overflow-auto rounded-[var(--r-md)] bg-[var(--surface-inset)] p-3 text-xs leading-5', className)}
+      className={cn('max-h-56 overflow-auto rounded-[var(--r-md)] bg-[var(--surface-inset)] p-[14px] text-[12px] leading-5 text-[var(--ink-2)]', className)}
       data-slot='code-block'
     >
       {children}

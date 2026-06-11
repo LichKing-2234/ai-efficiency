@@ -20,14 +20,14 @@ function DialogContent({
       <DialogPrimitive.Overlay className='fixed inset-0 z-50 bg-black/35 backdrop-blur-sm' />
       <DialogPrimitive.Content
         className={cn(
-          'fixed left-1/2 top-1/2 z-50 grid w-[min(560px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-lg border border-border bg-card p-5 shadow-xl',
+          'fixed left-1/2 top-[13vh] z-50 grid w-[min(580px,92vw)] -translate-x-1/2 gap-4 rounded-[var(--r-lg)] border border-border bg-[var(--surface)] p-[18px] data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95',
           className
         )}
         {...props}
       >
         {children}
         {showCloseButton ? (
-          <DialogPrimitive.Close className='absolute right-3 top-3 rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground'>
+          <DialogPrimitive.Close className='absolute right-3 top-3 rounded-[var(--r-sm)] p-1 text-[var(--ink-3)] hover:bg-[var(--surface-2)] hover:text-foreground'>
             <XIcon />
             <span className='sr-only'>Close</span>
           </DialogPrimitive.Close>
@@ -42,11 +42,11 @@ function DialogHeader(props: React.ComponentProps<'div'>) {
 }
 
 function DialogTitle({ className, ...props }: React.ComponentProps<typeof DialogPrimitive.Title>) {
-  return <DialogPrimitive.Title className={cn('font-semibold text-lg', className)} {...props} />
+  return <DialogPrimitive.Title className={cn('font-[650] text-[14px] text-[var(--ink)]', className)} {...props} />
 }
 
 function DialogDescription({ className, ...props }: React.ComponentProps<typeof DialogPrimitive.Description>) {
-  return <DialogPrimitive.Description className={cn('text-muted-foreground text-sm', className)} {...props} />
+  return <DialogPrimitive.Description className={cn('text-[12px] text-[var(--ink-3)]', className)} {...props} />
 }
 
 export { Dialog, DialogTrigger, DialogClose, DialogContent, DialogHeader, DialogTitle, DialogDescription }

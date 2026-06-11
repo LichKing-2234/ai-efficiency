@@ -100,4 +100,15 @@ describe('ActionGroup', () => {
     expect(html).toContain('justify-end')
     expect(html).toContain('Start job')
   })
+
+  test('forwards native span attributes for semantic state hooks', () => {
+    const html = renderToStaticMarkup(
+      <ActionGroup data-empty='true' id='meter-shell'>
+        <button type='button'>Visible</button>
+      </ActionGroup>
+    )
+
+    expect(html).toContain('data-empty="true"')
+    expect(html).toContain('id="meter-shell"')
+  })
 })

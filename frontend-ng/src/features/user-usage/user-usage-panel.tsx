@@ -1,23 +1,23 @@
 import { Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
-import { ActivityIcon, CoinsIcon, GaugeIcon, LayersIcon, RefreshCwIcon } from 'lucide-react'
+import { ActivityIcon, CoinsIcon, DownloadIcon, GaugeIcon, LayersIcon, RefreshCwIcon } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
-import { Empty, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
+import { Card } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ActionGroup } from '@/components/primitives/action-group'
 import { AppAlert } from '@/components/primitives/app-alert'
+import { CardContentStack } from '@/components/primitives/card-content-stack'
 import { CardTableContent } from '@/components/primitives/card-table-content'
 import { ChartLegend } from '@/components/primitives/chart-legend'
 import { BarsH, StackedAreaChart, type StackedAreaKey } from '@/components/primitives/charts'
 import { DataGrid, DataGridCell, DataGridHeader, DataGridHeaderCell, DataGridRow } from '@/components/primitives/data-grid'
 import { FilterRow } from '@/components/primitives/filter-row'
-import { FilterRowTitle } from '@/components/primitives/filter-row-title'
 import { HeatmapGrid } from '@/components/primitives/heatmap-grid'
 import { KpiGrid } from '@/components/primitives/kpi-grid'
 import { KpiCard } from '@/components/primitives/metric-card'
+import { PageEmpty } from '@/components/primitives/page-empty'
 import { SectionCardHeader } from '@/components/primitives/section-card-header'
 import { SegmentedControl } from '@/components/primitives/segmented-control'
 import { Stack } from '@/components/primitives/stack'
@@ -54,9 +54,7 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
   return (
     <Stack className='stagger'>
       <FilterRow justify='between' gap='lg'>
-        {!embedded ? (
-          <FilterRowTitle title={t('usageDashboard.title')} description={t('usageDashboard.subtitle')} />
-        ) : <div />}
+        <div />
         <ActionGroup wrap>
           <SegmentedControl
             ariaLabel={t('usageDashboard.selectedRange')}
@@ -72,6 +70,12 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
             <RefreshCwIcon data-icon='inline-start' />
             {t('common.refresh')}
           </Button>
+          {!embedded ? (
+            <Button variant='outline'>
+              <DownloadIcon data-icon='inline-start' />
+              {t('command.exportUsageReport')}
+            </Button>
+          ) : null}
         </ActionGroup>
       </FilterRow>
       <Stack>
@@ -137,7 +141,7 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
             </KpiGrid>
             <Card>
               <SectionCardHeader title={t('usageDashboard.tokenTrend')} description={t('usageDashboard.tokenTrendDescription', { range: rangeLabel })} />
-              <CardContent>
+              <CardContentStack>
                 {snapshot.trend.length ? (
                   <Stack>
                     <ChartLegend items={tokenKeys} />
@@ -148,29 +152,29 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
                     />
                   </Stack>
                 ) : (
-                  <Empty><EmptyHeader><EmptyTitle>{t('usageDashboard.noTrendData')}</EmptyTitle></EmptyHeader></Empty>
+                  <PageEmpty title={t('usageDashboard.noTrendData')} />
                 )}
-              </CardContent>
+              </CardContentStack>
             </Card>
             <div className='split-2'>
               <Card>
                 <SectionCardHeader title={t('usageDashboard.modelDistribution')} description={t('usageDashboard.modelDistributionDescription')} />
-                <CardContent>
+                <CardContentStack>
                   {snapshot.models.length ? (
-                    <BarsH
-                      rows={snapshot.models.slice(0, 6).map((model, index) => ({
-                        label: model.model,
-                        value: model.total_tokens,
+                  <BarsH
+                    rows={snapshot.models.slice(0, 6).map((model, index) => ({
+                      label: model.model,
+                      value: model.total_tokens,
                         share: model.total_tokens / modelMax,
                         color: ['var(--viz-input)', 'var(--viz-output)', 'var(--viz-cache)', 'var(--viz-reason)', 'var(--ai-bright)', 'var(--ink-3)'][index % 6]
                       }))}
-                      valueFormatter={(value) => compact(value, locale)}
-                    />
-                  ) : (
-                    <Empty><EmptyHeader><EmptyTitle>{t('usageDashboard.noModelData')}</EmptyTitle></EmptyHeader></Empty>
-                  )}
-                </CardContent>
-              </Card>
+                    valueFormatter={(value) => compact(value, locale)}
+                  />
+                ) : (
+                  <PageEmpty title={t('usageDashboard.noModelData')} />
+                )}
+              </CardContentStack>
+            </Card>
               <Card className='overflow-hidden'>
                 <SectionCardHeader title={t('usageDashboard.costByModel')} description={t('usageDashboard.modelDistributionDescription')} />
                 <CardTableContent>
@@ -192,7 +196,7 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
                       ))}
                     </DataGrid>
                   ) : (
-                    <Empty><EmptyHeader><EmptyTitle>{t('usageDashboard.noModelData')}</EmptyTitle></EmptyHeader></Empty>
+                    <PageEmpty title={t('usageDashboard.noModelData')} />
                   )}
                 </CardTableContent>
               </Card>
@@ -200,7 +204,7 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
             {!embedded ? (
               <Card>
                 <SectionCardHeader title={t('usageDashboard.activityHeatmap')} description={t('usageDashboard.activityHeatmapDescription')} />
-                <CardContent>
+                <CardContentStack>
                   {snapshot.trend.length ? (
                     <HeatmapGrid
                       dayLabels={[
@@ -218,9 +222,9 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
                       valueFormatter={(value) => t('usageDashboard.heatmapRequests', { count: number(value, locale) })}
                     />
                   ) : (
-                    <Empty><EmptyHeader><EmptyTitle>{t('usageDashboard.noTrendData')}</EmptyTitle></EmptyHeader></Empty>
+                    <PageEmpty title={t('usageDashboard.noTrendData')} />
                   )}
-                </CardContent>
+                </CardContentStack>
               </Card>
             ) : null}
           </>

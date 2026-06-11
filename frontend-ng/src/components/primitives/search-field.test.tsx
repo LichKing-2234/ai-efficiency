@@ -50,7 +50,19 @@ describe('SearchField', () => {
       />
     )
 
-    expect(html).toContain('min-w-64')
-    expect(html).toContain('sm:max-w-md')
+    expect(html).toContain('max-w-[320px]')
+    expect(html).toContain('flex-1')
+  })
+
+  test('uses the tighter reference inset search chrome', async () => {
+    const source = await import('node:fs/promises').then((fs) =>
+      fs.readFile(new URL('./search-field.tsx', import.meta.url), 'utf8')
+    )
+
+    expect(source).toContain("InputGroup className={cn('h-[34px] min-w-0 rounded-[var(--r-md)] border-[var(--line)] bg-[var(--surface-inset)] px-[1px] shadow-none'")
+    expect(source).toContain("width === 'toolbar' && 'max-w-[320px] flex-1'")
+    expect(source).toContain("<InputGroupButton aria-label={clearLabel} onClick={onClear} size='icon-xs'>")
+    expect(source).not.toContain("InputGroup className={cn('h-9 min-w-0 bg-[var(--surface-inset)]'")
+    expect(source).not.toContain("'min-w-64 flex-1 sm:max-w-md'")
   })
 })

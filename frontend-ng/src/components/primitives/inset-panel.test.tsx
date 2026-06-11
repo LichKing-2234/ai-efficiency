@@ -14,8 +14,8 @@ describe('InsetPanel', () => {
     expect(html).toContain('data-slot="inset-panel"')
     expect(html).toContain('Background sync pending')
     expect(html).toContain('Provider response')
-    expect(html).toContain('text-muted-foreground')
-    expect(html).toContain('p-4')
+    expect(html).toContain('text-[var(--ink-3)]')
+    expect(html).toContain('p-[14px]')
     expect(html).toContain('leading-7')
   })
 
@@ -52,8 +52,21 @@ describe('InsetPanel', () => {
 
     expect(html).toContain('data-slot="inset-panel"')
     expect(html).toContain('Bind before sync')
-    expect(html).toContain('px-3')
-    expect(html).toContain('py-2')
-    expect(html).toContain('text-muted-foreground')
+    expect(html).toContain('px-[11px]')
+    expect(html).toContain('py-[9px]')
+    expect(html).toContain('text-[var(--ink-3)]')
+  })
+
+  test('keeps inset panel density inside the shared primitive', async () => {
+    const source = await import('node:fs/promises').then((fs) =>
+      fs.readFile(new URL('./inset-panel.tsx', import.meta.url), 'utf8')
+    )
+
+    expect(source).toContain("'rounded-[var(--r-md)] border border-border bg-[var(--surface-inset)] text-[12px]'")
+    expect(source).toContain("compact ? 'px-[11px] py-[9px]'")
+    expect(source).toContain(": comfortable ? 'p-[14px] leading-7'")
+    expect(source).toContain(": 'p-[14px]'")
+    expect(source).toContain("muted && 'text-[var(--ink-3)]'")
+    expect(source).not.toContain("muted && 'text-muted-foreground'")
   })
 })

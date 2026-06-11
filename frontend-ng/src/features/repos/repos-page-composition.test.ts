@@ -8,17 +8,22 @@ const source = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), 're
 describe('Repos page composition', () => {
   test('uses shared filter and section primitives for the workbench shell', () => {
     expect(source).toContain("from '@/components/primitives/card-filter-bar'")
+    expect(source).toContain("from '@/components/primitives/segmented-control'")
     expect(source).toContain("from '@/components/primitives/section-card-header'")
     expect(source).toContain('<CardFilterBar>')
+    expect(source).toContain('<SegmentedControl')
     expect(source).toContain('<SectionCardHeader')
     expect(source).toContain('<ActionGroup push wrap>')
     expect(source).toContain('meta={`${number(total, locale)} ${t(')
+    expect(source).not.toContain("<Card>\n        <CardFilterBar>")
+    expect(source).not.toContain("ariaLabel={t('common.pageSizeControl')}")
     expect(source).not.toContain("<div className='flex flex-wrap items-center gap-2'>")
     expect(source).not.toContain("<ActionGroup wrap className='ml-auto'>")
     expect(source).not.toContain("<div className='border-border border-b px-3.5 py-3'>")
     expect(source).not.toContain("<div className='mb-3 flex items-center justify-between gap-2'>")
     expect(source).not.toContain("<div className='flex flex-col gap-2 border-b border-border px-5 py-4 md:flex-row md:items-center md:justify-between'>")
     expect(source).not.toContain("className='border-b border-border px-5 py-4'")
+    expect(source).not.toContain("'border-border border-b p-3'")
     expect(source).not.toContain("actions={<span className='text-muted-foreground text-sm'>{number(total, locale)} {t('repos.totalRepositories')}</span>}")
   })
 
@@ -85,6 +90,16 @@ describe('Repos page composition', () => {
     expect(source).not.toContain("<div className='flex flex-wrap gap-2'>")
   })
 
+  test('keeps binding controls inside the workbench header like the reference screen', () => {
+    expect(source).toContain("ariaLabel={t('repos.bindingFilter')}")
+    expect(source).toContain("description={selectedProvider?.name ?? t('common.empty')}")
+    expect(source).toContain('actions={(')
+    expect(source).toContain("<SegmentedControl\n")
+    expect(source).toContain("size='sm'")
+    expect(source).not.toContain("<ToolbarSelect\n            ariaLabel={t('repos.bindingFilter')}")
+    expect(source).not.toContain("<Button variant='ghost' onClick={() => replaceSearch({ ...search, binding: 'unbound', provider: 'unbound', page: 1 })}>{t('repos.reviewNeedsBinding')}</Button>")
+  })
+
   test('uses the shared entity glyph for repository inspect identity', () => {
     expect(source).toContain("from '@/components/primitives/entity-glyph'")
     expect(source).toContain("leading={<EntityGlyph icon={FolderGit2Icon} label={t('repos.repository')} />}")
@@ -98,6 +113,12 @@ describe('Repos page composition', () => {
     expect(source).toContain('percent(repo.pr_summary?.ai_share, locale)')
   })
 
+  test('renders provider identity as a neutral status badge in the inspect panel', () => {
+    expect(source).toContain("<Badge variant='neutral'>")
+    expect(source).toContain("repo.edges?.scm_provider?.name || t('repos.provider')")
+    expect(source).not.toContain("label={t('repos.provider')} value={repo.edges?.scm_provider?.base_url || repo.edges?.scm_provider?.name || repo.scm_provider_id || '-'} mono truncate")
+  })
+
   test('renders reference inspect actions for binding and PR sync', () => {
     expect(source).toContain('const syncRepo = useMutation')
     expect(source).toContain('mutationFn: api.repos.syncPRs')
@@ -109,6 +130,20 @@ describe('Repos page composition', () => {
     expect(source).toContain("label={t('repos.defaultBranch')}")
     expect(source).toContain("disabled={repo.binding_state === 'unbound' || syncPending}")
     expect(source).toContain("{syncPending ? t('repoDetail.syncingPrs') : t('repoDetail.syncPrs')}")
+  })
+
+  test('uses reference inspect configuration rhythm and equal-width action row', () => {
+    expect(source).toContain("label={t('repos.clone')}")
+    expect(source).toContain("label={t('repos.defaultBranch')}")
+    expect(source).toContain("label={t('repos.provider')}")
+    expect(source).toContain("title={t('repos.bindToPrSource')}")
+    expect(source).toContain("className='grid grid-cols-2 gap-[10px]'")
+    expect(source).toContain("className='w-full'")
+    expect(source).not.toContain("label={t('repos.fullName')}")
+    expect(source).not.toContain("label={t('common.status')}")
+    expect(source).toContain("{deleteConfirmId === repo.id ? (")
+    expect(source).toContain("<ActionGroup push wrap>")
+    expect(source).toContain("<ActionGroup push>")
   })
 
   test('uses shared empty-state primitives for repository empty content', () => {

@@ -18,6 +18,6 @@ describe('RowInsetPanel', () => {
     expect(html).toContain('ml-11')
     expect(html).toContain('max-w-xl')
     expect(html).toContain('text-left')
-    expect(html).toContain('text-xs')
+    expect(html).toContain('text-[11.5px]')
   })
 })

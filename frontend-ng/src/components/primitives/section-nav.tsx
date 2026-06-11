@@ -37,7 +37,7 @@ export function SectionNav<T extends string>({
           <Button
             aria-current={active ? 'page' : undefined}
             className={cn(
-              'h-10 w-full justify-start gap-3 px-3 text-left font-medium text-sm shadow-none',
+              'h-[38px] w-full justify-start gap-2.5 px-[11px] text-left font-medium text-[13px] shadow-none',
               active
                 ? 'border-transparent bg-[var(--surface-inset)] text-foreground hover:bg-[var(--surface-inset)]'
                 : 'border-transparent bg-transparent text-[var(--ink-2)] hover:bg-[var(--surface-inset)] hover:text-foreground'
@@ -48,9 +48,9 @@ export function SectionNav<T extends string>({
             type='button'
             variant='ghost'
           >
-            <Icon className={active ? 'text-[var(--ai)]' : 'text-[var(--ink-3)]'} />
+            <Icon className={cn('size-4', active ? 'text-[var(--ai)]' : 'text-[var(--ink-3)]')} />
             <span className='min-w-0 truncate'>{item.label}</span>
-            {item.trailing ? <span className='ml-auto shrink-0 text-[11px] text-muted-foreground'>{item.trailing}</span> : null}
+            {item.trailing ? <span className='ml-auto shrink-0 text-[11px] text-[var(--ink-3)]'>{item.trailing}</span> : null}
           </Button>
         )
       })}
@@ -66,7 +66,7 @@ export function SectionNavFrame({
   className?: string
 }) {
   return (
-    <Card className={cn('p-2', className)} data-slot='section-nav-frame'>
+    <Card className={cn('border border-[var(--line)] bg-[var(--surface)] p-[8px] shadow-none', className)} data-slot='section-nav-frame'>
       {children}
     </Card>
   )

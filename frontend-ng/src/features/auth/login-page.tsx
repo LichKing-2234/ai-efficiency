@@ -1,14 +1,19 @@
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
-import { Button } from '@/components/ui/button'
 import { AuthSurface } from '@/components/primitives/auth-surface'
+import { InsetPanel } from '@/components/primitives/inset-panel'
+import { Button } from '@/components/ui/button'
 import { api } from '@/lib/api'
 import { useI18n } from '@/lib/i18n/i18n'
 import { safeRedirect, selectInitialLoginSource } from './auth-flow-state'
 import { LoginForm } from './login-form'
 
-export function LoginPage() {
+export type LoginPageProps = {
+  localHandoffHref?: string | null
+}
+
+export function LoginPage({ localHandoffHref = null }: LoginPageProps) {
   const { t } = useI18n()
   const navigate = useNavigate()
   const search = useSearch({ strict: false }) as { redirect?: string }
@@ -24,6 +29,7 @@ export function LoginPage() {
   useEffect(() => {
     if (options.data) setSource(selectInitialLoginSource(options.data))
   }, [options.data])
+
   const devLogin = useMutation({
     mutationFn: api.auth.devLogin,
     onSuccess: () => navigate({ to: safeRedirect(search.redirect) })
@@ -33,12 +39,24 @@ export function LoginPage() {
     <AuthSurface
       title={t('auth.loginTitle')}
       description={t('auth.loginDescription')}
-      actions={options.data?.dev_login_enabled ? (
-        <Button variant='outline' onClick={() => devLogin.mutate()} disabled={devLogin.isPending}>
-          {t('auth.devLogin')}
-        </Button>
-      ) : null}
+      actions={(
+        <div className='flex flex-col gap-2 sm:flex-row'>
+          {options.data?.dev_login_enabled ? (
+            <Button disabled={devLogin.isPending} onClick={() => devLogin.mutate()} variant='outline'>
+              {t('auth.devLogin')}
+            </Button>
+          ) : null}
+          {localHandoffHref ? (
+            <Button asChild variant='outline'>
+              <a href={localHandoffHref}>{t('auth.localHandoff')}</a>
+            </Button>
+          ) : null}
+        </div>
+      )}
     >
+      <InsetPanel muted>
+        <div className='text-[12px] text-[var(--ink-3)]'>{t('auth.localHandoffDescription')}</div>
+      </InsetPanel>
       <LoginForm
         error={login.error?.message}
         options={options.data}

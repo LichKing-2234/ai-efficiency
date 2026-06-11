@@ -5,7 +5,7 @@ import { Database, KeyRound, Layers, LockKeyhole, RefreshCw, Settings as Setting
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
+import { Card } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
 import { ActionGroup } from '@/components/primitives/action-group'
@@ -18,6 +18,7 @@ import { Page } from '@/components/primitives/page'
 import { LoadingState } from '@/components/primitives/data-state'
 import { HealthFieldItem, HealthFieldList, type HealthStatus } from '@/components/primitives/health-field-list'
 import { InfoTile, InfoTileGrid } from '@/components/primitives/info-tile'
+import { PageEmpty } from '@/components/primitives/page-empty'
 import { SectionCardHeader } from '@/components/primitives/section-card-header'
 import { SectionNav, SectionNavFrame, type SectionNavItem } from '@/components/primitives/section-nav'
 import { Stack } from '@/components/primitives/stack'
@@ -295,113 +296,143 @@ export function SettingsPage() {
           <SectionCardHeader
             title={t('settings.aiServices')}
             description={t('settings.relayProvidersDescription')}
+            leading={Layers}
             actions={<Button size='sm' onClick={openAddRelayDialog}><Layers data-icon='inline-start' />{t('common.add')}</Button>}
           />
           <CardTableContent variant='flush'>
-            <DataGrid minWidth={860}>
-              <DataGridHeader columns={relayColumns}>
-                <span>{t('settings.name')}</span>
-                <span>{t('settings.baseUrl')}</span>
-                <span>{t('settings.primary')}</span>
-                <span>{t('common.status')}</span>
-                <span />
-              </DataGridHeader>
-            {(relay.data ?? []).map((provider) => (
-              <DataGridRow key={provider.id} columns={relayColumns}>
-                <DataGridCell description={provider.name} truncate>{provider.display_name || provider.name}</DataGridCell>
-                <DataGridCell mono truncate tone='metadata'>{provider.base_url}</DataGridCell>
-                {provider.is_primary ? <span><Badge variant='ai'>{t('common.primary')}</Badge></span> : <DataGridCell tone='metadata'>-</DataGridCell>}
-                <span><StatusBadge value={provider.enabled ? 'active' : 'disabled'} /></span>
-                <SettingsRowActions
-                  updateLabel={t('common.update')}
-                  deleteLabel={t('common.delete')}
-                  cancelLabel={t('common.cancel')}
-                  deleteTitle={t('settings.deleteRelayProvider')}
-                  deleteDescription={t('settings.deleteRelayProviderDescription', { name: provider.display_name || provider.name })}
-                  deletePending={deleteRelay.isPending}
-                  onEdit={() => openEditRelayDialog(provider)}
-                  onDelete={() => deleteRelay.mutate(provider.id)}
-                />
-              </DataGridRow>
-            ))}
-            </DataGrid>
+            {(relay.data ?? []).length > 0 ? (
+              <DataGrid minWidth={860}>
+                <DataGridHeader columns={relayColumns}>
+                  <span>{t('settings.name')}</span>
+                  <span>{t('settings.baseUrl')}</span>
+                  <span>{t('settings.primary')}</span>
+                  <span>{t('common.status')}</span>
+                  <span />
+                </DataGridHeader>
+                {(relay.data ?? []).map((provider) => (
+                  <DataGridRow key={provider.id} columns={relayColumns}>
+                    <DataGridCell description={provider.name} truncate>{provider.display_name || provider.name}</DataGridCell>
+                    <DataGridCell mono truncate tone='metadata'>{provider.base_url}</DataGridCell>
+                    {provider.is_primary ? <span><Badge variant='ai'>{t('common.primary')}</Badge></span> : <DataGridCell tone='metadata'>-</DataGridCell>}
+                    <span><StatusBadge value={provider.enabled ? 'active' : 'disabled'} /></span>
+                    <SettingsRowActions
+                      updateLabel={t('common.update')}
+                      deleteLabel={t('common.delete')}
+                      cancelLabel={t('common.cancel')}
+                      deleteTitle={t('settings.deleteRelayProvider')}
+                      deleteDescription={t('settings.deleteRelayProviderDescription', { name: provider.display_name || provider.name })}
+                      deletePending={deleteRelay.isPending}
+                      onEdit={() => openEditRelayDialog(provider)}
+                      onDelete={() => deleteRelay.mutate(provider.id)}
+                    />
+                  </DataGridRow>
+                ))}
+              </DataGrid>
+            ) : (
+              <PageEmpty
+                icon={Layers}
+                title={t('settings.aiServices')}
+                description={t('settings.relayProvidersDescription')}
+                action={<Button size='sm' onClick={openAddRelayDialog}><Layers data-icon='inline-start' />{t('common.add')}</Button>}
+              />
+            )}
           </CardTableContent>
         </Card> : null}
         {activeSection === 'code-platforms' ? <Card>
           <SectionCardHeader
             title={t('settings.codePlatforms')}
             description={t('settings.scmProvidersDescription')}
+            leading={Waypoints}
             actions={<Button size='sm' onClick={openAddScmDialog}><Waypoints data-icon='inline-start' />{t('common.add')}</Button>}
           />
           <CardTableContent variant='flush'>
-            <DataGrid minWidth={840}>
-              <DataGridHeader columns={scmColumns}>
-                <span>{t('settings.name')}</span>
-                <span>{t('common.type')}</span>
-                <span>{t('settings.baseUrl')}</span>
-                <span>{t('common.status')}</span>
-                <span />
-              </DataGridHeader>
-            {(scm.data?.items ?? []).map((provider) => (
-              <DataGridRow key={provider.id} columns={scmColumns}>
-                <DataGridCell truncate>{provider.name}</DataGridCell>
-                <span><Badge variant='secondary'>{provider.type}</Badge></span>
-                <DataGridCell mono truncate tone='metadata'>{provider.base_url}</DataGridCell>
-                <span><StatusBadge value={provider.status} /></span>
-                <SettingsRowActions
-                  updateLabel={t('common.update')}
-                  deleteLabel={t('common.delete')}
-                  cancelLabel={t('common.cancel')}
-                  deleteTitle={t('settings.deleteScmProvider')}
-                  deleteDescription={t('settings.deleteScmProviderDescription', { name: provider.name })}
-                  deletePending={deleteScm.isPending}
-                  onEdit={() => openEditScmDialog(provider)}
-                  onDelete={() => deleteScm.mutate(provider.id)}
-                />
-              </DataGridRow>
-            ))}
-            </DataGrid>
+            {(scm.data?.items ?? []).length > 0 ? (
+              <DataGrid minWidth={840}>
+                <DataGridHeader columns={scmColumns}>
+                  <span>{t('settings.name')}</span>
+                  <span>{t('common.type')}</span>
+                  <span>{t('settings.baseUrl')}</span>
+                  <span>{t('common.status')}</span>
+                  <span />
+                </DataGridHeader>
+                {(scm.data?.items ?? []).map((provider) => (
+                  <DataGridRow key={provider.id} columns={scmColumns}>
+                    <DataGridCell truncate>{provider.name}</DataGridCell>
+                    <span><Badge variant='secondary'>{provider.type}</Badge></span>
+                    <DataGridCell mono truncate tone='metadata'>{provider.base_url}</DataGridCell>
+                    <span><StatusBadge value={provider.status} /></span>
+                    <SettingsRowActions
+                      updateLabel={t('common.update')}
+                      deleteLabel={t('common.delete')}
+                      cancelLabel={t('common.cancel')}
+                      deleteTitle={t('settings.deleteScmProvider')}
+                      deleteDescription={t('settings.deleteScmProviderDescription', { name: provider.name })}
+                      deletePending={deleteScm.isPending}
+                      onEdit={() => openEditScmDialog(provider)}
+                      onDelete={() => deleteScm.mutate(provider.id)}
+                    />
+                  </DataGridRow>
+                ))}
+              </DataGrid>
+            ) : (
+              <PageEmpty
+                icon={Waypoints}
+                title={t('settings.codePlatforms')}
+                description={t('settings.scmProvidersDescription')}
+                action={<Button size='sm' onClick={openAddScmDialog}><Waypoints data-icon='inline-start' />{t('common.add')}</Button>}
+              />
+            )}
           </CardTableContent>
         </Card> : null}
         {activeSection === 'advanced-credentials' ? <Card>
           <SectionCardHeader
             title={t('settings.advancedCredentials')}
             description={t('settings.advancedCredentialsDescription')}
+            leading={LockKeyhole}
             actions={<Button size='sm' onClick={openAddCredentialDialog}><KeyRound data-icon='inline-start' />{t('common.add')}</Button>}
           />
           <CardTableContent variant='flush'>
-            <DataGrid minWidth={760}>
-              <DataGridHeader columns={credentialColumns}>
-                <span>{t('settings.name')}</span>
-                <span>{t('common.type')}</span>
-                <span>{t('settings.usedBy')}</span>
-                <span>{t('adminUsers.updated')}</span>
-                <span />
-              </DataGridHeader>
-            {(credentials.data ?? []).map((credential) => (
-              <DataGridRow key={credential.id} columns={credentialColumns}>
-                <DataGridCell description={credential.description} truncate>{credential.name}</DataGridCell>
-                <span><Badge variant='secondary'>{credential.kind}</Badge></span>
-                <DataGridCell numeric tone='metadata'>{number(credential.usage_count)}</DataGridCell>
-                <DataGridCell numeric tone='metadata'>{dateTime(credential.updated_at)}</DataGridCell>
-                <SettingsRowActions
-                  updateLabel={t('common.update')}
-                  deleteLabel={t('common.delete')}
-                  cancelLabel={t('common.cancel')}
-                  deleteTitle={t('settings.deleteCredential')}
-                  deleteDescription={t('settings.deleteCredentialDescription', { name: credential.name })}
-                  deletePending={deleteCredential.isPending}
-                  onEdit={() => openEditCredentialDialog(credential)}
-                  onDelete={() => deleteCredential.mutate(credential.id)}
-                />
-              </DataGridRow>
-            ))}
-            </DataGrid>
+            {(credentials.data ?? []).length > 0 ? (
+              <DataGrid minWidth={760}>
+                <DataGridHeader columns={credentialColumns}>
+                  <span>{t('settings.name')}</span>
+                  <span>{t('common.type')}</span>
+                  <span>{t('settings.usedBy')}</span>
+                  <span>{t('adminUsers.updated')}</span>
+                  <span />
+                </DataGridHeader>
+                {(credentials.data ?? []).map((credential) => (
+                  <DataGridRow key={credential.id} columns={credentialColumns}>
+                    <DataGridCell description={credential.description} truncate>{credential.name}</DataGridCell>
+                    <span><Badge variant='secondary'>{credential.kind}</Badge></span>
+                    <DataGridCell numeric tone='metadata'>{number(credential.usage_count)}</DataGridCell>
+                    <DataGridCell numeric tone='metadata'>{dateTime(credential.updated_at)}</DataGridCell>
+                    <SettingsRowActions
+                      updateLabel={t('common.update')}
+                      deleteLabel={t('common.delete')}
+                      cancelLabel={t('common.cancel')}
+                      deleteTitle={t('settings.deleteCredential')}
+                      deleteDescription={t('settings.deleteCredentialDescription', { name: credential.name })}
+                      deletePending={deleteCredential.isPending}
+                      onEdit={() => openEditCredentialDialog(credential)}
+                      onDelete={() => deleteCredential.mutate(credential.id)}
+                    />
+                  </DataGridRow>
+                ))}
+              </DataGrid>
+            ) : (
+              <PageEmpty
+                icon={LockKeyhole}
+                title={t('settings.advancedCredentials')}
+                description={t('settings.advancedCredentialsDescription')}
+                action={<Button size='sm' onClick={openAddCredentialDialog}><KeyRound data-icon='inline-start' />{t('common.add')}</Button>}
+              />
+            )}
           </CardTableContent>
         </Card> : null}
         {activeSection === 'organization-login' ? <Card>
-          <SectionCardHeader title={t('settings.organizationLogin')} description={t('settings.ldapLoginBehavior')} />
-          <CardContent>
+          <SectionCardHeader title={t('settings.organizationLogin')} description={t('settings.ldapLoginBehavior')} leading={Shield} />
+          <CardContentStack>
             <LdapSettingsForm
               form={ldapForm}
               message={ldapMessage}
@@ -411,61 +442,76 @@ export function SettingsPage() {
               savePending={saveLDAP.isPending}
               testPending={testLDAP.isPending}
             />
-          </CardContent>
-        </Card> : null}
-        {activeSection === 'deployment-runtime' ? <Card>
-          <SectionCardHeader title={t('settings.deploymentRuntime')} description={t('settings.currentBackendDeployment')} />
-          <CardContentStack>
-            <InfoTileGrid columns={3}>
-              <InfoTile label={t('settings.current')} value={`v${deployment.data?.version.version || '-'}`} mono />
-              <InfoTile label={t('settings.mode')} value={deployment.data?.mode || t('common.unknown')} mono />
-              <InfoTile label={t('settings.commit')} value={deployment.data?.version.commit || '-'} mono />
-            </InfoTileGrid>
-            <HealthFieldList>
-              {deploymentHealthRows(deploymentHealth.data?.checks ?? []).map((check) => (
-                <HealthFieldItem
-                  key={check.name}
-                  label={deploymentHealthCheckLabel(check.name, t)}
-                  status={deploymentHealthCheckStatus(check)}
-                  value={deploymentHealthCheckValue(check, t)}
-                  mono
-                  truncate
-                />
-              ))}
-            </HealthFieldList>
-            {deployment.data?.update_available ? <Badge variant='ai'>{t('settings.updateAvailable', { version: deployment.data.latest_release?.version || '-' })}</Badge> : <Badge variant='success'>{t('settings.upToDate')}</Badge>}
-            <ActionGroup wrap align='start'>
-              <Button variant='outline' onClick={() => checkUpdate.mutate()} disabled={checkUpdate.isPending}><RefreshCw data-icon='inline-start' />{t('settings.checkUpdate')}</Button>
-              <ConfirmAction
-                trigger={<Button variant='outline' disabled={!deployment.data?.latest_release?.version || applyUpdate.isPending}>{t('common.apply')}</Button>}
-                title={t('settings.stageUpdate')}
-                description={t('settings.stageUpdateDescription', { version: deployment.data?.latest_release?.version || '' })}
-                confirmLabel={t('common.apply')}
-                cancelLabel={t('common.cancel')}
-                onConfirm={() => applyUpdate.mutate()}
-                disabled={!deployment.data?.latest_release?.version || applyUpdate.isPending}
-              />
-              <ConfirmAction
-                trigger={<Button variant='outline' disabled={rollback.isPending}>{t('settings.rollback')}</Button>}
-                title={t('settings.rollback')}
-                description={t('settings.rollbackDescription')}
-                confirmLabel={t('settings.rollback')}
-                cancelLabel={t('common.cancel')}
-                onConfirm={() => rollback.mutate()}
-                disabled={rollback.isPending}
-              />
-              <ConfirmAction
-                trigger={<Button variant='outline' disabled={restart.isPending}>{t('settings.restart')}</Button>}
-                title={t('settings.requestRestart')}
-                description={t('settings.requestRestartDescription')}
-                confirmLabel={t('settings.restart')}
-                cancelLabel={t('common.cancel')}
-                onConfirm={() => restart.mutate()}
-                disabled={restart.isPending}
-              />
-            </ActionGroup>
           </CardContentStack>
         </Card> : null}
+        {activeSection === 'deployment-runtime' ? <>
+          <Card>
+            <SectionCardHeader
+              title={t('settings.deploymentRuntime')}
+              description={t('settings.currentBackendDeployment')}
+              leading={Database}
+              actions={deployment.data?.update_available ? <Badge variant='ai'>{t('settings.updateAvailable', { version: deployment.data.latest_release?.version || '-' })}</Badge> : <Badge variant='success'>{t('settings.upToDate')}</Badge>}
+            />
+            <CardContentStack gap='compact'>
+              <InfoTileGrid columns={3}>
+                <InfoTile label={t('settings.current')} value={`v${deployment.data?.version.version || '-'}`} mono />
+                <InfoTile label={t('settings.latest')} value={`v${deployment.data?.latest_release?.version || deployment.data?.version.version || '-'}`} mono />
+                <InfoTile label={t('settings.mode')} value={deployment.data?.mode || t('common.unknown')} mono accent='ai' />
+              </InfoTileGrid>
+              <ActionGroup wrap align='start'>
+                <Button variant='ghost' onClick={() => checkUpdate.mutate()} disabled={checkUpdate.isPending}><RefreshCw data-icon='inline-start' />{t('settings.checkUpdate')}</Button>
+                <ConfirmAction
+                  trigger={<Button variant='ghost' disabled={!deployment.data?.latest_release?.version || applyUpdate.isPending}>{t('common.apply')}</Button>}
+                  title={t('settings.stageUpdate')}
+                  description={t('settings.stageUpdateDescription', { version: deployment.data?.latest_release?.version || '' })}
+                  confirmLabel={t('common.apply')}
+                  cancelLabel={t('common.cancel')}
+                  onConfirm={() => applyUpdate.mutate()}
+                  disabled={!deployment.data?.latest_release?.version || applyUpdate.isPending}
+                />
+                <ConfirmAction
+                  trigger={<Button variant='ghost' disabled={rollback.isPending}>{t('settings.rollback')}</Button>}
+                  title={t('settings.rollback')}
+                  description={t('settings.rollbackDescription')}
+                  confirmLabel={t('settings.rollback')}
+                  cancelLabel={t('common.cancel')}
+                  onConfirm={() => rollback.mutate()}
+                  disabled={rollback.isPending}
+                />
+                <ConfirmAction
+                  trigger={<Button variant='ghost' disabled={restart.isPending}>{t('settings.restart')}</Button>}
+                  title={t('settings.requestRestart')}
+                  description={t('settings.requestRestartDescription')}
+                  confirmLabel={t('settings.restart')}
+                  cancelLabel={t('common.cancel')}
+                  onConfirm={() => restart.mutate()}
+                  disabled={restart.isPending}
+                />
+              </ActionGroup>
+            </CardContentStack>
+          </Card>
+          <Card>
+            <SectionCardHeader
+              title={t('settings.serviceHealth')}
+              description={t('settings.serviceHealthDescription')}
+              leading={Database}
+            />
+            <CardContentStack gap='normal'>
+              <HealthFieldList>
+                {deploymentHealthRows(deploymentHealth.data?.checks ?? []).map((check) => (
+                  <HealthFieldItem
+                    key={check.name}
+                    label={deploymentHealthCheckLabel(check.name, t)}
+                    status={deploymentHealthCheckStatus(check)}
+                    value={deploymentHealthCheckValue(check, t)}
+                    mono
+                    truncate
+                  />
+                ))}
+              </HealthFieldList>
+            </CardContentStack>
+          </Card>
+        </> : null}
         </Stack>
       </div>
       <Dialog open={relayDialog} onOpenChange={(open) => open ? setRelayDialog(true) : closeRelayDialog()}>

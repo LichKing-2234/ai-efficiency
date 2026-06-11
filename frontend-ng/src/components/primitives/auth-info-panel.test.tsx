@@ -10,6 +10,16 @@ describe('AuthInfoPanel', () => {
 
     expect(html).toContain('data-slot="auth-info-panel"')
     expect(html).toContain('Signed in as alice@example.com')
-    expect(html).toContain('text-muted-foreground')
+    expect(html).toContain('text-[var(--ink-3)]')
+  })
+
+  test('supports emphasized oauth identity styling on the same shared surface', () => {
+    const html = renderToStaticMarkup(
+      <AuthInfoPanel emphasis>Signed in as alice@example.com</AuthInfoPanel>
+    )
+
+    expect(html).toContain('border-[var(--ai-line)]')
+    expect(html).toContain('bg-[var(--ai-soft)]')
+    expect(html).toContain('text-[var(--ai-deep)]')
   })
 })

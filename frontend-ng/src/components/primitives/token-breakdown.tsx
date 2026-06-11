@@ -1,5 +1,5 @@
+import { ActionGroup } from './action-group'
 import { Stack } from '@/components/primitives/stack'
-import { cn } from '@/lib/utils'
 
 export type TokenBreakdownItem = {
   label: React.ReactNode
@@ -19,8 +19,8 @@ export function TokenBreakdown({
   const total = items.reduce((sum, item) => sum + Math.max(0, item.value), 0)
 
   return (
-    <div className={cn('flex flex-col gap-3', className)} data-slot='token-breakdown'>
-      <div className='flex h-2.5 overflow-hidden rounded-full bg-[var(--surface-inset)]' data-slot='token-breakdown-bar'>
+    <Stack className={className} dataSlot='token-breakdown' gap='compact'>
+      <ActionGroup className='h-2.5 overflow-hidden rounded-full bg-[var(--surface-inset)] gap-0' dataSlot='token-breakdown-bar'>
         {items.map((item) => {
           const value = Math.max(0, item.value)
           const width = total > 0 ? (value / total) * 100 : 0
@@ -33,16 +33,16 @@ export function TokenBreakdown({
             />
           )
         })}
-      </div>
+      </ActionGroup>
       <Stack gap='compact'>
         {items.map((item) => (
-          <div className='flex items-center gap-2 text-[12.5px]' data-slot='token-breakdown-row' key={String(item.label)}>
+          <ActionGroup align='start' className='text-[12.5px]' dataSlot='token-breakdown-row' fit key={String(item.label)}>
             <span className='size-2.5 rounded-sm' style={{ background: item.color }} />
             <span className='min-w-0 flex-1 truncate text-[var(--ink-2)]'>{item.label}</span>
             <span className='mono tnum shrink-0 font-semibold'>{valueFormatter(item.value)}</span>
-          </div>
+          </ActionGroup>
         ))}
       </Stack>
-    </div>
+    </Stack>
   )
 }

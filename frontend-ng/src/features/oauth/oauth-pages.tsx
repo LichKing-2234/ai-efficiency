@@ -1,6 +1,7 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useLocation, useNavigate, useSearch } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
+import { KeyRoundIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ActionGroup } from '@/components/primitives/action-group'
 import { AppAlert } from '@/components/primitives/app-alert'
@@ -53,11 +54,14 @@ export function OAuthAuthorizePage() {
     }
   }, [location.pathname, location.searchStr, me.error, navigate])
 
+  const identity = me.data?.email || me.data?.username || t('auth.guest')
+
   return (
-    <AuthSurface title={t('oauth.authorizeCli')} description={t('oauth.allowCli')}>
-      <AuthInfoPanel>
-        {t('oauth.signedInAs', { identity: me.data?.email || me.data?.username || t('auth.guest') })}
-      </AuthInfoPanel>
+    <AuthSurface
+      title={t('oauth.authorizeCli')}
+      description={t('oauth.allowCli')}
+      aside={<AuthInfoPanel emphasis>{t('oauth.signedInAs', { identity })}</AuthInfoPanel>}
+    >
       {error ? <AppAlert tone='error' title={error} /> : null}
       <OAuthActionGroup
         approveLabel={t('oauth.approve')}
@@ -93,11 +97,14 @@ export function OAuthDevicePage() {
     }
   }, [location.pathname, location.searchStr, me.error, navigate])
 
+  const identity = me.data?.email || me.data?.username || t('auth.guest')
+
   return (
-    <AuthSurface title={t('oauth.deviceLogin')} description={t('oauth.enterCode')}>
-      <AuthInfoPanel>
-        {t('oauth.signedInAs', { identity: me.data?.email || me.data?.username || t('auth.guest') })}
-      </AuthInfoPanel>
+    <AuthSurface
+      title={t('oauth.deviceLogin')}
+      description={t('oauth.enterCode')}
+      aside={<AuthInfoPanel emphasis>{t('oauth.signedInAs', { identity })}</AuthInfoPanel>}
+    >
       <DeviceCodeField
         code={code}
         label={t('oauth.deviceCode')}
@@ -132,6 +139,7 @@ export function DeviceCodeField({
     <TextField
       id='oauth-device-code'
       label={label}
+      controlClassName='h-11 rounded-[var(--r-md)] bg-[var(--surface-inset)] px-3.5 text-center text-[15px] font-semibold tracking-[0.18em] uppercase'
       placeholder={placeholder}
       value={code}
       onChange={onCodeChange}
@@ -154,7 +162,10 @@ export function OAuthActionGroup({
 }) {
   return (
     <ActionGroup layout='split'>
-      <Button disabled={disabled} onClick={onApprove}>{approveLabel}</Button>
+      <Button disabled={disabled} onClick={onApprove}>
+        <KeyRoundIcon data-icon='inline-start' />
+        {approveLabel}
+      </Button>
       <Button disabled={disabled} variant='outline' onClick={onDeny}>{denyLabel}</Button>
     </ActionGroup>
   )

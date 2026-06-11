@@ -38,8 +38,21 @@ describe('SectionNav', () => {
     )
 
     expect(html).toContain('data-slot="section-nav-frame"')
-    expect(html).toContain('p-2')
+    expect(html).toContain('bg-[var(--surface)]')
+    expect(html).toContain('p-[8px]')
     expect(html).toContain('Relay providers')
+  })
+
+  test('uses the tighter reference rail button rhythm and inset active state', async () => {
+    const source = await import('node:fs/promises').then((fs) =>
+      fs.readFile(new URL('./section-nav.tsx', import.meta.url), 'utf8')
+    )
+
+    expect(source).toContain("'h-[38px] w-full justify-start gap-2.5 px-[11px] text-left font-medium text-[13px] shadow-none'")
+    expect(source).toContain("'border-transparent bg-[var(--surface-inset)] text-foreground hover:bg-[var(--surface-inset)]'")
+    expect(source).toContain("className='ml-auto shrink-0 text-[11px] text-[var(--ink-3)]'")
+    expect(source).not.toContain("'h-10 w-full justify-start gap-3 px-3 text-left font-medium text-sm shadow-none'")
+    expect(source).not.toContain("className='ml-auto shrink-0 text-[11px] text-muted-foreground'")
   })
 
   test('owns workbench scroll constraints for long section rails', () => {

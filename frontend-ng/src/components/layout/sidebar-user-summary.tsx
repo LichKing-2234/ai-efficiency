@@ -22,14 +22,14 @@ export function SidebarUserSummary({
   const identity = user?.username || user?.email || fallbackName
 
   return (
-    <div className={cn('flex items-center gap-2', compact && 'justify-center')} data-slot='sidebar-user-summary'>
+    <div className={cn('flex items-center gap-[9px] rounded-[var(--r-md)] border border-[var(--line)] bg-sidebar-accent p-[7px]', compact && 'size-[42px] justify-center rounded-[var(--r-sm)] border-transparent bg-transparent p-0')} data-slot='sidebar-user-summary'>
       <IdentityAvatar className='bg-[var(--ae-ai-soft)] text-[var(--ae-ai-2)]' value={identity} />
       {!compact ? (
         <div className='min-w-0 flex-1'>
-          <div className='truncate font-medium text-sm' data-slot='sidebar-user-summary-name'>
+          <div className='truncate font-semibold text-[12.5px]' data-slot='sidebar-user-summary-name'>
             {user?.username || fallbackName}
           </div>
-          <div className='truncate text-muted-foreground text-xs' data-slot='sidebar-user-summary-role'>
+          <div className='truncate text-[10.5px] text-[var(--ink-4)]' data-slot='sidebar-user-summary-role'>
             {user?.role || fallbackRole}
           </div>
         </div>

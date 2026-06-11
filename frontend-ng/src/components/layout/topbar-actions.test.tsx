@@ -30,4 +30,16 @@ describe('TopbarActions', () => {
     expect(html).toContain('EN')
     expect(html).toContain('Toggle theme')
   })
+
+  test('keeps the locale trigger on the reference compact ghost-button shell', async () => {
+    const source = await import('node:fs/promises').then((fs) =>
+      fs.readFile(new URL('./topbar-actions.tsx', import.meta.url), 'utf8')
+    )
+
+    expect(source).toContain("className='hidden sm:inline'")
+    expect(source).toContain("className='min-w-40 border-[var(--line-strong)]'")
+    expect(source).toContain("size='sm' type='button' variant='ghost'")
+    expect(source).not.toContain("width: 'auto'")
+    expect(source).not.toContain("padding: '0 9px'")
+  })
 })

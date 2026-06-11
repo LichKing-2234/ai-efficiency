@@ -21,9 +21,13 @@ describe('Stack', () => {
   test('supports compact and loose rhythm variants', () => {
     const compact = renderToStaticMarkup(<Stack gap='compact'>Compact</Stack>)
     const loose = renderToStaticMarkup(<Stack gap='loose'>Loose</Stack>)
+    const none = renderToStaticMarkup(<Stack gap='none'>None</Stack>)
 
     expect(compact).toContain('gap-2')
     expect(loose).toContain('gap-5')
+    expect(none).not.toContain('gap-2')
+    expect(none).not.toContain('gap-4')
+    expect(none).not.toContain('gap-5')
   })
 
   test('passes through page animation and layout classes', () => {

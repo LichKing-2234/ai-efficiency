@@ -21,4 +21,21 @@ describe('TokenMeter', () => {
     expect(nonZero).toContain('width:4%')
     expect(zero).toContain('width:0%')
   })
+
+  test('uses shared action-group layout for the meter shell', async () => {
+    const source = await import('node:fs/promises').then((fs) =>
+      fs.readFile(new URL('./token-meter.tsx', import.meta.url), 'utf8')
+    )
+
+    expect(source).toContain("from '@/components/primitives/action-group'")
+    expect(source).toContain("from '@/components/primitives/meter-track'")
+    expect(source).toContain('<ActionGroup')
+    expect(source).toContain('<MeterTrack')
+    expect(source).toContain("dataSlot='token-meter'")
+    expect(source).toContain("className={cn('gap-2', className)}")
+    expect(source).toContain("className='h-1.5 max-w-[88px] flex-1'")
+    expect(source).toContain("className='mono tnum min-w-[54px] text-right text-[11.5px] text-[var(--ink-2)]'")
+    expect(source).not.toContain("className={cn('flex min-w-0 items-center gap-2', className)}")
+    expect(source).not.toContain("className='mono tnum min-w-12 text-[var(--ink-2)] text-xs'")
+  })
 })

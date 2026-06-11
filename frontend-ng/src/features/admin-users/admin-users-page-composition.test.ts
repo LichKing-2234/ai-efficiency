@@ -59,7 +59,7 @@ describe('Admin users page composition', () => {
   })
 
   test('uses shared pushed action groups for current job status', () => {
-    expect(source).toContain('<ActionGroup push>')
+    expect(source).toContain('<ActionGroup push wrap>')
     expect(source).not.toContain("<ActionGroup className='ml-auto text-sm'>")
   })
 
@@ -88,5 +88,48 @@ describe('Admin users page composition', () => {
     expect(source).toContain("from '@/components/primitives/kpi-grid'")
     expect(source).toContain('<KpiGrid>')
     expect(source).not.toContain("<div className='kpi-grid'>")
+  })
+
+  test('keeps the invite action in the top toolbar like the reference screen', () => {
+    expect(source).toContain('<ActionGroup push wrap>')
+    expect(source).toContain("t('adminUsers.inviteUser')")
+    expect(source).toContain("<Plus data-icon='inline-start' />")
+  })
+
+  test('keeps the subscription management card as a compact reference workbench section', () => {
+    expect(source).toContain("title={t('adminUsers.subscriptionManagement')}")
+    expect(source).not.toContain("description={t('adminUsers.subscriptionManagementDescription')}")
+  })
+
+  test('keeps the user table toolbar search-led like the reference screen', () => {
+    expect(source).toContain('<CardFilterBar>')
+    expect(source).toContain("<ActionGroup push wrap>")
+    expect(source).toContain("width='toolbar'")
+    expect(source).toContain("placeholder={t('adminUsers.searchUsers')}")
+    expect(source).not.toContain("<ToolbarSelect\n            ariaLabel={t('common.pageSizeControl')}")
+    expect(source).not.toContain("<div className='flex items-center justify-between gap-3'>")
+  })
+
+  test('keeps the reference search-plus-meter scan rhythm delegated to shared primitives', () => {
+    expect(source).toContain("from '@/components/primitives/search-field'")
+    expect(source).toContain("from '@/components/primitives/token-meter'")
+    expect(source).not.toContain("className='h-9 min-w-0 bg-[var(--surface-inset)]'")
+    expect(source).not.toContain("className='mono tnum min-w-12 text-[var(--ink-2)] text-xs'")
+  })
+
+  test('keeps subscription job summaries inside shared result and advanced data panels', () => {
+    expect(source).toContain("from '@/components/primitives/job-result-list'")
+    expect(source).toContain("from '@/components/primitives/inset-panel'")
+    expect(source).not.toContain("<div className='max-h-56 overflow-auto rounded-[var(--r-md)] border border-border bg-card'>")
+    expect(source).not.toContain("<div className='text-sm text-muted-foreground'>")
+  })
+
+  test('keeps plaintext reveal confirmation as a compact inline admin action block', () => {
+    expect(source).toContain('<RowInsetPanel')
+    expect(source).toContain("indent='selection'")
+    expect(source).toContain("maxWidth='xl'")
+    expect(source).toContain("actions={")
+    expect(source).toContain("<ActionGroup align='start'>")
+    expect(source).not.toContain("<FieldDescription>{t('adminUsers.plaintextWarning')}</FieldDescription>\n                    <Button")
   })
 })

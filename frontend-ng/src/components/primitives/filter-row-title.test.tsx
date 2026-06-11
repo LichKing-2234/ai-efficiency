@@ -11,7 +11,7 @@ describe('FilterRowTitle', () => {
     expect(html).toContain('data-slot="filter-row-title-description"')
     expect(html).toContain('Usage Analytics')
     expect(html).toContain('Track token usage.')
-    expect(html).toContain('text-muted-foreground')
+    expect(html).toContain('text-[12px] text-[var(--ink-3)]')
   })
 
   test('omits description without rendering an empty slot', () => {
@@ -27,7 +27,7 @@ describe('FilterRowTitle', () => {
     expect(html).toContain('data-slot="filter-row-title"')
     expect(html).toContain('data-slot="filter-row-title-label"')
     expect(html).toContain('Merged in')
-    expect(html).toContain('text-muted-foreground')
+    expect(html).toContain('text-[12px] text-[var(--ink-3)]')
     expect(html).not.toContain('data-slot="filter-row-title-text"')
   })
 
@@ -36,6 +36,11 @@ describe('FilterRowTitle', () => {
       fs.readFile(new URL('./filter-row-title.tsx', import.meta.url), 'utf8')
     )
 
+    expect(source).toContain("from '@/components/primitives/stack'")
+    expect(source).toContain("className='text-[12px] text-[var(--ink-3)]'")
+    expect(source).toContain("className='text-[12px] text-[var(--ink-3)]' data-slot='filter-row-title-label'")
+    expect(source).toContain("className='font-semibold text-[14px]' data-slot='filter-row-title-text'")
     expect(source).not.toContain("className='mt-0.5 text-muted-foreground text-xs'")
+    expect(source).not.toContain("<div className={cn('min-w-0', className)} data-slot='filter-row-title'>")
   })
 })

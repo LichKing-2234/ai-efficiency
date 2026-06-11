@@ -1,3 +1,5 @@
+import { FilterRow } from '@/components/primitives/filter-row'
+import { Stack } from '@/components/primitives/stack'
 import { cn } from '@/lib/utils'
 
 export type HeatmapPoint = {
@@ -47,10 +49,10 @@ export function HeatmapGrid({
   const labels = dayLabels.length >= 7 ? dayLabels : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
   return (
-    <div className={cn('flex flex-col gap-3', className)}>
-      <div className='flex items-center justify-end gap-2 text-[11.5px] text-muted-foreground'>
+    <Stack className={className} dataSlot='heatmap-grid' gap='compact'>
+      <FilterRow className='justify-end text-[11.5px] text-[var(--ink-3)]' dataSlot='heatmap-grid-legend'>
         <span>{lessLabel}</span>
-        <span className='flex gap-1'>
+        <FilterRow className='gap-1' dataSlot='heatmap-grid-legend-scale'>
           {[0.08, 0.28, 0.48, 0.7, 1].map((intensity) => (
             <span
               aria-hidden='true'
@@ -59,9 +61,9 @@ export function HeatmapGrid({
               style={{ background: heatmapColor(intensity) }}
             />
           ))}
-        </span>
+        </FilterRow>
         <span>{moreLabel}</span>
-      </div>
+      </FilterRow>
       <div className='grid min-w-0 grid-cols-[34px_minmax(0,1fr)] gap-2'>
         <div />
         <div className='grid gap-1' style={{ gridTemplateColumns: 'repeat(24, minmax(0, 1fr))' }}>
@@ -73,7 +75,7 @@ export function HeatmapGrid({
         </div>
         {labels.slice(0, 7).map((label, day) => (
           <div className='contents' key={label}>
-            <div className='flex items-center font-medium text-[11px] text-muted-foreground'>{label}</div>
+            <div className='flex items-center font-medium text-[11px] text-[var(--ink-3)]'>{label}</div>
             <div className='grid gap-1' style={{ gridTemplateColumns: 'repeat(24, minmax(0, 1fr))' }}>
               {cells.slice(day * 24, day * 24 + 24).map((cell) => (
                 <div
@@ -88,7 +90,7 @@ export function HeatmapGrid({
           </div>
         ))}
       </div>
-    </div>
+    </Stack>
   )
 }
 

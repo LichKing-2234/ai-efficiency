@@ -3,10 +3,11 @@ import { createRootRoute, HeadContent, Outlet, Scripts, useLocation, useNavigate
 import { useEffect } from 'react'
 import { Toaster } from 'sonner'
 import { AppShell } from '@/components/layout/app-shell'
-import { LoadingState } from '@/components/primitives/data-state'
+import { ErrorState, LoadingState } from '@/components/primitives/data-state'
 import { queryClient } from '@/query-client'
 import { buildCurrentRouteRedirectPath, buildLoginRedirect } from '@/features/auth/auth-flow-state'
 import { ensureAuthenticatedUser } from '@/lib/auth/session'
+import { ApiError } from '@/lib/api/client'
 import { I18nProvider, useI18n } from '@/lib/i18n/i18n'
 import stylesUrl from '../styles.css?url'
 
@@ -43,11 +44,12 @@ function AuthFrame({ children }: { children: React.ReactNode }) {
   const { data: user, isLoading, error, refetch } = useQuery({
     queryKey: ['auth', 'me'],
     queryFn: ensureAuthenticatedUser,
-    enabled: !isPublic
+    enabled: !isPublic,
+    retry: false
   })
 
   useEffect(() => {
-    if (!isPublic && error) {
+    if (!isPublic && error instanceof ApiError && (error.status === 401 || error.status === 403)) {
       const redirect = buildLoginRedirect(buildCurrentRouteRedirectPath(location.pathname, location.searchStr))
       void navigate({ to: redirect.to, search: redirect.search as never, replace: true })
     }
@@ -55,6 +57,17 @@ function AuthFrame({ children }: { children: React.ReactNode }) {
 
   if (isPublic) return <>{children}</>
   if (isLoading && !user) return <AppShell user={null}><LoadingState label={t('auth.loadingAccount')} /></AppShell>
+  if (error && !user) {
+    return (
+      <AppShell user={null}>
+        <ErrorState
+          message={error.message}
+          onRetry={() => void refetch()}
+          retryLabel={t('common.retry')}
+        />
+      </AppShell>
+    )
+  }
   return <AppShell user={user ?? null}>{children}</AppShell>
 }
 

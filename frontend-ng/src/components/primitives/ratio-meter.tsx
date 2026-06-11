@@ -1,3 +1,5 @@
+import { ActionGroup } from '@/components/primitives/action-group'
+import { MeterTrack } from '@/components/primitives/meter-track'
 import { cn } from '@/lib/utils'
 
 export function RatioMeter({
@@ -15,17 +17,17 @@ export function RatioMeter({
   const empty = total <= 0
 
   return (
-    <span className={cn('flex min-w-0 items-center gap-2', className)} data-empty={empty ? 'true' : undefined} data-slot='ratio-meter'>
-      <span className='h-1.5 max-w-20 flex-1 overflow-hidden rounded-full bg-[var(--surface-inset)]' data-slot='ratio-meter-track'>
+    <ActionGroup className={className} data-empty={empty ? 'true' : undefined} dataSlot='ratio-meter' fit>
+      <MeterTrack className='h-1.5 max-w-[88px] flex-1' dataSlot='ratio-meter-track'>
         <span
           className='block h-full rounded-full bg-[var(--ai)]'
           data-slot='ratio-meter-fill'
           style={{ width: `${width}%` }}
         />
-      </span>
-      <span className='mono tnum min-w-12 text-[var(--ink-2)] text-xs' data-slot='ratio-meter-value'>
+      </MeterTrack>
+      <span className='mono tnum min-w-[54px] text-[11.5px] text-[var(--ink-2)]' data-slot='ratio-meter-value'>
         {empty ? emptyLabel : `${part}/${total}`}
       </span>
-    </span>
+    </ActionGroup>
   )
 }

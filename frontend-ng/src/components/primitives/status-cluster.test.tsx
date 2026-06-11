@@ -24,7 +24,9 @@ describe('StatusCluster', () => {
       fs.readFile(new URL('./status-cluster.tsx', import.meta.url), 'utf8')
     )
 
-    expect(source).toContain('data-slot')
+    expect(source).toContain("from '@/components/primitives/filter-row'")
+    expect(source).toContain("dataSlot='status-cluster'")
+    expect(source).not.toContain("const statusClusterClass = 'flex flex-wrap items-center gap-2'")
     expect(source).not.toContain("className='flex flex-wrap gap-2'")
   })
 })

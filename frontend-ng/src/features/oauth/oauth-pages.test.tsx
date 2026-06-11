@@ -22,6 +22,8 @@ describe('OAuth page primitives', () => {
     expect(html).toContain('for="oauth-device-code"')
     expect(html).toContain('id="oauth-device-code"')
     expect(html).toContain('ABCD-EFGH')
+    expect(html).toContain('text-center')
+    expect(html).toContain('tracking-[0.18em]')
   })
 
   test('renders approve and deny actions through the shared action group', () => {
@@ -38,10 +40,13 @@ describe('OAuth page primitives', () => {
     expect(html).toContain('data-slot="action-group"')
     expect(html).toContain('Approve')
     expect(html).toContain('Deny')
+    expect(html).toContain('data-icon="inline-start"')
   })
 
   test('uses the shared split action row for approve and deny actions', () => {
     expect(source).toContain("<ActionGroup layout='split'>")
+    expect(source).toContain("aside={<AuthInfoPanel emphasis>")
+    expect(source).toContain("<KeyRoundIcon data-icon='inline-start' />")
     expect(source).not.toContain("className='flex-1'")
     expect(source).not.toContain("className='w-full'")
   })

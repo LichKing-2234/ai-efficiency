@@ -21,7 +21,9 @@ describe('SectionCardHeader', () => {
     expect(html).toContain('AI Services')
     expect(html).toContain('Configure model providers.')
     expect(html).toContain('Add')
-    expect(html).toContain('justify-between')
+    expect(html).toContain('data-slot="section-card-header-content"')
+    expect(html).toContain('[&amp;&gt;*]:flex-1')
+    expect(html).toContain('sm:justify-end')
   })
 
   test('omits optional description and actions without empty controls', () => {
@@ -29,7 +31,7 @@ describe('SectionCardHeader', () => {
 
     expect(html).toContain('Organization Login')
     expect(html).not.toContain('data-slot="card-description"')
-    expect(html).not.toContain('justify-end')
+    expect(html).toContain('justify-start')
   })
 
   test('passes layout class names through to the card header slot', () => {
@@ -61,7 +63,27 @@ describe('SectionCardHeader', () => {
 
     expect(html).toContain('data-slot="section-card-meta"')
     expect(html).toContain('42 repositories')
-    expect(html).toContain('text-muted-foreground')
-    expect(html).toContain('text-sm')
+    expect(html).toContain('text-[12px]')
+    expect(html).toContain('text-[var(--ink-3)]')
+  })
+
+  test('sources title and action layout from shared stack and action group primitives', async () => {
+    const source = await import('node:fs/promises').then((fs) =>
+      fs.readFile(new URL('./section-card-header.tsx', import.meta.url), 'utf8')
+    )
+
+    expect(source).toContain("from '@/components/primitives/action-group'")
+    expect(source).toContain("from '@/components/primitives/stack'")
+    expect(source).toContain("dataSlot='section-card-header-content'")
+    expect(source).toContain("dataSlot='section-card-title-row'")
+    expect(source).toContain("<ActionGroup align='start' className='min-w-0 gap-[9px]'")
+    expect(source).toContain("className='w-full gap-3'")
+    expect(source).toContain("className='text-[14px] font-[650] leading-none'")
+    expect(source).toContain("className='mt-0.5 text-[12px] text-[var(--ink-3)]'")
+    expect(source).toContain("className='shrink-0 gap-2.5'")
+    expect(source).not.toContain("className={cn('flex items-start justify-between gap-3', actions ? 'flex-col sm:flex-row sm:items-center' : 'items-center')}")
+    expect(source).not.toContain("className='flex shrink-0 items-center justify-end gap-2'")
+    expect(source).not.toContain("className='inline-flex min-w-0 items-center gap-2'")
+    expect(source).not.toContain("className={actions ? 'sm:flex-row sm:items-center sm:justify-between' : undefined}")
   })
 })

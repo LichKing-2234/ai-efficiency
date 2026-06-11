@@ -22,7 +22,7 @@ export function SearchField({
   width?: 'auto' | 'toolbar'
 }) {
   return (
-    <InputGroup className={cn('h-9 min-w-0 bg-[var(--surface-inset)]', width === 'toolbar' && 'min-w-64 flex-1 sm:max-w-md', className)}>
+    <InputGroup className={cn('h-[34px] min-w-0 rounded-[var(--r-md)] border-[var(--line)] bg-[var(--surface-inset)] px-[1px] shadow-none', width === 'toolbar' && 'max-w-[320px] flex-1', className)}>
       <InputGroupAddon>
         <SearchIcon />
       </InputGroupAddon>

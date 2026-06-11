@@ -9,16 +9,17 @@ describe('User usage panel composition', () => {
   test('uses shared row primitives for usage range and refresh controls', () => {
     expect(source).toContain("from '@/components/primitives/action-group'")
     expect(source).toContain("from '@/components/primitives/filter-row'")
-    expect(source).toContain("from '@/components/primitives/filter-row-title'")
     expect(source).toContain('<FilterRow')
     expect(source).toContain("<FilterRow justify='between' gap='lg'>")
-    expect(source).toContain('<FilterRowTitle')
     expect(source).toContain('<ActionGroup')
+    expect(source).toContain('<div />')
+    expect(source).toContain("t('command.exportUsageReport')")
     expect(source).not.toContain("<FilterRow className='justify-between gap-3'>")
     expect(source).not.toContain("<div className='flex flex-wrap items-center justify-between gap-3'>")
     expect(source).not.toContain("<div className='flex flex-wrap items-center gap-2'>")
     expect(source).not.toContain("<div className='font-semibold text-sm'>{t('usageDashboard.title')}</div>")
     expect(source).not.toContain("<div className='mt-0.5 text-muted-foreground text-xs'>{t('usageDashboard.subtitle')}</div>")
+    expect(source).not.toContain('FilterRowTitle')
   })
 
   test('matches the reference usage analytics card structure', () => {
@@ -39,8 +40,10 @@ describe('User usage panel composition', () => {
 
   test('uses shared table card content for edge-to-edge model cost table', () => {
     expect(source).toContain("from '@/components/primitives/card-table-content'")
+    expect(source).toContain("from '@/components/primitives/card-content-stack'")
     expect(source).toContain('<CardTableContent>')
     expect(source).not.toContain("<CardContent className='px-0 pb-0'>")
+    expect(source).not.toContain('<CardContent>')
   })
 
   test('uses shared data grid cells for model cost numeric columns', () => {
@@ -66,6 +69,14 @@ describe('User usage panel composition', () => {
     expect(source).toContain("from '@/components/primitives/app-alert'")
     expect(source).toContain('actions={')
     expect(source).not.toContain("className='mt-3'")
+  })
+
+  test('uses shared page empty states instead of raw empty shells for no-data cards', () => {
+    expect(source).toContain("from '@/components/primitives/page-empty'")
+    expect(source).toContain('<PageEmpty title={t(\'usageDashboard.noTrendData\')} />')
+    expect(source).toContain('<PageEmpty title={t(\'usageDashboard.noModelData\')} />')
+    expect(source).not.toContain("from '@/components/ui/empty'")
+    expect(source).not.toContain('<Empty><EmptyHeader><EmptyTitle>')
   })
 
   test('uses the shared KPI grid primitive for usage analytics metrics', () => {

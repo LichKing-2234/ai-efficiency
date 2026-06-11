@@ -1,4 +1,5 @@
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
+import { CardContentStack } from '@/components/primitives/card-content-stack'
 import { cn } from '@/lib/utils'
 import { CodeBlock } from './code-block'
 import { FieldItem, FieldList } from './field-list'
@@ -36,7 +37,7 @@ export function AdvancedDataPanel({
 }) {
   return (
     <Accordion
-      className={cn('rounded-[var(--r-md)] border border-border px-3', className)}
+      className={cn('rounded-[var(--r-md)] border border-border px-[14px]', className)}
       collapsible
       data-slot='advanced-data-panel'
       defaultValue={defaultOpen ? 'advanced' : undefined}
@@ -45,13 +46,13 @@ export function AdvancedDataPanel({
       <AccordionItem value='advanced'>
         <AccordionTrigger>{title}</AccordionTrigger>
         <AccordionContent>
-          <div className='grid gap-2 text-sm'>
+          <CardContentStack className='px-0 pb-0 text-[12.5px]' dataSlot='advanced-data-panel-content' gap='compact'>
             <FieldList>
               {fields.map((field, index) => (
                 <FieldItem key={index} label={field.label} mono={field.mono} value={field.value} />
               ))}
             </FieldList>
-          </div>
+          </CardContentStack>
           {code ? <AdvancedDataCode ariaLabel={codeAriaLabel}>{code}</AdvancedDataCode> : null}
         </AccordionContent>
       </AccordionItem>

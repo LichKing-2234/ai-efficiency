@@ -11,17 +11,17 @@ export function TopbarCommandTrigger({
   return (
     <span className='contents' data-slot='topbar-command-trigger'>
       <Button
-        className='hidden min-w-48 justify-start gap-2 text-[var(--ink-3)] lg:inline-flex'
+        className='cmd-trigger hidden h-9 min-w-48 justify-start gap-[7px] border-[var(--line)] bg-[var(--surface-inset)] px-3 text-[var(--ink-3)] lg:inline-flex'
         data-slot='topbar-command-trigger-desktop'
         onClick={onOpen}
-        size='sm'
+        size='default'
         type='button'
         variant='outline'
       >
         <SearchIcon />
         <span className='flex-1 text-left'>{label}</span>
         <kbd
-          className='rounded border border-border bg-[var(--surface)] px-1.5 py-0.5 font-mono font-semibold text-[10.5px] text-[var(--ink-3)]'
+          className='rounded-[var(--r-xs)] border border-[var(--line)] bg-[var(--surface)] px-1.5 py-0.5 font-mono font-semibold text-[10.5px] text-[var(--ink-3)]'
           data-slot='topbar-command-trigger-kbd'
         >
           ⌘K
@@ -31,7 +31,7 @@ export function TopbarCommandTrigger({
         className='lg:hidden'
         data-slot='topbar-command-trigger-mobile'
         onClick={onOpen}
-        size='icon-sm'
+        size='icon'
         title={label}
         type='button'
         variant='outline'

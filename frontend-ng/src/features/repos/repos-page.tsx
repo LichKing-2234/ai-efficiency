@@ -22,17 +22,17 @@ import { FieldItem, FieldList } from '@/components/primitives/field-list'
 import { InfoTile, InfoTileGrid } from '@/components/primitives/info-tile'
 import { KpiGrid } from '@/components/primitives/kpi-grid'
 import { RatioMeter } from '@/components/primitives/ratio-meter'
+import { SegmentedControl } from '@/components/primitives/segmented-control'
 import { SectionCardHeader } from '@/components/primitives/section-card-header'
 import { SectionNav, type SectionNavItem } from '@/components/primitives/section-nav'
 import { SlideOver } from '@/components/primitives/slide-over'
 import { SlideOverStack } from '@/components/primitives/slide-over-stack'
 import { StatusBadge } from '@/components/primitives/status-badge'
 import { StatusCluster } from '@/components/primitives/status-cluster'
-import { ToolbarSelect } from '@/components/primitives/toolbar-select'
 import { WorkbenchContent, WorkbenchRail } from '@/components/primitives/workbench-rail'
 import { api } from '@/lib/api'
 import type { RepoConfig } from '@/lib/api/types'
-import { number, percent } from '@/lib/format'
+import { dateTime, number, percent } from '@/lib/format'
 import { useI18n } from '@/lib/i18n/i18n'
 import { RepoCreateForm, type RepoCreateFormLabels } from './repo-create-form'
 import {
@@ -249,31 +249,6 @@ export function ReposPage() {
           {t('repos.addRepo')}
         </Button>
       </ActionGroup>
-      <Card>
-        <CardFilterBar>
-          <ToolbarSelect
-            ariaLabel={t('repos.bindingFilter')}
-            options={[
-              { value: 'all', label: t('repos.allBindings') },
-              { value: 'bound', label: t('repos.bound') },
-              { value: 'unbound', label: t('repos.unbound') }
-            ]}
-            value={search.binding}
-            onValueChange={(value) => replaceSearch({ ...search, binding: value as RepoBindingFilter, page: 1 })}
-          />
-          <ToolbarSelect
-            ariaLabel={t('common.pageSizeControl')}
-            options={[
-              { value: '20', label: t('common.pageSize', { size: 20 }) },
-              { value: '50', label: t('common.pageSize', { size: 50 }) },
-              { value: '100', label: t('common.pageSize', { size: 100 }) }
-            ]}
-            value={String(search.pageSize)}
-            onValueChange={(value) => replaceSearch({ ...search, pageSize: Number(value), page: 1 })}
-          />
-          <Button variant='ghost' onClick={() => replaceSearch({ ...search, binding: 'unbound', provider: 'unbound', page: 1 })}>{t('repos.reviewNeedsBinding')}</Button>
-        </CardFilterBar>
-      </Card>
       <KpiGrid>
         <KpiCard label={t('repos.totalRepositories')} value={number(health.total, locale)} icon={FolderGit2Icon} sparkline={reposForProviders.map((provider) => provider.total_repos)} />
         <KpiCard label={t('repos.boundRepositories')} value={number(health.bound, locale)} accent icon={CheckIcon} sparkline={reposForProviders.map((provider) => provider.bound_repos)} />
@@ -330,6 +305,19 @@ export function ReposPage() {
             </WorkbenchRail>
             <WorkbenchContent>
               <SectionCardHeader
+                actions={(
+                  <SegmentedControl
+                    ariaLabel={t('repos.bindingFilter')}
+                    onChange={(value) => replaceSearch({ ...search, binding: value as RepoBindingFilter, page: 1 })}
+                    options={[
+                      { value: 'all', label: t('repos.allBindings') },
+                      { value: 'bound', label: t('repos.bound') },
+                      { value: 'unbound', label: t('repos.unbound') }
+                    ]}
+                    size='sm'
+                    value={search.binding}
+                  />
+                )}
                 title={selectedScope || t('repos.selectedScope')}
                 description={selectedProvider?.name ?? t('common.empty')}
                 meta={`${number(total, locale)} ${t('repos.totalRepositories')}`}
@@ -473,6 +461,7 @@ function RepoInspectSlideOver({
           <StatusCluster>
             <Badge variant={repo.binding_state === 'bound' ? 'pos' : 'warn'}>{repo.binding_state}</Badge>
             <StatusBadge value={repo.status} />
+            <Badge variant='neutral'>{repo.edges?.scm_provider?.name || t('repos.provider')}</Badge>
           </StatusCluster>
           <InfoTileGrid>
             <InfoTile label={t('repos.totalPrs')} value={number(repo.pr_summary?.total_prs, locale)} />
@@ -480,11 +469,10 @@ function RepoInspectSlideOver({
             <InfoTile label={t('repos.aiPrShare')} value={percent(repo.pr_summary?.ai_share, locale)} />
           </InfoTileGrid>
           <FieldList>
-            <FieldItem label={t('repos.fullName')} value={repo.full_name || repo.name} truncate />
             <FieldItem label={t('repos.clone')} value={repo.clone_url || '-'} mono />
             <FieldItem label={t('repos.defaultBranch')} value={repo.default_branch || '-'} mono />
-            <FieldItem label={t('repos.provider')} value={repo.edges?.scm_provider?.base_url || repo.edges?.scm_provider?.name || repo.scm_provider_id || '-'} mono truncate />
-            <FieldItem label={t('common.status')} value={repo.status || '-'} />
+            <FieldItem label={t('repos.provider')} value={repo.edges?.scm_provider?.base_url || repo.edges?.scm_provider?.name || '-'} truncate />
+            <FieldItem label={t('adminUsers.updated')} value={dateTime(repo.created_at, locale)} />
           </FieldList>
           {repo.binding_state === 'unbound' ? (
             <AppAlert
@@ -501,26 +489,28 @@ function RepoInspectSlideOver({
               )}
             />
           ) : null}
-          <ActionGroup push wrap>
-            <Button variant='outline' onClick={() => syncRepo(repo.id)} disabled={repo.binding_state === 'unbound' || syncPending}>
+          <div className='grid grid-cols-2 gap-[10px]'>
+            <Button className='w-full' variant='outline' onClick={() => syncRepo(repo.id)} disabled={repo.binding_state === 'unbound' || syncPending}>
               <RefreshCwIcon data-icon='inline-start' />
               {syncPending ? t('repoDetail.syncingPrs') : t('repoDetail.syncPrs')}
             </Button>
-            <Button asChild variant='outline'>
+            <Button asChild className='w-full' variant='outline'>
               <Link to='/repos/$id' params={{ id: String(repo.id) }}>
                 <ExternalLinkIcon data-icon='inline-start' />
                 {t('repos.openDetails')}
               </Link>
             </Button>
-            {deleteConfirmId === repo.id ? (
-              <>
-                <Button variant='destructive' onClick={() => deleteRepo(repo.id)} disabled={deletePending}>{t('common.confirm')}</Button>
-                <Button variant='ghost' onClick={() => setDeleteConfirmId(null)}>{t('common.cancel')}</Button>
-              </>
-            ) : (
+          </div>
+          {deleteConfirmId === repo.id ? (
+            <ActionGroup push wrap>
+              <Button variant='destructive' onClick={() => deleteRepo(repo.id)} disabled={deletePending}>{t('common.confirm')}</Button>
+              <Button variant='ghost' onClick={() => setDeleteConfirmId(null)}>{t('common.cancel')}</Button>
+            </ActionGroup>
+          ) : (
+            <ActionGroup push>
               <Button variant='ghost' onClick={() => setDeleteConfirmId(repo.id)}>{t('common.delete')}</Button>
-            )}
-          </ActionGroup>
+            </ActionGroup>
+          )}
         </SlideOverStack>
       ) : null}
     </SlideOver>

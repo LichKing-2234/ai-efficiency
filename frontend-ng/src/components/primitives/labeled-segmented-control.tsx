@@ -1,4 +1,5 @@
 import { cn } from '@/lib/utils'
+import { ActionGroup } from './action-group'
 import { SegmentedControl, type SegmentedOption } from './segmented-control'
 
 export function LabeledSegmentedControl<T extends string>({
@@ -19,11 +20,11 @@ export function LabeledSegmentedControl<T extends string>({
   value: T
 }) {
   return (
-    <div className={cn('flex items-center gap-2', className)} data-slot='labeled-segmented-control'>
+    <ActionGroup align='start' className={className} dataSlot='labeled-segmented-control'>
       <span className='font-semibold text-[11.5px] text-[var(--ink-4)]' data-slot='labeled-segmented-control-label'>
         {label}
       </span>
       <SegmentedControl ariaLabel={ariaLabel} onChange={onChange} options={options} size={size} value={value} />
-    </div>
+    </ActionGroup>
   )
 }

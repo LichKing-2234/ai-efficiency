@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Navigate, useNavigate, useSearch } from '@tanstack/react-router'
-import { ChevronRight, Clipboard, Clock3, RefreshCw, Shield, UserCheck, Users } from 'lucide-react'
+import { ChevronRight, Clipboard, Clock3, Plus, RefreshCw, Shield, UserCheck, Users } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -187,6 +187,14 @@ export function AdminUsersPage() {
 
   return (
     <Page className='stagger'>
+      <div className='min-h-9'>
+        <ActionGroup push wrap>
+          <Button>
+            <Plus data-icon='inline-start' />
+            {t('adminUsers.inviteUser')}
+          </Button>
+        </ActionGroup>
+      </div>
       <KpiGrid>
         <KpiCard label={t('adminUsers.totalUsers')} value={number(kpis.total)} icon={Users} />
         <KpiCard label={t('adminUsers.activeUsers')} value={number(kpis.active)} icon={UserCheck} accent />
@@ -254,30 +262,32 @@ export function AdminUsersPage() {
             value={q}
             width='toolbar'
           />
-          <ToolbarSelect
-            ariaLabel={t('common.pageSizeControl')}
-            options={[10, 20, 50, 100].map((size) => ({ value: String(size), label: t('common.pageSize', { size }) }))}
-            value={String(pageSize)}
-            width='compact'
-            onValueChange={(value) => {
-              setPageSize(Number(value))
-              setPage(1)
-            }}
-          />
-          <Button variant='outline' disabled={users.isFetching} onClick={() => void users.refetch()}>
-            <RefreshCw data-icon='inline-start' />
-            {t('common.refresh')}
-          </Button>
-          {currentJob ? (
-            <ActionGroup push>
-              <StatusWithReason
-                inline
-                meta={`${number(currentJob.processed_count)}/${number(currentJob.total_count)}`}
-                metaNumeric
-                value={currentJob.status}
+          <div className='min-h-9'>
+            <ActionGroup push wrap>
+              <ToolbarSelect
+                ariaLabel={t('common.pageSizeControl')}
+                options={[10, 20, 50, 100].map((size) => ({ value: String(size), label: t('common.pageSize', { size }) }))}
+                value={String(pageSize)}
+                width='compact'
+                onValueChange={(value) => {
+                  setPageSize(Number(value))
+                  setPage(1)
+                }}
               />
+              <Button variant='outline' disabled={users.isFetching} onClick={() => void users.refetch()}>
+                <RefreshCw data-icon='inline-start' />
+                {t('common.refresh')}
+              </Button>
+              {currentJob ? (
+                <StatusWithReason
+                  inline
+                  meta={`${number(currentJob.processed_count)}/${number(currentJob.total_count)}`}
+                  metaNumeric
+                  value={currentJob.status}
+                />
+              ) : null}
             </ActionGroup>
-          ) : null}
+          </div>
         </CardFilterBar>
         <DataGrid minWidth={1100}>
           <DataGridHeader columns={tableColumns}>
@@ -339,18 +349,25 @@ export function AdminUsersPage() {
                   <ChevronRight aria-hidden='true' />
                 </DataGridRowAffordance>
                 {plaintextConfirmUserId === user.id ? (
-                  <RowInsetPanel indent='selection' maxWidth='xl'>
+                  <RowInsetPanel
+                    indent='selection'
+                    maxWidth='xl'
+                    actions={
+                      <ActionGroup align='start'>
+                        <Button
+                          variant='outline'
+                          size='sm'
+                          disabled={reveal.isPending}
+                          onClick={() => {
+                            reveal.mutate(user.id, { onSuccess: () => setPlaintextConfirmUserId(null) })
+                          }}
+                        >
+                          {t('adminUsers.confirmReveal')}
+                        </Button>
+                      </ActionGroup>
+                    }
+                  >
                     <FieldDescription>{t('adminUsers.plaintextWarning')}</FieldDescription>
-                    <Button
-                      variant='outline'
-                      size='sm'
-                      disabled={reveal.isPending}
-                      onClick={() => {
-                        reveal.mutate(user.id, { onSuccess: () => setPlaintextConfirmUserId(null) })
-                      }}
-                    >
-                      {t('adminUsers.confirmReveal')}
-                    </Button>
                   </RowInsetPanel>
                 ) : null}
               </DataGridRow>

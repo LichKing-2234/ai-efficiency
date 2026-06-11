@@ -30,6 +30,7 @@ export function LoginForm({
   username: string
 }) {
   const { t } = useI18n()
+  const fieldControlClassName = 'h-10 rounded-[var(--r-md)] bg-[var(--surface-inset)] px-3.5 text-[13px] shadow-none'
 
   return (
     <form
@@ -38,9 +39,22 @@ export function LoginForm({
         onSubmit()
       }}
     >
-      <FieldGroup>
-        <TextField id='login-username' label={t('auth.usernameOrEmail')} value={username} onChange={onUsernameChange} />
-        <TextField id='login-password' label={t('auth.password')} type='password' value={password} onChange={onPasswordChange} />
+      <FieldGroup gap='compact'>
+        <TextField
+          id='login-username'
+          label={t('auth.usernameOrEmail')}
+          controlClassName={fieldControlClassName}
+          value={username}
+          onChange={onUsernameChange}
+        />
+        <TextField
+          id='login-password'
+          label={t('auth.password')}
+          controlClassName={fieldControlClassName}
+          type='password'
+          value={password}
+          onChange={onPasswordChange}
+        />
         <SelectField
           id='login-source'
           label={t('auth.loginSource')}
@@ -48,12 +62,12 @@ export function LoginForm({
             ...(options?.ldap_enabled ? [{ label: 'LDAP', value: 'LDAP' }] : []),
             { label: t('auth.relaySso'), value: 'SSO' }
           ]}
-          triggerClassName='w-full'
+          triggerClassName={`${fieldControlClassName} w-full`}
           value={source}
           onValueChange={onSourceChange}
         />
-        {error ? <AppAlert tone='error' title={error} /> : null}
-        <Button disabled={!username || !password || pending}>
+        {error ? <AppAlert tone='error' title={error} description={t('auth.loginErrorDescription')} /> : null}
+        <Button className='w-full' disabled={!username || !password || pending}>
           {pending ? t('auth.signingIn') : t('auth.signIn')}
         </Button>
       </FieldGroup>

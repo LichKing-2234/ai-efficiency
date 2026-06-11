@@ -82,6 +82,14 @@ describe('ProviderTestForm', () => {
     expect(source).toContain("<ActionGroup wrap align='start'>")
     expect(source).not.toContain("<ActionGroup wrap className='justify-start'>")
   })
+
+  test('uses shared inset field chrome for the reference provider test form controls', () => {
+    expect(source).toContain("const fieldControlClassName = 'h-10 rounded-[var(--r-md)] bg-[var(--surface-inset)] shadow-none'")
+    expect(source).toContain("const promptControlClassName = 'min-h-24 rounded-[var(--r-md)] bg-[var(--surface-inset)] shadow-none'")
+    expect(source).toContain("triggerClassName={`${fieldControlClassName} w-full`}")
+    expect(source).toContain("controlClassName={fieldControlClassName}")
+    expect(source).toContain("controlClassName={promptControlClassName}")
+  })
 })
 
 function labels() {

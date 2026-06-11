@@ -1,13 +1,15 @@
 import type * as React from 'react'
+import { ActionGroup } from '@/components/primitives/action-group'
+import { Stack } from '@/components/primitives/stack'
 import { cn } from '@/lib/utils'
 
 export type HealthStatus = 'danger' | 'healthy' | 'unknown' | 'warning'
 
 const healthDotClass = {
-  danger: 'bg-destructive shadow-[0_0_0_3px_color-mix(in_oklab,var(--destructive)_14%,transparent)]',
-  healthy: 'bg-[var(--ae-success)] shadow-[0_0_0_3px_color-mix(in_oklab,var(--ae-success)_14%,transparent)]',
-  unknown: 'bg-muted-foreground/45 shadow-[0_0_0_3px_color-mix(in_oklab,var(--muted-foreground)_12%,transparent)]',
-  warning: 'bg-[var(--ae-warn)] shadow-[0_0_0_3px_color-mix(in_oklab,var(--ae-warn)_14%,transparent)]'
+  danger: 'bg-destructive',
+  healthy: 'bg-[var(--ae-success)]',
+  unknown: 'bg-muted-foreground/45',
+  warning: 'bg-[var(--ae-warn)]'
 } satisfies Record<HealthStatus, string>
 
 export function HealthFieldList({
@@ -28,7 +30,7 @@ function HealthStatusDot({ status }: { status: HealthStatus }) {
   return (
     <span
       aria-hidden='true'
-      className={cn('size-2 shrink-0 rounded-full', healthDotClass[status])}
+      className={cn('size-2 shrink-0 rounded-full ring-3 ring-transparent', healthDotClass[status])}
       data-slot='health-status-dot'
       data-status={status}
     />
@@ -49,14 +51,24 @@ export function HealthFieldItem({
   truncate?: boolean
 }) {
   return (
-    <div data-slot='health-field-item' className='flex items-center gap-3 border-b border-[var(--line-faint)] px-3 py-2 last:border-b-0'>
-      <span className='flex w-28 shrink-0 items-center gap-2 text-muted-foreground text-xs' data-slot='health-field-label'>
+    <ActionGroup
+      align='start'
+      className='border-b border-[var(--line-faint)] px-[14px] py-[10px] last:border-b-0'
+      dataSlot='health-field-item'
+      fit
+      layout='split'
+    >
+      <ActionGroup align='start' className='w-32 shrink-0 text-[12.5px] text-[var(--ink-3)]' dataSlot='health-field-label' fit>
         <HealthStatusDot status={status} />
         <span className='truncate'>{label}</span>
-      </span>
-      <span className={cn('min-w-0 flex-1 text-right text-sm', mono && 'mono break-all text-xs', truncate && 'truncate')} data-slot='health-field-value'>
+      </ActionGroup>
+      <Stack
+        className={cn('min-w-0 flex-1 text-right text-[12px]', mono && 'mono break-all text-[12px]', truncate && 'truncate')}
+        dataSlot='health-field-value'
+        gap='none'
+      >
         {value}
-      </span>
-    </div>
+      </Stack>
+    </ActionGroup>
   )
 }

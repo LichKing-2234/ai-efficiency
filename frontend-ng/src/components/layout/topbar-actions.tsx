@@ -46,7 +46,7 @@ export function TopbarActions({
             <ChevronDownIcon />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align='end' className='min-w-40 border-[var(--line-strong)] shadow-[var(--sh-lg)]'>
+        <DropdownMenuContent align='end' className='min-w-40 border-[var(--line-strong)]'>
           <DropdownMenuRadioGroup value={locale} onValueChange={(value) => onLocaleChange(value as Locale)}>
             {locales.map((item) => (
               <DropdownMenuRadioItem className='h-8 text-[13px]' key={item.value} value={item.value}>

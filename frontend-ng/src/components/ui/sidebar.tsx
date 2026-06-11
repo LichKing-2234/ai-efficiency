@@ -114,7 +114,7 @@ function SidebarMenuButton({
       {Icon ? <Icon className={cn('size-4 text-[var(--ink-3)] group-data-[collapsed=true]/sidebar-wrapper:size-[19px]', active && 'text-[var(--ai)]')} /> : null}
       <span className='truncate group-data-[collapsed=true]/sidebar-wrapper:sr-only'>{children}</span>
       {tooltip ? (
-        <span className='pointer-events-none absolute left-[calc(100%+10px)] top-1/2 z-50 hidden -translate-y-1/2 scale-95 whitespace-nowrap rounded-[var(--r-sm)] bg-primary px-2 py-1 font-semibold text-primary-foreground text-xs opacity-0 shadow-[var(--sh-lg)] transition group-hover/sidebar-item:scale-100 group-hover/sidebar-item:opacity-100 group-data-[collapsed=true]/sidebar-wrapper:block'>
+        <span aria-hidden='true' className='pointer-events-none absolute left-[calc(100%+10px)] top-1/2 z-50 hidden -translate-y-1/2 scale-95 whitespace-nowrap rounded-[var(--r-sm)] border border-[var(--line-strong)] bg-[var(--surface)] px-2 py-1 font-semibold text-[11px] text-[var(--ink-2)] opacity-0 transition group-hover/sidebar-item:scale-100 group-hover/sidebar-item:opacity-100 group-data-[collapsed=true]/sidebar-wrapper:block'>
           {tooltip}
         </span>
       ) : null}
@@ -127,8 +127,8 @@ function SidebarMenuButton({
     'data-tooltip': tooltip,
     title: tooltip,
     className: cn(
-      'group/sidebar-item relative flex h-8 w-full items-center gap-2 rounded-[var(--r-sm)] border border-transparent px-2 font-medium text-[var(--ink-2)] text-sm transition-colors duration-150 hover:bg-[var(--surface-2)] hover:text-foreground group-data-[collapsed=true]/sidebar-wrapper:h-[42px] group-data-[collapsed=true]/sidebar-wrapper:justify-center group-data-[collapsed=true]/sidebar-wrapper:px-0',
-      active && 'border-border bg-sidebar-accent text-foreground shadow-[var(--sh-sm)]',
+      'group/sidebar-item relative flex h-8 w-full items-center gap-2 rounded-[var(--r-sm)] border border-transparent px-2 font-medium text-[var(--ink-2)] text-sm shadow-none transition-colors duration-150 hover:bg-[var(--surface-2)] hover:text-foreground group-data-[collapsed=true]/sidebar-wrapper:size-[42px] group-data-[collapsed=true]/sidebar-wrapper:justify-center group-data-[collapsed=true]/sidebar-wrapper:px-0',
+      active && 'border-border bg-sidebar-accent text-foreground',
       className
     ),
     ...props,
@@ -156,7 +156,7 @@ type SidebarBrandProps = React.ComponentProps<'div'> & {
 function SidebarBrand({ className, mark, title, subtitle, ...props }: SidebarBrandProps) {
   return (
     <div data-slot='sidebar-brand' className={cn('flex min-w-0 items-center gap-2 font-semibold', className)} {...props}>
-      <span className='grid size-7 shrink-0 place-items-center rounded-[var(--r-sm)] bg-[linear-gradient(135deg,var(--ai-bright),var(--ai-deep))] text-primary-foreground text-xs shadow-[0_2px_8px_var(--ai-glow)]'>{mark}</span>
+      <span className='grid size-7 shrink-0 place-items-center rounded-[var(--r-sm)] bg-[linear-gradient(135deg,var(--ai-bright),var(--ai-deep))] text-primary-foreground text-xs'>{mark}</span>
       <span className='min-w-0 group-data-[collapsed=true]/sidebar-wrapper:sr-only'>
         <span className='block truncate'>{title}</span>
         {subtitle ? <span className='block font-mono text-[10px] text-[var(--ink-4)]'>{subtitle}</span> : null}

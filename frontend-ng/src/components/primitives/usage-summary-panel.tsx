@@ -1,4 +1,6 @@
-import { InfoTile } from '@/components/primitives/info-tile'
+import { ActionGroup } from '@/components/primitives/action-group'
+import { FilterRow } from '@/components/primitives/filter-row'
+import { InfoTile, InfoTileGrid } from '@/components/primitives/info-tile'
 import { InsetPanel } from '@/components/primitives/inset-panel'
 import { cn } from '@/lib/utils'
 
@@ -10,18 +12,11 @@ export type UsageSummaryMetric = {
   numeric?: boolean
 }
 
-const usageSummaryPanelFooterClass = 'mt-4 flex flex-wrap items-center justify-between gap-3 text-sm'
-const usageSummaryPanelMetaClass = 'flex min-w-0 flex-wrap items-center gap-2'
-const usageSummaryPanelActionsClass = 'flex flex-wrap gap-2'
-
 function UsageSummaryPanelFooter({ children }: { children: React.ReactNode }) {
   return (
-    <div
-      className={usageSummaryPanelFooterClass}
-      data-slot='usage-summary-panel-footer'
-    >
+    <FilterRow className='mt-[12px] border-t border-[var(--line)] pt-[12px] text-[12px]' dataSlot='usage-summary-panel-footer' justify='between' gap='lg'>
       {children}
-    </div>
+    </FilterRow>
   )
 }
 
@@ -33,18 +28,18 @@ function UsageSummaryPanelMeta({
   summary?: React.ReactNode
 }) {
   return (
-    <div className={usageSummaryPanelMetaClass} data-slot='usage-summary-panel-meta'>
+    <FilterRow className='min-w-0' dataSlot='usage-summary-panel-meta'>
       {children}
-      {summary ? <span className='text-muted-foreground'>{summary}</span> : null}
-    </div>
+      {summary ? <span className='text-[11.5px] text-[var(--ink-3)]'>{summary}</span> : null}
+    </FilterRow>
   )
 }
 
 function UsageSummaryPanelActions({ children }: { children: React.ReactNode }) {
   return (
-    <div className={usageSummaryPanelActionsClass} data-slot='usage-summary-panel-actions'>
+    <ActionGroup dataSlot='usage-summary-panel-actions' wrap>
       {children}
-    </div>
+    </ActionGroup>
   )
 }
 
@@ -62,8 +57,8 @@ export function UsageSummaryPanel({
   summary?: React.ReactNode
 }) {
   return (
-    <InsetPanel className={cn('p-3', className)} dataSlot='usage-summary-panel'>
-      <div className='grid gap-3 sm:grid-cols-2 lg:grid-cols-6'>
+    <InsetPanel className={cn('bg-[var(--surface)] p-[14px]', className)} dataSlot='usage-summary-panel'>
+      <InfoTileGrid className='sm:grid-cols-2 lg:grid-cols-6' columns={3}>
         {metrics.map((metric, index) => (
           <InfoTile
             accent={metric.accent}
@@ -75,7 +70,7 @@ export function UsageSummaryPanel({
             value={metric.value}
           />
         ))}
-      </div>
+      </InfoTileGrid>
       {(status || summary || actions) ? (
         <UsageSummaryPanelFooter>
           <UsageSummaryPanelMeta summary={summary}>{status}</UsageSummaryPanelMeta>

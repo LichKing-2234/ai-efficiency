@@ -1,12 +1,20 @@
 import type * as React from 'react'
+import { ActionGroup } from '@/components/primitives/action-group'
+import { Stack } from '@/components/primitives/stack'
 import { CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
 
-const entityCardDescriptionClass = 'mt-1 break-words'
+function EntityCardTitle({ children }: { children: React.ReactNode }) {
+  return (
+    <CardTitle className='text-[14px] font-[650] leading-none'>
+      {children}
+    </CardTitle>
+  )
+}
 
 function EntityCardDescription({ children }: { children: React.ReactNode }) {
   return (
-    <CardDescription className={entityCardDescriptionClass} data-slot='entity-card-description'>
+    <CardDescription className='mt-0.5 break-words text-[12px] text-[var(--ink-3)]' data-slot='entity-card-description'>
       {children}
     </CardDescription>
   )
@@ -29,16 +37,16 @@ export function EntityCardHeader({
 }) {
   return (
     <CardHeader data-slot='entity-card-header' className={cn('gap-4', className)}>
-      <div className={cn('flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between', contentClassName)}>
-        <div className='flex min-w-0 items-center gap-4'>
+      <ActionGroup align='responsive-end' className={cn('lg:items-start', contentClassName)} dataSlot='entity-card-header-content' fit layout='split'>
+        <ActionGroup align='start' className='min-w-0 gap-4' dataSlot='entity-card-header-identity' fit>
           {leading ? <div className='shrink-0'>{leading}</div> : null}
-          <div className='min-w-0'>
-            <CardTitle>{title}</CardTitle>
+          <Stack className='min-w-0' dataSlot='entity-card-header-copy' gap='none'>
+            <EntityCardTitle>{title}</EntityCardTitle>
             {description ? <EntityCardDescription>{description}</EntityCardDescription> : null}
-          </div>
-        </div>
-        {actions ? <div className='flex shrink-0 flex-wrap items-center justify-start gap-2 lg:justify-end'>{actions}</div> : null}
-      </div>
+          </Stack>
+        </ActionGroup>
+        {actions ? <ActionGroup align='responsive-end' className='shrink-0' dataSlot='entity-card-header-actions' wrap>{actions}</ActionGroup> : null}
+      </ActionGroup>
     </CardHeader>
   )
 }

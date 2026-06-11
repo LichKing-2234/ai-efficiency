@@ -43,6 +43,41 @@ describe('StackedAreaChart composition', () => {
       fs.readFile(new URL('./charts.tsx', import.meta.url), 'utf8')
     )
 
+    expect(source).toContain("from './action-group'")
+    expect(source).toContain("className='mt-1 text-[11.5px]'")
     expect(source).not.toContain("className='mt-1 flex items-center gap-2 text-xs'")
+    expect(source).not.toContain("const stackedAreaTooltipRowClass = 'mt-1 flex items-center gap-2 text-xs'")
+    expect(source).toContain('<ActionGroup')
+  })
+
+  test('keeps horizontal bar layout on shared stack and action primitives', async () => {
+    const source = await import('node:fs/promises').then((fs) =>
+      fs.readFile(new URL('./charts.tsx', import.meta.url), 'utf8')
+    )
+
+    expect(source).not.toContain("className={cn('flex flex-col gap-3.5', className)}")
+    expect(source).not.toContain("className='mb-1.5 flex items-baseline justify-between gap-3'")
+    expect(source).not.toContain("className='flex min-w-0 items-center gap-2 font-medium text-[12.5px]'")
+  })
+
+  test('keeps stacked-area tooltip card density on explicit token sizing', async () => {
+    const source = await import('node:fs/promises').then((fs) =>
+      fs.readFile(new URL('./charts.tsx', import.meta.url), 'utf8')
+    )
+
+    expect(source).toContain("className='pointer-events-none absolute top-2 min-w-40 rounded-[var(--r-sm)] border border-[var(--line-strong)] bg-[var(--surface)] p-[14px]'")
+    expect(source).not.toContain("className='pointer-events-none absolute top-2 min-w-40 rounded-[var(--r-sm)] border border-[var(--line-strong)] bg-[var(--surface)] p-3 shadow-[var(--sh-lg)]'")
+  })
+
+  test('keeps ring container layout on shared stack primitives', async () => {
+    const source = await import('node:fs/promises').then((fs) =>
+      fs.readFile(new URL('./charts.tsx', import.meta.url), 'utf8')
+    )
+
+    expect(source).toContain("from './stack'")
+    expect(source).toContain('<Stack')
+    expect(source).toContain("dataSlot='ring'")
+    expect(source).not.toContain("className={cn('relative grid place-items-center', className)}")
+    expect(source).not.toContain("className='absolute inset-0 grid place-items-center'")
   })
 })

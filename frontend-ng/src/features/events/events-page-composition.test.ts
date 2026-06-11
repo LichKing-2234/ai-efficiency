@@ -16,6 +16,7 @@ describe('Events page composition', () => {
     expect(source).toContain("from '@/components/primitives/filter-row'")
     expect(source).toContain('<FilterRow>')
     expect(source).toContain("<FilterRow align='start'>")
+    expect(source).toContain("<FilterRow gap='lg' justify='between'>")
     expect(source).toContain("width='toolbar'")
     expect(source).not.toContain("<div className='flex flex-wrap items-center gap-2'>")
     expect(source).not.toContain("<div className='flex flex-wrap gap-2'>")
@@ -69,12 +70,19 @@ describe('Events page composition', () => {
   })
 
   test('uses shared primitives for pagination metadata and empty detail sections', () => {
-    expect(source).toContain("import { Empty, EmptyHeader, EmptyTitle } from '@/components/ui/empty'")
-    expect(source).toContain("<Empty size='compact'>")
+    expect(source).toContain("from '@/components/primitives/page-empty'")
+    expect(source).toContain("<PageEmpty title={t('events.noMatchedPrs')} />")
     expect(source).toContain("meta={t('common.pageCount'")
+    expect(source).toContain("t('command.exportUsageReport')")
+    expect(source).not.toContain("from '@/components/ui/empty'")
     expect(source).not.toContain("<Empty className='p-4'>")
     expect(source).not.toContain("<span className='text-muted-foreground text-xs'>{t('common.pageCount'")
     expect(source).not.toContain("<div className='text-muted-foreground text-sm'>{t('events.noMatchedPrs')}</div>")
+  })
+
+  test('uses plain linked-record items for matched PR rows in the event detail drawer', () => {
+    expect(source).toContain("variant='plain'")
+    expect(source).not.toContain("<a key={i} className='pr-link'>")
   })
 
   test('uses the shared KPI grid primitive for event summary metrics', () => {
