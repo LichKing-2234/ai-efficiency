@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -280,6 +281,47 @@ func TestDoctorRepoEligibilityUsesDoctorTimeout(t *testing.T) {
 	}
 }
 
+func TestDoctorRepoEligibilityDoesNotWritePositiveHookCache(t *testing.T) {
+	repo := initRepoWithCommitForCmdTests(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	withWorkingDir(t, repo)
+	writeTestTokenForServer(t, home, "https://ae.example.com", "user:123")
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"code":0,"data":{"eligible":true,"repo_config_id":456,"repo_key":"github.com/acme/repo","full_name":"acme/repo","clone_url":"https://github.com/acme/repo.git","status":"active","binding_state":"bound"}}`))
+	}))
+	defer srv.Close()
+
+	oldCfg := cfg
+	oldClient := apiClient
+	cfg = &config.Config{Server: config.ServerConfig{URL: srv.URL, Token: "tok"}}
+	apiClient = client.New(srv.URL, "tok")
+	t.Cleanup(func() {
+		cfg = oldCfg
+		apiClient = oldClient
+	})
+
+	var buf bytes.Buffer
+	printRepoEligibilityDiagnostic(&buf)
+	if !strings.Contains(buf.String(), "Repo Eligibility: eligible") {
+		t.Fatalf("output = %q, want eligible", buf.String())
+	}
+
+	cache, err := hookstate.LoadEligibilityCache()
+	if err != nil {
+		t.Fatalf("LoadEligibilityCache: %v", err)
+	}
+	if _, ok := cache.Lookup(hookstate.Context{
+		ServerURL:   srv.URL,
+		AuthSubject: "user:123",
+		RepoKey:     "github.com/acme/repo",
+	}, time.Now(), true); ok {
+		t.Fatalf("doctor wrote hook eligibility cache; doctor should be diagnostic-only: %+v", cache)
+	}
+}
+
 func TestSyncCommandRequiresLogin(t *testing.T) {
 	repo := initRepoWithCommitForCmdTests(t)
 	home := t.TempDir()
@@ -304,6 +346,168 @@ func TestSyncCommandRequiresLogin(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "ae-cli login") {
 		t.Fatalf("err = %q, want login guidance", err.Error())
+	}
+}
+
+func TestSyncCommandRefreshesEligibilityWhenHookResolveTimesOut(t *testing.T) {
+	repo := initRepoWithCommitForCmdTests(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	withWorkingDir(t, repo)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/repos/resolve-remote" {
+			t.Fatalf("path = %s, want /api/v1/repos/resolve-remote", r.URL.Path)
+		}
+		time.Sleep(75 * time.Millisecond)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"code":0,"data":{"eligible":true,"repo_config_id":789,"repo_key":"github.com/acme/repo","full_name":"acme/repo","clone_url":"https://github.com/acme/repo.git","status":"active","binding_state":"bound"}}`))
+	}))
+	defer srv.Close()
+	writeTestTokenForServer(t, home, srv.URL, "user:123")
+
+	oldCfg := cfg
+	oldClient := apiClient
+	oldHookTimeout := hookEligibilityResolveTimeout
+	oldRun := runBackgroundSyncTask
+	cfg = &config.Config{Server: config.ServerConfig{URL: srv.URL, Token: "tok"}}
+	apiClient = client.New(srv.URL, "tok")
+	hookEligibilityResolveTimeout = 10 * time.Millisecond
+	var syncCalls int
+	runBackgroundSyncTask = func(ctx context.Context, execCtx hooks.ExecutionContext, uploader hooks.Uploader) error {
+		syncCalls++
+		if execCtx.RepoConfigID != 789 || execCtx.RepoKey != "github.com/acme/repo" {
+			t.Fatalf("execCtx = %+v, want repo_config_id=789 repo_key=github.com/acme/repo", execCtx)
+		}
+		return nil
+	}
+	t.Cleanup(func() {
+		cfg = oldCfg
+		apiClient = oldClient
+		hookEligibilityResolveTimeout = oldHookTimeout
+		runBackgroundSyncTask = oldRun
+	})
+
+	buf := new(bytes.Buffer)
+	syncCmd.SetOut(buf)
+	syncCmd.SetErr(buf)
+	if err := syncCmd.RunE(syncCmd, nil); err != nil {
+		t.Fatalf("syncCmd.RunE: %v", err)
+	}
+	if syncCalls != 1 {
+		t.Fatalf("syncCalls = %d, want 1", syncCalls)
+	}
+	cache, err := hookstate.LoadEligibilityCache()
+	if err != nil {
+		t.Fatalf("LoadEligibilityCache: %v", err)
+	}
+	rec, ok := cache.Lookup(hookstate.Context{
+		ServerURL:   srv.URL,
+		AuthSubject: "user:123",
+		RepoKey:     "github.com/acme/repo",
+	}, time.Now(), true)
+	if !ok || rec.RepoConfigID != 789 {
+		t.Fatalf("cached eligibility = %+v ok=%t, want repo_config_id=789", rec, ok)
+	}
+}
+
+func TestSyncCommandRefreshesEligibilityAndFlushesUnresolvedHookEvents(t *testing.T) {
+	repo := initRepoWithCommitForCmdTests(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	withWorkingDir(t, repo)
+
+	gitCtx, err := hooks.DetectGitContext(repo)
+	if err != nil {
+		t.Fatalf("DetectGitContext: %v", err)
+	}
+
+	var checkpointCalls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/repos/resolve-remote":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"code":0,"data":{"eligible":true,"repo_config_id":789,"repo_key":"github.com/acme/repo","full_name":"acme/repo","clone_url":"https://github.com/acme/repo.git","status":"active","binding_state":"bound"}}`))
+		case "/api/v1/checkpoints/commit":
+			checkpointCalls++
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"code":0,"data":{"event_id":"ok"}}`))
+		case "/api/v1/tool-usage-events/batch":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"code":0,"data":{"accepted":0}}`))
+		default:
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+	writeTestTokenForServer(t, home, srv.URL, "user:123")
+
+	for i := 0; i < 22; i++ {
+		if err := hooks.EnqueueUnresolvedHookEvent(hooks.UnresolvedHookEvent{
+			Kind:           "post-commit",
+			RemoteURL:      "https://github.com/acme/repo.git",
+			RepoKey:        "github.com/acme/repo",
+			WorkspaceID:    gitCtx.WorkspaceID,
+			ServerURL:      srv.URL,
+			AuthSubject:    "user:123",
+			CommitSHA:      fmt.Sprintf("queued-unresolved-sha-%02d", i),
+			BranchSnapshot: "main",
+			CapturedAt:     time.Now().UTC().Format(time.RFC3339Nano),
+		}); err != nil {
+			t.Fatalf("EnqueueUnresolvedHookEvent(%d): %v", i, err)
+		}
+	}
+
+	cache, err := hookstate.LoadEligibilityCache()
+	if err != nil {
+		t.Fatalf("LoadEligibilityCache: %v", err)
+	}
+	if _, ok := cache.Lookup(hookstate.Context{
+		ServerURL:   srv.URL,
+		AuthSubject: "user:123",
+		RepoKey:     "github.com/acme/repo",
+	}, time.Now(), true); ok {
+		t.Fatalf("eligibility cache unexpectedly present before sync")
+	}
+	task, err := hooks.LoadSyncTask(gitCtx.WorkspaceID)
+	if err != nil {
+		t.Fatalf("LoadSyncTask before sync: %v", err)
+	}
+	if task != nil {
+		t.Fatalf("sync task before sync = %+v, want none", task)
+	}
+	count, err := hooks.CountUnresolvedHookEvents()
+	if err != nil {
+		t.Fatalf("CountUnresolvedHookEvents before sync: %v", err)
+	}
+	if count != 22 {
+		t.Fatalf("unresolved hook events before sync = %d, want 22", count)
+	}
+
+	oldCfg := cfg
+	oldClient := apiClient
+	cfg = &config.Config{Server: config.ServerConfig{URL: srv.URL, Token: "tok"}}
+	apiClient = client.New(srv.URL, "tok")
+	t.Cleanup(func() {
+		cfg = oldCfg
+		apiClient = oldClient
+	})
+
+	buf := new(bytes.Buffer)
+	syncCmd.SetOut(buf)
+	syncCmd.SetErr(buf)
+	if err := syncCmd.RunE(syncCmd, nil); err != nil {
+		t.Fatalf("syncCmd.RunE: %v", err)
+	}
+	if checkpointCalls != 22 {
+		t.Fatalf("checkpointCalls = %d, want 22", checkpointCalls)
+	}
+	items, err := hooks.ListUnresolvedHookEvents()
+	if err != nil {
+		t.Fatalf("ListUnresolvedHookEvents: %v", err)
+	}
+	if len(items) != 0 {
+		t.Fatalf("unresolved hook events = %+v, want none", items)
 	}
 }
 

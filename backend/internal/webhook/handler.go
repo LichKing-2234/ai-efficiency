@@ -5,6 +5,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -15,12 +17,15 @@ import (
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/internal/efficiency"
 	"github.com/ai-efficiency/backend/internal/pkg"
+	"github.com/ai-efficiency/backend/internal/repoidentity"
 	"github.com/ai-efficiency/backend/internal/scm"
 	"github.com/ai-efficiency/backend/internal/scm/bitbucket"
 	"github.com/ai-efficiency/backend/internal/scm/github"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 )
+
+var errWebhookRepoNotConfigured = errors.New("repo not configured")
 
 // Handler handles incoming SCM webhook events.
 type Handler struct {
@@ -34,6 +39,15 @@ type bitbucketWebhookRepoRef struct {
 	Project struct {
 		Key string `json:"key"`
 	} `json:"project"`
+	Links struct {
+		Clone []struct {
+			Href string `json:"href"`
+			Name string `json:"name"`
+		} `json:"clone"`
+		Self []struct {
+			Href string `json:"href"`
+		} `json:"self"`
+	} `json:"links"`
 }
 
 // NewHandler creates a new webhook handler.
@@ -176,11 +190,15 @@ func (h *Handler) HandleBitbucket(c *gin.Context) {
 		return
 	}
 
-	rc, err := h.entClient.RepoConfig.Query().
-		Where(repoconfig.FullNameEQ(repoFullName)).
-		Only(c.Request.Context())
+	rc, err := h.findBitbucketRepoConfig(
+		c.Request.Context(),
+		repoFullName,
+		payload.Repository,
+		payload.PullRequest.ToRef.Repository,
+		payload.PullRequest.FromRef.Repository,
+	)
 	if err != nil {
-		if ent.IsNotFound(err) {
+		if ent.IsNotFound(err) || errors.Is(err, errWebhookRepoNotConfigured) {
 			pkg.Error(c, http.StatusNotFound, "repo not configured")
 			return
 		}
@@ -232,6 +250,93 @@ func bitbucketWebhookRepoFullName(repos ...bitbucketWebhookRepoRef) string {
 		}
 	}
 	return ""
+}
+
+func (h *Handler) findBitbucketRepoConfig(ctx context.Context, repoFullName string, repos ...bitbucketWebhookRepoRef) (*ent.RepoConfig, error) {
+	if repoFullName != "" {
+		if rc, err := h.entClient.RepoConfig.Query().
+			Where(repoconfig.FullNameEQ(repoFullName)).
+			Only(ctx); err == nil {
+			return rc, nil
+		} else if err != nil && !ent.IsNotFound(err) {
+			return nil, err
+		}
+
+		matches, err := h.entClient.RepoConfig.Query().
+			Where(repoconfig.FullNameEqualFold(repoFullName)).
+			Limit(2).
+			All(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if len(matches) == 1 {
+			return matches[0], nil
+		}
+		if len(matches) > 1 {
+			return nil, fmt.Errorf("ambiguous bitbucket webhook repo full_name %q", repoFullName)
+		}
+	}
+
+	for _, candidate := range bitbucketWebhookRepoIdentityCandidates(repos...) {
+		if rc, err := h.entClient.RepoConfig.Query().
+			Where(repoconfig.RepoKeyEqualFold(candidate.repoKey)).
+			Only(ctx); err == nil {
+			return rc, nil
+		} else if err != nil && !ent.IsNotFound(err) {
+			return nil, err
+		}
+
+		if rc, err := h.entClient.RepoConfig.Query().
+			Where(repoconfig.CloneURLEqualFold(candidate.cloneURL)).
+			Only(ctx); err == nil {
+			return rc, nil
+		} else if err != nil && !ent.IsNotFound(err) {
+			return nil, err
+		}
+	}
+
+	return nil, errWebhookRepoNotConfigured
+}
+
+type bitbucketWebhookRepoIdentityCandidate struct {
+	repoKey  string
+	cloneURL string
+}
+
+func bitbucketWebhookRepoIdentityCandidates(repos ...bitbucketWebhookRepoRef) []bitbucketWebhookRepoIdentityCandidate {
+	var candidates []bitbucketWebhookRepoIdentityCandidate
+	for _, repo := range repos {
+		for _, link := range repo.Links.Clone {
+			candidates = appendBitbucketWebhookRepoIdentityCandidate(candidates, link.Href)
+		}
+		for _, link := range repo.Links.Self {
+			candidates = appendBitbucketWebhookRepoIdentityCandidate(candidates, link.Href)
+		}
+	}
+	return candidates
+}
+
+func appendBitbucketWebhookRepoIdentityCandidate(candidates []bitbucketWebhookRepoIdentityCandidate, rawURL string) []bitbucketWebhookRepoIdentityCandidate {
+	rawURL = strings.TrimSpace(rawURL)
+	if rawURL == "" {
+		return candidates
+	}
+	identity, err := repoidentity.DeriveRepoIdentity(rawURL)
+	if err != nil {
+		identity = repoidentity.FallbackRepoIdentity(rawURL, "")
+	}
+	if strings.TrimSpace(identity.RepoKey) == "" {
+		return candidates
+	}
+	for _, existing := range candidates {
+		if strings.EqualFold(existing.repoKey, identity.RepoKey) || strings.EqualFold(existing.cloneURL, rawURL) {
+			return candidates
+		}
+	}
+	return append(candidates, bitbucketWebhookRepoIdentityCandidate{
+		repoKey:  identity.RepoKey,
+		cloneURL: rawURL,
+	})
 }
 
 func (h *Handler) dispatch(c *gin.Context, rc *ent.RepoConfig, event *scm.WebhookEvent) {

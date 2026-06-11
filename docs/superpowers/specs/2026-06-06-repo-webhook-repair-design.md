@@ -256,6 +256,7 @@ Update Bitbucket inbound webhook parsing or handler validation:
 6. On mismatch, store a dead letter and return an unauthorized response.
 7. Do not log the secret, computed HMAC, or raw request body in normal logs.
 8. Resolve the Bitbucket repository identity from the inbound payload before loading the stored secret. Prefer top-level `repository`, then `pullRequest.toRef.repository`, then `pullRequest.fromRef.repository`. Bitbucket Server PR events can omit the top-level `repository`; those events must not fail with `missing repository info` when a PR ref contains the target repository.
+9. Repository lookup must tolerate Bitbucket Server identity spelling drift. Try exact `full_name` first, then case-insensitive `full_name`, then normalized identity candidates derived from payload clone/self URLs (`repo_key` and clone URL). This covers split API/SSH hosts and project-key casing such as `SDK/repo` vs stored `sdk/repo` while still returning `404` for truly unconfigured repos.
 
 This aligns Bitbucket security with GitHub-style signed webhook handling and uses the secret that the registration path already stores.
 
@@ -301,6 +302,7 @@ Do not expose `webhook_secret`.
 | GitHub webhook missing/invalid signature when a secret is stored | `401`, store a dead letter without logging secret material |
 | Bitbucket webhook missing/invalid signature | `401`, store a dead letter without logging secret material |
 | Bitbucket PR event without top-level `repository` but with PR ref repository info | resolve the repo from `pullRequest.toRef.repository` or `pullRequest.fromRef.repository`; do not return `400 missing repository info` |
+| Bitbucket refs-changed event whose project key casing differs from stored repo config | resolve the configured repo using case-insensitive `full_name` or normalized payload URL identity; validate the stored secret; return `200 processed` for supported push events |
 
 ## Testing Strategy
 
@@ -322,6 +324,7 @@ Do not expose `webhook_secret`.
 14. GitHub `ping` and other unsupported events return `200 ignored` after payload/signature validation succeeds.
 15. GitHub inbound webhook with a stored secret still rejects invalid `X-Hub-Signature-256`.
 16. Bitbucket PR events without a top-level `repository` resolve the repo from `pullRequest.toRef.repository` before falling back to `pullRequest.fromRef.repository`.
+17. Bitbucket `repo:refs_changed` delete events match a configured repo when the payload uses uppercase project keys but the stored repo config uses lowercase `full_name`, then validate the stored webhook secret and return `200 processed`.
 
 ### Frontend Tests
 

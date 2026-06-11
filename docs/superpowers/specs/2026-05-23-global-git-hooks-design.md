@@ -211,7 +211,7 @@ Keeps its user-facing meaning: manually scan local tool artifacts and upload usa
 New boundary:
 
 1. Detect the current repository identity and write or update its durable observed repo identity with the current context binding when a stable `auth_subject` is available; otherwise write only an unbound local hint.
-2. Resolve current repository eligibility first using the current server and authenticated request. Durable cache or replay state is written only when a stable `auth_subject` is available.
+2. Resolve current repository eligibility first using the current server and authenticated request. Foreground `sync` may use its own longer resolve timeout to refresh the current repository cache after a hook-time cache miss, so manual recovery is not constrained by the hidden hook's short fail-open window. Durable cache or replay state is written only when a stable `auth_subject` is available.
 3. If the repository is not backend-known or reporting-enabled, fail with a clear message that points to `ae-cli init` or admin repo configuration.
 4. If no stable `auth_subject` exists, `sync` may perform an immediate authenticated upload for the current invocation after eligibility is resolved, but it must not write positive or negative eligibility cache entries, durable retry queues, tool-usage spools, or upload-ledger records.
 5. Do not create repositories implicitly from `sync`.
@@ -717,7 +717,7 @@ Compatibility rules:
 The hook path must be bounded and fail-open:
 
 1. Cache reads and writes are local file operations and should be best-effort.
-2. Online resolve on cache miss has a hard timeout. The default timeout is 500ms.
+2. Online resolve on cache miss has a hard timeout. The default timeout is 2s.
 3. Resolve timeout, network failure, invalid token, or backend 5xx means skip AE work for that hook invocation.
 4. Ineligible responses write short-lived negative cache entries only when stable context binding is available.
 5. Hidden hook commands keep their existing total timeout and upload queue behavior only after stable context binding is available. Without stable `auth_subject`, failures remain fail-open but are not written to durable hook queues or tool-usage spools.
