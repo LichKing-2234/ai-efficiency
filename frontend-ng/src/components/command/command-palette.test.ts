@@ -31,6 +31,7 @@ describe('getCommandPaletteItems', () => {
       'add-repository',
       'create-api-key',
       'export-usage-report',
+      'auto-bind-unbound',
       'toggle-theme',
       'admin-users',
       'settings'
@@ -81,6 +82,12 @@ describe('getCommandPaletteItems', () => {
       groupKey: 'command.actions',
       labelKey: 'command.exportUsageReport'
     })
+    expect(items.find((command) => command.id === 'auto-bind-unbound')).toMatchObject({
+      kind: 'action',
+      groupKey: 'command.actions',
+      labelKey: 'repos.autoBind',
+      admin: true
+    })
     expect(items.find((command) => command.id === 'repo-42')).toMatchObject({
       kind: 'repo',
       to: '/repos/$id',
@@ -101,5 +108,14 @@ describe('getCommandPaletteItems', () => {
     expect(source).toContain("queryKey: ['command-palette', 'repos']")
     expect(source).toContain('api.repos.list({ page: 1, pageSize: 4 })')
     expect(source).not.toContain('AE.repoRows')
+  })
+
+  test('runs auto-bind through the real repository API with feedback', () => {
+    expect(source).toContain('const autoBind = useMutation')
+    expect(source).toContain('mutationFn: api.repos.autoBindUnbound')
+    expect(source).toContain("if (command.id === 'auto-bind-unbound') autoBind.mutate()")
+    expect(source).toContain("toast.success(t('repos.autoBindSummary'")
+    expect(source).toContain("toast.error(error instanceof Error ? error.message : t('repos.autoBindFailed'))")
+    expect(source).toContain("qc.invalidateQueries({ queryKey: ['repos'] })")
   })
 })

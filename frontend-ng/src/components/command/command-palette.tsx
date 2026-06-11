@@ -1,5 +1,5 @@
 import { useNavigate } from '@tanstack/react-router'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ActivityIcon,
   ArrowRightIcon,
@@ -13,9 +13,11 @@ import {
   SearchIcon,
   SettingsIcon,
   ShieldIcon,
+  WandSparklesIcon,
   UserIcon
 } from 'lucide-react'
 import { useMemo } from 'react'
+import { toast } from 'sonner'
 import {
   Command,
   CommandDialog,
@@ -57,6 +59,7 @@ const COMMANDS: Array<NavCommandItem | ActionCommandItem> = [
   { id: 'add-repository', kind: 'action', to: '/repos', labelKey: 'command.addRepository', groupKey: 'command.actions', icon: PlusIcon },
   { id: 'create-api-key', kind: 'action', to: '/user', labelKey: 'command.createApiKey', groupKey: 'command.actions', icon: KeyIcon },
   { id: 'export-usage-report', kind: 'action', to: '/usage', labelKey: 'command.exportUsageReport', groupKey: 'command.actions', icon: DownloadIcon },
+  { id: 'auto-bind-unbound', kind: 'action', labelKey: 'repos.autoBind', groupKey: 'command.actions', icon: WandSparklesIcon, admin: true },
   { id: 'toggle-theme', kind: 'action', labelKey: 'nav.toggleTheme', groupKey: 'command.actions', icon: MoonIcon },
   { id: 'admin-users', kind: 'nav', to: '/admin/users', labelKey: 'nav.userManagement', groupKey: 'command.admin', icon: ShieldIcon, admin: true },
   { id: 'settings', kind: 'nav', to: '/settings', labelKey: 'nav.adminConsole', groupKey: 'command.admin', icon: SettingsIcon, admin: true }
@@ -93,12 +96,30 @@ export function CommandPalette({
   onToggleTheme: () => void
 }) {
   const navigate = useNavigate()
+  const qc = useQueryClient()
   const { t } = useI18n()
   const repos = useQuery({
     queryKey: ['command-palette', 'repos'],
     queryFn: () => api.repos.list({ page: 1, pageSize: 4 }),
     enabled: open,
     staleTime: 60_000
+  })
+  const autoBind = useMutation({
+    mutationFn: api.repos.autoBindUnbound,
+    onSuccess: (result) => {
+      toast.success(t('repos.autoBindSummary', {
+        bound: result.summary.bound,
+        noMatch: result.summary.skipped_no_match,
+        ambiguous: result.summary.skipped_ambiguous,
+        webhookFailed: result.summary.webhook_failed,
+        errors: result.summary.errors
+      }))
+      void qc.invalidateQueries({ queryKey: ['repos'] })
+      void qc.invalidateQueries({ queryKey: ['command-palette', 'repos'] })
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : t('repos.autoBindFailed'))
+    }
   })
   const commands = useMemo(() => getCommandPaletteItems(isAdmin, repos.data?.items ?? []), [isAdmin, repos.data?.items])
   const grouped = useMemo(() => commands.reduce<Record<string, typeof commands>>((acc, command) => {
@@ -112,6 +133,7 @@ export function CommandPalette({
     onClose()
     if (command.kind === 'action') {
       if (command.id === 'toggle-theme') onToggleTheme()
+      if (command.id === 'auto-bind-unbound') autoBind.mutate()
       if (command.to) await navigate({ to: command.to })
       return
     }
