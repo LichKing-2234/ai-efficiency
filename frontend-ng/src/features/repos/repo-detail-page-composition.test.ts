@@ -64,9 +64,12 @@ describe('Repo detail page composition', () => {
   })
 
   test('uses shared card content stacks for scm binding card bodies', () => {
+    expect(source).toContain("from '@/components/primitives/section-card'")
+    expect(source).toContain('<SectionCard')
     expect(source).toContain("from '@/components/primitives/framed-card'")
     expect(source).toContain('<FramedCard>')
     expect(source).toContain("from '@/components/primitives/card-content-stack'")
+    expect(source).not.toContain('<Card>')
     expect(source).not.toContain("<Card className='overflow-hidden'>")
     expect(source).not.toContain('<CardContent>')
   })

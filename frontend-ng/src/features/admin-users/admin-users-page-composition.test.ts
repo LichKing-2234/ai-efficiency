@@ -115,7 +115,10 @@ describe('Admin users page composition', () => {
   })
 
   test('keeps the subscription management card as a compact reference workbench section', () => {
+    expect(source).toContain("from '@/components/primitives/section-card'")
+    expect(source).toContain('<SectionCard')
     expect(source).toContain("title={t('adminUsers.subscriptionManagement')}")
+    expect(source).not.toContain('<Card>')
     expect(source).not.toContain("description={t('adminUsers.subscriptionManagementDescription')}")
   })
 

@@ -28,6 +28,7 @@ import { Page, PageToolbar } from '@/components/primitives/page'
 import { PrimaryActionButton } from '@/components/primitives/primary-action-button'
 import { QuietActionButton } from '@/components/primitives/quiet-action-button'
 import { RepoPrActions } from '@/components/primitives/repo-pr-actions'
+import { SectionCard } from '@/components/primitives/section-card'
 import { SectionCardHeader } from '@/components/primitives/section-card-header'
 import { LoadingState } from '@/components/primitives/data-state'
 import { Stack } from '@/components/primitives/stack'
@@ -273,9 +274,7 @@ export function RepoDetailPage() {
         <KpiCard label={t('repoDetail.refreshFailed')} value={number(summary?.refresh_failed)} />
       </KpiGrid>
       {currentJob ? (
-        <Card>
-          <SectionCardHeader title={t('repoDetail.latestSyncJob')} />
-          <CardContentStack>
+        <SectionCard title={t('repoDetail.latestSyncJob')}>
             <InfoTileGrid columns={4}>
               <InfoTile label={t('common.status')} value={<StatusBadge value={currentJob.status} />} />
               <InfoTile label={t('repoDetail.phaseLabel')} value={currentJob.phase || '-'} />
@@ -285,12 +284,9 @@ export function RepoDetailPage() {
             <InsetPanel muted>
               {t('repoDetail.usage', { done: number(jobProgress?.usageRefreshed), total: number(jobProgress?.usageTotal) })} · {syncMessage || prSyncJobMessage(currentJob)}
             </InsetPanel>
-          </CardContentStack>
-        </Card>
+        </SectionCard>
       ) : null}
-      <Card>
-        <SectionCardHeader title={t('repoDetail.scmBinding')} leading={Waypoints} />
-        <CardContentStack>
+      <SectionCard leading={Waypoints} title={t('repoDetail.scmBinding')}>
           <ControlGrid variant='inline-actions'>
             <ToolbarSelect
               ariaLabel={t('repoDetail.scmBinding')}
@@ -311,8 +307,7 @@ export function RepoDetailPage() {
               saveBinding.mutate('')
             }} disabled={saveBinding.isPending}>{t('repoDetail.clearBinding')}</QuietActionButton>
           </ControlGrid>
-        </CardContentStack>
-      </Card>
+      </SectionCard>
       <FramedCard>
         <EntityCardHeader
           title={t('repoDetail.pullRequests')}

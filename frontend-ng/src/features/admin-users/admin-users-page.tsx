@@ -3,12 +3,10 @@ import { Navigate, useNavigate, useSearch } from '@tanstack/react-router'
 import { ChevronRight, Clock3, Plus, RefreshCw, Shield, UserCheck, Users } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import { Card } from '@/components/ui/card'
 import { FieldDescription } from '@/components/ui/field'
 import { AdminSecretActions } from '@/components/primitives/admin-secret-actions'
 import { AppAlert } from '@/components/primitives/app-alert'
 import { ButtonWithIcon } from '@/components/primitives/button-with-icon'
-import { CardContentStack } from '@/components/primitives/card-content-stack'
 import { CategoryBadge } from '@/components/primitives/category-badge'
 import { DataGridCheckbox } from '@/components/primitives/data-grid-checkbox'
 import { CardPagerFooter } from '@/components/primitives/card-pager-footer'
@@ -26,7 +24,7 @@ import { PageSizeSelect } from '@/components/primitives/page-size-select'
 import { RowInsetPanel } from '@/components/primitives/row-inset-panel'
 import { SearchField } from '@/components/primitives/search-field'
 import { SearchActionBar } from '@/components/primitives/search-action-bar'
-import { SectionCardHeader } from '@/components/primitives/section-card-header'
+import { SectionCard } from '@/components/primitives/section-card'
 import { StatusWithReason } from '@/components/primitives/status-with-reason'
 import { KpiCard } from '@/components/primitives/metric-card'
 import { StatusBadge } from '@/components/primitives/status-badge'
@@ -202,9 +200,7 @@ export function AdminUsersPage() {
         <KpiCard label={t('adminUsers.admins')} value={number(kpis.admins)} icon={Shield} />
         <KpiCard label={t('adminUsers.pendingUsers')} value={number(kpis.pending)} icon={Clock3} />
       </KpiGrid>
-      <Card>
-        <SectionCardHeader title={t('adminUsers.subscriptionManagement')} />
-        <CardContentStack>
+      <SectionCard title={t('adminUsers.subscriptionManagement')}>
           <FieldDescription>
             {scope === 'selected' ? t('adminUsers.selectedUsers', { count: selected.length }) : scope === 'current_filter' ? (q.trim() ? t('adminUsers.currentFilterValue', { query: q.trim() }) : t('adminUsers.currentFilter')) : t('adminUsers.allMapped')}
           </FieldDescription>
@@ -244,8 +240,7 @@ export function AdminUsersPage() {
           {jobResults.length > 0 ? (
             <JobResultList items={jobResults} />
           ) : null}
-        </CardContentStack>
-      </Card>
+      </SectionCard>
       <FramedCard>
         <SearchActionBar
           search={(

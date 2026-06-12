@@ -2,11 +2,9 @@ import { Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { ActivityIcon, CoinsIcon, DownloadIcon, GaugeIcon, LayersIcon, RefreshCwIcon } from 'lucide-react'
-import { Card } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { AppAlert } from '@/components/primitives/app-alert'
 import { ButtonWithIcon } from '@/components/primitives/button-with-icon'
-import { CardContentStack } from '@/components/primitives/card-content-stack'
 import { CardTableContent } from '@/components/primitives/card-table-content'
 import { ChartLegend } from '@/components/primitives/chart-legend'
 import { BarsH, StackedAreaChart, type StackedAreaKey } from '@/components/primitives/charts'
@@ -19,6 +17,7 @@ import { KpiGrid } from '@/components/primitives/kpi-grid'
 import { LinkAction } from '@/components/primitives/link-action'
 import { KpiCard } from '@/components/primitives/metric-card'
 import { PageEmpty } from '@/components/primitives/page-empty'
+import { SectionCard } from '@/components/primitives/section-card'
 import { SectionCardHeader } from '@/components/primitives/section-card-header'
 import { SegmentedControl } from '@/components/primitives/segmented-control'
 import { Stack } from '@/components/primitives/stack'
@@ -149,13 +148,12 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
                 sparklineColor='var(--viz-cache)'
               />
             </KpiGrid>
-            <Card>
-              <SectionCardHeader
-                title={t('usageDashboard.tokenTrend')}
-                description={t('usageDashboard.tokenTrendDescription', { range: rangeLabel })}
-                actions={<ChartLegend className='justify-end' compact items={tokenKeys} />}
-              />
-              <CardContentStack gap='titled'>
+            <SectionCard
+              actions={<ChartLegend className='justify-end' compact items={tokenKeys} />}
+              description={t('usageDashboard.tokenTrendDescription', { range: rangeLabel })}
+              gap='titled'
+              title={t('usageDashboard.tokenTrend')}
+            >
                 {snapshot.trend.length ? (
                   <StackedAreaChart
                     keys={tokenKeys}
@@ -165,12 +163,13 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
                 ) : (
                   <PageEmpty title={t('usageDashboard.noTrendData')} />
                 )}
-              </CardContentStack>
-            </Card>
+            </SectionCard>
             <div className='split-equal'>
-              <Card>
-                <SectionCardHeader title={t('usageDashboard.modelDistribution')} description={t('usageDashboard.modelDistributionDescription')} />
-                <CardContentStack gap='titled'>
+              <SectionCard
+                description={t('usageDashboard.modelDistributionDescription')}
+                gap='titled'
+                title={t('usageDashboard.modelDistribution')}
+              >
                   {snapshot.models.length ? (
                   <BarsH
                     rows={snapshot.models.slice(0, 6).map((model, index) => ({
@@ -184,8 +183,7 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
                 ) : (
                   <PageEmpty title={t('usageDashboard.noModelData')} />
                 )}
-              </CardContentStack>
-            </Card>
+              </SectionCard>
               <FramedCard>
                 <SectionCardHeader title={t('usageDashboard.costByModel')} description={t('usageDashboard.costByModelDescription')} />
                 <CardTableContent>
@@ -221,9 +219,11 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
               </FramedCard>
             </div>
             {!embedded ? (
-              <Card>
-                <SectionCardHeader title={t('usageDashboard.activityHeatmap')} description={t('usageDashboard.activityHeatmapDescription')} />
-                <CardContentStack gap='titled'>
+              <SectionCard
+                description={t('usageDashboard.activityHeatmapDescription')}
+                gap='titled'
+                title={t('usageDashboard.activityHeatmap')}
+              >
                   {snapshot.trend.length ? (
                     <HeatmapGrid
                       dayLabels={[
@@ -243,8 +243,7 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
                   ) : (
                     <PageEmpty title={t('usageDashboard.noTrendData')} />
                   )}
-                </CardContentStack>
-              </Card>
+              </SectionCard>
             ) : null}
           </>
         ) : null}

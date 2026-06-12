@@ -31,6 +31,7 @@ describe('User usage panel composition', () => {
   })
 
   test('matches the reference usage analytics card structure', () => {
+    expect(source).toContain("from '@/components/primitives/section-card'")
     const tokenTrendIndex = source.indexOf("title={t('usageDashboard.tokenTrend')}")
     const modelDistributionIndex = source.indexOf("title={t('usageDashboard.modelDistribution')}")
     const costByModelIndex = source.indexOf("title={t('usageDashboard.costByModel')}")
@@ -44,7 +45,8 @@ describe('User usage panel composition', () => {
     expect(costByModelIndex).toBeGreaterThan(firstSplitAfterTrend)
     expect(source).not.toContain("<div className='px-[18px] pb-4'>")
     expect(source).not.toContain("<div className='px-[18px] pb-[18px]'>")
-    expect(source).toContain("<CardContentStack gap='titled'>")
+    expect(source).toContain('<SectionCard')
+    expect(source).toContain("gap='titled'")
     expect(source).not.toContain("<CardContentStack className='pt-[14px]'>")
     expect(source).not.toContain("<CardContentStack className='pt-[16px]'>")
   })
@@ -57,7 +59,6 @@ describe('User usage panel composition', () => {
   test('uses shared table card content for edge-to-edge model cost table', () => {
     expect(source).toContain("from '@/components/primitives/framed-card'")
     expect(source).toContain("from '@/components/primitives/card-table-content'")
-    expect(source).toContain("from '@/components/primitives/card-content-stack'")
     expect(source).toContain('<FramedCard>')
     expect(source).toContain('<CardTableContent>')
     expect(source).not.toContain("<Card className='overflow-hidden'>")
