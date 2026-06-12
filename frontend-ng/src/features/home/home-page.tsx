@@ -68,15 +68,18 @@ export function HomePage() {
   const totalTokens = usageStats?.total_tokens ?? 0
   const aiPrShare = totalRepos > 0 ? Math.min(1, totalAiPrs / Math.max(totalRepos, totalAiPrs)) : 0
   const savingsRatio = totalStandardCost > 0 ? Math.max(0, 1 - (totalActualCost / totalStandardCost)) : 0
+  const setupDescription = setupProgress.ready === setupProgress.total
+    ? t('home.statusReady')
+    : t('home.setupStatusDescription')
   const pulseSpend = usageTrend.slice(-24).map((point) => Math.max(0, point.actual_cost))
   const pulseRequests = usageTrend.slice(-24).map((point) => Math.max(0, point.requests))
   const pulseTokens = usageTrend.slice(-24).map((point) => Math.max(0, point.total_tokens))
   const topModels = usageModels.slice(0, 5)
   const trendMini = usageTrend.slice(-14)
   const tokenKeys: Array<StackedAreaKey<UserUsageTrendPoint>> = [
-    { key: 'cache_creation_tokens', label: 'Cache', color: 'var(--viz-cache)' },
-    { key: 'input_tokens', label: 'Input', color: 'var(--viz-input)' },
-    { key: 'output_tokens', label: 'Output', color: 'var(--viz-output)' }
+    { key: 'cache_creation_tokens', label: t('home.tokenTypeCache'), color: 'var(--viz-cache)' },
+    { key: 'input_tokens', label: t('home.tokenTypeInput'), color: 'var(--viz-input)' },
+    { key: 'output_tokens', label: t('home.tokenTypeOutput'), color: 'var(--viz-output)' }
   ]
 
   function exportOverviewReport() {
@@ -117,10 +120,9 @@ export function HomePage() {
             </StartActions>
           )}
           badge={<CategoryBadge variant='ai'>{t('home.heroBadge')}</CategoryBadge>}
-          description={t('home.roleLine', {
-            identity: me.data?.email || me.data?.username || t('auth.guest'),
-            role: me.data?.role || 'user',
-            source: me.data?.auth_source || t('common.unknown')
+          description={t('home.heroDescription', {
+            share: percent(aiPrShare, locale),
+            saving: percent(savingsRatio, locale)
           })}
           title={(
             <>
@@ -148,7 +150,7 @@ export function HomePage() {
         <KpiCard
           label={t('home.aiPrShare')}
           value={percent(aiPrShare, locale)}
-          helper={`${number(totalAiPrs, locale)} AI PRs`}
+          helper={t('home.aiPrCountHelper', { count: number(totalAiPrs, locale) })}
           accent
           icon={GitPullRequestIcon}
           sparkline={usageTrend.map((point) => point.requests)}
@@ -206,6 +208,7 @@ export function HomePage() {
         </Card>
         <Card>
           <EntityCardHeader
+            description={setupDescription}
             leading={<Ring color='var(--ai)' size={66} stroke={7} value={setupProgress.ratio}>
               <div className='text-center'>
                 <ProgressFraction ready={setupProgress.ready} total={setupProgress.total} />

@@ -20,7 +20,7 @@ describe('ValueComparison', () => {
   test('keeps comparison typography in a reusable primitive', () => {
     expect(source).toContain("data-slot='value-comparison'")
     expect(source).toContain("className='flex items-baseline gap-3'")
-    expect(source).toContain("className='tnum text-3xl font-semibold leading-none'")
+    expect(source).toContain("className='tnum text-[30px] font-[680] leading-none tracking-[-0.02em]'")
     expect(source).toContain("className='text-[12px] text-[var(--ink-3)] line-through'")
     expect(source).toContain('export function ValueComparison(')
   })
