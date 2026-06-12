@@ -27,7 +27,7 @@ import { compact, currency, durationMs, number } from '@/lib/format'
 import { useI18n } from '@/lib/i18n/i18n'
 import { buildUsageDashboardParams, buildUsageHeatmapPoints, rangeLabelKey, usageTotalsFromTrend, type UsageRangeOption } from './user-usage-state'
 
-const modelColumns = '1.5fr_0.8fr_0.9fr_0.8fr'
+const modelColumns = '1.6fr_1fr_1fr_0.9fr'
 
 export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
   const { locale, t } = useI18n()
@@ -151,7 +151,7 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
                 description={t('usageDashboard.tokenTrendDescription', { range: rangeLabel })}
                 actions={<ChartLegend className='justify-end' compact items={tokenKeys} />}
               />
-              <CardContentStack className='pt-3'>
+              <CardContentStack className='pt-[14px]'>
                 {snapshot.trend.length ? (
                   <StackedAreaChart
                     keys={tokenKeys}
@@ -166,7 +166,7 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
             <div className='split-equal'>
               <Card>
                 <SectionCardHeader title={t('usageDashboard.modelDistribution')} description={t('usageDashboard.modelDistributionDescription')} />
-                <CardContentStack className='pt-4'>
+                <CardContentStack className='pt-[16px]'>
                   {snapshot.models.length ? (
                   <BarsH
                     rows={snapshot.models.slice(0, 6).map((model, index) => ({
@@ -211,7 +211,7 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
             {!embedded ? (
               <Card>
                 <SectionCardHeader title={t('usageDashboard.activityHeatmap')} description={t('usageDashboard.activityHeatmapDescription')} />
-                <CardContentStack className='pt-4'>
+                <CardContentStack className='pt-[16px]'>
                   {snapshot.trend.length ? (
                     <HeatmapGrid
                       dayLabels={[
