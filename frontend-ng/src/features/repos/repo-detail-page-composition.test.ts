@@ -69,7 +69,7 @@ describe('Repo detail page composition', () => {
     expect(source).toContain('<SectionCard')
     expect(source).toContain("from '@/components/primitives/framed-table-card'")
     expect(source).toContain('<FramedTableCard')
-    expect(source).toContain("from '@/components/primitives/section-card-header'")
+    expect(source).not.toContain("from '@/components/primitives/section-card-header'")
     expect(source).not.toContain('<FramedCard>')
     expect(source).not.toContain('<CardContent>')
   })

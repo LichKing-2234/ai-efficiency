@@ -12,6 +12,7 @@ describe('Home page composition', () => {
     expect(source).toContain("from '@/components/primitives/start-actions'")
     expect(source).toContain('<HeroSurfaceCard>')
     expect(source).toContain('<HeroContent')
+    expect(source).not.toContain("from '@/components/primitives/card-content-stack'")
     expect(source).not.toContain("<Card variant='accent'")
     expect(source).not.toContain("grid-paper overflow-hidden border-[var(--ai-line)]")
     expect(source).not.toContain("bg-[linear-gradient(150deg,var(--ai-soft),transparent_60%),var(--surface)]")

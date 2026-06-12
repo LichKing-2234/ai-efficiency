@@ -27,7 +27,6 @@ import { PrimaryActionButton } from '@/components/primitives/primary-action-butt
 import { QuietActionButton } from '@/components/primitives/quiet-action-button'
 import { RepoPrActions } from '@/components/primitives/repo-pr-actions'
 import { SectionCard } from '@/components/primitives/section-card'
-import { SectionCardHeader } from '@/components/primitives/section-card-header'
 import { LoadingState } from '@/components/primitives/data-state'
 import { Stack } from '@/components/primitives/stack'
 import { StatusBadge } from '@/components/primitives/status-badge'
