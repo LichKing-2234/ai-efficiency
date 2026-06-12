@@ -16,12 +16,14 @@ describe('Events page composition', () => {
   test('uses shared filter rows for filter controls and detail badges', () => {
     expect(source).toContain("from '@/components/primitives/button-with-icon'")
     expect(source).toContain("from '@/components/primitives/filter-row'")
+    expect(source).toContain("from '@/components/primitives/filter-segmented-control'")
     expect(source).toContain("from '@/components/primitives/primary-action-button'")
     expect(source).toContain("from '@/components/primitives/secondary-action-button'")
     expect(source).toContain("from '@/components/primitives/search-table-workbench'")
     expect(source).toContain('<SearchTableWorkbench')
     expect(source).toContain("<FilterRow className='min-w-0 flex-1'>")
     expect(source).toContain("<FilterRow align='start'>")
+    expect(source).toContain('<FilterSegmentedControl')
     expect(source).toContain("width='toolbar'")
     expect(source).not.toContain('<Card>')
     expect(source).not.toContain("<div className='flex flex-wrap items-center gap-2'>")
@@ -30,6 +32,7 @@ describe('Events page composition', () => {
     expect(source).not.toContain("<CardFilterBar stacked>")
     expect(source).not.toContain('<Button onClick={applyCurrentFilters}>')
     expect(source).not.toContain("<Button variant='outline' onClick={clearTimeRange}>")
+    expect(source).not.toContain("from '@/components/primitives/labeled-segmented-control'")
   })
 
   test('uses the shared leading-icon CTA button for event export', () => {

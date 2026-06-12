@@ -14,11 +14,11 @@ import { DetailSummaryStack } from '@/components/primitives/detail-summary-stack
 import { DetailSection } from '@/components/primitives/detail-section'
 import { FieldItem } from '@/components/primitives/field-list'
 import { FilterRow } from '@/components/primitives/filter-row'
+import { FilterSegmentedControl } from '@/components/primitives/filter-segmented-control'
 import { FramedTableCard } from '@/components/primitives/framed-table-card'
 import { GlyphLabelCell } from '@/components/primitives/glyph-label-cell'
 import { InfoTile, InfoTileGrid } from '@/components/primitives/info-tile'
 import { KpiGrid } from '@/components/primitives/kpi-grid'
-import { LabeledSegmentedControl } from '@/components/primitives/labeled-segmented-control'
 import { LinkedRecordItem, LinkedRecordList } from '@/components/primitives/linked-record-list'
 import { KpiCard } from '@/components/primitives/metric-card'
 import { OptionList } from '@/components/primitives/option-list'
@@ -177,14 +177,14 @@ export function EventsPage() {
               value={filters.q}
               width='toolbar'
             />
-            <LabeledSegmentedControl
+            <FilterSegmentedControl
               ariaLabel={t('events.tool')}
               label={t('events.tool')}
               onChange={(tool) => setFilters((current) => ({ ...current, tool: segmentToFilter(tool) }))}
               options={[{ value: 'all', label: t('events.allTools') }, ...TOOL_OPTIONS.map((tool) => ({ value: tool, label: tool }))]}
               value={filterToSegment(filters.tool)}
             />
-            <LabeledSegmentedControl
+            <FilterSegmentedControl
               ariaLabel={t('events.binding')}
               label={t('events.binding')}
               onChange={(bindingStatus) => setFilters((current) => ({ ...current, bindingStatus: segmentToFilter(bindingStatus) }))}
