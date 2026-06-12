@@ -12,6 +12,7 @@ import { AppAlert } from '@/components/primitives/app-alert'
 import { Page } from '@/components/primitives/page'
 import { EmptyState, LoadingState } from '@/components/primitives/data-state'
 import { DataGrid, DataGridHeader, DataGridHeaderCell, DataGridPrimaryLink, DataGridRecordCell, DataGridRow, DataGridRowAffordance } from '@/components/primitives/data-grid'
+import { DetailDrawerActions } from '@/components/primitives/detail-drawer-actions'
 import { DetailFieldSection } from '@/components/primitives/detail-field-section'
 import { DetailSummaryStack } from '@/components/primitives/detail-summary-stack'
 import { EntityGlyph } from '@/components/primitives/entity-glyph'
@@ -19,7 +20,6 @@ import { EndActions } from '@/components/primitives/end-actions'
 import { FieldItem } from '@/components/primitives/field-list'
 import { FormDialog } from '@/components/primitives/form-dialog'
 import { InfoTile, InfoTileGrid } from '@/components/primitives/info-tile'
-import { InlineDestructiveActions } from '@/components/primitives/inline-destructive-actions'
 import { KpiGrid } from '@/components/primitives/kpi-grid'
 import { LineTabs } from '@/components/primitives/line-tabs'
 import { PagerNavButton } from '@/components/primitives/pager-nav-button'
@@ -30,7 +30,6 @@ import { SegmentedControl } from '@/components/primitives/segmented-control'
 import { SectionNav, type SectionNavItem } from '@/components/primitives/section-nav'
 import { SlideOver } from '@/components/primitives/slide-over'
 import { StatusBadge } from '@/components/primitives/status-badge'
-import { SplitActions } from '@/components/primitives/split-actions'
 import { api } from '@/lib/api'
 import type { RepoConfig } from '@/lib/api/types'
 import { dateTime, number, percent } from '@/lib/format'
@@ -485,17 +484,19 @@ function RepoInspectSlideOver({
               )}
             />
           ) : null}
-          <SplitActions>
-            <ButtonWithIcon variant='outline' icon={RefreshCwIcon} onClick={() => syncRepo(repo.id)} disabled={repo.binding_state === 'unbound' || syncPending}>
-              {syncPending ? t('repoDetail.syncingPrs') : t('repoDetail.syncPrs')}
-            </ButtonWithIcon>
-            <ButtonWithIcon asChild variant='outline' icon={ExternalLinkIcon}>
-              <Link to='/repos/$id' params={{ id: String(repo.id) }}>
-                {t('repos.openDetails')}
-              </Link>
-            </ButtonWithIcon>
-          </SplitActions>
-          <InlineDestructiveActions
+          <DetailDrawerActions
+            actions={(
+              <>
+                <ButtonWithIcon variant='outline' icon={RefreshCwIcon} onClick={() => syncRepo(repo.id)} disabled={repo.binding_state === 'unbound' || syncPending}>
+                  {syncPending ? t('repoDetail.syncingPrs') : t('repoDetail.syncPrs')}
+                </ButtonWithIcon>
+                <ButtonWithIcon asChild variant='outline' icon={ExternalLinkIcon}>
+                  <Link to='/repos/$id' params={{ id: String(repo.id) }}>
+                    {t('repos.openDetails')}
+                  </Link>
+                </ButtonWithIcon>
+              </>
+            )}
             armed={deleteConfirmId === repo.id}
             cancelLabel={t('common.cancel')}
             confirmLabel={t('common.confirm')}
