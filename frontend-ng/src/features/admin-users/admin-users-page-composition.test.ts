@@ -26,13 +26,14 @@ describe('Admin users page composition', () => {
     expect(source).not.toContain("className='flex min-w-0 items-center gap-3'")
   })
 
-  test('uses shadcn field description for subscription summary copy', () => {
-    expect(source).toContain("FieldDescription")
+  test('uses shared helper text for subscription summary copy', () => {
+    expect(source).toContain("from '@/components/primitives/helper-text'")
+    expect(source).toContain('<HelperText>')
     expect(source).not.toContain("<div className='text-muted-foreground text-sm'>")
   })
 
-  test('uses shadcn field description for plaintext reveal warning copy', () => {
-    expect(source).toContain('<FieldDescription>{t(\'adminUsers.plaintextWarning\')}</FieldDescription>')
+  test('uses shared helper text for plaintext reveal warning copy', () => {
+    expect(source).toContain("<HelperText>{t('adminUsers.plaintextWarning')}</HelperText>")
     expect(source).not.toContain("<span className='text-muted-foreground'>{t('adminUsers.plaintextWarning')}</span>")
   })
 

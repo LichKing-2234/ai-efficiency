@@ -31,10 +31,10 @@ describe('StartActionsFeedback', () => {
   })
 
   test('sources layout from shared field description and start actions primitives', () => {
-    expect(source).toContain("from '@/components/ui/field'")
+    expect(source).toContain("from '@/components/primitives/helper-text'")
     expect(source).toContain("from '@/components/primitives/start-actions'")
-    expect(source).toContain('{description ? <FieldDescription>{description}</FieldDescription> : null}')
+    expect(source).toContain('{description ? <HelperText>{description}</HelperText> : null}')
     expect(source).toContain('<StartActions>')
-    expect(source).toContain('{hint ? <FieldDescription>{hint}</FieldDescription> : null}')
+    expect(source).toContain('{hint ? <HelperText>{hint}</HelperText> : null}')
   })
 })

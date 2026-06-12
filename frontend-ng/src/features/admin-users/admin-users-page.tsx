@@ -3,7 +3,6 @@ import { Navigate, useNavigate, useSearch } from '@tanstack/react-router'
 import { ChevronRight, Clock3, Plus, RefreshCw, Shield, UserCheck, Users } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import { FieldDescription } from '@/components/ui/field'
 import { AdminSecretActions } from '@/components/primitives/admin-secret-actions'
 import { AppAlert } from '@/components/primitives/app-alert'
 import { ButtonWithIcon } from '@/components/primitives/button-with-icon'
@@ -13,6 +12,7 @@ import { CardPagerFooter } from '@/components/primitives/card-pager-footer'
 import { DataGrid, DataGridCell, DataGridHeader, DataGridIdentityCell, DataGridRow, DataGridRowAffordance } from '@/components/primitives/data-grid'
 import { EndActions } from '@/components/primitives/end-actions'
 import { FramedTableCard } from '@/components/primitives/framed-table-card'
+import { HelperText } from '@/components/primitives/helper-text'
 import { Page } from '@/components/primitives/page'
 import { LoadingState } from '@/components/primitives/data-state'
 import { InsetPanel } from '@/components/primitives/inset-panel'
@@ -211,9 +211,9 @@ export function AdminUsersPage() {
           />
         ) : null}
       >
-          <FieldDescription>
+          <HelperText>
             {scope === 'selected' ? t('adminUsers.selectedUsers', { count: selected.length }) : scope === 'current_filter' ? (q.trim() ? t('adminUsers.currentFilterValue', { query: q.trim() }) : t('adminUsers.currentFilter')) : t('adminUsers.allMapped')}
-          </FieldDescription>
+          </HelperText>
           <AdminSubscriptionForm
             activeGroupId={activeGroupId}
             activeGroups={activeGroups}
@@ -363,7 +363,7 @@ export function AdminUsersPage() {
                       />
                     }
                   >
-                    <FieldDescription>{t('adminUsers.plaintextWarning')}</FieldDescription>
+                    <HelperText>{t('adminUsers.plaintextWarning')}</HelperText>
                   </RowInsetPanel>
                 ) : null}
               </DataGridRow>

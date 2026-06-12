@@ -1,5 +1,5 @@
 import type * as React from 'react'
-import { FieldDescription } from '@/components/ui/field'
+import { HelperText } from '@/components/primitives/helper-text'
 import { StartActions } from '@/components/primitives/start-actions'
 
 export function StartActionsFeedback({
@@ -17,11 +17,11 @@ export function StartActionsFeedback({
 }) {
   return (
     <>
-      {description ? <FieldDescription>{description}</FieldDescription> : null}
+      {description ? <HelperText>{description}</HelperText> : null}
       {children}
       <StartActions>
         {actions}
-        {hint ? <FieldDescription>{hint}</FieldDescription> : null}
+        {hint ? <HelperText>{hint}</HelperText> : null}
         {status}
       </StartActions>
     </>
