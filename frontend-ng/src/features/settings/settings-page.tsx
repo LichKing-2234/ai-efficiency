@@ -31,6 +31,7 @@ import { CredentialForm } from './credential-form'
 import { LdapSettingsForm } from './ldap-settings-form'
 import { RelayProviderForm } from './relay-provider-form'
 import { ScmProviderForm } from './scm-provider-form'
+import { SettingsSectionAddAction } from './settings-section-add-action'
 import type { Credential, DeploymentHealthCheck, RelayProvider, SCMProvider } from '@/lib/api/types'
 import {
   buildCredentialPayload,
@@ -304,7 +305,7 @@ export function SettingsPage() {
         </SectionNavFrame>
         <Stack constrain='content'>
         {activeSection === 'ai-services' ? <SectionTableCard
-          actions={<ButtonWithIcon size='sm' icon={Layers} onClick={openAddRelayDialog}>{t('settings.addRelayProvider')}</ButtonWithIcon>}
+          actions={<SettingsSectionAddAction onClick={openAddRelayDialog} section='ai-services' />}
           description={t(settingsSectionMeta['ai-services'].descriptionKey as never)}
           leading={Layers}
           title={t(settingsSectionMeta['ai-services'].labelKey as never)}
@@ -344,12 +345,12 @@ export function SettingsPage() {
                 icon={Layers}
                 title={t(settingsSectionMeta['ai-services'].labelKey as never)}
                 description={t(settingsSectionMeta['ai-services'].descriptionKey as never)}
-                action={<ButtonWithIcon size='sm' icon={Layers} onClick={openAddRelayDialog}>{t('settings.addRelayProvider')}</ButtonWithIcon>}
+                action={<SettingsSectionAddAction onClick={openAddRelayDialog} section='ai-services' />}
               />
             )}
         </SectionTableCard> : null}
         {activeSection === 'code-platforms' ? <SectionTableCard
-          actions={<ButtonWithIcon size='sm' icon={Waypoints} onClick={openAddScmDialog}>{t('settings.addScmProvider')}</ButtonWithIcon>}
+          actions={<SettingsSectionAddAction onClick={openAddScmDialog} section='code-platforms' />}
           description={t(settingsSectionMeta['code-platforms'].descriptionKey as never)}
           leading={Waypoints}
           title={t(settingsSectionMeta['code-platforms'].labelKey as never)}
@@ -389,12 +390,12 @@ export function SettingsPage() {
                 icon={Waypoints}
                 title={t(settingsSectionMeta['code-platforms'].labelKey as never)}
                 description={t(settingsSectionMeta['code-platforms'].descriptionKey as never)}
-                action={<ButtonWithIcon size='sm' icon={Waypoints} onClick={openAddScmDialog}>{t('settings.addScmProvider')}</ButtonWithIcon>}
+                action={<SettingsSectionAddAction onClick={openAddScmDialog} section='code-platforms' />}
               />
             )}
         </SectionTableCard> : null}
         {activeSection === 'advanced-credentials' ? <SectionTableCard
-          actions={<ButtonWithIcon size='sm' icon={KeyRound} onClick={openAddCredentialDialog}>{t('settings.addCredential')}</ButtonWithIcon>}
+          actions={<SettingsSectionAddAction onClick={openAddCredentialDialog} section='advanced-credentials' />}
           description={t(settingsSectionMeta['advanced-credentials'].descriptionKey as never)}
           leading={LockKeyhole}
           title={t(settingsSectionMeta['advanced-credentials'].labelKey as never)}
@@ -434,7 +435,7 @@ export function SettingsPage() {
                 icon={LockKeyhole}
                 title={t(settingsSectionMeta['advanced-credentials'].labelKey as never)}
                 description={t(settingsSectionMeta['advanced-credentials'].descriptionKey as never)}
-                action={<ButtonWithIcon size='sm' icon={KeyRound} onClick={openAddCredentialDialog}>{t('settings.addCredential')}</ButtonWithIcon>}
+                action={<SettingsSectionAddAction onClick={openAddCredentialDialog} section='advanced-credentials' />}
               />
             )}
         </SectionTableCard> : null}
