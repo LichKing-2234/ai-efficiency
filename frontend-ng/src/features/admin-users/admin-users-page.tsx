@@ -15,10 +15,10 @@ import { FramedTableCard } from '@/components/primitives/framed-table-card'
 import { HelperText } from '@/components/primitives/helper-text'
 import { Page } from '@/components/primitives/page'
 import { LoadingState } from '@/components/primitives/data-state'
-import { InsetPanel } from '@/components/primitives/inset-panel'
 import { JobResultList } from '@/components/primitives/job-result-list'
 import { KpiGrid } from '@/components/primitives/kpi-grid'
 import { InlineConfirmActions } from '@/components/primitives/inline-confirm-actions'
+import { MutedInsetNote } from '@/components/primitives/muted-inset-note'
 import { PagerNavButton } from '@/components/primitives/pager-nav-button'
 import { PageSizeSelect } from '@/components/primitives/page-size-select'
 import { RowInsetPanel } from '@/components/primitives/row-inset-panel'
@@ -246,7 +246,7 @@ export function AdminUsersPage() {
           />
           {job.error ? <AppAlert tone='error' title={job.error.message} /> : null}
           {activeJob.error ? <AppAlert tone='error' title={activeJob.error.message} /> : null}
-          {jobMessage ? <InsetPanel>{jobMessage}</InsetPanel> : null}
+          {jobMessage ? <MutedInsetNote>{jobMessage}</MutedInsetNote> : null}
           {jobResults.length > 0 ? (
             <JobResultList items={jobResults} />
           ) : null}

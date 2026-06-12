@@ -32,6 +32,12 @@ describe('Admin users page composition', () => {
     expect(source).not.toContain("<div className='text-muted-foreground text-sm'>")
   })
 
+  test('uses the shared muted inset note surface for subscription job messages', () => {
+    expect(source).toContain("from '@/components/primitives/muted-inset-note'")
+    expect(source).toContain('<MutedInsetNote>{jobMessage}</MutedInsetNote>')
+    expect(source).not.toContain('<InsetPanel>{jobMessage}</InsetPanel>')
+  })
+
   test('uses shared helper text for plaintext reveal warning copy', () => {
     expect(source).toContain("<HelperText>{t('adminUsers.plaintextWarning')}</HelperText>")
     expect(source).not.toContain("<span className='text-muted-foreground'>{t('adminUsers.plaintextWarning')}</span>")
@@ -153,7 +159,8 @@ describe('Admin users page composition', () => {
 
   test('keeps subscription job summaries inside shared result and advanced data panels', () => {
     expect(source).toContain("from '@/components/primitives/job-result-list'")
-    expect(source).toContain("from '@/components/primitives/inset-panel'")
+    expect(source).toContain("from '@/components/primitives/muted-inset-note'")
+    expect(source).toContain('<MutedInsetNote>{jobMessage}</MutedInsetNote>')
     expect(source).not.toContain("<div className='max-h-56 overflow-auto rounded-[var(--r-md)] border border-border bg-card'>")
     expect(source).not.toContain("<div className='text-sm text-muted-foreground'>")
   })
