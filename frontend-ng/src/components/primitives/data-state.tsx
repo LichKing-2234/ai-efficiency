@@ -1,6 +1,7 @@
 import { ActionGroup } from '@/components/primitives/action-group'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
 import { CardContentStack } from '@/components/primitives/card-content-stack'
 import { Stack } from '@/components/primitives/stack'
 import { useI18n } from '@/lib/i18n/i18n'
@@ -20,12 +21,14 @@ export function LoadingState({ label = 'Loading...' }: { label?: string }) {
 export function EmptyState({ title, description, action }: { title: string; description?: string; action?: React.ReactNode }) {
   return (
     <Card data-slot='data-state-empty'>
-      <CardContentStack className='p-[24px] text-center' dataSlot='data-state-empty-content'>
-        <Stack className='items-center' dataSlot='data-state-empty-copy' gap='compact'>
-          <div className='font-medium' data-slot='data-state-empty-title'>{title}</div>
-          {description ? <div className='max-w-md text-[12px] text-[var(--ink-3)]' data-slot='data-state-empty-description'>{description}</div> : null}
-        </Stack>
-        {action}
+      <CardContentStack className='p-[24px]' dataSlot='data-state-empty-content'>
+        <Empty>
+          <EmptyHeader>
+            <EmptyTitle>{title}</EmptyTitle>
+            {description ? <EmptyDescription>{description}</EmptyDescription> : null}
+          </EmptyHeader>
+          {action ? <EmptyContent>{action}</EmptyContent> : null}
+        </Empty>
       </CardContentStack>
     </Card>
   )
