@@ -1,9 +1,11 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, test } from 'vitest'
-import { DeviceCodeField, OAuthActionGroup } from './oauth-pages'
+import { DeviceCodeField } from './oauth-pages'
 import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { KeyRoundIcon } from 'lucide-react'
+import { OAuthDecisionActions } from '@/components/primitives/oauth-decision-actions'
 
 const source = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), 'oauth-pages.tsx'), 'utf8')
 
@@ -28,9 +30,10 @@ describe('OAuth page primitives', () => {
 
   test('renders approve and deny actions through the shared action group', () => {
     const html = renderToStaticMarkup(
-      <OAuthActionGroup
+      <OAuthDecisionActions
         approveLabel='Approve'
         denyLabel='Deny'
+        icon={KeyRoundIcon}
         disabled={false}
         onApprove={() => undefined}
         onDeny={() => undefined}
@@ -45,6 +48,7 @@ describe('OAuth page primitives', () => {
 
   test('uses the shared split action row for approve and deny actions', () => {
     expect(source).toContain("from '@/components/primitives/oauth-decision-actions'")
+    expect(source).not.toContain('export function OAuthActionGroup(')
     expect(source).toContain("from '@/components/primitives/auth-field'")
     expect(source).toContain('<OAuthDecisionActions')
     expect(source).toContain("aside={<AuthInfoPanel emphasis>")
@@ -63,5 +67,10 @@ describe('OAuth page primitives', () => {
     expect(source).toContain("from '@/components/primitives/auth-surface'")
     expect(source).not.toContain("function AuthSurface")
     expect(source).not.toContain("<main className='grid min-h-screen place-items-center bg-background p-4'>")
+  })
+
+  test('does not keep an OAuth-local action wrapper once the shared primitive owns the auth footer shell', () => {
+    expect(source).not.toContain('export function OAuthActionGroup(')
+    expect(source).not.toContain('<OAuthActionGroup')
   })
 })

@@ -63,10 +63,11 @@ export function OAuthAuthorizePage() {
       aside={<AuthInfoPanel emphasis>{t('oauth.signedInAs', { identity })}</AuthInfoPanel>}
     >
       {error ? <AppAlert tone='error' title={error} /> : null}
-      <OAuthActionGroup
+      <OAuthDecisionActions
         approveLabel={t('oauth.approve')}
         denyLabel={t('oauth.denied')}
         disabled={approve.isPending || me.isLoading || !!me.error}
+        icon={KeyRoundIcon}
         onApprove={() => approve.mutate(true)}
         onDeny={() => approve.mutate(false)}
       />
@@ -113,10 +114,11 @@ export function OAuthDevicePage() {
       />
       {verify.data ? <AppAlert tone='success' title={t('oauth.deviceStatus', { status: verify.data.status })} /> : null}
       {verify.error ? <AppAlert tone='error' title={verify.error.message} /> : null}
-      <OAuthActionGroup
+      <OAuthDecisionActions
         approveLabel={t('oauth.approve')}
         denyLabel={t('oauth.denied')}
         disabled={!code || verify.isPending || me.isLoading || !!me.error}
+        icon={KeyRoundIcon}
         onApprove={() => verify.mutate(true)}
         onDeny={() => verify.mutate(false)}
       />
@@ -143,31 +145,6 @@ export function DeviceCodeField({
       placeholder={placeholder}
       value={code}
       onChange={onCodeChange}
-    />
-  )
-}
-
-export function OAuthActionGroup({
-  approveLabel,
-  denyLabel,
-  disabled,
-  onApprove,
-  onDeny
-}: {
-  approveLabel: string
-  denyLabel: string
-  disabled: boolean
-  onApprove: () => void
-  onDeny: () => void
-}) {
-  return (
-    <OAuthDecisionActions
-      approveLabel={approveLabel}
-      denyLabel={denyLabel}
-      disabled={disabled}
-      icon={KeyRoundIcon}
-      onApprove={onApprove}
-      onDeny={onDeny}
     />
   )
 }
