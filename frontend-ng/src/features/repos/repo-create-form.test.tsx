@@ -95,7 +95,9 @@ describe('RepoCreateForm', () => {
   test('uses compact field group rhythm without local gap classes', () => {
     const source = readFileSync(new URL('./repo-create-form.tsx', import.meta.url), 'utf8')
 
-    expect(source).toContain("<FieldGroup gap='compact'>")
+    expect(source).toContain("from '@/components/primitives/form-field-group'")
+    expect(source).toContain("<FormFieldGroup gap='compact'>")
+    expect(source).not.toContain("from '@/components/ui/field'")
     expect(source).toContain("from '@/components/primitives/submit-cancel-actions'")
     expect(source).toContain('<SubmitCancelActions')
     expect(source).not.toContain("<FieldGroup className='gap-3'>")

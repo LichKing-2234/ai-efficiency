@@ -1,6 +1,6 @@
-import { FieldGroup } from '@/components/ui/field'
 import { AppAlert } from '@/components/primitives/app-alert'
 import { FieldItem } from '@/components/primitives/field-list'
+import { FormFieldGroup } from '@/components/primitives/form-field-group'
 import { InsetFieldList } from '@/components/primitives/inset-field-list'
 import { LabeledSegmentedControl } from '@/components/primitives/labeled-segmented-control'
 import { SelectField } from '@/components/primitives/select-field'
@@ -67,7 +67,7 @@ export function RepoCreateForm({
   sshHost: string
 }) {
   return (
-    <FieldGroup gap='compact'>
+    <FormFieldGroup gap='compact'>
       <SelectField
         id='repo-create-provider'
         label={labels.provider}
@@ -127,6 +127,6 @@ export function RepoCreateForm({
         onCancel={onCancel}
         onSubmit={onCreate}
       />
-    </FieldGroup>
+    </FormFieldGroup>
   )
 }

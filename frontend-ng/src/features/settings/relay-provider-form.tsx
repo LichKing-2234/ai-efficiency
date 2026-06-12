@@ -1,5 +1,5 @@
-import { FieldGroup } from '@/components/ui/field'
 import { CheckboxField } from '@/components/primitives/checkbox-field'
+import { FormFieldGroup } from '@/components/primitives/form-field-group'
 import { ManagedFormFooter } from '@/components/primitives/managed-form-footer'
 import { TextField } from '@/components/primitives/text-field'
 import { useI18n } from '@/lib/i18n/i18n'
@@ -42,7 +42,7 @@ export function RelayProviderForm({
   const submitDisabled = !form.name || !form.display_name || !form.base_url || (!editMode && !form.admin_api_key) || createPending || updatePending
 
   return (
-    <FieldGroup>
+    <FormFieldGroup>
       {relayFields.map((field) => (
         <TextField
           disabled={field.key === 'name' && editMode}
@@ -64,6 +64,6 @@ export function RelayProviderForm({
         onCancel={onCancel}
         onSubmit={onSubmit}
       />
-    </FieldGroup>
+    </FormFieldGroup>
   )
 }

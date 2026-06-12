@@ -1,4 +1,4 @@
-import { FieldGroup } from '@/components/ui/field'
+import { FormFieldGroup } from '@/components/primitives/form-field-group'
 import { ManagedFormFooter } from '@/components/primitives/managed-form-footer'
 import { SegmentedField } from '@/components/primitives/segmented-field'
 import { SelectField } from '@/components/primitives/select-field'
@@ -32,7 +32,7 @@ export function ScmProviderForm({
   const submitDisabled = !form.name || !form.base_url || !form.api_credential_id || createPending || updatePending
 
   return (
-    <FieldGroup>
+    <FormFieldGroup>
       <TextField id='scm-name' label={t('settings.name')} value={form.name} onChange={(name) => onChange({ ...form, name })} />
       <SegmentedField
         ariaLabel={t('settings.codePlatforms')}
@@ -95,6 +95,6 @@ export function ScmProviderForm({
         onCancel={onCancel}
         onSubmit={onSubmit}
       />
-    </FieldGroup>
+    </FormFieldGroup>
   )
 }

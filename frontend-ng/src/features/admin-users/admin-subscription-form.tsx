@@ -1,7 +1,7 @@
-import { FieldGroup } from '@/components/ui/field'
 import { BlockEndActions } from '@/components/primitives/block-end-actions'
 import { CheckboxField } from '@/components/primitives/checkbox-field'
 import { ControlGrid } from '@/components/primitives/control-grid'
+import { FormFieldGroup } from '@/components/primitives/form-field-group'
 import { SecondaryActionButton } from '@/components/primitives/secondary-action-button'
 import { SelectField } from '@/components/primitives/select-field'
 import { TextField } from '@/components/primitives/text-field'
@@ -71,7 +71,7 @@ export function AdminSubscriptionForm({
   subscriptionProviders: AdminAssignableSubscriptionProvider[]
 }) {
   return (
-    <FieldGroup gap='compact'>
+    <FormFieldGroup gap='compact'>
       <ControlGrid variant='subscription'>
         <SelectField
           disabled={activeJobRunning}
@@ -144,6 +144,6 @@ export function AdminSubscriptionForm({
           </SecondaryActionButton>
         </BlockEndActions>
       </ControlGrid>
-    </FieldGroup>
+    </FormFieldGroup>
   )
 }

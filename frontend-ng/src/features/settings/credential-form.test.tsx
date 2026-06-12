@@ -81,6 +81,9 @@ describe('CredentialForm', () => {
       fs.readFile(new URL('./credential-form.tsx', import.meta.url), 'utf8')
     )
 
+    expect(source).toContain("from '@/components/primitives/form-field-group'")
+    expect(source).toContain('<FormFieldGroup>')
+    expect(source).not.toContain("from '@/components/ui/field'")
     expect(source).toContain("from '@/components/primitives/segmented-field'")
     expect(source).toContain('<SegmentedField')
     expect(source).not.toContain("from '@/components/primitives/labeled-segmented-control'")

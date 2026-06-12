@@ -59,4 +59,14 @@ describe('RelayProviderForm', () => {
 
     expect(html).toContain('disabled=""')
   })
+
+  test('uses the shared form field-group primitive for settings forms', async () => {
+    const source = await import('node:fs/promises').then((fs) =>
+      fs.readFile(new URL('./relay-provider-form.tsx', import.meta.url), 'utf8')
+    )
+
+    expect(source).toContain("from '@/components/primitives/form-field-group'")
+    expect(source).toContain('<FormFieldGroup>')
+    expect(source).not.toContain("from '@/components/ui/field'")
+  })
 })

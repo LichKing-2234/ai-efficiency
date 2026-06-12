@@ -1,7 +1,7 @@
-import { FieldGroup } from '@/components/ui/field'
 import { AppAlert } from '@/components/primitives/app-alert'
 import { authFieldControlClassName } from '@/components/primitives/auth-field'
 import { AuthSubmitButton } from '@/components/primitives/auth-submit-button'
+import { FormFieldGroup } from '@/components/primitives/form-field-group'
 import { SelectField } from '@/components/primitives/select-field'
 import { TextField } from '@/components/primitives/text-field'
 import { useI18n } from '@/lib/i18n/i18n'
@@ -39,7 +39,7 @@ export function LoginForm({
         onSubmit()
       }}
     >
-      <FieldGroup gap='compact'>
+      <FormFieldGroup gap='compact'>
         <TextField
           id='login-username'
           label={t('auth.usernameOrEmail')}
@@ -70,7 +70,7 @@ export function LoginForm({
         <AuthSubmitButton disabled={!username || !password || pending}>
           {pending ? t('auth.signingIn') : t('auth.signIn')}
         </AuthSubmitButton>
-      </FieldGroup>
+      </FormFieldGroup>
     </form>
   )
 }

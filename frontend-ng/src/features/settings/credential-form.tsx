@@ -1,4 +1,4 @@
-import { FieldGroup } from '@/components/ui/field'
+import { FormFieldGroup } from '@/components/primitives/form-field-group'
 import { ManagedFormFooter } from '@/components/primitives/managed-form-footer'
 import { SegmentedField } from '@/components/primitives/segmented-field'
 import { TextField } from '@/components/primitives/text-field'
@@ -35,7 +35,7 @@ export function CredentialForm({
     updatePending
 
   return (
-    <FieldGroup>
+    <FormFieldGroup>
       <TextField id='credential-name' label={t('settings.name')} value={form.name} onChange={(name) => onChange({ ...form, name })} />
       <TextField id='credential-description' label={t('settings.credentialDescription')} value={form.description ?? ''} onChange={(description) => onChange({ ...form, description })} />
       <SegmentedField
@@ -73,6 +73,6 @@ export function CredentialForm({
         onCancel={onCancel}
         onSubmit={onSubmit}
       />
-    </FieldGroup>
+    </FormFieldGroup>
   )
 }

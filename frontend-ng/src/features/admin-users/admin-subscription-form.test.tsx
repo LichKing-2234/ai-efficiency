@@ -56,7 +56,9 @@ describe('AdminSubscriptionForm', () => {
   })
 
   test('uses compact field group rhythm without local gap classes', () => {
-    expect(source).toContain("<FieldGroup gap='compact'>")
+    expect(source).toContain("from '@/components/primitives/form-field-group'")
+    expect(source).toContain("<FormFieldGroup gap='compact'>")
+    expect(source).not.toContain("from '@/components/ui/field'")
     expect(source).not.toContain("<FieldGroup className='gap-3'>")
   })
 

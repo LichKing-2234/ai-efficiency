@@ -47,7 +47,9 @@ describe('LoginForm', () => {
       fs.readFile(new URL('./login-form.tsx', import.meta.url), 'utf8')
     )
 
-    expect(source).toContain("<FieldGroup gap='compact'>")
+    expect(source).toContain("from '@/components/primitives/form-field-group'")
+    expect(source).toContain("<FormFieldGroup gap='compact'>")
+    expect(source).not.toContain("from '@/components/ui/field'")
     expect(source).toContain("from '@/components/primitives/auth-field'")
     expect(source).toContain("from '@/components/primitives/auth-submit-button'")
     expect(source).toContain('<AuthSubmitButton')
