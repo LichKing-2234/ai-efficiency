@@ -76,8 +76,11 @@ describe('Home page composition', () => {
   })
 
   test('keeps the setup status card copy compact like the reference overview card', () => {
+    expect(source).toContain("from '@/components/primitives/entity-section-card'")
+    expect(source).toContain('<EntitySectionCard')
     expect(source).toContain("title={t('home.setupStatus')}")
     expect(source).not.toContain("description={setupProgress.ready === setupProgress.total ? t('home.statusReady') : t('home.statusWaitingEvents')}")
+    expect(source).not.toContain('<EntityCardHeader')
   })
 
   test('uses checklist rows directly for setup status items instead of a page-local wrapper', () => {

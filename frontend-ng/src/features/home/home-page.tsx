@@ -7,7 +7,7 @@ import { BarsH, Ring, StackedAreaChart, type StackedAreaKey } from '@/components
 import { CategoryBadge } from '@/components/primitives/category-badge'
 import { ChecklistRow } from '@/components/primitives/checklist-row'
 import { CompareBar } from '@/components/primitives/compare-bar'
-import { EntityCardHeader } from '@/components/primitives/entity-card-header'
+import { EntitySectionCard } from '@/components/primitives/entity-section-card'
 import { HeroContent } from '@/components/primitives/hero-content'
 import { KpiGrid } from '@/components/primitives/kpi-grid'
 import { LinkAction } from '@/components/primitives/link-action'
@@ -204,17 +204,15 @@ export function HomePage() {
               </CardContentStack>
             ) : null}
         </SectionCard>
-        <Card>
-          <EntityCardHeader
-            description={setupDescription}
-            leading={<Ring color='var(--ai)' size={66} stroke={7} value={setupProgress.ratio}>
-              <div className='text-center'>
-                <ProgressFraction ready={setupProgress.ready} total={setupProgress.total} />
-              </div>
-            </Ring>}
-            title={t('home.setupStatus')}
-          />
-          <CardContentStack>
+        <EntitySectionCard
+          description={setupDescription}
+          leading={<Ring color='var(--ai)' size={66} stroke={7} value={setupProgress.ratio}>
+            <div className='text-center'>
+              <ProgressFraction ready={setupProgress.ready} total={setupProgress.total} />
+            </div>
+          </Ring>}
+          title={t('home.setupStatus')}
+        >
             <ChecklistRow label={t('home.statusAccount')} ok value={t('home.statusReady')} />
             <ChecklistRow
               action={connectedTools.size > 0 ? null : <LinkAction asChild><Link to='/user'>{t('home.statusFix')}</Link></LinkAction>}
@@ -234,8 +232,7 @@ export function HomePage() {
               ok={recentEvents.length > 0}
               value={recentEvents.length ? t('home.statusEventCount', { count: number(recentEvents.length, locale) }) : t('home.statusWaitingEvents')}
             />
-          </CardContentStack>
-        </Card>
+        </EntitySectionCard>
       </div>
 
       <div className='split-2'>

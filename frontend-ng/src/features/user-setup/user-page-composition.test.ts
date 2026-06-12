@@ -47,12 +47,14 @@ describe('User setup page composition', () => {
   })
 
   test('uses the shared entity header plus right-aligned action group for provider group toggles', () => {
-    expect(source).toContain("from '@/components/primitives/entity-card-header'")
+    expect(source).toContain("from '@/components/primitives/entity-section-card'")
+    expect(source).toContain('<EntitySectionCard')
     expect(source).toContain("from '@/components/primitives/header-option-buttons'")
-    expect(source).toContain('<EntityCardHeader')
     expect(source).toContain("actions={(")
     expect(source).toContain('<HeaderOptionButtons')
     expect(source).toContain("value={selectedGroupId}")
+    expect(source).not.toContain('<EntityCardHeader')
+    expect(source).not.toContain('<CardContentStack gap=')
   })
 
   test('keeps provider test results inside the shared inset panel surface', () => {

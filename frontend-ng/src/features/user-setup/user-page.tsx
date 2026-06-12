@@ -14,7 +14,7 @@ import { ContextInline, ContextInlineItem } from '@/components/primitives/contex
 import { CountBadge } from '@/components/primitives/count-badge'
 import { CredentialKeyActions } from '@/components/primitives/credential-key-actions'
 import { CredentialKeyPanel } from '@/components/primitives/credential-key-panel'
-import { EntityCardHeader } from '@/components/primitives/entity-card-header'
+import { EntitySectionCard } from '@/components/primitives/entity-section-card'
 import { HeaderOptionButtons } from '@/components/primitives/header-option-buttons'
 import { PageEmpty } from '@/components/primitives/page-empty'
 import { Page } from '@/components/primitives/page'
@@ -22,7 +22,6 @@ import { InfoTile, InfoTileGrid } from '@/components/primitives/info-tile'
 import { InsetPanel } from '@/components/primitives/inset-panel'
 import { RecordMeta } from '@/components/primitives/record-meta'
 import { SectionCard } from '@/components/primitives/section-card'
-import { SectionCardHeader } from '@/components/primitives/section-card-header'
 import { SelectableCard, SelectableCardHeader, SelectableCardMeta, SelectableCardStatus, SelectableCardTitle } from '@/components/primitives/selectable-card'
 import { Stack } from '@/components/primitives/stack'
 import { LoadingState } from '@/components/primitives/data-state'
@@ -192,26 +191,25 @@ export function UserPage() {
           </SectionCard>
         </Stack>
         <Stack>
-          <Card>
-            <EntityCardHeader
-              title={selectedProvider ? selectedProvider.display_name || selectedProvider.name : t('userSetup.aiAccess')}
-              description={<RecordMeta wrap>{selectedProvider?.base_url || t('userSetup.noProvider')}</RecordMeta>}
-              actions={(
-                <HeaderOptionButtons
-                  ariaLabel={t('userSetup.group')}
-                  onChange={(groupId) => {
-                    setSelectedGroupId(groupId)
-                    setTestResult(null)
-                  }}
-                  options={(selectedProvider?.groups ?? []).map((group) => ({
-                    label: group.group_name,
-                    value: group.group_id
-                  }))}
-                  value={selectedGroupId}
-                />
-              )}
-            />
-            <CardContentStack gap='normal'>
+          <EntitySectionCard
+            actions={(
+              <HeaderOptionButtons
+                ariaLabel={t('userSetup.group')}
+                onChange={(groupId) => {
+                  setSelectedGroupId(groupId)
+                  setTestResult(null)
+                }}
+                options={(selectedProvider?.groups ?? []).map((group) => ({
+                  label: group.group_name,
+                  value: group.group_id
+                }))}
+                value={selectedGroupId}
+              />
+            )}
+            description={<RecordMeta wrap>{selectedProvider?.base_url || t('userSetup.noProvider')}</RecordMeta>}
+            gap='normal'
+            title={selectedProvider ? selectedProvider.display_name || selectedProvider.name : t('userSetup.aiAccess')}
+          >
               {selectedGroup ? (
                 <>
                   <InfoTileGrid columns={3}>
@@ -264,8 +262,7 @@ export function UserPage() {
               ) : (
                 <PageEmpty title={t('userSetup.noAccessGroup')} />
               )}
-            </CardContentStack>
-          </Card>
+          </EntitySectionCard>
           <SectionCard
             description={t('userSetup.providerTestDescription')}
             gap='compact'
