@@ -104,6 +104,13 @@ describe('ProviderTestForm', () => {
     expect(source).not.toContain("const fieldControlClassName = 'h-10 rounded-[var(--r-md)] bg-[var(--surface-inset)] shadow-none'")
     expect(source).not.toContain("const promptControlClassName = 'min-h-24 rounded-[var(--r-md)] bg-[var(--surface-inset)] shadow-none'")
   })
+
+  test('uses a shared provider test response preview surface instead of a raw inset panel', () => {
+    expect(source).toContain("from '@/components/primitives/provider-test-response'")
+    expect(source).toContain('<ProviderTestResponse')
+    expect(source).not.toContain("from '@/components/primitives/inset-panel'")
+    expect(source).not.toContain('{result?.response ? <InsetPanel comfortable>{result.response}</InsetPanel> : null}')
+  })
 })
 
 function labels() {

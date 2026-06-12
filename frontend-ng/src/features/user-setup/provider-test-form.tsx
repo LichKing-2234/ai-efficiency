@@ -4,7 +4,7 @@ import { formInsetControlClassName, formInsetTextareaClassName } from '@/compone
 import { ButtonWithIcon } from '@/components/primitives/button-with-icon'
 import { ControlGrid } from '@/components/primitives/control-grid'
 import { FormFieldGroup } from '@/components/primitives/form-field-group'
-import { InsetPanel } from '@/components/primitives/inset-panel'
+import { ProviderTestResponse } from '@/components/primitives/provider-test-response'
 import { SelectField } from '@/components/primitives/select-field'
 import { StartActionsFeedback } from '@/components/primitives/start-actions-feedback'
 import { StatusBadge } from '@/components/primitives/status-badge'
@@ -101,7 +101,7 @@ export function ProviderTestForm({
       >
         {error ? <AppAlert tone='error' title={error} /> : null}
       </StartActionsFeedback>
-      {result?.response ? <InsetPanel comfortable>{result.response}</InsetPanel> : null}
+      {result?.response ? <ProviderTestResponse>{result.response}</ProviderTestResponse> : null}
     </FormFieldGroup>
   )
 }
