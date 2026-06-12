@@ -73,7 +73,6 @@ export function HomePage() {
     : t('home.setupStatusDescription')
   const pulseSpend = usageTrend.slice(-24).map((point) => Math.max(0, point.actual_cost))
   const pulseRequests = usageTrend.slice(-24).map((point) => Math.max(0, point.requests))
-  const pulseTokens = usageTrend.slice(-24).map((point) => Math.max(0, point.total_tokens))
   const topModels = usageModels.slice(0, 5)
   const trendMini = usageTrend.slice(-14)
   const tokenKeys: Array<StackedAreaKey<UserUsageTrendPoint>> = [
@@ -141,7 +140,7 @@ export function HomePage() {
           <PulseStatGrid>
             <PulseStat color='var(--ai)' label={t('home.pulseSpendToday')} value={currency(todayActualCost, locale)} values={pulseSpend} />
             <PulseStat color='var(--viz-output)' divider label={t('home.pulseRequests')} value={number(todayRequests, locale)} values={pulseRequests} />
-            <PulseStat color='var(--viz-reason)' divider label={t('home.pulseActiveDevs')} value={number(connectedTools.size, locale)} values={pulseTokens} />
+            <PulseStat color='var(--viz-reason)' divider label={t('home.pulseActiveDevs')} value={number(connectedTools.size, locale)} />
           </PulseStatGrid>
         </CardContentStack>
       </Card>

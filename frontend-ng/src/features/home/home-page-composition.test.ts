@@ -104,6 +104,11 @@ describe('Home page composition', () => {
     expect(source).not.toContain("<div className='text-muted-foreground text-sm line-through'>{currency(totalStandardCost, locale)}</div>")
   })
 
+  test('does not borrow token spark data for the active devs pulse card', () => {
+    expect(source).toContain("<PulseStat color='var(--viz-reason)' divider label={t('home.pulseActiveDevs')} value={number(connectedTools.size, locale)} />")
+    expect(source).not.toContain("<PulseStat color='var(--viz-reason)' divider label={t('home.pulseActiveDevs')} value={number(connectedTools.size, locale)} values={pulseTokens} />")
+  })
+
   test('keeps the reference hero dual-action row for setup and export', () => {
     expect(source).toContain("from '@/components/primitives/start-actions'")
     expect(source).toContain('<StartActions>')

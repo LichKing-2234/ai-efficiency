@@ -21,6 +21,16 @@ describe('PulseStat', () => {
     expect(html).toContain('min-w-[112px] flex-1')
   })
 
+  test('supports pulse rows without a borrowed spark series', () => {
+    const html = renderToStaticMarkup(
+      <PulseStat color='var(--viz-reason)' label='Active devs' value='3' />
+    )
+
+    expect(html).toContain('Active devs')
+    expect(html).toContain('>3<')
+    expect(html).not.toContain('<svg')
+  })
+
   test('keeps reference pulse density in the shared primitive', () => {
     expect(source).toContain("from '@/components/primitives/card-content-stack'")
     expect(source).toContain("from '@/components/primitives/charts'")
