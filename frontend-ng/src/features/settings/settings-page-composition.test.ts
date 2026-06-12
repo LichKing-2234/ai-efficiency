@@ -208,8 +208,10 @@ describe('Settings page composition', () => {
   test('keeps deployment runtime actions and health body inside compact card content stacks', () => {
     const source = readFileSync(join(ROOT, 'features/settings/settings-page.tsx'), 'utf8')
 
-    expect(source).toContain("<CardContentStack gap='compact'>")
-    expect(source).toContain("<CardContentStack gap='normal'>")
+    expect(source).toContain("from '@/components/primitives/section-card'")
+    expect(source).toContain('<SectionCard')
+    expect(source).toContain("gap='compact'")
+    expect(source).toContain("gap='normal'")
     expect(source).toContain("{activeSection === 'deployment-runtime' ? <>")
   })
 
@@ -252,11 +254,11 @@ describe('Settings page composition', () => {
     const source = readFileSync(join(ROOT, 'features/settings/settings-page.tsx'), 'utf8')
 
     expect(source).toContain("<InfoTileGrid columns={3} className='split-equal min-[920px]:grid-cols-3'>")
-    expect(source).toContain("<CardContentStack gap='compact'>")
-    expect(source).toContain("<CardContentStack gap='normal'>")
+    expect(source).toContain("gap='compact'")
+    expect(source).toContain("gap='normal'")
     expect(source).toContain("title={t('settings.serviceHealth')}")
     expect(source).toContain("description={t('settings.serviceHealthDescription')}")
-    expect(source).toContain("</Card>\n          <Card>")
+    expect(source).toContain("</SectionCard>\n          <SectionCard")
     expect(source).not.toContain("<CardContentStack gap='compact'>\n              <HealthFieldList className='bg-[var(--surface-inset)]'>")
   })
 })

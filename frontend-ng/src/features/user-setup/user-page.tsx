@@ -21,6 +21,7 @@ import { Page } from '@/components/primitives/page'
 import { InfoTile, InfoTileGrid } from '@/components/primitives/info-tile'
 import { InsetPanel } from '@/components/primitives/inset-panel'
 import { RecordMeta } from '@/components/primitives/record-meta'
+import { SectionCard } from '@/components/primitives/section-card'
 import { SectionCardHeader } from '@/components/primitives/section-card-header'
 import { SelectableCard, SelectableCardHeader, SelectableCardMeta, SelectableCardStatus, SelectableCardTitle } from '@/components/primitives/selectable-card'
 import { Stack } from '@/components/primitives/stack'
@@ -142,12 +143,11 @@ export function UserPage() {
     <Page className='stagger'>
       <div className='split-rail'>
         <Stack>
-          <Card>
-            <SectionCardHeader
-              title={t('userSetup.accountAccess')}
-              actions={<CountBadge variant='ai'>{t('userSetup.groupsReadyShort', { ready: readyGroups, total: totalGroups })}</CountBadge>}
-            />
-            <CardContentStack gap='compact'>
+          <SectionCard
+            actions={<CountBadge variant='ai'>{t('userSetup.groupsReadyShort', { ready: readyGroups, total: totalGroups })}</CountBadge>}
+            gap='compact'
+            title={t('userSetup.accountAccess')}
+          >
               {providers.data?.message ? <InsetPanel muted>{providers.data.message}</InsetPanel> : null}
               {rows.map((provider) => {
                 const ready = provider.groups.filter((group) => group.credential.state === 'existing_hidden').length
@@ -174,15 +174,13 @@ export function UserPage() {
                   </SelectableCard>
                 )
               })}
-            </CardContentStack>
-          </Card>
-          <Card>
-            <SectionCardHeader
-              title={t('userSetup.cliWorkflow')}
-              leading={Terminal}
-              description={t('userSetup.cliDescription')}
-            />
-            <CardContentStack gap='compact'>
+          </SectionCard>
+          <SectionCard
+            description={t('userSetup.cliDescription')}
+            gap='compact'
+            leading={Terminal}
+            title={t('userSetup.cliWorkflow')}
+          >
               <CommandStep step={1} label={t('userSetup.installCli')} command={installCommand} copiedMessage={t('userSetup.commandCopied')} />
               <CommandStep step={2} label={t('userSetup.authenticate')} command='ae-cli login' copiedMessage={t('userSetup.commandCopied')} />
               <CommandStep step={3} label={t('userSetup.discoverProvider')} command={discoverCommand} disabled={!selectedProvider} copiedMessage={t('userSetup.commandCopied')} />
@@ -191,8 +189,7 @@ export function UserPage() {
               <CommandAccordion title={t('userSetup.windowsInstaller')}>
                 <CommandStep command={windowsInstallCommand} copiedMessage={t('userSetup.commandCopied')} />
               </CommandAccordion>
-            </CardContentStack>
-          </Card>
+          </SectionCard>
         </Stack>
         <Stack>
           <Card>
@@ -269,9 +266,11 @@ export function UserPage() {
               )}
             </CardContentStack>
           </Card>
-          <Card>
-            <SectionCardHeader title={t('userSetup.providerTest')} description={t('userSetup.providerTestDescription')} />
-            <CardContentStack gap='compact'>
+          <SectionCard
+            description={t('userSetup.providerTestDescription')}
+            gap='compact'
+            title={t('userSetup.providerTest')}
+          >
               {selectedGroup ? (
                 <InsetPanel muted>
                   <ContextInline>
@@ -298,8 +297,7 @@ export function UserPage() {
                 running={testProvider.isPending}
                 secretMissing={!secret}
               />
-            </CardContentStack>
-          </Card>
+          </SectionCard>
         </Stack>
       </div>
     </Page>

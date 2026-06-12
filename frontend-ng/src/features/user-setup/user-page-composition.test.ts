@@ -20,7 +20,10 @@ describe('User setup page composition', () => {
   })
 
   test('uses shared card content stacks for setup card bodies', () => {
+    expect(source).toContain("from '@/components/primitives/section-card'")
+    expect(source).toContain('<SectionCard')
     expect(source).toContain("from '@/components/primitives/card-content-stack'")
+    expect(source).not.toContain("<Card>\n            <SectionCardHeader")
     expect(source).not.toContain("<CardContent className='flex flex-col gap-2'>")
     expect(source).not.toContain("<CardContent className='flex flex-col gap-4'>")
     expect(source).not.toContain('<CardContent>')

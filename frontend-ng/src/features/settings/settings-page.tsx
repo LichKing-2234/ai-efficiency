@@ -19,6 +19,7 @@ import { HealthFieldItem, HealthFieldList, type HealthStatus } from '@/component
 import { InfoTile, InfoTileGrid } from '@/components/primitives/info-tile'
 import { PageEmpty } from '@/components/primitives/page-empty'
 import { RowIconActions } from '@/components/primitives/row-icon-actions'
+import { SectionCard } from '@/components/primitives/section-card'
 import { SectionCardHeader } from '@/components/primitives/section-card-header'
 import { SectionNav, SectionNavFrame, type SectionNavItem } from '@/components/primitives/section-nav'
 import { StartActions } from '@/components/primitives/start-actions'
@@ -447,9 +448,11 @@ export function SettingsPage() {
             )}
           </CardTableContent>
         </Card> : null}
-        {activeSection === 'organization-login' ? <Card>
-          <SectionCardHeader title={t(settingsSectionMeta['organization-login'].labelKey as never)} description={t(settingsSectionMeta['organization-login'].descriptionKey as never)} leading={Shield} />
-          <CardContentStack>
+        {activeSection === 'organization-login' ? <SectionCard
+          description={t(settingsSectionMeta['organization-login'].descriptionKey as never)}
+          leading={Shield}
+          title={t(settingsSectionMeta['organization-login'].labelKey as never)}
+        >
             <LdapSettingsForm
               form={ldapForm}
               message={ldapMessage}
@@ -459,21 +462,19 @@ export function SettingsPage() {
               savePending={saveLDAP.isPending}
               testPending={testLDAP.isPending}
             />
-          </CardContentStack>
-        </Card> : null}
+        </SectionCard> : null}
         {activeSection === 'deployment-runtime' ? <>
-          <Card>
-            <SectionCardHeader
-              title={t(settingsSectionMeta['deployment-runtime'].labelKey as never)}
-              description={t(settingsSectionMeta['deployment-runtime'].descriptionKey as never)}
-              leading={Database}
-              actions={
-                deployment.data?.update_available
-                  ? <CategoryBadge variant='ai'>{t('settings.updateAvailable', { version: deployment.data.latest_release?.version || '-' })}</CategoryBadge>
-                  : <StatusBadge value='success' label={t('settings.upToDate')} />
-              }
-            />
-            <CardContentStack gap='compact'>
+          <SectionCard
+            actions={
+              deployment.data?.update_available
+                ? <CategoryBadge variant='ai'>{t('settings.updateAvailable', { version: deployment.data.latest_release?.version || '-' })}</CategoryBadge>
+                : <StatusBadge value='success' label={t('settings.upToDate')} />
+            }
+            description={t(settingsSectionMeta['deployment-runtime'].descriptionKey as never)}
+            gap='compact'
+            leading={Database}
+            title={t(settingsSectionMeta['deployment-runtime'].labelKey as never)}
+          >
               <InfoTileGrid columns={3} className='split-equal min-[920px]:grid-cols-3'>
                 <InfoTile label={t('settings.current')} value={`v${deployment.data?.version.version || '-'}`} mono />
                 <InfoTile label={t('settings.latest')} value={`v${deployment.data?.latest_release?.version || deployment.data?.version.version || '-'}`} mono />
@@ -509,15 +510,13 @@ export function SettingsPage() {
                   title={t('settings.requestRestart')}
                 />
               </StartActions>
-            </CardContentStack>
-          </Card>
-          <Card>
-            <SectionCardHeader
-              title={t('settings.serviceHealth')}
-              description={t('settings.serviceHealthDescription')}
-              leading={Database}
-            />
-            <CardContentStack gap='normal'>
+          </SectionCard>
+          <SectionCard
+            description={t('settings.serviceHealthDescription')}
+            gap='normal'
+            leading={Database}
+            title={t('settings.serviceHealth')}
+          >
               <HealthFieldList className='bg-[var(--surface-inset)]'>
                 {deploymentHealthRows(deploymentHealth.data?.checks ?? []).map((check) => (
                   <HealthFieldItem
@@ -530,8 +529,7 @@ export function SettingsPage() {
                   />
                 ))}
               </HealthFieldList>
-            </CardContentStack>
-          </Card>
+          </SectionCard>
         </> : null}
         </Stack>
       </div>
