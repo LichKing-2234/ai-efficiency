@@ -32,7 +32,7 @@ export function AuthSurface({
         >
           <div
             data-slot='auth-surface-brand-mark'
-            className='grid size-8 place-items-center rounded-[8px] bg-[linear-gradient(135deg,var(--ai-bright),var(--ai-deep))] text-white shadow-[0_2px_8px_var(--ai-glow)]'
+            className='grid size-8 place-items-center rounded-[8px] bg-[linear-gradient(135deg,var(--ai-bright),var(--ai-deep))] text-white'
           >
             <span className='text-[15px] font-[700] leading-none'>AI</span>
           </div>
@@ -42,7 +42,7 @@ export function AuthSurface({
           </div>
         </div>
 
-        <Card className={cn('grid-paper w-full overflow-hidden border-[var(--ai-line)] shadow-[var(--sh-lg)]', className)} variant='accent'>
+        <Card className={cn('grid-paper w-full overflow-hidden border-[var(--ai-line)]', className)} variant='accent'>
           <SectionCardHeader className='px-[18px] pt-[18px]' title={title} description={description} />
           <CardContentStack className='border-border border-t px-[18px] py-[18px]'>
             {aside}
