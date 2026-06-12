@@ -33,7 +33,7 @@ describe('heatmap grid helpers', () => {
   test('uses shared stack and row primitives for legend and outer shell rhythm', () => {
     expect(source).toContain("from '@/components/primitives/filter-row'")
     expect(source).toContain("from '@/components/primitives/stack'")
-    expect(source).toContain("<FilterRow className='justify-end text-[11.5px] text-[var(--ink-3)]' dataSlot='heatmap-grid-legend'>")
+    expect(source).toContain("<FilterRow className='justify-end text-[11px] text-[var(--ink-3)]' dataSlot='heatmap-grid-legend'>")
     expect(source).toContain("<div className='flex items-center font-medium text-[11px] text-[var(--ink-3)]'>{label}</div>")
     expect(source).not.toContain("<div className={cn('flex flex-col gap-3', className)}>")
     expect(source).not.toContain("<div className='flex items-center justify-end gap-2 text-[11.5px] text-muted-foreground'>")

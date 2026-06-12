@@ -50,7 +50,7 @@ export function HeatmapGrid({
 
   return (
     <Stack className={className} dataSlot='heatmap-grid' gap='compact'>
-      <FilterRow className='justify-end text-[11.5px] text-[var(--ink-3)]' dataSlot='heatmap-grid-legend'>
+      <FilterRow className='justify-end text-[11px] text-[var(--ink-3)]' dataSlot='heatmap-grid-legend'>
         <span>{lessLabel}</span>
         <FilterRow className='gap-1' dataSlot='heatmap-grid-legend-scale'>
           {[0.08, 0.28, 0.48, 0.7, 1].map((intensity) => (
