@@ -18,4 +18,15 @@ describe('SectionEyebrow', () => {
     expect(html).toContain('mb-0')
     expect(html).toContain('Analyze')
   })
+
+  test('forwards div attributes so shell wrappers can attach stable selectors', () => {
+    const html = renderToStaticMarkup(
+      <SectionEyebrow data-slot='topbar-title-section' id='eyebrow-anchor'>
+        Analyze
+      </SectionEyebrow>
+    )
+
+    expect(html).toContain('data-slot="topbar-title-section"')
+    expect(html).toContain('id="eyebrow-anchor"')
+  })
 })
