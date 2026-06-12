@@ -99,7 +99,7 @@ describe('User setup page composition', () => {
 
   test('keeps provider test context inside the shared inset panel surface', () => {
     expect(source).toContain("from '@/components/primitives/context-inline'")
-    expect(source).toContain("from '@/components/primitives/inset-panel'")
+    expect(source).toContain("from '@/components/primitives/muted-inset-note'")
     expect(source).toContain('<ContextInline>')
     expect(source).toContain('<ContextInlineItem')
     expect(source).toContain("label={t('userSetup.group')}")
@@ -114,7 +114,7 @@ describe('User setup page composition', () => {
     expect(source).toContain("compact")
     expect(source).toContain("? 'ai' : false")
     expect(source).toContain("from '@/components/primitives/info-tile'")
-    expect(source).toContain("from '@/components/primitives/inset-panel'")
+    expect(source).toContain("from '@/components/primitives/muted-inset-note'")
     expect(source).toContain("from '@/components/primitives/context-inline'")
     expect(source).toContain("value={selectedGroup.group_name}")
     expect(source).toContain("value={selectedGroup.platform}")
@@ -126,5 +126,11 @@ describe('User setup page composition', () => {
     expect(source).toContain('<ConfirmActionButton')
     expect(source).toContain("label={t('userSetup.regenerate')}")
     expect(source).not.toContain("trigger={<Button size='sm' variant='outline' disabled={regenerateCredential.isPending}>")
+  })
+
+  test('uses the shared muted inset note surface for provider guidance instead of raw inset panels', () => {
+    expect(source).toContain("from '@/components/primitives/muted-inset-note'")
+    expect(source).toContain('<MutedInsetNote>')
+    expect(source).not.toContain('<InsetPanel muted>')
   })
 })

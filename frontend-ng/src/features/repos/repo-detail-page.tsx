@@ -20,6 +20,7 @@ import { InsetPanel } from '@/components/primitives/inset-panel'
 import { KpiGrid } from '@/components/primitives/kpi-grid'
 import { LinkedRecordItem } from '@/components/primitives/linked-record-list'
 import { KpiCard } from '@/components/primitives/metric-card'
+import { MutedInsetNote } from '@/components/primitives/muted-inset-note'
 import { PagerNavButton } from '@/components/primitives/pager-nav-button'
 import { PageSizeSelect } from '@/components/primitives/page-size-select'
 import { Page, PageToolbar } from '@/components/primitives/page'
@@ -237,7 +238,7 @@ export function RepoDetailPage() {
           {activeJobRunning ? t('repoDetail.syncingPrs') : t('repoDetail.syncPrs')}
         </ButtonWithIcon>
       </PageToolbar>
-      {syncDisabledReason ? <InsetPanel compact muted>{syncDisabledReason}</InsetPanel> : null}
+      {syncDisabledReason ? <MutedInsetNote compact>{syncDisabledReason}</MutedInsetNote> : null}
       {showWebhookRepair ? (
         <AppAlert
           actions={(

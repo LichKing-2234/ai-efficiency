@@ -117,7 +117,8 @@ describe('Repo detail page composition', () => {
   })
 
   test('uses the shared inset panel compact variant for sync status notes', () => {
-    expect(source).toContain('<InsetPanel compact muted>')
+    expect(source).toContain("from '@/components/primitives/muted-inset-note'")
+    expect(source).toContain("<MutedInsetNote compact>")
     expect(source).not.toContain("className='px-3 py-2'")
   })
 

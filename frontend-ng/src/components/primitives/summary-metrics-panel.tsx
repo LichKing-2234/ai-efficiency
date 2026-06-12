@@ -1,6 +1,6 @@
 import type * as React from 'react'
 import { InfoTileGrid } from '@/components/primitives/info-tile'
-import { InsetPanel } from '@/components/primitives/inset-panel'
+import { MutedInsetNote } from '@/components/primitives/muted-inset-note'
 import { SectionCard } from '@/components/primitives/section-card'
 
 export function SummaryMetricsPanel({
@@ -31,7 +31,7 @@ export function SummaryMetricsPanel({
       <InfoTileGrid className={metricsClassName} columns={metricsColumns}>
         {children}
       </InfoTileGrid>
-      {note ? <InsetPanel muted>{note}</InsetPanel> : null}
+      {note ? <MutedInsetNote>{note}</MutedInsetNote> : null}
     </SectionCard>
   )
 }

@@ -17,7 +17,7 @@ import { HeaderOptionButtons } from '@/components/primitives/header-option-butto
 import { PageEmpty } from '@/components/primitives/page-empty'
 import { Page } from '@/components/primitives/page'
 import { InfoTile, InfoTileGrid } from '@/components/primitives/info-tile'
-import { InsetPanel } from '@/components/primitives/inset-panel'
+import { MutedInsetNote } from '@/components/primitives/muted-inset-note'
 import { RecordMeta } from '@/components/primitives/record-meta'
 import { SectionCard } from '@/components/primitives/section-card'
 import { SelectableCard, SelectableCardHeader, SelectableCardMeta, SelectableCardStatus, SelectableCardTitle } from '@/components/primitives/selectable-card'
@@ -147,7 +147,7 @@ export function UserPage() {
             gap='compact'
             title={t('userSetup.accountAccess')}
           >
-              {providers.data?.message ? <InsetPanel muted>{providers.data.message}</InsetPanel> : null}
+              {providers.data?.message ? <MutedInsetNote>{providers.data.message}</MutedInsetNote> : null}
               {rows.map((provider) => {
                 const ready = provider.groups.filter((group) => group.credential.state === 'existing_hidden').length
                 const total = provider.groups.length
@@ -269,12 +269,12 @@ export function UserPage() {
             title={t('userSetup.providerTest')}
           >
               {selectedGroup ? (
-                <InsetPanel muted>
+                <MutedInsetNote>
                   <ContextInline>
                     <ContextInlineItem label={t('userSetup.group')} value={selectedGroup.group_name} />
                     <ContextInlineItem label={t('userSetup.platform')} separator={false} value={selectedGroup.platform} />
                   </ContextInline>
-                </InsetPanel>
+                </MutedInsetNote>
               ) : null}
               <ProviderTestForm
                 canRun={!!selectedGroup && !!secret && !!model.trim()}

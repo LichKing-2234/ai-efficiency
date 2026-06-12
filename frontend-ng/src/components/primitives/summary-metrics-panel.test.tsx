@@ -18,6 +18,7 @@ describe('SummaryMetricsPanel', () => {
     expect(html).toContain('data-slot="info-tile-grid"')
     expect(html).toContain('min-[920px]:grid-cols-4')
     expect(html).toContain('Usage refresh 4/7')
+    expect(html).toContain('data-slot="muted-inset-note"')
   })
 
   test('supports compact section-card options and alternate metric layouts', () => {
