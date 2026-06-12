@@ -12,6 +12,7 @@ import { ChartLegend } from '@/components/primitives/chart-legend'
 import { BarsH, StackedAreaChart, type StackedAreaKey } from '@/components/primitives/charts'
 import { DataGrid, DataGridCell, DataGridHeader, DataGridHeaderCell, DataGridRow } from '@/components/primitives/data-grid'
 import { FilterRow } from '@/components/primitives/filter-row'
+import { GlyphLabelCell } from '@/components/primitives/glyph-label-cell'
 import { HeatmapGrid } from '@/components/primitives/heatmap-grid'
 import { KpiGrid } from '@/components/primitives/kpi-grid'
 import { LinkAction } from '@/components/primitives/link-action'
@@ -21,7 +22,6 @@ import { SectionCardHeader } from '@/components/primitives/section-card-header'
 import { SegmentedControl } from '@/components/primitives/segmented-control'
 import { Stack } from '@/components/primitives/stack'
 import { ToolbarActions } from '@/components/primitives/toolbar-actions'
-import { ToolGlyph } from '@/components/primitives/tool-glyph'
 import { api } from '@/lib/api'
 import type { UserUsageTrendPoint } from '@/lib/api/types'
 import { compact, currency, durationMs, number } from '@/lib/format'
@@ -198,10 +198,15 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
                       </DataGridHeader>
                       {snapshot.models.map((model) => (
                         <DataGridRow columns={modelColumns} key={model.model}>
-                          <div className='flex min-w-0 items-center gap-2'>
-                            <ToolGlyph label={model.model} tool={toolFromModelName(model.model)} size={22} />
-                            <DataGridCell description={t('usageDashboard.modelDistribution')} mono truncate>{model.model}</DataGridCell>
-                          </div>
+                          <GlyphLabelCell
+                            description={t('usageDashboard.modelDistribution')}
+                            glyphLabel={model.model}
+                            glyphTool={toolFromModelName(model.model)}
+                            mono
+                            truncate
+                          >
+                            {model.model}
+                          </GlyphLabelCell>
                           <DataGridCell align='right' numeric>{number(model.requests, locale)}</DataGridCell>
                           <DataGridCell align='right' numeric>{compact(model.total_tokens, locale)}</DataGridCell>
                           <DataGridCell align='right' emphasis numeric>{currency(model.actual_cost || model.cost, locale)}</DataGridCell>

@@ -55,6 +55,8 @@ describe('Events page composition', () => {
   })
 
   test('keeps event row secondary metadata inside shared data grid cells', () => {
+    expect(source).toContain("from '@/components/primitives/glyph-label-cell'")
+    expect(source).toContain('<GlyphLabelCell')
     expect(source).toContain('description={row.source_basename || row.tool_session_id}')
     expect(source).not.toContain("from '@/components/primitives/record-meta'")
     expect(source).not.toContain('<RecordMeta>')
@@ -62,7 +64,7 @@ describe('Events page composition', () => {
   })
 
   test('uses shared data grid description cells for event repository metadata', () => {
-    expect(source).toContain('DataGridCell')
+    expect(source).toContain('GlyphLabelCell')
     expect(source).not.toContain("<span className='min-w-0'>")
     expect(source).not.toContain("<span className='block truncate font-medium text-foreground text-sm'>{row.repo_name || t('events.unlinked')}</span>")
   })

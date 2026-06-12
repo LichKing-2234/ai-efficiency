@@ -11,6 +11,7 @@ import { CategoryBadge } from '@/components/primitives/category-badge'
 import { DataGrid, DataGridCell, DataGridHeader, DataGridHeaderCell, DataGridRow } from '@/components/primitives/data-grid'
 import { FieldItem, FieldList } from '@/components/primitives/field-list'
 import { FilterRow } from '@/components/primitives/filter-row'
+import { GlyphLabelCell } from '@/components/primitives/glyph-label-cell'
 import { InfoTile, InfoTileGrid } from '@/components/primitives/info-tile'
 import { KpiGrid } from '@/components/primitives/kpi-grid'
 import { LabeledSegmentedControl } from '@/components/primitives/labeled-segmented-control'
@@ -309,7 +310,9 @@ function EventRow({ row, maxTokens, onSelect }: { row: ToolUsageEventRow; maxTok
       onClick={onSelect}
     >
       <ToolGlyph tool={row.tool} />
-      <DataGridCell description={row.source_basename || row.tool_session_id} truncate>{row.repo_name || t('events.unlinked')}</DataGridCell>
+      <GlyphLabelCell description={row.source_basename || row.tool_session_id} glyphTool={row.tool} truncate>
+        {row.repo_name || t('events.unlinked')}
+      </GlyphLabelCell>
       <TokenMeter label={compact(tokens)} max={maxTokens} value={tokens} />
       <DataGridCell align='right' numeric tone='muted'>{number(row.request_count)}</DataGridCell>
       <DataGridCell align='right' emphasis numeric>{number(row.credit_usage)}</DataGridCell>
