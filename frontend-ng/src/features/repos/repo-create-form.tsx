@@ -1,7 +1,7 @@
 import { FieldGroup } from '@/components/ui/field'
 import { AppAlert } from '@/components/primitives/app-alert'
-import { FieldItem, FieldList } from '@/components/primitives/field-list'
-import { InsetPanel } from '@/components/primitives/inset-panel'
+import { FieldItem } from '@/components/primitives/field-list'
+import { InsetFieldList } from '@/components/primitives/inset-field-list'
 import { LabeledSegmentedControl } from '@/components/primitives/labeled-segmented-control'
 import { SelectField } from '@/components/primitives/select-field'
 import { SubmitCancelActions } from '@/components/primitives/submit-cancel-actions'
@@ -85,11 +85,9 @@ export function RepoCreateForm({
         onChange={onRepoUrlChange}
       />
       {parsedRepo ? (
-        <InsetPanel stack>
-          <FieldList>
-            <FieldItem label={labels.fullName} value={`${parsedRepo.project}/${parsedRepo.repo}`} truncate />
-            <FieldItem label={labels.provider} value={selectedProvider?.name || labels.noMatchingProvider} truncate />
-          </FieldList>
+        <InsetFieldList>
+          <FieldItem label={labels.fullName} value={`${parsedRepo.project}/${parsedRepo.repo}`} truncate />
+          <FieldItem label={labels.provider} value={selectedProvider?.name || labels.noMatchingProvider} truncate />
           <LabeledSegmentedControl
             ariaLabel={labels.clone}
             label={labels.clone}
@@ -116,7 +114,7 @@ export function RepoCreateForm({
             readOnly
             value={previewCloneUrl}
           />
-        </InsetPanel>
+        </InsetFieldList>
       ) : repoUrl ? (
         <AppAlert tone='warning' title={labels.enterRepoUrl} />
       ) : null}

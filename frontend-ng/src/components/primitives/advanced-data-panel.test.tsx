@@ -45,9 +45,10 @@ describe('AdvancedDataPanel', () => {
       fs.readFile(new URL('./advanced-data-panel.tsx', import.meta.url), 'utf8')
     )
 
-    expect(source).toContain("from '@/components/primitives/card-content-stack'")
+    expect(source).toContain("from '@/components/primitives/inset-field-list'")
     expect(source).toContain("className={cn('rounded-[var(--r-md)] border border-border px-[14px]', className)}")
     expect(source).toContain("className='px-0 pb-0 text-[12.5px]'")
+    expect(source).toContain('<InsetFieldList>')
     expect(source).not.toContain("<div className='grid gap-2 text-sm'>")
     expect(source).not.toContain("<CodeBlock ariaLabel={codeAriaLabel} className='mt-3'>")
   })

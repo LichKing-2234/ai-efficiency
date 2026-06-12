@@ -10,4 +10,11 @@ describe('RepoCreateForm composition', () => {
     expect(source).not.toContain("<Button variant='outline'")
     expect(source).not.toContain('<ActionGroup>')
   })
+
+  test('uses the shared inset field-list shell for parsed repository metadata', () => {
+    expect(source).toContain("from '@/components/primitives/inset-field-list'")
+    expect(source).toContain('<InsetFieldList>')
+    expect(source).not.toContain('<InsetPanel stack>')
+    expect(source).not.toContain('<FieldList>')
+  })
 })

@@ -1,8 +1,9 @@
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
 import { CardContentStack } from '@/components/primitives/card-content-stack'
+import { InsetFieldList } from '@/components/primitives/inset-field-list'
 import { cn } from '@/lib/utils'
 import { CodeBlock } from './code-block'
-import { FieldItem, FieldList } from './field-list'
+import { FieldItem } from './field-list'
 
 const advancedCodeClass = 'mt-3'
 
@@ -47,11 +48,11 @@ export function AdvancedDataPanel({
         <AccordionTrigger>{title}</AccordionTrigger>
         <AccordionContent>
           <CardContentStack className='px-0 pb-0 text-[12.5px]' dataSlot='advanced-data-panel-content' gap='compact'>
-            <FieldList>
+            <InsetFieldList>
               {fields.map((field, index) => (
                 <FieldItem key={index} label={field.label} mono={field.mono} value={field.value} />
               ))}
-            </FieldList>
+            </InsetFieldList>
           </CardContentStack>
           {code ? <AdvancedDataCode ariaLabel={codeAriaLabel}>{code}</AdvancedDataCode> : null}
         </AccordionContent>

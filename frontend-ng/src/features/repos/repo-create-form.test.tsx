@@ -88,7 +88,8 @@ describe('RepoCreateForm', () => {
   test('uses the shared inset panel stack variant for parsed repository previews', () => {
     const source = readFileSync(new URL('./repo-create-form.tsx', import.meta.url), 'utf8')
 
-    expect(source).toContain('<InsetPanel stack>')
+    expect(source).toContain("from '@/components/primitives/inset-field-list'")
+    expect(source).toContain('<InsetFieldList>')
   })
 
   test('uses compact field group rhythm without local gap classes', () => {
