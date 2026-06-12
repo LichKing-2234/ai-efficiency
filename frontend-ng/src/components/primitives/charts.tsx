@@ -318,7 +318,10 @@ export function BarsH({
             </span>
           </ActionGroup>
           <div className='h-[9px] overflow-hidden rounded-[var(--r-full)] bg-[var(--surface-inset)]'>
-            <div className='h-full rounded-[var(--r-full)] motion-safe:transition-[width] motion-safe:duration-700 motion-safe:ease-[var(--ease-out)]' style={{ width: `${(row.value / max) * 100}%`, background: row.color }} />
+            <div
+              className='h-full rounded-[var(--r-full)] motion-safe:transition-[width] motion-safe:duration-700 motion-safe:ease-[var(--ease-out)]'
+              style={{ width: `${Math.max(0, Math.min(100, (typeof row.share === 'number' ? row.share * 100 : (row.value / max) * 100)))}%`, background: row.color }}
+            />
           </div>
         </Stack>
       ))}

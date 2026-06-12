@@ -1,5 +1,8 @@
+import { createElement } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, test } from 'vitest'
 import { buildSparklinePath, buildStackedAreaLayers, type StackedAreaKey, type StackedAreaPoint } from './charts'
+import { BarsH } from './charts'
 
 describe('buildSparklinePath', () => {
   test('builds a stable sparkline for flat data without NaN coordinates', () => {
@@ -79,5 +82,20 @@ describe('StackedAreaChart composition', () => {
     expect(source).toContain("dataSlot='ring'")
     expect(source).not.toContain("className={cn('relative grid place-items-center', className)}")
     expect(source).not.toContain("className='absolute inset-0 grid place-items-center'")
+  })
+
+  test('uses explicit share ratios for horizontal bar widths when share data is available', () => {
+    const html = renderToStaticMarkup(
+      createElement(BarsH, {
+        rows: [
+          { label: 'Model A', value: 120, share: 0.25, color: 'var(--viz-input)' },
+          { label: 'Model B', value: 240, share: 0.5, color: 'var(--viz-output)' }
+        ]
+      })
+    )
+
+    expect(html).toContain('width:25%')
+    expect(html).toContain('width:50%')
+    expect(html).not.toContain('width:100%')
   })
 })
