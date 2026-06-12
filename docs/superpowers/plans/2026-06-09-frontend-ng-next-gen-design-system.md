@@ -246,6 +246,10 @@ Follow-up overview KPI parity audit on 2026-06-12 closed one obvious remaining m
 
 Follow-up overview KPI parity audit evidence: the red-green cycle first failed with `cd frontend-ng && bun test src/features/home/home-page-composition.test.ts --timeout 20000` after tightening the composition guard to require the avg-response KPI, then passed after the implementation update. Local runtime reachability also remains healthy on the current preview listener with `lsof -nP -iTCP:4441 -sTCP:LISTEN` showing a single listener and `curl -I -s http://127.0.0.1:4441/` returning `HTTP/1.1 200`.
 
+Follow-up usage KPI parity audit on 2026-06-12 closed the matching strip-level mismatch on `screens-usage.jsx`. The reference usage analytics surface keeps the fourth KPI focused on throughput rather than response latency, and the real backend payload already exposes `tpm` for that purpose. `frontend-ng/src/features/user-usage/user-usage-panel.tsx` now aligns the fourth KPI to `usageDashboard.throughput`, renders the value from real backend `tpm` as `{compact(tpm)}/m`, and uses `usageDashboard.throughputHelper` to keep the secondary line grounded in real `rpm` plus average response latency. This keeps the KPI visually aligned to the reference while still preserving the true backend signals rather than swapping in mock dashboard numbers.
+
+Follow-up usage KPI parity audit evidence: the red-green cycle first failed with `cd frontend-ng && bun test src/features/user-usage/user-usage-panel-composition.test.ts --timeout 20000` after tightening the composition guard to require throughput instead of avg response, then passed after the implementation update. Broader verification for this checkpoint also passed with `cd frontend-ng && bun run check` and `git diff --check`.
+
 ## File Structure
 
 - Modify: `frontend-ng/src/styles.css` - global MiSans, warm-paper tokens, shadcn compatibility tokens, sidebar/chart tokens, layout utilities, motion utilities, CSS-grid table classes.

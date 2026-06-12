@@ -133,11 +133,11 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
                 sparklineColor='var(--viz-reason)'
               />
               <KpiCard
-                label={t('usageDashboard.avgResponse')}
-                value={durationMs(stats?.average_duration_ms ?? 0, locale)}
-                helper={t('usageDashboard.avgResponseHelper', {
+                label={t('usageDashboard.throughput')}
+                value={`${compact(stats?.tpm ?? 0, locale)}/m`}
+                helper={t('usageDashboard.throughputHelper', {
                   rpm: compact(stats?.rpm ?? 0, locale),
-                  tpm: compact(stats?.tpm ?? 0, locale)
+                  avg: durationMs(stats?.average_duration_ms ?? 0, locale)
                 })}
                 delta={4}
                 icon={GaugeIcon}

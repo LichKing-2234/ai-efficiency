@@ -122,4 +122,11 @@ describe('User usage panel composition', () => {
     expect(source).toContain("cache: compact(totals.cacheCreationTokens + totals.cacheReadTokens, locale)")
     expect(source).not.toContain("helper={`${t('usageDashboard.input')}: ${compact(stats?.total_input_tokens ?? 0, locale)} · ${t('usageDashboard.output')}: ${compact(stats?.total_output_tokens ?? 0, locale)}`}")
   })
+
+  test('keeps the fourth usage KPI aligned to reference throughput using real backend throughput stats', () => {
+    expect(source).toContain("label={t('usageDashboard.throughput')}")
+    expect(source).toContain("value={`${compact(stats?.tpm ?? 0, locale)}/m`}")
+    expect(source).toContain("helper={t('usageDashboard.throughputHelper', {")
+    expect(source).not.toContain("label={t('usageDashboard.avgResponse')}")
+  })
 })
