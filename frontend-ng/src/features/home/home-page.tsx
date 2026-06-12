@@ -19,6 +19,7 @@ import { PageEmpty } from '@/components/primitives/page-empty'
 import { ProgressFraction } from '@/components/primitives/progress-fraction'
 import { PulseStat } from '@/components/primitives/pulse-stat'
 import { PulseStatGrid } from '@/components/primitives/pulse-stat-grid'
+import { PulseStripPanel } from '@/components/primitives/pulse-strip-panel'
 import { SectionCard } from '@/components/primitives/section-card'
 import { LoadingState } from '@/components/primitives/data-state'
 import { StartActions } from '@/components/primitives/start-actions'
@@ -137,13 +138,13 @@ export function HomePage() {
             </>
           )}
         />
-        <CardContentStack className='border-border border-t px-[18px] py-4'>
+        <PulseStripPanel>
           <PulseStatGrid>
             <PulseStat color='var(--ai)' label={t('home.pulseSpendToday')} value={currency(todayActualCost, locale)} values={pulseSpend} />
             <PulseStat color='var(--viz-output)' divider label={t('home.pulseRequests')} value={number(todayRequests, locale)} values={pulseRequests} />
             <PulseStat color='var(--viz-reason)' divider label={t('home.pulseActiveDevs')} value={number(connectedTools.size, locale)} />
           </PulseStatGrid>
-        </CardContentStack>
+        </PulseStripPanel>
       </HeroSurfaceCard>
 
       <KpiGrid>

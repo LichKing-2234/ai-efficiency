@@ -20,8 +20,11 @@ describe('Home page composition', () => {
   })
 
   test('uses the reference framed pulse strip shell under the hero', () => {
+    expect(source).toContain("from '@/components/primitives/pulse-strip-panel'")
     expect(source).toContain("from '@/components/primitives/pulse-stat-grid'")
+    expect(source).toContain('<PulseStripPanel>')
     expect(source).toContain('<PulseStatGrid>')
+    expect(source).not.toContain("<CardContentStack className='border-border border-t px-[18px] py-4'>")
     expect(source).not.toContain("rounded-[var(--r-md)] border border-border bg-card md:grid-cols-3")
   })
 
