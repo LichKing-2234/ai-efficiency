@@ -3,6 +3,7 @@ import { useLocation, useNavigate, useSearch } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
 import { KeyRoundIcon } from 'lucide-react'
 import { AppAlert } from '@/components/primitives/app-alert'
+import { authDeviceCodeControlClassName } from '@/components/primitives/auth-field'
 import { AuthInfoPanel } from '@/components/primitives/auth-info-panel'
 import { AuthSurface } from '@/components/primitives/auth-surface'
 import { OAuthDecisionActions } from '@/components/primitives/oauth-decision-actions'
@@ -138,7 +139,7 @@ export function DeviceCodeField({
     <TextField
       id='oauth-device-code'
       label={label}
-      controlClassName='h-11 rounded-[var(--r-md)] bg-[var(--surface-inset)] px-3.5 text-center text-[15px] font-semibold tracking-[0.18em] uppercase'
+      controlClassName={authDeviceCodeControlClassName}
       placeholder={placeholder}
       value={code}
       onChange={onCodeChange}

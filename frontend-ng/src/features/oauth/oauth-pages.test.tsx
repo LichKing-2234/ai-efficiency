@@ -45,10 +45,13 @@ describe('OAuth page primitives', () => {
 
   test('uses the shared split action row for approve and deny actions', () => {
     expect(source).toContain("from '@/components/primitives/oauth-decision-actions'")
+    expect(source).toContain("from '@/components/primitives/auth-field'")
     expect(source).toContain('<OAuthDecisionActions')
     expect(source).toContain("aside={<AuthInfoPanel emphasis>")
+    expect(source).toContain('authDeviceCodeControlClassName')
     expect(source).not.toContain("className='flex-1'")
     expect(source).not.toContain("className='w-full'")
+    expect(source).not.toContain("controlClassName='h-11 rounded-[var(--r-md)] bg-[var(--surface-inset)] px-3.5 text-center text-[15px] font-semibold tracking-[0.18em] uppercase'")
   })
 
   test('uses the shared card content stack for auth surface bodies', () => {
