@@ -4,13 +4,11 @@ import { Navigate, useNavigate, useSearch } from '@tanstack/react-router'
 import { Database, KeyRound, Layers, LockKeyhole, RefreshCw, Settings as SettingsIcon, Shield, Trash2, Waypoints } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { Card } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { AppAlert } from '@/components/primitives/app-alert'
 import { ButtonWithIcon } from '@/components/primitives/button-with-icon'
 import { CategoryBadge } from '@/components/primitives/category-badge'
 import { CardContentStack } from '@/components/primitives/card-content-stack'
-import { CardTableContent } from '@/components/primitives/card-table-content'
 import { ConfirmActionButton } from '@/components/primitives/confirm-action-button'
 import { DataGrid, DataGridCell, DataGridHeader, DataGridRow } from '@/components/primitives/data-grid'
 import { Page } from '@/components/primitives/page'
@@ -20,7 +18,7 @@ import { InfoTile, InfoTileGrid } from '@/components/primitives/info-tile'
 import { PageEmpty } from '@/components/primitives/page-empty'
 import { RowIconActions } from '@/components/primitives/row-icon-actions'
 import { SectionCard } from '@/components/primitives/section-card'
-import { SectionCardHeader } from '@/components/primitives/section-card-header'
+import { SectionTableCard } from '@/components/primitives/section-table-card'
 import { SectionNav, SectionNavFrame, type SectionNavItem } from '@/components/primitives/section-nav'
 import { StartActions } from '@/components/primitives/start-actions'
 import { Stack } from '@/components/primitives/stack'
@@ -304,14 +302,12 @@ export function SettingsPage() {
           <SectionNav ariaLabel={t('settings.sections')} items={sectionItems} onChange={selectSection} value={activeSection} />
         </SectionNavFrame>
         <Stack constrain='content'>
-        {activeSection === 'ai-services' ? <Card>
-          <SectionCardHeader
-            title={t(settingsSectionMeta['ai-services'].labelKey as never)}
-            description={t(settingsSectionMeta['ai-services'].descriptionKey as never)}
-            leading={Layers}
-            actions={<ButtonWithIcon size='sm' icon={Layers} onClick={openAddRelayDialog}>{t('settings.addRelayProvider')}</ButtonWithIcon>}
-          />
-          <CardTableContent variant='flush'>
+        {activeSection === 'ai-services' ? <SectionTableCard
+          actions={<ButtonWithIcon size='sm' icon={Layers} onClick={openAddRelayDialog}>{t('settings.addRelayProvider')}</ButtonWithIcon>}
+          description={t(settingsSectionMeta['ai-services'].descriptionKey as never)}
+          leading={Layers}
+          title={t(settingsSectionMeta['ai-services'].labelKey as never)}
+        >
             {(relay.data ?? []).length > 0 ? (
               <DataGrid minWidth={860}>
                 <DataGridHeader columns={relayColumns}>
@@ -350,16 +346,13 @@ export function SettingsPage() {
                 action={<ButtonWithIcon size='sm' icon={Layers} onClick={openAddRelayDialog}>{t('settings.addRelayProvider')}</ButtonWithIcon>}
               />
             )}
-          </CardTableContent>
-        </Card> : null}
-        {activeSection === 'code-platforms' ? <Card>
-          <SectionCardHeader
-            title={t(settingsSectionMeta['code-platforms'].labelKey as never)}
-            description={t(settingsSectionMeta['code-platforms'].descriptionKey as never)}
-            leading={Waypoints}
-            actions={<ButtonWithIcon size='sm' icon={Waypoints} onClick={openAddScmDialog}>{t('settings.addScmProvider')}</ButtonWithIcon>}
-          />
-          <CardTableContent variant='flush'>
+        </SectionTableCard> : null}
+        {activeSection === 'code-platforms' ? <SectionTableCard
+          actions={<ButtonWithIcon size='sm' icon={Waypoints} onClick={openAddScmDialog}>{t('settings.addScmProvider')}</ButtonWithIcon>}
+          description={t(settingsSectionMeta['code-platforms'].descriptionKey as never)}
+          leading={Waypoints}
+          title={t(settingsSectionMeta['code-platforms'].labelKey as never)}
+        >
             {(scm.data?.items ?? []).length > 0 ? (
               <DataGrid minWidth={840}>
                 <DataGridHeader columns={scmColumns}>
@@ -398,16 +391,13 @@ export function SettingsPage() {
                 action={<ButtonWithIcon size='sm' icon={Waypoints} onClick={openAddScmDialog}>{t('settings.addScmProvider')}</ButtonWithIcon>}
               />
             )}
-          </CardTableContent>
-        </Card> : null}
-        {activeSection === 'advanced-credentials' ? <Card>
-          <SectionCardHeader
-            title={t(settingsSectionMeta['advanced-credentials'].labelKey as never)}
-            description={t(settingsSectionMeta['advanced-credentials'].descriptionKey as never)}
-            leading={LockKeyhole}
-            actions={<ButtonWithIcon size='sm' icon={KeyRound} onClick={openAddCredentialDialog}>{t('settings.addCredential')}</ButtonWithIcon>}
-          />
-          <CardTableContent variant='flush'>
+        </SectionTableCard> : null}
+        {activeSection === 'advanced-credentials' ? <SectionTableCard
+          actions={<ButtonWithIcon size='sm' icon={KeyRound} onClick={openAddCredentialDialog}>{t('settings.addCredential')}</ButtonWithIcon>}
+          description={t(settingsSectionMeta['advanced-credentials'].descriptionKey as never)}
+          leading={LockKeyhole}
+          title={t(settingsSectionMeta['advanced-credentials'].labelKey as never)}
+        >
             {(credentials.data ?? []).length > 0 ? (
               <DataGrid minWidth={760}>
                 <DataGridHeader columns={credentialColumns}>
@@ -446,8 +436,7 @@ export function SettingsPage() {
                 action={<ButtonWithIcon size='sm' icon={KeyRound} onClick={openAddCredentialDialog}>{t('settings.addCredential')}</ButtonWithIcon>}
               />
             )}
-          </CardTableContent>
-        </Card> : null}
+        </SectionTableCard> : null}
         {activeSection === 'organization-login' ? <SectionCard
           description={t(settingsSectionMeta['organization-login'].descriptionKey as never)}
           leading={Shield}

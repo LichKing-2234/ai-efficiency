@@ -55,9 +55,10 @@ describe('Settings page composition', () => {
   test('uses shared table card content for settings data grids', () => {
     const source = readFileSync(join(ROOT, 'features/settings/settings-page.tsx'), 'utf8')
 
-    expect(source).toContain("from '@/components/primitives/card-table-content'")
-    expect(source).toContain("from '@/components/primitives/card-content-stack'")
-    expect(source).toContain("<CardTableContent variant='flush'>")
+    expect(source).toContain("from '@/components/primitives/section-table-card'")
+    expect(source).toContain('<SectionTableCard')
+    expect(source).not.toContain("<CardTableContent variant='flush'>")
+    expect(source).not.toContain("<Card>\n          <SectionCardHeader")
     expect(source).not.toContain("<CardContent className='p-0'>")
     expect(source).not.toContain('<CardContent>')
   })
