@@ -1,7 +1,6 @@
 import { FieldGroup } from '@/components/ui/field'
-import { AppAlert } from '@/components/primitives/app-alert'
 import { CheckboxField } from '@/components/primitives/checkbox-field'
-import { SubmitCancelActions } from '@/components/primitives/submit-cancel-actions'
+import { ManagedFormFooter } from '@/components/primitives/managed-form-footer'
 import { TextField } from '@/components/primitives/text-field'
 import { useI18n } from '@/lib/i18n/i18n'
 import type { RelayFormState } from './settings-payloads'
@@ -57,11 +56,9 @@ export function RelayProviderForm({
       ))}
       <CheckboxField id='relay-primary' checked={form.is_primary} label={t('settings.primary')} onCheckedChange={(is_primary) => onChange({ ...form, is_primary })} />
       <CheckboxField id='relay-enabled' checked={form.enabled} label={t('settings.enabled')} onCheckedChange={(enabled) => onChange({ ...form, enabled })} />
-      {errors.filter((message): message is string => !!message).map((message) => (
-        <AppAlert key={message} tone='error' title={message} />
-      ))}
-      <SubmitCancelActions
+      <ManagedFormFooter
         cancelLabel={t('common.cancel')}
+        errors={errors}
         submitDisabled={submitDisabled}
         submitLabel={editMode ? t('common.update') : t('common.create')}
         onCancel={onCancel}

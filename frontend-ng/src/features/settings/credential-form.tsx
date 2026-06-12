@@ -1,7 +1,6 @@
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
-import { AppAlert } from '@/components/primitives/app-alert'
 import { LabeledSegmentedControl } from '@/components/primitives/labeled-segmented-control'
-import { SubmitCancelActions } from '@/components/primitives/submit-cancel-actions'
+import { ManagedFormFooter } from '@/components/primitives/managed-form-footer'
 import { TextField } from '@/components/primitives/text-field'
 import { useI18n } from '@/lib/i18n/i18n'
 import type { CredentialFormState } from './settings-payloads'
@@ -68,11 +67,9 @@ export function CredentialForm({
       {form.kind === 'ssh_username_with_private_key' ? (
         <TextField id='credential-passphrase' label={t('settings.passphrase')} type='password' value={form.passphrase ?? ''} onChange={(passphrase) => onChange({ ...form, passphrase })} />
       ) : null}
-      {errors.filter((message): message is string => !!message).map((message) => (
-        <AppAlert key={message} tone='error' title={message} />
-      ))}
-      <SubmitCancelActions
+      <ManagedFormFooter
         cancelLabel={t('common.cancel')}
+        errors={errors}
         submitDisabled={submitDisabled}
         submitLabel={editMode ? t('common.update') : t('common.create')}
         onCancel={onCancel}

@@ -11,10 +11,17 @@ const credentialSource = readFileSync(resolve(root, 'credential-form.tsx'), 'utf
 describe('Settings form action composition', () => {
   test('uses shared submit-cancel actions instead of page-local button pairs for CRUD dialogs', () => {
     for (const source of [relaySource, scmSource, credentialSource]) {
-      expect(source).toContain("from '@/components/primitives/submit-cancel-actions'")
-      expect(source).toContain('<SubmitCancelActions')
+      expect(source).toContain("from '@/components/primitives/managed-form-footer'")
+      expect(source).toContain('<ManagedFormFooter')
       expect(source).not.toContain('<ActionGroup>')
       expect(source).not.toContain("<Button variant='outline'")
+    }
+  })
+
+  test('routes CRUD form errors through the shared managed footer instead of local alert loops', () => {
+    for (const source of [relaySource, scmSource, credentialSource]) {
+      expect(source).not.toContain("errors.filter((message): message is string => !!message).map((message) => (")
+      expect(source).not.toContain("<AppAlert key={message} tone='error' title={message} />")
     }
   })
 })

@@ -1,8 +1,7 @@
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
-import { AppAlert } from '@/components/primitives/app-alert'
 import { LabeledSegmentedControl } from '@/components/primitives/labeled-segmented-control'
+import { ManagedFormFooter } from '@/components/primitives/managed-form-footer'
 import { SelectField } from '@/components/primitives/select-field'
-import { SubmitCancelActions } from '@/components/primitives/submit-cancel-actions'
 import { TextField } from '@/components/primitives/text-field'
 import type { Credential } from '@/lib/api/types'
 import { useI18n } from '@/lib/i18n/i18n'
@@ -91,11 +90,9 @@ export function ScmProviderForm({
           />
         </>
       ) : null}
-      {errors.filter((message): message is string => !!message).map((message) => (
-        <AppAlert key={message} tone='error' title={message} />
-      ))}
-      <SubmitCancelActions
+      <ManagedFormFooter
         cancelLabel={t('common.cancel')}
+        errors={errors}
         submitDisabled={submitDisabled}
         submitLabel={editMode ? t('common.update') : t('common.create')}
         onCancel={onCancel}
