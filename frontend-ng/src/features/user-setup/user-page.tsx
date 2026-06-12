@@ -22,6 +22,7 @@ import { RecordMeta } from '@/components/primitives/record-meta'
 import { SectionCard } from '@/components/primitives/section-card'
 import { SelectableCard, SelectableCardHeader, SelectableCardMeta, SelectableCardStatus, SelectableCardTitle } from '@/components/primitives/selectable-card'
 import { Stack } from '@/components/primitives/stack'
+import { SummaryMetricsPanel } from '@/components/primitives/summary-metrics-panel'
 import { SurfaceSplit } from '@/components/primitives/surface-split'
 import { LoadingState } from '@/components/primitives/data-state'
 import { api } from '@/lib/api'
@@ -211,7 +212,7 @@ export function UserPage() {
           >
               {selectedGroup ? (
                 <>
-                  <InfoTileGrid columns={3}>
+                  <SummaryMetricsPanel metricsColumns={3} title={t('userSetup.aiAccess')}>
                     <InfoTile compact label={t('userSetup.group')} value={selectedGroup.group_name} />
                     <InfoTile compact label={t('userSetup.platform')} value={selectedGroup.platform} />
                     <InfoTile
@@ -220,7 +221,7 @@ export function UserPage() {
                       value={selectedGroup.credential.state === 'existing_hidden' ? t('userSetup.ready') : t('userSetup.needsSetup')}
                       accent={selectedGroup.credential.state === 'existing_hidden' ? 'ai' : false}
                     />
-                  </InfoTileGrid>
+                  </SummaryMetricsPanel>
                   <CredentialKeyPanel
                     label={t('userSetup.apiKey')}
                     value={displayedSecret || t('userSetup.noKeyProvisioned')}

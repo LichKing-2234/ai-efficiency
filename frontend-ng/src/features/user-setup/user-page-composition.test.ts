@@ -109,7 +109,8 @@ describe('User setup page composition', () => {
   })
 
   test('uses compact stat tiles and grouped setup actions closer to the reference panel rhythm', () => {
-    expect(source).toContain("<InfoTileGrid columns={3}>")
+    expect(source).toContain("from '@/components/primitives/summary-metrics-panel'")
+    expect(source).toContain('<SummaryMetricsPanel')
     expect(source).toContain("compact")
     expect(source).toContain("? 'ai' : false")
     expect(source).toContain("from '@/components/primitives/info-tile'")
@@ -117,6 +118,7 @@ describe('User setup page composition', () => {
     expect(source).toContain("from '@/components/primitives/context-inline'")
     expect(source).toContain("value={selectedGroup.group_name}")
     expect(source).toContain("value={selectedGroup.platform}")
+    expect(source).not.toContain('<InfoTileGrid columns={3}>')
   })
 
   test('uses the shared confirm trigger primitive for credential regeneration', () => {

@@ -21,6 +21,7 @@ import { SectionTableCard } from '@/components/primitives/section-table-card'
 import { SectionNav, SectionNavFrame, type SectionNavItem } from '@/components/primitives/section-nav'
 import { StartActions } from '@/components/primitives/start-actions'
 import { Stack } from '@/components/primitives/stack'
+import { SummaryMetricsPanel } from '@/components/primitives/summary-metrics-panel'
 import { SurfaceSplit } from '@/components/primitives/surface-split'
 import { StatusBadge } from '@/components/primitives/status-badge'
 import { api } from '@/lib/api'
@@ -453,7 +454,7 @@ export function SettingsPage() {
             />
         </SectionCard> : null}
         {activeSection === 'deployment-runtime' ? <>
-          <SectionCard
+          <SummaryMetricsPanel
             actions={
               deployment.data?.update_available
                 ? <CategoryBadge variant='ai'>{t('settings.updateAvailable', { version: deployment.data.latest_release?.version || '-' })}</CategoryBadge>
@@ -462,13 +463,20 @@ export function SettingsPage() {
             description={t(settingsSectionMeta['deployment-runtime'].descriptionKey as never)}
             gap='compact'
             leading={Database}
+            metricsClassName='split-equal min-[920px]:grid-cols-3'
+            metricsColumns={3}
             title={t(settingsSectionMeta['deployment-runtime'].labelKey as never)}
           >
-              <InfoTileGrid columns={3} className='split-equal min-[920px]:grid-cols-3'>
-                <InfoTile label={t('settings.current')} value={`v${deployment.data?.version.version || '-'}`} mono />
-                <InfoTile label={t('settings.latest')} value={`v${deployment.data?.latest_release?.version || deployment.data?.version.version || '-'}`} mono />
-                <InfoTile label={t('settings.mode')} value={deployment.data?.mode || t('common.unknown')} mono accent='ai' />
-              </InfoTileGrid>
+              <InfoTile label={t('settings.current')} value={`v${deployment.data?.version.version || '-'}`} mono />
+              <InfoTile label={t('settings.latest')} value={`v${deployment.data?.latest_release?.version || deployment.data?.version.version || '-'}`} mono />
+              <InfoTile label={t('settings.mode')} value={deployment.data?.mode || t('common.unknown')} mono accent='ai' />
+          </SummaryMetricsPanel>
+          <SectionCard
+            description={t('settings.serviceHealthDescription')}
+            gap='normal'
+            leading={Database}
+            title={t('settings.serviceHealth')}
+          >
               <StartActions>
                 <ButtonWithIcon size='sm' variant='ghost' icon={RefreshCw} onClick={() => checkUpdate.mutate()} disabled={checkUpdate.isPending}>{t('settings.checkUpdate')}</ButtonWithIcon>
                 <ConfirmActionButton
@@ -499,13 +507,6 @@ export function SettingsPage() {
                   title={t('settings.requestRestart')}
                 />
               </StartActions>
-          </SectionCard>
-          <SectionCard
-            description={t('settings.serviceHealthDescription')}
-            gap='normal'
-            leading={Database}
-            title={t('settings.serviceHealth')}
-          >
               <HealthFieldList className='bg-[var(--surface-inset)]'>
                 {deploymentHealthRows(deploymentHealth.data?.checks ?? []).map((check) => (
                   <HealthFieldItem
