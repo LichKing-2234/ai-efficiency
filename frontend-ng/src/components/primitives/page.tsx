@@ -1,5 +1,6 @@
 import { ActionGroup } from '@/components/primitives/action-group'
 import { Stack } from '@/components/primitives/stack'
+import { ToolbarActions } from '@/components/primitives/toolbar-actions'
 import { cn } from '@/lib/utils'
 
 const pageHeaderDescriptionClass = 'mt-1 max-w-3xl text-[12px] text-[var(--ink-3)]'
@@ -17,7 +18,7 @@ export function Page({ children, className }: { children: React.ReactNode; class
 }
 
 export function PageToolbar({ children, className }: { children: React.ReactNode; className?: string }) {
-  return <ActionGroup className={className}>{children}</ActionGroup>
+  return <ToolbarActions className={className}>{children}</ToolbarActions>
 }
 
 export function PageHeader({

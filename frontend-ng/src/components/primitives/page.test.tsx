@@ -51,8 +51,9 @@ describe('PageHeader', () => {
       fs.readFile(new URL('./page.tsx', import.meta.url), 'utf8')
     )
 
-    expect(source).toContain("from '@/components/primitives/action-group'")
+    expect(source).toContain("from '@/components/primitives/toolbar-actions'")
     expect(source).toContain("from '@/components/primitives/stack'")
+    expect(source).toContain('<ToolbarActions className={className}>{children}</ToolbarActions>')
     expect(source).toContain("dataSlot='page-header'")
     expect(source).toContain("<ActionGroup align='responsive-end'")
     expect(source).toContain("className='min-[920px]:items-end'")
