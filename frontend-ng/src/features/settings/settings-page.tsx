@@ -8,7 +8,6 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { AppAlert } from '@/components/primitives/app-alert'
 import { ButtonWithIcon } from '@/components/primitives/button-with-icon'
 import { CategoryBadge } from '@/components/primitives/category-badge'
-import { CardContentStack } from '@/components/primitives/card-content-stack'
 import { ConfirmActionButton } from '@/components/primitives/confirm-action-button'
 import { DataGrid, DataGridCell, DataGridHeader, DataGridRow } from '@/components/primitives/data-grid'
 import { Page } from '@/components/primitives/page'
