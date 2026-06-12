@@ -29,6 +29,7 @@ import { useI18n } from '@/lib/i18n/i18n'
 import { navItems, pageMeta } from './navigation'
 import { SidebarUserSummary } from './sidebar-user-summary'
 import { TopbarActions } from './topbar-actions'
+import { TopbarActionsDivider } from './topbar-actions-divider'
 import { TopbarTitle } from './topbar-title'
 
 const LOCALES: Array<{ value: Locale; labelKey: 'locale.english' | 'locale.chinese' }> = [
@@ -182,7 +183,7 @@ export function AppShell({ user, children }: { user: User | null; children: Reac
             <Button className='hidden min-[920px]:inline-flex' variant='ghost' size='icon-sm' onClick={toggleCollapsed} title={t('nav.toggleSidebar')}>
               <PanelLeftIcon />
             </Button>
-            <div className='hidden h-[22px] w-px bg-[var(--line)] min-[920px]:block' />
+            <TopbarActionsDivider />
             <TopbarTitle section={t(meta.sectionKey)} title={t(meta.titleKey)} />
             <TopbarActions
               commandLabel={t('command.trigger')}

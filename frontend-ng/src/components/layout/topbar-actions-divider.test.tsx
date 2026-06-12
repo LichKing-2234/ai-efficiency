@@ -12,13 +12,13 @@ describe('TopbarActionsDivider', () => {
     expect(html).toContain('bg-[var(--line)]')
   })
 
-  test('keeps the divider on the desktop-only shell from the reference topbar', async () => {
+  test('keeps the divider as a reusable shell primitive instead of hardcoding desktop-only visibility', async () => {
     const source = await import('node:fs/promises').then((fs) =>
       fs.readFile(new URL('./topbar-actions-divider.tsx', import.meta.url), 'utf8')
     )
 
     expect(source).toContain("data-slot='topbar-actions-divider'")
-    expect(source).toContain("hidden h-[22px] w-px bg-[var(--line)] min-[920px]:block")
+    expect(source).toContain("className={cn('h-[22px] w-px bg-[var(--line)]', className)}")
     expect(source).not.toContain('h-6')
     expect(source).not.toContain('bg-border')
   })

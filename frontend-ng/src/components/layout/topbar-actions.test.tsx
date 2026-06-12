@@ -38,7 +38,7 @@ describe('TopbarActions', () => {
     )
 
     expect(source).toContain("from './topbar-actions-divider'")
-    expect(source).toContain('<TopbarActionsDivider />')
+    expect(source).toContain("<TopbarActionsDivider className='hidden min-[920px]:block' />")
     expect(source).toContain("className='hidden min-[920px]:inline'")
     expect(source).toContain("className='min-w-40 border-[var(--line-strong)]'")
     expect(source).toContain("size='sm'")

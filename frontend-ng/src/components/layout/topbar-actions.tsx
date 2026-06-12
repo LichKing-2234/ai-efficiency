@@ -38,7 +38,7 @@ export function TopbarActions({
     <div className='ml-auto flex items-center gap-[8px]' data-slot='topbar-actions'>
       <TopbarCommandTrigger label={commandLabel} onOpen={onOpenCommand} />
       <TopbarLiveStatus label={ingestingLabel} />
-      <TopbarActionsDivider />
+      <TopbarActionsDivider className='hidden min-[920px]:block' />
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
