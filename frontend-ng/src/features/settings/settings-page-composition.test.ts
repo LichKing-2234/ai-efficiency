@@ -148,6 +148,20 @@ describe('Settings page composition', () => {
     expect(source).not.toContain("<div style={{ width: 44, height: 44")
   })
 
+  test('uses the shared form dialog shell for CRUD management modals', () => {
+    const source = readFileSync(join(ROOT, 'features/settings/settings-page.tsx'), 'utf8')
+
+    expect(source).toContain("from '@/components/primitives/form-dialog'")
+    expect(source).toContain('<FormDialog')
+    expect(source).toContain("title={editingRelayId ? t('settings.editRelayProvider') : t('settings.addRelayProvider')}")
+    expect(source).toContain("title={editingScmId ? t('settings.editScmProvider') : t('settings.addScmProvider')}")
+    expect(source).toContain("title={editingCredentialId ? t('settings.editCredential') : t('settings.addCredential')}")
+    expect(source).not.toContain("from '@/components/ui/dialog'")
+    expect(source).not.toContain('<DialogHeader>')
+    expect(source).not.toContain('<DialogTitle>')
+    expect(source).not.toContain('<DialogDescription>')
+  })
+
   test('uses compact icon row actions for settings provider tables', () => {
     const source = readFileSync(join(ROOT, 'features/settings/settings-page.tsx'), 'utf8')
 

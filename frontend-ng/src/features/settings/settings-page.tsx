@@ -4,7 +4,6 @@ import { Navigate, useNavigate, useSearch } from '@tanstack/react-router'
 import { Database, KeyRound, Layers, LockKeyhole, RefreshCw, Settings as SettingsIcon, Shield, Trash2, Waypoints } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { AppAlert } from '@/components/primitives/app-alert'
 import { ButtonWithIcon } from '@/components/primitives/button-with-icon'
 import { CategoryBadge } from '@/components/primitives/category-badge'
@@ -12,6 +11,7 @@ import { ConfirmActionButton } from '@/components/primitives/confirm-action-butt
 import { DataGrid, DataGridCell, DataGridHeader, DataGridRow } from '@/components/primitives/data-grid'
 import { Page } from '@/components/primitives/page'
 import { LoadingState } from '@/components/primitives/data-state'
+import { FormDialog } from '@/components/primitives/form-dialog'
 import { HealthFieldItem, HealthFieldList, type HealthStatus } from '@/components/primitives/health-field-list'
 import { InfoTile, InfoTileGrid } from '@/components/primitives/info-tile'
 import { PageEmpty } from '@/components/primitives/page-empty'
@@ -522,12 +522,12 @@ export function SettingsPage() {
         </> : null}
         </Stack>
       </SurfaceSplit>
-      <Dialog open={relayDialog} onOpenChange={(open) => open ? setRelayDialog(true) : closeRelayDialog()}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{editingRelayId ? t('settings.editRelayProvider') : t('settings.addRelayProvider')}</DialogTitle>
-            <DialogDescription>{editingRelayId ? t('settings.editRelayProviderDescription') : t('settings.adminApiKeyDescription')}</DialogDescription>
-          </DialogHeader>
+      <FormDialog
+        description={editingRelayId ? t('settings.editRelayProviderDescription') : t('settings.adminApiKeyDescription')}
+        open={relayDialog}
+        title={editingRelayId ? t('settings.editRelayProvider') : t('settings.addRelayProvider')}
+        onOpenChange={(open) => open ? setRelayDialog(true) : closeRelayDialog()}
+      >
           <RelayProviderForm
             createPending={createRelay.isPending}
             editMode={!!editingRelayId}
@@ -538,14 +538,13 @@ export function SettingsPage() {
             onSubmit={() => editingRelayId ? updateRelay.mutate() : createRelay.mutate()}
             updatePending={updateRelay.isPending}
           />
-        </DialogContent>
-      </Dialog>
-      <Dialog open={scmDialog} onOpenChange={(open) => open ? setScmDialog(true) : closeScmDialog()}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{editingScmId ? t('settings.editScmProvider') : t('settings.addScmProvider')}</DialogTitle>
-            <DialogDescription>{t('settings.scmProvidersDescription')}</DialogDescription>
-          </DialogHeader>
+      </FormDialog>
+      <FormDialog
+        description={t('settings.scmProvidersDescription')}
+        open={scmDialog}
+        title={editingScmId ? t('settings.editScmProvider') : t('settings.addScmProvider')}
+        onOpenChange={(open) => open ? setScmDialog(true) : closeScmDialog()}
+      >
           <ScmProviderForm
             createPending={createScm.isPending}
             credentials={credentials.data ?? []}
@@ -557,14 +556,13 @@ export function SettingsPage() {
             onSubmit={() => editingScmId ? updateScm.mutate() : createScm.mutate()}
             updatePending={updateScm.isPending}
           />
-        </DialogContent>
-      </Dialog>
-      <Dialog open={credentialDialog} onOpenChange={(open) => open ? setCredentialDialog(true) : closeCredentialDialog()}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{editingCredentialId ? t('settings.editCredential') : t('settings.addCredential')}</DialogTitle>
-            <DialogDescription>{editingCredentialId ? t('settings.editCredentialDescription') : t('settings.createCredentialDescription')}</DialogDescription>
-          </DialogHeader>
+      </FormDialog>
+      <FormDialog
+        description={editingCredentialId ? t('settings.editCredentialDescription') : t('settings.createCredentialDescription')}
+        open={credentialDialog}
+        title={editingCredentialId ? t('settings.editCredential') : t('settings.addCredential')}
+        onOpenChange={(open) => open ? setCredentialDialog(true) : closeCredentialDialog()}
+      >
           <CredentialForm
             createPending={createCredential.isPending}
             editMode={!!editingCredentialId}
@@ -575,8 +573,7 @@ export function SettingsPage() {
             onSubmit={() => editingCredentialId ? updateCredential.mutate() : createCredential.mutate()}
             updatePending={updateCredential.isPending}
           />
-        </DialogContent>
-      </Dialog>
+      </FormDialog>
     </Page>
   )
 }

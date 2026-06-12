@@ -183,6 +183,16 @@ describe('Repos page composition', () => {
     expect(source).not.toContain("<CardContent className='p-8'>")
   })
 
+  test('uses the shared form dialog shell for add-repository management flows', () => {
+    expect(source).toContain("from '@/components/primitives/form-dialog'")
+    expect(source).toContain('<FormDialog')
+    expect(source).toContain("description={t('repos.pasteRepoUrl')}")
+    expect(source).not.toContain("from '@/components/ui/dialog'")
+    expect(source).not.toContain('<DialogHeader>')
+    expect(source).not.toContain('<DialogTitle>')
+    expect(source).not.toContain('<DialogDescription>')
+  })
+
   test('uses the shared pager navigation button for repository list pagination', () => {
     expect(source).toContain("from '@/components/primitives/pager-nav-button'")
     expect(source).toContain('<CardPagerFooter')

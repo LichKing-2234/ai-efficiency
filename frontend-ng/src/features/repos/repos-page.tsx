@@ -3,7 +3,6 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 import { CheckIcon, ChevronRightIcon, CircleDotIcon, ExternalLinkIcon, FolderGit2Icon, GitPullRequestIcon, PlusIcon, RefreshCwIcon, WrenchIcon } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { CardPagerFooter } from '@/components/primitives/card-pager-footer'
 import { ButtonWithIcon } from '@/components/primitives/button-with-icon'
@@ -18,6 +17,7 @@ import { DetailSection } from '@/components/primitives/detail-section'
 import { EntityGlyph } from '@/components/primitives/entity-glyph'
 import { EndActions } from '@/components/primitives/end-actions'
 import { FieldItem, FieldList } from '@/components/primitives/field-list'
+import { FormDialog } from '@/components/primitives/form-dialog'
 import { InfoTile, InfoTileGrid } from '@/components/primitives/info-tile'
 import { InlineDestructiveActions } from '@/components/primitives/inline-destructive-actions'
 import { KpiGrid } from '@/components/primitives/kpi-grid'
@@ -569,12 +569,12 @@ function AddRepoDialog({
     sshHostExample: t('settings.sshHostExample')
   }
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>{t('repos.addRepo')}</DialogTitle>
-          <DialogDescription>{t('repos.pasteRepoUrl')}</DialogDescription>
-        </DialogHeader>
+    <FormDialog
+      description={t('repos.pasteRepoUrl')}
+      open={open}
+      title={t('repos.addRepo')}
+      onOpenChange={setOpen}
+    >
         <RepoCreateForm
           addError={addError}
           cloneProtocol={cloneProtocol}
@@ -600,8 +600,7 @@ function AddRepoDialog({
           onSelectedProviderIdChange={setSelectedProviderId}
           onSshHostChange={setSshHost}
         />
-      </DialogContent>
-    </Dialog>
+    </FormDialog>
   )
 }
 
