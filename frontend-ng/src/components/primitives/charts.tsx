@@ -312,7 +312,7 @@ export function BarsH({
               <span className='size-2 shrink-0 rounded-[3px]' style={{ background: row.color }} />
               <span className='mono truncate'>{row.label}</span>
             </ActionGroup>
-            <span className='shrink-0 text-[12px] text-[var(--ink-3)]'>
+            <span className='shrink-0 text-[11.5px] text-[var(--ink-3)]'>
               <span className='tnum font-semibold text-[var(--ink)]'>{formatValue(row.value)}</span>
               {typeof row.share === 'number' ? <span className='tnum ml-2'>{Math.round(row.share * 100)}%</span> : null}
             </span>

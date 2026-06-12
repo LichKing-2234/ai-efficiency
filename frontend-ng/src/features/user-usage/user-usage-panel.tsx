@@ -31,7 +31,7 @@ const modelColumns = '1.5fr_0.8fr_0.9fr_0.8fr'
 
 export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
   const { locale, t } = useI18n()
-  const [range, setRange] = useState<UsageRangeOption>('7d')
+  const [range, setRange] = useState<UsageRangeOption>('30d')
   const query = useQuery({
     queryKey: ['user-usage-dashboard', range],
     queryFn: () => api.userUsage.dashboard(buildUsageDashboardParams(range))
@@ -102,7 +102,7 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
               <KpiCard
                 label={t('usageDashboard.rangeCost', { range: rangeLabel })}
                 value={currency(totals.actualCost, locale)}
-                helper={`${t('usageDashboard.standard')}: ${currency(totals.standardCost, locale)}`}
+                helper={t('usageDashboard.rangeCostHelper', { cost: currency(totals.standardCost, locale) })}
                 accent
                 delta={-9}
                 deltaTone='pos'
@@ -113,7 +113,7 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
               <KpiCard
                 label={t('usageDashboard.rangeRequests', { range: rangeLabel })}
                 value={number(totals.requests, locale)}
-                helper={t('usageDashboard.selectedRange')}
+                helper={t('usageDashboard.rangeRequestsHelper')}
                 delta={12}
                 icon={ActivityIcon}
                 sparkline={snapshot.trend.map((point) => point.requests)}
@@ -122,7 +122,11 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
               <KpiCard
                 label={t('usageDashboard.rangeTokens', { range: rangeLabel })}
                 value={compact(totals.tokens, locale)}
-                helper={`${t('usageDashboard.input')}: ${compact(totals.inputTokens, locale)} · ${t('usageDashboard.output')}: ${compact(totals.outputTokens, locale)} · ${t('usageDashboard.cache')}: ${compact(totals.cacheCreationTokens + totals.cacheReadTokens, locale)}`}
+                helper={t('usageDashboard.rangeTokensHelper', {
+                  input: compact(totals.inputTokens, locale),
+                  output: compact(totals.outputTokens, locale),
+                  cache: compact(totals.cacheCreationTokens + totals.cacheReadTokens, locale)
+                })}
                 delta={15}
                 icon={LayersIcon}
                 sparkline={spark}
@@ -131,7 +135,10 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
               <KpiCard
                 label={t('usageDashboard.avgResponse')}
                 value={durationMs(stats?.average_duration_ms ?? 0, locale)}
-                helper={`RPM ${compact(stats?.rpm ?? 0, locale)} · TPM ${compact(stats?.tpm ?? 0, locale)}`}
+                helper={t('usageDashboard.avgResponseHelper', {
+                  rpm: compact(stats?.rpm ?? 0, locale),
+                  tpm: compact(stats?.tpm ?? 0, locale)
+                })}
                 delta={4}
                 icon={GaugeIcon}
                 sparkline={snapshot.trend.map((point) => point.requests)}

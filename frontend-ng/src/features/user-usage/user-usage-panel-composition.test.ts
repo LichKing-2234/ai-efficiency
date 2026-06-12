@@ -116,7 +116,10 @@ describe('User usage panel composition', () => {
   })
 
   test('derives KPI helper breakdowns from the selected range totals instead of aggregate stats', () => {
-    expect(source).toContain("helper={`${t('usageDashboard.input')}: ${compact(totals.inputTokens, locale)} · ${t('usageDashboard.output')}: ${compact(totals.outputTokens, locale)} · ${t('usageDashboard.cache')}: ${compact(totals.cacheCreationTokens + totals.cacheReadTokens, locale)}`}")
+    expect(source).toContain("helper={t('usageDashboard.rangeTokensHelper', {")
+    expect(source).toContain("input: compact(totals.inputTokens, locale)")
+    expect(source).toContain("output: compact(totals.outputTokens, locale)")
+    expect(source).toContain("cache: compact(totals.cacheCreationTokens + totals.cacheReadTokens, locale)")
     expect(source).not.toContain("helper={`${t('usageDashboard.input')}: ${compact(stats?.total_input_tokens ?? 0, locale)} · ${t('usageDashboard.output')}: ${compact(stats?.total_output_tokens ?? 0, locale)}`}")
   })
 })
