@@ -1,10 +1,7 @@
 import type * as React from 'react'
-import { ActionGroup } from '@/components/primitives/action-group'
 import { AppBrand } from '@/components/primitives/app-brand'
-import { Card } from '@/components/ui/card'
-import { CardContentStack } from '@/components/primitives/card-content-stack'
-import { SectionCardHeader } from '@/components/primitives/section-card-header'
-import { cn } from '@/lib/utils'
+import { AuthSurfaceActions } from '@/components/primitives/auth-surface-actions'
+import { AuthSurfaceFrame } from '@/components/primitives/auth-surface-frame'
 
 export function AuthSurface({
   actions,
@@ -35,18 +32,10 @@ export function AuthSurface({
           title='AI Efficiency'
         />
 
-        <Card className={cn('grid-paper w-full overflow-hidden border-[var(--ai-line)]', className)} variant='accent'>
-          <SectionCardHeader className='px-[18px] pt-[18px]' title={title} description={description} />
-          <CardContentStack className='border-border border-t px-[18px] py-[18px]'>
-            {aside}
-            {children}
-          </CardContentStack>
-          {actions ? (
-            <ActionGroup className='border-border border-t px-[18px] py-[12px]' dataSlot='auth-surface-actions' layout='split'>
-              {actions}
-            </ActionGroup>
-          ) : null}
-        </Card>
+        <AuthSurfaceFrame aside={aside} className={className} description={description} title={title}>
+          {children}
+        </AuthSurfaceFrame>
+        {actions ? <AuthSurfaceActions>{actions}</AuthSurfaceActions> : null}
 
         <p
           data-slot='auth-surface-caption'
