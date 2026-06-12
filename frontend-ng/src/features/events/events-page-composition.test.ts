@@ -104,7 +104,8 @@ describe('Events page composition', () => {
     expect(source).toContain("from '@/components/primitives/page-empty'")
     expect(source).toContain("from '@/components/primitives/pager-nav-button'")
     expect(source).toContain("from '@/components/primitives/page-size-select'")
-    expect(source).toContain("<PageEmpty title={t('events.noMatchedPrs')} />")
+    expect(source).toContain("from '@/components/primitives/detail-record-links-section'")
+    expect(source).toContain("<DetailRecordLinksSection emptyTitle={t('events.noMatchedPrs')} title={t('events.matchedPrs')}>")
     expect(source).toContain("<PageSizeSelect")
     expect(source).toContain("ariaLabel={t('common.pageSizeControl')}")
     expect(source).toContain("labelMode='plain'")
@@ -122,6 +123,8 @@ describe('Events page composition', () => {
   })
 
   test('uses plain linked-record items for matched PR rows in the event detail drawer', () => {
+    expect(source).toContain("from '@/components/primitives/detail-record-links-section'")
+    expect(source).toContain('<DetailRecordLinksSection')
     expect(source).toContain("variant='plain'")
     expect(source).not.toContain("<a key={i} className='pr-link'>")
   })

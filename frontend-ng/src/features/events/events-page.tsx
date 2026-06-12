@@ -9,6 +9,7 @@ import { CardPagerFooter } from '@/components/primitives/card-pager-footer'
 import { CategoryBadge } from '@/components/primitives/category-badge'
 import { DataGrid, DataGridCell, DataGridHeader, DataGridHeaderCell, DataGridRow } from '@/components/primitives/data-grid'
 import { DetailFieldSection } from '@/components/primitives/detail-field-section'
+import { DetailRecordLinksSection } from '@/components/primitives/detail-record-links-section'
 import { DetailSummaryStack } from '@/components/primitives/detail-summary-stack'
 import { DetailSection } from '@/components/primitives/detail-section'
 import { FieldItem } from '@/components/primitives/field-list'
@@ -372,25 +373,19 @@ function EventDetail({ event, isAdmin, onClose }: { event: ToolUsageEventDetail 
             <FieldItem label={t('events.observedStart')} value={dateTime(event.observed_start_at)} />
           </DetailFieldSection>
 
-          <DetailSection title={t('events.matchedPrs')}>
-            {event.matched_prs.length > 0 ? (
-              <LinkedRecordList>
-                {event.matched_prs.map((pr) => (
-                  <LinkedRecordItem
-                    description={pr.status}
-                    href={pr.scm_pr_url}
-                    icon={<GitPullRequestIcon />}
-                    key={pr.pr_record_id}
-                    label={`#${pr.scm_pr_id} ${pr.title}`}
-                    trailing={<ExternalLinkIcon className='size-3.5' />}
-                    variant='plain'
-                  />
-                ))}
-              </LinkedRecordList>
-            ) : (
-              <PageEmpty title={t('events.noMatchedPrs')} />
-            )}
-          </DetailSection>
+          <DetailRecordLinksSection emptyTitle={t('events.noMatchedPrs')} title={t('events.matchedPrs')}>
+            {event.matched_prs.map((pr) => (
+              <LinkedRecordItem
+                description={pr.status}
+                href={pr.scm_pr_url}
+                icon={<GitPullRequestIcon />}
+                key={pr.pr_record_id}
+                label={`#${pr.scm_pr_id} ${pr.title}`}
+                trailing={<ExternalLinkIcon className='size-3.5' />}
+                variant='plain'
+              />
+            ))}
+          </DetailRecordLinksSection>
 
           <AdvancedDataPanel
             code={isAdmin && event.raw_payload ? JSON.stringify(event.raw_payload, null, 2) : null}
