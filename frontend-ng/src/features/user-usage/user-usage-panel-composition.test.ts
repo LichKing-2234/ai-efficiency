@@ -129,4 +129,12 @@ describe('User usage panel composition', () => {
     expect(source).toContain("helper={t('usageDashboard.throughputHelper', {")
     expect(source).not.toContain("label={t('usageDashboard.avgResponse')}")
   })
+
+  test('does not render hardcoded KPI delta percentages without real backend trend comparison data', () => {
+    expect(source).not.toContain('delta={-9}')
+    expect(source).not.toContain('delta={12}')
+    expect(source).not.toContain('delta={15}')
+    expect(source).not.toContain('delta={4}')
+    expect(source).not.toContain("deltaTone='pos'")
+  })
 })

@@ -104,8 +104,6 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
                 value={currency(totals.actualCost, locale)}
                 helper={t('usageDashboard.rangeCostHelper', { cost: currency(totals.standardCost, locale) })}
                 accent
-                delta={-9}
-                deltaTone='pos'
                 icon={CoinsIcon}
                 sparkline={spark}
                 sparklineColor='var(--viz-input)'
@@ -114,7 +112,6 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
                 label={t('usageDashboard.rangeRequests', { range: rangeLabel })}
                 value={number(totals.requests, locale)}
                 helper={t('usageDashboard.rangeRequestsHelper')}
-                delta={12}
                 icon={ActivityIcon}
                 sparkline={snapshot.trend.map((point) => point.requests)}
                 sparklineColor='var(--viz-output)'
@@ -127,7 +124,6 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
                   output: compact(totals.outputTokens, locale),
                   cache: compact(totals.cacheCreationTokens + totals.cacheReadTokens, locale)
                 })}
-                delta={15}
                 icon={LayersIcon}
                 sparkline={spark}
                 sparklineColor='var(--viz-reason)'
@@ -139,7 +135,6 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
                   rpm: compact(stats?.rpm ?? 0, locale),
                   avg: durationMs(stats?.average_duration_ms ?? 0, locale)
                 })}
-                delta={4}
                 icon={GaugeIcon}
                 sparkline={snapshot.trend.map((point) => point.requests)}
                 sparklineColor='var(--viz-cache)'

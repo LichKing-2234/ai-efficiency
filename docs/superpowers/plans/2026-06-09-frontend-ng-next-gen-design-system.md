@@ -262,6 +262,10 @@ Follow-up horizontal-bar parity audit on 2026-06-12 tightened the shared `BarsH`
 
 Follow-up horizontal-bar parity audit evidence: the red-green cycle first failed with `cd frontend-ng && bun test src/components/primitives/charts.test.ts --timeout 20000` after adding a guard that expected 25% and 50% widths from explicit share input, then passed after the primitive update. Broader verification for this checkpoint also passed with `cd frontend-ng && bun test src/components/primitives/charts.test.ts src/features/home/home-page-composition.test.ts src/features/user-usage/user-usage-panel-composition.test.ts --timeout 20000`, `cd frontend-ng && bun run check`, and `git diff --check`.
 
+Follow-up usage KPI integrity audit on 2026-06-12 removed one remaining class of misleading reference drift: hardcoded delta percentages on the Usage Analytics KPI strip. Those `-9 / 12 / 15 / 4` deltas were not coming from real backend comparisons and therefore violated the migration rule that visible analytics should be grounded in actual data rather than prototype placeholders. `frontend-ng/src/features/user-usage/user-usage-panel.tsx` now renders the same four KPI cards without any synthetic delta or `deltaTone` props. The sparkline, totals, throughput, and helper copy remain intact; only the fake trend badges were removed.
+
+Follow-up usage KPI integrity audit evidence: the red-green cycle first failed with `cd frontend-ng && bun test src/features/user-usage/user-usage-panel-composition.test.ts --timeout 20000` after adding a guard that rejected the hardcoded delta props, then passed after the implementation update. Broader verification for this checkpoint also passed with `cd frontend-ng && bun test src/features/user-usage/user-usage-panel-composition.test.ts src/components/primitives/charts.test.ts --timeout 20000`, `cd frontend-ng && bun run check`, and `git diff --check`.
+
 ## File Structure
 
 - Modify: `frontend-ng/src/styles.css` - global MiSans, warm-paper tokens, shadcn compatibility tokens, sidebar/chart tokens, layout utilities, motion utilities, CSS-grid table classes.
