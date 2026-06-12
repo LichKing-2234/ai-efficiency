@@ -32,10 +32,11 @@ describe('User usage panel composition', () => {
 
   test('matches the reference usage analytics card structure', () => {
     expect(source).toContain("from '@/components/primitives/section-card'")
+    expect(source).toContain("from '@/components/primitives/surface-split'")
     const tokenTrendIndex = source.indexOf("title={t('usageDashboard.tokenTrend')}")
     const modelDistributionIndex = source.indexOf("title={t('usageDashboard.modelDistribution')}")
     const costByModelIndex = source.indexOf("title={t('usageDashboard.costByModel')}")
-    const firstSplitAfterTrend = source.indexOf("<div className='split-equal'>", tokenTrendIndex)
+    const firstSplitAfterTrend = source.indexOf("<SurfaceSplit variant='equal'>", tokenTrendIndex)
 
     expect(tokenTrendIndex).toBeGreaterThan(0)
     expect(modelDistributionIndex).toBeGreaterThan(tokenTrendIndex)
@@ -47,6 +48,7 @@ describe('User usage panel composition', () => {
     expect(source).not.toContain("<div className='px-[18px] pb-[18px]'>")
     expect(source).toContain('<SectionCard')
     expect(source).toContain("gap='titled'")
+    expect(source).not.toContain("className='split-equal'")
     expect(source).not.toContain("<CardContentStack className='pt-[14px]'>")
     expect(source).not.toContain("<CardContentStack className='pt-[16px]'>")
   })

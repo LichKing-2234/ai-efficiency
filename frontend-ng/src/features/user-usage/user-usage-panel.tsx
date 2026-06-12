@@ -19,6 +19,7 @@ import { SectionCard } from '@/components/primitives/section-card'
 import { SectionTableCard } from '@/components/primitives/section-table-card'
 import { SegmentedControl } from '@/components/primitives/segmented-control'
 import { Stack } from '@/components/primitives/stack'
+import { SurfaceSplit } from '@/components/primitives/surface-split'
 import { ToolbarActions } from '@/components/primitives/toolbar-actions'
 import { api } from '@/lib/api'
 import type { UserUsageTrendPoint } from '@/lib/api/types'
@@ -162,7 +163,7 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
                   <PageEmpty title={t('usageDashboard.noTrendData')} />
                 )}
             </SectionCard>
-            <div className='split-equal'>
+            <SurfaceSplit variant='equal'>
               <SectionCard
                 description={t('usageDashboard.modelDistributionDescription')}
                 gap='titled'
@@ -212,7 +213,7 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
                     <PageEmpty title={t('usageDashboard.noModelData')} />
                   )}
               </SectionTableCard>
-            </div>
+            </SurfaceSplit>
             {!embedded ? (
               <SectionCard
                 description={t('usageDashboard.activityHeatmapDescription')}

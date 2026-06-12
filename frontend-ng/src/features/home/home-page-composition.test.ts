@@ -68,9 +68,11 @@ describe('Home page composition', () => {
   test('uses reference overview sections instead of embedding the full usage analytics panel', () => {
     expect(source).toContain("from '@/components/primitives/charts'")
     expect(source).toContain("from '@/components/primitives/section-card'")
+    expect(source).toContain("from '@/components/primitives/surface-split'")
     expect(source).toContain('<BarsH')
-    expect(source).toContain("className='split-2'")
+    expect(source).toContain("<SurfaceSplit variant='overview'>")
     expect(source).not.toContain('<UserUsagePanel embedded />')
+    expect(source).not.toContain("className='split-2'")
   })
 
   test('keeps the reference live-activity and top-models ending row without an extra usage snapshot card', () => {

@@ -21,6 +21,7 @@ import { PulseStat } from '@/components/primitives/pulse-stat'
 import { PulseStatGrid } from '@/components/primitives/pulse-stat-grid'
 import { PulseStripPanel } from '@/components/primitives/pulse-strip-panel'
 import { SectionCard } from '@/components/primitives/section-card'
+import { SurfaceSplit } from '@/components/primitives/surface-split'
 import { LoadingState } from '@/components/primitives/data-state'
 import { StartActions } from '@/components/primitives/start-actions'
 import { UsageActivityRow } from '@/components/primitives/usage-activity-row'
@@ -185,7 +186,7 @@ export function HomePage() {
         />
       </KpiGrid>
 
-      <div className='split-2'>
+      <SurfaceSplit variant='overview'>
         <SectionCard
           actions={<StatusBadge value='success' label={t('home.savedLabel', { value: percent(savingsRatio, locale) })} />}
           description={t('home.costEfficiencyDescription')}
@@ -234,9 +235,9 @@ export function HomePage() {
               value={recentEvents.length ? t('home.statusEventCount', { count: number(recentEvents.length, locale) }) : t('home.statusWaitingEvents')}
             />
         </EntitySectionCard>
-      </div>
+      </SurfaceSplit>
 
-      <div className='split-2'>
+      <SurfaceSplit variant='overview'>
         <SectionCard
           actions={(
             <LinkAction asChild iconEnd={ArrowRightIcon}>
@@ -268,7 +269,7 @@ export function HomePage() {
               <PageEmpty title={t('common.empty')} />
             )}
         </SectionCard>
-      </div>
+      </SurfaceSplit>
     </Page>
   )
 }
