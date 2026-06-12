@@ -254,6 +254,10 @@ Follow-up overview setup-status audit on 2026-06-12 tightened the right-hand set
 
 Follow-up overview setup-status audit evidence: the red-green cycle first failed with `cd frontend-ng && bun test src/features/home/home-page-composition.test.ts --timeout 20000` after tightening the composition guard to require count-based value copy, then passed after the implementation update. Broader verification for this checkpoint also passed with `cd frontend-ng && bun run check` and `git diff --check`.
 
+Follow-up usage heatmap distribution audit on 2026-06-12 tightened the one place where the current real-data rendering was still reading much sparser than the reference visual system. For day-granularity usage snapshots, `frontend-ng/src/features/user-usage/user-usage-state.ts` had been collapsing each day into only six work-hour buckets, which made the 7x24 heatmap look unnaturally empty compared with the reference's fuller operational day pattern. The daily distribution now uses a broader weighted 9-17 curve, preserving the exact total request count while spreading activity across a more realistic workday shape. Hour-granularity data is unchanged, and no API contract changed; this is purely a view-model refinement so the existing `HeatmapGrid` renders closer to the reference surface with the same real backend totals.
+
+Follow-up usage heatmap distribution audit evidence: the red-green cycle first failed with `cd frontend-ng && bun test src/features/user-usage/user-usage-state.test.ts --timeout 20000` after tightening the daily heatmap expectation to require a fuller workday spread, then passed after the implementation update. Broader verification for this checkpoint also passed with `cd frontend-ng && bun test src/features/user-usage/user-usage-state.test.ts src/features/user-usage/user-usage-panel-composition.test.ts --timeout 20000`, `cd frontend-ng && bun run check`, and `git diff --check`.
+
 ## File Structure
 
 - Modify: `frontend-ng/src/styles.css` - global MiSans, warm-paper tokens, shadcn compatibility tokens, sidebar/chart tokens, layout utilities, motion utilities, CSS-grid table classes.

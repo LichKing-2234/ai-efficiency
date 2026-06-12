@@ -51,16 +51,16 @@ describe('user usage state', () => {
     ])
   })
 
-  test('spreads daily trend data across reference work hours', () => {
-    expect(buildUsageHeatmapPoints([
+  test('spreads daily trend data across a fuller reference-style workday while preserving totals', () => {
+    const points = buildUsageHeatmapPoints([
       { date: '2026-06-08', requests: 12, input_tokens: 0, output_tokens: 0, cache_creation_tokens: 0, cache_read_tokens: 0, total_tokens: 120, cost: 0, actual_cost: 0 }
-    ], 'day')).toEqual([
-      { day: 0, hour: 9, value: 2 },
-      { day: 0, hour: 10, value: 2 },
-      { day: 0, hour: 11, value: 2 },
-      { day: 0, hour: 14, value: 2 },
-      { day: 0, hour: 15, value: 2 },
-      { day: 0, hour: 16, value: 2 }
-    ])
+    ], 'day')
+
+    expect(points.reduce((sum, point) => sum + point.value, 0)).toBe(12)
+    expect(points.length).toBeGreaterThan(6)
+    expect(points.some((point) => point.hour === 9)).toBe(true)
+    expect(points.some((point) => point.hour === 12)).toBe(true)
+    expect(points.some((point) => point.hour >= 14 && point.hour <= 16)).toBe(true)
+    expect(points.every((point) => point.day === 0)).toBe(true)
   })
 })

@@ -56,7 +56,18 @@ export function usageTotalsFromTrend(points: UserUsageTrendPoint[]) {
   )
 }
 
-const dayWorkHours = [9, 10, 11, 14, 15, 16]
+const dayWorkPattern = [
+  { hour: 9, weight: 1 },
+  { hour: 10, weight: 2 },
+  { hour: 11, weight: 2 },
+  { hour: 12, weight: 1 },
+  { hour: 13, weight: 1 },
+  { hour: 14, weight: 2 },
+  { hour: 15, weight: 2 },
+  { hour: 16, weight: 2 },
+  { hour: 17, weight: 1 }
+]
+const dayWorkWeightTotal = dayWorkPattern.reduce((sum, item) => sum + item.weight, 0)
 
 export function buildUsageHeatmapPoints(points: UserUsageTrendPoint[], granularity: string | undefined): HeatmapPoint[] {
   const buckets = new Map<string, HeatmapPoint>()
@@ -71,10 +82,22 @@ export function buildUsageHeatmapPoints(points: UserUsageTrendPoint[], granulari
       return
     }
 
-    const base = Math.floor(point.requests / dayWorkHours.length)
-    const remainder = point.requests % dayWorkHours.length
-    dayWorkHours.forEach((hour, hourIndex) => {
-      addHeatmapValue(buckets, day, hour, base + (hourIndex < remainder ? 1 : 0))
+    let remaining = point.requests
+    const distributed = dayWorkPattern.map((item) => {
+      const value = Math.floor((point.requests * item.weight) / dayWorkWeightTotal)
+      remaining -= value
+      return { hour: item.hour, value }
+    })
+    distributed
+      .slice()
+      .sort((left, right) => right.value - left.value || left.hour - right.hour)
+      .slice(0, remaining)
+      .forEach((item) => {
+        const target = distributed.find((candidate) => candidate.hour === item.hour)
+        if (target) target.value += 1
+      })
+    distributed.forEach((item) => {
+      addHeatmapValue(buckets, day, item.hour, item.value)
     })
   })
   return [...buckets.values()].filter((point) => point.value > 0)
