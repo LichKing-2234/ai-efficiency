@@ -55,6 +55,10 @@ describe('Home page composition', () => {
     expect(source).not.toContain("label={t('home.connectedTools')}")
   })
 
+  test('does not render synthetic overview KPI sparklines when no real series exists', () => {
+    expect(source).not.toContain('sparkline={[2, 4, 5, 7, 8, totalRepos]}')
+  })
+
   test('uses reference overview sections instead of embedding the full usage analytics panel', () => {
     expect(source).toContain("from '@/components/primitives/charts'")
     expect(source).toContain('<BarsH')

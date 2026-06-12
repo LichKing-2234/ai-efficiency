@@ -266,6 +266,10 @@ Follow-up usage KPI integrity audit on 2026-06-12 removed one remaining class of
 
 Follow-up usage KPI integrity audit evidence: the red-green cycle first failed with `cd frontend-ng && bun test src/features/user-usage/user-usage-panel-composition.test.ts --timeout 20000` after adding a guard that rejected the hardcoded delta props, then passed after the implementation update. Broader verification for this checkpoint also passed with `cd frontend-ng && bun test src/features/user-usage/user-usage-panel-composition.test.ts src/components/primitives/charts.test.ts --timeout 20000`, `cd frontend-ng && bun run check`, and `git diff --check`.
 
+Follow-up overview KPI integrity audit on 2026-06-12 removed the corresponding remaining synthetic sparkline from the Overview strip. `frontend-ng/src/features/home/home-page.tsx` had still been feeding the `Tracked repos` KPI a hardcoded `[2, 4, 5, 7, 8, totalRepos]` sequence even though no real repository-trend series exists in the current backend payload. That placeholder sparkline is now gone. The KPI still shows the real repository count and helper copy, but it no longer suggests a trend line that the system cannot currently justify with real data.
+
+Follow-up overview KPI integrity audit evidence: the red-green cycle first failed with `cd frontend-ng && bun test src/features/home/home-page-composition.test.ts --timeout 20000` after adding a guard that rejected the hardcoded repository sparkline, then passed after the implementation update. Broader verification for this checkpoint also passed with `cd frontend-ng && bun test src/features/home/home-page-composition.test.ts src/features/user-usage/user-usage-panel-composition.test.ts --timeout 20000`, `cd frontend-ng && bun run check`, and `git diff --check`.
+
 ## File Structure
 
 - Modify: `frontend-ng/src/styles.css` - global MiSans, warm-paper tokens, shadcn compatibility tokens, sidebar/chart tokens, layout utilities, motion utilities, CSS-grid table classes.

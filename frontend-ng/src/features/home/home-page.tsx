@@ -161,7 +161,6 @@ export function HomePage() {
           value={number(totalRepos, locale)}
           helper={t('home.reposHelp')}
           icon={FolderGit2Icon}
-          sparkline={[2, 4, 5, 7, 8, totalRepos]}
           sparklineColor='var(--viz-output)'
         />
         <KpiCard
