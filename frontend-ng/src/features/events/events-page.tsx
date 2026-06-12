@@ -8,7 +8,7 @@ import { ButtonWithIcon } from '@/components/primitives/button-with-icon'
 import { CardFilterBar } from '@/components/primitives/card-filter-bar'
 import { CardPagerFooter } from '@/components/primitives/card-pager-footer'
 import { CategoryBadge } from '@/components/primitives/category-badge'
-import { DataGrid, DataGridCell, DataGridHeader, DataGridHeaderCell, DataGridRow, DataGridStatusRow } from '@/components/primitives/data-grid'
+import { DataGrid, DataGridCell, DataGridHeader, DataGridHeaderCell, DataGridRow } from '@/components/primitives/data-grid'
 import { FieldItem, FieldList } from '@/components/primitives/field-list'
 import { FilterRow } from '@/components/primitives/filter-row'
 import { InfoTile, InfoTileGrid } from '@/components/primitives/info-tile'
@@ -271,7 +271,7 @@ export function EventsPage() {
               row={row}
             />
           ))}
-          {rows.length === 0 ? <DataGridStatusRow columns={eventColumns}>{t('common.empty')}</DataGridStatusRow> : null}
+          {rows.length === 0 ? <PageEmpty title={t('events.noFilteredEvents')} /> : null}
         </DataGrid>
         <CardPagerFooter
           meta={t('common.pageCount', { current: pagination.currentPage, total: pagination.totalPages })}
