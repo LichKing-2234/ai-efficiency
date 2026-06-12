@@ -13,11 +13,11 @@ import { AppAlert } from '@/components/primitives/app-alert'
 import { Page } from '@/components/primitives/page'
 import { EmptyState, LoadingState } from '@/components/primitives/data-state'
 import { DataGrid, DataGridHeader, DataGridHeaderCell, DataGridPrimaryLink, DataGridRecordCell, DataGridRow, DataGridRowAffordance } from '@/components/primitives/data-grid'
+import { DetailFieldSection } from '@/components/primitives/detail-field-section'
 import { DetailSummaryStack } from '@/components/primitives/detail-summary-stack'
-import { DetailSection } from '@/components/primitives/detail-section'
 import { EntityGlyph } from '@/components/primitives/entity-glyph'
 import { EndActions } from '@/components/primitives/end-actions'
-import { FieldItem, FieldList } from '@/components/primitives/field-list'
+import { FieldItem } from '@/components/primitives/field-list'
 import { FormDialog } from '@/components/primitives/form-dialog'
 import { InfoTile, InfoTileGrid } from '@/components/primitives/info-tile'
 import { InlineDestructiveActions } from '@/components/primitives/inline-destructive-actions'
@@ -465,14 +465,12 @@ function RepoInspectSlideOver({
             </>
           )}
         >
-          <DetailSection title={t('repos.configuration')}>
-            <FieldList>
-              <FieldItem label={t('repos.clone')} value={repo.clone_url || '-'} mono />
-              <FieldItem label={t('repos.defaultBranch')} value={repo.default_branch || '-'} mono />
-              <FieldItem label={t('repos.provider')} value={repo.edges?.scm_provider?.base_url || repo.edges?.scm_provider?.name || '-'} truncate />
-              <FieldItem label={t('adminUsers.updated')} value={dateTime(repo.created_at, locale)} />
-            </FieldList>
-          </DetailSection>
+          <DetailFieldSection title={t('repos.configuration')}>
+            <FieldItem label={t('repos.clone')} value={repo.clone_url || '-'} mono />
+            <FieldItem label={t('repos.defaultBranch')} value={repo.default_branch || '-'} mono />
+            <FieldItem label={t('repos.provider')} value={repo.edges?.scm_provider?.base_url || repo.edges?.scm_provider?.name || '-'} truncate />
+            <FieldItem label={t('adminUsers.updated')} value={dateTime(repo.created_at, locale)} />
+          </DetailFieldSection>
           {repo.binding_state === 'unbound' ? (
             <AppAlert
               tone='info'

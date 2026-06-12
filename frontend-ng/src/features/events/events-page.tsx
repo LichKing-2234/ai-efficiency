@@ -8,9 +8,10 @@ import { CardFilterBar } from '@/components/primitives/card-filter-bar'
 import { CardPagerFooter } from '@/components/primitives/card-pager-footer'
 import { CategoryBadge } from '@/components/primitives/category-badge'
 import { DataGrid, DataGridCell, DataGridHeader, DataGridHeaderCell, DataGridRow } from '@/components/primitives/data-grid'
+import { DetailFieldSection } from '@/components/primitives/detail-field-section'
 import { DetailSummaryStack } from '@/components/primitives/detail-summary-stack'
 import { DetailSection } from '@/components/primitives/detail-section'
-import { FieldItem, FieldList } from '@/components/primitives/field-list'
+import { FieldItem } from '@/components/primitives/field-list'
 import { FilterRow } from '@/components/primitives/filter-row'
 import { FramedTableCard } from '@/components/primitives/framed-table-card'
 import { GlyphLabelCell } from '@/components/primitives/glyph-label-cell'
@@ -362,16 +363,14 @@ function EventDetail({ event, isAdmin, onClose }: { event: ToolUsageEventDetail 
             <TokenBreakdown items={tokenBreakdown} valueFormatter={number} />
           </DetailSection>
 
-          <DetailSection title={t('events.session')}>
-            <FieldList>
-              <FieldItem label={t('events.observedEnd')} value={dateTime(event.observed_end_at)} />
-              <FieldItem label={t('repoDetail.commit')} value={event.commit_sha || '-'} mono />
-              <FieldItem label={t('events.source')} value={event.source_basename} mono />
-              <FieldItem label={t('events.session')} value={event.tool_session_id || t('events.noToolSessionId')} mono />
-              <FieldItem label={t('events.workspace')} value={event.workspace_id} mono />
-              <FieldItem label={t('events.observedStart')} value={dateTime(event.observed_start_at)} />
-            </FieldList>
-          </DetailSection>
+          <DetailFieldSection title={t('events.session')}>
+            <FieldItem label={t('events.observedEnd')} value={dateTime(event.observed_end_at)} />
+            <FieldItem label={t('repoDetail.commit')} value={event.commit_sha || '-'} mono />
+            <FieldItem label={t('events.source')} value={event.source_basename} mono />
+            <FieldItem label={t('events.session')} value={event.tool_session_id || t('events.noToolSessionId')} mono />
+            <FieldItem label={t('events.workspace')} value={event.workspace_id} mono />
+            <FieldItem label={t('events.observedStart')} value={dateTime(event.observed_start_at)} />
+          </DetailFieldSection>
 
           <DetailSection title={t('events.matchedPrs')}>
             {event.matched_prs.length > 0 ? (
