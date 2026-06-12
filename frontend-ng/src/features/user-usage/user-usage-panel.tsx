@@ -49,7 +49,6 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
     { key: 'input_tokens', label: t('usageDashboard.input'), color: 'var(--viz-input)' },
     { key: 'output_tokens', label: t('usageDashboard.output'), color: 'var(--viz-output)' }
   ]
-  const modelMax = Math.max(1, ...(snapshot?.models ?? []).map((model) => model.total_tokens))
 
   return (
     <Stack className='stagger'>
@@ -167,7 +166,7 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
                     rows={snapshot.models.slice(0, 6).map((model, index) => ({
                       label: model.model,
                       value: model.total_tokens,
-                        share: model.total_tokens / modelMax,
+                      share: totals.tokens > 0 ? model.total_tokens / totals.tokens : 0,
                         color: ['var(--viz-input)', 'var(--viz-output)', 'var(--viz-cache)', 'var(--viz-reason)', 'var(--ai-bright)', 'var(--ink-3)'][index % 6]
                       }))}
                     valueFormatter={(value) => compact(value, locale)}

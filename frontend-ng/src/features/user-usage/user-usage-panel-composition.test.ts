@@ -137,4 +137,9 @@ describe('User usage panel composition', () => {
     expect(source).not.toContain('delta={4}')
     expect(source).not.toContain("deltaTone='pos'")
   })
+
+  test('derives model distribution share from total model tokens instead of normalizing against the max row', () => {
+    expect(source).toContain('share: totals.tokens > 0 ? model.total_tokens / totals.tokens : 0')
+    expect(source).not.toContain('share: model.total_tokens / modelMax')
+  })
 })
