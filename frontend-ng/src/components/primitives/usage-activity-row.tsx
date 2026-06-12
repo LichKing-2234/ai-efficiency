@@ -47,7 +47,7 @@ function UsageActivityAmount({
   return (
     <Stack className='hidden w-[88px] text-right tnum sm:block' dataSlot='usage-activity-amount' gap='none'>
       <div className='font-semibold text-[13px]'>{credit}</div>
-      <div className='text-[11px] text-[var(--ink-3)]'>{requests}</div>
+      <div className='mt-px text-[11px] text-[var(--ink-4)]'>{requests}</div>
     </Stack>
   )
 }

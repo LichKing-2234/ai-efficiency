@@ -13,7 +13,7 @@ function SectionCardTitle({ children }: { children: React.ReactNode }) {
 
 function SectionCardDescription({ children }: { children: React.ReactNode }) {
   return (
-    <CardDescription className='mt-0.5 text-[12px] text-[var(--ink-3)]'>
+    <CardDescription className='mt-px text-[12px] text-[var(--ink-3)]'>
       {children}
     </CardDescription>
   )
@@ -48,7 +48,7 @@ export function SectionCardHeader({
     <CardHeader className={className}>
       <ActionGroup
         align='responsive-end'
-        className='w-full gap-3'
+        className='w-full gap-[10px]'
         dataSlot='section-card-header-content'
         fit
         layout='split'
@@ -56,7 +56,7 @@ export function SectionCardHeader({
       >
         <SectionCardTitle>{titleNode}</SectionCardTitle>
         {meta || actions ? (
-          <ActionGroup align='responsive-end' className='shrink-0 gap-2.5' dataSlot='section-card-header-actions'>
+          <ActionGroup align='responsive-end' className='shrink-0 gap-2' dataSlot='section-card-header-actions'>
             {meta ? <span className='text-[12px] text-[var(--ink-3)]' data-slot='section-card-meta'>{meta}</span> : null}
             {actions}
           </ActionGroup>
