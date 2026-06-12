@@ -79,4 +79,16 @@ describe('AuthSurface', () => {
     expect(source).not.toContain("data-slot='auth-surface-brand'")
     expect(source).not.toContain("className='grid min-h-screen place-items-center bg-background p-4'")
   })
+
+  test('delegates the auth frame shell to the shared accent surface primitive', async () => {
+    const source = await import('node:fs/promises').then((fs) =>
+      fs.readFile(new URL('./auth-surface-frame.tsx', import.meta.url), 'utf8')
+    )
+
+    expect(source).toContain("from '@/components/primitives/accent-surface-card'")
+    expect(source).toContain("<AccentSurfaceCard className={cn('w-full', className)} dataSlot='auth-surface-frame'>")
+    expect(source).not.toContain("from '@/components/ui/card'")
+    expect(source).not.toContain("variant='accent'")
+    expect(source).not.toContain("grid-paper w-full overflow-hidden border-[var(--ai-line)]")
+  })
 })
