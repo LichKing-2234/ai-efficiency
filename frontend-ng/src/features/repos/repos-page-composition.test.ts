@@ -10,10 +10,12 @@ describe('Repos page composition', () => {
     expect(source).toContain("from '@/components/primitives/repositories-workbench-shell'")
     expect(source).toContain("from '@/components/primitives/button-with-icon'")
     expect(source).toContain("from '@/components/primitives/count-badge'")
+    expect(source).toContain("from '@/components/primitives/line-tabs'")
     expect(source).toContain("from '@/components/primitives/segmented-control'")
     expect(source).toContain("from '@/components/primitives/card-pager-footer'")
     expect(source).toContain('<RepositoriesWorkbenchShell')
     expect(source).toContain("<CountBadge variant='secondary'>")
+    expect(source).toContain('<LineTabs')
     expect(source).toContain('<SegmentedControl')
     expect(source).toContain('providerTabs={(')
     expect(source).toContain('rail={(')
@@ -204,9 +206,11 @@ describe('Repos page composition', () => {
   })
 
   test('uses wrapped shadcn tabs without page-local tab list layout classes', () => {
-    expect(source).toContain("<TabsList variant='line' wrap>")
-    expect(source).toContain("className='h-8 gap-2 px-3'")
+    expect(source).toContain("from '@/components/primitives/line-tabs'")
+    expect(source).toContain('<LineTabs')
     expect(source).not.toContain("<TabsList className='h-auto flex-wrap justify-start'>")
+    expect(source).not.toContain("<TabsList variant='line' wrap>")
+    expect(source).not.toContain("className='h-8 gap-2 px-3'")
   })
 
   test('uses the shared KPI grid primitive for repository health metrics', () => {

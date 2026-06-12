@@ -3,7 +3,6 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 import { CheckIcon, ChevronRightIcon, CircleDotIcon, ExternalLinkIcon, FolderGit2Icon, GitPullRequestIcon, PlusIcon, RefreshCwIcon, WrenchIcon } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { CardPagerFooter } from '@/components/primitives/card-pager-footer'
 import { ButtonWithIcon } from '@/components/primitives/button-with-icon'
 import { CategoryBadge } from '@/components/primitives/category-badge'
@@ -22,6 +21,7 @@ import { FormDialog } from '@/components/primitives/form-dialog'
 import { InfoTile, InfoTileGrid } from '@/components/primitives/info-tile'
 import { InlineDestructiveActions } from '@/components/primitives/inline-destructive-actions'
 import { KpiGrid } from '@/components/primitives/kpi-grid'
+import { LineTabs } from '@/components/primitives/line-tabs'
 import { PagerNavButton } from '@/components/primitives/pager-nav-button'
 import { QuietActionButton } from '@/components/primitives/quiet-action-button'
 import { RatioMeter } from '@/components/primitives/ratio-meter'
@@ -298,16 +298,16 @@ export function ReposPage() {
           )}
           meta={`${number(total, locale)} ${t('repos.totalRepositories')}`}
           providerTabs={(
-            <Tabs value={selectedProvider?.provider_key ?? ''} onValueChange={(value) => replaceSearch({ ...search, provider: value, scope: '', page: 1 })}>
-              <TabsList variant='line' wrap>
-                {reposForProviders.map((provider) => (
-                  <TabsTrigger key={provider.provider_key} value={provider.provider_key} className='h-8 gap-2 px-3'>
-                    {provider.name}
-                    <CountBadge variant='secondary'>{number(provider.total_repos, locale)}</CountBadge>
-                  </TabsTrigger>
-                ))}
-              </TabsList>
-            </Tabs>
+            <LineTabs
+              ariaLabel={t('repos.provider')}
+              items={reposForProviders.map((provider) => ({
+                value: provider.provider_key,
+                label: provider.name,
+                count: number(provider.total_repos, locale)
+              }))}
+              onChange={(value) => replaceSearch({ ...search, provider: value, scope: '', page: 1 })}
+              value={selectedProvider?.provider_key ?? ''}
+            />
           )}
           rail={(
             <SectionNav
