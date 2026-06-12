@@ -21,6 +21,7 @@ import { SectionCardHeader } from '@/components/primitives/section-card-header'
 import { SegmentedControl } from '@/components/primitives/segmented-control'
 import { Stack } from '@/components/primitives/stack'
 import { ToolbarActions } from '@/components/primitives/toolbar-actions'
+import { ToolGlyph } from '@/components/primitives/tool-glyph'
 import { api } from '@/lib/api'
 import type { UserUsageTrendPoint } from '@/lib/api/types'
 import { compact, currency, durationMs, number } from '@/lib/format'
@@ -28,6 +29,14 @@ import { useI18n } from '@/lib/i18n/i18n'
 import { buildUsageDashboardParams, buildUsageHeatmapPoints, rangeLabelKey, usageTotalsFromTrend, type UsageRangeOption } from './user-usage-state'
 
 const modelColumns = '1.6fr_1fr_1fr_0.9fr'
+
+function toolFromModelName(modelName: string) {
+  const key = modelName.toLowerCase()
+  if (key.includes('claude')) return 'claude'
+  if (key.includes('gpt') || key.includes('o1') || key.includes('o3') || key.includes('o4') || key.includes('codex')) return 'codex'
+  if (key.includes('kiro')) return 'kiro'
+  return null
+}
 
 export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
   const { locale, t } = useI18n()
@@ -189,7 +198,10 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
                       </DataGridHeader>
                       {snapshot.models.map((model) => (
                         <DataGridRow columns={modelColumns} key={model.model}>
-                          <DataGridCell mono truncate>{model.model}</DataGridCell>
+                          <div className='flex min-w-0 items-center gap-2'>
+                            <ToolGlyph label={model.model} tool={toolFromModelName(model.model)} size={22} />
+                            <DataGridCell description={t('usageDashboard.modelDistribution')} mono truncate>{model.model}</DataGridCell>
+                          </div>
                           <DataGridCell align='right' numeric>{number(model.requests, locale)}</DataGridCell>
                           <DataGridCell align='right' numeric>{compact(model.total_tokens, locale)}</DataGridCell>
                           <DataGridCell align='right' emphasis numeric>{currency(model.actual_cost || model.cost, locale)}</DataGridCell>

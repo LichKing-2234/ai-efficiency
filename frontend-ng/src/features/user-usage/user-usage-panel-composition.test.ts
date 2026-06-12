@@ -70,6 +70,13 @@ describe('User usage panel composition', () => {
     expect(source).not.toContain("className='tnum text-right font-semibold text-foreground'")
   })
 
+  test('uses shared tool glyphs and descriptive model cells in the cost-by-model table', () => {
+    expect(source).toContain("from '@/components/primitives/tool-glyph'")
+    expect(source).toContain('<ToolGlyph')
+    expect(source).toContain('<DataGridCell description={t(\'usageDashboard.modelDistribution\')} mono truncate>')
+    expect(source).not.toContain('<DataGridCell mono truncate>{model.model}</DataGridCell>')
+  })
+
   test('uses shared data grid header cells for model cost numeric headers', () => {
     expect(source).toContain('DataGridHeaderCell')
     expect(source).not.toContain("<span className='text-right'>{t('events.requests')}</span>")
