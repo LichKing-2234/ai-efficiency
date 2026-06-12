@@ -1,9 +1,9 @@
 import { Zap } from 'lucide-react'
-import { FieldGroup } from '@/components/ui/field'
 import { AppAlert } from '@/components/primitives/app-alert'
 import { formInsetControlClassName, formInsetTextareaClassName } from '@/components/primitives/auth-field'
 import { ButtonWithIcon } from '@/components/primitives/button-with-icon'
 import { ControlGrid } from '@/components/primitives/control-grid'
+import { FormFieldGroup } from '@/components/primitives/form-field-group'
 import { InsetPanel } from '@/components/primitives/inset-panel'
 import { SelectField } from '@/components/primitives/select-field'
 import { StartActionsFeedback } from '@/components/primitives/start-actions-feedback'
@@ -58,7 +58,7 @@ export function ProviderTestForm({
   secretMissing?: boolean
 }) {
   return (
-    <FieldGroup>
+    <FormFieldGroup>
       <ControlGrid variant='two-column'>
         {modelOptions.length ? (
           <SelectField
@@ -102,6 +102,6 @@ export function ProviderTestForm({
         {error ? <AppAlert tone='error' title={error} /> : null}
       </StartActionsFeedback>
       {result?.response ? <InsetPanel comfortable>{result.response}</InsetPanel> : null}
-    </FieldGroup>
+    </FormFieldGroup>
   )
 }

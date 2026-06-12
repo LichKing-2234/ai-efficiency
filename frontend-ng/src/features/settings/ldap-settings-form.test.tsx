@@ -53,6 +53,9 @@ describe('LdapSettingsForm', () => {
   })
 
   test('uses shared start-aligned action groups for LDAP actions', () => {
+    expect(source).toContain("from '@/components/primitives/form-field-group'")
+    expect(source).toContain('<FormFieldGroup>')
+    expect(source).not.toContain("from '@/components/ui/field'")
     expect(source).toContain("from '@/components/primitives/start-actions-feedback'")
     expect(source).toContain("from '@/components/primitives/primary-action-button'")
     expect(source).toContain("from '@/components/primitives/secondary-action-button'")

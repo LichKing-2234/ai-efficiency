@@ -1,6 +1,6 @@
-import { FieldGroup } from '@/components/ui/field'
 import { AppAlert } from '@/components/primitives/app-alert'
 import { CheckboxField } from '@/components/primitives/checkbox-field'
+import { FormFieldGroup } from '@/components/primitives/form-field-group'
 import { PrimaryActionButton } from '@/components/primitives/primary-action-button'
 import { SecondaryActionButton } from '@/components/primitives/secondary-action-button'
 import { StartActionsFeedback } from '@/components/primitives/start-actions-feedback'
@@ -44,7 +44,7 @@ export function LdapSettingsForm({
   const requiredReady = !!form.url && !!form.base_dn && !!form.bind_dn && !!form.user_filter
 
   return (
-    <FieldGroup>
+    <FormFieldGroup>
       {ldapFields.map((field) => (
         <TextField
           id={field.id}
@@ -81,6 +81,6 @@ export function LdapSettingsForm({
           />
         ) : null}
       </StartActionsFeedback>
-    </FieldGroup>
+    </FormFieldGroup>
   )
 }

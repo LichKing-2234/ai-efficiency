@@ -67,6 +67,9 @@ describe('ProviderTestForm', () => {
   })
 
   test('uses shared control grid for paired model and platform fields', () => {
+    expect(source).toContain("from '@/components/primitives/form-field-group'")
+    expect(source).toContain('<FormFieldGroup>')
+    expect(source).not.toContain("from '@/components/ui/field'")
     expect(source).toContain("from '@/components/primitives/control-grid'")
     expect(source).toContain("<ControlGrid variant='two-column'>")
     expect(source).not.toContain("<div className='grid gap-3 md:grid-cols-2'>")
