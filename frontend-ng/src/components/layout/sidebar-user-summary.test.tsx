@@ -41,6 +41,7 @@ describe('SidebarUserSummary', () => {
 
     expect(html).toContain('data-slot="sidebar-user-summary"')
     expect(html).toContain('data-slot="identity-avatar"')
+    expect(html).toContain('data-slot="rail-tooltip"')
     expect(html).not.toContain('data-slot="sidebar-user-summary-name"')
     expect(html).not.toContain('data-slot="sidebar-user-summary-role"')
     expect(html).not.toContain('aria-label="Sign out"')
@@ -52,6 +53,8 @@ describe('SidebarUserSummary', () => {
     )
 
     expect(source).toContain("className={cn('flex items-center gap-[9px] rounded-[var(--r-md)] border border-[var(--line)] bg-sidebar-accent p-[7px]', compact && 'size-[42px] justify-center rounded-[var(--r-sm)] border-transparent bg-transparent p-0')}")
+    expect(source).toContain("from '@/components/primitives/rail-tooltip'")
+    expect(source).toContain('<RailTooltip')
     expect(source).toContain("className='bg-[var(--ai-soft)] text-[var(--ai-deep)]'")
     expect(source).toContain("className='truncate font-semibold text-[12.5px]'")
     expect(source).toContain("className='truncate text-[10.5px] text-[var(--ink-4)]'")

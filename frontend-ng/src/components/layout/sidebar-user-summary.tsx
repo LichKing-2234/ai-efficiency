@@ -1,5 +1,6 @@
 import { LogOutIcon } from 'lucide-react'
 import { IdentityAvatar } from '@/components/primitives/identity-avatar'
+import { RailTooltip } from '@/components/primitives/rail-tooltip'
 import { Button } from '@/components/ui/button'
 import type { User } from '@/lib/api/types'
 import { cn } from '@/lib/utils'
@@ -20,10 +21,12 @@ export function SidebarUserSummary({
   user: User | null
 }) {
   const identity = user?.username || user?.email || fallbackName
+  const summaryLabel = `${user?.username || fallbackName} · ${user?.role || fallbackRole}`
+  const avatar = <IdentityAvatar className='bg-[var(--ai-soft)] text-[var(--ai-deep)]' value={identity} />
 
   return (
     <div className={cn('flex items-center gap-[9px] rounded-[var(--r-md)] border border-[var(--line)] bg-sidebar-accent p-[7px]', compact && 'size-[42px] justify-center rounded-[var(--r-sm)] border-transparent bg-transparent p-0')} data-slot='sidebar-user-summary'>
-      <IdentityAvatar className='bg-[var(--ai-soft)] text-[var(--ai-deep)]' value={identity} />
+      {compact ? <RailTooltip content={summaryLabel}>{avatar}</RailTooltip> : avatar}
       {!compact ? (
         <div className='min-w-0 flex-1'>
           <div className='truncate font-semibold text-[12.5px]' data-slot='sidebar-user-summary-name'>

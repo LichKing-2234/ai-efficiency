@@ -1,6 +1,7 @@
 import type * as React from 'react'
 import type { LucideIcon } from 'lucide-react'
 import { AppBrand } from '@/components/primitives/app-brand'
+import { RailTooltip } from '@/components/primitives/rail-tooltip'
 import { SectionEyebrow } from '@/components/primitives/section-eyebrow'
 import { cn } from '@/lib/utils'
 
@@ -114,18 +115,14 @@ function SidebarMenuButton({
   tooltip,
   ...props
 }: SidebarMenuButtonProps) {
-  const content = (
+  const body = (
     <>
       {active ? <span className='absolute top-2 bottom-2 -left-3 w-[3px] rounded-full bg-[var(--ai)] group-data-[collapsed=true]/sidebar-wrapper:hidden' /> : null}
       {Icon ? <Icon className={cn('size-4 text-[var(--ink-3)] group-data-[collapsed=true]/sidebar-wrapper:size-[19px]', active && 'text-[var(--ai)]')} /> : null}
       <span className='truncate group-data-[collapsed=true]/sidebar-wrapper:sr-only'>{children}</span>
-      {tooltip ? (
-        <span aria-hidden='true' className='pointer-events-none absolute left-[calc(100%+10px)] top-1/2 z-50 hidden -translate-y-1/2 scale-95 whitespace-nowrap rounded-[var(--r-sm)] border border-[var(--line-strong)] bg-[var(--surface)] px-2 py-1 font-semibold text-[11px] text-[var(--ink-2)] opacity-0 transition group-hover/sidebar-item:scale-100 group-hover/sidebar-item:opacity-100 group-data-[collapsed=true]/sidebar-wrapper:block'>
-          {tooltip}
-        </span>
-      ) : null}
     </>
   )
+  const content = tooltip ? <RailTooltip content={tooltip}>{body}</RailTooltip> : body
   const buttonProps = {
     'aria-current': active ? 'page' : undefined,
     'data-active': active,
