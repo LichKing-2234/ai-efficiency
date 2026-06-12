@@ -2,7 +2,7 @@ import { AppAlert } from '@/components/primitives/app-alert'
 import { FieldItem } from '@/components/primitives/field-list'
 import { FormFieldGroup } from '@/components/primitives/form-field-group'
 import { InsetFieldList } from '@/components/primitives/inset-field-list'
-import { LabeledSegmentedControl } from '@/components/primitives/labeled-segmented-control'
+import { InsetSegmentedControl } from '@/components/primitives/inset-segmented-control'
 import { SelectField } from '@/components/primitives/select-field'
 import { SubmitCancelActions } from '@/components/primitives/submit-cancel-actions'
 import { TextField } from '@/components/primitives/text-field'
@@ -88,7 +88,7 @@ export function RepoCreateForm({
         <InsetFieldList>
           <FieldItem label={labels.fullName} value={`${parsedRepo.project}/${parsedRepo.repo}`} truncate />
           <FieldItem label={labels.provider} value={selectedProvider?.name || labels.noMatchingProvider} truncate />
-          <LabeledSegmentedControl
+          <InsetSegmentedControl
             ariaLabel={labels.clone}
             label={labels.clone}
             onChange={onCloneProtocolChange}
