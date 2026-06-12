@@ -3,7 +3,7 @@ import { AppAlert } from '@/components/primitives/app-alert'
 import { CheckboxField } from '@/components/primitives/checkbox-field'
 import { PrimaryActionButton } from '@/components/primitives/primary-action-button'
 import { SecondaryActionButton } from '@/components/primitives/secondary-action-button'
-import { StartActions } from '@/components/primitives/start-actions'
+import { StartActionsFeedback } from '@/components/primitives/start-actions-feedback'
 import { TextField } from '@/components/primitives/text-field'
 import { useI18n } from '@/lib/i18n/i18n'
 import type { LDAPFormState } from './settings-payloads'
@@ -56,26 +56,31 @@ export function LdapSettingsForm({
         />
       ))}
       <CheckboxField id='ldap-starttls' checked={form.tls} label={t('settings.useStartTls')} onCheckedChange={(tls) => onChange({ ...form, tls })} />
-      {message ? (
-        <AppAlert
-          tone={message.toLowerCase().includes('failed') || message.toLowerCase().includes('required') ? 'error' : 'success'}
-          title={message}
-        />
-      ) : null}
-      <StartActions>
-        <SecondaryActionButton
-          onClick={onTest}
-          disabled={!requiredReady || testPending}
-        >
-          {t('settings.testLdap')}
-        </SecondaryActionButton>
-        <PrimaryActionButton
-          onClick={onSave}
-          disabled={!requiredReady || savePending}
-        >
-          {t('settings.saveLdap')}
-        </PrimaryActionButton>
-      </StartActions>
+      <StartActionsFeedback
+        actions={(
+          <>
+            <SecondaryActionButton
+              onClick={onTest}
+              disabled={!requiredReady || testPending}
+            >
+              {t('settings.testLdap')}
+            </SecondaryActionButton>
+            <PrimaryActionButton
+              onClick={onSave}
+              disabled={!requiredReady || savePending}
+            >
+              {t('settings.saveLdap')}
+            </PrimaryActionButton>
+          </>
+        )}
+      >
+        {message ? (
+          <AppAlert
+            tone={message.toLowerCase().includes('failed') || message.toLowerCase().includes('required') ? 'error' : 'success'}
+            title={message}
+          />
+        ) : null}
+      </StartActionsFeedback>
     </FieldGroup>
   )
 }

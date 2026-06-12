@@ -1,12 +1,12 @@
 import { Zap } from 'lucide-react'
-import { FieldDescription, FieldGroup } from '@/components/ui/field'
+import { FieldGroup } from '@/components/ui/field'
 import { AppAlert } from '@/components/primitives/app-alert'
 import { formInsetControlClassName, formInsetTextareaClassName } from '@/components/primitives/auth-field'
 import { ButtonWithIcon } from '@/components/primitives/button-with-icon'
 import { ControlGrid } from '@/components/primitives/control-grid'
 import { InsetPanel } from '@/components/primitives/inset-panel'
 import { SelectField } from '@/components/primitives/select-field'
-import { StartActions } from '@/components/primitives/start-actions'
+import { StartActionsFeedback } from '@/components/primitives/start-actions-feedback'
 import { StatusBadge } from '@/components/primitives/status-badge'
 import { TextField } from '@/components/primitives/text-field'
 import { modelLabel } from './user-setup-state'
@@ -81,8 +81,6 @@ export function ProviderTestForm({
         )}
         <TextField id='provider-test-platform' label={labels.platform} controlClassName={formInsetControlClassName} value={platform} disabled />
       </ControlGrid>
-      {message ? <FieldDescription>{message}</FieldDescription> : null}
-      {error ? <AppAlert tone='error' title={error} /> : null}
       <TextField
         id='provider-test-prompt'
         label={labels.prompt}
@@ -91,13 +89,18 @@ export function ProviderTestForm({
         value={prompt}
         onChange={onPromptChange}
       />
-      <StartActions>
-        <ButtonWithIcon size='sm' icon={Zap} disabled={!canRun || running} onClick={onRun}>
-          {running ? labels.testing : labels.runTest}
-        </ButtonWithIcon>
-        {secretMissing ? <FieldDescription>{labels.createKeyBeforeTesting}</FieldDescription> : null}
-        {result ? <StatusBadge value={result.success ? 'success' : 'error'} label={result.message} /> : null}
-      </StartActions>
+      <StartActionsFeedback
+        description={message}
+        hint={secretMissing ? labels.createKeyBeforeTesting : undefined}
+        status={result ? <StatusBadge value={result.success ? 'success' : 'error'} label={result.message} /> : undefined}
+        actions={(
+          <ButtonWithIcon size='sm' icon={Zap} disabled={!canRun || running} onClick={onRun}>
+            {running ? labels.testing : labels.runTest}
+          </ButtonWithIcon>
+        )}
+      >
+        {error ? <AppAlert tone='error' title={error} /> : null}
+      </StartActionsFeedback>
       {result?.response ? <InsetPanel comfortable>{result.response}</InsetPanel> : null}
     </FieldGroup>
   )

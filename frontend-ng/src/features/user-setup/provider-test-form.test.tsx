@@ -73,16 +73,19 @@ describe('ProviderTestForm', () => {
   })
 
   test('uses shadcn field descriptions for form feedback copy', () => {
-    expect(source).toContain("FieldDescription")
+    expect(source).toContain("from '@/components/primitives/start-actions-feedback'")
+    expect(source).toContain('description={message}')
+    expect(source).toContain("hint={secretMissing ? labels.createKeyBeforeTesting : undefined}")
     expect(source).not.toContain("<div className='text-muted-foreground text-sm'>{message}</div>")
     expect(source).not.toContain("<span className='text-muted-foreground text-sm'>{labels.createKeyBeforeTesting}</span>")
   })
 
   test('uses shared start-aligned action groups for provider test actions', () => {
-    expect(source).toContain("from '@/components/primitives/start-actions'")
-    expect(source).toContain('<StartActions>')
+    expect(source).toContain("from '@/components/primitives/start-actions-feedback'")
+    expect(source).toContain('<StartActionsFeedback')
     expect(source).toContain("from '@/components/primitives/button-with-icon'")
     expect(source).toContain("<ButtonWithIcon size='sm' icon={Zap} disabled={!canRun || running} onClick={onRun}>")
+    expect(source).not.toContain("from '@/components/primitives/start-actions'")
     expect(source).not.toContain("<Button disabled={!canRun || running} onClick={onRun}>")
     expect(source).not.toContain("<ActionGroup wrap align='start'>")
     expect(source).not.toContain("<ActionGroup wrap className='justify-start'>")
