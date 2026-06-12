@@ -250,6 +250,10 @@ Follow-up usage KPI parity audit on 2026-06-12 closed the matching strip-level m
 
 Follow-up usage KPI parity audit evidence: the red-green cycle first failed with `cd frontend-ng && bun test src/features/user-usage/user-usage-panel-composition.test.ts --timeout 20000` after tightening the composition guard to require throughput instead of avg response, then passed after the implementation update. Broader verification for this checkpoint also passed with `cd frontend-ng && bun run check` and `git diff --check`.
 
+Follow-up overview setup-status audit on 2026-06-12 tightened the right-hand setup card so it reads more like the reference overview surface instead of a generic backend checklist. The card structure, progress ring, and fix actions were already correct; the remaining drift was that the positive states still rendered broad labels like `Configured` and `Events received` instead of grounding the eye in concrete counts. `frontend-ng/src/features/home/home-page.tsx` now keeps those checklist values on real numbers from the current payload: connected AI tools render as `{count} tools`, repository reporting renders as `{count} repos`, and recent usage renders as `{count} events`. This moves the card closer to the prototype's operational readout without inventing new data or weakening the existing action flow when a step is still missing.
+
+Follow-up overview setup-status audit evidence: the red-green cycle first failed with `cd frontend-ng && bun test src/features/home/home-page-composition.test.ts --timeout 20000` after tightening the composition guard to require count-based value copy, then passed after the implementation update. Broader verification for this checkpoint also passed with `cd frontend-ng && bun run check` and `git diff --check`.
+
 ## File Structure
 
 - Modify: `frontend-ng/src/styles.css` - global MiSans, warm-paper tokens, shadcn compatibility tokens, sidebar/chart tokens, layout utilities, motion utilities, CSS-grid table classes.

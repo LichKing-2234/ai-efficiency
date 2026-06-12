@@ -225,19 +225,19 @@ export function HomePage() {
               action={connectedTools.size > 0 ? null : <LinkAction asChild><Link to='/user'>{t('home.statusFix')}</Link></LinkAction>}
               label={t('home.statusAiAccess')}
               ok={connectedTools.size > 0}
-              value={connectedTools.size ? t('home.statusAiAccessReady') : t('home.statusAiAccessMissing')}
+              value={connectedTools.size ? t('home.statusAiAccessCount', { count: number(connectedTools.size, locale) }) : t('home.statusAiAccessMissing')}
             />
             <ChecklistRow
               action={(dashboard.data?.total_repos ?? 0) > 0 ? null : <LinkAction asChild><Link to='/repos'>{t('home.statusFix')}</Link></LinkAction>}
               label={t('home.statusRepositoryReporting')}
               ok={(dashboard.data?.total_repos ?? 0) > 0}
-              value={(dashboard.data?.total_repos ?? 0) > 0 ? t('home.statusConfigured') : t('home.statusNoRepo')}
+              value={(dashboard.data?.total_repos ?? 0) > 0 ? t('home.statusRepoCount', { count: number(dashboard.data?.total_repos ?? 0, locale) }) : t('home.statusNoRepo')}
             />
             <ChecklistRow
               action={recentEvents.length > 0 ? null : <LinkAction asChild><Link to='/events'>{t('home.statusFix')}</Link></LinkAction>}
               label={t('home.statusRecentUsage')}
               ok={recentEvents.length > 0}
-              value={recentEvents.length ? t('home.statusEvents') : t('home.statusWaitingEvents')}
+              value={recentEvents.length ? t('home.statusEventCount', { count: number(recentEvents.length, locale) }) : t('home.statusWaitingEvents')}
             />
           </CardContentStack>
         </Card>

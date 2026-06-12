@@ -82,6 +82,14 @@ describe('Home page composition', () => {
     expect(source).not.toContain("action={connectedTools.size > 0 ? null : <Button asChild variant='link' size='sm'>")
   })
 
+  test('keeps setup status values grounded in real counts instead of generic ready copy', () => {
+    expect(source).toContain("value={connectedTools.size ? t('home.statusAiAccessCount', { count: number(connectedTools.size, locale) }) : t('home.statusAiAccessMissing')}")
+    expect(source).toContain("value={(dashboard.data?.total_repos ?? 0) > 0 ? t('home.statusRepoCount', { count: number(dashboard.data?.total_repos ?? 0, locale) }) : t('home.statusNoRepo')}")
+    expect(source).toContain("value={recentEvents.length ? t('home.statusEventCount', { count: number(recentEvents.length, locale) }) : t('home.statusWaitingEvents')}")
+    expect(source).not.toContain("value={(dashboard.data?.total_repos ?? 0) > 0 ? t('home.statusConfigured') : t('home.statusNoRepo')}")
+    expect(source).not.toContain("value={recentEvents.length ? t('home.statusEvents') : t('home.statusWaitingEvents')}")
+  })
+
   test('uses shared overview pulse and comparison primitives instead of page-local helpers', () => {
     expect(source).toContain("from '@/components/primitives/compare-bar'")
     expect(source).toContain("from '@/components/primitives/pulse-stat'")
