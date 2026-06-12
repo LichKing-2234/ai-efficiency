@@ -11,6 +11,7 @@ import { CategoryBadge } from '@/components/primitives/category-badge'
 import { DataGrid, DataGridCell, DataGridHeader, DataGridHeaderCell, DataGridRow } from '@/components/primitives/data-grid'
 import { FieldItem, FieldList } from '@/components/primitives/field-list'
 import { FilterRow } from '@/components/primitives/filter-row'
+import { FramedCard } from '@/components/primitives/framed-card'
 import { GlyphLabelCell } from '@/components/primitives/glyph-label-cell'
 import { InfoTile, InfoTileGrid } from '@/components/primitives/info-tile'
 import { KpiGrid } from '@/components/primitives/kpi-grid'
@@ -253,7 +254,7 @@ export function EventsPage() {
         </SearchActionBar>
       </Card>
 
-      <Card className='overflow-hidden'>
+      <FramedCard>
         <DataGrid minWidth={860} scrollClassName='min-w-0'>
           <DataGridHeader columns={eventColumns}>
             <span />
@@ -293,7 +294,7 @@ export function EventsPage() {
             <PagerNavButton direction='next' onClick={nextPage} disabled={!pagination.canGoNext}>{t('common.next')}</PagerNavButton>
           )}
         />
-      </Card>
+      </FramedCard>
 
       <EventDetail event={selected} isAdmin={isAdmin} onClose={() => setSelected(null)} />
     </Page>

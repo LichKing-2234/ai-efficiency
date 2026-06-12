@@ -1,6 +1,6 @@
 import type * as React from 'react'
-import { Card } from '@/components/ui/card'
 import { CardFilterBar } from '@/components/primitives/card-filter-bar'
+import { FramedCard } from '@/components/primitives/framed-card'
 import { SectionCardHeader } from '@/components/primitives/section-card-header'
 import { WorkbenchContent, WorkbenchRail } from '@/components/primitives/workbench-rail'
 
@@ -26,7 +26,7 @@ export function RepositoriesWorkbenchShell({
   title: React.ReactNode
 }) {
   return (
-    <Card className='overflow-hidden' data-slot='repositories-workbench-shell'>
+    <FramedCard data-slot='repositories-workbench-shell'>
       <CardFilterBar>
         {providerTabs}
       </CardFilterBar>
@@ -48,6 +48,6 @@ export function RepositoriesWorkbenchShell({
           {children}
         </WorkbenchContent>
       </div>
-    </Card>
+    </FramedCard>
   )
 }

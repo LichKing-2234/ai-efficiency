@@ -14,6 +14,7 @@ import { DataGridCheckbox } from '@/components/primitives/data-grid-checkbox'
 import { CardPagerFooter } from '@/components/primitives/card-pager-footer'
 import { DataGrid, DataGridCell, DataGridHeader, DataGridIdentityCell, DataGridRow, DataGridRowAffordance } from '@/components/primitives/data-grid'
 import { EndActions } from '@/components/primitives/end-actions'
+import { FramedCard } from '@/components/primitives/framed-card'
 import { Page } from '@/components/primitives/page'
 import { LoadingState } from '@/components/primitives/data-state'
 import { InsetPanel } from '@/components/primitives/inset-panel'
@@ -245,7 +246,7 @@ export function AdminUsersPage() {
           ) : null}
         </CardContentStack>
       </Card>
-      <Card className='overflow-hidden'>
+      <FramedCard>
         <SearchActionBar
           search={(
             <SearchField
@@ -367,7 +368,7 @@ export function AdminUsersPage() {
           previous={<PagerNavButton direction='previous' disabled={page <= 1 || users.isFetching} onClick={() => setPage((value) => Math.max(1, value - 1))}>{t('common.previous')}</PagerNavButton>}
           next={<PagerNavButton direction='next' disabled={page >= totalPages || users.isFetching} onClick={() => setPage((value) => value + 1)}>{t('common.next')}</PagerNavButton>}
         />
-      </Card>
+      </FramedCard>
     </Page>
   )
 }

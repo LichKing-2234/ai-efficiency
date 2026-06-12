@@ -37,11 +37,11 @@ describe('RepositoriesWorkbenchShell', () => {
   })
 
   test('keeps the repository shell composed from shared frame primitives', () => {
-    expect(source).toContain("from '@/components/ui/card'")
+    expect(source).toContain("from '@/components/primitives/framed-card'")
     expect(source).toContain("from '@/components/primitives/card-filter-bar'")
     expect(source).toContain("from '@/components/primitives/section-card-header'")
     expect(source).toContain("from '@/components/primitives/workbench-rail'")
-    expect(source).toContain("<Card className='overflow-hidden' data-slot='repositories-workbench-shell'>")
+    expect(source).toContain("<FramedCard data-slot='repositories-workbench-shell'>")
     expect(source).toContain("<div className='repo-workbench' data-slot='repositories-workbench-grid'>")
   })
 })

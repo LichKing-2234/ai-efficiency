@@ -14,6 +14,7 @@ import { DataGrid, DataGridCell, DataGridHeader, DataGridHeaderCell, DataGridRow
 import { FilterRow } from '@/components/primitives/filter-row'
 import { GlyphLabelCell } from '@/components/primitives/glyph-label-cell'
 import { HeatmapGrid } from '@/components/primitives/heatmap-grid'
+import { FramedCard } from '@/components/primitives/framed-card'
 import { KpiGrid } from '@/components/primitives/kpi-grid'
 import { LinkAction } from '@/components/primitives/link-action'
 import { KpiCard } from '@/components/primitives/metric-card'
@@ -185,7 +186,7 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
                 )}
               </CardContentStack>
             </Card>
-              <Card className='overflow-hidden'>
+              <FramedCard>
                 <SectionCardHeader title={t('usageDashboard.costByModel')} description={t('usageDashboard.costByModelDescription')} />
                 <CardTableContent>
                   {snapshot.models.length ? (
@@ -217,7 +218,7 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
                     <PageEmpty title={t('usageDashboard.noModelData')} />
                   )}
                 </CardTableContent>
-              </Card>
+              </FramedCard>
             </div>
             {!embedded ? (
               <Card>

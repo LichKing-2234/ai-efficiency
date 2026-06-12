@@ -85,7 +85,10 @@ describe('Events page composition', () => {
   })
 
   test('uses the shared data grid status row for empty results', () => {
+    expect(source).toContain("from '@/components/primitives/framed-card'")
+    expect(source).toContain('<FramedCard>')
     expect(source).toContain("<PageEmpty title={t('events.noFilteredEvents')} />")
+    expect(source).not.toContain("<Card className='overflow-hidden'>")
     expect(source).not.toContain('<DataGridStatusRow')
     expect(source).not.toContain("className='px-6 py-10 text-center text-muted-foreground text-sm'")
   })

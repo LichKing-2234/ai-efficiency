@@ -55,9 +55,12 @@ describe('User usage panel composition', () => {
   })
 
   test('uses shared table card content for edge-to-edge model cost table', () => {
+    expect(source).toContain("from '@/components/primitives/framed-card'")
     expect(source).toContain("from '@/components/primitives/card-table-content'")
     expect(source).toContain("from '@/components/primitives/card-content-stack'")
+    expect(source).toContain('<FramedCard>')
     expect(source).toContain('<CardTableContent>')
+    expect(source).not.toContain("<Card className='overflow-hidden'>")
     expect(source).not.toContain("<CardContent className='px-0 pb-0'>")
     expect(source).not.toContain('<CardContent>')
   })

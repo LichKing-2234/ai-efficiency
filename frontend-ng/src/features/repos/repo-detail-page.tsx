@@ -15,6 +15,7 @@ import { DataGrid, DataGridCell, DataGridHeader, DataGridHeaderCell, DataGridRow
 import { EntityCardHeader } from '@/components/primitives/entity-card-header'
 import { FilterRow } from '@/components/primitives/filter-row'
 import { FilterRowTitle } from '@/components/primitives/filter-row-title'
+import { FramedCard } from '@/components/primitives/framed-card'
 import { FormActions } from '@/components/primitives/form-actions'
 import { InfoTile, InfoTileGrid } from '@/components/primitives/info-tile'
 import { InsetPanel } from '@/components/primitives/inset-panel'
@@ -312,7 +313,7 @@ export function RepoDetailPage() {
           </ControlGrid>
         </CardContentStack>
       </Card>
-      <Card className='overflow-hidden'>
+      <FramedCard>
         <EntityCardHeader
           title={t('repoDetail.pullRequests')}
           actions={(
@@ -471,7 +472,7 @@ export function RepoDetailPage() {
           previous={<PagerNavButton direction='previous' onClick={() => setPRsPage((value) => Math.max(0, value - 1))} disabled={!hasPreviousPage || prs.isFetching}>{t('common.previous')}</PagerNavButton>}
           next={<PagerNavButton direction='next' onClick={() => setPRsPage((value) => value + 1)} disabled={!hasNextPage || prs.isFetching}>{t('common.next')}</PagerNavButton>}
         />
-      </Card>
+      </FramedCard>
     </Page>
   )
 }
