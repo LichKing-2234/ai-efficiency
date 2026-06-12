@@ -1,7 +1,6 @@
 import { Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowRightIcon, CoinsIcon, DownloadIcon, FolderGit2Icon, GaugeIcon, GitPullRequestIcon, WorkflowIcon } from 'lucide-react'
-import { Card } from '@/components/ui/card'
 import { ButtonWithIcon } from '@/components/primitives/button-with-icon'
 import { CardContentStack } from '@/components/primitives/card-content-stack'
 import { BarsH, Ring, StackedAreaChart, type StackedAreaKey } from '@/components/primitives/charts'
@@ -18,12 +17,13 @@ import { PageEmpty } from '@/components/primitives/page-empty'
 import { ProgressFraction } from '@/components/primitives/progress-fraction'
 import { PulseStat } from '@/components/primitives/pulse-stat'
 import { PulseStatGrid } from '@/components/primitives/pulse-stat-grid'
-import { SectionCardHeader } from '@/components/primitives/section-card-header'
+import { SectionCard } from '@/components/primitives/section-card'
 import { LoadingState } from '@/components/primitives/data-state'
 import { StartActions } from '@/components/primitives/start-actions'
 import { UsageActivityRow } from '@/components/primitives/usage-activity-row'
 import { ValueComparison } from '@/components/primitives/value-comparison'
 import { StatusBadge } from '@/components/primitives/status-badge'
+import { Card } from '@/components/ui/card'
 import { api } from '@/lib/api'
 import type { UserUsageTrendPoint } from '@/lib/api/types'
 import { compact, currency, dateTime, durationMs, number, percent } from '@/lib/format'
@@ -184,13 +184,11 @@ export function HomePage() {
       </KpiGrid>
 
       <div className='split-2'>
-        <Card>
-          <SectionCardHeader
-            title={t('home.costEfficiency')}
-            description={t('home.costEfficiencyDescription')}
-            actions={<StatusBadge value='success' label={t('home.savedLabel', { value: percent(savingsRatio, locale) })} />}
-          />
-          <CardContentStack>
+        <SectionCard
+          actions={<StatusBadge value='success' label={t('home.savedLabel', { value: percent(savingsRatio, locale) })} />}
+          description={t('home.costEfficiencyDescription')}
+          title={t('home.costEfficiency')}
+        >
             <ValueComparison current={currency(totalActualCost, locale)} previous={currency(totalStandardCost, locale)} />
             <CompareBar color='var(--ai)' label={t('home.actualSpend')} max={Math.max(totalStandardCost, totalActualCost, 1)} value={totalActualCost} valueLabel={currency(totalActualCost, locale)} />
             <CompareBar color='var(--surface-3)' label={t('home.standardPricing')} max={Math.max(totalStandardCost, totalActualCost, 1)} value={totalStandardCost} valueLabel={currency(totalStandardCost, locale)} />
@@ -205,8 +203,7 @@ export function HomePage() {
                 />
               </CardContentStack>
             ) : null}
-          </CardContentStack>
-        </Card>
+        </SectionCard>
         <Card>
           <EntityCardHeader
             description={setupDescription}
@@ -242,27 +239,23 @@ export function HomePage() {
       </div>
 
       <div className='split-2'>
-        <Card>
-          <SectionCardHeader
-            title={t('home.liveActivity')}
-            live
-            actions={(
-              <LinkAction asChild iconEnd={ArrowRightIcon}>
-                <Link to='/events'>{t('home.viewAllRecords')}</Link>
-              </LinkAction>
-            )}
-          />
-          <CardContentStack gap='none'>
+        <SectionCard
+          actions={(
+            <LinkAction asChild iconEnd={ArrowRightIcon}>
+              <Link to='/events'>{t('home.viewAllRecords')}</Link>
+            </LinkAction>
+          )}
+          gap='none'
+          live
+          title={t('home.liveActivity')}
+        >
             {recentEvents.length ? recentEvents.map((event, index) => (
               <HomeActivityRow key={event.id} event={buildHomeActivitySummary(event)} first={index === 0} locale={locale} />
             )) : (
               <PageEmpty title={t('common.empty')} />
             )}
-          </CardContentStack>
-        </Card>
-        <Card>
-          <SectionCardHeader title={t('home.topModels')} description={t('home.topModelsDescription')} />
-          <CardContentStack>
+        </SectionCard>
+        <SectionCard description={t('home.topModelsDescription')} title={t('home.topModels')}>
             {topModels.length ? (
               <BarsH
                 rows={topModels.map((model, index) => ({
@@ -276,8 +269,7 @@ export function HomePage() {
             ) : (
               <PageEmpty title={t('common.empty')} />
             )}
-          </CardContentStack>
-        </Card>
+        </SectionCard>
       </div>
     </Page>
   )

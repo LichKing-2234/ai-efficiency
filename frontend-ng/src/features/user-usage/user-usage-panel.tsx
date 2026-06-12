@@ -5,20 +5,18 @@ import { ActivityIcon, CoinsIcon, DownloadIcon, GaugeIcon, LayersIcon, RefreshCw
 import { Skeleton } from '@/components/ui/skeleton'
 import { AppAlert } from '@/components/primitives/app-alert'
 import { ButtonWithIcon } from '@/components/primitives/button-with-icon'
-import { CardTableContent } from '@/components/primitives/card-table-content'
 import { ChartLegend } from '@/components/primitives/chart-legend'
 import { BarsH, StackedAreaChart, type StackedAreaKey } from '@/components/primitives/charts'
 import { DataGrid, DataGridCell, DataGridHeader, DataGridHeaderCell, DataGridRow } from '@/components/primitives/data-grid'
 import { FilterRow } from '@/components/primitives/filter-row'
 import { GlyphLabelCell } from '@/components/primitives/glyph-label-cell'
 import { HeatmapGrid } from '@/components/primitives/heatmap-grid'
-import { FramedCard } from '@/components/primitives/framed-card'
 import { KpiGrid } from '@/components/primitives/kpi-grid'
 import { LinkAction } from '@/components/primitives/link-action'
 import { KpiCard } from '@/components/primitives/metric-card'
 import { PageEmpty } from '@/components/primitives/page-empty'
 import { SectionCard } from '@/components/primitives/section-card'
-import { SectionCardHeader } from '@/components/primitives/section-card-header'
+import { SectionTableCard } from '@/components/primitives/section-table-card'
 import { SegmentedControl } from '@/components/primitives/segmented-control'
 import { Stack } from '@/components/primitives/stack'
 import { ToolbarActions } from '@/components/primitives/toolbar-actions'
@@ -184,9 +182,7 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
                   <PageEmpty title={t('usageDashboard.noModelData')} />
                 )}
               </SectionCard>
-              <FramedCard>
-                <SectionCardHeader title={t('usageDashboard.costByModel')} description={t('usageDashboard.costByModelDescription')} />
-                <CardTableContent>
+              <SectionTableCard description={t('usageDashboard.costByModelDescription')} title={t('usageDashboard.costByModel')}>
                   {snapshot.models.length ? (
                     <DataGrid minWidth={560}>
                       <DataGridHeader columns={modelColumns}>
@@ -215,8 +211,7 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
                   ) : (
                     <PageEmpty title={t('usageDashboard.noModelData')} />
                   )}
-                </CardTableContent>
-              </FramedCard>
+              </SectionTableCard>
             </div>
             {!embedded ? (
               <SectionCard

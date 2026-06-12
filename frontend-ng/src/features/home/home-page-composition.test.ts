@@ -31,8 +31,9 @@ describe('Home page composition', () => {
   })
 
   test('uses shared card content stack for the recent usage activity list', () => {
-    expect(source).toContain("from '@/components/primitives/card-content-stack'")
-    expect(source).toContain("<CardContentStack gap='none'>")
+    expect(source).toContain("from '@/components/primitives/section-card'")
+    expect(source).toContain('<SectionCard')
+    expect(source).toContain("gap='none'")
     expect(source).not.toContain("<CardContent className='flex flex-col'>")
   })
 
@@ -61,6 +62,7 @@ describe('Home page composition', () => {
 
   test('uses reference overview sections instead of embedding the full usage analytics panel', () => {
     expect(source).toContain("from '@/components/primitives/charts'")
+    expect(source).toContain("from '@/components/primitives/section-card'")
     expect(source).toContain('<BarsH')
     expect(source).toContain("className='split-2'")
     expect(source).not.toContain('<UserUsagePanel embedded />')
@@ -69,6 +71,7 @@ describe('Home page composition', () => {
   test('keeps the reference live-activity and top-models ending row without an extra usage snapshot card', () => {
     expect(source).toContain("title={t('home.liveActivity')}")
     expect(source).toContain("title={t('home.topModels')}")
+    expect(source).toContain('</SectionCard>')
     expect(source).not.toContain("title={t('home.usageSnapshot')}")
   })
 
@@ -97,6 +100,7 @@ describe('Home page composition', () => {
   test('uses shared overview pulse and comparison primitives instead of page-local helpers', () => {
     expect(source).toContain("from '@/components/primitives/compare-bar'")
     expect(source).toContain("from '@/components/primitives/pulse-stat'")
+    expect(source).toContain("from '@/components/primitives/section-card'")
     expect(source).toContain('<PulseStat')
     expect(source).toContain('<CompareBar')
     expect(source).not.toContain('function PulseStat(')
