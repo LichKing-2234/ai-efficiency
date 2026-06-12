@@ -27,4 +27,12 @@ describe('StatusBadge', () => {
     expect(unknown).toContain('unknown')
     expect(unknown).toContain('var(--surface-3)')
   })
+
+  test('renders an explicit label without changing semantic tone mapping', () => {
+    const pending = renderToStaticMarkup(<StatusBadge value='pending_upload' label='Waiting for usage upload' />)
+
+    expect(pending).toContain('Waiting for usage upload')
+    expect(pending).toContain('var(--ai-soft)')
+    expect(pending).not.toContain('pending upload')
+  })
 })

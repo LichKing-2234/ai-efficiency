@@ -25,11 +25,11 @@ export function ActionGroup({
     <span
       data-slot={dataSlot}
       className={cn(
-        'flex items-center gap-2',
+        'flex items-center gap-2.5',
         align === 'block-end' && 'items-end justify-end',
         align === 'start' && 'justify-start',
         align === 'end' && 'justify-end',
-        align === 'responsive-end' && 'justify-start sm:justify-end',
+        align === 'responsive-end' && 'justify-start min-[920px]:justify-end',
         fit && 'min-w-0',
         layout === 'split' && 'w-full [&>*]:flex-1',
         push && 'ml-auto',

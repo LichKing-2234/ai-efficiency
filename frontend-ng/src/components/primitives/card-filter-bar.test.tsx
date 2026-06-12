@@ -37,8 +37,8 @@ describe('CardFilterBar', () => {
   test('uses the shared card content stack for standardized filter card rhythm', () => {
     expect(source).toContain("from '@/components/primitives/card-content-stack'")
     expect(source).toContain("dataSlot='card-filter-bar'")
-    expect(source).toContain("'border-border border-b px-[12px] py-[10px]'")
-    expect(source).toContain("flex flex-wrap items-center gap-1.5")
+    expect(source).toContain("'border-border border-b px-[14px] py-[12px]'")
+    expect(source).toContain("flex flex-wrap items-center gap-2")
     expect(source).not.toContain("'border-border border-b p-3'")
     expect(source).not.toContain("import { CardContent } from '@/components/ui/card'")
     expect(source).not.toContain('<CardContent ')

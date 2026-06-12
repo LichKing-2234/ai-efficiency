@@ -7,6 +7,7 @@ describe('WorkbenchRail', () => {
   test('renders the reference workbench side rail with stable slots', () => {
     const html = renderToStaticMarkup(
       <WorkbenchRail
+        description='GitHub'
         title='Scopes'
         actions={<Badge variant='secondary'>2</Badge>}
       >
@@ -17,8 +18,9 @@ describe('WorkbenchRail', () => {
     expect(html).toContain('data-slot="workbench-rail"')
     expect(html).toContain('data-slot="workbench-rail-header"')
     expect(html).toContain('data-slot="workbench-rail-content"')
-    expect(html).toContain('border-border bg-[var(--surface-2)] p-[12px] lg:border-r')
+    expect(html).toContain('border-border bg-[var(--surface-2)] px-[12px] py-[14px] min-[920px]:border-r')
     expect(html).toContain('Scopes')
+    expect(html).toContain('GitHub')
     expect(html).toContain('platform-team')
   })
 

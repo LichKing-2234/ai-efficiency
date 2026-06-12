@@ -1,8 +1,9 @@
-import { Button } from '@/components/ui/button'
 import { FieldGroup } from '@/components/ui/field'
-import { ActionGroup } from '@/components/primitives/action-group'
 import { AppAlert } from '@/components/primitives/app-alert'
 import { CheckboxField } from '@/components/primitives/checkbox-field'
+import { PrimaryActionButton } from '@/components/primitives/primary-action-button'
+import { SecondaryActionButton } from '@/components/primitives/secondary-action-button'
+import { StartActions } from '@/components/primitives/start-actions'
 import { TextField } from '@/components/primitives/text-field'
 import { useI18n } from '@/lib/i18n/i18n'
 import type { LDAPFormState } from './settings-payloads'
@@ -61,21 +62,20 @@ export function LdapSettingsForm({
           title={message}
         />
       ) : null}
-      <ActionGroup wrap align='start'>
-        <Button
-          variant='outline'
+      <StartActions>
+        <SecondaryActionButton
           onClick={onTest}
           disabled={!requiredReady || testPending}
         >
           {t('settings.testLdap')}
-        </Button>
-        <Button
+        </SecondaryActionButton>
+        <PrimaryActionButton
           onClick={onSave}
           disabled={!requiredReady || savePending}
         >
           {t('settings.saveLdap')}
-        </Button>
-      </ActionGroup>
+        </PrimaryActionButton>
+      </StartActions>
     </FieldGroup>
   )
 }

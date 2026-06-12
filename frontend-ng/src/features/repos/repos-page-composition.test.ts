@@ -7,15 +7,22 @@ const source = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), 're
 
 describe('Repos page composition', () => {
   test('uses shared filter and section primitives for the workbench shell', () => {
-    expect(source).toContain("from '@/components/primitives/card-filter-bar'")
+    expect(source).toContain("from '@/components/primitives/repositories-workbench-shell'")
+    expect(source).toContain("from '@/components/primitives/button-with-icon'")
+    expect(source).toContain("from '@/components/primitives/count-badge'")
     expect(source).toContain("from '@/components/primitives/segmented-control'")
-    expect(source).toContain("from '@/components/primitives/section-card-header'")
-    expect(source).toContain('<CardFilterBar>')
+    expect(source).toContain('<RepositoriesWorkbenchShell')
+    expect(source).toContain("<CountBadge variant='secondary'>")
     expect(source).toContain('<SegmentedControl')
-    expect(source).toContain('<SectionCardHeader')
-    expect(source).toContain('<ActionGroup push wrap>')
+    expect(source).toContain('providerTabs={(')
+    expect(source).toContain('rail={(')
+    expect(source).toContain('header={(')
     expect(source).toContain('meta={`${number(total, locale)} ${t(')
-    expect(source).not.toContain("<Card>\n        <CardFilterBar>")
+    expect(source).not.toContain("from '@/components/primitives/card-filter-bar'")
+    expect(source).not.toContain("from '@/components/primitives/section-card-header'")
+    expect(source).not.toContain("<Card>\n        <RepositoriesWorkbenchShell")
+    expect(source).not.toContain('<CardFilterBar>')
+    expect(source).not.toContain('<SectionCardHeader')
     expect(source).not.toContain("ariaLabel={t('common.pageSizeControl')}")
     expect(source).not.toContain("<div className='flex flex-wrap items-center gap-2'>")
     expect(source).not.toContain("<ActionGroup wrap className='ml-auto'>")
@@ -24,7 +31,17 @@ describe('Repos page composition', () => {
     expect(source).not.toContain("<div className='flex flex-col gap-2 border-b border-border px-5 py-4 md:flex-row md:items-center md:justify-between'>")
     expect(source).not.toContain("className='border-b border-border px-5 py-4'")
     expect(source).not.toContain("'border-border border-b p-3'")
+    expect(source).not.toContain("<Badge variant='secondary'>{number(provider.total_repos, locale)}</Badge>")
     expect(source).not.toContain("actions={<span className='text-muted-foreground text-sm'>{number(total, locale)} {t('repos.totalRepositories')}</span>}")
+  })
+
+  test('uses shared leading-icon CTA buttons for top-level repository actions', () => {
+    expect(source).toContain("<ButtonWithIcon size='sm' variant='outline' icon={GitPullRequestIcon}")
+    expect(source).toContain("<ButtonWithIcon size='sm' variant='outline' icon={WrenchIcon}")
+    expect(source).toContain("<ButtonWithIcon size='sm' icon={PlusIcon} onClick={openAddDialog}>")
+    expect(source).not.toContain("<Button variant='outline' onClick={() => autoBind.mutate()} disabled={autoBind.isPending}>")
+    expect(source).not.toContain("<Button variant='outline' onClick={() => webhookRepair.mutate({ force: false })} disabled={webhookRepair.isPending}>")
+    expect(source).not.toContain("<Button onClick={openAddDialog}>")
   })
 
   test('uses shared data grid record cells for clone URLs', () => {
@@ -36,10 +53,11 @@ describe('Repos page composition', () => {
   })
 
   test('uses the shared workbench rail for provider scopes', () => {
-    expect(source).toContain("from '@/components/primitives/workbench-rail'")
-    expect(source).toContain('<WorkbenchRail')
-    expect(source).toContain('<WorkbenchContent>')
+    expect(source).toContain("from '@/components/primitives/repositories-workbench-shell'")
     expect(source).toContain("scroll='workbench'")
+    expect(source).not.toContain("from '@/components/primitives/workbench-rail'")
+    expect(source).not.toContain('<WorkbenchRail')
+    expect(source).not.toContain('<WorkbenchContent>')
     expect(source).not.toContain("<aside className='border-border bg-[var(--surface-2)] p-3 lg:border-r'>")
     expect(source).not.toContain("<section className='min-w-0'>")
     expect(source).not.toContain("className='max-h-[430px] overflow-y-auto'")
@@ -92,8 +110,8 @@ describe('Repos page composition', () => {
 
   test('keeps binding controls inside the workbench header like the reference screen', () => {
     expect(source).toContain("ariaLabel={t('repos.bindingFilter')}")
-    expect(source).toContain("description={selectedProvider?.name ?? t('common.empty')}")
-    expect(source).toContain('actions={(')
+    expect(source).toContain("railDescription={selectedProvider?.name ?? t('common.empty')}")
+    expect(source).toContain('header={(')
     expect(source).toContain("<SegmentedControl\n")
     expect(source).toContain("size='sm'")
     expect(source).not.toContain("<ToolbarSelect\n            ariaLabel={t('repos.bindingFilter')}")
@@ -114,7 +132,8 @@ describe('Repos page composition', () => {
   })
 
   test('renders provider identity as a neutral status badge in the inspect panel', () => {
-    expect(source).toContain("<Badge variant='neutral'>")
+    expect(source).toContain("from '@/components/primitives/category-badge'")
+    expect(source).toContain('<CategoryBadge>')
     expect(source).toContain("repo.edges?.scm_provider?.name || t('repos.provider')")
     expect(source).not.toContain("label={t('repos.provider')} value={repo.edges?.scm_provider?.base_url || repo.edges?.scm_provider?.name || repo.scm_provider_id || '-'} mono truncate")
   })
@@ -130,6 +149,9 @@ describe('Repos page composition', () => {
     expect(source).toContain("label={t('repos.defaultBranch')}")
     expect(source).toContain("disabled={repo.binding_state === 'unbound' || syncPending}")
     expect(source).toContain("{syncPending ? t('repoDetail.syncingPrs') : t('repoDetail.syncPrs')}")
+    expect(source).toContain("<ButtonWithIcon asChild icon={GitPullRequestIcon}>")
+    expect(source).toContain("<ButtonWithIcon variant='outline' icon={RefreshCwIcon} onClick={() => syncRepo(repo.id)} disabled={repo.binding_state === 'unbound' || syncPending}>")
+    expect(source).toContain("<ButtonWithIcon asChild variant='outline' icon={ExternalLinkIcon}>")
   })
 
   test('uses reference inspect configuration rhythm and equal-width action row', () => {
@@ -137,13 +159,17 @@ describe('Repos page composition', () => {
     expect(source).toContain("label={t('repos.defaultBranch')}")
     expect(source).toContain("label={t('repos.provider')}")
     expect(source).toContain("title={t('repos.bindToPrSource')}")
-    expect(source).toContain("className='grid grid-cols-2 gap-[10px]'")
-    expect(source).toContain("className='w-full'")
+    expect(source).toContain("from '@/components/primitives/split-actions'")
+    expect(source).toContain('<SplitActions>')
+    expect(source).not.toContain("className='grid grid-cols-2 gap-[10px]'")
+    expect(source).not.toContain("className='w-full'")
     expect(source).not.toContain("label={t('repos.fullName')}")
     expect(source).not.toContain("label={t('common.status')}")
-    expect(source).toContain("{deleteConfirmId === repo.id ? (")
-    expect(source).toContain("<ActionGroup push wrap>")
-    expect(source).toContain("<ActionGroup push>")
+    expect(source).toContain("from '@/components/primitives/inline-destructive-actions'")
+    expect(source).toContain('<InlineDestructiveActions')
+    expect(source).toContain('confirmPending={deletePending}')
+    expect(source).not.toContain('{deleteConfirmId === repo.id ? (')
+    expect(source).not.toContain('<InlineConfirmActions')
   })
 
   test('uses shared empty-state primitives for repository empty content', () => {
@@ -152,8 +178,17 @@ describe('Repos page composition', () => {
     expect(source).not.toContain("<CardContent className='p-8'>")
   })
 
+  test('uses the shared pager navigation button for repository list pagination', () => {
+    expect(source).toContain("from '@/components/primitives/pager-nav-button'")
+    expect(source).toContain("<PagerNavButton direction='previous' onClick={() => replaceSearch({ ...search, page: Math.max(1, search.page - 1) })} disabled={!canPreviousPage || repos.isFetching}>")
+    expect(source).toContain("<PagerNavButton direction='next' onClick={() => replaceSearch({ ...search, page: search.page + 1 })} disabled={!canNextPage || repos.isFetching}>")
+    expect(source).not.toContain("<Button variant='outline' size='sm' onClick={() => replaceSearch({ ...search, page: Math.max(1, search.page - 1) })} disabled={!canPreviousPage || repos.isFetching}>")
+    expect(source).not.toContain("<Button variant='outline' size='sm' onClick={() => replaceSearch({ ...search, page: search.page + 1 })} disabled={!canNextPage || repos.isFetching}>")
+  })
+
   test('uses wrapped shadcn tabs without page-local tab list layout classes', () => {
-    expect(source).toContain('<TabsList wrap>')
+    expect(source).toContain("<TabsList variant='line' wrap>")
+    expect(source).toContain("className='h-8 gap-2 px-3'")
     expect(source).not.toContain("<TabsList className='h-auto flex-wrap justify-start'>")
   })
 
@@ -165,12 +200,26 @@ describe('Repos page composition', () => {
 
   test('shows the reference unbound warning banner from real inventory health', () => {
     expect(source).toContain("from '@/components/primitives/app-alert'")
+    expect(source).toContain("from '@/components/primitives/quiet-action-button'")
     expect(source).toContain('health.unbound > 0 ? (')
     expect(source).toContain("<AppAlert")
     expect(source).toContain("tone='warning'")
     expect(source).toContain("title={t('repos.unboundWarningTitle', { count: number(health.unbound, locale) })}")
     expect(source).toContain("description={t('repos.unboundWarningDescription')}")
     expect(source).toContain("replaceSearch({ ...search, binding: 'unbound', provider: 'unbound', page: 1 })")
+    expect(source).toContain("<QuietActionButton onClick={() => replaceSearch({ ...search, binding: 'unbound', provider: 'unbound', page: 1 })}>")
     expect(source).not.toContain("<div className='warn-soft")
+    expect(source).not.toContain("<Button variant='ghost' onClick={() => replaceSearch({ ...search, binding: 'unbound', provider: 'unbound', page: 1 })}>")
+  })
+
+  test('uses shared app alerts for auto-bind and webhook repair result notices', () => {
+    expect(source).toContain('<AppAlert tone=')
+    expect(source).not.toContain('<Alert><AlertTitle>')
+    expect(source).not.toContain("<Alert variant='destructive'><AlertTitle>")
+  })
+
+  test('uses shared status badges for repository binding pills', () => {
+    expect(source).toContain('<StatusBadge value={repo.binding_state} />')
+    expect(source).not.toContain("<Badge variant={repo.binding_state === 'bound' ? 'pos' : 'warn'}>{repo.binding_state}</Badge>")
   })
 })

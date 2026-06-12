@@ -21,7 +21,7 @@ describe('HeroContent', () => {
     expect(html).toContain('data-slot="hero-shell"')
     expect(html).toContain('flex')
     expect(html).toContain('[&amp;&gt;*]:flex-1')
-    expect(html).toContain('sm:justify-end')
+    expect(html).toContain('min-[920px]:justify-end')
     expect(html).toContain('text-[13.5px]')
     expect(html).toContain('AI assisted delivery')
     expect(html).toContain('Open setup')

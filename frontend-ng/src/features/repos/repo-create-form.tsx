@@ -1,11 +1,10 @@
-import { Button } from '@/components/ui/button'
 import { FieldGroup } from '@/components/ui/field'
-import { ActionGroup } from '@/components/primitives/action-group'
 import { AppAlert } from '@/components/primitives/app-alert'
 import { FieldItem, FieldList } from '@/components/primitives/field-list'
 import { InsetPanel } from '@/components/primitives/inset-panel'
 import { LabeledSegmentedControl } from '@/components/primitives/labeled-segmented-control'
 import { SelectField } from '@/components/primitives/select-field'
+import { SubmitCancelActions } from '@/components/primitives/submit-cancel-actions'
 import { TextField } from '@/components/primitives/text-field'
 import type { SCMProvider } from '@/lib/api/types'
 import type { ParsedRepoUrl, RepoCloneProtocol } from './repos-state'
@@ -123,10 +122,13 @@ export function RepoCreateForm({
       ) : null}
       <TextField id='repo-create-default-branch' label={labels.defaultBranch} value={defaultBranch} onChange={onDefaultBranchChange} />
       {addError ? <AppAlert tone='error' title={addError} /> : null}
-      <ActionGroup>
-        <Button variant='outline' onClick={onCancel}>{labels.cancel}</Button>
-        <Button disabled={!selectedProviderId || !parsedRepo || createPending} onClick={onCreate}>{labels.create}</Button>
-      </ActionGroup>
+      <SubmitCancelActions
+        cancelLabel={labels.cancel}
+        submitDisabled={!selectedProviderId || !parsedRepo || createPending}
+        submitLabel={labels.create}
+        onCancel={onCancel}
+        onSubmit={onCreate}
+      />
     </FieldGroup>
   )
 }

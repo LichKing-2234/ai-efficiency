@@ -1,19 +1,21 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Clipboard, KeyRound, RefreshCw, Terminal } from 'lucide-react'
+import { KeyRound, RefreshCw, Terminal } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
-import { ActionGroup } from '@/components/primitives/action-group'
 import { AppAlert } from '@/components/primitives/app-alert'
+import { ButtonWithIcon } from '@/components/primitives/button-with-icon'
+import { CategoryBadge } from '@/components/primitives/category-badge'
 import { CardContentStack } from '@/components/primitives/card-content-stack'
 import { CommandAccordion } from '@/components/primitives/command-accordion'
 import { CommandStep } from '@/components/primitives/command-step'
-import { ConfirmAction } from '@/components/primitives/confirm-action'
+import { ConfirmActionButton } from '@/components/primitives/confirm-action-button'
+import { ContextInline, ContextInlineItem } from '@/components/primitives/context-inline'
 import { CountBadge } from '@/components/primitives/count-badge'
+import { CredentialKeyActions } from '@/components/primitives/credential-key-actions'
 import { CredentialKeyPanel } from '@/components/primitives/credential-key-panel'
 import { EntityCardHeader } from '@/components/primitives/entity-card-header'
+import { HeaderOptionButtons } from '@/components/primitives/header-option-buttons'
 import { PageEmpty } from '@/components/primitives/page-empty'
 import { Page } from '@/components/primitives/page'
 import { InfoTile, InfoTileGrid } from '@/components/primitives/info-tile'
@@ -163,7 +165,7 @@ export function UserPage() {
                   >
                     <SelectableCardHeader>
                       <SelectableCardTitle>{provider.display_name || provider.name}</SelectableCardTitle>
-                      {provider.is_primary ? <Badge variant='ai'>{t('userSetup.primary')}</Badge> : null}
+                      {provider.is_primary ? <CategoryBadge variant='ai'>{t('userSetup.primary')}</CategoryBadge> : null}
                     </SelectableCardHeader>
                     <SelectableCardMeta>{provider.base_url}</SelectableCardMeta>
                     <SelectableCardStatus tone={ready === total ? 'success' : 'warning'}>
@@ -198,21 +200,18 @@ export function UserPage() {
               title={selectedProvider ? selectedProvider.display_name || selectedProvider.name : t('userSetup.aiAccess')}
               description={<RecordMeta wrap>{selectedProvider?.base_url || t('userSetup.noProvider')}</RecordMeta>}
               actions={(
-                <ActionGroup align='responsive-end' wrap>
-                  {(selectedProvider?.groups ?? []).map((group) => (
-                  <Button
-                    key={group.group_id}
-                    size='sm'
-                    variant={group.group_id === selectedGroupId ? 'default' : 'outline'}
-                    onClick={() => {
-                      setSelectedGroupId(group.group_id)
-                      setTestResult(null)
-                    }}
-                  >
-                    {group.group_name}
-                  </Button>
-                ))}
-                </ActionGroup>
+                <HeaderOptionButtons
+                  ariaLabel={t('userSetup.group')}
+                  onChange={(groupId) => {
+                    setSelectedGroupId(groupId)
+                    setTestResult(null)
+                  }}
+                  options={(selectedProvider?.groups ?? []).map((group) => ({
+                    label: group.group_name,
+                    value: group.group_id
+                  }))}
+                  value={selectedGroupId}
+                />
               )}
             />
             <CardContentStack gap='normal'>
@@ -234,32 +233,31 @@ export function UserPage() {
                     ready={!!secret}
                     icon={KeyRound}
                     actions={secret ? (
-                      <>
-                        <Button size='sm' variant='ghost' onClick={() => selectedSecretKey && setRevealed((value) => ({ ...value, [selectedSecretKey]: !secretIsRevealed }))}>
-                          {secretIsRevealed ? t('common.hide') : t('userSetup.reveal')}
-                        </Button>
-                        <Button size='icon-sm' variant='ghost' aria-label={t('userSetup.copy')} onClick={() => {
+                      <CredentialKeyActions
+                        copyLabel={t('userSetup.copy')}
+                        hideLabel={t('common.hide')}
+                        revealLabel={t('userSetup.reveal')}
+                        revealed={secretIsRevealed}
+                        onCopy={() => {
                           void navigator.clipboard?.writeText(secret)
                           toast.success(t('userSetup.credentialCopied'))
-                        }}>
-                          <Clipboard />
-                        </Button>
-                      </>
+                        }}
+                        onToggleReveal={() => selectedSecretKey && setRevealed((value) => ({ ...value, [selectedSecretKey]: !secretIsRevealed }))}
+                      />
                     ) : null}
                     footer={selectedGroup.credential.state === 'missing' ? (
-                      <Button size='sm' disabled={createCredential.isPending} onClick={() => createCredential.mutate()}>
-                        <KeyRound data-icon='inline-start' />
+                      <ButtonWithIcon size='sm' icon={KeyRound} disabled={createCredential.isPending} onClick={() => createCredential.mutate()}>
                         {t('userSetup.createKey')}
-                      </Button>
+                      </ButtonWithIcon>
                     ) : (
-                      <ConfirmAction
-                        trigger={<Button size='sm' variant='outline' disabled={regenerateCredential.isPending}><RefreshCw data-icon='inline-start' />{t('userSetup.regenerate')}</Button>}
-                        title={t('userSetup.regenerateTitle')}
-                        description={t('userSetup.regenerateDescription')}
-                        confirmLabel={t('userSetup.regenerate')}
+                      <ConfirmActionButton
                         cancelLabel={t('common.cancel')}
+                        confirmLabel={t('userSetup.regenerate')}
+                        description={t('userSetup.regenerateDescription')}
+                        label={t('userSetup.regenerate')}
                         onConfirm={() => regenerateCredential.mutate()}
                         disabled={regenerateCredential.isPending}
+                        title={t('userSetup.regenerateTitle')}
                       />
                     )}
                   />
@@ -276,7 +274,10 @@ export function UserPage() {
             <CardContentStack gap='compact'>
               {selectedGroup ? (
                 <InsetPanel muted>
-                  {t('userSetup.group')}: <span className='mono'>{selectedGroup.group_name}</span> · {t('userSetup.platform')}: <span className='mono'>{selectedGroup.platform}</span>
+                  <ContextInline>
+                    <ContextInlineItem label={t('userSetup.group')} value={selectedGroup.group_name} />
+                    <ContextInlineItem label={t('userSetup.platform')} separator={false} value={selectedGroup.platform} />
+                  </ContextInline>
                 </InsetPanel>
               ) : null}
               <ProviderTestForm

@@ -235,7 +235,10 @@ describe('DataGrid', () => {
     )
 
     expect(defaultHtml).toContain('data-slot="data-grid-row-affordance"')
-    expect(defaultHtml).toContain('justify-end')
+    expect(defaultHtml).toContain('size-8')
+    expect(defaultHtml).toContain('items-center')
+    expect(defaultHtml).toContain('justify-center')
+    expect(defaultHtml).toContain('justify-self-end')
     expect(defaultHtml).toContain('text-[var(--ink-4)]')
     expect(defaultHtml).toContain('size-4')
     expect(mutedHtml).toContain('text-[var(--ink-3)]')

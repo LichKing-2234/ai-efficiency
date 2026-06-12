@@ -13,6 +13,11 @@ export function commandStepClipboardText(command: string) {
   return command
 }
 
+export function commandStepAriaLabel(command: string, label?: string) {
+  if (label && command) return `${label}: ${command}`
+  return label || command || 'command'
+}
+
 export function CommandStep({
   command,
   copiedMessage,
@@ -40,6 +45,8 @@ export function CommandStep({
           'flex min-w-0 flex-1 items-center gap-2 rounded-[var(--r-sm)] border border-border bg-[var(--surface-inset)] px-[10px] py-[8px] text-left text-[12px] transition hover:border-[var(--line-strong)] hover:bg-card disabled:cursor-not-allowed disabled:opacity-60'
         )}
         disabled={disabled}
+        aria-label={commandStepAriaLabel(command, label)}
+        title={label}
         onClick={() => {
           const text = commandStepClipboardText(command)
           if (!text) return
@@ -49,7 +56,6 @@ export function CommandStep({
           toast.success(copiedMessage)
         }}
       >
-        {label ? <span className='shrink-0 font-semibold text-[11px] text-[var(--ink-4)]'>{label}</span> : null}
         <span className='mono min-w-0 flex-1 truncate text-[11.5px] text-[var(--ai-deep)]'>{commandStepDisplayText(command)}</span>
         <ActionGroup className='gap-1 text-[var(--ink-4)]' dataSlot='command-step-copy' fit>
           {copied ? <CheckIcon data-icon='inline-start' /> : <ClipboardIcon data-icon='inline-start' />}

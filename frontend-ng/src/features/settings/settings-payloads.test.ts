@@ -6,7 +6,10 @@ import {
   buildRelayPayload,
   buildScmProviderPayload,
   buildSettingsSectionSearch,
+  settingsCredentialKindLabel,
+  settingsSectionMeta,
   settingsSectionFromSearch,
+  settingsScmProviderTypeLabel,
   type CredentialFormState,
   type LDAPFormState,
   type RelayFormState,
@@ -158,8 +161,53 @@ describe('settings section search state', () => {
     }
   })
 
+  test('keeps settings sections in the reference rail order', () => {
+    expect(settingsSections).toEqual([
+      'ai-services',
+      'code-platforms',
+      'advanced-credentials',
+      'organization-login',
+      'deployment-runtime'
+    ])
+  })
+
   test('omits default section from URL search and keeps non-default sections', () => {
     expect(buildSettingsSectionSearch('ai-services')).toEqual({})
     expect(buildSettingsSectionSearch('organization-login')).toEqual({ section: 'organization-login' })
+  })
+
+  test('provides stable metadata for every settings section', () => {
+    expect(settingsSectionMeta['ai-services']).toMatchObject({
+      labelKey: 'settings.aiServices',
+      descriptionKey: 'settings.relayProvidersDescription',
+      addKey: 'settings.addRelayProvider'
+    })
+    expect(settingsSectionMeta['code-platforms']).toMatchObject({
+      labelKey: 'settings.codePlatforms',
+      descriptionKey: 'settings.scmProvidersDescription',
+      addKey: 'settings.addScmProvider'
+    })
+    expect(settingsSectionMeta['advanced-credentials']).toMatchObject({
+      labelKey: 'settings.advancedCredentials',
+      descriptionKey: 'settings.advancedCredentialsDescription',
+      addKey: 'settings.addCredential'
+    })
+    expect(settingsSectionMeta['organization-login']).toMatchObject({
+      labelKey: 'settings.organizationLogin',
+      descriptionKey: 'settings.ldapLoginBehavior'
+    })
+    expect(settingsSectionMeta['deployment-runtime']).toMatchObject({
+      labelKey: 'settings.deploymentRuntime',
+      descriptionKey: 'settings.currentBackendDeployment'
+    })
+  })
+
+  test('maps scm provider types and credential kinds to stable display keys', () => {
+    expect(settingsScmProviderTypeLabel('github')).toBe('settings.scmTypeGithub')
+    expect(settingsScmProviderTypeLabel('bitbucket')).toBe('settings.scmTypeBitbucket')
+    expect(settingsScmProviderTypeLabel('unknown')).toBe('common.unknown')
+    expect(settingsCredentialKindLabel('secret_text')).toBe('settings.secretTextKind')
+    expect(settingsCredentialKindLabel('username_password')).toBe('settings.usernamePasswordKind')
+    expect(settingsCredentialKindLabel('ssh_username_with_private_key')).toBe('settings.sshPrivateKeyKind')
   })
 })

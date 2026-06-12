@@ -31,9 +31,9 @@ import { SidebarUserSummary } from './sidebar-user-summary'
 import { TopbarActions } from './topbar-actions'
 import { TopbarTitle } from './topbar-title'
 
-const LOCALES: Array<{ value: Locale; labelKey: 'locale.english' | 'locale.chinese'; shortKey: 'locale.englishShort' | 'locale.chineseShort' }> = [
-  { value: 'en-US', labelKey: 'locale.english', shortKey: 'locale.englishShort' },
-  { value: 'zh-CN', labelKey: 'locale.chinese', shortKey: 'locale.chineseShort' }
+const LOCALES: Array<{ value: Locale; labelKey: 'locale.english' | 'locale.chinese' }> = [
+  { value: 'en-US', labelKey: 'locale.english' },
+  { value: 'zh-CN', labelKey: 'locale.chinese' }
 ]
 const SIDEBAR_COOKIE = 'ae.sidebar.collapsed'
 
@@ -169,20 +169,20 @@ export function AppShell({ user, children }: { user: User | null; children: Reac
           <SidebarRail />
         </Sidebar>
         <Sheet onOpenChange={setOpen} open={open}>
-          <SheetContent className='w-[min(280px,86vw)] gap-0 border-sidebar-border bg-sidebar p-0 text-sidebar-foreground md:hidden' showCloseButton={false} side='left'>
+          <SheetContent className='w-[min(280px,86vw)] gap-0 border-sidebar-border bg-sidebar p-0 text-sidebar-foreground min-[920px]:hidden' showCloseButton={false} side='left'>
             <SheetTitle className='sr-only'>{t('nav.closeMenu')}</SheetTitle>
             {nav(false)}
           </SheetContent>
         </Sheet>
         <SidebarInset>
           <header className='flex h-[var(--topbar)] shrink-0 items-center gap-[14px] border-b border-[var(--line)] bg-[color-mix(in_oklab,var(--bg)_82%,transparent)] px-[18px] backdrop-blur-[12px]'>
-            <Button className='md:hidden' variant='outline' size='icon-sm' onClick={() => setOpen(true)}>
+            <Button className='min-[920px]:hidden' variant='outline' size='icon-sm' onClick={() => setOpen(true)}>
               <MenuIcon />
             </Button>
-            <Button className='hidden md:inline-flex' variant='ghost' size='icon-sm' onClick={toggleCollapsed} title={t('nav.toggleSidebar')}>
+            <Button className='hidden min-[920px]:inline-flex' variant='ghost' size='icon-sm' onClick={toggleCollapsed} title={t('nav.toggleSidebar')}>
               <PanelLeftIcon />
             </Button>
-            <div className='hidden h-[22px] w-px bg-[var(--line)] md:block' />
+            <div className='hidden h-[22px] w-px bg-[var(--line)] min-[920px]:block' />
             <TopbarTitle section={t(meta.sectionKey)} title={t(meta.titleKey)} />
             <TopbarActions
               commandLabel={t('command.trigger')}
@@ -191,8 +191,7 @@ export function AppShell({ user, children }: { user: User | null; children: Reac
               locale={locale}
               locales={LOCALES.map((item) => ({
                 value: item.value,
-                label: t(item.labelKey),
-                shortLabel: t(item.shortKey)
+                label: t(item.labelKey)
               }))}
               onLocaleChange={setLocale}
               onOpenCommand={() => setCommandOpen(true)}
@@ -201,7 +200,7 @@ export function AppShell({ user, children }: { user: User | null; children: Reac
             />
           </header>
           <main className='min-h-0 flex-1 overflow-y-auto'>
-            <div className='mx-auto w-full max-w-[1180px] px-[22px] pb-16 pt-[22px] md:px-6'>{children}</div>
+            <div className='mx-auto w-full max-w-[1180px] px-[22px] pb-16 pt-[22px] min-[920px]:px-6'>{children}</div>
           </main>
         </SidebarInset>
         <CommandPalette

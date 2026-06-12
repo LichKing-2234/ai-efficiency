@@ -2,9 +2,9 @@ import type * as React from 'react'
 import { cn } from '@/lib/utils'
 
 const infoTileGridColumns = {
-  2: 'md:grid-cols-2',
-  3: 'md:grid-cols-3',
-  4: 'md:grid-cols-4'
+  2: 'min-[920px]:grid-cols-2',
+  3: 'min-[920px]:grid-cols-3',
+  4: 'min-[920px]:grid-cols-4'
 } as const
 
 export function InfoTileGrid({
@@ -47,17 +47,17 @@ export function InfoTile({
     <div
       data-slot='info-tile'
       className={cn(
-        'rounded-[var(--r-md)] border bg-[var(--surface-inset)] p-[14px]',
+        'rounded-[var(--r-md)] border bg-[var(--surface-inset)] px-[12px] py-[11px]',
         aiAccent ? 'border-[var(--ai-line)] bg-[var(--ai-soft)]' : 'border-border',
         className
       )}
     >
-      <div className={cn('font-semibold text-[11px]', compact ? 'text-[var(--ink-3)]' : 'text-[var(--ink-3)] uppercase', aiAccent && 'text-[var(--ai-deep)]')}>{label}</div>
+      <div className={cn('font-medium text-[11px]', compact ? 'text-[var(--ink-3)]' : 'text-[var(--ink-3)] uppercase', aiAccent && 'text-[var(--ai-deep)]')}>{label}</div>
       <div
         className={cn(
-          'mt-1 break-all font-semibold text-[14.5px]',
+          'mt-[3px] break-all font-[680] text-[18px]',
           numeric && 'tnum',
-          compact && 'text-[20px]',
+          compact && 'text-[18px]',
           positiveAccent && 'text-[var(--pos)]',
           aiAccent && 'text-[var(--ai-deep)]',
           mono && 'mono truncate'

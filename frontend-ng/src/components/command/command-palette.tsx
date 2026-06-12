@@ -33,6 +33,7 @@ import { api } from '@/lib/api'
 import type { RepoConfig } from '@/lib/api/types'
 import type { MessageKey } from '@/lib/i18n/messages'
 import { useI18n } from '@/lib/i18n/i18n'
+import { cn } from '@/lib/utils'
 
 type BaseCommandItem = {
   id: string
@@ -40,6 +41,7 @@ type BaseCommandItem = {
   to?: '/' | '/usage' | '/events' | '/repos' | '/repos/$id' | '/user' | '/admin/users' | '/settings'
   labelKey?: MessageKey
   label?: string
+  meta?: string
   groupKey: MessageKey
   icon: typeof HomeIcon
   admin?: boolean
@@ -51,18 +53,18 @@ type RepoCommandItem = BaseCommandItem & { kind: 'repo'; to: '/repos/$id'; param
 type CommandItem = NavCommandItem | ActionCommandItem | RepoCommandItem
 
 const COMMANDS: Array<NavCommandItem | ActionCommandItem> = [
-  { id: 'overview', kind: 'nav', to: '/', labelKey: 'nav.overview', groupKey: 'command.navigate', icon: HomeIcon },
-  { id: 'usage', kind: 'nav', to: '/usage', labelKey: 'nav.usageAnalytics', groupKey: 'command.navigate', icon: GaugeIcon },
-  { id: 'events', kind: 'nav', to: '/events', labelKey: 'nav.usageRecords', groupKey: 'command.navigate', icon: ActivityIcon },
-  { id: 'repos', kind: 'nav', to: '/repos', labelKey: 'nav.codeRepositories', groupKey: 'command.navigate', icon: FolderGit2Icon },
-  { id: 'user', kind: 'nav', to: '/user', labelKey: 'nav.mySetup', groupKey: 'command.navigate', icon: UserIcon },
-  { id: 'add-repository', kind: 'action', to: '/repos', labelKey: 'command.addRepository', groupKey: 'command.actions', icon: PlusIcon },
-  { id: 'create-api-key', kind: 'action', to: '/user', labelKey: 'command.createApiKey', groupKey: 'command.actions', icon: KeyIcon },
-  { id: 'export-usage-report', kind: 'action', to: '/usage', labelKey: 'command.exportUsageReport', groupKey: 'command.actions', icon: DownloadIcon },
-  { id: 'auto-bind-unbound', kind: 'action', labelKey: 'repos.autoBind', groupKey: 'command.actions', icon: WandSparklesIcon, admin: true },
-  { id: 'toggle-theme', kind: 'action', labelKey: 'nav.toggleTheme', groupKey: 'command.actions', icon: MoonIcon },
-  { id: 'admin-users', kind: 'nav', to: '/admin/users', labelKey: 'nav.userManagement', groupKey: 'command.admin', icon: ShieldIcon, admin: true },
-  { id: 'settings', kind: 'nav', to: '/settings', labelKey: 'nav.adminConsole', groupKey: 'command.admin', icon: SettingsIcon, admin: true }
+  { id: 'overview', kind: 'nav', to: '/', labelKey: 'nav.overview', meta: '/', groupKey: 'command.navigate', icon: HomeIcon },
+  { id: 'usage', kind: 'nav', to: '/usage', labelKey: 'nav.usageAnalytics', meta: '/usage', groupKey: 'command.navigate', icon: GaugeIcon },
+  { id: 'events', kind: 'nav', to: '/events', labelKey: 'nav.usageRecords', meta: '/events', groupKey: 'command.navigate', icon: ActivityIcon },
+  { id: 'repos', kind: 'nav', to: '/repos', labelKey: 'nav.codeRepositories', meta: '/repos', groupKey: 'command.navigate', icon: FolderGit2Icon },
+  { id: 'user', kind: 'nav', to: '/user', labelKey: 'nav.mySetup', meta: '/user', groupKey: 'command.navigate', icon: UserIcon },
+  { id: 'add-repository', kind: 'action', to: '/repos', labelKey: 'command.addRepository', meta: 'command.meta.opensRepositories', groupKey: 'command.actions', icon: PlusIcon },
+  { id: 'create-api-key', kind: 'action', to: '/user', labelKey: 'command.createApiKey', meta: 'command.meta.opensMySetup', groupKey: 'command.actions', icon: KeyIcon },
+  { id: 'export-usage-report', kind: 'action', to: '/usage', labelKey: 'command.exportUsageReport', meta: 'command.meta.opensUsageAnalytics', groupKey: 'command.actions', icon: DownloadIcon },
+  { id: 'auto-bind-unbound', kind: 'action', labelKey: 'repos.autoBind', meta: 'command.meta.mutatesRepositories', groupKey: 'command.actions', icon: WandSparklesIcon, admin: true },
+  { id: 'toggle-theme', kind: 'action', labelKey: 'nav.toggleTheme', meta: 'command.meta.updatesAppearance', groupKey: 'command.actions', icon: MoonIcon },
+  { id: 'admin-users', kind: 'nav', to: '/admin/users', labelKey: 'nav.userManagement', meta: '/admin/users', groupKey: 'command.admin', icon: ShieldIcon, admin: true },
+  { id: 'settings', kind: 'nav', to: '/settings', labelKey: 'nav.adminConsole', meta: '/settings', groupKey: 'command.admin', icon: SettingsIcon, admin: true }
 ]
 
 function repoCommand(repo: RepoConfig): CommandItem {
@@ -72,6 +74,7 @@ function repoCommand(repo: RepoConfig): CommandItem {
     to: '/repos/$id',
     params: { id: String(repo.id) },
     label: repo.full_name || repo.name,
+    meta: repo.default_branch ? `${repo.default_branch} branch` : repo.clone_url,
     groupKey: 'command.repositories',
     icon: FolderGit2Icon
   }
@@ -148,6 +151,12 @@ export function CommandPalette({
     return command.labelKey ? t(command.labelKey) : command.label ?? command.id
   }
 
+  function meta(command: CommandItem) {
+    if (!command.meta) return null
+    if (command.meta.startsWith('command.')) return t(command.meta as MessageKey)
+    return command.meta
+  }
+
   return (
     <CommandDialog
       description={t('command.placeholder')}
@@ -168,12 +177,20 @@ export function CommandPalette({
                 return (
                   <CommandItem
                     key={command.id}
-                    keywords={[t(command.groupKey), command.to ?? '', command.id]}
+                    className={cn('h-auto min-h-10 py-2', command.kind === 'repo' && 'items-start')}
+                    keywords={[t(command.groupKey), command.to ?? '', command.id, meta(command) ?? '']}
                     onSelect={() => void run(command)}
                     value={`${label(command)} ${command.id} ${command.to ?? ''}`}
                   >
                     <Icon />
-                    <span className='min-w-0 flex-1 truncate font-medium text-[13.5px]'>{label(command)}</span>
+                    <span className='min-w-0 flex-1'>
+                      <span className='block truncate font-medium text-[13.5px]'>{label(command)}</span>
+                      {meta(command) ? (
+                        <span className='block truncate pt-0.5 text-[11.5px] text-[var(--ink-4)]'>
+                          {meta(command)}
+                        </span>
+                      ) : null}
+                    </span>
                     <CommandShortcut>
                       <ArrowRightIcon />
                     </CommandShortcut>
@@ -183,7 +200,14 @@ export function CommandPalette({
             </CommandGroup>
           ))}
         </CommandList>
-        <CommandFooter>{t('command.footer')}</CommandFooter>
+        <CommandFooter>
+          <CommandFooter.Hint keys={<CommandFooter.Key>↑↓</CommandFooter.Key>} label={t('command.navigateHint')} />
+          <CommandFooter.Hint keys={<CommandFooter.Key>↵</CommandFooter.Key>} label={t('command.selectHint')} />
+          <span className='ml-auto flex items-center gap-1.5' data-slot='command-footer-brand'>
+            <WandSparklesIcon className='size-3 text-[var(--ai)]' />
+            <span>{t('app.title')}</span>
+          </span>
+        </CommandFooter>
       </Command>
     </CommandDialog>
   )

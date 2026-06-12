@@ -39,8 +39,8 @@ export function SectionNav<T extends string>({
             className={cn(
               'h-[38px] w-full justify-start gap-2.5 px-[11px] text-left font-medium text-[13px] shadow-none',
               active
-                ? 'border-transparent bg-[var(--surface-inset)] text-foreground hover:bg-[var(--surface-inset)]'
-                : 'border-transparent bg-transparent text-[var(--ink-2)] hover:bg-[var(--surface-inset)] hover:text-foreground'
+                ? 'border-[var(--line)] bg-[var(--surface-inset)] text-foreground hover:bg-[var(--surface-inset)]'
+                : 'border-transparent bg-transparent text-[var(--ink-2)] hover:bg-[var(--surface)] hover:text-foreground'
             )}
             data-active={active}
             key={item.value}
@@ -66,7 +66,7 @@ export function SectionNavFrame({
   className?: string
 }) {
   return (
-    <Card className={cn('border border-[var(--line)] bg-[var(--surface)] p-[8px] shadow-none', className)} data-slot='section-nav-frame'>
+    <Card className={cn('border border-[var(--line)] bg-[var(--surface-2)] p-[8px] shadow-none', className)} data-slot='section-nav-frame'>
       {children}
     </Card>
   )

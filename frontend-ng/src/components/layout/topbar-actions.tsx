@@ -8,7 +8,6 @@ import { TopbarLiveStatus } from './topbar-live-status'
 export type TopbarLocaleOption = {
   value: Locale
   label: string
-  shortLabel: string
 }
 
 export function TopbarActions({
@@ -42,7 +41,7 @@ export function TopbarActions({
         <DropdownMenuTrigger asChild>
           <Button data-slot='topbar-actions-locale-trigger' size='sm' type='button' variant='ghost'>
             <GlobeIcon />
-            <span className='hidden sm:inline'>{currentLocale?.shortLabel}</span>
+            <span className='hidden min-[920px]:inline'>{currentLocale?.label}</span>
             <ChevronDownIcon />
           </Button>
         </DropdownMenuTrigger>

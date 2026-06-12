@@ -28,12 +28,28 @@ describe('AppAlert', () => {
     expect(html).toContain('Open setup')
   })
 
+  test('maps success and warning tones onto the shared semantic surface tokens', () => {
+    const successHtml = renderToStaticMarkup(
+      <AppAlert title='Updated' tone='success' />
+    )
+    const warningHtml = renderToStaticMarkup(
+      <AppAlert title='Review required' tone='warning' />
+    )
+
+    expect(successHtml).toContain('var(--pos-line)')
+    expect(successHtml).toContain('var(--pos-soft)')
+    expect(warningHtml).toContain('var(--warn-line)')
+    expect(warningHtml).toContain('var(--warn-soft)')
+  })
+
   test('keeps action spacing inside the primitive action slot', async () => {
     const source = await import('node:fs/promises').then((fs) =>
       fs.readFile(new URL('./app-alert.tsx', import.meta.url), 'utf8')
     )
 
     expect(source).toContain("from '@/components/primitives/stack'")
+    expect(source).toContain("from '@/lib/utils'")
+    expect(source).toContain('toneClassName')
     expect(source).not.toContain("data-slot='app-alert-actions' className='mt-3'")
     expect(source).not.toContain("const appAlertActionsClass = 'mt-3'")
   })

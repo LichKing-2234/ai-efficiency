@@ -53,7 +53,14 @@ describe('LdapSettingsForm', () => {
   })
 
   test('uses shared start-aligned action groups for LDAP actions', () => {
-    expect(source).toContain("<ActionGroup wrap align='start'>")
+    expect(source).toContain("from '@/components/primitives/start-actions'")
+    expect(source).toContain("from '@/components/primitives/primary-action-button'")
+    expect(source).toContain("from '@/components/primitives/secondary-action-button'")
+    expect(source).toContain('<StartActions>')
+    expect(source).toContain('<PrimaryActionButton')
+    expect(source).toContain('<SecondaryActionButton')
+    expect(source).not.toContain("<ActionGroup wrap align='start'>")
     expect(source).not.toContain("<ActionGroup wrap className='justify-start'>")
+    expect(source).not.toContain("<Button\n          variant='outline'")
   })
 })

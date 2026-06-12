@@ -1,4 +1,5 @@
 import type { CredentialPayload, LDAPSettings, RelayProviderPayload, SCMProviderPayload } from '@/lib/api/types'
+import type { MessageKey } from '@/lib/i18n/messages'
 
 type CredentialKind = CredentialPayload['kind']
 type CredentialSecretFields = NonNullable<CredentialPayload['payload']>
@@ -47,12 +48,48 @@ export interface LDAPFormState {
 export const settingsSections = [
   'ai-services',
   'code-platforms',
+  'advanced-credentials',
   'organization-login',
-  'deployment-runtime',
-  'advanced-credentials'
+  'deployment-runtime'
 ] as const
 
 export type SettingsSection = (typeof settingsSections)[number]
+
+export const settingsSectionMeta: Record<SettingsSection, {
+  addKey?: 'settings.addCredential' | 'settings.addRelayProvider' | 'settings.addScmProvider'
+  descriptionKey: string
+  iconName: 'database' | 'layers' | 'lock' | 'shield' | 'waypoints'
+  labelKey: string
+}> = {
+  'ai-services': {
+    addKey: 'settings.addRelayProvider',
+    descriptionKey: 'settings.relayProvidersDescription',
+    iconName: 'layers',
+    labelKey: 'settings.aiServices'
+  },
+  'code-platforms': {
+    addKey: 'settings.addScmProvider',
+    descriptionKey: 'settings.scmProvidersDescription',
+    iconName: 'waypoints',
+    labelKey: 'settings.codePlatforms'
+  },
+  'advanced-credentials': {
+    addKey: 'settings.addCredential',
+    descriptionKey: 'settings.advancedCredentialsDescription',
+    iconName: 'lock',
+    labelKey: 'settings.advancedCredentials'
+  },
+  'organization-login': {
+    descriptionKey: 'settings.ldapLoginBehavior',
+    iconName: 'shield',
+    labelKey: 'settings.organizationLogin'
+  },
+  'deployment-runtime': {
+    descriptionKey: 'settings.currentBackendDeployment',
+    iconName: 'database',
+    labelKey: 'settings.deploymentRuntime'
+  }
+}
 
 const settingsSectionSet = new Set<string>(settingsSections)
 
@@ -148,4 +185,16 @@ export function buildLDAPPayload(form: LDAPFormState): LDAPSettings {
     user_filter: form.user_filter.trim(),
     tls: form.tls
   }
+}
+
+export function settingsScmProviderTypeLabel(type: string): MessageKey {
+  return type === 'github' ? 'settings.scmTypeGithub' : type === 'bitbucket' ? 'settings.scmTypeBitbucket' : 'common.unknown'
+}
+
+export function settingsCredentialKindLabel(kind: CredentialKind): MessageKey {
+  return kind === 'secret_text'
+    ? 'settings.secretTextKind'
+    : kind === 'username_password'
+      ? 'settings.usernamePasswordKind'
+      : 'settings.sshPrivateKeyKind'
 }

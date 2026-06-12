@@ -1,32 +1,35 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Navigate, useNavigate, useSearch } from '@tanstack/react-router'
-import { ChevronRight, Clipboard, Clock3, Plus, RefreshCw, Shield, UserCheck, Users } from 'lucide-react'
+import { ChevronRight, Clock3, Plus, RefreshCw, Shield, UserCheck, Users } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
 import { FieldDescription } from '@/components/ui/field'
-import { ActionGroup } from '@/components/primitives/action-group'
+import { AdminSecretActions } from '@/components/primitives/admin-secret-actions'
 import { AppAlert } from '@/components/primitives/app-alert'
+import { ButtonWithIcon } from '@/components/primitives/button-with-icon'
 import { CardContentStack } from '@/components/primitives/card-content-stack'
-import { CardFilterBar } from '@/components/primitives/card-filter-bar'
+import { CategoryBadge } from '@/components/primitives/category-badge'
 import { DataGridCheckbox } from '@/components/primitives/data-grid-checkbox'
 import { CardPagerFooter } from '@/components/primitives/card-pager-footer'
 import { DataGrid, DataGridCell, DataGridHeader, DataGridIdentityCell, DataGridRow, DataGridRowAffordance } from '@/components/primitives/data-grid'
+import { EndActions } from '@/components/primitives/end-actions'
 import { Page } from '@/components/primitives/page'
 import { LoadingState } from '@/components/primitives/data-state'
 import { InsetPanel } from '@/components/primitives/inset-panel'
 import { JobResultList } from '@/components/primitives/job-result-list'
 import { KpiGrid } from '@/components/primitives/kpi-grid'
+import { InlineConfirmActions } from '@/components/primitives/inline-confirm-actions'
+import { PagerNavButton } from '@/components/primitives/pager-nav-button'
+import { PageSizeSelect } from '@/components/primitives/page-size-select'
 import { RowInsetPanel } from '@/components/primitives/row-inset-panel'
 import { SearchField } from '@/components/primitives/search-field'
+import { SearchActionBar } from '@/components/primitives/search-action-bar'
 import { SectionCardHeader } from '@/components/primitives/section-card-header'
 import { StatusWithReason } from '@/components/primitives/status-with-reason'
 import { KpiCard } from '@/components/primitives/metric-card'
 import { StatusBadge } from '@/components/primitives/status-badge'
 import { TokenMeter } from '@/components/primitives/token-meter'
-import { ToolbarSelect } from '@/components/primitives/toolbar-select'
 import { api } from '@/lib/api'
 import { compact, number } from '@/lib/format'
 import { useI18n } from '@/lib/i18n/i18n'
@@ -187,14 +190,11 @@ export function AdminUsersPage() {
 
   return (
     <Page className='stagger'>
-      <div className='min-h-9'>
-        <ActionGroup push wrap>
-          <Button>
-            <Plus data-icon='inline-start' />
-            {t('adminUsers.inviteUser')}
-          </Button>
-        </ActionGroup>
-      </div>
+      <EndActions>
+        <ButtonWithIcon size='sm' icon={Plus}>
+          {t('adminUsers.inviteUser')}
+        </ButtonWithIcon>
+      </EndActions>
       <KpiGrid>
         <KpiCard label={t('adminUsers.totalUsers')} value={number(kpis.total)} icon={Users} />
         <KpiCard label={t('adminUsers.activeUsers')} value={number(kpis.active)} icon={UserCheck} accent />
@@ -246,38 +246,39 @@ export function AdminUsersPage() {
         </CardContentStack>
       </Card>
       <Card className='overflow-hidden'>
-        <CardFilterBar>
-          <SearchField
-            ariaLabel={t('adminUsers.searchUsers')}
-            clearLabel={t('common.clear')}
-            onChange={(value) => {
-              setQ(value)
-              setPage(1)
-            }}
-            onClear={() => {
-              setQ('')
-              setPage(1)
-            }}
-            placeholder={t('adminUsers.searchUsers')}
-            value={q}
-            width='toolbar'
-          />
-          <div className='min-h-9'>
-            <ActionGroup push wrap>
-              <ToolbarSelect
+        <SearchActionBar
+          search={(
+            <SearchField
+              ariaLabel={t('adminUsers.searchUsers')}
+              clearLabel={t('common.clear')}
+              onChange={(value) => {
+                setQ(value)
+                setPage(1)
+              }}
+              onClear={() => {
+                setQ('')
+                setPage(1)
+              }}
+              placeholder={t('adminUsers.searchUsers')}
+              value={q}
+              width='toolbar'
+            />
+          )}
+          actions={(
+            <>
+              <PageSizeSelect
                 ariaLabel={t('common.pageSizeControl')}
-                options={[10, 20, 50, 100].map((size) => ({ value: String(size), label: t('common.pageSize', { size }) }))}
-                value={String(pageSize)}
-                width='compact'
+                sizes={[10, 20, 50, 100]}
+                tPageSize={(size) => t('common.pageSize', { size })}
+                value={pageSize}
                 onValueChange={(value) => {
-                  setPageSize(Number(value))
+                  setPageSize(value)
                   setPage(1)
                 }}
               />
-              <Button variant='outline' disabled={users.isFetching} onClick={() => void users.refetch()}>
-                <RefreshCw data-icon='inline-start' />
+              <ButtonWithIcon size='sm' variant='outline' icon={RefreshCw} disabled={users.isFetching} onClick={() => void users.refetch()}>
                 {t('common.refresh')}
-              </Button>
+              </ButtonWithIcon>
               {currentJob ? (
                 <StatusWithReason
                   inline
@@ -286,9 +287,9 @@ export function AdminUsersPage() {
                   value={currentJob.status}
                 />
               ) : null}
-            </ActionGroup>
-          </div>
-        </CardFilterBar>
+            </>
+          )}
+        />
         <DataGrid minWidth={1100}>
           <DataGridHeader columns={tableColumns}>
             <span>
@@ -319,32 +320,21 @@ export function AdminUsersPage() {
                   />
                 </span>
                 <DataGridIdentityCell description={user.email} value={user.username || user.email}>{user.username}</DataGridIdentityCell>
-                <span><Badge variant={user.role === 'admin' ? 'ai' : 'secondary'}>{user.role}</Badge></span>
+                <span><CategoryBadge variant={user.role === 'admin' ? 'ai' : 'secondary'}>{user.role}</CategoryBadge></span>
                 <TokenMeter label={compact(metrics.tokensMonth)} max={maxTokensMonth} value={metrics.tokensMonth} />
                 <DataGridCell numeric>{number(metrics.eventsMonth)}</DataGridCell>
                 <span><StatusBadge value={metrics.status} /></span>
-                <ActionGroup fit wrap>
-                  <Button
-                    variant='ghost'
-                    size='icon'
-                    disabled={!user.relay_auth_password}
-                    aria-label={t('adminUsers.copyEncrypted')}
-                    onClick={() => {
-                      void navigator.clipboard?.writeText(user.relay_auth_password || '')
-                      toast.success(t('adminUsers.encryptedCopied'))
-                    }}
-                  >
-                    <Clipboard />
-                  </Button>
-                  <Button
-                    variant='outline'
-                    size='sm'
-                    disabled={!user.relay_auth_password || reveal.isPending}
-                    onClick={() => setPlaintextConfirmUserId((value) => value === user.id ? null : user.id)}
-                  >
-                    {t('adminUsers.copyPlaintext')}
-                  </Button>
-                </ActionGroup>
+                <AdminSecretActions
+                  copyDisabled={!user.relay_auth_password}
+                  copyEncryptedLabel={t('adminUsers.copyEncrypted')}
+                  revealDisabled={!user.relay_auth_password || reveal.isPending}
+                  revealLabel={t('adminUsers.copyPlaintext')}
+                  onCopyEncrypted={() => {
+                    void navigator.clipboard?.writeText(user.relay_auth_password || '')
+                    toast.success(t('adminUsers.encryptedCopied'))
+                  }}
+                  onReveal={() => setPlaintextConfirmUserId((value) => value === user.id ? null : user.id)}
+                />
                 <DataGridRowAffordance tone='muted'>
                   <ChevronRight aria-hidden='true' />
                 </DataGridRowAffordance>
@@ -353,18 +343,16 @@ export function AdminUsersPage() {
                     indent='selection'
                     maxWidth='xl'
                     actions={
-                      <ActionGroup align='start'>
-                        <Button
-                          variant='outline'
-                          size='sm'
-                          disabled={reveal.isPending}
-                          onClick={() => {
-                            reveal.mutate(user.id, { onSuccess: () => setPlaintextConfirmUserId(null) })
-                          }}
-                        >
-                          {t('adminUsers.confirmReveal')}
-                        </Button>
-                      </ActionGroup>
+                      <InlineConfirmActions
+                        cancelLabel={t('common.cancel')}
+                        confirmLabel={t('adminUsers.confirmReveal')}
+                        confirmVariant='outline'
+                        onCancel={() => setPlaintextConfirmUserId(null)}
+                        onConfirm={() => {
+                          reveal.mutate(user.id, { onSuccess: () => setPlaintextConfirmUserId(null) })
+                        }}
+                        wrap
+                      />
                     }
                   >
                     <FieldDescription>{t('adminUsers.plaintextWarning')}</FieldDescription>
@@ -376,8 +364,8 @@ export function AdminUsersPage() {
         </DataGrid>
         <CardPagerFooter
           summary={t('adminUsers.pageOfUsers', { page, totalPages, total: number(total) })}
-          previous={<Button variant='outline' size='sm' disabled={page <= 1 || users.isFetching} onClick={() => setPage((value) => Math.max(1, value - 1))}>{t('common.previous')}</Button>}
-          next={<Button variant='outline' size='sm' disabled={page >= totalPages || users.isFetching} onClick={() => setPage((value) => value + 1)}>{t('common.next')}</Button>}
+          previous={<PagerNavButton direction='previous' disabled={page <= 1 || users.isFetching} onClick={() => setPage((value) => Math.max(1, value - 1))}>{t('common.previous')}</PagerNavButton>}
+          next={<PagerNavButton direction='next' disabled={page >= totalPages || users.isFetching} onClick={() => setPage((value) => value + 1)}>{t('common.next')}</PagerNavButton>}
         />
       </Card>
     </Page>

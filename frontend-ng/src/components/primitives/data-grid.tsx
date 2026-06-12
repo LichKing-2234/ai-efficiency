@@ -239,8 +239,9 @@ export function DataGridRowAffordance({
   return (
     <span
       className={cn(
-        'flex justify-end [&_svg]:size-4',
-        tone === 'muted' ? 'text-[var(--ink-3)]' : 'text-[var(--ink-4)]',
+        'flex size-8 items-center justify-center self-center justify-self-end rounded-[var(--r-sm)] border border-transparent transition-colors [&_svg]:size-4',
+        tone === 'muted' && 'text-[var(--ink-3)] hover:border-border hover:bg-[var(--surface-2)]',
+        tone === 'subtle' && 'text-[var(--ink-4)] hover:border-border hover:bg-[var(--surface-2)]',
         className
       )}
       data-slot='data-grid-row-affordance'

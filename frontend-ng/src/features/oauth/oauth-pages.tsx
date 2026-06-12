@@ -2,11 +2,10 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { useLocation, useNavigate, useSearch } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
 import { KeyRoundIcon } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { ActionGroup } from '@/components/primitives/action-group'
 import { AppAlert } from '@/components/primitives/app-alert'
 import { AuthInfoPanel } from '@/components/primitives/auth-info-panel'
 import { AuthSurface } from '@/components/primitives/auth-surface'
+import { OAuthDecisionActions } from '@/components/primitives/oauth-decision-actions'
 import { TextField } from '@/components/primitives/text-field'
 import { apiFetch } from '@/lib/api/client'
 import { ensureAuthenticatedUser } from '@/lib/auth/session'
@@ -161,12 +160,13 @@ export function OAuthActionGroup({
   onDeny: () => void
 }) {
   return (
-    <ActionGroup layout='split'>
-      <Button disabled={disabled} onClick={onApprove}>
-        <KeyRoundIcon data-icon='inline-start' />
-        {approveLabel}
-      </Button>
-      <Button disabled={disabled} variant='outline' onClick={onDeny}>{denyLabel}</Button>
-    </ActionGroup>
+    <OAuthDecisionActions
+      approveLabel={approveLabel}
+      denyLabel={denyLabel}
+      disabled={disabled}
+      icon={KeyRoundIcon}
+      onApprove={onApprove}
+      onDeny={onDeny}
+    />
   )
 }

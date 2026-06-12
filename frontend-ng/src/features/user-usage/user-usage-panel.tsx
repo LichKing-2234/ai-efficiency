@@ -2,12 +2,10 @@ import { Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { ActivityIcon, CoinsIcon, DownloadIcon, GaugeIcon, LayersIcon, RefreshCwIcon } from 'lucide-react'
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
-import { ActionGroup } from '@/components/primitives/action-group'
 import { AppAlert } from '@/components/primitives/app-alert'
+import { ButtonWithIcon } from '@/components/primitives/button-with-icon'
 import { CardContentStack } from '@/components/primitives/card-content-stack'
 import { CardTableContent } from '@/components/primitives/card-table-content'
 import { ChartLegend } from '@/components/primitives/chart-legend'
@@ -16,11 +14,13 @@ import { DataGrid, DataGridCell, DataGridHeader, DataGridHeaderCell, DataGridRow
 import { FilterRow } from '@/components/primitives/filter-row'
 import { HeatmapGrid } from '@/components/primitives/heatmap-grid'
 import { KpiGrid } from '@/components/primitives/kpi-grid'
+import { LinkAction } from '@/components/primitives/link-action'
 import { KpiCard } from '@/components/primitives/metric-card'
 import { PageEmpty } from '@/components/primitives/page-empty'
 import { SectionCardHeader } from '@/components/primitives/section-card-header'
 import { SegmentedControl } from '@/components/primitives/segmented-control'
 import { Stack } from '@/components/primitives/stack'
+import { ToolbarActions } from '@/components/primitives/toolbar-actions'
 import { api } from '@/lib/api'
 import type { UserUsageTrendPoint } from '@/lib/api/types'
 import { compact, currency, durationMs, number } from '@/lib/format'
@@ -55,7 +55,7 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
     <Stack className='stagger'>
       <FilterRow justify='between' gap='lg'>
         <div />
-        <ActionGroup wrap>
+        <ToolbarActions>
           <SegmentedControl
             ariaLabel={t('usageDashboard.selectedRange')}
             onChange={setRange}
@@ -66,17 +66,15 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
             ]}
             value={range}
           />
-          <Button variant='outline' disabled={query.isFetching} onClick={() => void query.refetch()}>
-            <RefreshCwIcon data-icon='inline-start' />
+          <ButtonWithIcon size='sm' variant='outline' icon={RefreshCwIcon} disabled={query.isFetching} onClick={() => void query.refetch()}>
             {t('common.refresh')}
-          </Button>
+          </ButtonWithIcon>
           {!embedded ? (
-            <Button variant='outline'>
-              <DownloadIcon data-icon='inline-start' />
+            <ButtonWithIcon size='sm' variant='outline' icon={DownloadIcon}>
               {t('command.exportUsageReport')}
-            </Button>
+            </ButtonWithIcon>
           ) : null}
-        </ActionGroup>
+        </ToolbarActions>
       </FilterRow>
       <Stack>
         {query.isLoading ? <Skeleton aria-label={t('common.loading')} className='h-5 w-40' role='status' /> : null}
@@ -85,25 +83,26 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
             title={t('usageDashboard.setupTitle')}
             description={t('usageDashboard.setupHelp')}
             actions={(
-              <Button asChild size='sm'>
+              <LinkAction asChild>
                 <Link to='/user'>{t('home.openSetup')}</Link>
-              </Button>
+              </LinkAction>
             )}
           />
         ) : null}
         {query.error ? (
-          <Alert variant='destructive'>
-            <AlertTitle>{query.error.message.includes('409') ? t('usageDashboard.credentialError') : t('usageDashboard.unavailable')}</AlertTitle>
-            <AlertDescription>{t('usageDashboard.retryHelp')}</AlertDescription>
-          </Alert>
+          <AppAlert
+            tone='error'
+            title={query.error.message.includes('409') ? t('usageDashboard.credentialError') : t('usageDashboard.unavailable')}
+            description={t('usageDashboard.retryHelp')}
+          />
         ) : null}
         {snapshot?.configured !== false && snapshot ? (
           <>
             <KpiGrid>
               <KpiCard
                 label={t('usageDashboard.rangeCost', { range: rangeLabel })}
-                value={currency(totals.actualCost || stats?.total_actual_cost || 0, locale)}
-                helper={`${t('usageDashboard.standard')}: ${currency(totals.standardCost || stats?.total_cost || 0, locale)}`}
+                value={currency(totals.actualCost, locale)}
+                helper={`${t('usageDashboard.standard')}: ${currency(totals.standardCost, locale)}`}
                 accent
                 delta={-9}
                 deltaTone='pos'
@@ -113,7 +112,7 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
               />
               <KpiCard
                 label={t('usageDashboard.rangeRequests', { range: rangeLabel })}
-                value={number(totals.requests || stats?.total_requests || 0, locale)}
+                value={number(totals.requests, locale)}
                 helper={t('usageDashboard.selectedRange')}
                 delta={12}
                 icon={ActivityIcon}
@@ -122,8 +121,8 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
               />
               <KpiCard
                 label={t('usageDashboard.rangeTokens', { range: rangeLabel })}
-                value={compact(totals.tokens || stats?.total_tokens || 0, locale)}
-                helper={`${t('usageDashboard.input')}: ${compact(stats?.total_input_tokens ?? 0, locale)} · ${t('usageDashboard.output')}: ${compact(stats?.total_output_tokens ?? 0, locale)}`}
+                value={compact(totals.tokens, locale)}
+                helper={`${t('usageDashboard.input')}: ${compact(totals.inputTokens, locale)} · ${t('usageDashboard.output')}: ${compact(totals.outputTokens, locale)} · ${t('usageDashboard.cache')}: ${compact(totals.cacheCreationTokens + totals.cacheReadTokens, locale)}`}
                 delta={15}
                 icon={LayersIcon}
                 sparkline={spark}
@@ -140,23 +139,24 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
               />
             </KpiGrid>
             <Card>
-              <SectionCardHeader title={t('usageDashboard.tokenTrend')} description={t('usageDashboard.tokenTrendDescription', { range: rangeLabel })} />
+              <SectionCardHeader
+                title={t('usageDashboard.tokenTrend')}
+                description={t('usageDashboard.tokenTrendDescription', { range: rangeLabel })}
+                actions={<ChartLegend className='justify-end' compact items={tokenKeys} />}
+              />
               <CardContentStack>
                 {snapshot.trend.length ? (
-                  <Stack>
-                    <ChartLegend items={tokenKeys} />
-                    <StackedAreaChart
-                      keys={tokenKeys}
-                      series={snapshot.trend}
-                      valueFormatter={(value) => compact(value, locale)}
-                    />
-                  </Stack>
+                  <StackedAreaChart
+                    keys={tokenKeys}
+                    series={snapshot.trend}
+                    valueFormatter={(value) => compact(value, locale)}
+                  />
                 ) : (
                   <PageEmpty title={t('usageDashboard.noTrendData')} />
                 )}
               </CardContentStack>
             </Card>
-            <div className='split-2'>
+            <div className='split-equal'>
               <Card>
                 <SectionCardHeader title={t('usageDashboard.modelDistribution')} description={t('usageDashboard.modelDistributionDescription')} />
                 <CardContentStack>
@@ -176,7 +176,7 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
               </CardContentStack>
             </Card>
               <Card className='overflow-hidden'>
-                <SectionCardHeader title={t('usageDashboard.costByModel')} description={t('usageDashboard.modelDistributionDescription')} />
+                <SectionCardHeader title={t('usageDashboard.costByModel')} description={t('usageDashboard.costByModelDescription')} />
                 <CardTableContent>
                   {snapshot.models.length ? (
                     <DataGrid minWidth={560}>

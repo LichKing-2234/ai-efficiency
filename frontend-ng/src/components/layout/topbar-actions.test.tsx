@@ -3,8 +3,8 @@ import { describe, expect, test } from 'vitest'
 import { TopbarActions } from './topbar-actions'
 
 const locales = [
-  { value: 'en-US' as const, label: 'English', shortLabel: 'EN' },
-  { value: 'zh-CN' as const, label: 'Chinese', shortLabel: 'ZH' }
+  { value: 'en-US' as const, label: 'English' },
+  { value: 'zh-CN' as const, label: 'Chinese' }
 ]
 
 describe('TopbarActions', () => {
@@ -27,7 +27,7 @@ describe('TopbarActions', () => {
     expect(html).toContain('data-slot="topbar-command-trigger"')
     expect(html).toContain('data-slot="topbar-live-status"')
     expect(html).toContain('data-slot="topbar-actions-locale-trigger"')
-    expect(html).toContain('EN')
+    expect(html).toContain('English')
     expect(html).toContain('Toggle theme')
   })
 
@@ -36,9 +36,10 @@ describe('TopbarActions', () => {
       fs.readFile(new URL('./topbar-actions.tsx', import.meta.url), 'utf8')
     )
 
-    expect(source).toContain("className='hidden sm:inline'")
+    expect(source).toContain("className='hidden min-[920px]:inline'")
     expect(source).toContain("className='min-w-40 border-[var(--line-strong)]'")
     expect(source).toContain("size='sm' type='button' variant='ghost'")
+    expect(source).toContain('{currentLocale?.label}')
     expect(source).not.toContain("width: 'auto'")
     expect(source).not.toContain("padding: '0 9px'")
   })

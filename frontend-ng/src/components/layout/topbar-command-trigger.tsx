@@ -11,7 +11,7 @@ export function TopbarCommandTrigger({
   return (
     <span className='contents' data-slot='topbar-command-trigger'>
       <Button
-        className='cmd-trigger hidden h-9 min-w-48 justify-start gap-[7px] border-[var(--line)] bg-[var(--surface-inset)] px-3 text-[var(--ink-3)] lg:inline-flex'
+        className='cmd-trigger hidden h-[34px] min-w-[188px] justify-start gap-[9px] border-[var(--line)] bg-[var(--surface-inset)] px-[10px] pl-[11px] text-[12.5px] text-[var(--ink-3)] min-[920px]:inline-flex'
         data-slot='topbar-command-trigger-desktop'
         onClick={onOpen}
         size='default'
@@ -21,14 +21,14 @@ export function TopbarCommandTrigger({
         <SearchIcon />
         <span className='flex-1 text-left'>{label}</span>
         <kbd
-          className='rounded-[var(--r-xs)] border border-[var(--line)] bg-[var(--surface)] px-1.5 py-0.5 font-mono font-semibold text-[10.5px] text-[var(--ink-3)]'
+          className='rounded-[5px] border border-[var(--line)] bg-[var(--surface)] px-[6px] py-[2px] font-mono font-semibold text-[10.5px] text-[var(--ink-3)]'
           data-slot='topbar-command-trigger-kbd'
         >
           ⌘K
         </kbd>
       </Button>
       <Button
-        className='lg:hidden'
+        className='min-[920px]:hidden'
         data-slot='topbar-command-trigger-mobile'
         onClick={onOpen}
         size='icon'

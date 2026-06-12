@@ -2,12 +2,12 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import { ActivityIcon, CoinsIcon, DownloadIcon, ExternalLinkIcon, GitPullRequestIcon, LayersIcon } from 'lucide-react'
 import { useState } from 'react'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { AdvancedDataPanel } from '@/components/primitives/advanced-data-panel'
+import { ButtonWithIcon } from '@/components/primitives/button-with-icon'
 import { CardFilterBar } from '@/components/primitives/card-filter-bar'
 import { CardPagerFooter } from '@/components/primitives/card-pager-footer'
+import { CategoryBadge } from '@/components/primitives/category-badge'
 import { DataGrid, DataGridCell, DataGridHeader, DataGridHeaderCell, DataGridRow, DataGridStatusRow } from '@/components/primitives/data-grid'
 import { FieldItem, FieldList } from '@/components/primitives/field-list'
 import { FilterRow } from '@/components/primitives/filter-row'
@@ -20,15 +20,21 @@ import { OptionList } from '@/components/primitives/option-list'
 import { Page } from '@/components/primitives/page'
 import { PageEmpty } from '@/components/primitives/page-empty'
 import { LoadingState } from '@/components/primitives/data-state'
+import { PagerNavButton } from '@/components/primitives/pager-nav-button'
+import { PageSizeSelect } from '@/components/primitives/page-size-select'
+import { PrimaryActionButton } from '@/components/primitives/primary-action-button'
+import { QuietActionButton } from '@/components/primitives/quiet-action-button'
 import { SearchField } from '@/components/primitives/search-field'
+import { SearchActionBar } from '@/components/primitives/search-action-bar'
+import { SecondaryActionButton } from '@/components/primitives/secondary-action-button'
 import { SectionEyebrow } from '@/components/primitives/section-eyebrow'
 import { SlideOver } from '@/components/primitives/slide-over'
 import { SlideOverStack } from '@/components/primitives/slide-over-stack'
+import { StatusBadge } from '@/components/primitives/status-badge'
 import { TokenMeter } from '@/components/primitives/token-meter'
 import { TokenBreakdown } from '@/components/primitives/token-breakdown'
 import { TextField } from '@/components/primitives/text-field'
 import { ToolGlyph } from '@/components/primitives/tool-glyph'
-import { ToolbarSelect } from '@/components/primitives/toolbar-select'
 import { api } from '@/lib/api'
 import { compact, dateTime, number, tokenTotal } from '@/lib/format'
 import { useI18n } from '@/lib/i18n/i18n'
@@ -157,8 +163,8 @@ export function EventsPage() {
       </KpiGrid>
 
       <Card>
-        <CardFilterBar stacked>
-          <FilterRow gap='lg' justify='between'>
+        <SearchActionBar
+          search={(
             <FilterRow className='min-w-0 flex-1'>
               <SearchField
                 ariaLabel={t('events.searchRepoSessionSource')}
@@ -187,14 +193,16 @@ export function EventsPage() {
                 ]}
                 value={filterToSegment(filters.bindingStatus)}
               />
-              <Button onClick={applyCurrentFilters}>{t('common.applyFilters')}</Button>
+              <PrimaryActionButton onClick={applyCurrentFilters}>{t('common.applyFilters')}</PrimaryActionButton>
             </FilterRow>
-            <Button disabled={rows.length === 0} variant='outline' onClick={exportRows}>
-              <DownloadIcon data-icon='inline-start' />
+          )}
+          actions={(
+            <ButtonWithIcon size='sm' disabled={rows.length === 0} variant='outline' icon={DownloadIcon} onClick={exportRows}>
               {t('command.exportUsageReport')}
-            </Button>
-          </FilterRow>
-          <FilterRow>
+            </ButtonWithIcon>
+          )}
+        >
+          <FilterRow align='start'>
             <TextField
               id='events-filter-from'
               label={t('events.fromTime')}
@@ -211,7 +219,7 @@ export function EventsPage() {
               width='datetime'
               onChange={(to) => setFilters((value) => ({ ...value, to }))}
             />
-            <Button variant='outline' onClick={clearTimeRange}>{t('events.clearTime')}</Button>
+            <SecondaryActionButton onClick={clearTimeRange}>{t('events.clearTime')}</SecondaryActionButton>
             {isAdmin ? (
               <>
                 <TextField
@@ -222,10 +230,10 @@ export function EventsPage() {
                   width='wide'
                   onChange={setUserSearch}
                 />
-                <Button variant='outline' onClick={searchUsers} disabled={users.isFetching}>{t('adminUsers.searchUsers')}</Button>
+                <SecondaryActionButton onClick={searchUsers} disabled={users.isFetching}>{t('adminUsers.searchUsers')}</SecondaryActionButton>
               </>
             ) : null}
-            {isAdmin && appliedFilters.userId ? <Button variant='ghost' onClick={clearSelectedUser}>{t('adminUsers.clearUser', { id: appliedFilters.userId })}</Button> : null}
+            {isAdmin && appliedFilters.userId ? <QuietActionButton onClick={clearSelectedUser}>{t('adminUsers.clearUser', { id: appliedFilters.userId })}</QuietActionButton> : null}
           </FilterRow>
           {userOptions.length > 0 ? (
             <OptionList
@@ -241,7 +249,7 @@ export function EventsPage() {
               }}
             />
           ) : null}
-        </CardFilterBar>
+        </SearchActionBar>
       </Card>
 
       <Card className='overflow-hidden'>
@@ -270,22 +278,18 @@ export function EventsPage() {
           summary={t('events.total', { total: number(total) })}
           previous={(
             <>
-              <ToolbarSelect
+              <PageSizeSelect
                 ariaLabel={t('common.pageSizeControl')}
+                labelMode='plain'
                 size='sm'
-                options={[
-                  { value: '20', label: '20' },
-                  { value: '50', label: '50' },
-                  { value: '100', label: '100' }
-                ]}
-                value={String(appliedFilters.limit)}
-                onValueChange={(value) => changePageSize(Number(value))}
+                value={appliedFilters.limit}
+                onValueChange={changePageSize}
               />
-              <Button size='sm' variant='outline' onClick={previousPage} disabled={!pagination.canGoPrev}>{t('common.previous')}</Button>
+              <PagerNavButton direction='previous' onClick={previousPage} disabled={!pagination.canGoPrev}>{t('common.previous')}</PagerNavButton>
             </>
           )}
           next={(
-            <Button size='sm' variant='outline' onClick={nextPage} disabled={!pagination.canGoNext}>{t('common.next')}</Button>
+            <PagerNavButton direction='next' onClick={nextPage} disabled={!pagination.canGoNext}>{t('common.next')}</PagerNavButton>
           )}
         />
       </Card>
@@ -309,7 +313,7 @@ function EventRow({ row, maxTokens, onSelect }: { row: ToolUsageEventRow; maxTok
       <TokenMeter label={compact(tokens)} max={maxTokens} value={tokens} />
       <DataGridCell align='right' numeric tone='muted'>{number(row.request_count)}</DataGridCell>
       <DataGridCell align='right' emphasis numeric>{number(row.credit_usage)}</DataGridCell>
-      <span><Badge variant={row.binding_status === 'bound' ? 'pos' : 'warn'}>{row.binding_status}</Badge></span>
+      <span><StatusBadge value={row.binding_status} /></span>
       <DataGridCell align='right' tone='subtle'>{dateTime(row.observed_end_at)}</DataGridCell>
     </DataGridRow>
   )
@@ -336,9 +340,9 @@ function EventDetail({ event, isAdmin, onClose }: { event: ToolUsageEventDetail 
       {event ? (
         <SlideOverStack>
           <FilterRow align='start'>
-            <Badge variant='ai'>{event.tool}</Badge>
-            <Badge variant={event.binding_status === 'bound' ? 'pos' : 'warn'}>{event.binding_status}</Badge>
-            <Badge variant='neutral'>{number(event.context_usage_pct)}% {t('events.context')}</Badge>
+            <CategoryBadge variant='ai'>{event.tool}</CategoryBadge>
+            <StatusBadge value={event.binding_status} />
+            <CategoryBadge>{number(event.context_usage_pct)}% {t('events.context')}</CategoryBadge>
           </FilterRow>
 
           <InfoTileGrid columns={3}>

@@ -58,7 +58,7 @@ export function UsageSummaryPanel({
 }) {
   return (
     <InsetPanel className={cn('bg-[var(--surface)] p-[14px]', className)} dataSlot='usage-summary-panel'>
-      <InfoTileGrid className='sm:grid-cols-2 lg:grid-cols-6' columns={3}>
+      <InfoTileGrid className='min-[560px]:grid-cols-2 min-[1100px]:grid-cols-6' columns={3}>
         {metrics.map((metric, index) => (
           <InfoTile
             accent={metric.accent}

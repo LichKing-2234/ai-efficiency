@@ -36,7 +36,7 @@ function Sidebar({ className, ...props }: React.ComponentProps<'aside'>) {
     <aside
       data-slot='sidebar'
       className={cn(
-        'hidden h-full w-[var(--sidebar-current-width)] shrink-0 flex-col overflow-hidden border-r border-sidebar-border bg-sidebar text-sidebar-foreground transition-[width] duration-200 ease-[var(--ease-out)] md:flex',
+        'hidden h-full w-[var(--sidebar-current-width)] shrink-0 flex-col overflow-hidden border-r border-sidebar-border bg-sidebar text-sidebar-foreground transition-[width] duration-200 ease-[var(--ease-out)] min-[920px]:flex',
         className
       )}
       {...props}
@@ -127,7 +127,7 @@ function SidebarMenuButton({
     'data-tooltip': tooltip,
     title: tooltip,
     className: cn(
-      'group/sidebar-item relative flex h-8 w-full items-center gap-2 rounded-[var(--r-sm)] border border-transparent px-2 font-medium text-[var(--ink-2)] text-sm shadow-none transition-colors duration-150 hover:bg-[var(--surface-2)] hover:text-foreground group-data-[collapsed=true]/sidebar-wrapper:size-[42px] group-data-[collapsed=true]/sidebar-wrapper:justify-center group-data-[collapsed=true]/sidebar-wrapper:px-0',
+      'group/sidebar-item relative flex h-[34px] w-full items-center gap-[10px] rounded-[var(--r-sm)] border border-transparent px-[9px] text-[13.5px] font-medium text-[var(--ink-2)] shadow-none transition-colors duration-150 hover:bg-[var(--surface-2)] hover:text-foreground group-data-[collapsed=true]/sidebar-wrapper:size-[42px] group-data-[collapsed=true]/sidebar-wrapper:justify-center group-data-[collapsed=true]/sidebar-wrapper:px-0',
       active && 'border-border bg-sidebar-accent text-foreground',
       className
     ),

@@ -23,7 +23,7 @@ export function SidebarUserSummary({
 
   return (
     <div className={cn('flex items-center gap-[9px] rounded-[var(--r-md)] border border-[var(--line)] bg-sidebar-accent p-[7px]', compact && 'size-[42px] justify-center rounded-[var(--r-sm)] border-transparent bg-transparent p-0')} data-slot='sidebar-user-summary'>
-      <IdentityAvatar className='bg-[var(--ae-ai-soft)] text-[var(--ae-ai-2)]' value={identity} />
+      <IdentityAvatar className='bg-[var(--ai-soft)] text-[var(--ai-deep)]' value={identity} />
       {!compact ? (
         <div className='min-w-0 flex-1'>
           <div className='truncate font-semibold text-[12.5px]' data-slot='sidebar-user-summary-name'>

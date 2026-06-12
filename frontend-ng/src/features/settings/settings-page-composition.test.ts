@@ -18,7 +18,10 @@ describe('Settings page composition', () => {
   test('uses shared action groups for deployment runtime action rows', () => {
     const source = readFileSync(join(ROOT, 'features/settings/settings-page.tsx'), 'utf8')
 
-    expect(source).toContain("<ActionGroup wrap align='start'>")
+    expect(source).toContain("from '@/components/primitives/start-actions'")
+    expect(source).toContain('<StartActions>')
+    expect(source).toContain('ConfirmActionButton')
+    expect(source).not.toContain("<ActionGroup wrap align='start'>")
     expect(source).not.toContain("<ActionGroup wrap className='justify-start'>")
     expect(source).not.toContain("<div className='flex gap-2'>")
   })
@@ -27,6 +30,7 @@ describe('Settings page composition', () => {
     const source = readFileSync(join(ROOT, 'features/settings/settings-page.tsx'), 'utf8')
 
     expect(source).toContain('DataGridCell')
+    expect(source).toContain('CategoryBadge')
     expect(source).not.toContain("className='mono truncate text-muted-foreground text-xs'")
     expect(source).not.toContain("className='tnum text-muted-foreground text-xs'")
     expect(source).not.toContain("<span className='text-muted-foreground'>-</span>")
@@ -58,6 +62,18 @@ describe('Settings page composition', () => {
     expect(source).not.toContain('<CardContent>')
   })
 
+  test('uses shared category badges and normalized labels for scm and credential kinds', () => {
+    const source = readFileSync(join(ROOT, 'features/settings/settings-page.tsx'), 'utf8')
+    const payloadSource = readFileSync(join(ROOT, 'features/settings/settings-payloads.ts'), 'utf8')
+
+    expect(source).toContain("from '@/components/primitives/category-badge'")
+    expect(source).toContain('<CategoryBadge>')
+    expect(source).not.toContain("<Badge variant='secondary'>{provider.type}</Badge>")
+    expect(source).not.toContain("<Badge variant='secondary'>{credential.kind}</Badge>")
+    expect(payloadSource).toContain('export function settingsScmProviderTypeLabel(')
+    expect(payloadSource).toContain('export function settingsCredentialKindLabel(')
+  })
+
   test('uses shared stack rhythm for the active settings section body', () => {
     const source = readFileSync(join(ROOT, 'features/settings/settings-page.tsx'), 'utf8')
 
@@ -74,27 +90,70 @@ describe('Settings page composition', () => {
     expect(source).not.toContain("<Card className='p-2'>")
   })
 
+  test('drives the settings rail and section copy from shared section metadata in reference order', () => {
+    const source = readFileSync(join(ROOT, 'features/settings/settings-page.tsx'), 'utf8')
+    const payloadSource = readFileSync(join(ROOT, 'features/settings/settings-payloads.ts'), 'utf8')
+
+    expect(source).toContain('settingsSectionMeta')
+    expect(payloadSource).toContain('export const settingsSectionMeta')
+    expect(payloadSource).toContain("'ai-services': {")
+    expect(payloadSource).toContain("'code-platforms': {")
+    expect(payloadSource).toContain("'advanced-credentials': {")
+    expect(payloadSource).toContain("'organization-login': {")
+    expect(payloadSource).toContain("'deployment-runtime': {")
+    expect(payloadSource.indexOf("'ai-services': {")).toBeLessThan(payloadSource.indexOf("'code-platforms': {"))
+    expect(payloadSource.indexOf("'code-platforms': {")).toBeLessThan(payloadSource.indexOf("'advanced-credentials': {"))
+    expect(payloadSource.indexOf("'advanced-credentials': {")).toBeLessThan(payloadSource.indexOf("'organization-login': {"))
+    expect(payloadSource.indexOf("'organization-login': {")).toBeLessThan(payloadSource.indexOf("'deployment-runtime': {"))
+    expect(source).not.toContain('function settingsSectionLabel(')
+    expect(source).not.toContain('function settingsSectionIcon(')
+  })
+
+  test('uses specific reference-style add CTA labels for settings management sections', () => {
+    const source = readFileSync(join(ROOT, 'features/settings/settings-page.tsx'), 'utf8')
+
+    expect(source).toContain("{t('settings.addRelayProvider')}")
+    expect(source).toContain("{t('settings.addScmProvider')}")
+    expect(source).toContain("{t('settings.addCredential')}")
+    expect(source).not.toContain("{t('common.add')}")
+  })
+
+  test('routes repeated add and refresh CTA buttons through the shared icon-button primitive', () => {
+    const source = readFileSync(join(ROOT, 'features/settings/settings-page.tsx'), 'utf8')
+
+    expect(source).toContain("from '@/components/primitives/button-with-icon'")
+    expect(source).toContain('<ButtonWithIcon')
+    expect(source).toContain("icon={Layers}")
+    expect(source).toContain("icon={Waypoints}")
+    expect(source).toContain("icon={KeyRound}")
+    expect(source).toContain("icon={RefreshCw}")
+    expect(source).not.toContain("<Button size='sm' onClick={openAddRelayDialog}><Layers data-icon='inline-start' />")
+    expect(source).not.toContain("<Button size='sm' onClick={openAddScmDialog}><Waypoints data-icon='inline-start' />")
+    expect(source).not.toContain("<Button size='sm' onClick={openAddCredentialDialog}><KeyRound data-icon='inline-start' />")
+    expect(source).not.toContain("<Button variant='ghost' onClick={() => checkUpdate.mutate()} disabled={checkUpdate.isPending}><RefreshCw data-icon='inline-start' />")
+  })
+
   test('uses shared page empty states for table sections with no records', () => {
     const source = readFileSync(join(ROOT, 'features/settings/settings-page.tsx'), 'utf8')
 
     expect(source).toContain("from '@/components/primitives/page-empty'")
     expect(source).toContain('<PageEmpty')
-    expect(source).toContain("title={t('settings.aiServices')}")
-    expect(source).toContain("title={t('settings.codePlatforms')}")
-    expect(source).toContain("title={t('settings.advancedCredentials')}")
+    expect(source).toContain("title={t(settingsSectionMeta['ai-services'].labelKey as never)}")
+    expect(source).toContain("title={t(settingsSectionMeta['code-platforms'].labelKey as never)}")
+    expect(source).toContain("title={t(settingsSectionMeta['advanced-credentials'].labelKey as never)}")
     expect(source).not.toContain("<div style={{ width: 44, height: 44")
   })
 
   test('uses compact icon row actions for settings provider tables', () => {
     const source = readFileSync(join(ROOT, 'features/settings/settings-page.tsx'), 'utf8')
 
-    expect(source).toContain('SettingsRowActions')
-    expect(source).toContain('<SettingsIcon')
-    expect(source).toContain('<Trash2')
-    expect(source).toContain('aria-label={updateLabel}')
-    expect(source).toContain('aria-label={deleteLabel}')
-    expect(source).toContain("updateLabel={t('common.update')}")
+    expect(source).toContain('RowIconActions')
+    expect(source).toContain("from '@/components/primitives/row-icon-actions'")
+    expect(source).toContain("editLabel={t('common.update')}")
     expect(source).toContain("deleteLabel={t('common.delete')}")
+    expect(source).not.toContain('function SettingsRowActions(')
+    expect(source).not.toContain('aria-label={updateLabel}')
+    expect(source).not.toContain('aria-label={deleteLabel}')
     expect(source).not.toContain("size='sm' variant='outline' onClick={() => openEditRelayDialog(provider)}>{t('common.update')}</Button>")
     expect(source).not.toContain("size='sm' variant='outline' onClick={() => openEditScmDialog(provider)}>{t('common.update')}</Button>")
     expect(source).not.toContain("trigger={<Button size='sm' variant='ghost' disabled={deleteRelay.isPending}>{t('common.delete')}</Button>}")
@@ -109,7 +168,7 @@ describe('Settings page composition', () => {
     expect(source).toContain('queryFn: api.health.ready')
     expect(source).toContain('(deploymentHealth.data?.checks ?? [])')
     expect(source).toContain("title={t('settings.serviceHealth')}")
-    expect(source).toContain('<HealthFieldList>')
+    expect(source).toContain("<HealthFieldList className='bg-[var(--surface-inset)]'>")
     expect(source).toContain('<HealthFieldItem')
     expect(source).not.toContain("<FieldItem label={t('settings.current')}")
     expect(source).not.toContain("<FieldItem label={t('settings.mode')}")
@@ -120,18 +179,19 @@ describe('Settings page composition', () => {
   test('keeps the deployment update badge in the section header action slot like the reference', () => {
     const source = readFileSync(join(ROOT, 'features/settings/settings-page.tsx'), 'utf8')
 
-    expect(source).toContain("title={t('settings.deploymentRuntime')}")
-    expect(source).toContain("actions={deployment.data?.update_available ? <Badge variant='ai'>")
-    expect(source).toContain(": <Badge variant='success'>{t('settings.upToDate')}</Badge>}")
-    expect(source).toContain("<ActionGroup wrap align='start'>")
-    expect(source).toContain("variant='ghost' onClick={() => checkUpdate.mutate()}")
+    expect(source).toContain("title={t(settingsSectionMeta['deployment-runtime'].labelKey as never)}")
+    expect(source).toContain("? <CategoryBadge variant='ai'>")
+    expect(source).toContain(": <StatusBadge value='success' label={t('settings.upToDate')} />")
+    expect(source).toContain('<StartActions>')
+    expect(source).toContain("<ButtonWithIcon size='sm' variant='ghost' icon={RefreshCw} onClick={() => checkUpdate.mutate()} disabled={checkUpdate.isPending}>")
+    expect(source).toContain('<ConfirmActionButton')
   })
 
   test('splits deployment runtime and service health into separate settings cards like the reference', () => {
     const source = readFileSync(join(ROOT, 'features/settings/settings-page.tsx'), 'utf8')
 
     expect(source).toContain("{activeSection === 'deployment-runtime' ? <>")
-    expect(source).toContain("title={t('settings.deploymentRuntime')}")
+    expect(source).toContain("title={t(settingsSectionMeta['deployment-runtime'].labelKey as never)}")
     expect(source).toContain("title={t('settings.serviceHealth')}")
     expect(source).not.toContain("<CardContentStack>\n            <InfoTileGrid columns={3}>\n")
   })
@@ -177,14 +237,26 @@ describe('Settings page composition', () => {
     const healthSource = readFileSync(join(ROOT, 'components/primitives/health-field-list.tsx'), 'utf8')
     const stylesSource = readFileSync(join(ROOT, 'styles.css'), 'utf8')
 
-    expect(navSource).toContain("className={cn('border border-[var(--line)] bg-[var(--surface)] p-[8px] shadow-none'")
+    expect(navSource).toContain("className={cn('border border-[var(--line)] bg-[var(--surface-2)] p-[8px] shadow-none'")
     expect(navSource).not.toContain('shadow-[var(--sh-sm)]')
     expect(navSource).not.toContain('shadow-[var(--sh-lg)]')
     expect(sidebarSource).toContain("group-data-[collapsed=true]/sidebar-wrapper:size-[42px]")
     expect(healthSource).toContain("border border-border bg-[var(--surface-inset)]")
-    expect(healthSource).toContain("className='border-b border-[var(--line-faint)] px-[14px] py-[10px] last:border-b-0'")
+    expect(healthSource).toContain("className='border-b border-[var(--line-faint)] px-[14px] py-[11px] last:border-b-0'")
     expect(stylesSource).not.toContain('box-shadow: 0 0 0 3px var(--pos-soft);')
     expect(stylesSource).not.toContain('box-shadow: inset 2px 0 0 var(--ai);')
-    expect(source).toContain("actions={deployment.data?.update_available ? <Badge variant='ai'>")
+    expect(source).toContain("? <CategoryBadge variant='ai'>")
+  })
+
+  test('keeps deployment runtime summary and health slabs on separate compact cards', () => {
+    const source = readFileSync(join(ROOT, 'features/settings/settings-page.tsx'), 'utf8')
+
+    expect(source).toContain("<InfoTileGrid columns={3} className='split-equal min-[920px]:grid-cols-3'>")
+    expect(source).toContain("<CardContentStack gap='compact'>")
+    expect(source).toContain("<CardContentStack gap='normal'>")
+    expect(source).toContain("title={t('settings.serviceHealth')}")
+    expect(source).toContain("description={t('settings.serviceHealthDescription')}")
+    expect(source).toContain("</Card>\n          <Card>")
+    expect(source).not.toContain("<CardContentStack gap='compact'>\n              <HealthFieldList className='bg-[var(--surface-inset)]'>")
   })
 })

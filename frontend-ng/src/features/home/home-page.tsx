@@ -1,25 +1,29 @@
 import { Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowRightIcon, CoinsIcon, DownloadIcon, FolderGit2Icon, GitPullRequestIcon, PlugZapIcon, WorkflowIcon } from 'lucide-react'
-import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { ActionGroup } from '@/components/primitives/action-group'
+import { ButtonWithIcon } from '@/components/primitives/button-with-icon'
 import { CardContentStack } from '@/components/primitives/card-content-stack'
 import { BarsH, Ring, StackedAreaChart, type StackedAreaKey } from '@/components/primitives/charts'
+import { CategoryBadge } from '@/components/primitives/category-badge'
 import { ChecklistRow } from '@/components/primitives/checklist-row'
 import { CompareBar } from '@/components/primitives/compare-bar'
 import { EntityCardHeader } from '@/components/primitives/entity-card-header'
 import { HeroContent } from '@/components/primitives/hero-content'
 import { KpiGrid } from '@/components/primitives/kpi-grid'
+import { LinkAction } from '@/components/primitives/link-action'
 import { KpiCard } from '@/components/primitives/metric-card'
 import { Page } from '@/components/primitives/page'
 import { PageEmpty } from '@/components/primitives/page-empty'
 import { ProgressFraction } from '@/components/primitives/progress-fraction'
 import { PulseStat } from '@/components/primitives/pulse-stat'
+import { PulseStatGrid } from '@/components/primitives/pulse-stat-grid'
 import { SectionCardHeader } from '@/components/primitives/section-card-header'
 import { LoadingState } from '@/components/primitives/data-state'
+import { StartActions } from '@/components/primitives/start-actions'
 import { UsageActivityRow } from '@/components/primitives/usage-activity-row'
+import { ValueComparison } from '@/components/primitives/value-comparison'
+import { StatusBadge } from '@/components/primitives/status-badge'
 import { api } from '@/lib/api'
 import type { UserUsageTrendPoint } from '@/lib/api/types'
 import { compact, currency, dateTime, number, percent } from '@/lib/format'
@@ -103,17 +107,16 @@ export function HomePage() {
       <Card variant='accent'>
         <HeroContent
           action={(
-            <ActionGroup wrap>
-              <Button asChild>
-                <Link to='/user'>{t('home.openSetup')}<ArrowRightIcon data-icon='inline-end' /></Link>
-              </Button>
-              <Button variant='outline' onClick={exportOverviewReport}>
-                <DownloadIcon data-icon='inline-start' />
+            <StartActions>
+              <ButtonWithIcon asChild icon={ArrowRightIcon} iconPosition='end'>
+                <Link to='/user'>{t('home.openSetup')}</Link>
+              </ButtonWithIcon>
+              <ButtonWithIcon size='sm' variant='outline' icon={DownloadIcon} onClick={exportOverviewReport}>
                 {t('command.exportUsageReport')}
-              </Button>
-            </ActionGroup>
+              </ButtonWithIcon>
+            </StartActions>
           )}
-          badge={<Badge variant='ai'>{t('home.heroBadge')}</Badge>}
+          badge={<CategoryBadge variant='ai'>{t('home.heroBadge')}</CategoryBadge>}
           description={t('home.roleLine', {
             identity: me.data?.email || me.data?.username || t('auth.guest'),
             role: me.data?.role || 'user',
@@ -133,11 +136,11 @@ export function HomePage() {
           )}
         />
         <CardContentStack className='border-border border-t px-[18px] py-4'>
-          <div className='grid gap-0 overflow-hidden rounded-[var(--r-md)] border border-border bg-[var(--surface)] md:grid-cols-3'>
+          <PulseStatGrid>
             <PulseStat color='var(--ai)' label={t('home.pulseSpendToday')} value={currency(todayActualCost, locale)} values={pulseSpend} />
             <PulseStat color='var(--viz-output)' divider label={t('home.pulseRequests')} value={number(todayRequests, locale)} values={pulseRequests} />
             <PulseStat color='var(--viz-reason)' divider label={t('home.pulseActiveDevs')} value={number(connectedTools.size, locale)} values={pulseTokens} />
-          </div>
+          </PulseStatGrid>
         </CardContentStack>
       </Card>
 
@@ -168,7 +171,7 @@ export function HomePage() {
           sparklineColor='var(--viz-reason)'
         />
         <KpiCard
-          label={t('home.avgResponse')}
+          label={t('home.connectedTools')}
           value={number(connectedTools.size, locale)}
           helper={connectedTools.size ? [...connectedTools].join(', ') : t('home.statusAiAccessMissing')}
           icon={PlugZapIcon}
@@ -182,13 +185,10 @@ export function HomePage() {
           <SectionCardHeader
             title={t('home.costEfficiency')}
             description={t('home.costEfficiencyDescription')}
-            actions={<Badge variant='success'>{t('home.savedLabel', { value: percent(savingsRatio, locale) })}</Badge>}
+            actions={<StatusBadge value='success' label={t('home.savedLabel', { value: percent(savingsRatio, locale) })} />}
           />
           <CardContentStack>
-            <div className='flex items-baseline gap-3'>
-              <div className='tnum text-3xl font-semibold leading-none'>{currency(totalActualCost, locale)}</div>
-              <div className='text-[12px] text-[var(--ink-3)] line-through'>{currency(totalStandardCost, locale)}</div>
-            </div>
+            <ValueComparison current={currency(totalActualCost, locale)} previous={currency(totalStandardCost, locale)} />
             <CompareBar color='var(--ai)' label={t('home.actualSpend')} max={Math.max(totalStandardCost, totalActualCost, 1)} value={totalActualCost} valueLabel={currency(totalActualCost, locale)} />
             <CompareBar color='var(--surface-3)' label={t('home.standardPricing')} max={Math.max(totalStandardCost, totalActualCost, 1)} value={totalStandardCost} valueLabel={currency(totalStandardCost, locale)} />
             {trendMini.length ? (
@@ -214,10 +214,25 @@ export function HomePage() {
             title={t('home.setupStatus')}
           />
           <CardContentStack>
-            <StatusLine label={t('home.statusAccount')} value={t('home.statusReady')} ok />
-            <StatusLine label={t('home.statusAiAccess')} value={connectedTools.size ? t('home.statusAiAccessReady') : t('home.statusAiAccessMissing')} ok={connectedTools.size > 0} to='/user' />
-            <StatusLine label={t('home.statusRepositoryReporting')} value={(dashboard.data?.total_repos ?? 0) > 0 ? t('home.statusConfigured') : t('home.statusNoRepo')} ok={(dashboard.data?.total_repos ?? 0) > 0} to='/repos' />
-            <StatusLine label={t('home.statusRecentUsage')} value={recentEvents.length ? t('home.statusEvents') : t('home.statusWaitingEvents')} ok={recentEvents.length > 0} to='/events' />
+            <ChecklistRow label={t('home.statusAccount')} ok value={t('home.statusReady')} />
+            <ChecklistRow
+              action={connectedTools.size > 0 ? null : <LinkAction asChild><Link to='/user'>{t('home.statusFix')}</Link></LinkAction>}
+              label={t('home.statusAiAccess')}
+              ok={connectedTools.size > 0}
+              value={connectedTools.size ? t('home.statusAiAccessReady') : t('home.statusAiAccessMissing')}
+            />
+            <ChecklistRow
+              action={(dashboard.data?.total_repos ?? 0) > 0 ? null : <LinkAction asChild><Link to='/repos'>{t('home.statusFix')}</Link></LinkAction>}
+              label={t('home.statusRepositoryReporting')}
+              ok={(dashboard.data?.total_repos ?? 0) > 0}
+              value={(dashboard.data?.total_repos ?? 0) > 0 ? t('home.statusConfigured') : t('home.statusNoRepo')}
+            />
+            <ChecklistRow
+              action={recentEvents.length > 0 ? null : <LinkAction asChild><Link to='/events'>{t('home.statusFix')}</Link></LinkAction>}
+              label={t('home.statusRecentUsage')}
+              ok={recentEvents.length > 0}
+              value={recentEvents.length ? t('home.statusEvents') : t('home.statusWaitingEvents')}
+            />
           </CardContentStack>
         </Card>
       </div>
@@ -228,9 +243,9 @@ export function HomePage() {
             title={t('home.liveActivity')}
             live
             actions={(
-              <Button asChild variant='link' size='sm'>
-                <Link to='/events'>{t('home.viewAllRecords')}<ArrowRightIcon data-icon='inline-end' /></Link>
-              </Button>
+              <LinkAction asChild iconEnd={ArrowRightIcon}>
+                <Link to='/events'>{t('home.viewAllRecords')}</Link>
+              </LinkAction>
             )}
           />
           <CardContentStack gap='none'>
@@ -285,18 +300,6 @@ function HomeActivityRow({
       title={event.title}
       tokens={`${compact(event.tokens, locale)} ${t('home.tokensShort')}`}
       tool={event.tool}
-    />
-  )
-}
-
-function StatusLine({ label, value, ok, to }: { label: string; value: string; ok: boolean; to?: '/user' | '/repos' | '/events' }) {
-  const { t } = useI18n()
-  return (
-    <ChecklistRow
-      action={!ok && to ? <Button asChild variant='link' size='sm'><Link to={to}>{t('home.statusFix')}</Link></Button> : null}
-      label={label}
-      ok={ok}
-      value={value}
     />
   )
 }

@@ -19,9 +19,10 @@ describe('TopbarCommandTrigger', () => {
       fs.readFile(new URL('./topbar-command-trigger.tsx', import.meta.url), 'utf8')
     )
 
-    expect(source).toContain("className='cmd-trigger hidden h-9 min-w-48 justify-start gap-[7px] border-[var(--line)] bg-[var(--surface-inset)] px-3 text-[var(--ink-3)] lg:inline-flex'")
+    expect(source).toContain("className='cmd-trigger hidden h-[34px] min-w-[188px] justify-start gap-[9px] border-[var(--line)] bg-[var(--surface-inset)] px-[10px] pl-[11px] text-[12.5px] text-[var(--ink-3)] min-[920px]:inline-flex'")
     expect(source).toContain("size='default'")
     expect(source).toContain("size='icon'")
-    expect(source).toContain("border-[var(--line)] bg-[var(--surface)] px-1.5 py-0.5")
+    expect(source).toContain("border-[var(--line)] bg-[var(--surface)] px-[6px] py-[2px]")
+    expect(source).toContain("className='min-[920px]:hidden'")
   })
 })

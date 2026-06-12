@@ -28,6 +28,7 @@ import { Route as OauthDeviceVerifyRouteImport } from './routes/oauth/device.ver
 import { Route as OauthAuthorizeApproveRouteImport } from './routes/oauth/authorize.approve'
 import { Route as ApiV1SplatRouteImport } from './routes/api/v1/$'
 import { Route as ApiLocalCallbackRouteImport } from './routes/api/local/callback'
+import { Route as ApiAuthOptionsRouteImport } from './routes/api/auth/options'
 import { Route as ApiAuthLogoutRouteImport } from './routes/api/auth/logout'
 import { Route as ApiAuthLoginRouteImport } from './routes/api/auth/login'
 import { Route as ApiAuthDevLoginRouteImport } from './routes/api/auth/dev-login'
@@ -128,6 +129,11 @@ const ApiLocalCallbackRoute = ApiLocalCallbackRouteImport.update({
   path: '/api/local/callback',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiAuthOptionsRoute = ApiAuthOptionsRouteImport.update({
+  id: '/api/auth/options',
+  path: '/api/auth/options',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiAuthLogoutRoute = ApiAuthLogoutRouteImport.update({
   id: '/api/auth/logout',
   path: '/api/auth/logout',
@@ -168,6 +174,7 @@ export interface FileRoutesByFullPath {
   '/api/auth/dev-login': typeof ApiAuthDevLoginRoute
   '/api/auth/login': typeof ApiAuthLoginRoute
   '/api/auth/logout': typeof ApiAuthLogoutRoute
+  '/api/auth/options': typeof ApiAuthOptionsRoute
   '/api/local/callback': typeof ApiLocalCallbackRoute
   '/api/v1/$': typeof ApiV1SplatRoute
   '/oauth/authorize/approve': typeof OauthAuthorizeApproveRoute
@@ -193,6 +200,7 @@ export interface FileRoutesByTo {
   '/api/auth/dev-login': typeof ApiAuthDevLoginRoute
   '/api/auth/login': typeof ApiAuthLoginRoute
   '/api/auth/logout': typeof ApiAuthLogoutRoute
+  '/api/auth/options': typeof ApiAuthOptionsRoute
   '/api/local/callback': typeof ApiLocalCallbackRoute
   '/api/v1/$': typeof ApiV1SplatRoute
   '/oauth/authorize/approve': typeof OauthAuthorizeApproveRoute
@@ -219,6 +227,7 @@ export interface FileRoutesById {
   '/api/auth/dev-login': typeof ApiAuthDevLoginRoute
   '/api/auth/login': typeof ApiAuthLoginRoute
   '/api/auth/logout': typeof ApiAuthLogoutRoute
+  '/api/auth/options': typeof ApiAuthOptionsRoute
   '/api/local/callback': typeof ApiLocalCallbackRoute
   '/api/v1/$': typeof ApiV1SplatRoute
   '/oauth/authorize/approve': typeof OauthAuthorizeApproveRoute
@@ -246,6 +255,7 @@ export interface FileRouteTypes {
     | '/api/auth/dev-login'
     | '/api/auth/login'
     | '/api/auth/logout'
+    | '/api/auth/options'
     | '/api/local/callback'
     | '/api/v1/$'
     | '/oauth/authorize/approve'
@@ -271,6 +281,7 @@ export interface FileRouteTypes {
     | '/api/auth/dev-login'
     | '/api/auth/login'
     | '/api/auth/logout'
+    | '/api/auth/options'
     | '/api/local/callback'
     | '/api/v1/$'
     | '/oauth/authorize/approve'
@@ -296,6 +307,7 @@ export interface FileRouteTypes {
     | '/api/auth/dev-login'
     | '/api/auth/login'
     | '/api/auth/logout'
+    | '/api/auth/options'
     | '/api/local/callback'
     | '/api/v1/$'
     | '/oauth/authorize/approve'
@@ -321,6 +333,7 @@ export interface RootRouteChildren {
   ApiAuthDevLoginRoute: typeof ApiAuthDevLoginRoute
   ApiAuthLoginRoute: typeof ApiAuthLoginRoute
   ApiAuthLogoutRoute: typeof ApiAuthLogoutRoute
+  ApiAuthOptionsRoute: typeof ApiAuthOptionsRoute
   ApiLocalCallbackRoute: typeof ApiLocalCallbackRoute
   ApiV1SplatRoute: typeof ApiV1SplatRoute
   ApiLocalIndexRoute: typeof ApiLocalIndexRoute
@@ -461,6 +474,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiLocalCallbackRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/auth/options': {
+      id: '/api/auth/options'
+      path: '/api/auth/options'
+      fullPath: '/api/auth/options'
+      preLoaderRoute: typeof ApiAuthOptionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/auth/logout': {
       id: '/api/auth/logout'
       path: '/api/auth/logout'
@@ -544,6 +564,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAuthDevLoginRoute: ApiAuthDevLoginRoute,
   ApiAuthLoginRoute: ApiAuthLoginRoute,
   ApiAuthLogoutRoute: ApiAuthLogoutRoute,
+  ApiAuthOptionsRoute: ApiAuthOptionsRoute,
   ApiLocalCallbackRoute: ApiLocalCallbackRoute,
   ApiV1SplatRoute: ApiV1SplatRoute,
   ApiLocalIndexRoute: ApiLocalIndexRoute,

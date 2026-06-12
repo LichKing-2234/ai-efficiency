@@ -1,7 +1,7 @@
-import { Badge } from '@/components/ui/badge'
 import { ActionGroup } from '@/components/primitives/action-group'
 import { FilterRow } from '@/components/primitives/filter-row'
 import { Stack } from '@/components/primitives/stack'
+import { StatusBadge } from '@/components/primitives/status-badge'
 import { cn } from '@/lib/utils'
 import { ToolGlyph } from './tool-glyph'
 
@@ -70,7 +70,7 @@ export function UsageActivityRow({
   endedAt: React.ReactNode
   first?: boolean
   requests: React.ReactNode
-  statusLabel: React.ReactNode
+  statusLabel: string
   title: React.ReactNode
   tokens: React.ReactNode
   tool?: string | null
@@ -88,7 +88,7 @@ export function UsageActivityRow({
         <UsageActivityTitle>{title}</UsageActivityTitle>
         <UsageActivityMeta endedAt={endedAt} tokens={tokens} />
       </UsageActivityContent>
-      <Badge variant={bound ? 'success' : 'warning'}>{statusLabel}</Badge>
+      <StatusBadge label={statusLabel} value={bound ? 'bound' : 'unbound'} />
       <UsageActivityAmount credit={credit} requests={requests} />
     </ActionGroup>
   )

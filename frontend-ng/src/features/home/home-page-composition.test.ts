@@ -9,7 +9,7 @@ describe('Home page composition', () => {
   test('uses the shared card accent variant for the overview hero surface', () => {
     expect(source).toContain("<Card variant='accent'")
     expect(source).toContain("from '@/components/primitives/hero-content'")
-    expect(source).toContain("from '@/components/primitives/action-group'")
+    expect(source).toContain("from '@/components/primitives/start-actions'")
     expect(source).toContain('<HeroContent')
     expect(source).not.toContain("grid-paper overflow-hidden border-[var(--ai-line)]")
     expect(source).not.toContain("bg-[linear-gradient(150deg,var(--ai-soft),transparent_60%),var(--surface)]")
@@ -18,7 +18,8 @@ describe('Home page composition', () => {
   })
 
   test('uses the reference framed pulse strip shell under the hero', () => {
-    expect(source).toContain("overflow-hidden rounded-[var(--r-md)] border border-border bg-[var(--surface)] md:grid-cols-3")
+    expect(source).toContain("from '@/components/primitives/pulse-stat-grid'")
+    expect(source).toContain('<PulseStatGrid>')
     expect(source).not.toContain("rounded-[var(--r-md)] border border-border bg-card md:grid-cols-3")
   })
 
@@ -47,6 +48,12 @@ describe('Home page composition', () => {
     expect(source).not.toContain("<div className='kpi-grid'>")
   })
 
+  test('keeps the fourth KPI aligned to real connected-tool data instead of a mock response metric', () => {
+    expect(source).toContain("label={t('home.connectedTools')}")
+    expect(source).toContain("helper={connectedTools.size ? [...connectedTools].join(', ') : t('home.statusAiAccessMissing')}")
+    expect(source).not.toContain("label={t('home.avgResponse')}")
+  })
+
   test('uses reference overview sections instead of embedding the full usage analytics panel', () => {
     expect(source).toContain("from '@/components/primitives/charts'")
     expect(source).toContain('<BarsH')
@@ -65,6 +72,15 @@ describe('Home page composition', () => {
     expect(source).not.toContain("description={setupProgress.ready === setupProgress.total ? t('home.statusReady') : t('home.statusWaitingEvents')}")
   })
 
+  test('uses checklist rows directly for setup status items instead of a page-local wrapper', () => {
+    expect(source).toContain("from '@/components/primitives/checklist-row'")
+    expect(source).toContain("from '@/components/primitives/link-action'")
+    expect(source).toContain('<ChecklistRow')
+    expect(source).toContain("<LinkAction asChild>")
+    expect(source).not.toContain('function StatusLine(')
+    expect(source).not.toContain("action={connectedTools.size > 0 ? null : <Button asChild variant='link' size='sm'>")
+  })
+
   test('uses shared overview pulse and comparison primitives instead of page-local helpers', () => {
     expect(source).toContain("from '@/components/primitives/compare-bar'")
     expect(source).toContain("from '@/components/primitives/pulse-stat'")
@@ -76,9 +92,19 @@ describe('Home page composition', () => {
   })
 
   test('keeps the reference hero dual-action row for setup and export', () => {
-    expect(source).toContain("<ActionGroup wrap>")
+    expect(source).toContain("from '@/components/primitives/start-actions'")
+    expect(source).toContain('<StartActions>')
     expect(source).toContain("t('command.exportUsageReport')")
-    expect(source).toContain("<Button variant='outline' onClick={exportOverviewReport}>")
+    expect(source).toContain("from '@/components/primitives/button-with-icon'")
+    expect(source).toContain("<ButtonWithIcon asChild icon={ArrowRightIcon} iconPosition='end'>")
+    expect(source).toContain("<ButtonWithIcon size='sm' variant='outline' icon={DownloadIcon} onClick={exportOverviewReport}>")
     expect(source).not.toContain("action={(\n            <Button asChild>")
+  })
+
+  test('uses shared link actions for overview secondary navigation affordances', () => {
+    expect(source).toContain("from '@/components/primitives/link-action'")
+    expect(source).toContain("<LinkAction asChild>")
+    expect(source).toContain("iconEnd={ArrowRightIcon}")
+    expect(source).not.toContain("<Button asChild variant='link' size='sm'>")
   })
 })

@@ -13,14 +13,32 @@ describe('Events page composition', () => {
   })
 
   test('uses shared filter rows for filter controls and detail badges', () => {
+    expect(source).toContain("from '@/components/primitives/button-with-icon'")
     expect(source).toContain("from '@/components/primitives/filter-row'")
-    expect(source).toContain('<FilterRow>')
+    expect(source).toContain("from '@/components/primitives/primary-action-button'")
+    expect(source).toContain("from '@/components/primitives/secondary-action-button'")
+    expect(source).toContain("from '@/components/primitives/search-action-bar'")
+    expect(source).toContain('<SearchActionBar')
+    expect(source).toContain("<FilterRow className='min-w-0 flex-1'>")
     expect(source).toContain("<FilterRow align='start'>")
-    expect(source).toContain("<FilterRow gap='lg' justify='between'>")
     expect(source).toContain("width='toolbar'")
     expect(source).not.toContain("<div className='flex flex-wrap items-center gap-2'>")
     expect(source).not.toContain("<div className='flex flex-wrap gap-2'>")
     expect(source).not.toContain("className='min-w-[260px] flex-1'")
+    expect(source).not.toContain("<CardFilterBar stacked>")
+    expect(source).not.toContain('<Button onClick={applyCurrentFilters}>')
+    expect(source).not.toContain("<Button variant='outline' onClick={clearTimeRange}>")
+  })
+
+  test('uses the shared leading-icon CTA button for event export', () => {
+    expect(source).toContain("<ButtonWithIcon size='sm' disabled={rows.length === 0} variant='outline' icon={DownloadIcon} onClick={exportRows}>")
+    expect(source).not.toContain("<Button disabled={rows.length === 0} variant='outline' onClick={exportRows}>")
+  })
+
+  test('uses the shared low-emphasis action button for admin clear-user controls', () => {
+    expect(source).toContain("from '@/components/primitives/quiet-action-button'")
+    expect(source).toContain("<QuietActionButton onClick={clearSelectedUser}>")
+    expect(source).not.toContain("{isAdmin && appliedFilters.userId ? <Button variant='ghost' onClick={clearSelectedUser}>")
   })
 
   test('uses semantic field widths for secondary filters', () => {
@@ -71,13 +89,22 @@ describe('Events page composition', () => {
 
   test('uses shared primitives for pagination metadata and empty detail sections', () => {
     expect(source).toContain("from '@/components/primitives/page-empty'")
+    expect(source).toContain("from '@/components/primitives/pager-nav-button'")
+    expect(source).toContain("from '@/components/primitives/page-size-select'")
     expect(source).toContain("<PageEmpty title={t('events.noMatchedPrs')} />")
+    expect(source).toContain("<PageSizeSelect\n                ariaLabel={t('common.pageSizeControl')}")
+    expect(source).toContain("labelMode='plain'")
+    expect(source).toContain("<PagerNavButton direction='previous' onClick={previousPage} disabled={!pagination.canGoPrev}>")
+    expect(source).toContain("<PagerNavButton direction='next' onClick={nextPage} disabled={!pagination.canGoNext}>")
     expect(source).toContain("meta={t('common.pageCount'")
     expect(source).toContain("t('command.exportUsageReport')")
     expect(source).not.toContain("from '@/components/ui/empty'")
     expect(source).not.toContain("<Empty className='p-4'>")
     expect(source).not.toContain("<span className='text-muted-foreground text-xs'>{t('common.pageCount'")
     expect(source).not.toContain("<div className='text-muted-foreground text-sm'>{t('events.noMatchedPrs')}</div>")
+    expect(source).not.toContain("<ToolbarSelect\n                ariaLabel={t('common.pageSizeControl')}")
+    expect(source).not.toContain("<Button size='sm' variant='outline' onClick={previousPage} disabled={!pagination.canGoPrev}>")
+    expect(source).not.toContain("<Button size='sm' variant='outline' onClick={nextPage} disabled={!pagination.canGoNext}>")
   })
 
   test('uses plain linked-record items for matched PR rows in the event detail drawer', () => {

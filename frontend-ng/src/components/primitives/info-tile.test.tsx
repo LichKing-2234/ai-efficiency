@@ -17,7 +17,7 @@ describe('InfoTile', () => {
 
     expect(html).toContain('border-[var(--ai-line)]')
     expect(html).toContain('bg-[var(--ai-soft)]')
-    expect(html).toContain('text-[20px]')
+    expect(html).toContain('text-[18px]')
     expect(html).toContain('tnum')
     expect(html).not.toContain('uppercase')
   })
@@ -31,7 +31,7 @@ describe('InfoTile', () => {
 
     expect(html).toContain('data-slot="info-tile-grid"')
     expect(html).toContain('grid gap-[10px]')
-    expect(html).toContain('md:grid-cols-4')
+    expect(html).toContain('min-[920px]:grid-cols-4')
     expect(html).toContain('Status')
   })
 
@@ -41,10 +41,10 @@ describe('InfoTile', () => {
     )
 
     expect(source).toContain("className={cn('grid gap-[10px]'")
-    expect(source).toContain("'rounded-[var(--r-md)] border bg-[var(--surface-inset)] p-[14px]'")
-    expect(source).toContain("cn('font-semibold text-[11px]', compact ? 'text-[var(--ink-3)]' : 'text-[var(--ink-3)] uppercase'")
-    expect(source).toContain("'mt-1 break-all font-semibold text-[14.5px]'")
-    expect(source).toContain("compact && 'text-[20px]'")
+    expect(source).toContain("'rounded-[var(--r-md)] border bg-[var(--surface-inset)] px-[12px] py-[11px]'")
+    expect(source).toContain("cn('font-medium text-[11px]', compact ? 'text-[var(--ink-3)]' : 'text-[var(--ink-3)] uppercase'")
+    expect(source).toContain("'mt-[3px] break-all font-[680] text-[18px]'")
+    expect(source).toContain("compact && 'text-[18px]'")
     expect(source).not.toContain("cn('font-semibold text-[11px]', compact ? 'text-muted-foreground' : 'text-muted-foreground uppercase'")
     expect(source).not.toContain("'mt-1 break-all font-semibold text-sm'")
   })

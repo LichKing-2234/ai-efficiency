@@ -29,6 +29,8 @@ AE_FRONTEND_BACKEND_URL=https://ai-efficiency-web.la3.agoralab.co
 
 Then open local `/login` and use the "Use online session for local dev" action. That keeps browser traffic on localhost while the local TanStack server proxies through the deployed frontend BFF.
 
+When `AE_FRONTEND_BACKEND_URL` points at the deployed `-web` frontend host, local `/api/auth/options` still resolves LDAP and dev-login capability from the paired public backend host for the auth-options probe. In the current production naming, `https://ai-efficiency-web.la3.agoralab.co` is rewritten to `https://ai-efficiency.la3.agoralab.co` only for `/api/auth/options`, while login, bootstrap, and handoff actions continue to use the web BFF host.
+
 `VITE_BACKEND_URL` is accepted as a local fallback for compatibility, but browser code must not call that backend URL directly.
 `AE_FRONTEND_GATEWAY_EXCHANGE_SECRET` should only be configured after the Go backend exposes `/api/v1/auth/gateway-exchange` and the shared header contract is agreed.
 

@@ -30,6 +30,8 @@ describe('CredentialKeyPanel', () => {
     expect(html).toContain('Reveal')
     expect(html).toContain('Regenerate')
     expect(html).toContain('text-[var(--ai-deep)]')
+    expect(html).toContain('bg-[var(--surface-inset)]')
+    expect(html).toContain('rounded-[var(--r-md)]')
   })
 
   test('renders a missing credential in muted state', () => {
@@ -45,6 +47,7 @@ describe('CredentialKeyPanel', () => {
     expect(html).toContain('No key')
     expect(html).toContain('text-[var(--ink-3)]')
     expect(html).toContain('Create API key')
+    expect(html).toContain('data-slot="credential-key-row"')
   })
 
   test('keeps footer action rhythm inside the primitive slot', async () => {
@@ -55,11 +58,12 @@ describe('CredentialKeyPanel', () => {
     expect(source).toContain("from '@/components/primitives/action-group'")
     expect(source).toContain("from '@/components/primitives/stack'")
     expect(source).toContain("className={cn('rounded-[var(--r-md)] border border-border bg-[var(--surface-inset)] p-[14px]'")
-    expect(source).toContain("className='font-medium text-[11px] text-[var(--ink-3)] uppercase tracking-[0.04em]'")
-    expect(source).toContain("className='min-w-0 rounded-[var(--r-md)] border border-border bg-card px-[14px] py-[11px]'")
+    expect(source).toContain("className='font-semibold text-[10.5px] text-[var(--ink-3)] uppercase tracking-[0.06em]'")
+    expect(source).toContain("className='min-w-0 rounded-[var(--r-md)] border border-border bg-[var(--surface)] px-[14px] py-[11px]'")
     expect(source).toContain("className={ready ? 'text-[var(--ai)]' : 'text-[var(--ink-3)]'}")
     expect(source).toContain("className={cn('mono min-w-0 flex-1 truncate text-[13px]', ready ? 'text-[var(--ai-deep)]' : 'text-[var(--ink-3)]')}")
-    expect(source).toContain("className='mt-1'")
+    expect(source).toContain("className='mt-1.5'")
+    expect(source).toContain("className={cn('rounded-[var(--r-md)] border border-border bg-[var(--surface-inset)] p-[14px]', className)}")
     expect(source).not.toContain("className='mt-3 flex flex-wrap gap-2'")
     expect(source).not.toContain("className='mb-2 font-semibold text-muted-foreground text-xs uppercase'")
   })

@@ -34,12 +34,25 @@ export function rangeLabelKey(range: UsageRangeOption): MessageKey {
 export function usageTotalsFromTrend(points: UserUsageTrendPoint[]) {
   return points.reduce(
     (next, point) => ({
+      cacheCreationTokens: next.cacheCreationTokens + point.cache_creation_tokens,
+      cacheReadTokens: next.cacheReadTokens + point.cache_read_tokens,
+      inputTokens: next.inputTokens + point.input_tokens,
+      outputTokens: next.outputTokens + point.output_tokens,
       requests: next.requests + point.requests,
       tokens: next.tokens + point.total_tokens,
       actualCost: next.actualCost + point.actual_cost,
       standardCost: next.standardCost + point.cost
     }),
-    { requests: 0, tokens: 0, actualCost: 0, standardCost: 0 }
+    {
+      cacheCreationTokens: 0,
+      cacheReadTokens: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+      requests: 0,
+      tokens: 0,
+      actualCost: 0,
+      standardCost: 0
+    }
   )
 }
 

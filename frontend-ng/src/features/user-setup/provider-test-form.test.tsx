@@ -34,7 +34,7 @@ describe('ProviderTestForm', () => {
     expect(html).toContain('for="provider-test-model"')
     expect(html).toContain('for="provider-test-platform"')
     expect(html).toContain('for="provider-test-prompt"')
-    expect(html).toContain('data-slot="action-group"')
+    expect(html).toContain('data-slot="start-actions"')
     expect(html).toContain('Claude Sonnet (claude-sonnet)')
   })
 
@@ -79,16 +79,24 @@ describe('ProviderTestForm', () => {
   })
 
   test('uses shared start-aligned action groups for provider test actions', () => {
-    expect(source).toContain("<ActionGroup wrap align='start'>")
+    expect(source).toContain("from '@/components/primitives/start-actions'")
+    expect(source).toContain('<StartActions>')
+    expect(source).toContain("from '@/components/primitives/button-with-icon'")
+    expect(source).toContain("<ButtonWithIcon size='sm' icon={Zap} disabled={!canRun || running} onClick={onRun}>")
+    expect(source).not.toContain("<Button disabled={!canRun || running} onClick={onRun}>")
+    expect(source).not.toContain("<ActionGroup wrap align='start'>")
     expect(source).not.toContain("<ActionGroup wrap className='justify-start'>")
   })
 
   test('uses shared inset field chrome for the reference provider test form controls', () => {
-    expect(source).toContain("const fieldControlClassName = 'h-10 rounded-[var(--r-md)] bg-[var(--surface-inset)] shadow-none'")
-    expect(source).toContain("const promptControlClassName = 'min-h-24 rounded-[var(--r-md)] bg-[var(--surface-inset)] shadow-none'")
-    expect(source).toContain("triggerClassName={`${fieldControlClassName} w-full`}")
-    expect(source).toContain("controlClassName={fieldControlClassName}")
-    expect(source).toContain("controlClassName={promptControlClassName}")
+    expect(source).toContain("from '@/components/primitives/auth-field'")
+    expect(source).toContain('formInsetControlClassName')
+    expect(source).toContain('formInsetTextareaClassName')
+    expect(source).toContain("triggerClassName={`${formInsetControlClassName} w-full`}")
+    expect(source).toContain("controlClassName={formInsetControlClassName}")
+    expect(source).toContain("controlClassName={formInsetTextareaClassName}")
+    expect(source).not.toContain("const fieldControlClassName = 'h-10 rounded-[var(--r-md)] bg-[var(--surface-inset)] shadow-none'")
+    expect(source).not.toContain("const promptControlClassName = 'min-h-24 rounded-[var(--r-md)] bg-[var(--surface-inset)] shadow-none'")
   })
 })
 

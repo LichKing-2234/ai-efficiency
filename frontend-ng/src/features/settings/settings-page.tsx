@@ -4,23 +4,24 @@ import { Navigate, useNavigate, useSearch } from '@tanstack/react-router'
 import { Database, KeyRound, Layers, LockKeyhole, RefreshCw, Settings as SettingsIcon, Shield, Trash2, Waypoints } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Badge } from '@/components/ui/badge'
-import { ActionGroup } from '@/components/primitives/action-group'
 import { AppAlert } from '@/components/primitives/app-alert'
+import { ButtonWithIcon } from '@/components/primitives/button-with-icon'
+import { CategoryBadge } from '@/components/primitives/category-badge'
 import { CardContentStack } from '@/components/primitives/card-content-stack'
 import { CardTableContent } from '@/components/primitives/card-table-content'
-import { ConfirmAction } from '@/components/primitives/confirm-action'
+import { ConfirmActionButton } from '@/components/primitives/confirm-action-button'
 import { DataGrid, DataGridCell, DataGridHeader, DataGridRow } from '@/components/primitives/data-grid'
 import { Page } from '@/components/primitives/page'
 import { LoadingState } from '@/components/primitives/data-state'
 import { HealthFieldItem, HealthFieldList, type HealthStatus } from '@/components/primitives/health-field-list'
 import { InfoTile, InfoTileGrid } from '@/components/primitives/info-tile'
 import { PageEmpty } from '@/components/primitives/page-empty'
+import { RowIconActions } from '@/components/primitives/row-icon-actions'
 import { SectionCardHeader } from '@/components/primitives/section-card-header'
 import { SectionNav, SectionNavFrame, type SectionNavItem } from '@/components/primitives/section-nav'
+import { StartActions } from '@/components/primitives/start-actions'
 import { Stack } from '@/components/primitives/stack'
 import { StatusBadge } from '@/components/primitives/status-badge'
 import { api } from '@/lib/api'
@@ -38,9 +39,12 @@ import {
   buildLDAPPayload,
   buildRelayPayload,
   buildScmProviderPayload,
+  settingsCredentialKindLabel,
   type CredentialFormState,
   type LDAPFormState,
   type RelayFormState,
+  settingsScmProviderTypeLabel,
+  settingsSectionMeta,
   type SettingsSection,
   settingsSectionFromSearch,
   settingsSections,
@@ -54,6 +58,13 @@ const emptyLDAPForm: LDAPFormState = { url: '', base_dn: '', bind_dn: '', bind_p
 const relayColumns = '1.2fr_1.8fr_0.7fr_0.8fr_86px'
 const scmColumns = '1.4fr_0.8fr_1.8fr_0.8fr_86px'
 const credentialColumns = '1.4fr_1fr_1fr_0.9fr_86px'
+const settingsSectionIcons = {
+  database: Database,
+  layers: Layers,
+  lock: LockKeyhole,
+  shield: Shield,
+  waypoints: Waypoints
+} as const
 
 export function SettingsPage() {
   const { t } = useI18n()
@@ -63,8 +74,8 @@ export function SettingsPage() {
   const activeSection = settingsSectionFromSearch(search)
   const sectionItems = settingsSections.map((section) => ({
     value: section,
-    label: settingsSectionLabel(section, t),
-    icon: settingsSectionIcon(section)
+    label: t(settingsSectionMeta[section].labelKey as never),
+    icon: settingsSectionIcons[settingsSectionMeta[section].iconName]
   })) satisfies Array<SectionNavItem<SettingsSection>>
   const [relayDialog, setRelayDialog] = useState(false)
   const [editingRelayId, setEditingRelayId] = useState<number | null>(null)
@@ -294,10 +305,10 @@ export function SettingsPage() {
         <Stack constrain='content'>
         {activeSection === 'ai-services' ? <Card>
           <SectionCardHeader
-            title={t('settings.aiServices')}
-            description={t('settings.relayProvidersDescription')}
+            title={t(settingsSectionMeta['ai-services'].labelKey as never)}
+            description={t(settingsSectionMeta['ai-services'].descriptionKey as never)}
             leading={Layers}
-            actions={<Button size='sm' onClick={openAddRelayDialog}><Layers data-icon='inline-start' />{t('common.add')}</Button>}
+            actions={<ButtonWithIcon size='sm' icon={Layers} onClick={openAddRelayDialog}>{t('settings.addRelayProvider')}</ButtonWithIcon>}
           />
           <CardTableContent variant='flush'>
             {(relay.data ?? []).length > 0 ? (
@@ -313,15 +324,17 @@ export function SettingsPage() {
                   <DataGridRow key={provider.id} columns={relayColumns}>
                     <DataGridCell description={provider.name} truncate>{provider.display_name || provider.name}</DataGridCell>
                     <DataGridCell mono truncate tone='metadata'>{provider.base_url}</DataGridCell>
-                    {provider.is_primary ? <span><Badge variant='ai'>{t('common.primary')}</Badge></span> : <DataGridCell tone='metadata'>-</DataGridCell>}
+                    {provider.is_primary ? <span><CategoryBadge variant='ai'>{t('common.primary')}</CategoryBadge></span> : <DataGridCell tone='metadata'>-</DataGridCell>}
                     <span><StatusBadge value={provider.enabled ? 'active' : 'disabled'} /></span>
-                    <SettingsRowActions
-                      updateLabel={t('common.update')}
+                    <RowIconActions
+                      editLabel={t('common.update')}
                       deleteLabel={t('common.delete')}
                       cancelLabel={t('common.cancel')}
                       deleteTitle={t('settings.deleteRelayProvider')}
                       deleteDescription={t('settings.deleteRelayProviderDescription', { name: provider.display_name || provider.name })}
-                      deletePending={deleteRelay.isPending}
+                      deleteDisabled={deleteRelay.isPending}
+                      editIcon={SettingsIcon}
+                      deleteIcon={Trash2}
                       onEdit={() => openEditRelayDialog(provider)}
                       onDelete={() => deleteRelay.mutate(provider.id)}
                     />
@@ -331,19 +344,19 @@ export function SettingsPage() {
             ) : (
               <PageEmpty
                 icon={Layers}
-                title={t('settings.aiServices')}
-                description={t('settings.relayProvidersDescription')}
-                action={<Button size='sm' onClick={openAddRelayDialog}><Layers data-icon='inline-start' />{t('common.add')}</Button>}
+                title={t(settingsSectionMeta['ai-services'].labelKey as never)}
+                description={t(settingsSectionMeta['ai-services'].descriptionKey as never)}
+                action={<ButtonWithIcon size='sm' icon={Layers} onClick={openAddRelayDialog}>{t('settings.addRelayProvider')}</ButtonWithIcon>}
               />
             )}
           </CardTableContent>
         </Card> : null}
         {activeSection === 'code-platforms' ? <Card>
           <SectionCardHeader
-            title={t('settings.codePlatforms')}
-            description={t('settings.scmProvidersDescription')}
+            title={t(settingsSectionMeta['code-platforms'].labelKey as never)}
+            description={t(settingsSectionMeta['code-platforms'].descriptionKey as never)}
             leading={Waypoints}
-            actions={<Button size='sm' onClick={openAddScmDialog}><Waypoints data-icon='inline-start' />{t('common.add')}</Button>}
+            actions={<ButtonWithIcon size='sm' icon={Waypoints} onClick={openAddScmDialog}>{t('settings.addScmProvider')}</ButtonWithIcon>}
           />
           <CardTableContent variant='flush'>
             {(scm.data?.items ?? []).length > 0 ? (
@@ -358,16 +371,18 @@ export function SettingsPage() {
                 {(scm.data?.items ?? []).map((provider) => (
                   <DataGridRow key={provider.id} columns={scmColumns}>
                     <DataGridCell truncate>{provider.name}</DataGridCell>
-                    <span><Badge variant='secondary'>{provider.type}</Badge></span>
+                    <span><CategoryBadge>{t(settingsScmProviderTypeLabel(provider.type) as never)}</CategoryBadge></span>
                     <DataGridCell mono truncate tone='metadata'>{provider.base_url}</DataGridCell>
                     <span><StatusBadge value={provider.status} /></span>
-                    <SettingsRowActions
-                      updateLabel={t('common.update')}
+                    <RowIconActions
+                      editLabel={t('common.update')}
                       deleteLabel={t('common.delete')}
                       cancelLabel={t('common.cancel')}
                       deleteTitle={t('settings.deleteScmProvider')}
                       deleteDescription={t('settings.deleteScmProviderDescription', { name: provider.name })}
-                      deletePending={deleteScm.isPending}
+                      deleteDisabled={deleteScm.isPending}
+                      editIcon={SettingsIcon}
+                      deleteIcon={Trash2}
                       onEdit={() => openEditScmDialog(provider)}
                       onDelete={() => deleteScm.mutate(provider.id)}
                     />
@@ -377,19 +392,19 @@ export function SettingsPage() {
             ) : (
               <PageEmpty
                 icon={Waypoints}
-                title={t('settings.codePlatforms')}
-                description={t('settings.scmProvidersDescription')}
-                action={<Button size='sm' onClick={openAddScmDialog}><Waypoints data-icon='inline-start' />{t('common.add')}</Button>}
+                title={t(settingsSectionMeta['code-platforms'].labelKey as never)}
+                description={t(settingsSectionMeta['code-platforms'].descriptionKey as never)}
+                action={<ButtonWithIcon size='sm' icon={Waypoints} onClick={openAddScmDialog}>{t('settings.addScmProvider')}</ButtonWithIcon>}
               />
             )}
           </CardTableContent>
         </Card> : null}
         {activeSection === 'advanced-credentials' ? <Card>
           <SectionCardHeader
-            title={t('settings.advancedCredentials')}
-            description={t('settings.advancedCredentialsDescription')}
+            title={t(settingsSectionMeta['advanced-credentials'].labelKey as never)}
+            description={t(settingsSectionMeta['advanced-credentials'].descriptionKey as never)}
             leading={LockKeyhole}
-            actions={<Button size='sm' onClick={openAddCredentialDialog}><KeyRound data-icon='inline-start' />{t('common.add')}</Button>}
+            actions={<ButtonWithIcon size='sm' icon={KeyRound} onClick={openAddCredentialDialog}>{t('settings.addCredential')}</ButtonWithIcon>}
           />
           <CardTableContent variant='flush'>
             {(credentials.data ?? []).length > 0 ? (
@@ -404,16 +419,18 @@ export function SettingsPage() {
                 {(credentials.data ?? []).map((credential) => (
                   <DataGridRow key={credential.id} columns={credentialColumns}>
                     <DataGridCell description={credential.description} truncate>{credential.name}</DataGridCell>
-                    <span><Badge variant='secondary'>{credential.kind}</Badge></span>
+                    <span><CategoryBadge>{t(settingsCredentialKindLabel(credential.kind) as never)}</CategoryBadge></span>
                     <DataGridCell numeric tone='metadata'>{number(credential.usage_count)}</DataGridCell>
                     <DataGridCell numeric tone='metadata'>{dateTime(credential.updated_at)}</DataGridCell>
-                    <SettingsRowActions
-                      updateLabel={t('common.update')}
+                    <RowIconActions
+                      editLabel={t('common.update')}
                       deleteLabel={t('common.delete')}
                       cancelLabel={t('common.cancel')}
                       deleteTitle={t('settings.deleteCredential')}
                       deleteDescription={t('settings.deleteCredentialDescription', { name: credential.name })}
-                      deletePending={deleteCredential.isPending}
+                      deleteDisabled={deleteCredential.isPending}
+                      editIcon={SettingsIcon}
+                      deleteIcon={Trash2}
                       onEdit={() => openEditCredentialDialog(credential)}
                       onDelete={() => deleteCredential.mutate(credential.id)}
                     />
@@ -423,15 +440,15 @@ export function SettingsPage() {
             ) : (
               <PageEmpty
                 icon={LockKeyhole}
-                title={t('settings.advancedCredentials')}
-                description={t('settings.advancedCredentialsDescription')}
-                action={<Button size='sm' onClick={openAddCredentialDialog}><KeyRound data-icon='inline-start' />{t('common.add')}</Button>}
+                title={t(settingsSectionMeta['advanced-credentials'].labelKey as never)}
+                description={t(settingsSectionMeta['advanced-credentials'].descriptionKey as never)}
+                action={<ButtonWithIcon size='sm' icon={KeyRound} onClick={openAddCredentialDialog}>{t('settings.addCredential')}</ButtonWithIcon>}
               />
             )}
           </CardTableContent>
         </Card> : null}
         {activeSection === 'organization-login' ? <Card>
-          <SectionCardHeader title={t('settings.organizationLogin')} description={t('settings.ldapLoginBehavior')} leading={Shield} />
+          <SectionCardHeader title={t(settingsSectionMeta['organization-login'].labelKey as never)} description={t(settingsSectionMeta['organization-login'].descriptionKey as never)} leading={Shield} />
           <CardContentStack>
             <LdapSettingsForm
               form={ldapForm}
@@ -447,47 +464,51 @@ export function SettingsPage() {
         {activeSection === 'deployment-runtime' ? <>
           <Card>
             <SectionCardHeader
-              title={t('settings.deploymentRuntime')}
-              description={t('settings.currentBackendDeployment')}
+              title={t(settingsSectionMeta['deployment-runtime'].labelKey as never)}
+              description={t(settingsSectionMeta['deployment-runtime'].descriptionKey as never)}
               leading={Database}
-              actions={deployment.data?.update_available ? <Badge variant='ai'>{t('settings.updateAvailable', { version: deployment.data.latest_release?.version || '-' })}</Badge> : <Badge variant='success'>{t('settings.upToDate')}</Badge>}
+              actions={
+                deployment.data?.update_available
+                  ? <CategoryBadge variant='ai'>{t('settings.updateAvailable', { version: deployment.data.latest_release?.version || '-' })}</CategoryBadge>
+                  : <StatusBadge value='success' label={t('settings.upToDate')} />
+              }
             />
             <CardContentStack gap='compact'>
-              <InfoTileGrid columns={3}>
+              <InfoTileGrid columns={3} className='split-equal min-[920px]:grid-cols-3'>
                 <InfoTile label={t('settings.current')} value={`v${deployment.data?.version.version || '-'}`} mono />
                 <InfoTile label={t('settings.latest')} value={`v${deployment.data?.latest_release?.version || deployment.data?.version.version || '-'}`} mono />
                 <InfoTile label={t('settings.mode')} value={deployment.data?.mode || t('common.unknown')} mono accent='ai' />
               </InfoTileGrid>
-              <ActionGroup wrap align='start'>
-                <Button variant='ghost' onClick={() => checkUpdate.mutate()} disabled={checkUpdate.isPending}><RefreshCw data-icon='inline-start' />{t('settings.checkUpdate')}</Button>
-                <ConfirmAction
-                  trigger={<Button variant='ghost' disabled={!deployment.data?.latest_release?.version || applyUpdate.isPending}>{t('common.apply')}</Button>}
-                  title={t('settings.stageUpdate')}
-                  description={t('settings.stageUpdateDescription', { version: deployment.data?.latest_release?.version || '' })}
-                  confirmLabel={t('common.apply')}
+              <StartActions>
+                <ButtonWithIcon size='sm' variant='ghost' icon={RefreshCw} onClick={() => checkUpdate.mutate()} disabled={checkUpdate.isPending}>{t('settings.checkUpdate')}</ButtonWithIcon>
+                <ConfirmActionButton
                   cancelLabel={t('common.cancel')}
+                  confirmLabel={t('common.apply')}
+                  description={t('settings.stageUpdateDescription', { version: deployment.data?.latest_release?.version || '' })}
                   onConfirm={() => applyUpdate.mutate()}
                   disabled={!deployment.data?.latest_release?.version || applyUpdate.isPending}
+                  label={t('common.apply')}
+                  title={t('settings.stageUpdate')}
                 />
-                <ConfirmAction
-                  trigger={<Button variant='ghost' disabled={rollback.isPending}>{t('settings.rollback')}</Button>}
-                  title={t('settings.rollback')}
-                  description={t('settings.rollbackDescription')}
-                  confirmLabel={t('settings.rollback')}
+                <ConfirmActionButton
                   cancelLabel={t('common.cancel')}
+                  confirmLabel={t('settings.rollback')}
+                  description={t('settings.rollbackDescription')}
                   onConfirm={() => rollback.mutate()}
                   disabled={rollback.isPending}
+                  label={t('settings.rollback')}
+                  title={t('settings.rollback')}
                 />
-                <ConfirmAction
-                  trigger={<Button variant='ghost' disabled={restart.isPending}>{t('settings.restart')}</Button>}
-                  title={t('settings.requestRestart')}
-                  description={t('settings.requestRestartDescription')}
-                  confirmLabel={t('settings.restart')}
+                <ConfirmActionButton
                   cancelLabel={t('common.cancel')}
+                  confirmLabel={t('settings.restart')}
+                  description={t('settings.requestRestartDescription')}
                   onConfirm={() => restart.mutate()}
                   disabled={restart.isPending}
+                  label={t('settings.restart')}
+                  title={t('settings.requestRestart')}
                 />
-              </ActionGroup>
+              </StartActions>
             </CardContentStack>
           </Card>
           <Card>
@@ -497,7 +518,7 @@ export function SettingsPage() {
               leading={Database}
             />
             <CardContentStack gap='normal'>
-              <HealthFieldList>
+              <HealthFieldList className='bg-[var(--surface-inset)]'>
                 {deploymentHealthRows(deploymentHealth.data?.checks ?? []).map((check) => (
                   <HealthFieldItem
                     key={check.name}
@@ -573,36 +594,6 @@ export function SettingsPage() {
   )
 }
 
-function settingsSectionLabel(section: SettingsSection, t: ReturnType<typeof useI18n>['t']) {
-  switch (section) {
-    case 'ai-services':
-      return t('settings.aiServices')
-    case 'code-platforms':
-      return t('settings.codePlatforms')
-    case 'organization-login':
-      return t('settings.organizationLogin')
-    case 'deployment-runtime':
-      return t('settings.deploymentRuntime')
-    case 'advanced-credentials':
-      return t('settings.advancedCredentials')
-  }
-}
-
-function settingsSectionIcon(section: SettingsSection) {
-  switch (section) {
-    case 'ai-services':
-      return Layers
-    case 'code-platforms':
-      return Waypoints
-    case 'organization-login':
-      return Shield
-    case 'deployment-runtime':
-      return Database
-    case 'advanced-credentials':
-      return LockKeyhole
-  }
-}
-
 function deploymentHealthRows(checks: DeploymentHealthCheck[]) {
   return checks.length ? checks : [{ name: 'runtime', status: 'unknown', message: '' }]
 }
@@ -639,45 +630,4 @@ function deploymentHealthCheckStatus(check: DeploymentHealthCheck): HealthStatus
 
 function deploymentHealthCheckValue(check: DeploymentHealthCheck, t: ReturnType<typeof useI18n>['t']) {
   return check.message || check.status.replaceAll('_', ' ') || t('common.unknown')
-}
-
-function SettingsRowActions({
-  updateLabel,
-  deleteLabel,
-  cancelLabel,
-  deleteTitle,
-  deleteDescription,
-  deletePending,
-  onEdit,
-  onDelete
-}: {
-  updateLabel: string
-  deleteLabel: string
-  cancelLabel: string
-  deleteTitle: string
-  deleteDescription: string
-  deletePending: boolean
-  onEdit: () => void
-  onDelete: () => void
-}) {
-  return (
-    <ActionGroup>
-      <Button aria-label={updateLabel} title={updateLabel} size='icon-sm' type='button' variant='ghost' onClick={onEdit}>
-        <SettingsIcon data-icon='icon' aria-hidden='true' />
-      </Button>
-      <ConfirmAction
-        trigger={
-          <Button aria-label={deleteLabel} title={deleteLabel} size='icon-sm' type='button' variant='ghost' disabled={deletePending}>
-            <Trash2 data-icon='icon' aria-hidden='true' />
-          </Button>
-        }
-        title={deleteTitle}
-        description={deleteDescription}
-        confirmLabel={deleteLabel}
-        cancelLabel={cancelLabel}
-        onConfirm={onDelete}
-        disabled={deletePending}
-      />
-    </ActionGroup>
-  )
 }

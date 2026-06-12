@@ -1,6 +1,6 @@
 import { Badge } from '@/components/ui/badge'
 
-export function StatusBadge({ value }: { value?: string | null }) {
+export function StatusBadge({ value, label }: { value?: string | null, label?: string | null }) {
   const text = value || 'unknown'
   const variant =
     ['active', 'healthy', 'fresh', 'completed', 'success', 'bound', 'admin'].includes(text)
@@ -10,5 +10,5 @@ export function StatusBadge({ value }: { value?: string | null }) {
         : ['failed', 'abandoned', 'unbound', 'missing', 'refresh_failed', 'suspended', 'error'].includes(text)
           ? 'neg'
           : 'secondary'
-  return <Badge variant={variant}>{text.replaceAll('_', ' ')}</Badge>
+  return <Badge variant={variant}>{label || text.replaceAll('_', ' ')}</Badge>
 }

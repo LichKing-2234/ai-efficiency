@@ -1,5 +1,6 @@
 import type * as React from 'react'
 import { ActionGroup } from '@/components/primitives/action-group'
+import { StatusBadge } from '@/components/primitives/status-badge'
 import { Stack } from '@/components/primitives/stack'
 import { cn } from '@/lib/utils'
 
@@ -16,7 +17,7 @@ export function SelectableCard({
     <button
       aria-pressed={active}
       className={cn(
-        'rounded-[var(--r-md)] border border-border bg-[var(--surface)] p-[12px] text-left transition hover:border-[var(--line-strong)] hover:bg-[var(--surface-2)] data-[active=true]:border-[var(--ai-line)] data-[active=true]:bg-[var(--ai-softer)]',
+        'rounded-[var(--r-md)] border border-border bg-[var(--surface)] p-[12px] text-left transition hover:border-[var(--line-strong)] hover:bg-[var(--surface)] data-[active=true]:border-[var(--ai-line)] data-[active=true]:bg-[var(--ai-softer)]',
         className
       )}
       data-active={active}
@@ -80,11 +81,13 @@ export function SelectableCardStatus({
 }: React.ComponentProps<'div'> & {
   tone?: 'success' | 'warning'
 }) {
+  const text = typeof props.children === 'string' ? props.children : undefined
   return (
-    <div
+    <span
       data-slot='selectable-card-status'
-      className={cn('mt-1.5 font-medium text-[11px]', tone === 'success' ? 'text-[var(--pos)]' : 'text-[var(--warn)]', className)}
-      {...props}
-    />
+      className={cn('mt-1.5 inline-flex', className)}
+    >
+      <StatusBadge label={text} value={tone === 'success' ? 'success' : 'pending_upload'} />
+    </span>
   )
 }

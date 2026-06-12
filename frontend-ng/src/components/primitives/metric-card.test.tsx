@@ -38,9 +38,12 @@ describe('KpiCard', () => {
   test('uses shared stack and action primitives for KPI header and value rows', () => {
     expect(source).toContain("from '@/components/primitives/stack'")
     expect(source).toContain("from './action-group'")
+    expect(source).toContain("data-slot='kpi-card-delta'")
     expect(source).toContain("className='min-w-0 flex-1 truncate text-[12px] font-medium text-[var(--ink-3)]'")
     expect(source).toContain("className='gap-3 text-[11.5px] text-[var(--ink-3)]'")
     expect(source).toContain("className={cn('tnum font-semibold text-3xl leading-none tracking-tight'")
+    expect(source).toContain("'ml-auto inline-flex items-center gap-1 text-[11.5px] font-semibold'")
+    expect(source).not.toContain("from '@/components/ui/badge'")
     expect(source).not.toContain("<div className='flex items-center gap-2'>")
     expect(source).not.toContain("<div className='flex items-end justify-between gap-3'>")
   })

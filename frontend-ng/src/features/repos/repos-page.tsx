@@ -3,33 +3,35 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 import { CheckIcon, ChevronRightIcon, CircleDotIcon, ExternalLinkIcon, FolderGit2Icon, GitPullRequestIcon, PlusIcon, RefreshCwIcon, WrenchIcon } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { ActionGroup } from '@/components/primitives/action-group'
-import { CardFilterBar } from '@/components/primitives/card-filter-bar'
+import { Card } from '@/components/ui/card'
 import { CardPagerFooter } from '@/components/primitives/card-pager-footer'
+import { ButtonWithIcon } from '@/components/primitives/button-with-icon'
+import { CategoryBadge } from '@/components/primitives/category-badge'
+import { CountBadge } from '@/components/primitives/count-badge'
 import { KpiCard } from '@/components/primitives/metric-card'
 import { AppAlert } from '@/components/primitives/app-alert'
 import { Page } from '@/components/primitives/page'
 import { EmptyState, LoadingState } from '@/components/primitives/data-state'
 import { DataGrid, DataGridHeader, DataGridHeaderCell, DataGridPrimaryLink, DataGridRecordCell, DataGridRow, DataGridRowAffordance } from '@/components/primitives/data-grid'
 import { EntityGlyph } from '@/components/primitives/entity-glyph'
+import { EndActions } from '@/components/primitives/end-actions'
 import { FieldItem, FieldList } from '@/components/primitives/field-list'
 import { InfoTile, InfoTileGrid } from '@/components/primitives/info-tile'
+import { InlineDestructiveActions } from '@/components/primitives/inline-destructive-actions'
 import { KpiGrid } from '@/components/primitives/kpi-grid'
+import { PagerNavButton } from '@/components/primitives/pager-nav-button'
+import { QuietActionButton } from '@/components/primitives/quiet-action-button'
 import { RatioMeter } from '@/components/primitives/ratio-meter'
+import { RepositoriesWorkbenchShell } from '@/components/primitives/repositories-workbench-shell'
 import { SegmentedControl } from '@/components/primitives/segmented-control'
-import { SectionCardHeader } from '@/components/primitives/section-card-header'
 import { SectionNav, type SectionNavItem } from '@/components/primitives/section-nav'
 import { SlideOver } from '@/components/primitives/slide-over'
 import { SlideOverStack } from '@/components/primitives/slide-over-stack'
 import { StatusBadge } from '@/components/primitives/status-badge'
 import { StatusCluster } from '@/components/primitives/status-cluster'
-import { WorkbenchContent, WorkbenchRail } from '@/components/primitives/workbench-rail'
+import { SplitActions } from '@/components/primitives/split-actions'
 import { api } from '@/lib/api'
 import type { RepoConfig } from '@/lib/api/types'
 import { dateTime, number, percent } from '@/lib/format'
@@ -231,24 +233,21 @@ export function ReposPage() {
 
   return (
     <Page className='stagger'>
-      <ActionGroup push wrap>
+      <EndActions>
         {me.data?.role === 'admin' ? (
           <>
-            <Button variant='outline' onClick={() => autoBind.mutate()} disabled={autoBind.isPending}>
-              <GitPullRequestIcon data-icon='inline-start' />
+            <ButtonWithIcon size='sm' variant='outline' icon={GitPullRequestIcon} onClick={() => autoBind.mutate()} disabled={autoBind.isPending}>
               {autoBind.isPending ? t('repos.autoBindComplete') : t('repos.autoBind')}
-            </Button>
-            <Button variant='outline' onClick={() => webhookRepair.mutate({ force: false })} disabled={webhookRepair.isPending}>
-              <WrenchIcon data-icon='inline-start' />
+            </ButtonWithIcon>
+            <ButtonWithIcon size='sm' variant='outline' icon={WrenchIcon} onClick={() => webhookRepair.mutate({ force: false })} disabled={webhookRepair.isPending}>
               {webhookRepair.isPending ? t('repoDetail.webhookRepairing') : t('repos.repairWebhooks')}
-            </Button>
+            </ButtonWithIcon>
           </>
         ) : null}
-        <Button onClick={openAddDialog}>
-          <PlusIcon data-icon='inline-start' />
+        <ButtonWithIcon size='sm' icon={PlusIcon} onClick={openAddDialog}>
           {t('repos.addRepo')}
-        </Button>
-      </ActionGroup>
+        </ButtonWithIcon>
+      </EndActions>
       <KpiGrid>
         <KpiCard label={t('repos.totalRepositories')} value={number(health.total, locale)} icon={FolderGit2Icon} sparkline={reposForProviders.map((provider) => provider.total_repos)} />
         <KpiCard label={t('repos.boundRepositories')} value={number(health.bound, locale)} accent icon={CheckIcon} sparkline={reposForProviders.map((provider) => provider.bound_repos)} />
@@ -261,10 +260,10 @@ export function ReposPage() {
           title={t('repos.unboundWarningTitle', { count: number(health.unbound, locale) })}
           description={t('repos.unboundWarningDescription')}
           actions={(
-            <Button variant='ghost' onClick={() => replaceSearch({ ...search, binding: 'unbound', provider: 'unbound', page: 1 })}>
+            <QuietActionButton onClick={() => replaceSearch({ ...search, binding: 'unbound', provider: 'unbound', page: 1 })}>
               {t('repos.reviewNeedsBinding')}
               <ChevronRightIcon data-icon='inline-end' />
-            </Button>
+            </QuietActionButton>
           )}
         />
       ) : null}
@@ -277,70 +276,64 @@ export function ReposPage() {
       {reposForProviders.length === 0 ? (
         <EmptyState title={t('common.empty')} description={t('repos.healthHelp')} />
       ) : (
-        <Card className='overflow-hidden'>
-          <CardFilterBar>
+        <RepositoriesWorkbenchShell
+          header={(
+            <SegmentedControl
+              ariaLabel={t('repos.bindingFilter')}
+              onChange={(value) => replaceSearch({ ...search, binding: value as RepoBindingFilter, page: 1 })}
+              options={[
+                { value: 'all', label: t('repos.allBindings') },
+                { value: 'bound', label: t('repos.bound') },
+                { value: 'unbound', label: t('repos.unbound') }
+              ]}
+              size='sm'
+              value={search.binding}
+            />
+          )}
+          meta={`${number(total, locale)} ${t('repos.totalRepositories')}`}
+          providerTabs={(
             <Tabs value={selectedProvider?.provider_key ?? ''} onValueChange={(value) => replaceSearch({ ...search, provider: value, scope: '', page: 1 })}>
-              <TabsList wrap>
+              <TabsList variant='line' wrap>
                 {reposForProviders.map((provider) => (
-                  <TabsTrigger key={provider.provider_key} value={provider.provider_key} className='h-9'>
+                  <TabsTrigger key={provider.provider_key} value={provider.provider_key} className='h-8 gap-2 px-3'>
                     {provider.name}
-                    <Badge variant='secondary'>{number(provider.total_repos, locale)}</Badge>
+                    <CountBadge variant='secondary'>{number(provider.total_repos, locale)}</CountBadge>
                   </TabsTrigger>
                 ))}
               </TabsList>
             </Tabs>
-          </CardFilterBar>
-          <div className='repo-workbench'>
-            <WorkbenchRail
-              title={t('repos.scopeSearch')}
-              actions={<Badge variant='secondary'>{number(selectedProvider?.scopes.length ?? 0, locale)}</Badge>}
-            >
-              <SectionNav
-                ariaLabel={t('repos.scopeSearch')}
-                items={scopeItems}
-                onChange={(scope) => replaceSearch({ ...search, scope, page: 1 })}
-                scroll='workbench'
-                value={selectedScope}
-              />
-            </WorkbenchRail>
-            <WorkbenchContent>
-              <SectionCardHeader
-                actions={(
-                  <SegmentedControl
-                    ariaLabel={t('repos.bindingFilter')}
-                    onChange={(value) => replaceSearch({ ...search, binding: value as RepoBindingFilter, page: 1 })}
-                    options={[
-                      { value: 'all', label: t('repos.allBindings') },
-                      { value: 'bound', label: t('repos.bound') },
-                      { value: 'unbound', label: t('repos.unbound') }
-                    ]}
-                    size='sm'
-                    value={search.binding}
-                  />
-                )}
-                title={selectedScope || t('repos.selectedScope')}
-                description={selectedProvider?.name ?? t('common.empty')}
-                meta={`${number(total, locale)} ${t('repos.totalRepositories')}`}
-              />
-              {repos.isLoading ? (
-                <LoadingState />
-              ) : rows.length === 0 ? (
-                <EmptyState title={t('common.empty')} description={t('repos.healthHelp')} />
-              ) : (
-                <RepoTable
-                  rows={rows}
-                  onSelectRepo={(repo) => setSelectedRepo(repo)}
-                />
-              )}
-            </WorkbenchContent>
-          </div>
-        </Card>
+          )}
+          rail={(
+            <SectionNav
+              ariaLabel={t('repos.scopeSearch')}
+              items={scopeItems}
+              onChange={(scope) => replaceSearch({ ...search, scope, page: 1 })}
+              scroll='workbench'
+              value={selectedScope}
+            />
+          )}
+          railActions={<CountBadge variant='secondary'>{number(selectedProvider?.scopes.length ?? 0, locale)}</CountBadge>}
+          railDescription={selectedProvider?.name ?? t('common.empty')}
+          railTitle={t('repos.scopeSearch')}
+          title={selectedScope || t('repos.selectedScope')}
+        >
+          {repos.isLoading ? (
+            <LoadingState />
+          ) : rows.length === 0 ? (
+            <EmptyState title={t('common.empty')} description={t('repos.healthHelp')} />
+          ) : (
+            <RepoTable
+              rows={rows}
+              onSelectRepo={(repo) => setSelectedRepo(repo)}
+            />
+          )}
+        </RepositoriesWorkbenchShell>
       )}
       <Card>
         <CardPagerFooter
           summary={`${t('common.pageCount', { current: search.page, total: Math.max(1, Math.ceil(total / search.pageSize)) })} · ${number(total, locale)} ${t('repos.totalRepositories')}`}
-          previous={<Button variant='outline' size='sm' onClick={() => replaceSearch({ ...search, page: Math.max(1, search.page - 1) })} disabled={!canPreviousPage || repos.isFetching}>{t('common.previous')}</Button>}
-          next={<Button variant='outline' size='sm' onClick={() => replaceSearch({ ...search, page: search.page + 1 })} disabled={!canNextPage || repos.isFetching}>{t('common.next')}</Button>}
+          previous={<PagerNavButton direction='previous' onClick={() => replaceSearch({ ...search, page: Math.max(1, search.page - 1) })} disabled={!canPreviousPage || repos.isFetching}>{t('common.previous')}</PagerNavButton>}
+          next={<PagerNavButton direction='next' onClick={() => replaceSearch({ ...search, page: search.page + 1 })} disabled={!canNextPage || repos.isFetching}>{t('common.next')}</PagerNavButton>}
         />
       </Card>
       <AddRepoDialog
@@ -383,10 +376,10 @@ function Alerts(props: { autoBindMessage: string; autoBindError: string; webhook
   const { t } = useI18n()
   return (
     <>
-      {props.autoBindMessage ? <Alert><AlertTitle>{t('repos.autoBindComplete')}</AlertTitle><AlertDescription>{props.autoBindMessage}</AlertDescription></Alert> : null}
-      {props.autoBindError ? <Alert variant='destructive'><AlertTitle>{t('repos.autoBindFailed')}</AlertTitle><AlertDescription>{props.autoBindError}</AlertDescription></Alert> : null}
-      {props.webhookRepairMessage ? <Alert><AlertTitle>{t('repos.webhookRepairComplete')}</AlertTitle><AlertDescription>{props.webhookRepairMessage}</AlertDescription></Alert> : null}
-      {props.webhookRepairError ? <Alert variant='destructive'><AlertTitle>{t('repos.webhookRepairFailed')}</AlertTitle><AlertDescription>{props.webhookRepairError}</AlertDescription></Alert> : null}
+      {props.autoBindMessage ? <AppAlert tone='success' title={t('repos.autoBindComplete')} description={props.autoBindMessage} /> : null}
+      {props.autoBindError ? <AppAlert tone='error' title={t('repos.autoBindFailed')} description={props.autoBindError} /> : null}
+      {props.webhookRepairMessage ? <AppAlert tone='success' title={t('repos.webhookRepairComplete')} description={props.webhookRepairMessage} /> : null}
+      {props.webhookRepairError ? <AppAlert tone='error' title={t('repos.webhookRepairFailed')} description={props.webhookRepairError} /> : null}
     </>
   )
 }
@@ -416,7 +409,7 @@ function RepoTable({
               <span>{repo.full_name || repo.name}</span>
             </DataGridPrimaryLink>
           </DataGridRecordCell>
-          <span><Badge variant={repo.binding_state === 'bound' ? 'pos' : 'warn'}>{repo.binding_state}</Badge></span>
+          <span><StatusBadge value={repo.binding_state} /></span>
           <RatioMeter part={repo.pr_summary?.ai_prs ?? 0} total={repo.pr_summary?.total_prs ?? 0} />
           <span><StatusBadge value={repo.status} /></span>
           <DataGridRowAffordance>
@@ -459,9 +452,9 @@ function RepoInspectSlideOver({
       {repo ? (
         <SlideOverStack>
           <StatusCluster>
-            <Badge variant={repo.binding_state === 'bound' ? 'pos' : 'warn'}>{repo.binding_state}</Badge>
+            <StatusBadge value={repo.binding_state} />
             <StatusBadge value={repo.status} />
-            <Badge variant='neutral'>{repo.edges?.scm_provider?.name || t('repos.provider')}</Badge>
+            <CategoryBadge>{repo.edges?.scm_provider?.name || t('repos.provider')}</CategoryBadge>
           </StatusCluster>
           <InfoTileGrid>
             <InfoTile label={t('repos.totalPrs')} value={number(repo.pr_summary?.total_prs, locale)} />
@@ -480,37 +473,34 @@ function RepoInspectSlideOver({
               title={t('repos.bindToPrSource')}
               description={t('repos.bindToPrSourceDescription')}
               actions={(
-                <Button asChild>
+                <ButtonWithIcon asChild icon={GitPullRequestIcon}>
                   <Link to='/repos/$id' params={{ id: String(repo.id) }}>
-                    <GitPullRequestIcon data-icon='inline-start' />
                     {t('repos.bindRepository')}
                   </Link>
-                </Button>
+                </ButtonWithIcon>
               )}
             />
           ) : null}
-          <div className='grid grid-cols-2 gap-[10px]'>
-            <Button className='w-full' variant='outline' onClick={() => syncRepo(repo.id)} disabled={repo.binding_state === 'unbound' || syncPending}>
-              <RefreshCwIcon data-icon='inline-start' />
+          <SplitActions>
+            <ButtonWithIcon variant='outline' icon={RefreshCwIcon} onClick={() => syncRepo(repo.id)} disabled={repo.binding_state === 'unbound' || syncPending}>
               {syncPending ? t('repoDetail.syncingPrs') : t('repoDetail.syncPrs')}
-            </Button>
-            <Button asChild className='w-full' variant='outline'>
+            </ButtonWithIcon>
+            <ButtonWithIcon asChild variant='outline' icon={ExternalLinkIcon}>
               <Link to='/repos/$id' params={{ id: String(repo.id) }}>
-                <ExternalLinkIcon data-icon='inline-start' />
                 {t('repos.openDetails')}
               </Link>
-            </Button>
-          </div>
-          {deleteConfirmId === repo.id ? (
-            <ActionGroup push wrap>
-              <Button variant='destructive' onClick={() => deleteRepo(repo.id)} disabled={deletePending}>{t('common.confirm')}</Button>
-              <Button variant='ghost' onClick={() => setDeleteConfirmId(null)}>{t('common.cancel')}</Button>
-            </ActionGroup>
-          ) : (
-            <ActionGroup push>
-              <Button variant='ghost' onClick={() => setDeleteConfirmId(repo.id)}>{t('common.delete')}</Button>
-            </ActionGroup>
-          )}
+            </ButtonWithIcon>
+          </SplitActions>
+          <InlineDestructiveActions
+            armed={deleteConfirmId === repo.id}
+            cancelLabel={t('common.cancel')}
+            confirmLabel={t('common.confirm')}
+            confirmPending={deletePending}
+            triggerLabel={t('common.delete')}
+            onArm={() => setDeleteConfirmId(repo.id)}
+            onCancel={() => setDeleteConfirmId(null)}
+            onConfirm={() => deleteRepo(repo.id)}
+          />
         </SlideOverStack>
       ) : null}
     </SlideOver>

@@ -21,7 +21,7 @@ describe('TopbarLiveStatus', () => {
       fs.readFile(new URL('./topbar-live-status.tsx', import.meta.url), 'utf8')
     )
 
-    expect(source).toContain("className='hidden items-center gap-2 rounded-full border border-[var(--pos-line)] bg-[var(--pos-soft)] px-3 py-1 md:flex'")
+    expect(source).toContain("className='hidden items-center gap-2 rounded-full border border-[var(--pos-line)] bg-[var(--pos-soft)] px-3 py-1 min-[920px]:flex'")
     expect(source).toContain("className='font-semibold text-[11.5px] text-[var(--pos)]'")
     expect(source).not.toContain('text-xs')
     expect(source).not.toContain('px-2.5')

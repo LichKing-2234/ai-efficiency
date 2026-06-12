@@ -1,6 +1,5 @@
 import type { LucideIcon } from 'lucide-react'
 import { ArrowDownIcon, ArrowUpIcon } from 'lucide-react'
-import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
 import { CardContentStack } from '@/components/primitives/card-content-stack'
 import { Sparkline } from '@/components/primitives/charts'
@@ -53,10 +52,16 @@ export function KpiCard({
           ) : null}
           <div className='min-w-0 flex-1 truncate text-[12px] font-medium text-[var(--ink-3)]'>{label}</div>
           {typeof delta === 'number' ? (
-            <Badge variant={tone}>
+            <span
+              className={cn(
+                'ml-auto inline-flex items-center gap-1 text-[11.5px] font-semibold',
+                tone === 'pos' ? 'text-[var(--pos)]' : 'text-[var(--neg)]'
+              )}
+              data-slot='kpi-card-delta'
+            >
               {delta >= 0 ? <ArrowUpIcon className='size-3' /> : <ArrowDownIcon className='size-3' />}
               {Math.abs(delta)}%
-            </Badge>
+            </span>
           ) : null}
         </ActionGroup>
         <ActionGroup align='block-end' className='gap-3' dataSlot='kpi-card-value-row' fit layout='split'>

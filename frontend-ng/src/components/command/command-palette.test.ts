@@ -62,44 +62,52 @@ describe('getCommandPaletteItems', () => {
     expect(items.find((command) => command.id === 'toggle-theme')).toMatchObject({
       kind: 'action',
       groupKey: 'command.actions',
-      labelKey: 'nav.toggleTheme'
+      labelKey: 'nav.toggleTheme',
+      meta: 'command.meta.updatesAppearance'
     })
     expect(items.find((command) => command.id === 'add-repository')).toMatchObject({
       kind: 'action',
       to: '/repos',
       groupKey: 'command.actions',
-      labelKey: 'command.addRepository'
+      labelKey: 'command.addRepository',
+      meta: 'command.meta.opensRepositories'
     })
     expect(items.find((command) => command.id === 'create-api-key')).toMatchObject({
       kind: 'action',
       to: '/user',
       groupKey: 'command.actions',
-      labelKey: 'command.createApiKey'
+      labelKey: 'command.createApiKey',
+      meta: 'command.meta.opensMySetup'
     })
     expect(items.find((command) => command.id === 'export-usage-report')).toMatchObject({
       kind: 'action',
       to: '/usage',
       groupKey: 'command.actions',
-      labelKey: 'command.exportUsageReport'
+      labelKey: 'command.exportUsageReport',
+      meta: 'command.meta.opensUsageAnalytics'
     })
     expect(items.find((command) => command.id === 'auto-bind-unbound')).toMatchObject({
       kind: 'action',
       groupKey: 'command.actions',
       labelKey: 'repos.autoBind',
-      admin: true
+      admin: true,
+      meta: 'command.meta.mutatesRepositories'
     })
     expect(items.find((command) => command.id === 'repo-42')).toMatchObject({
       kind: 'repo',
       to: '/repos/$id',
       params: { id: '42' },
       groupKey: 'command.repositories',
-      label: 'example/repo'
+      label: 'example/repo',
+      meta: 'main branch'
     })
   })
 
   test('uses shared command footer composition', () => {
     expect(source).toContain("from '@/components/primitives/command-footer'")
     expect(source).toContain('<CommandFooter>')
+    expect(source).toContain('<CommandFooter.Hint')
+    expect(source).toContain('<CommandFooter.Key>')
     expect(source).not.toContain("<div className='border-t border-border px-4 py-2.5 text-[11px] text-[var(--ink-4)]'>")
   })
 
@@ -117,5 +125,11 @@ describe('getCommandPaletteItems', () => {
     expect(source).toContain("toast.success(t('repos.autoBindSummary'")
     expect(source).toContain("toast.error(error instanceof Error ? error.message : t('repos.autoBindFailed'))")
     expect(source).toContain("qc.invalidateQueries({ queryKey: ['repos'] })")
+  })
+
+  test('renders reference-style secondary metadata for command rows', () => {
+    expect(source).toContain("className={cn('h-auto min-h-10 py-2', command.kind === 'repo' && 'items-start')}")
+    expect(source).toContain("className='block truncate pt-0.5 text-[11.5px] text-[var(--ink-4)]'")
+    expect(source).toContain("data-slot='command-footer-brand'")
   })
 })

@@ -36,15 +36,16 @@ describe('SelectableCard', () => {
     expect(html).toContain('justify-start')
     expect(html).toContain('[&amp;&gt;*]:flex-1')
     expect(html).toContain('mono')
-    expect(html).toContain('text-[var(--warn)]')
+    expect(html).toContain('2/3 ready')
   })
 
-  test('uses shared action-group and stack primitives for selectable card layout', async () => {
+  test('uses shared action-group, status, and stack primitives for selectable card layout', async () => {
     const source = await import('node:fs/promises').then((fs) =>
       fs.readFile(new URL('./selectable-card.tsx', import.meta.url), 'utf8')
     )
 
     expect(source).toContain("from '@/components/primitives/action-group'")
+    expect(source).toContain("from '@/components/primitives/status-badge'")
     expect(source).toContain("from '@/components/primitives/stack'")
     expect(source).toContain('<Stack')
     expect(source).toContain('<ActionGroup')
@@ -53,7 +54,7 @@ describe('SelectableCard', () => {
     expect(source).toContain("data-[active=true]:bg-[var(--ai-softer)]")
     expect(source).toContain("truncate font-semibold text-[13px]")
     expect(source).toContain("mono mt-1 truncate text-[10.5px] text-[var(--ink-4)]")
-    expect(source).toContain("mt-1.5 font-medium text-[11px]")
+    expect(source).toContain("<StatusBadge label={text} value={tone === 'success' ? 'success' : 'pending_upload'} />")
     expect(source).not.toContain("rounded-[var(--r-md)] border border-border bg-card p-[12px]")
     expect(source).not.toContain("className={cn('flex items-center justify-between gap-2', className)}")
   })

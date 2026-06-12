@@ -50,6 +50,7 @@ describe('UsageSummaryPanel', () => {
 
     expect(source).toContain("from '@/components/primitives/info-tile'")
     expect(source).toContain('InfoTileGrid')
+    expect(source).toContain("<InfoTileGrid className='min-[560px]:grid-cols-2 min-[1100px]:grid-cols-6' columns={3}>")
     expect(source).not.toContain("<div className='grid gap-3 sm:grid-cols-2 lg:grid-cols-6'>")
   })
 })

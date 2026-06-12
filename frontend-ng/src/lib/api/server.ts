@@ -5,6 +5,7 @@ import { extractTokens } from '@/lib/auth/tokens'
 import type { ApiResponse, AuthTokenPayload } from '@/lib/api/types'
 
 const DEFAULT_BACKEND_URL = 'http://localhost:8081'
+const DEPLOYED_WEB_HOST_SUFFIX = '-web.'
 
 const API_ALLOWLIST = [
   '/api/v1/auth/',
@@ -29,6 +30,42 @@ export function getBackendUrl(request?: Request) {
     import.meta.env.VITE_BACKEND_URL ||
     DEFAULT_BACKEND_URL
   ).replace(/\/$/, '')
+}
+
+function isFrontendProxyTarget(target: string) {
+  try {
+    const url = new URL(target)
+    return url.protocol === 'https:' || !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)
+  } catch {
+    return false
+  }
+}
+
+function buildBffAuthTarget(request: Request, path: `/api/auth/${string}` | `/api/v1/auth/${string}`) {
+  const baseUrl = getBackendUrl(request)
+  if (isFrontendProxyTarget(baseUrl)) {
+    const authPath = path.replace('/api/v1/auth/', '/api/auth/')
+    return `${baseUrl}${authPath}`
+  }
+  return `${baseUrl}${path}`
+}
+
+function getPublicAuthOptionsBaseUrl(request: Request) {
+  const baseUrl = getBackendUrl(request)
+  try {
+    const url = new URL(baseUrl)
+    if (url.hostname.includes(DEPLOYED_WEB_HOST_SUFFIX)) {
+      url.hostname = url.hostname.replace(DEPLOYED_WEB_HOST_SUFFIX, '.')
+      return url.toString().replace(/\/$/, '')
+    }
+  } catch {
+    return baseUrl
+  }
+  return baseUrl
+}
+
+export function getAuthOptionsTarget(request: Request) {
+  return `${getPublicAuthOptionsBaseUrl(request)}/api/v1/auth/options`
 }
 
 export function getGatewayExchangeSecret() {
@@ -63,27 +100,29 @@ async function proxyWithRefresh(request: Request, path: string) {
     accessToken = pendingTokens?.accessToken
   }
   const first = await forwardToBackend(request, path, accessToken)
+  const normalizedFirst = normalizeAuthRedirectResponse(first)
   if (pendingTokens && first.status !== 401) {
-    const headers = new Headers(first.headers)
+    const headers = new Headers(normalizedFirst.headers)
     appendTokenCookies(headers, pendingTokens, request)
-    return new Response(first.body, { status: first.status, statusText: first.statusText, headers })
+    return new Response(normalizedFirst.body, { status: normalizedFirst.status, statusText: normalizedFirst.statusText, headers })
   }
-  if (first.status !== 401 || path.includes('/auth/refresh')) {
-    return first
+  if (normalizedFirst.status !== 401 || path.includes('/auth/refresh')) {
+    return normalizedFirst
   }
   if (!tokens?.refreshToken) {
-    return first
+    return normalizedFirst
   }
   const refreshed = await refreshTokens(request, tokens.refreshToken)
   if (!refreshed) {
-    const headers = new Headers(first.headers)
+    const headers = new Headers(normalizedFirst.headers)
     appendClearTokenCookies(headers, request)
-    return new Response(first.body, { status: first.status, headers })
+    return new Response(normalizedFirst.body, { status: normalizedFirst.status, headers })
   }
   const retry = await forwardToBackend(request, path, refreshed.accessToken)
+  const normalizedRetry = normalizeAuthRedirectResponse(retry)
   const headers = new Headers(retry.headers)
   appendTokenCookies(headers, refreshed, request)
-  return new Response(retry.body, { status: retry.status, statusText: retry.statusText, headers })
+  return new Response(normalizedRetry.body, { status: normalizedRetry.status, statusText: normalizedRetry.statusText, headers })
 }
 
 async function forwardToBackend(request: Request, path: string, accessToken?: string) {
@@ -111,6 +150,13 @@ async function forwardToBackend(request: Request, path: string, accessToken?: st
   }
 }
 
+function normalizeAuthRedirectResponse(response: Response) {
+  if (response.status < 300 || response.status >= 400) return response
+  const location = response.headers.get('location')
+  if (!location || !location.includes('/oauth/authorize')) return response
+  return json({ code: 401, message: 'authentication required' }, 401)
+}
+
 async function refreshTokens(request: Request, refreshToken: string) {
   const res = await fetch(`${getBackendUrl(request)}/api/v1/auth/refresh`, {
     method: 'POST',
@@ -124,7 +170,7 @@ async function refreshTokens(request: Request, refreshToken: string) {
 
 export async function loginThroughBackend(request: Request) {
   const body = await request.arrayBuffer()
-  const res = await fetch(`${getBackendUrl(request)}/api/v1/auth/login`, {
+  const res = await fetch(buildBffAuthTarget(request, '/api/v1/auth/login'), {
     method: 'POST',
     headers: { 'Content-Type': request.headers.get('content-type') || 'application/json' },
     body
@@ -137,12 +183,32 @@ export async function loginThroughBackend(request: Request) {
 }
 
 export async function devLoginThroughBackend(request: Request) {
-  const res = await fetch(`${getBackendUrl(request)}/api/v1/auth/dev-login`, { method: 'POST' })
+  const res = await fetch(buildBffAuthTarget(request, '/api/v1/auth/dev-login'), { method: 'POST' })
   const payload = (await res.json()) as ApiResponse<AuthTokenPayload>
   if (!res.ok) return json(payload, res.status)
   const headers = new Headers({ 'Content-Type': 'application/json' })
   appendTokenCookies(headers, extractTokens(payload), request)
   return new Response(JSON.stringify(payload), { status: res.status, headers })
+}
+
+export async function authOptionsFromBackend(request: Request) {
+  try {
+    const res = await fetch(getAuthOptionsTarget(request), {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+      redirect: 'manual'
+    })
+    const payload = await res.text()
+    return new Response(payload, {
+      status: res.status,
+      statusText: res.statusText,
+      headers: {
+        'Content-Type': res.headers.get('content-type') || 'application/json'
+      }
+    })
+  } catch {
+    return json({ code: 502, message: 'backend is unavailable from frontend proxy' }, 502)
+  }
 }
 
 export async function bootstrapFromGateway(request: Request) {
@@ -157,7 +223,7 @@ export async function bootstrapFromGateway(request: Request) {
   if (!secret) {
     return json({ code: 503, message: 'gateway exchange is not configured' }, 503)
   }
-  const res = await fetch(`${getBackendUrl(request)}/api/v1/auth/gateway-exchange`, {
+  const res = await fetch(buildBffAuthTarget(request, '/api/v1/auth/gateway-exchange'), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

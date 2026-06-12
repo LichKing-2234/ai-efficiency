@@ -52,7 +52,7 @@ describe('RepoCreateForm', () => {
     expect(html).toContain('flex')
     expect(html).toContain('flex-col')
     expect(html).toContain('gap-3')
-    expect(html).toContain('data-slot="action-group"')
+    expect(html).toContain('data-slot="form-actions"')
     expect(html).toContain('PROJ/service')
   })
 
@@ -95,7 +95,10 @@ describe('RepoCreateForm', () => {
     const source = readFileSync(new URL('./repo-create-form.tsx', import.meta.url), 'utf8')
 
     expect(source).toContain("<FieldGroup gap='compact'>")
+    expect(source).toContain("from '@/components/primitives/submit-cancel-actions'")
+    expect(source).toContain('<SubmitCancelActions')
     expect(source).not.toContain("<FieldGroup className='gap-3'>")
+    expect(source).not.toContain('<ActionGroup>')
   })
 })
 

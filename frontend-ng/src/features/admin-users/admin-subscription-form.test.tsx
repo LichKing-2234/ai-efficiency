@@ -52,7 +52,7 @@ describe('AdminSubscriptionForm', () => {
     expect(html).toContain('for="admin-subscription-provider"')
     expect(html).toContain('for="admin-subscription-group"')
     expect(html).toContain('for="admin-subscription-days"')
-    expect(html).toContain('data-slot="action-group"')
+    expect(html).toContain('data-slot="block-end-actions"')
   })
 
   test('uses compact field group rhythm without local gap classes', () => {
@@ -85,8 +85,12 @@ describe('AdminSubscriptionForm', () => {
       />
     )
 
-    expect(html).toContain('data-slot="action-group"')
-    expect(source).toContain("<ActionGroup align='block-end'>")
+    expect(html).toContain('data-slot="block-end-actions"')
+    expect(source).toContain("from '@/components/primitives/block-end-actions'")
+    expect(source).toContain("from '@/components/primitives/secondary-action-button'")
+    expect(source).toContain('<BlockEndActions>')
+    expect(source).toContain('<SecondaryActionButton')
+    expect(source).not.toContain("<ActionGroup align='block-end'>")
     expect(source).not.toContain("<ActionGroup className='items-end'>")
     expect(html).toContain('items-end')
     expect(html).not.toContain('class="flex items-center gap-2 justify-end items-end"')

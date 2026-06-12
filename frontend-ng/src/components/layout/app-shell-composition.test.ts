@@ -63,7 +63,7 @@ describe('AppShell composition', () => {
 
   test('uses the reference screen padding rhythm for logged-in content', () => {
     expect(source).toContain("px-[22px] pb-16 pt-[22px]")
-    expect(source).toContain("md:px-6")
+    expect(source).toContain("min-[920px]:px-6")
     expect(source).not.toContain("p-4 pb-12")
     expect(source).not.toContain("md:p-6")
   })

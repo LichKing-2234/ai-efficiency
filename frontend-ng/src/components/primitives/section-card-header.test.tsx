@@ -23,7 +23,7 @@ describe('SectionCardHeader', () => {
     expect(html).toContain('Add')
     expect(html).toContain('data-slot="section-card-header-content"')
     expect(html).toContain('[&amp;&gt;*]:flex-1')
-    expect(html).toContain('sm:justify-end')
+    expect(html).toContain('min-[920px]:justify-end')
   })
 
   test('omits optional description and actions without empty controls', () => {

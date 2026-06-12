@@ -54,7 +54,7 @@ export const api = {
     devLogin: () => apiFetch<AuthTokenPayload>('/api/auth/dev-login', { method: 'POST' }),
     logout: () => apiFetch<{ message: string }>('/api/auth/logout', { method: 'POST' }),
     bootstrap: () => apiFetch<AuthTokenPayload | { message: string }>('/api/auth/bootstrap', { method: 'POST' }),
-    options: () => apiFetch<AuthOptions>('/auth/options'),
+    options: () => apiFetch<AuthOptions>('/api/auth/options'),
     me: () => apiFetch<User>('/auth/me')
   },
   health: {

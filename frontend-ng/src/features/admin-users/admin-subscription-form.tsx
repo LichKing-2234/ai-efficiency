@@ -1,8 +1,8 @@
-import { Button } from '@/components/ui/button'
 import { FieldGroup } from '@/components/ui/field'
-import { ActionGroup } from '@/components/primitives/action-group'
+import { BlockEndActions } from '@/components/primitives/block-end-actions'
 import { CheckboxField } from '@/components/primitives/checkbox-field'
 import { ControlGrid } from '@/components/primitives/control-grid'
+import { SecondaryActionButton } from '@/components/primitives/secondary-action-button'
 import { SelectField } from '@/components/primitives/select-field'
 import { TextField } from '@/components/primitives/text-field'
 import type {
@@ -138,11 +138,11 @@ export function AdminSubscriptionForm({
             onCheckedChange={onConfirmRemoveChange}
           />
         )}
-        <ActionGroup align='block-end'>
-          <Button variant='outline' disabled={!canSubmit} onClick={onStart}>
+        <BlockEndActions>
+          <SecondaryActionButton disabled={!canSubmit} onClick={onStart}>
             {activeJobRunning ? labels.jobRunning : labels.startJob}
-          </Button>
-        </ActionGroup>
+          </SecondaryActionButton>
+        </BlockEndActions>
       </ControlGrid>
     </FieldGroup>
   )

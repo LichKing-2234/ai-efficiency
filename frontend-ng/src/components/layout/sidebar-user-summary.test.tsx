@@ -52,8 +52,11 @@ describe('SidebarUserSummary', () => {
     )
 
     expect(source).toContain("className={cn('flex items-center gap-[9px] rounded-[var(--r-md)] border border-[var(--line)] bg-sidebar-accent p-[7px]', compact && 'size-[42px] justify-center rounded-[var(--r-sm)] border-transparent bg-transparent p-0')}")
+    expect(source).toContain("className='bg-[var(--ai-soft)] text-[var(--ai-deep)]'")
     expect(source).toContain("className='truncate font-semibold text-[12.5px]'")
     expect(source).toContain("className='truncate text-[10.5px] text-[var(--ink-4)]'")
+    expect(source).not.toContain('--ae-ai-soft')
+    expect(source).not.toContain('--ae-ai-2')
     expect(source).not.toContain("className={cn('flex items-center gap-2', compact && 'justify-center')}")
     expect(source).not.toContain("className='truncate font-medium text-sm'")
     expect(source).not.toContain("className='truncate text-muted-foreground text-xs'")

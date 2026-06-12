@@ -1,6 +1,7 @@
-import { Button } from '@/components/ui/button'
 import { FieldGroup } from '@/components/ui/field'
 import { AppAlert } from '@/components/primitives/app-alert'
+import { authFieldControlClassName } from '@/components/primitives/auth-field'
+import { AuthSubmitButton } from '@/components/primitives/auth-submit-button'
 import { SelectField } from '@/components/primitives/select-field'
 import { TextField } from '@/components/primitives/text-field'
 import { useI18n } from '@/lib/i18n/i18n'
@@ -30,7 +31,6 @@ export function LoginForm({
   username: string
 }) {
   const { t } = useI18n()
-  const fieldControlClassName = 'h-10 rounded-[var(--r-md)] bg-[var(--surface-inset)] px-3.5 text-[13px] shadow-none'
 
   return (
     <form
@@ -43,14 +43,14 @@ export function LoginForm({
         <TextField
           id='login-username'
           label={t('auth.usernameOrEmail')}
-          controlClassName={fieldControlClassName}
+          controlClassName={authFieldControlClassName}
           value={username}
           onChange={onUsernameChange}
         />
         <TextField
           id='login-password'
           label={t('auth.password')}
-          controlClassName={fieldControlClassName}
+          controlClassName={authFieldControlClassName}
           type='password'
           value={password}
           onChange={onPasswordChange}
@@ -62,14 +62,14 @@ export function LoginForm({
             ...(options?.ldap_enabled ? [{ label: 'LDAP', value: 'LDAP' }] : []),
             { label: t('auth.relaySso'), value: 'SSO' }
           ]}
-          triggerClassName={`${fieldControlClassName} w-full`}
+          triggerClassName={`${authFieldControlClassName} w-full`}
           value={source}
           onValueChange={onSourceChange}
         />
         {error ? <AppAlert tone='error' title={error} description={t('auth.loginErrorDescription')} /> : null}
-        <Button className='w-full' disabled={!username || !password || pending}>
+        <AuthSubmitButton disabled={!username || !password || pending}>
           {pending ? t('auth.signingIn') : t('auth.signIn')}
-        </Button>
+        </AuthSubmitButton>
       </FieldGroup>
     </form>
   )

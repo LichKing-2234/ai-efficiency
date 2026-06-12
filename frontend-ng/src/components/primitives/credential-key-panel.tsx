@@ -27,10 +27,10 @@ export function CredentialKeyPanel({
       dataSlot='credential-key-panel'
       gap='compact'
     >
-      <div className='font-medium text-[11px] text-[var(--ink-3)] uppercase tracking-[0.04em]'>{label}</div>
+      <div className='font-semibold text-[10.5px] text-[var(--ink-3)] uppercase tracking-[0.06em]'>{label}</div>
       <ActionGroup
         align='start'
-        className='min-w-0 rounded-[var(--r-md)] border border-border bg-card px-[14px] py-[11px]'
+        className='min-w-0 rounded-[var(--r-md)] border border-border bg-[var(--surface)] px-[14px] py-[11px]'
         dataSlot='credential-key-row'
         fit
       >
@@ -41,7 +41,7 @@ export function CredentialKeyPanel({
         {actions}
       </ActionGroup>
       {footer ? (
-        <ActionGroup align='start' className='mt-1' dataSlot='credential-key-footer' wrap>
+        <ActionGroup align='start' className='mt-1.5' dataSlot='credential-key-footer' wrap>
           {footer}
         </ActionGroup>
       ) : null}

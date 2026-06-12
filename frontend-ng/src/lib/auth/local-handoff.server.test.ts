@@ -35,7 +35,7 @@ describe('local auth handoff server routes', () => {
     process.env.AE_FRONTEND_GATEWAY_EXCHANGE_SECRET = 'exchange-secret'
     process.env.AE_FRONTEND_BACKEND_URL = 'https://api.example.com'
     globalThis.fetch = vi.fn(async (input) => {
-      expect(String(input)).toBe('https://api.example.com/api/v1/auth/gateway-exchange')
+      expect(String(input)).toBe('https://api.example.com/api/auth/gateway-exchange')
       return new Response(JSON.stringify({
         code: 0,
         data: {

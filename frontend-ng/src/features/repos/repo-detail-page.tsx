@@ -3,11 +3,10 @@ import { useParams } from '@tanstack/react-router'
 import { ExternalLink, GitPullRequest, RefreshCw, Save, Waypoints } from 'lucide-react'
 import { Fragment, useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { Button } from '@/components/ui/button'
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Card } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { ActionGroup } from '@/components/primitives/action-group'
+import { AppAlert } from '@/components/primitives/app-alert'
+import { ButtonWithIcon } from '@/components/primitives/button-with-icon'
+import { CategoryBadge } from '@/components/primitives/category-badge'
 import { CardContentStack } from '@/components/primitives/card-content-stack'
 import { CardPagerFooter } from '@/components/primitives/card-pager-footer'
 import { CheckboxField } from '@/components/primitives/checkbox-field'
@@ -16,12 +15,18 @@ import { DataGrid, DataGridCell, DataGridHeader, DataGridHeaderCell, DataGridRow
 import { EntityCardHeader } from '@/components/primitives/entity-card-header'
 import { FilterRow } from '@/components/primitives/filter-row'
 import { FilterRowTitle } from '@/components/primitives/filter-row-title'
+import { FormActions } from '@/components/primitives/form-actions'
 import { InfoTile, InfoTileGrid } from '@/components/primitives/info-tile'
 import { InsetPanel } from '@/components/primitives/inset-panel'
 import { KpiGrid } from '@/components/primitives/kpi-grid'
 import { LinkedRecordItem } from '@/components/primitives/linked-record-list'
 import { KpiCard } from '@/components/primitives/metric-card'
+import { PagerNavButton } from '@/components/primitives/pager-nav-button'
+import { PageSizeSelect } from '@/components/primitives/page-size-select'
 import { Page, PageToolbar } from '@/components/primitives/page'
+import { PrimaryActionButton } from '@/components/primitives/primary-action-button'
+import { QuietActionButton } from '@/components/primitives/quiet-action-button'
+import { RepoPrActions } from '@/components/primitives/repo-pr-actions'
 import { SectionCardHeader } from '@/components/primitives/section-card-header'
 import { LoadingState } from '@/components/primitives/data-state'
 import { Stack } from '@/components/primitives/stack'
@@ -30,6 +35,7 @@ import { StatusWithReason } from '@/components/primitives/status-with-reason'
 import { ToolbarSelect } from '@/components/primitives/toolbar-select'
 import { UsageSummaryPanel } from '@/components/primitives/usage-summary-panel'
 import { api } from '@/lib/api'
+import type { UsageStatus } from '@/lib/api/types'
 import { compact, dateTime, number, percent } from '@/lib/format'
 import { useI18n } from '@/lib/i18n/i18n'
 import { buildRepoBindingPayload } from './repo-binding'
@@ -193,18 +199,49 @@ export function RepoDetailPage() {
     webhookId: repo.data?.webhook_id
   })
 
+  function usageStatusLabel(status?: string | null) {
+    const value = (status ?? 'unknown') as UsageStatus
+    const labels: Record<UsageStatus, string> = {
+      fresh: t('repoDetail.usageFresh'),
+      pending_upload: t('repoDetail.usagePending'),
+      no_checkpoint: t('repoDetail.noCheckpoint'),
+      no_usage_events: t('repoDetail.usageNoUsage'),
+      unbound: t('repoDetail.usageUnbound'),
+      stale_snapshot: t('repoDetail.usageStale'),
+      refresh_failed: t('repoDetail.usageFailed'),
+      unknown: t('repoDetail.usageUnknown')
+    }
+    return labels[value] ?? labels.unknown
+  }
+
+  function usageStatusReason(status?: string | null, reason?: string | null) {
+    if (reason) return reason
+    const value = (status ?? 'unknown') as UsageStatus
+    const labels: Record<UsageStatus, string> = {
+      fresh: t('repoDetail.usageFreshHelp'),
+      pending_upload: t('repoDetail.usagePendingHelp'),
+      no_checkpoint: t('repoDetail.noCheckpointHelp'),
+      no_usage_events: t('repoDetail.usageNoUsageHelp'),
+      unbound: t('repoDetail.usageUnboundHelp'),
+      stale_snapshot: t('repoDetail.usageStaleHelp'),
+      refresh_failed: t('repoDetail.usageFailedHelp'),
+      unknown: t('repoDetail.usageUnknownHelp')
+    }
+    return labels[value] ?? labels.unknown
+  }
+
   return (
     <Page className='stagger'>
       <PageToolbar>
-        <Button onClick={() => sync.mutate()} disabled={!canSync}><RefreshCw data-icon='inline-start' />{activeJobRunning ? t('repoDetail.syncingPrs') : t('repoDetail.syncPrs')}</Button>
+        <ButtonWithIcon size='sm' icon={RefreshCw} onClick={() => sync.mutate()} disabled={!canSync}>
+          {activeJobRunning ? t('repoDetail.syncingPrs') : t('repoDetail.syncPrs')}
+        </ButtonWithIcon>
       </PageToolbar>
       {syncDisabledReason ? <InsetPanel compact muted>{syncDisabledReason}</InsetPanel> : null}
       {showWebhookRepair ? (
-        <Alert>
-          <AlertTitle>{t('repoDetail.repairWebhook')}</AlertTitle>
-          <AlertDescription>
+        <AppAlert
+          actions={(
             <Stack gap='compact'>
-              <span>{t('repoDetail.webhookRepairNeeded')}</span>
               {repo.data?.webhook_id ? (
                 <CheckboxField
                   checked={webhookRepairForce}
@@ -213,19 +250,20 @@ export function RepoDetailPage() {
                   onCheckedChange={setWebhookRepairForce}
                 />
               ) : null}
-              <ActionGroup align='start'>
-                <Button disabled={repairWebhook.isPending} onClick={() => repairWebhook.mutate()}>
+              <FormActions align='start'>
+                <PrimaryActionButton disabled={repairWebhook.isPending} onClick={() => repairWebhook.mutate()}>
                   {repairWebhook.isPending ? t('repoDetail.webhookRepairing') : t('repoDetail.repairWebhook')}
-                </Button>
-              </ActionGroup>
+                </PrimaryActionButton>
+              </FormActions>
             </Stack>
-          </AlertDescription>
-        </Alert>
+          )}
+          description={t('repoDetail.webhookRepairNeeded')}
+          title={t('repoDetail.repairWebhook')}
+          tone='warning'
+        />
       ) : null}
       {webhookRepairNotice ? (
-        <Alert variant={webhookRepairNotice.kind === 'error' ? 'destructive' : 'default'}>
-          <AlertTitle>{webhookRepairNotice.message}</AlertTitle>
-        </Alert>
+        <AppAlert title={webhookRepairNotice.message} tone={webhookRepairNotice.kind === 'error' ? 'error' : 'success'} />
       ) : null}
       <KpiGrid>
         <KpiCard label={t('repoDetail.prs')} value={number(totalPRs)} />
@@ -264,11 +302,13 @@ export function RepoDetailPage() {
               width='full'
               onValueChange={(value) => setSelectedProviderId(value === 'none' ? '' : value)}
             />
-            <Button variant='outline' onClick={() => saveBinding.mutate(selectedProviderId)} disabled={saveBinding.isPending}><Save data-icon='inline-start' />{t('repoDetail.saveBinding')}</Button>
-            <Button variant='ghost' onClick={() => {
+            <ButtonWithIcon size='sm' variant='outline' icon={Save} onClick={() => saveBinding.mutate(selectedProviderId)} disabled={saveBinding.isPending}>
+              {t('repoDetail.saveBinding')}
+            </ButtonWithIcon>
+            <QuietActionButton onClick={() => {
               setSelectedProviderId('')
               saveBinding.mutate('')
-            }} disabled={saveBinding.isPending}>{t('repoDetail.clearBinding')}</Button>
+            }} disabled={saveBinding.isPending}>{t('repoDetail.clearBinding')}</QuietActionButton>
           </ControlGrid>
         </CardContentStack>
       </Card>
@@ -293,16 +333,13 @@ export function RepoDetailPage() {
                   setPRsPage(0)
                 }}
               />
-              <ToolbarSelect
+              <PageSizeSelect
                 ariaLabel={t('common.pageSizeControl')}
-                options={[
-                  { value: '10', label: t('common.pageSize', { size: 10 }) },
-                  { value: '25', label: t('common.pageSize', { size: 25 }) },
-                  { value: '50', label: t('common.pageSize', { size: 50 }) }
-                ]}
-                value={String(prsPageSize)}
+                sizes={[10, 25, 50]}
+                tPageSize={(size) => t('common.pageSize', { size })}
+                value={prsPageSize}
                 onValueChange={(value) => {
-                  setPRsPageSize(Number(value))
+                  setPRsPageSize(value)
                   setPRsPage(0)
                 }}
               />
@@ -335,19 +372,27 @@ export function RepoDetailPage() {
                         trailing={<ExternalLink />}
                         variant='plain'
                       />
-                      <span><Badge variant='ai'>{pr.ai_label} · {percent(pr.ai_ratio)}</Badge></span>
+                      <span><CategoryBadge variant='ai'>{pr.ai_label} · {percent(pr.ai_ratio)}</CategoryBadge></span>
                       <span>
-                        <StatusWithReason reason={pr.usage_status_reason} reasonClassName='max-w-48' value={pr.usage_status || pr.attribution_status} />
+                        <StatusWithReason
+                          label={usageStatusLabel(pr.usage_status || pr.attribution_status)}
+                          reason={usageStatusReason(pr.usage_status || pr.attribution_status, pr.usage_status_reason)}
+                          reasonClassName='max-w-48'
+                          value={pr.usage_status || pr.attribution_status}
+                        />
                       </span>
                       <DataGridCell numeric>{compact((pr.usage_input_tokens ?? 0) + (pr.usage_output_tokens ?? 0) + (pr.usage_cached_input_tokens ?? 0) + (pr.usage_reasoning_tokens ?? 0))}</DataGridCell>
                       <DataGridCell numeric>{number(pr.cycle_time_hours)}h</DataGridCell>
                       <DataGridCell numeric tone='metadata'>{dateTime(pr.merged_at)}</DataGridCell>
-                      <ActionGroup>
-                        <Button variant='ghost' size='sm' onClick={() => setExpandedPRId(expanded ? null : pr.id)} disabled={prDetail.isFetching && expanded}>
-                          {expanded ? t('common.hide') : t('common.details')}
-                        </Button>
-                        <Button variant='outline' size='sm' onClick={() => refreshUsage.mutate(pr.id)} disabled={refreshUsage.isPending}>{t('repoDetail.refreshUsage')}</Button>
-                      </ActionGroup>
+                      <RepoPrActions
+                        detailsDisabled={prDetail.isFetching && expanded}
+                        detailsLabel={expanded ? t('common.hide') : t('common.details')}
+                        expanded={expanded}
+                        refreshDisabled={refreshUsage.isPending}
+                        refreshLabel={t('repoDetail.refreshUsage')}
+                        onRefresh={() => refreshUsage.mutate(pr.id)}
+                        onToggleDetails={() => setExpandedPRId(expanded ? null : pr.id)}
+                      />
                     </DataGridRow>
                     {expanded ? (
                       <InsetPanel flush>
@@ -356,14 +401,16 @@ export function RepoDetailPage() {
                           ) : (
                             <Stack>
                               <UsageSummaryPanel
-                                actions={
-                                  <>
-                                    <Button variant='outline' size='sm' onClick={() => refreshUsage.mutate(detail.id)} disabled={refreshUsage.isPending}>{t('repoDetail.refreshUsage')}</Button>
-                                    <Button variant='outline' size='sm' onClick={() => settlePR.mutate(detail.id)} disabled={settlePR.isPending || detail.attribution_status === 'clear'}>
-                                      {t('repoDetail.resolveAttribution')}
-                                    </Button>
-                                  </>
-                                }
+                                actions={(
+                                  <RepoPrActions
+                                    refreshDisabled={refreshUsage.isPending}
+                                    refreshLabel={t('repoDetail.refreshUsage')}
+                                    resolveDisabled={settlePR.isPending || detail.attribution_status === 'clear'}
+                                    resolveLabel={t('repoDetail.resolveAttribution')}
+                                    onRefresh={() => refreshUsage.mutate(detail.id)}
+                                    onResolve={() => settlePR.mutate(detail.id)}
+                                  />
+                                )}
                                 metrics={[
                                   { label: t('repoDetail.input'), value: compact(detail.usage_input_tokens), numeric: true },
                                   { label: t('repoDetail.output'), value: compact(detail.usage_output_tokens), numeric: true },
@@ -372,7 +419,7 @@ export function RepoDetailPage() {
                                   { label: t('repoDetail.requests'), value: number(detail.usage_request_count), numeric: true },
                                   { label: t('repoDetail.credits'), value: number(detail.usage_credit_usage), accent: 'ai', numeric: true }
                                 ]}
-                                status={<StatusBadge value={detail.usage_status || detail.attribution_status} />}
+                                status={<StatusBadge value={detail.usage_status || detail.attribution_status} label={usageStatusLabel(detail.usage_status || detail.attribution_status)} />}
                                 summary={t('repoDetail.totalTokensRefreshed', { tokens: compact(tokenUsage), time: dateTime(detail.usage_refreshed_at) })}
                               />
                               <DataGrid minWidth={980}>
@@ -399,7 +446,12 @@ export function RepoDetailPage() {
                                       <DataGridCell align='right' numeric>{compact(snapshot.reasoning_tokens)}</DataGridCell>
                                       <DataGridCell align='right' numeric>{number(snapshot.credit_usage)}</DataGridCell>
                                       <DataGridCell align='right' numeric>{number(snapshot.request_count)}</DataGridCell>
-                                      <StatusWithReason reason={freshness?.usage_status_reason} reasonClassName='max-w-64' value={freshness?.usage_status} />
+                                      <StatusWithReason
+                                        label={usageStatusLabel(freshness?.usage_status)}
+                                        reason={usageStatusReason(freshness?.usage_status, freshness?.usage_status_reason)}
+                                        reasonClassName='max-w-64'
+                                        value={freshness?.usage_status}
+                                      />
                                     </DataGridRow>
                                   )
                                 }) : (
@@ -416,8 +468,8 @@ export function RepoDetailPage() {
         </DataGrid>
         <CardPagerFooter
           summary={t('repoDetail.pagePrs', { page: number(prsPage + 1), total: number(totalPRs) })}
-          previous={<Button variant='outline' size='sm' onClick={() => setPRsPage((value) => Math.max(0, value - 1))} disabled={!hasPreviousPage || prs.isFetching}>{t('common.previous')}</Button>}
-          next={<Button variant='outline' size='sm' onClick={() => setPRsPage((value) => value + 1)} disabled={!hasNextPage || prs.isFetching}>{t('common.next')}</Button>}
+          previous={<PagerNavButton direction='previous' onClick={() => setPRsPage((value) => Math.max(0, value - 1))} disabled={!hasPreviousPage || prs.isFetching}>{t('common.previous')}</PagerNavButton>}
+          next={<PagerNavButton direction='next' onClick={() => setPRsPage((value) => value + 1)} disabled={!hasNextPage || prs.isFetching}>{t('common.next')}</PagerNavButton>}
         />
       </Card>
     </Page>

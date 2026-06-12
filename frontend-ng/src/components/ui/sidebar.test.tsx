@@ -102,8 +102,10 @@ describe('Sidebar', () => {
       fs.readFile(new URL('./sidebar.tsx', import.meta.url), 'utf8')
     )
 
+    expect(source).toContain('flex h-[34px] w-full items-center gap-[10px]')
     expect(source).toContain('group-data-[collapsed=true]/sidebar-wrapper:size-[42px]')
     expect(source).toContain("active && 'border-border bg-sidebar-accent text-foreground'")
+    expect(source).toContain("transition-[width] duration-200 ease-[var(--ease-out)] min-[920px]:flex")
     expect(source).not.toContain('shadow-[var(--sh-sm)]')
     expect(source).not.toContain('shadow-[var(--sh-lg)]')
     expect(source).not.toContain('shadow-[0_2px_8px_var(--ai-glow)]')

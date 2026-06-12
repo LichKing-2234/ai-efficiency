@@ -13,7 +13,7 @@ describe('ActionGroup', () => {
 
     expect(html).toContain('data-slot="action-group"')
     expect(html).toContain('justify-end')
-    expect(html).toContain('gap-2')
+    expect(html).toContain('gap-2.5')
     expect(html).toContain('Update')
     expect(html).toContain('Delete')
   })
@@ -74,7 +74,7 @@ describe('ActionGroup', () => {
     )
 
     expect(html).toContain('justify-start')
-    expect(html).toContain('sm:justify-end')
+    expect(html).toContain('min-[920px]:justify-end')
     expect(html).not.toContain('gap-2 justify-end flex-wrap')
   })
 

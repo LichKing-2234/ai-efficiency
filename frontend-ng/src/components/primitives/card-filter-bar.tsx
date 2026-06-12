@@ -15,8 +15,8 @@ export function CardFilterBar({
     <CardContentStack
       dataSlot='card-filter-bar'
       className={cn(
-        'border-border border-b px-[12px] py-[10px]',
-        stacked ? 'flex flex-col gap-3' : 'flex flex-wrap items-center gap-1.5',
+        'border-border border-b px-[14px] py-[12px]',
+        stacked ? 'flex flex-col gap-3' : 'flex flex-wrap items-center gap-2',
         className
       )}
     >

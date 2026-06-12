@@ -22,7 +22,7 @@ describe('CardPagerFooter', () => {
     expect(html).toContain('Page 1 of 4')
     expect(html).toContain('Previous')
     expect(html).toContain('Next')
-    expect(html).toContain('sm:justify-end')
+    expect(html).toContain('min-[920px]:justify-end')
     expect(html).toContain('[&amp;&gt;*]:flex-1')
     expect(html).toContain('border-border')
     expect(html).toContain('border-t')

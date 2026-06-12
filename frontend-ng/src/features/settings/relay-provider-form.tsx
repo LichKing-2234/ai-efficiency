@@ -1,8 +1,7 @@
-import { Button } from '@/components/ui/button'
 import { FieldGroup } from '@/components/ui/field'
-import { ActionGroup } from '@/components/primitives/action-group'
 import { AppAlert } from '@/components/primitives/app-alert'
 import { CheckboxField } from '@/components/primitives/checkbox-field'
+import { SubmitCancelActions } from '@/components/primitives/submit-cancel-actions'
 import { TextField } from '@/components/primitives/text-field'
 import { useI18n } from '@/lib/i18n/i18n'
 import type { RelayFormState } from './settings-payloads'
@@ -61,15 +60,13 @@ export function RelayProviderForm({
       {errors.filter((message): message is string => !!message).map((message) => (
         <AppAlert key={message} tone='error' title={message} />
       ))}
-      <ActionGroup>
-        <Button variant='outline' onClick={onCancel}>{t('common.cancel')}</Button>
-        <Button
-          disabled={submitDisabled}
-          onClick={onSubmit}
-        >
-          {editMode ? t('common.update') : t('common.create')}
-        </Button>
-      </ActionGroup>
+      <SubmitCancelActions
+        cancelLabel={t('common.cancel')}
+        submitDisabled={submitDisabled}
+        submitLabel={editMode ? t('common.update') : t('common.create')}
+        onCancel={onCancel}
+        onSubmit={onSubmit}
+      />
     </FieldGroup>
   )
 }

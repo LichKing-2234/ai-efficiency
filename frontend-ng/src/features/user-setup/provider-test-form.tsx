@@ -1,12 +1,13 @@
 import { Zap } from 'lucide-react'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import { FieldDescription, FieldGroup } from '@/components/ui/field'
-import { ActionGroup } from '@/components/primitives/action-group'
 import { AppAlert } from '@/components/primitives/app-alert'
+import { formInsetControlClassName, formInsetTextareaClassName } from '@/components/primitives/auth-field'
+import { ButtonWithIcon } from '@/components/primitives/button-with-icon'
 import { ControlGrid } from '@/components/primitives/control-grid'
 import { InsetPanel } from '@/components/primitives/inset-panel'
 import { SelectField } from '@/components/primitives/select-field'
+import { StartActions } from '@/components/primitives/start-actions'
+import { StatusBadge } from '@/components/primitives/status-badge'
 import { TextField } from '@/components/primitives/text-field'
 import { modelLabel } from './user-setup-state'
 import type { UserProviderModel, UserProviderTestResult } from '@/lib/api/types'
@@ -56,9 +57,6 @@ export function ProviderTestForm({
   running?: boolean
   secretMissing?: boolean
 }) {
-  const fieldControlClassName = 'h-10 rounded-[var(--r-md)] bg-[var(--surface-inset)] shadow-none'
-  const promptControlClassName = 'min-h-24 rounded-[var(--r-md)] bg-[var(--surface-inset)] shadow-none'
-
   return (
     <FieldGroup>
       <ControlGrid variant='two-column'>
@@ -67,7 +65,7 @@ export function ProviderTestForm({
             id='provider-test-model'
             label={labels.model}
             options={modelOptions.map((item) => ({ label: modelLabel(item), value: item.id }))}
-            triggerClassName={`${fieldControlClassName} w-full`}
+            triggerClassName={`${formInsetControlClassName} w-full`}
             value={model}
             onValueChange={onModelChange}
           />
@@ -75,32 +73,31 @@ export function ProviderTestForm({
           <TextField
             id='provider-test-model'
             label={labels.model}
-            controlClassName={fieldControlClassName}
+            controlClassName={formInsetControlClassName}
             placeholder={loadingModels ? labels.loadingModels : modelFallbackPlaceholder}
             value={model}
             onChange={onModelChange}
           />
         )}
-        <TextField id='provider-test-platform' label={labels.platform} controlClassName={fieldControlClassName} value={platform} disabled />
+        <TextField id='provider-test-platform' label={labels.platform} controlClassName={formInsetControlClassName} value={platform} disabled />
       </ControlGrid>
       {message ? <FieldDescription>{message}</FieldDescription> : null}
       {error ? <AppAlert tone='error' title={error} /> : null}
       <TextField
         id='provider-test-prompt'
         label={labels.prompt}
-        controlClassName={promptControlClassName}
+        controlClassName={formInsetTextareaClassName}
         multiline
         value={prompt}
         onChange={onPromptChange}
       />
-      <ActionGroup wrap align='start'>
-        <Button disabled={!canRun || running} onClick={onRun}>
-          <Zap data-icon='inline-start' />
+      <StartActions>
+        <ButtonWithIcon size='sm' icon={Zap} disabled={!canRun || running} onClick={onRun}>
           {running ? labels.testing : labels.runTest}
-        </Button>
+        </ButtonWithIcon>
         {secretMissing ? <FieldDescription>{labels.createKeyBeforeTesting}</FieldDescription> : null}
-        {result ? <Badge variant={result.success ? 'success' : 'warning'}>{result.message}</Badge> : null}
-      </ActionGroup>
+        {result ? <StatusBadge value={result.success ? 'success' : 'error'} label={result.message} /> : null}
+      </StartActions>
       {result?.response ? <InsetPanel comfortable>{result.response}</InsetPanel> : null}
     </FieldGroup>
   )

@@ -7,6 +7,7 @@ import { StatusBadge } from './status-badge'
 export function StatusWithReason({
   className,
   inline = false,
+  label,
   meta,
   metaNumeric = false,
   reason,
@@ -15,6 +16,7 @@ export function StatusWithReason({
 }: {
   className?: string
   inline?: boolean
+  label?: string | null
   meta?: React.ReactNode
   metaNumeric?: boolean
   reason?: string | null
@@ -28,7 +30,7 @@ export function StatusWithReason({
       gap='none'
     >
       <ActionGroup align='start' className={cn('min-w-0 gap-2', !inline && 'gap-1')} dataSlot='status-with-reason-primary' fit>
-        <StatusBadge value={value} />
+        <StatusBadge label={label} value={value} />
         {meta ? (
           <span className={cn('text-[11.5px] text-[var(--ink-3)]', metaNumeric && 'tnum')} data-slot='status-with-reason-meta'>
             {meta}

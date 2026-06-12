@@ -14,7 +14,7 @@ describe('ControlGrid', () => {
     expect(html).toContain('data-slot="control-grid"')
     expect(html).toContain('grid')
     expect(html).toContain('gap-3')
-    expect(html).toContain('md:grid-cols-[150px_150px_minmax(0,1fr)_minmax(0,1fr)_120px_auto]')
+    expect(html).toContain('min-[920px]:grid-cols-[150px_150px_minmax(0,1fr)_minmax(0,1fr)_120px_auto]')
     expect(html).toContain('Scope')
   })
 
@@ -26,7 +26,7 @@ describe('ControlGrid', () => {
       </ControlGrid>
     )
 
-    expect(html).toContain('lg:grid-cols-[minmax(0,1fr)_auto_auto]')
+    expect(html).toContain('min-[1100px]:grid-cols-[minmax(0,1fr)_auto_auto]')
     expect(html).toContain('Provider')
   })
 
@@ -38,7 +38,7 @@ describe('ControlGrid', () => {
       </ControlGrid>
     )
 
-    expect(html).toContain('md:grid-cols-2')
+    expect(html).toContain('min-[920px]:grid-cols-2')
     expect(html).toContain('Model')
   })
 })

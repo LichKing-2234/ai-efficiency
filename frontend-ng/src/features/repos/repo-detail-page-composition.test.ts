@@ -15,6 +15,12 @@ describe('Repo detail page composition', () => {
     expect(source).not.toContain("<span className='min-w-0'>")
   })
 
+  test('uses shared category badges for AI PR ratio pills', () => {
+    expect(source).toContain("from '@/components/primitives/category-badge'")
+    expect(source).toContain("<CategoryBadge variant='ai'>{pr.ai_label} · {percent(pr.ai_ratio)}</CategoryBadge>")
+    expect(source).not.toContain("<Badge variant='ai'>{pr.ai_label} · {percent(pr.ai_ratio)}</Badge>")
+  })
+
   test('uses the shared KPI grid utility for repository detail metrics', () => {
     expect(source).toContain("from '@/components/primitives/kpi-grid'")
     expect(source).toContain('<KpiGrid>')
@@ -33,8 +39,28 @@ describe('Repo detail page composition', () => {
   })
 
   test('uses semantic select sizing for SCM binding controls', () => {
+    expect(source).toContain("from '@/components/primitives/quiet-action-button'")
     expect(source).toContain("width='full'")
+    expect(source).toContain("<QuietActionButton onClick={() => {")
     expect(source).not.toContain("className='w-full'")
+    expect(source).not.toContain("<Button variant='ghost' onClick={() => {")
+  })
+
+  test('uses the shared page-size select for pull request pager sizing', () => {
+    expect(source).toContain("from '@/components/primitives/page-size-select'")
+    expect(source).toContain("<PageSizeSelect\n                ariaLabel={t('common.pageSizeControl')}")
+    expect(source).toContain('sizes={[10, 25, 50]}')
+    expect(source).toContain("tPageSize={(size) => t('common.pageSize', { size })}")
+    expect(source).not.toContain("<ToolbarSelect\n                ariaLabel={t('common.pageSizeControl')}")
+  })
+
+  test('uses shared leading-icon CTA buttons for sync and binding actions', () => {
+    expect(source).toContain("from '@/components/primitives/button-with-icon'")
+    expect(source).toContain('<ButtonWithIcon')
+    expect(source).toContain("icon={RefreshCw}")
+    expect(source).toContain("icon={Save}")
+    expect(source).not.toContain("<Button onClick={() => sync.mutate()} disabled={!canSync}><RefreshCw data-icon='inline-start' />")
+    expect(source).not.toContain("<Button variant='outline' onClick={() => saveBinding.mutate(selectedProviderId)} disabled={saveBinding.isPending}><Save data-icon='inline-start' />")
   })
 
   test('uses shared card content stacks for scm binding card bodies', () => {
@@ -48,9 +74,29 @@ describe('Repo detail page composition', () => {
     expect(source).not.toContain("<div className='flex flex-col gap-4'>")
   })
 
-  test('uses shared action groups for webhook repair actions', () => {
-    expect(source).toContain("<ActionGroup align='start'>")
+  test('uses shared form action rows for webhook repair and PR actions', () => {
+    expect(source).toContain("from '@/components/primitives/form-actions'")
+    expect(source).toContain("from '@/components/primitives/primary-action-button'")
+    expect(source).toContain("from '@/components/primitives/repo-pr-actions'")
+    expect(source).toContain("<FormActions align='start'>")
+    expect(source).toContain('<PrimaryActionButton')
+    expect(source).toContain('<RepoPrActions')
+    expect(source).not.toContain("<ActionGroup align='start'>")
+    expect(source).not.toContain('<ActionGroup>')
     expect(source).not.toContain("className='w-fit'")
+    expect(source).not.toContain('<Button disabled={repairWebhook.isPending}')
+    expect(source).not.toContain("<Button variant='ghost' size='sm' onClick={() => setExpandedPRId(expanded ? null : pr.id)}")
+    expect(source).not.toContain("<Button variant='outline' size='sm' onClick={() => refreshUsage.mutate(pr.id)}")
+  })
+
+  test('uses shared app alerts for webhook repair guidance and notices', () => {
+    expect(source).toContain("from '@/components/primitives/app-alert'")
+    expect(source).toContain('<AppAlert')
+    expect(source).toContain("tone='warning'")
+    expect(source).not.toContain("from '@/components/ui/alert'")
+    expect(source).not.toContain('<Alert>')
+    expect(source).not.toContain('<AlertTitle>')
+    expect(source).not.toContain('<AlertDescription>')
   })
 
   test('uses the shared inset panel flush variant for expanded pull request details', () => {
@@ -72,6 +118,10 @@ describe('Repo detail page composition', () => {
   test('uses shared status-with-reason rows for PR and snapshot usage states', () => {
     expect(source).toContain("from '@/components/primitives/status-with-reason'")
     expect(source.match(/<StatusWithReason/g)?.length).toBe(2)
+    expect(source).toContain("label={usageStatusLabel(pr.usage_status || pr.attribution_status)}")
+    expect(source).toContain("label={usageStatusLabel(freshness?.usage_status)}")
+    expect(source).toContain("reason={usageStatusReason(pr.usage_status || pr.attribution_status, pr.usage_status_reason)}")
+    expect(source).toContain("reason={usageStatusReason(freshness?.usage_status, freshness?.usage_status_reason)}")
     expect(source).not.toContain("<div className='flex flex-col gap-1'>")
     expect(source).not.toContain("<span className='flex min-w-0 flex-col gap-1'>")
   })
@@ -99,5 +149,13 @@ describe('Repo detail page composition', () => {
     expect(source).toContain('DataGridStatusRow')
     expect(source).not.toContain("className='py-4 text-center text-muted-foreground text-sm'")
     expect(source).not.toContain("className='justify-center py-6 text-center text-muted-foreground text-sm'")
+  })
+
+  test('uses the shared pager navigation button for pull request pagination', () => {
+    expect(source).toContain("from '@/components/primitives/pager-nav-button'")
+    expect(source).toContain("<PagerNavButton direction='previous' onClick={() => setPRsPage((value) => Math.max(0, value - 1))} disabled={!hasPreviousPage || prs.isFetching}>")
+    expect(source).toContain("<PagerNavButton direction='next' onClick={() => setPRsPage((value) => value + 1)} disabled={!hasNextPage || prs.isFetching}>")
+    expect(source).not.toContain("<Button variant='outline' size='sm' onClick={() => setPRsPage((value) => Math.max(0, value - 1))} disabled={!hasPreviousPage || prs.isFetching}>")
+    expect(source).not.toContain("<Button variant='outline' size='sm' onClick={() => setPRsPage((value) => value + 1)} disabled={!hasNextPage || prs.isFetching}>")
   })
 })

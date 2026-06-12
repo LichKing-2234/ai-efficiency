@@ -49,17 +49,31 @@ describe('Admin users page composition', () => {
   })
 
   test('uses semantic select sizing for page size control', () => {
-    expect(source).toContain("width='compact'")
+    expect(source).toContain("from '@/components/primitives/page-size-select'")
+    expect(source).toContain('<PageSizeSelect')
+    expect(source).toContain("tPageSize={(size) => t('common.pageSize', { size })}")
+    expect(source).not.toContain("<ToolbarSelect\n                ariaLabel={t('common.pageSizeControl')}")
     expect(source).not.toContain("className='w-36'")
   })
 
   test('uses shared fitted action groups for dense table row actions', () => {
-    expect(source).toContain('<ActionGroup fit wrap>')
+    expect(source).toContain("from '@/components/primitives/admin-secret-actions'")
+    expect(source).toContain('<AdminSecretActions')
+    expect(source).not.toContain('<ActionGroup fit wrap>')
     expect(source).not.toContain("<ActionGroup wrap className='min-w-0'>")
   })
 
+  test('uses shared category badges for user role pills', () => {
+    expect(source).toContain("from '@/components/primitives/category-badge'")
+    expect(source).toContain("<CategoryBadge variant={user.role === 'admin' ? 'ai' : 'secondary'}>{user.role}</CategoryBadge>")
+    expect(source).not.toContain("from '@/components/ui/badge'")
+  })
+
   test('uses shared pushed action groups for current job status', () => {
-    expect(source).toContain('<ActionGroup push wrap>')
+    expect(source).toContain("from '@/components/primitives/end-actions'")
+    expect(source).toContain('<EndActions>')
+    expect(source).not.toContain("<div className='min-h-9'>")
+    expect(source).not.toContain('<ActionGroup push wrap>')
     expect(source).not.toContain("<ActionGroup className='ml-auto text-sm'>")
   })
 
@@ -70,6 +84,7 @@ describe('Admin users page composition', () => {
     expect(source).toContain("t('adminUsers.tokensMonth')")
     expect(source).toContain("t('adminUsers.eventsMonth')")
     expect(source).toContain('DataGridRowAffordance')
+    expect(source).toContain("<DataGridRowAffordance tone='muted'>")
     expect(source).not.toContain("<span className='flex justify-end text-[var(--ink-3)]'>")
     expect(source).not.toContain("<span>{t('adminUsers.auth')}</span>")
     expect(source).not.toContain("<span>{t('adminUsers.relay')}</span>")
@@ -91,9 +106,12 @@ describe('Admin users page composition', () => {
   })
 
   test('keeps the invite action in the top toolbar like the reference screen', () => {
-    expect(source).toContain('<ActionGroup push wrap>')
+    expect(source).toContain("from '@/components/primitives/end-actions'")
+    expect(source).toContain('<EndActions>')
     expect(source).toContain("t('adminUsers.inviteUser')")
-    expect(source).toContain("<Plus data-icon='inline-start' />")
+    expect(source).toContain("from '@/components/primitives/button-with-icon'")
+    expect(source).toContain("<ButtonWithIcon size='sm' icon={Plus}>")
+    expect(source).not.toContain("<Plus data-icon='inline-start' />")
   })
 
   test('keeps the subscription management card as a compact reference workbench section', () => {
@@ -102,12 +120,16 @@ describe('Admin users page composition', () => {
   })
 
   test('keeps the user table toolbar search-led like the reference screen', () => {
-    expect(source).toContain('<CardFilterBar>')
-    expect(source).toContain("<ActionGroup push wrap>")
+    expect(source).toContain("from '@/components/primitives/search-action-bar'")
+    expect(source).toContain('<SearchActionBar')
+    expect(source).toContain('<EndActions>')
     expect(source).toContain("width='toolbar'")
     expect(source).toContain("placeholder={t('adminUsers.searchUsers')}")
+    expect(source).toContain("<ButtonWithIcon size='sm' variant='outline' icon={RefreshCw} disabled={users.isFetching} onClick={() => void users.refetch()}>")
+    expect(source).not.toContain("from '@/components/primitives/card-filter-bar'")
     expect(source).not.toContain("<ToolbarSelect\n            ariaLabel={t('common.pageSizeControl')}")
     expect(source).not.toContain("<div className='flex items-center justify-between gap-3'>")
+    expect(source).not.toContain("<Button variant='outline' disabled={users.isFetching} onClick={() => void users.refetch()}>")
   })
 
   test('keeps the reference search-plus-meter scan rhythm delegated to shared primitives', () => {
@@ -129,7 +151,16 @@ describe('Admin users page composition', () => {
     expect(source).toContain("indent='selection'")
     expect(source).toContain("maxWidth='xl'")
     expect(source).toContain("actions={")
-    expect(source).toContain("<ActionGroup align='start'>")
+    expect(source).toContain('InlineConfirmActions')
+    expect(source).toContain("confirmVariant='outline'")
     expect(source).not.toContain("<FieldDescription>{t('adminUsers.plaintextWarning')}</FieldDescription>\n                    <Button")
+  })
+
+  test('uses the shared pager navigation button for user table pagination', () => {
+    expect(source).toContain("from '@/components/primitives/pager-nav-button'")
+    expect(source).toContain("<PagerNavButton direction='previous' disabled={page <= 1 || users.isFetching} onClick={() => setPage((value) => Math.max(1, value - 1))}>")
+    expect(source).toContain("<PagerNavButton direction='next' disabled={page >= totalPages || users.isFetching} onClick={() => setPage((value) => value + 1)}>")
+    expect(source).not.toContain("<Button variant='outline' size='sm' disabled={page <= 1 || users.isFetching} onClick={() => setPage((value) => Math.max(1, value - 1))}>")
+    expect(source).not.toContain("<Button variant='outline' size='sm' disabled={page >= totalPages || users.isFetching} onClick={() => setPage((value) => value + 1)}>")
   })
 })
