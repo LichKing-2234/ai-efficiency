@@ -51,6 +51,7 @@ describe('AppShell composition', () => {
     expect(source).toContain("bg-[color-mix(in_oklab,var(--bg)_82%,transparent)]")
     expect(source).toContain("backdrop-blur-[12px]")
     expect(source).toContain("h-[22px] w-px bg-[var(--line)]")
+    expect(source).not.toContain("<TopbarActionsDivider")
     expect(source).not.toContain("bg-background/85 px-4 backdrop-blur")
     expect(source).not.toContain("h-6 w-px bg-border")
   })

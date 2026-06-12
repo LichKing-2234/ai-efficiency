@@ -2,6 +2,7 @@ import { ChevronDownIcon, GlobeIcon, MoonIcon, SunIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import type { Locale } from '@/lib/i18n/messages'
+import { TopbarActionsDivider } from './topbar-actions-divider'
 import { TopbarCommandTrigger } from './topbar-command-trigger'
 import { TopbarLiveStatus } from './topbar-live-status'
 
@@ -37,6 +38,7 @@ export function TopbarActions({
     <div className='ml-auto flex items-center gap-[8px]' data-slot='topbar-actions'>
       <TopbarCommandTrigger label={commandLabel} onOpen={onOpenCommand} />
       <TopbarLiveStatus label={ingestingLabel} />
+      <TopbarActionsDivider />
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
@@ -61,7 +63,7 @@ export function TopbarActions({
           </DropdownMenuRadioGroup>
         </DropdownMenuContent>
       </DropdownMenu>
-      <Button aria-label={themeLabel} onClick={onToggleTheme} size='icon-sm' title={themeLabel} type='button' variant='ghost'>
+      <Button aria-label={themeLabel} className='shrink-0' onClick={onToggleTheme} size='icon-sm' title={themeLabel} type='button' variant='ghost'>
         {dark ? <SunIcon /> : <MoonIcon />}
       </Button>
     </div>
