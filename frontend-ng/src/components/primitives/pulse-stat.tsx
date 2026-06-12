@@ -18,9 +18,9 @@ export function PulseStat({
 }) {
   return (
     <div className={cn('min-w-[112px] flex-1', divider && 'border-[var(--line-faint)] border-l')}>
-      <CardContentStack className='px-4 py-3'>
+      <CardContentStack className='px-[16px] py-[12px]'>
         <div className='text-[11px] font-medium text-[var(--ink-3)]'>{label}</div>
-        <div className='tnum text-[19px] font-[680] tracking-[-0.02em]'>{value}</div>
+        <div className='tnum mb-[6px] text-[19px] font-[680] tracking-[-0.02em]'>{value}</div>
         <SparkBars color={color} data={values.map((point) => ({ value: point }))} height={20} width={104} />
       </CardContentStack>
     </div>

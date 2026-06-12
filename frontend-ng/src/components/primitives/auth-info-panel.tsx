@@ -13,7 +13,7 @@ export function AuthInfoPanel({
   return (
     <InsetPanel
       className={cn(
-        'text-[12px] text-[var(--ink-3)]',
+        'px-[12px] py-[10px] text-[11.5px] leading-[1.5] text-[var(--ink-3)]',
         emphasis && 'border-[var(--ai-line)] bg-[var(--ai-soft)] text-[var(--ai-deep)]',
         className
       )}

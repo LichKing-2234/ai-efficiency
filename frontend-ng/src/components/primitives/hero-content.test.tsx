@@ -42,6 +42,7 @@ describe('HeroContent', () => {
     expect(source).toContain("className='max-w-[540px]'")
     expect(source).toContain("text-[25px]")
     expect(source).toContain("text-[13.5px]")
+    expect(source).toContain("className='items-center gap-6'")
     expect(source).not.toContain("import { CardContent } from '@/components/ui/card'")
     expect(source).not.toContain('<CardContent ')
     expect(source).not.toContain("const heroTitleClass = 'mt-4 font-semibold text-2xl tracking-tight md:text-3xl'")

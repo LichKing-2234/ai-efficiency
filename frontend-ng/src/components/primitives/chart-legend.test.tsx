@@ -38,6 +38,7 @@ describe('ChartLegend', () => {
     expect(html).toContain('justify-end')
     expect(html).toContain('gap-3')
     expect(html).toContain('Cache Read')
+    expect(html).toContain('text-[11.5px]')
   })
 
   test('uses shared row primitives for legend shell and items', () => {

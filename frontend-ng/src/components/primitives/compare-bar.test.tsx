@@ -17,7 +17,7 @@ describe('CompareBar', () => {
     expect(html).toContain('$42.00')
     expect(html).toContain('bg-[var(--surface-inset)]')
     expect(html).toContain('width:42%')
-    expect(html).toContain('h-2.5')
+    expect(html).toContain('h-[10px]')
   })
 
   test('keeps the comparison bar layout in a reusable primitive', () => {
@@ -27,7 +27,7 @@ describe('CompareBar', () => {
     expect(source).toContain("className='flex items-center justify-between gap-3 text-[12px]'")
     expect(source).toContain("className={cn('font-medium text-[var(--ink-2)]', labelClassName)}")
     expect(source).toContain("className='tnum font-semibold text-[12px] text-[var(--ink)]'")
-    expect(source).toContain("className='h-2.5 overflow-hidden rounded-[var(--r-full)] bg-[var(--surface-inset)]'")
+    expect(source).toContain("className='h-[10px] overflow-hidden rounded-[var(--r-full)] bg-[var(--surface-inset)]'")
     expect(source).toContain('export function CompareBar(')
     expect(source).toContain("transition-[width] duration-700 ease-[var(--ease-out)]")
   })

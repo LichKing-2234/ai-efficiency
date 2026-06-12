@@ -36,7 +36,7 @@ export function KpiCard({
         accent && 'border-[var(--ai-line)] bg-[linear-gradient(150deg,var(--ai-soft),transparent_60%),var(--surface)]'
       )}
     >
-      <CardContentStack className='p-[18px]'>
+      <CardContentStack className='p-4'>
         <ActionGroup align='start' className='min-w-0' dataSlot='kpi-card-header' fit>
           {Icon ? (
             <span
@@ -65,7 +65,7 @@ export function KpiCard({
           ) : null}
         </ActionGroup>
         <ActionGroup align='block-end' className='gap-3' dataSlot='kpi-card-value-row' fit layout='split'>
-          <div className={cn('tnum font-semibold text-3xl leading-none tracking-tight', accent && 'text-[var(--ai-deep)]')}>
+          <div className={cn('tnum text-[30px] font-[680] leading-none tracking-[-0.02em]', accent && 'text-[var(--ai-deep)]')}>
             {value}
           </div>
           {sparkline?.length ? (
@@ -74,7 +74,7 @@ export function KpiCard({
             </Stack>
           ) : null}
         </ActionGroup>
-        {helper ? <Stack className='gap-3 text-[11.5px] text-[var(--ink-3)]' dataSlot='kpi-card-helper' gap='none'>{helper}</Stack> : null}
+        {helper ? <Stack className='gap-3 text-[11.5px] leading-[1.45] text-[var(--ink-3)]' dataSlot='kpi-card-helper' gap='none'>{helper}</Stack> : null}
       </CardContentStack>
     </Card>
   )

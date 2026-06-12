@@ -35,7 +35,7 @@ export function HeroContent({
 }) {
   return (
     <CardContentStack className={cn('p-[22px]', className)} dataSlot='hero-content'>
-      <ActionGroup align='responsive-end' className='items-center gap-6 lg:items-center' dataSlot='hero-shell' fit layout='split' wrap>
+      <ActionGroup align='responsive-end' className='items-center gap-6' dataSlot='hero-shell' fit layout='split' wrap>
         <Stack className='max-w-[540px]' dataSlot='hero-copy' gap='compact'>
           {badge}
           <HeroTitle>{title}</HeroTitle>

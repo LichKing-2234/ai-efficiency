@@ -25,7 +25,7 @@ export function CompareBar({
         <span className={cn('font-medium text-[var(--ink-2)]', labelClassName)}>{label}</span>
         <span className='tnum font-semibold text-[12px] text-[var(--ink)]'>{valueLabel}</span>
       </div>
-      <div className='h-2.5 overflow-hidden rounded-[var(--r-full)] bg-[var(--surface-inset)]'>
+      <div className='h-[10px] overflow-hidden rounded-[var(--r-full)] bg-[var(--surface-inset)]'>
         <div className='h-full rounded-[var(--r-full)] transition-[width] duration-700 ease-[var(--ease-out)]' style={{ width: `${ratio}%`, background: color }} />
       </div>
     </CardContentStack>
