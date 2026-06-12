@@ -7,10 +7,12 @@ const source = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), 'ho
 
 describe('Home page composition', () => {
   test('uses the shared card accent variant for the overview hero surface', () => {
-    expect(source).toContain("<Card variant='accent'")
+    expect(source).toContain("from '@/components/primitives/hero-surface-card'")
     expect(source).toContain("from '@/components/primitives/hero-content'")
     expect(source).toContain("from '@/components/primitives/start-actions'")
+    expect(source).toContain('<HeroSurfaceCard>')
     expect(source).toContain('<HeroContent')
+    expect(source).not.toContain("<Card variant='accent'")
     expect(source).not.toContain("grid-paper overflow-hidden border-[var(--ai-line)]")
     expect(source).not.toContain("bg-[linear-gradient(150deg,var(--ai-soft),transparent_60%),var(--surface)]")
     expect(source).not.toContain("<CardContent className='flex flex-col gap-5 p-6 lg:flex-row lg:items-center lg:justify-between'>")

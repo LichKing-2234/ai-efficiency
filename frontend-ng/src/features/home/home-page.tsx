@@ -9,6 +9,7 @@ import { ChecklistRow } from '@/components/primitives/checklist-row'
 import { CompareBar } from '@/components/primitives/compare-bar'
 import { EntitySectionCard } from '@/components/primitives/entity-section-card'
 import { HeroContent } from '@/components/primitives/hero-content'
+import { HeroSurfaceCard } from '@/components/primitives/hero-surface-card'
 import { KpiGrid } from '@/components/primitives/kpi-grid'
 import { LinkAction } from '@/components/primitives/link-action'
 import { KpiCard } from '@/components/primitives/metric-card'
@@ -23,7 +24,6 @@ import { StartActions } from '@/components/primitives/start-actions'
 import { UsageActivityRow } from '@/components/primitives/usage-activity-row'
 import { ValueComparison } from '@/components/primitives/value-comparison'
 import { StatusBadge } from '@/components/primitives/status-badge'
-import { Card } from '@/components/ui/card'
 import { api } from '@/lib/api'
 import type { UserUsageTrendPoint } from '@/lib/api/types'
 import { compact, currency, dateTime, durationMs, number, percent } from '@/lib/format'
@@ -106,7 +106,7 @@ export function HomePage() {
 
   return (
     <Page>
-      <Card variant='accent'>
+      <HeroSurfaceCard>
         <HeroContent
           action={(
             <StartActions>
@@ -143,7 +143,7 @@ export function HomePage() {
             <PulseStat color='var(--viz-reason)' divider label={t('home.pulseActiveDevs')} value={number(connectedTools.size, locale)} />
           </PulseStatGrid>
         </CardContentStack>
-      </Card>
+      </HeroSurfaceCard>
 
       <KpiGrid>
         <KpiCard
