@@ -106,8 +106,8 @@ describe('Repos page composition', () => {
   })
 
   test('uses shared status clusters inside the repository inspect panel', () => {
-    expect(source).toContain("from '@/components/primitives/status-cluster'")
-    expect(source).toContain('<StatusCluster>')
+    expect(source).toContain("from '@/components/primitives/detail-summary-stack'")
+    expect(source).toContain('<DetailSummaryStack')
     expect(source).not.toContain("<div className='flex flex-wrap gap-2'>")
   })
 
@@ -128,6 +128,7 @@ describe('Repos page composition', () => {
   })
 
   test('renders PR summary stats in the repository inspect panel', () => {
+    expect(source).toContain("from '@/components/primitives/detail-summary-stack'")
     expect(source).toContain("label={t('repos.totalPrs')}")
     expect(source).toContain("label={t('repos.aiPrs')}")
     expect(source).toContain("label={t('repos.aiPrShare')}")

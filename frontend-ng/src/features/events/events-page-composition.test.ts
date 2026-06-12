@@ -8,7 +8,8 @@ const source = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), 'ev
 describe('Events page composition', () => {
   test('uses shared info tile grids for event detail metrics', () => {
     expect(source).toContain("import { InfoTile, InfoTileGrid } from '@/components/primitives/info-tile'")
-    expect(source).toContain('<InfoTileGrid columns={3}>')
+    expect(source).toContain("from '@/components/primitives/detail-summary-stack'")
+    expect(source).toContain('<DetailSummaryStack')
     expect(source).not.toContain("<div className='grid grid-cols-3 gap-2'>")
   })
 
@@ -50,9 +51,9 @@ describe('Events page composition', () => {
   })
 
   test('uses the shared slide-over stack for event detail sections', () => {
-    expect(source).toContain("from '@/components/primitives/slide-over-stack'")
+    expect(source).toContain("from '@/components/primitives/detail-summary-stack'")
     expect(source).toContain("from '@/components/primitives/detail-section'")
-    expect(source).toContain('<SlideOverStack>')
+    expect(source).toContain('<DetailSummaryStack')
     expect(source).toContain('<DetailSection')
     expect(source).not.toContain('<section>')
     expect(source).not.toContain("<div className='flex flex-col gap-[18px]'>")

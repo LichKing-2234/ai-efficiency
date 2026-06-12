@@ -8,6 +8,7 @@ import { CardFilterBar } from '@/components/primitives/card-filter-bar'
 import { CardPagerFooter } from '@/components/primitives/card-pager-footer'
 import { CategoryBadge } from '@/components/primitives/category-badge'
 import { DataGrid, DataGridCell, DataGridHeader, DataGridHeaderCell, DataGridRow } from '@/components/primitives/data-grid'
+import { DetailSummaryStack } from '@/components/primitives/detail-summary-stack'
 import { DetailSection } from '@/components/primitives/detail-section'
 import { FieldItem, FieldList } from '@/components/primitives/field-list'
 import { FilterRow } from '@/components/primitives/filter-row'
@@ -30,7 +31,6 @@ import { SearchField } from '@/components/primitives/search-field'
 import { SearchTableWorkbench } from '@/components/primitives/search-table-workbench'
 import { SecondaryActionButton } from '@/components/primitives/secondary-action-button'
 import { SlideOver } from '@/components/primitives/slide-over'
-import { SlideOverStack } from '@/components/primitives/slide-over-stack'
 import { StatusBadge } from '@/components/primitives/status-badge'
 import { TokenMeter } from '@/components/primitives/token-meter'
 import { TokenBreakdown } from '@/components/primitives/token-breakdown'
@@ -342,19 +342,22 @@ function EventDetail({ event, isAdmin, onClose }: { event: ToolUsageEventDetail 
       title={event?.repo_name || t('events.unlinked')}
     >
       {event ? (
-        <SlideOverStack>
-          <FilterRow align='start'>
-            <CategoryBadge variant='ai'>{event.tool}</CategoryBadge>
-            <StatusBadge value={event.binding_status} />
-            <CategoryBadge>{number(event.context_usage_pct)}% {t('events.context')}</CategoryBadge>
-          </FilterRow>
-
-          <InfoTileGrid columns={3}>
-            <InfoTile label={t('events.tokens')} value={compact(tokens)} compact numeric />
-            <InfoTile label={t('events.requests')} value={number(event.request_count)} compact numeric />
-            <InfoTile label={t('events.credit')} value={number(event.credit_usage)} accent='ai' compact numeric />
-          </InfoTileGrid>
-
+        <DetailSummaryStack
+          statuses={(
+            <>
+              <CategoryBadge variant='ai'>{event.tool}</CategoryBadge>
+              <StatusBadge value={event.binding_status} />
+              <CategoryBadge>{number(event.context_usage_pct)}% {t('events.context')}</CategoryBadge>
+            </>
+          )}
+          metrics={(
+            <>
+              <InfoTile label={t('events.tokens')} value={compact(tokens)} compact numeric />
+              <InfoTile label={t('events.requests')} value={number(event.request_count)} compact numeric />
+              <InfoTile label={t('events.credit')} value={number(event.credit_usage)} accent='ai' compact numeric />
+            </>
+          )}
+        >
           <DetailSection title={t('events.tokenBreakdown')}>
             <TokenBreakdown items={tokenBreakdown} valueFormatter={number} />
           </DetailSection>
@@ -404,7 +407,7 @@ function EventDetail({ event, isAdmin, onClose }: { event: ToolUsageEventDetail 
             ]}
             title={t('events.advancedData')}
           />
-        </SlideOverStack>
+        </DetailSummaryStack>
       ) : null}
     </SlideOver>
   )

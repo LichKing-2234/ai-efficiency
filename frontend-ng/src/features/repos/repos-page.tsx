@@ -13,6 +13,7 @@ import { AppAlert } from '@/components/primitives/app-alert'
 import { Page } from '@/components/primitives/page'
 import { EmptyState, LoadingState } from '@/components/primitives/data-state'
 import { DataGrid, DataGridHeader, DataGridHeaderCell, DataGridPrimaryLink, DataGridRecordCell, DataGridRow, DataGridRowAffordance } from '@/components/primitives/data-grid'
+import { DetailSummaryStack } from '@/components/primitives/detail-summary-stack'
 import { DetailSection } from '@/components/primitives/detail-section'
 import { EntityGlyph } from '@/components/primitives/entity-glyph'
 import { EndActions } from '@/components/primitives/end-actions'
@@ -28,9 +29,7 @@ import { RepositoriesWorkbenchShell } from '@/components/primitives/repositories
 import { SegmentedControl } from '@/components/primitives/segmented-control'
 import { SectionNav, type SectionNavItem } from '@/components/primitives/section-nav'
 import { SlideOver } from '@/components/primitives/slide-over'
-import { SlideOverStack } from '@/components/primitives/slide-over-stack'
 import { StatusBadge } from '@/components/primitives/status-badge'
-import { StatusCluster } from '@/components/primitives/status-cluster'
 import { SplitActions } from '@/components/primitives/split-actions'
 import { api } from '@/lib/api'
 import type { RepoConfig } from '@/lib/api/types'
@@ -450,17 +449,22 @@ function RepoInspectSlideOver({
       onClose={onClose}
     >
       {repo ? (
-        <SlideOverStack>
-          <StatusCluster>
-            <StatusBadge value={repo.binding_state} />
-            <StatusBadge value={repo.status} />
-            <CategoryBadge>{repo.edges?.scm_provider?.name || t('repos.provider')}</CategoryBadge>
-          </StatusCluster>
-          <InfoTileGrid>
-            <InfoTile label={t('repos.totalPrs')} value={number(repo.pr_summary?.total_prs, locale)} />
-            <InfoTile label={t('repos.aiPrs')} value={number(repo.pr_summary?.ai_prs, locale)} accent='ai' />
-            <InfoTile label={t('repos.aiPrShare')} value={percent(repo.pr_summary?.ai_share, locale)} />
-          </InfoTileGrid>
+        <DetailSummaryStack
+          statuses={(
+            <>
+              <StatusBadge value={repo.binding_state} />
+              <StatusBadge value={repo.status} />
+              <CategoryBadge>{repo.edges?.scm_provider?.name || t('repos.provider')}</CategoryBadge>
+            </>
+          )}
+          metrics={(
+            <>
+              <InfoTile label={t('repos.totalPrs')} value={number(repo.pr_summary?.total_prs, locale)} />
+              <InfoTile label={t('repos.aiPrs')} value={number(repo.pr_summary?.ai_prs, locale)} accent='ai' />
+              <InfoTile label={t('repos.aiPrShare')} value={percent(repo.pr_summary?.ai_share, locale)} />
+            </>
+          )}
+        >
           <DetailSection title={t('repos.configuration')}>
             <FieldList>
               <FieldItem label={t('repos.clone')} value={repo.clone_url || '-'} mono />
@@ -503,7 +507,7 @@ function RepoInspectSlideOver({
             onCancel={() => setDeleteConfirmId(null)}
             onConfirm={() => deleteRepo(repo.id)}
           />
-        </SlideOverStack>
+        </DetailSummaryStack>
       ) : null}
     </SlideOver>
   )
