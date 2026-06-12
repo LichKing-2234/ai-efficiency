@@ -1,7 +1,7 @@
 import type * as React from 'react'
 import { CardFilterBar } from '@/components/primitives/card-filter-bar'
-import { FramedCard } from '@/components/primitives/framed-card'
 import { SectionCardHeader } from '@/components/primitives/section-card-header'
+import { WorkbenchFrame } from '@/components/primitives/workbench-frame'
 import { WorkbenchContent, WorkbenchRail } from '@/components/primitives/workbench-rail'
 
 export function RepositoriesWorkbenchShell({
@@ -28,29 +28,33 @@ export function RepositoriesWorkbenchShell({
   title: React.ReactNode
 }) {
   return (
-    <FramedCard data-slot='repositories-workbench-shell'>
-      <CardFilterBar>
-        {providerTabs}
-      </CardFilterBar>
-      <div className='repo-workbench' data-slot='repositories-workbench-grid'>
-        <WorkbenchRail
-          actions={railActions}
-          description={railDescription}
-          title={railTitle}
-        >
-          {rail}
-        </WorkbenchRail>
-        <WorkbenchContent>
-          <SectionCardHeader
-            actions={header}
+    <WorkbenchFrame
+      body={(
+        <div className='repo-workbench' data-slot='repositories-workbench-grid'>
+          <WorkbenchRail
+            actions={railActions}
             description={railDescription}
-            meta={meta}
-            title={title}
-          />
-          {children}
-        </WorkbenchContent>
-      </div>
-      {footer}
-    </FramedCard>
+            title={railTitle}
+          >
+            {rail}
+          </WorkbenchRail>
+          <WorkbenchContent>
+            <SectionCardHeader
+              actions={header}
+              description={railDescription}
+              meta={meta}
+              title={title}
+            />
+            {children}
+          </WorkbenchContent>
+        </div>
+      )}
+      footer={footer}
+      topBar={(
+        <CardFilterBar>
+          {providerTabs}
+        </CardFilterBar>
+      )}
+    />
   )
 }
