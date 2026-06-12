@@ -2,7 +2,6 @@ import { Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { ActivityIcon, CoinsIcon, DownloadIcon, GaugeIcon, LayersIcon, RefreshCwIcon } from 'lucide-react'
-import { Skeleton } from '@/components/ui/skeleton'
 import { AppAlert } from '@/components/primitives/app-alert'
 import { ButtonWithIcon } from '@/components/primitives/button-with-icon'
 import { ChartLegend } from '@/components/primitives/chart-legend'
@@ -13,6 +12,7 @@ import { GlyphLabelCell } from '@/components/primitives/glyph-label-cell'
 import { HeatmapGrid } from '@/components/primitives/heatmap-grid'
 import { KpiGrid } from '@/components/primitives/kpi-grid'
 import { LinkAction } from '@/components/primitives/link-action'
+import { LoadingChip } from '@/components/primitives/loading-chip'
 import { KpiCard } from '@/components/primitives/metric-card'
 import { PageEmpty } from '@/components/primitives/page-empty'
 import { SectionCard } from '@/components/primitives/section-card'
@@ -84,7 +84,7 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
         </ToolbarActions>
       </FilterRow>
       <Stack>
-        {query.isLoading ? <Skeleton aria-label={t('common.loading')} className='h-5 w-40' role='status' /> : null}
+        {query.isLoading ? <LoadingChip ariaLabel={t('common.loading')} /> : null}
         {snapshot?.configured === false ? (
           <AppAlert
             title={t('usageDashboard.setupTitle')}

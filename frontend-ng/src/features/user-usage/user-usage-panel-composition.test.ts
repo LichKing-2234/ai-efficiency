@@ -92,10 +92,11 @@ describe('User usage panel composition', () => {
     expect(source).not.toContain("<span className='text-right'>{t('events.credit')}</span>")
   })
 
-  test('uses shadcn skeleton for the loading placeholder', () => {
-    expect(source).toContain("from '@/components/ui/skeleton'")
-    expect(source).toContain('<Skeleton')
+  test('uses shared loading chip for the inline loading placeholder', () => {
+    expect(source).toContain("from '@/components/primitives/loading-chip'")
+    expect(source).toContain('<LoadingChip')
     expect(source).not.toContain("<div className='text-muted-foreground text-sm'>{t('common.loading')}</div>")
+    expect(source).not.toContain("from '@/components/ui/skeleton'")
   })
 
   test('uses shared alert actions for setup CTA spacing', () => {
