@@ -14,9 +14,9 @@ import { LoadingState } from '@/components/primitives/data-state'
 import { FormDialog } from '@/components/primitives/form-dialog'
 import { HealthFieldItem, HealthFieldList, type HealthStatus } from '@/components/primitives/health-field-list'
 import { InfoTile, InfoTileGrid } from '@/components/primitives/info-tile'
-import { PageEmpty } from '@/components/primitives/page-empty'
 import { RowIconActions } from '@/components/primitives/row-icon-actions'
 import { SectionCard } from '@/components/primitives/section-card'
+import { SectionEmptyState } from '@/components/primitives/section-empty-state'
 import { SectionTableCard } from '@/components/primitives/section-table-card'
 import { SectionNav, SectionNavFrame, type SectionNavItem } from '@/components/primitives/section-nav'
 import { StartActions } from '@/components/primitives/start-actions'
@@ -340,7 +340,7 @@ export function SettingsPage() {
                 ))}
               </DataGrid>
             ) : (
-              <PageEmpty
+              <SectionEmptyState
                 icon={Layers}
                 title={t(settingsSectionMeta['ai-services'].labelKey as never)}
                 description={t(settingsSectionMeta['ai-services'].descriptionKey as never)}
@@ -385,7 +385,7 @@ export function SettingsPage() {
                 ))}
               </DataGrid>
             ) : (
-              <PageEmpty
+              <SectionEmptyState
                 icon={Waypoints}
                 title={t(settingsSectionMeta['code-platforms'].labelKey as never)}
                 description={t(settingsSectionMeta['code-platforms'].descriptionKey as never)}
@@ -430,7 +430,7 @@ export function SettingsPage() {
                 ))}
               </DataGrid>
             ) : (
-              <PageEmpty
+              <SectionEmptyState
                 icon={LockKeyhole}
                 title={t(settingsSectionMeta['advanced-credentials'].labelKey as never)}
                 description={t(settingsSectionMeta['advanced-credentials'].descriptionKey as never)}

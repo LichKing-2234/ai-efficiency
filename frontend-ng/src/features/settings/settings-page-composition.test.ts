@@ -140,11 +140,13 @@ describe('Settings page composition', () => {
   test('uses shared page empty states for table sections with no records', () => {
     const source = readFileSync(join(ROOT, 'features/settings/settings-page.tsx'), 'utf8')
 
-    expect(source).toContain("from '@/components/primitives/page-empty'")
-    expect(source).toContain('<PageEmpty')
+    expect(source).toContain("from '@/components/primitives/section-empty-state'")
+    expect(source).toContain('<SectionEmptyState')
     expect(source).toContain("title={t(settingsSectionMeta['ai-services'].labelKey as never)}")
     expect(source).toContain("title={t(settingsSectionMeta['code-platforms'].labelKey as never)}")
     expect(source).toContain("title={t(settingsSectionMeta['advanced-credentials'].labelKey as never)}")
+    expect(source).not.toContain("from '@/components/primitives/page-empty'")
+    expect(source).not.toContain('<PageEmpty')
     expect(source).not.toContain("<div style={{ width: 44, height: 44")
   })
 
