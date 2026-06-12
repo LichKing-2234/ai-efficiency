@@ -32,6 +32,7 @@ import { LoadingState } from '@/components/primitives/data-state'
 import { Stack } from '@/components/primitives/stack'
 import { StatusBadge } from '@/components/primitives/status-badge'
 import { StatusWithReason } from '@/components/primitives/status-with-reason'
+import { SummaryMetricsPanel } from '@/components/primitives/summary-metrics-panel'
 import { ToolbarSelect } from '@/components/primitives/toolbar-select'
 import { UsageSummaryPanel } from '@/components/primitives/usage-summary-panel'
 import { api } from '@/lib/api'
@@ -272,17 +273,15 @@ export function RepoDetailPage() {
         <KpiCard label={t('repoDetail.refreshFailed')} value={number(summary?.refresh_failed)} />
       </KpiGrid>
       {currentJob ? (
-        <SectionCard title={t('repoDetail.latestSyncJob')}>
-            <InfoTileGrid columns={4}>
-              <InfoTile label={t('common.status')} value={<StatusBadge value={currentJob.status} />} />
-              <InfoTile label={t('repoDetail.phaseLabel')} value={currentJob.phase || '-'} />
-              <InfoTile label={t('repoDetail.fetchedLabel')} value={number(jobProgress?.fetched)} mono />
-              <InfoTile label={t('repoDetail.processedLabel')} value={`${number(jobProgress?.processed)}/${number(currentJob.total_prs || currentJob.fetched_prs)}`} mono />
-            </InfoTileGrid>
-            <InsetPanel muted>
-              {t('repoDetail.usage', { done: number(jobProgress?.usageRefreshed), total: number(jobProgress?.usageTotal) })} · {syncMessage || prSyncJobMessage(currentJob)}
-            </InsetPanel>
-        </SectionCard>
+        <SummaryMetricsPanel
+          note={`${t('repoDetail.usage', { done: number(jobProgress?.usageRefreshed), total: number(jobProgress?.usageTotal) })} · ${syncMessage || prSyncJobMessage(currentJob)}`}
+          title={t('repoDetail.latestSyncJob')}
+        >
+          <InfoTile label={t('common.status')} value={<StatusBadge value={currentJob.status} />} />
+          <InfoTile label={t('repoDetail.phaseLabel')} value={currentJob.phase || '-'} />
+          <InfoTile label={t('repoDetail.fetchedLabel')} value={number(jobProgress?.fetched)} mono />
+          <InfoTile label={t('repoDetail.processedLabel')} value={`${number(jobProgress?.processed)}/${number(currentJob.total_prs || currentJob.fetched_prs)}`} mono />
+        </SummaryMetricsPanel>
       ) : null}
       <SectionCard leading={Waypoints} title={t('repoDetail.scmBinding')}>
           <ControlGrid variant='inline-actions'>

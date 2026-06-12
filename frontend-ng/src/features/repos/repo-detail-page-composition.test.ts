@@ -74,6 +74,12 @@ describe('Repo detail page composition', () => {
     expect(source).not.toContain('<CardContent>')
   })
 
+  test('uses a shared latest-sync summary shell instead of page-local metric grid composition', () => {
+    expect(source).toContain("from '@/components/primitives/summary-metrics-panel'")
+    expect(source).toContain('<SummaryMetricsPanel')
+    expect(source).not.toContain("<SectionCard title={t('repoDetail.latestSyncJob')}>\n            <InfoTileGrid columns={4}>")
+  })
+
   test('uses shared stacks for repair and expanded detail vertical rhythm', () => {
     expect(source).toContain("from '@/components/primitives/stack'")
     expect(source).not.toContain("<div className='flex flex-col gap-3'>")
