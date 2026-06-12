@@ -154,7 +154,7 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
                 description={t('usageDashboard.tokenTrendDescription', { range: rangeLabel })}
                 actions={<ChartLegend className='justify-end' compact items={tokenKeys} />}
               />
-              <CardContentStack className='pt-[14px]'>
+              <CardContentStack gap='titled'>
                 {snapshot.trend.length ? (
                   <StackedAreaChart
                     keys={tokenKeys}
@@ -169,7 +169,7 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
             <div className='split-equal'>
               <Card>
                 <SectionCardHeader title={t('usageDashboard.modelDistribution')} description={t('usageDashboard.modelDistributionDescription')} />
-                <CardContentStack className='pt-[16px]'>
+                <CardContentStack gap='titled'>
                   {snapshot.models.length ? (
                   <BarsH
                     rows={snapshot.models.slice(0, 6).map((model, index) => ({
@@ -222,7 +222,7 @@ export function UserUsagePanel({ embedded = false }: { embedded?: boolean }) {
             {!embedded ? (
               <Card>
                 <SectionCardHeader title={t('usageDashboard.activityHeatmap')} description={t('usageDashboard.activityHeatmapDescription')} />
-                <CardContentStack className='pt-[16px]'>
+                <CardContentStack gap='titled'>
                   {snapshot.trend.length ? (
                     <HeatmapGrid
                       dayLabels={[

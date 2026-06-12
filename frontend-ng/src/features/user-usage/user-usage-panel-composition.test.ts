@@ -44,6 +44,9 @@ describe('User usage panel composition', () => {
     expect(costByModelIndex).toBeGreaterThan(firstSplitAfterTrend)
     expect(source).not.toContain("<div className='px-[18px] pb-4'>")
     expect(source).not.toContain("<div className='px-[18px] pb-[18px]'>")
+    expect(source).toContain("<CardContentStack gap='titled'>")
+    expect(source).not.toContain("<CardContentStack className='pt-[14px]'>")
+    expect(source).not.toContain("<CardContentStack className='pt-[16px]'>")
   })
 
   test('uses the section header action slot for the token trend legend like the reference', () => {

@@ -36,6 +36,13 @@ describe('CardContentStack', () => {
     expect(normal).toContain('gap-3.5')
   })
 
+  test('supports a titled card-body rhythm for section-header cards', () => {
+    const html = renderToStaticMarkup(<CardContentStack gap='titled'>Trend</CardContentStack>)
+
+    expect(html).toContain('pt-[14px]')
+    expect(html).toContain('Trend')
+  })
+
   test('supports a no-gap list rhythm for adjacent activity rows', () => {
     const html = renderToStaticMarkup(<CardContentStack gap='none'>Activity</CardContentStack>)
 
@@ -53,6 +60,7 @@ describe('CardContentStack', () => {
 
     expect(source).toContain("standard: 'gap-3'")
     expect(source).toContain("normal: 'gap-3.5'")
+    expect(source).toContain("titled: 'gap-3 pt-[14px]'")
     expect(source).not.toContain("normal: 'gap-4'")
   })
 })
