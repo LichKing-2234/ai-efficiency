@@ -15,6 +15,7 @@ import { AppAlert } from '@/components/primitives/app-alert'
 import { Page } from '@/components/primitives/page'
 import { EmptyState, LoadingState } from '@/components/primitives/data-state'
 import { DataGrid, DataGridHeader, DataGridHeaderCell, DataGridPrimaryLink, DataGridRecordCell, DataGridRow, DataGridRowAffordance } from '@/components/primitives/data-grid'
+import { DetailSection } from '@/components/primitives/detail-section'
 import { EntityGlyph } from '@/components/primitives/entity-glyph'
 import { EndActions } from '@/components/primitives/end-actions'
 import { FieldItem, FieldList } from '@/components/primitives/field-list'
@@ -461,12 +462,14 @@ function RepoInspectSlideOver({
             <InfoTile label={t('repos.aiPrs')} value={number(repo.pr_summary?.ai_prs, locale)} accent='ai' />
             <InfoTile label={t('repos.aiPrShare')} value={percent(repo.pr_summary?.ai_share, locale)} />
           </InfoTileGrid>
-          <FieldList>
-            <FieldItem label={t('repos.clone')} value={repo.clone_url || '-'} mono />
-            <FieldItem label={t('repos.defaultBranch')} value={repo.default_branch || '-'} mono />
-            <FieldItem label={t('repos.provider')} value={repo.edges?.scm_provider?.base_url || repo.edges?.scm_provider?.name || '-'} truncate />
-            <FieldItem label={t('adminUsers.updated')} value={dateTime(repo.created_at, locale)} />
-          </FieldList>
+          <DetailSection title={t('repos.configuration')}>
+            <FieldList>
+              <FieldItem label={t('repos.clone')} value={repo.clone_url || '-'} mono />
+              <FieldItem label={t('repos.defaultBranch')} value={repo.default_branch || '-'} mono />
+              <FieldItem label={t('repos.provider')} value={repo.edges?.scm_provider?.base_url || repo.edges?.scm_provider?.name || '-'} truncate />
+              <FieldItem label={t('adminUsers.updated')} value={dateTime(repo.created_at, locale)} />
+            </FieldList>
+          </DetailSection>
           {repo.binding_state === 'unbound' ? (
             <AppAlert
               tone='info'

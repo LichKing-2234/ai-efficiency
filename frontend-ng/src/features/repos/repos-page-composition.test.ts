@@ -155,6 +155,8 @@ describe('Repos page composition', () => {
   })
 
   test('uses reference inspect configuration rhythm and equal-width action row', () => {
+    expect(source).toContain("from '@/components/primitives/detail-section'")
+    expect(source).toContain('<DetailSection')
     expect(source).toContain("label={t('repos.clone')}")
     expect(source).toContain("label={t('repos.defaultBranch')}")
     expect(source).toContain("label={t('repos.provider')}")
