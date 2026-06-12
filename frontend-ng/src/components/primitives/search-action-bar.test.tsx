@@ -19,6 +19,7 @@ describe('SearchActionBar', () => {
     expect(html).toContain('data-slot="search-action-bar"')
     expect(html).toContain('data-slot="search-action-bar-search"')
     expect(html).toContain('data-slot="search-action-bar-actions"')
+    expect(html).toContain('data-slot="search-action-bar-actions-row"')
     expect(html).toContain('Search users')
     expect(html).toContain('Refresh')
   })
@@ -40,9 +41,11 @@ describe('SearchActionBar', () => {
 
   test('uses shared card filter, filter-row, and end-actions primitives for search-plus-actions rhythm', () => {
     expect(source).toContain("from '@/components/primitives/card-filter-bar'")
+    expect(source).toContain("from '@/components/primitives/action-group'")
     expect(source).toContain("from '@/components/primitives/end-actions'")
     expect(source).toContain("from '@/components/primitives/filter-row'")
     expect(source).toContain("<CardFilterBar")
+    expect(source).toContain("<ActionGroup")
     expect(source).toContain("<FilterRow")
     expect(source).toContain("<EndActions")
     expect(source).not.toContain("className='flex items-center justify-between gap-3'")

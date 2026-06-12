@@ -2,7 +2,6 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import { ActivityIcon, CoinsIcon, DownloadIcon, ExternalLinkIcon, GitPullRequestIcon, LayersIcon } from 'lucide-react'
 import { useState } from 'react'
-import { Card } from '@/components/ui/card'
 import { AdvancedDataPanel } from '@/components/primitives/advanced-data-panel'
 import { ButtonWithIcon } from '@/components/primitives/button-with-icon'
 import { CardFilterBar } from '@/components/primitives/card-filter-bar'
@@ -29,6 +28,7 @@ import { PrimaryActionButton } from '@/components/primitives/primary-action-butt
 import { QuietActionButton } from '@/components/primitives/quiet-action-button'
 import { SearchField } from '@/components/primitives/search-field'
 import { SearchActionBar } from '@/components/primitives/search-action-bar'
+import { SearchWorkbenchCard } from '@/components/primitives/search-workbench-card'
 import { SecondaryActionButton } from '@/components/primitives/secondary-action-button'
 import { SlideOver } from '@/components/primitives/slide-over'
 import { SlideOverStack } from '@/components/primitives/slide-over-stack'
@@ -164,7 +164,7 @@ export function EventsPage() {
         <KpiCard label={t('events.credits')} value={number(totalCredit)} icon={CoinsIcon} sparkline={rows.map((row) => row.credit_usage)} sparklineColor='var(--viz-cache)' />
       </KpiGrid>
 
-      <Card>
+      <SearchWorkbenchCard>
         <SearchActionBar
           search={(
             <FilterRow className='min-w-0 flex-1'>
@@ -252,7 +252,7 @@ export function EventsPage() {
             />
           ) : null}
         </SearchActionBar>
-      </Card>
+      </SearchWorkbenchCard>
 
       <FramedTableCard
         footer={(

@@ -1,4 +1,5 @@
 import type * as React from 'react'
+import { ActionGroup } from '@/components/primitives/action-group'
 import { CardFilterBar } from '@/components/primitives/card-filter-bar'
 import { EndActions } from '@/components/primitives/end-actions'
 import { FilterRow } from '@/components/primitives/filter-row'
@@ -20,7 +21,9 @@ export function SearchActionBar({
         </div>
         {actions ? (
           <EndActions>
-            <div data-slot='search-action-bar-actions'>{actions}</div>
+            <ActionGroup dataSlot='search-action-bar-actions-row'>
+              <div data-slot='search-action-bar-actions'>{actions}</div>
+            </ActionGroup>
           </EndActions>
         ) : null}
       </FilterRow>
