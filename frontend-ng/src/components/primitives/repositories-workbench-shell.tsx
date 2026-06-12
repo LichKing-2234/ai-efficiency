@@ -6,6 +6,7 @@ import { WorkbenchContent, WorkbenchRail } from '@/components/primitives/workben
 
 export function RepositoriesWorkbenchShell({
   children,
+  footer,
   header,
   meta,
   providerTabs,
@@ -16,6 +17,7 @@ export function RepositoriesWorkbenchShell({
   title
 }: {
   children: React.ReactNode
+  footer?: React.ReactNode
   header?: React.ReactNode
   meta?: React.ReactNode
   providerTabs: React.ReactNode
@@ -48,6 +50,7 @@ export function RepositoriesWorkbenchShell({
           {children}
         </WorkbenchContent>
       </div>
+      {footer}
     </FramedCard>
   )
 }

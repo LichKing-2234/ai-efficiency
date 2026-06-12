@@ -12,6 +12,7 @@ describe('RepositoriesWorkbenchShell', () => {
   test('renders the shared repository workbench frame with stable slots', () => {
     const html = renderToStaticMarkup(
       <RepositoriesWorkbenchShell
+        footer={<div>Pagination</div>}
         header={<button type='button'>All</button>}
         meta='10 total repositories'
         providerTabs={<button type='button'>GitHub</button>}
@@ -34,6 +35,7 @@ describe('RepositoriesWorkbenchShell', () => {
     expect(html).toContain('platform-team')
     expect(html).toContain('10 total repositories')
     expect(html).toContain('Repository table')
+    expect(html).toContain('Pagination')
   })
 
   test('keeps the repository shell composed from shared frame primitives', () => {
@@ -41,6 +43,7 @@ describe('RepositoriesWorkbenchShell', () => {
     expect(source).toContain("from '@/components/primitives/card-filter-bar'")
     expect(source).toContain("from '@/components/primitives/section-card-header'")
     expect(source).toContain("from '@/components/primitives/workbench-rail'")
+    expect(source).toContain('footer?: React.ReactNode')
     expect(source).toContain("<FramedCard data-slot='repositories-workbench-shell'>")
     expect(source).toContain("<div className='repo-workbench' data-slot='repositories-workbench-grid'>")
   })

@@ -5,7 +5,6 @@ import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Card } from '@/components/ui/card'
 import { CardPagerFooter } from '@/components/primitives/card-pager-footer'
 import { ButtonWithIcon } from '@/components/primitives/button-with-icon'
 import { CategoryBadge } from '@/components/primitives/category-badge'
@@ -278,6 +277,13 @@ export function ReposPage() {
         <EmptyState title={t('common.empty')} description={t('repos.healthHelp')} />
       ) : (
         <RepositoriesWorkbenchShell
+          footer={(
+            <CardPagerFooter
+              summary={`${t('common.pageCount', { current: search.page, total: Math.max(1, Math.ceil(total / search.pageSize)) })} · ${number(total, locale)} ${t('repos.totalRepositories')}`}
+              previous={<PagerNavButton direction='previous' onClick={() => replaceSearch({ ...search, page: Math.max(1, search.page - 1) })} disabled={!canPreviousPage || repos.isFetching}>{t('common.previous')}</PagerNavButton>}
+              next={<PagerNavButton direction='next' onClick={() => replaceSearch({ ...search, page: search.page + 1 })} disabled={!canNextPage || repos.isFetching}>{t('common.next')}</PagerNavButton>}
+            />
+          )}
           header={(
             <SegmentedControl
               ariaLabel={t('repos.bindingFilter')}
@@ -330,13 +336,6 @@ export function ReposPage() {
           )}
         </RepositoriesWorkbenchShell>
       )}
-      <Card>
-        <CardPagerFooter
-          summary={`${t('common.pageCount', { current: search.page, total: Math.max(1, Math.ceil(total / search.pageSize)) })} · ${number(total, locale)} ${t('repos.totalRepositories')}`}
-          previous={<PagerNavButton direction='previous' onClick={() => replaceSearch({ ...search, page: Math.max(1, search.page - 1) })} disabled={!canPreviousPage || repos.isFetching}>{t('common.previous')}</PagerNavButton>}
-          next={<PagerNavButton direction='next' onClick={() => replaceSearch({ ...search, page: search.page + 1 })} disabled={!canNextPage || repos.isFetching}>{t('common.next')}</PagerNavButton>}
-        />
-      </Card>
       <AddRepoDialog
         open={showAdd}
         setOpen={setShowAdd}
