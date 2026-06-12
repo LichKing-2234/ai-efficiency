@@ -3,7 +3,9 @@ import { cn } from '@/lib/utils'
 
 const surfaceSplitVariants = {
   equal: 'split-equal',
-  overview: 'split-2'
+  overview: 'split-2',
+  rail: 'split-rail',
+  settings: 'split-settings'
 } as const
 
 export function SurfaceSplit({

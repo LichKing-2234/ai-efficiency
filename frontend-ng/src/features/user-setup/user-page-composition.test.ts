@@ -7,7 +7,9 @@ const source = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), 'us
 
 describe('User setup page composition', () => {
   test('keeps the reference split-rail layout for account access and provider setup', () => {
-    expect(source).toContain("className='split-rail'")
+    expect(source).toContain("from '@/components/primitives/surface-split'")
+    expect(source).toContain("<SurfaceSplit variant='rail'>")
+    expect(source).not.toContain("className='split-rail'")
     expect(source).not.toContain("className='grid gap-4 lg:grid-cols-[340px_minmax(0,1fr)]'")
   })
 

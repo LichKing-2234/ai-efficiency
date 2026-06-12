@@ -24,6 +24,7 @@ import { RecordMeta } from '@/components/primitives/record-meta'
 import { SectionCard } from '@/components/primitives/section-card'
 import { SelectableCard, SelectableCardHeader, SelectableCardMeta, SelectableCardStatus, SelectableCardTitle } from '@/components/primitives/selectable-card'
 import { Stack } from '@/components/primitives/stack'
+import { SurfaceSplit } from '@/components/primitives/surface-split'
 import { LoadingState } from '@/components/primitives/data-state'
 import { api } from '@/lib/api'
 import { useI18n } from '@/lib/i18n/i18n'
@@ -140,7 +141,7 @@ export function UserPage() {
 
   return (
     <Page className='stagger'>
-      <div className='split-rail'>
+      <SurfaceSplit variant='rail'>
         <Stack>
           <SectionCard
             actions={<CountBadge variant='ai'>{t('userSetup.groupsReadyShort', { ready: readyGroups, total: totalGroups })}</CountBadge>}
@@ -296,7 +297,7 @@ export function UserPage() {
               />
           </SectionCard>
         </Stack>
-      </div>
+      </SurfaceSplit>
     </Page>
   )
 }

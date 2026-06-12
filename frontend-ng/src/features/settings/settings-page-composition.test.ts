@@ -79,7 +79,10 @@ describe('Settings page composition', () => {
     const source = readFileSync(join(ROOT, 'features/settings/settings-page.tsx'), 'utf8')
 
     expect(source).toContain("from '@/components/primitives/stack'")
+    expect(source).toContain("from '@/components/primitives/surface-split'")
+    expect(source).toContain("<SurfaceSplit variant='settings'>")
     expect(source).toContain("<Stack constrain='content'>")
+    expect(source).not.toContain("className='split-settings'")
     expect(source).not.toContain("<Stack className='min-w-0'>")
     expect(source).not.toContain("<div className='flex min-w-0 flex-col gap-4'>")
   })

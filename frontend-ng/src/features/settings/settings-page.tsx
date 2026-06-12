@@ -22,6 +22,7 @@ import { SectionTableCard } from '@/components/primitives/section-table-card'
 import { SectionNav, SectionNavFrame, type SectionNavItem } from '@/components/primitives/section-nav'
 import { StartActions } from '@/components/primitives/start-actions'
 import { Stack } from '@/components/primitives/stack'
+import { SurfaceSplit } from '@/components/primitives/surface-split'
 import { StatusBadge } from '@/components/primitives/status-badge'
 import { api } from '@/lib/api'
 import { dateTime, number } from '@/lib/format'
@@ -297,7 +298,7 @@ export function SettingsPage() {
 
   return (
     <Page className='stagger'>
-      <div className='split-settings'>
+      <SurfaceSplit variant='settings'>
         <SectionNavFrame>
           <SectionNav ariaLabel={t('settings.sections')} items={sectionItems} onChange={selectSection} value={activeSection} />
         </SectionNavFrame>
@@ -521,7 +522,7 @@ export function SettingsPage() {
           </SectionCard>
         </> : null}
         </Stack>
-      </div>
+      </SurfaceSplit>
       <Dialog open={relayDialog} onOpenChange={(open) => open ? setRelayDialog(true) : closeRelayDialog()}>
         <DialogContent>
           <DialogHeader>
