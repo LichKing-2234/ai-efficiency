@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils'
 
 function HeroTitle({ children }: { children: React.ReactNode }) {
   return (
-    <h1 className='text-[25px] font-semibold leading-[1.18] tracking-tight' data-slot='hero-title'>
+    <h1 className='text-[25px] font-[680] leading-[1.18] tracking-[-0.025em]' data-slot='hero-title'>
       {children}
     </h1>
   )

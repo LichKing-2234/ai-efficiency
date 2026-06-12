@@ -26,7 +26,7 @@ describe('PulseStat', () => {
     expect(source).toContain("from '@/components/primitives/charts'")
     expect(source).toContain("from '@/lib/utils'")
     expect(source).toContain("className='px-[16px] py-[12px]'")
-    expect(source).toContain("className='tnum mb-[6px] text-[19px] font-[680] tracking-[-0.02em]'")
+    expect(source).toContain("className='tnum mt-[3px] mb-[6px] text-[19px] font-[680] tracking-[-0.02em]'")
     expect(source).toContain("mb-[6px]")
     expect(source).toContain('export function PulseStat(')
   })

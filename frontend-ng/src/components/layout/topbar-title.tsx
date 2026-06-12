@@ -15,7 +15,7 @@ export function TopbarTitle({
       <div className='font-semibold text-[10.5px] text-[var(--ink-4)] uppercase tracking-[0.04em]' data-slot='topbar-title-section'>
         {section}
       </div>
-      <div className='truncate font-semibold text-[15px] leading-tight' data-slot='topbar-title-text'>
+      <div className='truncate text-[15px] leading-[1.1] font-[650] tracking-[-0.01em]' data-slot='topbar-title-text'>
         {title}
       </div>
     </div>

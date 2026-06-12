@@ -40,7 +40,7 @@ describe('HeroContent', () => {
     expect(source).toContain("<ActionGroup align='responsive-end'")
     expect(source).toContain("className={cn('p-[22px]'")
     expect(source).toContain("className='max-w-[540px]'")
-    expect(source).toContain("text-[25px]")
+    expect(source).toContain("text-[25px] font-[680] leading-[1.18] tracking-[-0.025em]")
     expect(source).toContain("text-[13.5px]")
     expect(source).toContain("className='items-center gap-6'")
     expect(source).not.toContain("import { CardContent } from '@/components/ui/card'")

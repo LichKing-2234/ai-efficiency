@@ -12,4 +12,13 @@ describe('TopbarTitle', () => {
     expect(html).toContain('AE')
     expect(html).toContain('section 1')
   })
+
+  test('keeps the compact reference title rhythm', async () => {
+    const source = await import('node:fs/promises').then((fs) =>
+      fs.readFile(new URL('./topbar-title.tsx', import.meta.url), 'utf8')
+    )
+
+    expect(source).toContain("className='truncate text-[15px] leading-[1.1] font-[650] tracking-[-0.01em]'")
+    expect(source).not.toContain("className='truncate font-semibold text-[15px] leading-tight'")
+  })
 })

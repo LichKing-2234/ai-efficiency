@@ -12,8 +12,8 @@ describe('TopbarLiveStatus', () => {
     expect(html).toContain('live-dot')
     expect(html).toContain('Ingesting')
     expect(html).toContain('rounded-full')
-    expect(html).toContain('px-3')
-    expect(html).toContain('py-1')
+    expect(html).toContain('h-7')
+    expect(html).toContain('px-[10px]')
   })
 
   test('keeps the denser reference live-status typography and spacing', async () => {
@@ -21,7 +21,7 @@ describe('TopbarLiveStatus', () => {
       fs.readFile(new URL('./topbar-live-status.tsx', import.meta.url), 'utf8')
     )
 
-    expect(source).toContain("className='hidden items-center gap-2 rounded-full border border-[var(--pos-line)] bg-[var(--pos-soft)] px-3 py-1 min-[920px]:flex'")
+    expect(source).toContain("className='hidden h-7 items-center gap-[7px] rounded-full border border-[var(--pos-line)] bg-[var(--pos-soft)] px-[10px] min-[920px]:flex'")
     expect(source).toContain("className='font-semibold text-[11.5px] text-[var(--pos)]'")
     expect(source).not.toContain('text-xs')
     expect(source).not.toContain('px-2.5')
