@@ -38,7 +38,11 @@ describe('TopbarActions', () => {
 
     expect(source).toContain("className='hidden min-[920px]:inline'")
     expect(source).toContain("className='min-w-40 border-[var(--line-strong)]'")
-    expect(source).toContain("size='sm' type='button' variant='ghost'")
+    expect(source).toContain("size='sm'")
+    expect(source).toContain("type='button'")
+    expect(source).toContain("variant='ghost'")
+    expect(source).toContain("className='gap-[6px] px-[9px] text-[12px] font-semibold'")
+    expect(source).toContain("<ChevronDownIcon className='text-[var(--ink-4)]' />")
     expect(source).toContain('{currentLocale?.label}')
     expect(source).not.toContain("width: 'auto'")
     expect(source).not.toContain("padding: '0 9px'")

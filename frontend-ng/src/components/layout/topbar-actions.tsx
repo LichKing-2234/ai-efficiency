@@ -34,15 +34,21 @@ export function TopbarActions({
   const currentLocale = locales.find((item) => item.value === locale) ?? locales[0]
 
   return (
-    <div className='ml-auto flex items-center gap-2' data-slot='topbar-actions'>
+    <div className='ml-auto flex items-center gap-[8px]' data-slot='topbar-actions'>
       <TopbarCommandTrigger label={commandLabel} onOpen={onOpenCommand} />
       <TopbarLiveStatus label={ingestingLabel} />
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button data-slot='topbar-actions-locale-trigger' size='sm' type='button' variant='ghost'>
+          <Button
+            className='gap-[6px] px-[9px] text-[12px] font-semibold'
+            data-slot='topbar-actions-locale-trigger'
+            size='sm'
+            type='button'
+            variant='ghost'
+          >
             <GlobeIcon />
             <span className='hidden min-[920px]:inline'>{currentLocale?.label}</span>
-            <ChevronDownIcon />
+            <ChevronDownIcon className='text-[var(--ink-4)]' />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align='end' className='min-w-40 border-[var(--line-strong)]'>
