@@ -6,11 +6,6 @@ import { LoginPage } from '@/features/auth/login-page'
 
 const getLoginBootstrap = createServerFn({ method: 'GET' })
   .handler(async () => {
-    const backendOrigin = (
-      process.env.AE_FRONTEND_BACKEND_URL ||
-      process.env.VITE_BACKEND_URL ||
-      null
-    )?.trim()
     let authOptions: AuthOptions | null = null
 
     try {
@@ -27,18 +22,7 @@ const getLoginBootstrap = createServerFn({ method: 'GET' })
       authOptions = null
     }
 
-    if (!backendOrigin) {
-      return { localHandoffHref: null as string | null, authOptions }
-    }
-
-    try {
-      return {
-        localHandoffHref: new URL('/oauth2/local', backendOrigin).toString(),
-        authOptions
-      }
-    } catch {
-      return { localHandoffHref: null as string | null, authOptions }
-    }
+    return { localHandoffHref: '/oauth2/local' as string | null, authOptions }
   })
 
 export const Route = createFileRoute('/login')({

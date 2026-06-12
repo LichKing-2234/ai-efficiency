@@ -28,6 +28,26 @@ async function resolveLocalHandoffTokens(request: Request) {
   }
 }
 
+function getDeployedFrontendOrigin() {
+  const backendUrl = (
+    process.env.AE_FRONTEND_BACKEND_URL ||
+    process.env.VITE_BACKEND_URL ||
+    ''
+  ).trim()
+
+  if (!backendUrl) return null
+
+  try {
+    const url = new URL(backendUrl)
+    if (url.hostname.startsWith('ai-efficiency-web.')) {
+      return url.origin
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
 export async function localHandoffIssueResponse(request: Request, callbackPath = '/api/local/callback') {
   const url = new URL(request.url)
   const target = url.searchParams.get('target') || url.searchParams.get('local') || 'http://localhost:3000'
@@ -36,6 +56,12 @@ export async function localHandoffIssueResponse(request: Request, callbackPath =
   }
   const tokens = await resolveLocalHandoffTokens(request)
   if (!tokens?.accessToken && !tokens?.refreshToken) {
+    const deployedFrontendOrigin = getDeployedFrontendOrigin()
+    if (deployedFrontendOrigin && deployedFrontendOrigin !== url.origin) {
+      const fallback = new URL('/oauth2/local', deployedFrontendOrigin)
+      fallback.searchParams.set('target', target)
+      return Response.redirect(fallback, 302)
+    }
     return json({ code: 401, message: 'local handoff requires an active app session' }, 401)
   }
   const proxyTarget = getLocalHandoffProxyTarget(request)

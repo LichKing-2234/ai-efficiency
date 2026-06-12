@@ -62,6 +62,18 @@ describe('local auth handoff server routes', () => {
     expect(location.searchParams.get('backend_url')).toBe('https://web.example.com')
   })
 
+  test('redirects localhost handoff to the deployed frontend when local app session and gateway identity are both absent', async () => {
+    process.env.AE_FRONTEND_BACKEND_URL = 'https://ai-efficiency-web.la3.agoralab.co'
+
+    const response = await localHandoffIssueResponse(new Request('http://127.0.0.1:4441/oauth2/local?target=http://127.0.0.1:4441'), '/oauth2/local')
+
+    expect(response.status).toBe(302)
+    const location = new URL(response.headers.get('Location') ?? '')
+    expect(location.origin).toBe('https://ai-efficiency-web.la3.agoralab.co')
+    expect(location.pathname).toBe('/oauth2/local')
+    expect(location.searchParams.get('target')).toBe('http://127.0.0.1:4441')
+  })
+
   test('writes the proxy target into the localhost cookie on callback', () => {
     const response = localHandoffCallbackResponse(new Request(
       'http://127.0.0.1:4317/oauth2/local?access_token=access-token&refresh_token=refresh-token&backend_url=https%3A%2F%2Fweb.example.com'
