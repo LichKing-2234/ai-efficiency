@@ -200,7 +200,17 @@ export function AdminUsersPage() {
         <KpiCard label={t('adminUsers.admins')} value={number(kpis.admins)} icon={Shield} />
         <KpiCard label={t('adminUsers.pendingUsers')} value={number(kpis.pending)} icon={Clock3} />
       </KpiGrid>
-      <SectionCard title={t('adminUsers.subscriptionManagement')}>
+      <SectionCard
+        title={t('adminUsers.subscriptionManagement')}
+        actions={currentJob ? (
+          <StatusWithReason
+            inline
+            meta={`${number(currentJob.processed_count)}/${number(currentJob.total_count)}`}
+            metaNumeric
+            value={currentJob.status}
+          />
+        ) : null}
+      >
           <FieldDescription>
             {scope === 'selected' ? t('adminUsers.selectedUsers', { count: selected.length }) : scope === 'current_filter' ? (q.trim() ? t('adminUsers.currentFilterValue', { query: q.trim() }) : t('adminUsers.currentFilter')) : t('adminUsers.allMapped')}
           </FieldDescription>
@@ -261,33 +271,29 @@ export function AdminUsersPage() {
         )}
         actions={(
           <>
-            <PageSizeSelect
-              ariaLabel={t('common.pageSizeControl')}
-              sizes={[10, 20, 50, 100]}
-              tPageSize={(size) => t('common.pageSize', { size })}
-              value={pageSize}
-              onValueChange={(value) => {
-                setPageSize(value)
-                setPage(1)
-              }}
-            />
             <ButtonWithIcon size='sm' variant='outline' icon={RefreshCw} disabled={users.isFetching} onClick={() => void users.refetch()}>
               {t('common.refresh')}
             </ButtonWithIcon>
-            {currentJob ? (
-              <StatusWithReason
-                inline
-                meta={`${number(currentJob.processed_count)}/${number(currentJob.total_count)}`}
-                metaNumeric
-                value={currentJob.status}
-              />
-            ) : null}
           </>
         )}
         footer={(
           <CardPagerFooter
             summary={t('adminUsers.pageOfUsers', { page, totalPages, total: number(total) })}
-            previous={<PagerNavButton direction='previous' disabled={page <= 1 || users.isFetching} onClick={() => setPage((value) => Math.max(1, value - 1))}>{t('common.previous')}</PagerNavButton>}
+            previous={
+              <>
+                <PageSizeSelect
+                  ariaLabel={t('common.pageSizeControl')}
+                  sizes={[10, 20, 50, 100]}
+                  tPageSize={(size) => t('common.pageSize', { size })}
+                  value={pageSize}
+                  onValueChange={(value) => {
+                    setPageSize(value)
+                    setPage(1)
+                  }}
+                />
+                <PagerNavButton direction='previous' disabled={page <= 1 || users.isFetching} onClick={() => setPage((value) => Math.max(1, value - 1))}>{t('common.previous')}</PagerNavButton>
+              </>
+            }
             next={<PagerNavButton direction='next' disabled={page >= totalPages || users.isFetching} onClick={() => setPage((value) => value + 1)}>{t('common.next')}</PagerNavButton>}
           />
         )}

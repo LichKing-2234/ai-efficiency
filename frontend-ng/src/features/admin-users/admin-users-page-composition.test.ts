@@ -38,8 +38,12 @@ describe('Admin users page composition', () => {
 
   test('uses shared status metadata for the current subscription job summary', () => {
     expect(source).toContain('StatusWithReason')
+    expect(source).toContain("title={t('adminUsers.subscriptionManagement')}")
+    expect(source).toContain("actions={currentJob ? (")
     expect(source).not.toContain("<StatusBadge value={currentJob.status} />")
     expect(source).not.toContain("<span className='tnum'>{number(currentJob.processed_count)}/{number(currentJob.total_count)}</span>")
+    expect(source).not.toContain("actions={(\n          <>\n            <PageSizeSelect")
+    expect(source).not.toContain("actions={(\n          <>\n            <PageSizeSelect")
   })
 
   test('uses shared filter sizing for the user search field', () => {
@@ -52,6 +56,8 @@ describe('Admin users page composition', () => {
     expect(source).toContain("from '@/components/primitives/page-size-select'")
     expect(source).toContain('<PageSizeSelect')
     expect(source).toContain("tPageSize={(size) => t('common.pageSize', { size })}")
+    expect(source).toContain("previous={")
+    expect(source).toContain("<>\n                <PageSizeSelect")
     expect(source).not.toContain("<ToolbarSelect\n                ariaLabel={t('common.pageSizeControl')}")
     expect(source).not.toContain("className='w-36'")
   })
@@ -125,10 +131,11 @@ describe('Admin users page composition', () => {
   test('keeps the user table toolbar search-led like the reference screen', () => {
     expect(source).toContain("from '@/components/primitives/search-table-workbench'")
     expect(source).toContain('<SearchTableWorkbench')
-    expect(source).toContain('<EndActions>')
     expect(source).toContain("width='toolbar'")
     expect(source).toContain("placeholder={t('adminUsers.searchUsers')}")
     expect(source).toContain("<ButtonWithIcon size='sm' variant='outline' icon={RefreshCw} disabled={users.isFetching} onClick={() => void users.refetch()}>")
+    expect(source).not.toContain("actions={(\n          <>\n            <PageSizeSelect")
+    expect(source).not.toContain("actions={(\n          <>\n            <StatusWithReason")
     expect(source).not.toContain('<FramedCard>')
     expect(source).not.toContain("from '@/components/primitives/card-filter-bar'")
     expect(source).not.toContain("<ToolbarSelect\n            ariaLabel={t('common.pageSizeControl')}")
