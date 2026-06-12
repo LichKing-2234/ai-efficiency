@@ -242,6 +242,10 @@ Follow-up local auth handoff audit on 2026-06-12 corrected the direction of the 
 
 Follow-up local auth handoff audit evidence: focused verification passed with `cd frontend-ng && bun test src/lib/auth/local-handoff.server.test.ts src/features/auth/login-page-composition.test.ts src/lib/api/server.test.ts --timeout 20000`, followed by `cd frontend-ng && bun run check`, all passing. Runtime HTTP proof also confirms the fallback redirect is now wired from localhost: `curl -I -s 'http://127.0.0.1:4441/oauth2/local?target=http://127.0.0.1:4441'` returns `HTTP/1.1 302` with `Location: https://ai-efficiency-web.la3.agoralab.co/oauth2/local?target=http%3A%2F%2F127.0.0.1%3A4441`.
 
+Follow-up overview KPI parity audit on 2026-06-12 closed one obvious remaining mismatch against the reference `screens-overview.jsx` KPI strip. The fourth overview metric had still been carrying a local `Connected tools` card, while the reference design and the existing real backend payload both support `Avg response`. `frontend-ng/src/features/home/home-page.tsx` now aligns that final KPI to `home.avgResponse` and formats it from real usage dashboard stats via `durationMs(usageStats?.average_duration_ms)` plus the existing `usageDashboard.avgResponseHelper` with backend `rpm` and `tpm` values. No mock metric was introduced, and the connected-tools signal remains where it belongs in setup readiness instead of occupying the reference KPI slot.
+
+Follow-up overview KPI parity audit evidence: the red-green cycle first failed with `cd frontend-ng && bun test src/features/home/home-page-composition.test.ts --timeout 20000` after tightening the composition guard to require the avg-response KPI, then passed after the implementation update. Local runtime reachability also remains healthy on the current preview listener with `lsof -nP -iTCP:4441 -sTCP:LISTEN` showing a single listener and `curl -I -s http://127.0.0.1:4441/` returning `HTTP/1.1 200`.
+
 ## File Structure
 
 - Modify: `frontend-ng/src/styles.css` - global MiSans, warm-paper tokens, shadcn compatibility tokens, sidebar/chart tokens, layout utilities, motion utilities, CSS-grid table classes.

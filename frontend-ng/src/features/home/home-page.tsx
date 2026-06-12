@@ -1,6 +1,6 @@
 import { Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowRightIcon, CoinsIcon, DownloadIcon, FolderGit2Icon, GitPullRequestIcon, PlugZapIcon, WorkflowIcon } from 'lucide-react'
+import { ArrowRightIcon, CoinsIcon, DownloadIcon, FolderGit2Icon, GaugeIcon, GitPullRequestIcon, WorkflowIcon } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { ButtonWithIcon } from '@/components/primitives/button-with-icon'
 import { CardContentStack } from '@/components/primitives/card-content-stack'
@@ -26,7 +26,7 @@ import { ValueComparison } from '@/components/primitives/value-comparison'
 import { StatusBadge } from '@/components/primitives/status-badge'
 import { api } from '@/lib/api'
 import type { UserUsageTrendPoint } from '@/lib/api/types'
-import { compact, currency, dateTime, number, percent } from '@/lib/format'
+import { compact, currency, dateTime, durationMs, number, percent } from '@/lib/format'
 import { useI18n } from '@/lib/i18n/i18n'
 import { buildHomeActivitySummary, homeSetupProgress } from './home-state'
 
@@ -173,11 +173,14 @@ export function HomePage() {
           sparklineColor='var(--viz-reason)'
         />
         <KpiCard
-          label={t('home.connectedTools')}
-          value={number(connectedTools.size, locale)}
-          helper={connectedTools.size ? [...connectedTools].join(', ') : t('home.statusAiAccessMissing')}
-          icon={PlugZapIcon}
-          sparkline={[0, 0, 1, 1, 2, connectedTools.size]}
+          label={t('home.avgResponse')}
+          value={durationMs(usageStats?.average_duration_ms ?? 0, locale)}
+          helper={t('usageDashboard.avgResponseHelper', {
+            rpm: compact(usageStats?.rpm ?? 0, locale),
+            tpm: compact(usageStats?.tpm ?? 0, locale)
+          })}
+          icon={GaugeIcon}
+          sparkline={usageTrend.map((point) => point.requests)}
           sparklineColor='var(--viz-cache)'
         />
       </KpiGrid>

@@ -48,10 +48,11 @@ describe('Home page composition', () => {
     expect(source).not.toContain("<div className='kpi-grid'>")
   })
 
-  test('keeps the fourth KPI aligned to real connected-tool data instead of a mock response metric', () => {
-    expect(source).toContain("label={t('home.connectedTools')}")
-    expect(source).toContain("helper={connectedTools.size ? [...connectedTools].join(', ') : t('home.statusAiAccessMissing')}")
-    expect(source).not.toContain("label={t('home.avgResponse')}")
+  test('keeps the fourth KPI aligned to the reference avg response metric using real usage stats', () => {
+    expect(source).toContain("label={t('home.avgResponse')}")
+    expect(source).toContain("value={durationMs(usageStats?.average_duration_ms ?? 0, locale)}")
+    expect(source).toContain("helper={t('usageDashboard.avgResponseHelper', {")
+    expect(source).not.toContain("label={t('home.connectedTools')}")
   })
 
   test('uses reference overview sections instead of embedding the full usage analytics panel', () => {
