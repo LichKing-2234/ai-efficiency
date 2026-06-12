@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { ArrowRightIcon, CoinsIcon, DownloadIcon, FolderGit2Icon, GaugeIcon, GitPullRequestIcon, WorkflowIcon } from 'lucide-react'
 import { ButtonWithIcon } from '@/components/primitives/button-with-icon'
 import { CardContentStack } from '@/components/primitives/card-content-stack'
+import { ChartFooterPanel } from '@/components/primitives/chart-footer-panel'
 import { BarsH, Ring, StackedAreaChart, type StackedAreaKey } from '@/components/primitives/charts'
 import { CategoryBadge } from '@/components/primitives/category-badge'
 import { ChecklistRow } from '@/components/primitives/checklist-row'
@@ -193,15 +194,14 @@ export function HomePage() {
             <CompareBar color='var(--ai)' label={t('home.actualSpend')} max={Math.max(totalStandardCost, totalActualCost, 1)} value={totalActualCost} valueLabel={currency(totalActualCost, locale)} />
             <CompareBar color='var(--surface-3)' label={t('home.standardPricing')} max={Math.max(totalStandardCost, totalActualCost, 1)} value={totalStandardCost} valueLabel={currency(totalStandardCost, locale)} />
             {trendMini.length ? (
-              <CardContentStack className='border-[var(--line-faint)] border-t px-0 pt-3'>
-                <div className='text-[11.5px] font-medium text-[var(--ink-3)]'>{t('home.tokenConsumption14d')}</div>
+              <ChartFooterPanel label={t('home.tokenConsumption14d')}>
                 <StackedAreaChart
                   height={120}
                   keys={tokenKeys}
                   series={trendMini}
                   valueFormatter={(value) => compact(value, locale)}
                 />
-              </CardContentStack>
+              </ChartFooterPanel>
             ) : null}
         </SectionCard>
         <EntitySectionCard

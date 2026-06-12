@@ -103,14 +103,17 @@ describe('Home page composition', () => {
   })
 
   test('uses shared overview pulse and comparison primitives instead of page-local helpers', () => {
+    expect(source).toContain("from '@/components/primitives/chart-footer-panel'")
     expect(source).toContain("from '@/components/primitives/compare-bar'")
     expect(source).toContain("from '@/components/primitives/pulse-stat'")
     expect(source).toContain("from '@/components/primitives/section-card'")
+    expect(source).toContain('<ChartFooterPanel')
     expect(source).toContain('<PulseStat')
     expect(source).toContain('<CompareBar')
     expect(source).not.toContain('function PulseStat(')
     expect(source).not.toContain('function CompareBar(')
     expect(source).not.toContain("<div className='text-muted-foreground text-sm line-through'>{currency(totalStandardCost, locale)}</div>")
+    expect(source).not.toContain("<CardContentStack className='border-[var(--line-faint)] border-t px-0 pt-3'>")
   })
 
   test('does not borrow token spark data for the active devs pulse card', () => {
