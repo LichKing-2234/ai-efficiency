@@ -123,10 +123,8 @@ describe('Admin users page composition', () => {
   })
 
   test('keeps the user table toolbar search-led like the reference screen', () => {
-    expect(source).toContain("from '@/components/primitives/framed-table-card'")
-    expect(source).toContain("from '@/components/primitives/search-action-bar'")
-    expect(source).toContain('<FramedTableCard')
-    expect(source).toContain('<SearchActionBar')
+    expect(source).toContain("from '@/components/primitives/search-table-workbench'")
+    expect(source).toContain('<SearchTableWorkbench')
     expect(source).toContain('<EndActions>')
     expect(source).toContain("width='toolbar'")
     expect(source).toContain("placeholder={t('adminUsers.searchUsers')}")

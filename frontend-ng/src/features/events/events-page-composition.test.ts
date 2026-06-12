@@ -17,10 +17,8 @@ describe('Events page composition', () => {
     expect(source).toContain("from '@/components/primitives/filter-row'")
     expect(source).toContain("from '@/components/primitives/primary-action-button'")
     expect(source).toContain("from '@/components/primitives/secondary-action-button'")
-    expect(source).toContain("from '@/components/primitives/search-action-bar'")
-    expect(source).toContain("from '@/components/primitives/search-workbench-card'")
-    expect(source).toContain('<SearchWorkbenchCard>')
-    expect(source).toContain('<SearchActionBar')
+    expect(source).toContain("from '@/components/primitives/search-table-workbench'")
+    expect(source).toContain('<SearchTableWorkbench')
     expect(source).toContain("<FilterRow className='min-w-0 flex-1'>")
     expect(source).toContain("<FilterRow align='start'>")
     expect(source).toContain("width='toolbar'")
@@ -91,8 +89,8 @@ describe('Events page composition', () => {
   })
 
   test('uses the shared data grid status row for empty results', () => {
-    expect(source).toContain("from '@/components/primitives/framed-table-card'")
-    expect(source).toContain('<FramedTableCard')
+    expect(source).toContain("from '@/components/primitives/search-table-workbench'")
+    expect(source).toContain('<SearchTableWorkbench')
     expect(source).toContain("<PageEmpty title={t('events.noFilteredEvents')} />")
     expect(source).not.toContain('<FramedCard>')
     expect(source).not.toContain('<DataGridStatusRow')

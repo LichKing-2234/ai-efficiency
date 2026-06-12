@@ -27,8 +27,7 @@ import { PageSizeSelect } from '@/components/primitives/page-size-select'
 import { PrimaryActionButton } from '@/components/primitives/primary-action-button'
 import { QuietActionButton } from '@/components/primitives/quiet-action-button'
 import { SearchField } from '@/components/primitives/search-field'
-import { SearchActionBar } from '@/components/primitives/search-action-bar'
-import { SearchWorkbenchCard } from '@/components/primitives/search-workbench-card'
+import { SearchTableWorkbench } from '@/components/primitives/search-table-workbench'
 import { SecondaryActionButton } from '@/components/primitives/secondary-action-button'
 import { SlideOver } from '@/components/primitives/slide-over'
 import { SlideOverStack } from '@/components/primitives/slide-over-stack'
@@ -164,97 +163,95 @@ export function EventsPage() {
         <KpiCard label={t('events.credits')} value={number(totalCredit)} icon={CoinsIcon} sparkline={rows.map((row) => row.credit_usage)} sparklineColor='var(--viz-cache)' />
       </KpiGrid>
 
-      <SearchWorkbenchCard>
-        <SearchActionBar
-          search={(
-            <FilterRow className='min-w-0 flex-1'>
-              <SearchField
-                ariaLabel={t('events.searchRepoSessionSource')}
-                clearLabel={t('common.clear')}
-                onChange={(q) => setFilters((value) => ({ ...value, q }))}
-                onClear={() => setFilters((value) => ({ ...value, q: '' }))}
-                placeholder={t('events.searchRepoSessionSource')}
-                value={filters.q}
-                width='toolbar'
-              />
-              <LabeledSegmentedControl
-                ariaLabel={t('events.tool')}
-                label={t('events.tool')}
-                onChange={(tool) => setFilters((current) => ({ ...current, tool: segmentToFilter(tool) }))}
-                options={[{ value: 'all', label: t('events.allTools') }, ...TOOL_OPTIONS.map((tool) => ({ value: tool, label: tool }))]}
-                value={filterToSegment(filters.tool)}
-              />
-              <LabeledSegmentedControl
-                ariaLabel={t('events.binding')}
-                label={t('events.binding')}
-                onChange={(bindingStatus) => setFilters((current) => ({ ...current, bindingStatus: segmentToFilter(bindingStatus) }))}
-                options={[
-                  { value: 'all', label: t('events.allCodeLinks') },
-                  { value: 'bound', label: t('repos.bound') },
-                  { value: 'unbound', label: t('repos.unbound') }
-                ]}
-                value={filterToSegment(filters.bindingStatus)}
-              />
-              <PrimaryActionButton onClick={applyCurrentFilters}>{t('common.applyFilters')}</PrimaryActionButton>
-            </FilterRow>
-          )}
-          actions={(
-            <ButtonWithIcon size='sm' disabled={rows.length === 0} variant='outline' icon={DownloadIcon} onClick={exportRows}>
-              {t('command.exportUsageReport')}
-            </ButtonWithIcon>
-          )}
-        >
-          <FilterRow align='start'>
-            <TextField
-              id='events-filter-from'
-              label={t('events.fromTime')}
-              type='datetime-local'
-              value={filters.from}
-              width='datetime'
-              onChange={(from) => setFilters((value) => ({ ...value, from }))}
+      <SearchTableWorkbench
+        search={(
+          <FilterRow className='min-w-0 flex-1'>
+            <SearchField
+              ariaLabel={t('events.searchRepoSessionSource')}
+              clearLabel={t('common.clear')}
+              onChange={(q) => setFilters((value) => ({ ...value, q }))}
+              onClear={() => setFilters((value) => ({ ...value, q: '' }))}
+              placeholder={t('events.searchRepoSessionSource')}
+              value={filters.q}
+              width='toolbar'
             />
-            <TextField
-              id='events-filter-to'
-              label={t('events.toTime')}
-              type='datetime-local'
-              value={filters.to}
-              width='datetime'
-              onChange={(to) => setFilters((value) => ({ ...value, to }))}
+            <LabeledSegmentedControl
+              ariaLabel={t('events.tool')}
+              label={t('events.tool')}
+              onChange={(tool) => setFilters((current) => ({ ...current, tool: segmentToFilter(tool) }))}
+              options={[{ value: 'all', label: t('events.allTools') }, ...TOOL_OPTIONS.map((tool) => ({ value: tool, label: tool }))]}
+              value={filterToSegment(filters.tool)}
             />
-            <SecondaryActionButton onClick={clearTimeRange}>{t('events.clearTime')}</SecondaryActionButton>
-            {isAdmin ? (
-              <>
-                <TextField
-                  id='events-user-search'
-                  label={t('events.searchUsersByNameOrEmail')}
-                  placeholder={t('events.searchUsersByNameOrEmail')}
-                  value={userSearch}
-                  width='wide'
-                  onChange={setUserSearch}
-                />
-                <SecondaryActionButton onClick={searchUsers} disabled={users.isFetching}>{t('adminUsers.searchUsers')}</SecondaryActionButton>
-              </>
-            ) : null}
-            {isAdmin && appliedFilters.userId ? <QuietActionButton onClick={clearSelectedUser}>{t('adminUsers.clearUser', { id: appliedFilters.userId })}</QuietActionButton> : null}
+            <LabeledSegmentedControl
+              ariaLabel={t('events.binding')}
+              label={t('events.binding')}
+              onChange={(bindingStatus) => setFilters((current) => ({ ...current, bindingStatus: segmentToFilter(bindingStatus) }))}
+              options={[
+                { value: 'all', label: t('events.allCodeLinks') },
+                { value: 'bound', label: t('repos.bound') },
+                { value: 'unbound', label: t('repos.unbound') }
+              ]}
+              value={filterToSegment(filters.bindingStatus)}
+            />
+            <PrimaryActionButton onClick={applyCurrentFilters}>{t('common.applyFilters')}</PrimaryActionButton>
           </FilterRow>
-          {userOptions.length > 0 ? (
-            <OptionList
-              ariaLabel={t('events.searchUsersByNameOrEmail')}
-              items={userOptions.map((user) => ({
-                id: user.id,
-                label: user.email || user.username,
-                description: `${user.role} · ${number(user.event_count)}`
-              }))}
-              onSelect={(item) => {
-                const user = userOptions.find((option) => option.id === item.id)
-                if (user) selectUser(user)
-              }}
-            />
-          ) : null}
-        </SearchActionBar>
-      </SearchWorkbenchCard>
-
-      <FramedTableCard
+        )}
+        actions={(
+          <ButtonWithIcon size='sm' disabled={rows.length === 0} variant='outline' icon={DownloadIcon} onClick={exportRows}>
+            {t('command.exportUsageReport')}
+          </ButtonWithIcon>
+        )}
+        searchChildren={(
+          <>
+            <FilterRow align='start'>
+              <TextField
+                id='events-filter-from'
+                label={t('events.fromTime')}
+                type='datetime-local'
+                value={filters.from}
+                width='datetime'
+                onChange={(from) => setFilters((value) => ({ ...value, from }))}
+              />
+              <TextField
+                id='events-filter-to'
+                label={t('events.toTime')}
+                type='datetime-local'
+                value={filters.to}
+                width='datetime'
+                onChange={(to) => setFilters((value) => ({ ...value, to }))}
+              />
+              <SecondaryActionButton onClick={clearTimeRange}>{t('events.clearTime')}</SecondaryActionButton>
+              {isAdmin ? (
+                <>
+                  <TextField
+                    id='events-user-search'
+                    label={t('events.searchUsersByNameOrEmail')}
+                    placeholder={t('events.searchUsersByNameOrEmail')}
+                    value={userSearch}
+                    width='wide'
+                    onChange={setUserSearch}
+                  />
+                  <SecondaryActionButton onClick={searchUsers} disabled={users.isFetching}>{t('adminUsers.searchUsers')}</SecondaryActionButton>
+                </>
+              ) : null}
+              {isAdmin && appliedFilters.userId ? <QuietActionButton onClick={clearSelectedUser}>{t('adminUsers.clearUser', { id: appliedFilters.userId })}</QuietActionButton> : null}
+            </FilterRow>
+            {userOptions.length > 0 ? (
+              <OptionList
+                ariaLabel={t('events.searchUsersByNameOrEmail')}
+                items={userOptions.map((user) => ({
+                  id: user.id,
+                  label: user.email || user.username,
+                  description: `${user.role} · ${number(user.event_count)}`
+                }))}
+                onSelect={(item) => {
+                  const user = userOptions.find((option) => option.id === item.id)
+                  if (user) selectUser(user)
+                }}
+              />
+            ) : null}
+          </>
+        )}
         footer={(
           <CardPagerFooter
             meta={t('common.pageCount', { current: pagination.currentPage, total: pagination.totalPages })}
@@ -297,7 +294,7 @@ export function EventsPage() {
           ))}
           {rows.length === 0 ? <PageEmpty title={t('events.noFilteredEvents')} /> : null}
         </DataGrid>
-      </FramedTableCard>
+      </SearchTableWorkbench>
 
       <EventDetail event={selected} isAdmin={isAdmin} onClose={() => setSelected(null)} />
     </Page>

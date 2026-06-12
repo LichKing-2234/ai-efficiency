@@ -23,7 +23,7 @@ import { PagerNavButton } from '@/components/primitives/pager-nav-button'
 import { PageSizeSelect } from '@/components/primitives/page-size-select'
 import { RowInsetPanel } from '@/components/primitives/row-inset-panel'
 import { SearchField } from '@/components/primitives/search-field'
-import { SearchActionBar } from '@/components/primitives/search-action-bar'
+import { SearchTableWorkbench } from '@/components/primitives/search-table-workbench'
 import { SectionCard } from '@/components/primitives/section-card'
 import { StatusWithReason } from '@/components/primitives/status-with-reason'
 import { KpiCard } from '@/components/primitives/metric-card'
@@ -241,52 +241,48 @@ export function AdminUsersPage() {
             <JobResultList items={jobResults} />
           ) : null}
       </SectionCard>
-      <FramedTableCard
-        header={(
-          <SearchActionBar
-            search={(
-              <SearchField
-                ariaLabel={t('adminUsers.searchUsers')}
-                clearLabel={t('common.clear')}
-                onChange={(value) => {
-                  setQ(value)
-                  setPage(1)
-                }}
-                onClear={() => {
-                  setQ('')
-                  setPage(1)
-                }}
-                placeholder={t('adminUsers.searchUsers')}
-                value={q}
-                width='toolbar'
-              />
-            )}
-            actions={(
-              <>
-                <PageSizeSelect
-                  ariaLabel={t('common.pageSizeControl')}
-                  sizes={[10, 20, 50, 100]}
-                  tPageSize={(size) => t('common.pageSize', { size })}
-                  value={pageSize}
-                  onValueChange={(value) => {
-                    setPageSize(value)
-                    setPage(1)
-                  }}
-                />
-                <ButtonWithIcon size='sm' variant='outline' icon={RefreshCw} disabled={users.isFetching} onClick={() => void users.refetch()}>
-                  {t('common.refresh')}
-                </ButtonWithIcon>
-                {currentJob ? (
-                  <StatusWithReason
-                    inline
-                    meta={`${number(currentJob.processed_count)}/${number(currentJob.total_count)}`}
-                    metaNumeric
-                    value={currentJob.status}
-                  />
-                ) : null}
-              </>
-            )}
+      <SearchTableWorkbench
+        search={(
+          <SearchField
+            ariaLabel={t('adminUsers.searchUsers')}
+            clearLabel={t('common.clear')}
+            onChange={(value) => {
+              setQ(value)
+              setPage(1)
+            }}
+            onClear={() => {
+              setQ('')
+              setPage(1)
+            }}
+            placeholder={t('adminUsers.searchUsers')}
+            value={q}
+            width='toolbar'
           />
+        )}
+        actions={(
+          <>
+            <PageSizeSelect
+              ariaLabel={t('common.pageSizeControl')}
+              sizes={[10, 20, 50, 100]}
+              tPageSize={(size) => t('common.pageSize', { size })}
+              value={pageSize}
+              onValueChange={(value) => {
+                setPageSize(value)
+                setPage(1)
+              }}
+            />
+            <ButtonWithIcon size='sm' variant='outline' icon={RefreshCw} disabled={users.isFetching} onClick={() => void users.refetch()}>
+              {t('common.refresh')}
+            </ButtonWithIcon>
+            {currentJob ? (
+              <StatusWithReason
+                inline
+                meta={`${number(currentJob.processed_count)}/${number(currentJob.total_count)}`}
+                metaNumeric
+                value={currentJob.status}
+              />
+            ) : null}
+          </>
         )}
         footer={(
           <CardPagerFooter
@@ -368,7 +364,7 @@ export function AdminUsersPage() {
             )
           })}
         </DataGrid>
-      </FramedTableCard>
+      </SearchTableWorkbench>
     </Page>
   )
 }
