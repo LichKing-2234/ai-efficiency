@@ -1,6 +1,5 @@
 import type * as React from 'react'
 import { ActionGroup } from '@/components/primitives/action-group'
-import { StatusBadge } from '@/components/primitives/status-badge'
 import { Stack } from '@/components/primitives/stack'
 import { cn } from '@/lib/utils'
 
@@ -81,13 +80,17 @@ export function SelectableCardStatus({
 }: React.ComponentProps<'div'> & {
   tone?: 'success' | 'warning'
 }) {
-  const text = typeof props.children === 'string' ? props.children : undefined
   return (
     <span
       data-slot='selectable-card-status'
-      className={cn('mt-1.5 inline-flex', className)}
+      className={cn(
+        'mt-1.5 inline-flex text-[11px] font-medium',
+        tone === 'success' ? 'text-[var(--pos)]' : 'text-[var(--warn)]',
+        className
+      )}
+      {...props}
     >
-      <StatusBadge label={text} value={tone === 'success' ? 'success' : 'pending_upload'} />
+      {props.children}
     </span>
   )
 }

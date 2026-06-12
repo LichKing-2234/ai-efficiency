@@ -23,4 +23,15 @@ describe('provider selection cards', () => {
     expect(source).not.toContain("className='mono mt-1 truncate text-muted-foreground text-[11px]'")
     expect(source).not.toContain("ready === total ? 'mt-2 font-medium text-[var(--pos)] text-xs' : 'mt-2 font-medium text-[var(--warn)] text-xs'")
   })
+
+  test('keeps provider readiness copy lightweight instead of promoting it to a badge pill', async () => {
+    const primitiveSource = await import('node:fs/promises').then((fs) =>
+      fs.readFile(new URL('../../components/primitives/selectable-card.tsx', import.meta.url), 'utf8')
+    )
+
+    expect(primitiveSource).toContain("text-[11px] font-medium")
+    expect(primitiveSource).toContain("tone === 'success' ? 'text-[var(--pos)]' : 'text-[var(--warn)]'")
+    expect(primitiveSource).not.toContain("from '@/components/primitives/status-badge'")
+    expect(primitiveSource).not.toContain('<StatusBadge')
+  })
 })

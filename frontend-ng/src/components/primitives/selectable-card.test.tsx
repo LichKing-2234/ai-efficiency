@@ -16,7 +16,7 @@ describe('SelectableCard', () => {
     expect(html).toContain('Provider Alpha')
   })
 
-  test('renders standardized selectable card content slots', () => {
+  test('renders standardized selectable card content slots with lightweight status copy', () => {
     const html = renderToStaticMarkup(
       <SelectableCard active>
         <SelectableCardHeader>
@@ -37,15 +37,17 @@ describe('SelectableCard', () => {
     expect(html).toContain('[&amp;&gt;*]:flex-1')
     expect(html).toContain('mono')
     expect(html).toContain('2/3 ready')
+    expect(html).toContain('text-[11px]')
+    expect(html).toContain('text-[var(--warn)]')
+    expect(html).not.toContain('data-slot="badge"')
   })
 
-  test('uses shared action-group, status, and stack primitives for selectable card layout', async () => {
+  test('uses shared action-group and stack primitives for selectable card layout', async () => {
     const source = await import('node:fs/promises').then((fs) =>
       fs.readFile(new URL('./selectable-card.tsx', import.meta.url), 'utf8')
     )
 
     expect(source).toContain("from '@/components/primitives/action-group'")
-    expect(source).toContain("from '@/components/primitives/status-badge'")
     expect(source).toContain("from '@/components/primitives/stack'")
     expect(source).toContain('<Stack')
     expect(source).toContain('<ActionGroup')
@@ -54,7 +56,10 @@ describe('SelectableCard', () => {
     expect(source).toContain("data-[active=true]:bg-[var(--ai-softer)]")
     expect(source).toContain("truncate font-semibold text-[13px]")
     expect(source).toContain("mono mt-1 truncate text-[10.5px] text-[var(--ink-4)]")
-    expect(source).toContain("<StatusBadge label={text} value={tone === 'success' ? 'success' : 'pending_upload'} />")
+    expect(source).toContain("tone === 'success'")
+    expect(source).toContain("text-[var(--pos)]")
+    expect(source).toContain("text-[var(--warn)]")
+    expect(source).not.toContain("from '@/components/primitives/status-badge'")
     expect(source).not.toContain("rounded-[var(--r-md)] border border-border bg-card p-[12px]")
     expect(source).not.toContain("className={cn('flex items-center justify-between gap-2', className)}")
   })
