@@ -15,7 +15,7 @@ import { DataGrid, DataGridCell, DataGridHeader, DataGridHeaderCell, DataGridRow
 import { EntityCardHeader } from '@/components/primitives/entity-card-header'
 import { FilterRow } from '@/components/primitives/filter-row'
 import { FilterRowTitle } from '@/components/primitives/filter-row-title'
-import { FramedCard } from '@/components/primitives/framed-card'
+import { FramedTableCard } from '@/components/primitives/framed-table-card'
 import { FormActions } from '@/components/primitives/form-actions'
 import { InfoTile, InfoTileGrid } from '@/components/primitives/info-tile'
 import { InsetPanel } from '@/components/primitives/inset-panel'
@@ -308,40 +308,50 @@ export function RepoDetailPage() {
             }} disabled={saveBinding.isPending}>{t('repoDetail.clearBinding')}</QuietActionButton>
           </ControlGrid>
       </SectionCard>
-      <FramedCard>
-        <EntityCardHeader
-          title={t('repoDetail.pullRequests')}
-          actions={(
-            <FilterRow tone='label'>
-              <FilterRowTitle title={t('repoDetail.mergedIn')} variant='label' />
-              <ToolbarSelect
-                ariaLabel={t('repoDetail.mergedIn')}
-                options={[
-                  { value: '1', label: '1' },
-                  { value: '3', label: '3' },
-                  { value: '6', label: '6' },
-                  { value: '12', label: '12' },
-                  { value: '0', label: t('common.allTime') }
-                ]}
-                value={String(prsMonths)}
-                onValueChange={(value) => {
-                  setPRsMonths(Number(value))
-                  setPRsPage(0)
-                }}
-              />
-              <PageSizeSelect
-                ariaLabel={t('common.pageSizeControl')}
-                sizes={[10, 25, 50]}
-                tPageSize={(size) => t('common.pageSize', { size })}
-                value={prsPageSize}
-                onValueChange={(value) => {
-                  setPRsPageSize(value)
-                  setPRsPage(0)
-                }}
-              />
-            </FilterRow>
-          )}
-        />
+      <FramedTableCard
+        header={(
+          <EntityCardHeader
+            title={t('repoDetail.pullRequests')}
+            actions={(
+              <FilterRow tone='label'>
+                <FilterRowTitle title={t('repoDetail.mergedIn')} variant='label' />
+                <ToolbarSelect
+                  ariaLabel={t('repoDetail.mergedIn')}
+                  options={[
+                    { value: '1', label: '1' },
+                    { value: '3', label: '3' },
+                    { value: '6', label: '6' },
+                    { value: '12', label: '12' },
+                    { value: '0', label: t('common.allTime') }
+                  ]}
+                  value={String(prsMonths)}
+                  onValueChange={(value) => {
+                    setPRsMonths(Number(value))
+                    setPRsPage(0)
+                  }}
+                />
+                <PageSizeSelect
+                  ariaLabel={t('common.pageSizeControl')}
+                  sizes={[10, 25, 50]}
+                  tPageSize={(size) => t('common.pageSize', { size })}
+                  value={prsPageSize}
+                  onValueChange={(value) => {
+                    setPRsPageSize(value)
+                    setPRsPage(0)
+                  }}
+                />
+              </FilterRow>
+            )}
+          />
+        )}
+        footer={(
+          <CardPagerFooter
+            summary={t('repoDetail.pagePrs', { page: number(prsPage + 1), total: number(totalPRs) })}
+            previous={<PagerNavButton direction='previous' onClick={() => setPRsPage((value) => Math.max(0, value - 1))} disabled={!hasPreviousPage || prs.isFetching}>{t('common.previous')}</PagerNavButton>}
+            next={<PagerNavButton direction='next' onClick={() => setPRsPage((value) => value + 1)} disabled={!hasNextPage || prs.isFetching}>{t('common.next')}</PagerNavButton>}
+          />
+        )}
+      >
         <DataGrid minWidth={1180}>
           <DataGridHeader columns={prColumns}>
             <span>{t('repoDetail.prColumn')}</span>
@@ -462,12 +472,7 @@ export function RepoDetailPage() {
                 )
               })}
         </DataGrid>
-        <CardPagerFooter
-          summary={t('repoDetail.pagePrs', { page: number(prsPage + 1), total: number(totalPRs) })}
-          previous={<PagerNavButton direction='previous' onClick={() => setPRsPage((value) => Math.max(0, value - 1))} disabled={!hasPreviousPage || prs.isFetching}>{t('common.previous')}</PagerNavButton>}
-          next={<PagerNavButton direction='next' onClick={() => setPRsPage((value) => value + 1)} disabled={!hasNextPage || prs.isFetching}>{t('common.next')}</PagerNavButton>}
-        />
-      </FramedCard>
+      </FramedTableCard>
     </Page>
   )
 }

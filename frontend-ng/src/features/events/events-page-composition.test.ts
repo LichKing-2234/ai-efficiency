@@ -88,10 +88,10 @@ describe('Events page composition', () => {
   })
 
   test('uses the shared data grid status row for empty results', () => {
-    expect(source).toContain("from '@/components/primitives/framed-card'")
-    expect(source).toContain('<FramedCard>')
+    expect(source).toContain("from '@/components/primitives/framed-table-card'")
+    expect(source).toContain('<FramedTableCard')
     expect(source).toContain("<PageEmpty title={t('events.noFilteredEvents')} />")
-    expect(source).not.toContain("<Card className='overflow-hidden'>")
+    expect(source).not.toContain('<FramedCard>')
     expect(source).not.toContain('<DataGridStatusRow')
     expect(source).not.toContain("className='px-6 py-10 text-center text-muted-foreground text-sm'")
   })
@@ -101,7 +101,8 @@ describe('Events page composition', () => {
     expect(source).toContain("from '@/components/primitives/pager-nav-button'")
     expect(source).toContain("from '@/components/primitives/page-size-select'")
     expect(source).toContain("<PageEmpty title={t('events.noMatchedPrs')} />")
-    expect(source).toContain("<PageSizeSelect\n                ariaLabel={t('common.pageSizeControl')}")
+    expect(source).toContain("<PageSizeSelect")
+    expect(source).toContain("ariaLabel={t('common.pageSizeControl')}")
     expect(source).toContain("labelMode='plain'")
     expect(source).toContain("<PagerNavButton direction='previous' onClick={previousPage} disabled={!pagination.canGoPrev}>")
     expect(source).toContain("<PagerNavButton direction='next' onClick={nextPage} disabled={!pagination.canGoNext}>")

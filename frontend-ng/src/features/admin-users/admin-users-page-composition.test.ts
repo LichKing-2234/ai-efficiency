@@ -123,15 +123,15 @@ describe('Admin users page composition', () => {
   })
 
   test('keeps the user table toolbar search-led like the reference screen', () => {
-    expect(source).toContain("from '@/components/primitives/framed-card'")
+    expect(source).toContain("from '@/components/primitives/framed-table-card'")
     expect(source).toContain("from '@/components/primitives/search-action-bar'")
-    expect(source).toContain('<FramedCard>')
+    expect(source).toContain('<FramedTableCard')
     expect(source).toContain('<SearchActionBar')
     expect(source).toContain('<EndActions>')
     expect(source).toContain("width='toolbar'")
     expect(source).toContain("placeholder={t('adminUsers.searchUsers')}")
     expect(source).toContain("<ButtonWithIcon size='sm' variant='outline' icon={RefreshCw} disabled={users.isFetching} onClick={() => void users.refetch()}>")
-    expect(source).not.toContain("<Card className='overflow-hidden'>")
+    expect(source).not.toContain('<FramedCard>')
     expect(source).not.toContain("from '@/components/primitives/card-filter-bar'")
     expect(source).not.toContain("<ToolbarSelect\n            ariaLabel={t('common.pageSizeControl')}")
     expect(source).not.toContain("<div className='flex items-center justify-between gap-3'>")

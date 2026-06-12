@@ -12,7 +12,7 @@ import { DataGrid, DataGridCell, DataGridHeader, DataGridHeaderCell, DataGridRow
 import { DetailSection } from '@/components/primitives/detail-section'
 import { FieldItem, FieldList } from '@/components/primitives/field-list'
 import { FilterRow } from '@/components/primitives/filter-row'
-import { FramedCard } from '@/components/primitives/framed-card'
+import { FramedTableCard } from '@/components/primitives/framed-table-card'
 import { GlyphLabelCell } from '@/components/primitives/glyph-label-cell'
 import { InfoTile, InfoTileGrid } from '@/components/primitives/info-tile'
 import { KpiGrid } from '@/components/primitives/kpi-grid'
@@ -254,7 +254,29 @@ export function EventsPage() {
         </SearchActionBar>
       </Card>
 
-      <FramedCard>
+      <FramedTableCard
+        footer={(
+          <CardPagerFooter
+            meta={t('common.pageCount', { current: pagination.currentPage, total: pagination.totalPages })}
+            summary={t('events.total', { total: number(total) })}
+            previous={(
+              <>
+                <PageSizeSelect
+                  ariaLabel={t('common.pageSizeControl')}
+                  labelMode='plain'
+                  size='sm'
+                  value={appliedFilters.limit}
+                  onValueChange={changePageSize}
+                />
+                <PagerNavButton direction='previous' onClick={previousPage} disabled={!pagination.canGoPrev}>{t('common.previous')}</PagerNavButton>
+              </>
+            )}
+            next={(
+              <PagerNavButton direction='next' onClick={nextPage} disabled={!pagination.canGoNext}>{t('common.next')}</PagerNavButton>
+            )}
+          />
+        )}
+      >
         <DataGrid minWidth={860} scrollClassName='min-w-0'>
           <DataGridHeader columns={eventColumns}>
             <span />
@@ -275,26 +297,7 @@ export function EventsPage() {
           ))}
           {rows.length === 0 ? <PageEmpty title={t('events.noFilteredEvents')} /> : null}
         </DataGrid>
-        <CardPagerFooter
-          meta={t('common.pageCount', { current: pagination.currentPage, total: pagination.totalPages })}
-          summary={t('events.total', { total: number(total) })}
-          previous={(
-            <>
-              <PageSizeSelect
-                ariaLabel={t('common.pageSizeControl')}
-                labelMode='plain'
-                size='sm'
-                value={appliedFilters.limit}
-                onValueChange={changePageSize}
-              />
-              <PagerNavButton direction='previous' onClick={previousPage} disabled={!pagination.canGoPrev}>{t('common.previous')}</PagerNavButton>
-            </>
-          )}
-          next={(
-            <PagerNavButton direction='next' onClick={nextPage} disabled={!pagination.canGoNext}>{t('common.next')}</PagerNavButton>
-          )}
-        />
-      </FramedCard>
+      </FramedTableCard>
 
       <EventDetail event={selected} isAdmin={isAdmin} onClose={() => setSelected(null)} />
     </Page>

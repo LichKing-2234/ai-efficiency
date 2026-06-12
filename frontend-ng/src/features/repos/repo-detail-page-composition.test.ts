@@ -48,7 +48,8 @@ describe('Repo detail page composition', () => {
 
   test('uses the shared page-size select for pull request pager sizing', () => {
     expect(source).toContain("from '@/components/primitives/page-size-select'")
-    expect(source).toContain("<PageSizeSelect\n                ariaLabel={t('common.pageSizeControl')}")
+    expect(source).toContain("<PageSizeSelect")
+    expect(source).toContain("ariaLabel={t('common.pageSizeControl')}")
     expect(source).toContain('sizes={[10, 25, 50]}')
     expect(source).toContain("tPageSize={(size) => t('common.pageSize', { size })}")
     expect(source).not.toContain("<ToolbarSelect\n                ariaLabel={t('common.pageSizeControl')}")
@@ -66,11 +67,10 @@ describe('Repo detail page composition', () => {
   test('uses shared card content stacks for scm binding card bodies', () => {
     expect(source).toContain("from '@/components/primitives/section-card'")
     expect(source).toContain('<SectionCard')
-    expect(source).toContain("from '@/components/primitives/framed-card'")
-    expect(source).toContain('<FramedCard>')
+    expect(source).toContain("from '@/components/primitives/framed-table-card'")
+    expect(source).toContain('<FramedTableCard')
     expect(source).toContain("from '@/components/primitives/card-content-stack'")
-    expect(source).not.toContain('<Card>')
-    expect(source).not.toContain("<Card className='overflow-hidden'>")
+    expect(source).not.toContain('<FramedCard>')
     expect(source).not.toContain('<CardContent>')
   })
 

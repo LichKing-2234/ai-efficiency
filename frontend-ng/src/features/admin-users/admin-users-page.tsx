@@ -12,7 +12,7 @@ import { DataGridCheckbox } from '@/components/primitives/data-grid-checkbox'
 import { CardPagerFooter } from '@/components/primitives/card-pager-footer'
 import { DataGrid, DataGridCell, DataGridHeader, DataGridIdentityCell, DataGridRow, DataGridRowAffordance } from '@/components/primitives/data-grid'
 import { EndActions } from '@/components/primitives/end-actions'
-import { FramedCard } from '@/components/primitives/framed-card'
+import { FramedTableCard } from '@/components/primitives/framed-table-card'
 import { Page } from '@/components/primitives/page'
 import { LoadingState } from '@/components/primitives/data-state'
 import { InsetPanel } from '@/components/primitives/inset-panel'
@@ -241,51 +241,61 @@ export function AdminUsersPage() {
             <JobResultList items={jobResults} />
           ) : null}
       </SectionCard>
-      <FramedCard>
-        <SearchActionBar
-          search={(
-            <SearchField
-              ariaLabel={t('adminUsers.searchUsers')}
-              clearLabel={t('common.clear')}
-              onChange={(value) => {
-                setQ(value)
-                setPage(1)
-              }}
-              onClear={() => {
-                setQ('')
-                setPage(1)
-              }}
-              placeholder={t('adminUsers.searchUsers')}
-              value={q}
-              width='toolbar'
-            />
-          )}
-          actions={(
-            <>
-              <PageSizeSelect
-                ariaLabel={t('common.pageSizeControl')}
-                sizes={[10, 20, 50, 100]}
-                tPageSize={(size) => t('common.pageSize', { size })}
-                value={pageSize}
-                onValueChange={(value) => {
-                  setPageSize(value)
+      <FramedTableCard
+        header={(
+          <SearchActionBar
+            search={(
+              <SearchField
+                ariaLabel={t('adminUsers.searchUsers')}
+                clearLabel={t('common.clear')}
+                onChange={(value) => {
+                  setQ(value)
                   setPage(1)
                 }}
+                onClear={() => {
+                  setQ('')
+                  setPage(1)
+                }}
+                placeholder={t('adminUsers.searchUsers')}
+                value={q}
+                width='toolbar'
               />
-              <ButtonWithIcon size='sm' variant='outline' icon={RefreshCw} disabled={users.isFetching} onClick={() => void users.refetch()}>
-                {t('common.refresh')}
-              </ButtonWithIcon>
-              {currentJob ? (
-                <StatusWithReason
-                  inline
-                  meta={`${number(currentJob.processed_count)}/${number(currentJob.total_count)}`}
-                  metaNumeric
-                  value={currentJob.status}
+            )}
+            actions={(
+              <>
+                <PageSizeSelect
+                  ariaLabel={t('common.pageSizeControl')}
+                  sizes={[10, 20, 50, 100]}
+                  tPageSize={(size) => t('common.pageSize', { size })}
+                  value={pageSize}
+                  onValueChange={(value) => {
+                    setPageSize(value)
+                    setPage(1)
+                  }}
                 />
-              ) : null}
-            </>
-          )}
-        />
+                <ButtonWithIcon size='sm' variant='outline' icon={RefreshCw} disabled={users.isFetching} onClick={() => void users.refetch()}>
+                  {t('common.refresh')}
+                </ButtonWithIcon>
+                {currentJob ? (
+                  <StatusWithReason
+                    inline
+                    meta={`${number(currentJob.processed_count)}/${number(currentJob.total_count)}`}
+                    metaNumeric
+                    value={currentJob.status}
+                  />
+                ) : null}
+              </>
+            )}
+          />
+        )}
+        footer={(
+          <CardPagerFooter
+            summary={t('adminUsers.pageOfUsers', { page, totalPages, total: number(total) })}
+            previous={<PagerNavButton direction='previous' disabled={page <= 1 || users.isFetching} onClick={() => setPage((value) => Math.max(1, value - 1))}>{t('common.previous')}</PagerNavButton>}
+            next={<PagerNavButton direction='next' disabled={page >= totalPages || users.isFetching} onClick={() => setPage((value) => value + 1)}>{t('common.next')}</PagerNavButton>}
+          />
+        )}
+      >
         <DataGrid minWidth={1100}>
           <DataGridHeader columns={tableColumns}>
             <span>
@@ -358,12 +368,7 @@ export function AdminUsersPage() {
             )
           })}
         </DataGrid>
-        <CardPagerFooter
-          summary={t('adminUsers.pageOfUsers', { page, totalPages, total: number(total) })}
-          previous={<PagerNavButton direction='previous' disabled={page <= 1 || users.isFetching} onClick={() => setPage((value) => Math.max(1, value - 1))}>{t('common.previous')}</PagerNavButton>}
-          next={<PagerNavButton direction='next' disabled={page >= totalPages || users.isFetching} onClick={() => setPage((value) => value + 1)}>{t('common.next')}</PagerNavButton>}
-        />
-      </FramedCard>
+      </FramedTableCard>
     </Page>
   )
 }
