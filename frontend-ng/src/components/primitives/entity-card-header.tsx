@@ -37,7 +37,7 @@ export function EntityCardHeader({
 }) {
   return (
     <CardHeader data-slot='entity-card-header' className={cn('gap-4', className)}>
-      <ActionGroup align='responsive-end' className={cn('lg:items-start', contentClassName)} dataSlot='entity-card-header-content' fit layout='split'>
+      <ActionGroup align='responsive-end' className={cn('min-[920px]:items-start', contentClassName)} dataSlot='entity-card-header-content' fit layout='split'>
         <ActionGroup align='start' className='min-w-0 gap-4' dataSlot='entity-card-header-identity' fit>
           {leading ? <div className='shrink-0'>{leading}</div> : null}
           <Stack className='min-w-0' dataSlot='entity-card-header-copy' gap='none'>

@@ -37,7 +37,7 @@ export function PageHeader({
   }
 
   return (
-    <ActionGroup align='responsive-end' className='md:items-end' dataSlot='page-header' fit layout='split'>
+    <ActionGroup align='responsive-end' className='min-[920px]:items-end' dataSlot='page-header' fit layout='split'>
       <Stack className='min-w-0' dataSlot='page-header-copy' gap='none'>
         <h1 className='font-semibold text-2xl tracking-tight'>{title}</h1>
         {description ? <PageHeaderDescription>{description}</PageHeaderDescription> : null}

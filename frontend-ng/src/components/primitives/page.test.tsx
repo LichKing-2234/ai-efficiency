@@ -55,6 +55,7 @@ describe('PageHeader', () => {
     expect(source).toContain("from '@/components/primitives/stack'")
     expect(source).toContain("dataSlot='page-header'")
     expect(source).toContain("<ActionGroup align='responsive-end'")
+    expect(source).toContain("className='min-[920px]:items-end'")
     expect(source).toContain("const pageHeaderDescriptionClass = 'mt-1 max-w-3xl text-[12px] text-[var(--ink-3)]'")
     expect(source).not.toContain("className='mt-1 max-w-3xl text-muted-foreground text-sm'")
     expect(source).not.toContain("className='flex items-center justify-end gap-2'")

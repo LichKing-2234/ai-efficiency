@@ -38,6 +38,7 @@ describe('EntityCardHeader', () => {
     expect(source).toContain("from '@/components/primitives/stack'")
     expect(source).toContain("dataSlot='entity-card-header-content'")
     expect(source).toContain("<ActionGroup align='responsive-end'")
+    expect(source).toContain("className={cn('min-[920px]:items-start', contentClassName)}")
     expect(source).toContain("className='text-[14px] font-[650] leading-none'")
     expect(source).toContain("className='mt-0.5 break-words text-[12px] text-[var(--ink-3)]'")
     expect(source).not.toContain("className='mt-1 break-words'")
