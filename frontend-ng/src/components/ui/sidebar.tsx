@@ -1,5 +1,6 @@
 import type * as React from 'react'
 import type { LucideIcon } from 'lucide-react'
+import { AppBrand } from '@/components/primitives/app-brand'
 import { cn } from '@/lib/utils'
 
 type SidebarProviderProps = React.ComponentProps<'div'> & {
@@ -155,13 +156,13 @@ type SidebarBrandProps = React.ComponentProps<'div'> & {
 
 function SidebarBrand({ className, mark, title, subtitle, ...props }: SidebarBrandProps) {
   return (
-    <div data-slot='sidebar-brand' className={cn('flex min-w-0 items-center gap-2 font-semibold', className)} {...props}>
-      <span className='grid size-7 shrink-0 place-items-center rounded-[var(--r-sm)] bg-[linear-gradient(135deg,var(--ai-bright),var(--ai-deep))] text-primary-foreground text-xs'>{mark}</span>
-      <span className='min-w-0 group-data-[collapsed=true]/sidebar-wrapper:sr-only'>
-        <span className='block truncate'>{title}</span>
-        {subtitle ? <span className='block font-mono text-[10px] text-[var(--ink-4)]'>{subtitle}</span> : null}
-      </span>
-    </div>
+    <AppBrand
+      className={cn('group-data-[collapsed=true]/sidebar-wrapper:[&_span[data-slot=app-brand-subtitle]]:sr-only group-data-[collapsed=true]/sidebar-wrapper:[&_span[data-slot=app-brand-title]]:sr-only', className)}
+      mark={mark}
+      subtitle={subtitle}
+      title={title}
+      {...props}
+    />
   )
 }
 

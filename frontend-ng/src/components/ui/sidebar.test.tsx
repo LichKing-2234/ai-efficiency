@@ -127,6 +127,8 @@ describe('Sidebar', () => {
       fs.readFile(new URL('./sidebar.tsx', import.meta.url), 'utf8')
     )
 
+    expect(source).toContain("from '@/components/primitives/app-brand'")
+    expect(source).toContain('<AppBrand')
     expect(source).toContain("aria-hidden='true'")
     expect(source).toContain("group-data-[collapsed=true]/sidebar-wrapper:block")
   })

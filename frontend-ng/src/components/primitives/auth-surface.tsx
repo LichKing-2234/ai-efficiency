@@ -1,5 +1,6 @@
 import type * as React from 'react'
 import { ActionGroup } from '@/components/primitives/action-group'
+import { AppBrand } from '@/components/primitives/app-brand'
 import { Card } from '@/components/ui/card'
 import { CardContentStack } from '@/components/primitives/card-content-stack'
 import { SectionCardHeader } from '@/components/primitives/section-card-header'
@@ -26,21 +27,13 @@ export function AuthSurface({
       className='grid min-h-screen place-items-center overflow-x-hidden bg-[radial-gradient(120%_140%_at_88%_-10%,var(--ai-softer),transparent_55%),var(--bg)] px-[18px] py-[22px]'
     >
       <div className='flex w-full max-w-[448px] flex-col gap-[12px]'>
-        <div
-          data-slot='auth-surface-brand'
-          className='flex items-center justify-center gap-[10px] text-center'
-        >
-          <div
-            data-slot='auth-surface-brand-mark'
-            className='grid size-8 place-items-center rounded-[8px] bg-[linear-gradient(135deg,var(--ai-bright),var(--ai-deep))] text-white'
-          >
-            <span className='text-[15px] font-[700] leading-none'>AI</span>
-          </div>
-          <div className='min-w-0 leading-[1.05]'>
-            <div className='text-[13.5px] font-[650] tracking-[0] text-foreground'>AI Efficiency</div>
-            <div className='mono mt-[2px] text-[10px] tracking-[0.02em] text-[var(--ink-4)]'>console · ng</div>
-          </div>
-        </div>
+        <AppBrand
+          className='justify-center text-center'
+          compact
+          mark={<span className='font-[700] leading-none'>AI</span>}
+          subtitle='console · ng'
+          title='AI Efficiency'
+        />
 
         <Card className={cn('grid-paper w-full overflow-hidden border-[var(--ai-line)]', className)} variant='accent'>
           <SectionCardHeader className='px-[18px] pt-[18px]' title={title} description={description} />
