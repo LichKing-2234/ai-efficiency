@@ -11,4 +11,11 @@ describe('SectionEyebrow', () => {
     expect(html).toContain('uppercase')
     expect(html).toContain('tracking-[0.06em]')
   })
+
+  test('supports shell labels without the default bottom margin', () => {
+    const html = renderToStaticMarkup(<SectionEyebrow className='mb-0'>Analyze</SectionEyebrow>)
+
+    expect(html).toContain('mb-0')
+    expect(html).toContain('Analyze')
+  })
 })

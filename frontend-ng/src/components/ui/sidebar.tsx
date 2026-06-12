@@ -1,6 +1,7 @@
 import type * as React from 'react'
 import type { LucideIcon } from 'lucide-react'
 import { AppBrand } from '@/components/primitives/app-brand'
+import { SectionEyebrow } from '@/components/primitives/section-eyebrow'
 import { cn } from '@/lib/utils'
 
 type SidebarProviderProps = React.ComponentProps<'div'> & {
@@ -67,9 +68,13 @@ function SidebarGroup({ className, ...props }: React.ComponentProps<'div'>) {
 
 function SidebarGroupLabel({ className, children, ...props }: React.ComponentProps<'div'>) {
   return (
-    <div data-slot='sidebar-group-label' className={cn('px-2 py-1 font-semibold text-[10px] text-[var(--ink-4)] uppercase tracking-[0.08em] group-data-[collapsed=true]/sidebar-wrapper:sr-only', className)} {...props}>
+    <SectionEyebrow
+      className={cn('mb-0 px-2 py-1 text-[10px] tracking-[0.08em] group-data-[collapsed=true]/sidebar-wrapper:sr-only', className)}
+      data-slot='sidebar-group-label'
+      {...props}
+    >
       {children}
-    </div>
+    </SectionEyebrow>
   )
 }
 

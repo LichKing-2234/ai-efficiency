@@ -128,7 +128,9 @@ describe('Sidebar', () => {
     )
 
     expect(source).toContain("from '@/components/primitives/app-brand'")
+    expect(source).toContain("from '@/components/primitives/section-eyebrow'")
     expect(source).toContain('<AppBrand')
+    expect(source).toContain('<SectionEyebrow')
     expect(source).toContain("aria-hidden='true'")
     expect(source).toContain("group-data-[collapsed=true]/sidebar-wrapper:block")
   })
