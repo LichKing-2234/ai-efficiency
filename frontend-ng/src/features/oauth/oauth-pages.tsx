@@ -58,19 +58,21 @@ export function OAuthAuthorizePage() {
 
   return (
     <AuthSurface
+      actions={(
+        <OAuthDecisionActions
+          approveLabel={t('oauth.approve')}
+          denyLabel={t('oauth.denied')}
+          disabled={approve.isPending || me.isLoading || !!me.error}
+          icon={KeyRoundIcon}
+          onApprove={() => approve.mutate(true)}
+          onDeny={() => approve.mutate(false)}
+        />
+      )}
       title={t('oauth.authorizeCli')}
       description={t('oauth.allowCli')}
       aside={<AuthInfoPanel emphasis>{t('oauth.signedInAs', { identity })}</AuthInfoPanel>}
     >
       {error ? <AppAlert tone='error' title={error} /> : null}
-      <OAuthDecisionActions
-        approveLabel={t('oauth.approve')}
-        denyLabel={t('oauth.denied')}
-        disabled={approve.isPending || me.isLoading || !!me.error}
-        icon={KeyRoundIcon}
-        onApprove={() => approve.mutate(true)}
-        onDeny={() => approve.mutate(false)}
-      />
     </AuthSurface>
   )
 }
@@ -102,6 +104,16 @@ export function OAuthDevicePage() {
 
   return (
     <AuthSurface
+      actions={(
+        <OAuthDecisionActions
+          approveLabel={t('oauth.approve')}
+          denyLabel={t('oauth.denied')}
+          disabled={!code || verify.isPending || me.isLoading || !!me.error}
+          icon={KeyRoundIcon}
+          onApprove={() => verify.mutate(true)}
+          onDeny={() => verify.mutate(false)}
+        />
+      )}
       title={t('oauth.deviceLogin')}
       description={t('oauth.enterCode')}
       aside={<AuthInfoPanel emphasis>{t('oauth.signedInAs', { identity })}</AuthInfoPanel>}
@@ -114,14 +126,6 @@ export function OAuthDevicePage() {
       />
       {verify.data ? <AppAlert tone='success' title={t('oauth.deviceStatus', { status: verify.data.status })} /> : null}
       {verify.error ? <AppAlert tone='error' title={verify.error.message} /> : null}
-      <OAuthDecisionActions
-        approveLabel={t('oauth.approve')}
-        denyLabel={t('oauth.denied')}
-        disabled={!code || verify.isPending || me.isLoading || !!me.error}
-        icon={KeyRoundIcon}
-        onApprove={() => verify.mutate(true)}
-        onDeny={() => verify.mutate(false)}
-      />
     </AuthSurface>
   )
 }

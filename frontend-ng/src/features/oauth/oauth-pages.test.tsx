@@ -50,6 +50,7 @@ describe('OAuth page primitives', () => {
     expect(source).toContain("from '@/components/primitives/oauth-decision-actions'")
     expect(source).not.toContain('export function OAuthActionGroup(')
     expect(source).toContain("from '@/components/primitives/auth-field'")
+    expect(source).toContain('actions={(')
     expect(source).toContain('<OAuthDecisionActions')
     expect(source).toContain("aside={<AuthInfoPanel emphasis>")
     expect(source).toContain('authDeviceCodeControlClassName')
@@ -72,5 +73,6 @@ describe('OAuth page primitives', () => {
   test('does not keep an OAuth-local action wrapper once the shared primitive owns the auth footer shell', () => {
     expect(source).not.toContain('export function OAuthActionGroup(')
     expect(source).not.toContain('<OAuthActionGroup')
+    expect(source).not.toContain("    >\n      <OAuthDecisionActions")
   })
 })

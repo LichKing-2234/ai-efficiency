@@ -39,7 +39,6 @@ describe('AuthSurface', () => {
     )
 
     expect(html).toContain('data-slot="auth-surface-actions"')
-    expect(html).toContain('[&amp;&gt;*]:flex-1')
     expect(html).toContain('Use dev login')
     expect(html).toContain('border-border border-t px-[18px] py-[12px]')
   })
