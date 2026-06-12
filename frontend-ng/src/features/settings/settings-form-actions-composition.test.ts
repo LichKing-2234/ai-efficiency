@@ -24,4 +24,13 @@ describe('Settings form action composition', () => {
       expect(source).not.toContain("<AppAlert key={message} tone='error' title={message} />")
     }
   })
+
+  test('uses shared segmented field wrappers for CRUD segmented choices instead of local field-label shells', () => {
+    for (const source of [scmSource, credentialSource]) {
+      expect(source).toContain("from '@/components/primitives/segmented-field'")
+      expect(source).toContain('<SegmentedField')
+      expect(source).not.toContain('FieldLabel')
+      expect(source).not.toContain("from '@/components/primitives/labeled-segmented-control'")
+    }
+  })
 })

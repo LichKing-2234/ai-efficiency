@@ -27,6 +27,7 @@ describe('CredentialForm', () => {
 
     expect(html).toContain('data-slot="field-group"')
     expect(html).toContain('id="credential-name"')
+    expect(html).toContain('for="credential-kind"')
     expect(html).toContain('id="credential-secret-text"')
     expect(html).toContain('data-slot="labeled-segmented-control"')
     expect(html).toContain('Create')
@@ -73,5 +74,17 @@ describe('CredentialForm', () => {
 
     expect(html).toContain('Update')
     expect(html).not.toContain('disabled=""')
+  })
+
+  test('uses the shared segmented field primitive for credential kind selection', async () => {
+    const source = await import('node:fs/promises').then((fs) =>
+      fs.readFile(new URL('./credential-form.tsx', import.meta.url), 'utf8')
+    )
+
+    expect(source).toContain("from '@/components/primitives/segmented-field'")
+    expect(source).toContain('<SegmentedField')
+    expect(source).not.toContain("from '@/components/primitives/labeled-segmented-control'")
+    expect(source).not.toContain('FieldLabel')
+    expect(source).not.toContain('<Field>')
   })
 })

@@ -1,6 +1,6 @@
-import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
-import { LabeledSegmentedControl } from '@/components/primitives/labeled-segmented-control'
+import { FieldGroup } from '@/components/ui/field'
 import { ManagedFormFooter } from '@/components/primitives/managed-form-footer'
+import { SegmentedField } from '@/components/primitives/segmented-field'
 import { TextField } from '@/components/primitives/text-field'
 import { useI18n } from '@/lib/i18n/i18n'
 import type { CredentialFormState } from './settings-payloads'
@@ -38,20 +38,18 @@ export function CredentialForm({
     <FieldGroup>
       <TextField id='credential-name' label={t('settings.name')} value={form.name} onChange={(name) => onChange({ ...form, name })} />
       <TextField id='credential-description' label={t('settings.credentialDescription')} value={form.description ?? ''} onChange={(description) => onChange({ ...form, description })} />
-      <Field>
-        <FieldLabel>{t('settings.addCredential')}</FieldLabel>
-        <LabeledSegmentedControl
-          ariaLabel={t('settings.addCredential')}
-          label={t('settings.addCredential')}
-          onChange={(kind: CredentialKind) => onChange({ ...form, kind })}
-          options={[
-            { value: 'secret_text', label: t('settings.secretTextKind') },
-            { value: 'username_password', label: t('settings.usernamePasswordKind') },
-            { value: 'ssh_username_with_private_key', label: t('settings.sshPrivateKeyKind') }
-          ]}
-          value={form.kind}
-        />
-      </Field>
+      <SegmentedField
+        ariaLabel={t('settings.addCredential')}
+        id='credential-kind'
+        label={t('settings.addCredential')}
+        onChange={(kind: CredentialKind) => onChange({ ...form, kind })}
+        options={[
+          { value: 'secret_text', label: t('settings.secretTextKind') },
+          { value: 'username_password', label: t('settings.usernamePasswordKind') },
+          { value: 'ssh_username_with_private_key', label: t('settings.sshPrivateKeyKind') }
+        ]}
+        value={form.kind}
+      />
       {form.kind === 'secret_text' ? (
         <TextField id='credential-secret-text' label={t('settings.secretText')} multiline value={form.text ?? ''} onChange={(text) => onChange({ ...form, text })} />
       ) : null}
