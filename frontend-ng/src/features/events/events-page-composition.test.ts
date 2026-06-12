@@ -50,7 +50,10 @@ describe('Events page composition', () => {
 
   test('uses the shared slide-over stack for event detail sections', () => {
     expect(source).toContain("from '@/components/primitives/slide-over-stack'")
+    expect(source).toContain("from '@/components/primitives/detail-section'")
     expect(source).toContain('<SlideOverStack>')
+    expect(source).toContain('<DetailSection')
+    expect(source).not.toContain('<section>')
     expect(source).not.toContain("<div className='flex flex-col gap-[18px]'>")
   })
 

@@ -9,6 +9,7 @@ import { CardFilterBar } from '@/components/primitives/card-filter-bar'
 import { CardPagerFooter } from '@/components/primitives/card-pager-footer'
 import { CategoryBadge } from '@/components/primitives/category-badge'
 import { DataGrid, DataGridCell, DataGridHeader, DataGridHeaderCell, DataGridRow } from '@/components/primitives/data-grid'
+import { DetailSection } from '@/components/primitives/detail-section'
 import { FieldItem, FieldList } from '@/components/primitives/field-list'
 import { FilterRow } from '@/components/primitives/filter-row'
 import { FramedCard } from '@/components/primitives/framed-card'
@@ -29,7 +30,6 @@ import { QuietActionButton } from '@/components/primitives/quiet-action-button'
 import { SearchField } from '@/components/primitives/search-field'
 import { SearchActionBar } from '@/components/primitives/search-action-bar'
 import { SecondaryActionButton } from '@/components/primitives/secondary-action-button'
-import { SectionEyebrow } from '@/components/primitives/section-eyebrow'
 import { SlideOver } from '@/components/primitives/slide-over'
 import { SlideOverStack } from '@/components/primitives/slide-over-stack'
 import { StatusBadge } from '@/components/primitives/status-badge'
@@ -355,13 +355,11 @@ function EventDetail({ event, isAdmin, onClose }: { event: ToolUsageEventDetail 
             <InfoTile label={t('events.credit')} value={number(event.credit_usage)} accent='ai' compact numeric />
           </InfoTileGrid>
 
-          <section>
-            <SectionEyebrow>{t('events.tokenBreakdown')}</SectionEyebrow>
+          <DetailSection title={t('events.tokenBreakdown')}>
             <TokenBreakdown items={tokenBreakdown} valueFormatter={number} />
-          </section>
+          </DetailSection>
 
-          <section>
-            <SectionEyebrow>{t('events.session')}</SectionEyebrow>
+          <DetailSection title={t('events.session')}>
             <FieldList>
               <FieldItem label={t('events.observedEnd')} value={dateTime(event.observed_end_at)} />
               <FieldItem label={t('repoDetail.commit')} value={event.commit_sha || '-'} mono />
@@ -370,10 +368,9 @@ function EventDetail({ event, isAdmin, onClose }: { event: ToolUsageEventDetail 
               <FieldItem label={t('events.workspace')} value={event.workspace_id} mono />
               <FieldItem label={t('events.observedStart')} value={dateTime(event.observed_start_at)} />
             </FieldList>
-          </section>
+          </DetailSection>
 
-          <section>
-            <SectionEyebrow>{t('events.matchedPrs')}</SectionEyebrow>
+          <DetailSection title={t('events.matchedPrs')}>
             {event.matched_prs.length > 0 ? (
               <LinkedRecordList>
                 {event.matched_prs.map((pr) => (
@@ -391,7 +388,7 @@ function EventDetail({ event, isAdmin, onClose }: { event: ToolUsageEventDetail 
             ) : (
               <PageEmpty title={t('events.noMatchedPrs')} />
             )}
-          </section>
+          </DetailSection>
 
           <AdvancedDataPanel
             code={isAdmin && event.raw_payload ? JSON.stringify(event.raw_payload, null, 2) : null}
