@@ -966,12 +966,12 @@ onMounted(loadProviders)
                         class="rounded-md border border-gray-200 p-3 shadow-sm"
                       >
                         <div class="flex items-center justify-between gap-3">
-                          <div class="font-medium leading-6 text-gray-900">{{ command.title }}</div>
+                          <div class="text-[11px] font-semibold text-gray-500">{{ command.title }}</div>
                           <button class="shrink-0 text-xs font-medium text-indigo-700 hover:text-indigo-900" type="button" @click="copyCommand(command.key, command.value)">
                             {{ copyCommandLabel(command.key) }}
                           </button>
                         </div>
-                        <p class="mt-1 text-xs leading-5 text-gray-500">{{ command.help }}</p>
+                        <p class="mt-1.5 text-sm leading-5 text-gray-600">{{ command.help }}</p>
                         <pre class="mt-1.5 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-[13px] leading-5 text-green-300">{{ command.value }}</pre>
                       </div>
                     </div>
