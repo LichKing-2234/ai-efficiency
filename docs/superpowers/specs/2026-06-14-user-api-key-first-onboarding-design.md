@@ -232,6 +232,7 @@ ccswitch://v1/import?resource=provider&app={app}&name={name}&...
 - `endpoint=<selectedProvider.base_url>`
 - `apiKey=<selected group key>`
 - `enabled=true`
+- `model=gpt-5.4` for `app=codex`
 
 示例：
 
@@ -243,7 +244,6 @@ ccswitch://v1/import?resource=provider&app=codex&name=Relay%20Main%20%2F%20Gener
 
 第一版不要求使用以下参数：
 
-- `model`
 - `config`
 - `configFormat`
 - `configUrl`
@@ -253,6 +253,7 @@ ccswitch://v1/import?resource=provider&app=codex&name=Relay%20Main%20%2F%20Gener
 原因：
 
 - 当前 `/user` onboarding 的核心目标是稳定导入 provider endpoint 与 API key。
+- Codex 是例外：为了避免 `CC Switch` 自身模板默认填充 `gpt-5-codex`，`/user` 对 Codex import 显式传 `model=gpt-5.4`。
 - 一旦带入 `config` 或 app-specific extended config，就会把 spec 拉进多个客户端各自的高级配置合同。
 
 #### Fallback Behavior

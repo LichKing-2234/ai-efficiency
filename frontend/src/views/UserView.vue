@@ -110,6 +110,7 @@ const ccSwitchImports = computed(() => {
       name: `${selectedProvider.value.display_name} / ${selectedGroup.value.group_name}`,
       endpoint: selectedProvider.value.base_url,
       apiKey: selectedKeyValue.value,
+      model: app === 'codex' ? 'gpt-5.4' : undefined,
     }),
   }]
 })

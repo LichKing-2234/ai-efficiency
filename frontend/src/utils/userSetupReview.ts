@@ -28,6 +28,7 @@ export type CCSwitchProviderImportInput = {
   name: string
   endpoint: string
   apiKey: string
+  model?: string
   enabled?: boolean
 }
 
@@ -199,6 +200,9 @@ export function buildCCSwitchProviderImportLink(input: CCSwitchProviderImportInp
     apiKey: input.apiKey,
     enabled: String(input.enabled ?? true),
   })
+  if (input.model) {
+    params.set('model', input.model)
+  }
   return `ccswitch://v1/import?${params.toString()}`
 }
 

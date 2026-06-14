@@ -113,6 +113,18 @@ describe('userSetupReview command builders', () => {
     )
   })
 
+  it('includes an explicit model when provided for a CC Switch import', () => {
+    expect(buildCCSwitchProviderImportLink({
+      app: 'codex',
+      name: 'Production / Group Alpha',
+      endpoint: 'https://prod.example.com',
+      apiKey: 'sk-openai',
+      model: 'gpt-5.4',
+    })).toBe(
+      'ccswitch://v1/import?resource=provider&app=codex&name=Production+%2F+Group+Alpha&endpoint=https%3A%2F%2Fprod.example.com&apiKey=sk-openai&enabled=true&model=gpt-5.4'
+    )
+  })
+
   it('buildDiscoverCommand uses the selected provider', () => {
     expect(buildDiscoverCommand('https://ae.example.com', 'sub2api-prod')).toBe(
       'ae-cli discover --provider sub2api-prod'

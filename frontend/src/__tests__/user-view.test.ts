@@ -257,6 +257,22 @@ describe('UserView', () => {
     expect(methods).not.toContain('Import to Gemini')
   })
 
+  it('passes an explicit Codex model in the OpenAI CC Switch import link', async () => {
+    const { createGroupCredential } = await import('@/api/user')
+    ;(createGroupCredential as any).mockResolvedValue({
+      data: { data: { api_key_id: 7, name: 'alice', status: 'active', secret: 'sk-openai' } },
+    })
+
+    const { wrapper } = await mountUserView()
+    await wrapper.get('[data-testid="group-42"]').trigger('click')
+    await wrapper.get('[data-testid="create-key"]').trigger('click')
+    await flushPromises()
+
+    const codexImport = wrapper.get('[data-testid="ccswitch-import-codex"]')
+    expect(codexImport.attributes('href')).toContain('app=codex')
+    expect(codexImport.attributes('href')).toContain('model=gpt-5.4')
+  })
+
   it('shows advanced command reference only inside automatic configuration', async () => {
     const { wrapper } = await mountUserView()
 
