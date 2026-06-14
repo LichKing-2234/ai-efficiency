@@ -102,6 +102,7 @@ const ccSwitchImports = computed(() => {
   if (!selectedProvider.value || !selectedGroup.value || !selectedKeyValue.value) return []
   const app = resolveCCSwitchAppForPlatform(selectedGroup.value.platform)
   if (!app) return []
+  const selectedModel = providerTestModel.value.trim()
   return [{
     key: app,
     label: app === 'codex' ? t('user.importToCodex') : app === 'claude' ? t('user.importToClaude') : t('user.importToGemini'),
@@ -110,7 +111,7 @@ const ccSwitchImports = computed(() => {
       name: `${selectedProvider.value.display_name} / ${selectedGroup.value.group_name}`,
       endpoint: selectedProvider.value.base_url,
       apiKey: selectedKeyValue.value,
-      model: app === 'codex' ? 'gpt-5.4' : undefined,
+      model: selectedModel || (app === 'codex' ? 'gpt-5.4' : undefined),
     }),
   }]
 })

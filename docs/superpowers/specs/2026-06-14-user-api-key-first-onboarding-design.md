@@ -232,7 +232,8 @@ ccswitch://v1/import?resource=provider&app={app}&name={name}&...
 - `endpoint=<selectedProvider.base_url>`
 - `apiKey=<selected group key>`
 - `enabled=true`
-- `model=gpt-5.4` for `app=codex`
+- `model=<selected providerTestModel>` when the page has a selected model for the current group
+- `model=gpt-5.4` as the Codex fallback when no explicit model is available
 
 示例：
 
@@ -253,7 +254,7 @@ ccswitch://v1/import?resource=provider&app=codex&name=Relay%20Main%20%2F%20Gener
 原因：
 
 - 当前 `/user` onboarding 的核心目标是稳定导入 provider endpoint 与 API key。
-- Codex 是例外：为了避免 `CC Switch` 自身模板默认填充 `gpt-5-codex`，`/user` 对 Codex import 显式传 `model=gpt-5.4`。
+- 为了避免 `CC Switch` 使用各客户端自身的默认模板模型，`/user` 优先对当前平台传入页面已选中的模型；Codex 在没有显式模型时仍传 `gpt-5.4`，避免落回 `gpt-5-codex`。
 - 一旦带入 `config` 或 app-specific extended config，就会把 spec 拉进多个客户端各自的高级配置合同。
 
 #### Fallback Behavior

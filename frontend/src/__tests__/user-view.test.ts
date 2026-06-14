@@ -257,6 +257,14 @@ describe('UserView', () => {
     expect(methods).not.toContain('Import to Gemini')
   })
 
+  it('passes the selected Claude model in the CC Switch import link', async () => {
+    const { wrapper } = await mountUserView()
+
+    const claudeImport = wrapper.get('[data-testid="ccswitch-import-claude"]')
+    expect(claudeImport.attributes('href')).toContain('app=claude')
+    expect(claudeImport.attributes('href')).toContain('model=claude-sonnet-4-6')
+  })
+
   it('passes an explicit Codex model in the OpenAI CC Switch import link', async () => {
     const { createGroupCredential } = await import('@/api/user')
     ;(createGroupCredential as any).mockResolvedValue({
@@ -271,6 +279,17 @@ describe('UserView', () => {
     const codexImport = wrapper.get('[data-testid="ccswitch-import-codex"]')
     expect(codexImport.attributes('href')).toContain('app=codex')
     expect(codexImport.attributes('href')).toContain('model=gpt-5.4')
+  })
+
+  it('passes the selected Gemini model in the CC Switch import link', async () => {
+    const { wrapper } = await mountUserView()
+
+    await wrapper.get('[data-testid="group-45"]').trigger('click')
+    await flushPromises()
+
+    const geminiImport = wrapper.get('[data-testid="ccswitch-import-gemini"]')
+    expect(geminiImport.attributes('href')).toContain('app=gemini')
+    expect(geminiImport.attributes('href')).toContain('model=gemini-3.1-pro-preview')
   })
 
   it('shows advanced command reference only inside automatic configuration', async () => {
