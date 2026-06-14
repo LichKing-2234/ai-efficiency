@@ -150,6 +150,26 @@ const automaticRepoCommands = computed(() => [
   { key: 'auto-repo-cd', label: t('user.repoStep1'), value: repoChangeDirCommand.value },
   { key: 'auto-init', label: t('user.repoStep2'), value: repoInitCommand.value },
 ])
+const automaticAdvancedCommands = computed(() => [
+  {
+    key: 'auto-doctor',
+    title: t('user.setupStepDoctorTitle'),
+    help: t('user.automaticConfigDoctorHelp'),
+    value: doctorCommand.value,
+  },
+  {
+    key: 'manual-sync',
+    title: t('user.manualSync'),
+    help: t('user.automaticConfigSyncHelp'),
+    value: syncCommand.value,
+  },
+  {
+    key: 'hook-status',
+    title: t('user.hookStatus'),
+    help: t('user.automaticConfigHookStatusHelp'),
+    value: hooksStatusUploadsCommand.value,
+  },
+])
 
 function credentialStatusLabel(state: string) {
   return state === 'existing_hidden' ? t('user.readyToUse') : t('user.needsSetup')
@@ -939,40 +959,22 @@ onMounted(loadProviders)
                     </summary>
                     <p class="mt-2 text-sm leading-5 text-gray-600">{{ t('user.commandReferenceHelp') }}</p>
 
-                    <div class="mt-4 space-y-4 text-sm">
-                      <div class="rounded-md border border-gray-200 p-3 shadow-sm">
-                        <div class="font-medium leading-6 text-gray-900">{{ t('user.setupStepDoctorTitle') }}</div>
-                        <p class="mt-1 text-xs leading-5 text-gray-500">{{ t('user.automaticConfigDoctorHelp') }}</p>
-                        <div class="mt-1.5 flex justify-end">
-                          <button class="text-xs font-medium text-indigo-700 hover:text-indigo-900" type="button" @click="copyCommand('auto-doctor', doctorCommand)">
-                            {{ copyCommandLabel('auto-doctor') }}
+                    <div class="mt-4 space-y-3 text-sm">
+                      <div
+                        v-for="command in automaticAdvancedCommands"
+                        :key="command.key"
+                        class="rounded-md border border-gray-200 p-3 shadow-sm"
+                      >
+                        <div class="flex items-start justify-between gap-3">
+                          <div class="min-w-0">
+                            <div class="font-medium leading-6 text-gray-900">{{ command.title }}</div>
+                            <p class="mt-1 text-xs leading-5 text-gray-500">{{ command.help }}</p>
+                          </div>
+                          <button class="shrink-0 text-xs font-medium text-indigo-700 hover:text-indigo-900" type="button" @click="copyCommand(command.key, command.value)">
+                            {{ copyCommandLabel(command.key) }}
                           </button>
                         </div>
-                        <pre class="mt-1.5 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-[13px] leading-5 text-green-300">{{ doctorCommand }}</pre>
-                      </div>
-
-                      <div class="rounded-md border border-gray-200 p-3 shadow-sm">
-                        <div class="font-medium leading-6 text-gray-900">{{ t('user.manualRecovery') }}</div>
-                        <div class="mt-4 space-y-4">
-                          <div>
-                            <div class="text-sm font-medium leading-6 text-gray-900">{{ t('user.manualSync') }}</div>
-                            <div class="mt-1.5 flex justify-end">
-                              <button class="text-xs font-medium text-indigo-700 hover:text-indigo-900" type="button" @click="copyCommand('manual-sync', syncCommand)">
-                                {{ copyCommandLabel('manual-sync') }}
-                              </button>
-                            </div>
-                            <pre class="mt-1.5 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-[13px] leading-5 text-green-300">{{ syncCommand }}</pre>
-                          </div>
-                          <div>
-                            <div class="text-sm font-medium leading-6 text-gray-900">{{ t('user.hookStatus') }}</div>
-                            <div class="mt-1.5 flex justify-end">
-                              <button class="text-xs font-medium text-indigo-700 hover:text-indigo-900" type="button" @click="copyCommand('hook-status', hooksStatusUploadsCommand)">
-                                {{ copyCommandLabel('hook-status') }}
-                              </button>
-                            </div>
-                            <pre class="mt-1.5 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-[13px] leading-5 text-green-300">{{ hooksStatusUploadsCommand }}</pre>
-                          </div>
-                        </div>
+                        <pre class="mt-1.5 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-[13px] leading-5 text-green-300">{{ command.value }}</pre>
                       </div>
                     </div>
                   </details>
