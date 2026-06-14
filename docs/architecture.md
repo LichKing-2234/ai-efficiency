@@ -12,6 +12,7 @@ This document is the project-level architecture overview for `ai-efficiency`.
 ## Source-of-Truth Order
 
 1. Topic-specific current specs:
+   - `docs/superpowers/specs/2026-06-14-user-api-key-first-onboarding-design.md`
    - `docs/superpowers/specs/2026-06-04-admin-sub2api-subscription-assignment-design.md`
    - `docs/superpowers/specs/2026-06-02-repo-auto-binding-design.md`
    - `docs/superpowers/specs/2026-05-26-ae-cli-post-commit-async-attribution-sync-design.md`

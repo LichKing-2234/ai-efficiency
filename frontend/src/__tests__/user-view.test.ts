@@ -179,7 +179,7 @@ describe('UserView', () => {
 
   it('loads profile and provider data, selects primary provider by default, and renders group info', async () => {
     const { wrapper } = await mountUserView()
-    expect(wrapper.text()).toContain('My Setup')
+    expect(wrapper.text()).toContain('Create or manage my API key')
     expect(wrapper.text()).toContain('Choose an access group, create your API key')
     expect(wrapper.text()).toContain('alice@example.com')
     expect(wrapper.text()).toContain('Production')
@@ -519,7 +519,9 @@ describe('UserView', () => {
     expect(regenerateGroupCredential).not.toHaveBeenCalled()
     await wrapper.get('[data-testid="confirm-secret-action"]').trigger('click')
     await flushPromises()
-    expect(wrapper.text()).toContain('sk-claude')
+    expect(wrapper.text()).not.toContain('sk-claude')
+    expect(wrapper.text()).toContain('sk-c***')
+    expect(wrapper.get('[data-testid="reveal-key"]').text()).toContain('Reveal')
 
     await wrapper.get('[data-testid="group-42"]').trigger('click')
     expect(wrapper.text()).toContain('sk-openai')

@@ -442,7 +442,7 @@ async function handleRegenerateKey() {
     const data = res.data.data
     if (!data) return
     sessionSecrets[selectedSecretKey.value] = data.secret
-    revealedSecretKeys[selectedSecretKey.value] = true
+    revealedSecretKeys[selectedSecretKey.value] = false
     updateSelectedGroupCredential(data.api_key_id, data.name, data.status, data.secret)
     resetPostKeyFlow()
   } catch (err: any) {

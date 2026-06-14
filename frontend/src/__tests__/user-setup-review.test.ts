@@ -69,7 +69,7 @@ describe('userSetupReview command builders', () => {
     expect(buildGeminiReloadSnippet()).toContain('[ -f "$rc_file" ] && source "$rc_file"')
     expect(buildGeminiReloadSnippet()).not.toContain('source "$HOME/.zshrc"\nsource "$HOME/.bashrc"')
     expect(buildGeminiModelSnippet()).toContain('export GEMINI_MODEL="gemini-3.1-pro-preview"')
-    expect(buildGeminiModelSnippet()).toContain('Do not manually switch models inside Gemini')
+    expect(buildGeminiModelSnippet()).toContain('# Do not manually switch models inside Gemini')
   })
 
   it('builds platform-specific manual config card metadata', () => {

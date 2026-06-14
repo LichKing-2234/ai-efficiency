@@ -126,7 +126,7 @@ export function buildGeminiReloadSnippet() {
 export function buildGeminiModelSnippet() {
   return [
     `export GEMINI_MODEL=${shellString(GEMINI_MODEL)}`,
-    'Do not manually switch models inside Gemini after setting this value.',
+    '# Do not manually switch models inside Gemini after setting this value.',
   ].join('\n')
 }
 
