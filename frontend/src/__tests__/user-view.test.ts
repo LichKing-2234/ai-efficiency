@@ -191,149 +191,85 @@ describe('UserView', () => {
     expect(wrapper.text()).not.toContain('repo init, hooks, or doctor output looks wrong')
   })
 
-  it('renders a task-first setup flow and copies command blocks', async () => {
+  it('shows create my api key as the primary action when the selected group has no key', async () => {
     const { wrapper } = await mountUserView()
 
-    expect(wrapper.text()).toContain('Setup progress')
-    expect(wrapper.text()).toContain("I'm a developer")
-    expect(wrapper.text()).toContain("I'm not a developer")
-    expect(wrapper.text()).toContain('Account verified')
-    expect(wrapper.text()).toContain('Confirm AI access')
-    expect(wrapper.text()).toContain('Install the CLI')
-    expect(wrapper.text()).toContain('Check GitHub connectivity')
-    expect(wrapper.text()).toContain('HTTPS_PROXY')
-    expect(wrapper.text()).toContain('Configure local AI tools')
-    expect(wrapper.text()).toContain('Enable automatic Git reporting')
-    expect(wrapper.text()).toContain('Run setup diagnosis')
-    expect(wrapper.text()).toContain('When setup is blocked')
+    await wrapper.get('[data-testid="group-42"]').trigger('click')
+    await flushPromises()
 
-    const copyButton = wrapper.findAll('button').find((button) => button.text() === 'Copy command')
-    await copyButton!.trigger('click')
-
-    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(expect.stringContaining('curl -fsSL'))
-    expect(wrapper.text()).toContain('Copied')
+    expect(wrapper.get('[data-testid="primary-onboarding-action"]').text()).toBe('Create my API key')
+    expect(wrapper.find('[data-testid="configuration-methods"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain("I'm a developer")
+    expect(wrapper.text()).not.toContain("I'm not a developer")
   })
 
-  it('lets non-developers switch to manual local configuration without ae-cli commands in the progress flow', async () => {
+  it('reveals configuration methods only after a successful connection test', async () => {
+    const { createGroupCredential, testUserProvider } = await import('@/api/user')
+    ;(createGroupCredential as any).mockResolvedValue({
+      data: { data: { api_key_id: 7, name: 'alice', status: 'active', secret: 'sk-openai' } },
+    })
+    ;(testUserProvider as any).mockResolvedValue({
+      data: { data: { success: true, message: 'Connection successful', response: 'pong' } },
+    })
+
     const { wrapper } = await mountUserView()
+    await wrapper.get('[data-testid="group-42"]').trigger('click')
+    await wrapper.get('[data-testid="create-key"]').trigger('click')
+    await flushPromises()
 
-    await wrapper.get('[data-testid="setup-audience-non-developer"]').trigger('click')
+    expect(wrapper.get('[data-testid="primary-onboarding-action"]').text()).toBe('Run connection test')
+    expect(wrapper.find('[data-testid="configuration-methods"]').exists()).toBe(false)
 
-    const progressText = wrapper.get('[data-testid="setup-progress"]').text()
-    expect(progressText).toContain('Manual local configuration')
-    expect(progressText).toContain('ae-cli is not required')
-    expect(progressText).toContain('https://prod.example.com')
-    expect(progressText).toContain('anthropic')
-    expect(progressText).toContain('~/.claude/settings.json')
-    expect(progressText).toContain('ANTHROPIC_BASE_URL')
-    expect(progressText).toContain('ANTHROPIC_AUTH_TOKEN')
-    expect(progressText).toContain('CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC')
-    expect(progressText).toContain('CLAUDE_CODE_ATTRIBUTION_HEADER')
-    expect(progressText).not.toContain('sk-existing-claude-123456')
-    expect(progressText).not.toContain('ae-cli login')
-    expect(progressText).not.toContain('ae-cli discover')
-    expect(progressText).not.toContain('ae-cli hooks enable --global')
-    expect(progressText).not.toContain('ae-cli init')
-    expect(progressText).not.toContain('ae-cli doctor')
+    await wrapper.get('[data-testid="user-provider-test-model"]').setValue('gpt-5.4')
+    await wrapper.get('[data-testid="user-provider-test-run"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="configuration-methods"]').text()).toContain('Manual configuration')
+    expect(wrapper.get('[data-testid="configuration-methods"]').text()).toContain('Automatic configuration')
+    expect(wrapper.get('[data-testid="configuration-methods"]').text()).toContain('CC Switch configuration')
   })
 
-  it('copies a complete non-developer manual snippet only after secret confirmation', async () => {
+  it('clears the successful test state when switching groups or regenerating the key', async () => {
+    const { testUserProvider, regenerateGroupCredential } = await import('@/api/user')
+    ;(testUserProvider as any).mockResolvedValue({
+      data: { data: { success: true, message: 'Connection successful', response: 'pong' } },
+    })
+    ;(regenerateGroupCredential as any).mockResolvedValue({
+      data: { data: { api_key_id: 99, name: 'alice', status: 'active', secret: 'sk-regenerated' } },
+    })
+
     const { wrapper } = await mountUserView()
+    await wrapper.get('[data-testid="user-provider-test-model"]').setValue('claude-sonnet-4-6')
+    await wrapper.get('[data-testid="user-provider-test-run"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="configuration-methods"]').exists()).toBe(true)
 
-    await wrapper.get('[data-testid="setup-audience-non-developer"]').trigger('click')
-    await wrapper.get('[data-testid="manual-config-copy-claude-settings"]').trigger('click')
-
-    expect(wrapper.text()).toContain('Confirm copy configuration with API key')
-    expect(navigator.clipboard.writeText).not.toHaveBeenCalled()
-
-    await wrapper.get('[data-testid="confirm-manual-config-copy"]').trigger('click')
-
-    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(expect.stringContaining('"ANTHROPIC_AUTH_TOKEN": "sk-existing-claude-123456"'))
-  })
-
-  it('renders Codex manual configuration for non-developer OpenAI groups', async () => {
-    const { wrapper } = await mountUserView()
-
-    await wrapper.get('[data-testid="setup-audience-non-developer"]').trigger('click')
     await wrapper.get('[data-testid="group-44"]').trigger('click')
     await flushPromises()
+    expect(wrapper.find('[data-testid="configuration-methods"]').exists()).toBe(false)
 
-    const progressText = wrapper.get('[data-testid="setup-progress"]').text()
-    expect(progressText).toContain('~/.codex/config.toml')
-    expect(progressText).toContain('model_provider = "prod"')
-    expect(progressText).toContain('model = "gpt-5.4"')
-    expect(progressText).toContain('model_reasoning_effort = "xhigh"')
-    expect(progressText).toContain('disable_response_storage = true')
-    expect(progressText).toContain('network_access = "enabled"')
-    expect(progressText).toContain('[model_providers.prod]')
-    expect(progressText).toContain('base_url = "https://prod.example.com"')
-    expect(progressText).toContain('wire_api = "responses"')
-    expect(progressText).toContain('requires_openai_auth = true')
-    expect(progressText).toContain('~/.codex/auth.json')
-    expect(progressText).toContain('OPENAI_API_KEY')
-    expect(progressText).not.toContain('sk-existing-openai-123456')
-
-    const codexConfigBlock = wrapper.findAll('pre').find((block) => block.text().includes('model_provider = "prod"'))
-    expect(codexConfigBlock?.text()).toContain('model_auto_compact_token_limit = 900000\n\n[model_providers.prod]')
+    await wrapper.get('[data-testid="group-43"]').trigger('click')
+    await wrapper.get('[data-testid="regenerate-key"]').trigger('click')
+    await wrapper.get('[data-testid="confirm-secret-action"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="configuration-methods"]').exists()).toBe(false)
   })
 
-  it('renders Gemini manual configuration and reload guidance for non-developer Gemini groups', async () => {
-    const { wrapper } = await mountUserView()
+  it('shows only the matching CC Switch import target for the selected group platform', async () => {
+    const { testUserProvider } = await import('@/api/user')
+    ;(testUserProvider as any).mockResolvedValue({
+      data: { data: { success: true, message: 'Connection successful', response: 'pong' } },
+    })
 
-    await wrapper.get('[data-testid="setup-audience-non-developer"]').trigger('click')
-    await wrapper.get('[data-testid="group-45"]').trigger('click')
+    const { wrapper } = await mountUserView()
+    await wrapper.get('[data-testid="user-provider-test-model"]').setValue('claude-sonnet-4-6')
+    await wrapper.get('[data-testid="user-provider-test-run"]').trigger('click')
     await flushPromises()
 
-    const progressText = wrapper.get('[data-testid="setup-progress"]').text()
-    expect(progressText).toContain('~/.ae-cli/env.sh')
-    expect(progressText).toContain('export GEMINI_API_KEY=')
-    expect(progressText).toContain('export GOOGLE_GEMINI_BASE_URL="https://prod.example.com"')
-    expect(progressText).toContain('case "${SHELL##*/}" in')
-    expect(progressText).toContain('zsh) rc_file="$HOME/.zshrc" ;;')
-    expect(progressText).toContain('bash) rc_file="$HOME/.bashrc" ;;')
-    expect(progressText).toContain('*) rc_file="$HOME/.profile" ;;')
-    expect(progressText).toContain('[ -f "$rc_file" ] && source "$rc_file"')
-    expect(progressText).not.toContain('source "$HOME/.zshrc"source "$HOME/.bashrc"')
-    expect(progressText).toContain('export GEMINI_MODEL="gemini-3.1-pro-preview"')
-    expect(progressText).toContain('Do not manually switch models inside Gemini')
-    expect(progressText).not.toContain('sk-existing-gemini-123456')
-  })
-
-  it('marks local-only setup steps as requiring a local check instead of pretending they are numbered progress', async () => {
-    const { wrapper } = await mountUserView()
-
-    expect(wrapper.text()).toContain('Needs local check')
-    expect(wrapper.text()).toContain('Run this command on your machine to complete or verify this step.')
-    expect(wrapper.text()).not.toContain('3Install the CLI')
-  })
-
-  it('recommends default CLI login in setup progress and leaves device login as a fallback reference', async () => {
-    const { wrapper } = await mountUserView()
-
-    const text = wrapper.text()
-    const loginStepStart = text.indexOf('Sign in from the CLI')
-    const configureStepStart = text.indexOf('Configure local AI tools')
-    const loginStepText = text.slice(loginStepStart, configureStepStart)
-
-    expect(loginStepText).toContain('ae-cli login')
-    expect(loginStepText).not.toContain('ae-cli login --device')
-    expect(text).toContain('ae-cli login --device')
-  })
-
-  it('keeps primary setup commands out of the advanced command reference duplicates', async () => {
-    const { wrapper } = await mountUserView()
-
-    const commandBlocks = wrapper.findAll('pre').map((block) => block.text())
-
-    expect(commandBlocks.filter((command) => command === 'ae-cli discover --provider prod')).toHaveLength(1)
-    expect(commandBlocks.filter((command) => command === 'ae-cli hooks enable --global')).toHaveLength(1)
-    expect(commandBlocks.filter((command) => command === 'ae-cli init')).toHaveLength(1)
-    expect(commandBlocks.filter((command) => command === 'ae-cli doctor')).toHaveLength(1)
-    expect(commandBlocks).toContain('ae-cli login --device')
-    expect(commandBlocks).toContain('ae-cli sync')
-    expect(commandBlocks).toContain('ae-cli hooks status --uploads')
-    expect(wrapper.text()).not.toContain('Machine Setup')
-    expect(wrapper.text()).not.toContain('Per-Repo Setup')
+    const methods = wrapper.get('[data-testid="configuration-methods"]').text()
+    expect(methods).toContain('Import to Claude')
+    expect(methods).not.toContain('Import to Codex')
+    expect(methods).not.toContain('Import to Gemini')
   })
 
   it('switches providers and updates the discover command and group list', async () => {

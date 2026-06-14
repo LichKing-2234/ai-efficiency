@@ -129,7 +129,7 @@ Run: `cd frontend && pnpm test user-setup-review.test.ts`
 
 Expected: PASS, including the new `CC Switch` helper assertions and the existing manual/automatic setup helper assertions.
 
-- [ ] **Step 5: Commit the helper work**
+- [x] **Step 5: Commit the helper work**
 
 ```bash
 git add frontend/src/utils/userSetupReview.ts frontend/src/__tests__/user-setup-review.test.ts
@@ -141,7 +141,7 @@ git commit -m "feat(frontend): add ccswitch import helpers"
 **Files:**
 - Modify: `frontend/src/__tests__/user-view.test.ts`
 
-- [ ] **Step 1: Replace checklist/audience-toggle assertions with API-key-first state tests**
+- [x] **Step 1: Replace checklist/audience-toggle assertions with API-key-first state tests**
 
 ```ts
 it('shows create my api key as the primary action when the selected group has no key', async () => {
@@ -226,7 +226,7 @@ it('shows only the matching CC Switch import target for the selected group platf
 })
 ```
 
-- [ ] **Step 2: Run the focused `/user` test file to verify it fails**
+- [x] **Step 2: Run the focused `/user` test file to verify it fails**
 
 Run: `cd frontend && pnpm test user-view.test.ts`
 
