@@ -365,7 +365,7 @@ Run: `cd frontend && pnpm test user-view.test.ts`
 
 Expected: FAIL, but the failures should now be narrowed to configuration-method visibility/content rather than the removed audience toggle.
 
-- [ ] **Step 5: Commit the primary-flow refactor checkpoint**
+- [x] **Step 5: Commit the primary-flow refactor checkpoint**
 
 ```bash
 git add frontend/src/views/UserView.vue
@@ -378,7 +378,7 @@ git commit -m "feat(frontend): add api-key-first user onboarding flow"
 - Modify: `frontend/src/views/UserView.vue`
 - Modify: `frontend/src/i18n.ts`
 
-- [ ] **Step 1: Add the configuration-method selector and post-success panels**
+- [x] **Step 1: Add the configuration-method selector and post-success panels**
 
 ```ts
 const ccSwitchImports = computed(() => {
@@ -432,7 +432,7 @@ const ccSwitchImports = computed(() => {
 </section>
 ```
 
-- [ ] **Step 2: Rewrite the touched `/user` i18n keys around the new flow**
+- [x] **Step 2: Rewrite the touched `/user` i18n keys around the new flow**
 
 ```ts
 'user.subtitle': 'Choose an access group, create your API key, confirm the connection, then configure your tool.',
@@ -472,7 +472,7 @@ const ccSwitchImports = computed(() => {
 'user.ccSwitchFallback': '如果 CC Switch 没有打开，请先安装或重新注册 ccswitch:// 协议，然后重试，或回退到手动配置。',
 ```
 
-- [ ] **Step 3: Run the focused frontend tests to verify the new flow passes**
+- [x] **Step 3: Run the focused frontend tests to verify the new flow passes**
 
 Run: `cd frontend && pnpm test user-setup-review.test.ts user-view.test.ts`
 

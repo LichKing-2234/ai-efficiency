@@ -10,6 +10,7 @@ import type {
   UserProviderSummary,
 } from '@/types'
 import {
+  buildCCSwitchProviderImportLink,
   buildDeviceLoginCommand,
   buildDiscoverCommand,
   buildDoctorCommand,
@@ -21,6 +22,7 @@ import {
   buildManualConfigSnippets,
   buildPreferredInstallCommand,
   buildRepoInitCommand,
+  resolveCCSwitchAppForPlatform,
   buildSyncCommand,
   buildWindowsInstallCommand,
   detectInstallPlatform,
@@ -89,13 +91,28 @@ const onboardingState = computed(() => {
   return 'key_ready_without_test' as const
 })
 const primaryOnboardingActionLabel = computed(() => {
-  if (onboardingState.value === 'group_selected_without_key') return 'Create my API key'
+  if (onboardingState.value === 'group_selected_without_key') return t('user.createMyApiKey')
   if (onboardingState.value === 'key_ready_without_test' || onboardingState.value === 'test_failed') {
-    return 'Run connection test'
+    return t('user.runConnectionTest')
   }
   return ''
 })
 const showConfigurationMethods = computed(() => onboardingState.value === 'test_success')
+const ccSwitchImports = computed(() => {
+  if (!selectedProvider.value || !selectedGroup.value || !selectedKeyValue.value) return []
+  const app = resolveCCSwitchAppForPlatform(selectedGroup.value.platform)
+  if (!app) return []
+  return [{
+    key: app,
+    label: app === 'codex' ? t('user.importToCodex') : app === 'claude' ? t('user.importToClaude') : t('user.importToGemini'),
+    href: buildCCSwitchProviderImportLink({
+      app,
+      name: `${selectedProvider.value.display_name} / ${selectedGroup.value.group_name}`,
+      endpoint: selectedProvider.value.base_url,
+      apiKey: selectedKeyValue.value,
+    }),
+  }]
+})
 
 function credentialStatusLabel(state: string) {
   return state === 'existing_hidden' ? t('user.readyToUse') : t('user.needsSetup')
@@ -535,9 +552,9 @@ onMounted(loadProviders)
         <div class="min-w-0 space-y-6">
           <section data-testid="primary-onboarding-flow" class="rounded-lg bg-white p-5 shadow">
             <div class="border-b border-gray-100 pb-4">
-              <p class="text-xs font-semibold uppercase tracking-wide text-amber-700">Primary goal</p>
-              <h2 class="mt-2 text-2xl font-bold text-gray-900">Create my API key</h2>
-              <p class="mt-2 text-sm text-gray-600">Choose an access group, create your API key, confirm the connection, then configure your tool.</p>
+              <p class="text-xs font-semibold uppercase tracking-wide text-amber-700">{{ t('user.primaryGoalEyebrow') }}</p>
+              <h2 class="mt-2 text-2xl font-bold text-gray-900">{{ t('user.createMyApiKey') }}</h2>
+              <p class="mt-2 text-sm text-gray-600">{{ t('user.primaryFlowHelp') }}</p>
             </div>
 
             <div class="mt-5 space-y-4">
@@ -545,7 +562,7 @@ onMounted(loadProviders)
                 <div class="flex items-start justify-between gap-4">
                   <div>
                     <h3 class="text-base font-semibold text-gray-900">{{ t('user.accessTitle') }}</h3>
-                    <p class="mt-1 text-sm text-gray-600">Access groups decide which API key you can create and which AI tools you can connect.</p>
+                    <p class="mt-1 text-sm text-gray-600">{{ t('user.accessGroupHelp') }}</p>
                     <p v-if="selectedProvider" class="mt-2 text-sm text-gray-500">{{ selectedProvider.base_url }}</p>
                   </div>
                   <button
@@ -586,7 +603,7 @@ onMounted(loadProviders)
                 <div class="flex items-start justify-between gap-4">
                   <div>
                     <h3 class="text-base font-semibold text-gray-900">{{ t('user.apiKeyTitle') }}</h3>
-                    <p class="mt-1 text-sm text-gray-600">Keep your key hidden by default. After creating or regenerating it, run a connection test before choosing a configuration method.</p>
+                    <p class="mt-1 text-sm text-gray-600">{{ t('user.apiKeyStageHelp') }}</p>
                   </div>
                   <button
                     v-if="onboardingState === 'key_ready_without_test' || onboardingState === 'test_failed'"
@@ -739,7 +756,141 @@ onMounted(loadProviders)
                 v-if="showConfigurationMethods"
                 data-testid="configuration-methods"
                 class="rounded-lg border border-gray-200 p-4"
-              />
+              >
+                <h3 class="text-base font-semibold text-gray-900">{{ t('user.configurationMethodsTitle') }}</h3>
+                <p class="mt-1 text-sm text-gray-600">{{ t('user.configurationMethodsHelp') }}</p>
+
+                <div class="mt-4 grid gap-3 md:grid-cols-3">
+                  <button
+                    data-testid="config-method-manual"
+                    class="rounded-lg border px-4 py-3 text-left transition"
+                    :class="selectedConfigMethod === 'manual' ? 'border-gray-900 bg-gray-50' : 'border-gray-200 hover:border-gray-400'"
+                    @click="selectedConfigMethod = 'manual'"
+                  >
+                    <div class="font-medium text-gray-900">{{ t('user.manualConfigMethodTitle') }}</div>
+                    <p class="mt-1 text-sm text-gray-600">{{ t('user.manualConfigMethodHelp') }}</p>
+                  </button>
+                  <button
+                    data-testid="config-method-automatic"
+                    class="rounded-lg border px-4 py-3 text-left transition"
+                    :class="selectedConfigMethod === 'automatic' ? 'border-gray-900 bg-gray-50' : 'border-gray-200 hover:border-gray-400'"
+                    @click="selectedConfigMethod = 'automatic'"
+                  >
+                    <div class="font-medium text-gray-900">{{ t('user.automaticConfigMethodTitle') }}</div>
+                    <p class="mt-1 text-sm text-gray-600">{{ t('user.automaticConfigMethodHelp') }}</p>
+                  </button>
+                  <div
+                    v-if="ccSwitchImports.length > 0"
+                    class="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3"
+                  >
+                    <div class="font-medium text-gray-900">{{ t('user.ccSwitchConfigMethodTitle') }}</div>
+                    <p class="mt-1 text-sm text-gray-600">{{ t('user.ccSwitchConfigMethodHelp') }}</p>
+                    <div class="mt-3 flex flex-wrap gap-2">
+                      <a
+                        v-for="item in ccSwitchImports"
+                        :key="item.key"
+                        :data-testid="`ccswitch-import-${item.key}`"
+                        :href="item.href"
+                        class="inline-flex rounded-md bg-blue-700 px-3 py-2 text-sm font-medium text-white hover:bg-blue-800"
+                      >
+                        {{ item.label }}
+                      </a>
+                    </div>
+                    <p class="mt-3 text-xs text-blue-900">{{ t('user.ccSwitchFallback') }}</p>
+                  </div>
+                </div>
+
+                <div v-if="selectedConfigMethod === 'manual'" class="mt-4 rounded-lg border border-gray-200 p-4">
+                  <div class="font-medium text-gray-900">{{ t('user.manualConfigDetailsTitle') }}</div>
+                  <dl class="mt-3 grid gap-2 sm:grid-cols-[120px_minmax(0,1fr)]">
+                    <dt class="text-xs font-medium uppercase tracking-wide text-slate-500">{{ t('user.manualConfigProviderUrl') }}</dt>
+                    <dd class="break-all font-mono text-xs text-slate-900">{{ selectedProvider?.base_url || '—' }}</dd>
+                    <dt class="text-xs font-medium uppercase tracking-wide text-slate-500">{{ t('user.manualConfigPlatform') }}</dt>
+                    <dd class="break-all font-mono text-xs text-slate-900">{{ selectedGroup?.platform || '—' }}</dd>
+                    <dt class="text-xs font-medium uppercase tracking-wide text-slate-500">{{ t('user.manualConfigGroup') }}</dt>
+                    <dd class="break-all text-xs text-slate-900">{{ selectedGroup?.group_name || '—' }}</dd>
+                    <dt class="text-xs font-medium uppercase tracking-wide text-slate-500">{{ t('user.manualConfigApiKey') }}</dt>
+                    <dd class="text-xs text-slate-900">{{ t('user.manualConfigApiKeyHelp') }}</dd>
+                  </dl>
+                  <div v-if="manualConfigDisplaySnippets.length > 0" class="mt-4 space-y-3">
+                    <div
+                      v-for="snippet in manualConfigDisplaySnippets"
+                      :key="snippet.key"
+                      class="rounded-md border border-slate-200 bg-white p-3"
+                    >
+                      <div class="flex flex-wrap items-start justify-between gap-3">
+                        <div class="min-w-0">
+                          <div class="font-medium text-slate-900">{{ manualConfigSnippetTitle(snippet) }}</div>
+                          <div class="mt-1 break-all font-mono text-xs text-slate-500">{{ snippet.path }}</div>
+                        </div>
+                        <button
+                          class="shrink-0 text-xs font-medium text-indigo-700 hover:text-indigo-900"
+                          type="button"
+                          :data-testid="`manual-config-copy-${snippet.key}`"
+                          @click="copyManualConfigSnippet(snippet)"
+                        >
+                          {{ manualConfigCopyLabel(snippet) }}
+                        </button>
+                      </div>
+                      <pre class="mt-3 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-xs text-green-300">{{ snippet.body }}</pre>
+                    </div>
+                    <div v-if="pendingManualConfigSnippet" class="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                      <div class="font-medium">{{ t('user.confirmCopyConfigSnippet') }}</div>
+                      <p class="mt-1 text-xs">{{ t('user.secretRiskText') }}</p>
+                      <div class="mt-3 flex flex-wrap gap-2">
+                        <button
+                          data-testid="confirm-manual-config-copy"
+                          class="rounded-md bg-amber-700 px-3 py-2 text-xs font-medium text-white hover:bg-amber-800"
+                          @click="confirmManualConfigCopy"
+                        >
+                          {{ t('user.confirmAction') }}
+                        </button>
+                        <button
+                          class="rounded-md border border-amber-300 bg-white px-3 py-2 text-xs font-medium text-amber-900 hover:bg-amber-100"
+                          @click="manualConfigConfirmKey = ''"
+                        >
+                          {{ t('user.cancel') }}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                  <p v-else class="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+                    {{ t('user.manualConfigUnsupportedPlatform') }}
+                  </p>
+                </div>
+
+                <div v-if="selectedConfigMethod === 'automatic'" class="mt-4 rounded-lg border border-gray-200 p-4">
+                  <div class="font-medium text-gray-900">{{ t('user.automaticConfigMethodTitle') }}</div>
+                  <p class="mt-1 text-sm text-gray-600">{{ t('user.automaticConfigProviderHelp') }}</p>
+                  <div class="mt-4 space-y-4 text-sm">
+                    <div>
+                      <div class="flex items-center justify-between gap-3">
+                        <span class="text-xs font-medium uppercase tracking-wide text-gray-500">{{ t('user.recommendedCommand') }}</span>
+                        <button class="shrink-0 text-xs font-medium text-indigo-700 hover:text-indigo-900" type="button" @click="copyCommand('auto-install', installCommand)">
+                          {{ copyCommandLabel('auto-install') }}
+                        </button>
+                      </div>
+                      <pre class="mt-2 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-xs text-green-300">{{ installCommand }}</pre>
+                    </div>
+                    <div v-for="command in [
+                      { key: 'auto-connectivity', label: t('user.githubConnectivityTitle'), value: githubConnectivityCommand },
+                      { key: 'auto-login', label: t('user.setupStepLoginTitle'), value: loginCommand },
+                      { key: 'auto-discover', label: t('user.setupStepConfigureTitle'), value: discoverCommand || t('user.selectProviderCommand') },
+                      { key: 'auto-hooks', label: t('user.setupStepHooksTitle'), value: hooksGlobalCommand },
+                      { key: 'auto-init', label: t('user.setupStepRepoTitle'), value: repoInitCommand },
+                      { key: 'auto-doctor', label: t('user.setupStepDoctorTitle'), value: doctorCommand },
+                    ]" :key="command.key">
+                      <div class="flex items-center justify-between gap-3">
+                        <span class="text-xs font-medium uppercase tracking-wide text-gray-500">{{ command.label }}</span>
+                        <button class="shrink-0 text-xs font-medium text-indigo-700 hover:text-indigo-900" type="button" @click="copyCommand(command.key, command.value)">
+                          {{ copyCommandLabel(command.key) }}
+                        </button>
+                      </div>
+                      <pre class="mt-2 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-xs text-green-300">{{ command.value }}</pre>
+                    </div>
+                  </div>
+                </div>
+              </section>
             </div>
           </section>
 
