@@ -554,8 +554,7 @@ onMounted(loadProviders)
         <div class="min-w-0 space-y-6">
           <section data-testid="primary-onboarding-flow" class="rounded-lg bg-white p-5 shadow">
             <div class="border-b border-gray-100 pb-4">
-              <p class="text-xs font-semibold uppercase tracking-wide text-amber-700">{{ t('user.primaryGoalEyebrow') }}</p>
-              <h2 class="mt-2 text-2xl font-bold text-gray-900">{{ t('user.createMyApiKey') }}</h2>
+              <h2 class="text-2xl font-bold text-gray-900">{{ t('user.manageMyApiKey') }}</h2>
               <p class="mt-2 text-sm text-gray-600">{{ t('user.primaryFlowHelp') }}</p>
             </div>
 

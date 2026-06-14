@@ -150,7 +150,7 @@ describe('UserView', () => {
     expect(wrapper.text()).not.toContain('Manual backfill / recovery')
     expect(wrapper.text()).not.toContain('ae-cli sync')
     expect(wrapper.text()).not.toContain('ae-cli hooks status --uploads')
-    expect(wrapper.text()).toContain('Create my API key')
+    expect(wrapper.text()).toContain('Create or manage my API key')
     expect(wrapper.text()).not.toContain("I'm a developer")
     expect(wrapper.text()).not.toContain("I'm not a developer")
     expect(wrapper.text()).toContain('Group Beta')
@@ -317,7 +317,7 @@ describe('UserView', () => {
     const { wrapper } = await mountUserView()
     await wrapper.get('[data-testid="provider-1"]').trigger('click')
     expect(wrapper.text()).toContain('https://staging.example.com')
-    expect(wrapper.text()).toContain('Create my API key')
+    expect(wrapper.text()).toContain('Create or manage my API key')
     expect(wrapper.text()).toContain('OpenAI-Staging')
   })
 
