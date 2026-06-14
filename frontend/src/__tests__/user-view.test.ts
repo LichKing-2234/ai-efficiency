@@ -265,6 +265,39 @@ describe('UserView', () => {
     expect(wrapper.find('[data-testid="configuration-methods"]').exists()).toBe(false)
   })
 
+  it('prefers the first provider with groups when the primary provider has none', async () => {
+    const { wrapper } = await mountUserViewWithProviders([
+      {
+        id: 9,
+        name: 'empty',
+        display_name: 'Empty',
+        base_url: 'https://empty.example.com',
+        default_model: 'claude-sonnet',
+        is_primary: true,
+        groups: [],
+      },
+      {
+        id: 10,
+        name: 'usable',
+        display_name: 'Usable',
+        base_url: 'https://usable.example.com',
+        default_model: 'claude-sonnet',
+        is_primary: false,
+        groups: [
+          {
+            group_id: '77',
+            group_name: 'Usable Group',
+            platform: 'anthropic',
+            credential: { state: 'existing_hidden', api_key_id: 31, name: 'alice', status: 'active', key: 'sk-usable' },
+          },
+        ],
+      },
+    ])
+
+    expect(wrapper.text()).toContain('Usable Group')
+    expect(wrapper.text()).not.toContain('This access source has no groups available')
+  })
+
   it('clears the successful test state when switching groups or regenerating the key', async () => {
     const { testUserProvider, regenerateGroupCredential } = await import('@/api/user')
     ;(testUserProvider as any).mockResolvedValue({

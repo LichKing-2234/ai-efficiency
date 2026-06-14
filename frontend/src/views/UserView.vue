@@ -84,6 +84,8 @@ const readyAccessGroupCount = computed(() =>
 const totalAccessGroupCount = computed(() =>
   providers.value.reduce((count, provider) => count + provider.groups.length, 0)
 )
+const hasAnyAccessGroups = computed(() => providers.value.some((provider) => provider.groups.length > 0))
+const selectedProviderHasGroups = computed(() => !!selectedProvider.value?.groups.length)
 const onboardingState = computed(() => {
   if (!selectedGroup.value) return 'no_group_selected' as const
   if (!selectedKeyValue.value) return 'group_selected_without_key' as const
@@ -223,8 +225,13 @@ function selectDefaultGroup(provider: UserProviderSummary | null) {
 }
 
 function selectDefaultProvider(rows: UserProviderSummary[]) {
-  const primary = rows.find((provider) => provider.is_primary)
-  selectedProviderId.value = primary?.id ?? rows[0]?.id ?? null
+  const preferred =
+    rows.find((provider) => provider.is_primary && provider.groups.length > 0) ??
+    rows.find((provider) => provider.groups.length > 0) ??
+    rows.find((provider) => provider.is_primary) ??
+    rows[0] ??
+    null
+  selectedProviderId.value = preferred?.id ?? null
   const provider = rows.find((item) => item.id === selectedProviderId.value) ?? null
   selectDefaultGroup(provider)
 }
@@ -657,7 +664,7 @@ onMounted(loadProviders)
                   </div>
                   <div v-else class="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
                     <div class="font-medium">{{ t('user.noAccessGroupTitle') }}</div>
-                    <p class="mt-2">{{ t('user.noAccessGroupHelp') }}</p>
+                    <p class="mt-2">{{ hasAnyAccessGroups ? t('user.noAccessGroupOnProviderHelp') : t('user.noAccessGroupHelp') }}</p>
                   </div>
                 </div>
               </section>
@@ -806,7 +813,7 @@ onMounted(loadProviders)
                   </div>
                 </div>
                 <div v-else class="mt-4 rounded-md border border-gray-200 bg-gray-50 p-4 text-sm text-gray-600">
-                  {{ t('user.noAccessGroupApiKeyHelp') }}
+                  {{ hasAnyAccessGroups && !selectedProviderHasGroups ? t('user.noAccessGroupOnProviderApiKeyHelp') : t('user.noAccessGroupApiKeyHelp') }}
                 </div>
               </section>
 
