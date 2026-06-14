@@ -502,7 +502,7 @@ Run: `git diff -- docs/architecture.md`
 
 Expected: A focused wording-only diff around the `/user` surface description, with no unrelated architecture churn.
 
-- [ ] **Step 3: Commit the doc sync**
+- [x] **Step 3: Commit the doc sync**
 
 ```bash
 git add docs/architecture.md
@@ -519,31 +519,31 @@ git commit -m "docs(architecture): refresh user onboarding surface"
 - Verify: `frontend/src/__tests__/user-setup-review.test.ts`
 - Verify: `docs/architecture.md`
 
-- [ ] **Step 1: Run targeted frontend tests**
+- [x] **Step 1: Run targeted frontend tests**
 
 Run: `cd frontend && pnpm test user-setup-review.test.ts user-view.test.ts`
 
 Expected: PASS.
 
-- [ ] **Step 2: Run frontend type-check**
+- [x] **Step 2: Run frontend type-check**
 
 Run: `cd frontend && pnpm exec vue-tsc -b --pretty false`
 
 Expected: PASS.
 
-- [ ] **Step 3: Run the full frontend test suite**
+- [x] **Step 3: Run the full frontend test suite**
 
 Run: `cd frontend && pnpm test`
 
 Expected: PASS.
 
-- [ ] **Step 4: Run the existing role regression**
+- [x] **Step 4: Run the existing role regression**
 
 Run: `cd frontend && pnpm run test:e2e:role`
 
 Expected: PASS.
 
-- [ ] **Step 5: Manually verify the `/user` flow in the browser**
+- [x] **Step 5: Manually verify the `/user` flow in the browser**
 
 Run:
 
@@ -560,7 +560,7 @@ Expected:
 - after a successful test, the page shows manual, automatic, and matching `CC Switch` options
 - the `CC Switch` button target starts with `ccswitch://v1/import?resource=provider&app=...`
 
-- [ ] **Step 6: Final commit if verification required follow-up fixes**
+- [x] **Step 6: Final commit if verification required follow-up fixes**
 
 ```bash
 git status --short
