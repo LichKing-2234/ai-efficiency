@@ -926,27 +926,6 @@ onMounted(loadProviders)
 
                     <div class="mt-4 space-y-4 text-sm">
                       <div class="rounded-md border border-gray-200 p-4">
-                        <div class="font-medium text-gray-900">{{ t('user.alternateInstall') }}</div>
-                        <div class="mt-3 text-xs font-medium uppercase tracking-wide text-gray-500">{{ alternateInstallLabel }}</div>
-                        <div class="mt-2 flex justify-end">
-                          <button class="text-xs font-medium text-indigo-700 hover:text-indigo-900" type="button" @click="copyCommand(alternateInstallCopyKey, alternateInstallCommand)">
-                            {{ copyCommandLabel(alternateInstallCopyKey) }}
-                          </button>
-                        </div>
-                        <pre class="mt-2 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-xs text-green-300">{{ alternateInstallCommand }}</pre>
-                      </div>
-
-                      <div class="rounded-md border border-gray-200 p-4">
-                        <div class="font-medium text-gray-900">{{ t('user.deviceLoginFallback') }}</div>
-                        <div class="mt-2 flex justify-end">
-                          <button class="text-xs font-medium text-indigo-700 hover:text-indigo-900" type="button" @click="copyCommand('device-login', deviceLoginCommand)">
-                            {{ copyCommandLabel('device-login') }}
-                          </button>
-                        </div>
-                        <pre class="mt-2 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-xs text-green-300">{{ deviceLoginCommand }}</pre>
-                      </div>
-
-                      <div class="rounded-md border border-gray-200 p-4">
                         <div class="font-medium text-gray-900">{{ t('user.setupStepDoctorTitle') }}</div>
                         <p class="mt-1 text-sm text-gray-600">{{ t('user.automaticConfigDoctorHelp') }}</p>
                         <div class="mt-2 flex justify-end">

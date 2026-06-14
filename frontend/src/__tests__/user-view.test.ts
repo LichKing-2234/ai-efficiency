@@ -315,6 +315,9 @@ describe('UserView', () => {
 
     await wrapper.get('summary').trigger('click')
     expect(wrapper.text()).toContain('ae-cli doctor')
+    const advancedText = wrapper.text().slice(wrapper.text().indexOf('Advanced command reference'))
+    expect(advancedText).not.toContain('Windows PowerShell')
+    expect(advancedText).not.toContain('ae-cli login --device')
   })
 
   it('shows audience guidance on each configuration method card', async () => {
