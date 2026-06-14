@@ -342,7 +342,7 @@ describe('UserView', () => {
     const methods = wrapper.get('[data-testid="configuration-methods"]').text()
     expect(methods).toContain('Best for non-developers, independent agents')
     expect(methods).toContain('Best for engineering teams')
-    expect(methods).toContain('Best for non-developers who want a managed desktop configuration flow')
+    expect(methods).toContain('Best for non-developers who prefer a desktop app to manage tool configuration')
   })
 
   it('switches providers and updates the discover command and group list', async () => {
