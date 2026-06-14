@@ -881,21 +881,21 @@ onMounted(loadProviders)
                 </div>
 
                 <div v-if="selectedConfigMethod === 'automatic'" class="mt-4 rounded-lg border border-gray-200 p-4">
-                  <p class="text-sm leading-6 text-gray-600">{{ t('user.automaticConfigProviderHelp') }}</p>
-                  <p class="mt-2 text-sm leading-6 text-gray-600">{{ t('user.automaticConfigOverview') }}</p>
+                  <p class="text-sm leading-5 text-gray-600">{{ t('user.automaticConfigProviderHelp') }}</p>
+                  <p class="mt-2 text-sm leading-5 text-gray-600">{{ t('user.automaticConfigOverview') }}</p>
 
                   <section class="mt-4">
-                    <div class="text-lg font-semibold leading-7 text-gray-900">{{ t('user.automaticConfigMachineTitle') }}</div>
-                    <p class="mt-1 text-sm leading-6 text-gray-600">{{ t('user.automaticConfigMachineHelp') }}</p>
+                    <div class="text-base font-semibold leading-6 text-gray-900">{{ t('user.automaticConfigMachineTitle') }}</div>
+                    <p class="mt-1 text-sm leading-5 text-gray-600">{{ t('user.automaticConfigMachineHelp') }}</p>
                     <div class="mt-4 space-y-3 text-sm">
-                      <div v-for="command in automaticMachineCommands" :key="command.key" class="rounded-md border border-gray-200 p-4 shadow-sm">
+                      <div v-for="command in automaticMachineCommands" :key="command.key" class="rounded-md border border-gray-200 p-3 shadow-sm">
                         <div class="flex items-center justify-between gap-3">
                           <span class="text-[11px] font-semibold text-gray-500">{{ command.label }}</span>
                           <button class="shrink-0 text-xs font-medium text-indigo-700 hover:text-indigo-900" type="button" @click="copyCommand(command.key, command.value)">
                             {{ copyCommandLabel(command.key) }}
                           </button>
                         </div>
-                        <pre class="mt-2 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-[13px] leading-6 text-green-300">{{ command.value }}</pre>
+                        <pre class="mt-1.5 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-[13px] leading-5 text-green-300">{{ command.value }}</pre>
                         <details
                           v-if="command.fallback"
                           :data-testid="command.fallback.detailsTestId"
@@ -904,73 +904,73 @@ onMounted(loadProviders)
                           <summary class="cursor-pointer text-sm font-medium leading-6 text-gray-700">
                             {{ command.fallback.title }}
                           </summary>
-                          <p class="mt-2 text-sm leading-6 text-gray-600">{{ command.fallback.help }}</p>
-                          <div class="mt-3 text-[11px] font-semibold text-gray-500">{{ command.fallback.label }}</div>
-                          <div class="mt-2 flex justify-end">
+                          <p class="mt-1.5 text-xs leading-5 text-gray-500">{{ command.fallback.help }}</p>
+                          <div class="mt-2 text-[10px] font-semibold uppercase tracking-wide text-gray-500">{{ command.fallback.label }}</div>
+                          <div class="mt-1.5 flex justify-end">
                             <button class="text-xs font-medium text-indigo-700 hover:text-indigo-900" type="button" @click="copyCommand(command.fallback.copyKey, command.fallback.value)">
                               {{ copyCommandLabel(command.fallback.copyKey) }}
                             </button>
                           </div>
-                          <pre class="mt-2 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-[13px] leading-6 text-green-300">{{ command.fallback.value }}</pre>
+                          <pre class="mt-1.5 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-[13px] leading-5 text-green-300">{{ command.fallback.value }}</pre>
                         </details>
                       </div>
                     </div>
                   </section>
 
                   <section class="mt-6">
-                    <div class="text-lg font-semibold leading-7 text-gray-900">{{ t('user.automaticConfigRepoTitle') }}</div>
-                    <p class="mt-1 text-sm leading-6 text-gray-600">{{ t('user.automaticConfigRepoHelp') }}</p>
+                    <div class="text-base font-semibold leading-6 text-gray-900">{{ t('user.automaticConfigRepoTitle') }}</div>
+                    <p class="mt-1 text-sm leading-5 text-gray-600">{{ t('user.automaticConfigRepoHelp') }}</p>
                     <div class="mt-4 space-y-3 text-sm">
-                      <div v-for="command in automaticRepoCommands" :key="command.key" class="rounded-md border border-gray-200 p-4 shadow-sm">
+                      <div v-for="command in automaticRepoCommands" :key="command.key" class="rounded-md border border-gray-200 p-3 shadow-sm">
                         <div class="flex items-center justify-between gap-3">
                           <span class="text-[11px] font-semibold text-gray-500">{{ command.label }}</span>
                           <button class="shrink-0 text-xs font-medium text-indigo-700 hover:text-indigo-900" type="button" @click="copyCommand(command.key, command.value)">
                             {{ copyCommandLabel(command.key) }}
                           </button>
                         </div>
-                        <pre class="mt-2 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-[13px] leading-6 text-green-300">{{ command.value }}</pre>
+                        <pre class="mt-1.5 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-[13px] leading-5 text-green-300">{{ command.value }}</pre>
                       </div>
                     </div>
                   </section>
 
                   <details data-testid="auto-advanced" class="mt-6 rounded-lg border border-gray-200 p-4">
-                    <summary class="cursor-pointer text-lg font-semibold leading-7 text-gray-900">
+                    <summary class="cursor-pointer text-base font-semibold leading-6 text-gray-900">
                       {{ t('user.commandReference') }}
                     </summary>
-                    <p class="mt-2 text-sm leading-6 text-gray-600">{{ t('user.commandReferenceHelp') }}</p>
+                    <p class="mt-2 text-sm leading-5 text-gray-600">{{ t('user.commandReferenceHelp') }}</p>
 
                     <div class="mt-4 space-y-4 text-sm">
-                      <div class="rounded-md border border-gray-200 p-4 shadow-sm">
+                      <div class="rounded-md border border-gray-200 p-3 shadow-sm">
                         <div class="font-medium leading-6 text-gray-900">{{ t('user.setupStepDoctorTitle') }}</div>
-                        <p class="mt-1 text-sm leading-6 text-gray-600">{{ t('user.automaticConfigDoctorHelp') }}</p>
-                        <div class="mt-2 flex justify-end">
+                        <p class="mt-1 text-xs leading-5 text-gray-500">{{ t('user.automaticConfigDoctorHelp') }}</p>
+                        <div class="mt-1.5 flex justify-end">
                           <button class="text-xs font-medium text-indigo-700 hover:text-indigo-900" type="button" @click="copyCommand('auto-doctor', doctorCommand)">
                             {{ copyCommandLabel('auto-doctor') }}
                           </button>
                         </div>
-                        <pre class="mt-2 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-[13px] leading-6 text-green-300">{{ doctorCommand }}</pre>
+                        <pre class="mt-1.5 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-[13px] leading-5 text-green-300">{{ doctorCommand }}</pre>
                       </div>
 
-                      <div class="rounded-md border border-gray-200 p-4 shadow-sm">
+                      <div class="rounded-md border border-gray-200 p-3 shadow-sm">
                         <div class="font-medium leading-6 text-gray-900">{{ t('user.manualRecovery') }}</div>
                         <div class="mt-4 space-y-4">
                           <div>
                             <div class="text-sm font-medium leading-6 text-gray-900">{{ t('user.manualSync') }}</div>
-                            <div class="mt-2 flex justify-end">
+                            <div class="mt-1.5 flex justify-end">
                               <button class="text-xs font-medium text-indigo-700 hover:text-indigo-900" type="button" @click="copyCommand('manual-sync', syncCommand)">
                                 {{ copyCommandLabel('manual-sync') }}
                               </button>
                             </div>
-                            <pre class="mt-2 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-[13px] leading-6 text-green-300">{{ syncCommand }}</pre>
+                            <pre class="mt-1.5 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-[13px] leading-5 text-green-300">{{ syncCommand }}</pre>
                           </div>
                           <div>
                             <div class="text-sm font-medium leading-6 text-gray-900">{{ t('user.hookStatus') }}</div>
-                            <div class="mt-2 flex justify-end">
+                            <div class="mt-1.5 flex justify-end">
                               <button class="text-xs font-medium text-indigo-700 hover:text-indigo-900" type="button" @click="copyCommand('hook-status', hooksStatusUploadsCommand)">
                                 {{ copyCommandLabel('hook-status') }}
                               </button>
                             </div>
-                            <pre class="mt-2 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-[13px] leading-6 text-green-300">{{ hooksStatusUploadsCommand }}</pre>
+                            <pre class="mt-1.5 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-[13px] leading-5 text-green-300">{{ hooksStatusUploadsCommand }}</pre>
                           </div>
                         </div>
                       </div>
