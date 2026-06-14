@@ -925,8 +925,8 @@ onMounted(loadProviders)
                             {{ command.fallback.title }}
                           </summary>
                           <p class="mt-1.5 text-xs leading-5 text-gray-500">{{ command.fallback.help }}</p>
-                          <div class="mt-2 text-[10px] font-semibold uppercase tracking-wide text-gray-500">{{ command.fallback.label }}</div>
-                          <div class="mt-1.5 flex justify-end">
+                          <div class="mt-2 flex items-center justify-between gap-3">
+                            <div class="text-[10px] font-semibold uppercase tracking-wide text-gray-500">{{ command.fallback.label }}</div>
                             <button class="text-xs font-medium text-indigo-700 hover:text-indigo-900" type="button" @click="copyCommand(command.fallback.copyKey, command.fallback.value)">
                               {{ copyCommandLabel(command.fallback.copyKey) }}
                             </button>
@@ -970,7 +970,7 @@ onMounted(loadProviders)
                             <div class="font-medium leading-6 text-gray-900">{{ command.title }}</div>
                             <p class="mt-1 text-xs leading-5 text-gray-500">{{ command.help }}</p>
                           </div>
-                          <button class="shrink-0 text-xs font-medium text-indigo-700 hover:text-indigo-900" type="button" @click="copyCommand(command.key, command.value)">
+                          <button class="mt-0.5 shrink-0 text-xs font-medium text-indigo-700 hover:text-indigo-900" type="button" @click="copyCommand(command.key, command.value)">
                             {{ copyCommandLabel(command.key) }}
                           </button>
                         </div>
