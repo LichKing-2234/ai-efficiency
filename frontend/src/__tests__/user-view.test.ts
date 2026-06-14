@@ -146,12 +146,10 @@ describe('UserView', () => {
     expect(wrapper.text()).toContain('Choose an access group, create your API key')
     expect(wrapper.text()).toContain('alice@example.com')
     expect(wrapper.text()).toContain('Production')
-    expect(wrapper.text()).toContain('Windows PowerShell')
-    expect(wrapper.text()).toContain('install.ps1')
-    expect(wrapper.text()).toContain('Advanced command reference')
-    expect(wrapper.text()).toContain('Manual backfill / recovery')
-    expect(wrapper.text()).toContain('ae-cli sync')
-    expect(wrapper.text()).toContain('ae-cli hooks status --uploads')
+    expect(wrapper.text()).not.toContain('Advanced command reference')
+    expect(wrapper.text()).not.toContain('Manual backfill / recovery')
+    expect(wrapper.text()).not.toContain('ae-cli sync')
+    expect(wrapper.text()).not.toContain('ae-cli hooks status --uploads')
     expect(wrapper.text()).toContain('Create my API key')
     expect(wrapper.text()).not.toContain("I'm a developer")
     expect(wrapper.text()).not.toContain("I'm not a developer")
@@ -168,7 +166,6 @@ describe('UserView', () => {
     expect(wrapper.text()).toContain('Access group')
     expect(wrapper.text()).toContain('Ready to use')
     expect(wrapper.text()).toContain('API key and connection test')
-    expect(wrapper.text()).toContain('Advanced command reference')
     expect(wrapper.text()).not.toContain('Profile Summary')
     expect(wrapper.text()).not.toContain('Provider & Group Credential')
     expect(wrapper.text()).not.toContain('Credential state')
@@ -198,7 +195,7 @@ describe('UserView', () => {
     expect(wrapper.text()).not.toContain("I'm not a developer")
   })
 
-  it('reveals configuration methods only after a successful connection test', async () => {
+  it('reveals configuration methods as soon as a key is available', async () => {
     const { createGroupCredential, testUserProvider } = await import('@/api/user')
     ;(createGroupCredential as any).mockResolvedValue({
       data: { data: { api_key_id: 7, name: 'alice', status: 'active', secret: 'sk-openai' } },
@@ -212,16 +209,14 @@ describe('UserView', () => {
     await wrapper.get('[data-testid="create-key"]').trigger('click')
     await flushPromises()
 
-    expect(wrapper.get('[data-testid="primary-onboarding-action"]').text()).toBe('Run connection test')
-    expect(wrapper.find('[data-testid="configuration-methods"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="configuration-methods"]').text()).toContain('Manual configuration')
+    expect(wrapper.get('[data-testid="configuration-methods"]').text()).toContain('Automatic configuration')
+    expect(wrapper.get('[data-testid="configuration-methods"]').text()).toContain('CC Switch configuration')
 
     await wrapper.get('[data-testid="user-provider-test-model"]').setValue('gpt-5.4')
     await wrapper.get('[data-testid="user-provider-test-run"]').trigger('click')
     await flushPromises()
-
-    expect(wrapper.get('[data-testid="configuration-methods"]').text()).toContain('Manual configuration')
-    expect(wrapper.get('[data-testid="configuration-methods"]').text()).toContain('Automatic configuration')
-    expect(wrapper.get('[data-testid="configuration-methods"]').text()).toContain('CC Switch configuration')
+    expect(wrapper.text()).toContain('Connection successful')
   })
 
   it('clears the successful test state when switching groups or regenerating the key', async () => {
@@ -238,33 +233,40 @@ describe('UserView', () => {
     await wrapper.get('[data-testid="user-provider-test-run"]').trigger('click')
     await flushPromises()
     expect(wrapper.find('[data-testid="configuration-methods"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('Connection successful')
 
     await wrapper.get('[data-testid="group-44"]').trigger('click')
     await flushPromises()
-    expect(wrapper.find('[data-testid="configuration-methods"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="configuration-methods"]').exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('Connection successful')
 
     await wrapper.get('[data-testid="group-43"]').trigger('click')
     await wrapper.get('[data-testid="regenerate-key"]').trigger('click')
     await wrapper.get('[data-testid="confirm-secret-action"]').trigger('click')
     await flushPromises()
-    expect(wrapper.find('[data-testid="configuration-methods"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="configuration-methods"]').exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('Connection successful')
   })
 
   it('shows only the matching CC Switch import target for the selected group platform', async () => {
-    const { testUserProvider } = await import('@/api/user')
-    ;(testUserProvider as any).mockResolvedValue({
-      data: { data: { success: true, message: 'Connection successful', response: 'pong' } },
-    })
-
     const { wrapper } = await mountUserView()
-    await wrapper.get('[data-testid="user-provider-test-model"]').setValue('claude-sonnet-4-6')
-    await wrapper.get('[data-testid="user-provider-test-run"]').trigger('click')
-    await flushPromises()
 
     const methods = wrapper.get('[data-testid="configuration-methods"]').text()
     expect(methods).toContain('Import to Claude')
     expect(methods).not.toContain('Import to Codex')
     expect(methods).not.toContain('Import to Gemini')
+  })
+
+  it('shows advanced command reference only inside automatic configuration', async () => {
+    const { wrapper } = await mountUserView()
+
+    expect(wrapper.text()).not.toContain('Advanced command reference')
+    await wrapper.get('[data-testid="config-method-automatic"]').trigger('click')
+    expect(wrapper.text()).toContain('Advanced command reference')
+    expect(wrapper.text()).toContain('ae-cli discover --provider prod')
+    expect(wrapper.text()).toContain('ae-cli hooks enable --global')
+    expect(wrapper.text()).toContain('ae-cli init')
+    expect(wrapper.text()).toContain('ae-cli doctor')
   })
 
   it('switches providers and updates the discover command and group list', async () => {

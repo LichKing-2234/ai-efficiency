@@ -97,7 +97,7 @@ const primaryOnboardingActionLabel = computed(() => {
   }
   return ''
 })
-const showConfigurationMethods = computed(() => onboardingState.value === 'test_success')
+const showConfigurationMethods = computed(() => !!selectedKeyValue.value)
 const ccSwitchImports = computed(() => {
   if (!selectedProvider.value || !selectedGroup.value || !selectedKeyValue.value) return []
   const app = resolveCCSwitchAppForPlatform(selectedGroup.value.platform)
@@ -605,15 +605,6 @@ onMounted(loadProviders)
                     <h3 class="text-base font-semibold text-gray-900">{{ t('user.apiKeyTitle') }}</h3>
                     <p class="mt-1 text-sm text-gray-600">{{ t('user.apiKeyStageHelp') }}</p>
                   </div>
-                  <button
-                    v-if="onboardingState === 'key_ready_without_test' || onboardingState === 'test_failed'"
-                    data-testid="primary-onboarding-action"
-                    class="rounded-md bg-emerald-700 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-800 disabled:opacity-50"
-                    :disabled="providerTestLoading || !canTestProvider"
-                    @click="handleTestProvider"
-                  >
-                    {{ providerTestLoading ? t('user.testing') : primaryOnboardingActionLabel }}
-                  </button>
                 </div>
 
                 <div v-if="selectedGroup" class="mt-4 space-y-4">
@@ -889,6 +880,60 @@ onMounted(loadProviders)
                       <pre class="mt-2 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-xs text-green-300">{{ command.value }}</pre>
                     </div>
                   </div>
+
+                  <details class="mt-4 rounded-lg border border-gray-200 p-4">
+                    <summary class="cursor-pointer text-sm font-semibold text-gray-900">
+                      {{ t('user.commandReference') }}
+                    </summary>
+                    <p class="mt-2 text-sm text-gray-500">{{ t('user.commandReferenceHelp') }}</p>
+
+                    <div class="mt-4 space-y-4 text-sm">
+                      <div class="rounded-md border border-gray-200 p-4">
+                        <div class="font-medium text-gray-900">{{ t('user.alternateInstall') }}</div>
+                        <div class="mt-3 text-xs font-medium uppercase tracking-wide text-gray-500">{{ alternateInstallLabel }}</div>
+                        <div class="mt-2 flex justify-end">
+                          <button class="text-xs font-medium text-indigo-700 hover:text-indigo-900" type="button" @click="copyCommand(alternateInstallCopyKey, alternateInstallCommand)">
+                            {{ copyCommandLabel(alternateInstallCopyKey) }}
+                          </button>
+                        </div>
+                        <pre class="mt-2 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-xs text-green-300">{{ alternateInstallCommand }}</pre>
+                      </div>
+
+                      <div class="rounded-md border border-gray-200 p-4">
+                        <div class="font-medium text-gray-900">{{ t('user.deviceLoginFallback') }}</div>
+                        <div class="mt-2 flex justify-end">
+                          <button class="text-xs font-medium text-indigo-700 hover:text-indigo-900" type="button" @click="copyCommand('device-login', deviceLoginCommand)">
+                            {{ copyCommandLabel('device-login') }}
+                          </button>
+                        </div>
+                        <pre class="mt-2 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-xs text-green-300">{{ deviceLoginCommand }}</pre>
+                      </div>
+
+                      <div class="rounded-md border border-gray-200 p-4">
+                        <div class="font-medium text-gray-900">{{ t('user.manualRecovery') }}</div>
+                        <div class="mt-4 space-y-4">
+                          <div>
+                            <div class="text-sm font-medium text-gray-900">{{ t('user.manualSync') }}</div>
+                            <div class="mt-2 flex justify-end">
+                              <button class="text-xs font-medium text-indigo-700 hover:text-indigo-900" type="button" @click="copyCommand('manual-sync', syncCommand)">
+                                {{ copyCommandLabel('manual-sync') }}
+                              </button>
+                            </div>
+                            <pre class="mt-2 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-xs text-green-300">{{ syncCommand }}</pre>
+                          </div>
+                          <div>
+                            <div class="text-sm font-medium text-gray-900">{{ t('user.hookStatus') }}</div>
+                            <div class="mt-2 flex justify-end">
+                              <button class="text-xs font-medium text-indigo-700 hover:text-indigo-900" type="button" @click="copyCommand('hook-status', hooksStatusUploadsCommand)">
+                                {{ copyCommandLabel('hook-status') }}
+                              </button>
+                            </div>
+                            <pre class="mt-2 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-xs text-green-300">{{ hooksStatusUploadsCommand }}</pre>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </details>
                 </div>
               </section>
             </div>
@@ -908,59 +953,6 @@ onMounted(loadProviders)
             </div>
           </section>
 
-          <details class="rounded-lg bg-white p-5 shadow">
-            <summary class="cursor-pointer text-sm font-semibold uppercase tracking-wide text-gray-900">
-              {{ t('user.commandReference') }}
-            </summary>
-            <p class="mt-2 text-sm text-gray-500">{{ t('user.commandReferenceHelp') }}</p>
-
-            <div class="mt-4 space-y-4 text-sm">
-              <div class="rounded-md border border-gray-200 p-4">
-                <div class="font-medium text-gray-900">{{ t('user.alternateInstall') }}</div>
-                <div class="mt-3 text-xs font-medium uppercase tracking-wide text-gray-500">{{ alternateInstallLabel }}</div>
-                <div class="mt-2 flex justify-end">
-                  <button class="text-xs font-medium text-indigo-700 hover:text-indigo-900" type="button" @click="copyCommand(alternateInstallCopyKey, alternateInstallCommand)">
-                    {{ copyCommandLabel(alternateInstallCopyKey) }}
-                  </button>
-                </div>
-                <pre class="mt-2 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-xs text-green-300">{{ alternateInstallCommand }}</pre>
-              </div>
-
-              <div class="rounded-md border border-gray-200 p-4">
-                <div class="font-medium text-gray-900">{{ t('user.deviceLoginFallback') }}</div>
-                <div class="mt-2 flex justify-end">
-                  <button class="text-xs font-medium text-indigo-700 hover:text-indigo-900" type="button" @click="copyCommand('device-login', deviceLoginCommand)">
-                    {{ copyCommandLabel('device-login') }}
-                  </button>
-                </div>
-                <pre class="mt-2 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-xs text-green-300">{{ deviceLoginCommand }}</pre>
-              </div>
-
-              <div class="rounded-md border border-gray-200 p-4">
-                <div class="font-medium text-gray-900">{{ t('user.manualRecovery') }}</div>
-                <div class="mt-4 space-y-4">
-                  <div>
-                    <div class="text-sm font-medium text-gray-900">{{ t('user.manualSync') }}</div>
-                    <div class="mt-2 flex justify-end">
-                      <button class="text-xs font-medium text-indigo-700 hover:text-indigo-900" type="button" @click="copyCommand('manual-sync', syncCommand)">
-                        {{ copyCommandLabel('manual-sync') }}
-                      </button>
-                    </div>
-                    <pre class="mt-2 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-xs text-green-300">{{ syncCommand }}</pre>
-                  </div>
-                  <div>
-                    <div class="text-sm font-medium text-gray-900">{{ t('user.hookStatus') }}</div>
-                    <div class="mt-2 flex justify-end">
-                      <button class="text-xs font-medium text-indigo-700 hover:text-indigo-900" type="button" @click="copyCommand('hook-status', hooksStatusUploadsCommand)">
-                        {{ copyCommandLabel('hook-status') }}
-                      </button>
-                    </div>
-                    <pre class="mt-2 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-xs text-green-300">{{ hooksStatusUploadsCommand }}</pre>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </details>
         </div>
       </div>
     </div>

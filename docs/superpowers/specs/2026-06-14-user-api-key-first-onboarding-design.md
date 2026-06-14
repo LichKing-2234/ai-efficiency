@@ -50,7 +50,7 @@
 3. 去掉“研发 / 非研发”切换，让所有用户共用同一条主流程，只在“配置方式”阶段分流。
 4. 保留 `接入组` 这个术语，但让它成为清晰解释后的用户可操作对象，而不是抽象技术背景。
 5. 让 API key 创建成为首屏第一主动作，让连接测试成为创建后的默认下一步。
-6. 让 `手动配置`、`自动配置`、`CC Switch 配置` 只在连接测试成功后出现。
+6. 让 `手动配置`、`自动配置`、`CC Switch 配置` 在 API key 可用后出现，并把连接测试保留为推荐的下一步动作，而不是显示门槛。
 7. 保留研发能力，但把 CLI、repo attribution、恢复命令、诊断命令下沉为“自动配置”路径或高级区。
 8. 为 `CC Switch` 增加明确的 app-specific 一键导入设计合同，而不是停留在说明文字。
 
@@ -79,7 +79,7 @@
 1. 先选择一个接入组。
 2. 为自己创建这个组的 API key。
 3. 立刻跑一次真实连接测试。
-4. 测试成功后再决定如何配置工具。
+4. API key 可用后即可决定如何配置工具；连接测试用于先验证可用性。
 
 ### 2. Information Architecture
 
@@ -125,21 +125,21 @@
 
 #### `key_ready_without_test`
 
-- 主按钮切换为 `运行连接测试`。
 - API key reveal/copy/regenerate 仍可用，但退居辅助位置。
-- `配置方式` 继续隐藏。
+- `配置方式` 立即可见。
+- `运行连接测试` 仍然是推荐动作，但不再是显示配置方式的门槛。
 
 #### `test_success`
 
 - `连接测试` 显示最近一次成功状态。
-- 主区展开 `手动配置`、`自动配置`、`CC Switch 配置`。
-- 页面不显示“已全部完成”；这里只表示“可以开始配置工具”。
+- `手动配置`、`自动配置`、`CC Switch 配置` 继续可见。
+- 页面不显示“已全部完成”；这里只表示“连接已验证，可以继续配置工具”。
 
 #### `test_failed`
 
 - 保持当前 group 和当前 key 可见。
 - 显示失败结果与重试动作。
-- `配置方式` 保持隐藏。
+- `配置方式` 继续可见，因为用户仍然可能需要先走手动或自动配置，再回头重试。
 
 切换 provider 或 group 时：
 
@@ -150,7 +150,7 @@
 重新生成 key 时：
 
 - 当前测试结果必须失效。
-- 用户需要重新运行连接测试后才可见配置方式。
+- `配置方式` 不隐藏，但页面应明确提示“建议重新运行连接测试”。
 
 ### 4. Access Group As The First-Class Object
 
@@ -170,13 +170,13 @@
 
 ### 5. Configuration Methods
 
-连接测试成功后，主区展示三种配置方式：
+API key 可用后，主区展示三种配置方式：
 
 1. `手动配置`
 2. `自动配置`
 3. `CC Switch 配置`
 
-这三种方式不是首屏默认内容，只在测试成功后展开。
+这三种方式不是无 key 首屏默认内容；它们在 key 可用后展开。
 
 #### Manual Configuration
 
@@ -196,7 +196,7 @@
 
 #### CC Switch Configuration
 
-- `CC Switch 配置` 是连接测试成功后的第三种路径。
+- `CC Switch 配置` 是 API key 可用后的第三种路径。
 - 它不是泛化说明块，而是工具级导入动作。
 - 第一版只承诺 app-specific provider import，不承诺 universal provider deep link import。
 
@@ -316,10 +316,11 @@ ccswitch://v1/import?resource=provider&app=codex&name=Relay%20Main%20%2F%20Gener
 
 1. 没有 group 时不展示配置方式。
 2. 选中 group 且无 key 时，主动作是 `创建我的 API Key`。
-3. 创建 key 后，主动作切换为 `运行连接测试`。
-4. 测试成功后才出现 `手动配置 / 自动配置 / CC Switch 配置`。
-5. 切换 group 或 regenerate key 会重置测试成功态。
-6. `CC Switch` 按钮只为匹配 platform 的 app 展示，并生成对应 deep link。
+3. 创建 key 后，`手动配置 / 自动配置 / CC Switch 配置` 即可见。
+4. `运行连接测试` 仍然保留为推荐动作，但不是配置方式显示门槛。
+5. 切换 group 或 regenerate key 会重置测试成功态，但不会强制隐藏配置方式。
+6. `高级命令参考` 只在 `自动配置` 面板内出现。
+7. `CC Switch` 按钮只为匹配 platform 的 app 展示，并生成对应 deep link。
 
 `frontend/src/__tests__/user-setup-review.test.ts` 继续验证手动片段和自动配置 helper；新增 `CC Switch` deep link builder 的单元测试。
 
