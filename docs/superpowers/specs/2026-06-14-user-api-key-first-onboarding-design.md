@@ -375,12 +375,13 @@ ccswitch://v1/import?resource=provider&app=codex&name=Relay%20Main%20%2F%20Gener
 2. `/user` 页面不再以 `接入进度` 或“完成接入”为主标题和主叙事。
 3. 当前选中接入组无 key 时，主动作是 `创建我的 API Key`。
 4. key 创建成功后，主动作默认切换为 `运行连接测试`。
-5. `手动配置 / 自动配置 / CC Switch 配置` 在测试成功前不可见。
-6. 切换 group 或 regenerate key 会使测试成功态失效。
-7. `CC Switch` 使用 `ccswitch://v1/import?resource=provider&app=...` app-specific provider import 协议。
-8. `CC Switch` 第一版不承诺 universal provider import deep link。
-9. 手动配置与自动配置继续遵守当前 `ae-cli` 工具配置合同。
-10. `/user` 现有 provider/group/self-serve/test 的 backend API 合同保持不变。
+5. `手动配置 / 自动配置 / CC Switch 配置` 在 API key 可用后出现，连接测试保留为推荐动作但不是显示门槛。
+6. 切换 group 或 regenerate key 会使测试成功态失效，但不会强制隐藏配置方式。
+7. 无接入组时页面会显示明确空态，而不是静默缺内容。
+8. `CC Switch` 使用 `ccswitch://v1/import?resource=provider&app=...` app-specific provider import 协议。
+9. `CC Switch` 第一版不承诺 universal provider import deep link。
+10. 手动配置与自动配置继续遵守当前 `ae-cli` 工具配置合同。
+11. `/user` 现有 provider/group/self-serve/test 的 backend API 合同保持不变。
 
 ## External References
 

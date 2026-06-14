@@ -33,61 +33,62 @@ function createTestRouter() {
 
 async function mountUserView() {
   const { getUserProviders, getUserProviderModels } = await import('@/api/user')
+  const providers = [
+    {
+      id: 1,
+      name: 'staging',
+      display_name: 'Staging',
+      base_url: 'https://staging.example.com',
+      default_model: 'claude-sonnet',
+      is_primary: false,
+      groups: [
+        {
+          group_id: '42',
+          group_name: 'OpenAI-Staging',
+          platform: 'openai',
+          credential: { state: 'missing' },
+        },
+      ],
+    },
+    {
+      id: 2,
+      name: 'prod',
+      display_name: 'Production',
+      base_url: 'https://prod.example.com',
+      default_model: 'claude-sonnet',
+      is_primary: true,
+      groups: [
+        {
+          group_id: '43',
+          group_name: 'Group Beta',
+          platform: 'anthropic',
+          credential: { state: 'existing_hidden', api_key_id: 22, name: 'alice', status: 'active', key: 'sk-existing-claude-123456' },
+        },
+        {
+          group_id: '42',
+          group_name: 'Group Alpha',
+          platform: 'openai',
+          credential: { state: 'missing' },
+        },
+        {
+          group_id: '44',
+          group_name: 'Group Gamma',
+          platform: 'openai',
+          credential: { state: 'existing_hidden', api_key_id: 23, name: 'alice', status: 'active', key: 'sk-existing-openai-123456' },
+        },
+        {
+          group_id: '45',
+          group_name: 'Group Delta',
+          platform: 'gemini',
+          credential: { state: 'existing_hidden', api_key_id: 24, name: 'alice', status: 'active', key: 'sk-existing-gemini-123456' },
+        },
+      ],
+    },
+  ]
   ;(getUserProviders as any).mockResolvedValue({
     data: {
       data: {
-        providers: [
-          {
-            id: 1,
-            name: 'staging',
-            display_name: 'Staging',
-            base_url: 'https://staging.example.com',
-            default_model: 'claude-sonnet',
-            is_primary: false,
-            groups: [
-              {
-                group_id: '42',
-                group_name: 'OpenAI-Staging',
-                platform: 'openai',
-                credential: { state: 'missing' },
-              },
-            ],
-          },
-          {
-            id: 2,
-            name: 'prod',
-            display_name: 'Production',
-            base_url: 'https://prod.example.com',
-            default_model: 'claude-sonnet',
-            is_primary: true,
-            groups: [
-              {
-                group_id: '43',
-                group_name: 'Group Beta',
-                platform: 'anthropic',
-                credential: { state: 'existing_hidden', api_key_id: 22, name: 'alice', status: 'active', key: 'sk-existing-claude-123456' },
-              },
-              {
-                group_id: '42',
-                group_name: 'Group Alpha',
-                platform: 'openai',
-                credential: { state: 'missing' },
-              },
-              {
-                group_id: '44',
-                group_name: 'Group Gamma',
-                platform: 'openai',
-                credential: { state: 'existing_hidden', api_key_id: 23, name: 'alice', status: 'active', key: 'sk-existing-openai-123456' },
-              },
-              {
-                group_id: '45',
-                group_name: 'Group Delta',
-                platform: 'gemini',
-                credential: { state: 'existing_hidden', api_key_id: 24, name: 'alice', status: 'active', key: 'sk-existing-gemini-123456' },
-              },
-            ],
-          },
-        ],
+        providers,
         message: '',
       },
     },
@@ -108,6 +109,42 @@ async function mountUserView() {
         ]
     return Promise.resolve({ data: { data: { models } } })
   })
+
+  const pinia = createPinia()
+  setActivePinia(pinia)
+  const auth = useAuthStore(pinia)
+  auth.token = 'token'
+  auth.user = { id: 1, username: 'alice', email: 'alice@example.com', role: 'user', auth_source: 'sso' }
+
+  const router = createTestRouter()
+  await router.push('/user')
+  await router.isReady()
+
+  const wrapper = mount(UserView, {
+    global: {
+      plugins: [pinia, router],
+      stubs: {
+        AppLayout: {
+          template: '<div><slot /></div>',
+        },
+      },
+    },
+  })
+  await flushPromises()
+  return { wrapper, router }
+}
+
+async function mountUserViewWithProviders(providers: any[]) {
+  const { getUserProviders, getUserProviderModels } = await import('@/api/user')
+  ;(getUserProviders as any).mockResolvedValue({
+    data: {
+      data: {
+        providers,
+        message: '',
+      },
+    },
+  })
+  ;(getUserProviderModels as any).mockResolvedValue({ data: { data: { models: [] } } })
 
   const pinia = createPinia()
   setActivePinia(pinia)
@@ -198,6 +235,7 @@ describe('UserView', () => {
     await wrapper.get('[data-testid="create-key"]').trigger('click')
     await flushPromises()
 
+    expect(wrapper.get('[data-testid="user-provider-test-run"]').text()).toBe('Run connection test')
     expect(wrapper.get('[data-testid="configuration-methods"]').text()).toContain('Manual configuration')
     expect(wrapper.get('[data-testid="configuration-methods"]').text()).toContain('Automatic configuration')
     expect(wrapper.get('[data-testid="configuration-methods"]').text()).toContain('CC Switch configuration')
@@ -206,6 +244,25 @@ describe('UserView', () => {
     await wrapper.get('[data-testid="user-provider-test-run"]').trigger('click')
     await flushPromises()
     expect(wrapper.text()).toContain('Connection successful')
+  })
+
+  it('shows a clear empty state when no access groups are available', async () => {
+    const { wrapper } = await mountUserViewWithProviders([
+      {
+        id: 9,
+        name: 'empty',
+        display_name: 'Empty',
+        base_url: 'https://empty.example.com',
+        default_model: 'claude-sonnet',
+        is_primary: true,
+        groups: [],
+      },
+    ])
+
+    expect(wrapper.text()).toContain('No access group available yet')
+    expect(wrapper.text()).toContain('Ask an admin to grant an access group before continuing')
+    expect(wrapper.find('[data-testid="create-key"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="configuration-methods"]').exists()).toBe(false)
   })
 
   it('clears the successful test state when switching groups or regenerating the key', async () => {
@@ -483,17 +540,14 @@ describe('UserView', () => {
     expect((refreshedSelect.element as HTMLSelectElement).value).toBe('gpt-5.4')
   })
 
-  it('disables provider test when the selected group has no API key', async () => {
+  it('does not show the promoted test action when the selected group has no API key', async () => {
     const { testUserProvider } = await import('@/api/user')
     const { wrapper } = await mountUserView()
 
     await wrapper.get('[data-testid="group-42"]').trigger('click')
     await wrapper.get('[data-testid="user-provider-test-model"]').setValue('gpt-5.4')
 
-    const runButton = wrapper.get('[data-testid="user-provider-test-run"]')
-    expect(runButton.attributes('disabled')).toBeDefined()
-
-    await runButton.trigger('click')
+    expect(wrapper.find('[data-testid="user-provider-test-run"]').exists()).toBe(false)
     expect(testUserProvider).not.toHaveBeenCalled()
   })
 })

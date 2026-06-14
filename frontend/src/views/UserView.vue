@@ -655,6 +655,10 @@ onMounted(loadProviders)
                     <div class="mt-1">{{ t('user.platform') }}: {{ selectedGroup.platform }}</div>
                     <div class="mt-2">{{ credentialStatusHelp(selectedGroup.credential.state, !!selectedGroup.credential.key) }}</div>
                   </div>
+                  <div v-else class="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                    <div class="font-medium">{{ t('user.noAccessGroupTitle') }}</div>
+                    <p class="mt-2">{{ t('user.noAccessGroupHelp') }}</p>
+                  </div>
                 </div>
               </section>
 
@@ -664,6 +668,15 @@ onMounted(loadProviders)
                     <h3 class="text-base font-semibold text-gray-900">{{ t('user.apiKeyTitle') }}</h3>
                     <p class="mt-1 text-sm text-gray-600">{{ t('user.apiKeyStageHelp') }}</p>
                   </div>
+                  <button
+                    v-if="onboardingState === 'key_ready_without_test' || onboardingState === 'test_failed'"
+                    data-testid="user-provider-test-run"
+                    class="rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-black disabled:opacity-50"
+                    :disabled="providerTestLoading || !canTestProvider"
+                    @click="handleTestProvider"
+                  >
+                    {{ providerTestLoading ? t('user.testing') : primaryOnboardingActionLabel }}
+                  </button>
                 </div>
 
                 <div v-if="selectedGroup" class="mt-4 space-y-4">
@@ -783,14 +796,6 @@ onMounted(loadProviders)
                       />
                     </div>
                     <div class="mt-3 flex flex-wrap items-center gap-3">
-                      <button
-                        data-testid="user-provider-test-run"
-                        :disabled="providerTestLoading || !canTestProvider"
-                        class="rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-black disabled:opacity-50"
-                        @click="handleTestProvider"
-                      >
-                        {{ providerTestLoading ? t('user.testing') : t('user.runTest') }}
-                      </button>
                       <span v-if="providerTestResult" class="text-sm" :class="providerTestResult.success ? 'text-green-700' : 'text-red-700'">
                         {{ providerTestResult.message }}
                       </span>
@@ -799,6 +804,9 @@ onMounted(loadProviders)
                       {{ providerTestResult.response }}
                     </div>
                   </div>
+                </div>
+                <div v-else class="mt-4 rounded-md border border-gray-200 bg-gray-50 p-4 text-sm text-gray-600">
+                  {{ t('user.noAccessGroupApiKeyHelp') }}
                 </div>
               </section>
 

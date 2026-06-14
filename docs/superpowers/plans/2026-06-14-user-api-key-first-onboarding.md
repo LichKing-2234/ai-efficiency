@@ -2,13 +2,13 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Rework `/user` into an API-key-first onboarding flow that removes the developer/non-developer split, promotes group selection plus key creation and connection test as the primary path, and exposes manual, automatic, and CC Switch configuration methods only after a successful test.
+**Goal:** Rework `/user` into an API-key-first onboarding flow that removes the developer/non-developer split, promotes group selection plus key creation and connection test as the primary path, and exposes manual, automatic, and CC Switch configuration methods once a key exists.
 
 **Architecture:** Keep the existing `/api/v1/user/providers` plus group-scoped key/model/test APIs and recompose the frontend around a small state machine keyed by the selected group. Reuse the existing manual-config helper and command builders, add a focused CC Switch deep-link helper, and update `/user` and its tests without changing CLI or backend contracts.
 
 **Tech Stack:** Vue 3, TypeScript, TailwindCSS, Vitest, Vue Test Utils, Vue Router, existing `frontend/src/i18n.ts`, Markdown docs.
 
-**Status:** Drafted on 2026-06-14 after spec approval. No implementation work from this plan has been executed yet.
+**Status:** Implemented and verified on the `codex/user-api-key-first-onboarding` branch. The current `/user` contract exposes configuration methods once a key exists, keeps connection testing as the recommended next step, and no longer uses the old developer/non-developer split.
 
 ---
 
@@ -18,7 +18,7 @@ Included:
 
 - `/user` primary flow rewrite from checklist to API-key-first onboarding.
 - Removal of the developer/non-developer audience toggle from the UI and tests.
-- New `/user` state gating for key creation, connection test success, and configuration method visibility.
+- New `/user` state gating for key creation, recommended connection testing, and configuration method visibility.
 - `CC Switch` app-specific provider import deep-link helper and matching UI.
 - Updated bilingual `/user` copy and architecture docs.
 
@@ -156,7 +156,7 @@ it('shows create my api key as the primary action when the selected group has no
   expect(wrapper.text()).not.toContain("I'm not a developer")
 })
 
-it('reveals configuration methods only after a successful connection test', async () => {
+it('reveals configuration methods as soon as a key is available', async () => {
   const { createGroupCredential, testUserProvider } = await import('@/api/user')
   ;(createGroupCredential as any).mockResolvedValue({
     data: { data: { api_key_id: 7, name: 'alice', status: 'active', secret: 'sk-openai' } },
@@ -443,7 +443,7 @@ const ccSwitchImports = computed(() => {
 'user.apiKeyStageHelp': 'Keep your key hidden by default. After creating or regenerating it, run a connection test before choosing a configuration method.',
 'user.runConnectionTest': 'Run connection test',
 'user.configurationMethodsTitle': 'Choose a configuration method',
-'user.configurationMethodsHelp': 'These options appear only after a successful connection test.',
+'user.configurationMethodsHelp': 'These options appear after an API key is available. Run a connection test first if you want to verify access before configuring tools.',
 'user.manualConfigMethodTitle': 'Manual configuration',
 'user.automaticConfigMethodTitle': 'Automatic configuration',
 'user.ccSwitchConfigMethodTitle': 'CC Switch configuration',
@@ -493,7 +493,7 @@ git commit -m "feat(frontend): add post-test onboarding configuration methods"
 - [x] **Step 1: Update the `/user` architecture description to match the new flow**
 
 ```md
-- The embedded SPA now exposes a regular-user `/user` surface as a personal AI onboarding workbench. The page keeps provider-first, group-second credential self-serve backed by `/api/v1/user/providers`, but its primary flow is now group-scoped and API-key-first: users select an access group, create or regenerate a personal key, run a real connection test with the selected group platform and model, and only after a successful test choose between manual configuration, automatic `ae-cli discover`, or app-specific `CC Switch` provider import links. The old developer / non-developer split and progress-checklist framing are no longer part of the active `/user` contract.
+- The embedded SPA now exposes a regular-user `/user` surface as a personal AI onboarding workbench. The page keeps provider-first, group-second credential self-serve backed by `/api/v1/user/providers`, but its primary flow is now group-scoped and API-key-first: users select an access group, create or regenerate a personal key, can choose between manual configuration, automatic `ae-cli discover`, or app-specific `CC Switch` provider import links once a key exists, and are encouraged to run a real connection test with the selected group platform and model before relying on that access. The old developer / non-developer split and progress-checklist framing are no longer part of the active `/user` contract.
 ```
 
 - [x] **Step 2: Run a narrow diff check to verify only the intended `/user` architecture wording changed**
@@ -556,8 +556,8 @@ Expected:
 - `/user` no longer shows `I'm a developer` / `I'm not a developer`
 - `/user` no longer uses `Setup progress` as its main title
 - a group with no key emphasizes `Create my API key`
-- configuration methods stay hidden before a successful test
-- after a successful test, the page shows manual, automatic, and matching `CC Switch` options
+- configuration methods stay hidden before a key exists
+- once a key exists, the page shows manual, automatic, and matching `CC Switch` options
 - the `CC Switch` button target starts with `ccswitch://v1/import?resource=provider&app=...`
 
 - [x] **Step 6: Final commit if verification required follow-up fixes**
@@ -574,7 +574,7 @@ Spec coverage:
 
 - API-key-first primary flow: covered by Tasks 2-4.
 - Remove developer/non-developer split: covered by Tasks 2-4.
-- Gate configuration methods on successful connection test: covered by Tasks 2-4.
+- Show configuration methods once a key exists, while keeping connection testing as the recommended next step: covered by Tasks 2-4.
 - Add `CC Switch` app-specific deep links only: covered by Tasks 1 and 4.
 - Keep backend/API contracts unchanged: preserved by the scope boundary and by Tasks 3-4 reusing the existing APIs.
 - Update architecture docs to match the new `/user` contract: covered by Task 5.
