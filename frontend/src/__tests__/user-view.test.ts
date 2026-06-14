@@ -244,6 +244,7 @@ describe('UserView', () => {
     await wrapper.get('[data-testid="user-provider-test-run"]').trigger('click')
     await flushPromises()
     expect(wrapper.find('[data-testid="user-provider-test-run"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="user-provider-test-run"]').text()).toBe('Run connection test')
     expect((testUserProvider as any).mock.calls).toHaveLength(1)
     expect(wrapper.text()).toContain('Connection successful')
 

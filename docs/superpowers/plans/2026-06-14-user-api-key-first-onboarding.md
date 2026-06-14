@@ -170,8 +170,8 @@ it('reveals configuration methods as soon as a key is available', async () => {
   await wrapper.get('[data-testid="create-key"]').trigger('click')
   await flushPromises()
 
-  expect(wrapper.get('[data-testid="primary-onboarding-action"]').text()).toBe('Run connection test')
-  expect(wrapper.find('[data-testid="configuration-methods"]').exists()).toBe(false)
+  expect(wrapper.get('[data-testid="user-provider-test-run"]').text()).toBe('Run connection test')
+  expect(wrapper.find('[data-testid="configuration-methods"]').exists()).toBe(true)
 
   await wrapper.get('[data-testid="user-provider-test-model"]').setValue('gpt-5.4')
   await wrapper.get('[data-testid="user-provider-test-run"]').trigger('click')
@@ -435,10 +435,10 @@ const ccSwitchImports = computed(() => {
 - [x] **Step 2: Rewrite the touched `/user` i18n keys around the new flow**
 
 ```ts
-'user.subtitle': 'Choose an access group, create your API key, confirm the connection, then configure your tool.',
+'user.subtitle': 'Choose an access group, create your API key, and configure your tool. Run a connection test whenever you want to verify access.',
 'user.primaryGoalEyebrow': 'Primary goal',
 'user.createMyApiKey': 'Create my API key',
-'user.primaryFlowHelp': 'Start with the selected access group. Create a personal API key, run a real connection test, then choose how you want to configure your AI tool.',
+'user.primaryFlowHelp': 'Start with the selected access group. Create a personal API key, choose how you want to configure your AI tool, and run a connection test whenever you need to verify access.',
 'user.accessGroupHelp': 'Access groups decide which API key you can create and which AI tools you can connect.',
 'user.apiKeyStageHelp': 'Keep your key hidden by default. After creating or regenerating it, run a connection test before choosing a configuration method.',
 'user.runConnectionTest': 'Run connection test',

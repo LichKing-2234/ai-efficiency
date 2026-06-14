@@ -95,7 +95,7 @@ const onboardingState = computed(() => {
 })
 const primaryOnboardingActionLabel = computed(() => {
   if (onboardingState.value === 'group_selected_without_key') return t('user.createMyApiKey')
-  if (onboardingState.value === 'key_ready_without_test' || onboardingState.value === 'test_failed') {
+  if (selectedKeyValue.value) {
     return t('user.runConnectionTest')
   }
   return ''
