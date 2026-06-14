@@ -178,6 +178,8 @@ API key 可用后，主区展示三种配置方式：
 
 这三种方式不是无 key 首屏默认内容；它们在 key 可用后展开。
 
+这三种方式在顶层信息架构上必须同级显示，不应通过颜色或独占按钮让 `CC Switch` 看起来高于另外两种方式。差异应通过说明文字和展开后的细节表达，而不是通过卡片层级表达。
+
 #### Manual Configuration
 
 - 复用当前 `frontend/src/utils/userSetupReview.ts` 的片段生成逻辑。
@@ -186,6 +188,10 @@ API key 可用后，主区展示三种配置方式：
   - `anthropic` -> Claude
   - `gemini` -> Gemini
 - 默认隐藏 key 明文；复制包含 secret 的片段仍需显式确认。
+- 顶层卡片文案应明确它面向：
+  - 非研发
+  - 需要把配置复制给独立 agent 或第三方客户端的场景
+  - 其他方式失效时的 fallback
 
 #### Automatic Configuration
 
@@ -193,12 +199,16 @@ API key 可用后，主区展示三种配置方式：
 - `ae-cli discover` 的 provider-scoped 合同保持不变。
 - UI 必须说明：自动配置基于当前 provider，而不是仅基于当前选中的 group。若同一 provider 下存在其他匹配 platform credential，`discover` 可能一并配置对应已安装工具。
 - `hooks enable --global`、`init`、`doctor`、`sync`、`hooks status --uploads`、安装命令、设备登录兜底等内容不再占主流程首屏，而是下沉为自动配置或高级区内容。
+- 顶层卡片文案应明确它主要面向研发团队。
+- `高级命令参考` 不再作为 `/user` 全局常驻区块，而应只出现在 `自动配置` 面板内部。
 
 #### CC Switch Configuration
 
 - `CC Switch 配置` 是 API key 可用后的第三种路径。
 - 它不是泛化说明块，而是工具级导入动作。
 - 第一版只承诺 app-specific provider import，不承诺 universal provider deep link import。
+- 顶层卡片文案应明确它主要面向非研发用户。
+- `CC Switch` 详情面板应提供官方下载入口，指向官方安装或 release 渠道，而不是只给 deeplink 按钮。
 
 ### 6. CC Switch Deep Link Contract
 

@@ -762,6 +762,7 @@ onMounted(loadProviders)
                   >
                     <div class="font-medium text-gray-900">{{ t('user.manualConfigMethodTitle') }}</div>
                     <p class="mt-1 text-sm text-gray-600">{{ t('user.manualConfigMethodHelp') }}</p>
+                    <p class="mt-3 text-xs text-gray-500">{{ t('user.manualConfigMethodAudience') }}</p>
                   </button>
                   <button
                     data-testid="config-method-automatic"
@@ -771,26 +772,19 @@ onMounted(loadProviders)
                   >
                     <div class="font-medium text-gray-900">{{ t('user.automaticConfigMethodTitle') }}</div>
                     <p class="mt-1 text-sm text-gray-600">{{ t('user.automaticConfigMethodHelp') }}</p>
+                    <p class="mt-3 text-xs text-gray-500">{{ t('user.automaticConfigMethodAudience') }}</p>
                   </button>
-                  <div
+                  <button
                     v-if="ccSwitchImports.length > 0"
-                    class="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3"
+                    data-testid="config-method-ccswitch"
+                    class="rounded-lg border px-4 py-3 text-left transition"
+                    :class="selectedConfigMethod === 'ccswitch' ? 'border-gray-900 bg-gray-50' : 'border-gray-200 hover:border-gray-400'"
+                    @click="selectedConfigMethod = 'ccswitch'"
                   >
                     <div class="font-medium text-gray-900">{{ t('user.ccSwitchConfigMethodTitle') }}</div>
                     <p class="mt-1 text-sm text-gray-600">{{ t('user.ccSwitchConfigMethodHelp') }}</p>
-                    <div class="mt-3 flex flex-wrap gap-2">
-                      <a
-                        v-for="item in ccSwitchImports"
-                        :key="item.key"
-                        :data-testid="`ccswitch-import-${item.key}`"
-                        :href="item.href"
-                        class="inline-flex rounded-md bg-blue-700 px-3 py-2 text-sm font-medium text-white hover:bg-blue-800"
-                      >
-                        {{ item.label }}
-                      </a>
-                    </div>
-                    <p class="mt-3 text-xs text-blue-900">{{ t('user.ccSwitchFallback') }}</p>
-                  </div>
+                    <p class="mt-3 text-xs text-gray-500">{{ t('user.ccSwitchConfigMethodAudience') }}</p>
+                  </button>
                 </div>
 
                 <div v-if="selectedConfigMethod === 'manual'" class="mt-4 rounded-lg border border-gray-200 p-4">
@@ -936,6 +930,33 @@ onMounted(loadProviders)
                       </div>
                     </div>
                   </details>
+                </div>
+
+                <div v-if="selectedConfigMethod === 'ccswitch'" class="mt-4 rounded-lg border border-gray-200 p-4">
+                  <div class="font-medium text-gray-900">{{ t('user.ccSwitchConfigMethodTitle') }}</div>
+                  <p class="mt-1 text-sm text-gray-600">{{ t('user.ccSwitchConfigMethodHelp') }}</p>
+                  <div class="mt-3">
+                    <a
+                      :href="t('user.ccSwitchDownloadUrl')"
+                      target="_blank"
+                      rel="noreferrer"
+                      class="text-sm font-medium text-indigo-700 hover:text-indigo-900"
+                    >
+                      {{ t('user.ccSwitchDownload') }}
+                    </a>
+                  </div>
+                  <div class="mt-4 flex flex-wrap gap-2">
+                    <a
+                      v-for="item in ccSwitchImports"
+                      :key="item.key"
+                      :data-testid="`ccswitch-import-${item.key}`"
+                      :href="item.href"
+                      class="inline-flex rounded-md bg-blue-700 px-3 py-2 text-sm font-medium text-white hover:bg-blue-800"
+                    >
+                      {{ item.label }}
+                    </a>
+                  </div>
+                  <p class="mt-3 text-xs text-gray-500">{{ t('user.ccSwitchFallback') }}</p>
                 </div>
               </section>
             </div>

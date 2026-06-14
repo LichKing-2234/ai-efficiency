@@ -252,14 +252,23 @@ describe('UserView', () => {
     const { wrapper } = await mountUserView()
 
     const methods = wrapper.get('[data-testid="configuration-methods"]').text()
-    expect(methods).toContain('Import to Claude')
+    expect(methods).toContain('CC Switch configuration')
+    expect(methods).not.toContain('Import to Claude')
     expect(methods).not.toContain('Import to Codex')
     expect(methods).not.toContain('Import to Gemini')
+
+    await wrapper.get('[data-testid="config-method-ccswitch"]').trigger('click')
+    const ccswitchPanel = wrapper.text()
+    expect(ccswitchPanel).toContain('Import to Claude')
+    expect(ccswitchPanel).not.toContain('Import to Codex')
+    expect(ccswitchPanel).not.toContain('Import to Gemini')
+    expect(ccswitchPanel).toContain('Download CC Switch')
   })
 
   it('passes the selected Claude model in the CC Switch import link', async () => {
     const { wrapper } = await mountUserView()
 
+    await wrapper.get('[data-testid="config-method-ccswitch"]').trigger('click')
     const claudeImport = wrapper.get('[data-testid="ccswitch-import-claude"]')
     expect(claudeImport.attributes('href')).toContain('app=claude')
     expect(claudeImport.attributes('href')).toContain('model=claude-sonnet-4-6')
@@ -276,6 +285,7 @@ describe('UserView', () => {
     await wrapper.get('[data-testid="create-key"]').trigger('click')
     await flushPromises()
 
+    await wrapper.get('[data-testid="config-method-ccswitch"]').trigger('click')
     const codexImport = wrapper.get('[data-testid="ccswitch-import-codex"]')
     expect(codexImport.attributes('href')).toContain('app=codex')
     expect(codexImport.attributes('href')).toContain('model=gpt-5.4')
@@ -287,6 +297,7 @@ describe('UserView', () => {
     await wrapper.get('[data-testid="group-45"]').trigger('click')
     await flushPromises()
 
+    await wrapper.get('[data-testid="config-method-ccswitch"]').trigger('click')
     const geminiImport = wrapper.get('[data-testid="ccswitch-import-gemini"]')
     expect(geminiImport.attributes('href')).toContain('app=gemini')
     expect(geminiImport.attributes('href')).toContain('model=gemini-3.1-pro-preview')
@@ -302,6 +313,15 @@ describe('UserView', () => {
     expect(wrapper.text()).toContain('ae-cli hooks enable --global')
     expect(wrapper.text()).toContain('ae-cli init')
     expect(wrapper.text()).toContain('ae-cli doctor')
+  })
+
+  it('shows audience guidance on each configuration method card', async () => {
+    const { wrapper } = await mountUserView()
+
+    const methods = wrapper.get('[data-testid="configuration-methods"]').text()
+    expect(methods).toContain('Best for non-developers, independent agents')
+    expect(methods).toContain('Best for engineering teams')
+    expect(methods).toContain('Best for non-developers who want a managed desktop configuration flow')
   })
 
   it('switches providers and updates the discover command and group list', async () => {
