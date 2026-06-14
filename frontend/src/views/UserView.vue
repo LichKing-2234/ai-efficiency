@@ -909,8 +909,8 @@ onMounted(loadProviders)
                     <p class="mt-1 text-sm leading-5 text-gray-600">{{ t('user.automaticConfigMachineHelp') }}</p>
                     <div class="mt-4 space-y-3 text-sm">
                       <div v-for="command in automaticMachineCommands" :key="command.key" class="rounded-md border border-gray-200 p-3 shadow-sm">
-                        <div class="text-[11px] font-semibold text-gray-500">{{ command.label }}</div>
-                        <div class="mt-2 flex justify-end">
+                        <div class="flex items-center justify-between gap-3">
+                          <div class="text-[11px] font-semibold text-gray-500">{{ command.label }}</div>
                           <button class="text-xs font-medium text-indigo-700 hover:text-indigo-900" type="button" @click="copyCommand(command.key, command.value)">
                             {{ copyCommandLabel(command.key) }}
                           </button>
@@ -925,8 +925,8 @@ onMounted(loadProviders)
                             {{ command.fallback.title }}
                           </summary>
                           <p class="mt-1.5 text-xs leading-5 text-gray-500">{{ command.fallback.help }}</p>
-                          <div class="mt-2 text-[10px] font-semibold uppercase tracking-wide text-gray-500">{{ command.fallback.label }}</div>
-                          <div class="mt-2 flex justify-end">
+                          <div class="mt-2 flex items-center justify-between gap-3">
+                            <div class="text-[10px] font-semibold uppercase tracking-wide text-gray-500">{{ command.fallback.label }}</div>
                             <button class="text-xs font-medium text-indigo-700 hover:text-indigo-900" type="button" @click="copyCommand(command.fallback.copyKey, command.fallback.value)">
                               {{ copyCommandLabel(command.fallback.copyKey) }}
                             </button>
@@ -942,8 +942,8 @@ onMounted(loadProviders)
                     <p class="mt-1 text-sm leading-5 text-gray-600">{{ t('user.automaticConfigRepoHelp') }}</p>
                     <div class="mt-4 space-y-3 text-sm">
                       <div v-for="command in automaticRepoCommands" :key="command.key" class="rounded-md border border-gray-200 p-3 shadow-sm">
-                        <div class="text-[11px] font-semibold text-gray-500">{{ command.label }}</div>
-                        <div class="mt-2 flex justify-end">
+                        <div class="flex items-center justify-between gap-3">
+                          <div class="text-[11px] font-semibold text-gray-500">{{ command.label }}</div>
                           <button class="text-xs font-medium text-indigo-700 hover:text-indigo-900" type="button" @click="copyCommand(command.key, command.value)">
                             {{ copyCommandLabel(command.key) }}
                           </button>
@@ -965,13 +965,13 @@ onMounted(loadProviders)
                         :key="command.key"
                         class="rounded-md border border-gray-200 p-3 shadow-sm"
                       >
-                        <div class="text-[11px] font-semibold text-gray-500">{{ command.title }}</div>
-                        <p class="mt-1.5 text-sm leading-5 text-gray-600">{{ command.help }}</p>
-                        <div class="mt-2 flex justify-end">
+                        <div class="flex items-center justify-between gap-3">
+                          <div class="text-[11px] font-semibold text-gray-500">{{ command.title }}</div>
                           <button class="text-xs font-medium text-indigo-700 hover:text-indigo-900" type="button" @click="copyCommand(command.key, command.value)">
                             {{ copyCommandLabel(command.key) }}
                           </button>
                         </div>
+                        <p class="mt-1.5 text-sm leading-5 text-gray-600">{{ command.help }}</p>
                         <pre class="mt-1.5 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-[13px] leading-5 text-green-300">{{ command.value }}</pre>
                       </div>
                     </div>
