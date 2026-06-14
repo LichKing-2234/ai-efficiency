@@ -478,7 +478,7 @@ Run: `cd frontend && pnpm test user-setup-review.test.ts user-view.test.ts`
 
 Expected: PASS, including the new deep-link helper coverage and the new `/user` state/visibility assertions.
 
-- [ ] **Step 4: Commit the configuration-method and copy changes**
+- [x] **Step 4: Commit the configuration-method and copy changes**
 
 ```bash
 git add frontend/src/views/UserView.vue frontend/src/i18n.ts frontend/src/__tests__/user-view.test.ts frontend/src/__tests__/user-setup-review.test.ts
@@ -490,13 +490,13 @@ git commit -m "feat(frontend): add post-test onboarding configuration methods"
 **Files:**
 - Modify: `docs/architecture.md`
 
-- [ ] **Step 1: Update the `/user` architecture description to match the new flow**
+- [x] **Step 1: Update the `/user` architecture description to match the new flow**
 
 ```md
 - The embedded SPA now exposes a regular-user `/user` surface as a personal AI onboarding workbench. The page keeps provider-first, group-second credential self-serve backed by `/api/v1/user/providers`, but its primary flow is now group-scoped and API-key-first: users select an access group, create or regenerate a personal key, run a real connection test with the selected group platform and model, and only after a successful test choose between manual configuration, automatic `ae-cli discover`, or app-specific `CC Switch` provider import links. The old developer / non-developer split and progress-checklist framing are no longer part of the active `/user` contract.
 ```
 
-- [ ] **Step 2: Run a narrow diff check to verify only the intended `/user` architecture wording changed**
+- [x] **Step 2: Run a narrow diff check to verify only the intended `/user` architecture wording changed**
 
 Run: `git diff -- docs/architecture.md`
 
