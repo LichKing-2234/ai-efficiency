@@ -297,6 +297,9 @@ describe('UserView', () => {
 
     expect(wrapper.text()).not.toContain('Advanced command reference')
     await wrapper.get('[data-testid="config-method-automatic"]').trigger('click')
+    expect(wrapper.text()).toContain('One-time machine setup')
+    expect(wrapper.text()).toContain('Per-repo setup')
+    expect(wrapper.text()).toContain('cd /path/to/repo')
     expect(wrapper.text()).toContain('Advanced command reference')
     expect(wrapper.text()).toContain('ae-cli discover --provider prod')
     expect(wrapper.text()).toContain('ae-cli hooks enable --global')

@@ -62,6 +62,7 @@ const installPlatform = computed(() => detectInstallPlatform())
 const shellInstallCommand = computed(() => buildInstallCommand(currentOrigin.value))
 const windowsInstallCommand = computed(() => buildWindowsInstallCommand(currentOrigin.value))
 const installCommand = computed(() => buildPreferredInstallCommand(currentOrigin.value, installPlatform.value))
+const repoChangeDirCommand = computed(() => 'cd /path/to/repo')
 const alternateInstallLabel = computed(() => installPlatform.value === 'windows' ? 'macOS / Linux' : 'Windows PowerShell')
 const alternateInstallCommand = computed(() => installPlatform.value === 'windows' ? shellInstallCommand.value : windowsInstallCommand.value)
 const alternateInstallCopyKey = computed(() => installPlatform.value === 'windows' ? 'install-macos' : 'install-windows')
@@ -115,6 +116,18 @@ const ccSwitchImports = computed(() => {
     }),
   }]
 })
+const automaticMachineCommands = computed(() => [
+  { key: 'auto-install', label: t('user.installCli'), value: installCommand.value },
+  { key: 'auto-connectivity', label: t('user.githubConnectivityTitle'), value: githubConnectivityCommand.value },
+  { key: 'auto-login', label: t('user.setupStepLoginTitle'), value: loginCommand.value },
+  { key: 'auto-discover', label: t('user.setupStepConfigureTitle'), value: discoverCommand.value || t('user.selectProviderCommand') },
+  { key: 'auto-hooks', label: t('user.setupStepHooksTitle'), value: hooksGlobalCommand.value },
+])
+const automaticRepoCommands = computed(() => [
+  { key: 'auto-repo-cd', label: t('user.repoStep1'), value: repoChangeDirCommand.value },
+  { key: 'auto-init', label: t('user.repoStep2'), value: repoInitCommand.value },
+  { key: 'auto-doctor', label: t('user.repoStep3'), value: doctorCommand.value },
+])
 
 function credentialStatusLabel(state: string) {
   return state === 'existing_hidden' ? t('user.readyToUse') : t('user.needsSetup')
@@ -848,31 +861,37 @@ onMounted(loadProviders)
                 <div v-if="selectedConfigMethod === 'automatic'" class="mt-4 rounded-lg border border-gray-200 p-4">
                   <div class="font-medium text-gray-900">{{ t('user.automaticConfigMethodTitle') }}</div>
                   <p class="mt-1 text-sm text-gray-600">{{ t('user.automaticConfigProviderHelp') }}</p>
-                  <div class="mt-4 space-y-4 text-sm">
-                    <div>
-                      <div class="flex items-center justify-between gap-3">
-                        <span class="text-xs font-medium uppercase tracking-wide text-gray-500">{{ t('user.recommendedCommand') }}</span>
-                        <button class="shrink-0 text-xs font-medium text-indigo-700 hover:text-indigo-900" type="button" @click="copyCommand('auto-install', installCommand)">
-                          {{ copyCommandLabel('auto-install') }}
-                        </button>
+                  <p class="mt-3 text-sm text-gray-600">{{ t('user.automaticConfigOverview') }}</p>
+
+                  <div class="mt-4 rounded-lg border border-gray-200 p-4">
+                    <div class="font-medium text-gray-900">{{ t('user.automaticConfigMachineTitle') }}</div>
+                    <p class="mt-1 text-sm text-gray-600">{{ t('user.automaticConfigMachineHelp') }}</p>
+                    <div class="mt-4 space-y-4 text-sm">
+                      <div v-for="command in automaticMachineCommands" :key="command.key">
+                        <div class="flex items-center justify-between gap-3">
+                          <span class="text-xs font-medium uppercase tracking-wide text-gray-500">{{ command.label }}</span>
+                          <button class="shrink-0 text-xs font-medium text-indigo-700 hover:text-indigo-900" type="button" @click="copyCommand(command.key, command.value)">
+                            {{ copyCommandLabel(command.key) }}
+                          </button>
+                        </div>
+                        <pre class="mt-2 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-xs text-green-300">{{ command.value }}</pre>
                       </div>
-                      <pre class="mt-2 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-xs text-green-300">{{ installCommand }}</pre>
                     </div>
-                    <div v-for="command in [
-                      { key: 'auto-connectivity', label: t('user.githubConnectivityTitle'), value: githubConnectivityCommand },
-                      { key: 'auto-login', label: t('user.setupStepLoginTitle'), value: loginCommand },
-                      { key: 'auto-discover', label: t('user.setupStepConfigureTitle'), value: discoverCommand || t('user.selectProviderCommand') },
-                      { key: 'auto-hooks', label: t('user.setupStepHooksTitle'), value: hooksGlobalCommand },
-                      { key: 'auto-init', label: t('user.setupStepRepoTitle'), value: repoInitCommand },
-                      { key: 'auto-doctor', label: t('user.setupStepDoctorTitle'), value: doctorCommand },
-                    ]" :key="command.key">
-                      <div class="flex items-center justify-between gap-3">
-                        <span class="text-xs font-medium uppercase tracking-wide text-gray-500">{{ command.label }}</span>
-                        <button class="shrink-0 text-xs font-medium text-indigo-700 hover:text-indigo-900" type="button" @click="copyCommand(command.key, command.value)">
-                          {{ copyCommandLabel(command.key) }}
-                        </button>
+                  </div>
+
+                  <div class="mt-4 rounded-lg border border-gray-200 p-4">
+                    <div class="font-medium text-gray-900">{{ t('user.automaticConfigRepoTitle') }}</div>
+                    <p class="mt-1 text-sm text-gray-600">{{ t('user.automaticConfigRepoHelp') }}</p>
+                    <div class="mt-4 space-y-4 text-sm">
+                      <div v-for="command in automaticRepoCommands" :key="command.key">
+                        <div class="flex items-center justify-between gap-3">
+                          <span class="text-xs font-medium uppercase tracking-wide text-gray-500">{{ command.label }}</span>
+                          <button class="shrink-0 text-xs font-medium text-indigo-700 hover:text-indigo-900" type="button" @click="copyCommand(command.key, command.value)">
+                            {{ copyCommandLabel(command.key) }}
+                          </button>
+                        </div>
+                        <pre class="mt-2 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-xs text-green-300">{{ command.value }}</pre>
                       </div>
-                      <pre class="mt-2 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-xs text-green-300">{{ command.value }}</pre>
                     </div>
                   </div>
 
