@@ -48,23 +48,8 @@ const providerTestLoading = ref(false)
 const providerTestResult = ref<UserProviderTestResult | null>(null)
 const copiedCommandKey = ref('')
 const credentialMutationLoading = ref(false)
-const setupAudience = ref<'developer' | 'non_developer'>('developer')
+const selectedConfigMethod = ref<'manual' | 'automatic' | 'ccswitch' | null>(null)
 const manualConfigConfirmKey = ref('')
-type SetupStepStatus = 'done' | 'todo' | 'local_check'
-type SetupStepCommand = {
-  key: string
-  label: string
-  help: string
-  command: string
-}
-type SetupStep = {
-  key: string
-  status: SetupStepStatus
-  title: string
-  help: string
-  command?: string
-  secondaryCommands?: SetupStepCommand[]
-}
 type SecretAction = 'reveal' | 'copy' | 'regenerate'
 const secretConfirmAction = ref<SecretAction | null>(null)
 
@@ -96,88 +81,21 @@ const readyAccessGroupCount = computed(() =>
 const totalAccessGroupCount = computed(() =>
   providers.value.reduce((count, provider) => count + provider.groups.length, 0)
 )
-const setupSteps = computed<SetupStep[]>(() => {
-  const commonSteps: SetupStep[] = [
-    {
-      key: 'account',
-      status: auth.user ? 'done' : 'todo',
-      title: t('user.setupStepAccountTitle'),
-      help: auth.user ? t('user.setupStepAccountDone') : t('user.setupStepAccountTodo'),
-    },
-    {
-      key: 'access',
-      status: selectedGroup.value?.credential.state === 'existing_hidden' ? 'done' : 'todo',
-      title: t('user.setupStepAccessTitle'),
-      help: selectedGroup.value?.credential.state === 'existing_hidden' ? t('user.setupStepAccessDone') : t('user.setupStepAccessTodo'),
-    },
-  ]
-
-  if (setupAudience.value === 'non_developer') {
-    return [
-      ...commonSteps,
-      {
-        key: 'manual',
-        status: 'local_check',
-        title: t('user.setupStepManualTitle'),
-        help: t('user.setupStepManualHelp'),
-      },
-    ]
-  }
-
-  return [
-    ...commonSteps,
-    {
-      key: 'machine',
-      status: 'local_check',
-      title: t('user.setupStepMachineTitle'),
-      help: t('user.setupStepMachineHelp'),
-      command: installCommand.value,
-      secondaryCommands: [
-        {
-          key: 'github-connectivity',
-          label: t('user.githubConnectivityTitle'),
-          help: t('user.githubConnectivityHelp'),
-          command: githubConnectivityCommand.value,
-        },
-      ],
-    },
-    {
-      key: 'login',
-      status: 'local_check',
-      title: t('user.setupStepLoginTitle'),
-      help: t('user.setupStepLoginHelp'),
-      command: loginCommand.value,
-    },
-    {
-      key: 'configure',
-      status: 'local_check',
-      title: t('user.setupStepConfigureTitle'),
-      help: t('user.setupStepConfigureHelp'),
-      command: discoverCommand.value || t('user.selectProviderCommand'),
-    },
-    {
-      key: 'hooks',
-      status: 'local_check',
-      title: t('user.setupStepHooksTitle'),
-      help: t('user.setupStepHooksHelp'),
-      command: hooksGlobalCommand.value,
-    },
-    {
-      key: 'repo',
-      status: 'local_check',
-      title: t('user.setupStepRepoTitle'),
-      help: t('user.setupStepRepoHelp'),
-      command: repoInitCommand.value,
-    },
-    {
-      key: 'doctor',
-      status: 'local_check',
-      title: t('user.setupStepDoctorTitle'),
-      help: t('user.setupStepDoctorHelp'),
-      command: doctorCommand.value,
-    },
-  ]
+const onboardingState = computed(() => {
+  if (!selectedGroup.value) return 'no_group_selected' as const
+  if (!selectedKeyValue.value) return 'group_selected_without_key' as const
+  if (providerTestResult.value?.success) return 'test_success' as const
+  if (providerTestResult.value && !providerTestResult.value.success) return 'test_failed' as const
+  return 'key_ready_without_test' as const
 })
+const primaryOnboardingActionLabel = computed(() => {
+  if (onboardingState.value === 'group_selected_without_key') return 'Create my API key'
+  if (onboardingState.value === 'key_ready_without_test' || onboardingState.value === 'test_failed') {
+    return 'Run connection test'
+  }
+  return ''
+})
+const showConfigurationMethods = computed(() => onboardingState.value === 'test_success')
 
 function credentialStatusLabel(state: string) {
   return state === 'existing_hidden' ? t('user.readyToUse') : t('user.needsSetup')
@@ -234,19 +152,25 @@ function selectDefaultProvider(rows: UserProviderSummary[]) {
   selectDefaultGroup(provider)
 }
 
+function resetPostKeyFlow() {
+  providerTestResult.value = null
+  selectedConfigMethod.value = null
+}
+
 function selectProvider(providerId: number) {
   secretConfirmAction.value = null
   manualConfigConfirmKey.value = ''
   selectedProviderId.value = providerId
   const provider = providers.value.find((item) => item.id === providerId) ?? null
   selectDefaultGroup(provider)
+  resetPostKeyFlow()
 }
 
 function selectGroup(groupId: string) {
   secretConfirmAction.value = null
   manualConfigConfirmKey.value = ''
   selectedGroupId.value = groupId
-  providerTestResult.value = null
+  resetPostKeyFlow()
 }
 
 function resetProviderModels(message = '') {
@@ -392,6 +316,7 @@ async function handleCreateKey() {
     sessionSecrets[selectedSecretKey.value] = data.secret
     revealedSecretKeys[selectedSecretKey.value] = false
     updateSelectedGroupCredential(data.api_key_id, data.name, data.status, data.secret)
+    resetPostKeyFlow()
   } catch (err: any) {
     error.value = err.response?.data?.message || err.message || t('user.createKeyFailed')
   } finally {
@@ -435,6 +360,7 @@ async function handleRegenerateKey() {
     sessionSecrets[selectedSecretKey.value] = data.secret
     revealedSecretKeys[selectedSecretKey.value] = true
     updateSelectedGroupCredential(data.api_key_id, data.name, data.status, data.secret)
+    resetPostKeyFlow()
   } catch (err: any) {
     error.value = err.response?.data?.message || err.message || t('user.regenerateKeyFailed')
   } finally {
@@ -607,298 +533,213 @@ onMounted(loadProviders)
         </div>
 
         <div class="min-w-0 space-y-6">
-          <section data-testid="setup-progress" class="rounded-lg bg-white p-5 shadow">
-            <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-900">{{ t('user.setupProgressTitle') }}</h2>
-            <p class="mt-1 text-sm text-gray-500">{{ t('user.setupProgressHelp') }}</p>
-            <div class="mt-4 inline-flex rounded-md border border-gray-200 bg-gray-50 p-1" role="group" :aria-label="t('user.setupAudienceLabel')">
-              <button
-                data-testid="setup-audience-developer"
-                type="button"
-                class="cursor-pointer rounded px-3 py-1.5 text-sm font-medium transition-colors"
-                :class="setupAudience === 'developer' ? 'bg-gray-900 text-white' : 'text-gray-700 hover:bg-white'"
-                :aria-pressed="setupAudience === 'developer'"
-                @click="setupAudience = 'developer'"
-              >
-                {{ t('user.setupAudienceDeveloper') }}
-              </button>
-              <button
-                data-testid="setup-audience-non-developer"
-                type="button"
-                class="cursor-pointer rounded px-3 py-1.5 text-sm font-medium transition-colors"
-                :class="setupAudience === 'non_developer' ? 'bg-gray-900 text-white' : 'text-gray-700 hover:bg-white'"
-                :aria-pressed="setupAudience === 'non_developer'"
-                @click="setupAudience = 'non_developer'"
-              >
-                {{ t('user.setupAudienceNonDeveloper') }}
-              </button>
+          <section data-testid="primary-onboarding-flow" class="rounded-lg bg-white p-5 shadow">
+            <div class="border-b border-gray-100 pb-4">
+              <p class="text-xs font-semibold uppercase tracking-wide text-amber-700">Primary goal</p>
+              <h2 class="mt-2 text-2xl font-bold text-gray-900">Create my API key</h2>
+              <p class="mt-2 text-sm text-gray-600">Choose an access group, create your API key, confirm the connection, then configure your tool.</p>
             </div>
-            <ol class="mt-4 space-y-3">
-              <li v-for="(step, index) in setupSteps" :key="step.key" class="rounded-md border border-gray-200 p-4">
-                <div class="flex items-start gap-3">
-                  <span
-                    class="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold"
-                    :class="step.status === 'done' ? 'bg-emerald-100 text-emerald-800' : step.status === 'local_check' ? 'bg-blue-50 text-blue-700' : 'bg-slate-100 text-slate-700'"
+
+            <div class="mt-5 space-y-4">
+              <section class="rounded-lg border border-gray-200 p-4">
+                <div class="flex items-start justify-between gap-4">
+                  <div>
+                    <h3 class="text-base font-semibold text-gray-900">{{ t('user.accessTitle') }}</h3>
+                    <p class="mt-1 text-sm text-gray-600">Access groups decide which API key you can create and which AI tools you can connect.</p>
+                    <p v-if="selectedProvider" class="mt-2 text-sm text-gray-500">{{ selectedProvider.base_url }}</p>
+                  </div>
+                  <button
+                    v-if="onboardingState === 'group_selected_without_key'"
+                    data-testid="primary-onboarding-action"
+                    class="rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-black disabled:opacity-50"
+                    :disabled="credentialMutationLoading"
+                    @click="handleCreateKey"
                   >
-                    {{ step.status === 'done' ? t('user.doneShort') : step.status === 'local_check' ? '?' : index + 1 }}
-                  </span>
-                  <div class="min-w-0 flex-1">
-                    <div class="flex flex-wrap items-center gap-2">
-                      <span class="font-medium text-gray-900">{{ step.title }}</span>
-                      <span
-                        v-if="step.status === 'local_check'"
-                        class="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700"
-                      >
-                        {{ t('user.localCheck') }}
-                      </span>
-                    </div>
-                    <p class="mt-1 text-sm text-gray-600">{{ step.help }}</p>
-                    <p v-if="step.status === 'local_check'" class="mt-1 text-xs text-gray-500">{{ t('user.localCheckHelp') }}</p>
-                    <div v-if="step.command" class="mt-3">
-                      <div class="flex items-center justify-between gap-3">
-                        <span class="text-xs font-medium uppercase tracking-wide text-gray-500">{{ t('user.recommendedCommand') }}</span>
-                        <button class="shrink-0 text-xs font-medium text-indigo-700 hover:text-indigo-900" type="button" @click="copyCommand(`setup-${step.key}`, step.command)">
-                          {{ copyCommandLabel(`setup-${step.key}`) }}
-                        </button>
-                      </div>
-                      <pre class="mt-2 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-xs text-green-300">{{ step.command }}</pre>
-                    </div>
-                    <div v-for="secondary in step.secondaryCommands ?? []" :key="secondary.key" class="mt-3 rounded-md border border-blue-100 bg-blue-50 p-3">
-                      <div class="flex items-center justify-between gap-3">
-                        <span class="text-xs font-medium uppercase tracking-wide text-blue-700">{{ secondary.label }}</span>
-                        <button class="shrink-0 text-xs font-medium text-blue-700 hover:text-blue-900" type="button" @click="copyCommand(`setup-${step.key}-${secondary.key}`, secondary.command)">
-                          {{ copyCommandLabel(`setup-${step.key}-${secondary.key}`) }}
-                        </button>
-                      </div>
-                      <p class="mt-1 text-xs text-blue-800">{{ secondary.help }}</p>
-                      <pre class="mt-2 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-xs text-green-300">{{ secondary.command }}</pre>
-                    </div>
-                    <div v-if="step.key === 'manual'" class="mt-3 rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
-                      <div class="font-medium text-slate-900">{{ t('user.manualConfigDetailsTitle') }}</div>
-                      <dl class="mt-3 grid gap-2 sm:grid-cols-[120px_minmax(0,1fr)]">
-                        <dt class="text-xs font-medium uppercase tracking-wide text-slate-500">{{ t('user.manualConfigProviderUrl') }}</dt>
-                        <dd class="break-all font-mono text-xs text-slate-900">{{ selectedProvider?.base_url || '—' }}</dd>
-                        <dt class="text-xs font-medium uppercase tracking-wide text-slate-500">{{ t('user.manualConfigPlatform') }}</dt>
-                        <dd class="break-all font-mono text-xs text-slate-900">{{ selectedGroup?.platform || '—' }}</dd>
-                        <dt class="text-xs font-medium uppercase tracking-wide text-slate-500">{{ t('user.manualConfigGroup') }}</dt>
-                        <dd class="break-all text-xs text-slate-900">{{ selectedGroup?.group_name || '—' }}</dd>
-                        <dt class="text-xs font-medium uppercase tracking-wide text-slate-500">{{ t('user.manualConfigApiKey') }}</dt>
-                        <dd class="text-xs text-slate-900">{{ t('user.manualConfigApiKeyHelp') }}</dd>
-                      </dl>
-                      <div v-if="manualConfigDisplaySnippets.length > 0" class="mt-4 space-y-3">
-                        <div
-                          v-for="snippet in manualConfigDisplaySnippets"
-                          :key="snippet.key"
-                          class="rounded-md border border-slate-200 bg-white p-3"
-                        >
-                          <div class="flex flex-wrap items-start justify-between gap-3">
-                            <div class="min-w-0">
-                              <div class="font-medium text-slate-900">{{ manualConfigSnippetTitle(snippet) }}</div>
-                              <div class="mt-1 break-all font-mono text-xs text-slate-500">{{ snippet.path }}</div>
-                            </div>
-                            <button
-                              class="shrink-0 text-xs font-medium text-indigo-700 hover:text-indigo-900"
-                              type="button"
-                              :data-testid="`manual-config-copy-${snippet.key}`"
-                              @click="copyManualConfigSnippet(snippet)"
-                            >
-                              {{ manualConfigCopyLabel(snippet) }}
-                            </button>
-                          </div>
-                          <pre class="mt-3 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-xs text-green-300">{{ snippet.body }}</pre>
-                        </div>
-                        <div v-if="pendingManualConfigSnippet" class="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-                          <div class="font-medium">{{ t('user.confirmCopyConfigSnippet') }}</div>
-                          <p class="mt-1 text-xs">{{ t('user.secretRiskText') }}</p>
-                          <div class="mt-3 flex flex-wrap gap-2">
-                            <button
-                              data-testid="confirm-manual-config-copy"
-                              class="rounded-md bg-amber-700 px-3 py-2 text-xs font-medium text-white hover:bg-amber-800"
-                              @click="confirmManualConfigCopy"
-                            >
-                              {{ t('user.confirmAction') }}
-                            </button>
-                            <button
-                              class="rounded-md border border-amber-300 bg-white px-3 py-2 text-xs font-medium text-amber-900 hover:bg-amber-100"
-                              @click="manualConfigConfirmKey = ''"
-                            >
-                              {{ t('user.cancel') }}
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                      <p v-else class="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
-                        {{ t('user.manualConfigUnsupportedPlatform') }}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </li>
-            </ol>
-          </section>
-
-          <section class="rounded-lg bg-white p-5 shadow">
-            <div class="flex items-start justify-between gap-4">
-              <div>
-                <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-900">{{ t('user.accessTitle') }}</h2>
-                <p v-if="selectedProvider" class="mt-1 text-sm text-gray-500">{{ selectedProvider.base_url }}</p>
-              </div>
-            </div>
-
-            <div v-if="selectedProvider" class="mt-4 space-y-4">
-              <div class="flex flex-wrap gap-2">
-                <button
-                  v-for="group in selectedProvider.groups"
-                  :key="group.group_id"
-                  :data-testid="`group-${group.group_id}`"
-                  class="rounded-full border px-3 py-2 text-sm transition"
-                  :class="group.group_id === selectedGroupId ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-300 bg-white text-gray-800 hover:border-gray-500'"
-                  @click="selectGroup(group.group_id)"
-                >
-                  {{ group.group_name }}
-                </button>
-              </div>
-
-              <div v-if="selectedGroup" class="space-y-4">
-                <div class="rounded-md bg-gray-50 p-4 text-sm text-gray-700">
-                  <div class="font-medium text-gray-900">{{ credentialStatusLabel(selectedGroup.credential.state) }}</div>
-                  <div class="mt-2">{{ t('user.group') }}: {{ selectedGroup.group_name }}</div>
-                  <div class="mt-1">{{ t('user.platform') }}: {{ selectedGroup.platform }}</div>
-                  <div class="mt-2">{{ credentialStatusHelp(selectedGroup.credential.state, !!selectedGroup.credential.key) }}</div>
+                    {{ credentialMutationLoading ? t('user.creatingKey') : primaryOnboardingActionLabel }}
+                  </button>
                 </div>
 
-                <div class="rounded-md border border-dashed border-gray-300 p-4">
-                  <div class="text-xs uppercase tracking-wide text-gray-400">{{ t('user.apiKeyTitle') }}</div>
-                  <div class="mt-2 break-all rounded-md bg-gray-950 px-3 py-2 font-mono text-sm text-green-300">
-                    {{ displayedSecret || '••••••••••••••••' }}
-                  </div>
-                  <div class="mt-3 flex flex-wrap gap-2">
+                <div v-if="selectedProvider" class="mt-4 space-y-4">
+                  <div class="flex flex-wrap gap-2">
                     <button
-                      v-if="selectedGroup.credential.state === 'missing'"
-                      data-testid="create-key"
-                      class="rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-black disabled:opacity-50"
-                      :disabled="credentialMutationLoading"
-                      @click="handleCreateKey"
+                      v-for="group in selectedProvider.groups"
+                      :key="group.group_id"
+                      :data-testid="`group-${group.group_id}`"
+                      class="rounded-full border px-3 py-2 text-sm transition"
+                      :class="group.group_id === selectedGroupId ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-300 bg-white text-gray-800 hover:border-gray-500'"
+                      @click="selectGroup(group.group_id)"
                     >
-                      {{ credentialMutationLoading ? t('user.creatingKey') : t('user.createKey') }}
-                    </button>
-                    <button
-                      v-if="selectedGroup.credential.state === 'existing_hidden'"
-                      data-testid="regenerate-key"
-                      class="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-900 hover:bg-amber-100 disabled:opacity-50"
-                      :disabled="credentialMutationLoading"
-                      @click="requestSecretAction('regenerate')"
-                    >
-                      {{ credentialMutationLoading ? t('user.regenerating') : t('user.regenerate') }}
-                    </button>
-                    <button
-                      v-if="canReveal"
-                      data-testid="reveal-key"
-                      class="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-                      @click="isSecretRevealed ? hideSelectedKey() : requestSecretAction('reveal')"
-                    >
-                      {{ isSecretRevealed ? t('user.hide') : t('user.reveal') }}
-                    </button>
-                    <button
-                      v-if="canReveal"
-                      data-testid="copy-key"
-                      class="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-                      @click="requestSecretAction('copy')"
-                    >
-                      {{ t('user.copy') }}
+                      {{ group.group_name }}
                     </button>
                   </div>
-                  <div v-if="secretConfirmAction" class="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-                    <div class="font-medium">{{ secretConfirmTitle(secretConfirmAction) }}</div>
-                    <p class="mt-1 text-xs">{{ t('user.secretRiskText') }}</p>
+
+                  <div v-if="selectedGroup" class="rounded-md bg-gray-50 p-4 text-sm text-gray-700">
+                    <div class="font-medium text-gray-900">{{ credentialStatusLabel(selectedGroup.credential.state) }}</div>
+                    <div class="mt-2">{{ t('user.group') }}: {{ selectedGroup.group_name }}</div>
+                    <div class="mt-1">{{ t('user.platform') }}: {{ selectedGroup.platform }}</div>
+                    <div class="mt-2">{{ credentialStatusHelp(selectedGroup.credential.state, !!selectedGroup.credential.key) }}</div>
+                  </div>
+                </div>
+              </section>
+
+              <section class="rounded-lg border border-gray-200 p-4">
+                <div class="flex items-start justify-between gap-4">
+                  <div>
+                    <h3 class="text-base font-semibold text-gray-900">{{ t('user.apiKeyTitle') }}</h3>
+                    <p class="mt-1 text-sm text-gray-600">Keep your key hidden by default. After creating or regenerating it, run a connection test before choosing a configuration method.</p>
+                  </div>
+                  <button
+                    v-if="onboardingState === 'key_ready_without_test' || onboardingState === 'test_failed'"
+                    data-testid="primary-onboarding-action"
+                    class="rounded-md bg-emerald-700 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-800 disabled:opacity-50"
+                    :disabled="providerTestLoading || !canTestProvider"
+                    @click="handleTestProvider"
+                  >
+                    {{ providerTestLoading ? t('user.testing') : primaryOnboardingActionLabel }}
+                  </button>
+                </div>
+
+                <div v-if="selectedGroup" class="mt-4 space-y-4">
+                  <div class="rounded-md border border-dashed border-gray-300 p-4">
+                    <div class="text-xs uppercase tracking-wide text-gray-400">{{ t('user.apiKeyTitle') }}</div>
+                    <div class="mt-2 break-all rounded-md bg-gray-950 px-3 py-2 font-mono text-sm text-green-300">
+                      {{ displayedSecret || '••••••••••••••••' }}
+                    </div>
                     <div class="mt-3 flex flex-wrap gap-2">
                       <button
-                        data-testid="confirm-secret-action"
-                        class="rounded-md bg-amber-700 px-3 py-2 text-xs font-medium text-white hover:bg-amber-800 disabled:opacity-50"
+                        v-if="selectedGroup.credential.state === 'missing'"
+                        data-testid="create-key"
+                        class="rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-black disabled:opacity-50"
                         :disabled="credentialMutationLoading"
-                        @click="confirmSecretAction"
+                        @click="handleCreateKey"
                       >
-                        {{ t('user.confirmAction') }}
+                        {{ credentialMutationLoading ? t('user.creatingKey') : t('user.createKey') }}
                       </button>
                       <button
-                        class="rounded-md border border-amber-300 bg-white px-3 py-2 text-xs font-medium text-amber-900 hover:bg-amber-100"
-                        @click="secretConfirmAction = null"
+                        v-if="selectedGroup.credential.state === 'existing_hidden'"
+                        data-testid="regenerate-key"
+                        class="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-900 hover:bg-amber-100 disabled:opacity-50"
+                        :disabled="credentialMutationLoading"
+                        @click="requestSecretAction('regenerate')"
                       >
-                        {{ t('user.cancel') }}
+                        {{ credentialMutationLoading ? t('user.regenerating') : t('user.regenerate') }}
+                      </button>
+                      <button
+                        v-if="canReveal"
+                        data-testid="reveal-key"
+                        class="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                        @click="isSecretRevealed ? hideSelectedKey() : requestSecretAction('reveal')"
+                      >
+                        {{ isSecretRevealed ? t('user.hide') : t('user.reveal') }}
+                      </button>
+                      <button
+                        v-if="canReveal"
+                        data-testid="copy-key"
+                        class="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                        @click="requestSecretAction('copy')"
+                      >
+                        {{ t('user.copy') }}
                       </button>
                     </div>
-                  </div>
-                </div>
-
-                <div class="rounded-md border border-gray-200 p-4">
-                  <div class="font-medium text-gray-900">{{ t('user.testTitle') }}</div>
-                  <p class="mt-1 text-xs text-gray-500">
-                    {{ t('user.testHelp') }}
-                  </p>
-                  <div class="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-                    <div>
-                      <label class="block text-xs font-medium uppercase tracking-wide text-gray-500">{{ t('user.platform') }}</label>
-                      <input
-                        :value="selectedGroup.platform"
-                        disabled
-                        class="mt-1 w-full rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-500"
-                      />
-                    </div>
-                    <div>
-                      <label class="block text-xs font-medium uppercase tracking-wide text-gray-500">{{ t('user.model') }}</label>
-                      <select
-                        v-if="providerModelOptions.length > 0"
-                        v-model="providerTestModel"
-                        data-testid="user-provider-test-model"
-                        class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-                      >
-                        <option
-                          v-for="model in providerModelOptions"
-                          :key="model.id"
-                          :value="model.id"
+                    <div v-if="secretConfirmAction" class="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                      <div class="font-medium">{{ secretConfirmTitle(secretConfirmAction) }}</div>
+                      <p class="mt-1 text-xs">{{ t('user.secretRiskText') }}</p>
+                      <div class="mt-3 flex flex-wrap gap-2">
+                        <button
+                          data-testid="confirm-secret-action"
+                          class="rounded-md bg-amber-700 px-3 py-2 text-xs font-medium text-white hover:bg-amber-800 disabled:opacity-50"
+                          :disabled="credentialMutationLoading"
+                          @click="confirmSecretAction"
                         >
-                          {{ providerModelLabel(model) }}
-                        </option>
-                      </select>
-                      <input
-                        v-else
-                        v-model="providerTestModel"
-                        data-testid="user-provider-test-model"
-                        type="text"
-                        :placeholder="providerModelsLoading ? t('user.loadingModels') : 'gpt-5.4'"
-                        class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-                      />
-                      <p v-if="providerModelsLoading" class="mt-1 text-xs text-gray-500">{{ t('user.loadingModels') }}</p>
-                      <p v-else-if="providerModelsMessage" class="mt-1 text-xs text-gray-500">{{ providerModelsMessage }}</p>
+                          {{ t('user.confirmAction') }}
+                        </button>
+                        <button
+                          class="rounded-md border border-amber-300 bg-white px-3 py-2 text-xs font-medium text-amber-900 hover:bg-amber-100"
+                          @click="secretConfirmAction = null"
+                        >
+                          {{ t('user.cancel') }}
+                        </button>
+                      </div>
                     </div>
                   </div>
-                  <div class="mt-3">
-                    <label class="block text-xs font-medium uppercase tracking-wide text-gray-500">{{ t('user.prompt') }}</label>
-                    <input
-                      v-model="providerTestPrompt"
-                      data-testid="user-provider-test-prompt"
-                      type="text"
-                      placeholder="Hi"
-                      class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-                    />
-                  </div>
-                  <div class="mt-3 flex flex-wrap items-center gap-3">
-                    <button
-                      data-testid="user-provider-test-run"
-                      :disabled="providerTestLoading || !canTestProvider"
-                      class="rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-black disabled:opacity-50"
-                      @click="handleTestProvider"
-                    >
-                      {{ providerTestLoading ? t('user.testing') : t('user.runTest') }}
-                    </button>
-                    <span v-if="providerTestResult" class="text-sm" :class="providerTestResult.success ? 'text-green-700' : 'text-red-700'">
-                      {{ providerTestResult.message }}
-                    </span>
-                  </div>
-                  <div v-if="providerTestResult?.response" class="mt-3 rounded-md bg-gray-50 p-3 text-sm text-gray-700">
-                    {{ providerTestResult.response }}
+
+                  <div class="rounded-md border border-gray-200 p-4">
+                    <div class="font-medium text-gray-900">{{ t('user.testTitle') }}</div>
+                    <p class="mt-1 text-xs text-gray-500">
+                      {{ t('user.testHelp') }}
+                    </p>
+                    <div class="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+                      <div>
+                        <label class="block text-xs font-medium uppercase tracking-wide text-gray-500">{{ t('user.platform') }}</label>
+                        <input
+                          :value="selectedGroup.platform"
+                          disabled
+                          class="mt-1 w-full rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-500"
+                        />
+                      </div>
+                      <div>
+                        <label class="block text-xs font-medium uppercase tracking-wide text-gray-500">{{ t('user.model') }}</label>
+                        <select
+                          v-if="providerModelOptions.length > 0"
+                          v-model="providerTestModel"
+                          data-testid="user-provider-test-model"
+                          class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                        >
+                          <option
+                            v-for="model in providerModelOptions"
+                            :key="model.id"
+                            :value="model.id"
+                          >
+                            {{ providerModelLabel(model) }}
+                          </option>
+                        </select>
+                        <input
+                          v-else
+                          v-model="providerTestModel"
+                          data-testid="user-provider-test-model"
+                          type="text"
+                          :placeholder="providerModelsLoading ? t('user.loadingModels') : 'gpt-5.4'"
+                          class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                        />
+                        <p v-if="providerModelsLoading" class="mt-1 text-xs text-gray-500">{{ t('user.loadingModels') }}</p>
+                        <p v-else-if="providerModelsMessage" class="mt-1 text-xs text-gray-500">{{ providerModelsMessage }}</p>
+                      </div>
+                    </div>
+                    <div class="mt-3">
+                      <label class="block text-xs font-medium uppercase tracking-wide text-gray-500">{{ t('user.prompt') }}</label>
+                      <input
+                        v-model="providerTestPrompt"
+                        data-testid="user-provider-test-prompt"
+                        type="text"
+                        placeholder="Hi"
+                        class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                      />
+                    </div>
+                    <div class="mt-3 flex flex-wrap items-center gap-3">
+                      <button
+                        data-testid="user-provider-test-run"
+                        :disabled="providerTestLoading || !canTestProvider"
+                        class="rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-black disabled:opacity-50"
+                        @click="handleTestProvider"
+                      >
+                        {{ providerTestLoading ? t('user.testing') : t('user.runTest') }}
+                      </button>
+                      <span v-if="providerTestResult" class="text-sm" :class="providerTestResult.success ? 'text-green-700' : 'text-red-700'">
+                        {{ providerTestResult.message }}
+                      </span>
+                    </div>
+                    <div v-if="providerTestResult?.response" class="mt-3 rounded-md bg-gray-50 p-3 text-sm text-gray-700">
+                      {{ providerTestResult.response }}
+                    </div>
                   </div>
                 </div>
-              </div>
+              </section>
+
+              <section
+                v-if="showConfigurationMethods"
+                data-testid="configuration-methods"
+                class="rounded-lg border border-gray-200 p-4"
+              />
             </div>
           </section>
 

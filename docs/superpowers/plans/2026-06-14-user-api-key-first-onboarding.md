@@ -244,7 +244,7 @@ git commit -m "test(frontend): cover api-key-first onboarding flow"
 **Files:**
 - Modify: `frontend/src/views/UserView.vue`
 
-- [ ] **Step 1: Add explicit onboarding state and reset helpers in the script block**
+- [x] **Step 1: Add explicit onboarding state and reset helpers in the script block**
 
 ```ts
 const selectedConfigMethod = ref<'manual' | 'automatic' | 'ccswitch' | null>(null)
@@ -273,7 +273,7 @@ function resetPostKeyFlow() {
 }
 ```
 
-- [ ] **Step 2: Clear success state whenever the group context changes**
+- [x] **Step 2: Clear success state whenever the group context changes**
 
 ```ts
 function selectProvider(providerId: number) {
@@ -305,7 +305,7 @@ async function handleRegenerateKey() {
 }
 ```
 
-- [ ] **Step 3: Replace the `setup-progress` checklist section with the new primary-flow shell**
+- [x] **Step 3: Replace the `setup-progress` checklist section with the new primary-flow shell**
 
 ```vue
 <section data-testid="primary-onboarding-flow" class="rounded-lg bg-white p-5 shadow">
@@ -359,7 +359,7 @@ async function handleRegenerateKey() {
 </section>
 ```
 
-- [ ] **Step 4: Run the focused `/user` tests to verify the new shell still fails only on missing method panels/copy**
+- [x] **Step 4: Run the focused `/user` tests to verify the new shell still fails only on missing method panels/copy**
 
 Run: `cd frontend && pnpm test user-view.test.ts`
 
