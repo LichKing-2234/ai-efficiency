@@ -300,10 +300,20 @@ describe('UserView', () => {
     expect(wrapper.text()).toContain('One-time machine setup')
     expect(wrapper.text()).toContain('Per-repo setup')
     expect(wrapper.text()).toContain('cd /path/to/repo')
+    expect(wrapper.text()).toContain('Device login fallback')
+    expect(wrapper.text()).toContain('Alternate OS installer')
     expect(wrapper.text()).toContain('Advanced command reference')
     expect(wrapper.text()).toContain('ae-cli discover --provider prod')
     expect(wrapper.text()).toContain('ae-cli hooks enable --global')
     expect(wrapper.text()).toContain('ae-cli init')
+    expect(wrapper.text()).not.toContain('Check GitHub connectivity')
+
+    const repoSectionStart = wrapper.text().indexOf('Per-repo setup')
+    const advancedSectionStart = wrapper.text().indexOf('Advanced command reference')
+    const repoSectionText = wrapper.text().slice(repoSectionStart, advancedSectionStart)
+    expect(repoSectionText).not.toContain('ae-cli doctor')
+
+    await wrapper.get('summary').trigger('click')
     expect(wrapper.text()).toContain('ae-cli doctor')
   })
 

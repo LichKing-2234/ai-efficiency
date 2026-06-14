@@ -118,7 +118,6 @@ const ccSwitchImports = computed(() => {
 })
 const automaticMachineCommands = computed(() => [
   { key: 'auto-install', label: t('user.installCli'), value: installCommand.value },
-  { key: 'auto-connectivity', label: t('user.githubConnectivityTitle'), value: githubConnectivityCommand.value },
   { key: 'auto-login', label: t('user.setupStepLoginTitle'), value: loginCommand.value },
   { key: 'auto-discover', label: t('user.setupStepConfigureTitle'), value: discoverCommand.value || t('user.selectProviderCommand') },
   { key: 'auto-hooks', label: t('user.setupStepHooksTitle'), value: hooksGlobalCommand.value },
@@ -126,7 +125,6 @@ const automaticMachineCommands = computed(() => [
 const automaticRepoCommands = computed(() => [
   { key: 'auto-repo-cd', label: t('user.repoStep1'), value: repoChangeDirCommand.value },
   { key: 'auto-init', label: t('user.repoStep2'), value: repoInitCommand.value },
-  { key: 'auto-doctor', label: t('user.repoStep3'), value: doctorCommand.value },
 ])
 
 function credentialStatusLabel(state: string) {
@@ -877,6 +875,31 @@ onMounted(loadProviders)
                         <pre class="mt-2 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-xs text-green-300">{{ command.value }}</pre>
                       </div>
                     </div>
+
+                    <div class="mt-4 grid gap-4 md:grid-cols-2">
+                      <div class="rounded-md border border-gray-200 p-4">
+                        <div class="font-medium text-gray-900">{{ t('user.alternateInstall') }}</div>
+                        <p class="mt-1 text-sm text-gray-600">{{ t('user.automaticConfigAlternateInstallHelp') }}</p>
+                        <div class="mt-3 text-xs font-medium uppercase tracking-wide text-gray-500">{{ alternateInstallLabel }}</div>
+                        <div class="mt-2 flex justify-end">
+                          <button class="text-xs font-medium text-indigo-700 hover:text-indigo-900" type="button" @click="copyCommand(alternateInstallCopyKey, alternateInstallCommand)">
+                            {{ copyCommandLabel(alternateInstallCopyKey) }}
+                          </button>
+                        </div>
+                        <pre class="mt-2 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-xs text-green-300">{{ alternateInstallCommand }}</pre>
+                      </div>
+
+                      <div class="rounded-md border border-gray-200 p-4">
+                        <div class="font-medium text-gray-900">{{ t('user.deviceLoginFallback') }}</div>
+                        <p class="mt-1 text-sm text-gray-600">{{ t('user.automaticConfigDeviceLoginHelp') }}</p>
+                        <div class="mt-2 flex justify-end">
+                          <button class="text-xs font-medium text-indigo-700 hover:text-indigo-900" type="button" @click="copyCommand('device-login', deviceLoginCommand)">
+                            {{ copyCommandLabel('device-login') }}
+                          </button>
+                        </div>
+                        <pre class="mt-2 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-xs text-green-300">{{ deviceLoginCommand }}</pre>
+                      </div>
+                    </div>
                   </div>
 
                   <div class="mt-4 rounded-lg border border-gray-200 p-4">
@@ -921,6 +944,17 @@ onMounted(loadProviders)
                           </button>
                         </div>
                         <pre class="mt-2 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-xs text-green-300">{{ deviceLoginCommand }}</pre>
+                      </div>
+
+                      <div class="rounded-md border border-gray-200 p-4">
+                        <div class="font-medium text-gray-900">{{ t('user.setupStepDoctorTitle') }}</div>
+                        <p class="mt-1 text-sm text-gray-600">{{ t('user.automaticConfigDoctorHelp') }}</p>
+                        <div class="mt-2 flex justify-end">
+                          <button class="text-xs font-medium text-indigo-700 hover:text-indigo-900" type="button" @click="copyCommand('auto-doctor', doctorCommand)">
+                            {{ copyCommandLabel('auto-doctor') }}
+                          </button>
+                        </div>
+                        <pre class="mt-2 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-xs text-green-300">{{ doctorCommand }}</pre>
                       </div>
 
                       <div class="rounded-md border border-gray-200 p-4">
