@@ -37,7 +37,7 @@ Implementation files:
 - Modify: `frontend/src/utils/userSetupReview.ts`
   Adds `CC Switch` provider-import deep-link helpers and platform-to-app mapping.
 - Modify: `frontend/src/views/UserView.vue`
-  Replaces the current `setupProgress` checklist shell with a group-scoped primary flow and post-test configuration methods.
+  Replaces the current `setupProgress` checklist shell with a group-scoped primary flow and post-key configuration methods.
 - Modify: `frontend/src/i18n.ts`
   Rewrites `/user` copy around the new flow and adds `CC Switch` labels/help.
 - Modify: `docs/architecture.md`
@@ -232,7 +232,7 @@ Run: `cd frontend && pnpm test user-view.test.ts`
 
 Expected: FAIL because the current view still renders `Setup progress`, audience toggles, and the old always-visible command/test layout.
 
-- [ ] **Step 3: Commit the failing-test checkpoint**
+- [x] **Step 3: Commit the failing-test checkpoint**
 
 ```bash
 git add frontend/src/__tests__/user-view.test.ts

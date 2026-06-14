@@ -243,7 +243,13 @@ describe('UserView', () => {
     await wrapper.get('[data-testid="user-provider-test-model"]').setValue('gpt-5.4')
     await wrapper.get('[data-testid="user-provider-test-run"]').trigger('click')
     await flushPromises()
+    expect(wrapper.find('[data-testid="user-provider-test-run"]').exists()).toBe(true)
+    expect((testUserProvider as any).mock.calls).toHaveLength(1)
     expect(wrapper.text()).toContain('Connection successful')
+
+    await wrapper.get('[data-testid="user-provider-test-run"]').trigger('click')
+    await flushPromises()
+    expect((testUserProvider as any).mock.calls).toHaveLength(2)
   })
 
   it('shows a clear empty state when no access groups are available', async () => {

@@ -676,7 +676,7 @@ onMounted(loadProviders)
                     <p class="mt-1 text-sm text-gray-600">{{ t('user.apiKeyStageHelp') }}</p>
                   </div>
                   <button
-                    v-if="onboardingState === 'key_ready_without_test' || onboardingState === 'test_failed'"
+                    v-if="selectedKeyValue"
                     data-testid="user-provider-test-run"
                     class="rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-black disabled:opacity-50"
                     :disabled="providerTestLoading || !canTestProvider"
