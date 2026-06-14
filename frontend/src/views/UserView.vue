@@ -962,20 +962,6 @@ onMounted(loadProviders)
             </div>
           </section>
 
-          <section class="rounded-lg bg-white p-5 shadow">
-            <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-900">{{ t('user.supportTitle') }}</h2>
-            <div class="mt-4 grid gap-3 md:grid-cols-2">
-              <div class="rounded-md border border-slate-200 p-3">
-                <div class="font-medium text-gray-900">{{ t('user.askAdminTitle') }}</div>
-                <p class="mt-1 text-sm text-gray-600">{{ t('user.askAdminHelp') }}</p>
-              </div>
-              <div class="rounded-md border border-slate-200 p-3">
-                <div class="font-medium text-gray-900">{{ t('user.evidenceTitle') }}</div>
-                <p class="mt-1 text-sm text-gray-600">{{ t('user.evidenceHelp') }}</p>
-              </div>
-            </div>
-          </section>
-
         </div>
       </div>
     </div>

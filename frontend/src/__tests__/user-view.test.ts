@@ -172,17 +172,6 @@ describe('UserView', () => {
     expect(wrapper.text()).not.toContain('Current Secret')
   })
 
-  it('gives actionable blocked-setup guidance instead of vague developer escalation', async () => {
-    const { wrapper } = await mountUserView()
-
-    expect(wrapper.text()).toContain('When setup is blocked')
-    expect(wrapper.text()).toContain('Ask an admin')
-    expect(wrapper.text()).toContain('Share diagnosis output')
-    expect(wrapper.text()).toContain('Run ae-cli doctor in the affected repository')
-    expect(wrapper.text()).not.toContain('Ask a developer')
-    expect(wrapper.text()).not.toContain('repo init, hooks, or doctor output looks wrong')
-  })
-
   it('shows create my api key as the primary action when the selected group has no key', async () => {
     const { wrapper } = await mountUserView()
 
