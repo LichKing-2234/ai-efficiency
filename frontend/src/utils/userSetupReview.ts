@@ -1,4 +1,5 @@
 export type InstallPlatform = 'shell' | 'windows'
+export type CCSwitchApp = 'codex' | 'claude' | 'gemini'
 
 export type ManualConfigSnippetKey =
   | 'codex-config'
@@ -20,6 +21,15 @@ export type ManualConfigSnippetInput = {
   baseUrl: string
   platform: string
   apiKey: string
+}
+
+export type CCSwitchProviderImportInput = {
+  app: CCSwitchApp
+  name: string
+  endpoint: string
+  apiKey: string
+  model?: string
+  enabled?: boolean
 }
 
 const GITHUB_RELEASE_API_URL = 'https://api.github.com/repos/LichKing-2234/ai-efficiency/releases/latest'
@@ -171,6 +181,29 @@ export function buildManualConfigSnippets(input: ManualConfigSnippetInput): Manu
     ]
   }
   return []
+}
+
+export function resolveCCSwitchAppForPlatform(platform: string): CCSwitchApp | null {
+  const normalized = platform.trim().toLowerCase()
+  if (normalized === 'openai') return 'codex'
+  if (normalized === 'anthropic') return 'claude'
+  if (normalized === 'gemini') return 'gemini'
+  return null
+}
+
+export function buildCCSwitchProviderImportLink(input: CCSwitchProviderImportInput) {
+  const params = new URLSearchParams({
+    resource: 'provider',
+    app: input.app,
+    name: input.name,
+    endpoint: input.endpoint,
+    apiKey: input.apiKey,
+    enabled: String(input.enabled ?? true),
+  })
+  if (input.model) {
+    params.set('model', input.model)
+  }
+  return `ccswitch://v1/import?${params.toString()}`
 }
 
 export function buildGithubConnectivityCommand() {

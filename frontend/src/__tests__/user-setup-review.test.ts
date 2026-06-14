@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
+  buildCCSwitchProviderImportLink,
   buildDeviceLoginCommand,
   buildDiscoverCommand,
   buildDoctorCommand,
+  resolveCCSwitchAppForPlatform,
   buildClaudeSettingsSnippet,
   buildCodexAuthSnippet,
   buildCodexConfigSnippet,
@@ -91,6 +93,36 @@ describe('userSetupReview command builders', () => {
       platform: 'gemini',
       apiKey: 'sk-gemini',
     }).map((snippet) => snippet.path)).toEqual(['~/.ae-cli/env.sh', 'Shell reload', 'Current shell'])
+  })
+
+  it('maps supported platforms to CC Switch apps', () => {
+    expect(resolveCCSwitchAppForPlatform('openai')).toBe('codex')
+    expect(resolveCCSwitchAppForPlatform('anthropic')).toBe('claude')
+    expect(resolveCCSwitchAppForPlatform('gemini')).toBe('gemini')
+    expect(resolveCCSwitchAppForPlatform('unknown')).toBeNull()
+  })
+
+  it('builds an app-specific CC Switch provider import link', () => {
+    expect(buildCCSwitchProviderImportLink({
+      app: 'claude',
+      name: 'Production / Group Alpha',
+      endpoint: 'https://prod.example.com',
+      apiKey: 'sk-claude',
+    })).toBe(
+      'ccswitch://v1/import?resource=provider&app=claude&name=Production+%2F+Group+Alpha&endpoint=https%3A%2F%2Fprod.example.com&apiKey=sk-claude&enabled=true'
+    )
+  })
+
+  it('includes an explicit model when provided for a CC Switch import', () => {
+    expect(buildCCSwitchProviderImportLink({
+      app: 'codex',
+      name: 'Production / Group Alpha',
+      endpoint: 'https://prod.example.com',
+      apiKey: 'sk-openai',
+      model: 'gpt-5.4',
+    })).toBe(
+      'ccswitch://v1/import?resource=provider&app=codex&name=Production+%2F+Group+Alpha&endpoint=https%3A%2F%2Fprod.example.com&apiKey=sk-openai&enabled=true&model=gpt-5.4'
+    )
   })
 
   it('buildDiscoverCommand uses the selected provider', () => {
