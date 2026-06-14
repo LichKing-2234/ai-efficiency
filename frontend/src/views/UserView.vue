@@ -155,18 +155,21 @@ const automaticAdvancedCommands = computed(() => [
     key: 'auto-doctor',
     title: t('user.setupStepDoctorTitle'),
     help: t('user.automaticConfigDoctorHelp'),
+    label: t('user.diagnosisCommand'),
     value: doctorCommand.value,
   },
   {
     key: 'manual-sync',
     title: t('user.manualSync'),
     help: t('user.automaticConfigSyncHelp'),
+    label: t('user.recoveryCommand'),
     value: syncCommand.value,
   },
   {
     key: 'hook-status',
     title: t('user.hookStatus'),
     help: t('user.automaticConfigHookStatusHelp'),
+    label: t('user.statusCommand'),
     value: hooksStatusUploadsCommand.value,
   },
 ])
@@ -965,13 +968,14 @@ onMounted(loadProviders)
                         :key="command.key"
                         class="rounded-md border border-gray-200 p-3 shadow-sm"
                       >
-                        <div class="flex items-center justify-between gap-3">
-                          <div class="text-[11px] font-semibold text-gray-500">{{ command.title }}</div>
+                        <div class="font-medium leading-6 text-gray-900">{{ command.title }}</div>
+                        <p class="mt-1 text-sm leading-5 text-gray-600">{{ command.help }}</p>
+                        <div class="mt-3 flex items-center justify-between gap-3">
+                          <div class="text-[10px] font-semibold uppercase tracking-wide text-gray-500">{{ command.label }}</div>
                           <button class="text-xs font-medium text-indigo-700 hover:text-indigo-900" type="button" @click="copyCommand(command.key, command.value)">
                             {{ copyCommandLabel(command.key) }}
                           </button>
                         </div>
-                        <p class="mt-1.5 text-sm leading-5 text-gray-600">{{ command.help }}</p>
                         <pre class="mt-1.5 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-[13px] leading-5 text-green-300">{{ command.value }}</pre>
                       </div>
                     </div>
