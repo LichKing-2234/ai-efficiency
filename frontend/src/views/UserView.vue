@@ -117,8 +117,32 @@ const ccSwitchImports = computed(() => {
   }]
 })
 const automaticMachineCommands = computed(() => [
-  { key: 'auto-install', label: t('user.installCli'), value: installCommand.value },
-  { key: 'auto-login', label: t('user.setupStepLoginTitle'), value: loginCommand.value },
+  {
+    key: 'auto-install',
+    label: t('user.installCli'),
+    value: installCommand.value,
+    fallback: {
+      detailsTestId: 'auto-install-fallback',
+      title: t('user.alternateInstall'),
+      help: t('user.automaticConfigAlternateInstallHelp'),
+      label: alternateInstallLabel.value,
+      value: alternateInstallCommand.value,
+      copyKey: alternateInstallCopyKey.value,
+    },
+  },
+  {
+    key: 'auto-login',
+    label: t('user.setupStepLoginTitle'),
+    value: loginCommand.value,
+    fallback: {
+      detailsTestId: 'auto-login-fallback',
+      title: t('user.deviceLoginFallback'),
+      help: t('user.automaticConfigDeviceLoginHelp'),
+      label: t('user.fallbackCommand'),
+      value: deviceLoginCommand.value,
+      copyKey: 'device-login',
+    },
+  },
   { key: 'auto-discover', label: t('user.setupStepConfigureTitle'), value: discoverCommand.value || t('user.selectProviderCommand') },
   { key: 'auto-hooks', label: t('user.setupStepHooksTitle'), value: hooksGlobalCommand.value },
 ])
@@ -861,11 +885,11 @@ onMounted(loadProviders)
                   <p class="mt-1 text-sm text-gray-600">{{ t('user.automaticConfigProviderHelp') }}</p>
                   <p class="mt-3 text-sm text-gray-600">{{ t('user.automaticConfigOverview') }}</p>
 
-                  <div class="mt-4 rounded-lg border border-gray-200 p-4">
+                  <section class="mt-4">
                     <div class="font-medium text-gray-900">{{ t('user.automaticConfigMachineTitle') }}</div>
                     <p class="mt-1 text-sm text-gray-600">{{ t('user.automaticConfigMachineHelp') }}</p>
-                    <div class="mt-4 space-y-4 text-sm">
-                      <div v-for="command in automaticMachineCommands" :key="command.key">
+                    <div class="mt-4 space-y-3 text-sm">
+                      <div v-for="command in automaticMachineCommands" :key="command.key" class="rounded-md border border-gray-200 p-4">
                         <div class="flex items-center justify-between gap-3">
                           <span class="text-xs font-medium uppercase tracking-wide text-gray-500">{{ command.label }}</span>
                           <button class="shrink-0 text-xs font-medium text-indigo-700 hover:text-indigo-900" type="button" @click="copyCommand(command.key, command.value)">
@@ -873,40 +897,32 @@ onMounted(loadProviders)
                           </button>
                         </div>
                         <pre class="mt-2 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-xs text-green-300">{{ command.value }}</pre>
+                        <details
+                          v-if="command.fallback"
+                          :data-testid="command.fallback.detailsTestId"
+                          class="mt-3 rounded-md border border-gray-200 bg-gray-50 p-3"
+                        >
+                          <summary class="cursor-pointer text-xs font-medium text-gray-700">
+                            {{ command.fallback.title }}
+                          </summary>
+                          <p class="mt-2 text-sm text-gray-600">{{ command.fallback.help }}</p>
+                          <div class="mt-3 text-xs font-medium uppercase tracking-wide text-gray-500">{{ command.fallback.label }}</div>
+                          <div class="mt-2 flex justify-end">
+                            <button class="text-xs font-medium text-indigo-700 hover:text-indigo-900" type="button" @click="copyCommand(command.fallback.copyKey, command.fallback.value)">
+                              {{ copyCommandLabel(command.fallback.copyKey) }}
+                            </button>
+                          </div>
+                          <pre class="mt-2 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-xs text-green-300">{{ command.fallback.value }}</pre>
+                        </details>
                       </div>
                     </div>
+                  </section>
 
-                    <div class="mt-4 grid gap-4 md:grid-cols-2">
-                      <div class="rounded-md border border-gray-200 p-4">
-                        <div class="font-medium text-gray-900">{{ t('user.alternateInstall') }}</div>
-                        <p class="mt-1 text-sm text-gray-600">{{ t('user.automaticConfigAlternateInstallHelp') }}</p>
-                        <div class="mt-3 text-xs font-medium uppercase tracking-wide text-gray-500">{{ alternateInstallLabel }}</div>
-                        <div class="mt-2 flex justify-end">
-                          <button class="text-xs font-medium text-indigo-700 hover:text-indigo-900" type="button" @click="copyCommand(alternateInstallCopyKey, alternateInstallCommand)">
-                            {{ copyCommandLabel(alternateInstallCopyKey) }}
-                          </button>
-                        </div>
-                        <pre class="mt-2 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-xs text-green-300">{{ alternateInstallCommand }}</pre>
-                      </div>
-
-                      <div class="rounded-md border border-gray-200 p-4">
-                        <div class="font-medium text-gray-900">{{ t('user.deviceLoginFallback') }}</div>
-                        <p class="mt-1 text-sm text-gray-600">{{ t('user.automaticConfigDeviceLoginHelp') }}</p>
-                        <div class="mt-2 flex justify-end">
-                          <button class="text-xs font-medium text-indigo-700 hover:text-indigo-900" type="button" @click="copyCommand('device-login', deviceLoginCommand)">
-                            {{ copyCommandLabel('device-login') }}
-                          </button>
-                        </div>
-                        <pre class="mt-2 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-xs text-green-300">{{ deviceLoginCommand }}</pre>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div class="mt-4 rounded-lg border border-gray-200 p-4">
+                  <section class="mt-6">
                     <div class="font-medium text-gray-900">{{ t('user.automaticConfigRepoTitle') }}</div>
                     <p class="mt-1 text-sm text-gray-600">{{ t('user.automaticConfigRepoHelp') }}</p>
-                    <div class="mt-4 space-y-4 text-sm">
-                      <div v-for="command in automaticRepoCommands" :key="command.key">
+                    <div class="mt-4 space-y-3 text-sm">
+                      <div v-for="command in automaticRepoCommands" :key="command.key" class="rounded-md border border-gray-200 p-4">
                         <div class="flex items-center justify-between gap-3">
                           <span class="text-xs font-medium uppercase tracking-wide text-gray-500">{{ command.label }}</span>
                           <button class="shrink-0 text-xs font-medium text-indigo-700 hover:text-indigo-900" type="button" @click="copyCommand(command.key, command.value)">
@@ -916,9 +932,9 @@ onMounted(loadProviders)
                         <pre class="mt-2 overflow-x-auto rounded-md bg-gray-950 px-3 py-2 text-xs text-green-300">{{ command.value }}</pre>
                       </div>
                     </div>
-                  </div>
+                  </section>
 
-                  <details class="mt-4 rounded-lg border border-gray-200 p-4">
+                  <details data-testid="auto-advanced" class="mt-6 rounded-lg border border-gray-200 p-4">
                     <summary class="cursor-pointer text-sm font-semibold text-gray-900">
                       {{ t('user.commandReference') }}
                     </summary>

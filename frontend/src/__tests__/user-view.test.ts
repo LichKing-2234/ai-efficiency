@@ -313,11 +313,27 @@ describe('UserView', () => {
     const repoSectionText = wrapper.text().slice(repoSectionStart, advancedSectionStart)
     expect(repoSectionText).not.toContain('ae-cli doctor')
 
-    await wrapper.get('summary').trigger('click')
+    const installFallback = wrapper.get('[data-testid="auto-install-fallback"]')
+    const loginFallback = wrapper.get('[data-testid="auto-login-fallback"]')
+    const advancedDetails = wrapper.get('[data-testid="auto-advanced"]')
+
+    expect(installFallback.attributes('open')).toBeUndefined()
+    expect(loginFallback.attributes('open')).toBeUndefined()
+    expect(advancedDetails.attributes('open')).toBeUndefined()
+
+    expect(wrapper.text()).toContain('Alternate OS installer')
+    expect(wrapper.text()).toContain('Device login fallback')
+
+    await installFallback.find('summary').trigger('click')
+    await loginFallback.find('summary').trigger('click')
+    await advancedDetails.find('summary').trigger('click')
+
     expect(wrapper.text()).toContain('ae-cli doctor')
     const advancedText = wrapper.text().slice(wrapper.text().indexOf('Advanced command reference'))
-    expect(advancedText).not.toContain('Windows PowerShell')
-    expect(advancedText).not.toContain('ae-cli login --device')
+    expect(advancedText).not.toContain('Alternate OS installer')
+    expect(advancedText).not.toContain('Device login fallback')
+    expect(wrapper.text()).toContain('Windows PowerShell')
+    expect(wrapper.text()).toContain('ae-cli login --device')
   })
 
   it('shows audience guidance on each configuration method card', async () => {
