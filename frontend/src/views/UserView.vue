@@ -553,8 +553,8 @@ onMounted(loadProviders)
     <div class="space-y-6">
       <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h1 class="text-2xl font-bold text-gray-900">{{ t('user.title') }}</h1>
-          <p class="mt-1 text-sm text-gray-500">{{ t('user.subtitle') }}</p>
+          <h1 class="text-3xl font-semibold tracking-tight text-gray-900">{{ t('user.title') }}</h1>
+          <p class="mt-2 max-w-3xl text-sm text-gray-500">{{ t('user.subtitle') }}</p>
         </div>
         <button
           class="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
@@ -565,8 +565,8 @@ onMounted(loadProviders)
       </div>
 
       <div class="grid min-w-0 gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
-        <div class="min-w-0 space-y-6">
-          <section class="rounded-lg bg-white p-5 shadow">
+        <div class="order-2 min-w-0 space-y-6 lg:order-1">
+          <section class="rounded-xl border border-gray-200 bg-white p-5">
             <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-900">{{ t('user.accountTitle') }}</h2>
             <dl class="mt-4 space-y-3 text-sm">
               <div class="flex flex-col gap-1 sm:flex-row sm:justify-between sm:gap-4"><dt class="text-gray-500">{{ t('user.username') }}</dt><dd class="break-all font-medium text-gray-900">{{ auth.user?.username ?? '—' }}</dd></div>
@@ -576,7 +576,7 @@ onMounted(loadProviders)
             </dl>
           </section>
 
-          <section class="rounded-lg bg-white p-5 shadow">
+          <section class="rounded-xl border border-gray-200 bg-white p-5">
             <div class="flex items-center justify-between">
               <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-900">{{ t('user.aiAccessTitle') }}</h2>
               <span v-if="loading" class="text-xs text-gray-400">{{ t('user.loading') }}</span>
@@ -616,10 +616,10 @@ onMounted(loadProviders)
           </section>
         </div>
 
-        <div class="min-w-0 space-y-6">
-          <section data-testid="primary-onboarding-flow" class="rounded-lg bg-white p-5 shadow">
+        <div class="order-1 min-w-0 space-y-6 lg:order-2">
+          <section data-testid="primary-onboarding-flow" class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
             <div class="border-b border-gray-100 pb-4">
-              <h2 class="text-2xl font-bold text-gray-900">{{ t('user.manageMyApiKey') }}</h2>
+              <h2 class="text-lg font-semibold text-gray-900">{{ t('user.setupFlowTitle') }}</h2>
               <p class="mt-2 text-sm text-gray-600">{{ t('user.primaryFlowHelp') }}</p>
             </div>
 
@@ -672,7 +672,7 @@ onMounted(loadProviders)
               <section class="rounded-lg border border-gray-200 p-4">
                 <div class="flex items-start justify-between gap-4">
                   <div>
-                    <h3 class="text-base font-semibold text-gray-900">{{ t('user.apiKeyTitle') }}</h3>
+                    <h3 class="text-base font-semibold text-gray-900">{{ t('user.apiKeyStepTitle') }}</h3>
                     <p class="mt-1 text-sm text-gray-600">{{ t('user.apiKeyStageHelp') }}</p>
                   </div>
                   <button

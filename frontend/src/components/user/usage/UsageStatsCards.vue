@@ -3,11 +3,14 @@ import { computed } from 'vue'
 import type { UserUsageDashboardStats, UserUsageTrendPoint } from '@/types'
 import { useI18n } from '@/i18n'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   stats: UserUsageDashboardStats | null
   trend: UserUsageTrendPoint[]
   rangeLabel: string
-}>()
+  hideCost?: boolean
+}>(), {
+  hideCost: false,
+})
 
 const { t } = useI18n()
 
@@ -55,8 +58,8 @@ function formatDuration(ms: number): string {
 </script>
 
 <template>
-  <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-    <section class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+  <div class="grid grid-cols-1 gap-4 sm:grid-cols-2" :class="props.hideCost ? 'xl:grid-cols-3' : 'xl:grid-cols-4'">
+    <section v-if="!props.hideCost" class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
       <p class="text-xs font-medium uppercase text-gray-500">{{ t('usageDashboard.rangeCost', { range: rangeLabel }) }}</p>
       <p class="mt-2 text-2xl font-semibold text-gray-900">
         ${{ formatCost(rangeTotals.actualCost) }}

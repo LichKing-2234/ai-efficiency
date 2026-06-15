@@ -7,10 +7,13 @@ import { useI18n } from '@/i18n'
 
 ChartJS.register(ArcElement, Tooltip, Legend)
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   data: UserUsageModelStat[]
   loading: boolean
-}>()
+  hideCost?: boolean
+}>(), {
+  hideCost: false,
+})
 
 const { t } = useI18n()
 
@@ -50,8 +53,8 @@ function formatTokens(n: number): string {
               <th class="pb-2">{{ t('usageDashboard.model') }}</th>
               <th class="pb-2 text-right">{{ t('usageDashboard.requests') }}</th>
               <th class="pb-2 text-right">{{ t('usageDashboard.tokens') }}</th>
-              <th class="pb-2 text-right">{{ t('usageDashboard.actual') }}</th>
-              <th class="pb-2 text-right">{{ t('usageDashboard.standard') }}</th>
+              <th v-if="!props.hideCost" class="pb-2 text-right">{{ t('usageDashboard.actual') }}</th>
+              <th v-if="!props.hideCost" class="pb-2 text-right">{{ t('usageDashboard.standard') }}</th>
             </tr>
           </thead>
           <tbody>
@@ -61,8 +64,8 @@ function formatTokens(n: number): string {
               </td>
               <td class="py-2 text-right text-gray-600">{{ model.requests.toLocaleString() }}</td>
               <td class="py-2 text-right text-gray-600">{{ formatTokens(model.total_tokens) }}</td>
-              <td class="py-2 text-right text-green-600">${{ model.actual_cost.toFixed(4) }}</td>
-              <td class="py-2 text-right text-gray-500">${{ model.cost.toFixed(4) }}</td>
+              <td v-if="!props.hideCost" class="py-2 text-right text-green-600">${{ model.actual_cost.toFixed(4) }}</td>
+              <td v-if="!props.hideCost" class="py-2 text-right text-gray-500">${{ model.cost.toFixed(4) }}</td>
             </tr>
           </tbody>
         </table>
