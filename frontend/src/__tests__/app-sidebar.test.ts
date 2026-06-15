@@ -76,10 +76,10 @@ describe('AppSidebar', () => {
     const links = wrapper.findAll('a')
     const linkTexts = links.map((l) => l.text())
 
-    expect(linkTexts).toContain('My AI Usage')
+    expect(linkTexts).toContain('AI Usage Center')
     expect(linkTexts).toContain('Usage Records')
     expect(linkTexts).toContain('Code Repositories')
-    expect(linkTexts).toContain('My Setup')
+    expect(linkTexts).toContain('AI Setup & Configuration')
     expect(linkTexts).not.toContain('My Usage')
     expect(links.map((l) => l.attributes('href'))).not.toContain('/user/usage')
     expect(wrapper.text()).toContain('My Work')
@@ -174,7 +174,7 @@ describe('AppSidebar', () => {
       global: { plugins: [createPinia(), router] },
     })
 
-    const dashboardLink = wrapper.findAll('a').find((a) => a.text() === 'My AI Usage')
+    const dashboardLink = wrapper.findAll('a').find((a) => a.text() === 'AI Usage Center')
     expect(dashboardLink).toBeTruthy()
     expect(dashboardLink!.classes()).not.toContain('bg-gray-800')
   })
@@ -257,7 +257,7 @@ describe('AppSidebar', () => {
       global: { plugins: [pinia, router] },
     })
 
-    const setupLinks = wrapper.findAll('a').filter((link) => link.text() === 'My Setup')
+    const setupLinks = wrapper.findAll('a').filter((link) => link.text() === 'AI Setup & Configuration')
     expect(setupLinks).toHaveLength(1)
     expect(setupLinks[0].attributes('href')).toBe('/user')
 
@@ -348,8 +348,8 @@ describe('AppSidebar', () => {
     const linkTexts = wrapper.findAll('a').map((l) => l.text())
     expect(wrapper.text()).toContain('我的工作')
     expect(wrapper.text()).toContain('代码与 PR')
-    expect(linkTexts).toContain('我的 AI 使用中心')
-    expect(linkTexts).toContain('我的接入')
+    expect(linkTexts).toContain('AI 使用中心')
+    expect(linkTexts).toContain('AI 接入与配置')
     expect(linkTexts).not.toContain('我的用量')
     expect(linkTexts).toContain('使用记录')
     expect(linkTexts).toContain('代码仓库')

@@ -131,7 +131,7 @@ describe('UsageView', () => {
     const wrapper = mount(UsageView, { global: { plugins: [createPinia(), router] } })
     await flushPromises()
     expect(wrapper.text()).toContain('Complete AI service configuration')
-    expect(wrapper.text()).toContain('Open My Setup')
+    expect(wrapper.text()).toContain('Open AI Setup')
   })
 
   it('renders snapshot cards and charts', async () => {
@@ -156,6 +156,19 @@ describe('UsageView', () => {
     const modelTableScroll = wrapper.get('[data-testid="usage-model-table-scroll"]')
     expect(modelTableScroll.classes()).toContain('overflow-x-auto')
     expect(modelTableScroll.get('table').classes()).toContain('min-w-[36rem]')
+  })
+
+  it('keeps cost visible on the standalone usage page', async () => {
+    const { getUserUsageDashboard } = await import('@/api/userUsage')
+    ;(getUserUsageDashboard as any).mockResolvedValue({ data: { data: snapshot } })
+    const router = createRouterForUsage()
+    await router.push('/user/usage')
+    await router.isReady()
+    const wrapper = mount(UsageView, { global: { plugins: [createPinia(), router] } })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('7 Days Cost')
+    expect(wrapper.text()).toContain('$0.6000')
   })
 
   it('updates card labels and totals for selected ranges', async () => {
@@ -253,7 +266,7 @@ describe('UsageView', () => {
     const wrapper = mount(UsageView, { global: { plugins: [createPinia(), router] } })
     await flushPromises()
     expect(wrapper.text()).toContain('Relay credentials need attention')
-    expect(wrapper.text()).toContain('Open My Setup')
+    expect(wrapper.text()).toContain('Open AI Setup')
   })
 
   it('renders Chinese usage labels when locale is Chinese', async () => {

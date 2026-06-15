@@ -8,7 +8,7 @@
 
 **Tech Stack:** Vue 3, TypeScript, TailwindCSS, Vitest, Vue Test Utils, Vue Router, existing `frontend/src/i18n.ts`, Markdown docs.
 
-**Status:** Implemented and verified on the `codex/user-api-key-first-onboarding` branch. The current `/user` contract exposes configuration methods once a key exists, keeps connection testing as the recommended next step, and no longer uses the old developer/non-developer split.
+**Status:** Implemented and verified on the `codex/user-api-key-first-onboarding` branch. The current `/user` contract exposes configuration methods once a key exists, keeps connection testing as the recommended next step, and no longer uses the old developer/non-developer split. A 2026-06-15 copy-and-hierarchy follow-up renamed the sidebar entry to `AI Setup` / `AI 接入`, promoted a distinct page title, and labeled the primary flow as an explicit three-step setup sequence.
 
 ---
 

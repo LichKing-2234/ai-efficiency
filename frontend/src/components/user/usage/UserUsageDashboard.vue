@@ -31,7 +31,7 @@
       </div>
     </div>
 
-    <div v-if="loading && !snapshot" class="flex min-h-80 items-center justify-center text-sm text-gray-500">
+    <div v-if="loading && !currentSnapshot" class="flex min-h-80 items-center justify-center text-sm text-gray-500">
       {{ t('usageDashboard.loading') }}
     </div>
 
@@ -52,10 +52,15 @@
     </div>
 
     <div v-else class="space-y-6">
-      <UsageStatsCards :stats="snapshot?.stats ?? null" :trend="snapshot?.trend ?? []" :range-label="snapshotRangeLabel" />
+      <UsageStatsCards
+        :stats="currentSnapshot?.stats ?? null"
+        :trend="currentSnapshot?.trend ?? []"
+        :range-label="snapshotRangeLabel"
+        :hide-cost="props.homeMode"
+      />
       <div class="grid min-w-0 grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
-        <UsageTrendChart :data="snapshot?.trend ?? []" :loading="loading" />
-        <UsageModelChart :data="snapshot?.models ?? []" :loading="loading" />
+        <UsageTrendChart :data="currentSnapshot?.trend ?? []" :loading="loading" />
+        <UsageModelChart :data="currentSnapshot?.models ?? []" :loading="loading" :hide-cost="props.homeMode" />
       </div>
     </div>
   </div>
@@ -74,8 +79,12 @@ type RangeOption = 'today' | '7d' | '30d'
 
 const props = withDefaults(defineProps<{
   embedded?: boolean
+  homeMode?: boolean
+  initialSnapshot?: UserUsageDashboardSnapshot | null
 }>(), {
   embedded: false,
+  homeMode: false,
+  initialSnapshot: null,
 })
 
 const selectedRange = ref<RangeOption>('7d')
@@ -87,7 +96,8 @@ const credentialError = ref(false)
 const { t } = useI18n()
 let dashboardRequestSeq = 0
 
-const setupRequired = computed(() => snapshot.value?.configured === false)
+const currentSnapshot = computed(() => snapshot.value ?? props.initialSnapshot)
+const setupRequired = computed(() => currentSnapshot.value?.configured === false)
 const snapshotRangeLabel = computed(() => rangeLabel(snapshotRange.value))
 
 function rangeLabel(range: RangeOption) {
@@ -157,6 +167,10 @@ function selectRange(range: RangeOption) {
 }
 
 onMounted(() => {
+  if (props.initialSnapshot) {
+    snapshotRange.value = selectedRange.value
+    return
+  }
   loadDashboard()
 })
 </script>

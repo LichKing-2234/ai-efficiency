@@ -2,36 +2,40 @@
 import { computed, onMounted, ref } from 'vue'
 import AppLayout from '@/components/AppLayout.vue'
 import UserUsageDashboard from '@/components/user/usage/UserUsageDashboard.vue'
-import { useAuthStore } from '@/stores/auth'
-import { getDashboard } from '@/api/efficiency'
 import { getUserProviders } from '@/api/user'
-import { listEvents } from '@/api/events'
+import { getUserUsageDashboard } from '@/api/userUsage'
 import { useI18n } from '@/i18n'
-import type { DashboardData, ToolUsageEventRow, UserProviderSummary } from '@/types'
+import type { UserProviderSummary, UserUsageDashboardSnapshot } from '@/types'
 
-const auth = useAuthStore()
 const { t } = useI18n()
-const dashboard = ref<DashboardData | null>(null)
 const userProviders = ref<UserProviderSummary[]>([])
-const recentEvents = ref<ToolUsageEventRow[]>([])
+const usageSnapshot = ref<UserUsageDashboardSnapshot | null>(null)
 const loading = ref(true)
-const loadFailed = ref(false)
 const providersLoadFailed = ref(false)
-const eventsLoadFailed = ref(false)
+const usageLoadFailed = ref(false)
+
+type HomeLifecycleState =
+  | 'needs_setup'
+  | 'setup_ready_waiting_for_first_usage'
+  | 'established_user'
+  | 'degraded_error'
 
 onMounted(async () => {
-  const [dashboardResult, providersResult, eventsResult] = await Promise.allSettled([
-    getDashboard(),
-    getUserProviders(),
-    listEvents({ limit: 3, offset: 0 }),
-  ])
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone
+  const end = new Date()
+  const start = new Date(end)
+  start.setDate(end.getDate() - 6)
+  const formatDate = (date: Date) => date.toISOString().slice(0, 10)
 
-  if (dashboardResult.status === 'fulfilled') {
-    dashboard.value = dashboardResult.value.data.data ?? null
-  } else {
-    loadFailed.value = true
-    dashboard.value = null
-  }
+  const [providersResult, usageResult] = await Promise.allSettled([
+    getUserProviders(),
+    getUserUsageDashboard({
+      start_date: formatDate(start),
+      end_date: formatDate(end),
+      granularity: 'day',
+      timezone,
+    }),
+  ])
 
   if (providersResult.status === 'fulfilled') {
     userProviders.value = providersResult.value.data.data?.providers ?? []
@@ -40,98 +44,61 @@ onMounted(async () => {
     userProviders.value = []
   }
 
-  if (eventsResult.status === 'fulfilled') {
-    recentEvents.value = eventsResult.value.data.data?.items ?? []
+  if (usageResult.status === 'fulfilled') {
+    usageSnapshot.value = usageResult.value.data.data ?? null
   } else {
-    eventsLoadFailed.value = true
-    recentEvents.value = []
+    usageLoadFailed.value = true
+    usageSnapshot.value = null
   }
 
   loading.value = false
 })
 
-const displayName = computed(() => auth.user?.username || auth.user?.email || 'User')
-const hasDashboardData = computed(() => !!dashboard.value && !loadFailed.value)
-const connectedToolCount = computed(() => {
-  if (providersLoadFailed.value) return undefined
-  const platforms = new Set<string>()
-  for (const provider of userProviders.value) {
-    for (const group of provider.groups) {
-      if (group.credential.state === 'existing_hidden') {
-        platforms.add(group.platform)
-      }
-    }
-  }
-  return platforms.size
+const aiAccessReady = computed(() => {
+  if (providersLoadFailed.value) return false
+  return userProviders.value.some((provider) =>
+    provider.groups.some((group) => group.credential.state === 'existing_hidden'),
+  )
 })
-
-const connectedToolHelp = computed(() => {
-  if (providersLoadFailed.value) return t('home.metricToolsHelpUnavailable')
-  return connectedToolCount.value ? t('home.metricToolsHelp') : t('home.metricToolsHelpNone')
+const usageDataReady = computed(() => {
+  const snapshot = usageSnapshot.value
+  if (!snapshot || snapshot.configured !== true) return false
+  if ((snapshot.stats?.total_requests ?? 0) > 0) return true
+  if ((snapshot.stats?.total_tokens ?? 0) > 0) return true
+  if (snapshot.trend.some((point) => point.requests > 0 || point.total_tokens > 0)) return true
+  return snapshot.models.some((model) => model.requests > 0 || model.total_tokens > 0)
 })
-const hasRecentUsage = computed(() => !eventsLoadFailed.value && recentEvents.value.length > 0)
-const codeReportingActive = computed(() => (dashboard.value?.total_repos ?? 0) > 0 || (dashboard.value?.tracked_workflows ?? 0) > 0)
-const setupStatuses = computed(() => [
-  {
-    label: t('home.statusAccount'),
-    value: t('home.statusAccountReady'),
-    tone: 'ready',
-    action: '',
-    to: '',
-  },
-  {
-    label: t('home.statusAiAccess'),
-    value: providersLoadFailed.value
-      ? t('home.statusUnknown')
-      : connectedToolCount.value
-        ? t('home.statusAiAccessReady')
-        : t('home.statusAiAccessMissing'),
-    tone: providersLoadFailed.value ? 'warn' : connectedToolCount.value ? 'ready' : 'warn',
-    action: connectedToolCount.value ? '' : t('home.openSetup'),
-    to: '/user',
-  },
-  {
-    label: t('home.statusReporting'),
-    value: codeReportingActive.value ? t('home.statusReportingActive') : t('home.statusReportingWaiting'),
-    tone: codeReportingActive.value ? 'ready' : 'warn',
-    action: codeReportingActive.value ? '' : t('home.openSetup'),
-    to: '/user',
-  },
-  {
-    label: t('home.statusRecentUsage'),
-    value: eventsLoadFailed.value ? t('home.statusUnknown') : hasRecentUsage.value ? t('home.statusRecentUsageSeen') : t('home.statusRecentUsageMissing'),
-    tone: eventsLoadFailed.value || !hasRecentUsage.value ? 'warn' : 'ready',
-    action: hasRecentUsage.value ? t('home.viewRecords') : t('home.openSetup'),
-    to: hasRecentUsage.value ? '/events' : '/user',
-  },
-])
+const homeLifecycleState = computed<HomeLifecycleState>(() => {
+  if (providersLoadFailed.value || usageLoadFailed.value) return 'degraded_error'
+  if (!aiAccessReady.value) return 'needs_setup'
+  if (!usageDataReady.value) return 'setup_ready_waiting_for_first_usage'
+  return 'established_user'
+})
+const guideExpanded = ref(false)
+const defaultGuideExpanded = computed(() => homeLifecycleState.value !== 'established_user')
+const guideTitle = computed(() => {
+  if (homeLifecycleState.value === 'needs_setup') return t('home.guideNeedsSetupTitle')
+  if (homeLifecycleState.value === 'setup_ready_waiting_for_first_usage') return t('home.guideWaitingUsageTitle')
+  if (homeLifecycleState.value === 'degraded_error') return t('home.guideErrorTitle')
+  return t('home.guideReadyTitle')
+})
+const guideHelp = computed(() => {
+  if (homeLifecycleState.value === 'needs_setup') return t('home.guideNeedsSetupHelp')
+  if (homeLifecycleState.value === 'setup_ready_waiting_for_first_usage') return t('home.guideWaitingUsageHelp')
+  if (homeLifecycleState.value === 'degraded_error') return t('home.guideErrorHelp')
+  return t('home.guideReadyHelp')
+})
+const guidePrimaryAction = computed(() => {
+  if (homeLifecycleState.value === 'needs_setup') return t('home.goSetup')
+  if (homeLifecycleState.value === 'setup_ready_waiting_for_first_usage') return t('home.goSetup')
+  if (homeLifecycleState.value === 'degraded_error') return t('home.goSetup')
+  return t('home.viewSetupGuidance')
+})
+const shouldShowGuideSignals = computed(() => defaultGuideExpanded.value || guideExpanded.value)
 
-const metricCards = computed(() => [
-  {
-    label: t('home.metricRepos'),
-    value: dashboard.value?.total_repos,
-    helper: t('home.metricReposHelp'),
-  },
-  {
-    label: t('home.metricWorkflows'),
-    value: dashboard.value?.tracked_workflows,
-    helper: t('home.metricWorkflowsHelp'),
-  },
-  {
-    label: t('home.metricAiPrs'),
-    value: dashboard.value?.total_ai_prs,
-    helper: t('home.metricAiPrsHelp'),
-  },
-  {
-    label: t('home.metricTools'),
-    value: connectedToolCount.value,
-    helper: connectedToolHelp.value,
-  },
-])
-
-function formatMetric(value?: number | null) {
-  if (value == null || Number.isNaN(value)) return '—'
-  return value.toLocaleString()
+function toggleGuideExpanded() {
+  if (homeLifecycleState.value !== 'established_user') return
+  guideExpanded.value = !guideExpanded.value
 }
 
 </script>
@@ -139,93 +106,55 @@ function formatMetric(value?: number | null) {
 <template>
   <AppLayout>
     <div class="space-y-6">
-      <section class="rounded-lg border border-cyan-100 bg-white p-5 shadow-sm sm:p-6">
-        <div class="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <p class="text-sm font-semibold text-cyan-700">{{ t('home.personalStatus') }}</p>
-            <h1 class="mt-2 text-2xl font-bold tracking-normal text-slate-950 sm:text-3xl">{{ t('home.title') }}</h1>
-            <p class="mt-2 max-w-2xl text-sm text-slate-600">{{ t('home.subtitle') }}</p>
-          </div>
-          <div class="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-            <div class="text-xs font-medium uppercase tracking-wide text-slate-500">{{ t('home.statusAccount') }}</div>
-            <div class="mt-1 font-semibold text-slate-950">{{ displayName }}</div>
-            <div class="mt-1 text-xs text-slate-500">{{ auth.user?.role ?? 'user' }} · {{ auth.user?.auth_source ?? 'unknown' }}</div>
-          </div>
-        </div>
-      </section>
-
       <div v-if="loading" class="rounded-lg border border-slate-200 bg-white p-6 text-sm text-slate-500 shadow-sm">
         {{ t('home.loading') }}
       </div>
 
       <template v-else>
         <section class="space-y-4">
-          <div class="flex items-center justify-between">
-            <h2 class="text-base font-semibold text-slate-950">{{ t('home.thisWeek') }}</h2>
-            <span class="text-xs text-slate-500">{{ t('home.signalsScope') }}</span>
-          </div>
-          <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <div
-              v-for="card in metricCards"
-              :key="card.label"
-              class="rounded-lg border border-slate-200 bg-white p-5 shadow-sm"
-            >
-              <p class="text-sm font-medium text-slate-500">{{ card.label }}</p>
-              <p class="mt-3 text-3xl font-semibold text-slate-950">{{ formatMetric(card.value) }}</p>
-              <p class="mt-2 text-xs text-slate-500">{{ card.helper }}</p>
-            </div>
-          </div>
-        </section>
-
-        <section class="grid gap-4 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
-          <div class="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-            <h2 class="text-base font-semibold text-slate-950">{{ t('home.setupStatus') }}</h2>
-            <div class="mt-4 space-y-3 text-sm">
-              <div
-                v-for="item in setupStatuses"
-                :key="item.label"
-                class="flex flex-col gap-2 rounded-md bg-slate-50 px-3 py-3 sm:flex-row sm:items-center sm:justify-between"
+          <div
+            class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+            :data-testid="`home-guide-${homeLifecycleState}`"
+          >
+            <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <p class="text-sm font-semibold text-cyan-700">{{ t('home.title') }}</p>
+                <h1 class="mt-2 text-2xl font-semibold text-slate-950">{{ guideTitle }}</h1>
+                <p class="mt-2 max-w-3xl text-sm text-slate-600">{{ guideHelp }}</p>
+              </div>
+              <RouterLink
+                v-if="homeLifecycleState !== 'established_user'"
+                to="/user"
+                class="inline-flex rounded-md bg-cyan-700 px-4 py-2 text-sm font-medium text-white hover:bg-cyan-800"
               >
-                <span class="text-slate-600">{{ item.label }}</span>
-                <div class="flex items-center gap-3">
-                  <span class="font-medium" :class="item.tone === 'ready' ? 'text-emerald-700' : 'text-amber-700'">
-                    {{ item.value }}
-                  </span>
-                  <RouterLink v-if="item.action" :to="item.to" class="font-medium text-cyan-700 hover:text-cyan-900">
-                    {{ item.action }}
-                  </RouterLink>
+                {{ guidePrimaryAction }}
+              </RouterLink>
+              <button
+                v-else
+                type="button"
+                class="inline-flex rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                @click="toggleGuideExpanded"
+              >
+                {{ guidePrimaryAction }}
+              </button>
+            </div>
+
+            <div v-if="shouldShowGuideSignals" class="mt-4 grid gap-3 sm:grid-cols-2">
+              <div class="rounded-lg bg-slate-50 p-4 text-sm">
+                <div class="font-medium text-slate-950">{{ t('home.guideSignalAiAccess') }}</div>
+                <div class="mt-2 text-slate-600">{{ aiAccessReady ? t('home.guideDone') : t('home.guideTodo') }}</div>
+              </div>
+              <div class="rounded-lg bg-slate-50 p-4 text-sm">
+                <div class="font-medium text-slate-950">{{ t('home.guideSignalUsage') }}</div>
+                <div class="mt-2 text-slate-600">
+                  {{ usageLoadFailed ? t('home.statusUnknown') : usageDataReady ? t('home.guideDone') : t('home.guideWaiting') }}
                 </div>
               </div>
             </div>
           </div>
-
-          <div class="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-            <h2 class="text-base font-semibold text-slate-950">{{ t('home.nextSteps') }}</h2>
-            <div class="mt-4 grid gap-3 sm:grid-cols-3">
-              <RouterLink to="/user" class="rounded-lg border border-cyan-200 bg-cyan-50 p-4 text-sm hover:border-cyan-400">
-                <div class="font-semibold text-cyan-950">{{ t('home.nextSetupTitle') }}</div>
-                <p class="mt-2 text-xs text-cyan-800">{{ t('home.nextSetupText') }}</p>
-              </RouterLink>
-              <RouterLink to="/repos" class="rounded-lg border border-slate-200 p-4 text-sm hover:border-slate-400">
-                <div class="font-semibold text-slate-950">{{ t('home.nextRepoTitle') }}</div>
-                <p class="mt-2 text-xs text-slate-600">{{ t('home.nextRepoText') }}</p>
-              </RouterLink>
-              <RouterLink to="/events" class="rounded-lg border border-slate-200 p-4 text-sm hover:border-slate-400">
-                <div class="font-semibold text-slate-950">{{ t('home.nextRecordsTitle') }}</div>
-                <p class="mt-2 text-xs text-slate-600">{{ t('home.nextRecordsText') }}</p>
-              </RouterLink>
-            </div>
-            <div v-if="!hasDashboardData" class="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-              <div class="font-medium">{{ t('home.noData') }}</div>
-              <p class="mt-1 text-xs">{{ t('home.noDataHelp') }}</p>
-              <RouterLink to="/user" class="mt-3 inline-flex rounded-md bg-amber-900 px-3 py-2 text-xs font-medium text-white hover:bg-amber-950">
-                {{ t('home.openSetup') }}
-              </RouterLink>
-            </div>
-          </div>
         </section>
 
-        <UserUsageDashboard embedded />
+        <UserUsageDashboard embedded home-mode :initial-snapshot="usageSnapshot" />
       </template>
     </div>
   </AppLayout>
