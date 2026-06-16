@@ -16,7 +16,10 @@ import (
 	_ "github.com/lib/pq"
 )
 
-const defaultAdminDSN = "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable"
+var defaultAdminDSNs = []string{
+	"postgres://postgres:postgres@127.0.0.1:15432/postgres?sslmode=disable",
+	"postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable",
+}
 
 var schemaInitMu sync.Mutex
 
@@ -30,12 +33,8 @@ func OpenWithDSN(t *testing.T) (*ent.Client, string) {
 	t.Helper()
 
 	adminDSN := strings.TrimSpace(os.Getenv("AE_TEST_POSTGRES_DSN"))
-	if adminDSN == "" {
-		adminDSN = defaultAdminDSN
-	}
-
 	schemaName := "test_" + strings.ReplaceAll(uuid.NewString(), "-", "")
-	adminDB, err := sql.Open("postgres", adminDSN)
+	adminDB, adminDSN, err := openAdminDB(t, adminDSN)
 	if err != nil {
 		t.Fatalf("open postgres admin db: %v", err)
 	}
@@ -45,10 +44,6 @@ func OpenWithDSN(t *testing.T) (*ent.Client, string) {
 	})
 
 	ctx := context.Background()
-	if err := adminDB.PingContext(ctx); err != nil {
-		t.Fatalf("ping postgres admin db: %v", err)
-	}
-
 	if _, err := adminDB.ExecContext(ctx, fmt.Sprintf(`CREATE SCHEMA "%s"`, schemaName)); err != nil {
 		t.Fatalf("create schema %s: %v", schemaName, err)
 	}
@@ -75,6 +70,34 @@ func OpenWithDSN(t *testing.T) (*ent.Client, string) {
 	})
 
 	return client, dsn
+}
+
+func openAdminDB(t *testing.T, envDSN string) (*sql.DB, string, error) {
+	t.Helper()
+
+	candidates := defaultAdminDSNs
+	if envDSN != "" {
+		candidates = []string{envDSN}
+	}
+
+	var attempts []string
+	for _, dsn := range candidates {
+		adminDB, err := sql.Open("postgres", dsn)
+		if err != nil {
+			attempts = append(attempts, fmt.Sprintf("%s: open failed: %v", dsn, err))
+			continue
+		}
+
+		if err := adminDB.PingContext(context.Background()); err != nil {
+			adminDB.Close()
+			attempts = append(attempts, fmt.Sprintf("%s: ping failed: %v", dsn, err))
+			continue
+		}
+
+		return adminDB, dsn, nil
+	}
+
+	return nil, "", fmt.Errorf("all postgres admin DSN candidates failed (%s)", strings.Join(attempts, "; "))
 }
 
 func withSearchPath(t *testing.T, dsn, schema string) string {
