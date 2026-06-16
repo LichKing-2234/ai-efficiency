@@ -3,6 +3,10 @@
 **日期**: 2026-06-06
 **状态**: 已实现；2026-06-06 follow-up 决定前端不再暴露独立 `/user/usage` 页面，dashboard 嵌入首页“我的 AI 使用中心”
 
+## Follow-up
+
+首页 group-level quota 卡片已由 [2026-06-16-ai-usage-center-group-quota-design.md](./2026-06-16-ai-usage-center-group-quota-design.md) 定义。本文中“第一版不展示 platform quota”的非目标仍保留为当时的一版范围说明，不应被理解为禁止后续首页补充 group 级 quota 摘要。
+
 ## 背景
 
 用户需要在 ai-efficiency 平台查看自己的 AI 使用情况。当前分支已经尝试新增 `/user/usage` 页面，但实现偏向“单独的趋势页”：前端分别请求 stats、trend、models 三个接口，页面只展示统计卡、手写柱状趋势和模型列表。

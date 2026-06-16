@@ -15,7 +15,7 @@
 - 本文不回写该历史 spec 的正文结论，而是在其基础上新增一个 follow-up 合同：首页现在需要展示 **group 级** quota 摘要，用于回答“我在当前主 provider 下可用的各个 group 已使用多少、配额是多少、是否无限”。
 - 本文继承 [2026-06-15-ai-usage-center-lifecycle-home-design.md](./2026-06-15-ai-usage-center-lifecycle-home-design.md) 中“首页以 `UserUsageDashboard` 为老用户主区”的结论；group quota 区块插入该 dashboard 顶部，不改变生命周期分流规则。
 - 本文不改变 `/user` 页面现有的 provider/group/API key 自助配置合同。[2026-06-14-user-api-key-first-onboarding-design.md](./2026-06-14-user-api-key-first-onboarding-design.md) 仍然是 `/user` 的当前主设计。
-- 本文允许 AE 侧扩展 relay adapter 以读取上游 group quota 数据，但不引入 direct DB coupling，也不修改 `sub2api` 仓库源码。
+- 本文允许 AE 侧扩展首页组装逻辑以复用上游已有的 API key quota 与 group limit 数据，但不引入 direct DB coupling，也不修改 `sub2api` 仓库源码。
 
 ## Problem
 
@@ -35,7 +35,8 @@
 
 1. 现有 snapshot 只包含 `stats`、`trend`、`models`。
 2. `/user/providers` 只负责接入配置摘要，不适合承载实时 quota。
-3. 一旦未来 quota 数据源不可用，如果把它混入现有 usage snapshot 的 fail-fast 逻辑，会让首页整体降级过于激进。
+3. `sub2api` 当前用户端现成 quota 视图是 `platform` 维度，而不是 `group` 维度；如果首页直接把 platform usage 映射成 group usage，在同平台多 group 场景下会产生错误语义。
+4. 一旦未来 quota 数据源不可用，如果把它混入现有 usage snapshot 的 fail-fast 逻辑，会让首页整体降级过于激进。
 
 结果是：老用户首页虽然能看“总用量”，但看不到“我有哪些可用 group、每个 group 目前用了多少、是不是无限”，这个信息缺口正好落在首页最应该回答的工作流问题上。
 
@@ -62,7 +63,7 @@
 4. 不在本轮改变 `getUserProviders()` 的职责边界，不把实时 quota 塞回 provider/group 配置摘要接口。
 5. 不在首页新增“充值”“购买”“管理订阅”等 sub2api 资产操作入口。
 6. 不改变当前 usage dashboard 的 range 切换、趋势图和模型分布合同。
-7. 不修改 `sub2api` 仓库源码；若当前上游合同没有现成 group quota 字段，AE 只能通过 relay adapter 扩展已存在的上游能力或等待上游提供相应接口。
+7. 不修改 `sub2api` 仓库源码；AE 只能通过当前已存在的 API key 与 group 合同组装首页卡片。
 
 ## User Decisions Captured
 
@@ -81,10 +82,10 @@
 
 ## Reviewed Alternatives
 
-### Option A: 扩展现有 `/user/usage/dashboard` snapshot
+### Option A: 扩展现有 `/user/usage/dashboard` snapshot，并复用 API key quota
 
 - 在现有 snapshot 响应里新增 `group_quotas` section。
-- 首页继续一次请求拿齐 usage 和 quota 数据。
+- 首页继续一次请求拿齐 usage 数据，并在 AE 后端用当前用户可复用 API key 列表组装 group quota 卡片。
 
 优点：
 
@@ -124,7 +125,7 @@
 
 ### Decision
 
-采用 **Option A**：扩展现有 `/api/v1/user/usage/dashboard` snapshot，在其中新增 `group_quotas` section。
+采用 **Option A**：扩展现有 `/api/v1/user/usage/dashboard` snapshot，在其中新增 `group_quotas` section，并以 `ListUserAPIKeys` + 绑定 group 的 limit 作为首页卡片数据源。
 
 ## Architecture
 
@@ -141,19 +142,20 @@ AE user_usage handler
   - resolve primary relay provider
   - fetch usage snapshot via relay.Provider
   - fetch eligible groups from primary provider summary
-  - fetch quota snapshot via relay adapter extension
+  - fetch reusable API keys for the current user
+  - derive group quota cards from API key quota and bound group limits
   - merge into one homepage response
       |
       v
 relay adapter (sub2api)
   - user dashboard stats/trend/models
-  - optional group quota source for primary provider groups
+  - user API key list with bound group metadata and key quota usage
 ```
 
 关键边界：
 
 1. 首页 quota 仍然属于 AE 首页 snapshot 合同的一部分，不属于 `/user` 配置合同。
-2. `sub2api` 集成仍然只通过 `backend/internal/relay.Provider` 及其可选扩展接口完成。
+2. `sub2api` 集成仍然只通过 `backend/internal/relay.Provider` 已有能力完成；本轮不新增新的上游 group quota endpoint 假设。
 3. AE 不直接读取 relay 数据库，不把 quota 逻辑塞进 frontend 自己拼装。
 4. usage stats/trend/models 仍保持 2026-06-06 spec 的 fail-fast 逻辑；但 `group_quotas` section 允许独立降级。
 
@@ -264,51 +266,38 @@ GET /api/v1/user/usage/dashboard?start_date=...&end_date=...&granularity=...&tim
 
 ## Relay Adapter Design
 
-### Provider interface
+### Existing adapter inputs
 
-现有 `relay.Provider` 保持不变，以避免强迫所有 provider 同步实现 quota 能力。
+本轮不新增新的 relay provider 方法。首页 quota 卡片直接复用已存在的：
 
-新增一个可选扩展接口，例如：
-
-```go
-type UserGroupQuotaProvider interface {
-    GetUserGroupQuotas(ctx context.Context, login, password string, req UserGroupQuotaRequest) (*UserGroupQuotaResponse, error)
-}
-```
-
-说明：
-
-1. `user_usage.go` 先通过 `relay.Provider` 取 usage snapshot。
-2. 然后检查 provider 是否实现 `UserGroupQuotaProvider`。
-3. 未实现时，不报 handler 错，而是返回 `group_quotas.status = "unavailable"`。
-
-### Request shape
-
-`UserGroupQuotaRequest` 建议包含：
-
-- `GroupIDs []string`
-- `Timezone string`
+1. `ListUserAPIKeys(ctx, userID)`
+2. `ListAllowedGroupsForUser(ctx, userID)`，仅作为 `/user` 侧现有 group 过滤事实链的一部分
 
 原因：
 
-1. 首页只需要查询可展示 group，不需要 relay 返回用户全部 group。
-2. 通过 AE 侧先过滤出主 provider + existing key group，再把 group ids 传给 relay，避免上游多余开销。
+1. `sub2api` 当前用户端现成 quota 接口是 `/user/platform-quotas`，它是 `platform` 维度，不能安全映射到 `group`。
+2. `sub2api` 当前用户 API key DTO 已经同时暴露：
+   - key 级 `quota / quota_used`
+   - 绑定 group 的 `daily_limit_usd / weekly_limit_usd / monthly_limit_usd`
+3. AE 当前 `/user` 自助接入流程已经依赖 `ListUserAPIKeys`，因此可以在不新增上游 endpoint 的前提下构造首页卡片。
 
-### Response shape
+### Data precedence
 
-`UserGroupQuotaResponse` 建议包含：
+每张首页 group 卡片的数据优先级：
 
-- `UnitLabel string`
-- `Groups []UserGroupQuotaItem`
+1. `已使用`
+   - 优先取 API key 的 `quota_used`
+   - 若 API key 没有 quota usage，则显示 `--`
+2. `配额`
+   - 优先取 API key 的 `quota`
+   - 若 API key `quota <= 0` 或未设置，则回退到 group 的 limit
+   - group limit 多窗口并存时，首页先按 `monthly > weekly > daily` 选一个主显示额度
+3. `无限`
+   - 当 API key quota 不存在，且 group 的 `daily/weekly/monthly_limit_usd` 全为空时，视为无限
 
-其中 `UserGroupQuotaItem` 至少包含：
+### Intentional omission
 
-- `GroupID string`
-- `UsedAmount *float64`
-- `QuotaAmount *float64`
-- `IsUnlimited bool`
-
-若上游只能返回数值而不返回单位，则 adapter 让 `UnitLabel` 为空，由 handler 兜底写成 `USD`。
+本轮首页卡片不尝试展示 group 的三档窗口并列进度，也不把 platform usage 反向拆给多个 group。
 
 ## Handler Merge Rules
 
@@ -325,10 +314,10 @@ type UserGroupQuotaProvider interface {
 7. 调用当前 `/user` 侧 group 摘要逻辑或等价 service，找出：
    - `is_primary === true` 的 provider
    - 其中 `credential.state === existing_hidden` 的 group
-8. 若没有 eligible groups，返回 `group_quotas.status = "empty"`。
-9. 若 provider 未实现 quota 扩展接口，返回 `group_quotas.status = "unavailable"`。
-10. 若 quota 查询失败，记录 warning log，返回 `group_quotas.status = "unavailable"`。
-11. 若 quota 查询成功，按 group id merge 为首页展示结构。
+8. 通过同一个 primary relay provider 调用 `ListUserAPIKeys(...)`。
+9. 若没有 eligible groups，返回 `group_quotas.status = "empty"`。
+10. 若 `ListUserAPIKeys(...)` 失败，记录 warning log，返回 `group_quotas.status = "unavailable"`。
+11. 若 key 列表查询成功，按 group id merge 为首页展示结构。
 
 这个流程要求：
 
@@ -396,6 +385,7 @@ frontend/src/components/user/usage/UsageGroupQuotaSection.vue
 2. 默认美元显示：
    - 若 `unit_label == "USD"` 或为空，经后端兜底后前端显示为 `$`
 3. 当前设计不要求首页同时支持多种货币混排；若后续上游允许不同 group 返回不同单位，应另起 spec 处理。
+4. 当 group limit 同时存在日/周/月多档时，首页本轮只显示一个主额度；若后续需要多窗口视图，应另起 spec。
 
 ## Cleanup Scope
 
@@ -445,10 +435,10 @@ frontend/src/components/user/usage/UsageGroupQuotaSection.vue
 
 在 `backend/internal/relay/sub2api_test.go` 增加：
 
-1. 有限 quota 解析测试
-2. 无限 quota 解析测试
-3. 上游缺失单位时 handler/adapter 默认 `USD` 的测试
-4. quota 上游失败时返回可降级结果而不是污染 usage snapshot 主错误流
+1. API key quota + bound group limit 解析测试
+2. 无限 quota 判定测试
+3. API key 无 quota、仅 group limit 时的回退测试
+4. key 列表失败时返回可降级结果而不是污染 usage snapshot 主错误流
 
 ### Backend handler tests
 
@@ -497,6 +487,6 @@ frontend/src/components/user/usage/UsageGroupQuotaSection.vue
 
 ## Implementation Notes
 
-1. 若当前 sub2api 只有 `by_platform`，没有现成 group 级 quota 数据源，则本设计只定义 AE 侧合同与降级行为；具体上游能力接入方式在实现 plan 中细化。
-2. 若上游 quota 能力需要额外登录、额外用户 token 或不同 endpoint，仍应封装在 relay adapter 内，不得泄漏到 handler 或 frontend。
+1. `sub2api` 当前用户端 `platform quota` 不用于首页 group 卡片的 `已使用`，因为它不能安全映射到多 group 场景。
+2. 若未来上游提供真实 group usage endpoint，可在新 spec 中把首页数据源从 API key quota 升级为 group usage。
 3. 任何“货币换算”“多币种混排”“手动切换单位”都不在本轮范围内。

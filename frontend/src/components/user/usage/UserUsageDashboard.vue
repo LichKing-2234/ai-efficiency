@@ -52,6 +52,7 @@
     </div>
 
     <div v-else class="space-y-6">
+      <UsageGroupQuotaSection :quotas="currentSnapshot?.group_quotas ?? null" />
       <UsageStatsCards
         :stats="currentSnapshot?.stats ?? null"
         :trend="currentSnapshot?.trend ?? []"
@@ -74,6 +75,7 @@ import type { UserUsageDashboardParams, UserUsageDashboardSnapshot } from '@/typ
 import UsageStatsCards from '@/components/user/usage/UsageStatsCards.vue'
 import UsageTrendChart from '@/components/user/usage/UsageTrendChart.vue'
 import UsageModelChart from '@/components/user/usage/UsageModelChart.vue'
+import UsageGroupQuotaSection from '@/components/user/usage/UsageGroupQuotaSection.vue'
 
 type RangeOption = 'today' | '7d' | '30d'
 

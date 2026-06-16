@@ -27,6 +27,8 @@ type userUsageRelayStub struct {
 	gotLogin    string
 	gotPassword string
 	gotParams   relay.UserUsageDashboardParams
+	apiKeys     []relay.APIKey
+	apiKeysErr  error
 	response    *relay.UserUsageDashboardResponse
 	err         error
 }
@@ -39,6 +41,13 @@ func (s *userUsageRelayStub) GetUserUsageDashboard(ctx context.Context, login, p
 		return nil, s.err
 	}
 	return s.response, nil
+}
+
+func (s *userUsageRelayStub) ListUserAPIKeys(ctx context.Context, userID int64) ([]relay.APIKey, error) {
+	if s.apiKeysErr != nil {
+		return nil, s.apiKeysErr
+	}
+	return s.apiKeys, nil
 }
 
 func newUserUsageTestRouter(t *testing.T, env *testEnv, handler *UserUsageHandler) *gin.Engine {
@@ -97,6 +106,9 @@ func TestUserUsageDashboardReturnsSnapshot(t *testing.T) {
 	if err := env.client.User.UpdateOneID(env.userID).SetRelayAuthPassword(ciphertext).Exec(context.Background()); err != nil {
 		t.Fatalf("update user password: %v", err)
 	}
+	if err := env.client.User.UpdateOneID(env.userID).SetRelayUserID(7).Exec(context.Background()); err != nil {
+		t.Fatalf("set relay user id: %v", err)
+	}
 	provider, err := env.client.RelayProvider.Create().
 		SetName("primary").
 		SetDisplayName("Primary").
@@ -133,6 +145,10 @@ func TestUserUsageDashboardReturnsSnapshot(t *testing.T) {
 				TotalTokens: 3456,
 				ActualCost:  1.25,
 			}},
+			GroupQuotas: relay.UserUsageGroupQuotaState{
+				Status: "empty",
+				Groups: []relay.UserUsageGroupQuotaGroupItem{},
+			},
 		},
 	}
 	h := NewUserUsageHandler(env.client, userUsageResolverFunc(func(_ context.Context, providerID int) (relay.Provider, error) {
@@ -155,6 +171,196 @@ func TestUserUsageDashboardReturnsSnapshot(t *testing.T) {
 	}
 	if !strings.Contains(w.Body.String(), `"today_requests":12`) || strings.Contains(w.Body.String(), "total_api_keys") {
 		t.Fatalf("unexpected response body: %s", w.Body.String())
+	}
+}
+
+func TestUserUsageDashboardIncludesEligibleGroupQuotasFromReusableKeys(t *testing.T) {
+	env := setupTestEnv(t)
+	ciphertext, err := pkg.Encrypt("test-password", userUsageTestEncryptionKey)
+	if err != nil {
+		t.Fatalf("encrypt password: %v", err)
+	}
+	if err := env.client.User.UpdateOneID(env.userID).SetRelayAuthPassword(ciphertext).Exec(context.Background()); err != nil {
+		t.Fatalf("update user password: %v", err)
+	}
+	if err := env.client.User.UpdateOneID(env.userID).SetRelayUserID(7).Exec(context.Background()); err != nil {
+		t.Fatalf("set relay user id: %v", err)
+	}
+	provider, err := env.client.RelayProvider.Create().
+		SetName("primary").
+		SetDisplayName("Primary").
+		SetBaseURL("https://relay.example.com").
+		SetAdminAPIKey("unused").
+		SetDefaultModel("example-model").
+		SetIsPrimary(true).
+		Save(context.Background())
+	if err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+
+	monthlyLimit := 100.0
+	dailyLimit := 10.0
+	stub := &userUsageRelayStub{
+		response: &relay.UserUsageDashboardResponse{
+			Configured: true,
+			Range: relay.UserUsageDashboardRange{
+				StartDate:   "2026-06-01",
+				EndDate:     "2026-06-06",
+				Granularity: "day",
+				Timezone:    "Asia/Shanghai",
+			},
+			Trend:       []relay.UserUsageTrendPoint{},
+			Models:      []relay.UserUsageModelStat{},
+			GroupQuotas: relay.UserUsageGroupQuotaState{Status: "empty", Groups: []relay.UserUsageGroupQuotaGroupItem{}},
+		},
+		apiKeys: []relay.APIKey{
+			{
+				ID:        44,
+				UserID:    7,
+				Key:       "sk-existing-openai",
+				Name:      "admin",
+				Status:    "active",
+				Quota:     100,
+				QuotaUsed: 32.4,
+				Group: &relay.Group{
+					ID:              42,
+					Name:            "Group Alpha",
+					Platform:        "openai",
+					DailyLimitUSD:   &dailyLimit,
+					MonthlyLimitUSD: &monthlyLimit,
+				},
+			},
+			{
+				ID:        45,
+				UserID:    7,
+				Key:       "sk-existing-unlimited",
+				Name:      "admin",
+				Status:    "active",
+				Quota:     0,
+				QuotaUsed: 18.2,
+				Group: &relay.Group{
+					ID:       43,
+					Name:     "Group Beta",
+					Platform: "anthropic",
+				},
+			},
+		},
+	}
+	h := NewUserUsageHandler(env.client, userUsageResolverFunc(func(_ context.Context, providerID int) (relay.Provider, error) {
+		if providerID != provider.ID {
+			t.Fatalf("providerID = %d, want %d", providerID, provider.ID)
+		}
+		return stub, nil
+	}), userUsageTestEncryptionKey)
+	router := newUserUsageTestRouter(t, env, h)
+
+	w := performUserUsageRequest(router, env.token, "/api/v1/user/usage/dashboard?start_date=2026-06-01&end_date=2026-06-06&granularity=day&timezone=Asia%2FShanghai")
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body=%s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), `"group_quotas":{"status":"ok"`) {
+		t.Fatalf("missing ok group quotas: %s", w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), `"group_name":"Group Alpha"`) || !strings.Contains(w.Body.String(), `"group_name":"Group Beta"`) {
+		t.Fatalf("missing expected group names: %s", w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), `"quota_amount":100`) {
+		t.Fatalf("missing finite quota amount: %s", w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), `"is_unlimited":true`) {
+		t.Fatalf("missing unlimited group marker: %s", w.Body.String())
+	}
+}
+
+func TestUserUsageDashboardReturnsEmptyGroupQuotasWhenNoReusableKeysExist(t *testing.T) {
+	env := setupTestEnv(t)
+	ciphertext, err := pkg.Encrypt("test-password", userUsageTestEncryptionKey)
+	if err != nil {
+		t.Fatalf("encrypt password: %v", err)
+	}
+	if err := env.client.User.UpdateOneID(env.userID).SetRelayAuthPassword(ciphertext).Exec(context.Background()); err != nil {
+		t.Fatalf("update user password: %v", err)
+	}
+	if err := env.client.User.UpdateOneID(env.userID).SetRelayUserID(7).Exec(context.Background()); err != nil {
+		t.Fatalf("set relay user id: %v", err)
+	}
+	if _, err := env.client.RelayProvider.Create().
+		SetName("primary").
+		SetDisplayName("Primary").
+		SetBaseURL("https://relay.example.com").
+		SetAdminAPIKey("unused").
+		SetDefaultModel("example-model").
+		SetIsPrimary(true).
+		Save(context.Background()); err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+
+	stub := &userUsageRelayStub{
+		response: &relay.UserUsageDashboardResponse{
+			Configured: true,
+			Range: relay.UserUsageDashboardRange{StartDate: "2026-06-01", EndDate: "2026-06-06", Granularity: "day", Timezone: "Asia/Shanghai"},
+			Trend:  []relay.UserUsageTrendPoint{},
+			Models: []relay.UserUsageModelStat{},
+		},
+		apiKeys: []relay.APIKey{},
+	}
+	h := NewUserUsageHandler(env.client, userUsageResolverFunc(func(context.Context, int) (relay.Provider, error) {
+		return stub, nil
+	}), userUsageTestEncryptionKey)
+	router := newUserUsageTestRouter(t, env, h)
+
+	w := performUserUsageRequest(router, env.token, "/api/v1/user/usage/dashboard")
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body=%s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), `"group_quotas":{"status":"empty"`) {
+		t.Fatalf("expected empty group quotas: %s", w.Body.String())
+	}
+}
+
+func TestUserUsageDashboardReturnsUnavailableGroupQuotasWhenAPIKeyListFails(t *testing.T) {
+	env := setupTestEnv(t)
+	ciphertext, err := pkg.Encrypt("test-password", userUsageTestEncryptionKey)
+	if err != nil {
+		t.Fatalf("encrypt password: %v", err)
+	}
+	if err := env.client.User.UpdateOneID(env.userID).SetRelayAuthPassword(ciphertext).Exec(context.Background()); err != nil {
+		t.Fatalf("update user password: %v", err)
+	}
+	if err := env.client.User.UpdateOneID(env.userID).SetRelayUserID(7).Exec(context.Background()); err != nil {
+		t.Fatalf("set relay user id: %v", err)
+	}
+	if _, err := env.client.RelayProvider.Create().
+		SetName("primary").
+		SetDisplayName("Primary").
+		SetBaseURL("https://relay.example.com").
+		SetAdminAPIKey("unused").
+		SetDefaultModel("example-model").
+		SetIsPrimary(true).
+		Save(context.Background()); err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+
+	stub := &userUsageRelayStub{
+		response: &relay.UserUsageDashboardResponse{
+			Configured: true,
+			Range: relay.UserUsageDashboardRange{StartDate: "2026-06-01", EndDate: "2026-06-06", Granularity: "day", Timezone: "Asia/Shanghai"},
+			Trend:  []relay.UserUsageTrendPoint{},
+			Models: []relay.UserUsageModelStat{},
+		},
+		apiKeysErr: errors.New("list api keys failed"),
+	}
+	h := NewUserUsageHandler(env.client, userUsageResolverFunc(func(context.Context, int) (relay.Provider, error) {
+		return stub, nil
+	}), userUsageTestEncryptionKey)
+	router := newUserUsageTestRouter(t, env, h)
+
+	w := performUserUsageRequest(router, env.token, "/api/v1/user/usage/dashboard")
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body=%s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), `"group_quotas":{"status":"unavailable"`) {
+		t.Fatalf("expected unavailable group quotas: %s", w.Body.String())
 	}
 }
 

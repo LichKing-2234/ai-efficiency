@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -73,8 +75,12 @@ func (h *UserUsageHandler) Dashboard(c *gin.Context) {
 				Granularity: params.Granularity,
 				Timezone:    params.Timezone,
 			},
-			Trend:  []relay.UserUsageTrendPoint{},
+			Trend: []relay.UserUsageTrendPoint{},
 			Models: []relay.UserUsageModelStat{},
+			GroupQuotas: relay.UserUsageGroupQuotaState{
+				Status: "empty",
+				Groups: []relay.UserUsageGroupQuotaGroupItem{},
+			},
 		})
 		return
 	}
@@ -111,7 +117,134 @@ func (h *UserUsageHandler) Dashboard(c *gin.Context) {
 		pkg.Error(c, http.StatusBadGateway, "get usage dashboard: empty response")
 		return
 	}
+	var relayUserID int64
+	if u.RelayUserID != nil {
+		relayUserID = int64(*u.RelayUserID)
+	}
+	snapshot.GroupQuotas = h.buildHomepageGroupQuotas(c.Request.Context(), relayProvider, relayUserID)
 	pkg.Success(c, snapshot)
+}
+
+func (h *UserUsageHandler) buildHomepageGroupQuotas(ctx context.Context, relayProvider relay.Provider, relayUserID int64) relay.UserUsageGroupQuotaState {
+	if relayProvider == nil {
+		return defaultUnavailableGroupQuotaState("Group quotas are temporarily unavailable.")
+	}
+	if relayUserID <= 0 {
+		return defaultEmptyGroupQuotaState()
+	}
+	keys, err := relayProvider.ListUserAPIKeys(ctx, relayUserID)
+	if err != nil {
+		return defaultUnavailableGroupQuotaState("Group quotas are temporarily unavailable.")
+	}
+	return mergeHomepageGroupQuotas(keys)
+}
+
+func defaultUnavailableGroupQuotaState(message string) relay.UserUsageGroupQuotaState {
+	return relay.UserUsageGroupQuotaState{
+		Status:  "unavailable",
+		Message: strings.TrimSpace(message),
+		Groups:  []relay.UserUsageGroupQuotaGroupItem{},
+	}
+}
+
+func defaultEmptyGroupQuotaState() relay.UserUsageGroupQuotaState {
+	return relay.UserUsageGroupQuotaState{
+		Status: "empty",
+		Groups: []relay.UserUsageGroupQuotaGroupItem{},
+	}
+}
+
+func mergeHomepageGroupQuotas(keys []relay.APIKey) relay.UserUsageGroupQuotaState {
+	if len(keys) == 0 {
+		return defaultEmptyGroupQuotaState()
+	}
+
+	type card struct {
+		groupID   string
+		groupName string
+		platform  string
+		used      *float64
+		quota     *float64
+		unlimited bool
+		source    string
+	}
+
+	byGroup := map[string]card{}
+	for _, key := range keys {
+		if !strings.EqualFold(strings.TrimSpace(key.Status), "active") {
+			continue
+		}
+		if key.Group == nil || key.Group.ID <= 0 {
+			continue
+		}
+		groupID := strconv.FormatInt(key.Group.ID, 10)
+		used := float64Ptr(key.QuotaUsed)
+		quota, source, unlimited := selectQuotaAmount(&key)
+		byGroup[groupID] = card{
+			groupID:   groupID,
+			groupName: firstNonEmptyString(strings.TrimSpace(key.Group.Name), groupID),
+			platform:  strings.TrimSpace(key.Group.Platform),
+			used:      used,
+			quota:     quota,
+			unlimited: unlimited,
+			source:    source,
+		}
+	}
+
+	if len(byGroup) == 0 {
+		return defaultEmptyGroupQuotaState()
+	}
+
+	groupIDs := make([]string, 0, len(byGroup))
+	for groupID := range byGroup {
+		groupIDs = append(groupIDs, groupID)
+	}
+	sort.Strings(groupIDs)
+
+	out := relay.UserUsageGroupQuotaState{
+		Status:    "ok",
+		UnitLabel: "USD",
+		Groups:    make([]relay.UserUsageGroupQuotaGroupItem, 0, len(groupIDs)),
+	}
+	for _, groupID := range groupIDs {
+		item := byGroup[groupID]
+		out.Groups = append(out.Groups, relay.UserUsageGroupQuotaGroupItem{
+			GroupID:     item.groupID,
+			GroupName:   item.groupName,
+			Platform:    item.platform,
+			UsedAmount:  item.used,
+			QuotaAmount: item.quota,
+			IsUnlimited: item.unlimited,
+			QuotaSource: item.source,
+		})
+	}
+	return out
+}
+
+func selectQuotaAmount(key *relay.APIKey) (*float64, string, bool) {
+	if key == nil {
+		return nil, "", true
+	}
+	if key.Quota > 0 {
+		return float64Ptr(key.Quota), "api_key", false
+	}
+	if key.Group == nil {
+		return nil, "", true
+	}
+	if key.Group.MonthlyLimitUSD != nil {
+		return key.Group.MonthlyLimitUSD, "group_monthly", false
+	}
+	if key.Group.WeeklyLimitUSD != nil {
+		return key.Group.WeeklyLimitUSD, "group_weekly", false
+	}
+	if key.Group.DailyLimitUSD != nil {
+		return key.Group.DailyLimitUSD, "group_daily", false
+	}
+	return nil, "", true
+}
+
+func float64Ptr(v float64) *float64 {
+	return &v
 }
 
 func parseUserUsageDashboardParams(c *gin.Context) (relay.UserUsageDashboardParams, bool) {
