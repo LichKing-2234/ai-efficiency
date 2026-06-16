@@ -29,6 +29,7 @@ type userUsageRelayStub struct {
 	gotParams   relay.UserUsageDashboardParams
 	apiKeys     []relay.APIKey
 	apiKeysErr  error
+	subscriptions []relay.UserSubscription
 	response    *relay.UserUsageDashboardResponse
 	err         error
 }
@@ -48,6 +49,10 @@ func (s *userUsageRelayStub) ListUserAPIKeys(ctx context.Context, userID int64) 
 		return nil, s.apiKeysErr
 	}
 	return s.apiKeys, nil
+}
+
+func (s *userUsageRelayStub) ListUserSubscriptions(ctx context.Context, userID int64) ([]relay.UserSubscription, error) {
+	return s.subscriptions, nil
 }
 
 func newUserUsageTestRouter(t *testing.T, env *testEnv, handler *UserUsageHandler) *gin.Engine {
@@ -269,6 +274,407 @@ func TestUserUsageDashboardIncludesEligibleGroupQuotasFromReusableKeys(t *testin
 	}
 	if !strings.Contains(w.Body.String(), `"is_unlimited":true`) {
 		t.Fatalf("missing unlimited group marker: %s", w.Body.String())
+	}
+}
+
+func TestUserUsageDashboardUsesSubscriptionUsageForSubscriptionGroupsWithoutKeyQuota(t *testing.T) {
+	env := setupTestEnv(t)
+	ciphertext, err := pkg.Encrypt("test-password", userUsageTestEncryptionKey)
+	if err != nil {
+		t.Fatalf("encrypt password: %v", err)
+	}
+	if err := env.client.User.UpdateOneID(env.userID).SetRelayAuthPassword(ciphertext).SetRelayUserID(7).Exec(context.Background()); err != nil {
+		t.Fatalf("update user auth/relay id: %v", err)
+	}
+	if _, err := env.client.RelayProvider.Create().
+		SetName("primary").
+		SetDisplayName("Primary").
+		SetBaseURL("https://relay.example.com").
+		SetAdminAPIKey("unused").
+		SetDefaultModel("example-model").
+		SetIsPrimary(true).
+		Save(context.Background()); err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+
+	monthlyLimit := 200.0
+	stub := &userUsageRelayStub{
+		response: &relay.UserUsageDashboardResponse{
+			Configured: true,
+			Range: relay.UserUsageDashboardRange{StartDate: "2026-06-01", EndDate: "2026-06-06", Granularity: "day", Timezone: "Asia/Shanghai"},
+			Trend:  []relay.UserUsageTrendPoint{},
+			Models: []relay.UserUsageModelStat{},
+		},
+		apiKeys: []relay.APIKey{
+			{
+				ID:        46,
+				UserID:    7,
+				Key:       "sk-subscription",
+				Name:      "admin",
+				Status:    "active",
+				Quota:     0,
+				QuotaUsed: 0,
+				Group: &relay.Group{
+					ID:               99,
+					Name:             "Anthropic-RD",
+					Platform:         "anthropic",
+					SubscriptionType: "subscription",
+					MonthlyLimitUSD:  &monthlyLimit,
+				},
+			},
+		},
+		subscriptions: []relay.UserSubscription{
+			{
+				ID:              901,
+				UserID:          7,
+				GroupID:         99,
+				Status:          "active",
+				MonthlyUsageUSD: 123.45,
+			},
+		},
+	}
+	h := NewUserUsageHandler(env.client, userUsageResolverFunc(func(context.Context, int) (relay.Provider, error) {
+		return stub, nil
+	}), userUsageTestEncryptionKey)
+	router := newUserUsageTestRouter(t, env, h)
+
+	w := performUserUsageRequest(router, env.token, "/api/v1/user/usage/dashboard?start_date=2026-05-18&end_date=2026-06-16&granularity=day")
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body=%s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), `"used_amount":123.45`) {
+		t.Fatalf("expected subscription monthly usage to be used: %s", w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), `"quota_amount":200`) {
+		t.Fatalf("expected subscription monthly limit to be used: %s", w.Body.String())
+	}
+}
+
+func TestUserUsageDashboardUsesSubscriptionUsageForUnlimitedSubscriptionGroups(t *testing.T) {
+	env := setupTestEnv(t)
+	ciphertext, err := pkg.Encrypt("test-password", userUsageTestEncryptionKey)
+	if err != nil {
+		t.Fatalf("encrypt password: %v", err)
+	}
+	if err := env.client.User.UpdateOneID(env.userID).SetRelayAuthPassword(ciphertext).SetRelayUserID(7).Exec(context.Background()); err != nil {
+		t.Fatalf("update user auth/relay id: %v", err)
+	}
+	if _, err := env.client.RelayProvider.Create().
+		SetName("primary").
+		SetDisplayName("Primary").
+		SetBaseURL("https://relay.example.com").
+		SetAdminAPIKey("unused").
+		SetDefaultModel("example-model").
+		SetIsPrimary(true).
+		Save(context.Background()); err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+
+	stub := &userUsageRelayStub{
+		response: &relay.UserUsageDashboardResponse{
+			Configured: true,
+			Range: relay.UserUsageDashboardRange{StartDate: "2026-06-01", EndDate: "2026-06-06", Granularity: "day", Timezone: "Asia/Shanghai"},
+			Trend:  []relay.UserUsageTrendPoint{},
+			Models: []relay.UserUsageModelStat{},
+		},
+		apiKeys: []relay.APIKey{
+			{
+				ID:        47,
+				UserID:    7,
+				Key:       "sk-subscription-unlimited",
+				Name:      "admin",
+				Status:    "active",
+				Quota:     0,
+				QuotaUsed: 0,
+				Group: &relay.Group{
+					ID:               100,
+					Name:             "OpenAI-RD",
+					Platform:         "openai",
+					SubscriptionType: "subscription",
+				},
+			},
+		},
+		subscriptions: []relay.UserSubscription{
+			{
+				ID:              902,
+				UserID:          7,
+				GroupID:         100,
+				Status:          "active",
+				MonthlyUsageUSD: 88.88,
+			},
+		},
+	}
+	h := NewUserUsageHandler(env.client, userUsageResolverFunc(func(context.Context, int) (relay.Provider, error) {
+		return stub, nil
+	}), userUsageTestEncryptionKey)
+	router := newUserUsageTestRouter(t, env, h)
+
+	w := performUserUsageRequest(router, env.token, "/api/v1/user/usage/dashboard?start_date=2026-05-18&end_date=2026-06-16&granularity=day")
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body=%s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), `"used_amount":88.88`) {
+		t.Fatalf("expected unlimited subscription usage to be surfaced: %s", w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), `"is_unlimited":true`) {
+		t.Fatalf("expected unlimited flag: %s", w.Body.String())
+	}
+	if strings.Contains(w.Body.String(), `"quota_amount":0`) {
+		t.Fatalf("unexpected zero quota amount for unlimited subscription: %s", w.Body.String())
+	}
+}
+
+func TestUserUsageDashboardUsesDailySubscriptionWindowForTodayRange(t *testing.T) {
+	env := setupTestEnv(t)
+	ciphertext, err := pkg.Encrypt("test-password", userUsageTestEncryptionKey)
+	if err != nil {
+		t.Fatalf("encrypt password: %v", err)
+	}
+	if err := env.client.User.UpdateOneID(env.userID).SetRelayAuthPassword(ciphertext).SetRelayUserID(7).Exec(context.Background()); err != nil {
+		t.Fatalf("update user auth/relay id: %v", err)
+	}
+	if _, err := env.client.RelayProvider.Create().
+		SetName("primary").
+		SetDisplayName("Primary").
+		SetBaseURL("https://relay.example.com").
+		SetAdminAPIKey("unused").
+		SetDefaultModel("example-model").
+		SetIsPrimary(true).
+		Save(context.Background()); err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+
+	dailyLimit := 10.0
+	stub := &userUsageRelayStub{
+		response: &relay.UserUsageDashboardResponse{
+			Configured: true,
+			Range: relay.UserUsageDashboardRange{StartDate: "2026-06-16", EndDate: "2026-06-16", Granularity: "hour", Timezone: "Asia/Shanghai"},
+			Trend:  []relay.UserUsageTrendPoint{},
+			Models: []relay.UserUsageModelStat{},
+		},
+		apiKeys: []relay.APIKey{
+			{
+				ID:        48,
+				UserID:    7,
+				Key:       "sk-daily",
+				Name:      "admin",
+				Status:    "active",
+				Group: &relay.Group{
+					ID:               101,
+					Name:             "Gemini-RD",
+					Platform:         "gemini",
+					SubscriptionType: "subscription",
+					DailyLimitUSD:    &dailyLimit,
+				},
+			},
+		},
+		subscriptions: []relay.UserSubscription{
+			{ID: 903, UserID: 7, GroupID: 101, Status: "active", DailyUsageUSD: 6.66, WeeklyUsageUSD: 33.33, MonthlyUsageUSD: 88.88},
+		},
+	}
+	h := NewUserUsageHandler(env.client, userUsageResolverFunc(func(context.Context, int) (relay.Provider, error) {
+		return stub, nil
+	}), userUsageTestEncryptionKey)
+	router := newUserUsageTestRouter(t, env, h)
+
+	w := performUserUsageRequest(router, env.token, "/api/v1/user/usage/dashboard?start_date=2026-06-16&end_date=2026-06-16&granularity=hour")
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body=%s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), `"used_amount":6.66`) || !strings.Contains(w.Body.String(), `"quota_amount":10`) {
+		t.Fatalf("expected daily window usage/limit: %s", w.Body.String())
+	}
+}
+
+func TestUserUsageDashboardUsesWeeklySubscriptionWindowFor7DayRange(t *testing.T) {
+	env := setupTestEnv(t)
+	ciphertext, err := pkg.Encrypt("test-password", userUsageTestEncryptionKey)
+	if err != nil {
+		t.Fatalf("encrypt password: %v", err)
+	}
+	if err := env.client.User.UpdateOneID(env.userID).SetRelayAuthPassword(ciphertext).SetRelayUserID(7).Exec(context.Background()); err != nil {
+		t.Fatalf("update user auth/relay id: %v", err)
+	}
+	if _, err := env.client.RelayProvider.Create().
+		SetName("primary").
+		SetDisplayName("Primary").
+		SetBaseURL("https://relay.example.com").
+		SetAdminAPIKey("unused").
+		SetDefaultModel("example-model").
+		SetIsPrimary(true).
+		Save(context.Background()); err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+
+	weeklyLimit := 70.0
+	stub := &userUsageRelayStub{
+		response: &relay.UserUsageDashboardResponse{
+			Configured: true,
+			Range: relay.UserUsageDashboardRange{StartDate: "2026-06-10", EndDate: "2026-06-16", Granularity: "day", Timezone: "Asia/Shanghai"},
+			Trend:  []relay.UserUsageTrendPoint{},
+			Models: []relay.UserUsageModelStat{},
+		},
+		apiKeys: []relay.APIKey{
+			{
+				ID:        49,
+				UserID:    7,
+				Key:       "sk-weekly",
+				Name:      "admin",
+				Status:    "active",
+				Group: &relay.Group{
+					ID:               102,
+					Name:             "OpenAI-RD",
+					Platform:         "openai",
+					SubscriptionType: "subscription",
+					WeeklyLimitUSD:   &weeklyLimit,
+				},
+			},
+		},
+		subscriptions: []relay.UserSubscription{
+			{ID: 904, UserID: 7, GroupID: 102, Status: "active", DailyUsageUSD: 6.66, WeeklyUsageUSD: 44.44, MonthlyUsageUSD: 99.99},
+		},
+	}
+	h := NewUserUsageHandler(env.client, userUsageResolverFunc(func(context.Context, int) (relay.Provider, error) {
+		return stub, nil
+	}), userUsageTestEncryptionKey)
+	router := newUserUsageTestRouter(t, env, h)
+
+	w := performUserUsageRequest(router, env.token, "/api/v1/user/usage/dashboard?start_date=2026-06-10&end_date=2026-06-16&granularity=day")
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body=%s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), `"used_amount":44.44`) || !strings.Contains(w.Body.String(), `"quota_amount":70`) {
+		t.Fatalf("expected weekly window usage/limit: %s", w.Body.String())
+	}
+}
+
+func TestUserUsageDashboardUsesDashWhenCurrentWindowHasNoQuotaButOtherWindowDoes(t *testing.T) {
+	env := setupTestEnv(t)
+	ciphertext, err := pkg.Encrypt("test-password", userUsageTestEncryptionKey)
+	if err != nil {
+		t.Fatalf("encrypt password: %v", err)
+	}
+	if err := env.client.User.UpdateOneID(env.userID).SetRelayAuthPassword(ciphertext).SetRelayUserID(7).Exec(context.Background()); err != nil {
+		t.Fatalf("update user auth/relay id: %v", err)
+	}
+	if _, err := env.client.RelayProvider.Create().
+		SetName("primary").
+		SetDisplayName("Primary").
+		SetBaseURL("https://relay.example.com").
+		SetAdminAPIKey("unused").
+		SetDefaultModel("example-model").
+		SetIsPrimary(true).
+		Save(context.Background()); err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+
+	monthlyLimit := 1000.0
+	stub := &userUsageRelayStub{
+		response: &relay.UserUsageDashboardResponse{
+			Configured: true,
+			Range: relay.UserUsageDashboardRange{StartDate: "2026-06-10", EndDate: "2026-06-16", Granularity: "day", Timezone: "Asia/Shanghai"},
+			Trend:  []relay.UserUsageTrendPoint{},
+			Models: []relay.UserUsageModelStat{},
+		},
+		apiKeys: []relay.APIKey{
+			{
+				ID:        51,
+				UserID:    7,
+				Key:       "sk-anthropic-rd",
+				Name:      "admin",
+				Status:    "active",
+				Group: &relay.Group{
+					ID:               5,
+					Name:             "Anthropic-RD",
+					Platform:         "anthropic",
+					SubscriptionType: "subscription",
+					MonthlyLimitUSD:  &monthlyLimit,
+				},
+			},
+		},
+		subscriptions: []relay.UserSubscription{
+			{ID: 906, UserID: 7, GroupID: 5, Status: "active", DailyUsageUSD: 12.34, WeeklyUsageUSD: 56.78, MonthlyUsageUSD: 123.45},
+		},
+	}
+	h := NewUserUsageHandler(env.client, userUsageResolverFunc(func(context.Context, int) (relay.Provider, error) {
+		return stub, nil
+	}), userUsageTestEncryptionKey)
+	router := newUserUsageTestRouter(t, env, h)
+
+	w := performUserUsageRequest(router, env.token, "/api/v1/user/usage/dashboard?start_date=2026-06-10&end_date=2026-06-16&granularity=day")
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body=%s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), `"used_amount":56.78`) {
+		t.Fatalf("expected weekly usage to be surfaced: %s", w.Body.String())
+	}
+	if strings.Contains(w.Body.String(), `"quota_amount":1000`) {
+		t.Fatalf("expected current-window-unconfigured card to omit monthly quota amount in weekly view: %s", w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), `"is_unlimited":false`) {
+		t.Fatalf("expected non-unlimited state when another window has a quota: %s", w.Body.String())
+	}
+}
+
+func TestUserUsageDashboardUsesMonthlySubscriptionWindowFor30DayRange(t *testing.T) {
+	env := setupTestEnv(t)
+	ciphertext, err := pkg.Encrypt("test-password", userUsageTestEncryptionKey)
+	if err != nil {
+		t.Fatalf("encrypt password: %v", err)
+	}
+	if err := env.client.User.UpdateOneID(env.userID).SetRelayAuthPassword(ciphertext).SetRelayUserID(7).Exec(context.Background()); err != nil {
+		t.Fatalf("update user auth/relay id: %v", err)
+	}
+	if _, err := env.client.RelayProvider.Create().
+		SetName("primary").
+		SetDisplayName("Primary").
+		SetBaseURL("https://relay.example.com").
+		SetAdminAPIKey("unused").
+		SetDefaultModel("example-model").
+		SetIsPrimary(true).
+		Save(context.Background()); err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+
+	monthlyLimit := 200.0
+	stub := &userUsageRelayStub{
+		response: &relay.UserUsageDashboardResponse{
+			Configured: true,
+			Range: relay.UserUsageDashboardRange{StartDate: "2026-05-18", EndDate: "2026-06-16", Granularity: "day", Timezone: "Asia/Shanghai"},
+			Trend:  []relay.UserUsageTrendPoint{},
+			Models: []relay.UserUsageModelStat{},
+		},
+		apiKeys: []relay.APIKey{
+			{
+				ID:        50,
+				UserID:    7,
+				Key:       "sk-monthly",
+				Name:      "admin",
+				Status:    "active",
+				Group: &relay.Group{
+					ID:               103,
+					Name:             "Anthropic-RD",
+					Platform:         "anthropic",
+					SubscriptionType: "subscription",
+					MonthlyLimitUSD:  &monthlyLimit,
+				},
+			},
+		},
+		subscriptions: []relay.UserSubscription{
+			{ID: 905, UserID: 7, GroupID: 103, Status: "active", DailyUsageUSD: 6.66, WeeklyUsageUSD: 44.44, MonthlyUsageUSD: 123.45},
+		},
+	}
+	h := NewUserUsageHandler(env.client, userUsageResolverFunc(func(context.Context, int) (relay.Provider, error) {
+		return stub, nil
+	}), userUsageTestEncryptionKey)
+	router := newUserUsageTestRouter(t, env, h)
+
+	w := performUserUsageRequest(router, env.token, "/api/v1/user/usage/dashboard?start_date=2026-05-18&end_date=2026-06-16&granularity=day")
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body=%s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), `"used_amount":123.45`) || !strings.Contains(w.Body.String(), `"quota_amount":200`) {
+		t.Fatalf("expected monthly window usage/limit: %s", w.Body.String())
 	}
 }
 

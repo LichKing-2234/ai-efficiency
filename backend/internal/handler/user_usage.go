@@ -121,11 +121,11 @@ func (h *UserUsageHandler) Dashboard(c *gin.Context) {
 	if u.RelayUserID != nil {
 		relayUserID = int64(*u.RelayUserID)
 	}
-	snapshot.GroupQuotas = h.buildHomepageGroupQuotas(c.Request.Context(), relayProvider, relayUserID)
+	snapshot.GroupQuotas = h.buildHomepageGroupQuotas(c.Request.Context(), relayProvider, relayUserID, params)
 	pkg.Success(c, snapshot)
 }
 
-func (h *UserUsageHandler) buildHomepageGroupQuotas(ctx context.Context, relayProvider relay.Provider, relayUserID int64) relay.UserUsageGroupQuotaState {
+func (h *UserUsageHandler) buildHomepageGroupQuotas(ctx context.Context, relayProvider relay.Provider, relayUserID int64, params relay.UserUsageDashboardParams) relay.UserUsageGroupQuotaState {
 	if relayProvider == nil {
 		return defaultUnavailableGroupQuotaState("Group quotas are temporarily unavailable.")
 	}
@@ -136,7 +136,20 @@ func (h *UserUsageHandler) buildHomepageGroupQuotas(ctx context.Context, relayPr
 	if err != nil {
 		return defaultUnavailableGroupQuotaState("Group quotas are temporarily unavailable.")
 	}
-	return mergeHomepageGroupQuotas(keys)
+	subscriptionsByGroup := map[string]relay.UserSubscription{}
+	if lister, ok := relayProvider.(interface {
+		ListUserSubscriptions(context.Context, int64) ([]relay.UserSubscription, error)
+	}); ok {
+		if subscriptions, subErr := lister.ListUserSubscriptions(ctx, relayUserID); subErr == nil {
+			for _, sub := range subscriptions {
+				if sub.GroupID <= 0 {
+					continue
+				}
+				subscriptionsByGroup[strconv.FormatInt(sub.GroupID, 10)] = sub
+			}
+		}
+	}
+	return mergeHomepageGroupQuotas(keys, subscriptionsByGroup, quotaWindowFromParams(params))
 }
 
 func defaultUnavailableGroupQuotaState(message string) relay.UserUsageGroupQuotaState {
@@ -154,7 +167,7 @@ func defaultEmptyGroupQuotaState() relay.UserUsageGroupQuotaState {
 	}
 }
 
-func mergeHomepageGroupQuotas(keys []relay.APIKey) relay.UserUsageGroupQuotaState {
+func mergeHomepageGroupQuotas(keys []relay.APIKey, subscriptionsByGroup map[string]relay.UserSubscription, selectedWindow string) relay.UserUsageGroupQuotaState {
 	if len(keys) == 0 {
 		return defaultEmptyGroupQuotaState()
 	}
@@ -178,8 +191,7 @@ func mergeHomepageGroupQuotas(keys []relay.APIKey) relay.UserUsageGroupQuotaStat
 			continue
 		}
 		groupID := strconv.FormatInt(key.Group.ID, 10)
-		used := float64Ptr(key.QuotaUsed)
-		quota, source, unlimited := selectQuotaAmount(&key)
+		used, quota, source, unlimited := selectQuotaPresentation(&key, subscriptionsByGroup[groupID], selectedWindow)
 		byGroup[groupID] = card{
 			groupID:   groupID,
 			groupName: firstNonEmptyString(strings.TrimSpace(key.Group.Name), groupID),
@@ -221,30 +233,107 @@ func mergeHomepageGroupQuotas(keys []relay.APIKey) relay.UserUsageGroupQuotaStat
 	return out
 }
 
-func selectQuotaAmount(key *relay.APIKey) (*float64, string, bool) {
+func selectQuotaPresentation(key *relay.APIKey, sub relay.UserSubscription, selectedWindow string) (*float64, *float64, string, bool) {
 	if key == nil {
-		return nil, "", true
+		return nil, nil, "", true
 	}
 	if key.Quota > 0 {
-		return float64Ptr(key.Quota), "api_key", false
+		return float64Ptr(key.QuotaUsed), float64Ptr(key.Quota), "api_key", false
 	}
 	if key.Group == nil {
-		return nil, "", true
+		return nil, nil, "", true
 	}
-	if key.Group.MonthlyLimitUSD != nil {
-		return key.Group.MonthlyLimitUSD, "group_monthly", false
+	if strings.EqualFold(strings.TrimSpace(key.Group.SubscriptionType), "subscription") {
+		used := usageForWindow(sub, selectedWindow)
+		quota := quotaForWindow(key.Group, selectedWindow)
+		if quota != nil {
+			return float64Ptr(used), quota, "group_" + selectedWindow + "_subscription", false
+		}
+		if hasAnyPositiveGroupLimit(key.Group) {
+			return float64Ptr(used), nil, "group_" + selectedWindow + "_subscription_window_unconfigured", false
+		}
+		return float64Ptr(used), nil, "group_subscription_unlimited", true
 	}
-	if key.Group.WeeklyLimitUSD != nil {
-		return key.Group.WeeklyLimitUSD, "group_weekly", false
+	quota := quotaForWindow(key.Group, selectedWindow)
+	if quota != nil {
+		return nil, quota, "group_" + selectedWindow, false
 	}
-	if key.Group.DailyLimitUSD != nil {
-		return key.Group.DailyLimitUSD, "group_daily", false
+	if hasAnyPositiveGroupLimit(key.Group) {
+		return nil, nil, "group_" + selectedWindow + "_window_unconfigured", false
 	}
-	return nil, "", true
+	return nil, nil, "", true
 }
 
-func float64Ptr(v float64) *float64 {
-	return &v
+func usageForWindow(sub relay.UserSubscription, selectedWindow string) float64 {
+	switch selectedWindow {
+	case "daily":
+		return sub.DailyUsageUSD
+	case "weekly":
+		return sub.WeeklyUsageUSD
+	default:
+		return sub.MonthlyUsageUSD
+	}
+}
+
+func quotaForWindow(group *relay.Group, selectedWindow string) *float64 {
+	if group == nil {
+		return nil
+	}
+	switch selectedWindow {
+	case "daily":
+		if positiveLimit(group.DailyLimitUSD) {
+			return group.DailyLimitUSD
+		}
+	case "weekly":
+		if positiveLimit(group.WeeklyLimitUSD) {
+			return group.WeeklyLimitUSD
+		}
+	default:
+		if positiveLimit(group.MonthlyLimitUSD) {
+			return group.MonthlyLimitUSD
+		}
+	}
+	return nil
+}
+
+func hasAnyPositiveGroupLimit(group *relay.Group) bool {
+	if group == nil {
+		return false
+	}
+	return positiveLimit(group.DailyLimitUSD) || positiveLimit(group.WeeklyLimitUSD) || positiveLimit(group.MonthlyLimitUSD)
+}
+
+func float64Ptr(v float64) *float64 { return &v }
+
+func positiveLimit(v *float64) bool { return v != nil && *v > 0 }
+
+func quotaTitleKeyForWindow(window string) string {
+	switch window {
+	case "daily":
+		return "usageDashboard.dailyQuotaTitle"
+	case "weekly":
+		return "usageDashboard.weeklyQuotaTitle"
+	default:
+		return "usageDashboard.monthlyQuotaTitle"
+	}
+}
+
+func quotaWindowFromParams(params relay.UserUsageDashboardParams) string {
+	if strings.EqualFold(strings.TrimSpace(params.Granularity), "hour") {
+		return "daily"
+	}
+	start, errStart := time.Parse("2006-01-02", strings.TrimSpace(params.StartDate))
+	end, errEnd := time.Parse("2006-01-02", strings.TrimSpace(params.EndDate))
+	if errStart == nil && errEnd == nil {
+		days := int(end.Sub(start).Hours()/24) + 1
+		if days <= 1 {
+			return "daily"
+		}
+		if days <= 7 {
+			return "weekly"
+		}
+	}
+	return "monthly"
 }
 
 func parseUserUsageDashboardParams(c *gin.Context) (relay.UserUsageDashboardParams, bool) {

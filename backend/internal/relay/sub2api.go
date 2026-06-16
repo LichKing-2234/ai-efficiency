@@ -1399,11 +1399,35 @@ type subscriptionAssignment struct {
 }
 
 type sub2apiUserSubscription struct {
-	ID      int64  `json:"id"`
-	UserID  int64  `json:"user_id"`
-	GroupID int64  `json:"group_id"`
-	Status  string `json:"status"`
-	Group   *Group `json:"group"`
+	ID              int64   `json:"id"`
+	UserID          int64   `json:"user_id"`
+	GroupID         int64   `json:"group_id"`
+	Status          string  `json:"status"`
+	DailyUsageUSD   float64 `json:"daily_usage_usd"`
+	WeeklyUsageUSD  float64 `json:"weekly_usage_usd"`
+	MonthlyUsageUSD float64 `json:"monthly_usage_usd"`
+	Group           *Group  `json:"group"`
+}
+
+func (s *sub2apiRelay) ListUserSubscriptions(ctx context.Context, userID int64) ([]UserSubscription, error) {
+	items, err := s.listUserSubscriptions(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]UserSubscription, 0, len(items))
+	for _, item := range items {
+		out = append(out, UserSubscription{
+			ID:              item.ID,
+			UserID:          item.UserID,
+			GroupID:         item.GroupID,
+			Status:          item.Status,
+			DailyUsageUSD:   item.DailyUsageUSD,
+			WeeklyUsageUSD:  item.WeeklyUsageUSD,
+			MonthlyUsageUSD: item.MonthlyUsageUSD,
+			Group:           item.Group,
+		})
+	}
+	return out, nil
 }
 
 func (s *sub2apiRelay) assignDefaultSubscriptionsForUser(ctx context.Context, userID int64) error {

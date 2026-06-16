@@ -52,12 +52,17 @@
     </div>
 
     <div v-else class="space-y-6">
-      <UsageGroupQuotaSection :quotas="currentSnapshot?.group_quotas ?? null" />
+      <UsageGroupQuotaSection
+        :quotas="currentSnapshot?.group_quotas ?? null"
+        :loading="loading && !!currentSnapshot"
+        :range-label="selectedRangeLabel"
+      />
       <UsageStatsCards
         :stats="currentSnapshot?.stats ?? null"
         :trend="currentSnapshot?.trend ?? []"
         :range-label="snapshotRangeLabel"
         :hide-cost="props.homeMode"
+        :loading="loading && !!currentSnapshot"
       />
       <div class="grid min-w-0 grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
         <UsageTrendChart :data="currentSnapshot?.trend ?? []" :loading="loading" />
@@ -89,8 +94,8 @@ const props = withDefaults(defineProps<{
   initialSnapshot: null,
 })
 
-const selectedRange = ref<RangeOption>('7d')
-const snapshotRange = ref<RangeOption>('7d')
+const selectedRange = ref<RangeOption>('30d')
+const snapshotRange = ref<RangeOption>('30d')
 const snapshot = ref<UserUsageDashboardSnapshot | null>(null)
 const loading = ref(false)
 const errorMessage = ref('')
@@ -100,6 +105,7 @@ let dashboardRequestSeq = 0
 
 const currentSnapshot = computed(() => snapshot.value ?? props.initialSnapshot)
 const setupRequired = computed(() => currentSnapshot.value?.configured === false)
+const selectedRangeLabel = computed(() => rangeLabel(selectedRange.value))
 const snapshotRangeLabel = computed(() => rangeLabel(snapshotRange.value))
 
 function rangeLabel(range: RangeOption) {
