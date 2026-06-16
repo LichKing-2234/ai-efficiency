@@ -24,7 +24,7 @@ onMounted(async () => {
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone
   const end = new Date()
   const start = new Date(end)
-  start.setDate(end.getDate() - 6)
+  start.setDate(end.getDate() - 29)
   const formatDate = (date: Date) => date.toISOString().slice(0, 10)
 
   const [providersResult, usageResult] = await Promise.allSettled([

@@ -1497,11 +1497,17 @@ func TestListUserAPIKeysDecodesGroupPlatformAndLastUsed(t *testing.T) {
 					"key":          "sk-existing-openai",
 					"name":         "alice",
 					"status":       "active",
+					"quota":        100.0,
+					"quota_used":   32.4,
 					"created_at":   "2026-04-07T10:00:00Z",
 					"last_used_at": "2026-04-07T11:00:00Z",
 					"group": map[string]any{
-						"id":       42,
-						"platform": "openai",
+						"id":                42,
+						"name":              "Group Alpha",
+						"platform":          "openai",
+						"daily_limit_usd":   10.0,
+						"weekly_limit_usd":  50.0,
+						"monthly_limit_usd": 100.0,
 					},
 				},
 			},
@@ -1521,6 +1527,15 @@ func TestListUserAPIKeysDecodesGroupPlatformAndLastUsed(t *testing.T) {
 	}
 	if keys[0].Group == nil || keys[0].Group.Platform != "openai" {
 		t.Fatalf("group platform = %+v, want openai", keys[0].Group)
+	}
+	if keys[0].Quota != 100 || keys[0].QuotaUsed != 32.4 {
+		t.Fatalf("quota fields = quota:%v quota_used:%v, want 100 / 32.4", keys[0].Quota, keys[0].QuotaUsed)
+	}
+	if keys[0].Group.Name != "Group Alpha" {
+		t.Fatalf("group name = %q, want Group Alpha", keys[0].Group.Name)
+	}
+	if keys[0].Group.MonthlyLimitUSD == nil || *keys[0].Group.MonthlyLimitUSD != 100 {
+		t.Fatalf("monthly_limit_usd = %+v, want 100", keys[0].Group.MonthlyLimitUSD)
 	}
 	if keys[0].LastUsedAt == nil || keys[0].LastUsedAt.IsZero() {
 		t.Fatalf("expected last_used_at to be decoded")

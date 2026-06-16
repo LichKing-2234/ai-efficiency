@@ -643,10 +643,28 @@ export interface UserUsageModelStat {
   actual_cost: number
 }
 
+export interface UserUsageGroupQuotaItem {
+  group_id: string
+  group_name: string
+  platform: string
+  used_amount?: number | null
+  quota_amount?: number | null
+  is_unlimited: boolean
+  quota_source?: string
+}
+
+export interface UserUsageGroupQuotaState {
+  status: 'ok' | 'empty' | 'unavailable' | string
+  unit_label?: string
+  message?: string
+  groups: UserUsageGroupQuotaItem[]
+}
+
 export interface UserUsageDashboardSnapshot {
   configured: boolean
   range: UserUsageDashboardRange
   stats: UserUsageDashboardStats | null
   trend: UserUsageTrendPoint[]
   models: UserUsageModelStat[]
+  group_quotas?: UserUsageGroupQuotaState
 }

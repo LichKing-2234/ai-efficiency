@@ -60,6 +60,30 @@ const usageSnapshot = {
   },
   trend: [{ date: '2026-06-06', requests: 12, input_tokens: 1000, output_tokens: 500, cache_creation_tokens: 20, cache_read_tokens: 30, total_tokens: 1550, cost: 0.25, actual_cost: 0.2 }],
   models: [{ model: 'example-model', requests: 12, input_tokens: 1000, output_tokens: 500, cache_creation_tokens: 20, cache_read_tokens: 30, total_tokens: 1550, cost: 0.25, actual_cost: 0.2 }],
+  group_quotas: { status: 'empty', unit_label: 'USD', message: '', groups: [] },
+}
+
+const usageSnapshotWithQuotas = {
+  ...usageSnapshot,
+  group_quotas: {
+    status: 'ok',
+    unit_label: 'USD',
+    message: '',
+    groups: [
+      { group_id: '42', group_name: 'Group Alpha', platform: 'openai', used_amount: 32.4, quota_amount: 100, is_unlimited: false, quota_source: 'api_key' },
+      { group_id: '43', group_name: 'Group Beta', platform: 'anthropic', used_amount: 18.2, quota_amount: null, is_unlimited: true, quota_source: '' },
+    ],
+  },
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  return { promise, resolve, reject }
 }
 
 function createTestRouter() {
@@ -117,6 +141,28 @@ describe('DashboardView', () => {
     })
 
     expect(wrapper.text()).toContain('Loading your AI usage')
+  })
+
+  it('requests the 30 day snapshot on first homepage load', async () => {
+    const { getUserProviders } = await import('@/api/user')
+    const { getUserUsageDashboard } = await import('@/api/userUsage')
+    ;(getUserProviders as any).mockResolvedValue({ data: { data: { providers: [] } } })
+    ;(getUserUsageDashboard as any).mockResolvedValue({ data: { data: usageSnapshotWithQuotas } })
+
+    const router = createTestRouter()
+    await router.push('/')
+    await router.isReady()
+
+    mount(DashboardView, {
+      global: { plugins: [createPinia(), router] },
+    })
+    await flushPromises()
+
+    expect((getUserUsageDashboard as any).mock.calls[0][0]).toMatchObject({
+      granularity: 'day',
+      start_date: expect.any(String),
+      end_date: expect.any(String),
+    })
   })
 
   it('displays dashboard data after loading', async () => {
@@ -322,6 +368,122 @@ describe('DashboardView', () => {
     expect(wrapper.text()).toContain('example-model')
     expect(wrapper.find('[data-test="line-chart"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="doughnut-chart"]').exists()).toBe(true)
+  })
+
+  it('renders homepage group quota cards above the usage stats', async () => {
+    const { getUserProviders } = await import('@/api/user')
+    const { getUserUsageDashboard } = await import('@/api/userUsage')
+    ;(getUserProviders as any).mockResolvedValue({
+      data: {
+        data: {
+          providers: [
+            {
+              id: 1,
+              name: 'prod',
+              display_name: 'Production',
+              base_url: 'https://relay.example.com',
+              default_model: 'gpt-5.4',
+              is_primary: true,
+              groups: [{ group_id: '42', group_name: 'Group Alpha', platform: 'openai', credential: { state: 'existing_hidden' } }],
+            },
+          ],
+        },
+      },
+    })
+    ;(getUserUsageDashboard as any).mockResolvedValue({ data: { data: usageSnapshotWithQuotas } })
+
+    const router = createTestRouter()
+    await router.push('/')
+    await router.isReady()
+    const wrapper = mount(DashboardView, { global: { plugins: [createPinia(), router] } })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Monthly Quotas')
+    expect(wrapper.text()).toContain('Group Alpha')
+    expect(wrapper.text()).toContain('$32.40 / $100.00')
+    expect(wrapper.text()).toContain('$18.20 / ∞')
+    expect(wrapper.text()).toContain('My Usage')
+  })
+
+  it('hides the quota section when the snapshot reports empty quotas', async () => {
+    const { getUserProviders } = await import('@/api/user')
+    const { getUserUsageDashboard } = await import('@/api/userUsage')
+    ;(getUserProviders as any).mockResolvedValue({ data: { data: { providers: [] } } })
+    ;(getUserUsageDashboard as any).mockResolvedValue({ data: { data: usageSnapshot } })
+
+    const router = createTestRouter()
+    await router.push('/')
+    await router.isReady()
+    const wrapper = mount(DashboardView, { global: { plugins: [createPinia(), router] } })
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('Group Quotas')
+  })
+
+  it('shows a lightweight unavailable message when quota loading degrades', async () => {
+    const { getUserProviders } = await import('@/api/user')
+    const { getUserUsageDashboard } = await import('@/api/userUsage')
+    ;(getUserProviders as any).mockResolvedValue({ data: { data: { providers: [] } } })
+    ;(getUserUsageDashboard as any).mockResolvedValue({
+      data: {
+        data: {
+          ...usageSnapshot,
+          group_quotas: { status: 'unavailable', unit_label: 'USD', message: 'Group quotas are temporarily unavailable.', groups: [] },
+        },
+      },
+    })
+
+    const router = createTestRouter()
+    await router.push('/')
+    await router.isReady()
+    const wrapper = mount(DashboardView, { global: { plugins: [createPinia(), router] } })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Monthly Quotas')
+    expect(wrapper.text()).toContain('temporarily unavailable')
+    expect(wrapper.text()).toContain('Token Trend')
+    expect(wrapper.text()).toContain('Model Distribution')
+  })
+
+  it('shows quota skeleton loading while range refresh is in flight', async () => {
+    const { getUserProviders } = await import('@/api/user')
+    const { getUserUsageDashboard } = await import('@/api/userUsage')
+    const refresh = deferred<{ data: { data: typeof usageSnapshotWithQuotas } }>()
+    ;(getUserProviders as any).mockResolvedValue({
+      data: {
+        data: {
+          providers: [
+            {
+              id: 1,
+              name: 'prod',
+              display_name: 'Production',
+              base_url: 'https://relay.example.com',
+              default_model: 'gpt-5.4',
+              is_primary: true,
+              groups: [{ group_id: '42', group_name: 'Group Alpha', platform: 'openai', credential: { state: 'existing_hidden' } }],
+            },
+          ],
+        },
+      },
+    })
+    ;(getUserUsageDashboard as any)
+      .mockResolvedValueOnce({ data: { data: usageSnapshotWithQuotas } })
+      .mockReturnValueOnce(refresh.promise)
+
+    const router = createTestRouter()
+    await router.push('/')
+    await router.isReady()
+    const wrapper = mount(DashboardView, { global: { plugins: [createPinia(), router] } })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('$32.40 / $100.00')
+
+    await wrapper.get('[data-test="range-30d"]').trigger('click')
+    wrapper.get('[data-testid="usage-group-quotas-loading"]')
+
+    refresh.resolve({ data: { data: usageSnapshotWithQuotas } })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="usage-group-quotas-loading"]').exists()).toBe(false)
   })
 
   it('shows the expanded guide card for users without any reusable AI access', async () => {

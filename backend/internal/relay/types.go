@@ -43,6 +43,8 @@ type APIKey struct {
 	Key        string     `json:"key"`
 	Name       string     `json:"name"`
 	Status     string     `json:"status"`
+	Quota      float64    `json:"quota"`
+	QuotaUsed  float64    `json:"quota_used"`
 	CreatedAt  time.Time  `json:"created_at"`
 	LastUsedAt *time.Time `json:"last_used_at"`
 	Group      *Group     `json:"group"`
@@ -54,6 +56,20 @@ type Group struct {
 	Platform         string `json:"platform"`
 	IsExclusive      bool   `json:"is_exclusive,omitempty"`
 	SubscriptionType string `json:"subscription_type,omitempty"`
+	DailyLimitUSD    *float64 `json:"daily_limit_usd,omitempty"`
+	WeeklyLimitUSD   *float64 `json:"weekly_limit_usd,omitempty"`
+	MonthlyLimitUSD  *float64 `json:"monthly_limit_usd,omitempty"`
+}
+
+type UserSubscription struct {
+	ID              int64   `json:"id"`
+	UserID          int64   `json:"user_id"`
+	GroupID         int64   `json:"group_id"`
+	Status          string  `json:"status"`
+	DailyUsageUSD   float64 `json:"daily_usage_usd"`
+	WeeklyUsageUSD  float64 `json:"weekly_usage_usd"`
+	MonthlyUsageUSD float64 `json:"monthly_usage_usd"`
+	Group           *Group  `json:"group,omitempty"`
 }
 
 func (u *User) UnmarshalJSON(data []byte) error {
@@ -208,11 +224,12 @@ type UserUsageDashboardRange struct {
 }
 
 type UserUsageDashboardResponse struct {
-	Configured bool                     `json:"configured"`
-	Range      UserUsageDashboardRange  `json:"range"`
-	Stats      *UserUsageDashboardStats `json:"stats"`
-	Trend      []UserUsageTrendPoint    `json:"trend"`
-	Models     []UserUsageModelStat     `json:"models"`
+	Configured  bool                     `json:"configured"`
+	Range       UserUsageDashboardRange  `json:"range"`
+	Stats       *UserUsageDashboardStats `json:"stats"`
+	Trend       []UserUsageTrendPoint    `json:"trend"`
+	Models      []UserUsageModelStat     `json:"models"`
+	GroupQuotas UserUsageGroupQuotaState `json:"group_quotas"`
 }
 
 type UserUsageDashboardStats struct {
@@ -259,4 +276,21 @@ type UserUsageModelStat struct {
 	TotalTokens         int64   `json:"total_tokens"`
 	Cost                float64 `json:"cost"`
 	ActualCost          float64 `json:"actual_cost"`
+}
+
+type UserUsageGroupQuotaState struct {
+	Status    string                        `json:"status"`
+	UnitLabel string                        `json:"unit_label,omitempty"`
+	Message   string                        `json:"message,omitempty"`
+	Groups    []UserUsageGroupQuotaGroupItem `json:"groups"`
+}
+
+type UserUsageGroupQuotaGroupItem struct {
+	GroupID     string   `json:"group_id"`
+	GroupName   string   `json:"group_name"`
+	Platform    string   `json:"platform"`
+	UsedAmount  *float64 `json:"used_amount,omitempty"`
+	QuotaAmount *float64 `json:"quota_amount,omitempty"`
+	IsUnlimited bool     `json:"is_unlimited"`
+	QuotaSource string   `json:"quota_source,omitempty"`
 }
