@@ -6,9 +6,17 @@ import (
 )
 
 func TestDefaultAdminDSNUsesStandardPostgresPort(t *testing.T) {
-	want := "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable"
-	if defaultAdminDSN != want {
-		t.Fatalf("defaultAdminDSN = %q, want %q", defaultAdminDSN, want)
+	want := []string{
+		"postgres://postgres:postgres@127.0.0.1:15432/postgres?sslmode=disable",
+		"postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable",
+	}
+	if len(defaultAdminDSNs) != len(want) {
+		t.Fatalf("defaultAdminDSNs length = %d, want %d", len(defaultAdminDSNs), len(want))
+	}
+	for index, dsn := range want {
+		if defaultAdminDSNs[index] != dsn {
+			t.Fatalf("defaultAdminDSNs[%d] = %q, want %q", index, defaultAdminDSNs[index], dsn)
+		}
 	}
 }
 

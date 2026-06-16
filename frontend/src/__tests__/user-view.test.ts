@@ -20,6 +20,15 @@ Object.assign(navigator, {
   },
 })
 
+function decodeCCSwitchConfig(link: string) {
+  const url = new URL(link)
+  const config = url.searchParams.get('config')
+  if (!config) {
+    throw new Error('missing config parameter')
+  }
+  return JSON.parse(Buffer.from(config, 'base64').toString('utf8'))
+}
+
 function createTestRouter() {
   return createRouter({
     history: createMemoryHistory(),
@@ -359,8 +368,21 @@ describe('UserView', () => {
 
     await wrapper.get('[data-testid="config-method-ccswitch"]').trigger('click')
     const claudeImport = wrapper.get('[data-testid="ccswitch-import-claude"]')
-    expect(claudeImport.attributes('href')).toContain('app=claude')
-    expect(claudeImport.attributes('href')).toContain('model=claude-sonnet-4-6')
+    const href = claudeImport.attributes('href') ?? ''
+    expect(href).toContain('app=claude')
+    expect(href).toContain('configFormat=json')
+    expect(href).not.toContain('model=claude-sonnet-4-6')
+
+    expect(decodeCCSwitchConfig(href)).toEqual({
+      env: {
+        ANTHROPIC_BASE_URL: 'https://prod.example.com',
+        ANTHROPIC_AUTH_TOKEN: 'sk-existing-claude-123456',
+        ANTHROPIC_MODEL: 'claude-sonnet-4-6',
+        ANTHROPIC_DEFAULT_SONNET_MODEL: 'claude-sonnet-4-6',
+        CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
+        CLAUDE_CODE_ATTRIBUTION_HEADER: '0',
+      },
+    })
   })
 
   it('passes an explicit Codex model in the OpenAI CC Switch import link', async () => {
@@ -376,8 +398,33 @@ describe('UserView', () => {
 
     await wrapper.get('[data-testid="config-method-ccswitch"]').trigger('click')
     const codexImport = wrapper.get('[data-testid="ccswitch-import-codex"]')
-    expect(codexImport.attributes('href')).toContain('app=codex')
-    expect(codexImport.attributes('href')).toContain('model=gpt-5.4')
+    const href = codexImport.attributes('href') ?? ''
+    expect(href).toContain('app=codex')
+    expect(href).toContain('configFormat=json')
+    expect(href).not.toContain('model=gpt-5.4')
+
+    expect(decodeCCSwitchConfig(href)).toEqual({
+      auth: {
+        OPENAI_API_KEY: 'sk-openai',
+      },
+      config: [
+        'model_provider = "custom"',
+        'model = "gpt-5.4"',
+        'review_model = "gpt-5.4"',
+        'model_reasoning_effort = "xhigh"',
+        'disable_response_storage = true',
+        'network_access = "enabled"',
+        'windows_wsl_setup_acknowledged = true',
+        'model_context_window = 1000000',
+        'model_auto_compact_token_limit = 900000',
+        '',
+        '[model_providers.custom]',
+        'name = "Production / Group Alpha"',
+        'base_url = "https://prod.example.com"',
+        'wire_api = "responses"',
+        'requires_openai_auth = true',
+      ].join('\n'),
+    })
   })
 
   it('passes the selected Gemini model in the CC Switch import link', async () => {
@@ -388,8 +435,16 @@ describe('UserView', () => {
 
     await wrapper.get('[data-testid="config-method-ccswitch"]').trigger('click')
     const geminiImport = wrapper.get('[data-testid="ccswitch-import-gemini"]')
-    expect(geminiImport.attributes('href')).toContain('app=gemini')
-    expect(geminiImport.attributes('href')).toContain('model=gemini-3.1-pro-preview')
+    const href = geminiImport.attributes('href') ?? ''
+    expect(href).toContain('app=gemini')
+    expect(href).toContain('configFormat=json')
+    expect(href).not.toContain('model=gemini-3.1-pro-preview')
+
+    expect(decodeCCSwitchConfig(href)).toEqual({
+      GEMINI_API_KEY: 'sk-existing-gemini-123456',
+      GOOGLE_GEMINI_BASE_URL: 'https://prod.example.com',
+      GEMINI_MODEL: 'gemini-3.1-pro-preview',
+    })
   })
 
   it('shows advanced command reference only inside automatic configuration', async () => {

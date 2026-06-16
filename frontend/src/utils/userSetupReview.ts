@@ -69,6 +69,86 @@ function shellString(value: string) {
   return `"${value.replace(/(["\\$`])/g, '\\$1')}"`
 }
 
+function buildClaudeSettingsEnv(baseUrl: string, apiKey: string) {
+  return {
+    ANTHROPIC_BASE_URL: baseUrl,
+    ANTHROPIC_AUTH_TOKEN: apiKey,
+    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
+    CLAUDE_CODE_ATTRIBUTION_HEADER: '0',
+  }
+}
+
+function buildCodexCCSwitchConfig(name: string, baseUrl: string, apiKey: string, model?: string) {
+  const selectedModel = model?.trim() || CODEX_MODEL
+  const config = [
+    `model_provider = "custom"`,
+    `model = ${tomlString(selectedModel)}`,
+    `review_model = ${tomlString(selectedModel)}`,
+    `model_reasoning_effort = "xhigh"`,
+    `disable_response_storage = true`,
+    `network_access = "enabled"`,
+    `windows_wsl_setup_acknowledged = true`,
+    `model_context_window = 1000000`,
+    `model_auto_compact_token_limit = 900000`,
+    ``,
+    `[model_providers.custom]`,
+    `name = ${tomlString(name)}`,
+    `base_url = ${tomlString(baseUrl)}`,
+    `wire_api = "responses"`,
+    `requires_openai_auth = true`,
+  ].join('\n')
+
+  return {
+    auth: {
+      OPENAI_API_KEY: apiKey,
+    },
+    config,
+  }
+}
+
+function resolveClaudeDefaultModelEnv(model: string) {
+  const normalized = model.trim().toLowerCase()
+  if (normalized.includes('haiku')) return 'ANTHROPIC_DEFAULT_HAIKU_MODEL'
+  if (normalized.includes('sonnet')) return 'ANTHROPIC_DEFAULT_SONNET_MODEL'
+  if (normalized.includes('opus')) return 'ANTHROPIC_DEFAULT_OPUS_MODEL'
+  return null
+}
+
+function encodeBase64(value: string) {
+  const bytes = new TextEncoder().encode(value)
+  let binary = ''
+  const chunkSize = 0x8000
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize))
+  }
+  return btoa(binary)
+}
+
+function buildClaudeCCSwitchConfig(baseUrl: string, apiKey: string, model?: string) {
+  const env: Record<string, string> = buildClaudeSettingsEnv(baseUrl, apiKey)
+  const selectedModel = model?.trim()
+  if (selectedModel) {
+    env.ANTHROPIC_MODEL = selectedModel
+    const defaultModelEnv = resolveClaudeDefaultModelEnv(selectedModel)
+    if (defaultModelEnv) {
+      env[defaultModelEnv] = selectedModel
+    }
+  }
+  return { env }
+}
+
+function buildGeminiCCSwitchConfig(baseUrl: string, apiKey: string, model?: string) {
+  const config: Record<string, string> = {
+    GEMINI_API_KEY: apiKey,
+    GOOGLE_GEMINI_BASE_URL: baseUrl,
+  }
+  const selectedModel = model?.trim()
+  if (selectedModel) {
+    config.GEMINI_MODEL = selectedModel
+  }
+  return config
+}
+
 export function buildCodexConfigSnippet(providerName: string, baseUrl: string) {
   const provider = providerName.trim() || 'provider'
   return [
@@ -96,12 +176,7 @@ export function buildCodexAuthSnippet(apiKey: string) {
 
 export function buildClaudeSettingsSnippet(baseUrl: string, apiKey: string) {
   return JSON.stringify({
-    env: {
-      ANTHROPIC_BASE_URL: baseUrl,
-      ANTHROPIC_AUTH_TOKEN: apiKey,
-      CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
-      CLAUDE_CODE_ATTRIBUTION_HEADER: '0',
-    },
+    env: buildClaudeSettingsEnv(baseUrl, apiKey),
   }, null, 2)
 }
 
@@ -192,6 +267,42 @@ export function resolveCCSwitchAppForPlatform(platform: string): CCSwitchApp | n
 }
 
 export function buildCCSwitchProviderImportLink(input: CCSwitchProviderImportInput) {
+  if (input.app === 'claude') {
+    const params = new URLSearchParams({
+      resource: 'provider',
+      app: input.app,
+      name: input.name,
+      enabled: String(input.enabled ?? true),
+      configFormat: 'json',
+      config: encodeBase64(JSON.stringify(buildClaudeCCSwitchConfig(input.endpoint, input.apiKey, input.model))),
+    })
+    return `ccswitch://v1/import?${params.toString()}`
+  }
+
+  if (input.app === 'codex') {
+    const params = new URLSearchParams({
+      resource: 'provider',
+      app: input.app,
+      name: input.name,
+      enabled: String(input.enabled ?? true),
+      configFormat: 'json',
+      config: encodeBase64(JSON.stringify(buildCodexCCSwitchConfig(input.name, input.endpoint, input.apiKey, input.model))),
+    })
+    return `ccswitch://v1/import?${params.toString()}`
+  }
+
+  if (input.app === 'gemini') {
+    const params = new URLSearchParams({
+      resource: 'provider',
+      app: input.app,
+      name: input.name,
+      enabled: String(input.enabled ?? true),
+      configFormat: 'json',
+      config: encodeBase64(JSON.stringify(buildGeminiCCSwitchConfig(input.endpoint, input.apiKey, input.model))),
+    })
+    return `ccswitch://v1/import?${params.toString()}`
+  }
+
   const params = new URLSearchParams({
     resource: 'provider',
     app: input.app,
