@@ -26,6 +26,15 @@ import {
   detectInstallPlatform,
 } from '@/utils/userSetupReview'
 
+function decodeCCSwitchConfig(link: string) {
+  const url = new URL(link)
+  const config = url.searchParams.get('config')
+  if (!config) {
+    throw new Error('missing config parameter')
+  }
+  return JSON.parse(Buffer.from(config, 'base64').toString('utf8'))
+}
+
 describe('userSetupReview command builders', () => {
   it('builds Codex manual config snippets equivalent to ae-cli discover', () => {
     expect(buildCodexConfigSnippet('prod', 'https://prod.example.com')).toContain([
@@ -103,26 +112,113 @@ describe('userSetupReview command builders', () => {
   })
 
   it('builds an app-specific CC Switch provider import link', () => {
-    expect(buildCCSwitchProviderImportLink({
+    const link = buildCCSwitchProviderImportLink({
       app: 'claude',
       name: 'Production / Group Alpha',
       endpoint: 'https://prod.example.com',
       apiKey: 'sk-claude',
-    })).toBe(
-      'ccswitch://v1/import?resource=provider&app=claude&name=Production+%2F+Group+Alpha&endpoint=https%3A%2F%2Fprod.example.com&apiKey=sk-claude&enabled=true'
-    )
+    })
+    const url = new URL(link)
+    expect(`${url.protocol}//${url.host}${url.pathname}`).toBe('ccswitch://v1/import')
+    expect(url.searchParams.get('resource')).toBe('provider')
+    expect(url.searchParams.get('app')).toBe('claude')
+    expect(url.searchParams.get('name')).toBe('Production / Group Alpha')
+    expect(url.searchParams.get('enabled')).toBe('true')
+    expect(url.searchParams.get('configFormat')).toBe('json')
+    expect(url.searchParams.get('endpoint')).toBeNull()
+    expect(url.searchParams.get('apiKey')).toBeNull()
+    expect(url.searchParams.get('model')).toBeNull()
+
+    expect(decodeCCSwitchConfig(link)).toEqual({
+      env: {
+        ANTHROPIC_BASE_URL: 'https://prod.example.com',
+        ANTHROPIC_AUTH_TOKEN: 'sk-claude',
+        CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
+        CLAUDE_CODE_ATTRIBUTION_HEADER: '0',
+      },
+    })
   })
 
   it('includes an explicit model when provided for a CC Switch import', () => {
-    expect(buildCCSwitchProviderImportLink({
+    const link = buildCCSwitchProviderImportLink({
       app: 'codex',
       name: 'Production / Group Alpha',
       endpoint: 'https://prod.example.com',
       apiKey: 'sk-openai',
       model: 'gpt-5.4',
-    })).toBe(
-      'ccswitch://v1/import?resource=provider&app=codex&name=Production+%2F+Group+Alpha&endpoint=https%3A%2F%2Fprod.example.com&apiKey=sk-openai&enabled=true&model=gpt-5.4'
-    )
+    })
+    const url = new URL(link)
+    expect(url.searchParams.get('app')).toBe('codex')
+    expect(url.searchParams.get('configFormat')).toBe('json')
+    expect(url.searchParams.get('endpoint')).toBeNull()
+    expect(url.searchParams.get('apiKey')).toBeNull()
+    expect(url.searchParams.get('model')).toBeNull()
+
+    expect(decodeCCSwitchConfig(link)).toEqual({
+      auth: {
+        OPENAI_API_KEY: 'sk-openai',
+      },
+      config: [
+        'model_provider = "custom"',
+        'model = "gpt-5.4"',
+        'review_model = "gpt-5.4"',
+        'model_reasoning_effort = "xhigh"',
+        'disable_response_storage = true',
+        'network_access = "enabled"',
+        'windows_wsl_setup_acknowledged = true',
+        'model_context_window = 1000000',
+        'model_auto_compact_token_limit = 900000',
+        '',
+        '[model_providers.custom]',
+        'name = "Production / Group Alpha"',
+        'base_url = "https://prod.example.com"',
+        'wire_api = "responses"',
+        'requires_openai_auth = true',
+      ].join('\n'),
+    })
+  })
+
+  it('stores the selected Claude model inside the imported config', () => {
+    const link = buildCCSwitchProviderImportLink({
+      app: 'claude',
+      name: 'Production / Group Alpha',
+      endpoint: 'https://prod.example.com',
+      apiKey: 'sk-claude',
+      model: 'claude-sonnet-4-6',
+    })
+
+    expect(decodeCCSwitchConfig(link)).toEqual({
+      env: {
+        ANTHROPIC_BASE_URL: 'https://prod.example.com',
+        ANTHROPIC_AUTH_TOKEN: 'sk-claude',
+        ANTHROPIC_MODEL: 'claude-sonnet-4-6',
+        ANTHROPIC_DEFAULT_SONNET_MODEL: 'claude-sonnet-4-6',
+        CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
+        CLAUDE_CODE_ATTRIBUTION_HEADER: '0',
+      },
+    })
+  })
+
+  it('stores Gemini providers as a config import payload', () => {
+    const link = buildCCSwitchProviderImportLink({
+      app: 'gemini',
+      name: 'Production / Group Alpha',
+      endpoint: 'https://prod.example.com',
+      apiKey: 'sk-gemini',
+      model: 'gemini-3.1-pro-preview',
+    })
+    const url = new URL(link)
+    expect(url.searchParams.get('app')).toBe('gemini')
+    expect(url.searchParams.get('configFormat')).toBe('json')
+    expect(url.searchParams.get('endpoint')).toBeNull()
+    expect(url.searchParams.get('apiKey')).toBeNull()
+    expect(url.searchParams.get('model')).toBeNull()
+
+    expect(decodeCCSwitchConfig(link)).toEqual({
+      GEMINI_API_KEY: 'sk-gemini',
+      GOOGLE_GEMINI_BASE_URL: 'https://prod.example.com',
+      GEMINI_MODEL: 'gemini-3.1-pro-preview',
+    })
   })
 
   it('buildDiscoverCommand uses the selected provider', () => {

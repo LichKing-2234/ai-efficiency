@@ -234,38 +234,79 @@ ccswitch://v1/import?resource=provider&app={app}&name={name}&...
 
 #### Required Parameters
 
-第一版使用最小稳定参数集：
+第一版按 app-specific config import 交付三种稳定导入形态：
 
-- `resource=provider`
-- `app=<codex|claude|gemini>`
-- `name=<provider display name or provider name + "/" + group name>`
-- `endpoint=<selectedProvider.base_url>`
-- `apiKey=<selected group key>`
-- `enabled=true`
-- `model=<selected providerTestModel>` when the page has a selected model for the current group
-- `model=gpt-5.4` as the Codex fallback when no explicit model is available
+- 通用参数：
+  - `resource=provider`
+  - `app=<codex|claude|gemini>`
+  - `name=<provider display name or provider name + "/" + group name>`
+  - `enabled=true`
+- `Codex` 改用 config-import 模式：
+  - `configFormat=json`
+  - `config=<Base64(JSON.stringify({ auth, config }))>`
+  - `auth.OPENAI_API_KEY=<selected group key>`
+  - `config` is a TOML string that carries:
+    - `model_provider = "custom"`
+    - `model=<selected providerTestModel>` or `gpt-5.4` fallback
+    - `review_model=<same selected model>`
+    - `model_reasoning_effort="xhigh"`
+    - `disable_response_storage=true`
+    - `network_access="enabled"`
+    - `windows_wsl_setup_acknowledged=true`
+    - `model_context_window=1000000`
+    - `model_auto_compact_token_limit=900000`
+    - `[model_providers.custom].name=<button label provider/group name>`
+    - `[model_providers.custom].base_url=<selectedProvider.base_url>`
+    - `[model_providers.custom].wire_api="responses"`
+    - `[model_providers.custom].requires_openai_auth=true`
+- `Claude` 改用 config-import 模式：
+  - `configFormat=json`
+  - `config=<Base64(JSON.stringify({ env }))>`
+  - `env.ANTHROPIC_BASE_URL=<selectedProvider.base_url>`
+  - `env.ANTHROPIC_AUTH_TOKEN=<selected group key>`
+  - `env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC="1"`
+  - `env.CLAUDE_CODE_ATTRIBUTION_HEADER="0"`
+  - `env.ANTHROPIC_MODEL=<selected providerTestModel>` when the page has a selected model for the current group
+  - when the selected Claude model name clearly implies a role (`haiku` / `sonnet` / `opus`), mirror it into the matching `env.ANTHROPIC_DEFAULT_<ROLE>_MODEL`
+- `Gemini` 改用 config-import 模式：
+  - `configFormat=json`
+  - `config=<Base64(JSON.stringify(config))>`
+  - `config.GEMINI_API_KEY=<selected group key>`
+  - `config.GOOGLE_GEMINI_BASE_URL=<selectedProvider.base_url>`
+  - `config.GEMINI_MODEL=<selected providerTestModel>` when the page has a selected model for the current group
 
 示例：
 
 ```text
-ccswitch://v1/import?resource=provider&app=codex&name=Relay%20Main%20%2F%20General%20Development&endpoint=https%3A%2F%2Frelay.example.com&apiKey=sk-xxx&enabled=true
+ccswitch://v1/import?resource=provider&app=codex&name=Relay%20Main%20%2F%20General%20Development&enabled=true&configFormat=json&config=<base64-json>
+```
+
+```text
+ccswitch://v1/import?resource=provider&app=claude&name=Relay%20Main%20%2F%20General%20Development&enabled=true&configFormat=json&config=<base64-json>
+```
+
+```text
+ccswitch://v1/import?resource=provider&app=gemini&name=Relay%20Main%20%2F%20General%20Development&enabled=true&configFormat=json&config=<base64-json>
 ```
 
 #### Explicitly Deferred Parameters
 
 第一版不要求使用以下参数：
 
-- `config`
-- `configFormat`
 - `configUrl`
 - `homepage`
 - `notes`
+- top-level `endpoint` / `apiKey` / `model` for `Claude`
+- top-level `endpoint` / `apiKey` / `model` for `Codex` and `Gemini`
 
 原因：
 
-- 当前 `/user` onboarding 的核心目标是稳定导入 provider endpoint 与 API key。
-- 为了避免 `CC Switch` 使用各客户端自身的默认模板模型，`/user` 优先对当前平台传入页面已选中的模型；Codex 在没有显式模型时仍传 `gpt-5.4`，避免落回 `gpt-5-codex`。
-- 一旦带入 `config` 或 app-specific extended config，就会把 spec 拉进多个客户端各自的高级配置合同。
+- 当前 `/user` onboarding 的核心目标仍然是稳定导入 provider endpoint 与 API key，但 `Codex` / `Claude` / `Gemini` 的实际 app-specific 导入合同都能保留比通用 URL 参数更多的稳定配置字段。
+- `Codex` config-import 让 `/user` deep link 能保留我们当前页面已经承诺的核心 Codex 运行时设置，而不是退化成上游导入器根据 `endpoint/apiKey/model` 临时拼出来的最小默认 TOML。
+- `Claude` config-import 直接复用 `~/.claude/settings.json` / `ae-cli discover` 的关键 env 字段，避免 deeplink 导入后与手动配置合同漂移。
+- `Gemini` config-import 与上游 Gemini provider 最终落盘形态一致，并显式使用 `GOOGLE_GEMINI_BASE_URL` 这一当前代码中的 canonical key；虽然上游示例页仍可见 `GEMINI_BASE_URL` 文案，但 deeplink 解析器已经兼容两者。
+- `CC Switch` 当前公开 deeplink 文档和示例页已经把 `Claude` 的完整配置导入建立在 `configFormat=json` + `config` 上，并在近期 release note 中明确提到 Claude deeplink import 会保留 custom environment fields。
+- `Codex` 在没有显式模型时仍传 `gpt-5.4`，避免落回 `gpt-5-codex`。
 
 #### Fallback Behavior
 
