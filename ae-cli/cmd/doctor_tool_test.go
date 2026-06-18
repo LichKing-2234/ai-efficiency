@@ -222,6 +222,70 @@ func TestDoctorRegistersProbeToolsFlag(t *testing.T) {
 	}
 }
 
+func TestDoctorRecentFailuresFlagCanHideSection(t *testing.T) {
+	repo := initRepoWithCommitForCmdTests(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	withWorkingDir(t, repo)
+	writeDoctorToolFiles(t, home)
+
+	oldCfg := cfg
+	oldClient := apiClient
+	oldList := listProvidersForDoctor
+	oldDetect := detectToolsForDoctor
+	oldProbe := probeToolsForDoctor
+	oldProbeTools := doctorProbeTools
+	oldRecent := recentCodexFailureSummary
+	oldRecentLimit := doctorRecentFailures
+	recentFlag := doctorCmd.Flags().Lookup("recent-failures")
+	if recentFlag == nil {
+		t.Fatal("doctor --recent-failures flag is not registered")
+	}
+	oldRecentFlag := recentFlag.Value.String()
+
+	doctorProbeTools = false
+	cfg = &config.Config{Server: config.ServerConfig{URL: "https://ae.example.com", Token: "tok"}}
+	apiClient = nil
+	listProvidersForDoctor = func(context.Context) ([]client.ProviderInfo, string, error) {
+		return []client.ProviderInfo{doctorProviderInfo()}, "user/providers", nil
+	}
+	detectToolsForDoctor = func([]string) ([]doctorcheck.ToolState, error) {
+		return []doctorcheck.ToolState{{Name: "codex", ExecutablePath: "/bin/codex", Version: "codex 1", Probeable: true}}, nil
+	}
+	probeToolsForDoctor = func(context.Context, doctorcheck.ProbeOptions) []doctorcheck.ProbeResult {
+		t.Fatal("probeToolsForDoctor should not run unless --probe-tools is set")
+		return nil
+	}
+	recentCodexFailureSummary = func(string, int) (attributionlocal.CodexFailureSummary, error) {
+		t.Fatal("recentCodexFailureSummary should not run when --recent-failures=0")
+		return attributionlocal.CodexFailureSummary{}, nil
+	}
+	if err := doctorCmd.Flags().Set("recent-failures", "0"); err != nil {
+		t.Fatalf("set recent-failures: %v", err)
+	}
+	t.Cleanup(func() {
+		cfg = oldCfg
+		apiClient = oldClient
+		listProvidersForDoctor = oldList
+		detectToolsForDoctor = oldDetect
+		probeToolsForDoctor = oldProbe
+		doctorProbeTools = oldProbeTools
+		recentCodexFailureSummary = oldRecent
+		doctorRecentFailures = oldRecentLimit
+		_ = doctorCmd.Flags().Set("recent-failures", oldRecentFlag)
+	})
+
+	buf := &bytes.Buffer{}
+	doctorCmd.SetOut(buf)
+	doctorCmd.SetErr(buf)
+	if err := doctorCmd.RunE(doctorCmd, nil); err != nil {
+		t.Fatalf("doctor: %v", err)
+	}
+	if strings.Contains(buf.String(), "Recent Codex Failures") {
+		t.Fatalf("doctor output should hide recent Codex failures when flag is 0:\n%s", buf.String())
+	}
+}
+
 func TestDoctorPrintsRecentCodexFailures(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -327,6 +391,17 @@ func TestDoctorDoesNotPrintRequestIDFallbackWhenRecentFailuresHaveIDs(t *testing
 	}
 	if strings.Contains(output, "Recent Codex Failures With Request IDs") {
 		t.Fatalf("doctor output should not duplicate request-id fallback when recent failures already have IDs:\n%s", output)
+	}
+}
+
+func TestFailureURLRedactsSensitiveParts(t *testing.T) {
+	got := failureURL("https://alice:test-password@relay.example.com/responses?api_key=test-password&ok=1#fragment")
+	if got != "https://relay.example.com/responses" {
+		t.Fatalf("failureURL redacted URL = %q", got)
+	}
+	got = failureURL("not-a-url?token=secret")
+	if got != "not-a-url" {
+		t.Fatalf("failureURL fallback = %q", got)
 	}
 }
 

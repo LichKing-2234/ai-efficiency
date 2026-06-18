@@ -1,7 +1,9 @@
 package attributionlocal
 
 import (
+	"context"
 	"database/sql"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -40,6 +42,9 @@ type CodexFailureSummary struct {
 // script trusts: HTTP completions logged by the default client transport.
 const codexFailedRequestTarget = "codex_client::default_client"
 
+const codexFailureLookback = 30 * 24 * time.Hour
+const codexFailureQueryTimeout = 3 * time.Second
+
 var (
 	reFailLine             = regexp.MustCompile(`url=(\S+) status=(\d{3}) (.*?) headers=`)
 	reFailHdrRequestID     = regexp.MustCompile(`"x-request-id":\s*"([^"]+)"`)
@@ -66,32 +71,63 @@ func RecentCodexFailureSummary(homeDir string, limit int) (CodexFailureSummary, 
 	if len(dbPaths) == 0 {
 		return CodexFailureSummary{}, nil
 	}
-	return parseCodexFailureSummary(dbPaths[0], limit)
+	ctx, cancel := context.WithTimeout(context.Background(), codexFailureQueryTimeout)
+	defer cancel()
+	since := time.Now().UTC().Add(-codexFailureLookback)
+	return parseCodexFailureSummary(ctx, dbPaths[0], limit, since)
 }
 
 func parseCodexFailures(dbPath string, limit int) ([]CodexFailedRequest, error) {
-	summary, err := parseCodexFailureSummary(dbPath, limit)
+	summary, err := parseCodexFailureSummary(context.Background(), dbPath, limit, time.Time{})
 	return summary.Recent, err
 }
 
-func parseCodexFailureSummary(dbPath string, limit int) (CodexFailureSummary, error) {
+func parseCodexFailureSummary(ctx context.Context, dbPath string, limit int, since time.Time) (CodexFailureSummary, error) {
 	var summary CodexFailureSummary
 	if limit <= 0 {
 		return summary, nil
 	}
-	db, err := sql.Open("sqlite", dbPath)
+	db, err := sql.Open("sqlite", codexSQLiteReadOnlyDSN(dbPath))
 	if err != nil {
 		return summary, err
 	}
 	defer db.Close()
 
-	// Walk newest-first using the ts index. The LIKE clauses narrow the scan to
-	// HTTP completion lines whose status is not 2xx (3xx/4xx/5xx) before we parse
-	// in Go; we stop once `limit` genuine failures are collected.
-	rows, err := db.Query(`
+	summary.Recent, err = queryCodexFailures(ctx, db, limit, since, false)
+	if err != nil {
+		return summary, err
+	}
+	summary.RecentWithRequestID, err = queryCodexFailures(ctx, db, limit, since, true)
+	if err != nil {
+		return summary, err
+	}
+	return summary, nil
+}
+
+func queryCodexFailures(ctx context.Context, db *sql.DB, limit int, since time.Time, requireRequestID bool) ([]CodexFailedRequest, error) {
+	if limit <= 0 {
+		return nil, nil
+	}
+	sinceUnix := int64(0)
+	if !since.IsZero() {
+		sinceUnix = since.UTC().Unix()
+	}
+	requestIDFilter := ""
+	if requireRequestID {
+		requestIDFilter = `
+		  AND (
+		        feedback_log_body LIKE '%"x-request-id"%'
+		     OR feedback_log_body LIKE '%"x-client-request-id"%'
+		     OR feedback_log_body LIKE '%"x-kong-request-id"%'
+		  )`
+	}
+	// The timestamp lower bound, descending timestamp order, and SQL LIMIT keep
+	// doctor from walking an unbounded Codex transport log on every run.
+	query := `
 		SELECT id, ts, ts_nanos, thread_id, feedback_log_body
 		FROM logs
 		WHERE target = ?
+		  AND ts >= ?
 		  AND feedback_log_body LIKE '%Request completed method=POST%'
 		  AND feedback_log_body LIKE '%api.path="responses"%'
 		  AND (
@@ -99,15 +135,17 @@ func parseCodexFailureSummary(dbPath string, limit int) (CodexFailureSummary, er
 		     OR feedback_log_body LIKE '%status=4%'
 		     OR feedback_log_body LIKE '%status=5%'
 		  )
+` + requestIDFilter + `
 		ORDER BY ts DESC, ts_nanos DESC, id DESC
-	`, codexFailedRequestTarget)
+		LIMIT ?
+	`
+	rows, err := db.QueryContext(ctx, query, codexFailedRequestTarget, sinceUnix, limit)
 	if err != nil {
-		return summary, err
+		return nil, err
 	}
 	defer rows.Close()
 
-	summary.Recent = make([]CodexFailedRequest, 0, limit)
-	summary.RecentWithRequestID = make([]CodexFailedRequest, 0, limit)
+	failures := make([]CodexFailedRequest, 0, limit)
 	for rows.Next() {
 		var (
 			id      int64
@@ -117,26 +155,27 @@ func parseCodexFailureSummary(dbPath string, limit int) (CodexFailureSummary, er
 			body    string
 		)
 		if err := rows.Scan(&id, &ts, &tsNanos, &thread, &body); err != nil {
-			return summary, err
+			return nil, err
 		}
 		failure, ok := parseCodexFailureLine(id, ts, tsNanos, thread.String, body)
 		if !ok {
 			continue
 		}
-		if len(summary.Recent) < limit {
-			summary.Recent = append(summary.Recent, failure)
-		}
-		if failure.HasRequestID() && len(summary.RecentWithRequestID) < limit {
-			summary.RecentWithRequestID = append(summary.RecentWithRequestID, failure)
-		}
-		if len(summary.Recent) >= limit && len(summary.RecentWithRequestID) >= limit {
-			break
-		}
+		failures = append(failures, failure)
 	}
 	if err := rows.Err(); err != nil {
-		return summary, err
+		return nil, err
 	}
-	return summary, nil
+	return failures, nil
+}
+
+func codexSQLiteReadOnlyDSN(dbPath string) string {
+	u := url.URL{
+		Scheme:   "file",
+		Path:     dbPath,
+		RawQuery: "mode=ro",
+	}
+	return u.String()
 }
 
 func parseCodexFailureLine(id, ts, tsNanos int64, threadID, body string) (CodexFailedRequest, bool) {

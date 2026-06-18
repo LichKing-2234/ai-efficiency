@@ -74,13 +74,15 @@ ae-cli doctor --probe-tools
 ```
 
 First-phase failed-request diagnostics are intentionally Codex-only and do not
-use OpenTelemetry. Doctor reads the local Codex log database and prints a small
-copy-pasteable list of recent non-2xx Responses API requests with upstream
-request identifiers when available. If the most recent failures do not carry
-upstream identifiers, doctor also prints the most recent failed Codex requests
-that do carry request IDs so local proxy 502s do not hide useful support IDs.
-Claude, Gemini, and OTel ingestion remain out of scope for this section until a
-later design explicitly adds them.
+use OpenTelemetry. Doctor reads the local Codex log database in read-only mode
+with a bounded recent lookback, then prints a small copy-pasteable list of
+recent non-2xx Responses API requests with upstream request identifiers when
+available. If the most recent failures do not carry upstream identifiers, doctor
+also prints the most recent failed Codex requests that do carry request IDs so
+local proxy 502s do not hide useful support IDs. Printed request URLs are
+sanitized to scheme, host, and path before rendering. Claude, Gemini, and OTel
+ingestion remain out of scope for this section until a later design explicitly
+adds them.
 
 ## Tool Detection
 
@@ -311,6 +313,7 @@ Add focused tests for:
 13. Doctor repo eligibility uses the doctor timeout, not the hook timeout.
 14. Recent failed-request diagnostics are labeled `Recent Codex Failures` and only read Codex local logs.
 15. When recent Codex failures lack request IDs, doctor also prints `Recent Codex Failures With Request IDs`.
+16. Recent failed-request diagnostics use bounded read-only Codex sqlite reads and redact URL userinfo/query/fragment data.
 
 Default test command:
 

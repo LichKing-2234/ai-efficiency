@@ -1,9 +1,11 @@
 package attributionlocal
 
 import (
+	"context"
 	"database/sql"
 	"path/filepath"
 	"testing"
+	"time"
 
 	_ "github.com/glebarez/go-sqlite"
 )
@@ -102,7 +104,7 @@ func TestRecentCodexFailureSummary_SeparatesRecentWithRequestIDs(t *testing.T) {
 		{ts: 200, target: codexFailedRequestTarget, threadID: "without-id", body: codexFail502},
 	})
 
-	summary, err := parseCodexFailureSummary(dbPath, 1)
+	summary, err := parseCodexFailureSummary(context.Background(), dbPath, 1, time.Time{})
 	if err != nil {
 		t.Fatalf("parseCodexFailureSummary: %v", err)
 	}

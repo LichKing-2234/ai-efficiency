@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"os/exec"
 	"strings"
@@ -140,7 +141,7 @@ func printCodexFailureList(out io.Writer, style doctorOutputStyle, title string,
 		f := failures[i]
 		when := f.Timestamp.Local().Format("2006-01-02 15:04:05")
 		fmt.Fprintf(out, "  - %s status=%d %s\n", when, f.StatusCode, strings.TrimSpace(f.StatusText))
-		fmt.Fprintf(out, "      url=%s\n", f.URL)
+		fmt.Fprintf(out, "      url=%s\n", failureURL(f.URL))
 		fmt.Fprintf(out, "      x-request-id=%s\n", failureID(f.XRequestID))
 		fmt.Fprintf(out, "      x-client-request-id=%s\n", failureID(f.XClientRequestID))
 		fmt.Fprintf(out, "      x-kong-request-id=%s\n", failureID(f.XKongRequestID))
@@ -154,6 +155,28 @@ func codexFailuresNeedRequestIDFallback(failures []attributionlocal.CodexFailedR
 		}
 	}
 	return false
+}
+
+func failureURL(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "(none)"
+	}
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return stripURLSuffix(value)
+	}
+	parsed.User = nil
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	return parsed.String()
+}
+
+func stripURLSuffix(value string) string {
+	if idx := strings.IndexAny(value, "?#"); idx >= 0 {
+		return value[:idx]
+	}
+	return value
 }
 
 func failureID(value string) string {
