@@ -64,11 +64,6 @@ const showAutomaticConfigMethod = computed(() => !selectedIsAgentGroup.value)
 const ccSwitchMethodTitle = computed(() => selectedIsAgentGroup.value ? t('user.appImportMethodTitle') : t('user.ccSwitchConfigMethodTitle'))
 const ccSwitchMethodHelp = computed(() => selectedIsAgentGroup.value ? t('user.appImportMethodHelp') : t('user.ccSwitchConfigMethodHelp'))
 const ccSwitchMethodAudience = computed(() => selectedIsAgentGroup.value ? t('user.appImportMethodAudience') : t('user.ccSwitchConfigMethodAudience'))
-const showAgentImportProtocolWarning = computed(() => {
-  if (!selectedIsAgentGroup.value) return false
-  const platform = selectedGroup.value?.platform.trim().toLowerCase()
-  return platform === 'anthropic' || platform === 'gemini'
-})
 const installPlatform = computed(() => detectInstallPlatform())
 const shellInstallCommand = computed(() => buildInstallCommand(currentOrigin.value))
 const windowsInstallCommand = computed(() => buildWindowsInstallCommand(currentOrigin.value))
@@ -1057,11 +1052,11 @@ onMounted(loadProviders)
                     {{ t('user.agentImportHermesVersionWarning') }}
                   </p>
                   <p
-                    v-if="showAgentImportProtocolWarning"
-                    data-testid="agent-import-protocol-warning"
+                    v-if="selectedIsAgentGroup"
+                    data-testid="agent-import-v1-notice"
                     class="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"
                   >
-                    {{ t('user.agentImportProtocolWarning') }}
+                    {{ t('user.agentImportV1EndpointNotice') }}
                   </p>
                   <p class="mt-3 text-xs text-gray-500">{{ t('user.ccSwitchFallback') }}</p>
                 </div>

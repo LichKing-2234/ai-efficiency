@@ -19,7 +19,7 @@
 - `Agent` manual configuration must include Hermes Agent, OpenClaw, and Custom Agent.
 - `Agent` app import must include only Hermes Agent and OpenClaw.
 - Hermes/OpenClaw CC Switch import links use `ccswitch://v1/import` provider import with URL parameters `resource`, `app`, `name`, `endpoint`, `apiKey`, `model`, and `enabled`; do not reuse Codex/Claude/Gemini app-specific config payloads for these apps.
-- For `Agent` `anthropic` or `gemini` groups, the UI must tell users to confirm or adjust OpenClaw `api` or Hermes `api_mode` inside CC Switch after import.
+- `Agent` `anthropic` and `gemini` groups still use OpenAI-compatible `/v1` Agent endpoints; their backend platform does not switch Hermes/OpenClaw to native Anthropic or Gemini client protocols.
 - Claude Desktop must not be generated as a deep-link target.
 - API key hiding and copy-confirmation behavior must stay unchanged.
 - Do not add backend APIs, browser-to-local CLI execution, or `ae-cli discover` support for Hermes/OpenClaw.
@@ -34,7 +34,7 @@ Included:
 - Agent manual snippets for Hermes Agent, OpenClaw, and Custom Agent.
 - Hermes/OpenClaw CC Switch import link generation for `Agent` groups.
 - `/user` configuration-method card branching for ordinary groups versus Agent groups.
-- Bilingual `/user` copy for Agent manual configuration, app import, compatibility warnings, and protocol-mode adjustment.
+- Bilingual `/user` copy for Agent manual configuration, app import, compatibility warnings, and the OpenAI-compatible `/v1` endpoint notice.
 - Focused frontend unit and view tests.
 - `docs/architecture.md` update for the new current `/user` behavior.
 
@@ -177,7 +177,7 @@ it('switches manual snippets from normal tools to Agent clients for Agent groups
 Add this test to assert platform-specific content:
 
 ```ts
-it('builds Agent manual snippets without mixing platform credential names', () => {
+it('builds Agent manual snippets as OpenAI-compatible v1 providers', () => {
   const anthropicSnippets = buildManualConfigSnippets({
     providerName: 'prod',
     baseUrl: 'https://prod.example.com',
@@ -187,11 +187,12 @@ it('builds Agent manual snippets without mixing platform credential names', () =
     groupName: 'Agentanthropic',
   })
   const anthropicBody = anthropicSnippets.map((snippet) => snippet.body).join('\n')
-  expect(anthropicBody).toContain('ANTHROPIC_AUTH_TOKEN')
-  expect(anthropicBody).toContain('ANTHROPIC_BASE_URL')
-  expect(anthropicBody).toContain('anthropic-messages')
-  expect(anthropicBody).toContain('anthropic_messages')
-  expect(anthropicBody).not.toContain('OPENAI_API_KEY')
+  expect(anthropicBody).toContain('OPENAI_API_KEY')
+  expect(anthropicBody).toContain('OPENAI_BASE_URL')
+  expect(anthropicBody).toContain('https://prod.example.com/v1')
+  expect(anthropicBody).toContain('openai-completions')
+  expect(anthropicBody).toContain('chat_completions')
+  expect(anthropicBody).not.toContain('ANTHROPIC_AUTH_TOKEN')
   expect(anthropicBody).not.toContain('GEMINI_API_KEY')
 
   const geminiSnippets = buildManualConfigSnippets({
@@ -203,10 +204,11 @@ it('builds Agent manual snippets without mixing platform credential names', () =
     groupName: 'Agentgemini',
   })
   const geminiBody = geminiSnippets.map((snippet) => snippet.body).join('\n')
-  expect(geminiBody).toContain('GEMINI_API_KEY')
-  expect(geminiBody).toContain('GOOGLE_GEMINI_BASE_URL')
-  expect(geminiBody).toContain('google-generative-ai')
-  expect(geminiBody).not.toContain('OPENAI_API_KEY')
+  expect(geminiBody).toContain('OPENAI_API_KEY')
+  expect(geminiBody).toContain('OPENAI_BASE_URL')
+  expect(geminiBody).toContain('https://prod.example.com/v1')
+  expect(geminiBody).toContain('openai-completions')
+  expect(geminiBody).not.toContain('GEMINI_API_KEY')
   expect(geminiBody).not.toContain('ANTHROPIC_AUTH_TOKEN')
 })
 ```
@@ -298,13 +300,21 @@ type AgentPlatform = 'openai' | 'anthropic' | 'gemini'
 type AgentPlatformProfile = {
   platform: AgentPlatform
   displayName: string
+  baseUrl: string
   env: Record<string, string>
-  openClawApi: 'openai-completions' | 'anthropic-messages' | 'google-generative-ai'
-  hermesApiMode: 'chat_completions' | 'anthropic_messages' | null
+  openClawApi: 'openai-completions'
+  hermesApiMode: 'chat_completions'
 }
 
 export function isAgentAccessGroup(groupName: string | null | undefined) {
   return Boolean(groupName?.startsWith('Agent'))
+}
+
+export function buildAgentProviderBaseUrl(baseUrl: string) {
+  const trimmed = baseUrl.trim().replace(/\/+$/, '')
+  if (!trimmed) return '/v1'
+  if (/\/v\d+$/i.test(trimmed)) return trimmed
+  return `${trimmed}/v1`
 }
 
 function normalizeAgentPlatform(platform: string): AgentPlatform | null {
@@ -318,46 +328,20 @@ function normalizeAgentPlatform(platform: string): AgentPlatform | null {
 function resolveAgentPlatformProfile(platform: string, baseUrl: string, apiKey: string, model?: string): AgentPlatformProfile | null {
   const normalized = normalizeAgentPlatform(platform)
   const selectedModel = model?.trim()
-  if (normalized === 'openai') {
-    return {
-      platform: 'openai',
-      displayName: 'OpenAI-compatible',
-      env: {
-        OPENAI_API_KEY: apiKey,
-        OPENAI_BASE_URL: baseUrl,
-        ...(selectedModel ? { OPENAI_MODEL: selectedModel } : {}),
-      },
-      openClawApi: 'openai-completions',
-      hermesApiMode: 'chat_completions',
-    }
+  if (!normalized) return null
+  const agentBaseUrl = buildAgentProviderBaseUrl(baseUrl)
+  return {
+    platform: normalized,
+    displayName: 'OpenAI-compatible Chat Completions',
+    baseUrl: agentBaseUrl,
+    env: {
+      OPENAI_API_KEY: apiKey,
+      OPENAI_BASE_URL: agentBaseUrl,
+      ...(selectedModel ? { OPENAI_MODEL: selectedModel } : {}),
+    },
+    openClawApi: 'openai-completions',
+    hermesApiMode: 'chat_completions',
   }
-  if (normalized === 'anthropic') {
-    return {
-      platform: 'anthropic',
-      displayName: 'Anthropic-compatible',
-      env: {
-        ANTHROPIC_AUTH_TOKEN: apiKey,
-        ANTHROPIC_BASE_URL: baseUrl,
-        ...(selectedModel ? { ANTHROPIC_MODEL: selectedModel } : {}),
-      },
-      openClawApi: 'anthropic-messages',
-      hermesApiMode: 'anthropic_messages',
-    }
-  }
-  if (normalized === 'gemini') {
-    return {
-      platform: 'gemini',
-      displayName: 'Gemini-compatible',
-      env: {
-        GEMINI_API_KEY: apiKey,
-        GOOGLE_GEMINI_BASE_URL: baseUrl,
-        ...(selectedModel ? { GEMINI_MODEL: selectedModel } : {}),
-      },
-      openClawApi: 'google-generative-ai',
-      hermesApiMode: null,
-    }
-  }
-  return null
 }
 ```
 
@@ -611,11 +595,11 @@ it('shows only Hermes and OpenClaw imports for Agent groups', async () => {
   const hermesHref = wrapper.get('[data-testid="ccswitch-import-hermes"]').attributes('href') ?? ''
   const openclawHref = wrapper.get('[data-testid="ccswitch-import-openclaw"]').attributes('href') ?? ''
   expect(hermesHref).toContain('app=hermes')
-  expect(hermesHref).toContain('endpoint=https%3A%2F%2Fprod.example.com')
+  expect(hermesHref).toContain('endpoint=https%3A%2F%2Fprod.example.com%2Fv1')
   expect(hermesHref).toContain('apiKey=sk-existing-agent-openai-123456')
   expect(hermesHref).not.toContain('configFormat=json')
   expect(openclawHref).toContain('app=openclaw')
-  expect(openclawHref).toContain('endpoint=https%3A%2F%2Fprod.example.com')
+  expect(openclawHref).toContain('endpoint=https%3A%2F%2Fprod.example.com%2Fv1')
   expect(openclawHref).toContain('apiKey=sk-existing-agent-openai-123456')
   expect(openclawHref).not.toContain('configFormat=json')
 })
@@ -624,22 +608,19 @@ it('shows only Hermes and OpenClaw imports for Agent groups', async () => {
 Add this test:
 
 ```ts
-it('warns Agent Anthropic and Gemini users to confirm CC Switch protocol mode after import', async () => {
+it('explains Agent imports use OpenAI-compatible v1 endpoints', async () => {
   const { wrapper } = await mountUserView()
 
   await wrapper.get('[data-testid="group-47"]').trigger('click')
   await flushPromises()
   await wrapper.get('[data-testid="config-method-ccswitch"]').trigger('click')
-  expect(wrapper.text()).toContain('Confirm the provider protocol in CC Switch after import')
-  expect(wrapper.text()).toContain('OpenClaw api')
-  expect(wrapper.text()).toContain('Hermes api_mode')
+  expect(wrapper.text()).toContain('Agent imports use the OpenAI-compatible /v1 endpoint')
+  expect(wrapper.text()).toContain('Hermes Agent and OpenClaw use Chat Completions providers')
 
   await wrapper.get('[data-testid="group-48"]').trigger('click')
   await flushPromises()
   await wrapper.get('[data-testid="config-method-ccswitch"]').trigger('click')
-  expect(wrapper.text()).toContain('Confirm the provider protocol in CC Switch after import')
-  expect(wrapper.text()).toContain('OpenClaw api')
-  expect(wrapper.text()).toContain('Hermes api_mode')
+  expect(wrapper.text()).toContain('Agent imports use the OpenAI-compatible /v1 endpoint')
 })
 ```
 
@@ -683,11 +664,6 @@ const showAutomaticConfigMethod = computed(() => !selectedIsAgentGroup.value)
 const ccSwitchMethodTitle = computed(() => selectedIsAgentGroup.value ? t('user.appImportMethodTitle') : t('user.ccSwitchConfigMethodTitle'))
 const ccSwitchMethodHelp = computed(() => selectedIsAgentGroup.value ? t('user.appImportMethodHelp') : t('user.ccSwitchConfigMethodHelp'))
 const ccSwitchMethodAudience = computed(() => selectedIsAgentGroup.value ? t('user.appImportMethodAudience') : t('user.ccSwitchConfigMethodAudience'))
-const showAgentImportProtocolWarning = computed(() => {
-  if (!selectedIsAgentGroup.value) return false
-  const platform = selectedGroup.value?.platform.trim().toLowerCase()
-  return platform === 'anthropic' || platform === 'gemini'
-})
 ```
 
 - [x] **Step 5: Update manual snippet input with group name and model**
@@ -794,11 +770,11 @@ Add this warning inside the app-import panel before the import buttons:
   {{ t('user.agentImportHermesVersionWarning') }}
 </p>
 <p
-  v-if="showAgentImportProtocolWarning"
-  data-testid="agent-import-protocol-warning"
+  v-if="selectedIsAgentGroup"
+  data-testid="agent-import-v1-notice"
   class="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"
 >
-  {{ t('user.agentImportProtocolWarning') }}
+  {{ t('user.agentImportV1EndpointNotice') }}
 </p>
 ```
 
@@ -817,7 +793,7 @@ Add English strings near the existing manual/CC Switch strings in `frontend/src/
 'user.importToHermes': 'Import to Hermes Agent',
 'user.importToOpenClaw': 'Import to OpenClaw',
 'user.agentImportHermesVersionWarning': 'Hermes Agent import requires a recent CC Switch version. If import fails, upgrade CC Switch or use manual configuration.',
-'user.agentImportProtocolWarning': 'Confirm the provider protocol in CC Switch after import. For this platform, check OpenClaw api and Hermes api_mode before using the provider.',
+'user.agentImportV1EndpointNotice': 'Agent imports use the OpenAI-compatible /v1 endpoint because Hermes Agent and OpenClaw use Chat Completions providers by default.',
 ```
 
 Add Chinese strings near the existing Chinese manual/CC Switch strings:
@@ -833,7 +809,7 @@ Add Chinese strings near the existing Chinese manual/CC Switch strings:
 'user.importToHermes': '导入到 Hermes Agent',
 'user.importToOpenClaw': '导入到 OpenClaw',
 'user.agentImportHermesVersionWarning': 'Hermes Agent 导入需要较新版本的 CC Switch。如果导入失败，请升级 CC Switch 或改用手动配置。',
-'user.agentImportProtocolWarning': '导入后请在 CC Switch 内确认 provider 协议。当前平台需要检查 OpenClaw api 和 Hermes api_mode 后再使用。',
+'user.agentImportV1EndpointNotice': 'Agent 导入会使用 OpenAI-compatible /v1 端点，因为 Hermes Agent 和 OpenClaw 默认使用 Chat Completions provider。',
 ```
 
 - [x] **Step 10: Run view tests to verify they pass**
@@ -866,7 +842,7 @@ Modify the long `/user` paragraph in `docs/architecture.md` that currently says 
 Replace that sentence with this content:
 
 ```md
-Once a key exists, ordinary access groups still offer manual local configuration, automatic `ae-cli discover`, and app-specific `CC Switch` provider-import links for Codex, Claude Code, or Gemini according to the selected group platform. Access groups whose names strictly start with `Agent` instead enter an Agent client configuration branch: the page hides Codex/Claude/Gemini snippets, hides the `ae-cli` automatic configuration card, shows Hermes Agent, OpenClaw, and Custom Agent manual configuration, and offers only Hermes/OpenClaw CC Switch app-import links. Hermes/OpenClaw app import uses CC Switch provider deep links; for Anthropic or Gemini Agent groups, the UI tells users to confirm OpenClaw `api` or Hermes `api_mode` inside CC Switch after import because the deep link imports endpoint/key/model but does not fully encode every target app protocol field.
+Once a key exists, ordinary access groups still offer manual local configuration, automatic `ae-cli discover`, and app-specific `CC Switch` provider-import links for Codex, Claude Code, or Gemini according to the selected group platform. Access groups whose names strictly start with `Agent` instead enter an Agent client configuration branch: the page hides Codex/Claude/Gemini snippets, hides the `ae-cli` automatic configuration card, shows Hermes Agent, OpenClaw, and Custom Agent manual configuration, and offers only Hermes/OpenClaw CC Switch app-import links. Agent-client manual snippets and Hermes/OpenClaw app imports normalize the provider URL to an OpenAI-compatible versioned endpoint, normally `<provider.base_url>/v1` unless the configured provider URL already ends in a version segment.
 ```
 
 - [x] **Step 2: Run plan-required focused tests**

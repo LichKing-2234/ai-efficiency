@@ -44,7 +44,7 @@
 1. `Agent` 接入组的目标客户端是 Hermes Agent、OpenClaw 和自定义 Agent，而不是 Codex、Claude Code、Gemini。
 2. 如果 Agent 接入组继续显示 Codex/Claude/Gemini 片段，会让用户误把 Agent 专用额度或路由配置进普通开发工具。
 3. Hermes/OpenClaw 的官方接入主要是 CLI onboarding、配置文件、或 CC Switch 管理导入；这些命令式配置不应该归入 `ae-cli 自动配置`。
-4. CC Switch deep link 是 CC Switch 自己的导入协议，不等同于 Hermes/OpenClaw 官方是否提供自有 deep link。CC Switch 当前源码已接受 `app=openclaw` 和 `app=hermes`，但 provider import 对 OpenClaw/Hermes 的协议模式仍使用默认值，不能把所有 platform 语义完整写入目标 app。
+4. CC Switch deep link 是 CC Switch 自己的导入协议，不等同于 Hermes/OpenClaw 官方是否提供自有 deep link。CC Switch 当前源码已接受 `app=openclaw` 和 `app=hermes`，且 provider import 对 OpenClaw/Hermes 的默认协议模式正好是 Agent 分支需要的 OpenAI-compatible Chat Completions。
 5. Claude Desktop 虽已被 CC Switch 管理，但当前不应作为稳定 deep link target 出现在 `/user`。
 
 结果是：页面需要在普通接入组和 Agent 接入组之间明确分流，避免同一个配置区域同时混入普通工具和 Agent 客户端。
@@ -55,7 +55,7 @@
 2. `Agent` 接入组只展示 Hermes Agent、OpenClaw 和 Custom Agent，不展示 Codex、Claude Code、Gemini 配置或导入。
 3. 普通接入组保持现状，继续展示 Codex、Claude Code、Gemini 对应的手动配置、CC Switch 导入和 `ae-cli` 自动配置路径。
 4. 将 Hermes/OpenClaw 的命令式 onboarding 和文件片段归入 `手动配置`。
-5. 将 Hermes/OpenClaw 的 CC Switch provider import 归入 `应用导入`，不伪装成官方自有 deep link；对非 OpenAI platform 明确提示用户在 CC Switch 内确认或调整协议模式。
+5. 将 Hermes/OpenClaw 的 CC Switch provider import 归入 `应用导入`，不伪装成官方自有 deep link；对所有 Agent platform 明确说明导入使用 OpenAI-compatible `/v1` endpoint。
 6. 对 Custom Agent 提供平台化通用模板，用于任何支持当前协议的自定义 Agent。
 7. 不改变后端 provider/group/API key 合同，不新增后端 API。
 8. 不改变 `ae-cli discover`、hooks、repo attribution 或 doctor 的命令语义。
@@ -151,15 +151,15 @@ Hermes Agent 手动配置应优先提供官方 CLI/onboarding 路径和必要文
 - `hermes model` / `hermes config set` 方向的命令式配置
 - `~/.hermes/config.yaml` / `~/.hermes/.env` 方向的文件片段，前提是片段能与官方配置合同保持一致
 
-Hermes 配置内容必须按当前 group platform 生成，不把所有 group 都伪装成 OpenAI-compatible：
+Hermes Agent 配置内容统一使用 OpenAI-compatible Chat Completions endpoint。原因是 Hermes custom provider 的稳定配置面以 `base_url` + `api_mode: chat_completions` 表达这类接入；因此 Agent 接入组的 `platform` 只表示后端 group/model 来源，不再决定 Hermes 客户端协议。
 
 | platform | Hermes manual output |
 | --- | --- |
-| `openai` | OpenAI-compatible endpoint/key/model |
-| `anthropic` | Anthropic-compatible endpoint/key/model |
-| `gemini` | Gemini-compatible endpoint/key/model |
+| `openai` | OpenAI-compatible `/v1` endpoint/key/model |
+| `anthropic` | OpenAI-compatible `/v1` endpoint/key/model |
+| `gemini` | OpenAI-compatible `/v1` endpoint/key/model |
 
-如果某个平台在 Hermes 官方配置合同中不能稳定表达，UI 应展示官方配置入口和当前 group 的通用参数，而不是硬写可能错误的私有文件格式。
+如果 provider `base_url` 已经以版本段结尾（如 `/v1` 或 `/api/coding/paas/v4`），前端保留该版本化 URL；否则追加 `/v1`。
 
 #### OpenClaw
 
@@ -170,15 +170,15 @@ OpenClaw 手动配置应提供官方 onboard/config 路径和必要文件片段�
 - `openclaw config set ...` / `openclaw config patch ...`
 - `~/.openclaw/openclaw.json` 方向的片段，前提是片段能与官方 configuration reference 保持一致
 
-OpenClaw 配置内容同样必须按当前 group platform 生成：
+OpenClaw 配置内容同样统一使用 OpenAI-compatible Chat Completions：
 
 | platform | OpenClaw manual output |
 | --- | --- |
-| `openai` | OpenAI-compatible endpoint/key/model |
-| `anthropic` | Anthropic-compatible endpoint/key/model |
-| `gemini` | Gemini-compatible endpoint/key/model |
+| `openai` | `api: "openai-completions"` + `/v1` endpoint/key/model |
+| `anthropic` | `api: "openai-completions"` + `/v1` endpoint/key/model |
+| `gemini` | `api: "openai-completions"` + `/v1` endpoint/key/model |
 
-实现时如果无法确认 OpenClaw 某个平台的 exact nested JSON path，应优先输出 `openclaw onboard` / `openclaw config set` 命令和通用参数，不应生成不确定的 JSON 路径。
+这里不生成 `anthropic-messages` 或 `google-generative-ai` native provider 片段；Agent 客户端按 `/v1/chat/completions` 工作，native platform 仍由后端连接测试和普通组配置路径覆盖。
 
 #### Custom Agent
 
@@ -195,9 +195,9 @@ Custom Agent 展示内容：
 
 | platform | template |
 | --- | --- |
-| `openai` | `OPENAI_API_KEY`, `OPENAI_BASE_URL`, OpenAI-compatible JSON 示例 |
-| `anthropic` | `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL`, Anthropic-compatible JSON 示例 |
-| `gemini` | `GEMINI_API_KEY`, `GOOGLE_GEMINI_BASE_URL`, Gemini-compatible env/JSON 示例 |
+| `openai` | `OPENAI_API_KEY`, `OPENAI_BASE_URL=<provider.base_url>/v1`, OpenAI-compatible JSON 示例 |
+| `anthropic` | `OPENAI_API_KEY`, `OPENAI_BASE_URL=<provider.base_url>/v1`, OpenAI-compatible JSON 示例 |
+| `gemini` | `OPENAI_API_KEY`, `OPENAI_BASE_URL=<provider.base_url>/v1`, OpenAI-compatible JSON 示例 |
 
 Custom Agent 不进入应用导入，因为没有稳定 app target。
 
@@ -230,7 +230,7 @@ Hermes 可作为稳定 app target 处理，但需要兼容性提示：
 1. 生成 `app=hermes` 的 provider import link。
 2. UI 必须提示用户需要较新版本 CC Switch。
 3. 如果导入失败，提示升级 CC Switch 或回退到手动配置。
-4. 对 `anthropic` / `gemini` platform，提示导入后需要在 CC Switch 内确认 Hermes `api_mode`，因为当前 CC Switch provider import 默认写入 `chat_completions`。
+4. UI 说明 Agent 导入使用 OpenAI-compatible `/v1` endpoint，因为 Hermes/OpenClaw 默认 provider 协议就是 Chat Completions。
 
 Claude Desktop 不作为本轮 deep link 目标：
 
@@ -247,12 +247,12 @@ CC Switch import builder 应区分两层能力：
    - OpenClaw: `api = "openai-completions"`
    - Hermes: `api_mode = "chat_completions"`
 
-因此 AE 第一版不能假设 deeplink 能完整携带 `openai` / `anthropic` / `gemini` platform 语义。它应当：
+因此 AE 第一版不把 `openai` / `anthropic` / `gemini` platform 语义映射为 native Agent 协议。它应当：
 
 - 对所有 `Agent` platform 生成 Hermes/OpenClaw import link。
-- 在 link 中携带当前 group 的 endpoint、API key、model、provider name。
-- 对 `platform !== "openai"` 的 Agent group，在应用导入面板显示 post-import adjustment 提示，要求用户在 CC Switch 内确认/调整 OpenClaw `api` 或 Hermes `api_mode`。
-- 把“准确按 platform 配置协议字段”的能力放在手动配置里。
+- 在 link 中携带 Agent 归一化后的 `/v1` endpoint、API key、model、provider name。
+- 使用 CC Switch 默认的 OpenClaw `api = "openai-completions"` 和 Hermes `api_mode = "chat_completions"`。
+- 不再提示 Anthropic/Gemini Agent group 手动调整 OpenClaw `api` 或 Hermes `api_mode`，因为 Agent 分支统一走 OpenAI-compatible Chat Completions。
 
 目标结构：
 
@@ -264,7 +264,7 @@ type AgentProviderImportInput = {
   app: AgentImportApp
   platform: ProviderPlatform
   name: string
-  endpoint: string
+  endpoint: string // normalized Agent endpoint, normally <provider.base_url>/v1
   apiKey: string
   model?: string
   enabled?: boolean
@@ -273,18 +273,17 @@ type AgentProviderImportInput = {
 
 link 输出原则：
 
-1. `app=openclaw` 使用 `ccswitch://v1/import?resource=provider&app=openclaw&name=...&endpoint=...&apiKey=...&model=...&enabled=true`。
-2. `app=hermes` 使用 `ccswitch://v1/import?resource=provider&app=hermes&name=...&endpoint=...&apiKey=...&model=...&enabled=true`。
+1. `app=openclaw` 使用 `ccswitch://v1/import?resource=provider&app=openclaw&name=...&endpoint=<provider.base_url>/v1&apiKey=...&model=...&enabled=true`。
+2. `app=hermes` 使用 `ccswitch://v1/import?resource=provider&app=hermes&name=...&endpoint=<provider.base_url>/v1&apiKey=...&model=...&enabled=true`。
 3. 不为 OpenClaw/Hermes 复用 Codex 的 `auth/config.toml` JSON payload。
 4. 不为 OpenClaw/Hermes 复用 Claude 的 `env` JSON payload。
 5. 不在 URL 明文 query 之外额外展开不被 CC Switch 当前 parser 使用的协议字段。
 
 手动配置输出原则：
 
-1. `platform=openai` 使用 OpenAI-compatible key/base URL 字段。
-2. `platform=anthropic` 使用 Anthropic-compatible key/base URL 字段。
-3. `platform=gemini` 使用 Gemini-compatible key/base URL 字段。
-4. 不把 `anthropic` 或 `gemini` group 包装成 OpenAI config。
+1. Agent group 的 Hermes/OpenClaw/Custom Agent 统一使用 OpenAI-compatible key/base URL 字段。
+2. 普通 group 仍按 `openai` / `anthropic` / `gemini` platform 输出对应 Codex/Claude/Gemini 配置。
+3. Agent group 不按 `anthropic` 或 `gemini` native client protocol 生成 Hermes/OpenClaw/Custom Agent 配置；这些 Agent 客户端统一使用 OpenAI-compatible Chat Completions。
 
 ### 6. API Key Safety
 
@@ -402,7 +401,7 @@ Agent 组文案避免“CC Switch 配置”这个过窄标题，使用更准确�
 3. `Agent` group 的手动配置面板显示 Hermes Agent、OpenClaw、Custom Agent。
 4. `Agent` group 的应用导入面板显示 Hermes/OpenClaw，不显示 Codex/Claude/Gemini。
 5. Hermes import 区显示版本兼容提示。
-6. `Agent` + `anthropic` 或 `Agent` + `gemini` 的应用导入面板显示 CC Switch 协议模式确认/调整提示。
+6. `Agent` + `anthropic` 或 `Agent` + `gemini` 的应用导入面板显示 OpenAI-compatible `/v1` endpoint 说明。
 7. API key 未创建时，Agent import link 不可用或不渲染。
 
 ### Manual Verification
@@ -411,10 +410,10 @@ Agent 组文案避免“CC Switch 配置”这个过窄标题，使用更准确�
 
 1. 普通 OpenAI group：页面行为与当前线上一致。
 2. `Agent` OpenAI group：只看到 Hermes/OpenClaw/Custom Agent。
-3. `Agent` Anthropic group：只看到 Hermes/OpenClaw/Custom Agent，变量名不使用 OpenAI key。
-4. `Agent` Gemini group：只看到 Hermes/OpenClaw/Custom Agent，变量名不使用 OpenAI/Anthropic key。
+3. `Agent` Anthropic group：只看到 Hermes/OpenClaw/Custom Agent，变量名使用 `OPENAI_API_KEY` / `OPENAI_BASE_URL=<provider.base_url>/v1`。
+4. `Agent` Gemini group：只看到 Hermes/OpenClaw/Custom Agent，变量名使用 `OPENAI_API_KEY` / `OPENAI_BASE_URL=<provider.base_url>/v1`。
 5. 点击 OpenClaw import link 能拉起支持 deep link 的 CC Switch。
-6. `Agent` Anthropic/Gemini group 的应用导入文案提醒用户在 CC Switch 内确认 OpenClaw `api` 或 Hermes `api_mode`。
+6. `Agent` Anthropic/Gemini group 的应用导入文案提醒用户导入使用 OpenAI-compatible `/v1` endpoint。
 7. 点击 Hermes import link 时，如 CC Switch 版本不支持，页面已有明确回退说明。
 
 ## Documentation Updates
@@ -434,7 +433,7 @@ Agent 组文案避免“CC Switch 配置”这个过窄标题，使用更准确�
 5. `Agent` group 应用导入只包含 Hermes Agent 和 OpenClaw。
 6. `Agent` group 不展示 `ae-cli` 自动配置卡。
 7. Hermes import 有 CC Switch 版本兼容提示。
-8. `Agent` Anthropic/Gemini group 的应用导入提示用户确认 CC Switch 协议模式。
+8. `Agent` Anthropic/Gemini group 的应用导入提示用户导入使用 OpenAI-compatible `/v1` endpoint。
 9. Claude Desktop 不作为 generated deep link target。
 10. API key 敏感复制确认规则保持不变。
 11. 相关 helper 和 view tests 覆盖普通组与 Agent 组分支。

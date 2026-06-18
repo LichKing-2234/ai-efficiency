@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  buildAgentProviderBaseUrl,
   buildCCSwitchProviderImportLink,
   buildDeviceLoginCommand,
   buildDiscoverCommand,
@@ -119,6 +120,13 @@ describe('userSetupReview command builders', () => {
     expect(isAgentAccessGroup(undefined)).toBe(false)
   })
 
+  it('normalizes Agent provider endpoints to OpenAI-compatible versioned URLs', () => {
+    expect(buildAgentProviderBaseUrl('https://prod.example.com')).toBe('https://prod.example.com/v1')
+    expect(buildAgentProviderBaseUrl('https://prod.example.com/')).toBe('https://prod.example.com/v1')
+    expect(buildAgentProviderBaseUrl('https://prod.example.com/v1')).toBe('https://prod.example.com/v1')
+    expect(buildAgentProviderBaseUrl('https://prod.example.com/api/coding/paas/v4')).toBe('https://prod.example.com/api/coding/paas/v4')
+  })
+
   it('switches manual snippets from normal tools to Agent clients for Agent groups', () => {
     expect(buildManualConfigSnippets({
       providerName: 'prod',
@@ -172,7 +180,7 @@ describe('userSetupReview command builders', () => {
     ])
   })
 
-  it('builds Agent manual snippets without mixing platform credential names', () => {
+  it('builds Agent manual snippets as OpenAI-compatible v1 providers', () => {
     const anthropicSnippets = buildManualConfigSnippets({
       providerName: 'prod',
       baseUrl: 'https://prod.example.com',
@@ -182,11 +190,12 @@ describe('userSetupReview command builders', () => {
       groupName: 'Agentanthropic',
     })
     const anthropicBody = anthropicSnippets.map((snippet) => snippet.body).join('\n')
-    expect(anthropicBody).toContain('ANTHROPIC_AUTH_TOKEN')
-    expect(anthropicBody).toContain('ANTHROPIC_BASE_URL')
-    expect(anthropicBody).toContain('anthropic-messages')
-    expect(anthropicBody).toContain('anthropic_messages')
-    expect(anthropicBody).not.toContain('OPENAI_API_KEY')
+    expect(anthropicBody).toContain('OPENAI_API_KEY')
+    expect(anthropicBody).toContain('OPENAI_BASE_URL')
+    expect(anthropicBody).toContain('https://prod.example.com/v1')
+    expect(anthropicBody).toContain('openai-completions')
+    expect(anthropicBody).toContain('chat_completions')
+    expect(anthropicBody).not.toContain('ANTHROPIC_AUTH_TOKEN')
     expect(anthropicBody).not.toContain('GEMINI_API_KEY')
 
     const geminiSnippets = buildManualConfigSnippets({
@@ -198,10 +207,11 @@ describe('userSetupReview command builders', () => {
       groupName: 'Agentgemini',
     })
     const geminiBody = geminiSnippets.map((snippet) => snippet.body).join('\n')
-    expect(geminiBody).toContain('GEMINI_API_KEY')
-    expect(geminiBody).toContain('GOOGLE_GEMINI_BASE_URL')
-    expect(geminiBody).toContain('google-generative-ai')
-    expect(geminiBody).not.toContain('OPENAI_API_KEY')
+    expect(geminiBody).toContain('OPENAI_API_KEY')
+    expect(geminiBody).toContain('OPENAI_BASE_URL')
+    expect(geminiBody).toContain('https://prod.example.com/v1')
+    expect(geminiBody).toContain('openai-completions')
+    expect(geminiBody).not.toContain('GEMINI_API_KEY')
     expect(geminiBody).not.toContain('ANTHROPIC_AUTH_TOKEN')
   })
 
@@ -265,7 +275,7 @@ describe('userSetupReview command builders', () => {
       expect(url.searchParams.get('resource')).toBe('provider')
       expect(url.searchParams.get('app')).toBe(app)
       expect(url.searchParams.get('name')).toBe('Production / Agentopenai')
-      expect(url.searchParams.get('endpoint')).toBe('https://prod.example.com')
+      expect(url.searchParams.get('endpoint')).toBe('https://prod.example.com/v1')
       expect(url.searchParams.get('apiKey')).toBe('sk-agent')
       expect(url.searchParams.get('model')).toBe('gpt-5.4')
       expect(url.searchParams.get('enabled')).toBe('true')

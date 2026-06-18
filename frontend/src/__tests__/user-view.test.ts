@@ -506,31 +506,30 @@ describe('UserView', () => {
     const hermesHref = wrapper.get('[data-testid="ccswitch-import-hermes"]').attributes('href') ?? ''
     const openclawHref = wrapper.get('[data-testid="ccswitch-import-openclaw"]').attributes('href') ?? ''
     expect(hermesHref).toContain('app=hermes')
-    expect(hermesHref).toContain('endpoint=https%3A%2F%2Fprod.example.com')
+    expect(hermesHref).toContain('endpoint=https%3A%2F%2Fprod.example.com%2Fv1')
     expect(hermesHref).toContain('apiKey=sk-existing-agent-openai-123456')
     expect(hermesHref).not.toContain('configFormat=json')
     expect(openclawHref).toContain('app=openclaw')
-    expect(openclawHref).toContain('endpoint=https%3A%2F%2Fprod.example.com')
+    expect(openclawHref).toContain('endpoint=https%3A%2F%2Fprod.example.com%2Fv1')
     expect(openclawHref).toContain('apiKey=sk-existing-agent-openai-123456')
     expect(openclawHref).not.toContain('configFormat=json')
   })
 
-  it('warns Agent Anthropic and Gemini users to confirm CC Switch protocol mode after import', async () => {
+  it('explains Agent imports use OpenAI-compatible v1 endpoints', async () => {
     const { wrapper } = await mountUserView()
 
     await wrapper.get('[data-testid="group-47"]').trigger('click')
     await flushPromises()
     await wrapper.get('[data-testid="config-method-ccswitch"]').trigger('click')
-    expect(wrapper.text()).toContain('Confirm the provider protocol in CC Switch after import')
-    expect(wrapper.text()).toContain('OpenClaw api')
-    expect(wrapper.text()).toContain('Hermes api_mode')
+    expect(wrapper.text()).toContain('Agent imports use the OpenAI-compatible /v1 endpoint')
+    expect(wrapper.text()).toContain('Hermes Agent and OpenClaw use Chat Completions providers')
+    expect(wrapper.find('[data-testid="agent-import-v1-notice"]').exists()).toBe(true)
 
     await wrapper.get('[data-testid="group-48"]').trigger('click')
     await flushPromises()
     await wrapper.get('[data-testid="config-method-ccswitch"]').trigger('click')
-    expect(wrapper.text()).toContain('Confirm the provider protocol in CC Switch after import')
-    expect(wrapper.text()).toContain('OpenClaw api')
-    expect(wrapper.text()).toContain('Hermes api_mode')
+    expect(wrapper.text()).toContain('Agent imports use the OpenAI-compatible /v1 endpoint')
+    expect(wrapper.find('[data-testid="agent-import-v1-notice"]').exists()).toBe(true)
   })
 
   it('shows advanced command reference only inside automatic configuration', async () => {

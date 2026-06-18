@@ -47,9 +47,10 @@ type AgentPlatform = 'openai' | 'anthropic' | 'gemini'
 type AgentPlatformProfile = {
   platform: AgentPlatform
   displayName: string
+  baseUrl: string
   env: Record<string, string>
-  openClawApi: 'openai-completions' | 'anthropic-messages' | 'google-generative-ai'
-  hermesApiMode: 'chat_completions' | 'anthropic_messages' | null
+  openClawApi: 'openai-completions'
+  hermesApiMode: 'chat_completions'
 }
 
 type PlatformSource = {
@@ -89,6 +90,13 @@ export function isAgentAccessGroup(groupName: string | null | undefined) {
   return Boolean(groupName?.startsWith('Agent'))
 }
 
+export function buildAgentProviderBaseUrl(baseUrl: string) {
+  const trimmed = baseUrl.trim().replace(/\/+$/, '')
+  if (!trimmed) return '/v1'
+  if (/\/v\d+$/i.test(trimmed)) return trimmed
+  return `${trimmed}/v1`
+}
+
 function normalizeAgentPlatform(platform: string): AgentPlatform | null {
   const normalized = platform.trim().toLowerCase()
   if (normalized === 'openai') return 'openai'
@@ -100,46 +108,20 @@ function normalizeAgentPlatform(platform: string): AgentPlatform | null {
 function resolveAgentPlatformProfile(platform: string, baseUrl: string, apiKey: string, model?: string): AgentPlatformProfile | null {
   const normalized = normalizeAgentPlatform(platform)
   const selectedModel = model?.trim()
-  if (normalized === 'openai') {
-    return {
-      platform: 'openai',
-      displayName: 'OpenAI-compatible',
-      env: {
-        OPENAI_API_KEY: apiKey,
-        OPENAI_BASE_URL: baseUrl,
-        ...(selectedModel ? { OPENAI_MODEL: selectedModel } : {}),
-      },
-      openClawApi: 'openai-completions',
-      hermesApiMode: 'chat_completions',
-    }
+  if (!normalized) return null
+  const agentBaseUrl = buildAgentProviderBaseUrl(baseUrl)
+  return {
+    platform: normalized,
+    displayName: 'OpenAI-compatible Chat Completions',
+    baseUrl: agentBaseUrl,
+    env: {
+      OPENAI_API_KEY: apiKey,
+      OPENAI_BASE_URL: agentBaseUrl,
+      ...(selectedModel ? { OPENAI_MODEL: selectedModel } : {}),
+    },
+    openClawApi: 'openai-completions',
+    hermesApiMode: 'chat_completions',
   }
-  if (normalized === 'anthropic') {
-    return {
-      platform: 'anthropic',
-      displayName: 'Anthropic-compatible',
-      env: {
-        ANTHROPIC_AUTH_TOKEN: apiKey,
-        ANTHROPIC_BASE_URL: baseUrl,
-        ...(selectedModel ? { ANTHROPIC_MODEL: selectedModel } : {}),
-      },
-      openClawApi: 'anthropic-messages',
-      hermesApiMode: 'anthropic_messages',
-    }
-  }
-  if (normalized === 'gemini') {
-    return {
-      platform: 'gemini',
-      displayName: 'Gemini-compatible',
-      env: {
-        GEMINI_API_KEY: apiKey,
-        GOOGLE_GEMINI_BASE_URL: baseUrl,
-        ...(selectedModel ? { GEMINI_MODEL: selectedModel } : {}),
-      },
-      openClawApi: 'google-generative-ai',
-      hermesApiMode: null,
-    }
-  }
-  return null
 }
 
 function buildClaudeSettingsEnv(baseUrl: string, apiKey: string) {
@@ -287,26 +269,13 @@ function envExports(env: Record<string, string>) {
 function buildHermesAgentSnippet(input: ManualConfigSnippetInput, profile: AgentPlatformProfile) {
   const providerName = input.providerName.trim() || 'ae-agent'
   const model = input.model?.trim()
-  if (profile.platform === 'gemini') {
-    return [
-      '# Hermes Agent does not expose a stable native Gemini provider mode through CC Switch import.',
-      '# Use the Hermes setup portal and enter these current access-group values:',
-      'hermes setup --portal',
-      '',
-      `provider_name=${shellString(providerName)}`,
-      `provider_protocol=${shellString(profile.displayName)}`,
-      `base_url=${shellString(input.baseUrl)}`,
-      `api_key=${shellString(input.apiKey)}`,
-      ...(model ? [`model=${shellString(model)}`] : []),
-    ].join('\n')
-  }
   return [
-    '# Add this provider through Hermes setup or config, using the same fields.',
+    '# Add this provider through Hermes setup or config as an OpenAI-compatible Chat Completions endpoint.',
     'hermes setup --portal',
     '',
     'custom_providers:',
     `  - name: ${JSON.stringify(providerName)}`,
-    `    base_url: ${JSON.stringify(input.baseUrl)}`,
+    `    base_url: ${JSON.stringify(profile.baseUrl)}`,
     `    api_key: ${JSON.stringify(input.apiKey)}`,
     `    api_mode: ${JSON.stringify(profile.hermesApiMode)}`,
     ...(model ? [
@@ -320,7 +289,7 @@ function buildHermesAgentSnippet(input: ManualConfigSnippetInput, profile: Agent
 function buildOpenClawAgentSnippet(input: ManualConfigSnippetInput, profile: AgentPlatformProfile) {
   const model = input.model?.trim()
   return JSON.stringify({
-    baseUrl: input.baseUrl,
+    baseUrl: profile.baseUrl,
     apiKey: input.apiKey,
     api: profile.openClawApi,
     ...(model ? { models: [{ id: model, name: model }] } : {}),
@@ -331,7 +300,7 @@ function buildCustomAgentJSONSnippet(input: ManualConfigSnippetInput, profile: A
   return JSON.stringify({
     platform: profile.platform,
     protocol: profile.displayName,
-    base_url: input.baseUrl,
+    base_url: profile.baseUrl,
     api_key: input.apiKey,
     ...(input.model?.trim() ? { model: input.model.trim() } : {}),
   }, null, 2)
@@ -346,7 +315,7 @@ function buildAgentManualConfigSnippets(input: ManualConfigSnippetInput): Manual
         path: 'Custom Agent provider values',
         body: JSON.stringify({
           platform: input.platform,
-          base_url: input.baseUrl,
+          base_url: buildAgentProviderBaseUrl(input.baseUrl),
           api_key: input.apiKey,
           ...(input.model?.trim() ? { model: input.model.trim() } : {}),
         }, null, 2),
@@ -357,7 +326,7 @@ function buildAgentManualConfigSnippets(input: ManualConfigSnippetInput): Manual
   return [
     {
       key: 'hermes-agent',
-      path: profile.platform === 'gemini' ? 'Hermes Agent setup values' : '~/.hermes/config.yaml',
+      path: '~/.hermes/config.yaml',
       body: buildHermesAgentSnippet(input, profile),
       containsSecret: true,
     },
@@ -495,7 +464,7 @@ export function buildCCSwitchProviderImportLink(input: CCSwitchProviderImportInp
     resource: 'provider',
     app: input.app,
     name: input.name,
-    endpoint: input.endpoint,
+    endpoint: input.app === 'hermes' || input.app === 'openclaw' ? buildAgentProviderBaseUrl(input.endpoint) : input.endpoint,
     apiKey: input.apiKey,
     enabled: String(input.enabled ?? true),
   })
