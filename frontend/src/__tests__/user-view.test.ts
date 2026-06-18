@@ -91,6 +91,24 @@ async function mountUserView() {
           platform: 'gemini',
           credential: { state: 'existing_hidden', api_key_id: 24, name: 'alice', status: 'active', key: 'sk-existing-gemini-123456' },
         },
+        {
+          group_id: '46',
+          group_name: 'Agent-openai',
+          platform: 'openai',
+          credential: { state: 'existing_hidden', api_key_id: 25, name: 'alice', status: 'active', key: 'sk-existing-agent-openai-123456' },
+        },
+        {
+          group_id: '47',
+          group_name: 'Agent-anthropic',
+          platform: 'anthropic',
+          credential: { state: 'existing_hidden', api_key_id: 26, name: 'alice', status: 'active', key: 'sk-existing-agent-anthropic-123456' },
+        },
+        {
+          group_id: '48',
+          group_name: 'Agent-gemini',
+          platform: 'gemini',
+          credential: { state: 'existing_hidden', api_key_id: 27, name: 'alice', status: 'active', key: 'sk-existing-agent-gemini-123456' },
+        },
       ],
     },
   ]
@@ -445,6 +463,74 @@ describe('UserView', () => {
       GOOGLE_GEMINI_BASE_URL: 'https://prod.example.com',
       GEMINI_MODEL: 'gemini-3.1-pro-preview',
     })
+  })
+
+  it('shows Agent-only configuration methods and manual snippets for Agent groups', async () => {
+    const { wrapper } = await mountUserView()
+
+    await wrapper.get('[data-testid="group-46"]').trigger('click')
+    await flushPromises()
+
+    const methods = wrapper.get('[data-testid="configuration-methods"]').text()
+    expect(methods).toContain('Manual configuration')
+    expect(methods).toContain('App import')
+    expect(methods).not.toContain('Automatic configuration')
+    expect(wrapper.find('[data-testid="config-method-automatic"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="config-method-ccswitch"]').exists()).toBe(true)
+
+    await wrapper.get('[data-testid="config-method-manual"]').trigger('click')
+    const manualText = wrapper.text()
+    expect(manualText).toContain('Hermes Agent')
+    expect(manualText).toContain('OpenClaw')
+    expect(manualText).toContain('Custom Agent')
+    expect(manualText).not.toContain('Codex config')
+    expect(manualText).not.toContain('Codex auth')
+    expect(manualText).not.toContain('Claude settings')
+    expect(manualText).not.toContain('Gemini env')
+  })
+
+  it('shows only Hermes and OpenClaw imports for Agent groups', async () => {
+    const { wrapper } = await mountUserView()
+
+    await wrapper.get('[data-testid="group-46"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="config-method-ccswitch"]').trigger('click')
+
+    const panelText = wrapper.text()
+    expect(panelText).toContain('Import to Hermes Agent')
+    expect(panelText).toContain('Import to OpenClaw')
+    expect(panelText).not.toContain('Import to Codex')
+    expect(panelText).not.toContain('Import to Claude')
+    expect(panelText).not.toContain('Import to Gemini')
+
+    const hermesHref = wrapper.get('[data-testid="ccswitch-import-hermes"]').attributes('href') ?? ''
+    const openclawHref = wrapper.get('[data-testid="ccswitch-import-openclaw"]').attributes('href') ?? ''
+    expect(hermesHref).toContain('app=hermes')
+    expect(hermesHref).toContain('endpoint=https%3A%2F%2Fprod.example.com')
+    expect(hermesHref).toContain('apiKey=sk-existing-agent-openai-123456')
+    expect(hermesHref).not.toContain('configFormat=json')
+    expect(openclawHref).toContain('app=openclaw')
+    expect(openclawHref).toContain('endpoint=https%3A%2F%2Fprod.example.com')
+    expect(openclawHref).toContain('apiKey=sk-existing-agent-openai-123456')
+    expect(openclawHref).not.toContain('configFormat=json')
+  })
+
+  it('warns Agent Anthropic and Gemini users to confirm CC Switch protocol mode after import', async () => {
+    const { wrapper } = await mountUserView()
+
+    await wrapper.get('[data-testid="group-47"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="config-method-ccswitch"]').trigger('click')
+    expect(wrapper.text()).toContain('Confirm the provider protocol in CC Switch after import')
+    expect(wrapper.text()).toContain('OpenClaw api')
+    expect(wrapper.text()).toContain('Hermes api_mode')
+
+    await wrapper.get('[data-testid="group-48"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="config-method-ccswitch"]').trigger('click')
+    expect(wrapper.text()).toContain('Confirm the provider protocol in CC Switch after import')
+    expect(wrapper.text()).toContain('OpenClaw api')
+    expect(wrapper.text()).toContain('Hermes api_mode')
   })
 
   it('shows advanced command reference only inside automatic configuration', async () => {

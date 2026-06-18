@@ -22,10 +22,11 @@ import {
   buildManualConfigSnippets,
   buildPreferredInstallCommand,
   buildRepoInitCommand,
-  resolveCCSwitchAppForPlatform,
+  resolveCCSwitchAppsForGroup,
   buildSyncCommand,
   buildWindowsInstallCommand,
   detectInstallPlatform,
+  isAgentAccessGroup,
 } from '@/utils/userSetupReview'
 import type { ManualConfigSnippet } from '@/utils/userSetupReview'
 
@@ -58,6 +59,16 @@ const secretConfirmAction = ref<SecretAction | null>(null)
 const currentOrigin = computed(() => window.location.origin)
 const selectedProvider = computed(() => providers.value.find((provider) => provider.id === selectedProviderId.value) ?? null)
 const selectedGroup = computed(() => selectedProvider.value?.groups.find((group) => group.group_id === selectedGroupId.value) ?? null)
+const selectedIsAgentGroup = computed(() => isAgentAccessGroup(selectedGroup.value?.group_name))
+const showAutomaticConfigMethod = computed(() => !selectedIsAgentGroup.value)
+const ccSwitchMethodTitle = computed(() => selectedIsAgentGroup.value ? t('user.appImportMethodTitle') : t('user.ccSwitchConfigMethodTitle'))
+const ccSwitchMethodHelp = computed(() => selectedIsAgentGroup.value ? t('user.appImportMethodHelp') : t('user.ccSwitchConfigMethodHelp'))
+const ccSwitchMethodAudience = computed(() => selectedIsAgentGroup.value ? t('user.appImportMethodAudience') : t('user.ccSwitchConfigMethodAudience'))
+const showAgentImportProtocolWarning = computed(() => {
+  if (!selectedIsAgentGroup.value) return false
+  const platform = selectedGroup.value?.platform.trim().toLowerCase()
+  return platform === 'anthropic' || platform === 'gemini'
+})
 const installPlatform = computed(() => detectInstallPlatform())
 const shellInstallCommand = computed(() => buildInstallCommand(currentOrigin.value))
 const windowsInstallCommand = computed(() => buildWindowsInstallCommand(currentOrigin.value))
@@ -102,21 +113,28 @@ const primaryOnboardingActionLabel = computed(() => {
 })
 const showConfigurationMethods = computed(() => !!selectedKeyValue.value)
 const ccSwitchImports = computed(() => {
-  if (!selectedProvider.value || !selectedGroup.value || !selectedKeyValue.value) return []
-  const app = resolveCCSwitchAppForPlatform(selectedGroup.value.platform)
-  if (!app) return []
+  const provider = selectedProvider.value
+  const group = selectedGroup.value
+  const apiKey = selectedKeyValue.value
+  if (!provider || !group || !apiKey) return []
+  const apps = resolveCCSwitchAppsForGroup(group.platform, group.group_name)
   const selectedModel = providerTestModel.value.trim()
-  return [{
+  return apps.map((app) => ({
     key: app,
-    label: app === 'codex' ? t('user.importToCodex') : app === 'claude' ? t('user.importToClaude') : t('user.importToGemini'),
+    label:
+      app === 'codex' ? t('user.importToCodex')
+        : app === 'claude' ? t('user.importToClaude')
+          : app === 'gemini' ? t('user.importToGemini')
+            : app === 'hermes' ? t('user.importToHermes')
+              : t('user.importToOpenClaw'),
     href: buildCCSwitchProviderImportLink({
       app,
-      name: `${selectedProvider.value.display_name} / ${selectedGroup.value.group_name}`,
-      endpoint: selectedProvider.value.base_url,
-      apiKey: selectedKeyValue.value,
+      name: `${provider.display_name} / ${group.group_name}`,
+      endpoint: provider.base_url,
+      apiKey,
       model: selectedModel || (app === 'codex' ? 'gpt-5.4' : undefined),
     }),
-  }]
+  }))
 })
 const automaticMachineCommands = computed(() => [
   {
@@ -339,6 +357,8 @@ function buildSelectedManualConfigSnippets(apiKey: string) {
     baseUrl: selectedProvider.value.base_url,
     platform: selectedGroup.value.platform,
     apiKey,
+    groupName: selectedGroup.value.group_name,
+    model: providerTestModel.value.trim(),
   })
 }
 
@@ -356,6 +376,14 @@ function manualConfigSnippetTitle(snippet: ManualConfigSnippet) {
       return t('user.manualConfigGeminiReload')
     case 'gemini-model':
       return t('user.manualConfigGeminiModel')
+    case 'hermes-agent':
+      return t('user.manualConfigHermesAgent')
+    case 'openclaw-agent':
+      return t('user.manualConfigOpenClaw')
+    case 'custom-agent-env':
+      return t('user.manualConfigCustomAgentEnv')
+    case 'custom-agent-json':
+      return t('user.manualConfigCustomAgentJson')
     default:
       return snippet.path
   }
@@ -837,6 +865,7 @@ onMounted(loadProviders)
                     <p class="mt-3 text-xs text-gray-500">{{ t('user.manualConfigMethodAudience') }}</p>
                   </button>
                   <button
+                    v-if="showAutomaticConfigMethod"
                     data-testid="config-method-automatic"
                     class="rounded-lg border px-4 py-3 text-left transition"
                     :class="selectedConfigMethod === 'automatic' ? 'border-gray-900 bg-gray-50' : 'border-gray-200 hover:border-gray-400'"
@@ -853,9 +882,9 @@ onMounted(loadProviders)
                     :class="selectedConfigMethod === 'ccswitch' ? 'border-gray-900 bg-gray-50' : 'border-gray-200 hover:border-gray-400'"
                     @click="selectedConfigMethod = 'ccswitch'"
                   >
-                    <div class="font-medium text-gray-900">{{ t('user.ccSwitchConfigMethodTitle') }}</div>
-                    <p class="mt-1 text-sm text-gray-600">{{ t('user.ccSwitchConfigMethodHelp') }}</p>
-                    <p class="mt-3 text-xs text-gray-500">{{ t('user.ccSwitchConfigMethodAudience') }}</p>
+                    <div class="font-medium text-gray-900">{{ ccSwitchMethodTitle }}</div>
+                    <p class="mt-1 text-sm text-gray-600">{{ ccSwitchMethodHelp }}</p>
+                    <p class="mt-3 text-xs text-gray-500">{{ ccSwitchMethodAudience }}</p>
                   </button>
                 </div>
 
@@ -998,8 +1027,8 @@ onMounted(loadProviders)
                 </div>
 
                 <div v-if="selectedConfigMethod === 'ccswitch'" class="mt-4 rounded-lg border border-gray-200 p-4">
-                  <div class="font-medium text-gray-900">{{ t('user.ccSwitchConfigMethodTitle') }}</div>
-                  <p class="mt-1 text-sm text-gray-600">{{ t('user.ccSwitchConfigMethodHelp') }}</p>
+                  <div class="font-medium text-gray-900">{{ ccSwitchMethodTitle }}</div>
+                  <p class="mt-1 text-sm text-gray-600">{{ ccSwitchMethodHelp }}</p>
                   <div class="mt-3">
                     <a
                       :href="t('user.ccSwitchDownloadUrl')"
@@ -1021,6 +1050,19 @@ onMounted(loadProviders)
                       {{ item.label }}
                     </a>
                   </div>
+                  <p
+                    v-if="selectedIsAgentGroup"
+                    class="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"
+                  >
+                    {{ t('user.agentImportHermesVersionWarning') }}
+                  </p>
+                  <p
+                    v-if="showAgentImportProtocolWarning"
+                    data-testid="agent-import-protocol-warning"
+                    class="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"
+                  >
+                    {{ t('user.agentImportProtocolWarning') }}
+                  </p>
                   <p class="mt-3 text-xs text-gray-500">{{ t('user.ccSwitchFallback') }}</p>
                 </div>
               </section>
