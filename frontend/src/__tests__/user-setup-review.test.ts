@@ -106,15 +106,15 @@ describe('userSetupReview command builders', () => {
     }).map((snippet) => snippet.path)).toEqual(['~/.ae-cli/env.sh', 'Shell reload', 'Current shell'])
   })
 
-  it('classifies Agent access groups with a strict Agent- prefix', () => {
+  it('classifies Agent access groups with a strict Agent prefix', () => {
+    expect(isAgentAccessGroup('Agentopenai')).toBe(true)
+    expect(isAgentAccessGroup('Agentanthropic')).toBe(true)
+    expect(isAgentAccessGroup('Agentgemini')).toBe(true)
+    expect(isAgentAccessGroup('AgentAlpha')).toBe(true)
+    expect(isAgentAccessGroup('Agent')).toBe(true)
     expect(isAgentAccessGroup('Agent-openai')).toBe(true)
-    expect(isAgentAccessGroup('Agent-anthropic')).toBe(true)
-    expect(isAgentAccessGroup('Agent-gemini')).toBe(true)
-    expect(isAgentAccessGroup('Agent-Alpha')).toBe(true)
-    expect(isAgentAccessGroup('Agent')).toBe(false)
-    expect(isAgentAccessGroup('Agentic-openai')).toBe(false)
-    expect(isAgentAccessGroup('agent-openai')).toBe(false)
-    expect(isAgentAccessGroup('My-Agent-openai')).toBe(false)
+    expect(isAgentAccessGroup('agentopenai')).toBe(false)
+    expect(isAgentAccessGroup('MyAgentopenai')).toBe(false)
     expect(isAgentAccessGroup(null)).toBe(false)
     expect(isAgentAccessGroup(undefined)).toBe(false)
   })
@@ -135,7 +135,7 @@ describe('userSetupReview command builders', () => {
       platform: 'openai',
       apiKey: 'sk-openai',
       model: 'gpt-5.4',
-      groupName: 'Agent-openai',
+      groupName: 'Agentopenai',
     }).map((snippet) => snippet.key)).toEqual([
       'hermes-agent',
       'openclaw-agent',
@@ -149,7 +149,7 @@ describe('userSetupReview command builders', () => {
       platform: 'anthropic',
       apiKey: 'sk-claude',
       model: 'claude-sonnet-4-6',
-      groupName: 'Agent-anthropic',
+      groupName: 'Agentanthropic',
     }).map((snippet) => snippet.key)).toEqual([
       'hermes-agent',
       'openclaw-agent',
@@ -163,7 +163,7 @@ describe('userSetupReview command builders', () => {
       platform: 'gemini',
       apiKey: 'sk-gemini',
       model: 'gemini-3.1-pro-preview',
-      groupName: 'Agent-gemini',
+      groupName: 'Agentgemini',
     }).map((snippet) => snippet.key)).toEqual([
       'hermes-agent',
       'openclaw-agent',
@@ -179,7 +179,7 @@ describe('userSetupReview command builders', () => {
       platform: 'anthropic',
       apiKey: 'sk-claude',
       model: 'claude-sonnet-4-6',
-      groupName: 'Agent-anthropic',
+      groupName: 'Agentanthropic',
     })
     const anthropicBody = anthropicSnippets.map((snippet) => snippet.body).join('\n')
     expect(anthropicBody).toContain('ANTHROPIC_AUTH_TOKEN')
@@ -195,7 +195,7 @@ describe('userSetupReview command builders', () => {
       platform: 'gemini',
       apiKey: 'sk-gemini',
       model: 'gemini-3.1-pro-preview',
-      groupName: 'Agent-gemini',
+      groupName: 'Agentgemini',
     })
     const geminiBody = geminiSnippets.map((snippet) => snippet.body).join('\n')
     expect(geminiBody).toContain('GEMINI_API_KEY')
@@ -216,11 +216,11 @@ describe('userSetupReview command builders', () => {
     expect(resolveCCSwitchAppsForGroup('openai', 'Group Alpha')).toEqual(['codex'])
     expect(resolveCCSwitchAppsForGroup('anthropic', 'Group Beta')).toEqual(['claude'])
     expect(resolveCCSwitchAppsForGroup('gemini', 'Group Delta')).toEqual(['gemini'])
-    expect(resolveCCSwitchAppsForGroup('openai', 'Agent-openai')).toEqual(['hermes', 'openclaw'])
-    expect(resolveCCSwitchAppsForGroup('anthropic', 'Agent-anthropic')).toEqual(['hermes', 'openclaw'])
-    expect(resolveCCSwitchAppsForGroup('gemini', 'Agent-gemini')).toEqual(['hermes', 'openclaw'])
-    expect(resolveCCSwitchAppsForGroup('openai', 'Agent')).toEqual(['codex'])
-    expect(resolveCCSwitchAppsForGroup('unknown', 'Agent-unknown')).toEqual([])
+    expect(resolveCCSwitchAppsForGroup('openai', 'Agentopenai')).toEqual(['hermes', 'openclaw'])
+    expect(resolveCCSwitchAppsForGroup('anthropic', 'Agentanthropic')).toEqual(['hermes', 'openclaw'])
+    expect(resolveCCSwitchAppsForGroup('gemini', 'Agentgemini')).toEqual(['hermes', 'openclaw'])
+    expect(resolveCCSwitchAppsForGroup('openai', 'Agent')).toEqual(['hermes', 'openclaw'])
+    expect(resolveCCSwitchAppsForGroup('unknown', 'Agentunknown')).toEqual([])
   })
 
   it('builds an app-specific CC Switch provider import link', () => {
@@ -255,7 +255,7 @@ describe('userSetupReview command builders', () => {
     for (const app of ['hermes', 'openclaw'] as const) {
       const link = buildCCSwitchProviderImportLink({
         app,
-        name: 'Production / Agent-openai',
+        name: 'Production / Agentopenai',
         endpoint: 'https://prod.example.com',
         apiKey: 'sk-agent',
         model: 'gpt-5.4',
@@ -264,7 +264,7 @@ describe('userSetupReview command builders', () => {
       expect(`${url.protocol}//${url.host}${url.pathname}`).toBe('ccswitch://v1/import')
       expect(url.searchParams.get('resource')).toBe('provider')
       expect(url.searchParams.get('app')).toBe(app)
-      expect(url.searchParams.get('name')).toBe('Production / Agent-openai')
+      expect(url.searchParams.get('name')).toBe('Production / Agentopenai')
       expect(url.searchParams.get('endpoint')).toBe('https://prod.example.com')
       expect(url.searchParams.get('apiKey')).toBe('sk-agent')
       expect(url.searchParams.get('model')).toBe('gpt-5.4')

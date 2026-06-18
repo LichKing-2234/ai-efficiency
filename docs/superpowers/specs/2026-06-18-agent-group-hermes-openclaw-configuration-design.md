@@ -11,7 +11,7 @@
 
 ## Spec Relationship
 
-- 本文定义 `/user` 页面在 `Agent-` 接入组下的配置方式扩展合同。
+- 本文定义 `/user` 页面在 `Agent` 接入组下的配置方式扩展合同。
 - 本文继承 [2026-06-14-user-api-key-first-onboarding-design.md](./2026-06-14-user-api-key-first-onboarding-design.md) 的 API-key-first 主流程：选择接入组、创建 API key、运行连接测试、选择配置方式。
 - 本文不改变 `ae-cli discover` 当前合同。[2026-05-19-ae-cli-deterministic-tool-configuration-design.md](./2026-05-19-ae-cli-deterministic-tool-configuration-design.md) 仍然只覆盖当前已实现的 Codex、Claude Code、Gemini 本机配置写入。
 - 本文不回写历史 spec 正文；历史 spec 保留当时的设计背景。
@@ -41,7 +41,7 @@
 
 这个结构适合普通 Codex、Claude Code、Gemini 工具配置，但对 Agent 类接入组不够准确：
 
-1. `Agent-` 接入组的目标客户端是 Hermes Agent、OpenClaw 和自定义 Agent，而不是 Codex、Claude Code、Gemini。
+1. `Agent` 接入组的目标客户端是 Hermes Agent、OpenClaw 和自定义 Agent，而不是 Codex、Claude Code、Gemini。
 2. 如果 Agent 接入组继续显示 Codex/Claude/Gemini 片段，会让用户误把 Agent 专用额度或路由配置进普通开发工具。
 3. Hermes/OpenClaw 的官方接入主要是 CLI onboarding、配置文件、或 CC Switch 管理导入；这些命令式配置不应该归入 `ae-cli 自动配置`。
 4. CC Switch deep link 是 CC Switch 自己的导入协议，不等同于 Hermes/OpenClaw 官方是否提供自有 deep link。CC Switch 当前源码已接受 `app=openclaw` 和 `app=hermes`，但 provider import 对 OpenClaw/Hermes 的协议模式仍使用默认值，不能把所有 platform 语义完整写入目标 app。
@@ -51,8 +51,8 @@
 
 ## Goals
 
-1. 当且仅当当前接入组名称严格以 `Agent-` 开头时，启用 Agent 客户端配置体验。
-2. `Agent-` 接入组只展示 Hermes Agent、OpenClaw 和 Custom Agent，不展示 Codex、Claude Code、Gemini 配置或导入。
+1. 当且仅当当前接入组名称严格以 `Agent` 开头时，启用 Agent 客户端配置体验。
+2. `Agent` 接入组只展示 Hermes Agent、OpenClaw 和 Custom Agent，不展示 Codex、Claude Code、Gemini 配置或导入。
 3. 普通接入组保持现状，继续展示 Codex、Claude Code、Gemini 对应的手动配置、CC Switch 导入和 `ae-cli` 自动配置路径。
 4. 将 Hermes/OpenClaw 的命令式 onboarding 和文件片段归入 `手动配置`。
 5. 将 Hermes/OpenClaw 的 CC Switch provider import 归入 `应用导入`，不伪装成官方自有 deep link；对非 OpenAI platform 明确提示用户在 CC Switch 内确认或调整协议模式。
@@ -66,7 +66,7 @@
 2. 不新增浏览器到本机 CLI 的执行桥，不在浏览器里直接执行 Hermes/OpenClaw 命令。
 3. 不把 Hermes/OpenClaw 的官方 CLI onboarding 归类为自动配置；用户复制并执行命令仍属于手动配置。
 4. 不为 Claude Desktop 生成 CC Switch deep link。Claude Desktop 可以由 CC Switch 应用内管理，但当前不是 `/user` 生成链接的稳定合同。
-5. 不把非 `Agent-` 的 group 名称做模糊匹配。`Agent`、`Agentic-*`、`agent-*`、`My-Agent-*` 都不触发 Agent 配置体验。
+5. 不把非 `Agent` 前缀的 group 名称做模糊匹配。`agent*`、`MyAgent*` 都不触发 Agent 配置体验。
 6. 不改变 API key 默认隐藏和敏感复制确认规则。
 7. 不在本轮引入后端 capability flag。后续如果需要，可用后端显式 capability 替换前端前缀判断。
 8. 不承诺 CC Switch deep link 能完整设置 Hermes/OpenClaw 的所有 provider protocol 字段；手动配置仍是非默认协议的准确配置入口。
@@ -82,9 +82,9 @@
    - `ae-cli` 自动配置
 3. 命令式配置属于手动配置。
 4. CC Switch deep link 是否支持某个 app，应以 `farion1231/cc-switch` 的 deep link/managed app 合同为判断依据。
-5. 只有严格以 `Agent-` 开头的接入组才需要 Hermes/OpenClaw 指引。
-6. `Agent-` 接入组不再展示原来的 Codex、Claude Code、Gemini 配置和导入方式。
-7. `Agent-` 接入组的手动配置还需要兼容自定义 Agent。
+5. 只有严格以 `Agent` 开头的接入组才需要 Hermes/OpenClaw 指引。
+6. `Agent` 接入组不再展示原来的 Codex、Claude Code、Gemini 配置和导入方式。
+7. `Agent` 接入组的手动配置还需要兼容自定义 Agent。
 
 ## Decisions
 
@@ -94,22 +94,21 @@
 
 ```ts
 function isAgentAccessGroup(groupName: string | undefined | null) {
-  return Boolean(groupName?.startsWith('Agent-'))
+  return Boolean(groupName?.startsWith('Agent'))
 }
 ```
 
-该判断必须严格区分大小写，并要求完整前缀 `Agent-`：
+该判断必须严格区分大小写，并要求字面前缀 `Agent`，不要求前缀后带横杠：
 
 | group name | Agent experience |
 | --- | --- |
-| `Agent-openai` | yes |
-| `Agent-anthropic` | yes |
-| `Agent-gemini` | yes |
-| `Agent-Alpha` | yes |
-| `Agent` | no |
-| `Agentic-openai` | no |
-| `agent-openai` | no |
-| `My-Agent-openai` | no |
+| `Agentopenai` | yes |
+| `Agentanthropic` | yes |
+| `Agentgemini` | yes |
+| `AgentAlpha` | yes |
+| `Agent` | yes |
+| `agentopenai` | no |
+| `MyAgentopenai` | no |
 
 第一版不新增后端字段。实现时应把判断集中在 helper 层，不在 Vue template 中散落字符串判断。
 
@@ -121,12 +120,12 @@ function isAgentAccessGroup(groupName: string | undefined | null) {
 2. `ae-cli 自动配置`
 3. `CC Switch 配置`
 
-`Agent-` 接入组显示两种主要方式：
+`Agent` 接入组显示两种主要方式：
 
 1. `手动配置`
 2. `应用导入`
 
-`Agent-` 接入组应隐藏 `ae-cli 自动配置`卡片。原因：
+`Agent` 接入组应隐藏 `ae-cli 自动配置`卡片。原因：
 
 1. `ae-cli discover` 当前不配置 Hermes/OpenClaw。
 2. `ae-cli` 的 repo attribution 能力是研发上报链路，不是 Agent 客户端配置主路径。
@@ -136,7 +135,7 @@ function isAgentAccessGroup(groupName: string | undefined | null) {
 
 ### 3. Manual Configuration for Agent Groups
 
-`Agent-` 接入组的手动配置只展示三个目标：
+`Agent` 接入组的手动配置只展示三个目标：
 
 1. Hermes Agent
 2. OpenClaw
@@ -183,7 +182,7 @@ OpenClaw 配置内容同样必须按当前 group platform 生成：
 
 #### Custom Agent
 
-Custom Agent 是 `Agent-` 手动配置的兜底能力。它不假设具体客户端文件路径，只提供当前接入组的标准 provider 参数和可复制模板。
+Custom Agent 是 `Agent` 手动配置的兜底能力。它不假设具体客户端文件路径，只提供当前接入组的标准 provider 参数和可复制模板。
 
 Custom Agent 展示内容：
 
@@ -210,7 +209,7 @@ Custom Agent 不进入应用导入，因为没有稳定 app target。
 - `anthropic` -> Claude Code
 - `gemini` -> Gemini
 
-`Agent-` 接入组的应用导入只展示：
+`Agent` 接入组的应用导入只展示：
 
 - `Import to Hermes Agent`
 - `Import to OpenClaw`
@@ -250,7 +249,7 @@ CC Switch import builder 应区分两层能力：
 
 因此 AE 第一版不能假设 deeplink 能完整携带 `openai` / `anthropic` / `gemini` platform 语义。它应当：
 
-- 对所有 `Agent-` platform 生成 Hermes/OpenClaw import link。
+- 对所有 `Agent` platform 生成 Hermes/OpenClaw import link。
 - 在 link 中携带当前 group 的 endpoint、API key、model、provider name。
 - 对 `platform !== "openai"` 的 Agent group，在应用导入面板显示 post-import adjustment 提示，要求用户在 CC Switch 内确认/调整 OpenClaw `api` 或 Hermes `api_mode`。
 - 把“准确按 platform 配置协议字段”的能力放在手动配置里。
@@ -301,8 +300,8 @@ Agent 配置继续沿用当前 `/user` 敏感信息策略：
 如果未来出现 `platform` 不在 `openai`、`anthropic`、`gemini` 内：
 
 - 普通组保持当前 unsupported 行为。
-- `Agent-` 组手动配置显示 Custom Agent 的通用参数摘要，但不生成不确定命令。
-- `Agent-` 组应用导入不生成 Hermes/OpenClaw link，并提示当前 platform 暂不支持应用导入。
+- `Agent` 组手动配置显示 Custom Agent 的通用参数摘要，但不生成不确定命令。
+- `Agent` 组应用导入不生成 Hermes/OpenClaw link，并提示当前 platform 暂不支持应用导入。
 
 ## Data Flow
 
@@ -331,7 +330,7 @@ Agent 配置继续沿用当前 `/user` 敏感信息策略：
 避免在 `UserView.vue` template 中散落：
 
 ```ts
-selectedGroup.group_name.startsWith('Agent-')
+selectedGroup.group_name.startsWith('Agent')
 ```
 
 ### UI Layer
@@ -371,7 +370,7 @@ Agent 组文案避免“CC Switch 配置”这个过窄标题，使用更准确�
 
 1. 没有 API key：不生成包含 secret 的片段或 import link，提示先创建当前接入组 API key。
 2. 没有 selected group：隐藏配置方式区域，保持当前页面行为。
-3. `Agent-` group + unsupported platform：只展示通用参数摘要，不生成不确定命令或 import link。
+3. `Agent` group + unsupported platform：只展示通用参数摘要，不生成不确定命令或 import link。
 4. Hermes import 失败：页面无法检测本机失败，只能在文案中提示升级 CC Switch 或改用手动配置。
 5. OpenClaw/Hermes 命令不可用：页面不探测本机，只提供安装/官方入口提示；真实失败由用户本机命令输出处理。
 
@@ -381,14 +380,14 @@ Agent 组文案避免“CC Switch 配置”这个过窄标题，使用更准确�
 
 `frontend/src/__tests__/user-setup-review.test.ts` 应覆盖：
 
-1. `isAgentAccessGroup('Agent-openai') === true`
-2. `isAgentAccessGroup('Agent') === false`
-3. `isAgentAccessGroup('Agentic-openai') === false`
-4. `isAgentAccessGroup('agent-openai') === false`
+1. `isAgentAccessGroup('Agentopenai') === true`
+2. `isAgentAccessGroup('Agent') === true`
+3. `isAgentAccessGroup('agentopenai') === false`
+4. `isAgentAccessGroup('MyAgentopenai') === false`
 5. 普通 `openai` 组只生成 Codex 手动配置，不生成 Hermes/OpenClaw/Custom Agent。
-6. `Agent-` + `openai` 组生成 Hermes/OpenClaw/Custom Agent，不生成 Codex。
-7. `Agent-` + `anthropic` 组生成 Hermes/OpenClaw/Custom Agent，不生成 Claude Code。
-8. `Agent-` + `gemini` 组生成 Hermes/OpenClaw/Custom Agent，不生成 Gemini。
+6. `Agent` + `openai` 组生成 Hermes/OpenClaw/Custom Agent，不生成 Codex。
+7. `Agent` + `anthropic` 组生成 Hermes/OpenClaw/Custom Agent，不生成 Claude Code。
+8. `Agent` + `gemini` 组生成 Hermes/OpenClaw/Custom Agent，不生成 Gemini。
 9. Agent group 的 CC Switch import apps 只包含 `hermes/openclaw`。
 10. 普通 group 的 CC Switch import apps 继续按 `codex/claude/gemini` 生成。
 11. Claude Desktop 不出现在任何 generated import target 中。
@@ -399,11 +398,11 @@ Agent 组文案避免“CC Switch 配置”这个过窄标题，使用更准确�
 `frontend/src/__tests__/user-view.test.ts` 应覆盖：
 
 1. 普通 group 显示三张配置方式卡：手动、ae-cli 自动、CC Switch。
-2. `Agent-` group 不显示 ae-cli 自动配置卡。
-3. `Agent-` group 的手动配置面板显示 Hermes Agent、OpenClaw、Custom Agent。
-4. `Agent-` group 的应用导入面板显示 Hermes/OpenClaw，不显示 Codex/Claude/Gemini。
+2. `Agent` group 不显示 ae-cli 自动配置卡。
+3. `Agent` group 的手动配置面板显示 Hermes Agent、OpenClaw、Custom Agent。
+4. `Agent` group 的应用导入面板显示 Hermes/OpenClaw，不显示 Codex/Claude/Gemini。
 5. Hermes import 区显示版本兼容提示。
-6. `Agent-` + `anthropic` 或 `Agent-` + `gemini` 的应用导入面板显示 CC Switch 协议模式确认/调整提示。
+6. `Agent` + `anthropic` 或 `Agent` + `gemini` 的应用导入面板显示 CC Switch 协议模式确认/调整提示。
 7. API key 未创建时，Agent import link 不可用或不渲染。
 
 ### Manual Verification
@@ -411,11 +410,11 @@ Agent 组文案避免“CC Switch 配置”这个过窄标题，使用更准确�
 手动验收至少覆盖：
 
 1. 普通 OpenAI group：页面行为与当前线上一致。
-2. `Agent-` OpenAI group：只看到 Hermes/OpenClaw/Custom Agent。
-3. `Agent-` Anthropic group：只看到 Hermes/OpenClaw/Custom Agent，变量名不使用 OpenAI key。
-4. `Agent-` Gemini group：只看到 Hermes/OpenClaw/Custom Agent，变量名不使用 OpenAI/Anthropic key。
+2. `Agent` OpenAI group：只看到 Hermes/OpenClaw/Custom Agent。
+3. `Agent` Anthropic group：只看到 Hermes/OpenClaw/Custom Agent，变量名不使用 OpenAI key。
+4. `Agent` Gemini group：只看到 Hermes/OpenClaw/Custom Agent，变量名不使用 OpenAI/Anthropic key。
 5. 点击 OpenClaw import link 能拉起支持 deep link 的 CC Switch。
-6. `Agent-` Anthropic/Gemini group 的应用导入文案提醒用户在 CC Switch 内确认 OpenClaw `api` 或 Hermes `api_mode`。
+6. `Agent` Anthropic/Gemini group 的应用导入文案提醒用户在 CC Switch 内确认 OpenClaw `api` 或 Hermes `api_mode`。
 7. 点击 Hermes import link 时，如 CC Switch 版本不支持，页面已有明确回退说明。
 
 ## Documentation Updates
@@ -429,13 +428,13 @@ Agent 组文案避免“CC Switch 配置”这个过窄标题，使用更准确�
 ## Acceptance Criteria
 
 1. 普通 group 的 Codex/Claude/Gemini 配置体验不回退。
-2. 只有 `Agent-` 严格前缀 group 进入 Agent 配置体验。
-3. `Agent-` group 不展示 Codex/Claude/Gemini 配置或导入。
-4. `Agent-` group 手动配置包含 Hermes Agent、OpenClaw、Custom Agent。
-5. `Agent-` group 应用导入只包含 Hermes Agent 和 OpenClaw。
-6. `Agent-` group 不展示 `ae-cli` 自动配置卡。
+2. 只有 `Agent` 严格前缀 group 进入 Agent 配置体验。
+3. `Agent` group 不展示 Codex/Claude/Gemini 配置或导入。
+4. `Agent` group 手动配置包含 Hermes Agent、OpenClaw、Custom Agent。
+5. `Agent` group 应用导入只包含 Hermes Agent 和 OpenClaw。
+6. `Agent` group 不展示 `ae-cli` 自动配置卡。
 7. Hermes import 有 CC Switch 版本兼容提示。
-8. `Agent-` Anthropic/Gemini group 的应用导入提示用户确认 CC Switch 协议模式。
+8. `Agent` Anthropic/Gemini group 的应用导入提示用户确认 CC Switch 协议模式。
 9. Claude Desktop 不作为 generated deep link target。
 10. API key 敏感复制确认规则保持不变。
 11. 相关 helper 和 view tests 覆盖普通组与 Agent 组分支。

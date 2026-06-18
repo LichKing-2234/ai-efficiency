@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add an `Agent-` access-group configuration branch on `/user` that focuses on Hermes Agent, OpenClaw, and Custom Agent instead of Codex, Claude Code, Gemini, or `ae-cli discover`.
+**Goal:** Add an `Agent` access-group configuration branch on `/user` that focuses on Hermes Agent, OpenClaw, and Custom Agent instead of Codex, Claude Code, Gemini, or `ae-cli discover`.
 
-**Architecture:** Keep the backend and `ae-cli` contracts unchanged. Add focused frontend helpers in `userSetupReview.ts` for strict `Agent-` classification, Agent manual snippets, and Hermes/OpenClaw CC Switch import links; then make `UserView.vue` render different configuration cards from those helpers while preserving the current ordinary-group flow.
+**Architecture:** Keep the backend and `ae-cli` contracts unchanged. Add focused frontend helpers in `userSetupReview.ts` for strict `Agent` classification, Agent manual snippets, and Hermes/OpenClaw CC Switch import links; then make `UserView.vue` render different configuration cards from those helpers while preserving the current ordinary-group flow.
 
 **Tech Stack:** Vue 3, TypeScript, TailwindCSS, Vitest, Vue Test Utils, existing `frontend/src/i18n.ts`, Markdown docs.
 
@@ -12,14 +12,14 @@
 
 ## Global Constraints
 
-- Agent configuration is enabled only when `group_name.startsWith("Agent-")` with case-sensitive matching.
+- Agent configuration is enabled only when `group_name.startsWith("Agent")` with case-sensitive matching.
 - Ordinary access groups continue to show Codex, Claude Code, Gemini manual snippets, CC Switch imports, and `ae-cli` automatic configuration.
-- `Agent-` access groups must not show Codex, Claude Code, Gemini manual snippets or import links.
-- `Agent-` access groups must not show the `ae-cli` automatic configuration card.
-- `Agent-` manual configuration must include Hermes Agent, OpenClaw, and Custom Agent.
-- `Agent-` app import must include only Hermes Agent and OpenClaw.
+- `Agent` access groups must not show Codex, Claude Code, Gemini manual snippets or import links.
+- `Agent` access groups must not show the `ae-cli` automatic configuration card.
+- `Agent` manual configuration must include Hermes Agent, OpenClaw, and Custom Agent.
+- `Agent` app import must include only Hermes Agent and OpenClaw.
 - Hermes/OpenClaw CC Switch import links use `ccswitch://v1/import` provider import with URL parameters `resource`, `app`, `name`, `endpoint`, `apiKey`, `model`, and `enabled`; do not reuse Codex/Claude/Gemini app-specific config payloads for these apps.
-- For `Agent-` `anthropic` or `gemini` groups, the UI must tell users to confirm or adjust OpenClaw `api` or Hermes `api_mode` inside CC Switch after import.
+- For `Agent` `anthropic` or `gemini` groups, the UI must tell users to confirm or adjust OpenClaw `api` or Hermes `api_mode` inside CC Switch after import.
 - Claude Desktop must not be generated as a deep-link target.
 - API key hiding and copy-confirmation behavior must stay unchanged.
 - Do not add backend APIs, browser-to-local CLI execution, or `ae-cli discover` support for Hermes/OpenClaw.
@@ -30,9 +30,9 @@
 
 Included:
 
-- Helper-level strict `Agent-` group classification.
+- Helper-level strict `Agent` group classification.
 - Agent manual snippets for Hermes Agent, OpenClaw, and Custom Agent.
-- Hermes/OpenClaw CC Switch import link generation for `Agent-` groups.
+- Hermes/OpenClaw CC Switch import link generation for `Agent` groups.
 - `/user` configuration-method card branching for ordinary groups versus Agent groups.
 - Bilingual `/user` copy for Agent manual configuration, app import, compatibility warnings, and protocol-mode adjustment.
 - Focused frontend unit and view tests.
@@ -95,15 +95,15 @@ import {
 Add this test inside `describe('userSetupReview command builders', () => { ... })`:
 
 ```ts
-it('classifies Agent access groups with a strict Agent- prefix', () => {
+it('classifies Agent access groups with a strict Agent prefix', () => {
+  expect(isAgentAccessGroup('Agentopenai')).toBe(true)
+  expect(isAgentAccessGroup('Agentanthropic')).toBe(true)
+  expect(isAgentAccessGroup('Agentgemini')).toBe(true)
+  expect(isAgentAccessGroup('AgentAlpha')).toBe(true)
+  expect(isAgentAccessGroup('Agent')).toBe(true)
   expect(isAgentAccessGroup('Agent-openai')).toBe(true)
-  expect(isAgentAccessGroup('Agent-anthropic')).toBe(true)
-  expect(isAgentAccessGroup('Agent-gemini')).toBe(true)
-  expect(isAgentAccessGroup('Agent-Alpha')).toBe(true)
-  expect(isAgentAccessGroup('Agent')).toBe(false)
-  expect(isAgentAccessGroup('Agentic-openai')).toBe(false)
-  expect(isAgentAccessGroup('agent-openai')).toBe(false)
-  expect(isAgentAccessGroup('My-Agent-openai')).toBe(false)
+  expect(isAgentAccessGroup('agentopenai')).toBe(false)
+  expect(isAgentAccessGroup('MyAgentopenai')).toBe(false)
   expect(isAgentAccessGroup(null)).toBe(false)
   expect(isAgentAccessGroup(undefined)).toBe(false)
 })
@@ -136,7 +136,7 @@ it('switches manual snippets from normal tools to Agent clients for Agent groups
     platform: 'openai',
     apiKey: 'sk-openai',
     model: 'gpt-5.4',
-    groupName: 'Agent-openai',
+    groupName: 'Agentopenai',
   }).map((snippet) => snippet.key)).toEqual([
     'hermes-agent',
     'openclaw-agent',
@@ -150,7 +150,7 @@ it('switches manual snippets from normal tools to Agent clients for Agent groups
     platform: 'anthropic',
     apiKey: 'sk-claude',
     model: 'claude-sonnet-4-6',
-    groupName: 'Agent-anthropic',
+    groupName: 'Agentanthropic',
   }).map((snippet) => snippet.key)).toEqual([
     'hermes-agent',
     'openclaw-agent',
@@ -164,7 +164,7 @@ it('switches manual snippets from normal tools to Agent clients for Agent groups
     platform: 'gemini',
     apiKey: 'sk-gemini',
     model: 'gemini-3.1-pro-preview',
-    groupName: 'Agent-gemini',
+    groupName: 'Agentgemini',
   }).map((snippet) => snippet.key)).toEqual([
     'hermes-agent',
     'openclaw-agent',
@@ -184,7 +184,7 @@ it('builds Agent manual snippets without mixing platform credential names', () =
     platform: 'anthropic',
     apiKey: 'sk-claude',
     model: 'claude-sonnet-4-6',
-    groupName: 'Agent-anthropic',
+    groupName: 'Agentanthropic',
   })
   const anthropicBody = anthropicSnippets.map((snippet) => snippet.body).join('\n')
   expect(anthropicBody).toContain('ANTHROPIC_AUTH_TOKEN')
@@ -200,7 +200,7 @@ it('builds Agent manual snippets without mixing platform credential names', () =
     platform: 'gemini',
     apiKey: 'sk-gemini',
     model: 'gemini-3.1-pro-preview',
-    groupName: 'Agent-gemini',
+    groupName: 'Agentgemini',
   })
   const geminiBody = geminiSnippets.map((snippet) => snippet.body).join('\n')
   expect(geminiBody).toContain('GEMINI_API_KEY')
@@ -220,11 +220,11 @@ it('resolves CC Switch apps by ordinary versus Agent group', () => {
   expect(resolveCCSwitchAppsForGroup('openai', 'Group Alpha')).toEqual(['codex'])
   expect(resolveCCSwitchAppsForGroup('anthropic', 'Group Beta')).toEqual(['claude'])
   expect(resolveCCSwitchAppsForGroup('gemini', 'Group Delta')).toEqual(['gemini'])
-  expect(resolveCCSwitchAppsForGroup('openai', 'Agent-openai')).toEqual(['hermes', 'openclaw'])
-  expect(resolveCCSwitchAppsForGroup('anthropic', 'Agent-anthropic')).toEqual(['hermes', 'openclaw'])
-  expect(resolveCCSwitchAppsForGroup('gemini', 'Agent-gemini')).toEqual(['hermes', 'openclaw'])
+  expect(resolveCCSwitchAppsForGroup('openai', 'Agentopenai')).toEqual(['hermes', 'openclaw'])
+  expect(resolveCCSwitchAppsForGroup('anthropic', 'Agentanthropic')).toEqual(['hermes', 'openclaw'])
+  expect(resolveCCSwitchAppsForGroup('gemini', 'Agentgemini')).toEqual(['hermes', 'openclaw'])
   expect(resolveCCSwitchAppsForGroup('openai', 'Agent')).toEqual(['codex'])
-  expect(resolveCCSwitchAppsForGroup('unknown', 'Agent-unknown')).toEqual([])
+  expect(resolveCCSwitchAppsForGroup('unknown', 'Agentunknown')).toEqual([])
 })
 ```
 
@@ -235,7 +235,7 @@ it('builds Hermes and OpenClaw provider links with URL params instead of app-spe
   for (const app of ['hermes', 'openclaw'] as const) {
     const link = buildCCSwitchProviderImportLink({
       app,
-      name: 'Production / Agent-openai',
+      name: 'Production / Agentopenai',
       endpoint: 'https://prod.example.com',
       apiKey: 'sk-agent',
       model: 'gpt-5.4',
@@ -244,7 +244,7 @@ it('builds Hermes and OpenClaw provider links with URL params instead of app-spe
     expect(`${url.protocol}//${url.host}${url.pathname}`).toBe('ccswitch://v1/import')
     expect(url.searchParams.get('resource')).toBe('provider')
     expect(url.searchParams.get('app')).toBe(app)
-    expect(url.searchParams.get('name')).toBe('Production / Agent-openai')
+    expect(url.searchParams.get('name')).toBe('Production / Agentopenai')
     expect(url.searchParams.get('endpoint')).toBe('https://prod.example.com')
     expect(url.searchParams.get('apiKey')).toBe('sk-agent')
     expect(url.searchParams.get('model')).toBe('gpt-5.4')
@@ -304,7 +304,7 @@ type AgentPlatformProfile = {
 }
 
 export function isAgentAccessGroup(groupName: string | null | undefined) {
-  return Boolean(groupName?.startsWith('Agent-'))
+  return Boolean(groupName?.startsWith('Agent'))
 }
 
 function normalizeAgentPlatform(platform: string): AgentPlatform | null {
@@ -543,19 +543,19 @@ Modify the `providers` array inside `mountUserView()` in `frontend/src/__tests__
 ```ts
 {
   group_id: '46',
-  group_name: 'Agent-openai',
+  group_name: 'Agentopenai',
   platform: 'openai',
   credential: { state: 'existing_hidden', api_key_id: 25, name: 'alice', status: 'active', key: 'sk-existing-agent-openai-123456' },
 },
 {
   group_id: '47',
-  group_name: 'Agent-anthropic',
+  group_name: 'Agentanthropic',
   platform: 'anthropic',
   credential: { state: 'existing_hidden', api_key_id: 26, name: 'alice', status: 'active', key: 'sk-existing-agent-anthropic-123456' },
 },
 {
   group_id: '48',
-  group_name: 'Agent-gemini',
+  group_name: 'Agentgemini',
   platform: 'gemini',
   credential: { state: 'existing_hidden', api_key_id: 27, name: 'alice', status: 'active', key: 'sk-existing-agent-gemini-123456' },
 },
@@ -857,7 +857,7 @@ git commit -m "feat(frontend): show agent group configuration paths"
 
 **Interfaces:**
 - Consumes: Task 1 helper contract and Task 2 rendered behavior.
-- Produces: Current architecture documentation that describes ordinary versus `Agent-` `/user` configuration branching.
+- Produces: Current architecture documentation that describes ordinary versus `Agent` `/user` configuration branching.
 
 - [x] **Step 1: Update `docs/architecture.md` for the new `/user` current behavior**
 
@@ -866,7 +866,7 @@ Modify the long `/user` paragraph in `docs/architecture.md` that currently says 
 Replace that sentence with this content:
 
 ```md
-Once a key exists, ordinary access groups still offer manual local configuration, automatic `ae-cli discover`, and app-specific `CC Switch` provider-import links for Codex, Claude Code, or Gemini according to the selected group platform. Access groups whose names strictly start with `Agent-` instead enter an Agent-client configuration branch: the page hides Codex/Claude/Gemini snippets, hides the `ae-cli` automatic configuration card, shows Hermes Agent, OpenClaw, and Custom Agent manual configuration, and offers only Hermes/OpenClaw CC Switch app-import links. Hermes/OpenClaw app import uses CC Switch provider deep links; for Anthropic or Gemini Agent groups, the UI tells users to confirm OpenClaw `api` or Hermes `api_mode` inside CC Switch after import because the deep link imports endpoint/key/model but does not fully encode every target app protocol field.
+Once a key exists, ordinary access groups still offer manual local configuration, automatic `ae-cli discover`, and app-specific `CC Switch` provider-import links for Codex, Claude Code, or Gemini according to the selected group platform. Access groups whose names strictly start with `Agent` instead enter an Agent client configuration branch: the page hides Codex/Claude/Gemini snippets, hides the `ae-cli` automatic configuration card, shows Hermes Agent, OpenClaw, and Custom Agent manual configuration, and offers only Hermes/OpenClaw CC Switch app-import links. Hermes/OpenClaw app import uses CC Switch provider deep links; for Anthropic or Gemini Agent groups, the UI tells users to confirm OpenClaw `api` or Hermes `api_mode` inside CC Switch after import because the deep link imports endpoint/key/model but does not fully encode every target app protocol field.
 ```
 
 - [x] **Step 2: Run plan-required focused tests**
@@ -940,4 +940,4 @@ Report:
 - Keep the existing untracked `.claude/` directory in the main checkout untouched.
 - Work in `/Users/admin/ai-efficiency/.worktrees/agent-group-hermes-openclaw-config-spec` unless the user explicitly chooses another location.
 - If `frontend/node_modules` is missing in this worktree, install dependencies with `cd frontend && npm install` before running tests. Do not commit generated dependency directories.
-- Do not use real user emails, API keys, provider URLs, group names, passwords, tokens, or company domains in tests. Use `example.com`, `alice@example.com`, `sk-*` fake keys, `Group Alpha`, and `Agent-*` test group names only.
+- Do not use real user emails, API keys, provider URLs, group names, passwords, tokens, or company domains in tests. Use `example.com`, `alice@example.com`, `sk-*` fake keys, `Group Alpha`, and `Agent*` test group names only.

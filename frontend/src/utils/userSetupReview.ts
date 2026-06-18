@@ -86,7 +86,7 @@ function shellString(value: string) {
 }
 
 export function isAgentAccessGroup(groupName: string | null | undefined) {
-  return Boolean(groupName?.startsWith('Agent-'))
+  return Boolean(groupName?.startsWith('Agent'))
 }
 
 function normalizeAgentPlatform(platform: string): AgentPlatform | null {

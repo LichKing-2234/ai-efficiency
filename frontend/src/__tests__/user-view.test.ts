@@ -93,19 +93,19 @@ async function mountUserView() {
         },
         {
           group_id: '46',
-          group_name: 'Agent-openai',
+          group_name: 'Agentopenai',
           platform: 'openai',
           credential: { state: 'existing_hidden', api_key_id: 25, name: 'alice', status: 'active', key: 'sk-existing-agent-openai-123456' },
         },
         {
           group_id: '47',
-          group_name: 'Agent-anthropic',
+          group_name: 'Agentanthropic',
           platform: 'anthropic',
           credential: { state: 'existing_hidden', api_key_id: 26, name: 'alice', status: 'active', key: 'sk-existing-agent-anthropic-123456' },
         },
         {
           group_id: '48',
-          group_name: 'Agent-gemini',
+          group_name: 'Agentgemini',
           platform: 'gemini',
           credential: { state: 'existing_hidden', api_key_id: 27, name: 'alice', status: 'active', key: 'sk-existing-agent-gemini-123456' },
         },
