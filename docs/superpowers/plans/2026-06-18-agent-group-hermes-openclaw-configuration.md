@@ -8,7 +8,7 @@
 
 **Tech Stack:** Vue 3, TypeScript, TailwindCSS, Vitest, Vue Test Utils, existing `frontend/src/i18n.ts`, Markdown docs.
 
-**Status:** Not started. Spec committed in this worktree as `d55ad0c1`.
+**Status:** Complete. Agent group helpers, `/user` rendering, architecture docs, focused tests, build, and diff checks are complete in this worktree.
 
 ## Global Constraints
 
@@ -81,7 +81,7 @@ Tests:
 - Produces: `CCSwitchApp` values `hermes` and `openclaw`
 - Consumes: existing `buildManualConfigSnippets`, `buildCCSwitchProviderImportLink`, `resolveCCSwitchAppForPlatform`
 
-- [ ] **Step 1: Write failing tests for strict Agent group classification**
+- [x] **Step 1: Write failing tests for strict Agent group classification**
 
 Add these imports in `frontend/src/__tests__/user-setup-review.test.ts`:
 
@@ -109,13 +109,13 @@ it('classifies Agent access groups with a strict Agent- prefix', () => {
 })
 ```
 
-- [ ] **Step 2: Run helper tests to verify the classification test fails**
+- [x] **Step 2: Run helper tests to verify the classification test fails**
 
 Run: `cd frontend && pnpm test user-setup-review.test.ts`
 
 Expected: FAIL with an import error for `isAgentAccessGroup` and `resolveCCSwitchAppsForGroup`.
 
-- [ ] **Step 3: Write failing tests for ordinary versus Agent manual snippets**
+- [x] **Step 3: Write failing tests for ordinary versus Agent manual snippets**
 
 Add this test to `frontend/src/__tests__/user-setup-review.test.ts`:
 
@@ -211,7 +211,7 @@ it('builds Agent manual snippets without mixing platform credential names', () =
 })
 ```
 
-- [ ] **Step 4: Write failing tests for ordinary versus Agent CC Switch app selection**
+- [x] **Step 4: Write failing tests for ordinary versus Agent CC Switch app selection**
 
 Add this test:
 
@@ -255,13 +255,13 @@ it('builds Hermes and OpenClaw provider links with URL params instead of app-spe
 })
 ```
 
-- [ ] **Step 5: Run helper tests to verify the new tests fail**
+- [x] **Step 5: Run helper tests to verify the new tests fail**
 
 Run: `cd frontend && pnpm test user-setup-review.test.ts`
 
 Expected: FAIL with missing helper/type support for Agent snippets and app selection.
 
-- [ ] **Step 6: Add Agent helper types and classification**
+- [x] **Step 6: Add Agent helper types and classification**
 
 Modify the top of `frontend/src/utils/userSetupReview.ts`:
 
@@ -361,7 +361,7 @@ function resolveAgentPlatformProfile(platform: string, baseUrl: string, apiKey: 
 }
 ```
 
-- [ ] **Step 7: Add Agent manual snippet builders**
+- [x] **Step 7: Add Agent manual snippet builders**
 
 Add these functions after `buildGeminiModelSnippet()`:
 
@@ -471,7 +471,7 @@ function buildAgentManualConfigSnippets(input: ManualConfigSnippetInput): Manual
 }
 ```
 
-- [ ] **Step 8: Route `buildManualConfigSnippets` through Agent snippets**
+- [x] **Step 8: Route `buildManualConfigSnippets` through Agent snippets**
 
 Modify the start of `buildManualConfigSnippets`:
 
@@ -484,7 +484,7 @@ export function buildManualConfigSnippets(input: ManualConfigSnippetInput): Manu
   // keep the existing ordinary-group openai/anthropic/gemini branches unchanged
 ```
 
-- [ ] **Step 9: Add Agent CC Switch app resolution and link support**
+- [x] **Step 9: Add Agent CC Switch app resolution and link support**
 
 Replace `resolveCCSwitchAppForPlatform` and keep its existing behavior for ordinary groups:
 
@@ -508,13 +508,13 @@ export function resolveCCSwitchAppsForGroup(platform: string, groupName?: string
 
 Leave the existing `buildCCSwitchProviderImportLink` app-specific `claude`, `codex`, and `gemini` branches unchanged. The existing fallback branch will now handle `hermes` and `openclaw` with URL params because `CCSwitchApp` includes those values.
 
-- [ ] **Step 10: Run helper tests to verify they pass**
+- [x] **Step 10: Run helper tests to verify they pass**
 
 Run: `cd frontend && pnpm test user-setup-review.test.ts`
 
 Expected: PASS for all `user-setup-review.test.ts` tests.
 
-- [ ] **Step 11: Commit helper work**
+- [x] **Step 11: Commit helper work**
 
 ```bash
 git add frontend/src/utils/userSetupReview.ts frontend/src/__tests__/user-setup-review.test.ts
@@ -536,7 +536,7 @@ git commit -m "feat(frontend): add agent group setup helpers"
 - Produces: `config-method-automatic` is hidden for Agent groups
 - Produces: `ccswitch-import-hermes` and `ccswitch-import-openclaw` links for Agent groups
 
-- [ ] **Step 1: Add Agent groups to the view test fixture**
+- [x] **Step 1: Add Agent groups to the view test fixture**
 
 Modify the `providers` array inside `mountUserView()` in `frontend/src/__tests__/user-view.test.ts` by adding these groups to the `prod` provider:
 
@@ -561,7 +561,7 @@ Modify the `providers` array inside `mountUserView()` in `frontend/src/__tests__
 },
 ```
 
-- [ ] **Step 2: Write failing view tests for Agent method cards and manual panel**
+- [x] **Step 2: Write failing view tests for Agent method cards and manual panel**
 
 Add this test in `frontend/src/__tests__/user-view.test.ts`:
 
@@ -643,13 +643,13 @@ it('warns Agent Anthropic and Gemini users to confirm CC Switch protocol mode af
 })
 ```
 
-- [ ] **Step 3: Run view tests to verify they fail**
+- [x] **Step 3: Run view tests to verify they fail**
 
 Run: `cd frontend && pnpm test user-view.test.ts`
 
 Expected: FAIL because the Agent groups still render the ordinary automatic card and ordinary import/manual snippets.
 
-- [ ] **Step 4: Import Agent helpers and compute Agent state in `UserView.vue`**
+- [x] **Step 4: Import Agent helpers and compute Agent state in `UserView.vue`**
 
 Modify the import block in `frontend/src/views/UserView.vue`:
 
@@ -690,7 +690,7 @@ const showAgentImportProtocolWarning = computed(() => {
 })
 ```
 
-- [ ] **Step 5: Update manual snippet input with group name and model**
+- [x] **Step 5: Update manual snippet input with group name and model**
 
 Modify `buildSelectedManualConfigSnippets` in `frontend/src/views/UserView.vue`:
 
@@ -708,7 +708,7 @@ function buildSelectedManualConfigSnippets(apiKey: string) {
 }
 ```
 
-- [ ] **Step 6: Update CC Switch imports computed output**
+- [x] **Step 6: Update CC Switch imports computed output**
 
 Replace the current `ccSwitchImports` computed in `frontend/src/views/UserView.vue`:
 
@@ -736,7 +736,7 @@ const ccSwitchImports = computed(() => {
 })
 ```
 
-- [ ] **Step 7: Add Agent manual snippet titles**
+- [x] **Step 7: Add Agent manual snippet titles**
 
 Extend `manualConfigSnippetTitle` in `frontend/src/views/UserView.vue`:
 
@@ -751,7 +751,7 @@ Extend `manualConfigSnippetTitle` in `frontend/src/views/UserView.vue`:
       return t('user.manualConfigCustomAgentJson')
 ```
 
-- [ ] **Step 8: Hide automatic card and retitle app import card**
+- [x] **Step 8: Hide automatic card and retitle app import card**
 
 Modify the template card section:
 
@@ -802,7 +802,7 @@ Add this warning inside the app-import panel before the import buttons:
 </p>
 ```
 
-- [ ] **Step 9: Add English and Chinese i18n strings**
+- [x] **Step 9: Add English and Chinese i18n strings**
 
 Add English strings near the existing manual/CC Switch strings in `frontend/src/i18n.ts`:
 
@@ -836,13 +836,13 @@ Add Chinese strings near the existing Chinese manual/CC Switch strings:
 'user.agentImportProtocolWarning': '导入后请在 CC Switch 内确认 provider 协议。当前平台需要检查 OpenClaw api 和 Hermes api_mode 后再使用。',
 ```
 
-- [ ] **Step 10: Run view tests to verify they pass**
+- [x] **Step 10: Run view tests to verify they pass**
 
 Run: `cd frontend && pnpm test user-view.test.ts`
 
 Expected: PASS for all `user-view.test.ts` tests.
 
-- [ ] **Step 11: Commit UI work**
+- [x] **Step 11: Commit UI work**
 
 ```bash
 git add frontend/src/views/UserView.vue frontend/src/i18n.ts frontend/src/__tests__/user-view.test.ts
@@ -859,7 +859,7 @@ git commit -m "feat(frontend): show agent group configuration paths"
 - Consumes: Task 1 helper contract and Task 2 rendered behavior.
 - Produces: Current architecture documentation that describes ordinary versus `Agent-` `/user` configuration branching.
 
-- [ ] **Step 1: Update `docs/architecture.md` for the new `/user` current behavior**
+- [x] **Step 1: Update `docs/architecture.md` for the new `/user` current behavior**
 
 Modify the long `/user` paragraph in `docs/architecture.md` that currently says users can choose manual configuration, automatic `ae-cli discover`, or app-specific `CC Switch` provider-import links once a key exists.
 
@@ -869,7 +869,7 @@ Replace that sentence with this content:
 Once a key exists, ordinary access groups still offer manual local configuration, automatic `ae-cli discover`, and app-specific `CC Switch` provider-import links for Codex, Claude Code, or Gemini according to the selected group platform. Access groups whose names strictly start with `Agent-` instead enter an Agent-client configuration branch: the page hides Codex/Claude/Gemini snippets, hides the `ae-cli` automatic configuration card, shows Hermes Agent, OpenClaw, and Custom Agent manual configuration, and offers only Hermes/OpenClaw CC Switch app-import links. Hermes/OpenClaw app import uses CC Switch provider deep links; for Anthropic or Gemini Agent groups, the UI tells users to confirm OpenClaw `api` or Hermes `api_mode` inside CC Switch after import because the deep link imports endpoint/key/model but does not fully encode every target app protocol field.
 ```
 
-- [ ] **Step 2: Run plan-required focused tests**
+- [x] **Step 2: Run plan-required focused tests**
 
 Run:
 
@@ -879,7 +879,7 @@ cd frontend && pnpm test user-setup-review.test.ts user-view.test.ts
 
 Expected: PASS for both test files.
 
-- [ ] **Step 3: Run frontend build/type verification**
+- [x] **Step 3: Run frontend build/type verification**
 
 Run:
 
@@ -889,7 +889,7 @@ cd frontend && pnpm run build
 
 Expected: PASS with `vue-tsc -b` and `vite build` completing successfully.
 
-- [ ] **Step 4: Check the final diff for whitespace and scope**
+- [x] **Step 4: Check the final diff for whitespace and scope**
 
 Run:
 
@@ -907,14 +907,14 @@ Expected:
  M docs/architecture.md
 ```
 
-- [ ] **Step 5: Commit docs and final verification state**
+- [x] **Step 5: Commit docs and final verification state**
 
 ```bash
 git add docs/architecture.md
 git commit -m "docs(frontend): document agent group configuration branch"
 ```
 
-- [ ] **Step 6: Report final implementation status**
+- [x] **Step 6: Report final implementation status**
 
 Collect:
 
