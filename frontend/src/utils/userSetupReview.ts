@@ -268,31 +268,41 @@ function envExports(env: Record<string, string>) {
 
 function buildHermesAgentSnippet(input: ManualConfigSnippetInput, profile: AgentPlatformProfile) {
   const providerName = input.providerName.trim() || 'ae-agent'
-  const model = input.model?.trim()
+  const model = input.model?.trim() || '<model-id>'
   return [
-    '# Add this provider through Hermes setup or config as an OpenAI-compatible Chat Completions endpoint.',
-    'hermes setup --portal',
+    '# Merge this into ~/.hermes/config.yaml to make this Agent group the active main model.',
+    'model:',
+    `  provider: ${JSON.stringify(`custom:${providerName}`)}`,
+    `  default: ${JSON.stringify(model)}`,
+    `  base_url: ${JSON.stringify(profile.baseUrl)}`,
+    `  api_mode: ${JSON.stringify(profile.hermesApiMode)}`,
     '',
     'custom_providers:',
     `  - name: ${JSON.stringify(providerName)}`,
     `    base_url: ${JSON.stringify(profile.baseUrl)}`,
     `    api_key: ${JSON.stringify(input.apiKey)}`,
     `    api_mode: ${JSON.stringify(profile.hermesApiMode)}`,
-    ...(model ? [
-      '    models:',
-      `      ${JSON.stringify(model)}:`,
-      '        context_length: 200000',
-    ] : []),
+    '    models:',
+    `      ${JSON.stringify(model)}:`,
+    '        context_length: 200000',
   ].join('\n')
 }
 
 function buildOpenClawAgentSnippet(input: ManualConfigSnippetInput, profile: AgentPlatformProfile) {
-  const model = input.model?.trim()
+  const providerName = input.providerName.trim() || 'ae-agent'
+  const model = input.model?.trim() || '<model-id>'
   return JSON.stringify({
-    baseUrl: profile.baseUrl,
-    apiKey: input.apiKey,
-    api: profile.openClawApi,
-    ...(model ? { models: [{ id: model, name: model }] } : {}),
+    models: {
+      mode: 'merge',
+      providers: {
+        [providerName]: {
+          baseUrl: profile.baseUrl,
+          apiKey: input.apiKey,
+          api: profile.openClawApi,
+          models: [{ id: model, name: model }],
+        },
+      },
+    },
   }, null, 2)
 }
 
@@ -332,7 +342,7 @@ function buildAgentManualConfigSnippets(input: ManualConfigSnippetInput): Manual
     },
     {
       key: 'openclaw-agent',
-      path: '~/.openclaw/openclaw.json provider entry',
+      path: '~/.openclaw/openclaw.json',
       body: buildOpenClawAgentSnippet(input, profile),
       containsSecret: true,
     },

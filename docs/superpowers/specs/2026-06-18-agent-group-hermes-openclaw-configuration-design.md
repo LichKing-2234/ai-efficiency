@@ -145,11 +145,10 @@ function isAgentAccessGroup(groupName: string | undefined | null) {
 
 #### Hermes Agent
 
-Hermes Agent 手动配置应优先提供官方 CLI/onboarding 路径和必要文件片段：
+Hermes Agent 手动配置应优先提供官方模型配置路径和必要文件片段：
 
-- `hermes setup --portal`
 - `hermes model` / `hermes config set` 方向的命令式配置
-- `~/.hermes/config.yaml` / `~/.hermes/.env` 方向的文件片段，前提是片段能与官方配置合同保持一致
+- `~/.hermes/config.yaml` 方向的文件片段，前提是片段能与官方配置合同保持一致
 
 Hermes Agent 配置内容统一使用 OpenAI-compatible Chat Completions endpoint。原因是 Hermes custom provider 的稳定配置面以 `base_url` + `api_mode: chat_completions` 表达这类接入；因此 Agent 接入组的 `platform` 只表示后端 group/model 来源，不再决定 Hermes 客户端协议。
 
@@ -160,6 +159,25 @@ Hermes Agent 配置内容统一使用 OpenAI-compatible Chat Completions endpoin
 | `gemini` | OpenAI-compatible `/v1` endpoint/key/model |
 
 如果 provider `base_url` 已经以版本段结尾（如 `/v1` 或 `/api/coding/paas/v4`），前端保留该版本化 URL；否则追加 `/v1`。
+
+Hermes 片段必须同时写入 active main model 和 custom provider 定义，避免用户只添加 provider 却继续使用旧 provider：
+
+```yaml
+model:
+  provider: "custom:prod"
+  default: "gpt-5.4"
+  base_url: "https://prod.example.com/v1"
+  api_mode: "chat_completions"
+
+custom_providers:
+  - name: "prod"
+    base_url: "https://prod.example.com/v1"
+    api_key: "sk-agent"
+    api_mode: "chat_completions"
+    models:
+      "gpt-5.4":
+        context_length: 200000
+```
 
 #### OpenClaw
 
@@ -179,6 +197,26 @@ OpenClaw 配置内容同样统一使用 OpenAI-compatible Chat Completions：
 | `gemini` | `api: "openai-completions"` + `/v1` endpoint/key/model |
 
 这里不生成 `anthropic-messages` 或 `google-generative-ai` native provider 片段；Agent 客户端按 `/v1/chat/completions` 工作，native platform 仍由后端连接测试和普通组配置路径覆盖。
+
+OpenClaw 片段必须输出可合并到 `~/.openclaw/openclaw.json` 的 `models.providers.<provider>` 结构，而不是只输出 provider 内部字段：
+
+```json
+{
+  "models": {
+    "mode": "merge",
+    "providers": {
+      "prod": {
+        "baseUrl": "https://prod.example.com/v1",
+        "apiKey": "sk-agent",
+        "api": "openai-completions",
+        "models": [
+          { "id": "gpt-5.4", "name": "gpt-5.4" }
+        ]
+      }
+    }
+  }
+}
+```
 
 #### Custom Agent
 

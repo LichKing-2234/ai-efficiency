@@ -215,6 +215,73 @@ describe('userSetupReview command builders', () => {
     expect(geminiBody).not.toContain('ANTHROPIC_AUTH_TOKEN')
   })
 
+  it('builds complete Hermes and OpenClaw Agent manual config fragments', () => {
+    const snippets = buildManualConfigSnippets({
+      providerName: 'prod',
+      baseUrl: 'https://prod.example.com',
+      platform: 'openai',
+      apiKey: 'sk-agent',
+      model: 'gpt-5.4',
+      groupName: 'Agentopenai',
+    })
+    const hermesSnippet = snippets.find((snippet) => snippet.key === 'hermes-agent')
+    const openclawSnippet = snippets.find((snippet) => snippet.key === 'openclaw-agent')
+
+    expect(hermesSnippet?.body).toContain([
+      'model:',
+      '  provider: "custom:prod"',
+      '  default: "gpt-5.4"',
+      '  base_url: "https://prod.example.com/v1"',
+      '  api_mode: "chat_completions"',
+    ].join('\n'))
+    expect(hermesSnippet?.body).toContain([
+      'custom_providers:',
+      '  - name: "prod"',
+      '    base_url: "https://prod.example.com/v1"',
+      '    api_key: "sk-agent"',
+      '    api_mode: "chat_completions"',
+      '    models:',
+      '      "gpt-5.4":',
+      '        context_length: 200000',
+    ].join('\n'))
+
+    expect(openclawSnippet?.path).toBe('~/.openclaw/openclaw.json')
+    expect(JSON.parse(openclawSnippet?.body ?? '{}')).toEqual({
+      models: {
+        mode: 'merge',
+        providers: {
+          prod: {
+            baseUrl: 'https://prod.example.com/v1',
+            apiKey: 'sk-agent',
+            api: 'openai-completions',
+            models: [{ id: 'gpt-5.4', name: 'gpt-5.4' }],
+          },
+        },
+      },
+    })
+  })
+
+  it('uses explicit model placeholders for Agent manual snippets when no model is selected', () => {
+    const snippets = buildManualConfigSnippets({
+      providerName: 'prod',
+      baseUrl: 'https://prod.example.com',
+      platform: 'openai',
+      apiKey: 'sk-agent',
+      groupName: 'Agentopenai',
+    })
+
+    expect(snippets.find((snippet) => snippet.key === 'hermes-agent')?.body).toContain('default: "<model-id>"')
+    expect(JSON.parse(snippets.find((snippet) => snippet.key === 'openclaw-agent')?.body ?? '{}')).toMatchObject({
+      models: {
+        providers: {
+          prod: {
+            models: [{ id: '<model-id>', name: '<model-id>' }],
+          },
+        },
+      },
+    })
+  })
+
   it('maps supported platforms to CC Switch apps', () => {
     expect(resolveCCSwitchAppForPlatform('openai')).toBe('codex')
     expect(resolveCCSwitchAppForPlatform('anthropic')).toBe('claude')

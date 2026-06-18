@@ -8,7 +8,7 @@
 
 **Tech Stack:** Vue 3, TypeScript, TailwindCSS, Vitest, Vue Test Utils, existing `frontend/src/i18n.ts`, Markdown docs.
 
-**Status:** Complete. Agent group helpers, `/user` rendering, architecture docs, focused tests, build, and diff checks are complete in this worktree.
+**Status:** Complete. Agent group helpers, `/user` rendering, architecture docs, focused tests, build, and diff checks are complete in this worktree. Code-review follow-up updated Hermes/OpenClaw manual snippets to emit complete active provider config fragments instead of partial provider values.
 
 ## Global Constraints
 
@@ -225,7 +225,7 @@ it('resolves CC Switch apps by ordinary versus Agent group', () => {
   expect(resolveCCSwitchAppsForGroup('openai', 'Agentopenai')).toEqual(['hermes', 'openclaw'])
   expect(resolveCCSwitchAppsForGroup('anthropic', 'Agentanthropic')).toEqual(['hermes', 'openclaw'])
   expect(resolveCCSwitchAppsForGroup('gemini', 'Agentgemini')).toEqual(['hermes', 'openclaw'])
-  expect(resolveCCSwitchAppsForGroup('openai', 'Agent')).toEqual(['codex'])
+  expect(resolveCCSwitchAppsForGroup('openai', 'Agent')).toEqual(['hermes', 'openclaw'])
   expect(resolveCCSwitchAppsForGroup('unknown', 'Agentunknown')).toEqual([])
 })
 ```
@@ -247,7 +247,7 @@ it('builds Hermes and OpenClaw provider links with URL params instead of app-spe
     expect(url.searchParams.get('resource')).toBe('provider')
     expect(url.searchParams.get('app')).toBe(app)
     expect(url.searchParams.get('name')).toBe('Production / Agentopenai')
-    expect(url.searchParams.get('endpoint')).toBe('https://prod.example.com')
+    expect(url.searchParams.get('endpoint')).toBe('https://prod.example.com/v1')
     expect(url.searchParams.get('apiKey')).toBe('sk-agent')
     expect(url.searchParams.get('model')).toBe('gpt-5.4')
     expect(url.searchParams.get('enabled')).toBe('true')
@@ -358,44 +358,41 @@ function envExports(env: Record<string, string>) {
 
 function buildHermesAgentSnippet(input: ManualConfigSnippetInput, profile: AgentPlatformProfile) {
   const providerName = input.providerName.trim() || 'ae-agent'
-  const model = input.model?.trim()
-  if (profile.platform === 'gemini') {
-    return [
-      '# Hermes Agent does not expose a stable native Gemini provider mode through CC Switch import.',
-      '# Use the Hermes setup portal and enter these current access-group values:',
-      'hermes setup --portal',
-      '',
-      `provider_name=${shellString(providerName)}`,
-      `provider_protocol=${shellString(profile.displayName)}`,
-      `base_url=${shellString(input.baseUrl)}`,
-      `api_key=${shellString(input.apiKey)}`,
-      ...(model ? [`model=${shellString(model)}`] : []),
-    ].join('\n')
-  }
+  const model = input.model?.trim() || '<model-id>'
   return [
-    '# Add this provider through Hermes setup or config, using the same fields.',
-    'hermes setup --portal',
+    '# Merge this into ~/.hermes/config.yaml to make this Agent group the active main model.',
+    'model:',
+    `  provider: ${JSON.stringify(`custom:${providerName}`)}`,
+    `  default: ${JSON.stringify(model)}`,
+    `  base_url: ${JSON.stringify(profile.baseUrl)}`,
+    `  api_mode: ${JSON.stringify(profile.hermesApiMode)}`,
     '',
     'custom_providers:',
     `  - name: ${JSON.stringify(providerName)}`,
-    `    base_url: ${JSON.stringify(input.baseUrl)}`,
+    `    base_url: ${JSON.stringify(profile.baseUrl)}`,
     `    api_key: ${JSON.stringify(input.apiKey)}`,
     `    api_mode: ${JSON.stringify(profile.hermesApiMode)}`,
-    ...(model ? [
-      '    models:',
-      `      ${JSON.stringify(model)}:`,
-      '        context_length: 200000',
-    ] : []),
+    '    models:',
+    `      ${JSON.stringify(model)}:`,
+    '        context_length: 200000',
   ].join('\n')
 }
 
 function buildOpenClawAgentSnippet(input: ManualConfigSnippetInput, profile: AgentPlatformProfile) {
-  const model = input.model?.trim()
+  const providerName = input.providerName.trim() || 'ae-agent'
+  const model = input.model?.trim() || '<model-id>'
   return JSON.stringify({
-    baseUrl: input.baseUrl,
-    apiKey: input.apiKey,
-    api: profile.openClawApi,
-    ...(model ? { models: [{ id: model, name: model }] } : {}),
+    models: {
+      mode: 'merge',
+      providers: {
+        [providerName]: {
+          baseUrl: profile.baseUrl,
+          apiKey: input.apiKey,
+          api: profile.openClawApi,
+          models: [{ id: model, name: model }],
+        },
+      },
+    },
   }, null, 2)
 }
 
@@ -403,7 +400,7 @@ function buildCustomAgentJSONSnippet(input: ManualConfigSnippetInput, profile: A
   return JSON.stringify({
     platform: profile.platform,
     protocol: profile.displayName,
-    base_url: input.baseUrl,
+    base_url: profile.baseUrl,
     api_key: input.apiKey,
     ...(input.model?.trim() ? { model: input.model.trim() } : {}),
   }, null, 2)
@@ -418,7 +415,7 @@ function buildAgentManualConfigSnippets(input: ManualConfigSnippetInput): Manual
         path: 'Custom Agent provider values',
         body: JSON.stringify({
           platform: input.platform,
-          base_url: input.baseUrl,
+          base_url: buildAgentProviderBaseUrl(input.baseUrl),
           api_key: input.apiKey,
           ...(input.model?.trim() ? { model: input.model.trim() } : {}),
         }, null, 2),
@@ -429,13 +426,13 @@ function buildAgentManualConfigSnippets(input: ManualConfigSnippetInput): Manual
   return [
     {
       key: 'hermes-agent',
-      path: profile.platform === 'gemini' ? 'Hermes Agent setup values' : '~/.hermes/config.yaml',
+      path: '~/.hermes/config.yaml',
       body: buildHermesAgentSnippet(input, profile),
       containsSecret: true,
     },
     {
       key: 'openclaw-agent',
-      path: '~/.openclaw/openclaw.json provider entry',
+      path: '~/.openclaw/openclaw.json',
       body: buildOpenClawAgentSnippet(input, profile),
       containsSecret: true,
     },
