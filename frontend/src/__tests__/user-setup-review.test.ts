@@ -24,6 +24,8 @@ import {
   buildWindowsGithubConnectivityCommand,
   buildWindowsInstallCommand,
   detectInstallPlatform,
+  isAgentAccessGroup,
+  resolveCCSwitchAppsForGroup,
 } from '@/utils/userSetupReview'
 
 function decodeCCSwitchConfig(link: string) {
@@ -104,11 +106,121 @@ describe('userSetupReview command builders', () => {
     }).map((snippet) => snippet.path)).toEqual(['~/.ae-cli/env.sh', 'Shell reload', 'Current shell'])
   })
 
+  it('classifies Agent access groups with a strict Agent- prefix', () => {
+    expect(isAgentAccessGroup('Agent-openai')).toBe(true)
+    expect(isAgentAccessGroup('Agent-anthropic')).toBe(true)
+    expect(isAgentAccessGroup('Agent-gemini')).toBe(true)
+    expect(isAgentAccessGroup('Agent-Alpha')).toBe(true)
+    expect(isAgentAccessGroup('Agent')).toBe(false)
+    expect(isAgentAccessGroup('Agentic-openai')).toBe(false)
+    expect(isAgentAccessGroup('agent-openai')).toBe(false)
+    expect(isAgentAccessGroup('My-Agent-openai')).toBe(false)
+    expect(isAgentAccessGroup(null)).toBe(false)
+    expect(isAgentAccessGroup(undefined)).toBe(false)
+  })
+
+  it('switches manual snippets from normal tools to Agent clients for Agent groups', () => {
+    expect(buildManualConfigSnippets({
+      providerName: 'prod',
+      baseUrl: 'https://prod.example.com',
+      platform: 'openai',
+      apiKey: 'sk-openai',
+      model: 'gpt-5.4',
+      groupName: 'Group Alpha',
+    }).map((snippet) => snippet.key)).toEqual(['codex-config', 'codex-auth'])
+
+    expect(buildManualConfigSnippets({
+      providerName: 'prod',
+      baseUrl: 'https://prod.example.com',
+      platform: 'openai',
+      apiKey: 'sk-openai',
+      model: 'gpt-5.4',
+      groupName: 'Agent-openai',
+    }).map((snippet) => snippet.key)).toEqual([
+      'hermes-agent',
+      'openclaw-agent',
+      'custom-agent-env',
+      'custom-agent-json',
+    ])
+
+    expect(buildManualConfigSnippets({
+      providerName: 'prod',
+      baseUrl: 'https://prod.example.com',
+      platform: 'anthropic',
+      apiKey: 'sk-claude',
+      model: 'claude-sonnet-4-6',
+      groupName: 'Agent-anthropic',
+    }).map((snippet) => snippet.key)).toEqual([
+      'hermes-agent',
+      'openclaw-agent',
+      'custom-agent-env',
+      'custom-agent-json',
+    ])
+
+    expect(buildManualConfigSnippets({
+      providerName: 'prod',
+      baseUrl: 'https://prod.example.com',
+      platform: 'gemini',
+      apiKey: 'sk-gemini',
+      model: 'gemini-3.1-pro-preview',
+      groupName: 'Agent-gemini',
+    }).map((snippet) => snippet.key)).toEqual([
+      'hermes-agent',
+      'openclaw-agent',
+      'custom-agent-env',
+      'custom-agent-json',
+    ])
+  })
+
+  it('builds Agent manual snippets without mixing platform credential names', () => {
+    const anthropicSnippets = buildManualConfigSnippets({
+      providerName: 'prod',
+      baseUrl: 'https://prod.example.com',
+      platform: 'anthropic',
+      apiKey: 'sk-claude',
+      model: 'claude-sonnet-4-6',
+      groupName: 'Agent-anthropic',
+    })
+    const anthropicBody = anthropicSnippets.map((snippet) => snippet.body).join('\n')
+    expect(anthropicBody).toContain('ANTHROPIC_AUTH_TOKEN')
+    expect(anthropicBody).toContain('ANTHROPIC_BASE_URL')
+    expect(anthropicBody).toContain('anthropic-messages')
+    expect(anthropicBody).toContain('anthropic_messages')
+    expect(anthropicBody).not.toContain('OPENAI_API_KEY')
+    expect(anthropicBody).not.toContain('GEMINI_API_KEY')
+
+    const geminiSnippets = buildManualConfigSnippets({
+      providerName: 'prod',
+      baseUrl: 'https://prod.example.com',
+      platform: 'gemini',
+      apiKey: 'sk-gemini',
+      model: 'gemini-3.1-pro-preview',
+      groupName: 'Agent-gemini',
+    })
+    const geminiBody = geminiSnippets.map((snippet) => snippet.body).join('\n')
+    expect(geminiBody).toContain('GEMINI_API_KEY')
+    expect(geminiBody).toContain('GOOGLE_GEMINI_BASE_URL')
+    expect(geminiBody).toContain('google-generative-ai')
+    expect(geminiBody).not.toContain('OPENAI_API_KEY')
+    expect(geminiBody).not.toContain('ANTHROPIC_AUTH_TOKEN')
+  })
+
   it('maps supported platforms to CC Switch apps', () => {
     expect(resolveCCSwitchAppForPlatform('openai')).toBe('codex')
     expect(resolveCCSwitchAppForPlatform('anthropic')).toBe('claude')
     expect(resolveCCSwitchAppForPlatform('gemini')).toBe('gemini')
     expect(resolveCCSwitchAppForPlatform('unknown')).toBeNull()
+  })
+
+  it('resolves CC Switch apps by ordinary versus Agent group', () => {
+    expect(resolveCCSwitchAppsForGroup('openai', 'Group Alpha')).toEqual(['codex'])
+    expect(resolveCCSwitchAppsForGroup('anthropic', 'Group Beta')).toEqual(['claude'])
+    expect(resolveCCSwitchAppsForGroup('gemini', 'Group Delta')).toEqual(['gemini'])
+    expect(resolveCCSwitchAppsForGroup('openai', 'Agent-openai')).toEqual(['hermes', 'openclaw'])
+    expect(resolveCCSwitchAppsForGroup('anthropic', 'Agent-anthropic')).toEqual(['hermes', 'openclaw'])
+    expect(resolveCCSwitchAppsForGroup('gemini', 'Agent-gemini')).toEqual(['hermes', 'openclaw'])
+    expect(resolveCCSwitchAppsForGroup('openai', 'Agent')).toEqual(['codex'])
+    expect(resolveCCSwitchAppsForGroup('unknown', 'Agent-unknown')).toEqual([])
   })
 
   it('builds an app-specific CC Switch provider import link', () => {
@@ -137,6 +249,29 @@ describe('userSetupReview command builders', () => {
         CLAUDE_CODE_ATTRIBUTION_HEADER: '0',
       },
     })
+  })
+
+  it('builds Hermes and OpenClaw provider links with URL params instead of app-specific config payloads', () => {
+    for (const app of ['hermes', 'openclaw'] as const) {
+      const link = buildCCSwitchProviderImportLink({
+        app,
+        name: 'Production / Agent-openai',
+        endpoint: 'https://prod.example.com',
+        apiKey: 'sk-agent',
+        model: 'gpt-5.4',
+      })
+      const url = new URL(link)
+      expect(`${url.protocol}//${url.host}${url.pathname}`).toBe('ccswitch://v1/import')
+      expect(url.searchParams.get('resource')).toBe('provider')
+      expect(url.searchParams.get('app')).toBe(app)
+      expect(url.searchParams.get('name')).toBe('Production / Agent-openai')
+      expect(url.searchParams.get('endpoint')).toBe('https://prod.example.com')
+      expect(url.searchParams.get('apiKey')).toBe('sk-agent')
+      expect(url.searchParams.get('model')).toBe('gpt-5.4')
+      expect(url.searchParams.get('enabled')).toBe('true')
+      expect(url.searchParams.get('configFormat')).toBeNull()
+      expect(url.searchParams.get('config')).toBeNull()
+    }
   })
 
   it('includes an explicit model when provided for a CC Switch import', () => {
