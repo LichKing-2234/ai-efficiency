@@ -1,5 +1,5 @@
 export type InstallPlatform = 'shell' | 'windows'
-export type CCSwitchApp = 'codex' | 'claude' | 'gemini'
+export type CCSwitchApp = 'codex' | 'claude' | 'gemini' | 'hermes' | 'openclaw'
 
 export type ManualConfigSnippetKey =
   | 'codex-config'
@@ -8,6 +8,10 @@ export type ManualConfigSnippetKey =
   | 'gemini-env'
   | 'gemini-reload'
   | 'gemini-model'
+  | 'hermes-agent'
+  | 'openclaw-agent'
+  | 'custom-agent-env'
+  | 'custom-agent-json'
 
 export type ManualConfigSnippet = {
   key: ManualConfigSnippetKey
@@ -21,6 +25,8 @@ export type ManualConfigSnippetInput = {
   baseUrl: string
   platform: string
   apiKey: string
+  groupName?: string | null
+  model?: string
 }
 
 export type CCSwitchProviderImportInput = {
@@ -35,6 +41,17 @@ export type CCSwitchProviderImportInput = {
 const GITHUB_RELEASE_API_URL = 'https://api.github.com/repos/LichKing-2234/ai-efficiency/releases/latest'
 const CODEX_MODEL = 'gpt-5.4'
 const GEMINI_MODEL = 'gemini-3.1-pro-preview'
+
+type AgentPlatform = 'openai' | 'anthropic' | 'gemini'
+
+type AgentPlatformProfile = {
+  platform: AgentPlatform
+  displayName: string
+  baseUrl: string
+  env: Record<string, string>
+  openClawApi: 'openai-completions'
+  hermesApiMode: 'chat_completions'
+}
 
 type PlatformSource = {
   platform?: string
@@ -67,6 +84,44 @@ function tomlTableKey(value: string) {
 
 function shellString(value: string) {
   return `"${value.replace(/(["\\$`])/g, '\\$1')}"`
+}
+
+export function isAgentAccessGroup(groupName: string | null | undefined) {
+  return Boolean(groupName?.startsWith('Agent'))
+}
+
+export function buildAgentProviderBaseUrl(baseUrl: string) {
+  const trimmed = baseUrl.trim().replace(/\/+$/, '')
+  if (!trimmed) return '/v1'
+  if (/\/v\d+$/i.test(trimmed)) return trimmed
+  return `${trimmed}/v1`
+}
+
+function normalizeAgentPlatform(platform: string): AgentPlatform | null {
+  const normalized = platform.trim().toLowerCase()
+  if (normalized === 'openai') return 'openai'
+  if (normalized === 'anthropic') return 'anthropic'
+  if (normalized === 'gemini') return 'gemini'
+  return null
+}
+
+function resolveAgentPlatformProfile(platform: string, baseUrl: string, apiKey: string, model?: string): AgentPlatformProfile | null {
+  const normalized = normalizeAgentPlatform(platform)
+  const selectedModel = model?.trim()
+  if (!normalized) return null
+  const agentBaseUrl = buildAgentProviderBaseUrl(baseUrl)
+  return {
+    platform: normalized,
+    displayName: 'OpenAI-compatible Chat Completions',
+    baseUrl: agentBaseUrl,
+    env: {
+      OPENAI_API_KEY: apiKey,
+      OPENAI_BASE_URL: agentBaseUrl,
+      ...(selectedModel ? { OPENAI_MODEL: selectedModel } : {}),
+    },
+    openClawApi: 'openai-completions',
+    hermesApiMode: 'chat_completions',
+  }
 }
 
 function buildClaudeSettingsEnv(baseUrl: string, apiKey: string) {
@@ -205,7 +260,111 @@ export function buildGeminiModelSnippet() {
   ].join('\n')
 }
 
+function envExports(env: Record<string, string>) {
+  return Object.entries(env)
+    .map(([key, value]) => `export ${key}=${shellString(value)}`)
+    .join('\n')
+}
+
+function buildHermesAgentSnippet(input: ManualConfigSnippetInput, profile: AgentPlatformProfile) {
+  const providerName = input.providerName.trim() || 'ae-agent'
+  const model = input.model?.trim() || '<model-id>'
+  return [
+    '# Merge this into ~/.hermes/config.yaml to make this Agent group the active main model.',
+    'model:',
+    `  provider: ${JSON.stringify(`custom:${providerName}`)}`,
+    `  default: ${JSON.stringify(model)}`,
+    `  base_url: ${JSON.stringify(profile.baseUrl)}`,
+    `  api_mode: ${JSON.stringify(profile.hermesApiMode)}`,
+    '',
+    'custom_providers:',
+    `  - name: ${JSON.stringify(providerName)}`,
+    `    base_url: ${JSON.stringify(profile.baseUrl)}`,
+    `    api_key: ${JSON.stringify(input.apiKey)}`,
+    `    api_mode: ${JSON.stringify(profile.hermesApiMode)}`,
+    '    models:',
+    `      ${JSON.stringify(model)}:`,
+    '        context_length: 200000',
+  ].join('\n')
+}
+
+function buildOpenClawAgentSnippet(input: ManualConfigSnippetInput, profile: AgentPlatformProfile) {
+  const providerName = input.providerName.trim() || 'ae-agent'
+  const model = input.model?.trim() || '<model-id>'
+  return JSON.stringify({
+    models: {
+      mode: 'merge',
+      providers: {
+        [providerName]: {
+          baseUrl: profile.baseUrl,
+          apiKey: input.apiKey,
+          api: profile.openClawApi,
+          models: [{ id: model, name: model }],
+        },
+      },
+    },
+  }, null, 2)
+}
+
+function buildCustomAgentJSONSnippet(input: ManualConfigSnippetInput, profile: AgentPlatformProfile) {
+  return JSON.stringify({
+    platform: profile.platform,
+    protocol: profile.displayName,
+    base_url: profile.baseUrl,
+    api_key: input.apiKey,
+    ...(input.model?.trim() ? { model: input.model.trim() } : {}),
+  }, null, 2)
+}
+
+function buildAgentManualConfigSnippets(input: ManualConfigSnippetInput): ManualConfigSnippet[] {
+  const profile = resolveAgentPlatformProfile(input.platform, input.baseUrl, input.apiKey, input.model)
+  if (!profile) {
+    return [
+      {
+        key: 'custom-agent-json',
+        path: 'Custom Agent provider values',
+        body: JSON.stringify({
+          platform: input.platform,
+          base_url: buildAgentProviderBaseUrl(input.baseUrl),
+          api_key: input.apiKey,
+          ...(input.model?.trim() ? { model: input.model.trim() } : {}),
+        }, null, 2),
+        containsSecret: true,
+      },
+    ]
+  }
+  return [
+    {
+      key: 'hermes-agent',
+      path: '~/.hermes/config.yaml',
+      body: buildHermesAgentSnippet(input, profile),
+      containsSecret: true,
+    },
+    {
+      key: 'openclaw-agent',
+      path: '~/.openclaw/openclaw.json',
+      body: buildOpenClawAgentSnippet(input, profile),
+      containsSecret: true,
+    },
+    {
+      key: 'custom-agent-env',
+      path: 'Custom Agent environment',
+      body: envExports(profile.env),
+      containsSecret: true,
+    },
+    {
+      key: 'custom-agent-json',
+      path: 'Custom Agent JSON',
+      body: buildCustomAgentJSONSnippet(input, profile),
+      containsSecret: true,
+    },
+  ]
+}
+
 export function buildManualConfigSnippets(input: ManualConfigSnippetInput): ManualConfigSnippet[] {
+  if (isAgentAccessGroup(input.groupName)) {
+    return buildAgentManualConfigSnippets(input)
+  }
   const platform = input.platform.trim().toLowerCase()
   if (platform === 'openai') {
     return [
@@ -266,6 +425,14 @@ export function resolveCCSwitchAppForPlatform(platform: string): CCSwitchApp | n
   return null
 }
 
+export function resolveCCSwitchAppsForGroup(platform: string, groupName?: string | null): CCSwitchApp[] {
+  if (isAgentAccessGroup(groupName)) {
+    return normalizeAgentPlatform(platform) ? ['hermes', 'openclaw'] : []
+  }
+  const app = resolveCCSwitchAppForPlatform(platform)
+  return app ? [app] : []
+}
+
 export function buildCCSwitchProviderImportLink(input: CCSwitchProviderImportInput) {
   if (input.app === 'claude') {
     const params = new URLSearchParams({
@@ -307,7 +474,7 @@ export function buildCCSwitchProviderImportLink(input: CCSwitchProviderImportInp
     resource: 'provider',
     app: input.app,
     name: input.name,
-    endpoint: input.endpoint,
+    endpoint: input.app === 'hermes' || input.app === 'openclaw' ? buildAgentProviderBaseUrl(input.endpoint) : input.endpoint,
     apiKey: input.apiKey,
     enabled: String(input.enabled ?? true),
   })
