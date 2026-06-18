@@ -52,6 +52,7 @@ That creates two blind spots:
 ```text
 Tool configuration
 Tool probe
+Recent Codex Failures
 ```
 
 The default command validates local configuration and repository readiness without executing Codex, Claude, or Gemini:
@@ -71,6 +72,15 @@ Real local CLI probes run only when the user opts in:
 ```bash
 ae-cli doctor --probe-tools
 ```
+
+First-phase failed-request diagnostics are intentionally Codex-only and do not
+use OpenTelemetry. Doctor reads the local Codex log database and prints a small
+copy-pasteable list of recent non-2xx Responses API requests with upstream
+request identifiers when available. If the most recent failures do not carry
+upstream identifiers, doctor also prints the most recent failed Codex requests
+that do carry request IDs so local proxy 502s do not hide useful support IDs.
+Claude, Gemini, and OTel ingestion remain out of scope for this section until a
+later design explicitly adds them.
 
 ## Tool Detection
 
@@ -229,6 +239,20 @@ Tool configuration
   [ok] gemini: ok env=/Users/alice/.ae-cli/env.sh shell_rc=/Users/alice/.zshrc base_url=match credential=match
 
 Tool probe: skipped [warn] (use --probe-tools to run local CLI probes)
+
+Recent Codex Failures: 1 [warn] (most recent Codex request errors)
+  - 2026-06-18 17:30:00 status=503 Service Unavailable
+      url=https://relay.example.com/responses
+      x-request-id=req-503
+      x-client-request-id=client-503
+      x-kong-request-id=kong-503
+
+Recent Codex Failures With Request IDs: 1 [warn] (most recent Codex request errors with upstream IDs)
+  - 2026-06-11 20:51:56 status=504 Gateway Timeout
+      url=https://relay.example.com/responses
+      x-request-id=req-older
+      x-client-request-id=(none)
+      x-kong-request-id=(none)
 ```
 
 With opt-in probes:
@@ -285,6 +309,8 @@ Add focused tests for:
 11. Secret redaction in failure output.
 12. Doctor status output uses visible status badges and colors when enabled.
 13. Doctor repo eligibility uses the doctor timeout, not the hook timeout.
+14. Recent failed-request diagnostics are labeled `Recent Codex Failures` and only read Codex local logs.
+15. When recent Codex failures lack request IDs, doctor also prints `Recent Codex Failures With Request IDs`.
 
 Default test command:
 

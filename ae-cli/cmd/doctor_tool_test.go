@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/ai-efficiency/ae-cli/config"
+	"github.com/ai-efficiency/ae-cli/internal/attributionlocal"
 	"github.com/ai-efficiency/ae-cli/internal/client"
 	"github.com/ai-efficiency/ae-cli/internal/doctorcheck"
 )
@@ -218,6 +219,114 @@ func TestDoctorRegistersProbeToolsFlag(t *testing.T) {
 	}
 	if flag.DefValue != "false" {
 		t.Fatalf("--probe-tools default = %q, want false", flag.DefValue)
+	}
+}
+
+func TestDoctorPrintsRecentCodexFailures(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	oldRecent := recentCodexFailureSummary
+	recentCodexFailureSummary = func(gotHome string, limit int) (attributionlocal.CodexFailureSummary, error) {
+		if gotHome != home {
+			t.Fatalf("home = %q, want %q", gotHome, home)
+		}
+		if limit != 3 {
+			t.Fatalf("limit = %d, want 3", limit)
+		}
+		return attributionlocal.CodexFailureSummary{
+			Recent: []attributionlocal.CodexFailedRequest{
+				{
+					Timestamp:  time.Date(2026, 6, 18, 9, 31, 0, 0, time.UTC),
+					StatusCode: 502,
+					StatusText: "Bad Gateway",
+					URL:        "http://127.0.0.1:15721/v1/responses",
+				},
+			},
+			RecentWithRequestID: []attributionlocal.CodexFailedRequest{
+				{
+					Timestamp:        time.Date(2026, 6, 18, 9, 30, 0, 0, time.UTC),
+					StatusCode:       503,
+					StatusText:       "Service Unavailable",
+					URL:              "https://relay.example.com/responses",
+					XRequestID:       "req-503",
+					XClientRequestID: "client-503",
+					XKongRequestID:   "kong-503",
+				},
+			},
+		}, nil
+	}
+	t.Cleanup(func() {
+		recentCodexFailureSummary = oldRecent
+	})
+
+	buf := &bytes.Buffer{}
+	printRecentFailures(buf, 3)
+
+	output := buf.String()
+	for _, want := range []string{
+		"Recent Codex Failures: 1 [warn] (most recent Codex request errors)",
+		"status=502 Bad Gateway",
+		"url=http://127.0.0.1:15721/v1/responses",
+		"x-request-id=(none)",
+		"Recent Codex Failures With Request IDs: 1 [warn] (most recent Codex request errors with upstream IDs)",
+		"status=503 Service Unavailable",
+		"url=https://relay.example.com/responses",
+		"x-request-id=req-503",
+		"x-client-request-id=client-503",
+		"x-kong-request-id=kong-503",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("doctor recent failure output missing %q:\n%s", want, output)
+		}
+	}
+	if strings.Contains(output, "Recent Failures:") {
+		t.Fatalf("doctor output should be explicitly Codex-scoped:\n%s", output)
+	}
+}
+
+func TestDoctorDoesNotPrintRequestIDFallbackWhenRecentFailuresHaveIDs(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	oldRecent := recentCodexFailureSummary
+	recentCodexFailureSummary = func(string, int) (attributionlocal.CodexFailureSummary, error) {
+		failure := attributionlocal.CodexFailedRequest{
+			Timestamp:        time.Date(2026, 6, 18, 9, 30, 0, 0, time.UTC),
+			StatusCode:       503,
+			StatusText:       "Service Unavailable",
+			URL:              "https://relay.example.com/responses",
+			XRequestID:       "req-503",
+			XClientRequestID: "client-503",
+			XKongRequestID:   "kong-503",
+		}
+		return attributionlocal.CodexFailureSummary{
+			Recent:              []attributionlocal.CodexFailedRequest{failure},
+			RecentWithRequestID: []attributionlocal.CodexFailedRequest{failure},
+		}, nil
+	}
+	t.Cleanup(func() {
+		recentCodexFailureSummary = oldRecent
+	})
+
+	buf := &bytes.Buffer{}
+	printRecentFailures(buf, 3)
+
+	output := buf.String()
+	for _, want := range []string{
+		"Recent Codex Failures: 1 [warn] (most recent Codex request errors)",
+		"status=503 Service Unavailable",
+		"url=https://relay.example.com/responses",
+		"x-request-id=req-503",
+		"x-client-request-id=client-503",
+		"x-kong-request-id=kong-503",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("doctor recent failure output missing %q:\n%s", want, output)
+		}
+	}
+	if strings.Contains(output, "Recent Codex Failures With Request IDs") {
+		t.Fatalf("doctor output should not duplicate request-id fallback when recent failures already have IDs:\n%s", output)
 	}
 }
 

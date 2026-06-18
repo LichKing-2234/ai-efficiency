@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ai-efficiency/ae-cli/internal/attributionlocal"
 	"github.com/ai-efficiency/ae-cli/internal/client"
 	"github.com/ai-efficiency/ae-cli/internal/doctorcheck"
 	"github.com/ai-efficiency/ae-cli/internal/hooks"
@@ -34,6 +35,13 @@ var probeToolsForDoctor = doctorcheck.ProbeTools
 var doctorRepoEligibilityTimeout = 10 * time.Second
 
 var doctorProbeTools bool
+
+// doctorRecentFailures controls how many recent failed Codex requests doctor
+// prints. It defaults to a small, copy-pasteable summary and can be raised (or
+// set to 0 to hide) via the --recent-failures flag.
+var doctorRecentFailures int = 3
+
+var recentCodexFailureSummary = attributionlocal.RecentCodexFailureSummary
 
 var doctorCmd = &cobra.Command{
 	Use:   "doctor",
@@ -87,8 +95,72 @@ var doctorCmd = &cobra.Command{
 		printSyncTaskStatus(out, task)
 		printToolDiagnostics(out)
 		printRepoEligibilityDiagnostic(out)
+		printRecentFailures(out, doctorRecentFailures)
 		return nil
 	},
+}
+
+// printRecentFailures renders the most recent non-2xx Codex Responses requests
+// recovered from the local ~/.codex log database, including the upstream request
+// identifiers (x-request-id / x-client-request-id / x-kong-request-id). The goal
+// is that any user — including non-developers with no Python or other tooling —
+// can copy these IDs straight out of `ae-cli doctor` when reporting a problem.
+func printRecentFailures(out io.Writer, limit int) {
+	style := doctorOutputStyleFor(out)
+	if limit <= 0 {
+		return
+	}
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		fmt.Fprintf(out, "Recent Codex Failures: unavailable %s (%v)\n", style.badge("warn"), err)
+		return
+	}
+	summary, err := recentCodexFailureSummary(homeDir, limit)
+	if err != nil {
+		fmt.Fprintf(out, "Recent Codex Failures: unavailable %s (%v)\n", style.badge("warn"), err)
+		return
+	}
+	if len(summary.Recent) == 0 {
+		fmt.Fprintf(out, "Recent Codex Failures: none %s (no failed Codex requests in local logs)\n", style.badge(doctorcheck.StatusOK))
+		return
+	}
+	printCodexFailureList(out, style, "Recent Codex Failures", summary.Recent, "most recent Codex request errors")
+	if codexFailuresNeedRequestIDFallback(summary.Recent) {
+		if len(summary.RecentWithRequestID) == 0 {
+			fmt.Fprintf(out, "Recent Codex Failures With Request IDs: none %s (no failed Codex requests with upstream IDs found)\n", style.badge("warn"))
+			return
+		}
+		printCodexFailureList(out, style, "Recent Codex Failures With Request IDs", summary.RecentWithRequestID, "most recent Codex request errors with upstream IDs")
+	}
+}
+
+func printCodexFailureList(out io.Writer, style doctorOutputStyle, title string, failures []attributionlocal.CodexFailedRequest, description string) {
+	fmt.Fprintf(out, "%s: %d %s (%s)\n", title, len(failures), style.badge("warn"), description)
+	for i := range failures {
+		f := failures[i]
+		when := f.Timestamp.Local().Format("2006-01-02 15:04:05")
+		fmt.Fprintf(out, "  - %s status=%d %s\n", when, f.StatusCode, strings.TrimSpace(f.StatusText))
+		fmt.Fprintf(out, "      url=%s\n", f.URL)
+		fmt.Fprintf(out, "      x-request-id=%s\n", failureID(f.XRequestID))
+		fmt.Fprintf(out, "      x-client-request-id=%s\n", failureID(f.XClientRequestID))
+		fmt.Fprintf(out, "      x-kong-request-id=%s\n", failureID(f.XKongRequestID))
+	}
+}
+
+func codexFailuresNeedRequestIDFallback(failures []attributionlocal.CodexFailedRequest) bool {
+	for i := range failures {
+		if !failures[i].HasRequestID() {
+			return true
+		}
+	}
+	return false
+}
+
+func failureID(value string) string {
+	if strings.TrimSpace(value) == "" {
+		return "(none)"
+	}
+	return value
 }
 
 func printToolDiagnostics(out io.Writer) {
@@ -512,5 +584,6 @@ func syncTaskStatus(task *hooks.SyncTask) string {
 
 func init() {
 	doctorCmd.Flags().BoolVar(&doctorProbeTools, "probe-tools", false, "run local Codex, Claude, and Gemini CLI probes")
+	doctorCmd.Flags().IntVar(&doctorRecentFailures, "recent-failures", doctorRecentFailures, "number of recent failed Codex requests to show (0 hides the section)")
 	rootCmd.AddCommand(doctorCmd)
 }
