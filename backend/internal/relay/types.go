@@ -35,6 +35,7 @@ type UpdateUserRequest struct {
 	Username    string `json:"username,omitempty"`
 	Notes       string `json:"notes,omitempty"`
 	Concurrency *int   `json:"concurrency,omitempty"`
+	Status      string `json:"status,omitempty"`
 }
 
 type APIKey struct {
@@ -51,11 +52,11 @@ type APIKey struct {
 }
 
 type Group struct {
-	ID               int64  `json:"id"`
-	Name             string `json:"name"`
-	Platform         string `json:"platform"`
-	IsExclusive      bool   `json:"is_exclusive,omitempty"`
-	SubscriptionType string `json:"subscription_type,omitempty"`
+	ID               int64    `json:"id"`
+	Name             string   `json:"name"`
+	Platform         string   `json:"platform"`
+	IsExclusive      bool     `json:"is_exclusive,omitempty"`
+	SubscriptionType string   `json:"subscription_type,omitempty"`
 	DailyLimitUSD    *float64 `json:"daily_limit_usd,omitempty"`
 	WeeklyLimitUSD   *float64 `json:"weekly_limit_usd,omitempty"`
 	MonthlyLimitUSD  *float64 `json:"monthly_limit_usd,omitempty"`
@@ -279,9 +280,9 @@ type UserUsageModelStat struct {
 }
 
 type UserUsageGroupQuotaState struct {
-	Status    string                        `json:"status"`
-	UnitLabel string                        `json:"unit_label,omitempty"`
-	Message   string                        `json:"message,omitempty"`
+	Status    string                         `json:"status"`
+	UnitLabel string                         `json:"unit_label,omitempty"`
+	Message   string                         `json:"message,omitempty"`
 	Groups    []UserUsageGroupQuotaGroupItem `json:"groups"`
 }
 

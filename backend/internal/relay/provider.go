@@ -74,3 +74,10 @@ type PlatformChatCompleter interface {
 type PlatformModelLister interface {
 	ListModelsForPlatform(ctx context.Context, platform string) ([]ModelOption, error)
 }
+
+// UserDisabler is an optional extension for relay implementations that can
+// disable upstream users without exposing provider-specific request details to
+// admin/offboarding handlers.
+type UserDisabler interface {
+	DisableUser(ctx context.Context, userID int64) error
+}

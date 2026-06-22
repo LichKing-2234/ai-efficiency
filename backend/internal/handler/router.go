@@ -38,6 +38,7 @@ func SetupRouter(
 	adminSettingsHandler *AdminSettingsHandler,
 	checkpointHandler *CheckpointHandler,
 	deploymentHandler *DeploymentHandler,
+	directoryServices ...DirectoryAdminService,
 ) *gin.Engine {
 	r := gin.New()
 	r.RemoveExtraSlash = true
@@ -247,6 +248,12 @@ func SetupRouter(
 			ldapGroup.PUT("", adminSettingsHandler.UpdateLDAP)
 			ldapGroup.POST("/test", adminSettingsHandler.TestLDAP)
 		}
+	}
+
+	if len(directoryServices) > 0 && directoryServices[0] != nil {
+		directoryGroup := protected.Group("/admin/directory")
+		directoryGroup.Use(auth.RequireAdmin())
+		RegisterDirectoryRoutes(directoryGroup, NewDirectoryHandler(directoryServices[0]))
 	}
 
 	// Settings — admin only

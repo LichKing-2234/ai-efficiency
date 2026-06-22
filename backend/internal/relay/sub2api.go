@@ -704,6 +704,16 @@ func (s *sub2apiRelay) UpdateUser(ctx context.Context, userID int64, req UpdateU
 	return &result.Data, nil
 }
 
+func (s *sub2apiRelay) DisableUser(ctx context.Context, userID int64) error {
+	if userID <= 0 {
+		return fmt.Errorf("relay: disable user: user id is required")
+	}
+	if _, err := s.UpdateUser(ctx, userID, UpdateUserRequest{Status: "disabled"}); err != nil {
+		return fmt.Errorf("relay: disable user: %w", err)
+	}
+	return nil
+}
+
 func (s *sub2apiRelay) ChatCompletion(ctx context.Context, req ChatCompletionRequest) (*ChatCompletionResponse, error) {
 	req.Model = s.inferenceModel()
 

@@ -21,6 +21,7 @@ import (
 	"github.com/ai-efficiency/backend/internal/config"
 	"github.com/ai-efficiency/backend/internal/credential"
 	"github.com/ai-efficiency/backend/internal/deployment"
+	"github.com/ai-efficiency/backend/internal/directorysync"
 	"github.com/ai-efficiency/backend/internal/efficiency"
 	"github.com/ai-efficiency/backend/internal/handler"
 	"github.com/ai-efficiency/backend/internal/middleware"
@@ -236,6 +237,15 @@ func main() {
 
 	// Init provider handler
 	providerHandler := handler.NewProviderHandler(entClient, cfg.Encryption.Key, logger)
+	directoryService := directorysync.NewService(entClient, directorysync.ServiceOptions{
+		Executor:       directorysync.NewExecutor(directorysync.ExecutorOptions{}),
+		Credentials:    directorysync.NewEntCredentialResolver(entClient, cfg.Encryption.Key),
+		RelayDisablers: directorysync.NewProviderRelayDisablerResolver(providerHandler),
+		TokenRevoker:   authService,
+	})
+	directorySchedulerCtx, stopDirectoryScheduler := context.WithCancel(context.Background())
+	defer stopDirectoryScheduler()
+	directoryService.StartScheduler(directorySchedulerCtx, time.Minute)
 
 	// Init admin settings handler
 	adminSettingsHandler := handler.NewAdminSettingsHandler(settingsConfigPath, &ldapConfig)
@@ -330,6 +340,7 @@ func main() {
 		adminSettingsHandler,
 		checkpointHandler,
 		deploymentHandler,
+		directoryService,
 	)
 
 	// Start server
@@ -351,6 +362,7 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 	logger.Info("shutting down server...")
+	stopDirectoryScheduler()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

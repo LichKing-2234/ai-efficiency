@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go, Gin, Ent, PostgreSQL/SQLite test migrations, `gopkg.in/yaml.v3`, Vue 3, Vite/Vitest, TailwindCSS, existing credential and relay provider boundaries.
 
-**Status:** In progress on 2026-06-22. Tasks 1-3 are implemented; Postgres-backed package tests are currently blocked by the local test database connection.
+**Status:** In progress on 2026-06-22. Tasks 1-5 are implemented; Postgres-backed package tests are currently blocked by the local test database connection.
 
 ## Global Constraints
 
@@ -221,7 +221,7 @@ Expected: PASS.
 - Produces: `Service.DisableRelayUserForCandidate`
 - Produces: `relay.UserDisabler.DisableUser(ctx context.Context, userID int64) error`
 
-- [ ] **Step 1: Write failing service tests**
+- [x] **Step 1: Write failing service tests**
 
 Cover preview not updating facts, failed apply not updating facts, successful apply replacing facts, email matching, candidate derivation, provider without disable capability returning validation error, and confirmed offboarding calling relay disable plus token revocation.
 
@@ -229,7 +229,7 @@ Run: `cd backend && go test ./internal/directorysync -run 'TestService'`
 
 Expected: FAIL because service behavior is not implemented.
 
-- [ ] **Step 2: Write failing sub2api disable test**
+- [x] **Step 2: Write failing sub2api disable test**
 
 Add an HTTP test proving `DisableUser` sends a safe admin user update and treats non-2xx responses as errors.
 
@@ -237,11 +237,13 @@ Run: `cd backend && go test ./internal/relay -run TestSub2apiDisableUser`
 
 Expected: FAIL because `DisableUser` does not exist.
 
-- [ ] **Step 3: Implement service and relay disable capability**
+- [x] **Step 3: Implement service and relay disable capability**
 
 Persist run status transitions, update current facts only after complete successful apply, derive candidates from current members, persist offboarding actions, call `relay.UserDisabler`, and call `auth.Service.RevokeUserTokens`.
 
 - [ ] **Step 4: Verify backend service tests**
+
+Current result: `cd backend && go test ./internal/relay -run TestDisableUser` passes, and `cd backend && go test ./internal/directorysync -run '^$'` compiles. `cd backend && go test ./internal/directorysync -run 'TestService'` is blocked by local Postgres connection failure before service assertions run.
 
 Run: `cd backend && go test ./internal/directorysync ./internal/relay ./internal/auth`
 
@@ -260,7 +262,7 @@ Expected: PASS.
 - Produces admin-only endpoints under `/api/v1/admin/directory/...`
 - Produces in-process scheduler startup and shutdown tied to server context
 
-- [ ] **Step 1: Write failing handler tests**
+- [x] **Step 1: Write failing handler tests**
 
 Cover source CRUD, static validate, preview/apply run start, run detail, facts list, candidate list, and disable action requiring `confirm_email`.
 
@@ -268,15 +270,15 @@ Run: `cd backend && go test ./internal/handler -run 'Directory|SetupRouter'`
 
 Expected: FAIL because routes are not registered.
 
-- [ ] **Step 2: Implement handler and router wiring**
+- [x] **Step 2: Implement handler and router wiring**
 
 Use `pkg.Success`, `pkg.Created`, `pkg.Error`, existing admin middleware, and dependency injection through `SetupRouter`.
 
-- [ ] **Step 3: Wire scheduler in server**
+- [x] **Step 3: Wire scheduler in server**
 
 Instantiate `directorysync.Service` with Ent, credential resolver, auth service, and provider resolver; start its scheduler goroutine and stop it on server shutdown.
 
-- [ ] **Step 4: Verify handler tests**
+- [x] **Step 4: Verify handler tests**
 
 Run: `cd backend && go test ./internal/handler -run 'Directory|SetupRouter'`
 

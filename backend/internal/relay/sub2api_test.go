@@ -1271,6 +1271,38 @@ func TestUpdateUser(t *testing.T) {
 	}
 }
 
+func TestDisableUser(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/users/7", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut {
+			t.Fatalf("method = %s, want PUT", r.Method)
+		}
+		if got := r.Header.Get("X-API-Key"); got != "test-admin-key" {
+			t.Fatalf("x-api-key = %q", got)
+		}
+		var body relay.UpdateUserRequest
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		if body.Status != "disabled" {
+			t.Fatalf("status = %q, want disabled", body.Status)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": map[string]any{"id": 7, "email": "alice@example.com", "username": "alice", "role": "user"},
+		})
+	})
+	p := newTestProvider(t, mux)
+	disabler, ok := p.(relay.UserDisabler)
+	if !ok {
+		t.Fatal("provider does not support UserDisabler")
+	}
+	if err := disabler.DisableUser(context.Background(), 7); err != nil {
+		t.Fatalf("DisableUser() unexpected error: %v", err)
+	}
+}
+
 func TestChatCompletion(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/chat/completions", func(w http.ResponseWriter, r *http.Request) {
