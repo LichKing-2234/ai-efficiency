@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go, Gin, Ent, PostgreSQL/SQLite test migrations, `gopkg.in/yaml.v3`, Vue 3, Vite/Vitest, TailwindCSS, existing credential and relay provider boundaries.
 
-**Status:** Implementation complete on 2026-06-22 with one environment-sensitive verification gap: backend full `go test ./...` is blocked by the local Postgres test database connection. Frontend full tests, targeted non-DB backend tests, diff hygiene, and safety scan have passed.
+**Status:** Complete on 2026-06-22. Backend full tests, frontend full tests, diff hygiene, and safety scan have passed with local Postgres available on `127.0.0.1:15432`.
 
 ## Global Constraints
 
@@ -156,9 +156,9 @@ Expected: FAIL because token validation does not check the user row.
 
 Load the user by `user_id`, compare token `iat` to `token_valid_after`, reject revoked tokens, and update middleware to pass request context.
 
-- [ ] **Step 3: Verify auth tests**
+- [x] **Step 3: Verify auth tests**
 
-Current result: `cd backend && go test ./internal/auth -run 'TestGenerateAndValidateAccessToken|TestValidateAccessTokenRejectsRefreshToken|TestValidateTokenExpired|TestValidateTokenWrongSecret|TestValidateTokenInvalid|TestValidateRefreshToken|TestValidateAccessTokenWrongSigningMethod|TestGenerateTokenPairForUser'` passes, and `cd backend && go test ./internal/auth -run '^$'` compiles. `cd backend && go test ./internal/auth -run 'TokenRevocation'` is blocked by local Postgres connection failure before assertions run.
+Verified with local Postgres: `cd backend && AE_TEST_POSTGRES_DSN='postgres://postgres:postgres@127.0.0.1:15432/postgres?sslmode=disable' go test ./internal/auth -count=1`.
 
 Run: `cd backend && go test ./internal/auth -run 'TokenRevocation|RefreshToken'`
 
@@ -241,9 +241,9 @@ Expected: FAIL because `DisableUser` does not exist.
 
 Persist run status transitions, update current facts only after complete successful apply, derive candidates from current members, persist offboarding actions, call `relay.UserDisabler`, and call `auth.Service.RevokeUserTokens`.
 
-- [ ] **Step 4: Verify backend service tests**
+- [x] **Step 4: Verify backend service tests**
 
-Current result: `cd backend && go test ./internal/relay -run TestDisableUser` passes, and `cd backend && go test ./internal/directorysync -run '^$'` compiles. `cd backend && go test ./internal/directorysync -run 'TestService'` is blocked by local Postgres connection failure before service assertions run.
+Verified with local Postgres: `cd backend && AE_TEST_POSTGRES_DSN='postgres://postgres:postgres@127.0.0.1:15432/postgres?sslmode=disable' go test ./internal/directorysync ./internal/relay ./internal/auth -count=1`.
 
 Run: `cd backend && go test ./internal/directorysync ./internal/relay ./internal/auth`
 
@@ -355,9 +355,9 @@ Update this plan only for steps actually completed in this implementation run.
 **Files:**
 - Verify entire backend/frontend surfaces touched by this feature.
 
-- [ ] **Step 1: Backend full test**
+- [x] **Step 1: Backend full test**
 
-Current result: `cd backend && go test ./...` fails before assertions in Postgres-backed packages because neither default test DSN is usable on this machine (`127.0.0.1:15432` connection refused; `127.0.0.1:5432` password authentication failed for user `postgres`). Fresh targeted backend checks passed: `go test ./ent/... ./internal/directorysync -run 'TestParseDSL|TestValidateDSL|TestEvaluateJSONPath|TestExecutor'`, `go test -count=1 ./internal/handler -run DirectoryHandler`, `go test -count=1 ./internal/relay -run TestDisableUser`, and `go test ./cmd/server ./internal/auth -run '^$|TestGenerateAndValidateAccessToken|TestValidateAccessTokenRejectsRefreshToken|TestValidateTokenExpired|TestValidateTokenWrongSecret|TestValidateTokenInvalid|TestValidateRefreshToken|TestValidateAccessTokenWrongSigningMethod|TestGenerateTokenPairForUser'`.
+Verified with local Postgres: `cd backend && AE_TEST_POSTGRES_DSN='postgres://postgres:postgres@127.0.0.1:15432/postgres?sslmode=disable' go test ./... -count=1`.
 
 Run: `cd backend && go test ./...`
 
