@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go, Gin, Ent, PostgreSQL/SQLite test migrations, `gopkg.in/yaml.v3`, Vue 3, Vite/Vitest, TailwindCSS, existing credential and relay provider boundaries.
 
-**Status:** In progress on 2026-06-22. Tasks 1-5 are implemented; Postgres-backed package tests are currently blocked by the local test database connection.
+**Status:** In progress on 2026-06-22. Tasks 1-6 are implemented; Postgres-backed package tests are currently blocked by the local test database connection.
 
 ## Global Constraints
 
@@ -304,7 +304,7 @@ Expected: PASS.
 - Produces: offboarding review UI at `/admin/directory/offboarding`
 - Produces: safe template and AI prompt helper copy
 
-- [ ] **Step 1: Write failing frontend tests**
+- [x] **Step 1: Write failing frontend tests**
 
 Cover rendering Directory Sync, safe template values, copy AI prompt safety text, validate/preview/save/run API calls, candidate listing, email confirmation, and no-auto-subscription-removal copy.
 
@@ -312,19 +312,19 @@ Run: `cd frontend && pnpm test -- settings-view directory-sync-settings director
 
 Expected: FAIL because components, API wrappers, and route do not exist yet.
 
-- [ ] **Step 2: Implement API wrappers and types**
+- [x] **Step 2: Implement API wrappers and types**
 
 Add typed functions for all admin directory endpoints and shared TypeScript interfaces.
 
-- [ ] **Step 3: Implement settings component**
+- [x] **Step 3: Implement settings component**
 
 Render source list, editor, templates, AI prompt helper, validate/preview/run buttons, and redacted result summaries with stable Tailwind layout.
 
-- [ ] **Step 4: Implement offboarding page and route**
+- [x] **Step 4: Implement offboarding page and route**
 
 Render candidates, require exact email confirmation before disable, call disable API, and refresh candidates after action.
 
-- [ ] **Step 5: Verify frontend targeted tests**
+- [x] **Step 5: Verify frontend targeted tests**
 
 Run: `cd frontend && pnpm test -- settings-view directory-sync-settings directory-offboarding-view router`
 

@@ -61,6 +61,15 @@ vi.mock('@/api/deployment', () => ({
   restartDeployment: vi.fn(),
 }))
 
+vi.mock('@/api/directory', () => ({
+  listDirectorySources: vi.fn(),
+  createDirectorySource: vi.fn(),
+  updateDirectorySource: vi.fn(),
+  validateDirectorySource: vi.fn(),
+  previewDirectorySource: vi.fn(),
+  startDirectoryRun: vi.fn(),
+}))
+
 vi.mock('@/api/auth', () => ({
   login: vi.fn(),
   getMe: vi.fn(),
@@ -111,6 +120,14 @@ async function resetApiMocks() {
   deploymentApi.applyUpdate.mockReset().mockResolvedValue({ data: { data: { phase: 'idle' } } })
   deploymentApi.rollbackUpdate.mockReset().mockResolvedValue({ data: { data: { phase: 'idle' } } })
   deploymentApi.restartDeployment.mockReset().mockResolvedValue({ data: { data: { phase: 'restart_requested' } } })
+
+  const directoryApi = await import('@/api/directory') as any
+  directoryApi.listDirectorySources.mockReset().mockResolvedValue({ data: { data: { items: [] } } })
+  directoryApi.createDirectorySource.mockReset().mockResolvedValue({ data: { data: { id: 1 } } })
+  directoryApi.updateDirectorySource.mockReset().mockResolvedValue({ data: { data: { id: 1 } } })
+  directoryApi.validateDirectorySource.mockReset().mockResolvedValue({ data: { data: { valid: true, issues: [] } } })
+  directoryApi.previewDirectorySource.mockReset().mockResolvedValue({ data: { data: { id: 1, status: 'completed' } } })
+  directoryApi.startDirectoryRun.mockReset().mockResolvedValue({ data: { data: { id: 2, status: 'completed' } } })
 
   const authApi = await import('@/api/auth') as any
   authApi.login.mockReset().mockResolvedValue({ data: { data: null } })
@@ -194,6 +211,16 @@ describe('SettingsView', () => {
     await openSettingsSection(wrapper, 'advanced-credentials')
     expect(wrapper.text()).toContain('Credential store')
     expect(wrapper.text()).toContain('Add Credential')
+  })
+
+  it('renders directory sync inside organization login settings', async () => {
+    const wrapper = await mountSettings()
+
+    await openSettingsSection(wrapper, 'organization-login')
+
+    expect(wrapper.text()).toContain('Directory Sync')
+    expect(wrapper.text()).toContain('Departments then members')
+    expect(wrapper.text()).toContain('Copy AI Prompt')
   })
 
   it('restores and persists active settings section in the URL query', async () => {

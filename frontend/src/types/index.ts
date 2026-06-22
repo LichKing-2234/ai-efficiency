@@ -503,6 +503,102 @@ export interface AdminSubscriptionOptionsResponse {
   providers: AdminAssignableSubscriptionProvider[]
 }
 
+export interface DirectorySource {
+  id: number
+  name: string
+  description: string
+  scope: 'full_company'
+  enabled: boolean
+  dsl: string
+  schedule_enabled: boolean
+  schedule_interval: 'hourly' | 'daily' | 'weekly'
+  schedule_timezone: string
+  last_successful_run_id?: number | null
+  last_run_id?: number | null
+  created_at?: string
+  updated_at?: string
+}
+
+export interface DirectorySourceRequest {
+  name: string
+  description: string
+  scope: 'full_company'
+  enabled: boolean
+  dsl: string
+  schedule_enabled: boolean
+  schedule_interval: 'hourly' | 'daily' | 'weekly'
+  schedule_timezone: string
+}
+
+export interface DirectorySourceListResponse {
+  items: DirectorySource[]
+}
+
+export interface DirectoryValidationIssue {
+  path: string
+  message: string
+}
+
+export interface DirectoryValidationResponse {
+  valid: boolean
+  issues: DirectoryValidationIssue[]
+}
+
+export interface DirectorySyncRun {
+  id: number
+  source_id: number
+  mode: 'validate' | 'preview' | 'apply'
+  trigger?: 'manual' | 'schedule'
+  status: 'queued' | 'running' | 'completed' | 'completed_with_warnings' | 'failed'
+  phase?: string
+  department_count?: number
+  member_count?: number
+  warning_count?: number
+  error_message?: string | null
+  created_at?: string
+  updated_at?: string
+}
+
+export interface DirectoryDepartment {
+  id: number
+  source_id: number
+  external_id: string
+  name: string
+  path?: string
+}
+
+export interface DirectoryMember {
+  id: number
+  source_id: number
+  email_normalized: string
+  display_name?: string
+  department_external_id?: string
+  status?: string
+  matched_user_id?: number | null
+}
+
+export interface DirectoryOffboardingCandidate {
+  user_id: number
+  username: string
+  email: string
+  auth_source: string
+  relay_user_id: number
+  reason: string
+  directory_run_id: number
+  directory_run_at?: string | null
+  token_valid_after?: string | null
+  offboarding_status?: string
+}
+
+export interface DirectoryOffboardingAction {
+  id: number
+  source_id: number
+  user_id: number
+  relay_user_id: number
+  status: 'running' | 'succeeded' | 'failed' | 'partial_failed'
+  reason: string
+}
+
 export interface AdminAssignSubscriptionRequest {
   provider_id: number
   group_id: string

@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { useI18n } from '@/i18n'
+import DirectorySyncSettings from '@/components/settings/DirectorySyncSettings.vue'
+import type { Credential } from '@/types'
 
 const { t } = useI18n()
 
@@ -16,6 +18,7 @@ defineProps<{
   ldapTesting: boolean
   ldapError: string
   ldapSuccess: string
+  credentials: Credential[]
 }>()
 
 defineEmits<{
@@ -73,5 +76,6 @@ defineEmits<{
         </div>
       </div>
     </div>
+    <DirectorySyncSettings :credentials="credentials" />
   </div>
 </template>

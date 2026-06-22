@@ -138,6 +138,12 @@ describe('Router Guards', () => {
     expect(adminUsersRoute?.meta.requireAdmin).toBe(true)
   })
 
+  it('includes directory offboarding route requiring admin access', () => {
+    const route = router.getRoutes().find((r) => r.name === 'DirectoryOffboarding')
+    expect(route?.path).toBe('/admin/directory/offboarding')
+    expect(route?.meta.requireAdmin).toBe(true)
+  })
+
   it('redirects authenticated users away from login using a safe redirect target', async () => {
     const { getMe: mockGetMe } = await import('@/api/auth')
     ;(mockGetMe as any).mockResolvedValue({
