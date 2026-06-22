@@ -36,6 +36,9 @@ func (User) Fields() []ent.Field {
 		field.Enum("role").
 			Values("admin", "user").
 			Default("user"),
+		field.Time("token_valid_after").
+			Optional().
+			Nillable(),
 		field.Time("created_at").
 			Immutable().
 			Default(timeNow),

@@ -1053,6 +1053,86 @@ func TestRefreshTokenUserNotFound(t *testing.T) {
 	}
 }
 
+func TestTokenRevocationRejectsAccessTokenIssuedBeforeFloor(t *testing.T) {
+	svc, client := newTestServiceWithDB(t)
+	ctx := context.Background()
+
+	u := client.User.Create().
+		SetUsername("revoked-access").
+		SetEmail("revoked-access@example.com").
+		SetAuthSource(entuser.AuthSourceLdap).
+		SetRole(entuser.RoleUser).
+		SaveX(ctx)
+	pair, err := svc.generateTokenPair(&UserInfo{ID: u.ID, Username: u.Username, Role: string(u.Role)})
+	if err != nil {
+		t.Fatalf("generateTokenPair: %v", err)
+	}
+
+	if err := svc.RevokeUserTokens(ctx, u.ID, time.Now().Add(10*time.Second)); err != nil {
+		t.Fatalf("RevokeUserTokens: %v", err)
+	}
+
+	_, err = svc.ValidateAccessToken(ctx, pair.AccessToken)
+	if err == nil {
+		t.Fatal("expected revoked access token to be rejected")
+	}
+	if !strings.Contains(err.Error(), "revoked") {
+		t.Fatalf("error = %v, want revoked", err)
+	}
+}
+
+func TestTokenRevocationRejectsRefreshTokenIssuedBeforeFloor(t *testing.T) {
+	svc, client := newTestServiceWithDB(t)
+	ctx := context.Background()
+
+	u := client.User.Create().
+		SetUsername("revoked-refresh").
+		SetEmail("revoked-refresh@example.com").
+		SetAuthSource(entuser.AuthSourceLdap).
+		SetRole(entuser.RoleUser).
+		SaveX(ctx)
+	pair, err := svc.generateTokenPair(&UserInfo{ID: u.ID, Username: u.Username, Role: string(u.Role)})
+	if err != nil {
+		t.Fatalf("generateTokenPair: %v", err)
+	}
+
+	if err := svc.RevokeUserTokens(ctx, u.ID, time.Now().Add(10*time.Second)); err != nil {
+		t.Fatalf("RevokeUserTokens: %v", err)
+	}
+
+	_, _, err = svc.RefreshToken(ctx, pair.RefreshToken)
+	if err == nil {
+		t.Fatal("expected revoked refresh token to be rejected")
+	}
+	if !strings.Contains(err.Error(), "revoked") {
+		t.Fatalf("error = %v, want revoked", err)
+	}
+}
+
+func TestTokenRevocationAllowsTokenIssuedAfterFloor(t *testing.T) {
+	svc, client := newTestServiceWithDB(t)
+	ctx := context.Background()
+
+	u := client.User.Create().
+		SetUsername("active-after-floor").
+		SetEmail("active-after-floor@example.com").
+		SetAuthSource(entuser.AuthSourceLdap).
+		SetRole(entuser.RoleUser).
+		SetTokenValidAfter(time.Now().Add(-10 * time.Second)).
+		SaveX(ctx)
+	pair, err := svc.generateTokenPair(&UserInfo{ID: u.ID, Username: u.Username, Role: string(u.Role)})
+	if err != nil {
+		t.Fatalf("generateTokenPair: %v", err)
+	}
+
+	if _, err := svc.ValidateAccessToken(ctx, pair.AccessToken); err != nil {
+		t.Fatalf("ValidateAccessToken: %v", err)
+	}
+	if _, _, err := svc.RefreshToken(ctx, pair.RefreshToken); err != nil {
+		t.Fatalf("RefreshToken: %v", err)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // ValidateAccessToken edge cases
 // ---------------------------------------------------------------------------
@@ -1068,7 +1148,7 @@ func TestValidateAccessTokenWrongSigningMethod(t *testing.T) {
 	})
 	tokenStr, _ := token.SignedString(jwt.UnsafeAllowNoneSignatureType)
 
-	_, err := svc.ValidateAccessToken(tokenStr)
+	_, err := svc.ValidateAccessToken(context.Background(), tokenStr)
 	if err == nil {
 		t.Error("should reject token with 'none' signing method")
 	}
@@ -1090,7 +1170,7 @@ func TestGenerateTokenPairForUser(t *testing.T) {
 	}
 
 	// Validate the generated access token
-	claims, err := svc.ValidateAccessToken(pair.AccessToken)
+	claims, err := svc.ValidateAccessToken(context.Background(), pair.AccessToken)
 	if err != nil {
 		t.Fatalf("ValidateAccessToken error: %v", err)
 	}

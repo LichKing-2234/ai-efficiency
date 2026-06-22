@@ -175,6 +175,9 @@ func (s *Service) RefreshToken(ctx context.Context, refreshToken string) (*Token
 	if err != nil {
 		return nil, nil, fmt.Errorf("get user: %w", err)
 	}
+	if err := s.ensureTokenValidForUser(u, claims); err != nil {
+		return nil, nil, fmt.Errorf("invalid refresh token: %w", err)
+	}
 
 	userInfo := &UserInfo{
 		ID:         u.ID,
@@ -193,14 +196,37 @@ func (s *Service) RefreshToken(ctx context.Context, refreshToken string) (*Token
 }
 
 // ValidateAccessToken validates an access token and returns claims.
-func (s *Service) ValidateAccessToken(tokenStr string) (jwt.MapClaims, error) {
-	return s.validateToken(tokenStr, "access")
+func (s *Service) ValidateAccessToken(ctx context.Context, tokenStr string) (jwt.MapClaims, error) {
+	claims, err := s.validateToken(tokenStr, "access")
+	if err != nil {
+		return nil, err
+	}
+	if err := s.ensureTokenNotRevoked(ctx, claims); err != nil {
+		return nil, err
+	}
+	return claims, nil
 }
 
 // GenerateTokenPairForUser generates a token pair for the given user info.
 // Exported for integration testing.
 func (s *Service) GenerateTokenPairForUser(info *UserInfo) (*TokenPair, error) {
 	return s.generateTokenPair(info)
+}
+
+func (s *Service) RevokeUserTokens(ctx context.Context, userID int, revokedAt time.Time) error {
+	if s == nil || s.entClient == nil {
+		return fmt.Errorf("auth service is not configured")
+	}
+	if userID <= 0 {
+		return fmt.Errorf("user id is required")
+	}
+	if revokedAt.IsZero() {
+		revokedAt = time.Now()
+	}
+	if _, err := s.entClient.User.UpdateOneID(userID).SetTokenValidAfter(revokedAt).Save(ctx); err != nil {
+		return fmt.Errorf("revoke user tokens: %w", err)
+	}
+	return nil
 }
 
 func (s *Service) ensureLocalUser(ctx context.Context, info *UserInfo) (*ent.User, error) {
@@ -489,4 +515,68 @@ func (s *Service) validateToken(tokenStr, expectedType string) (jwt.MapClaims, e
 	}
 
 	return claims, nil
+}
+
+func (s *Service) ensureTokenNotRevoked(ctx context.Context, claims jwt.MapClaims) error {
+	if s == nil || s.entClient == nil {
+		return nil
+	}
+	userID, err := userIDFromClaims(claims)
+	if err != nil {
+		return err
+	}
+	u, err := s.entClient.User.Get(ctx, userID)
+	if err != nil {
+		return fmt.Errorf("get user: %w", err)
+	}
+	return s.ensureTokenValidForUser(u, claims)
+}
+
+func (s *Service) ensureTokenValidForUser(u *ent.User, claims jwt.MapClaims) error {
+	if u == nil || u.TokenValidAfter == nil {
+		return nil
+	}
+	issuedAt, err := issuedAtFromClaims(claims)
+	if err != nil {
+		return err
+	}
+	if issuedAt.Before(*u.TokenValidAfter) {
+		return fmt.Errorf("token revoked")
+	}
+	return nil
+}
+
+func userIDFromClaims(claims jwt.MapClaims) (int, error) {
+	switch v := claims["user_id"].(type) {
+	case float64:
+		if v <= 0 {
+			return 0, fmt.Errorf("invalid token claims")
+		}
+		return int(v), nil
+	case int:
+		if v <= 0 {
+			return 0, fmt.Errorf("invalid token claims")
+		}
+		return v, nil
+	case int64:
+		if v <= 0 {
+			return 0, fmt.Errorf("invalid token claims")
+		}
+		return int(v), nil
+	default:
+		return 0, fmt.Errorf("invalid token claims")
+	}
+}
+
+func issuedAtFromClaims(claims jwt.MapClaims) (time.Time, error) {
+	switch v := claims["iat"].(type) {
+	case float64:
+		return time.Unix(int64(v), 0), nil
+	case int64:
+		return time.Unix(v, 0), nil
+	case int:
+		return time.Unix(int64(v), 0), nil
+	default:
+		return time.Time{}, fmt.Errorf("invalid token issued-at claim")
+	}
 }

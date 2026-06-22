@@ -1,0 +1,46 @@
+package directorysync
+
+import (
+	"encoding/json"
+	"testing"
+)
+
+func TestEvaluateJSONPathSubset(t *testing.T) {
+	var doc any
+	if err := json.Unmarshal([]byte(`{
+		"data": {
+			"departments": [
+				{"id": "dept-alpha", "name": "Department Alpha"},
+				{"id": "dept-beta", "name": "Department Beta"}
+			],
+			"user": {"email": "alice@example.com"}
+		}
+	}`), &doc); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	items, err := EvaluateJSONPath(doc, "$.data.departments")
+	if err != nil {
+		t.Fatalf("EvaluateJSONPath departments: %v", err)
+	}
+	if list, ok := items.([]any); !ok || len(list) != 2 {
+		t.Fatalf("departments = %#v, want two items", items)
+	}
+
+	email, err := EvaluateJSONPath(doc, "$.data.user.email")
+	if err != nil {
+		t.Fatalf("EvaluateJSONPath email: %v", err)
+	}
+	if email != "alice@example.com" {
+		t.Fatalf("email = %#v", email)
+	}
+}
+
+func TestEvaluateJSONPathRejectsUnsupportedExpressions(t *testing.T) {
+	if _, err := EvaluateJSONPath(map[string]any{"items": []any{}}, "data.items"); err == nil {
+		t.Fatal("expected missing root prefix to fail")
+	}
+	if _, err := EvaluateJSONPath(map[string]any{"items": []any{}}, "$.items[0]"); err == nil {
+		t.Fatal("expected array index expression to fail")
+	}
+}

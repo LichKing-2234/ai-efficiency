@@ -1,0 +1,122 @@
+package directorysync
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+)
+
+type staticCredentialResolver map[string]string
+
+func (r staticCredentialResolver) ResolveCredential(_ context.Context, ref string) (string, bool, error) {
+	value, ok := r[ref]
+	return value, ok, nil
+}
+
+func TestExecutorRunsForeachAndNormalizesMembers(t *testing.T) {
+	var seenAuthHeaders []string
+	var seenDepartmentQueries []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seenAuthHeaders = append(seenAuthHeaders, r.Header.Get("X-Directory-API-Key"))
+		switch r.URL.Path {
+		case "/departments":
+			writeJSON(t, w, map[string]any{
+				"data": map[string]any{
+					"departments": []map[string]any{
+						{"id": "dept-alpha", "name": "Department Alpha", "path": "Department Alpha"},
+						{"id": "dept-beta", "name": "Department Beta", "path": "Department Beta"},
+					},
+				},
+			})
+		case "/users":
+			departmentID := r.URL.Query().Get("department_id")
+			seenDepartmentQueries = append(seenDepartmentQueries, departmentID)
+			users := []map[string]any{
+				{"id": "member-" + departmentID, "email": departmentID + "@example.com", "name": departmentID, "status": "active"},
+			}
+			if departmentID == "dept-beta" {
+				users = append(users,
+					map[string]any{"id": "bad-email", "email": "not-an-email", "name": "Bad Email", "status": "active"},
+					map[string]any{"id": "duplicate", "email": " DEPT-ALPHA@example.com ", "name": "Duplicate Email", "status": "active"},
+				)
+			}
+			writeJSON(t, w, map[string]any{"data": map[string]any{"users": users}})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	raw := strings.ReplaceAll(validDirectoryDSL, "https://directory.example.com/api/departments", server.URL+"/departments")
+	raw = strings.ReplaceAll(raw, "https://directory.example.com/api/users", server.URL+"/users")
+	cfg, err := ParseDSL(raw)
+	if err != nil {
+		t.Fatalf("ParseDSL: %v", err)
+	}
+
+	executor := NewExecutor(ExecutorOptions{AllowHTTP: true})
+	result, err := executor.Execute(context.Background(), cfg, staticCredentialResolver{"directory_api_key": "test-directory-secret"})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if result.HTTPRequestCount != 3 {
+		t.Fatalf("HTTPRequestCount = %d, want 3", result.HTTPRequestCount)
+	}
+	if len(result.Departments) != 2 {
+		t.Fatalf("departments = %d, want 2", len(result.Departments))
+	}
+	if len(result.Members) != 2 {
+		t.Fatalf("members = %#v, want two valid unique members", result.Members)
+	}
+	if result.Members[0].EmailNormalized != "dept-alpha@example.com" {
+		t.Fatalf("first email = %q", result.Members[0].EmailNormalized)
+	}
+	if len(result.Warnings) != 2 {
+		t.Fatalf("warnings = %#v, want invalid email and duplicate email", result.Warnings)
+	}
+	if fmt.Sprint(seenDepartmentQueries) != "[dept-alpha dept-beta]" {
+		t.Fatalf("department queries = %v", seenDepartmentQueries)
+	}
+	for _, header := range seenAuthHeaders {
+		if header != "test-directory-secret" {
+			t.Fatalf("auth header = %q", header)
+		}
+	}
+}
+
+func TestExecutorEnforcesLimits(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"data":{"departments":[]}}`))
+	}))
+	defer server.Close()
+
+	raw := strings.ReplaceAll(validDirectoryDSL, "https://directory.example.com/api/departments", server.URL+"/departments")
+	raw = strings.ReplaceAll(raw, "https://directory.example.com/api/users", server.URL+"/users")
+	raw = strings.Replace(raw, "max_response_bytes: 1048576", "max_response_bytes: 8", 1)
+	cfg, err := ParseDSL(raw)
+	if err != nil {
+		t.Fatalf("ParseDSL: %v", err)
+	}
+
+	executor := NewExecutor(ExecutorOptions{AllowHTTP: true})
+	_, err = executor.Execute(context.Background(), cfg, staticCredentialResolver{"directory_api_key": "test-directory-secret"})
+	if err == nil {
+		t.Fatal("expected response-size limit error")
+	}
+	if !strings.Contains(err.Error(), "response too large") {
+		t.Fatalf("error = %v, want response too large", err)
+	}
+}
+
+func writeJSON(t *testing.T, w http.ResponseWriter, body any) {
+	t.Helper()
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(body); err != nil {
+		t.Fatalf("encode response: %v", err)
+	}
+}

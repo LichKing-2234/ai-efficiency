@@ -16,6 +16,11 @@ import (
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
 	"github.com/ai-efficiency/backend/ent/commitrewrite"
 	"github.com/ai-efficiency/backend/ent/credential"
+	"github.com/ai-efficiency/backend/ent/directorydepartment"
+	"github.com/ai-efficiency/backend/ent/directorymember"
+	"github.com/ai-efficiency/backend/ent/directoryoffboardingaction"
+	"github.com/ai-efficiency/backend/ent/directorysource"
+	"github.com/ai-efficiency/backend/ent/directorysyncrun"
 	"github.com/ai-efficiency/backend/ent/prattributionrun"
 	"github.com/ai-efficiency/backend/ent/prcommitusagesnapshot"
 	"github.com/ai-efficiency/backend/ent/prrecord"
@@ -87,21 +92,26 @@ var (
 func checkColumn(table, column string) error {
 	initCheck.Do(func() {
 		columnCheck = sql.NewColumnCheck(map[string]func(string) bool{
-			adminsubscriptionjob.Table:  adminsubscriptionjob.ValidColumn,
-			commitcheckpoint.Table:      commitcheckpoint.ValidColumn,
-			commitrewrite.Table:         commitrewrite.ValidColumn,
-			credential.Table:            credential.ValidColumn,
-			prcommitusagesnapshot.Table: prcommitusagesnapshot.ValidColumn,
-			prsyncjob.Table:             prsyncjob.ValidColumn,
-			prattributionrun.Table:      prattributionrun.ValidColumn,
-			prrecord.Table:              prrecord.ValidColumn,
-			relayprovider.Table:         relayprovider.ValidColumn,
-			repoconfig.Table:            repoconfig.ValidColumn,
-			scmprovider.Table:           scmprovider.ValidColumn,
-			systemsetting.Table:         systemsetting.ValidColumn,
-			toolusageevent.Table:        toolusageevent.ValidColumn,
-			user.Table:                  user.ValidColumn,
-			webhookdeadletter.Table:     webhookdeadletter.ValidColumn,
+			adminsubscriptionjob.Table:       adminsubscriptionjob.ValidColumn,
+			commitcheckpoint.Table:           commitcheckpoint.ValidColumn,
+			commitrewrite.Table:              commitrewrite.ValidColumn,
+			credential.Table:                 credential.ValidColumn,
+			directorydepartment.Table:        directorydepartment.ValidColumn,
+			directorymember.Table:            directorymember.ValidColumn,
+			directoryoffboardingaction.Table: directoryoffboardingaction.ValidColumn,
+			directorysource.Table:            directorysource.ValidColumn,
+			directorysyncrun.Table:           directorysyncrun.ValidColumn,
+			prcommitusagesnapshot.Table:      prcommitusagesnapshot.ValidColumn,
+			prsyncjob.Table:                  prsyncjob.ValidColumn,
+			prattributionrun.Table:           prattributionrun.ValidColumn,
+			prrecord.Table:                   prrecord.ValidColumn,
+			relayprovider.Table:              relayprovider.ValidColumn,
+			repoconfig.Table:                 repoconfig.ValidColumn,
+			scmprovider.Table:                scmprovider.ValidColumn,
+			systemsetting.Table:              systemsetting.ValidColumn,
+			toolusageevent.Table:             toolusageevent.ValidColumn,
+			user.Table:                       user.ValidColumn,
+			webhookdeadletter.Table:          webhookdeadletter.ValidColumn,
 		})
 	})
 	return columnCheck(table, column)

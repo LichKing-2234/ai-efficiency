@@ -151,6 +151,209 @@ var (
 		Columns:    CredentialsColumns,
 		PrimaryKey: []*schema.Column{CredentialsColumns[0]},
 	}
+	// DirectoryDepartmentsColumns holds the columns for the "directory_departments" table.
+	DirectoryDepartmentsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "source_id", Type: field.TypeInt},
+		{Name: "external_id", Type: field.TypeString},
+		{Name: "parent_external_id", Type: field.TypeString, Nullable: true},
+		{Name: "name", Type: field.TypeString},
+		{Name: "path", Type: field.TypeString, Default: ""},
+		{Name: "metadata", Type: field.TypeJSON, Nullable: true},
+		{Name: "last_seen_run_id", Type: field.TypeInt},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+	}
+	// DirectoryDepartmentsTable holds the schema information for the "directory_departments" table.
+	DirectoryDepartmentsTable = &schema.Table{
+		Name:       "directory_departments",
+		Columns:    DirectoryDepartmentsColumns,
+		PrimaryKey: []*schema.Column{DirectoryDepartmentsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "directorydepartment_source_id_external_id",
+				Unique:  true,
+				Columns: []*schema.Column{DirectoryDepartmentsColumns[1], DirectoryDepartmentsColumns[2]},
+			},
+			{
+				Name:    "directorydepartment_source_id_parent_external_id",
+				Unique:  false,
+				Columns: []*schema.Column{DirectoryDepartmentsColumns[1], DirectoryDepartmentsColumns[3]},
+			},
+			{
+				Name:    "directorydepartment_source_id_name",
+				Unique:  false,
+				Columns: []*schema.Column{DirectoryDepartmentsColumns[1], DirectoryDepartmentsColumns[4]},
+			},
+		},
+	}
+	// DirectoryMembersColumns holds the columns for the "directory_members" table.
+	DirectoryMembersColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "source_id", Type: field.TypeInt},
+		{Name: "external_id", Type: field.TypeString, Default: ""},
+		{Name: "email_normalized", Type: field.TypeString},
+		{Name: "display_name", Type: field.TypeString, Default: ""},
+		{Name: "department_external_id", Type: field.TypeString, Default: ""},
+		{Name: "status", Type: field.TypeString, Default: "active"},
+		{Name: "metadata", Type: field.TypeJSON, Nullable: true},
+		{Name: "matched_user_id", Type: field.TypeInt, Nullable: true},
+		{Name: "last_seen_run_id", Type: field.TypeInt},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+	}
+	// DirectoryMembersTable holds the schema information for the "directory_members" table.
+	DirectoryMembersTable = &schema.Table{
+		Name:       "directory_members",
+		Columns:    DirectoryMembersColumns,
+		PrimaryKey: []*schema.Column{DirectoryMembersColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "directorymember_source_id_email_normalized",
+				Unique:  true,
+				Columns: []*schema.Column{DirectoryMembersColumns[1], DirectoryMembersColumns[3]},
+			},
+			{
+				Name:    "directorymember_source_id_department_external_id",
+				Unique:  false,
+				Columns: []*schema.Column{DirectoryMembersColumns[1], DirectoryMembersColumns[5]},
+			},
+			{
+				Name:    "directorymember_matched_user_id",
+				Unique:  false,
+				Columns: []*schema.Column{DirectoryMembersColumns[8]},
+			},
+			{
+				Name:    "directorymember_last_seen_run_id",
+				Unique:  false,
+				Columns: []*schema.Column{DirectoryMembersColumns[9]},
+			},
+		},
+	}
+	// DirectoryOffboardingActionsColumns holds the columns for the "directory_offboarding_actions" table.
+	DirectoryOffboardingActionsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "source_id", Type: field.TypeInt},
+		{Name: "user_id", Type: field.TypeInt},
+		{Name: "relay_user_id", Type: field.TypeInt},
+		{Name: "directory_run_id", Type: field.TypeInt},
+		{Name: "action", Type: field.TypeEnum, Enums: []string{"disable_relay_user"}},
+		{Name: "status", Type: field.TypeEnum, Enums: []string{"running", "succeeded", "failed", "partial_failed"}, Default: "running"},
+		{Name: "reason", Type: field.TypeString},
+		{Name: "error_message", Type: field.TypeString, Nullable: true},
+		{Name: "performed_by_user_id", Type: field.TypeInt},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+	}
+	// DirectoryOffboardingActionsTable holds the schema information for the "directory_offboarding_actions" table.
+	DirectoryOffboardingActionsTable = &schema.Table{
+		Name:       "directory_offboarding_actions",
+		Columns:    DirectoryOffboardingActionsColumns,
+		PrimaryKey: []*schema.Column{DirectoryOffboardingActionsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "directoryoffboardingaction_source_id_user_id_action",
+				Unique:  true,
+				Columns: []*schema.Column{DirectoryOffboardingActionsColumns[1], DirectoryOffboardingActionsColumns[2], DirectoryOffboardingActionsColumns[5]},
+			},
+			{
+				Name:    "directoryoffboardingaction_source_id_status",
+				Unique:  false,
+				Columns: []*schema.Column{DirectoryOffboardingActionsColumns[1], DirectoryOffboardingActionsColumns[6]},
+			},
+			{
+				Name:    "directoryoffboardingaction_user_id",
+				Unique:  false,
+				Columns: []*schema.Column{DirectoryOffboardingActionsColumns[2]},
+			},
+		},
+	}
+	// DirectorySourcesColumns holds the columns for the "directory_sources" table.
+	DirectorySourcesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "name", Type: field.TypeString},
+		{Name: "description", Type: field.TypeString, Default: ""},
+		{Name: "scope", Type: field.TypeEnum, Enums: []string{"full_company"}, Default: "full_company"},
+		{Name: "enabled", Type: field.TypeBool, Default: false},
+		{Name: "deleted", Type: field.TypeBool, Default: false},
+		{Name: "dsl", Type: field.TypeString, Size: 2147483647},
+		{Name: "schedule_enabled", Type: field.TypeBool, Default: false},
+		{Name: "schedule_interval", Type: field.TypeEnum, Enums: []string{"hourly", "daily", "weekly"}, Default: "daily"},
+		{Name: "schedule_timezone", Type: field.TypeString, Default: "UTC"},
+		{Name: "last_successful_run_id", Type: field.TypeInt, Nullable: true},
+		{Name: "last_run_id", Type: field.TypeInt, Nullable: true},
+		{Name: "last_scheduled_at", Type: field.TypeTime, Nullable: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+	}
+	// DirectorySourcesTable holds the schema information for the "directory_sources" table.
+	DirectorySourcesTable = &schema.Table{
+		Name:       "directory_sources",
+		Columns:    DirectorySourcesColumns,
+		PrimaryKey: []*schema.Column{DirectorySourcesColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "directorysource_deleted_enabled",
+				Unique:  false,
+				Columns: []*schema.Column{DirectorySourcesColumns[5], DirectorySourcesColumns[4]},
+			},
+			{
+				Name:    "directorysource_schedule_enabled_enabled_deleted",
+				Unique:  false,
+				Columns: []*schema.Column{DirectorySourcesColumns[7], DirectorySourcesColumns[4], DirectorySourcesColumns[5]},
+			},
+			{
+				Name:    "directorysource_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{DirectorySourcesColumns[13]},
+			},
+		},
+	}
+	// DirectorySyncRunsColumns holds the columns for the "directory_sync_runs" table.
+	DirectorySyncRunsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "source_id", Type: field.TypeInt},
+		{Name: "mode", Type: field.TypeEnum, Enums: []string{"validate", "preview", "apply"}},
+		{Name: "trigger", Type: field.TypeEnum, Enums: []string{"manual", "schedule"}, Default: "manual"},
+		{Name: "status", Type: field.TypeEnum, Enums: []string{"queued", "running", "completed", "completed_with_warnings", "failed"}, Default: "queued"},
+		{Name: "phase", Type: field.TypeEnum, Enums: []string{"validating", "executing", "normalizing", "applying", "completed", "failed"}, Default: "validating"},
+		{Name: "started_at", Type: field.TypeTime, Nullable: true},
+		{Name: "completed_at", Type: field.TypeTime, Nullable: true},
+		{Name: "http_request_count", Type: field.TypeInt, Default: 0},
+		{Name: "department_count", Type: field.TypeInt, Default: 0},
+		{Name: "member_count", Type: field.TypeInt, Default: 0},
+		{Name: "invalid_member_count", Type: field.TypeInt, Default: 0},
+		{Name: "warning_count", Type: field.TypeInt, Default: 0},
+		{Name: "error_message", Type: field.TypeString, Nullable: true},
+		{Name: "warnings", Type: field.TypeJSON, Nullable: true},
+		{Name: "summary", Type: field.TypeJSON, Nullable: true},
+		{Name: "preview_diff", Type: field.TypeJSON, Nullable: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+	}
+	// DirectorySyncRunsTable holds the schema information for the "directory_sync_runs" table.
+	DirectorySyncRunsTable = &schema.Table{
+		Name:       "directory_sync_runs",
+		Columns:    DirectorySyncRunsColumns,
+		PrimaryKey: []*schema.Column{DirectorySyncRunsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "directorysyncrun_source_id_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{DirectorySyncRunsColumns[1], DirectorySyncRunsColumns[17]},
+			},
+			{
+				Name:    "directorysyncrun_source_id_status",
+				Unique:  false,
+				Columns: []*schema.Column{DirectorySyncRunsColumns[1], DirectorySyncRunsColumns[4]},
+			},
+			{
+				Name:    "directorysyncrun_status_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{DirectorySyncRunsColumns[4], DirectorySyncRunsColumns[17]},
+			},
+		},
+	}
 	// PrCommitUsageSnapshotsColumns holds the columns for the "pr_commit_usage_snapshots" table.
 	PrCommitUsageSnapshotsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
@@ -537,6 +740,7 @@ var (
 		{Name: "relay_auth_password", Type: field.TypeString, Nullable: true},
 		{Name: "ldap_dn", Type: field.TypeString, Nullable: true},
 		{Name: "role", Type: field.TypeEnum, Enums: []string{"admin", "user"}, Default: "user"},
+		{Name: "token_valid_after", Type: field.TypeTime, Nullable: true},
 		{Name: "created_at", Type: field.TypeTime},
 		{Name: "updated_at", Type: field.TypeTime},
 	}
@@ -587,6 +791,11 @@ var (
 		CommitCheckpointsTable,
 		CommitRewritesTable,
 		CredentialsTable,
+		DirectoryDepartmentsTable,
+		DirectoryMembersTable,
+		DirectoryOffboardingActionsTable,
+		DirectorySourcesTable,
+		DirectorySyncRunsTable,
 		PrCommitUsageSnapshotsTable,
 		PrSyncJobsTable,
 		PrAttributionRunsTable,

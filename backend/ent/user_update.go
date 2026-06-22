@@ -154,6 +154,26 @@ func (uu *UserUpdate) SetNillableRole(u *user.Role) *UserUpdate {
 	return uu
 }
 
+// SetTokenValidAfter sets the "token_valid_after" field.
+func (uu *UserUpdate) SetTokenValidAfter(t time.Time) *UserUpdate {
+	uu.mutation.SetTokenValidAfter(t)
+	return uu
+}
+
+// SetNillableTokenValidAfter sets the "token_valid_after" field if the given value is not nil.
+func (uu *UserUpdate) SetNillableTokenValidAfter(t *time.Time) *UserUpdate {
+	if t != nil {
+		uu.SetTokenValidAfter(*t)
+	}
+	return uu
+}
+
+// ClearTokenValidAfter clears the value of the "token_valid_after" field.
+func (uu *UserUpdate) ClearTokenValidAfter() *UserUpdate {
+	uu.mutation.ClearTokenValidAfter()
+	return uu
+}
+
 // SetUpdatedAt sets the "updated_at" field.
 func (uu *UserUpdate) SetUpdatedAt(t time.Time) *UserUpdate {
 	uu.mutation.SetUpdatedAt(t)
@@ -378,6 +398,12 @@ func (uu *UserUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	}
 	if value, ok := uu.mutation.Role(); ok {
 		_spec.SetField(user.FieldRole, field.TypeEnum, value)
+	}
+	if value, ok := uu.mutation.TokenValidAfter(); ok {
+		_spec.SetField(user.FieldTokenValidAfter, field.TypeTime, value)
+	}
+	if uu.mutation.TokenValidAfterCleared() {
+		_spec.ClearField(user.FieldTokenValidAfter, field.TypeTime)
 	}
 	if value, ok := uu.mutation.UpdatedAt(); ok {
 		_spec.SetField(user.FieldUpdatedAt, field.TypeTime, value)
@@ -660,6 +686,26 @@ func (uuo *UserUpdateOne) SetNillableRole(u *user.Role) *UserUpdateOne {
 	return uuo
 }
 
+// SetTokenValidAfter sets the "token_valid_after" field.
+func (uuo *UserUpdateOne) SetTokenValidAfter(t time.Time) *UserUpdateOne {
+	uuo.mutation.SetTokenValidAfter(t)
+	return uuo
+}
+
+// SetNillableTokenValidAfter sets the "token_valid_after" field if the given value is not nil.
+func (uuo *UserUpdateOne) SetNillableTokenValidAfter(t *time.Time) *UserUpdateOne {
+	if t != nil {
+		uuo.SetTokenValidAfter(*t)
+	}
+	return uuo
+}
+
+// ClearTokenValidAfter clears the value of the "token_valid_after" field.
+func (uuo *UserUpdateOne) ClearTokenValidAfter() *UserUpdateOne {
+	uuo.mutation.ClearTokenValidAfter()
+	return uuo
+}
+
 // SetUpdatedAt sets the "updated_at" field.
 func (uuo *UserUpdateOne) SetUpdatedAt(t time.Time) *UserUpdateOne {
 	uuo.mutation.SetUpdatedAt(t)
@@ -914,6 +960,12 @@ func (uuo *UserUpdateOne) sqlSave(ctx context.Context) (_node *User, err error) 
 	}
 	if value, ok := uuo.mutation.Role(); ok {
 		_spec.SetField(user.FieldRole, field.TypeEnum, value)
+	}
+	if value, ok := uuo.mutation.TokenValidAfter(); ok {
+		_spec.SetField(user.FieldTokenValidAfter, field.TypeTime, value)
+	}
+	if uuo.mutation.TokenValidAfterCleared() {
+		_spec.ClearField(user.FieldTokenValidAfter, field.TypeTime)
 	}
 	if value, ok := uuo.mutation.UpdatedAt(); ok {
 		_spec.SetField(user.FieldUpdatedAt, field.TypeTime, value)

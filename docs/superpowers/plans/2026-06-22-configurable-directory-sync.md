@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go, Gin, Ent, PostgreSQL/SQLite test migrations, `gopkg.in/yaml.v3`, Vue 3, Vite/Vitest, TailwindCSS, existing credential and relay provider boundaries.
 
-**Status:** Planned on 2026-06-22. Implementation not started in this plan yet.
+**Status:** In progress on 2026-06-22. Tasks 1-3 are implemented; Postgres-backed package tests are currently blocked by the local test database connection.
 
 ## Global Constraints
 
@@ -109,7 +109,7 @@
 - Produces: Ent clients for `DirectorySource`, `DirectorySyncRun`, `DirectoryDepartment`, `DirectoryMember`, `DirectoryOffboardingAction`
 - Produces: nullable `User.TokenValidAfter`
 
-- [ ] **Step 1: Write schema regression tests**
+- [x] **Step 1: Write schema regression tests**
 
 Add tests that create a source, successful run, department, member, offboarding action, and user token revocation timestamp through Ent.
 
@@ -117,17 +117,17 @@ Run: `cd backend && go test ./internal/directorysync ./internal/auth`
 
 Expected: FAIL because the new Ent schemas and user field do not exist yet.
 
-- [ ] **Step 2: Add Ent schemas**
+- [x] **Step 2: Add Ent schemas**
 
 Add the schema files from the file map with enum values from the approved spec and indexes on source/run/status/email fields.
 
-- [ ] **Step 3: Generate Ent code**
+- [x] **Step 3: Generate Ent code**
 
 Run: `cd backend && go generate ./ent`
 
 Expected: Ent generation completes and adds the new generated files.
 
-- [ ] **Step 4: Verify generated packages**
+- [x] **Step 4: Verify generated packages**
 
 Run: `cd backend && go test ./ent/...`
 
@@ -144,7 +144,7 @@ Expected: PASS.
 - Produces: `ValidateAccessToken(ctx context.Context, tokenStr string) (jwt.MapClaims, error)`
 - Produces: `RevokeUserTokens(ctx context.Context, userID int, revokedAt time.Time) error`
 
-- [ ] **Step 1: Write failing auth tests**
+- [x] **Step 1: Write failing auth tests**
 
 Add tests proving access tokens and refresh tokens issued before `token_valid_after` are rejected, and tokens issued after the revocation floor are accepted.
 
@@ -152,11 +152,13 @@ Run: `cd backend && go test ./internal/auth -run 'TokenRevocation|RefreshToken'`
 
 Expected: FAIL because token validation does not check the user row.
 
-- [ ] **Step 2: Implement revocation checks**
+- [x] **Step 2: Implement revocation checks**
 
 Load the user by `user_id`, compare token `iat` to `token_valid_after`, reject revoked tokens, and update middleware to pass request context.
 
 - [ ] **Step 3: Verify auth tests**
+
+Current result: `cd backend && go test ./internal/auth -run 'TestGenerateAndValidateAccessToken|TestValidateAccessTokenRejectsRefreshToken|TestValidateTokenExpired|TestValidateTokenWrongSecret|TestValidateTokenInvalid|TestValidateRefreshToken|TestValidateAccessTokenWrongSigningMethod|TestGenerateTokenPairForUser'` passes, and `cd backend && go test ./internal/auth -run '^$'` compiles. `cd backend && go test ./internal/auth -run 'TokenRevocation'` is blocked by local Postgres connection failure before assertions run.
 
 Run: `cd backend && go test ./internal/auth -run 'TokenRevocation|RefreshToken'`
 
@@ -177,7 +179,7 @@ Expected: PASS.
 - Produces: `ValidateDSL(ctx context.Context, cfg *DSL, credentialExists func(context.Context, string) bool) []ValidationIssue`
 - Produces: `Executor.Execute(ctx context.Context, cfg *DSL, credentials CredentialResolver) (*ExecutionResult, error)`
 
-- [ ] **Step 1: Write failing parser and validation tests**
+- [x] **Step 1: Write failing parser and validation tests**
 
 Cover safe YAML template parsing, unsupported methods, non-HTTPS URLs, missing credential refs, duplicate step ids, missing member email mapping, and missing department id/name mappings.
 
@@ -185,7 +187,7 @@ Run: `cd backend && go test ./internal/directorysync -run 'TestParseDSL|TestVali
 
 Expected: FAIL because the package does not exist yet.
 
-- [ ] **Step 2: Write failing JSONPath and executor tests**
+- [x] **Step 2: Write failing JSONPath and executor tests**
 
 Cover `$.data.items`, nested fields, foreach over prior step items, header credential injection, query template rendering, invalid email warnings, duplicate email warnings, item caps, and response-size limits.
 
@@ -193,11 +195,11 @@ Run: `cd backend && go test ./internal/directorysync -run 'TestJSONPath|TestExec
 
 Expected: FAIL because evaluator and executor do not exist yet.
 
-- [ ] **Step 3: Implement parser, validator, JSONPath subset, and executor**
+- [x] **Step 3: Implement parser, validator, JSONPath subset, and executor**
 
 Use `encoding/json` and `gopkg.in/yaml.v3`; support only spec-approved first-version DSL features.
 
-- [ ] **Step 4: Verify directorysync unit tests**
+- [x] **Step 4: Verify directorysync unit tests**
 
 Run: `cd backend && go test ./internal/directorysync -run 'TestParseDSL|TestValidateDSL|TestJSONPath|TestExecutor'`
 
