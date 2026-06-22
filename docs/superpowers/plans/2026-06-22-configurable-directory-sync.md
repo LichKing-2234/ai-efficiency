@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go, Gin, Ent, PostgreSQL/SQLite test migrations, `gopkg.in/yaml.v3`, Vue 3, Vite/Vitest, TailwindCSS, existing credential and relay provider boundaries.
 
-**Status:** In progress on 2026-06-22. Tasks 1-6 are implemented; Postgres-backed package tests are currently blocked by the local test database connection.
+**Status:** In progress on 2026-06-22. Tasks 1-7 are implemented; Postgres-backed package tests are currently blocked by the local test database connection.
 
 ## Global Constraints
 
@@ -336,17 +336,17 @@ Expected: PASS.
 - Modify: `docs/architecture.md`
 - Modify: `docs/superpowers/plans/2026-06-22-configurable-directory-sync.md`
 
-- [ ] **Step 1: Update architecture**
+- [x] **Step 1: Update architecture**
 
 Document `directorysync`, persisted current directory facts, scheduler, admin settings/offboarding surfaces, relay disable boundary, and `users.token_valid_after`.
 
-- [ ] **Step 2: Scan for unsafe example data**
+- [x] **Step 2: Scan for unsafe example data**
 
 Run a repo-local safety scan across the new spec, this plan, backend directorysync files, and frontend directory UI files for internal domains, bearer tokens, cloud keys, real employee emails, real department names, and real subscription group names.
 
 Expected: no matches in new examples, tests, or templates. Safe placeholders such as `directory.example.com`, `alice@example.com`, and `Department Alpha` are allowed.
 
-- [ ] **Step 3: Mark completed plan items**
+- [x] **Step 3: Mark completed plan items**
 
 Update this plan only for steps actually completed in this implementation run.
 

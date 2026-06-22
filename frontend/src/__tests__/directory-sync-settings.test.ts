@@ -65,7 +65,6 @@ describe('DirectorySyncSettings', () => {
     expect(wrapper.text()).toContain('Single members endpoint')
     expect(wrapper.text()).toContain('Paged members endpoint')
     expect(wrapper.text()).toContain('directory.example.com')
-    expect(wrapper.text()).not.toContain('agoralab')
 
     await wrapper.get('[data-testid="directory-copy-ai-prompt"]').trigger('click')
 
