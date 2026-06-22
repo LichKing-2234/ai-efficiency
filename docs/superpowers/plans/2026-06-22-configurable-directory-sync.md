@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go, Gin, Ent, PostgreSQL/SQLite test migrations, `gopkg.in/yaml.v3`, Vue 3, Vite/Vitest, TailwindCSS, existing credential and relay provider boundaries.
 
-**Status:** In progress on 2026-06-22. Tasks 1-7 are implemented; Postgres-backed package tests are currently blocked by the local test database connection.
+**Status:** Implementation complete on 2026-06-22 with one environment-sensitive verification gap: backend full `go test ./...` is blocked by the local Postgres test database connection. Frontend full tests, targeted non-DB backend tests, diff hygiene, and safety scan have passed.
 
 ## Global Constraints
 
@@ -357,23 +357,25 @@ Update this plan only for steps actually completed in this implementation run.
 
 - [ ] **Step 1: Backend full test**
 
+Current result: `cd backend && go test ./...` fails before assertions in Postgres-backed packages because neither default test DSN is usable on this machine (`127.0.0.1:15432` connection refused; `127.0.0.1:5432` password authentication failed for user `postgres`). Fresh targeted backend checks passed: `go test ./ent/... ./internal/directorysync -run 'TestParseDSL|TestValidateDSL|TestEvaluateJSONPath|TestExecutor'`, `go test -count=1 ./internal/handler -run DirectoryHandler`, `go test -count=1 ./internal/relay -run TestDisableUser`, and `go test ./cmd/server ./internal/auth -run '^$|TestGenerateAndValidateAccessToken|TestValidateAccessTokenRejectsRefreshToken|TestValidateTokenExpired|TestValidateTokenWrongSecret|TestValidateTokenInvalid|TestValidateRefreshToken|TestValidateAccessTokenWrongSigningMethod|TestGenerateTokenPairForUser'`.
+
 Run: `cd backend && go test ./...`
 
 Expected: PASS.
 
-- [ ] **Step 2: Frontend full test**
+- [x] **Step 2: Frontend full test**
 
 Run: `cd frontend && pnpm test`
 
 Expected: PASS.
 
-- [ ] **Step 3: Git diff hygiene**
+- [x] **Step 3: Git diff hygiene**
 
 Run: `git diff --check`
 
 Expected: no whitespace errors.
 
-- [ ] **Step 4: Final safety scan**
+- [x] **Step 4: Final safety scan**
 
 Run: `rg -n "directory\\.example\\.com|alice@example\\.com|bob@example\\.org|Department Alpha|Department Beta|Group Alpha|Group Beta" docs/superpowers/plans/2026-06-22-configurable-directory-sync.md backend/internal/directorysync frontend/src`
 
