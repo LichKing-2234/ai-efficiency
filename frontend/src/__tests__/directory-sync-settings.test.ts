@@ -66,14 +66,35 @@ describe('DirectorySyncSettings', () => {
     expect(wrapper.text()).toContain('Departments then members')
     expect(wrapper.text()).toContain('Single members endpoint')
     expect(wrapper.text()).toContain('Paged members endpoint')
+    expect(wrapper.text()).toContain('API documentation or endpoint notes')
+    expect(wrapper.text()).toContain('If there is no API documentation, provide these interfaces one by one')
     expect(wrapper.text()).toContain('directory.example.com')
 
+    await wrapper.get('[data-testid="directory-ai-context"]').setValue('GET /departments returns data.departments; GET /users returns data.users.')
     await wrapper.get('[data-testid="directory-copy-ai-prompt"]').trigger('click')
 
     expect(navigator.clipboard.writeText).toHaveBeenCalled()
     const prompt = (navigator.clipboard.writeText as any).mock.calls[0][0]
+    expect(prompt).toContain('Target YAML contract')
+    expect(prompt).toContain('Normalized output structures')
+    expect(prompt).toContain('department.external_id')
+    expect(prompt).toContain('member.email')
+    expect(prompt).toContain('GET /departments returns data.departments')
     expect(prompt).toContain('Do not include real API keys')
     expect(prompt).toContain('directory.example.com')
+  })
+
+  it('copies a step-by-step prompt when API documentation is missing', async () => {
+    const { wrapper } = await mountDirectorySyncSettings()
+
+    await wrapper.get('[data-testid="directory-copy-ai-prompt"]').trigger('click')
+
+    const prompt = (navigator.clipboard.writeText as any).mock.calls[0][0]
+    expect(prompt).toContain('No API documentation was provided')
+    expect(prompt).toContain('Ask the configurator for each interface in this order')
+    expect(prompt).toContain('1. Department list endpoint')
+    expect(prompt).toContain('2. Member list endpoint')
+    expect(prompt).toContain('3. Pagination')
   })
 
   it('saves, validates, previews, and runs a directory source', async () => {
@@ -105,9 +126,13 @@ describe('DirectorySyncSettings', () => {
     expect(wrapper.text()).toContain('组织架构同步')
     expect(wrapper.text()).toContain('先部门后成员')
     expect(wrapper.text()).toContain('复制 AI Prompt')
+    expect(wrapper.text()).toContain('接口文档或接口说明')
+    expect(wrapper.text()).toContain('没有接口文档时，逐项提供这些接口')
 
     await wrapper.get('[data-testid="directory-copy-ai-prompt"]').trigger('click')
     const prompt = (navigator.clipboard.writeText as any).mock.calls[0][0]
+    expect(prompt).toContain('目标 YAML 合同')
+    expect(prompt).toContain('标准化输出结构')
     expect(prompt).toContain('不要包含真实 API Key')
     expect(prompt).toContain('directory.example.com')
   })

@@ -23,6 +23,7 @@ const loading = ref(false)
 const saving = ref(false)
 const message = ref('')
 const error = ref('')
+const aiPromptContext = ref('')
 const form = ref<DirectorySourceRequest>({
   name: '',
   description: '',
@@ -217,9 +218,76 @@ async function runNow() {
 }
 
 async function copyAIPrompt() {
+  const context = aiPromptContext.value.trim()
+  const contextLines = context
+    ? [t('directorySync.aiPromptProvidedDocs'), context]
+    : [
+        t('directorySync.aiPromptNoDocs'),
+        t('directorySync.aiPromptNoDocsOrder'),
+        t('directorySync.aiPromptNoDocsDepartment'),
+        t('directorySync.aiPromptNoDocsMember'),
+        t('directorySync.aiPromptNoDocsPagination'),
+        t('directorySync.aiPromptNoDocsAuth'),
+        t('directorySync.aiPromptNoDocsSamples'),
+      ]
   const prompt = [
     t('directorySync.aiPromptLine1'),
     t('directorySync.aiPromptLine2'),
+    '',
+    t('directorySync.aiPromptTargetContractTitle'),
+    `version: 1
+scope: full_company
+auth:
+  type: header
+  header: X-Directory-API-Key
+  credential_ref: directory_api_key
+limits:
+  timeout_seconds: 30
+  max_response_bytes: 1048576
+  max_items: 50000
+steps:
+  - id: departments
+    request:
+      method: GET
+      url: https://directory.example.com/api/v1/departments
+    extract:
+      items: $.data.departments
+    map:
+      department:
+        external_id: $.id
+        parent_external_id: $.parent_id
+        name: $.name
+        path: $.path
+  - id: members
+    foreach: departments.items
+    request:
+      method: GET
+      url: https://directory.example.com/api/v1/users
+      query:
+        department_id: "{{ item.external_id }}"
+    extract:
+      items: $.data.users
+    map:
+      member:
+        external_id: $.id
+        email: $.email
+        display_name: $.name
+        department_external_id: "{{ item.external_id }}"
+        status: $.status`,
+    '',
+    t('directorySync.aiPromptStructuresTitle'),
+    '- department.external_id: required stable department id',
+    '- department.parent_external_id: optional parent department id',
+    '- department.name: required display name',
+    '- department.path: optional full path',
+    '- member.external_id: optional stable person id',
+    '- member.email: required user email; this system matches local users only by normalized email',
+    '- member.display_name: optional display name',
+    '- member.department_external_id: optional department id',
+    '- member.status: optional employment status',
+    '',
+    ...contextLines,
+    '',
     t('directorySync.aiPromptLine3'),
     t('directorySync.aiPromptLine4'),
     t('directorySync.aiPromptLine5'),
@@ -293,6 +361,28 @@ async function copyAIPrompt() {
           </div>
           <p class="mb-2 text-xs text-gray-500">{{ t('directorySync.templatePlaceholderHelp') }}</p>
           <textarea v-model="form.dsl" class="h-72 w-full rounded-md border border-gray-300 px-3 py-2 font-mono text-xs" />
+        </div>
+
+        <div class="rounded-md border border-gray-200 p-3">
+          <label class="text-sm font-medium text-gray-700">
+            {{ t('directorySync.aiContextLabel') }}
+            <textarea
+              data-testid="directory-ai-context"
+              v-model="aiPromptContext"
+              class="mt-2 h-28 w-full rounded-md border border-gray-300 px-3 py-2 text-xs"
+              :placeholder="t('directorySync.aiContextPlaceholder')"
+            />
+          </label>
+          <div class="mt-3 rounded-md bg-gray-50 p-3 text-xs text-gray-600">
+            <p class="font-medium text-gray-700">{{ t('directorySync.noDocsChecklistTitle') }}</p>
+            <ol class="mt-2 list-decimal space-y-1 pl-4">
+              <li>{{ t('directorySync.noDocsDepartment') }}</li>
+              <li>{{ t('directorySync.noDocsMember') }}</li>
+              <li>{{ t('directorySync.noDocsPagination') }}</li>
+              <li>{{ t('directorySync.noDocsAuth') }}</li>
+              <li>{{ t('directorySync.noDocsSamples') }}</li>
+            </ol>
+          </div>
         </div>
 
         <div v-if="message" class="rounded-md bg-green-50 p-3 text-sm text-green-700">{{ message }}</div>
