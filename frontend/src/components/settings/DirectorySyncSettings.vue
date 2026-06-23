@@ -9,7 +9,7 @@ import {
   validateDirectorySource,
 } from '@/api/directory'
 import { useI18n, type MessageKey } from '@/i18n'
-import type { Credential, DirectorySource, DirectorySourceRequest } from '@/types'
+import type { Credential, DirectorySource, DirectorySourceRequest, DirectorySyncRun, DirectoryValidationIssue } from '@/types'
 
 defineProps<{
   credentials: Credential[]
@@ -23,6 +23,7 @@ const loading = ref(false)
 const saving = ref(false)
 const message = ref('')
 const error = ref('')
+const validationIssues = ref<DirectoryValidationIssue[]>([])
 const aiPromptContext = ref('')
 const form = ref<DirectorySourceRequest>({
   name: '',
@@ -159,6 +160,7 @@ async function loadSources() {
 }
 
 function selectSource(source: DirectorySource) {
+  clearFeedback()
   selectedSourceId.value = source.id
   form.value = {
     name: source.name,
@@ -173,15 +175,32 @@ function selectSource(source: DirectorySource) {
 }
 
 function applyTemplate(dsl: string) {
+  clearFeedback()
   form.value.dsl = dsl
   if (!form.value.name) form.value.name = t('directorySync.exampleName')
   if (!form.value.description) form.value.description = t('directorySync.exampleDescription')
 }
 
-async function saveSource() {
-  saving.value = true
+function clearFeedback() {
   message.value = ''
   error.value = ''
+  validationIssues.value = []
+}
+
+function apiErrorMessage(e: any, fallback: string) {
+  return e?.response?.data?.message || e?.message || fallback
+}
+
+function showRunResult(run: DirectorySyncRun | undefined, messageKey: MessageKey) {
+  message.value = t(messageKey, { status: run?.status || t('directorySync.started') })
+  if (run?.status === 'failed' && run.error_message) {
+    error.value = run.error_message
+  }
+}
+
+async function saveSource() {
+  saving.value = true
+  clearFeedback()
   try {
     if (selectedSourceId.value) {
       await updateDirectorySource(selectedSourceId.value, form.value)
@@ -192,7 +211,7 @@ async function saveSource() {
     message.value = t('directorySync.saved')
     await loadSources()
   } catch (e: any) {
-    error.value = e?.response?.data?.message || e?.message || t('directorySync.saveFailed')
+    error.value = apiErrorMessage(e, t('directorySync.saveFailed'))
   } finally {
     saving.value = false
   }
@@ -200,21 +219,37 @@ async function saveSource() {
 
 async function validateSource() {
   if (!selectedSourceId.value) return
-  const res = await validateDirectorySource(selectedSourceId.value)
-  const data = res.data.data
-  message.value = data?.valid ? t('directorySync.validationPassed') : t('directorySync.validationIssues', { count: data?.issues.length ?? 0 })
+  clearFeedback()
+  try {
+    const res = await validateDirectorySource(selectedSourceId.value)
+    const data = res.data.data
+    validationIssues.value = data?.issues ?? []
+    message.value = data?.valid ? t('directorySync.validationPassed') : t('directorySync.validationIssues', { count: validationIssues.value.length })
+  } catch (e: any) {
+    error.value = apiErrorMessage(e, t('directorySync.validateFailed'))
+  }
 }
 
 async function previewSource() {
   if (!selectedSourceId.value) return
-  const res = await previewDirectorySource(selectedSourceId.value)
-  message.value = t('directorySync.previewRunStatus', { status: res.data.data?.status || t('directorySync.started') })
+  clearFeedback()
+  try {
+    const res = await previewDirectorySource(selectedSourceId.value)
+    showRunResult(res.data.data, 'directorySync.previewRunStatus')
+  } catch (e: any) {
+    error.value = apiErrorMessage(e, t('directorySync.previewFailed'))
+  }
 }
 
 async function runNow() {
   if (!selectedSourceId.value) return
-  const res = await startDirectoryRun(selectedSourceId.value, { mode: 'apply' })
-  message.value = t('directorySync.applyRunStatus', { status: res.data.data?.status || t('directorySync.started') })
+  clearFeedback()
+  try {
+    const res = await startDirectoryRun(selectedSourceId.value, { mode: 'apply' })
+    showRunResult(res.data.data, 'directorySync.applyRunStatus')
+  } catch (e: any) {
+    error.value = apiErrorMessage(e, t('directorySync.runFailed'))
+  }
 }
 
 async function copyAIPrompt() {
@@ -236,6 +271,7 @@ async function copyAIPrompt() {
     '',
     t('directorySync.aiPromptTargetContractTitle'),
     t('directorySync.aiPromptContractRules'),
+    t('directorySync.aiPromptIndentationRule'),
     `version: 1
 scope: full_company
 auth:
@@ -397,6 +433,14 @@ steps:
 
         <div v-if="message" class="rounded-md bg-green-50 p-3 text-sm text-green-700">{{ message }}</div>
         <div v-if="error" class="rounded-md bg-red-50 p-3 text-sm text-red-700">{{ error }}</div>
+        <div v-if="validationIssues.length > 0" class="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+          <p class="font-medium">{{ t('directorySync.validationIssueDetails') }}</p>
+          <ul class="mt-2 space-y-1">
+            <li v-for="issue in validationIssues" :key="`${issue.path}:${issue.message}`" class="font-mono text-xs">
+              {{ issue.path }}: {{ issue.message }}
+            </li>
+          </ul>
+        </div>
 
         <div class="flex flex-wrap justify-end gap-2">
           <button data-testid="directory-validate" type="button" :disabled="!selectedSourceId" class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 disabled:opacity-50" @click="validateSource">

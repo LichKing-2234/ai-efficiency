@@ -88,6 +88,8 @@ describe('DirectorySyncSettings', () => {
     expect(prompt).toContain('If you can read docs or call endpoints with tools, do so in read-only mode')
     expect(prompt).toContain('If pagination is not visible in the response body or headers, do not invent it')
     expect(prompt).toContain('Do not output YAML until the required fields are known')
+    expect(prompt).toContain('Preserve YAML indentation')
+    expect(prompt).toContain('do not flatten nested keys')
     expect(prompt).toContain('GET /departments returns data.departments')
     expect(prompt).toContain('Use provided production endpoint URLs, field names, and non-secret header names in the final YAML')
     expect(prompt).toContain('Do not include API keys, bearer tokens, passwords')
@@ -107,6 +109,50 @@ describe('DirectorySyncSettings', () => {
     expect(prompt).toContain('1. Department list endpoint')
     expect(prompt).toContain('2. Member list endpoint')
     expect(prompt).toContain('3. Pagination')
+  })
+
+  it('shows validation issue details', async () => {
+    const { wrapper, api } = await mountDirectorySyncSettings()
+    api.validateDirectorySource.mockResolvedValueOnce({
+      data: {
+        data: {
+          valid: false,
+          issues: [
+            { path: 'auth.type', message: 'auth.type must be header' },
+            { path: 'steps[0].request.url', message: 'url host is required' },
+          ],
+        },
+      },
+    })
+
+    await wrapper.get('[data-testid="directory-validate"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Validation found 2 issue(s)')
+    expect(wrapper.text()).toContain('auth.type')
+    expect(wrapper.text()).toContain('auth.type must be header')
+    expect(wrapper.text()).toContain('steps[0].request.url')
+    expect(wrapper.text()).toContain('url host is required')
+  })
+
+  it('shows preview and apply run failure details', async () => {
+    const { wrapper, api } = await mountDirectorySyncSettings()
+    api.previewDirectorySource.mockResolvedValueOnce({
+      data: { data: { id: 20, mode: 'preview', status: 'failed', error_message: 'steps[0].request.url: url host is required' } },
+    })
+    api.startDirectoryRun.mockResolvedValueOnce({
+      data: { data: { id: 21, mode: 'apply', status: 'failed', error_message: 'steps[0].map: department or member mapping is required' } },
+    })
+
+    await wrapper.get('[data-testid="directory-preview"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('Preview run failed')
+    expect(wrapper.text()).toContain('steps[0].request.url: url host is required')
+
+    await wrapper.get('[data-testid="directory-run-now"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('Apply run failed')
+    expect(wrapper.text()).toContain('steps[0].map: department or member mapping is required')
   })
 
   it('saves, validates, previews, and runs a directory source', async () => {
@@ -151,6 +197,8 @@ describe('DirectorySyncSettings', () => {
     expect(prompt).toContain('不要粘贴原始响应行')
     expect(prompt).toContain('邮箱字段必须有完整的非空覆盖')
     expect(prompt).toContain('不要编造分页')
+    expect(prompt).toContain('保留 YAML 缩进')
+    expect(prompt).toContain('不要把嵌套字段拉平成顶层字段')
     expect(prompt).toContain('最终 YAML 可以使用配置者提供的生产接口 URL、字段名和非密钥 header 名称')
     expect(prompt).toContain('不要包含 API Key、bearer token、密码')
     expect(prompt).toContain('directory.example.com')

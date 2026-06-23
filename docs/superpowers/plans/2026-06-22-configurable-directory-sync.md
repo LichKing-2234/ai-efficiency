@@ -24,6 +24,21 @@
 - [x] Verify `git diff --check`.
 - [x] Run a diff safety scan for real company domains, internal URLs, tokens, API keys, and real employee data.
 
+**Follow-up Status (2026-06-23, validation UX):** Directory validation details and failed run feedback are complete. Targeted settings test, related frontend regression, frontend full test, build, diff hygiene, and safety scan have passed.
+
+## 2026-06-23 Follow-up: Directory Validation Feedback
+
+- [x] Identify that flattened YAML indentation produces empty `auth`, `request`, `extract`, and `map` objects, which matches the 11 validation issues.
+- [x] Add failing frontend tests for validation issue details and failed preview/apply run messages.
+- [x] Render validation issue path/message details and failed run `error_message`.
+- [x] Add Prompt guidance to preserve YAML indentation and keep nested keys nested.
+- [x] Verify `cd frontend && pnpm test -- directory-sync-settings`.
+- [x] Verify `cd frontend && pnpm test -- directory-sync-settings directory-offboarding-view settings-view router`.
+- [x] Verify `cd frontend && pnpm test`.
+- [x] Verify `cd frontend && pnpm build`.
+- [x] Verify `git diff --check`.
+- [x] Run a diff safety scan for real company domains, internal URLs, tokens, API keys, and real employee data.
+
 ## Global Constraints
 
 - Use only generic HTTP DSL support; do not add Feishu, WeCom, LDAP group sync, or other vendor SDK code.
