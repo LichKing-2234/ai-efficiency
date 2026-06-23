@@ -8,11 +8,14 @@ import {
   updateDirectorySource,
   validateDirectorySource,
 } from '@/api/directory'
+import { useI18n, type MessageKey } from '@/i18n'
 import type { Credential, DirectorySource, DirectorySourceRequest } from '@/types'
 
 defineProps<{
   credentials: Credential[]
 }>()
+
+const { t } = useI18n()
 
 const sources = ref<DirectorySource[]>([])
 const selectedSourceId = ref<number | null>(null)
@@ -33,9 +36,9 @@ const form = ref<DirectorySourceRequest>({
 
 const selectedSource = computed(() => sources.value.find((source) => source.id === selectedSourceId.value) || null)
 
-const templates = [
+const templates: Array<{ nameKey: MessageKey; dsl: string }> = [
   {
-    name: 'Departments then members',
+    nameKey: 'directorySync.templateDepartmentsMembers',
     dsl: `version: 1
 scope: full_company
 auth:
@@ -78,7 +81,7 @@ steps:
 `,
   },
   {
-    name: 'Single members endpoint',
+    nameKey: 'directorySync.templateSingleMembers',
     dsl: `version: 1
 scope: full_company
 auth:
@@ -106,7 +109,7 @@ steps:
 `,
   },
   {
-    name: 'Paged members endpoint',
+    nameKey: 'directorySync.templatePagedMembers',
     dsl: `version: 1
 scope: full_company
 auth:
@@ -148,7 +151,7 @@ async function loadSources() {
       applyTemplate(templates[0].dsl)
     }
   } catch (e: any) {
-    error.value = e?.message || 'Failed to load directory sources'
+    error.value = e?.message || t('directorySync.loadSourcesFailed')
   } finally {
     loading.value = false
   }
@@ -170,8 +173,8 @@ function selectSource(source: DirectorySource) {
 
 function applyTemplate(dsl: string) {
   form.value.dsl = dsl
-  if (!form.value.name) form.value.name = 'Example Directory'
-  if (!form.value.description) form.value.description = 'Synthetic directory source'
+  if (!form.value.name) form.value.name = t('directorySync.exampleName')
+  if (!form.value.description) form.value.description = t('directorySync.exampleDescription')
 }
 
 async function saveSource() {
@@ -185,10 +188,10 @@ async function saveSource() {
       const res = await createDirectorySource(form.value)
       selectedSourceId.value = res.data.data?.id ?? null
     }
-    message.value = 'Directory source saved'
+    message.value = t('directorySync.saved')
     await loadSources()
   } catch (e: any) {
-    error.value = e?.response?.data?.message || e?.message || 'Failed to save directory source'
+    error.value = e?.response?.data?.message || e?.message || t('directorySync.saveFailed')
   } finally {
     saving.value = false
   }
@@ -198,29 +201,31 @@ async function validateSource() {
   if (!selectedSourceId.value) return
   const res = await validateDirectorySource(selectedSourceId.value)
   const data = res.data.data
-  message.value = data?.valid ? 'Validation passed' : `Validation found ${data?.issues.length ?? 0} issue(s)`
+  message.value = data?.valid ? t('directorySync.validationPassed') : t('directorySync.validationIssues', { count: data?.issues.length ?? 0 })
 }
 
 async function previewSource() {
   if (!selectedSourceId.value) return
   const res = await previewDirectorySource(selectedSourceId.value)
-  message.value = `Preview run ${res.data.data?.status || 'started'}`
+  message.value = t('directorySync.previewRunStatus', { status: res.data.data?.status || t('directorySync.started') })
 }
 
 async function runNow() {
   if (!selectedSourceId.value) return
   const res = await startDirectoryRun(selectedSourceId.value, { mode: 'apply' })
-  message.value = `Apply run ${res.data.data?.status || 'started'}`
+  message.value = t('directorySync.applyRunStatus', { status: res.data.data?.status || t('directorySync.started') })
 }
 
 async function copyAIPrompt() {
-  const prompt = `Generate a YAML DSL for AI Efficiency Directory Sync.
-Use only version: 1, scope: full_company, GET requests, header auth with credential_ref, JSONPath-like item extraction, and department/member mappings.
-Do not include real API keys, real employee data, real tokens, real company domains, or real internal URLs.
-Use placeholders such as https://directory.example.com, X-Directory-API-Key, directory_api_key, alice@example.com, bob@example.org, Department Alpha, and Department Beta.
-Return only the YAML DSL.`
+  const prompt = [
+    t('directorySync.aiPromptLine1'),
+    t('directorySync.aiPromptLine2'),
+    t('directorySync.aiPromptLine3'),
+    t('directorySync.aiPromptLine4'),
+    t('directorySync.aiPromptLine5'),
+  ].join('\n')
   await navigator.clipboard.writeText(prompt)
-  message.value = 'AI prompt copied'
+  message.value = t('directorySync.aiPromptCopied')
 }
 </script>
 
@@ -228,11 +233,11 @@ Return only the YAML DSL.`
   <section class="space-y-4 rounded-lg border border-gray-200 bg-white p-5">
     <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <div>
-        <h3 class="text-base font-semibold text-gray-900">Directory Sync</h3>
-        <p class="text-sm text-gray-500">Configure a generic organization API and review offboarding candidates separately.</p>
+        <h3 class="text-base font-semibold text-gray-900">{{ t('directorySync.title') }}</h3>
+        <p class="text-sm text-gray-500">{{ t('directorySync.subtitle') }}</p>
       </div>
       <button data-testid="directory-copy-ai-prompt" type="button" class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50" @click="copyAIPrompt">
-        Copy AI Prompt
+        {{ t('directorySync.copyAiPrompt') }}
       </button>
     </div>
 
@@ -247,23 +252,23 @@ Return only the YAML DSL.`
           @click="selectSource(source)"
         >
           <span class="block font-medium">{{ source.name }}</span>
-          <span class="block text-xs text-gray-500">{{ source.enabled ? 'Enabled' : 'Disabled' }}</span>
+          <span class="block text-xs text-gray-500">{{ source.enabled ? t('settings.enabled') : t('settings.disabled') }}</span>
         </button>
-        <p v-if="!loading && sources.length === 0" class="text-sm text-gray-500">No directory source configured.</p>
+        <p v-if="!loading && sources.length === 0" class="text-sm text-gray-500">{{ t('directorySync.noSource') }}</p>
       </div>
 
       <div class="space-y-4">
         <div class="grid gap-3 md:grid-cols-2">
           <label class="text-sm font-medium text-gray-700">
-            Name
+            {{ t('settings.name') }}
             <input data-testid="directory-source-name" v-model="form.name" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
           </label>
           <label class="text-sm font-medium text-gray-700">
-            Schedule
+            {{ t('directorySync.schedule') }}
             <select v-model="form.schedule_interval" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm">
-              <option value="hourly">Hourly</option>
-              <option value="daily">Daily</option>
-              <option value="weekly">Weekly</option>
+              <option value="hourly">{{ t('directorySync.hourly') }}</option>
+              <option value="daily">{{ t('directorySync.daily') }}</option>
+              <option value="weekly">{{ t('directorySync.weekly') }}</option>
             </select>
           </label>
         </div>
@@ -271,22 +276,22 @@ Return only the YAML DSL.`
         <div class="flex flex-wrap items-center gap-4 text-sm text-gray-700">
           <label class="inline-flex items-center gap-2">
             <input v-model="form.enabled" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-indigo-600" />
-            Enabled
+            {{ t('settings.enabled') }}
           </label>
           <label class="inline-flex items-center gap-2">
             <input v-model="form.schedule_enabled" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-indigo-600" />
-            Scheduled apply
+            {{ t('directorySync.scheduledApply') }}
           </label>
-          <span class="text-gray-500">Credential ref: directory_api_key</span>
+          <span class="text-gray-500">{{ t('directorySync.credentialRef', { ref: 'directory_api_key' }) }}</span>
         </div>
 
         <div class="rounded-md border border-gray-200 p-3">
           <div class="mb-2 flex flex-wrap gap-2">
-            <button v-for="template in templates" :key="template.name" type="button" class="rounded-md border border-gray-300 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50" @click="applyTemplate(template.dsl)">
-              {{ template.name }}
+            <button v-for="template in templates" :key="template.nameKey" type="button" class="rounded-md border border-gray-300 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50" @click="applyTemplate(template.dsl)">
+              {{ t(template.nameKey) }}
             </button>
           </div>
-          <p class="mb-2 text-xs text-gray-500">Templates use synthetic placeholders such as https://directory.example.com and alice@example.com.</p>
+          <p class="mb-2 text-xs text-gray-500">{{ t('directorySync.templatePlaceholderHelp') }}</p>
           <textarea v-model="form.dsl" class="h-72 w-full rounded-md border border-gray-300 px-3 py-2 font-mono text-xs" />
         </div>
 
@@ -295,16 +300,16 @@ Return only the YAML DSL.`
 
         <div class="flex flex-wrap justify-end gap-2">
           <button data-testid="directory-validate" type="button" :disabled="!selectedSourceId" class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 disabled:opacity-50" @click="validateSource">
-            Validate
+            {{ t('directorySync.validate') }}
           </button>
           <button data-testid="directory-preview" type="button" :disabled="!selectedSourceId" class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 disabled:opacity-50" @click="previewSource">
-            Preview
+            {{ t('directorySync.preview') }}
           </button>
           <button data-testid="directory-run-now" type="button" :disabled="!selectedSourceId" class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 disabled:opacity-50" @click="runNow">
-            Run Now
+            {{ t('directorySync.runNow') }}
           </button>
           <button data-testid="directory-save" type="button" :disabled="saving" class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-50" @click="saveSource">
-            {{ saving ? 'Saving' : 'Save' }}
+            {{ saving ? t('settings.saving') : t('settings.save') }}
           </button>
         </div>
       </div>

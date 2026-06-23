@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import DirectoryOffboardingView from '@/views/admin/DirectoryOffboardingView.vue'
+import { setLocale } from '@/i18n'
 
 vi.mock('@/api/directory', () => ({
   listDirectoryOffboardingCandidates: vi.fn(),
@@ -55,6 +56,7 @@ async function mountOffboarding() {
 describe('DirectoryOffboardingView', () => {
   beforeEach(() => {
     vi.resetAllMocks()
+    setLocale('en-US')
   })
 
   it('requires email confirmation before disabling relay user', async () => {
@@ -75,5 +77,14 @@ describe('DirectoryOffboardingView', () => {
       confirm_email: 'bob@example.org',
       reason: 'missing_from_latest_full_company_directory',
     })
+  })
+
+  it('switches offboarding copy to Chinese', async () => {
+    setLocale('zh-CN')
+    const { wrapper } = await mountOffboarding()
+
+    expect(wrapper.text()).toContain('组织架构离职处理')
+    expect(wrapper.text()).toContain('订阅不会自动删除')
+    expect(wrapper.text()).toContain('禁用 relay 用户')
   })
 })

@@ -3,10 +3,12 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppLayout from '@/components/AppLayout.vue'
 import { disableDirectoryRelayUser, listDirectoryOffboardingCandidates } from '@/api/directory'
+import { useI18n } from '@/i18n'
 import type { DirectoryOffboardingCandidate } from '@/types'
 
 const route = useRoute()
 const router = useRouter()
+const { t } = useI18n()
 const candidates = ref<DirectoryOffboardingCandidate[]>([])
 const sourceId = ref<number>(Number(route.query.source_id || 1))
 const q = ref(typeof route.query.q === 'string' ? route.query.q : '')
@@ -31,7 +33,7 @@ async function loadCandidates() {
     const res = await listDirectoryOffboardingCandidates(params)
     candidates.value = res.data.data?.items ?? []
   } catch (e: any) {
-    error.value = e?.response?.data?.message || e?.message || 'Failed to load offboarding candidates'
+    error.value = e?.response?.data?.message || e?.message || t('directoryOffboarding.loadFailed')
   } finally {
     loading.value = false
   }
@@ -51,10 +53,10 @@ async function disableCandidate(candidate: DirectoryOffboardingCandidate) {
       confirm_email: confirmations.value[candidate.user_id].trim(),
       reason: 'missing_from_latest_full_company_directory',
     })
-    message.value = `${candidate.email} disabled`
+    message.value = t('directoryOffboarding.disabled', { email: candidate.email })
     await loadCandidates()
   } catch (e: any) {
-    error.value = e?.response?.data?.message || e?.message || 'Failed to disable relay user'
+    error.value = e?.response?.data?.message || e?.message || t('directoryOffboarding.disableFailed')
   }
 }
 </script>
@@ -64,18 +66,18 @@ async function disableCandidate(candidate: DirectoryOffboardingCandidate) {
     <div class="space-y-5">
       <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 class="text-2xl font-bold text-gray-900">Directory Offboarding</h1>
-          <p class="text-sm text-gray-500">Review users missing from the latest full-company directory snapshot.</p>
+          <h1 class="text-2xl font-bold text-gray-900">{{ t('directoryOffboarding.title') }}</h1>
+          <p class="text-sm text-gray-500">{{ t('directoryOffboarding.subtitle') }}</p>
         </div>
         <div class="flex flex-wrap gap-2">
-          <input v-model.number="sourceId" type="number" min="1" class="w-28 rounded-md border border-gray-300 px-3 py-2 text-sm" aria-label="Source ID" />
-          <input v-model="q" type="search" class="w-56 rounded-md border border-gray-300 px-3 py-2 text-sm" placeholder="Search users" />
-          <button type="button" class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50" @click="loadCandidates">Search</button>
+          <input v-model.number="sourceId" type="number" min="1" class="w-28 rounded-md border border-gray-300 px-3 py-2 text-sm" :aria-label="t('directoryOffboarding.sourceId')" />
+          <input v-model="q" type="search" class="w-56 rounded-md border border-gray-300 px-3 py-2 text-sm" :placeholder="t('directoryOffboarding.searchPlaceholder')" />
+          <button type="button" class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50" @click="loadCandidates">{{ t('adminUsers.search') }}</button>
         </div>
       </div>
 
       <div class="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-        Disabling a candidate disables upstream AI access and revokes local AI Efficiency tokens. Subscriptions are not removed automatically.
+        {{ t('directoryOffboarding.warning') }}
       </div>
       <div v-if="message" class="rounded-md bg-green-50 p-3 text-sm text-green-700">{{ message }}</div>
       <div v-if="error" class="rounded-md bg-red-50 p-3 text-sm text-red-700">{{ error }}</div>
@@ -84,19 +86,19 @@ async function disableCandidate(candidate: DirectoryOffboardingCandidate) {
         <table class="min-w-full divide-y divide-gray-200 text-sm">
           <thead class="bg-gray-50 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
             <tr>
-              <th class="px-4 py-3">User</th>
-              <th class="px-4 py-3">Relay</th>
-              <th class="px-4 py-3">Reason</th>
-              <th class="px-4 py-3">Confirmation</th>
-              <th class="px-4 py-3 text-right">Action</th>
+              <th class="px-4 py-3">{{ t('adminUsers.user') }}</th>
+              <th class="px-4 py-3">{{ t('directoryOffboarding.relay') }}</th>
+              <th class="px-4 py-3">{{ t('directoryOffboarding.reason') }}</th>
+              <th class="px-4 py-3">{{ t('directoryOffboarding.confirmation') }}</th>
+              <th class="px-4 py-3 text-right">{{ t('settings.actions') }}</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-gray-100">
             <tr v-if="loading">
-              <td colspan="5" class="px-4 py-6 text-center text-gray-500">Loading</td>
+              <td colspan="5" class="px-4 py-6 text-center text-gray-500">{{ t('settings.loading') }}</td>
             </tr>
             <tr v-else-if="!hasCandidates">
-              <td colspan="5" class="px-4 py-6 text-center text-gray-500">No offboarding candidates</td>
+              <td colspan="5" class="px-4 py-6 text-center text-gray-500">{{ t('directoryOffboarding.empty') }}</td>
             </tr>
             <tr v-for="candidate in candidates" v-else :key="candidate.user_id">
               <td class="px-4 py-3">
@@ -123,7 +125,7 @@ async function disableCandidate(candidate: DirectoryOffboardingCandidate) {
                   :disabled="!confirmed(candidate)"
                   @click="disableCandidate(candidate)"
                 >
-                  Disable relay user
+                  {{ t('directoryOffboarding.disableRelayUser') }}
                 </button>
               </td>
             </tr>

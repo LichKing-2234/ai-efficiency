@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import DirectorySyncSettings from '@/components/settings/DirectorySyncSettings.vue'
+import { setLocale } from '@/i18n'
 
 vi.mock('@/api/directory', () => ({
   listDirectorySources: vi.fn(),
@@ -55,6 +56,7 @@ async function mountDirectorySyncSettings() {
 describe('DirectorySyncSettings', () => {
   beforeEach(() => {
     vi.resetAllMocks()
+    setLocale('en-US')
   })
 
   it('renders safe templates and copies an AI prompt with safety guidance', async () => {
@@ -94,5 +96,19 @@ describe('DirectorySyncSettings', () => {
     await wrapper.get('[data-testid="directory-run-now"]').trigger('click')
     await flushPromises()
     expect(api.startDirectoryRun).toHaveBeenCalledWith(1, { mode: 'apply' })
+  })
+
+  it('switches directory sync copy to Chinese', async () => {
+    setLocale('zh-CN')
+    const { wrapper } = await mountDirectorySyncSettings()
+
+    expect(wrapper.text()).toContain('组织架构同步')
+    expect(wrapper.text()).toContain('先部门后成员')
+    expect(wrapper.text()).toContain('复制 AI Prompt')
+
+    await wrapper.get('[data-testid="directory-copy-ai-prompt"]').trigger('click')
+    const prompt = (navigator.clipboard.writeText as any).mock.calls[0][0]
+    expect(prompt).toContain('不要包含真实 API Key')
+    expect(prompt).toContain('directory.example.com')
   })
 })
