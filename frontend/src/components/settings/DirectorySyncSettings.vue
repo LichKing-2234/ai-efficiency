@@ -195,8 +195,29 @@ function apiErrorMessage(e: any, fallback: string) {
   return e?.response?.data?.message || e?.message || fallback
 }
 
-function showRunResult(run: DirectorySyncRun | undefined, messageKey: MessageKey) {
-  message.value = t(messageKey, { status: run?.status || t('directorySync.started') })
+function runStats(run: DirectorySyncRun | undefined) {
+  return {
+    departments: run?.department_count ?? 0,
+    members: run?.member_count ?? 0,
+    warnings: run?.warning_count ?? 0,
+  }
+}
+
+function showRunResult(run: DirectorySyncRun | undefined, action: 'preview' | 'apply') {
+  const status = run?.status
+  if (status === 'completed_with_warnings') {
+    message.value = t(action === 'preview' ? 'directorySync.previewCompletedWithWarnings' : 'directorySync.applyCompletedWithWarnings', runStats(run))
+    return
+  }
+  if (status === 'completed') {
+    message.value = t(action === 'preview' ? 'directorySync.previewCompleted' : 'directorySync.applyCompleted', runStats(run))
+    return
+  }
+  if (status === 'failed') {
+    message.value = t(action === 'preview' ? 'directorySync.previewRunFailed' : 'directorySync.applyRunFailed')
+  } else {
+    message.value = t(action === 'preview' ? 'directorySync.previewRunStatus' : 'directorySync.applyRunStatus', { status: status || t('directorySync.started') })
+  }
   if (run?.status === 'failed' && run.error_message) {
     error.value = run.error_message
   }
@@ -239,7 +260,7 @@ async function previewSource() {
   clearFeedback()
   try {
     const res = await previewDirectorySource(selectedSourceId.value)
-    showRunResult(res.data.data, 'directorySync.previewRunStatus')
+    showRunResult(res.data.data, 'preview')
   } catch (e: any) {
     error.value = apiErrorMessage(e, t('directorySync.previewFailed'))
   }
@@ -250,7 +271,7 @@ async function runNow() {
   clearFeedback()
   try {
     const res = await startDirectoryRun(selectedSourceId.value, { mode: 'apply' })
-    showRunResult(res.data.data, 'directorySync.applyRunStatus')
+    showRunResult(res.data.data, 'apply')
   } catch (e: any) {
     error.value = apiErrorMessage(e, t('directorySync.runFailed'))
   }

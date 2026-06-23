@@ -170,6 +170,79 @@ auth:
     expect(wrapper.text()).toContain('steps[0].map: department or member mapping is required')
   })
 
+  it('shows completed preview and run counts when the backend returns warnings', async () => {
+    const { wrapper, api } = await mountDirectorySyncSettings()
+    api.previewDirectorySource.mockResolvedValueOnce({
+      data: {
+        data: {
+          id: 30,
+          mode: 'preview',
+          status: 'completed_with_warnings',
+          department_count: 184,
+          member_count: 631,
+          warning_count: 3759,
+        },
+      },
+    })
+    api.startDirectoryRun.mockResolvedValueOnce({
+      data: {
+        data: {
+          id: 31,
+          mode: 'apply',
+          status: 'completed_with_warnings',
+          department_count: 184,
+          member_count: 631,
+          warning_count: 3759,
+        },
+      },
+    })
+
+    await wrapper.get('[data-testid="directory-preview"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('Preview completed with warnings: 184 departments, 631 members, 3759 warnings')
+
+    await wrapper.get('[data-testid="directory-run-now"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('Run completed with warnings: 184 departments, 631 members, 3759 warnings')
+  })
+
+  it('shows localized completed-with-warnings run counts in Chinese', async () => {
+    setLocale('zh-CN')
+    const { wrapper, api } = await mountDirectorySyncSettings()
+    api.previewDirectorySource.mockResolvedValueOnce({
+      data: {
+        data: {
+          id: 32,
+          mode: 'preview',
+          status: 'completed_with_warnings',
+          department_count: 184,
+          member_count: 631,
+          warning_count: 3759,
+        },
+      },
+    })
+    api.startDirectoryRun.mockResolvedValueOnce({
+      data: {
+        data: {
+          id: 33,
+          mode: 'apply',
+          status: 'completed_with_warnings',
+          department_count: 184,
+          member_count: 631,
+          warning_count: 3759,
+        },
+      },
+    })
+
+    await wrapper.get('[data-testid="directory-preview"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('预览完成但有警告：184 个部门，631 个成员，3759 个警告')
+
+    await wrapper.get('[data-testid="directory-run-now"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('运行完成但有警告：184 个部门，631 个成员，3759 个警告')
+  })
+
   it('saves, validates, previews, and runs a directory source', async () => {
     const { wrapper, api } = await mountDirectorySyncSettings()
 

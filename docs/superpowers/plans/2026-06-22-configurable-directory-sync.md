@@ -41,6 +41,21 @@
 
 **Follow-up Status (2026-06-23, localhost integration):** Root-array directory API integration is complete. Runtime validation, preview, apply, backend full tests, frontend full tests, build, diff hygiene, and safety scan have passed.
 
+**Follow-up Status (2026-06-23, run result UX):** Complete. Successful preview/apply runs now show localized success summaries with department, member, and warning counts; targeted tests, related regressions, frontend full tests, build, diff hygiene, safety scan, dev rebuild, and localhost page verification have passed.
+
+## 2026-06-23 Follow-up: Directory Run Result Feedback
+
+- [x] Reproduce that preview/apply API calls can complete with warnings while the page only shows raw `completed_with_warnings` status.
+- [x] Add failing frontend tests for English and Chinese completed-with-warnings result summaries.
+- [x] Render completed and completed-with-warnings preview/apply runs as clear success summaries with department/member/warning counts.
+- [x] Verify `cd frontend && pnpm test -- directory-sync-settings`.
+- [x] Verify `cd frontend && pnpm test -- directory-sync-settings directory-offboarding-view settings-view router`.
+- [x] Verify `cd frontend && pnpm test`.
+- [x] Verify `cd frontend && pnpm build`.
+- [x] Verify `git diff --check`.
+- [x] Run a diff safety scan for real company domains, internal URLs, tokens, API keys, and real employee data.
+- [x] Rebuild the dev backend image and verify the localhost page shows localized completed-with-warnings counts for Validate, Preview, and Run Now.
+
 ## 2026-06-23 Follow-up: Root-Array Directory API Integration
 
 - [x] Reproduce the original 11 validation issues from flattened YAML indentation.
