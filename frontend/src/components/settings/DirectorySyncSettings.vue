@@ -235,6 +235,7 @@ async function copyAIPrompt() {
     t('directorySync.aiPromptLine2'),
     '',
     t('directorySync.aiPromptTargetContractTitle'),
+    t('directorySync.aiPromptContractRules'),
     `version: 1
 scope: full_company
 auth:
@@ -285,6 +286,15 @@ steps:
     '- member.display_name: optional display name',
     '- member.department_external_id: optional department id',
     '- member.status: optional employment status',
+    '',
+    t('directorySync.aiPromptEvidenceTitle'),
+    t('directorySync.aiPromptEvidenceTools'),
+    t('directorySync.aiPromptEvidenceSummary'),
+    t('directorySync.aiPromptEvidenceNoRawRows'),
+    t('directorySync.aiPromptEvidenceEmail'),
+    t('directorySync.aiPromptEvidenceExternalID'),
+    t('directorySync.aiPromptEvidencePagination'),
+    t('directorySync.aiPromptEvidenceAskFirst'),
     '',
     ...contextLines,
     '',

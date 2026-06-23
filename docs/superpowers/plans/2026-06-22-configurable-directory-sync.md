@@ -10,6 +10,20 @@
 
 **Status:** Complete on 2026-06-22. Backend full tests, frontend full tests, diff hygiene, and safety scan have passed with local Postgres available on `127.0.0.1:15432`.
 
+**Follow-up Status (2026-06-23):** Directory AI Prompt hardening is complete. Targeted prompt, related frontend regression, frontend full tests, build, diff hygiene, and safety scan have passed.
+
+## 2026-06-23 Follow-up: Directory AI Prompt Hardening
+
+- [x] Inspect the referenced Codex session using only structural/redacted evidence.
+- [x] Add failing prompt contract tests for guided endpoint evidence, `steps[].id`, raw-row redaction, email coverage, stable external IDs, and pagination evidence.
+- [x] Update the copied AI Prompt to require read-only evidence gathering and missing-field questions before final YAML.
+- [x] Verify `cd frontend && pnpm test -- directory-sync-settings`.
+- [x] Verify `cd frontend && pnpm test -- directory-sync-settings directory-offboarding-view settings-view router`.
+- [x] Verify `cd frontend && pnpm test`.
+- [x] Verify `cd frontend && pnpm build`.
+- [x] Verify `git diff --check`.
+- [x] Run a diff safety scan for real company domains, internal URLs, tokens, API keys, and real employee data.
+
 ## Global Constraints
 
 - Use only generic HTTP DSL support; do not add Feishu, WeCom, LDAP group sync, or other vendor SDK code.
