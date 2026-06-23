@@ -80,7 +80,10 @@ describe('DirectorySyncSettings', () => {
     expect(prompt).toContain('department.external_id')
     expect(prompt).toContain('member.email')
     expect(prompt).toContain('GET /departments returns data.departments')
-    expect(prompt).toContain('Do not include real API keys')
+    expect(prompt).toContain('Use provided production endpoint URLs, field names, and non-secret header names in the final YAML')
+    expect(prompt).toContain('Do not include API keys, bearer tokens, passwords')
+    expect(prompt).not.toContain('real company domains')
+    expect(prompt).not.toContain('real internal URLs')
     expect(prompt).toContain('directory.example.com')
   })
 
@@ -133,7 +136,8 @@ describe('DirectorySyncSettings', () => {
     const prompt = (navigator.clipboard.writeText as any).mock.calls[0][0]
     expect(prompt).toContain('目标 YAML 合同')
     expect(prompt).toContain('标准化输出结构')
-    expect(prompt).toContain('不要包含真实 API Key')
+    expect(prompt).toContain('最终 YAML 可以使用配置者提供的生产接口 URL、字段名和非密钥 header 名称')
+    expect(prompt).toContain('不要包含 API Key、bearer token、密码')
     expect(prompt).toContain('directory.example.com')
   })
 })
