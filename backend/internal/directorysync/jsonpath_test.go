@@ -36,6 +36,21 @@ func TestEvaluateJSONPathSubset(t *testing.T) {
 	}
 }
 
+func TestEvaluateJSONPathAllowsRootDocument(t *testing.T) {
+	root := []any{
+		map[string]any{"id": "dept-alpha", "name": "Department Alpha"},
+		map[string]any{"id": "dept-beta", "name": "Department Beta"},
+	}
+
+	value, err := EvaluateJSONPath(root, "$")
+	if err != nil {
+		t.Fatalf("EvaluateJSONPath root: %v", err)
+	}
+	if len(value.([]any)) != 2 {
+		t.Fatalf("root value = %#v, want two items", value)
+	}
+}
+
 func TestEvaluateJSONPathRejectsUnsupportedExpressions(t *testing.T) {
 	if _, err := EvaluateJSONPath(map[string]any{"items": []any{}}, "data.items"); err == nil {
 		t.Fatal("expected missing root prefix to fail")

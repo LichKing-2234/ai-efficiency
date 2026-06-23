@@ -89,6 +89,53 @@ func TestExecutorRunsForeachAndNormalizesMembers(t *testing.T) {
 	}
 }
 
+func TestExecutorExtractsRootArrayResponses(t *testing.T) {
+	var seenDepartmentQueries []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/departments":
+			writeJSON(t, w, []map[string]any{
+				{"id": "dept-alpha", "name": "Department Alpha", "path": "Department Alpha"},
+				{"id": "dept-beta", "name": "Department Beta", "path": "Department Beta"},
+			})
+		case "/users":
+			departmentID := r.URL.Query().Get("department_id")
+			seenDepartmentQueries = append(seenDepartmentQueries, departmentID)
+			writeJSON(t, w, []map[string]any{
+				{"id": "member-" + departmentID, "email": departmentID + "@example.com", "name": departmentID},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	raw := strings.ReplaceAll(validDirectoryDSL, "https://directory.example.com/api/departments", server.URL+"/departments")
+	raw = strings.ReplaceAll(raw, "https://directory.example.com/api/users", server.URL+"/users")
+	raw = strings.ReplaceAll(raw, "items: $.data.departments", "items: $")
+	raw = strings.ReplaceAll(raw, "items: $.data.users", "items: $")
+	cfg, err := ParseDSL(raw)
+	if err != nil {
+		t.Fatalf("ParseDSL: %v", err)
+	}
+
+	executor := NewExecutor(ExecutorOptions{AllowHTTP: true})
+	result, err := executor.Execute(context.Background(), cfg, staticCredentialResolver{"directory_api_key": "test-directory-secret"})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if len(result.Departments) != 2 {
+		t.Fatalf("departments = %#v, want two departments", result.Departments)
+	}
+	if len(result.Members) != 2 {
+		t.Fatalf("members = %#v, want two members", result.Members)
+	}
+	if fmt.Sprint(seenDepartmentQueries) != "[dept-alpha dept-beta]" {
+		t.Fatalf("department queries = %v", seenDepartmentQueries)
+	}
+}
+
 func TestExecutorEnforcesLimits(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`{"data":{"departments":[]}}`))

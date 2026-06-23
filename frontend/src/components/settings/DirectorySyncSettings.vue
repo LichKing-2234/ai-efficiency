@@ -37,6 +37,10 @@ const form = ref<DirectorySourceRequest>({
 })
 
 const selectedSource = computed(() => sources.value.find((source) => source.id === selectedSourceId.value) || null)
+const currentCredentialRef = computed(() => {
+  const match = form.value.dsl.match(/^\s*credential_ref:\s*["']?([^"'\s#]+)["']?\s*$/m)
+  return match?.[1] || 'directory_api_key'
+})
 
 const templates: Array<{ nameKey: MessageKey; dsl: string }> = [
   {
@@ -272,6 +276,7 @@ async function copyAIPrompt() {
     t('directorySync.aiPromptTargetContractTitle'),
     t('directorySync.aiPromptContractRules'),
     t('directorySync.aiPromptIndentationRule'),
+    t('directorySync.aiPromptRootArrayRule'),
     `version: 1
 scope: full_company
 auth:
@@ -396,7 +401,7 @@ steps:
             <input v-model="form.schedule_enabled" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-indigo-600" />
             {{ t('directorySync.scheduledApply') }}
           </label>
-          <span class="text-gray-500">{{ t('directorySync.credentialRef', { ref: 'directory_api_key' }) }}</span>
+          <span class="text-gray-500">{{ t('directorySync.credentialRef', { ref: currentCredentialRef }) }}</span>
         </div>
 
         <div class="rounded-md border border-gray-200 p-3">
@@ -406,7 +411,7 @@ steps:
             </button>
           </div>
           <p class="mb-2 text-xs text-gray-500">{{ t('directorySync.templatePlaceholderHelp') }}</p>
-          <textarea v-model="form.dsl" class="h-72 w-full rounded-md border border-gray-300 px-3 py-2 font-mono text-xs" />
+          <textarea data-testid="directory-dsl" v-model="form.dsl" class="h-72 w-full rounded-md border border-gray-300 px-3 py-2 font-mono text-xs" />
         </div>
 
         <div class="rounded-md border border-gray-200 p-3">

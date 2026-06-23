@@ -39,6 +39,25 @@
 - [x] Verify `git diff --check`.
 - [x] Run a diff safety scan for real company domains, internal URLs, tokens, API keys, and real employee data.
 
+**Follow-up Status (2026-06-23, localhost integration):** Root-array directory API integration is complete. Runtime validation, preview, apply, backend full tests, frontend full tests, build, diff hygiene, and safety scan have passed.
+
+## 2026-06-23 Follow-up: Root-Array Directory API Integration
+
+- [x] Reproduce the original 11 validation issues from flattened YAML indentation.
+- [x] Confirm the indentation issue is Prompt output/configuration, not backend parsing logic.
+- [x] Reproduce the remaining `extract.items: $` rejection after indentation was corrected.
+- [x] Add backend tests for root-array `extract.items: $` validation and execution.
+- [x] Implement generic root-array extraction support without vendor-specific code.
+- [x] Add Prompt guidance for `extract.items: $` vs `$.data.items`.
+- [x] Show the credential reference from the current DSL instead of a fixed template value.
+- [x] Verify localhost API validation passes for the configured source.
+- [x] Verify localhost page buttons: Validate shows success, Preview completes, Run Now completes.
+- [x] Verify `cd backend && go test ./...`.
+- [x] Verify `cd frontend && pnpm test`.
+- [x] Verify `cd frontend && pnpm build`.
+- [x] Verify `git diff --check`.
+- [x] Run a diff safety scan for real company domains, internal URLs, tokens, API keys, and real employee data.
+
 ## Global Constraints
 
 - Use only generic HTTP DSL support; do not add Feishu, WeCom, LDAP group sync, or other vendor SDK code.

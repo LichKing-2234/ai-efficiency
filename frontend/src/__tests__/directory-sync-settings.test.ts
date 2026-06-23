@@ -90,6 +90,7 @@ describe('DirectorySyncSettings', () => {
     expect(prompt).toContain('Do not output YAML until the required fields are known')
     expect(prompt).toContain('Preserve YAML indentation')
     expect(prompt).toContain('do not flatten nested keys')
+    expect(prompt).toContain('Use extract.items: $ only when the response root is the array')
     expect(prompt).toContain('GET /departments returns data.departments')
     expect(prompt).toContain('Use provided production endpoint URLs, field names, and non-secret header names in the final YAML')
     expect(prompt).toContain('Do not include API keys, bearer tokens, passwords')
@@ -133,6 +134,20 @@ describe('DirectorySyncSettings', () => {
     expect(wrapper.text()).toContain('auth.type must be header')
     expect(wrapper.text()).toContain('steps[0].request.url')
     expect(wrapper.text()).toContain('url host is required')
+  })
+
+  it('shows the credential ref from the current DSL', async () => {
+    const { wrapper } = await mountDirectorySyncSettings()
+
+    await wrapper.get('[data-testid="directory-dsl"]').setValue(`version: 1
+scope: full_company
+auth:
+  type: header
+  header: X-Directory-API-Key
+  credential_ref: custom_directory_key
+`)
+
+    expect(wrapper.text()).toContain('Credential ref: custom_directory_key')
   })
 
   it('shows preview and apply run failure details', async () => {
@@ -199,6 +214,7 @@ describe('DirectorySyncSettings', () => {
     expect(prompt).toContain('不要编造分页')
     expect(prompt).toContain('保留 YAML 缩进')
     expect(prompt).toContain('不要把嵌套字段拉平成顶层字段')
+    expect(prompt).toContain('只有响应根本身就是数组时才使用 extract.items: $')
     expect(prompt).toContain('最终 YAML 可以使用配置者提供的生产接口 URL、字段名和非密钥 header 名称')
     expect(prompt).toContain('不要包含 API Key、bearer token、密码')
     expect(prompt).toContain('directory.example.com')

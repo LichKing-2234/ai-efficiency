@@ -9,6 +9,9 @@ func EvaluateJSONPath(root any, path string) (any, error) {
 	if err := validateJSONPath(path); err != nil {
 		return nil, err
 	}
+	if strings.TrimSpace(path) == "$" {
+		return root, nil
+	}
 	current := root
 	for _, part := range strings.Split(strings.TrimPrefix(path, "$."), ".") {
 		if part == "" {
@@ -31,6 +34,9 @@ func validateJSONPath(path string) error {
 	path = strings.TrimSpace(path)
 	if path == "" {
 		return fmt.Errorf("json path is required")
+	}
+	if path == "$" {
+		return nil
 	}
 	if !strings.HasPrefix(path, "$.") {
 		return fmt.Errorf("json path must start with $.")

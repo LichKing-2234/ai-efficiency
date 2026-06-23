@@ -64,6 +64,21 @@ func TestParseDSLAcceptsSafeYAMLTemplate(t *testing.T) {
 	}
 }
 
+func TestValidateDSLAcceptsRootArrayExtractPath(t *testing.T) {
+	raw := strings.ReplaceAll(validDirectoryDSL, "items: $.data.departments", "items: $")
+	raw = strings.ReplaceAll(raw, "items: $.data.users", "items: $")
+	cfg, err := ParseDSL(raw)
+	if err != nil {
+		t.Fatalf("ParseDSL: %v", err)
+	}
+	issues := ValidateDSL(context.Background(), cfg, func(_ context.Context, ref string) bool {
+		return ref == "directory_api_key"
+	})
+	if len(issues) != 0 {
+		t.Fatalf("issues = %#v, want none", issues)
+	}
+}
+
 func TestValidateDSLRejectsUnsupportedFeatures(t *testing.T) {
 	tests := []struct {
 		name      string

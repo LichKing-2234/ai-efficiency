@@ -335,7 +335,7 @@ Supported first-version features:
 - Headers: literal safe values plus credential injection
 - Query parameters: literal values and simple template expressions
 - Iteration: `foreach` over a prior step's extracted items
-- Extraction: JSONPath-like `items` path
+- Extraction: JSONPath-like `items` path, including `$` when the response root itself is the item array
 - Mapping targets: `department`, `member`
 - Templates: `{{ item.field }}` and `{{ source.field }}` only
 - Limits: timeout, response size, and total item caps
@@ -359,7 +359,7 @@ Validation rules:
 3. Every step must have a unique `id`.
 4. Every request URL must use `https://` unless an explicit admin-only unsafe-local toggle is added for local testing.
 5. Credential references must resolve to existing credentials.
-6. JSONPath expressions must parse before execution.
+6. JSONPath expressions must parse before execution. `extract.items: $` is valid only for root-array responses.
 7. Member mapping must include `email`.
 8. Department mapping must include `external_id` and `name`.
 9. Invalid or missing email rows become warnings and are excluded from `directory_members`.
@@ -672,7 +672,7 @@ Backend tests:
 
 - DSL schema validation accepts valid templates and rejects unsupported features.
 - Credential references resolve without exposing secret values in run summaries.
-- Executor handles simple GET, header auth, query templates, foreach, JSONPath extraction, and limits.
+- Executor handles simple GET, header auth, query templates, foreach, JSONPath extraction including root-array responses, and limits.
 - Preview run does not update `directory_members`.
 - Failed apply run does not change current facts or offboarding candidates.
 - Successful full-company apply updates departments, members, and `last_successful_run_id`.
