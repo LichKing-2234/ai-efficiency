@@ -41,6 +41,10 @@ func (f *fakeDirectoryService) RunSource(_ context.Context, sourceID int, mode, 
 	return &ent.DirectorySyncRun{ID: 3, SourceID: sourceID, Mode: directorysyncrun.Mode(mode), Trigger: directorysyncrun.Trigger(trigger), Status: "queued"}, nil
 }
 
+func (f *fakeDirectoryService) ExecuteRun(_ context.Context, id int) (*ent.DirectorySyncRun, error) {
+	return &ent.DirectorySyncRun{ID: id, SourceID: 1, Mode: "apply", Status: "completed"}, nil
+}
+
 func (f *fakeDirectoryService) GetRun(_ context.Context, id int) (*ent.DirectorySyncRun, error) {
 	return &ent.DirectorySyncRun{ID: id, SourceID: 1, Mode: "apply", Status: "completed"}, nil
 }
@@ -96,6 +100,54 @@ func TestDirectoryHandlerValidateSource(t *testing.T) {
 	}
 	if len(body.Data.Issues) != 1 || body.Data.Issues[0].Path != "steps[0].request.url" {
 		t.Fatalf("issues = %+v", body.Data.Issues)
+	}
+}
+
+func TestDirectoryHandlerPreviewReturnsQueuedRun(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	h := NewDirectoryHandler(&fakeDirectoryService{})
+	router.POST("/api/v1/admin/directory/sources/:id/preview", h.PreviewSource)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/directory/sources/1/preview", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Data ent.DirectorySyncRun `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body.Data.Status != directorysyncrun.StatusQueued || body.Data.Mode != directorysyncrun.ModePreview {
+		t.Fatalf("run = %+v, want queued preview", body.Data)
+	}
+}
+
+func TestDirectoryHandlerStartRunReturnsQueuedRun(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	h := NewDirectoryHandler(&fakeDirectoryService{})
+	router.POST("/api/v1/admin/directory/sources/:id/runs", h.StartRun)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/directory/sources/1/runs", bytes.NewBufferString(`{"mode":"apply"}`))
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Data ent.DirectorySyncRun `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body.Data.Status != directorysyncrun.StatusQueued || body.Data.Mode != directorysyncrun.ModeApply {
+		t.Fatalf("run = %+v, want queued apply", body.Data)
 	}
 }
 

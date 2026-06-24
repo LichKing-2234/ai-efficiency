@@ -10,6 +10,7 @@ vi.mock('@/api/directory', () => ({
   validateDirectorySource: vi.fn(),
   previewDirectorySource: vi.fn(),
   startDirectoryRun: vi.fn(),
+  getDirectoryRun: vi.fn(),
 }))
 
 Object.assign(navigator, {
@@ -47,6 +48,7 @@ async function mountDirectorySyncSettings() {
   api.validateDirectorySource.mockResolvedValue({ data: { data: { valid: true, issues: [] } } })
   api.previewDirectorySource.mockResolvedValue({ data: { data: { id: 10, mode: 'preview', status: 'completed' } } })
   api.startDirectoryRun.mockResolvedValue({ data: { data: { id: 11, mode: 'apply', status: 'completed' } } })
+  api.getDirectoryRun.mockResolvedValue({ data: { data: { id: 10, mode: 'preview', status: 'completed' } } })
 
   const wrapper = mount(DirectorySyncSettings, {
     props: {
@@ -258,6 +260,73 @@ auth:
     await flushPromises()
     expect(wrapper.text()).toContain('运行已完成：已保留 631 个有效成员，跳过 3759 条记录；部门 184 个。')
     expect(wrapper.text()).toContain('重复邮箱：3758 条')
+  })
+
+  it('polls preview progress until the run completes', async () => {
+    vi.useFakeTimers()
+    const { wrapper, api } = await mountDirectorySyncSettings()
+    api.previewDirectorySource.mockResolvedValueOnce({
+      data: { data: { id: 40, mode: 'preview', status: 'queued', phase: 'validating', department_count: 0, member_count: 0, warning_count: 0 } },
+    })
+    api.getDirectoryRun
+      .mockResolvedValueOnce({ data: { data: { id: 40, mode: 'preview', status: 'running', phase: 'executing', department_count: 0, member_count: 0, warning_count: 0 } } })
+      .mockResolvedValueOnce({ data: { data: { id: 40, mode: 'preview', status: 'completed', phase: 'completed', department_count: 2, member_count: 3, warning_count: 0 } } })
+
+    try {
+      await wrapper.get('[data-testid="directory-preview"]').trigger('click')
+      expect(wrapper.text()).toContain('Starting preview...')
+      await flushPromises()
+      expect(wrapper.text()).toContain('Reading directory API')
+      expect(api.getDirectoryRun).toHaveBeenCalledWith(40)
+
+      await vi.runOnlyPendingTimersAsync()
+      await flushPromises()
+      expect(wrapper.text()).toContain('Preview completed: kept 3 valid members; 2 departments.')
+      expect(wrapper.text()).not.toContain('Reading directory API')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('shows localized apply progress while polling the run', async () => {
+    vi.useFakeTimers()
+    setLocale('zh-CN')
+    const { wrapper, api } = await mountDirectorySyncSettings()
+    api.startDirectoryRun.mockResolvedValueOnce({
+      data: { data: { id: 41, mode: 'apply', status: 'queued', phase: 'validating', department_count: 0, member_count: 0, warning_count: 0 } },
+    })
+    api.getDirectoryRun
+      .mockResolvedValueOnce({ data: { data: { id: 41, mode: 'apply', status: 'running', phase: 'executing', department_count: 0, member_count: 0, warning_count: 0 } } })
+      .mockResolvedValueOnce({
+        data: {
+          data: {
+            id: 41,
+            mode: 'apply',
+            status: 'completed_with_warnings',
+            phase: 'completed',
+            department_count: 184,
+            member_count: 633,
+            warning_count: 3769,
+            warnings: warnings('duplicate_member_email', 3769),
+          },
+        },
+      })
+
+    try {
+      await wrapper.get('[data-testid="directory-run-now"]').trigger('click')
+      expect(wrapper.text()).toContain('正在启动运行...')
+      await flushPromises()
+      expect(wrapper.text()).toContain('正在读取组织架构接口')
+      expect(api.getDirectoryRun).toHaveBeenCalledWith(41)
+
+      await vi.runOnlyPendingTimersAsync()
+      await flushPromises()
+      expect(wrapper.text()).toContain('运行已完成：已保留 633 个有效成员，跳过 3769 条记录；部门 184 个。')
+      expect(wrapper.text()).toContain('重复邮箱：3769 条')
+      expect(wrapper.text()).not.toContain('正在读取组织架构接口')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('saves, validates, previews, and runs a directory source', async () => {

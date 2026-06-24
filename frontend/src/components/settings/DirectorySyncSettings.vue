@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import {
   createDirectorySource,
+  getDirectoryRun,
   listDirectorySources,
   previewDirectorySource,
   startDirectoryRun,
@@ -26,6 +27,9 @@ const error = ref('')
 const validationIssues = ref<DirectoryValidationIssue[]>([])
 const aiPromptContext = ref('')
 const runWarningSummaries = ref<Array<{ code: string; count: number; labelKey: MessageKey; helpKey: MessageKey }>>([])
+const activeRun = ref<DirectorySyncRun | null>(null)
+const activeRunAction = ref<'preview' | 'apply' | null>(null)
+let runPollTimer: number | undefined
 const form = ref<DirectorySourceRequest>({
   name: '',
   description: '',
@@ -146,6 +150,7 @@ steps:
 ]
 
 onMounted(loadSources)
+onUnmounted(stopRunPolling)
 
 async function loadSources() {
   loading.value = true
@@ -187,10 +192,13 @@ function applyTemplate(dsl: string) {
 }
 
 function clearFeedback() {
+  stopRunPolling()
   message.value = ''
   error.value = ''
   validationIssues.value = []
   runWarningSummaries.value = []
+  activeRun.value = null
+  activeRunAction.value = null
 }
 
 function apiErrorMessage(e: any, fallback: string) {
@@ -247,6 +255,29 @@ function warningRecordUnit(count: number) {
   return t(count === 1 ? 'directorySync.warningRecordSingular' : 'directorySync.warningRecordPlural')
 }
 
+function isTerminalRun(run: DirectorySyncRun | undefined) {
+  return run?.status === 'completed' || run?.status === 'completed_with_warnings' || run?.status === 'failed'
+}
+
+function stopRunPolling() {
+  if (runPollTimer) {
+    window.clearTimeout(runPollTimer)
+    runPollTimer = undefined
+  }
+}
+
+function phaseLabel(phase?: string) {
+  const labels: Record<string, MessageKey> = {
+    validating: 'directorySync.phaseValidating',
+    executing: 'directorySync.phaseExecuting',
+    normalizing: 'directorySync.phaseNormalizing',
+    applying: 'directorySync.phaseApplying',
+    completed: 'directorySync.phaseCompleted',
+    failed: 'directorySync.phaseFailed',
+  }
+  return t(phase ? labels[phase] ?? 'directorySync.phaseValidating' : 'directorySync.phaseValidating')
+}
+
 function showRunResult(run: DirectorySyncRun | undefined, action: 'preview' | 'apply') {
   const status = run?.status
   if (status === 'completed_with_warnings') {
@@ -261,10 +292,40 @@ function showRunResult(run: DirectorySyncRun | undefined, action: 'preview' | 'a
   if (status === 'failed') {
     message.value = t(action === 'preview' ? 'directorySync.previewRunFailed' : 'directorySync.applyRunFailed')
   } else {
-    message.value = t(action === 'preview' ? 'directorySync.previewRunStatus' : 'directorySync.applyRunStatus', { status: status || t('directorySync.started') })
+    message.value = t(action === 'preview' ? 'directorySync.previewStarted' : 'directorySync.applyStarted')
   }
   if (run?.status === 'failed' && run.error_message) {
     error.value = run.error_message
+  }
+}
+
+function applyRunProgress(run: DirectorySyncRun | undefined, action: 'preview' | 'apply') {
+  if (!run) return
+  activeRun.value = run
+  activeRunAction.value = action
+  if (isTerminalRun(run)) {
+    stopRunPolling()
+    showRunResult(run, action)
+    return
+  }
+  message.value = t(action === 'preview' ? 'directorySync.previewStarted' : 'directorySync.applyStarted')
+}
+
+async function pollRunUntilDone(runID: number, action: 'preview' | 'apply') {
+  try {
+    const res = await getDirectoryRun(runID)
+    const run = res.data.data
+    applyRunProgress(run, action)
+    if (run && !isTerminalRun(run)) {
+      runPollTimer = window.setTimeout(() => {
+        void pollRunUntilDone(runID, action)
+      }, 1500)
+    }
+  } catch (e: any) {
+    stopRunPolling()
+    activeRun.value = null
+    activeRunAction.value = null
+    error.value = apiErrorMessage(e, t('directorySync.runProgressFailed'))
   }
 }
 
@@ -303,9 +364,15 @@ async function validateSource() {
 async function previewSource() {
   if (!selectedSourceId.value) return
   clearFeedback()
+  activeRunAction.value = 'preview'
+  message.value = t('directorySync.previewStarted')
   try {
     const res = await previewDirectorySource(selectedSourceId.value)
-    showRunResult(res.data.data, 'preview')
+    const run = res.data.data
+    applyRunProgress(run, 'preview')
+    if (run && !isTerminalRun(run)) {
+      await pollRunUntilDone(run.id, 'preview')
+    }
   } catch (e: any) {
     error.value = apiErrorMessage(e, t('directorySync.previewFailed'))
   }
@@ -314,9 +381,15 @@ async function previewSource() {
 async function runNow() {
   if (!selectedSourceId.value) return
   clearFeedback()
+  activeRunAction.value = 'apply'
+  message.value = t('directorySync.applyStarted')
   try {
     const res = await startDirectoryRun(selectedSourceId.value, { mode: 'apply' })
-    showRunResult(res.data.data, 'apply')
+    const run = res.data.data
+    applyRunProgress(run, 'apply')
+    if (run && !isTerminalRun(run)) {
+      await pollRunUntilDone(run.id, 'apply')
+    }
   } catch (e: any) {
     error.value = apiErrorMessage(e, t('directorySync.runFailed'))
   }
@@ -504,6 +577,12 @@ steps:
 
         <div v-if="message" class="rounded-md bg-green-50 p-3 text-sm text-green-700">{{ message }}</div>
         <div v-if="error" class="rounded-md bg-red-50 p-3 text-sm text-red-700">{{ error }}</div>
+        <div v-if="activeRun && !isTerminalRun(activeRun)" class="rounded-md bg-blue-50 p-3 text-sm text-blue-900" aria-live="polite">
+          <p class="font-medium">{{ phaseLabel(activeRun.phase) }}</p>
+          <p class="mt-1 text-xs text-blue-800">
+            {{ t('directorySync.runProgressCounts', { departments: activeRun.department_count ?? 0, members: activeRun.member_count ?? 0, warnings: activeRun.warning_count ?? 0 }) }}
+          </p>
+        </div>
         <div v-if="runWarningSummaries.length > 0" class="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
           <p class="font-medium">{{ t('directorySync.warningDetailsTitle') }}</p>
           <ul class="mt-2 space-y-2">
@@ -523,14 +602,14 @@ steps:
         </div>
 
         <div class="flex flex-wrap justify-end gap-2">
-          <button data-testid="directory-validate" type="button" :disabled="!selectedSourceId" class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 disabled:opacity-50" @click="validateSource">
+          <button data-testid="directory-validate" type="button" :disabled="!selectedSourceId || Boolean(activeRun && !isTerminalRun(activeRun))" class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 disabled:opacity-50" @click="validateSource">
             {{ t('directorySync.validate') }}
           </button>
-          <button data-testid="directory-preview" type="button" :disabled="!selectedSourceId" class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 disabled:opacity-50" @click="previewSource">
-            {{ t('directorySync.preview') }}
+          <button data-testid="directory-preview" type="button" :disabled="!selectedSourceId || Boolean(activeRun && !isTerminalRun(activeRun))" class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 disabled:opacity-50" @click="previewSource">
+            {{ activeRunAction === 'preview' && activeRun && !isTerminalRun(activeRun) ? t('directorySync.previewing') : t('directorySync.preview') }}
           </button>
-          <button data-testid="directory-run-now" type="button" :disabled="!selectedSourceId" class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 disabled:opacity-50" @click="runNow">
-            {{ t('directorySync.runNow') }}
+          <button data-testid="directory-run-now" type="button" :disabled="!selectedSourceId || Boolean(activeRun && !isTerminalRun(activeRun))" class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 disabled:opacity-50" @click="runNow">
+            {{ activeRunAction === 'apply' && activeRun && !isTerminalRun(activeRun) ? t('directorySync.running') : t('directorySync.runNow') }}
           </button>
           <button data-testid="directory-save" type="button" :disabled="saving" class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-50" @click="saveSource">
             {{ saving ? t('settings.saving') : t('settings.save') }}

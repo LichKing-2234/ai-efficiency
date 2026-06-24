@@ -61,8 +61,15 @@ func TestServicePreviewDoesNotUpdateFactsAndApplyDoes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("preview RunSource: %v", err)
 	}
+	if preview.Status != "queued" {
+		t.Fatalf("preview status = %s, want queued", preview.Status)
+	}
+	preview, err = svc.ExecuteRun(ctx, preview.ID)
+	if err != nil {
+		t.Fatalf("preview ExecuteRun: %v", err)
+	}
 	if preview.Status != "completed" {
-		t.Fatalf("preview status = %s, want completed", preview.Status)
+		t.Fatalf("executed preview status = %s, want completed", preview.Status)
 	}
 	if count := client.DirectoryMember.Query().Where(directorymember.SourceIDEQ(source.ID)).CountX(ctx); count != 0 {
 		t.Fatalf("preview member count = %d, want 0", count)
@@ -72,8 +79,15 @@ func TestServicePreviewDoesNotUpdateFactsAndApplyDoes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("apply RunSource: %v", err)
 	}
+	if apply.Status != "queued" {
+		t.Fatalf("apply status = %s, want queued", apply.Status)
+	}
+	apply, err = svc.ExecuteRun(ctx, apply.ID)
+	if err != nil {
+		t.Fatalf("apply ExecuteRun: %v", err)
+	}
 	if apply.Status != "completed" {
-		t.Fatalf("apply status = %s, want completed", apply.Status)
+		t.Fatalf("executed apply status = %s, want completed", apply.Status)
 	}
 	if count := client.DirectoryMember.Query().Where(directorymember.SourceIDEQ(source.ID)).CountX(ctx); count != 1 {
 		t.Fatalf("apply member count = %d, want 1", count)
@@ -93,8 +107,12 @@ func TestServiceOffboardingCandidateAndDisableRevokesTokens(t *testing.T) {
 		Executor:    NewExecutor(ExecutorOptions{AllowHTTP: true}),
 		Credentials: staticCredentialResolver{"directory_api_key": "test-directory-secret"},
 	})
-	if _, err := svc.RunSource(ctx, source.ID, "apply", "manual"); err != nil {
+	run, err := svc.RunSource(ctx, source.ID, "apply", "manual")
+	if err != nil {
 		t.Fatalf("apply RunSource: %v", err)
+	}
+	if _, err := svc.ExecuteRun(ctx, run.ID); err != nil {
+		t.Fatalf("apply ExecuteRun: %v", err)
 	}
 
 	bob := client.User.Create().
@@ -159,8 +177,12 @@ func TestServiceProviderWithoutDisableCapabilityReturnsValidationError(t *testin
 		Executor:    NewExecutor(ExecutorOptions{AllowHTTP: true}),
 		Credentials: staticCredentialResolver{"directory_api_key": "test-directory-secret"},
 	})
-	if _, err := svc.RunSource(ctx, source.ID, "apply", "manual"); err != nil {
+	run, err := svc.RunSource(ctx, source.ID, "apply", "manual")
+	if err != nil {
 		t.Fatalf("apply RunSource: %v", err)
+	}
+	if _, err := svc.ExecuteRun(ctx, run.ID); err != nil {
+		t.Fatalf("apply ExecuteRun: %v", err)
 	}
 	user := client.User.Create().
 		SetUsername("alice").
@@ -170,7 +192,7 @@ func TestServiceProviderWithoutDisableCapabilityReturnsValidationError(t *testin
 		SetRelayUserID(42).
 		SaveX(ctx)
 
-	_, err := svc.DisableRelayUserForCandidate(ctx, DisableCandidateRequest{
+	_, err = svc.DisableRelayUserForCandidate(ctx, DisableCandidateRequest{
 		SourceID:          source.ID,
 		UserID:            user.ID,
 		ConfirmEmail:      "alice@example.com",

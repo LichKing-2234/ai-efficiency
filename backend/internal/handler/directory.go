@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/internal/auth"
@@ -21,6 +22,7 @@ type DirectoryAdminService interface {
 	DeleteSource(ctx context.Context, id int) error
 	ValidateSource(ctx context.Context, sourceID int) ([]directorysync.ValidationIssue, error)
 	RunSource(ctx context.Context, sourceID int, mode, trigger string) (*ent.DirectorySyncRun, error)
+	ExecuteRun(ctx context.Context, runID int) (*ent.DirectorySyncRun, error)
 	GetRun(ctx context.Context, runID int) (*ent.DirectorySyncRun, error)
 	ListRuns(ctx context.Context, sourceID int) ([]*ent.DirectorySyncRun, error)
 	ListDepartments(ctx context.Context, sourceID int, q string) ([]*ent.DirectoryDepartment, error)
@@ -153,6 +155,7 @@ func (h *DirectoryHandler) PreviewSource(c *gin.Context) {
 		writeDirectoryError(c, err)
 		return
 	}
+	h.executeRunAsync(run.ID)
 	pkg.Created(c, run)
 }
 
@@ -174,7 +177,16 @@ func (h *DirectoryHandler) StartRun(c *gin.Context) {
 		writeDirectoryError(c, err)
 		return
 	}
+	h.executeRunAsync(run.ID)
 	pkg.Created(c, run)
+}
+
+func (h *DirectoryHandler) executeRunAsync(runID int) {
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+		defer cancel()
+		_, _ = h.service.ExecuteRun(ctx, runID)
+	}()
 }
 
 func (h *DirectoryHandler) ListRuns(c *gin.Context) {

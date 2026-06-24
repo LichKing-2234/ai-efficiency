@@ -208,7 +208,7 @@ func (s *Service) RunSource(ctx context.Context, sourceID int, mode, trigger str
 	if err != nil {
 		return nil, err
 	}
-	return s.ExecuteRun(ctx, run.ID)
+	return run, nil
 }
 
 func (s *Service) ExecuteRun(ctx context.Context, runID int) (*ent.DirectorySyncRun, error) {
@@ -749,7 +749,11 @@ func (s *Service) runScheduledSources(ctx context.Context) {
 			defer s.unmarkSourceRunning(sourceID)
 			runCtx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 			defer cancel()
-			_, _ = s.RunSource(runCtx, sourceID, "apply", "schedule")
+			run, err := s.RunSource(runCtx, sourceID, "apply", "schedule")
+			if err != nil {
+				return
+			}
+			_, _ = s.ExecuteRun(runCtx, run.ID)
 		}(source.ID)
 	}
 }

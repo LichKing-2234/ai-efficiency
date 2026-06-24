@@ -45,6 +45,28 @@
 
 **Follow-up Status (2026-06-24, warning explanation UX):** Complete. Successful preview/apply runs with warnings now show user-oriented skipped-record explanations grouped by warning reason; targeted tests, related regressions, frontend full tests, build, diff hygiene, safety scan, dev rebuild, and localhost page verification have passed.
 
+**Follow-up Status (2026-06-24, async run progress):** Complete. Preview/apply APIs now return queued runs immediately, backend executes runs asynchronously, and the frontend polls progress with immediate feedback before showing the final grouped warning result.
+
+## 2026-06-24 Follow-up: Directory Async Run Progress
+
+- [x] Confirm current spec already defines asynchronous preview/apply runs with frontend polling.
+- [x] Confirm current implementation drift: `RunSource` created and executed the run inside the request before returning.
+- [x] Identify existing progress patterns: PR sync job polling and admin subscription job polling.
+- [x] Add failing backend tests for queued run creation plus explicit `ExecuteRun`.
+- [x] Implement backend run creation and background handler/scheduler execution.
+- [x] Add failing frontend tests for preview/apply progress polling.
+- [x] Implement frontend queued/running progress display and run polling.
+- [x] Verify `cd backend && go test ./internal/directorysync`.
+- [x] Verify `cd backend && go test ./internal/handler -run 'TestDirectoryHandlerPreviewReturnsQueuedRun|TestDirectoryHandlerStartRunReturnsQueuedRun'`.
+- [x] Verify `cd frontend && pnpm test -- directory-sync-settings`.
+- [x] Verify `cd frontend && pnpm test -- directory-sync-settings directory-offboarding-view settings-view router`.
+- [x] Verify `cd backend && go test ./...`.
+- [x] Verify `cd frontend && pnpm test`.
+- [x] Verify `cd frontend && pnpm build`.
+- [x] Verify `git diff --check`.
+- [x] Run a diff safety scan for real company domains, internal URLs, tokens, API keys, and real employee data.
+- [x] Rebuild the dev backend image and verify localhost shows immediate progress plus final grouped warning reasons.
+
 ## 2026-06-24 Follow-up: Directory Warning Explanation UX
 
 - [x] Confirm warning semantics from current code: invalid member emails and duplicate member emails are skipped while the run remains successful.
