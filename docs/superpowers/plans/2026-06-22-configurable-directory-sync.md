@@ -43,6 +43,21 @@
 
 **Follow-up Status (2026-06-23, run result UX):** Complete. Successful preview/apply runs now show localized success summaries with department, member, and warning counts; targeted tests, related regressions, frontend full tests, build, diff hygiene, safety scan, dev rebuild, and localhost page verification have passed.
 
+**Follow-up Status (2026-06-24, warning explanation UX):** Complete. Successful preview/apply runs with warnings now show user-oriented skipped-record explanations grouped by warning reason; targeted tests, related regressions, frontend full tests, build, diff hygiene, safety scan, dev rebuild, and localhost page verification have passed.
+
+## 2026-06-24 Follow-up: Directory Warning Explanation UX
+
+- [x] Confirm warning semantics from current code: invalid member emails and duplicate member emails are skipped while the run remains successful.
+- [x] Add failing frontend tests for user-oriented skipped-record copy and warning reason aggregation.
+- [x] Render warning reasons as localized skipped-record summaries with guidance for duplicate and invalid emails.
+- [x] Verify `cd frontend && pnpm test -- directory-sync-settings`.
+- [x] Verify `cd frontend && pnpm test -- directory-sync-settings directory-offboarding-view settings-view router`.
+- [x] Verify `cd frontend && pnpm test`.
+- [x] Verify `cd frontend && pnpm build`.
+- [x] Verify `git diff --check`.
+- [x] Run a diff safety scan for real company domains, internal URLs, tokens, API keys, and real employee data.
+- [x] Rebuild the dev backend image and verify the localhost page shows grouped warning reasons in Chinese.
+
 ## 2026-06-23 Follow-up: Directory Run Result Feedback
 
 - [x] Reproduce that preview/apply API calls can complete with warnings while the page only shows raw `completed_with_warnings` status.

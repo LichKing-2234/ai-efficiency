@@ -544,6 +544,12 @@ export interface DirectoryValidationResponse {
   issues: DirectoryValidationIssue[]
 }
 
+export interface DirectorySyncWarning {
+  code: string
+  message?: string
+  step_id?: string
+}
+
 export interface DirectorySyncRun {
   id: number
   source_id: number
@@ -554,6 +560,7 @@ export interface DirectorySyncRun {
   department_count?: number
   member_count?: number
   warning_count?: number
+  warnings?: DirectorySyncWarning[]
   error_message?: string | null
   created_at?: string
   updated_at?: string

@@ -18,6 +18,10 @@ Object.assign(navigator, {
   },
 })
 
+function warnings(code: string, count: number) {
+  return Array.from({ length: count }, () => ({ code, message: code, step_id: 'members' }))
+}
+
 async function mountDirectorySyncSettings() {
   const api = await import('@/api/directory') as any
   api.listDirectorySources.mockResolvedValue({
@@ -181,6 +185,7 @@ auth:
           department_count: 184,
           member_count: 631,
           warning_count: 3759,
+          warnings: [...warnings('duplicate_member_email', 3758), ...warnings('invalid_member_email', 1)],
         },
       },
     })
@@ -193,17 +198,22 @@ auth:
           department_count: 184,
           member_count: 631,
           warning_count: 3759,
+          warnings: [...warnings('duplicate_member_email', 3758), ...warnings('invalid_member_email', 1)],
         },
       },
     })
 
     await wrapper.get('[data-testid="directory-preview"]').trigger('click')
     await flushPromises()
-    expect(wrapper.text()).toContain('Preview completed with warnings: 184 departments, 631 members, 3759 warnings')
+    expect(wrapper.text()).toContain('Preview completed: kept 631 valid members, skipped 3759 records; 184 departments.')
+    expect(wrapper.text()).toContain('Skipped record reasons')
+    expect(wrapper.text()).toContain('Duplicate email: 3758 records')
+    expect(wrapper.text()).toContain('Missing or invalid email: 1 record')
 
     await wrapper.get('[data-testid="directory-run-now"]').trigger('click')
     await flushPromises()
-    expect(wrapper.text()).toContain('Run completed with warnings: 184 departments, 631 members, 3759 warnings')
+    expect(wrapper.text()).toContain('Run completed: kept 631 valid members, skipped 3759 records; 184 departments.')
+    expect(wrapper.text()).toContain('Duplicate email: 3758 records')
   })
 
   it('shows localized completed-with-warnings run counts in Chinese', async () => {
@@ -218,6 +228,7 @@ auth:
           department_count: 184,
           member_count: 631,
           warning_count: 3759,
+          warnings: [...warnings('duplicate_member_email', 3758), ...warnings('invalid_member_email', 1)],
         },
       },
     })
@@ -230,17 +241,23 @@ auth:
           department_count: 184,
           member_count: 631,
           warning_count: 3759,
+          warnings: [...warnings('duplicate_member_email', 3758), ...warnings('invalid_member_email', 1)],
         },
       },
     })
 
     await wrapper.get('[data-testid="directory-preview"]').trigger('click')
     await flushPromises()
-    expect(wrapper.text()).toContain('预览完成但有警告：184 个部门，631 个成员，3759 个警告')
+    expect(wrapper.text()).toContain('预览已完成：已保留 631 个有效成员，跳过 3759 条记录；部门 184 个。')
+    expect(wrapper.text()).toContain('跳过原因')
+    expect(wrapper.text()).toContain('重复邮箱：3758 条')
+    expect(wrapper.text()).toContain('缺失或无效邮箱：1 条')
+    expect(wrapper.text()).toContain('通常表示同一成员从多个部门结果重复返回')
 
     await wrapper.get('[data-testid="directory-run-now"]').trigger('click')
     await flushPromises()
-    expect(wrapper.text()).toContain('运行完成但有警告：184 个部门，631 个成员，3759 个警告')
+    expect(wrapper.text()).toContain('运行已完成：已保留 631 个有效成员，跳过 3759 条记录；部门 184 个。')
+    expect(wrapper.text()).toContain('重复邮箱：3758 条')
   })
 
   it('saves, validates, previews, and runs a directory source', async () => {

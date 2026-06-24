@@ -25,6 +25,7 @@ const message = ref('')
 const error = ref('')
 const validationIssues = ref<DirectoryValidationIssue[]>([])
 const aiPromptContext = ref('')
+const runWarningSummaries = ref<Array<{ code: string; count: number; labelKey: MessageKey; helpKey: MessageKey }>>([])
 const form = ref<DirectorySourceRequest>({
   name: '',
   description: '',
@@ -189,6 +190,7 @@ function clearFeedback() {
   message.value = ''
   error.value = ''
   validationIssues.value = []
+  runWarningSummaries.value = []
 }
 
 function apiErrorMessage(e: any, fallback: string) {
@@ -203,9 +205,52 @@ function runStats(run: DirectorySyncRun | undefined) {
   }
 }
 
+const warningCopy: Record<string, { labelKey: MessageKey; helpKey: MessageKey }> = {
+  duplicate_member_email: {
+    labelKey: 'directorySync.warningDuplicateEmail',
+    helpKey: 'directorySync.warningDuplicateEmailHelp',
+  },
+  invalid_member_email: {
+    labelKey: 'directorySync.warningInvalidEmail',
+    helpKey: 'directorySync.warningInvalidEmailHelp',
+  },
+  unknown: {
+    labelKey: 'directorySync.warningOther',
+    helpKey: 'directorySync.warningOtherHelp',
+  },
+}
+
+function summarizeWarnings(run: DirectorySyncRun | undefined) {
+  const counts = new Map<string, number>()
+  for (const warning of run?.warnings ?? []) {
+    const code = warningCopy[warning.code] ? warning.code : 'unknown'
+    counts.set(code, (counts.get(code) ?? 0) + 1)
+  }
+
+  const knownCount = Array.from(counts.values()).reduce((sum, count) => sum + count, 0)
+  const totalCount = run?.warning_count ?? knownCount
+  const unlistedCount = totalCount - knownCount
+  if (unlistedCount > 0) {
+    counts.set('unknown', (counts.get('unknown') ?? 0) + unlistedCount)
+  }
+
+  return Array.from(counts.entries())
+    .filter(([, count]) => count > 0)
+    .map(([code, count]) => ({
+      code,
+      count,
+      ...warningCopy[code],
+    }))
+}
+
+function warningRecordUnit(count: number) {
+  return t(count === 1 ? 'directorySync.warningRecordSingular' : 'directorySync.warningRecordPlural')
+}
+
 function showRunResult(run: DirectorySyncRun | undefined, action: 'preview' | 'apply') {
   const status = run?.status
   if (status === 'completed_with_warnings') {
+    runWarningSummaries.value = summarizeWarnings(run)
     message.value = t(action === 'preview' ? 'directorySync.previewCompletedWithWarnings' : 'directorySync.applyCompletedWithWarnings', runStats(run))
     return
   }
@@ -459,6 +504,15 @@ steps:
 
         <div v-if="message" class="rounded-md bg-green-50 p-3 text-sm text-green-700">{{ message }}</div>
         <div v-if="error" class="rounded-md bg-red-50 p-3 text-sm text-red-700">{{ error }}</div>
+        <div v-if="runWarningSummaries.length > 0" class="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+          <p class="font-medium">{{ t('directorySync.warningDetailsTitle') }}</p>
+          <ul class="mt-2 space-y-2">
+            <li v-for="summary in runWarningSummaries" :key="summary.code">
+              <p class="font-medium">{{ t('directorySync.warningDetailCount', { label: t(summary.labelKey), count: summary.count, unit: warningRecordUnit(summary.count) }) }}</p>
+              <p class="text-xs leading-5 text-amber-800">{{ t(summary.helpKey) }}</p>
+            </li>
+          </ul>
+        </div>
         <div v-if="validationIssues.length > 0" class="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
           <p class="font-medium">{{ t('directorySync.validationIssueDetails') }}</p>
           <ul class="mt-2 space-y-1">
