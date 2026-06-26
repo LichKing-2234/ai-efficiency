@@ -2,7 +2,6 @@ package auth
 
 import (
 	"context"
-	"errors"
 	"testing"
 	"time"
 
@@ -164,7 +163,7 @@ func TestSSOProviderAuthenticateInvalidCredentials(t *testing.T) {
 	}
 }
 
-func TestSSOProviderAuthenticateCreatesMissingRelayUser(t *testing.T) {
+func TestSSOProviderAuthenticateDoesNotCreateMissingRelayUser(t *testing.T) {
 	mock := &mockRelayProvider{authErr: relay.ErrInvalidCredentials}
 	p := NewSSOProvider(mock, zap.NewNop())
 
@@ -172,29 +171,19 @@ func TestSSOProviderAuthenticateCreatesMissingRelayUser(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if info == nil {
-		t.Fatal("expected provisioned UserInfo")
+	if info != nil {
+		t.Fatalf("expected nil UserInfo for missing relay user, got %+v", info)
 	}
-	if info.Username != "alice" || info.Email != "alice@example.com" || info.AuthSource != "relay_sso" {
-		t.Fatalf("unexpected user info: %+v", info)
+	if len(mock.createUserCalls) != 0 {
+		t.Fatalf("expected SSO not to create relay user, got %+v", mock.createUserCalls)
 	}
-	if info.RelayUserID == nil || *info.RelayUserID != 77 {
-		t.Fatalf("RelayUserID = %v, want 77", info.RelayUserID)
-	}
-	if info.RelayAuthPassword != "test-password" {
-		t.Fatal("expected SSO password to be stored for relay JWT writes")
-	}
-	if len(mock.createUserCalls) != 1 {
-		t.Fatalf("expected one CreateUser call, got %+v", mock.createUserCalls)
-	}
-	req := mock.createUserCalls[0]
-	if req.Username != "alice" || req.Email != "alice@example.com" || req.Password != "test-password" {
-		t.Fatalf("unexpected CreateUser request: %+v", req)
+	if len(mock.findByEmailCalls) != 0 || len(mock.findByUsernameCalls) != 0 {
+		t.Fatalf("expected SSO not to lookup missing relay user, email calls=%v username calls=%v", mock.findByEmailCalls, mock.findByUsernameCalls)
 	}
 }
 
-func TestSSOProviderAuthenticateReturnsNilWhenMissingRelayUserCreateFails(t *testing.T) {
-	mock := &mockRelayProvider{authErr: relay.ErrInvalidCredentials, createUserErr: errors.New("create failed")}
+func TestSSOProviderAuthenticateInvalidCredentialsDoesNotProvision(t *testing.T) {
+	mock := &mockRelayProvider{authErr: relay.ErrInvalidCredentials, createUserErr: context.Canceled}
 	p := NewSSOProvider(mock, zap.NewNop())
 
 	info, err := p.Authenticate(context.Background(), "alice@example.com", "test-password")
@@ -202,7 +191,10 @@ func TestSSOProviderAuthenticateReturnsNilWhenMissingRelayUserCreateFails(t *tes
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if info != nil {
-		t.Fatalf("expected nil UserInfo when relay self-provisioning fails, got %+v", info)
+		t.Fatalf("expected nil UserInfo for invalid SSO credentials, got %+v", info)
+	}
+	if len(mock.createUserCalls) != 0 {
+		t.Fatalf("expected SSO not to call CreateUser, got %+v", mock.createUserCalls)
 	}
 }
 

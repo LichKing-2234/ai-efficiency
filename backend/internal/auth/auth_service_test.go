@@ -290,47 +290,32 @@ func TestLoginSSOPersistsEncryptedRelayAuthPassword(t *testing.T) {
 	}
 }
 
-func TestLoginSSOCreatesMissingRelayAndLocalUser(t *testing.T) {
+func TestLoginSSODoesNotCreateMissingRelayOrLocalUser(t *testing.T) {
 	client := setupAuthEntClient(t)
 	encryptionKey := "0000000000000000000000000000000000000000000000000000000000000000"
 	svc := NewService(client, "test-secret-key-for-unit-tests!!", 7200, 604800, zap.NewNop(), encryptionKey)
 	relayMock := &mockRelayProvider{authErr: relay.ErrInvalidCredentials}
 	svc.RegisterProvider(NewSSOProvider(relayMock, zap.NewNop()))
 
-	_, info, err := svc.Login(context.Background(), LoginRequest{
+	tokens, info, err := svc.Login(context.Background(), LoginRequest{
 		Username: "alice@example.com",
 		Password: "test-password",
 		Source:   "sso",
 	})
-	if err != nil {
-		t.Fatalf("Login error: %v", err)
+	if err == nil {
+		t.Fatal("expected SSO login to fail for missing relay user")
 	}
-	if info == nil || info.RelayUserID == nil || *info.RelayUserID != 77 {
-		t.Fatalf("unexpected user info: %+v", info)
+	if !strings.Contains(err.Error(), "authentication failed") {
+		t.Fatalf("Login error = %v, want authentication failure", err)
 	}
-	if len(relayMock.createUserCalls) != 1 {
-		t.Fatalf("expected relay user creation, got %+v", relayMock.createUserCalls)
+	if tokens != nil || info != nil {
+		t.Fatalf("expected no tokens or user info, got tokens=%+v info=%+v", tokens, info)
 	}
-	if relayMock.createUserCalls[0].Password != "test-password" {
-		t.Fatal("expected SSO password to provision missing relay user")
+	if len(relayMock.createUserCalls) != 0 {
+		t.Fatalf("expected SSO not to create relay user, got %+v", relayMock.createUserCalls)
 	}
-
-	u, err := client.User.Query().Where(entuser.EmailEQ("alice@example.com")).Only(context.Background())
-	if err != nil {
-		t.Fatalf("query user: %v", err)
-	}
-	if u.RelayUserID == nil || *u.RelayUserID != 77 {
-		t.Fatalf("relay_user_id = %v, want 77", u.RelayUserID)
-	}
-	if u.RelayAuthPassword == nil || *u.RelayAuthPassword == "" {
-		t.Fatal("expected encrypted relay auth password to be stored")
-	}
-	decrypted, err := svc.DecryptRelayAuthPassword(*u.RelayAuthPassword)
-	if err != nil {
-		t.Fatalf("DecryptRelayAuthPassword error: %v", err)
-	}
-	if decrypted != "test-password" {
-		t.Fatalf("stored relay password = %q, want test-password", decrypted)
+	if _, err := client.User.Query().Where(entuser.EmailEQ("alice@example.com")).Only(context.Background()); !ent.IsNotFound(err) {
+		t.Fatalf("expected no local user to be created, err=%v", err)
 	}
 }
 
