@@ -15,8 +15,9 @@ import (
 )
 
 type fakeDirectoryService struct {
-	validateIssues []directorysync.ValidationIssue
-	disableReq     directorysync.DisableCandidateRequest
+	validateIssues      []directorysync.ValidationIssue
+	disableReq          directorysync.DisableCandidateRequest
+	offboardingSourceID int
 }
 
 func (f *fakeDirectoryService) ListSources(context.Context) ([]*ent.DirectorySource, error) {
@@ -61,7 +62,8 @@ func (f *fakeDirectoryService) ListMembers(context.Context, int, string) ([]*ent
 	return []*ent.DirectoryMember{{ID: 5, SourceID: 1, EmailNormalized: "alice@example.com"}}, nil
 }
 
-func (f *fakeDirectoryService) ListOffboardingCandidates(context.Context, int, string) ([]directorysync.OffboardingCandidate, error) {
+func (f *fakeDirectoryService) ListOffboardingCandidates(_ context.Context, sourceID int, _ string) ([]directorysync.OffboardingCandidate, error) {
+	f.offboardingSourceID = sourceID
 	return []directorysync.OffboardingCandidate{{
 		UserID:      7,
 		Username:    "bob",
@@ -166,6 +168,25 @@ func TestDirectoryHandlerDisableCandidateRequiresConfirmation(t *testing.T) {
 	}
 }
 
+func TestDirectoryHandlerListOffboardingCandidatesUsesCurrentSourceByDefault(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	svc := &fakeDirectoryService{}
+	router := gin.New()
+	h := NewDirectoryHandler(svc)
+	router.GET("/api/v1/admin/directory/offboarding-candidates", h.ListOffboardingCandidates)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/directory/offboarding-candidates", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	if svc.offboardingSourceID != 0 {
+		t.Fatalf("source id = %d, want 0 for current source fallback", svc.offboardingSourceID)
+	}
+}
+
 func TestDirectoryHandlerDisableCandidate(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	svc := &fakeDirectoryService{}
@@ -182,6 +203,26 @@ func TestDirectoryHandlerDisableCandidate(t *testing.T) {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
 	}
 	if svc.disableReq.SourceID != 1 || svc.disableReq.UserID != 7 || svc.disableReq.ConfirmEmail != "bob@example.org" {
+		t.Fatalf("disable request = %+v", svc.disableReq)
+	}
+}
+
+func TestDirectoryHandlerDisableCandidateUsesCurrentSourceByDefault(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	svc := &fakeDirectoryService{}
+	router := gin.New()
+	h := NewDirectoryHandler(svc)
+	router.POST("/api/v1/admin/directory/offboarding-candidates/:user_id/disable-relay-user", h.DisableRelayUser)
+
+	body := bytes.NewBufferString(`{"confirm_email":"bob@example.org","reason":"missing_from_latest_full_company_directory"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/directory/offboarding-candidates/7/disable-relay-user", body)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if svc.disableReq.SourceID != 0 || svc.disableReq.UserID != 7 || svc.disableReq.ConfirmEmail != "bob@example.org" {
 		t.Fatalf("disable request = %+v", svc.disableReq)
 	}
 }

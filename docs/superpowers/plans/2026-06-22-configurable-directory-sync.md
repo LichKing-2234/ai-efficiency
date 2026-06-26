@@ -57,6 +57,27 @@
 
 **Follow-up Status (2026-06-24, organization representatives):** Complete. DSL metadata mapping, backend representative aggregation, frontend representative badges, local apply verification, full backend/frontend tests, build, browser verification, diff hygiene, and safety scan have passed.
 
+**Follow-up Status (2026-06-26, code review hardening):** Complete. Review hardening fixes, targeted regressions, full backend tests, frontend full tests, build, diff hygiene, and safety scan have passed.
+
+## 2026-06-26 Follow-up: Code Review Hardening
+
+- [x] Verify review findings against the current code before implementing fixes.
+- [x] Add failing DSL validation tests for literal credentials in request headers, query parameters, and URL query strings.
+- [x] Reject literal credentials in DSL request fields while preserving `auth.header` / `auth.credential_ref`.
+- [x] Add failing service tests for overlapping apply run creation and apply fact/source-pointer atomicity.
+- [x] Reject queued/running overlapping apply runs for the same source and commit apply facts, run completion, and source pointers atomically.
+- [x] Add failing current-snapshot tests for latest successful apply ordering and offboarding current-source fallback.
+- [x] Centralize current directory source resolution and remove source-id defaulting from the offboarding UI.
+- [x] Update `docs/superpowers/specs/2026-06-22-configurable-directory-sync-design.md`, `docs/architecture.md`, and `AGENTS.md`.
+- [x] Verify `cd backend && go test ./internal/directorysync`.
+- [x] Verify `cd backend && go test ./internal/handler -run 'TestDirectoryHandler|TestAdminUsers'`.
+- [x] Verify `cd backend && go test ./internal/adminsubscription`.
+- [x] Verify `cd backend && go test ./...`.
+- [x] Verify `cd frontend && pnpm test`.
+- [x] Verify `cd frontend && pnpm build`.
+- [x] Verify `git diff --check`.
+- [x] Run a diff safety scan for real company domains, internal URLs, tokens, API keys, and real employee data.
+
 ## 2026-06-24 Follow-up: Organization Representatives
 
 - [x] Inspect the live directory API shape using structural/redacted evidence only.

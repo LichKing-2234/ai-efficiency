@@ -141,6 +141,9 @@ func ValidateDSL(ctx context.Context, cfg *DSL, credentialExists func(context.Co
 		if err := validateHTTPSURL(step.Request.URL); err != nil {
 			add(prefix+".request.url", err.Error())
 		}
+		for _, issue := range validateRequestSecrets(prefix+".request", step.Request) {
+			add(issue.Path, issue.Message)
+		}
 		if err := validateJSONPath(step.Extract.Items); err != nil {
 			add(prefix+".extract.items", err.Error())
 		}
@@ -179,4 +182,98 @@ func validateHTTPSURL(raw string) error {
 		return fmt.Errorf("url host is required")
 	}
 	return nil
+}
+
+func validateRequestSecrets(prefix string, request RequestConfig) []ValidationIssue {
+	var issues []ValidationIssue
+	add := func(path, message string) {
+		issues = append(issues, ValidationIssue{Path: path, Message: message})
+	}
+
+	if parsed, err := url.Parse(strings.TrimSpace(request.URL)); err == nil {
+		for key, values := range parsed.Query() {
+			if isSensitiveCredentialKey(key) {
+				add(prefix+".url", "request url must not include credential query parameters; use auth.credential_ref")
+				break
+			}
+			for _, value := range values {
+				if looksLikeLiteralSecret(value) {
+					add(prefix+".url", "request url must not include literal secrets; use auth.credential_ref")
+					break
+				}
+			}
+		}
+	}
+
+	for key, value := range request.Headers {
+		path := prefix + ".headers." + key
+		if isSensitiveCredentialKey(key) {
+			add(path, "request headers must not include credential values; use auth.header with auth.credential_ref")
+			continue
+		}
+		if looksLikeLiteralSecret(value) {
+			add(path, "request header value looks like a literal secret; use auth.credential_ref")
+		}
+	}
+
+	for key, value := range request.Query {
+		path := prefix + ".query." + key
+		if isSensitiveCredentialKey(key) {
+			add(path, "request query must not include credential values; use auth.credential_ref")
+			continue
+		}
+		if looksLikeLiteralSecret(value) {
+			add(path, "request query value looks like a literal secret; use auth.credential_ref")
+		}
+	}
+	return issues
+}
+
+func isSensitiveCredentialKey(key string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(key))
+	normalized = strings.ReplaceAll(normalized, "_", "-")
+	sensitiveExact := map[string]struct{}{
+		"authorization": {},
+		"cookie":        {},
+		"set-cookie":    {},
+		"key":           {},
+		"api-key":       {},
+		"apikey":        {},
+		"access-token":  {},
+		"refresh-token": {},
+	}
+	if _, ok := sensitiveExact[normalized]; ok {
+		return true
+	}
+	for _, marker := range []string{"token", "secret", "password", "credential"} {
+		if strings.Contains(normalized, marker) {
+			return true
+		}
+	}
+	return strings.HasSuffix(normalized, "-key")
+}
+
+func looksLikeLiteralSecret(value string) bool {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return false
+	}
+	lower := strings.ToLower(trimmed)
+	for _, prefix := range []string{"bearer ", "basic ", "token ", "apikey ", "api-key "} {
+		if strings.HasPrefix(lower, prefix) {
+			return true
+		}
+	}
+	if strings.Contains(trimmed, "{{") {
+		return false
+	}
+	if strings.HasPrefix(trimmed, "eyJ") && strings.Count(trimmed, ".") >= 2 {
+		return true
+	}
+	for _, prefix := range []string{"sk-", "ghp_", "glpat-", "xoxb-", "xoxp-"} {
+		if strings.HasPrefix(trimmed, prefix) {
+			return true
+		}
+	}
+	return false
 }

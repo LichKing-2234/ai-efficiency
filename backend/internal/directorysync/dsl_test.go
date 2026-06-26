@@ -115,6 +115,26 @@ func TestValidateDSLRejectsUnsupportedFeatures(t *testing.T) {
 			raw:       strings.Replace(validDirectoryDSL, "        name: $.name\n", "", 1),
 			wantIssue: "steps[0].map.department.name",
 		},
+		{
+			name:      "literal authorization header",
+			raw:       strings.Replace(validDirectoryDSL, "      url: https://directory.example.com/api/departments\n", "      url: https://directory.example.com/api/departments\n      headers:\n        Authorization: Bearer test-token\n", 1),
+			wantIssue: "steps[0].request.headers.Authorization",
+		},
+		{
+			name:      "sensitive query parameter",
+			raw:       strings.Replace(validDirectoryDSL, "      url: https://directory.example.com/api/departments\n", "      url: https://directory.example.com/api/departments\n      query:\n        access_token: test-token\n", 1),
+			wantIssue: "steps[0].request.query.access_token",
+		},
+		{
+			name:      "secret-looking url query",
+			raw:       strings.Replace(validDirectoryDSL, "https://directory.example.com/api/departments", "https://directory.example.com/api/departments?token=test-token", 1),
+			wantIssue: "steps[0].request.url",
+		},
+		{
+			name:      "templated bearer header",
+			raw:       strings.Replace(validDirectoryDSL, "      url: https://directory.example.com/api/departments\n", "      url: https://directory.example.com/api/departments\n      headers:\n        X-Directory-Session: Bearer {{ item.token }}\n", 1),
+			wantIssue: "steps[0].request.headers.X-Directory-Session",
+		},
 	}
 
 	for _, tt := range tests {

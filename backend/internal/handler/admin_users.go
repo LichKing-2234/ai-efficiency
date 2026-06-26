@@ -13,11 +13,11 @@ import (
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/ent/directorydepartment"
 	"github.com/ai-efficiency/backend/ent/directorymember"
-	"github.com/ai-efficiency/backend/ent/directorysource"
 	"github.com/ai-efficiency/backend/ent/predicate"
 	"github.com/ai-efficiency/backend/ent/relayprovider"
 	entuser "github.com/ai-efficiency/backend/ent/user"
 	"github.com/ai-efficiency/backend/internal/adminsubscription"
+	"github.com/ai-efficiency/backend/internal/directorysync"
 	"github.com/ai-efficiency/backend/internal/directorytree"
 	"github.com/ai-efficiency/backend/internal/pkg"
 	"github.com/ai-efficiency/backend/internal/relay"
@@ -1108,20 +1108,7 @@ func (h *AdminUsersHandler) departmentSubtreeExternalIDs(ctx context.Context, so
 }
 
 func (h *AdminUsersHandler) currentDirectorySourceID(ctx context.Context) (int, bool, error) {
-	source, err := h.entClient.DirectorySource.Query().
-		Where(
-			directorysource.DeletedEQ(false),
-			directorysource.LastSuccessfulRunIDNotNil(),
-		).
-		Order(ent.Desc(directorysource.FieldUpdatedAt), ent.Desc(directorysource.FieldID)).
-		First(ctx)
-	if ent.IsNotFound(err) {
-		return 0, false, nil
-	}
-	if err != nil {
-		return 0, false, fmt.Errorf("resolve current directory source: %w", err)
-	}
-	return source.ID, true, nil
+	return directorysync.CurrentSourceID(ctx, h.entClient)
 }
 
 func (h *AdminUsersHandler) departmentsForUsers(ctx context.Context, users []*ent.User) (map[int]*adminUserDepartmentRow, error) {

@@ -114,8 +114,12 @@ func (s *Service) ListSources(ctx context.Context) ([]*ent.DirectorySource, erro
 
 func (s *Service) CreateSource(ctx context.Context, input SourceInput) (*ent.DirectorySource, error) {
 	input = normalizeSourceInput(input)
-	if _, err := ParseDSL(input.DSL); err != nil {
+	cfg, err := ParseDSL(input.DSL)
+	if err != nil {
 		return nil, err
+	}
+	if issues := s.validateConfig(ctx, cfg); len(issues) > 0 {
+		return nil, &ValidationError{Message: validationIssuesMessage(issues)}
 	}
 	return s.client.DirectorySource.Create().
 		SetName(input.Name).
@@ -131,8 +135,12 @@ func (s *Service) CreateSource(ctx context.Context, input SourceInput) (*ent.Dir
 
 func (s *Service) UpdateSource(ctx context.Context, id int, input SourceInput) (*ent.DirectorySource, error) {
 	input = normalizeSourceInput(input)
-	if _, err := ParseDSL(input.DSL); err != nil {
+	cfg, err := ParseDSL(input.DSL)
+	if err != nil {
 		return nil, err
+	}
+	if issues := s.validateConfig(ctx, cfg); len(issues) > 0 {
+		return nil, &ValidationError{Message: validationIssuesMessage(issues)}
 	}
 	return s.client.DirectorySource.UpdateOneID(id).
 		SetName(input.Name).
@@ -195,7 +203,37 @@ func (s *Service) RunSource(ctx context.Context, sourceID int, mode, trigger str
 	if trigger == "" {
 		trigger = "manual"
 	}
-	run, err := s.client.DirectorySyncRun.Create().
+	applyMode := directorysyncrun.Mode(mode) == directorysyncrun.ModeApply
+	if applyMode && !s.markSourceRunning(sourceID) {
+		return nil, &ConflictError{Message: "another full-company apply sync is already queued or running for this source"}
+	}
+	runCreated := false
+	defer func() {
+		if applyMode && !runCreated {
+			s.unmarkSourceRunning(sourceID)
+		}
+	}()
+	tx, err := s.client.Tx(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	if applyMode {
+		count, err := tx.DirectorySyncRun.Query().
+			Where(
+				directorysyncrun.SourceIDEQ(sourceID),
+				directorysyncrun.ModeEQ(directorysyncrun.ModeApply),
+				directorysyncrun.StatusIn(directorysyncrun.StatusQueued, directorysyncrun.StatusRunning),
+			).
+			Count(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if count > 0 {
+			return nil, &ConflictError{Message: "another full-company apply sync is already queued or running for this source"}
+		}
+	}
+	run, err := tx.DirectorySyncRun.Create().
 		SetSourceID(sourceID).
 		SetMode(directorysyncrun.Mode(mode)).
 		SetTrigger(directorysyncrun.Trigger(trigger)).
@@ -208,6 +246,10 @@ func (s *Service) RunSource(ctx context.Context, sourceID int, mode, trigger str
 	if err != nil {
 		return nil, err
 	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	runCreated = true
 	return run, nil
 }
 
@@ -215,6 +257,9 @@ func (s *Service) ExecuteRun(ctx context.Context, runID int) (*ent.DirectorySync
 	run, err := s.client.DirectorySyncRun.Get(ctx, runID)
 	if err != nil {
 		return nil, err
+	}
+	if run.Mode == directorysyncrun.ModeApply {
+		defer s.unmarkSourceRunning(run.SourceID)
 	}
 	source, err := s.client.DirectorySource.Get(ctx, run.SourceID)
 	if err != nil {
@@ -251,9 +296,11 @@ func (s *Service) ExecuteRun(ctx context.Context, runID int) (*ent.DirectorySync
 			Save(ctx); err != nil {
 			return nil, err
 		}
-		if err := s.replaceFacts(ctx, source.ID, run.ID, result); err != nil {
+		completed, err := s.completeApplyRun(ctx, run.ID, source.ID, result)
+		if err != nil {
 			return s.failRun(ctx, run.ID, "apply facts: "+err.Error())
 		}
+		return completed, nil
 	}
 	return s.completeRun(ctx, run.ID, source, result)
 }
@@ -348,6 +395,56 @@ func (s *Service) completeRun(ctx context.Context, runID int, source *ent.Direct
 	return run, nil
 }
 
+func (s *Service) completeApplyRun(ctx context.Context, runID, sourceID int, result *ExecutionResult) (*ent.DirectorySyncRun, error) {
+	tx, err := s.client.Tx(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+
+	if err := s.replaceFactsTx(ctx, tx, sourceID, runID, result); err != nil {
+		return nil, err
+	}
+	completedAt := s.now()
+	status := directorysyncrun.StatusCompleted
+	if len(result.Warnings) > 0 {
+		status = directorysyncrun.StatusCompletedWithWarnings
+	}
+	run, err := tx.DirectorySyncRun.UpdateOneID(runID).
+		SetPhase(directorysyncrun.PhaseCompleted).
+		SetCompletedAt(completedAt).
+		SetStatus(status).
+		SetHTTPRequestCount(result.HTTPRequestCount).
+		SetDepartmentCount(len(result.Departments)).
+		SetMemberCount(len(result.Members)).
+		SetWarningCount(len(result.Warnings)).
+		SetWarnings(warningsToMaps(result.Warnings)).
+		SetSummary(map[string]any{
+			"departments": len(result.Departments),
+			"members":     len(result.Members),
+			"warnings":    len(result.Warnings),
+		}).
+		SetPreviewDiff(map[string]any{
+			"departments": len(result.Departments),
+			"members":     len(result.Members),
+			"warnings":    len(result.Warnings),
+		}).
+		Save(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := tx.DirectorySource.UpdateOneID(sourceID).
+		SetLastRunID(run.ID).
+		SetLastSuccessfulRunID(run.ID).
+		Save(ctx); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return run, nil
+}
+
 func warningsToMaps(warnings []ExecutionWarning) []map[string]any {
 	out := make([]map[string]any, 0, len(warnings))
 	for _, warning := range warnings {
@@ -367,6 +464,13 @@ func (s *Service) replaceFacts(ctx context.Context, sourceID, runID int, result 
 	}
 	defer tx.Rollback()
 
+	if err := s.replaceFactsTx(ctx, tx, sourceID, runID, result); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (s *Service) replaceFactsTx(ctx context.Context, tx *ent.Tx, sourceID, runID int, result *ExecutionResult) error {
 	if _, err := tx.DirectoryDepartment.Delete().Where(directorydepartment.SourceIDEQ(sourceID)).Exec(ctx); err != nil {
 		return err
 	}
@@ -407,7 +511,7 @@ func (s *Service) replaceFacts(ctx context.Context, sourceID, runID int, result 
 			return err
 		}
 	}
-	return tx.Commit()
+	return nil
 }
 
 func (s *Service) GetRun(ctx context.Context, runID int) (*ent.DirectorySyncRun, error) {
@@ -460,6 +564,17 @@ type OffboardingCandidate struct {
 }
 
 func (s *Service) ListOffboardingCandidates(ctx context.Context, sourceID int, q string) ([]OffboardingCandidate, error) {
+	var ok bool
+	var err error
+	if sourceID <= 0 {
+		sourceID, ok, err = CurrentSourceID(ctx, s.client)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			return []OffboardingCandidate{}, nil
+		}
+	}
 	source, err := s.client.DirectorySource.Get(ctx, sourceID)
 	if err != nil {
 		return nil, err
@@ -560,6 +675,14 @@ func (s *Service) DisableRelayUserForCandidate(ctx context.Context, req DisableC
 	if u.RelayUserID == nil {
 		return nil, &ValidationError{Message: "user does not have relay_user_id"}
 	}
+	sourceID, ok, err := CurrentSourceID(ctx, s.client)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, &ConflictError{Message: "no successful full-company directory sync"}
+	}
+	req.SourceID = sourceID
 	source, err := s.client.DirectorySource.Get(ctx, req.SourceID)
 	if err != nil {
 		return nil, err
@@ -741,12 +864,11 @@ func (s *Service) runScheduledSources(ctx context.Context) {
 	}
 	now := s.now()
 	for _, source := range sources {
-		if !scheduleDue(source, now) || !s.markSourceRunning(source.ID) {
+		if !scheduleDue(source, now) {
 			continue
 		}
 		_, _ = s.client.DirectorySource.UpdateOneID(source.ID).SetLastScheduledAt(now).Save(ctx)
 		go func(sourceID int) {
-			defer s.unmarkSourceRunning(sourceID)
 			runCtx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 			defer cancel()
 			run, err := s.RunSource(runCtx, sourceID, "apply", "schedule")

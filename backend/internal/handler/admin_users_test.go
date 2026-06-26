@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ai-efficiency/backend/internal/pkg"
 	"github.com/gin-gonic/gin"
@@ -86,6 +87,7 @@ func seedAdminUsersDirectorySnapshot(t *testing.T, env *fullTestEnv, fixture adm
 		SetPhase("completed").
 		SetDepartmentCount(2).
 		SetMemberCount(2).
+		SetCompletedAt(time.Date(2026, 6, 22, 10, 0, 0, 0, time.UTC)).
 		Save(ctx)
 	if err != nil {
 		t.Fatalf("create directory run: %v", err)
@@ -158,6 +160,7 @@ func seedAdminUsersHierarchicalDirectorySnapshot(t *testing.T, env *fullTestEnv,
 		SetPhase("completed").
 		SetDepartmentCount(3).
 		SetMemberCount(3).
+		SetCompletedAt(time.Date(2026, 6, 22, 10, 0, 0, 0, time.UTC)).
 		Save(ctx)
 	if err != nil {
 		t.Fatalf("create directory run: %v", err)
@@ -231,6 +234,59 @@ func seedAdminUsersHierarchicalDirectorySnapshot(t *testing.T, env *fullTestEnv,
 		Save(ctx); err != nil {
 		t.Fatalf("create beta member: %v", err)
 	}
+}
+
+func seedAdminUsersSingleMemberDirectorySnapshot(t *testing.T, env *fullTestEnv, sourceName, departmentID, departmentName string, userID int, email string, completedAt time.Time) int {
+	t.Helper()
+	ctx := context.Background()
+	source, err := env.client.DirectorySource.Create().
+		SetName(sourceName).
+		SetDescription("Synthetic organization directory").
+		SetEnabled(true).
+		SetDsl("version: 1\nscope: full_company\nsteps: []\n").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create directory source: %v", err)
+	}
+	run, err := env.client.DirectorySyncRun.Create().
+		SetSourceID(source.ID).
+		SetMode("apply").
+		SetStatus("completed").
+		SetPhase("completed").
+		SetDepartmentCount(1).
+		SetMemberCount(1).
+		SetCompletedAt(completedAt).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create directory run: %v", err)
+	}
+	if _, err := env.client.DirectorySource.UpdateOneID(source.ID).
+		SetLastRunID(run.ID).
+		SetLastSuccessfulRunID(run.ID).
+		Save(ctx); err != nil {
+		t.Fatalf("update directory source run pointers: %v", err)
+	}
+	if _, err := env.client.DirectoryDepartment.Create().
+		SetSourceID(source.ID).
+		SetExternalID(departmentID).
+		SetName(departmentName).
+		SetPath(departmentName).
+		SetLastSeenRunID(run.ID).
+		Save(ctx); err != nil {
+		t.Fatalf("create department: %v", err)
+	}
+	if _, err := env.client.DirectoryMember.Create().
+		SetSourceID(source.ID).
+		SetExternalID("member-" + departmentID).
+		SetEmailNormalized(email).
+		SetDisplayName(email).
+		SetDepartmentExternalID(departmentID).
+		SetMatchedUserID(userID).
+		SetLastSeenRunID(run.ID).
+		Save(ctx); err != nil {
+		t.Fatalf("create member: %v", err)
+	}
+	return source.ID
 }
 
 func TestAdminUsersListSearchPaginationAndCiphertext(t *testing.T) {
@@ -325,6 +381,32 @@ func TestAdminUsersListIncludesDirectoryDepartment(t *testing.T) {
 	}
 	if department["external_id"] != "dept-alpha" || department["name"] != "Department Alpha" || department["path"] != "Department Alpha" {
 		t.Fatalf("department = %+v, want alpha department", department)
+	}
+}
+
+func TestAdminUsersListUsesLatestSuccessfulApplyRunAfterOlderSourceEdit(t *testing.T) {
+	t.Parallel()
+
+	env := setupFullTestEnv(t)
+	fixture := seedAdminUsersFixture(t, env)
+	oldSourceID := seedAdminUsersSingleMemberDirectorySnapshot(t, env, "Old Directory", "dept-old", "Department Old", fixture.aliceID, "alice@example.com", time.Date(2026, 6, 22, 9, 0, 0, 0, time.UTC))
+	seedAdminUsersSingleMemberDirectorySnapshot(t, env, "New Directory", "dept-new", "Department New", fixture.aliceID, "alice@example.com", time.Date(2026, 6, 22, 10, 0, 0, 0, time.UTC))
+	if _, err := env.client.DirectorySource.UpdateOneID(oldSourceID).SetDescription("Edited after latest sync").Save(context.Background()); err != nil {
+		t.Fatalf("update old source: %v", err)
+	}
+
+	w := doFullRequest(env, http.MethodGet, "/api/v1/admin/users?q=alice&page=1&page_size=20", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body=%s", w.Code, w.Body.String())
+	}
+	data := parseFullResponse(t, w)["data"].(map[string]interface{})
+	items := data["items"].([]interface{})
+	if len(items) != 1 {
+		t.Fatalf("items = %d, want 1", len(items))
+	}
+	department := items[0].(map[string]interface{})["department"].(map[string]interface{})
+	if department["external_id"] != "dept-new" || department["name"] != "Department New" {
+		t.Fatalf("department = %+v, want latest successful apply source", department)
 	}
 }
 

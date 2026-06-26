@@ -1,16 +1,14 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { computed, onMounted, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import AppLayout from '@/components/AppLayout.vue'
 import { disableDirectoryRelayUser, listDirectoryOffboardingCandidates } from '@/api/directory'
 import { useI18n } from '@/i18n'
 import type { DirectoryOffboardingCandidate } from '@/types'
 
 const route = useRoute()
-const router = useRouter()
 const { t } = useI18n()
 const candidates = ref<DirectoryOffboardingCandidate[]>([])
-const sourceId = ref<number>(Number(route.query.source_id || 1))
 const q = ref(typeof route.query.q === 'string' ? route.query.q : '')
 const confirmations = ref<Record<number, string>>({})
 const loading = ref(false)
@@ -21,15 +19,11 @@ const hasCandidates = computed(() => candidates.value.length > 0)
 
 onMounted(loadCandidates)
 
-watch(sourceId, () => {
-  void router.replace({ query: { ...route.query, source_id: String(sourceId.value || 1) } })
-})
-
 async function loadCandidates() {
   loading.value = true
   error.value = ''
   try {
-    const params = { source_id: sourceId.value || 1, q: q.value.trim() }
+    const params = { q: q.value.trim() }
     const res = await listDirectoryOffboardingCandidates(params)
     candidates.value = res.data.data?.items ?? []
   } catch (e: any) {
@@ -49,7 +43,6 @@ async function disableCandidate(candidate: DirectoryOffboardingCandidate) {
   error.value = ''
   try {
     await disableDirectoryRelayUser(candidate.user_id, {
-      source_id: sourceId.value || 1,
       confirm_email: confirmations.value[candidate.user_id].trim(),
       reason: 'missing_from_latest_full_company_directory',
     })
@@ -70,7 +63,6 @@ async function disableCandidate(candidate: DirectoryOffboardingCandidate) {
           <p class="text-sm text-gray-500">{{ t('directoryOffboarding.subtitle') }}</p>
         </div>
         <div class="flex flex-wrap gap-2">
-          <input v-model.number="sourceId" type="number" min="1" class="w-28 rounded-md border border-gray-300 px-3 py-2 text-sm" :aria-label="t('directoryOffboarding.sourceId')" />
           <input v-model="q" type="search" class="w-56 rounded-md border border-gray-300 px-3 py-2 text-sm" :placeholder="t('directoryOffboarding.searchPlaceholder')" />
           <button type="button" class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50" @click="loadCandidates">{{ t('adminUsers.search') }}</button>
         </div>

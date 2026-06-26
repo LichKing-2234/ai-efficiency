@@ -12,9 +12,9 @@ import (
 	"github.com/ai-efficiency/backend/ent/adminsubscriptionjob"
 	"github.com/ai-efficiency/backend/ent/directorydepartment"
 	"github.com/ai-efficiency/backend/ent/directorymember"
-	"github.com/ai-efficiency/backend/ent/directorysource"
 	"github.com/ai-efficiency/backend/ent/predicate"
 	entuser "github.com/ai-efficiency/backend/ent/user"
+	"github.com/ai-efficiency/backend/internal/directorysync"
 	"github.com/ai-efficiency/backend/internal/directorytree"
 )
 
@@ -386,20 +386,7 @@ func (s *Service) departmentSubtreeExternalIDs(ctx context.Context, sourceID int
 }
 
 func (s *Service) currentDirectorySourceID(ctx context.Context) (int, bool, error) {
-	source, err := s.client.DirectorySource.Query().
-		Where(
-			directorysource.DeletedEQ(false),
-			directorysource.LastSuccessfulRunIDNotNil(),
-		).
-		Order(ent.Desc(directorysource.FieldUpdatedAt), ent.Desc(directorysource.FieldID)).
-		First(ctx)
-	if ent.IsNotFound(err) {
-		return 0, false, nil
-	}
-	if err != nil {
-		return 0, false, fmt.Errorf("resolve current directory source: %w", err)
-	}
-	return source.ID, true, nil
+	return directorysync.CurrentSourceID(ctx, s.client)
 }
 
 func (s *Service) runTarget(ctx context.Context, job *ent.AdminSubscriptionJob, operator SubscriptionOperator, groupID int64, target TargetSnapshot) ResultRow {

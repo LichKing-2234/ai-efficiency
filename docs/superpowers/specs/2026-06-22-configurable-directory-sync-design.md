@@ -1,8 +1,8 @@
 # Configurable Directory Sync Design
 
-**Date:** 2026-06-22  
-**Status:** Approved design for implementation planning  
-**Scope:** `backend/internal/directorysync/`, `backend/ent/schema/`, `backend/internal/handler/`, `frontend/src/views/`, `frontend/src/components/settings/`, `frontend/src/api/`, `docs/architecture.md`  
+**Date:** 2026-06-22
+**Status:** Approved design for implementation planning
+**Scope:** `backend/internal/directorysync/`, `backend/ent/schema/`, `backend/internal/handler/`, `frontend/src/views/`, `frontend/src/components/settings/`, `frontend/src/api/`, `docs/architecture.md`
 **Related:**
 
 - [2026-03-24-oauth-cli-login-design.md](./2026-03-24-oauth-cli-login-design.md)
@@ -181,6 +181,10 @@ Fields:
 - `updated_at`
 
 The DSL stores credential references only. It must not store secret values.
+Real source configurations may contain the administrator's real HTTPS endpoint
+URLs, header names, query names, and response field paths when those are needed
+to call the directory API. Secret values still must stay in the encrypted
+credential store and be referenced only by `auth.credential_ref`.
 
 ### `directory_sync_runs`
 
@@ -207,6 +211,11 @@ Fields:
 - `preview_diff`: JSON object, redacted and only for preview/apply response summaries
 - `created_at`
 - `updated_at`
+
+The current company directory snapshot is resolved from the latest successful
+`full_company` apply run (`completed` or `completed_with_warnings`), using run
+completion time and run id as the ordering source of truth. Editing an older
+source must not make it current.
 
 Run logs must not store request headers, credential values, full response bodies, or raw employee data beyond bounded redacted samples.
 
@@ -336,8 +345,9 @@ Supported first-version features:
 
 - HTTP methods: `GET`
 - Auth: static header credential injection through `credential_ref`
-- Headers: literal safe values plus credential injection
-- Query parameters: literal values and simple template expressions
+- Headers: literal non-sensitive values plus credential injection through the
+  top-level `auth.header` / `auth.credential_ref` contract
+- Query parameters: literal non-sensitive values and simple template expressions
 - Iteration: `foreach` over a prior step's extracted items
 - Extraction and mappings: JSONPath-like paths, including `$` when the response root itself is the item array and numeric array indexes such as `$.departmentIds[0]` for fields inside item objects
 - Mapping targets: `department`, `member`
@@ -367,11 +377,18 @@ Validation rules:
 2. `scope` must be `full_company`.
 3. Every step must have a unique `id`.
 4. Every request URL must use `https://` unless an explicit admin-only unsafe-local toggle is added for local testing.
-5. Credential references must resolve to existing credentials.
+5. Credential references must resolve to existing credentials. Source create and
+   update must run static DSL validation before persisting `directory_sources.dsl`,
+   so literal credentials cannot be saved and later re-exposed by source APIs.
 6. JSONPath expressions must parse before execution. `extract.items: $` is valid only for root-array responses. Wildcards and filters are unsupported; a single numeric array index segment is supported for mapping scalar values from arrays.
 7. Member mapping must include `email`.
 8. Department mapping must include `external_id` and `name`.
 9. Invalid or missing email rows become warnings and are excluded from `directory_members`.
+10. `request.url`, `request.headers`, and `request.query` must not contain
+    literal credentials. Sensitive keys such as authorization, cookie, token,
+    secret, password, credential, and API-key variants are rejected in request
+    headers/query parameters. Secret-looking values such as bearer/basic/token
+    credentials, JWT-shaped strings, and common API-token prefixes are rejected.
 
 ## Backend API
 
@@ -440,7 +457,8 @@ Responses must not include raw unredacted metadata by default.
 The product UI treats organization data as one current company snapshot. `source_id`
 is a persistence detail for the directory sync module and must not be exposed as a
 normal selector in `/admin/users`. Admin-facing user management APIs that need
-department context should resolve the current directory snapshot server-side.
+department context must resolve the current directory snapshot server-side from
+the latest successful apply run, not from `directory_sources.updated_at`.
 
 ### Admin Users Department Filters
 
@@ -487,9 +505,15 @@ user-row department text must use `display_path` or `name`, not the source
 ### Offboarding Review
 
 ```text
-GET /api/v1/admin/directory/offboarding-candidates?source_id=1&q=alice
+GET /api/v1/admin/directory/offboarding-candidates?q=alice
 POST /api/v1/admin/directory/offboarding-candidates/:user_id/disable-relay-user
 ```
+
+`source_id` may be accepted as an internal compatibility parameter, but the
+normal product flow omits it and resolves the current snapshot server-side.
+Disable actions must also resolve and recheck against the current snapshot
+server-side; a supplied older `source_id` must not be trusted for the final
+missing-email decision.
 
 Candidate rows include:
 
@@ -600,7 +624,13 @@ The UI also includes `Copy AI Prompt`, which copies a prompt explaining:
 - safety rules
 - expected output format
 
-The prompt must explicitly tell the admin not to include real API keys, real employee data, real tokens, real company domains, or real internal URLs in AI prompts.
+The prompt must distinguish configuration evidence from sensitive data. It can
+ask for real API documentation, real endpoint paths, real query/header names,
+and real response field paths when those are necessary to produce a working DSL.
+It must tell the admin not to paste secret values, API keys, bearer tokens,
+cookies, passwords, or raw employee rows into AI tools. Credential values must
+be represented as a `credential_ref` name that the admin will resolve inside AI
+Efficiency.
 
 The product does not store external API docs pasted into AI tools.
 
@@ -667,23 +697,30 @@ Runs the DSL asynchronously against the external API and records a preview run. 
 
 ### Apply
 
-Runs the DSL and normalizes the complete result. Only after all required steps succeed does it update current directory facts in a transaction.
+Runs the DSL and normalizes the complete result. Only after all required steps
+succeed does it update current directory facts, run completion fields, and
+`last_successful_run_id` in one transaction.
 
 Apply behavior:
 
-1. Mark run `running`.
-2. Execute steps with limits.
-3. Normalize departments/members.
-4. Validate required member emails.
-5. Compute diff.
-6. In a transaction, replace or upsert current facts for the source and set `last_successful_run_id`.
-7. Mark run `completed` or `completed_with_warnings`.
+1. Refuse to queue a new apply when the same source already has a queued or
+   running apply run.
+2. Mark run `running`.
+3. Execute steps with limits.
+4. Normalize departments/members.
+5. Validate required member emails.
+6. Compute diff.
+7. In a transaction, replace current facts for the source, mark the run
+   `completed` or `completed_with_warnings`, and set source `last_run_id` /
+   `last_successful_run_id`.
 
 Failed apply runs do not change current directory facts or offboarding candidates.
 
 ### Schedule
 
-A background scheduler finds enabled sources whose next run is due and starts apply runs. The scheduler must prevent concurrent runs for the same source.
+A background scheduler finds enabled sources whose next run is due and starts
+apply runs. The scheduler must prevent concurrent runs for the same source, and
+manual apply creation must use the same queued/running apply guard.
 
 First implementation can use an in-process scheduler because the app is a modular monolith. If multiple backend replicas become supported later, scheduling must add a DB lease.
 
@@ -691,7 +728,10 @@ First implementation can use an in-process scheduler because the app is a modula
 
 A local user is an offboarding candidate when all are true:
 
-1. There is a latest complete successful `full_company` apply run. `completed` and `completed_with_warnings` both qualify only when all required HTTP steps finished and the run produced a complete normalized snapshot.
+1. There is a latest complete successful `full_company` apply run. `completed`
+   and `completed_with_warnings` both qualify only when all required HTTP steps
+   finished and the run produced a complete normalized snapshot. The latest run,
+   not the newest edited source, determines the current source.
 2. The local user's normalized email does not exist in that source's current `directory_members`.
 3. The local user has a `relay_user_id`.
 4. The local user has not already been successfully disabled through the offboarding action, or the UI is showing historical/completed cases.

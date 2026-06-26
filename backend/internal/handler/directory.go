@@ -242,7 +242,7 @@ func (h *DirectoryHandler) ListMembers(c *gin.Context) {
 }
 
 func (h *DirectoryHandler) ListOffboardingCandidates(c *gin.Context) {
-	sourceID, ok := directoryQueryID(c, "source_id")
+	sourceID, ok := directoryOptionalQueryID(c, "source_id")
 	if !ok {
 		return
 	}
@@ -264,8 +264,8 @@ func (h *DirectoryHandler) DisableRelayUser(c *gin.Context) {
 		pkg.Error(c, http.StatusBadRequest, "invalid request")
 		return
 	}
-	if req.SourceID <= 0 || strings.TrimSpace(req.ConfirmEmail) == "" {
-		pkg.Error(c, http.StatusBadRequest, "source_id and confirm_email are required")
+	if strings.TrimSpace(req.ConfirmEmail) == "" {
+		pkg.Error(c, http.StatusBadRequest, "confirm_email is required")
 		return
 	}
 	performedBy := 0
@@ -312,6 +312,19 @@ func directoryQueryID(c *gin.Context, name string) (int, bool) {
 	id, err := strconv.Atoi(c.Query(name))
 	if err != nil || id <= 0 {
 		pkg.Error(c, http.StatusBadRequest, name+" is required")
+		return 0, false
+	}
+	return id, true
+}
+
+func directoryOptionalQueryID(c *gin.Context, name string) (int, bool) {
+	raw := strings.TrimSpace(c.Query(name))
+	if raw == "" {
+		return 0, true
+	}
+	id, err := strconv.Atoi(raw)
+	if err != nil || id <= 0 {
+		pkg.Error(c, http.StatusBadRequest, "invalid "+name)
 		return 0, false
 	}
 	return id, true

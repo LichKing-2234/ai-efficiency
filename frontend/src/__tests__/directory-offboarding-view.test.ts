@@ -41,7 +41,7 @@ async function mountOffboarding() {
   api.disableDirectoryRelayUser.mockResolvedValue({ data: { data: { id: 8, status: 'succeeded' } } })
 
   const router = createRouterForOffboarding()
-  await router.push('/admin/directory/offboarding?source_id=1')
+  await router.push('/admin/directory/offboarding')
   await router.isReady()
   const wrapper = mount(DirectoryOffboardingView, {
     global: {
@@ -62,10 +62,11 @@ describe('DirectoryOffboardingView', () => {
   it('requires email confirmation before disabling relay user', async () => {
     const { wrapper, api } = await mountOffboarding()
 
-    expect(api.listDirectoryOffboardingCandidates).toHaveBeenCalledWith({ source_id: 1, q: '' })
+    expect(api.listDirectoryOffboardingCandidates).toHaveBeenCalledWith({ q: '' })
     expect(wrapper.text()).toContain('Directory Offboarding')
     expect(wrapper.text()).toContain('bob@example.org')
     expect(wrapper.text()).toContain('Subscriptions are not removed automatically')
+    expect(wrapper.find('input[type="number"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="disable-relay-user-7"]').attributes('disabled')).toBeDefined()
 
     await wrapper.get('[data-testid="confirm-email-7"]').setValue('bob@example.org')
@@ -73,7 +74,6 @@ describe('DirectoryOffboardingView', () => {
     await flushPromises()
 
     expect(api.disableDirectoryRelayUser).toHaveBeenCalledWith(7, {
-      source_id: 1,
       confirm_email: 'bob@example.org',
       reason: 'missing_from_latest_full_company_directory',
     })
