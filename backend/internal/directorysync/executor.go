@@ -234,7 +234,9 @@ func (e *Executor) executeStep(ctx context.Context, step StepConfig, iterationIt
 		return nil, fmt.Errorf("execute step %s: %w", step.ID, err)
 	}
 	var document any
-	if err := json.Unmarshal(body, &document); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.UseNumber()
+	if err := decoder.Decode(&document); err != nil {
 		return nil, fmt.Errorf("decode step %s response: %w", step.ID, err)
 	}
 	rawItems, err := EvaluateJSONPath(document, step.Extract.Items)
@@ -274,7 +276,7 @@ func mapDepartment(mapping *DepartmentMapping, item map[string]any) DepartmentRe
 		ParentExternalID: evaluateString(mapping.ParentExternalID, item, nil),
 		Name:             evaluateString(mapping.Name, item, nil),
 		Path:             evaluateString(mapping.Path, item, nil),
-		Metadata:         map[string]any{},
+		Metadata:         evaluateMetadata(mapping.Metadata, item, nil),
 	}
 }
 
@@ -306,8 +308,40 @@ func mapMember(stepID string, mapping *MemberMapping, item, source map[string]an
 		DisplayName:          evaluateString(mapping.DisplayName, item, source),
 		DepartmentExternalID: evaluateString(mapping.DepartmentExternalID, item, source),
 		Status:               status,
-		Metadata:             map[string]any{},
+		Metadata:             evaluateMetadata(mapping.Metadata, item, source),
 	}, nil
+}
+
+func evaluateMetadata(mapping map[string]string, item, source map[string]any) map[string]any {
+	if len(mapping) == 0 {
+		return map[string]any{}
+	}
+	metadata := make(map[string]any, len(mapping))
+	for key, expression := range mapping {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		value, err := evaluateValue(expression, item, source)
+		if err != nil || emptyMetadataValue(value) {
+			continue
+		}
+		metadata[key] = value
+	}
+	return metadata
+}
+
+func emptyMetadataValue(value any) bool {
+	if value == nil {
+		return true
+	}
+	if text, ok := value.(string); ok {
+		return strings.TrimSpace(text) == ""
+	}
+	if list, ok := value.([]any); ok {
+		return len(list) == 0
+	}
+	return false
 }
 
 func normalizeEmail(email string) string {

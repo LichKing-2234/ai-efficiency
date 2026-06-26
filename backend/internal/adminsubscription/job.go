@@ -10,8 +10,12 @@ import (
 
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/ent/adminsubscriptionjob"
+	"github.com/ai-efficiency/backend/ent/directorydepartment"
+	"github.com/ai-efficiency/backend/ent/directorymember"
+	"github.com/ai-efficiency/backend/ent/directorysource"
 	"github.com/ai-efficiency/backend/ent/predicate"
 	entuser "github.com/ai-efficiency/backend/ent/user"
+	"github.com/ai-efficiency/backend/internal/directorytree"
 )
 
 const (
@@ -51,6 +55,7 @@ type StartJobRequest struct {
 	Scope        string
 	UserIDs      []int
 	FilterQuery  string
+	DepartmentID string
 	Operation    string
 	ProviderID   int
 	GroupID      string
@@ -108,6 +113,7 @@ func (s *Service) StartJob(ctx context.Context, req StartJobRequest) (*ent.Admin
 	req.Operation = strings.TrimSpace(req.Operation)
 	req.GroupID = strings.TrimSpace(req.GroupID)
 	req.FilterQuery = strings.TrimSpace(req.FilterQuery)
+	req.DepartmentID = strings.TrimSpace(req.DepartmentID)
 	if req.ProviderID <= 0 {
 		return nil, NewValidationError("provider_id is required")
 	}
@@ -313,6 +319,13 @@ func (s *Service) resolveTargets(ctx context.Context, scope adminsubscriptionjob
 		if req.FilterQuery != "" {
 			query = query.Where(searchPredicate(req.FilterQuery))
 		}
+		if req.DepartmentID != "" {
+			var err error
+			query, err = s.applyDepartmentFilter(ctx, query, req.DepartmentID)
+			if err != nil {
+				return nil, nil, nil, err
+			}
+		}
 	case adminsubscriptionjob.ScopeAllMapped:
 		query = query.Where(entuser.RelayUserIDNotNil(), entuser.RelayUserIDGT(0))
 	default:
@@ -336,6 +349,57 @@ func (s *Service) resolveTargets(ctx context.Context, scope adminsubscriptionjob
 		snapshots = append(snapshots, targetSnapshotFromUser(u))
 	}
 	return ids, nil, snapshots, nil
+}
+
+func (s *Service) applyDepartmentFilter(ctx context.Context, query *ent.UserQuery, departmentID string) (*ent.UserQuery, error) {
+	sourceID, ok, err := s.currentDirectorySourceID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return query.Where(entuser.IDEQ(0)), nil
+	}
+	departmentIDs, err := s.departmentSubtreeExternalIDs(ctx, sourceID, departmentID)
+	if err != nil {
+		return nil, err
+	}
+	members, err := s.client.DirectoryMember.Query().
+		Where(
+			directorymember.SourceIDEQ(sourceID),
+			directorymember.DepartmentExternalIDIn(departmentIDs...),
+		).
+		All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list directory members for department: %w", err)
+	}
+	return query.Where(userPredicateForDirectoryMembers(members)), nil
+}
+
+func (s *Service) departmentSubtreeExternalIDs(ctx context.Context, sourceID int, departmentID string) ([]string, error) {
+	departments, err := s.client.DirectoryDepartment.Query().
+		Where(directorydepartment.SourceIDEQ(sourceID)).
+		All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list directory departments for subtree filter: %w", err)
+	}
+	return directorytree.New(departments).SubtreeIDs(departmentID), nil
+}
+
+func (s *Service) currentDirectorySourceID(ctx context.Context) (int, bool, error) {
+	source, err := s.client.DirectorySource.Query().
+		Where(
+			directorysource.DeletedEQ(false),
+			directorysource.LastSuccessfulRunIDNotNil(),
+		).
+		Order(ent.Desc(directorysource.FieldUpdatedAt), ent.Desc(directorysource.FieldID)).
+		First(ctx)
+	if ent.IsNotFound(err) {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, fmt.Errorf("resolve current directory source: %w", err)
+	}
+	return source.ID, true, nil
 }
 
 func (s *Service) runTarget(ctx context.Context, job *ent.AdminSubscriptionJob, operator SubscriptionOperator, groupID int64, target TargetSnapshot) ResultRow {
@@ -594,6 +658,39 @@ func searchPredicate(q string) predicate.User {
 	}
 	if n, err := strconv.Atoi(q); err == nil {
 		predicates = append(predicates, entuser.IDEQ(n), entuser.RelayUserIDEQ(n))
+	}
+	return entuser.Or(predicates...)
+}
+
+func userPredicateForDirectoryMembers(members []*ent.DirectoryMember) predicate.User {
+	ids := make([]int, 0, len(members))
+	emails := make([]string, 0, len(members))
+	seenIDs := map[int]struct{}{}
+	seenEmails := map[string]struct{}{}
+	for _, member := range members {
+		if member.MatchedUserID != nil && *member.MatchedUserID > 0 {
+			if _, ok := seenIDs[*member.MatchedUserID]; !ok {
+				ids = append(ids, *member.MatchedUserID)
+				seenIDs[*member.MatchedUserID] = struct{}{}
+			}
+		}
+		email := strings.TrimSpace(strings.ToLower(member.EmailNormalized))
+		if email != "" {
+			if _, ok := seenEmails[email]; !ok {
+				emails = append(emails, email)
+				seenEmails[email] = struct{}{}
+			}
+		}
+	}
+	predicates := make([]predicate.User, 0, 2)
+	if len(ids) > 0 {
+		predicates = append(predicates, entuser.IDIn(ids...))
+	}
+	if len(emails) > 0 {
+		predicates = append(predicates, entuser.EmailIn(emails...))
+	}
+	if len(predicates) == 0 {
+		return entuser.IDEQ(0)
 	}
 	return entuser.Or(predicates...)
 }

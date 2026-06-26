@@ -23,6 +23,7 @@ import {
   startAdminUserSubscriptionJob,
   getAdminUserSubscriptionJob,
   getLatestAdminUserSubscriptionJob,
+  listAdminUserDepartments,
 } from '@/api/adminUsers'
 
 const mockClient = client as unknown as {
@@ -305,5 +306,13 @@ describe('admin users API', () => {
     await getLatestAdminUserSubscriptionJob()
 
     expect(mockClient.get).toHaveBeenCalledWith('/admin/users/subscription-jobs/latest')
+  })
+
+  it('lists admin user departments for the in-route department view', async () => {
+    mockClient.get.mockResolvedValue({ data: { data: { items: [] } } })
+
+    await listAdminUserDepartments()
+
+    expect(mockClient.get).toHaveBeenCalledWith('/admin/users/departments')
   })
 })

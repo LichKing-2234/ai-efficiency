@@ -11,10 +11,14 @@ import (
 	"time"
 
 	"github.com/ai-efficiency/backend/ent"
+	"github.com/ai-efficiency/backend/ent/directorydepartment"
+	"github.com/ai-efficiency/backend/ent/directorymember"
+	"github.com/ai-efficiency/backend/ent/directorysource"
 	"github.com/ai-efficiency/backend/ent/predicate"
 	"github.com/ai-efficiency/backend/ent/relayprovider"
 	entuser "github.com/ai-efficiency/backend/ent/user"
 	"github.com/ai-efficiency/backend/internal/adminsubscription"
+	"github.com/ai-efficiency/backend/internal/directorytree"
 	"github.com/ai-efficiency/backend/internal/pkg"
 	"github.com/ai-efficiency/backend/internal/relay"
 	"github.com/gin-gonic/gin"
@@ -51,22 +55,52 @@ type adminRelaySubscriptionRemover interface {
 
 const adminSubscriptionBatchMaxUsers = 500
 
+const (
+	directoryDepartmentRepresentativeIDsKey = "representative_external_ids"
+	directoryMemberLeaderDepartmentIDsKey   = "leader_department_ids"
+)
+
 type adminUserRow struct {
-	ID                int       `json:"id"`
-	Username          string    `json:"username"`
-	Email             string    `json:"email"`
-	Role              string    `json:"role"`
-	AuthSource        string    `json:"auth_source"`
-	RelayUserID       *int      `json:"relay_user_id,omitempty"`
-	RelayAuthPassword string    `json:"relay_auth_password"`
-	CreatedAt         time.Time `json:"created_at"`
-	UpdatedAt         time.Time `json:"updated_at"`
+	ID                int                     `json:"id"`
+	Username          string                  `json:"username"`
+	Email             string                  `json:"email"`
+	Role              string                  `json:"role"`
+	AuthSource        string                  `json:"auth_source"`
+	RelayUserID       *int                    `json:"relay_user_id,omitempty"`
+	RelayAuthPassword string                  `json:"relay_auth_password"`
+	Department        *adminUserDepartmentRow `json:"department,omitempty"`
+	CreatedAt         time.Time               `json:"created_at"`
+	UpdatedAt         time.Time               `json:"updated_at"`
 }
 
 type adminUsersListRequest struct {
-	Q        string
-	Page     int
-	PageSize int
+	Q            string
+	DepartmentID string
+	Page         int
+	PageSize     int
+}
+
+type adminUserDepartmentRow struct {
+	ExternalID  string `json:"external_id"`
+	Name        string `json:"name"`
+	Path        string `json:"path"`
+	DisplayPath string `json:"display_path"`
+}
+
+type adminDirectoryDepartmentSummaryRow struct {
+	ExternalID                 string  `json:"external_id"`
+	ParentExternalID           *string `json:"parent_external_id,omitempty"`
+	Name                       string  `json:"name"`
+	Path                       string  `json:"path"`
+	DisplayPath                string  `json:"display_path"`
+	Depth                      int     `json:"depth"`
+	ChildCount                 int     `json:"child_count"`
+	MemberCount                int     `json:"member_count"`
+	MatchedUserCount           int     `json:"matched_user_count"`
+	SubtreeMemberCount         int     `json:"subtree_member_count"`
+	SubtreeMatchedUserCount    int     `json:"subtree_matched_user_count"`
+	RepresentativeCount        int     `json:"representative_count"`
+	MatchedRepresentativeCount int     `json:"matched_representative_count"`
 }
 
 type adminSubscriptionProviderRow struct {
@@ -101,7 +135,8 @@ type adminManageSubscriptionsRequest struct {
 }
 
 type adminManageSubscriptionsFilter struct {
-	Q string `json:"q"`
+	Q            string `json:"q"`
+	DepartmentID string `json:"department_id"`
 }
 
 type adminManageSubscriptionsResponse struct {
@@ -177,6 +212,14 @@ func (h *AdminUsersHandler) List(c *gin.Context) {
 	if req.Q != "" {
 		query = query.Where(adminUsersSearchPredicate(req.Q))
 	}
+	if req.DepartmentID != "" {
+		var err error
+		query, err = h.applyDepartmentFilter(c.Request.Context(), query, req.DepartmentID)
+		if err != nil {
+			pkg.Error(c, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
 
 	total, err := query.Clone().Count(c.Request.Context())
 	if err != nil {
@@ -194,6 +237,12 @@ func (h *AdminUsersHandler) List(c *gin.Context) {
 		return
 	}
 
+	departmentsByUserID, err := h.departmentsForUsers(c.Request.Context(), users)
+	if err != nil {
+		pkg.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+
 	items := make([]adminUserRow, 0, len(users))
 	for _, u := range users {
 		relayPassword := ""
@@ -208,6 +257,7 @@ func (h *AdminUsersHandler) List(c *gin.Context) {
 			AuthSource:        string(u.AuthSource),
 			RelayUserID:       u.RelayUserID,
 			RelayAuthPassword: relayPassword,
+			Department:        departmentsByUserID[u.ID],
 			CreatedAt:         u.CreatedAt,
 			UpdatedAt:         u.UpdatedAt,
 		})
@@ -219,6 +269,165 @@ func (h *AdminUsersHandler) List(c *gin.Context) {
 		"page":      req.Page,
 		"page_size": req.PageSize,
 	})
+}
+
+func (h *AdminUsersHandler) ListDepartments(c *gin.Context) {
+	sourceID, ok, err := h.currentDirectorySourceID(c.Request.Context())
+	if err != nil {
+		pkg.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if !ok {
+		pkg.Success(c, gin.H{"items": []adminDirectoryDepartmentSummaryRow{}})
+		return
+	}
+	departments, err := h.entClient.DirectoryDepartment.Query().
+		Where(directorydepartment.SourceIDEQ(sourceID)).
+		Order(ent.Asc(directorydepartment.FieldName), ent.Asc(directorydepartment.FieldExternalID)).
+		All(c.Request.Context())
+	if err != nil {
+		pkg.Error(c, http.StatusInternalServerError, "list directory departments: "+err.Error())
+		return
+	}
+	members, err := h.entClient.DirectoryMember.Query().
+		Where(directorymember.SourceIDEQ(sourceID)).
+		All(c.Request.Context())
+	if err != nil {
+		pkg.Error(c, http.StatusInternalServerError, "list directory members: "+err.Error())
+		return
+	}
+	memberCounts := make(map[string]int, len(departments))
+	matchedCounts := make(map[string]int, len(departments))
+	membersByExternalID := make(map[string]*ent.DirectoryMember, len(members))
+	for _, member := range members {
+		departmentID := strings.TrimSpace(member.DepartmentExternalID)
+		if departmentID == "" {
+			continue
+		}
+		memberCounts[departmentID]++
+		if member.MatchedUserID != nil && *member.MatchedUserID > 0 {
+			matchedCounts[departmentID]++
+		}
+		externalID := strings.TrimSpace(member.ExternalID)
+		if externalID != "" {
+			membersByExternalID[externalID] = member
+		}
+	}
+	representativeIDs := representativeExternalIDsByDepartment(departments, members)
+	tree := directorytree.New(departments)
+	rows := make([]adminDirectoryDepartmentSummaryRow, 0, len(departments))
+	for _, department := range tree.Ordered() {
+		subtreeMemberCount := 0
+		subtreeMatchedUserCount := 0
+		for _, departmentID := range tree.SubtreeIDs(department.ExternalID) {
+			subtreeMemberCount += memberCounts[departmentID]
+			subtreeMatchedUserCount += matchedCounts[departmentID]
+		}
+		departmentRepresentativeIDs := representativeIDs[department.ExternalID]
+		rows = append(rows, adminDirectoryDepartmentSummaryRow{
+			ExternalID:                 department.ExternalID,
+			ParentExternalID:           department.ParentExternalID,
+			Name:                       department.Name,
+			Path:                       department.Path,
+			DisplayPath:                tree.DisplayPath(department.ExternalID),
+			Depth:                      tree.Depth(department.ExternalID),
+			ChildCount:                 tree.ChildCount(department.ExternalID),
+			MemberCount:                memberCounts[department.ExternalID],
+			MatchedUserCount:           matchedCounts[department.ExternalID],
+			SubtreeMemberCount:         subtreeMemberCount,
+			SubtreeMatchedUserCount:    subtreeMatchedUserCount,
+			RepresentativeCount:        len(departmentRepresentativeIDs),
+			MatchedRepresentativeCount: matchedRepresentativeCount(departmentRepresentativeIDs, membersByExternalID),
+		})
+	}
+	pkg.Success(c, gin.H{"items": rows})
+}
+
+func representativeExternalIDsByDepartment(departments []*ent.DirectoryDepartment, members []*ent.DirectoryMember) map[string]map[string]struct{} {
+	representatives := make(map[string]map[string]struct{}, len(departments))
+	add := func(departmentID, representativeExternalID string) {
+		departmentID = strings.TrimSpace(departmentID)
+		representativeExternalID = strings.TrimSpace(representativeExternalID)
+		if departmentID == "" || representativeExternalID == "" {
+			return
+		}
+		if representatives[departmentID] == nil {
+			representatives[departmentID] = map[string]struct{}{}
+		}
+		representatives[departmentID][representativeExternalID] = struct{}{}
+	}
+
+	for _, department := range departments {
+		for _, representativeExternalID := range metadataStringValues(department.Metadata[directoryDepartmentRepresentativeIDsKey]) {
+			add(department.ExternalID, representativeExternalID)
+		}
+	}
+	for _, member := range members {
+		for _, departmentID := range metadataStringValues(member.Metadata[directoryMemberLeaderDepartmentIDsKey]) {
+			add(departmentID, member.ExternalID)
+		}
+	}
+	return representatives
+}
+
+func matchedRepresentativeCount(representativeExternalIDs map[string]struct{}, membersByExternalID map[string]*ent.DirectoryMember) int {
+	count := 0
+	for representativeExternalID := range representativeExternalIDs {
+		member := membersByExternalID[representativeExternalID]
+		if member != nil && member.MatchedUserID != nil && *member.MatchedUserID > 0 {
+			count++
+		}
+	}
+	return count
+}
+
+func metadataStringValues(value any) []string {
+	switch typed := value.(type) {
+	case nil:
+		return nil
+	case []any:
+		values := make([]string, 0, len(typed))
+		for _, item := range typed {
+			if value := metadataScalarString(item); value != "" {
+				values = append(values, value)
+			}
+		}
+		return values
+	case []string:
+		values := make([]string, 0, len(typed))
+		for _, item := range typed {
+			if value := strings.TrimSpace(item); value != "" {
+				values = append(values, value)
+			}
+		}
+		return values
+	default:
+		if value := metadataScalarString(typed); value != "" {
+			return []string{value}
+		}
+		return nil
+	}
+}
+
+func metadataScalarString(value any) string {
+	switch typed := value.(type) {
+	case string:
+		return strings.TrimSpace(typed)
+	case json.Number:
+		return strings.TrimSpace(typed.String())
+	case float64:
+		return strings.TrimSpace(strconv.FormatFloat(typed, 'f', -1, 64))
+	case float32:
+		return strings.TrimSpace(strconv.FormatFloat(float64(typed), 'f', -1, 32))
+	case int:
+		return strconv.Itoa(typed)
+	case int64:
+		return strconv.FormatInt(typed, 10)
+	case int32:
+		return strconv.FormatInt(int64(typed), 10)
+	default:
+		return strings.TrimSpace(fmt.Sprint(typed))
+	}
 }
 
 func (h *AdminUsersHandler) ListSubscriptionOptions(c *gin.Context) {
@@ -320,6 +529,7 @@ func (h *AdminUsersHandler) StartSubscriptionJob(c *gin.Context) {
 		Scope:        req.Scope,
 		UserIDs:      req.UserIDs,
 		FilterQuery:  req.Filters.Q,
+		DepartmentID: req.Filters.DepartmentID,
 		Operation:    req.Operation,
 		ProviderID:   req.ProviderID,
 		GroupID:      strconv.FormatInt(groupID, 10),
@@ -759,6 +969,15 @@ func (h *AdminUsersHandler) subscriptionTargetsForScope(c *gin.Context, req admi
 		if q != "" {
 			query = query.Where(adminUsersSearchPredicate(q))
 		}
+		departmentID := strings.TrimSpace(req.Filters.DepartmentID)
+		if departmentID != "" {
+			var err error
+			query, err = h.applyDepartmentFilter(c.Request.Context(), query, departmentID)
+			if err != nil {
+				pkg.Error(c, http.StatusInternalServerError, err.Error())
+				return nil, false
+			}
+		}
 	case "all_mapped":
 		query = query.Where(entuser.RelayUserIDNotNil(), entuser.RelayUserIDGT(0))
 	default:
@@ -854,6 +1073,182 @@ func adminUsersSearchPredicate(q string) predicate.User {
 	return entuser.Or(predicates...)
 }
 
+func (h *AdminUsersHandler) applyDepartmentFilter(ctx context.Context, query *ent.UserQuery, departmentID string) (*ent.UserQuery, error) {
+	sourceID, ok, err := h.currentDirectorySourceID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return query.Where(entuser.IDEQ(0)), nil
+	}
+	departmentIDs, err := h.departmentSubtreeExternalIDs(ctx, sourceID, departmentID)
+	if err != nil {
+		return nil, err
+	}
+	members, err := h.entClient.DirectoryMember.Query().
+		Where(
+			directorymember.SourceIDEQ(sourceID),
+			directorymember.DepartmentExternalIDIn(departmentIDs...),
+		).
+		All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list directory members for department: %w", err)
+	}
+	return query.Where(adminUserPredicateForDirectoryMembers(members)), nil
+}
+
+func (h *AdminUsersHandler) departmentSubtreeExternalIDs(ctx context.Context, sourceID int, departmentID string) ([]string, error) {
+	departments, err := h.entClient.DirectoryDepartment.Query().
+		Where(directorydepartment.SourceIDEQ(sourceID)).
+		All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list directory departments for subtree filter: %w", err)
+	}
+	return directorytree.New(departments).SubtreeIDs(departmentID), nil
+}
+
+func (h *AdminUsersHandler) currentDirectorySourceID(ctx context.Context) (int, bool, error) {
+	source, err := h.entClient.DirectorySource.Query().
+		Where(
+			directorysource.DeletedEQ(false),
+			directorysource.LastSuccessfulRunIDNotNil(),
+		).
+		Order(ent.Desc(directorysource.FieldUpdatedAt), ent.Desc(directorysource.FieldID)).
+		First(ctx)
+	if ent.IsNotFound(err) {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, fmt.Errorf("resolve current directory source: %w", err)
+	}
+	return source.ID, true, nil
+}
+
+func (h *AdminUsersHandler) departmentsForUsers(ctx context.Context, users []*ent.User) (map[int]*adminUserDepartmentRow, error) {
+	out := make(map[int]*adminUserDepartmentRow, len(users))
+	if len(users) == 0 {
+		return out, nil
+	}
+	sourceID, ok, err := h.currentDirectorySourceID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return out, nil
+	}
+	userIDs := make([]int, 0, len(users))
+	emails := make([]string, 0, len(users))
+	userIDByEmail := make(map[string]int, len(users))
+	for _, u := range users {
+		userIDs = append(userIDs, u.ID)
+		email := strings.TrimSpace(strings.ToLower(u.Email))
+		if email != "" {
+			emails = append(emails, email)
+			userIDByEmail[email] = u.ID
+		}
+	}
+	predicates := []predicate.DirectoryMember{directorymember.MatchedUserIDIn(userIDs...)}
+	if len(emails) > 0 {
+		predicates = append(predicates, directorymember.EmailNormalizedIn(emails...))
+	}
+	members, err := h.entClient.DirectoryMember.Query().
+		Where(
+			directorymember.SourceIDEQ(sourceID),
+			directorymember.Or(predicates...),
+		).
+		All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list directory members for users: %w", err)
+	}
+	departmentIDs := make([]string, 0, len(members))
+	seenDepartmentIDs := map[string]struct{}{}
+	for _, member := range members {
+		departmentID := strings.TrimSpace(member.DepartmentExternalID)
+		if departmentID == "" {
+			continue
+		}
+		if _, ok := seenDepartmentIDs[departmentID]; ok {
+			continue
+		}
+		seenDepartmentIDs[departmentID] = struct{}{}
+		departmentIDs = append(departmentIDs, departmentID)
+	}
+	if len(departmentIDs) == 0 {
+		return out, nil
+	}
+	departments, err := h.entClient.DirectoryDepartment.Query().
+		Where(
+			directorydepartment.SourceIDEQ(sourceID),
+		).
+		All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list directory departments for users: %w", err)
+	}
+	departmentsByExternalID := make(map[string]*ent.DirectoryDepartment, len(departments))
+	for _, department := range departments {
+		departmentsByExternalID[department.ExternalID] = department
+	}
+	tree := directorytree.New(departments)
+	for _, member := range members {
+		department := departmentsByExternalID[member.DepartmentExternalID]
+		if department == nil {
+			continue
+		}
+		userID := 0
+		if member.MatchedUserID != nil && *member.MatchedUserID > 0 {
+			userID = *member.MatchedUserID
+		} else {
+			userID = userIDByEmail[strings.TrimSpace(strings.ToLower(member.EmailNormalized))]
+		}
+		if userID <= 0 {
+			continue
+		}
+		if _, exists := out[userID]; exists {
+			continue
+		}
+		out[userID] = &adminUserDepartmentRow{
+			ExternalID:  department.ExternalID,
+			Name:        department.Name,
+			Path:        department.Path,
+			DisplayPath: tree.DisplayPath(department.ExternalID),
+		}
+	}
+	return out, nil
+}
+
+func adminUserPredicateForDirectoryMembers(members []*ent.DirectoryMember) predicate.User {
+	ids := make([]int, 0, len(members))
+	emails := make([]string, 0, len(members))
+	seenIDs := map[int]struct{}{}
+	seenEmails := map[string]struct{}{}
+	for _, member := range members {
+		if member.MatchedUserID != nil && *member.MatchedUserID > 0 {
+			if _, ok := seenIDs[*member.MatchedUserID]; !ok {
+				ids = append(ids, *member.MatchedUserID)
+				seenIDs[*member.MatchedUserID] = struct{}{}
+			}
+		}
+		email := strings.TrimSpace(strings.ToLower(member.EmailNormalized))
+		if email != "" {
+			if _, ok := seenEmails[email]; !ok {
+				emails = append(emails, email)
+				seenEmails[email] = struct{}{}
+			}
+		}
+	}
+	predicates := make([]predicate.User, 0, 2)
+	if len(ids) > 0 {
+		predicates = append(predicates, entuser.IDIn(ids...))
+	}
+	if len(emails) > 0 {
+		predicates = append(predicates, entuser.EmailIn(emails...))
+	}
+	if len(predicates) == 0 {
+		return entuser.IDEQ(0)
+	}
+	return entuser.Or(predicates...)
+}
+
 func parseAdminUsersListRequest(c *gin.Context) adminUsersListRequest {
 	page := parseOptionalInt(c.DefaultQuery("page", "1"))
 	if page <= 0 {
@@ -867,8 +1262,9 @@ func parseAdminUsersListRequest(c *gin.Context) adminUsersListRequest {
 		pageSize = 100
 	}
 	return adminUsersListRequest{
-		Q:        strings.TrimSpace(c.Query("q")),
-		Page:     page,
-		PageSize: pageSize,
+		Q:            strings.TrimSpace(c.Query("q")),
+		DepartmentID: strings.TrimSpace(c.Query("department_id")),
+		Page:         page,
+		PageSize:     pageSize,
 	}
 }

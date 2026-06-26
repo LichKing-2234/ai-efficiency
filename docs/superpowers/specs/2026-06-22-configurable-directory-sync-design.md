@@ -309,6 +309,8 @@ steps:
         parent_external_id: $.parent_id
         name: $.name
         path: $.path
+        metadata:
+          representative_external_ids: $.leader_ids
 
   - id: members
     foreach: departments.items
@@ -324,8 +326,10 @@ steps:
         external_id: $.id
         email: $.email
         display_name: $.name
-        department_external_id: "{{ item.external_id }}"
+        department_external_id: "{{ source.external_id }}"
         status: $.status
+        metadata:
+          leader_department_ids: $.leader_department_ids
 ```
 
 Supported first-version features:
@@ -335,9 +339,14 @@ Supported first-version features:
 - Headers: literal safe values plus credential injection
 - Query parameters: literal values and simple template expressions
 - Iteration: `foreach` over a prior step's extracted items
-- Extraction: JSONPath-like `items` path, including `$` when the response root itself is the item array
+- Extraction and mappings: JSONPath-like paths, including `$` when the response root itself is the item array and numeric array indexes such as `$.departmentIds[0]` for fields inside item objects
 - Mapping targets: `department`, `member`
-- Templates: `{{ item.field }}` and `{{ source.field }}` only
+- Explicit metadata mappings: optional `department.metadata.*` and
+  `member.metadata.*` entries are allowlisted JSONPath/template mappings for
+  non-sensitive ids or role flags that the platform needs. Known organization
+  representative fields are `department.metadata.representative_external_ids`
+  and `member.metadata.leader_department_ids`.
+- Templates: `{{ item.field }}` and `{{ source.field }}` only. In a `foreach` member step, `item` refers to the member row and `source` refers to the outer iteration item, such as the department row.
 - Limits: timeout, response size, and total item caps
 
 Unsupported first-version features:
@@ -359,7 +368,7 @@ Validation rules:
 3. Every step must have a unique `id`.
 4. Every request URL must use `https://` unless an explicit admin-only unsafe-local toggle is added for local testing.
 5. Credential references must resolve to existing credentials.
-6. JSONPath expressions must parse before execution. `extract.items: $` is valid only for root-array responses.
+6. JSONPath expressions must parse before execution. `extract.items: $` is valid only for root-array responses. Wildcards and filters are unsupported; a single numeric array index segment is supported for mapping scalar values from arrays.
 7. Member mapping must include `email`.
 8. Department mapping must include `external_id` and `name`.
 9. Invalid or missing email rows become warnings and are excluded from `directory_members`.
@@ -427,6 +436,53 @@ GET /api/v1/admin/directory/members?source_id=1&q=alice&department_id=dept-alpha
 ```
 
 Responses must not include raw unredacted metadata by default.
+
+The product UI treats organization data as one current company snapshot. `source_id`
+is a persistence detail for the directory sync module and must not be exposed as a
+normal selector in `/admin/users`. Admin-facing user management APIs that need
+department context should resolve the current directory snapshot server-side.
+
+### Admin Users Department Filters
+
+`GET /api/v1/admin/users` supports an optional `department_id` query parameter.
+When present, pagination and totals are computed after filtering local users by
+directory members whose `department_external_id` is in the selected department's
+subtree, including the selected department itself, and whose normalized email
+matches the local user email. Returned user rows may include a `department`
+object:
+
+```json
+{
+  "department": {
+    "external_id": "dept-alpha",
+    "name": "Department Alpha",
+    "path": "Department Alpha"
+  }
+}
+```
+
+Users with no matching current directory member are still listed in the default
+user view and show an unmatched organization state. They are excluded when a
+specific department filter is active.
+
+Current-filter subscription jobs must use the same department filter as the
+visible `/admin/users` list. A department-filtered list and a current-filter
+bulk action must therefore target the same user set, subject to the existing
+relay-mapped and target-count rules.
+
+`GET /api/v1/admin/users/departments` returns departments from the current
+single directory snapshot in tree preorder. Each row includes `external_id`,
+optional `parent_external_id`, `name`, source `path`, name-based `display_path`,
+`depth`, `child_count`, direct `member_count` / `matched_user_count`, and subtree
+`subtree_member_count` / `subtree_matched_user_count`. When representative
+metadata is mapped, each row also includes `representative_count` and
+`matched_representative_count`, derived from
+`department.metadata.representative_external_ids` plus cross-checked
+`member.metadata.leader_department_ids`. The existing direct count fields remain
+direct-only for compatibility; UI copy must distinguish direct counts from
+totals that include child departments. UI labels, department filters, and
+user-row department text must use `display_path` or `name`, not the source
+`path`, because source paths may be numeric ID chains.
 
 ### Offboarding Review
 
@@ -581,6 +637,23 @@ Action:
 - requires confirmation with the candidate email
 - explains that it disables upstream AI access and revokes local AI Efficiency tokens
 - states that subscriptions are not removed automatically
+
+### Admin Users Organization Views
+
+`/admin/users` remains the single admin surface for local users and AI access
+support. It adds an internal view switch:
+
+1. User view: the existing user/access table plus a department column and
+   department filter.
+2. Department view: a directory-backed collapsible tree list inside the same
+   route, showing department name/display path, hierarchy indentation, direct
+   member count, direct matched local-user count, subtree total member count,
+   subtree total matched local-user count, and a drill-in action that switches
+   back to user view with the selected department subtree filter.
+
+The route may preserve the selected view and department filter in query
+parameters, for example `view=departments` or `department_id=dept-alpha`, but it
+must not add a separate department page or expose a directory source selector.
 
 ## Sync Execution
 

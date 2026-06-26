@@ -89,6 +89,104 @@ func TestExecutorRunsForeachAndNormalizesMembers(t *testing.T) {
 	}
 }
 
+func TestExecutorMapsFirstDepartmentIDFromMemberArray(t *testing.T) {
+	raw := strings.ReplaceAll(validDirectoryDSL, `department_external_id: "{{ item.external_id }}"`, "department_external_id: $.department_ids[0]")
+	cfg, err := ParseDSL(raw)
+	if err != nil {
+		t.Fatalf("ParseDSL: %v", err)
+	}
+	member := map[string]any{
+		"id":             "member-alpha",
+		"email":          "alice@example.com",
+		"name":           "Alice",
+		"department_ids": []any{"dept-alpha", "dept-parent"},
+	}
+
+	mapped, warnings := mapMember("members", cfg.Steps[1].Map.Member, member, map[string]any{"external_id": "dept-parent"}, map[string]struct{}{})
+	if len(warnings) != 0 {
+		t.Fatalf("warnings = %#v", warnings)
+	}
+	if mapped == nil {
+		t.Fatal("mapped member is nil")
+	}
+	if mapped.DepartmentExternalID != "dept-alpha" {
+		t.Fatalf("department_external_id = %q, want dept-alpha", mapped.DepartmentExternalID)
+	}
+}
+
+func TestExecutorMapsDepartmentAndMemberMetadata(t *testing.T) {
+	raw := strings.ReplaceAll(validDirectoryDSL, "        path: $.path\n", "        path: $.path\n        metadata:\n          representative_external_ids: $.leader_ids\n")
+	raw = strings.ReplaceAll(raw, "        status: $.status\n", "        status: $.status\n        metadata:\n          leader_department_ids: $.leader_department_ids\n")
+	cfg, err := ParseDSL(raw)
+	if err != nil {
+		t.Fatalf("ParseDSL: %v", err)
+	}
+
+	department := mapDepartment(cfg.Steps[0].Map.Department, map[string]any{
+		"id":         "dept-alpha",
+		"name":       "Department Alpha",
+		"path":       "Department Alpha",
+		"leader_ids": []any{"member-alpha"},
+	})
+	if fmt.Sprint(department.Metadata["representative_external_ids"]) != "[member-alpha]" {
+		t.Fatalf("department metadata = %#v, want representative_external_ids array", department.Metadata)
+	}
+
+	member, warnings := mapMember("members", cfg.Steps[1].Map.Member, map[string]any{
+		"id":                    "member-alpha",
+		"email":                 "alice@example.com",
+		"name":                  "Alice Example",
+		"leader_department_ids": []any{"dept-alpha"},
+	}, map[string]any{"external_id": "dept-alpha"}, map[string]struct{}{})
+	if len(warnings) != 0 {
+		t.Fatalf("warnings = %#v", warnings)
+	}
+	if member == nil {
+		t.Fatal("member is nil")
+	}
+	if fmt.Sprint(member.Metadata["leader_department_ids"]) != "[dept-alpha]" {
+		t.Fatalf("member metadata = %#v, want leader_department_ids array", member.Metadata)
+	}
+}
+
+func TestExecutorPreservesNumericIDsAsDecimalStrings(t *testing.T) {
+	const departmentID = "123456789012345678"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/departments":
+			_, _ = fmt.Fprintf(w, `[{"id":%s,"name":"Department Alpha","path":"Department Alpha"}]`, departmentID)
+		case "/users":
+			_, _ = fmt.Fprintf(w, `[{"id":"member-alpha","email":"alice@example.com","name":"Alice","departmentIds":[%s]}]`, departmentID)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	raw := strings.ReplaceAll(validDirectoryDSL, "https://directory.example.com/api/departments", server.URL+"/departments")
+	raw = strings.ReplaceAll(raw, "https://directory.example.com/api/users", server.URL+"/users")
+	raw = strings.ReplaceAll(raw, "items: $.data.departments", "items: $")
+	raw = strings.ReplaceAll(raw, "items: $.data.users", "items: $")
+	raw = strings.ReplaceAll(raw, `department_external_id: "{{ item.external_id }}"`, "department_external_id: $.departmentIds[0]")
+	cfg, err := ParseDSL(raw)
+	if err != nil {
+		t.Fatalf("ParseDSL: %v", err)
+	}
+
+	executor := NewExecutor(ExecutorOptions{AllowHTTP: true})
+	result, err := executor.Execute(context.Background(), cfg, staticCredentialResolver{"directory_api_key": "test-directory-secret"})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if result.Departments[0].ExternalID != departmentID {
+		t.Fatalf("department external id = %q, want %s", result.Departments[0].ExternalID, departmentID)
+	}
+	if result.Members[0].DepartmentExternalID != departmentID {
+		t.Fatalf("member department external id = %q, want %s", result.Members[0].DepartmentExternalID, departmentID)
+	}
+}
+
 func TestExecutorExtractsRootArrayResponses(t *testing.T) {
 	var seenDepartmentQueries []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

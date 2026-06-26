@@ -470,8 +470,16 @@ export interface AdminUser {
   auth_source: string
   relay_user_id?: number | null
   relay_auth_password: string
+  department?: AdminUserDepartment | null
   created_at: string
   updated_at: string
+}
+
+export interface AdminUserDepartment {
+  external_id: string
+  name: string
+  path?: string
+  display_path?: string
 }
 
 export interface AdminUsersListResponse {
@@ -479,6 +487,26 @@ export interface AdminUsersListResponse {
   total: number
   page: number
   page_size: number
+}
+
+export interface AdminDirectoryDepartmentSummary {
+  external_id: string
+  parent_external_id?: string | null
+  name: string
+  path?: string
+  display_path?: string
+  depth?: number
+  child_count?: number
+  member_count: number
+  matched_user_count: number
+  subtree_member_count?: number
+  subtree_matched_user_count?: number
+  representative_count?: number
+  matched_representative_count?: number
+}
+
+export interface AdminUserDepartmentsResponse {
+  items: AdminDirectoryDepartmentSummary[]
 }
 
 export interface AdminRelayPasswordRevealResponse {
@@ -627,6 +655,7 @@ export interface AdminManageSubscriptionsRequest {
   user_ids?: number[]
   filters?: {
     q?: string
+    department_id?: string
   }
   operation: AdminSubscriptionManageOperation
   provider_id: number

@@ -73,6 +73,8 @@ steps:
         parent_external_id: $.parent_id
         name: $.name
         path: $.path
+        metadata:
+          representative_external_ids: $.leader_ids
   - id: members
     foreach: departments.items
     request:
@@ -87,8 +89,10 @@ steps:
         external_id: $.id
         email: $.email
         display_name: $.name
-        department_external_id: "{{ item.external_id }}"
+        department_external_id: "{{ source.external_id }}"
         status: $.status
+        metadata:
+          leader_department_ids: $.leader_department_ids
 `,
   },
   {
@@ -453,7 +457,7 @@ steps:
         external_id: $.id
         email: $.email
         display_name: $.name
-        department_external_id: "{{ item.external_id }}"
+        department_external_id: "{{ source.external_id }}"
         status: $.status`,
     '',
     t('directorySync.aiPromptStructuresTitle'),
@@ -461,11 +465,14 @@ steps:
     '- department.parent_external_id: optional parent department id',
     '- department.name: required display name',
     '- department.path: optional full path',
+    '- department.metadata.representative_external_ids: optional array of representative member ids, when the department response provides leader or owner ids',
     '- member.external_id: optional stable person id',
     '- member.email: required user email; this system matches local users only by normalized email',
     '- member.display_name: optional display name',
-    '- member.department_external_id: optional department id',
+    '- member.department_external_id: optional department id; use $.department_id, $.departmentIds[0], or {{ source.external_id }} when the member endpoint returns only direct members for the requested department',
     '- member.status: optional employment status',
+    '- member.metadata.leader_department_ids: optional array of department ids where this member is the representative or leader',
+    '- metadata mappings are explicit allowlists; include only non-sensitive ids or role flags needed by this system',
     '',
     t('directorySync.aiPromptEvidenceTitle'),
     t('directorySync.aiPromptEvidenceTools'),

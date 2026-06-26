@@ -13,7 +13,7 @@ func TestEvaluateJSONPathSubset(t *testing.T) {
 				{"id": "dept-alpha", "name": "Department Alpha"},
 				{"id": "dept-beta", "name": "Department Beta"}
 			],
-			"user": {"email": "alice@example.com"}
+				"user": {"email": "alice@example.com", "department_ids": ["dept-alpha", "dept-beta"]}
 		}
 	}`), &doc); err != nil {
 		t.Fatalf("unmarshal: %v", err)
@@ -33,6 +33,14 @@ func TestEvaluateJSONPathSubset(t *testing.T) {
 	}
 	if email != "alice@example.com" {
 		t.Fatalf("email = %#v", email)
+	}
+
+	departmentID, err := EvaluateJSONPath(doc, "$.data.user.department_ids[0]")
+	if err != nil {
+		t.Fatalf("EvaluateJSONPath department id: %v", err)
+	}
+	if departmentID != "dept-alpha" {
+		t.Fatalf("department id = %#v", departmentID)
 	}
 }
 
@@ -55,7 +63,7 @@ func TestEvaluateJSONPathRejectsUnsupportedExpressions(t *testing.T) {
 	if _, err := EvaluateJSONPath(map[string]any{"items": []any{}}, "data.items"); err == nil {
 		t.Fatal("expected missing root prefix to fail")
 	}
-	if _, err := EvaluateJSONPath(map[string]any{"items": []any{}}, "$.items[0]"); err == nil {
-		t.Fatal("expected array index expression to fail")
+	if _, err := EvaluateJSONPath(map[string]any{"items": []any{}}, "$.items[*]"); err == nil {
+		t.Fatal("expected wildcard expression to fail")
 	}
 }

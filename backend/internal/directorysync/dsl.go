@@ -55,18 +55,20 @@ type MapConfig struct {
 }
 
 type DepartmentMapping struct {
-	ExternalID       string `json:"external_id" yaml:"external_id"`
-	ParentExternalID string `json:"parent_external_id" yaml:"parent_external_id"`
-	Name             string `json:"name" yaml:"name"`
-	Path             string `json:"path" yaml:"path"`
+	ExternalID       string            `json:"external_id" yaml:"external_id"`
+	ParentExternalID string            `json:"parent_external_id" yaml:"parent_external_id"`
+	Name             string            `json:"name" yaml:"name"`
+	Path             string            `json:"path" yaml:"path"`
+	Metadata         map[string]string `json:"metadata" yaml:"metadata"`
 }
 
 type MemberMapping struct {
-	ExternalID           string `json:"external_id" yaml:"external_id"`
-	Email                string `json:"email" yaml:"email"`
-	DisplayName          string `json:"display_name" yaml:"display_name"`
-	DepartmentExternalID string `json:"department_external_id" yaml:"department_external_id"`
-	Status               string `json:"status" yaml:"status"`
+	ExternalID           string            `json:"external_id" yaml:"external_id"`
+	Email                string            `json:"email" yaml:"email"`
+	DisplayName          string            `json:"display_name" yaml:"display_name"`
+	DepartmentExternalID string            `json:"department_external_id" yaml:"department_external_id"`
+	Status               string            `json:"status" yaml:"status"`
+	Metadata             map[string]string `json:"metadata" yaml:"metadata"`
 }
 
 type ValidationIssue struct {

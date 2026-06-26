@@ -4,6 +4,7 @@ import type {
   AdminAssignSubscriptionResponse,
   AdminManageSubscriptionsRequest,
   AdminManageSubscriptionsResponse,
+  AdminUserDepartmentsResponse,
   AdminRelayPasswordRevealResponse,
   AdminSubscriptionJob,
   AdminSubscriptionOptionsResponse,
@@ -13,12 +14,17 @@ import type {
 
 export interface AdminUsersListParams {
   q?: string
+  department_id?: string
   page?: number
   page_size?: number
 }
 
 export function listAdminUsers(params: AdminUsersListParams) {
   return client.get<ApiResponse<AdminUsersListResponse>>('/admin/users', { params })
+}
+
+export function listAdminUserDepartments() {
+  return client.get<ApiResponse<AdminUserDepartmentsResponse>>('/admin/users/departments')
 }
 
 export function listAdminUserSubscriptionOptions() {

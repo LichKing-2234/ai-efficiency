@@ -47,6 +47,88 @@
 
 **Follow-up Status (2026-06-24, async run progress):** Complete. Preview/apply APIs now return queued runs immediately, backend executes runs asynchronously, and the frontend polls progress with immediate feedback before showing the final grouped warning result.
 
+**Follow-up Status (2026-06-24, admin users organization views):** Complete. `/admin/users` now shows department fields, supports department filtering, and includes an in-route department view backed by the current single organization snapshot.
+
+**Follow-up Status (2026-06-24, member department mapping):** Complete. The current local DSL maps member departments from the member row's department array, the executor preserves numeric directory ids as decimal strings, and the local apply run verified member department references across multiple departments.
+
+**Follow-up Status (2026-06-24, organization hierarchy view):** Complete. `/admin/users` department view exposes hierarchy ordering, parent/depth metadata, direct and subtree counts, and department filters include descendant departments by default.
+
+**Follow-up Status (2026-06-24, organization hierarchy interaction and labels):** Complete. `/admin/users` department tree entries support expand/collapse, and all user-visible department labels use name-based display paths instead of source raw path ids.
+
+**Follow-up Status (2026-06-24, organization representatives):** Complete. DSL metadata mapping, backend representative aggregation, frontend representative badges, local apply verification, full backend/frontend tests, build, browser verification, diff hygiene, and safety scan have passed.
+
+## 2026-06-24 Follow-up: Organization Representatives
+
+- [x] Inspect the live directory API shape using structural/redacted evidence only.
+- [x] Confirm representative evidence comes from department leader ids and member leader-department ids, not hardcoded organization names.
+- [x] Add failing backend tests for directory metadata mapping and department representative matched counts.
+- [x] Add failing frontend tests for representative matched/total badges in the department tree.
+- [x] Implement explicit non-sensitive `metadata` mappings in the generic Directory Sync DSL.
+- [x] Implement representative aggregation in `/admin/users/departments`.
+- [x] Implement department tree representative badges and bilingual copy.
+- [x] Update the current local DSL and run a manual apply sync.
+- [x] Verify the target department stores representative metadata and the admin departments API returns representative counts.
+- [x] Verify focused backend directorysync and admin users handler tests.
+- [x] Verify focused frontend admin users tests.
+- [x] Verify backend/frontend broader regressions and build.
+- [x] Verify localhost browser organization view.
+- [x] Verify `git diff --check`.
+- [x] Run a diff safety scan for real company domains, internal URLs, tokens, API keys, and real employee data.
+
+## 2026-06-24 Follow-up: Organization Hierarchy Interaction and Labels
+
+- [x] Add failing backend tests for name-based department `display_path` in department summaries and user rows.
+- [x] Add failing frontend tests for collapsible department tree rows and name-based department labels in filters/user rows/tree rows.
+- [x] Implement backend `display_path` construction from department parent/name hierarchy.
+- [x] Implement frontend display labels from `display_path` and hide collapsed descendant rows.
+- [x] Verify `cd backend && go test ./internal/handler -run 'TestAdminUsers'`.
+- [x] Verify `cd frontend && pnpm test -- admin-users-view`.
+- [x] Verify `git diff --check`.
+- [x] Run a diff safety scan for real company domains, internal URLs, tokens, API keys, and real employee data.
+
+## 2026-06-24 Follow-up: Organization Hierarchy View
+
+- [x] Add failing backend tests for tree-ordered department summaries with parent/depth/subtree counts.
+- [x] Add failing backend tests for parent department filters including descendant department users.
+- [x] Implement backend department tree ordering, hierarchy metadata, and subtree aggregate counts.
+- [x] Implement subtree department filtering for admin user list and current-filter subscription targets.
+- [x] Add failing frontend tests for an in-route tree-style department view.
+- [x] Implement the `/admin/users` department tree list with indentation and direct/subtree count labels.
+- [x] Verify `cd backend && go test ./internal/handler -run 'TestAdminUsers'`.
+- [x] Verify `cd frontend && pnpm test -- admin-users-view`.
+- [x] Verify `git diff --check`.
+- [x] Run a diff safety scan for real company domains, internal URLs, tokens, API keys, and real employee data.
+
+## 2026-06-24 Follow-up: Member Department Mapping
+
+- [x] Inspect the live directory API shape using structural evidence only.
+- [x] Identify that member rows expose department ids in an array and that per-department member calls return duplicate recursive rows.
+- [x] Add failing backend tests for array-index JSONPath mappings and large numeric directory id preservation.
+- [x] Implement JSONPath numeric array-index support and `json.Decoder.UseNumber()` for directory responses.
+- [x] Update the current local DSL to map `department_external_id` from the member row's first department id.
+- [x] Rebuild the local backend and run a manual apply sync.
+- [x] Verify the latest apply stores members across multiple real departments with no missing department references.
+- [x] Verify focused backend directorysync tests.
+- [x] Verify focused frontend directory sync prompt/template tests.
+- [x] Verify `git diff --check`.
+- [x] Run a diff safety scan for real company domains, internal URLs, tokens, API keys, and real employee data.
+
+## 2026-06-24 Follow-up: Admin Users Organization Views
+
+- [x] Update the configurable directory sync spec to make `/admin/users` the only department-management surface and hide directory source selection from user workflows.
+- [x] Add failing backend tests for `/admin/users` department fields, department filtering, and current-filter subscription target consistency.
+- [x] Implement backend current-directory snapshot resolution, department enrichment, and department-filtered user predicates without writing department data into `users`.
+- [x] Add an admin users department-summary API for the in-route department view.
+- [x] Add failing frontend tests for the `/admin/users` user/department view switch, department column, department filter, and department drill-in.
+- [x] Implement the `/admin/users` user view department column/filter and the in-route department view.
+- [x] Verify `cd backend && go test ./internal/handler -run 'TestAdminUsers'`.
+- [x] Verify `cd frontend && pnpm test -- admin-users-view`.
+- [x] Verify `cd backend && go test ./...`.
+- [x] Verify `cd frontend && pnpm test`.
+- [x] Verify `cd frontend && pnpm build`.
+- [x] Verify `git diff --check`.
+- [x] Run a diff safety scan for real company domains, internal URLs, tokens, API keys, and real employee data.
+
 ## 2026-06-24 Follow-up: Directory Async Run Progress
 
 - [x] Confirm current spec already defines asynchronous preview/apply runs with frontend polling.

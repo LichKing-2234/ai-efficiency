@@ -220,6 +220,7 @@ func SetupRouter(
 	adminUsersGroup.Use(auth.RequireAdmin())
 	{
 		adminUsersGroup.GET("", adminUsersHandler.List)
+		adminUsersGroup.GET("/departments", adminUsersHandler.ListDepartments)
 		adminUsersGroup.GET("/subscription-options", adminUsersHandler.ListSubscriptionOptions)
 		adminUsersGroup.POST("/subscription-jobs", adminUsersHandler.StartSubscriptionJob)
 		adminUsersGroup.GET("/subscription-jobs/latest", adminUsersHandler.GetLatestSubscriptionJob)
